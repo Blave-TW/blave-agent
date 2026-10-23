@@ -126,6 +126,6 @@ ok("SAVE_FAILED 翻成句子(兩語);英文「and {n} more」同網頁",
 // Mac e2e 第三輪:解除綁定的確認框照新行為寫——策略組合與金額保留(runtime 只清路由)、模擬帳戶權益重新開始(lib/order_paper 重設帳本)、成交紀錄保留
 ok("解除綁定確認框:不再說「下單設定會一併清空／部位與紀錄不會帶過去」;三句(模擬、這台電腦、雲端)都講策略組合和金額保留、重新綁定後存一次;模擬講權益重新開始(不寫死 100,000:回報沒有初始權益這個欄位)、成交紀錄保留",
   ["tr.unbindWarnPaper", "tr.unbindWarn", "tr.cloud.unbindWarn"].every((k) => { const all = [...S.matchAll(new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"', "g"))].map((m) => m[1]); const zh = all.find((x) => /[\u4e00-\u9fff]/.test(x)) || "";
-    return all.length === 2 && /策略組合和金額會保留/.test(zh) && /存一次就能繼續下單/.test(zh) && !/一併清空|不會帶過去/.test(zh) && all.some((x) => /portfolio and amounts are kept/.test(x)); })
-  && /"tr\.unbindWarnPaper": "[^"]*權益與部位會重新開始；成交紀錄保留。"/.test(S) && !/"tr\.unbindWarnPaper": "[^"]*100,000/.test(S) && !/order settings are (also )?cleared/i.test(S));
+    return all.length === 2 && /策略組合和金額保留/.test(zh) && /重綁後存一次即可/.test(zh) && !/一併清空|不會帶過去/.test(zh) && all.some((x) => /portfolio and amounts are kept/.test(x)); })
+  && /"tr\.unbindWarnPaper": "[^"]*權益與部位會重新開始，成交紀錄保留。/.test(S) && !/"tr\.unbindWarnPaper": "[^"]*100,000/.test(S) && !/order settings are (also )?cleared/i.test(S));
 console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0);

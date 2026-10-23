@@ -159,7 +159,8 @@ function shrOpen(c, mode, opener) {
   $("shr-tt").textContent = t(SHR_OG_PREFIX[kind]) + String(meta.title || rep.title || "");
   $("shr-ds").textContent = shrLead(rep);
   $("shr-perf").hidden = kind !== "performance";   // 公開與更新兩種模式都出
-  $("shr-must").textContent = t(c.env === "local" ? "shr.noteLocal" : "shr.noteCloud");
+  if (c.env === "local") $("shr-must").replaceChildren(t("shr.noteLocal"), document.createElement("br"), t("shr.noteLocal2"));
+  else $("shr-must").textContent = t("shr.noteCloud");
   $("shr-anon").checked = true; $("shr-ack").checked = false;
   $("shr-send").textContent = t(mode === "update" ? "shr.sendUpdate" : "shr.send");
   $("shr-msg").textContent = ""; $("shr-msg").classList.remove("is-hint");

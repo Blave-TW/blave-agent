@@ -39,7 +39,7 @@ function srcPaintList(box) {
   const missing = cloud ? [] : SRC.missing;   // 雲端視角不畫:缺不缺是拿這台電腦的策略比的
   const focusMiss = SRC.focusMiss; SRC.focusMiss = false;
   const head = srcMk("div", "src-head");
-  head.append(srcMk("p", "priv-lead", t(cloud ? "src.cloudLead" : "src.lead")));
+  if (cloud) head.append(srcMk("p", "priv-lead", t("src.cloudLead")));
   if (!cloud && (names.length || missing.length)) head.append(srcBtn("btn-out", t("src.add"), () => srcOpenForm(null)));
   box.append(head);
   if (!SRC.loaded) return;
@@ -102,7 +102,7 @@ function srcPaintForm(box) {
   const nameL = srcMk("label", "src-l", t(locked ? "src.nameLocked" : "src.name")); nameL.htmlFor = "src-name";
   const name = srcMk("input", "f-input mono"); name.id = "src-name"; name.type = "text"; name.maxLength = SRC_NAME_MAX;
   name.autocomplete = "off"; name.spellcheck = false; name.value = SRC.edit || SRC.fixed || ""; name.readOnly = locked;
-  const howto = srcMk("p", "cx-manual-note");
+  const howto = srcMk("p", "cx-manual-note"); howto.id = "src-howto";
   const paintHowto = () => { howto.textContent = t("src.howto", { vars: srcVars(name.value, SRC.rows), name: (name.value || "…").toLowerCase() }); };
   name.addEventListener("input", () => { const v = srcUpper(name.value, /[^A-Z0-9]/g, SRC_NAME_MAX); if (v !== name.value) name.value = v; srcSetErr(null); paintHowto(); srcGate(); });
   name.addEventListener("blur", () => { if (!editing) srcSetErr(srcNameErr(name.value)); });
@@ -137,7 +137,7 @@ function srcFieldRow(r, i, paintHowto) {
   if (r.stored && !r.replacing) {
     wrap.append(srcMk("span", "src-saved", t("src.saved")), srcBtn("btn-quiet", t("src.replace"), () => { srcSyncRows(); r.replacing = true; srcRepaintKeepValues(); const el = $("set-src").querySelectorAll(".src-f2")[i]; const inp = el && el.querySelector(".src-value"); if (inp) inp.focus(); }));
   } else {
-    const val = srcMk("input", "f-input mono src-value"); val.type = "password"; val.autocomplete = "off"; val.spellcheck = false; val.placeholder = t("src.value"); val.maxLength = 600;
+    const val = srcMk("input", "f-input mono src-value"); val.type = "password"; val.autocomplete = "off"; val.spellcheck = false; val.placeholder = t("src.value"); val.maxLength = 600; val.setAttribute("aria-describedby", "src-howto");
     val.addEventListener("input", () => { srcSetErr(null); srcGate(); });
     const tog = srcBtn("btn-quiet src-tog", t("src.show"), () => { const show = val.type === "password"; val.type = show ? "text" : "password"; tog.textContent = t(show ? "src.hide" : "src.show"); });
     wrap.append(val, tog);

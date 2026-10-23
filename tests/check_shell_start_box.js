@@ -155,7 +155,7 @@ function world(o) {
     const det = (o) => N(o).details.map((g) => g.label + (g.text ? "=" + g.text : "")).join();
     ok("帳本還沒建(第一次):常駐講「同方向的部位第一次對帳會算進來」,細節多一段 1.5 倍規則(排在環境那一段前面)", N({ real: true, own: true, book: "none", venue: "B" }).keep[0] === "tr.keep.ownFirst"
       && det({ real: true, own: true, book: "none", venue: "B" }) === "tr.det.own=tr.det.ownRule,tr.det.local");
-    ok("帳本已建:常駐只講「你自己開的不算 Blave 的」,不講會算進來;細節沒有 1.5 倍那一段", N({ real: true, own: true, book: "built", venue: "B" }).keep[0] === "tr.keep.ownBuilt"
+    ok("帳本已建:常駐只講「你自己開的不算 Blave 的」,不講會算進來;細節沒有 1.5 倍那一段", N({ real: true, own: true, book: "built", venue: "B" }).keep.join() === "tr.keep.ownBuilt,tr.keep.ownBuilt2"
       && det({ real: true, own: true, book: "built", venue: "B" }) === "tr.det.local" && N({ cloud: true, real: true, own: true, book: "built", v: { h: "1", m: "50" } }).keep[0] === "tr.keep.ownBuilt");
     ok("讀不到帳本狀態:只講兩種情況都成立的那半句;細節沒有 1.5 倍那一段", [undefined, "unknown", "weird"].every((b) => N({ real: true, own: true, book: b, venue: "B" }).keep[0] === "tr.keep.own" && det({ real: true, own: true, book: b, venue: "B" }) === "tr.det.local"));
     ok("模擬不出這一句,三種帳本狀態都一樣", ["none", "built", "unknown"].every((b) => !/tr\.(keep\.own|det\.own)/.test(flat({ paper: true, own: true, book: b, venue: "" }))));
@@ -184,12 +184,15 @@ function world(o) {
     const zh = strings.slice(strings.indexOf("\n  zh: {")), get = (k) => (zh.match(new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"')) || [])[1] || "";
     ok("兩顆主鈕的字沒變(實測腳本認這兩句)", get("tr.startCatchUp") === "啟動並補齊部位" && get("tr.startWait") === "啟動，等新訊號才進場" && get("tr.start") === "啟動下單");
     ok("1.5 倍那一段逐字沿用原句的後半(只在帳本還沒建時出);已建那一句不講「會算進來」「不會被平」", get("tr.det.ownRule") === "第一次對帳時，同方向的現有部位不超過目標 1.5 倍就整份算 Blave 的，更大時只算到目標那麼多，其餘算你的、不會被平。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
-      && !/算進來|不會被平|不會被動到/.test(get("tr.keep.ownBuilt")) && /單向持倉/.test(get("tr.keep.ownBuilt")) && get("tr.keep.own") === "只調整 Blave 自己那一份。");
+      && !/算進來|不會被平|不會被動到/.test(get("tr.keep.ownBuilt") + get("tr.keep.ownBuilt2")) && /單向持倉/.test(get("tr.keep.ownBuilt2")) && get("tr.keep.own") === "只調整 Blave 自己那一份。");
     { const en = strings.slice(strings.indexOf("\n  en: {"), strings.indexOf("\n  zh: {")), getEn = (k) => (en.match(new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"')) || [])[1] || "";
-      ok("帳本已建那一句(設計師定稿):三句同一個開頭與句號,不用冒號;「也不會抵掉策略的目標部位」/ don’t offset a strategy’s target",
-        get("tr.keep.ownBuilt") === "只調整 Blave 自己那一份。你自己開的部位不算 Blave 的，也不會抵掉策略的目標部位。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
-        && getEn("tr.keep.ownBuilt") === "Only Blave’s own share is traded. Positions you opened yourself aren’t counted as Blave’s and don’t offset a strategy’s target. On a one-way account the exchange nets Blave’s orders against your own position in the same coin."
-        && ["tr.keep.own", "tr.keep.ownFirst", "tr.keep.ownBuilt"].every((k) => get(k).indexOf("只調整 Blave 自己那一份。") === 0 && getEn(k).indexOf("Only Blave’s own share is traded.") === 0));
+      // 文案清長句:單向持倉那句拆到 tr.keep.ownBuilt2(帳本已建時第二行);ownBuilt 的開頭接逗號,開頭比對不含句號
+      ok("帳本已建那兩句(文案清長句定稿):同一個開頭;「也不抵掉目標部位」/ don’t offset targets;單向持倉另起一行",
+        get("tr.keep.ownBuilt") === "只調整 Blave 自己那一份，你自己開的部位不算、也不抵掉目標部位。"
+        && get("tr.keep.ownBuilt2") === "單向持倉帳戶上，交易所會把 Blave 的單與你同幣的部位合併計算。"
+        && getEn("tr.keep.ownBuilt") === "Only Blave’s own share is traded. Positions you opened aren’t counted and don’t offset targets."
+        && getEn("tr.keep.ownBuilt2") === "On a one-way account, the exchange nets Blave’s orders with your position in the same coin."
+        && ["tr.keep.own", "tr.keep.ownFirst", "tr.keep.ownBuilt"].every((k) => get(k).indexOf("只調整 Blave 自己那一份") === 0 && getEn(k).indexOf("Only Blave’s own share is traded.") === 0));
       ok("統一的兩句(設計師裁定,逐字)", get("tr.keep.pres") === "只調整 Blave 自己那一份；同一個商品別跟策略用同一個月份手動交易，Blave 會分不清。"
         && getEn("tr.keep.pres") === "Only Blave’s own share is traded; don’t trade the same product and month by hand as a strategy — Blave can’t tell them apart."
         && get("tr.means.presNight") === "台指期夜盤 15:00 到隔天 05:00 也會下單，電腦要一直開著。" && getEn("tr.means.presNight") === "TAIEX futures also trade in the night session, 15:00–05:00; keep this computer on.");

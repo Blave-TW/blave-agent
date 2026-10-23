@@ -30,7 +30,7 @@ if (!process.versions.electron) {
     /x\.need\.kind === "confirm" \? "br\.need\.confirm"/.test(brSrc) && /confirm: "br\.ask\.confirm\.h"/.test(brSrc) && /confirm: t\("br\.ask\.p\.confirm"\)/.test(brSrc)
     && /if \(k === "confirm"\) me\.addEventListener\("click", \(\) => window\.blave\.browserUserDone\(x\.id, "open"\)\);/.test(brSrc)
     && /"br\.need\.confirm": "要確認網址"/.test(strings) && /"br\.need\.confirm": "Address check needed"/.test(strings) && /"br\.ask\.openAnyway": "仍要開啟"/.test(strings)
-    && /"br\.ask\.p\.confirm": "agent 這一輪還沒去過這個網站，網址卻帶著一大段資料，可能是被網頁誘導把讀到的內容送出去。先看網址列，確定沒問題再開。"/.test(strings));
+    && /"br\.ask\.p\.confirm": "網址帶著大段資料，但 agent 這一輪沒來過這個網站。可能是被網頁誘導外送內容，先看網址列。"/.test(strings));
   // 確認態的網址列:顯示被擋下的那個網址(含 # 之後)、換警示三角(canon 第 3 條),而且不能編輯(不是這一頁的網址)
   {
     const cutF = (n) => { const i = brSrc.indexOf("function " + n + "("); return brSrc.slice(i, brSrc.indexOf("\n}\n", i) + 2); };

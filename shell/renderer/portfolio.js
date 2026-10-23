@@ -961,7 +961,7 @@ function mgBacktestSec() {
   const man = bt.managed && typeof bt.managed === "object" ? bt.managed : {}, rb = bt.random_benchmark && typeof bt.random_benchmark === "object" ? bt.random_benchmark : {};
   // 每個指標各自的「贏過 X% 隨機」(Wei 10-15),附期間注記的參考值、不是判決;舊 workspace 只有 Sharpe 那一個
   const beats = mgBeatsOf(rb), ov = bt.overlap && typeof bt.overlap === "object" ? bt.overlap : null;
-  const win = ov && typeof ov.start === "string" && typeof ov.eval_days === "number" ? " " + t("mg.beatsNote", { s: ov.start, n: ov.eval_days }) : "";
+  const win = ov && typeof ov.start === "string" && typeof ov.eval_days === "number" ? (LANG === "zh" ? "" : " ") + t("mg.beatsNote", { s: ov.start, n: ov.eval_days }) : "";
   if (!beats.ret && !beats.sharpe && !beats.mdd && ov) frag.appendChild(trEl("p", "mg-refnote", t("mg.beatsNone")));
   const grid = trEl("div", "mg-stats");
   const stat = (label, v, cls, k) => {

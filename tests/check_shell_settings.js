@@ -493,7 +493,8 @@ ok("分隔線:帳號那一塊、「關於」上面、AI 接入頁列間那三條
 const PO = ["zh", "en"].map((l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8"));
 ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效(切換後以主行程回的為準)", /data-set-cat="shares"[^>]*><\/button>\s*\n\s*(<!--[\s\S]*?-->\s*\n\s*)?<button[^>]*data-set-cat="priv"[^>]*><\/button>\s*\n\s*<\/nav>/.test(html)
   && /setAttribute\("role", "switch"\)/.test(fnSrc("privPaint")) && /aria-checked/.test(fnSrc("privPaint")) && /PRIV = \(await window\.blave\.telemetrySet\(want\)\) === true/.test(src));
-ok("隱私:會收 8 條(功能那條緊接在里程碑後、0.1.9「卡在哪一步」再接在功能後、0.1.13 免登入下載的安裝識別碼接在安裝識別碼後、0.1.10 帳號狀態一併回報的那條排最後)、不收 6 條(含「事件紀錄不含 IP 位址」原話);關掉後清單留著、標題與尾句換掉", /PRIV_COLLECT = \["priv\.collect\.1", "priv\.collect\.5", "priv\.collect\.6", "priv\.collect\.2", "priv\.collect\.3", "priv\.collect\.4", "priv\.collect\.8", "priv\.collect\.7"\]/.test(src) && /PRIV_NEVER = \[("priv\.never\.[1-6]",? ?){6}\]/.test(src)
+ok("隱私:會收 8 條(功能那條緊接在里程碑後、0.1.9「卡在哪一步」再接在功能後、0.1.13 免登入下載的安裝識別碼接在安裝識別碼後、0.1.10 帳號狀態一併回報的那條排最後;關掉時仍送「已關閉」寫在關閉態那行 priv.kept)、不收 6 條(含「事件紀錄不含 IP 位址」原話);關掉後清單留著、標題與尾句換掉、不畫說明行", /PRIV_COLLECT = \["priv\.collect\.1", "priv\.collect\.5", "priv\.collect\.6", "priv\.collect\.2", "priv\.collect\.3", "priv\.collect\.4", "priv\.collect\.8", "priv\.collect\.7"\]/.test(src)
+  && /if \(!off\) box\.append\(mk\("p", "priv-lead", t\("priv\.lead"\)\)\);/.test(src) && PO.every((x) => !/msgid "(priv|mv|br\.set)\.leadOff"/.test(x)) && /PRIV_NEVER = \[("priv\.never\.[1-6]",? ?){6}\]/.test(src)
   && /msgid "priv\.never\.6"\nmsgstr "事件紀錄不含 IP 位址"/.test(PO[0]) && /msgid "priv\.never\.6"\nmsgstr "Event records contain no IP address"/.test(PO[1])
   && /off \? t\("priv\.collect\.hOff"\) : t\("priv\.collect\.h"\)/.test(src) && /off \? t\("priv\.kept"\) : t\("priv\.fine"\)/.test(src));
 { // 隱私開關連點(0.1.10 #9-1):上一次還沒回來,後面幾下不送;回來了(成功或丟例外)才解鎖。不用 disabled——焦點會掉到 body
@@ -945,10 +946,10 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
         && ["pv.e.out", "pv.e.card", "pv.e.card.cli"].every((k) => /免費試用 \{t\} 天/.test(str(zh, k)) && !/送 \{t\}/.test(str(zh, k)) && /\{t\}\u2011day free trial/.test(str(enp, k))) && /免費試用一段時間/.test(str(zh, "pv.e.outNoNum")) && /free trial/.test(str(enp, "pv.e.outNoNum"))); }
     PV_P = ""; PV_PR = null; acct = { plan: { state: "running" } }; }
   // 內文講切換器、標題不動。哪些事歸給網頁工作頁、哪些不可以再歸給它——那條規則由 check_shell_strings.js 守,這裡只守「內文確實在講切換器」。
-  // spec-desktop-settings-cleanup §4:運行中那段收成一句「那一邊有什麼」;網頁限定那一句搬進「方案內容與計費」(pv.inc.web)
-  ok("內文一句講雲端那一邊有什麼、標題不動;網頁限定那一句(pv.inc.web)兩語都還在表裡(zh / en)", /msgid "pv\.d\.running"\nmsgstr "在雲端那一邊，可以看主機上的策略、部位與下單，也可以請 agent 在主機上做策略。"/.test(PO[0])
+  // spec-desktop-settings-cleanup §4:運行中那段收成一句「那一邊有什麼」;「方案內容與計費」那段(pv.inc.*)已隨方案頁拿掉
+  ok("內文一句講雲端那一邊有什麼、標題不動;沒人讀的 pv.inc.note / pv.inc.web 兩語都刪了(zh / en)", /msgid "pv\.d\.running"\nmsgstr "在雲端那一邊，可以看主機上的策略、部位與下單，也可以請 agent 在主機上做策略。"/.test(PO[0])
     && /msgid "pv\.d\.running"\nmsgstr "On the cloud side you can see the strategies, positions and orders on the machine, and ask the agent to build strategies there\."/.test(PO[1])
-    && /msgid "pv\.inc\.web"\nmsgstr "[^\n]*工作頁/.test(PO[0]) && /msgid "pv\.inc\.web"\nmsgstr "[^\n]*workspace on the web/.test(PO[1])
+    && PO.every((x) => !/msgid "pv\.inc\./.test(x))
     && /msgid "pv\.h\.running"\nmsgstr "策略可以在雲端主機上線了"/.test(PO[0])
     && /msgid "plan\.switchCloud"\nmsgstr "切到雲端"/.test(PO[0]) && /msgid "plan\.switchCloud"\nmsgstr "Switch to cloud"/.test(PO[1]));
 }

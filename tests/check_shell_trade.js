@@ -152,12 +152,14 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
 }
 { const S3 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"), has = (k, v) => S3.includes(J(k) + ": " + J(v));
   ok("order-copy #8 暫停框:主鈕「暫停下單 / Pause trading」(0.1.27);舊 lib 第一句照舊講出場照常(兩種 self_ledger 各一句)", has("tr.stopKeep", "暫停下單") && has("tr.stopKeep", "Pause trading")
-    && /^"tr\.stopChoice": "平倉與停損停利照常執行。/m.test(S3.split("\n").map((l) => l.trim()).join("\n")) && has("tr.stopChoiceSelf", "平倉與停損停利照常執行。「暫停並關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"));
-  ok("0.1.27 稽核 s18 暫停框:四句引號裡寫的是鈕上的字「暫停並關閉部位」(tr.stopFlat);重建句寫「下單程式會」不寫「下單機會」",
-    has("tr.stopFlat", "暫停並關閉部位") && ["tr.stopChoice", "tr.stopChoiceFreeze", "tr.stopChoiceSelf", "tr.stopChoiceSelfFreeze"].every((k) => new RegExp(J(k).replace(/\./g, "\\.") + ': "[^"]*「暫停並關閉部位」').test(S3))
-    && !S3.includes("「關閉部位」") && !S3.includes("下單機會") && ["tr.closeAllWarn2", "tr.cloud.closeAllWarn2Unconfirmed"].every((k) => new RegExp(J(k).replace(/\./g, "\\.") + ': "[^"]*下單程式會照現有金額').test(S3)));
+    && /^"tr\.stopChoice": "平倉與停損停利照常執行。/m.test(S3.split("\n").map((l) => l.trim()).join("\n")) && has("tr.stopChoiceSelf", "平倉與停損停利照常執行。「暫停並關閉部位」只平自動下單建立的部位，你手動開的單不動。"));
+  // 凍結那兩組把「暫停並關閉部位」拆到 <選句>2 另起一行(文案清長句):四種組合畫出來的框都要有鈕上的字
+  ok("0.1.27 稽核 s18 暫停框:四種組合的引號裡寫的是鈕上的字「暫停並關閉部位」(tr.stopFlat;凍結那組在 Freeze2);重建句講照金額重建、不寫「下單機會」",
+    has("tr.stopFlat", "暫停並關閉部位") && ["tr.stopChoice", "tr.stopChoiceFreeze2", "tr.stopChoiceSelf", "tr.stopChoiceSelfFreeze2"].every((k) => new RegExp(J(k).replace(/\./g, "\\.") + ': "[^"]*「暫停並關閉部位」').test(S3))
+    && !S3.includes("「關閉部位」") && !S3.includes("下單機會") && ["tr.closeAllWarn2", "tr.cloud.closeAllWarn2Unconfirmed"].every((k) => new RegExp(J(k).replace(/\./g, "\\.") + ': "[^"]*照金額重建部位').test(S3)));
   ok("0.1.27 完全凍結:暫停框照 halt.freeze 換句(Freeze 那組講什麼單都不送);freeze 那兩句不提照常執行",
-    /lines: \[t\(\(r\.self_ledger === true \? "tr\.stopChoiceSelf" : "tr\.stopChoice"\) \+ \(trHaltFreeze\(r\) \? "Freeze" : ""\)\)/.test(src)
+    /freeze = trHaltFreeze\(r\), choice = \(r\.self_ledger === true \? "tr\.stopChoiceSelf" : "tr\.stopChoice"\) \+ \(freeze \? "Freeze" : ""\);/.test(src)
+    && /lines: \[t\(choice\), \.\.\.\(freeze \? \[t\(choice \+ "2"\)\] : \[\]\), /.test(src)
     && ["tr.stopChoiceFreeze", "tr.stopChoiceSelfFreeze", "tr.haltReasonFreeze", "tr.haltUnboundFreeze", "tr.acct.doneSameFreeze"].every((k) => S3.includes(J(k) + ": ") && !new RegExp(J(k).replace(/\./g, "\\.") + ': "[^"]*照常執行').test(S3))); }
 { // order-copy #14:lib 的 [order_reject:<kind>] 放在最前面 → 六句白話(每句自己帶標的);沒有 token 照舊原文
   const K = ["insufficient_margin", "below_min_size", "symbol_unavailable", "key_permission", "reduce_only_rejected", "paper_margin"];
@@ -1134,11 +1136,11 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const get = (l, k) => { const m = po(l).match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')); return m ? m[1] : null; };
     const strs = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
     ok("「沒開著的時段」那一句整句拿掉:兩份 .po 與產生的 strings.js 都沒有 tr.ov.gapNote", !/tr\.ov\.gapNote/.test(po("zh") + po("en") + strs) && !/沒開著的時段沒有紀錄|connects straight across/.test(strs));
-    ok("A′ / B0 / S1 文字照稽核;事件兩句 note 同網頁語序", /^什麼單都不下——平倉與停損也不會執行。/.test(get("zh", "tr.haltReasonAll")) && /^No orders are going out — exits and stops won’t run either\./.test(get("en", "tr.haltReasonAll"))
+    ok("A′ / B0 / S1 文字照稽核;事件兩句 note 同網頁語序", /^什麼單都不下，平倉與停損也不執行。/.test(get("zh", "tr.haltReasonAll")) && /^No orders are going out — exits and stops won’t run either\./.test(get("en", "tr.haltReasonAll"))
       && /^主機重開過，什麼單都不下/.test(get("zh", "tr.cloud.restartNoAccountZ")) && get("zh", "tr.cloud.restartNoAccountStart") === null && get("zh", "tr.cloud.restartNoAccount") === null
       && get("zh", "tr.ov.evHaltNote") === "平倉與停損停利照常執行；停開新倉" && get("zh", "tr.ov.evRestartStoppedNote") === "什麼單都不送"   // 稽核 0127b1 P2-20:跟狀態列同一個講法,一句就夠
-      && /更新到最新版本、再按「啟動下單」/.test(get("zh", "tr.cloud.closeAllWarn2Unconfirmed")) && get("zh", "tr.cloud.saveIdleUnconfirmed") === null   // 存金額框的 idle 那句 0.1.24 退場
-      && /after you update to the latest version and press Start trading/.test(get("en", "tr.cloud.closeAllWarn2Unconfirmed")) && get("en", "tr.cloud.saveIdleUnconfirmed") === null
+      && /更新主機後按「啟動下單」/.test(get("zh", "tr.cloud.closeAllWarn2Unconfirmed")) && get("zh", "tr.cloud.saveIdleUnconfirmed") === null   // 存金額框的 idle 那句 0.1.24 退場
+      && /after you update the machine and press Start trading/.test(get("en", "tr.cloud.closeAllWarn2Unconfirmed")) && get("en", "tr.cloud.saveIdleUnconfirmed") === null
       && get("en", "tr.cloud.restartStartWarn2") === null && get("zh", "tr.cloud.restartStartWarn2") === null);
     ok("側欄「已停」→「已暫停」;設定的雲端舊版那句照稽核", get("zh", "side.cloud.st.halted") === "已暫停" && get("en", "side.cloud.st.halted") === "Paused"
       && get("zh", "up.c.needsUpdate") === null);   // v4:那一句退場(雲端更新走「檢查更新」,沒有第四個狀態)
@@ -1204,7 +1206,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("B1 列舉:C 的每一種子狀態(" + cases.length + " 種 × zh/en)看得到的狀態字都沒有「啟動下單」/ Start trading" + (bad.length ? ":" + bad.slice(0, 3).join(" | ") : ""), cases.length === 22 && bad.length === 0);
     ctx.LANG = "zh"; vm.runInContext('LANG = "zh"', ctx);
     ctx.TR = { env: "cloud", st: cases.find((c) => c.name === "reconciler").st }; vm.runInContext("var TR = this.TR", ctx);
-    ok("B1 C + 自動 HALT 的原因行指向更新(不是 A′ 那句)", /舊版下單程式可能還在跑。先按「更新雲端主機」把主機更新到最新版本；不確定暫停的原因，可以在聊天請 agent 查。$/.test(vm.runInContext('trStateText("halted")', ctx))); }
+    ok("B1 C + 自動 HALT 的原因行指向更新(不是 A′ 那句)", /舊版下單程式可能還在跑，先按「更新雲端主機」。不確定暫停原因，可以在聊天請 agent 查。$/.test(vm.runInContext('trStateText("halted")', ctx))); }
   { // round-2 稽核 B2:B0 的去向行沒有交易所時不留空段
     ok("B2 去向行濾掉空段:「雲端 ·  · 」→「雲端」;三段齊全照原樣", trWhereTidy("雲端 ·  · ") === "雲端" && trWhereTidy("雲端 · 真錢 · Binance") === "雲端 · 真錢 · Binance"
       && trWhereTidy("Cloud · Paper · ") === "Cloud · Paper" && /o\.footWhere = trWhereTidy\(t\("tr\.cloud\.footWhere"/.test(src)); }
@@ -1214,7 +1216,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   { // 0.0.3 實機:按下啟動之後,啟動前的失敗不再講成現在式
     ok("按下啟動記時間(表底紅字只給這之後的失敗)", /const go = \(cmd\) => \{ TR\.startAt = Date\.now\(\); return trRunStart\(cmd\); \};/.test(fnS("trAskStart")));
     const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
-    ok("本機重開的啟動框那一句(zh / en):講 Blave 關著時訊號沒有更新,不講「暫停期間照常更新」", /msgid "tr\.opt\.catchStale"\nmsgstr "Blave 關著時訊號沒有更新：/.test(po("zh")) && /msgid "tr\.opt\.catchStale"\nmsgstr "Signals didn’t update while Blave was closed/.test(po("en"))
+    ok("本機重開的啟動框那一句(zh / en):講 Blave 關著時訊號沒有更新,不講「暫停期間照常更新」", /msgid "tr\.opt\.catchStale"\nmsgstr "Blave 關著時訊號沒更新，/.test(po("zh")) && /msgid "tr\.opt\.catchStale"\nmsgstr "Signals didn’t update while Blave was closed/.test(po("en"))
       && /msgid "po\.orderFailedLast"\nmsgstr "上次下單失敗：\{err\}"/.test(po("zh")) && !/msgid "tr\.orderFailedLastWhy"/.test(po("zh"))); }   // 0.1.24:列下面那句不帶標的(同網頁)
   { // 設計師新狀態稽核(09-22)
     const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
@@ -1662,8 +1664,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && !rmBlocks(css).some((b) => /spin16/.test(b)) && !rmBlocks(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")).some((b) => /spin16/.test(b)) && !/cx-saved \.dot/.test(css));
     ok("稽核 B3:最低版本閘擋下「解除暫停」時的字不叫人按啟動下單", /^這個版本的 Blave 需要更新，才能送出「解除暫停」。/.test(get("zh", "minv.release")) && !/啟動下單/.test(get("zh", "minv.release")) && !/Start trading/.test(get("en", "minv.release")));
     ok("狀態行的分隔符統一成「 · 」(不混「・」)", ["tr.runningZ"].every((k) => / · /.test(get("zh", k)) && !/・/.test(get("zh", k))));
-    ok("§13-2 模擬帳戶逾時自己一句:不提金鑰、講「再試一次」;真實交易所那句不動", /^模擬帳戶已經送出，.*可以再試一次/.test(get("zh", "tr.cloud.cxSavedStalePaper")) && !/金鑰/.test(get("zh", "tr.cloud.cxSavedStalePaper"))
-      && /^The paper account was sent,/.test(get("en", "tr.cloud.cxSavedStalePaper")) && /^金鑰已經送出，/.test(get("zh", "tr.cloud.cxSavedStale")));
+    ok("§13-2 模擬帳戶逾時自己一句:不提金鑰、講「再試一次」;真實交易所那句不動", /^模擬帳戶已送出，.*可以再試一次/.test(get("zh", "tr.cloud.cxSavedStalePaper")) && !/金鑰/.test(get("zh", "tr.cloud.cxSavedStalePaper"))
+      && /^The paper account was sent,/.test(get("en", "tr.cloud.cxSavedStalePaper")) && /^金鑰已送出，/.test(get("zh", "tr.cloud.cxSavedStale")));
     ok("S5 文字(zh / en)", get("zh", "tr.cloud.hdConnecting") === "連接中…" && get("en", "tr.cloud.hdNoConfirm") === "No confirmation from the machine" && get("zh", "tr.cloud.cxSavedPaper") === null
       && /^正在等主機確認，通常一兩分鐘。/.test(get("zh", "tr.cloud.cxWaiting")) && /^Waiting for the machine to confirm, usually a minute or two\./.test(get("en", "tr.cloud.cxWaiting"))); }
   { // v2 §9-1(列舉):Z 時任何狀態字都不叫人按「啟動下單」——那顆停用或根本不在。真的字串表、zh / en、兩個視角
@@ -2006,7 +2008,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && ((x) => x.market === "台股" && x.crypto === true)(trRejectCode("ValueError: MARKET_VENUE: 「tw」是台股策略,binance 是加密貨幣交易所、下不了"))
       && trRejectCode("ValueError: amounts must be numbers") === null && trRejectCode("SOME_CODE: 「a b」x") === null && trRejectText("ValueError: SOME_CODE: 「x」y") === "「x」y" && trRejectText("ValueError: bad strategy name") === "bad strategy name");
     // 0.1.29 埋點:啟動還沒生效時按暫停、框打開就記(同網頁 GA4 trade_stop_while_starting);一般暫停不記
-    ok("trAskStop:啟動待生效才送 feature_used trade_stop_start", /function trAskStop\(opener\) \{\n  const r = trReport\(\) \|\| \{\};\n  if \(trStartPending\(TR\.pending\)\) trackFeature\("trade_stop_start"\);/.test(src) && (src.match(/"trade_stop_start"/g) || []).length === 1);
+    ok("trAskStop:啟動待生效才送 feature_used trade_stop_start", /function trAskStop\(opener\) \{\n  const r = trReport\(\) \|\| \{\}[^\n]*;\n  if \(trStartPending\(TR\.pending\)\) trackFeature\("trade_stop_start"\);/.test(src) && (src.match(/"trade_stop_start"/g) || []).length === 1);
     { const sctx = vm.createContext({ LANG: "zh", TR: { list: L, env: "local" }, t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), String, JSON, Object, Array, trKindOf, trErrorKind, trRejectCode, trRejectText });
       vm.runInContext(["trDisplay", "trTwVenueName", "trRejectSentence", "trSendError"].map(cutF).join("\n"), sctx);
       const se = (err, kind, env) => vm.runInContext("trSendError(" + JSON.stringify({ ok: false, error: err }) + ", " + JSON.stringify(kind) + ", " + JSON.stringify(env) + ")", sctx);

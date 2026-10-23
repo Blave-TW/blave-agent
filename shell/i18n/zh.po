@@ -379,7 +379,7 @@ msgid "turn.exit"
 msgstr "引擎退出碼 {code}"
 
 msgid "AGENT_BIN_MISSING"
-msgstr "找不到你連的那個 AI 指令列工具了（可能被移走或解除安裝）。到「連結」重新偵測一次，或改連別的。這一輪沒有送出。"
+msgstr "這一輪沒送出：找不到你連的 AI 指令列工具。到「連結」重新偵測，或改連別的。"
 
 msgid "turn.error"
 msgstr "出錯了：{msg}"
@@ -642,7 +642,7 @@ msgid "bt.legendMedian"
 msgstr "隨機中位數"
 
 msgid "bt.tip.band"
-msgstr "1000 組隨機權重的投組，每天調回原權重、不計手續費。每天各自取 5%–95% 的範圍，不是某一組投組的路徑。"
+msgstr "1000 組隨機權重投組，每根 K 棒調回原權重，不計手續費。每天各取 p5–p95，不是單一投組的路徑。"
 
 msgid "bt.tip.bandNarrow"
 msgstr "隨機投組的範圍太窄，只畫中位數。"
@@ -803,7 +803,7 @@ msgid "set.lang"
 msgstr "語言"
 
 msgid "up.installFailed"
-msgstr "{nv} 下載好了，但沒有裝成功。請確認 Blave 放在「應用程式」資料夾裡（不是從下載的磁碟映像直接開），再檢查一次"
+msgstr "{nv} 下載好了但沒裝成功。確認 Blave 在「應用程式」資料夾、不是從磁碟映像直接開，再檢查一次"
 
 # Windows 沒有「應用程式」資料夾與磁碟映像那一關;裝不上多半是安裝檔被擋或被佔用
 msgid "up.installFailed.win"
@@ -858,7 +858,7 @@ msgid "bt.tip.benchmark"
 msgstr "同一段期間買進後一直持有這個標的的報酬。策略要贏過它，才算比什麼都不做好。"
 
 msgid "bt.tip.benchmarkRank"
-msgstr "跟 1000 組隨機權重的投組比（同一批標的、持股數約同這支策略，每天調回原權重、不計手續費），這支策略的總報酬贏過其中多少。"
+msgstr "隨機投組：1000 組隨機權重，同一批標的、持股數相近，每根 K 棒調回權重，不計手續費。比的是總報酬。"
 
 msgid "bt.tip.benchmarkBhAdj"
 msgstr "同期間持有 {sym} 的報酬，還原價、不計手續費。"
@@ -1304,12 +1304,6 @@ msgstr "啟動中"
 msgid "pv.more.once"
 msgstr "首次綁卡的試用每人一次、每張卡一次。"
 
-msgid "pv.inc.note"
-msgstr "這台電腦與雲端主機是兩台獨立的機器，各自的交易所金鑰與帳本。電腦上做好的策略可以送上雲端，也可以直接請 agent 在主機上做。"
-
-msgid "pv.inc.web"
-msgstr "定期報告與策略管理，在網頁的雲端工作頁。"
-
 msgid "pv.signin"
 msgstr "登入 Blave"
 
@@ -1515,7 +1509,7 @@ msgid "tr.starting"
 msgstr "啟動中…"
 
 msgid "tr.cmdNotDelivered"
-msgstr "指令沒有送到，它還在交易。再按一次試試；一直失敗的話，到交易所撤銷這台電腦的 API key——它就再也送不出單（既有部位仍需你自己在交易所平倉）。"
+msgstr "暫停沒送到，還在交易。再按一次，一直失敗就到交易所撤銷這台電腦的金鑰，部位要自己平。"
 
 msgid "tr.cmdUnavailable"
 msgstr "這台電腦的指令通道沒有回應，現在送不出指令。"
@@ -1524,13 +1518,13 @@ msgid "tr.cmdFailed"
 msgstr "指令沒有送到，什麼都沒有改變。再按一次試試。"
 
 msgid "tr.cmdUnknown"
-msgstr "指令送出去了，但這台電腦還沒回報結果，可能已經執行。先看這一頁的狀態，再決定要不要重按。"
+msgstr "指令已送出，這台電腦還沒回報，可能已執行。先看這頁狀態再決定要不要重按。"
 
 msgid "tr.cmdRejected"
 msgstr "這台電腦沒有接受這個指令（{err}）。"
 
 msgid "tr.hostRetry"
-msgstr "這台電腦的下單機停了，正在重新啟動，這段時間不會下單。起來之後看這裡的狀態；如果顯示尚未啟動，再按一次「啟動下單」。"
+msgstr "下單機停了，正在重新啟動，這段時間不會下單。起來後若顯示尚未啟動，再按「啟動下單」。"
 
 msgid "tr.hostShort"
 msgstr "下單機沒有在跑"
@@ -1569,22 +1563,22 @@ msgid "tr.err.okxMode"
 msgstr "{sym}：OKX 帳戶模式不支援合約。到 OKX 設定 → 帳戶模式，改成合約模式或跨幣種保證金。"
 
 msgid "tr.err.gateDeviated"
-msgstr "{sym}：Gate.io 盤口偏離標記價太遠，市價單被交易所擋下，沒有成交。多半是這個合約一時流動性不足，下一輪會自動再試。"
+msgstr "{sym} 沒有成交：Gate.io 盤口偏離標記價太遠，擋下市價單。下一輪會自動再試。"
 
 msgid "tr.err.margin"
 msgstr "{sym} 沒有下單：帳戶的可用保證金或餘額不夠。調低金額、補入資金，或到交易所調高這個合約的槓桿。"
 
 msgid "tr.err.minSize"
-msgstr "{sym} 沒有下單：這次要調整的數量低於交易所的最小下單量。調高這支策略的金額，或等差額變大再下。"
+msgstr "{sym} 沒有下單：這次調整量低於交易所最小下單量。調高策略金額，或等差額變大。"
 
 msgid "tr.err.symbol"
-msgstr "{sym} 沒有下單：交易所上找不到這個合約，或它目前暫停交易。先到交易所確認；如果已經下架，請 agent 把策略換到別的合約。"
+msgstr "{sym} 沒有下單：交易所找不到這個合約，或它暫停交易。已下架的話，請 agent 換到別的合約。"
 
 msgid "tr.err.key"
-msgstr "{sym} 沒有下單：交易所拒絕了這把金鑰（交易權限、IP 白名單，或金鑰本身）。到 設定 › 帳戶 按「重新測試」看是哪一個。"
+msgstr "{sym} 沒有下單：交易所拒絕這把金鑰。到「自動下單 › 設定」看帳戶狀態，有「重新測試」就按。"
 
 msgid "tr.err.reduceOnly"
-msgstr "{sym} 沒有下單：交易所拒絕了只減倉的單，交易所上的部位或掛單跟 Blave 記的不一樣（可能被手動平掉，或還有別的掛單）。到交易所看一下這個部位現在的狀態。"
+msgstr "{sym} 沒有下單：交易所拒絕只減倉單，部位或掛單跟 Blave 記的不同。到交易所看這個部位現況。"
 
 msgid "tr.err.paperMargin"
 msgstr "{sym} 沒有下單：台指期每口要的保證金加起來，超過模擬帳戶的淨值。調低口數再試。"
@@ -1599,19 +1593,25 @@ msgid "tr.err.askPromptCloud"
 msgstr "雲端主機的下單機回報下單失敗：{sym}——{err}。請用 blave 工具查這台主機的原因、用白話解釋，並告訴我該怎麼處理；先不要自行下單。"
 
 msgid "tr.stopChoiceSelf"
-msgstr "平倉與停損停利照常執行。「暫停並關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"
+msgstr "平倉與停損停利照常執行。「暫停並關閉部位」只平自動下單建立的部位，你手動開的單不動。"
 
 msgid "tr.stopChoiceSelfFreeze"
-msgstr "暫停期間什麼單都不送，平倉、減碼與停損停利也不會執行；交易所上已掛的停損單照常有效。「暫停並關閉部位」只會平掉自動下單建立的部位，你手動開的單不會被動到。"
+msgstr "暫停期間什麼單都不送，平倉與停損停利也不執行。交易所上的停損單照常有效。"
+
+msgid "tr.stopChoiceSelfFreeze2"
+msgstr "「暫停並關閉部位」只平自動下單建立的部位，你手動開的單不動。"
 
 msgid "tr.stopChoice"
-msgstr "平倉與停損停利照常執行。「暫停並關閉部位」會市價平掉這個帳戶上的所有部位，包含你自己手動開的單。"
+msgstr "平倉與停損停利照常執行。「暫停並關閉部位」會市價平掉帳戶上所有部位，含你手動開的單。"
 
 msgid "tr.stopChoiceFreeze"
-msgstr "暫停期間什麼單都不送，平倉、減碼與停損停利也不會執行；交易所上已掛的停損單照常有效。「暫停並關閉部位」會市價平掉這個帳戶上的所有部位，包含你自己手動開的單。"
+msgstr "暫停期間什麼單都不送，平倉與停損停利也不執行。交易所上的停損單照常有效。"
+
+msgid "tr.stopChoiceFreeze2"
+msgstr "「暫停並關閉部位」會市價平掉帳戶上所有部位，含你手動開的單。"
 
 msgid "tr.closeAllWarn2"
-msgstr "策略金額會保留：之後按「啟動下單」，下單程式會照現有金額把部位重建回來；不想重建，先把金額歸零。"
+msgstr "策略金額會保留，之後按「啟動下單」會照金額重建部位。不想重建，先把金額歸零或移除策略。"
 
 msgid "tr.stopKeep"
 msgstr "暫停下單"
@@ -1669,7 +1669,7 @@ msgid "tr.opt.catchHow.customReal"
 msgstr "用自訂方式（{module}）送出真實委託"
 
 msgid "tr.opt.catchStale"
-msgstr "Blave 關著時訊號沒有更新：現在補齊，用的可能還是關掉之前那一次的訊號，每支策略下一次排程跑完才會換新。"
+msgstr "Blave 關著時訊號沒更新，現在補齊可能用到舊訊號。下次排程跑完才換新。"
 
 msgid "tr.opt.wait"
 msgstr "等新訊號"
@@ -1692,7 +1692,10 @@ msgid "tr.keep.ownFirst"
 msgstr "只調整 Blave 自己那一份。同一個幣你已經有同方向的部位時，第一次對帳會把它算進來。"
 
 msgid "tr.keep.ownBuilt"
-msgstr "只調整 Blave 自己那一份。你自己開的部位不算 Blave 的，也不會抵掉策略的目標部位。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
+msgstr "只調整 Blave 自己那一份，你自己開的部位不算、也不抵掉目標部位。"
+
+msgid "tr.keep.ownBuilt2"
+msgstr "單向持倉帳戶上，交易所會把 Blave 的單與你同幣的部位合併計算。"
 
 msgid "tr.det.own"
 msgstr "哪些部位算 Blave 的"
@@ -1806,7 +1809,7 @@ msgid "tr.tab.set"
 msgstr "設定"
 
 msgid "tr.onboard"
-msgstr "下單金額是從交易所的淨值算出來的，所以這頁要先接一個交易所帳戶。接好之後，每檔策略填一個金額就會開始下單。"
+msgstr "先接交易所帳戶，再按上方「解除暫停」、設金額。"
 
 msgid "tr.onboard.cloud"
 msgstr "下單金額是從交易所的淨值算出來的，這台雲端主機還沒接交易所。"
@@ -2177,10 +2180,10 @@ msgid "tr.unbindDescPaper"
 msgstr "解除後可以改綁真實交易所。"
 
 msgid "tr.unbindWarn"
-msgstr "會把這個帳戶的登入資料從這台電腦移除，下單機不再能用它交易。策略組合和金額會保留；重新綁定後，到策略組合存一次就能繼續下單。"
+msgstr "登入資料會從這台電腦移除，下單機不能再用它交易。策略組合和金額保留，重綁後存一次即可。"
 
 msgid "tr.unbindWarnPaper"
-msgstr "策略組合和金額會保留；重新綁定後，到策略組合存一次就能繼續下單。之後再綁模擬交易時，模擬帳戶的權益與部位會重新開始；成交紀錄保留。"
+msgstr "再綁模擬交易時，權益與部位會重新開始，成交紀錄保留。策略組合和金額保留，重綁後存一次即可。"
 
 msgid "tr.ov.equity"
 msgstr "總權益"
@@ -2204,10 +2207,10 @@ msgid "tr.ov.rangeAll"
 msgstr "全部"
 
 msgid "tr.ov.empty"
-msgstr "還沒有權益紀錄。每個整點記一筆：這台電腦要 Blave 開著，雲端主機要在運作中；關著或停機的時段不會有紀錄。"
+msgstr "還沒有權益紀錄，每個整點記一筆。"
 
 msgid "tr.ov.emptyBaseline"
-msgstr "紀錄還不夠畫出曲線，要兩筆。每個整點記一筆：這台電腦要 Blave 開著，雲端主機要在運作中；關著或停機的時段不會有紀錄。"
+msgstr "紀錄還不夠畫曲線，至少要兩筆。"
 
 msgid "tr.ov.basisNote"
 msgstr "這之前的點只算下單錢包，之後是全帳戶合計；兩段不相連。"
@@ -2297,7 +2300,7 @@ msgid "tr.ov.perf.reason.insufficientSamples"
 msgstr "{d}目前的權益紀錄太稀疏、中間間隔太長，還湊不出足夠的區間可以算。"
 
 msgid "tr.ov.perf.reason.flowMerged"
-msgstr "{d}入金出金的間隔太密，相鄰區間被併在一起，剩下的獨立區間不夠算。這跟時間長短無關，要有一段出入金少的期間才會出現。"
+msgstr "{d}出入金太密，可算的區間不夠，要等一段少出入金的期間。"
 
 msgid "tr.ov.perf.reason.zeroVolatility"
 msgstr "{d}這段期間權益完全沒有起伏，還沒有波動可以拿來除。"
@@ -2306,7 +2309,7 @@ msgid "tr.ov.perf.volEst.insufficientSamples"
 msgstr "報酬起伏的大小，越大越震盪(年化)。權益紀錄還太稀疏，數字會抖，等紀錄密一些就會穩定。"
 
 msgid "tr.ov.perf.volEst.flowMerged"
-msgstr "報酬起伏的大小，越大越震盪(年化)。入金出金的間隔太密，可以拿來計算的獨立區間被併掉了，數字會抖。這跟時間長短無關，要有一段出入金少的期間才會穩定。"
+msgstr "報酬起伏的大小，越大越震盪(年化)。出入金太密，數字會抖，等一段少出入金的期間才穩定。"
 
 msgid "tr.ov.perfUnreach"
 msgstr "現在讀不到雲端的組合績效，稍後會再試。"
@@ -2707,10 +2710,16 @@ msgid "tr.cloud.reportUnreach"
 msgstr "讀不到這支策略的報告。"
 
 msgid "tr.cloud.stoppedBody"
-msgstr "餘額低於 {m} TWD，主機已停機。下單已停止，部位留在交易所、現在沒有人在管。停機期間仍每小時扣 {h} TWD；餘額歸零時主機會刪除，主機上的策略、資料與金鑰一併清除。"
+msgstr "餘額低於 {m} TWD，主機已停機。下單已停，部位留在交易所、沒人在管。"
+
+msgid "tr.cloud.stoppedBody2"
+msgstr "停機仍每小時扣 {h} TWD。餘額歸零會刪除主機，策略、資料與金鑰一併清除。"
 
 msgid "tr.cloud.stoppedBody0"
-msgstr "餘額不足，主機已停機。下單已停止，部位留在交易所、現在沒有人在管。停機期間仍會扣主機費；餘額歸零時主機會刪除，主機上的策略、資料與金鑰一併清除。"
+msgstr "餘額不足，主機已停機。下單已停，部位留在交易所、沒人在管。"
+
+msgid "tr.cloud.stoppedBody02"
+msgstr "停機仍會扣主機費。餘額歸零會刪除主機，策略、資料與金鑰一併清除。"
 
 msgid "tr.cloud.footWhere"
 msgstr "{where} · {money} · {venue}"
@@ -2728,19 +2737,19 @@ msgid "tr.cloud.bothReal.h"
 msgstr "這台電腦也正在用真錢下單。"
 
 msgid "tr.cloud.bothReal.b"
-msgstr "如果兩邊連的是同一個交易所帳戶，同一個標的的部位會互相抵銷或疊加。同一個帳戶只讓一邊跑。"
+msgstr "兩邊若連同一個交易所帳戶，同標的部位會互相抵銷或疊加。同一個帳戶只讓一邊跑。"
 
 msgid "tr.cloud.cmdFailed"
 msgstr "指令沒有送到雲端主機，什麼都沒有改變。再按一次試試。"
 
 msgid "tr.cloud.cmdUnknown"
-msgstr "指令送出去了，但雲端主機還沒回報結果，可能已經執行。先看這一頁的狀態，再決定要不要重按。"
+msgstr "指令已送出，雲端主機還沒回報，可能已執行。先看這頁狀態再決定要不要重按。"
 
 msgid "tr.cloud.startedNotRunning"
-msgstr "雲端主機已經收下啟動指令，但下單程式沒有跑起來，現在不會下單。到網頁版工作頁再按一次「啟動下單」。"
+msgstr "主機收下了啟動，但下單程式沒跑起來。到網頁工作頁再按一次「啟動下單」。"
 
 msgid "tr.cloud.cmdNotDelivered"
-msgstr "暫停的指令沒有送到，它還在交易。再按一次試試；一直失敗的話，到交易所撤銷雲端那把 API key——它就再也送不出單（既有部位仍需你自己在交易所平倉）。"
+msgstr "暫停沒送到，雲端還在交易。再按一次，一直失敗就到交易所撤銷雲端那把金鑰，部位要自己平。"
 
 msgid "tr.cloud.cmdRejected"
 msgstr "雲端主機沒有接受這個指令（{err}）。"
@@ -2914,13 +2923,10 @@ msgid "mv.switch"
 msgstr "在手機 App 上查看這台電腦的部位"
 
 msgid "mv.lead"
-msgstr "每 2 分鐘把策略、部位與權益傳上 Blave，只有你的帳號看得到；手機上這台叫 {name}。關掉就停止上傳，並刪掉平台上這台的資料。"
+msgstr "每 2 分鐘上傳策略、部位與權益，只有你看得到。手機上這台叫 {name}，關掉會刪平台上這台的資料。"
 
 msgid "mv.leadNoName"
-msgstr "每 2 分鐘把策略、部位與權益傳上 Blave，只有你的帳號看得到；手機上會顯示這台電腦的名稱。關掉就停止上傳，並刪掉平台上這台的資料。"
-
-msgid "mv.leadOff"
-msgstr "已關閉：這台電腦不上傳，平台上這台的資料已刪除。"
+msgstr "每 2 分鐘上傳策略、部位與權益，只有你的帳號看得到。關掉會刪掉平台上這台的資料。"
 
 msgid "mv.leadPending"
 msgstr "已關閉，但平台上這台的資料還沒刪成；連上網路後會自動再刪。"
@@ -2935,10 +2941,7 @@ msgid "priv.switch"
 msgstr "傳送使用資料"
 
 msgid "priv.lead"
-msgstr "用來知道大家卡在哪一步；登入後，也用來決定要不要寄提醒信給你。關掉就停止傳送使用資料，也不再寄信。"
-
-msgid "priv.leadOff"
-msgstr "已關閉：不再傳送使用資料，也不寄提醒信；登入中只告訴我們「已關閉」。其他功能照常。"
+msgstr "用來找出大家卡在哪一步。登入後，也用來決定要不要寄提醒信。"
 
 msgid "priv.collect.h"
 msgstr "會收"
@@ -2998,7 +3001,7 @@ msgid "priv.fine"
 msgstr "紀錄保留 25 個月。送不出去就丟掉，不影響任何功能。"
 
 msgid "priv.kept"
-msgstr "關掉之前送出的紀錄仍保留 25 個月。"
+msgstr "登入中只送「已關閉」一個值，用來停寄提醒信；之前的紀錄保留 25 個月。"
 
 msgid "about.id"
 msgstr "安裝識別碼"
@@ -3049,7 +3052,7 @@ msgid "cx.chk.tradingNoIp"
 msgstr "這把金鑰沒開交易權限，沒有儲存。通常是還沒設 IP 白名單：設好白名單、勾選交易權限，再連一次。"
 
 msgid "cx.chk.ipOrKey"
-msgstr "Binance 拒絕了這把金鑰，沒有儲存。Binance 不區分這三種原因：白名單裡沒有上面這個 IP、API Key 貼錯、金鑰已被刪除。先核對白名單裡的 IP。"
+msgstr "Binance 拒絕這把金鑰，沒有儲存。可能是白名單沒有上面的 IP、Key 貼錯或金鑰已刪，先核對 IP。"
 
 msgid "cx.chk.keyFormat"
 msgstr "API Key 的格式不對，沒有儲存。從 Binance 重新複製一次，前後不要帶空白。"
@@ -3071,13 +3074,13 @@ msgid "cx.chk.libBrokenV"
 msgstr "這台電腦上 {venue} 的程式載入失敗，沒有儲存（{reason}）。請回報給 Blave。"
 
 msgid "cx.chk.secret"
-msgstr "Secret Key 對不上這把 API Key，沒有儲存。從 Binance 重新複製 Secret；它只在建立金鑰時顯示一次，找不到就要重建一把。"
+msgstr "Secret Key 對不上 API Key，沒有儲存。重貼 Secret，找不到就重建金鑰（它只在建立時顯示一次）。"
 
 msgid "cx.chk.clock"
 msgstr "這台電腦的時間跟 Binance 差太多，沒辦法檢查，沒有儲存。到系統設定打開「自動設定時間」，再連一次。"
 
 msgid "cx.chk.clock.win"
-msgstr "這台電腦的時間跟 Binance 差太多，沒辦法檢查，沒有儲存。到 Windows 設定 › 時間與語言 › 日期和時間，打開「自動設定時間」，再連一次。"
+msgstr "電腦時間跟 Binance 差太多，沒有儲存。到 Windows 設定 › 時間與語言 › 日期和時間，打開「自動設定時間」再連一次。"
 
 msgid "cx.chk.rate"
 msgstr "Binance 暫時限制了這個 IP 的請求，沒辦法檢查，沒有儲存。請等幾分鐘再試；連續重試會讓限制變長。"
@@ -3089,7 +3092,7 @@ msgid "cx.chk.unknown"
 msgstr "Binance 回了看不懂的結果，沒辦法確認權限，沒有儲存。過幾分鐘再試。"
 
 msgid "cx.chk.noWhitelist"
-msgstr "這把金鑰沒有設 IP 白名單。Binance 會刪除沒有白名單、又閒置 30 天的金鑰；建議把這台電腦的對外 IP 加進白名單。"
+msgstr "這把金鑰沒設 IP 白名單，閒置 30 天會被 Binance 刪除。把這台電腦的對外 IP 加進白名單。"
 
 msgid "cx.chk.sendFail"
 msgstr "金鑰通過了檢查，但沒有存進這台電腦（{err}）。再連一次。"
@@ -3122,7 +3125,7 @@ msgid "tm.key.rejTitle"
 msgstr "{where}：Binance 拒絕了金鑰"
 
 msgid "tm.key.rejSameIpBody"
-msgstr "到 Binance 確認這把金鑰還在、權限沒被改；不在就重建一把，到「自動下單 › 設定」解除綁定後重新連接。改好之前下單送不出去。"
+msgstr "到 Binance 確認金鑰還在、權限沒改。不在就重建一把，到「自動下單 › 設定」解除綁定再連接。"
 
 msgid "tm.key.rejUnknownBody"
 msgstr "打開「自動下單 › 設定」核對 IP 與金鑰：可能是對外 IP 換了，或金鑰被刪除。改好之前下單送不出去。"
@@ -3137,13 +3140,13 @@ msgid "tr.hostLock"
 msgstr "上一次的下單機還沒完全停下來，正在自動重試（{n}/{max}）。這段時間不會下單。"
 
 msgid "cx.re.badKey"
-msgstr "這台電腦上存的金鑰對不上 Binance 了（Secret 或 API Key 的內容不對），下單送不出去。按「解除綁定」，再重新連接一次。"
+msgstr "存的金鑰對不上 Binance，下單送不出去。按「解除綁定」再重新連接。"
 
 msgid "cx.note.noFutures"
-msgstr "這把金鑰沒有開合約交易權限：現貨策略可以下單，合約策略的下單會被 Binance 拒絕。要跑合約策略，到 Binance 開啟後按「重新測試」；開不了的話（金鑰建在開通合約帳戶之前就會這樣），重建一把金鑰再連接。"
+msgstr "這把金鑰沒開合約權限，合約策略的單會被 Binance 拒絕。到 Binance 開啟，開不了就重建金鑰再連接。"
 
 msgid "cx.note.noSpot"
-msgstr "這把金鑰沒有開現貨交易權限：合約策略可以下單，現貨策略的下單會被 Binance 拒絕。要跑現貨策略，到 Binance 開啟後按「重新測試」；開不了的話，重建一把金鑰再連接。"
+msgstr "這把金鑰沒開現貨權限，現貨策略的單會被 Binance 拒絕。到 Binance 開啟，開不了就重建金鑰再連接。"
 
 msgid "cx.ip.copyThis"
 msgstr "複製這個 IP"
@@ -3175,7 +3178,7 @@ msgid "src.addField"
 msgstr "加一個欄位"
 
 msgid "src.howto"
-msgstr "策略裡用 {vars} 讀它；跟 agent 說「用 {name} 的資料」就可以。儲存後不再顯示內容。"
+msgstr "存在這台電腦，agent 與策略程式讀得到。策略裡用 {vars} 讀它，儲存後不再顯示內容。"
 
 msgid "src.edit"
 msgstr "修改"
@@ -3241,13 +3244,10 @@ msgid "src.delBody2"
 msgstr "用到它的策略：{names}。刪除後它們回測與執行時會抓不到這份資料。"
 
 msgid "src.delBlocked"
-msgstr "現在不能刪除。{name} 正在下單，而且用到 {source}；刪了它下一次就抓不到資料。先到「策略組合」把這支的金額設為 0，再回來刪除。"
+msgstr "{name} 正在下單且用到 {source}，現在不能刪。先到「策略組合」把它的金額設為 0，再回來刪。"
 
 msgid "src.gotIt"
 msgstr "知道了"
-
-msgid "src.lead"
-msgstr "自己申請的資料服務（例：FRED、Coinglass）的金鑰放這裡，策略用它抓資料。金鑰存在這台電腦的工作區，agent 和你的策略程式讀得到；永遠不會拿去下單。"
 
 msgid "src.empty1"
 msgstr "Blave 內建的資料不需要金鑰。策略要用別家的資料、而那一家要你自己的金鑰時，才在這裡加。"
@@ -3271,7 +3271,7 @@ msgid "src.rmField"
 msgstr "拿掉這個欄位"
 
 msgid "src.errValue"
-msgstr "{field} 的內容有不能用的字元：只收英數與符號，不能有空白、中文、單引號、反斜線或 ${。請確認貼上的是金鑰本身。"
+msgstr "{field} 有不能用的字元（空白、中文、單引號、反斜線或 ${）。確認貼上的是金鑰本身。"
 
 msgid "src.errFieldReserved"
 msgstr "{field} 這個欄位名稱不能用在這個來源上。換一個，例如 TOKEN。"
@@ -3479,7 +3479,7 @@ msgid "strat.delBusy"
 msgstr "agent 這一輪還在跑，可能正在讀寫這支策略，這次沒有刪除。等這一輪跑完再刪。"
 
 msgid "strat.delGone"
-msgstr "這台電腦上已經找不到這支策略的資料夾（可能被移走、改名或刪掉），沒有刪除任何東西。清單已重新整理。"
+msgstr "找不到這支策略的資料夾，可能被移走、改名或刪掉。沒有刪除任何東西，清單已重新整理。"
 
 msgid "strat.delFailed"
 msgstr "沒能移到垃圾桶，這次沒有刪除。"
@@ -3555,7 +3555,7 @@ msgid "cx.ip.cloudNone"
 msgstr "讀不到雲端主機的 IP"
 
 msgid "cx.leadCloud"
-msgstr "存在你的雲端主機的工作區（.env）。金鑰只經過 Blave 送進你自己的主機，不會存在我們這裡，也不會進到對話紀錄。agent 和你的策略程式讀得到，才能替你下單、讀帳戶。"
+msgstr "存在你雲端主機的 .env，Blave 只轉送不留存，也不進對話紀錄。agent 和你的策略程式讀得到。"
 
 msgid "cx.chk.incomplete"
 msgstr "API Key 和 Secret Key 要一起給，這一次沒有收齊，沒有儲存。兩格都填好再連一次。"
@@ -3579,7 +3579,7 @@ msgid "cx.chk.backoffCloud"
 msgstr "雲端主機剛被 Binance 限制過，還在等限制解除，這一次沒有去查，沒有儲存。請等幾分鐘再連一次。"
 
 msgid "cx.chk.noWhitelistCloud"
-msgstr "這把金鑰沒有設 IP 白名單：Binance 會刪除沒有白名單、又長期閒置的金鑰。"
+msgstr "這把金鑰沒設 IP 白名單，閒置 30 天會被 Binance 刪除。"
 
 msgid "tr.cloud.cxSavedBn"
 msgstr "金鑰已存到雲端主機，Binance 權限檢查通過。"
@@ -3588,10 +3588,10 @@ msgid "tr.cloud.cxSavedV"
 msgstr "金鑰已存到雲端主機。{venue} 帳戶讀不讀得到，等主機回報才知道。"
 
 msgid "tr.cloud.cxUnknown"
-msgstr "金鑰送出去了，但雲端主機還沒回報檢查結果。先關掉這個框看這一頁：接上了會自己換成下單設定；沒有的話再連一次。"
+msgstr "金鑰已送出，雲端主機還沒回報檢查結果。關掉這個框等一下，沒接上再連一次。"
 
 msgid "tr.cloud.unbindWarn"
-msgstr "會把這個交易所的金鑰從雲端主機移除，雲端的下單會立刻暫停，部位留在交易所、沒有人在管。策略組合和金額會保留；重新連接後，到策略組合存一次就能繼續下單。"
+msgstr "金鑰會從主機移除，下單停止，部位留在交易所沒人管。策略組合和金額保留，重綁後存一次即可。"
 
 msgid "tr.cloud.pendRow"
 msgstr "已送出，等雲端主機回報。"
@@ -3603,7 +3603,7 @@ msgid "tr.cfgUnreadLocal"
 msgstr "讀不到這台電腦的金額設定，現在儲存可能清掉整個組合。狀態更新後就能存。"
 
 msgid "src.delCfgUnread"
-msgstr "讀不到這台電腦的下單設定，分不出用到這個來源的策略有沒有在下單，這次沒有刪除。過一會兒再試。"
+msgstr "沒有刪除：讀不到下單設定，分不出用到它的策略有沒有在下單。過一會兒再試。"
 
 msgid "tr.ov.evManualClose"
 msgstr "群益部位未平倉"
@@ -3666,10 +3666,10 @@ msgid "tr.ov.evRestartStoppedNote"
 msgstr "什麼單都不送"
 
 msgid "tm.evRestartStoppedNote"
-msgstr "主機重開過，自動下單已暫停，什麼單都不下——部位現在沒有人在管，平倉與停損也不會執行。到「自動下單」按「啟動下單」繼續，可選補齊部位或等新訊號。交易所端的停損單不受影響。"
+msgstr "部位沒人在管，平倉與停損都不執行。到「自動下單」按「啟動下單」繼續，交易所上的停損單照常有效。"
 
 msgid "tr.cloud.cxSavedStale"
-msgstr "金鑰已經送出，但雲端主機到現在都沒有回報，這一頁還沒換成下單設定。可以再連一次，或到聊天請 agent 看看主機怎麼了。"
+msgstr "金鑰已送出，雲端主機一直沒有回報。可以再連一次，或在聊天請 agent 看看主機。"
 
 msgid "tr.cloud.mayTrade"
 msgstr "可能仍在下單"
@@ -3678,7 +3678,7 @@ msgid "tm.stMayTrade"
 msgstr "可能仍在下單"
 
 msgid "tr.cloud.restartUnconfirmed"
-msgstr "主機重開後，沒能確認自動下單已經停下，部位可能還在被交易。先按「暫停下單」，再按「更新雲端主機」把主機更新到最新版本。"
+msgstr "主機重開後沒能確認已停下。先按「暫停下單」，再按「更新雲端主機」。"
 
 msgid "tr.ov.evRestartStopFailed"
 msgstr "主機重開，自動下單可能沒停住"
@@ -3687,16 +3687,16 @@ msgid "tr.ov.evRestartStopFailedNote"
 msgstr "先按「暫停下單」，再按「更新雲端主機」；主機還是舊版"
 
 msgid "tr.haltReasonAll"
-msgstr "什麼單都不下——平倉與停損也不會執行。問題處理好之後，再按「啟動下單」；不確定原因，可以在聊天請 agent 查。"
+msgstr "什麼單都不下，平倉與停損也不執行。處理好後按「啟動下單」，不確定原因就在聊天請 agent 查。"
 
 msgid "tr.cloud.closeAllWarn2Unconfirmed"
-msgstr "策略金額會保留：更新到最新版本、再按「啟動下單」之後，下單程式會照現有金額把部位重建回來；不想重建，先把金額歸零。"
+msgstr "策略金額會保留：更新主機後按「啟動下單」，會照金額重建部位。不想重建，先把金額歸零。"
 
 msgid "tr.cloud.recomputing"
 msgstr "策略正在用開機後的資料重算，算完才能補齊部位；算完後關掉這個框再開一次。"
 
 msgid "tr.cloud.haltReasonUnconfirmed"
-msgstr "舊版下單程式可能還在跑。先按「更新雲端主機」把主機更新到最新版本；不確定暫停的原因，可以在聊天請 agent 查。"
+msgstr "舊版下單程式可能還在跑，先按「更新雲端主機」。不確定暫停原因，可以在聊天請 agent 查。"
 
 msgid "tr.ov.curveAriaPnl"
 msgstr "累積損益曲線，{a} 到 {b}，{n} 筆"
@@ -3738,7 +3738,7 @@ msgid "tr.relTitle"
 msgstr "解除暫停？"
 
 msgid "tr.acct.reason"
-msgstr "換了 {v} 的金鑰後，Blave 認不出這是不是原來的帳戶。回答之前，{v} 什麼單都不下，平倉與停損也不會執行。"
+msgstr "換了金鑰後，Blave 認不出這是不是原來的 {v} 帳戶。回答前什麼單都不下，平倉與停損也不執行。"
 
 msgid "tr.acct.btn"
 msgstr "確認帳戶"
@@ -3750,13 +3750,13 @@ msgid "tr.acct.title"
 msgstr "這還是原來的 {v} 帳戶嗎？"
 
 msgid "tr.acct.body"
-msgstr "你換過 {v} 的 API 金鑰，而這把金鑰讀不到帳戶資料，Blave 分不出它是不是原來那個帳戶。兩個答案都不會下單；答完仍是暫停，按「啟動下單」才會恢復。"
+msgstr "這把金鑰讀不到帳戶資料。兩個答案都不會下單，答完仍暫停，按「啟動下單」才恢復。"
 
 msgid "tr.acct.ifSame"
 msgstr "同一個帳戶：Blave 之前在 {v} 開的部位，照舊由 Blave 管理。"
 
 msgid "tr.acct.ifDiff"
-msgstr "不同帳戶：之前那些部位交給你自己處理，Blave 不會再動它們；Blave 在這個帳戶從零開始，現有部位一個都不碰。"
+msgstr "不同帳戶：之前的部位交給你處理，Blave 不再動。在這個帳戶從零開始，現有部位一個都不碰。"
 
 msgid "tr.acct.same"
 msgstr "同一個帳戶"
@@ -3774,10 +3774,10 @@ msgid "tr.acct.doneSameFreeze"
 msgstr "已確認是同一個 {v} 帳戶：Blave 的部位照舊管理；按「啟動下單」恢復下單。"
 
 msgid "tr.acct.doneDiff"
-msgstr "{v} 已從零開始：之前的部位交給你處理，Blave 不會再動它們。按「啟動下單」後，策略會在這個帳戶重新開部位。"
+msgstr "{v} 已從零開始，之前的部位交給你處理、Blave 不再動。按「啟動下單」後策略會重新開部位。"
 
 msgid "tr.relBody"
-msgstr "解除後，暫停時被擋下的單會恢復放行，包含你自己的策略程式下的單。還沒有策略設定金額，所以不會照策略下單。"
+msgstr "暫停時擋下的單會恢復放行，含你自己的策略程式下的單。沒有策略設金額，不會照策略下單。"
 
 msgid "tr.relAuto"
 msgstr "這次暫停是系統自動觸發的（例如金鑰被拒、讀帳連續失敗、帳戶變更）。確定問題處理好了再解除。"
@@ -3786,10 +3786,10 @@ msgid "tr.relX1Title"
 msgstr "解除暫停會平掉這 {n} 個部位"
 
 msgid "tr.relX1Lead"
-msgstr "還沒有策略設定金額。解除後下單程式會恢復對帳，用市價平掉這個帳戶上的合約部位，包含你手動開的單："
+msgstr "沒有策略設金額，所以合約部位會市價平掉，含你手動開的單："
 
 msgid "tr.relX2Lead"
-msgstr "還沒有策略設定金額。解除後下單程式會恢復對帳，用市價平掉自動下單建立的這些部位；你手動開的單不會被動到："
+msgstr "沒有策略設金額，所以這些部位會市價平掉，手動開的單不動："
 
 msgid "tr.relReadAt"
 msgstr "{time} 讀到的部位"
@@ -3813,10 +3813,10 @@ msgid "tr.relX2TitleN"
 msgstr "解除暫停可能會平掉自動下單的部位"
 
 msgid "tr.relX2BodyN"
-msgstr "讀不到自動下單的帳本。還沒有策略設定金額，解除後下單程式會恢復對帳；帳本上如果有部位，會用市價平掉，你手動開的單不會被動到。"
+msgstr "讀不到自動下單的帳本。沒有策略設金額，帳本上若有部位會市價平掉，手動開的單不動。"
 
 msgid "tr.relX1BodyN"
-msgstr "讀不到這個帳戶現在的部位。還沒有策略設定金額，解除後下單程式會恢復對帳；帳上如果有合約部位，會用市價平掉，包含你手動開的單。"
+msgstr "讀不到帳戶部位。沒有策略設金額，帳上若有合約部位會市價平掉，含你手動開的單。"
 
 msgid "tr.relX2Title"
 msgstr "解除暫停會平掉自動下單的部位"
@@ -3852,7 +3852,7 @@ msgid "minv.release"
 msgstr "這個版本的 Blave 需要更新，才能送出「解除暫停」。到 設定 › 一般 最下面更新。"
 
 msgid "tr.cloud.cxSavedStalePaper"
-msgstr "模擬帳戶已經送出，但雲端主機到現在都沒有回報，這一頁還沒換成下單設定。可以再試一次，或到聊天請 agent 看看主機怎麼了。"
+msgstr "模擬帳戶已送出，雲端主機一直沒有回報。可以再試一次，或在聊天請 agent 看看主機。"
 
 msgid "tr.runningZ"
 msgstr "下單程式在跑 · 還沒有策略設定金額"
@@ -3928,7 +3928,7 @@ msgid "up.cf.body1Unconfirmed"
 msgstr "主機重開後沒能確認自動下單已停下：換成新版後會先停住，按「啟動下單」才會繼續。"
 
 msgid "up.cf.body1Unknown"
-msgstr "讀不到自動下單的狀態，照正在跑處理：動到下單程式時，會等沒有單在送出的空檔，再用新版重新啟動。"
+msgstr "讀不到自動下單狀態，照在跑處理。動到下單程式時，會等沒單在送的空檔再用新版重啟。"
 
 msgid "up.cf.d1"
 msgstr "只換 Blave 官方的程式與說明檔，不碰你的策略檔與金鑰；部位不會平倉。"
@@ -4271,7 +4271,7 @@ msgid "wf.factWfe"
 msgstr "樣本外效率"
 
 msgid "wf.tipWfe"
-msgstr "Walk-Forward Efficiency（WFE）：樣本外 Sharpe ÷ 樣本內 Sharpe（即上表兩列）。業界常用 0.5 當及格線、0.7 以上算好；樣本內 Sharpe 低於 0.25 就不做這個除法。這是慣例，不是證明。"
+msgstr "WFE＝樣本外 Sharpe ÷ 樣本內 Sharpe。慣例 0.5 及格、0.7 以上算好，樣本內低於 0.25 不算。"
 
 msgid "wf.chartLabel"
 msgstr "樣本外累積報酬"
@@ -4725,7 +4725,7 @@ msgid "lib.cf.l1"
 msgstr "agent 會把策略下載到 strategies/ 資料夾，用最新資料跑一次回測，結果出現在左側欄。"
 
 msgid "lib.cf.l1Local"
-msgstr "策略會下載到這台電腦的 strategies/ 資料夾，agent 檢查過程式碼再用最新資料跑一次回測，結果出現在左側欄。"
+msgstr "策略會下載到這台電腦的 strategies/。agent 檢查程式碼後用最新資料回測，結果出現在左側欄。"
 
 msgid "lib.cf.l2"
 msgstr "不會自動下單，要不要上線由你決定。"
@@ -5054,7 +5054,10 @@ msgstr "這份報告含你的帳戶資產與部位，公開後拿到連結的人
 
 # 揭露小字:本機報告版(web 的刪機句對本機檔不為真;spec DT2);雲端視角逐字同 web workspace_share_note_must
 msgid "shr.noteLocal"
-msgstr "已轉貼或被預覽快取的內容收不回。公開的是上傳當下的快照，之後修改這份報告不會變更公開版本。刪掉這台電腦的檔案不會取消公開，要收回請按取消分享；刪除雲端主機或帳號會一併取消。"
+msgstr "公開的是現在這份快照，之後修改不會更新公開版。已轉貼或被預覽快取的內容收不回。"
+
+msgid "shr.noteLocal2"
+msgstr "刪本機檔案不會取消公開，要收回按「取消分享」。刪雲端主機或帳號也會一併取消。"
 
 msgid "shr.noteCloud"
 msgstr "已轉貼或被預覽快取的內容收不回；機器被刪除或替換（含餘額歸零）時，所有公開連結會一併取消。"
@@ -5450,7 +5453,7 @@ msgid "br.ask.p"
 msgstr "帳密由你輸入；你操作時 agent 暫停、不讀這一頁。"
 
 msgid "br.ask.captcha.p"
-msgstr "搜尋次數一多，{engine} 會要確認是真人在用。驗證由你自己按，agent 不會代按；過了會自動接著搜尋，沒接上再按「好了，交還 agent」。"
+msgstr "驗證由你按，agent 不代按。過了會自動接著搜尋，沒接上再按「好了，交還 agent」。"
 
 msgid "br.ask.skip"
 msgstr "跳過"
@@ -5544,10 +5547,7 @@ msgid "br.set.switch"
 msgstr "內建瀏覽器"
 
 msgid "br.set.lead"
-msgstr "agent 可以上網搜尋、開網頁查資料，開的每一頁都會出現在聊天裡。交易所與券商後台、銀行一律不開；登入、送出、付款由你自己按。關掉之後，agent 就不上網查任何東西。"
-
-msgid "br.set.leadOff"
-msgstr "已關閉，agent 不會上網搜尋、也不會開任何網頁，只用 Blave 的資料和這台電腦上的檔案回答。策略抓資料與下單不受影響。"
+msgstr "agent 會上網查資料，開的頁都會出現在聊天裡。不開交易所後台、券商與銀行，登入、送出、付款由你按。"
 
 msgid "br.set.clear"
 msgstr "清除瀏覽資料"
@@ -5667,7 +5667,7 @@ msgid "cap.unlocked"
 msgstr "我已解鎖"
 
 msgid "cap.c.verifyDo"
-msgstr "群益規定第一次要跑一次連線檢核。在你自己的 Windows 電腦打開群益的檢核工具，登入後按「模擬國內證券下單」「模擬國內期貨下單」，最後按「查詢是否已驗證」。"
+msgstr "在 Windows 打開群益檢核工具登入，依序按「模擬國內證券下單」「模擬國內期貨下單」「查詢是否已驗證」。"
 
 msgid "cap.pfx.how"
 msgstr "在你的 Windows 電腦打開群益憑證精靈，按「匯出憑證」。"
@@ -5898,7 +5898,7 @@ msgid "br.ask.confirm.h"
 msgstr "要開這個網址嗎？"
 
 msgid "br.ask.p.confirm"
-msgstr "agent 這一輪還沒去過這個網站，網址卻帶著一大段資料，可能是被網頁誘導把讀到的內容送出去。先看網址列，確定沒問題再開。"
+msgstr "網址帶著大段資料，但 agent 這一輪沒來過這個網站。可能是被網頁誘導外送內容，先看網址列。"
 
 msgid "br.ask.openAnyway"
 msgstr "仍要開啟"
@@ -6067,7 +6067,7 @@ msgid "ver.driftLocal"
 msgstr "strategy.py 已經和這一版不同：檔案被直接改過、卻沒有重跑回測。"
 
 msgid "ver.driftCloud"
-msgstr "strategy.py 已經和這一版不同：檔案被直接改過、卻沒有重跑回測。這個旗標最多延遲 2 分鐘才會傳到這裡。"
+msgstr "strategy.py 已和這一版不同：檔案被直接改過、沒重跑回測。旗標最多晚 2 分鐘出現。"
 
 msgid "ver.compareOpen"
 msgstr "比較兩個版本…"
@@ -6157,7 +6157,7 @@ msgid "ver.rsB1"
 msgstr "策略檔會換回 {v} 的程式碼，{v} 回到目前版本，不會多一個版號。"
 
 msgid "ver.rsB2"
-msgstr "頁面先顯示 {v} 存下的結果，同時用最新資料重跑一次回測，跑完數字會更新。{cur} 留在清單裡，之後還能回去。"
+msgstr "先顯示 {v} 存下的結果，同時用最新資料重跑回測。{cur} 留在清單裡，之後還能回去。"
 
 msgid "ver.rsOk"
 msgstr "還原"
@@ -6243,7 +6243,7 @@ msgid "ver.guardS3"
 msgstr "你確認後，在自動下單一次存檔：新策略給金額、原策略金額設 0（保留勾選，才退得回來）"
 
 msgid "ver.guardNote"
-msgstr "同方向同標的，下單程式會在同一輪把舊倉換成新倉，幾乎不產生交易；方向相反則是一次完整的平倉再進場。"
+msgstr "同方向同標的，會在同一輪舊倉換新倉，幾乎不產生交易。方向相反則是完整平倉再進場。"
 
 msgid "ver.guardOk"
 msgstr "用 {v} 建立新策略"
@@ -6473,7 +6473,7 @@ msgid "rules.full"
 msgstr "已經 10 條，是上限。要新增請先刪掉一條——不會自動丟掉舊的。"
 
 msgid "rules.over"
-msgstr "目前 {n} 條，超過 10 條上限。agent 下一輪會自己整理；你也可以在這裡先刪掉幾條。畫面顯示的是全部內容，沒有被截掉。"
+msgstr "目前 {n} 條，超過 10 條上限。agent 下一輪會自己整理，你也可以先刪幾條。"
 
 msgid "rules.tooLong"
 msgstr "這條 {n} 字，超過 150 字上限。請縮短，或拆成兩條。"
@@ -6600,7 +6600,7 @@ msgid "ak.e.key"
 msgstr "{p} 不認這把金鑰（{s}）。確認貼上的是 API 金鑰本身、而且沒有停用。什麼都沒有改變。"
 
 msgid "ak.e.shape"
-msgstr "這不像完整的 API 金鑰：可能少貼了一段，或夾了空格、換行。整串重新複製後再貼一次。什麼都沒有改變。"
+msgstr "這不像完整的 API 金鑰，什麼都沒有改變。整串重新複製再貼一次，別夾空白或換行。"
 
 msgid "ak.e.credit"
 msgstr "{p} 帳戶餘額不足（402）。到 {p} 儲值後再試一次。"
@@ -6639,7 +6639,7 @@ msgid "ak.f.rate"
 msgstr "{p} 現在限流（429），這一輪沒有跑完。等一下再送一次。"
 
 msgid "ak.f.compat"
-msgstr "{p} 不接受這一輪的請求（400）。這通常是 Blave 這邊的相容性問題，不是你的金鑰或設定。先換一個模型再試。"
+msgstr "{p} 不接受這一輪的請求（400），問題多半在 Blave 端，不是你的金鑰。"
 
 msgid "ak.f.net"
 msgstr "連不到 {p}，這一輪沒有跑完。檢查網路後再送一次。"
@@ -7167,7 +7167,7 @@ msgid "pres.pfx.errImport"
 msgstr "憑證沒有存好。再按一次「用這張憑證」。"
 
 msgid "pres.t.hostDo"
-msgstr "統一規定：先在測試環境登入、下一筆測試單，回報營業員後才開正式權限。照測試帳號信上的主機網址填。"
+msgstr "統一規定先在測試環境下一筆測試單。回報營業員後才開正式權限。"
 
 msgid "pres.t.url"
 msgstr "測試主機網址（信上寫的）"
@@ -7296,7 +7296,7 @@ msgid "pres.done.n1"
 msgstr "結束 Blave 或關機就不再下單；部位留在統一，不會自動平倉。"
 
 msgid "pres.done.n2"
-msgstr "Blave 只管自己下的單，不碰你手動下的。"
+msgstr "Blave 只管自己下的部位，不動你在統一 app 手動下的單。"
 
 
 
@@ -7439,10 +7439,16 @@ msgid "pv.d.stopped.mNoNum"
 msgstr "每天會重試一次；一直沒付款，主機會刪除，上面的策略與資料一併清除。"
 
 msgid "tr.cloud.stoppedPlan"
-msgstr "方案沒付款，主機已停機。下單已停止，部位留在交易所、現在沒有人在管。到 {gu} 還沒付款，主機會刪除，主機上的策略、資料與金鑰一併清除。"
+msgstr "方案沒付款，主機已停機。下單已停，部位留在交易所、沒人在管。"
+
+msgid "tr.cloud.stoppedPlan2"
+msgstr "到 {gu} 還沒付款會刪除主機，策略、資料與金鑰一併清除。"
 
 msgid "tr.cloud.stoppedPlanNoNum"
-msgstr "方案沒付款，主機已停機。下單已停止，部位留在交易所、現在沒有人在管。一直沒付款，主機會刪除，主機上的策略、資料與金鑰一併清除。"
+msgstr "方案沒付款，主機已停機。下單已停，部位留在交易所、沒人在管。"
+
+msgid "tr.cloud.stoppedPlan2NoNum"
+msgstr "一直沒付款會刪除主機，策略、資料與金鑰一併清除。"
 
 msgid "cf.m.body1"
 msgstr "方案（Linux Starter）含 Blave 資料，電腦版馬上就能用。不會開雲端主機；之後到網站開一台 Linux Starter 不另收費。"
@@ -7535,7 +7541,7 @@ msgid "pv.d.stopped.mOk"
 msgstr "停機不影響方案：這一期已付，到期照常續約。要開回來或取消，在網頁操作。"
 
 msgid "tr.cloud.stoppedPlanOk"
-msgstr "主機已停機。下單已停止，部位留在交易所、現在沒有人在管。方案照常、到期照常續約；要開回來在網頁操作。"
+msgstr "主機已停機，部位留在交易所、沒人在管。方案照常續約，要開回來到網頁操作。"
 
 msgid "plan.onWeb"
 msgstr "到網站操作"
@@ -7559,10 +7565,16 @@ msgid "pv.d.endedNoNum"
 msgstr "方案已取消、不會續約。主機即將刪除，上面的策略、資料與金鑰一併清除。"
 
 msgid "tr.cloud.stoppedEnded"
-msgstr "方案已結束，主機已停機。下單已停止，部位留在交易所、現在沒有人在管。{gu}主機會刪除，主機上的策略、資料與金鑰一併清除。"
+msgstr "方案已結束，主機已停機。下單已停，部位留在交易所、沒人在管。"
+
+msgid "tr.cloud.stoppedEnded2"
+msgstr "{gu}主機會刪除，策略、資料與金鑰一併清除。"
 
 msgid "tr.cloud.stoppedEndedNoNum"
-msgstr "方案已結束，主機已停機。下單已停止，部位留在交易所、現在沒有人在管。主機即將刪除，主機上的策略、資料與金鑰一併清除。"
+msgstr "方案已結束，主機已停機。下單已停，部位留在交易所、沒人在管。"
+
+msgid "tr.cloud.stoppedEnded2NoNum"
+msgstr "主機即將刪除，策略、資料與金鑰一併清除。"
 
 msgid "plan.err.web"
 msgstr "這一步要到網站做：你的方案是別的階，或主機要在網站重開。"
@@ -7901,7 +7913,7 @@ msgid "mg.chartAria"
 msgstr "管理後累積報酬曲線，對照隨機組合 p5 到 p95 區間與中位數"
 
 msgid "mg.chartAriaW"
-msgstr "上圖：管理後累積報酬曲線，對照隨機組合 p5 到 p95 區間與中位數；下圖：各成員策略權重佔比隨時間的堆疊面積圖。"
+msgstr "管理後累積報酬與權重佔比圖"
 
 msgid "mg.chartCap"
 msgstr "累積報酬"
@@ -7923,13 +7935,13 @@ msgstr "預設是配置分頁的合計"
 
 # 移動窗格回測三格數字底下各自的「贏過 X%」氣泡;後面接 mg.beatsNote(期間注記)
 msgid "mg.beatsTip.ret"
-msgstr "總報酬高於同一段期間 1,000 組隨機權重投組中的這個比例；參考值，換一段期間會明顯不同"
+msgstr "總報酬高於同期 1,000 組隨機權重投組中這個比例。參考值，換一段期間會明顯不同。"
 
 msgid "mg.beatsTip.sharpe"
-msgstr "Sharpe 高於同一段期間 1,000 組隨機權重投組中的這個比例；參考值，換一段期間會明顯不同"
+msgstr "Sharpe 高於同期 1,000 組隨機權重投組中這個比例。參考值，換一段期間會明顯不同。"
 
 msgid "mg.beatsTip.mdd"
-msgstr "最大回撤比同一段期間 1,000 組隨機權重投組中的這個比例來得淺；參考值，換一段期間會明顯不同"
+msgstr "最大回撤比同期 1,000 組隨機權重投組中這個比例來得淺。參考值，換一段期間會明顯不同。"
 
 msgid "mg.groupBuiltin"
 msgstr "內建"
@@ -7981,7 +7993,7 @@ msgid "mg.optRunning"
 msgstr "優化中…"
 
 msgid "mg.optTip"
-msgstr "結果只填入「配置」欄；實際套用跟 agent 說"
+msgstr "算出建議權重填進建議金額；按「套用金額」才寫進配置"
 
 # 優化分頁:選了兩檔以上、還沒有權重也沒有回測時,霧上 CTA 卡那一句(鈕是 mg.optRun)
 msgid "mg.fogOpt"
@@ -8173,7 +8185,7 @@ msgstr "台股現在休市，台股的單要等開盤後的第一輪才會成交
 
 # 啟動框:休市時按的全部平倉延到開盤還沒執行(回報 deferred_close),啟動下單會取消它;{syms} = 代號＋股名
 msgid "tr.deferredClose"
-msgstr "休市時按的全部平倉還在等開盤（{syms}）。現在啟動下單會取消這筆平倉，改照策略的目標部位下單；要平掉就等開盤平完再啟動。"
+msgstr "全部平倉還在等開盤（{syms}）。現在啟動會取消平倉，改照策略下單。要平就等開盤平完再啟動。"
 
 msgid "tr.pick.noTxf"
 msgstr "還沒有台指期策略。"
@@ -8755,7 +8767,7 @@ msgid "capl.errDl"
 msgstr "下載不到群益的憑證精靈。已經幫你開群益憑證專區，從那裡下載。"
 
 msgid "capl.errSig"
-msgstr "下載到的憑證精靈不是群益官方簽署的版本，Blave 沒有打開它。已經幫你開群益憑證專區，從那裡下載。"
+msgstr "下載到的憑證精靈沒有群益官方簽章，沒有打開。已開群益憑證專區，從那裡下載。"
 
 msgid "capl.errLaunch"
 msgstr "憑證精靈沒有打開。公司電腦的話，可能被安全政策擋下。"
@@ -8812,7 +8824,7 @@ msgstr "重新找憑證"
 
 # 321(第一次用 API)
 msgid "capl.verifyDo"
-msgstr "群益規定第一次要跑一次連線檢核。下載檢核工具並打開，登入後按「模擬國內證券下單」「模擬國內期貨下單」，最後按「查詢是否已驗證」。"
+msgstr "打開群益檢核工具登入，依序按「模擬國內證券下單」「模擬國內期貨下單」「查詢是否已驗證」。"
 
 # 確認帳密／讀取帳戶失敗(這台電腦的版本;雲端那組寫的是「主機」)
 msgid "capl.vehicle"

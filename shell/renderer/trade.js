@@ -2577,7 +2577,11 @@ function trPaintVerdict(on) {
   const row = trEl("div", "verdict"), mark = trEl("span", "fault-mark"); mark.setAttribute("aria-hidden", "true");
   // 方案制:扣款失敗與取消到期都講刪機日(grace_until);用戶自己停的講方案照常;都不講餘額
   const gu = (key) => t(v.gu ? key : key + "NoNum", v);
-  row.append(mark, trEl("span", "", k === "fail" ? gu("tr.cloud.stoppedPlan") : k === "ended" ? gu("tr.cloud.stoppedEnded") : k === "self" ? t("tr.cloud.stoppedPlanOk") : v.m && v.h ? t("tr.cloud.stoppedBody", v) : t("tr.cloud.stoppedBody0")));
+  const body = trEl("span", "", k === "fail" ? gu("tr.cloud.stoppedPlan") : k === "ended" ? gu("tr.cloud.stoppedEnded") : k === "self" ? t("tr.cloud.stoppedPlanOk") : v.m && v.h ? t("tr.cloud.stoppedBody", v) : t("tr.cloud.stoppedBody0"));
+  // 第二行講停著不管的後果(續扣、刪機);用戶自己停的方案照常續約,沒有這一行
+  const after = k === "fail" ? gu("tr.cloud.stoppedPlan2") : k === "ended" ? gu("tr.cloud.stoppedEnded2") : k === "self" ? "" : v.m && v.h ? t("tr.cloud.stoppedBody2", v) : t("tr.cloud.stoppedBody02");
+  if (after) body.append(document.createElement("br"), after);
+  row.append(mark, body);
   box.appendChild(row);
 }
 
@@ -2597,13 +2601,14 @@ function trStopAfterStartLead(canFlatten) {
   return row;
 }
 function trAskStop(opener) {
-  const r = trReport() || {};
+  const r = trReport() || {}, freeze = trHaltFreeze(r), choice = (r.self_ledger === true ? "tr.stopChoiceSelf" : "tr.stopChoice") + (freeze ? "Freeze" : "");
   if (trStartPending(TR.pending)) trackFeature("trade_stop_start");
   confirmBox(trCloudBox({
     title: t("tr.stop"), mark: trIsPaper() ? t("tr.mode.paper") : null, opener,
     lead: trStartPending(TR.pending) ? trStopAfterStartLead(r.can_flatten === true) : null,
     // 重開沒停住(C):沒有啟動鈕,「之後按啟動下單」要先更新(audit S1)
-    lines: [t((r.self_ledger === true ? "tr.stopChoiceSelf" : "tr.stopChoice") + (trHaltFreeze(r) ? "Freeze" : "")), trRestartUnconfirmed(r) ? t("tr.cloud.closeAllWarn2Unconfirmed") : t("tr.closeAllWarn2")],
+    // 凍結時選句只講暫停期間不送單,「暫停並關閉部位」那句另起一行(<選句>2)
+    lines: [t(choice), ...(freeze ? [t(choice + "2")] : []), trRestartUnconfirmed(r) ? t("tr.cloud.closeAllWarn2Unconfirmed") : t("tr.closeAllWarn2")],
     ok: t("tr.stopKeep"), onOk: () => trRun("halted", [(S) => trSend(S, "halt", { reason: "desktop ui" })], "halt"),
     // 沒有平倉層的 workspace 不給「看起來成功但沒平」的鈕(同雲端 can_flatten)
     alt: r.can_flatten === true ? { label: t("tr.stopFlat"), danger: true, onOk: () => trRun("halted", [(S) => trSend(S, "close_all", {})], "close_all") } : null,
@@ -2636,6 +2641,7 @@ function trStartNotes(o) {
   if (o.own && o.real) {
     // 統一(這台電腦):同月份手動交易分不清那一句取代加密口吻的三種說法(完成頁那段說明搬過來的,設計師裁定)
     keep.push(t(o.pres ? "tr.keep.pres" : o.book === "none" ? "tr.keep.ownFirst" : o.book === "built" ? "tr.keep.ownBuilt" : "tr.keep.own"));
+    if (!o.pres && o.book === "built") keep.push(t("tr.keep.ownBuilt2"));
     if (o.book === "none") details.push({ label: t("tr.det.own"), text: t("tr.det.ownRule") });
   }
   if (o.cloud) {

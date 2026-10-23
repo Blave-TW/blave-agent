@@ -372,7 +372,7 @@ msgid "turn.exit"
 msgstr "Engine exited with code {code}"
 
 msgid "AGENT_BIN_MISSING"
-msgstr "The AI command-line tool you’re connected to can’t be found any more (moved or uninstalled). Re-detect it in Connect, or connect a different one. Nothing was sent this turn."
+msgstr "Not sent: your AI command-line tool can’t be found. Re-detect it in Connect, or connect another."
 
 msgid "turn.error"
 msgstr "Something went wrong: {msg}"
@@ -635,7 +635,7 @@ msgid "bt.legendMedian"
 msgstr "Random median"
 
 msgid "bt.tip.band"
-msgstr "1,000 random-weight portfolios, rebalanced daily to their weights, no fees. Each day’s 5–95% range, not any single portfolio’s path."
+msgstr "1,000 random-weight portfolios, rebalanced every bar, no fees. Each day’s p5–p95, not one portfolio’s path."
 
 msgid "bt.tip.bandNarrow"
 msgstr "The random portfolios’ range is too narrow to show, so only the median is drawn."
@@ -796,7 +796,7 @@ msgid "set.lang"
 msgstr "Language"
 
 msgid "up.installFailed"
-msgstr "{nv} was downloaded but couldn’t be installed. Make sure Blave is in your Applications folder (not opened straight from the disk image), then check again"
+msgstr "{nv} downloaded but didn’t install. Make sure Blave is in Applications, not opened from the disk image, then check again"
 
 # Windows 沒有「應用程式」資料夾與磁碟映像那一關;裝不上多半是安裝檔被擋或被佔用
 msgid "up.installFailed.win"
@@ -851,7 +851,7 @@ msgid "bt.tip.benchmark"
 msgstr "What buying and holding this symbol over the same period would have returned. The strategy has to beat it to be better than doing nothing."
 
 msgid "bt.tip.benchmarkRank"
-msgstr "Share of 1,000 random-weight portfolios (same assets, about as many holdings as this strategy, rebalanced daily to their weights, no fees) that this strategy’s total return beats."
+msgstr "Random portfolios: 1,000 random weights, same assets, similar holdings count, rebalanced every bar, no fees. Compares total return."
 
 msgid "bt.tip.benchmarkBhAdj"
 msgstr "Return from holding {sym} over the same period, dividend-adjusted, no fees."
@@ -1296,12 +1296,6 @@ msgstr "Starting"
 msgid "pv.more.once"
 msgstr "The first-card trial is once per person and once per card."
 
-msgid "pv.inc.note"
-msgstr "This computer and the cloud machine are two separate machines, each with its own exchange keys and ledger. A strategy built here can be sent to the cloud, or you can ask the agent to build one on the machine directly."
-
-msgid "pv.inc.web"
-msgstr "Scheduled reports and strategy management are in the cloud workspace on the web."
-
 msgid "pv.signin"
 msgstr "Sign in to Blave"
 
@@ -1506,7 +1500,7 @@ msgid "tr.starting"
 msgstr "Starting…"
 
 msgid "tr.cmdNotDelivered"
-msgstr "The command was never delivered — it is still trading. Try again; if it keeps failing, revoke this computer's API key at the exchange and it can no longer send orders (existing positions still need closing there yourself)."
+msgstr "The pause didn’t arrive; it’s still trading. Try again. If it keeps failing, revoke this computer’s key at the exchange and close positions yourself."
 
 msgid "tr.cmdUnavailable"
 msgstr "This computer’s command channel is not responding — commands can’t be sent from here right now."
@@ -1515,13 +1509,13 @@ msgid "tr.cmdFailed"
 msgstr "The command was not delivered — nothing changed. Try again."
 
 msgid "tr.cmdUnknown"
-msgstr "The command was sent, but this computer has not reported a result yet — it may already have run. Check the status on this page before pressing again."
+msgstr "The command was sent; this computer hasn’t reported back and it may have run. Check this page before pressing again."
 
 msgid "tr.cmdRejected"
 msgstr "This computer rejected the command ({err})."
 
 msgid "tr.hostRetry"
-msgstr "The order engine on this computer stopped and is restarting; no orders go out meanwhile. Once it is back, check the status here — if it shows not started, press Start trading again."
+msgstr "The order engine stopped and is restarting; no orders meanwhile. If it then shows not started, press Start trading."
 
 msgid "tr.hostShort"
 msgstr "Order engine not running"
@@ -1560,22 +1554,22 @@ msgid "tr.err.okxMode"
 msgstr "{sym}: this OKX account mode can't trade futures. In OKX, go to Settings → Account mode and switch to Futures mode or Multi-currency margin."
 
 msgid "tr.err.gateDeviated"
-msgstr "{sym}: Gate.io's order book was too far from the mark price, so the exchange refused the market order and nothing filled. This contract is usually just thin for a moment; the next round retries on its own."
+msgstr "{sym} didn’t fill: Gate.io’s book was too far from the mark price, so the market order was blocked. The next round retries."
 
 msgid "tr.err.margin"
 msgstr "{sym} order not placed: not enough available margin or balance on the account. Lower the amount, add funds, or raise this contract's leverage on the exchange."
 
 msgid "tr.err.minSize"
-msgstr "{sym} order not placed: the size is below the exchange's minimum order. Raise this strategy's amount, or wait for the difference to grow."
+msgstr "{sym} not placed: this adjustment is below the exchange minimum. Raise the strategy’s amount, or wait for the gap to grow."
 
 msgid "tr.err.symbol"
-msgstr "{sym} order not placed: the exchange doesn't list this contract or has paused trading on it. Check on the exchange; if it's delisted, ask the agent to move the strategy to another contract."
+msgstr "{sym} not placed: the exchange can’t find this contract, or it’s paused. If delisted, ask the agent to switch contracts."
 
 msgid "tr.err.key"
-msgstr "{sym} order not placed: the exchange rejected this key (trading permission, IP whitelist, or the key itself). Go to Settings › Account and press Retest to see which."
+msgstr "{sym} not placed: the exchange rejected this key. Check the account in Auto trading › Settings; press Retest connection if it’s there."
 
 msgid "tr.err.reduceOnly"
-msgstr "{sym} order not placed: the exchange refused a reduce-only order because the position or open orders there differ from what Blave expects (closed by hand, or another order is open). Check this position on the exchange."
+msgstr "{sym} not placed: the exchange refused a reduce-only order; its position or orders differ from Blave’s record. Check the position there."
 
 msgid "tr.err.paperMargin"
 msgstr "{sym} order not placed: the margin for these TAIFEX lots adds up to more than the paper account's equity. Lower the lots and try again."
@@ -1590,19 +1584,25 @@ msgid "tr.err.askPromptCloud"
 msgstr "The cloud machine's order engine reported a failed order: {sym} — {err}. Please use the blave tools to find out why on that machine, explain it in plain words, and tell me what to do; don't place any orders yourself."
 
 msgid "tr.stopChoiceSelf"
-msgstr "Exits, stops and take-profits keep running. Closing positions here only closes positions opened by auto-trading; ones you opened manually are left alone."
+msgstr "Exits, stops and take-profits keep running. “Pause and close positions” closes only auto-trading’s positions; manual ones stay."
 
 msgid "tr.stopChoiceSelfFreeze"
-msgstr "While paused no orders are sent — not exits, reductions, stops or take-profits; stop orders already resting on the exchange still work. Closing positions here only closes positions opened by auto-trading; ones you opened manually are left alone."
+msgstr "While paused, no orders go out — not even exits, stops or take-profits. Stop orders on the exchange still work."
+
+msgid "tr.stopChoiceSelfFreeze2"
+msgstr "“Pause and close positions” closes only auto-trading’s positions; manual ones stay."
 
 msgid "tr.stopChoice"
-msgstr "Exits, stops and take-profits keep running. Closing positions here market-closes ALL positions on this account, including ones you opened manually."
+msgstr "Exits, stops and take-profits keep running. “Pause and close positions” market-closes every position here, including manual ones."
 
 msgid "tr.stopChoiceFreeze"
-msgstr "While paused no orders are sent — not exits, reductions, stops or take-profits; stop orders already resting on the exchange still work. Closing positions here market-closes ALL positions on this account, including ones you opened manually."
+msgstr "While paused, no orders go out — not even exits, stops or take-profits. Stop orders on the exchange still work."
+
+msgid "tr.stopChoiceFreeze2"
+msgstr "“Pause and close positions” market-closes every position here, including manual ones."
 
 msgid "tr.closeAllWarn2"
-msgstr "Strategy amounts are kept: pressing Start trading later rebuilds positions to those amounts. If you don't want that, zero the amounts first."
+msgstr "Strategy amounts are kept; Start trading later rebuilds positions to them. To avoid that, zero the amounts or remove strategies first."
 
 msgid "tr.stopKeep"
 msgstr "Pause trading"
@@ -1660,7 +1660,7 @@ msgid "tr.opt.catchHow.customReal"
 msgstr "Sends real orders with your custom method ({module})"
 
 msgid "tr.opt.catchStale"
-msgstr "Signals didn’t update while Blave was closed: catching up now may still trade on the signal from before you closed it; each strategy switches to a fresh one after its next scheduled run."
+msgstr "Signals didn’t update while Blave was closed, so catching up may use old ones. They refresh after the next scheduled run."
 
 msgid "tr.opt.wait"
 msgstr "Wait for new signals"
@@ -1683,7 +1683,10 @@ msgid "tr.keep.ownFirst"
 msgstr "Only Blave’s own share is traded. If you already hold a same-side position in the same coin, the first reconcile counts it in."
 
 msgid "tr.keep.ownBuilt"
-msgstr "Only Blave’s own share is traded. Positions you opened yourself aren’t counted as Blave’s and don’t offset a strategy’s target. On a one-way account the exchange nets Blave’s orders against your own position in the same coin."
+msgstr "Only Blave’s own share is traded. Positions you opened aren’t counted and don’t offset targets."
+
+msgid "tr.keep.ownBuilt2"
+msgstr "On a one-way account, the exchange nets Blave’s orders with your position in the same coin."
 
 msgid "tr.det.own"
 msgstr "Which positions count as Blave’s"
@@ -1797,7 +1800,7 @@ msgid "tr.tab.set"
 msgstr "Settings"
 
 msgid "tr.onboard"
-msgstr "Order sizes are derived from your exchange equity, so this page needs an exchange account first. Once connected, give each strategy an amount and it starts trading."
+msgstr "Connect an exchange account, then press Release pause above and set amounts."
 
 msgid "tr.onboard.cloud"
 msgstr "Order sizes are derived from your exchange equity, and this cloud machine has no exchange connected yet."
@@ -2166,10 +2169,10 @@ msgid "tr.unbindDescPaper"
 msgstr "Unbind to connect a real exchange instead."
 
 msgid "tr.unbindWarn"
-msgstr "This removes this account’s login details from this computer — the order engine can no longer trade with it. Your portfolio and amounts are kept; after you bind again, save once in Portfolio to resume trading."
+msgstr "This computer’s login details are removed; the order engine can’t trade with them. Your portfolio and amounts are kept; save once after reconnecting."
 
 msgid "tr.unbindWarnPaper"
-msgstr "Your portfolio and amounts are kept; after you bind again, save once in Portfolio to resume trading. If you bind paper trading again, the paper account’s equity and positions start over; trade history is kept."
+msgstr "Reconnecting paper trading makes its equity and positions start over; trade history stays. Your portfolio and amounts are kept; save once after reconnecting."
 
 msgid "tr.ov.equity"
 msgstr "Total equity"
@@ -2193,10 +2196,10 @@ msgid "tr.ov.rangeAll"
 msgstr "All"
 
 msgid "tr.ov.empty"
-msgstr "No equity records yet. One is recorded on the hour — on this computer while Blave is open, on the cloud machine while it is running; nothing is recorded while it is closed or stopped."
+msgstr "No equity records yet; one is logged every hour."
 
 msgid "tr.ov.emptyBaseline"
-msgstr "Not enough records to draw the curve yet — it takes two. One is recorded on the hour — on this computer while Blave is open, on the cloud machine while it is running; nothing is recorded while it is closed or stopped."
+msgstr "Not enough records for a curve; it needs two."
 
 msgid "tr.ov.basisNote"
 msgstr "Earlier points count only the trading wallet; later ones the whole account. The two parts aren’t joined."
@@ -2286,7 +2289,7 @@ msgid "tr.ov.perf.reason.insufficientSamples"
 msgstr "{d} Your account's equity has only been recorded a few times so far, with long gaps in between, so there aren't enough separate periods to work this out yet."
 
 msgid "tr.ov.perf.reason.flowMerged"
-msgstr "{d} Deposits and withdrawals land so close together that adjacent periods merge, leaving too few independent ones to measure. Waiting won't change this — it needs a stretch with fewer transfers."
+msgstr "{d} Transfers are too frequent to leave enough periods to measure. It needs a stretch with fewer transfers."
 
 msgid "tr.ov.perf.reason.zeroVolatility"
 msgstr "{d} Equity hasn't moved at all over this period, so there's no volatility to divide by yet."
@@ -2295,7 +2298,7 @@ msgid "tr.ov.perf.volEst.insufficientSamples"
 msgstr "How much returns swing — larger means choppier (annualized). Your equity is still being recorded too sparsely, so the number jumps around; it settles as the records fill in."
 
 msgid "tr.ov.perf.volEst.flowMerged"
-msgstr "How much returns swing — larger means choppier (annualized). Deposits and withdrawals land close enough together to merge adjacent periods, so the number jumps around. Waiting won't change this — it needs a stretch with fewer transfers."
+msgstr "How much returns swing (annualized); higher is choppier. Frequent transfers make it jumpy; it steadies after a quieter stretch."
 
 msgid "tr.ov.perfUnreach"
 msgstr "Can’t read the cloud’s portfolio performance right now; this will retry shortly."
@@ -2696,10 +2699,16 @@ msgid "tr.cloud.reportUnreach"
 msgstr "Couldn’t load this strategy’s report."
 
 msgid "tr.cloud.stoppedBody"
-msgstr "The balance fell under {m} TWD and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. A stopped machine still bills {h} TWD an hour. At a balance of 0 the machine is deleted, along with the strategies, data and keys on it."
+msgstr "Balance fell below {m} TWD; the machine stopped. Trading halted; positions sit at the exchange, unmanaged."
+
+msgid "tr.cloud.stoppedBody2"
+msgstr "A stopped machine still bills {h} TWD an hour. At 0 the machine is deleted, with its strategies, data and keys."
 
 msgid "tr.cloud.stoppedBody0"
-msgstr "The balance ran low and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. A stopped machine is still billed. At a balance of 0 the machine is deleted, along with the strategies, data and keys on it."
+msgstr "Balance ran low; the machine stopped. Trading halted; positions sit at the exchange, unmanaged."
+
+msgid "tr.cloud.stoppedBody02"
+msgstr "A stopped machine is still billed. At 0 the machine is deleted, with its strategies, data and keys."
 
 msgid "tr.cloud.footWhere"
 msgstr "{where} · {money} · {venue}"
@@ -2717,19 +2726,19 @@ msgid "tr.cloud.bothReal.h"
 msgstr "This computer is also trading real money."
 
 msgid "tr.cloud.bothReal.b"
-msgstr "If both sides use the same exchange account, positions in the same symbol will offset or stack. Run only one side per account."
+msgstr "If both use the same exchange account, positions in the same symbol offset or stack. Run only one side per account."
 
 msgid "tr.cloud.cmdFailed"
 msgstr "The command didn’t reach the cloud machine, and nothing changed. Try again."
 
 msgid "tr.cloud.cmdUnknown"
-msgstr "The command was sent, but the cloud machine hasn’t reported back. It may already have run. Check this page’s state before pressing again."
+msgstr "The command was sent; the cloud machine hasn’t reported back and it may have run. Check this page before pressing again."
 
 msgid "tr.cloud.startedNotRunning"
-msgstr "The cloud machine accepted the start, but its order program didn’t start, so nothing is trading. Press Start trading once more from the workspace on the web."
+msgstr "The machine accepted the start, but the trading program didn’t run. Press Start trading again in the web workspace."
 
 msgid "tr.cloud.cmdNotDelivered"
-msgstr "The pause command wasn’t delivered and it is still trading. Try again. If it keeps failing, revoke the cloud’s API key at the exchange — it can then place no more orders (you still need to close existing positions yourself at the exchange)."
+msgstr "The pause didn’t arrive; the cloud is still trading. Try again. If it keeps failing, revoke the cloud key at the exchange and close positions yourself."
 
 msgid "tr.cloud.cmdRejected"
 msgstr "The cloud machine didn’t accept this command ({err})."
@@ -2903,13 +2912,10 @@ msgid "mv.switch"
 msgstr "See this computer’s positions in the mobile app"
 
 msgid "mv.lead"
-msgstr "Every 2 minutes, your strategies, positions and equity go to Blave, where only your account can see them. On your phone this computer is called {name}. Turn it off and uploads stop, and this computer’s data on Blave is deleted."
+msgstr "Uploads strategies, positions and equity every 2 minutes, visible only to you. Your phone calls this computer {name}. Turning it off deletes its data on Blave."
 
 msgid "mv.leadNoName"
-msgstr "Every 2 minutes, your strategies, positions and equity go to Blave, where only your account can see them. Your phone shows this computer by its name. Turn it off and uploads stop, and this computer’s data on Blave is deleted."
-
-msgid "mv.leadOff"
-msgstr "Off. This computer doesn’t upload, and its data on Blave has been deleted."
+msgstr "Uploads strategies, positions and equity every 2 minutes, visible only to your account. Turning it off deletes this computer’s data on Blave."
 
 msgid "mv.leadPending"
 msgstr "Off, but this computer’s data on Blave hasn’t been deleted yet. It’s deleted automatically once you’re back online."
@@ -2924,10 +2930,7 @@ msgid "priv.switch"
 msgstr "Send usage data"
 
 msgid "priv.lead"
-msgstr "It shows us where people get stuck and, once you sign in, whether to email you a reminder. Turn it off and usage data stops, and so do the emails."
-
-msgid "priv.leadOff"
-msgstr "Off. No usage data is sent and no reminders go out; while you’re signed in, we only learn that it’s off. Everything else works as usual."
+msgstr "Shows us where people get stuck. Once you sign in, it also decides whether to send reminder emails."
 
 msgid "priv.collect.h"
 msgstr "Collected"
@@ -2987,7 +2990,7 @@ msgid "priv.fine"
 msgstr "Records are kept for 25 months. Anything that can’t be sent is dropped, and nothing in the app depends on it."
 
 msgid "priv.kept"
-msgstr "Records sent before you turned this off are still kept for 25 months."
+msgstr "While signed in, only an “off” value is sent, to stop reminder emails. Earlier records are kept for 25 months."
 
 msgid "about.id"
 msgstr "Installation ID"
@@ -3038,7 +3041,7 @@ msgid "cx.chk.tradingNoIp"
 msgstr "This key has no trading permission, so it was not saved. Usually the IP whitelist is missing: set the whitelist, enable trading, then connect again."
 
 msgid "cx.chk.ipOrKey"
-msgstr "Binance rejected this key, so it was not saved. Binance doesn’t tell these three causes apart: the IP above isn’t on the whitelist, the API Key was pasted wrong, or the key was deleted. Check the whitelisted IP first."
+msgstr "Binance rejected this key; not saved. The IP above may be missing from the whitelist, the key mistyped or deleted. Check the IP first."
 
 msgid "cx.chk.keyFormat"
 msgstr "The API Key’s format is wrong, so it was not saved. Copy it from Binance again, with no spaces before or after."
@@ -3060,13 +3063,13 @@ msgid "cx.chk.libBrokenV"
 msgstr "The {venue} code on this computer failed to load, so nothing was saved ({reason}). Please report this to Blave."
 
 msgid "cx.chk.secret"
-msgstr "The Secret Key doesn’t match this API Key, so it was not saved. Copy the secret from Binance again. It is shown only once, when the key is created; if you no longer have it, create a new key."
+msgstr "The Secret Key doesn’t match the API Key; not saved. Paste it again, or create a new key (it’s shown only once)."
 
 msgid "cx.chk.clock"
 msgstr "This computer’s clock is too far off Binance’s, so the key couldn’t be checked and was not saved. Turn on automatic date and time in System Settings, then connect again."
 
 msgid "cx.chk.clock.win"
-msgstr "This computer’s clock is too far off Binance’s, so the key couldn’t be checked and was not saved. In Windows Settings › Time & language › Date & time, turn on “Set time automatically”, then connect again."
+msgstr "Your clock is too far off Binance’s; not saved. Turn on “Set time automatically” in Windows Settings › Time & language › Date & time, then reconnect."
 
 msgid "cx.chk.rate"
 msgstr "Binance is temporarily limiting requests from this IP, so the key couldn’t be checked and was not saved. Wait a few minutes before trying again. Repeated retries extend the limit."
@@ -3078,7 +3081,7 @@ msgid "cx.chk.unknown"
 msgstr "Binance returned a result that couldn’t be read, so the permissions couldn’t be confirmed and the key was not saved. Try again in a few minutes."
 
 msgid "cx.chk.noWhitelist"
-msgstr "This key has no IP whitelist. Binance deletes keys that have no whitelist and sit unused for 30 days; adding this computer’s public IP to the whitelist is recommended."
+msgstr "This key has no IP whitelist; Binance deletes it after 30 idle days. Add this computer’s public IP to the whitelist."
 
 msgid "cx.chk.sendFail"
 msgstr "The key passed the check but was not saved on this computer ({err}). Connect again."
@@ -3111,7 +3114,7 @@ msgid "tm.key.rejTitle"
 msgstr "{where}: Binance rejected the key"
 
 msgid "tm.key.rejSameIpBody"
-msgstr "Check at Binance that the key still exists and its permissions are unchanged. If it’s gone, create a new one, then unbind and reconnect in Auto trading › Settings. Orders can’t be placed until then."
+msgstr "Check at Binance that the key still exists with the same permissions. If not, create one, then disconnect and reconnect in Auto trading › Settings."
 
 msgid "tm.key.rejUnknownBody"
 msgstr "Open Auto trading › Settings to check the IP and the key: the public IP may have changed, or the key may have been deleted. Orders can’t be placed until then."
@@ -3126,13 +3129,13 @@ msgid "tr.hostLock"
 msgstr "The previous order engine is still shutting down; retrying automatically ({n}/{max}). No orders go out meanwhile."
 
 msgid "cx.re.badKey"
-msgstr "The key saved on this computer no longer matches Binance (the secret or the API Key is wrong), so orders can’t be placed. Press Unbind, then connect again."
+msgstr "The saved key doesn’t match Binance, so orders can’t go out. Press Disconnect, then connect again."
 
 msgid "cx.note.noFutures"
-msgstr "This key has no futures trading permission: spot strategies can trade, but Binance will reject orders from futures strategies. To run futures strategies, enable it at Binance, then press Retest connection. If it can’t be enabled (keys created before you opened a futures account can’t), create a new key and connect again."
+msgstr "This key lacks futures permission; Binance will reject futures strategies’ orders. Enable it at Binance, or create a new key and reconnect."
 
 msgid "cx.note.noSpot"
-msgstr "This key has no spot trading permission: futures strategies can trade, but Binance will reject orders from spot strategies. To run spot strategies, enable it at Binance, then press Retest connection. If it can’t be enabled, create a new key and connect again."
+msgstr "This key lacks spot permission; Binance will reject spot strategies’ orders. Enable it at Binance, or create a new key and reconnect."
 
 msgid "cx.ip.copyThis"
 msgstr "Copy this IP"
@@ -3164,7 +3167,7 @@ msgid "src.addField"
 msgstr "Add a field"
 
 msgid "src.howto"
-msgstr "Strategies read it as {vars}; just tell the agent to “use {name} data”. Values aren’t shown again after saving."
+msgstr "Stored on this computer; the agent and strategy code can read it. Strategies read it as {vars}; values aren’t shown again after saving."
 
 msgid "src.edit"
 msgstr "Edit"
@@ -3230,13 +3233,10 @@ msgid "src.delBody2"
 msgstr "Used by: {names}. After deletion they can’t fetch this data in backtests or live runs."
 
 msgid "src.delBlocked"
-msgstr "It can’t be deleted right now. {name} is trading and uses {source}; without the key its next run can’t fetch the data. Set that strategy’s amount to 0 under Portfolio first, then come back."
+msgstr "{name} is trading with {source}, so it can’t be deleted now. Set its amount to 0 in Portfolio first, then delete."
 
 msgid "src.gotIt"
 msgstr "Got It"
-
-msgid "src.lead"
-msgstr "Keys for data services you signed up for yourself (such as FRED or Coinglass) go here; strategies use them to fetch data. They are stored in the workspace on this computer, where the agent and your strategy code can read them. They are never used to place orders."
 
 msgid "src.empty1"
 msgstr "Blave’s built-in data needs no key. Add something here only when a strategy uses another provider’s data and that provider requires your own key."
@@ -3260,7 +3260,7 @@ msgid "src.rmField"
 msgstr "Remove this field"
 
 msgid "src.errValue"
-msgstr "The value for {field} contains characters that can’t be used: letters, digits and symbols only — no spaces, non-ASCII characters, single quotes, backslashes or ${. Check that you pasted the key itself."
+msgstr "{field} has characters that can’t be used (spaces, non-ASCII, single quotes, backslashes or ${). Make sure you pasted the key itself."
 
 msgid "src.errFieldReserved"
 msgstr "The field name {field} can’t be used with this source. Choose another, such as TOKEN."
@@ -3468,7 +3468,7 @@ msgid "strat.delBusy"
 msgstr "The agent is still running a turn and may be reading or writing this strategy, so nothing was deleted. Delete it after the turn finishes."
 
 msgid "strat.delGone"
-msgstr "This strategy’s folder is no longer on this computer (it may have been moved, renamed or deleted), so nothing was deleted. The list has been refreshed."
+msgstr "This strategy’s folder is gone — moved, renamed or deleted. Nothing was deleted; the list is refreshed."
 
 msgid "strat.delFailed"
 msgstr "Couldn’t move it to the Trash, so nothing was deleted."
@@ -3543,7 +3543,7 @@ msgid "cx.ip.cloudNone"
 msgstr "Couldn’t read the cloud machine’s IP"
 
 msgid "cx.leadCloud"
-msgstr "Stored in your cloud machine’s workspace (.env). The key only passes through Blave on its way to your own machine; it isn’t stored with us and never enters chat history. The agent and your strategy code can read it; that is how they place orders and read your account for you."
+msgstr "Stored in your cloud machine’s .env. Blave relays it without keeping it, and it never enters chat history. The agent and your strategy code can read it."
 
 msgid "cx.chk.incomplete"
 msgstr "The API Key and Secret Key must be sent together, and this attempt didn’t include both, so nothing was saved. Fill in both, then connect again."
@@ -3567,7 +3567,7 @@ msgid "cx.chk.backoffCloud"
 msgstr "The cloud machine was just rate-limited by Binance and is waiting it out, so it didn’t check this time and nothing was saved. Wait a few minutes, then connect again."
 
 msgid "cx.chk.noWhitelistCloud"
-msgstr "This key has no IP whitelist: Binance deletes keys that have no whitelist and sit unused for a long time."
+msgstr "This key has no IP whitelist; Binance deletes it after 30 idle days."
 
 msgid "tr.cloud.cxSavedBn"
 msgstr "API key saved to your cloud machine; Binance permissions check passed."
@@ -3576,10 +3576,10 @@ msgid "tr.cloud.cxSavedV"
 msgstr "The key is saved on your cloud machine. Whether the {venue} account can be read shows once the machine reports."
 
 msgid "tr.cloud.cxUnknown"
-msgstr "The key was sent, but the cloud machine hasn’t reported the check result. Close this and watch this page: it switches to the trading settings if the connection went through. If not, connect again."
+msgstr "The key was sent; the cloud machine hasn’t reported the check yet. Close this and wait; if it doesn’t connect, try again."
 
 msgid "tr.cloud.unbindWarn"
-msgstr "This removes the exchange keys from the cloud machine. Cloud trading pauses at once, and positions stay at the exchange with nothing managing them. Your portfolio and amounts are kept; after you reconnect, save once in Portfolio to resume trading."
+msgstr "The keys leave the machine and trading stops; positions stay at the exchange, unmanaged. Your portfolio and amounts are kept; save once after reconnecting."
 
 msgid "tr.cloud.pendRow"
 msgstr "Sent. Waiting for the cloud machine to report back."
@@ -3591,7 +3591,7 @@ msgid "tr.cfgUnreadLocal"
 msgstr "This computer’s amount settings couldn’t be read, so saving now could clear the whole portfolio. You can save once the status updates."
 
 msgid "src.delCfgUnread"
-msgstr "This computer’s trading settings couldn’t be read, so it isn’t clear whether the strategies using this source are trading. Nothing was deleted; try again in a moment."
+msgstr "Not deleted: the trading settings couldn’t be read, so it’s unclear whether strategies using it are trading. Try again shortly."
 
 msgid "tr.ov.evManualClose"
 msgstr "Capital positions still open"
@@ -3654,10 +3654,10 @@ msgid "tr.ov.evRestartStoppedNote"
 msgstr "no orders are sent"
 
 msgid "tm.evRestartStoppedNote"
-msgstr "Your machine restarted and auto-trading is paused. No orders are going out — nothing is managing your positions, and exits and stops won’t run. Press Start trading on the Auto trading page to resume, then choose to catch up or wait for new signals. Stop orders placed on the exchange are unaffected."
+msgstr "Nothing is managing your positions; exits and stops won’t run. Press Start trading in Auto trading to resume. Stop orders on the exchange still work."
 
 msgid "tr.cloud.cxSavedStale"
-msgstr "The key was sent, but the cloud machine hasn’t reported back, so this page hasn’t switched to the trading settings. You can connect again, or ask the agent in the chat to check on the machine."
+msgstr "The key was sent, but the cloud machine hasn’t reported back. Connect again, or ask the agent in chat to check the machine."
 
 msgid "tr.cloud.mayTrade"
 msgstr "May still be trading"
@@ -3666,7 +3666,7 @@ msgid "tm.stMayTrade"
 msgstr "May still be trading"
 
 msgid "tr.cloud.restartUnconfirmed"
-msgstr "The machine restarted, but we couldn’t confirm trading stopped — your positions may still be traded. Press Pause trading first, then Update cloud machine to bring the machine up to date."
+msgstr "After the restart, we couldn’t confirm trading stopped. Press Pause trading, then Update cloud machine."
 
 msgid "tr.ov.evRestartStopFailed"
 msgstr "Machine restarted — trading may not have stopped"
@@ -3675,16 +3675,16 @@ msgid "tr.ov.evRestartStopFailedNote"
 msgstr "press Pause trading first, then Update cloud machine; the machine is out of date"
 
 msgid "tr.haltReasonAll"
-msgstr "No orders are going out — exits and stops won’t run either. Once the problem is fixed, press Start trading; if you’re not sure what caused it, ask the agent in chat."
+msgstr "No orders are going out — exits and stops won’t run either. Fix it, then press Start trading; unsure why? Ask the agent in chat."
 
 msgid "tr.cloud.closeAllWarn2Unconfirmed"
-msgstr "Strategy amounts are kept: after you update to the latest version and press Start trading, positions are rebuilt to those amounts. If you don’t want that, zero the amounts first."
+msgstr "Amounts are kept: after you update the machine and press Start trading, positions are rebuilt to them. To avoid that, zero the amounts first."
 
 msgid "tr.cloud.recomputing"
 msgstr "Strategies are recomputing on post-restart data. Catch up becomes available when they finish; close this box and open it again then."
 
 msgid "tr.cloud.haltReasonUnconfirmed"
-msgstr "An old version of the trading program may still be running. Press Update cloud machine first to bring the machine up to date; if you’re not sure why it paused, ask the agent in chat."
+msgstr "The old trading program may still be running; press Update cloud machine first. Unsure why it paused? Ask the agent in chat."
 
 msgid "tr.ov.curveAriaPnl"
 msgstr "Cumulative PnL curve, {a} to {b}, {n} records"
@@ -3726,7 +3726,7 @@ msgid "tr.relTitle"
 msgstr "Release the pause?"
 
 msgid "tr.acct.reason"
-msgstr "After the {v} key change, Blave can't tell whether this is the same account. Until you answer, nothing trades on {v} — exits and stops won't run either."
+msgstr "After the key change, Blave can’t tell if this is the same {v} account. Until you answer, nothing trades — not even exits or stops."
 
 msgid "tr.acct.btn"
 msgstr "Confirm account"
@@ -3738,13 +3738,13 @@ msgid "tr.acct.title"
 msgstr "Is this still the same {v} account?"
 
 msgid "tr.acct.body"
-msgstr "Your {v} API key changed, and the new key doesn't show which account it belongs to, so Blave can't tell whether it's the same one. Neither answer places an order; you stay paused until you press Start trading."
+msgstr "This key can’t read account details. Neither answer places orders; you stay paused until you press Start trading."
 
 msgid "tr.acct.ifSame"
 msgstr "Same account: the positions Blave opened on {v} stay under Blave's management."
 
 msgid "tr.acct.ifDiff"
-msgstr "Different account: the positions Blave opened before are yours to handle — Blave won't touch them again. It starts from zero on this account and leaves every existing position alone."
+msgstr "Different account: earlier positions are yours; Blave won’t touch them. It starts from zero here and leaves existing positions alone."
 
 msgid "tr.acct.same"
 msgstr "Same account"
@@ -3762,10 +3762,10 @@ msgid "tr.acct.doneSameFreeze"
 msgstr "Confirmed as the same {v} account: Blave keeps managing its positions. Press Start trading to resume."
 
 msgid "tr.acct.doneDiff"
-msgstr "{v} starts from zero: the earlier positions are yours to handle and Blave won't touch them. Once you press Start trading, strategies open positions on this account again."
+msgstr "{v} starts from zero; earlier positions are yours, and Blave won’t touch them. Press Start trading and strategies open positions again."
 
 msgid "tr.relBody"
-msgstr "Orders blocked during the pause, including orders from your own strategy code, are allowed again. No strategy has an amount, so no strategy will trade."
+msgstr "Orders blocked during the pause, including your own strategy code’s, go through again. No strategy has an amount, so none will trade."
 
 msgid "tr.relAuto"
 msgstr "This pause was triggered automatically (for example a rejected key, repeated account-read failures or an account change). Release only once that’s fixed."
@@ -3774,10 +3774,10 @@ msgid "tr.relX1Title"
 msgstr "Releasing the pause closes these {n} positions"
 
 msgid "tr.relX1Lead"
-msgstr "No strategy has an amount. Once released, the order program resumes reconciling and market-closes the futures positions on this account, including ones you opened by hand:"
+msgstr "No strategy has an amount, so futures positions are market-closed, including manual ones:"
 
 msgid "tr.relX2Lead"
-msgstr "No strategy has an amount. Once released, the order program resumes reconciling and market-closes these positions opened by auto-trading; positions you opened by hand are left alone:"
+msgstr "No strategy has an amount, so these positions are market-closed; manual ones stay:"
 
 msgid "tr.relReadAt"
 msgstr "Positions as read at {time}"
@@ -3801,10 +3801,10 @@ msgid "tr.relX2TitleN"
 msgstr "Releasing the pause may close auto-trading positions"
 
 msgid "tr.relX2BodyN"
-msgstr "Couldn't read the auto-trading ledger. No strategy has an amount, so once released the order program resumes reconciling and market-closes any positions auto-trading opened; positions you opened by hand are left alone."
+msgstr "The auto-trading ledger couldn’t be read. No strategy has an amount, so its positions are market-closed; manual ones stay."
 
 msgid "tr.relX1BodyN"
-msgstr "Couldn't read this account's positions. No strategy has an amount, so once released the order program resumes reconciling and market-closes any futures positions on the account, including ones you opened by hand."
+msgstr "Positions couldn’t be read. No strategy has an amount, so any futures positions are market-closed, including manual ones."
 
 msgid "tr.relX2Title"
 msgstr "Releasing the pause will close auto-trading positions"
@@ -3840,7 +3840,7 @@ msgid "minv.release"
 msgstr "This version of Blave needs an update before it can send Release pause. Update at the bottom of Settings › General."
 
 msgid "tr.cloud.cxSavedStalePaper"
-msgstr "The paper account was sent, but the cloud machine still hasn’t reported back, so this page hasn’t switched to order settings. You can try again, or ask the agent in chat what’s going on with the machine."
+msgstr "The paper account was sent, but the cloud machine hasn’t reported back. Try again, or ask the agent in chat to check the machine."
 
 msgid "tr.runningZ"
 msgstr "Order program running · no strategy has an amount"
@@ -3916,7 +3916,7 @@ msgid "up.cf.body1Unconfirmed"
 msgstr "After the machine restarted, we couldn’t confirm auto-trading had stopped: once on the new version it stays stopped until you press Start trading."
 
 msgid "up.cf.body1Unknown"
-msgstr "Couldn’t read the auto-trading status, so it’s treated as running: if the trading code changes, it waits until no order is mid-flight, then restarts on the new version."
+msgstr "Couldn’t read auto-trading status, so it’s treated as running. If trading code changes, it restarts on the new version between orders."
 
 msgid "up.cf.d1"
 msgstr "Only Blave’s official code and reference files change; your strategy files and keys are left alone. Positions stay open."
@@ -4259,7 +4259,7 @@ msgid "wf.factWfe"
 msgstr "OOS efficiency"
 
 msgid "wf.tipWfe"
-msgstr "Walk-Forward Efficiency (WFE): out-of-sample Sharpe ÷ in-sample Sharpe (the two rows above). The usual bars are 0.5 to pass and 0.7 to call it good; below an in-sample Sharpe of 0.25 the division is not done. These are conventions, not proof."
+msgstr "WFE = out-of-sample Sharpe ÷ in-sample Sharpe. By convention 0.5 passes, 0.7+ is good; in-sample below 0.25 isn’t scored."
 
 msgid "wf.chartLabel"
 msgstr "Out-of-Sample Cumulative Return"
@@ -4712,7 +4712,7 @@ msgid "lib.cf.l1"
 msgstr "The agent downloads it into strategies/ and runs a backtest on fresh data; the result shows up in the sidebar."
 
 msgid "lib.cf.l1Local"
-msgstr "It downloads into strategies/ on this computer; the agent checks the code, then runs a backtest on fresh data. The result shows up in the sidebar."
+msgstr "It downloads to strategies/ on this computer. The agent checks the code and backtests on fresh data; results show in the sidebar."
 
 msgid "lib.cf.l2"
 msgstr "No orders are placed — whether to run it is your call."
@@ -5040,7 +5040,10 @@ msgstr "This report shows your account balance and positions. Once it's public, 
 
 # 揭露小字:本機報告版(web 的刪機句對本機檔不為真;spec DT2);雲端視角逐字同 web workspace_share_note_must
 msgid "shr.noteLocal"
-msgstr "Reposted or preview-cached copies can't be recalled. What goes public is a snapshot taken at upload; later edits to this report won't change the public version. Deleting the file on this computer doesn't stop sharing — use Stop sharing to take it down; deleting your cloud machine or your account removes it too."
+msgstr "What goes public is this snapshot; later edits won’t update it. Reposted or preview-cached copies can’t be recalled."
+
+msgid "shr.noteLocal2"
+msgstr "Deleting the local file doesn’t unpublish it; press Stop sharing. Deleting your cloud machine or account also unpublishes it."
 
 msgid "shr.noteCloud"
 msgstr "Copies already reposted or cached in link previews can't be recalled; if your machine is deleted or replaced (including when your balance reaches zero), all your public links are removed."
@@ -5436,7 +5439,7 @@ msgid "br.ask.p"
 msgstr "You type any passwords. While you're in control, the agent pauses and doesn't read this page."
 
 msgid "br.ask.captcha.p"
-msgstr "After several searches in a row, {engine} asks to confirm a person is there. You do the check yourself; the agent never does it for you. Once it passes, the search picks up on its own; if it doesn't, press \"Done, hand back to agent\"."
+msgstr "You do the check; the agent won’t. Search resumes once it passes; if not, press \"Done, hand back to agent\"."
 
 msgid "br.ask.skip"
 msgstr "Skip"
@@ -5530,10 +5533,7 @@ msgid "br.set.switch"
 msgstr "Built-in browser"
 
 msgid "br.set.lead"
-msgstr "The agent can search the web and open pages to look things up, and every page it opens shows up in the chat. It never opens exchange or broker account areas or bank sites; you press sign-in, submit and pay yourself. Turn it off and the agent stops going online to look anything up."
-
-msgid "br.set.leadOff"
-msgstr "Off. The agent doesn’t search the web or open any page; it answers from Blave data and the files on this computer. Strategies still fetch data and place orders as usual."
+msgstr "The agent searches the web; every page it opens shows in the chat. It never opens exchange account pages, brokers or banks; you sign in, submit and pay."
 
 msgid "br.set.clear"
 msgstr "Clear browsing data"
@@ -5653,7 +5653,7 @@ msgid "cap.unlocked"
 msgstr "I've Unlocked It"
 
 msgid "cap.c.verifyDo"
-msgstr "Capital requires a one-time connection check. On your own Windows PC, open Capital's check tool, sign in, press “模擬國內證券下單” and “模擬國內期貨下單”, then “查詢是否已驗證”."
+msgstr "On Windows, open Capital’s check tool, sign in, and press “模擬國內證券下單”, “模擬國內期貨下單”, then “查詢是否已驗證”."
 
 msgid "cap.pfx.how"
 msgstr "On your Windows PC, open Capital's certificate wizard and choose “匯出憑證” (Export certificate)."
@@ -5884,7 +5884,7 @@ msgid "br.ask.confirm.h"
 msgstr "Open this address?"
 
 msgid "br.ask.p.confirm"
-msgstr "This site hasn't come up this turn, and the address carries a block of data — a page may be steering the agent into sending out what it read. Check the address bar before opening."
+msgstr "The address carries a block of data, and the agent hasn’t visited this site this turn. A page may be leaking content — check the address."
 
 msgid "br.ask.openAnyway"
 msgstr "Open anyway"
@@ -6053,7 +6053,7 @@ msgid "ver.driftLocal"
 msgstr "strategy.py no longer matches this version: the file was edited without a new backtest."
 
 msgid "ver.driftCloud"
-msgstr "strategy.py no longer matches this version: the file was edited without a new backtest. This flag can take up to 2 minutes to reach here."
+msgstr "strategy.py differs from this version: it was edited without a new backtest. The flag can take up to 2 minutes to show."
 
 msgid "ver.compareOpen"
 msgstr "Compare two versions…"
@@ -6143,7 +6143,7 @@ msgid "ver.rsB1"
 msgstr "The strategy file goes back to {v}’s code and {v} becomes the current version again — no new version number."
 
 msgid "ver.rsB2"
-msgstr "The page shows {v}’s saved results right away while the backtest reruns on the latest data; the numbers update when it finishes. {cur} stays in the list, so you can go back to it."
+msgstr "Shows {v}’s saved results while rerunning the backtest on fresh data. {cur} stays in the list, so you can go back."
 
 msgid "ver.rsOk"
 msgstr "Restore"
@@ -6229,7 +6229,7 @@ msgid "ver.guardS3"
 msgstr "After you confirm, save once in Auto-trading: fund the new strategy and set the original's amount to 0 (keep it selected so you can roll back)"
 
 msgid "ver.guardNote"
-msgstr "Same symbol and direction: the order engine swaps old for new in one round, with little or no trading. Opposite direction: a full close and re-entry."
+msgstr "Same symbol and direction: old swaps for new in one round, with little trading. Opposite direction: full close, then re-entry."
 
 msgid "ver.guardOk"
 msgstr "Create a new strategy from {v}"
@@ -6459,7 +6459,7 @@ msgid "rules.full"
 msgstr "10 rules is the limit. Delete one to add another — nothing gets dropped for you."
 
 msgid "rules.over"
-msgstr "You have {n} rules, over the limit of 10. The agent will tidy them up on its next turn; you can also delete a few here. Everything is shown in full, nothing is truncated."
+msgstr "{n} rules, over the limit of 10. The agent tidies them next turn; you can also delete a few."
 
 msgid "rules.tooLong"
 msgstr "This rule is {n} characters, over the 150 limit. Shorten it, or split it into two."
@@ -6586,7 +6586,7 @@ msgid "ak.e.key"
 msgstr "{p} didn't accept this key ({s}). Check that you pasted the API key itself and that it's still active. Nothing was changed."
 
 msgid "ak.e.shape"
-msgstr "That doesn't look like a complete API key. Part of it may be missing, or it may contain a space or line break. Copy the whole key again and paste it. Nothing was changed."
+msgstr "That doesn’t look like a complete API key; nothing changed. Copy the whole key again, with no spaces or line breaks."
 
 msgid "ak.e.credit"
 msgstr "Your {p} balance is too low (402). Top up at {p}, then try again."
@@ -6625,7 +6625,7 @@ msgid "ak.f.rate"
 msgstr "{p} is rate-limiting right now (429), so this turn didn't finish. Wait a moment, then send again."
 
 msgid "ak.f.compat"
-msgstr "{p} didn't accept this turn's request (400). This is usually a compatibility issue on Blave's side, not your key or settings. Try a different model."
+msgstr "{p} rejected this turn’s request (400). It’s most likely on Blave’s side, not your key."
 
 msgid "ak.f.net"
 msgstr "Couldn't reach {p}, so this turn didn't finish. Check your connection, then send again."
@@ -7153,7 +7153,7 @@ msgid "pres.pfx.errImport"
 msgstr "The certificate wasn’t saved. Press Use this certificate again."
 
 msgid "pres.t.hostDo"
-msgstr "President’s rule: log in to the test environment and place one test order; production opens after you tell your rep. Enter the host address from the test account email."
+msgstr "President requires one test order in the test environment. Production opens after you tell your rep."
 
 msgid "pres.t.url"
 msgstr "Test host address (from the email)"
@@ -7282,7 +7282,7 @@ msgid "pres.done.n1"
 msgstr "Quit Blave or shut down and orders stop; positions stay at President and aren’t closed."
 
 msgid "pres.done.n2"
-msgstr "Blave manages only its own orders and never touches trades you place by hand."
+msgstr "Blave manages only its own positions, not trades you place in the President app."
 
 
 
@@ -7423,10 +7423,16 @@ msgid "pv.d.stopped.mNoNum"
 msgstr "It’s retried once a day. Left unpaid, the machine is deleted, along with the strategies and data on it."
 
 msgid "tr.cloud.stoppedPlan"
-msgstr "The plan is unpaid and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. If it’s still unpaid by {gu}, the machine is deleted, along with the strategies, data and keys on it."
+msgstr "The plan is unpaid; the machine stopped. Trading halted; positions sit at the exchange, unmanaged."
+
+msgid "tr.cloud.stoppedPlan2"
+msgstr "Unpaid by {gu}, the machine is deleted, with its strategies, data and keys."
 
 msgid "tr.cloud.stoppedPlanNoNum"
-msgstr "The plan is unpaid and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. Left unpaid, the machine is deleted, along with the strategies, data and keys on it."
+msgstr "The plan is unpaid; the machine stopped. Trading halted; positions sit at the exchange, unmanaged."
+
+msgid "tr.cloud.stoppedPlan2NoNum"
+msgstr "Left unpaid, the machine is deleted, with its strategies, data and keys."
 
 msgid "cf.m.body1"
 msgstr "The plan (Linux Starter) includes Blave data, in this app right away. It doesn’t start a cloud machine; starting a Linux Starter machine on the website later costs nothing extra."
@@ -7519,7 +7525,7 @@ msgid "pv.d.stopped.mOk"
 msgstr "Stopping doesn’t change the plan: this period is paid and it renews as usual. Starting it again or cancelling is on the web."
 
 msgid "tr.cloud.stoppedPlanOk"
-msgstr "The machine is stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. The plan continues and renews as usual; start the machine again on the web."
+msgstr "The machine is stopped; positions sit at the exchange, unmanaged. The plan renews as usual; restart it on the web."
 
 msgid "plan.onWeb"
 msgstr "Open on the Web"
@@ -7543,10 +7549,16 @@ msgid "pv.d.endedNoNum"
 msgstr "It was cancelled and won’t renew. Soon the machine is deleted, along with the strategies, data and keys on it."
 
 msgid "tr.cloud.stoppedEnded"
-msgstr "The plan has ended and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. On {gu} the machine is deleted, along with the strategies, data and keys on it."
+msgstr "The plan ended; the machine stopped. Trading halted; positions sit at the exchange, unmanaged."
+
+msgid "tr.cloud.stoppedEnded2"
+msgstr "On {gu} the machine is deleted, with its strategies, data and keys."
 
 msgid "tr.cloud.stoppedEndedNoNum"
-msgstr "The plan has ended and the machine stopped. Trading has halted. Positions remain at the exchange and nothing is managing them. Soon the machine is deleted, along with the strategies, data and keys on it."
+msgstr "The plan ended; the machine stopped. Trading halted; positions sit at the exchange, unmanaged."
+
+msgid "tr.cloud.stoppedEnded2NoNum"
+msgstr "The machine will be deleted soon, with its strategies, data and keys."
 
 msgid "plan.err.web"
 msgstr "This one is done on the website: your plan is a different tier, or the machine has to be started again there."
@@ -7885,7 +7897,7 @@ msgid "mg.chartAria"
 msgstr "Managed cumulative return versus the random-portfolio p5–p95 band and median"
 
 msgid "mg.chartAriaW"
-msgstr "Top: managed cumulative return versus the random-portfolio p5–p95 band and median. Bottom: stacked area of each member strategy's portfolio weight over time."
+msgstr "Managed cumulative return and weight share chart"
 
 msgid "mg.chartCap"
 msgstr "Cumulative Return"
@@ -7906,13 +7918,13 @@ msgid "mg.fundTip"
 msgstr "Defaults to the total on the Allocation tab"
 
 msgid "mg.beatsTip.ret"
-msgstr "Share of 1,000 random-weight portfolios over the same period with a lower total return. A reference figure — it varies a lot with the period."
+msgstr "Share of 1,000 random-weight portfolios over the same period with a lower total return. A reference figure that varies a lot with the period."
 
 msgid "mg.beatsTip.sharpe"
-msgstr "Share of 1,000 random-weight portfolios over the same period with a lower Sharpe. A reference figure — it varies a lot with the period."
+msgstr "Share of 1,000 random-weight portfolios over the same period with a lower Sharpe. A reference figure that varies a lot with the period."
 
 msgid "mg.beatsTip.mdd"
-msgstr "Share of 1,000 random-weight portfolios over the same period with a deeper max drawdown. A reference figure — it varies a lot with the period."
+msgstr "Share of 1,000 random-weight portfolios over the same period with a deeper max drawdown. A reference figure that varies a lot with the period."
 
 msgid "mg.groupBuiltin"
 msgstr "Built-in"
@@ -7964,7 +7976,7 @@ msgid "mg.optRunning"
 msgstr "Optimizing…"
 
 msgid "mg.optTip"
-msgstr "Only fills the Allocation column; ask the agent to apply"
+msgstr "Turns suggested weights into suggested amounts; press Apply Amounts to write them to Allocation"
 
 # 優化分頁:選了兩檔以上、還沒有權重也沒有回測時,霧上 CTA 卡那一句(鈕是 mg.optRun)
 msgid "mg.fogOpt"
@@ -8156,7 +8168,7 @@ msgstr "The Taiwan stock market is closed now; Taiwan stock orders fill in the f
 
 # 啟動框:休市時按的全部平倉延到開盤還沒執行(回報 deferred_close),啟動下單會取消它;{syms} = 代號＋股名
 msgid "tr.deferredClose"
-msgstr "The close-all you pressed while the market was shut is still waiting for the open ({syms}). Starting now cancels it and trades to the strategies’ targets; to close them, start after they close at the open."
+msgstr "Close-all is waiting for the open ({syms}). Starting now cancels it and trades by strategy. To close, wait until it’s done, then start."
 
 msgid "tr.pick.noTxf"
 msgstr "No TAIEX futures strategies yet."
@@ -8736,7 +8748,7 @@ msgid "capl.errDl"
 msgstr "Couldn't download Capital's certificate wizard. Capital's certificate page is open in your browser — download it there."
 
 msgid "capl.errSig"
-msgstr "The downloaded wizard isn't signed by Capital, so Blave didn't open it. Capital's certificate page is open in your browser — download it there."
+msgstr "The downloaded wizard lacks Capital’s signature, so it wasn’t opened. Capital’s certificate page is open — download it there."
 
 msgid "capl.errLaunch"
 msgstr "The wizard didn't open. On a work computer, a security policy may have blocked it."
@@ -8793,7 +8805,7 @@ msgstr "Find a Certificate Again"
 
 # 321(第一次用 API)
 msgid "capl.verifyDo"
-msgstr "Capital requires a one-time connection check. Download the check tool and open it, sign in, press 模擬國內證券下單 and 模擬國內期貨下單, then 查詢是否已驗證."
+msgstr "Open Capital’s check tool, sign in, and press “模擬國內證券下單”, “模擬國內期貨下單”, then “查詢是否已驗證”."
 
 # 確認帳密／讀取帳戶失敗(這台電腦的版本;雲端那組寫的是「主機」)
 msgid "capl.vehicle"

@@ -29,8 +29,8 @@ if (!process.versions.electron) {
     && /function brSendBounds\(b\) \{ const key = JSON\.stringify\(b\); if \(key === brLastBounds\) return; brLastBounds = key; window\.blave\.browserBounds\(b\); \}/.test(js));
   { const S = new Function(fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "utf8") + "; return STRINGS;")();
     ok("① 驗證卡文案(br.ask.captcha.p):講「過了會自動接著搜尋」也講「沒接上再按」,引用的鈕字跟 br.handback.done 逐字相同;zh 用「」、en 用雙引號",
-      S.zh["br.ask.captcha.p"] === "搜尋次數一多，{engine} 會要確認是真人在用。驗證由你自己按，agent 不會代按；過了會自動接著搜尋，沒接上再按「" + S.zh["br.handback.done"] + "」。"
-      && S.en["br.ask.captcha.p"] === "After several searches in a row, {engine} asks to confirm a person is there. You do the check yourself; the agent never does it for you. Once it passes, the search picks up on its own; if it doesn't, press \"" + S.en["br.handback.done"] + "\"."
+      S.zh["br.ask.captcha.p"] === "驗證由你按，agent 不代按。過了會自動接著搜尋，沒接上再按「" + S.zh["br.handback.done"] + "」。"
+      && S.en["br.ask.captcha.p"] === "You do the check; the agent won’t. Search resumes once it passes; if not, press \"" + S.en["br.handback.done"] + "\"."
       && S.zh["br.handback.done"] === "好了，交還 agent" && S.en["br.handback.done"] === "Done, hand back to agent", [S.zh["br.ask.captcha.p"], S.en["br.ask.captcha.p"]]); }
   const bin = GATE.bin(SHELL, "②");
   if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }

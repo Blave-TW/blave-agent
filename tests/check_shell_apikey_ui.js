@@ -188,7 +188,7 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
   t("只開按量計費:表單有一句講清楚 Coding Plan 類不能用", /按量計費/.test(po.zh["ak.payg"]) && /Coding Plan/.test(po.zh["ak.payg"]) && /ak\.payg/.test(akSrc));
   t("組名改成「用你自己的 AI」(連結畫面與設定共用)", po.zh["cn.local.label"] === "用你自己的 AI" && po.en["cn.local.label"] === "Use your own AI");
   { const W = { "ak.payg": ["只能用按量計費的 API 金鑰。Coding Plan 這類月費方案的金鑰不能用。", "Pay-as-you-go API keys only. Keys from monthly plans, such as a Coding Plan, won't work."],
-      "ak.e.shape": ["這不像完整的 API 金鑰：可能少貼了一段，或夾了空格、換行。整串重新複製後再貼一次。什麼都沒有改變。", "That doesn't look like a complete API key. Part of it may be missing, or it may contain a space or line break. Copy the whole key again and paste it. Nothing was changed."],
+      "ak.e.shape": ["這不像完整的 API 金鑰，什麼都沒有改變。整串重新複製再貼一次，別夾空白或換行。", "That doesn’t look like a complete API key; nothing changed. Copy the whole key again, with no spaces or line breaks."],
       "ak.e.other": ["{p} 回了錯誤（{s}）。等一下再試一次。什麼都沒有改變。", "{p} returned an error ({s}). Try again in a moment. Nothing was changed."],
       "ak.e.unknown": ["沒能跟 {p} 確認這把金鑰。等一下再試一次。什麼都沒有改變。", "Couldn't verify this key with {p}. Try again in a moment. Nothing was changed."],
       "ak.e.seal": ["這台電腦現在沒辦法把金鑰加密保存，所以沒有存。重新打開 Blave 再試一次。", "This computer can't store the key encrypted right now, so it wasn't saved. Restart Blave and try again."],

@@ -226,8 +226,11 @@ if (!process.versions.electron) {
       ok("S5 腳的順序:條款句 → 訊息槽 → 鈕", foot.indexOf('class="shr-tos"') > 0 && foot.indexOf('class="shr-tos"') < foot.indexOf('id="shr-msg"') && foot.indexOf('id="shr-msg"') < foot.indexOf('id="shr-cancel"'));
       ok("S6 雲端視角:分享 / 更新框掛 envm + 灰標題列,取消分享與它的失敗框帶 env", /<span class="envm" id="shr-env" hidden><\/span>\s*<h6 id="shr-title">/.test(html) && /classList\.toggle\("cloud", cloud\);\s*\$\("shr-env"\)\.hidden = !cloud;/.test(js) && (js.match(/env: c\.env/g) || []).length === 2);
       ok("S7 / S8 shr.quota(zh / en)與 shr.rate(en)", STR.zh["shr.quota"] === "這個帳號的圖片空間已滿，這份報告沒有公開。" && STR.en["shr.quota"] === "Your account's image storage is full, so this report wasn't published." && STR.en["shr.rate"] === "Too many attempts. Try again in a while." && STR.zh["shr.rate"] === "按得太頻繁了，請過一陣子再試。");
-      ok("本機揭露小字 = spec-share-list E 定稿一(含 Wei 拍板那句)", STR.zh["shr.noteLocal"] === "已轉貼或被預覽快取的內容收不回。公開的是上傳當下的快照，之後修改這份報告不會變更公開版本。刪掉這台電腦的檔案不會取消公開，要收回請按取消分享；刪除雲端主機或帳號會一併取消。"
-        && STR.en["shr.noteLocal"] === "Reposted or preview-cached copies can't be recalled. What goes public is a snapshot taken at upload; later edits to this report won't change the public version. Deleting the file on this computer doesn't stop sharing — use Stop sharing to take it down; deleting your cloud machine or your account removes it too.");
+      ok("本機揭露小字(文案清長句定稿):兩行,快照一行、收回一行;開框時兩行之間換行", STR.zh["shr.noteLocal"] === "公開的是現在這份快照，之後修改不會更新公開版。已轉貼或被預覽快取的內容收不回。"
+        && STR.zh["shr.noteLocal2"] === "刪本機檔案不會取消公開，要收回按「取消分享」。刪雲端主機或帳號也會一併取消。"
+        && STR.en["shr.noteLocal"] === "What goes public is this snapshot; later edits won’t update it. Reposted or preview-cached copies can’t be recalled."
+        && STR.en["shr.noteLocal2"] === "Deleting the local file doesn’t unpublish it; press Stop sharing. Deleting your cloud machine or account also unpublishes it."
+        && /\$\("shr-must"\)\.replaceChildren\(t\("shr\.noteLocal"\), document\.createElement\("br"\), t\("shr\.noteLocal2"\)\)/.test(js));
       ok("#2 畫面:api 的原文不上畫面(renderer 不讀 detail / error、樣式拿掉);shr.notShareable 字不改", !/\.detail\b/.test(js) && !/\.error\b/.test(js) && !/shr-detail/.test(js + css)
         && STR.zh["shr.notShareable"] === "這份報告目前不能公開。" && STR.en["shr.notShareable"] === "This report can't be published.");
       logged.length = 0; applog.length = 0; x = mk2({ res: () => ({ status: 413, body: { error: "at most 20 images per shared report", error_code: "TOO_LARGE" } }) });
@@ -345,7 +348,7 @@ app.whenReady().then(async () => {
     hint: g("shr-hint").textContent, must: g("shr-must").textContent, tt: g("shr-tt").textContent, ds: g("shr-ds").textContent, tag: g("shr-og-tag").textContent, tagShown: !g("shr-og-tag").hidden, perf: g("shr-perf").hidden, same: g("shr-same").hidden, three: [...document.querySelectorAll(".shr-three li")].map((x) => x.textContent), focus: document.activeElement && document.activeElement.id,
     order: [...g("shr-modal").querySelectorAll(".shr-three, #shr-ack")].map((x) => x.id || x.className).join() }; })()`);
   ok("④ 確認框:標題「公開這份報告」、主鈕未勾前 disabled、預設匿名、名字讀不到 → radio 組收起來、純文字「匿名」+ 去填名稱那句;揭露小字 = 本機版;預覽 = 研究報告前綴 + meta 標題 + lead 首句;三行在勾選之前;焦點在 ✕(沒有名字可選時不給捲動區最下面的勾選框,DF12)",
-    d.open && d.title === (await T("shr.dlgTitle")) && d.send && d.sendText === (await T("shr.send")) && d.named && d.anon && d.hint === (await T("shr.noName")) && d.must === (await T("shr.noteLocal")) && d.tt === (await T("shr.ogPrefix.research")) + "標題 res"
+    d.open && d.title === (await T("shr.dlgTitle")) && d.send && d.sendText === (await T("shr.send")) && d.named && d.anon && d.hint === (await T("shr.noName")) && d.must === (await T("shr.noteLocal")) + (await T("shr.noteLocal2")) && d.tt === (await T("shr.ogPrefix.research")) + "標題 res"
       && d.ds === "第一句。" && d.tag === (await T("shr.ogTag.research")) && d.tagShown && d.perf && d.same && d.three.length === 3 && d.three[1] === (await T("shr.ack2")) && d.order === "shr-three,shr-ack" && d.focus === "shr-close" && d.radios && d.plain === (await T("shr.anon")), JSON.stringify(d));
   await js(`document.getElementById("shr-tos").click()`); await wait(50);
   ok("④ 條款連結 → openExternal 到 blave.org/zh/…terms_of_service#ugc", (await js(`JSON.stringify(window.__s.calls.filter((c) => c[0] === "ext").pop())`)).includes("https://blave.org/disclaimer/zh/terms_of_service#ugc"));

@@ -153,8 +153,8 @@ async function pure() {
   // 字串
   const S = new Function(fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "utf8") + "; return STRINGS;")();
   const zh = S.zh, en = S.en;
-  t("字串:改 3、新增 2(出口鈕「這次不搜尋」、系統通知),{engine} 兩語都在", zh["br.need.captcha"] === "搜尋要過機器人驗證" && en["br.need.captcha"] === "Search needs a robot check"
-    && zh["br.ask.captcha.h"] === "搜尋要先過機器人驗證" && zh["br.ask.captcha.p"].includes("{engine}") && en["br.ask.captcha.p"].includes("{engine}") && zh["br.ask.captcha.p"].includes("agent 不會代按")
+  t("字串:改 3、新增 2(出口鈕「這次不搜尋」、系統通知);驗證卡說明(文案清長句後不帶 {engine})講 agent 不代按", zh["br.need.captcha"] === "搜尋要過機器人驗證" && en["br.need.captcha"] === "Search needs a robot check"
+    && zh["br.ask.captcha.h"] === "搜尋要先過機器人驗證" && zh["br.ask.captcha.p"].includes("agent 不代按") && en["br.ask.captcha.p"].includes("the agent won’t")
     && zh["br.ask.noSearch"] === "這次不搜尋" && en["br.ask.noSearch"] === "Skip this search" && !!zh["br.notif.captcha"] && !!en["br.notif.captcha"], [zh["br.need.captcha"], zh["br.ask.captcha.p"]]);
   const main = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
   t("系統通知:只在 app 不在前景時發、字還沒交過來不發、點了把視窗叫到前面;雲端視角送出的回合不問", /if \(kind !== "captcha" \|\| BrowserWindow\.getFocusedWindow\(\) \|\| !tmLabels\.br_captcha \|\| !Notification\.isSupported\(\)\) return false;/.test(main)

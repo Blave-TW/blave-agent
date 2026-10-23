@@ -357,7 +357,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
         r.F.verRestoreAsk();
         const box = r.boxes[0];
         ok("還原確認框:標題 / 兩段改寫 / 另存那句每次都講(cf-note)/ 主鈕「還原」",
-          box.title === "還原成 v2" && box.lines.join("|") === "策略檔會換回 v2 的程式碼，v2 回到目前版本，不會多一個版號。|頁面先顯示 v2 存下的結果，同時用最新資料重跑一次回測，跑完數字會更新。v3 留在清單裡，之後還能回去。"
+          box.title === "還原成 v2" && box.lines.join("|") === "策略檔會換回 v2 的程式碼，v2 回到目前版本，不會多一個版號。|先顯示 v2 存下的結果，同時用最新資料重跑回測。v3 留在清單裡，之後還能回去。"
           && box.extra.className === "cf-note" && box.extra.textContent === "策略檔裡還沒回測過的修改，會先另存一份。" && box.ok === "還原" && box.env === undefined);
         box.onOk();
         ok("按下確認:送 version_restore {name, n}(不經 agent、不送聊天)", JSON.stringify(r.sent) === '[["version_restore",{"name":"momo","n":2}]]');

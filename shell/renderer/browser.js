@@ -809,8 +809,8 @@ async function brPrivPaint(box) {
   const row = brEl("div", "sw-row"); row.append(brEl("span", "sw-l", t("br.set.switch")));
   const sw = brEl("button", "sw" + (p && p.enabled ? "" : " off")); sw.type = "button"; sw.id = "br-sw";
   sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", p && p.enabled ? "true" : "false"); sw.setAttribute("aria-label", t("br.set.switch"));
-  const lead = brEl("p", "priv-lead", t(p && p.enabled ? "br.set.lead" : "br.set.leadOff"));   // 隨開關換字(同頁「傳送使用資料」那顆的做法)
-  sw.addEventListener("click", async () => { const on = sw.getAttribute("aria-checked") !== "true"; const r = await window.blave.browserPrefsSet({ enabled: on }); const v = !!(r && r.enabled); sw.classList.toggle("off", !v); sw.setAttribute("aria-checked", v ? "true" : "false"); lead.textContent = t(v ? "br.set.lead" : "br.set.leadOff"); if (typeof tvPrefs === "function") tvPrefs(); if (typeof libIdeaSync === "function") libIdeaSync(); });
+  const lead = brEl("p", "priv-lead", t("br.set.lead")); lead.hidden = !(p && p.enabled);   // 只在開著時講(同頁「傳送使用資料」那顆的做法)
+  sw.addEventListener("click", async () => { const on = sw.getAttribute("aria-checked") !== "true"; const r = await window.blave.browserPrefsSet({ enabled: on }); const v = !!(r && r.enabled); sw.classList.toggle("off", !v); sw.setAttribute("aria-checked", v ? "true" : "false"); lead.hidden = !v; if (typeof tvPrefs === "function") tvPrefs(); if (typeof libIdeaSync === "function") libIdeaSync(); });
   row.append(sw);
   const clr = brEl("button", "btn-quiet", t("br.set.clear")); clr.type = "button";
   clr.addEventListener("click", async () => { const ok = await window.blave.browserClear(); if (ok) BR_FAVS.clear(); clr.textContent = t(ok ? "br.set.cleared" : "br.set.busy"); srSay(clr.textContent); setTimeout(() => { if (clr.isConnected) clr.textContent = t("br.set.clear"); }, 2500); });

@@ -609,8 +609,10 @@ function mvBlock(mk) {
   if (out) {
     lead.append(t("mv.leadOut"));
     const go = mk("button", "btn-quiet", t("mv.goLogin")); go.type = "button"; go.addEventListener("click", () => setCat("plan")); lead.append(go);
-  } else if (!on) lead.textContent = t(MV.pending ? "mv.leadPending" : "mv.leadOff");
-  else if (MV.name) {
+  } else if (!on) {
+    if (!MV.pending) return wrap;   // 關著沒有說明;只有平台上的資料還沒刪成時要講
+    lead.textContent = t("mv.leadPending");
+  } else if (MV.name) {
     const [a, b] = t("mv.lead").split("{name}");
     lead.append(a || ""); lead.append(mk("span", "dn", MV.name)); lead.append(b || "");
   } else lead.textContent = t("mv.leadNoName");
@@ -625,7 +627,7 @@ async function privToggle() {
   PRIV_BUSY = true;
   try { PRIV = (await window.blave.telemetrySet(want)) === true; } catch (_) { /* noop */ } finally { PRIV_BUSY = false; }   // 沒切成:畫面維持原狀
   privPaint(); $("priv-sw").focus();
-  srSay(PRIV ? t("priv.lead") : t("priv.leadOff"));
+  srSay(PRIV ? t("priv.lead") : t("priv.kept"));
 }
 function privPaint() {
   const box = $("set-priv"); if (!box) return;
@@ -639,7 +641,7 @@ function privPaint() {
   sw.disabled = PRIV == null; sw.addEventListener("click", privToggle);
   row.append(sw); box.append(row);
   const off = PRIV === false;
-  box.append(mk("p", "priv-lead", off ? t("priv.leadOff") : t("priv.lead")));
+  if (!off) box.append(mk("p", "priv-lead", t("priv.lead")));
   const two = mk("div", "priv-two");
   [[off ? t("priv.collect.hOff") : t("priv.collect.h"), PRIV_COLLECT], [t("priv.never.h"), PRIV_NEVER]].forEach(([head, keys]) => {
     const col = mk("div"), ul = mk("ul"); col.append(mk("h6", "", head));
