@@ -250,11 +250,10 @@ async function poAdd(S, name, inPo) {
   const inp = [...$("po-cfg").querySelectorAll(".amt-in")].find((y) => y.dataset.amt === name);
   if (inp && !inp.disabled && inp.offsetParent) inp.focus(); else $("po-h").focus();
 }
-// 歡迎頁③(welcome.js):到策略組合頁、直接打開選擇策略框,不替用戶勾任何一支;焦點回來時落在頁上的〔選擇策略〕。
+// 歡迎頁③(welcome.js):到這一邊的策略組合頁、直接打開選擇策略框,不替用戶勾任何一支;焦點回來時落在頁上的〔選擇策略〕。
 // amt = 已經勾了沒存或存了 0:不開框,焦點落在第一個金額格(同頁首〔設定金額〕trZGo)
 async function poPick(amt) {
-  const S = TR_BAGS.local;
-  if (S !== TR_BAGS[ENV.cur]) return;
+  const S = TR_BAGS[ENV.cur];
   await poOpen("cfg");
   if (TR !== S || S.view !== "po") return;
   if (amt) { trFocusFirstAmt(); return; }
@@ -621,7 +620,9 @@ function mgBtSendingSync(G) {
 }
 
 /* 部位大小(Wei 10-13 A 版):權重(怎麼分)是工具列的「方法」;這裡只管總量(放多大)。設定只改頁面上的金額,寫進主機一律走「套用金額」 */
-function mpsProp() { return mgProposal(); }
+// 別的方法算的那份(mgPropOtherAlloc)也照畫成表,只是不能套用(mgApply 只認 mgProposal)
+function mpsProp() { return mgProposal() || mgOtherProp(); }
+function mgOtherProp() { return mgPropOtherAlloc() ? mgManager().proposal : null; }
 function mpsMembers() { const p = mpsProp() || {}; return Array.isArray(p.members) ? p.members.map(String) : []; }
 function mpsWeight(n) { const w = ((mpsProp() || {}).weights || {})[n]; return typeof w === "number" && isFinite(w) && w > 0 ? w : 0; }
 // 投入資金與建議金額的幣別:成員只有一區時那一區的幣(台指期區 = TWD);兩區以上或幣別未定 = 顯示幣別
@@ -711,9 +712,10 @@ function mgPrimary(box, G) {
   if (ap) { ap.classList.toggle("btn-fill", applyLeads); ap.classList.toggle("btn-out", !applyLeads); }
 }
 /* 選了兩檔以上、還沒有權重也沒有回測(沒在跑、沒錯、沒警示):工具列下面原本整片空白(實機 integ2 10-18)→ Setup fog,CTA 是「跑優化」。
-   「策略 N 檔」「方法」與「跑回測」留在工具列;同一個動作只出現一次,工具列的「跑優化」在霧開著時藏起來 */
+   「策略 N 檔」「方法」與「跑回測」留在工具列;同一個動作只出現一次,工具列的「跑優化」在霧開著時藏起來。
+   同一組策略已有別的方法算的權重:那是內容不是空白,不出霧(C 案,Wei 10-23) */
 function mgFogOn(G) {
-  if (mgBlocked() || G.err || G.optBusy || G.btSending || mgMembers().length < 2 || mgProposal() || mgBacktest() || mgRunning()) return false;
+  if (mgBlocked() || G.err || G.optBusy || G.btSending || mgMembers().length < 2 || mgProposal() || mgOtherProp() || mgBacktest() || mgRunning()) return false;
   const j = mgJob(), sh = mgShort();
   return !(j && j.status === "error") && !(sh && !G.shortDismissed) && !["opt", "bt"].some((w) => G.wait[w] && G.wait[w].left.length);
 }
@@ -758,7 +760,8 @@ function mgToolbar(outdated, fog) {
     line.appendChild(b); tb.appendChild(line); });
   return tb;
 }
-// 權重分配(警示條 → 有提案才畫:區段標 + 部位大小設定鈕 + 套用 + 表)。兩檔以上、還沒有建議也沒有回測時不畫這一段,改出 Setup fog(mgFogOn,實機 integ2 10-18)
+// 權重分配(警示條 → 有提案才畫:區段標 + 部位大小設定鈕 + 套用 + 表)。兩檔以上、還沒有建議也沒有回測時不畫這一段,改出 Setup fog(mgFogOn,實機 integ2 10-18)。
+// 手上那份是別的方法算的:照畫,套用停用、原因寫在 .mg-apply-why(C 案)
 function mgSuggest() {
   const frag = document.createDocumentFragment(), G = mgBag(), sh = mgBlocked() ? null : mgShort();
   if (sh && !G.shortDismissed) {
@@ -774,12 +777,8 @@ function mgSuggest() {
     acts.appendChild(no); box.appendChild(acts); frag.appendChild(box);
   }
   if (mgMembers().length === 1 && !mgBlocked()) { const box = trEl("div", "mg-warn"); box.appendChild(trEl("p", "", t("mg.single", { n: 1 }))); frag.appendChild(box); }
-  const prop = mgProposal();
-  if (!prop) {
-    const other = mgPropOtherAlloc();
-    if (other) frag.appendChild(trEl("p", "ns-hint mg-other-alloc", t("mg.propOtherAlloc", { method: mgAllocLabel(other) })));
-    return frag;
-  }
+  const other = mgProposal() ? null : mgPropOtherAlloc();
+  if (!mgProposal() && !other) return frag;
   const sec = trEl("div", "pf-sec");
   sec.appendChild(poHelpGroup(trEl("span", "label", t("mg.secAmounts")), "optimize", "po-help-opt"));
   sec.appendChild(mgSizeChip());
@@ -790,10 +789,10 @@ function mgSuggest() {
   ap.addEventListener("click", () => mgApply(ap));
   acts.appendChild(ap); sec.appendChild(acts); frag.appendChild(sec);
   const wrap = trEl("div", "pf-scroll"); frag.appendChild(wrap);
-  mgSuggestTable(wrap, ap);
+  mgSuggestTable(wrap, ap, other);
   return frag;
 }
-/* 機器上那份權重是別的方法算的(proposal.json 只有一份,誰最後跑優化就是誰的):權重區不畫,改一句講清楚(同網頁 mgPropOtherAlloc)。
+/* 機器上那份權重是別的方法算的(proposal.json 只有一份,誰最後跑優化就是誰的):回那個方法名,權重表照畫、套用停用。
    成員不同、被丟棄、優化正在跑、在等更新績效或機器落後時不講——那時候的下一步不是「換方法重算」 */
 function mgPropOtherAlloc() {
   const m = mgManager(), G = mgBag(), p = m && m.proposal;
@@ -815,7 +814,7 @@ function mgSizeChip() {
   return b;
 }
 // 權重分配表「策略｜權重｜金額」(Wei 10-13);分區同金額表,單位只寫在區標題;金額 = 套用時寫進主機的數
-function mgSuggestTable(wrap, ap) {
+function mgSuggestTable(wrap, ap, other) {
   const d = mpsRows(), stored = trStored() || {}, byName = {}; d.rows.forEach((r) => { byName[r.name] = r; });
   const zoneOf = (n) => (byName[n].spec ? TR_ZONE_LOTS : byName[n].unit || TR_ZONE_UNKNOWN);
   const names = d.rows.map((r) => r.name), zones = trZoneOrder(names.map(zoneOf), trVenueId(), trMultZone(trVenueId(), trUnit(), names.map(zoneOf)));
@@ -874,9 +873,9 @@ function mgSuggestTable(wrap, ap) {
   over.forEach((o) => wrap.appendChild(trEl("p", "pf-note", over.length === 1 ? t("mg.lotsOverFoot", { lots: o.lots, pct: o.pct }) : t("mg.lotsOverFootN", { name: trDisplay(o.name), lots: o.lots, pct: o.pct }))));
   if (d.rows.some((r) => r.spec)) trTxfWant();
   // 套用:算不出來、算出來跟目前全等、儲存生命週期中、讀不到設定、兩邊策略不是同一組都停用
-  ap.disabled = d.eff === null || quoteMissing || !changed || !!TR.save && TR.save !== "failed" || trCfgUnread(trReport()) || trStored() === null || !mgSameAsAmounts() || !TR.listLoaded || (TR.env === "cloud" && !(TR.st && TR.st.alive));
+  ap.disabled = !!other || d.eff === null || quoteMissing || !changed || !!TR.save && TR.save !== "failed" || trCfgUnread(trReport()) || trStored() === null || !mgSameAsAmounts() || !TR.listLoaded || (TR.env === "cloud" && !(TR.st && TR.st.alive));
   const whyEl = ap.parentNode && ap.parentNode.querySelector ? ap.parentNode.querySelector(".mg-apply-why") : null;
-  if (whyEl) whyEl.textContent = ap.disabled ? t(mgApplyWhy(d, quoteMissing, changed)) : "";
+  if (whyEl) whyEl.textContent = other ? t("mg.propOtherAlloc", { method: mgAllocLabel(other) }) : ap.disabled ? t(mgApplyWhy(d, quoteMissing, changed)) : "";
   // 用的是上次存下來的匯率(登入失效／雲端讀不到):表下講是哪一天的,數字是 ≈
   const fv = trFxView(); if (fv.cached && d.rows.some((r) => r.spec || (r.unit && r.unit !== mpsCcy()))) wrap.appendChild(trEl("p", "pf-note", t("mg.fxCached", { d: new Date(fv.cached).toISOString().slice(0, 10) })));
 }
@@ -974,8 +973,8 @@ function mgBacktestSec() {
     return c;
   };
   const tr0 = mgPctText(man["total_return_%"]), dd = mgPctText(man["max_drawdown_%"]);
-  grid.append(stat(t("mg.totalReturn"), tr0 && tr0.s, !tr0 ? "" : tr0.v > 0 ? "buy" : tr0.v < 0 ? "sell" : "", "ret"), stat("Sharpe", mgSharpeText(man.sharpe), "", "sharpe"),
-    stat("Max DD", dd && dd.s, dd && dd.v < 0 ? "sell" : "", "mdd"));
+  grid.append(stat(t("mg.totalReturn"), tr0 && tr0.s, !tr0 ? "" : tr0.v > 0 ? "buy" : tr0.v < 0 ? "sell" : "", "ret"), stat(t("bt.sharpe"), mgSharpeText(man.sharpe), "", "sharpe"),
+    stat(t("bt.maxDrawdown"), dd && dd.s, dd && dd.v < 0 ? "sell" : "", "mdd"));
   frag.appendChild(grid);
   const frame = trEl("div", "mg-frame"); frame.appendChild(trEl("div", "chart-cap", t("mg.chartCap")));
   const series = mgWeightSeries(bt), canvas = document.createElement("canvas");
@@ -1221,7 +1220,8 @@ function mgMethodFields() {
   const box = $("mgm-fields"); box.textContent = ""; $("mgm-err").hidden = true;
   const keys = Object.keys(mgmPend.params); $("mgm-params").hidden = !keys.length;   // 方法沒宣告參數(等權)整格不出現
   keys.forEach((k, i) => {
-    const v = mgmPend.params[k], row = trEl("div", "mg-pfld"), lab = trEl("label", "mono", k); lab.htmlFor = "mgm-p-" + i; row.appendChild(lab);
+    // 內建參數有介面字;自訂方法的參數名照程式裡的寫(mono)
+    const v = mgmPend.params[k], row = trEl("div", "mg-pfld"), lab = k === "lookback" ? trEl("label", "", t("mg.paramLookback")) : trEl("label", "mono", k); lab.htmlFor = "mgm-p-" + i; row.appendChild(lab);
     let inp;
     if (typeof v === "boolean") { inp = trEl("select", "mg-sel"); ["true", "false"].forEach((x) => { const o = trEl("option", "", x); o.value = x; inp.appendChild(o); }); inp.value = String(v); }
     else { inp = trEl("input", "amt-in"); inp.type = "text"; if (typeof v === "number") inp.inputMode = "decimal"; inp.value = String(v); inp.spellcheck = false; }

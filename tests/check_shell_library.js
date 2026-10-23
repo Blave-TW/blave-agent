@@ -68,8 +68,8 @@ if (!process.versions.electron) {
     && P.libVisible([{ id: 1, category: "Forex" }, { id: 2, category: "Crypto" }, { id: 3, market: "txf", category: "TW Stock" }], "txf").map((s) => s.id).join() === "3"
     && P.libVisible([{ id: 1, category: "Forex" }, { id: 2, category: "Crypto" }, { id: 3, market: "txf", category: "TW Stock" }], "twstock").length === 0
     && P.libVisible([{ id: 1, category: "Forex" }, { id: 2, category: "Crypto" }], "all").length === 2);
-  ok("① 找點子框的市場預設:加密 → crypto、台股 → tw、台指期 → txf;美股 / 全部 / 認不得 → any(框沒有美股)", P.libIdeaMkt("crypto") === "crypto" && P.libIdeaMkt("twstock") === "tw" && P.libIdeaMkt("txf") === "txf"
-    && ["usstock", "all", "tw", "", undefined].every((m) => P.libIdeaMkt(m) === "any"));
+  ok("① 找點子框的市場預設:加密 → crypto、台股 → tw、台指期 → txf、美股 → us(0.1.30);全部 / 認不得 → any", P.libIdeaMkt("crypto") === "crypto" && P.libIdeaMkt("twstock") === "tw" && P.libIdeaMkt("txf") === "txf" && P.libIdeaMkt("usstock") === "us"
+    && ["all", "tw", "", undefined].every((m) => P.libIdeaMkt(m) === "any"));
   const v = P.libVisible(LIST, "all");
   ok("① 一份清單(0.1.6 §2.1):官方或已驗證在前(其中已驗證 → 樣本長 → 新;官方但未驗證的 #86 墊在這一段尾)、未驗證的社群策略在最後(同一套排序:樣本同長就新的先);回的是陣列", Array.isArray(v) && v.map((s) => s.id).join() === "74,101,72,5,9,86,12,8");
   ok("① 市場:舊 api(沒有 market)台股 1 支、台指期 0 支;加密 7 支(2 支未驗證在尾);api 帶 market 時 #74 改歸台指期;沒有的市場空陣列", P.libVisible(LIST, "twstock").map((s) => s.id).join() === "74" && P.libVisible(LIST, "txf").length === 0 && P.libVisible(LIST, "crypto").map((s) => s.id).join() === "101,72,5,9,86,12,8"
@@ -447,7 +447,7 @@ if (!process.versions.electron) {
     && Object.keys(STR.zh).filter((k) => k.startsWith("lib.") && /網頁/.test(STR.zh[k])).join() === "" && Object.keys(STR.en).filter((k) => k.startsWith("lib.") && /\bweb\b/i.test(STR.en[k])).join() === "");
   { const esm = cutFn(trSrc, "envShowMain");
     ok("③ envShowMain:雲端分支帶 gate 問 libShowMain 再問 rptShowMain、本機分支問 libShowMain(false) 再 rptShowMain(false);原本被別支測試釘住的那幾行一字不動", /if \(typeof libShowMain === "function"\) libShowMain\(gate\);\s*\/\/[^\n]*\n\s*if \(typeof rptShowMain === "function"\) rptShowMain\(gate\);[^\n]*\n\s*return;/.test(esm) && /libShowMain\(false\);\n  if \(typeof rptShowMain === "function"\) rptShowMain\(false\);\n\}$/.test(esm)
-      && /const gate = !\$\("cv-empty"\)\.hidden, rp = !gate && typeof RPC !== "undefined" && !!\(RPC\.name && RPC\.data\);/.test(esm) && /\$\("rp"\)\.hidden = !rp; \$\("main-empty"\)\.hidden = true; \$\("tr"\)\.hidden = gate \|\| rp \|\| po; \$\("po"\)\.hidden = gate \|\| rp \|\| !po;/.test(esm)); }
+      && /const gate = !\$\("cv-empty"\)\.hidden, rp = !gate && typeof RPC !== "undefined" && !!\(RPC\.name && RPC\.data\);/.test(esm) && /\$\("rp"\)\.hidden = !rp; \$\("main-empty"\)\.hidden = gate \|\| rp \|\| open; \$\("tr"\)\.hidden = gate \|\| rp \|\| !open \|\| po; \$\("po"\)\.hidden = gate \|\| rp \|\| !open \|\| !po;/.test(esm)); }
   ok("③ 開別的視圖就 libLeave:trOpen(那一邊)、stratSelect(本機,選了才)、rpCloudSelect(雲端,選了才)", /if \(typeof libLeave === "function"\) libLeave\(S\.env\);/.test(cutFn(trSrc, "trOpen"))
     && /if \(name && typeof libLeave === "function"\) libLeave\("local"\);/.test(cutFn(appSrc, "stratSelect")) && /if \(name && typeof libLeave === "function"\) libLeave\("cloud"\);/.test(cutFn(appSrc, "rpCloudSelect")));
   ok("③ 回合的三個出口(上鎖、失敗解鎖、turn-end)都叫 libSync;turn-end 等 stratRefresh(true) 回來才 libTurnEnd;trPoll 每次讀到雲端清單都叫 libCloudChanged(緊接 rpCloudPrune)", (appSrc.match(/if \(typeof libSync === "function"\) libSync\(\);/g) || []).length === 3

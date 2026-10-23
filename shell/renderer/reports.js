@@ -88,7 +88,7 @@ function rptI18n(env) {
 /* ── 開 / 關 ──────────────────────────────────────────── */
 async function rptOpen() {
   const B = rptBag();
-  if (typeof trLeave === "function") trLeave();
+  if (typeof trLeave === "function") trLeave(libEnv());
   if (typeof libLeave === "function") libLeave();
   if (libEnv() === "local") { if (typeof stratSelect === "function") await stratSelect(null); }
   else if (typeof rpCloudSelect === "function") await rpCloudSelect(null);

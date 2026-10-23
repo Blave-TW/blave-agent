@@ -112,6 +112,17 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   ok("每一個送指令的地方都是「自己那一份狀態的 api」(S.api / L.api),共 " + sends.length + " 處", sends.length >= 5 && sends.every((x) => x === "S.api.tradeSend(" || x === "L.api.tradeSend("));
   // L = TR_BAGS.local(設定 › 連線這一刀永遠是這台電腦的);S = 進來那一刻的 TR
   const fn = (name) => { const i = code.indexOf("function " + name + "("); if (i < 0) throw new Error("找不到 " + name); const j = code.indexOf("\nfunction ", i + 1), k = code.indexOf("\nasync function ", i + 1); return code.slice(i, Math.min(j < 0 ? 1e9 : j, k < 0 ? 1e9 : k)); };
+  // 0.1.30 雲端歡迎頁:只有從沒下過單的才落歡迎頁;在下單、已暫停、帳上有部位、對帳器跑過、有下單紀錄都落自動下單頁;狀態還沒讀到先開自動下單頁,讀到後用戶沒動過才改判;只判一次
+  { const land = (states, o) => { o = o || {}; const C = Object.assign({ open: false, view: null, st: { report: o.rep || {} } }, o.bag), V = { s: null };
+      const f = new Function("trExecState", "trStartPending", "RPC", "trVenueIds", "trLiveEntry", "return " + fn("trCloudLand").trim())(() => V.s, (p) => !!(p && p.want === "running"), { name: o.rpc || null },
+        (r) => Object.keys((r.account && r.account.venues) || {}), (r, id) => r.account.venues[id]);
+      const out = []; states.forEach((x) => { V.s = x; f(C); out.push(C.open ? C.view || "tr" : "welcome"); }); return out.join(","); };
+    const pos = { account: { venues: { binance: { ok: true, positions: { BTCUSDT: { size: 1 } } } } } }, flat = { account: { venues: { binance: { ok: true, positions: {} } } } };
+    const r = [land(["noaccount"]), land(["dead"]) === "tr" && land(["running"]) === "tr" && land(["unconfirmed"]) === "tr" ? "tr" : "x", land(["halted"]), land(["noaccount"], { bag: { pending: { want: "running" } } }),
+      land(["idle"], { rep: flat }), land(["idle"], { rep: pos }), land(["idle"], { rep: { last_reconcile: { ts: "x" } } }), land(["idle"], { rep: { orders: [{ id: 1 }] } }),
+      land(["loading", "noaccount"]), land(["loading", "halted"]), land(["loading", "noaccount"], { rpc: "a" }), land(["noaccount", "running"])];
+    ok("雲端落點:從沒下過單 → 歡迎頁;在下單／重開沒停住／對帳器停了／已暫停／剛按啟動／帳上有部位／對帳器跑過／有下單紀錄 → 自動下單頁;還沒讀到先開自動下單頁、讀到從沒下過單改歡迎頁(已選策略不動);只判一次",
+      r.join("|") === "welcome|tr|tr|tr|welcome|tr|tr|tr|tr,welcome|tr,tr|tr,tr|welcome,welcome", r.join("|")); }
   // cxRetest:本機那半直送(雲端那半走 trSend);cdelRun:雲端刪除,request_id 以名字為單位沿用(CDEL.ids),審過
   // psApply 不在這裡:0.1.26 起 picker 的勾選是草稿,儲存才走 trSaveAmounts 送出;trExecSend:下單方式(0.1.26)
   // trPvRequest:存金額框請機器重算草稿的預覽(stats_refresh,0.1.27;同 perf.js 不帶 request_id,重送 = 機器回 BUSY)
@@ -528,8 +539,8 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     ok("③ envSwitch 記下切之前那一邊、切完叫 chatSwitched;換對話時 swLine 歸零", /const prev = ENV\.cur;/.test(fn("envSwitch")) && /chatSwitched\(prev, env\);/.test(fn("envSwitch")) && /liveBubble = null; busy = null; swLine = null; swHeld = null;/.test(app)
       && /if \(rt\) resTurnEnd\(rt, cloudTurn\);[^\n]*\n\s*chatSwitchFlush\(\);[^\n]*\n\}\);/.test(app));
     // 雲端中欄畫雲端那支的報告:#rp 共用、資料分兩袋;雲端列是鈕;「送上雲端」在雲端不畫;送出當下 viewing 指的是雲端那一份
-    ok("雲端報告:envShowMain 雲端分支依 RPC 掀 #rp、收 #tr(沒主機可看時兩個都收);這台電腦那一半一個字沒變",
-      /const gate = !\$\("cv-empty"\)\.hidden, rp = !gate && typeof RPC !== "undefined" && !!\(RPC\.name && RPC\.data\);/.test(fn("envShowMain")) && /\$\("rp"\)\.hidden = !rp; \$\("main-empty"\)\.hidden = true; \$\("tr"\)\.hidden = gate \|\| rp \|\| po; \$\("po"\)\.hidden = gate \|\| rp \|\| !po;/.test(fn("envShowMain"))
+    ok("雲端報告:envShowMain 雲端分支依 RPC 掀 #rp、收 #tr(沒主機可看時全收);雲端那一袋沒開(open false)出歡迎頁 #main-empty(0.1.30);這台電腦那一半一個字沒變",
+      /const gate = !\$\("cv-empty"\)\.hidden, rp = !gate && typeof RPC !== "undefined" && !!\(RPC\.name && RPC\.data\);/.test(fn("envShowMain")) && /\$\("rp"\)\.hidden = !rp; \$\("main-empty"\)\.hidden = gate \|\| rp \|\| open; \$\("tr"\)\.hidden = gate \|\| rp \|\| !open \|\| po; \$\("po"\)\.hidden = gate \|\| rp \|\| !open \|\| !po;/.test(fn("envShowMain"))
       && /const L = TR_BAGS\.local, rp = !L\.open && !!\(RP\.name && RP\.data\);/.test(fn("envShowMain")) && !/envShowLocalMain/.test(code + app));
     ok("雲端報告:側欄雲端列是 button.strat-row(點了 rpCloudSelect;再點選中那支經 sideReclick 收掉,見 check_shell_side_reclick)、選中的帶 aria-current;is-static 退場;#tr-nav 在雲端收掉雲端那支",
       /const wrap = trEl\("div", "strat-wrap cs-row"\), row = trEl\("button", "strat-row"\); row\.type = "button"; row\.dataset\.name = x\.name;/.test(fn("envPaintSide")) && /if \(x\.name === sel\) row\.setAttribute\("aria-current", "true"\);/.test(fn("envPaintSide"))

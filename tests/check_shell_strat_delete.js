@@ -283,11 +283,11 @@ ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/d
   { const dom2 = {}; const $2 = (id) => dom2[id] || (dom2[id] = mkEl("div"));
     ["rp", "tr", "main-empty"].forEach((id) => { $2(id).hidden = id !== "tr"; }); $2("cv-empty").hidden = true; $2("rp-wait").hidden = true;
     const pendingLoads = []; let said = [];
-    const C = { alertSrc: null, alertText: "", st: { cloud: { strategies: [{ name: "a", display_name: "策略 A" }, { name: "b", display_name: "策略 B" }] } },
+    const C = { open: true, alertSrc: null, alertText: "", st: { cloud: { strategies: [{ name: "a", display_name: "策略 A" }, { name: "b", display_name: "策略 B" }] } },
       api: { loadStrategy: (n) => new Promise((res) => pendingLoads.push({ n, res })) } };
     const scope = { $: $2, document: doc, t: (k) => k, ENV: { cur: "cloud", sig: {} }, TR_BAGS: { cloud: C, local: { open: false } }, RP: { name: null }, RPC: { name: null, data: null, tab: "bt", drawn: {} },
-      trAlert: () => {}, srSay: (x) => said.push(x), hoPaint: () => {}, window: {} };
-    const code = [fnOf(trSrc, "envShowMain"), fnOf(trSrc, "envNavMark"), fnOf(trSrc, "envCloudList"), appSrc.match(/^const rpBag = [^\n]*$/m)[0].replace(/^const /, "var "), fnOf(appSrc, "rpPaintHead"), appSrc.match(/^const RP_WAIT_DELAY_MS = [^\n]*$/m)[0].replace(/^const /, "var "), "var rpWaitShownAt = 0;", fnOf(appSrc, "rpWaitHold"), fnOf(appSrc, "rpBodyPaint"), fnOf(appSrc, "rpTab"), fnOf(appSrc, "rpShowTab"), fnOf(appSrc, "rpMissKey"), fnOf(appSrc, "rpNobtPaint"),
+      trAlert: () => {}, srSay: (x) => said.push(x), hoPaint: () => {}, trPaintHead: () => {}, window: {} };
+    const code = [fnOf(trSrc, "envShowMain"), fnOf(trSrc, "envNavMark"), fnOf(trSrc, "trLeave"), fnOf(trSrc, "envCloudList"), appSrc.match(/^const rpBag = [^\n]*$/m)[0].replace(/^const /, "var "), fnOf(appSrc, "rpPaintHead"), appSrc.match(/^const RP_WAIT_DELAY_MS = [^\n]*$/m)[0].replace(/^const /, "var "), "var rpWaitShownAt = 0;", fnOf(appSrc, "rpWaitHold"), fnOf(appSrc, "rpBodyPaint"), fnOf(appSrc, "rpTab"), fnOf(appSrc, "rpShowTab"), fnOf(appSrc, "rpMissKey"), fnOf(appSrc, "rpNobtPaint"),
       appSrc.slice(appSrc.indexOf("const RPC_CACHE = new Map();"), appSrc.indexOf("async function rpCloudSelect(")).replace(/^const |^let /gm, "var "),
       "var rpCloudSelect = async " + fnOf(appSrc, "rpCloudSelect").replace(/^async /, ""),
       "var trPaint = () => envShowMain();"].join("\n");
@@ -351,7 +351,7 @@ ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/d
     { const h = new Function(fnOf(appSrc, "rpWaitHold") + appSrc.match(/^const RP_WAIT_DELAY_MS = [^\n]*$/m)[0] + "\nreturn rpWaitHold;")();
       ok("rpWaitHold:沒出現過 0;出現 100ms → 再等 200;出現超過 300ms → 0", h(0, 5000) === 0 && h(1000, 1100) === 200 && h(1000, 1400) === 0); }
     api.rpCloudSelect(null);
-    ok("收掉選取:回雲端自動下單頁", $2("rp").hidden === true && $2("tr").hidden === false); }
+    ok("收掉選取:回雲端的歡迎頁(0.1.30;選了策略就離開自動下單頁,同這台電腦)", $2("rp").hidden === true && $2("tr").hidden === true && $2("main-empty").hidden === false && C.open === false); }
   await Promise.all(pending);
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

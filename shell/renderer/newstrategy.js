@@ -115,7 +115,7 @@ async function nsSend() {
    殼與送出流程同上面的新增策略框:nsGate 閘門、送出中三顆停用、inert、trapTab、Esc 由 app.js escTop 收、送出失敗框留著 ── */
 const IDEA = { sending: false, opener: null, fail: false, from: "welcome", mkt: "any" };
 const IDEA_FROM = ["welcome", "lib_head", "lib_empty"];
-function ideaStrings() { return { msg: t("idea.msg"), topicTpl: t("idea.topicTpl"), mkt: { crypto: t("idea.mkt.crypto"), tw: t("idea.mkt.tw"), txf: t("idea.mkt.txf"), any: "" } }; }
+function ideaStrings() { return { msg: t("idea.msg"), topicTpl: t("idea.topicTpl"), mkt: { crypto: t("idea.mkt.crypto"), tw: t("idea.mkt.tw"), txf: t("idea.mkt.txf"), us: t("idea.mkt.us"), any: "" } }; }
 function ideaMsg() { return ideaCompose(IDEA.mkt, $("idea-topic").value, ideaStrings()); }
 // 找點子框只在這台電腦視角開:閘門只看回合在不在跑(沒有雲端主機停機 / 逾時那兩態)
 function ideaGate() { return rptAskState({ running: typeof running !== "undefined" && running === true, env: "local", cloud: null, pending: false }); }
@@ -135,7 +135,7 @@ function ideaOpen(opener, from, mkt) {
   if (!sc.hidden || libEnv() !== "local") return;   // 只有這台電腦視角(雲端沒有內建瀏覽器)
   if (typeof envCanSwitch === "function" && !envCanSwitch()) return;   // 別的框開著 / 選字中
   IDEA.opener = opener || document.activeElement; IDEA.fail = false;
-  IDEA.from = IDEA_FROM.includes(from) ? from : "welcome"; IDEA.mkt = mkt === "crypto" || mkt === "tw" || mkt === "txf" ? mkt : "any";
+  IDEA.from = IDEA_FROM.includes(from) ? from : "welcome"; IDEA.mkt = mkt === "crypto" || mkt === "tw" || mkt === "txf" || mkt === "us" ? mkt : "any";
   ideaRefresh();
   $("view-ws").inert = true; $("set-scrim").inert = true;
   sc.hidden = false;

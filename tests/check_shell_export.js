@@ -32,7 +32,10 @@ ok("Type B(檔頭 # Type: B):三個平台都不能選,原因是 nosignal", X.xpI
   && !X.xpIsTypeB({ code: "# Type:     A (single symbol)\n" }) && !X.xpIsTypeB({ code: "x = 1  # Type: B\n" }) && !X.xpIsTypeB({ code: "# Type: Breakout\n" }) && !X.xpIsTypeB({}) && !X.xpIsTypeB(null));
 ok("三列同一個原因 → 原因只講一次(組合、Type B);只有 XQ 不能選 / 都能選 → 各列自己講", X.xpOffAll(typeC) === "portfolio" && X.xpOffAll(typeB) === "nosignal"
   && X.xpOffAll({ symbol: "BTCUSDT" }) === null && X.xpOffAll({ symbol: "2330" }) === null && X.xpOffAll(null) === null);
-ok("選單:頂端那一句與各列的原因走同一張 key 表,三種原因都有字", /if \(all\) m\.appendChild\(xpMk\("p", "xp-why", t\(XP_OFF_KEY\[all\]\)\)\)/.test(xp) && /if \(!all\) r\.appendChild\(xpMk\("span", "d", t\(XP_OFF_KEY\[off\]\)\)\)/.test(xp)
+// 設計稽核 S6:三列都不能選時選單裡一個 menuitem 都沒有 → 觸發器 aria-disabled、按了在 #xp-note 講原因(同時光機)
+ok("三個平台都轉不了:觸發器 aria-disabled、按了講原因不開選單;各列原因與它走同一張 key 表,三種原因都有字",
+  /if \(xpDisabled\(\) \|\| xpOffNow\(\)\) \{ b\.setAttribute\("aria-disabled", "true"\);/.test(xp) && /const off0 = xpOffNow\(\); if \(off0\) \{ xpNote\(t\(XP_OFF_KEY\[off0\]\)\); return; \}/.test(xp)
+  && /r\.append\(XP_PLATFORM\[k\] \+ " ", lang, xpMk\("span", "d", t\(XP_OFF_KEY\[off\]\)\)\)/.test(xp) && !/xp-why/.test(xp)
   && ["portfolio", "nosignal", "crypto"].every((k) => new RegExp(k + ': "xp\\.off\\.' + k + '"').test(xp))
   && ["en", "zh"].every((l) => ["xp.off.portfolio", "xp.off.nosignal", "xp.off.crypto"].every((k) => fs.readFileSync(path.join(SHELL, "i18n", l + ".po"), "utf8").includes('msgid "' + k + '"'))));
 // e2e 0.1.8 #67:Type B 的程式碼分頁不叫人去跑回測

@@ -24,19 +24,26 @@ ok("① 點完成那一行重新展開:只有 done 的那一步跟著 open[i],cu
   states(st({ bt: true, open: [false, true, true] })) === "done,done+,cur+", states(st({ bt: true, open: [false, true, true] })));
 ok("① 狀態檔還沒讀到(known false):③ 一律沒輪到、不算完成——就算其實已經存了金額", states(st({ bt: true, funded: true, known: false })) === "done,done,todo"
   && !st({ bt: true, funded: true, known: false }).complete);
-const ph = (o) => JSON.stringify(P.onbPhase(Object.assign({ flag: false, complete: false, base: null, fin: false, replay: false }, o)));
+const ph = (o) => JSON.stringify(P.onbPhase(Object.assign({ flag: false, complete: false, base: null, fin: false }, o)));
 const V = (view, setFlag, event) => JSON.stringify({ view, setFlag, event });
 ok("① E／F:狀態檔還沒讀到 → E;讀到時還沒完成 → E;之後當下做完 → 「都設好了」、存旗標、送 onb_done",
   ph({}) === V("E", false, false) && ph({ base: false }) === V("E", false, false) && ph({ base: false, complete: true }) === V("fin", true, true));
 ok("① 上線那天就已經完成(第一次讀到狀態檔就完成)→ 直接 F、存旗標、不慶祝、不送 onb_done", ph({ base: true, complete: true }) === V("F", true, false));
-ok("① 已進 F 的旗標在 → 一律 F(之後停掉下單、刪了策略也不退回 E);這次開著時顯示過「都設好了」→ 留著;設定〔重看〕→ E、不再存旗標",
+ok("① 已進 F 的旗標在 → 一律 F(之後停掉下單、刪了策略也不退回 E);這次開著時顯示過「都設好了」→ 留著;設定〔重看〕0.1.30 拿掉(Wei),沒有 replay 分支",
   ph({ flag: true }) === V("F", false, false) && ph({ flag: true, complete: false, base: false }) === V("F", false, false)
-  && ph({ fin: true, flag: true }) === V("fin", false, false) && ph({ replay: true, complete: true, base: true }) === V("E", false, false));
+  && ph({ fin: true, flag: true }) === V("fin", false, false) && !/replay/.test(cutFn(src, "onbPhase")));
+{ const html = read(path.join(R, "index.html")), app = read(path.join(R, "app.js"));
+  ok("① 設定 › 一般「入門步驟〔重看〕」整列拿掉:#set-onb、app.js 點擊處理、onbReplay、onb_replay 送出點、set.onb.replay 字串都不在",
+    !/id="set-onb"|set\.onb\.replay/.test(html) && !/set-onb|onbReplay|onb_replay/.test(app) && !/onbReplay|ONB\.replay|onb_replay/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""))
+    && !/set\.onb\.replay/.test(read(path.join(R, "strings.js")))); }
 
 // ── 原文鎖(畫面接線)──
 const paint = cutFn(src, "onbPaint");
-ok("② 先記基準再判:base 只在狀態檔讀到(d.known)之後記一次;完成那一刻送 onb_done(不分市場)",
-  /if \(d\.known && ONB\.base === null\) ONB\.base = S\.complete;/.test(paint) && /if \(ph\.event\) trackFeature\("onb_done"\);/.test(paint) && /onbSave\(\{ done: true \}\)/.test(paint));
+{ const ev = cutFn(src, "onbEval");
+  ok("② 先記基準再判(兩個視角各一份):base 只在狀態檔讀到(d.known)之後記一次;完成那一刻送 onb_done／onb_done_cloud(雲端只在看著雲端時送);旗標分開存 done／cloudDone;兩個視角每輪都判",
+    /if \(d\.known && V\.base === null\) V\.base = S\.complete;/.test(ev) && /if \(ph\.event && env === "local"\) trackFeature\("onb_done"\);/.test(ev)
+    && /if \(ph\.event && env === "cloud" && onbEnv\(\) === "cloud"\) trackFeature\("onb_done_cloud"\);/.test(ev) && /onbSave\(\{ \[f\]: true \}\)/.test(ev)
+    && /const ONB_FLAG = \{ local: "done", cloud: "cloudDone" \};/.test(src) && /onbEval\(env === "cloud" \? "local" : "cloud"\);/.test(paint)); }
 ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded),③ 點了到策略組合頁(不展開、不掛 aria-expanded)",
   !/metas|"meta"|acctName|d\.total|ONB_MKT_CCY/.test(src) && /if \(i < 2\) \{ h\.setAttribute\("aria-expanded"/.test(cutFn(src, "onbHead")) && /i === 2 \? poOpen\("cfg", true\) : onbToggle\(i\)/.test(cutFn(src, "onbHead")));
 { const code = src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""), html = read(path.join(R, "index.html"));
@@ -53,9 +60,13 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
   ok("② onbData.amt:存了但全 0 → true;沒存、勾了草稿 → true;沒存沒勾 → false;有一支 > 0(③已完成)→ false;狀態檔沒讀到 → false",
     d({ a: 0 }, false) === true && d({}, true) === true && d({}, false) === false && d({ a: 0, b: 5 }, true) === false
     && (C.TR_BAGS = { local: { st: null } }, C.trStored = () => ({ a: 0 }), C.onbData().amt) === false);
+  // 雲端那一份:清單讀 TR_BAGS.cloud.list;清單還沒載入(listLoaded)前不下結論(不然既有用戶會被當成還沒回測、之後假慶祝)
+  const dc = (list, loaded, stored) => { C.TR_BAGS = { local: { st: null }, cloud: { st: { report: {} }, list, listLoaded: loaded } }; C.trStored = () => stored; C.trZDraft = () => false; return C.onbData("cloud"); };
+  const c1 = dc([{ name: "x", hasBacktest: true }], true, { x: 5 }), c2 = dc([{ name: "x", hasBacktest: true }], false, { x: 5 }), c3 = dc([{ name: "x", hasBacktest: false }], true, {});
+  ok("② onbData(cloud):回測過看雲端清單(不看本機 RP.list)、金額看雲端那一袋;清單沒載入 → known false", c1.known && c1.bt && c1.funded && !c2.known && c3.known && !c3.bt && !c3.funded, JSON.stringify([c1, c2, c3]));
   const paint = cutFn(src, "onbPaint");
   ok("② onbPaint:鈕字照 amt 換(po.goAmounts／tr.pick),指紋帶 amt;click 把 ONB.amt 交給 poPick",
-    /\$\("onb-po"\)\.textContent = t\(d\.amt \? "po\.goAmounts" : "tr\.pick"\);/.test(paint) && /JSON\.stringify\(\[LANG, ph\.view, S\.steps, d\.amt\]\)/.test(paint) && /poPick\(ONB\.amt\)/.test(src)); }
+    /\$\("onb-po"\)\.textContent = t\(d\.amt \? "po\.goAmounts" : "tr\.pick"\);/.test(paint) && /JSON\.stringify\(\[LANG, env, ph\.view, S\.steps, d\.amt\]\)/.test(paint) && /poPick\(ONB\.amt\)/.test(src)); }
 // ── ② 起手句不帶市場 tag(設計稽核 P2-4)──
 { const css = read(path.join(R, "welcome.css")), st = cutFn(src, "stPaint");
   ok("② 起手句沒有市場 tag:stPaint 不畫 .tag;.st-rows 三欄 auto minmax(0, 1fr) auto;welcome.css 不再有 .tag 規則",
@@ -68,7 +79,7 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
 
 // ── ② 歡迎頁③ → 策略組合頁＋選擇策略框 ──
 { const portfolio = read(path.join(R, "portfolio.js"));
-  ok("② ③ 的鈕記 onb_go_po、走 poPick(不經 poAdd:不替用戶勾任何一支)", /\$\("onb-po"\)\.addEventListener\("click", \(\) => \{ trackFeature\("onb_go_po"\); poPick\(ONB\.amt\); \}\);/.test(src) && !/poAdd\(/.test(src));
+  ok("② ③ 的鈕記 onb_go_po(雲端 onb_go_po_cloud)、走 poPick(不經 poAdd:不替用戶勾任何一支)", /\$\("onb-po"\)\.addEventListener\("click", \(\) => \{ trackFeature\(onbEnv\(\) === "cloud" \? "onb_go_po_cloud" : "onb_go_po"\); poPick\(ONB\.amt\); \}\);/.test(src) && !/poAdd\(/.test(src));
   const run = async (o) => {
     const log = [], el = (id) => ({ id, hidden: true, isConnected: true, disabled: false, textContent: "", dataset: {}, classList: { add() {}, remove() {}, toggle() {} }, focus() { log.push("focus:" + id); },
       kids: [], appendChild(x) { this.kids.push(x); return x; }, querySelector: () => null, querySelectorAll: () => [] });
@@ -154,7 +165,8 @@ function rest() {
   const g1 = JSON.stringify(C.onbPrefsGet());
   const s1 = JSON.stringify(C.onbPrefsSet({ mkt: "tw" })), s2 = JSON.stringify(C.onbPrefsSet({ done: true })), s3 = JSON.stringify(C.onbPrefsSet({ mkt: "bogus" })), raw = JSON.parse(fs.readFileSync(file, "utf8"));
   ok("④ welcome-prefs:沒檔 / 形狀不對 → 沒進 F;set 只動有帶的鍵、別的偏好(theme)留著;0.1.28 存的 onbMkt 不讀、不回(市場題退役)",
-    g0 === '{"done":false}' && g1 === '{"done":false}' && s1 === '{"done":false}' && s2 === '{"done":true}' && s3 === '{"done":true}' && raw.theme === "dark" && raw.onbMkt === "us",
+    g0 === '{"done":false,"cloudDone":false}' && g1 === '{"done":false,"cloudDone":false}' && s1 === '{"done":false,"cloudDone":false}' && s2 === '{"done":true,"cloudDone":false}' && s3 === '{"done":true,"cloudDone":false}' && raw.theme === "dark" && raw.onbMkt === "us"
+    && JSON.stringify(C.onbPrefsSet({ cloudDone: true })) === '{"done":true,"cloudDone":true}' && JSON.stringify(C.onbPrefsSet({ cloudDone: "yes" })) === '{"done":true,"cloudDone":false}',
     JSON.stringify([g0, g1, s1, s2, s3, raw]));
   fs.rmSync(dir, { recursive: true, force: true }); }
 

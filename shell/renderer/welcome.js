@@ -1,13 +1,13 @@
-/* 歡迎頁(只有「這台電腦」視角;入門步驟照 0.1.29 三步版(Wei 10-22 口頭定案),完成後首頁照 mockup f-watermark)。
+/* 歡迎頁(兩個視角各一份,0.1.30 Wei:雲端也有;入門步驟照 0.1.29 三步版(Wei 10-22 口頭定案),完成後首頁照 mockup f-watermark)。
    onboarding 期間(E,#wc):記號 → 步驟清單 ①找靈感 ②做策略並回測 ③加到策略組合,不分市場(0.1.29 Wei:拿掉市場題與④自動下單)。
    ①② 全新時同時展開;③ 輪到才露鈕;完成的一步收成一行(打勾＋名字,不帶 meta);①② 點了重新展開,③ 點了直接到策略組合頁。完成判定全從現有狀態推:
-   ② = 本機清單有一支回測過(RP.list hasBacktest)、③ = 存著的金額有一支 > 0(trStored,同 strat_deployed 的判準)。
+   ② = 那個視角的清單有一支回測過(本機 RP.list、雲端 TR_BAGS.cloud.list 的 hasBacktest)、③ = 那個視角存著的金額有一支 > 0(trStored,同 strat_deployed 的判準)。
    做完③的當下原地一行「都設好了」(這次開著期間留著),之後就是完成後的首頁(F,#wf):淡化記號＋一列籤。
-   「已進 F」存主行程 ui-prefs(IPC welcome-prefs),不上傳。既有用戶第一次判斷就已經完成的直接進 F,不顯示「都設好了」、不送 onb_done——
+   「已進 F」兩個視角分開存主行程 ui-prefs(IPC welcome-prefs:done = 這台電腦、cloudDone = 雲端),不上傳。既有用戶第一次判斷就已經完成的直接進 F,不顯示「都設好了」、不送 onb_done——
    所以那一次判斷要等到狀態檔真的讀到(報告還沒來時③一律當沒輪到,不下結論)。
    起手句(spec-starters):三句並列、點了就把 starter_<mk>_send 送給現在連的 AI,只有 stFill 判定跑不了才填進輸入框。
    整頁等 app.js stratRefresh 第一次讀完清單(RP.loaded)與入門偏好讀到才顯示。
-   接線:app.js stratRefresh → wcSync;trade.js trPoll → onbPaint;送出／解鎖那三排 → stSync;回合結束 → stTurnEnd;設定 › 一般〔重看〕→ onbReplay。
+   接線:app.js stratRefresh → wcSync;trade.js trPoll → onbPaint;送出／解鎖那三排 → stSync;回合結束 → stTurnEnd;切視角 → trade.js envSwitch 叫 onbPaint。
 
    歡迎頁的資料清單(0.1.17;設計:.claude/output/designer/data-scope-2026-10/mockup-data-scope.html §1 歡迎頁)。
    工作頁沒選策略時的空狀態,籤下面列「可以回測的資料」:依市場分段,每一列一行 = 資料名 + 緊跟在後的小字(頻率・起始年),
@@ -55,11 +55,10 @@ function onbSteps(o) {
   });
   return { steps, complete: !!o.known && done.every(Boolean) };
 }
-/* E／F 切換。o = { flag(已進 F), complete, base(第一次讀到狀態檔那一刻完成了沒;null = 還沒讀到), fin(這次開著時已經顯示過「都設好了」), replay(設定裡按了重看) }。
+/* E／F 切換。o = { flag(已進 F), complete, base(第一次讀到狀態檔那一刻完成了沒;null = 還沒讀到), fin(這次開著時已經顯示過「都設好了」) }。
    回 { view: E | fin | F, setFlag, event }:當下完成才慶祝、才送 onb_done;上線那天就已經完成的直接進 F */
 function onbPhase(o) {
   if (o.fin) return { view: "fin", setFlag: false, event: false };
-  if (o.replay) return { view: "E", setFlag: false, event: false };
   if (o.flag) return { view: "F", setFlag: false, event: false };
   if (o.base === null || o.base === undefined || !o.complete) return { view: "E", setFlag: false, event: false };
   return o.base === false ? { view: "fin", setFlag: true, event: true } : { view: "F", setFlag: true, event: false };
@@ -183,14 +182,16 @@ function stGo(mk) {
     if (fresh && typeof acctPrecheck === "function") acctPrecheck();   // 換了新對話,預檢卡(這時唯一要做的事)跟著清掉了:補回來
     return;
   }
-  const before = new Set(RP.list.map((x) => x.name));
-  submitMessage(text).then((ok) => { if (ok) { trackFeature(ST_FEATURE[mk]); ST.pending = { before }; } });
+  const env = onbEnv(), before = new Set((env === "cloud" ? TR_BAGS.cloud.list || [] : RP.list).map((x) => x.name));
+  submitMessage(text).then((ok) => { if (ok) { trackFeature(ST_FEATURE[mk]); ST.pending = { before, env }; } });
 }
-// 起手句送出的那一輪結束(app.js onTurnEnd,stratRefresh(true) 之後;同 libTurnEnd):本機清單多了一支 = starter_new
+// 起手句送出的那一輪結束(app.js onTurnEnd,stratRefresh(true) 之後;同 libTurnEnd):送出時那一邊的清單多了一支 = starter_new
+// (雲端歡迎頁的起手句,策略建在雲端)
 function stTurnEnd() {
   const p = ST.pending; if (!p) return;
   ST.pending = null;
-  trackFeature(RP.list.some((x) => !p.before.has(x.name)) ? "starter_new" : "starter_no_new");
+  const list = p.env === "cloud" ? TR_BAGS.cloud.list || [] : RP.list;
+  trackFeature(list.some((x) => !p.before.has(x.name)) ? "starter_new" : "starter_no_new");
 }
 
 /* ── 可以回測的資料 ›(§1.5):每次開 app 都收起來,不記住 ── */
@@ -202,8 +203,12 @@ $("wl-fold").addEventListener("click", () => {
 
 /* ── 入門步驟(E)與完成後的首頁(F)── */
 const WC = { shown: false, armed: false };
-// prefs:null = 還在讀(讀到之前不畫,不然已進 F 的人會先閃一下步驟清單)
-const ONB = { prefs: null, base: null, fin: false, replay: false, open: [false, false, false], key: null, amt: false };
+// prefs:null = 還在讀(讀到之前不畫,不然已進 F 的人會先閃一下步驟清單)。base／fin／open 兩個視角各一份(ONB.v),畫面只有一份(key、amt 跟著現在的視角)
+const onbV = () => ({ base: null, fin: false, open: [false, false, false] });
+const ONB = { prefs: null, v: { local: onbV(), cloud: onbV() }, key: null, amt: false };
+const ONB_FLAG = { local: "done", cloud: "cloudDone" };
+const onbEnv = () => (typeof ENV !== "undefined" && ENV.cur === "cloud" ? "cloud" : "local");
+
 const ONB_STEP_KEYS = ["onb.s1", "onb.s2", "onb.s3"];   // 字逐字同網頁 workspace_onb_s1–s3(兩語)
 // 第一次清單讀完才顯示整頁
 function wcSync() {
@@ -217,15 +222,16 @@ function wcArm() {
   WC.armed = true; setTimeout(() => { if (!WC.shown) wcSync(); }, 3000);
 }
 const onbSave = (patch) => { Promise.resolve().then(() => window.blave.welcomePrefsSet(patch)).catch(() => {}); };
-/* 從現有狀態推每一步(spec §2.3)。本機視角才有歡迎頁,只看 TR_BAGS.local */
-function onbData() {
-  const L = typeof TR_BAGS !== "undefined" ? TR_BAGS.local : null, st = L && L.st, r = st && st.report;
-  const known = !!r && typeof trExecState === "function" && trExecState(st) !== "loading";
+/* 從現有狀態推每一步(spec §2.3),env = 哪個視角的資料。雲端的清單在那份狀態裡、可能比報告晚到:清單沒載入(listLoaded)前不下結論,
+   不然既有用戶第一次判斷會被當成「還沒回測」、之後假慶祝一次 */
+function onbData(env) {
+  const cloud = env === "cloud", L = typeof TR_BAGS !== "undefined" ? TR_BAGS[cloud ? "cloud" : "local"] : null, st = L && L.st, r = st && st.report;
+  const known = !!r && typeof trExecState === "function" && trExecState(st) !== "loading" && (!cloud || !!L.listLoaded);
   const stored = known ? trWith(L, () => trStored()) || {} : {};
   const funded = Object.keys(stored).some((n) => Number(stored[n]) > 0);
   // ③ 已經勾了沒存、或存了但金額全 0:下一步是填金額,不是再開一次框(借頁首 trZCase 的 draft／amt 兩個判斷;那支要綁好帳戶才回值,新手多半沒綁,不整支照搬)
   const amt = known && !funded && (Object.keys(stored).length > 0 || trWith(L, () => trZDraft()));
-  return { known, bt: RP.list.some((x) => x.hasBacktest), funded, amt };
+  return { known, bt: (cloud ? (L && L.list) || [] : RP.list).some((x) => x.hasBacktest), funded, amt };
 }
 /* 標題列:完成的那一步是按鈕,其餘是灰或亮的字。完成列不帶 meta(Wei 10-21:策略名、金額、帳戶名都不放)。
    ①② 點了就地展開／收起;③ 直接到策略組合頁(做完之後要看的就是那一頁,展開只會露出用過的鈕) */
@@ -245,22 +251,32 @@ function onbHead(i, s) {
   host.appendChild(h);
 }
 function onbToggle(i) {
-  ONB.open[i] = !ONB.open[i];
-  if (ONB.open[i]) trackFeature("onb_reopen");
+  const V = ONB.v[onbEnv()];
+  V.open[i] = !V.open[i];
+  if (V.open[i]) trackFeature(onbEnv() === "cloud" ? "onb_reopen_cloud" : "onb_reopen");
   ONB.key = null; onbPaint();
   const b = $("onb-h" + (i + 1)).querySelector("button"); if (b) b.focus();
+}
+/* 一個視角的判斷:記基準、存旗標、送完成事件——兩個視角每輪都判(③ 是在策略組合頁存金額完成的,那一刻歡迎頁不在畫面上)。
+   雲端的完成事件只在看著雲端時送:雲端也可能是在網站上做完的,那邊自己有 onboarding_done */
+function onbEval(env) {
+  const V = ONB.v[env], f = ONB_FLAG[env], d = onbData(env), S = onbSteps({ bt: d.bt, funded: d.funded, known: d.known, open: V.open });
+  if (d.known && V.base === null) V.base = S.complete;
+  const ph = onbPhase({ flag: ONB.prefs[f], complete: S.complete, base: V.base, fin: V.fin });
+  if (ph.setFlag) { ONB.prefs[f] = true; onbSave({ [f]: true }); }
+  if (ph.view === "fin") V.fin = true;
+  if (ph.event && env === "local") trackFeature("onb_done");
+  if (ph.event && env === "cloud" && onbEnv() === "cloud") trackFeature("onb_done_cloud");
+  return { d, S, ph };
 }
 /* 重畫。指紋沒變就不碰 DOM(trPoll 每輪都叫:hover 與焦點不能被洗掉) */
 function onbPaint() {
   const wc = $("wc"), wf = $("wf"); if (!wc || !wf || !WC.shown || !ONB.prefs) return;
-  const d = onbData(), S = onbSteps({ bt: d.bt, funded: d.funded, known: d.known, open: ONB.open });
-  if (d.known && ONB.base === null) ONB.base = S.complete;
-  const ph = onbPhase({ flag: ONB.prefs.done, complete: S.complete, base: ONB.base, fin: ONB.fin, replay: ONB.replay });
-  if (ph.setFlag) { ONB.prefs.done = true; onbSave({ done: true }); }
-  if (ph.view === "fin") ONB.fin = true;
-  if (ph.event) trackFeature("onb_done");
+  const env = onbEnv();
+  onbEval(env === "cloud" ? "local" : "cloud");
+  const { d, S, ph } = onbEval(env);
   ONB.amt = d.amt;
-  const key = JSON.stringify([LANG, ph.view, S.steps, d.amt]);
+  const key = JSON.stringify([LANG, env, ph.view, S.steps, d.amt]);
   if (key === ONB.key) return;
   ONB.key = key;
   wf.hidden = ph.view !== "F"; wc.hidden = ph.view === "F";
@@ -270,22 +286,15 @@ function onbPaint() {
   S.steps.forEach((s, i) => { onbHead(i, s); $("onb-b" + (i + 1)).hidden = !s.open; });
   $("onb-po").textContent = t(d.amt ? "po.goAmounts" : "tr.pick");
 }
-// 設定 › 一般〔重看〕(app.js):清掉旗標、這次開著期間停在步驟清單(下次開 app 再照完成條件判)
-function onbReplay() {
-  if (!ONB.prefs) return;
-  ONB.prefs.done = false; ONB.fin = false; ONB.replay = true; ONB.open = [false, false, false]; ONB.key = null;
-  onbSave({ done: false });
-  onbPaint();
-}
 $("onb-lib").addEventListener("click", () => libOpen());
 // ③ 到策略組合頁並打開選擇策略框,讓用戶自己勾(Wei 0.1.29:不替他挑一支);勾了沒存／存了 0 → 落在金額格
-$("onb-po").addEventListener("click", () => { trackFeature("onb_go_po"); poPick(ONB.amt); });
+$("onb-po").addEventListener("click", () => { trackFeature(onbEnv() === "cloud" ? "onb_go_po_cloud" : "onb_go_po"); poPick(ONB.amt); });
 // F 的三顆籤:不帶市場(spec §3.2)
 $("wf-idea").addEventListener("click", () => ideaOpen($("wf-idea"), "welcome", "any"));
 $("wf-lib").addEventListener("click", () => libOpen());
 $("wf-ns").addEventListener("click", () => nsOpen($("wf-ns")));
 Promise.resolve().then(() => window.blave.welcomePrefs()).then((p) => p, () => null).then((p) => {
-  ONB.prefs = { done: !!(p && p.done === true) };
+  ONB.prefs = { done: !!(p && p.done === true), cloudDone: !!(p && p.cloudDone === true) };
   if ($("wl-seg").hasAttribute("aria-label")) wdPaint(); else onbPaint();   // applyStatic 還沒跑就先別畫資料清單(同檔尾那一條)
 });
 // 開機那次 stratRefresh / enterWorkspace 可能在這支載入前就跑完(script 之間會先跑掉 microtask,typeof 那時還是 undefined):補叫一次

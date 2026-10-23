@@ -386,6 +386,19 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     ok("S3 btc 在等新訊號、改金額 500→1000:不列買 BTC、「儲存金額」、表下說等新訊號", f.title === "tr.cf.title" && side(f).length === 0 && f.notes.includes("cf-note:tr.cf.gated " + J({ syms: "BTCUSDT" })), J(f));
     bag({ firing: true, picked: ["tw"], rep: { last_reconcile: LR(gt) } }); const g = open();
     ok("S3 …移出閘中的 btc 本身:照列賣 BTC", g.title === "tr.cf.titleFire" && side(g).includes("tr.cf.sellBTCUSDT0.01 tr.cf.unitCoins"), J(g)); }
+  // 0.1.29 Mac 實測:BTC 跟台股一起在等新訊號,改的只有台股——框只講台股。閘中的標的這次差額不夠下單也點名
+  { const g1 = (sym, size, strat, amt) => ({ side: "long", size, gated: true, contributors: [{ strategy: strat, position: 1, amount: amt, contribution: amt, gated: true }] });
+    bag({ firing: true, paper: true, edits: { tw: 200000 }, rep: { last_reconcile: LR({ BTCUSDT: g1("BTCUSDT", 500, "btc", 500), "2330@spot": g1("2330", 100000, "tw", 100000) }) } }); const f = open();
+    const n = f.notes.find((x) => /^cf-note:tr\.cf\.gated /.test(x)), syms = n ? JSON.parse(n.slice("cf-note:tr.cf.gated ".length)).syms : "";
+    ok("閘中、這次不會動的 BTC 也點名(BTC 與台股同一句)", /BTCUSDT/.test(syms) && /2330/.test(syms) && side(f).length === 0, J(f));
+    bag({ firing: true, edits: { tw: 200000 }, states: { btc: { symbol: "BTCUSDT", position: 0 } }, rep: { last_reconcile: LR({ BTCUSDT: Object.assign(g1("BTCUSDT", 0, "btc", 500), { side: null }) }),
+      account: { read_at: now, venues: { binance: { ok: true, equity: 10000, currency: "USDT", positions: {} } } } } }); const g = open();
+    ok("…閘中但目標 0、帳上也沒有:不點名(沒有東西在等)", !g.notes.some((x) => /tr\.cf\.gated/.test(x)), J(g)); }
+  // 實盤 state 沒有收盤價、帳上沒這檔(沒有 mark):借它預覽的收盤換顆數,不再一下有一下沒有
+  { bag({ firing: true, edits: { btc: 1000 }, pvs: { btc: pvA("BTCUSDT", { close: 50000 }) }, rep: { account: { read_at: now, venues: { binance: { ok: true, equity: 10000, currency: "USDT", positions: {} } } } } }); const f = open();
+    ok("帳上沒 BTC、實盤 state 沒價:用預覽收盤寫 0.02 顆", J(side(f)) === J(["tr.cf.buyBTCUSDT0.02 tr.cf.unitCoins"]), J(f));
+    bag({ firing: true, edits: { btc: 1000 }, rep: { account: { read_at: now, venues: { binance: { ok: true, equity: 10000, currency: "USDT", positions: {} } } } } }); const g = open();
+    ok("…連預覽都沒有:照寫金額與幣別", J(side(g)) === J(["tr.cf.buyBTCUSDT1,000 USDT"]), J(g)); }
   // 快照 awaiting 已經過期、框還開著:對帳器照常賣,框也要列賣單(不能說不動)
   { bag({ firing: true, picked: ["btc", "tw", "db"], amounts: { db: 500 }, edits: { btc: 0 }, list: [DB], noPv: true,
       rep: { last_reconcile: LR({ BTCUSDT: { side: "long", size: 500, contributors: [], awaiting: { db: now - 5 }, frozen: 500 } }) } }); const f = open();
@@ -513,7 +526,7 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     ok("…沒在跑(s9:尚未啟動、沒綁帳戶):只講前半句,不說「才會進場」", f.rows.length === 0 && J(f.notes) === J(["cf-note:tr.cf.flatNoOrder"]), J(f));
     bag({ halted: true, picked: ["btc", "tw", "ec"], edits: { ec: 300 }, list: [EC], noPv: true, pvs: { ec: flat0() } });
     f = open();
-    ok("…暫停中:只講前半句(暫停那句照出)", f.notes.includes("cf-note:tr.cf.flatNoOrder") && !f.notes.some((x) => x === "cf-note:tr.cf.flat" || x === "cf-note:tr.cf.flatLong"), J(f));
+    ok("…暫停中:只留暫停那句,空手句不出(暫停句已講不開新倉,設計稽核 S4)", J(f.notes) === J(["cf-note:tr.saveWarnHalted"]), J(f));
     bag(draft({ firing: true, pv: { weights: { "2330": 0, "2454": 0 } } })); f = open();
     ok("…這家下不了(Binance 在跑、空手的台股組合):只講前半句", f.rows.length === 0 && J(f.notes) === J(["cf-note:tr.cf.flatNoOrder"]), J(f));
     bag({ firing: true, picked: ["btc", "tw", "sp"], edits: { sp: 300 }, list: [SP], noPv: true, pvs: { sp: flat0({ market: "spot" }) } });
