@@ -25,9 +25,9 @@ const cut = (src, name) => { const i = src.indexOf("function " + name + "("); if
 t("權限請求與權限檢查都掛了 handler,只放自家頁面的 clipboard-sanitized-write", /setPermissionRequestHandler\(/.test(main) && /setPermissionCheckHandler\(/.test(main)
   && /const permOk = \(wc, perm, url\) => perm === "clipboard-sanitized-write" && isOurPageUrl\(/.test(main));
 
-// ── Electron 44:通知失敗不可以無聲 ──
+// ── Electron 44:通知失敗不可以無聲 ── (0.1.30 回合結束提示 replyCue 是第 6 則)
 { const sends = (main.match(/new Notification\(/g) || []).length, watched = (main.match(/notifWatch\(/g) || []).length - 1;   // 扣掉定義那一個
-  t("每一個 new Notification 都掛了 failed 的 log(沒簽章的包、用戶關掉通知時,通知只會 failed)", sends === 5 && watched === sends && /function notifWatch\(n, what\) \{ n\.on\("failed"/.test(main)); }
+  t("每一個 new Notification 都掛了 failed 的 log(沒簽章的包、用戶關掉通知時,通知只會 failed)", sends === 6 && watched === sends && /function notifWatch\(n, what\) \{ n\.on\("failed"/.test(main)); }
 
 // ── R9:~/Blave 建立時 0700 ──
 // 0.1.12 起建立 ~/Blave 的是 enginesetup.js(base / ws 由 main.js 傳 BASE / WS);實際建一次的行為在 tests/check_shell_engine_setup.js

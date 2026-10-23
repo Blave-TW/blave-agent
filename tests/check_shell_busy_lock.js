@@ -29,6 +29,7 @@ const QUIET = [
   ["app.js", "if ((!msg && !attachments.length) || running) return false;", "submitMessage 最後一道:每個入口自己先講"],
   ["app.js", "function upLocalTurn()", "只是讀值"],
   ["app.js", "if (busyOn()) return;", "csStartNew / csOpen 最後一道:入口(csNewClick、列的 click)先講"],
+  ["app.js", "if (!id || id === sessionId || busyOn()) return;", "點了回合結束的系統通知(open-session):回合中只叫出視窗、不換對話(spec agent-reply-notifications-0130 §3.5),畫面上沒有按了沒反應的控件"],
   ["app.js", "if (running === true) { swHeld = { from, to }; return; }", "切視角的系統行延到回合結束才插,不是擋操作(切視角本身照切)"],
   ["app.js", "function canResend() { return !running", "述詞;重送的鈕先看 running、走 busySendTell"],
   ["capital.js", "return capHandoff(\"setup\");", "capHandoff 自己寫 TURN_BUSY 進框裡的訊息槽"],

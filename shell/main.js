@@ -2812,6 +2812,15 @@ function keepAwakeSet(on) {
   awakeSync();
   return keepAwakeGet();
 }
+/* 設定 › 一般「回覆好了通知我」(spec agent-reply-notifications-0130 §3.6):ui-prefs replyNotify,缺 = 開;按裝置存,不是帳號偏好 */
+const replyNotifyGet = () => { try { return JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")).replyNotify !== false; } catch (_) { return true; } };
+function replyNotifySet(on) {
+  const was = replyNotifyGet();
+  try { uiPrefsPatch({ replyNotify: on === true }); } catch (_) { /* 寫不進去:照舊值 */ }
+  const now = replyNotifyGet();
+  if (now !== was) tm().track("reply_notif", { act: now ? "on" : "off" });
+  return now;
+}
 function awakeSync() {
   const st = _tradeHost ? _tradeHost.status() : null;
   const want = awakeWanted({ st, startAt: awakeStartAt, now: Date.now(), keepAwake: keepAwakeGet(), win: WIN, twHeld: WIN ? twLots().held : false, prev: awakeBlocker !== null });
@@ -2950,6 +2959,70 @@ function browserNotify(kind) {
   n.show();
   return true;
 }
+/* 回合結束提示(spec agent-reply-notifications-0130 §3.1–3.5;不屬 P1／P2／P3):只通知這台 spawn 的回合、只在視窗不在前景、用戶按停止不跳。
+   不亮 Dock 紅點、不動 p1Badge(紅點留給 P1)。畫面在回合結束時送 reply-cue {kind: done|fail|stopped, snippet};
+   「等你回覆」看主行程自己記的 done.awaiting,對話是 runTurn 的 sessionId(不看畫面現在開著哪條)。
+   replyPending 一輪一個、reply-cue 用掉就清:畫面再送也發不出第二則。replyLast = 還沒點的那一則,下一輪開始時收掉 */
+let replyPending = null, replyLast = null, replyOsOff = false;
+const REPLY_KINDS = ["done", "await", "fail"];
+const replyGraphemes = (s) => { try { return [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(s)].map((x) => x.segment); } catch (_) { return Array.from(s); } };
+// 純函式(tests/check_shell_reply_cue.js):o = { kind, focused, pref } → 要發的型別或 null
+function replyCuePick(o) {
+  if (!o || o.focused !== false || o.pref !== true) return null;
+  return REPLY_KINDS.indexOf(o.kind) >= 0 ? o.kind : null;
+}
+// 純函式:內文 = 狀態前綴＋摘錄;摘錄不合(不是字串、超過 60 字＋「…」)當空,空的用該型的空摘錄字。字還沒交過來回 ""(不拿英文退路塞給中文用戶)
+function replyBody(kind, snippet, L) {
+  const pre = kind === "await" ? L.rc_await : kind === "fail" ? L.rc_fail : "", empty = L["rc_" + kind + "Empty"];
+  if (REPLY_KINDS.indexOf(kind) < 0 || !empty || (kind !== "done" && !pre)) return "";
+  const s = typeof snippet === "string" && snippet.length <= 400 && replyGraphemes(snippet).length <= 61 ? snippet.replace(/[\u0000-\u001f\u007f]/g, " ").trim() : "";
+  return s ? pre + (/:$/.test(pre) ? " " : "") + s : empty;   // en 前綴是半形冒號,後面補一格;zh 全形冒號不補
+}
+// 純函式:標題 = 這條對話第一句用戶的話(同對話清單);附件那幾行(給引擎看的)拿掉,截 60 字,沒有就 Blave
+function replyTitleOf(raw) {
+  const at = require("./attach"), okHead = at.NOTE_OK.slice(0, at.NOTE_OK.indexOf("{name}"));
+  const s = String(typeof raw === "string" ? raw : "").split("\n").filter((l) => !l.startsWith(okHead) && l.trim() !== at.NOTE_FAIL).join(" ").replace(/\s+/g, " ").trim();
+  const g = replyGraphemes(s);
+  return !s ? "Blave" : g.length > 60 ? g.slice(0, 60).join("").trimEnd() + "…" : s;
+}
+function replyTitle(sid) {
+  const db = sessionDb(true); if (!db) return replyTitleOf("");
+  try { const r = db.prepare("SELECT content FROM turns WHERE session_id = ? AND role = 'user' ORDER BY id LIMIT 1").get(sid); return replyTitleOf(r && r.content); }
+  catch (_) { return replyTitleOf(""); } finally { db.close(); }
+}
+function replyCue(cue) {
+  const p = replyPending; replyPending = null;
+  if (!p || !okSessionId(p.sid) || !cue || typeof cue !== "object") return false;
+  const show = replyCuePick({ kind: cue.kind === "done" && p.awaiting ? "await" : cue.kind, focused: !!BrowserWindow.getFocusedWindow(), pref: replyNotifyGet() });
+  if (!show || !Notification.isSupported()) return false;
+  const body = replyBody(show, cue.snippet, tmLabels); if (!body) return false;
+  const n = new Notification({ title: replyTitle(p.sid), body });
+  p1Alive.add(n); replyLast = n;
+  const drop = () => { p1Alive.delete(n); if (replyLast === n) replyLast = null; };
+  n.on("show", () => { replyOsOff = false; tm().track("reply_notif", { act: show }); });
+  n.on("click", () => {
+    drop(); tm().track("reply_notif", { act: "click" }); showMain();
+    const w = BrowserWindow.getAllWindows().find((x) => !x.isDestroyed() && isOurPageUrl(x.webContents.getURL()));
+    if (w) w.webContents.send("open-session", p.sid);
+  });
+  n.on("close", drop);
+  n.on("failed", () => { drop(); replyOsOff = true; tm().track("reply_notif", { act: "os_off" }); });
+  notifWatch(n, "reply " + show);
+  if (p1Alive.size > 20) p1Alive.delete(p1Alive.values().next().value);
+  n.show();
+  return true;
+}
+function replyTurnStart() {
+  replyPending = null;
+  if (replyLast) { try { replyLast.close(); } catch (_) { /* 已經不在了 */ } replyLast = null; }
+}
+// 設定列下「開啟系統設定」:網址寫死在這裡(畫面的 open-external 只放行 https)
+function replyOsSettings() {
+  const u = WIN ? "ms-settings:notifications" : process.platform === "darwin" ? "x-apple.systempreferences:com.apple.preference.notifications" : null;
+  if (!u) return false;
+  shell.openExternal(u).catch(() => {});
+  return true;
+}
 /* 這一輪帶哪些憑證(純函式;tests/check_shell_data_env.js 從原文切出來跑)。三顆各看各的:
      proxyToken(帳號 token,會燒 Blave AI 額度)= **連的是 Blave AI** 而且有登入;
      dataKey(縮權的資料 key,不能呼叫 LLM)= **有登入而且帳號含資料**,不看連的是誰——自帶 Claude Code / Codex 的人登入後也拿得到資料。
@@ -2973,6 +3046,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   const model = safeId(rawModel), effort = safeId(rawEffort);
   // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式
   if (!okSessionId(sessionId)) throw new Error("bad session id");
+  replyTurnStart();
   sessWaitingSave(sessionId, false);   // 這一句就是回答:等你回覆清掉(同 api /send → hdel waiting)
   // 訊息走 stdin:不是字串的話 stdin.end() 會拋、留下一支等不到 EOF 的子行程(稽核 R4)。上限同 runtime 的 --message-stdin
   if (typeof message !== "string" || Buffer.byteLength(message, "utf8") > MESSAGE_MAX_BYTES) throw new Error("bad message");
@@ -3112,7 +3186,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   child.stdin.on("error", () => { /* 子行程一起來就死(EPIPE):close 事件會把失敗交給畫面 */ });
   try { child.stdin.end(message); } catch (err) { try { child.kill(); } catch (_) { /* 已經不在了 */ } turnDone(); throw err; }   // 不留一支卡在讀 stdin 的子行程
   activeTurn = child;
-  let buf = "";
+  let buf = "", turnAwaiting = false;
   const turnXp = [];   // 這一輪的轉出卡:回合結束才寫進 index(ts 要排在回覆之後)
   child.stdout.on("data", (d) => {
     turnLastOut = Date.now();
@@ -3122,7 +3196,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
       const line = buf.slice(0, i); buf = buf.slice(i + 1);
       if (line.startsWith("@@BLAVE@@")) {
         try {
-          const c = JSON.parse(line.slice(9)); if (c && c.type === "done") { turnFinalized = true; sessWaitingSave(sessionId, c.awaiting === true); }   // awaiting 只存;kinds 不存不畫
+          const c = JSON.parse(line.slice(9)); if (c && c.type === "done") { turnFinalized = true; turnAwaiting = c.awaiting === true; sessWaitingSave(sessionId, turnAwaiting); }   // awaiting 只存;kinds 不存不畫
           if (c && c.type === "export") { const rec = noteExport(c, sessionId); if (rec) { c.id = rec.id; turnXp.push(rec); } }   // 卡重開要畫回來:快照先落地,id 給卡的「下載…」
           win.webContents.send("turn-event", c);
         } catch (_) {}
@@ -3135,6 +3209,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     turnDone();   // 這一輪結束:設定檔(裡面是接入碼 / 瀏覽器 token)立刻刪,瀏覽器 token 作廢
     activeTurn = null;
     flushExports(sessionId, turnXp);
+    replyPending = { sid: sessionId, awaiting: turnAwaiting };   // 畫面判完 stopped／faulted 才送 reply-cue
     // 視窗可能已經關掉了(結束時回合才收尾):送到已銷毀的 webContents 會丟例外
     if (!win.isDestroyed()) win.webContents.send("turn-end", { code, errTail: code === 0 ? "" : errTail });
   });
@@ -3519,6 +3594,10 @@ app.whenReady().then(() => {
   // 側欄偏好(renderer/stratflags.js):順序與旗標只收自家頁面;拒絕時回空的 = 照預設序、沒旗標
   handle("keep-awake", () => keepAwakeGet(), true);
   handle("keep-awake-set", (_e, on) => keepAwakeSet(on === true), null);
+  handle("reply-notify", () => ({ on: replyNotifyGet(), osOff: replyOsOff }), { on: true, osOff: false });
+  handle("reply-notify-set", (_e, on) => replyNotifySet(on === true), null);
+  handle("reply-notify-os", () => replyOsSettings(), false);
+  ipcMain.on("reply-cue", (e, cue) => { if (fromOurPage(e)) replyCue(cue); });
   handle("theme", () => themeGet(), "system");
   handle("theme-set", (_e, v) => themeSet(v), null);
   handle("welcome-prefs", () => onbPrefsGet(), { done: false, cloudDone: false });
@@ -3561,6 +3640,7 @@ app.whenReady().then(() => {
       }
     } catch (err) { turnStarting = false; throw err; }   // 這一段拋了不還原的話,之後每一次送出都回 busy(稽核 R1)
     runTurn(win, payload).then(() => { if (cloudUp) tm().track("cloud_started"); }).catch((err) => {   // resolve = spawn 與 stdin 都成功、話交到 agent 手上;失敗那條不送
+      replyPending = { sid: payload && payload.sessionId, awaiting: false };
       if (win && !win.isDestroyed()) win.webContents.send("turn-end", { code: 1, errTail: String((err && err.message) || err) });
     }).finally(() => { turnStarting = false; });
     return { started: true };
@@ -3675,7 +3755,8 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   br_captchaTitle: "", br_captcha: "",   // 內建瀏覽器:搜尋要用戶過驗證(browserNotify);空的 = 還沒交字 = 不發
   moveTitle: "", moveBody: "", moveGo: "", moveNo: "",   // 搬到「應用程式」那一問(askMoveToApps):空的 = 還沒交字 = 不問
   moveAuthExists: "", moveAuthApps: "", gotIt: "",   // 搬移要授權時那個只有「知道了」的提示框;空的 = 不跳,只留 log
-  pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "", ...Object.fromEntries(Object.keys(MENU_EN).map((k) => [k, ""])) };
+  pauseLocal: "", quitCloudNote: "", notifPrefixLocal: "", notifPrefixCloud: "",
+  rc_await: "", rc_fail: "", rc_doneEmpty: "", rc_awaitEmpty: "", rc_failEmpty: "", ...Object.fromEntries(Object.keys(MENU_EN).map((k) => [k, ""])) };
 const TT = require("./traytext");
 const { planRestart, shouldAskMove, moveNeedsAuth, moveAuthReason } = require("./updater");
 let uiLang = null, appMenuKey = "";   // renderer 交過來之前用系統語系猜(app.getLocale() 要等 ready 之後才有值,所以用的時候才算)
@@ -4033,6 +4114,9 @@ function binanceNotify(v) {
     TRADING_LOST: ["key_permTitle", "key_permBody"] };
   // 回 true = 真的交給系統了。字還沒交過來 / 系統不支援 → false,binance_link 不會記成已通知,下一輪再試
   const k = map[v && v.reason]; if (!k || !tmLabels[k[0]] || !tmLabels[k[1]] || !Notification.isSupported()) return false;
+  // 視窗在前景不發(notifications §8.1 第 2 條):畫面已由 binance-state 推送重畫(標題列「串接失敗」、設定分頁帳戶列),
+  // 顯示過就算告知過——回 true,binance_link 記成已通知、照 24 小時重查,不補發系統通知(Wei 拍板)
+  if (BrowserWindow.getFocusedWindow()) return true;
   const n = new Notification({ title: tmLabels[k[0]], body: tmLabels[k[1]].replace("{ip}", () => v.ip || "—") });
   p1Alive.add(n); const drop = () => p1Alive.delete(n);
   n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop); notifWatch(n, "binance " + v.reason);

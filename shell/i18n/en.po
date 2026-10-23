@@ -1745,6 +1745,30 @@ msgstr "To run around the clock without this computer:"
 msgid "tr.means.cloudGo"
 msgstr "Use a cloud host"
 
+msgid "set.rn"
+msgstr "Notify me when a reply is done"
+
+msgid "set.rn.osOff"
+msgstr "System notifications are off."
+
+msgid "set.rn.osGo"
+msgstr "Open System Settings"
+
+msgid "rc.await"
+msgstr "Waiting for you:"
+
+msgid "rc.fail"
+msgstr "Didn’t finish:"
+
+msgid "rc.doneEmpty"
+msgstr "Reply ready."
+
+msgid "rc.awaitEmpty"
+msgstr "Waiting for your reply."
+
+msgid "rc.failEmpty"
+msgstr "Didn’t finish."
+
 msgid "set.awake"
 msgstr "Keep the computer awake while auto-trading"
 
@@ -2943,7 +2967,7 @@ msgid "priv.collect.hOff"
 msgstr "Collected when on"
 
 msgid "priv.collect.5"
-msgstr "Which features you used: tab and button names, once per item per day, without their content; when you use a library strategy, whether it needs Blave data; when you send an idea request, which entry point it came from"
+msgstr "Which features you used: tab and button names, once per item per day, without their content; when you use a library strategy, whether it needs Blave data; when you send an idea request, which entry point it came from; whether a reply notification was shown or clicked, never the chat title or text"
 
 # 0.1.18 策略三步(strat_created / strat_backtested / strat_deployed)補在這一條:只記型別與市場類別
 msgid "priv.collect.1"

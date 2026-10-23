@@ -1753,6 +1753,8 @@ function trPushLabels() {
     key_permTitle: t("tm.key.permTitle", { where: t("env.local") }), key_permBody: t("tm.key.permBody"),
     notifPrefixLocal: t("tm.notifPrefixLocal"), notifPrefixCloud: t("tm.notifPrefixCloud"),
     br_captchaTitle: t("br.need.captcha"), br_captcha: t("br.notif.captcha"),   // 內建瀏覽器:搜尋要過驗證、app 不在前景(主行程 browserNotify)
+    // 回合結束的系統通知(主行程 replyCue):內文前綴與空摘錄的字;標題是對話標題,不加「這台電腦：」
+    rc_await: t("rc.await"), rc_fail: t("rc.fail"), rc_doneEmpty: t("rc.doneEmpty"), rc_awaitEmpty: t("rc.awaitEmpty"), rc_failEmpty: t("rc.failEmpty"),
     ...Object.fromEntries(TR_MENU_KEYS.map((k) => ["menu" + k.charAt(5).toUpperCase() + k.slice(6), t(k)])) });
 }
 // app 選單每一格的字(主行程 main.js appMenuTemplate 的 MENU_EN;字串表 menu.x → tm 的鍵 menuX)
