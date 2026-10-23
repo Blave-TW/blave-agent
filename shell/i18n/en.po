@@ -5323,7 +5323,7 @@ msgid "idea.cost"
 msgstr "This turn is billed by Blave AI usage from your balance; the more pages it reads, the more it uses."
 
 msgid "idea.msg"
-msgstr "Search the web for 3 backtestable {mkt}strategy ideas{topic}. Write each as explicit entry and exit rules, say whether it needs Blave data, and give the source URL. No code yet, and no call on today's direction. I'll pick one for you to backtest."
+msgstr "Search the web for 3 backtestable {mkt}strategy ideas{topic}. For each, give the logic in a sentence or two, flag anything that would change my pick, and give the source URL. Say what all three share once, at the top. Save the exact entry and exit rules until I pick one. End by recommending one and telling me that replying with its number starts the backtest. No code yet, and no call on today's direction."
 
 # en 的 {mkt} 尾端帶一個空白、{topic} 前面帶一個空白(句子本身不留空白)
 msgid "idea.mkt.crypto"

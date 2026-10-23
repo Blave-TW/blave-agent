@@ -48,17 +48,17 @@ if (!process.versions.electron) {
 
   // 上網找點子的那句(spec-0.1.13 §1.5 / §7)
   const IS = (L) => ({ msg: STR[L]["idea.msg"], topicTpl: STR[L]["idea.topicTpl"], mkt: { crypto: STR[L]["idea.mkt.crypto"], tw: STR[L]["idea.mkt.tw"], txf: STR[L]["idea.mkt.txf"], us: STR[L]["idea.mkt.us"], any: "" } });
-  ok("① ideaCompose zh:市場代進、方向進「」;不限 / 沒方向就整段不帶(逐字照 spec §7)", P.ideaCompose("tw", "外資連買", IS("zh")) === "上網幫我找 3 個台股可以回測的策略點子，方向是「外資連買」。每個寫成明確的進出場規則，註明要不要用到 Blave 資料，並附來源網址；先不要寫程式，也不要給今天的多空判斷。我挑一個再請你回測。"
-    && P.ideaCompose("any", "", IS("zh")) === "上網幫我找 3 個可以回測的策略點子。每個寫成明確的進出場規則，註明要不要用到 Blave 資料，並附來源網址；先不要寫程式，也不要給今天的多空判斷。我挑一個再請你回測。");
-  ok("① ideaCompose en:市場尾端一個空白、方向前面一個空白", P.ideaCompose("crypto", "funding rate", IS("en")) === 'Search the web for 3 backtestable crypto strategy ideas around "funding rate". Write each as explicit entry and exit rules, say whether it needs Blave data, and give the source URL. No code yet, and no call on today\'s direction. I\'ll pick one for you to backtest.'
-    && P.ideaCompose("any", null, IS("en")).startsWith("Search the web for 3 backtestable strategy ideas. Write"));
+  ok("① ideaCompose zh:市場代進、方向進「」;不限 / 沒方向就整段不帶(逐字照 spec §7)", P.ideaCompose("tw", "外資連買", IS("zh")) === "上網幫我找 3 個台股可以回測的策略點子，方向是「外資連買」。每個用一兩句講邏輯，標出會影響我挑選的提醒，並附來源網址；所有點子共通的事開頭講一次就好。進出場細節等我挑了再給。最後推薦一個，告訴我回數字就開始回測。先不要寫程式，也不要給今天的多空判斷。"
+    && P.ideaCompose("any", "", IS("zh")) === "上網幫我找 3 個可以回測的策略點子。每個用一兩句講邏輯，標出會影響我挑選的提醒，並附來源網址；所有點子共通的事開頭講一次就好。進出場細節等我挑了再給。最後推薦一個，告訴我回數字就開始回測。先不要寫程式，也不要給今天的多空判斷。");
+  ok("① ideaCompose en:市場尾端一個空白、方向前面一個空白", P.ideaCompose("crypto", "funding rate", IS("en")) === 'Search the web for 3 backtestable crypto strategy ideas around "funding rate". For each, give the logic in a sentence or two, flag anything that would change my pick, and give the source URL. Say what all three share once, at the top. Save the exact entry and exit rules until I pick one. End by recommending one and telling me that replying with its number starts the backtest. No code yet, and no call on today\'s direction.'
+    && P.ideaCompose("any", null, IS("en")).startsWith("Search the web for 3 backtestable strategy ideas. For each"));
   ok("① ideaCompose 台指期:句子點名 TXF／MXF／TMF,agent 才會去找台指期策略、用台指期資料回測", P.ideaCompose("txf", "", IS("zh")).startsWith("上網幫我找 3 個台指期（TXF／MXF／TMF）可以回測的策略點子。每個")
-    && P.ideaCompose("txf", "", IS("en")).startsWith("Search the web for 3 backtestable TAIEX futures (TXF/MXF/TMF) strategy ideas. Write"));
+    && P.ideaCompose("txf", "", IS("en")).startsWith("Search the web for 3 backtestable TAIEX futures (TXF/MXF/TMF) strategy ideas. For each"));
   ok("① ideaCompose 方向清洗:控制字元 → 空白、連續空白合併、去頭尾、截 40;只剩空白 → 不帶;方向裡的 {mkt} / {topic} 不再被代換", P.ideaCompose("any", "  a\n\tb\u0000  c  ", { msg: "[{mkt}|{topic}]", topicTpl: "<{t}>", mkt: { any: "" } }) === "[|<a b c>]"
     && P.ideaCompose("any", "x".repeat(60), { msg: "{mkt}{topic}", topicTpl: "{t}", mkt: { any: "" } }).length === 40 && P.ideaCompose("any", " \n ", { msg: "{mkt}{topic}.", topicTpl: "<{t}>", mkt: { any: "" } }) === "."
     && P.ideaCompose("tw", "{mkt}{topic}", { msg: "{mkt}{topic}", topicTpl: "<{t}>", mkt: { tw: "T" } }) === "T<{mkt}{topic}>");
-  ok("① ideaCompose 美股(0.1.30 Wei):照另外三個市場的寫法代進「美股」/ US stock", P.ideaCompose("us", "", IS("zh")) === "上網幫我找 3 個美股可以回測的策略點子。每個寫成明確的進出場規則，註明要不要用到 Blave 資料，並附來源網址；先不要寫程式，也不要給今天的多空判斷。我挑一個再請你回測。"
-    && P.ideaCompose("us", "", IS("en")).startsWith("Search the web for 3 backtestable US stock strategy ideas. Write"));
+  ok("① ideaCompose 美股(0.1.30 Wei):照另外三個市場的寫法代進「美股」/ US stock", P.ideaCompose("us", "", IS("zh")) === "上網幫我找 3 個美股可以回測的策略點子。每個用一兩句講邏輯，標出會影響我挑選的提醒，並附來源網址；所有點子共通的事開頭講一次就好。進出場細節等我挑了再給。最後推薦一個，告訴我回數字就開始回測。先不要寫程式，也不要給今天的多空判斷。"
+    && P.ideaCompose("us", "", IS("en")).startsWith("Search the web for 3 backtestable US stock strategy ideas. For each"));
   ok("① ideaCompose 範本壞掉 → null(寧可不送):msg 少一個槽 / 兩個槽、topicTpl 沒有 {t}、市場不在表上", [P.ideaCompose("any", "", { msg: "{topic}", topicTpl: "{t}", mkt: { any: "" } }), P.ideaCompose("any", "", { msg: "{mkt}{mkt}{topic}", topicTpl: "{t}", mkt: { any: "" } }),
     P.ideaCompose("any", "x", { msg: "{mkt}{topic}", topicTpl: "t", mkt: { any: "" } }), P.ideaCompose("jp", "", IS("zh")), P.ideaCompose("toString", "", IS("zh")), P.ideaCompose("any", "", null)].every((x) => x === null));
   // ── ② 接線 ──

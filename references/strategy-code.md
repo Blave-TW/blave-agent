@@ -36,7 +36,7 @@ When the user asks you to base a strategy on code they point you to — a script
 - **No lecture.** At most one sentence, the first time it comes up in a conversation: 「來源程式碼的使用由你自己負責。」 / "How the source code is used is your responsibility." Do not repeat it, and do not ask them to confirm it.
 - **A source or licence note goes in only when the user asks for one.** Do not add one to the strategy file on your own.
 - **What you cannot read, you say you cannot read.** A protected or invite-only script, or a page behind a login the user is not signed in to: say the source is not readable and build from the public description instead. Never work around an access restriction.
-- **Only on the user's request.** This covers code the user pointed you to; it is not a reason to go looking for other people's code on your own. The one exception: when the user asks for strategy ideas you may read open-source code to state its rules, but deliver rules + URL only (`strategy-ideas.md`).
+- **Only on the user's request.** This covers code the user pointed you to; it is not a reason to go looking for other people's code on your own. The one exception: when the user asks for strategy ideas you may read open-source code to state its rules, but deliver the idea's logic + URL only; exact rules per `strategy-ideas.md` › Output.
 - Every other rule stays as it is: classify Type A / B / C first, the backtest and its benchmark sentence, no invented data, and everything about orders and deployment.
 
 ## Naming & description
