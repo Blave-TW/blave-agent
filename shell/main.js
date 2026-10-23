@@ -4113,9 +4113,9 @@ function binanceNotify(v) {
     TRADING_LOST: ["key_permTitle", "key_permBody"] };
   // 回 true = 真的交給系統了。字還沒交過來 / 系統不支援 → false,binance_link 不會記成已通知,下一輪再試
   const k = map[v && v.reason]; if (!k || !tmLabels[k[0]] || !tmLabels[k[1]] || !Notification.isSupported()) return false;
-  // 視窗在前景不發(notifications §8.1 第 2 條):畫面已由 binance-state 推送重畫(標題列「串接失敗」、設定分頁帳戶列)。
-  // 回 false = 不記成已通知:binance_link 5 分鐘後重查,那時視窗已不在前景才補發系統通知
-  if (BrowserWindow.getFocusedWindow()) return false;
+  // 視窗在前景不發(notifications §8.1 第 2 條):畫面已由 binance-state 推送重畫(標題列「串接失敗」、設定分頁帳戶列),
+  // 顯示過就算告知過——回 true,binance_link 記成已通知、照 24 小時重查,不補發系統通知(Wei 拍板)
+  if (BrowserWindow.getFocusedWindow()) return true;
   const n = new Notification({ title: tmLabels[k[0]], body: tmLabels[k[1]].replace("{ip}", () => v.ip || "—") });
   p1Alive.add(n); const drop = () => p1Alive.delete(n);
   n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop); notifWatch(n, "binance " + v.reason);
