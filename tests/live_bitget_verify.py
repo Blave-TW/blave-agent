@@ -76,7 +76,9 @@ T1, T3, T2, T4.
       (rests); a crossing post_only (over the ask): refused with a code, or accepted and
       cancelled — if it filled, it is closed
   T8  equity with a position: open NVDA → raw rows / get_equity / positions → TP/SL 20%
-      away → raw TP/SL list → cancel_protective_orders → list [] → close
+      away → raw TP/SL list (UTA: one order holds both — a second place on the leg rewrites
+      it, measured 2026-10-23) → UTA: move the SL alone, the TP must survive → cancel own →
+      list [] → close
   T9  the real executors on NVDA through lib.execute in a scratch workspace (.env written
       0600 there, removed at the end; residual gate lowered for this run): chase open →
       chase close → TWAP open → TWAP close, one slice each
@@ -313,6 +315,12 @@ def close_chunked(env, order, sym, side, total, step_qty, say, tag, min_qty=0.0)
     return True
 
 
+def one_per_id(rows):
+    """A UTA tpsl order is listed once per kind (SL, TP): act on it once."""
+    seen = set()
+    return [o for o in rows if not (o["order_id"] in seen or seen.add(o["order_id"]))]
+
+
 def cleanup(env, acct, order, touched, own_ids, say, max_qty, min_qty=lambda sym: 0.0):
     """Only what this script made: its own orders / TP/SL (own()) and the legs of the
     symbols it traded — the order steps start only on a bare account (precheck), so
@@ -326,7 +334,7 @@ def cleanup(env, acct, order, touched, own_ids, say, max_qty, min_qty=lambda sym
                     say(f"CLEANUP {sym} cancel order", order.cancel_order(env, sym, order_id=o["order_id"]))
                 else:
                     say(f"CLEANUP {sym} NOT OURS, left alone", o)
-            for o in order.get_open_algo_orders(env, sym):
+            for o in one_per_id(order.get_open_algo_orders(env, sym)):
                 if own(o, own_ids):
                     say(f"CLEANUP {sym} cancel plan",
                         order.cancel_algo_order(env, sym, o["order_id"], o["stop_order_type"]))
@@ -350,7 +358,7 @@ def cleanup(env, acct, order, touched, own_ids, say, max_qty, min_qty=lambda sym
 
 def cancel_own_plans(env, order, sym, own_ids, say, tag):
     """The script's own TP/SL on `sym`, one by one; anyone else's is listed and kept."""
-    for o in order.get_open_algo_orders(env, sym):
+    for o in one_per_id(order.get_open_algo_orders(env, sym)):
         if own(o, own_ids):
             say(f"{tag} cancel own TP/SL", order.cancel_algo_order(env, sym, o["order_id"], o["stop_order_type"]))
         else:
@@ -923,7 +931,12 @@ def main():
             last = order.get_mark_price(env, "NVDAUSDT")
             say("T8 SL -20% / TP +20%", order.place_protective_orders(env, "NVDAUSDT", "long",
                                                                        sl_price=last * 0.8, tp_price=last * 1.2))
-            say("T8 raw TP/SL list", raw_plans("NVDAUSDT"))
+            say("T8 raw TP/SL list (UTA: ONE order, stopLoss AND takeProfit both set)", raw_plans("NVDAUSDT"))
+            if uta:
+                say("T8 move the SL alone to -25% (UTA: the TP must be carried over)",
+                    order.place_protective_orders(env, "NVDAUSDT", "long", sl_price=last * 0.75))
+                say("T8 raw TP/SL list after the move (want stopLoss ≈ -25% AND the same takeProfit)",
+                    raw_plans("NVDAUSDT"))
             cancel_own_plans(env, order, "NVDAUSDT", own_ids, say, "T8")
             say("T8 plan list after cancel (want [])", order.get_open_algo_orders(env, "NVDAUSDT"))
             say("T8 close", order.close_position_partial(env, "NVDAUSDT", "long", q))

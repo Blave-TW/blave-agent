@@ -744,11 +744,15 @@ class BitgetUTA(Bitget):
         if path == "/api/v3/trade/place-strategy-order":
             if not self.legs.get((q["symbol"], q["posSide"])):
                 return bad("43023", "Insufficient position, can not set profit or stop loss")
-            i = self.oid()
-            self.strat[i] = {"orderId": i, "clientOid": q.get("clientOid"), "category": "USDT-FUTURES",
+            # one tpsl order per leg: a second place rewrites it (same id, first clientOid, omitted
+            # fields emptied) — measured 2026-10-23
+            i = next((k for k, x in self.strat.items() if x["symbol"] == q["symbol"] and x["side"] == q["side"]),
+                     None) or self.oid()
+            cid = self.strat.get(i, {}).get("clientOid") or q.get("clientOid")
+            self.strat[i] = {"orderId": i, "clientOid": cid, "category": "USDT-FUTURES",
                              "symbol": q["symbol"], "side": q["side"], "posSide": q["posSide"], "status": "pending",
                              "stopLoss": q.get("stopLoss", ""), "takeProfit": q.get("takeProfit", "")}
-            return 200, ok({"orderId": i, "clientOid": q.get("clientOid")})
+            return 200, ok({"orderId": i, "clientOid": cid})
         if path == "/api/v3/trade/unfilled-strategy-orders":
             rows = list(self.strat.values()) + ([] if q.get("type") == "tpsl" else self.ustrat_other)
             return 200, ok({"list": rows})

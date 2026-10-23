@@ -92,7 +92,10 @@ RULES_TTL_S = 600  # symbolStatus moves (limit_open / restrictedAPI): not an hou
 BELOW_MIN = {"45110", "43027"}  # classic / UTA: order value under the minimum → quiet False
 # classic one-way, reduceOnly over the held size: refused whole, nothing closed (measured T12
 # 2026-10-22; hedge mode instead caps the close at the leg, T3)
-OVER_CLOSE = "40804"
+# classic one-way 40804 (measured T12 2026-10-22); UTA one-way 25231 "Close quantity cannot
+# exceed the held position quantity" (measured T12 2026-10-23). UTA hedge with no reduceOnly
+# caps the close at the leg instead (T3, same day)
+OVER_CLOSE = {"40804", "25231"}
 UNKNOWN_SYMBOL = "40034"  # "Parameter NOPEUSDT does not exist" — public contracts, measured 2026-10-20
 # order gone / never existed — replies ccxt records; T7 of the live script measures them
 _CANCEL_GONE = {"40768", "43001", "40109"}  # classic cancel: 43001 measured live (R9, 2026-10-22)
@@ -639,7 +642,7 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None, reduce
     except BitgetError as e:
         if e.code in BELOW_MIN:  # value under minTradeUSDT after the venue's own rounding
             return False
-        if not (reduce_only and e.code == OVER_CLOSE):
+        if not (reduce_only and e.code in OVER_CLOSE):
             raise
         # the leg shrank between the read and the send (a stop fired, a resting close filled):
         # a one-way close over the held size is refused whole (measured) — re-read, send what is left
@@ -810,22 +813,26 @@ def get_open_orders(env, symbol=None):
 _PLAN_TYPES = (("sl", "pos_loss"), ("tp", "pos_profit"))
 
 
-def _protective_body(api, pos_mode, vsym, direction, kind, plan, trigger, margin=None):
-    """The body of one SL or TP on the `direction` leg. Classic: position TP/SL,
-    holdSide = the leg (hedge) or the position's buy/sell (one-way). UTA: a `tpsl`
-    strategy order in `full` mode (the whole leg), side = the CLOSING direction +
-    posSide = the leg in both position modes (as ccxt sends it; T8U / T12U measure
-    one-way), one order per kind."""
-    if api == "uta":
-        k = "sl" if kind == "sl" else "tp"
-        body = {
-            "category": CATEGORY, "symbol": vsym, "type": "tpsl", "tpslMode": "full",
-            "side": "sell" if direction == "long" else "buy", "posSide": direction,
-            ("stopLoss" if k == "sl" else "takeProfit"): trigger,
-            f"{k}TriggerBy": "mark", f"{k}OrderType": "market", "clientOid": _cid()}
-        if margin:
-            body["marginMode"] = margin  # UTA error 31008: an isolated leg is not found without it
-        return body
+def _uta_tpsl_body(vsym, direction, sl=None, tp=None, margin=None):
+    """UTA: ONE `tpsl` strategy order in `full` mode carrying both the SL and the TP of the
+    `direction` leg. Bitget keeps one such order per leg: a second place-strategy-order on
+    the leg rewrites the first in place (same orderId, the field it omits emptied —
+    measured T8 / T11 / T12 2026-10-23: an SL then a TP left the TP only). side = the
+    CLOSING direction, posSide = the leg in both position modes."""
+    body = {"category": CATEGORY, "symbol": vsym, "type": "tpsl", "tpslMode": "full",
+            "side": "sell" if direction == "long" else "buy", "posSide": direction, "clientOid": _cid()}
+    if sl is not None:
+        body.update(stopLoss=sl, slTriggerBy="mark", slOrderType="market")
+    if tp is not None:
+        body.update(takeProfit=tp, tpTriggerBy="mark", tpOrderType="market")
+    if margin:
+        body["marginMode"] = margin  # UTA error 31008: an isolated leg is not found without it
+    return body
+
+
+def _protective_body(pos_mode, vsym, direction, plan, trigger):
+    """The body of one classic SL or TP on the `direction` leg: position TP/SL,
+    holdSide = the leg (hedge) or the position's buy/sell (one-way). UTA: _uta_tpsl_body."""
     hold = direction if pos_mode == "hedge" else ("buy" if direction == "long" else "sell")
     return {"marginCoin": MARGIN_COIN, "productType": PRODUCT, "symbol": vsym,
                        "planType": plan, "triggerPrice": trigger, "triggerType": "mark_price",
@@ -845,16 +852,14 @@ def place_protective_orders(env, symbol, direction, sl_price=None, tp_price=None
     placed = {}
     try:
         api, pos_mode, margin_mode = _modes(env, vsym)
-        for kind, plan in _PLAN_TYPES:
+        if api == "uta":
+            placed = _place_uta_tpsl(env, symbol, vsym, direction, sl_price, tp_price, margin_mode)
+        for kind, plan in (() if api == "uta" else _PLAN_TYPES):
             trigger = sl_price if kind == "sl" else tp_price
             if trigger is None:
                 continue
-            body = _protective_body(api, pos_mode, vsym, direction, kind, plan,
-                                    _trigger_price(env, symbol, trigger), margin_mode)
-            if api == "uta":
-                o = _request("POST", "/api/v3/trade/place-strategy-order", env, body)
-            else:
-                o = _request("POST", "/api/v2/mix/order/place-tpsl-order", env, body)
+            body = _protective_body(pos_mode, vsym, direction, plan, _trigger_price(env, symbol, trigger))
+            o = _request("POST", "/api/v2/mix/order/place-tpsl-order", env, body)
             if not (o or {}).get("orderId"):
                 raise BitgetError(f"bitget {vsym}: {kind} reply has no orderId ({str(o)[:160]})")
             placed[kind] = {"algoId": str(o["orderId"]), "raw": o}
@@ -866,12 +871,31 @@ def place_protective_orders(env, symbol, direction, sl_price=None, tp_price=None
         raise ProtectionFailed(f"{symbol} {direction} position may be NAKED — placing protective "
                                f"orders failed after {list(placed)} succeeded: {e}") from e
     if verify and placed:
-        open_ids = {o["order_id"] for o in get_open_algo_orders(env, symbol)}
-        missing = [k for k, o in placed.items() if o["algoId"] not in open_ids]
+        # per kind, not per id: on a UTA one id carries both, and a rewrite can drop one
+        listed = {(o["order_id"], o["stop_order_type"]) for o in get_open_algo_orders(env, symbol)}
+        missing = [k for k, o in placed.items() if (o["algoId"], dict(_PLAN_TYPES)[k]) not in listed]
         if missing:
             raise ProtectionFailed(f"{symbol} {direction}: protective order(s) {missing} accepted "
                                    f"but NOT in the open plan list — position may be naked")
     return placed
+
+
+def _place_uta_tpsl(env, symbol, vsym, direction, sl_price, tp_price, margin_mode):
+    """One tpsl order for the leg. Asked for one kind only, the other is carried over from
+    the leg's open tpsl order — the place below rewrites that order and would drop it."""
+    closing = "sell" if direction == "long" else "buy"
+    keep = {o["stop_order_type"]: o["trigger_price"] for o in get_open_algo_orders(env, symbol)
+            if o["side"] == closing}
+    sl = _trigger_price(env, symbol, sl_price) if sl_price is not None else (
+        _trigger_price(env, symbol, keep["pos_loss"]) if keep.get("pos_loss") else None)
+    tp = _trigger_price(env, symbol, tp_price) if tp_price is not None else (
+        _trigger_price(env, symbol, keep["pos_profit"]) if keep.get("pos_profit") else None)
+    o = _request("POST", "/api/v3/trade/place-strategy-order", env,
+                 _uta_tpsl_body(vsym, direction, sl=sl, tp=tp, margin=margin_mode))
+    if not (o or {}).get("orderId"):
+        raise BitgetError(f"bitget {vsym}: tpsl reply has no orderId ({str(o)[:160]})")
+    oid = str(o["orderId"])
+    return {k: {"algoId": oid, "raw": o} for k, v in (("sl", sl), ("tp", tp)) if v is not None}
 
 
 def open_position(env, symbol, direction, qty, sl_price=None, tp_price=None,
@@ -903,16 +927,21 @@ def get_open_algo_orders(env, symbol=None):
                 continue
             if str(o.get("status") or "pending").lower() not in ("pending", "submitting"):
                 continue
-            sl = o.get("stopLoss") not in (None, "")
-            out.append({
-                "order_id": str(o.get("orderId") or ""),
-                "client_order_id": str(o.get("clientOid") or ""),
-                "symbol": canonical_symbol(o.get("symbol")),
-                "side": o.get("side"),
-                "pos_side": o.get("posSide"),
-                "stop_order_type": "pos_loss" if sl else "pos_profit",
-                "trigger_price": float((o.get("stopLoss") if sl else o.get("takeProfit")) or 0),
-            })
+            # one order carries the leg's SL and TP: one row per kind, same order_id. posSide
+            # is not the leg on a one-way account (a long's TP listed posSide short, T12
+            # 2026-10-23) — side (the closing direction) is
+            for kind, field in (("pos_loss", "stopLoss"), ("pos_profit", "takeProfit")):
+                if o.get(field) in (None, ""):
+                    continue
+                out.append({
+                    "order_id": str(o.get("orderId") or ""),
+                    "client_order_id": str(o.get("clientOid") or ""),
+                    "symbol": canonical_symbol(o.get("symbol")),
+                    "side": o.get("side"),
+                    "pos_side": o.get("posSide"),
+                    "stop_order_type": kind,
+                    "trigger_price": float(o.get(field) or 0),
+                })
         return out
     q = {"productType": PRODUCT, "planType": "profit_loss"}
     if vsym:
@@ -932,7 +961,7 @@ def get_open_algo_orders(env, symbol=None):
 def cancel_algo_order(env, symbol, order_id, plan_type=None):
     """Cancel one TP/SL order. 'canceled' when Bitget lists it as cancelled (UTA: the
     order is no longer pending), 'order_not_found' when it is gone; any other failure
-    raises."""
+    raises. UTA: the order holds the leg's SL AND TP — cancelling it removes both."""
     if acct.account_mode(env) == "uta":
         return _cancel_strategy_v3(env, symbol, order_id)
     body = {"orderIdList": [{"orderId": str(order_id)}], "symbol": venue_symbol(symbol),
@@ -979,7 +1008,17 @@ def _cancel_strategy_v3(env, symbol, order_id):
 def cancel_protective_orders(env, symbol):
     """Cancel every TP/SL plan order on the symbol. Returns the cancel results."""
     return [cancel_algo_order(env, symbol, o["order_id"], o["stop_order_type"])
-            for o in get_open_algo_orders(env, symbol)]
+            for o in _one_per_id(get_open_algo_orders(env, symbol))]
+
+
+def _one_per_id(rows):
+    """A UTA tpsl order is listed once per kind: cancel it once."""
+    seen, out = set(), []
+    for o in rows:
+        if o["order_id"] not in seen:
+            seen.add(o["order_id"])
+            out.append(o)
+    return out
 
 
 def _symbol_held(env, vsym):
@@ -1025,7 +1064,7 @@ def sweep_orphan_stops(env, positions=None):
             if _symbol_held(env, vsym) > 0 or _symbol_held(env, vsym) > 0:
                 continue
             res = [cancel_algo_order(env, sym, x["order_id"], x["stop_order_type"])
-                   for x in stops if x["symbol"] == sym]
+                   for x in _one_per_id([x for x in stops if x["symbol"] == sym])]
             guard.audit("stops_cancelled_on_flat", symbol=vsym, results=res)
             swept.append(sym)
         except Exception as e:

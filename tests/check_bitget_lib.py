@@ -983,6 +983,30 @@ UPOS[:] = [upos("NVDAUSDT", "long", "0.05")]
 order.close_position_partial(ENV, "NVDAUSDT", "long", 0.03)
 check(UPOSTS[-1]["side"] == "sell" and UPOSTS[-1]["reduceOnly"] == "yes" and "posSide" not in UPOSTS[-1],
       "UTA one-way close long: sell + reduceOnly yes, no posSide")
+_n25231 = {"n": 0}
+
+
+def u25231(p):
+    # the leg shrank to 0.02 between the read and the send: Bitget refuses the 0.05 close whole
+    _n25231["n"] += 1
+    if _n25231["n"] == 1:
+        UPOS[:] = [upos("NVDAUSDT", "long", "0.02")]
+        return err("25231", "Close quantity cannot exceed the held position quantity")
+    return uplace(p)
+
+
+route("POST", "/api/v3/trade/place-order", u25231)
+UPOS[:] = [upos("NVDAUSDT", "long", "0.05")]
+res = order.close_position_partial(ENV, "NVDAUSDT", "long", 0.05)
+check(res and UPOSTS[-1]["qty"] == "0.02" and _n25231["n"] == 2,
+      "UTA one-way close meets 25231 (measured T12): re-read the leg, send what is left", UPOSTS[-1])
+route("POST", "/api/v3/trade/place-order", lambda p: err("25231", "Close quantity cannot exceed the held position quantity"))
+try:
+    order.close_position_partial(ENV, "NVDAUSDT", "long", 0.02)
+    check(False, "25231 twice raises")
+except acct.BitgetError as e:
+    check(str(e).startswith("[order_reject:reduce_only_rejected]"), "25231 that persists: reduce_only_rejected", str(e))
+route("POST", "/api/v3/trade/place-order", uplace)
 UPOS[:] = []
 
 # reply without orderId, dropped POST, HALT, attribution — the v3 transport
@@ -1144,15 +1168,22 @@ route("GET", "/api/v3/trade/unfilled-orders", lambda p: ok({"list": None, "curso
 check(order.get_open_orders(ENV) == [], "UTA open orders: data.list null = none")
 
 # ── protective (tpsl strategy orders) ────────────────────────────────────────
+# As measured 2026-10-23: one tpsl full order per leg; a second place on the leg rewrites it in
+# place (same orderId, the first clientOid kept, any field it omits emptied).
 STRAT = {}
 
 
 def ustrat(p):
-    oid = f"u{len(STRAT) + 1}"
-    STRAT[oid] = {"orderId": oid, "clientOid": p["clientOid"], "category": p["category"], "symbol": p["symbol"],
-                  "side": p["side"], "posSide": p["posSide"], "status": "pending",
-                  "stopLoss": p.get("stopLoss", ""), "takeProfit": p.get("takeProfit", "")}
-    return ok({"orderId": oid, "clientOid": p["clientOid"]})
+    oid = next((k for k, x in STRAT.items() if x["symbol"] == p["symbol"] and x["side"] == p["side"]), None)
+    if oid is None:
+        oid = f"u{len(STRAT) + 1}"
+        while oid in STRAT:
+            oid += "x"
+        STRAT[oid] = {"orderId": oid, "clientOid": p["clientOid"]}
+    STRAT[oid].update({"category": p["category"], "symbol": p["symbol"], "side": p["side"],
+                       "posSide": p["posSide"], "status": "pending",
+                       "stopLoss": p.get("stopLoss", ""), "takeProfit": p.get("takeProfit", "")})
+    return ok({"orderId": oid, "clientOid": STRAT[oid]["clientOid"]})
 
 
 def ustrat_list(p):
@@ -1166,6 +1197,10 @@ def ustrat_cancel(p):
     return ok(None)
 
 
+def strat_posts():
+    return [c["body"] for c in CALLS if c["path"] == "/api/v3/trade/place-strategy-order"]
+
+
 route("POST", "/api/v3/trade/place-strategy-order", ustrat)
 route("GET", "/api/v3/trade/unfilled-strategy-orders", lambda p: ok({"list": None, "cursor": None}))
 check(order.get_open_algo_orders(ENV) == [], "UTA strategy orders: data.list null = none")
@@ -1173,27 +1208,47 @@ route("GET", "/api/v3/trade/unfilled-strategy-orders", ustrat_list)
 route("POST", "/api/v3/trade/cancel-strategy-order", ustrat_cancel)
 del CALLS[:]
 placed = order.place_protective_orders(ENV, "NVDAUSDT", "long", sl_price=170.004, tp_price=200.006)
-bodies = [c["body"] for c in CALLS if c["path"] == "/api/v3/trade/place-strategy-order"]
-check(len(bodies) == 2 and set(placed) == {"sl", "tp"}
-      and all(b["type"] == "tpsl" and b["tpslMode"] == "full" and b["side"] == "sell" and b["posSide"] == "long"
-              and b["category"] == "USDT-FUTURES" for b in bodies)
-      and bodies[0]["stopLoss"] == "170.00" and bodies[0]["slTriggerBy"] == "mark" and bodies[0]["slOrderType"] == "market"
-      and "takeProfit" not in bodies[0] and bodies[1]["takeProfit"] == "200.01" and bodies[1]["tpTriggerBy"] == "mark",
-      "UTA TP/SL on a long: two tpsl full orders, side SELL (the closing direction) + posSide long, mark trigger", bodies)
+bodies = strat_posts()
+al = order.get_open_algo_orders(ENV, "NVDAUSDT")
+check(len(bodies) == 1 and set(placed) == {"sl", "tp"} and placed["sl"]["algoId"] == placed["tp"]["algoId"]
+      and bodies[0]["type"] == "tpsl" and bodies[0]["tpslMode"] == "full" and bodies[0]["side"] == "sell"
+      and bodies[0]["posSide"] == "long" and bodies[0]["stopLoss"] == "170.00" and bodies[0]["slTriggerBy"] == "mark"
+      and bodies[0]["slOrderType"] == "market" and bodies[0]["takeProfit"] == "200.01"
+      and bodies[0]["tpTriggerBy"] == "mark" and bodies[0]["tpOrderType"] == "market",
+      "UTA TP/SL on a long: ONE tpsl full order carrying both, side SELL (closing) + posSide long, mark trigger", bodies)
+check(sorted((x["stop_order_type"], x["trigger_price"]) for x in al) == [("pos_loss", 170.0), ("pos_profit", 200.01)]
+      and len({x["order_id"] for x in al}) == 1,
+      "UTA open TP/SL: the one order is listed once per kind (SL and TP both visible, same id)", al)
+del CALLS[:]
+order.place_protective_orders(ENV, "NVDAUSDT", "long", sl_price=175)
+b = strat_posts()[-1]
+al = order.get_open_algo_orders(ENV, "NVDAUSDT")
+check(b["stopLoss"] == "175.00" and b["takeProfit"] == "200.01"
+      and sorted((x["stop_order_type"], x["trigger_price"]) for x in al) == [("pos_loss", 175.0), ("pos_profit", 200.01)],
+      "UTA: moving the SL alone carries the leg's TP over (a place without it would empty it on Bitget)", b)
 SETTINGS["holdMode"] = "hedge_mode"
 order.place_protective_orders(ENV, "NVDAUSDT", "short", sl_price=190)
-b = [c["body"] for c in CALLS if c["path"] == "/api/v3/trade/place-strategy-order"][-1]
-check(b["side"] == "buy" and b["posSide"] == "short" and b["stopLoss"] == "190.00", "UTA TP/SL on a short: side BUY + posSide short")
+b = strat_posts()[-1]
+check(b["side"] == "buy" and b["posSide"] == "short" and b["stopLoss"] == "190.00" and "takeProfit" not in b
+      and len(STRAT) == 2, "UTA TP/SL on a short: side BUY + posSide short, its own order (the long's kept)", b)
 SETTINGS["holdMode"] = "one_way_mode"
 SETTINGS["symbolConfigList"] = [{"category": "USDT-FUTURES", "symbol": "NVDAUSDT", "marginMode": "isolated"}]
 order.place_protective_orders(ENV, "NVDAUSDT", "long", sl_price=171)
-b = [c["body"] for c in CALLS if c["path"] == "/api/v3/trade/place-strategy-order"][-1]
+b = strat_posts()[-1]
 check(b.get("marginMode") == "isolated", "UTA TP/SL on an isolated symbol names marginMode (UTA error 31008 otherwise)")
 SETTINGS["symbolConfigList"] = []
-order.cancel_algo_order(ENV, "NVDAUSDT", [x for x in STRAT if STRAT[x]["stopLoss"] == "171.00"][0])
-al = order.get_open_algo_orders(ENV, "NVDAUSDT")
-check(sorted(x["stop_order_type"] for x in al) == ["pos_loss", "pos_loss", "pos_profit"]
-      and {x["trigger_price"] for x in al} == {170.0, 200.01, 190.0}, "UTA open TP/SL: pending tpsl orders, kind from the price field", al)
+
+
+def ustrat_drop_tp(p):
+    return ustrat({k: v for k, v in p.items() if not k.startswith("tp") and k != "takeProfit"})
+
+
+route("POST", "/api/v3/trade/place-strategy-order", ustrat_drop_tp)
+try:
+    order.place_protective_orders(ENV, "NVDAUSDT", "long", sl_price=170, tp_price=210)
+    check(False, "UTA: a TP the order does not carry raises")
+except order.ProtectionFailed:
+    check(True, "UTA: accepted but the listed order lacks the TP → ProtectionFailed (checked per kind, not per id)")
 route("POST", "/api/v3/trade/place-strategy-order", lambda p: ok({"orderId": "ghost"}))
 try:
     order.place_protective_orders(ENV, "NVDAUSDT", "long", sl_price=170)
@@ -1201,16 +1256,23 @@ try:
 except order.ProtectionFailed:
     check(True, "UTA: a TP/SL accepted but not pending → ProtectionFailed")
 route("POST", "/api/v3/trade/place-strategy-order", ustrat)
-check(order.cancel_algo_order(ENV, "NVDAUSDT", "u1")["status"] == "canceled" and "u1" not in STRAT,
-      "UTA cancel TP/SL: cancel-strategy-order, confirmed off the pending list")
+order.place_protective_orders(ENV, "NVDAUSDT", "long", sl_price=170, tp_price=210)
+del CALLS[:]
+res = order.cancel_protective_orders(ENV, "NVDAUSDT")
+cancels = [c for c in CALLS if c["path"] == "/api/v3/trade/cancel-strategy-order"]
+check(len(cancels) == 2 and all(r["status"] == "canceled" for r in res) and not STRAT,
+      "UTA cancel_protective_orders: each order cancelled once (long + short), not once per kind", (cancels, res))
 check(order.cancel_algo_order(ENV, "NVDAUSDT", "u1")["status"] == "order_not_found",
       "UTA: cancelling a TP/SL that is gone → order_not_found")
+order.place_protective_orders(ENV, "NVDAUSDT", "long", sl_price=170, tp_price=210)
 UPOS[:] = [upos("ACNSTOCKUSDT", "long", "0.03", mark="250")]
 STRAT["u9"] = {"orderId": "u9", "symbol": "ACNSTOCKUSDT", "side": "sell", "posSide": "long", "status": "pending",
                "stopLoss": "200", "takeProfit": ""}
+del CALLS[:]
 swept = order.sweep_orphan_stops(ENV, acct.get_positions(ENV))
-check(swept == ["NVDAUSDT"] and set(STRAT) == {"u9"}, "UTA sweep: a flat symbol's TP/SL cancelled, a held symbol's kept",
-      (swept, STRAT))
+cancels = [c for c in CALLS if c["path"] == "/api/v3/trade/cancel-strategy-order"]
+check(swept == ["NVDAUSDT"] and set(STRAT) == {"u9"} and len(cancels) == 1,
+      "UTA sweep: a flat symbol's TP/SL order cancelled once, a held symbol's kept", (swept, STRAT))
 UPOS[:] = []
 
 # ── flows ────────────────────────────────────────────────────────────────────
