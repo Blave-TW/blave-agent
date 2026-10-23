@@ -57,7 +57,24 @@ Applies when the user wants strategy ideas from the web: the app's 「上網找�
 
 ## Output
 
-What the request asks (the app's message: 3 ideas, explicit entry and exit rules, whether Blave data is needed, the source URL). **Each idea ends with its source URL on a line of its own** — a site name alone is not a source. An idea found on several sites cites the original one.
+This reply exists so the user can pick one — the chat column is narrow and a reply longer than one phone screen goes unread. So it carries only what the pick needs:
+
+- One opening sentence for what every idea shares (whether Blave data is needed, that you read only the page or also the code). Never repeat it per idea.
+- Per idea: its logic in one plain sentence; at most two caveats that would change the pick (tested only on another market, too few trades, parameters the source leaves out); the source URL on a line of its own — the script or article page itself, never a list page or a site name. An idea found on several sites cites the original one.
+- Exact entry / exit / stop rules wait until the user picks one or asks for them.
+- End with the idea you recommend and a one-clause reason, and say that replying with its number starts the backtest.
+
+Reply in the user's language; the example below is the shape, not the wording.
+
+<example>
+All three use only public Binance klines, no Blave data; I read the page descriptions, not the code.
+1. **First-4-hour fake breakout**: price breaks out of the UTC 0–4 range and closes back inside, so enter the other way. The author tested it only on gold.
+https://www.tradingview.com/script/…
+2. **Bollinger squeeze breakout (ETH)**: volatility contracts, then expands; follow the direction. The page shows only 11 trades, and two parameters are left for us to fill in.
+https://jesse.trade/strategies/…
+3. …
+I'd test 1 first: its rules are the most complete and need no extra parameters. Reply with a number to start the backtest.
+</example>
 
 ## Fit check
 
