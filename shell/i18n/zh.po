@@ -2237,8 +2237,12 @@ msgstr "還沒有權益快照。連上交易所後，Blave 開著時每個整點
 msgid "tr.ov.emptyCloud"
 msgstr "還沒有權益快照。連上交易所後，主機每個整點記一筆。"
 
+# 只有一筆、畫不出線(trade.js trPaintOver);本機／雲端各一句,後半同 empty／emptyCloud
 msgid "tr.ov.emptyBaseline"
-msgstr "紀錄還不夠畫曲線，至少要兩筆。"
+msgstr "紀錄還不夠畫曲線，要兩筆。Blave 開著時每個整點記一筆。"
+
+msgid "tr.ov.emptyBaselineCloud"
+msgstr "紀錄還不夠畫曲線，要兩筆。主機每個整點記一筆。"
 
 msgid "tr.ov.basisNote"
 msgstr "這之前的點只算下單錢包，之後是全帳戶合計；兩段不相連。"

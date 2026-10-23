@@ -93,6 +93,8 @@ const xpDisabled = () => running === true || !!XP.tm;
 // 三個平台都轉不了(組合、Type B):選單打開會一個能選的都沒有,觸發器直接停用、按了講原因(設計稽核 S6,同時光機)
 const xpOffNow = () => (typeof RP !== "undefined" && RP ? xpOffAll(RP.data) : null);
 const XP_OFF_KEY = { portfolio: "xp.off.portfolio", nosignal: "xp.off.nosignal", crypto: "xp.off.crypto" };
+// 選單列的 desc 沒有句號(Unavailable info);同一句放進 #xp-note 就是一句話,要跟 xp.why.* 一樣收句號(設計稽核 v030 S7)
+const xpEnd = (s) => s + (LANG === "zh" ? "。" : ".");
 
 /* ── 觸發器 + 選單(分頁列右端;同 web .tab-act)── */
 function xpDom() {
@@ -138,7 +140,7 @@ function xpNote(text) { const n = $("xp-note"); if (!n) return; delete n.dataset
 function xpOpen() {
   const b = $("xp-btn"), m = $("xp-menu");
   if (xpDisabled()) { if (running === true) { busyHit("send"); xpNote(t("xp.why.busy")); busyFixLink($("xp-note"), "stop"); } else xpNote(t("xp.why.tm")); return; }
-  const off0 = xpOffNow(); if (off0) { xpNote(t(XP_OFF_KEY[off0])); return; }
+  const off0 = xpOffNow(); if (off0) { xpNote(xpEnd(t(XP_OFF_KEY[off0]))); return; }
   const d = RP.data; m.textContent = "";
   for (const k of XP_ORDER) {
     const lang = xpMk("span", "lang", "· " + xpLang(k));

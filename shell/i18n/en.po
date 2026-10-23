@@ -2226,8 +2226,12 @@ msgstr "No equity snapshots yet. Once an exchange is connected, one is recorded 
 msgid "tr.ov.emptyCloud"
 msgstr "No equity snapshots yet. Once an exchange is connected, the machine records one each hour."
 
+# 只有一筆、畫不出線(trade.js trPaintOver);本機／雲端各一句,後半同 empty／emptyCloud
 msgid "tr.ov.emptyBaseline"
-msgstr "Not enough records for a curve; it needs two."
+msgstr "The curve needs two records. One is recorded each hour while Blave is open."
+
+msgid "tr.ov.emptyBaselineCloud"
+msgstr "The curve needs two records. The machine records one each hour."
 
 msgid "tr.ov.basisNote"
 msgstr "Earlier points count only the trading wallet; later ones the whole account. The two parts aren’t joined."
@@ -8001,7 +8005,7 @@ msgstr "Optimize"
 
 # 優化分頁「套用金額」停用的原因:手上那份權重是別的方法算的,表照畫(portfolio.js mgSuggestTable;C 案)
 msgid "mg.propOtherAlloc"
-msgstr "These weights use {method}"
+msgstr "Computed with {method}"
 
 msgid "mg.optRunning"
 msgstr "Optimizing…"

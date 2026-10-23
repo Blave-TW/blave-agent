@@ -1372,7 +1372,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("§8 破壞性次鈕的字:en「Close positions and release」(不讀成「關掉這個框」,同網頁);zh 跟頁首鈕同一個字「平倉並解除暫停」(ux §3.2)", /"tr\.relCloseGo": "Close positions and release"/.test(S2) && /"tr\.relCloseGo": "平倉並解除暫停"/.test(S2)
         && /"tr\.releaseClose": "平倉並解除暫停"/.test(S2) && /"tr\.releaseClose": "Close positions and release"/.test(S2) && !/Close and release/.test(S2)); }
     const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
-    ok("視覺稽核 2-4:停用的實心鈕有一條比填色亮一階的框(只靠填色對 darkBody 只有 1.5:1)", /\.btn-fill:disabled(?:, [^{,]+)* \{ background: var\(--surface-muted\); color: var\(--ink-3\); border: 1px solid var\(--color-greyMedium\); cursor: default; opacity: 1; \}/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")));
+    ok("視覺稽核 2-4:停用的實心鈕有一條比填色亮一階的框(只靠填色對 darkBody 只有 1.5:1)", /\.btn-fill:disabled(?:, [^{,]+)* \{ background: var\(--surface-muted\); color: var\(--ink-3\); border: 1px solid var\(--color-greyMedium\); cursor: not-allowed; opacity: 1; \}/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")));
     ok("稽核 R5:原因行收掉 / 重建之前,焦點在那條「部位」連結上就先交給標題(不掉到 BODY);標頭早退拿掉主鈕時同理",
       /const hadFocus = p\.contains\(document\.activeElement\);/.test(noamt) && /if \(!key\) \{ if \(hadFocus\) \$\("tr-h"\)\.focus\(\); p\.textContent = ""; p\.classList\.remove\("cx-wait"\); delete p\.dataset\.key; return; \}/.test(noamt)
       && !/p\.remove\(\)/.test(noamt) && /\.main-head \.tr-noamt \{ min-height: 18px; \}/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8"))   // #108:節點常駐、只清內容
@@ -1741,7 +1741,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const cutF = (n) => { const i = src.indexOf("function " + n + "("); if (i < 0) throw new Error("no " + n); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return (src.slice(i - 6, i) === "async " ? "async " : "") + src.slice(i, k + 1); } throw new Error("no " + n); };
     const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")), envb = src.slice(src.indexOf("/* ── 視角純邏輯("), src.indexOf("/* ── 視角純邏輯到此"));
     const consts = ["TR_RANGES", "tr2", "trMD", "TR_PERF_REASON", "TR_PERF_VOL_EST", "trPerfReason"].map((c) => { const m = src.match(new RegExp("^const " + c + " = [^\\n]*", "m")); if (!m) throw new Error("no " + c); return m[0].replace(/^const /, "var "); }).join("\n");
-    const fns = ["trEl", "trOvEmptyKey", "trSec", "trReport", "trVenueId", "trVenueLabel", "trCcy", "trUnit", "trWithUnit", "trEquity", "trIsPaper", "trFmt", "trFmt2", "trStamp", "trHM", "trTipLabel", "trStatCell", "trPct", "trOvStats", "trOvCurve", "trCurvePoints", "trLoadCurve", "trPaintOver", "trWith", "trOvPerf", "trPerfFmt", "trPnlServerPoints", "trZRows"].map(cutF).join("\n");
+    const fns = ["trEl", "trOvEmptyKey", "trOvBaselineKey", "trSec", "trReport", "trVenueId", "trVenueLabel", "trCcy", "trUnit", "trWithUnit", "trEquity", "trIsPaper", "trFmt", "trFmt2", "trStamp", "trHM", "trTipLabel", "trStatCell", "trPct", "trOvStats", "trOvCurve", "trCurvePoints", "trLoadCurve", "trPaintOver", "trWith", "trOvPerf", "trPerfFmt", "trPnlServerPoints", "trZRows"].map(cutF).join("\n");
     const node = (tag) => ({ tag, id: "", className: "", kids: [], text: "", dataset: {}, attrs: {}, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); },
       setAttribute(k, v) { this.attrs[k] = v; }, addEventListener() {}, get textContent() { return this.text + this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }, set textContent(v) { this.text = v; this.kids = []; } });
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
@@ -1794,8 +1794,9 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && z.day.textContent === "0TWD" && !/pos|neg/.test(z.day.className), J([up.eq.textContent, up.day.textContent, dn.day.textContent, z.day.textContent])); }
     { const all = paint(bag("cloud", { curve: { code: "OK", curve: [], currency: "USDT", baseline_ts: null, today: null, unrealized: null, anomalies: [] } }));
       const one = paint(bag("cloud", { curve: { code: "OK", curve: [{ ts: now - H, equity: 5, basis: "flow0" }], currency: "USDT", baseline_ts: now - H, today: null, unrealized: null, anomalies: [] } }));
-      ok("雲端:讀到了但沒有點 →「還沒有權益快照」(雲端那句,主機自己記);只有一筆 →「紀錄還不夠畫出曲線」;當日損益是「—」不是 0", states(all).join() === "tr.ov.emptyCloud" && !canvasOf(all) && dayCell(all).textContent === "—"
-        && states(one).join() === "tr.ov.emptyBaseline" && !canvasOf(one)); }
+      const oneL = paint(bag("local", { curve: { ...LOCAL, curve: [{ ts: now - H, equity: 5, basis: "wallets" }], today: null } }));
+      ok("雲端:讀到了但沒有點 →「還沒有權益快照」(雲端那句,主機自己記);只有一筆 →「紀錄還不夠畫曲線」雲端那句(設計稽核 v030 S6:本機／雲端各一句);當日損益是「—」不是 0", states(all).join() === "tr.ov.emptyCloud" && !canvasOf(all) && dayCell(all).textContent === "—"
+        && states(one).join() === "tr.ov.emptyBaselineCloud" && !canvasOf(one) && states(oneL).join() === "tr.ov.emptyBaseline" && !canvasOf(oneL), J([states(one), states(oneL)])); }
     { const all = paint(bag("cloud", { curve: { code: "UNREACH", curve: [] }, curveErr: true }));
       ok("雲端:讀不到 →「讀不到」那一句(不是「還沒有紀錄」),當日損益「—」不上色、沒有 0.00", states(all).join() === "tr.ov.curveUnreach" && !canvasOf(all) && dayCell(all).textContent === "—" && dayCell(all).className.includes("na") && !flat(box).some((n) => /0\.00/.test(n.text)));
       const ld = paint(bag("cloud", { curve: null }));

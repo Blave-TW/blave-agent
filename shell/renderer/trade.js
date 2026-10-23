@@ -4714,6 +4714,7 @@ function trCurvePoints() {
 }
 // 權益空狀態誰在記:本機要 Blave 開著,雲端是主機自己記(兩句不同的事實,不是兩種版面)
 function trOvEmptyKey() { return TR.env === "cloud" ? "tr.ov.emptyCloud" : "tr.ov.empty"; }
+function trOvBaselineKey() { return TR.env === "cloud" ? "tr.ov.emptyBaselineCloud" : "tr.ov.emptyBaseline"; }
 function trPaintOver() {
   const box = $("tr-over"), r = trReport() || {};
   if (!TR.ov.curve || (TR.ov.at || 0) < Date.now() - 60000) { TR.ov.at = Date.now(); trLoadCurve(); }
@@ -4850,7 +4851,7 @@ function trOvCurve(z) {
   if (pts.length < 2) {
     // 剛換綁、新段只有一筆:一行講清楚前面的線為什麼不見了(不疊 emptyBaseline + flowNote 兩行)
     if (flow && !isPnl) { const st = trEl("div", "pf-state"); st.appendChild(trTipLabel("", t("tr.ov.flowWait"), t("tr.ov.flowTip"))); frag.appendChild(st); return frag; }
-    frag.appendChild(trEl("div", "pf-state", pts.length ? t("tr.ov.emptyBaseline") : t(trOvEmptyKey())));
+    frag.appendChild(trEl("div", "pf-state", pts.length ? t(trOvBaselineKey()) : t(trOvEmptyKey())));
     return frag;
   }
   const series = srv ? pts : isPnl ? pts.map((p) => ({ t: p.t, v: p.v - pts[0].v })) : pts;

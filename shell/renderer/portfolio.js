@@ -785,7 +785,7 @@ function mgSuggest() {
   const acts = trEl("div", "pf-acts");
   // 停用時旁邊一定有一句原因(停用鈕的 title 觸控看不到;Mac e2e 10-14:缺台幣匯率時原本什麼都沒寫)。內容由 mgSuggestTable 跟著停用條件一起寫
   const why = acts.appendChild(trEl("span", "mg-apply-why", "")); why.id = "mg-apply-why";
-  const ap = trEl("button", "btn-fill", t("mg.apply")); ap.type = "button"; ap.dataset.fk = "mg-apply"; ap.id = "mg-apply";
+  const ap = trEl("button", "btn-fill", t("mg.apply")); ap.type = "button"; ap.dataset.fk = "mg-apply"; ap.id = "mg-apply"; ap.setAttribute("aria-describedby", "mg-apply-why");
   ap.addEventListener("click", () => mgApply(ap));
   acts.appendChild(ap); sec.appendChild(acts); frag.appendChild(sec);
   const wrap = trEl("div", "pf-scroll"); frag.appendChild(wrap);

@@ -284,6 +284,10 @@ function onbPaint() {
   $("onb-steps").hidden = ph.view !== "E";
   if (ph.view !== "E") return;
   S.steps.forEach((s, i) => { onbHead(i, s); $("onb-b" + (i + 1)).hidden = !s.open; });
+  // 雲端主機本來就含 Blave 資料(主機費含資料費):「免費 vs Blave 資料」那份清單在雲端會講錯事實,同網頁歡迎頁不出
+  const cloud = env === "cloud", fold = $("wl-fold");
+  fold.hidden = cloud;
+  if (cloud) { $("wl").hidden = true; fold.setAttribute("aria-expanded", "false"); }
   $("onb-po").textContent = t(d.amt ? "po.goAmounts" : "tr.pick");
 }
 $("onb-lib").addEventListener("click", () => libOpen());

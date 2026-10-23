@@ -1378,8 +1378,8 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 /* 失效的實心鈕:框取比填色亮一階的灰——只靠填色的話對 darkBody 只有 1.5:1,看不出那裡有一顆鈕(canon Disabled) */
 /* 回合進行中「點了才講」的鈕(策略庫主鈕、報告「新增報告」;aria-disabled:鍵盤停得上去、點了才把原因寫在鈕下)長相同 :disabled、hover 不給回饋。
    只點名這兩處:datasrc / 下單啟動過場 / 群益開通的 aria-disabled 實心鈕各有自己的長相,不跟著變灰 */
-.btn-fill:disabled, .lib-cta .btn-fill[aria-disabled="true"], .btn-fill.is-lock, .wf-go[aria-disabled="true"] { background: var(--surface-muted); color: var(--ink-3); border: 1px solid var(--color-greyMedium); cursor: default; opacity: 1; }
-.btn-out:disabled, #rpt-ask[aria-disabled="true"], .btn-out.is-lock { color: var(--ink-3); background: transparent; cursor: default; }
+.btn-fill:disabled, .lib-cta .btn-fill[aria-disabled="true"], .btn-fill.is-lock, .wf-go[aria-disabled="true"] { background: var(--surface-muted); color: var(--ink-3); border: 1px solid var(--color-greyMedium); cursor: not-allowed; opacity: 1; }
+.btn-out:disabled, #rpt-ask[aria-disabled="true"], .btn-out.is-lock { color: var(--ink-3); background: transparent; cursor: not-allowed; }
 /* 回合中的鎖(參數掃描「開始掃描」、樣本外驗證「開始驗證」):長相同上,游標照 canon › Disabled ①。掃描的 aria-disabled 也包含「已送出」轉圈那一態,
    所以掃描靠 report-robust.js 的 .is-lock 只點名「被鎖」;驗證的「已送出」是原生 disabled,aria-disabled 只會是鎖 */
 .lib-cta .btn-fill[aria-disabled="true"], .btn-fill.is-lock, .btn-out.is-lock, .wf-go[aria-disabled="true"] { cursor: not-allowed; }

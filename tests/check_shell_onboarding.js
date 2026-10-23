@@ -67,6 +67,19 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
   const paint = cutFn(src, "onbPaint");
   ok("② onbPaint:鈕字照 amt 換(po.goAmounts／tr.pick),指紋帶 amt;click 把 ONB.amt 交給 poPick",
     /\$\("onb-po"\)\.textContent = t\(d\.amt \? "po\.goAmounts" : "tr\.pick"\);/.test(paint) && /JSON\.stringify\(\[LANG, env, ph\.view, S\.steps, d\.amt\]\)/.test(paint) && /poPick\(ONB\.amt\)/.test(src)); }
+// 設計稽核 v030 S4:雲端主機本來就含資料,步驟②不出「可以回測的資料」(免費 vs Blave 兩欄會講錯事實);本機照舊、切回本機要再露出來
+{ const run = (envs) => {
+    const el = (id) => ({ id, hidden: false, textContent: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } });
+    const els = {}; ["wc", "wf", "onb-fin", "onb-steps", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl"].forEach((id) => { els[id] = el(id); });
+    const C = { $: (id) => els[id], t: (k) => k, LANG: "zh", JSON, WC: { shown: true }, ONB: { prefs: {}, key: null, amt: false }, onbHead() {}, ENVNOW: "local",
+      onbEnv: () => C.ENVNOW, onbEval: () => ({ d: { amt: false }, S: { steps: [{ open: true }, { open: true }, { open: false }] }, ph: { view: "E" } }) };
+    vm.createContext(C); vm.runInContext(paint, C);
+    return envs.map((e) => { C.ENVNOW = e; if (e === "local-open") { C.ENVNOW = "local"; els.wl.hidden = false; els["wl-fold"].attrs["aria-expanded"] = "true"; } C.onbPaint();
+      return [e, els["wl-fold"].hidden, els.wl.hidden, els["wl-fold"].attrs["aria-expanded"] || null].join(); });
+  };
+  const r = run(["local-open", "cloud", "local"]);
+  ok("② 雲端歡迎頁步驟②不出「可以回測的資料」:#wl-fold 收掉、#wl 收起、aria-expanded false;本機照舊(展開著的不被收);切回本機 #wl-fold 再出現",
+    JSON.stringify(r) === JSON.stringify(["local-open,false,false,true", "cloud,true,true,false", "local,false,true,false"]), JSON.stringify(r)); }
 // ── ② 起手句不帶市場 tag(設計稽核 P2-4)──
 { const css = read(path.join(R, "welcome.css")), st = cutFn(src, "stPaint");
   ok("② 起手句沒有市場 tag:stPaint 不畫 .tag;.st-rows 三欄 auto minmax(0, 1fr) auto;welcome.css 不再有 .tag 規則",

@@ -1059,7 +1059,8 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
     && run({ members: ["a", "c"] }) === null && run({ dropped: true }) === null && run({ busy: true }) === null && run({ wait: true }) === null && run({ blocked: true }) === null
     && run({ prop: null }) === null && run({ prop: { allocator: "slope" } }) === null);
   // C 案(Wei 10-23):不出霧、照畫那份權重表;套用停用、原因「這份是「{method}」算的」寫在 .mg-apply-why,實心交回〔跑優化〕
-  ok("…別的方法算的那份:權重表照畫(mpsProp 也認它)、不出霧;套用停用、原因寫進 .mg-apply-why;套用本身只認 mgProposal",
+  ok("…別的方法算的那份:權重表照畫(mpsProp 也認它)、不出霧;套用停用、原因寫進 .mg-apply-why(鈕以 aria-describedby 指到它,canon 文案密度 #5);套用本身只認 mgProposal",
+    /why\.id = "mg-apply-why";\n  const ap = [^\n]*ap\.setAttribute\("aria-describedby", "mg-apply-why"\);/.test(cutF(psrc, "mgSuggest")) &&
     /const other = mgProposal\(\) \? null : mgPropOtherAlloc\(\);\n  if \(!mgProposal\(\) && !other\) return frag;/.test(cutF(psrc, "mgSuggest")) && /mgSuggestTable\(wrap, ap, other\);/.test(cutF(psrc, "mgSuggest"))
     && /function mpsProp\(\) \{ return mgProposal\(\) \|\| mgOtherProp\(\); \}/.test(psrc) && /mgProposal\(\) \|\| mgOtherProp\(\) \|\| mgBacktest\(\)/.test(cutF(psrc, "mgFogOn"))
     && /ap\.disabled = !!other \|\|/.test(cutF(psrc, "mgSuggestTable")) && /whyEl\.textContent = other \? t\("mg\.propOtherAlloc", \{ method: mgAllocLabel\(other\) \}\)/.test(cutF(psrc, "mgSuggestTable"))
