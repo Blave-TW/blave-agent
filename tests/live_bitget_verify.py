@@ -813,7 +813,10 @@ def main():
                     base, "long", order._floor_str(h + step, order.get_contract_rules(env, base)["step"]),
                     reduce_only=True))
                 time.sleep(2)
-                say("T3 legs (a short leg = the side table is WRONG — stop and report)", legs(base))
+                after = legs(base)
+                say("T3 legs (a short leg = the side table is WRONG — stop and report)", after)
+                if any(p["side"] != "long" for p in after):
+                    raise RuntimeError(f"T3 over-close opened the opposite leg: {after} — the side table is WRONG")
             if want("T2") and not uta:
                 cur["step"] = "T2"
                 say("T2 resend the filled clientOid", raw_order(base, "long", format(q, "f"), cid=cid))
