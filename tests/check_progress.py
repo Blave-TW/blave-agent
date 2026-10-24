@@ -82,7 +82,7 @@ def sh(ret):
     s = sized * ret - fc; s = s[~np.isnan(s)]
     return (s.mean() / s.std()) * np.sqrt(8760) if s.std() > 0 else np.nan
 old = np.array([sh(r.permutation(fwd)) for _ in range(300)])
-# dist via dot products rounds differently from this formula (~1e-15); the p-value may not move
+# bit-for-bit equality of the fast path is check_mcpt_auto.py's job; here only the progress wiring
 fin = np.isfinite(old)
 check(np.array_equal(np.isnan(old), np.isnan(d1)) and np.max(np.abs(old[fin] - d1[fin])) < 1e-9
       and a1 == sh(fwd) and p1 == float((old >= sh(fwd)).mean()),
