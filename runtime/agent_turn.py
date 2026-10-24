@@ -184,14 +184,16 @@ def strip_hallucinated_turn(text):
 
 # ── 建議下一步(suggested next actions)────────────────────────────────────
 # 模型依 WEB_FORMATTING_RULE 在回覆末尾輸出 <suggest> 區塊(一行一句);
-# WebSink.finalize 把它剝離成 {"type": "suggestions", "items": [...]} chunk,
-# 前端渲染成輸入框上緣的可點建議列(點了=替用戶送出那句話)。
+# WebSink.finalize 把它剝離成 {"type": "suggestions", "items": [一句], "kind": "nav"|"step"} chunk,
+# 前端畫成輸入框裡的灰字(桌機)或回答尾端一行(手機),用了只填進輸入框、由用戶自己送出。
 # TG 面沒有這條規則,但 TelegramSink 仍防禦性剝除,raw 標記絕不給用戶看到。
 _SUGGEST_BLOCK_RE = re.compile(r"[ \t]*<suggest>(.*?)</suggest>[ \t]*", re.S)
 # 回覆被截斷(interrupt/max_turns)時可能只剩未閉合的開頭——也要剝乾淨。
 _SUGGEST_OPEN_TAIL_RE = re.compile(r"[ \t]*<suggest>(?:(?!</suggest>).)*$", re.S)
-_SUGGEST_MAX_ITEMS = 3
+_SUGGEST_MAX_ITEMS = 1
 _SUGGEST_MAX_CHARS = 80
+# 導航句的固定起手:suggestions chunk 的 kind 照它判,其他語系一律算 step。舊 runtime 不帶 kind,客戶端用同一套自己判。
+_SUGGEST_NAV_HEADS = ("帶我看怎麼", "带我看怎么", "show me how")
 # 中文建議句的半形標點轉全形——prompt 講了模型照樣寫半形逗號(同 Markdown 表格,
 # 靠規則擋不住就在 code 收斂)。只動中文為主的行(英文建議照英文標點),
 # 數字之間的逗號(1,000)保持半形。
@@ -212,6 +214,10 @@ def _fullwidth_punct(line):
     # 全形標點本身佔一個字寬,後面再跟半形空格會看起來多一格。
     line = re.sub(r"([，；！？])[ \t]+", r"\1", line)
     return line.replace("\x00", ",")
+
+
+def suggest_kind(line):
+    return "nav" if line.lstrip().lower().startswith(_SUGGEST_NAV_HEADS) else "step"
 
 
 def extract_suggestions(text):
@@ -1718,10 +1724,25 @@ def version_restore_note(since):
             "對這幾支策略動手前先重讀檔案,不要憑記憶整檔覆寫;不必重跑回測,也不必改 VERSION_NOTE。]")
 
 
+# 結尾規則的逐輪錨(build_prompt,web／電腦版)。客戶端這一輪畫不畫建議由 --suggest-mode 告知:
+# reduced = 用戶連續沒用建議,只畫導航句;off = 用戶關掉了。畫不出來的那一句改寫進正文最後,下一步才不會無聲消失。
+_SUGGEST_ANCHOR_TAIL = "提到策略用它的名稱、不用底線代號;建議跟本則結論同方向:正文說不建議用,就不提上線、也不提正文勸退的做法。]"
+_SUGGEST_ANCHORS = {
+    "normal": "[結尾規則:只有命中里程碑才在最後附 <suggest>(1 句、用戶口吻;一般句 ≤20 字,「帶我看怎麼」開頭的不限);"
+              "其他回合寫完答案就結束,不提議、不用問句收尾。" + _SUGGEST_ANCHOR_TAIL,
+    "reduced": "[結尾規則:用戶這一輪只看得到「帶我看怎麼」開頭的導航句。命中導航類里程碑照樣在最後附 <suggest>(1 句);"
+               "命中其他里程碑不附 <suggest>,改在正文最後寫一句直述的下一步(例:「下一步可以先掃 20/10 的參數，看有沒有穩定區。」);"
+               "沒命中就寫完答案結束,不提議、不用問句收尾。" + _SUGGEST_ANCHOR_TAIL,
+    "off": "[結尾規則:用戶關掉了輸入框建議,這一輪不附 <suggest>。命中里程碑時改在正文最後寫一句直述的下一步"
+           "(例:「下一步可以先掃 20/10 的參數，看有沒有穩定區。」);沒命中就寫完答案結束,不提議、不用問句收尾。" + _SUGGEST_ANCHOR_TAIL,
+}
+
+
 def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=None,
                  suggest_directive=False, viewing_view=None,
                  reply_lang=None, resume_note=None, viewing_env=None, cloud_mcp=False, lang_basis=None,
-                 version_note=None, desktop=False, report_fail_line=None, user_tz=None):
+                 version_note=None, desktop=False, report_fail_line=None, user_tz=None,
+                 suggest_mode="normal"):
     """`report_fail_line`:run_turn 每回合算一次傳進來(排程回合傳 "",續跑沿用同一行);
     None = 這裡自己算(測試與其他呼叫端)。`user_tz`:用戶的 IANA 時區,電腦版不傳。"""
     parts = []
@@ -1819,14 +1840,7 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
         # session 歷史累積「市場問答→問句收尾」先例後,deepseek 對探索層連續三輪
         # 不服從(2026-08-24 e2e:ETH/BTC vs ETH/SOL 三輪全數問句收尾、零區塊);
         # _lang_directive 已證明「貼著訊息的逐輪指令」對弱模型有效,同機制照搬。
-        parts.append(
-            "[結尾規則:要提議下一步(再拉圖、補籌碼面、跑回測、掃參數、跑組合優化等)就放進"
-            " <suggest> 區塊(一行一句、用戶口吻、最多 3),不要在正文用問句提議;"
-            "提到策略用它的名稱、不用底線代號。"
-            "命中里程碑(剛完成回測、或本輪在總結/分析一支有回測但還沒上線的策略)必附區塊,"
-            "而且建議跟本則結論同方向:正文說不建議用,就不提上線、也不提正文勸退的做法;"
-            "純寒暄或單一報價則什麼都不附。]"
-        )
+        parts.append(_SUGGEST_ANCHORS.get(suggest_mode, _SUGGEST_ANCHORS["normal"]))
     # 兩個 sink 都掛(不像 _deploy_state_line 是 web 專屬):這是機器層級的事實,不是
     # 工作頁的 UI 狀態,而且只從 TG 用的人更沒有別的地方會看到它。
     # 位置擠在語言錨之前的倒數第二格(2026-08-26 從紅線句後面挪來):它是「本回合要多做
@@ -2067,35 +2081,40 @@ _NAV_RULE_LOCAL = (
 _SUGGEST_RULE = (
     "\n\n---\n\n"
     "## 建議下一步（每輪回覆前必檢查）\n"
-    "命中下列時機，回覆以 <suggest> 區塊結尾（其後不得再有文字），方向要跟你這則的結論同方向：\n"
-    "- 剛建立／修改策略、還沒回測 → 跑回測\n"
+    "只有命中下列里程碑，回覆才以 <suggest> 區塊結尾（其後不得再有文字），方向要跟你這則的結論同方向；沒命中就不附：\n"
+    "- 剛建立／修改策略、還沒回測 → 「回測〈策略名〉」\n"
     "- 剛回測完，或在總結／評估一支有回測、還沒上線的策略（已在策略組合或模擬盤上的不算）：\n"
     "  ‧ 結論是可以用 → 「帶我看怎麼把〈策略名〉加進策略組合」\n"
     "  ‧ 用戶還在迭代 → 只給一個優化方向（見下），不提部署\n"
     "  ‧ 結論是不建議用 → 不提部署。訊號站不住（MCPT p-value > 0.05，Type A 回測已自動算、不要建議「跑 MCPT」；"
-    "或你說訊號不成立）→ 只提換訊號（「幫〈標的〉換一種進場訊號另做一支」）；**禁止**提在同一個訊號上加東西（濾網、調參數、掃參數、vol targeting 都算，參數是手挑的也一樣）——那是在沒優勢的訊號上硬拉；"
+    "或你說訊號不成立）→ 只提換訊號（「幫〈標的〉換一種進場訊號」）；**禁止**提在同一個訊號上加東西（濾網、調參數、掃參數、vol targeting 都算，參數是手挑的也一樣）——那是在沒優勢的訊號上硬拉"
+    "（只管你主動提的建議；用戶自己要求的照做，見 AGENTS.md）；"
     "其他原因 → 挑一個針對它的優化方向\n"
     "- 策略組合裡已有兩支以上策略 → 「幫我跑一次組合優化」或「跑移動窗格回測」\n"
-    "- 已在模擬盤上（上線現況有金額、模擬交易已連接）且穩定跑一段時間、執行無異常 → 必附，不再提「加進策略組合」，依標的分："
-    "加密或台指期 → 「帶我看怎麼把〈策略名〉上小額實盤」；台股（個股、ETF）→ 「到策略組合看〈策略名〉的持股，照著手動下單」"
+    "- 已在模擬盤上（上線現況有金額、模擬交易已連接）且穩定跑一段時間、執行無異常 → 不再提「加進策略組合」，依標的分："
+    "加密或台指期 → 「帶我看怎麼把〈策略名〉上小額實盤」；台股（個股、ETF）→ 「到策略組合看〈策略名〉的持股」"
     "（真帳的券商自動下單只接期貨商，股票策略不提實盤、券商）\n"
     "- 想實際跑但還沒綁任何交易所 → 「帶我看怎麼先綁模擬盤帳戶」\n"
-    "- 沒命中、但你想在結尾提議下一步 → 也寫成 <suggest>（1–2 個），優先往策略／回測推進；純寒暄、單一報價什麼都不附\n"
-    "優化選項（挑最相關的一個；只對還沒上線、而且訊號站得住的策略，已在跑的要改就講明另開一支）：參數手挑沒驗過 → 「掃一下〈策略名〉的參數，看有沒有穩定區」"
-    "（已有 scan.json、或這輪就是用掃出的參數重跑 → 不提）；部位固定、回撤起伏大 → 「幫〈策略名〉加 vol targeting 調部位」"
-    "（單一標的適用，低波動時部位會放大、上限 VOL_CAP，要講明）；假訊號多 → 「幫〈策略名〉加一個趨勢濾網」；訊號沒優勢 → 「幫〈標的〉換一種進場訊號另做一支」。\n"
+    "- 研究／分析題答完、還沒做成報告 → 「做成報告」（改過題目就帶改後條件，例「用前 10% 門檻做成報告」）\n"
+    "不附建議的回合：市場問答、資料查詢、報價、概念解釋、寒暄；除錯或排查還在進行；用戶這句已經講明下一步要做什麼；"
+    "這一輪在等用戶回答（見下一節的標記）；跟上一輪一模一樣的句子；用戶**明確拒絕**過（「不要」「先不上」）、還在同一階段的建議不重提。\n"
+    "優化選項（挑最相關的一個；只對還沒上線、而且訊號站得住的策略，已在跑的要改就講明另開一支）：參數手挑沒驗過 → 「掃〈策略名〉的參數找穩定區」"
+    "（已有 scan.json、或這輪就是用掃出的參數重跑 → 不提）；部位固定、回撤起伏大 → 「幫〈策略名〉加 vol targeting」"
+    "（單一標的適用，低波動時部位會放大、上限 VOL_CAP，要在正文講明）；假訊號多 → 「幫〈策略名〉加趨勢濾網」；訊號沒優勢 → 「幫〈標的〉換一種進場訊號」。\n"
     "<suggest>\n帶我看怎麼把〈策略名〉加進策略組合\n</suggest>\n"
-    "一行一句、最多 3 個（通常 1 個）；句子＝用戶口吻的短指令，點了會原句送出。部署類（加進策略組合、綁定、小額實盤）是導航句，"
-    "固定以「帶我看怎麼」起手，你回操作步驟、不代做；其他是一般執行句。策略寫名稱（strategy.py 的 # Strategy: 或用戶慣稱）："
+    "只寫 1 句；句子＝用戶口吻的短指令，會填進用戶的輸入框、由用戶自己送出。"
+    "一般句 ≤20 字（策略名照算、空白不算；英文 ≤48 字元），策略名可用用戶慣稱的短名。"
+    "部署類（加進策略組合、綁定、小額實盤）是導航句，固定以「帶我看怎麼」起手、不限長度（策略名寫全，不要為了縮短改掉起手），你回操作步驟、不代做；其他是一般執行句。"
+    "策略寫名稱（strategy.py 的 # Strategy: 或用戶慣稱）："
     "寫「把 BTC 4h 均線交叉加進策略組合」，不寫「把 btc_ma_cross_4h 加進策略組合」；〈〉只是佔位，不寫進句子。"
     "有轉出檔時 `<export … />` 照寫、放在 <suggest> 區塊的前一行。\n"
-    "語言跟正文一致：英文用戶每行都用英文，導航句以「Show me how to」起手（Show me how to add 〈strategy name〉 to the portfolio）；"
+    "語言跟正文一致：英文用戶用英文，導航句以「Show me how to」起手（Show me how to add 〈strategy name〉 to the portfolio）；"
     "中文句的逗號、分號、驚嘆號、問號一律全形（，；！？）。\n"
     "區塊內禁止形容詞副詞（最強、輕鬆、高勝率）、收益承諾（開始獲利、躺賺）、催促（立即、馬上、別錯過）、emoji；策略名與數字必須真實存在。\n"
-    "**建議不能跟正文的結論打架**：用戶點下這句去做的，若是你剛說不值得做的事，就換一句。用戶**明確拒絕**過的（「不要」「先不上」）同一階段不重提；"
-    "只是沒點不算拒絕，但連續兩輪不貼一模一樣的句子（換角度或換動詞，例如「加進策略組合」→「先綁模擬盤帳戶」）。\n"
-    "**下一步的提議只放 <suggest>：禁止在正文結尾用問句提議，也不在正文列出幾個方向問用戶挑哪個**（「要不要我幫你…？」「需要我再…嗎？」「哪個先試？」都不寫），"
-    "挑一個寫進 <suggest>；只有缺了用戶才知道的資訊、你做不下去時才問。"
+    "**建議不能跟正文的結論打架**：用戶照這句去做的，若是你剛說不值得做的事，就換一句。\n"
+    "**禁止在正文結尾用問句提議，也不在正文列出幾個方向問用戶挑哪個**（「要不要我幫你…？」「需要我再…嗎？」「哪個先試？」都不寫）；"
+    "只有缺了用戶才知道的資訊、你做不下去時才問。命中里程碑時下一步放 <suggest>，正文不重複寫；"
+    "逐輪的結尾規則說用戶這一輪看不到建議時，照它改在正文最後寫一句直述的下一步。"
     "沒有要提議時，正文最後一句寫完就結束，後面什麼都不加：不寫「沒有建議」「不附建議」這類交代，不說明為什麼沒有 <suggest>；"
     "上面的檢查是你心裡做的，檢查的結果不寫進回覆；也不評論、不更正自己前面寫的句子，寫錯了就只留對的那一句，不道歉。\n"
 )
@@ -2105,8 +2124,8 @@ _AWAIT_RULE = (
     "\n\n---\n\n"
     "## 等用戶回覆的標記\n"
     "這一輪收尾時，要用戶回答你才能繼續——你問了澄清問題、列出編號選項或方案要用戶選一個、需要只有用戶知道的資訊——"
-    "就在正文最後自成一行寫 `<await/>`（有 `<export … />` 時放在它後面；有 <suggest> 區塊時放在區塊的前一行，<suggest> 仍是最後）。"
-    "只是回報結果、交代做了什麼、附 <suggest> 建議（建議列不算等回覆）、純聊天 → 不寫。標記本身不解釋、不提。\n"
+    "就在正文最後自成一行寫 `<await/>`（有 `<export … />` 時放在它後面）。寫了 `<await/>` 的回合不附 <suggest>。"
+    "只是回報結果、交代做了什麼、純聊天 → 不寫。標記本身不解釋、不提。\n"
 )
 
 # Web renders standard Markdown in the browser — tables, headings, and
@@ -3491,7 +3510,8 @@ class WebSink:
             for chunk in exports:
                 self._send(chunk)
         if suggestions and not self.interrupted:
-            self._send({"type": "suggestions", "items": suggestions})
+            self._send({"type": "suggestions", "items": suggestions,
+                        "kind": suggest_kind(suggestions[0])})
         # awaiting:被 Stop 截斷的回合不算(半途的標記不可信)。欄位契約:references/turn-events.md。
         self._send({"type": "done", "awaiting": bool(awaiting and not self.interrupted),
                     "kinds": dict(self._kinds)})
@@ -4329,7 +4349,7 @@ def _remove_cloud_handoff_dir(workspace=None):
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
                    viewing_view=None, ui_lang=None,
                    engine="claude", codex_bin=None, effort=None, mcp_config=None,
-                   viewing_env=None, mcp_servers=None):
+                   viewing_env=None, mcp_servers=None, suggest_mode="normal"):
     # engine="codex" 是電腦版專屬(用戶自己的 Codex 訂閱),只換掉「呼叫模型並消化它的
     # 事件流」那一段;prompt、session store、兜底分類、寫回歷史全部共用。機隊不帶
     # --engine,走的是原本那條路,一行都不經過 codex 分支(閘門:
@@ -4376,7 +4396,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                           reply_lang=reply_lang, viewing_env=viewing_env, cloud_mcp=cloud_mcp,
                           lang_basis=lang_msg, version_note=version_note,
                           report_fail_line=report_fail_line, user_tz=prompt_tz,
-                          desktop=_desktop_surface(sink))
+                          desktop=_desktop_surface(sink), suggest_mode=suggest_mode)
     agents_md = load_agents_md()
 
     # Persist the user's message BEFORE calling the SDK — if the turn later
@@ -4765,7 +4785,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                                   viewing_env=viewing_env, cloud_mcp=cloud_mcp, lang_basis=lang_msg,
                                   version_note=version_note,
                                   report_fail_line=report_fail_line, user_tz=prompt_tz,
-                                  desktop=_desktop_surface(sink))
+                                  desktop=_desktop_surface(sink), suggest_mode=suggest_mode)
             options.max_budget_usd = budget if options.max_budget_usd is not None else None
             options.max_turns = max(TURN_MAX_TURNS - spent_turns, _RESUME_MIN_TURNS)
             # A new dict, not an in-place update: the CLI child's env is built from
@@ -4889,6 +4909,8 @@ def main():
     parser.add_argument("--codex-bin", default=None)
     # 選填,值域由外殼依引擎/模型保證,這裡原樣轉發。沒帶 = 引擎自己的預設。
     parser.add_argument("--effort", default=None)
+    # 客戶端這一輪畫不畫建議(電腦版 main.js、web_bridge 只帶非預設值,兩邊都先篩過值域)
+    parser.add_argument("--suggest-mode", default="normal", choices=["normal", "reduced", "off"])
     args = parser.parse_args()
     if args.message_stdin:
         raw = sys.stdin.buffer.read(MESSAGE_STDIN_MAX + 1)
@@ -4926,7 +4948,7 @@ def main():
         viewing_view=args.viewing_view,
         ui_lang=args.ui_lang, engine=args.engine, codex_bin=args.codex_bin,
         effort=args.effort, mcp_config=args.mcp_config, viewing_env=args.viewing_env,
-        mcp_servers=args.mcp_servers,
+        mcp_servers=args.mcp_servers, suggest_mode=args.suggest_mode,
     ))
     if args.scheduled:
         _write_sched_outcome()

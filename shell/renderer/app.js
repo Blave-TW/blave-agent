@@ -1073,6 +1073,7 @@ function setAttachments(list) {
   box.querySelectorAll(".attach-chip").forEach((x) => x.remove());
   attachedFiles.forEach((a) => box.insertBefore(attachChip(a), hint));
   box.hidden = !attachedFiles.length;
+  if (typeof sugPaint === "function") sugPaint();   // 有附件時建議灰字先藏,清空後才畫
   attachHintPaint();
 }
 /* 一顆 chip:檔名(截尾時全名在 title)+ ✕(讀屏名稱帶檔名)。建 element,檔名走文字節點 */
@@ -1968,7 +1969,7 @@ const csWhy = () => busySlot("cs-why", $("cs-head"));
 function csNewClick() { if (busyOn()) { busyTell(csWhy(), "new"); return; } csStartNew(); }
 function csClearChat() {
   if (typeof brReset === "function") brReset();   // 內建瀏覽器的區塊與展開層(renderer/browser.js)
-  if (typeof sugCollapse === "function") sugCollapse();   // 建議列屬於眼前這條對話,換對話即作廢(同 web csSwitch)
+  if (typeof sugCollapse === "function") sugCollapse();   // 建議屬於眼前這條對話,換對話即作廢、切回來也不復原(同 web csSwitch)
   $("chat-scroll").innerHTML = "";
   liveBubble = null; busy = null; swLine = null; swHeld = null; chatStick = true; chatTop = 0;
   acctCard = null; creditCards.length = 0; dataCard = null;   // 卡片跟著聊天欄一起清掉
@@ -3029,6 +3030,7 @@ async function sendDraft() {
   const msg = $("ta").value.trim();
   const attachments = attachedFiles;   // 純附件(沒打字)也可以送,同雲端
   if ((!msg && !attachments.length) || running) return;
+  if (typeof sugSnap === "function") sugSnap(msg);   // 清空之前先記這句用沒用建議(renderer/suggest.js;跑起來才結算)
   $("ta").value = ""; autosize();
   // chip 由 submitMessage 在送出去的那一刻清(安裝失敗後按「重試」送出的也走那裡);沒送出去的路(busy / 版本閘 / 引擎起不來)把句子還原到輸入框、檔也留著,不靜默消失
   await submitMessage(msg, { typed: true, attachments });
@@ -3040,7 +3042,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   // 失敗的那一輪(Codex 不見、金鑰不見、形狀不對)可能根本沒存到檔;只重送句子的話檔就無聲不見,純附件那句更是無從重送
   const attachments = opts && Array.isArray(opts.attachments) ? opts.attachments : [];
   if ((!msg && !attachments.length) || running) return false;
-  if (typeof sugCollapse === "function") sugCollapse();   // 任何入口送出,上一組建議都作廢(renderer/suggest.js)
+  if (typeof sugCollapse === "function") sugCollapse();   // 任何入口送出,上一句建議都作廢(renderer/suggest.js)
   UPD.turnCloud = false; turnSeq++;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where);回合序號 +1(參數掃描的「已送出」只認這一輪)
   running = true; sendBtnSync(); stratDelSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof stSync === "function") stSync(); if (typeof xpSync === "function") xpSync(); csLock(true); busySync();   // 回合在跑:更新入口是鎖(更新會重開 app)
   // 操作對象在送出當下定案:之後切視角不改這一輪。opts.viewing = 呼叫端指定(更新雲端那一句永遠帶 env:cloud)
@@ -3061,7 +3063,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
   if (!csTitle) { csTitle = msg || attachments[0].name; csRenderHead(); csRemember(); }   // 純附件開頭的對話:清單上用檔名當標題(純文字,不放圖示)
   liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = []; turnAiBubbles = []; turnFaultEl = null;
-  const unlock = () => { running = false; turnStopping = false; sendBtnSync(); stratDelSync(); csLock(false); busySync(); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof stSync === "function") stSync(); if (typeof xpSync === "function") xpSync(); };
+  const unlock = () => { if (typeof sugUnsend === "function") sugUnsend(); running = false; turnStopping = false; sendBtnSync(); stratDelSync(); csLock(false); busySync(); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof stSync === "function") stSync(); if (typeof xpSync === "function") xpSync(); };
   try {
     // 引擎還沒裝好時由安裝進度卡交代(engine.js),指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
     engineWait = true;
@@ -3090,8 +3092,9 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
       catch (_) { addMsg("sys", t("ws.attachReadFail")).dataset.i18n = "ws.attachReadFail"; unsend(); unlock(); return false; }
     }
     const r = await window.blave.sendMessage({
-      sessionId, message: msg, handoff: opts && opts.handoff, note: lastUserNote, model: MP.model, effort: mpEffort(), viewing, attachments: att });
+      sessionId, suggestMode: typeof sugMode === "function" ? sugMode() : "normal", message: msg, handoff: opts && opts.handoff, note: lastUserNote, model: MP.model, effort: mpEffort(), viewing, attachments: att });
     // main.js 的回覆:started / busy,以及最低版本閘擋下的 blocked(沒有 spawn、沒有花 AI)
+    if (r.started && typeof sugSettle === "function") sugSettle(msg);   // 用了建議 / 沒用建議,回合真的跑起來才算(renderer/suggest.js)
     // 送出去了才清 chip(還掛著同一個檔才清:送出途中換掛的不動)。放在這裡不放 sendDraft:安裝失敗後按「重試」送出的那句不經 sendDraft,chip 留著的話下一句會再帶一次同一個檔
     if (r.started && attachments.length && attachedFiles === attachments) setAttachments([]);
     if (r.started) { busyStart(); trackFeature("chat_sent"); for (const k of attachKinds(attachments)) trackFeature(ATTACH_FEATURE[k]); if (attachments.length > 1) trackFeature("attach_multi"); return true; }
@@ -4242,7 +4245,7 @@ window.blave.onTurnEnd(async (r) => {
   if (cloudTurn && RPC.name) rpCloudSelect(RPC.name, true);
   else if (rpcOwed && RPC.name) rpCloudRefetch(RPC.name);   // 回合中輪詢看到開著那支變了(例如網頁發起的雲端回合):這時才補
   mpTurnEnd();
-  if (typeof sugTurnEnd === "function") sugTurnEnd(!stopped && !faulted);   // 建議列停一拍才長出,那時回覆與下面兩行的卡都已掛好(renderer/suggest.js)
+  if (typeof sugTurnEnd === "function") sugTurnEnd(!stopped && !faulted);   // 建議灰字停一拍才畫,出錯與停止都不畫(renderer/suggest.js)
   if (rt) resTurnEnd(rt, cloudTurn);   // 最後一步:回覆泡泡已定稿(paintAi 會清空泡泡)、轉出卡已掛,結果卡才決定掛在哪一則
   chatSwitchFlush();   // 回合中切過視角:那一行排在這一輪之後(結果卡的落點已經在上一行定了)
 });

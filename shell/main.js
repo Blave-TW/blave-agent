@@ -2913,6 +2913,10 @@ function viewingArgs(v) {
   if (name) return ["--viewing-strategy=" + name, ...(v.tab === "code" || v.tab === "data" ? ["--viewing-tab=" + v.tab] : []), ...env];
   return [...(v.view === "portfolio" ? ["--viewing-view=portfolio"] : []), ...env];
 }
+/* 建議下一步這一輪畫不畫(renderer/suggest.js sugMode;runtime 的 --suggest-mode,同雲端 web_bridge 那一份):
+   只送非預設值,值域在這裡再篩一次(renderer 的值不可信,怪值帶過去 argparse 的 choices 會整輪 exit 2)。
+   runtime 那半要一起出——舊 runtime 不認得這個旗標;tests/check_shell_viewing.js 釘著「runtime 認得 --suggest-mode」 */
+function suggestArgs(mode) { return mode === "reduced" || mode === "off" ? ["--suggest-mode=" + mode] : []; }
 /* 自動掛上 `blave` MCP(agent 經它拿得到用戶雲端主機的 SSH)+ 畫面上的「送上雲端 / 拉回這台電腦」。
    **2026-09-22 Wei 拍板打開**:三個前置都完成了——sshd 方案 A 已推上全機隊 20 台(憑證只登得進 blaveagent、root 被 Match 擋掉)、
    接入碼撤銷端點上線、確認框只列真正會搬的資料來源金鑰。發佈版一律是這個常數;開發版另可用 BLAVE_CLOUD_HANDOFF=1
@@ -3042,7 +3046,7 @@ const MESSAGE_MAX_BYTES = 1024 * 1024;   // 同 runtime/agent_turn.py 的 MESSAG
 /* 外殼給這一輪的指示(renderer 只交代號,字在 runtime/agent_turn.py TURN_NOTES):跟用戶的訊息分開送,不進泡泡也不進對話存檔。
    只認這張表上的;renderer 會渲染 LLM 的文字,不能讓它把任意字串送成系統層級的規則 */
 const TURN_NOTES = ["report_once", "report_recur"];
-async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing, note, attachments }) {
+async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing, note, attachments, suggestMode }) {
   const model = safeId(rawModel), effort = safeId(rawEffort);
   // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式
   if (!okSessionId(sessionId)) throw new Error("bad session id");
@@ -3175,6 +3179,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // codex 要連執行檔的絕對路徑一起給,因為它多半不在 PATH 上。
     ...(useCodex ? ["--engine", "codex", "--codex-bin", codexBin] : []),
     ...viewingArgs(viewing),
+    ...suggestArgs(suggestMode),
     // argv 上只有設定檔的**路徑**(碼在檔案裡,0600、workspace 以外、這一輪結束就刪);runtime 只在電腦版(LocalSink)認這個旗標
     ...(mcpFile ? ["--mcp-config=" + mcpFile] : []),
     ...(mcpServers.length ? ["--mcp-servers=" + mcpServers.join(",")] : []),

@@ -149,6 +149,8 @@ $("wl-seg").addEventListener("click", (e) => { const b = e.target.closest("butto
 $("wl-all").addEventListener("click", wdDocs);
 
 /* ── 起手句(spec-starters §1.4、§2)── */
+// 「點了 = 送成一句話」的列:lucide corner-down-right(原本跟建議列共用,建議改成輸入框灰字後只剩這裡用)
+const SEND_ROW_IC = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 10 5 5-5 5"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/></svg>';
 const ST_ROWS = [["crypto", 2020], ["tw", 2022], ["txf", 2015]];   // 順序固定、沒有預設市場;年份 = 送出那句「回測 X 年至今」
 const ST = { lang: "", pending: null };
 const ST_FEATURE = { crypto: "starter_crypto", tw: "starter_tw", txf: "starter_txf" };   // 送出點的名字要是字面(tests/check_shell_telemetry.js 掃的是這張表)

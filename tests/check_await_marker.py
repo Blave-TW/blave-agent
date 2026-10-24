@@ -45,6 +45,8 @@ for name, raw, want_text, want_flag in [
 
 # ── 2. 規則是 prompt 最尾端那一節(_AWAIT_RULE,緊接在建議規則後),web 與電腦版都帶 ──
 ok("規則獨立在 _AWAIT_RULE,不再混在建議規則裡", "<await/>" in at._AWAIT_RULE and "<await/>" not in at._SUGGEST_RULE)
+ok("寫了 <await/> 的回合不附 <suggest>(v2:等回答的回合不出建議)", "寫了 `<await/>` 的回合不附 <suggest>" in at._AWAIT_RULE
+   and "<suggest> 仍是最後" not in at._AWAIT_RULE and "這一輪在等用戶回答" in at._SUGGEST_RULE)
 for rule_name in ("WEB_FORMATTING_RULE", "LOCAL_FORMATTING_RULE"):
     rule = getattr(at, rule_name)
     ok(f"{rule_name} 以建議規則＋等回覆規則收尾(標記規則仍在 prompt 最尾端)",

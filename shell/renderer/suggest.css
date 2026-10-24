@@ -1,66 +1,28 @@
-/* 建議下一步(renderer/suggest.js):逐條照雲端 web/app/static/css/agent/workspace.css 的 .sug-*(mockup v9.2 案 4,
-   動畫沿用 v8),dark 值換成這裡的角色變數:行字 greyLightMedium → --ink-2、hover 填 darkBorder → --surface-muted、
-   hover 字 darkText → --ink、送出 icon 與小標 greyMedium → --ink-3。
-   .is-closed 是唯一開關:加上 = 向下沉入輸入框收合,拿掉 = 從輸入框往上長出。高度軌 0fr↔1fr(同 .think-reason-wrap);
-   align-content:end 把軌釘在容器底緣,過渡中列表底緣全程貼著輸入框。減少動態由 app.css 全域那條收掉。 */
-.sug-wrap {
-  display: grid;
-  grid-template-rows: 1fr;
-  align-content: end;
-  transition: grid-template-rows var(--motion-base) var(--ease-standard);
+/* 建議下一步 v2(renderer/suggest.js;spec suggest-next-step-v2 §1.2,mockup-next-step-v2.html):
+   輸入框裡的單行灰字＋Tab 鍵帽,疊在 textarea 那一列(.ci-bar 不動)。dark 值換成這裡的角色變數:灰字 greyMedium → --ink-3。
+   .has-ghost 是唯一開關(掛在 .ta-field):出現淡入 --motion-base;消失不轉場——一打字就藏,淡出的那一拍灰字會壓在剛打的字上。
+   減少動態由 app.css 全域那條收掉。 */
+.ta-field { position: relative; display: flex; flex-direction: column; }
+.sug-ghost {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; gap: var(--space-8);
+  pointer-events: none; opacity: 0;
+  font-size: 13px; line-height: 1.5; color: var(--ink-3);
 }
-.sug-wrap.is-closed { grid-template-rows: 0fr; }
-.sug {
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  padding-bottom: var(--space-8);
-  transition: padding-bottom var(--motion-base) var(--ease-standard);
+.ta-field.has-ghost .sug-ghost { opacity: 1; transition: opacity var(--motion-base) var(--ease-standard); }
+.ta-field.has-ghost textarea::placeholder { color: transparent; }
+/* 放不下維持單行、尾端省略號(canon Input › placeholder);填入之後看得到全文 */
+.sug-ghost-t { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* 鍵帽 = canon Mini tag › 按鍵小標(kbd)原樣;標示、不可點 */
+.sug-ghost kbd {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  height: 20px; min-width: 20px; padding: 0 6px; box-sizing: border-box;
+  border: 1px solid var(--border-hairline); border-radius: var(--radius-micro); background: transparent;
+  font-family: var(--font-mono); font-weight: 500; font-size: 11px; line-height: 1; color: var(--ink-3);
 }
-.sug-wrap.is-closed .sug { padding-bottom: 0; }
-/* 小標 = web .group-label(13/600、greyMedium);下緣 12:標籤到第一列(12 + 行上 padding 8)要大於列距 16,Proximity 才不反轉 */
-.sug-cap { padding: 0 var(--space-12) var(--space-12); font-size: 13px; font-weight: 600; color: var(--ink-3); }
-/* 關閉 ×:幾何同 web .attach-clear(20×20、radius-micro、✕ 11px),色同 .modal-close。絕對定位不佔排版,小標行高度不變。
-   熱區 = 小標行右端 44 × 31.5(小標 13 × 1.5 + 下緣 12),不壓到第一列;電腦版只有滑鼠,不做觸控的 44 高。
-   z-index:長出途中 .sug-item 帶 transform 自成疊層、DOM 又在後面,不墊高的話動畫途中列會蓋住 × */
-.sug-head { position: relative; }   /* .sug-close 的定位基準(見 index.html 那段註解) */
-.sug-close {
-  position: absolute; top: 0; right: var(--space-4); z-index: 1;
-  width: 20px; height: 20px; padding: 0;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: var(--radius-micro);
-  font-size: 11px; line-height: 1; color: var(--ink-3);
-  transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
-}
-.sug-close::before { content: ""; position: absolute; top: 0; right: calc(var(--space-4) * -1); width: 44px; height: calc(13px * 1.5 + var(--space-12)); }
-.sug-close:hover { background: var(--surface-muted); color: var(--ink); }
-.sug-close:focus-visible { outline-offset: -2px; border-radius: var(--radius-micro); }   /* 貼著 .sug 頂端,外推的 ring 會被 overflow:hidden 裁掉 */
-.sug-item {
-  display: flex; align-items: baseline; gap: var(--space-12);
-  width: 100%; min-height: 36px; padding: var(--space-8) var(--space-12);
-  text-align: left; border-radius: var(--radius-sm);
-  font-size: 13px; font-weight: 400; line-height: 1.6; color: var(--ink-2);
-  transition:
-    color var(--motion-fast) var(--ease-standard),
-    background var(--motion-fast) var(--ease-standard),
-    transform var(--motion-base) var(--ease-standard),
-    opacity var(--motion-base) var(--ease-standard);
-}
-.sug-item:hover { background: var(--surface-muted); color: var(--ink); }
-.sug-item:focus-visible { outline-offset: -2px; }   /* .sug 是 overflow:hidden,外推的 ring 會被裁掉 */
-/* 列是 baseline 對齊,svg 沒有 baseline 會掉到行底:包層高 = 一行行高(13px × 1.6),icon 置中在第一行、句子折行不跟著跑 */
-.sug-glyph { flex: none; align-self: start; display: flex; align-items: center; height: calc(13px * 1.6); color: var(--ink-3); transition: color var(--motion-fast) var(--ease-standard); }
-.sug-item:hover .sug-glyph { color: var(--ink); }
-.sug-item .txt { flex: 1; overflow-wrap: anywhere; }   /* agent 寫的句子,長 token 也要斷 */
 
-/* 收合:每行下移淡出、沉進輸入框;stagger 最上行先走,步距 = 1/3 --motion-fast */
-.sug-wrap.is-closed .sug-item { transform: translateY(var(--space-24)); opacity: 0; pointer-events: none; }
-.sug-wrap.is-closed .sug-item:nth-child(1) { transition-delay: 0s; }
-.sug-wrap.is-closed .sug-item:nth-child(2) { transition-delay: calc(var(--motion-fast) / 3); }
-.sug-wrap.is-closed .sug-item:nth-child(3) { transition-delay: calc(var(--motion-fast) * 2 / 3); }
-/* 出現:反向,最下行(貼輸入框)先進場;延遲只掛 transform + opacity,hover 的 color / background 維持零延遲 */
-.sug-wrap:not(.is-closed) .sug-item:nth-child(1) { transition-delay: 0s, 0s, calc(var(--motion-fast) * 2 / 3), calc(var(--motion-fast) * 2 / 3); }
-.sug-wrap:not(.is-closed) .sug-item:nth-child(2) { transition-delay: 0s, 0s, calc(var(--motion-fast) / 3), calc(var(--motion-fast) / 3); }
-.sug-wrap:not(.is-closed) .sug-item:nth-child(3) { transition-delay: 0s; }
+/* 設定 › 一般 › 輸入框建議:字掛虛線底(canon Tooltip 觸發),泡泡用 app.css 的 .tip 材質 */
+.set-sug { margin-top: var(--space-24); }
+.set-sug .sw-l { position: relative; }
+.set-sug-l { cursor: help; text-decoration: underline dotted var(--ink-3); text-underline-offset: 3px; }
+.set-sug-l:hover:not([data-tip-off]) + .tip, .set-sug:has(.sw:focus-visible) .tip { display: block; }

@@ -396,30 +396,23 @@
         <!-- 輸入框:上 textarea、下工具列(左=model/effort 觸發鈕,右=送出)。
              選 model 放這裡而不是左下角:引擎是設一次的事(誰付錢、要不要重新授權),
              model / effort 是每個任務都可能換的,兩件事不擠同一個入口。 -->
-        <!-- 建議下一步(照雲端 #chat_sug_wrap;renderer/suggest.js):輸入框上緣全寬列表行、最多 3 行、整行可點 = 送出那句。
-             .is-closed 與 inert 同進退,預設收合;小標與 group 的 aria-label 同字,小標 aria-hidden,讀屏只念一份 -->
-        <div class="sug-wrap is-closed" id="sug-wrap" inert>
-          <div class="sug" role="group" data-i18n-aria="ws.sugGroup">
-            <!-- 關閉 × 不能放進小標(小標 aria-hidden,讀屏會看不到)。兩個包在 .sug-head:收合時 .sug 往下縮、內容從頂端被裁,
-                 × 釘在 .sug 頂端的話會留在畫面上滑過建議列;釘在 head 才會跟小標一起被裁掉 -->
-            <div class="sug-head">
-              <div class="sug-cap" aria-hidden="true" data-i18n="ws.sugGroup"></div>
-              <button type="button" class="sug-close" id="sug-close" data-i18n-aria="ws.sugClose">✕</button>
-            </div>
-            <div class="sug-rows" id="sug-rows"></div>
-          </div>
-        </div>
         <!-- 回合進行中、草稿非空時按 Enter:不送,這一行講為什麼(e2e 0.1.8 #71);字由 taWaitShow 寫,回合結束即收 -->
         <p class="ta-wait" id="ta-wait" role="status"></p>
         <!-- 待送附件 chip(照雲端 #attach_chip):一個檔一顆(檔名 + ✕,由 setAttachments 畫),排成一列、放不下換行;最多 4 個,再加是往後加。
-             貼著輸入框(建議列之下):建議列每輪都會長,chip 放它上面會離輸入框 200 多 px(設計稽核 0.1.17)。
+             貼著輸入框(設計稽核 0.1.17:當時輸入框上方有每輪都長的建議列,chip 放它上面會離輸入框 200 多 px;0.1.31 建議改成輸入框裡的灰字)。
              chip 是輸入框的狀態,送出後泡泡末行的「迴紋針 + 檔名」另外畫(addMsg),重開 app 從逐字稿尾端那幾行還原 -->
         <div class="attach-chips" id="attach-chips" hidden>
           <!-- 選的模型不讀圖(DeepSeek):清單有圖就出現一次,在最後一顆 chip 後面;字由 attachHintPaint 組(帶模型名,不掛 data-i18n) -->
           <span class="attach-hint" id="attach-hint" role="note" hidden></span>
         </div>
         <div class="chat-input">
-          <textarea id="ta" rows="1" data-i18n-ph="ws.placeholder"></textarea>
+          <!-- 建議下一步(renderer/suggest.js;spec suggest-next-step-v2 §1.2):灰字疊在 textarea 那一列、單行不撐高,鍵帽跟在句子後面。
+               灰字 aria-hidden,讀屏靠 textarea 的 aria-describedby 指向 #sug-desc(作廢就拿掉) -->
+          <div class="ta-field" id="ta-field">
+            <textarea id="ta" rows="1" data-i18n-ph="ws.placeholder"></textarea>
+            <div class="sug-ghost" aria-hidden="true"><span class="sug-ghost-t" id="sug-ghost-t"></span><kbd id="sug-kbd">Tab</kbd></div>
+            <span class="sr-only" id="sug-desc"></span>
+          </div>
           <div class="ci-bar">
             <!-- 迴紋針(照雲端 #attach_btn,同一顆中性 ghost):雲端放輸入列最左,電腦版的輸入框是上下兩層,放工具列最左。
                  電腦版另外收拖放到輸入框與貼上剪貼簿的圖(原生能力,雲端沒有) -->
@@ -518,6 +511,10 @@
           <div class="set-rn">
             <div class="sw-row"><span class="sw-l" id="set-rn-l" data-i18n="set.rn"></span><button type="button" class="sw" id="set-rn-sw" role="switch" aria-checked="true" aria-labelledby="set-rn-l"></button></div>
             <p class="priv-lead set-rn-os" id="set-rn-os" hidden><span data-i18n="set.rn.osOff"></span><button type="button" class="btn-quiet" id="set-rn-os-go" data-i18n="set.rn.osGo"></button></p>
+          </div>
+          <!-- 輸入框建議(renderer/suggest.js;localStorage ws_sug_on,"0" = 關、其他或沒有 = 開;只管這台電腦)。說明走 .tip 泡泡,滑鼠停在字上或鍵盤 focus 開關時出 -->
+          <div class="set-sug">
+            <div class="sw-row"><span class="sw-l"><span class="set-sug-l" id="set-sug-l" data-i18n="set.sug"></span><span class="tip" id="set-sug-tip" role="tooltip" data-i18n="set.sug.tip"></span></span><button type="button" class="sw" id="set-sug-sw" role="switch" aria-checked="true" aria-labelledby="set-sug-l" aria-describedby="set-sug-tip"></button></div>
           </div>
           <!-- 自動下單時不讓電腦睡(ui-prefs keepAwake,缺 = 開;主行程 awakeSync 照它持有防睡)。開關狀態與下面那句由 app.js 的 awakePaint 畫 -->
           <div class="set-awake">

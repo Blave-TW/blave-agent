@@ -108,7 +108,7 @@ try {
   // ── main.js 接線 ──
   const rt = (mainSrc.match(/async function runTurn\(win, \{[^}]*\}\) \{[\s\S]*?\n\}/) || [""])[0];
   t("runTurn 收 attachments:先驗整份清單(個數 / 合計 / 重名 / 任一個壞 → 整輪不跑)與加上那幾行之後的 stdin 上限 → 落地 workspace/tmp/inbound → withNotes 接在訊息尾端",
-    /async function runTurn\(win, \{ sessionId, message, [^}]*attachments \}\)/.test(rt)
+    /async function runTurn\(win, \{ sessionId, message, [^}]*attachments(, suggestMode)? \}\)/.test(rt)
     && /const vs = at\.validateAll\(attachments\);\n\s*if \(!vs\) throw new Error\("bad attachment"\);\n\s*if \(Buffer\.byteLength\(at\.withNotes\(message, vs\.map\(\(v\) => "0000000000_" \+ v\.name\)\), "utf8"\) > MESSAGE_MAX_BYTES\) throw new Error\("bad message"\);/.test(rt)
     && /if \(at\) message = at\.withNotes\(message, at\.saveAll\(WS, attachments\)\);/.test(rt) && rt.indexOf("at.saveAll(") < rt.indexOf("child.stdin.end(message)"));
   { const iVal = rt.indexOf("at.validateAll(attachments)"), iSave = rt.indexOf("at.saveAll(WS, attachments)"), iCodex = rt.indexOf('throw new Error("AGENT_BIN_MISSING")'), iKey = rt.indexOf('throw new Error("APIKEY_MISSING")');
@@ -290,7 +290,7 @@ try {
 
   // ── 3. 畫面與字串 ──
   t("index.html:chip 列(一個檔一顆,由 setAttachments 畫)貼著輸入框——在建議列與 #ta-wait 之下、.chat-input 正上方(設計稽核 0.1.17:建議列每輪都長,chip 放它上面離輸入框 200 多 px)、迴紋針在工具列最左、hidden file input(可多選)", /<div class="attach-chips" id="attach-chips" hidden>\s*<!--[\s\S]*?-->\s*<span class="attach-hint" id="attach-hint" role="note" hidden><\/span>\s*<\/div>\s*<div class="chat-input">/.test(html)
-    && html.indexOf('id="ws-update"') < html.indexOf('id="sug-wrap"') && html.indexOf('id="sug-wrap"') < html.indexOf('id="ta-wait"') && html.indexOf('id="ta-wait"') < html.indexOf('id="attach-chips"') && /<div class="ci-bar">\s*<!--[\s\S]*?-->\s*<input type="file" id="attach-input" multiple hidden \/>\s*<button class="btn-attach" id="attach-btn" type="button" data-i18n-aria="ws\.attach">/.test(html));
+    && html.indexOf('id="ws-update"') < html.indexOf('id="ta-wait"') && html.indexOf('id="ta-wait"') < html.indexOf('id="attach-chips"') && /<div class="ci-bar">\s*<!--[\s\S]*?-->\s*<input type="file" id="attach-input" multiple hidden \/>\s*<button class="btn-attach" id="attach-btn" type="button" data-i18n-aria="ws\.attach">/.test(html));
   const st = fs.readFileSync(path.join(R, "strings.js"), "utf8");
   t("空檔那句 en / zh 都有、zh 全形標點", (st.match(/"ws\.attachEmpty": "/g) || []).length === 2 && st.includes('"ws.attachEmpty": "這個檔案是空的，沒有內容可以傳。"'));
   t("檔名太長那句 en / zh 都有、zh 全形標點", (st.match(/"ws\.attachNameLong": "/g) || []).length === 2 && st.includes('"ws.attachNameLong": "檔名太長，請改短一點再傳。"'));
