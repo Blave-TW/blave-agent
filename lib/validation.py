@@ -108,21 +108,68 @@ def mcpt(
     sized    = position * vol_scalar
     fee_cost = np.abs(np.diff(sized, prepend=0)) * fee
 
-    def _sharpe(ret):
-        sr = sized * ret - fee_cost
-        r  = sr[~np.isnan(sr)]
-        return (r.mean() / r.std()) * np.sqrt(periods_per_year) if r.std() > 0 else np.nan
-
-    actual  = _sharpe(fwd_ret)
     permute = np.random.permutation if rng is None else rng.permutation
-    dist    = np.empty(n)
     # stdout ETA lines only past the runner's 30 s automatic-MCPT budget (manual big n)
     progress = Progress('mcpt', n, 'permutations', min_seconds=30)
-    for k in range(n):
-        dist[k] = _sharpe(permute(fwd_ret))
-        progress.tick()
+    # Permuting moves a NaN to another bar and changes which bars count, so the sums the
+    # fast path precomputes would be wrong: any non-finite input takes the plain loop.
+    if np.isfinite(sized).all() and np.isfinite(fwd_ret).all():
+        actual, dist = _mcpt_dot(sized, fee_cost, fwd_ret, n, permute, periods_per_year, progress)
+    else:
+        actual, dist = _mcpt_loop(sized, fee_cost, fwd_ret, n, permute, periods_per_year, progress)
     p_value = float((dist >= actual).mean())
     return actual, p_value, dist
+
+
+def _perm_sharpe(sized, fee_cost, ret, periods_per_year):
+    sr = sized * ret - fee_cost
+    r  = sr[~np.isnan(sr)]
+    return (r.mean() / r.std()) * np.sqrt(periods_per_year) if r.std() > 0 else np.nan
+
+
+def _mcpt_loop(sized, fee_cost, fwd_ret, n, permute, periods_per_year, progress):
+    actual = _perm_sharpe(sized, fee_cost, fwd_ret, periods_per_year)
+    dist   = np.empty(n)
+    for k in range(n):
+        dist[k] = _perm_sharpe(sized, fee_cost, permute(fwd_ret), periods_per_year)
+        progress.tick()
+    return actual, dist
+
+
+# A dot-product Sharpe within this relative distance of `actual` (or with a variance this
+# badly cancelled) is recomputed the plain way on the same permutation: the two formulas
+# round differently (~1e-13 relative at 1e6 bars), and the p-value is a hard >= cut that
+# must not move. Wide enough to cover that error by orders of magnitude, narrow enough
+# that almost no permutation hits it.
+_DOT_TIE_TOL = 1e-9
+_DOT_VAR_FLOOR = 1e-8
+
+
+def _mcpt_dot(sized, fee_cost, fwd_ret, n, permute, periods_per_year, progress):
+    """Same Sharpes as _mcpt_loop for all-finite inputs, at three dot products per
+    permutation: with x = sized*r - fee_cost, Σx and Σx² expand into dot products of the
+    permuted r against arrays fixed across permutations. Same permute() calls in the same
+    order, so the RNG stream — and the p-value — is unchanged."""
+    N      = float(len(fwd_ret))
+    s2     = sized * sized
+    sf     = sized * fee_cost
+    f_sum  = fee_cost.sum()
+    ff_sum = fee_cost @ fee_cost
+    ann    = np.sqrt(periods_per_year)
+    actual = _perm_sharpe(sized, fee_cost, fwd_ret, periods_per_year)
+    tie    = _DOT_TIE_TOL * max(1.0, abs(actual)) if np.isfinite(actual) else -1.0
+    dist   = np.empty(n)
+    for k in range(n):
+        r    = permute(fwd_ret)
+        mean = (sized @ r - f_sum) / N
+        ex2  = (s2 @ (r * r) - 2.0 * (sf @ r) + ff_sum) / N
+        var  = ex2 - mean * mean
+        sh   = mean / np.sqrt(var) * ann if var > _DOT_VAR_FLOOR * ex2 else np.nan
+        if not np.isfinite(sh) or abs(sh - actual) <= tie:
+            sh = _perm_sharpe(sized, fee_cost, r, periods_per_year)
+        dist[k] = sh
+        progress.tick()
+    return actual, dist
 
 
 # Keys mcpt_stats_fields writes into stats.json — the api ingests them and the web shows
