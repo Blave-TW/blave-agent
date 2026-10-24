@@ -53,6 +53,7 @@ import capital_local
 import telegram_pairing
 import refresh_capacity
 import save_routing
+import tick_gate
 import turn_slots
 import venue_traits
 
@@ -1679,6 +1680,20 @@ def _sync_strategy_crons(names):
 # down with it).
 
 SCHEDULER_INTERVAL_SECONDS = 60  # matches wait_for_bar.py's own cron cadence
+# Cycles fire at :05 of every minute by the wall clock. A fixed 60 s wait after the cycle's own
+# work drifted ~1.7 s a minute, so the start walked through the whole minute; started in its
+# last ~15 s, wait_for_bar judged bar M-1 while the strategy fetched after M closed and computed
+# M — M-1 was never computed as the latest bar (5% of 1m bars on the 10-22 Windows run). Not at
+# :00: a fetch in the first seconds can find bar M-1 not served yet (fewer ticks ran at :01–:02
+# than at :03+ on that run). BLAVE_SCHEDULER_PHASE=off restores the fixed 60 s wait; <n> (0–14)
+# moves the phase.
+SCHEDULER_PHASE_SECONDS = 5
+PHASE_ENV = "BLAVE_SCHEDULER_PHASE"
+# A fixed phase turns a feed that is always later than it into a strategy that never computes:
+# a <5m tick not-ready at :05 is judged again next minute against the NEXT bar. So those
+# strategies get another look at :20 and :35 (phase + these) — only the ones whose wait_for_bar
+# state went not-ready this minute; the rest are not started at all.
+SCHEDULER_RETRY_OFFSETS = (15, 30)
 # Generous: fetch_data() can legitimately take minutes (wait_for_bar.py's own
 # cost-note docstring) on top of the strategy run's own 1200s budget inside
 # it (wait_for_bar.py trims that budget to what the probe left of this one,
@@ -1688,6 +1703,141 @@ SCHEDULER_INTERVAL_SECONDS = 60  # matches wait_for_bar.py's own cron cadence
 SCHEDULER_TICK_TIMEOUT_SECONDS = 1800
 
 _scheduler_wake = threading.Event()  # lets a fresh 下單設定 save skip the wait
+_tick_gate = None
+_tick_gate_read = False
+_retry_minutes = {}       # <5m Type A/C name -> INTERVAL minutes, from the last full cycle
+_queued_logged = {}       # name -> when its last "queued" line was written
+LATE_LAUNCH_SECOND = 45   # a <5m tick launched past this in its minute may compute the next bar
+EARLY_TIMER_TOLERANCE = 1  # a timer may fire this early (Windows: a few ms) and still be its slot
+
+
+def _scheduler_delay(now, phase=SCHEDULER_PHASE_SECONDS):
+    """Seconds from wall-clock `now` to the next :`phase`, in (0, 60]."""
+    return SCHEDULER_INTERVAL_SECONDS - (now - phase) % SCHEDULER_INTERVAL_SECONDS
+
+
+def _next_slot(t, phase=SCHEDULER_PHASE_SECONDS):
+    """(time, is_full_cycle) of the first slot after `t`: :phase runs the cycle, :phase+15 and
+    :phase+30 only the not-ready retries."""
+    base = t - t % SCHEDULER_INTERVAL_SECONDS
+    for m in (base - SCHEDULER_INTERVAL_SECONDS, base, base + SCHEDULER_INTERVAL_SECONDS):
+        for off in (0,) + SCHEDULER_RETRY_OFFSETS:
+            if m + phase + off > t:
+                return m + phase + off, off == 0
+    return t + _scheduler_delay(t, phase), True
+
+
+def _scheduler_phase():
+    """Seconds past the minute the cycle fires at; None = off (the fixed 60 s wait)."""
+    v = (os.environ.get(PHASE_ENV) or "").strip().lower()
+    if v == "off":
+        return None
+    if v:
+        try:
+            n = int(v)
+        except ValueError:
+            n = -1
+        if 0 <= n <= 14:   # the last retry (+30) must stay before LATE_LAUNCH_SECOND
+            return n
+        _log(f"scheduler: {PHASE_ENV}={v!r} not understood — using :{SCHEDULER_PHASE_SECONDS:02d}")
+    return SCHEDULER_PHASE_SECONDS
+
+
+def _get_tick_gate():
+    global _tick_gate, _tick_gate_read
+    if not _tick_gate_read:
+        try:
+            limit, note = tick_gate.configured_limit(os.environ.get(tick_gate.ENV))
+            if note:
+                _log(f"scheduler: {note}")
+            _tick_gate = tick_gate.TickGate(limit) if limit else None
+        except Exception as e:   # the gate only saves CPU: failing it must not stop the ticks
+            _log(f"scheduler: tick gate unavailable ({type(e).__name__}: {e}) — gate off")
+            limit, _tick_gate = None, None
+        _tick_gate_read = True
+        _log(f"scheduler: live ticks {'at most %d at once' % limit if limit else 'all at once (gate off)'}")
+    return _tick_gate
+
+
+def _gated_tick(gate, name, interval_min):
+    launched = []
+
+    def body():
+        launched.append(time.time())
+        _tick_one(name)
+
+    release = None
+    if interval_min < 5:
+        now = time.time()
+        release = now - now % SCHEDULER_INTERVAL_SECONDS + LATE_LAUNCH_SECOND
+    waited = gate.run(name, body, release_at=release)
+    second = launched[0] % SCHEDULER_INTERVAL_SECONDS
+    if waited >= 10 or (waited >= 1 and interval_min < 5 and second >= LATE_LAUNCH_SECOND):
+        if launched[0] - _queued_logged.get(name, 0) >= 3600:
+            _queued_logged[name] = launched[0]
+            _log(f"scheduler tick {name}: queued {waited:.1f}s for a slot (limit {gate.limit}), "
+                 f"launched at :{int(second):02d} (at most one such line an hour per strategy)")
+
+
+def _start_ticks(minutes):
+    """One tick thread per name in `minutes` ({name: INTERVAL minutes})."""
+    gate = _get_tick_gate()
+    if gate is None:
+        for name in sorted(minutes):
+            threading.Thread(target=_tick_one, args=(name,),
+                             daemon=True, name=f"strategy-tick-{name}").start()
+        return
+    queued = gate.enqueue(list(minutes.items()))
+    for i, name in enumerate(queued):
+        try:
+            threading.Thread(target=_gated_tick, args=(gate, name, minutes[name]),
+                             daemon=True, name=f"strategy-tick-{name}").start()
+        except Exception:
+            for n in queued[i:]:
+                gate.cancel(n)   # a queued name with no thread would block everyone behind it
+            raise
+
+
+def _not_ready_this_minute(name, now):
+    """This minute's tick found the bar not ready, read off wait_for_bar's state file: written
+    this minute with pending_since set and no stall alerted. A computed bar clears pending_since;
+    fast path, throttle and a busy lock do not write. A fetch_error, a failed run or a wrapper
+    error also save and keep pending_since: those get one retry, which wait_for_bar's own
+    RETRY_BACKOFF_SECONDS turns away at once — at most two cheap extra starts a minute while
+    the backoff lasts. pending_since is NOT compared with this minute: it is written once when a
+    wait begins and kept until a bar computes, so after one bar landing past :35 it stays in
+    that minute while every later minute still needs its retry. A row due later than now
+    (an align_feed wait) is not retried — nothing can land before it is due."""
+    from datetime import datetime, timezone
+    path = os.path.join(WORKSPACE, "state", "bar_wait", f"{name}.json")
+    try:
+        if os.path.getmtime(path) < now - now % SCHEDULER_INTERVAL_SECONDS:
+            return False
+        st = atomic_file.load_json(path, encoding="utf-8")
+        if not isinstance(st, dict):
+            return False
+    except (OSError, ValueError):
+        return False
+    since = st.get("pending_since")
+    if since is None or st.get("stall_alert_at") is not None:
+        return False
+    try:
+        if datetime.fromisoformat(since).replace(tzinfo=timezone.utc).timestamp() > now:
+            return False
+    except (TypeError, ValueError):
+        pass   # not an ISO string: the mtime and the two fields above already decided
+    return True
+
+
+def _run_retry_cycle():
+    if not _retry_minutes or _signals_frozen() or _downtime_pending():
+        return
+    now = time.time()
+    due = {n: m for n, m in _retry_minutes.items() if _not_ready_this_minute(n, now)}
+    if due:
+        _start_ticks(due)
+
+
 _ac_migration_done = False  # see _run_scheduler_cycle's transition handling
 
 
@@ -2594,8 +2744,9 @@ def _signals_frozen():
 _AC_DEPLOY_TYPE = "wait_for_bar"
 
 
-def _sync_deployment_registry(ac_names):
-    """Upsert state/deployments.json entries for Type A/C names so
+def _sync_deployment_registry(minutes):
+    """`minutes`: {Type A/C name: INTERVAL minutes} (_strategy_interval_minutes, read once per
+    cycle by the caller). Upsert state/deployments.json entries for Type A/C names so
     manager/healthcheck.py keeps monitoring them even though they now have no
     crontab line — that file's own auto-registration only fires from a LIVE
     crontab scan (see its _autoregister), so a Type A/C strategy that's never
@@ -2618,9 +2769,8 @@ def _sync_deployment_registry(ac_names):
         return
     changed = False
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
-    for n in ac_names:
+    for n, expect in minutes.items():
         cur = deps.get(n)
-        expect = _strategy_interval_minutes(n)
         if not (isinstance(cur, dict) and cur.get("type") == _AC_DEPLOY_TYPE
                 and cur.get("expect_every_minutes") == expect):
             deps[n] = {
@@ -2732,10 +2882,11 @@ def _run_scheduler_cycle():
     exit) and N is small (a user's whole portfolio, not a fleet) — one spawn
     per name per minute is cheap, and per-strategy overlap is already
     prevented by wait_for_bar.py's own file lock (state/bar_wait/<name>.lock),
-    not by anything in this loop."""
+    not by anything in this loop. How many of those threads run their tick at
+    once: runtime/tick_gate.py (BLAVE_TICK_CONCURRENCY=off spawns as before)."""
     if _signals_frozen():
         return
-    global _ac_migration_done
+    global _ac_migration_done, _retry_minutes
     if _wait_for_bar_available() and not _ac_migration_done:
         # Runs once per process, but not necessarily on the FIRST cycle: a
         # workspace can update (git pull bringing in wait_for_bar.py for the
@@ -2774,11 +2925,12 @@ def _run_scheduler_cycle():
     # before the ac_names-empty early return, not after it.
     _prune_deployment_registry(ac_names)
     if not ac_names:
+        _retry_minutes = {}
         return
-    _sync_deployment_registry(ac_names)
-    for name in sorted(ac_names):
-        threading.Thread(target=_tick_one, args=(name,),
-                         daemon=True, name=f"strategy-tick-{name}").start()
+    minutes = {n: _strategy_interval_minutes(n) for n in ac_names}
+    _sync_deployment_registry(minutes)
+    _retry_minutes = {n: m for n, m in minutes.items() if m < 5}
+    _start_ticks(minutes)
 
 
 def _migrate_legacy_ac_crons():
@@ -2857,18 +3009,66 @@ def _scheduler_loop():
     except Exception as e:
         _log(f"downtime startup check failed: {type(e).__name__}: {e}")
     threading.Thread(target=_downtime_watch_loop, daemon=True, name="downtime-watch").start()
-    while True:
+    phase = _scheduler_phase()
+    # Started late in a minute (the same K3 window as a late wake): the first cycle waits for :phase.
+    full = phase is None or time.time() % SCHEDULER_INTERVAL_SECONDS < LATE_LAUNCH_SECOND
+    if not full:
+        # Arms the report jobs now (a first sight only arms, never fires): armed at :05 instead,
+        # a job due at the coming :00 would be skipped — on desktop logged as missed, app closed.
         try:
-            _downtime_check()
-            if _downtime_pending():
-                _log("scheduler cycle skipped — a downtime gap is not settled yet")
-            else:
-                _run_scheduler_cycle()
+            _fire_due_reports()
         except Exception as e:
-            _log(f"scheduler cycle failed: {type(e).__name__}: {e}")
-        _fire_due_reports()  # independent of venue binding — reports run unbound too
-        _scheduler_wake.wait(timeout=SCHEDULER_INTERVAL_SECONDS)
-        _scheduler_wake.clear()
+            _log(f"report trigger at startup failed: {type(e).__name__}: {e}")
+    target = None
+    while True:
+        if full:
+            try:
+                _downtime_check()
+                if _downtime_pending():
+                    _log("scheduler cycle skipped — a downtime gap is not settled yet")
+                else:
+                    _run_scheduler_cycle()
+            except Exception as e:
+                _log(f"scheduler cycle failed: {type(e).__name__}: {e}")
+            _fire_due_reports()  # independent of venue binding — reports run unbound too
+        else:
+            try:
+                _run_retry_cycle()
+            except Exception as e:
+                _log(f"scheduler retry failed: {type(e).__name__}: {e}")
+        if phase is None:
+            _scheduler_wake.wait(timeout=SCHEDULER_INTERVAL_SECONDS)
+            _scheduler_wake.clear()
+            continue
+        while True:
+            now = time.time()
+            # Overran the slot, or the clock moved: back onto the grid from now. Otherwise the
+            # next slot follows the last one, so a timer firing a few ms early (Windows) cannot
+            # make two cycles in one minute.
+            if target is None or target <= now or target - now > SCHEDULER_INTERVAL_SECONDS:
+                target, is_full = _next_slot(now, phase)
+            woke = _scheduler_wake.wait(timeout=target - now)
+            _scheduler_wake.clear()
+            if not woke:
+                # A late timer (sleep, a clock jump, a starved thread) still runs: until :45 a 1m
+                # tick judges the same bar the :phase one would. Past :45 it waits for the next
+                # :phase, like a late save or start. Landing in a later minute than its slot, that
+                # minute has had no full cycle yet, so this is one.
+                late = time.time()
+                if late < target - EARLY_TIMER_TOLERANCE:   # the clock went back: re-align from now
+                    target = None
+                    continue
+                if late % SCHEDULER_INTERVAL_SECONDS >= LATE_LAUNCH_SECOND:
+                    target = None
+                    continue
+                full = is_full or late // SCHEDULER_INTERVAL_SECONDS != target // SCHEDULER_INTERVAL_SECONDS
+                target, is_full = _next_slot(target, phase)
+                break
+            # A 下單設定 save. Late in the minute a 1m tick would judge one bar and fetch the
+            # next, so that save waits for the :phase cycle instead.
+            if time.time() % SCHEDULER_INTERVAL_SECONDS < LATE_LAUNCH_SECOND:
+                full = True
+                break
 
 
 # ── 定期報告排程(.claude/docs/report-schedules.md §3、§6)────────────────────
