@@ -6,7 +6,7 @@ import pandas as pd
 import logging
 
 # Same list as lib/matplotlibrc.
-CJK_FONTS = ['Noto Sans CJK TC', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', 'Heiti TC', 'Arial Unicode MS', 'DejaVu Sans']
+CJK_FONTS = ['Noto Sans CJK TC', 'Microsoft JhengHei', 'Noto Sans CJK SC', 'Microsoft YaHei', 'WenQuanYi Micro Hei', 'Heiti TC', 'Arial Unicode MS', 'DejaVu Sans']
 
 
 def _plt():

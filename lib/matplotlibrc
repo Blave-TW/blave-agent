@@ -1,3 +1,3 @@
 # Loaded through MATPLOTLIBRC (lib/__init__.py). font.family is the same list as lib/analysis.CJK_FONTS.
 backend: Agg
-font.family: Noto Sans CJK TC, Noto Sans CJK SC, WenQuanYi Micro Hei, Heiti TC, Arial Unicode MS, DejaVu Sans
+font.family: Noto Sans CJK TC, Microsoft JhengHei, Noto Sans CJK SC, Microsoft YaHei, WenQuanYi Micro Hei, Heiti TC, Arial Unicode MS, DejaVu Sans
