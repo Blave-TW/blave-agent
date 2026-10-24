@@ -7,7 +7,7 @@
 **Quant Workspace for AI Agents**<br>
 Build, backtest and trade strategies live with Claude Code or Codex. Free and open source.
 
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a> <a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=f7931a" alt="Latest release"></a> <img src="https://img.shields.io/badge/desktop-macOS%20%7C%20Windows-555" alt="macOS | Windows"> <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex-555" alt="Works with Claude Code and Codex">
+<a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=555" alt="Latest release"></a>
 
 **English** | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
@@ -17,7 +17,7 @@ Build, backtest and trade strategies live with Claude Code or Codex. Free and op
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
-<p align="center"><a href="#quick-start">Quick start</a> · <a href="https://blave.org/docs/en">Docs</a> · <a href="https://blave.org/agent/en">Run it with your computer off</a></p>
+<p align="center"><a href="https://blave.org/docs/en">Docs</a></p>
 
 ## What You Get
 
@@ -26,8 +26,8 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 - **Real fees by default.** A fee of 0 gets a warning.
 - **Auto-trading already wired up.** Binance, OKX, Bybit, BingX, Gate.io, plus Taiwan index futures on Windows.
 - **Paper trading.** No keys needed.
-- **Ideas from the web.** The agent reads a dozen sites and brings back three you can backtest.
-- **Your own AI.** Claude Code, Codex, a DeepSeek key, or Blave AI.
+- **Ideas from the web.** The agent reads a few sites and brings back three you can backtest.
+- **Pick your AI.** Claude Code, Codex, a DeepSeek key, or Blave AI.
 
 ![A BTC breakout strategy in the app](docs/readme-backtest.png)
 
@@ -38,7 +38,7 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 ## Quick Start
 
 1. Download for [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) or [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) and open it.
-2. Pick your AI: your own Claude Code or Codex, a DeepSeek key, or Blave AI.
+2. Pick your AI.
 3. Describe an idea:
 
 > Backtest BTCUSDT on the 4h chart: long when SMA 20 crosses above SMA 60, flat when it crosses back. 0.05% fee per side.
@@ -66,7 +66,7 @@ On Windows, run `npm.cmd install` and `npm.cmd start` in PowerShell.
 
 ## Safety
 
-- **Only you fund or resume trading.** The agent can only stop it.
+- **Only you allocate funds or resume trading.** The agent can only stop it.
 - **Every order is checked with the exchange** and logged to `state/audit.jsonl`.
 - **A backtest describes the past.** Trading can lose all of your money.
 

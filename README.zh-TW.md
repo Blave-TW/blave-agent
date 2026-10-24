@@ -7,7 +7,7 @@
 **給 AI Agent 的量化工作台**<br>
 用 Claude Code 或 Codex 寫策略、跑回測、上線自動交易。免費開源。
 
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="授權 Apache-2.0"></a> <a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=f7931a" alt="最新版本"></a> <img src="https://img.shields.io/badge/desktop-macOS%20%7C%20Windows-555" alt="macOS | Windows"> <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex-555" alt="支援 Claude Code 與 Codex">
+<a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=555" alt="最新版本"></a>
 
 [English](README.md) | **繁體中文** | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
@@ -17,28 +17,28 @@
 
 https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 
-<p align="center"><a href="#quick-start">快速開始</a> · <a href="https://blave.org/docs/zh">文件</a> · <a href="https://blave.org/agent/zh">關電腦也照跑</a></p>
+<p align="center"><a href="https://blave.org/docs/zh">文件</a></p>
 
 ## 你會得到
 
 - **所有策略在一個 app 裡。** 每支都有回測、成交、參數掃描、版本。
-- **回測會抓過擬合。** MCPT p 值、參數高原、樣本外驗證。
+- **回測會抓過度擬合。** MCPT p 值、參數高原、樣本外驗證。
 - **預設算真實手續費。** 手續費填 0 會警告。
 - **自動下單已經接好。** 幣安、OKX、Bybit、BingX、Gate.io，以及台指期（Windows）。
 - **模擬交易。** 不用金鑰。
-- **上網幫你找點子。** 讀十幾個網站，帶回三個能回測的點子。
-- **用你自己的 AI。** Claude Code、Codex、DeepSeek 金鑰或 Blave AI。
+- **上網幫你找點子。** 讀幾個網站，帶回三個能回測的。
+- **AI 自己選。** Claude Code、Codex、DeepSeek 金鑰或 Blave AI。
 
 ![app 裡的 BTC 突破策略](docs/readme-backtest.png)
 
-<p align="center">⭐ 省下你一個週末接 API 的話，按個 Star。這能幫其他交易者找到它。</p>
+<p align="center">⭐ 如果它幫你省下一個週末接 API，按個 Star。這能幫其他交易者找到它。</p>
 
 <a id="quick-start"></a>
 
 ## 快速開始
 
 1. 下載 [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) 或 [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) 版並打開。
-2. 選 AI：你自己的 Claude Code 或 Codex、DeepSeek 金鑰，或 Blave AI。
+2. 選 AI。
 3. 說出你的點子：
 
 > 回測 BTCUSDT 4 小時線：SMA 20 上穿 SMA 60 做多，下穿就平倉。單邊手續費 0.05%。
@@ -66,7 +66,7 @@ Windows 在 PowerShell 裡改跑 `npm.cmd install` 與 `npm.cmd start`。
 
 ## 安全
 
-- **只有你能入金與恢復交易。** agent 只能停。
+- **只有你能配置資金與恢復交易。** agent 只能停。
 - **每筆委託都跟交易所核對過**，記在 `state/audit.jsonl`。
 - **回測只代表過去。** 交易可能賠光本金。
 
