@@ -186,11 +186,15 @@ def _write_json_atomic(path, obj, indent=2):
     versions index while a backtest mints into it — and a reader landing mid-write would
     otherwise see a truncated file and drop keys for good (MCPT / Generated At carry-over,
     or the whole version list)."""
+    _write_atomic(path, lambda f: json.dump(obj, f, indent=indent))
+
+
+def _write_atomic(path, write):
     path = Path(path)
     tmp  = path.with_name(path.name + '.tmp')
     try:
         with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(obj, f, indent=indent)
+            write(f)
         atomic_replace(tmp, path)
     except Exception:
         try:
@@ -297,7 +301,11 @@ def _write_preview(out_dir, preview, src0):
 
 
 def _write_stats(out_dir, stats):
-    return _write_json_atomic(Path(out_dir) / 'stats.json', stats)
+    # indent=2 / json.dump run the pure-Python encoder; compact json.dumps takes the C one. One
+    # top-level key per line keeps `grep '"Benchmark Return'` / `head` to a line, not the curve.
+    # dumps({k: v})[1:-1] rather than dumps(k) so non-str keys coerce exactly as json.dump does.
+    body = '{\n' + ',\n'.join(json.dumps({k: v})[1:-1] for k, v in stats.items()) + '\n}\n'
+    return _write_atomic(Path(out_dir) / 'stats.json', lambda f: f.write(body))
 
 
 def _mcpt_n_effective(n_perm, bars):
