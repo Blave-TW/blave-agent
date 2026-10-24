@@ -262,7 +262,7 @@ t("研究題 reports.md §1b:資料檢查在搜尋與腳本之前、8–12 分�
                         "also when the user asked for a report outright (the 新增報告 box included)",
                         "never publish the changed one before the user accepts it",
                         "Offer the report **on the changed question**", "「用前 10% 門檻做成報告」",
-                        "Web / desktop: a `<suggest>` line", "Telegram has no `<suggest>`: one plain sentence",
+                        "Web / desktop: a `<suggest>` line — an answered research question not yet made a report is one of the suggestion milestones", "Telegram has no `<suggest>`: one plain sentence",
                         "**Taking the offer is the user's consent to the change:**", "answer it — not the original",
                         "**Never publish a report on a substitution the user did not accept.**",
                         "A template brief (台股收盤報告 …), a backtest report or a change to an existing report is not this rule",

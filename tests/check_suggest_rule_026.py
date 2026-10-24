@@ -57,6 +57,9 @@ t("v2 只寫 1 句、填進輸入框不是原句送出;一般句 ≤20 字、導
   and "填進用戶的輸入框" in S and "一般句 ≤20 字" in S and "英文 ≤48 字元" in S and "不限長度" in S)
 t("v2 step 範本改短", all(k in S for k in ("「掃〈策略名〉的參數找穩定區」", "「幫〈策略名〉加 vol targeting」", "「幫〈策略名〉加趨勢濾網」",
                                            "「幫〈標的〉換一種進場訊號」", "「回測〈策略名〉」")))
+t("研究題答完、還沒做成報告是里程碑(同 references/reports.md)", "- 研究／分析題答完、還沒做成報告 → 「做成報告」" in S
+  and "one of the suggestion milestones" in open(os.path.join(ROOT, "references", "reports.md"), encoding="utf-8").read())
+t("turn-events.md:<await/> 那輪不附 <suggest>", "A turn that writes `<await/>` carries no `<suggest>` block." in open(os.path.join(ROOT, "references", "turn-events.md"), encoding="utf-8").read())
 t("B4 禁止在同一訊號加東西只管主動提的建議", "（只管你主動提的建議；用戶自己要求的照做，見 AGENTS.md）" in S)
 t("_SUGGEST_MAX_ITEMS = 1", at._SUGGEST_MAX_ITEMS == 1)
 _, items = at.extract_suggestions("好。\n<suggest>\n一\n二\n三\n</suggest>")

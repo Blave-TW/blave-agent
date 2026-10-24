@@ -7,8 +7,8 @@ runtime side ships first (api, then web / desktop, follow the same contract).
 ## The `<await/>` marker (model → runtime)
 
 - Written by the model on its own line at the very end of the reply body — after an
-  `<export … />` marker, before a `<suggest>` block (`<suggest>` stays last). Rule text lives in the
-  runtime prompt (`_SUGGEST_RULE` tail); nothing here needs the agent's attention.
+  `<export … />` marker. A turn that writes `<await/>` carries no `<suggest>` block. Rule text lives
+  in the runtime prompt (`_AWAIT_RULE`); nothing here needs the agent's attention.
 - Meaning: the turn ends needing the user's answer to continue — a clarification question, numbered
   options the user must pick from, information only the user has. Not for reporting results,
   suggestion chips, or chit-chat.

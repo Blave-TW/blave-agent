@@ -463,7 +463,8 @@ a follow-up on an answer or report you already gave (「那 ETH 呢」, 「第�
    - Or the condition holds in only a few segments — say how many, give the figures, and say what
      that many cannot show.
    - Offer the report **on the changed question**, naming the change: 「用前 10% 門檻做成報告」
-     (a few segments, nothing changed: 「做成報告」). Web / desktop: a `<suggest>` line, never a
+     (a few segments, nothing changed: 「做成報告」). Web / desktop: a `<suggest>` line — an answered
+     research question not yet made a report is one of the suggestion milestones — never a
      question at the end of the reply. Telegram has no `<suggest>`: one plain sentence —
      「要的話回覆『用前 10% 門檻做成報告』」. The script stays in `tmp/research/`, so taking the
      offer reruns it (*Research scripts*, below).
