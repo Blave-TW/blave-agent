@@ -129,14 +129,16 @@ write_report(
 status("mcpt-2317-20260901")   # 'pending' | 'sent' | 'failed: <reason>' | 'unknown'
 ```
 
-`write_report` checks only the report id and the image file names (a name is used to
-write a file, so it must not be a path) — every other rule is enforced downstream,
-where the error message is more precise than anything this side could reproduce. It
-writes the pictures before the JSON, in the order the drop dir requires. For
+Before writing, `write_report` sends the report to the platform's own validator: a
+refusal raises `ValueError` with the api's message (it names the field path) and writes
+nothing — fix it and call again with the same id, this turn. With no verdict (no machine
+token, offline, timeout, an older api) it writes unchecked and the rules are enforced at
+upload. Locally it checks only the report id and the image file names (a name is used to
+write a file, so it must not be a path). It writes the pictures before the JSON, in the order the drop dir requires. For
 `type="research"` it also prints advisory `WARNING:` lines from §7b (title too long, no
 `kpi_row` right after the lead, no `meta.shareable` — B7). They never stop the write.
 
-**The write is the finish line.** Once the JSON is in the drop dir the report is
+**The write is the finish line.** Once `write_report` returns the report is
 produced and you are done — tell the user it has been produced and will show up in the
 Reports list (「報告」 in the workspace sidebar) within about two minutes, then move on.
 Never say it is already in the list: the upload has not run yet, and the platform can

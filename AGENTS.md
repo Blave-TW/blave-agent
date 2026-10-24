@@ -93,7 +93,7 @@ Asked for strategy ideas from the web (incl. the app prompt 「上網幫我找 3
 
 ## Blave API Headers
 
-`lib/data.py` functions take a `headers` dict — the runner builds it; anywhere else (one price, a quick check) it is `load_dotenv()` then `{'api-key': os.environ['blave_api_key'], 'secret-key': os.environ['blave_secret_key']}`, no need to look it up. **NEVER use** `X-API-KEY`, `X-SECRET-KEY`, or `Authorization: Bearer ...` (403). **The base URL is ALWAYS `https://api.blave.org`** — copy it from `lib/data.py`, never from memory (`api.blave.ai` does not exist).
+`lib/data.py` functions take a `headers` dict — the runner builds it; anywhere else (one price, a quick check) it is `load_dotenv()` then `{'api-key': os.environ['blave_api_key'], 'secret-key': os.environ['blave_secret_key']}`, no need to look it up; a crypto last price needs none: `fetch_binance_ticker_24h().loc['BTCUSDT', 'last']`. **NEVER use** `X-API-KEY`, `X-SECRET-KEY`, or `Authorization: Bearer ...` (403). **The base URL is ALWAYS `https://api.blave.org`** — copy it from `lib/data.py`, never from memory (`api.blave.ai` does not exist).
 
 ## Exchange API Keys
 
@@ -119,7 +119,7 @@ Import from `lib/` — never write these functions inline (`references/lib.md`).
 
 ## Reports
 
-A report is a document the user reads in the Reports list (web: 「報告」 in the sidebar; desktop: Reports in the left sidebar) — for anything read again later. A change to a report the user named goes through `edit_report` on that same report — never a hand edit of the JSON, never a report nobody named (`references/reports.md` §1).
+A report is a document the user reads in the Reports list (web: 「報告」 in the sidebar; desktop: Reports in the left sidebar) — for anything read again later. A change to a report the user named goes through `edit_report` on that same report — never a hand edit of the JSON, never a report nobody named (`references/reports.md` §1). A report you got wrong this turn is rewritten under its id with `replace=True`, never a second id; cannot fix it → say so in the reply.
 
 - **A research question goes straight to a report:** its answer needs an analysis script over multi-period history (event study, conditional returns, comparing periods or groups) or the user asks for a new research report → say 「這題會直接做成報告，約 N 分鐘」 and start, no confirmation round; 研究 or 分析 alone does not trigger it; one number, a current reading or a follow-up stays in chat.
 - **For a research question, check the data first:** period covered, condition present, independent segments (B9). Question must change or few segments → answer in chat, report asked for or not; say what changed, offer a report on the new question (「用前 10% 門檻做成報告」) — taking it is consent. **Never publish a report on a substitution the user did not accept** (`references/reports.md` §1b).
@@ -128,7 +128,7 @@ A report is a document the user reads in the Reports list (web: 「報告」 in 
 - **A pack missing part of its data is still published** (`publish()` footnotes it); only `pack.skip` stops it.
 - **Restate the schedule you parsed (cadence, time, weekday/date, timezone) before you start;** the cron is the user's own wall-clock time, never converted; an unknown symbol, a future date or a kind with no template → ask one question first (`references/reports.md` §1b).
 - **A recurring report is a job directory registered with `lib.report.register_schedule`, never a crontab / schtasks line** — read `references/reports.md` §8 (layout, list/remove, the web's 「請修改定期報告「…」（id：…）」 edit flow — finish it this turn, consented scheduled agent runs). One sample first; signal-only; changing a job on your own initiative waits for the user's yes. Never a Telegram message about a stored report.
-- **Writing the JSON finishes the job:** say it is produced (desktop: 「報告做好了」; never say it is open or was opened), then **two sentences at most** — one conclusion, one thing to watch; no heading, list, report figure or tool-status line (「Published successfully.」). Never poll `status()`.
+- **`write_report` / `publish` returning without an error finishes the job** — refused, it raises the platform's message: fix that and call it again with the same id, this turn. Then say it is produced (desktop: 「報告做好了」; never say it is open or was opened), then **two sentences at most** — one conclusion, one thing to watch; no heading, list, report figure or tool-status line (「Published successfully.」). Never poll `status()`.
 
 ## Shell Commands
 
