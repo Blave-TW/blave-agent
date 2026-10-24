@@ -1721,9 +1721,9 @@ def version_restore_note(since):
 def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=None,
                  suggest_directive=False, viewing_view=None,
                  reply_lang=None, resume_note=None, viewing_env=None, cloud_mcp=False, lang_basis=None,
-                 version_note=None, desktop=False, report_fail_line=None):
+                 version_note=None, desktop=False, report_fail_line=None, user_tz=None):
     """`report_fail_line`:run_turn 每回合算一次傳進來(排程回合傳 "",續跑沿用同一行);
-    None = 這裡自己算(測試與其他呼叫端)。"""
+    None = 這裡自己算(測試與其他呼叫端)。`user_tz`:用戶的 IANA 時區,電腦版不傳。"""
     parts = []
     if summary:
         parts.append(f"[過去對話摘要]\n{summary}\n")
@@ -1773,6 +1773,10 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
         parts.append(_viewing_env_segment(cloud_mcp))
     if version_note:  # 機器上的事實,不是 UI 狀態:兩個 sink 都掛
         parts.append(version_note)
+    if user_tz:
+        # TZ env 只讓 agent 自己的 shell 換成用戶時間,模型本身看不到:沒有這行它會說「不知道用戶時區」
+        # 或照範例猜台北時間。策略子行程刻意不吃 TZ,所以 run.log 與資料的時間戳仍是 UTC
+        parts.append(f"[用戶時區：{user_tz}；資料與 log 是 UTC]")
     parts.append("[使用者這次的訊息]")
     parts.append(message)
     # 紅線逐輪錨——**兩個 sink 都掛**,獨立於 suggest_directive:TG 是主介面之一,
@@ -4362,13 +4366,17 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # 排程回合沒人在場:講了沒人聽,還會把「講過了」記掉,用戶在對話裡就再也聽不到。
     # 只算一次:_report_failures_line 會寫 told 標記,續跑重建 prompt 時再算就是空的
     report_fail_line = "" if isinstance(sink, ReportSink) else _report_failures_line()
+    user_tz = strategy_reporter.read_timezone()
+    # 電腦版跑在用戶自己的電腦上,本機時鐘就是用戶時區,log 也不是 UTC:那句話在那裡是錯的
+    prompt_tz = None if _desktop_surface(sink) else user_tz
     prompt = build_prompt(summary, recent, message,
                           viewing_strategy=viewing_strategy, viewing_tab=viewing_tab,
                           suggest_directive=isinstance(sink, WebSink),
                           viewing_view=viewing_view,
                           reply_lang=reply_lang, viewing_env=viewing_env, cloud_mcp=cloud_mcp,
                           lang_basis=lang_msg, version_note=version_note,
-                          report_fail_line=report_fail_line, desktop=_desktop_surface(sink))
+                          report_fail_line=report_fail_line, user_tz=prompt_tz,
+                          desktop=_desktop_surface(sink))
     agents_md = load_agents_md()
 
     # Persist the user's message BEFORE calling the SDK — if the turn later
@@ -4392,7 +4400,6 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     # 時間(report-schedules.md §2b)——沒帶的話它會把 UTC 的 10:26 當成用戶的現在。
     # 沒設定就不帶(舊機、只用 Telegram 的用戶),維持機器時間。策略子行程刻意不吃這個
     # (command_listener._strategy_subprocess_env),排程跑與手動跑的基準才會一致。
-    user_tz = strategy_reporter.read_timezone()
     if user_tz:
         turn_env["TZ"] = user_tz
     # Claude Code's Bash tool auto-backgrounds any command still running at 600s
@@ -4757,7 +4764,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                                   reply_lang=reply_lang, resume_note=_resume_note(tool_steps),
                                   viewing_env=viewing_env, cloud_mcp=cloud_mcp, lang_basis=lang_msg,
                                   version_note=version_note,
-                                  report_fail_line=report_fail_line,
+                                  report_fail_line=report_fail_line, user_tz=prompt_tz,
                                   desktop=_desktop_surface(sink))
             options.max_budget_usd = budget if options.max_budget_usd is not None else None
             options.max_turns = max(TURN_MAX_TURNS - spent_turns, _RESUME_MIN_TURNS)

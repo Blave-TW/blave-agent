@@ -53,6 +53,8 @@ import re
 import shutil
 import time
 import unicodedata
+import urllib.error
+import urllib.request
 from zoneinfo import ZoneInfo
 try:
     from lib.winreplace import load_json
@@ -414,6 +416,49 @@ def _write_bytes(path, data):
         raise
 
 
+# The platform's own validator, run before the file is written (api POST <report url>/<id>/validate,
+# the same check the upload's PUT makes). Same env override as runtime/report_uploader.py.
+REPORT_URL = os.environ.get("BLAVE_REPORT_URL", "https://api.blave.org/openclaw/agent/report")
+# The agent waits on this inside its turn, and the check is CPU-only on the api (well under a second
+# plus the round trip from a cloud machine), so a few seconds is plenty; past that the report is
+# written unchecked rather than holding the reply (the uploader's 20 s is for a background timer).
+VALIDATE_TIMEOUT_S = 5
+_REFUSED = (400, 413)   # = report_uploader._PERMANENT_STATUS: the same bytes will never pass
+
+
+def _platform_check(doc):
+    """Raise ValueError with the api's message when the platform would refuse `doc`. Every other
+    outcome writes the report as before: no machine token (desktop, a scheduled strategy
+    subprocess), offline, timeout, 401/404 (an api without this endpoint yet), 429, 5xx."""
+    token = os.environ.get("BLAVE_PROXY_TOKEN")
+    if not token or os.environ.get("BLAVE_AGENT_LOCAL") == "1":
+        return
+    # The uploader swaps an image block's `file` for the sha256 of the uploaded bytes; the api only
+    # checks that it is one, so a placeholder stands in for a picture not uploaded yet.
+    blocks = [dict({k: v for k, v in b.items() if k != "file"}, sha256="0" * 64)
+              if isinstance(b, dict) and b.get("type") == "image" and "file" in b and "sha256" not in b
+              else b for b in doc["blocks"]]
+    body = json.dumps(dict(doc, blocks=blocks), ensure_ascii=False, allow_nan=False).encode("utf-8")
+    req = urllib.request.Request(
+        f"{REPORT_URL}/{doc['id']}/validate", data=body, method="POST",
+        headers={"Content-Type": "application/json", "x-api-key": f"proxy-{token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=VALIDATE_TIMEOUT_S):
+            return
+    except urllib.error.HTTPError as e:
+        if e.code not in _REFUSED:
+            return
+        try:
+            detail = json.loads(e.read() or b"{}").get("error") or ""
+        except Exception:  # noqa: BLE001 - an unreadable body still means refused
+            detail = ""
+        raise ValueError(f"The platform refused report {doc['id']}, so nothing was written: "
+                         f"HTTP {e.code} {detail}".rstrip() + ". Fix what it names and call it again "
+                         "with the same id in this turn.") from None
+    except Exception:  # noqa: BLE001 - no verdict (offline, timeout, TLS…) never blocks a report
+        return
+
+
 def _mark_scheduled(report_id):
     """A scheduled agent run (the runner sets BLAVE_SCHEDULED_JOB for that turn) records which
     report it produced, so report_runner can tell its own report from anything else written in
@@ -464,12 +509,14 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
                 from the environment. png / jpg / jpeg / webp / gif, ≤2MB each.
 
     A footnote id used more than once is joined into one footnote line (`unique_footnotes`).
-    Nothing else here is validated beyond the report id, the image file names (a name
-    becomes a path on this disk, so it may not be one) and the cap of CITED_IMAGES_MAX
-    image blocks carrying `source` (the api has no such cap): the api is the only validator,
-    and a second copy of the rules on this side would drift and start refusing reports
-    the platform accepts. A rejected report lands in `reports/failed/` with the
-    api's message (it names the offending field path) in `upload_errors.log`.
+    The rules live in one place, the api: before anything is written the report goes to its
+    validator (`_platform_check`, no copy of the rules here), and a refusal raises ValueError
+    with its message (it names the offending field path) and writes nothing — fix it and call
+    again with the same id. With no verdict (no machine token, offline, timeout, an older api)
+    the report is written unchecked and a refusal at upload lands in `reports/failed/` with the
+    message in `upload_errors.log`. Checked here as well: the report id, the image file names
+    (a name becomes a path on this disk, so it may not be one) and the cap of CITED_IMAGES_MAX
+    image blocks carrying `source` (the api has no such cap).
     For `type="research"` three points of the §7b skeleton (title width, the lead's first
     sentence, a `kpi_row` right after the lead), a baseline `delta` on a non-neutral KPI cell
     and a missing `meta.shareable` are printed as `WARNING:`
@@ -527,6 +574,7 @@ def _write(asked, report_id, title, blocks, type, report_type, created_at, meta,
         version = "1.1"
     doc = {"schema_version": version, "id": report_id, "type": type,
            "title": title, "created_at": created_at, "blocks": blocks}
+    _platform_check(doc)   # before any file: a refused report leaves nothing behind
 
     os.makedirs(REPORTS_DIR, exist_ok=True)
     # Pictures first, JSON last — the report landing is what makes the set visible to
