@@ -241,13 +241,22 @@ TXF_SRC = ('SYMBOL = "TXF"\nINTERVAL = "{iv}"\n'
            'def fetch_data(h):\n    return fetch_twfutures_ohlcv("TXF", "60m", "2026-01-01", None, h)\n')
 for n, src in (("tx", TXF_SRC.format(iv="1h")), ("tx1", TXF_SRC.format(iv="1m")),
                ("tx5", TXF_SRC.format(iv="5m")),
-               ("sf", 'SYMBOL = "2330F"\nINTERVAL = "5m"\ndef fetch_data(h):\n    return None\n'),
+               ("sf", 'SYMBOL = "CDF"\nINTERVAL = "5m"\nfrom lib.data import fetch_twfutures_ohlcv\n'
+                      'def fetch_data(h):\n    return fetch_twfutures_ohlcv(SYMBOL, "5m", "2026-01-01", None, h)\n'),
+               ("sfx", 'SYMBOL = "CDF"\nINTERVAL = "5m"\nfrom lib.data import fetch_kline\n'
+                       'def fetch_data(h):\n    return fetch_kline("TSMUSDT", "5m", "2026-01-01", None, h)\n'),
+               ("sfmix", 'INTERVAL = "5m"\nfrom lib.data import fetch_kline, fetch_twfutures_ohlcv\n'
+                         'def fetch_data(h):\n    return fetch_twfutures_ohlcv("CDF", "5m", "2026-01-01", None, h), '
+                         'fetch_kline("BTCUSDT", "5m", "2026-01-01", None, h)\n'),
+               ("sfnote", 'INTERVAL = "5m"\n# priced like fetch_twfutures_ohlcv("CDF") would be\n'
+                          'def fetch_data(h):\n    return None\n'),
                ("btc", 'SYMBOL = "BTCUSDT"\nINTERVAL = "1h"\ndef fetch_data(h):\n    return None\n')):
     os.makedirs(os.path.join(WS, "strategies", n))
     open(os.path.join(WS, "strategies", n, "strategy.py"), "w").write(src)
 os.makedirs(os.path.join(WS, "manager"))
-json.dump({"amounts": {"sf": 1}, "exchanges": {"sf": ""},
-           "asset_specs": {"sf": {"type": "futures_contracts", "contract_value": 2000}}},
+LOTS = ("sf", "sfx", "sfmix", "sfnote", "sfgone")
+json.dump({"amounts": {n: 1 for n in LOTS}, "exchanges": {n: "" for n in LOTS},
+           "asset_specs": {n: {"type": "futures_contracts", "contract_value": 2000} for n in LOTS}},
           open(os.path.join(WS, "manager", "portfolio_config.json"), "w"))
 os.makedirs(os.path.join(WS, "state", "bar_wait"))
 os.chdir(WS)
@@ -378,6 +387,57 @@ try:
     feed.update(labels=labels_for("DHF", "5m"), td=timedelta(minutes=5))
     drive("sf", T(10, 16, 13, 0), T(10, 19, 9, 0))
     check(not alerts, f"DHF 5m (day only) Friday close → Monday open: no alert → {tpe(a for a, _ in alerts)}")
+
+    # night learning: on the ready path too (a feed that is never late), only 17:25–05:00 labels,
+    # and it lapses
+    full = [x for x in (T(10, 20, 13) + timedelta(minutes=5 * i) for i in range(12 * 20))
+            if wfb._tw_fut_bar_exists("lots", x, timedelta(minutes=5), hol, True)]
+    feed.update(labels=full, td=timedelta(minutes=5))
+    st = drive("sf", T(10, 20, 13, 0), T(10, 20, 17, 31))
+    check(st.get("tw_fut_night_bar") == T(10, 20, 17, 25).isoformat(),
+          f"…learned from the first night bar, which was ready on its first poll → {st.get('tw_fut_night_bar')}")
+    st = drive("sf", T(10, 20, 17, 31), T(10, 21, 9, 0), reset=False)
+    check(st.get("tw_fut_night_bar") and not alerts,
+          f"CDF 5m feed never late (every bar ready on its first poll): night learned on the ready "
+          f"path, no alert through 05:00 and after → {st.get('tw_fut_night_bar')} {tpe(a for a, _ in alerts)}")
+    stray = [x for x in labels_for("DHF", "5m") if x < T(10, 20, 14)] + [T(10, 20, 15, 30)]
+    feed.update(labels=sorted(stray), td=timedelta(minutes=5))
+    st = drive("sf", T(10, 20, 13, 0), T(10, 20, 17, 0))
+    check(not st.get("tw_fut_night_bar") and not wfb._tw_fut_night_label(T(10, 20, 15, 30), timedelta(minutes=5))
+          and not wfb._tw_fut_night_label(T(10, 20, 10, 0), H1) and wfb._tw_fut_night_label(T(10, 20, 17, 0), H1)
+          and wfb._tw_fut_night_label(T(10, 17, 4, 0), H1) and not wfb._tw_fut_night_label(T(10, 17, 10, 0), H1),
+          "a stray 15:30 label is not a night bar (only 17:25–05:00 is), nor a day or weekend one")
+    keep = wfb.TW_FUT_NIGHT_KEEP_DAYS
+    st = {"tw_fut_night_bar": T(10, 1, 2).isoformat()}
+    check(wfb._tw_fut_lots_night(st, T(10, 1, 2) + timedelta(days=keep) - M1)
+          and not wfb._tw_fut_lots_night(st, T(10, 1, 2) + timedelta(days=keep) + M1)
+          and not wfb._tw_fut_lots_night({}, T(10, 1, 2)) and not wfb._tw_fut_lots_night({"tw_fut_night_bar": "x"}, T(10, 1, 2)),
+          f"a learned night lapses {keep} days after the last night bar seen")
+
+    # sized in lots but not priced off TAIFEX: no quiet, the old alerting
+    check(wfb._tw_fut_data("sf") and wfb._tw_fut_data("tx") and not wfb._tw_fut_data("sfx")
+          and not wfb._tw_fut_data("sfmix") and not wfb._tw_fut_data("sfnote") and not wfb._tw_fut_data("sfgone"),
+          "TAIFEX data gate: twfutures fetchers only (a crypto feed, a mix, a comment, no source → no)")
+    feed.update(labels=labels_for("DHF", "5m"), td=timedelta(minutes=5))
+    drive("sfx", T(10, 16, 13, 0), T(10, 17, 9, 0))
+    check(alerts, f"lots strategy priced off a crypto feed: alerts as before → {tpe(a for a, _ in alerts)[:3]}")
+
+    # a Lunar New Year closure (2026: 02-12 .. 02-22 with the weekends), 60m index
+    lny = {date(2026, 2, 12), date(2026, 2, 13)} | {date(2026, 2, d) for d in range(15, 21)}
+    HOLIDAYS.update(lny)
+    feed.update(labels=[x for x in (T(2, 9, 0) + H1 * i for i in range(24 * 16))
+                        if wfb._tw_fut_bar_exists("index", x, H1, hol)], td=H1)
+    drive("tx", T(2, 11, 12, 0), T(2, 23, 10, 0))
+    first = [r for r in runs if r > T(2, 13, 0)][:1]
+    check(not alerts and tpe(first) == ["02-23 09:00"],
+          f"Lunar New Year, 11 days closed: 0 alerts, the reopening 08:00 bar runs 09:00 → "
+          f"{tpe(a for a, _ in alerts)[:3]} {tpe(first)}")
+    lookback = wfb._tw_fut_last_bar_before
+    wfb._tw_fut_last_bar_before = lambda *a, **k: lookback(*a, **{**k, "days": 7})
+    drive("tx", T(2, 11, 12, 0), T(2, 23, 10, 0))
+    check(alerts, f"…with the old 7-day lookback the closure alerts again → {tpe(a for a, _ in alerts)[:3]}")
+    wfb._tw_fut_last_bar_before = lookback
+    HOLIDAYS.difference_update(lny)
 
     # ── 5. 29026 txf_supertrend_1h: 1h index, 10-14 → 10-23 07:30 Taipei ─────
     feed.update(labels=labels_for("TXF", "60m"), td=H1)

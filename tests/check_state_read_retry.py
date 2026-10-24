@@ -230,6 +230,8 @@ EXEMPT = [
     ('manager/wait_for_bar.py', '_lock_pids', 'lock_path', 'own', 'lock file pid list, best-effort'),
     ('manager/wait_for_bar.py', '_tw_futures_kind', 'f"strategies/{name}/strategy.py"',
      'code', 'code / doc / VERSION text, not a state file'),
+    ('manager/wait_for_bar.py', '_tw_fut_data', 'f"strategies/{name}/strategy.py"',
+     'code', 'code / doc / VERSION text, not a state file'),
     ('manager/wait_for_bar.py', '_tw_stock_daily', 'f"strategies/{name}/strategy.py"',
      'code', 'code / doc / VERSION text, not a state file'),
     ('manager/wait_for_bar.py', '_us_stock_daily', 'f"strategies/{name}/strategy.py"',
