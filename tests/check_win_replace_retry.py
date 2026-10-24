@@ -156,7 +156,7 @@ try:
         ("lib/portfolio.py", "_report_ledger_adoption"), ("lib/portfolio.py", "_save_signal_gate"),
         ("lib/portfolio.py", "_drift_sigma"),
         ("lib/order_paper.py", "_save"), ("lib/order_president.py", "_write_tags"),
-        ("lib/runner.py", "_write_json_atomic"), ("lib/validation.py", "write_mcpt_to_stats"),
+        ("lib/runner.py", "_write_atomic"), ("lib/validation.py", "write_mcpt_to_stats"),
         ("lib/president_worker.py", "_atomic_write"), ("lib/president_quote.py", "_atomic_write"),
         ("lib/capital_worker.py", "_write_snapshot"), ("lib/capital_worker.py", "_write_probe"),
         ("lib/capital_vault.py", "mark_order_sent"), ("lib/capital_vault.py", "_write_block"),
