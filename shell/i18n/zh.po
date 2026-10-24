@@ -8598,9 +8598,6 @@ msgstr "agent 正在回覆，可能還在改策略，回覆完再重跑。"
 msgid "busy.restore"
 msgstr "agent 正在回覆，可能正在改這支策略，回覆完再還原。"
 
-msgid "busy.del"
-msgstr "agent 正在回覆，可能正在改這支策略，回覆完再刪除。"
-
 msgid "busy.chatDel"
 msgstr "這條還在回覆，停止後才能刪除。"
 

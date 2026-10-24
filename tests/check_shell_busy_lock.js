@@ -152,8 +152,9 @@ B.busySlot("perf-why", $("x")).kids.find((k) => typeof k !== "string" && k.tag =
 ok("③ 按「查看」:關設定、收清單、展開聊天欄、捲到底、焦點回輸入框;記 lock_fix", calls.join() === "setClose,list:false,pane:chat:false,scroll,focus:ta" && tracked.slice(-2).join() === "lock_perf,lock_fix", calls);
 const want = { update: "lock_update", perf: "lock_perf", rerun: "lock_perf", restore: "lock_restore", del: "lock_del", chatDel: "lock_chat_del", switch: "lock_switch", new: "lock_switch", cloudUpd: "lock_send", send: "lock_send", sendAway: "lock_send" };
 const FEATURES = require(path.join(SH, "telemetry.js")).EVENTS.feature_used.name;
-ok("③ 每一把鎖都有字(zh / en)、都對到 spec §4 的埋點名,名字都在白名單上",
-  JSON.stringify(Object.keys(B.BUSY).sort()) === JSON.stringify(Object.keys(want).sort()) && Object.keys(want).every((k) => B.BUSY_FEATURE[k] === want[k] && STR.zh[B.BUSY[k].key] && STR.en[B.BUSY[k].key])
+ok("③ 每一把鎖都有字(zh / en)、都對到 spec §4 的埋點名,名字都在白名單上;刪策略(del)只記埋點、沒有字(Wei 10-24)",
+  JSON.stringify(Object.keys(B.BUSY).sort()) === JSON.stringify(Object.keys(want).filter((k) => k !== "del").sort()) && Object.keys(want).every((k) => B.BUSY_FEATURE[k] === want[k] && (k === "del" || (STR.zh[B.BUSY[k].key] && STR.en[B.BUSY[k].key])))
+  && !("busy.del" in STR.zh) && !("busy.del" in STR.en)
   && ["lock_update", "lock_perf", "lock_chat_del", "lock_switch", "lock_send", "lock_fix", "lock_restore", "lock_del"].every((n) => FEATURES.includes(n)));
 const borrowed = $("rp-ho-note"); B.busyTell(borrowed, "send");
 const before = !borrowed.hidden && borrowed.textContent === STR.zh["turn.busy"];

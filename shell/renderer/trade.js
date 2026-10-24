@@ -6062,7 +6062,7 @@ function envPaintSide(kind, st) {
     if (typeof sfRowActions === "function") sfRowActions(wrap, row, x, SF_CLOUD);   // 旗標鈕 + 右鍵面板,接在名字與 ✕ 之間
     if (canDel && !deleting && /^[A-Za-z0-9_-]{1,64}$/.test(x.name) && typeof armedDelete === "function") {
       const d = armedDelete(wrap, t("cdel.aria", { name: x.displayName || x.name }), (btn) => cdelAsk(x, btn), true);
-      busyLock(d, busyOn()); d.onBusy = () => stratDelBusy(wrap); wrap.appendChild(d);
+      busyLock(d, busyOn()); d.onBusy = () => busyHit("del"); wrap.appendChild(d);
     }
     box.appendChild(wrap);
   });

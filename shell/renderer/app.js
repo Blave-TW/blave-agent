@@ -1490,9 +1490,8 @@ async function stratRefreshAt(name) {
   const rows = $("strat-list").querySelectorAll(".strat-row");
   return rows[Math.min(at, rows.length - 1)] || $("strat-add");
 }
-// 回合中主行程不給刪(硬鎖,Wei 10-17):✕ 照畫、aria-disabled,點了在列下講原因。列多半是回合開始前畫的,鎖要跟著 running 走(本機、雲端兩個清單都掃)
+// 回合中主行程不給刪(硬鎖,Wei 10-17):✕ 照畫、aria-disabled,點了不刪也不講原因(Wei 10-24)。列多半是回合開始前畫的,鎖要跟著 running 走(本機、雲端兩個清單都掃)
 function stratDelSync() { ["strat-list", "strat-list-cloud"].forEach((id) => { const box = $(id); if (box) box.querySelectorAll(".cs-del").forEach((d) => busyLock(d, running)); }); }
-function stratDelBusy(wrap) { busyTell(busySlot("strat-why", wrap), "del"); }
 async function stratRefresh(turnEnd) {
   if (typeof sfBeforeRebuild === "function") await sfBeforeRebuild();   // 偏好讀好、拖拉中等拖完、旗標面板開著先收(renderer/stratflags.js)
   const before = new Map(RP.list.map((x) => [x.name, x]));
@@ -1500,7 +1499,6 @@ async function stratRefresh(turnEnd) {
   if (typeof sfApplyOrder === "function") RP.list = sfApplyOrder(RP.list, SF.order);   // 用戶拖過的順序先、其餘照主行程的「最近動過在上」
   const box = $("strat-list");
   box.querySelectorAll(".strat-wrap").forEach((n) => n.remove());
-  { const sw = $("strat-why"); if (sw) { sw.hidden = true; sw.textContent = ""; } }   // 原因句講的是被拆掉的那一列:列重建就收
   $("strat-empty").hidden = RP.list.length > 0;
   RP.list.forEach((x) => {
     const b = document.createElement("button");
@@ -1528,7 +1526,7 @@ async function stratRefresh(turnEnd) {
       confirmBox({ title, ...stratDelBody(code, x.name), ok: t("cdel.gotIt"), opener, single: true, onOk: () => {},
         alt: code === "IN_PORTFOLIO" ? { label: t("cdel.goPos"), onOk: () => poOpen("cfg") } : null });
     }, false, window.blave.platform === "win32" ? "strat.delConfirm.win" : "strat.delConfirm");
-    busyLock(del, running); del.onBusy = () => stratDelBusy(wrap);
+    busyLock(del, running); del.onBusy = () => busyHit("del");
     wrap.append(b);
     if (typeof sfRowActions === "function") sfRowActions(wrap, b, x);   // 旗標鈕在名字與 ✕ 之間
     wrap.append(del);
@@ -2116,7 +2114,7 @@ function armedDelete(row, label, onConfirm, direct, armedKey) {
   del.innerHTML = X;
   const disarm = () => { del.classList.remove("is-armed"); del.innerHTML = X; row.style.removeProperty("--armed-w"); };
   del.addEventListener("click", async () => {
-    if (busyLocked(del)) { if (del.onBusy) del.onBusy(); return; }   // 回合中的鎖(busy.js):不武裝,講原因
+    if (busyLocked(del)) { if (del.onBusy) del.onBusy(); return; }   // 回合中的鎖(busy.js):不武裝;講不講原因看 onBusy
     if (direct) { onConfirm(del); return; }     // 確認交給 modal,列內不武裝
     if (!del.classList.contains("is-armed")) {
       del.classList.add("is-armed"); del.textContent = t(armedKey || "cs.delConfirm");

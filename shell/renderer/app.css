@@ -1226,7 +1226,6 @@ body.resizing * { cursor: col-resize !important; }
 :is(.busy-why, .xp-note, .rp-ho-note, .rob-cap, .wf-cap, #lib-cta-note, #ver-banner-err, #ver-rerun-busy):has(> .busy-fix) { padding-top: 13px; padding-bottom: 13px; }
 #cs-why { padding: 0 var(--space-12) var(--space-8); }
 #busy-cut-why { padding: 0 var(--space-16) var(--space-8); }
-#strat-why { padding: var(--space-4) var(--space-12) var(--space-8) var(--space-24); }   /* 左緣對齊列裡的策略名 */
 #ws-up-why { text-align: right; margin-bottom: var(--space-6); }
 @media (prefers-reduced-motion: reduce) {
   .cs-btn, .cs-newrow, .cs-item, .cs-del { transition: none; }

@@ -8579,9 +8579,6 @@ msgstr "The agent is replying and may still be editing strategies. Run it again 
 msgid "busy.restore"
 msgstr "The agent is replying and may be editing this strategy. Restore after it finishes."
 
-msgid "busy.del"
-msgstr "The agent is replying and may be editing this strategy. Delete it after it finishes."
-
 msgid "busy.chatDel"
 msgstr "This conversation is still replying. Stop it before deleting."
 
