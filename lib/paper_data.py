@@ -765,9 +765,9 @@ def _tw_day_verdict(day, env):
 def tw_session_open(env=None, now=None):
     """True inside a TWSE regular session: 09:00–13:30 Taipei on a trading day.
     The holiday table (lib.data.is_tw_trading_day) needs a Blave API plan; when
-    it can't be read the weekday alone decides. Typhoon closures are in no
-    table, so a paper fill can still happen on one. Outside the hours no
-    fetch at all."""
+    it can't be read the weekday alone decides. A typhoon closure reaches the
+    table only that evening or the next morning, so a paper fill can still
+    happen during one. Outside the hours no fetch at all."""
     from datetime import datetime, timedelta, timezone
     t = datetime.fromtimestamp(time.time() if now is None else now, timezone(timedelta(hours=8)))
     if t.weekday() >= 5 or not (_TW_OPEN_MIN <= t.hour * 60 + t.minute < _TW_CLOSE_MIN):

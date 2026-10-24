@@ -262,7 +262,7 @@ try:
     try:
         calls, ok = [], {"v": True}
         wfb._run_strategy_protected = lambda n: calls.append(n) or ok["v"]
-        wfb._tw_holiday = lambda day: day == date(2026, 10, 20)   # a made-up Tuesday holiday
+        wfb._tw_holiday = lambda day, unknown=False: day == date(2026, 10, 20)   # a made-up Tuesday holiday
         td = timedelta(hours=1)
         U = lambda d, h, m=0: datetime(2026, 10, d, h, m)   # naive UTC; Taipei = +8
         exp = U(13, 8)

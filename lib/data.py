@@ -5001,6 +5001,9 @@ def fetch_twmarket_dividend_points(start, end, headers):
 
 _HOLIDAY_MEMO = {}
 _HOLIDAY_MEMO_TTL = 3600
+# Row types of the holiday table that close the market. The api's contract is "every row
+# is a closure"; manager/wait_for_bar reads this set too, so a new type is decided here once.
+TW_CLOSED_TYPES = frozenset({'holiday', 'settlement_only', 'adhoc_closed'})
 _TPE = timezone(timedelta(hours=8))
 
 
@@ -5021,16 +5024,21 @@ def _taipei_date(value):
 
 
 def fetch_twstock_holidays(headers, year=None, timeout=20, max_retries=2):
-    """TWSE 年度休市表 (annual market holiday schedule) for `year` (default: this Taipei year).
+    """Taiwan market closures for `year` (default: this Taipei year): TWSE 年度休市表 plus the
+    ad-hoc closures Blave has confirmed.
 
-    DataFrame, one row per listed day: date (Timestamp), name, type, note. type is
-    'holiday' or 'settlement_only' (市場無交易,僅辦理結算交割 — nothing trades that day either);
-    the table's 「…開始/最後交易日」 marker rows are already removed server-side. Weekend
-    dates may appear. **Ad-hoc closures (typhoon days) are never in it.**
+    DataFrame, one row per closed day: date (Timestamp), name, type, note. type is one of
+    TW_CLOSED_TYPES: 'holiday' / 'settlement_only' (市場無交易,僅辦理結算交割 — nothing trades
+    that day either) from the TWSE annual schedule, whose 「…開始/最後交易日」 marker rows are
+    already removed server-side (weekend dates may appear); 'adhoc_closed' (name 臨時停市) = a
+    weekday both TWSE and TPEx published no closing quotes for (typhoon days), added by Blave
+    **after the fact** — the evening of that day or the next morning. It can never say in
+    advance whether tomorrow trades.
 
-    df.attrs: year, source / source_zh (the licence attribution — copy one verbatim into
-    any report or reply that cites the table), note, stale (True = TWSE was unreachable
-    and this is the last stored copy).
+    df.attrs: year, source / source_zh (the TWSE schedule's licence attribution — copy one
+    verbatim into any report or reply that cites the table), adhoc_source / adhoc_source_zh
+    (present when the year has 'adhoc_closed' rows: the attribution for those rows), note,
+    stale (True = TWSE was unreachable and this is the last stored copy).
 
     Returns None — and prints why — when the endpoint is unreachable or TWSE has not
     published that year (published:false). None means "unknown", never "no holidays"."""
@@ -5062,6 +5070,9 @@ def fetch_twstock_holidays(headers, year=None, timeout=20, max_retries=2):
     df['date'] = pd.to_datetime(df['date'])
     df = df[['date', 'name', 'type', 'note']].sort_values('date').reset_index(drop=True)
     df.attrs = {k: payload.get(k) for k in ('year', 'source', 'source_zh', 'note', 'stale')}
+    for k in ('adhoc_source', 'adhoc_source_zh'):
+        if payload.get(k):
+            df.attrs[k] = payload[k]
     if payload.get('stale'):
         print(f"  [holidays] {year}: WARNING TWSE unreachable, this is the last stored copy of the table")
     _HOLIDAY_MEMO[year] = (time.time(), df)
@@ -5072,8 +5083,9 @@ def is_tw_trading_day(date, headers, timeout=20, max_retries=2):
     """Is `date` a TWSE trading day? 'YYYY-MM-DD', date, datetime or Timestamp; a tz-aware
     value is converted to Taipei first, a naive one is taken as a Taipei date. True / False,
     or None when unknown (holiday table unavailable or that year not published).
-    Saturday/Sunday → False without any fetch; a 'holiday' or 'settlement_only' row → False.
-    True only means "not in the official table": a typhoon closure is not in it."""
+    Saturday/Sunday → False without any fetch; a row of any TW_CLOSED_TYPES type → False.
+    True only means "not in the table yet": an ad-hoc (typhoon) closure is added the evening
+    of the day or the next morning, so True about today or a future day is no promise."""
     d = _taipei_date(date)
     if d.weekday() >= 5:
         return False
@@ -5081,7 +5093,7 @@ def is_tw_trading_day(date, headers, timeout=20, max_retries=2):
     table = fetch_twstock_holidays(headers, d.year, **kw)
     if table is None:
         return None
-    closed = table[table['type'].isin(['holiday', 'settlement_only'])]['date'].dt.date
+    closed = table[table['type'].isin(TW_CLOSED_TYPES)]['date'].dt.date
     return d not in set(closed)
 
 

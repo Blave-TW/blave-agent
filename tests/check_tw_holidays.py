@@ -64,6 +64,33 @@ for bad in ("9/25", "20260925", "2026/09/25"):
         d.is_tw_trading_day(bad, H); check(False, f"{bad!r} rejected with ValueError")
     except ValueError:
         check(True, f"{bad!r} rejected with ValueError")
+# ad-hoc closure (typhoon day) added by Blave after the fact: type adhoc_closed + its own attribution
+ADHOC = {**TABLE, "adhoc_source": "Ad-hoc closures … Taipei Exchange …", "adhoc_source_zh": "臨時停市…證券櫃檯買賣中心…",
+         "data": TABLE["data"] + [{"date": "2026-10-23", "name": "臨時停市", "type": "adhoc_closed"}]}
+check(d.TW_CLOSED_TYPES == {"holiday", "settlement_only", "adhoc_closed"}, "TW_CLOSED_TYPES: the three closure types")
+serve(ADHOC)
+t = d.fetch_twstock_holidays(H, 2026)
+check(d.is_tw_trading_day("2026-10-23", H) is False, "adhoc_closed row → False")
+check(t.attrs.get("adhoc_source_zh") == ADHOC["adhoc_source_zh"] and t.attrs.get("adhoc_source") == ADHOC["adhoc_source"]
+      and t.attrs.get("source") == SRC, "adhoc_source / adhoc_source_zh carried next to the TWSE source")
+serve(TABLE)
+check(d.is_tw_trading_day("2026-10-23", H) is True and "adhoc_source" not in d.fetch_twstock_holidays(H, 2026).attrs,
+      "same day without the row → True; no adhoc attribution when the year has none")
+serve({**TABLE, "data": TABLE["data"] + [{"date": "2026-10-24", "name": "補行交易", "type": "makeup_trading"},
+                                          {"date": "2026-10-22", "name": "x", "type": "makeup_trading"}]})
+check(d.is_tw_trading_day("2026-10-22", H) is True, "a row type outside TW_CLOSED_TYPES is not a closure")
+serve(requests.exceptions.ConnectionError("down"))
+check(d.is_tw_trading_day("2026-10-23", H) is None, "table unreachable → None, as before")
+
+# report label: Blave's ad-hoc verdict is never presented as TWSE's schedule
+from lib import report_templates as RT
+serve(ADHOC)
+label, src = RT._closure("2026-10-23", H)
+check(label == "臨時停市" and src == ADHOC["adhoc_source_zh"] and "TWSE 休市表" not in label + src,
+      f"report closure for an adhoc_closed day: 臨時停市 + the ad-hoc attribution ({label} / {src})")
+label, src = RT._closure("2026-09-25", H)
+check(label == "TWSE 休市表:中秋節" and src == TABLE["source_zh"], "a TWSE holiday keeps its label and the TWSE source")
+
 serve(AssertionError("weekend must not fetch"))
 check(d.is_tw_trading_day("2026-09-26", H) is False and d.is_tw_trading_day("2026-09-27", H) is False,
       "Saturday / Sunday → False without fetching")

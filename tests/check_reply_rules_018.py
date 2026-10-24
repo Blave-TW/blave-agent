@@ -118,7 +118,7 @@ t("#133 台股免費路徑的估時:AGENTS.md 是一句獨立的指示(CDN 優�
   and all("# Data wait:" in read("examples", n, "strategy.py").split("import sys")[0] and "tell the user before running" in read("examples", n, "strategy.py")
           for n in ("twstock_momentum", "tw100_foreign_zscore"))
   and "~36 s per stock-year of the exchange-path fallback" in read("examples", "tw100_foreign_zscore", "strategy.py")
-  and "Blave CDN first — seconds per stock" in read("examples", "twstock_momentum", "strategy.py"))
+  and "Blave CDN first — over 40 ids it reads the whole-market year files" in read("examples", "twstock_momentum", "strategy.py"))
 t("I 改參數時,DESCRIPTION、LOGIC 與檔頭裡寫到的同一個數字一起改(策略頁的副標是 DESCRIPTION、展開的策略邏輯是 LOGIC)",
   "Changing a parameter also changes every place the file states that number: `DESCRIPTION`, `LOGIC` and the header comment" in agents
   and "**Keep the words true to the code.**" in read("references", "strategy-code.md"))

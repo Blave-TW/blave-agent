@@ -287,7 +287,7 @@ def _close_gate(b, idx):
             b.ctx["休市表出處"] = src
             skip += f"。休市表出處(轉述時原文照附):{src}"
     elif last_day != date:
-        skip = (f"{date} 的加權指數收盤尚未入庫,或今日臨時停市(颱風停市不在休市表內);"
+        skip = (f"{date} 的加權指數收盤尚未入庫,或今日臨時停市(臨時停市當晚或隔天早上才補進休市表);"
                 f"最近一個有收盤資料的交易日是 {last_day}")
     if skip:
         b.notes.append(skip)

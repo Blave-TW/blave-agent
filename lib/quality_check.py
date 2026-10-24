@@ -653,7 +653,7 @@ _DATA_INERT = frozenset({
     "DataAccessError", "BatchIncomplete", "UnknownFetcher", "TwPublicUnavailable", "TwCdnUnavailable",
     "UsStockUnavailable", "UsStockNotHere", "UsStockNotFound", "FeedNotPublished", "closed_bars_only", "live_feeds",
     "us_live_strategy",
-    "FEED_TIMING", "TW_FLOWS", "TWSE_INDUSTRY_NAMES", "PUBLIC_SOURCE_EN",
+    "FEED_TIMING", "TW_FLOWS", "TWSE_INDUSTRY_NAMES", "PUBLIC_SOURCE_EN", "TW_CLOSED_TYPES",
 })
 # Shipped lib modules that call Blave themselves (the report builders; paper_data's
 # USD rate). The test lists every lib module that reaches lib.data's Blave names.

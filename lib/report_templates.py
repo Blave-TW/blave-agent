@@ -1116,6 +1116,9 @@ def _closure(day, headers):
     if table is None:
         return "休市", None
     rows = table[table["date"] == d]
+    if len(rows) and rows["type"].iloc[0] == "adhoc_closed":
+        # Blave's own verdict from the two exchanges' quotes, not TWSE's schedule
+        return "臨時停市", table.attrs.get("adhoc_source_zh") or table.attrs.get("adhoc_source")
     label = f"TWSE 休市表:{rows['name'].iloc[0]}" if len(rows) else "TWSE 休市表"
     return label, table.attrs.get("source_zh") or table.attrs.get("source")
 
@@ -1128,7 +1131,7 @@ def tw_close_brief(date=None, headers=None, lookback_days=45, extra=None, fresh=
 
     `pack.skip` is set (and `publish` writes nothing) when `date` is not a trading day per
     `lib.data.is_tw_trading_day`, or when the index has no close for `date` yet (not landed,
-    or an ad-hoc closure the holiday table does not list); the reason names the last
+    or an ad-hoc closure the holiday table does not list yet); the reason names the last
     trading day. 漲跌家數 and a per-industry breakdown are not blocks of this template; on the
     desktop `lib.data.fetch_tw_breadth_public` / `fetch_tw_sector_breadth` answer them in chat
     (上市 only, finished session)."""

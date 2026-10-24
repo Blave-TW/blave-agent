@@ -149,7 +149,7 @@ check(st["last_processed_bar"] == "2026-10-19T00:00:00" and len(sent) == 1,
 
 # ── (5b) a TWSE daily strategy: the manifest is asked about the mapped trading day ─────────
 wfb._tw_stock_daily = lambda n: True
-wfb._tw_holiday = lambda d: False
+wfb._tw_holiday = lambda d, unknown=False: False
 os.makedirs("strategies/tw")
 frame["df"] = susp
 ran.clear()

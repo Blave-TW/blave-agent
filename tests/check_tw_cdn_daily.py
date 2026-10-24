@@ -641,12 +641,12 @@ def t_cloud_lag():
     m = json.loads((CDN / "manifest.json").read_text())
     m["asof"] = "2024-02-29"
     final = "2024-03-01"
-    closed = []
+    closed, kind = [], ["holiday"]
 
     def blave(url, **kw):
         if url.endswith("/twmarket/holidays"):
             return FakeResponse({"published": True, "year": 2024,
-                                 "data": [{"date": d, "name": "test", "type": "holiday"} for d in closed]})
+                                 "data": [{"date": d, "name": "test", "type": kind[0]} for d in closed]})
         return blave_ok(url, **kw)
 
     def setup(blave_fn):
@@ -666,6 +666,17 @@ def t_cloud_lag():
               and bat.attrs.get("via") == "Blave CDN" and D._TW_PUBLIC_SESSION.calls == []
               and all(u.endswith("/holidays") for u in blave_calls),
               "cloud, CDN a day short, the day closed in the holiday table: the CDN frame, complete through it")
+        for k, closes in (("adhoc_closed", True), ("makeup_trading", False)):
+            kind[0] = k
+            del blave_calls[:]
+            setup(blave)
+            bat = D.fetch_twstock_price_adj_batch(["2330"], "2024-01-01", None, {"api-key": "x"})["2330"]
+            only_table = all(u.endswith("/holidays") for u in blave_calls)
+            check((bat.attrs.get("via") == "Blave CDN" and bat.attrs.get("asof") == final and only_table) if closes
+                  else not only_table,
+                  f"cloud, CDN a day short, the day a {k!r} row: "
+                  + ("a closure — the CDN frame, no Blave price call" if closes else "not a closed type — goes to Blave"))
+        kind[0] = "holiday"
         closed[:] = ["2024-02-28"]
         setup(blave)
         df = D.fetch_twstock_price("2330", "2024-01-01", None, {"api-key": "x"})

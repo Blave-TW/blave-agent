@@ -3,10 +3,11 @@
 # Universe: 台股藍籌 20 支（跨產業）
 # Signal:   60 日價格動能排名，每週選前 5 名等權配置
 # Rebalance: 每週第一個交易日(收盤定權重、隔日開盤成交)
-# Data wait: daily bars come from the Blave CDN first — seconds per stock not yet cached. Only when a ⚠️ line says
-#           the exchange path served them (CDN down) does each take ~36 s per year (TWSE, one month per request):
-#           then UNIVERSE × years since START is the wait — tell the user before running; over ~25 min, start with
-#           a later START (what is fetched stays cached).
+# Data wait: one batch call, Blave CDN first — over 40 ids it reads the whole-market year files (the first run
+#           downloads each year since START once; they stay cached). Only when a ⚠️ line says the exchange path served
+#           them (CDN down) does each stock take ~36 s per year (TWSE, one month per request): then UNIVERSE × years
+#           since START is the wait — tell the user before running; over ~25 min, start with a later START (what is
+#           fetched stays cached).
 
 import sys
 from pathlib import Path
@@ -124,18 +125,19 @@ def _rebalance_mask(idx, freq='W'):
 # ── fetch_data ────────────────────────────────────────────────────────────────
 def fetch_data(hdrs):
     import pandas as pd
-    from lib.data import fetch_twstock_price_adj
+    from lib.data import fetch_twstock_price_adj_batch
+
+    # Not caught: BatchIncomplete fails a backtest, and a live tick alerts fetch_error and
+    # retries — never a ranking on a partial universe. An id no source has is simply absent.
+    price_all = fetch_twstock_price_adj_batch(UNIVERSE, START, END, hdrs)   # {sid: Open/Close}
 
     closes, opens = {}, {}
     for sid in UNIVERSE:
-        try:
-            price = fetch_twstock_price_adj(sid, START, END, hdrs)
-            closes[sid] = price['Close']
-            opens[sid]  = price['Open']
-        except Exception as e:
-            # For a price fetch that fails for one stock. align_feed belongs outside this
-            # loop: skipping its FeedNotPublished would re-rank on a partial universe.
-            print(f"  skip {sid}: {e}")
+        price = price_all.get(sid)
+        if price is None or price.empty:
+            continue
+        closes[sid] = price['Close']
+        opens[sid]  = price['Open']
 
     close_df = pd.DataFrame(closes).sort_index().dropna(how='all')
     if close_df.empty:
