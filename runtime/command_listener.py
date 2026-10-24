@@ -2761,8 +2761,6 @@ def _sync_deployment_registry(minutes):
     must not become the bottleneck or race the reconciler's own writes to
     this same file more than the pre-existing multi-writer risk already
     accepted for portfolio_config.json elsewhere in this file."""
-    if not isinstance(minutes, dict):  # pre-tickcap shape: a list of names
-        minutes = {n: _strategy_interval_minutes(n) for n in minutes}
     path = os.path.join(WORKSPACE, "state", "deployments.json")
     try:
         deps = atomic_file.load_json_for_update(path)

@@ -674,7 +674,7 @@ try:
         ("command_listener._mark_bind_account_change", "state/venue_account.json", vacct_doc,
          lambda: cl._mark_bind_account_change("okx", "account changed")),
         ("command_listener._sync_deployment_registry", "state/deployments.json", deps_doc,
-         lambda: cl._sync_deployment_registry(["s1"])),
+         lambda: cl._sync_deployment_registry({"s1": 60})),
         ("command_listener._register_reconciler_deployment", "state/deployments.json",
          {k: v for k, v in deps_doc.items() if k != "reconciler"}, cl._register_reconciler_deployment),
         ("capital_connect._register_worker_deployment", "state/deployments.json",
