@@ -15,7 +15,7 @@ Claude Code や Codex で、戦略を書き、バックテストして自動売�
 
 </div>
 
-> この文書は英語版 README の commit [`ec42107`](https://github.com/Blave-TW/blave-agent/blob/ec42107/README.md) から翻訳したものです。食い違いがある場合は英語の原文が優先されます。
+> この文書は英語版 README の commit [`584f3c6`](https://github.com/Blave-TW/blave-agent/blob/584f3c6/README.md) から翻訳したものです。食い違いがある場合は英語の原文が優先されます。
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
@@ -53,12 +53,16 @@ macOS 13 以降（ユニバーサルビルド）または Windows 10/11 x64。Wi
 
 <details><summary>ソースからビルド</summary>
 
+必要なもの：Node.js 22.12 以降、`PATH` 上の Python 3。
+
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
 cd blave-agent/shell
 npm install
 npm start
 ```
+
+Windows では PowerShell で `npm.cmd install` と `npm.cmd start` を実行します。
 
 </details>
 
@@ -89,6 +93,8 @@ PC を閉じても戦略は動き続け、Web や Telegram から話しかけら
 ## ライセンス
 
 Apache-2.0。あなたが書いた戦略はあなたのものです。「Blave」は商標です。フォークする場合は名前を変えてください。
+
+Claude Code と Codex は、それぞれの所有者の製品です。Blave Agent はそれらと提携しておらず、推奨も受けていません。
 
 ## コード署名ポリシー
 

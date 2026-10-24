@@ -15,7 +15,7 @@ Xây dựng chiến lược, backtest và giao dịch thật với Claude Code h
 
 </div>
 
-> Bản dịch từ README tiếng Anh tại commit [`ec42107`](https://github.com/Blave-TW/blave-agent/blob/ec42107/README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
+> Bản dịch từ README tiếng Anh tại commit [`584f3c6`](https://github.com/Blave-TW/blave-agent/blob/584f3c6/README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
@@ -53,12 +53,16 @@ macOS 13+ (bản universal) hoặc Windows 10/11 x64. Bộ cài Windows chưa đ
 
 <details><summary>Build từ mã nguồn</summary>
 
+Bạn cần Node.js 22.12 trở lên và Python 3 trong `PATH`.
+
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
 cd blave-agent/shell
 npm install
 npm start
 ```
+
+Trên Windows, chạy `npm.cmd install` và `npm.cmd start` trong PowerShell.
 
 </details>
 
@@ -89,6 +93,8 @@ Bắt đầu với `AGENTS.md`, rồi `examples/README.md` và `references/lib.m
 ## Giấy phép
 
 Apache-2.0. Chiến lược bạn viết là của bạn. "Blave" là nhãn hiệu: hãy đổi tên bản fork của bạn.
+
+Claude Code và Codex là sản phẩm của các chủ sở hữu tương ứng. Blave Agent không liên kết với họ và không được họ bảo trợ.
 
 ## Chính sách ký mã
 

@@ -15,7 +15,7 @@
 
 </div>
 
-> 本文译自英文版 README 的 commit [`ec42107`](https://github.com/Blave-TW/blave-agent/blob/ec42107/README.md)。内容有出入时，以英文原文为准。
+> 本文译自英文版 README 的 commit [`584f3c6`](https://github.com/Blave-TW/blave-agent/blob/584f3c6/README.md)。内容有出入时，以英文原文为准。
 
 https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 
@@ -53,12 +53,16 @@ macOS 13 及以上（通用版）或 Windows 10/11 x64。Windows 安装包还没
 
 <details><summary>从源代码构建</summary>
 
+需要 Node.js 22.12 以上，且 `PATH` 上有 Python 3。
+
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
 cd blave-agent/shell
 npm install
 npm start
 ```
+
+Windows 在 PowerShell 里改跑 `npm.cmd install` 与 `npm.cmd start`。
 
 </details>
 
@@ -89,6 +93,8 @@ npm start
 ## 授权
 
 Apache-2.0。你写的策略归你。“Blave”是商标：fork 请改名。
+
+Claude Code 与 Codex 是各自所有者的产品；Blave Agent 与它们没有合作或背书关系。
 
 ## 代码签名政策
 

@@ -15,7 +15,7 @@ Crea, haz backtest y opera estrategias en vivo con Claude Code o Codex. Gratis y
 
 </div>
 
-> Traducido del README en inglés en el commit [`ec42107`](https://github.com/Blave-TW/blave-agent/blob/ec42107/README.md). Si algo no coincide, prevalece el original en inglés.
+> Traducido del README en inglés en el commit [`584f3c6`](https://github.com/Blave-TW/blave-agent/blob/584f3c6/README.md). Si algo no coincide, prevalece el original en inglés.
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
@@ -53,12 +53,16 @@ macOS 13+ (build universal) o Windows 10/11 x64. El instalador de Windows aún n
 
 <details><summary>Compilar desde el código fuente</summary>
 
+Necesitas Node.js 22.12 o superior y Python 3 en tu `PATH`.
+
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
 cd blave-agent/shell
 npm install
 npm start
 ```
+
+En Windows, ejecuta `npm.cmd install` y `npm.cmd start` en PowerShell.
 
 </details>
 
@@ -89,6 +93,8 @@ Empieza por `AGENTS.md`, luego `examples/README.md` y `references/lib.md`. En `t
 ## Licencia
 
 Apache-2.0. Las estrategias que escribes son tuyas. «Blave» es una marca comercial: cambia el nombre de tu fork.
+
+Claude Code y Codex son productos de sus respectivos propietarios. Blave Agent no está afiliado a ellos ni cuenta con su respaldo.
 
 ## Política de firma de código
 
