@@ -31,8 +31,9 @@ t("runtime 認得 --message-stdin,而且訊息的位置參數變選填(機隊照
 /* 兩半的閘門:外殼已經送 --viewing-env=cloud,而 agent_turn.py 是 parse_args()(不是 parse_known_args)——runtime 那半沒接上之前,
    雲端視角的每一輪都會被 argparse 當未知旗標、exit 2。這一條紅 = 外殼不可以先出貨。契約:值只有 cloud;同一輪的
    --viewing-strategy 指的是雲端那一份同名策略;runtime 把「做在雲端主機」寫進 prompt,並在 tool chunk 帶 where("cloud"|"local")給動作列的 .wtag。 */
+t("runtime 認得 --suggest-mode(建議下一步 v2,外殼 main.js suggestArgs 會帶;runtime 那半沒接上前外殼不可以出貨)", (() => { const rt = fs.readFileSync(path.join(__dirname, "..", "runtime", "agent_turn.py"), "utf8"); return /add_argument\("--suggest-mode", default="normal", choices=\["normal", "reduced", "off"\]\)/.test(rt); })());
 t("runtime 認得 --viewing-env(runtime 那半;沒接上前外殼不可以出貨)", (() => { const rt = fs.readFileSync(path.join(__dirname, "..", "runtime", "agent_turn.py"), "utf8"); return /add_argument\("--viewing-env"/.test(rt); })());
-t("runTurn 真的把它接上 spawn 的參數", /\.\.\.viewingArgs\(viewing\),/.test(mainSrc) && /effort: rawEffort, viewing, note, attachments \}/.test(mainSrc));
+t("runTurn 真的把它接上 spawn 的參數", /\.\.\.viewingArgs\(viewing\),/.test(mainSrc) && /effort: rawEffort, viewing, note, attachments, suggestMode \}/.test(mainSrc));
 t("send-message:turnStarting 在第一個 await 之前就立起(挪到後面,連按兩下會 spawn 兩顆 agent 搶同一個 session.db)", (() => { const i = mainSrc.indexOf('ipcMain.handle("send-message"'), body = mainSrc.slice(i, mainSrc.indexOf("runTurn(win, payload)", i)).replace(/\/\/.*$/gm, ""); const a = body.indexOf("turnStarting = true"), w = body.indexOf("await "); return a > 0 && w > 0 && a < w; })());
 t("send-message 只收自家頁面(會 spawn agent、花 AI 額度)", /ipcMain\.handle\("send-message", async \(e, payload\) => \{\s*if \(!fromOurPage\(e\)\) return/.test(mainSrc));
 

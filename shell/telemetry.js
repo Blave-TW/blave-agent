@@ -96,7 +96,8 @@ const EVENTS = {
     "tv_send", "tv_pasted", "tv_read", "tv_fix", "tv_agent_paste", "tv_fail_editor", "tv_fail_compile",
     // 內建瀏覽器「用系統瀏覽器開」(renderer/browser.js;0.1.8):按了就記,不記網址
     "browser_open_ext",
-    // 建議下一步(0.1.9;renderer/suggest.js):建議列長出來、點一行且回合跑起來。不送句子本身
+    // 建議下一步(0.1.9;renderer/suggest.js):suggest_shown = 0.1.31 起是輸入框灰字第一次真的畫出來(同一句藏了再出現不重送)。不送句子本身。
+    // suggest_clicked 0.1.31 起無送出點(點了就送的建議列拿掉、改成填入),0.1.9–0.1.30 的外殼還在送;等它們退場,外殼、api、canon 三處一起拿
     "suggest_shown", "suggest_clicked",
     // 設定 › Agent 規則(renderer/rules.js;0.1.9):切到那個分類、新增或編輯存成功、刪除成功、回覆語言改成功。背景同步不埋
     "settings_rules", "rules_save", "rules_delete", "reply_lang_set",
@@ -123,7 +124,7 @@ const EVENTS = {
     "trade_lev_ack", "trade_net_open",
     // 部位表拒單那一行的「請 agent 查原因」(0.1.13;order-copy #14 §4.4):填進聊天框才算(不送出)
     "trade_err_ask",
-    // 建議下一步的關閉(renderer/suggest.js sugDismiss):按 × 或 Esc 收掉;送出、換對話、出錯的收合不算。不分 × / Esc(name 16 字裝不下第二格)
+    // 建議下一步的關閉(× 或 Esc 收掉):0.1.31 起無送出點(× 拿掉、Esc 不再埋),0.1.30 以前的外殼還在送;退場同 suggest_clicked
     "suggest_closed",
     // 關於第二行「更新雲端主機」(0.1.15;renderer/app.js upCloudUpdate / upCloudSend):按下(含投資組合被鎖那一行的雲端入口)、
     // 確認或直接送出且回合真的跑起來、確認框沒按主鈕就收掉
@@ -225,7 +226,11 @@ const EVENTS = {
     // 啟動還沒生效時按「暫停下單」、確認框打開(0.1.29;renderer/trade.js trAskStop)。同網頁 GA4 trade_stop_while_starting(名字超過 16 字,電腦版縮寫)
     "trade_stop_start",
     // 雲端視角的歡迎頁(0.1.30;renderer/welcome.js):同 onb_go_po / onb_reopen / onb_done,看著雲端時才送;雲端的完成事件只在看著雲端時判到才送
-    "onb_go_po_cloud", "onb_reopen_cloud", "onb_done_cloud"] },
+    "onb_go_po_cloud", "onb_reopen_cloud", "onb_done_cloud",
+    // 建議下一步 v2(0.1.31;renderer/suggest.js):suggest_filled = 用 Tab 或 → 填入;回合真的跑起來時結算(app.js r.started)——
+    // suggest_sent / suggest_sent_ed = 填入後原句／改過字送出,suggest_missed = 灰字出現過、自己打字送出,suggest_reduced = 連續 5 次沒用、只剩導航句的那一刻;
+    // suggest_off / suggest_on = 設定 › 一般 › 輸入框建議 關掉／打開。都不帶句子
+    "suggest_filled", "suggest_sent", "suggest_sent_ed", "suggest_missed", "suggest_reduced", "suggest_off", "suggest_on"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

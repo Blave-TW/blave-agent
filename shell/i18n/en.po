@@ -138,13 +138,13 @@ msgstr "Up to 4 files per message. The rest weren't added."
 msgid "ws.attachTotalLarge"
 msgstr "Attachments are limited to 15 MB in total. Some weren't added."
 
-# 輸入框上方建議列的小標與 group 名稱(renderer/suggest.js);逐字同 web workspace_sug_group
-msgid "ws.sugGroup"
-msgstr "Suggested Next Steps"
+# 建議下一步灰字的讀屏說明(textarea 的 aria-describedby;renderer/suggest.js)。{s} = agent 寫的那一句
+msgid "ws.sugDesc"
+msgstr "Suggestion: {s}. Press Tab to fill it in."
 
-# 建議列右上角的關閉 ×(aria-label);逐字同 web workspace_sug_close
-msgid "ws.sugClose"
-msgstr "Dismiss suggestions"
+# 灰字第一次畫出來時讀屏念一次(polite live region)
+msgid "ws.sugSay"
+msgstr "Suggestion: {s}, press Tab to fill it in"
 
 msgid "ws.send"
 msgstr "Send"
@@ -1744,6 +1744,14 @@ msgstr "To run around the clock without this computer:"
 
 msgid "tr.means.cloudGo"
 msgstr "Use a cloud host"
+
+# 設定 › 一般 的開關:輸入框裡的建議灰字(renderer/suggest.js;只管這台電腦)。陳述句
+msgid "set.sug"
+msgstr "Input suggestions"
+
+# 上面那個開關的說明泡泡(滑鼠停在字上或鍵盤 focus 開關時出;≤40 字)
+msgid "set.sug.tip"
+msgstr "After each reply, the input box shows one next step. Press Tab to fill it in."
 
 msgid "set.rn"
 msgstr "Notify me when a reply is done"
