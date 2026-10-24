@@ -917,14 +917,14 @@ body.resizing * { cursor: col-resize !important; }
 .set-ccy-err { margin: var(--space-8) 0 0; font-size: 12px; color: var(--color-redText); }
 .set-rn, .set-awake { margin-top: var(--space-24); }
 .set-rn-os .btn-quiet { margin-inline-start: var(--space-4); }
-/* 設定 › 隱私:整頁沒有分隔線。開關 = canon 的 Switch(黑白、無橘);視覺 36×20、熱區上下各補 12 */
+/* 設定 › 隱私:整頁沒有分隔線。開關 = canon 的 Switch(黑白、無橘):視覺 40×24、鈕 18,熱區補到 44×44 */
 .sw-row { display: flex; align-items: center; gap: var(--space-12); }
 .sw-l { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
-.sw { flex: none; position: relative; width: 36px; height: 20px; border-radius: var(--radius-pill); background: var(--control-fill); transition: background var(--motion-fast) var(--ease-standard); }
-.sw::before { content: ""; position: absolute; inset: -12px -4px; }
-.sw::after { content: ""; position: absolute; top: 2px; left: 18px; width: 16px; height: 16px; border-radius: 50%; background: var(--control-fill-text); transition: left var(--motion-fast) var(--ease-standard); }
+.sw { flex: none; position: relative; width: 40px; height: 24px; border-radius: var(--radius-pill); background: var(--control-fill); transition: background var(--motion-base) var(--ease-standard); }
+.sw::before { content: ""; position: absolute; inset: -10px -2px; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 19px; width: 18px; height: 18px; border-radius: 50%; background: var(--control-fill-text); box-shadow: var(--shadow-sm); transition: left var(--motion-base) var(--ease-standard); }
 .sw.off { background: var(--surface-muted); }
-.sw.off::after { left: 2px; background: var(--ink-3); }
+.sw.off::after { left: 3px; background: var(--color-pureWhite); }
 .sw:disabled { opacity: .5; cursor: default; }
 .priv-lead { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); }
 /* 在手機 App 上查看這台電腦的部位:用間距跟下面的「傳送使用資料」分組,不加線;電腦名稱用等寬字、不斷行 */

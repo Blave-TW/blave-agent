@@ -118,7 +118,7 @@ function sugUnsend() {
   if (inf && inf.filled) { SUG.filledText = inf.filled; SUG.used = true; }
 }
 
-/* 設定 › 一般 › 輸入框建議 */
+/* 設定 › 一般 › 建議下一步 */
 function sugSwPaint() {
   const on = sugOn(), sw = $("set-sug-sw");
   sw.classList.toggle("off", !on); sw.setAttribute("aria-checked", on ? "true" : "false");

@@ -509,16 +509,16 @@
           <p class="set-ccy-err" id="set-ccy-err" role="status" hidden></p>
           <!-- 回覆好了通知我(ui-prefs replyNotify,缺 = 開;主行程 replyCue 照它決定發不發)。不寫說明句;作業系統關了通知(收到 failed)時才出下面那行,由 app.js 的 rnPaint 畫 -->
           <div class="set-rn">
-            <div class="sw-row"><span class="sw-l" id="set-rn-l" data-i18n="set.rn"></span><button type="button" class="sw" id="set-rn-sw" role="switch" aria-checked="true" aria-labelledby="set-rn-l"></button></div>
+            <div class="sw-row"><label class="sw-l" id="set-rn-l" for="set-rn-sw" data-i18n="set.rn"></label><button type="button" class="sw" id="set-rn-sw" role="switch" aria-checked="true" aria-labelledby="set-rn-l"></button></div>
             <p class="priv-lead set-rn-os" id="set-rn-os" hidden><span data-i18n="set.rn.osOff"></span><button type="button" class="btn-quiet" id="set-rn-os-go" data-i18n="set.rn.osGo"></button></p>
           </div>
-          <!-- 輸入框建議(renderer/suggest.js;localStorage ws_sug_on,"0" = 關、其他或沒有 = 開;只管這台電腦)。說明走 .tip 泡泡,滑鼠停在字上或鍵盤 focus 開關時出 -->
+          <!-- 建議下一步(renderer/suggest.js;localStorage ws_sug_on,"0" = 關、其他或沒有 = 開;只管這台電腦)。說明走 .tip 泡泡,滑鼠停在字上或鍵盤 focus 開關時出 -->
           <div class="set-sug">
-            <div class="sw-row"><span class="sw-l"><span class="set-sug-l" id="set-sug-l" data-i18n="set.sug"></span><span class="tip" id="set-sug-tip" role="tooltip" data-i18n="set.sug.tip"></span></span><button type="button" class="sw" id="set-sug-sw" role="switch" aria-checked="true" aria-labelledby="set-sug-l" aria-describedby="set-sug-tip"></button></div>
+            <div class="sw-row"><label class="sw-l" for="set-sug-sw"><span class="set-sug-l" id="set-sug-l" data-i18n="set.sug"></span><span class="tip" id="set-sug-tip" role="tooltip" data-i18n="set.sug.tip"></span></label><button type="button" class="sw" id="set-sug-sw" role="switch" aria-checked="true" aria-labelledby="set-sug-l" aria-describedby="set-sug-tip"></button></div>
           </div>
           <!-- 自動下單時不讓電腦睡(ui-prefs keepAwake,缺 = 開;主行程 awakeSync 照它持有防睡)。開關狀態與下面那句由 app.js 的 awakePaint 畫 -->
           <div class="set-awake">
-            <div class="sw-row"><span class="sw-l" id="set-awake-l" data-i18n="set.awake"></span><button type="button" class="sw" id="set-awake-sw" role="switch" aria-checked="true" aria-labelledby="set-awake-l"></button></div>
+            <div class="sw-row"><label class="sw-l" id="set-awake-l" for="set-awake-sw" data-i18n="set.awake"></label><button type="button" class="sw" id="set-awake-sw" role="switch" aria-checked="true" aria-labelledby="set-awake-l"></button></div>
             <p class="priv-lead" id="set-awake-lead"></p>
           </div>
           <!-- 關於(這一頁最下面;版本唯一出現處):第一行「Blave {app} · 已是最新版」+ 文字連結(檢查更新 / 重新啟動以完成更新),只管電腦版;

@@ -145,6 +145,13 @@ for (const lang of ["zh", "en"]) {
     const bad = Object.keys(MG_KEYS).filter((k) => !w[k] || w[k] !== d[MG_KEYS[k]]);
     ok("優化分頁套用停用原因句兩邊同一份(" + lang + ")", bad.length === 0, bad.map((k) => k + ": " + w[k] + " vs " + d[MG_KEYS[k]]).join(";"));
   } }
+// 建議下一步的設定開關 label／tooltip:zh / en 兩邊逐字一致(設計稽核 v031 M1)
+{ const SUG_KEYS = { workspace_sug_pref: "set.sug", workspace_sug_pref_tip: "set.sug.tip" };
+  for (const lang of ["zh", "en"]) {
+    const w = poRaw(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po")), d = poRaw(path.join(__dirname, "..", "shell", "i18n", lang + ".po"));
+    const bad = Object.keys(SUG_KEYS).filter((k) => !w[k] || w[k] !== d[SUG_KEYS[k]]);
+    ok("建議下一步設定開關的字兩邊同一份(" + lang + ")", bad.length === 0, bad.map((k) => k + ": " + w[k] + " vs " + d[SUG_KEYS[k]]).join(";"));
+  } }
 // 建議下一步 v2(spec suggest-next-step-v2 §0):取句長度上限、減少門檻、鍵帽學會次數、導航句首、三個 localStorage 鍵,兩邊同名同值。
 // 比原文(去空白、單引號當雙引號),同網頁 tests/check_suggest_v2.js §9;任一邊找不到就紅
 { const SUG_CONSTS = ["SUG_MAX_CHARS", "SUG_MISS_LIMIT", "SUG_TAB_LEARNED", "SUG_NAV_PREFIXES", "SUG_KEY_ON", "SUG_KEY_MISS", "SUG_KEY_TAB"];

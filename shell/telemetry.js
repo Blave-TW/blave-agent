@@ -231,7 +231,7 @@ const EVENTS = {
     "onb_go_po_cloud", "onb_reopen_cloud", "onb_done_cloud",
     // 建議下一步 v2(0.1.31;renderer/suggest.js):suggest_filled = 用 Tab 或 → 填入;回合真的跑起來時結算(app.js r.started)——
     // suggest_sent / suggest_sent_ed = 填入後原句／改過字送出,suggest_missed = 灰字出現過、自己打字送出,suggest_reduced = 連續 5 次沒用、只剩導航句的那一刻;
-    // suggest_off / suggest_on = 設定 › 一般 › 輸入框建議 關掉／打開。都不帶句子
+    // suggest_off / suggest_on = 設定 › 一般 › 建議下一步 關掉／打開。都不帶句子
     "suggest_filled", "suggest_sent", "suggest_sent_ed", "suggest_missed", "suggest_reduced", "suggest_off", "suggest_on"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重

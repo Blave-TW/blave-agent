@@ -120,7 +120,7 @@ ok("畫面:點通知開那條對話——已是那條、回合中、清單上沒
 // ---- 6. 設定列與字
 const html = fs.readFileSync(path.join(S, "renderer", "index.html"), "utf8");
 ok("設定 › 一般:開關在「自動下單時不讓電腦睡」上面、sw-row、不寫說明句;OS 關掉那行預設藏著", html.indexOf('id="set-rn-sw"') > 0 && html.indexOf('id="set-rn-sw"') < html.indexOf('id="set-awake-sw"')
-  && /<div class="sw-row"><span class="sw-l" id="set-rn-l" data-i18n="set.rn"><\/span><button type="button" class="sw" id="set-rn-sw" role="switch"/.test(html) && /id="set-rn-os" hidden>/.test(html));
+  && /<div class="sw-row"><label class="sw-l" id="set-rn-l" for="set-rn-sw" data-i18n="set.rn"><\/label><button type="button" class="sw" id="set-rn-sw" role="switch"/.test(html) && /id="set-rn-os" hidden>/.test(html));
 const po = (lang) => fs.readFileSync(path.join(S, "i18n", lang + ".po"), "utf8"), str = (src, k) => (src.match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\nmsgstr "([^"]*)"')) || [])[1];
 const WANT = { zh: { "set.rn": "回覆好了通知我", "set.rn.osOff": "系統通知已關閉。", "set.rn.osGo": "開啟系統設定", "rc.await": "等你回覆：", "rc.fail": "沒做完：", "rc.doneEmpty": "回覆好了。", "rc.awaitEmpty": "等你回覆。", "rc.failEmpty": "沒做完。" },
   en: { "set.rn": "Notify me when a reply is done", "set.rn.osOff": "System notifications are off.", "set.rn.osGo": "Open System Settings", "rc.await": "Waiting for you:", "rc.fail": "Didn’t finish:", "rc.doneEmpty": "Reply ready.", "rc.awaitEmpty": "Waiting for your reply.", "rc.failEmpty": "Didn’t finish." } };

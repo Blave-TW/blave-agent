@@ -1747,11 +1747,11 @@ msgstr "Use a cloud host"
 
 # 設定 › 一般 的開關:輸入框裡的建議灰字(renderer/suggest.js;只管這台電腦)。陳述句
 msgid "set.sug"
-msgstr "Input suggestions"
+msgstr "Suggest a next step"
 
 # 上面那個開關的說明泡泡(滑鼠停在字上或鍵盤 focus 開關時出;≤40 字)
 msgid "set.sug.tip"
-msgstr "After each reply, the input box shows one next step. Press Tab to fill it in."
+msgstr "After each reply, adds one next step for you to fill in and send."
 
 msgid "set.rn"
 msgstr "Notify me when a reply is done"
@@ -2983,7 +2983,7 @@ msgstr "Which features you used: tab and button names, once per item per day, wi
 
 # 0.1.18 策略三步(strat_created / strat_backtested / strat_deployed)補在這一條:只記型別與市場類別
 msgid "priv.collect.1"
-msgstr "Which step you reached: first open, daily open, each day the app stays open (and whether local auto-trading is running), connected an AI (which kind), signed in, first backtest, trading started (paper or real), ran in the cloud; when each strategy is created, first backtested and first given an amount, its type (A/B/C) and market category (such as crypto or Taiwan index futures), never its name or symbol; a strategy's three steps are linked by one code; only this computer can compute it, and it can't be turned back into the name"
+msgstr "Which step you reached: first open, daily open, each day the app stays open (and whether local auto-trading is running), connected an AI (which kind), signed in, first backtest, trading started (paper or real), ran in the cloud; when each strategy is created, first backtested and first given an amount, its type (A/B/C) and market category (such as crypto or Taiwan index futures), never its name or symbol; a strategy's three steps share one code; only this computer can compute it, and Blave can't turn it back into the name"
 
 msgid "priv.collect.2"
 msgstr "When it happened"
