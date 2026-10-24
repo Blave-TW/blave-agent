@@ -4,13 +4,16 @@
   ① 400 / 413 → ValueError 帶 api 的訊息,磁碟上什麼都沒留(沒有 JSON、沒有 sidecar)
   ② 200 → 照寫;打的是實際寫入的 id、POST、proxy-{token};image 的 file 換成 sha256 才送(api 不認 file)
   ③ 沒有判決就不擋:404(api 還沒部署這支)、401、429、500、連不上、逾時 → 照寫
-  ④ 沒有機器 token、電腦版(BLAVE_AGENT_LOCAL=1)→ 一個請求都不發
+  ④ 沒有機器 token、電腦版(BLAVE_AGENT_LOCAL=1)、帳號 token(acct-…,漏帶 LOCAL 也一樣)→ 一個請求都不發
+  ⑤ api 回 302 → 不跟(urllib 會把 POST 轉 GET、x-api-key 帶去 Location):重導向目標一個請求都沒收到、照寫
+     (這條起兩個本機 HTTP server,只連 127.0.0.1)
 
 Run: cd blave-agent && .venv/bin/python tests/check_report_platform_check.py
 """
-import contextlib, io, json, os, shutil, socket, sys, tempfile, urllib.error, urllib.request
+import contextlib, http.server, io, json, os, shutil, socket, sys, tempfile, threading, urllib.error, urllib.request
 TMP = tempfile.mkdtemp(prefix="pcheck-")
 os.environ["BLAVE_AGENT_WORKSPACE"] = os.path.join(TMP, "workspace")
+os.environ["NO_PROXY"] = os.environ["no_proxy"] = "127.0.0.1"
 for k in ("BLAVE_AGENT_LOCAL", "BLAVE_TURN_ID", "BLAVE_SCHEDULED_JOB", "BLAVE_REPORT_URL"):
     os.environ.pop(k, None)
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -54,7 +57,8 @@ def fake_urlopen(req, timeout=None):
         else b"<html>Not Found</html>"))
 
 
-urllib.request.urlopen = fake_urlopen
+real_open = R._OPENER.open
+R._OPENER.open = fake_urlopen
 BLOCKS = [{"type": "text", "variant": "lead", "markdown": "結論"},
           {"type": "image", "file": "fig.png", "alt": "圖"}]
 
@@ -114,6 +118,62 @@ check(os.path.isfile(write("notoken")) and calls == [], "④ 沒有機器 token 
 os.environ["BLAVE_PROXY_TOKEN"] = "tok"
 os.environ["BLAVE_AGENT_LOCAL"] = "1"
 check(os.path.isfile(write("desktop")) and calls == [], "④ 電腦版 → 不發請求、照寫")
+os.environ.pop("BLAVE_AGENT_LOCAL")
+os.environ["BLAVE_PROXY_TOKEN"] = "acct-abc"
+check(os.path.isfile(write("acct")) and calls == [], "④ 帳號 token(沒帶 BLAVE_AGENT_LOCAL)→ 不發請求、照寫", calls)
+
+
+def serve(handler_fn):
+    hits = []
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def _any(self):
+            n = int(self.headers.get("Content-Length") or 0)
+            if n:
+                self.rfile.read(n)
+            hits.append((self.command, self.path, self.headers.get("x-api-key")))
+            handler_fn(self)
+        do_GET = do_POST = do_HEAD = do_PUT = _any
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, hits
+
+
+def ok200(h):
+    h.send_response(200)
+    h.send_header("Content-Length", "2")
+    h.end_headers()
+    h.wfile.write(b"{}")
+
+
+target, target_hits = serve(ok200)
+
+
+def redirect(h):
+    h.send_response(302)
+    h.send_header("Location", f"http://127.0.0.1:{target.server_port}/stolen")
+    h.send_header("Content-Length", "0")
+    h.end_headers()
+
+
+origin, origin_hits = serve(redirect)
+R._OPENER.open = real_open
+os.environ["BLAVE_PROXY_TOKEN"] = "tok"
+R.REPORT_URL = f"http://127.0.0.1:{origin.server_port}/openclaw/agent/report"
+try:
+    p = write("redir")
+    ok = os.path.isfile(p)
+except Exception as e:  # noqa: BLE001
+    ok = repr(e)
+check(len(origin_hits) == 1 and origin_hits[0][0] == "POST", "⑤ validate 有打到(本機假 api)", origin_hits)
+check(target_hits == [], "⑤ 302 不跟:重導向目標沒收到任何請求(沒有 token 外流)", target_hits)
+check(ok is True, "⑤ 302 → 沒有判決,照寫", ok)
+origin.shutdown()
+target.shutdown()
 
 shutil.rmtree(TMP, ignore_errors=True)
 print("ALL PASS" if not fails else f"{fails} FAIL")

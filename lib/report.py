@@ -426,12 +426,24 @@ VALIDATE_TIMEOUT_S = 5
 _REFUSED = (400, 413)   # = report_uploader._PERMANENT_STATUS: the same bytes will never pass
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    # urllib turns a POST answered 301/302/303 into a GET to the Location — any host, plain http —
+    # and keeps x-api-key on it. A 3xx here is an HTTPError instead: no verdict, written unchecked.
+    def redirect_request(self, *a, **k):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def _platform_check(doc):
     """Raise ValueError with the api's message when the platform would refuse `doc`. Every other
     outcome writes the report as before: no machine token (desktop, a scheduled strategy
     subprocess), offline, timeout, 401/404 (an api without this endpoint yet), 429, 5xx."""
     token = os.environ.get("BLAVE_PROXY_TOKEN")
-    if not token or os.environ.get("BLAVE_AGENT_LOCAL") == "1":
+    # an account token is the desktop's (the api's ACCOUNT_TOKEN_PREFIX): the validator refuses it,
+    # so the report body is not sent even when a desktop entry forgot BLAVE_AGENT_LOCAL
+    if not token or token.startswith("acct-") or os.environ.get("BLAVE_AGENT_LOCAL") == "1":
         return
     # The uploader swaps an image block's `file` for the sha256 of the uploaded bytes; the api only
     # checks that it is one, so a placeholder stands in for a picture not uploaded yet.
@@ -443,7 +455,7 @@ def _platform_check(doc):
         f"{REPORT_URL}/{doc['id']}/validate", data=body, method="POST",
         headers={"Content-Type": "application/json", "x-api-key": f"proxy-{token}"})
     try:
-        with urllib.request.urlopen(req, timeout=VALIDATE_TIMEOUT_S):
+        with _OPENER.open(req, timeout=VALIDATE_TIMEOUT_S):
             return
     except urllib.error.HTTPError as e:
         if e.code not in _REFUSED:
