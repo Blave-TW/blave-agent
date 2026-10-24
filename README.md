@@ -1,91 +1,55 @@
+<div align="center">
+
+<img src="docs/icon.png" width="80" alt="">
+
 # Blave Agent
 
-## Quant Workspace for AI Agents
-
+**Quant Workspace for AI Agents**<br>
 Build, backtest and trade strategies live with Claude Code or Codex. Free and open source.
+
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a> <a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=f7931a" alt="Latest release"></a> <img src="https://img.shields.io/badge/desktop-macOS%20%7C%20Windows-555" alt="macOS | Windows"> <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex-555" alt="Works with Claude Code and Codex">
 
 **English** | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
 <a href="https://download.blave.org/desktop/mac/Blave-universal.dmg"><img src="docs/readme-dl-mac.en.png" alt="Download for Mac" width="228"></a>&nbsp;&nbsp; <a href="https://download.blave.org/desktop/win/Blave-Setup.exe"><img src="docs/readme-dl-win.en.png" alt="Download for Windows" width="228"></a>
 
+</div>
+
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
-[Quick start](#quick-start) · [Run it with your computer off](https://blave.org/agent/en)
+<p align="center"><a href="#quick-start">Quick start</a> · <a href="https://blave.org/docs/en">Docs</a> · <a href="https://blave.org/agent/en">Run it with your computer off</a></p>
 
-Star the repo if this is useful — and Watch › Releases to get notified of new versions.
+## What You Get
 
-## What Makes It Different
+- **All your strategies in one app.** Backtest, trades, parameter scan and saved versions for each.
+- **Backtests that flag overfitting.** MCPT p-value, parameter plateau and walk-forward.
+- **Real fees by default.** A fee of 0 gets a warning.
+- **Auto-trading already wired up.** Binance, OKX, Bybit, BingX, Gate.io, plus Taiwan index futures on Windows.
+- **Paper trading.** No keys needed.
+- **Ideas from the web.** The agent reads a dozen sites and brings back three you can backtest.
+- **Your own AI.** Claude Code, Codex, a DeepSeek key, or Blave AI.
 
-Claude Code or Codex can write a trading bot. Running it for real is the hard part. In a terminal, every strategy is a folder of scripts and a chat log, and past a handful they are hard to keep track of. Wiring up your own auto-trading means handling scheduling, exchange APIs, position reconciliation, restarts and keys yourself. Blave Agent is that missing part.
+![A BTC breakout strategy in the app](docs/readme-backtest.png)
 
-### Your Strategies in One App, Not Scattered Scripts
-
-![A BTC breakout strategy in the app: backtest, trades, parameter scan, out-of-sample and code tabs, with the agent's verdict beside it](docs/readme-backtest.png)
-
-Each strategy sits in the sidebar with its backtest, trades, parameter scan, out-of-sample test, code and saved versions. Restore an old version from the list, and set how much each strategy trades on the Portfolio page.
-
-### Auto-Trading Already Wired Up
-
-- **Connect an exchange:** Binance, OKX, Bybit, BingX, Gate.io, or President Futures on Windows. The key is checked with the exchange first, and a key that can withdraw is refused (Gate.io doesn't report this, so check it yourself).
-- **Set an amount, press Start trading.** The app runs each strategy on schedule and moves the account toward its target positions. Every order attempt is logged (`state/audit.jsonl`).
-- **Pause trading (keep positions)** from the menu bar (system tray on Windows). After you quit and reopen the app, nothing trades until you press Start trading again.
-- **Paper trading** needs no keys.
-
-### Backtests That Check for Overfitting and Use Real Fees
-
-Overfitting: parameters that just happen to fit past data.
-
-- **MCPT p-value** on every Type A backtest (`lib/validation.py`): could shuffled data have done as well?
-- **Parameter scan** for a plateau, not the single best cell (`lib/param_scan.py`); **walk-forward** for out-of-sample results (`lib/walk_forward.py`).
-- **Real fees:** a fee of 0 gets a warning (`lib/quality_check.py`).
-- **One idea, one backtest:** a poor result is reported as it is, not quietly re-tuned (*Iteration Brakes* in [`AGENTS.md`](AGENTS.md)).
-
-### No Ideas? It Searches the Web for You
-
-![The agent searching a dozen sites for BTC and ETH strategy ideas in the built-in browser](docs/readme-browser.png)
-
-Press **Search the Web for Ideas** and the agent reads a dozen-odd sites, then brings back three backtestable ideas, each with entry and exit rules and its source URL. Pick one and it builds and backtests it. The pages it reads open in the app's built-in browser, on your screen; exchange account pages and private-network addresses are blocked.
+<p align="center">⭐ If this saves you a weekend of wiring, star the repo. It helps other traders find it.</p>
 
 <a id="quick-start"></a>
 
 ## Quick Start
 
-Download the app for [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) or [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) (macOS 13+, or Windows 10/11 x64) and open it.
+1. Download for [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) or [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) and open it.
+2. Pick your AI: your own Claude Code or Codex, a DeepSeek key, or Blave AI.
+3. Describe an idea:
 
-On first launch you choose what powers the agent:
+> Backtest BTCUSDT on the 4h chart: long when SMA 20 crosses above SMA 60, flat when it crosses back. 0.05% fee per side.
 
-- **Your own Claude Code or Codex.** No Blave account needed; Blave charges nothing for the AI.
-- **Your own DeepSeek key.** DeepSeek bills you directly. The key stays in this computer's keychain and never reaches the agent.
-- **Blave AI.** Sign in with a Blave account; billed by usage.
+<details><summary>Platform notes</summary>
 
-Then describe an idea:
-
-- "Backtest BTCUSDT on the 4h chart: long when the 20-period SMA crosses above the 60-period SMA, flat when it crosses back below. Use a 0.05% fee per side."
-- "Scan both SMA lengths on that strategy and show me where the plateau is."
-
-The agent sorts every idea into one of three types before writing code:
-
-| Type | What it is | Backtest |
-|---|---|---|
-| A | One fixed symbol on a fixed interval; one position (long / short / flat) | Required |
-| C | A portfolio: N symbols and a weight vector that sums to at most 1, rebalanced on a schedule | Required |
-| B | Everything else: screeners, grids, arbitrage, alerts, one-off execution | None |
-
-<details>
-<summary>Platform notes</summary>
-
-- The packaged macOS app is a universal build (Apple Silicon and Intel). Windows: the versions Electron 44 supports; ARM not tested. The Windows installer is not code-signed yet, so SmartScreen warns on first install: choose More info › Run anyway.
-- Node.js version: `shell/package.json` › `engines`. The packaged app bundles its own Python 3.12; running from source uses your system Python (`python3`, or `python` on Windows) to create the venv.
-- Codex comes inside the ChatGPT app — Microsoft Store “ChatGPT” on Windows (`winget install --id 9PLM9XGG6VKS -s msstore`), ChatGPT.app on Mac. On Windows, avoid the npm `@openai/codex` 0.161–0.162.1 builds for now (their sandbox is broken).
-- With your own Claude Code or Codex, the app only launches the CLI; your credentials stay with it. A DeepSeek key is stored encrypted on Windows, and the app relays the agent's requests locally.
-- `npm.cmd` runs even when PowerShell's execution policy blocks the `npm` script.
-- The interface follows the system language (English or Traditional Chinese). To override: `BLAVE_LANG=en npm start` (PowerShell: `$env:BLAVE_LANG="en"; npm.cmd start`).
+macOS 13+ (universal build) or Windows 10/11 x64. The Windows installer is not code-signed yet: choose More info › Run anyway.
 
 </details>
 
-### From Source
-
-You need macOS 13+ or Windows 10/11 (x64), Node.js 22.12+, Python 3 on your `PATH`, and one of: Claude Code or Codex signed in, a DeepSeek API key, or a Blave account.
+<details><summary>Build from source</summary>
 
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
@@ -94,116 +58,39 @@ npm install
 npm start
 ```
 
-On Windows, run `npm.cmd install` and `npm.cmd start` in PowerShell.
+</details>
 
-## News
+## Safety
 
-What changed in each version: [Releases](https://github.com/Blave-TW/blave-agent/releases).
+- **Only you fund or resume trading.** The agent can only stop it.
+- **Every order is checked with the exchange** and logged to `state/audit.jsonl`.
+- **A backtest describes the past.** Trading can lose all of your money.
 
-## Venues and Data
-
-**Venues with a tested order library** (`lib/account_*.py` + `lib/order_*.py`, verified on real accounts):
-
-- Binance, BingX, OKX, Gate.io, Bybit — futures and spot
-- Capital Futures (群益期貨) — Taiwan index futures (TXF, MXF and TMF); Windows cloud machine only (its API is a Windows COM component, see `references/capital-broker.md`) — the desktop app cannot connect it on any OS, a Windows PC included. You upload your certificate in the app and the agent completes the setup on the cloud machine — no remote desktop needed.
-- President Futures (統一期貨) — TXF, MXF and TMF; Windows only, because its certificate tool runs only on Windows 10 or later (see `references/president-broker.md`). On the Windows desktop app you upload the certificate and sign in inside the app. On a Windows cloud machine you apply for or export the certificate on your own Windows PC, upload it on the web workspace's Auto trading page and confirm the sign-in there — no remote desktop.
-
-How a venue gets connected depends on where the agent runs:
-
-- **Desktop app:** Binance, OKX, BingX, Gate.io and Bybit are connected in the app under Auto trading › Connect an exchange, which checks the key with the exchange first. A key pasted in chat is rejected — use Connect an exchange instead. Anything pasted stays in your chat history, so rotate a key you pasted by mistake. Type C strategies (one strategy holding several symbols by a weight vector — not the Portfolio page, which sets an amount for each of your strategies) can be auto-traded from the desktop app; if the workspace's lib is too old to trade them, they show as locked in Pick strategies until it is updated. A Type C strategy sized in contracts or shares places no orders, and Type C cannot be routed to President Futures or Capital Futures — saving an amount for it there is rejected.
-- **Cloud machine:** bind a venue on the web workspace's Auto trading page, or paste a Binance, BingX, OKX, Gate.io or Bybit key in chat and the agent binds it with `lib.venue.bind`.
-
-For any other exchange or broker with an API, the agent can write a helper from `lib/account_TEMPLATE.py` and `lib/order_TEMPLATE.py`. That code has not been tested by Blave.
-
-**Paper trading** needs no keys. It ships as `lib/account_paper.py` + `lib/order_paper.py` and fills at the market's latest real price, never an adjusted one: crypto at Binance's last trade, TAIFEX futures at the latest minute, stocks at the unadjusted daily close (`lib/paper_data.py`).
-
-**Data.**
-
-- Desktop app, no account needed: crypto klines from Binance (USDT-M perpetuals, all intervals, back to listing) and BingX public endpoints; Taiwan stock daily bars straight from TWSE and TPEx with the exchanges' own ex-dividend adjustment (listed from 2010, OTC from the 1990s); Taiwan index futures daily bars from TAIFEX public data (since 1998); market-wide institutional net buying from TWSE (foreign investors since 2004); US stock and ETF daily bars (auto trading only through a single-symbol strategy on the stock's own perpetual, e.g. NVDA → NVDAUSDT); the Crypto Fear & Greed index (since 2018). Blave's indicators, Taiwan intraday and per-stock flow data, futures intraday bars and the rest of the futures data, and the macro calendar need a Blave account with data access.
-- Cloud machine: market data comes from the Blave API through `lib/data.py` — crypto klines and indicators, Taiwan stocks, futures. US stock and ETF daily bars are fetched the same way as on the desktop app.
-
-## Safety and Limits
-
-- **Keys:** give read and trade permission only. A key with withdrawal permission is refused when you connect it (Binance, OKX, BingX, Bybit); Gate.io does not report that flag, so check it yourself. Keys live in the workspace `.env` on your computer (`~/Blave/workspace/.env`, `%USERPROFILE%\Blave\workspace\.env` on Windows) or on your own cloud machine, or encrypted by Blave when bound on the web page. The agent can read that `.env`; its rules forbid printing key values (`references/exchange-connect.md`).
-- **You fund and resume trading,** in the desktop app's Auto trading page or the web workspace. The agent refuses to, even when asked; the one thing it may always do by itself is trip the kill switch.
-- **Desktop orders only go out while Blave is running.** After you quit and reopen it, trading stays paused until you press Start trading.
-- **Verified before reported:** an order is queried back from the exchange before the agent says it was placed, and every attempt is logged to `state/audit.jsonl`.
-- A backtest describes the past. MCPT and parameter scans lower the odds that you are looking at luck; they do not remove them. Nothing here is investment advice, and trading can lose all of your money.
+Exchanges and keys: [docs](https://blave.org/docs/en/exchange_api) · Data sources: [crypto](https://blave.org/docs/en/data_crypto), [Taiwan stocks](https://blave.org/docs/en/data_twstock)
 
 ## Run It in the Cloud (Paid)
 
-To keep a strategy running with your computer off, Blave Agent runs the same workspace on a dedicated cloud machine: talk to it from the web workspace or Telegram (SSH too), schedule reports, or connect your own Claude Code, Codex or other MCP agent ([guide](https://blave.org/docs/en/connect)). Plans and prices: [blave.org/agent/en](https://blave.org/agent/en).
+Keep strategies running with your computer off, and talk to them from the web or Telegram. [Plans](https://blave.org/agent/en)
 
-## Just Reading the Code
+## News
 
-1. [`AGENTS.md`](AGENTS.md) — how the agent is expected to behave
-2. [`examples/README.md`](examples/README.md) — eight complete strategies, each showing one pattern
-3. [`references/lib.md`](references/lib.md) and [`references/strategy-code.md`](references/strategy-code.md) — library signatures and strategy code rules
-4. [`strategies/TEMPLATE_A.py`](strategies/TEMPLATE_A.py) and [`strategies/TEMPLATE_C.py`](strategies/TEMPLATE_C.py)
+Every version: [Releases](https://github.com/Blave-TW/blave-agent/releases). Watch › Releases to get notified.
 
-<details>
-<summary>Repository layout, what goes where when running from source, tests</summary>
+## For Developers
 
-| Path | What is in it |
-|---|---|
-| `AGENTS.md` | The agent's rules: verify before reporting, iteration limits, data sources, deployment redlines. Start here. |
-| `lib/` | Shared library: data, backtest runner, MCPT, parameter scan, walk-forward, reports, charts, exchange account and order helpers (`account_*.py`, `order_*.py`), kill switch (`guard.py`) |
-| `strategies/` | Strategy templates. Your own strategies live here too and are git-ignored. |
-| `examples/` | Complete reference strategies (crypto, crude oil, Taiwan stocks, Taiwan index futures) and export templates — see [`examples/README.md`](examples/README.md) |
-| `references/` | What the agent reads before acting: library signatures, strategy code rules, deployment, broker guides, report contract |
-| `manager/` | Portfolio manager, reconciler, health check, stop / flatten tools |
-| `allocators/` | Template for a custom portfolio weighting method |
-| `runtime/` | The agent loop, web and Telegram bridges, reporters and job runner that ship to every cloud machine, plus the desktop app's local order daemon |
-| `shell/` | The desktop app (Electron) |
-| `tests/` | Small checks, one file per contract |
+<details><summary>Repository layout, tests, contributing</summary>
 
-Versions: the workspace is [`VERSION`](VERSION) (date-based); the runtime is `runtime/VERSION`, history in [`runtime/CHANGELOG.md`](runtime/CHANGELOG.md); the desktop app is `shell/package.json`.
-
-About the `openclaw` name: it is the name of an earlier framework. Config files (`openclaw.json`), API paths (`/openclaw/...`) and SSH host names still carry it because those locations really are called that. The runtime in `runtime/` has been first-party since 2026-07-25 and is unrelated to that product.
-
-### Running from source: what goes where
-
-The first time you connect, the app prepares `~/Blave/` (`%USERPROFILE%\Blave\` on Windows):
-
-- `~/Blave/workspace/` — `lib/`, `manager/`, `references/`, `examples/`, `allocators/`, the strategy templates, `AGENTS.md`, `CLAUDE.md` and `VERSION`, copied from this checkout
-- `~/Blave/venv/` — created with `python3 -m venv` (`python -m venv` on Windows), then `claude-agent-sdk`, cryptography, pandas, numpy, matplotlib, pyarrow, requests, python-dotenv and scipy are installed with pip
-- `~/Blave/state/` — chat sessions, chat images and trading state
-
-Your strategies end up in `~/Blave/workspace/strategies/<name>/`. When running from source, the official files are copied again on every launch, so edit `lib/` in the checkout, not in `~/Blave/workspace/`. Your strategies, `.env` and state are never overwritten.
-
-### Tests
-
-Each file in `tests/` states how to run it in its header, for example `python tests/check_param_scan.py` or `node tests/check_shell_strings.js`.
+Start with `AGENTS.md`, then `examples/README.md` and `references/lib.md`. One test file per contract in `tests/`. Before a PR, run the tests that cover your change and `pre-commit install`.
 
 </details>
 
-## Contributing
+## License
 
-Issues and pull requests are welcome. Before a PR:
-
-- run the checks in `tests/` that cover what you changed;
-- activate secret scanning once per clone: `pip install pre-commit && pre-commit install`;
-- leave the backtest-chain files (`lib/runner.py`, `param_scan.py`, `walk_forward.py`, `validation.py`, `analysis.py`) alone unless the change is about them — the web workspace reads their output files by contract.
+Apache-2.0. The strategies you write are yours. "Blave" is a trademark: rename your fork.
 
 ## Code Signing Policy
 
 The Windows build is not code-signed yet: we have applied to the [SignPath Foundation](https://signpath.org) open-source program, and until it is approved the Windows installer is unsigned. Once approved: free code signing on Windows provided by [SignPath.io](https://signpath.io), certificate by SignPath Foundation. Releases are built by the public GitHub Actions workflow in this repository from a tagged commit; each signing request is approved by the repository owner. Roles: Authors and Reviewers — the maintainers with write access; Approver — the repository owner. This program will not transfer any information to third parties except as described in the [privacy policy](https://blave.org/disclaimer/en/privacy_policy). The macOS build is signed and notarized with Blave's own Apple identity.
-
-## License
-
-**Apache-2.0** — see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). You may use, modify and redistribute it, commercially too; a patent grant is included. "Blave" and the Blave logo are trademarks: rename your fork.
-
-**The strategies you write are yours.** Anything under `strategies/` is not part of this project and the license does not reach it. The paid parts — cloud machines, market data and Blave's LLM proxy — are blave.org services and not in this repo.
-
-Claude Code and Codex are products of their respective owners. Blave Agent is not affiliated with or endorsed by them.
-
-## Links
-
-- Website: [blave.org](https://blave.org) · Blave Agent: [blave.org/agent/en](https://blave.org/agent/en)
-- Docs: [blave.org/docs/en](https://blave.org/docs/en) — [quick start](https://blave.org/docs/en/quickstart), [MCPT](https://blave.org/docs/en/mcpt), [walk-forward](https://blave.org/docs/en/walk_forward), [avoiding overfitting](https://blave.org/docs/en/avoid_overfitting)
-- Strategy Library: [blave.org/agent/en/library](https://blave.org/agent/en/library)
-
----
 
 ---
 
