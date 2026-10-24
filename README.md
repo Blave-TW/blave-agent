@@ -51,12 +51,16 @@ macOS 13+ (universal build) or Windows 10/11 x64. The Windows installer is not c
 
 <details><summary>Build from source</summary>
 
+You need Node.js 22.12+ and Python 3 on your `PATH`.
+
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
 cd blave-agent/shell
 npm install
 npm start
 ```
+
+On Windows, run `npm.cmd install` and `npm.cmd start` in PowerShell.
 
 </details>
 
@@ -87,6 +91,8 @@ Start with `AGENTS.md`, then `examples/README.md` and `references/lib.md`. One t
 ## License
 
 Apache-2.0. The strategies you write are yours. "Blave" is a trademark: rename your fork.
+
+Claude Code and Codex are products of their respective owners. Blave Agent is not affiliated with or endorsed by them.
 
 ## Code Signing Policy
 

@@ -51,12 +51,16 @@ macOS 13 以上（通用版）或 Windows 10/11 x64。Windows 安裝檔還沒簽
 
 <details><summary>從原始碼建置</summary>
 
+需要 Node.js 22.12 以上，且 `PATH` 上有 Python 3。
+
 ```
 git clone https://github.com/Blave-TW/blave-agent.git
 cd blave-agent/shell
 npm install
 npm start
 ```
+
+Windows 在 PowerShell 裡改跑 `npm.cmd install` 與 `npm.cmd start`。
 
 </details>
 
@@ -87,6 +91,8 @@ npm start
 ## 授權
 
 Apache-2.0。你寫的策略歸你。「Blave」是商標：fork 請改名。
+
+Claude Code 與 Codex 是各自所有者的產品；Blave Agent 與它們沒有合作或背書關係。
 
 ## 程式碼簽章政策
 
