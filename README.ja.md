@@ -7,7 +7,7 @@
 **AI エージェントのためのクオンツ・ワークスペース**<br>
 Claude Code や Codex で、戦略を書き、バックテストして自動売買まで動かす。無料・オープンソース。
 
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="ライセンス Apache-2.0"></a> <a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=f7931a" alt="最新リリース"></a> <img src="https://img.shields.io/badge/desktop-macOS%20%7C%20Windows-555" alt="macOS | Windows"> <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex-555" alt="Claude Code と Codex に対応">
+<a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=555" alt="最新リリース"></a>
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | **日本語** | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
@@ -15,11 +15,11 @@ Claude Code や Codex で、戦略を書き、バックテストして自動売�
 
 </div>
 
-> この文書は英語版 README の commit [`584f3c6`](https://github.com/Blave-TW/blave-agent/blob/584f3c6/README.md) から翻訳したものです。食い違いがある場合は英語の原文が優先されます。
+> この文書は英語版 README の commit [`db5574d`](https://github.com/Blave-TW/blave-agent/blob/db5574d/README.md) から翻訳したものです。食い違いがある場合は英語の原文が優先されます。
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
-<p align="center"><a href="#quick-start">クイックスタート</a> · <a href="https://blave.org/docs/ja">ドキュメント</a> · <a href="https://blave.org/agent/ja">PC を閉じても動かす</a></p>
+<p align="center"><a href="https://blave.org/docs/ja">ドキュメント</a></p>
 
 ## できること
 
@@ -28,8 +28,8 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 - **手数料は最初から実費。** 手数料 0 には警告が出ます。
 - **自動売買はもう組み込み済み。** Binance、OKX、Bybit、BingX、Gate.io、Windows では台湾指数先物も。
 - **ペーパートレード。** キーは不要です。
-- **アイデアは Web から。** エージェントが十数サイトを読み、バックテストできる案を 3 つ持ち帰ります。
-- **AI は自分で選べる。** Claude Code、Codex、DeepSeek キー、または Blave AI。
+- **アイデアは Web から。** エージェントがいくつかのサイトを読み、バックテストできる案を 3 つ持ち帰ります。
+- **AI を選ぶ。** Claude Code、Codex、DeepSeek キー、または Blave AI。
 
 ![アプリ内の BTC ブレイクアウト戦略](docs/readme-backtest.png)
 
@@ -40,7 +40,7 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 ## クイックスタート
 
 1. [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) 版か [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) 版をダウンロードして開きます。
-2. AI を選びます：自分の Claude Code か Codex、DeepSeek キー、または Blave AI。
+2. AI を選びます。
 3. アイデアを話します：
 
 > BTCUSDT の 4 時間足でバックテストして。SMA 20 が SMA 60 を上抜けたらロング、下に戻ったらノーポジション。手数料は片道 0.05%。
@@ -68,7 +68,7 @@ Windows では PowerShell で `npm.cmd install` と `npm.cmd start` を実行し
 
 ## 安全性
 
-- **入金と取引の再開は、あなたにしかできません。** エージェントにできるのは停止だけです。
+- **資金の配分と取引の再開は、あなたにしかできません。** エージェントにできるのは停止だけです。
 - **すべての注文は取引所に照会して確認され**、`state/audit.jsonl` に記録されます。
 - **バックテストが示すのは過去です。** 取引では全額を失うこともあります。
 

@@ -7,7 +7,7 @@
 **Espacio de trabajo quant para agentes de IA**<br>
 Crea, haz backtest y opera estrategias en vivo con Claude Code o Codex. Gratis y de código abierto.
 
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Licencia: Apache-2.0"></a> <a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=f7931a" alt="Última versión"></a> <img src="https://img.shields.io/badge/desktop-macOS%20%7C%20Windows-555" alt="macOS | Windows"> <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex-555" alt="Funciona con Claude Code y Codex">
+<a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=555" alt="Última versión"></a>
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | **Español** | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
@@ -15,11 +15,11 @@ Crea, haz backtest y opera estrategias en vivo con Claude Code o Codex. Gratis y
 
 </div>
 
-> Traducido del README en inglés en el commit [`584f3c6`](https://github.com/Blave-TW/blave-agent/blob/584f3c6/README.md). Si algo no coincide, prevalece el original en inglés.
+> Traducido del README en inglés en el commit [`db5574d`](https://github.com/Blave-TW/blave-agent/blob/db5574d/README.md). Si algo no coincide, prevalece el original en inglés.
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
-<p align="center"><a href="#quick-start">Inicio rápido</a> · <a href="https://blave.org/docs/es">Documentación</a> · <a href="https://blave.org/agent/es">Que siga funcionando con el PC apagado</a></p>
+<p align="center"><a href="https://blave.org/docs/es">Documentación</a></p>
 
 ## Qué obtienes
 
@@ -28,8 +28,8 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 - **Comisiones reales por defecto.** Una comisión de 0 genera un aviso.
 - **Trading automático ya conectado.** Binance, OKX, Bybit, BingX, Gate.io, y futuros sobre índices de Taiwán en Windows.
 - **Paper trading.** Sin claves.
-- **Ideas de la web.** El agente lee una docena de sitios y trae tres que puedes probar.
-- **Tu propia IA.** Claude Code, Codex, una clave de DeepSeek o Blave AI.
+- **Ideas de la web.** El agente lee unos pocos sitios y trae tres que puedes probar.
+- **Elige tu IA.** Claude Code, Codex, una clave de DeepSeek o Blave AI.
 
 ![Una estrategia de ruptura de BTC en la app](docs/readme-backtest.png)
 
@@ -40,7 +40,7 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 ## Inicio rápido
 
 1. Descarga la versión para [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) o [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) y ábrela.
-2. Elige tu IA: tu propio Claude Code o Codex, una clave de DeepSeek o Blave AI.
+2. Elige tu IA.
 3. Describe una idea:
 
 > Haz un backtest de BTCUSDT en velas de 4h: largo cuando la SMA 20 cruce por encima de la SMA 60, sin posición cuando vuelva a cruzar. Comisión del 0,05% por lado.
@@ -68,7 +68,7 @@ En Windows, ejecuta `npm.cmd install` y `npm.cmd start` en PowerShell.
 
 ## Seguridad
 
-- **Solo tú puedes fondear o reanudar el trading.** El agente solo puede detenerlo.
+- **Solo tú puedes asignar fondos o reanudar el trading.** El agente solo puede detenerlo.
 - **Cada orden se verifica con el exchange** y queda registrada en `state/audit.jsonl`.
 - **Un backtest describe el pasado.** El trading puede hacerte perder todo tu dinero.
 

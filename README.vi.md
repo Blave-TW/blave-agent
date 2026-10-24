@@ -7,7 +7,7 @@
 **Không gian làm việc quant cho AI agent**<br>
 Xây dựng chiến lược, backtest và giao dịch thật với Claude Code hoặc Codex. Miễn phí, mã nguồn mở.
 
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Giấy phép: Apache-2.0"></a> <a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=f7931a" alt="Phiên bản mới nhất"></a> <img src="https://img.shields.io/badge/desktop-macOS%20%7C%20Windows-555" alt="macOS | Windows"> <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex-555" alt="Dùng được với Claude Code và Codex">
+<a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=555" alt="Phiên bản mới nhất"></a>
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | **Tiếng Việt**
 
@@ -15,11 +15,11 @@ Xây dựng chiến lược, backtest và giao dịch thật với Claude Code h
 
 </div>
 
-> Bản dịch từ README tiếng Anh tại commit [`584f3c6`](https://github.com/Blave-TW/blave-agent/blob/584f3c6/README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
+> Bản dịch từ README tiếng Anh tại commit [`db5574d`](https://github.com/Blave-TW/blave-agent/blob/db5574d/README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
-<p align="center"><a href="#quick-start">Bắt đầu nhanh</a> · <a href="https://blave.org/docs/vi">Tài liệu</a> · <a href="https://blave.org/agent/vi">Vẫn chạy khi tắt máy</a></p>
+<p align="center"><a href="https://blave.org/docs/vi">Tài liệu</a></p>
 
 ## Bạn nhận được gì
 
@@ -28,8 +28,8 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 - **Mặc định tính phí thật.** Phí bằng 0 sẽ bị cảnh báo.
 - **Giao dịch tự động đã nối sẵn.** Binance, OKX, Bybit, BingX, Gate.io, cùng hợp đồng tương lai chỉ số Đài Loan trên Windows.
 - **Giao dịch mô phỏng.** Không cần khóa.
-- **Ý tưởng từ web.** Agent đọc khoảng mười mấy trang và mang về ba ý tưởng có thể backtest.
-- **AI của riêng bạn.** Claude Code, Codex, khóa DeepSeek hoặc Blave AI.
+- **Ý tưởng từ web.** Agent đọc vài trang và mang về ba ý tưởng có thể backtest.
+- **Tự chọn AI.** Claude Code, Codex, khóa DeepSeek hoặc Blave AI.
 
 ![Một chiến lược breakout BTC trong ứng dụng](docs/readme-backtest.png)
 
@@ -40,7 +40,7 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 ## Bắt đầu nhanh
 
 1. Tải bản cho [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) hoặc [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) rồi mở ra.
-2. Chọn AI: Claude Code hoặc Codex của bạn, khóa DeepSeek, hoặc Blave AI.
+2. Chọn AI.
 3. Mô tả một ý tưởng:
 
 > Backtest BTCUSDT khung 4h: mua khi SMA 20 cắt lên SMA 60, đóng vị thế khi cắt xuống lại. Phí 0,05% mỗi chiều.
@@ -68,7 +68,7 @@ Trên Windows, chạy `npm.cmd install` và `npm.cmd start` trong PowerShell.
 
 ## An toàn
 
-- **Chỉ bạn mới nạp vốn hoặc tiếp tục giao dịch.** Agent chỉ có thể dừng.
+- **Chỉ bạn mới phân bổ vốn hoặc tiếp tục giao dịch.** Agent chỉ có thể dừng.
 - **Mọi lệnh đều được đối chiếu với sàn** và ghi vào `state/audit.jsonl`.
 - **Backtest chỉ mô tả quá khứ.** Giao dịch có thể làm bạn mất toàn bộ số tiền.
 

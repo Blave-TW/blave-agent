@@ -7,7 +7,7 @@
 **给 AI Agent 的量化工作台**<br>
 用 Claude Code 或 Codex 写策略、跑回测、上线自动交易。免费开源。
 
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="授权 Apache-2.0"></a> <a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=f7931a" alt="最新版本"></a> <img src="https://img.shields.io/badge/desktop-macOS%20%7C%20Windows-555" alt="macOS | Windows"> <img src="https://img.shields.io/badge/works%20with-Claude%20Code%20%C2%B7%20Codex-555" alt="支持 Claude Code 与 Codex">
+<a href="https://github.com/Blave-TW/blave-agent/releases"><img src="https://img.shields.io/github/v/release/Blave-TW/blave-agent?filter=desktop-*&label=latest&color=555" alt="最新版本"></a>
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | **简体中文** | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
@@ -15,11 +15,11 @@
 
 </div>
 
-> 本文译自英文版 README 的 commit [`584f3c6`](https://github.com/Blave-TW/blave-agent/blob/584f3c6/README.md)。内容有出入时，以英文原文为准。
+> 本文译自英文版 README 的 commit [`db5574d`](https://github.com/Blave-TW/blave-agent/blob/db5574d/README.md)。内容有出入时，以英文原文为准。
 
 https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 
-<p align="center"><a href="#quick-start">快速开始</a> · <a href="https://blave.org/docs/cn">文档</a> · <a href="https://blave.org/agent/cn">关电脑也照跑</a></p>
+<p align="center"><a href="https://blave.org/docs/cn">文档</a></p>
 
 ## 你会得到
 
@@ -28,19 +28,19 @@ https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 - **默认按真实手续费算。** 手续费填 0 会警告。
 - **自动交易已经接好。** Binance、OKX、Bybit、BingX、Gate.io，以及台指期（Windows）。
 - **模拟交易。** 不需要密钥。
-- **上网帮你找点子。** 读十几个网站，带回三个能回测的点子。
-- **用你自己的 AI。** Claude Code、Codex、DeepSeek 密钥或 Blave AI。
+- **上网帮你找点子。** 读几个网站，带回三个能回测的。
+- **AI 自己选。** Claude Code、Codex、DeepSeek 密钥或 Blave AI。
 
 ![app 里的 BTC 突破策略](docs/readme-backtest.png)
 
-<p align="center">⭐ 如果它帮你省下一个周末接 API 的时间，请点个 Star，能帮其他交易者找到它。</p>
+<p align="center">⭐ 如果它帮你省下一个周末接 API，点个 Star。这能帮其他交易者找到它。</p>
 
 <a id="quick-start"></a>
 
 ## 快速开始
 
 1. 下载 [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) 或 [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) 版并打开。
-2. 选 AI：你自己的 Claude Code 或 Codex、DeepSeek 密钥，或 Blave AI。
+2. 选 AI。
 3. 说出你的点子：
 
 > 回测 BTCUSDT 4 小时线：SMA 20 上穿 SMA 60 做多，下穿就平仓。单边手续费 0.05%。
@@ -68,7 +68,7 @@ Windows 在 PowerShell 里改跑 `npm.cmd install` 与 `npm.cmd start`。
 
 ## 安全
 
-- **只有你能投入资金与恢复交易。** agent 只能停。
+- **只有你能配置资金与恢复交易。** agent 只能停。
 - **每笔委托都跟交易所核对过**，记在 `state/audit.jsonl`。
 - **回测只代表过去。** 交易可能亏光本金。
 
