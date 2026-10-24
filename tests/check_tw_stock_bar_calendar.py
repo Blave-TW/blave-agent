@@ -7,8 +7,8 @@ bar on Saturday, Sunday or a TWSE holiday, so it used to wait on one that never 
 
   1. a TW stock Type A and a Type C universe: no stale alert; every trading-day bar computed
      exactly once (Monday's on Tuesday 08:00 TPE, like every other weekday's); nothing on the
-     holiday; the holiday table never asked on Sat/Sun/Mon, and not once per minute on the day
-     after the holiday.
+     holiday; the holiday table never asked on Sat/Sun/Mon, and on the day after the holiday
+     once per TW_BAR_MAP_RECHECK_SECONDS (a withdrawn ad-hoc closure is seen), not every minute.
   2. Friday's bar really late (lands Saturday 13:00 TPE): still alerts, on Friday's bar, and
      runs once it lands.
   3. not TW stock daily → the plain calendar floor every minute of the week, holiday table never
@@ -89,7 +89,7 @@ wfb.datetime = _Clock
 wfb.time = types.SimpleNamespace(time=lambda: (_Clock.at - datetime(1970, 1, 1)).total_seconds(),
                                  monotonic=__import__("time").monotonic)
 holiday_calls = []
-real_holiday = lambda day: holiday_calls.append((_Clock.at, day)) or day == HOLIDAY
+real_holiday = lambda day, unknown=False: holiday_calls.append((_Clock.at, day)) or day == HOLIDAY
 wfb._tw_holiday = real_holiday
 wfb._load_strategy_module = lambda n: types.SimpleNamespace(INTERVAL="1d")
 land = {}   # trading day → naive UTC moment its bar lands (default 17:35 TPE that day)
@@ -149,11 +149,13 @@ try:
         check(mon == [U(20)], f"{name}: Monday's bar runs once, Tuesday 08:00 TPE (got {mon})")
         weekend = [c for c in holiday_calls if U(17, 0, 1) <= c[0] < U(20)]
         check(not weekend, f"{name}: holiday table not asked after Saturday's run until Tuesday ({len(weekend)} calls)")
-        after = [c for c in holiday_calls if U(22) <= c[0] < U(23)]
-        check(len(after) <= 2, f"{name}: day after the holiday asks the table once, not every minute ({len(after)} calls)")
+        after = {c[0] for c in holiday_calls if U(22) <= c[0] < U(23)}
+        hourly = 24 * 3600 / wfb.TW_BAR_MAP_RECHECK_SECONDS + 1
+        check(len(after) <= hourly, f"{name}: day after the holiday asks the table once per re-check interval, not every "
+                                    f"minute ({len(after)} minutes asked, at most {hourly:.0f})")
 
     # a holiday on Friday: Saturday and Monday mornings wait on Thursday's bar
-    wfb._tw_holiday = lambda day: day == date(2026, 10, 16)
+    wfb._tw_holiday = lambda day, unknown=False: day == date(2026, 10, 16)
     for t in (U(17, 0, 1), U(19, 0, 1)):
         st = {"last_processed_bar": "2026-10-15T00:00:00"}
         try:

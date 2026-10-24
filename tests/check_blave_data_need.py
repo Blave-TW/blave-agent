@@ -187,7 +187,7 @@ EXPECT = {
     "strategies/TEMPLATE_A.py": False, "strategies/TEMPLATE_C.py": False,
     "examples/btc_sma_cross/strategy.py": False,      # fetch_kline
     "examples/tsmc_ma/strategy.py": False,            # fetch_twstock_price_adj: public CDN on the desktop
-    "examples/twstock_momentum/strategy.py": False,   # per-ticker fetch_twstock_price_adj loop: public CDN
+    "examples/twstock_momentum/strategy.py": False,   # fetch_twstock_price_adj_batch from 2015: public CDN
     "examples/btc_ti_5min/strategy.py": True,         # fetch_taker_intensity
     "examples/cl_sma/strategy.py": True,              # fetch_db_kline
     "examples/tw100_foreign_zscore/strategy.py": True,

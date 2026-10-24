@@ -98,19 +98,26 @@ def _rebalance_mask(idx, freq='W'):
 
 # ── fetch_data ────────────────────────────────────────────────────────────────
 # Returns a TUPLE — runner passes this directly to compute_signals as `data`.
+# One batch call for the whole universe, never one fetch per id. Do not catch BatchIncomplete
+# or go on with its .partial: a backtest fails, and a live tick alerts fetch_error and retries
+# — never weights on a partial universe. An id no source has is simply absent: .get skips it.
 def fetch_data(hdrs):
     import pandas as pd
-    # from lib.data import fetch_twstock_price_adj, fetch_twstock_institutional
+    # Taiwan stocks:
+    #   from lib.data import fetch_twstock_price_adj_batch
+    #   price_all = fetch_twstock_price_adj_batch(UNIVERSE, START, END, hdrs)    # {sid: Open/Close}
+    # Crypto (UNIVERSE as 'BTCUSDT' — the dict's keys are the normalized symbols):
+    #   from lib.data import fetch_kline_batch
+    #   price_all = fetch_kline_batch(UNIVERSE, INTERVAL, START, END, hdrs)     # {symbol: OHLCV}
+    price_all = {}
 
     closes, opens = {}, {}
     for sid in UNIVERSE:
-        try:
-            # price = fetch_twstock_price_adj(sid, START, END, hdrs)
-            # closes[sid] = price['Close']
-            # opens[sid]  = price['Open']
-            pass
-        except Exception as e:
-            print(f"  skip {sid}: {e}")
+        price = price_all.get(sid)
+        if price is None or price.empty:
+            continue
+        closes[sid] = price['Close']
+        opens[sid]  = price['Open']
 
     close_df = pd.DataFrame(closes).sort_index().dropna(how='all')
     if close_df.empty:

@@ -65,8 +65,9 @@ State: state/bar_wait/<name>.json
                          member's own newest bar) and the newest of those bars
   prime_tried_fp      : fingerprint of the last prime attempt, success or failure — the
                          same data is primed at most once
-  tw_bar_map          : TWSE stock daily strategies only: [calendar bar, trading day it maps to]
-                         for the last closed day found on the holiday table (_tw_skip_holidays)
+  tw_bar_map          : TWSE stock daily strategies only: [calendar bar, trading day it maps to,
+                         epoch checked] for the last closed day found on the holiday table
+                         (_tw_skip_holidays); re-checked every TW_BAR_MAP_RECHECK_SECONDS
   not_waited / dead_noticed : Type C members readiness does not wait for (lib.bar_ready.dead_members),
                          and those of them already notified as long dead (_note_dead)
 
@@ -82,8 +83,9 @@ behind: the expected bar's close + grace) and no member is still inside its own 
 member a minute late is waited for and the bar is computed once, on complete data; a member
 stuck for days does not let the others in batch by batch. A column that never had any data blocks priming. Not primed: no data, an unpublished
 align_feed row (the live run would refuse it), a TAIFEX contract strategy outside its session
-(_tw_futures_closed — weekends, the gap between sessions and TWSE holidays; typhoon closures
-and a night session before a holiday are not known, and a prime there is computed once, its
+(_tw_futures_closed — weekends, the gap between sessions and closed days on the holiday table;
+a typhoon closure is known only once Blave adds it — that evening or the next morning — and a
+night session before a holiday is not known, and a prime there is computed once, its
 orders then refused every reconcile round until the open). A failed prime backs off like any
 failed run and is not retried on the same data.
 
@@ -102,7 +104,8 @@ trading-calendar knowledge; it reacts to observed data behavior only.
 
 TWSE/TPEx stock daily strategies (only fetch_twstock_price* prices, _tw_stock_daily) do use the calendar:
 their bars exist on trading days only, so the expected bar is the latest weekday not on the
-TWSE holiday table. Otherwise every Sunday, Monday morning and day after a holiday waited on a
+holiday table (TWSE's annual schedule plus the ad-hoc closures Blave adds after the fact).
+Otherwise every Sunday, Monday morning and day after a holiday waited on a
 bar that never comes, alerted, and ran Monday's bar twice (once for "Sunday", once for itself).
 
 Repeat alerting during a stall: the FIRST alert for a given `last_seen_bar`
@@ -251,6 +254,10 @@ STALL_REALERT_SECONDS = 24 * 3600  # repeat the stale-data alert at most this of
                                     # SAME last_seen_bar persists — without this, a permanently
                                     # stuck symbol (delisted) gets exactly one alert ever, then
                                     # silence, even though the strategy never runs again
+TW_BAR_MAP_RECHECK_SECONDS = 3600  # a kept tw_bar_map is re-asked this often: an ad-hoc closure
+                                    # withdrawn from the table must not stay skipped. Withdrawals
+                                    # only happen at the api's 17:55 / 21:40 / 07:10 runs, and each
+                                    # ask is an authenticated api call — hourly, not every minute
 STATE_DIR = "state/bar_wait"
 RUN_TIMEOUT_SECONDS = 1200         # kill a strategy subprocess that hangs (e.g. a stuck order API call).
                                     # A whole-market Type C run (~1,700 TW stocks) took 6 min on an M-series
@@ -895,9 +902,22 @@ def _sized_in_lots(name):
     return isinstance(spec, dict) and spec.get("type") == "futures_contracts"
 
 
-def _tw_holiday(day):
-    """True when `day` (a date) is on the TWSE annual holiday table (TAIFEX closes with it).
-    Table unreachable or unpublished → False: the weekday rules still hold."""
+def _tw_closed_types():
+    """lib.data.TW_CLOSED_TYPES, or None from a lib without it (then every row counts)."""
+    try:
+        from lib.data import TW_CLOSED_TYPES
+        return TW_CLOSED_TYPES
+    except Exception:
+        return None
+
+
+def _tw_holiday(day, unknown=False):
+    """True when `day` (a date) is a closed day on the holiday table — TWSE's annual schedule
+    plus the ad-hoc (typhoon) closures Blave adds the evening of the day or the next morning;
+    TAIFEX closes with it. Only rows of lib.data.TW_CLOSED_TYPES count, so a future row that
+    is not a closure is not read as one. Table unreachable or unpublished → `unknown` (False:
+    the weekday rules still hold)."""
+    types = _tw_closed_types()
     try:
         from dotenv import dotenv_values
         from lib.data import fetch_twstock_holidays
@@ -905,17 +925,20 @@ def _tw_holiday(day):
         table = fetch_twstock_holidays({"api-key": env.get("blave_api_key", ""),
                                         "secret-key": env.get("blave_secret_key", "")}, day.year)
     except Exception:
-        return False
+        return unknown
     if table is None or table.empty:
-        return False
+        return unknown
+    if types is not None:
+        table = table[table["type"].isin(types)]
     return any(d.date() == day for d in table["date"])
 
 
 def _tw_futures_closed(name, now):
     """A TAIFEX contract strategy and `now` (naive UTC) outside its session: day 08:45–13:45
     Mon–Fri; night (index futures only) 15:00–05:00, opening Mon–Fri; and a day on the TWSE
-    holiday table (the night part after midnight belongs to the day before). Not known:
-    typhoon closures, and a night session skipped before a holiday. The full slot table is
+    holiday table (the night part after midnight belongs to the day before). Not known: a
+    typhoon closure before Blave adds it (that evening or the next morning), and a night
+    session skipped before a holiday. The full slot table is
     tick-winpid's _tw_fut_slot."""
     kind = _tw_futures_kind(name)
     if kind is None:
@@ -1050,18 +1073,27 @@ def _tw_skip_weekend(day):
 def _tw_skip_holidays(expected, state):
     """`expected` (a weekday) → the latest TWSE trading day at or before it, stopping at
     last_processed_bar. A day found closed is kept in state["tw_bar_map"] so the table is
-    asked once per closed day, not every minute; an unknown table counts as open (the stall
-    alert then fires as before)."""
+    asked every TW_BAR_MAP_RECHECK_SECONDS, not every minute; a re-check that reads the table
+    and no longer finds the closure (an ad-hoc row withdrawn) walks again, so `expected` is
+    computed — an unreadable table keeps the map (a blip must not raise a stall alert on a
+    closed day). Without a map an unknown table counts as open (the stall alert then fires as
+    before)."""
     memo = state.get("tw_bar_map")
     if memo and memo[0] == expected.isoformat():
-        return datetime.fromisoformat(memo[1])
+        if len(memo) > 2 and 0 <= time.time() - memo[2] < TW_BAR_MAP_RECHECK_SECONDS:
+            return datetime.fromisoformat(memo[1])
+        if _tw_holiday(expected.date(), unknown=None) is None:
+            state["tw_bar_map"] = [memo[0], memo[1], time.time()]
+            return datetime.fromisoformat(memo[1])
     day = expected
     for _ in range(31):   # bounded: a bad table must not spin the tick
         if day.isoformat() == state.get("last_processed_bar") or not _tw_holiday(day.date()):
             break
         day = _tw_skip_weekend(day - timedelta(days=1))
     if day != expected:
-        state["tw_bar_map"] = [expected.isoformat(), day.isoformat()]
+        state["tw_bar_map"] = [expected.isoformat(), day.isoformat(), time.time()]
+    else:
+        state.pop("tw_bar_map", None)
     return day
 
 
