@@ -493,6 +493,15 @@ ok("分隔線:帳號那一塊、「關於」上面、AI 接入頁列間那三條
 const PO = ["zh", "en"].map((l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8"));
 ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效(切換後以主行程回的為準)", /data-set-cat="shares"[^>]*><\/button>\s*\n\s*(<!--[\s\S]*?-->\s*\n\s*)?<button[^>]*data-set-cat="priv"[^>]*><\/button>\s*\n\s*<\/nav>/.test(html)
   && /setAttribute\("role", "switch"\)/.test(fnSrc("privPaint")) && /aria-checked/.test(fnSrc("privPaint")) && /PRIV = \(await window\.blave\.telemetrySet\(want\)\) === true/.test(src));
+{ // 隱私三列跟一般三列同一種:開關文字是 label[for],點字會切換;名稱只來自 label,不再另掛 aria-label
+  const br = fs.readFileSync(path.join(R, "browser.js"), "utf8"), i = br.indexOf("async function brPrivPaint("), brFn = br.slice(i, br.indexOf("\n}", i) + 2);
+  ok("隱私:三顆開關(mv-sw / priv-sw / br-sw)的字是 label[for] 指向開關、沒有 aria-label;清除瀏覽資料與隱私權政策不在 label 裡",
+    /lbl = mk\("label", "sw-l", t\("mv\.switch"\)\); lbl\.htmlFor = "mv-sw"; row\.append\(lbl\);/.test(fnSrc("mvBlock"))
+    && /lbl = mk\("label", "sw-l", t\("priv\.switch"\)\); lbl\.htmlFor = "priv-sw"; row\.append\(lbl\);/.test(fnSrc("privPaint"))
+    && /lbl = brEl\("label", "sw-l", t\("br\.set\.switch"\)\); lbl\.htmlFor = "br-sw"; row\.append\(lbl\);/.test(brFn)
+    && ![fnSrc("mvBlock"), fnSrc("privPaint"), brFn].some((f) => /"span", "sw-l"|aria-label/.test(f))
+    && /wrap\.append\(row, lead, clr\);/.test(brFn) && /legal\.append\(pl\); box\.append\(legal\);/.test(fnSrc("privPaint")));
+}
 ok("隱私:會收 8 條(功能那條緊接在里程碑後、0.1.9「卡在哪一步」再接在功能後、0.1.13 免登入下載的安裝識別碼接在安裝識別碼後、0.1.10 帳號狀態一併回報的那條排最後;關掉時仍送「已關閉」寫在關閉態那行 priv.kept)、不收 6 條(含「事件紀錄不含 IP 位址」原話);關掉後清單留著、標題與尾句換掉、不畫說明行", /PRIV_COLLECT = \["priv\.collect\.1", "priv\.collect\.5", "priv\.collect\.6", "priv\.collect\.2", "priv\.collect\.3", "priv\.collect\.4", "priv\.collect\.8", "priv\.collect\.7"\]/.test(src)
   && /if \(!off\) box\.append\(mk\("p", "priv-lead", t\("priv\.lead"\)\)\);/.test(src) && PO.every((x) => !/msgid "(priv|mv|br\.set)\.leadOff"/.test(x)) && /PRIV_NEVER = \[("priv\.never\.[1-6]",? ?){6}\]/.test(src)
   && /msgid "priv\.never\.6"\nmsgstr "事件紀錄不含 IP 位址"/.test(PO[0]) && /msgid "priv\.never\.6"\nmsgstr "Event records contain no IP address"/.test(PO[1])

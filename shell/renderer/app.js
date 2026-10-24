@@ -599,10 +599,10 @@ async function mvToggle() {
 }
 function mvBlock(mk) {
   if (!mvShown()) return null;
-  const wrap = mk("div", "mv"), row = mk("div", "sw-row"); row.append(mk("span", "sw-l", t("mv.switch")));
+  const wrap = mk("div", "mv"), row = mk("div", "sw-row"), lbl = mk("label", "sw-l", t("mv.switch")); lbl.htmlFor = "mv-sw"; row.append(lbl);
   const out = !MV.signedIn, on = !out && MV.on === true;
   const sw = mk("button", "sw" + (on ? "" : " off")); sw.type = "button"; sw.id = "mv-sw";
-  sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", on ? "true" : "false"); sw.setAttribute("aria-label", t("mv.switch"));
+  sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", on ? "true" : "false");
   sw.disabled = out; sw.addEventListener("click", mvToggle);
   row.append(sw); wrap.append(row);
   const lead = mk("p", "priv-lead");
@@ -635,9 +635,9 @@ function privPaint() {
   const had = box.contains(document.activeElement);
   box.textContent = "";
   const mv = typeof mvBlock === "function" ? mvBlock(mk) : null; if (mv) box.append(mv);
-  const row = mk("div", "sw-row"); row.append(mk("span", "sw-l", t("priv.switch")));
+  const row = mk("div", "sw-row"), lbl = mk("label", "sw-l", t("priv.switch")); lbl.htmlFor = "priv-sw"; row.append(lbl);
   const sw = mk("button", "sw" + (PRIV ? "" : " off")); sw.type = "button"; sw.id = "priv-sw";
-  sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", PRIV ? "true" : "false"); sw.setAttribute("aria-label", t("priv.switch"));
+  sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", PRIV ? "true" : "false");
   sw.disabled = PRIV == null; sw.addEventListener("click", privToggle);
   row.append(sw); box.append(row);
   const off = PRIV === false;

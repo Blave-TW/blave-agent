@@ -806,9 +806,9 @@ function brRepaint() { BR.sig = null; BR.blocks.forEach((b) => { brPaintHead(b);
 async function brPrivPaint(box) {
   let p = null; try { p = await window.blave.browserPrefs(); } catch (_) { return; }
   if (!box.isConnected || box.querySelector("#br-sw")) return;
-  const row = brEl("div", "sw-row"); row.append(brEl("span", "sw-l", t("br.set.switch")));
+  const row = brEl("div", "sw-row"), lbl = brEl("label", "sw-l", t("br.set.switch")); lbl.htmlFor = "br-sw"; row.append(lbl);
   const sw = brEl("button", "sw" + (p && p.enabled ? "" : " off")); sw.type = "button"; sw.id = "br-sw";
-  sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", p && p.enabled ? "true" : "false"); sw.setAttribute("aria-label", t("br.set.switch"));
+  sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", p && p.enabled ? "true" : "false");
   const lead = brEl("p", "priv-lead", t("br.set.lead")); lead.hidden = !(p && p.enabled);   // 只在開著時講(同頁「傳送使用資料」那顆的做法)
   sw.addEventListener("click", async () => { const on = sw.getAttribute("aria-checked") !== "true"; const r = await window.blave.browserPrefsSet({ enabled: on }); const v = !!(r && r.enabled); sw.classList.toggle("off", !v); sw.setAttribute("aria-checked", v ? "true" : "false"); lead.hidden = !v; if (typeof tvPrefs === "function") tvPrefs(); if (typeof libIdeaSync === "function") libIdeaSync(); });
   row.append(sw);
