@@ -7,11 +7,12 @@ alone but flagged on stdout and in the log when it sits below the library listin
 the seeded private RNG makes the p-value reproducible without touching the global seed,
 that vol_window follows the bar frequency, that stats.json is written atomically, that a
 live tick carries all three over (+ the _carry_over edge cases), and that scan_grid never
-touches lib.validation.mcpt (monkeypatched counter), and that the dot-product fast path gives
-the plain loop's p-value bit for bit (NaN inputs routed to the loop).
+touches lib.validation.mcpt (monkeypatched counter), that the fast path gives the plain
+loop's Sharpes bit for bit (NaN inputs routed to the loop), and that the fast path never
+reaches a BLAS dot / matmul (multi-threaded under OpenBLAS: fights the loop for the cores).
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_mcpt_auto.py
 """
-import json, math, os, sys, tempfile
+import ast, inspect, json, math, os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("MPLBACKEND", "Agg")
 import numpy as np
@@ -318,15 +319,66 @@ for label, c, pos, want in (
         ("中間 NaN(停牌)", cl, np.r_[base[:1500], np.full(30, np.nan), base[1530:]], "loop")):
     (an, pn, dn), (ao, po, do), path = _paths(c, pos)
     fin = np.isfinite(do)
-    check(path == want and pn == po and np.array_equal(np.isnan(dn), np.isnan(do))
-          and (not fin.any() or np.max(np.abs(dn[fin] - do[fin])) < 1e-9)
+    check(path == want and pn == po and np.array_equal(dn, do, equal_nan=True)
           and (an == ao or (np.isnan(an) and np.isnan(ao))),
-          f"內積快路 vs 逐次迴圈 [{label}] → 走 {path}、p 相同({pn} / {po})、dist 誤差 < 1e-9")
-_tol = V._DOT_TIE_TOL; V._DOT_TIE_TOL = 1e9
+          f"快路 vs 逐次迴圈 [{label}] → 走 {path}、p 相同({pn} / {po})、dist 逐位相同")
+_tol, _ps = V._DOT_TIE_TOL, V._perm_sharpe; V._DOT_TIE_TOL = 1e9; _calls = [0]
+def _counted(*a):
+    _calls[0] += 1; return _ps(*a)
 try:
-    (_, pt, dt_), (_, po, do), _ = _paths(cl, base)
+    V._perm_sharpe = _counted
+    _, pt, dt_ = V.mcpt(cl, base, n=300, fee=0.0005, rng=np.random.default_rng(42))
+    V._perm_sharpe = _ps
+    _, (_, po, do), _ = _paths(cl, base)
 finally:
-    V._DOT_TIE_TOL = _tol
-check(pt == po and np.array_equal(dt_, do), "貼近 actual 的排列改用逐次算法重算(容忍度放到無限大 → dist 與迴圈逐位相同)")
+    V._DOT_TIE_TOL, V._perm_sharpe = _tol, _ps
+check(_calls[0] == 301 and pt == po and np.array_equal(dt_, do),
+      f"貼近 actual 的排列改用逐次算法重算(容忍度放到無限大 → 300 次全重算 [{_calls[0] - 1}]、dist 與迴圈逐位相同)")
+
+
+# ── 6. fast path stays off BLAS (OpenBLAS threads a long 1-D dot) ─────────────────────────────
+_BLAS_NAMES = {"dot", "vdot", "inner", "matmul", "tensordot", "einsum", "linalg", "multi_dot"}
+def _blas_uses(src):
+    hits = []
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, (ast.BinOp, ast.AugAssign)) and isinstance(node.op, ast.MatMult):
+            hits.append("@")
+        elif isinstance(node, ast.Attribute) and node.attr in _BLAS_NAMES:
+            hits.append(node.attr)
+        elif isinstance(node, ast.Name) and node.id in _BLAS_NAMES:
+            hits.append(node.id)
+    return hits
+_src = inspect.getsource(V._mcpt_dot)
+check(_blas_uses(_src) == [], f"_mcpt_dot 原始碼沒有 @ / dot / matmul / einsum({_blas_uses(_src)})")
+check(_blas_uses("y = a @ b") == ["@"] and _blas_uses("y = np.dot(a, b)") == ["dot"],
+      "BLAS 偵測本身抓得到 @ 與 np.dot")
+
+class _NoBlas(np.ndarray):
+    def __array_ufunc__(self, ufunc, method, *args, **kw):
+        if ufunc is np.matmul:
+            raise AssertionError("matmul reached")
+        un = lambda a: a.view(np.ndarray) if isinstance(a, _NoBlas) else a
+        if "out" in kw:
+            kw["out"] = tuple(un(o) for o in kw["out"])
+        res = getattr(ufunc, method)(*map(un, args), **kw)
+        return res.view(_NoBlas) if isinstance(res, np.ndarray) and res.ndim else res
+    def __array_function__(self, func, types, args, kwargs):
+        if func.__name__ in _BLAS_NAMES:
+            raise AssertionError(f"np.{func.__name__} reached")
+        return super().__array_function__(func, types, args, kwargs)
+    def dot(self, *a, **k):
+        raise AssertionError("ndarray.dot reached")
+_sz = (base * np.linspace(0.2, 1.0, N)); _fc = np.abs(np.diff(_sz, prepend=0)) * 0.0005
+_fr = np.r_[np.diff(cl) / cl[:-1], 0.0]
+_g1, _g2 = np.random.default_rng(3), np.random.default_rng(3)
+_quiet = type("P", (), {"tick": lambda self: None})()
+try:
+    _, _dn = V._mcpt_dot(_sz.view(_NoBlas), _fc.view(_NoBlas), _fr.view(_NoBlas), 50,
+                         lambda a: _g1.permutation(a.view(np.ndarray)).view(_NoBlas), 8760, _quiet)
+    _, _dl = V._mcpt_loop(_sz, _fc, _fr, 50, _g2.permutation, 8760, _quiet)
+    check(np.array_equal(np.asarray(_dn), _dl, equal_nan=True),
+          "_mcpt_dot 跑在攔 matmul / dot 的陣列上不觸發,結果仍與迴圈逐位相同")
+except AssertionError as e:
+    check(False, f"_mcpt_dot 觸發了 BLAS 路徑:{e}")
 
 print("all checks passed" if not fails else f"FAILED: {fails}"); sys.exit(1 if fails else 0)

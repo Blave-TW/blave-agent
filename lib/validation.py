@@ -136,35 +136,36 @@ def _mcpt_loop(sized, fee_cost, fwd_ret, n, permute, periods_per_year, progress)
     return actual, dist
 
 
-# A dot-product Sharpe within this relative distance of `actual` (or with a variance this
-# badly cancelled) is recomputed the plain way on the same permutation: the two formulas
-# round differently (~1e-13 relative at 1e6 bars), and the p-value is a hard >= cut that
-# must not move. Wide enough to cover that error by orders of magnitude, narrow enough
-# that almost no permutation hits it.
+# A fast-path Sharpe within this relative distance of `actual` is recomputed with
+# _perm_sharpe on the same permutation: the p-value is a hard >= cut that must not move,
+# and this keeps it pinned even if a numpy build ever rounds the two paths differently.
 _DOT_TIE_TOL = 1e-9
-_DOT_VAR_FLOOR = 1e-8
 
 
 def _mcpt_dot(sized, fee_cost, fwd_ret, n, permute, periods_per_year, progress):
-    """Same Sharpes as _mcpt_loop for all-finite inputs, at three dot products per
-    permutation: with x = sized*r - fee_cost, Σx and Σx² expand into dot products of the
-    permuted r against arrays fixed across permutations. Same permute() calls in the same
-    order, so the RNG stream — and the p-value — is unchanged."""
-    N      = float(len(fwd_ret))
-    s2     = sized * sized
-    sf     = sized * fee_cost
-    f_sum  = fee_cost.sum()
-    ff_sum = fee_cost @ fee_cost
+    """Same Sharpes as _mcpt_loop for all-finite inputs: the same ufunc steps numpy's
+    mean()/std() take, into one reused buffer, without the NaN mask, its copy and the
+    second std(). Same permute() calls in the same order, so the RNG stream — and the
+    p-value — is unchanged.
+
+    No matmul / dot here on purpose: OpenBLAS multi-threads a long 1-D dot, and on a
+    2-vCPU box those threads fight this Python loop for the cores (MCPT slower than the
+    plain loop, +30-40% CPU). Plain ufuncs and pairwise sums stay on this thread."""
+    N      = len(fwd_ret)
     ann    = np.sqrt(periods_per_year)
     actual = _perm_sharpe(sized, fee_cost, fwd_ret, periods_per_year)
     tie    = _DOT_TIE_TOL * max(1.0, abs(actual)) if np.isfinite(actual) else -1.0
+    x      = np.empty(N)
     dist   = np.empty(n)
     for k in range(n):
-        r    = permute(fwd_ret)
-        mean = (sized @ r - f_sum) / N
-        ex2  = (s2 @ (r * r) - 2.0 * (sf @ r) + ff_sum) / N
-        var  = ex2 - mean * mean
-        sh   = mean / np.sqrt(var) * ann if var > _DOT_VAR_FLOOR * ex2 else np.nan
+        r = permute(fwd_ret)
+        np.multiply(sized, r, out=x)
+        np.subtract(x, fee_cost, out=x)
+        mean = x.sum() / N
+        np.subtract(x, mean, out=x)
+        np.multiply(x, x, out=x)
+        std  = np.sqrt(x.sum() / N)
+        sh   = (mean / std) * ann if std > 0 else np.nan
         if not np.isfinite(sh) or abs(sh - actual) <= tie:
             sh = _perm_sharpe(sized, fee_cost, r, periods_per_year)
         dist[k] = sh
