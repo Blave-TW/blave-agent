@@ -68,6 +68,10 @@ State: state/bar_wait/<name>.json
   tw_bar_map          : TWSE stock daily strategies only: [calendar bar, trading day it maps to,
                          epoch checked] for the last closed day found on the holiday table
                          (_tw_skip_holidays); re-checked every TW_BAR_MAP_RECHECK_SECONDS
+  tw_fut_holiday      : TAIFEX intraday strategies only: {date: [on the holiday table, asked at]},
+                         the last 10 days, each answer reused 6 hours (_tw_fut_holiday_memo)
+  tw_fut_night_bar    : stock futures (sized in lots) only: a night-session bar this strategy has
+                         observed — its night session is then known to trade (_tw_fut_quiet)
   not_waited / dead_noticed : Type C members readiness does not wait for (lib.bar_ready.dead_members),
                          and those of them already notified as long dead (_note_dead)
 
@@ -101,6 +105,16 @@ wall-clock time has moved): once alerted for a given `last_seen_bar`, further
 checks throttle down to once every STALL_POLL_MINUTES instead of every
 minute — and resume at full speed the moment the data moves. This needs no
 trading-calendar knowledge; it reacts to observed data behavior only.
+
+TAIFEX intraday strategies (_tw_futures_kind, INTERVAL under 1d) do use the calendar for alerting:
+while the expected bar is one Blave never publishes (_tw_fut_bar_exists: off-session, weekend,
+holiday table) and every bar before it that does exist is in, nothing is late — no bar_stale,
+pending_since is cleared (the next real bar is timed from its own close), and polling runs at the
+stall throttle's minutes instead of every minute. Without this every session close alerted once
+15 minutes later (07:15 and 15:15 Taipei for a 1h TXF strategy) and again daily over weekends.
+A bar that does exist and is missing (13:44 never came, the night's 05:00 never came) alerts as
+before. A bar observed where the model says none exists (the table is wrong, a stock future's
+night session nobody told us about) turns the quiet off for that tick — see _tw_fut_quiet.
 
 TWSE/TPEx stock daily strategies (only fetch_twstock_price* prices, _tw_stock_daily) do use the calendar:
 their bars exist on trading days only, so the expected bar is the latest weekday not on the
@@ -762,14 +776,33 @@ def _tick(name):
     if last_failed and time.time() - last_failed < RETRY_BACKOFF_SECONDS:
         return
 
+    # A TAIFEX intraday strategy between sessions: quiet (module docstring, _tw_fut_quiet).
+    fut_kind = fut_td = holiday_fn = None
+    if not (tw_stock or us_stock):
+        try:
+            fut_td = _interval_to_timedelta(interval)
+        except ValueError:
+            fut_td = None
+        if fut_td is not None and fut_td < timedelta(days=1):
+            fut_kind = _tw_futures_kind(name)
+    if fut_kind:
+        holiday_fn = _tw_fut_holiday_memo(state)
+        lots_night = bool(state.get("tw_fut_night_bar"))
+        quiet = _tw_fut_quiet(fut_kind, expected, fut_td, state.get("last_seen_bar"), holiday_fn,
+                              lots_night)
+    else:
+        quiet = False
+
     # Stall throttle: once we've confirmed a stall (alerted at least once this
     # episode — see stall_alert_at), stop polling every minute — this is what a
     # TXF weekend close looks like. Resumes full speed the moment data moves.
     # Also polled right after the priming grace (:05 of each quarter): with a member stuck the
     # bar is primed then, on everything that landed by the grace, not 15 minutes later.
-    if state.get("stall_alert_at") is not None:
+    # A quiet TAIFEX close polls on the same minutes: a bar the calendar got wrong still lands
+    # within 10 minutes.
+    if state.get("stall_alert_at") is not None or quiet:
         if now.minute % STALL_POLL_MINUTES not in (0, PRIME_GRACE_SECONDS // 60):
-            return
+            return   # no state write outside the lock: the memo is kept by the next polled tick
 
     # After the fast path and the throttle: the holiday table is a request, and this runs every minute.
     if tw_stock:
@@ -842,6 +875,15 @@ def _tick(name):
             state["last_seen_bar"] = observed_iso
             state["stall_alert_at"] = None
 
+        if fut_kind == "lots" and observed_ts is not None and _tw_fut_night_label(observed_ts):
+            state["tw_fut_night_bar"] = observed_iso
+        if fut_kind and not isinstance(straggler_symbol, _FeedWait) and \
+                _tw_fut_quiet(fut_kind, expected, fut_td, observed_iso, holiday_fn,
+                              bool(state.get("tw_fut_night_bar"))):
+            state["pending_since"] = None   # stall_alert_at stays: it may be a real stall's
+            _save_state(name, state)
+            return
+
         if isinstance(straggler_symbol, _FeedWait):
             # count lateness from when the row was DUE, not from the first poll: a daily
             # feed due at 20:00 polled from 15:00 on must not alert at 15:15
@@ -877,6 +919,11 @@ def _tick(name):
 _TW_FUT_SYMBOL_RE = re.compile(r'^SYMBOL\s*=\s*["\'](?:TXF|MXF|TMF)(?:R1)?["\']', re.M)
 _TW_FUT_FETCH = "fetch_twfutures_ohlcv"
 _TPE = timedelta(hours=8)
+# TAIFEX sessions, Taipei minutes of the day, [open, close): day Mon–Fri; night opens Mon–Fri and
+# runs past midnight. Index futures open the night at 15:00, the stock futures that have one
+# (TSMC, UMC… — not all) at 17:25. Shared by _tw_futures_closed and _tw_fut_bar_exists.
+_TW_FUT_DAY_OPEN, _TW_FUT_DAY_CLOSE = 8 * 60 + 45, 13 * 60 + 45
+_TW_FUT_NIGHT_OPEN, _TW_FUT_LOTS_NIGHT_OPEN, _TW_FUT_NIGHT_CLOSE = 15 * 60, 17 * 60 + 25, 5 * 60
 
 
 def _tw_futures_kind(name):
@@ -945,15 +992,117 @@ def _tw_futures_closed(name, now):
         return False
     t = now + _TPE
     hm, wd = t.hour * 60 + t.minute, t.weekday()
-    if wd <= 4 and 8 * 60 + 45 <= hm < 13 * 60 + 45:
+    if wd <= 4 and _TW_FUT_DAY_OPEN <= hm < _TW_FUT_DAY_CLOSE:
         session_day = t.date()
-    elif kind == "index" and wd <= 4 and hm >= 15 * 60:
+    elif kind == "index" and wd <= 4 and hm >= _TW_FUT_NIGHT_OPEN:
         session_day = t.date()
-    elif kind == "index" and 1 <= wd <= 5 and hm < 5 * 60:
+    elif kind == "index" and 1 <= wd <= 5 and hm < _TW_FUT_NIGHT_CLOSE:
         session_day = t.date() - timedelta(days=1)
     else:
         return True
     return _tw_holiday(session_day)
+
+
+def _tw_fut_sessions(kind, day, lots_night):
+    """[open, close) as naive Taipei datetimes of the sessions opening on `day` (a weekday)."""
+    d = datetime(day.year, day.month, day.day)
+    out = [(d + timedelta(minutes=_TW_FUT_DAY_OPEN), d + timedelta(minutes=_TW_FUT_DAY_CLOSE))]
+    night = _TW_FUT_NIGHT_OPEN if kind == "index" else _TW_FUT_LOTS_NIGHT_OPEN if lots_night else None
+    if night is not None:
+        out.append((d + timedelta(minutes=night), d + timedelta(days=1, minutes=_TW_FUT_NIGHT_CLOSE)))
+    return out
+
+
+def _tw_fut_bar_exists(kind, bar_open, td, holiday_fn, lots_night=False):
+    """Blave publishes a TAIFEX bar that ends a wait for `bar_open` (naive UTC, as
+    _expected_closed_bar_open gives it; INTERVAL under 1d). A different question from
+    _tw_futures_closed ("is `now` inside a session"), and the answers differ in the closing
+    minute: 13:45 and 05:00 are closed, yet the bar holding their last trade exists.
+
+    Blave's labels (twfutures3 cache, TXF / CDF / DHF, 2026-09-21..10-23 — pinned by
+    tests/check_tw_futures_quiet.py): 1m bars are labelled by their CLOSE minute — the day
+    session is 08:46..13:45, the night 15:01..05:00, no 08:45 and no 15:00. Longer bars bucket
+    those 1m labels on their own grid, labelled at the bucket start: 5m 08:45 (holds 08:46–08:49)
+    .. 13:45 (holds only the 13:45 one), 15m 08:45..13:45, 30m 08:30..13:30, 60m 08:00..13:00 and
+    15:00..05:00 — so the night's last trade makes its own 60m 05:00 bar and there is no 14:00 or
+    06:00 bar. Put as one rule: a wait for bar_open ends when some trading minute (open-time
+    minute inside a session) falls in [bar_open − 1m, bar_open + td) — the −1m being the 1m
+    label that already satisfies the wait's `>=` (the 08:46 label ends the wait for 08:45).
+
+    A session counts when it opens on a weekday that is not on the holiday table (the night
+    part after midnight belongs to the day before); holiday_fn(date) is asked at most once per
+    session day and only when the bar overlaps that day's sessions. Stock futures' night is
+    counted only with lots_night (most have none). Not known, so counted as existing: typhoon
+    closures, a night session skipped before a holiday, and the settlement day's early close
+    (third Wednesday, the expiring contract stops at 13:30: 1m 13:31–13:45 and 5m/15m 13:45 do
+    not exist that afternoon — a short-bar strategy alerts there once, as before)."""
+    lo = bar_open + _TPE - timedelta(minutes=1)
+    hi = bar_open + _TPE + td
+    day = lo.date() - timedelta(days=1)
+    while day <= hi.date():
+        if day.weekday() <= 4 and any(lo < b and a < hi for a, b in _tw_fut_sessions(kind, day, lots_night)) \
+                and not holiday_fn(day):
+            return True
+        day += timedelta(days=1)
+    return False
+
+
+def _tw_fut_last_bar_before(kind, bar_open, td, holiday_fn, lots_night=False, days=7):
+    """The newest bar on bar_open's grid before it that _tw_fut_bar_exists; None within `days`.
+    Session by session, newest first: in a session [a, b) the last such bar is the grid floor of
+    min(bar_open − td, b), if it still reaches past a − td."""
+    epoch = datetime(1970, 1, 1)
+    day = (bar_open + _TPE).date()
+    for _ in range(days + 2):
+        if day.weekday() <= 4:
+            for a, b in reversed(_tw_fut_sessions(kind, day, lots_night)):
+                cap = min(bar_open - td, b - _TPE)
+                last = epoch + ((cap - epoch) // td) * td
+                if last + _TPE > a - td and last >= bar_open - timedelta(days=days) \
+                        and not holiday_fn(day):
+                    return last
+        day -= timedelta(days=1)
+    return None
+
+
+def _tw_fut_holiday_memo(state):
+    """_tw_holiday kept in state (tw_fut_holiday) so the minute ticks do not ask the table every
+    minute. A False may only mean the table was unreachable: that errs
+    toward "the bar exists", the old alerting, and is asked again after 6 hours."""
+    memo = state.get("tw_fut_holiday") or {}
+    today = datetime.now(timezone.utc).date()
+    memo = {k: v for k, v in memo.items() if (today - datetime.fromisoformat(k).date()).days <= 10}
+    state["tw_fut_holiday"] = memo
+
+    def closed(day):
+        hit = memo.get(day.isoformat())
+        if hit and time.time() - hit[1] < 6 * 3600:
+            return hit[0]
+        memo[day.isoformat()] = [bool(_tw_holiday(day)), time.time()]
+        return memo[day.isoformat()][0]
+    return closed
+
+
+def _tw_fut_quiet(kind, expected, td, seen_iso, holiday_fn, lots_night=False):
+    """Nothing is late: the expected bar is one Blave never publishes, and `seen_iso` (the newest
+    bar observed) has reached the last one before it that it does. Not quiet when the seen bar is
+    itself one the model says does not exist — the calendar is wrong for this series (a holiday
+    that traded, an unknown night session), so it is waited on and alerted as before."""
+    try:
+        seen = datetime.fromisoformat(seen_iso)
+    except (TypeError, ValueError):   # None (no data yet) or a state file from elsewhere
+        return False
+    if _tw_fut_bar_exists(kind, expected, td, holiday_fn, lots_night) or \
+            not _tw_fut_bar_exists(kind, seen, td, holiday_fn, lots_night):
+        return False
+    last = _tw_fut_last_bar_before(kind, expected, td, holiday_fn, lots_night)
+    return last is not None and seen >= last
+
+
+def _tw_fut_night_label(bar_open):
+    """A bar of the night session (Taipei 14:00–08:00 labels: every day-session bar up to 60m is
+    labelled 08:00–13:59)."""
+    return not 8 <= (bar_open + _TPE).hour < 14
 
 
 # runtime/strategy_reporter._PRICE_FETCHERS' names (this process cannot import runtime;
