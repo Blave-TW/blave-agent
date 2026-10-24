@@ -41,7 +41,7 @@ Many Taiwan stocks: `*_batch` fetchers, narrow the pool first, never per-stock f
 
 **The symbol you backtest must be the symbol the orders go to, and the contract the user named.** `fetch_kline` is Binance USDT-M perps only; elsewhere use the exchange-native fetcher (`references/lib.md`); data not reachable → say so and stop, never a look-alike (`XAUUSDT` is not BingX's `GOLD(XAU)-USDT`).
 
-**Macro events and their numbers come from `fetch_economic_calendar()` — never from a web search or memory.** **Anything time-sensitive it does not cover (who holds an office, recent decisions, news) — verify on the web and cite, or say plainly you could not verify; a search that returns nothing, errors, or is blocked is not permission to answer from memory — it IS the answer.** Why: `references/lib.md` › *Macro facts discipline*.
+**Macro events and their numbers come from `fetch_economic_calendar()` — never from a web search or memory;** it covers ~5 weeks, so past events' dates (FOMC meetings for an event study) come from the official source's own page (federalreserve.gov), cited. **Anything time-sensitive it does not cover (who holds an office, recent decisions, news) — verify on the web and cite, or say plainly you could not verify; a search that returns nothing, errors, or is blocked is not permission to answer from memory — it IS the answer.** Why: `references/lib.md` › *Macro facts discipline*.
 
 Blave API credentials are in the workspace `.env`. **The user's own data-source keys** (`DATA_<SOURCE>_<FIELD>` in `.env`): only for fetching that source — never for orders or as a venue, never print a value.
 
@@ -93,7 +93,7 @@ Asked for strategy ideas from the web (incl. the app prompt 「上網幫我找 3
 
 ## Blave API Headers
 
-`lib/data.py` functions take a `headers` dict (the runner builds it; otherwise `references/strategy-code.md`). **NEVER use** `X-API-KEY`, `X-SECRET-KEY`, or `Authorization: Bearer ...` (403). **The base URL is ALWAYS `https://api.blave.org`** — copy it from `lib/data.py`, never from memory (`api.blave.ai` does not exist).
+`lib/data.py` functions take a `headers` dict — the runner builds it; anywhere else (one price, a quick check) it is `load_dotenv()` then `{'api-key': os.environ['blave_api_key'], 'secret-key': os.environ['blave_secret_key']}`, no need to look it up. **NEVER use** `X-API-KEY`, `X-SECRET-KEY`, or `Authorization: Bearer ...` (403). **The base URL is ALWAYS `https://api.blave.org`** — copy it from `lib/data.py`, never from memory (`api.blave.ai` does not exist).
 
 ## Exchange API Keys
 
@@ -165,7 +165,7 @@ Every backtest costs the user real credit. These limits are absolute; no goal ju
 - **Default: ONE backtest per user request, then STOP.** Report the result — good or bad — and wait. Do NOT adjust parameters and re-run on your own; a poor result is a valid stopping point: report it honestly, say why you think it failed, propose next steps.
 - **Reporting a backtest: the first sentence says how it did against its benchmark** (`Benchmark Return [%]` in `stats.json`; a Type C: `benchmark_bh.ret_pct`, buy-and-hold of `benchmark_bh.symbol` (an `as_of` on it: `references/lib.md`) — 0050 for Taiwan stocks, BTCUSDT for crypto (shown to the user as BTC), SPY for US stocks; a mixed Type C: `benchmark_strategy_ret_pct`, the share of random portfolios it beat): 「賺了 298%，但輸給單純持有的 783%」. Name what the user sees (「回測分頁」), no engineering names; no indicator line on the chart → a strategy you wrote or edited: ask whether to add `PLOT_SERIES`; a library strategy installed as is, or a fresh fork's baseline run: say it in one sentence, no edit, no question.
 - **A poor result is not permission to widen scope.** Test ONLY the indicator/data/symbol asked for; offer the wider version as an option.
-- **Iterating requires explicit user permission** ("自己調", "幫我優化", "掃參數"). Even then: max 3 iterations, then stop and report. One `lib/param_scan.py` run = ONE iteration.
+- **Iterating requires explicit user permission** ("自己調", "幫我優化", "掃參數"). Even then: max 3 iterations, then stop and report. One `lib/param_scan.py` run = ONE iteration. **Given, it runs — a weak result never vetoes it:** trailed its benchmark or MCPT p > 0.05 → one sentence with both numbers, then do it; the rule against suggesting more work on the same signal limits what you propose, never what the user asked for.
 - **Two identical results in a row = malfunction.** Stop and tell the user.
 - **Never end your turn while a backtest you started is still running.** Delete a stale `stats.json` only right before a re-run you then execute — never leave a strategy without one.
 - **A user question is not permission to resume.** Answer it and stay stopped.
