@@ -518,17 +518,22 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       const fet = rp.match(/_PRICE_FETCHERS = \{([\s\S]*?)\n\}/), vals = new Set(fet ? [...fet[1].matchAll(/: "([a-z_]+)"/g)].map((m) => m[1]) : []);
       ["tw_index_futures", "tw_stock_futures", "mixed"].forEach((v) => vals.add(v));
       t("…runtime strategy_market 會回的每個值都在外殼對照表裡(新增市場時這格紅)", vals.size === 7 && [...vals].every((v) => Object.prototype.hasOwnProperty.call(STRAT_MARKETS, v)), [...vals]); }
-    t("…每日去重(DAILY)、不是 once、畫面送不了(不在 FROM_RENDERER)", SE.every((ev) => new RegExp('const DAILY = \\[[^\\]]*"' + ev + '"').test(tmSrc18) && !new RegExp('const ONCE = \\[[^\\]]*"' + ev + '"').test(tmSrc18) && !FROM_RENDERER.includes(ev)));
+    t("…不在 DAILY(0.1.31 起一支一則)、不是 once、畫面送不了(不在 FROM_RENDERER)", SE.every((ev) => /const DAILY = \[[^\]]*\]/.test(tmSrc18) && !new RegExp('const DAILY = \\[[^\\]]*"' + ev + '"').test(tmSrc18) && !new RegExp('const ONCE = \\[[^\\]]*"' + ev + '"').test(tmSrc18) && !FROM_RENDERER.includes(ev)));
     t("main.js:strategies 讀 daemon 狀態檔的 strategy_kinds", /strategies: \(\) => \(_tradeHost \? \(\(_tradeHost\.status\(\)\.report \|\| \{\}\)\.strategy_kinds \|\| null\) : null\),/.test(mainSrc18));
     const apiPy18 = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
     if (!fs.existsSync(apiPy18)) console.log("SKIP  api 端 strat_* 比對(需要 monorepo 版面)");
     else { const api = fs.readFileSync(apiPy18, "utf8"), m = api.match(/^STRATEGY_KINDS = \(([^()]*)\)/m);
       const apiKinds = m ? [...m[1].matchAll(/"([^"]+)"/g)].map((v) => v[1]) : null;
       t("api STRATEGY_KINDS = 外殼 STRAT_KINDS(逐值逐序)", JSON.stringify(apiKinds) === JSON.stringify(STRAT_KINDS));
-      t("api EVENTS 的三個 strat_* = kind: STRATEGY_KINDS、不是 once", SE.every((ev) => new RegExp('^    "' + ev + '": \\{"props": \\{"kind": STRATEGY_KINDS\\}, "once": False\\},$', "m").test(api))); }
+      t("api EVENTS 的三個 strat_* = kind: STRATEGY_KINDS、不是 once", SE.every((ev) => new RegExp('^    "' + ev + '": \\{"props": \\{"kind": STRATEGY_KINDS\\}, "once": False\\},$', "m").test(api)));
+      const sidOn = api.match(/^SID_ON = \(([^()]*)\)/m), shellSidOn = tmSrc18.match(/^const SID_ON = \[([^\]]*)\]/m);
+      const names = (mm) => (mm ? [...mm[1].matchAll(/"([^"]+)"/g)].map((v) => v[1]) : null);
+      t("parity:api SID_ON = 外殼 SID_ON = 三個 strat_*(逐序)", JSON.stringify(names(sidOn)) === JSON.stringify(SE) && JSON.stringify(names(shellSidOn)) === JSON.stringify(SE));
+      t("parity:api _SID_RE 是 16 個小寫 hex(結尾 \\Z)、外殼 SID_RE 同形狀", /^_SID_RE = re\.compile\(r"\^\[0-9a-f\]\{16\}\\Z"\)$/m.test(api) && /^const SID_RE = \/\^\[0-9a-f\]\{16\}\$\/;$/m.test(tmSrc18)); }
 
     // 行為:一個假的狀態檔序列,看出門的事件
     const K = (type, market, bt, funded) => ({ type, market, bt, funded });
+    const SID_OK = (v) => typeof v === "string" && /^[0-9a-f]{16}$/.test(v);
     const dirS = fs.mkdtempSync(path.join(TMP_ROOT, "d-")); let clockS = Date.UTC(2026, 9, 7, 3, 0, 0);
     // 升級:舊版(0.1.17 以前)留下的狀態檔有 install_id、沒有 strat
     fs.writeFileSync(path.join(dirS, "telemetry.json"), JSON.stringify({ install_id: require("crypto").randomUUID(), enabled: true, sent: ["app_first_open"] }));
@@ -542,24 +547,26 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     x = mk(dirS, { now: () => clockS });   // 重開 app:讀回狀態檔
     const s1 = { ...exist, tx_trend_SECRET: K("A", "tw_index_futures", false, false) };
     t("重開後新的一支:送 strat_created kind=A.tw_idx_fut", x.tm.strategySteps(s1) === 1); await tick();
-    t("…出門的只有 kind、沒有名字", x.sent.length === 1 && x.sent[0].event === "strat_created" && JSON.stringify(x.sent[0].props) === '{"kind":"A.tw_idx_fut"}' && !JSON.stringify(x.sent[0]).includes("SECRET") && !JSON.stringify(x.sent[0]).includes("tx_trend"));
+    t("…出門的只有 kind 和 sid(16 hex)、沒有名字", x.sent.length === 1 && x.sent[0].event === "strat_created" && JSON.stringify(Object.keys(x.sent[0].props)) === '["kind","sid"]' && x.sent[0].props.kind === "A.tw_idx_fut" && /^[0-9a-f]{16}$/.test(x.sent[0].props.sid) && !JSON.stringify(x.sent[0]).includes("SECRET") && !JSON.stringify(x.sent[0]).includes("tx_trend"));
     t("…同一支再看一次:不送", x.tm.strategySteps(s1) === 0);
     s1.tx_trend_SECRET = K("A", "tw_index_futures", true, false);
     t("同一支回測好了:送 strat_backtested", x.tm.strategySteps(s1) === 1); await tick();
     s1.tx_trend_SECRET = K("A", "tw_index_futures", true, true);
     t("配了錢:送 strat_deployed;已送過的兩步不重送", x.tm.strategySteps(s1) === 1); await tick();
     t("…三則依序", x.sent.map((b) => b.event + "=" + b.props.kind).join() === "strat_created=A.tw_idx_fut,strat_backtested=A.tw_idx_fut,strat_deployed=A.tw_idx_fut");
-    // 同日同 kind 的第二支:api 只會留一列,外殼不再出門、直接記成送過
+    t("…同一支三步的 sid 相同", x.sent[0].props.sid === x.sent[1].props.sid && x.sent[1].props.sid === x.sent[2].props.sid);
+    const sidTx = x.sent[0].props.sid;
+    // 同日同 kind 的第二支:0.1.31 起各出門一則、sid 不同(api 每支一列)
     const s2 = { ...s1, eth_SECRET: K("A", "crypto", false, false), btc_SECRET: K("A", "crypto", false, false) };
     const n2 = x.tm.strategySteps(s2); await tick();
-    t("同一輪兩支同 kind:只出門一則(第二支等那則記好)", n2 === 1 && x.sent.length === 4 && x.sent[3].props.kind === "A.crypto");
-    t("…下一輪:第二支直接記成送過、不出門", x.tm.strategySteps(s2) === 0 && x.sent.length === 4 && x.tm.strategySteps(s2) === 0);
+    t("同一輪兩支同 kind:各出門一則、sid 不同", n2 === 2 && x.sent.length === 5 && x.sent[3].props.kind === "A.crypto" && x.sent[4].props.kind === "A.crypto" && x.sent[3].props.sid !== x.sent[4].props.sid);
+    t("…下一輪:兩支都記好了、不再出門", x.tm.strategySteps(s2) === 0 && x.sent.length === 5 && x.tm.strategySteps(s2) === 0);
     clockS += 24 * 3600 * 1000;
     t("換日之後已記的不會再送", x.tm.strategySteps(s2) === 0);
     // 型別 / 市場判不出來、或不在表上 → unk
     const s3 = { ...s2, a_SECRET: K(null, null, false, false), b_SECRET: K("C", "us_stock", false, false), c_SECRET: K("Z", "BTCUSDT", false, false), d_SECRET: K("B", "constructor", false, false) };
     x.tm.strategySteps(s3); await tick(); x.tm.strategySteps(s3); await tick();
-    t("判不出來 / 表外的值 → unk;出門的 kind 全在列舉裡", JSON.stringify(x.sent.slice(4).map((b) => b.props.kind).sort()) === JSON.stringify(["B.unk", "C.us_stock", "unk.unk"]) && x.sent.every((b) => STRAT_KINDS.includes(b.props.kind)));
+    t("判不出來 / 表外的值 → unk;出門的 kind 全在列舉裡", JSON.stringify(x.sent.slice(5).map((b) => b.props.kind).sort()) === JSON.stringify(["B.unk", "C.us_stock", "unk.unk", "unk.unk"]) && x.sent.every((b) => STRAT_KINDS.includes(b.props.kind)));
     // 關著時發生的:記成送過,重新打開不補
     x.tm.setEnabled(false);
     const s4 = { ...s3, off_SECRET: K("B", "crypto", false, false) };
@@ -593,11 +600,51 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       t(`…過了一分鐘再送一次`, sentF.length === n0 + 2);
       mode = "200"; clockF += 121 * 1000; f.strategySteps(sk); await tick();
       t(`…恢復後送成功就記,不再重送`, sentF.length === n0 + 3 && f.strategySteps(sk) === 0);
-      clockF += 24 * 3600 * 1000;   // 換日:下一個 code 的同 kind 不被「今天已有一列」擋掉
     }
     { mode = "502"; const sk = { cap_SECRET: K("C", "crypto", false, false) }, n0 = sentF.length;
       for (let i = 0; i < 12; i++) { f.strategySteps(sk); await tick(); clockF += 16 * 60 * 1000; }
       t("一直 5xx:送滿 STRAT_RETRY_MAX(5)次就記成送過,不無限重送", sentF.length === n0 + 5); }
+    // 0.1.31 sid:加了本機秘密的 HMAC。同名不同安裝不同、不等於沒加鹽的 sha256;重開不變;壞 key 只換 key
+    { const nodeCrypto = require("crypto"), NAME = "btc_regime_v6";
+      const plain = nodeCrypto.createHash("sha256").update(NAME).digest("hex").slice(0, 16);
+      const dA = fs.mkdtempSync(path.join(TMP_ROOT, "d-")), dB2 = fs.mkdtempSync(path.join(TMP_ROOT, "d-"));
+      const iA = mk(dA), iB = mk(dB2), one = { [NAME]: K("A", "crypto", false, false) };
+      iA.tm.strategySteps(one); iB.tm.strategySteps(one); await tick();
+      const sA = iA.sent[0] && iA.sent[0].props.sid, sB = iB.sent[0] && iB.sent[0].props.sid;
+      t("sid:同名策略在兩個安裝 sid 不同,而且都不是沒加鹽的 sha256 前 16 hex", SID_OK(sA) && SID_OK(sB) && sA !== sB && sA !== plain && sB !== plain);
+      const keyA = JSON.parse(fs.readFileSync(path.join(dA, "telemetry.json"), "utf8")).sid_key;
+      t("…sid_key 存在狀態檔:64 hex、檔案權限仍是 0600", /^[0-9a-f]{64}$/.test(keyA) && (fs.statSync(path.join(dA, "telemetry.json")).mode & 0o777) === 0o600);
+      const reA = mk(dA); reA.tm.strategySteps({ [NAME]: K("A", "crypto", true, true) }); await tick();
+      t("sid:重開 app 後同一支的 sid 不變(回測、配錢兩步跟新建同一個 sid)", reA.sent.length === 2 && reA.sent.every((b) => b.props.sid === sA)
+        && JSON.parse(fs.readFileSync(path.join(dA, "telemetry.json"), "utf8")).sid_key === keyA);
+      t("sid_key 不出門:任何送出的 body 都不含它", ![...iA.sent, ...reA.sent].some((b) => JSON.stringify(b).includes(keyA)) && !JSON.stringify(x.sent).includes(keyA));
+      // 壞 sid_key:只換 key,install_id、enabled:false、strat 都不動
+      for (const bad of ["BAD", "A".repeat(64), "a".repeat(63), ["a".repeat(64)], 12345, null]) {
+        const dK = fs.mkdtempSync(path.join(TMP_ROOT, "d-")), iid = nodeCrypto.randomUUID(), strat = { created: [plain], backtested: [], deployed: [] };
+        fs.writeFileSync(path.join(dK, "telemetry.json"), JSON.stringify({ install_id: iid, enabled: false, sent: ["app_first_open"], strat, sid_key: bad }));
+        const iK = mk(dK); iK.tm.strategySteps({ [NAME]: K("A", "crypto", false, false) }); await tick();
+        const j = JSON.parse(fs.readFileSync(path.join(dK, "telemetry.json"), "utf8"));
+        t(`sid_key 壞掉(${JSON.stringify(bad)}):只重新產生 key,install_id／enabled:false／strat 不變、一則都不送`,
+          typeof j.sid_key === "string" && /^[0-9a-f]{64}$/.test(j.sid_key) && j.install_id === iid && j.enabled === false && JSON.stringify(j.strat) === JSON.stringify(strat) && iK.sent.length === 0);
+      }
+      // track() 的閘門:非 strat 事件帶 sid、strat 事件帶壞形狀 → body 不帶 sid
+      const dG = fs.mkdtempSync(path.join(TMP_ROOT, "d-")), g = mk(dG), GOOD = "0123456789abcdef";
+      g.tm.track("feature_used", { name: "chat_sent", sid: GOOD }); g.tm.track("connect_done", { kind: "claude", sid: GOOD });
+      for (const bad of ["0123456789ABCDEF", "0123456789abcde", "0123456789abcdef0", "0123456789abcdef\n", [GOOD], { toString: () => GOOD }, 1])
+        g.tm.track("strat_created", { kind: "A.crypto", sid: bad });
+      g.tm.track("strat_deployed", { kind: "A.crypto", sid: GOOD }); await tick();
+      t("sid 閘門:非 strat 事件帶 sid、strat 事件帶壞形狀(含陣列／物件)→ 送出的 body 不帶 sid", g.sent.length === 10 && g.sent.slice(0, 9).every((b) => !("sid" in b.props))
+        && JSON.stringify(g.sent[9].props) === JSON.stringify({ kind: "A.crypto", sid: GOOD })); }
+    // 每輪限量:25 支新策略一次冒出來,第一輪最多 10 則,三輪內全部送完,沒有記了卻沒出門的
+    { const dM = fs.mkdtempSync(path.join(TMP_ROOT, "d-")), m = mk(dM), many = {};
+      for (let i = 0; i < 25; i++) many["bulk_" + i + "_SECRET"] = K("B", "crypto", false, false);
+      const w1 = m.tm.strategySteps(many); await tick(); const c1 = m.sent.length;
+      const w2 = m.tm.strategySteps(many); await tick(); const c2 = m.sent.length;
+      const w3 = m.tm.strategySteps(many); await tick();
+      const j = JSON.parse(fs.readFileSync(path.join(dM, "telemetry.json"), "utf8"));
+      t("每輪限量:25 支新策略 → 10／10／5 則,三輪送完、25 個 sid 各不同、記帳 25 支 = 出門 25 則",
+        w1 === 10 && c1 === 10 && w2 === 10 && c2 === 20 && w3 === 5 && m.sent.length === 25 && new Set(m.sent.map((b) => b.props.sid)).size === 25
+        && j.strat.created.length === 25 && m.tm.strategySteps(many) === 0); }
     // 計時器:start() 排一次,讀 opts.strategies()
     let calls = 0;
     const tmr = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")), { strategies: () => { calls++; return null; }, strategiesMs: 10 });
