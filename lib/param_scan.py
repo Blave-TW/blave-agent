@@ -20,9 +20,6 @@ import os
 import time
 
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
-from matplotlib.patches import Rectangle
 
 
 # api-side cap on each scan.json axis (api/openclaw/agent_strategies.py ingest) — a longer
@@ -599,6 +596,8 @@ def plot_heatmap(
     -------
     output_path
     """
+    plt = _pyplot()
+    from matplotlib.patches import Rectangle
     if output_path is None:
         raise ValueError(
             "plot_heatmap() requires output_path — "
@@ -664,3 +663,19 @@ def plot_heatmap(
             print(f"Error: heatmap saved but Telegram send failed: {e}")
 
     return output_path
+
+
+def _pyplot():
+    try:
+        from lib.analysis import _plt
+    except ImportError:  # half-updated workspace: the old lib/analysis.py set Agg + fonts on import
+        import matplotlib.pyplot as plt
+        return plt
+    return _plt()
+
+
+def __getattr__(name):
+    # `from lib.param_scan import plt` (a module attribute until the import went lazy) keeps working
+    if name == 'plt':
+        return _pyplot()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

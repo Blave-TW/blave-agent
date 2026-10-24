@@ -4,11 +4,33 @@ import os
 import numpy as np
 import pandas as pd
 import logging
-import matplotlib
-matplotlib.use('Agg')
-matplotlib.rcParams['font.family'] = ['Noto Sans CJK TC', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', 'Heiti TC', 'Arial Unicode MS', 'DejaVu Sans']
-logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
-import matplotlib.pyplot as plt
+
+# Same list as lib/matplotlibrc.
+CJK_FONTS = ['Noto Sans CJK TC', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', 'Heiti TC', 'Arial Unicode MS', 'DejaVu Sans']
+
+
+def _plt():
+    """pyplot on Agg with CJK fonts, imported on the first chart: a live tick draws none and
+    should not pay pyplot's import time and memory every bar."""
+    import matplotlib
+    matplotlib.use('Agg')
+    # only over matplotlib's own default: a font the caller (or lib/matplotlibrc) set stays
+    if matplotlib.rcParams['font.family'] == matplotlib.rcParamsDefault['font.family']:
+        matplotlib.rcParams['font.family'] = CJK_FONTS
+    logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
+    import matplotlib.pyplot as plt
+    return plt
+
+
+def __getattr__(name):
+    # `from lib.analysis import plt` (a module attribute until the import went lazy) keeps working
+    if name == 'plt':
+        return _plt()
+    if name == 'matplotlib':
+        _plt()
+        import matplotlib
+        return matplotlib
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def precise_pnl(close_v, open_v, w_curr, w_prev, exec_shifted, fee):
@@ -159,6 +181,7 @@ def regime_analysis(df, result, vol_lookback=720, hours_per_year=8760):
 
 def plot_regime(df, result, title='Regime Analysis', vol_lookback=720, hours_per_year=8760, output_path=os.path.join(tempfile.gettempdir(), 'regime.png')):
     """Bar chart of ann_ret/sharpe/mdd by year, trend regime, volatility regime."""
+    plt = _plt()
     raw_groups = _build_regimes(
         result['strat_ret'], df['Close'].values, df.index, result['realized_vol'],
         hours_per_year, vol_lookback,
@@ -204,6 +227,7 @@ def plot_pnl(df, result, title='Strategy PnL', output_path=os.path.join(tempfile
     """Generic 2-panel PnL chart: price+return / drawdown.
     extra_panels: list of dicts [{'data': array, 'label': str, 'color': str, 'hlines': [(y, color, label)]}]
     """
+    plt = _plt()
     close  = df['Close'].values
     dates  = df.index
     cum    = result['cum']
@@ -428,6 +452,7 @@ def plot_pnl_portfolio(pf_ret, close_df, title='Portfolio PnL', output_path=os.p
                        bench_pct=None, bench_line=None, bench_label=None):
     """2-panel PnL chart for Type C strategies. bench_pct: DataFrame with p5/p50/p95 columns;
     bench_line: a buy-and-hold equity Series over the same bars."""
+    plt = _plt()
     pf_equity = np.cumprod(1 + pf_ret.values)
     dd  = pf_equity / np.maximum.accumulate(pf_equity) - 1
     idx = close_df.index
@@ -468,6 +493,7 @@ def plot_candlestick(df, title='走勢圖', output_path=os.path.join(tempfile.ge
     df must have columns: Open, High, Low, Close, Volume (case-sensitive).
     extra_lines: list of dicts [{'data': array, 'label': str, 'color': str}] — overlaid on price panel.
     """
+    plt = _plt()
     xs      = np.arange(len(df))
     opens   = df['Open'].values
     highs   = df['High'].values
