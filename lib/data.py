@@ -6205,10 +6205,23 @@ def txf_settlement_mask(index):
     if pd.notna(bar):
         end = end + bar
 
-    local = (index.tz_localize('UTC') if index.tz is None else index).tz_convert(twn)
     daily = pd.notna(bar) and bar >= pd.Timedelta(days=1)
-    day_session = local if daily else local[(local.hour >= 8) & (local.hour < 14)]
-    open_days = sorted(set(day_session.normalize().unique().date))
+    # Taipei has been a fixed UTC+8 since 1980, so the open days come straight from the epoch
+    # integers: tz-converting and normalizing every bar cost seconds per call on two years of 1m
+    # (every look-ahead replay and every live tick). asi8 is UTC in the index's own unit.
+    per_sec = {'s': 1, 'ms': 10**3, 'us': 10**6, 'ns': 10**9}[getattr(index, 'unit', 'ns')]
+    utc = index.asi8
+    if len(utc) and utc.min() >= 315532800 * per_sec:   # 1980-01-01 UTC; NaT is below it too
+        local_t = utc + 8 * 3600 * per_sec
+        day = local_t // (86400 * per_sec)
+        if not daily:
+            hour = (local_t // (3600 * per_sec)) % 24
+            day = day[(hour >= 8) & (hour < 14)]
+        open_days = np.unique(day).astype('datetime64[D]').tolist()
+    else:
+        local = (index.tz_localize('UTC') if index.tz is None else index).tz_convert(twn)
+        day_session = local if daily else local[(local.hour >= 8) & (local.hour < 14)]
+        open_days = sorted(set(day_session.normalize().unique().date))
     open_set = set(open_days)
 
     def _mark(ts_settle):
