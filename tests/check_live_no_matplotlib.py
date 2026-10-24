@@ -8,7 +8,8 @@ MATPLOTLIBRC → lib/matplotlibrc). Each case runs in a fresh interpreter:
   (1) examples/txf_ma_1m live tick (fetch stubbed, no network) → state.json written, and no
       matplotlib module loaded — someone putting a matplotlib import back on that path fails here;
   (2) MPLBACKEND / MATPLOTLIBRC unset: import lib.runner, then matplotlib.pyplot → lib/matplotlibrc
-      is the rc file loaded, font.family starts with Noto Sans CJK TC, backend agg;
+      is the rc file loaded, font.family starts with Noto Sans CJK TC, backend agg; its font list
+      equals lib.analysis.CJK_FONTS;
   (3) plot_pnl writes a non-empty PNG;
   (4) half-updated workspace — the old empty lib/__init__.py and no lib/matplotlibrc beside the
       new analysis.py: plot_pnl still draws on Agg with the CJK fonts; MATPLOTLIBRC naming a
@@ -105,6 +106,13 @@ if out:
           f"the rc file loaded is lib/matplotlibrc → {out['fname']}")
     check(out["font"][:1] == [CJK], f"font.family starts with {CJK} → {out['font'][:2]}")
     check(out["backend"] == "agg", f"backend agg → {out['backend']}")
+
+# lib's own charts get the rc file's list (_plt only fills in over matplotlib's default): the two copies stay one
+rc_line = [l for l in open(os.path.join(ROOT, "lib", "matplotlibrc"), encoding="utf-8") if l.startswith("font.family:")]
+sys.path.insert(0, ROOT)
+from lib.analysis import CJK_FONTS  # noqa: E402
+rc_fonts = [f.strip() for f in rc_line[0].split(":", 1)[1].split(",")] if rc_line else []
+check(rc_fonts == CJK_FONTS, f"lib/matplotlibrc font.family == lib.analysis.CJK_FONTS → {rc_fonts}")
 
 # ── (3) + (4) plot_pnl, with the full lib and with a half-updated one ────────────────────────
 PLOT = r'''
