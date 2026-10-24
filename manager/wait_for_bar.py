@@ -68,9 +68,10 @@ State: state/bar_wait/<name>.json
   tw_bar_map          : TWSE stock daily strategies only: [calendar bar, trading day it maps to]
                          for the last closed day found on the holiday table (_tw_skip_holidays)
   tw_fut_holiday      : TAIFEX intraday strategies only: {date: [on the holiday table, asked at]},
-                         the last 10 days, each answer reused 6 hours (_tw_fut_holiday_memo)
-  tw_fut_night_bar    : stock futures (sized in lots) only: a night-session bar this strategy has
-                         observed — its night session is then known to trade (_tw_fut_quiet)
+                         the last 25 days, each answer reused 6 hours (_tw_fut_holiday_memo)
+  tw_fut_night_bar    : stock futures (sized in lots) only: the newest 17:25–05:00 night-session bar
+                         this strategy observed; its night session counts as trading for
+                         TW_FUT_NIGHT_KEEP_DAYS after it (_tw_fut_lots_night)
   not_waited / dead_noticed : Type C members readiness does not wait for (lib.bar_ready.dead_members),
                          and those of them already notified as long dead (_note_dead)
 
@@ -778,9 +779,11 @@ def _tick(name):
             fut_td = None
         if fut_td is not None and fut_td < timedelta(days=1):
             fut_kind = _tw_futures_kind(name)
+        if fut_kind and not _tw_fut_data(name):
+            fut_kind = None   # sized in contracts, priced off something else: its own hours
     if fut_kind:
         holiday_fn = _tw_fut_holiday_memo(state)
-        lots_night = bool(state.get("tw_fut_night_bar"))
+        lots_night = _tw_fut_lots_night(state, now)
         quiet = _tw_fut_quiet(fut_kind, expected, fut_td, state.get("last_seen_bar"), holiday_fn,
                               lots_night)
     else:
@@ -839,6 +842,9 @@ def _tick(name):
         observed_iso = observed_ts.isoformat() if observed_ts is not None else None
         fp, newest_iso = _fingerprint(latest)
 
+        if fut_kind == "lots" and observed_ts is not None and _tw_fut_night_label(observed_ts, fut_td):
+            state["tw_fut_night_bar"] = observed_iso   # on the ready path too: a prompt feed is never pending
+
         if ready:
             if _run_strategy_protected(name):
                 state["last_processed_bar"] = expected_iso
@@ -868,11 +874,9 @@ def _tick(name):
             state["last_seen_bar"] = observed_iso
             state["stall_alert_at"] = None
 
-        if fut_kind == "lots" and observed_ts is not None and _tw_fut_night_label(observed_ts):
-            state["tw_fut_night_bar"] = observed_iso
         if fut_kind and not isinstance(straggler_symbol, _FeedWait) and \
                 _tw_fut_quiet(fut_kind, expected, fut_td, observed_iso, holiday_fn,
-                              bool(state.get("tw_fut_night_bar"))):
+                              _tw_fut_lots_night(state, now)):
             state["pending_since"] = None   # stall_alert_at stays: it may be a real stall's
             _save_state(name, state)
             return
@@ -1024,8 +1028,9 @@ def _tw_fut_bar_exists(kind, bar_open, td, holiday_fn, lots_night=False):
     return False
 
 
-def _tw_fut_last_bar_before(kind, bar_open, td, holiday_fn, lots_night=False, days=7):
-    """The newest bar on bar_open's grid before it that _tw_fut_bar_exists; None within `days`.
+def _tw_fut_last_bar_before(kind, bar_open, td, holiday_fn, lots_night=False, days=21):
+    """The newest bar on bar_open's grid before it that _tw_fut_bar_exists; None within `days`
+    (21: the Lunar New Year closure runs 9–12 calendar days with its weekends).
     Session by session, newest first: in a session [a, b) the last such bar is the grid floor of
     min(bar_open − td, b), if it still reaches past a − td."""
     epoch = datetime(1970, 1, 1)
@@ -1048,7 +1053,7 @@ def _tw_fut_holiday_memo(state):
     toward "the bar exists", the old alerting, and is asked again after 6 hours."""
     memo = state.get("tw_fut_holiday") or {}
     today = datetime.now(timezone.utc).date()
-    memo = {k: v for k, v in memo.items() if (today - datetime.fromisoformat(k).date()).days <= 10}
+    memo = {k: v for k, v in memo.items() if (today - datetime.fromisoformat(k).date()).days <= 25}
     state["tw_fut_holiday"] = memo
 
     def closed(day):
@@ -1076,10 +1081,38 @@ def _tw_fut_quiet(kind, expected, td, seen_iso, holiday_fn, lots_night=False):
     return last is not None and seen >= last
 
 
-def _tw_fut_night_label(bar_open):
-    """A bar of the night session (Taipei 14:00–08:00 labels: every day-session bar up to 60m is
-    labelled 08:00–13:59)."""
-    return not 8 <= (bar_open + _TPE).hour < 14
+TW_FUT_NIGHT_KEEP_DAYS = 14   # > the longest closure (Lunar New Year, ~12 days); a strategy moved to
+                              # a day-only contract stops expecting a night within two weeks
+
+
+def _tw_fut_night_label(bar_open, td):
+    """A bar only a stock future's 17:25–05:00 night session explains — not a day bar, and not a
+    stray label between 13:45 and 17:25 that no session explains."""
+    never = lambda d: False
+    return _tw_fut_bar_exists("lots", bar_open, td, never, True) and \
+        not _tw_fut_bar_exists("lots", bar_open, td, never, False)
+
+
+def _tw_fut_lots_night(state, now):
+    """The stock future's night session counts as trading: a night bar was observed within
+    TW_FUT_NIGHT_KEEP_DAYS."""
+    try:
+        seen = datetime.fromisoformat(state.get("tw_fut_night_bar"))
+    except (TypeError, ValueError):
+        return False
+    return now - seen <= timedelta(days=TW_FUT_NIGHT_KEEP_DAYS)
+
+
+def _tw_fut_data(name):
+    """Every price fetcher the strategy calls is a TAIFEX one (lib.data._price_fetcher_scan, read
+    as code); unreadable source or an older lib → False, the old alerting."""
+    try:
+        from lib.data import _PRICE_FETCHERS, _price_fetcher_scan
+        with open(f"strategies/{name}/strategy.py", encoding="utf-8", errors="replace") as f:
+            names, _ = _price_fetcher_scan(f.read())
+    except Exception:
+        return False
+    return bool(names) and all(_PRICE_FETCHERS.get(n) == "twfutures" for n in names)
 
 
 # runtime/strategy_reporter._PRICE_FETCHERS' names (this process cannot import runtime;
