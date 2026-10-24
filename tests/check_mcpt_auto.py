@@ -7,7 +7,8 @@ alone but flagged on stdout and in the log when it sits below the library listin
 the seeded private RNG makes the p-value reproducible without touching the global seed,
 that vol_window follows the bar frequency, that stats.json is written atomically, that a
 live tick carries all three over (+ the _carry_over edge cases), and that scan_grid never
-touches lib.validation.mcpt (monkeypatched counter).
+touches lib.validation.mcpt (monkeypatched counter), and that the dot-product fast path gives
+the plain loop's p-value bit for bit (NaN inputs routed to the loop).
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_mcpt_auto.py
 """
 import json, math, os, sys, tempfile
@@ -289,5 +290,43 @@ try:
 except ValueError:
     check(True, "edges 退化(全距 < 1e-4,round(4) 後首尾相等)要 raise")
 check(set(f) == set(R.MCPT_KEYS) == {V.MCPT_P_KEY, V.MCPT_N_KEY, V.MCPT_DIST_KEY}, "runner MCPT_KEYS 與 validation key 常數一致")
+
+# ── 5. dot-product fast path == the plain loop (same seed → identical p-value) ───────────────
+def _paths(c, pos, n=300):
+    def one(fn):
+        cnt = {"dot": 0, "loop": 0}
+        d0, l0 = V._mcpt_dot, V._mcpt_loop
+        V._mcpt_dot = lambda *a: (cnt.__setitem__("dot", 1), d0(*a))[1]
+        V._mcpt_loop = lambda *a: (cnt.__setitem__("loop", 1), l0(*a))[1]
+        if fn is not None:
+            V._mcpt_dot = lambda *a: (cnt.__setitem__("dot", 1), fn(*a))[1]
+        try:
+            res = V.mcpt(c, pos, n=n, fee=0.0005, rng=np.random.default_rng(42))
+        finally:
+            V._mcpt_dot, V._mcpt_loop = d0, l0
+        return res, ("dot" if cnt["dot"] else "loop")
+    new, path = one(None)
+    old, _ = one(V._mcpt_loop)  # same dispatch, forced through the plain loop
+    return new, old, path
+cl = DF["Close"].values; base = compute(DF).values
+trade1 = np.zeros(N); trade1[1000:1400] = 1.0
+for label, c, pos, want in (
+        ("0/1", cl, base, "dot"), ("小數(vol scaling)", cl, base * np.linspace(0.2, 1.0, N), "dot"),
+        ("做空", cl, np.where(base > 0, 1.0, -0.5), "dot"), ("只一筆交易", cl, trade1, "dot"),
+        ("從沒交易", cl, np.zeros(N), "dot"), ("價格不動(std 退化)", np.full(N, 100.0), base, "dot"),
+        ("開頭 NaN(warmup)", cl, np.r_[np.full(60, np.nan), base[60:]], "loop"),
+        ("中間 NaN(停牌)", cl, np.r_[base[:1500], np.full(30, np.nan), base[1530:]], "loop")):
+    (an, pn, dn), (ao, po, do), path = _paths(c, pos)
+    fin = np.isfinite(do)
+    check(path == want and pn == po and np.array_equal(np.isnan(dn), np.isnan(do))
+          and (not fin.any() or np.max(np.abs(dn[fin] - do[fin])) < 1e-9)
+          and (an == ao or (np.isnan(an) and np.isnan(ao))),
+          f"內積快路 vs 逐次迴圈 [{label}] → 走 {path}、p 相同({pn} / {po})、dist 誤差 < 1e-9")
+_tol = V._DOT_TIE_TOL; V._DOT_TIE_TOL = 1e9
+try:
+    (_, pt, dt_), (_, po, do), _ = _paths(cl, base)
+finally:
+    V._DOT_TIE_TOL = _tol
+check(pt == po and np.array_equal(dt_, do), "貼近 actual 的排列改用逐次算法重算(容忍度放到無限大 → dist 與迴圈逐位相同)")
 
 print("all checks passed" if not fails else f"FAILED: {fails}"); sys.exit(1 if fails else 0)

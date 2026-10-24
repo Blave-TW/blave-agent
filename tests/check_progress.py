@@ -4,7 +4,7 @@ threshold compute_signals go through scan_grid twice: once with the lines forced
 (MIN_SECONDS = 0), once silenced; the grids must be identical and the forced run must
 print the `[scan] done/total cells` lines (10 % steps + the final one) and nothing else.
 mcpt with a seeded rng must be reproducible run to run and match the pre-progress
-list-comprehension formula exactly (same rng draw order).
+list-comprehension formula (same rng draw order, same actual and p-value, dist within 1e-9).
 Run: cd blave-agent && .venv/bin/python tests/check_progress.py
 """
 import contextlib, io, os, re, sys
@@ -82,7 +82,11 @@ def sh(ret):
     s = sized * ret - fc; s = s[~np.isnan(s)]
     return (s.mean() / s.std()) * np.sqrt(8760) if s.std() > 0 else np.nan
 old = np.array([sh(r.permutation(fwd)) for _ in range(300)])
-check(np.array_equal(old, d1, equal_nan=True), "mcpt dist == pre-progress formula (bit-exact)")
+# dist via dot products rounds differently from this formula (~1e-15); the p-value may not move
+fin = np.isfinite(old)
+check(np.array_equal(np.isnan(old), np.isnan(d1)) and np.max(np.abs(old[fin] - d1[fin])) < 1e-9
+      and a1 == sh(fwd) and p1 == float((old >= sh(fwd)).mean()),
+      "mcpt == pre-progress formula (same actual + p-value, dist within 1e-9)")
 
 # ── Progress itself: 10 % cadence and duration format ────────────────────────
 P.MIN_SECONDS = 0.0
