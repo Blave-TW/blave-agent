@@ -209,11 +209,11 @@ for i in range(20):
 nl = re.split(r"、(?![^()]*\))", rows(at._deploy_state_line(WS)).get("還沒上線", ""))
 t("複驗 R-P2-2 還沒上線超過 15 支:金額 0 的排最前面、註記不會被截掉(照舊最多 15 支)", nl[0] == "zz(在策略組合、金額 0)" and len(nl) == 15, nl[:3])
 src = open(os.path.join(ROOT, "runtime", "agent_turn.py"), encoding="utf-8").read()
-t("P1-1 同段 prompt 的舊詞:導航句「設金額上線 / 連接模擬交易或交易所」、里程碑「有回測但還沒上線」「就不提上線」",
-  "portfolio.pos=設金額上線、" in src and "portfolio.venue=連接模擬交易或交易所、" in src and "有回測但還沒上線的策略" in src and "就不提上線、" in src
+t("P1-1 同段 prompt 的舊詞:導航句「設金額上線 / 連接模擬交易或交易所」、里程碑「有回測、還沒上線」「就不提上線」",
+  "portfolio.pos=設金額上線、" in src and "portfolio.venue=連接模擬交易或交易所、" in src and "一支有回測、還沒上線的策略" in src and "就不提上線、" in src
   and "設金額/部署" not in src and "有回測但未部署" not in src and "就不提部署" not in src)
 t("P1-1 建議句的「加進策略組合」與「先綁模擬盤帳戶」(nav_topic 靠這些字附步驟)",
-  "「加進策略組合」→「先綁模擬盤帳戶」" in src and at.nav_topic("帶我看怎麼把 BTC 均線交叉加進策略組合")
+  "「帶我看怎麼把〈策略名〉加進策略組合」" in at._SUGGEST_RULE and "「帶我看怎麼先綁模擬盤帳戶」" in at._SUGGEST_RULE and at.nav_topic("帶我看怎麼把 BTC 均線交叉加進策略組合")
   and at.nav_topic("帶我看怎麼先綁模擬盤帳戶"))
 
 # ── #7b 步驟依表面注入 ───────────────────────────────────────────────
@@ -245,7 +245,8 @@ with open(os.path.join(WS, "references", "portfolio-steps.md"), "w", encoding="u
 t("#7b 舊檔(沒有子段):整段照舊回,不回空", "點「連接交易所」" in at._portfolio_steps_block(WS, desktop=True))
 
 src = open(os.path.join(ROOT, "runtime", "agent_turn.py"), encoding="utf-8").read()
-t("#7b build_prompt 兩個呼叫點都帶 desktop=_desktop_surface(sink)", src.count("desktop=_desktop_surface(sink))") == 2)
+t("#7b build_prompt 兩個呼叫點都帶 desktop=_desktop_surface(sink)(連同 suggest_mode,續跑那一輪不掉回 normal)",
+  len(re.findall(r"desktop=_desktop_surface\(sink\),\s*suggest_mode=suggest_mode\)", src)) == 2)
 
 # build_prompt 真的把表面帶進步驟注入(步驟檔放好、用導航句)
 fresh({})

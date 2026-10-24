@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **建議下一步 v2(電腦版 0.1.31;spec `.claude/output/specs/suggest-next-step-v2/`)**:`<suggest>` 只取 1 句(`_SUGGEST_MAX_ITEMS = 1`),suggestions chunk 多帶 `kind`(`nav` = 句首「帶我看怎麼」／「带我看怎么」／「show me how」,其他 `step`;`suggest_kind`)。`_SUGGEST_RULE` 改成只在里程碑出建議:刪掉「沒命中也寫成 <suggest>」,列明不出建議的回合(問答、除錯中、用戶已講明、等回答、重複句、拒絕過),一般句 ≤20 字、導航句不限,範本改短,句子改成「填進輸入框、用戶自己送出」;「禁止在同一個訊號上加東西」句尾加「只管你主動提的建議；用戶自己要求的照做」(回覆模式實測 B4)。`_AWAIT_RULE` 改成寫了 `<await/>` 的回合不附 `<suggest>`。新旗標 `--suggest-mode`(`normal`／`reduced`／`off`,預設 normal,有 choices):逐輪結尾錨依它換——reduced 只附導航句、其他里程碑把下一步寫成正文最後一句直述,off 一律寫進正文。`web_bridge` 收 `context.suggest_mode`,只在 reduced／off 時帶旗標。**外殼帶這個旗標,所以 0.1.31 外殼要跟這版 runtime 一起出**(舊 runtime 的 argparse 會整輪 exit 2;`tests/check_shell_viewing.js` 釘著)。測試 `tests/check_suggest_rule_026.py`、`tests/check_web_bridge_suggest_mode.py`(新)、`check_await_marker.py`、`check_deploy_prompt_010.py`。
+
 ## 1.1.139 — 2026-10-22(desktop 0.1.29)
 
 - **美股 Type C 剛建好不再落「幣別未定」(`portfolio_reporter.strategy_quote_ccy`;用戶回報 0.1.29)**:還沒有 `state.json` 權重、檔案也沒有 `SYMBOL` 時,美股價格的策略(`us_stock`,以及美股＋加密濾網的 `mixed`)改讀檔內 `UNIVERSE` 最後一次賦值的字面清單(`_universe_const`,ast,同 `lib/paper_data._consts` 取最後一次;最後一次是程式算的、或之後有 `UNIVERSE += …` 就不猜、回 None):全是美股純代號 → USD、全是股票永續 → 那個報價幣(原本一律當 USD)、混了加密對或混台股／全球期貨照舊 None。抓價函式表 runtime(`strategy_reporter._PRICE_FETCHERS`)比 lib(`lib/data._PRICE_FETCHERS`)少六個(`fetch_binance_ticker_24h`、`fetch_twmarket_index(_public)`、`fetch_twse_day_all_public`、`fetch_twstock_quote(_batch)`),這次不收(收了會改 `strategy_market` 與 `wait_for_bar` 的判法),由 `tests/check_price_fetchers.py` 釘住差集與共同名字的市場對應,再長就紅。測試 `tests/check_report_quote_ccy.py`。

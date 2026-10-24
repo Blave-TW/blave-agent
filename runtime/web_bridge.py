@@ -299,7 +299,7 @@ def save_attachment(attachment):
 
 def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
                    attachment_names=None, viewing_view=None,
-                   ui_lang=None, stop_file=None):
+                   ui_lang=None, stop_file=None, suggest_mode=None):
     """Spawn one agent_turn.py and wait for it. The turn's slot is kept fresh by the
     keep_fresh thread (every slot in _running), not by this loop."""
     # 有任一張圖的輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
@@ -321,6 +321,9 @@ def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
     # 頁面 <lang>;白名單外當沒送(同 viewing_view:新 runtime 可能跑在還沒部署 clamp 的 api 上)
     if ui_lang in strategy_reporter.REPLY_LANGS:
         cmd.append(f"--ui-lang={ui_lang}")
+    # 工作頁這一輪畫不畫建議;normal 與怪值都不帶(= runtime 預設),argparse 的 choices 才不會整輪 exit 2
+    if suggest_mode in ("reduced", "off"):
+        cmd.append(f"--suggest-mode={suggest_mode}")
     # `--` terminates options so a message starting with '-' (or literally '--help')
     # is taken as the positional arg, not parsed as a flag (which would silently
     # print help + exit 0 and the user would get nothing back).
@@ -582,6 +585,7 @@ def _ingest(m):
         "viewing_tab": ctx.get("viewing_tab"),
         "viewing_view": ctx.get("viewing_view"),
         "ui_lang": ctx.get("ui_lang"),
+        "suggest_mode": ctx.get("suggest_mode"),
         "ts": m.get("timestamp") or int(time.time() * 1000),
     }
     behind = None
@@ -653,7 +657,8 @@ def _worker(session_id, entry, slot):
                        viewing_tab=entry.get("viewing_tab"),
                        attachment_names=_entry_attachment_names(entry),
                        viewing_view=entry.get("viewing_view"),
-                       ui_lang=entry.get("ui_lang"), stop_file=stop_file)
+                       ui_lang=entry.get("ui_lang"), stop_file=stop_file,
+                       suggest_mode=entry.get("suggest_mode"))
     except Exception as e:
         print(f"[web_bridge] turn {session_id} crashed before/at spawn: {e}", file=sys.stderr)
         report_turn_aborted(session_id)
