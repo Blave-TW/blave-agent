@@ -65,6 +65,10 @@ exit 2
       t("127、有 ChatGPT.app → 退到 app 內附那顆:已登入、path 是它、via=app、why=null", r.codex.installed && r.codex.loggedIn && r.codex.path === FAKE_APP && r.codex.via === "app" && r.codex.why === null, r.codex);
       t("…記下 PATH 那顆跑不起來;codexBinNow 那條(codexPath 不帶 seen)跳過它、拿 app 那顆", m.BAD_BIN.codex === p127 && await m.codexPath(PATH_OF(d)) === FAKE_APP);
       t("…detect.log:bin=chatgpt、alt=chatgpt、found=posix(PATH 上找到的檔種)", m.logged[0].codex.bin === "chatgpt" && m.logged[0].codex.alt === "chatgpt" && m.logged[0].codex.found === "posix", m.logged[0].codex);
+      fs.writeFileSync(p127, "#!/bin/sh\nsleep 1\nexit 127\n", { mode: 0o755 });
+      const again = m.detectAgents(); await new Promise((res) => setTimeout(res, 300));
+      const mid = await m.codexPath(PATH_OF(d)); await again;
+      t("…重新偵測途中(PATH 那顆還在試)每一則訊息仍拿 app 那顆,不會短暫退回壞掉的那顆", mid === FAKE_APP && m.BAD_BIN.codex === p127, mid);
       fs.writeFileSync(p127, CODEX_OK, { mode: 0o755 });
       const r2 = await m.detectAgents();
       t("…PATH 那顆修好了:重新偵測重設 BAD_BIN、改回用 PATH 那顆", m.BAD_BIN.codex === null && r2.codex.path === p127 && r2.codex.via === "cli" && r2.codex.why === "codex_nonzero", r2.codex);

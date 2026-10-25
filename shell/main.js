@@ -204,7 +204,8 @@ async function storeCodexPath(envPath, fresh) {
   storeCodex = exe && fs.existsSync(exe) ? exe : null;
   return storeCodex;
 }
-// 上一次偵測時 PATH 上跑不起來的那顆(cantRun):codexBinNow / claudePath 跳過它、直接拿退路那顆。每次偵測重設、重新試
+// 上一次偵測時 PATH 上跑不起來的那顆(cantRun):不帶 seen 的呼叫(codexBinNow、偵測裡找退路那一次)跳過它、直接拿退路那顆。
+// 偵測本身(帶 seen)一律重試 PATH 那顆,試完才改這個值——偵測途中每一則訊息仍拿得到上一次的判斷
 const BAD_BIN = { codex: null, claude: null };
 async function codexPath(envPath, seen, fresh) {
   const found = await which("codex", envPath, seen);
@@ -212,9 +213,9 @@ async function codexPath(envPath, seen, fresh) {
   if (process.platform === "win32") {
     const exe = winRealExe(found, process.arch);
     if (found && !exe) console.error("[detect] codex is a .cmd shim with no codex.exe next to it: " + found);
-    return (exe && exe !== BAD_BIN.codex ? exe : null) || storeCodexPath(envPath, fresh);
+    return (exe && (seen || exe !== BAD_BIN.codex) ? exe : null) || storeCodexPath(envPath, fresh);
   }
-  return (found && found !== BAD_BIN.codex ? found : null) || (fs.existsSync(CODEX_IN_CHATGPT) ? CODEX_IN_CHATGPT : null);
+  return (found && (seen || found !== BAD_BIN.codex) ? found : null) || (fs.existsSync(CODEX_IN_CHATGPT) ? CODEX_IN_CHATGPT : null);
 }
 /* Claude 的對話不是用戶機上的 claude 跑的:claude-agent-sdk 的 wheel 隨包一顆 Claude CLI,SDK 的 _find_cli() 第一個就拿它
    (_internal/transport/subprocess_cli.py 的 _find_bundled_cli);用戶自己裝的 claude 只拿來跑 `auth status` / `auth login`。
@@ -232,7 +233,7 @@ function bundledClaude(base, win, fsx = fs) {
 async function claudePath(envPath, seen) {
   const found = await which("claude", envPath, seen);
   if (seen) seen.found = binKind(found);
-  return (found && found !== BAD_BIN.claude ? found : null) || bundledClaude(BASE, WIN);
+  return (found && (seen || found !== BAD_BIN.claude) ? found : null) || bundledClaude(BASE, WIN);
 }
 /* 這一輪要跑的 codex 執行檔。**只解路徑**,不跑 `login status`——每一則訊息都要用,detectAgents() 一次要開到四個子行程;
    連 Claude 的人一次都不必開(SDK 自己找 claude)。來源仍然是當下的偵測,不是連結紀錄裡那個 agent 寫得到的字(稽核 R4)。 */
@@ -247,10 +248,10 @@ async function detectAgents() {
   /* 解路徑 + 跑登入檢查。PATH 上那顆跑不起來(cantRun)就記進 BAD_BIN、再解一次——這次 find 會跳過它、拿退路那顆
      (ChatGPT.app / Store 版內附的 codex、SDK 隨包的 claude);退路也跑不起來才算 cantrun。rec.alt = 試過的退路檔種 */
   const probe = async (kind, find, args) => {
-    BAD_BIN[kind] = null;
     let bin = await find(rec[kind]);
-    if (!bin) return { bin: null, r: null };
+    if (!bin) { BAD_BIN[kind] = null; return { bin: null, r: null }; }
     let r = await run(bin, args, envPath, LOGIN_CHECK_MS);
+    BAD_BIN[kind] = null;
     if (cantRun(r)) {
       BAD_BIN[kind] = bin;
       const alt = await find(null);
