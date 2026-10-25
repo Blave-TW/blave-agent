@@ -191,7 +191,7 @@ async function localLogin(kind, b) {
   const x = (lastDetect && lastDetect[kind]) || {};
   if (inRow && r.ok && x.installed && x.loggedIn) return connect(kind, x);
   // 登入指令本身跑不起來(127、126、ENOENT),偵測卻沒看出來(login status 跑得動):兩個表面都改畫「無法啟動」,不叫他重登
-  if (r.cantRun && x.installed && !x.loggedIn && !whyState(x)) { x.why = kind + "_cantrun"; paintRows(lastDetect); }
+  if (r.cantRun && x.installed && !x.loggedIn && !whyState(x)) { x.why = kind + "_cantrun"; paintRows(lastDetect); srSay(t(whyState(x))); }
   if (!r.cancelled && !r.busy && !(x.installed && x.loggedIn) && !whyState(x)) {
     if (!inRow) setHint({ text: t("login.failed", { name }), cmd: kind });
     else { ROWMSG[kind] = "failed"; paintRows(lastDetect); srSay(rowMsgText(kind, "failed")); }

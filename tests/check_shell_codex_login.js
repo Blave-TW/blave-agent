@@ -195,11 +195,11 @@ exit 2
   // 登入指令本身跑不起來(agentLogin 回 cantRun),偵測卻只看到「沒登入」:兩個表面都改「無法啟動」,不出「登入沒有完成」(稽核 P2-4)
   { const inSet = () => { const o = mkEl("div"); o.className = "cn-opts"; const b = mkEl("button"); o.append(b); return b; };
     const go = async (b, res) => { RSTATE.login = async () => res; RSTATE.next = D({ installed: false }, { loggedIn: false, why: "codex_nonzero" }); R.set("HINT", null); R.ROWMSG.codex = null; await R.localLogin("codex", b); return R.get("lastDetect").codex; };
-    const a = await go(inSet(), { ok: false, cancelled: false, code: 127, cantRun: true }), aHint = R.get("HINT");
+    R.said.length = 0; const a = await go(inSet(), { ok: false, cancelled: false, code: 127, cantRun: true }), aHint = R.get("HINT"), aSaid = R.said.slice();
     const c = await go(inSet(), { ok: false, cancelled: false, code: 1, cantRun: false }), cHint = R.get("HINT");
     const e = await go(mkEl("button"), { ok: false, cancelled: false, code: "ENOENT", cantRun: true });
-    t("localLogin:設定 › 模型接入 127 → 那一列改 why=codex_cantrun、沒有「登入沒有完成」;一般失敗(1)照舊出失敗句",
-      a.why === "codex_cantrun" && aHint === null && c.why === "codex_nonzero" && cHint && cHint.text === "Codex 登入沒有完成。" && cHint.cmd === "codex", { a, aHint, c, cHint });
+    t("localLogin:設定 › 模型接入 127 → 那一列改 why=codex_cantrun、讀屏念「無法啟動」、沒有「登入沒有完成」;一般失敗(1)照舊出失敗句",
+      a.why === "codex_cantrun" && aHint === null && aSaid.includes("無法啟動") && c.why === "codex_nonzero" && cHint && cHint.text === "Codex 登入沒有完成。" && cHint.cmd === "codex", { a, aHint, aSaid, c, cHint });
     t("…連結畫面 ENOENT → 那一列「無法啟動」、沒有鈕、沒有失敗訊息", e.why === "codex_cantrun" && R.ROWMSG.codex === null && rows()[1] === "codex|off|無法啟動||", rows());
     RSTATE.next = null; R.set("loginPending", null); }
 
