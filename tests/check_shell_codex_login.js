@@ -236,6 +236,13 @@ exit 2
   t("連結畫面登入成功直接連上(方案 B):localLogin 在列裡成功 → connect", /if \(inRow && r\.ok && x\.installed && x\.loggedIn\) return connect\(kind, x\);/.test(app));
   t("設定 › 模型接入保留〔登入〕(mdlOptions 仍用 cn.signIn)", /"cn\.signIn" : null\) : curKind === kind/.test(app));
 
+  // CSS 註解不能巢狀:多一個 /* 會把前一條規則的說明吞進去(稽核 P2-6),renderer 每支 css 都掃
+  { const RD = path.join(SHELL, "renderer"), bad = [];
+    for (const f of fs.readdirSync(RD).filter((x) => x.endsWith(".css"))) {
+      const css = fs.readFileSync(path.join(RD, f), "utf8");
+      for (const m of css.matchAll(/\/\*[\s\S]*?\*\//g)) if (m[0].slice(2).includes("/*")) bad.push(f + ":" + css.slice(0, m.index).split("\n").length); }
+    t("renderer css:沒有註解裡又開一個 /*", bad.length === 0, bad); }
+
   fs.rmSync(ROOT, { recursive: true, force: true });
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();
