@@ -895,15 +895,21 @@ body.resizing * { cursor: col-resize !important; }
   padding: var(--space-12) var(--space-8);
   border-right: 1px solid var(--border-hairline);
 }
+/* canon › modal 內分類欄:分類欄坐在卡面上,Studio 側欄那套(control-on / hover 卡面)在這裡看不見。
+   目前項 muted＋600;hover 走 row-hover,兩態都比目前項弱(light 白、dark darkBody);視覺 34,熱區用 ::before 上下各補 5 到 44 */
 .set-cat {
+  position: relative;
   display: block; width: 100%;
   padding: var(--space-8) var(--space-12);
   border-radius: var(--radius-md);
-  text-align: left; font-size: 13px; color: var(--ink-2);
+  text-align: left; font-size: 13px; line-height: 18px; color: var(--ink-2);   /* 固定行高:純英文名(Agent)跟中文名同高 34 */
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
-.set-cat:hover, .set-cat[aria-current="true"] { background: var(--surface-muted); color: var(--ink); }
-.set-cat[aria-current="true"] { font-weight: 600; }
+/* 鈕距 36、熱區 44:相鄰兩顆的熱區必然重疊。熱區壓到 -1、分類欄自成一層(isolation):每顆自己的可見框永遠蓋在鄰居的熱區上面,只有框外那幾 px 才歸熱區 */
+.set-cats { isolation: isolate; }
+.set-cat::before { content: ""; position: absolute; inset: -5px 0; z-index: -1; }
+.set-cat[aria-current="true"] { background: var(--surface-muted); color: var(--ink); font-weight: 600; }
+@media (hover: hover) { .set-cat:not([aria-current="true"]):hover { background: var(--surface-row-hover); color: var(--ink); } }
 /* 固定內容高:切分類不改變 modal 尺寸,內容自己捲 */
 .set-content {
   flex: 1 1 auto; min-width: 0;
@@ -911,11 +917,13 @@ body.resizing * { cursor: col-resize !important; }
   padding: var(--space-16);
   overflow-y: auto;
 }
+/* 「一般」三組(canon Perceptual #1,組內 : 組間 ≈ 1:4):外觀／語言／顯示幣別 → 回覆通知／建議下一步／防睡 → 關於;組內 8、組間 32 */
 .set-row { display: flex; align-items: center; gap: var(--space-8); }
-.set-row + .set-row { margin-top: var(--space-16); }
+.set-row + .set-row { margin-top: var(--space-8); }
 /* 設定 › 顯示幣別:切換失敗那一句(下拉底下;同網頁 setFail 的字) */
 .set-ccy-err { margin: var(--space-8) 0 0; font-size: 12px; color: var(--color-redText); }
-.set-rn, .set-awake { margin-top: var(--space-24); }
+.set-rn { margin-top: var(--space-32); }
+.set-awake { margin-top: var(--space-8); }
 .set-rn-os .btn-quiet { margin-inline-start: var(--space-4); }
 /* 設定 › 隱私:整頁沒有分隔線。開關 = canon 的 Switch(黑白、無橘):視覺 40×24、鈕 18,熱區補到 44×44 */
 .sw-row { display: flex; align-items: center; gap: var(--space-12); }
@@ -941,11 +949,9 @@ body.resizing * { cursor: col-resize !important; }
 .set-legal { margin: var(--space-16) 0 0; font-size: 12px; color: var(--ink-3); }   /* 字級 / 色給兩份之間的「·」 */
 .priv-fine { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); max-width: 60ch; }
 @media (prefers-reduced-motion: reduce) { .sw, .sw::after { transition: none; } }
-/* 關於:「一般」頁最下面的腳——等寬版號、下一行更新狀態、右邊一顆鈕 */
-.set-pane[data-set-cat="display"]:not([hidden]) { display: flex; flex-direction: column; min-height: 100%; }
 /* 關於:標題下面一行「Blave {app} · 雲端主機 {ws} · 已是最新版」+ 右邊一個文字連結(mockup-desktop-update-flow-v4 §2)。
    12px、--ink-3、版號 mono 不在連字號處斷行(最長那種只能在段與段之間折);狀態字不換色 */
-.set-about { margin-top: auto; padding-top: var(--space-16); display: flex; flex-direction: column; gap: var(--space-8); }
+.set-about { margin-top: var(--space-32); display: flex; flex-direction: column; gap: var(--space-8); }   /* 緊接防睡那一組:不釘底,登入前後位置不跳 */
 .set-up-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-16); min-height: 24px; }
 .set-up-line { margin: 0; min-width: 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .set-up-line .mono { white-space: nowrap; }
@@ -954,12 +960,11 @@ body.resizing * { cursor: col-resize !important; }
 .set-idv { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); white-space: nowrap; user-select: all; -webkit-user-select: all; }
 #set-up-btn .spin16 { vertical-align: -3px; }   /* 檢查中:連結本身變成圓環(被按的控件自己的回饋) */
 .set-about button { flex: none; }
-/* ── 設定 › 雲端方案(設計師 mockup-desktop-plan-in-app)──────────────
-   上半 .plan-scroll 自己捲;.plan-foot 不捲:「主機存在就會扣」那句永遠貼在鈕的正上方。
-   這一類把 .set-content 的內距與捲動接手過來(其他兩類不受影響)。 */
-.set-content:has(> .plan-pane:not([hidden])) { padding: 0; overflow: hidden; }
-.plan-pane:not([hidden]) { display: flex; flex-direction: column; height: 100%; font-size: 13px; }
-.plan-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding:var(--space-16)}
+/* ── 設定 › 帳號與方案(設計師 mockup-desktop-plan-in-app;0.1.32 方案 B 併入公開連結)──────────────
+   兩個區段同一頁、跟其他分類一樣由 .set-content 捲:帳號與方案(.plan-scroll → .plan-foot)→ 組間距 32 → 公開連結(#set-shares)。
+   .plan-foot 跟著內容流、緊接在方案內容後面:「主機存在就會扣」那句仍在鈕的正上方(釘底的話,兩區段同頁時鈕會跟方案內容隔著整份清單) */
+.plan-pane { font-size: 13px; }
+#set-shares { margin-top: var(--space-32); }
 .plan-top{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-12);flex-wrap:wrap}
 .plan-top h6{margin:0;font-size:15px;font-weight:600;line-height:1.3;color:var(--ink)}
 .plan-st{display:flex;align-items:center;gap:var(--space-6);font-size:12px;color:var(--ink-2)}
@@ -989,7 +994,7 @@ body.resizing * { cursor: col-resize !important; }
 .plan-price .h{font-size:12px;color:var(--ink-3)}
 .plan-id .plan-fine{margin-top:calc(-1 * var(--space-4))}   /* 餘額列下的自動儲值短句:抵掉一半的欄距,貼著餘額列 */
 .plan-fine{margin:var(--space-6) 0 0;font-size:12px;line-height:1.6;color:var(--ink-3)}
-.plan-foot{flex:none;padding:var(--space-12) var(--space-16);border-top:1px solid var(--border-hairline)}
+.plan-foot{margin-top:var(--space-16)}
 .plan-rule{margin:0 0 var(--space-12);font-size:12px;line-height:1.6;color:var(--ink-2)}   /* 暗底必讀的次要字升一階 */
 .plan-foot .plan-fine{margin:0 0 var(--space-12)}
 .plan-err{display:flex;gap:var(--space-8);margin:0 0 var(--space-12);font-size:12px;line-height:1.6;color:var(--ink-2)}
@@ -997,10 +1002,9 @@ body.resizing * { cursor: col-resize !important; }
 .plan-err.is-calm .fault-mark{background:var(--ink-3)}
 .plan-act{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:var(--space-12)}
 .plan-act .btn-quiet{margin-right:auto}
-/* 精簡版(設計師 v3):一個標題句(h5,20/600)+ 至多兩行說明 + 外開定價頁的安靜鈕;底列=一行跟錢有關的話 + 鈕 */
-.plan-pane .plan-scroll{padding:var(--space-16)}   /* 第一個東西是一列小字(帳號列),上距跟其他分類對齊 */
+/* 精簡版(設計師 v3):一個標題句(h6,15/600,0.1.32 起不大於框標題)+ 至多兩行說明 + 外開定價頁的安靜鈕;底列=一行跟錢有關的話 + 鈕 */
 .plan-pane .plan-st{margin-bottom:var(--space-8)}
-.plan-pane h5{margin:0;font-size:20px;font-weight:600;line-height:1.4;color:var(--ink);text-wrap:balance}
+.plan-scroll > h6{margin:0;font-size:15px;font-weight:600;line-height:1.4;color:var(--ink);text-wrap:balance}   /* 只管方案那一區段:同頁「公開連結」的區段標題也是 h6,不能被這條蓋掉 */
 .plan-pane .plan-lead{margin-top:var(--space-8);text-wrap:pretty}
 .plan-pane .plan-rule{text-wrap:pretty}
 .plan-act .wait{margin-right:auto;font-size:12px;line-height:1.5;color:var(--ink-2)}
@@ -1394,7 +1398,7 @@ html[data-platform="win32"] ::-webkit-scrollbar-thumb:hover { background: var(--
 /* Windows 的 11px Mini tag:微軟正黑體沒有 600,會渲染成 Bold 700,在 11px + 0.04em 字距下筆畫糊成一團(設計評估 P3),
    這一階改 400;Mac 的 PingFang 有 Semibold,照 canon 的 600 不動。選擇器 = 外殼所有 11px/600 的 tag 形元件 */
 html[data-platform="win32"] .lib .tag, html[data-platform="win32"] .rb-report .rb-news-tag, html[data-platform="win32"] .pf-wallet-row .mini_tag,
-html[data-platform="win32"] .mode, html[data-platform="win32"] .envm, html[data-platform="win32"] .shr-tag, html[data-platform="win32"] .tag-you, html[data-platform="win32"] .vtag { font-weight: 400; }
+html[data-platform="win32"] .mode, html[data-platform="win32"] .envm, html[data-platform="win32"] .shr-tag, html[data-platform="win32"] .tag-you, html[data-platform="win32"] .rules-here, html[data-platform="win32"] .vtag { font-weight: 400; }
 
 /* ── 兩個表單 modal(新增策略 #ns-modal、新增報告 #rpn-modal;spec-desktop-0.1.6 §1.5 / §4.2)共用的殼:
    .del-modal 的 440 框 + 可捲的 .modal-body + 腳最前面一行常駐的 .foot-msg(role=status;空時高 0、不 display:none)。

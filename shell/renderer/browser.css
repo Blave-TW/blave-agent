@@ -213,8 +213,8 @@
 .snap-img { display: block; width: 100%; height: auto; }
 .snap-txt { margin: 0; padding: var(--space-16) var(--space-24); max-width: 72ch; white-space: pre-wrap; font-family: inherit; font-size: 13px; line-height: 1.7; color: var(--ink-2); }
 
-/* 設定 › 隱私 裡的那一段:跟上面的使用資料分開 */
-.br-set { margin: var(--space-24) 0; padding-top: var(--space-16); border-top: 1px solid var(--border-hairline); }
+/* 設定 › Agent 的最後一組:跟上面的常駐規則只用組間距分開,不畫線 */
+.br-set { margin-top: var(--space-32); }
 .br-set .btn-quiet { margin-top: var(--space-8); }
 
 @container main (max-width: 600px) {

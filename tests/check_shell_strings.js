@@ -137,6 +137,7 @@ else pass("trade.js 的 tr.gateFootLead 不帶參數、接在原因前");
 // 策略管理(spec-desktop-cloud-writable §6 剩下的那幾列)。連接交易所**不再是**網頁限定:cxModalOpen 在主機 running 時兩個視角都開得起來
 // (cxConnectCloud)。網頁限定那一句曾搬進「方案內容與計費」(pv.inc.web),方案頁拿掉那一段後隨之刪除;
 // pv.d.running 照查:提到這幾件事就得在同一句指去網頁工作頁,而且不可以再把連接交易所歸給網頁。
+// 0.1.32 方案 B S12 把那句刪了(運行中那格不再有頁首說明):不在表裡 = 沒有那句可以講錯,照 pass;哪天加回來就照查。
 const CAP = { zh: [/定期報告/, /連接交易所/, /下單方式/], en: [/report/i, /connect(ing)? an exchange/i, /order handling/i] };
 const NOT_WEB = { zh: /新增策略/, en: /add(ing)? strateg/i };
 const HOME = { zh: /工作頁/, en: /workspace/i };
@@ -144,7 +145,7 @@ const CX_WEB = { zh: /連接交易所/, en: /connect(ing)? an exchange/i };
 ["en", "zh"].forEach((l) => ["pv.d.running"].forEach((k) => {
   const s = (l === "en" ? enV : zhV)[k] || "";
   const liar = s.split(/[。.]/).filter((x) => CAP[l].some((re) => re.test(x)) && !HOME[l].test(x));
-  if (!s) fail(`${k}(${l})不在表裡`);
+  if (!s) pass(`${k}(${l})已刪(方案 B S12),沒有雲端能做什麼的那句`);
   else if (liar.length) fail(`${k}(${l})把雲端視角做不到的事講成做得到:「${liar[0].trim()}」`);
   else if (NOT_WEB[l].test(s)) fail(`${k}(${l})還在把「新增策略」歸給網頁——agent 現在能在雲端主機上做策略`);
   else if (s.split(/[。.]/).some((x) => CX_WEB[l].test(x) && HOME[l].test(x))) fail(`${k}(${l})還在把「連接交易所」歸給網頁——app 在雲端視角就連得了`);

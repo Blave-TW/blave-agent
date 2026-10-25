@@ -165,6 +165,18 @@ function machine({ rules = ["A", "B"], lang = { lang: "", custom: "" }, langRead
       && !/rules\.lead|rules\.localOnly/.test(fs.readFileSync(path.join(ROOT, "shell", "renderer", "strings.js"), "utf8")));
   }
 
+  // ---- 方案 B S4:雲端視角改的仍是這台電腦那一份,兩個 label 旁標「這台電腦」;本機視角不標 ----
+  {
+    const m = machine(); m.ctx.rulesOpen(); await m.release();
+    const tags = () => { const out = []; const walk = (n) => { if (!n || typeof n !== "object") return; if (/\brules-here\b/.test(n.className || "")) out.push(n); (n.children || []).forEach(walk); }; walk(m.ctx.$("set-rules")); return out; };
+    const local = tags().length;
+    m.ctx.ENV = { cur: "cloud" }; m.ctx.rulesPaint(); const cloud = tags(), grpOf = (id) => find(m.ctx.$("set-rules"), (n) => n.id === id), here = (n) => /\brules-here\b/.test(n.className || "");
+    const rlRow = find(grpOf("rules-rl"), here), top = find(grpOf("rules-grp"), here);
+    m.ctx.ENV = { cur: "local" }; m.ctx.rulesPaint(); const back = tags().length;
+    t("S4 雲端視角:回覆語言、常駐規則兩個 label 旁各一顆「這台電腦」(沿用 shl.src.here);切回本機視角就沒有", local === 0 && cloud.length === 2 && cloud.every((n) => n._t === "shl.src.here") && !!rlRow && !!top && back === 0,
+      { local, cloud: cloud.length, back });
+  }
+
   console.log(red ? `\n${red} FAILED` : "\nALL PASS");
   process.exit(red ? 1 : 0);
 })();

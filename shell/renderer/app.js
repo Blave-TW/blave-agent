@@ -427,8 +427,10 @@ function trapTab(e, box) {
   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 }
+let SHL_SCROLL = false;   // 這次開「帳號與方案」是為了公開連結:清單那一區段畫好就捲過去、焦點給區段標題(report-sharelist.js shlReveal)
 function setCat(cat) {
   if (cat === "acct") cat = "plan";   // 「帳號」併進「帳號與方案」:舊的分類 id 照樣開得到,漏改的呼叫點不會開到空白頁
+  if (cat === "shares") { cat = "plan"; SHL_SCROLL = true; }   // 「公開連結」併進「帳號與方案」成為一個區段,同上
   $("set-cats").querySelectorAll(".set-cat").forEach((b) => {
     if (b.dataset.setCat === cat) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
   });
@@ -442,11 +444,14 @@ function setCat(cat) {
   if (cat === "display" && typeof awakeLoad === "function") { themeLoad(); awakeLoad(); rnLoad(); }   // 設定 › 一般的外觀與防睡開關
   if (cat === "display" && typeof ccyPaint === "function") ccyPaint();   // 設定 › 顯示幣別(帳號偏好)
   if (cat === "priv") privLoad();
+  if (cat === "connect") { connectPaint(); mvLoad().then(() => { connectCatSync(); if (!$("set-connect").hidden) connectPaint(); }); }
   if (cat === "plan" && typeof mvLoad === "function") mvLoad();   // 登出確認框要知道手機查看開著沒
-  if (cat === "shares") shlOpen();   // 公開連結(renderer/report-sharelist.js):每次切到這一類重抓
+  if (cat === "plan") shlOpen();   // 公開連結區段(renderer/report-sharelist.js):每次切到這一類重抓
   if (cat === "plan") { planPaint(); trackFeature("settings_plan"); if (hasToken) { acctCheck(); balLoad(); } else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
+  if (cat === "plan" && SHL_SCROLL) { SHL_SCROLL = false; shlReveal(); }
 }
 async function setOpen() {
+  await mvLoad(); connectCatSync();   // 「連結」那一顆出不出要在框打開之前定好,不在眼前長出來(主行程同步回,讀不到 = 不出)
   if (typeof upRefresh === "function") upRefresh();   // 下載完當下在下單、之後暫停了:主行程不會再推事件,打開設定時自己重讀(稽核 M3)
   $("set-lang").value = LANG;
   setCat("display");
@@ -581,11 +586,10 @@ function trackEvent(ev, props) { try { window.blave.trackEvent(ev, props); } cat
 const PRIV_NEVER = ["priv.never.1", "priv.never.2", "priv.never.3", "priv.never.4", "priv.never.5", "priv.never.6"];
 async function privLoad() {
   try { PRIV = (await window.blave.telemetryGet()) === true; } catch (_) { PRIV = null; }
-  await mvLoad();
   privPaint();
 }
-/* 在手機 App 上查看這台電腦的部位(mockup-desktop-mobile-view-toggle A 版:隱私頁最上面)。真值在主行程(mobileview.js);
-   平台還沒開放(visible false)時這一區整個不出。MV = {visible, on, pending, signedIn, name},null = 讀不到 = 不出 */
+/* 設定 › 連結:在手機 App 上查看這台電腦的部位。真值在主行程(mobileview.js);
+   平台還沒開放(visible false)時連「連結」這一類都不出(connectCatSync)。MV = {visible, on, pending, signedIn, name},null = 讀不到 = 不出 */
 let MV = null, MV_BUSY = false;
 async function mvLoad() { try { MV = await window.blave.mobileViewState(); } catch (_) { MV = null; } return MV; }
 const mvShown = () => !!(MV && MV.visible === true);
@@ -594,7 +598,7 @@ async function mvToggle() {
   MV_BUSY = true;
   // 沒切成:畫面維持原狀
   try { MV = await window.blave.mobileViewSet(!MV.on); } catch (_) { /* noop */ } finally { MV_BUSY = false; }
-  privPaint(); const sw = $("mv-sw"); if (sw) sw.focus();
+  connectPaint(); const sw = $("mv-sw"); if (sw) sw.focus();
   const lead = document.querySelector(".mv .priv-lead"); if (lead) srSay(lead.textContent);
 }
 function mvBlock(mk) {
@@ -634,7 +638,6 @@ function privPaint() {
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   const had = box.contains(document.activeElement);
   box.textContent = "";
-  const mv = typeof mvBlock === "function" ? mvBlock(mk) : null; if (mv) box.append(mv);
   const row = mk("div", "sw-row"), lbl = mk("label", "sw-l", t("priv.switch")); lbl.htmlFor = "priv-sw"; row.append(lbl);
   const sw = mk("button", "sw" + (PRIV ? "" : " off")); sw.type = "button"; sw.id = "priv-sw";
   sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", PRIV ? "true" : "false");
@@ -652,8 +655,22 @@ function privPaint() {
   const legal = mk("p", "set-legal"), pl = mk("button", "btn-quiet", t("legal.privacy")); pl.type = "button"; pl.id = "priv-legal";
   pl.addEventListener("click", () => window.blave.openExternal(legalUrl("privacy_policy")));
   legal.append(pl); box.append(legal);
-  if (typeof brPrivPaint === "function") brPrivPaint(box);   // 內建瀏覽器開關 + 清除瀏覽資料(renderer/browser.js)
   if (had) sw.focus();
+  setFocusGuard();
+}
+/* 設定 › 連結(手機 App 查看)。分類鈕跟著平台旗標出不出:旗標是發佈層級的,同一版本裡固定,不隨用戶狀態增減(canon › modal 內分類欄) */
+function connectCatSync() {
+  const b = document.querySelector('.set-cat[data-set-cat="connect"]'); if (!b) return;
+  b.hidden = !mvShown();
+  if (b.hidden && b.getAttribute("aria-current") === "true") setCat("display");
+}
+function connectPaint() {
+  const box = $("set-connect"); if (!box) return;
+  const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const had = box.contains(document.activeElement);
+  box.textContent = "";
+  const mv = mvBlock(mk); if (mv) box.append(mv);
+  if (had) { const sw = $("mv-sw"); if (sw) sw.focus(); }
   setFocusGuard();
 }
 /* 「一般」頁最下面的「關於」一行 + 聊天輸入列右上那一格 + 選單列那一行(proposal-desktop-update-flow-v4 §2–§4)。
@@ -3720,7 +3737,7 @@ let planLoginBusy = false, planLastView = null;
 let planLoginOut = false;   // 這次 planLogin 是從設定外面開始的(planSignIn 沒帶 inSettings):關設定不取消它
 function planPaint() {
   if (typeof envPlanChanged === "function") envPlanChanged();   // 開通頁跟著同一份狀態重畫(trade.js);放最前面:下面有提早 return
-  const box = $("set-plan"); if (!box) return;
+  const box = $("set-plan-main"); if (!box) return;   // 只畫帳號與方案那一區段;同頁的公開連結(#set-shares)是 shlPaint 的
   // 登入回來、狀態還在查:留著上一格,查完(或失敗)那次重畫才換——不閃「查不到」
   if (hasToken && !acct && acctPending && box.firstChild) return;
   const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
@@ -3809,7 +3826,7 @@ function planPaint() {
     // 啟動中通常一分鐘內就變 running:試用的揭露只加那一行,鈕等進了 running 才有
     starting: { st: ["busy", t("pv.st.starting")], h: "pv.h.starting", lead: t("pv.d.starting"), rule: tOn ? planRunRule(v) : "",
                 acts: [slow ? btn("btn-out", t("plan.recheck"), () => { planSince = Date.now(); acctCheck(); planPaint(); }) : btn("btn-fill", t("plan.starting"), null, true)] },
-    running:  { st: ["on", tCx ? t("pv.st.trialCancelled", v) : tOn ? t("plan.st.runningTrial", v) : t("plan.st.running")], h: "pv.h.running", lead: t("pv.d.running"), rule: mo ? planRunRule(v) : t("pv.f.running", v),
+    running:  { st: ["on", tCx ? t("pv.st.trialCancelled", v) : tOn ? t("plan.st.runningTrial", v) : t("plan.st.running")], h: "pv.h.running", lead: "", rule: mo ? planRunRule(v) : t("pv.f.running", v),
                 acts: [mo ? (tOn && trialBtn()) || btn("btn-quiet", t("plan.manageStopped"), ext(planPayUrl())) : btn("btn-quiet", t("plan.manage"), ext(planWebUrl())), btn("btn-out", t("plan.switchCloud"), planToCloud)] },
     stopped:  planStopKind() === "fail" ? { st: ["bad", t("plan.st.stoppedPlan")], h: "pv.h.stopped.m", lead: v.gu ? t("pv.d.stopped.m", v) : t("pv.d.stopped.mNoNum"),
                      acts: [btn("btn-quiet", t("plan.manageStopped"), ext(planPayUrl())), btn("btn-fill", t("plan.repay"), planRepay)] }
@@ -3824,9 +3841,9 @@ function planPaint() {
                      acts: [btn("btn-quiet", t("plan.manageStopped"), ext(planWebUrl())), btn("btn-fill", t("plan.addCredit"), () => bindGo("topup_set"))] },
   }[view];
 
-  if (view !== planLastView) { if (planLastView && !box.hidden) srSay(t(V.h, v)); planLastView = view; }
+  if (view !== planLastView) { if (planLastView && !$("set-plan").hidden) srSay(t(V.h, v)); planLastView = view; }
   if (V.st) { const stEl = el("span", "plan-st " + V.st[0]); stEl.append(el("span", "dot"), el("span", null, V.st[1])); sc.append(stEl); }
-  sc.append(el("h5", null, t(V.h, v)));
+  sc.append(el("h6", null, t(V.h, v)));   // modal 內的標題用 h6(canon Type › 標題用法):跟框標題同級、不超過它
   if (V.lead) sc.append(el("p", "plan-lead", V.lead));
   if (V.list) { const ul = el("ul", "plan-list"); V.list.forEach((x) => ul.append(el("li", null, x))); sc.append(ul); }
   // 底列:錯誤(有才出)→ 鈕上方那行(這顆鈕會帶來的錢)→ 鈕左小字 + 鈕
@@ -3850,6 +3867,8 @@ function planPaint() {
     if (again && !again.disabled) again.focus();
     else { const catBtn = document.querySelector('.set-cat[aria-current="true"]'); if (catBtn) catBtn.focus(); }
   }
+  // 從「看公開連結」來、焦點還在區段標題上:方案這一區段重畫後變高(登入後查到狀態)會把它推出畫面,再捲一次
+  const shlH = $("shl-h"); if (shlH && document.activeElement === shlH) shlH.scrollIntoView({ block: "start" });
 }
 /* 方案頁的「登入 Blave」:只拿 token,**不改連線**(AI 照用他現在那個)。等待瀏覽器期間同一顆鈕變「取消」。 */
 async function planLogin() {
@@ -4379,6 +4398,8 @@ function applyStatic() {
   acctPaintAcct();   // 設定 › 帳號與方案(字跟著語言換)
   if (typeof mdlPaint === "function") mdlPaint();   // 設定 › 模型接入
   if (typeof privPaint === "function" && $("set-priv") && !$("set-priv").hidden) privPaint();
+  if (typeof connectPaint === "function" && $("set-connect") && !$("set-connect").hidden) connectPaint();
+  if (typeof rulesPaint === "function" && $("set-rules") && !$("set-rules").hidden && !rulesBusy()) rulesPaint();   // 設定 › Agent(含內建瀏覽器那一組);編輯中不重畫,免得洗掉打到一半的字
   if (typeof awakePaint === "function") awakePaint();   // 設定 › 一般的防睡開關底下那句
   if (typeof libRepaint === "function") libRepaint();   // 策略庫的清單 / 詳情(renderer/library.js 用 t() 現組的字)
   if (typeof rptRepaint === "function") rptRepaint();   // 報告清單 / 閱讀頁 / 新增報告框(renderer/reports.js)

@@ -1223,9 +1223,6 @@ msgstr "Usage & billing"
 msgid "pv.d.starting"
 msgstr "Blave data is available right now, before the machine is up. You can close this window."
 
-msgid "pv.d.running"
-msgstr "On the cloud side you can see the strategies, positions and orders on the machine, and ask the agent to build strategies there."
-
 msgid "pv.d.stopped"
 msgstr "A stopped machine still bills {h} TWD an hour. At a balance of 0 the machine is deleted, along with the strategies and data on it."
 
@@ -3279,10 +3276,10 @@ msgid "src.gotIt"
 msgstr "Got It"
 
 msgid "src.empty1"
-msgstr "Blave’s built-in data needs no key. Add something here only when a strategy uses another provider’s data and that provider requires your own key."
+msgstr "No data sources with your own key yet."
 
 msgid "src.empty2"
-msgstr "Once it’s added, just tell the agent to “use {ex} data”. Don’t paste the key into the chat."
+msgstr "Don’t paste keys into the chat."
 
 msgid "src.rowLocal.one"
 msgstr "{n} field · used by: {names}"
@@ -3309,7 +3306,7 @@ msgid "src.errBusy"
 msgstr "The workspace settings file is in use, so nothing was saved. Wait a few seconds and try again."
 
 msgid "src.cloudLead"
-msgstr "These are the data sources on your cloud machine; only names are listed. This version can’t add or delete them here."
+msgstr "Data sources on the cloud machine. Read-only."
 
 msgid "src.cloudEmpty"
 msgstr "There are no data sources on the cloud machine."
@@ -5573,7 +5570,7 @@ msgid "br.set.switch"
 msgstr "Built-in browser"
 
 msgid "br.set.lead"
-msgstr "The agent searches the web; every page it opens shows in the chat. It never opens exchange account pages, brokers or banks; you sign in, submit and pay."
+msgstr "It never opens exchange account pages, brokers or banks. You sign in, submit and pay."
 
 msgid "br.set.clear"
 msgstr "Clear browsing data"
@@ -6328,9 +6325,6 @@ msgstr "This table is scaled down to fit the page. Open the report in Blave to s
 msgid "set.cat.shares"
 msgstr "Public links"
 
-msgid "shl.title"
-msgstr "Public reports"
-
 msgid "shl.count"
 msgstr "{n} / {max}"
 
@@ -6475,7 +6469,10 @@ msgstr "Send It"
 # Settings › Agent rules (0.1.9; spec-desktop-agent-rules-0.1.9 §11, this computer only)
 
 msgid "set.cat.rules"
-msgstr "Agent rules"
+msgstr "Agent"
+
+msgid "set.cat.connect"
+msgstr "Connections"
 
 msgid "rules.aria"
 msgstr "Agent standing rules"
@@ -6496,7 +6493,7 @@ msgid "rules.emptyLead"
 msgstr "No rules yet."
 
 msgid "rules.emptyHow"
-msgstr "Say “from now on every strategy needs a stop loss” in the chat and the agent records it as a rule — or add one here."
+msgstr "Saying “always set a stop loss” in the chat also adds a rule."
 
 msgid "rules.full"
 msgstr "10 rules is the limit. Delete one to add another — nothing gets dropped for you."
@@ -7762,7 +7759,7 @@ msgid "pv.f.running.await"
 msgstr "The first period wasn’t charged automatically. Start the plan on the website to continue; otherwise the machine is deleted on {gu}"
 
 msgid "plan.topupShort"
-msgstr "Under {a} TWD, your card tops up {b} TWD; turn off on the web"
+msgstr "Under {a} TWD, your card tops up {b} TWD. You can turn this off on the web."
 
 msgid "po.nav"
 msgstr "Portfolio"

@@ -69,9 +69,10 @@ if (!process.versions.electron) {
     const mainSrc = read(path.join(SHELL, "main.js")), pre = read(path.join(SHELL, "preload.js"));
     ok("③ IPC:清單與取消都不從畫面收憑證;取消只收代碼;「在不在這台電腦」由主行程看檔", /handle\("share-list", \(\) => shareList\(\), \{ code: "UNREACH" \}\)/.test(mainSrc) && /handle\("share-revoke-code", \(_e, code\) => shareClient\(\)\.revokeCode\(code\)/.test(mainSrc)
       && /shareList: \(\) => ipcRenderer\.invoke\("share-list"\)/.test(pre) && /shareRevokeCode: \(code\) => ipcRenderer\.invoke\("share-revoke-code", code\)/.test(pre) && /local: x\.origin === "desktop" && rptLocalHas\(x\.reportId\)/.test(mainSrc));
-    ok("③ 埋點 share_list_open 在外殼白名單(≤ 16 字);送出點在切到分類那一層,不在畫", require(path.join(SHELL, "telemetry.js")).EVENTS.feature_used.name.indexOf("share_list_open") >= 0 && "share_list_open".length <= 16 && /function shlOpen\(\) \{\s*libTrack\("share_list_open"\);/.test(src) && !/libTrack\("share_list_open"\)/.test(src.slice(src.indexOf("function shlPaint"))));
+    ok("③ 埋點 share_list_open 在外殼白名單(≤ 16 字);公開連結併進帳號與方案之後,送出點是區段捲進畫面那一刻(shlWatch 的 IntersectionObserver),不在畫、不在切分類", require(path.join(SHELL, "telemetry.js")).EVENTS.feature_used.name.indexOf("share_list_open") >= 0 && "share_list_open".length <= 16
+      && /function shlOpen\(\) \{\s*shlWatch\(\);\s*shlLoad\(\);\s*\}/.test(src) && /new IntersectionObserver\(\(es\) => \{ if \(es\.some\(\(e\) => e\.isIntersecting\)\) libTrack\("share_list_open"\); \}\)/.test(src) && (src.match(/libTrack\("share_list_open"\)/g) || []).length === 1);
     const STR = (() => { const sb = {}; vm.runInNewContext(read(path.join(R, "strings.js")) + "\nthis.S = STRINGS;", sb); return sb.S; })();
-    const E = { "set.cat.shares": ["公開連結", "Public links"], "shl.title": ["公開中的報告", "Public reports"], "shl.count": ["{n}／{max}", "{n} / {max}"], "shl.kind.research": ["研究報告", "Research report"], "shl.kind.morning": ["市場報告", "Market report"], "shl.kind.performance": ["績效報告", "Performance report"],
+    const E = { "set.cat.shares": ["公開連結", "Public links"], "shl.count": ["{n}／{max}", "{n} / {max}"], "shl.kind.research": ["研究報告", "Research report"], "shl.kind.morning": ["市場報告", "Market report"], "shl.kind.performance": ["績效報告", "Performance report"],
       "shl.src.here": ["這台電腦", "This computer"], "shl.src.desktop": ["電腦版", "Desktop"], "shl.src.cloud": ["雲端", "Cloud"], "shl.gone": ["這台電腦上找不到原檔，公開版本仍有效。", "The original file isn't on this computer; the public version is still live."],
       "shl.empty": ["目前沒有公開中的報告。要公開，打開一份報告按「分享」。", "No public reports right now. To publish one, open a report and choose Share."], "shl.loadFail": ["讀不到公開連結，請檢查網路後再試。", "Couldn't load your public links. Check your connection and try again."],
       "shl.gate": ["公開連結掛在你的 Blave 帳號下，登入後才看得到。", "Public links are tied to your Blave account. Sign in to see them."], "shl.countAria": ["公開中 {n} 份，上限 {max} 份", "{n} of {max} public reports"],
@@ -143,20 +144,22 @@ app.whenReady().then(async () => {
   const openCat = async () => { await js(`(async () => { if (document.getElementById("set-scrim").hidden) await setOpen(); setCat("shares"); })()`); };
   const pane = () => js(`(() => { const b = document.getElementById("set-shares"), q = (s) => b.querySelector(s), all = (s) => [...b.querySelectorAll(s)];
     return { hidden: b.hidden, head: q(".shl-head h6") && q(".shl-head h6").textContent, count: q(".shl-count") ? q(".shl-count").textContent : null, aria: q(".shl-count") ? q(".shl-count").getAttribute("aria-label") : null, sk: all(".shl-sk").length, msg: q(".shl-msg") ? q(".shl-msg").textContent : null,
-      mark: all(".fault-mark").length, btn: q(".shl-msgrow .btn-out") ? q(".shl-msgrow .btn-out").textContent : null,
+      skh: all(".shl-sk").map((x) => Math.round(x.getBoundingClientRect().height)), mark: all(".fault-mark").length, btn: q(".shl-msgrow .btn-out") ? q(".shl-msgrow .btn-out").textContent : null,
       rows: all(".shl-row").map((r) => { const n = r.querySelector(".shl-name"), g = r.querySelector(".shl-gone"), a = [...r.querySelectorAll(".shl-acts button")]; return { tag: n.tagName, name: n.textContent, html: n.children.length, sub: r.querySelector(".shl-sub").textContent, mono: r.querySelector(".shl-sub .mono").textContent,
-        gone: g ? g.textContent : null, acts: a.map((x) => x.className + ":" + x.textContent).join("|"), clip: n.scrollWidth > n.clientWidth, w: Math.round(r.getBoundingClientRect().width), h: Math.round(a[0].getBoundingClientRect().height) }; }) }; })()`);
+        gone: g ? g.textContent : null, acts: a.map((x) => x.className + ":" + x.textContent).join("|"), clip: n.scrollWidth > n.clientWidth, w: Math.round(r.getBoundingClientRect().width), h: Math.round(a[0].getBoundingClientRect().height), rh: Math.round(r.getBoundingClientRect().height), bt: getComputedStyle(r).borderTopWidth }; }) }; })()`);
 
-  // 分類
-  const cats = await js(`[...document.querySelectorAll("#set-cats .set-cat")].map((b) => b.dataset.setCat).join()`);
-  ok("④ 設定分類七個:「公開連結」排在帳號與方案後、隱私前(0.1.9 在模型接入後面加了 Agent 規則)", cats === "display,model,rules,src,plan,shares,priv", cats);
+  // 分類(0.1.32 方案 B:公開連結是帳號與方案裡的一個區段;「連結」只在平台開放手機查看時出,這個假主行程沒開放)
+  const cats = await js(`[...document.querySelectorAll("#set-cats .set-cat")].map((b) => b.dataset.setCat + (b.hidden ? "(hidden)" : "")).join()`);
+  ok("④ 設定分類:沒有「公開連結」這一類;平台沒開放手機查看時「連結」不出", cats === "display,model,rules,src,connect(hidden),plan,priv", cats);
 
   // 載入中 → 有資料
   await js(`window.__s.listDelay = 700`); await openCat(); await wait(100);
   let p = await pane();
-  ok("④ 載入 200ms 內不畫骨架;小標常駐、載入中不顯示份數", !p.hidden && p.head === (await T("shl.title")) && p.sk === 0 && p.count === null && p.rows.length === 0, JSON.stringify(p));
+  ok("④ 載入 200ms 內不畫骨架;區段標題「公開連結」常駐、載入中不顯示份數;分類停在帳號與方案", !p.hidden && p.head === (await T("set.cat.shares")) && p.sk === 0 && p.count === null && p.rows.length === 0
+    && (await js(`document.querySelector('.set-cat[aria-current="true"]').dataset.setCat === "plan" && !document.getElementById("set-plan").hidden && document.getElementById("set-plan").contains(document.getElementById("set-shares"))`)), JSON.stringify(p));
   await wait(300); p = await pane();
   ok("④ 超過 200ms:骨架三列", p.sk === 3 && p.count === null, JSON.stringify(p));
+  const skH = p.skh;
   await wait(700); p = await pane();
   await js(`window.__s.listDelay = 0`);
   const yr = new Date((NOW - 86400 * 400) * 1000).getFullYear();
@@ -164,8 +167,9 @@ app.whenReady().then(async () => {
   ok("④ 標題:這台找得到 = 鈕;電腦版找不到 / 雲端(主機沒在跑、原報告不在)= 純文字;不可信字串當字畫、單行截斷", p.rows.map((r) => r.tag).join() === "BUTTON,SPAN,SPAN,SPAN" && p.rows[0].html === 0 && p.rows[0].name.includes("<b>x</b>") && p.rows[0].clip, JSON.stringify(p.rows.map((r) => [r.tag, r.html, r.clip])));
   ok("④ meta 行:類型 · 來源 · 公開時間 · 署名;類型缺就不出;不是今年的加年份;匿名用既有那個字", p.rows[0].sub === "市場報告 · 這台電腦 · " + p.rows[0].mono + " · 匿名" && /^\d\d\/\d\d \d\d:\d\d$/.test(p.rows[0].mono) && p.rows[1].sub === "電腦版 · " + p.rows[1].mono + " · Wei" && p.rows[2].sub.startsWith("研究報告 · 雲端 · ") && p.rows[3].mono.startsWith(yr + "/"), JSON.stringify(p.rows.map((r) => r.sub)));
   ok("④ 原因行:電腦版找不到原檔、雲端原報告被移除;雲端只是現在開不了不加", p.rows[0].gone === null && p.rows[1].gone === (await T("shl.gone")) && p.rows[2].gone === null && p.rows[3].gone === (await T("shl.goneCloud")), JSON.stringify(p.rows.map((r) => r.gone)));
+  ok("④ S19 列與列之間不畫線(靠 12＋12 的列距分組);骨架列跟真列同高", p.rows.every((r) => r.bt === "0px") && skH.length === 3 && p.rows.filter((r) => !r.gone).every((r) => skH.every((h) => Math.abs(h - r.rh) <= 1)), JSON.stringify({ sk: skH, rows: p.rows.map((r) => [r.rh, r.bt, !!r.gone]) }));
   ok("④ 動作:複製連結(btn-out 32 高)+ 取消分享(btn-quiet);列不超出內容欄", p.rows.every((r) => r.acts === "btn-out:複製連結|btn-quiet:取消分享" && r.h === 32 && r.w <= 440), JSON.stringify(p.rows.map((r) => [r.acts, r.h, r.w])));
-  ok("④ 埋點:切到這一類送 share_list_open", (await js(`JSON.stringify(window.__s.tracked)`)).includes("share_list_open"));
+  ok("④ 埋點:公開連結區段捲進畫面時送 share_list_open", (await js(`JSON.stringify(window.__s.tracked)`)).includes("share_list_open"));
 
   // 複製
   const cp = await js(`(async () => { const b = document.querySelector("#set-shares .shl-row .btn-out"), w0 = b.offsetWidth; b.click(); await new Promise((r) => setTimeout(r, 60)); return { text: b.textContent, w0, w1: b.offsetWidth, copied: window.__s.copied.slice(), live: document.getElementById("sr-live").textContent, tracked: window.__s.tracked.slice() }; })()`);
@@ -192,7 +196,7 @@ app.whenReady().then(async () => {
     && (await js(`document.getElementById("sr-live").textContent`)) === (await T("shl.revoked")) && (await js(`JSON.stringify(window.__s.tracked)`)) === '["share_revoke"]' && (await js(`document.getElementById("del-scrim").hidden && !document.getElementById("set-scrim").hidden`)), JSON.stringify([rv, p.count]));
 
   // 空 / 讀不到 / 未登入
-  await js(`window.__s.list = { code: "OK", shares: [], limits: { liveCount: 0, liveLimit: 50 } }; setCat("acct"); setCat("shares")`); await wait(200); p = await pane();
+  await js(`window.__s.list = { code: "OK", shares: [], limits: { liveCount: 0, liveLimit: 50 } }; setCat("display"); setCat("shares")`); await wait(200); p = await pane();
   ok("④ 每次切到這一類重抓;空:一句引導、不顯示份數", (await calls("list")).length === 2 && p.rows.length === 0 && p.msg === (await T("shl.empty")) && p.count === null && p.btn === null, JSON.stringify(p));
   await js(`window.__s.list = { code: "UNREACH" }; setCat("shares")`); await wait(200); p = await pane();
   ok("④ 讀不到:錯誤記號 + 一句 +「重新載入」", p.msg === (await T("shl.loadFail")) && p.mark === 1 && p.btn === (await T("br.reload")) && p.count === null, JSON.stringify(p));
@@ -202,10 +206,10 @@ app.whenReady().then(async () => {
   ok("④ 未登入:一句 +「登入 Blave」(沒有錯誤記號)", p.msg === (await T("shl.gate")) && p.mark === 0 && p.btn === (await T("cn.blave.btn")), JSON.stringify(p));
   await js(`document.querySelector("#set-shares .shl-msgrow .btn-out").click()`); await wait(100);
   { const w1 = await js(`({ cat: document.querySelector('.set-cat[aria-current="true"]').dataset.setCat, btn: document.querySelector("#set-shares .shl-msgrow .btn-out").textContent })`), oa = await calls("oauth");
-    ok("④ …點了原地登入:分類停在「公開連結」、startOAuth 叫一次、鈕字換成「取消等待」", w1.cat === "shares" && oa.length === 1 && w1.btn === (await T("oauth.cancel")), JSON.stringify([w1, oa]));
+    ok("④ …點了原地登入:分類停在「帳號與方案」、startOAuth 叫一次、鈕字換成「取消等待」", w1.cat === "plan" && oa.length === 1 && w1.btn === (await T("oauth.cancel")), JSON.stringify([w1, oa]));
     await js(`window.__s.oauthReject(); true`); await wait(200);
     const w2 = await js(`({ cat: document.querySelector('.set-cat[aria-current="true"]').dataset.setCat, btn: document.querySelector("#set-shares .shl-msgrow .btn-out").textContent })`);
-    ok("④ …取消之後鈕字換回「登入 Blave」、還在公開連結", w2.cat === "shares" && w2.btn === (await T("cn.blave.btn")), JSON.stringify(w2));
+    ok("④ …取消之後鈕字換回「登入 Blave」、還在帳號與方案", w2.cat === "plan" && w2.btn === (await T("cn.blave.btn")), JSON.stringify(w2));
     await js(`window.__s.tracked.length = 0; true`); }
 
   // 標題 = 打開報告
@@ -271,7 +275,10 @@ app.whenReady().then(async () => {
   await js(`document.getElementById("shr-ack").click()`); await wait(50);
   ok("④ 勾了主鈕還是停用、送不出去", (await dlg()).send && (await js(`(async () => { await shrSubmit(); return window.__s.calls.filter((c) => c[0] === "publish").length; })()`)) === 0);
   await js(`document.querySelector("#shr-msg button").click()`); await wait(400);
-  ok("④ 「看公開連結」:關分享框、開設定 › 公開連結", (await js(`document.getElementById("shr-scrim").hidden && !document.getElementById("set-scrim").hidden && document.querySelector('.set-cat[aria-current="true"]').dataset.setCat === "shares" && !document.getElementById("set-shares").hidden`)));
+  { const g = await js(`(() => { const sc = document.querySelector(".set-content"), h = document.getElementById("shl-h"), a = sc.getBoundingClientRect(), b = h.getBoundingClientRect();
+      return { closed: document.getElementById("shr-scrim").hidden, open: !document.getElementById("set-scrim").hidden, cat: document.querySelector('.set-cat[aria-current="true"]').dataset.setCat, plan: !document.getElementById("set-plan").hidden,
+        focus: document.activeElement === h, act: (document.activeElement || {}).id || (document.activeElement || {}).className, top: Math.round(b.top - a.top), scrolled: sc.scrollTop > 0, inView: b.top >= a.top - 1 && b.bottom <= a.bottom + 1 }; })()`);
+    ok("④ 「看公開連結」:關分享框、開設定 › 帳號與方案,捲到公開連結區段、焦點在區段標題上", g.closed && g.open && g.cat === "plan" && g.plan && g.focus && g.inView, JSON.stringify(g)); }
   await js(`setClose()`); await wait(100);
   await js(`window.__s.state.res = { code: "OK", share: null, displayName: null, limits: { liveCount: 3, liveLimit: 50, todayCount: 20, dailyLimit: 20 } }`);
   await openRead("perf"); await openRead("res"); await js(`document.getElementById("rpt-share").click()`); await wait(300); d = await dlg();

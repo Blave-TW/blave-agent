@@ -39,14 +39,16 @@ function srcPaintList(box) {
   const missing = cloud ? [] : SRC.missing;   // 雲端視角不畫:缺不缺是拿這台電腦的策略比的
   const focusMiss = SRC.focusMiss; SRC.focusMiss = false;
   const head = srcMk("div", "src-head");
-  if (cloud) head.append(srcMk("p", "priv-lead", t("src.cloudLead")));
-  if (!cloud && (names.length || missing.length)) head.append(srcBtn("btn-out", t("src.add"), () => srcOpenForm(null)));
-  box.append(head);
+  // 雲端視角清單是空的:只出 src.cloudEmpty 那一句,頭部不再講一次(一個 pane 一個訊息)
+  const lead = cloud && names.length > 0, add = !cloud && (names.length > 0 || missing.length > 0);
+  if (lead) head.append(srcMk("p", "priv-lead", t("src.cloudLead")));
+  if (add) head.append(srcBtn("btn-out", t("src.add"), () => srcOpenForm(null)));
+  if (lead || add) box.append(head);   // 空的頭部不佔位:不然這一類的內容起點比其他類低一截
   if (!SRC.loaded) return;
   if (!names.length && !missing.length) {
     const e = srcMk("div", "src-empty");
     if (cloud) e.append(srcMk("p", "", t("src.cloudEmpty")));
-    else { e.append(srcMk("p", "", t("src.empty1")), srcMk("p", "", t("src.empty2", { ex: "fred" })), srcBtn("btn-out", t("src.add"), () => srcOpenForm(null))); }
+    else { e.append(srcMk("p", "", t("src.empty1")), srcBtn("btn-out", t("src.add"), () => srcOpenForm(null)), srcMk("p", "src-fine", t("src.empty2"))); }   // 名詞句 → 鈕 → 金鑰那句(canon States › Empty)
     box.append(e); return;
   }
   const rows = srcMk("div", "src-rows");
