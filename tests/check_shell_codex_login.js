@@ -21,7 +21,7 @@ t("字串:終端機那一句帶 {cmd} 佔位(兩語)", /\{cmd\}/.test(STR.zh["ro
 
 // ── 主行程:原文切出來,配假的 loginShellPath / BASE,子行程是真的 ──
 const POSIX = process.platform !== "win32";
-const PIECES = [constOf(src, "cmdWrap"), fnOf(src, "run"), fnOf(src, "which"), "const LOGIN_CHECK_MS = 400;", fnOf(src, "binKind"), constOf(src, "runRec"), constOf(src, "cantRun"),
+const PIECES = [constOf(src, "cmdWrap"), fnOf(src, "run"), fnOf(src, "which"), "const LOGIN_CHECK_MS = 2000;", fnOf(src, "binKind"), constOf(src, "runRec"), constOf(src, "cantRun"),
   fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "codexPath"), fnOf(src, "claudePath"), fnOf(src, "detectAgents"),
   "let loginChild = null;", fnOf(src, "agentLogin"), fnOf(src, "cancelAgentLogin")].join("\n");
 function mkMain(envPath, chatgpt, bundled) {
@@ -75,10 +75,10 @@ exit 2
       const d = binDir("benoent"); script(path.join(d, "codex"), "#!/nonexistent/interp\n");
       const m2 = mkMain(PATH_OF(d), MISSING_APP, null), r2 = await m2.detectAgents(), l = await m2.agentLogin("codex");
       t("檔在、開不起來(ENOENT)→ why=codex_cantrun;登入回 code=ENOENT、cantRun=true", r2.codex.why === "codex_cantrun" && l.code === "ENOENT" && l.cantRun === true && l.ok === false, { why: r2.codex.why, l }); }
-    // 4. 逾時:login status 不回(上限在這支測試裡縮成 400ms)
-    { const d = binDir("bslow"); script(path.join(d, "codex"), "#!/bin/sh\nexec sleep 5\n");
+    // 4. 逾時:login status 不回(上限在這支測試裡縮成 2 秒)
+    { const d = binDir("bslow"); script(path.join(d, "codex"), "#!/bin/sh\nexec sleep 8\n");
       const t0 = Date.now(), r = await mkMain(PATH_OF(d), MISSING_APP, null).detectAgents();
-      t("逾時 → why=codex_timeout(畫面「沒有回應」),不會等滿 5 秒", r.codex.installed && !r.codex.loggedIn && r.codex.why === "codex_timeout" && Date.now() - t0 < 3000, r.codex); }
+      t("逾時 → why=codex_timeout(畫面「沒有回應」),不會等滿 8 秒", r.codex.installed && !r.codex.loggedIn && r.codex.why === "codex_timeout" && Date.now() - t0 < 6000, r.codex); }
     // 5. 正常登入:沒登入 → 替他跑 `codex login`(活過 1 秒、回 0)→ 再偵測就是已登入
     { const d = binDir("bok"); script(path.join(d, "codex"), CODEX_OK);
       const m = mkMain(PATH_OF(d), MISSING_APP, null), r = await m.detectAgents();
