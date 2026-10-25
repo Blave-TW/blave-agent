@@ -1230,6 +1230,8 @@ ok("409 重開那一句跟網站 bc_cycle_requote 同字", STR.zh["cf.m.repriced
 ok("確認框字(r8):body1 有 Linux Starter;鈕「付 {x} TWD 開通」/ Pay {x} TWD to Start Plan;試用 en Start Now, Pay {x} TWD on {d};計費週期;Yearly",
   STR.zh["cf.m.body1"].includes("Linux Starter") && STR.en["cf.m.body1"].includes("Linux Starter") && STR.zh["cf.m.ok"] === "付 {x} TWD 開通" && STR.en["cf.m.ok"] === "Pay {x} TWD to Start Plan"
   && STR.en["cf.m.okTrial"] === "Start Now, Pay {x} TWD on {d}" && STR.zh["cf.m.pick"] === "計費週期" && STR.en["plan.cyc.annual"] === "Yearly");
+  // 資料來源空狀態那句「金鑰不要貼在對話裡。」是第 0 關、必須被讀到的次要字:12px、--ink-2(設計師稽核 D5)
+  ok("資料來源空狀態的金鑰提醒 12px、--ink-2", /\.src-empty \.src-fine \{[^}]*font-size: 12px; color: var\(--ink-2\); \}/.test(fs.readFileSync(path.join(R, "datasrc.css"), "utf8")));
 })().then(() => {
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 });

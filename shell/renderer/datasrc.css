@@ -5,7 +5,7 @@
 .src-head .btn-out { flex: none; }
 .src-empty { max-width: 52ch; margin-top: var(--space-24); }
 #set-src > .src-empty:first-child { margin-top: 0; }   /* 沒有頭部(空清單)時,內容起點跟其他分類對齊 */
-.src-empty .src-fine { margin: var(--space-12) 0 0; font-size: 12px; color: var(--ink-3); }   /* 鈕下面那句提醒:次要字一階 */
+.src-empty .src-fine { margin: var(--space-12) 0 0; font-size: 12px; color: var(--ink-2); }   /* 鈕下面那句是金鑰提醒(第 0 關),要被讀到:字級維持 12、字色 ink-2 */
 .src-empty p { margin: 0 0 var(--space-12); font-size: 13px; line-height: 1.7; color: var(--ink-2); }
 .src-rows { display: flex; flex-direction: column; gap: var(--space-4); margin-top: var(--space-16); }
 .src-row { display: flex; align-items: center; gap: var(--space-12); min-height: 44px; padding: var(--space-6) 0; }
