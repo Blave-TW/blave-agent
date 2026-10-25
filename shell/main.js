@@ -2819,7 +2819,7 @@ function president() {
 /* 群益本機開通的憑證那一段(capital_local.js;畫面 renderer/capital_local.js):回給畫面的只有代號、張數、到期日;
    憑證檔路徑與匯出密碼只在這個行程。只有 Windows 走得到 */
 // = renderer/trade.js CAPL_LOCAL_ON(tests/check_shell_capital_local.js 釘兩處相同)
-const CAPL_LOCAL_ON = false;
+const CAPL_LOCAL_ON = true;
 let _capitalLocal = null;
 function capitalLocal() {
   if (!_capitalLocal) _capitalLocal = require("./capital_local").createCapitalLocal({
