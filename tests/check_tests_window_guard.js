@@ -58,7 +58,9 @@ t("掃得到東西(清單是空的 = 掃描壞了)", hits.length >= 24, "只掃�
     t("CI 閘門:Gate tests 之前把捲軸設成浮動式(跟發版機一樣;runner 沒觸控板會變常駐 15px 捲軸,版面測試誤紅)", si >= 0 && gi > si, JSON.stringify({ si, gi })); }
   const relSrc = fs.readFileSync(path.join(ROOT, "shell", "tools", "release.js"), "utf8");
   const relRe = /filter\(\(f\) => (\/\^\(check_shell_[^\n]*?\$\/)\.test\(f\) && f !== "check_shell_paths\.js"\)/.exec(relSrc);
-  const want = relRe ? fs.readdirSync(DIR).filter((f) => eval(relRe[1]).test(f) && f !== "check_shell_paths.js").sort() : null;
+  // CI 唯一允許少跑的:要讀私有 web repo 測資的那支(mac 發版有 web 樹照跑);多一支就紅
+  const CI_SKIP = ["check_shell_suggest.js"];
+  const want = relRe ? fs.readdirSync(DIR).filter((f) => eval(relRe[1]).test(f) && f !== "check_shell_paths.js" && !CI_SKIP.includes(f)).sort() : null;
   const tmp = fs.mkdtempSync(path.join(require("os").tmpdir(), "blave-wingate-")), bin = path.join(tmp, "bin"), tdir = path.join(tmp, "tests");
   fs.mkdirSync(bin); fs.mkdirSync(tdir);
   for (const f of fs.readdirSync(DIR)) if (/\.(js|py)$/.test(f)) fs.writeFileSync(path.join(tdir, f), "");

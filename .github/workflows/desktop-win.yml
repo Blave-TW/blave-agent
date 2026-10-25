@@ -84,6 +84,8 @@ jobs:
           red=0
           for t in tests/check_shell_*.js tests/check_version_matrix_shell.js tests/check_tests_window_guard.js; do
             [ "$t" = tests/check_shell_paths.js ] && continue
+            # 要讀 web repo 的 suggest_vectors.json(私有 repo,CI 拿不到);純 JS、跟平台無關,mac 的 release.js 有 web 樹會跑
+            [ "$t" = tests/check_shell_suggest.js ] && { echo "::notice::$t 跳過:CI 沒有 web 樹"; continue; }
             echo "::group::$t"
             if out=$(node "$t" 2>&1); then rc=0; else rc=$?; fi
             printf '%s\n' "$out"
