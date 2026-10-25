@@ -483,17 +483,21 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       && x15.tm.track("detect_fail", { why: "C:\\SECRET" }) === false); await tick();
     t("…出門的 props 只有 why", x15.sent.filter((b) => b.event === "detect_fail").length === 8 && x15.sent.every((b) => !JSON.stringify(b).includes("SECRET")));
     // 主行程算值的 detectWhy:每種偵測紀錄的輸出都在列舉裡、能用時 null
-    const dw = mainSrc15.match(/^function detectWhy\(kind, r\) \{[\s\S]*?\n\}/m);
-    if (!dw) t("main.js 找得到 detectWhy", false);
-    else { const detectWhy = new Function(dw[0] + "; return detectWhy;")();
+    const dw = mainSrc15.match(/^function detectWhy\(kind, r\) \{[\s\S]*?\n\}/m), cr = mainSrc15.match(/^const cantRun = .*$/m);
+    if (!dw || !cr) t("main.js 找得到 detectWhy / cantRun", false);
+    else { const detectWhy = new Function(cr[0] + "\n" + dw[0] + "; return detectWhy;")();
+      // cantrun(找到了、跑不起來)是畫面用的獨立值,還不在白名單:畫面送出前記成 nonzero(下面那條比原文)
+      const UI_ONLY = ["claude_cantrun", "codex_cantrun"];
       const cases = [["claude", { bin: "none" }, "claude_none"], ["claude", { bin: "none", where: ["shim"] }, "claude_none"], ["codex", { bin: "none" }, "codex_none"],
         ["codex", { bin: "none", where: ["shim"] }, "codex_shim"], ["codex", { bin: "none", where: ["shim", "cmd"], found: "cmd" }, "codex_shim"],
         ["claude", { bin: "exe", timedOut: true, code: null }, "claude_timeout"], ["codex", { bin: "exe", timedOut: true, code: null }, "codex_timeout"],
         ["claude", { bin: "posix", code: 1, timedOut: false, json: false }, "claude_badjson"], ["claude", { bin: "posix", code: 0, timedOut: false, loggedIn: false }, "claude_nonzero"],
-        ["codex", { bin: "chatgpt", code: 1, timedOut: false, loggedIn: false }, "codex_nonzero"], ["codex", { bin: "exe", code: "ENOENT", timedOut: false }, "codex_nonzero"],
+        ["codex", { bin: "chatgpt", code: 1, timedOut: false, loggedIn: false }, "codex_nonzero"], ["codex", { bin: "exe", code: "ENOENT", timedOut: false }, "codex_cantrun"],
+        ["codex", { bin: "posix", code: 127, timedOut: false }, "codex_cantrun"], ["claude", { bin: "posix", code: 126, timedOut: false }, "claude_cantrun"],
         ["claude", { bin: "exe", code: 0, loggedIn: true }, null], ["codex", { bin: "posix", code: 0, loggedIn: true }, null]];
       const bad = cases.filter(([k, r, want]) => detectWhy(k, r) !== want);
-      t("detectWhy:沒檔 / 只有 shim / 逾時 / 不是 JSON / 回答沒登入 各對到一個值,能用回 null;輸出全在列舉裡", bad.length === 0 && cases.every(([k, r]) => { const v = detectWhy(k, r); return v === null || WHY.includes(v); }), bad); }
+      t("detectWhy:沒檔 / 只有 shim / 逾時 / 跑不起來 / 不是 JSON / 回答沒登入 各對到一個值,能用回 null;輸出全在列舉裡(或畫面專用的 cantrun)", bad.length === 0 && cases.every(([k, r]) => { const v = detectWhy(k, r); return v === null || WHY.includes(v) || UI_ONLY.includes(v); }), bad);
+      t("…cantrun 記成 nonzero 之後一定在白名單裡", UI_ONLY.every((v) => WHY.includes(v.replace(/_cantrun$/, "_nonzero")))); }
     t("…detectAgents 把 detectWhy 放進回傳(why),畫面在連結畫面偵測完、每個有 why 的 CLI 各送一則",
       /out\.claude\.why = detectWhy\("claude", rec\.claude\); out\.codex\.why = detectWhy\("codex", rec\.codex\);/.test(mainSrc15)
       && /if \(!\$\("view-connect"\)\.hidden\) \["claude", "codex"\]\.forEach\(\(k\) => \{ if \(lastDetect\[k\] && lastDetect\[k\]\.why\) trackEvent\("detect_fail", \{ why: lastDetect\[k\]\.why \}\); \}\);/.test(fs.readFileSync(path.join(R, "app.js"), "utf8")));
