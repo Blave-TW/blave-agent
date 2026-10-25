@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-- **Bitget 翻開經典帳戶**(`venue_traits` 的 `bitget` `verified_modes` = `("classic",)`,2026-10-22 經典主帳戶真帳驗過):`account_reader` 開始讀 Bitget,`local_daemon` 放行 `BITGET`(電腦版連接框同值翻開:`cloudcmd.BITGET_VERIFIED_MODES`);統一帳戶(UTA)的金鑰由 lib 拒絕並說明怎麼做。
+- **Bitget 翻開經典帳戶**(`venue_traits` 的 `bitget` `verified_modes` = `("classic",)`,2026-10-22 經典主帳戶真帳驗過):`account_reader` 開始讀 Bitget,`local_daemon` 放行 `BITGET`(電腦版連接框同值翻開:`cloudcmd.BITGET_VERIFIED_MODES`);統一帳戶(UTA)的金鑰由 lib 拒絕,句子講「還不支援」、叫人改綁經典帳戶(不叫人切回:升級過的子帳戶切不回);金鑰讀不到 UTA 設定時,UTA 沒開放就同樣講還不支援、不叫人去勾權限。電腦版連接框、設定分頁讀帳那一列、下單失敗卡都照實講還不支援(`trErrToken` 先認 `[bitget_account_mode:uta]`,原本落成 `tr.err.key`「交易所拒絕這把金鑰」)。測試 `tests/check_shell_trade.js`。
 - **`account_reader` 不讀還沒真帳驗證的交易所**(`venue_traits` 的 `verified_modes` 是空的):機器上有 `BITGET_*` 金鑰也不會出現在投資組合頁;lib 自己的簽章閘門另外擋住所有私有呼叫。
 - **下單 lib 名單加 `bitget`(`turn_stop` 的 Stop 豁免、排程守門 `SCHED_ORDER_LIB`)**:同 stockcoin 那一次,workspace 新的 `lib/order_bitget.py` 載入的行程不被聊天 Stop 砍、排程指令照下單 lib 守門。
 - **電腦版綁 Bitget(`command_listener._LOCAL_KEY_CHECKS`、`local_daemon` 放行清單)**:`BITGET_API_KEY`／`BITGET_SECRET_KEY`／`BITGET_PASSPHRASE` 一整組,寫入前用 `lib/account_bitget.get_equity` 讀一次帳戶(沒驗過的帳戶類型在這一步被拒、不寫)。只有 `venue_traits` 的 `bitget` `verified_modes` 不是空的時候才放行(現在只有 `classic`,見上一條)。測試 `tests/check_bitget_surfaces.py`。

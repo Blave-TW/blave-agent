@@ -174,6 +174,14 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
     ok("Bitget 40092:[bitget_account_eligibility] → tr.err.bitgetEligibility(帶 {sym});沒有那個標記的 symbol_unavailable 照舊 tr.err.symbol",
       trErrToken(b) === "bitget_account_eligibility" && trErrToken("close_symbol: " + b) === "bitget_account_eligibility" && TR_REJECT_TEXT.bitget_account_eligibility === "tr.err.bitgetEligibility"
       && trErrToken("[order_reject:symbol_unavailable] bitget code=45119: x") === "symbol_unavailable"); }
+  // Bitget 統一帳戶沒開放:lib _require_verified 的句子形狀(kind=key_permission)→ 照實講還不支援,不落成 tr.err.key;閘門值照 trade.js 原文
+  { eval("var BITGET_VERIFIED_MODES = " + /\nconst BITGET_VERIFIED_MODES = (\[[^\]]*\]);/.exec(src)[1]);
+    const u = "[order_reject:key_permission] 這組 Bitget 金鑰的帳戶是統一帳戶 [bitget_account_mode:uta]，Blave 還不支援 Bitget 的統一帳戶（目前只支援經典帳戶）";
+    const want = BITGET_VERIFIED_MODES.indexOf("uta") < 0 ? "bitget_uta_unsupported" : "key_permission";
+    ok("Bitget UTA 沒開放:[bitget_account_mode:uta] → tr.err.bitgetUta(下單)、讀帳那列 cx.err.bitgetUtaBound;經典帳戶的標記照舊 key_permission",
+      trErrToken(u) === want && trErrToken("close_symbol: " + u) === want && TR_REJECT_TEXT.bitget_uta_unsupported === "tr.err.bitgetUta"
+      && trErrToken("[order_reject:key_permission] x [bitget_account_mode:classic]") === "key_permission"
+      && src.includes('else if (trErrToken(ae.msg) === "bitget_uta_unsupported") box.appendChild(errLine(t("cx.err.bitgetUtaBound")));')); }
   const vm = require("vm"), ta = { value: "", focused: false, focus() { this.focused = true; } }, ctx = { $: () => ta, t: (k, v) => k + "|" + v.sym + "|" + v.err, TR: { env: "local" }, autosize() {}, tracked: [], String,
     paneSt: { chat: { off: true } }, opened: [], paneToggle(k, off) { ctx.opened.push([k, off]); }, trackFeature: (x) => ctx.tracked.push(x) };
   vm.createContext(ctx); vm.runInContext(src.slice(src.indexOf("function trErrAsk("), src.indexOf("function trLivePositions(")), ctx);

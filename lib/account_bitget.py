@@ -46,6 +46,16 @@ try:
 except ImportError:  # half-updated workspace: stock swaps read under Bitget's own names
     stock_perps = None
 try:
+    from lib.winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
+try:
+    from lib.winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
+try:
     from lib import venue_errors
 except ImportError:  # a file-by-file update that skipped lib/venue_errors.py must not break reads
     venue_errors = None
@@ -254,8 +264,7 @@ def _read_mode():
     """The mode file; {} when there is none, {'corrupt': True} when it cannot be read —
     an unreadable record holds (fail-closed), it never reads as "no switch"."""
     try:
-        with open(MODE_PATH) as f:
-            st = json.load(f)
+        st = load_json(MODE_PATH)  # Windows: another process mid-replace → retry, not "corrupt"
     except FileNotFoundError:
         return {}
     except (OSError, ValueError):
@@ -268,7 +277,7 @@ def _write_mode(st):
     tmp = f"{MODE_PATH}.{os.getpid()}.tmp"
     with open(tmp, "w") as f:
         json.dump(st, f)
-    os.replace(tmp, MODE_PATH)
+    atomic_replace(tmp, MODE_PATH)
 
 
 def _transient(e):
@@ -290,6 +299,7 @@ def _probe(env):
         except BitgetError as e2:
             if e2.code != UTA_MODE:
                 raise
+            _require_verified("uta")  # UTA not open: "tick the read permission" would be wasted effort
             # a UTA whose key cannot read the account settings (where the hold mode lives)
             raise BitgetError(
                 f"這組 Bitget 金鑰的帳戶是統一帳戶 [{MODE_TAG}:uta]，但讀不到帳戶設定（{e}）：請在 Bitget 建金鑰時勾選統一帳戶的讀取權限",
@@ -357,8 +367,9 @@ def _require_verified(mode):
         return
     ok = "、".join(_MODE_NAMES[m] for m in sorted(VERIFIED_MODES)) or "（還沒有）"
     tag = f" [{MODE_TAG}:{mode}]" if mode in _MODE_NAMES else ""
-    raise BitgetError(f"這組 Bitget 金鑰的帳戶是{_MODE_NAMES.get(mode, mode)}{tag}，Blave 目前只支援 Bitget 的{ok}："
-                      f"請到 Bitget App 把帳戶換成{ok}，或改綁其他交易所", code=UNVERIFIED,
+    # not "switch the account back": an upgraded Bitget sub-account cannot return to classic
+    raise BitgetError(f"這組 Bitget 金鑰的帳戶是{_MODE_NAMES.get(mode, mode)}{tag}，Blave 還不支援 Bitget 的"
+                      f"{_MODE_NAMES.get(mode, mode)}（目前只支援{ok}）：請改綁{ok}的金鑰，或改綁其他交易所", code=UNVERIFIED,
                       kind=reject_token.KEY_PERMISSION)
 
 
