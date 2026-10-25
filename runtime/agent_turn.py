@@ -428,6 +428,21 @@ def split_nav_head(text):
     return (target if target in _NAV_TARGETS else None), text[m.end():], True
 
 
+def visible_text(text):
+    """剝掉所有給外殼看的標記(假對話、<suggest>、<await/>、<export/>、<nav>)之後,用戶真的看得到的字。
+    只有標記的回覆不算回覆:e2e029 找點子追問那一輪,最後一則訊息只剩標記、正文全在帶工具的旁白裡,
+    剝完是空字串,旁白補位又因為 full_text 非空沒觸發,用戶拿到空泡泡、逐字稿存了 ""。"""
+    text, _ = strip_hallucinated_turn(text or "")
+    text, _ = extract_suggestions(text)
+    text, _ = extract_await(text)
+    return _NAV_STRIP_RE.sub("", _EXPORT_STRIP_RE.sub("", text)).strip()
+
+
+def _counts_as_reply(text):
+    # 合法的 <export/> 本身就是交付物(轉出卡),只有它也算回了話:不能為它觸發空回合續跑、重轉一次
+    return bool(visible_text(text) or _EXPORT_TAG_RE.search(text or ""))
+
+
 _RECONCILER_STALE_S = 300  # 同 portfolio_reporter.HEARTBEAT_STALE_S
 
 
@@ -2356,8 +2371,12 @@ class TelegramSink:
         self.chunk_text = text
 
     def has_reply(self):
-        """這一輪有沒有真正的回覆文字(旁白 _last_status 不算)。run_turn 的空回合判定。"""
-        return bool(self.chunk_text.strip() or any(s.strip() for s in self.segments))
+        """這一輪有沒有真正的回覆文字(旁白 _last_status 不算、只有標記也不算)。run_turn 的空回合判定。"""
+        return _counts_as_reply(self.chunk_text) or any(_counts_as_reply(s) for s in self.segments)
+
+    def drop_non_reply(self):
+        """同 WebSink.drop_non_reply:泡泡那則由 finalize 的 finish 換掉。"""
+        self.chunk_text = ""
 
     async def stop(self):
         if self.typing_task:
@@ -2377,10 +2396,11 @@ class TelegramSink:
         self.streamer.finish(self.chunk_text)
         self.segments.append(self.chunk_text)
         reply = "\n\n".join(s for s in self.segments if s)
-        if not reply and getattr(self, "_last_status", ""):
-            # 極端情況:模型把話全講在帶工具的訊息裡、最後一則沒有純文字——
+        narration = visible_text(getattr(self, "_last_status", ""))
+        if not reply.strip() and narration:
+            # 極端情況:模型把話全講在帶工具的訊息裡、最後一則沒有純文字(或只剩標記)——
             # 用最後一句旁白當回覆,別讓用戶收到空氣。
-            reply = convert_markdown_tables_to_list(self._last_status)
+            reply = convert_markdown_tables_to_list(narration)
             self.streamer.finish(reply)
         return reply
 
@@ -3379,8 +3399,9 @@ class WebSink:
         seg = self.full_text[self._seg_start:]
         if seg.strip():
             self.full_text = self.full_text[:self._seg_start]
-            self._last_status = seg
-            self._send({"type": "thinking", "text": seg})
+            if visible_text(seg):   # 只有標記的一段(續跑前那一則 <await/>)不能蓋掉真旁白,補位就靠它
+                self._last_status = seg
+                self._send({"type": "thinking", "text": seg})
         # 這段整段被收回活動列(前端收到下面的 tool chunk 就把泡泡文字移除),
         # 還沒送出去的尾巴直接丟掉——送出去只會讓前端多刪一次。
         self._pending = ""
@@ -3464,7 +3485,16 @@ class WebSink:
 
     def has_reply(self):
         """同 TelegramSink.has_reply。段首暫留(_head_hold)的字還沒進 full_text,也算。"""
-        return bool((self.full_text + (self._head_hold or "")).strip())
+        return _counts_as_reply(self.full_text + (self._head_hold or ""))
+
+    def drop_non_reply(self):
+        """空回合續跑之前:has_reply() 判為不算回覆的那段(只有標記)丟掉,不然續跑寫出的回覆會接在它後面——
+        等你回覆、舊建議跟著出,骨架開頭還會把新回覆整段截掉。已送出去的那段叫前端清掉。"""
+        if self._nav_fired and self._nav_fired_seg == self._seg_start:
+            self._nav_fired = False
+        if self.full_text:
+            self._send({"type": "text_replace", "text": ""})
+        self.full_text, self._pending, self._seg_start, self._head_hold = "", "", 0, ""
 
     async def stop(self):
         pass
@@ -3502,6 +3532,11 @@ class WebSink:
         if not marked:
             exports = unmarked_exports(self.started_at, getattr(self, "export_touched", None))
         cleaned = _NAV_STRIP_RE.sub("", cleaned)  # 放錯位置的標記只剝不觸發
+        if not cleaned.strip() and not visible_text(self.full_text[: self._seg_start]):
+            # 最後一則只有標記(上面那條補位看 full_text 非空就不補):剝完同樣是空氣,旁白照樣補位
+            narration = visible_text(getattr(self, "_last_status", ""))
+            if narration:
+                cleaned = narration
         if cleaned != seg:
             self.full_text = self.full_text[: self._seg_start] + cleaned
             self._send({"type": "text_replace", "text": cleaned})
@@ -4774,6 +4809,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                 break
             print(f"[agent_turn] empty reply — resuming once (tools={len(tool_steps)}, "
                   f"{elapsed:.0f}s, ${spent_usd:.2f} spent)", file=sys.stderr)
+            sink.drop_non_reply()
             # The original message goes in again, not a literal 「繼續」: the language pin is
             # derived from it, and `recent` (read before this turn's user row was written)
             # would otherwise hold the request twice.
@@ -4797,7 +4833,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # Narration still counts as the floor: when both attempts end without reply text
         # but some narration exists, finalize() shows it the way it did before resuming.
         if not getattr(sink, "interrupted", False) and not sink.has_reply() \
-                and not getattr(sink, "_last_status", "").strip():
+                and not visible_text(getattr(sink, "_last_status", "")):
             fault_code = _fault_code(RuntimeError("the turn ended without any reply text"),
                                      len(tool_steps), result_info)
             print(f"[agent_turn] empty reply → fault={fault_code} tools={len(tool_steps)}",

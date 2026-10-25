@@ -12,6 +12,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 - **`account_reader` 不讀還沒真帳驗證的交易所**(`venue_traits` 的 `verified_modes` 是空的):機器上有 `BITGET_*` 金鑰也不會出現在投資組合頁;lib 自己的簽章閘門另外擋住所有私有呼叫。
 - **下單 lib 名單加 `bitget`(`turn_stop` 的 Stop 豁免、排程守門 `SCHED_ORDER_LIB`)**:同 stockcoin 那一次,workspace 新的 `lib/order_bitget.py` 載入的行程不被聊天 Stop 砍、排程指令照下單 lib 守門。
 - **電腦版綁 Bitget(`command_listener._LOCAL_KEY_CHECKS`、`local_daemon` 放行清單)**:`BITGET_API_KEY`／`BITGET_SECRET_KEY`／`BITGET_PASSPHRASE` 一整組,寫入前用 `lib/account_bitget.get_equity` 讀一次帳戶(沒驗過的帳戶類型在這一步被拒、不寫)。只有 `venue_traits` 的 `bitget` `verified_modes` 不是空的時候才放行(現在只有 `classic`,見上一條)。測試 `tests/check_bitget_surfaces.py`。
+- **最後一則只有標記的回合不再回空泡泡(`visible_text`／`_counts_as_reply`、`WebSink.finalize`／`on_tool`／`has_reply`、`TelegramSink.has_reply`／`finalize`、`run_turn` 空回合錯誤判定;e2e029 找點子第一次追問 10-23,session.db 存了 "")**:正文全寫在帶工具的訊息裡(旁白),最後一則只剩 `<await/>`、`<suggest>` 區塊或 prompt 骨架開頭時,finalize 剝完是空字串,但旁白補位看的是 `not full_text`(標記還在裡面)沒觸發,電腦版收到 `text_replace ""`、泡泡空白、逐字稿存空字串;網頁聊天是同一個 sink、同一個問題。現在剝完沒有字就用旁白補位(建議、`awaiting` 照送);`has_reply()` 只算剝掉標記後的字(合法 `<export/>` 照算回話),所以只有標記的回合走既有的空回合路:續跑一次,仍然沒有就旁白補位、連旁白都沒有就出錯誤句。只有標記的一段被工具呼叫收回時不再蓋掉真旁白;續跑之前先丟掉那段標記(`drop_non_reply`,已送出的叫前端清掉),續跑寫出的回覆不會帶著第一次的等你回覆、舊建議,也不會被骨架開頭整段截掉。測試 `tests/check_marker_only_reply.py`(新;舊碼 24 條紅)。
 
 ## 1.1.140 — 2026-10-24(desktop 0.1.31)
 
