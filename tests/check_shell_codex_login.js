@@ -17,6 +17,8 @@ const KEYS = ["row.opened", "row.failed", "row.orCmd", "row.orApp", "st.cantRun"
 t("字串:六個新 key 在 en / zh 都有", KEYS.every((k) => STR.en[k] && STR.zh[k]));
 t("字串:zh「無法啟動」「沒有回應」「已在瀏覽器開啟登入頁」「登入沒有完成。」;「連結」沿用 cn.connect",
   STR.zh["st.cantRun"] === "無法啟動" && STR.zh["st.noResp"] === "沒有回應" && STR.zh["row.opened"] === "已在瀏覽器開啟登入頁" && STR.zh["row.failed"] === "登入沒有完成。" && STR.zh["cn.connect"] === "連結");
+// 回前景會自動重新偵測(focusRedetect),退路不必再叫他按「重新偵測」;字照 mockup-codex-login
+t("字串:ChatGPT app 那句退路 zh「或在 ChatGPT app 登入後回到這裡。」、en 照 mockup", STR.zh["row.orApp"] === "或在 ChatGPT app 登入後回到這裡。" && STR.en["row.orApp"] === "Or sign in through the ChatGPT app, then come back.", [STR.zh["row.orApp"], STR.en["row.orApp"]]);
 t("字串:終端機那一句帶 {cmd} 佔位(兩語)", /\{cmd\}/.test(STR.zh["row.orCmd"]) && /\{cmd\}/.test(STR.en["row.orCmd"]));
 
 // ── 主行程:原文切出來,配假的 loginShellPath / BASE,子行程是真的 ──
@@ -178,7 +180,7 @@ exit 2
   R.set("loginPending", null); R.ROWMSG.codex = "failed"; R.paintRows(R.get("lastDetect"));
   t("…失敗 · CLI 版:「登入沒有完成。或在終端機執行 codex login。」(句號後不多一個空格)、鈕「再試一次」", rows()[1] === "codex|||登入沒有完成。或在終端機執行 codex login。|再試一次", rows());
   R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero", via: "app" })); R.paintRows(R.get("lastDetect"));
-  t("…失敗 · ChatGPT app 版:退路是在 app 裡登入,不給 codex login", rows()[1] === "codex|||登入沒有完成。或在 ChatGPT app 裡登入，再按重新偵測。|再試一次", rows());
+  t("…失敗 · ChatGPT app 版:退路是在 app 裡登入,不給 codex login", rows()[1] === "codex|||登入沒有完成。或在 ChatGPT app 登入後回到這裡。|再試一次", rows());
   LANG = "en"; R.sync(); R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero", via: "cli" })); R.paintRows(R.get("lastDetect"));
   t("…en:兩句中間有一個空格", rows()[1] === "codex|||Sign-in didn’t finish. Or run codex login in a terminal.|Try Again", rows());
   R.ROWMSG.claude = "failed"; R.set("lastDetect", D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: true })); R.paintRows(R.get("lastDetect"));

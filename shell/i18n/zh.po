@@ -963,7 +963,7 @@ msgid "row.orCmd"
 msgstr "或在終端機執行 {cmd}。"
 
 msgid "row.orApp"
-msgstr "或在 ChatGPT app 裡登入，再按重新偵測。"
+msgstr "或在 ChatGPT app 登入後回到這裡。"
 
 msgid "st.cantRun"
 msgstr "無法啟動"

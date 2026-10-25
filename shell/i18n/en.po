@@ -957,7 +957,7 @@ msgid "row.orCmd"
 msgstr "Or run {cmd} in a terminal."
 
 msgid "row.orApp"
-msgstr "Or sign in inside the ChatGPT app, then press Detect again."
+msgstr "Or sign in through the ChatGPT app, then come back."
 
 msgid "st.cantRun"
 msgstr "Can’t start"
