@@ -126,11 +126,11 @@ ok("精靈開著 / 找憑證中 / Mac:只有取消;私鑰用不了:只有關閉(
   vm.runInContext(strings.replace(/^\s*const STRINGS\s*=/m, "this.STRINGS =") + "\n" + fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "i18n.js"), "utf8").replace(/^let LANG\b/m, "var LANG") + "\nthis.t = t; this.setL = (l) => { LANG = l; };", sctx);
   const say = (err, lang) => { sctx.setL(lang); return sctx.t(...ctx.caplSetupFailMsg(err)); };
   const SAY = [
-    ["SETUP_FAILED:vcredist:1618", "Windows 正在安裝更新，等幾分鐘再按再試一次。", "Windows is installing updates. Wait a few minutes, then Try Again."],
-    ["SETUP_FAILED:vcredist:denied", "要按「是」讓微軟的執行環境安裝，再按再試一次。", "Click Yes so Microsoft's runtime can install, then Try Again."],
-    ["SETUP_FAILED:vcredist:reboot", "重新開機後再按再試一次。", "Restart the computer, then Try Again."],
-    ["SETUP_FAILED:vcredist:1603", "群益元件沒裝好。（代碼 1603）", "The Capital components didn't install. (Code 1603)"],
-    ["SETUP_FAILED:vcredist:1618,cryptography", "Windows 正在安裝更新，等幾分鐘再按再試一次。", null],
+    ["SETUP_FAILED:vcredist:1618", "Windows 正在安裝其他程式或更新，等幾分鐘再試。", "Windows is installing something else, often updates. Try again in a few minutes."],
+    ["SETUP_FAILED:vcredist:denied", "安裝被取消了。再試一次，Windows 詢問時按「是」。", "The install was cancelled. Try again and click Yes when Windows asks."],
+    ["SETUP_FAILED:vcredist:reboot", "要重新開機才能裝完，開機後再試一次。", "Restart the computer to finish installing, then try again."],
+    ["SETUP_FAILED:vcredist:1603", "群益元件沒裝好（代碼 1603）。", "The Capital components didn’t install (code 1603)."],
+    ["SETUP_FAILED:vcredist:1618,cryptography", "Windows 正在安裝其他程式或更新，等幾分鐘再試。", null],
     ["SETUP_FAILED:vcredist:sig", "群益元件沒裝好。", "The Capital components didn't install."],
     ["SETUP_FAILED:vcredist", "群益元件沒裝好。", null], ["SETUP_FAILED:skcom", "群益元件沒裝好。", null], ["SETUP_FAILED:python64,cryptography", "群益元件沒裝好。", null],
     ["SETUP_FAILED:vcredist:<b>", "群益元件沒裝好。", null], ["vcredist:1618", "群益元件沒裝好。", null], [undefined, "群益元件沒裝好。", null], [null, "群益元件沒裝好。", null],
