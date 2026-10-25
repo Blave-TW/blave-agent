@@ -228,7 +228,7 @@ function presHost(target) {
 function presAdvance(view, pc) {
   if (PRES.sent && pc && pc.updated_at !== PRES.sent.upd) PRES.sent = null;
   const setup = presSec(pc, "setup"), worker = presSec(pc, "worker");
-  if (!PRES.base) PRES.base = { worker: worker.status || null };
+  if (!PRES.base && pc) PRES.base = { worker: worker.status || null };
   // 這次開框看到下單程式起來:主畫面要等 daemon 重讀帳戶(runtime president_connect._ready)才有總權益,這幾秒改快輪詢接住
   if (worker.status === "ok" && PRES.base.worker !== "ok" && !PRES.readyBurst) { PRES.readyBurst = true; presBurst(); }
   if (PRES.busy || PRES.sent || presDown() || PRES.phase !== "flow" || (pc && pc.busy)) return;

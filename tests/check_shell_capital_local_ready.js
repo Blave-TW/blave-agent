@@ -37,6 +37,11 @@ ok("不多送任何步驟(不多登入群益)", ctx.st().steps.length === 0, ctx
 // 開框時就已經 ok(早就開通過,只是打開來看)
 ctx.reset(); ctx.run(CC({ status: "ok", ok_at: 1 }));
 ok("開框時早就 ok:不開爆發窗", !ctx.st().on && ctx.st().soon.length === 0, ctx.st());
+// 開框第一輪回報還沒到(cc 是 null):不能拿那一輪當基準,否則早就開通好的人只是打開來看也開一次爆發窗
+ctx.reset(); ctx.run(null); ctx.run(CC({ status: "ok", ok_at: 1 }));
+ok("第一輪 cc 還是 null、下一輪才看到早就 ok:不開爆發窗", !ctx.st().on && ctx.st().soon.length === 0, ctx.st());
+ctx.reset(); ctx.run(null); ctx.run(CC({ status: "running" })); ctx.run(CC({ status: "ok" }));
+ok("第一輪 cc 是 null、之後看著它從 running 變 ok:照樣開", ctx.st().on && ctx.st().soon.length === 1, ctx.st());
 // 爆發窗開著時,trPoll 排下一輪用 TR_POLL_PENDING(2.5 秒)
 const sched = line(trade, /TRP\.timer = setTimeout\(trPoll, TRP\.again \? 0 : .*$/m);
 ok("trPoll:爆發窗開著排 TR_POLL_PENDING", /trBurstOn\(ENV\.burst, Date\.now\(\)\) \? TR_POLL_PENDING/.test(sched), sched);

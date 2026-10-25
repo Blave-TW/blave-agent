@@ -43,6 +43,11 @@ ctx.reset(); ctx.run(PC({ status: "ok", ok_at: 1 }));
 ok("開框時早就 ok:不開爆發窗", !ctx.st().on && ctx.st().soon.length === 0, ctx.st());
 ctx.reset(); ctx.run(PC({ status: "ok", ok_at: 1 }), "prep");
 ok("開框時早就 ok、還在準備頁:也不開", !ctx.st().on && ctx.st().soon.length === 0, ctx.st());
+// 開框第一輪 presPC() 還是 null:不能拿那一輪當基準
+ctx.reset(); ctx.run(null); ctx.run(PC({ status: "ok", ok_at: 1 }));
+ok("第一輪 pc 還是 null、下一輪才看到早就 ok:不開爆發窗", !ctx.st().on && ctx.st().soon.length === 0, ctx.st());
+ctx.reset(); ctx.run(null); ctx.run(PC({ status: "running" })); ctx.run(PC({ status: "ok" }));
+ok("第一輪 pc 是 null、之後看著它從 running 變 ok:照樣開", ctx.st().on && ctx.st().soon.length === 1, ctx.st());
 
 console.log(red ? `${red} FAIL` : "all pass");
 process.exit(red ? 1 : 0);

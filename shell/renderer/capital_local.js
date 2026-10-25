@@ -292,7 +292,7 @@ function caplAdvance(view, cc) {
   }
   const setup = caplSec(cc, "setup"), worker = caplSec(cc, "worker"), probe = caplSec(cc, "probe");
   // 埋點只記這次開框真的看到它完成(開框時已經完成的不算)
-  if (!CAPL.base) CAPL.base = { setup: setup.status || null, probe: probe.status === "ok" ? probe.state : null, worker: worker.status || null };
+  if (!CAPL.base && cc) CAPL.base = { setup: setup.status || null, probe: probe.status === "ok" ? probe.state : null, worker: worker.status || null };
   if (setup.status === "ok" && CAPL.base.setup !== "ok") caplTrack("setup");
   if (probe.status === "ok" && probe.state === "ok" && CAPL.base.probe !== "ok") caplTrack("probe");
   // 這次開框看到下單程式起來:主畫面要等 daemon 重讀帳戶(runtime capital_local._ready)才有總權益,這幾秒改快輪詢接住
