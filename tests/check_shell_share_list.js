@@ -144,9 +144,9 @@ app.whenReady().then(async () => {
   const openCat = async () => { await js(`(async () => { if (document.getElementById("set-scrim").hidden) await setOpen(); setCat("shares"); })()`); };
   const pane = () => js(`(() => { const b = document.getElementById("set-shares"), q = (s) => b.querySelector(s), all = (s) => [...b.querySelectorAll(s)];
     return { hidden: b.hidden, head: q(".shl-head h6") && q(".shl-head h6").textContent, count: q(".shl-count") ? q(".shl-count").textContent : null, aria: q(".shl-count") ? q(".shl-count").getAttribute("aria-label") : null, sk: all(".shl-sk").length, msg: q(".shl-msg") ? q(".shl-msg").textContent : null,
-      mark: all(".fault-mark").length, btn: q(".shl-msgrow .btn-out") ? q(".shl-msgrow .btn-out").textContent : null,
+      skh: all(".shl-sk").map((x) => Math.round(x.getBoundingClientRect().height)), mark: all(".fault-mark").length, btn: q(".shl-msgrow .btn-out") ? q(".shl-msgrow .btn-out").textContent : null,
       rows: all(".shl-row").map((r) => { const n = r.querySelector(".shl-name"), g = r.querySelector(".shl-gone"), a = [...r.querySelectorAll(".shl-acts button")]; return { tag: n.tagName, name: n.textContent, html: n.children.length, sub: r.querySelector(".shl-sub").textContent, mono: r.querySelector(".shl-sub .mono").textContent,
-        gone: g ? g.textContent : null, acts: a.map((x) => x.className + ":" + x.textContent).join("|"), clip: n.scrollWidth > n.clientWidth, w: Math.round(r.getBoundingClientRect().width), h: Math.round(a[0].getBoundingClientRect().height) }; }) }; })()`);
+        gone: g ? g.textContent : null, acts: a.map((x) => x.className + ":" + x.textContent).join("|"), clip: n.scrollWidth > n.clientWidth, w: Math.round(r.getBoundingClientRect().width), h: Math.round(a[0].getBoundingClientRect().height), rh: Math.round(r.getBoundingClientRect().height), bt: getComputedStyle(r).borderTopWidth }; }) }; })()`);
 
   // 分類(0.1.32 方案 B:公開連結是帳號與方案裡的一個區段;「連結」只在平台開放手機查看時出,這個假主行程沒開放)
   const cats = await js(`[...document.querySelectorAll("#set-cats .set-cat")].map((b) => b.dataset.setCat + (b.hidden ? "(hidden)" : "")).join()`);
@@ -159,6 +159,7 @@ app.whenReady().then(async () => {
     && (await js(`document.querySelector('.set-cat[aria-current="true"]').dataset.setCat === "plan" && !document.getElementById("set-plan").hidden && document.getElementById("set-plan").contains(document.getElementById("set-shares"))`)), JSON.stringify(p));
   await wait(300); p = await pane();
   ok("④ 超過 200ms:骨架三列", p.sk === 3 && p.count === null, JSON.stringify(p));
+  const skH = p.skh;
   await wait(700); p = await pane();
   await js(`window.__s.listDelay = 0`);
   const yr = new Date((NOW - 86400 * 400) * 1000).getFullYear();
@@ -166,6 +167,7 @@ app.whenReady().then(async () => {
   ok("④ 標題:這台找得到 = 鈕;電腦版找不到 / 雲端(主機沒在跑、原報告不在)= 純文字;不可信字串當字畫、單行截斷", p.rows.map((r) => r.tag).join() === "BUTTON,SPAN,SPAN,SPAN" && p.rows[0].html === 0 && p.rows[0].name.includes("<b>x</b>") && p.rows[0].clip, JSON.stringify(p.rows.map((r) => [r.tag, r.html, r.clip])));
   ok("④ meta 行:類型 · 來源 · 公開時間 · 署名;類型缺就不出;不是今年的加年份;匿名用既有那個字", p.rows[0].sub === "市場報告 · 這台電腦 · " + p.rows[0].mono + " · 匿名" && /^\d\d\/\d\d \d\d:\d\d$/.test(p.rows[0].mono) && p.rows[1].sub === "電腦版 · " + p.rows[1].mono + " · Wei" && p.rows[2].sub.startsWith("研究報告 · 雲端 · ") && p.rows[3].mono.startsWith(yr + "/"), JSON.stringify(p.rows.map((r) => r.sub)));
   ok("④ 原因行:電腦版找不到原檔、雲端原報告被移除;雲端只是現在開不了不加", p.rows[0].gone === null && p.rows[1].gone === (await T("shl.gone")) && p.rows[2].gone === null && p.rows[3].gone === (await T("shl.goneCloud")), JSON.stringify(p.rows.map((r) => r.gone)));
+  ok("④ S19 列與列之間不畫線(靠 12＋12 的列距分組);骨架列跟真列同高", p.rows.every((r) => r.bt === "0px") && skH.length === 3 && p.rows.filter((r) => !r.gone).every((r) => skH.every((h) => Math.abs(h - r.rh) <= 1)), JSON.stringify({ sk: skH, rows: p.rows.map((r) => [r.rh, r.bt, !!r.gone]) }));
   ok("④ 動作:複製連結(btn-out 32 高)+ 取消分享(btn-quiet);列不超出內容欄", p.rows.every((r) => r.acts === "btn-out:複製連結|btn-quiet:取消分享" && r.h === 32 && r.w <= 440), JSON.stringify(p.rows.map((r) => [r.acts, r.h, r.w])));
   ok("④ 埋點:公開連結區段捲進畫面時送 share_list_open", (await js(`JSON.stringify(window.__s.tracked)`)).includes("share_list_open"));
 
