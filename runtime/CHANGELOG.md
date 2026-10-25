@@ -19,6 +19,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 - **統一本機開通完成後,主畫面也幾秒內就顯示已連接(`president_connect._local_start`／`_ready`、`local_daemon.run` 接 `on_ready` → `account_kick`)**:同上面群益那一條。`_local_start` 看到第一份好 snapshot、寫完 worker ok 就叫 `on_ready` 一次,daemon 2 秒內重讀帳戶;`lib/account_president` 只讀 `state/president_account.json`、不登入統一,所以不多打統一 API。雲端的 `run_finish`(NSSM)沒有 daemon,不動。電腦版開通框第一次看到 worker ok 時開一次爆發窗,判斷放在推進早退之前(變 ok 那一輪常碰上 `busy`／步驟回報)。測試 `tests/check_president_local_ready.py`(新;舊碼 4 條紅)、`tests/check_shell_president_ready.js`(新;舊碼 3 條紅)。
 - **群益 VC++ 提權:路徑跳脫連彎引號一起處理(`capital_local._PS_VC`;稽核 v032-final P2-1)**:PowerShell 把 U+2018–U+201B 也當單引號,原本只把 `'` 變 `''`,用戶名帶 `’`(如 O’Brien)的 `%TEMP%` 會讓字面值提早結束、提權腳本語法錯。改成五個字元都重複一次(同 `CodeGeneration.EscapeSingleQuotedStringContent`),命令維持純 ASCII。
 - **群益 VC++ 提權:只有 UAC 按否才算「取消」(`capital_local._PS_VC`;稽核 v032-final P2-3)**:原本 `catch { exit 1223 }` 把 `Start-Process` 的所有例外都當 UAC 按否,`powershell.exe` 不在、被 AppLocker/WDAC 擋時畫面也叫用戶按「是」。現在只有 Win32Exception 1223(本身或 InnerException)回 1223,其他回 1224,`setup.error` 是 `vcredist:1224`,畫面講代碼那一句。
+- **群益 VC++ 提權:驗簽與執行改用管理員專屬目錄裡的複本(`capital_local._PS_VC_ELEVATED`;稽核 v032-final P2-2 TOCTOU)**:安裝程式原本留在用戶可寫的 `%TEMP%`,驗完簽章到 `Start-Process` 之間(1618 重試時每 30 秒一次)可能被同 session 的程式換掉。提權腳本現在先在 `%ProgramData%` 開一個隨機名字、建立時就只給 SYSTEM／Administrators 的目錄,複製進去,驗簽、執行、重試都用那份複本,`finally` 刪掉目錄。簽章不對改成記 4 跳出迴圈(不在 try 裡 exit),其他例外記 1。
 
 ## 1.1.140 — 2026-10-24(desktop 0.1.31)
 

@@ -574,11 +574,32 @@ check("10c 路徑進提權腳本是單引號字面值:' 與 U+2018–U+201B 都�
       and ps_literal_end(lit) == len(lit) - 1, [m_esc and m_esc.group(0), lit])
 m_idle = re.search(r"function Test-MsiIdle \{.*?'Global\\_MSIExecute'.*?WaitOne\(0\)\) \{ \$m\.ReleaseMutex\(\); return \$true \}", inner)
 m_wait = re.search(r"\$w = 0; while \(-not \(Test-MsiIdle\) -and \$w -lt 90\) \{ Start-Sleep -Seconds 5; \$w \+= 5 \}", inner)
-m_loop = re.search(r"for \(\$i = 0; \$i -le 3; \$i\+\+\) \{ if \(\$i\) \{ Start-Sleep -Seconds 30 \}; \$s = Get-AuthenticodeSignature.*?\{ exit 4 \}; "
-                   r"\$r = \(Start-Process -FilePath \$f .*?-Wait -PassThru\)\.ExitCode; if \(\$r -ne 1618\) \{ break \} \}; exit \$r$", inner)
+m_loop = re.search(r"for \(\$i = 0; \$i -le 3; \$i\+\+\) \{ if \(\$i\) \{ Start-Sleep -Seconds 30 \}; \$s = Get-AuthenticodeSignature -LiteralPath \$c; .*?\{ \$r = 4; break \}; "
+                   r"\$r = \(Start-Process -FilePath \$c .*?-Wait -PassThru -ErrorAction Stop\)\.ExitCode; if \(\$r -ne 1618\) \{ break \} \} ", inner)
 check("10c 提權腳本:_MSIExecute 拿得到就放掉 = 空閒;每 5 秒看一次、最多等 90 秒", bool(m_idle and m_wait) and (capl.VC_MSI_WAIT_S, capl.VC_MSI_POLL_S) == (90, 5))
 check("10c 提權腳本:等完才跑;1618 等 30 秒再跑、最多再 3 次;每次跑前重驗簽章;結束碼交回", bool(m_loop) and inner.index("Test-MsiIdle) -and") < inner.index("for (")
       and (capl.VC_BUSY_RETRIES, capl.VC_BUSY_WAIT_S) == (3, 30))
+# 稽核 v032-final P2-2(TOCTOU):%TEMP% 是用戶可寫的,驗完簽章到執行之間檔案可能被換。提權腳本先開一個只有 SYSTEM／Administrators
+# 能寫的新目錄(建立當下就帶 ACL、隨機名字),把安裝程式複製進去,驗簽、執行、1618 重試都用那份複本,最後刪掉整個目錄。
+def at(x):
+    return inner.index(x) if x in inner else -1
+
+
+order = ["$d = Join-Path $env:ProgramData ('blave-vc-' + [guid]::NewGuid().ToString('N'))", "[IO.Directory]::CreateDirectory($d, $a)",
+         "$c = Join-Path $d 'vcredist_x64_2010.exe'", "Copy-Item -LiteralPath $f -Destination $c -ErrorAction Stop",
+         "Get-AuthenticodeSignature -LiteralPath $c", "Start-Process -FilePath $c", "finally { Remove-Item -LiteralPath $d -Recurse -Force", "exit $r"]
+pos = [at(x) for x in order]
+check("10c 提權腳本順序:開新目錄(建立時就帶 ACL)→ 複製 → 驗簽複本 → 跑複本 → finally 刪目錄 → 交回結束碼", -1 not in pos and pos == sorted(pos)
+      and inner.endswith("; exit $r"), list(zip(order, pos)))
+check("10c 驗簽與執行用同一份複本:提權腳本裡 $f 只出現在 Copy-Item(用戶 temp 那份不驗也不跑)", len(re.findall(r"\$f\b", inner)) == 1 and "-FilePath $f" not in inner
+      and "Get-AuthenticodeSignature -LiteralPath $f" not in inner)
+check("10c 新目錄的 ACL:不繼承、只給 SYSTEM 與 Administrators 完全控制、擁有者是 Administrators;沒有別的 SID",
+      "$a.SetAccessRuleProtection($true, $false)" in inner and "foreach ($n in 'S-1-5-18', 'S-1-5-32-544')" in inner
+      and "'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow'" in inner and "$a.SetOwner((New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')))" in inner
+      and sorted(set(re.findall(r"S-1-[0-9-]+", inner))) == ["S-1-5-18", "S-1-5-32-544"])
+check("10c 簽章不對不在 try 裡 exit(finally 要刪目錄):記 4 跳出迴圈;其他例外記 1", "{ exit 4 }" not in inner and "} catch { $r = 1 } finally {" in inner)
+# RunAs(ShellExecute)那條命令列據報約 2048 字被截:路徑(MAX_PATH 260)與外層參數也要塞得下
+check("10c 提權命令列塞得下:提權腳本 + 路徑 260 + 外層參數 < 2048", len(inner) + 260 + 120 < 2048, len(inner))
 src_vc = open(os.path.join(ROOT, "runtime", "capital_local.py"), encoding="utf-8").read()
 src_vc = src_vc[src_vc.index("def _ensure_vc("):src_vc.index("def _x64_members(")]
 check("10c Python 這層不再重跑 Start-Process(_ensure_vc 沒有迴圈、沒有 sleep)", "for " not in src_vc and "while " not in src_vc and "sleep" not in src_vc)

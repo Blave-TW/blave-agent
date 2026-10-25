@@ -599,20 +599,35 @@ VC_MSI_POLL_S = 5
 VC_BUSY_RETRIES = 3   # … then 1618 (another install running, e.g. Windows Update right after boot) retries
 VC_BUSY_WAIT_S = 30
 
-_PS_SIG_OK = ("$s = Get-AuthenticodeSignature -LiteralPath $f; "
-              "if ($s.Status -ne 'Valid' -or $s.SignerCertificate.GetNameInfo('SimpleName', $false) -ne 'Microsoft Corporation') { exit 4 }; ")
+def _ps_sig_ok(var, bad):
+    return (f"$s = Get-AuthenticodeSignature -LiteralPath {var}; "
+            f"if ($s.Status -ne 'Valid' -or $s.SignerCertificate.GetNameInfo('SimpleName', $false) -ne 'Microsoft Corporation') {{ {bad} }}; ")
+
+
 # Runs elevated. The wait and the retries live here so the user sees one UAC prompt, not one per try.
 # _MSIExecute is held while any install runs: getting it (and letting go at once) = Installer is idle.
-# The signature is checked again right before each run: the file sits in a user-writable temp dir.
+# $f sits in the user's %TEMP%, which any process of theirs can rewrite between the signature check and the run.
+# So the file is first copied into a fresh ProgramData folder that only SYSTEM/Administrators can write (the ACL is
+# set by CreateDirectory itself, so there is no moment with the inherited one; the name is random so nobody can
+# pre-create it), and the check, the run and every retry use that copy. The folder goes in `finally`, which is
+# why a bad signature sets $r instead of exiting.
 _PS_VC_ELEVATED = (
     "function Test-MsiIdle { try { $m = New-Object System.Threading.Mutex($false, 'Global\\_MSIExecute') } catch { return $false }; "
     "try { if ($m.WaitOne(0)) { $m.ReleaseMutex(); return $true }; return $false } "
     "catch [System.Threading.AbandonedMutexException] { $m.ReleaseMutex(); return $true } catch { return $false } finally { $m.Dispose() } }; "
+    "$r = 1; $d = Join-Path $env:ProgramData ('blave-vc-' + [guid]::NewGuid().ToString('N')); try { "
+    "$a = New-Object Security.AccessControl.DirectorySecurity; $a.SetAccessRuleProtection($true, $false); "
+    "foreach ($n in 'S-1-5-18', 'S-1-5-32-544') { $a.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule("
+    "(New-Object Security.Principal.SecurityIdentifier($n)), 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow'))) }; "
+    "$a.SetOwner((New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544'))); "
+    "[void][IO.Directory]::CreateDirectory($d, $a); "
+    "$c = Join-Path $d 'vcredist_x64_2010.exe'; Copy-Item -LiteralPath $f -Destination $c -ErrorAction Stop; "
     f"$w = 0; while (-not (Test-MsiIdle) -and $w -lt {VC_MSI_WAIT_S}) {{ Start-Sleep -Seconds {VC_MSI_POLL_S}; $w += {VC_MSI_POLL_S} }}; "
     f"for ($i = 0; $i -le {VC_BUSY_RETRIES}; $i++) {{ "
-    f"if ($i) {{ Start-Sleep -Seconds {VC_BUSY_WAIT_S} }}; " + _PS_SIG_OK +
-    "$r = (Start-Process -FilePath $f -ArgumentList '/q', '/norestart' -Wait -PassThru).ExitCode; "
-    "if ($r -ne 1618) { break } }; exit $r")
+    f"if ($i) {{ Start-Sleep -Seconds {VC_BUSY_WAIT_S} }}; " + _ps_sig_ok("$c", "$r = 4; break") +
+    "$r = (Start-Process -FilePath $c -ArgumentList '/q', '/norestart' -Wait -PassThru -ErrorAction Stop).ExitCode; "
+    "if ($r -ne 1618) { break } } "
+    "} catch { $r = 1 } finally { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue }; exit $r")
 # Not elevated: refuse a bad file before any prompt, then start the elevated script above once and hand back its
 # exit code. The path reaches it as a quoted literal: an elevated process does not get our env. PowerShell also
 # ends a single-quoted string on U+2018–U+201B, so those are doubled too (as EscapeSingleQuotedStringContent does)
@@ -624,7 +639,7 @@ _PS_VC_ELEVATED = (
 # AppLocker/WDAC, another ShellExecute error) never showed a prompt, so it exits 1224 and the row shows the code
 # instead of asking the user to click Yes. Without the catch, a non-terminating Start-Process error would leave
 # $p null and exit 0 (not seen on a box yet).
-_PS_VC = ("$f = $env:CAPL_VC; " + _PS_SIG_OK +
+_PS_VC = ("$f = $env:CAPL_VC; " + _ps_sig_ok("$f", "exit 4") +
           "$i = \"`$f = '\" + ($f -replace '[''\\u2018-\\u201B]', '$0$0') + \"'; \" + $env:CAPL_VC_ELEVATED; "
           "try { $p = Start-Process -FilePath ($PSHOME + '\\powershell.exe') -ArgumentList '-NoProfile', '-NonInteractive', "
           "'-WindowStyle', 'Hidden', '-Command', $i -Verb RunAs -Wait -PassThru -ErrorAction Stop } catch { "
