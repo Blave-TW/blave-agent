@@ -150,11 +150,17 @@ function hintFill(n) {
    - 設定 › 模型接入的〔登入〕:照舊寫共用訊息格(setHint),成功停在那一頁。
    失敗的退路(rowMsg / cmdLine):CLI 版寫出終端機指令;ChatGPT app 版請他在 app 裡登入。 */
 const LOGIN_CMD = { claude: "claude auth login", codex: "codex login" };
-// 「已在瀏覽器開啟」要等子行程活過 1 秒才講:跑不起來(127、ENOENT)的會在那之前就結束,不能說一件沒發生的事
+// 「已在瀏覽器開啟」要等子行程活過 1 秒才講:跑不起來(127、ENOENT)的會在那之前就結束,不能說一件沒發生的事。
+// 1 秒從主行程 spawn 那一刻(agent-login-spawned)起算:spawn 前要先跑一兩秒偵測,從按下去算會提早講
 const LOGIN_OPENED_MS = 1000;
+let loginSpawned = null;
+window.blave.onAgentLoginSpawned(() => { if (loginSpawned) loginSpawned(); });
 async function agentLoginRun(kind, onOpened) {
+  const spawned = new Promise((res) => { loginSpawned = res; });
   const p = window.blave.agentLogin(kind);
-  const early = await Promise.race([p, new Promise((res) => setTimeout(res, LOGIN_OPENED_MS, null))]);
+  const opened = spawned.then(() => new Promise((res) => setTimeout(res, LOGIN_OPENED_MS, null)));
+  const early = await Promise.race([p, opened]);
+  loginSpawned = null;
   if (early === null && loginPending === kind) onOpened();
   return p;
 }

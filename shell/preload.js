@@ -173,6 +173,7 @@ contextBridge.exposeInMainWorld("blave", {
   reportLoad: (id) => ipcRenderer.invoke("report-load", id),
   cancelAgentLogin: () => ipcRenderer.invoke("cancel-agent-login"),
   agentLogin: (kind) => ipcRenderer.invoke("agent-login", kind),
+  onAgentLoginSpawned: (fn) => ipcRenderer.on("agent-login-spawned", () => fn()),   // 登入行程 spawn 了(偵測跑完之後)
   signOutBlave: () => ipcRenderer.invoke("sign-out-blave"),
   mobileViewState: () => ipcRenderer.invoke("mobile-view-state"),
   mobileViewSet: (on) => ipcRenderer.invoke("mobile-view-set", on === true),

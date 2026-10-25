@@ -229,7 +229,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
   // 偵測跑的可能是 SDK 隨包那顆 claude:不帶 DISABLE_AUTOUPDATER 它會在背景抓 330MB 新版
   const envOut = await run(process.execPath, ["-e", "process.stdout.write(String(process.env.DISABLE_AUTOUPDATER))"], process.env.PATH, 5000);
   t("run:子行程的 env 帶 DISABLE_AUTOUPDATER=1", envOut.code === 0 && envOut.stdout === "1", envOut);
-  { const al = src.match(/^async function agentLogin\(kind\) \{[\s\S]*?\n\}/m);
+  { const al = src.match(/^async function agentLogin\(kind, onSpawn\) \{[\s\S]*?\n\}/m);
     t("agentLogin:spawn 的 env 也帶 DISABLE_AUTOUPDATER=1(登入用的也可能是隨包那顆)", !!al && /spawn\([\s\S]*?env: \{ \.\.\.process\.env, PATH: envPath, DISABLE_AUTOUPDATER: "1" \}/.test(al[0])); }
   // claude auth status 跑不起來(退出碼非 0、沒有輸出)不是「回的不是 JSON」:只有退出碼 0 才記 json=false
   { const da = src.match(/^async function detectAgents\(\) \{[\s\S]*?\n\}/m), dw = src.match(/^function detectWhy\(kind, r\) \{[\s\S]*?\n\}/m);

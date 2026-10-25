@@ -305,7 +305,7 @@ async function detectAgents() {
    結束碼 0 = 成功。五分鐘沒完成就收掉,免得留一個孤兒行程佔著回呼的 port。
    回 { ok, cancelled, code, cantRun }:code = 結束碼(開不起來是 ENOENT 之類的字,被收掉是 null);cantRun 時畫面講「無法啟動」、不叫他重登 */
 let loginChild = null;
-async function agentLogin(kind) {
+async function agentLogin(kind, onSpawn) {
   if (loginChild) return { ok: false, busy: true };
   // spawn 之前先佔位:偵測要跑一兩秒,這段時間按「取消等待」要算數、第二個登入也要擋掉
   const slot = loginChild = { __cancelled: false };
@@ -322,6 +322,8 @@ async function agentLogin(kind) {
     const child = spawn(w.file, kind === "claude" ? ["auth", "login"] : ["login"],
       { env: { ...process.env, PATH: envPath, DISABLE_AUTOUPDATER: "1" }, stdio: "ignore", shell: w.shell, windowsHide: true });
     loginChild = child;
+    // 畫面的「已在瀏覽器開啟」1 秒從這裡起算,偵測那一兩秒不算(稽核 P2-2)
+    if (onSpawn) onSpawn();
     const timer = setTimeout(() => child.kill(), 5 * 60 * 1000);
     // cancelled:用戶自己按了「取消等待」——不是失敗,renderer 不顯示失敗句
     let settled = false;
@@ -3655,7 +3657,8 @@ app.whenReady().then(() => {
   handle("reports-list", () => reportsList(), { reports: [] });
   handle("report-load", (_e, id) => reportLoad(id), null);
   handle("sign-out-blave", () => signOutBlave());
-  handle("agent-login", (_e, kind) => agentLogin(String(kind || "")));
+  handle("agent-login", (e, kind) => agentLogin(String(kind || ""),
+    () => { if (!e.sender.isDestroyed()) e.sender.send("agent-login-spawned"); }));
   handle("cancel-agent-login", () => cancelAgentLogin());
   handle("stop-turn", () => stopTurn(), false);
   // 自帶 API 金鑰:只有 set(驗過才存)/ test(重驗已存的那把)/ remove,加一支不帶值的取消。**沒有任何一支把金鑰交回畫面**

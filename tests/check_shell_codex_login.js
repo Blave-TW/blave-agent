@@ -137,6 +137,7 @@ exit 2
   const R = new Function("document", "$", "t", "getLang", "window", "state",
     `let LANG; const sync = () => { LANG = getLang(); };
      let loginPending = null, oauthPending = false, lastDetect = null, cur = null, HINT = null, detects = 0, said = [];
+     let loginSpawned = null;
      const MDL = { busy: false }, mdlPaint = () => {}, paintBlaveBtn = () => {}, connect = (k) => { state.connected = k; }, srSay = (x) => said.push(x), trackEvent = () => {};
      const cmdLine = (k) => k;
      function detect() { detects++; detectAt = Date.now(); }
@@ -192,14 +193,31 @@ exit 2
     t("三處接字(setHint、模型接入、帳號訊息格)都走 hintFill,不再自己接空格",
       !/HINT\.text \+ \(HINT\.cmd \? " " : ""\)/.test(app) && (app.match(/hintFill\((n|p|hint)\);/g) || []).length === 3); }
 
-  // 「已在瀏覽器開啟」等 1 秒:跑不起來的子行程在那之前就結束,不講
-  { const run = async (ms, res) => { let opened = 0; R.set("loginPending", "codex");
-      const w = { agentLogin: () => new Promise((r) => setTimeout(() => r(res), ms)) };
-      const f = new Function("window", "loginPending", "LOGIN_OPENED_MS", fnOf(app, "agentLoginRun") + "\nreturn agentLoginRun;")({ blave: w }, "codex", 1000);
-      const r = await f("codex", () => opened++); return { opened, r }; };
-    const fast = await run(50, { ok: false, code: 127, cantRun: true }), slow = await run(1300, { ok: true, code: 0 });
-    t("agentLoginRun:127 在 1 秒內結束 → 不講「已開瀏覽器」、結果照回;活過 1 秒 → 講一次", fast.opened === 0 && fast.r.code === 127 && slow.opened === 1 && slow.r.ok === true, { fast, slow });
-    R.set("loginPending", null); }
+  // 「已在瀏覽器開啟」等 1 秒,從主行程 spawn 那一刻(agent-login-spawned)起算(稽核 P2-2)
+  const LISTEN = grab(app, /^window\.blave\.onAgentLoginSpawned\(.*$/m, "onAgentLoginSpawned 掛勾");
+  // blave = 假的 preload:agentLogin(kind, emit) 由呼叫端決定何時送 spawned、何時結束
+  const mkRun = (login) => { let listener = null; let pending = "codex";
+    const blave = { onAgentLoginSpawned: (fn) => { listener = fn; }, agentLogin: (k) => login(k, () => listener && listener()) };
+    const f = new Function("window", "LOGIN_OPENED_MS", "getPending",
+      "let loginSpawned = null; const lp = () => getPending();\n" + LISTEN + "\n" + fnOf(app, "agentLoginRun").replace(/loginPending/g, "lp()") + "\nreturn agentLoginRun;")({ blave }, 1000, () => pending);
+    return async (kind) => { let opened = 0; const r = await f(kind, () => opened++); return { opened, r }; }; };
+  { const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+    const fake = (spawnAt, endAt, res) => mkRun(async (_k, emit) => { if (spawnAt !== null) { await wait(spawnAt); emit(); } await wait(endAt - (spawnAt || 0)); return res; });
+    const [fast, slow, lateSpawn127, noSpawn] = await Promise.all([fake(0, 50, { ok: false, code: 127, cantRun: true })("codex"), fake(0, 1300, { ok: true, code: 0 })("codex"),
+      fake(1500, 1600, { ok: false, code: 127, cantRun: true })("codex"), fake(null, 1300, { ok: false, cancelled: true })("codex")]);
+    t("agentLoginRun:spawn 後 1 秒內結束(127)→ 不講;活過 1 秒 → 講一次", fast.opened === 0 && fast.r.code === 127 && slow.opened === 1 && slow.r.ok === true, { fast, slow });
+    t("…偵測拖了 1.5 秒才 spawn、接著 127 → 不講(從按下去算會在 1 秒時提早講);沒 spawn 就結束(取消、busy)→ 不講",
+      lateSpawn127.opened === 0 && lateSpawn127.r.code === 127 && noSpawn.opened === 0, { lateSpawn127, noSpawn }); }
+  if (POSIX) {
+    // 主行程原文接畫面原文:偵測慢(login status 睡 1.5 秒),登入行程一起來就 127 → 不講;活 1.3 秒 → 講
+    const d = binDir("bslowdetect"), p = path.join(d, "codex"); const m = mkMain(PATH_OF(d), MISSING_APP, null);
+    const body = (login) => `#!/bin/sh\nif [ "$1" = "login" ] && [ "$2" = "status" ]; then sleep 1.5; exit 1; fi\nif [ "$1" = "login" ]; then ${login}; fi\nexit 2\n`;
+    script(p, body("exit 127")); const a = await mkRun((k, emit) => m.agentLogin(k, emit))("codex");
+    script(p, body("sleep 1.3; exit 0")); const b = await mkRun((k, emit) => m.agentLogin(k, emit))("codex");
+    t("…真的主行程:偵測慢、登入行程 127 → 不講「已開啟」;登入行程活過 1 秒 → 講", a.opened === 0 && a.r.code === 127 && b.opened === 1 && b.r.ok === true, { a, b });
+  }
+  t("…主行程在 spawn 之後才送 agent-login-spawned,只送給按的那個畫面", /loginChild = child;\n[^\n]*\n    if \(onSpawn\) onSpawn\(\);/.test(src)
+    && /handle\("agent-login", \(e, kind\) => agentLogin\(String\(kind \|\| ""\),\s*\(\) => \{ if \(!e\.sender\.isDestroyed\(\)\) e\.sender\.send\("agent-login-spawned"\); \}\)\);/.test(src));
 
   // 回到前景重偵測:只在連結畫面(或模型接入)開著、有不能用的、沒在等登入、15 秒內不重來
   { $("view-connect").hidden = false; $("set-scrim").hidden = true; $("set-model").hidden = true;
