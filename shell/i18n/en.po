@@ -5709,7 +5709,7 @@ msgid "cap.s.setupRun"
 msgstr "Installing…"
 
 msgid "cap.s.setupFail"
-msgstr "The Capital components didn't install."
+msgstr "The Capital components didn’t install."
 
 msgid "capl.setupBusy"
 msgstr "Windows is installing something else, often updates. Try again in a few minutes."
