@@ -165,6 +165,30 @@ reply, chunks, stored = run("desktop-nonarr", None)
 errs = [c for c in chunks if c["type"] == "error"]
 ok("整輪、沒有旁白:走錯誤句(不是無聲的空 done)", errs and reply and "<await" not in reply, (reply, errs))
 
+# 續跑那一次真的寫出回覆:第一次那段標記不能黏在新回覆前面(等你回覆、舊建議、骨架截斷都會跟著錯)
+REAL = "完整規則:收在上軌之外做多,回到中軌出場。"
+for n, (label, dead) in enumerate([("<await/>", "<await/>"), ("<suggest>", "<suggest>\n舊建議\n</suggest>"),
+                    ("prompt 骨架", "[用中文回覆這則訊息]")]):
+    async def resumed(prompt, options, dead=dead):
+        calls.append(prompt)
+        if len(calls) == 1:
+            yield sdk.AssistantMessage(content=[sdk.TextBlock(text=NARR), sdk.ToolUseBlock(id="r1", name="Bash",
+                                                                                          input={"command": "echo"})])
+            yield sdk.AssistantMessage(content=[sdk.TextBlock(text=dead)])
+        else:
+            yield sdk.AssistantMessage(content=[sdk.TextBlock(text=REAL)])
+    calls.clear()
+    sdk.query = resumed
+    sid = f"desktop-resume-{n}"
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+        reply = asyncio.run(at.run_turn(sid, "第一個的完整進出場規則", "sonnet", at.LocalSink(sid)))
+    chunks = [json.loads(l[9:]) for l in out.getvalue().splitlines() if l.startswith("@@BLAVE@@")]
+    done = [c for c in chunks if c["type"] == "done"]
+    ok(f"續跑寫出回覆({label}):回覆就是續跑那段", reply == REAL, reply)
+    ok(f"續跑寫出回覆({label}):不帶第一次的等你回覆／建議", done and done[-1]["awaiting"] is False
+       and not any(c["type"] == "suggestions" for c in chunks), chunks[-3:])
+
 print()
 print("ALL PASS" if not fails else f"{len(fails)} FAILED: {fails}")
 sys.exit(1 if fails else 0)

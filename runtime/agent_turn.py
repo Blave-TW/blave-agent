@@ -2374,6 +2374,10 @@ class TelegramSink:
         """這一輪有沒有真正的回覆文字(旁白 _last_status 不算、只有標記也不算)。run_turn 的空回合判定。"""
         return _counts_as_reply(self.chunk_text) or any(_counts_as_reply(s) for s in self.segments)
 
+    def drop_non_reply(self):
+        """同 WebSink.drop_non_reply:泡泡那則由 finalize 的 finish 換掉。"""
+        self.chunk_text = ""
+
     async def stop(self):
         if self.typing_task:
             self.typing_task.cancel()
@@ -3482,6 +3486,15 @@ class WebSink:
     def has_reply(self):
         """同 TelegramSink.has_reply。段首暫留(_head_hold)的字還沒進 full_text,也算。"""
         return _counts_as_reply(self.full_text + (self._head_hold or ""))
+
+    def drop_non_reply(self):
+        """空回合續跑之前:has_reply() 判為不算回覆的那段(只有標記)丟掉,不然續跑寫出的回覆會接在它後面——
+        等你回覆、舊建議跟著出,骨架開頭還會把新回覆整段截掉。已送出去的那段叫前端清掉。"""
+        if self._nav_fired and self._nav_fired_seg == self._seg_start:
+            self._nav_fired = False
+        if self.full_text:
+            self._send({"type": "text_replace", "text": ""})
+        self.full_text, self._pending, self._seg_start, self._head_hold = "", "", 0, ""
 
     async def stop(self):
         pass
@@ -4796,6 +4809,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                 break
             print(f"[agent_turn] empty reply — resuming once (tools={len(tool_steps)}, "
                   f"{elapsed:.0f}s, ${spent_usd:.2f} spent)", file=sys.stderr)
+            sink.drop_non_reply()
             # The original message goes in again, not a literal 「繼續」: the language pin is
             # derived from it, and `recent` (read before this turn's user row was written)
             # would otherwise hold the request twice.
