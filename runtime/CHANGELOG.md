@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.141 — 2026-10-26(desktop 0.1.32)
+
 - **群益本機開通「安裝群益元件」的 VC++ 2010 一步講得出原因、別的安裝在跑會自己再試(`capital_local._ensure_vc`、`_PS_VC`;Windows Server 2022 剛開機半小時真機失敗一次、同 session 重跑就過)**:原本 `_PS_VC` 的結束碼被丟掉,`setup.error` 只寫得出 `SETUP_FAILED:vcredist`;UAC 按否時 `Start-Process` 若只寫非終止錯誤,`$p` 是空的、腳本會以 0 結束(推論,真機未見)。現在接住例外回 1223,依結束碼分:4 → `vcredist:sig`(不重試);等待與重試都在提權的那一個 PowerShell 裡做、整個流程只跳一次 UAC(一般管理員帳號每次 RunAs 都會再問):先用 `Global\_MSIExecute` mutex 等 Windows Installer 空閒(每 5 秒看一次、最多 90 秒),跑完仍是 1618(另一個安裝在跑)就等 30 秒再跑、最多再 3 次,每次跑前重驗簽章,仍是 1618 → `vcredist:1618`;3010／1641 而 DLL 已在算成功、不在 → `vcredist:reboot`;1223 → `vcredist:denied`(只有一次 UAC,所以只可能是那一次被拒);其他非 0 → `vcredist:<代碼>`。重試期間 `setup` 維持 `running`。電腦版 `l-setup-fail` 那一列依原因換一句(更新中／按「是」／重新開機／原句加代碼),讀不懂的照舊原本那句。測試 `tests/check_capital_local.py` 10c(要用 `/usr/bin/python3`,提權腳本的流程照原文驗、沒有在 Windows 上跑過)、`tests/check_shell_capital_local_view.js`。
 - **Bitget 的 lib 已就緒、閘門還關著(0.1.33 打開)**(`venue_traits` 的 `bitget` `verified_modes` = `()`;2026-10-22 經典主帳戶真帳驗過,Wei 決定 0.1.32 先不開):`account_reader` 不讀 Bitget、`local_daemon` 不放行 `BITGET`、電腦版連接框兩個視角都不列(`cloudcmd.BITGET_VERIFIED_MODES` 同為空)、聊天綁定不收,lib 不簽任何私有請求。開了之後的句子已先備好:統一帳戶(UTA)的金鑰由 lib 拒絕,講「還不支援」、叫人改綁經典帳戶(不叫人切回:升級過的子帳戶切不回);金鑰讀不到 UTA 設定時,UTA 沒開放就同樣講還不支援、不叫人去勾權限;電腦版連接框、設定分頁讀帳那一列、下單失敗卡都照實講還不支援(`trErrToken` 先認 `[bitget_account_mode:uta]`,原本落成 `tr.err.key`「交易所拒絕這把金鑰」)。測試 `tests/check_shell_trade.js`、`tests/check_bitget_surfaces.py`。
 - **`account_reader` 不讀還沒真帳驗證的交易所**(`venue_traits` 的 `verified_modes` 是空的):機器上有 `BITGET_*` 金鑰也不會出現在投資組合頁;lib 自己的簽章閘門另外擋住所有私有呼叫。
