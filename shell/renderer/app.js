@@ -213,8 +213,9 @@ async function localLogin(kind, b) {
     else { ROWMSG[kind] = "failed"; paintRows(lastDetect); srSay(rowMsgText(kind, "failed")); }
   }
   // detect() 把整列重畫了,焦點會掉回 body:放回這一列的鈕(成功=「連結」,失敗=「再試一次」/「登入」)
-  // 那一列變「無法啟動」沒有鈕了:設定 › 模型接入退到「重新偵測」(焦點掉到 body 的話 Esc 關不掉設定)
-  const again = host() && (host().querySelector('[data-kind="' + kind + '"] button') || host().querySelector('[data-kind="redetect"] button'));
+  // 那一列變「無法啟動」沒有鈕了:退到同一個表面的「重新偵測」(焦點掉到 body 的話 Esc 關不掉設定)。
+  // 連結畫面那一顆在 .cn-head(#btn-redetect),不在 #agent-rows 裡
+  const box = host(), again = box && (box.querySelector('[data-kind="' + kind + '"] button') || (inRow ? $("btn-redetect") : box.querySelector('[data-kind="redetect"] button')));
   if (again) again.focus();
 }
 

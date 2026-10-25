@@ -126,7 +126,7 @@ exit 2
       append: (...xs) => xs.forEach((x) => { if (typeof x === "string") n.children.push({ text: x }); else if (x.frag) x.children.forEach((c) => { c.parent = n; n.children.push(c); }); else { x.parent = n; n.children.push(x); } }),
       appendChild: (x) => { n.append(x); return x; },
       addEventListener: (ev, fn) => { if (ev === "click") n.onclick = fn; },
-      setAttribute: (k, v) => { n.attrs[k] = String(v); }, querySelector: () => null,
+      setAttribute: (k, v) => { n.attrs[k] = String(v); }, querySelector: () => null, focus: () => {},
       querySelectorAll: (q) => { const out = []; const walk = (x) => (x.children || []).forEach((c) => { if (q === "button" && c.tag === "button") out.push(c); walk(c); }); walk(n); return out; },
       closest: (q) => { const k = (q.match(/data-kind="([^"]+)"/) || [])[1]; let p = n; while (p) { if (k && p.dataset && p.dataset.kind === k) return p; if (q === ".cn-opts" && p.className === "cn-opts") return p; p = p.parent; } return null; } };
     Object.defineProperty(n, "textContent", { get: () => n.children.map((c) => c.text !== undefined ? c.text : c.textContent).join("") + n._txt, set: (v) => { n.children.length = 0; n._txt = v; } });
@@ -206,6 +206,14 @@ exit 2
     t("localLogin:設定 › 模型接入 127 → 那一列改 why=codex_cantrun、讀屏念「無法啟動」、沒有「登入沒有完成」;一般失敗(1)照舊出失敗句",
       a.why === "codex_cantrun" && aHint === null && aSaid.includes("無法啟動") && c.why === "codex_nonzero" && cHint && cHint.text === "Codex 登入沒有完成。" && cHint.cmd === "codex", { a, aHint, aSaid, c, cHint });
     t("…連結畫面 ENOENT → 那一列「無法啟動」、沒有鈕、沒有失敗訊息", e.why === "codex_cantrun" && R.ROWMSG.codex === null && rows()[1] === "codex|off|無法啟動||", rows());
+    // 那一列沒有鈕了,焦點不能掉到 body(設計師 D2):連結畫面給 .cn-head 的「重新偵測」(#btn-redetect),設定給本機那組底下的「重新偵測」
+    const focused = []; $("btn-redetect").focus = () => focused.push("cn-head");
+    await go(mkEl("button"), { ok: false, cancelled: false, code: 127, cantRun: true });
+    const spy = { focus: () => focused.push("set-model") }, setModel = $("set-model"), qs0 = setModel.querySelector;
+    setModel.querySelector = (q) => (q === '[data-kind="redetect"] button' ? spy : null);
+    await go(inSet(), { ok: false, cancelled: false, code: 127, cantRun: true });
+    setModel.querySelector = qs0;
+    t("…變「無法啟動」之後焦點有落點:連結畫面 → .cn-head 的重新偵測、設定 › 模型接入 → 那一頁的重新偵測", JSON.stringify(focused) === JSON.stringify(["cn-head", "set-model"]), focused);
     RSTATE.next = null; R.set("loginPending", null); }
 
   // 共用訊息格(三個表面同一支 hintFill):中文句尾全形標點後不補空格,英文補一個
