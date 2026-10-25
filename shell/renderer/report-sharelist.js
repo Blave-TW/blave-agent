@@ -51,25 +51,35 @@ function shlLimitFromCode(code, limit, limits) {
 }
 /* ── 純邏輯到此 ── */
 
-const SHL = { seq: 0, rows: null, limits: null, view: "idle" };   // view:idle / skel / list / empty / fail / gate / relogin
+const SHL = { seq: 0, rows: null, limits: null, view: "idle" };   // view:idle / skel / list / empty / fail / gate / relogin(gate = 沒登入:整段不畫)
 
 /* ── 設定 › 帳號與方案 › 公開連結 ─────────────────────────────────── */
-// app.js 的 setCat 切到「帳號與方案」時叫:每次重抓(取消分享可能發生在另一台電腦或 web)
+// app.js 的 setCat 切到「帳號與方案」時叫:每次重抓(取消分享可能發生在另一台電腦或 web)。沒登入不抓:區段整段不畫
 function shlOpen() {
   shlWatch();
-  shlLoad();
+  if (hasToken) shlLoad(); else { SHL.seq++; SHL.view = "gate"; shlPaint(); }
 }
-/* share_list_open 只在這一區段真的捲進畫面時記(同一頁上面是帳號與方案,開這一類不等於看了清單);區段藏起來再出現 = 再看一次 */
+// 登入狀態變了(app.js acctPaintAcct):帳號與方案開著才動——登出收掉區段,登入回來重抓
+function shlAuthSync() {
+  const box = $("set-shares"); if (!box || $("set-scrim").hidden || $("set-plan").hidden) return;
+  if (!hasToken && !box.hidden) { SHL.seq++; SHL.view = "gate"; shlPaint(); }
+  else if (hasToken && SHL.view === "gate") shlLoad();
+}
+/* share_list_open 只在這一區段真的捲進畫面時記(同一頁上面是帳號與方案,開這一類不等於看了清單);區段藏起來再出現 = 再看一次。沒登入區段不存在,不記 */
 let SHL_IO = null;
 function shlWatch() {
   if (SHL_IO || typeof IntersectionObserver !== "function") return;
-  SHL_IO = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) libTrack("share_list_open"); });
+  SHL_IO = new IntersectionObserver((es) => { if (hasToken && !$("set-shares").hidden && es.some((e) => e.isIntersecting)) libTrack("share_list_open"); });
   SHL_IO.observe($("set-shares"));
 }
-// 從分享框「看公開連結」來的(setCat("shares") → SHL_SCROLL):捲到區段標題、焦點給它
+// 從分享框「看公開連結」來的(setCat("shares") → SHL_SCROLL):捲到區段標題、焦點給它。
+// 沒登入區段不存在:停在帳號與方案頂端,焦點給方案區那一顆「登入 Blave」(planPaint 已經畫好)
 function shlReveal() {
-  const h = $("shl-h"); if (!h) return;
-  h.scrollIntoView({ block: "start" }); h.focus({ preventScroll: true });
+  const h = $("shl-h");
+  if (h && !$("set-shares").hidden) { h.scrollIntoView({ block: "start" }); h.focus({ preventScroll: true }); return; }
+  const sc = document.querySelector(".set-content"); if (sc) sc.scrollTop = 0;
+  const b = [...$("set-plan-main").querySelectorAll(".plan-act button")].pop();
+  if (b) b.focus({ preventScroll: true });
 }
 async function shlLoad() {
   const seq = ++SHL.seq;
@@ -98,6 +108,8 @@ function shlPaint() {
   const box = $("set-shares"); if (!box) return;
   const hadHead = !!document.activeElement && document.activeElement.id === "shl-h";
   box.textContent = "";
+  box.hidden = !hasToken || SHL.view === "gate";   // 沒登入整段不畫(標題、清單、登入鈕都不出):方案區已經有一顆「登入 Blave」
+  if (box.hidden) return;
   const head = libEl("div", "shl-head"), h = libEl("h6", "set-gl", t("set.cat.shares")); h.id = "shl-h"; h.tabIndex = -1;
   head.appendChild(h);
   if (SHL.view === "list") head.appendChild(shlCount());
@@ -105,11 +117,11 @@ function shlPaint() {
   if (hadHead) h.focus({ preventScroll: true });   // 載入 → 骨架 → 清單每次重畫都換新節點:焦點留在區段標題上
   if (SHL.view === "skel") { [[82, 54], [64, 48], [74, 57]].forEach((w) => { const r = libEl("div", "shl-sk"), a = libEl("span", "sk"), b = libEl("span", "sk s"); a.style.width = w[0] + "%"; b.style.width = w[1] + "%"; r.append(a, b); box.appendChild(r); }); return; }
   if (SHL.view === "empty") { box.appendChild(libEl("p", "shl-msg q", t("shl.empty"))); return; }
-  if (SHL.view === "fail" || SHL.view === "gate" || SHL.view === "relogin") {
+  if (SHL.view === "fail" || SHL.view === "relogin") {
     const row = libEl("div", "shl-msgrow");
-    if (SHL.view !== "gate") { const m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); row.appendChild(m); }
-    row.appendChild(libEl("p", "shl-msg", t(SHL.view === "fail" ? "shl.loadFail" : SHL.view === "gate" ? "shl.gate" : "conn.expired")));
-    // 登入那兩態用 signInLabel:等待中切走再切回來被重畫,也是「取消等待」、按了有反應(稽核 r2 S4)
+    const m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); row.appendChild(m);
+    row.appendChild(libEl("p", "shl-msg", t(SHL.view === "fail" ? "shl.loadFail" : "conn.expired")));
+    // 登入失效用 signInLabel:等待中切走再切回來被重畫,也是「取消等待」、按了有反應(稽核 r2 S4)
     const b = SHL.view === "fail" ? libEl("button", "btn-out", t("br.reload")) : signInLabel(libEl("button", "btn-out"), t("cn.blave.btn")); b.type = "button";
     b.addEventListener("click", SHL.view === "fail" ? shlLoad : () => shlSignIn(b));
     row.appendChild(b); box.appendChild(row);
@@ -160,7 +172,7 @@ function shlFlash(btn) {
   btn.textContent = t("shr.copied"); srSay(t("shr.copied"));
   btn._shlT = setTimeout(() => { if (btn.isConnected) btn.textContent = t("shr.copy"); }, SHL_FLASH_MS);
 }
-// 沒登入 / 登入失效:原地登入,不跳去帳號與方案那一類;登入回來重抓清單(之前是切回這一類時 shlOpen 才抓)
+// 登入失效:原地登入,不跳去帳號與方案那一類;登入回來重抓清單(之前是切回這一類時 shlOpen 才抓)
 async function shlSignIn(b) { await planSignIn(b, true); if (hasToken) shlLoad(); }   // 在設定 › 公開連結裡面:關設定照舊取消這次登入
 // 標題 = 打開那份報告:關設定、切到那一袋的視角、開閱讀頁。按了才發現不在 → 念一句(清單下次打開會更新)
 async function shlGo(row) {

@@ -6377,9 +6377,6 @@ msgstr "No public reports right now. To publish one, open a report and choose Sh
 msgid "shl.loadFail"
 msgstr "Couldn't load your public links. Check your connection and try again."
 
-msgid "shl.gate"
-msgstr "Public links are tied to your Blave account. Sign in to see them."
-
 # 取消成功後讀屏念的那一句(畫面上不出字)
 msgid "shl.revoked"
 msgstr "Sharing stopped."

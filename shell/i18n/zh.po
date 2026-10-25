@@ -6391,9 +6391,6 @@ msgstr "目前沒有公開中的報告。要公開，打開一份報告按「分
 msgid "shl.loadFail"
 msgstr "讀不到公開連結，請檢查網路後再試。"
 
-msgid "shl.gate"
-msgstr "公開連結掛在你的 Blave 帳號下，登入後才看得到。"
-
 # 取消成功後讀屏念的那一句(畫面上不出字)
 msgid "shl.revoked"
 msgstr "已取消分享。"

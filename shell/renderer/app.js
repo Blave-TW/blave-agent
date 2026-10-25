@@ -4112,6 +4112,7 @@ function planWatchIdle() { if (!$("set-scrim").hidden && !$("set-plan").hidden) 
    語言變了的地方照舊叫這一支:那一頁開著就整頁重畫,沒開就什麼都不做(下次切到那一類 setCat 會畫) */
 function acctPaintAcct() {
   if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint();
+  if (typeof shlAuthSync === "function") shlAuthSync();   // 同頁的公開連結區段:沒登入整段不畫
   setFocusGuard();
 }
 function sidePaint() {

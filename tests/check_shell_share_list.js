@@ -70,16 +70,17 @@ if (!process.versions.electron) {
     ok("③ IPC:清單與取消都不從畫面收憑證;取消只收代碼;「在不在這台電腦」由主行程看檔", /handle\("share-list", \(\) => shareList\(\), \{ code: "UNREACH" \}\)/.test(mainSrc) && /handle\("share-revoke-code", \(_e, code\) => shareClient\(\)\.revokeCode\(code\)/.test(mainSrc)
       && /shareList: \(\) => ipcRenderer\.invoke\("share-list"\)/.test(pre) && /shareRevokeCode: \(code\) => ipcRenderer\.invoke\("share-revoke-code", code\)/.test(pre) && /local: x\.origin === "desktop" && rptLocalHas\(x\.reportId\)/.test(mainSrc));
     ok("③ 埋點 share_list_open 在外殼白名單(≤ 16 字);公開連結併進帳號與方案之後,送出點是區段捲進畫面那一刻(shlWatch 的 IntersectionObserver),不在畫、不在切分類", require(path.join(SHELL, "telemetry.js")).EVENTS.feature_used.name.indexOf("share_list_open") >= 0 && "share_list_open".length <= 16
-      && /function shlOpen\(\) \{\s*shlWatch\(\);\s*shlLoad\(\);\s*\}/.test(src) && /new IntersectionObserver\(\(es\) => \{ if \(es\.some\(\(e\) => e\.isIntersecting\)\) libTrack\("share_list_open"\); \}\)/.test(src) && (src.match(/libTrack\("share_list_open"\)/g) || []).length === 1);
+      && /function shlOpen\(\) \{\s*shlWatch\(\);\s*if \(hasToken\) shlLoad\(\); else \{ SHL\.seq\+\+; SHL\.view = "gate"; shlPaint\(\); \}\s*\}/.test(src) && /new IntersectionObserver\(\(es\) => \{ if \(hasToken && !\$\("set-shares"\)\.hidden && es\.some\(\(e\) => e\.isIntersecting\)\) libTrack\("share_list_open"\); \}\)/.test(src) && (src.match(/libTrack\("share_list_open"\)/g) || []).length === 1);
     const STR = (() => { const sb = {}; vm.runInNewContext(read(path.join(R, "strings.js")) + "\nthis.S = STRINGS;", sb); return sb.S; })();
     const E = { "set.cat.shares": ["公開連結", "Public links"], "shl.count": ["{n}／{max}", "{n} / {max}"], "shl.kind.research": ["研究報告", "Research report"], "shl.kind.morning": ["市場報告", "Market report"], "shl.kind.performance": ["績效報告", "Performance report"],
       "shl.src.here": ["這台電腦", "This computer"], "shl.src.desktop": ["電腦版", "Desktop"], "shl.src.cloud": ["雲端", "Cloud"], "shl.gone": ["這台電腦上找不到原檔，公開版本仍有效。", "The original file isn't on this computer; the public version is still live."],
       "shl.empty": ["目前沒有公開中的報告。要公開，打開一份報告按「分享」。", "No public reports right now. To publish one, open a report and choose Share."], "shl.loadFail": ["讀不到公開連結，請檢查網路後再試。", "Couldn't load your public links. Check your connection and try again."],
-      "shl.gate": ["公開連結掛在你的 Blave 帳號下，登入後才看得到。", "Public links are tied to your Blave account. Sign in to see them."], "shl.countAria": ["公開中 {n} 份，上限 {max} 份", "{n} of {max} public reports"],
+      "shl.countAria": ["公開中 {n} 份，上限 {max} 份", "{n} of {max} public reports"],
       "shr.limitLive": ["公開中的報告已達 {n} 份上限。先取消幾份，再公開這一份。", "You've reached the limit of {n} public reports. Stop sharing a few, then publish this one."], "shr.limitLiveGo": ["看公開連結", "View public links"],
       "shr.limitDaily": ["今天已經公開 {n} 次，達到每日上限。請明天再試。", "You've published {n} times today, the daily limit. Try again tomorrow."],
       "pdf.btn": ["存成 PDF", "Save as PDF"], "pdf.saving": ["存成中…", "Saving…"], "pdf.saved": ["已存檔", "Saved"], "pdf.failTitle": ["沒有存成 PDF", "Couldn't save the PDF"], "pdf.failBody": ["檔案沒有寫進去。換個位置，或稍後再試一次。", "The file wasn't saved. Try another location, or try again later."] };
     const off = Object.keys(E).filter((k) => STR.zh[k] !== E[k][0] || STR.en[k] !== E[k][1]);
+    ok("③ 未登入不畫區段:那一句 shl.gate 兩語都拿掉了", STR.zh["shl.gate"] === undefined && STR.en["shl.gate"] === undefined);
     ok("③ 字串逐字同 spec(清單 E 表、上限 D 表的數字改成 {n}、PDF 的 DT2 表)", off.length === 0, off.join());
     const WEB_PO = path.join(MONO, "web", "app", "translations");
     if (!fs.existsSync(WEB_PO)) console.log("SKIP  ③ 雲端原報告被移除那一句與 web 逐字比對(需要 monorepo 版面)");
@@ -202,8 +203,26 @@ app.whenReady().then(async () => {
   ok("④ 讀不到:錯誤記號 + 一句 +「重新載入」", p.msg === (await T("shl.loadFail")) && p.mark === 1 && p.btn === (await T("br.reload")) && p.count === null, JSON.stringify(p));
   await js(`window.__s.list = { code: "OK", shares: ${JSON.stringify(ROWS.slice(1))}, limits: { liveCount: 3, liveLimit: 50 } }; document.querySelector("#set-shares .shl-msgrow .btn-out").click()`); await wait(200);
   ok("④ 「重新載入」重抓一次", (await pane()).rows.length === 3);
+  // 未登入整段不畫(canon:畫面上只剩方案區那一顆「登入 Blave」);主行程回 NO_LOGIN 也一樣不畫
   await js(`window.__s.list = { code: "NO_LOGIN" }; setCat("shares")`); await wait(200); p = await pane();
-  ok("④ 未登入:一句 +「登入 Blave」(沒有錯誤記號)", p.msg === (await T("shl.gate")) && p.mark === 0 && p.btn === (await T("cn.blave.btn")), JSON.stringify(p));
+  ok("④ 主行程回 NO_LOGIN:區段整段不畫(沒有標題、沒有句子、沒有鈕)", p.hidden && p.head === null && p.msg === null && p.btn === null, JSON.stringify(p));
+  { await js(`window.__s.calls.length = 0; window.__s.tracked.length = 0; hasToken = false; setCat("display"); setCat("shares")`); await wait(400);
+    const g = await js(`(() => { const b = document.getElementById("set-shares"), sc = document.querySelector(".set-content"), a = document.activeElement, plan = document.getElementById("set-plan");
+      return { hidden: b.hidden, kids: b.children.length, cat: document.querySelector('.set-cat[aria-current="true"]').dataset.setCat, top: sc.scrollTop,
+        focus: a && a.closest("#set-plan-main .plan-act") ? a.textContent : a ? a.tagName + "#" + a.id : null,
+        signins: [...plan.querySelectorAll("button")].filter((x) => !x.hidden && x.offsetParent && [t("pv.signin"), t("cn.blave.btn")].includes(x.textContent)).length,
+        lists: window.__s.calls.filter((c) => c[0] === "list").length, tracked: window.__s.tracked.slice() }; })()`);
+    ok("④ 沒登入、從「看公開連結」進來(setCat shares):區段不畫、不去抓清單;落在帳號與方案頂端,焦點在方案區的「登入 Blave」;整頁只有那一顆登入鈕;不送 share_list_open",
+      g.hidden && g.kids === 0 && g.cat === "plan" && g.top === 0 && g.focus === (await T("pv.signin")) && g.signins === 1 && g.lists === 0 && !g.tracked.includes("share_list_open"), JSON.stringify(g));
+    await js(`window.__s.list = { code: "OK", shares: ${JSON.stringify(ROWS.slice(1))}, limits: { liveCount: 3, liveLimit: 50 } }; hasToken = true; acctPaintAcct(); true`); await wait(300);
+    const back = await pane(), n = (await calls("list")).length;
+    await js(`hasToken = false; acctPaintAcct(); true`); await wait(100);
+    const gone = await pane();
+    ok("④ 帳號與方案開著時登入 → 區段出現並抓清單;登出 → 區段收掉", !back.hidden && back.rows.length === 3 && n === 1 && gone.hidden && gone.rows.length === 0, JSON.stringify([back.hidden, back.rows.length, n, gone.hidden]));
+    await js(`hasToken = true; true`); }
+  // 登入失效那一態保留原地登入鈕
+  await js(`window.__s.list = { code: "RELOGIN" }; setCat("shares")`); await wait(200); p = await pane();
+  ok("④ 登入失效:錯誤記號 + 一句 +「登入 Blave」", !p.hidden && p.msg === (await T("conn.expired")) && p.mark === 1 && p.btn === (await T("cn.blave.btn")), JSON.stringify(p));
   await js(`document.querySelector("#set-shares .shl-msgrow .btn-out").click()`); await wait(100);
   { const w1 = await js(`({ cat: document.querySelector('.set-cat[aria-current="true"]').dataset.setCat, btn: document.querySelector("#set-shares .shl-msgrow .btn-out").textContent })`), oa = await calls("oauth");
     ok("④ …點了原地登入:分類停在「帳號與方案」、startOAuth 叫一次、鈕字換成「取消等待」", w1.cat === "plan" && oa.length === 1 && w1.btn === (await T("oauth.cancel")), JSON.stringify([w1, oa]));
