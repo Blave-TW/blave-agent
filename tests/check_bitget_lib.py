@@ -245,6 +245,15 @@ except Exception as e:
     check(acct.classify(e) == "unknown" and "讀取權限" in str(e) and "key_permission" in str(e),
           "40085 while the UTA settings refuse the key → UNKNOWN (no instant HALT), says to enable the UTA read "
           "permission", str(e))
+acct.VERIFIED_MODES = frozenset({"classic"})  # as shipped: UTA closed → "not supported yet", not "tick the permission"
+try:
+    acct.get_equity(ENV)
+    check(False, "40085 with the UTA settings unreadable raises (UTA closed)")
+except Exception as e:
+    check(acct.classify(e) == "unknown" and "還不支援" in str(e) and "讀取權限" not in str(e)
+          and "[bitget_account_mode:uta]" in str(e),
+          "UTA closed: 40085 while the UTA settings refuse the key → UNKNOWN, says UTA is not supported yet", str(e))
+acct.VERIFIED_MODES = BOTH
 acct._mode.update(mode="classic", at=acct.time.time())  # back to the classic account for the sections below
 route("GET", "/api/v2/mix/account/accounts", lambda p: err("429", "Too Many Requests", 429))
 try:
