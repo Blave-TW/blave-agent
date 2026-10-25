@@ -49,9 +49,9 @@ CHOKE = {
     "binance": "_request", "bingx": "_request", "bybit": "_request",
     "gateio": "_request", "okx": "_request",
     "paper": "_gate", "capital": "_send", "sinopac": "place_odd_lot_order",
-    "president": "_send", "stockcoin": "_request",
+    "president": "_send", "stockcoin": "_request", "bitget": "_request",
 }
-HTTP = {"binance", "bingx", "bybit", "gateio", "okx", "stockcoin"}
+HTTP = {"binance", "bingx", "bybit", "gateio", "okx", "stockcoin", "bitget"}
 # non-GET _send calls outside _request, each with the reason it is not an order
 SEND_OUTSIDE_REQUEST_OK = {
     ("gateio", "set_leverage"): "leverage change — neither opens nor closes anything",
@@ -317,11 +317,30 @@ CASES = {  # lib: (call builder, {intent: request}) — intents as each lib clas
         "protective": ("POST", "/futures/order", {"symbol": "BTC-PERP-USDT", "side": "SELL_CLOSE",
                                                   "orderType": "STOP"}),
         "cancel": ("DELETE", "/futures/order", {"symbol": "BTC-PERP-USDT", "orderId": 1})}),
+    "bitget": (lambda m, meth, path, body: m._request(meth, path, {}, body), {
+        "entry": ("POST", "/api/v2/mix/order/place-order", {"symbol": "BTCUSDT", "side": "buy",
+                                                            "tradeSide": "open"}),
+        "reduce": ("POST", "/api/v2/mix/order/place-order", {"symbol": "BTCUSDT", "side": "buy",
+                                                             "tradeSide": "close"}),
+        "protective": ("POST", "/api/v2/mix/order/place-tpsl-order", {"symbol": "BTCUSDT",
+                                                                      "planType": "pos_loss"}),
+        "cancel": ("POST", "/api/v2/mix/order/cancel-order", {"symbol": "BTCUSDT", "orderId": "1"})}),
+    # Bitget UTA (v3): a hedge close is side sell + posSide long, no tradeSide — the gate reads it as reduce
+    "bitget_uta": (lambda m, meth, path, body: m._request(meth, path, {}, body), {
+        "entry": ("POST", "/api/v3/trade/place-order", {"category": "USDT-FUTURES", "symbol": "BTCUSDT",
+                                                        "side": "buy", "posSide": "long"}),
+        "reduce": ("POST", "/api/v3/trade/place-order", {"category": "USDT-FUTURES", "symbol": "BTCUSDT",
+                                                         "side": "sell", "posSide": "long"}),
+        "protective": ("POST", "/api/v3/trade/place-strategy-order", {"symbol": "BTCUSDT", "type": "tpsl",
+                                                                      "stopLoss": "1"}),
+        "cancel": ("POST", "/api/v3/trade/cancel-order", {"category": "USDT-FUTURES", "orderId": "1"})}),
 }
 import importlib  # noqa: E402
 
+MODULE = {"bitget_uta": "bitget"}  # a second request dialect of the same lib
+importlib.import_module("lib.account_bitget").VERIFIED_MODES = frozenset({"uta", "classic"})  # its own gate sits in front
 for v, (call, reqs) in CASES.items():
-    m = importlib.import_module(f"lib.order_{v}")
+    m = importlib.import_module(f"lib.order_{MODULE.get(v, v)}")
     sent = []
     real_send = m._send
     m._send = lambda *a, **k: sent.append(a) or {}

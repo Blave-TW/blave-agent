@@ -27,13 +27,16 @@ account currency). Trait meanings:
   close_needs_fill   flatten books a close as done only on a confirmed fill
   reference          the onboarding doc chat binding points to
   label              the broker's name in user-facing messages
-  cred_env           the venue's own .env names that do not follow the
-                     {ID}_API_KEY / _PASSWORD pair shape, with their role
-                     (API_KEY = the name that says "bound", PASSWORD = its
-                     secret, EXTRA = belongs to the venue, pairs nothing) —
-                     read before that shape so every discovery site (runtime
-                     _venue_cred_ids / venues() / account_reader, flatten)
-                     sees the venue and a rebind evicts all of its names
+  verified_modes     the account types whose real-account run passed (Bitget:
+                     "uta" / "classic"). Declared only by a venue whose libs ship
+                     ahead of that run (venue-onboarding §3). Empty = unverified:
+                     never auto-wired, never read by runtime/account_reader, not
+                     bindable from chat, and the venue's own libs sign nothing.
+                     Non-empty: the venue wires, and its libs refuse a key whose
+                     account is of a type not listed (bind and every read say
+                     so). The libs read the raw cell (verified_modes()), so a
+                     deleted row or cell stays closed. Filled in by the backend in
+                     the commit that merges the verified libs.
 """
 
 CAPITAL = "capital"
@@ -57,6 +60,13 @@ TRAITS = {
         "perp": False,
         "reference": "references/sinopac-broker.md",
         "label": "永豐金",
+    },
+    # real-account run passed on a classic account (2026-10-22, both position modes); a UTA key is
+    # refused by the lib until a UTA run passes (.claude/output/backend/bitget-real-verify-0.1.29.md)
+    "bitget": {
+        "verified_modes": ("classic",),
+        "reference": "references/exchange-connect.md",
+        "label": "Bitget",
     },
     PRESIDENT: {
         "auto_wire": False,
@@ -96,6 +106,20 @@ def has(venue, trait):
 def venues(trait, value=True):
     """Venue ids whose `trait` equals `value` (defaults applied)."""
     return frozenset(v for v in TRAITS if get(v, trait) == value)
+
+
+def verified_modes(venue):
+    """The account types a venue's own libs may trade (raw cell: a venue whose row has no
+    verified_modes gets () here — its libs stay shut). Only those libs ask this."""
+    row = TRAITS.get(venue, {}) if isinstance(venue, str) else {}
+    return tuple(row.get("verified_modes") or ())
+
+
+def unverified():
+    """Venue ids that declare verified_modes and have none yet: kept off every surface. A
+    venue without the cell (every venue that shipped verified, an agent-written lib)
+    is not in it."""
+    return frozenset(v for v, t in TRAITS.items() if "verified_modes" in t and not t["verified_modes"])
 
 
 def cred_env(name):
