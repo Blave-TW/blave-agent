@@ -68,14 +68,26 @@ async function detect() {
   // cantrun 還不在 api 的白名單(送了會整則被丟):先照 canon 舊語意記成 nonzero(「非 0 結束含執行失敗」),api 收了再拆
   if (!$("view-connect").hidden) ["claude", "codex"].forEach((k) => { if (lastDetect[k] && lastDetect[k].why) trackEvent("detect_fail", { why: lastDetect[k].why.replace(/_cantrun$/, "_nonzero") }); });
 }
-/* 從瀏覽器、終端機或 ChatGPT app 登入完切回來,不必再按「重新偵測」。只在連結畫面或設定 › 模型接入開著、
-   而且本機有一個不能用的時候;一次偵測要開到四個子行程,15 秒內不重來;等登入中不碰(那一列由 localLogin 收尾) */
+/* 從瀏覽器、終端機或 ChatGPT app 登入完切回來,不必再按「重新偵測」。連結畫面或設定 › 模型接入開著、而且本機有一個
+   不能用的時候;或工作頁有一張現在這條的登入失效卡(卡上的退路句寫「回到這裡」)。一次偵測要開到四個子行程,15 秒內不重來;
+   等登入中不碰(那一列由 localLogin 收尾)。失效卡不看 mdlNeedsRedetect:回合結束那次偵測不寫 lastDetect,它可能還說已登入 */
 const REDETECT_GAP_MS = 15000;
 function focusRedetect() {
-  if (loginPending || MDL.busy || !mdlNeedsRedetect(lastDetect) || Date.now() - detectAt < REDETECT_GAP_MS) return false;
+  if (loginPending || MDL.busy || Date.now() - detectAt < REDETECT_GAP_MS) return false;
   const onModel = !$("set-scrim").hidden && !$("set-model").hidden;
-  if ($("view-connect").hidden && !onModel) return false;
-  detect(); return true;
+  const onRows = mdlNeedsRedetect(lastDetect) && (!$("view-connect").hidden || onModel);
+  if (!onRows && !localFaultsLive().length) return false;
+  Promise.resolve(detect()).then(localFaultsRecheck); return true;
+}
+// 工作頁的本機登入失效卡(localLoginFlow 登記、登入好了就除名):只算還在畫面上、而且講的是現在這條的
+const LOCAL_FAULTS = [];
+function localFaultsLive() {
+  for (let i = LOCAL_FAULTS.length - 1; i >= 0; i--) if (!LOCAL_FAULTS[i].card.el.isConnected) LOCAL_FAULTS.splice(i, 1);
+  return LOCAL_FAULTS.filter((f) => f.kind === cur);
+}
+function localFaultsRecheck() {
+  if (loginPending) return;   // 偵測途中他按了卡上的〔登入〕:那一輪由 localLoginFlow 收尾
+  localFaultsLive().forEach((f) => { const x = (lastDetect && lastDetect[f.kind]) || {}; if (x.installed && x.loggedIn) f.done(); });
 }
 window.addEventListener("focus", focusRedetect);
 // 不能用的原因(main.js detectWhy):跑不起來、沒有回應各是一種狀態,不是「沒登入」——按「連結」只會再撞一次,所以那一列不給鈕
@@ -118,13 +130,17 @@ function rowMsg(kind, msg) {
   const f = document.createDocumentFragment();
   if (msg === "opened") { f.append(t("row.opened")); return f; }
   const e = document.createElement("span"); e.className = "e"; e.textContent = t("row.failed");
-  f.append(e, LANG === "zh" ? "" : " ");
+  f.append(e, LANG === "zh" ? "" : " ", cmdLine(kind)); return f;
+}
+const rowMsgText = (kind, msg) => rowMsg(kind, msg).textContent;
+// 失敗的退路,三個表面(連結畫面那一列、設定 › 模型接入、工作頁失效卡)同一句;{cmd} 包成 <code>,用 DOM 組(不用 innerHTML)
+function cmdLine(kind) {
+  const f = document.createDocumentFragment();
   if (kind === "codex" && ((lastDetect && lastDetect.codex) || {}).via !== "cli") { f.append(t("row.orApp")); return f; }
   const parts = t("row.orCmd", { cmd: "\u0000" }).split("\u0000");
   const c = document.createElement("code"); c.textContent = LOGIN_CMD[kind];
   f.append(parts[0] || "", c, parts[1] || ""); return f;
 }
-const rowMsgText = (kind, msg) => rowMsg(kind, msg).textContent;
 
 /* 連結畫面的 #cn-hint 與設定 › 模型接入 是兩個地方、同一句話:狀態記在這裡,兩邊各畫各的。
    h = null 或 { text, cmd?(kind:失敗時附上終端機指令) }。 */
@@ -3400,14 +3416,6 @@ function resendState(card, okText) {
     }
   } };
 }
-function cmdLine(kind) {
-  const f = document.createDocumentFragment();
-  if (kind === "codex" && ((lastDetect && lastDetect.codex) || {}).via !== "cli") { f.append(t("login.failedCodex")); return f; }
-  // {cmd} 包成 <code>,用 DOM 組(不用 innerHTML)
-  const parts = t("login.failedCmd", { cmd: "\u0000" }).split("\u0000");
-  const c = document.createElement("code"); c.textContent = LOGIN_CMD[kind];
-  f.append(parts[0] || "", c, parts[1] || ""); return f;
-}
 
 /* 同時只能有一個登入行程(main.js 的 loginChild)。等待期間其他登入入口不觸發新流程——
    原本去按另一家的「登入」會立刻顯示「登入沒有完成」,說了一件沒發生的事。 */
@@ -3415,6 +3423,11 @@ let loginPending = null;
 
 function localLoginFlow(card, kind) {
   const name = kind === "codex" ? "Codex" : "Claude Code";
+  const me = { card, kind, done: () => {
+    const i = LOCAL_FAULTS.indexOf(me); if (i >= 0) LOCAL_FAULTS.splice(i, 1);
+    card.set(resendState(card, t("login.ok", { name })));
+  } };
+  LOCAL_FAULTS.push(me);
   const fault = (failed) => card.set({
     text: failed ? t("login.failed", { name }) : t("fault.localAuth", { name }),
     label: failed ? t("login.retry") : t("fault.localAuthBtn", { name }),
@@ -3428,7 +3441,7 @@ function localLoginFlow(card, kind) {
     const r = await agentLoginRun(kind, () => card.set({ calm: true, text: t("login.opened", { name }), label: t("login.cancel"), out: true, on: cancel }));
     loginPending = null;
     if (!r.ok && !r.cancelled && !r.busy) trackEvent("connect_failed", { kind: kind === "codex" ? "codex_login" : "claude_login" });
-    if (r.ok) card.set(resendState(card, t("login.ok", { name })));
+    if (r.ok) me.done();
     else fault(!r.cancelled && !r.busy);      // 取消不是錯誤,回到原本那句
   }
   fault(false);

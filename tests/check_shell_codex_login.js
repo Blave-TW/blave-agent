@@ -144,12 +144,17 @@ exit 2
      let loginPending = null, oauthPending = false, lastDetect = null, cur = null, HINT = null, detects = 0, said = [];
      let loginSpawned = null;
      const MDL = { busy: false }, mdlPaint = () => {}, paintBlaveBtn = () => {}, connect = (k) => { state.connected = k; }, srSay = (x) => said.push(x), trackEvent = () => {};
-     const cmdLine = (k) => k;
+     ${fnOf(app, "cmdLine")}
      function detect() { detects++; detectAt = Date.now(); if (state.next) lastDetect = state.next; }
      function setHint(h) { HINT = h || null; }
      let detectAt = 0;
      ${constOf(app, "ROWMSG")}
      ${constOf(app, "REDETECT_GAP_MS")}
+     const resendState = (card, okText) => ({ calm: true, text: okText, resend: true });
+     ${constOf(app, "LOCAL_FAULTS")}
+     ${fnOf(app, "localFaultsLive")}
+     ${fnOf(app, "localFaultsRecheck")}
+     ${fnOf(app, "localLoginFlow")}
      ${fnOf(app, "focusRedetect")}
      ${constOf(app, "whyState")}
      ${fnOf(app, "mdlNeedsRedetect")}
@@ -163,7 +168,7 @@ exit 2
      ${fnOf(app, "hintFill")}
      ${constOf(app, "rowMsgText")}
      ${fnOf(app, "localLogin")}
-     return { sync, paintRows, rowMsg, agentLoginRun, hintFill, focusRedetect, whyState, localLogin,
+     return { sync, paintRows, rowMsg, cmdLine, agentLoginRun, hintFill, focusRedetect, localLoginFlow, LOCAL_FAULTS, whyState, localLogin,
        set: (k, v) => { eval(k + " = v"); }, get: (k) => eval(k), ROWMSG, said };`)(document, $, (k, v) => tr(k, v), () => LANG, { blave: { cancelAgentLogin: () => {}, agentLogin: (k) => RSTATE.login(k) } }, RSTATE);
   R.sync();
   const rows = () => $("agent-rows").children.map((r) => {
@@ -205,9 +210,17 @@ exit 2
 
   // 共用訊息格(三個表面同一支 hintFill):中文句尾全形標點後不補空格,英文補一個
   { const fill = (lang, h) => { LANG = lang; R.sync(); R.set("HINT", h); const n = mkEl("p"); R.hintFill(n); return n.textContent; };
+    R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero", via: "cli" }));
     t("hintFill:zh「Codex 登入沒有完成。」接退路不多空格;en 補一個;沒有 cmd 不補;沒有訊息不畫",
-      fill("zh", { text: "Codex 登入沒有完成。", cmd: "codex" }) === "Codex 登入沒有完成。codex" && fill("en", { text: "Codex sign-in didn’t finish.", cmd: "codex" }) === "Codex sign-in didn’t finish. codex"
-      && fill("en", { text: "x" }) === "x" && fill("zh", null) === "");
+      fill("zh", { text: "Codex 登入沒有完成。", cmd: "codex" }) === "Codex 登入沒有完成。或在終端機執行 codex login。" && fill("en", { text: "Codex sign-in didn’t finish.", cmd: "codex" }) === "Codex sign-in didn’t finish. Or run codex login in a terminal."
+      && fill("en", { text: "x" }) === "x" && fill("zh", null) === "", [fill("zh", { text: "Codex 登入沒有完成。", cmd: "codex" }), fill("en", { text: "Codex sign-in didn’t finish.", cmd: "codex" })]);
+    // 設定 › 模型接入與工作頁失效卡的退路(cmdLine)跟連結畫面那一列(rowMsg)同一句(設計師 D1)
+    const line = (lang, via, kind) => { LANG = lang; R.sync(); R.set("lastDetect", D({}, { loggedIn: false, why: "codex_nonzero", via })); const n = mkEl("p"); n.append(R.cmdLine(kind)); return n.textContent; };
+    const same = ["zh", "en"].every((lang) => line(lang, "app", "codex") === STR[lang]["row.orApp"]
+      && line(lang, "cli", "codex") === STR[lang]["row.orCmd"].replace("{cmd}", "codex login")
+      && line(lang, "app", "claude") === STR[lang]["row.orCmd"].replace("{cmd}", "claude auth login"));
+    t("cmdLine:ChatGPT app 版 = row.orApp、CLI 版 = row.orCmd(兩語),跟連結畫面同一句", same, [line("zh", "app", "codex"), line("zh", "cli", "codex"), line("en", "app", "codex")]);
+    t("…舊的 login.failedCodex / login.failedCmd 兩語都刪掉了", ["login.failedCodex", "login.failedCmd"].every((k) => STR.en[k] === undefined && STR.zh[k] === undefined));
     LANG = "zh"; R.sync();
     t("三處接字(setHint、模型接入、帳號訊息格)都走 hintFill,不再自己接空格",
       !/HINT\.text \+ \(HINT\.cmd \? " " : ""\)/.test(app) && (app.match(/hintFill\((n|p|hint)\);/g) || []).length === 3); }
@@ -240,7 +253,7 @@ exit 2
       const blave = { onAgentLoginSpawned: (fn) => { listener = fn; }, cancelAgentLogin: () => {},
         agentLogin: async () => { if (spawnAt !== null) { await new Promise((r) => setTimeout(r, spawnAt)); listener(); } await new Promise((r) => setTimeout(r, endAt - (spawnAt || 0))); return res; } };
       const f = new Function("window", "t", "LOGIN_OPENED_MS", "cmdLine", "resendState", "trackEvent",
-        "let loginPending = null, oauthPending = false, loginSpawned = null;\n" + LISTEN + "\n" + fnOf(app, "agentLoginRun") + "\n" + fnOf(app, "localLoginFlow") + "\nreturn localLoginFlow;")(
+        "let loginPending = null, oauthPending = false, loginSpawned = null; const LOCAL_FAULTS = [];\n" + LISTEN + "\n" + fnOf(app, "agentLoginRun") + "\n" + fnOf(app, "localLoginFlow") + "\nreturn localLoginFlow;")(
         { blave }, (k, v) => tr(k, v), 1000, (k) => k, () => ({ text: "ok" }), () => {});
       const card = { set: (st) => sets.push(st) };
       f(card, "codex"); sets[0].on();   // 卡先畫失效句,按〔登入〕
@@ -262,6 +275,32 @@ exit 2
     t("focusRedetect:第一次重偵測、15 秒內不再;等登入中不碰;連結畫面與模型接入都關著不碰;模型接入開著會;兩個都就緒不碰",
       a === true && b === false && c === false && d === false && e === true && f === false && R.get("detects") === 2, { a, b, c, d, e, f, n: R.get("detects") });
     t("…掛在 window 的 focus 上", /window\.addEventListener\("focus", focusRedetect\);/.test(app)); }
+
+  // 工作頁的登入失效卡也回前景重新偵測(設計師 D1):卡上那句「回到這裡」才成立。lastDetect 可能還是回合開始前那份(說已登入),
+  // 不能拿 mdlNeedsRedetect 擋;偵測到已登入就把卡換成「已登入」+ 重送
+  { const tick = () => new Promise((r) => setTimeout(r, 0));
+    $("view-connect").hidden = true; $("set-scrim").hidden = true; $("set-model").hidden = true;
+    R.set("cur", "codex"); R.set("loginPending", null); R.set("detects", 0);
+    R.set("lastDetect", D({ loggedIn: true }, { loggedIn: true }));   // 舊的那份:說兩個都就緒
+    const sets = [], el = { isConnected: true }, card = { el, set: (st) => sets.push(st) };
+    R.localLoginFlow(card, "codex");
+    RSTATE.next = D({ loggedIn: true }, { loggedIn: false, why: "codex_nonzero" });
+    R.set("detectAt", 0); const a = R.focusRedetect(); await tick();
+    const stillFault = sets[sets.length - 1].text === tr("fault.localAuth", { name: "Codex" }) && R.LOCAL_FAULTS.length === 1;
+    const b = R.focusRedetect();                                        // 15 秒內不重來
+    R.set("detectAt", 0); R.set("loginPending", "codex"); const c = R.focusRedetect(); R.set("loginPending", null);
+    R.set("cur", "claude"); const d = R.focusRedetect(); R.set("cur", "codex");   // 換了引擎:那張卡講的不是現在這條
+    el.isConnected = false; const e = R.focusRedetect(); el.isConnected = true;   // 卡已經不在畫面上(開新對話)
+    t("失效卡回前景:舊 lastDetect 說已登入也會重偵測;還沒登入卡不動;15 秒內、等登入中、換了引擎、卡不在畫面上都不跑",
+      a === true && stillFault && b === false && c === false && d === false && e === false && R.get("detects") === 1, { a, stillFault, b, c, d, e, n: R.get("detects") });
+    R.localLoginFlow(card, "codex");
+    RSTATE.next = D({ loggedIn: true }, { loggedIn: true, why: null });
+    R.set("detectAt", 0); const f = R.focusRedetect(); await tick();
+    const last = sets[sets.length - 1];
+    t("…偵測到已登入 → 卡換成 login.ok + 重送,不再登記", f === true && last.resend === true && last.text === tr("login.ok", { name: "Codex" }) && R.LOCAL_FAULTS.length === 0, { f, last, n: R.LOCAL_FAULTS.length });
+    R.set("detectAt", 0); const g = R.focusRedetect();
+    t("…換好之後回前景不再為它偵測(兩個都就緒)", g === false, g);
+    RSTATE.next = null; R.LOCAL_FAULTS.length = 0; }
 
   // 回合結束的登入失效判斷:跑不起來 / 沒有回應不出登入卡
   t("回合結束:loggedOut 排除 whyState(跑不起來、沒有回應)", /loggedOut = !!\(d\[cur\] && d\[cur\]\.installed && !d\[cur\]\.loggedIn && !whyState\(d\[cur\]\)\);/.test(app));

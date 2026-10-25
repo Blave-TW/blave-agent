@@ -937,13 +937,6 @@ msgstr "View larger"
 msgid "login.cancel"
 msgstr "Cancel"
 
-msgid "login.failedCmd"
-msgstr "Or run {cmd} in a terminal."
-
-# Codex 登入失敗的退路不講終端機:Store / ChatGPT.app 裝的人 PATH 上沒有 codex,叫他打 `codex login` 是死路
-msgid "login.failedCodex"
-msgstr "Sign in to your ChatGPT account inside the ChatGPT app, then press Detect again."
-
 msgid "login.retry"
 msgstr "Try Again"
 
