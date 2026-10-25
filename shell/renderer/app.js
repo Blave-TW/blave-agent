@@ -109,7 +109,8 @@ function paintRows(d) {
       rows.appendChild(row({ name, kind, st: t("st.signedIn"), stClass: "on", cur: cur === kind,
         action: cur === kind ? null : btn(localBtnCls(), t("cn.connect"), () => connect(kind, x)) }));
     } else if (x.installed && whyState(x)) {
-      rows.appendChild(row({ name, kind, st: t(whyState(x)), stClass: "" }));
+      // 跑不起來:剛才指他去跑的就是這一顆,「怎麼修」要寫在列上;沒有回應是暫態,重新偵測就是下一步
+      rows.appendChild(row({ name, kind, st: t(whyState(x)), stClass: "", sub: whyState(x) === "st.cantRun" ? t("row.reinstall", { name }) : null }));
     } else if (x.installed) {
       const waiting = loginPending === kind, msg = ROWMSG[kind];
       const label = waiting ? "login.cancel" : msg === "failed" ? "login.retry" : "cn.connect";
@@ -207,7 +208,7 @@ async function localLogin(kind, b) {
   const x = (lastDetect && lastDetect[kind]) || {};
   if (inRow && r.ok && x.installed && x.loggedIn) return connect(kind, x);
   // 登入指令本身跑不起來(127、126、ENOENT),偵測卻沒看出來(login status 跑得動):兩個表面都改畫「無法啟動」,不叫他重登
-  if (r.cantRun && x.installed && !x.loggedIn && !whyState(x)) { x.why = kind + "_cantrun"; paintRows(lastDetect); srSay(t(whyState(x))); }
+  if (r.cantRun && x.installed && !x.loggedIn && !whyState(x)) { x.why = kind + "_cantrun"; paintRows(lastDetect); srSay(t("st.cantRun") + (LANG === "zh" ? "。" : ". ") + t("row.reinstall", { name })); }
   if (!r.cancelled && !r.busy && !(x.installed && x.loggedIn) && !whyState(x)) {
     if (!inRow) setHint({ text: t("login.failed", { name }), cmd: kind });
     else { ROWMSG[kind] = "failed"; paintRows(lastDetect); srSay(rowMsgText(kind, "failed")); }
@@ -294,7 +295,7 @@ function mdlOptions(d, curKind, tok, pend, ak) {
     const x = (d && d[kind]) || {}, ready = !!(x.installed && x.loggedIn);
     // 跑不起來 / 沒有回應:同連結畫面,是狀態不是「沒登入」——列變灰、不給〔登入〕(按了只會再撞一次)
     const why = d !== null && x.installed && !ready ? whyState(x) : null;
-    out.push({ kind, name, desc: null,
+    out.push({ kind, name, desc: why === "st.cantRun" ? "row.reinstall" : null,   // 同連結畫面那一列:跑不起來寫怎麼修
       // d 是 null = 還在偵測:狀態寫「偵測中…」、不給動作(列數不變,不 reflow)
       st: d === null ? { key: "cn.detecting" } : why ? { key: why } : x.installed ? null : { key: "st.notFound" },
       act: p.login === kind ? "login.cancel" : d === null || !ready ? (d !== null && x.installed && !why ? "cn.signIn" : null) : curKind === kind ? null : "cn.use",
@@ -347,7 +348,7 @@ function mdlPaint() {
     if (o.isCur) r.setAttribute("aria-current", "true");
     const tc = el("div", "t"); tc.appendChild(el("p", "n", o.nameKey ? t(o.nameKey) : o.name));
     // 首次綁卡送多少 AI 額度來自 api(登入後 account_status、沒登入 public-pricing),不寫死;拿不到數字就退成怎麼收錢那句
-    if (o.desc) { const q = o.desc === "cn.blave.descSet" ? planVars().q : ""; tc.appendChild(el("p", "m", o.desc === "cn.blave.descSet" ? (q ? t(o.desc, { q }) : t("cn.blave.descSetNoNum")) : t(o.desc))); }
+    if (o.desc) { const q = o.desc === "cn.blave.descSet" ? planVars().q : ""; tc.appendChild(el("p", "m", o.desc === "cn.blave.descSet" ? (q ? t(o.desc, { q }) : t("cn.blave.descSetNoNum")) : t(o.desc, o.desc === "row.reinstall" ? { name: o.name } : undefined))); }
     else if (o.names) tc.appendChild(el("p", "m", o.names.join(t("ak.sep"))));
     r.appendChild(tc);
     if (o.st) r.appendChild(el("span", "st", t(o.st.key)));

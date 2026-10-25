@@ -411,6 +411,8 @@ ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」
   ok("模型接入:127 →「無法啟動」、逾時 →「沒有回應」,兩列 off、沒有鈕;沒登入(nonzero)那一列仍是〔登入〕、不灰;等登入中照樣只有「取消等待」",
     shape(A[1]) === "claude|false|st.noResp|null" && shape(A[2]) === "codex|false|st.cantRun|null" && A[1].off && A[2].off
     && shape(B[2]) === "codex|false||cn.signIn" && !B[2].off && C[2].act === "login.cancel" && C[2].st === null, [A, B, C].map((m) => m.slice(1, 3).map(shape)));
+  ok("模型接入:「無法啟動」那一列說明是 row.reinstall(帶名字);「沒有回應」、一般沒登入不加", A[2].desc === "row.reinstall" && A[1].desc === null && B[2].desc === null
+    && /tc\.appendChild\(el\("p", "m", [^\n]*t\(o\.desc, o\.desc === "row\.reinstall" \? \{ name: o\.name \} : undefined\)\)\)/.test(src), [A[1].desc, A[2].desc, B[2].desc]);
   ok("…畫面:off 的列加 class off、名字灰(同 .cn-row.off)", /el\("div", "cn-opt" \+ \(o\.isCur \? " is-cur" : ""\) \+ \(o\.off \? " off" : ""\)\)/.test(src) && /\.cn-opt\.off \.n\{color:var\(--ink-3\)\}/.test(css)); }
 ok("「切換」「連結」同一個動作同一個字:三列都用 cn.use,設定頁不再出現 cn.blave.switch / cn.connect / st.signedIn", mdlOptions(D, "codex", true)[1].act === "cn.use" && mdlOptions(D, "codex", true)[0].act === "cn.use"
   && !/cn\.blave\.switch|cn\.connect|st\.signedIn/.test(mdl + fnSrc("mdlPaint")));

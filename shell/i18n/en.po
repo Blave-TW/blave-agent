@@ -952,6 +952,10 @@ msgstr "Or run {cmd} in a terminal."
 msgid "row.orApp"
 msgstr "Or sign in through the ChatGPT app, then come back."
 
+# 「無法啟動」那一列名字底下(連結畫面、設定 › 模型接入):回前景會自動重新偵測,所以寫「回到這裡」
+msgid "row.reinstall"
+msgstr "Reinstall {name}, then come back here."
+
 msgid "st.cantRun"
 msgstr "Can’t start"
 

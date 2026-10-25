@@ -13,12 +13,14 @@ const fnOf = (s, name) => grab(s, new RegExp("^(?:async )?function " + name + "\
 const constOf = (s, name) => grab(s, new RegExp("^const " + name + " = .*$", "m"), name);
 
 // ── 字串:新狀態兩張表都有、文案照 mockup ──
-const KEYS = ["row.opened", "row.failed", "row.orCmd", "row.orApp", "st.cantRun", "st.noResp"];
-t("字串:六個新 key 在 en / zh 都有", KEYS.every((k) => STR.en[k] && STR.zh[k]));
+const KEYS = ["row.opened", "row.failed", "row.orCmd", "row.orApp", "row.reinstall", "st.cantRun", "st.noResp"];
+t("字串:七個新 key 在 en / zh 都有", KEYS.every((k) => STR.en[k] && STR.zh[k]));
 t("字串:zh「無法啟動」「沒有回應」「已在瀏覽器開啟登入頁」「登入沒有完成。」;「連結」沿用 cn.connect",
   STR.zh["st.cantRun"] === "無法啟動" && STR.zh["st.noResp"] === "沒有回應" && STR.zh["row.opened"] === "已在瀏覽器開啟登入頁" && STR.zh["row.failed"] === "登入沒有完成。" && STR.zh["cn.connect"] === "連結");
 // 回前景會自動重新偵測(focusRedetect),退路不必再叫他按「重新偵測」;字照 mockup-codex-login
 t("字串:ChatGPT app 那句退路 zh「或在 ChatGPT app 登入後回到這裡。」、en 照 mockup", STR.zh["row.orApp"] === "或在 ChatGPT app 登入後回到這裡。" && STR.en["row.orApp"] === "Or sign in through the ChatGPT app, then come back.", [STR.zh["row.orApp"], STR.en["row.orApp"]]);
+// 「無法啟動」那一列的退路(設計師稽核 D3,Wei 拍板):重裝那一顆,回前景會自動重新偵測
+t("字串:「無法啟動」退路 zh「重新安裝 {name} 後回到這裡。」、en「Reinstall {name}, then come back here.」", STR.zh["row.reinstall"] === "重新安裝 {name} 後回到這裡。" && STR.en["row.reinstall"] === "Reinstall {name}, then come back here.", [STR.zh["row.reinstall"], STR.en["row.reinstall"]]);
 t("字串:終端機那一句帶 {cmd} 佔位(兩語)", /\{cmd\}/.test(STR.zh["row.orCmd"]) && /\{cmd\}/.test(STR.en["row.orCmd"]));
 
 // ── 主行程:原文切出來,配假的 loginShellPath / BASE,子行程是真的 ──
@@ -179,7 +181,7 @@ exit 2
   });
   const D = (claude, codex) => ({ claude: { installed: true, ...claude }, codex: { installed: true, via: "cli", ...codex } });
   R.set("lastDetect", D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: false, why: "codex_cantrun" })); R.paintRows(R.get("lastDetect"));
-  t("連結畫面:沒登入 → 〔連結〕;127 → 「無法啟動」、列變灰、沒有鈕", JSON.stringify(rows()) === JSON.stringify(["claude|||" + "|連結", "codex|off|無法啟動||"]), rows());
+  t("連結畫面:沒登入 → 〔連結〕;127 → 「無法啟動」、列變灰、沒有鈕,名字底下一句「重新安裝 Codex 後回到這裡。」", JSON.stringify(rows()) === JSON.stringify(["claude|||" + "|連結", "codex|off|無法啟動|重新安裝 Codex 後回到這裡。|"]), rows());
   R.set("lastDetect", D({ loggedIn: true, why: null }, { loggedIn: false, why: "codex_timeout" })); R.paintRows(R.get("lastDetect"));
   t("…逾時 → 「沒有回應」、沒有鈕;已登入 → 「已登入」+〔連結〕", JSON.stringify(rows()) === JSON.stringify(["claude||已登入||連結", "codex|off|沒有回應||"]), rows());
   R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero" })); R.set("loginPending", "codex"); R.ROWMSG.codex = "opened"; R.paintRows(R.get("lastDetect"));
@@ -204,8 +206,8 @@ exit 2
     const c = await go(inSet(), { ok: false, cancelled: false, code: 1, cantRun: false }), cHint = R.get("HINT");
     const e = await go(mkEl("button"), { ok: false, cancelled: false, code: "ENOENT", cantRun: true });
     t("localLogin:設定 › 模型接入 127 → 那一列改 why=codex_cantrun、讀屏念「無法啟動」、沒有「登入沒有完成」;一般失敗(1)照舊出失敗句",
-      a.why === "codex_cantrun" && aHint === null && aSaid.includes("無法啟動") && c.why === "codex_nonzero" && cHint && cHint.text === "Codex 登入沒有完成。" && cHint.cmd === "codex", { a, aHint, aSaid, c, cHint });
-    t("…連結畫面 ENOENT → 那一列「無法啟動」、沒有鈕、沒有失敗訊息", e.why === "codex_cantrun" && R.ROWMSG.codex === null && rows()[1] === "codex|off|無法啟動||", rows());
+      a.why === "codex_cantrun" && aHint === null && aSaid.includes("無法啟動。重新安裝 Codex 後回到這裡。") && c.why === "codex_nonzero" && cHint && cHint.text === "Codex 登入沒有完成。" && cHint.cmd === "codex", { a, aHint, aSaid, c, cHint });
+    t("…連結畫面 ENOENT → 那一列「無法啟動」、沒有鈕、沒有失敗訊息", e.why === "codex_cantrun" && R.ROWMSG.codex === null && rows()[1] === "codex|off|無法啟動|重新安裝 Codex 後回到這裡。|", rows());
     // 那一列沒有鈕了,焦點不能掉到 body(設計師 D2):連結畫面給 .cn-head 的「重新偵測」(#btn-redetect),設定給本機那組底下的「重新偵測」
     const focused = []; $("btn-redetect").focus = () => focused.push("cn-head");
     await go(mkEl("button"), { ok: false, cancelled: false, code: 127, cantRun: true });

@@ -959,6 +959,9 @@ msgstr "或在終端機執行 {cmd}。"
 msgid "row.orApp"
 msgstr "或在 ChatGPT app 登入後回到這裡。"
 
+msgid "row.reinstall"
+msgstr "重新安裝 {name} 後回到這裡。"
+
 msgid "st.cantRun"
 msgstr "無法啟動"
 
