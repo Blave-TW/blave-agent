@@ -1,7 +1,7 @@
 """
 Bitget order execution — USDT-M perpetuals (coins, US stock perps (isRwa) and the
-eight Taiwan stock perps) on a UTA (v3 API, the main path) or a classic account
-(v2 API, not live-verified). Every call picks the API by
+eight Taiwan stock perps) on a classic account (v2 API, real-account run passed
+2026-10-22) or a UTA (v3 API, real-account run not passed). Every call picks the API by
 lib/account_bitget.account_mode(); a request that meets a mode change is never
 re-sent to the other API — it raises MODE_SWITCH (TRANSIENT), and entries stay
 refused for account_bitget.SWITCH_HOLD_S after it.
@@ -14,9 +14,9 @@ get_position_mode, session_open; the limit layer (place_limit_order / get_bbo /
 get_order / cancel_order / get_open_orders); SL/TP (place_protective_orders /
 open_position / cancel_protective_orders, sweep_orphan_stops). Not here: spot.
 
-NOT YET MEASURED ON A LIVE KEY: every fact below comes from Bitget's docs and the
-requests / replies ccxt's bitget.py records; tests/live_bitget_verify.py turns them
-into measurements (venue-onboarding §3). Only the account types in
+MEASURED vs DOCUMENTED: facts marked "measured" come from tests/live_bitget_verify.py
+runs on a real key (venue-onboarding §3); the rest come from Bitget's docs and the
+requests / replies ccxt's bitget.py records. Only the account types in
 account_bitget.VERIFIED_MODES (lib/venue_traits' bitget row) trade; empty = nothing is
 signed, nothing is sent.
 

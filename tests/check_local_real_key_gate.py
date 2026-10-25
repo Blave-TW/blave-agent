@@ -141,8 +141,7 @@ VENUE_ENV = {
     "GATEIO": {"GATEIO_API_KEY": "not-a-real-gate-key", "GATEIO_SECRET_KEY": "not-a-real-gate-secret"},
     "BYBIT": {"BYBIT_API_KEY": "not-a-real-bybit-key", "BYBIT_SECRET_KEY": "not-a-real-bybit-secret"},
     "STOCKCOIN": {"STOCKCOIN_API_KEY": "not-a-real-stockcoin-key", "STOCKCOIN_SECRET_KEY": "not-a-real-stockcoin-secret"},
-    "BITGET": {"BITGET_API_KEY": "not-a-real-bitget-key", "BITGET_SECRET_KEY": "not-a-real-bitget-secret",
-               "BITGET_PASSPHRASE": "not-a-real-bitget-pass"},
+    # 0.1.33 Bitget 翻開時加回 "BITGET"(API_KEY／SECRET_KEY／PASSPHRASE 三件)
 }
 wire, echo = [], []
 

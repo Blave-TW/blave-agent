@@ -24,7 +24,6 @@ VENUES = {
     "gateio": ("API_KEY", "SECRET_KEY"),
     "bybit": ("API_KEY", "SECRET_KEY"),
     "stockcoin": ("API_KEY", "SECRET_KEY"),
-    "bitget": ("API_KEY", "SECRET_KEY", "PASSPHRASE"),  # classic accounts only (lib/venue_traits)
 }
 _ELSEWHERE = {
     **{v: venue_traits.get(v, "reference") for v in

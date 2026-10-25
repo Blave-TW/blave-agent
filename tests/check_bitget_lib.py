@@ -103,9 +103,10 @@ from lib.data import normalize_symbol  # noqa: E402
 ENV = {"BITGET_API_KEY": "bg_not_a_real_key", "BITGET_SECRET_KEY": "not-a-real-secret",
        "BITGET_PASSPHRASE": "not-a-real-pass"}
 order.time.sleep = lambda s: None
-# the lib ships gated (acct.VERIFIED_MODES empty, see the unverified section below); the
+# the lib ships gated (acct.VERIFIED_MODES empty until 0.1.33, which expects frozenset({"classic"}) here and
+# in the venue_traits / venue_wiring checks below: git show 60d79035 -- this file); the
 # checks run with the gate open, and with no minimum switch hold except in the switch section
-check(acct.VERIFIED_MODES == frozenset({"classic"}), "the lib ships classic only: venue_traits' bitget row (UTA not verified)")
+check(acct.VERIFIED_MODES == frozenset(), "the lib ships closed: venue_traits' bitget row verifies no account type")
 BOTH = frozenset({"uta", "classic"})
 acct.VERIFIED_MODES = BOTH
 acct.SWITCH_HOLD_S = 0
@@ -740,14 +741,26 @@ check(acct.classify(acct.BitgetError("x", code=acct.UNVERIFIED)) == "unknown",
       "an unverified refusal classifies UNKNOWN (never TRANSIENT: it does not clear by itself)")
 acct.VERIFIED_MODES = BOTH
 POS[:] = []
-check(venue_traits.verified_modes("bitget") == ("classic",) and "bitget" not in venue_traits.unverified(),
-      "venue_traits: bitget verified on classic accounts only (the lib gate reads it)")
+check(venue_traits.verified_modes("bitget") == () and "bitget" in venue_traits.unverified(),
+      "venue_traits: bitget verifies no account type yet (the lib gate reads it)")
 from lib import venue_wiring as vw  # noqa: E402
 
 if not os.path.exists("lib"):
     os.symlink(os.path.join(ROOT, "lib"), "lib")  # official_venues looks for lib/account_<id>.py under cwd
-check(vw.official_venues(ENV) == ["bitget"] and vw.detect_venue(ENV) == "bitget",
-      "a machine with BITGET_* in .env (and both libs on disk): Bitget is wired (a UTA key is refused by the lib)")
+check(vw.official_venues(ENV) == [] and vw.detect_venue(ENV) is None,
+      "a machine with BITGET_* in .env (and both libs on disk): official_venues has no bitget, detect_venue None")
+check(vw.official_venues({**ENV, "BINANCE_API_KEY": "k", "BINANCE_SECRET_KEY": "s"}) == ["binance"],
+      "…a Binance key beside it is still the venue")
+_env0 = vw.read_env
+vw.read_env = lambda path=".env": ENV
+del CALLS[:]
+try:
+    vw.auto_place_order("NVDAUSDT", 10.0)
+    check(False, "the reconciler's place_order on a Bitget-only machine raises")
+except RuntimeError as e:
+    check("no officially-supported venue" in str(e) and not CALLS,
+          "the reconciler's place_order on a Bitget-only machine: no venue, nothing sent to Bitget")
+vw.read_env = _env0
 
 # ── lib.venue_wiring on Bitget ───────────────────────────────────────────────
 _env, _detect = vw.read_env, vw.detect_venue

@@ -61,10 +61,11 @@ TRAITS = {
         "reference": "references/sinopac-broker.md",
         "label": "永豐金",
     },
-    # real-account run passed on a classic account (2026-10-22, both position modes); a UTA key is
-    # refused by the lib until a UTA run passes (.claude/output/backend/bitget-real-verify-0.1.29.md)
+    # classic passed its real-account run (2026-10-22, .claude/output/backend/bitget-real-verify-0.1.29.md)
+    # but stays shut until 0.1.33 (Wei); 0.1.33 sets ("classic",). Shut, a machine with BITGET_* in .env
+    # (the web's old Bitget row) does nothing with it
     "bitget": {
-        "verified_modes": ("classic",),
+        "verified_modes": (),
         "reference": "references/exchange-connect.md",
         "label": "Bitget",
     },

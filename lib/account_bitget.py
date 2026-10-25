@@ -9,9 +9,13 @@ Credentials: BITGET_API_KEY / BITGET_SECRET_KEY / BITGET_PASSPHRASE in .env
 key serves both APIs: an upgraded account's existing key gains UTA access.
 
 TWO ACCOUNT TYPES, picked per key by account_mode():
-- UTA (Unified Trading Account, v3 API) — the main path. Bitget is moving every
-  account to it; a UTA key answers 40085 on any v2 private endpoint.
-- classic (v2 API) — the secondary path, NOT live-verified yet.
+- classic (v2 API) — real-account run passed (main account, both position modes,
+  2026-10-22).
+- UTA (Unified Trading Account, v3 API) — real-account run NOT passed (some replies
+  measured 2026-10-23, noted where they are used); a UTA key answers 40085 on any v2
+  private endpoint. Bitget is moving accounts to it.
+Only the types in VERIFIED_MODES (lib/venue_traits' bitget row) are served; a key of
+another type is refused on every read.
 The mode is re-read every MODE_TTL_S and at once on a 40085. The mode and the legs
 last held are recorded in state/bitget_account_mode.json. A first read, a changed
 mode (Bitget upgraded the account while it ran, or the user switched it), an
@@ -311,7 +315,7 @@ def _probe(env):
     if am in ("upgrading", "switching"):
         return "transition", st
     # hybrid and anything newer: not measured — refuse in words rather than trade a guess
-    raise BitgetError(f"Bitget 帳戶模式是 {am or '（空白）'}，Blave 還沒支援這種模式：請改用統一帳戶或經典帳戶",
+    raise BitgetError(f"Bitget 帳戶模式是 {am or '（空白）'}，Blave 還沒支援這種模式：請改綁經典帳戶的金鑰，或改綁其他交易所",
                       code=MODE_UNSUPPORTED, kind=reject_token.KEY_PERMISSION)
 
 
