@@ -307,10 +307,16 @@ async function detectAgents() {
 let loginChild = null;
 async function agentLogin(kind) {
   if (loginChild) return { ok: false, busy: true };
-  const d = await detectAgents();
-  const bin = kind === "claude" ? d.claude.path : kind === "codex" ? d.codex.path : null;
-  if (!bin) return { ok: false };
-  const envPath = await loginShellPath();
+  // spawn 之前先佔位:偵測要跑一兩秒,這段時間按「取消等待」要算數、第二個登入也要擋掉
+  const slot = loginChild = { __cancelled: false };
+  let bin, envPath;
+  try {
+    const d = await detectAgents();
+    bin = kind === "claude" ? d.claude.path : kind === "codex" ? d.codex.path : null;
+    if (bin) envPath = await loginShellPath();
+  } catch (e) { loginChild = null; throw e; }
+  if (!bin) { loginChild = null; return { ok: false }; }
+  if (slot.__cancelled) { loginChild = null; return { ok: false, cancelled: true, code: null, cantRun: false }; }
   return new Promise((resolve) => {
     const w = cmdWrap(bin);
     const child = spawn(w.file, kind === "claude" ? ["auth", "login"] : ["login"],
@@ -331,7 +337,7 @@ async function agentLogin(kind) {
 
 function cancelAgentLogin() {
   if (!loginChild) return false;
-  loginChild.__cancelled = true; loginChild.kill();
+  loginChild.__cancelled = true; if (loginChild.kill) loginChild.kill();
   return true;
 }
 

@@ -92,6 +92,21 @@ exit 2
       fs.rmSync(path.join(HOME, "signed"), { force: true });
       const p2 = m.agentLogin("codex"); await new Promise((res) => setTimeout(res, 200)); m.cancelAgentLogin(); const cx = await p2;
       t("…按「取消等待」→ cancelled=true、ok=false、不是 cantRun", cx.cancelled === true && cx.ok === false && cx.cantRun === false, cx); }
+    // 7. 偵測途中按「取消等待」:spawn 之前也要算數(稽核 P2-3)——登入行程不起、回 cancelled;偵測中第二個登入回 busy
+    { const d = binDir("bcancel"); script(path.join(d, "codex"), `#!/bin/sh
+if [ "$1" = "login" ] && [ "$2" = "status" ]; then sleep 1.5; exit 1; fi
+if [ "$1" = "login" ]; then : > "$HOME/login-ran"; exit 0; fi
+exit 2
+`);
+      const m = mkMain(PATH_OF(d), MISSING_APP, null);
+      const p = m.agentLogin("codex"); await new Promise((res) => setTimeout(res, 200));
+      const second = await m.agentLogin("codex"), cut = m.cancelAgentLogin(), r = await p;
+      await new Promise((res) => setTimeout(res, 300));
+      t("偵測中按取消 → cancelAgentLogin 回 true、結果 cancelled、登入行程沒起來;同時第二個登入回 busy",
+        cut === true && r.cancelled === true && r.ok === false && r.cantRun === false && !fs.existsSync(path.join(HOME, "login-ran")) && second.busy === true, { cut, r, second, ran: fs.existsSync(path.join(HOME, "login-ran")) });
+      const again = await m.agentLogin("codex");
+      t("…取消後佔位放掉:下一次登入照常跑", again.ok === true && fs.existsSync(path.join(HOME, "login-ran")), again);
+      fs.rmSync(path.join(HOME, "login-ran"), { force: true }); }
     // 6. Claude 同一套:PATH 上的 claude 跑不起來 → 改用 SDK 隨包那顆
     { const d = binDir("bclaude"); script(path.join(d, "claude"), "#!/bin/sh\nexit 127\n");
       const bundled = script(path.join(ROOT, "venv", "claude_agent_sdk", "_bundled", "claude"), "#!/bin/sh\necho '{\"loggedIn\":true,\"authMethod\":\"x\"}'\n");
