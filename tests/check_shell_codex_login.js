@@ -25,7 +25,7 @@ t("字串:終端機那一句帶 {cmd} 佔位(兩語)", /\{cmd\}/.test(STR.zh["ro
 
 // ── 主行程:原文切出來,配假的 loginShellPath / BASE,子行程是真的 ──
 const POSIX = process.platform !== "win32";
-const PIECES = [constOf(src, "cmdWrap"), fnOf(src, "run"), fnOf(src, "which"), "const LOGIN_CHECK_MS = 2000;", fnOf(src, "binKind"), constOf(src, "runRec"), constOf(src, "cantRun"),
+const PIECES = [constOf(src, "cmdWrap"), constOf(src, "WIN_ENV_DROP"), fnOf(src, "probeEnv"), fnOf(src, "run"), fnOf(src, "which"), "const LOGIN_CHECK_MS = 2000;", fnOf(src, "binKind"), constOf(src, "runRec"), constOf(src, "cantRun"),
   fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "codexPath"), fnOf(src, "claudePath"), fnOf(src, "detectAgents"),
   "let loginChild = null;", fnOf(src, "agentLogin"), fnOf(src, "cancelAgentLogin")].join("\n");
 function mkMain(envPath, chatgpt, bundled) {

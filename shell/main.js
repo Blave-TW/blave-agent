@@ -74,11 +74,11 @@ function loginShellPath() {
 /* Windows 的 npm 全域 CLI 是 .cmd 包裝檔,Node 不經 shell 開不了(EINVAL)。只有這種才走 shell;命令列裡只有我們寫死的字
    與 where.exe 給的路徑(引號包住,路徑含空白也行)。 */
 const cmdWrap = (bin) => (process.platform === "win32" && /\.(cmd|bat)$/i.test(bin) ? { file: `"${bin}"`, shell: true } : { file: bin, shell: false });
-function run(cmd, args, envPath, timeout = 10000, cwd = undefined) {
+// env 只給 detectAgents 的對照組(authOutside);其餘一律 probeEnv:跟 agent 回合同一組憑證環境
+function run(cmd, args, envPath, timeout = 10000, cwd = undefined, env = undefined) {
   const w = cmdWrap(cmd), t0 = Date.now();
   return new Promise((resolve) => {
-    // DISABLE_AUTOUPDATER:偵測跑的 claude 可能是 SDK 隨包那顆,同 runtime/agent_turn 的做法,別讓它背景抓 330MB 新版
-    execFile(w.file, args, { timeout, cwd, shell: w.shell, windowsHide: true, env: { ...process.env, PATH: envPath, DISABLE_AUTOUPDATER: "1" } },
+    execFile(w.file, args, { timeout, cwd, shell: w.shell, windowsHide: true, env: env || probeEnv(envPath) },
       (err, stdout, stderr) => resolve({
         code: err ? (err.code === undefined ? -1 : err.code) : 0,
         stdout: String(stdout || ""), stderr: String(stderr || ""),
@@ -241,16 +241,18 @@ async function codexBinNow() { return codexPath(await loginShellPath()); }
 async function detectAgents() {
   const envPath = await loginShellPath();
   const out = {
-    claude: { installed: false, loggedIn: false, authMethod: null, email: null, path: null, why: null },
-    codex: { installed: false, loggedIn: false, path: null, why: null, via: null },
+    claude: { installed: false, loggedIn: false, authMethod: null, email: null, path: null, why: null, authOutside: false },
+    codex: { installed: false, loggedIn: false, path: null, why: null, via: null, authOutside: false },
   };
   const rec = { claude: {}, codex: {} };
   /* 解路徑 + 跑登入檢查。PATH 上那顆跑不起來(cantRun)就記進 BAD_BIN、再解一次——這次 find 會跳過它、拿退路那顆
      (ChatGPT.app / Store 版內附的 codex、SDK 隨包的 claude);退路也跑不起來才算 cantrun。rec.alt = 試過的退路檔種 */
-  const probe = async (kind, find, args) => {
+  const probe = async (kind, find, args, rawArgs) => {
     let bin = await find(rec[kind]);
     if (!bin) { BAD_BIN[kind] = null; return { bin: null, r: null }; }
-    let r = await run(bin, args, envPath, LOGIN_CHECK_MS);
+    // 對照組跟正式那支同時開跑:正式那支說沒登入時才等它,不多花時間
+    const rawP = run(bin, rawArgs, envPath, LOGIN_CHECK_MS, undefined, { ...process.env, PATH: envPath, DISABLE_AUTOUPDATER: "1" });
+    let r = await run(bin, args, envPath, LOGIN_CHECK_MS), raw = rawP;
     BAD_BIN[kind] = null;
     if (cantRun(r)) {
       BAD_BIN[kind] = bin;
@@ -258,14 +260,18 @@ async function detectAgents() {
       if (alt && alt !== bin) {
         rec[kind].alt = binKind(alt);
         const r2 = await run(alt, args, envPath, LOGIN_CHECK_MS);
-        if (!cantRun(r2)) { bin = alt; r = r2; }
+        if (!cantRun(r2)) { bin = alt; r = r2; raw = null; }
       }
     }
-    return { bin, r };
+    return { bin, r, raw };
   };
+  /* 對照組:同一顆 CLI 帶整份環境、讀用戶設定檔(偵測改之前的看法)。正式那支沒登入、對照組卻登入 → 他的金鑰設在環境變數、
+     ~/.claude/settings.json 或 apiKeyHelper,agent 回合看不到;那一列多一句講出路。只回布林,不碰 stdout 的其他欄位 */
+  const outside = async (raw, ok) => { const x = raw && await raw; return !!x && !cantRun(x) && !x.timedOut && ok(x); };
   // 兩條同時跑:各自最多 LOGIN_CHECK_MS,整次偵測最多也就這麼久(依序跑最壞要兩倍,畫面那邊沒有自己的逾時)
   await Promise.all([(async () => {
-    const { bin: claudeBin, r } = await probe("claude", (seen) => claudePath(envPath, seen), ["auth", "status"]);
+    // --setting-sources= 要在子指令前面(放後面是 unknown option):agent 回合的 SDK 帶的就是它,用戶設定檔一個都不讀
+    const { bin: claudeBin, r, raw } = await probe("claude", (seen) => claudePath(envPath, seen), ["--setting-sources=", "auth", "status"], ["auth", "status"]);
     rec.claude.bin = binKind(claudeBin);
     if (!claudeBin) return;
     out.claude.installed = true;
@@ -278,13 +284,16 @@ async function detectAgents() {
       out.claude.authMethod = j.authMethod || null;
       out.claude.email = j.email || null;
     } catch (_) { if (r.code === 0) rec.claude.json = false; /* 舊版沒有這個子指令:當成未知,顯示成未登入;跑不起來(退出碼非 0、stdout 空)不算壞 JSON */ }
+    if (!out.claude.loggedIn && !cantRun(r) && !r.timedOut) {
+      out.claude.authOutside = await outside(raw, (x) => { try { return JSON.parse(x.stdout).loggedIn === true; } catch (_) { return false; } });
+    }
   })(), (async () => {
     // Codex 有兩種裝法:獨立 CLI(在 PATH 上),或跟著 ChatGPT 桌面版來的——後者的
     // CLI 藏在 app bundle 裡、不在 PATH 上,但就是同一顆完整的 codex(實測
     // 0.155.0-alpha:`login status`、`exec --json` 都在)。只查 PATH 的話,一大群
     // 「有 Codex」的人會看到「未偵測到」。Windows 的對應是 Store 版 Codex 桌面版(storeCodexPath)。
     // 官方契約:`codex login status` 登入=0、未登入=1(原始碼 cli/src/login.rs:443)
-    const { bin: codexBin, r } = await probe("codex", (seen) => codexPath(envPath, seen, true), ["login", "status"]);
+    const { bin: codexBin, r, raw } = await probe("codex", (seen) => codexPath(envPath, seen, true), ["login", "status"], ["login", "status"]);
     rec.codex.bin = binKind(codexBin);
     if (!codexBin) return;
     out.codex.installed = true;
@@ -292,8 +301,10 @@ async function detectAgents() {
     out.codex.via = rec.codex.bin === "chatgpt" || rec.codex.bin === "store" ? "app" : "cli";
     Object.assign(rec.codex, runRec(r));
     out.codex.loggedIn = r.code === 0;
+    if (!out.codex.loggedIn && !cantRun(r) && !r.timedOut) out.codex.authOutside = await outside(raw, (x) => x.code === 0);
   })()]);
   rec.claude.loggedIn = out.claude.loggedIn; rec.codex.loggedIn = out.codex.loggedIn;
+  rec.claude.outside = out.claude.authOutside; rec.codex.outside = out.codex.authOutside;
   out.claude.why = detectWhy("claude", rec.claude); out.codex.why = detectWhy("codex", rec.codex);
   detectLogWrite(path.join(BASE, "state", "detect.log"), { ts: new Date().toISOString(), os: process.platform, ...rec });
   return out;
@@ -320,7 +331,7 @@ async function agentLogin(kind, onSpawn) {
   return new Promise((resolve) => {
     const w = cmdWrap(bin);
     const child = spawn(w.file, kind === "claude" ? ["auth", "login"] : ["login"],
-      { env: { ...process.env, PATH: envPath, DISABLE_AUTOUPDATER: "1" }, stdio: "ignore", shell: w.shell, windowsHide: true });
+      { env: probeEnv(envPath), stdio: "ignore", shell: w.shell, windowsHide: true });
     loginChild = child;
     // 畫面的「已在瀏覽器開啟」1 秒從這裡起算,偵測那一兩秒不算(稽核 P2-2)
     if (onSpawn) onSpawn();
@@ -969,6 +980,18 @@ const PY_ENV = app.isPackaged ? { PYTHONPYCACHEPREFIX: path.join(BASE, "state", 
    就 UnicodeEncodeError;UTF-8 mode 一併修 stdio 與 open() 的預設編碼,整棵子行程樹(daemon → 對帳器 → 策略)都繼承。 */
 const WIN_ENV_DROP = /^(ANTHROPIC_|OPENAI_|BLAVE_|CODEX_|CLAUDE_|PYTHON|NODE_OPTIONS$|ELECTRON_)/i;
 const WIN_PY_ENV = { PYTHONUTF8: "1" };
+/* 偵測與替用戶登入給 CLI 的環境(純函式;tests/check_shell_claude_env_auth.js):兩個 OS 都從 process.env 拔掉 WIN_ENV_DROP 那組。
+   agent 回合在 Windows 被 childEnv 拔掉、在 Mac 不在白名單裡,偵測看得到的話會說「已登入」、送出卻是 Not logged in。
+   不直接用 childEnv:darwin 它原樣回呼叫端的白名單,這裡會連 USER 都沒有,Keychain 登入的人反被判成沒登入。
+   CLAUDE_CONFIG_DIR / CODEX_HOME 一起拔是刻意的:回合本來就不帶,要支援自訂設定目錄時兩邊一起帶。
+   win32 的 HOME 照 childEnv 對映到 USERPROFILE(為 Git Bash 設了使用者層 HOME 的人,兩邊才讀同一個 ~/.claude) */
+function probeEnv(envPath, platform = process.platform, penv = process.env) {
+  const env = {};
+  for (const k of Object.keys(penv)) if (!WIN_ENV_DROP.test(k) && !(platform === "win32" && k.toUpperCase() === "PATH")) env[k] = penv[k];
+  if (platform === "win32" && penv.USERPROFILE) env.HOME = penv.USERPROFILE;
+  // DISABLE_AUTOUPDATER:偵測跑的 claude 可能是 SDK 隨包那顆,同 runtime/agent_turn 的做法,別讓它背景抓 330MB 新版
+  return { ...env, PATH: envPath, DISABLE_AUTOUPDATER: "1" };
+}
 function childEnv(own, platform = process.platform, penv = process.env) {
   if (platform !== "win32") return own;
   const taken = new Set(Object.keys(own).map((k) => k.toUpperCase()));

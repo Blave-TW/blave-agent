@@ -114,7 +114,7 @@ function paintRows(d) {
     } else if (x.installed) {
       const waiting = loginPending === kind, msg = ROWMSG[kind];
       const label = waiting ? "login.cancel" : msg === "failed" ? "login.retry" : "cn.connect";
-      rows.appendChild(row({ name, kind, sub: msg ? rowMsg(kind, msg) : null,
+      rows.appendChild(row({ name, kind, sub: msg ? rowMsg(kind, msg) : x.authOutside ? t("row.keyOff", rowVars(kind, name)) : null,
         action: btn("btn-out", t(label), waiting ? () => window.blave.cancelAgentLogin() : (e) => localLogin(kind, e.currentTarget)) }));
     } else {
       rows.appendChild(row({ name, kind, st: t("st.notFound"), stClass: "" }));
@@ -134,6 +134,8 @@ function rowMsg(kind, msg) {
   f.append(e, LANG === "zh" ? "" : " ", cmdLine(kind)); return f;
 }
 const rowMsgText = (kind, msg) => rowMsg(kind, msg).textContent;
+// 列內那一句的佔位:{name} 是那一列,{acct} 是那家 CLI 登入用的帳號
+const rowVars = (kind, name) => ({ name, acct: kind === "codex" ? "ChatGPT" : "Claude" });
 // 失敗的退路,三個表面(連結畫面那一列、設定 › 模型接入、工作頁失效卡)同一句;{cmd} 包成 <code>,用 DOM 組(不用 innerHTML)
 function cmdLine(kind) {
   const f = document.createDocumentFragment();
@@ -295,7 +297,8 @@ function mdlOptions(d, curKind, tok, pend, ak) {
     const x = (d && d[kind]) || {}, ready = !!(x.installed && x.loggedIn);
     // 跑不起來 / 沒有回應:同連結畫面,是狀態不是「沒登入」——列變灰、不給〔登入〕(按了只會再撞一次)
     const why = d !== null && x.installed && !ready ? whyState(x) : null;
-    out.push({ kind, name, desc: why === "st.cantRun" ? "row.reinstall" : null,   // 同連結畫面那一列:跑不起來寫怎麼修
+    // 同連結畫面那一列:跑不起來寫怎麼修;金鑰設在 agent 回合讀不到的地方(authOutside)講出路
+    out.push({ kind, name, desc: why === "st.cantRun" ? "row.reinstall" : d !== null && x.installed && !ready && !why && x.authOutside ? "row.keyOff" : null,
       // d 是 null = 還在偵測:狀態寫「偵測中…」、不給動作(列數不變,不 reflow)
       st: d === null ? { key: "cn.detecting" } : why ? { key: why } : x.installed ? null : { key: "st.notFound" },
       act: p.login === kind ? "login.cancel" : d === null || !ready ? (d !== null && x.installed && !why ? "cn.signIn" : null) : curKind === kind ? null : "cn.use",
@@ -348,7 +351,7 @@ function mdlPaint() {
     if (o.isCur) r.setAttribute("aria-current", "true");
     const tc = el("div", "t"); tc.appendChild(el("p", "n", o.nameKey ? t(o.nameKey) : o.name));
     // 首次綁卡送多少 AI 額度來自 api(登入後 account_status、沒登入 public-pricing),不寫死;拿不到數字就退成怎麼收錢那句
-    if (o.desc) { const q = o.desc === "cn.blave.descSet" ? planVars().q : ""; tc.appendChild(el("p", "m", o.desc === "cn.blave.descSet" ? (q ? t(o.desc, { q }) : t("cn.blave.descSetNoNum")) : t(o.desc, o.desc === "row.reinstall" ? { name: o.name } : undefined))); }
+    if (o.desc) { const q = o.desc === "cn.blave.descSet" ? planVars().q : ""; tc.appendChild(el("p", "m", o.desc === "cn.blave.descSet" ? (q ? t(o.desc, { q }) : t("cn.blave.descSetNoNum")) : t(o.desc, /^row\./.test(o.desc) ? rowVars(o.kind, o.name) : undefined))); }
     else if (o.names) tc.appendChild(el("p", "m", o.names.join(t("ak.sep"))));
     r.appendChild(tc);
     if (o.st) r.appendChild(el("span", "st", t(o.st.key)));
@@ -4198,6 +4201,7 @@ function turnFailOf(f, text) {
   if (f && f.cap) return "cap";
   if (f && f.flow === "credit") return "402";
   if (f && f.flow === "blave") return "403";
+  if (f && f.flow === "local") return "auth";
   const m = /^(?:Failed to authenticate\. )?API Error: (\d{3})\b/.exec(text || "");
   return m ? (m[1] === "429" ? "429" : "other") : null;
 }
@@ -4317,6 +4321,7 @@ window.blave.onTurnEnd(async (r) => {
   if (typeof xpTurnEnd === "function") xpTurnEnd();   // 定稿之後才掛轉出卡:paintAi 會清空泡泡(連卡槽一起)
   // 上限的那句沒以回覆的形式出來(走 error chunk 或直接結束)時 turnFailOf 看不到:這一輪收過 llm_cap 就照樣記 cap
   if (!stopped && cur === "apikey" && turnCap) turnFail = "cap";
+  if (loggedOut) turnFail = "auth";
   const faulted = !stopped && (r.code !== 0 || turnFaulted || turnErrored || !turnGotReply || loggedOut);   // 同 upTurnEnded 的判準
   busyEnd(faulted, stopped);
   if (!stopped && (faulted || turnFail)) trackEvent("turn_failed", { reason: /AGENT_BIN_MISSING/.test(r.errTail || "") ? "engine_missing" : turnFail || "other" });
