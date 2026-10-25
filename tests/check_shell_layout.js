@@ -106,8 +106,12 @@ app.whenReady().then(async () => {
   await X(`document.documentElement.setAttribute("data-theme", "light")`);
   const hit = await X(`(() => { const cats = [...document.querySelectorAll("#set-cats .set-cat")].filter((b) => !b.hidden), f = cats[0], l = cats[cats.length - 1], a = f.getBoundingClientRect(), b = l.getBoundingClientRect(), x = a.left + a.width / 2;
     const at = (y) => { const e = document.elementFromPoint(x, y); return e && e.closest(".set-cat"); };
-    return { h: cats.map((c) => Math.round(c.getBoundingClientRect().height)), up: at(a.top - 4) === f, down: at(b.bottom + 4) === l, outUp: at(a.top - 6) !== f, outDown: at(b.bottom + 6) !== l }; })()`);
-  ok(`⑥ S15 分類鈕視覺高 34(${hit.h.join("/")}),熱區上下各多 5:邊外 4px 還點得到、6px 點不到`, hit.h.every((h) => h === 34) && hit.up && hit.down && hit.outUp && hit.outDown);
+    const own = cats.every((c) => { const r = c.getBoundingClientRect(); return at(r.top + 1) === c && at(r.bottom - 1) === c; });
+    const conn = document.querySelector('#set-cats .set-cat[data-set-cat="connect"]');
+    return { h: cats.map((c) => Math.round(c.getBoundingClientRect().height)), up: at(a.top - 4) === f, down: at(b.bottom + 4) === l, outUp: at(a.top - 6) !== f, outDown: at(b.bottom + 6) !== l, own,
+      connHidden: !!conn && conn.hidden && getComputedStyle(conn).display === "none" }; })()`);
+  ok(`⑥ S15 分類鈕視覺高 34(${hit.h.join("/")}),熱區上下各多 5:邊外 4px 還點得到、6px 點不到;每顆可見框的上下緣 1px 點到的都是自己(不被鄰居的熱區吃掉)`, hit.h.every((h) => h === 34) && hit.up && hit.down && hit.outUp && hit.outDown && hit.own, JSON.stringify(hit));
+  ok("⑥ 平台沒開放手機查看時,「連結」那顆真的不佔位(display: none)", hit.connHidden);
   const gap = await X(`(() => { const r = (id) => document.querySelector(id).getBoundingClientRect(), rows = [...document.querySelectorAll('#set-modal .set-pane[data-set-cat="display"] > .set-row')].filter((x) => !x.hidden).map((x) => x.getBoundingClientRect());
     const sc = document.querySelector(".set-content").getBoundingClientRect();
     return { inRows: rows.slice(1).map((x, i) => Math.round(x.top - rows[i].bottom)), toRn: Math.round(r(".set-rn").top - rows[rows.length - 1].bottom), rnSug: Math.round(r(".set-sug").top - r(".set-rn").bottom), sugAwake: Math.round(r(".set-awake").top - r(".set-sug").bottom),

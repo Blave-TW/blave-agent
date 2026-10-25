@@ -3867,6 +3867,8 @@ function planPaint() {
     if (again && !again.disabled) again.focus();
     else { const catBtn = document.querySelector('.set-cat[aria-current="true"]'); if (catBtn) catBtn.focus(); }
   }
+  // 從「看公開連結」來、焦點還在區段標題上:方案這一區段重畫後變高(登入後查到狀態)會把它推出畫面,再捲一次
+  const shlH = $("shl-h"); if (shlH && document.activeElement === shlH) shlH.scrollIntoView({ block: "start" });
 }
 /* 方案頁的「登入 Blave」:只拿 token,**不改連線**(AI 照用他現在那個)。等待瀏覽器期間同一顆鈕變「取消」。 */
 async function planLogin() {

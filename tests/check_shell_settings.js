@@ -336,7 +336,7 @@ ok("左欄底那一塊清乾淨:DOM / CSS / 程式都沒有舊的 id 與 class",
 const CATS = (re) => [...html.matchAll(re)].map((m) => m[1]).join();
 ok("分類順序(0.1.32 方案 B):一般 → 模型接入 → Agent → 資料來源 → 連結 → 帳號與方案 → 隱私(七個);每一類都有自己的頁;「公開連結」不再是一類,是帳號與方案裡的區段(#set-plan 裡 #set-plan-main 之後的 #set-shares);「帳號」那一頁與它的節點都拿掉了",
   CATS(/class="set-cat"[^>]*data-set-cat="([a-z]+)"/g) === "display,model,rules,src,connect,plan,priv" && CATS(/class="set-pane[^"]*" data-set-cat="([a-z]+)"/g) === "display,model,rules,src,connect,plan,priv"
-  && /<div class="set-pane plan-pane" data-set-cat="plan" id="set-plan" hidden>\s*<div id="set-plan-main"><\/div>\s*<div class="shl-sec" id="set-shares"><\/div>\s*<\/div>/.test(html)
+  && /<div class="set-pane plan-pane" data-set-cat="plan" id="set-plan" hidden>\s*<div id="set-plan-main"><\/div>\s*<div id="set-shares"><\/div>\s*<\/div>/.test(html)
   && /<button type="button" class="set-cat" data-set-cat="connect" data-i18n="set\.cat\.connect" hidden><\/button>/.test(html)
   && !/set-acct-pane|acct-to-plan|acct-list|acct-a1|id="set-acct-btn"|id="acct-hint"/.test(html) && !/acct-to-plan|acct-list|acct-a1|acct\.in\.|acct\.toPlan/.test(src));
 // 舊的分類 id(acct、shares)都還開得到合併後的頁:真的跑 setCat

@@ -905,7 +905,9 @@ body.resizing * { cursor: col-resize !important; }
   text-align: left; font-size: 13px; line-height: 18px; color: var(--ink-2);   /* 固定行高:純英文名(Agent)跟中文名同高 34 */
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
-.set-cat::before { content: ""; position: absolute; inset: -5px 0; }
+/* 鈕距 36、熱區 44:相鄰兩顆的熱區必然重疊。熱區壓到 -1、分類欄自成一層(isolation):每顆自己的可見框永遠蓋在鄰居的熱區上面,只有框外那幾 px 才歸熱區 */
+.set-cats { isolation: isolate; }
+.set-cat::before { content: ""; position: absolute; inset: -5px 0; z-index: -1; }
 .set-cat[aria-current="true"] { background: var(--surface-muted); color: var(--ink); font-weight: 600; }
 @media (hover: hover) { .set-cat:not([aria-current="true"]):hover { background: var(--surface-row-hover); color: var(--ink); } }
 /* 固定內容高:切分類不改變 modal 尺寸,內容自己捲 */
