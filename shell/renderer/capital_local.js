@@ -40,7 +40,7 @@ const CAPL_PFX_ERR = { PFX_PASSWORD: "cap.pfx.errPw", PFX_INVALID: "cap.pfx.errF
 const caplBlank = () => ({ started: false, scan: null, loc: null, cloud: false, choice: null, wiz: false, err: null, picked: false, ppw: "",
   pfxErr: null, done: null, nokey: false, busy: false, seen: {}, sig: null, view: null,
   flow: false, id: "", pw: "", msg: null, storeOpen: false, sent: null, setupSent: false, probeSent: false, startSent: false,
-  recheck: false, unlockUsed: false, signOpened: false, signChecked: false, verifyDl: false, verifyChecked: false, old: null, oldAsked: false, base: null });
+  recheck: false, unlockUsed: false, signOpened: false, signChecked: false, verifyDl: false, verifyChecked: false, old: null, oldAsked: false, base: null, readyBurst: false });
 let CAPL = caplBlank();
 let caplTimer = null;
 
@@ -295,6 +295,8 @@ function caplAdvance(view, cc) {
   if (!CAPL.base) CAPL.base = { setup: setup.status || null, probe: probe.status === "ok" ? probe.state : null, worker: worker.status || null };
   if (setup.status === "ok" && CAPL.base.setup !== "ok") caplTrack("setup");
   if (probe.status === "ok" && probe.state === "ok" && CAPL.base.probe !== "ok") caplTrack("probe");
+  // 這次開框看到下單程式起來:主畫面要等 daemon 重讀帳戶(runtime capital_local._ready)才有總權益,這幾秒改快輪詢接住
+  if (worker.status === "ok" && CAPL.base.worker !== "ok" && !CAPL.readyBurst) { CAPL.readyBurst = true; caplBurst(); }
   if ((view === "l-old-row" || view === "l-cert-bad") && !CAPL.oldAsked) { caplOldPlan(); return; }
   if (CAPL.busy || CAPL.sent || caplDown() || (cc && cc.busy)) return;
   if (!CAPL.setupSent && setup.status !== "ok" && setup.status !== "running" && setup.status !== "failed") { CAPL.setupSent = true; caplStep("setup"); return; }

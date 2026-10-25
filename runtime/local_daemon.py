@@ -1385,6 +1385,7 @@ class Daemon:
         # 群益: only through capital_local's bind step (capital_local.local_bind_gate)
         self.capl.set_seal_key(self.secret)
         self.capl._LOCAL["on_secrets"] = lambda: self.sup.respawn_when_idle("群益 credentials handed over")
+        self.capl._LOCAL["on_ready"] = self.account_kick.set
         self.capl._LOCAL["worker"].reap_orphan(cl._pid_cmdline)
         try:
             self.capl.startup_sweep()

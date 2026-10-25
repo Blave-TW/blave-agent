@@ -117,7 +117,8 @@ VC_MAX = 64 * 1024 * 1024
 _SECTIONS = ("setup", "probe", "worker")
 _busy = threading.Lock()
 _status_lock = threading.Lock()
-_LOCAL = {"key": None, "secrets": None, "pending": None, "worker": None, "on_secrets": None}
+_LOCAL = {"key": None, "secrets": None, "pending": None, "worker": None, "on_secrets": None,
+          "on_ready": None}
 
 
 def _paths():
@@ -848,6 +849,19 @@ def probe_once(push=None):
     return st
 
 
+def _ready():
+    """The modal reads this status file, the main screen reads account.json: the
+    daemon's account read last ran when `start` was dispatched (no snapshot yet,
+    so ok:false) and would not run again for up to ACCOUNT_EVERY_S. Reading the
+    snapshot file is all account_capital does — no 群益 login."""
+    cb = _LOCAL["on_ready"]
+    if cb:
+        try:
+            cb()
+        except Exception as e:
+            print(f"[capital_local] account read kick failed ({type(e).__name__})", file=sys.stderr)
+
+
 def _start(push):
     probe = (read_status() or {}).get("probe") or {}
     if probe.get("state") != "ok":
@@ -866,6 +880,7 @@ def _start(push):
                     if s.get("ok") is True:
                         # ok_at outlives later failures: "never finished" vs "finished, then failed"
                         _update("worker", status="ok", error=None, wanted=True, ok_at=int(time.time()))
+                        _ready()
                         return {"worker": "ok"}
                     _refuse("SNAPSHOT_ERROR", "the worker's first read failed")
             except (OSError, ValueError, AttributeError):
