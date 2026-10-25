@@ -1236,7 +1236,7 @@ def _sched_guard_hooks(options):
 # 而 publish 的指令字串裡會整段塞進新聞原文——所以網路工具只認指令位置(同 crontab 守門)、`.env` 前面不能是字或點
 # (www.env.go.jp)、order 模組逐一列(`order_\w+` 會誤擋 order_flow)。
 # 會下單 / 平倉 / 換 key 的模組整個擋(報告流程一個都不 import);清單由測試從 import 關係列舉對齊,新模組漏列會紅。
-SCHED_ORDER_LIB = "order_(?:binance|bingx|bybit|capital|gateio|okx|paper|president|sinopac|stockcoin|TEMPLATE)"
+SCHED_ORDER_LIB = "order_(?:binance|bingx|bybit|capital|gateio|okx|paper|president|sinopac|stockcoin|bitget|TEMPLATE)"
 # 這幾個名字不會出現在敘事裡,光出現就擋;execute / venue / portfolio 是一般英文字,只在 lib. 之後或 from lib import 裡擋
 SCHED_TRADE_BARE = SCHED_ORDER_LIB + "|venue_wiring|capital_vault|capital_worker|president_vault|president_worker"
 SCHED_TRADE_LIB = SCHED_TRADE_BARE + "|execute|venue|portfolio"

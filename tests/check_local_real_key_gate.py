@@ -110,8 +110,9 @@ cl.LOCAL_OPEN_VENUES = frozenset(cl.LOCAL_OPEN_VENUES | {"KUCOIN"})
 msg = refused({"KUCOIN_API_KEY": "not-a-real-kucoin-key", "KUCOIN_SECRET_KEY": "not-a-real-kucoin-secret"})
 check(bool(msg) and "no permission check" in msg and not os.path.exists(ENV_PATH),
       "a widened switch without a checker still writes nothing")
-check(sorted(cl._LOCAL_KEY_CHECKS) == ["BINGX", "BYBIT", "GATEIO", "OKX", "STOCKCOIN"],
-      "the venues with a desktop checker are exactly OKX, BingX, Gate.io, Bybit, StockCoin (a new one is a decision)")
+check(sorted(cl._LOCAL_KEY_CHECKS) == ["BINGX", "BITGET", "BYBIT", "GATEIO", "OKX", "STOCKCOIN"],
+      "the venues with a desktop checker are exactly OKX, BingX, Gate.io, Bybit, StockCoin, Bitget (a new one is a decision; "
+      "Bitget's is reachable only once local_daemon opens it — tests/check_bitget_surfaces.py)")
 check(not hasattr(cl, "_WITHDRAW_CHECKED") and not hasattr(cl, "_withdraw_gate"),
       "no venue's key is refused for withdrawal permission (Wei 2026-10-15)")
 
@@ -140,6 +141,8 @@ VENUE_ENV = {
     "GATEIO": {"GATEIO_API_KEY": "not-a-real-gate-key", "GATEIO_SECRET_KEY": "not-a-real-gate-secret"},
     "BYBIT": {"BYBIT_API_KEY": "not-a-real-bybit-key", "BYBIT_SECRET_KEY": "not-a-real-bybit-secret"},
     "STOCKCOIN": {"STOCKCOIN_API_KEY": "not-a-real-stockcoin-key", "STOCKCOIN_SECRET_KEY": "not-a-real-stockcoin-secret"},
+    "BITGET": {"BITGET_API_KEY": "not-a-real-bitget-key", "BITGET_SECRET_KEY": "not-a-real-bitget-secret",
+               "BITGET_PASSPHRASE": "not-a-real-bitget-pass"},
 }
 wire, echo = [], []
 

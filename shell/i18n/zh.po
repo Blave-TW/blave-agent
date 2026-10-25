@@ -1404,6 +1404,13 @@ msgstr "在 {venue} 建金鑰時，有設 IP 白名單的話，把這個 IP 加�
 msgid "cx.note.stockcoin"
 msgstr "金鑰要建成合約類型，並先在 StockCoin App 把資金轉進合約帳戶，Blave 只讀得到那裡的餘額。"
 
+# 連接框選 Bitget、閘門只開一種帳戶類型時說明區多一句(trade.js BITGET_VERIFIED_MODES)
+msgid "cx.note.bitgetClassicOnly"
+msgstr "只收 Bitget 經典帳戶的金鑰，統一帳戶（UTA）還不支援。"
+
+msgid "cx.note.bitgetUtaOnly"
+msgstr "只收 Bitget 統一帳戶（UTA）的金鑰。"
+
 msgid "cx.store.q"
 msgstr "金鑰存在哪？"
 
@@ -1445,6 +1452,17 @@ msgstr "登入已停止，按「繼續」確認登入。"
 
 msgid "cx.err.okxMode"
 msgstr "OKX 帳戶模式不支援合約。到 OKX 設定 → 帳戶模式，改成合約模式或跨幣種保證金。"
+
+# Bitget 拒收沒驗過的帳戶類型(lib/account_bitget 的句子 → trade.js cxBitgetModeErr)
+msgid "cx.err.bitgetUta"
+msgstr "還不支援 Bitget 統一帳戶（UTA），這把金鑰沒有儲存。請改用經典帳戶或其他交易所。"
+
+# 已綁的 Bitget 金鑰是統一帳戶、還沒開放(讀帳失敗那一列;trade.js trErrToken bitget_uta_unsupported)
+msgid "cx.err.bitgetUtaBound"
+msgstr "還不支援 Bitget 統一帳戶（UTA），讀不到這個帳戶。請改綁經典帳戶或其他交易所。"
+
+msgid "cx.err.bitgetClassic"
+msgstr "這把金鑰是 Bitget 經典帳戶，沒有儲存。到 Bitget App 升級成統一帳戶再連，或改綁其他交易所。"
 
 msgid "cx.failShort"
 msgstr "串接失敗"
@@ -1585,6 +1603,14 @@ msgstr "{sym} 沒有下單：這次調整量低於交易所最小下單量。調
 
 msgid "tr.err.symbol"
 msgstr "{sym} 沒有下單：交易所找不到這個合約，或它暫停交易。已下架的話，請 agent 換到別的合約。"
+
+# Bitget 40092:這個帳戶依地區或資格不開放這個標的(lib [bitget_account_eligibility] → trade.js trErrToken)
+msgid "tr.err.bitgetEligibility"
+msgstr "Bitget 不開放這個帳戶交易 {sym}，這筆沒有下單。請 agent 換標的，或洽 Bitget 確認帳戶資格。"
+
+# Bitget 統一帳戶還沒開放,下單被 lib 擋下(trade.js trErrToken bitget_uta_unsupported)
+msgid "tr.err.bitgetUta"
+msgstr "{sym} 沒有下單：還不支援 Bitget 統一帳戶（UTA）。請改綁經典帳戶或其他交易所。"
 
 msgid "tr.err.key"
 msgstr "{sym} 沒有下單：交易所拒絕這把金鑰。到「自動下單 › 設定」看帳戶狀態，有「重新測試」就按。"
@@ -3078,6 +3104,10 @@ msgstr "Passphrase"
 
 msgid "cx.passHint"
 msgstr "建立 API 金鑰時自己設的那組，不是 OKX 的登入密碼。"
+
+# Passphrase 提示:OKX 以外有 passphrase 的那家(Bitget)
+msgid "cx.passHintV"
+msgstr "建立 API 金鑰時自己設的那組，不是 {venue} 的登入密碼。"
 
 msgid "cx.group.crypto"
 msgstr "加密貨幣"
