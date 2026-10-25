@@ -122,7 +122,7 @@ exit 2
       append: (...xs) => xs.forEach((x) => { if (typeof x === "string") n.children.push({ text: x }); else if (x.frag) x.children.forEach((c) => { c.parent = n; n.children.push(c); }); else { x.parent = n; n.children.push(x); } }),
       appendChild: (x) => { n.append(x); return x; },
       addEventListener: (ev, fn) => { if (ev === "click") n.onclick = fn; },
-      setAttribute: (k, v) => { n.attrs[k] = String(v); },
+      setAttribute: (k, v) => { n.attrs[k] = String(v); }, querySelector: () => null,
       querySelectorAll: (q) => { const out = []; const walk = (x) => (x.children || []).forEach((c) => { if (q === "button" && c.tag === "button") out.push(c); walk(c); }); walk(n); return out; },
       closest: (q) => { const k = (q.match(/data-kind="([^"]+)"/) || [])[1]; let p = n; while (p) { if (k && p.dataset && p.dataset.kind === k) return p; if (q === ".cn-opts" && p.className === "cn-opts") return p; p = p.parent; } return null; } };
     Object.defineProperty(n, "textContent", { get: () => n.children.map((c) => c.text !== undefined ? c.text : c.textContent).join("") + n._txt, set: (v) => { n.children.length = 0; n._txt = v; } });
@@ -134,13 +134,15 @@ exit 2
   const dom = {}; const $ = (id) => dom[id] || (dom[id] = mkEl("div"));
   let LANG = "zh";
   const tr = (k, v) => { let s = STR[LANG][k] || k; for (const x of Object.keys(v || {})) s = s.split("{" + x + "}").join(v[x]); return s; };
+  const RSTATE = {};
   const R = new Function("document", "$", "t", "getLang", "window", "state",
     `let LANG; const sync = () => { LANG = getLang(); };
      let loginPending = null, oauthPending = false, lastDetect = null, cur = null, HINT = null, detects = 0, said = [];
      let loginSpawned = null;
      const MDL = { busy: false }, mdlPaint = () => {}, paintBlaveBtn = () => {}, connect = (k) => { state.connected = k; }, srSay = (x) => said.push(x), trackEvent = () => {};
      const cmdLine = (k) => k;
-     function detect() { detects++; detectAt = Date.now(); }
+     function detect() { detects++; detectAt = Date.now(); if (state.next) lastDetect = state.next; }
+     function setHint(h) { HINT = h || null; }
      let detectAt = 0;
      ${constOf(app, "ROWMSG")}
      ${constOf(app, "REDETECT_GAP_MS")}
@@ -155,8 +157,10 @@ exit 2
      ${constOf(app, "LOGIN_OPENED_MS")}
      ${fnOf(app, "agentLoginRun")}
      ${fnOf(app, "hintFill")}
-     return { sync, paintRows, rowMsg, agentLoginRun, hintFill, focusRedetect, whyState,
-       set: (k, v) => { eval(k + " = v"); }, get: (k) => eval(k), ROWMSG, said };`)(document, $, (k, v) => tr(k, v), () => LANG, { blave: { cancelAgentLogin: () => {} } }, {});
+     ${constOf(app, "rowMsgText")}
+     ${fnOf(app, "localLogin")}
+     return { sync, paintRows, rowMsg, agentLoginRun, hintFill, focusRedetect, whyState, localLogin,
+       set: (k, v) => { eval(k + " = v"); }, get: (k) => eval(k), ROWMSG, said };`)(document, $, (k, v) => tr(k, v), () => LANG, { blave: { cancelAgentLogin: () => {}, agentLogin: (k) => RSTATE.login(k) } }, RSTATE);
   R.sync();
   const rows = () => $("agent-rows").children.map((r) => {
     const st = (r._html.match(/class="cn-st[^"]*">(?:<span class="dot"><\/span>)?([^<]*)/) || [, ""])[1];
@@ -183,6 +187,17 @@ exit 2
   R.set("lastDetect", D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: false, why: "codex_nonzero" })); R.set("loginPending", "claude"); R.paintRows(R.get("lastDetect"));
   t("…等登入中:別的列的鈕鎖住,只有那一列的「取消等待」能按", JSON.stringify(rows()) === JSON.stringify(["claude||||取消等待", "codex||||連結(x)"]), rows());
   R.set("loginPending", null);
+
+  // 登入指令本身跑不起來(agentLogin 回 cantRun),偵測卻只看到「沒登入」:兩個表面都改「無法啟動」,不出「登入沒有完成」(稽核 P2-4)
+  { const inSet = () => { const o = mkEl("div"); o.className = "cn-opts"; const b = mkEl("button"); o.append(b); return b; };
+    const go = async (b, res) => { RSTATE.login = async () => res; RSTATE.next = D({ installed: false }, { loggedIn: false, why: "codex_nonzero" }); R.set("HINT", null); R.ROWMSG.codex = null; await R.localLogin("codex", b); return R.get("lastDetect").codex; };
+    const a = await go(inSet(), { ok: false, cancelled: false, code: 127, cantRun: true }), aHint = R.get("HINT");
+    const c = await go(inSet(), { ok: false, cancelled: false, code: 1, cantRun: false }), cHint = R.get("HINT");
+    const e = await go(mkEl("button"), { ok: false, cancelled: false, code: "ENOENT", cantRun: true });
+    t("localLogin:設定 › 模型接入 127 → 那一列改 why=codex_cantrun、沒有「登入沒有完成」;一般失敗(1)照舊出失敗句",
+      a.why === "codex_cantrun" && aHint === null && c.why === "codex_nonzero" && cHint && cHint.text === "Codex 登入沒有完成。" && cHint.cmd === "codex", { a, aHint, c, cHint });
+    t("…連結畫面 ENOENT → 那一列「無法啟動」、沒有鈕、沒有失敗訊息", e.why === "codex_cantrun" && R.ROWMSG.codex === null && rows()[1] === "codex|off|無法啟動||", rows());
+    RSTATE.next = null; R.set("loginPending", null); }
 
   // 共用訊息格(三個表面同一支 hintFill):中文句尾全形標點後不補空格,英文補一個
   { const fill = (lang, h) => { LANG = lang; R.sync(); R.set("HINT", h); const n = mkEl("p"); R.hintFill(n); return n.textContent; };

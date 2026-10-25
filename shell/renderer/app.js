@@ -190,12 +190,15 @@ async function localLogin(kind, b) {
   await detect();
   const x = (lastDetect && lastDetect[kind]) || {};
   if (inRow && r.ok && x.installed && x.loggedIn) return connect(kind, x);
-  if (!r.cancelled && !r.busy && !(x.installed && x.loggedIn)) {
+  // 登入指令本身跑不起來(127、126、ENOENT),偵測卻沒看出來(login status 跑得動):兩個表面都改畫「無法啟動」,不叫他重登
+  if (r.cantRun && x.installed && !x.loggedIn && !whyState(x)) { x.why = kind + "_cantrun"; paintRows(lastDetect); }
+  if (!r.cancelled && !r.busy && !(x.installed && x.loggedIn) && !whyState(x)) {
     if (!inRow) setHint({ text: t("login.failed", { name }), cmd: kind });
-    else if (!whyState(x)) { ROWMSG[kind] = "failed"; paintRows(lastDetect); srSay(rowMsgText(kind, "failed")); }
+    else { ROWMSG[kind] = "failed"; paintRows(lastDetect); srSay(rowMsgText(kind, "failed")); }
   }
   // detect() 把整列重畫了,焦點會掉回 body:放回這一列的鈕(成功=「連結」,失敗=「再試一次」/「登入」)
-  const again = host() && host().querySelector('[data-kind="' + kind + '"] button');
+  // 那一列變「無法啟動」沒有鈕了:設定 › 模型接入退到「重新偵測」(焦點掉到 body 的話 Esc 關不掉設定)
+  const again = host() && (host().querySelector('[data-kind="' + kind + '"] button') || host().querySelector('[data-kind="redetect"] button'));
   if (again) again.focus();
 }
 
@@ -272,11 +275,13 @@ function mdlOptions(d, curKind, tok, pend, ak) {
     isCur: curKind === "blave" }];
   [["claude", "Claude Code"], ["codex", "Codex"]].forEach(([kind, name]) => {
     const x = (d && d[kind]) || {}, ready = !!(x.installed && x.loggedIn);
+    // 跑不起來 / 沒有回應:同連結畫面,是狀態不是「沒登入」——列變灰、不給〔登入〕(按了只會再撞一次)
+    const why = d !== null && x.installed && !ready ? whyState(x) : null;
     out.push({ kind, name, desc: null,
       // d 是 null = 還在偵測:狀態寫「偵測中…」、不給動作(列數不變,不 reflow)
-      st: d === null ? { key: "cn.detecting" } : x.installed ? null : { key: "st.notFound" },
-      act: p.login === kind ? "login.cancel" : d === null || !ready ? (d !== null && x.installed ? "cn.signIn" : null) : curKind === kind ? null : "cn.use",
-      isCur: ready && curKind === kind });
+      st: d === null ? { key: "cn.detecting" } : why ? { key: why } : x.installed ? null : { key: "st.notFound" },
+      act: p.login === kind ? "login.cancel" : d === null || !ready ? (d !== null && x.installed && !why ? "cn.signIn" : null) : curKind === kind ? null : "cn.use",
+      isCur: ready && curKind === kind, off: !!why });
   });
   // API 金鑰(0.1.16):同一組第三列。沒有上架的供應商就不出(不做 fake door);存過 = 名字換成那一家、多一顆「修改」
   const presets = ak && Array.isArray(ak.presets) ? ak.presets : [];
@@ -321,7 +326,7 @@ function mdlPaint() {
     g.appendChild(o); box.appendChild(g); return [g, o];
   };
   const put = (into, o) => {
-    const r = el("div", "cn-opt" + (o.isCur ? " is-cur" : "")); r.dataset.kind = o.kind;
+    const r = el("div", "cn-opt" + (o.isCur ? " is-cur" : "") + (o.off ? " off" : "")); r.dataset.kind = o.kind;
     if (o.isCur) r.setAttribute("aria-current", "true");
     const tc = el("div", "t"); tc.appendChild(el("p", "n", o.nameKey ? t(o.nameKey) : o.name));
     // 首次綁卡送多少 AI 額度來自 api(登入後 account_status、沒登入 public-pricing),不寫死;拿不到數字就退成怎麼收錢那句

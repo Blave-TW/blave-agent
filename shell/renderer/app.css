@@ -1033,6 +1033,7 @@ body.resizing * { cursor: col-resize !important; }
 .cn-opt.is-cur{background:var(--surface-muted)}
 .cn-opt.is-cur .n{font-weight:600}
 .cn-opt.is-cur .m{color:var(--ink-2)}
+.cn-opt.off .n{color:var(--ink-3)}   /* 跑不起來 / 沒有回應:同連結畫面的 .cn-row.off */
 .cn-opt .cn-cur{flex:none;min-width:52px;text-align:right;font-size:12px;font-weight:600;color:var(--ink)}
 /* 這一頁的小框鈕比別處亮一階:它是這一列的主要動作 */
 #set-model .pf-act{min-width:52px;text-align:center;color:var(--ink-2);border-color:var(--border-frame)}

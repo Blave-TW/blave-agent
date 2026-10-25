@@ -380,6 +380,7 @@ ok("那一類定名「一般」;指到它的句子(minv.trade)兩語都跟著改
 const mdl = (() => { const a = src.indexOf("const MDL = {"), b = src.indexOf("/* ── 設定 › 模型接入 的純邏輯到此"); if (a < 0 || b < 0) throw new Error("找不到純邏輯區塊"); return src.slice(a, b); })();
 if (/\bdocument\b|\$\(|window\./.test(mdl.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""))) throw new Error("模型接入的純邏輯碰了 DOM");
 eval(mdl.replace(/^const /gm, "var "));
+var whyState = eval("(" + src.match(/^const whyState = (.*);$/m)[1] + ")");   // 同連結畫面那一支(原文)
 const D = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: false } };
 const shape = (o) => [o.kind, o.isCur, o.st && o.st.key, String(o.act)].join("|");
 let M = mdlOptions(D, "claude", true);
@@ -397,12 +398,20 @@ let M = mdlOptions(D, "claude", true);
     && /\.cn-opt \.m\{[^}]*white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/.test(css)); }
 ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」;用中的那一列沒有動作(列尾「使用中」);裝了沒登入的列只有〔登入〕,不再並排「尚未登入」", M.length === 3 && shape(M[0]) === "blave|false||cn.use" && shape(M[1]) === "claude|true||null" && shape(M[2]) === "codex|false||cn.signIn");
 { // 列尾只放一樣:有鈕(或「使用中」)的列沒有狀態字——列舉 引擎 × token × 等待 × 偵測結果,不是抽樣
-  const DS = [null, D, { claude: { installed: false }, codex: { installed: true, loggedIn: true } }, { claude: { installed: true, loggedIn: false }, codex: { installed: false } }];
+  const DS = [null, D, { claude: { installed: false }, codex: { installed: true, loggedIn: true } }, { claude: { installed: true, loggedIn: false }, codex: { installed: false } },
+    { claude: { installed: true, loggedIn: false, why: "claude_timeout" }, codex: { installed: true, loggedIn: false, why: "codex_cantrun" } }];
   const AKS = [null, { saved: null, presets: [{ id: "x", name: "X" }] }, { saved: "x", presets: [{ id: "x", name: "X" }] }];
   const bad = []; let n = 0;
   DS.forEach((d) => [null, "blave", "claude", "codex", "apikey"].forEach((c) => [true, false].forEach((tok) => [null, { oauth: true }, { login: "claude" }, { login: "codex" }].forEach((p) => AKS.forEach((ak) =>
-    mdlOptions(d, c, tok, p, ak).forEach((o) => { n++; if (o.st && (o.act || o.isCur)) bad.push(shape(o)); if (o.kind === "blave" && o.st) bad.push("blave:" + shape(o)); if (o.st && !["cn.detecting", "st.notFound"].includes(o.st.key)) bad.push("key:" + shape(o)); }))))));
-  ok("列尾只放一樣:有鈕或「使用中」的列 st = null;Blave 那一列永遠沒有狀態字;剩下的狀態字只有「偵測中…」「未偵測到」(" + n + " 列)", n > 1000 && bad.length === 0); }
+    mdlOptions(d, c, tok, p, ak).forEach((o) => { n++; if (o.st && (o.act || o.isCur)) bad.push(shape(o)); if (o.kind === "blave" && o.st) bad.push("blave:" + shape(o)); if (o.st && !["cn.detecting", "st.notFound", "st.cantRun", "st.noResp"].includes(o.st.key)) bad.push("key:" + shape(o)); }))))));
+  ok("列尾只放一樣:有鈕或「使用中」的列 st = null;Blave 那一列永遠沒有狀態字;剩下的狀態字只有「偵測中…」「未偵測到」「無法啟動」「沒有回應」(" + n + " 列)", n > 1000 && bad.length === 0); }
+{ // 跑不起來 / 沒有回應(稽核 P2-4):比照連結畫面,那一列寫狀態、灰掉、不給〔登入〕;一般沒登入照舊〔登入〕
+  const W = { claude: { installed: true, loggedIn: false, why: "claude_timeout" }, codex: { installed: true, loggedIn: false, why: "codex_cantrun" } };
+  const A = mdlOptions(W, "blave", true), B = mdlOptions(D, "claude", true), C = mdlOptions(W, "blave", true, { login: "codex" });
+  ok("模型接入:127 →「無法啟動」、逾時 →「沒有回應」,兩列 off、沒有鈕;沒登入(nonzero)那一列仍是〔登入〕、不灰;等登入中照樣只有「取消等待」",
+    shape(A[1]) === "claude|false|st.noResp|null" && shape(A[2]) === "codex|false|st.cantRun|null" && A[1].off && A[2].off
+    && shape(B[2]) === "codex|false||cn.signIn" && !B[2].off && C[2].act === "login.cancel" && C[2].st === null, [A, B, C].map((m) => m.slice(1, 3).map(shape)));
+  ok("…畫面:off 的列加 class off、名字灰(同 .cn-row.off)", /el\("div", "cn-opt" \+ \(o\.isCur \? " is-cur" : ""\) \+ \(o\.off \? " off" : ""\)\)/.test(src) && /\.cn-opt\.off \.n\{color:var\(--ink-3\)\}/.test(css)); }
 ok("「切換」「連結」同一個動作同一個字:三列都用 cn.use,設定頁不再出現 cn.blave.switch / cn.connect / st.signedIn", mdlOptions(D, "codex", true)[1].act === "cn.use" && mdlOptions(D, "codex", true)[0].act === "cn.use"
   && !/cn\.blave\.switch|cn\.connect|st\.signedIn/.test(mdl + fnSrc("mdlPaint")));
 ok("沒登入 Blave、現在用的是本機 agent:那一列是「登入並切換」(不是「登入 Blave」)", mdlOptions(D, "claude", false)[0].act === "cn.blave.signinSwitch" && mdlOptions(D, null, false)[0].act === "cn.blave.btn" && mdlOptions(D, "claude", false)[0].st === null && mdlOptions(D, null, false)[0].st === null);
