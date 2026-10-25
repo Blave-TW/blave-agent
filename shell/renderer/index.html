@@ -456,7 +456,7 @@
 </div>
 
 <!-- ============ 設定 modal(樣式照雲端 .scrim / .ns-modal.set-modal) ============
-     分類:一般(語言、關於)、模型接入、資料來源、帳號與方案、公開連結、隱私。每一類的內容各自由 app.js 畫;
+     分類:一般、模型接入、Agent、資料來源、連結、帳號與方案、隱私(web 工作頁的設定是其中「一般／Agent／連結」三類,名稱與相對順序相同)。每一類的內容各自由 app.js 畫;
      「模型接入」不借用連結畫面那張卡(那裡是第一次做決定的地方,這裡是回來換的地方)。 -->
 <div class="scrim" id="set-scrim" role="dialog" aria-modal="true" aria-labelledby="set-title" hidden>
   <div class="set-modal" id="set-modal">
@@ -468,15 +468,15 @@
       <nav class="set-cats" id="set-cats" data-i18n-aria="set.cats">
         <button type="button" class="set-cat" data-set-cat="display" aria-current="true" data-i18n="set.cat.display"></button>
         <button type="button" class="set-cat" data-set-cat="model" data-i18n="set.cat.model"></button>
-        <!-- Agent 規則:常駐規則 + 回覆語言(排在「模型接入」後面)。內容由 rules.js 畫;只管這台電腦那一份 -->
+        <!-- Agent:回覆語言 + 常駐規則 + 內建瀏覽器(排在「模型接入」後面)。內容由 rules.js 畫;規則只管這台電腦那一份 -->
         <button type="button" class="set-cat" data-set-cat="rules" data-i18n="set.cat.rules"></button>
         <!-- 資料來源:自帶資料商的金鑰(排在「AI 接入」後面)。內容由 datasrc.js 的 srcPaint 畫 -->
         <button type="button" class="set-cat" data-set-cat="src" data-i18n="src.title"></button>
+        <!-- 連結:手機 App 查看。平台還沒開放手機查看(發佈層級的旗標)時整顆不出,由 app.js 的 connectCatSync 決定;內容由 connectPaint 畫 -->
+        <button type="button" class="set-cat" data-set-cat="connect" data-i18n="set.cat.connect" hidden></button>
         <!-- 帳號與方案(原本「資料與雲端方案」與「帳號」兩類併成一類;id 留 plan,舊的 acct 由 setCat 轉過來)。
-             聊天裡的情境卡、策略庫、分享的「去登入」都直接開到這裡 -->
+             聊天裡的情境卡、策略庫、分享的「去登入」都直接開到這裡;「公開連結」是這一類裡的一個區段(舊的 shares 由 setCat 轉過來) -->
         <button type="button" class="set-cat" data-set-cat="plan" data-i18n="set.cat.plan"></button>
-        <!-- 公開連結:這個帳號所有公開中的報告(兩袋都列;spec-share-list-0.1.8 A1)。內容由 report-sharelist.js 的 shlPaint 畫 -->
-        <button type="button" class="set-cat" data-set-cat="shares" data-i18n="set.cat.shares"></button>
         <!-- 隱私:使用資料的開關與「會收 / 不收」(排最後;與視角無關)。內容由 app.js 的 privPaint 畫 -->
         <button type="button" class="set-cat" data-set-cat="priv" data-i18n="set.cat.priv"></button>
       </nav>
@@ -548,10 +548,14 @@
         <div class="set-pane" data-set-cat="model" id="set-model" hidden></div>
         <div class="set-pane" data-set-cat="rules" id="set-rules" hidden></div>
         <div class="set-pane" data-set-cat="src" id="set-src" hidden></div>
-        <!-- 帳號與方案:整頁由 app.js 的 planPaint 畫——最上面一組帳號列(登入狀態＋登出)、訊息格 #acct-hint、Blave 餘額列,
-             細線以下是方案(依 account_status.plan)。上半自己捲,底列(「存在就扣」那句 + 鈕)不捲——那句話永遠貼在鈕的正上方 -->
-        <div class="set-pane plan-pane" data-set-cat="plan" id="set-plan" hidden></div>
-        <div class="set-pane" data-set-cat="shares" id="set-shares" hidden></div>
+        <div class="set-pane" data-set-cat="connect" id="set-connect" hidden></div>
+        <!-- 帳號與方案:兩個區段。#set-plan-main 由 app.js 的 planPaint 畫——最上面一組帳號列(登入狀態＋登出)、訊息格 #acct-hint、Blave 餘額列,
+             細線以下是方案(依 account_status.plan),底列(「存在就扣」那句 + 鈕)緊接在方案內容後面、仍在鈕的正上方;
+             #set-shares 是區段「公開連結」(這個帳號所有公開中的報告,兩袋都列;spec-share-list-0.1.8 A1),由 report-sharelist.js 的 shlPaint 畫。整頁一起捲 -->
+        <div class="set-pane plan-pane" data-set-cat="plan" id="set-plan" hidden>
+          <div id="set-plan-main"></div>
+          <div class="shl-sec" id="set-shares"></div>
+        </div>
         <div class="set-pane" data-set-cat="priv" id="set-priv" hidden></div>
       </div>
     </div>

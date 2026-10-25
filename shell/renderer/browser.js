@@ -802,19 +802,17 @@ function brRestore(item) {
 function brReset() { if (typeof tvReset === "function") tvReset(); brCollapse(false); BR.blocks = []; BR.cur = null; BR.tabs.clear(); if (BR.io) BR.io.disconnect(); }
 function brRepaint() { BR.sig = null; BR.blocks.forEach((b) => { brPaintHead(b); b.ids.forEach((id) => { const x = BR.tabs.get(id); if (x) b.wall.querySelectorAll(".pt").forEach((el) => { if (el.dataset.id === id) brPaintTile(el, x); }); }); }); brPaintOverlay(); }
 
-// ── 設定 › 隱私:內建瀏覽器開關 + 清除瀏覽資料(app.js privPaint 呼叫) ──
-async function brPrivPaint(box) {
+// ── 設定 › Agent:內建瀏覽器開關 + 清除瀏覽資料(rules.js 的 rulesPaint 每次重畫給一格新的 .br-set) ──
+async function brSetPaint(box) {
   let p = null; try { p = await window.blave.browserPrefs(); } catch (_) { return; }
   if (!box.isConnected || box.querySelector("#br-sw")) return;
   const row = brEl("div", "sw-row"), lbl = brEl("label", "sw-l", t("br.set.switch")); lbl.htmlFor = "br-sw"; row.append(lbl);
   const sw = brEl("button", "sw" + (p && p.enabled ? "" : " off")); sw.type = "button"; sw.id = "br-sw";
   sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", p && p.enabled ? "true" : "false");
-  const lead = brEl("p", "priv-lead", t("br.set.lead")); lead.hidden = !(p && p.enabled);   // 只在開著時講(同頁「傳送使用資料」那顆的做法)
+  const lead = brEl("p", "priv-lead", t("br.set.lead")); lead.hidden = !(p && p.enabled);   // 只在開著時講(同「傳送使用資料」那顆的做法)
   sw.addEventListener("click", async () => { const on = sw.getAttribute("aria-checked") !== "true"; const r = await window.blave.browserPrefsSet({ enabled: on }); const v = !!(r && r.enabled); sw.classList.toggle("off", !v); sw.setAttribute("aria-checked", v ? "true" : "false"); lead.hidden = !v; if (typeof tvPrefs === "function") tvPrefs(); if (typeof libIdeaSync === "function") libIdeaSync(); });
   row.append(sw);
   const clr = brEl("button", "btn-quiet", t("br.set.clear")); clr.type = "button";
   clr.addEventListener("click", async () => { const ok = await window.blave.browserClear(); if (ok) BR_FAVS.clear(); clr.textContent = t(ok ? "br.set.cleared" : "br.set.busy"); srSay(clr.textContent); setTimeout(() => { if (clr.isConnected) clr.textContent = t("br.set.clear"); }, 2500); });
-  const legal = box.querySelector(".set-legal");
-  const wrap = brEl("div", "br-set"); wrap.append(row, lead, clr);
-  if (legal) box.insertBefore(wrap, legal); else box.append(wrap);
+  box.append(row, lead, clr);
 }

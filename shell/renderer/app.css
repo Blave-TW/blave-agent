@@ -954,12 +954,11 @@ body.resizing * { cursor: col-resize !important; }
 .set-idv { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); white-space: nowrap; user-select: all; -webkit-user-select: all; }
 #set-up-btn .spin16 { vertical-align: -3px; }   /* 檢查中:連結本身變成圓環(被按的控件自己的回饋) */
 .set-about button { flex: none; }
-/* ── 設定 › 雲端方案(設計師 mockup-desktop-plan-in-app)──────────────
-   上半 .plan-scroll 自己捲;.plan-foot 不捲:「主機存在就會扣」那句永遠貼在鈕的正上方。
-   這一類把 .set-content 的內距與捲動接手過來(其他兩類不受影響)。 */
-.set-content:has(> .plan-pane:not([hidden])) { padding: 0; overflow: hidden; }
-.plan-pane:not([hidden]) { display: flex; flex-direction: column; height: 100%; font-size: 13px; }
-.plan-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding:var(--space-16)}
+/* ── 設定 › 帳號與方案(設計師 mockup-desktop-plan-in-app;0.1.32 方案 B 併入公開連結)──────────────
+   兩個區段同一頁、跟其他分類一樣由 .set-content 捲:帳號與方案(.plan-scroll → .plan-foot)→ 組間距 32 → 公開連結(#set-shares)。
+   .plan-foot 跟著內容流、緊接在方案內容後面:「主機存在就會扣」那句仍在鈕的正上方(釘底的話,兩區段同頁時鈕會跟方案內容隔著整份清單) */
+.plan-pane { font-size: 13px; }
+#set-shares { margin-top: var(--space-32); }
 .plan-top{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-12);flex-wrap:wrap}
 .plan-top h6{margin:0;font-size:15px;font-weight:600;line-height:1.3;color:var(--ink)}
 .plan-st{display:flex;align-items:center;gap:var(--space-6);font-size:12px;color:var(--ink-2)}
@@ -989,7 +988,7 @@ body.resizing * { cursor: col-resize !important; }
 .plan-price .h{font-size:12px;color:var(--ink-3)}
 .plan-id .plan-fine{margin-top:calc(-1 * var(--space-4))}   /* 餘額列下的自動儲值短句:抵掉一半的欄距,貼著餘額列 */
 .plan-fine{margin:var(--space-6) 0 0;font-size:12px;line-height:1.6;color:var(--ink-3)}
-.plan-foot{flex:none;padding:var(--space-12) var(--space-16);border-top:1px solid var(--border-hairline)}
+.plan-foot{margin-top:var(--space-16)}
 .plan-rule{margin:0 0 var(--space-12);font-size:12px;line-height:1.6;color:var(--ink-2)}   /* 暗底必讀的次要字升一階 */
 .plan-foot .plan-fine{margin:0 0 var(--space-12)}
 .plan-err{display:flex;gap:var(--space-8);margin:0 0 var(--space-12);font-size:12px;line-height:1.6;color:var(--ink-2)}
@@ -998,7 +997,6 @@ body.resizing * { cursor: col-resize !important; }
 .plan-act{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:var(--space-12)}
 .plan-act .btn-quiet{margin-right:auto}
 /* 精簡版(設計師 v3):一個標題句(h5,20/600)+ 至多兩行說明 + 外開定價頁的安靜鈕;底列=一行跟錢有關的話 + 鈕 */
-.plan-pane .plan-scroll{padding:var(--space-16)}   /* 第一個東西是一列小字(帳號列),上距跟其他分類對齊 */
 .plan-pane .plan-st{margin-bottom:var(--space-8)}
 .plan-pane h5{margin:0;font-size:20px;font-weight:600;line-height:1.4;color:var(--ink);text-wrap:balance}
 .plan-pane .plan-lead{margin-top:var(--space-8);text-wrap:pretty}

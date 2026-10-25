@@ -1,4 +1,4 @@
-/* 設定 › Agent 規則(常駐規則 + 回覆語言)。主行程那一半在 shell/agentrules.js:讀寫這台電腦的兩個檔。
+/* 設定 › Agent(回覆語言 + 常駐規則;最後一組內建瀏覽器由 browser.js 的 brSetPaint 畫)。主行程那一半在 shell/agentrules.js:讀寫這台電腦的兩個檔。
    設計:blave-canon output/designer/spec-desktop-agent-rules-0.1.9.md(v2 的版式;跟雲端同步先擱置,只做本機)。
    狀態機、閘二、Esc 照 web 工作頁的 renderRules / rlBuild 搬,只換成電腦版的元件(§3)與列內錯誤句(§6.1)。
    - 這一頁永遠顯示、編輯這台電腦那一份(兩種視角的回合都在本機跑、讀同一份)。
@@ -105,6 +105,8 @@ function rulesPaint() {
   }
   const rl = rsEl("div", "rules-grp"); rl.id = "rules-rl"; box.append(rl); rlPaint(rl);
   const grp = rsEl("div", "rules-grp"); grp.id = "rules-grp"; box.append(grp); rulesPaintList(grp);
+  // 內建瀏覽器(renderer/browser.js):不是規則,但同樣是「agent 怎麼做事」,排在這一類的最後一組
+  if (typeof brSetPaint === "function") { const br = rsEl("div", "br-set"); br.id = "rules-br"; box.append(br); brSetPaint(br); }
   setFocusGuard();
 }
 /* ── 回覆語言(照 web rlBuild / rlCustomRow)── */

@@ -69,10 +69,13 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 300));
     const edge = await w.webContents.executeJavaScript(`document.querySelector("#set-up-line").getBoundingClientRect().left`, true);
     const terms = await w.webContents.executeJavaScript(textL("#set-terms"), true), priv1 = await w.webContents.executeJavaScript(textL("#set-privacy"), true);
+    // 0.1.32 起隱私頁只剩一顆文字鈕(手機查看、內建瀏覽器搬走了):padding 從一般與隱私兩頁一起收
+    const padsOf = `[...document.querySelectorAll("#set-modal .btn-quiet")].filter((b) => b.getClientRects().length).map((b) => getComputedStyle(b).paddingLeft + "/" + getComputedStyle(b).paddingRight)`;
+    const pads0 = await w.webContents.executeJavaScript(padsOf, true);
     await w.webContents.executeJavaScript(`setCat("priv")`, true); await new Promise((r) => setTimeout(r, 400));
     const pedge = await w.webContents.executeJavaScript(`document.querySelector("#set-priv .sw-l").getBoundingClientRect().left`, true);
     const priv2 = await w.webContents.executeJavaScript(textL("#priv-legal"), true);
-    const pads = await w.webContents.executeJavaScript(`[...document.querySelectorAll("#set-modal .btn-quiet")].filter((b) => b.getClientRects().length).map((b) => getComputedStyle(b).paddingLeft + "/" + getComputedStyle(b).paddingRight)`, true);
+    const pads = pads0.concat(await w.webContents.executeJavaScript(padsOf, true));
     await w.webContents.executeJavaScript(`setClose()`, true);
     return { edge, terms, priv1, pedge, priv2, pads };
   };

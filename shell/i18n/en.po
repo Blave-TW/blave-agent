@@ -6328,9 +6328,6 @@ msgstr "This table is scaled down to fit the page. Open the report in Blave to s
 msgid "set.cat.shares"
 msgstr "Public links"
 
-msgid "shl.title"
-msgstr "Public reports"
-
 msgid "shl.count"
 msgstr "{n} / {max}"
 
@@ -6475,7 +6472,10 @@ msgstr "Send It"
 # Settings › Agent rules (0.1.9; spec-desktop-agent-rules-0.1.9 §11, this computer only)
 
 msgid "set.cat.rules"
-msgstr "Agent rules"
+msgstr "Agent"
+
+msgid "set.cat.connect"
+msgstr "Connections"
 
 msgid "rules.aria"
 msgstr "Agent standing rules"

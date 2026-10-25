@@ -6342,9 +6342,6 @@ msgstr "這張表已縮小以放進頁面，原始大小請在 Blave 裡看。"
 msgid "set.cat.shares"
 msgstr "公開連結"
 
-msgid "shl.title"
-msgstr "公開中的報告"
-
 msgid "shl.count"
 msgstr "{n}／{max}"
 
@@ -6489,7 +6486,10 @@ msgstr "送進去"
 # 設定 › Agent 規則(0.1.9;spec-desktop-agent-rules-0.1.9 §11,只做本機)
 
 msgid "set.cat.rules"
-msgstr "Agent 規則"
+msgstr "Agent"
+
+msgid "set.cat.connect"
+msgstr "連結"
 
 msgid "rules.aria"
 msgstr "Agent 常駐規則"

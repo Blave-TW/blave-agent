@@ -334,18 +334,34 @@ ok("登出不碰雲端主機(那一句是事實):外殼只撤 token、清記憶�
   return /oauth\/desktop\/revoke/.test(f) && /clearToken\(\);/.test(f) && !/plan\/(stop|cancel)|machine|planStart|\/stop/.test(f); })());
 ok("左欄底那一塊清乾淨:DOM / CSS / 程式都沒有舊的 id 與 class", !/id="set-acct"[^-]/.test(html) && !/set-acct-who|set-acct-st\b/.test(html + src) && !/\.set-acct \.(who|l1|l2|lbl|mail)|\.set-cats \.set-acct/.test(css));
 const CATS = (re) => [...html.matchAll(re)].map((m) => m[1]).join();
-ok("分類順序:一般 → 模型接入 → Agent 規則 → 資料來源 → 帳號與方案 → 公開連結 → 隱私(七個;Agent 規則 0.1.9 加在模型接入後面);每一類都有自己的頁;「帳號」那一頁與它的節點都拿掉了", CATS(/class="set-cat"[^>]*data-set-cat="([a-z]+)"/g) === "display,model,rules,src,plan,shares,priv" && CATS(/class="set-pane[^"]*" data-set-cat="([a-z]+)"/g) === "display,model,rules,src,plan,shares,priv"
+ok("分類順序(0.1.32 方案 B):一般 → 模型接入 → Agent → 資料來源 → 連結 → 帳號與方案 → 隱私(七個);每一類都有自己的頁;「公開連結」不再是一類,是帳號與方案裡的區段(#set-plan 裡 #set-plan-main 之後的 #set-shares);「帳號」那一頁與它的節點都拿掉了",
+  CATS(/class="set-cat"[^>]*data-set-cat="([a-z]+)"/g) === "display,model,rules,src,connect,plan,priv" && CATS(/class="set-pane[^"]*" data-set-cat="([a-z]+)"/g) === "display,model,rules,src,connect,plan,priv"
+  && /<div class="set-pane plan-pane" data-set-cat="plan" id="set-plan" hidden>\s*<div id="set-plan-main"><\/div>\s*<div class="shl-sec" id="set-shares"><\/div>\s*<\/div>/.test(html)
+  && /<button type="button" class="set-cat" data-set-cat="connect" data-i18n="set\.cat\.connect" hidden><\/button>/.test(html)
   && !/set-acct-pane|acct-to-plan|acct-list|acct-a1|id="set-acct-btn"|id="acct-hint"/.test(html) && !/acct-to-plan|acct-list|acct-a1|acct\.in\.|acct\.toPlan/.test(src));
-// 舊的兩個分類 id 都還開得到合併後的頁:真的跑 setCat
-{ const mk = (k) => { const n = el(); n.dataset.setCat = k; return n; }, ids = ["display", "model", "src", "plan", "shares", "priv"], cats = ids.map(mk), panes = ids.map(mk); let painted = 0; const tracked = [];
-  const run = new Function("$", "mdlPaint", "srcLoad", "srcClear", "rulesOpen", "rulesClear", "privLoad", "aboutIdLoad", "shlOpen", "planPaint", "trackFeature", "acctCheck", "balLoad", "pubLoad", "hasToken", fnSrc("setCat") + "; return setCat;")(
-    (id) => (id === "set-cats" ? { querySelectorAll: () => cats } : id === "set-modal" ? { querySelectorAll: () => panes } : $(id)), () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => { painted++; }, (n) => tracked.push(n), () => {}, () => {}, () => Promise.resolve(), true);
-  const open = (k) => { painted = 0; tracked.length = 0; run(k); return { cur: cats.filter((c) => c.attrs["aria-current"] === "true").map((c) => c.dataset.setCat).join(), shown: panes.filter((p) => !p.hidden).map((p) => p.dataset.setCat).join(), painted, tracked: tracked.join() }; };
-  const a = open("acct"), b = open("plan");
-  ok("setCat(\"acct\") 與 setCat(\"plan\") 開到同一頁:左欄亮「帳號與方案」、只露出那一頁、整頁重畫、埋點記 settings_plan", JSON.stringify(a) === JSON.stringify(b) && a.cur === "plan" && a.shown === "plan" && a.painted === 1 && a.tracked === "settings_plan");
+// 舊的分類 id(acct、shares)都還開得到合併後的頁:真的跑 setCat
+{ const mk = (k) => { const n = el(); n.dataset.setCat = k; return n; }, ids = ["display", "model", "rules", "src", "connect", "plan", "priv"], cats = ids.map(mk), panes = ids.map(mk); let painted = 0; const tracked = [], did = [];
+  const env = { $: (id) => (id === "set-cats" ? { querySelectorAll: () => cats } : id === "set-modal" ? { querySelectorAll: () => panes } : $(id)),
+    mdlPaint() {}, srcLoad() {}, srcClear() {}, rulesOpen() {}, rulesClear() {}, privLoad() {}, aboutIdLoad() {}, shlOpen() { did.push("shlOpen"); }, planPaint() { painted++; }, trackFeature: (n) => tracked.push(n),
+    acctCheck() {}, balLoad() {}, pubLoad: () => Promise.resolve(), hasToken: true, connectPaint() { did.push("connectPaint"); }, mvLoad: () => Promise.resolve(null), connectCatSync() {}, shlReveal() { did.push("reveal"); }, SHL_SCROLL: false };
+  const run = new Function("env", "with (env) { " + fnSrc("setCat") + "; return setCat; }")(env);
+  const open = (k) => { painted = 0; tracked.length = 0; did.length = 0; run(k); return { cur: cats.filter((c) => c.attrs["aria-current"] === "true").map((c) => c.dataset.setCat).join(), shown: panes.filter((p) => !p.hidden).map((p) => p.dataset.setCat).join(), painted, tracked: tracked.join(), did: did.join() }; };
+  const a = open("acct"), b = open("plan"), c = open("shares");
+  ok("setCat(\"acct\") 與 setCat(\"plan\") 開到同一頁:左欄亮「帳號與方案」、只露出那一頁、整頁重畫(帳號與方案＋重抓公開連結)、埋點記 settings_plan;不捲", JSON.stringify(a) === JSON.stringify(b) && a.cur === "plan" && a.shown === "plan" && a.painted === 1 && a.tracked === "settings_plan" && a.did === "shlOpen", JSON.stringify([a, b]));
+  ok("setCat(\"shares\")(分享框「看公開連結」):同一頁,畫完才捲到公開連結區段(shlReveal 一次);旗標用完就放下,下一次開 plan 不捲", c.cur === "plan" && c.shown === "plan" && c.painted === 1 && c.did === "shlOpen,reveal" && env.SHL_SCROLL === false && open("plan").did === "shlOpen", JSON.stringify(c));
+  ok("setCat(\"connect\"):只露出連結那一頁、當場畫(MV 讀回來再畫一次)", (() => { const r = open("connect"); return r.cur === "connect" && r.shown === "connect" && r.did === "connectPaint" && r.tracked === ""; })());
   ok("別的分類不受影響", open("priv").shown === "priv" && open("display").cur === "display");
   const callers = ["library.js", "report-share.js", "report-sharelist.js", "app.js"].map((f) => fs.readFileSync(path.join(R, f), "utf8")).join("\n");
-  ok("外殼裡開這一頁的呼叫點都用 plan(保險那一行只是防漏)", !/setCat\("acct"\)|data-set-cat="acct"/.test(callers + html) && /if \(cat === "acct"\) cat = "plan";/.test(fnSrc("setCat"))); }
+  ok("外殼裡開這一頁的呼叫點都用 plan(保險那一行只是防漏);沒有人再找 data-set-cat=\"shares\" 那顆鈕", !/setCat\("acct"\)|data-set-cat="acct"/.test(callers + html) && /if \(cat === "acct"\) cat = "plan";/.test(fnSrc("setCat"))
+    && /if \(cat === "shares"\) \{ cat = "plan"; SHL_SCROLL = true; \}/.test(fnSrc("setCat")) && !/data-set-cat="shares"/.test(callers + html)); }
+{ // 「連結」那一顆:跟著平台旗標(發佈層級)出不出,開框之前就定好;平台關掉時正開著那一頁就退回一般
+  ok("setOpen 一開頭先讀 MV、定好「連結」出不出,才把框打開", /async function setOpen\(\) \{\n  await mvLoad\(\); connectCatSync\(\);/.test(src));
+  const btn = el(); btn.dataset.setCat = "connect"; let back = null;
+  const sync = new Function("document", "mvShown", "setCat", fnSrc("connectCatSync") + "; return connectCatSync;");
+  const q = { querySelector: (s) => (s === '.set-cat[data-set-cat="connect"]' ? btn : null) };
+  sync(q, () => true, (k) => { back = k; })(); const on = btn.hidden;
+  btn.setAttribute("aria-current", "true"); sync(q, () => false, (k) => { back = k; })();
+  ok("connectCatSync:平台開放 → 出;沒開放 → 藏,正停在那一頁就切回一般", on === false && btn.hidden === true && back === "display"); }
 const PO2 = ["zh", "en"].map((l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8"));
 ok("那一類定名「一般」;指到它的句子(minv.trade)兩語都跟著改", /msgid "set\.cat\.display"\nmsgstr "一般"/.test(PO2[0]) && /msgid "set\.cat\.display"\nmsgstr "General"/.test(PO2[1])
   && /msgid "minv\.trade"\nmsgstr "[^\n]*設定 › 一般/.test(PO2[0]) && /msgid "minv\.trade"\nmsgstr "[^\n]*Settings › General/.test(PO2[1]));
@@ -443,7 +459,7 @@ ok("字串:本機那一組改成「用你自己的 AI」(0.1.16 API 金鑰同組
 // 重畫吃掉焦點 → Esc 關不掉設定(R3-1:「重新偵測」那一顆被銷毀時踩到)
 ok("重新偵測那一組掛的是 data-kind(焦點還原查的就是它),不是 data-k", /m\.dataset\.kind = "redetect";/.test(src) && !/dataset\.k = /.test(fnSrc("mdlPaint")) && /querySelector\('\[data-kind="' \+ focusKind\.kind \+ '"\] button'\)/.test(src));
 ok("設定裡重畫過的每一塊都過同一關:焦點掉到 BODY 或掉出 modal 就放回框內(不靠個別欄位名猜對)", /function setFocusGuard\(\) \{[\s\S]{0,400}a !== document\.body && \$\("set-modal"\)\.contains\(a\)/.test(src)
-  && ["mdlPaint", "acctPaintAcct", "privPaint"].every((n) => /setFocusGuard\(\);\n\}/.test(fnSrc(n))));
+  && ["mdlPaint", "acctPaintAcct", "privPaint", "connectPaint"].every((n) => /setFocusGuard\(\);\n\}/.test(fnSrc(n))));
 // V4:等待狀態(oauthPending / planLoginBusy)是一件事、兩份 DOM。列舉:凡是改這兩個旗標的地方都要重畫兩個表面
 // 每一個**指派點**(不是每一個函式)後面三行內要看到 waitChanged():同一支裡漏掉其中一次也要抓得到
 const bare = src.replace(/^\s*\/\/.*$/gm, "");   // 註解掉的程式不算數
@@ -487,20 +503,28 @@ ok("中欄頂列與聊天頭沒有底線;雲端那兩條 transparent 跟著退�
 ok("分頁列與欄界那幾條線留著(分頁列的 hairline 自 0.1.20 畫在 inset shadow,見 spec-0.1.19 §2.3)", /\.main-tabs \{[^}]*box-shadow: inset 0 -1px 0 var\(--border-hairline\)/.test(trcss) && /\.modal-head \{[^}]*border-bottom/.test(css));
 ok("CSS:舊的三條規則與 .set-up 樣式清掉", !/\.set-acct \.(lbl|mail|btn-quiet)|\.set-up-txt|\.set-up \.btn-quiet/.test(css));
 ok("字標拿掉:DOM / CSS / 程式都沒有 .ws-brand 與 #ws-home;收合鈕上距 12", !/ws-brand|ws-home/.test(html + css + src) && /html\.ws-sc \.side-rail \{[^}]*padding-top: var\(--space-12\);/.test(css));
-ok("分隔線:帳號那一塊、「關於」上面、AI 接入頁列間那三條拿掉;標題列下緣、左右欄直線、方案頁的腳留著", !/\.set-acct[^{]*\{[^}]*border-top/.test(css) && !/\.set-about \{[^}]*border-top/.test(css) && !/\.cn-row \+ \.cn-row/.test(css)
-  && /\.modal-head \{[^}]*border-bottom/.test(css) && /\.set-cats\s*\{[^}]*border-right/.test(css) && /\.plan-foot\s*\{[^}]*border-top/.test(css));
+ok("分隔線:帳號那一塊、「關於」上面、AI 接入頁列間那三條拿掉;方案頁的腳不再釘底,它上面那條也拿掉(0.1.32,跟著內容流);標題列下緣、左右欄直線留著", !/\.set-acct[^{]*\{[^}]*border-top/.test(css) && !/\.set-about \{[^}]*border-top/.test(css) && !/\.cn-row \+ \.cn-row/.test(css)
+  && /\.modal-head \{[^}]*border-bottom/.test(css) && /\.set-cats\s*\{[^}]*border-right/.test(css) && !/\.plan-foot\s*\{[^}]*border-top/.test(css));
+ok("帳號與方案跟其他分類一樣由 .set-content 捲:不再接手內距與捲動、.plan-scroll 不自己捲、腳緊接在方案內容後面;公開連結區段隔 32", !/\.set-content:has\(> \.plan-pane/.test(css) && !/\.plan-scroll\s*\{[^}]*overflow/.test(css) && !/\.plan-pane:not\(\[hidden\]\)/.test(css)
+  && /\.plan-foot\{margin-top:var\(--space-16\)\}/.test(css) && /#set-shares \{ margin-top: var\(--space-32\); \}/.test(css));
 // 設定 › 隱私
 const PO = ["zh", "en"].map((l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8"));
-ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效(切換後以主行程回的為準)", /data-set-cat="shares"[^>]*><\/button>\s*\n\s*(<!--[\s\S]*?-->\s*\n\s*)?<button[^>]*data-set-cat="priv"[^>]*><\/button>\s*\n\s*<\/nav>/.test(html)
+ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效(切換後以主行程回的為準)", /data-set-cat="plan"[^>]*><\/button>\s*\n\s*(<!--[\s\S]*?-->\s*\n\s*)?<button[^>]*data-set-cat="priv"[^>]*><\/button>\s*\n\s*<\/nav>/.test(html)
   && /setAttribute\("role", "switch"\)/.test(fnSrc("privPaint")) && /aria-checked/.test(fnSrc("privPaint")) && /PRIV = \(await window\.blave\.telemetrySet\(want\)\) === true/.test(src));
-{ // 隱私三列跟一般三列同一種:開關文字是 label[for],點字會切換;名稱只來自 label,不再另掛 aria-label
-  const br = fs.readFileSync(path.join(R, "browser.js"), "utf8"), i = br.indexOf("async function brPrivPaint("), brFn = br.slice(i, br.indexOf("\n}", i) + 2);
-  ok("隱私:三顆開關(mv-sw / priv-sw / br-sw)的字是 label[for] 指向開關、沒有 aria-label;清除瀏覽資料與隱私權政策不在 label 裡",
+{ // 原本隱私頁的三顆開關跟一般三列同一種:開關文字是 label[for],點字會切換;名稱只來自 label,不再另掛 aria-label(0.1.32 起分住連結 / 隱私 / Agent 三頁)
+  const br = fs.readFileSync(path.join(R, "browser.js"), "utf8"), i = br.indexOf("async function brSetPaint("), brFn = br.slice(i, br.indexOf("\n}", i) + 2);
+  const rules = fs.readFileSync(path.join(R, "rules.js"), "utf8"), ri = rules.indexOf("function rulesPaint("), rulesFn = rules.slice(ri, rules.indexOf("\n}", ri) + 2);
+  ok("三顆開關(mv-sw / priv-sw / br-sw)的字是 label[for] 指向開關、沒有 aria-label;清除瀏覽資料與隱私權政策不在 label 裡",
     /lbl = mk\("label", "sw-l", t\("mv\.switch"\)\); lbl\.htmlFor = "mv-sw"; row\.append\(lbl\);/.test(fnSrc("mvBlock"))
     && /lbl = mk\("label", "sw-l", t\("priv\.switch"\)\); lbl\.htmlFor = "priv-sw"; row\.append\(lbl\);/.test(fnSrc("privPaint"))
     && /lbl = brEl\("label", "sw-l", t\("br\.set\.switch"\)\); lbl\.htmlFor = "br-sw"; row\.append\(lbl\);/.test(brFn)
     && ![fnSrc("mvBlock"), fnSrc("privPaint"), brFn].some((f) => /"span", "sw-l"|aria-label/.test(f))
-    && /wrap\.append\(row, lead, clr\);/.test(brFn) && /legal\.append\(pl\); box\.append\(legal\);/.test(fnSrc("privPaint")));
+    && /box\.append\(row, lead, clr\);/.test(brFn) && /legal\.append\(pl\); box\.append\(legal\);/.test(fnSrc("privPaint")));
+  ok("S2 隱私頁只剩使用資料:privPaint 不再畫手機查看、不再叫內建瀏覽器;手機查看由 connectPaint 畫在 #set-connect、開關切完重畫的是它", !/mvBlock|brPrivPaint|brSetPaint/.test(fnSrc("privPaint")) && !/brPrivPaint/.test(src + br + rules)
+    && /const box = \$\("set-connect"\)/.test(fnSrc("connectPaint")) && /const mv = mvBlock\(mk\); if \(mv\) box\.append\(mv\);/.test(fnSrc("connectPaint")) && /connectPaint\(\); const sw = \$\("mv-sw"\)/.test(fnSrc("mvToggle"))
+    && /go\.addEventListener\("click", \(\) => setCat\("plan"\)\)/.test(fnSrc("mvBlock")));
+  ok("S2 內建瀏覽器是 Agent 那一頁的最後一組:rulesPaint 在常駐規則之後給一格 .br-set;那一格不畫線、只隔組間距 32", /rulesPaintList\(grp\);\n[^\n]*\n  if \(typeof brSetPaint === "function"\) \{ const br = rsEl\("div", "br-set"\); br\.id = "rules-br"; box\.append\(br\); brSetPaint\(br\); \}/.test(rulesFn)
+    && /\.br-set \{ margin-top: var\(--space-32\); \}/.test(fs.readFileSync(path.join(R, "browser.css"), "utf8")) && !/\.br-set[^{]*\{[^}]*border/.test(fs.readFileSync(path.join(R, "browser.css"), "utf8")));
 }
 ok("隱私:會收 8 條(功能那條緊接在里程碑後、0.1.9「卡在哪一步」再接在功能後、0.1.13 免登入下載的安裝識別碼接在安裝識別碼後、0.1.10 帳號狀態一併回報的那條排最後;關掉時仍送「已關閉」寫在關閉態那行 priv.kept)、不收 6 條(含「事件紀錄不含 IP 位址」原話);關掉後清單留著、標題與尾句換掉、不畫說明行", /PRIV_COLLECT = \["priv\.collect\.1", "priv\.collect\.5", "priv\.collect\.6", "priv\.collect\.2", "priv\.collect\.3", "priv\.collect\.4", "priv\.collect\.8", "priv\.collect\.7"\]/.test(src)
   && /if \(!off\) box\.append\(mk\("p", "priv-lead", t\("priv\.lead"\)\)\);/.test(src) && PO.every((x) => !/msgid "(priv|mv|br\.set)\.leadOff"/.test(x)) && /PRIV_NEVER = \[("priv\.never\.[1-6]",? ?){6}\]/.test(src)
@@ -578,7 +602,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
 {
   const node = () => { const n = el(); n.dataset = {}; n.querySelectorAll = () => []; n.contains = () => false; n.firstChild = null;
     n.addEventListener = (_ev, fn) => { n._on = fn; }; n._click = () => n._on && n._on({ currentTarget: n }); return n; };
-  dom["set-plan"] = node(); document.createElement = node;
+  dom["set-plan"] = node(); dom["set-plan-main"] = node(); document.createElement = node;   // 帳號與方案這一頁(pane)與 planPaint 畫的那一區段(0.1.32 起同頁還有公開連結)
   const seen = [];
   window.blave.openExternal = (u) => { seen.push("ext:" + u); };
   const setClose = () => { seen.push("close"); }, envSwitchGuarded = (e) => { seen.push("env:" + e); return true; };
@@ -596,16 +620,16 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   let balLast = null, balFree = null; eval(fnSrc("balNum")); eval(fnSrc("balNow")); eval(fnSrc("balFreeNow"));   // 餘額由 balLoad 讀進 balLast(主行程的端點);這裡直接給值
   eval(fnSrc("planView")); eval(src.match(/^function planToCloud\(\).*$/m)[0]); eval(fnSrc("planPaint")); eval(src.match(/^function bindGo\(.*$/m)[0]);
   // 最上面一組(.plan-id):帳號列 → 訊息格 → 餘額列;餘額列是這一組的第三個子節點
-  const balRow = () => dom["set-plan"].children[0].children[0].children[2];
+  const balRow = () => dom["set-plan-main"].children[0].children[0].children[2];
   { planPaint(); const row = balRow(), val = row.children[1];
-    ok("① 真的畫一次:還沒讀到餘額 →「Blave 餘額　—」;讀到就是「1,235 TWD」(四捨五入)", dom["set-plan"].children[0].children[0].className === "plan-id" && row.className === "plan-bal" && row.children[0].textContent === "plan.bal" && val.textContent === "—" && val.className === "v na" && val.title === "plan.balNa"
+    ok("① 真的畫一次:還沒讀到餘額 →「Blave 餘額　—」;讀到就是「1,235 TWD」(四捨五入)", dom["set-plan-main"].children[0].children[0].className === "plan-id" && row.className === "plan-bal" && row.children[0].textContent === "plan.bal" && val.textContent === "—" && val.className === "v na" && val.title === "plan.balNa"
       && (balLast = balNum(1234.9), planPaint(), balRow().children[1].textContent) === "1,235 TWD", row.className + "|" + val.textContent);
     balLast = null; }
   { // ── 帳號與方案:最上面那一組、登出的確認框、訊息格(真的跑 planPaint / acctOutAsk / acctPaintAcct)──
     const boxes = []; const confirmBox = (o) => { boxes.push(o); }; let oauthPending = false; const acctSignOut = () => {};
     eval(fnSrc("acctOutAsk")); eval(fnSrc("acctPaintAcct"));
     const walkP = (n, out = []) => { (n.children || []).forEach((c) => { if (c && typeof c === "object") { out.push(c); walkP(c, out); } }); return out; };
-    const page = () => { const all = walkP(dom["set-plan"]), sc = all.find((n) => n.className === "plan-scroll"), id = all.find((n) => n.className === "plan-id"), rows = id ? id.children.filter((c) => c.className === "plan-bal") : [];
+    const page = () => { const all = walkP(dom["set-plan-main"]), sc = all.find((n) => n.className === "plan-scroll"), id = all.find((n) => n.className === "plan-id"), rows = id ? id.children.filter((c) => c.className === "plan-bal") : [];
       const row = (r) => r && { l: r.children[0].textContent, v: r.children[1].textContent, vCls: r.children[1].className, btn: r.children[2] || null };
       return { first: !!sc && sc.children[0] === id, who: row(rows[0]), bal: row(rows[1]), rows: rows.length, hint: id && id.children.find((c) => c.id === "acct-hint"), order: id ? id.children.map((c) => c.id || c.className).join() : "",
         idx: (f) => (sc ? sc.children.findIndex(f) : -1), dots: all.filter((n) => n.className === "dot").length,
@@ -615,11 +639,11 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     let A = page();
     ok("未登入:最上面一組只有帳號列「Blave 帳號 / 未登入」(灰字),沒有鈕、沒有餘額列;整頁唯一的登入鈕在頁尾", A.first && A.rows === 1 && A.who.l === "acct.lbl" && A.who.v === "acct.signedOut" && A.who.vCls === "v na" && !A.who.btn && A.foot.join() === "btn-fill:pv.signin", JSON.stringify(A));
     planLoginBusy = true; planPaint();
-    ok("登入等待中:頁尾那顆變「取消」;「瀏覽器已開啟…」只在鈕左邊,不在帳號列下面再放一次", page().foot.join() === "btn-out:oauth.cancel" && page().hint.hidden === true && walkP(dom["set-plan"]).some((n) => n.className === "wait" && n.textContent === "pv.w.waiting"));
+    ok("登入等待中:頁尾那顆變「取消」;「瀏覽器已開啟…」只在鈕左邊,不在帳號列下面再放一次", page().foot.join() === "btn-out:oauth.cancel" && page().hint.hidden === true && walkP(dom["set-plan-main"]).some((n) => n.className === "wait" && n.textContent === "pv.w.waiting"));
     planLoginBusy = false;
     { /* 未登入格 D 版(設計師 desktop-signedout-plan-2026-10-10,Wei 核准):方案制 → 標題只講試用(pv.h.offer.m)、說明句不出、三條借既有 .plan-list
          緊接 h5、底列只留價格事實(pv.f.out.m)、鈕左小字依 AI 來源(自帶 → pv.w.out.cli,Blave AI → pv.w.out)、鈕不動;切換前照舊那組(本名),未登入不再落 .old */
-      const D = () => { planPaint(); const all = walkP(dom["set-plan"]), sc = all.find((n) => n.className === "plan-scroll"), ul = sc.children.find((n) => n.className === "plan-list");
+      const D = () => { planPaint(); const all = walkP(dom["set-plan-main"]), sc = all.find((n) => n.className === "plan-scroll"), ul = sc.children.find((n) => n.className === "plan-list");
         return { h: sc.children[1].textContent, next: sc.children[2] ? sc.children[2].className : "", li: ul ? ul.children.map((n) => n.textContent) : null, lead: all.filter((n) => n.className === "plan-lead").map((n) => n.textContent).join(),
           rule: all.filter((n) => n.className === "plan-rule").map((n) => n.textContent).join(), wait: all.filter((n) => n.className === "wait").map((n) => n.textContent).join(), foot: page().foot.join(), texts: all.map((n) => n.textContent).join("|") }; };
       pub = { plan: { monthly_billing_active: true } }; PV_T = "14"; PV_P = "1,440"; PV_Q = "100"; cur = "claude";
@@ -647,7 +671,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
       && A.bal.l === "plan.bal" && /TWD$/.test(A.bal.v) && A.order === "plan-bal,acct-hint,plan-bal" && A.dots === 1, JSON.stringify(A));
     ok("這一組在方案內容之前(狀態點、標題句都在它後面);細線由這一組帶、不由列帶", page().idx((n) => n.className === "plan-id") === 0 && page().idx((n) => /^plan-st/.test(n.className)) > 0
       && /\.plan-id \{[^}]*border-bottom: 1px solid var\(--border-hairline\)/.test(css) && /\.plan-id \.plan-bal \{ padding: 0; margin: 0; border: 0; \}/.test(css)
-      && css.includes(".plan-pane .plan-scroll{padding:var(--space-16)}") && !/\.acct-(id|list|link)|#acct-hint/.test(css));
+      && !/\.acct-(id|list|link)|#acct-hint/.test(css));
     acct = null; planPaint();
     ok("已登入、正在重讀(手上有上一個數字):餘額列留著那個數字,不閃成「—」", page().bal.v === "1,234 TWD");
     balLast = null; planPaint();
@@ -674,7 +698,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     { let n = 0; const real = planPaint; planPaint = () => { n++; }; dom["set-plan"].hidden = true; acctPaintAcct(); const closed = n; dom["set-plan"].hidden = false; dom["set-scrim"].hidden = true; acctPaintAcct(); const off = n; dom["set-scrim"].hidden = false; acctPaintAcct(); planPaint = real;
       ok("那一頁沒開(別的分類 / 設定關著)不重畫;開著才畫", closed === 0 && off === 0 && n === 1); }
     acct = keep.acct; hasToken = keep.hasToken; cur = keep.cur; HINT = null; planLastView = null; }
-  const paintPlan = () => { planPaint(); const foot = dom["set-plan"].children[1], act = foot.children[foot.children.length - 1]; return act.children; };
+  const paintPlan = () => { planPaint(); const foot = dom["set-plan-main"].children[1], act = foot.children[foot.children.length - 1]; return act.children; };
   let acts = paintPlan();
   ok("running:兩顆鈕 = 「前往網頁停用」+「切到雲端」(plan.switchCloud);不再有「前往工作頁」", acts.map((b) => b.textContent).join() === "plan.manage,plan.switchCloud" && acts[1].className === "btn-out" && acts[1].disabled === false);
   acts[1]._click();
@@ -690,7 +714,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   { // §4 運行中:說明一句;「方案內容與計費」是外開網站定價頁的安靜鈕,原地不展開
     const walk = (n, out = []) => { (n.children || []).forEach((c) => { if (c && typeof c === "object") { out.push(c); walk(c, out); } }); return out; };
     acct = { plan: { state: "running" } }; PV_P = "990"; paintPlan();
-    const all = walk(dom["set-plan"]), lead = all.filter((n) => n._cls === "plan-lead").map((n) => n.textContent);
+    const all = walk(dom["set-plan-main"]), lead = all.filter((n) => n._cls === "plan-lead").map((n) => n.textContent);
     ok("運行中:說明只有 pv.d.running 一句", lead.join() === "pv.d.running");
     PV_P = ""; }
   { /* 沒有主機也能買資料(spec-data-without-machine-flow §1 / §4 / §5):資料那一格從兩態(included / plan)變四態。
@@ -704,7 +728,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     ok("billed 排在綁卡前面(沒綁卡但餘額付得起:不叫他去綁卡);none + 沒綁卡照舊走綁卡那兩格;試用中照舊是 trial",
       view({ data_access: "billed", reason: "NO_CARD", trial_eligible: true }) === "billed" && view({ data_access: "none", reason: "NO_CARD", trial_eligible: true }) === "offer"
       && view({ data_access: "none", reason: "NO_CARD", trial_eligible: false }) === "noTrial" && (PV_N = 5, view({ data_access: "included" }) === "trial") && ((PV_N = 0), true));
-    const paintOf = (a) => { acct = { plan: { state: "none" }, ...a }; const acts = paintPlan(); const all = walk(dom["set-plan"]);
+    const paintOf = (a) => { acct = { plan: { state: "none" }, ...a }; const acts = paintPlan(); const all = walk(dom["set-plan-main"]);
       return { acts: acts.map((b) => [b.className, b.textContent]), lead: all.filter((n) => n.className === "plan-lead").map((n) => n.textContent).join(),
         st: all.filter((n) => /^plan-st/.test(n.className || "")).map((n) => n.className + ":" + n.textContent).join(), texts: all.map((n) => n.textContent).join("|") }; };
     PV_P = "1,440"; PV_R = "2";
@@ -727,7 +751,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     ok("拿不到時價(data_hourly 缺):用不帶數字的那一句,不印「 TWD」", paintOf({ data_access: "billed" }).lead === "pv.d.billedNoNum" && paintOf({ data_access: "none" }).lead === "pv.d.noneNoNum");
     // 稽核 Delta 3 #3:billed 的人沒有主機,底列不能是「主機存在就扣」那條機器規則;講成「開了主機之後」
     PV_H = "2";
-    const bRule = (a) => walk((paintOf(a), dom["set-plan"])).filter((n) => n.className === "plan-rule").map((n) => n.textContent).join();
+    const bRule = (a) => walk((paintOf(a), dom["set-plan-main"])).filter((n) => n.className === "plan-rule").map((n) => n.textContent).join();
     ok("Delta 3 #3:billed 底列是「開了主機之後…」(pv.f.billed),不是 pv.f.plan;included 照舊 pv.f.plan", /^pv\.f\.billed/.test(bRule({ data_access: "billed", data_hourly: 2 }))
       && /^pv\.f\.plan/.test(bRule({ data_access: "included", data_included: true })));
     PV_H = "";
@@ -776,7 +800,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
       && view({ ...MO, data_access: "included", plan: { state: "none", tier: "linux_premium", label: "Premium", paid_until: AHEAD } }) === "planOn"
       && view({ ...MO, data_access: "plan_required", plan: { state: "none", tier: "linux_starter", paid_until: PAST, cancel_at_period_end: true } }) === "plan");
     ok("沒登入:planMo 看公開價目的 plan.monthly_billing_active", ((acct = null), (pub = { plan: { monthly_billing_active: true } }), planMo()) === true && ((pub = { plan: { monthly_billing_active: false } }), planMo()) === false && ((pub = null), true));
-    const paintOf = (a) => { acct = { plan: { state: "none" }, ...a }; const acts = paintPlan(); const all = walk(dom["set-plan"]);
+    const paintOf = (a) => { acct = { plan: { state: "none" }, ...a }; const acts = paintPlan(); const all = walk(dom["set-plan-main"]);
       return { acts: acts.map((b) => [b.className, b.textContent, b.disabled === true]), lead: all.filter((n) => n.className === "plan-lead").map((n) => n.textContent).join(),
         rule: all.filter((n) => n.className === "plan-rule").map((n) => n.textContent).join(),
         st: all.filter((n) => /^plan-st/.test(n.className || "")).map((n) => n.className + ":" + n.textContent).join(), texts: all.map((n) => n.textContent).join("|"), btns: acts }; };
@@ -789,7 +813,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
       /pv\.h\.plan\.m/.test(np.texts) && !/pv\.h\.plan\|/.test(np.texts)
       && (() => { const r = paintOf({ ...MO, plan: { state: "running", tier: "linux_starter" } }); return !/NoServer/.test(r.texts); })(), np.texts);
     PV_T = "14"; PV_Q = "100";
-    { const of = paintOf({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: true }), ul = walk(dom["set-plan"]).find((n) => n.className === "plan-scroll").children.find((n) => n.className === "plan-list");
+    { const of = paintOf({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: true }), ul = walk(dom["set-plan-main"]).find((n) => n.className === "plan-scroll").children.find((n) => n.className === "plan-list");
       ok("方案制綁卡那格(offer)跟未登入同組(D 版):標題 pv.h.offer.m、三條列式、沒有說明句(不會未登入講「免費試用」、登入後講「送」);底列照現行 pv.f.offer.m(驗證金、扣款與取消在這裡講);鈕〔前往綁卡〕",
         /pv\.h\.offer\.m\{/.test(of.texts) && of.lead === "" && !!ul && ul.children.map((n) => n.textContent).join("|").replace(/\{.*$/, "") === "pv.offer.li.data|pv.offer.li.server|pv.offer.li.ai"
         && /^pv\.f\.offer\.m\{/.test(of.rule) && !/pv\.d\.offer/.test(of.texts) && JSON.stringify(of.acts.map((x) => x[1])) === JSON.stringify(["plan.addCard"]), of.texts);
@@ -890,7 +914,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
       PV_N = 0;
       {
         const moreOf = (a, signedIn = true) => { const keep = hasToken; hasToken = signedIn; if (a === null) { acct = null; planPaint(); } else paintOf(a); hasToken = keep;
-          const all = walk(dom["set-plan"]);
+          const all = walk(dom["set-plan-main"]);
           return { n: all.filter((n) => (n.dataset && n.dataset.k === "more") || /plan-more/.test(n.className || "")).length,
             detail: all.some((n) => n.id === "plan-detail" || /plan-detail|plan-sec|plan-lbl|plan-inc/.test(n.className || "")), texts: all.map((n) => n.textContent).join("|") }; };
         const cases = [["方案制・有主機", { ...MO, data_access: "included", plan: { state: "running", tier: "linux_starter", paid_until: AHEAD } }], ["方案制・沒方案", { ...MO, data_access: "plan_required" }],
@@ -908,11 +932,11 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
         PV_D = ""; PV_U = "";
       }
       { paintOf({ ...MO, data_access: "included", plan: { state: "running", tier: "linux_starter", paid_until: AHEAD } });
-        const id = walk(dom["set-plan"]).find((n) => n.className === "plan-id"), kids = id.children.map((n) => n.className + ":" + n.textContent);
+        const id = walk(dom["set-plan-main"]).find((n) => n.className === "plan-id"), kids = id.children.map((n) => n.className + ":" + n.textContent);
         ok("自動儲值短句搬到帳號列那一組、餘額列正下方(plan-fine 12px,plan.topupShort 帶 api 的門檻與金額);金額拿不到就不出", kids[kids.length - 2].startsWith("plan-bal:plan.bal") && kids[kids.length - 1] === 'plan-fine:plan.topupShort{"a":"50","b":"300"}'
-          && (PV_A = "", paintOf({ ...MO, data_access: "included", plan: { state: "running", tier: "linux_starter", paid_until: AHEAD } }), !walk(dom["set-plan"]).some((n) => /plan\.topupShort/.test(n.textContent))), kids.join("\n"));
+          && (PV_A = "", paintOf({ ...MO, data_access: "included", plan: { state: "running", tier: "linux_starter", paid_until: AHEAD } }), !walk(dom["set-plan-main"]).some((n) => /plan\.topupShort/.test(n.textContent))), kids.join("\n"));
         PV_A = "50";
-        const hasShort = (a) => (paintOf(a), walk(dom["set-plan"]).some((n) => /^plan\.topupShort\{/.test(n.textContent)));
+        const hasShort = (a) => (paintOf(a), walk(dom["set-plan-main"]).some((n) => /^plan\.topupShort\{/.test(n.textContent)));
         ok("…沒卡的人(acct.reason = NO_CARD:綁卡拿試用／沒試用兩格)不出那一行(沒有卡可刷,那格底列在講綁卡時開啟自動儲值);有卡照出", !hasShort({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: true }) && !hasShort({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: false })
           && hasShort({ ...MO, data_access: "plan_required" }) && hasShort({ ...MO, data_access: "included", reason: "NO_CREDIT", plan: { state: "running", tier: "linux_starter", paid_until: AHEAD } }));
         ok("…沒卡看 has_card(paywall-redesign §2.2):綁卡前額度還有剩(reason 空、has_card:false)也不出;has_card:true 就出(就算 reason 還是 NO_CARD)", !hasShort({ ...MO, data_access: "plan_required", can_run: true, reason: null, has_card: false, trial_eligible: true })
