@@ -531,7 +531,8 @@ for rc, kw, want_err, what in (
         (1641, {"present_after": True}, None, "1641 但 DLL 已在 → 成功"),
         (3010, {}, "SETUP_FAILED:vcredist:reboot", "3010 而 DLL 不在 → vcredist:reboot"),
         (1603, {}, "SETUP_FAILED:vcredist:1603", "1603 → 代碼帶出去"),
-        (1223, {}, "SETUP_FAILED:vcredist:denied", "1223(Start-Process 拋例外 = UAC 按了否)→ vcredist:denied")):
+        (1223, {}, "SETUP_FAILED:vcredist:denied", "1223(Start-Process 拋的是 Win32 1223 = UAC 按了否)→ vcredist:denied"),
+        (1224, {}, "SETUP_FAILED:vcredist:1224", "1224(Start-Process 拋了別的例外:powershell.exe 不在、被 AppLocker 擋…)→ 代碼帶出去,不講按「是」")):
     err, n, sl, env = vc_run(rc, **kw)
     check("10c vcredist " + what + ";_PS_VC 只跑一次、Python 不 sleep", err == want_err and n == 1 and sl == []
           and env.get("CAPL_VC", "").endswith("vcredist_x64_2010.exe") and env.get("CAPL_VC_ELEVATED") == capl._PS_VC_ELEVATED, [err, n, sl])
@@ -540,8 +541,13 @@ check("10c powershell 本身跑不起來 / 逾時 → 照舊 vcredist(畫面講�
 outer, inner = capl._PS_VC, capl._PS_VC_ELEVATED
 check("10c 只跳一次 UAC:RunAs 只在外層、只一次(起提權的 powershell);提權腳本裡沒有 RunAs", outer.count("-Verb RunAs") == 1 and "RunAs" not in inner
       and "($PSHOME + '\\powershell.exe')" in outer and "'-Command', $i -Verb RunAs" in outer)
-check("10c 外層:先驗簽章(壞檔不跳 UAC)、Start-Process 拋例外接住回 1223、交回提權行程的結束碼", outer.index("exit 4") < outer.index("Start-Process")
-      and "-ErrorAction Stop } catch { exit 1223 }" in outer and outer.endswith("exit $p.ExitCode"))
+m_catch = re.search(r"-ErrorAction Stop \} catch \{ (.*?) \}; exit \$p\.ExitCode$", outer)
+cbody = m_catch.group(1) if m_catch else ""
+check("10c 外層:先驗簽章(壞檔不跳 UAC)、交回提權行程的結束碼;只有 Win32Exception 1223(本身或 InnerException)才回 1223,其他例外回 1224",
+      outer.index("exit 4") < outer.index("Start-Process") and bool(m_catch)
+      and cbody == "if (($_.Exception -is [ComponentModel.Win32Exception] -and $_.Exception.NativeErrorCode -eq 1223) -or "
+                   "($_.Exception.InnerException -is [ComponentModel.Win32Exception] -and $_.Exception.InnerException.NativeErrorCode -eq 1223)) "
+                   "{ exit 1223 }; exit 1224", cbody)
 # PowerShell 把 U+2018–U+201B 也當單引號(CodeGeneration.EscapeSingleQuotedStringContent 五個都重複一次);用戶名帶 ’ 的 %TEMP% 不能提早結束字面值
 m_esc = re.search(r"\(\$f -replace '((?:[^']|'')*)', '\$0\$0'\)", outer)
 PSQ = "'\u2018\u2019\u201a\u201b"

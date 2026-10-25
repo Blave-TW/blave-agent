@@ -619,13 +619,18 @@ _PS_VC_ELEVATED = (
 # — a user name like O’Brien sits in %TEMP%. \u escapes keep this command ASCII.
 # Plain -Command, not -EncodedCommand: base64 of UTF-16 nearly triples the length, and the RunAs (ShellExecute)
 # path is reported to cut command lines near 2048 chars. Nothing in it has a double quote, so it passes as is.
-# 4 = not Microsoft's signature. 1223 (ERROR_CANCELLED) = Start-Process threw, i.e. UAC said no; since there
-# is only one prompt, that can only be that first one. Without the catch, a non-terminating Start-Process error
-# would leave $p null and exit 0 (not seen on a box yet).
+# 4 = not Microsoft's signature. 1223 (ERROR_CANCELLED) = Start-Process threw a Win32 1223, i.e. UAC said no; since
+# there is only one prompt, that can only be that first one. Anything else it throws (powershell.exe missing,
+# AppLocker/WDAC, another ShellExecute error) never showed a prompt, so it exits 1224 and the row shows the code
+# instead of asking the user to click Yes. Without the catch, a non-terminating Start-Process error would leave
+# $p null and exit 0 (not seen on a box yet).
 _PS_VC = ("$f = $env:CAPL_VC; " + _PS_SIG_OK +
           "$i = \"`$f = '\" + ($f -replace '[''\\u2018-\\u201B]', '$0$0') + \"'; \" + $env:CAPL_VC_ELEVATED; "
           "try { $p = Start-Process -FilePath ($PSHOME + '\\powershell.exe') -ArgumentList '-NoProfile', '-NonInteractive', "
-          "'-WindowStyle', 'Hidden', '-Command', $i -Verb RunAs -Wait -PassThru -ErrorAction Stop } catch { exit 1223 }; "
+          "'-WindowStyle', 'Hidden', '-Command', $i -Verb RunAs -Wait -PassThru -ErrorAction Stop } catch { "
+          "if (($_.Exception -is [ComponentModel.Win32Exception] -and $_.Exception.NativeErrorCode -eq 1223) -or "
+          "($_.Exception.InnerException -is [ComponentModel.Win32Exception] -and $_.Exception.InnerException.NativeErrorCode -eq 1223)) "
+          "{ exit 1223 }; exit 1224 }; "
           "exit $p.ExitCode")
 
 
