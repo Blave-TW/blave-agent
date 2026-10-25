@@ -108,7 +108,9 @@ exit 2
         cut === true && r.cancelled === true && r.ok === false && r.cantRun === false && !fs.existsSync(path.join(HOME, "login-ran")) && second.busy === true, { cut, r, second, ran: fs.existsSync(path.join(HOME, "login-ran")) });
       const again = await m.agentLogin("codex");
       t("…取消後佔位放掉:下一次登入照常跑", again.ok === true && fs.existsSync(path.join(HOME, "login-ran")), again);
-      fs.rmSync(path.join(HOME, "login-ran"), { force: true }); }
+      fs.rmSync(path.join(HOME, "login-ran"), { force: true });
+      const p3 = m.agentLogin("claude"); await new Promise((res) => setTimeout(res, 200)); m.cancelAgentLogin(); const nb = await p3;
+      t("…偵測中取消、偵測完那一顆又沒找到 → 仍回 cancelled(不是失敗)", nb.cancelled === true && nb.ok === false, nb); }
     // 6. Claude 同一套:PATH 上的 claude 跑不起來 → 改用 SDK 隨包那顆
     { const d = binDir("bclaude"); script(path.join(d, "claude"), "#!/bin/sh\nexit 127\n");
       const bundled = script(path.join(ROOT, "venv", "claude_agent_sdk", "_bundled", "claude"), "#!/bin/sh\necho '{\"loggedIn\":true,\"authMethod\":\"x\"}'\n");

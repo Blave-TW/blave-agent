@@ -315,8 +315,8 @@ async function agentLogin(kind, onSpawn) {
     bin = kind === "claude" ? d.claude.path : kind === "codex" ? d.codex.path : null;
     if (bin) envPath = await loginShellPath();
   } catch (e) { loginChild = null; throw e; }
-  if (!bin) { loginChild = null; return { ok: false }; }
   if (slot.__cancelled) { loginChild = null; return { ok: false, cancelled: true, code: null, cantRun: false }; }
+  if (!bin) { loginChild = null; return { ok: false }; }
   return new Promise((resolve) => {
     const w = cmdWrap(bin);
     const child = spawn(w.file, kind === "claude" ? ["auth", "login"] : ["login"],
