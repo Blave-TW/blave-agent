@@ -7,6 +7,10 @@
 // 文字鈕 .btn-quiet(spec-desktop-settings-cleanup §0):
 //   ④ 關於的「服務條款 · 隱私權政策」、隱私頁的「隱私權政策」:字的左緣 = 內容欄起點(關於那一行 #set-up-line 的左緣)
 //   ⑤ 對照:把 UA 的左右 padding 蓋回去,④要壞
+// 設定 modal 方案 B(spec settings-modal-b-2026-10-24):
+//   ⑥ S7/S15 分類欄:目前項底色 = --surface-muted、hover 用的 --surface-row-hover 跟它不同(亮暗都量);視覺高 34、熱區上下各補 5 到 44
+//   ⑦ S8 「一般」三組:組內 8、組間 32;「關於」緊接防睡那組、隔 32(不釘底)
+//   ⑧ S9 每一類第一行字到內容區頂端 16–23(資料來源空清單時以前是 40)
 // 跑法:node tests/check_shell_layout.js(找不到 shell/node_modules 的 Electron 就 SKIP)
 const path = require("path"), fs = require("fs");
 const SHELL = path.join(__dirname, "..", "shell");
@@ -29,7 +33,7 @@ const STUB = `window.blave = new Proxy({}, { get: (_, k) => typeof k !== "string
       telemetryGet: true, telemetryInstallId: "a3f9c2e1-7b04-4d6e-9e21-5c0b8d4f1a77" })[k] });`;
 const TOKEN = "BINANCE_API_KEY=" + "FAKE_not_a_real_key_".repeat(6).slice(0, 104);   // 120 字、沒有任何斷點
 const EN = "Please check whether the strategy still holds after the funding rate flipped negative last week and tell me what changed";
-let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
+let red = 0; const ok = (n, c, why) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || !why ? "" : "  ← " + why)); if (!c) red++; };
 
 app.whenReady().then(async () => {
   if (app.dock) app.dock.hide();
@@ -86,6 +90,38 @@ app.whenReady().then(async () => {
   await w.webContents.executeJavaScript(`(() => { const s = document.createElement("style"); s.textContent = ".btn-quiet { padding: 1px 6px !important; }"; document.head.appendChild(s); })()`, true);
   const L2 = await legal();
   ok("⑤ 對照:文字鈕的 UA padding 蓋回去時,字就不在那條線上(這支測試抓得到那 6px)", Math.abs(L2.terms - L2.edge) > 3 && Math.abs(L2.priv2 - L2.pedge) > 3);
+  await w.webContents.executeJavaScript(`document.getElementById("bug-pad") && document.getElementById("bug-pad").remove()`, true);
+  await w.webContents.executeJavaScript(`[...document.querySelectorAll("style")].filter((s) => /padding: 1px 6px/.test(s.textContent)).forEach((s) => s.remove())`, true);
+  const X = (s) => w.webContents.executeJavaScript(s, true), nap = (ms) => new Promise((r) => setTimeout(r, ms));
+  await X(`(async () => { await setOpen(); setCat("display"); })()`); await nap(300);
+  for (const theme of ["light", "dark"]) {
+    await X(`document.documentElement.setAttribute("data-theme", ${JSON.stringify(theme)})`); await nap(400);   // 等底色的 transition 跑完
+    const c = await X(`(() => {
+      const probe = (v) => { const d = document.createElement("div"); d.style.background = "var(" + v + ")"; document.getElementById("set-modal").appendChild(d); const c = getComputedStyle(d).backgroundColor; d.remove(); return c; };
+      const cur = document.querySelector('.set-cat[aria-current="true"]'), cs = getComputedStyle(cur);
+      return { cur: cs.backgroundColor, w: cs.fontWeight, muted: probe("--surface-muted"), hover: probe("--surface-row-hover"), card: probe("--surface-card"),
+        rule: [...document.styleSheets].some((sh) => { try { return [...sh.cssRules].some((r) => r.media && r.media.mediaText === "(hover: hover)" && [...r.cssRules].some((x) => x.selectorText === '.set-cat:not([aria-current="true"]):hover' && /--surface-row-hover/.test(x.style.background))); } catch (_) { return false; } }) }; })()`);
+    ok(`⑥ S7 ${theme}:目前項 = --surface-muted＋600(${c.cur});hover 走 --surface-row-hover(${c.hover}),跟目前項、卡面都不同`, c.cur === c.muted && c.w === "600" && c.hover !== c.muted && c.hover !== c.card && c.rule);
+  }
+  await X(`document.documentElement.setAttribute("data-theme", "light")`);
+  const hit = await X(`(() => { const cats = [...document.querySelectorAll("#set-cats .set-cat")].filter((b) => !b.hidden), f = cats[0], l = cats[cats.length - 1], a = f.getBoundingClientRect(), b = l.getBoundingClientRect(), x = a.left + a.width / 2;
+    const at = (y) => { const e = document.elementFromPoint(x, y); return e && e.closest(".set-cat"); };
+    return { h: cats.map((c) => Math.round(c.getBoundingClientRect().height)), up: at(a.top - 4) === f, down: at(b.bottom + 4) === l, outUp: at(a.top - 6) !== f, outDown: at(b.bottom + 6) !== l }; })()`);
+  ok(`⑥ S15 分類鈕視覺高 34(${hit.h.join("/")}),熱區上下各多 5:邊外 4px 還點得到、6px 點不到`, hit.h.every((h) => h === 34) && hit.up && hit.down && hit.outUp && hit.outDown);
+  const gap = await X(`(() => { const r = (id) => document.querySelector(id).getBoundingClientRect(), rows = [...document.querySelectorAll('#set-modal .set-pane[data-set-cat="display"] > .set-row')].filter((x) => !x.hidden).map((x) => x.getBoundingClientRect());
+    const sc = document.querySelector(".set-content").getBoundingClientRect();
+    return { inRows: rows.slice(1).map((x, i) => Math.round(x.top - rows[i].bottom)), toRn: Math.round(r(".set-rn").top - rows[rows.length - 1].bottom), rnSug: Math.round(r(".set-sug").top - r(".set-rn").bottom), sugAwake: Math.round(r(".set-awake").top - r(".set-sug").bottom),
+      awakeAbout: Math.round(r("#set-up").top - r(".set-awake").bottom), aboutGap: Math.round(sc.bottom - r("#set-up").bottom) }; })()`);
+  ok(`⑦ S8 一般:組內 8(${gap.inRows.join("/")}、${gap.rnSug}、${gap.sugAwake})、組間 32(→回覆通知 ${gap.toRn}、→關於 ${gap.awakeAbout});關於不釘底`, gap.inRows.every((g) => g === 8) && gap.rnSug === 8 && gap.sugAwake === 8 && gap.toRn === 32 && gap.awakeAbout === 32, JSON.stringify(gap));
+  const tops = {};
+  for (const cat of ["display", "model", "src", "plan", "priv"]) {
+    await X(`setCat(${JSON.stringify(cat)})`); await nap(350);
+    tops[cat] = await X(`(() => { const sc = document.querySelector(".set-content"), pane = [...sc.children].find((p) => !p.hidden), tw = document.createTreeWalker(pane, NodeFilter.SHOW_TEXT);
+      let n; while ((n = tw.nextNode())) { if (!n.textContent.trim()) continue; const rg = document.createRange(); rg.selectNodeContents(n); const b = rg.getBoundingClientRect(); if (b.height) return Math.round(b.top - sc.getBoundingClientRect().top); } return null; })()`);
+  }
+  // 量的是第一個文字節點的行框頂(含行高的上半),比字形頂多 1–2px:一般那一類的第一列是 34 高的下拉列、字置中,量到 25
+  ok(`⑧ S9 每一類第一行字到內容區頂端都在 16–25(資料來源以前多 24):${JSON.stringify(tops)}`, Object.values(tops).every((v) => v !== null && v >= 16 && v <= 25));
+  await X(`setClose()`);
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   app.exit(red ? 1 : 0);
 });

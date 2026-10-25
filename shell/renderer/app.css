@@ -895,15 +895,19 @@ body.resizing * { cursor: col-resize !important; }
   padding: var(--space-12) var(--space-8);
   border-right: 1px solid var(--border-hairline);
 }
+/* canon › modal 內分類欄:分類欄坐在卡面上,Studio 側欄那套(control-on / hover 卡面)在這裡看不見。
+   目前項 muted＋600;hover 走 row-hover,兩態都比目前項弱(light 白、dark darkBody);視覺 34,熱區用 ::before 上下各補 5 到 44 */
 .set-cat {
+  position: relative;
   display: block; width: 100%;
   padding: var(--space-8) var(--space-12);
   border-radius: var(--radius-md);
-  text-align: left; font-size: 13px; color: var(--ink-2);
+  text-align: left; font-size: 13px; line-height: 18px; color: var(--ink-2);   /* 固定行高:純英文名(Agent)跟中文名同高 34 */
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
-.set-cat:hover, .set-cat[aria-current="true"] { background: var(--surface-muted); color: var(--ink); }
-.set-cat[aria-current="true"] { font-weight: 600; }
+.set-cat::before { content: ""; position: absolute; inset: -5px 0; }
+.set-cat[aria-current="true"] { background: var(--surface-muted); color: var(--ink); font-weight: 600; }
+@media (hover: hover) { .set-cat:not([aria-current="true"]):hover { background: var(--surface-row-hover); color: var(--ink); } }
 /* 固定內容高:切分類不改變 modal 尺寸,內容自己捲 */
 .set-content {
   flex: 1 1 auto; min-width: 0;
@@ -911,11 +915,13 @@ body.resizing * { cursor: col-resize !important; }
   padding: var(--space-16);
   overflow-y: auto;
 }
+/* 「一般」三組(canon Perceptual #1,組內 : 組間 ≈ 1:4):外觀／語言／顯示幣別 → 回覆通知／建議下一步／防睡 → 關於;組內 8、組間 32 */
 .set-row { display: flex; align-items: center; gap: var(--space-8); }
-.set-row + .set-row { margin-top: var(--space-16); }
+.set-row + .set-row { margin-top: var(--space-8); }
 /* 設定 › 顯示幣別:切換失敗那一句(下拉底下;同網頁 setFail 的字) */
 .set-ccy-err { margin: var(--space-8) 0 0; font-size: 12px; color: var(--color-redText); }
-.set-rn, .set-awake { margin-top: var(--space-24); }
+.set-rn { margin-top: var(--space-32); }
+.set-awake { margin-top: var(--space-8); }
 .set-rn-os .btn-quiet { margin-inline-start: var(--space-4); }
 /* 設定 › 隱私:整頁沒有分隔線。開關 = canon 的 Switch(黑白、無橘):視覺 40×24、鈕 18,熱區補到 44×44 */
 .sw-row { display: flex; align-items: center; gap: var(--space-12); }
@@ -941,11 +947,9 @@ body.resizing * { cursor: col-resize !important; }
 .set-legal { margin: var(--space-16) 0 0; font-size: 12px; color: var(--ink-3); }   /* 字級 / 色給兩份之間的「·」 */
 .priv-fine { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); max-width: 60ch; }
 @media (prefers-reduced-motion: reduce) { .sw, .sw::after { transition: none; } }
-/* 關於:「一般」頁最下面的腳——等寬版號、下一行更新狀態、右邊一顆鈕 */
-.set-pane[data-set-cat="display"]:not([hidden]) { display: flex; flex-direction: column; min-height: 100%; }
 /* 關於:標題下面一行「Blave {app} · 雲端主機 {ws} · 已是最新版」+ 右邊一個文字連結(mockup-desktop-update-flow-v4 §2)。
    12px、--ink-3、版號 mono 不在連字號處斷行(最長那種只能在段與段之間折);狀態字不換色 */
-.set-about { margin-top: auto; padding-top: var(--space-16); display: flex; flex-direction: column; gap: var(--space-8); }
+.set-about { margin-top: var(--space-32); display: flex; flex-direction: column; gap: var(--space-8); }   /* 緊接防睡那一組:不釘底,登入前後位置不跳 */
 .set-up-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-16); min-height: 24px; }
 .set-up-line { margin: 0; min-width: 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .set-up-line .mono { white-space: nowrap; }
