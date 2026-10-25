@@ -1000,9 +1000,9 @@ body.resizing * { cursor: col-resize !important; }
 .plan-err.is-calm .fault-mark{background:var(--ink-3)}
 .plan-act{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:var(--space-12)}
 .plan-act .btn-quiet{margin-right:auto}
-/* 精簡版(設計師 v3):一個標題句(h5,20/600)+ 至多兩行說明 + 外開定價頁的安靜鈕;底列=一行跟錢有關的話 + 鈕 */
+/* 精簡版(設計師 v3):一個標題句(h6,15/600,0.1.32 起不大於框標題)+ 至多兩行說明 + 外開定價頁的安靜鈕;底列=一行跟錢有關的話 + 鈕 */
 .plan-pane .plan-st{margin-bottom:var(--space-8)}
-.plan-pane h5{margin:0;font-size:20px;font-weight:600;line-height:1.4;color:var(--ink);text-wrap:balance}
+.plan-scroll > h6{margin:0;font-size:15px;font-weight:600;line-height:1.4;color:var(--ink);text-wrap:balance}   /* 只管方案那一區段:同頁「公開連結」的區段標題也是 h6,不能被這條蓋掉 */
 .plan-pane .plan-lead{margin-top:var(--space-8);text-wrap:pretty}
 .plan-pane .plan-rule{text-wrap:pretty}
 .plan-act .wait{margin-right:auto;font-size:12px;line-height:1.5;color:var(--ink-2)}

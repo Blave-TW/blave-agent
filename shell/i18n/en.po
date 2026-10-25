@@ -1223,9 +1223,6 @@ msgstr "Usage & billing"
 msgid "pv.d.starting"
 msgstr "Blave data is available right now, before the machine is up. You can close this window."
 
-msgid "pv.d.running"
-msgstr "On the cloud side you can see the strategies, positions and orders on the machine, and ask the agent to build strategies there."
-
 msgid "pv.d.stopped"
 msgstr "A stopped machine still bills {h} TWD an hour. At a balance of 0 the machine is deleted, along with the strategies and data on it."
 

@@ -372,7 +372,7 @@ const PO2 = ["zh", "en"].map((l) => fs.readFileSync(path.join(__dirname, "..", "
     "plan.topupShort": ["低於 {a} TWD 時從卡自動儲值 {b} TWD。可在網頁關閉。", "Under {a} TWD, your card tops up {b} TWD. You can turn this off on the web."] };
   const S2 = eval(fs.readFileSync(path.join(R, "strings.js"), "utf8") + ";STRINGS");
   const off = Object.keys(want).filter((k) => S2.zh[k] !== want[k][0] || S2.en[k] !== want[k][1]);
-  ok("方案 B 定稿字串 zh / en 逐字(" + Object.keys(want).length + " 個 key);刪掉的 shl.title 兩語都不在", off.length === 0 && !("shl.title" in S2.zh) && !("shl.title" in S2.en), off.join(",")); }
+  ok("方案 B 定稿字串 zh / en 逐字(" + Object.keys(want).length + " 個 key);刪掉的 shl.title、pv.d.running 兩語都不在", off.length === 0 && ["shl.title", "pv.d.running"].every((k) => !(k in S2.zh) && !(k in S2.en)), off.join(",")); }
 ok("那一類定名「一般」;指到它的句子(minv.trade)兩語都跟著改", /msgid "set\.cat\.display"\nmsgstr "一般"/.test(PO2[0]) && /msgid "set\.cat\.display"\nmsgstr "General"/.test(PO2[1])
   && /msgid "minv\.trade"\nmsgstr "[^\n]*設定 › 一般/.test(PO2[0]) && /msgid "minv\.trade"\nmsgstr "[^\n]*Settings › General/.test(PO2[1]));
 
@@ -725,7 +725,9 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     const walk = (n, out = []) => { (n.children || []).forEach((c) => { if (c && typeof c === "object") { out.push(c); walk(c, out); } }); return out; };
     acct = { plan: { state: "running" } }; PV_P = "990"; paintPlan();
     const all = walk(dom["set-plan-main"]), lead = all.filter((n) => n._cls === "plan-lead").map((n) => n.textContent);
-    ok("運行中:說明只有 pv.d.running 一句", lead.join() === "pv.d.running");
+    ok("S12 運行中:頁首沒有說明段(Copy 密度 #3;pv.d.running 刪了);標題是 h6、不大於框標題(15/600)", lead.length === 0
+      && /sc\.append\(el\("h6", null, t\(V\.h, v\)\)\);/.test(fnSrc("planPaint")) && !/"h5"/.test(fnSrc("planPaint"))
+      && /\.plan-scroll > h6\{margin:0;font-size:15px;font-weight:600;line-height:1\.4;color:var\(--ink\);text-wrap:balance\}/.test(css) && !/\.plan-pane h5/.test(css) && !/\.plan-pane h6/.test(css));
     PV_P = ""; }
   { /* 沒有主機也能買資料(spec-data-without-machine-flow §1 / §4 / §5):資料那一格從兩態(included / plan)變四態。
        真的跑 planView + planPaint;數字(時價)從 account_status 的 data_hourly 來,這裡用 PV_R 模擬 planVars 的 r */
@@ -881,7 +883,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
       const names = (r) => JSON.stringify(r.acts.map((x) => x[1]));
       const r = tr("running", {});
       ok("running × 試用中(到期自動扣):狀態「試用中 · 剩 {n} 天 · 主機運行中」(綠點)、標題說明不動、底列 pv.f.running.trial;鈕 = 〔到網站取消試用〕+〔切到雲端〕仍兩顆,沒有〔前往網頁管理〕;取消鈕外開方案卡、記 trial_cancel_web",
-        /^plan-st on:plan\.st\.runningTrial\{.*"n":5/.test(r.st) && /pv\.h\.running/.test(r.texts) && r.lead === "pv.d.running" && /^pv\.f\.running\.trial\{/.test(r.rule)
+        /^plan-st on:plan\.st\.runningTrial\{.*"n":5/.test(r.st) && /pv\.h\.running/.test(r.texts) && r.lead === "" && /^pv\.f\.running\.trial\{/.test(r.rule)
         && JSON.stringify(r.acts.map((x) => x.slice(0, 2))) === JSON.stringify([["btn-quiet", "plan.trialCancel"], ["btn-out", "plan.switchCloud"]])
         && (seen.length = 0, featured.length = 0, r.btns[0]._click(), seen.join() === "ext:" + planPayUrl() && featured.join() === "trial_cancel_web"), r.st + "|" + r.rule + "|" + names(r));
       const rc = tr("running", { cancel_at_period_end: true }, { trial_cancel_at_end: true });
@@ -990,8 +992,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     PV_P = ""; PV_PR = null; acct = { plan: { state: "running" } }; }
   // 內文講切換器、標題不動。哪些事歸給網頁工作頁、哪些不可以再歸給它——那條規則由 check_shell_strings.js 守,這裡只守「內文確實在講切換器」。
   // spec-desktop-settings-cleanup §4:運行中那段收成一句「那一邊有什麼」;「方案內容與計費」那段(pv.inc.*)已隨方案頁拿掉
-  ok("內文一句講雲端那一邊有什麼、標題不動;沒人讀的 pv.inc.note / pv.inc.web 兩語都刪了(zh / en)", /msgid "pv\.d\.running"\nmsgstr "在雲端那一邊，可以看主機上的策略、部位與下單，也可以請 agent 在主機上做策略。"/.test(PO[0])
-    && /msgid "pv\.d\.running"\nmsgstr "On the cloud side you can see the strategies, positions and orders on the machine, and ask the agent to build strategies there\."/.test(PO[1])
+  ok("運行中那一格沒有說明句(方案 B S12 刪了 pv.d.running)、標題不動;沒人讀的 pv.inc.note / pv.inc.web 兩語都刪了(zh / en)", PO.every((x) => !/msgid "pv\.d\.running"/.test(x))
     && PO.every((x) => !/msgid "pv\.inc\./.test(x))
     && /msgid "pv\.h\.running"\nmsgstr "策略可以在雲端主機上線了"/.test(PO[0])
     && /msgid "plan\.switchCloud"\nmsgstr "切到雲端"/.test(PO[0]) && /msgid "plan\.switchCloud"\nmsgstr "Switch to cloud"/.test(PO[1]));

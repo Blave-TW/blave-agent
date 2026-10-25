@@ -3826,7 +3826,7 @@ function planPaint() {
     // 啟動中通常一分鐘內就變 running:試用的揭露只加那一行,鈕等進了 running 才有
     starting: { st: ["busy", t("pv.st.starting")], h: "pv.h.starting", lead: t("pv.d.starting"), rule: tOn ? planRunRule(v) : "",
                 acts: [slow ? btn("btn-out", t("plan.recheck"), () => { planSince = Date.now(); acctCheck(); planPaint(); }) : btn("btn-fill", t("plan.starting"), null, true)] },
-    running:  { st: ["on", tCx ? t("pv.st.trialCancelled", v) : tOn ? t("plan.st.runningTrial", v) : t("plan.st.running")], h: "pv.h.running", lead: t("pv.d.running"), rule: mo ? planRunRule(v) : t("pv.f.running", v),
+    running:  { st: ["on", tCx ? t("pv.st.trialCancelled", v) : tOn ? t("plan.st.runningTrial", v) : t("plan.st.running")], h: "pv.h.running", lead: "", rule: mo ? planRunRule(v) : t("pv.f.running", v),
                 acts: [mo ? (tOn && trialBtn()) || btn("btn-quiet", t("plan.manageStopped"), ext(planPayUrl())) : btn("btn-quiet", t("plan.manage"), ext(planWebUrl())), btn("btn-out", t("plan.switchCloud"), planToCloud)] },
     stopped:  planStopKind() === "fail" ? { st: ["bad", t("plan.st.stoppedPlan")], h: "pv.h.stopped.m", lead: v.gu ? t("pv.d.stopped.m", v) : t("pv.d.stopped.mNoNum"),
                      acts: [btn("btn-quiet", t("plan.manageStopped"), ext(planPayUrl())), btn("btn-fill", t("plan.repay"), planRepay)] }
@@ -3843,7 +3843,7 @@ function planPaint() {
 
   if (view !== planLastView) { if (planLastView && !$("set-plan").hidden) srSay(t(V.h, v)); planLastView = view; }
   if (V.st) { const stEl = el("span", "plan-st " + V.st[0]); stEl.append(el("span", "dot"), el("span", null, V.st[1])); sc.append(stEl); }
-  sc.append(el("h5", null, t(V.h, v)));
+  sc.append(el("h6", null, t(V.h, v)));   // modal 內的標題用 h6(canon Type › 標題用法):跟框標題同級、不超過它
   if (V.lead) sc.append(el("p", "plan-lead", V.lead));
   if (V.list) { const ul = el("ul", "plan-list"); V.list.forEach((x) => ul.append(el("li", null, x))); sc.append(ul); }
   // 底列:錯誤(有才出)→ 鈕上方那行(這顆鈕會帶來的錢)→ 鈕左小字 + 鈕
