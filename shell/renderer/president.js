@@ -31,7 +31,7 @@ const PRES_FEATURE = { form: "pres_form_saved", tcem: "pres_tcem_open", cert: "p
 // choice = 找不到憑證那一頁選的路:"new"(申請新憑證)/ "have"(已經有憑證,從別台電腦匯出的檔)/ null(還沒選)
 const presBlank = () => ({ phase: "prep", scan: null, waitTcem: false, tcemMsg: null, choice: null, acct: "", pw: "", caPw: "",
   source: "found", picked: false, busy: false, msg: null, sent: null, recheck: false, recert: false,
-  test: { url: "" }, info: null, seen: {}, sig: null, started: false, setupSent: false, startSent: false, view: null });
+  test: { url: "" }, info: null, seen: {}, sig: null, started: false, setupSent: false, startSent: false, view: null, base: null, readyBurst: false });
 // 清單上有自己那一列的步驟:這些步驟沒送出去的錯掛在列上(host 記成 probe)
 const PRES_ROW_STEPS = ["setup", "cert", "probe", "test_order", "start"];
 // 整框層級的錯(不屬於哪一列),浮動 slot 只放這些
@@ -227,8 +227,11 @@ function presHost(target) {
    登入不會自動再試(任何失敗都等用戶按「確認登入」) */
 function presAdvance(view, pc) {
   if (PRES.sent && pc && pc.updated_at !== PRES.sent.upd) PRES.sent = null;
-  if (PRES.busy || PRES.sent || presDown() || PRES.phase !== "flow" || (pc && pc.busy)) return;
   const setup = presSec(pc, "setup"), worker = presSec(pc, "worker");
+  if (!PRES.base) PRES.base = { worker: worker.status || null };
+  // 這次開框看到下單程式起來:主畫面要等 daemon 重讀帳戶(runtime president_connect._ready)才有總權益,這幾秒改快輪詢接住
+  if (worker.status === "ok" && PRES.base.worker !== "ok" && !PRES.readyBurst) { PRES.readyBurst = true; presBurst(); }
+  if (PRES.busy || PRES.sent || presDown() || PRES.phase !== "flow" || (pc && pc.busy)) return;
   if (!PRES.setupSent && setup.status !== "ok" && setup.status !== "running" && setup.status !== "failed") { PRES.setupSent = true; presStep("setup"); return; }
   if (view === "d-finish" && !PRES.startSent && worker.status !== "running") { PRES.startSent = true; presTrack("probe"); presStep("start"); }
 }

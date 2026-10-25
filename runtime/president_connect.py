@@ -131,7 +131,8 @@ _SECTIONS = ("setup", "cert", "probe", "test_order", "worker")
 # every step that logs in (or, for finish, starts what logs in): needs the bind AND the certificate
 _LOGIN_CMDS = ("president_probe", "president_host", "president_test_order", "president_finish")
 # desktop state, this process only (see "desktop app" below)
-_LOCAL = {"key": None, "secrets": None, "pending": None, "worker": None, "on_secrets": None}
+_LOCAL = {"key": None, "secrets": None, "pending": None, "worker": None, "on_secrets": None,
+          "on_ready": None}
 _busy = threading.Lock()
 _status_lock = threading.Lock()
 
@@ -1383,6 +1384,18 @@ def _local_host(target, push, by_env=True):
     return {"env": target, "url": ENV_URLS[target], "probe": run_probe(push)}
 
 
+def _ready():
+    """= capital_local._ready: the modal reads this status file, the main screen reads
+    account.json, and the daemon's account read last ran when `start` was dispatched
+    (no snapshot yet). account_president only reads the snapshot file — no 統一 login."""
+    cb = _LOCAL["on_ready"]
+    if cb:
+        try:
+            cb()
+        except Exception as e:
+            print(f"[president_connect] account read kick failed ({type(e).__name__})", file=sys.stderr)
+
+
 def _local_start(push):
     st = read_status() or {}
     if current_env() != "live":
@@ -1406,6 +1419,7 @@ def _local_start(push):
                         # certificate resets the section): the pages tell "never finished
                         # onboarding" from "onboarded, then the login failed" by it
                         _update("worker", status="ok", error=None, wanted=True, ok_at=int(time.time()))
+                        _ready()
                         return {"worker": "ok"}
             except (OSError, ValueError, AttributeError):
                 pass

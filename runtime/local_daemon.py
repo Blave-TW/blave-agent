@@ -1381,6 +1381,7 @@ class Daemon:
                                          | ({"BITGET"} if cl.venue_traits.verified_modes("bitget") else set()))
         self.pc.set_seal_key(self.secret)
         self.pc._LOCAL["on_secrets"] = lambda: self.sup.respawn_when_idle("統一期貨 credentials handed over")
+        self.pc._LOCAL["on_ready"] = self.account_kick.set
         self.pc._LOCAL["worker"].reap_orphan(cl._pid_cmdline)
         # 群益: only through capital_local's bind step (capital_local.local_bind_gate)
         self.capl.set_seal_key(self.secret)
