@@ -20,7 +20,7 @@ t("字串:zh「無法啟動」「沒有回應」「已在瀏覽器開啟登入�
 // 回前景會自動重新偵測(focusRedetect),退路不必再叫他按「重新偵測」;字照 mockup-codex-login
 t("字串:ChatGPT app 那句退路 zh「或在 ChatGPT app 登入後回到這裡。」、en 照 mockup", STR.zh["row.orApp"] === "或在 ChatGPT app 登入後回到這裡。" && STR.en["row.orApp"] === "Or sign in through the ChatGPT app, then come back.", [STR.zh["row.orApp"], STR.en["row.orApp"]]);
 // 「無法啟動」那一列的退路(設計師稽核 D3,Wei 拍板):重裝那一顆,回前景會自動重新偵測
-t("字串:「無法啟動」退路 zh「重新安裝 {name} 後回到這裡。」、en「Reinstall {name}, then come back here.」", STR.zh["row.reinstall"] === "重新安裝 {name} 後回到這裡。" && STR.en["row.reinstall"] === "Reinstall {name}, then come back here.", [STR.zh["row.reinstall"], STR.en["row.reinstall"]]);
+t("字串:「無法啟動」退路 zh「重新安裝 {name} 後回到這裡。」、en「Reinstall {name}, then come back.」(同 row.orApp 不帶 here)", STR.zh["row.reinstall"] === "重新安裝 {name} 後回到這裡。" && STR.en["row.reinstall"] === "Reinstall {name}, then come back.", [STR.zh["row.reinstall"], STR.en["row.reinstall"]]);
 t("字串:終端機那一句帶 {cmd} 佔位(兩語)", /\{cmd\}/.test(STR.zh["row.orCmd"]) && /\{cmd\}/.test(STR.en["row.orCmd"]));
 
 // ── 主行程:原文切出來,配假的 loginShellPath / BASE,子行程是真的 ──

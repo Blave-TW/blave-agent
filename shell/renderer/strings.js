@@ -314,7 +314,7 @@ const STRINGS = {
     "row.failed": "Sign-in didn’t finish.",
     "row.orCmd": "Or run {cmd} in a terminal.",
     "row.orApp": "Or sign in through the ChatGPT app, then come back.",
-    "row.reinstall": "Reinstall {name}, then come back here.",
+    "row.reinstall": "Reinstall {name}, then come back.",
     "row.keyOff": "The key set for {name} on this computer won’t work in Blave. Use Blave AI, or sign in to your {acct} account.",
     "st.cantRun": "Can’t start",
     "st.noResp": "Not responding",
