@@ -412,7 +412,13 @@ ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」
     shape(A[1]) === "claude|false|st.noResp|null" && shape(A[2]) === "codex|false|st.cantRun|null" && A[1].off && A[2].off
     && shape(B[2]) === "codex|false||cn.signIn" && !B[2].off && C[2].act === "login.cancel" && C[2].st === null, [A, B, C].map((m) => m.slice(1, 3).map(shape)));
   ok("模型接入:「無法啟動」那一列說明是 row.reinstall(帶名字);「沒有回應」、一般沒登入不加", A[2].desc === "row.reinstall" && A[1].desc === null && B[2].desc === null
-    && /tc\.appendChild\(el\("p", "m", [^\n]*t\(o\.desc, o\.desc === "row\.reinstall" \? \{ name: o\.name \} : undefined\)\)\)/.test(src), [A[1].desc, A[2].desc, B[2].desc]);
+    && /tc\.appendChild\(el\("p", "m", [^\n]*t\(o\.desc, \/\^row\\\.\/\.test\(o\.desc\) \? rowVars\(o\.kind, o\.name\) : undefined\)\)\)/.test(src), [A[1].desc, A[2].desc, B[2].desc]);
+  // 金鑰設在 agent 回合讀不到的地方(main.js authOutside):沒登入那一列多一句出路,鈕照舊〔登入〕;跑不起來、偵測中、已登入都不出
+  const K = { claude: { installed: true, loggedIn: false, authOutside: true }, codex: { installed: true, loggedIn: false, authOutside: true } };
+  const KW = { claude: { installed: true, loggedIn: false, why: "claude_timeout", authOutside: true }, codex: { installed: true, loggedIn: true, authOutside: true } };
+  const KO = mdlOptions(K, "claude", true), KX = mdlOptions(KW, "blave", true);
+  ok("模型接入:authOutside 的沒登入列說明是 row.keyOff、鈕仍是〔登入〕;沒有回應、已登入、偵測中不出", KO[1].desc === "row.keyOff" && KO[2].desc === "row.keyOff" && KO[1].act === "cn.signIn"
+    && KX[1].desc === null && KX[2].desc === null && mdlOptions(null, "claude", true)[1].desc === null, [KO[1], KO[2], KX[1], KX[2]].map((o) => o.desc));
   ok("…畫面:off 的列加 class off、名字灰(同 .cn-row.off)", /el\("div", "cn-opt" \+ \(o\.isCur \? " is-cur" : ""\) \+ \(o\.off \? " off" : ""\)\)/.test(src) && /\.cn-opt\.off \.n\{color:var\(--ink-3\)\}/.test(css)); }
 ok("「切換」「連結」同一個動作同一個字:三列都用 cn.use,設定頁不再出現 cn.blave.switch / cn.connect / st.signedIn", mdlOptions(D, "codex", true)[1].act === "cn.use" && mdlOptions(D, "codex", true)[0].act === "cn.use"
   && !/cn\.blave\.switch|cn\.connect|st\.signedIn/.test(mdl + fnSrc("mdlPaint")));
