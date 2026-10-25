@@ -953,6 +953,24 @@ msgstr "在 ChatGPT app 裡登入 ChatGPT 帳號，再按重新偵測。"
 msgid "login.retry"
 msgstr "再試一次"
 
+msgid "row.opened"
+msgstr "已在瀏覽器開啟登入頁"
+
+msgid "row.failed"
+msgstr "登入沒有完成。"
+
+msgid "row.orCmd"
+msgstr "或在終端機執行 {cmd}。"
+
+msgid "row.orApp"
+msgstr "或在 ChatGPT app 裡登入，再按重新偵測。"
+
+msgid "st.cantRun"
+msgstr "無法啟動"
+
+msgid "st.noResp"
+msgstr "沒有回應"
+
 msgid "fault.resend"
 msgstr "再送一次"
 
