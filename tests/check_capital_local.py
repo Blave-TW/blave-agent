@@ -495,6 +495,47 @@ for bad_members, what in (({X + "SKCOM.dll": b"x", X + "..": b"x"}, "成員名�
         check("10 zip 不像樣(" + what + ")→ 拒絕", code_of(lambda: capl._ensure_skcom(tempfile.mkdtemp(dir=BASE))) is not None)
 check("10 setup 只在缺 VC++ 2010 時才下載微軟的安裝程式、先驗簽章是 Microsoft", "if _vc_present():\n        return" in open(os.path.join(ROOT, "runtime", "capital_local.py"), encoding="utf-8").read()
       and "-ne 'Microsoft Corporation'" in capl._PS_VC)
+# 10c. VC++ 2010 安裝程式的結束碼 → setup.error 的原因;1618(別的安裝在跑)等 30 秒再試、最多再試 3 次
+def vc_run(codes, present_after=False, raises=None):
+    """跑一次 run_setup,_PS_VC 依序回 codes。回 (setup.error, 跑了幾次, sleep 了哪些秒數)。"""
+    runs, sleeps, state = [], [], {"done": False}
+
+    def fake(argv, **kw):
+        if argv[-1] != capl._PS_VC:
+            return subprocess.CompletedProcess(argv, 0, b"", b"")
+        if raises:
+            raise raises
+        rc = codes[min(len(runs), len(codes) - 1)]
+        runs.append(rc)
+        state["done"] = rc == 0 or (rc in (3010, 1641) and present_after)
+        return subprocess.CompletedProcess(argv, rc, b"", b"")
+    with um.patch.object(capl.subprocess, "run", fake), um.patch.object(capl.time, "sleep", sleeps.append), \
+            um.patch.object(capl, "_vc_present", lambda: state["done"]), um.patch.object(capl, "_download", lambda *a, **k: None), \
+            um.patch.object(capl, "_ensure_comtypes", lambda: None), um.patch.object(capl, "_ensure_skcom", lambda tmp: None), \
+            um.patch.object(capl, "_check_com", lambda: None):
+        try:
+            capl.run_setup()
+        except ValueError:
+            pass
+    return capl.read_status()["setup"].get("error"), len(runs), sleeps
+
+
+for codes, kw, want_err, want_runs, what in (
+        ([0], {}, None, 1, "0 → 成功"),
+        ([4], {}, "SETUP_FAILED:vcredist:sig", 1, "4(簽章不對)→ vcredist:sig、不重試"),
+        ([1618, 0], {}, None, 2, "第一次 1618、第二次 0 → 成功"),
+        ([1618], {}, "SETUP_FAILED:vcredist:1618", 4, "連續 1618 → 再試 3 次仍失敗 → vcredist:1618"),
+        ([3010], {"present_after": True}, None, 1, "3010 但 DLL 已在 → 成功"),
+        ([1641], {"present_after": True}, None, 1, "1641 但 DLL 已在 → 成功"),
+        ([3010], {}, "SETUP_FAILED:vcredist:reboot", 1, "3010 而 DLL 不在 → vcredist:reboot"),
+        ([1603], {}, "SETUP_FAILED:vcredist:1603", 1, "1603 → 代碼帶出去、不重試"),
+        ([1223], {}, "SETUP_FAILED:vcredist:denied", 1, "1223(Start-Process 拋例外 = UAC 按了否)→ vcredist:denied")):
+    err, n, sl = vc_run(codes, **kw)
+    check("10c vcredist " + what, err == want_err and n == want_runs and sl == [capl.VC_BUSY_WAIT_S] * (n - 1) and capl.VC_BUSY_WAIT_S == 30, [err, n, sl])
+err, n, sl = vc_run([0], raises=subprocess.TimeoutExpired("powershell", 900))
+check("10c powershell 本身跑不起來 / 逾時 → 照舊 vcredist(畫面講原本那句)", err == "SETUP_FAILED:vcredist" and sl == [], [err, sl])
+check("10c _PS_VC:Start-Process 拋例外接住、結束碼 1223(不再 $p 是空的結束碼 0)", "-ErrorAction Stop } catch { exit 1223 }" in capl._PS_VC
+      and capl._PS_VC.index("exit 4") < capl._PS_VC.index("Start-Process"))
 check("10 comtypes 釘版本(M0 在 test-4 跑過的 1.4.17),已裝的版本不同也重裝", capl.COMTYPES_PIN == "comtypes==1.4.17" and "comtypes.__version__ == '1.4.17'" in capl._COMTYPES_OK)
 
 # 10b. 系統程式都走 System32 絕對路徑;pip 只裝釘死 hash 的 comtypes、不讀用戶的 pip 設定

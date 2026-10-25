@@ -5707,6 +5707,18 @@ msgstr "Installing…"
 msgid "cap.s.setupFail"
 msgstr "The Capital components didn't install."
 
+msgid "capl.setupBusy"
+msgstr "Windows is installing updates. Wait a few minutes, then Try Again."
+
+msgid "capl.setupDenied"
+msgstr "Click Yes so Microsoft's runtime can install, then Try Again."
+
+msgid "capl.setupReboot"
+msgstr "Restart the computer, then Try Again."
+
+msgid "capl.setupFailCode"
+msgstr "The Capital components didn't install. (Code {code})"
+
 msgid "cap.tryAgain"
 msgstr "Try Again"
 

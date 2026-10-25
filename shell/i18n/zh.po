@@ -5721,6 +5721,18 @@ msgstr "安裝中…"
 msgid "cap.s.setupFail"
 msgstr "群益元件沒裝好。"
 
+msgid "capl.setupBusy"
+msgstr "Windows 正在安裝更新，等幾分鐘再按再試一次。"
+
+msgid "capl.setupDenied"
+msgstr "要按「是」讓微軟的執行環境安裝，再按再試一次。"
+
+msgid "capl.setupReboot"
+msgstr "重新開機後再按再試一次。"
+
+msgid "capl.setupFailCode"
+msgstr "群益元件沒裝好。（代碼 {code}）"
+
 msgid "cap.tryAgain"
 msgstr "再試一次"
 

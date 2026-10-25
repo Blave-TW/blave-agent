@@ -593,9 +593,20 @@ def _vc_present():
     return all(os.path.isfile(os.path.join(sys32, n)) for n in ("mfc100.dll", "msvcr100.dll"))
 
 
+# exit 4 = not Microsoft's signature; 1223 (ERROR_CANCELLED) = Start-Process threw, i.e. UAC said no.
+# Without it, a non-terminating Start-Process error would leave $p null and exit 0 (not seen on a box yet).
 _PS_VC = ("$s = Get-AuthenticodeSignature -LiteralPath $env:CAPL_VC; "
           "if ($s.Status -ne 'Valid' -or $s.SignerCertificate.GetNameInfo('SimpleName', $false) -ne 'Microsoft Corporation') { exit 4 }; "
-          "$p = Start-Process -FilePath $env:CAPL_VC -ArgumentList '/q', '/norestart' -Verb RunAs -Wait -PassThru; exit $p.ExitCode")
+          "try { $p = Start-Process -FilePath $env:CAPL_VC -ArgumentList '/q', '/norestart' -Verb RunAs -Wait -PassThru -ErrorAction Stop } catch { exit 1223 }; "
+          "exit $p.ExitCode")
+VC_BUSY_RETRIES = 3   # 1618 = another install is running (Windows Update right after boot); passes on its own
+VC_BUSY_WAIT_S = 30
+
+
+class _StepFailed(RuntimeError):
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
 
 
 def _ensure_vc(tmp):
@@ -603,9 +614,24 @@ def _ensure_vc(tmp):
         return
     exe = os.path.join(tmp, "vcredist_x64_2010.exe")
     _download(VC_URL, exe, VC_MAX)
-    # one UAC prompt (Microsoft's installer, signature checked first); the only system-wide thing here
-    subprocess.run([_powershell(), "-NoProfile", "-NonInteractive", "-Command", _PS_VC],
-                   capture_output=True, timeout=900, env=dict(os.environ, CAPL_VC=exe), **_cl()._child_kw())
+    for attempt in range(VC_BUSY_RETRIES + 1):
+        if attempt:
+            time.sleep(VC_BUSY_WAIT_S)
+        # one UAC prompt (Microsoft's installer, signature checked first); the only system-wide thing here
+        rc = subprocess.run([_powershell(), "-NoProfile", "-NonInteractive", "-Command", _PS_VC],
+                            capture_output=True, timeout=900, env=dict(os.environ, CAPL_VC=exe), **_cl()._child_kw()).returncode
+        if rc != 1618:
+            break
+    if rc == 4:
+        raise _StepFailed("sig")
+    if rc == 1223:
+        raise _StepFailed("denied")
+    if rc in (3010, 1641):
+        if _vc_present():
+            return
+        raise _StepFailed("reboot")
+    if rc != 0:
+        raise _StepFailed(str(rc))
     if not _vc_present():
         raise RuntimeError("vc++ 2010 runtime missing after install")
 
@@ -710,8 +736,9 @@ def run_setup(push=None):
             try:
                 fn()
             except Exception as e:
-                print(f"[capital_local] setup {name} failed ({type(e).__name__})", file=sys.stderr)
-                failed.append(name)
+                why = e.reason if isinstance(e, _StepFailed) else None
+                print(f"[capital_local] setup {name} failed ({type(e).__name__}{': ' + why if why else ''})", file=sys.stderr)
+                failed.append(f"{name}:{why}" if why else name)
                 break
         try:
             import cryptography  # noqa: F401  (the sealed bundle opens in this interpreter)
