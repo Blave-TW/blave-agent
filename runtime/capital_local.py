@@ -614,14 +614,16 @@ _PS_VC_ELEVATED = (
     "$r = (Start-Process -FilePath $f -ArgumentList '/q', '/norestart' -Wait -PassThru).ExitCode; "
     "if ($r -ne 1618) { break } }; exit $r")
 # Not elevated: refuse a bad file before any prompt, then start the elevated script above once and hand back its
-# exit code. The path reaches it as a quoted literal ('' escapes '): an elevated process does not get our env.
+# exit code. The path reaches it as a quoted literal: an elevated process does not get our env. PowerShell also
+# ends a single-quoted string on U+2018–U+201B, so those are doubled too (as EscapeSingleQuotedStringContent does)
+# — a user name like O’Brien sits in %TEMP%. \u escapes keep this command ASCII.
 # Plain -Command, not -EncodedCommand: base64 of UTF-16 nearly triples the length, and the RunAs (ShellExecute)
 # path is reported to cut command lines near 2048 chars. Nothing in it has a double quote, so it passes as is.
 # 4 = not Microsoft's signature. 1223 (ERROR_CANCELLED) = Start-Process threw, i.e. UAC said no; since there
 # is only one prompt, that can only be that first one. Without the catch, a non-terminating Start-Process error
 # would leave $p null and exit 0 (not seen on a box yet).
 _PS_VC = ("$f = $env:CAPL_VC; " + _PS_SIG_OK +
-          "$i = \"`$f = '\" + $f.Replace(\"'\", \"''\") + \"'; \" + $env:CAPL_VC_ELEVATED; "
+          "$i = \"`$f = '\" + ($f -replace '[''\\u2018-\\u201B]', '$0$0') + \"'; \" + $env:CAPL_VC_ELEVATED; "
           "try { $p = Start-Process -FilePath ($PSHOME + '\\powershell.exe') -ArgumentList '-NoProfile', '-NonInteractive', "
           "'-WindowStyle', 'Hidden', '-Command', $i -Verb RunAs -Wait -PassThru -ErrorAction Stop } catch { exit 1223 }; "
           "exit $p.ExitCode")

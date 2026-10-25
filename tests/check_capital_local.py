@@ -542,7 +542,30 @@ check("10c 只跳一次 UAC:RunAs 只在外層、只一次(起提權的 powershe
       and "($PSHOME + '\\powershell.exe')" in outer and "'-Command', $i -Verb RunAs" in outer)
 check("10c 外層:先驗簽章(壞檔不跳 UAC)、Start-Process 拋例外接住回 1223、交回提權行程的結束碼", outer.index("exit 4") < outer.index("Start-Process")
       and "-ErrorAction Stop } catch { exit 1223 }" in outer and outer.endswith("exit $p.ExitCode"))
-check("10c 路徑進提權腳本是單引號字面值('' 跳脫);提權腳本沒有雙引號(-Command 原樣傳過去)", "$f.Replace(\"'\", \"''\")" in outer and '"' not in inner)
+# PowerShell 把 U+2018–U+201B 也當單引號(CodeGeneration.EscapeSingleQuotedStringContent 五個都重複一次);用戶名帶 ’ 的 %TEMP% 不能提早結束字面值
+m_esc = re.search(r"\(\$f -replace '((?:[^']|'')*)', '\$0\$0'\)", outer)
+PSQ = "'\u2018\u2019\u201a\u201b"
+
+
+def ps_literal_end(lit):
+    """PowerShell 單引號字面值從 lit[0] 開頭,回傳收尾那個引號的位置(兩個引號字元連著 = 一個字元)。"""
+    i = 1
+    while i < len(lit):
+        if lit[i] in PSQ:
+            if i + 1 < len(lit) and lit[i + 1] in PSQ:
+                i += 2
+                continue
+            return i
+        i += 1
+    return -1
+
+
+nasty = "C:\\Users\\O\u2019Brien\u2018x\u201a\u201by'z\\AppData\\Local\\Temp\\blave-capital-1\\vcredist_x64_2010.exe"
+esc = re.sub(m_esc.group(1).replace("''", "'"), lambda m: m.group(0) * 2, nasty) if m_esc else ""
+lit = "'" + esc + "'"
+check("10c 路徑進提權腳本是單引號字面值:' 與 U+2018–U+201B 都重複一次、整段只用 ASCII;提權腳本沒有雙引號(-Command 原樣傳過去)",
+      bool(m_esc) and outer.isascii() and '"' not in inner and all(esc.count(q) == 2 * nasty.count(q) for q in PSQ)
+      and ps_literal_end(lit) == len(lit) - 1, [m_esc and m_esc.group(0), lit])
 m_idle = re.search(r"function Test-MsiIdle \{.*?'Global\\_MSIExecute'.*?WaitOne\(0\)\) \{ \$m\.ReleaseMutex\(\); return \$true \}", inner)
 m_wait = re.search(r"\$w = 0; while \(-not \(Test-MsiIdle\) -and \$w -lt 90\) \{ Start-Sleep -Seconds 5; \$w \+= 5 \}", inner)
 m_loop = re.search(r"for \(\$i = 0; \$i -le 3; \$i\+\+\) \{ if \(\$i\) \{ Start-Sleep -Seconds 30 \}; \$s = Get-AuthenticodeSignature.*?\{ exit 4 \}; "
