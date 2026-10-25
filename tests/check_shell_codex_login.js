@@ -231,6 +231,19 @@ exit 2
     script(p, body("sleep 1.3; exit 0")); const b = await mkRun((k, emit) => m.agentLogin(k, emit))("codex");
     t("…真的主行程:偵測慢、登入行程 127 → 不講「已開啟」;登入行程活過 1 秒 → 講", a.opened === 0 && a.r.code === 127 && b.opened === 1 && b.r.ok === true, { a, b });
   }
+  // 工作頁的登入失效卡(localLoginFlow)走同一支 agentLoginRun:偵測慢、spawn 後馬上 127 → 不講「已開啟」
+  { const flow = (spawnAt, endAt, res) => { const sets = []; let listener = null;
+      const blave = { onAgentLoginSpawned: (fn) => { listener = fn; }, cancelAgentLogin: () => {},
+        agentLogin: async () => { if (spawnAt !== null) { await new Promise((r) => setTimeout(r, spawnAt)); listener(); } await new Promise((r) => setTimeout(r, endAt - (spawnAt || 0))); return res; } };
+      const f = new Function("window", "t", "LOGIN_OPENED_MS", "cmdLine", "resendState", "trackEvent",
+        "let loginPending = null, oauthPending = false, loginSpawned = null;\n" + LISTEN + "\n" + fnOf(app, "agentLoginRun") + "\n" + fnOf(app, "localLoginFlow") + "\nreturn localLoginFlow;")(
+        { blave }, (k, v) => tr(k, v), 1000, (k) => k, () => ({ text: "ok" }), () => {});
+      const card = { set: (st) => sets.push(st) };
+      f(card, "codex"); sets[0].on();   // 卡先畫失效句,按〔登入〕
+      return new Promise((r) => setTimeout(r, endAt + 300)).then(() => sets.map((x) => x.text)); };
+    const OPENED = tr("login.opened", { name: "Codex" });
+    const [late127, ok] = await Promise.all([flow(1500, 1600, { ok: false, cancelled: false, code: 127, cantRun: true }), flow(0, 1300, { ok: true, code: 0 })]);
+    t("localLoginFlow:spawn 前偵測拖 1.5 秒、接著 127 → 不講「已在瀏覽器開啟」;活過 1 秒 → 講一次", !late127.includes(OPENED) && ok.filter((x) => x === OPENED).length === 1, { late127, ok }); }
   t("…主行程在 spawn 之後才送 agent-login-spawned,只送給按的那個畫面", /loginChild = child;\n[^\n]*\n    if \(onSpawn\) onSpawn\(\);/.test(src)
     && /handle\("agent-login", \(e, kind\) => agentLogin\(String\(kind \|\| ""\),\s*\(\) => \{ if \(!e\.sender\.isDestroyed\(\)\) e\.sender\.send\("agent-login-spawned"\); \}\)\);/.test(src));
 

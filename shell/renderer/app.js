@@ -3422,9 +3422,10 @@ function localLoginFlow(card, kind) {
   async function start() {
     if (loginPending || oauthPending) return;
     loginPending = kind;
-    card.set({ calm: true, text: t("login.opened", { name }), label: t("login.cancel"), out: true,
-               on: () => window.blave.cancelAgentLogin() });
-    const r = await window.blave.agentLogin(kind);
+    // 「已在瀏覽器開啟」同連結畫面:登入行程 spawn 起來活過 1 秒才講(agentLoginRun);在那之前原句不動、鈕先換成取消
+    const cancel = () => window.blave.cancelAgentLogin();
+    card.set({ text: t("fault.localAuth", { name }), label: t("login.cancel"), out: true, on: cancel });
+    const r = await agentLoginRun(kind, () => card.set({ calm: true, text: t("login.opened", { name }), label: t("login.cancel"), out: true, on: cancel }));
     loginPending = null;
     if (!r.ok && !r.cancelled && !r.busy) trackEvent("connect_failed", { kind: kind === "codex" ? "codex_login" : "claude_login" });
     if (r.ok) card.set(resendState(card, t("login.ok", { name })));
