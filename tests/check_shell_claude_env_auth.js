@@ -46,10 +46,14 @@ t("agentLogin 的 spawn:不展開 process.env,走 probeEnv(envPath)", !!LOGIN &&
   t("…對照組的結果只寫進 authOutside", rawLines.every((l) => !/\.(loggedIn|why|authMethod|email) = /.test(l)) && (DETECT.match(/authOutside = /g) || []).length === 2); }
 
 // ── 字串與畫面接線:兩列各自的訊息槽(連結畫面 small.msg 的 sub、設定 › 模型接入的 .m 說明) ──
-t("字串 row.keyOff 兩語都有、帶 {name} {acct};不叫人去「API 金鑰」那一列填自己的金鑰", ["zh", "en"].every((l) => STR[l]["row.keyOff"] && /\{name\}/.test(STR[l]["row.keyOff"]) && /\{acct\}/.test(STR[l]["row.keyOff"]) && /Blave AI/.test(STR[l]["row.keyOff"]))
+t("字串 row.keyOff 兩語都有、只帶 {acct}(列名已寫 Claude Code／Codex,不再帶 {name});不叫人去「API 金鑰」那一列填自己的金鑰", ["zh", "en"].every((l) => STR[l]["row.keyOff"] && /\{acct\}/.test(STR[l]["row.keyOff"]) && !/\{name\}/.test(STR[l]["row.keyOff"]))
   && !/API 金鑰|API key/i.test(STR.zh["row.keyOff"] + STR.en["row.keyOff"]));
-t("zh 每句 ≤25 字(佔位代入 Claude Code / Claude、標點不算)", STR.zh["row.keyOff"].replace("{name}", "Claude Code").replace("{acct}", "Claude").split(/[。]/).filter(Boolean)
-  .every((s) => { const x = s.replace(/[，、:：「」\s]/g, ""); return (x.replace(/[A-Za-z0-9]+/g, "a").length) <= 25; }));
+// 設定 › 模型接入的 .m 固定一行(app.css .cn-opt .m),欄寬約 368–376px;超過就把出路「登入 {acct}」切掉。
+// 0.1.32 Mac 實量(12px 系統字):zh「…金鑰或登入…」ChatGPT 331/376;en「…other sign-in…」ChatGPT 324/368,
+// en 加 key or 是 362/368,Windows 字型沒量,不用。字數是寬度的代理:改字超過這兩條就要重量。
+const zhLen = (x) => (x.match(/[\u4e00-\u9fff]|[A-Za-z0-9]+/g) || []).length;
+t("zh 代入 ChatGPT ≤20 字(漢字一字、英數詞一字、標點不算)", zhLen(STR.zh["row.keyOff"].replace("{acct}", "ChatGPT")) <= 20, zhLen(STR.zh["row.keyOff"].replace("{acct}", "ChatGPT")));
+t("en 代入 ChatGPT ≤58 字元", STR.en["row.keyOff"].replace("{acct}", "ChatGPT").length <= 58, STR.en["row.keyOff"].replace("{acct}", "ChatGPT").length);
 t("連結畫面:沒登入那一列的 sub 先給等待／失敗句,沒有才給 row.keyOff", /sub: msg \? rowMsg\(kind, msg\) : x\.authOutside \? t\("row\.keyOff", rowVars\(kind, name\)\) : null,/.test(app));
 t("{acct}:Codex → ChatGPT、Claude Code → Claude", /const rowVars = \(kind, name\) => \(\{ name, acct: kind === "codex" \? "ChatGPT" : "Claude" \}\);/.test(app));
 

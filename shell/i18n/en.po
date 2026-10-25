@@ -958,7 +958,7 @@ msgstr "Reinstall {name}, then come back."
 
 # 偵測說沒登入、但 CLI 帶整份環境與用戶設定檔時說已登入(main.js authOutside):金鑰在環境變數、settings.json 或 apiKeyHelper,agent 回合讀不到
 msgid "row.keyOff"
-msgstr "The key set for {name} on this computer won’t work in Blave. Use Blave AI, or sign in to your {acct} account."
+msgstr "Blave can’t read your other sign-in. Sign in with {acct}."
 
 msgid "st.cantRun"
 msgstr "Can’t start"

@@ -964,7 +964,7 @@ msgstr "重新安裝 {name} 後回到這裡。"
 
 # 偵測說沒登入、但 CLI 帶整份環境與用戶設定檔時說已登入(main.js authOutside):金鑰在環境變數、settings.json 或 apiKeyHelper,agent 回合讀不到
 msgid "row.keyOff"
-msgstr "這台電腦給 {name} 設的金鑰，在 Blave 用不到。改用 Blave AI，或登入 {acct} 帳號。"
+msgstr "Blave 讀不到你另外設的金鑰或登入，請登入 {acct} 帳號。"
 
 msgid "st.cantRun"
 msgstr "無法啟動"
