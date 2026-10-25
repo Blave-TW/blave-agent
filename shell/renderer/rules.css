@@ -73,3 +73,6 @@
 .rules-empty { margin-top: var(--space-8); }
 
 @media (prefers-reduced-motion: reduce) { .rules-item, .rules-del { transition: none; } }
+
+/* 雲端視角的「這台電腦」:canon › Mini tag 中性款(18 高、11/600、.04em、micro 角) */
+.rules-here { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 var(--space-6); border-radius: var(--radius-micro); background: var(--tag-neutral-bg); color: var(--tag-neutral-text); font-size: 11px; font-weight: 600; letter-spacing: .04em; line-height: 1; white-space: nowrap; }

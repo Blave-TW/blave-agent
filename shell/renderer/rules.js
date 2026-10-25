@@ -28,6 +28,8 @@ const rulesLen = (s) => Array.from(String(s)).length;   // 代理對算一個字
 const rulesTrunc = (s) => { const cs = Array.from(String(s)); return cs.length > 20 ? cs.slice(0, 20).join("") + "\u2026" : cs.join(""); };
 const rulesBusy = () => !!(RS.edit || RS.confirm || RS.rl.saving);
 const rlSame = (a, b) => !!a && !!b && a.lang === b.lang && a.custom === b.custom;
+// 雲端視角:這一頁改的仍是這台電腦那一份(改雲端那份排在之後),兩個 label 旁標「這台電腦」;本機視角不標
+const rulesHereTag = () => (typeof ENV === "object" && ENV && ENV.cur === "cloud" ? rsEl("span", "rules-here", t("shl.src.here")) : null);
 
 // 列內錯誤:本機 daemon 的三種結果。送了但沒回覆是灰色短劃(不是失敗)
 function rulesErr(r) {
@@ -124,6 +126,7 @@ function rlPaint(box) {
   const tip = rsEl("span", "tip", desc); tip.id = "rules-rl-tip"; tip.setAttribute("role", "tooltip");
   label.setAttribute("aria-describedby", "rules-rl-tip");
   tw.append(label, tip); row.append(tw);
+  const here = rulesHereTag(); if (here) row.append(here);
   if (saving) { const sp = rsEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); row.append(sp); }
   const wrap = rsEl("span", "set-selw"), sel = rsEl("select", "set-sel"); sel.id = "rules-rl-sel";
   const opt = (value, text, on) => { const o = rsEl("option", null, text); o.value = value; if (on) o.selected = true; sel.append(o); return o; };
@@ -229,6 +232,7 @@ function rulesPaintList(grp) {
   const head = rsEl("span", "set-gl rules-tipb", t("rules.head")); head.tabIndex = 0; head.setAttribute("aria-describedby", "rules-scope-tip");
   const tip = rsEl("span", "tip", t("rules.scope")); tip.id = "rules-scope-tip"; tip.setAttribute("role", "tooltip");
   tw.append(head, tip); top.append(tw);
+  const here = rulesHereTag(); if (here) top.append(here);
   const count = rsEl("span", "mono rules-count" + (over ? " over" : ""), n + " / " + RULES_MAX); top.append(count);
   if (RS.countSaid !== null && RS.countSaid !== n && RS.open) srSay(n + " / " + RULES_MAX);   // 計數變了才播報
   RS.countSaid = n;
