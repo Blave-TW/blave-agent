@@ -26,7 +26,7 @@ var ENV = { cloudDirty: false }; let polls = 0, refreshes = 0;
 // trade.js 的輪詢替身:清掉記號、把「主行程手上那一份」(cloudSt)放進雲端那一袋——app.js 只從這一袋讀,不自己讀交易狀態
 const trPoll = async () => { polls++; ENV.cloudDirty = false; TR_BAGS.cloud.st = cloudSt; };
 let cur = null, planLoginBusy = false, oauthPending = false, HINT = null;
-const setFocusGuard = () => {}, cmdLine = () => "";
+const setFocusGuard = () => {}, cmdLine = () => "", hintFill = (n) => { if (HINT) n.append(HINT.text); };
 // t 的替身:key + vars 的 JSON;upRich 會把 mono 的值換成記號、{view} 的位置放鈕——哪些字有 {view} 從 strings.js 讀,不寫死
 const STR = eval(fs.readFileSync(path.join(R, "strings.js"), "utf8") + ";STRINGS"), VIEW_KEYS = new Set(Object.keys(STR.zh).filter((k) => /\{view\}/.test(STR.zh[k])));
 const t = (k, v) => { if (!v) return k; const { view, ...rest } = v; return k + (Object.keys(rest).length ? JSON.stringify(rest) : "") + (view === "\uE002" && VIEW_KEYS.has(k) ? view : ""); };
@@ -425,12 +425,12 @@ ok("「重新偵測」只在本機有一個不能用時出:兩個都就緒不出
   ok("本機登入等待中:那一列只有「取消等待」;每一列的列尾都只有一樣", waitLogin[2].tail.join() === "pf-act:login.cancel" && waitLogin.every((r) => r.tail.length === 1));
   hasToken = true; cur = null; lastDetect = null;
   // 連結畫面(另一份 DOM:row / paintRows):同一條規則——有〔登入〕鈕的列不並排「尚未登入」;沒鈕可按的(偵測中… / 未偵測到)照講
-  var localReady = false, paintBlaveBtn = () => {}, connect = () => {}, localLogin = () => {}, btn = (cls, text) => { const b = el(); b.className = cls; b.textContent = text; return b; };
+  var localReady = false, paintBlaveBtn = () => {}, connect = () => {}, localLogin = () => {}, whyState = () => null, ROWMSG = {}, rowMsg = () => "", btn = (cls, text) => { const b = el(); b.className = cls; b.textContent = text; return b; };
   eval(fnSrc("row")); eval(fnSrc("paintRows")); eval(fnSrc("detectingRows"));
   const cnRows = (fn) => { delete dom["agent-rows"]; fn(); return $("agent-rows").children.map((r) => [r.dataset.kind, (r.innerHTML.match(/class="cn-st[^"]*">([^<]*)/) || [, ""])[1], r.children.map((c) => c._cls + ":" + c.textContent).join("+")].join("|")).join(" "); };
-  ok("連結畫面:裝了沒登入的列只有〔登入〕(沒有 .cn-st);沒裝的「未偵測到」、偵測中的「偵測中…」照講、沒有鈕",
-    cnRows(() => paintRows({ claude: { installed: true, loggedIn: false }, codex: { installed: false } })) === "claude||btn-out:cn.signIn codex|st.notFound|"
-    && cnRows(() => paintRows({ claude: { installed: false }, codex: { installed: true, loggedIn: false } })) === "claude|st.notFound| codex||btn-out:cn.signIn"
+  ok("連結畫面:裝了沒登入的列只有〔連結〕(方案 B;沒有 .cn-st);沒裝的「未偵測到」、偵測中的「偵測中…」照講、沒有鈕",
+    cnRows(() => paintRows({ claude: { installed: true, loggedIn: false }, codex: { installed: false } })) === "claude||btn-out:cn.connect codex|st.notFound|"
+    && cnRows(() => paintRows({ claude: { installed: false }, codex: { installed: true, loggedIn: false } })) === "claude|st.notFound| codex||btn-out:cn.connect"
     && cnRows(detectingRows) === "claude|cn.detecting| codex|cn.detecting|");
   ok("連結畫面:等待登入中是同一顆鈕換字(「取消等待」),那一列本來就沒有狀態字;Blave 那一格只有標題、說明與一顆鈕", /b\.textContent = t\("login\.cancel"\);/.test(fnSrc("localLogin")) && !/st\.notSignedIn/.test(src + PO2[0] + PO2[1])
     && /<div class="cn-sec cn-blave">\s*<!--[^>]*-->\s*<p class="cn-head">\s*<span class="cn-ttl" data-i18n="cn\.blave\.title"><\/span>\s*<span class="cn-meta" data-i18n="cn\.blave\.desc"><\/span>\s*<\/p>\s*<span class="cn-cur" id="cn-blave-cur" hidden><\/span>\s*<button class="btn-fill" id="btn-blave" type="button"><\/button>/.test(html)); }

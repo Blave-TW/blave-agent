@@ -947,6 +947,24 @@ msgstr "Sign in to your ChatGPT account inside the ChatGPT app, then press Detec
 msgid "login.retry"
 msgstr "Try Again"
 
+msgid "row.opened"
+msgstr "Sign-in opened in your browser"
+
+msgid "row.failed"
+msgstr "Sign-in didn’t finish."
+
+msgid "row.orCmd"
+msgstr "Or run {cmd} in a terminal."
+
+msgid "row.orApp"
+msgstr "Or sign in inside the ChatGPT app, then press Detect again."
+
+msgid "st.cantRun"
+msgstr "Can’t start"
+
+msgid "st.noResp"
+msgstr "Not responding"
+
 msgid "fault.resend"
 msgstr "Send Again"
 

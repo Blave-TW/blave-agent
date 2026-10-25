@@ -500,7 +500,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       t("…cantrun 記成 nonzero 之後一定在白名單裡", UI_ONLY.every((v) => WHY.includes(v.replace(/_cantrun$/, "_nonzero")))); }
     t("…detectAgents 把 detectWhy 放進回傳(why),畫面在連結畫面偵測完、每個有 why 的 CLI 各送一則",
       /out\.claude\.why = detectWhy\("claude", rec\.claude\); out\.codex\.why = detectWhy\("codex", rec\.codex\);/.test(mainSrc15)
-      && /if \(!\$\("view-connect"\)\.hidden\) \["claude", "codex"\]\.forEach\(\(k\) => \{ if \(lastDetect\[k\] && lastDetect\[k\]\.why\) trackEvent\("detect_fail", \{ why: lastDetect\[k\]\.why \}\); \}\);/.test(fs.readFileSync(path.join(R, "app.js"), "utf8")));
+      && /if \(!\$\("view-connect"\)\.hidden\) \["claude", "codex"\]\.forEach\(\(k\) => \{ if \(lastDetect\[k\] && lastDetect\[k\]\.why\) trackEvent\("detect_fail", \{ why: lastDetect\[k\]\.why\.replace\(\/_cantrun\$\/, "_nonzero"\) \}\); \}\);/.test(fs.readFileSync(path.join(R, "app.js"), "utf8")));
     const apiPy15 = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
     if (!fs.existsSync(apiPy15)) console.log("SKIP  api 端 detect_fail 比對(需要 monorepo 版面)");
     else { const api = fs.readFileSync(apiPy15, "utf8"), got = {};

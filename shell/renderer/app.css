@@ -127,6 +127,12 @@
 .cn-st { flex: none; display: flex; align-items: center; gap: var(--space-6); font-size: 12px; color: var(--ink-3); }
 .cn-st.on { color: var(--ink-2); }
 .cn-st .dot { width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--color-green); }
+/* 列內訊息(連結畫面登入的等待／失敗句):同 .n small 的字級,錯誤句可換行。錯字照 canon › States › Error——
+   亮面 redText;暗面坐在 darkCard 上,redText 只有 3.97:1,改 redBlack */
+.cn-row .n small.msg { display: block; font-size: 12px; line-height: 1.5; color: var(--ink-3); white-space: normal; overflow: visible; }
+.cn-row .n small.msg .e { color: var(--color-redText); }
+[data-theme="dark"] .cn-row .n small.msg .e { color: var(--color-redBlack); }
+.cn-row .n small.msg code { font-family: var(--font-mono); color: var(--ink-2); }
 /* Outlined control(canon › Terminal toolbar):hover 只灰填,邊框與字不變色 */
 .btn-out {
   flex: none; height: 32px; padding: 0 var(--space-12);
