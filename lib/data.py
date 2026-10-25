@@ -5115,13 +5115,13 @@ def _fetch_twfutures_raw(symbol, schema, start, end, headers):
         cursor = chunk_end
 
     def _fetch_one(cs, ce):
-        r = requests.get(
+        # The 500/5min limit is per machine: a TW-stock strategy on the same box can spend it.
+        r = _retry_get(
             f'{BASE}/studio/market/twfutures/ohlcv/{symbol}/{schema}',
             headers=headers,
             params={'start': cs, 'end': ce},
             timeout=60,
         )
-        r.raise_for_status()
         return r.json().get('data', [])
 
     rows = []
