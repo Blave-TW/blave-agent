@@ -2863,6 +2863,26 @@ function onbPrefsSet(patch) {
   if (Object.keys(w).length) try { uiPrefsPatch(w); } catch (_) { /* 寫不進去:這一次只在畫面上 */ }
   return onbPrefsGet();
 }
+/* 第一次對話 modal(renderer/intro.js;IPC intro-check / intro-seen):兩件都確定才回 show:true,讀不到一律不彈——
+   不借 sessionDb()(檔不在與開不起來都回 null)也不借 onbPrefsGet(出錯回預設值):兩條都會在出錯時把老用戶判成新用戶。
+   ui-prefs.json 不存在 = 全新安裝還沒寫過偏好,不是讀不到;session.db 不存在 = 沒跑過任何回合。
+   只問有沒有 user turn、不篩 desktop- 前綴:雲端視角的對話也是本機 runtime 存在同一個檔 */
+function introCheck() {
+  let prefs = {};
+  try { prefs = JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")); }
+  catch (e) { if (!e || e.code !== "ENOENT") return { show: false }; }
+  if (prefs && prefs.introSeen === true) return { show: false };
+  if (!fs.existsSync(SESSION_DB)) return { show: true };
+  let db = null;
+  try {
+    db = new (require("node:sqlite").DatabaseSync)(SESSION_DB, { readOnly: true });
+    return { show: !db.prepare("SELECT 1 FROM turns WHERE role = 'user' LIMIT 1").get() };
+  } catch (_) { return { show: false }; }
+  finally { try { if (db) db.close(); } catch (_) { /* 開檔就失敗的那一條 */ } }
+}
+function introSeenSet() {
+  try { uiPrefsPatch({ introSeen: true }); return true; } catch (_) { return false; }
+}
 let awakeBlocker = null, awakeStartAt = 0;
 // 這台電腦在台灣券商(統一／群益本機)的部位:{ lots, known }(daemon twHeld);讀不到(known:false)保守當有部位
 function twLots() {
@@ -3671,6 +3691,8 @@ app.whenReady().then(() => {
   handle("theme-set", (_e, v) => themeSet(v), null);
   handle("welcome-prefs", () => onbPrefsGet(), { done: false, cloudDone: false });
   handle("welcome-prefs-set", (_e, p) => onbPrefsSet(p), { done: false, cloudDone: false });
+  handle("intro-check", () => introCheck(), { show: false });
+  handle("intro-seen", () => introSeenSet(), false);
   handle("strat-prefs", () => stratPrefsGet(), { stratOrder: [], stratFlags: {} });
   handle("strat-prefs-set", (_e, patch) => stratPrefsSet(patch), { stratOrder: [], stratFlags: {} });
   handle("mg-sizing-cloud", () => mgSizingCloudGet(), null);

@@ -232,7 +232,9 @@ const EVENTS = {
     // 建議下一步 v2(0.1.31;renderer/suggest.js):suggest_filled = 用 Tab 或 → 填入;回合真的跑起來時結算(app.js r.started)——
     // suggest_sent / suggest_sent_ed = 填入後原句／改過字送出,suggest_missed = 灰字出現過、自己打字送出,suggest_reduced = 連續 5 次沒用、只剩導航句的那一刻;
     // suggest_off / suggest_on = 設定 › 一般 › 建議下一步 關掉／打開。都不帶句子
-    "suggest_filled", "suggest_sent", "suggest_sent_ed", "suggest_missed", "suggest_reduced", "suggest_off", "suggest_on"] },
+    "suggest_filled", "suggest_sent", "suggest_sent_ed", "suggest_missed", "suggest_reduced", "suggest_off", "suggest_on",
+    // 0.1.33 第一次對話 modal(renderer/intro.js):真的顯示出來(同一刻寫 introSeen)、主鈕送出且回合跑起來、✕／Esc 關掉、〔我有想法，自己打〕
+    "intro_shown", "intro_send", "intro_close", "intro_type"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

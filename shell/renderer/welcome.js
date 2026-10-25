@@ -129,6 +129,7 @@ function wdPaint() {
   if (!hasToken && !pub && !WD.pubAsked) { WD.pubAsked = true; pubLoad().then(() => wdPaint()); }
   const key = JSON.stringify([LANG, m.k, m.cmp, WD.mk, v.t, v.r, v.d, planMo()]);
   onbPaint();
+  if (typeof introSync === "function") introSync();   // 帳號狀態變了:第一次對話 modal 重判(renderer/intro.js)
   if (key === WD.key) return;
   WD.key = key;
   $("wl-seg").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mk === WD.mk)));

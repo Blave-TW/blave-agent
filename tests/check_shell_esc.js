@@ -38,6 +38,8 @@ const MODALS = [
   { name: "上網找點子", open: `(running = false, ENV.cur = "local", ideaOpen($("chat-idea"), "welcome", "any"))`, isOpen: `!$("idea-scrim").hidden`, text: "#idea-title" },
   // 0.1.8 報告分享確認框(焦點在框裡那一格落在「匿名」radio 上)
   { name: "報告分享", open: `(hasToken = true, shrOpen({ env: "local", id: "x", rep: { type: "research", title: "t", blocks: [] }, host: $("rpt-read"), share: null, name: null }, "new", $("rpt-share")))`, isOpen: `!$("shr-scrim").hidden`, text: "#shr-must" },
+  // 0.1.33 第一次對話 modal(焦點在框裡那一格落在主鈕上;點遮罩不關,所以 Esc 是鍵盤唯一的出口)
+  { name: "第一次對話", open: `introShow()`, isOpen: `!$("intro-scrim").hidden`, text: "#intro-title" },
   // 模型選單沒有型錄時整塊沒有版面(量到 0×0),點不到字;它的點擊路徑跟「焦點在 body」同一條(document 層),由那一格代表
   { name: "模型選單", open: `mpOpen(false)`, isOpen: `!$("mp-panel").hidden`, text: null },
   // 0.1.8 策略版本(versions.js 自己的 capture 層 Esc):比較框、版本選單(同模型選單:觸發器藏著時沒有版面,點不到字)
@@ -67,7 +69,7 @@ app.whenReady().then(async () => {
       await esc();
       const closed = !(await js(m.isOpen));
       ok(`${m.name}:焦點${how === "inside" ? "在框裡" : how === "body" ? "在 body" : "在點過的字上(" + st.active + ")"}按 Esc → 關掉`, st.open && closed);
-      if (!closed) await js(`try { delClose(false); cxModalClose(false); lbClose(); setClose(); mpClose(false); nsClose(); rptNewClose(); } catch (_) {}`);
+      if (!closed) await js(`try { delClose(false); cxModalClose(false); lbClose(); setClose(); mpClose(false); nsClose(); rptNewClose(); introClose("close"); } catch (_) {}`);
     }
   }
   // 一次只關一層:設定開著、確認框疊上去

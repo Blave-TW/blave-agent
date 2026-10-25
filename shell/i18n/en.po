@@ -8937,3 +8937,93 @@ msgstr "{lots} lot(s) are still open at Capital. After you quit, strategies plac
 
 msgid "capl.quit.unknown"
 msgstr "Capital positions can’t be read right now — some may still be open. After you quit, strategies place no more orders and nothing is closed — check them in the Capital app."
+
+msgid "intro.title"
+msgstr "Start Your First Strategy"
+
+msgid "intro.ask"
+msgstr "Ask the Agent Where to Start"
+
+msgid "intro.type"
+msgstr "Type My Own Idea"
+
+msgid "intro.msg"
+msgstr "I don't have a strategy idea yet. Where should I start? Keep it short and end with three next steps I can pick."
+
+msgid "intro.pause"
+msgstr "Pause Demo"
+
+msgid "intro.resume"
+msgstr "Resume Demo"
+
+msgid "intro.replay"
+msgstr "Replay Demo"
+
+msgid "intro.sc1"
+msgstr "Say an Idea"
+
+msgid "intro.sc2"
+msgstr "Write It as a Strategy"
+
+msgid "intro.sc3"
+msgstr "Run a Backtest"
+
+msgid "intro.entry"
+msgstr "Entry"
+
+msgid "intro.exit"
+msgstr "Exit"
+
+msgid "intro.bt"
+msgstr "Backtest"
+
+msgid "intro.tag"
+msgstr "Illustrative"
+
+msgid "intro.today"
+msgstr "Today"
+
+msgid "intro.crypto.idea"
+msgstr "Buy BTC above its 200-day MA, sell below"
+
+msgid "intro.crypto.name"
+msgstr "BTC MA Trend"
+
+msgid "intro.crypto.in"
+msgstr "Daily close above the 200-day MA"
+
+msgid "intro.crypto.out"
+msgstr "Close below the 200-day MA"
+
+msgid "intro.crypto.span"
+msgstr "2020 to today"
+
+msgid "intro.tw.idea"
+msgstr "Buy TSMC above its 60-day MA, sell below"
+
+msgid "intro.tw.name"
+msgstr "TSMC MA"
+
+msgid "intro.tw.in"
+msgstr "Daily close above the 60-day MA"
+
+msgid "intro.tw.out"
+msgstr "Close below the 60-day MA"
+
+msgid "intro.tw.span"
+msgstr "2015 to today"
+
+msgid "intro.txf.idea"
+msgstr "Go long TAIEX futures on a 20-day high, exit on a 10-day low"
+
+msgid "intro.txf.name"
+msgstr "TAIEX Futures Breakout"
+
+msgid "intro.txf.in"
+msgstr "Long on a close above the 20-day high"
+
+msgid "intro.txf.out"
+msgstr "Close below the 10-day low"
+
+msgid "intro.txf.span"
+msgstr "2015 to today"

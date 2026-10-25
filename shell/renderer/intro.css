@@ -1,0 +1,65 @@
+/* 第一次對話 modal(renderer/intro.js;設計 .claude/output/designer/desktop-first-chat-modal-2026-10-25)。
+   殼是 app.css 的 .scrim / .set-modal / .modal-head / .modal-foot,這裡只有寬度與示範舞台。
+   舞台 = 頁面地色的內嵌區,三幕疊在同一格,只動 opacity / transform;不寫 hex 與毫秒 */
+.intro-modal { width: min(560px, 92vw); }
+
+.intro-stage { position: relative; flex: none; height: 292px; margin: var(--space-16); border-radius: var(--radius-md); background: var(--bg-body); overflow: hidden; }
+.in-scene {
+  position: absolute; inset: 0; padding: var(--space-24) var(--space-24) var(--space-32);
+  display: flex; flex-direction: column; justify-content: center; gap: var(--space-12);
+  opacity: 0; transform: translateY(8px);
+  transition: opacity var(--motion-base) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
+}
+.in-scene.on { opacity: 1; transform: none; }
+.in-cap { font-size: 12px; color: var(--ink-3); }
+
+/* 幕一:一句白話,打字中帶游標 */
+.in-idea { min-height: 51px; font-size: 17px; line-height: 1.5; font-weight: 600; color: var(--ink); }
+.in-caret { display: inline-block; width: 2px; height: 1.1em; margin-left: 2px; vertical-align: -2px; background: var(--ink-3); }
+
+/* 幕二:變成一支策略 */
+.in-strat { padding: var(--space-16); border-radius: var(--radius-md); background: var(--surface-card); box-shadow: var(--shadow-sm); }
+.in-strat-n { margin-bottom: var(--space-12); font-size: 14px; font-weight: 600; color: var(--ink); }
+.in-rules { display: grid; grid-template-columns: auto 1fr; gap: var(--space-6) var(--space-12); margin: 0; font-size: 13px; line-height: 1.5; }
+.in-rules dt { color: var(--ink-3); }
+.in-rules dd { margin: 0; color: var(--ink-2); }
+.in-rules > * { opacity: 0; transform: translateY(4px); transition: opacity var(--motion-base) var(--ease-standard), transform var(--motion-base) var(--ease-standard); }
+.in-scene.on .in-rules > * { opacity: 1; transform: none; }
+.in-scene.on .in-rules > :nth-child(3), .in-scene.on .in-rules > :nth-child(4) { transition-delay: calc(var(--motion-base) / 3); }
+.in-scene.on .in-rules > :nth-child(5), .in-scene.on .in-rules > :nth-child(6) { transition-delay: calc(var(--motion-base) * 2 / 3); }
+
+/* 幕三:回測圖。權益線用 --color-primary(同 report-backtest.js:這張圖唯一的品牌色);沒有 y 軸數字、沒有基準線 */
+.in-bt { padding: var(--space-12) var(--space-16) var(--space-8); border-radius: var(--radius-md); background: var(--surface-card); box-shadow: var(--shadow-sm); }
+.in-bt-top { display: flex; align-items: center; gap: var(--space-8); margin-bottom: var(--space-8); }
+.in-bt-tab { font-size: 13px; font-weight: 600; color: var(--ink); }
+.in-bt-name { font-size: 12px; color: var(--ink-3); }
+.in-tag { margin-left: auto; height: 20px; padding: 0 var(--space-6); border-radius: var(--radius-micro); background: var(--tag-neutral-bg); color: var(--tag-neutral-text); font-size: 11px; line-height: 20px; }
+.in-plot { position: relative; height: 112px; }
+.in-plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.in-plot .grid { stroke: var(--border-hairline); stroke-width: 1; }
+.in-plot .eq { fill: none; stroke: var(--color-primary); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+/* 「畫出來」:同底色的蓋板往右收(只動 transform);敘事進場,--motion-enter 的兩倍 */
+.in-cover { position: absolute; top: -4px; bottom: -4px; left: 0; right: -6px; background: var(--surface-card); transform-origin: right; transform: scaleX(1); }
+.in-scene.on .in-cover { transform: scaleX(0); transition: transform calc(var(--motion-enter) * 2) cubic-bezier(.45, .05, .35, 1) var(--motion-fast); }
+.in-xax { display: flex; justify-content: space-between; margin-top: var(--space-4); font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* 暫停／重播(WCAG 2.2.2):舞台右下角,視覺 28、熱區 44 */
+.in-play { position: absolute; right: var(--space-8); bottom: var(--space-8); z-index: 2; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); color: var(--ink-3); }
+.in-play::before { content: ""; position: absolute; inset: -8px; }
+.in-play:hover { background: var(--surface-muted); color: var(--ink); }
+.in-play svg { width: 14px; height: 14px; fill: currentColor; }
+.in-dots { position: absolute; left: 50%; bottom: var(--space-12); transform: translateX(-50%); display: flex; gap: var(--space-6); }
+.in-dots i { width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--border-frame); }
+.in-dots i.on { background: var(--ink-3); }
+
+/* 暫停後停在結果那一格:不再過場 */
+.intro-stage.static .in-scene, .intro-stage.static .in-rules > *, .intro-stage.static .in-cover { transition: none; }
+/* 減少動態:不播,三幕併成一張,只留想法與回測圖 */
+.intro-stage.still { height: auto; }
+.intro-stage.still .in-scene { position: static; opacity: 1; transform: none; padding: var(--space-16); }
+.intro-stage.still .in-sc1 { padding-bottom: 0; }
+.intro-stage.still .in-sc2 { display: none; }
+.intro-stage.still .in-cover { transform: scaleX(0); }
+@media (prefers-reduced-motion: reduce) {
+  .in-scene, .in-rules > *, .in-cover { transition: none; }
+}
