@@ -158,6 +158,7 @@ const doc = { activeElement: null, createElement: el, createTextNode: (s) => ({ 
   ok("S17 雲端視角沒有資料來源:只有 src.cloudEmpty 一句,沒有頭部", !box.querySelector(".src-head") && box.querySelector(".src-empty") && box.querySelector(".src-empty").textContent === ZH["src.cloudEmpty"] && !all(box).some((x) => x.textContent === ZH["src.cloudLead"]));
   ctx.ENV.cur = "local"; SRC.cloud = null; SRC.items = []; SRC.missing = []; api.srcPaint();
   ok("S9 本機空清單:沒有空的 .src-head(以前佔了 24px);空狀態本身照出", !box.querySelector(".src-head") && !!box.querySelector(".src-empty"));
+  ok("S11 空狀態:名詞句 → 「新增資料來源」鈕 → 金鑰那句(不再帶 {ex})", box.querySelector(".src-empty").children.map((x) => x.tagName + ":" + x.textContent).join("|") === "P:" + ZH["src.empty1"] + "|BUTTON:" + ZH["src.add"] + "|P:" + ZH["src.empty2"] && !/\{ex\}/.test(ZH["src.empty2"] + EN["src.empty2"]));
   ok("renderer 那一半仍不用 innerHTML", !/innerHTML|insertAdjacentHTML|outerHTML/.test(rsrc + cut(app, "rpNobtPaint")));
 
   console.log(red ? `\n${red} 條紅` : "\n全綠");

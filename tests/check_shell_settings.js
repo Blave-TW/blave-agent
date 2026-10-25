@@ -363,6 +363,16 @@ ok("分類順序(0.1.32 方案 B):一般 → 模型接入 → Agent → 資料�
   btn.setAttribute("aria-current", "true"); sync(q, () => false, (k) => { back = k; })();
   ok("connectCatSync:平台開放 → 出;沒開放 → 藏,正停在那一頁就切回一般", on === false && btn.hidden === true && back === "display"); }
 const PO2 = ["zh", "en"].map((l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8"));
+{ // 設定 modal 方案 B 的定稿字串(spec settings-modal-b-2026-10-24 S3 / S10 / S11 / S14 / S17 / S18;S10 另由 check_web_desktop_parity.js 跟 web 逐字比)
+  const want = { "set.cat.rules": ["Agent", "Agent"], "set.cat.connect": ["連結", "Connections"], "set.cat.shares": ["公開連結", "Public links"],
+    "rules.emptyHow": ["在對話裡說「以後都要設停損」，也會記成一條規則。", "Saying “always set a stop loss” in the chat also adds a rule."],
+    "src.empty1": ["還沒有自帶金鑰的資料來源。", "No data sources with your own key yet."], "src.empty2": ["金鑰不要貼在對話裡。", "Don’t paste keys into the chat."],
+    "br.set.lead": ["不開交易所後台、券商與銀行。登入、送出、付款由你按。", "It never opens exchange account pages, brokers or banks. You sign in, submit and pay."],
+    "src.cloudLead": ["雲端主機上的資料來源，唯讀。", "Data sources on the cloud machine. Read-only."],
+    "plan.topupShort": ["低於 {a} TWD 時從卡自動儲值 {b} TWD。可在網頁關閉。", "Under {a} TWD, your card tops up {b} TWD. You can turn this off on the web."] };
+  const S2 = eval(fs.readFileSync(path.join(R, "strings.js"), "utf8") + ";STRINGS");
+  const off = Object.keys(want).filter((k) => S2.zh[k] !== want[k][0] || S2.en[k] !== want[k][1]);
+  ok("方案 B 定稿字串 zh / en 逐字(" + Object.keys(want).length + " 個 key);刪掉的 shl.title 兩語都不在", off.length === 0 && !("shl.title" in S2.zh) && !("shl.title" in S2.en), off.join(",")); }
 ok("那一類定名「一般」;指到它的句子(minv.trade)兩語都跟著改", /msgid "set\.cat\.display"\nmsgstr "一般"/.test(PO2[0]) && /msgid "set\.cat\.display"\nmsgstr "General"/.test(PO2[1])
   && /msgid "minv\.trade"\nmsgstr "[^\n]*設定 › 一般/.test(PO2[0]) && /msgid "minv\.trade"\nmsgstr "[^\n]*Settings › General/.test(PO2[1]));
 

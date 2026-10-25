@@ -3290,10 +3290,10 @@ msgid "src.gotIt"
 msgstr "知道了"
 
 msgid "src.empty1"
-msgstr "Blave 內建的資料不需要金鑰。策略要用別家的資料、而那一家要你自己的金鑰時，才在這裡加。"
+msgstr "還沒有自帶金鑰的資料來源。"
 
 msgid "src.empty2"
-msgstr "加好之後跟 agent 說「用 {ex} 的資料」就可以；金鑰不要貼在對話裡。"
+msgstr "金鑰不要貼在對話裡。"
 
 msgid "src.rowLocal.one"
 msgstr "{n} 個欄位 · 用到它的策略：{names}"
@@ -3320,7 +3320,7 @@ msgid "src.errBusy"
 msgstr "工作區的設定檔正在被使用，沒有儲存。等幾秒再試一次。"
 
 msgid "src.cloudLead"
-msgstr "這是你的雲端主機上的資料來源，這裡只列名稱。這一版還不能在這裡新增或刪除。"
+msgstr "雲端主機上的資料來源，唯讀。"
 
 msgid "src.cloudEmpty"
 msgstr "雲端主機上沒有資料來源。"
@@ -5587,7 +5587,7 @@ msgid "br.set.switch"
 msgstr "內建瀏覽器"
 
 msgid "br.set.lead"
-msgstr "agent 會上網查資料，開的頁都會出現在聊天裡。不開交易所後台、券商與銀行，登入、送出、付款由你按。"
+msgstr "不開交易所後台、券商與銀行。登入、送出、付款由你按。"
 
 msgid "br.set.clear"
 msgstr "清除瀏覽資料"
@@ -6510,7 +6510,7 @@ msgid "rules.emptyLead"
 msgstr "還沒有任何規則。"
 
 msgid "rules.emptyHow"
-msgstr "在對話裡說「以後每個策略都要停損」，agent 會幫你記成一條規則；也可以在這裡直接新增。"
+msgstr "在對話裡說「以後都要設停損」，也會記成一條規則。"
 
 msgid "rules.full"
 msgstr "已經 10 條，是上限。要新增請先刪掉一條——不會自動丟掉舊的。"
@@ -7778,7 +7778,7 @@ msgid "pv.f.running.await"
 msgstr "第一期沒有自動扣。到網站開通才會繼續；沒開通的話主機 {gu}刪除"
 
 msgid "plan.topupShort"
-msgstr "低於 {a} TWD 時從卡自動儲值 {b} TWD；網頁可關"
+msgstr "低於 {a} TWD 時從卡自動儲值 {b} TWD。可在網頁關閉。"
 
 msgid "po.nav"
 msgstr "策略組合"
