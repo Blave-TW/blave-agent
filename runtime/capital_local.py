@@ -874,17 +874,27 @@ def _start(push):
         _LOCAL["worker"].start()
         deadline = t0 + START_TIMEOUT_S
         while time.time() < deadline:
+            # only the read is retried (missing, mid-replace, half-written): a fresh ok:false is the worker's answer
             try:
                 s = atomic_file.load_json(out, encoding="utf-8")
-                if isinstance(s, dict) and (s.get("read_at") or 0) >= t0:
-                    if s.get("ok") is True:
-                        # ok_at outlives later failures: "never finished" vs "finished, then failed"
-                        _update("worker", status="ok", error=None, wanted=True, ok_at=int(time.time()))
-                        _ready()
-                        return {"worker": "ok"}
-                    _refuse("SNAPSHOT_ERROR", "the worker's first read failed")
-            except (OSError, ValueError, AttributeError):
-                pass
+            except (OSError, ValueError):
+                s = None
+            read_at = s.get("read_at") if isinstance(s, dict) else None
+            if isinstance(read_at, (int, float)) and read_at >= t0:
+                if s.get("ok") is True:
+                    # ok_at outlives later failures: "never finished" vs "finished, then failed"
+                    _update("worker", status="ok", error=None, wanted=True, ok_at=int(time.time()))
+                    _ready()
+                    return {"worker": "ok"}
+                # a refused login writes ok:false, then exits LOGIN_STOPPED_EXIT
+                p = _LOCAL["worker"].proc
+                try:
+                    rc = p.wait(5) if p is not None else None
+                except subprocess.TimeoutExpired:
+                    rc = None
+                if rc == LOGIN_STOPPED_EXIT:
+                    _refuse("LOGIN_FAILED", "the 群益 worker's login was refused")
+                _refuse("SNAPSHOT_ERROR", "the worker's first read failed")
             p = _LOCAL["worker"].proc
             if p is not None and p.poll() == LOGIN_STOPPED_EXIT:
                 _refuse("LOGIN_FAILED", "the 群益 worker's login was refused")

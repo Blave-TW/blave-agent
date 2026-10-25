@@ -5,6 +5,8 @@
 worker ok 之後沒有任何東西再 kick,要等 ACCOUNT_EVERY_S(60 秒)。這支釘住:
 
   1. _start 看到 worker 的第一份好 snapshot → 叫 on_ready 一次;snapshot 讀失敗不叫
+     worker 寫了明確的錯誤 snapshot → 幾秒內就以 SNAPSHOT_ERROR 結束(舊碼被同一圈的
+     except 吞掉,乾等 START_TIMEOUT_S 150 秒才報 SNAPSHOT_TIMEOUT);檔案還沒寫好照舊重試
   2. local_daemon.run 把 on_ready 接到 account_kick(不是 dirty、不是 _ON_PROGRESS)
   3. 真的 _account_loop:派發那一輪之後,worker ok → 3 秒內再讀一次帳戶;沒有 ok 就不多讀
 
@@ -46,12 +48,15 @@ def check(name, cond, detail=""):
 class _Worker:
     """capital_worker stand-in: start() writes the snapshot the real one writes after its login."""
 
-    def __init__(self, ok):
-        self.ok, self.proc = ok, None
+    def __init__(self, ok, proc=None):
+        self.ok, self.proc = ok, proc
 
     def start(self):
         with open(capl._paths()["snapshot"], "w", encoding="utf-8") as f:
-            json.dump({"ok": self.ok, "read_at": time.time()}, f)
+            if self.ok is None:
+                f.write('{"ok": tr')   # mid-write: not an answer yet
+            else:
+                json.dump({"ok": self.ok, "error": None if self.ok else "boom", "read_at": time.time()}, f)
 
     def stop(self, why=""):
         pass
@@ -60,14 +65,36 @@ class _Worker:
         return False
 
 
-def _fresh(ok):
+def _fresh(ok, proc=None):
     for k in ("status", "snapshot"):
         try:
             os.remove(capl._paths()[k])
         except OSError:
             pass
     capl._update("probe", status="ok", state="ok")
-    capl._LOCAL["worker"] = _Worker(ok)
+    capl._LOCAL["worker"] = _Worker(ok, proc)
+
+
+def _start_code():
+    t = time.time()
+    try:
+        capl._start(None)
+        return None, time.time() - t
+    except Exception as e:
+        return str(e).split(":", 1)[0], time.time() - t
+
+
+class _Exited:
+    """Popen stand-in for a worker that has already exited with `rc`."""
+
+    def __init__(self, rc):
+        self.rc = rc
+
+    def poll(self):
+        return self.rc
+
+    def wait(self, timeout=None):
+        return self.rc
 
 
 # 1 ─ _start
@@ -80,14 +107,31 @@ check("1 叫的時候狀態檔已經是 worker ok(畫面讀到的順序跟 runti
       (capl.read_status() or {}).get("worker", {}).get("status") == "ok")
 calls.clear()
 _fresh(False)
-real_timeout, capl.START_TIMEOUT_S = capl.START_TIMEOUT_S, 3   # a failed read is swallowed by the poll loop and runs out the clock
-try:
-    capl._start(None)
-    raised = None
-except Exception as e:
-    raised = str(e).split(":", 1)[0]
-check("1 snapshot 讀失敗 → 不叫 on_ready", raised is not None and calls == [], (raised, calls))
-capl.START_TIMEOUT_S = real_timeout
+raised, took = _start_code()
+check("1 worker 寫了錯誤 snapshot → 幾秒內以 SNAPSHOT_ERROR 結束(不是等 150 秒的 SNAPSHOT_TIMEOUT)",
+      raised == "SNAPSHOT_ERROR" and took < 10, (raised, round(took, 1)))
+check("1 …狀態檔記 worker failed / SNAPSHOT_ERROR(畫面對到 cap.err.snapshot)",
+      (capl.read_status() or {}).get("worker", {}).get("error") == "SNAPSHOT_ERROR"
+      and capl.read_status()["worker"]["status"] == "failed", capl.read_status())
+check("1 snapshot 讀失敗 → 不叫 on_ready", calls == [], calls)
+_fresh(False, _Exited(capl.LOGIN_STOPPED_EXIT))
+raised, took = _start_code()
+check("1 錯誤 snapshot 之後 worker 以登入被拒結束 → 照舊報 LOGIN_FAILED", raised == "LOGIN_FAILED" and took < 10,
+      (raised, round(took, 1)))
+_fresh(None)
+
+
+def _later_good():
+    time.sleep(3)
+    with open(capl._paths()["snapshot"], "w", encoding="utf-8") as f:
+        json.dump({"ok": True, "read_at": time.time()}, f)
+
+
+threading.Thread(target=_later_good, daemon=True).start()
+raised, took = _start_code()
+check("1 snapshot 還沒寫好(JSON 寫一半)→ 照舊重試,等到好的那份才 ok", raised is None and len(calls) == 1,
+      (raised, calls))
+calls.clear()
 capl._LOCAL["on_ready"] = lambda: 1 / 0
 _fresh(True)
 check("1 on_ready 自己丟例外不拖垮開通", capl._start(None) == {"worker": "ok"})
