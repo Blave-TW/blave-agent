@@ -540,6 +540,10 @@ msgstr "Your account can't use {model}. This turn did not run."
 msgid "fault.noModelSwitched"
 msgstr "Your account can't use {model}. This turn did not run — switched back to {to}."
 
+# 0.1.33 綁卡前的 30 TWD 只能用 DeepSeek V4 Pro:送了鎖住的型號(api 404 MODEL_NEEDS_PAYMENT),選擇已換回預設;鈕是綁卡(acct.addCard)
+msgid "fault.freeLocked"
+msgstr "{model} needs a card or top-up. Switched back to {to}."
+
 msgid "fault.noModelBtn"
 msgstr "Choose a Model"
 
@@ -552,6 +556,10 @@ msgstr "Your {name} subscription has reached its usage limit. Until it resets, s
 
 msgid "fault.limitBtn"
 msgstr "Switch AI"
+
+# 0.1.33 模型選單上鎖住的列(綁卡前額度用不了的型號)右邊那行小字
+msgid "mp.locked"
+msgstr "Add a card or top up to use"
 
 msgid "mp.na"
 msgstr "Not on your plan"

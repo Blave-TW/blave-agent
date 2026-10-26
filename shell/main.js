@@ -2677,8 +2677,9 @@ async function blaveModels() {
     return (r.body.data || []).filter((m) => !m.legacy).map((m) => {
       const claude = /^anthropic\//.test(m.id) && !/haiku/.test(m.id);
       const efforts = claude ? CLAUDE_EFFORTS : /^deepseek\//.test(m.id) ? DEEPSEEK_EFFORTS : [];
+      // free_credit:綁卡前的 30 TWD 用不用得了(account_status.free_only 為真時,false 的列鎖住;舊 api 沒這欄 = 不鎖)
       return { id: m.id, name: BLAVE_NAMES[m.id] || m.id,
-               efforts, defaultEffort: efforts.length ? "high" : null };
+               efforts, defaultEffort: efforts.length ? "high" : null, free_credit: typeof m.free_credit === "boolean" ? m.free_credit : undefined };
     }).sort((a, b) => rank(a.id) - rank(b.id));
   } catch (_) { return []; }
 }

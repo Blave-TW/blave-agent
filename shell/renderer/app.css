@@ -620,6 +620,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 /* 這個帳號用不了的 model:名字退一階灰、旁邊標一句,但**不鎖**——訂閱升級之後就能用,
    鎖死的話用戶得去刪檔。成功跑過一輪標記就會自己消失。 */
 .mp-row.is-na { color: var(--ink-3); }
+/* 綁卡前額度用不了的型號:照列、選不了(app.js mpLocked);右邊小字講怎麼解開 */
+.mp-row.is-locked { color: var(--ink-3); cursor: default; }
 
 /* ── sidebar 策略列 ───────────────────────────────
    一列 = 名字 + Sharpe。選中 = 純加粗 + 淡底(canon › Active 一律灰階)。 */

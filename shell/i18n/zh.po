@@ -13,7 +13,7 @@ msgid "cn.blave.desc"
 msgstr "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費"
 
 # 連結畫面偵測完本機兩個 CLI 都不能用、沒登入、公開價目有綁卡前額度時的大標與 Blave 那一列的副標(0.1.22;spec desktop-precard-credit §5.2)。
-# 「綁卡」整個畫面只講一次,放副標、句子對齊網站授權頁的「額度用完才需要綁卡」;不寫「夠跑幾輪」(不限模型,Opus 一輪可能就超過)
+# 「綁卡」整個畫面只講一次,放副標、句子對齊網站授權頁的「額度用完才需要綁卡」;不寫「夠跑幾輪」。這筆額度只能用 DeepSeek V4 Pro(0.1.33,選單上其他型號鎖住、旁邊講怎麼解開),所以字不提型號
 msgid "cn.h.free"
 msgstr "先用 Blave AI 開始"
 
@@ -547,6 +547,10 @@ msgstr "你的帳號用不了「{model}」，這一輪沒有跑。"
 msgid "fault.noModelSwitched"
 msgstr "你的帳號用不了「{model}」，這一輪沒有跑。已換回「{to}」。"
 
+# 0.1.33 綁卡前的 30 TWD 只能用 DeepSeek V4 Pro:送了鎖住的型號(api 404 MODEL_NEEDS_PAYMENT),選擇已換回預設;鈕是綁卡(acct.addCard)
+msgid "fault.freeLocked"
+msgstr "「{model}」要綁卡或儲值才能用。已換回「{to}」。"
+
 msgid "fault.noModelBtn"
 msgstr "選別的模型"
 
@@ -559,6 +563,10 @@ msgstr "你的 {name} 訂閱用量到上限了。重置之前可以到「設定 
 
 msgid "fault.limitBtn"
 msgstr "切換 AI"
+
+# 0.1.33 模型選單上鎖住的列(綁卡前額度用不了的型號)右邊那行小字
+msgid "mp.locked"
+msgstr "綁卡或儲值後可用"
 
 msgid "mp.na"
 msgstr "你的方案沒有"
