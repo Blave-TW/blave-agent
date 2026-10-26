@@ -417,17 +417,19 @@ def _trip_mismatch_halt(mode, rows):
 
 
 def _stop_losses(env, mode):
-    """[{'symbol' (the strategy's name), 'side' (the closing direction)}] of every open
+    """[{'symbol' (the strategy's name), 'leg' ('long' | 'short' | None)}] of every open
     stop-loss — the read lib/order_bitget.get_open_algo_orders makes, kept here so this
-    read-only lib never imports the order lib."""
+    read-only lib never imports the order lib. UTA: the leg from the stop's closing side
+    (posSide is not the leg on a one-way account, T12); classic: posSide / holdSide."""
     if mode == "uta":
         data = _get(env, "/api/v3/trade/unfilled-strategy-orders", {"category": CATEGORY, "type": "tpsl"})
         rows = (data.get("list") if isinstance(data, dict) else data) or []
-        return [{"symbol": canonical(o.get("symbol")), "side": o.get("side")} for o in rows
+        return [{"symbol": canonical(o.get("symbol")),
+                 "leg": {"sell": "long", "buy": "short"}.get(str(o.get("side") or "").lower())} for o in rows
                 if str(o.get("status") or "pending").lower() in ("pending", "submitting")
                 and o.get("stopLoss") not in (None, "")]
     data = _get(env, "/api/v2/mix/order/orders-plan-pending", {"productType": PRODUCT, "planType": "profit_loss"})
-    return [{"symbol": canonical(o.get("symbol")), "side": o.get("side")}
+    return [{"symbol": canonical(o.get("symbol")), "leg": _audit_leg(o)}
             for o in (data or {}).get("entrustedList") or [] if o.get("planType") == "pos_loss"]
 
 
@@ -483,11 +485,11 @@ def _our_stop_legs():
     return set(live)
 
 
-def _unprotected(env, mode, legs):
-    """(the `legs` with no stop-loss on Bitget now, the plan list was unreadable). Any open
-    stop-loss on the leg counts. A symbol holding one leg is covered by any stop-loss on
-    it; holding both legs (hedge), UTA tells the leg by the stop's closing side, classic
-    does not — there both legs need a stop-loss each. Unreadable = every leg unprotected."""
+def _unprotected(env, mode, legs, held):
+    """(the `legs` with no stop-loss on Bitget now, the plan list was unreadable). `held` =
+    every leg the account holds. Any open stop-loss on the leg counts. A symbol holding one
+    leg is covered by any stop-loss on it; holding both (hedge), only by one on that leg — a
+    stop the user placed on the other leg does not guard ours. Unreadable = all unprotected."""
     if not legs:
         return [], False
     try:
@@ -498,13 +500,10 @@ def _unprotected(env, mode, legs):
     out = []
     for vsym, side in legs:
         mine = [o for o in stops if o.get("symbol") == _display_symbol(vsym)]
-        held = sum(1 for v, _ in legs if v == vsym)
-        if held == 1:
+        if sum(1 for v, _ in held if v == vsym) <= 1:
             covered = bool(mine)
-        elif mode == "uta":
-            covered = any(str(o.get("side") or "").lower() == ("sell" if side == "long" else "buy") for o in mine)
         else:
-            covered = len(mine) >= held
+            covered = any(o.get("leg") == side for o in mine)
         if not covered:
             out.append((vsym, side))
     return out, False
@@ -521,8 +520,8 @@ def _release(mode, now_legs, switched_from=None, env=None):
     if switched and env is not None:
         ours = _our_stop_legs()
         if ours:
-            bare, unreadable = _unprotected(env, mode, sorted((x[0], x[1]) for x in now_legs
-                                                             if (x[0], x[1]) in ours))
+            held = [(x[0], x[1]) for x in now_legs]
+            bare, unreadable = _unprotected(env, mode, sorted(x for x in held if x in ours), held)
     _write_mode({"mode": mode, "legs": [list(x) for x in now_legs], "hold": None})
     if not switched:
         return

@@ -1505,6 +1505,23 @@ del EMITS[:]
 judged()
 check([e[1]["legs"] for e in EMITS if e[0] == "venue_stops_missing"] == [[{"symbol": "NVDAUSDT", "side": "short"}]],
       "①b both NVDA legs ours, one stop that closes by selling: the long is covered, the short is listed", EMITS)
+# both NVDA legs held, only the short is ours and its stop is gone; the user's own stop guards the long:
+# that stop does not cover our short (counted over every held leg, not only ours)
+classic_with([V2_NVDA, {**V2_NVDA, "holdSide": "short"}], stops=[("NVDAUSDT", "short")])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03"), upos("NVDAUSDT", "short", "0.03")]
+STOPS[:] = [ustop("NVDAUSDT", "sell")]
+del EMITS[:]
+judged()
+check([e[1]["legs"] for e in EMITS if e[0] == "venue_stops_missing"] == [[{"symbol": "NVDAUSDT", "side": "short"}]],
+      "①b hedge, ours on the short gone, the user's stop on the long: not counted as ours, P1 names the short", EMITS)
+# classic: the plan list's posSide / holdSide tells the leg (a user's long stop does not cover our short)
+route("GET", "/api/v2/mix/order/orders-plan-pending", lambda p: ok({"entrustedList": [
+    {"symbol": "NVDAUSDT", "planType": "pos_loss", "posSide": "long", "holdSide": "long", "side": "sell"}]}))
+both = [("NVDAUSDT", "long"), ("NVDAUSDT", "short")]
+check(acct._unprotected(ENV, "classic", [("NVDAUSDT", "short")], both) == ([("NVDAUSDT", "short")], False)
+      and acct._unprotected(ENV, "classic", [("NVDAUSDT", "long")], both) == ([], False)
+      and acct._unprotected(ENV, "classic", [("NVDAUSDT", "short")], [("NVDAUSDT", "short")]) == ([], False),
+      "①b classic hedge: a stop counts for its own leg only (posSide); one leg held → any stop on the symbol")
 # Bitget's plan list cannot be read: our protected legs count as unprotected, flagged unreadable
 classic_with([V2_NVDA], stops=[("NVDAUSDT", "long")])
 UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
