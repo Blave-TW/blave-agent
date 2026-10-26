@@ -68,6 +68,14 @@ STATS_REFRESH_ENV = 'BLAVE_STATS_REFRESH'
 
 
 
+# 成交測試 tab: the same position / weights filled k bars later and at a higher per-side cost,
+# through this backtest's own precise_pnl arrays. Recomputed on every stats.json write
+# (backtest and performance refresh), never carried over: a refresh moves the Sharpe, and
+# lag["0"] must stay equal to it.
+EXEC_TEST_KEY = 'exec_test'
+EXEC_TEST_LAGS = (0, 1, 2, 3, 5, 10)
+EXEC_TEST_EXTRA_PCT = ('0.01', '0.02', '0.05', '0.1', '0.2', '0.5')
+
 # MCPT (Monte Carlo Permutation Test) fields in stats.json — written automatically by every
 # Type A backtest (see _auto_mcpt) and by lib.validation.write_mcpt_to_stats after a manual
 # run. Mirrors lib.validation.MCPT_*_KEY.
@@ -401,6 +409,65 @@ def _auto_mcpt(config, close_v, pos, index, fee, n_trades):
             return {MCPT_P_KEY: round(float(p_value), 4), MCPT_N_KEY: int(dist_arr.size)}
         logging.warning("MCPT failed (backtest stats still written without it): %s", e)
         return {}
+
+
+def _round4(x):
+    x = float(x)
+    return None if math.isnan(x) or math.isinf(x) else round(x, 4)
+
+
+def _lagged(w_curr, exec_shifted, k):
+    """w_curr held k bars later. Bars precise_pnl prices at the signal bar's close
+    (exec_shifted: settlement / exec_at_close) keep their own weight: a TAIFEX contract is
+    settled at 13:30 however late the bot is, so a lag must never carry a position across
+    the unadjusted roll gap. Cost of the one rule: a settlement bar's intraday leg stays
+    flat too (one w_curr per bar cannot hold 0 overnight and a position intraday)."""
+    if k == 0:
+        return w_curr
+    out = np.zeros_like(w_curr)
+    out[k:] = w_curr[:-k]
+    out[exec_shifted] = w_curr[exec_shifted]
+    return out
+
+
+def _exec_cell(close_v, open_v, w_curr, exec_shifted, fee, index):
+    w_prev = np.zeros_like(w_curr)
+    w_prev[1:] = w_curr[:-1]        # = the backtest's w_prev: pos[t-2] == w_curr[t-1]
+    pf_ret, _, delta_w, _ = precise_pnl(close_v, open_v, w_curr, w_prev, exec_shifted, fee)
+    sharpe, _, _, mdd, ann = compute_stats(pf_ret, index)
+    return [_round4(sharpe), _round4(ann * 100), _round4(-abs(mdd) * 100)], pf_ret, delta_w
+
+
+def _exec_test(close_v, open_v, w_curr, exec_shifted, fee, index):
+    """stats.json `exec_test` from the arrays the backtest just passed to precise_pnl, so
+    lag["0"] is the backtest's own Sharpe / MDD bit for bit. Never raises: the tab is an
+    extra, not part of the backtest."""
+    try:
+        lag = {str(k): _exec_cell(close_v, open_v, _lagged(w_curr, exec_shifted, k),
+                                  exec_shifted, fee, index)[0] for k in EXEC_TEST_LAGS}
+        close_fill = _exec_cell(close_v, open_v, w_curr, np.ones_like(exec_shifted), fee, index)[0]
+        free, gross, delta_w = _exec_cell(close_v, open_v, w_curr, exec_shifted, 0.0, index)
+        cost = {'free': free}
+        for x in EXEC_TEST_EXTRA_PCT:
+            cost[x] = _exec_cell(close_v, open_v, w_curr, exec_shifted, fee + float(x) / 100, index)[0]
+        abs_dw = np.abs(np.nan_to_num(delta_w))
+        if abs_dw.ndim > 1:
+            abs_dw = abs_dw.sum(axis=1)
+        sum_dw, gross_sum = float(abs_dw.sum()), float(np.nan_to_num(gross).sum())
+        years = (index[-1] - index[0]).days / 365.25 if len(index) > 1 else 0.0
+        return {
+            'lag': lag,
+            'close_fill': close_fill,
+            'cost': cost,
+            'fee_per_side_pct': _round4(fee * 100),
+            'breakeven_pct_per_side': _round4(gross_sum / sum_dw * 100)
+                                      if sum_dw > 0 and gross_sum > 0 else None,
+            'turnover_per_year': _round4(sum_dw / years) if years > 0 else None,
+            'position_changes': int(np.count_nonzero(np.round(abs_dw, 4))),
+        }
+    except Exception as e:
+        logging.warning("exec_test skipped (backtest stats still written without it): %s", e)
+        return None
 
 
 def _build_levels(raw):
@@ -2439,6 +2506,7 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
 
         pf_series = pd.Series(pf_ret, index=df.index)
         sharpe, sortino, omega, mdd_raw, _ = compute_stats(pf_ret, df.index)
+        exec_test = _exec_test(close_v, open_v, w_curr, exec_shifted, fee, df.index)
 
         total_ret  = float(np.prod(1 + np.nan_to_num(pf_ret)) - 1) * 100
         mdd        = -abs(mdd_raw) * 100  # drawdown is a loss from peak → always ≤ 0
@@ -2571,6 +2639,8 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                  'trades': trades,
                  'trades_start_position': trades_start_position,
                  }
+        if exec_test:  # optional field — absent when it could not be computed
+            stats[EXEC_TEST_KEY] = exec_test
         panes = _build_panes(config.get('PLOT_SERIES'), df)
         if panes:  # optional field — absent (not empty) when nothing is declared/valid
             stats['panes'] = panes
@@ -2717,6 +2787,7 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         pf_series = pd.Series(pf_ret, index=close_df.index)
         total_ret = pf_equity[-1] - 1
         sharpe, sortino, omega, mdd, ann_ret = compute_stats(pf_ret, close_df.index)
+        exec_test = _exec_test(close_v, open_v, w_curr, exec_shifted_c, fee, close_df.index)
 
         n_trades = count_trades(delta_w)
 
@@ -2786,6 +2857,8 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                  'daily_dates': d_dates, 'daily_returns': d_rets,
                  **carried,
                  }
+        if exec_test:
+            stats[EXEC_TEST_KEY] = exec_test
         if _superseded(config, src0):   # before the lock creates versions/ (same as Type A)
             _discard_superseded(strategy_name, 'Backtest' if mode == 'backtest' else 'Performance refresh')
             return
