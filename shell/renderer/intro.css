@@ -12,7 +12,8 @@
 .in-play[hidden] { display: none; }
 .in-play::before { content: ""; position: absolute; inset: -8px; }
 .in-play:hover { opacity: .85; }
-.in-play:focus-visible { outline: 2px solid var(--control-fill-text); outline-offset: 0; }
+/* 影片不跟主題換色:暗色用全站焦點環;亮色的全站環是深色,壓在深草地上看不見,只覆寫亮色 */
+[data-theme="light"] .in-play:focus-visible { outline-color: var(--control-fill-text); }
 .in-play svg { width: 14px; height: 14px; fill: currentColor; }
 /* 播放三角形的重心偏左,往右 1px 做光學置中 */
 .in-play svg:has(path) { margin-left: 1px; }
