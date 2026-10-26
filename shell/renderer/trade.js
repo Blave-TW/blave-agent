@@ -5141,7 +5141,8 @@ function trEvCount(body, count) {
 function trEvBody(body, head, note, lv, tip, count, code, tail) {
   body.appendChild(trEvHead(head, trEvClass(lv)));
   trEvCount(body, count);
-  if (code) body.append(" ", trEl("span", "mono", code));
+  // 中文標題以全形冒號收尾(後面接清單)時不再補空格
+  if (code) body.append(typeof head === "string" && /：$/.test(head) ? "" : " ", trEl("span", "mono", code));
   if (tail) body.append(" ", trEl("span", "", tail));
   if (note) { const n = trEl("span", "dim", "— " + note); if (tip) n.title = tip; body.append(" ", n); }
 }

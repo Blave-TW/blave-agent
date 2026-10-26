@@ -1072,7 +1072,11 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const S4 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
       ok("讀不到止損單那兩句拆成兩句(每句 ≤25 字,同 api notify.py):統一／經典",
         S4.includes('"tr.ov.evBitgetStopsUnreadUta": "Bitget 換成統一帳戶後讀不到止損單。以下倉位當成沒有止損："')
-        && S4.includes('"tr.ov.evBitgetStopsUnreadClassic": "Bitget 換成經典帳戶後讀不到止損單。以下倉位當成沒有止損："')); }
+        && S4.includes('"tr.ov.evBitgetStopsUnreadClassic": "Bitget 換成經典帳戶後讀不到止損單。以下倉位當成沒有止損："'));
+      ok("沒有止損那則標題也以全形冒號收尾(同讀不到那則),英文同步;冒號後面接清單不補空格",
+        S4.includes('"tr.ov.evBitgetNoStopUta": "Bitget 換成統一帳戶後，以下倉位沒有止損："') && S4.includes('"tr.ov.evBitgetNoStopClassic": "Bitget 換成經典帳戶後，以下倉位沒有止損："')
+        && S4.includes('these positions have no stop-loss:"')
+        && /if \(code\) body\.append\(typeof head === "string" && \/：\$\/\.test\(head\) \? "" : " ", trEl\("span", "mono", code\)\);/.test(src)); }
     const mc = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF, TXF", reason: "x" }), mc0 = trEventText("manual_close_required", { symbols: "" });
     ok("manual_close_required:帶標的時接在後面;symbols 空字串只講那一句;註解同網頁", mc[0] === "tr.ov.evManualClose" && mc[4] === "TMF, TXF" && mc[1] === "tr.ov.evManualCloseNote" && mc0[0] === "tr.ov.evManualClose" && !mc0[4]); }
   { // 設計稽核可後修 §3-1:雲端的投資組合策略那句講真話;L3:框開著時變成讀不到設定 → 送出前再擋一次;L2:=absent 講明

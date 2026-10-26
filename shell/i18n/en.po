@@ -8970,10 +8970,10 @@ msgstr "Bitget switched to a classic account; positions match, trading as usual"
 
 # 事件列(P1):Bitget 換帳戶類型、倉位都對上,但以下倉位在 Bitget 上沒有止損(下單照常、不自動補掛;trade.js trEventText venue_stops_missing)
 msgid "tr.ov.evBitgetNoStopUta"
-msgstr "After Bitget switched to a unified account (UTA), these positions have no stop-loss"
+msgstr "After Bitget switched to a unified account (UTA), these positions have no stop-loss:"
 
 msgid "tr.ov.evBitgetNoStopClassic"
-msgstr "After Bitget switched to a classic account, these positions have no stop-loss"
+msgstr "After Bitget switched to a classic account, these positions have no stop-loss:"
 
 # 讀不到 Bitget 的止損單:當成沒有
 msgid "tr.ov.evBitgetStopsUnreadUta"
