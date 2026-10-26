@@ -137,6 +137,9 @@ t("兩條引擎的提示都接了這一段;寫進歷史的仍是用戶的訊息�
 
 t("disallowed_tools 用 web_tools_off;mcp_rule 只看 blave 有沒有掛;Codex 的提示也吃同一個狀態", 'NO_LATER_TOOLS + web_tools_off(web, browser_mounted) + PROTECTED_EDIT_RULES' in src and "mcp_rule(cloud_mcp) + browser_rule(browser_mounted, web)" in src
   and "browser_rule(browser_mounted, desktop_web(sink, browser_mounted))" in src)
-t("strict_mcp_config 仍然是 True,而且沒有任何地方把 dict 交給 mcp_servers", "options.strict_mcp_config = True" in src and "mcp_servers = {" not in src and "options.mcp_servers = _mcp" in src)
+# 唯一的 dict 是排程回合的 in-process server({"type": "sdk"}:SDK 只把 type/name 放上 argv,沒有金鑰)
+t("strict_mcp_config 仍然是 True,而且沒有任何地方把帶金鑰的 dict 交給 mcp_servers", "options.strict_mcp_config = True" in src
+  and src.count("mcp_servers = {") == 1 and "options.mcp_servers = {SCHED_REPORT_SERVER: sched_report_server(state)}" in src
+  and "options.mcp_servers = _mcp" in src)
 print("ALL PASS" if not red else "%d 紅" % red)
 sys.exit(1 if red else 0)

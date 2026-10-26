@@ -108,15 +108,15 @@ class _Remote:
     pass
 
 
-def mounted(sink, scheduled):
+def mounted(sink):
     o = _Options()
-    at._mount_turn_hooks(o, sink, scheduled, "hi", None)
+    at._mount_turn_hooks(o, sink, "hi", None)
     return [x["hooks"][0].__qualname__ for x in (o.hooks or {}).get("PreToolUse") or []]
 
 
 local = at.LocalSink.__new__(at.LocalSink)
 CRED = "_cred_bash_guard_hooks.<locals>.guard"
-t("③ 雲端／電腦版 × 排程與否,四種回合都掛", all(CRED in mounted(s, sc) for s in (_Remote(), local) for sc in (False, True)))
+t("③ 雲端／電腦版回合都掛(排程回合同一條,另外沒有 Bash)", all(CRED in mounted(s) for s in (_Remote(), local)))
 
 if fails:
     sys.exit(f"{len(fails)} failed: {fails}")

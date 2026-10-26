@@ -52,6 +52,7 @@ DEGRADED_ALERT_COOLDOWN_S = 86400
 STATE_DIR = os.environ.get("BLAVE_AGENT_STATE") or os.path.join(os.path.dirname(WORKSPACE), "state")
 # 回合名額與 bridge 共用 runtime/turn_slots(同一份檔、同一套規則;稽核 0.1.7 P2-10 前是抄一份在這裡)
 import atomic_file  # noqa: E402
+import sched_pack  # noqa: E402
 import turn_slots  # noqa: E402
 SLOTS_DIR = turn_slots.SLOTS_DIR
 LIMITS_PATH = turn_slots.LIMITS_PATH
@@ -478,32 +479,9 @@ def job_lang(job):
     return "cn" if _SIMPLIFIED.search(words) else "zh"
 
 
-def _pack_call(job):
-    """The exact pack call for this job, so the turn does not read run.py or lib to find it."""
-    jd = job_dir(job["id"])
-    if os.path.isfile(os.path.join(jd, "recipe.json")):
-        return (f"from lib.report_templates import build, load_recipe, publish; "
-                f"pack = build(load_recipe(\"report_jobs/{job['id']}/run.py\"), extra=[...])")
-    try:
-        with open(os.path.join(jd, "run.py"), encoding="utf-8") as f:
-            src = f.read()
-    except OSError:
-        src = ""
-    m = _TEMPLATE_CALL.search(src)
-    args, depth = None, 1
-    if m:
-        for i in range(m.end(), len(src)):
-            depth += {"(": 1, ")": -1}.get(src[i], 0)
-            if depth == 0:
-                args = src[m.end():i].strip()
-                break
-    if args is None or "extra" in args or "\n" in args:
-        return None
-    return (f"from lib.report_templates import {m.group(1)}, publish; "
-            f"pack = {m.group(1)}({args + ', ' if args else ''}extra=[...])")
-
-
-_TEMPLATE_CALL = re.compile(r"\b(tw_market_brief|tw_close_brief|crypto_market_brief|symbol_brief|research_pack)\(")
+def pack_call(job):
+    """sched_pack.pack_call for this job's directory."""
+    return sched_pack.pack_call(job_dir(job["id"]))
 
 
 # DeepSeek 經 proxy 沒有 WebSearch(Anthropic 伺服器端工具),但 WebFetch 是 CLI 自己抓網頁、
@@ -520,7 +498,7 @@ def scheduled_prompt(job, model=None):
     """The one message a scheduled agent turn gets: the user's own request plus the rules of
     an unattended run. The agent-facing rules live in references/reports.md §8. `model` picks the
     news channel: a Claude model searches; DeepSeek (the default when None) fetches listed pages."""
-    deepseek = model is None or "deepseek" in str(model).lower()
+    deepseek = sched_pack.fetch_only(model)
     news = ("1) News first — this model has no web search: read with WebFetch only. Start from your "
             "market's list. Taiwan: 鉅亨's licensed list page https://news.cnyes.com/news/cat/headline , the candidates' "
             "links describe() prints, TWSE announcements "
@@ -537,27 +515,23 @@ def scheduled_prompt(job, model=None):
             "1) News first — no built-in browser here: 2–3 WebSearch queries in one message, then WebFetch "
             "the best 3 articles from 3 different sites in one message, each with a short prompt (headline, "
             "time, one line); stop there. ")
-    call = _pack_call(job)
     return (
         f"[Scheduled report run — nobody is watching] Job `{job['id']}` 「{job['title']}」 is due. "
         f"The user asked for it in these words: 「{job['prompt']}」.\n"
         f"Produce today's report exactly as you would in chat, in the user's language, in as few steps as "
-        f"you can — every step re-reads the whole context and this run has a fixed budget. The working "
-        f"directory is the workspace and python3 imports lib/ from it: do not look around. "
+        f"you can — every step re-reads the whole context and this run has a fixed budget. This run has no "
+        f"shell and cannot read or write files: the web tools and the two report tools are all there is. "
         + news +
-        "Pick 1–3 things special today. 2) Build once, after the search, "
-        f"with extra bricks for those things (at most 3; a brick is [name, {{params}}], not a news item — "
+        "Pick 1–3 things special today. 2) Build once, after the news: call mcp__blave_report__build "
+        f"with extra = the bricks for those things (at most 3; a brick is [name, {{params}}], not a news item — "
         f"a coin: [\"coin_snapshot\", {{\"symbol\": \"XRP\"}}] or [\"relative_to\", {{\"symbol\": \"XRP\"}}], an exchange: "
         f"[\"exchange_snapshot\", {{\"exchange\": \"okx\"}}], a Taiwan stock: [\"tw_institutional\", {{\"symbol\": \"2330\"}}] "
-        f"or [\"price_chart\", {{\"symbol\": \"2330\"}}]; the news goes in the narrative) — one python3 call: "
-        + (f"`{call}; print(pack.describe())`" if call else
-           f"the pack report_jobs/{job['id']}/run.py builds, with extra=[...] added, then print(pack.describe())")
-        + ". describe() prints every figure, rule and the narrative shape: do not read lib/ or references/. "
-        "3) Write the narrative from it (summary is required) and call "
-        "publish(pack, narrative, title=\"<today's conclusion>\") once; refused → fix every listed problem "
-        "and publish(\"<report id>\", narrative, title=...) again. Do not ask anything — nobody will "
-        "answer; a page or step that needs the user is skipped. Do not edit report_jobs/, strategies/, "
-        "control/ or lib/, do not register or change schedules, never place or touch an order. "
+        f"or [\"price_chart\", {{\"symbol\": \"2330\"}}]; the news goes in the narrative). It returns the pack's "
+        "describe(): every figure, rule and the narrative shape — do not read lib/ or references/. "
+        "3) Write the narrative from it (summary is required) and call mcp__blave_report__publish with "
+        "narrative and title=\"<today's conclusion>\" once; refused → fix every listed problem and call it "
+        "again. Do not ask anything — nobody will answer; a page or step that needs the user is skipped. "
+        "Never register or change schedules, never place or touch an order. "
         "If you cannot finish, stop: the plain data report is published for you."
     )
 
@@ -900,11 +874,16 @@ def _try_agent(job, jd, started, interp=None, env=None):
     {"mode": "data", "degraded"?: reason (footnote), "agent_skipped"?: why no agent at all,
     "attempted": a turn was started (counts towards the daily cap), "out"}."""
     if os.environ.get("BLAVE_AGENT_LOCAL") == "1":
-        return {"mode": "data", "agent_skipped": "desktop", "out": ""}   # 電腦版排程這版照舊(下一版)
+        # 電腦版排程這版照舊只出資料版。之後開放時,要走跟雲端同一組:設定隔離、tools= 白名單、
+        # deny-all hook 掛不上就不起回合(agent_turn._arm_scheduled)
+        return {"mode": "data", "agent_skipped": "desktop", "out": ""}
     if job.get("agent_consent") is not True:
         # 登記時沒聽過「每份會扣點」的估價、沒同意的 job(含這版之前登記的全部):照舊出資料版、
         # 不加尾註;重新登記並同意後才叫 agent
         return {"mode": "data", "agent_skipped": "no_consent", "out": ""}
+    if pack_call(job) is None:
+        # 自訂 run.py:排程回合沒有 shell,只會 build 模板／配方,起了也只能退回資料版(稽核 10-26 R1)
+        return {"mode": "data", "agent_skipped": "no_template", "out": ""}
     if single_slot():
         return {"mode": "data", "agent_skipped": "single_slot", "out": ""}
     if interp and _market_closed(job, jd, started, interp, env):

@@ -426,7 +426,7 @@ EXEMPT = [
     ('runtime/report_runner.py', '_is_close_job', 'os.path.join(jd, "run.py")',
      'code', 'code / doc / VERSION text, not a state file'),
     ('runtime/report_runner.py', '_last_line', 'path', 'append', 'log tail'),
-    ('runtime/report_runner.py', '_pack_call', 'os.path.join(jd, "run.py")',
+    ('runtime/sched_pack.py', 'pack_call', 'os.path.join(jd, "run.py")',
      'code', 'code / doc / VERSION text, not a state file'),
     ('runtime/report_runner.py', '_published', 'marker', 'own', 'publish marker written by this runner'),
     ('runtime/report_runner.py', '_runs', 'os.path.join(jd, "runs.jsonl")',
