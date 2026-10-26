@@ -145,13 +145,13 @@ msgstr "一次最多 4 個檔案，多的沒加入。"
 msgid "ws.attachTotalLarge"
 msgstr "附件合計上限 15MB，有檔案沒加入。"
 
-# 建議下一步灰字的讀屏說明(textarea 的 aria-describedby;renderer/suggest.js)。{s} = agent 寫的那一句
-msgid "ws.sugDesc"
-msgstr "建議：{s}。按 Tab 填入。"
-
-# 灰字第一次畫出來時讀屏念一次(polite live region)
+# 建議下一步托盤第一次畫出來時讀屏念一次(polite live region;renderer/suggest.js)。{s} = agent 寫的那一句
 msgid "ws.sugSay"
-msgstr "建議：{s}，按 Tab 填入"
+msgstr "建議：{s}"
+
+# 建議下一步托盤右邊 × 的可及名稱:作廢這句,不算沒用
+msgid "ws.sugDismiss"
+msgstr "關掉建議"
 
 msgid "ws.send"
 msgstr "送出"
@@ -1796,7 +1796,7 @@ msgstr "要 24 小時跑、不靠這台電腦："
 msgid "tr.means.cloudGo"
 msgstr "改用雲端主機"
 
-# 設定 › 一般 的開關:輸入框裡的建議灰字(renderer/suggest.js;只管這台電腦)。陳述句
+# 設定 › 一般 的開關:輸入框托盤的建議下一步(renderer/suggest.js;只管這台電腦)。陳述句
 msgid "set.sug"
 msgstr "建議下一步"
 

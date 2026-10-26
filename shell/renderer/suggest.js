@@ -1,16 +1,15 @@
-/* 建議下一步 v2(spec suggest-next-step-v2 §0、§1):輸入框裡的單行灰字,Tab 或 → 填入、Enter 才送,一打字就藏。
-   在 app.js 之後載入(用它的 $、sessionId、running、composing、attachedFiles、autosize、srSay、trackFeature、motionBaseMs、escTop、lsGet、lsSet)。
+/* 建議下一步 v2(spec suggest-next-step-v2 §0、§1;容器換成輸入框托盤,spec suggest-tray-2026-10-26):
+   點托盤或空輸入框按 → 填入、Enter 才送;Tab 不攔。一打字、組字或加附件,這句就收掉、刪回空白也不回來。
+   在 app.js 之後載入(用它的 $、sessionId、running、composing、attachedFiles、autosize、scrollChat、srSay、trackFeature、motionBaseMs、escTop、lsGet、lsSet)。
    runtime 回合收尾把 <suggest> 剝成 {type:"suggestions", items, kind};這裡先收著,回合結束(沒出錯、沒被停)停一拍才畫。
-   句子只在記憶體:重開 app、換對話都不留——同雲端(逐字稿裡沒有這段)。開關與兩個計數在 localStorage,各台電腦各自計。 */
-const SUG = { pending: null, timer: null, text: null, kind: null, shownOnce: false, used: false, filledText: null, inflight: null };
-// 下面七個跟網頁工作頁同名同值(web tests/check_suggest_v2.js 與 tests/check_web_desktop_parity.js 逐字比對原文)
+   句子只在記憶體:重開 app、換對話都不留——同雲端(逐字稿裡沒有這段)。開關與沒用計數在 localStorage,各台電腦各自計。 */
+const SUG = { pending: null, timer: null, text: null, kind: null, shownOnce: false, used: false, gone: false, files: 0, filledText: null, inflight: null };
+// 下面五個跟網頁工作頁同名同值(web tests/check_suggest_v2.js 與 tests/check_web_desktop_parity.js 逐字比對原文)
 const SUG_MAX_CHARS = 200;
 const SUG_MISS_LIMIT = 5;
-const SUG_TAB_LEARNED = 3;
 const SUG_NAV_PREFIXES = ["帶我看怎麼", "带我看怎么", "show me how"];   // 同 runtime _SUGGEST_NAV_HEADS:舊 runtime 不帶 kind 時自己判
 const SUG_KEY_ON = "ws_sug_on";
 const SUG_KEY_MISS = "ws_sug_miss";
-const SUG_KEY_TAB = "ws_sug_tab";
 
 const sugOn = () => lsGet(SUG_KEY_ON) !== "0";
 const sugNum = (k) => { const n = parseInt(lsGet(k), 10); return n > 0 ? n : 0; };
@@ -45,23 +44,27 @@ function sugTurnEnd(ok) {
   SUG.timer = setTimeout(() => {
     SUG.timer = null;
     if (running) return;   // 停一拍之間又送出了一句:這句已經過期
-    Object.assign(SUG, { text: p.text, kind: p.kind, shownOnce: false, used: false, filledText: null });
+    Object.assign(SUG, { text: p.text, kind: p.kind, shownOnce: false, used: false, gone: false, files: attachedFiles.length, filledText: null });
     sugPaint();
   }, motionBaseMs());
 }
-// 在場 = 有一句沒作廢、沒用過,輸入框是空的、沒有附件、不在組字中、沒有回合在跑。不在場就先等,等到在場那一刻才畫
+// 在場 = 有一句沒作廢、沒用過、沒被打字收掉,輸入框是空的、沒有附件、不在組字中、沒有回合在跑。不在場就先等,等到在場那一刻才畫
 function sugPresent() {
-  return !!SUG.text && !SUG.used && !running && !composing && $("ta").value === "" && !attachedFiles.length;
+  return !!SUG.text && !SUG.used && !SUG.gone && !running && !composing && $("ta").value === "" && !attachedFiles.length;
 }
+// 收掉只設 gone、不清 text:出現過的那句,之後自己打字送出照算一次沒用(v2 §0.3)
+function sugGone() { if (SUG.text && !SUG.used) SUG.gone = true; sugPaint(); }
 function sugPaint() {
-  const show = sugPresent(), field = $("ta-field"), ta = $("ta");
-  field.classList.toggle("has-ghost", show);
-  if (!show) { ta.removeAttribute("aria-describedby"); return; }
-  $("sug-ghost-t").textContent = SUG.text;
-  $("sug-kbd").hidden = sugNum(SUG_KEY_TAB) >= SUG_TAB_LEARNED;
-  $("sug-desc").textContent = t("ws.sugDesc", { s: SUG.text });
-  ta.setAttribute("aria-describedby", "sug-desc");
-  if (SUG.shownOnce) return;
+  if (attachedFiles.length > SUG.files && SUG.text && !SUG.used) SUG.gone = true;   // setAttachments 之後呼叫:多了附件才算「加了」
+  SUG.files = attachedFiles.length;
+  const show = sugPresent(), tray = $("sug-tray");
+  if (show) { $("sug-tray-t").textContent = SUG.text; $("sug-tray-btn").title = SUG.text; }
+  if (tray.hidden !== show) return;
+  // 托盤長高 36:訊息區原本在底部就捲回底部,不然回答尾段會被壓住(§1.4)
+  const box = $("chat-scroll"), atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 4;
+  tray.hidden = !show;
+  if (atEnd) scrollChat(true);   // 走 app.js 的捲到底:chatStick／chatTop 跟著同步
+  if (!show || SUG.shownOnce) return;
   SUG.shownOnce = true;
   trackFeature("suggest_shown");
   srSay(t("ws.sugSay", { s: SUG.text }));
@@ -72,28 +75,41 @@ function sugCollapse() {
   SUG.text = null; SUG.filledText = null;
   sugPaint();
 }
-function sugFill(byKey) {
+function sugFill() {
   const ta = $("ta"), text = SUG.text;
   SUG.used = true; SUG.filledText = text;
   ta.value = text; autosize();
   ta.setSelectionRange(text.length, text.length);
   lsSet(SUG_KEY_MISS, "0");   // 用一次就解除減少狀態
-  if (byKey) lsSet(SUG_KEY_TAB, String(sugNum(SUG_KEY_TAB) + 1));
   trackFeature("suggest_filled");
   sugPaint();
+  ta.focus();
 }
+// Esc 掛在輸入框與托盤鈕本身(比 document 層的 escTop 與 browser.js 先跑):有 modal / 選單、內建瀏覽器展開層開著讓它們先收;
+// 作廢了就 preventDefault,browser.js 看到便不收瀏覽器
+const sugEscOk = (e) => e.key === "Escape" && !e.defaultPrevented && !escTop() && !(typeof BR !== "undefined" && BR.exp);
 $("ta").addEventListener("keydown", (e) => {
   if (e.isComposing || e.keyCode === 229 || !sugPresent()) return;
   const bare = !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
-  if ((e.key === "Tab" || e.key === "ArrowRight") && bare) { e.preventDefault(); sugFill(true); return; }
-  // Esc 掛在輸入框本身(比 document 層的 escTop 與 browser.js 先跑):有 modal / 選單、內建瀏覽器展開層開著讓它們先收;
-  // 作廢了就 preventDefault,browser.js 看到便不收瀏覽器
-  if (e.key !== "Escape" || e.defaultPrevented || escTop() || (typeof BR !== "undefined" && BR.exp)) return;
+  if (e.key === "ArrowRight" && bare) { e.preventDefault(); sugFill(); return; }
+  if (!sugEscOk(e)) return;
   e.preventDefault();
   sugCollapse();
 });
-// 打字就藏、刪回空白再出現(用過的那句不會回來);組字開始先藏,結束再看(composing 由 app.js 先更新)
-["input", "compositionstart", "compositionend"].forEach((k) => $("ta").addEventListener(k, sugPaint));
+// 打字(值非空)、開始組字:這句收掉。compositionend 只重畫(composing 由 app.js 先更新)
+$("ta").addEventListener("input", () => { if ($("ta").value !== "") sugGone(); else sugPaint(); });
+$("ta").addEventListener("compositionstart", sugGone);
+$("ta").addEventListener("compositionend", sugPaint);
+// Shift+Tab 到句子鈕再按 Enter／空白鍵也是 click
+$("sug-tray-btn").addEventListener("click", () => { if (sugPresent()) sugFill(); });
+$("sug-tray-x").addEventListener("click", () => { sugCollapse(); $("ta").focus(); });
+// × 不進 Tab 順序:Shift+Tab 到托盤鈕的鍵盤用戶只剩 Esc 能作廢
+$("sug-tray-btn").addEventListener("keydown", (e) => {
+  if (!sugEscOk(e)) return;
+  e.preventDefault();
+  sugCollapse();
+  $("ta").focus();
+});
 
 /* 送出的結算(§1.4):sendDraft 清空輸入框之前先存快照,回合真的跑起來(app.js r.started)才算。
    沒經過 sendDraft 的入口(重送、卡片、策略庫)沒有快照,不算沒用 */
