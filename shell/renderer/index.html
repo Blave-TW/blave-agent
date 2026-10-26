@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="utf-8">
 <!-- CSP:這個畫面會渲染 LLM 產生的文字,而且能觸發「啟動雲端方案」(花錢)。程式只從本機檔案載,
      不准 inline script / eval / 任何外連;圖是主行程給的 data: URI;inline style 屬性有一處(拖曳區) -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Blave</title>
 <!-- 主題:比所有樣式表早、同步跑,第一幀就是對的明暗 -->
 <script src="theme-boot.js"></script>
@@ -460,14 +460,17 @@
 </div>
 
 <!-- 第一次對話 modal(renderer/intro.js;設計 desktop-first-chat-modal-2026-10-25):新安裝連上 AI 後彈一次。殼 = .scrim + .set-modal 560。
-     排在設定框前面:它開著時設定還能從選單疊上來,Esc 先關上面那層。舞台(三幕示範)由 intro.js 畫;點遮罩不關 -->
+     排在設定框前面:它開著時設定還能從選單疊上來,Esc 先關上面那層。舞台放 landing hero 影片(intro/,src 由 intro.js 開框時才設);點遮罩不關 -->
 <div class="scrim" id="intro-scrim" role="dialog" aria-modal="true" aria-labelledby="intro-title" hidden>
   <div class="set-modal intro-modal" id="intro-modal">
     <div class="modal-head">
       <h6 id="intro-title" data-i18n="intro.title"></h6>
       <button type="button" class="modal-close" id="intro-close" data-i18n-aria="set.close">✕</button>
     </div>
-    <div class="intro-stage" id="intro-stage"></div>
+    <div class="intro-stage" id="intro-stage">
+      <video id="intro-video" muted playsinline preload="auto" aria-hidden="true" disablepictureinpicture disableremoteplayback></video>
+      <button type="button" class="in-play" id="intro-play"></button>
+    </div>
     <div class="modal-foot">
       <button type="button" class="btn-out" id="intro-type" data-i18n="intro.type"></button>
       <button type="button" class="btn-fill" id="intro-ask" data-i18n="intro.ask"></button>

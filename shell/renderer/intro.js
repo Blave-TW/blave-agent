@@ -1,5 +1,5 @@
 /* 第一次對話 modal(spec .claude/output/backend/spec-desktop-first-chat-modal-2026-10-25.md;版面與字照設計
-   .claude/output/designer/desktop-first-chat-modal-2026-10-25)。每個安裝彈一次,彈出那一刻就寫 introSeen(主行程 ui-prefs)。
+   .claude/output/designer/desktop-first-chat-modal-2026-10-25;舞台影片照 intro-video-2026-10-26/embed-spec.md)。每個安裝彈一次,彈出那一刻就寫 introSeen(主行程 ui-prefs)。
    判斷一直重來到彈出、或到確定這次不彈:引擎的 promise 收尾、帳號狀態變了(welcome.js wdPaint)、別的 modal 關掉 / 進工作頁
    (body 上 hidden 屬性的變化)、視窗重新顯示。主行程那一問(intro-check)放最後:其餘條件都成立才問,每次開 app 只問一次。
    主鈕送 intro.msg(起手句的規則:先擋回合中、聊天欄收著先展開、這條對話講過話就開新的);次鈕、✕、Esc 只關框、游標到輸入框。
@@ -24,15 +24,8 @@ function introDecide(o) {
 /* ── 純邏輯到此 ── */
 
 // engine:wait / ok / fail(這次開著失敗過就一直是 fail,之後在卡上重試成功也不彈);check:undefined = 還沒問、null = 問了在路上
-const INTRO = { done: false, engine: "wait", sent: false, check: undefined, queued: false, timers: [], idx: 0, paused: false, ended: false };
-// 三個市場輪流,不替用戶挑市場。曲線是示意(台股有一段回撤、台指期有一段盤整),圖上只有年份,沒有績效數字
-const INTRO_DEMOS = [
-  { mk: "crypto", x: ["2020", "2022", "2024"], pts: [0, 2, 1, 4, 6, 5, 9, 12, 10, 8, 7, 9, 11, 10, 13, 15, 14, 17, 16, 19, 22, 20, 23, 25, 24, 27, 30, 29, 31, 33] },
-  { mk: "tw", x: ["2015", "2018", "2021"], pts: [6, 7, 9, 8, 10, 11, 10, 12, 13, 11, 8, 6, 5, 6, 8, 9, 11, 12, 11, 13, 14, 13, 15, 16, 15, 17, 18, 17, 19, 20] },
-  { mk: "txf", x: ["2015", "2018", "2021"], pts: [4, 5, 4, 6, 8, 7, 7, 7, 6, 7, 6, 7, 6, 6, 7, 6, 9, 11, 10, 12, 11, 9, 8, 9, 11, 13, 12, 14, 13, 15] },
-];
-// 時間軸(設計定稿):打字每字 70、打完停 900、策略 2400、回測 3600;三個播完約 24 秒,停在最後一格
-const INTRO_T = { lead: 300, ch: 70, hold: 900, strat: 2400, bt: 3600 };
+// fresh = 減少動態的初始狀態(停在最後一格、還沒按過播放);resume = 視窗藏起來那一刻正在播
+const INTRO = { done: false, engine: "wait", sent: false, check: undefined, queued: false, fresh: false, resume: false };
 const INTRO_PLAY = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>';
 const INTRO_PAUSE = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>';
 
@@ -74,67 +67,40 @@ function introEngineWatch() {
 }
 introEngineWatch();
 
-/* ── 示範舞台 ── */
-const inEl = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
-// key 先組好再查;三個市場每一欄兩語齊不齊由 tests/check_shell_intro.js 列舉
-const inK = (mk, f) => { const k = "intro." + mk + "." + f; return t(k); };
-function inPath(pts) {
-  const n = pts.length - 1, max = Math.max(...pts);
-  return pts.map((v, i) => (i ? "L" : "M") + (i / n * 100).toFixed(2) + " " + (92 - v / max * 84).toFixed(2)).join(" ");
+/* ── 示範舞台:landing hero 影片的 md 檔,播一次停在最後一格(回測結果頁)。只有鈕能操作,點影片沒反應 ── */
+// 介面只有 en / zh(i18n.js setLang)。檔是從 web landing 複製的:landing 重錄時 renderer/intro/ 的四個檔要同批換
+function introMedia(lang) {
+  const base = "intro/hero_demo" + (lang === "zh" ? "_zh" : "");
+  return { src: base + "_md.mp4", poster: base + "_poster.jpg" };
 }
-function introStage(still) {
-  const st = $("intro-stage"); st.textContent = ""; st.className = "intro-stage" + (still ? " still" : "");
-  const s1 = inEl("div", "in-scene in-sc1"), idea = inEl("div", "in-idea");
-  idea.append(inEl("span", "in-idea-t")); if (!still) { const c = inEl("span", "in-caret"); c.setAttribute("aria-hidden", "true"); idea.append(c); }
-  s1.append(inEl("div", "in-cap", t("intro.sc1")), idea);
-  const s2 = inEl("div", "in-scene in-sc2"), card = inEl("div", "in-strat");
-  card.append(inEl("div", "in-strat-n"), inEl("dl", "in-rules")); s2.append(inEl("div", "in-cap", t("intro.sc2")), card);
-  const s3 = inEl("div", "in-scene in-sc3"), bt = inEl("div", "in-bt"), top = inEl("div", "in-bt-top"), plot = inEl("div", "in-plot");
-  top.append(inEl("span", "in-bt-tab", t("intro.bt")), inEl("span", "in-bt-name"), inEl("span", "in-tag", t("intro.tag")));
-  plot.innerHTML = '<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><line class="grid" x1="0" x2="100" y1="8" y2="8"/><line class="grid" x1="0" x2="100" y1="50" y2="50"/><line class="grid" x1="0" x2="100" y1="92" y2="92"/><path class="eq"/></svg>';
-  plot.append(inEl("div", "in-cover"));
-  bt.append(top, plot, inEl("div", "in-xax")); s3.append(inEl("div", "in-cap", t("intro.sc3")), bt);
-  st.append(s1, s2, s3);
-  if (still) return;
-  const dots = inEl("div", "in-dots"); dots.setAttribute("aria-hidden", "true"); dots.append(inEl("i"), inEl("i"), inEl("i"));
-  const play = inEl("button", "in-play"); play.type = "button"; play.id = "intro-play";
-  play.addEventListener("click", introPlayClick);
-  st.append(dots, play);
-}
-function introFill(i) {
-  const d = INTRO_DEMOS[i], st = $("intro-stage");
-  st.querySelector(".in-strat-n").textContent = inK(d.mk, "name");
-  const dl = st.querySelector(".in-rules"); dl.textContent = "";
-  [["intro.entry", "in"], ["intro.exit", "out"], ["intro.bt", "span"]].forEach(([k, f]) => dl.append(inEl("dt", null, t(k)), inEl("dd", null, inK(d.mk, f))));
-  st.querySelector(".in-bt-name").textContent = inK(d.mk, "name");
-  st.querySelector(".eq").setAttribute("d", inPath(d.pts));
-  const x = st.querySelector(".in-xax"); x.textContent = ""; d.x.concat(t("intro.today")).forEach((y) => x.append(inEl("span", null, y)));
-  st.querySelectorAll(".in-dots i").forEach((e, k) => e.classList.toggle("on", k === i));
-}
-const inShow = (k) => $("intro-stage").querySelectorAll(".in-scene").forEach((s, i) => s.classList.toggle("on", i === k));
-function introStop() { INTRO.timers.forEach(clearTimeout); INTRO.timers = []; }
 function introBtn(icon, key) { const b = $("intro-play"); if (!b) return; b.innerHTML = icon; b.setAttribute("aria-label", t(key)); }
-function introRun(i) {
-  introStop(); INTRO.idx = i; INTRO.paused = false; INTRO.ended = false;
-  const st = $("intro-stage"), d = INTRO_DEMOS[i], idea = inK(d.mk, "idea"), out = st.querySelector(".in-idea-t");
-  st.classList.remove("static"); introFill(i); introBtn(INTRO_PAUSE, "intro.pause");
-  out.textContent = ""; inShow(0);
-  const at = (ms, fn) => INTRO.timers.push(setTimeout(fn, ms));
-  let ms = INTRO_T.lead;
-  [...idea].forEach((_, k) => at(ms + k * INTRO_T.ch, () => { out.textContent = idea.slice(0, k + 1); }));
-  ms += idea.length * INTRO_T.ch + INTRO_T.hold;
-  at(ms, () => inShow(1)); ms += INTRO_T.strat;
-  at(ms, () => inShow(2)); ms += INTRO_T.bt;
-  at(ms, () => (i < INTRO_DEMOS.length - 1 ? introRun(i + 1) : introPause(true)));
+// 載不到:留 poster、藏鈕,不出錯誤字。關框卸 src、或還沒載到就被暫停(AbortError)都不算
+function introFail() { if ($("intro-video").getAttribute("src")) $("intro-play").hidden = true; }
+function introPlay() {
+  const v = $("intro-video");
+  v.play().catch((e) => { if (v.readyState === 0 && !(e && e.name === "AbortError")) introFail(); });
 }
-// 暫停 / 播完:停在這一個市場的結果格
-function introPause(end) {
-  introStop(); INTRO.paused = true; INTRO.ended = !!end;
-  const st = $("intro-stage"); st.classList.add("static"); introFill(INTRO.idx);
-  st.querySelector(".in-idea-t").textContent = inK(INTRO_DEMOS[INTRO.idx].mk, "idea"); inShow(2);
-  introBtn(INTRO_PLAY, end ? "intro.replay" : "intro.resume");
+function introPlayClick() {
+  const v = $("intro-video");
+  if (v.ended || INTRO.fresh) { INTRO.fresh = false; v.currentTime = 0; }
+  else if (!v.paused) { v.pause(); return; }
+  introPlay();
 }
-function introPlayClick() { if (!INTRO.paused) introPause(false); else introRun(INTRO.ended ? 0 : INTRO.idx); }
+(() => {
+  const v = $("intro-video");
+  v.addEventListener("play", () => introBtn(INTRO_PAUSE, "intro.pause"));
+  v.addEventListener("pause", () => { if (!v.ended) introBtn(INTRO_PLAY, "intro.resume"); });
+  v.addEventListener("ended", () => introBtn(INTRO_PLAY, "intro.replay"));
+  v.addEventListener("loadedmetadata", () => { if (INTRO.fresh) v.currentTime = Math.max(0, v.duration - 0.05); });
+  v.addEventListener("error", introFail);
+  $("intro-play").addEventListener("click", introPlayClick);
+})();
+document.addEventListener("visibilitychange", () => {
+  if ($("intro-scrim").hidden) return;
+  const v = $("intro-video");
+  if (document.visibilityState === "hidden") { INTRO.resume = !v.paused; if (INTRO.resume) v.pause(); }
+  else if (INTRO.resume) { INTRO.resume = false; introPlay(); }
+});
 
 /* ── 開 / 關 ── */
 function introShow() {
@@ -142,10 +108,12 @@ function introShow() {
   INTRO.done = true; introMo.disconnect();
   Promise.resolve().then(() => window.blave.introSeen()).catch(() => {});
   trackFeature("intro_shown");
-  const still = reducedMotion();
-  introStage(still);
-  if (still) { introFill(0); $("intro-stage").querySelector(".in-idea-t").textContent = inK(INTRO_DEMOS[0].mk, "idea"); }
-  else introRun(0);
+  // 減少動態:不自動播,loadedmetadata 後停在最後一格,鈕是「播放示範」
+  const v = $("intro-video"), m = introMedia(LANG), still = reducedMotion();
+  INTRO.fresh = still; INTRO.resume = false; $("intro-play").hidden = false;
+  introBtn(INTRO_PLAY, still ? "intro.play" : "intro.resume");
+  v.muted = true; v.poster = m.poster; v.src = m.src;
+  if (!still) introPlay();
   $("view-ws").inert = true;
   sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));
@@ -153,7 +121,9 @@ function introShow() {
 }
 function introHide() {
   const sc = $("intro-scrim"); if (sc.hidden) return false;
-  introStop(); sc.classList.remove("open"); sc.hidden = true;
+  // 每個安裝只彈一次,不留解碼器
+  const v = $("intro-video"); v.pause(); v.removeAttribute("src"); v.load(); INTRO.fresh = false;
+  sc.classList.remove("open"); sc.hidden = true;
   $("view-ws").inert = false;
   return true;
 }

@@ -4,7 +4,8 @@
 //   ③ introEngineWatch:快照已是失敗就不叫 ensureEngine(會從頭重裝);這次失敗過,之後重試成功也不算可用
 //   ④ main.js introCheck 接暫存 sqlite(要 node:sqlite,Node 22.5+;沒有就只做靜態 SQL 檢查):
 //      檔不在 / 有 user turn(非 desktop- 前綴也算)/ 只有 assistant / 開檔失敗 / 沒有 turns 表 / ui-prefs 壞掉 / 已有 introSeen
-//   ⑤ 接線:submitMessage 過了空句與回合中那道才記、escTop、wdPaint、preload、IPC 預設值、載入順序、四個埋點字面、三個市場兩語齊
+//   ⑤ 接線:submitMessage 過了空句與回合中那道才記、escTop、wdPaint、preload、IPC 預設值、載入順序、四個埋點字面
+//   ⑥ 示範影片:兩支片與兩張 poster 在 renderer/intro/、introMedia 的語言對應、CSP 開 media-src、intro.play 兩語有字
 // 跑法:node tests/check_shell_intro.js
 const fs = require("fs"), path = require("path"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer");
@@ -136,10 +137,22 @@ async function syncCase(reply, patch) {
   for (const n of ["intro_shown", "intro_send"]) ok("埋點 " + n + " 是字面送出點", src.includes('trackFeature("' + n + '")'));
   ok("埋點 intro_type / intro_close 是字面送出點", src.includes('trackFeature(how === "type" ? "intro_type" : "intro_close")'));
   const vm = require("vm"), S = (() => { const sb = {}; vm.runInNewContext(read(path.join(R, "strings.js")) + "\nthis.S = STRINGS;", sb); return sb.S; })();
-  const miss = [];
-  for (const mk of ["crypto", "tw", "txf"]) for (const f of ["idea", "name", "in", "out", "span"]) for (const l of ["zh", "en"]) if (!S[l]["intro." + mk + "." + f]) miss.push(l + ":intro." + mk + "." + f);
-  ok("三個市場 × 五欄 × 兩語都有字", !miss.length, miss.join());
   ok("送出句是 intro.msg(文案長度豁免的形狀),鈕字另一個 key", src.includes('submitMessage(t("intro.msg"))') && /data-i18n="intro\.ask"/.test(html) && S.zh["intro.msg"] !== S.zh["intro.ask"]);
+
+  // ⑥ 示範影片
+  const MEDIA = ["hero_demo_md.mp4", "hero_demo_zh_md.mp4", "hero_demo_poster.jpg", "hero_demo_zh_poster.jpg"];
+  const gone = MEDIA.filter((f) => !fs.existsSync(path.join(R, "intro", f)) || !fs.statSync(path.join(R, "intro", f)).size);
+  ok("兩支片、兩張 poster 都在 renderer/intro/(不是空檔)", !gone.length, gone.join());
+  const introMedia = new Function(cutFn(src, "introMedia") + "; return introMedia;")();
+  const want = { zh: ["intro/hero_demo_zh_md.mp4", "intro/hero_demo_zh_poster.jpg"], en: ["intro/hero_demo_md.mp4", "intro/hero_demo_poster.jpg"] };
+  for (const [lang, w] of [["zh", want.zh], ["en", want.en], ["cn", want.en], [undefined, want.en]]) {
+    const m = introMedia(lang);
+    ok("語言 " + lang + " → " + w[0] + " + " + w[1], m.src === w[0] && m.poster === w[1], JSON.stringify(m));
+  }
+  ok("introMedia 給的路徑都對得到檔", ["zh", "en"].every((l) => { const m = introMedia(l); return fs.existsSync(path.join(R, m.src)) && fs.existsSync(path.join(R, m.poster)); }));
+  ok("introShow 照當下的 LANG 挑檔", /introMedia\(LANG\)/.test(cutFn(src, "introShow")));
+  ok("index.html CSP 開 media-src 'self'", /http-equiv="Content-Security-Policy" content="[^"]*\bmedia-src 'self';/.test(html));
+  ok("intro.play 兩語有字", !!(S.zh["intro.play"] && S.en["intro.play"]), JSON.stringify([S.zh["intro.play"], S.en["intro.play"]]));
 
   console.log(red ? `\n${red} 紅` : "\n全綠");
   process.exit(red ? 1 : 0);
