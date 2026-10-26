@@ -621,7 +621,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
    鎖死的話用戶得去刪檔。成功跑過一輪標記就會自己消失。 */
 .mp-row.is-na { color: var(--ink-3); }
 /* 綁卡前額度用不了的型號:照列、選不了(app.js mpLocked);右邊小字講怎麼解開 */
-.mp-row.is-locked { color: var(--ink-3); cursor: default; }
+.mp-row.is-locked { color: var(--ink-3); cursor: not-allowed; }
+.mp-row.is-locked:hover { background: none; }   /* canon › Disabled:無 hover */
 
 /* ── sidebar 策略列 ───────────────────────────────
    一列 = 名字 + Sharpe。選中 = 純加粗 + 淡底(canon › Active 一律灰階)。 */

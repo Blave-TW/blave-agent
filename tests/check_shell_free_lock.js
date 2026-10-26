@@ -5,6 +5,7 @@
 //   3. free_only true → false:換回原本的型號、unavailable 清掉;一開始就是 false 也清(複審 P2);欄位不存在不鎖不清
 //   4. 型錄先回、帳號狀態後回:還是會上鎖(反過來也一樣)
 //   5. 撞到 404 且 freeOnly:走暫換、fault.freeLocked、鈕是綁卡,不呼叫 mpMarkUnavailable;freeOnly 未知照舊標記
+//   6. 型錄空 + free-only:畫面送 null,主行程 fallback 送 V4 Pro(整合稽核 P2-1)
 // 跑法:node tests/check_shell_free_lock.js
 const fs = require("fs"), path = require("path");
 const src = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
@@ -41,8 +42,8 @@ function world(o = {}) {
   const saved = [], tracked = [], marked = [], binds = [];
   const prefs = o.prefs || { blave: { model: o.saved || SONNET, efforts: {}, ...(o.unavailable ? { unavailable: o.unavailable.slice() } : {}) } };
   let resolveOpt; const optP = new Promise((r) => { resolveOpt = r; });
-  const window = { blave: { modelOptions: async () => (o.lateCatalog ? optP : CATALOG), loadModelPrefs: async () => prefs, saveModelPrefs: (p) => saved.push(JSON.parse(JSON.stringify(p))), openExternal() {} } };
-  const STR = { "mp.locked": "綁卡或儲值後可用", "mp.na": "你的方案沒有", "mp.default": "預設", "fault.freeLocked": "「{model}」要綁卡或儲值才能用。已換回「{to}」。",
+  const window = { blave: { modelOptions: async () => (o.lateCatalog ? optP : o.catalog || CATALOG), loadModelPrefs: async () => prefs, saveModelPrefs: (p) => saved.push(JSON.parse(JSON.stringify(p))), openExternal() {} } };
+  const STR = { "mp.locked": "其他模型綁卡或儲值後可用", "mp.na": "你的方案沒有", "mp.default": "預設", "fault.freeLocked": "「{model}」要綁卡或儲值才能用，這一輪沒有跑。已換回「{to}」。",
     "fault.noModelSwitched": "你的帳號用不了「{model}」，這一輪沒有跑。已換回「{to}」。", "acct.addCard": "前往綁卡", "fault.noModelBtn": "選別的模型" };
   const t = (k, v) => { let s = STR[k] || k; if (v) for (const x in v) s = s.split("{" + x + "}").join(v[x]); return s; };
   const panelKey = block('$("mp-panel").addEventListener("keydown", (e) => {');
@@ -78,9 +79,10 @@ const STATUS = (free_only) => (free_only === undefined ? { can_run: true } : { c
 
     // 2. 列與點擊
     const s = row(w, "Claude Sonnet 5.5"), f = row(w, "DeepSeek V4 Flash"), p = row(w, "DeepSeek V4 Pro");
-    ok("2. 鎖住的列照列:aria-disabled、is-locked、右邊小字「綁卡或儲值後可用」;Pro 不鎖",
-      rows(w).length === 3 && s.attrs["aria-disabled"] === "true" && s.cls.has("is-locked") && s.children[1].textContent === "綁卡或儲值後可用"
-      && f.attrs["aria-disabled"] === "true" && !("aria-disabled" in p.attrs), rows(w).map((r) => r.attrs));
+    ok("2. 鎖住的列照列、只留名字:aria-disabled、is-locked、aria-describedby 指清單下那一行;Pro 不鎖",
+      rows(w).length === 3 && s.attrs["aria-disabled"] === "true" && s.cls.has("is-locked") && s.children.length === 1
+      && s.attrs["aria-describedby"] === "mp-lock-note" && f.attrs["aria-disabled"] === "true" && !("aria-disabled" in p.attrs) && !("aria-describedby" in p.attrs), rows(w).map((r) => r.attrs));
+    ok("2. 原因只講一次:#mp-lock-note「其他模型綁卡或儲值後可用」出現", w.$("mp-lock-note").hidden === false && w.$("mp-lock-note").textContent === "其他模型綁卡或儲值後可用");
     s.click(1);
     ok("2. 滑鼠點鎖住的列:選擇不變、送 mp_locked_click", w.M.MP.model === PRO && w.tracked.join() === "mp_locked_click", [w.M.MP.model, w.tracked]);
     w.tracked.length = 0;
@@ -92,10 +94,16 @@ const STATUS = (free_only) => (free_only === undefined ? { can_run: true } : { c
     w.M.panelKey({ key: "ArrowDown", target: row(w, "DeepSeek V4 Pro"), preventDefault() {} });
     ok("2. 方向鍵從 Pro 往下:Flash、Sonnet 都鎖 → 繞回 Pro 不動、沒送事件", w.M.MP.model === PRO && w.tracked.length === 0, [w.M.MP.model, w.tracked]);
 
+    // 讀不到帳號狀態(accountStatus 回 null):不等於沒鎖,沿用上一次(設計稽核 #4)
+    w.M.acctSet(null);
+    ok("2. acctSet(null) 不解鎖:還是 Pro、Sonnet 照鎖、displaced 留著、沒存檔蓋掉用戶的型號",
+      w.M.MP.model === PRO && w.M.MP.freeOnly === true && w.M.MP.displaced === SONNET && row(w, "Claude Sonnet 5.5").attrs["aria-disabled"] === "true"
+      && w.saved.every((x) => x.blave.model === SONNET), [w.M.MP.model, w.M.MP.freeOnly, w.saved]);
+
     // 3. 解鎖:換回原本的 Sonnet
     w.M.acctSet(STATUS(false));
     ok("3. free_only true → false:換回 Sonnet、displaced 清掉、列不再鎖",
-      w.M.MP.model === SONNET && w.M.MP.displaced === null && !("aria-disabled" in row(w, "Claude Sonnet 5.5").attrs), [w.M.MP.model, w.M.MP.displaced]);
+      w.M.MP.model === SONNET && w.M.MP.displaced === null && !("aria-disabled" in row(w, "Claude Sonnet 5.5").attrs) && w.$("mp-lock-note").hidden === true, [w.M.MP.model, w.M.MP.displaced]);
     w.M.panelKey({ key: "ArrowDown", target: row(w, "Claude Sonnet 5.5"), preventDefault() {} });
     ok("3. 解鎖後方向鍵照常走到下一列(Pro)", w.M.MP.model === PRO, w.M.MP.model);
   }
@@ -141,7 +149,7 @@ const STATUS = (free_only) => (free_only === undefined ? { can_run: true } : { c
     const f = w.M.classifyFault("There's an issue with the selected model (claude-sonnet-5-5). It may not exist or you may not have access to it.");
     ok("5. freeOnly + 撞到 404:暫換回 Pro、fault.freeLocked、鈕是綁卡,不呼叫 mpMarkUnavailable",
       w.marked.length === 0 && w.M.MP.model === PRO && w.M.MP.displaced === SONNET
-      && f.text === "「Claude Sonnet 5.5」要綁卡或儲值才能用。已換回「DeepSeek V4 Pro」。" && f.label === "前往綁卡", [w.marked, w.M.MP.model, f]);
+      && f.text === "「Claude Sonnet 5.5」要綁卡或儲值才能用，這一輪沒有跑。已換回「DeepSeek V4 Pro」。" && f.label === "前往綁卡", [w.marked, w.M.MP.model, f]);
     f.act();
     ok("5. 鈕送 bind_model", w.binds.join() === "bind_model", w.binds);
   }
@@ -152,5 +160,40 @@ const STATUS = (free_only) => (free_only === undefined ? { can_run: true } : { c
     w.M.classifyFault("There's an issue with the selected model (claude-sonnet-5-5). It may not exist or you may not have access to it.");
     ok("5. 還不知道 free_only:照舊 mpMarkUnavailable(回合結束重讀後由 mpFreeSync 清)", w.marked.join() === SONNET, w.marked);
   }
+  // 6. 型錄空(抓失敗或還沒回來)+ free-only:畫面送 null,主行程的 fallback 要是 V4 Pro,不是 Sonnet(整合稽核 P2-1)
+  {
+    const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+    const mfn = (name) => { const i = mainSrc.indexOf("function " + name + "("); let d = 0; for (let k = mainSrc.indexOf("{", mainSrc.indexOf(")", i)); k < mainSrc.length; k++) { if (mainSrc[k] === "{") d++; else if (mainSrc[k] === "}" && --d === 0) return mainSrc.slice(i, k + 1); } };
+    const lit = (n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0];
+    const args = new Function(`${lit("CLAUDE_DEFAULT")}\n${lit("BLAVE_DEFAULT")}\n${mfn("turnModelArgs")}\n return turnModelArgs;`)();
+    const w = world({ saved: SONNET, catalog: { models: [], defaultModel: null } });
+    w.M.acctSet(STATUS(true));
+    let err = null; try { await w.M.mpInit("blave"); w.M.acctSet(STATUS(true)); } catch (e) { err = String(e); }
+    ok("6. 型錄空 + free-only:mpInit / acctSet 不炸、選擇是 null(交給主行程的 fallback)", err === null && w.M.MP.model === null, [err, w.M.MP.model]);
+    const sent = args({ relayPreset: null, model: w.M.MP.model, useCodex: false, useBlave: true });
+    ok("6. 主行程對 Blave 線的 null 送 deepseek/deepseek-v4-pro(free-only 也放行、不撞 404)", sent.join(" ") === "--model " + PRO, sent);
+    ok("6. 自己的 Claude 線照舊送 Sonnet、Codex 不帶、選了就送選的、自帶金鑰照它的表",
+      args({ model: null, useCodex: false, useBlave: false }).join(" ") === "--model claude-sonnet-5-5"
+      && args({ model: null, useCodex: true, useBlave: false }).length === 0
+      && args({ model: SONNET, useBlave: true }).join(" ") === "--model " + SONNET
+      && args({ relayPreset: { models: ["a"], defaultModel: "a" }, model: "x" }).join(" ") === "--model a");
+  }
+  // 換引擎再切回 Blave、這時帳號狀態讀不到:鎖照舊(mpInit 不重設 freeOnly)
+  {
+    const w = world();
+    w.M.acctSet(STATUS(true));
+    await w.M.mpInit("blave");
+    await w.M.mpInit("codex");
+    w.M.acctSet(null);
+    await w.M.mpInit("blave");
+    ok("7. 切到 Codex 再切回 Blave + acctSet(null):仍鎖、送 Pro、Sonnet 列鎖住、存的型號還是 Sonnet",
+      w.M.MP.freeOnly === true && w.M.MP.model === PRO && w.M.MP.displaced === SONNET
+      && row(w, "Claude Sonnet 5.5").attrs["aria-disabled"] === "true" && w.prefs.blave.model === SONNET, [w.M.MP.freeOnly, w.M.MP.model, w.M.MP.displaced]);
+  }
+  // 登出才清鎖(acctSignOut;那支要整個登入流程,只釘接線)
+  ok("7. 登出:acctSignOut 把 freeOnly 清掉並收斂(換回被鎖前的型號)", /hasToken = false; acct = null;[^\n]*\n[^\n]*wdPaint\(\);[^\n]*\n\s*MP\.freeOnly = false; if \(mpFreeSync\(\)\) mpPaint\(\);/.test(src));
+  // 鎖住列沒有 hover、游標 not-allowed(canon › Disabled;設計稽核 #1)
+  const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8");
+  ok("7. CSS:.mp-row.is-locked 游標 not-allowed、:hover 不鋪底", /\.mp-row\.is-locked \{[^}]*cursor: not-allowed;/.test(css) && /\.mp-row\.is-locked:hover \{ background: none; \}/.test(css));
   console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();
