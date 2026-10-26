@@ -66,6 +66,9 @@ t("B4 禁止在同一訊號加東西只管主動提的建議", "（只管你主�
 t("_SUGGEST_MAX_ITEMS = 1", at._SUGGEST_MAX_ITEMS == 1)
 _, items = at.extract_suggestions("好。\n<suggest>\n一\n二\n三\n</suggest>")
 t("extract_suggestions 只留第一句", items == ["一"], items)
+_, i61 = at.extract_suggestions("好。\n<suggest>\n" + "長" * 61 + "\n</suggest>")
+_, i60 = at.extract_suggestions("好。\n<suggest>\n" + "長" * 60 + "\n</suggest>")
+t("extract_suggestions 上限 60(同顯示端):61 字整句丟、60 字照留", at._SUGGEST_MAX_CHARS == 60 and i61 == [] and i60 == ["長" * 60], (i61, i60))
 for line, want in (("帶我看怎麼把 A 加進策略組合", "nav"), ("  带我看怎么先绑模拟盘账户", "nav"), ("SHOW ME HOW to add A", "nav"),
                    ("Show me how to go live", "nav"), ("回測 A", "step"), ("掃 A 的參數找穩定區", "step"), ("Mostrar cómo", "step"), ("", "step")):
     t(f"suggest_kind({line!r}) = {want}", at.suggest_kind(line) == want)

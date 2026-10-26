@@ -191,7 +191,7 @@ _SUGGEST_BLOCK_RE = re.compile(r"[ \t]*<suggest>(.*?)</suggest>[ \t]*", re.S)
 # 回覆被截斷(interrupt/max_turns)時可能只剩未閉合的開頭——也要剝乾淨。
 _SUGGEST_OPEN_TAIL_RE = re.compile(r"[ \t]*<suggest>(?:(?!</suggest>).)*$", re.S)
 _SUGGEST_MAX_ITEMS = 1
-_SUGGEST_MAX_CHARS = 80
+_SUGGEST_MAX_CHARS = 60  # 同顯示端 SUG_MAX_CHARS(電腦版 suggest.js、web 工作頁):超過整句丟、不截
 # 導航句的固定起手:suggestions chunk 的 kind 照它判,其他語系一律算 step。舊 runtime 不帶 kind,客戶端用同一套自己判。
 _SUGGEST_NAV_HEADS = ("帶我看怎麼", "带我看怎么", "show me how")
 # 中文建議句的半形標點轉全形——prompt 講了模型照樣寫半形逗號(同 Markdown 表格,

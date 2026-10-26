@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-- **建議下一步的導航句也有長度上限(`agent_turn._SUGGEST_RULE`、`_SUGGEST_ANCHORS` normal／reduced;Wei 10-26:托盤手機最多三行,但建議不能長到用戶懶得看)**:「帶我看怎麼…」原本不限長度、要求策略名寫全;現在中文 ≤28 字(策略名照算、空白不算)、英文 ≤60 字元,一般句維持 ≤20／48;策略名太長用用戶慣稱的短名,縮短只縮名字、不改起手。只改 prompt,`extract_suggestions` 的 `_SUGGEST_MAX_CHARS`(80)不動;顯示端(電腦版 `SUG_MAX_CHARS`、web 同值)另降到 60、超過整句丟。測試 `tests/check_suggest_rule_026.py`(舊碼 4 條紅)。
+- **建議下一步的導航句也有長度上限(`agent_turn._SUGGEST_RULE`、`_SUGGEST_ANCHORS` normal／reduced;Wei 10-26:托盤手機最多三行,但建議不能長到用戶懶得看)**:「帶我看怎麼…」原本不限長度、要求策略名寫全;現在中文 ≤28 字(策略名照算、空白不算)、英文 ≤60 字元,一般句維持 ≤20／48;策略名太長用用戶慣稱的短名,縮短只縮名字、不改起手。`extract_suggestions` 的 `_SUGGEST_MAX_CHARS` 由 80 降到 60,跟顯示端(電腦版 `SUG_MAX_CHARS`、web 同值)一致,超過整句丟(丟掉時照舊不改寫進正文)。測試 `tests/check_suggest_rule_026.py`(舊碼 5 條紅)。
 
 ## 1.1.141 — 2026-10-26(desktop 0.1.32)
 
