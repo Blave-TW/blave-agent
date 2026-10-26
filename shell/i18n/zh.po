@@ -8994,81 +8994,9 @@ msgstr "繼續示範"
 msgid "intro.replay"
 msgstr "重播示範"
 
-# 示範三幕的分鏡小字
-msgid "intro.sc1"
-msgstr "說一句想法"
-
-msgid "intro.sc2"
-msgstr "寫成一支策略"
-
-msgid "intro.sc3"
-msgstr "跑出回測"
-
-# 策略卡的規則標籤;intro.bt 同時是回測卡的分頁字
-msgid "intro.entry"
-msgstr "進場"
-
-msgid "intro.exit"
-msgstr "出場"
-
-msgid "intro.bt"
-msgstr "回測"
-
-# 回測卡右上的標記:圖是示意,不是真的回測
-msgid "intro.tag"
-msgstr "示意"
-
-# 回測卡 x 軸最右端
-msgid "intro.today"
-msgstr "今天"
-
-# 示範一:加密
-msgid "intro.crypto.idea"
-msgstr "BTC 站上 200 日均線就買，跌破就賣"
-
-msgid "intro.crypto.name"
-msgstr "BTC 均線趨勢"
-
-msgid "intro.crypto.in"
-msgstr "日線收盤站上 200 日均線"
-
-msgid "intro.crypto.out"
-msgstr "收盤跌破 200 日均線"
-
-msgid "intro.crypto.span"
-msgstr "2020 年至今"
-
-# 示範二:台股
-msgid "intro.tw.idea"
-msgstr "台積電站上 60 日均線就買，跌破就賣"
-
-msgid "intro.tw.name"
-msgstr "台積電均線"
-
-msgid "intro.tw.in"
-msgstr "日線收盤站上 60 日均線"
-
-msgid "intro.tw.out"
-msgstr "收盤跌破 60 日均線"
-
-msgid "intro.tw.span"
-msgstr "2015 年至今"
-
-# 示範三:台指期
-msgid "intro.txf.idea"
-msgstr "台指期突破 20 日高點做多，跌破 10 日低點出場"
-
-msgid "intro.txf.name"
-msgstr "台指期突破"
-
-msgid "intro.txf.in"
-msgstr "收盤突破 20 日高點做多"
-
-msgid "intro.txf.out"
-msgstr "收盤跌破 10 日低點"
-
-msgid "intro.txf.span"
-msgstr "2015 年至今"
+# 減少動態時舞台停在最後一格,鈕的 aria-label(按了從頭播)
+msgid "intro.play"
+msgstr "播放示範"
 
 # Bitget 換帳戶類型後倉位對不上、自動暫停(halt.mismatch;trade.js trHaltReasonText)
 msgid "tr.haltBitgetMismatchUta"

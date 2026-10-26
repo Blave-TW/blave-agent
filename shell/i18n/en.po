@@ -8967,74 +8967,8 @@ msgstr "Resume Demo"
 msgid "intro.replay"
 msgstr "Replay Demo"
 
-msgid "intro.sc1"
-msgstr "Say an Idea"
-
-msgid "intro.sc2"
-msgstr "Write It as a Strategy"
-
-msgid "intro.sc3"
-msgstr "Run a Backtest"
-
-msgid "intro.entry"
-msgstr "Entry"
-
-msgid "intro.exit"
-msgstr "Exit"
-
-msgid "intro.bt"
-msgstr "Backtest"
-
-msgid "intro.tag"
-msgstr "Illustrative"
-
-msgid "intro.today"
-msgstr "Today"
-
-msgid "intro.crypto.idea"
-msgstr "Buy BTC above its 200-day MA, sell below"
-
-msgid "intro.crypto.name"
-msgstr "BTC MA Trend"
-
-msgid "intro.crypto.in"
-msgstr "Daily close above the 200-day MA"
-
-msgid "intro.crypto.out"
-msgstr "Close below the 200-day MA"
-
-msgid "intro.crypto.span"
-msgstr "2020 to today"
-
-msgid "intro.tw.idea"
-msgstr "Buy TSMC above its 60-day MA, sell below"
-
-msgid "intro.tw.name"
-msgstr "TSMC MA"
-
-msgid "intro.tw.in"
-msgstr "Daily close above the 60-day MA"
-
-msgid "intro.tw.out"
-msgstr "Close below the 60-day MA"
-
-msgid "intro.tw.span"
-msgstr "2015 to today"
-
-msgid "intro.txf.idea"
-msgstr "Go long TAIEX futures on a 20-day high, exit on a 10-day low"
-
-msgid "intro.txf.name"
-msgstr "TAIEX Futures Breakout"
-
-msgid "intro.txf.in"
-msgstr "Long on a close above the 20-day high"
-
-msgid "intro.txf.out"
-msgstr "Close below the 10-day low"
-
-msgid "intro.txf.span"
-msgstr "2015 to today"
+msgid "intro.play"
+msgstr "Play Demo"
 
 # Bitget 換帳戶類型後倉位對不上、自動暫停(halt.mismatch;trade.js trHaltReasonText)
 msgid "tr.haltBitgetMismatchUta"
