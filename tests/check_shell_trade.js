@@ -1059,6 +1059,14 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       J(trEventText("venue_mode_switched", { venue: "bitget", mode: "uta" }).slice(0, 3)) === J(["tr.ov.evBitgetUta", null, 3])
       && trEventText("venue_mode_switched", { venue: "bitget", mode: "classic" })[0] === "tr.ov.evBitgetClassic"
       && trEventText("venue_mode_switched", { venue: "okx", mode: "uta" }) === null);
+    { const ns = trEventText("venue_stops_missing", { venue: "bitget", mode: "uta", unreadable: false, legs: [{ symbol: "ACNUSDT", side: "short" }, { symbol: "x", side: "up" }] });
+      const nu = trEventText("venue_stops_missing", { venue: "bitget", mode: "uta", unreadable: true, legs: [{ symbol: "NVDAUSDT", side: "long" }] });
+      const mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+      ok("venue_stops_missing(換完倉位都對上、有腿沒止損):P1 紅字、列出那幾腿(壞的腿不列)、讀不到用另一句;本機 P1 通知也會叫",
+        ns[0] === "tr.ov.evBitgetNoStopUta" && ns[1] === "tr.ov.evBitgetNoStopNote" && ns[2] === 1 && ns[4] === "ACNUSDT tr.rel.short"
+        && nu[0] === "tr.ov.evBitgetStopsUnreadUta" && nu[4] === "NVDAUSDT tr.rel.long"
+        && trEventText("venue_stops_missing", { venue: "okx", legs: [] }) === null
+        && /const P1_TYPES = \[[^\]]*"venue_stops_missing"\]/.test(mainSrc2) && /ev_venue_stops_missing: t\("tm\.evBitgetNoStop"\)/.test(src)); }
     const mc = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF, TXF", reason: "x" }), mc0 = trEventText("manual_close_required", { symbols: "" });
     ok("manual_close_required:帶標的時接在後面;symbols 空字串只講那一句;註解同網頁", mc[0] === "tr.ov.evManualClose" && mc[4] === "TMF, TXF" && mc[1] === "tr.ov.evManualCloseNote" && mc0[0] === "tr.ov.evManualClose" && !mc0[4]); }
   { // 設計稽核可後修 §3-1:雲端的投資組合策略那句講真話;L3:框開著時變成讀不到設定 → 送出前再擋一次;L2:=absent 講明

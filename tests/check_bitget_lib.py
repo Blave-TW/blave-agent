@@ -1417,7 +1417,17 @@ order.close_position_partial(ENV, "NVDAUSDT", "long", 0.01)
 check(len(UPOSTS) == n + 1 and UPOSTS[-1]["side"] == "sell" and UPOSTS[-1]["reduceOnly"] == "yes",
       "a close during the hold still goes out (capped at the leg, v3 side table)")
 
-# ① every leg back with the same quantity: resumes by itself, one P3 event, no HALT
+STOPS = []
+route("GET", "/api/v3/trade/unfilled-strategy-orders", lambda p: ok({"list": list(STOPS), "cursor": None}))
+
+
+def ustop(sym, closing_side, sl="170"):
+    return {"orderId": "9" + sym, "clientOid": "c" + sym, "symbol": sym, "side": closing_side, "posSide": "long",
+            "stopLoss": sl, "takeProfit": "", "status": "pending"}
+
+
+# ① every leg back with the same quantity, its stop-loss still on Bitget: resumes by itself, one P3 event, no HALT
+STOPS[:] = [ustop("NVDAUSDT", "sell")]
 del EMITS[:]
 kind, pos = judged()
 check(kind == "ok" and pos and pos[0]["symbol"] == "NVDAUSDT" and pos[0]["size"] == 0.03 and acct.switch_hold_left() == 0
@@ -1430,6 +1440,38 @@ classic_with([V2_NVDA])
 UPOS[:] = [upos("NVDAUSDT", "long", "0.030004")]
 kind, pos = judged()
 check(kind == "ok" and halt_file() is None, "① 0.03 read back as 0.030004 (under one 0.01 step) still matches", (kind, pos))
+
+# ①b the legs match but a leg has no stop-loss on Bitget any more: trading resumes, one P1 event lists it
+classic_with([V2_NVDA, V2_ACN])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03"), upos("ACNSTOCKUSDT", "short", "0.05", mark="250")]
+STOPS[:] = [ustop("NVDAUSDT", "sell"), {**ustop("ACNSTOCKUSDT", "buy"), "stopLoss": "", "takeProfit": "200"}]
+del EMITS[:]
+kind, pos = judged()
+check(kind == "ok" and len(pos) == 2 and halt_file() is None and acct.switch_hold_left() == 0
+      and EMITS == [("venue_stops_missing", {"venue": "bitget", "mode": "uta", "unreadable": False,
+                                             "legs": [{"symbol": "ACNUSDT", "side": "short"}]})],
+      "①b ACN short has only a take-profit left: trading resumes (no HALT), one venue_stops_missing (P1) naming it, "
+      "no venue_mode_switched", EMITS)
+# a hedge symbol holding both legs: on UTA the stop's closing side tells which leg it guards
+classic_with([V2_NVDA, {**V2_NVDA, "holdSide": "short"}])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03"), upos("NVDAUSDT", "short", "0.03")]
+STOPS[:] = [ustop("NVDAUSDT", "sell")]
+del EMITS[:]
+judged()
+check([e[1]["legs"] for e in EMITS if e[0] == "venue_stops_missing"] == [[{"symbol": "NVDAUSDT", "side": "short"}]],
+      "①b both NVDA legs, one stop that closes by selling: the long is covered, the short is listed", EMITS)
+# the plan list cannot be read: every leg counts as unprotected, and the event says it was unreadable
+classic_with([V2_NVDA])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
+route("GET", "/api/v3/trade/unfilled-strategy-orders", lambda p: err("40015", "System is abnormal"))
+del EMITS[:]
+kind, pos = judged()
+check(kind == "ok" and halt_file() is None
+      and EMITS == [("venue_stops_missing", {"venue": "bitget", "mode": "uta", "unreadable": True,
+                                             "legs": [{"symbol": "NVDAUSDT", "side": "long"}]})],
+      "①b plan list unreadable: treated as no stop-loss (never assumed safe), unreadable flagged, trading resumes", EMITS)
+route("GET", "/api/v3/trade/unfilled-strategy-orders", lambda p: ok({"list": list(STOPS), "cursor": None}))
+STOPS[:] = [ustop("NVDAUSDT", "sell")]
 
 # ② a different quantity: HALT at once, the leg listed before vs now
 classic_with([V2_NVDA])

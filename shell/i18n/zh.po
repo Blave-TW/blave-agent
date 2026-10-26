@@ -8989,3 +8989,24 @@ msgstr "Bitget 換成統一帳戶，倉位都對上，照常下單。"
 
 msgid "tr.ov.evBitgetClassic"
 msgstr "Bitget 換成經典帳戶，倉位都對上，照常下單。"
+
+# 事件列(P1):Bitget 換帳戶類型、倉位都對上,但以下倉位在 Bitget 上沒有止損(下單照常、不自動補掛;trade.js trEventText venue_stops_missing)
+msgid "tr.ov.evBitgetNoStopUta"
+msgstr "Bitget 換成統一帳戶後，以下倉位沒有止損"
+
+msgid "tr.ov.evBitgetNoStopClassic"
+msgstr "Bitget 換成經典帳戶後，以下倉位沒有止損"
+
+# 讀不到 Bitget 的止損單:當成沒有
+msgid "tr.ov.evBitgetStopsUnreadUta"
+msgstr "Bitget 換成統一帳戶後讀不到止損單，以下倉位當成沒有止損"
+
+msgid "tr.ov.evBitgetStopsUnreadClassic"
+msgstr "Bitget 換成經典帳戶後讀不到止損單，以下倉位當成沒有止損"
+
+msgid "tr.ov.evBitgetNoStopNote"
+msgstr "下單照常，Blave 不會自動補掛。要止損請到 Bitget 設定，或請 agent 補掛。"
+
+# 本機 P1 系統通知的標題(main.js tmLabels ev_venue_stops_missing)
+msgid "tm.evBitgetNoStop"
+msgstr "Bitget 有倉位沒有止損"

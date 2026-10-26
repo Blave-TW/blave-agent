@@ -1764,6 +1764,7 @@ function trPushLabels() {
     ev_execution_fallback_market: t("tr.ov.evExecFallback"), ev_execution_fallback_market_n: t("tr.ov.evExecFallbackNote"),
     ev_execution_stuck: t("tr.ov.evExecStuck"), ev_execution_stuck_n: t("tr.ov.evExecStuckNote"),
     ev_machine_restart_stopped: t("tr.ov.evRestartStopped"), ev_machine_restart_stopped_n: t("tm.evRestartStoppedNote"),
+    ev_venue_stops_missing: t("tm.evBitgetNoStop"), ev_venue_stops_missing_n: t("tr.ov.evBitgetNoStopNote"),
     // 選單列兩行狀態、app 選單「顯示」兩項與官網、結束攔截多的那一句、通知標題的前綴(主行程:traytext.js / main.js)
     lang: LANG, stLocal: t("tm.stLocal"), stLocalOnly: t("tm.stLocalOnly"), noAccount: t("tr.noAccount"), runningZ: t("tr.runningZ"), stCloud: t("tm.stCloud"), stOn: t("tm.stOn"), stPaused: t("tm.stPaused"), stUnknown: t("tm.stUnknown"), stMayTrade: t("tm.stMayTrade"), stNotStarted: t("tr.notStarted"),
     moneyPaper: t("tr.mode.paper"), moneyReal: t("tr.mode.real"), venueCapital: t("cap.venue"), venuePresident: t("pres.venue"), pauseLocal: t("tm.pauseLocal"), quitCloudNote: t("tm.quitCloudNote"),
@@ -5007,7 +5008,7 @@ function trOrderErrText(sym, err) {
 /* 事件級別:先讀 api 帶的 level(trEvApiLevel),缺欄位才用這張表——鏡射 api agent_events.SPECS + level_for
    (halt 看 source、主機重開看 trigger),同網頁 ovEvLevel;不在表裡的當 P3。標題顏色只看它:1 紅、2 強調、3 一般字 */
 const TR_EV_P1 = ["order_error", "manual_close_required", "execution_interrupted", "execution_fallback_market", "execution_stuck",
-  "market_hold", "settings_unsafe", "machine_restart_stop_failed", "downtime_paused"];
+  "market_hold", "settings_unsafe", "machine_restart_stop_failed", "downtime_paused", "venue_stops_missing"];
 const TR_EV_P2 = ["reconciler_dead", "venue_disconnected", "strategy_failed", "bar_stale", "target_stale", "dead_members", "scheduler_error",
   "venue_unbound", "market_check_off", "ui_override", "settings_rollback_failed", "report_degraded", "exchange_unreachable",
   "machine_silent", "disk_full", "memory_low", "report_rejected"];
@@ -5037,6 +5038,14 @@ function trEventText(type, d) {
   if (type === "exchange_recovered") return out(["tr.ov.evExBack", v], null);
   // Bitget 換帳戶類型後倉位全對上、自動恢復(P3,只進事件列;對不上的那一種走 halt)
   if (type === "venue_mode_switched" && d.venue === "bitget") return out(t(d.mode === "classic" ? "tr.ov.evBitgetClassic" : "tr.ov.evBitgetUta"), null);
+  // 換完倉位都對上、但有幾腿在 Bitget 上沒有止損(P1;下單照常、不補掛)。讀不到計畫單時當成沒有,標題照實講讀不到
+  if (type === "venue_stops_missing" && d.venue === "bitget") {
+    const legs = (Array.isArray(d.legs) ? d.legs : []).filter((x) => x && typeof x.symbol === "string" && (x.side === "long" || x.side === "short"));
+    const names = legs.slice(0, 10).map((x) => x.symbol.slice(0, 24) + " " + t(x.side === "long" ? "tr.rel.long" : "tr.rel.short")).join(", ");
+    const head = d.unreadable === true ? (d.mode === "classic" ? "tr.ov.evBitgetStopsUnreadClassic" : "tr.ov.evBitgetStopsUnreadUta")
+      : d.mode === "classic" ? "tr.ov.evBitgetNoStopClassic" : "tr.ov.evBitgetNoStopUta";
+    return out(t(head), t("tr.ov.evBitgetNoStopNote"), null, names, legs.length > 10 ? t("tr.ov.evDeadMore", { total: legs.length, more: legs.length - 10 }) : null);
+  }
   if (type === "bar_stale") return d.computed === true ? null : out(t("tr.ov.evBarStale"), d.minutes == null ? null : t("tr.ov.evBarStaleNote", v));
   // 目標部位過久沒更新(同網頁 workspace_ov_ev_target_stale):換算門檻同 api notify._age_text;沒 age_s 用不帶時間那句
   if (type === "target_stale") {
