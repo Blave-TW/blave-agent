@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 - **All your strategies in one app.** Backtest, trades, parameter scan and saved versions for each.
 - **Backtests that flag overfitting.** MCPT p-value, parameter plateau and walk-forward.
 - **Real fees by default.** A fee of 0 gets a warning.
-- **Auto-trading already wired up.** Binance, OKX, Bybit, BingX, Gate.io, plus Taiwan index futures on Windows.
+- **Auto-trading already wired up.** Binance, OKX, Bybit, BingX, Gate.io, Bitget, StockCoin, plus Taiwan index futures on Windows.
 - **Paper trading.** No keys needed.
 - **Ideas from the web.** The agent reads a few sites and brings back three you can backtest.
 - **Pick your AI.** Claude Code, Codex, a DeepSeek key, or Blave AI.

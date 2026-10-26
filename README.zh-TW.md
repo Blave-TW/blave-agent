@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 - **所有策略在一個 app 裡。** 每支都有回測、成交、參數掃描、版本。
 - **回測會抓過度最佳化。** MCPT p 值、參數高原、樣本外驗證。
 - **預設算真實手續費。** 手續費填 0 會警告。
-- **自動下單已經接好。** 幣安、OKX、Bybit、BingX、Gate.io，以及台指期（Windows）。
+- **自動下單已經接好。** 幣安、OKX、Bybit、BingX、Gate.io、Bitget、StockCoin，以及台指期（Windows）。
 - **模擬交易。** 不用金鑰。
 - **上網幫你找點子。** 讀幾個網站，帶回三個能回測的。
 - **AI 自己選。** Claude Code、Codex、DeepSeek 金鑰或 Blave AI。
