@@ -85,13 +85,14 @@ function sugFill() {
   sugPaint();
   ta.focus();
 }
+// Esc 掛在輸入框與托盤鈕本身(比 document 層的 escTop 與 browser.js 先跑):有 modal / 選單、內建瀏覽器展開層開著讓它們先收;
+// 作廢了就 preventDefault,browser.js 看到便不收瀏覽器
+const sugEscOk = (e) => e.key === "Escape" && !e.defaultPrevented && !escTop() && !(typeof BR !== "undefined" && BR.exp);
 $("ta").addEventListener("keydown", (e) => {
   if (e.isComposing || e.keyCode === 229 || !sugPresent()) return;
   const bare = !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
   if (e.key === "ArrowRight" && bare) { e.preventDefault(); sugFill(); return; }
-  // Esc 掛在輸入框本身(比 document 層的 escTop 與 browser.js 先跑):有 modal / 選單、內建瀏覽器展開層開著讓它們先收;
-  // 作廢了就 preventDefault,browser.js 看到便不收瀏覽器
-  if (e.key !== "Escape" || e.defaultPrevented || escTop() || (typeof BR !== "undefined" && BR.exp)) return;
+  if (!sugEscOk(e)) return;
   e.preventDefault();
   sugCollapse();
 });
@@ -102,6 +103,13 @@ $("ta").addEventListener("compositionend", sugPaint);
 // Shift+Tab 到句子鈕再按 Enter／空白鍵也是 click
 $("sug-tray-btn").addEventListener("click", () => { if (sugPresent()) sugFill(); });
 $("sug-tray-x").addEventListener("click", () => { sugCollapse(); $("ta").focus(); });
+// × 不進 Tab 順序:Shift+Tab 到托盤鈕的鍵盤用戶只剩 Esc 能作廢
+$("sug-tray-btn").addEventListener("keydown", (e) => {
+  if (!sugEscOk(e)) return;
+  e.preventDefault();
+  sugCollapse();
+  $("ta").focus();
+});
 
 /* 送出的結算(§1.4):sendDraft 清空輸入框之前先存快照,回合真的跑起來(app.js r.started)才算。
    沒經過 sendDraft 的入口(重送、卡片、策略庫)沒有快照,不算沒用 */

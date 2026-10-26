@@ -163,6 +163,16 @@ const send = (msg, started = true) => { ctx.sugSnap(msg); W.ta.value = ""; ctx.s
   ok("Esc 作廢的那句刪回空白也不回來", !shown());
   send("x");
   ok("Esc 作廢後送出:不算沒用", (LS.get("ws_sug_miss") || "0") === "0");
+  reset(); await arm(); focused = "sug-tray-btn";
+  e = Object.assign({ key: "Escape", keyCode: 27, defaultPrevented: false, prevented: false }, {}); e.preventDefault = () => { e.prevented = true; };
+  W["sug-tray-btn"].fire("keydown", e);
+  ok("焦點在托盤鈕按 Esc:作廢、preventDefault、焦點回輸入框、不記", e.prevented && !shown() && focused === "ta" && ctx.tracked.length === 1);
+  for (const [name, setup, extra] of [["有 modal / 選單開著", () => { ctx.topLayer = () => {}; }, {}], ["內建瀏覽器展開層開著", () => { ctx.BR = { exp: {} }; }, {}], ["別人已 preventDefault", () => {}, { defaultPrevented: true }]]) {
+    reset(); await arm(); setup(); focused = "sug-tray-btn";
+    const ev = Object.assign({ key: "Escape", keyCode: 27, defaultPrevented: false, prevented: false, preventDefault() { ev.prevented = true; } }, extra);
+    W["sug-tray-btn"].fire("keydown", ev);
+    ok("托盤鈕上 Esc:" + name + " → 讓給它,不作廢、焦點不動", shown() && !ev.prevented && focused === "sug-tray-btn");
+  }
   for (const [name, setup, extra] of [["有 modal / 選單開著(escTop)", () => { ctx.topLayer = () => {}; }, {}], ["內建瀏覽器展開層開著", () => { ctx.BR = { exp: {} }; }, {}],
     ["別人已 preventDefault", () => {}, { defaultPrevented: true }], ["組字中(keyCode 229)", () => {}, { keyCode: 229 }]]) {
     reset(); await arm(); setup(); e = key("Escape", extra);
