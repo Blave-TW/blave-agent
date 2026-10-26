@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **建議下一步的導航句也有長度上限(`agent_turn._SUGGEST_RULE`、`_SUGGEST_ANCHORS` normal／reduced;Wei 10-26:托盤手機最多三行,但建議不能長到用戶懶得看)**:「帶我看怎麼…」原本不限長度、要求策略名寫全;現在中文 ≤28 字(策略名照算、空白不算)、英文 ≤60 字元,一般句維持 ≤20／48;策略名太長用用戶慣稱的短名,縮短只縮名字、不改起手。只改 prompt,`extract_suggestions` 的 `_SUGGEST_MAX_CHARS`(80)不動;顯示端(電腦版 `SUG_MAX_CHARS`、web 同值)另降到 60、超過整句丟。測試 `tests/check_suggest_rule_026.py`(舊碼 4 條紅)。
+
 ## 1.1.141 — 2026-10-26(desktop 0.1.32)
 
 - **群益本機開通「安裝群益元件」的 VC++ 2010 一步講得出原因、別的安裝在跑會自己再試(`capital_local._ensure_vc`、`_PS_VC`;Windows Server 2022 剛開機半小時真機失敗一次、同 session 重跑就過)**:原本 `_PS_VC` 的結束碼被丟掉,`setup.error` 只寫得出 `SETUP_FAILED:vcredist`;UAC 按否時 `Start-Process` 若只寫非終止錯誤,`$p` 是空的、腳本會以 0 結束(推論,真機未見)。現在接住例外回 1223,依結束碼分:4 → `vcredist:sig`(不重試);等待與重試都在提權的那一個 PowerShell 裡做、整個流程只跳一次 UAC(一般管理員帳號每次 RunAs 都會再問):先用 `Global\_MSIExecute` mutex 等 Windows Installer 空閒(每 5 秒看一次、最多 90 秒),跑完仍是 1618(另一個安裝在跑)就等 30 秒再跑、最多再 3 次,每次跑前重驗簽章,仍是 1618 → `vcredist:1618`;3010／1641 而 DLL 已在算成功、不在 → `vcredist:reboot`;1223 → `vcredist:denied`(只有一次 UAC,所以只可能是那一次被拒);其他非 0 → `vcredist:<代碼>`。重試期間 `setup` 維持 `running`。電腦版 `l-setup-fail` 那一列依原因換一句(更新中／按「是」／重新開機／原句加代碼),讀不懂的照舊原本那句。測試 `tests/check_capital_local.py` 10c(要用 `/usr/bin/python3`,提權腳本的流程照原文驗、沒有在 Windows 上跑過)、`tests/check_shell_capital_local_view.js`。
