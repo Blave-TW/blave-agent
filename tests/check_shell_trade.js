@@ -1068,7 +1068,11 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         ns[0] === "tr.ov.evBitgetNoStopUta" && ns[1] === "tr.ov.evBitgetNoStopNote" && ns[2] === 1 && ns[4] === "ACNUSDT tr.rel.short"
         && nu[0] === "tr.ov.evBitgetStopsUnreadUta" && nu[4] === "NVDAUSDT tr.rel.long"
         && trEventText("venue_stops_missing", { venue: "okx", legs: [] }) === null
-        && /const P1_TYPES = \[[^\]]*"venue_stops_missing"\]/.test(mainSrc2) && /ev_venue_stops_missing: t\("tm\.evBitgetNoStop"\)/.test(src)); }
+        && /const P1_TYPES = \[[^\]]*"venue_stops_missing"\]/.test(mainSrc2) && /ev_venue_stops_missing: t\("tm\.evBitgetNoStop"\)/.test(src));
+      const S4 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
+      ok("讀不到止損單那兩句拆成兩句(每句 ≤25 字,同 api notify.py):統一／經典",
+        S4.includes('"tr.ov.evBitgetStopsUnreadUta": "Bitget 換成統一帳戶後讀不到止損單。以下倉位當成沒有止損："')
+        && S4.includes('"tr.ov.evBitgetStopsUnreadClassic": "Bitget 換成經典帳戶後讀不到止損單。以下倉位當成沒有止損："')); }
     const mc = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF, TXF", reason: "x" }), mc0 = trEventText("manual_close_required", { symbols: "" });
     ok("manual_close_required:帶標的時接在後面;symbols 空字串只講那一句;註解同網頁", mc[0] === "tr.ov.evManualClose" && mc[4] === "TMF, TXF" && mc[1] === "tr.ov.evManualCloseNote" && mc0[0] === "tr.ov.evManualClose" && !mc0[4]); }
   { // 設計稽核可後修 §3-1:雲端的投資組合策略那句講真話;L3:框開著時變成讀不到設定 → 送出前再擋一次;L2:=absent 講明

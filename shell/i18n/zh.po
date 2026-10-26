@@ -8999,10 +8999,10 @@ msgstr "Bitget 換成經典帳戶後，以下倉位沒有止損"
 
 # 讀不到 Bitget 的止損單:當成沒有
 msgid "tr.ov.evBitgetStopsUnreadUta"
-msgstr "Bitget 換成統一帳戶後讀不到止損單，以下倉位當成沒有止損"
+msgstr "Bitget 換成統一帳戶後讀不到止損單。以下倉位當成沒有止損："
 
 msgid "tr.ov.evBitgetStopsUnreadClassic"
-msgstr "Bitget 換成經典帳戶後讀不到止損單，以下倉位當成沒有止損"
+msgstr "Bitget 換成經典帳戶後讀不到止損單。以下倉位當成沒有止損："
 
 msgid "tr.ov.evBitgetNoStopNote"
 msgstr "下單照常，Blave 不會自動補掛。要止損請到 Bitget 設定，或請 agent 補掛。"
