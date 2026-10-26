@@ -34,9 +34,17 @@ class _Options:
     max_buffer_size: object = None
     permission_mode: object = None
     hooks: object = None
+    tools: object = None
+    setting_sources: object = None
+    strict_mcp_config: object = False
+    mcp_servers: object = None
+    extra_args: object = None
 
 sdk.ClaudeAgentOptions = _Options
 sdk.HookMatcher = lambda matcher=None, hooks=None: {"matcher": matcher, "hooks": hooks}
+# 排程回合要 tools= 與 in-process MCP(稽核 10-26 R1),少一樣就不起回合
+sdk.tool = lambda name, desc, schema: (lambda fn: fn)
+sdk.create_sdk_mcp_server = lambda name, version="1.0.0", tools=None: {"type": "sdk", "name": name}
 seen = {}
 
 async def fake_query(prompt, options):
@@ -70,6 +78,7 @@ check("chat DeepSeek turn: no USD cap either (audit A-P1-2 — the CLI's Claude-
 # 直接呼叫 _apply_scheduled_limits() 測不到 main 有沒有真的套用——複審:拿掉 main 裡那一行照樣綠。
 job = "budget-x"
 os.makedirs(os.path.join(WS, "report_jobs", job), exist_ok=True)
+open(os.path.join(WS, "report_jobs", job, "run.py"), "w").write("from lib.report_templates import tw_market_brief, publish\npublish(tw_market_brief())\n")
 os.environ["BLAVE_SCHEDULED_JOB"] = job
 sys.argv = ["agent_turn.py", "--delivery=report", "--scheduled", "--model=sonnet", "--", f"sched-{job}", "報告"]
 seen.clear()

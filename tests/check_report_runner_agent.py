@@ -41,10 +41,18 @@ def check(cond, msg):
     fails += (not cond)
 
 
-RUN_PY = ("import json, os, sys\n"
-          "rid = sys.argv[0].split(os.sep)[-2] + '-auto'\n"
-          "json.dump({'degraded': os.environ.get('BLAVE_REPORT_DEGRADED')},"
-          " open(os.path.join('reports', rid + '.json'), 'w'))\n")
+# 排程回合只 build 模板／配方(稽核 10-26 R1):run.py 是模板呼叫;workspace 裡的假 lib.report_templates
+# 讓退回資料版那段寫出 <job>-auto 的報告,尾註原因照實記
+os.makedirs(os.path.join(WS, "lib"), exist_ok=True)
+open(os.path.join(WS, "lib", "__init__.py"), "w").write("")
+open(os.path.join(WS, "lib", "report_templates.py"), "w").write(
+    "import json, os, sys\n"
+    "def tw_market_brief():\n    return None\n"
+    "def publish(pack):\n"
+    "    rid = sys.argv[0].split(os.sep)[-2] + '-auto'\n"
+    "    json.dump({'degraded': os.environ.get('BLAVE_REPORT_DEGRADED')}, open(os.path.join('reports', rid + '.json'), 'w'))\n")
+RUN_PY = ("import os, sys\nsys.path.insert(0, os.getcwd())\n"
+          "from lib.report_templates import tw_market_brief, publish\npublish(tw_market_brief())\n")
 
 
 def make_job(job_id, consent=True):
@@ -248,10 +256,13 @@ open(os.path.join(dl, "run.py"), "w").write("from lib.report_templates import cr
 R.run_job("t-lang")
 argv = json.load(open(argv_out))
 prompt = argv[-1]
-check("--ui-lang=zh" in argv and "pack = crypto_market_brief(symbols=('BTC', 'ETH'), extra=[...]); print(pack.describe())" in prompt
+check("--ui-lang=zh" in argv and "mcp__blave_report__build" in prompt and "mcp__blave_report__publish" in prompt
+      and "python3" not in prompt and "crypto_market_brief" not in prompt
+      and "no shell and cannot read or write files" in prompt
       and "WebSearch" in prompt and "WebFetch" in prompt and 'title=' in prompt and "summary is required" in prompt
       and "do not read lib/ or references/" in prompt,
-      "排程回合:--ui-lang=zh(用戶用中文登記)、prompt 給 pack 的確切呼叫、雲端走 WebSearch/WebFetch、publish 要 title、summary 必填、不讀 lib")
+      "排程回合:--ui-lang=zh(用戶用中文登記)、prompt 叫兩支報告工具(不給 python3 指令、不貼 run.py 內容)、講明沒有 shell、"
+      "雲端走 WebSearch/WebFetch、publish 要 title、summary 必填、不讀 lib")
 json.dump({"_last": "deepseek/deepseek-v4-pro"}, open(R.MODEL_PREFS_PATH, "w"))
 dds = make_job("t-lang-ds")
 R.run_job("t-lang-ds")
@@ -289,7 +300,7 @@ check(R.job_lang({"prompt": "每天给我加密市场晨报"}) == "cn" and R.job
       and R.job_lang({"prompt": "每天給我台股晨報"}) == "zh", "報告語言:繁中 zh、简中 cn、英文不指定")
 os.makedirs(os.path.join(WS, "report_jobs", "t-rec"), exist_ok=True)
 open(os.path.join(WS, "report_jobs", "t-rec", "recipe.json"), "w").write("{}")
-check('build(load_recipe("report_jobs/t-rec/run.py"), extra=[...])' in R._pack_call({"id": "t-rec"}), "自組配方:給 build(load_recipe(...)) 的呼叫")
+check(R.pack_call({"id": "t-rec"}) == {"recipe": True}, "自組配方:排程回合 build(load_recipe(...))")
 R.AGENT_TIMEOUT_S = 2
 # 收盤報告 job 碰到休市(稽核 0.1.7 P1-2):不起回合、不花預算、不算次數;雲端 run.py 也帶排程旗標
 R._agent_turn_cloud = fake(lambda j: (_ for _ in ()).throw(AssertionError("休市日不該起回合")))

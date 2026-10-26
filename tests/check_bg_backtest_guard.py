@@ -9,7 +9,7 @@
   ⑤ 拒絕理由只指向 python time.sleep 輪詢(單一指令,不串 `;`——AGENTS.md 的規矩);
   ⑥ ③ 的 timeout 不足:引擎夠新(init 的 claude_code_version ≥ 2.0.10)且 need_ms ≥ 300000 時改寫成 need_ms 放行
      (updatedInput 帶整個 input);引擎版本未知/太舊、need_ms 太小、run_in_background 照舊拒絕;
-     排程回合的 _sched_bash_guard_hooks 同時掛著時它的 deny 不受影響。
+     排程回合的 deny-all 守門(_sched_tool_gate_hooks)同時掛著時它的 deny 不受影響。
 
 跑法:cd blave-agent && python3 tests/check_bg_backtest_guard.py
 """
@@ -186,20 +186,21 @@ for v in ("2.0.9", "1.0.120", None, ""):
     t(f"⑥ engine {v!r} → deny, no rewrite", hs.get("permissionDecision") == "deny" and "updatedInput" not in hs, hs)
 at._ENGINE["cli_version"] = "2.1.281"
 
-# ⑥ 排程回合:這道與排程守門都掛在 PreToolUse/Bash(券商密鑰檔、密鑰入碼那兩道也在,對這條指令不表態);
-# 一條回測啟動指令同時碰到排程守門(lib/execute)時,這道改寫放行、那道照 deny——引擎端 deny 贏,
-# 這裡只驗兩道各自的輸出沒被對方影響
+# ⑥ 排程回合:這道掛在 PreToolUse/Bash,deny-all 守門掛在 PreToolUse 全部工具。一條回測啟動指令,
+# 這道改寫放行、那道照 deny——引擎端 deny 贏,這裡只驗兩道各自的輸出沒被對方影響
 o2 = _Options(env={"BASH_MAX_TIMEOUT_MS": str(CAP)})
-at._mount_turn_hooks(o2, object(), True)
-bash_hooks = [h for m in o2.hooks["PreToolUse"] if m["matcher"] == "Bash" for h in m["hooks"]]
-mounted = {h.__qualname__.split(".")[0] for h in bash_hooks}
-t("⑥ scheduled turn mounts both Bash guards", {"_bg_guard_hooks", "_sched_bash_guard_hooks"} <= mounted, o2.hooks)
+at._mount_turn_hooks(o2, object())
+t("⑥ deny-all gate mounts", at._sched_tool_gate_hooks(o2, at.scheduled_allowed(None)) is True)
+pre = [h for m in o2.hooks["PreToolUse"] if m["matcher"] in ("Bash", None) for h in m["hooks"]]
+mounted = {h.__qualname__.split(".")[0] for h in pre}
+t("⑥ scheduled turn has the Bash guard and the deny-all gate", {"_bg_guard_hooks", "_sched_tool_gate_hooks"} <= mounted,
+  o2.hooks)
 sched_cmd = "python3 strategies/x/strategy.py --with lib/execute.py"
 outs = [asyncio.run(h({"tool_name": "Bash", "tool_input": {"command": sched_cmd, "timeout": 600000}}, "t2", None))
-        for h in bash_hooks]
+        for h in pre]
 decisions = sorted(d for d in ((o_.get("hookSpecificOutput") or {}).get("permissionDecision") for o_ in outs) if d)
-t("⑥ one hook rewrites (allow), the scheduled guard still denies", decisions == ["allow", "deny"]
-  and any(at.SCHED_BASH_DENY_REASON == (o_.get("hookSpecificOutput") or {}).get("permissionDecisionReason") for o_ in outs),
+t("⑥ one hook rewrites (allow), the deny-all gate still denies", decisions == ["allow", "deny"]
+  and any(at.SCHED_TOOL_DENY_REASON == (o_.get("hookSpecificOutput") or {}).get("permissionDecisionReason") for o_ in outs),
   outs)
 
 # ⑥ init 訊息把引擎版本記進 _ENGINE(run_turn 的訊息迴圈;這裡只驗型別別名有掛上、欄位名對)
