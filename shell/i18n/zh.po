@@ -8959,3 +8959,33 @@ msgstr "群益還有 {lots} 口在倉。結束後策略不會再下單，這些�
 # 結束攔截:群益本機綁著、這一刻讀不到部位、之前也沒讀到過有部位(保守當成可能還有)
 msgid "capl.quit.unknown"
 msgstr "群益的部位現在讀不到，可能還有在倉。結束後策略不會再下單，也不會自動平倉，請到群益 app 確認。"
+
+# Bitget 換帳戶類型後倉位對不上、自動暫停(halt.mismatch;trade.js trHaltReasonText)
+msgid "tr.haltBitgetMismatchUta"
+msgstr "Bitget 換成統一帳戶後，{n} 個倉位跟換之前對不上。暫停期間什麼單都不送。"
+
+msgid "tr.haltBitgetMismatchClassic"
+msgstr "Bitget 換成經典帳戶後，{n} 個倉位跟換之前對不上。暫停期間什麼單都不送。"
+
+# 對不上的倉位清單(trade.js trPaintMismatch):欄名與出口句
+msgid "tr.mm.colSym"
+msgstr "標的"
+
+msgid "tr.mm.colBefore"
+msgstr "換帳戶前"
+
+msgid "tr.mm.colNow"
+msgstr "Bitget 現在"
+
+msgid "tr.mm.none"
+msgstr "沒有倉位"
+
+msgid "tr.mm.foot"
+msgstr "在 Bitget 核對完，再按「啟動下單」。"
+
+# 事件列(P3):Bitget 換帳戶類型、倉位全對上、自動恢復
+msgid "tr.ov.evBitgetUta"
+msgstr "Bitget 換成統一帳戶，倉位都對上，照常下單。"
+
+msgid "tr.ov.evBitgetClassic"
+msgstr "Bitget 換成經典帳戶，倉位都對上，照常下單。"

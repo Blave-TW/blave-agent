@@ -1,10 +1,10 @@
 """
 Bitget order execution — USDT-M perpetuals (coins, US stock perps (isRwa) and the
 eight Taiwan stock perps) on a classic account (v2 API, real-account run passed
-2026-10-22) or a UTA (v3 API, real-account run not passed). Every call picks the API by
-lib/account_bitget.account_mode(); a request that meets a mode change is never
-re-sent to the other API — it raises MODE_SWITCH (TRANSIENT), and entries stay
-refused for account_bitget.SWITCH_HOLD_S after it.
+2026-10-22) or a UTA (v3 API, real-account run passed: T1–T12, T11c re-run 2026-10-26).
+Every call picks the API by lib/account_bitget.account_mode(); a request that meets a
+mode change is never re-sent to the other API — it raises MODE_SWITCH (TRANSIENT), and
+entries stay refused while account_bitget's switch hold is open.
 
 Companion to lib/account_bitget.py (credentials, signing, contract list, error
 table, mode). NEVER hand-write Bitget order calls; import from here.

@@ -509,5 +509,28 @@ else:
     open(_hp, "w").write(_had)
 check(_seen == [True, False, "absent", "absent"], f"F7 halt_state carries HALT closing only when it is a bool ({_seen})")
 
+# Bitget 換帳戶類型後對不上的倉位(lib/account_bitget 寫進 HALT 的 mismatch):形狀對才往畫面送,數字不是數字就成 None
+_had = open(_hp).read() if os.path.exists(_hp) else None
+_mm = {"kind": "bitget_mode_mismatch", "venue": "bitget", "mode": "uta",
+       "legs": [{"symbol": "BTCUSDT", "side": "long", "before": 0.05, "now": 0.03},
+                {"symbol": "ETHUSDT", "side": "short", "before": 1.2, "now": None},
+                {"symbol": "XUSDT", "side": "sideways", "before": 1, "now": 1}, "junk"]}
+_seen = []
+for _doc in ({"reason": "[bitget_account_mode_mismatch] x", "source": "reconciler", "mismatch": _mm},
+             {"reason": "x", "source": "reconciler", "mismatch": {"kind": "other", "legs": []}},
+             {"reason": "x", "source": "reconciler", "mismatch": "<b>"},
+             {"reason": "x", "source": "reconciler", "mismatch": {**_mm, "legs": [{"symbol": "BTCUSDT", "side": "long",
+                                                                                   "before": "0.05", "now": True}]}}):
+    open(_hp, "w").write(json.dumps(_doc))
+    _seen.append(pr.halt_state(hb=1, last={}).get("mismatch", "absent"))
+if _had is None:
+    os.remove(_hp)
+else:
+    open(_hp, "w").write(_had)
+check(_seen[0] == {"kind": "bitget_mode_mismatch", "venue": "bitget", "mode": "uta",
+                   "legs": _mm["legs"][:2]} and _seen[1:3] == ["absent", "absent"]
+      and _seen[3] == "absent",
+      f"F8 halt_state carries the Bitget mismatch legs; other shapes and legs with no number are dropped ({_seen})")
+
 print(f"\ncheck_halt_freeze: {red} FAILED" if red else "\ncheck_halt_freeze: all ok")
 sys.exit(1 if red else 0)

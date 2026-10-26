@@ -233,7 +233,11 @@ o = shell_view(True, {"uta": "ValueError: " + (r or "")})
 check(o["modeErr"]["uta"]["code"] == "MODE_UNVERIFIED" and o["modeErr"]["uta"]["detail"] == {"mode": "uta"},
       "④ lib 真的那一句經過 interpretVenueBind(含遮罩)→ MODE_UNVERIFIED uta(英文介面看得懂)")
 c = shell_view(False, {"uta": "ValueError: " + (r or "")})
-check(c["modeErr"]["uta"]["code"] == "MODE_UNVERIFIED", "④ 閘門全關時也一樣(沒有任何類型開放)")
+if "uta" in cc_modes:
+    check(c["modeErr"]["uta"]["code"] != "MODE_UNVERIFIED",
+          "④ 外殼現在的閘門開著統一帳戶:舊 lib 丟的統一帳戶拒絕不再講成「還不支援」(照 lib 原文)")
+else:
+    check(c["modeErr"]["uta"]["code"] == "MODE_UNVERIFIED", "④ 外殼現在的閘門沒開統一帳戶時也一樣")
 
 
 def settings_unreadable(env, path, params=None, timeout=10):

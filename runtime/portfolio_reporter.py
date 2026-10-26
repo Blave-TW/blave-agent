@@ -1422,6 +1422,7 @@ def halt_state(hb=None, last=None):
     guard_state = _read_json(os.path.join(WORKSPACE_STATE, "venue_account.json"), {})
     guard_state = guard_state if isinstance(guard_state, dict) else {}
     hold, mark = guard_state.get("book_hold"), guard_state.get("bind_reset")
+    mismatch = _halt_mismatch(info.get("mismatch"))
     return {
         "halted": True,
         "at": info.get("ts"),
@@ -1430,6 +1431,7 @@ def halt_state(hb=None, last=None):
         # 「暫停並關閉部位」: true only when a flatten really started (command_listener._mark_halt_closing);
         # absent on every other HALT and on runtimes before it
         **({"closing": info["closing"]} if isinstance(info.get("closing"), bool) else {}),
+        **({"mismatch": mismatch} if mismatch else {}),
         "blocked": _halt_denials(info.get("ts")),
         # true = no Blave order of any kind, closes and exits included: every
         # HALT on a freezing lib (`freeze`), or on an older one an account-guard
@@ -1442,6 +1444,28 @@ def halt_state(hb=None, last=None):
         or bool(isinstance(mark, dict) and mark.get("venue") and not mark.get("acked"))
         or bool(isinstance(hold, dict) and hold.get("venue")),
     }
+
+
+def _halt_num(x):
+    return float(x) if isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) else None
+
+
+def _halt_mismatch(m):
+    """The legs a Bitget account switch did not carry over (lib/account_bitget writes them on
+    its HALT): {kind, venue, mode, legs: [{symbol, side, before, now}]} — before / now are
+    quantities, None = no such leg. Anything else is dropped, never passed on as is."""
+    if not isinstance(m, dict) or m.get("kind") != "bitget_mode_mismatch":
+        return None
+    legs = []
+    for r in m.get("legs") if isinstance(m.get("legs"), list) else []:
+        if isinstance(r, dict) and isinstance(r.get("symbol"), str) and r.get("side") in ("long", "short"):
+            before, now = _halt_num(r.get("before")), _halt_num(r.get("now"))
+            if before is not None or now is not None:
+                legs.append({"symbol": r["symbol"][:40], "side": r["side"], "before": before, "now": now})
+    if not legs:
+        return None
+    return {"kind": m["kind"], "venue": "bitget", "mode": m.get("mode") if m.get("mode") in ("uta", "classic") else None,
+            "legs": legs[:20]}
 
 
 def account_guard():

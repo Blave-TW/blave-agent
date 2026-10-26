@@ -242,11 +242,21 @@ function trRecomputing(r) { const x = r && r.reconciler && r.reconciler.stopped;
    寫進 report.selfOrdering)。沒有的話「解除暫停」與「包含你自己的策略程式下的單」那半句都在講一顆不存在的東西(Wei 0.0.6 實測)。
    **嚴格 === false 才算沒有**:雲端的報告沒這個欄位、舊格式也沒有 → 照現行 */
 function trSelfOrdering(r) { return !(r && r.selfOrdering === false); }
+/* Bitget 換帳戶類型後倉位對不上而自動暫停(lib/account_bitget 寫進 HALT、runtime halt_state 帶出 halt.mismatch):
+   { kind, venue, mode, legs: [{ symbol, side, before, now }] },before / now 是數量,null = 那一邊沒有這一腿。
+   英文 reason 不顯示;清單由 trPaintMismatch 畫在狀態句下面。形狀不對就當沒有 */
+function trHaltMismatch(r) {
+  const h = r && r.halt, m = h && h.halted ? h.mismatch : null;
+  return m && typeof m === "object" && m.kind === "bitget_mode_mismatch" && Array.isArray(m.legs) && m.legs.length ? m : null;
+}
 function trHaltReasonText(r, done) {
   const rk = trRestartKind(r), z = trNoAmounts(r) && !trRestartUnconfirmed(r), H = !!(r && r.halt && r.halt.halted);
   const vl = (v) => (typeof trVenueLabel === "function" ? trVenueLabel(v, true) : v), bh = trBookHold(r);
   if (H && bh && bh.ask !== false) return t("tr.acct.reason", { v: vl(bh.venue) });   // 要回答的那一題優先:它的出口是「確認帳戶」,不是啟動下單
   if (H && !bh && done && (done.outcome === "kept" || done.outcome === "reset")) return t(done.outcome === "kept" ? (trHaltFreeze(r) ? "tr.acct.doneSameFreeze" : "tr.acct.doneSame") : "tr.acct.doneDiff", { v: vl(done.venue) });
+  // 主機重開停住(machine)仍優先:那時什麼單都不下的原因是重開,清單照樣畫
+  const mm = rk !== "machine" ? trHaltMismatch(r) : null;
+  if (mm) return t(mm.mode === "classic" ? "tr.haltBitgetMismatchClassic" : "tr.haltBitgetMismatchUta", { n: mm.legs.length });
   // 照 HALT 的實際原因講(Mac e2e 10-14:解綁造成的暫停被講成「Blave 重開過」)。主機重開停住(machine)那一種最根本,照舊優先;
   // 解綁那一種再分下單程式在不在跑:沒在跑就什麼單都不下,在跑照 A 的規則(不開新倉、平倉照常)
   // 「平倉與停損停利照常執行」只有對帳器真的活著才成立(從沒啟動過、自己掛了、解綁時被停掉都不成立;稽核 r4 P1-2)
@@ -1579,7 +1589,7 @@ const PAPER = "paper", BINANCE = "binance", CAPITAL = "capital";   // 群益只�
    讀帳失敗時 runtime 寫 currency: null,畫面靠它推幣別(tests/check_venue_ccy.py 逐支對 lib) */
 /* Bitget 閘門 = cloudcmd.BITGET_VERIFIED_MODES = lib/venue_traits.py bitget 列的 verified_modes(tests/check_bitget_surfaces.py 釘住同值)。
    空 = 兩個視角都不列;只開一種 = 說明區講另一種會被拒 */
-const BITGET_VERIFIED_MODES = ["classic"];
+const BITGET_VERIFIED_MODES = ["classic", "uta"];
 const CX_VENUES = { binance: { label: "Binance", env: "BINANCE", ccy: "USDT" }, okx: { label: "OKX", env: "OKX", pass: true, ccy: "USD" },
   bingx: { label: "BingX", env: "BINGX", ccy: "USDT" }, gateio: { label: "Gate.io", env: "GATEIO", ccy: "USDT" }, bybit: { label: "Bybit", env: "BYBIT", ccy: "USDT" },
   stockcoin: { label: "StockCoin", env: "STOCKCOIN", ccy: "USDT" },
@@ -2255,6 +2265,31 @@ async function trRun(want, steps, cmd) {
   if (heldV) srSay(t("tr.acct.reason", { v: trVenueLabel(heldV, true) }));
 }
 
+/* 對不上的倉位(設計 v033-decisions 1b-B):標的／換帳戶前／Bitget 現在,下面一句出口。數字原樣、不換算;沒有那一腿寫「沒有倉位」 */
+function trPaintMismatch(m) {
+  const box = $("tr-mm"); if (!box) return;
+  const sig = m ? LANG + "|" + JSON.stringify(m.legs) : "";
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig; box.textContent = ""; box.hidden = !m;
+  if (!m) return;
+  const leg = (side, q) => {
+    if (typeof q !== "number" || !isFinite(q)) return trEl("span", "pos-word", t("tr.mm.none"));
+    const g = trEl("span", "pos-leg");
+    g.append(trEl("span", "dir " + (side === "long" ? "buy" : "sell"), t(side === "long" ? "tr.rel.long" : "tr.rel.short")), " ",
+      trEl("span", "num", q.toLocaleString("en-US", { maximumFractionDigits: 8 })));
+    return g;
+  };
+  const scroll = trEl("div", "pf-scroll"), tbl = trEl("table", "pf-tbl");
+  tbl.appendChild(trHead([[t("tr.mm.colSym"), ""], [t("tr.mm.colBefore"), "n"], [t("tr.mm.colNow"), "n"]]));
+  const tb = document.createElement("tbody");
+  m.legs.forEach((x) => {
+    const tr = document.createElement("tr"), a = trEl("td", "n"), b = trEl("td", "n");
+    a.appendChild(leg(x.side, x.before)); b.appendChild(leg(x.side, x.now));
+    tr.append(trEl("td", "sym", String(x.symbol || "").slice(0, 40)), a, b); tb.appendChild(tr);
+  });
+  tbl.appendChild(tb); scroll.appendChild(tbl);
+  box.append(scroll, trEl("p", "tr-mm-foot", t("tr.mm.foot")));
+}
 function trPaintHead() {
   // state = 文字與鈕字用的(雲端讀不到新狀態時 = 上一份回報自己說的,見 envHeadState);綠點另外看保守的 trExecState
   const state = envHeadState(TR.st, Date.now()), text = trHeadText(state, trZNow(state)), ro = TR.env === "cloud";
@@ -2287,6 +2322,7 @@ function trPaintHead() {
   if (failStop) { const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); desc.appendChild(m); }
   desc.classList.toggle("fail", failStop);
   desc.appendChild(tx); desc.title = full;   // 單行截斷,全文放 title
+  trPaintMismatch(state === "halted" && !TR.pending ? trHaltMismatch(hr) : null);
   // 帶著出口的句子(「請重開 Blave」「按『啟動下單』重新開始」)不能被截斷:這時候狀態行可以換行
   /* 狀態句換行。**Z 一律換行**:標頭改成三列之後這一行跨滿寬,沒有 .wrap 的狀態會被截成一行、而且看起來很正常——
      被藏掉的正是「部位現在沒有人在管」那半句(設計師在 V2b 點名的陷阱)。running + Z 與「尚未啟動下單 · 最後執行」
@@ -4999,6 +5035,8 @@ function trEventText(type, d) {
   const out = (head, note, tip, code, tail) => [head, note == null ? null : note, lv, tip || null, code || null, tail || null];
   if (type === "exchange_unreachable") return out(["tr.ov.evExUnreach", v], t("tr.ov.evExUnreachNote"), t("tr.ov.evExUnreachTip"));
   if (type === "exchange_recovered") return out(["tr.ov.evExBack", v], null);
+  // Bitget 換帳戶類型後倉位全對上、自動恢復(P3,只進事件列;對不上的那一種走 halt)
+  if (type === "venue_mode_switched" && d.venue === "bitget") return out(t(d.mode === "classic" ? "tr.ov.evBitgetClassic" : "tr.ov.evBitgetUta"), null);
   if (type === "bar_stale") return d.computed === true ? null : out(t("tr.ov.evBarStale"), d.minutes == null ? null : t("tr.ov.evBarStaleNote", v));
   // 目標部位過久沒更新(同網頁 workspace_ov_ev_target_stale):換算門檻同 api notify._age_text;沒 age_s 用不帶時間那句
   if (type === "target_stale") {

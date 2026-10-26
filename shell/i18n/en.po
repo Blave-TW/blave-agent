@@ -8937,3 +8937,33 @@ msgstr "{lots} lot(s) are still open at Capital. After you quit, strategies plac
 
 msgid "capl.quit.unknown"
 msgstr "Capital positions can’t be read right now — some may still be open. After you quit, strategies place no more orders and nothing is closed — check them in the Capital app."
+
+# Bitget 換帳戶類型後倉位對不上、自動暫停(halt.mismatch;trade.js trHaltReasonText)
+msgid "tr.haltBitgetMismatchUta"
+msgstr "After Bitget switched to a unified account (UTA), {n} positions don’t match what was there before. Nothing is sent while paused."
+
+msgid "tr.haltBitgetMismatchClassic"
+msgstr "After Bitget switched to a classic account, {n} positions don’t match what was there before. Nothing is sent while paused."
+
+# 對不上的倉位清單(trade.js trPaintMismatch):欄名與出口句
+msgid "tr.mm.colSym"
+msgstr "Symbol"
+
+msgid "tr.mm.colBefore"
+msgstr "Before the switch"
+
+msgid "tr.mm.colNow"
+msgstr "On Bitget now"
+
+msgid "tr.mm.none"
+msgstr "No position"
+
+msgid "tr.mm.foot"
+msgstr "Check them on Bitget, then press Start trading."
+
+# 事件列(P3):Bitget 換帳戶類型、倉位全對上、自動恢復
+msgid "tr.ov.evBitgetUta"
+msgstr "Bitget switched to a unified account (UTA); positions match, trading as usual."
+
+msgid "tr.ov.evBitgetClassic"
+msgstr "Bitget switched to a classic account; positions match, trading as usual."

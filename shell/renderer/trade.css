@@ -149,7 +149,9 @@ html.ws-sc .side-gate { display: none; }
 /* 啟動在途時主鈕右邊多一顆「暫停下單」文字鈕(#tr-go-stop),間距 8 */
 .main-head .act { grid-column: 2; grid-row: 1; justify-self: end; display: flex; align-items: center; gap: var(--space-8); }
 /* `.txt` 底下其餘的孩子(狀態句、原因行、更新入口、唯讀說明、停機區塊、紅字)一律跨滿寬,自己一列 */
-.main-head-desc, .main-head .tr-noamt, .main-head .tr-go-upd, .main-head .tr-ro-note, .main-head #tr-verdict, .main-head .pf-alert { grid-column: 1 / -1; }
+.main-head-desc, .main-head .tr-noamt, .main-head .tr-go-upd, .main-head .tr-ro-note, .main-head #tr-verdict, .main-head .pf-alert, .main-head .tr-mm { grid-column: 1 / -1; }
+.main-head .tr-mm { margin-top: var(--space-12); }
+.main-head .tr-mm-foot { margin-top: var(--space-8); font-size: 12px; color: var(--ink-2); }
 /* 「暫停下單」要在恐慌時看得到:比一般文字鈕亮一階,熱區跟主鈕等高(視覺仍是一行字);hover 照 .btn-quiet:hover 轉 --ink */
 .main-head .tr-go-stop { color: var(--ink-2); min-height: 32px; padding: 0 var(--space-8); }
 .main-head .tr-go-stop:hover { color: var(--ink); }

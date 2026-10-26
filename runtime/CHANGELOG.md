@@ -8,7 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-- **Bitget 翻開經典帳戶(desktop 0.1.33)**(`venue_traits` 的 `bitget` `verified_modes` = `("classic",)`,2026-10-22 經典主帳戶真帳驗過;0.1.32 關著的閘門照 e3b573ab 列的步驟打開):`account_reader` 開始讀 Bitget、`local_daemon` 放行 `BITGET`、電腦版連接框兩個視角都列 Bitget(`cloudcmd.BITGET_VERIFIED_MODES` 同值)、聊天綁定收 `bitget`。統一帳戶(UTA)仍未開放:UTA 金鑰照舊由 lib 拒絕(`[bitget_account_mode:uta]`,講「還不支援」、叫人改綁經典帳戶或其他交易所),畫面走 `cx.err.bitgetUta`。broker attribution 還是空的(`BROKER_CHANNEL_CODE`)。測試 `tests/check_bitget_lib.py`、`tests/check_bitget_surfaces.py`、`tests/check_venue_traits.py`、`tests/check_shell_connect_venues.js`、`tests/check_desktop_venue_env.py`、`tests/check_local_real_key_gate.py`。
+- **Bitget 翻開經典帳戶與統一帳戶(desktop 0.1.33)**(`venue_traits` 的 `bitget` `verified_modes` = `("classic", "uta")`;經典 2026-10-22、統一帳戶 T1–T12 真帳驗過,T11c 停損 10-26 補驗):`account_reader` 讀 Bitget、`local_daemon` 放行 `BITGET`、電腦版連接框兩個視角都列 Bitget(`cloudcmd.BITGET_VERIFIED_MODES` 同值,兩種都開所以連接框不再講「只收經典帳戶」)、聊天綁定收 `bitget`。broker attribution 還是空的(`BROKER_CHANNEL_CODE`)。測試 `tests/check_bitget_lib.py`、`tests/check_bitget_surfaces.py`、`tests/check_venue_traits.py`、`tests/check_shell_connect_venues.js`、`tests/check_desktop_venue_env.py`、`tests/check_local_real_key_gate.py`。
+- **Bitget 換帳戶類型後倉位對不上,畫面列得出是哪幾筆(`portfolio_reporter.halt_state` 帶 `halt.mismatch`)**:workspace lib 0.1.33 在經典↔統一切換後,只要有一腿不見、多一腿、或數量差一個步長以上就立刻 HALT(source `reconciler`,平台 `halt` P1),HALT 檔多帶 `mismatch` = `{kind: "bitget_mode_mismatch", venue, mode, legs: [{symbol, side, before, now}]}`。reporter 只在形狀對時原樣帶出(最多 20 腿、數量不是數字就成 null、兩邊都沒數字的腿丟掉),其他 HALT 不帶這欄;電腦版照它把原因句換成 Bitget 那句、在狀態句下列出對不上的腿。`guard.trip_halt` 多收 `**extra`(向下相容)。全對上時 lib 寫一筆 P3 事件 `venue_mode_switched`(api `SPECS` 要先加,見 NOTIFY-PROPOSAL)。測試 `tests/check_halt_freeze.py` F8、`tests/check_bitget_lib.py` ①–⑤、`tests/check_shell_trade.js`。
 
 ## 1.1.141 — 2026-10-26(desktop 0.1.32)
 

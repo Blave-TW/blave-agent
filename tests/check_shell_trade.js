@@ -177,9 +177,10 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
   // Bitget 統一帳戶沒開放:lib _require_verified 的句子形狀(kind=key_permission)→ 照實講還不支援,不落成 tr.err.key;閘門值照 trade.js 原文
   { eval("var BITGET_VERIFIED_MODES = " + /\nconst BITGET_VERIFIED_MODES = (\[[^\]]*\]);/.exec(src)[1]);
     const u = "[order_reject:key_permission] 這組 Bitget 金鑰的帳戶是統一帳戶 [bitget_account_mode:uta]，Blave 還不支援 Bitget 的統一帳戶（目前只支援經典帳戶）";
-    const want = BITGET_VERIFIED_MODES.indexOf("uta") < 0 ? "bitget_uta_unsupported" : "key_permission";
+    // UTA 開了(0.1.33)就不再有這種拒絕;萬一舊 lib 還丟,照一般的 key_permission(只認最前面)
+    const shut = BITGET_VERIFIED_MODES.indexOf("uta") < 0, want = shut ? "bitget_uta_unsupported" : "key_permission";
     ok("Bitget UTA 沒開放:[bitget_account_mode:uta] → tr.err.bitgetUta(下單)、讀帳那列 cx.err.bitgetUtaBound;經典帳戶的標記照舊 key_permission",
-      trErrToken(u) === want && trErrToken("close_symbol: " + u) === want && TR_REJECT_TEXT.bitget_uta_unsupported === "tr.err.bitgetUta"
+      trErrToken(u) === want && trErrToken("close_symbol: " + u) === (shut ? want : null) && TR_REJECT_TEXT.bitget_uta_unsupported === "tr.err.bitgetUta"
       && trErrToken("[order_reject:key_permission] x [bitget_account_mode:classic]") === "key_permission"
       && src.includes('else if (trErrToken(ae.msg) === "bitget_uta_unsupported") box.appendChild(errLine(t("cx.err.bitgetUtaBound")));')); }
   const vm = require("vm"), ta = { value: "", focused: false, focus() { this.focused = true; } }, ctx = { $: () => ta, t: (k, v) => k + "|" + v.sym + "|" + v.err, TR: { env: "local" }, autosize() {}, tracked: [], String,
@@ -908,7 +909,23 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       var TR = { env: "local", st: haltApp, pending: null }, trReport = () => TR.st.report, t = (k) => k, trStamp = () => "—", envHeadWord = () => null, trKeyBad = () => false;
       eval(fn2("trStateText")); eval(fn2("trFailStopped")); eval(fn2("trHaltReasonText")); eval(fn2("cxFailWord"));
       ok("HALT + Blave 結束再打開:kind = app、狀態 halted、狀態行是 Blave 重開那條(不是 HALT 的「平倉照常」)",
-        trRestartKind(haltApp.report) === "app" && trExecState(haltApp) === "halted" && trStateText("halted") === "tr.halted · tr.restartStoppedLocal"); }
+        trRestartKind(haltApp.report) === "app" && trExecState(haltApp) === "halted" && trStateText("halted") === "tr.halted · tr.restartStoppedLocal");
+      eval(fn2("trHaltMismatch"));
+      const mmLegs = [{ symbol: "BTCUSDT", side: "long", before: 0.05, now: 0.03 }, { symbol: "ETHUSDT", side: "short", before: 1.2, now: null }];
+      const mmR = (o) => ({ venues: Vp, config: { amounts: { a: 100 } }, halt: { halted: true, at: 1, source: "reconciler", reason: "[bitget_account_mode_mismatch] x",
+        mismatch: { kind: "bitget_mode_mismatch", venue: "bitget", mode: "uta", legs: mmLegs } }, reconciler: { alive: true, heartbeat_at: 100 }, daemon: { reconciler: { running: true, wanted: true } }, ...o });
+      ok("Bitget 換帳戶類型對不上(halt.mismatch):原因句換成 Bitget 專屬那句、帶對不上的腿數;經典那一邊用 Classic 那句;形狀不對、沒暫停照舊",
+        trHaltReasonText(mmR({}), null) === "tr.haltBitgetMismatchUta" && /\{ n: mm\.legs\.length \}/.test(fn2("trHaltReasonText"))
+        && trHaltReasonText(mmR({ halt: { ...mmR({}).halt, mismatch: { ...mmR({}).halt.mismatch, mode: "classic" } } }), null) === "tr.haltBitgetMismatchClassic"
+        && trHaltMismatch(mmR({ halt: { ...mmR({}).halt, mismatch: { kind: "other", legs: mmLegs } } })) === null
+        && trHaltMismatch(mmR({ halt: { ...mmR({}).halt, mismatch: { ...mmR({}).halt.mismatch, legs: [] } } })) === null
+        && trHaltMismatch(mmR({ halt: { ...mmR({}).halt, halted: false } })) === null
+        && trHaltReasonText(mmR({ halt: { ...mmR({}).halt, mismatch: undefined } }), null) === "tr.haltReasonAll");
+      ok("對不上的清單畫在狀態句下面(#tr-mm,停暫停才出、過場中不出),欄位:標的／換帳戶前／Bitget 現在,沒有那一腿寫「沒有倉位」",
+        /trPaintMismatch\(state === "halted" && !TR\.pending \? trHaltMismatch\(hr\) : null\);/.test(src)
+        && /\[\[t\("tr\.mm\.colSym"\), ""\], \[t\("tr\.mm\.colBefore"\), "n"\], \[t\("tr\.mm\.colNow"\), "n"\]\]/.test(fn2("trPaintMismatch"))
+        && /t\("tr\.mm\.none"\)/.test(fn2("trPaintMismatch")) && /t\("tr\.mm\.foot"\)/.test(fn2("trPaintMismatch"))
+        && fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8").includes('<div class="tr-mm" id="tr-mm" hidden></div>')); }
     ok("主機重開 + 已按過暫停:講重開那條(kind = machine 優先)", trRestartKind({ halt: { halted: true }, reconciler: { stopped: { reason: "machine_restart" } } }) === "machine");
     ok("啟動框:重開過才多那一行(主機 / Blave 各一句,最上面的狀態句),HALT 後再啟動不加", /lines: plan\.concat\(rkS === "machine" \? \[t\("tr\.cloud\.restartStartLine"\)\] : rkS === "app" \? \[t\("tr\.restartStartLineLocal"\)\] : \[\]\)\.concat\(dcl\),/.test(src));   // 0.1.24 A6:最上面先一句「照策略組合 N 支…」
     { /* Wei 0.0.6:這台電腦沒有「自己下單」的策略程式時,「解除暫停」與「包含你自己的策略程式下的單」都在講一顆不存在的東西。
@@ -1038,6 +1055,10 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("S4 machine_restart_stop_failed 事件:同網頁那一列(可能沒停住;先暫停、再更新)", J(trEventText("machine_restart_stop_failed", {}).slice(0, 2)) === J(["tr.ov.evRestartStopFailed", "tr.ov.evRestartStopFailedNote"]));
     ok("machine_restart_stopped 事件:標題已暫停、說明講平倉停損也不會執行", J(trEventText("machine_restart_stopped", {}).slice(0, 2)) === J(["tr.ov.evRestartStopped", "tr.ov.evRestartStoppedNote"]));
     ok("desktop_action 不畫", trEventText("desktop_action", { action: "update" }) === null);
+    ok("venue_mode_switched(Bitget 換帳戶類型、倉位全對上):P3 一般字、照 mode 選句、沒有註解;別家不畫",
+      J(trEventText("venue_mode_switched", { venue: "bitget", mode: "uta" }).slice(0, 3)) === J(["tr.ov.evBitgetUta", null, 3])
+      && trEventText("venue_mode_switched", { venue: "bitget", mode: "classic" })[0] === "tr.ov.evBitgetClassic"
+      && trEventText("venue_mode_switched", { venue: "okx", mode: "uta" }) === null);
     const mc = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF, TXF", reason: "x" }), mc0 = trEventText("manual_close_required", { symbols: "" });
     ok("manual_close_required:帶標的時接在後面;symbols 空字串只講那一句;註解同網頁", mc[0] === "tr.ov.evManualClose" && mc[4] === "TMF, TXF" && mc[1] === "tr.ov.evManualCloseNote" && mc0[0] === "tr.ov.evManualClose" && !mc0[4]); }
   { // 設計稽核可後修 §3-1:雲端的投資組合策略那句講真話;L3:框開著時變成讀不到設定 → 送出前再擋一次;L2:=absent 講明
@@ -1401,7 +1422,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /\.main-head \.act \{ grid-column: 2; grid-row: 1; justify-self: end;/.test(css2)
       && /\.main-head:not\(:has\(\.act\)\) \{ grid-template-columns: minmax\(0, 1fr\); column-gap: 0; \}/.test(css2));
     ok("V2b:.txt 底下每一個孩子都跨滿寬(狀態句、原因行、更新入口、唯讀說明、停機區塊、紅字)——漏一個就會被塞進第二欄",
-      /\.main-head-desc, \.main-head \.tr-noamt, \.main-head \.tr-go-upd, \.main-head \.tr-ro-note, \.main-head #tr-verdict, \.main-head \.pf-alert \{ grid-column: 1 \/ -1; \}/.test(css2));
+      /\.main-head-desc, \.main-head \.tr-noamt, \.main-head \.tr-go-upd, \.main-head \.tr-ro-note, \.main-head #tr-verdict, \.main-head \.pf-alert, \.main-head \.tr-mm \{ grid-column: 1 \/ -1; \}/.test(css2));
     ok("V2b:中欄 ≤520 + 兩顆鈕才換列、各佔一半;一顆鈕留在標題列(不用無條件換行那一種)",
       /\.main-head:has\(\.act button \+ button\) \.act \{ grid-column: 1 \/ -1; grid-row: 2; justify-self: stretch;/.test(cq)
       && /\.main-head:has\(\.act button \+ button\) \.act > button \{ flex: 1; \}/.test(cq)
