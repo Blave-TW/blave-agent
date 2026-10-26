@@ -66,6 +66,11 @@ except ImportError:  # half-updated workspace (lib/winreplace.py without load_js
         with open(path, **open_kw) as f:
             return json.load(f)
 try:
+    from lib.winreplace import read_retry
+except ImportError:  # half-updated workspace (lib/winreplace.py without read_retry): no read retry
+    def read_retry(read, *args, **kwargs):
+        return read(*args, **kwargs)
+try:
     from lib import venue_errors
 except ImportError:  # a file-by-file update that skipped lib/venue_errors.py must not break reads
     venue_errors = None
@@ -431,6 +436,11 @@ def _audit_leg(r):
     return {"long": "long", "short": "short", "buy": "long", "sell": "short"}.get(side)
 
 
+def _read_lines(path):
+    with open(path, encoding="utf-8", errors="replace") as f:
+        return f.readlines()
+
+
 def _our_stop_legs():
     """{(Bitget symbol, side)} of the legs whose last stop-loss THIS lib placed is still
     standing by its own record: state/audit.jsonl (lib/guard: append-only, fsynced, never
@@ -439,8 +449,7 @@ def _our_stop_legs():
     not in the record (the leg it guarded is then gone or re-opened without it). None =
     the record cannot be read (missing or unreadable) — nothing can be said about it."""
     try:
-        with open(guard.AUDIT_PATH, encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
+        lines = read_retry(_read_lines, guard.AUDIT_PATH)
     except OSError:
         return None
     live = {}

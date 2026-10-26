@@ -84,6 +84,8 @@ EXEMPT_CATEGORIES = {
 EXEMPT = [
     ('lib/account_bitget.py', 'load_json', 'path',
      'helper', "the half-updated-workspace fallback (lib/winreplace.py without load_json)"),
+    ('lib/account_bitget.py', '_read_lines', 'path',
+     'helper', "the open read_retry wraps (state/audit.jsonl, _our_stop_legs)"),
     ('lib/account_capital.py', 'load_json', 'path',
      'helper', "the retry helper's own open, or the half-updated-workspace fallback"),
     ('lib/account_president.py', 'load_json', 'path',
