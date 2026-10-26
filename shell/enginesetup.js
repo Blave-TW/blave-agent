@@ -286,6 +286,10 @@ function createEngineSetup(o) {
       });
     });
   }
+  // 舊 pip(例:Xcode Python 3.9 帶的 21.2.4 建的 venv)不認 raw,在解析參數時就以 exit 2 退出、什麼都沒裝:
+  // 認出那一句就拿掉這個旗標重跑同一條,這次啟動之後的 pip 也不帶(只少了逐 byte 進度)
+  let rawBar = true;
+  const RAW_BAR = "--progress-bar=raw", RAW_BAR_REJECTED = /--progress-bar: invalid choice: 'raw'/;
   async function pip(my, args, envPath, timeoutMs, onName, onInstall) {
     const p = S.dl;
     let lastLine = now();
@@ -293,17 +297,23 @@ function createEngineSetup(o) {
     // 沒有新資料:最近一次有輸出(解析、Downloading、Progress)起算;進了安裝階段就不算(那時 pip 不出聲是正常的)
     const idle = { ms: o.idleMs, quiet: () => (p.installing ? 0 : now() - Math.max(lastLine, p.lastByteAt)) };
     const seen = new Map();   // 這一條 pip 下載 / 從快取拿的 wheel:名字 → 版本(給半裝保護釘版本)
+    const go = () => run(my, o.venvPy, [...PIP_INSTALL.filter((a) => rawBar || a !== RAW_BAR), ...(o.pipCacheDir ? ["--cache-dir", o.pipCacheDir] : []), ...args], envPath, timeoutMs, (l) => {
+      lastLine = now();
+      const n = onName ? pipCurName(l) : null, renamed = !!n && n !== S.cur.name, moved = pipLine(p, l, now());
+      const wh = onInstall && pipWheel(l);
+      if (wh) seen.set(wh.name, wh.version);
+      const ins = onInstall && /^Installing collected packages: (.+)$/.exec(l);
+      if (ins) onInstall(ins[1].split(",").map((x) => x.trim()).filter(Boolean), seen);
+      if (renamed) S.cur.name = n;
+      if (moved || renamed) emit();
+    }, o.idleMs ? idle : null);
     try {
-      await run(my, o.venvPy, [...PIP_INSTALL, ...(o.pipCacheDir ? ["--cache-dir", o.pipCacheDir] : []), ...args], envPath, timeoutMs, (l) => {
-        lastLine = now();
-        const n = onName ? pipCurName(l) : null, renamed = !!n && n !== S.cur.name, moved = pipLine(p, l, now());
-        const wh = onInstall && pipWheel(l);
-        if (wh) seen.set(wh.name, wh.version);
-        const ins = onInstall && /^Installing collected packages: (.+)$/.exec(l);
-        if (ins) onInstall(ins[1].split(",").map((x) => x.trim()).filter(Boolean), seen);
-        if (renamed) S.cur.name = n;
-        if (moved || renamed) emit();
-      }, o.idleMs ? idle : null);
+      try { await go(); } catch (e) {
+        if (!rawBar || e.aborted || !RAW_BAR_REJECTED.test(String(e.stderr || ""))) throw e;
+        rawBar = false;
+        o.log("[engine] this pip has no " + RAW_BAR + "; retrying without it");
+        await go();
+      }
       fileDone(p);
     } catch (e) {
       p.file = null;

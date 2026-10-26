@@ -1870,7 +1870,7 @@ const STRINGS = {
     "cap.needWin": "Capital needs a Windows machine.",
     "cap.s.setup": "Install Capital components",
     "cap.s.setupRun": "Installing…",
-    "cap.s.setupFail": "The Capital components didn't install.",
+    "cap.s.setupFail": "The Capital components didn’t install.",
     "capl.setupBusy": "Windows is installing something else, often updates. Try again in a few minutes.",
     "capl.setupDenied": "The install was cancelled. Try again and click Yes when Windows asks.",
     "capl.setupReboot": "Restart the computer to finish installing, then try again.",

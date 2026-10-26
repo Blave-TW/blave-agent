@@ -1622,7 +1622,7 @@ async function stratRefresh(turnEnd) {
     const wrap = document.createElement("div"); wrap.className = "strat-wrap cs-row";
     const del = armedDelete(wrap, t(window.blave.platform === "win32" ? "strat.del.win" : "strat.del"), async () => {
       const r = await window.blave.deleteStrategy(x.name);
-      if (r === true) { if (typeof sfForget === "function") sfForget(x.name); (await stratRefreshAt(x.name)).focus(); return; }
+      if (r === true) { if (typeof sfForget === "function") sfForget(x.name); if (typeof sugCollapse === "function") sugCollapse(); (await stratRefreshAt(x.name)).focus(); return; }
       // 沒刪成一律開框講原因,包括裸 false / null(IPC 被擋)與沒見過的 code。資料夾不在 = 先重讀,關框後焦點回到同位置那一列
       const code = r && r.code;
       const opener = code === "NOT_FOUND" ? await stratRefreshAt(x.name) : b;

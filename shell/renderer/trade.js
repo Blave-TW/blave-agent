@@ -6001,6 +6001,7 @@ async function cdelRun(x, opener) {
   }
   if (res && res.ok) {
     delete CDEL.ids[name]; CDEL.busy.delete(name); CDEL.gone.set(name, Date.now());
+    if (typeof sugCollapse === "function") sugCollapse();   // 灰字建議可能正指著這支(句子沒帶策略名可比對):刪了就作廢,同換對話
     if (typeof sfCloudForget === "function") sfCloudForget(name);   // 側欄順序 / 旗標裡的這個名字順手清掉(stratflags.js)
     const wasHere = !!document.activeElement && !!document.activeElement.closest && !!document.activeElement.closest('.strat-wrap[data-name="' + name + '"]');
     const rows = [...$("strat-list-cloud").querySelectorAll(".strat-wrap")], at = rows.findIndex((w) => w.dataset.name === name);

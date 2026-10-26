@@ -38,6 +38,10 @@ ok("組合成員:都沒有 = false;config 讀不到 = null(交給機器裁決)",
   ok("刪除框帶雲端記號、開框前先預檢組合成員", /if \(cdelInUse\(cfg, x\.name\) === true\) return cdelBlocked\(x, opener\);/.test(fnOf(trSrc, "cdelAsk")) && /env: "cloud"/.test(fnOf(trSrc, "cdelAsk"))
     && /okDisabled: true/.test(fnOf(trSrc, "cdelBlocked")) && /poOpen\("cfg"\)/.test(fnOf(trSrc, "cdelBlocked"))); }   // 0.1.24:金額搬到策略組合 › 配置
 
+// 刪成功(本機、雲端)→ 灰字建議作廢(renderer/suggest.js):句子可能正指著剛刪掉的那支
+{ const okBranch = (src) => (src.match(/if \(res && res\.ok\) \{[\s\S]*?\n {2}\}/) || [""])[0];
+  ok("刪成功:本機那條與雲端 cdelRun 的成功分支都呼叫 sugCollapse", /if \(r === true\) \{[^\n]*sugCollapse\(\)/.test(appSrc) && /sugCollapse\(\)/.test(okBranch(fnOf(trSrc, "cdelRun")))); }
+
 // ── confirmBox 的 single(只有一顆鈕)──
 ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$\("del-cancel"\)\.hidden = !!single;/.test(appSrc) && /if \(single\) \$\("del-ok"\)\.focus\(\); else \$\("del-cancel"\)\.focus\(\);/.test(appSrc)
   && /\$\("del-cancel"\)\.hidden = false;/.test(fnOf(appSrc, "delClose")));

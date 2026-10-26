@@ -615,6 +615,17 @@ const venvDir = (r) => path.join(r.base, "venv");
     ok("lockKey:SDK 或清單任一個換了就不一樣", E.lockKey(SDK, MAIN_DEPS) !== E.lockKey(SDK2, MAIN_DEPS) && E.lockKey(SDK, MAIN_DEPS) !== E.lockKey(SDK, [bump(MAIN_DEPS[0]), ...MAIN_DEPS.slice(1)]) && E.lockKey(SDK, MAIN_DEPS) === E.lockKey(SDK, [...MAIN_DEPS]));
     ok("接線:main.js 只在 WORKSPACE_LOCK_FOR 對得上時才帶鎖,對不上帶空的", /lock: WORKSPACE_LOCK_FOR === require\("\.\/enginesetup"\)\.lockKey\(SDK_PINS, WORKSPACE_DEPS\) \? WORKSPACE_LOCK : \[\],/.test(MAIN_SRC)); }
 
+  // ── 舊 pip(21.2.4 實測)不認 --progress-bar=raw:解析參數就 exit 2、沒裝東西 → 拿掉旗標重跑同一條,之後每條都不帶 ──
+  { const OLD = "Usage:\n  python -m pip install [options] <requirement specifier> ...\n\noption --progress-bar: invalid choice: 'raw' (choose from 'off', 'on', 'ascii', 'pretty', 'emoji')\n";
+    const k = rig({ behave: (bin, args) => (args.includes("--progress-bar=raw") ? { code: 2, err: OLD } : { code: 0 }) });
+    let err = null; try { await k.S.ensure(); } catch (e) { err = e; }
+    const pc = pipCalls(k), raw = pc.map((c) => c.args.includes("--progress-bar=raw"));
+    ok("舊 pip:ensure 成功;第一條帶 raw 被拒後原樣重跑一次(不帶),之後那條一開始就不帶", err === null && k.S.snapshot().phase === "done" && raw.join() === "true,false,false"
+      && batchOf(pc[0]).join(" ") === batchOf(pc[1]).join(" ") && k.logs.some((l) => /retrying without it/.test(l)), { err: err && err.message, raw });
+    const n = rig({ behave: (bin, args) => (args.includes(pin("numpy")) ? { code: 1, err: "ERROR: No matching distribution found for numpy" } : { code: 0 }) });
+    let e2 = null; try { await n.S.ensure(); } catch (e) { e2 = e; }
+    ok("別的失敗不重跑、照舊報錯,旗標也不拿掉", e2 && pipCalls(n).length === 2 && pipCalls(n).every((c) => c.args.includes("--progress-bar=raw")), pipCalls(n).length); }
+
   for (const d of TMPS) fs.rmSync(d, { recursive: true, force: true });
   process.exit(red ? 1 : 0);
 })();
