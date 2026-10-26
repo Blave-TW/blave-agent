@@ -1579,7 +1579,7 @@ const PAPER = "paper", BINANCE = "binance", CAPITAL = "capital";   // 群益只�
    讀帳失敗時 runtime 寫 currency: null,畫面靠它推幣別(tests/check_venue_ccy.py 逐支對 lib) */
 /* Bitget 閘門 = cloudcmd.BITGET_VERIFIED_MODES = lib/venue_traits.py bitget 列的 verified_modes(tests/check_bitget_surfaces.py 釘住同值)。
    空 = 兩個視角都不列;只開一種 = 說明區講另一種會被拒 */
-const BITGET_VERIFIED_MODES = [];
+const BITGET_VERIFIED_MODES = ["classic"];
 const CX_VENUES = { binance: { label: "Binance", env: "BINANCE", ccy: "USDT" }, okx: { label: "OKX", env: "OKX", pass: true, ccy: "USD" },
   bingx: { label: "BingX", env: "BINGX", ccy: "USDT" }, gateio: { label: "Gate.io", env: "GATEIO", ccy: "USDT" }, bybit: { label: "Bybit", env: "BYBIT", ccy: "USDT" },
   stockcoin: { label: "StockCoin", env: "STOCKCOIN", ccy: "USDT" },

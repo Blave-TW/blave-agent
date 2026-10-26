@@ -192,7 +192,7 @@ function cloudArgsOk(cmd, a) {
 /* Bitget 的閘門 = lib/venue_traits.py bitget 列的 verified_modes(真帳驗過的帳戶類型);這裡、trade.js 與 runtime 那份必須同值
    (tests/check_bitget_surfaces.py 釘住),翻開是同一個 commit 一起改。空 = 連接框不列、connectSecrets 不收、daemon 不收;
    解除綁定的名字照給——網頁舊的 Bitget 那一列綁過的機器 .env 可能已有 BITGET_* */
-const BITGET_VERIFIED_MODES = [];
+const BITGET_VERIFIED_MODES = ["classic"];
 const CONNECT_VENUES = { binance: { env: "BINANCE" }, okx: { env: "OKX", pass: true }, bingx: { env: "BINGX" }, gateio: { env: "GATEIO" }, bybit: { env: "BYBIT" }, stockcoin: { env: "STOCKCOIN" },
   bitget: { env: "BITGET", pass: true, modes: BITGET_VERIFIED_MODES } };
 // 帶 modes 的那家(真帳只驗了部分帳戶類型)= 空清單時整家關著

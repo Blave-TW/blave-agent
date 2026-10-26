@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **Bitget 翻開經典帳戶(desktop 0.1.33)**(`venue_traits` 的 `bitget` `verified_modes` = `("classic",)`,2026-10-22 經典主帳戶真帳驗過;0.1.32 關著的閘門照 e3b573ab 列的步驟打開):`account_reader` 開始讀 Bitget、`local_daemon` 放行 `BITGET`、電腦版連接框兩個視角都列 Bitget(`cloudcmd.BITGET_VERIFIED_MODES` 同值)、聊天綁定收 `bitget`。統一帳戶(UTA)仍未開放:UTA 金鑰照舊由 lib 拒絕(`[bitget_account_mode:uta]`,講「還不支援」、叫人改綁經典帳戶或其他交易所),畫面走 `cx.err.bitgetUta`。broker attribution 還是空的(`BROKER_CHANNEL_CODE`)。測試 `tests/check_bitget_lib.py`、`tests/check_bitget_surfaces.py`、`tests/check_venue_traits.py`、`tests/check_shell_connect_venues.js`、`tests/check_desktop_venue_env.py`、`tests/check_local_real_key_gate.py`。
+
 ## 1.1.141 — 2026-10-26(desktop 0.1.32)
 
 - **群益本機開通「安裝群益元件」的 VC++ 2010 一步講得出原因、別的安裝在跑會自己再試(`capital_local._ensure_vc`、`_PS_VC`;Windows Server 2022 剛開機半小時真機失敗一次、同 session 重跑就過)**:原本 `_PS_VC` 的結束碼被丟掉,`setup.error` 只寫得出 `SETUP_FAILED:vcredist`;UAC 按否時 `Start-Process` 若只寫非終止錯誤,`$p` 是空的、腳本會以 0 結束(推論,真機未見)。現在接住例外回 1223,依結束碼分:4 → `vcredist:sig`(不重試);等待與重試都在提權的那一個 PowerShell 裡做、整個流程只跳一次 UAC(一般管理員帳號每次 RunAs 都會再問):先用 `Global\_MSIExecute` mutex 等 Windows Installer 空閒(每 5 秒看一次、最多 90 秒),跑完仍是 1618(另一個安裝在跑)就等 30 秒再跑、最多再 3 次,每次跑前重驗簽章,仍是 1618 → `vcredist:1618`;3010／1641 而 DLL 已在算成功、不在 → `vcredist:reboot`;1223 → `vcredist:denied`(只有一次 UAC,所以只可能是那一次被拒);其他非 0 → `vcredist:<代碼>`。重試期間 `setup` 維持 `running`。電腦版 `l-setup-fail` 那一列依原因換一句(更新中／按「是」／重新開機／原句加代碼),讀不懂的照舊原本那句。測試 `tests/check_capital_local.py` 10c(要用 `/usr/bin/python3`,提權腳本的流程照原文驗、沒有在 Windows 上跑過)、`tests/check_shell_capital_local_view.js`。

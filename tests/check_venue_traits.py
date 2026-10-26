@@ -92,9 +92,7 @@ from manager import close_symbol, reconciler  # noqa: E402
 check(set(reconciler._HAND_WIRED) == set(venue_traits.venues("hand_wired")),
       "reconciler._HAND_WIRED covers exactly the hand_wired venues",
       (sorted(reconciler._HAND_WIRED), sorted(venue_traits.venues("hand_wired"))))
-# bitget: gate shut until 0.1.33 — out of the auto-wire. 0.1.33 opens it: _NON_AUTO back to the three
-# TW brokers, bitget into SHIPPED, the section-5 checks to the opened ones (git show 60d79035 -- this file)
-check(venue_wiring._NON_AUTO == {"sinopac", "president", "capital", "bitget"}, "venue_wiring._NON_AUTO",
+check(venue_wiring._NON_AUTO == {"sinopac", "president", "capital"}, "venue_wiring._NON_AUTO",
       venue_wiring._NON_AUTO)
 check(close_symbol._NOT_PERP == {"capital", "sinopac", "president"}, "close_symbol._NOT_PERP",
       close_symbol._NOT_PERP)
@@ -120,7 +118,7 @@ except RuntimeError:
 # ── 5. unverified venue libs: enumerated, and shut on every surface ─────────
 import importlib, json, subprocess  # noqa: E401,E402
 
-SHIPPED = {"binance", "bingx", "bybit", "capital", "gateio", "okx", "paper", "president", "sinopac",
+SHIPPED = {"binance", "bingx", "bitget", "bybit", "capital", "gateio", "okx", "paper", "president", "sinopac",
            "stockcoin"}
 tracked = subprocess.run(["git", "-C", ROOT, "ls-files", "lib/order_*.py"], capture_output=True,
                          text=True, check=True).stdout.split()
@@ -129,7 +127,17 @@ unverified = set(venue_traits.unverified())
 check(order_ids and order_ids == SHIPPED | unverified and not SHIPPED & unverified,
       "every shipped lib/order_<id>.py is in SHIPPED or declares no verified account type (and not both)",
       (sorted(order_ids - SHIPPED - unverified), sorted(SHIPPED & unverified)))
-check("bitget" in unverified, "bitget ships unverified", sorted(unverified))
+check(venue_traits.verified_modes("bitget") == ("classic",) and "bitget" not in unverified,
+      "bitget ships verified for classic accounts only")
+# no real venue is unverified today: a synthetic row keeps the mechanism itself under test
+sys.path.insert(0, os.path.join(ROOT, "runtime"))
+rt_traits = importlib.import_module("venue_traits")
+for t in (venue_traits, rt_traits):
+    t.TRAITS["zzgate"] = {"verified_modes": (), "reference": "references/exchange-connect.md", "label": "ZZ"}
+from lib import venue as chat_venue  # noqa: E402
+venue_wiring, chat_venue = importlib.reload(venue_wiring), importlib.reload(chat_venue)
+unverified = set(venue_traits.unverified())
+check(unverified == {"zzgate"} and "zzgate" in venue_wiring._NON_AUTO, "a row with no verified type is unverified")
 check(venue_traits.verified_modes("nosuchvenue") == () and "nosuchvenue" not in venue_traits.unverified(),
       "verified_modes(): a venue without the cell gets () (its own lib stays shut); unverified() leaves agent libs alone")
 
@@ -153,7 +161,6 @@ check(venue_wiring.official_venues(env) == ["acme"],
       "official_venues with the manifest listing them: still only the agent-written venue",
       venue_wiring.official_venues(env))
 os.chdir(here)
-sys.path.insert(0, os.path.join(ROOT, "runtime"))
 account_reader = importlib.import_module("account_reader")
 account_reader.WORKSPACE = ws
 check(account_reader._venues(env) == ["acme"], "runtime/account_reader reads no unverified venue",
@@ -163,13 +170,13 @@ check(flatten._venues({"BINANCE_API_KEY": "k", "BINANCE_SECRET_KEY": "s", **env}
       "manager/flatten lists no unverified venue (binance + acme + the unverified ones bound)",
       flatten._venues({"BINANCE_API_KEY": "k", "BINANCE_SECRET_KEY": "s", **env}))
 check(flatten._venues({"BINANCE_API_KEY": "k", "BINANCE_SECRET_KEY": "s", "BITGET_API_KEY": "k",
-                       "BITGET_SECRET_KEY": "s", "BITGET_PASSPHRASE": "p"}) == ["binance"],
-      "manager/flatten: .env with binance and bitget → binance only")
-from lib import venue as chat_venue  # noqa: E402
+                       "BITGET_SECRET_KEY": "s", "BITGET_PASSPHRASE": "p"}) == ["binance", "bitget"],
+      "manager/flatten: .env with binance and bitget → both (bitget verified)")
 for vid in sorted(unverified):
     check(vid not in chat_venue.VENUES and vid in chat_venue._ELSEWHERE, f"{vid}: not bindable from chat")
-    mod = importlib.import_module(f"lib.account_{vid}")
-    check(getattr(mod, "VERIFIED_MODES", None) == frozenset(), f"lib/account_{vid}.VERIFIED_MODES is empty as shipped")
+check("bitget" in chat_venue.VENUES and "bitget" not in chat_venue._ELSEWHERE, "bitget: bindable from chat")
+for t in (venue_traits, rt_traits):
+    t.TRAITS.pop("zzgate")
 
 print(f"\n{'FAILED: ' + str(fails) if fails else 'all passed'}")
 sys.exit(1 if fails else 0)
