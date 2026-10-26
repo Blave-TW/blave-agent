@@ -103,10 +103,10 @@ from lib.data import normalize_symbol  # noqa: E402
 ENV = {"BITGET_API_KEY": "bg_not_a_real_key", "BITGET_SECRET_KEY": "not-a-real-secret",
        "BITGET_PASSPHRASE": "not-a-real-pass"}
 order.time.sleep = lambda s: None
-# the lib ships classic only (acct.VERIFIED_MODES, see the unverified section below); the
-# checks run with the gate open, and with no minimum switch hold except in the switch section
-check(acct.VERIFIED_MODES == frozenset({"classic"}), "the lib ships classic only: venue_traits' bitget row (UTA not verified)")
+# the lib ships both account types (acct.VERIFIED_MODES, see the gate section below); the
+# checks run with no minimum switch hold except in the switch section
 BOTH = frozenset({"uta", "classic"})
+check(acct.VERIFIED_MODES == BOTH, "the lib ships classic and UTA: venue_traits' bitget row (both real-account verified)")
 acct.VERIFIED_MODES = BOTH
 acct.SWITCH_HOLD_S = 0
 
@@ -740,8 +740,8 @@ check(acct.classify(acct.BitgetError("x", code=acct.UNVERIFIED)) == "unknown",
       "an unverified refusal classifies UNKNOWN (never TRANSIENT: it does not clear by itself)")
 acct.VERIFIED_MODES = BOTH
 POS[:] = []
-check(venue_traits.verified_modes("bitget") == ("classic",) and "bitget" not in venue_traits.unverified(),
-      "venue_traits: bitget verified on classic accounts only (the lib gate reads it)")
+check(venue_traits.verified_modes("bitget") == ("classic", "uta") and "bitget" not in venue_traits.unverified(),
+      "venue_traits: bitget verified on classic and UTA accounts (the lib gate reads it)")
 from lib import venue_wiring as vw  # noqa: E402
 
 if not os.path.exists("lib"):
@@ -1322,21 +1322,84 @@ check(acct.classify(acct.BitgetError("x", code="40085")) == "transient"
       "40085 and a mode switch are TRANSIENT (the round is skipped, never HALT); an unsupported mode is UNKNOWN")
 
 # ── a classic account upgraded to UTA while running ──────────────────────────
-fresh_mode()
-SETTINGS["accountMode"] = "__classic__"
-route("GET", "/api/v3/account/settings",
-      lambda p: err("40084", "not a unified account") if SETTINGS["accountMode"] == "__classic__" else ok(dict(SETTINGS)))
-route("GET", "/api/v2/mix/account/accounts", lambda p: ok([{"marginCoin": "USDT", "accountEquity": "50"}]))
-route("GET", "/api/v2/mix/position/all-position", lambda p: ok([
-    {"symbol": "NVDAUSDT", "holdSide": "long", "total": "0.03", "available": "0.03", "markPrice": "182"}]))
-check(acct.account_mode(ENV) == "classic" and acct.get_positions(ENV)[0]["size"] == 0.03
-      and acct._read_mode().get("legs") == [["NVDAUSDT", "long"]],
-      "a classic key: the v3 settings refusal sends the probe to v2 → 'classic'; the held legs are recorded")
-acct.SWITCH_HOLD_S = 120
+from lib import events as _events  # noqa: E402
+
+EMITS = []
+_events.emit = lambda ev_type, **payload: EMITS.append((ev_type, payload))
+
+
+def halt_file():
+    try:
+        with open(guard.HALT_PATH) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+
+
+def user_resume():
+    guard.clear_halt("test")  # what 啟動下單 does (command_listener resume)
+
+
+def our_stops(*legs, cancelled=()):
+    """state/audit.jsonl as lib/order_bitget leaves it: a classic pos_loss placed on each
+    (symbol, side) leg (one-way: holdSide buy/sell), then the cancels of `cancelled` ids."""
+    with open(guard.AUDIT_PATH, "w") as f:
+        f.write(json.dumps({"event": "order_ok", "venue": "okx", "intent": "protective", "symbol": "NVDAUSDT",
+                            "planType": "pos_loss", "holdSide": "long", "order_id": "okx1"}) + "\n")
+        for i, (sym, side) in enumerate(legs):
+            f.write(json.dumps({"event": "order_ok", "venue": "bitget", "intent": "protective", "symbol": sym,
+                                "planType": "pos_loss", "holdSide": "buy" if side == "long" else "sell",
+                                "order_id": f"sl{i}"}) + "\n")
+        f.write("{torn\n")
+        for oid in cancelled:
+            f.write(json.dumps({"event": "order_ok", "venue": "bitget", "intent": "cancel", "symbol": "x",
+                                "orderId": oid, "order_id": ""}) + "\n")
+
+
+def classic_with(rows, stops=()):
+    """A classic machine that recorded `rows` (v2 position rows) as its legs, with this lib's
+    stop-losses `stops` on record, then Bitget upgrades it."""
+    our_stops(*stops)
+    fresh_mode()
+    acct.SWITCH_HOLD_S = 0
+    SETTINGS["accountMode"] = "__classic__"
+    route("GET", "/api/v3/account/settings",
+          lambda p: err("40084", "not a unified account") if SETTINGS["accountMode"] == "__classic__" else ok(dict(SETTINGS)))
+    route("GET", "/api/v2/mix/account/accounts", lambda p: ok([{"marginCoin": "USDT", "accountEquity": "50"}]))
+    route("GET", "/api/v2/mix/position/all-position", lambda p: ok(rows))
+    acct.get_positions(ENV)
+    acct.SWITCH_HOLD_S = 120
+    SETTINGS["accountMode"] = "unified"
+    route("GET", "/api/v2/mix/position/all-position",
+          lambda p: err("40085", "You are in Unified Account mode, and the Classic Account API is not supported at this time"))
+    acct._mode.update(mode=None, at=0.0)
+    acct.account_mode(ENV)  # the first read after the upgrade opens the hold
+
+
+def age_hold(seconds):
+    st = acct._read_mode()
+    st["hold"]["since"] = _time.time() - seconds
+    acct._write_mode(st)
+
+
+def judged():
+    """One read past the minimum hold: ('ok', positions) or ('err', the BitgetError)."""
+    age_hold(acct.SWITCH_HOLD_S + 1)
+    try:
+        return "ok", acct.get_positions(ENV)
+    except acct.BitgetError as e:
+        return "err", e
+
+
+V2_NVDA = {"symbol": "NVDAUSDT", "holdSide": "long", "total": "0.03", "available": "0.03", "markPrice": "182"}
+V2_ACN = {"symbol": "ACNSTOCKUSDT", "holdSide": "short", "total": "0.05", "available": "0.05", "markPrice": "250"}
+
+classic_with([V2_NVDA])
+st = acct._read_mode()
+check(st["hold"].get("from") == "classic" and st["hold"].get("await") == [["NVDAUSDT", "long", 0.03]],
+      "a classic key: the v3 settings refusal sends the probe to v2 → 'classic'; each leg is recorded with its quantity", st)
 # Bitget upgrades the account: v2 private endpoints answer 40085, v3 settings says upgrading
 SETTINGS["accountMode"] = "upgrading"
-route("GET", "/api/v2/mix/position/all-position",
-      lambda p: err("40085", "You are in Unified Account mode, and the Classic Account API is not supported at this time"))
 try:
     acct.get_positions(ENV)
     check(False, "positions during an upgrade raise")
@@ -1351,23 +1414,9 @@ for label in ("the first round after the upgrade", "a later round inside the hol
         check(False, f"{label}: positions raise")
     except acct.BitgetError as e:
         check(acct.classify(e) == "transient", f"{label}: get_positions raises TRANSIENT (an empty v3 list is not read)")
-check(acct.account_mode(ENV) == "uta" and acct.switch_hold_left() > 0, "the switch is recorded: mode uta, hold open")
+check(acct.account_mode(ENV) == "uta" and acct.switch_hold_left() > 0 and acct._read_mode()["hold"].get("from") == "classic",
+      "the switch is recorded: mode uta, hold open, switched from classic")
 check(order.session_open(ENV, "NVDAUSDT") is False, "during the hold session_open is False (entries held)")
-
-
-def age_hold(seconds):
-    st = acct._read_mode()
-    st["hold"]["since"] = _time.time() - seconds
-    acct._write_mode(st)
-
-
-age_hold(acct.SWITCH_HOLD_S + 1)
-try:
-    acct.get_positions(ENV)
-    check(False, "past the minimum, the old leg still missing: positions raise")
-except acct.BitgetError as e:
-    check(acct.classify(e) == "transient" and "NVDAUSDT long" in str(e),
-          "past the minimum hold, NVDAUSDT long not read back yet: still held (evidence, not a timer)", str(e))
 route("POST", "/api/v3/trade/place-order", uplace)
 n = len(UPOSTS)
 del CALLS[:]
@@ -1385,19 +1434,185 @@ UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
 order.close_position_partial(ENV, "NVDAUSDT", "long", 0.01)
 check(len(UPOSTS) == n + 1 and UPOSTS[-1]["side"] == "sell" and UPOSTS[-1]["reduceOnly"] == "yes",
       "a close during the hold still goes out (capped at the leg, v3 side table)")
-pos = acct.get_positions(ENV)
-check(pos and pos[0]["symbol"] == "NVDAUSDT" and pos[0]["size"] == 0.03 and acct.switch_hold_left() == 0
-      and order.session_open(ENV, "NVDAUSDT"),
-      "NVDAUSDT long reads back through v3 past the minimum: hold released, entries open again")
-# a hold that never sees its legs again stops being TRANSIENT
+
+STOPS = []
+route("GET", "/api/v3/trade/unfilled-strategy-orders", lambda p: ok({"list": list(STOPS), "cursor": None}))
+
+
+def ustop(sym, closing_side, sl="170"):
+    return {"orderId": "9" + sym, "clientOid": "c" + sym, "symbol": sym, "side": closing_side, "posSide": "long",
+            "stopLoss": sl, "takeProfit": "", "status": "pending"}
+
+
+# ① every leg back with the same quantity, the stop-loss Blave placed still on Bitget: resumes, one P3 event, no HALT
+STOPS[:] = [ustop("NVDAUSDT", "sell")]
+our_stops(("NVDAUSDT", "long"))
+del EMITS[:]
+kind, pos = judged()
+check(kind == "ok" and pos and pos[0]["symbol"] == "NVDAUSDT" and pos[0]["size"] == 0.03 and acct.switch_hold_left() == 0
+      and order.session_open(ENV, "NVDAUSDT") and halt_file() is None,
+      "① same symbol, side and quantity past the minimum: hold released, entries open, no HALT", (kind, pos))
+check(EMITS == [("venue_mode_switched", {"venue": "bitget", "mode": "uta", "legs": 1})],
+      "① …our stop-loss still there: one venue_mode_switched event (P3: event list only)", EMITS)
+# under one step (NVDAUSDT sizeMultiplier 0.01) is the venue's rounding, the same quantity
+classic_with([V2_NVDA])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.030004")]
+kind, pos = judged()
+check(kind == "ok" and halt_file() is None, "① 0.03 read back as 0.030004 (under one 0.01 step) still matches", (kind, pos))
+
+# ①b only the legs Blave itself protected are checked
+# a Type A strategy that never placed a stop: nothing missing, Bitget's list not even read
+classic_with([V2_NVDA])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
+STOPS[:] = []
+route("GET", "/api/v3/trade/unfilled-strategy-orders", lambda p: err("40015", "System is abnormal"))
+del EMITS[:]
+kind, pos = judged()
+check(kind == "ok" and EMITS == [("venue_mode_switched", {"venue": "bitget", "mode": "uta", "legs": 1})],
+      "①b no stop-loss of ours on record (Type A without stops, another venue's row ignored): P3 only, no P1", EMITS)
+route("GET", "/api/v3/trade/unfilled-strategy-orders", lambda p: ok({"list": list(STOPS), "cursor": None}))
+# ours on ACN gone after the switch (only a TP left), NVDA's still there: one P1 naming ACN, trading resumes
+classic_with([V2_NVDA, V2_ACN], stops=[("NVDAUSDT", "long"), ("ACNSTOCKUSDT", "short")])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03"), upos("ACNSTOCKUSDT", "short", "0.05", mark="250")]
+STOPS[:] = [ustop("NVDAUSDT", "sell"), {**ustop("ACNSTOCKUSDT", "buy"), "stopLoss": "", "takeProfit": "200"}]
+del EMITS[:]
+kind, pos = judged()
+check(kind == "ok" and len(pos) == 2 and halt_file() is None and acct.switch_hold_left() == 0
+      and EMITS == [("venue_stops_missing", {"venue": "bitget", "mode": "uta", "unreadable": False,
+                                             "legs": [{"symbol": "ACNUSDT", "side": "short"}]})],
+      "①b our stop-loss on ACN short gone (a take-profit is not one): trading resumes, one venue_stops_missing (P1)", EMITS)
+# ours on NVDA still there, ACN never protected by its strategy: ACN is not "missing" a stop
+classic_with([V2_NVDA, V2_ACN], stops=[("NVDAUSDT", "long")])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03"), upos("ACNSTOCKUSDT", "short", "0.05", mark="250")]
+STOPS[:] = [ustop("NVDAUSDT", "sell")]
+del EMITS[:]
+judged()
+check([e[0] for e in EMITS] == ["venue_mode_switched"],
+      "①b a leg whose strategy never placed a stop (ACN) is not checked beside one of ours (NVDA, still there)", EMITS)
+# a stop of ours that was cancelled before the switch is not ours any more
+classic_with([V2_NVDA])
+our_stops(("NVDAUSDT", "long"), cancelled=["sl0"])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
+STOPS[:] = []
+del EMITS[:]
+judged()
+check([e[0] for e in EMITS] == ["venue_mode_switched"], "①b a stop of ours cancelled earlier (classic cancel by id): not checked", EMITS)
+# a hedge symbol holding both legs, ours on both: on UTA the stop's closing side tells which leg it guards
+classic_with([V2_NVDA, {**V2_NVDA, "holdSide": "short"}], stops=[("NVDAUSDT", "long"), ("NVDAUSDT", "short")])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03"), upos("NVDAUSDT", "short", "0.03")]
+STOPS[:] = [ustop("NVDAUSDT", "sell")]
+del EMITS[:]
+judged()
+check([e[1]["legs"] for e in EMITS if e[0] == "venue_stops_missing"] == [[{"symbol": "NVDAUSDT", "side": "short"}]],
+      "①b both NVDA legs ours, one stop that closes by selling: the long is covered, the short is listed", EMITS)
+# Bitget's plan list cannot be read: our protected legs count as unprotected, flagged unreadable
+classic_with([V2_NVDA], stops=[("NVDAUSDT", "long")])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
+route("GET", "/api/v3/trade/unfilled-strategy-orders", lambda p: err("40015", "System is abnormal"))
+del EMITS[:]
+kind, pos = judged()
+check(kind == "ok" and halt_file() is None
+      and EMITS == [("venue_stops_missing", {"venue": "bitget", "mode": "uta", "unreadable": True,
+                                             "legs": [{"symbol": "NVDAUSDT", "side": "long"}]})],
+      "①b plan list unreadable: our stop-loss counted as gone (never assumed safe), flagged, trading resumes", EMITS)
+route("GET", "/api/v3/trade/unfilled-strategy-orders", lambda p: ok({"list": list(STOPS), "cursor": None}))
+# our own record cannot be read: no P1, the P3 line says the stops could not be confirmed
+classic_with([V2_NVDA])
+os.remove(guard.AUDIT_PATH)
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
+STOPS[:] = []
+del EMITS[:]
+judged()
+check(EMITS == [("venue_mode_switched", {"venue": "bitget", "mode": "uta", "legs": 1, "stops_unknown": True})],
+      "①b audit record missing: no P1, venue_mode_switched carries stops_unknown (「無法確認止損」)", EMITS)
+STOPS[:] = [ustop("NVDAUSDT", "sell")]
+our_stops()
+
+# ② a different quantity: HALT at once, the leg listed before vs now
+classic_with([V2_NVDA])
+n_ev = len(EMITS)
+UPOS[:] = [upos("NVDAUSDT", "long", "0.02")]
+kind, pos = judged()
+h = halt_file()
+check(kind == "ok" and pos[0]["size"] == 0.02
+      and h and h["source"] == "reconciler" and h["reason"].startswith(acct.MISMATCH_TAG)
+      and h["mismatch"]["legs"] == [{"symbol": "NVDAUSDT", "side": "long", "before": 0.03, "now": 0.02}]
+      and h["mismatch"]["mode"] == "uta",
+      "② quantity 0.03 → 0.02 (one step): HALT at once, the leg's both quantities on the HALT; the read itself does not "
+      "fail (the HALT is the notice, no reconciler retry message beside it)", (kind, pos, h))
+check(acct.switch_hold_left() > 0 and len(EMITS) == n_ev, "② …the hold stays, no resume event")
+kind, pos = judged()
+check(kind == "ok" and pos[0]["size"] == 0.02 and halt_file() == h,
+      "② while that HALT stands the positions read as they are (HALT stops every order), no second HALT")
+user_resume()
+kind, pos = judged()
+check(kind == "ok" and acct.switch_hold_left() == 0 and halt_file() is None
+      and acct._read_mode().get("legs") == [["NVDAUSDT", "long", 0.02]] and len(EMITS) == n_ev,
+      "② 啟動下單 releases the hold on what Bitget holds now; no resume event (the user resumed)", acct._read_mode())
+
+# ③ a leg missing: HALT at once (not after SWITCH_MAX_S)
+classic_with([V2_NVDA, V2_ACN])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
+kind, pos = judged()
+h = halt_file()
+check(kind == "ok" and h
+      and h["mismatch"]["legs"] == [{"symbol": "ACNUSDT", "side": "short", "before": 0.05, "now": None}],
+      "③ ACN short missing after the minimum hold: HALT at once, listed under the strategy's symbol (now: none)", (kind, pos, h))
+user_resume()
+
+# ④ a leg that was not there: HALT at once
+classic_with([V2_NVDA])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03"), upos("BTCUSDT", "short", "0.001", mark="81000")]
+kind, pos = judged()
+h = halt_file()
+check(kind == "ok" and h
+      and h["mismatch"]["legs"] == [{"symbol": "BTCUSDT", "side": "short", "before": None, "now": 0.001}],
+      "④ an extra BTC short after the switch: HALT at once (before: none)", (kind, pos, h))
+user_resume()
+judged()
+
+# someone else's HALT stood when the mismatch was found: kept, ours follows its resume
+classic_with([V2_NVDA])
+guard.trip_halt("paused by the user", "web")
+UPOS[:] = [upos("NVDAUSDT", "long", "0.02")]
+kind, pos = judged()
+check(kind == "ok" and halt_file()["source"] == "web" and acct.switch_hold_left() > 0,
+      "a user's HALT standing at the mismatch is not overwritten (the hold stays)")
+user_resume()
+kind, pos = judged()
+h = halt_file()
+check(kind == "ok" and h and h["reason"].startswith(acct.MISMATCH_TAG) and acct.switch_hold_left() > 0,
+      "…their resume brings up the mismatch HALT (the list was never shown)", (kind, h))
+user_resume()
+kind, pos = judged()
+check(kind == "ok" and acct.switch_hold_left() == 0, "…and resuming that one releases the hold")
+
+# ⑤ a mode file from before quantities were recorded: legs match on symbol and side
+fresh_mode()
+acct._write_mode({"mode": "classic", "legs": [["NVDAUSDT", "long"]],
+                  "hold": {"since": _time.time(), "await": [["NVDAUSDT", "long"]], "from": "classic"}})
+acct._write_mode({"mode": "classic", "legs": [["NVDAUSDT", "long"]], "hold": None})
+SETTINGS["accountMode"] = "unified"
+UPOS[:] = [upos("NVDAUSDT", "long", "0.05")]
+try:
+    acct.get_positions(ENV)
+except acct.BitgetError:
+    pass
+kind, pos = judged()
+check(kind == "ok" and halt_file() is None and acct._read_mode().get("legs") == [["NVDAUSDT", "long", 0.05]],
+      "⑤ an old [symbol, side] record: matched on symbol and side (no quantity to compare), then rewritten with it",
+      (kind, pos, acct._read_mode()))
+
+# a first read or a lost record (no mode switched from) keeps the old rule: release once every recorded leg reads back
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
 st = acct._read_mode()
 acct._write_mode({**st, "hold": {"since": _time.time() - acct.SWITCH_MAX_S - 1, "await": [["ACNSTOCKUSDT", "short"]]}})
 try:
     acct.get_positions(ENV)
     check(False, "a hold past SWITCH_MAX_S raises")
 except acct.BitgetError as e:
-    check(acct.classify(e) == "unknown" and "ACNSTOCKUSDT short" in str(e),
-          "past SWITCH_MAX_S with a leg still missing: MODE_STUCK (UNKNOWN → the reconciler HALTs if it lasts)", str(e))
+    check(acct.classify(e) == "unknown" and "ACNSTOCKUSDT short" in str(e) and halt_file() is None,
+          "a hold with no switch behind it, past SWITCH_MAX_S with a leg missing: MODE_STUCK, no HALT of its own", str(e))
 # an unreadable record holds (fail-closed), then restarts a hold of its own
 with open(acct.MODE_PATH, "w") as f:
     f.write("{not json")
@@ -1411,7 +1626,7 @@ except acct.BitgetError as e:
     check(acct.classify(e) == "transient" and acct._read_mode().get("hold"),
           "…the next read rewrites it with a fresh hold and raises TRANSIENT")
 age_hold(acct.SWITCH_HOLD_S + 1)
-check(acct.get_positions(ENV)[0]["symbol"] == "NVDAUSDT" and acct.switch_hold_left() == 0,
+check(acct.get_positions(ENV)[0]["symbol"] == "NVDAUSDT" and acct.switch_hold_left() == 0 and halt_file() is None,
       "…and releases past the minimum")
 
 # a process whose mode was cached as classic meets 40085 on an ORDER: refused, never re-sent to v3

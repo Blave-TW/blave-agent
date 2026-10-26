@@ -127,8 +127,8 @@ unverified = set(venue_traits.unverified())
 check(order_ids and order_ids == SHIPPED | unverified and not SHIPPED & unverified,
       "every shipped lib/order_<id>.py is in SHIPPED or declares no verified account type (and not both)",
       (sorted(order_ids - SHIPPED - unverified), sorted(SHIPPED & unverified)))
-check(venue_traits.verified_modes("bitget") == ("classic",) and "bitget" not in unverified,
-      "bitget ships verified for classic accounts only")
+check(venue_traits.verified_modes("bitget") == ("classic", "uta") and "bitget" not in unverified,
+      "bitget ships verified for classic and UTA accounts")
 # no real venue is unverified today: a synthetic row keeps the mechanism itself under test
 sys.path.insert(0, os.path.join(ROOT, "runtime"))
 rt_traits = importlib.import_module("venue_traits")

@@ -11,20 +11,22 @@ key serves both APIs: an upgraded account's existing key gains UTA access.
 TWO ACCOUNT TYPES, picked per key by account_mode():
 - classic (v2 API) — real-account run passed (main account, both position modes,
   2026-10-22).
-- UTA (Unified Trading Account, v3 API) — real-account run NOT passed (some replies
-  measured 2026-10-23, noted where they are used); a UTA key answers 40085 on any v2
-  private endpoint. Bitget is moving accounts to it.
+- UTA (Unified Trading Account, v3 API) — real-account run passed (T1–T12;
+  T11c's stop-loss re-run on BTCUSDT 2026-10-26); a UTA key answers 40085 on any v2 private
+  endpoint. Bitget is moving accounts to it.
 Only the types in VERIFIED_MODES (lib/venue_traits' bitget row) are served; a key of
 another type is refused on every read.
 The mode is re-read every MODE_TTL_S and at once on a 40085. The mode and the legs
 last held are recorded in state/bitget_account_mode.json. A first read, a changed
 mode (Bitget upgraded the account while it ran, or the user switched it), an
 `upgrading` / `switching` account or an unreadable record opens the switch hold:
-get_positions raises a TRANSIENT error and lib/order_bitget refuses entries until
-SWITCH_HOLD_S has passed AND every leg recorded before the switch reads back under
-the new mode — a half-migrated account could read as flat and be bought into
-twice. Past SWITCH_MAX_S the hold raises MODE_STUCK (UNKNOWN: the reconciler HALTs
-if it lasts) with what to check.
+get_positions raises a TRANSIENT error and lib/order_bitget refuses entries for at
+least SWITCH_HOLD_S — a half-migrated account could read as flat and be bought into
+twice. After a real switch the legs recorded before it (symbol, side, quantity) must
+then all read back the same, with nothing extra: a full match resumes by itself (a P3
+event; a P1 one instead when a leg has no stop-loss on Bitget any more), anything else
+HALTs at once (the HALT carries the legs that differ for the pages) and only the user's
+resume releases it (_check_hold).
 
 Equity base, both modes: the USDT row only (classic: the USDT-FUTURES account's
 USDT row; UTA: the unified account's USDT asset `equity` = balance + frozen +
@@ -38,12 +40,16 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import math
 import os
 import time
+from decimal import Decimal
 from urllib.parse import urlencode
 
 import requests
+
+from lib import guard
 
 try:
     from lib import stock_perps
@@ -109,6 +115,8 @@ MODE_TTL_S = 60
 SWITCH_HOLD_S = 120  # the minimum hold; it ends only when the positions read back too
 SWITCH_MAX_S = 1800  # past this a hold stops being TRANSIENT (MODE_STUCK → HALT if it lasts)
 MODE_STUCK = "mode_stuck"
+# the HALT reason of a switch whose legs did not carry over; the desktop picks its sentence by it
+MISMATCH_TAG = "[bitget_account_mode_mismatch]"
 _mode = {"mode": None, "at": 0.0}
 
 
@@ -315,7 +323,7 @@ def _probe(env):
     if am in ("upgrading", "switching"):
         return "transition", st
     # hybrid and anything newer: not measured — refuse in words rather than trade a guess
-    raise BitgetError(f"Bitget 帳戶模式是 {am or '（空白）'}，Blave 還沒支援這種模式：請改綁經典帳戶的金鑰，或改綁其他交易所",
+    raise BitgetError(f"Bitget 帳戶模式是 {am or '（空白）'}，Blave 還沒支援這種模式：請改綁經典帳戶或統一帳戶的金鑰，或改綁其他交易所",
                       code=MODE_UNSUPPORTED, kind=reject_token.KEY_PERMISSION)
 
 
@@ -324,7 +332,202 @@ def _hold_error(why):
 
 
 def _legs_of(rows):
-    return sorted({(p["symbol"], p["side"]) for p in rows if p["total"] > 0})
+    """[[symbol, side, qty]] of every non-zero leg. A mode file from before the quantity was
+    recorded holds [symbol, side] pairs: those legs are matched on symbol and side only."""
+    return sorted([p["symbol"], p["side"], p["total"]] for p in rows if p["total"] > 0)
+
+
+def _leg_key(leg):
+    return (leg[0], leg[1])
+
+
+def _leg_qty(leg):
+    return leg[2] if len(leg) > 2 else None
+
+
+def _step(vsym):
+    row = next((r for r in contract_rows() if r.get("symbol") == vsym), None)
+    if row is None or row.get("sizeMultiplier") in (None, ""):
+        raise requests.exceptions.ConnectionError(f"bitget contracts: no sizeMultiplier for {vsym}")
+    return Decimal(str(row["sizeMultiplier"]))
+
+
+def _mismatch(before, now):
+    """The legs a switch did not carry over as they were: one missing, one more, or a
+    quantity off by a step or more (sizes are whole steps, so less is only the venue's
+    rounding; Bitget says a manual upgrade keeps size and average price)."""
+    was = {_leg_key(x): _leg_qty(x) for x in before}
+    is_ = {_leg_key(x): _leg_qty(x) for x in now}
+    out = []
+    for key in sorted(set(was) | set(is_)):
+        a, b = was.get(key), is_.get(key)
+        if key in was and key in is_:
+            if a is None or abs(Decimal(str(a)) - Decimal(str(b))) < _step(key[0]):
+                continue
+        out.append({"symbol": key[0], "side": key[1],
+                    "before": a if key in was else None, "now": b if key in is_ else None})
+    return out
+
+
+def _display_symbol(vsym):
+    try:
+        return canonical(vsym)
+    except Exception:
+        return vsym
+
+
+def _halt_on_disk():
+    """state/HALT as written (None = absent). Not guard.halted(): its in-memory flag stays
+    set in a process that tripped HALT itself, and a cleared file is what a resume is."""
+    try:
+        info = load_json(guard.HALT_PATH)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        return {"reason": ""}
+    return info if isinstance(info, dict) else {"reason": ""}
+
+
+def _mismatch_reason(mode, rows):
+    def q(x):
+        return "none" if x is None else format(Decimal(str(x)).normalize(), "f")
+    legs = ", ".join(f"{r['symbol']} {r['side']} {q(r['before'])} -> {q(r['now'])}" for r in rows)
+    return (f"{MISMATCH_TAG} Bitget account switched to {_MODE_NAMES_EN.get(mode, mode)}; "
+            f"{len(rows)} position(s) differ from before the switch: {legs}")[:200]
+
+
+def _trip_mismatch_halt(mode, rows):
+    """HALT for a switch whose legs do not match, tripped here rather than by the reconciler:
+    whichever process reads first (the reconciler, the account reader) must stop trading at
+    once, and the hold needs the HALT's own timestamp to tell a resume from no HALT yet.
+    source "reconciler": an automatic stop (the platform's halt P1, canon notifications.md)."""
+    reason = _mismatch_reason(mode, rows)
+    detail = {"kind": "bitget_mode_mismatch", "venue": "bitget", "mode": mode,
+              "legs": [{**r, "symbol": _display_symbol(r["symbol"])} for r in rows][:20]}
+    try:
+        guard.trip_halt(reason, "reconciler", mismatch=detail)
+    except TypeError:  # a guard from before trip_halt took extra fields
+        guard.trip_halt(reason, "reconciler")
+    return (_halt_on_disk() or {}).get("ts")
+
+
+def _stop_losses(env, mode):
+    """[{'symbol' (the strategy's name), 'side' (the closing direction)}] of every open
+    stop-loss — the read lib/order_bitget.get_open_algo_orders makes, kept here so this
+    read-only lib never imports the order lib."""
+    if mode == "uta":
+        data = _get(env, "/api/v3/trade/unfilled-strategy-orders", {"category": CATEGORY, "type": "tpsl"})
+        rows = (data.get("list") if isinstance(data, dict) else data) or []
+        return [{"symbol": canonical(o.get("symbol")), "side": o.get("side")} for o in rows
+                if str(o.get("status") or "pending").lower() in ("pending", "submitting")
+                and o.get("stopLoss") not in (None, "")]
+    data = _get(env, "/api/v2/mix/order/orders-plan-pending", {"productType": PRODUCT, "planType": "profit_loss"})
+    return [{"symbol": canonical(o.get("symbol")), "side": o.get("side")}
+            for o in (data or {}).get("entrustedList") or [] if o.get("planType") == "pos_loss"]
+
+
+def _audit_leg(r):
+    side = str(r.get("posSide") or r.get("holdSide") or "").lower()
+    return {"long": "long", "short": "short", "buy": "long", "sell": "short"}.get(side)
+
+
+def _our_stop_legs():
+    """{(Bitget symbol, side)} of the legs whose last stop-loss THIS lib placed is still
+    standing by its own record: state/audit.jsonl (lib/guard: append-only, fsynced, never
+    pruned), rows lib/order_bitget tags venue "bitget". A placed stop counts until its
+    order is cancelled or the flat sweep clears the symbol; one Bitget fired by itself is
+    not in the record (the leg it guarded is then gone or re-opened without it). None =
+    the record cannot be read (missing or unreadable) — nothing can be said about it."""
+    try:
+        with open(guard.AUDIT_PATH, encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        return None
+    live = {}
+    for line in lines:
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue  # a torn last line from a crash: the rest of the record stands
+        if not isinstance(r, dict) or r.get("venue") != "bitget":
+            continue
+        sym = r.get("symbol")
+        if r.get("event") == "stops_cancelled_on_flat":
+            live = {k: v for k, v in live.items() if k[0] != sym}
+            continue
+        if r.get("event") != "order_ok":
+            continue
+        if r.get("intent") == "cancel":
+            gone = set(str(r.get("orderId") or "").split(","))
+            live = {k: v for k, v in live.items() if v not in gone}
+            continue
+        leg = _audit_leg(r) if r.get("intent") == "protective" else None
+        if leg is None:
+            continue
+        if r.get("type") == "tpsl":  # UTA: one order per leg, rewritten whole by the next place
+            if r.get("stopLoss") not in (None, ""):
+                live[(sym, leg)] = str(r.get("order_id") or "")
+            else:
+                live.pop((sym, leg), None)
+        elif r.get("planType") == "pos_loss":
+            live[(sym, leg)] = str(r.get("order_id") or "")
+    return set(live)
+
+
+def _unprotected(env, mode, legs):
+    """(the `legs` with no stop-loss on Bitget now, the plan list was unreadable). Any open
+    stop-loss on the leg counts. A symbol holding one leg is covered by any stop-loss on
+    it; holding both legs (hedge), UTA tells the leg by the stop's closing side, classic
+    does not — there both legs need a stop-loss each. Unreadable = every leg unprotected."""
+    if not legs:
+        return [], False
+    try:
+        stops = _stop_losses(env, mode)
+    except Exception as e:
+        logging.warning(f"bitget: plan orders unreadable after the account switch ({e})")
+        return list(legs), True
+    out = []
+    for vsym, side in legs:
+        mine = [o for o in stops if o.get("symbol") == _display_symbol(vsym)]
+        held = sum(1 for v, _ in legs if v == vsym)
+        if held == 1:
+            covered = bool(mine)
+        elif mode == "uta":
+            covered = any(str(o.get("side") or "").lower() == ("sell" if side == "long" else "buy") for o in mine)
+        else:
+            covered = len(mine) >= held
+        if not covered:
+            out.append((vsym, side))
+    return out, False
+
+
+def _release(mode, now_legs, switched_from=None, env=None):
+    """Bitget refuses a manual upgrade while orders are open and does not say whether TP/SL
+    counts, so after a switch the stop-losses this lib placed may be gone. Only those legs
+    are checked (Wei: a leg its strategy never protected is not missing one; the user's own
+    stops are theirs): one gone → P1 venue_stops_missing, trading resumes, nothing is
+    re-placed; our record unreadable → the P3 event says the stops could not be confirmed."""
+    switched = bool(switched_from) and switched_from != mode
+    bare, unreadable, ours = [], False, set()
+    if switched and env is not None:
+        ours = _our_stop_legs()
+        if ours:
+            bare, unreadable = _unprotected(env, mode, sorted((x[0], x[1]) for x in now_legs
+                                                             if (x[0], x[1]) in ours))
+    _write_mode({"mode": mode, "legs": [list(x) for x in now_legs], "hold": None})
+    if not switched:
+        return
+    try:
+        from lib import events
+        if bare:
+            # P1 (canon notifications.md, NOTIFY-PROPOSAL)
+            events.emit("venue_stops_missing", venue="bitget", mode=mode, unreadable=unreadable,
+                        legs=[{"symbol": _display_symbol(v), "side": sd} for v, sd in bare][:20])
+        else:
+            events.emit("venue_mode_switched", venue="bitget", mode=mode, legs=len(now_legs),
+                        **({"stops_unknown": True} if ours is None and now_legs else {}))
+    except Exception:
+        pass
 
 
 def account_mode(env, refresh=False):
@@ -344,7 +547,7 @@ def account_mode(env, refresh=False):
     legs = [] if st.get("corrupt") else st.get("legs") or []
     hold = None if st.get("corrupt") else st.get("hold")
     if mode == "transition":
-        hold = hold or {"since": now, "await": legs}
+        hold = hold or {"since": now, "await": legs, "from": prev}
         _write_mode({"mode": prev, "legs": legs, "hold": hold})
         if now - hold["since"] > SWITCH_MAX_S:
             raise BitgetError(f"bitget: 帳戶已經切換帳戶類型超過 {SWITCH_MAX_S // 60} 分鐘還沒完成，"
@@ -353,7 +556,7 @@ def account_mode(env, refresh=False):
     if hold is None and prev != mode:
         # first read, a changed mode or a lost record: hold until the positions recorded
         # before it read back under the new mode (get_positions releases it)
-        hold = {"since": now, "await": legs}
+        hold = {"since": now, "await": legs, "from": prev}
     if prev != mode or st.get("corrupt") or hold != st.get("hold"):
         _write_mode({"mode": mode, "legs": legs, "hold": hold})
     _require_verified(mode)
@@ -362,6 +565,7 @@ def account_mode(env, refresh=False):
 
 
 _MODE_NAMES = {"uta": "統一帳戶", "classic": "經典帳戶"}
+_MODE_NAMES_EN = {"uta": "a unified account (UTA)", "classic": "a classic account"}
 
 
 def _require_verified(mode):
@@ -407,10 +611,16 @@ def switch_hold_left():
         return float(SWITCH_HOLD_S)
 
 
-def _check_hold(mode, rows):
+def _check_hold(mode, rows, env=None):
     """get_positions' gate. No hold: record the legs held (the evidence a later switch
-    waits for). A hold releases only when SWITCH_HOLD_S has passed AND every leg recorded
-    before it reads back non-zero now; past SWITCH_MAX_S it raises MODE_STUCK instead."""
+    waits for). A hold lasts at least SWITCH_HOLD_S. After a real switch (the hold's `from`
+    is another mode) it then compares every leg recorded before it with what reads now —
+    same symbol, side and quantity within the step, nothing extra — and releases on a full
+    match or HALTs at once on anything else and returns the rows (HALT stops
+    every order). A full match is one P3 event, or a P1 one when a leg has no stop-loss on
+    Bitget (_unprotected; nothing is re-placed). That HALT is the user's to clear: a
+    resume releases the hold on what Bitget holds then. Any other hold
+    (a first read, a lost record) releases once every recorded leg reads back non-zero."""
     st = _read_mode()
     now_legs = _legs_of(rows)
     hold = None if st.get("corrupt") else st.get("hold")
@@ -421,17 +631,45 @@ def _check_hold(mode, rows):
         if [list(x) for x in now_legs] != st.get("legs"):
             _write_mode({**st, "mode": mode, "legs": [list(x) for x in now_legs]})
         return
+    stuck = hold.get("stuck")
+    if stuck:
+        on_disk = _halt_on_disk()
+        if on_disk is not None:
+            if not stuck.get("halt_ts") and str(on_disk.get("reason") or "").startswith(MISMATCH_TAG):
+                _write_mode({**st, "hold": {**hold, "stuck": {**stuck, "halt_ts": on_disk.get("ts")}}})
+            return  # HALT stops every order; the positions read as they are
+        if stuck.get("halt_ts"):
+            _release(mode, now_legs)  # the user pressed 啟動下單 after checking on Bitget
+            return
+        # someone else's HALT stood when this was found and has been cleared: ours now
+        ts = _trip_mismatch_halt(mode, stuck.get("legs") or [])
+        _write_mode({**st, "hold": {**hold, "stuck": {**stuck, "halt_ts": ts}}})
+        return
     elapsed = time.time() - float(hold.get("since") or 0)
-    missing = [tuple(x) for x in hold.get("await") or [] if tuple(x) not in now_legs]
-    if elapsed >= SWITCH_HOLD_S and not missing:
-        _write_mode({"mode": mode, "legs": [list(x) for x in now_legs], "hold": None})
+    if elapsed < SWITCH_HOLD_S:
+        raise _hold_error(f"Bitget 帳戶類型剛{'改成統一帳戶' if mode == 'uta' else '改成經典帳戶'}或第一次讀到，"
+                          f"約 {int(SWITCH_HOLD_S - elapsed) + 1} 秒內不對帳")
+    if hold.get("from") and hold["from"] != mode:
+        bad = _mismatch(hold.get("await") or [], now_legs)
+        if not bad:
+            _release(mode, now_legs, switched_from=hold["from"], env=env)
+            return
+        # not raised: the HALT is the notice and stops every order, and a failed read would
+        # add the reconciler's "will retry" message and a read error on the page beside it
+        on_disk = _halt_on_disk()
+        ts = None if on_disk is not None else _trip_mismatch_halt(mode, bad)
+        _write_mode({**st, "hold": {**hold, "stuck": {"at": time.time(), "legs": bad, "halt_ts": ts}}})
+        return
+    have = {_leg_key(x) for x in now_legs}
+    missing = [_leg_key(x) for x in hold.get("await") or [] if _leg_key(x) not in have]
+    if not missing:
+        _release(mode, now_legs)
         return
     if elapsed > SWITCH_MAX_S:
         raise BitgetError(f"bitget: 切換帳戶類型後 {SWITCH_MAX_S // 60} 分鐘仍讀不到原本的部位 "
                           f"{', '.join(f'{a} {b}' for a, b in missing)}，請到 Bitget App 確認", code=MODE_STUCK)
-    what = "還在等原本的部位讀回來（" + "、".join(f"{a} {b}" for a, b in missing) + "）" if missing else \
-        f"約 {int(SWITCH_HOLD_S - elapsed) + 1} 秒內不對帳"
-    raise _hold_error(f"Bitget 帳戶類型剛{'改成統一帳戶' if mode == 'uta' else '改成經典帳戶'}或第一次讀到，{what}")
+    raise _hold_error(f"Bitget 帳戶類型剛{'改成統一帳戶' if mode == 'uta' else '改成經典帳戶'}或第一次讀到，"
+                      "還在等原本的部位讀回來（" + "、".join(f"{a} {b}" for a, b in missing) + "）")
 
 
 def uta_settings(env):
@@ -633,7 +871,7 @@ def get_positions(env: dict) -> list:
     around an account type change read nothing as flat."""
     mode = account_mode(env)
     rows = leg_rows(env, mode)
-    _check_hold(mode, rows)
+    _check_hold(mode, rows, env)
     out = []
     for p in rows:
         if p["total"] == 0:

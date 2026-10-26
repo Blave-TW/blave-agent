@@ -362,9 +362,11 @@ def halt_info():
         return {"reason": "HALT file present but unreadable"}
 
 
-def trip_halt(reason, source):
+def trip_halt(reason, source, **extra):
     """Set the kill switch. source: who tripped it — 'user' / 'healthcheck' /
-    a strategy name. The in-memory flag is set FIRST so this process is
+    a strategy name. `extra`: more fields for the pages (lib/account_bitget's
+    `mismatch`), carried as is by runtime portfolio_reporter.halt_state. The
+    in-memory flag is set FIRST so this process is
     halted even if the file write below fails (full disk); the write failure
     still propagates so callers know the halt did not persist machine-wide."""
     global _halt_flag
@@ -372,7 +374,7 @@ def trip_halt(reason, source):
     os.makedirs(os.path.dirname(HALT_PATH), exist_ok=True)
     tmp = HALT_PATH + ".tmp"
     with open(tmp, "w") as f:
-        json.dump({"ts": _now(), "reason": reason, "source": source}, f)
+        json.dump({**extra, "ts": _now(), "reason": reason, "source": source}, f)
     atomic_replace(tmp, HALT_PATH)
     audit("halt_tripped", reason=reason, source=source)
 

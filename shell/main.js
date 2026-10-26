@@ -3847,6 +3847,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_execution_fallback_market: "Switched to a market order", ev_execution_fallback_market_n: "The configured order style could not run; the fill price may differ.",
   ev_execution_stuck: "Execution is stuck", ev_execution_stuck_n: "Later orders for this symbol are waiting on it.",
   ev_machine_restart_stopped: "Machine restarted — trading paused", ev_machine_restart_stopped_n: "No orders are going out — nothing is managing your positions, and exits and stops won't run. Press Start trading to resume.",
+  ev_venue_stops_missing: "Bitget positions without a stop-loss", ev_venue_stops_missing_n: "After the account switch some positions have no stop-loss on Bitget. Trading continues; Blave won’t re-place them.",
   // 有了雲端視角之後的字(字串表 tm.*)。**預設是空的 = renderer 還沒交**:空的時候相關的那一行 / 那一句 / 那個前綴整個不出現,
   // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單(menu*)例外:退路是 MENU_EN。
   // Binance 金鑰重查(tm.key.*):空的 = renderer 還沒交,那一則通知不發(不拿英文退路塞給中文用戶;下一輪 24 小時重查 verdict 還在,畫面上看得到)
@@ -4134,8 +4135,9 @@ function traySync() {
    - 超過 15 分鐘的舊事件只推水位線不發;同型別 60 秒內只發一則(拒單會每輪每筆一則),其餘靠 Dock 紅點數字。
    - 點通知 = 把視窗叫出來;視窗回前景就清紅點。 */
 // machine_restart_stopped 取代 downtime_paused(api 已改;設計定稿:不講時間,講部位沒人管、平倉停損不會執行、按啟動下單)
-const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped"];   // 全部六型(標籤用)
-const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error");   // 會出現在 events 裡的四型
+const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped",
+  "venue_stops_missing"];   // 全部七型(標籤用)
+const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error");   // 會出現在 events 裡的五型
 const HALT_AUTO_SOURCES = ["reconciler", "portfolio"];   // 同 api openclaw/agent_events._HALT_AUTO_SOURCES
 const notifiedPath = () => path.join(app.getPath("userData"), "p1-notified.json");
 let p1Marks = undefined, p1Badge = 0; const p1LastShown = {}, p1Alive = new Set();   // p1Alive:Notification 沒人持有會被 GC,click 就不觸發

@@ -1,10 +1,10 @@
 """
 Bitget order execution — USDT-M perpetuals (coins, US stock perps (isRwa) and the
 eight Taiwan stock perps) on a classic account (v2 API, real-account run passed
-2026-10-22) or a UTA (v3 API, real-account run not passed). Every call picks the API by
-lib/account_bitget.account_mode(); a request that meets a mode change is never
-re-sent to the other API — it raises MODE_SWITCH (TRANSIENT), and entries stay
-refused for account_bitget.SWITCH_HOLD_S after it.
+2026-10-22) or a UTA (v3 API, real-account run passed: T1–T12, T11c re-run 2026-10-26).
+Every call picks the API by lib/account_bitget.account_mode(); a request that meets a
+mode change is never re-sent to the other API — it raises MODE_SWITCH (TRANSIENT), and
+entries stay refused while account_bitget's switch hold is open.
 
 Companion to lib/account_bitget.py (credentials, signing, contract list, error
 table, mode). NEVER hand-write Bitget order calls; import from here.
@@ -188,6 +188,9 @@ def _request(method, path, env, params=None, retries=3):
     if intent is None:
         return _send(method, path, env, params, retries)
     fields = {k: params[k] for k in _AUDIT_KEYS if k in (params or {})}
+    if isinstance((params or {}).get("orderIdList"), list):  # classic cancel: which orders (account_bitget._our_stop_legs)
+        fields["orderId"] = ",".join(str((x or {}).get("orderId") or "") for x in params["orderIdList"])
+    fields["venue"] = "bitget"  # audit rows of every venue share one file
     fields["intent"] = intent
     if ("uta" if path.startswith("/api/v3/") else "classic") not in acct.VERIFIED_MODES:
         # account_mode() refuses an unverified type too; this one reads the API off the
@@ -1065,7 +1068,7 @@ def sweep_orphan_stops(env, positions=None):
                 continue
             res = [cancel_algo_order(env, sym, x["order_id"], x["stop_order_type"])
                    for x in _one_per_id([x for x in stops if x["symbol"] == sym])]
-            guard.audit("stops_cancelled_on_flat", symbol=vsym, results=res)
+            guard.audit("stops_cancelled_on_flat", symbol=vsym, results=res, venue="bitget")
             swept.append(sym)
         except Exception as e:
             _report_stops_failure(sym, e)
