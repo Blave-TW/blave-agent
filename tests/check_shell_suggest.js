@@ -75,6 +75,8 @@ const send = (msg, started = true) => { ctx.sugSnap(msg); W.ta.value = ""; ctx.s
     for (const v of V.kind) ok("sugKindOf(" + JSON.stringify(v.text) + ") = " + v.kind, ctx.sugKindOf(v.text) === v.kind);
   }
   ok("sugPick:chunk 不是物件 → null", ctx.sugPick(null) === null);
+  // 托盤單行:顯示端硬上限 60(web 同值,parity 常數);超過整句丟、不截。不靠 web 測資,電腦版自己也守
+  ok("sugPick:61 字整句丟、60 字照留(不截)", ctx.sugPick({ items: ["長".repeat(61)] }) === null && (ctx.sugPick({ items: ["長".repeat(60)] }) || {}).text === "長".repeat(60));
 }
 // suggest.js 不在 check_shell_strings 的掃描範圍(SUG_NAV_PREFIXES 要跟網頁逐字同、是中文字面),它用的 t() key 在這裡驗
 {

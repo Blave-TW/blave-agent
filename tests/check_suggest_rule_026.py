@@ -53,8 +53,10 @@ t("v2 只在里程碑出:沒命中不附、「沒命中也寫成 <suggest>」那
 t("v2 不附建議的回合列明(問答、除錯中、用戶已講明、等回答、重複句)",
   all(k in S for k in ("市場問答、資料查詢、報價、概念解釋、寒暄", "除錯或排查還在進行", "用戶這句已經講明下一步要做什麼",
                        "這一輪在等用戶回答", "跟上一輪一模一樣的句子")))
-t("v2 只寫 1 句、填進輸入框不是原句送出;一般句 ≤20 字、導航句不限", "只寫 1 句" in S and "最多 3" not in S and "原句送出" not in S
-  and "填進用戶的輸入框" in S and "一般句 ≤20 字" in S and "英文 ≤48 字元" in S and "不限長度" in S)
+t("v2 只寫 1 句、填進輸入框不是原句送出;一般句 ≤20 字(英文 ≤48)", "只寫 1 句" in S and "最多 3" not in S and "原句送出" not in S
+  and "填進用戶的輸入框" in S and "一般句 ≤20 字（英文 ≤48 字元）" in S)
+t("導航句也有上限:≤28 字(英文 ≤60),太長用短名、不改起手;不再「不限」", "導航句 ≤28 字（英文 ≤60 字元）" in S and "策略名太長時用用戶慣稱的短名" in S
+  and "要縮短就縮策略名，不要改掉起手" in S and "不限" not in S and "策略名寫全" not in S)
 t("v2 step 範本改短", all(k in S for k in ("「掃〈策略名〉的參數找穩定區」", "「幫〈策略名〉加 vol targeting」", "「幫〈策略名〉加趨勢濾網」",
                                            "「幫〈標的〉換一種進場訊號」", "「回測〈策略名〉」")))
 t("研究題答完、還沒做成報告是里程碑(同 references/reports.md)", "- 研究／分析題答完、還沒做成報告 → 「做成報告」" in S
@@ -64,6 +66,9 @@ t("B4 禁止在同一訊號加東西只管主動提的建議", "（只管你主�
 t("_SUGGEST_MAX_ITEMS = 1", at._SUGGEST_MAX_ITEMS == 1)
 _, items = at.extract_suggestions("好。\n<suggest>\n一\n二\n三\n</suggest>")
 t("extract_suggestions 只留第一句", items == ["一"], items)
+_, i61 = at.extract_suggestions("好。\n<suggest>\n" + "長" * 61 + "\n</suggest>")
+_, i60 = at.extract_suggestions("好。\n<suggest>\n" + "長" * 60 + "\n</suggest>")
+t("extract_suggestions 上限 60(同顯示端):61 字整句丟、60 字照留", at._SUGGEST_MAX_CHARS == 60 and i61 == [] and i60 == ["長" * 60], (i61, i60))
 for line, want in (("帶我看怎麼把 A 加進策略組合", "nav"), ("  带我看怎么先绑模拟盘账户", "nav"), ("SHOW ME HOW to add A", "nav"),
                    ("Show me how to go live", "nav"), ("回測 A", "step"), ("掃 A 的參數找穩定區", "step"), ("Mostrar cómo", "step"), ("", "step")):
     t(f"suggest_kind({line!r}) = {want}", at.suggest_kind(line) == want)
@@ -91,7 +96,8 @@ pn = at.build_prompt(None, None, "這支值得用嗎", suggest_directive=True)
 pr = at.build_prompt(None, None, "這支值得用嗎", suggest_directive=True, suggest_mode="reduced")
 po = at.build_prompt(None, None, "這支值得用嗎", suggest_directive=True, suggest_mode="off")
 px = at.build_prompt(None, None, "這支值得用嗎", suggest_directive=True, suggest_mode="weird")
-t("normal 逐輪錨 = spec §3.4 那句", "[結尾規則:只有命中里程碑才在最後附 <suggest>(1 句、用戶口吻;一般句 ≤20 字,「帶我看怎麼」開頭的不限);其他回合寫完答案就結束,不提議、不用問句收尾。" in pn)
+t("normal 逐輪錨 = spec §3.4 那句(導航句 ≤28 字)", "[結尾規則:只有命中里程碑才在最後附 <suggest>(1 句、用戶口吻;一般句 ≤20 字,「帶我看怎麼」開頭的 ≤28 字);其他回合寫完答案就結束,不提議、不用問句收尾。" in pn)
+t("reduced 逐輪錨的導航句也帶 ≤28 字;三種錨都沒有「不限」", "附 <suggest>(1 句、≤28 字)" in pr and all("不限" not in at._SUGGEST_ANCHORS[k] for k in at._SUGGEST_ANCHORS))
 t("reduced:導航類照附、其他改寫進正文最後一句直述", "命中導航類里程碑照樣在最後附 <suggest>" in pr and "正文最後寫一句直述的下一步" in pr and "只有命中里程碑才在最後附" not in pr)
 t("off:不附 <suggest>、改寫進正文", "這一輪不附 <suggest>" in po and "正文最後寫一句直述的下一步" in po)
 t("怪值當 normal", px == pn)

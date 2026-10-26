@@ -5,7 +5,7 @@
    句子只在記憶體:重開 app、換對話都不留——同雲端(逐字稿裡沒有這段)。開關與沒用計數在 localStorage,各台電腦各自計。 */
 const SUG = { pending: null, timer: null, text: null, kind: null, shownOnce: false, used: false, gone: false, files: 0, filledText: null, inflight: null };
 // 下面五個跟網頁工作頁同名同值(web tests/check_suggest_v2.js 與 tests/check_web_desktop_parity.js 逐字比對原文)
-const SUG_MAX_CHARS = 200;
+const SUG_MAX_CHARS = 60;   // 托盤單行截尾;超過整句丟、不截(runtime 規則一般句 ≤20／48、導航句 ≤28／60)
 const SUG_MISS_LIMIT = 5;
 const SUG_NAV_PREFIXES = ["帶我看怎麼", "带我看怎么", "show me how"];   // 同 runtime _SUGGEST_NAV_HEADS:舊 runtime 不帶 kind 時自己判
 const SUG_KEY_ON = "ws_sug_on";
@@ -18,7 +18,7 @@ const sugReduced = () => sugNum(SUG_KEY_MISS) >= SUG_MISS_LIMIT;
 function sugMode() { return !sugOn() ? "off" : sugReduced() ? "reduced" : "normal"; }
 
 /* 純函式(tests/check_shell_suggest.js 跑網頁那份 web/tests/suggest_vectors.json):chunk → { text, kind } 或 null。
-   VM 寫的字是不可信輸入:只看 items[0](舊 runtime 一次給 3 句),非字串、空白、超過 200 字整句丟,不往後找 */
+   VM 寫的字是不可信輸入:只看 items[0](舊 runtime 一次給 3 句),非字串、空白、超過 SUG_MAX_CHARS 字整句丟(不截),不往後找 */
 function sugKindOf(text) {
   const head = String(text).replace(/^\s+/, "").toLowerCase();
   return SUG_NAV_PREFIXES.some((p) => head.startsWith(p.toLowerCase())) ? "nav" : "step";

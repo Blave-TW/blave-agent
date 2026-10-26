@@ -9,6 +9,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 ## Unreleased
 
 - **Bitget 翻開經典帳戶(desktop 0.1.33)**(`venue_traits` 的 `bitget` `verified_modes` = `("classic",)`,2026-10-22 經典主帳戶真帳驗過;0.1.32 關著的閘門照 e3b573ab 列的步驟打開):`account_reader` 開始讀 Bitget、`local_daemon` 放行 `BITGET`、電腦版連接框兩個視角都列 Bitget(`cloudcmd.BITGET_VERIFIED_MODES` 同值)、聊天綁定收 `bitget`。統一帳戶(UTA)仍未開放:UTA 金鑰照舊由 lib 拒絕(`[bitget_account_mode:uta]`,講「還不支援」、叫人改綁經典帳戶或其他交易所),畫面走 `cx.err.bitgetUta`。broker attribution 還是空的(`BROKER_CHANNEL_CODE`)。測試 `tests/check_bitget_lib.py`、`tests/check_bitget_surfaces.py`、`tests/check_venue_traits.py`、`tests/check_shell_connect_venues.js`、`tests/check_desktop_venue_env.py`、`tests/check_local_real_key_gate.py`。
+- **建議下一步的導航句也有長度上限(`agent_turn._SUGGEST_RULE`、`_SUGGEST_ANCHORS` normal／reduced;Wei 10-26:托盤手機最多三行,但建議不能長到用戶懶得看)**:「帶我看怎麼…」原本不限長度、要求策略名寫全;現在中文 ≤28 字(策略名照算、空白不算)、英文 ≤60 字元,一般句維持 ≤20／48;策略名太長用用戶慣稱的短名,縮短只縮名字、不改起手。`extract_suggestions` 的 `_SUGGEST_MAX_CHARS` 由 80 降到 60,跟顯示端(電腦版 `SUG_MAX_CHARS`、web 同值)一致,超過整句丟(丟掉時照舊不改寫進正文)。測試 `tests/check_suggest_rule_026.py`(舊碼 5 條紅)。
 
 ## 1.1.141 — 2026-10-26(desktop 0.1.32)
 
