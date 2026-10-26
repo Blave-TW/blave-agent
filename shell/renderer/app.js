@@ -1389,7 +1389,7 @@ const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 async function mpInit(kind) {
   // 先同步清空:型錄最慢要 15 秒才回來(Blave AI 走網路),這期間按送出不能把**上一個
   // 引擎**的 model 送過去(Codex 的 gpt-5.5 送給 Blave 的 proxy → 該輪失敗)。
-  MP.kind = kind; MP.models = []; MP.model = null; MP.defaultModel = null; MP.freeOnly = false; MP.displaced = null;
+  MP.kind = kind; MP.models = []; MP.model = null; MP.defaultModel = null; MP.displaced = null;   // freeOnly 不重設:跟著帳號走,登出才清
   $("mp").hidden = true;
   const [opt, prefs] = await Promise.all([window.blave.modelOptions(kind), window.blave.loadModelPrefs()]);
   // 舊引擎的型錄晚到(快速切換)→ 丟掉,不然會蓋掉新引擎的、還被 mpSave 寫進錯的欄位

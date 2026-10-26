@@ -178,6 +178,18 @@ const STATUS = (free_only) => (free_only === undefined ? { can_run: true } : { c
       && args({ model: SONNET, useBlave: true }).join(" ") === "--model " + SONNET
       && args({ relayPreset: { models: ["a"], defaultModel: "a" }, model: "x" }).join(" ") === "--model a");
   }
+  // 換引擎再切回 Blave、這時帳號狀態讀不到:鎖照舊(mpInit 不重設 freeOnly)
+  {
+    const w = world();
+    w.M.acctSet(STATUS(true));
+    await w.M.mpInit("blave");
+    await w.M.mpInit("codex");
+    w.M.acctSet(null);
+    await w.M.mpInit("blave");
+    ok("7. 切到 Codex 再切回 Blave + acctSet(null):仍鎖、送 Pro、Sonnet 列鎖住、存的型號還是 Sonnet",
+      w.M.MP.freeOnly === true && w.M.MP.model === PRO && w.M.MP.displaced === SONNET
+      && row(w, "Claude Sonnet 5.5").attrs["aria-disabled"] === "true" && w.prefs.blave.model === SONNET, [w.M.MP.freeOnly, w.M.MP.model, w.M.MP.displaced]);
+  }
   // 登出才清鎖(acctSignOut;那支要整個登入流程,只釘接線)
   ok("7. 登出:acctSignOut 把 freeOnly 清掉並收斂(換回被鎖前的型號)", /hasToken = false; acct = null;[^\n]*\n[^\n]*wdPaint\(\);[^\n]*\n\s*MP\.freeOnly = false; if \(mpFreeSync\(\)\) mpPaint\(\);/.test(src));
   // 鎖住列沒有 hover、游標 not-allowed(canon › Disabled;設計稽核 #1)
