@@ -17,7 +17,7 @@ function world(o) {
     setAttribute(k, v) { this.attrs[k] = v; }, focus() { focused.push(id); }, querySelector: () => (o.noRow ? null : row) });
   // 外層的 cur / running 等照 app.js 是 let:包在同一層宣告,函式照原文放進來——遮蔽與 TDZ 才會跟真的一樣
   const M = new Function("$", "balLoad", "o", `let cur = o.cur, running = !!o.running, hasToken = !!o.hasToken;
-    const MP = { model: "a", kind: "claude", prefs: {} }; const mpEffort = () => "high", mpCur = () => ({ efforts: ["high"] }), mpSave = () => {}, mpPaint = () => {};
+    const MP = { model: "a", kind: "claude", prefs: {} }; const mpEffort = () => "high", mpCur = () => ({ efforts: ["high"] }), mpSave = () => {}, mpPaint = () => {}, mpLocked = () => false;
     ${fn("mpOpen")}\n${fn("mpClose")}\n${fn("mpPickModel")}\n return { mpOpen, mpClose, mpPickModel };`)($, () => checks.push(1), o);
   return { M, $, focused, checks };
 }
@@ -49,7 +49,7 @@ async function init(savedModel, efforts, kind = "blave", opt = BLAVE_OPT) {
   const els = {}; const $ = (id) => els[id] || (els[id] = { hidden: false });
   const window = { blave: { modelOptions: async () => opt, loadModelPrefs: async () => prefs } };
   const MP = {};
-  await new Function("$", "window", "MP", "isObj", "mpPaint", `async ${fn("mpInit")}\n return mpInit;`)($, window, MP, (v) => !!v && typeof v === "object" && !Array.isArray(v), () => {})(kind);
+  await new Function("$", "window", "MP", "isObj", "mpPaint", `const mpFreeSync = () => false;\n async ${fn("mpInit")}\n return mpInit;`)($, window, MP, (v) => !!v && typeof v === "object" && !Array.isArray(v), () => {})(kind);
   return MP;
 }
 (async () => {

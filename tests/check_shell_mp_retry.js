@@ -15,7 +15,7 @@ function world(catalogs, MP) {
   const els = {}; const $ = (id) => els[id] || (els[id] = { hidden: false });
   let reads = 0;
   const window = { blave: { modelOptions: async () => catalogs[Math.min(reads++, catalogs.length - 1)], loadModelPrefs: async () => ({}) } };
-  const M = new Function("$", "window", "MP", "isObj", "mpPaint", `async ${fn("mpInit")}\n${fn("mpTurnEnd")}\n return { mpInit, mpTurnEnd };`)($, window, MP, isObj, () => {});
+  const M = new Function("$", "window", "MP", "isObj", "mpPaint", `const mpFreeSync = () => false;\n async ${fn("mpInit")}\n${fn("mpTurnEnd")}\n return { mpInit, mpTurnEnd };`)($, window, MP, isObj, () => {});
   return { M, $, reads: () => reads };
 }
 const EMPTY = { models: [], defaultModel: null };

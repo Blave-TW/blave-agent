@@ -1110,6 +1110,7 @@ ok("回合結束不再出費用那一則:dataFeeNote / dataFeeShow / data.fee �
   let acct = null, hasToken = true, fetched = 0, notes = [], NEXT = null, painted = 0, cardCalls = 0;
   const window = { blave: { accountStatus: async () => { fetched++; return NEXT; }, openExternal: () => {} } };
   const acctPaint = () => { painted++; }, faultCard = () => ({ set: (x) => notes.push(x) }), maybeDataCard = () => { cardCalls++; };
+  const acctSet = (s) => { acct = s; };   // 模型選單那半(mpFreeSync)在 check_shell_free_lock 測
   eval(fnSrc("dataAccessOf"));
   eval("var dataTurnEnd = async " + fnSrc("dataTurnEnd").replace(/^async /, ""));
   acct = { data_access: "included", data_included: true }; NEXT = { data_access: "billed", data_hourly: 2, data_hour_paid: true };

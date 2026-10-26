@@ -1326,7 +1326,7 @@ $("ta").addEventListener("input", autosize);
    換 model 時 effort 能留就留,留不住就落回該 model 的預設——面板不自動關,軌的格數與
    選中格當場跟著變,看得到。
    選擇按引擎各記一組(model + 每個 model 各自的 effort),存本機、跨重啟保留。 */
-const MP = { kind: null, models: [], prefs: {}, model: null };
+const MP = { kind: null, models: [], prefs: {}, model: null, freeOnly: false, displaced: null };
 
 function mpLevel(lv) { const k = "lv." + lv; const v = t(k); return v === k ? lv.charAt(0).toUpperCase() + lv.slice(1) : v; }
 function mpCur() { return MP.models.find((m) => m.id === MP.model) || null; }
@@ -1337,7 +1337,7 @@ function mpEffort() {
 }
 function mpSave() {
   const slot = MP.prefs[MP.kind] || (MP.prefs[MP.kind] = { efforts: {} });
-  slot.model = MP.model; slot.efforts = slot.efforts || {};
+  slot.model = MP.displaced || MP.model; slot.efforts = slot.efforts || {};   // 被鎖暫換時存的還是用戶自己選的那個
   window.blave.saveModelPrefs(MP.prefs);
 }
 
@@ -1350,6 +1350,29 @@ function mpMarkUnavailable(id) {
   if (MP.model === id && MP.defaultModel && MP.defaultModel !== id) MP.model = MP.defaultModel;
   mpSave(); mpPaint();
 }
+/* 綁卡前的 30 TWD 只能用 free_credit 的型號(api account_status.free_only;spec desktop-free-credit-deepseek-only v3 S1–S2)。
+   鎖住的列照列、不能選;被鎖的那個記在 MP.displaced,解鎖換回去。只認 free_credit === false:舊 api 沒這欄就不鎖,交給伺服器擋 */
+const mpLocked = (id) => MP.kind === "blave" && MP.freeOnly && (MP.models.find((m) => m.id === id) || {}).free_credit === false;
+/* 照手上的 acct 收斂,不記轉換:mpInit 與 acctSet 誰後到都一樣。回傳畫面要不要重畫。
+   free_only 明確是 false 時順手清掉 free_credit === false 的 unavailable 標記——那是 0.1.32 撞到鎖的 404 留下的
+   (Blave 這條線沒有別的 404 來源),含一開始就是 false、沒有 true→false 那一下的人(複審 P2) */
+function mpFreeSync() {
+  if (MP.kind !== "blave" || !MP.models.length) return false;
+  const was = MP.freeOnly, before = MP.model;
+  MP.freeOnly = !!acct && acct.free_only === true;
+  if (mpLocked(MP.model) && MP.defaultModel && !mpLocked(MP.defaultModel)) {
+    MP.displaced = MP.displaced || MP.model; MP.model = MP.defaultModel;
+  } else if (!MP.freeOnly && MP.displaced) {
+    if (MP.models.some((m) => m.id === MP.displaced)) MP.model = MP.displaced;
+    MP.displaced = null;
+  }
+  const slot = MP.prefs.blave, na = slot && Array.isArray(slot.unavailable) ? slot.unavailable : null;
+  const keep = acct && acct.free_only === false && na ? na.filter((id) => (MP.models.find((m) => m.id === id) || {}).free_credit !== false) : na;
+  if (keep !== na && keep.length !== na.length) { slot.unavailable = keep; mpSave(); return true; }
+  return was !== MP.freeOnly || before !== MP.model;
+}
+function acctSet(s) { acct = s; if (mpFreeSync()) mpPaint(); }
+
 /* 用那個 model 成功跑完一輪 = 現在能用了(升級了方案),把標記拿掉。 */
 function mpMarkWorks(id) {
   const slot = MP.prefs[MP.kind];
@@ -1365,7 +1388,7 @@ const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 async function mpInit(kind) {
   // 先同步清空:型錄最慢要 15 秒才回來(Blave AI 走網路),這期間按送出不能把**上一個
   // 引擎**的 model 送過去(Codex 的 gpt-5.5 送給 Blave 的 proxy → 該輪失敗)。
-  MP.kind = kind; MP.models = []; MP.model = null; MP.defaultModel = null;
+  MP.kind = kind; MP.models = []; MP.model = null; MP.defaultModel = null; MP.freeOnly = false; MP.displaced = null;
   $("mp").hidden = true;
   const [opt, prefs] = await Promise.all([window.blave.modelOptions(kind), window.blave.loadModelPrefs()]);
   // 舊引擎的型錄晚到(快速切換)→ 丟掉,不然會蓋掉新引擎的、還被 mpSave 寫進錯的欄位
@@ -1388,6 +1411,7 @@ async function mpInit(kind) {
   }
   const saved = slot.model;
   MP.model = MP.models.some((m) => m.id === saved) ? saved : (opt.defaultModel || MP.models[0].id);
+  mpFreeSync();   // 帳號狀態可能比型錄先到
   mpPaint();
 }
 
@@ -1411,12 +1435,20 @@ function mpPaint() {
     const on = x.id === MP.model;
     b.setAttribute("aria-checked", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
     const nm = document.createElement("span"); nm.textContent = x.name; b.appendChild(nm);
-    if (((MP.prefs[MP.kind] || {}).unavailable || []).includes(x.id)) {
+    const locked = mpLocked(x.id);
+    if (locked) {
+      b.classList.add("is-locked"); b.setAttribute("aria-disabled", "true");
+      const lk = document.createElement("span"); lk.className = "mp-def"; lk.textContent = t("mp.locked"); b.appendChild(lk);
+    } else if (((MP.prefs[MP.kind] || {}).unavailable || []).includes(x.id)) {
       b.classList.add("is-na");
       const na = document.createElement("span"); na.className = "mp-def"; na.textContent = t("mp.na"); b.appendChild(na);
     }
     if (x.id === MP.defaultModel) { const d = document.createElement("span"); d.className = "mp-def"; d.textContent = t("mp.default"); b.appendChild(d); }
-    b.addEventListener("click", (e) => mpPickModel(x.id, e.detail > 0));   // detail > 0 = 真的滑鼠點;鍵盤的 Enter / Space 是 0
+    // 鎖住的列:方向鍵跳過它,走到這裡的只有滑鼠點與停在它上面按 Enter / Space,都算一次點擊
+    b.addEventListener("click", (e) => {
+      if (locked) { trackFeature("mp_locked_click"); return; }
+      mpPickModel(x.id, e.detail > 0);   // detail > 0 = 真的滑鼠點;鍵盤的 Enter / Space 是 0
+    });
     box.appendChild(b);
   });
 
@@ -1463,7 +1495,8 @@ function mpBillPaint() {
 }
 
 function mpPickModel(id, viaMouse) {
-  if (id === MP.model) return;
+  if (id === MP.model || mpLocked(id)) return;
+  MP.displaced = null;   // 自己選了一個用得了的:不再換回被鎖的那個
   const before = mpEffort();
   MP.model = id;
   const m = mpCur();
@@ -1522,8 +1555,11 @@ $("mp-panel").addEventListener("keydown", (e) => {
   const d = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key]; if (!d) return;
   e.preventDefault();
   const items = [...group.querySelectorAll('[role="radio"]')];
-  const next = items[(items.indexOf(e.target) + d + items.length) % items.length];
-  if (next) next.click();
+  let i = items.indexOf(e.target);
+  for (let n = 0; n < items.length; n++) {   // 跳過鎖住的列(aria-disabled);讀屏照樣讀得到它們
+    i = (i + d + items.length) % items.length;
+    if (items[i].getAttribute("aria-disabled") !== "true") { items[i].click(); break; }
+  }
 });
 
 
@@ -3327,6 +3363,13 @@ function classifyFault(text) {
     const id = turnModel || nm[1];
     const bad = MP.models.find((m) => m.id === id);
     const name = bad ? bad.name : nm[1];
+    // 綁卡前額度撞到鎖(api 404 MODEL_NEEDS_PAYMENT):不標「方案沒有」,改暫換、畫成鎖住。
+    // 這裡是同步的、等不了 acctCheck:手上的 acct 還沒說鎖就照舊標記,回合結束那次重讀(dataTurnEnd → acctSet)會清掉
+    if (MP.freeOnly && bad && bad.free_credit === false) {
+      if (mpFreeSync()) mpPaint();
+      const to = mpCur();
+      if (to && to.id !== id) return { text: t("fault.freeLocked", { model: name, to: to.name }), label: t("acct.addCard"), act: () => bindGo("bind_model") };
+    }
     mpMarkUnavailable(id);
     const back = mpCur();
     return {
@@ -3627,7 +3670,7 @@ async function acctCheck() {
   if (!hasToken) return;                    // 在途時登出了:這筆是舊帳號的
   await authSync();
   if (AUTH.revoked) acct = null;            // 登入已失效:手上那份是失效前的,不拿它畫「已登入」的方案
-  else if (s) acct = s;                     // 查不到就留著上一次的
+  else if (s) acctSet(s);                   // 查不到就留著上一次的
   acctPaint();
   if (!acct) planWatchIdle();               // 查不到、手上也沒有:方案頁這時才換成「查不到」那一格
   // 問不到、手上也沒有狀態:中性句不能一直掛著,退回「沒額度 → 儲值」那組(不猜沒卡)
@@ -3685,7 +3728,7 @@ function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* noop *
 async function dataTurnEnd() {
   if (hasToken) {
     const fresh = await window.blave.accountStatus().catch(() => null);
-    if (fresh && hasToken) { acct = fresh; acctPaint(); }
+    if (fresh && hasToken) { acctSet(fresh); acctPaint(); }
   }
   maybeDataCard();
 }
@@ -4138,7 +4181,7 @@ async function acctPrecheck() {
   if (acctCard && acctCard.el.isConnected) acctCard.el.remove();
   acctCard = null;
   if (!hasToken) { acct = null; planWatchIdle(); return; }
-  acct = await window.blave.accountStatus(); acctAt = Date.now();
+  acctSet(await window.blave.accountStatus()); acctAt = Date.now();
   if (acct) planWatch(acct);                  // 方案狀態(側欄那行字、啟動中的輪詢)不看能不能跑
   if (typeof wdPaint === "function") wdPaint();   // 能跑的人不會走到下面的 acctPaint,歡迎頁的清單在這裡換版
   if (cur !== "blave") return;                // 預檢卡講的是「Blave AI 能不能跑」,自帶 CLI 的人用不到
