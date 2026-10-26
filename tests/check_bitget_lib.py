@@ -1567,6 +1567,21 @@ check(kind == "ok" and acct.switch_hold_left() == 0 and halt_file() is None
       and acct._read_mode().get("legs") == [["NVDAUSDT", "long", 0.02]] and len(EMITS) == n_ev,
       "② 啟動下單 releases the hold on what Bitget holds now; no resume event (the user resumed)", acct._read_mode())
 
+# two processes judge the same switch: the second finds the first one's mismatch HALT and keeps it (time and
+# list), so 啟動下單 releases at once — never a second HALT after the resume
+classic_with([V2_NVDA])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.02")]
+age_hold(acct.SWITCH_HOLD_S + 1)
+first = acct._trip_mismatch_halt("uta", [{"symbol": "NVDAUSDT", "side": "long", "before": 0.03, "now": 0.02}])
+h1 = halt_file()  # process A tripped it; process B read the mode file before A recorded its hold
+acct.get_positions(ENV)
+check(halt_file() == h1 and acct._read_mode()["hold"]["stuck"]["halt_ts"] == first == h1["ts"],
+      "two readers: the second keeps the first one's mismatch HALT (same file, its timestamp recorded)")
+user_resume()
+kind, pos = judged()
+check(kind == "ok" and halt_file() is None and acct.switch_hold_left() == 0,
+      "…so one 啟動下單 releases the hold (no second HALT)", (kind, halt_file()))
+
 # ③ a leg missing: HALT at once (not after SWITCH_MAX_S)
 classic_with([V2_NVDA, V2_ACN])
 UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]

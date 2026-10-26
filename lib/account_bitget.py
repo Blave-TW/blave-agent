@@ -665,7 +665,13 @@ def _check_hold(mode, rows, env=None):
         # not raised: the HALT is the notice and stops every order, and a failed read would
         # add the reconciler's "will retry" message and a read error on the page beside it
         on_disk = _halt_on_disk()
-        ts = None if on_disk is not None else _trip_mismatch_halt(mode, bad)
+        if on_disk is None:
+            ts = _trip_mismatch_halt(mode, bad)
+        elif str(on_disk.get("reason") or "").startswith(MISMATCH_TAG):
+            # another process (reconciler / account reader) found it first: its HALT and list stand
+            ts = on_disk.get("ts")
+        else:
+            ts = None
         _write_mode({**st, "hold": {**hold, "stuck": {"at": time.time(), "legs": bad, "halt_ts": ts}}})
         return
     have = {_leg_key(x) for x in now_legs}
