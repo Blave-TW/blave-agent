@@ -419,6 +419,7 @@ async function acctSignOut() {
   const r = await window.blave.signOutBlave().finally(() => { acctOutBusy = false; });
   balFree = null; hasToken = false; acct = null; balLast = null; planErr = null; planBusy = false;
   if (typeof wdPaint === "function") wdPaint();   // 歡迎頁的資料清單退回沒登入那一版
+  MP.freeOnly = false; if (mpFreeSync()) mpPaint();   // 綁卡前額度的鎖跟著帳號走:登出才清(讀不到狀態不清)
   RPC_CACHE.clear();   // 上一個帳號的雲端報告不能在下一個帳號點同名策略時先畫出來
   if (typeof libInvalidate === "function") libInvalidate();   // 策略庫的 purchased / 閘門是這個帳號的
   if (typeof rptInvalidate === "function") rptInvalidate();   // 雲端報告也是
@@ -1359,7 +1360,7 @@ const mpLocked = (id) => MP.kind === "blave" && MP.freeOnly && (MP.models.find((
 function mpFreeSync() {
   if (MP.kind !== "blave" || !MP.models.length) return false;
   const was = MP.freeOnly, before = MP.model;
-  MP.freeOnly = !!acct && acct.free_only === true;
+  if (acct) MP.freeOnly = acct.free_only === true;   // 讀不到(null)不等於沒鎖:沿用上一次,登出才清(設計稽核 #4)
   if (mpLocked(MP.model) && MP.defaultModel && !mpLocked(MP.defaultModel)) {
     MP.displaced = MP.displaced || MP.model; MP.model = MP.defaultModel;
   } else if (!MP.freeOnly && MP.displaced) {
@@ -1437,8 +1438,8 @@ function mpPaint() {
     const nm = document.createElement("span"); nm.textContent = x.name; b.appendChild(nm);
     const locked = mpLocked(x.id);
     if (locked) {
-      b.classList.add("is-locked"); b.setAttribute("aria-disabled", "true");
-      const lk = document.createElement("span"); lk.className = "mp-def"; lk.textContent = t("mp.locked"); b.appendChild(lk);
+      // 原因只講一次:清單下面那行(#mp-lock-note),列上只留名字
+      b.classList.add("is-locked"); b.setAttribute("aria-disabled", "true"); b.setAttribute("aria-describedby", "mp-lock-note");
     } else if (((MP.prefs[MP.kind] || {}).unavailable || []).includes(x.id)) {
       b.classList.add("is-na");
       const na = document.createElement("span"); na.className = "mp-def"; na.textContent = t("mp.na"); b.appendChild(na);
@@ -1451,6 +1452,9 @@ function mpPaint() {
     });
     box.appendChild(b);
   });
+
+  const lockNote = $("mp-lock-note"), anyLocked = MP.models.some((x) => mpLocked(x.id));
+  lockNote.textContent = anyLocked ? t("mp.locked") : ""; lockNote.hidden = !anyLocked;
 
   const rail = $("mp-rail"); rail.textContent = "";
   rail.setAttribute("aria-label", t("mp.effort"));

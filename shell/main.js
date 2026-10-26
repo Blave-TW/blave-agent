@@ -2203,6 +2203,9 @@ const CLAUDE_MODELS = [
   { id: "haiku", name: "Haiku", efforts: [], defaultEffort: null },
 ];
 const CLAUDE_DEFAULT = "claude-sonnet-5-5";
+// Blave 線型錄拿不到時送的型號:跟型錄回來時的預設同一個(modelOptions)。綁卡前的 30 TWD 只能用它(api free_only),
+// 送 Sonnet 會撞 404 MODEL_NEEDS_PAYMENT(整合稽核 P2-1)
+const BLAVE_DEFAULT = "deepseek/deepseek-v4-pro";
 // 偏好檔裡存的舊別名對到明確 id(effort 跟著帶,renderer mpInit 讀 successors)
 const CLAUDE_SUCCESSORS = { sonnet: "claude-sonnet-5-5", opus: "claude-opus-5-5", fable: "claude-fable-5-1" };
 
@@ -3107,6 +3110,16 @@ function llmEnv(acct, relay) {
   if (relay) return { BLAVE_LLM_RELAY_URL: relay.url, BLAVE_LLM_RELAY_TOKEN: relay.token };
   return acct ? { BLAVE_PROXY_TOKEN: acct } : {};
 }
+/* 選擇器畫得出來時,model **一律明確指定**:輸入框上寫的就是送出去的,不靠引擎那邊看不見的預設。
+   只有型錄拿不到(沒畫選擇器、還沒回來)時 model 才是 null——那時 Blave AI 送 BLAVE_DEFAULT、自己的 Claude 送 Sonnet,
+   Codex 什麼都不帶(runtime 用「有沒有明確帶旗標」判斷,帶了 Claude 的名字過去會被轉成 `codex -m <那個名字>`)。
+   純函式(tests/check_shell_free_lock.js 切出來跑) */
+function turnModelArgs({ relayPreset, model, useCodex, useBlave }) {
+  if (relayPreset) return ["--model", relayPreset.models.indexOf(model) >= 0 ? model : relayPreset.defaultModel];
+  if (model) return ["--model", model];
+  if (useCodex) return [];
+  return ["--model", useBlave ? BLAVE_DEFAULT : CLAUDE_DEFAULT];
+}
 const MESSAGE_MAX_BYTES = 1024 * 1024;   // 同 runtime/agent_turn.py 的 MESSAGE_STDIN_MAX
 /* 外殼給這一輪的指示(renderer 只交代號,字在 runtime/agent_turn.py TURN_NOTES):跟用戶的訊息分開送,不進泡泡也不進對話存檔。
    只認這張表上的;renderer 會渲染 LLM 的文字,不能讓它把任意字串送成系統層級的規則 */
@@ -3230,12 +3243,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   try { child = spawn(VENV_PY, [
     path.join(REPO, "runtime", "agent_turn.py"),
     "--delivery", "local",
-    // 選擇器畫得出來時,model / effort **一律明確指定**:輸入框上寫的就是送出去的,
-    // 不靠引擎那邊看不見的預設。只有型錄拿不到(沒畫選擇器)時兩個才是 null——
-    // 那時 Claude / Blave AI 照舊送 Sonnet(proxy 也認裸 id),Codex 什麼都不帶(runtime 用「有沒有明確
-    // 帶旗標」判斷,帶了 Claude 的名字過去會被轉成 `codex -m <那個名字>`)。
-    ...(relayPreset ? ["--model", relayPreset.models.indexOf(model) >= 0 ? model : relayPreset.defaultModel]
-      : model ? ["--model", model] : useCodex ? [] : ["--model", CLAUDE_DEFAULT]),
+    ...turnModelArgs({ relayPreset, model, useCodex, useBlave }),
     ...(effort ? ["--effort", effort] : []),
     // 回覆語言跟著用戶打的字走,不跟介面(Wei):刻意**不帶** --ui-lang。runtime 的順序是
     // 「機器設定 > ui_lang > 看訊息猜」,電腦版沒有機器設定,不帶就落到最後一項。

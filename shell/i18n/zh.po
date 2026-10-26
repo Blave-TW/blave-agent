@@ -549,7 +549,7 @@ msgstr "你的帳號用不了「{model}」，這一輪沒有跑。已換回「{t
 
 # 0.1.33 綁卡前的 30 TWD 只能用 DeepSeek V4 Pro:送了鎖住的型號(api 404 MODEL_NEEDS_PAYMENT),選擇已換回預設;鈕是綁卡(acct.addCard)
 msgid "fault.freeLocked"
-msgstr "「{model}」要綁卡或儲值才能用。已換回「{to}」。"
+msgstr "「{model}」要綁卡或儲值才能用，這一輪沒有跑。已換回「{to}」。"
 
 msgid "fault.noModelBtn"
 msgstr "選別的模型"
@@ -564,9 +564,9 @@ msgstr "你的 {name} 訂閱用量到上限了。重置之前可以到「設定 
 msgid "fault.limitBtn"
 msgstr "切換 AI"
 
-# 0.1.33 模型選單上鎖住的列(綁卡前額度用不了的型號)右邊那行小字
+# 0.1.33 模型選單:有鎖住的列時,型號清單下面那一行(只講一次;鎖住列 aria-describedby 指它)。336 寬不折行
 msgid "mp.locked"
-msgstr "綁卡或儲值後可用"
+msgstr "其他模型綁卡或儲值後可用"
 
 msgid "mp.na"
 msgstr "你的方案沒有"
