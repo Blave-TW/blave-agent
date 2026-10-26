@@ -2928,6 +2928,7 @@ const STRINGS = {
     "tr.ov.evBitgetStopsUnreadClassic": "After Bitget switched to a classic account, its stop orders couldn’t be read — treating these positions as unprotected",
     "tr.ov.evBitgetNoStopNote": "Trading continues; Blave won’t re-place stops. Set them on Bitget, or ask the agent to.",
     "tm.evBitgetNoStop": "Bitget positions without a stop-loss",
+    "tr.ov.evBitgetStopsUnknown": "Stops couldn’t be confirmed: Blave’s order record is unreadable. Check your stops on Bitget.",
   },
   zh: {
     "cn.h": "Blave 不內建 AI。",
@@ -5852,5 +5853,6 @@ const STRINGS = {
     "tr.ov.evBitgetStopsUnreadClassic": "Bitget 換成經典帳戶後讀不到止損單，以下倉位當成沒有止損",
     "tr.ov.evBitgetNoStopNote": "下單照常，Blave 不會自動補掛。要止損請到 Bitget 設定，或請 agent 補掛。",
     "tm.evBitgetNoStop": "Bitget 有倉位沒有止損",
+    "tr.ov.evBitgetStopsUnknown": "無法確認止損：讀不到 Blave 的下單紀錄，請到 Bitget 看止損還在不在。",
   },
 };

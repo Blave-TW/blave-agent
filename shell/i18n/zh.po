@@ -9010,3 +9010,7 @@ msgstr "下單照常，Blave 不會自動補掛。要止損請到 Bitget 設定�
 # 本機 P1 系統通知的標題(main.js tmLabels ev_venue_stops_missing)
 msgid "tm.evBitgetNoStop"
 msgstr "Bitget 有倉位沒有止損"
+
+# 事件列 P3 的註解:Blave 自己的下單紀錄讀不到,無法確認換帳戶後止損還在不在
+msgid "tr.ov.evBitgetStopsUnknown"
+msgstr "無法確認止損：讀不到 Blave 的下單紀錄，請到 Bitget 看止損還在不在。"

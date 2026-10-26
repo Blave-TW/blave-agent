@@ -188,6 +188,9 @@ def _request(method, path, env, params=None, retries=3):
     if intent is None:
         return _send(method, path, env, params, retries)
     fields = {k: params[k] for k in _AUDIT_KEYS if k in (params or {})}
+    if isinstance((params or {}).get("orderIdList"), list):  # classic cancel: which orders (account_bitget._our_stop_legs)
+        fields["orderId"] = ",".join(str((x or {}).get("orderId") or "") for x in params["orderIdList"])
+    fields["venue"] = "bitget"  # audit rows of every venue share one file
     fields["intent"] = intent
     if ("uta" if path.startswith("/api/v3/") else "classic") not in acct.VERIFIED_MODES:
         # account_mode() refuses an unverified type too; this one reads the API off the
@@ -1065,7 +1068,7 @@ def sweep_orphan_stops(env, positions=None):
                 continue
             res = [cancel_algo_order(env, sym, x["order_id"], x["stop_order_type"])
                    for x in _one_per_id([x for x in stops if x["symbol"] == sym])]
-            guard.audit("stops_cancelled_on_flat", symbol=vsym, results=res)
+            guard.audit("stops_cancelled_on_flat", symbol=vsym, results=res, venue="bitget")
             swept.append(sym)
         except Exception as e:
             _report_stops_failure(sym, e)

@@ -426,52 +426,106 @@ def _stop_losses(env, mode):
             for o in (data or {}).get("entrustedList") or [] if o.get("planType") == "pos_loss"]
 
 
-def _unprotected(env, mode, now_legs):
-    """(legs with no stop-loss on Bitget now, the plan list was unreadable) after a switch.
-    Bitget refuses a manual upgrade while orders are open and does not say whether TP/SL
-    counts, so a stop may be gone. Any open stop-loss on the leg counts, this lib's or the
-    user's. A symbol holding one leg is covered by any stop-loss on it; holding both legs
-    (hedge), UTA tells the leg by the stop's closing side, classic does not — there both
-    legs need a stop-loss each. Unreadable = every leg unprotected (never assumed safe)."""
-    legs = [(x[0], x[1]) for x in now_legs]
+def _audit_leg(r):
+    side = str(r.get("posSide") or r.get("holdSide") or "").lower()
+    return {"long": "long", "short": "short", "buy": "long", "sell": "short"}.get(side)
+
+
+def _our_stop_legs():
+    """{(Bitget symbol, side)} of the legs whose last stop-loss THIS lib placed is still
+    standing by its own record: state/audit.jsonl (lib/guard: append-only, fsynced, never
+    pruned), rows lib/order_bitget tags venue "bitget". A placed stop counts until its
+    order is cancelled or the flat sweep clears the symbol; one Bitget fired by itself is
+    not in the record (the leg it guarded is then gone or re-opened without it). None =
+    the record cannot be read (missing or unreadable) — nothing can be said about it."""
+    try:
+        with open(guard.AUDIT_PATH, encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        return None
+    live = {}
+    for line in lines:
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue  # a torn last line from a crash: the rest of the record stands
+        if not isinstance(r, dict) or r.get("venue") != "bitget":
+            continue
+        sym = r.get("symbol")
+        if r.get("event") == "stops_cancelled_on_flat":
+            live = {k: v for k, v in live.items() if k[0] != sym}
+            continue
+        if r.get("event") != "order_ok":
+            continue
+        if r.get("intent") == "cancel":
+            gone = set(str(r.get("orderId") or "").split(","))
+            live = {k: v for k, v in live.items() if v not in gone}
+            continue
+        leg = _audit_leg(r) if r.get("intent") == "protective" else None
+        if leg is None:
+            continue
+        if r.get("type") == "tpsl":  # UTA: one order per leg, rewritten whole by the next place
+            if r.get("stopLoss") not in (None, ""):
+                live[(sym, leg)] = str(r.get("order_id") or "")
+            else:
+                live.pop((sym, leg), None)
+        elif r.get("planType") == "pos_loss":
+            live[(sym, leg)] = str(r.get("order_id") or "")
+    return set(live)
+
+
+def _unprotected(env, mode, legs):
+    """(the `legs` with no stop-loss on Bitget now, the plan list was unreadable). Any open
+    stop-loss on the leg counts. A symbol holding one leg is covered by any stop-loss on
+    it; holding both legs (hedge), UTA tells the leg by the stop's closing side, classic
+    does not — there both legs need a stop-loss each. Unreadable = every leg unprotected."""
     if not legs:
         return [], False
     try:
         stops = _stop_losses(env, mode)
     except Exception as e:
         logging.warning(f"bitget: plan orders unreadable after the account switch ({e})")
-        return legs, True
-    per_sym = {}
-    for vsym, _side in legs:
-        per_sym[vsym] = per_sym.get(vsym, 0) + 1
+        return list(legs), True
     out = []
     for vsym, side in legs:
         mine = [o for o in stops if o.get("symbol") == _display_symbol(vsym)]
-        if per_sym[vsym] == 1:
+        held = sum(1 for v, _ in legs if v == vsym)
+        if held == 1:
             covered = bool(mine)
         elif mode == "uta":
             covered = any(str(o.get("side") or "").lower() == ("sell" if side == "long" else "buy") for o in mine)
         else:
-            covered = len(mine) >= per_sym[vsym]
+            covered = len(mine) >= held
         if not covered:
             out.append((vsym, side))
     return out, False
 
 
 def _release(mode, now_legs, switched_from=None, env=None):
+    """Bitget refuses a manual upgrade while orders are open and does not say whether TP/SL
+    counts, so after a switch the stop-losses this lib placed may be gone. Only those legs
+    are checked (Wei: a leg its strategy never protected is not missing one; the user's own
+    stops are theirs): one gone → P1 venue_stops_missing, trading resumes, nothing is
+    re-placed; our record unreadable → the P3 event says the stops could not be confirmed."""
     switched = bool(switched_from) and switched_from != mode
-    bare, unreadable = _unprotected(env, mode, now_legs) if switched and env is not None else ([], False)
+    bare, unreadable, ours = [], False, set()
+    if switched and env is not None:
+        ours = _our_stop_legs()
+        if ours:
+            bare, unreadable = _unprotected(env, mode, sorted((x[0], x[1]) for x in now_legs
+                                                             if (x[0], x[1]) in ours))
     _write_mode({"mode": mode, "legs": [list(x) for x in now_legs], "hold": None})
     if not switched:
         return
     try:
         from lib import events
         if bare:
-            # P1 (canon notifications.md, NOTIFY-PROPOSAL): trading resumes, nothing is re-placed
+            # P1 (canon notifications.md, NOTIFY-PROPOSAL)
             events.emit("venue_stops_missing", venue="bitget", mode=mode, unreadable=unreadable,
                         legs=[{"symbol": _display_symbol(v), "side": sd} for v, sd in bare][:20])
         else:
-            events.emit("venue_mode_switched", venue="bitget", mode=mode, legs=len(now_legs))
+            events.emit("venue_mode_switched", venue="bitget", mode=mode, legs=len(now_legs),
+                        **({"stops_unknown": True} if ours is None and now_legs else {}))
     except Exception:
         pass
 

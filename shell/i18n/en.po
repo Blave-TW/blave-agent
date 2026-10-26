@@ -8988,3 +8988,7 @@ msgstr "Trading continues; Blave won’t re-place stops. Set them on Bitget, or 
 # 本機 P1 系統通知的標題(main.js tmLabels ev_venue_stops_missing)
 msgid "tm.evBitgetNoStop"
 msgstr "Bitget positions without a stop-loss"
+
+# 事件列 P3 的註解:Blave 自己的下單紀錄讀不到,無法確認換帳戶後止損還在不在
+msgid "tr.ov.evBitgetStopsUnknown"
+msgstr "Stops couldn’t be confirmed: Blave’s order record is unreadable. Check your stops on Bitget."

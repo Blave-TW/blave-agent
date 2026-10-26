@@ -1340,8 +1340,26 @@ def user_resume():
     guard.clear_halt("test")  # what 啟動下單 does (command_listener resume)
 
 
-def classic_with(rows):
-    """A classic machine that recorded `rows` (v2 position rows) as its legs, then Bitget upgrades it."""
+def our_stops(*legs, cancelled=()):
+    """state/audit.jsonl as lib/order_bitget leaves it: a classic pos_loss placed on each
+    (symbol, side) leg (one-way: holdSide buy/sell), then the cancels of `cancelled` ids."""
+    with open(guard.AUDIT_PATH, "w") as f:
+        f.write(json.dumps({"event": "order_ok", "venue": "okx", "intent": "protective", "symbol": "NVDAUSDT",
+                            "planType": "pos_loss", "holdSide": "long", "order_id": "okx1"}) + "\n")
+        for i, (sym, side) in enumerate(legs):
+            f.write(json.dumps({"event": "order_ok", "venue": "bitget", "intent": "protective", "symbol": sym,
+                                "planType": "pos_loss", "holdSide": "buy" if side == "long" else "sell",
+                                "order_id": f"sl{i}"}) + "\n")
+        f.write("{torn\n")
+        for oid in cancelled:
+            f.write(json.dumps({"event": "order_ok", "venue": "bitget", "intent": "cancel", "symbol": "x",
+                                "orderId": oid, "order_id": ""}) + "\n")
+
+
+def classic_with(rows, stops=()):
+    """A classic machine that recorded `rows` (v2 position rows) as its legs, with this lib's
+    stop-losses `stops` on record, then Bitget upgrades it."""
+    our_stops(*stops)
     fresh_mode()
     acct.SWITCH_HOLD_S = 0
     SETTINGS["accountMode"] = "__classic__"
@@ -1426,23 +1444,35 @@ def ustop(sym, closing_side, sl="170"):
             "stopLoss": sl, "takeProfit": "", "status": "pending"}
 
 
-# ① every leg back with the same quantity, its stop-loss still on Bitget: resumes by itself, one P3 event, no HALT
+# ① every leg back with the same quantity, the stop-loss Blave placed still on Bitget: resumes, one P3 event, no HALT
 STOPS[:] = [ustop("NVDAUSDT", "sell")]
+our_stops(("NVDAUSDT", "long"))
 del EMITS[:]
 kind, pos = judged()
 check(kind == "ok" and pos and pos[0]["symbol"] == "NVDAUSDT" and pos[0]["size"] == 0.03 and acct.switch_hold_left() == 0
       and order.session_open(ENV, "NVDAUSDT") and halt_file() is None,
       "① same symbol, side and quantity past the minimum: hold released, entries open, no HALT", (kind, pos))
 check(EMITS == [("venue_mode_switched", {"venue": "bitget", "mode": "uta", "legs": 1})],
-      "① …and one venue_mode_switched event (P3: event list only)", EMITS)
+      "① …our stop-loss still there: one venue_mode_switched event (P3: event list only)", EMITS)
 # under one step (NVDAUSDT sizeMultiplier 0.01) is the venue's rounding, the same quantity
 classic_with([V2_NVDA])
 UPOS[:] = [upos("NVDAUSDT", "long", "0.030004")]
 kind, pos = judged()
 check(kind == "ok" and halt_file() is None, "① 0.03 read back as 0.030004 (under one 0.01 step) still matches", (kind, pos))
 
-# ①b the legs match but a leg has no stop-loss on Bitget any more: trading resumes, one P1 event lists it
-classic_with([V2_NVDA, V2_ACN])
+# ①b only the legs Blave itself protected are checked
+# a Type A strategy that never placed a stop: nothing missing, Bitget's list not even read
+classic_with([V2_NVDA])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
+STOPS[:] = []
+route("GET", "/api/v3/trade/unfilled-strategy-orders", lambda p: err("40015", "System is abnormal"))
+del EMITS[:]
+kind, pos = judged()
+check(kind == "ok" and EMITS == [("venue_mode_switched", {"venue": "bitget", "mode": "uta", "legs": 1})],
+      "①b no stop-loss of ours on record (Type A without stops, another venue's row ignored): P3 only, no P1", EMITS)
+route("GET", "/api/v3/trade/unfilled-strategy-orders", lambda p: ok({"list": list(STOPS), "cursor": None}))
+# ours on ACN gone after the switch (only a TP left), NVDA's still there: one P1 naming ACN, trading resumes
+classic_with([V2_NVDA, V2_ACN], stops=[("NVDAUSDT", "long"), ("ACNSTOCKUSDT", "short")])
 UPOS[:] = [upos("NVDAUSDT", "long", "0.03"), upos("ACNSTOCKUSDT", "short", "0.05", mark="250")]
 STOPS[:] = [ustop("NVDAUSDT", "sell"), {**ustop("ACNSTOCKUSDT", "buy"), "stopLoss": "", "takeProfit": "200"}]
 del EMITS[:]
@@ -1450,18 +1480,33 @@ kind, pos = judged()
 check(kind == "ok" and len(pos) == 2 and halt_file() is None and acct.switch_hold_left() == 0
       and EMITS == [("venue_stops_missing", {"venue": "bitget", "mode": "uta", "unreadable": False,
                                              "legs": [{"symbol": "ACNUSDT", "side": "short"}]})],
-      "①b ACN short has only a take-profit left: trading resumes (no HALT), one venue_stops_missing (P1) naming it, "
-      "no venue_mode_switched", EMITS)
-# a hedge symbol holding both legs: on UTA the stop's closing side tells which leg it guards
-classic_with([V2_NVDA, {**V2_NVDA, "holdSide": "short"}])
+      "①b our stop-loss on ACN short gone (a take-profit is not one): trading resumes, one venue_stops_missing (P1)", EMITS)
+# ours on NVDA still there, ACN never protected by its strategy: ACN is not "missing" a stop
+classic_with([V2_NVDA, V2_ACN], stops=[("NVDAUSDT", "long")])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03"), upos("ACNSTOCKUSDT", "short", "0.05", mark="250")]
+STOPS[:] = [ustop("NVDAUSDT", "sell")]
+del EMITS[:]
+judged()
+check([e[0] for e in EMITS] == ["venue_mode_switched"],
+      "①b a leg whose strategy never placed a stop (ACN) is not checked beside one of ours (NVDA, still there)", EMITS)
+# a stop of ours that was cancelled before the switch is not ours any more
+classic_with([V2_NVDA])
+our_stops(("NVDAUSDT", "long"), cancelled=["sl0"])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
+STOPS[:] = []
+del EMITS[:]
+judged()
+check([e[0] for e in EMITS] == ["venue_mode_switched"], "①b a stop of ours cancelled earlier (classic cancel by id): not checked", EMITS)
+# a hedge symbol holding both legs, ours on both: on UTA the stop's closing side tells which leg it guards
+classic_with([V2_NVDA, {**V2_NVDA, "holdSide": "short"}], stops=[("NVDAUSDT", "long"), ("NVDAUSDT", "short")])
 UPOS[:] = [upos("NVDAUSDT", "long", "0.03"), upos("NVDAUSDT", "short", "0.03")]
 STOPS[:] = [ustop("NVDAUSDT", "sell")]
 del EMITS[:]
 judged()
 check([e[1]["legs"] for e in EMITS if e[0] == "venue_stops_missing"] == [[{"symbol": "NVDAUSDT", "side": "short"}]],
-      "①b both NVDA legs, one stop that closes by selling: the long is covered, the short is listed", EMITS)
-# the plan list cannot be read: every leg counts as unprotected, and the event says it was unreadable
-classic_with([V2_NVDA])
+      "①b both NVDA legs ours, one stop that closes by selling: the long is covered, the short is listed", EMITS)
+# Bitget's plan list cannot be read: our protected legs count as unprotected, flagged unreadable
+classic_with([V2_NVDA], stops=[("NVDAUSDT", "long")])
 UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
 route("GET", "/api/v3/trade/unfilled-strategy-orders", lambda p: err("40015", "System is abnormal"))
 del EMITS[:]
@@ -1469,9 +1514,19 @@ kind, pos = judged()
 check(kind == "ok" and halt_file() is None
       and EMITS == [("venue_stops_missing", {"venue": "bitget", "mode": "uta", "unreadable": True,
                                              "legs": [{"symbol": "NVDAUSDT", "side": "long"}]})],
-      "①b plan list unreadable: treated as no stop-loss (never assumed safe), unreadable flagged, trading resumes", EMITS)
+      "①b plan list unreadable: our stop-loss counted as gone (never assumed safe), flagged, trading resumes", EMITS)
 route("GET", "/api/v3/trade/unfilled-strategy-orders", lambda p: ok({"list": list(STOPS), "cursor": None}))
+# our own record cannot be read: no P1, the P3 line says the stops could not be confirmed
+classic_with([V2_NVDA])
+os.remove(guard.AUDIT_PATH)
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
+STOPS[:] = []
+del EMITS[:]
+judged()
+check(EMITS == [("venue_mode_switched", {"venue": "bitget", "mode": "uta", "legs": 1, "stops_unknown": True})],
+      "①b audit record missing: no P1, venue_mode_switched carries stops_unknown (「無法確認止損」)", EMITS)
 STOPS[:] = [ustop("NVDAUSDT", "sell")]
+our_stops()
 
 # ② a different quantity: HALT at once, the leg listed before vs now
 classic_with([V2_NVDA])

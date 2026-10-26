@@ -5037,8 +5037,9 @@ function trEventText(type, d) {
   if (type === "exchange_unreachable") return out(["tr.ov.evExUnreach", v], t("tr.ov.evExUnreachNote"), t("tr.ov.evExUnreachTip"));
   if (type === "exchange_recovered") return out(["tr.ov.evExBack", v], null);
   // Bitget 換帳戶類型後倉位全對上、自動恢復(P3,只進事件列;對不上的那一種走 halt)
-  if (type === "venue_mode_switched" && d.venue === "bitget") return out(t(d.mode === "classic" ? "tr.ov.evBitgetClassic" : "tr.ov.evBitgetUta"), null);
-  // 換完倉位都對上、但有幾腿在 Bitget 上沒有止損(P1;下單照常、不補掛)。讀不到計畫單時當成沒有,標題照實講讀不到
+  // stops_unknown:Blave 自己的下單紀錄讀不到,說不出我方止損還在不在(仍是 P3,註解講一句)
+  if (type === "venue_mode_switched" && d.venue === "bitget") return out(t(d.mode === "classic" ? "tr.ov.evBitgetClassic" : "tr.ov.evBitgetUta"), d.stops_unknown === true ? t("tr.ov.evBitgetStopsUnknown") : null);
+  // 換完倉位都對上、但 Blave 掛過止損的腿在 Bitget 上不見了(P1;下單照常、不補掛)。讀不到計畫單時當成不見,標題照實講讀不到
   if (type === "venue_stops_missing" && d.venue === "bitget") {
     const legs = (Array.isArray(d.legs) ? d.legs : []).filter((x) => x && typeof x.symbol === "string" && (x.side === "long" || x.side === "short"));
     const names = legs.slice(0, 10).map((x) => x.symbol.slice(0, 24) + " " + t(x.side === "long" ? "tr.rel.long" : "tr.rel.short")).join(", ");

@@ -1058,7 +1058,9 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("venue_mode_switched(Bitget 換帳戶類型、倉位全對上):P3 一般字、照 mode 選句、沒有註解;別家不畫",
       J(trEventText("venue_mode_switched", { venue: "bitget", mode: "uta" }).slice(0, 3)) === J(["tr.ov.evBitgetUta", null, 3])
       && trEventText("venue_mode_switched", { venue: "bitget", mode: "classic" })[0] === "tr.ov.evBitgetClassic"
-      && trEventText("venue_mode_switched", { venue: "okx", mode: "uta" }) === null);
+      && trEventText("venue_mode_switched", { venue: "okx", mode: "uta" }) === null
+      && trEventText("venue_mode_switched", { venue: "bitget", mode: "uta", stops_unknown: true })[1] === "tr.ov.evBitgetStopsUnknown"
+      && trEventText("venue_mode_switched", { venue: "bitget", mode: "uta", stops_unknown: true })[2] === 3);
     { const ns = trEventText("venue_stops_missing", { venue: "bitget", mode: "uta", unreadable: false, legs: [{ symbol: "ACNUSDT", side: "short" }, { symbol: "x", side: "up" }] });
       const nu = trEventText("venue_stops_missing", { venue: "bitget", mode: "uta", unreadable: true, legs: [{ symbol: "NVDAUSDT", side: "long" }] });
       const mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
