@@ -111,7 +111,7 @@ function introShow() {
   // 減少動態:不自動播,loadedmetadata 後停在最後一格,鈕是「播放示範」
   const v = $("intro-video"), m = introMedia(LANG), still = reducedMotion();
   INTRO.fresh = still; INTRO.resume = false; $("intro-play").hidden = false;
-  introBtn(INTRO_PLAY, still ? "intro.play" : "intro.pause");
+  introBtn(INTRO_PLAY, still ? "intro.play" : "intro.resume");
   v.muted = true; v.poster = m.poster; v.src = m.src;
   if (!still) introPlay();
   $("view-ws").inert = true;

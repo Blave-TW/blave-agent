@@ -12,6 +12,7 @@
 .in-play[hidden] { display: none; }
 .in-play::before { content: ""; position: absolute; inset: -8px; }
 .in-play:hover { opacity: .85; }
+.in-play:focus-visible { outline: 2px solid var(--control-fill-text); outline-offset: 0; }
 .in-play svg { width: 14px; height: 14px; fill: currentColor; }
 /* 播放三角形的重心偏左,往右 1px 做光學置中 */
 .in-play svg:has(path) { margin-left: 1px; }
