@@ -288,6 +288,15 @@ CASES = [
     ("import os, sys\nsys.path.insert(0, os.system('x'))\nfrom lib.report_templates import tw_market_brief, publish, headers_from_env\npublish(tw_market_brief())", None),
     ("import os, sys\nsys.path.insert(1, os.getcwd())\nfrom lib.report_templates import tw_market_brief, publish, headers_from_env\npublish(tw_market_brief())", None),
     ("import sys\nsys.path.insert(0, os.getcwd())\nfrom lib.report_templates import tw_market_brief, publish, headers_from_env\npublish(tw_market_brief())", None),
+    # 第三輪複核:裸字串路徑不收,'.'／'..' 只准當 os.path.join 的後段
+    ("import os, sys\nsys.path.insert(0, '/tmp/evil')\nfrom lib.report_templates import tw_market_brief, publish, headers_from_env\npublish(tw_market_brief())", None),
+    ("import os, sys\nsys.path.insert(0, 'tmp')\nfrom lib.report_templates import tw_market_brief, publish, headers_from_env\npublish(tw_market_brief())", None),
+    ("import os, sys\nsys.path.append('.')\nfrom lib.report_templates import tw_market_brief, publish, headers_from_env\npublish(tw_market_brief())", None),
+    ("import os, sys\nsys.path.insert(0, os.path.join('/tmp', os.getcwd()))\nfrom lib.report_templates import tw_market_brief, publish, headers_from_env\npublish(tw_market_brief())", None),
+    ("import os, sys\nsys.path.insert(0, os.path.join(os.getcwd(), 'evil'))\nfrom lib.report_templates import tw_market_brief, publish, headers_from_env\npublish(tw_market_brief())", None),
+    ("import os, sys\nsys.path.insert(0, os.path.dirname(os.getcwd(), 'x'))\nfrom lib.report_templates import tw_market_brief, publish, headers_from_env\npublish(tw_market_brief())", None),
+    ("import os, sys\nsys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))\nfrom lib.report_templates import tw_market_brief, publish, headers_from_env\npublish(tw_market_brief())",
+     {"fn": "tw_market_brief", "args": [], "kwargs": {}}),
     ("import os, sys\nsys.path.insert(0, os.path.dirname(evil))\nfrom lib.report_templates import tw_market_brief, publish, headers_from_env\npublish(tw_market_brief())", None),
     # 複審第二輪:白名單以外的任何語句都不算(實際跑的可能不是那個模板,或根本跑不到)
     ("from lib.report_templates import tw_market_brief\nfor tw_market_brief in [evil]: pass\ntw_market_brief()", None),
@@ -571,8 +580,14 @@ def _snapshot():
             h[pth] = (os.path.getmtime(pth), hashlib.sha1(open(pth, "rb").read()).hexdigest())
     return h
 before = _snapshot()
-r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "sched_job_classify.py"), "--workspace", CW],
-                   capture_output=True, text=True, timeout=60)
+TOOLD = os.path.join(TMP, "classify-tool")   # 照 docstring:兩個檔複製到 workspace 外的新目錄,-I -B 跑
+os.makedirs(TOOLD)
+shutil.copy(os.path.join(ROOT, "tools", "sched_job_classify.py"), TOOLD)
+shutil.copy(os.path.join(ROOT, "runtime", "sched_pack.py"), TOOLD)
+for _m in ("json.py", "ast.py"):   # 被種在旁邊、跟標準庫同名的模組不能被 import
+    open(os.path.join(TOOLD, _m), "w").write(f"open({MARK!r}, 'w')\n")
+r = subprocess.run([sys.executable, "-I", "-B", os.path.join(TOOLD, "sched_job_classify.py"), "--workspace", CW],
+                   capture_output=True, text=True, timeout=60, cwd=TOOLD)
 lines = [json.loads(x) for x in r.stdout.splitlines()]
 got = {x["job"]: (x["agent_consent"], x["class"]) for x in lines if "job" in x}
 t("classify: one line per job, the runtime's own classes", r.returncode == 0 and got == {
@@ -582,6 +597,9 @@ t("classify: summary counts the consented jobs that would lose the AI commentary
   lines and lines[-1] == {"summary": True, "jobs": 5, "with_consent": 3, "consent_no_template": 1}, lines[-1:])
 t("classify: read-only — no file changed or added, no run.py ran, no run.py text printed",
   _snapshot() == before and not os.path.exists(MARK) and "open(" not in r.stdout)
+t("classify: -I -B from its own directory writes nothing there and imports no planted module",
+  sorted(os.listdir(TOOLD)) == ["ast.py", "json.py", "sched_job_classify.py", "sched_pack.py"] and not os.path.exists(MARK),
+  os.listdir(TOOLD))
 
 if fails:
     sys.exit(f"{len(fails)} failed: {fails}")

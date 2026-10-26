@@ -3,9 +3,13 @@
 
 It reads `report_jobs/<id>/job.json`, checks for `recipe.json`, and parses `run.py` with the runtime's own rule
 (sched_pack.pack_call); it never runs or prints a script, and writes nothing. One JSON line per job, then a summary
-line. Needs sched_pack.py next to this file or in ../runtime/ (copy both to the machine; stdlib only).
+line. Needs sched_pack.py next to this file or in ../runtime/ (stdlib only).
 
-    python3 sched_job_classify.py [--workspace /opt/blave-agent/workspace]
+Copy this file and runtime/sched_pack.py into a new, empty directory OUTSIDE the workspace (never one a chat turn
+can write: a file planted next to them would run as you) and run it isolated, so nothing else is imported from
+there and no .pyc is written:
+
+    python3 -I -B sched_job_classify.py [--workspace /opt/blave-agent/workspace]
 """
 import argparse
 import json
@@ -14,7 +18,8 @@ import re
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path[:0] = [_HERE, os.path.join(os.path.dirname(_HERE), "runtime")]
+# 加在最後:標準庫(ast、json…)永遠先從 Python 自己的目錄找,這裡只用來找 sched_pack
+sys.path += [_HERE, os.path.join(os.path.dirname(_HERE), "runtime")]
 import sched_pack  # noqa: E402
 
 ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")

@@ -934,9 +934,8 @@ def agent_template_call(script):
             more.pop(0)
         return None if more else tpl(stmts[0].value)
 
-    def path_expr(node):   # os.getcwd()／__file__／字串常值,經 os.path.dirname／abspath／realpath／join 組起來
-        if isinstance(node, ast.Constant):
-            return isinstance(node.value, str)
+    def path_expr(node):   # os.getcwd()／__file__,經 os.path.dirname／abspath／realpath／join 組起來;
+        # 字串常值只准當 join 後段的 '.'／'..'(裸路徑會讓純資料版 import 到 workspace 以外的 lib)
         if isinstance(node, ast.Name):
             return node.id == "__file__"
         if not (isinstance(node, ast.Call) and not node.keywords and isinstance(node.func, ast.Attribute)
@@ -945,9 +944,13 @@ def agent_template_call(script):
         f = node.func
         if isinstance(f.value, ast.Name) and f.value.id == "os":
             return f.attr == "getcwd" and not node.args
-        return (f.attr in ("dirname", "abspath", "realpath", "join") and isinstance(f.value, ast.Attribute)
+        if not (f.attr in ("dirname", "abspath", "realpath", "join") and isinstance(f.value, ast.Attribute)
                 and f.value.attr == "path" and isinstance(f.value.value, ast.Name) and f.value.value.id == "os"
-                and bool(node.args) and all(path_expr(a) for a in node.args))
+                and node.args and path_expr(node.args[0])):
+            return False
+        if f.attr != "join":
+            return len(node.args) == 1
+        return all(path_expr(a) or isinstance(a, ast.Constant) and a.value in (".", "..") for a in node.args[1:])
 
     def pin(st):   # sys.path.insert(0, <path>) 或 sys.path.append(<path>):只動 import 路徑
         v = st.value if isinstance(st, ast.Expr) else None
