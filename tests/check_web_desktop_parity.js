@@ -145,17 +145,13 @@ for (const lang of ["zh", "en"]) {
     const bad = Object.keys(MG_KEYS).filter((k) => !w[k] || w[k] !== d[MG_KEYS[k]]);
     ok("優化分頁套用停用原因句兩邊同一份(" + lang + ")", bad.length === 0, bad.map((k) => k + ": " + w[k] + " vs " + d[MG_KEYS[k]]).join(";"));
   } }
-// 串接失敗／拒單講怎麼改的句子(Bitget 統一帳戶、OKX 帳戶模式):兩邊逐字一致。電腦版拒單句多一個 {sym} 前綴,拿掉再比;
-// en 那句網頁是「Order not placed」、電腦版是「{sym} not placed」,去掉前綴仍不同,先只比 zh
-{ const CX_KEYS = { workspace_pf_connect_bitget_uta: "cx.err.bitgetUtaBound", workspace_pf_err_okx_mode: "cx.err.okxMode" };
+// 串接失敗講怎麼改的句子(OKX 帳戶模式):兩邊逐字一致。Bitget 統一帳戶已開放,web 拿掉了「還不支援」那幾句,不再比
+{ const CX_KEYS = { workspace_pf_err_okx_mode: "cx.err.okxMode" };
   for (const lang of ["zh", "en"]) {
     const w = poRaw(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po")), d = poRaw(path.join(__dirname, "..", "shell", "i18n", lang + ".po"));
     const bad = Object.keys(CX_KEYS).filter((k) => !w[k] || w[k] !== d[CX_KEYS[k]]);
     ok("串接失敗講怎麼改的句子兩邊同一份(" + lang + ")", bad.length === 0, bad.map((k) => k + ": " + w[k] + " vs " + d[CX_KEYS[k]]).join(";"));
-  }
-  const w = poRaw(path.join(webDir, "app", "translations", "zh", "LC_MESSAGES", "messages.po")), d = poRaw(path.join(__dirname, "..", "shell", "i18n", "zh.po"));
-  const tr = (d["tr.err.bitgetUta"] || "").replace(/^\{sym\} /, "");
-  ok("拒單 Bitget 統一帳戶句兩邊同一份(zh,電腦版去掉 {sym} 前綴)", !!w.workspace_pf_err_bitget_uta && w.workspace_pf_err_bitget_uta === tr, w.workspace_pf_err_bitget_uta + " vs " + tr); }
+  } }
 // 建議下一步的設定開關 label／tooltip、托盤讀屏句與 × 可及名稱:zh / en 兩邊逐字一致(設計稽核 v031 M1;spec suggest-tray §2.4)
 { const SUG_KEYS = { workspace_sug_pref: "set.sug", workspace_sug_pref_tip: "set.sug.tip", workspace_sug_live: "ws.sugSay", workspace_sug_dismiss: "ws.sugDismiss" };
   for (const lang of ["zh", "en"]) {
