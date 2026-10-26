@@ -1505,6 +1505,23 @@ del EMITS[:]
 judged()
 check([e[1]["legs"] for e in EMITS if e[0] == "venue_stops_missing"] == [[{"symbol": "NVDAUSDT", "side": "short"}]],
       "①b both NVDA legs ours, one stop that closes by selling: the long is covered, the short is listed", EMITS)
+# both NVDA legs held, only the short is ours and its stop is gone; the user's own stop guards the long:
+# that stop does not cover our short (counted over every held leg, not only ours)
+classic_with([V2_NVDA, {**V2_NVDA, "holdSide": "short"}], stops=[("NVDAUSDT", "short")])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.03"), upos("NVDAUSDT", "short", "0.03")]
+STOPS[:] = [ustop("NVDAUSDT", "sell")]
+del EMITS[:]
+judged()
+check([e[1]["legs"] for e in EMITS if e[0] == "venue_stops_missing"] == [[{"symbol": "NVDAUSDT", "side": "short"}]],
+      "①b hedge, ours on the short gone, the user's stop on the long: not counted as ours, P1 names the short", EMITS)
+# classic: the plan list's posSide / holdSide tells the leg (a user's long stop does not cover our short)
+route("GET", "/api/v2/mix/order/orders-plan-pending", lambda p: ok({"entrustedList": [
+    {"symbol": "NVDAUSDT", "planType": "pos_loss", "posSide": "long", "holdSide": "long", "side": "sell"}]}))
+both = [("NVDAUSDT", "long"), ("NVDAUSDT", "short")]
+check(acct._unprotected(ENV, "classic", [("NVDAUSDT", "short")], both) == ([("NVDAUSDT", "short")], False)
+      and acct._unprotected(ENV, "classic", [("NVDAUSDT", "long")], both) == ([], False)
+      and acct._unprotected(ENV, "classic", [("NVDAUSDT", "short")], [("NVDAUSDT", "short")]) == ([], False),
+      "①b classic hedge: a stop counts for its own leg only (posSide); one leg held → any stop on the symbol")
 # Bitget's plan list cannot be read: our protected legs count as unprotected, flagged unreadable
 classic_with([V2_NVDA], stops=[("NVDAUSDT", "long")])
 UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
@@ -1549,6 +1566,21 @@ kind, pos = judged()
 check(kind == "ok" and acct.switch_hold_left() == 0 and halt_file() is None
       and acct._read_mode().get("legs") == [["NVDAUSDT", "long", 0.02]] and len(EMITS) == n_ev,
       "② 啟動下單 releases the hold on what Bitget holds now; no resume event (the user resumed)", acct._read_mode())
+
+# two processes judge the same switch: the second finds the first one's mismatch HALT and keeps it (time and
+# list), so 啟動下單 releases at once — never a second HALT after the resume
+classic_with([V2_NVDA])
+UPOS[:] = [upos("NVDAUSDT", "long", "0.02")]
+age_hold(acct.SWITCH_HOLD_S + 1)
+first = acct._trip_mismatch_halt("uta", [{"symbol": "NVDAUSDT", "side": "long", "before": 0.03, "now": 0.02}])
+h1 = halt_file()  # process A tripped it; process B read the mode file before A recorded its hold
+acct.get_positions(ENV)
+check(halt_file() == h1 and acct._read_mode()["hold"]["stuck"]["halt_ts"] == first == h1["ts"],
+      "two readers: the second keeps the first one's mismatch HALT (same file, its timestamp recorded)")
+user_resume()
+kind, pos = judged()
+check(kind == "ok" and halt_file() is None and acct.switch_hold_left() == 0,
+      "…so one 啟動下單 releases the hold (no second HALT)", (kind, halt_file()))
 
 # ③ a leg missing: HALT at once (not after SWITCH_MAX_S)
 classic_with([V2_NVDA, V2_ACN])
