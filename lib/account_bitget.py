@@ -24,8 +24,8 @@ get_positions raises a TRANSIENT error and lib/order_bitget refuses entries for 
 least SWITCH_HOLD_S — a half-migrated account could read as flat and be bought into
 twice. After a real switch the legs recorded before it (symbol, side, quantity) must
 then all read back the same, with nothing extra: a full match resumes by itself (a P3
-event), anything else HALTs at once (MODE_STUCK; the HALT carries the legs that differ
-for the pages) and only the user's resume releases it (_check_hold).
+event), anything else HALTs at once (the HALT carries the legs that differ for the
+pages) and only the user's resume releases it (_check_hold).
 
 Equity base, both modes: the USDT row only (classic: the USDT-FUTURES account's
 USDT row; UTA: the unified account's USDT asset `equity` = balance + frozen +
@@ -409,11 +409,6 @@ def _trip_mismatch_halt(mode, rows):
     return (_halt_on_disk() or {}).get("ts")
 
 
-def _stuck_error(mode, rows):
-    return BitgetError(f"bitget: 帳戶換成{_MODE_NAMES.get(mode, mode)}後有 {len(rows)} 個倉位跟換之前對不上，"
-                       f"自動下單已暫停：請到 Bitget 核對，再按「啟動下單」", code=MODE_STUCK)
-
-
 def _release(mode, now_legs, switched_from=None):
     _write_mode({"mode": mode, "legs": [list(x) for x in now_legs], "hold": None})
     if switched_from and switched_from != mode:
@@ -510,8 +505,9 @@ def _check_hold(mode, rows):
     waits for). A hold lasts at least SWITCH_HOLD_S. After a real switch (the hold's `from`
     is another mode) it then compares every leg recorded before it with what reads now —
     same symbol, side and quantity within the step, nothing extra — and releases on a full
-    match (a P3 event) or HALTs at once on anything else (MODE_STUCK). That HALT is the
-    user's to clear: a resume releases the hold on what Bitget holds then. Any other hold
+    match (a P3 event) or HALTs at once on anything else and returns the rows (HALT stops
+    every order). That HALT is the user's to clear: a resume releases the hold on what
+    Bitget holds then. Any other hold
     (a first read, a lost record) releases once every recorded leg reads back non-zero."""
     st = _read_mode()
     now_legs = _legs_of(rows)
@@ -536,7 +532,7 @@ def _check_hold(mode, rows):
         # someone else's HALT stood when this was found and has been cleared: ours now
         ts = _trip_mismatch_halt(mode, stuck.get("legs") or [])
         _write_mode({**st, "hold": {**hold, "stuck": {**stuck, "halt_ts": ts}}})
-        raise _stuck_error(mode, stuck.get("legs") or [])
+        return
     elapsed = time.time() - float(hold.get("since") or 0)
     if elapsed < SWITCH_HOLD_S:
         raise _hold_error(f"Bitget 帳戶類型剛{'改成統一帳戶' if mode == 'uta' else '改成經典帳戶'}或第一次讀到，"
@@ -546,10 +542,12 @@ def _check_hold(mode, rows):
         if not bad:
             _release(mode, now_legs, switched_from=hold["from"])
             return
+        # not raised: the HALT is the notice and stops every order, and a failed read would
+        # add the reconciler's "will retry" message and a read error on the page beside it
         on_disk = _halt_on_disk()
         ts = None if on_disk is not None else _trip_mismatch_halt(mode, bad)
         _write_mode({**st, "hold": {**hold, "stuck": {"at": time.time(), "legs": bad, "halt_ts": ts}}})
-        raise _stuck_error(mode, bad)
+        return
     have = {_leg_key(x) for x in now_legs}
     missing = [_leg_key(x) for x in hold.get("await") or [] if _leg_key(x) not in have]
     if not missing:

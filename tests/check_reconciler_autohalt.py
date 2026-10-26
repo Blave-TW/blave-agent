@@ -701,6 +701,30 @@ check(_snap["actual"] == {} and _snap.get("target", {}).get("BTCUSDT", {}).get("
       f"…and rewrites the snapshot with the empty actuals, target untouched ({_snap['actual']})")
 guard.clear_halt("test")
 
+# 3.16 a HALT tripped INSIDE the read (lib/account_bitget: a Bitget account switch whose
+# legs do not match trips it and returns the rows, no error): that same round sends nothing
+reset()
+rnd(0)
+_tg = []
+_real_tg = rec.send_telegram
+rec.send_telegram = _tg.append
+
+
+def _read_trips(now):
+    def fn():
+        S["next"] = {}
+        guard.trip_halt("[bitget_account_mode_mismatch] x", "reconciler", mismatch={"kind": "bitget_mode_mismatch"})
+        return rec._get_positions_guarded(now=now)
+    return fn
+
+
+del placed[:]
+portfolio.reconcile(get_positions_fn=_read_trips(60), place_order_fn=spy, threshold=10)
+rec.send_telegram = _real_tg
+check(placed == [] and not _tg and json.load(open(guard.HALT_PATH))["mismatch"] == {"kind": "bitget_mode_mismatch"},
+      f"HALT tripped inside the read: that round places nothing, no machine Telegram, HALT keeps its fields ({placed}, {_tg})")
+guard.clear_halt("test")
+
 # 3.14 the main loop releases a cleared HALT BEFORE it reconciles
 _src = open(os.path.join(ROOT, "manager", "reconciler.py"), encoding="utf-8").read()
 _main = _src[_src.index("if __name__ == '__main__':"):]

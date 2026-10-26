@@ -1435,14 +1435,14 @@ check(kind == "ok" and halt_file() is None, "① 0.03 read back as 0.030004 (und
 classic_with([V2_NVDA])
 n_ev = len(EMITS)
 UPOS[:] = [upos("NVDAUSDT", "long", "0.02")]
-kind, e = judged()
+kind, pos = judged()
 h = halt_file()
-check(kind == "err" and e.code == acct.MODE_STUCK and acct.classify(e) == "unknown"
+check(kind == "ok" and pos[0]["size"] == 0.02
       and h and h["source"] == "reconciler" and h["reason"].startswith(acct.MISMATCH_TAG)
       and h["mismatch"]["legs"] == [{"symbol": "NVDAUSDT", "side": "long", "before": 0.03, "now": 0.02}]
       and h["mismatch"]["mode"] == "uta",
-      "② quantity 0.03 → 0.02 (over one step): MODE_STUCK and HALT at once, the leg's both quantities on the HALT",
-      (kind, e, h))
+      "② quantity 0.03 → 0.02 (one step): HALT at once, the leg's both quantities on the HALT; the read itself does not "
+      "fail (the HALT is the notice, no reconciler retry message beside it)", (kind, pos, h))
 check(acct.switch_hold_left() > 0 and len(EMITS) == n_ev, "② …the hold stays, no resume event")
 kind, pos = judged()
 check(kind == "ok" and pos[0]["size"] == 0.02 and halt_file() == h,
@@ -1456,21 +1456,21 @@ check(kind == "ok" and acct.switch_hold_left() == 0 and halt_file() is None
 # ③ a leg missing: HALT at once (not after SWITCH_MAX_S)
 classic_with([V2_NVDA, V2_ACN])
 UPOS[:] = [upos("NVDAUSDT", "long", "0.03")]
-kind, e = judged()
+kind, pos = judged()
 h = halt_file()
-check(kind == "err" and e.code == acct.MODE_STUCK and h
+check(kind == "ok" and h
       and h["mismatch"]["legs"] == [{"symbol": "ACNUSDT", "side": "short", "before": 0.05, "now": None}],
-      "③ ACN short missing after the minimum hold: HALT at once, listed under the strategy's symbol (now: none)", (kind, e, h))
+      "③ ACN short missing after the minimum hold: HALT at once, listed under the strategy's symbol (now: none)", (kind, pos, h))
 user_resume()
 
 # ④ a leg that was not there: HALT at once
 classic_with([V2_NVDA])
 UPOS[:] = [upos("NVDAUSDT", "long", "0.03"), upos("BTCUSDT", "short", "0.001", mark="81000")]
-kind, e = judged()
+kind, pos = judged()
 h = halt_file()
-check(kind == "err" and e.code == acct.MODE_STUCK and h
+check(kind == "ok" and h
       and h["mismatch"]["legs"] == [{"symbol": "BTCUSDT", "side": "short", "before": None, "now": 0.001}],
-      "④ an extra BTC short after the switch: HALT at once (before: none)", (kind, e, h))
+      "④ an extra BTC short after the switch: HALT at once (before: none)", (kind, pos, h))
 user_resume()
 judged()
 
@@ -1478,12 +1478,13 @@ judged()
 classic_with([V2_NVDA])
 guard.trip_halt("paused by the user", "web")
 UPOS[:] = [upos("NVDAUSDT", "long", "0.02")]
-kind, e = judged()
-check(kind == "err" and halt_file()["source"] == "web", "a user's HALT standing at the mismatch is not overwritten")
+kind, pos = judged()
+check(kind == "ok" and halt_file()["source"] == "web" and acct.switch_hold_left() > 0,
+      "a user's HALT standing at the mismatch is not overwritten (the hold stays)")
 user_resume()
-kind, e = judged()
+kind, pos = judged()
 h = halt_file()
-check(kind == "err" and e.code == acct.MODE_STUCK and h and h["reason"].startswith(acct.MISMATCH_TAG),
+check(kind == "ok" and h and h["reason"].startswith(acct.MISMATCH_TAG) and acct.switch_hold_left() > 0,
       "…their resume brings up the mismatch HALT (the list was never shown)", (kind, h))
 user_resume()
 kind, pos = judged()
