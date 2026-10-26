@@ -15,7 +15,7 @@ Claude Code や Codex で、戦略を書き、バックテストして自動売�
 
 </div>
 
-> この文書は英語版 README の commit [`db5574d`](https://github.com/Blave-TW/blave-agent/blob/db5574d/README.md) から翻訳したものです。食い違いがある場合は英語の原文が優先されます。
+> この文書は英語版 README の commit [`593f8b3`](https://github.com/Blave-TW/blave-agent/blob/593f8b3/README.md) から翻訳したものです。食い違いがある場合は英語の原文が優先されます。
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 - **すべての戦略を 1 つのアプリに。** 戦略ごとにバックテスト、取引履歴、パラメータ探索、保存済みバージョン。
 - **過剰最適化を見抜くバックテスト。** MCPT の p 値、パラメータの平坦域、ウォークフォワード。
 - **手数料は最初から実費。** 手数料 0 には警告が出ます。
-- **自動売買はもう組み込み済み。** Binance、OKX、Bybit、BingX、Gate.io、Windows では台湾指数先物も。
+- **自動売買はもう組み込み済み。** Binance、OKX、Bybit、BingX、Gate.io、Bitget、StockCoin、Windows では台湾指数先物も。
 - **ペーパートレード。** キーは不要です。
 - **アイデアは Web から。** エージェントがいくつかのサイトを読み、バックテストできる案を 3 つ持ち帰ります。
 - **AI を選ぶ。** Claude Code、Codex、DeepSeek キー、または Blave AI。

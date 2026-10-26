@@ -15,7 +15,7 @@
 
 </div>
 
-> 本文译自英文版 README 的 commit [`db5574d`](https://github.com/Blave-TW/blave-agent/blob/db5574d/README.md)。内容有出入时，以英文原文为准。
+> 本文译自英文版 README 的 commit [`593f8b3`](https://github.com/Blave-TW/blave-agent/blob/593f8b3/README.md)。内容有出入时，以英文原文为准。
 
 https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 
@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 - **所有策略都在一个 app 里。** 每支都有回测、成交、参数扫描、版本。
 - **回测会抓过拟合。** MCPT p 值、参数平台、样本外验证。
 - **默认按真实手续费算。** 手续费填 0 会警告。
-- **自动交易已经接好。** Binance、OKX、Bybit、BingX、Gate.io，以及台指期（Windows）。
+- **自动交易已经接好。** Binance、OKX、Bybit、BingX、Gate.io、Bitget、StockCoin，以及台指期（Windows）。
 - **模拟交易。** 不需要密钥。
 - **上网帮你找点子。** 读几个网站，带回三个能回测的。
 - **AI 自己选。** Claude Code、Codex、DeepSeek 密钥或 Blave AI。

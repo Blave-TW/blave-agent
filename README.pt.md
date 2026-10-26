@@ -15,7 +15,7 @@ Crie, faça backtest e opere estratégias ao vivo com Claude Code ou Codex. Grá
 
 </div>
 
-> Traduzido do README em inglês no commit [`db5574d`](https://github.com/Blave-TW/blave-agent/blob/db5574d/README.md). Se algo divergir, vale o original em inglês.
+> Traduzido do README em inglês no commit [`593f8b3`](https://github.com/Blave-TW/blave-agent/blob/593f8b3/README.md). Se algo divergir, vale o original em inglês.
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 - **Todas as suas estratégias em um só app.** Backtest, operações, varredura de parâmetros e versões de cada uma.
 - **Backtests que apontam overfitting.** p-valor MCPT, platô de parâmetros e walk-forward.
 - **Taxas reais por padrão.** Uma taxa de 0 gera um aviso.
-- **Trading automático já conectado.** Binance, OKX, Bybit, BingX, Gate.io, e futuros de índice de Taiwan no Windows.
+- **Trading automático já conectado.** Binance, OKX, Bybit, BingX, Gate.io, Bitget, StockCoin e futuros de índice de Taiwan no Windows.
 - **Paper trading.** Sem chaves.
 - **Ideias da web.** O agente lê alguns sites e traz três que você pode testar.
 - **Escolha sua IA.** Claude Code, Codex, uma chave DeepSeek ou Blave AI.

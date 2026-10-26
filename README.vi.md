@@ -15,7 +15,7 @@ Xây dựng chiến lược, backtest và giao dịch thật với Claude Code h
 
 </div>
 
-> Bản dịch từ README tiếng Anh tại commit [`db5574d`](https://github.com/Blave-TW/blave-agent/blob/db5574d/README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
+> Bản dịch từ README tiếng Anh tại commit [`593f8b3`](https://github.com/Blave-TW/blave-agent/blob/593f8b3/README.md). Nếu có chỗ khác nhau, bản gốc tiếng Anh là chuẩn.
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 - **Mọi chiến lược trong một ứng dụng.** Mỗi chiến lược có backtest, giao dịch, quét tham số và các phiên bản đã lưu.
 - **Backtest cảnh báo overfitting.** p-value MCPT, vùng phẳng tham số và walk-forward.
 - **Mặc định tính phí thật.** Phí bằng 0 sẽ bị cảnh báo.
-- **Giao dịch tự động đã nối sẵn.** Binance, OKX, Bybit, BingX, Gate.io, cùng hợp đồng tương lai chỉ số Đài Loan trên Windows.
+- **Giao dịch tự động đã nối sẵn.** Binance, OKX, Bybit, BingX, Gate.io, Bitget, StockCoin, cùng hợp đồng tương lai chỉ số Đài Loan trên Windows.
 - **Giao dịch mô phỏng.** Không cần khóa.
 - **Ý tưởng từ web.** Agent đọc vài trang và mang về ba ý tưởng có thể backtest.
 - **Tự chọn AI.** Claude Code, Codex, khóa DeepSeek hoặc Blave AI.
