@@ -8963,10 +8963,10 @@ msgstr "Check them on Bitget, then press Start trading."
 
 # 事件列(P3):Bitget 換帳戶類型、倉位全對上、自動恢復
 msgid "tr.ov.evBitgetUta"
-msgstr "Bitget switched to a unified account (UTA); positions match, trading as usual."
+msgstr "Bitget switched to a unified account (UTA); positions match, trading as usual"
 
 msgid "tr.ov.evBitgetClassic"
-msgstr "Bitget switched to a classic account; positions match, trading as usual."
+msgstr "Bitget switched to a classic account; positions match, trading as usual"
 
 # 事件列(P1):Bitget 換帳戶類型、倉位都對上,但以下倉位在 Bitget 上沒有止損(下單照常、不自動補掛;trade.js trEventText venue_stops_missing)
 msgid "tr.ov.evBitgetNoStopUta"

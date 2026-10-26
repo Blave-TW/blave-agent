@@ -921,7 +921,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && trHaltMismatch(mmR({ halt: { ...mmR({}).halt, mismatch: { ...mmR({}).halt.mismatch, legs: [] } } })) === null
         && trHaltMismatch(mmR({ halt: { ...mmR({}).halt, halted: false } })) === null
         && trHaltReasonText(mmR({ halt: { ...mmR({}).halt, mismatch: undefined } }), null) === "tr.haltReasonAll");
-      ok("對不上的清單畫在狀態句下面(#tr-mm,停暫停才出、過場中不出),欄位:標的／換帳戶前／Bitget 現在,沒有那一腿寫「沒有倉位」",
+      ok("對不上的清單畫在狀態句下面(#tr-mm,停暫停才出、過場中不出),欄位:標的／換之前／Bitget 現在,沒有那一腿寫「沒有倉位」",
         /trPaintMismatch\(state === "halted" && !TR\.pending \? trHaltMismatch\(hr\) : null\);/.test(src)
         && /\[\[t\("tr\.mm\.colSym"\), ""\], \[t\("tr\.mm\.colBefore"\), "n"\], \[t\("tr\.mm\.colNow"\), "n"\]\]/.test(fn2("trPaintMismatch"))
         && /t\("tr\.mm\.none"\)/.test(fn2("trPaintMismatch")) && /t\("tr\.mm\.foot"\)/.test(fn2("trPaintMismatch"))

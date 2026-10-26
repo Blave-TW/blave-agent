@@ -8972,7 +8972,7 @@ msgid "tr.mm.colSym"
 msgstr "標的"
 
 msgid "tr.mm.colBefore"
-msgstr "換帳戶前"
+msgstr "換之前"
 
 msgid "tr.mm.colNow"
 msgstr "Bitget 現在"
@@ -8985,10 +8985,10 @@ msgstr "在 Bitget 核對完，再按「啟動下單」。"
 
 # 事件列(P3):Bitget 換帳戶類型、倉位全對上、自動恢復
 msgid "tr.ov.evBitgetUta"
-msgstr "Bitget 換成統一帳戶，倉位都對上，照常下單。"
+msgstr "Bitget 換成統一帳戶，倉位都對上，照常下單"
 
 msgid "tr.ov.evBitgetClassic"
-msgstr "Bitget 換成經典帳戶，倉位都對上，照常下單。"
+msgstr "Bitget 換成經典帳戶，倉位都對上，照常下單"
 
 # 事件列(P1):Bitget 換帳戶類型、倉位都對上,但以下倉位在 Bitget 上沒有止損(下單照常、不自動補掛;trade.js trEventText venue_stops_missing)
 msgid "tr.ov.evBitgetNoStopUta"

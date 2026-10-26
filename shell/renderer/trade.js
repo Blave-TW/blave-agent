@@ -2266,7 +2266,7 @@ async function trRun(want, steps, cmd) {
   if (heldV) srSay(t("tr.acct.reason", { v: trVenueLabel(heldV, true) }));
 }
 
-/* 對不上的倉位(設計 v033-decisions 1b-B):標的／換帳戶前／Bitget 現在,下面一句出口。數字原樣、不換算;沒有那一腿寫「沒有倉位」 */
+/* 對不上的倉位(設計 v033-decisions 1b-B):標的／換之前／Bitget 現在,下面一句出口。數字原樣、不換算;沒有那一腿寫「沒有倉位」 */
 function trPaintMismatch(m) {
   const box = $("tr-mm"); if (!box) return;
   const sig = m ? LANG + "|" + JSON.stringify(m.legs) : "";
