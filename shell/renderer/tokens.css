@@ -138,6 +138,11 @@
      停用版 light 也是白勾(web 同),dark 才換成 greyDark 的重上值 */
   --check-indicator: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10l3 3l6-6'/%3e%3c/svg%3e");
   --check-indicator-disabled: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10l3 3l6-6'/%3e%3c/svg%3e");
+
+  /* ---- 元件專用變數(不是通用角色;canon 定案前值照 spec 走) ---- */
+  /* 輸入框托盤(suggest.css;spec suggest-tray T2):底與整列 hover／按下 */
+  --surface-tray: var(--surface-muted);
+  --surface-tray-hover: var(--color-greyLightMedium);
 }
 [data-theme="dark"] {
   /* 墨階三變數的 dark 重上值(canon › Neutrals 註) */
@@ -187,6 +192,10 @@
   /* modal 這類暫時浮層(= web main.css dark 的 --glass-shadow)與它底下的遮罩 */
   --shadow-overlay: 0 8px 24px rgba(0,0,0,.5);
   --scrim: rgba(0,0,0,.6);   /* canon dark 是 rgba(5,9,11,.5);這版只上淺色,深色維持原值(待 Wei 拍板) */
+
+  /* ---- 元件專用變數 ---- */
+  --surface-tray: var(--surface-muted);
+  --surface-tray-hover: var(--surface-segment-on);   /* 同 segment 選中格的值;暗底上 --ink-2 只有 3.97,hover 字轉 --ink */
 }
 
 *, *::before, *::after { box-sizing: border-box; }

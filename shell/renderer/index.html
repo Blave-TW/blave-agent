@@ -406,13 +406,13 @@
           <span class="attach-hint" id="attach-hint" role="note" hidden></span>
         </div>
         <div class="chat-input">
-          <!-- 建議下一步(renderer/suggest.js;spec suggest-next-step-v2 §1.2):灰字疊在 textarea 那一列、單行不撐高,鍵帽跟在句子後面。
-               灰字 aria-hidden,讀屏靠 textarea 的 aria-describedby 指向 #sug-desc(作廢就拿掉) -->
-          <div class="ta-field" id="ta-field">
-            <textarea id="ta" rows="1" data-i18n-ph="ws.placeholder"></textarea>
-            <div class="sug-ghost" aria-hidden="true"><span class="sug-ghost-t" id="sug-ghost-t"></span><kbd id="sug-kbd">Tab</kbd></div>
-            <span class="sr-only" id="sug-desc"></span>
+          <!-- 建議下一步托盤(renderer/suggest.js;spec suggest-tray-2026-10-26 §1.1):框內第一列、在 textarea 之前,Shift+Tab 從輸入框回到句子鈕。
+               × 不進 Tab 順序(鍵盤用 Esc 作廢):不然 Shift+Tab 先落在 ×、按 Enter 是作廢而不是填入 -->
+          <div class="sug-tray" id="sug-tray" hidden>
+            <button type="button" class="sug-tray-btn" id="sug-tray-btn"><span class="sug-glyph" aria-hidden="true">↳</span><span class="sug-tray-t" id="sug-tray-t"></span></button>
+            <button type="button" class="sug-tray-x" id="sug-tray-x" tabindex="-1" data-i18n-aria="ws.sugDismiss">✕</button>
           </div>
+          <textarea id="ta" rows="1" data-i18n-ph="ws.placeholder"></textarea>
           <div class="ci-bar">
             <!-- 迴紋針(照雲端 #attach_btn,同一顆中性 ghost):雲端放輸入列最左,電腦版的輸入框是上下兩層,放工具列最左。
                  電腦版另外收拖放到輸入框與貼上剪貼簿的圖(原生能力,雲端沒有) -->

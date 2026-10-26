@@ -1,25 +1,38 @@
-/* 建議下一步 v2(renderer/suggest.js;spec suggest-next-step-v2 §1.2,mockup-next-step-v2.html):
-   輸入框裡的單行灰字＋Tab 鍵帽,疊在 textarea 那一列(.ci-bar 不動)。dark 值換成這裡的角色變數:灰字 greyMedium → --ink-3。
-   .has-ghost 是唯一開關(掛在 .ta-field):出現淡入 --motion-base;消失不轉場——一打字就藏,淡出的那一拍灰字會壓在剛打的字上。
-   減少動態由 app.css 全域那條收掉。 */
-.ta-field { position: relative; display: flex; flex-direction: column; }
-.sug-ghost {
-  position: absolute; inset: 0;
-  display: flex; align-items: center; gap: var(--space-8);
-  pointer-events: none; opacity: 0;
-  font-size: 13px; line-height: 1.5; color: var(--ink-3);
+/* 建議下一步托盤(renderer/suggest.js;spec suggest-tray-2026-10-26 §1,mockup 版本 A、底色 T2):
+   .chat-input 的第一列,滿版帶吃掉外框上內距與左右內距(外框 8 8 8 12),上兩角跟外框內緣、下緣直角,不畫交界線。
+   整列只有一個 hover 面:句子鈕 hover／按下換整列底色,× 只換字色——不出現一列兩色。
+   出現靠 hidden 拿掉時重跑 keyframes 淡入(display 互斥的切換,canon Motion);收起不轉場。減少動態由 app.css 全域那條收掉。 */
+.sug-tray {
+  display: flex; align-items: stretch; min-width: 0; flex: none;
+  margin: calc(-1 * var(--space-8)) calc(-1 * var(--space-8)) var(--space-4) calc(-1 * var(--space-12));
+  border-radius: calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px) 0 0;
+  background: var(--surface-tray);
+  animation: sug-tray-in var(--motion-base) var(--ease-standard);
+  transition: background-color var(--motion-fast) var(--ease-standard);
 }
-.ta-field.has-ghost .sug-ghost { opacity: 1; transition: opacity var(--motion-base) var(--ease-standard); }
-.ta-field.has-ghost textarea::placeholder { color: transparent; }
-/* 放不下維持單行、尾端省略號(canon Input › placeholder);填入之後看得到全文 */
-.sug-ghost-t { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-/* 鍵帽 = canon Mini tag › 按鍵小標(kbd)原樣;標示、不可點 */
-.sug-ghost kbd {
-  flex: none; display: inline-flex; align-items: center; justify-content: center;
-  height: 20px; min-width: 20px; padding: 0 6px; box-sizing: border-box;
-  border: 1px solid var(--border-hairline); border-radius: var(--radius-micro); background: transparent;
-  font-family: var(--font-mono); font-weight: 500; font-size: 11px; line-height: 1; color: var(--ink-3);
+@keyframes sug-tray-in { from { opacity: 0; } to { opacity: 1; } }
+.sug-tray:has(.sug-tray-btn:hover), .sug-tray:has(.sug-tray-btn:active) { background: var(--surface-tray-hover); }
+.sug-tray-btn, .sug-tray-x {
+  display: flex; align-items: center; margin: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 13px; line-height: 1.5;
+  transition: color var(--motion-fast) var(--ease-standard);
 }
+/* ↳ 左緣對齊輸入字左緣:左內距 12 = 外框左內距 */
+.sug-tray-btn {
+  flex: 1; min-width: 0; min-height: 36px; gap: var(--space-8);
+  padding: 0 var(--space-8) 0 var(--space-12);
+  color: var(--ink-2); text-align: left; border-radius: inherit;
+}
+.sug-tray-btn .sug-glyph { flex: none; color: var(--ink-3); }
+.sug-tray-t { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sug-tray:has(.sug-tray-btn:hover) .sug-tray-btn, .sug-tray:has(.sug-tray-btn:active) .sug-tray-btn { color: var(--ink); }
+.sug-tray:has(.sug-tray-btn:hover) .sug-glyph { color: var(--ink-2); }
+/* × 不另填底,但整列換 hover 底時至少 --ink-2:暗色 hover 底上 --ink-3 只有 1.92,過不了非文字 3:1 */
+.sug-tray:has(.sug-tray-btn:hover) .sug-tray-x, .sug-tray:has(.sug-tray-btn:active) .sug-tray-x { color: var(--ink-2); }
+.sug-tray-x { flex: none; width: 36px; padding: 0; justify-content: center; color: var(--ink-3); font-size: 11px; line-height: 1; }
+.sug-tray-x:hover { color: var(--ink); }
+/* 焦點框畫在內側,不被外框切掉 */
+.sug-tray-btn:focus-visible, .sug-tray-x:focus-visible { outline-offset: -2px; border-radius: var(--radius-sm); }
 
 /* 設定 › 一般 › 建議下一步:字掛虛線底(canon Tooltip 觸發),泡泡用 app.css 的 .tip 材質 */
 .set-sug { margin-top: var(--space-8); }   /* 跟回覆通知、防睡同一組(app.css 「一般」三組) */
