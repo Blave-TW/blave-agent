@@ -8959,3 +8959,105 @@ msgstr "群益還有 {lots} 口在倉。結束後策略不會再下單，這些�
 # 結束攔截:群益本機綁著、這一刻讀不到部位、之前也沒讀到過有部位(保守當成可能還有)
 msgid "capl.quit.unknown"
 msgstr "群益的部位現在讀不到，可能還有在倉。結束後策略不會再下單，也不會自動平倉，請到群益 app 確認。"
+
+# 第一次對話 modal(renderer/intro.js;設計 desktop-first-chat-modal-2026-10-25):新安裝連上 AI 後彈一次
+msgid "intro.title"
+msgstr "開始第一支策略"
+
+# 主鈕。按了送出 intro.msg 整句(鈕字與送出句分兩個 key)
+msgid "intro.ask"
+msgstr "問 agent 從哪開始"
+
+# 次鈕:關掉、游標落在輸入框
+msgid "intro.type"
+msgstr "我有想法，自己打"
+
+# 主鈕送給 agent 的整句(讀者是模型;web 工作頁上線時兩邊同一句,進 check_web_desktop_parity)
+msgid "intro.msg"
+msgstr "我還沒有策略想法，可以從哪開始？回答短一點，最後給我三個可以直接選的下一步。"
+
+# 示範舞台右下角那顆鈕的 aria-label(播放中／暫停後／播完)
+msgid "intro.pause"
+msgstr "暫停示範"
+
+msgid "intro.resume"
+msgstr "繼續示範"
+
+msgid "intro.replay"
+msgstr "重播示範"
+
+# 示範三幕的分鏡小字
+msgid "intro.sc1"
+msgstr "說一句想法"
+
+msgid "intro.sc2"
+msgstr "寫成一支策略"
+
+msgid "intro.sc3"
+msgstr "跑出回測"
+
+# 策略卡的規則標籤;intro.bt 同時是回測卡的分頁字
+msgid "intro.entry"
+msgstr "進場"
+
+msgid "intro.exit"
+msgstr "出場"
+
+msgid "intro.bt"
+msgstr "回測"
+
+# 回測卡右上的標記:圖是示意,不是真的回測
+msgid "intro.tag"
+msgstr "示意"
+
+# 回測卡 x 軸最右端
+msgid "intro.today"
+msgstr "今天"
+
+# 示範一:加密
+msgid "intro.crypto.idea"
+msgstr "BTC 站上 200 日均線就買，跌破就賣"
+
+msgid "intro.crypto.name"
+msgstr "BTC 均線趨勢"
+
+msgid "intro.crypto.in"
+msgstr "日線收盤站上 200 日均線"
+
+msgid "intro.crypto.out"
+msgstr "收盤跌破 200 日均線"
+
+msgid "intro.crypto.span"
+msgstr "2020 年至今"
+
+# 示範二:台股
+msgid "intro.tw.idea"
+msgstr "台積電站上 60 日均線就買，跌破就賣"
+
+msgid "intro.tw.name"
+msgstr "台積電均線"
+
+msgid "intro.tw.in"
+msgstr "日線收盤站上 60 日均線"
+
+msgid "intro.tw.out"
+msgstr "收盤跌破 60 日均線"
+
+msgid "intro.tw.span"
+msgstr "2015 年至今"
+
+# 示範三:台指期
+msgid "intro.txf.idea"
+msgstr "台指期突破 20 日高點做多，跌破 10 日低點出場"
+
+msgid "intro.txf.name"
+msgstr "台指期突破"
+
+msgid "intro.txf.in"
+msgstr "收盤突破 20 日高點做多"
+
+msgid "intro.txf.out"
+msgstr "收盤跌破 10 日低點"
+
+msgid "intro.txf.span"
+msgstr "2015 年至今"

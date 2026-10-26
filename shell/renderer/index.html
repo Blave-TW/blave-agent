@@ -30,6 +30,7 @@
 <link rel="stylesheet" href="versions.css">
 <link rel="stylesheet" href="engine.css">
 <link rel="stylesheet" href="welcome.css">
+<link rel="stylesheet" href="intro.css">
 </head><body>
 
 <!-- ============ 連結畫面(獨立畫面,不是 modal) ============ -->
@@ -455,6 +456,22 @@
   </div>
 </div>
 
+<!-- 第一次對話 modal(renderer/intro.js;設計 desktop-first-chat-modal-2026-10-25):新安裝連上 AI 後彈一次。殼 = .scrim + .set-modal 560。
+     排在設定框前面:它開著時設定還能從選單疊上來,Esc 先關上面那層。舞台(三幕示範)由 intro.js 畫;點遮罩不關 -->
+<div class="scrim" id="intro-scrim" role="dialog" aria-modal="true" aria-labelledby="intro-title" hidden>
+  <div class="set-modal intro-modal" id="intro-modal">
+    <div class="modal-head">
+      <h6 id="intro-title" data-i18n="intro.title"></h6>
+      <button type="button" class="modal-close" id="intro-close" data-i18n-aria="set.close">✕</button>
+    </div>
+    <div class="intro-stage" id="intro-stage"></div>
+    <div class="modal-foot">
+      <button type="button" class="btn-out" id="intro-type" data-i18n="intro.type"></button>
+      <button type="button" class="btn-fill" id="intro-ask" data-i18n="intro.ask"></button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ 設定 modal(樣式照雲端 .scrim / .ns-modal.set-modal) ============
      分類:一般、模型接入、Agent、資料來源、連結、帳號與方案、隱私(web 工作頁的設定是其中「一般／Agent／連結」三類,名稱與相對順序相同)。每一類的內容各自由 app.js 畫;
      「模型接入」不借用連結畫面那張卡(那裡是第一次做決定的地方,這裡是回來換的地方)。 -->
@@ -849,4 +866,5 @@
 <script src="engine.js"></script>
 <script src="stratflags.js"></script>
 <script src="welcome.js"></script>
+<script src="intro.js"></script>
 </body></html>
