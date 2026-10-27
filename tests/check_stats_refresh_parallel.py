@@ -150,7 +150,7 @@ lock = threading.Lock()
 live, peak_live, ran, overlap = set(), [0], [], []
 
 
-def fake_refresh(name, timeout, backtest_hash=None):
+def fake_refresh(name, timeout, backtest_hash=None, exec_test=False):
     with lock:
         if name in live:
             overlap.append(name)
