@@ -55,6 +55,7 @@ try:
     put("folder_x", 'STRATEGY_NAME = "renamed_pf"\nfrom lib.data import fetch_kline, fetch_twstock_price\n',
         {"benchmark_sharpe": 0.1})
     put("own_data", '# notes only\nimport pandas\n')
+    put("taiex_q", '# Type: B\nfrom lib.data import fetch_twstock_quote_batch\n')
     put("_scratch", '# Type: B\n')
     os.makedirs(os.path.join(SD, "out_only"))                    # backtest output dir, no strategy.py
     with open(os.path.join(SD, "flat.py"), "w") as f:            # flat layout: the app does not list it
@@ -63,16 +64,18 @@ try:
     cache = {}
     cfg = {"amounts": {"btc_trend": 1000, "renamed_pf": "250", "txf_daily": 0, "ghost": 5}}
     got = ld.strategy_kinds(SD, cfg, cache)
-    check(sorted(got) == ["btc_trend", "folder_x", "own_data", "txf_daily"],
+    check(sorted(got) == ["btc_trend", "folder_x", "own_data", "taiex_q", "txf_daily"],
           "lists strategies/<folder>/strategy.py only, skips _/. folders, output dirs and flat files", got)
-    check(got["btc_trend"] == {"type": "A", "market": "crypto", "bt": True, "funded": True},
+    check(got["btc_trend"] == {"type": "A", "market": "crypto", "market_hint": None, "bt": True, "funded": True},
           "header type, crypto fetcher, stats → bt, amount > 0 → funded", got["btc_trend"])
-    check(got["txf_daily"] == {"type": "A", "market": "tw_index_futures", "bt": False, "funded": False},
+    check(got["txf_daily"] == {"type": "A", "market": "tw_index_futures", "market_hint": None, "bt": False, "funded": False},
           "TXF futures → tw_index_futures; amount 0 is paused, not funded", got["txf_daily"])
-    check(got["folder_x"] == {"type": "C", "market": "mixed", "bt": True, "funded": True},
+    check(got["folder_x"] == {"type": "C", "market": "mixed", "market_hint": None, "bt": True, "funded": True},
           "no header + Type C backtest → C; two markets → mixed; funded by STRATEGY_NAME", got["folder_x"])
-    check(got["own_data"] == {"type": None, "market": None, "bt": False, "funded": False},
+    check(got["own_data"] == {"type": None, "market": None, "market_hint": None, "bt": False, "funded": False},
           "undecidable → None (the app sends unk)", got["own_data"])
+    check(got["taiex_q"] == {"type": "B", "market": None, "market_hint": "tw_stock", "bt": False, "funded": False},
+          "market undecided → market stays None, market_hint carries the telemetry-only guess", got["taiex_q"])
 
     check(ld.strategy_kinds(SD, {"weights": {"txf_daily": 0.3, "btc_trend": True}}, {})["txf_daily"]["funded"] is True
           and ld.strategy_kinds(SD, {"weights": {"btc_trend": True}}, {})["btc_trend"]["funded"] is False,
@@ -164,7 +167,7 @@ try:
         got = ld.strategy_kinds(SD, cfg, {})
     finally:
         srm.strategy_consts = real_consts
-    check(isinstance(got, dict) and got.get("poison") == {"type": None, "market": None, "bt": False, "funded": False}
+    check(isinstance(got, dict) and got.get("poison") == {"type": None, "market": None, "market_hint": None, "bt": False, "funded": False}
           and got.get("btc_trend", {}).get("type") == "B",
           "a strategy whose classification raises is listed as unknown; the others are still there", got)
 

@@ -528,7 +528,10 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     { const rp = fs.readFileSync(path.join(__dirname, "..", "runtime", "strategy_reporter.py"), "utf8");
       const fet = rp.match(/_PRICE_FETCHERS = \{([\s\S]*?)\n\}/), vals = new Set(fet ? [...fet[1].matchAll(/: "([a-z_]+)"/g)].map((m) => m[1]) : []);
       ["tw_index_futures", "tw_stock_futures", "mixed"].forEach((v) => vals.add(v));
-      t("…runtime strategy_market 會回的每個值都在外殼對照表裡(新增市場時這格紅)", vals.size === 7 && [...vals].every((v) => Object.prototype.hasOwnProperty.call(STRAT_MARKETS, v)), [...vals]); }
+      t("…runtime strategy_market 會回的每個值都在外殼對照表裡(新增市場時這格紅)", vals.size === 7 && [...vals].every((v) => Object.prototype.hasOwnProperty.call(STRAT_MARKETS, v)), [...vals]);
+      // 只給埋點的 strategy_market_hint:_HINT_FETCHERS 的字串值(指數腿是模組常數、不是字串)也都在對照表裡
+      const hf = rp.match(/_HINT_FETCHERS = \{([\s\S]*?)\n\}/), hv = new Set(hf ? [...hf[1].matchAll(/: "([a-z_]+)"/g)].map((m) => m[1]) : []);
+      t("…runtime strategy_market_hint 推斷表的每個值都在外殼對照表裡", hv.size === 2 && [...hv].every((v) => Object.prototype.hasOwnProperty.call(STRAT_MARKETS, v)), [...hv]); }
     t("…不在 DAILY(0.1.31 起一支一則)、不是 once、畫面送不了(不在 FROM_RENDERER)", SE.every((ev) => /const DAILY = \[[^\]]*\]/.test(tmSrc18) && !new RegExp('const DAILY = \\[[^\\]]*"' + ev + '"').test(tmSrc18) && !new RegExp('const ONCE = \\[[^\\]]*"' + ev + '"').test(tmSrc18) && !FROM_RENDERER.includes(ev)));
     t("main.js:strategies 讀 daemon 狀態檔的 strategy_kinds", /strategies: \(\) => \(_tradeHost \? \(\(_tradeHost\.status\(\)\.report \|\| \{\}\)\.strategy_kinds \|\| null\) : null\),/.test(mainSrc18));
     const apiPy18 = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
@@ -578,6 +581,13 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     const s3 = { ...s2, a_SECRET: K(null, null, false, false), b_SECRET: K("C", "us_stock", false, false), c_SECRET: K("Z", "BTCUSDT", false, false), d_SECRET: K("B", "constructor", false, false) };
     x.tm.strategySteps(s3); await tick(); x.tm.strategySteps(s3); await tick();
     t("判不出來 / 表外的值 → unk;出門的 kind 全在列舉裡", JSON.stringify(x.sent.slice(5).map((b) => b.props.kind).sort()) === JSON.stringify(["B.unk", "C.us_stock", "unk.unk", "unk.unk"]) && x.sent.every((b) => STRAT_KINDS.includes(b.props.kind)));
+    // market_hint(0.1.35):market 有效就用 market;無效或缺席才用有效的 market_hint;都無效 → unk
+    const KH = (type, market, hint) => ({ type, market, market_hint: hint, bt: false, funded: false });
+    const s3h = { ...s3, h1_SECRET: KH("A", "crypto", "tw_stock"), h2_SECRET: KH("B", null, "tw_stock"), h3_SECRET: KH("B", "BTCUSDT", "tw_index_futures"),
+      h4_SECRET: { type: "A", bt: false, funded: false, market_hint: "mixed" }, h5_SECRET: KH("C", null, "constructor"), h6_SECRET: KH("C", "nope", 7) };
+    const beforeH = x.sent.length;
+    x.tm.strategySteps(s3h); await tick(); x.tm.strategySteps(s3h); await tick();
+    t("market_hint:market 有效時忽略 hint;market 無效／缺席用有效的 hint;兩者都無效 → unk", JSON.stringify(x.sent.slice(beforeH).map((b) => b.props.kind).sort()) === JSON.stringify(["A.crypto", "A.mixed", "B.tw_idx_fut", "B.tw_stock", "C.unk", "C.unk"]) && x.sent.every((b) => STRAT_KINDS.includes(b.props.kind)), x.sent.slice(beforeH).map((b) => b.props.kind));
     // 關著時發生的:記成送過,重新打開不補
     x.tm.setEnabled(false);
     const s4 = { ...s3, off_SECRET: K("B", "crypto", false, false) };

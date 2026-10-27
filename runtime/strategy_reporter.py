@@ -283,6 +283,20 @@ _PRICE_FETCHERS = {
     "fetch_db_kline": "global_futures",
 }
 _TW_INDEX_FUTURES = ("TXF", "MXF", "TMF")
+# Telemetry-only fallback (strategy_market_hint): the lib.data price fetchers _PRICE_FETCHERS
+# deliberately lacks. Never fold these into _PRICE_FETCHERS — strategy_market drives order venue
+# checks, quote currency and bar timing, and a BTC strategy filtering on the TAIEX would turn mixed.
+_TW_INDEX_LEG = "tw_index_leg"   # internal: resolved by SYMBOL, never reported
+_HINT_FETCHERS = {
+    "fetch_binance_ticker_24h": "crypto",
+    "fetch_twstock_quote": "tw_stock", "fetch_twstock_quote_batch": "tw_stock",
+    "fetch_twse_day_all_public": "tw_stock",
+    "fetch_twmarket_index": _TW_INDEX_LEG, "fetch_twmarket_index_public": _TW_INDEX_LEG,
+}
+_MARKETS = frozenset({"crypto", "tw_index_futures", "tw_stock_futures", "tw_stock", "us_stock",
+                      "global_futures", "mixed"})
+_TW_STOCK_CODE_RE = re.compile(r"\d{4,6}[A-Z]?")
+_FUTURES_CODE_RE = re.compile(r"[A-Z]{2}F")
 _FETCHER_NAME_RE = re.compile(r"\bfetch_[a-z0-9_]+\b")
 _SYMBOL_RE = re.compile(r'''^\s*SYMBOL\s*=\s*["']([^"']*)["']''', re.M)
 
@@ -379,9 +393,99 @@ def strategy_market(src):
     return kinds.pop() if kinds else None
 
 
+def _hint_scan(src):
+    """(every name the source refers to, its literal SYMBOL or None, its string constants or
+    None when the file does not parse). One parse, one walk; same name / SYMBOL rules as
+    _referenced_fetchers, which stays untouched because strategy_market depends on it."""
+    try:
+        tree = ast.parse(src)
+    except (SyntaxError, ValueError):
+        code = "\n".join(line.split("#", 1)[0] for line in src.splitlines())
+        m = _SYMBOL_RE.search(code)
+        return set(_FETCHER_NAME_RE.findall(code)), (m.group(1) if m else None), None
+    names, symbol, strings = set(), None, []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            names.add(node.attr)
+        elif isinstance(node, ast.ImportFrom):
+            names.update(a.name for a in node.names)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            strings.append(node.value)
+        if symbol is None and isinstance(node, ast.Assign) \
+                and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str) \
+                and any(isinstance(t, ast.Name) and t.id == "SYMBOL" for t in node.targets):
+            symbol = node.value.value
+    return names, symbol, strings
+
+
+def _ticker_forms(s):
+    """(front, back): front = upper-cased, .TW / .TWO dropped, punctuation kept — the only form
+    the Taiwan-stock shape is tested on, so '08:45' / '2024-01' never pass as a code; back =
+    front with only A-Z0-9 and a trailing R1 dropped, as strategy_market reads SYMBOL."""
+    front = s.strip().upper()
+    for suffix in (".TWO", ".TW"):
+        if front.endswith(suffix):
+            front = front[:-len(suffix)]
+            break
+    back = re.sub(r"[^A-Z0-9]", "", front)
+    if back.endswith("R1") and len(back) > 2:
+        back = back[:-2]
+    return front, back
+
+
+def strategy_market_hint(src, market):
+    """Funnel telemetry only — strategy_market's answer, else a guess from what it leaves
+    undecided: the fetchers in _HINT_FETCHERS, and an index-futures fetcher whose SYMBOL is
+    not a literal. Nothing that orders, prices or times bars may read this. Never raises."""
+    if market is not None:
+        return market
+    try:
+        hint = _market_hint(src)
+    except Exception:
+        return None
+    return hint if hint in _MARKETS else None
+
+
+def _market_hint(src):
+    names, symbol, strings = _hint_scan(src)
+    legs = []   # (is_tw_futures_leg, market or None)
+    for kind in {_HINT_FETCHERS[n] for n in names & set(_HINT_FETCHERS)}:
+        if kind != _TW_INDEX_LEG:
+            legs.append((False, kind))
+        elif symbol:
+            front, back = _ticker_forms(symbol)
+            if back in _TW_INDEX_FUTURES:
+                legs.append((False, "tw_index_futures"))
+            elif _TW_STOCK_CODE_RE.fullmatch(front):
+                legs.append((False, "tw_stock"))
+        # an undecided index leg is dropped: most often a filter next to the real market
+    futures = {n for n in names if _PRICE_FETCHERS.get(n) == _TW_FUTURES}
+    if futures:
+        leg = None
+        if futures == {"fetch_txf_daily_public"}:   # accepts TXF / MXF / TMF only
+            leg = "tw_index_futures"
+        elif strings:
+            forms = [_ticker_forms(c) for c in strings]
+            index = any(b in _TW_INDEX_FUTURES for _, b in forms)
+            other = any((_FUTURES_CODE_RE.fullmatch(b) and b not in _TW_INDEX_FUTURES)
+                        or _TW_STOCK_CODE_RE.fullmatch(f) for f, b in forms)
+            if index and not other:
+                leg = "tw_index_futures"
+        legs.append((True, leg))
+    decided = {m for _, m in legs if m}
+    if any(fut and m is None for fut, m in legs) and decided:
+        return "mixed"   # an undecidable futures leg next to another market, as strategy_market
+    if len(decided) > 1:
+        return "mixed"
+    return decided.pop() if decided else None
+
+
 def _type_market(s):
-    """{type, market} for one scanned strategy, unknowns left out. Telemetry only: a failure
-    here never costs the strategy its report."""
+    """{type, market, market_hint} for one scanned strategy, unknowns left out. Telemetry only:
+    a failure here never costs the strategy its report, and a failing hint never costs type /
+    market."""
     try:
         src = s.get("code") or ""
         attrs = {"type": strategy_type(src) or ("C" if s.get("is_portfolio") else None),
@@ -389,7 +493,15 @@ def _type_market(s):
     except Exception as e:
         print(f"strategy_reporter: type/market skipped for {s.get('name')}: {e!r}", file=sys.stderr)
         return {}
-    return {k: v for k, v in attrs.items() if v}
+    out = {k: v for k, v in attrs.items() if v}
+    if attrs["market"] is None:
+        try:
+            hint = strategy_market_hint(src, None)
+        except Exception:
+            hint = None
+        if hint:
+            out["market_hint"] = hint
+    return out
 
 
 def _extract(path, fallback_name):

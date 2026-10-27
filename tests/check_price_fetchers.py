@@ -34,7 +34,12 @@ rt = SR._PRICE_FETCHERS
 for label, bad in (("runtime names not in lib", set(rt) - price),
                    ("runtime / lib disagree on the market", {n for n in set(rt) & price
                                                              if SAME.get(rt[n]) != D._PRICE_FETCHERS[n]}),
-                   ("lib-only names != the pinned runtime gap", (price - set(rt)) ^ RUNTIME_GAP)):
+                   ("lib-only names != the pinned runtime gap", (price - set(rt)) ^ RUNTIME_GAP),
+                   # the telemetry-only market_hint covers exactly the gap (spec strategy-market-hint §3.3)
+                   ("_HINT_FETCHERS keys != the pinned runtime gap", set(SR._HINT_FETCHERS) ^ RUNTIME_GAP),
+                   ("_HINT_FETCHERS disagrees with lib on the market",
+                    {n for n, m in SR._HINT_FETCHERS.items() if n in D._PRICE_FETCHERS
+                     and m != SR._TW_INDEX_LEG and SAME.get(m) != D._PRICE_FETCHERS[n]})):
     print(("  PASS  " if not bad else "  FAIL  ") + f"{label}: {sorted(bad)}")
     fails += bool(bad)
 print(f"{len(names)} fetchers: {len(price)} price, {len(other)} non-price")

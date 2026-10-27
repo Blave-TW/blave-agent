@@ -75,6 +75,92 @@ check(M(fut + call.format(f="fetch_kline")) == "mixed" and M(fut + call.format(f
 check(M("def broken(:\n# x = fetch_usstock_price()\ndf = fetch_kline(SYMBOL)\n") == "crypto",
       "a file that does not parse: regex fallback, comments stripped")
 
+# ── market_hint: telemetry-only fallback when strategy_market is None (spec strategy-market-hint §3) ──
+SEVEN = {"crypto", "tw_index_futures", "tw_stock_futures", "tw_stock", "us_stock", "global_futures", "mixed"}
+hints = []
+
+
+def H(src, official, want, msg):
+    """`official` is strategy_market(src) as it was before market_hint existed, hard-coded."""
+    m = sr.strategy_market(src)
+    h = sr.strategy_market_hint(src, m)
+    hints.append(h)
+    check(m == official and h == want, f"hint: {msg}" + ("" if m == official and h == want
+                                                          else f"  (market={m!r}, hint={h!r})"))
+
+
+idx = "from lib.data import fetch_twmarket_index\ndf = fetch_twmarket_index('2020-01-01')\n"
+idx_pub = "import lib.data as D\ndf = D.fetch_twmarket_index_public()\n"
+quote = "from lib.data import fetch_twstock_quote_batch\nq = fetch_twstock_quote_batch(['2330'])\n"
+txfv = "from lib.data import fetch_twfutures_ohlcv\nSYMBOL = pick()\ndf = fetch_twfutures_ohlcv(SYMBOL)\n"
+for s in ("TXF", "MXF R1", "tmf"):
+    H(f"SYMBOL = {s!r}\n" + idx, None, "tw_index_futures", f"index fetcher + SYMBOL {s!r} → tw_index_futures")
+for s in ("0050", "2330.TW", "6488.two", "00878"):
+    H(f"SYMBOL = {s!r}\n" + idx_pub, None, "tw_stock", f"index fetcher + SYMBOL {s!r} → tw_stock")
+for s in ("BTCUSDT", "AAPL", "TAIEX", "08:45", "2024-01", "CDF"):
+    H(f"SYMBOL = {s!r}\n" + idx, None, None, f"index fetcher + SYMBOL {s!r} → None")
+H(idx, None, None, "index fetcher, no SYMBOL → None")
+H("SYMBOL = pick()\n" + idx, None, None, "index fetcher, SYMBOL not a constant → None")
+H("NOTE = '2330'\n" + idx, None, None, "index fetcher: a stray '2330' that is not SYMBOL decides nothing")
+H(quote, None, "tw_stock", "quote fetcher only → tw_stock")
+H("from lib.data import fetch_twse_day_all_public\nd = fetch_twse_day_all_public()\n", None, "tw_stock",
+  "fetch_twse_day_all_public → tw_stock")
+H("from lib.data import fetch_twstock_quote\n", None, "tw_stock", "fetch_twstock_quote → tw_stock")
+H("from lib.data import fetch_binance_ticker_24h\n", None, "crypto", "fetch_binance_ticker_24h → crypto")
+H("x = 'fetch_twstock_quote'\n# fetch_binance_ticker_24h\n", None, None, "a hint fetcher in a string / comment → None")
+H("from lib.data import fetch_txf_daily_public\nSYMBOL = pick()\ndf = fetch_txf_daily_public(SYMBOL)\n", None,
+  "tw_index_futures", "fetch_txf_daily_public only, SYMBOL a variable → tw_index_futures")
+H("from lib.data import fetch_txf_daily_public, fetch_twfutures_ohlcv\nSYMBOL = pick()\n", None, None,
+  "fetch_txf_daily_public next to fetch_twfutures_ohlcv, no other constant → None")
+H(txfv, None, None, "futures fetcher, SYMBOL a variable, no constant → None")
+H(txfv + "S = ['MXF']\n", None, "tw_index_futures", "futures fetcher, SYMBOL a variable, 'MXF' constant → tw_index_futures")
+H(txfv + "S = ['MXF R1', 'TXF']\n", None, "tw_index_futures", "…'MXF R1' / 'TXF' constants → tw_index_futures")
+H(txfv + "S = ['MXF', 'CDF']\n", None, None, "…plus 'CDF' (a stock future) → None")
+H(txfv + "S = ['MXF', '2330']\n", None, None, "…plus '2330' (a stock-future underlying) → None")
+H(txfv + "S = ['MXF', 'cdf r1']\n", None, None, "…plus 'cdf r1' → None (R1 stripped before ^[A-Z]{2}F$)")
+H(txfv + "S = ['MXF', '08:45', '13:45', '2024-01']\n", None, "tw_index_futures",
+  "…plus '08:45' / '13:45' / '2024-01' → still tw_index_futures (session strings are not tickers)")
+H(txfv + "NOTE = 'trade TXF daily'\n", None, None, "TXF only inside a longer string → None (whole-string match)")
+H(txfv + "# 'MXF'\n", None, None, "'MXF' in a comment → None")
+# §3.5 merge
+H(idx + quote, None, "tw_stock", "merge: undecided index leg is dropped, quote leg → tw_stock")
+H("SYMBOL = 'TXF'\n" + idx + quote, None, "mixed", "merge: index leg TXF + quote leg → mixed")
+H(txfv + quote, None, "mixed", "merge: undecided futures leg next to a quote leg → mixed")
+H(txfv + idx, None, None, "merge: undecided futures leg + undecided index leg → None")
+H(txfv + "S = ['MXF']\nfrom lib.data import fetch_twstock_quote\n", None, "mixed",
+  "merge: futures leg tw_index_futures + quote leg → mixed")
+H("from lib.data import fetch_binance_ticker_24h, fetch_twstock_quote\n", None, "mixed", "merge: two markets → mixed")
+H("from lib.data import fetch_twstock_quote, fetch_twse_day_all_public\nSYMBOL = '2330'\n" + idx, None, "tw_stock",
+  "merge: index leg tw_stock + quote legs → tw_stock (one market)")
+# a decided strategy_market always wins, mixed included
+H("SYMBOL = 'BTCUSDT'\n" + call.format(f="fetch_kline") + idx, "crypto", "crypto",
+  "official crypto + index filter: hint == market (the filter never makes it mixed)")
+H(call.format(f="fetch_kline") + call.format(f="fetch_usstock_price") + quote, "mixed", "mixed", "official mixed stays mixed")
+H("SYMBOL = 'TXF'\n" + fut + quote, "tw_index_futures", "tw_index_futures", "official tw_index_futures + quote → unchanged")
+for src in (idx, quote, "from lib.data import fetch_binance_ticker_24h\n", "from lib.data import fetch_twse_day_all_public\n"):
+    check(sr._referenced_fetchers(src)[0] == set(), f"_referenced_fetchers unchanged for hint-only src: {src.splitlines()[0][:50]}")
+check(sr.strategy_market_hint(quote, "us_stock") == "us_stock", "hint never overrides a given market")
+# a file that does not parse: hint fetchers by regex (comments stripped), SYMBOL by regex as strategy_market,
+# the all-string-constants step skipped
+H("def broken(:\n" + quote, None, "tw_stock", "unparseable: quote fetcher by regex → tw_stock")
+H("def broken(:\n# fetch_twstock_quote\nx = 1\n", None, None, "unparseable: a commented-out hint fetcher → None")
+H("def broken(:\nSYMBOL = 'MXF'\n" + idx, None, "tw_index_futures", "unparseable: index leg reads SYMBOL by regex")
+H("def broken(:\n" + txfv + "S = ['MXF']\n", None, None, "unparseable: no string-constant step → futures leg None")
+check(all(h in SEVEN | {None} for h in hints), "every hint is one of the seven markets or None")
+check(sr.strategy_market_hint(None, None) is None and sr.strategy_market_hint(b"\xff", None) is None
+      and sr.strategy_market_hint(5, None) is None, "inputs that raise inside → None, no exception")
+# zero diff: strategy_market over every shipped example / template is what it was before market_hint
+SHIPPED = {"examples/btc_sma_cross/strategy.py": "crypto", "examples/btc_ti_5min/strategy.py": "crypto",
+           "examples/cl_sma/strategy.py": "global_futures", "examples/tsmc_ma/strategy.py": "tw_stock",
+           "examples/tw100_foreign_zscore/strategy.py": "tw_stock", "examples/tw2317_broker_zscore/strategy.py": "tw_stock",
+           "examples/twstock_momentum/strategy.py": "tw_stock", "examples/txf_ma_1m/strategy.py": "tw_index_futures",
+           "strategies/TEMPLATE_A.py": "crypto", "strategies/TEMPLATE_C.py": None}
+for rel, want in SHIPPED.items():
+    with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
+        src = fh.read()
+    m = sr.strategy_market(src)
+    check(m == want and (m is None or sr.strategy_market_hint(src, m) == m), f"shipped {rel}: market {want!r}, hint agrees")
+
 
 def write(name, text, stats=None):
     d = os.path.join(WS, "strategies", name)
@@ -90,22 +176,27 @@ write("txf_ma", '# Strategy: x\n# Type:     A (single)\nSTRATEGY_NAME = "txf_ma"
 write("rotation", 'STRATEGY_NAME = "rotation"\n' + call.format(f="fetch_twstock_price_adj_batch"),
       {"benchmark_n": 100, "daily_returns": [0.1]})
 write("plain", 'STRATEGY_NAME = "plain"\nimport requests\n', {"symbol": "X", "daily_returns": [0.1]})
+write("taiex_q", '# Type: B\nSTRATEGY_NAME = "taiex_q"\n' + quote)
 got = {s["name"]: s for s in sr.scan(include_newborn=True)}
 check(got["txf_ma"].get("type") == "A" and got["txf_ma"].get("market") == "tw_index_futures",
       "scan(): header + SYMBOL constant reach the report")
 check(got["rotation"].get("type") == "C" and got["rotation"].get("market") == "tw_stock",
       "scan(): no header but a Type C backtest → C")
 check("type" not in got["plain"] and "market" not in got["plain"], "scan(): unknown is absent, not null")
+check("market" not in got["taiex_q"] and got["taiex_q"].get("market_hint") == "tw_stock" and got["taiex_q"].get("type") == "B",
+      "scan(): market undecided → market_hint carried, market still absent")
+check(all("market_hint" not in got[n] for n in ("txf_ma", "rotation", "plain")),
+      "scan(): market decided, or no hint either → no market_hint key")
 
 # the report fingerprint ignores both: a runtime upgrade must not re-send the whole fleet
 base = {"name": "txf_ma", "status": "draft", "code": "x = 1\n", "display_name": "d", "description": ""}
-tagged = {**base, "type": "A", "market": "crypto"}
+tagged = {**base, "type": "A", "market": "crypto", "market_hint": "tw_stock"}
 check(sr._content_marker(base) == sr._content_marker(tagged)
-      and sr.strategy_marker(base) == sr.strategy_marker(tagged), "type / market are not in the marker")
+      and sr.strategy_marker(base) == sr.strategy_marker(tagged), "type / market / market_hint are not in the marker")
 check(sr.FIELDS == ("STRATEGY_NAME", "DISPLAY_NAME", "DESCRIPTION", "MODE", "LOGIC"),
       "FIELDS untouched (mirrored in api/openclaw/agent_pure.py)")
-check(all("type" not in s and "market" not in s for s in sr._scan_sources(include_newborn=True)),
-      "_scan_sources (the signature() hot path) computes neither — no second parse per tool step")
+check(all("type" not in s and "market" not in s and "market_hint" not in s for s in sr._scan_sources(include_newborn=True)),
+      "_scan_sources (the signature() hot path) computes none of type / market / market_hint — no second parse per tool step")
 
 # extraction blowing up: the strategy still reports, just without the two fields
 real = sr.strategy_market
@@ -114,8 +205,23 @@ try:
     got = {s["name"]: s for s in sr.scan(include_newborn=True)}
 finally:
     sr.strategy_market = real
-check(set(got) == {"txf_ma", "rotation", "plain"} and all("type" not in s and "market" not in s for s in got.values())
+check(set(got) == {"txf_ma", "rotation", "plain", "taiex_q"}
+      and all("type" not in s and "market" not in s and "market_hint" not in s for s in got.values())
       and got["txf_ma"]["code"].startswith("# Strategy"), "extraction raising: every strategy still reported, no type / market")
+
+# the hint blowing up costs only the hint: type / market still reported
+real = sr.strategy_market_hint
+sr.strategy_market_hint = lambda src, market: 1 / 0
+try:
+    tm = sr._type_market({"name": "q", "code": "# Type: A\n" + quote})
+    tm2 = sr._type_market({"name": "k", "code": "# Type: A\n" + call.format(f="fetch_kline")})
+finally:
+    sr.strategy_market_hint = real
+check(tm == {"type": "A"} and tm2 == {"type": "A", "market": "crypto"},
+      "hint raising: _type_market still returns type / market, just no market_hint", )
+check(sr._type_market({"name": "q", "code": "# Type: A\n" + quote}) == {"type": "A", "market_hint": "tw_stock"}
+      and sr._type_market({"name": "k", "code": call.format(f="fetch_kline") + quote}) == {"market": "crypto"},
+      "_type_market: market_hint only when market is None and the hint is not")
 
 print(f"\n{'ALL PASS' if not fails else f'{fails} FAIL'}")
 sys.exit(1 if fails else 0)

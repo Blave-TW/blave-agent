@@ -383,9 +383,9 @@ def _funded_names(cfg):
 
 
 def strategy_kinds(strat_dir, cfg, cache):
-    """{folder: {type, market, bt, funded}} for the app's strategy telemetry (shell/telemetry.js
-    strat_*). type / market come from strategy_reporter — the rule the cloud report uses — and
-    are None when undecidable; bt = stats.json exists (same test as shell anyBacktest);
+    """{folder: {type, market, market_hint, bt, funded}} for the app's strategy telemetry
+    (shell/telemetry.js strat_*). type / market / market_hint come from strategy_reporter — the
+    rule the cloud report uses — and are None when undecidable (market_hint only when market is); bt = stats.json exists (same test as shell anyBacktest);
     funded = the folder or its STRATEGY_NAME is in _funded_names.
 
     None (not {}) whenever the answer is not known — strategies dir unreadable, config
@@ -450,9 +450,11 @@ def strategy_kinds(strat_dir, cfg, cache):
             # later rewrites change nothing.
             settled = not needs_stats or (bsig is not None and bsig[0] >= sig[0])
             hit = {"sig": sig, "bsig": bsig, "settled": settled, "sname": sname,
-                   "type": attrs.get("type"), "market": attrs.get("market")}
+                   "type": attrs.get("type"), "market": attrs.get("market"),
+                   "market_hint": attrs.get("market_hint")}
             cache[name] = hit
-        out[name] = {"type": hit["type"], "market": hit["market"], "bt": bsig is not None,
+        out[name] = {"type": hit["type"], "market": hit["market"], "market_hint": hit.get("market_hint"),
+                     "bt": bsig is not None,
                      "funded": name in funded or hit["sname"] in funded}
     for gone in set(cache) - set(out):
         del cache[gone]

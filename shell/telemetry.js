@@ -365,7 +365,7 @@ function createTelemetry(opts) {
       return true;
     } catch (_) { return false; }   // 追蹤永遠不能炸掉呼叫端
   }
-  /* 策略三步(0.1.18)。kinds = runtime/local_daemon.strategy_kinds 寫進狀態檔的 {資料夾名: {type, market, bt, funded}}(null = 這輪不知道,整輪跳過)。
+  /* 策略三步(0.1.18)。kinds = runtime/local_daemon.strategy_kinds 寫進狀態檔的 {資料夾名: {type, market, market_hint, bt, funded}}(null = 這輪不知道,整輪跳過)。
      資料夾名只在這裡變成雜湊、不出門:本機記帳用 sha256 前 16 hex(stratHash);出門的是 kind 與 sid
      (sidOf = 以本機秘密 sid_key 做 HMAC-SHA256 取前 16 hex;沒加鹽的雜湊對常見策略名可以用字典反推)。
      - 升級後第一次拿到 kinds(狀態檔在、沒有 strat):每支策略已經到的步驟全記成送過、一則都不送——不然升級那一刻每台把存量灌一輪(同 api 第一份回報只 seed)。
@@ -378,8 +378,10 @@ function createTelemetry(opts) {
     if (!st.sid_key) { st.sid_key = crypto.randomBytes(32).toString("hex"); save(); }
     return crypto.createHmac("sha256", Buffer.from(st.sid_key, "hex")).update(name).digest("hex").slice(0, 16);
   }
+  // market 判不出才用 market_hint(0.1.35;只給埋點的推斷,runtime strategy_reporter.strategy_market_hint)
+  const stratMkt = (v) => (typeof v === "string" && Object.prototype.hasOwnProperty.call(STRAT_MARKETS, v) ? STRAT_MARKETS[v] : null);
   const stratKind = (k) => (["A", "B", "C"].indexOf(k.type) >= 0 ? k.type : "unk") + "."
-    + (typeof k.market === "string" && Object.prototype.hasOwnProperty.call(STRAT_MARKETS, k.market) ? STRAT_MARKETS[k.market] : "unk");
+    + (stratMkt(k.market) || stratMkt(k.market_hint) || "unk");
   const stratDue = (k, step) => step === "created" || (step === "backtested" ? k.bt === true : k.funded === true);
   function stratNote(step, h) {
     const a = st.strat[step];
