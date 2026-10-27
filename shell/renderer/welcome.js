@@ -246,11 +246,19 @@ function wcSkel() {
 async function wcDetail(s) { await libOpen({ silent: true }); libShowDetail(s.id); }
 function wcCard(s, first) {
   const c = wdEl("article", "wc-card"), r = s.report || {}, info = wdEl("div", "info");
-  const nm = wdEl("button", "t", s.title); nm.type = "button";
+  const nm = wdEl("button", "t"); nm.type = "button"; nm.appendChild(wdEl("span", "tn", s.title));
   nm.addEventListener("click", () => { trackFeature(onbEnv() === "cloud" ? "wcard_open_cloud" : "wcard_open"); wcDetail(s); });
   const meta = wdEl("div", "m"), y1 = String(r.equity_from || "").slice(0, 4), y2 = String(r.equity_to || "").slice(0, 4);
-  meta.append(...libSymbolNodes(s));
-  if (y1 && y2) { const sp = wdEl("span", "nw"); sp.appendChild(libRich("workspace_lib_bt_span", { span: libMono(y1 === y2 ? y1 : y1 + "–" + y2) })); meta.append(" · ", sp); }
+  // 「·」跟著後面那一段走(包進 nowrap):折行時不會掛在行尾變孤點(稽核 W8,同 .bt-meta)
+  const seg = (...xs) => { const sp = wdEl("span", "nw"); sp.append("· ", ...xs); meta.append(" ", sp); };
+  let dot = false;
+  libSymbolNodes(s).forEach((x) => {
+    if (x === " · ") dot = true;
+    else if (dot) { dot = false; seg(x); }
+    else if (typeof x === "string" && x.startsWith(" · ")) seg(x.slice(3));
+    else meta.append(x);
+  });
+  if (y1 && y2) seg(libRich("workspace_lib_bt_span", { span: libMono(y1 === y2 ? y1 : y1 + "–" + y2) }));
   info.append(nm, meta);
   // 第一格:樣本未滿 1 年講總報酬;最大回撤一律紅、Sharpe 不上色。gloss 只掛第一張卡(首次出現),重用回測頁同一句
   const tot = wcFirstKv(s) === "total", v1 = tot ? r.total_return : r.annual_return, mdd = typeof r.max_drawdown === "number" ? -Math.abs(r.max_drawdown) : null;

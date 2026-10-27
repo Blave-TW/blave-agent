@@ -101,6 +101,11 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
   ok("② 卡不畫 tag、不畫曲線(沒有 LWC);名字是按鈕;CTA 是 .ln-arrow、字是 lib.use、箭頭 aria-hidden",
     !c1.some((n) => /\btag\b|wc-curve/.test(n.className)) && !/LightweightCharts|wcCurve|createChart/.test(src) && cls(c1, "t")[0].tag === "button"
     && arrow && arrow.tag === "button" && cls(c1, "lbl")[0].textContent === "<lib.use>" && cls(c1, "ar")[0].attrs["aria-hidden"] === "true", JSON.stringify(c1.map((n) => n.className)));
+  { const m = cls(c1, "m")[0], nws = m.kids.filter((k) => typeof k === "object" && k.className === "nw");
+    ok("② 名字是 button.t 包 span.tn(兩行截斷寫在 span,WebKit 不吃 button 上的 line-clamp);meta 的「·」跟後面那段同一個 nowrap,折行不會掛孤點",
+      cls(c1, "t")[0].kids.length === 1 && cls(c1, "t")[0].kids[0].className === "tn" && cls(c1, "t")[0].kids[0].textContent === "A"
+      && nws.length === 1 && nws[0].kids[0] === "· " && !m.kids.some((k) => typeof k === "string" && /·/.test(k))
+      && /\.wc-card \.t \.tn \{ display: -webkit-box; -webkit-line-clamp: 2;/.test(css) && !/\.wc-card \.t \{[^}]*line-clamp/.test(css) && /\.wc-stat \.v \{ min-width: 7ch;/.test(css), JSON.stringify(m.kids)); }
   ok("② gloss 只掛第一張卡的三個 label:.mp-tip 按鈕 + 緊鄰的 span.tip[role=tooltip](aria-describedby 對上 id),字重用 bt.tip.*;第二張沒有",
     tips.length === 3 && cls(c2, "mp-tip").length === 0 && cls(c1, "k").every((k) => k.kids.length === 2 && k.kids[0].className === "mp-tip" && k.kids[1].className === "tip" && k.kids[1].attrs.role === "tooltip" && k.kids[0].attrs["aria-describedby"] === k.kids[1].id && k.kids[1].id)
     && cls(c1, "tip").map((n) => n.textContent).join() === "<bt.tip.annReturn>,<bt.tip.sharpe>,<bt.tip.maxDrawdown>", JSON.stringify(cls(c1, "tip").map((n) => n.textContent)));
@@ -114,10 +119,11 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
     && /\.ln-arrow:hover:not\(\[aria-disabled="true"\]\) \{ color: var\(--link-quiet-hover\); \}/.test(css) && /\.ln-arrow:hover:not\(\[aria-disabled="true"\]\) \.lbl \{ text-decoration: underline;/.test(css)
     && /\.ln-arrow::before \{ content: ""; position: absolute; left: 0; right: 0; top: -6px; bottom: -6px; \}/.test(css) && /min-height: 32px/.test(css.slice(css.indexOf(".ln-arrow {")))
     && !/\.st-row|\.tag\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, "")));
-  // 骨架→真卡不跳版:骨架拿樣板策略走 wcCard 原樣建(同斷行),字換透明條;真卡的名字區先留好名字一行＋meta 兩行,meta 短的卡不會比骨架矮
-  ok("② 骨架由 wcCard(樣板策略)建、每段字包進 .skt、整張 aria-hidden + inert;.info 先留名字一行＋meta 兩行的高度;wcBusySync 不碰骨架",
+  // 骨架→真卡不跳版:骨架拿樣板策略走 wcCard 原樣建(同斷行),字換透明條;真卡的名字區只在一行排(≥640)先留名字一行＋meta 兩行(兩排時不留,設計稽核 D2)
+  ok("② 骨架由 wcCard(樣板策略)建、每段字包進 .skt、整張 aria-hidden + inert;.info 只在 ≥640 先留名字一行＋meta 兩行的高度;wcBusySync 不碰骨架",
     /const c = wcCard\(WC_SKEL, false\)/.test(cutFn(src, "wcSkel")) && /k = wdEl\("span", "skt"\)/.test(cutFn(src, "wcSkel")) && /c\.setAttribute\("aria-hidden", "true"\); c\.inert = true;/.test(cutFn(src, "wcSkel"))
-    && /\.wc-card \.info \{ min-height: calc\(13px \* 1\.45 \+ var\(--space-2\) \+ 2 \* 12px \* 1\.5\); \}/.test(css) && /\.wc-card\.is-skel \.skt \{ color: transparent;/.test(css)
+    && /@container \(min-width: 640px\) \{ \.wc-card \.info \{ min-height: calc\(13px \* 1\.45 \+ var\(--space-2\) \+ 2 \* 12px \* 1\.5\); \} \}/.test(css)
+    && (css.match(/min-height: calc\(13px \* 1\.45/g) || []).length === 1 && /\.wc-card\.is-skel \.skt \{ color: transparent;/.test(css)
     && /querySelectorAll\("\.wc-card:not\(\.is-skel\) \.ln-arrow"\)/.test(cutFn(src, "wcBusySync"))); }
 // ── en Title Case(設計稽核 P2-5)──
 { const S = {}; vm.createContext(S); vm.runInContext(read(path.join(R, "strings.js")).replace(/^const STRINGS/m, "var STRINGS"), S);

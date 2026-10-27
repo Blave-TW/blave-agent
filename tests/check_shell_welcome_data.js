@@ -178,9 +178,9 @@ if (!process.versions.electron) {
       && /\.wd-row:hover \{ background: var\(--surface-muted\); \}/.test(css) && /\.wd-row:hover \.wd-mt \{ color: var\(--ink-2\); \}/.test(css) && /\.wd-row:hover::after \{ color: var\(--ink\); \}/.test(css)
       && /\.wd-row:focus-visible \{ outline-offset: -2px; \}/.test(css) && /prefers-reduced-motion: reduce\) \{ \.wd-row, \.wd-row::after, \.ln-arrow, \.wl-fold, \.wl-fold \.mp-chev, button\.onb-h \{ transition: none; \} \}/.test(css)
       && !/wd-go|"go"/.test(src));
-    ok("② 完整目錄退役:welcome.js / welcome.css / index.html 沒有目錄的程式與樣式(wdCatalog、WD.all、WD_NT、.wd-cat* / .wd-foot / .wd-tag、放寬 1040、一列一塊的 860 斷點),兩語 .po 與字串表沒有目錄的字(wd.less / wd.h.* / wd.src.* / wd.foot.* / wd.mk.txfo);容器查詢只有三條:兩欄清單 760、①策略卡的兩排 640 與三排 420(0.1.27 卡片三欄 640 與起手句窄版 480 都退役)",
+    ok("② 完整目錄退役:welcome.js / welcome.css / index.html 沒有目錄的程式與樣式(wdCatalog、WD.all、WD_NT、.wd-cat* / .wd-foot / .wd-tag、放寬 1040、一列一塊的 860 斷點),兩語 .po 與字串表沒有目錄的字(wd.less / wd.h.* / wd.src.* / wd.foot.* / wd.mk.txfo);容器查詢只有四條:兩欄清單 760、①策略卡一行排時先留高度 ≥640、兩排 640 與三排 420(0.1.27 卡片三欄 640 與起手句窄版 480 都退役)",
       !/wdCatalog|WD\.all|\ball:\s*(true|false)|WD_NT|wd-cat|wd-foot|wd-tag|wd\.less|wd\.h\.|wd\.src\.|wd\.foot\.|txfo|<table|"table"/.test(src + css + html.slice(html.indexOf('id="wl"'), html.indexOf("</section>", html.indexOf('id="wl"'))))
-      && !/1040px|859\.98|max-width: (?!(?:639|419)px\))\d+(\.\d+)?px\)/.test(css) && /@container \(min-width: 760px\) \{\s*\.wl-body\.cmp2/.test(css) && (css.match(/@container \([^)]*\)/g) || []).sort().join() === ["@container (min-width: 760px)", "@container (max-width: 639px)", "@container (max-width: 419px)"].sort().join()
+      && !/1040px|859\.98|max-width: (?!(?:639|419)px\))\d+(\.\d+)?px\)/.test(css) && /@container \(min-width: 760px\) \{\s*\.wl-body\.cmp2/.test(css) && (css.match(/@container \([^)]*\)/g) || []).sort().join() === ["@container (min-width: 760px)", "@container (min-width: 640px)", "@container (max-width: 639px)", "@container (max-width: 419px)"].sort().join()
       && !/msgid "wd\.(less|h\.|src\.|foot\.|mk\.txfo)/.test(po) && !/msgid "wd\.r\.[a-z0-9]+\.(nt|sn|us|wnm)"/.test(po));
     // 「看全部資料」:wdDocs 原文 + app.js 的 docsUrl 原文在純 node 跑;外開與埋點換成記錄器
     { const dl = /^const docsUrl = \(page\) => "https:\/\/blave\.org\/docs\/" \+ LANG \+ "\/" \+ page;$/m.exec(appSrc);

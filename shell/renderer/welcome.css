@@ -47,11 +47,13 @@ button.onb-h:focus-visible { outline-offset: -2px; }
   min-width: 0; padding: var(--space-12); border-radius: var(--radius-lg); background: var(--surface-card);
 }
 .wc-card .info { grid-area: info; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-/* 名字一行＋meta 兩行的高度先留好:meta 會不會折行看內容長短,不留的話同一頁的卡高低不一,骨架(wcSkel)也對不上真卡,讀到時版面跳。
-   名字折兩行、meta 折三行(很長的 en 標題、1024 最窄欄)才再長高 */
-.wc-card .info { min-height: calc(13px * 1.45 + var(--space-2) + 2 * 12px * 1.5); }
-.wc-card .t { align-self: flex-start; max-width: 100%; padding: 0; font-size: 13px; font-weight: 600; line-height: 1.45; color: var(--ink); text-align: left; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.wc-card .t:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* 一行排(≥640)時名字欄窄,meta 會不會折行看內容長短:先留名字一行＋meta 兩行,三張卡一樣高、骨架(wcSkel)對得上真卡。
+   兩排(<640)時 meta 有整列寬、幾乎不折,留高度只會在名字組與數字之間多一塊空白(組內間距大過卡距),不留(設計稽核 D2) */
+@container (min-width: 640px) { .wc-card .info { min-height: calc(13px * 1.45 + var(--space-2) + 2 * 12px * 1.5); } }
+.wc-card .t { display: block; align-self: flex-start; max-width: 100%; padding: 0; font-size: 13px; font-weight: 600; line-height: 1.45; color: var(--ink); text-align: left; }
+/* 最多兩行截在裡面那層 span:WebKit 不吃 <button> 上的 -webkit-line-clamp(設計稽核 W2,同 web .wc-name-t) */
+.wc-card .t .tn { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.wc-card .t:hover .tn { text-decoration: underline; text-underline-offset: 3px; }
 .wc-card .m { font-size: 12px; line-height: 1.5; color: var(--ink-3); overflow-wrap: anywhere; }
 .wc-card .m .nw { white-space: nowrap; }   /* 「回測 2014–2026」要換就整段一起換 */
 .wc-stats { grid-area: stats; display: grid; grid-template-columns: repeat(3, auto); grid-template-rows: auto auto; grid-auto-flow: column; justify-content: start; gap: var(--space-2) var(--space-12); }
@@ -60,7 +62,7 @@ button.onb-h:focus-visible { outline-offset: -2px; }
 .wc-stat .k { position: relative; justify-self: start; font-size: 11px; line-height: 1.5; color: var(--ink-3); white-space: nowrap; }
 .wc-stat .k .mp-tip { font-size: inherit; }
 .wc-stat .k .tip { width: max-content; }
-.wc-stat .v { font-size: 14px; line-height: 1.5; color: var(--ink); white-space: nowrap; }
+.wc-stat .v { min-width: 7ch; font-size: 14px; line-height: 1.5; color: var(--ink); white-space: nowrap; }   /* 數字欄寬不隨值長短變,三張卡的數字區對齊(稽核 W3) */
 .wc-stat .v.up { color: var(--color-greenText); }
 .wc-stat .v.down { color: var(--color-redText); }
 .wc-card .act { grid-area: act; }
