@@ -217,8 +217,9 @@ for os_name in ("Linux", "Darwin"):  # a cloud box is Linux; a dev Mac lands in 
     cl._tick_one("typea")
     check(calls[0][0][0] == "python3", f"[{os_name}, cloud] tick interpreter is PATH python3")
     env = calls[0][1]["env"]
-    check(set(env) <= {"PATH", "HOME", "LANG", "USER", "SHELL", "BLAVE_MODE"},
+    check(set(env) <= {"PATH", "HOME", "LANG", "USER", "SHELL", "BLAVE_MODE", "BLAVE_EXEC_TEST"},
           f"[{os_name}, cloud] strategy env is the bare allowlist")
+    check(env.get("BLAVE_EXEC_TEST") == "0", f"[{os_name}, cloud] a tick never runs the 成交測試 (BLAVE_EXEC_TEST=0)")
     calls.clear()
     cl._sync_strategy_crons({"typeb"})
     check([c[0][:2] for c in calls] == [["crontab", "-l"], ["crontab", "-"]],

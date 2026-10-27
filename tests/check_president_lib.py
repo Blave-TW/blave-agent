@@ -1385,6 +1385,7 @@ UNREACHED = {
     "get_bbo": "auto-wire", "get_position_mode": "auto-wire", "_position_mode": "auto-wire",
     "_position_rows": "auto-wire", "get_open_orders": "auto-wire / close_symbol (perp only)",
     "sweep_orphan_stops": "auto-wire (optional, hasattr — StockCoin's orphan STOP sweep)",
+    "resolve_unknown_order": "venue_wiring.query_parked_order (optional, hasattr — falls back to get_order)",
     # spot inventory: a futures account has none
     "get_spot_balances": "spot", "get_spot_price": "spot", "place_spot_market_order": "spot",
     "place_spot_limit_order": "spot", "cancel_spot_order": "spot", "get_spot_order": "spot",
