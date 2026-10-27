@@ -290,7 +290,8 @@ flatten._inflight_wait_s = lambda: 0
 check("X6" in parked(), "an entry parked before 全部平倉")
 with contextlib.redirect_stdout(io.StringIO()):
     flatten.flatten()
-check(os.getcwd() == str(WS) and not os.path.exists(os.path.join(ROOT, "manager", "order_errors.json")),
+# realpath: mkdtemp under /var/folders is /private/var/folders once chdir'd into (macOS symlink)
+check(os.path.realpath(os.getcwd()) == os.path.realpath(WS) and not os.path.exists(os.path.join(ROOT, "manager", "order_errors.json")),
       "flatten ran in the test workspace")
 fl = [r for r in rows("order_unconfirmed") if "close-all" in str(r.get("error"))]
 check(len(fl) == 1 and fl[0]["symbol"] == KEY and fl[0].get("stuck") is True and fl[0]["exchange"] == "paper",
