@@ -1152,7 +1152,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const head = fnS("trPaintHead");
     ok("A′ / B / B0 的原因行升正文墨色,用原因句本身定位(前面有「串接失敗 · 」也照升)", /const inkReason = state === "halted" && \(trRestartKind\(hr\) \|\| \(trHaltStopsAll\(hr\.halt\) && !\(trHaltFreeze\(hr\) && trHaltByUser\(hr\.halt\)\)\) \|\| trAcctAsk\(hr\)\) \? trHaltReasonText\(hr, TR\.acctDone\) : state === "noaccount" && trNoAccountStopped\(hr\) \? t\("tr\.cloud\.restartNoAccountZ"\) : "";/.test(head)
       && /const inkAt = inkReason \? full\.indexOf\(inkReason\) : -1;/.test(head) && !/full === text && !trFailedIds/.test(head.slice(head.indexOf("const inkReason"))));
-    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : closes \? null : t\("tr\.ov\.evHaltNote"\);/.test(src)
+    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = trHaltUnconfirmedSym\(d\) \? t\("tr\.ov\.evHaltUnconfirmedNote"\) : trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : closes \? null : t\("tr\.ov\.evHaltNote"\);/.test(src)
       && /trHaltStopsAll\(halt\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\)/.test(src)); }
   { // audit 2-1(B0):沒有交易所 + 重開停止
     const B0 = (o) => ({ alive: true, report: { venues: {}, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, ...o } } } });
@@ -2624,6 +2624,17 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       /id="tr-desc"><\/div>\s*(<!--[\s\S]*?-->\s*)?<p class="tr-ro-note" id="tr-quote" hidden>/.test(html) && /\$\("tr-quote"\)\.after\(p\)/.test(src)
       && /\.tr-ro-note\.is-fallback \{ color: var\(--ink-2\); \}/.test(css) && /trPaintQuote\(TR\.pending \? null : state\);/.test(src)
       && !/feature_used[^\n]*quote/.test(src)); }
+  { // 下單結果不明:追蹤不了而整台暫停的狀態句、已解除的停車單不再掛在部位表
+    t = (k, v) => k + (v ? JSON.stringify(v) : "");
+    const UH = { halted: true, at: "2026-10-27T01:00:00+00:00", source: "reconciler",
+      reason: "[order_unconfirmed_unparked] BTCUSDT: an order's outcome is unknown and Blave cannot track it (x) — check" };
+    ok("HALT reason 帶 [order_unconfirmed_unparked]:認出標的,狀態句換 tr.haltUnconfirmed(不顯示英文)",
+      trHaltUnconfirmedSym(UH) === "BTCUSDT" && trHaltUnconfirmedSym({ reason: "close all positions" }) === null
+      && trHaltReasonText({ halt: UH, reconciler: { alive: true }, venues: V }) === 'tr.haltUnconfirmed{"sym":"BTCUSDT"}');
+    const LE = (rel) => trLiveOrderErrs([{ ts: "2026-10-27T01:00:00", symbol: "BTCUSDT", exchange: "binance", kind: "order_unconfirmed", released: rel, error: "x" }],
+      new Set(["BTCUSDT"]), { open: new Set(), running: true, orders: [] });
+    ok("已解除(released)的停車單不掛在部位表;還沒解除的照掛", LE(true).size === 0 && LE(undefined).size === 1);
+  }
   console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();
 

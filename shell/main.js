@@ -3848,6 +3848,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_execution_stuck: "Execution is stuck", ev_execution_stuck_n: "Later orders for this symbol are waiting on it.",
   ev_machine_restart_stopped: "Machine restarted — trading paused", ev_machine_restart_stopped_n: "No orders are going out — nothing is managing your positions, and exits and stops won't run. Press Start trading to resume.",
   ev_venue_stops_missing: "Bitget positions without a stop-loss", ev_venue_stops_missing_n: "After the account switch some positions have no stop-loss on Bitget. Trading continues; Blave won’t re-place them.",
+  ev_halt_unconfirmed_n: "Nothing goes out. An order has an unknown outcome and may have filled — don't place it again yourself. Tell your agent how much filled, then press Start trading.",
   ev_order_unconfirmed: "Order outcome unknown", ev_order_unconfirmed_n: "This order may have filled — don't place it again yourself. New entries on this symbol are paused; closes still run.",
   ev_order_unconfirmed_stuck: "Order outcome still unknown", ev_order_unconfirmed_stuck_n: "The order still can't be found. New entries on this symbol stay paused. Check your position on the exchange, then tell your agent how much filled.",
   stratOne: "", stratTwo: "", stratMany: "", withStrat: "",
@@ -4164,7 +4165,8 @@ function p1FromState(r, mark, nowS) {   // 純函式:halt / 拒單從狀態檔�
   const at = h && h.halted ? p1Sec(h.at) : NaN;
   if (at > (mark.halt == null ? -1 : mark.halt)) {
     out.halt = at;
-    if (mark.halt != null && HALT_AUTO_SOURCES.indexOf(h.source) >= 0 && nowS - at <= 900) out.show.push({ type: "halt", ts: at, payload: {} });
+    if (mark.halt != null && HALT_AUTO_SOURCES.indexOf(h.source) >= 0 && nowS - at <= 900)
+      out.show.push({ type: "halt", ts: at, payload: { unconfirmed: /^\[order_unconfirmed_unparked\] /.test(String(h.reason || "")) } });
   } else if (mark.halt == null) out.halt = 0;
   let top = mark.err == null ? -1 : mark.err;
   for (const e of r && Array.isArray(r.order_errors) ? r.order_errors : []) {
@@ -4219,7 +4221,10 @@ function p1Sync() {
     if (!Notification.isSupported()) continue;
     // 這裡的事件全部來自這台電腦的狀態檔:標題第一個詞講是哪一邊(雲端的通知之後由它自己的來源加 notifPrefixCloud)
     const stuck = e.type === "order_unconfirmed" && e.payload && e.payload.stuck === true;
-    const head = tmLabels["ev_" + e.type + (stuck ? "_stuck" : "")], note = tmLabels["ev_" + e.type + (stuck ? "_stuck" : "") + "_n"];
+    const head = tmLabels["ev_" + e.type + (stuck ? "_stuck" : "")];
+    // 下單結果不明、追蹤不了而整台暫停:講可能已成交、不要手動補單、怎麼恢復,不是只有「什麼單都不送」
+    const note = e.type === "halt" && e.payload && e.payload.unconfirmed && tmLabels.ev_halt_unconfirmed_n ? tmLabels.ev_halt_unconfirmed_n
+      : tmLabels["ev_" + e.type + (stuck ? "_stuck" : "") + "_n"];
     const n = new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, head + (sym ? " · " + sym : "")), body: p1WithStrat(e.payload && e.payload.strategies, note) });
     p1Alive.add(n); const drop = () => p1Alive.delete(n);
     n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop); notifWatch(n, "p1 " + e.type);

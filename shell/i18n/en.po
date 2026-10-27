@@ -9056,3 +9056,19 @@ msgstr "{name} and {more} more strategies"
 msgid "tm.evWithStrat"
 msgstr "{strat}: {note}"
 
+# 下單結果不明:停車解除後那一列(灰字,released／filled),以及追蹤不了而整台暫停(HALT reason [order_unconfirmed_unparked])的狀態句與事件說明
+msgid "tr.ov.evUnconfirmedReleased"
+msgstr "Order outcome found"
+
+msgid "tr.ov.evUnconfirmedReleasedFilled"
+msgstr "It filled and is in the book; new entries on this symbol resume."
+
+msgid "tr.ov.evUnconfirmedReleasedNone"
+msgstr "It did not fill; new entries on this symbol resume."
+
+msgid "tr.haltUnconfirmed"
+msgstr "An order on {sym} has an unknown outcome and may have filled. Nothing goes out while paused. Check your position on the exchange; don't place it again yourself. Tell your agent how much filled, then press Start trading."
+
+msgid "tr.ov.evHaltUnconfirmedNote"
+msgstr "nothing goes out. An order has an unknown outcome and may have filled — don't place it again yourself. Tell your agent how much filled, then press Start trading."
+

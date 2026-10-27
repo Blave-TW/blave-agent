@@ -124,7 +124,12 @@ const UNCONFIRMED_PAIRS = {
   "tr.err.unconfirmed": "workspace_pf_err_unconfirmed", "tr.ov.evUnconfirmed": "workspace_ov_ev_unconfirmed",
   "tr.ov.evUnconfirmedStuck": "workspace_ov_ev_unconfirmed_stuck", "tr.ov.evUnconfirmedNote": "workspace_ov_ev_unconfirmed_note",
   "tr.ov.evUnconfirmedStuckNote": "workspace_ov_ev_unconfirmed_stuck_note",
-  "tr.ov.evStratOne": "workspace_ov_ev_strat_one", "tr.ov.evStratTwo": "workspace_ov_ev_strat_two", "tr.ov.evStratMany": "workspace_ov_ev_strat_many" };
+  "tr.ov.evStratOne": "workspace_ov_ev_strat_one", "tr.ov.evStratTwo": "workspace_ov_ev_strat_two", "tr.ov.evStratMany": "workspace_ov_ev_strat_many",
+  // 停車解除後(released／filled)與追蹤不了而整台暫停([order_unconfirmed_unparked])
+  "tr.ov.evUnconfirmedReleased": "workspace_ov_ev_unconfirmed_released",
+  "tr.ov.evUnconfirmedReleasedFilled": "workspace_ov_ev_unconfirmed_released_filled",
+  "tr.ov.evUnconfirmedReleasedNone": "workspace_ov_ev_unconfirmed_released_none",
+  "tr.ov.evHaltUnconfirmedNote": "workspace_ov_ev_halt_unconfirmed_note", "tr.haltUnconfirmed": "workspace_pf_halt_unconfirmed" };
 for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
   const bad = Object.entries(UNCONFIRMED_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== wp[w]);
@@ -141,6 +146,7 @@ for (const lang of ["zh", "en"]) {
   const rows = seg(desk, "function trOvEvents(", "\nfunction ");
   if (/r\.order_errors/.test(rows)) dSet.add("order_error");
   if (/e\.kind === "order_unconfirmed"/.test(rows)) dSet.add("order_unconfirmed");
+  if (/e\.released === true/.test(rows)) dSet.add("order_unconfirmed_released");   // 同一列 released 時畫成灰字;網頁畫平台的 P3 事件
   const wSet = types(seg(web, "function ovEventRow(", "\n        function "));
   const DESK_ONLY = new Set(["halt_close", "resume_wait", "downtime_paused"]);
   const onlyD = [...dSet].filter((x) => !wSet.has(x) && !DESK_ONLY.has(x)), onlyW = [...wSet].filter((x) => !dSet.has(x));

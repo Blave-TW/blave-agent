@@ -72,4 +72,8 @@ var tmLabels = {}; tmLabels.stratOne = "策略 {name}"; tmLabels.stratTwo = "策
 t("通知內文:一支、兩支、三支以上、沒有策略", p1WithStrat(["a"], "N") === "策略 a：N" && p1WithStrat(["a", "b"], "N") === "策略 a、b：N"
   && p1WithStrat(["a", "b", "c"], "N") === "a 等 3 支策略：N" && p1WithStrat([], "N") === "N" && p1WithStrat(undefined, "N") === "N");
 t("stuck 那則有自己的標題與內文", src.includes("ev_order_unconfirmed_stuck:") && src.includes("ev_order_unconfirmed_stuck_n:"));
+{ const x = p1FromState(R({ halted: true, at: NOW - 5, source: "reconciler", reason: "[order_unconfirmed_unparked] BTCUSDT: unknown" }), { halt: 0, err: 0 }, NOW);
+  t("追蹤不了而整台暫停:halt 那則帶 unconfirmed,內文用專屬那句(有英文退路)", x.show.length === 1 && x.show[0].payload.unconfirmed === true
+    && p1FromState(R({ halted: true, at: NOW - 5, source: "reconciler", reason: "3 strikes" }), { halt: 0, err: 0 }, NOW).show[0].payload.unconfirmed === false
+    && src.includes("ev_halt_unconfirmed_n:")); }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
