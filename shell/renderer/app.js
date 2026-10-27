@@ -2162,8 +2162,10 @@ function tabsMoreWire(box, more, tabSel) {
     // 捷徑自己佔的寬(本身 + 一個 gap)要算回去:用它在的時候的 clientWidth 判斷,拖寬聊天欄再拖回就收不回來
     const g = parseFloat(getComputedStyle(box.parentNode).columnGap) || 0;
     const room = box.clientWidth + (more.hidden ? 0 : more.offsetWidth + g);
-    const over = box.scrollWidth > room + 1;
+    const over = box.scrollWidth > room + 1, was = more.hidden;
     more.hidden = !over;
+    // 捷徑一冒出來分頁段就少它的寬:開報告時先捲好的那顆會被切一半,要照新寬度再捲一次
+    if (was !== more.hidden) rpTabReveal(box.querySelector(tabSel + '[aria-selected="true"]'));
     if (over) more.classList.toggle("is-back", box.scrollLeft >= box.scrollWidth - box.clientWidth - 1);
   };
   more.addEventListener("click", () => {

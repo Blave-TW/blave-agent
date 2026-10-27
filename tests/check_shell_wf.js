@@ -641,19 +641,24 @@ app.whenReady().then(async () => {
   ok("② L4 閘門 null → true 不重建(打到一半的 400 留著);翻成 false 才整片換成落後態", r.a === "400" && r.b, JSON.stringify(r));
 
   // ── 版面:另開視窗量(預設版面 = panesInit 夾出來的側欄 / 聊天欄;不拖拉)──
-  // B1:最小寬 1024、聊天欄開著,五顆分頁 + 轉出鈕;S1:預設 1280 每輪明細七欄放得下;列高上限 = 表頭 + 12 列
-  const measure = async (width, locale, runs) => {
+  // B1:最小寬 1024、聊天欄開著,六顆分頁 + 轉出鈕;S1:預設 1280 每輪明細七欄放得下;列高上限 = 表頭 + 12 列
+  const measure = async (width, locale, runs, first = "wf") => {
     const pre2 = path.join(app.getPath("userData"), "stub-" + locale + ".js"); fs.writeFileSync(pre2, STUB.replace('getLocale: "zh-TW"', "getLocale: " + JSON.stringify(locale)));
     const w2 = new BrowserWindow({ width, height: 800, show: false, webPreferences: { offscreen: true, preload: pre2, contextIsolation: false, sandbox: false } });
     await w2.loadFile(path.join(SHELL, "renderer", "index.html")); await wait(900);
     const wf = { ...SAMPLE, n_runs: runs, runs: Array.from({ length: runs }, (_, i) => ({ ...SAMPLE.runs[i % 11], k: i + 1 })) };
     const m = await w2.webContents.executeJavaScript(`(async () => {
-      // 帶一筆 trades:沒有逐筆紀錄時進出場分頁收起(同網頁 has_trades),這裡量的是五顆分頁都在的版面
+      // 帶一筆 trades:沒有逐筆紀錄時進出場分頁收起(同網頁 has_trades),這裡量的是六顆分頁都在的版面
       RP.name = "s1"; RP.data = { stats: { symbol: "BTCUSDT", start: "2023-01-01", end: "2024-11-30", "Generated At": 5, trades: [{ t: 1 }] }, wf: ${JSON.stringify(wf)}, code: "ENTRY_TH = 0.002\\nEXIT_TH = -0.002\\n", name: "s1", displayName: "s1", description: "" }; RP.drawn = {}; RP.tab = "wf";
-      document.getElementById("rp").hidden = false; rpPaintHead(RP); rpShowTab("wf"); await new Promise((r) => setTimeout(r, 400));
-      const R = (el) => el.getBoundingClientRect(), main = document.getElementById("rp"), sc = document.getElementById("rp-tabs-scroll"), more = document.getElementById("rp-tabs-more"), xp = document.getElementById("xp-dd");
+      const R = (el) => el.getBoundingClientRect(), sc0 = document.getElementById("rp-tabs-scroll");
+      // 開報告就停在 first 那顆:捷徑是在「捲進可視範圍」之後才冒出來的,那一刻分頁段少一顆捷徑寬,要再捲一次(不然靠右的分頁被切一半)
+      const first = ${JSON.stringify(first)}; RP.tab = first; document.getElementById("rp").hidden = false; rpPaintHead(RP); rpShowTab(first); await new Promise((r) => setTimeout(r, 400));
+      const s0 = sc0.querySelector('[aria-selected="true"]'), pad0 = parseFloat(getComputedStyle(sc0).paddingRight) || 0;
+      const firstSel = s0 && s0.dataset.tab, firstMore = !document.getElementById("rp-tabs-more").hidden, firstIn = !!s0 && R(s0).right <= R(sc0).right - pad0 + 1 && R(s0).left >= R(sc0).left - 1;
+      if (first !== "wf") { rpShowTab("wf"); await new Promise((r) => setTimeout(r, 400)); }
+      const main = document.getElementById("rp"), sc = document.getElementById("rp-tabs-scroll"), more = document.getElementById("rp-tabs-more"), xp = document.getElementById("xp-dd");
       const box = document.querySelector(".wf-scroll"), tb = box.querySelector("table"), rows = [...tb.querySelectorAll("tbody tr")].map((r) => R(r).height);
-      const out = { main: Math.round(R(main).width), mainR: Math.round(R(main).right), xpShown: !xp.hidden, xpR: Math.round(R(xp).right), over: sc.scrollWidth > sc.clientWidth + 1, more: !more.hidden,
+      const out = { firstSel, firstMore, firstIn, main: Math.round(R(main).width), mainR: Math.round(R(main).right), xpShown: !xp.hidden, xpR: Math.round(R(xp).right), over: sc.scrollWidth > sc.clientWidth + 1, more: !more.hidden,
         boxW: box.clientWidth, tblW: tb.scrollWidth, head: R(tb.querySelector("thead tr")).height, row: rows[0], rowsSame: rows.slice(0, -1).every((h) => Math.abs(h - rows[0]) < 0.5), boxH: box.clientHeight, boxSH: box.scrollHeight,
         selBottom: Math.round(R(sc.querySelector('[aria-selected="true"]')).bottom), barBottom: Math.round(R(document.getElementById("rp-tabs")).bottom) };
       rpShowTab("code"); await new Promise((r) => setTimeout(r, 100));
@@ -675,6 +680,10 @@ app.whenReady().then(async () => {
     w2.destroy(); return m;
   };
   for (const loc of ["zh-TW", "en-US"]) {
+    const x = await measure(1024, loc, 11, "xt");
+    console.log("      " + loc + " 1024 開在成交測試:" + JSON.stringify({ firstSel: x.firstSel, firstMore: x.firstMore, firstIn: x.firstIn }));
+    ok("② B1 " + loc + " 1024 聊天欄開著、開報告就停在靠右的成交測試:捷徑冒出來之後再捲一次,那顆整顆在可視範圍(不被切一半)",
+      x.firstSel === "xt" && x.firstMore && x.firstIn, JSON.stringify({ firstSel: x.firstSel, firstMore: x.firstMore, firstIn: x.firstIn }));
     const a = await measure(1024, loc, 11), b = await measure(1280, loc, 12), c = await measure(1280, loc, 13);
     console.log("      " + loc + " 1024:" + JSON.stringify(a) + "\n      " + loc + " 1280:" + JSON.stringify(b) + "\n      " + loc + " 1280/13 輪:" + JSON.stringify(c));
     ok("② B1 " + loc + " 1024 聊天欄開著:分頁段溢出 → 捲動捷徑出現;轉出鈕看得到且右緣不出中欄;選程式碼 / 回測都捲得進可視範圍;選中分頁底線壓在列底(窄版 padding 不吃掉 hairline 那 1px)",
