@@ -34,10 +34,11 @@ button.onb-h:focus-visible { outline-offset: -2px; }
 .onb-body .wc-cards + .onb-opts { margin-top: var(--space-12); }
 .onb-opts .wl-fold { margin: 0 0 0 var(--space-8); }
 .onb-fin { margin: var(--space-24) 0 0; display: flex; align-items: center; gap: var(--space-12); min-height: 36px; font-size: 14px; color: var(--ink-2); }
-/* 完成後的首頁(F;§3.2,mockup f-watermark):中欄垂直、水平置中;記號實色 --color-watermark(canon Brand logo 誤用的具名例外,不用 opacity) */
-.wf { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--space-24); padding-bottom: var(--space-48); }
-.wf-mark { width: 104px; height: auto; flex: none; color: var(--color-watermark); }
-.wf-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-8); }
+/* 完成後的首頁(F;§3.2,mockup f-watermark):中欄垂直、水平置中;記號實色 --color-watermark(canon Brand logo 誤用的具名例外,不用 opacity)。
+   class 不能叫 .wf:樣本外驗證分頁的根是 <div class="bt wf">(report-wf.js),全域的 .wf 會把整個分頁置中 */
+.wc-fin { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--space-24); padding-bottom: var(--space-48); }
+.wc-fin-mark { width: 104px; height: auto; flex: none; color: var(--color-watermark); }
+.wc-fin-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-8); }
 /* ①的策略卡(spec desktop-welcome-library-first §2.2;殼照 0.1.27 的 .wc-card:--surface-card、--radius-lg、無框無陰影、內距 12、卡距 8)。
    一張一列:名字區 | 三格數字 | CTA;排法看中欄寬(.main-empty 是容器):≥640 一行、420–639 名字一排＋數字與 CTA 一排、<420 三排且 CTA 靠左。
    一行排的門檻從 mockup 的 520 拉到 640:520–640 之間名字欄只剩不到 200,en 的長標題會折兩行,同一頁卡高不一、骨架對不上 */
@@ -80,7 +81,10 @@ button.onb-h:focus-visible { outline-offset: -2px; }
 @container (max-width: 639px) {
   .wc-card { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "info info" "stats act"; align-items: end; }
 }
-/* 1024 視窗、聊天欄開著時中欄只剩 288:數字與 CTA 放不進同一排,CTA 自己一排、靠左 */
+/* 中欄窄於 260 就整塊卡收起,①只剩兩顆籤(Wei 10-27;同 web @container wel (max-width: 259px))。
+   目前到不了:視窗最小 1024、聊天欄被 MAIN_MIN 480 擋住,這個容器最窄 432;留著是兩邊同一條規則 */
+@container (max-width: 259px) { .wc-cards { display: none; } }
+/* 中欄窄於 420:數字與 CTA 放不進同一排,CTA 自己一排、靠左(目前視窗最小 1024、中欄最窄 432,同樣到不了;跟 web 同一套斷點) */
 @container (max-width: 419px) {
   .wc-card { grid-template-columns: minmax(0, 1fr); grid-template-areas: "info" "stats" "act"; align-items: start; }
   .wc-card .act { justify-self: start; }

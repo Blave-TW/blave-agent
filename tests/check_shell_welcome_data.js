@@ -67,9 +67,20 @@ if (!process.versions.electron) {
   // ── ② 原文鎖 ──
   const chips = html.slice(html.indexOf('class="wc-chips"'), html.indexOf('id="wl-fold"'));
   const wcBox = html.slice(html.indexOf('id="main-empty"'), html.indexOf("</section>", html.indexOf('id="main-empty"')));
-  ok("② index.html(onboarding E/F):#main-empty 裡是 .wc-inner#wc(步驟清單,預設 hidden)與 .wf#wf(完成後首頁,預設 hidden);#wc 由上到下 記號 → ①(策略卡 #wc-cards、#chat-idea、#onb-lib)→ ②(#chat-ns、#wl-fold、#wl;0.1.34 起手句 #st-rows 退役)→ ③ → #onb-fin(0.1.29 拿掉市場題與④);#chat-lib、起手籤 #chat-eg、0.1.27 的三張卡 #wc-reco 退役",
-    /<div class="wc-inner" id="wc" hidden>/.test(wcBox) && /<div class="wf" id="wf" hidden>/.test(wcBox) && wcBox.split('class="wc-inner"').length === 2 && !html.includes('id="chat-lib"') && !html.includes('id="chat-eg"') && !html.includes('id="wc-reco"') && !html.includes('id="st-rows"') && !/ws\.chatExample/.test(html + appSrc)
+  ok("② index.html(onboarding E/F):#main-empty 裡是 .wc-inner#wc(步驟清單,預設 hidden)與 .wc-fin#wf(完成後首頁,預設 hidden;class 不叫 .wf,樣本外驗證分頁的根也是 .wf);#wc 由上到下 記號 → ①(策略卡 #wc-cards、#chat-idea、#onb-lib)→ ②(#chat-ns、#wl-fold、#wl;0.1.34 起手句 #st-rows 退役)→ ③ → #onb-fin(0.1.29 拿掉市場題與④);#chat-lib、起手籤 #chat-eg、0.1.27 的三張卡 #wc-reco 退役",
+    /<div class="wc-inner" id="wc" hidden>/.test(wcBox) && /<div class="wc-fin" id="wf" hidden>/.test(wcBox) && /<svg class="wc-fin-mark"/.test(wcBox) && /<div class="wc-fin-acts">/.test(wcBox) && wcBox.split('class="wc-inner"').length === 2 && !html.includes('id="chat-lib"') && !html.includes('id="chat-eg"') && !html.includes('id="wc-reco"') && !html.includes('id="st-rows"') && !/ws\.chatExample/.test(html + appSrc)
     && ['class="wc-mark"', 'id="wc-cards"', 'id="chat-idea"', 'id="onb-lib"', 'id="chat-ns"', 'id="wl-fold"', 'id="wl"', 'id="onb-po"', 'id="onb-fin"', 'id="wf"'].every((x, i, a) => wcBox.includes(x) && (i === 0 || wcBox.indexOf(x) > wcBox.indexOf(a[i - 1]))));
+  { // 樣本外驗證分頁的根是 <div class="bt wf">(report-wf.js):別的 css 寫 .wf / .wf-* 選擇器就會一起套上去(0.1.27 起歡迎頁 F 的 .wf 把整個分頁置中)。
+    // 列舉 shell 底下每一支 css 的每一個選擇器;只有 report-wf.css 能用,app.css 那兩條共用清單(回合鎖灰鈕 .wf-go、原因行 .wf-cap)本來就是在指分頁裡的元素
+    const ALLOW = { "app.css": [".wf-cap", ".wf-go"] }, bad = [];
+    const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.name === "node_modules" ? [] : e.isDirectory() ? walk(path.join(d, e.name)) : /\.css$/.test(e.name) ? [path.join(d, e.name)] : []));
+    const files = walk(SHELL);
+    for (const f of files) {
+      const b = path.basename(f); if (b === "report-wf.css") continue;
+      const sel = read(f).replace(/\/\*[\s\S]*?\*\//g, "").split("}").map((x) => x.split("{").slice(0, -1).join(" ")).join(" ");
+      for (const m of sel.matchAll(/(?<![\w-])\.wf(?:-[\w-]+)?(?![\w-])/g)) if (!(ALLOW[b] || []).includes(m[0])) bad.push(b + ": " + m[0]);
+    }
+    ok("② 除了 report-wf.css,shell 的 css(列舉全部 " + files.length + " 支)沒有 .wf / .wf-* 選擇器(app.css 指分頁元素的 .wf-cap / .wf-go 兩條除外);歡迎頁 F 改叫 .wc-fin", files.length > 10 && bad.length === 0 && /\.wc-fin \{ margin: auto;/.test(css), bad.join(", ")); }
   { const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]), dup = ids.filter((x, i) => ids.indexOf(x) !== i);
     ok("② 入口籤的 id 不重複:index.html 每一個 id 都只出現一次(列舉全部 " + ids.length + " 個)", ids.length > 100 && dup.length === 0, dup.join(", ")); }
   ok("② 標題拿掉(Wei 10-19):沒有 .wc-head / h4.wc-h,兩語字串表與 .po 都沒有 workspace_wel_h;記號 svg.wc-mark 直接在 #wc 第一個;①的策略卡容器 role=group、aria-labelledby 指到步驟①的標題列、預設 hidden、在①的籤之前",
@@ -166,7 +177,7 @@ if (!process.versions.electron) {
     ok("② welcome.css(onboarding E/F):.wc-inner 子項靠左撐滿、最寬 760;記號 32 靠左;步驟內容內縮 32;①的卡與籤之間 12;F 的記號 104、實色 --color-watermark、不用 opacity;小標列與頁尾不內縮(同一條左軸)",
       /\.wc-mark \{ width: var\(--space-32\); color: var\(--ink\); align-self: flex-start; \}/.test(css) && !/\.wc-head|\.wc-h \{/.test(css)
       && /\.onb-body \.wc-cards \+ \.onb-opts \{ margin-top: var\(--space-12\); \}/.test(css) && /\.onb-body \{ padding-left: var\(--space-32\);/.test(css)
-      && /\.wf-mark \{ width: 104px; height: auto; flex: none; color: var\(--color-watermark\); \}/.test(css) && !/opacity/.test(css.replace(/\/\*[\s\S]*?\*\//g, ""))
+      && /\.wc-fin-mark \{ width: 104px; height: auto; flex: none; color: var\(--color-watermark\); \}/.test(css) && !/opacity/.test(css.replace(/\/\*[\s\S]*?\*\//g, ""))
       && /\.wl-top \{[^}]*padding: 0; \}/.test(css) && /\.wl-colh \{[^}]*padding: 0 0 var\(--space-8\); border-bottom: 0; margin-bottom: 0; \}/.test(css)
       && /\.wl-foot \{ display: flex; align-items: center; justify-content: space-between; gap: var\(--space-4\) var\(--space-16\); flex-wrap: wrap; margin-top: var\(--space-4\); padding: 0; \}/.test(css)
       && /\.wl-state \{ margin: 0; padding: 0; /.test(css) && /\.wl-foot > \.btn-quiet \{ display: inline-flex; align-items: center; min-height: 44px; color: var\(--ink-2\); \}/.test(css));
@@ -178,9 +189,9 @@ if (!process.versions.electron) {
       && /\.wd-row:hover \{ background: var\(--surface-muted\); \}/.test(css) && /\.wd-row:hover \.wd-mt \{ color: var\(--ink-2\); \}/.test(css) && /\.wd-row:hover::after \{ color: var\(--ink\); \}/.test(css)
       && /\.wd-row:focus-visible \{ outline-offset: -2px; \}/.test(css) && /prefers-reduced-motion: reduce\) \{ \.wd-row, \.wd-row::after, \.ln-arrow, \.wl-fold, \.wl-fold \.mp-chev, button\.onb-h \{ transition: none; \} \}/.test(css)
       && !/wd-go|"go"/.test(src));
-    ok("② 完整目錄退役:welcome.js / welcome.css / index.html 沒有目錄的程式與樣式(wdCatalog、WD.all、WD_NT、.wd-cat* / .wd-foot / .wd-tag、放寬 1040、一列一塊的 860 斷點),兩語 .po 與字串表沒有目錄的字(wd.less / wd.h.* / wd.src.* / wd.foot.* / wd.mk.txfo);容器查詢只有四條:兩欄清單 760、①策略卡一行排時先留高度 ≥640、兩排 640 與三排 420(0.1.27 卡片三欄 640 與起手句窄版 480 都退役)",
+    ok("② 完整目錄退役:welcome.js / welcome.css / index.html 沒有目錄的程式與樣式(wdCatalog、WD.all、WD_NT、.wd-cat* / .wd-foot / .wd-tag、放寬 1040、一列一塊的 860 斷點),兩語 .po 與字串表沒有目錄的字(wd.less / wd.h.* / wd.src.* / wd.foot.* / wd.mk.txfo);容器查詢只有五條:兩欄清單 760、①策略卡一行排時先留高度 ≥640、兩排 640、三排 420、窄於 260 整塊收起(0.1.27 卡片三欄 640 與起手句窄版 480 都退役)",
       !/wdCatalog|WD\.all|\ball:\s*(true|false)|WD_NT|wd-cat|wd-foot|wd-tag|wd\.less|wd\.h\.|wd\.src\.|wd\.foot\.|txfo|<table|"table"/.test(src + css + html.slice(html.indexOf('id="wl"'), html.indexOf("</section>", html.indexOf('id="wl"'))))
-      && !/1040px|859\.98|max-width: (?!(?:639|419)px\))\d+(\.\d+)?px\)/.test(css) && /@container \(min-width: 760px\) \{\s*\.wl-body\.cmp2/.test(css) && (css.match(/@container \([^)]*\)/g) || []).sort().join() === ["@container (min-width: 760px)", "@container (min-width: 640px)", "@container (max-width: 639px)", "@container (max-width: 419px)"].sort().join()
+      && !/1040px|859\.98|max-width: (?!(?:639|419|259)px\))\d+(\.\d+)?px\)/.test(css) && /@container \(min-width: 760px\) \{\s*\.wl-body\.cmp2/.test(css) && (css.match(/@container \([^)]*\)/g) || []).sort().join() === ["@container (min-width: 760px)", "@container (min-width: 640px)", "@container (max-width: 639px)", "@container (max-width: 419px)", "@container (max-width: 259px)"].sort().join()
       && !/msgid "wd\.(less|h\.|src\.|foot\.|mk\.txfo)/.test(po) && !/msgid "wd\.r\.[a-z0-9]+\.(nt|sn|us|wnm)"/.test(po));
     // 「看全部資料」:wdDocs 原文 + app.js 的 docsUrl 原文在純 node 跑;外開與埋點換成記錄器
     { const dl = /^const docsUrl = \(page\) => "https:\/\/blave\.org\/docs\/" \+ LANG \+ "\/" \+ page;$/m.exec(appSrc);

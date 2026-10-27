@@ -117,6 +117,7 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
     && /@container \(max-width: 639px\) \{\s*\.wc-card \{ grid-template-columns: minmax\(0, 1fr\) auto; grid-template-areas: "info info" "stats act";/.test(css)
     && /@container \(max-width: 419px\) \{\s*\.wc-card \{ grid-template-columns: minmax\(0, 1fr\); grid-template-areas: "info" "stats" "act";[^}]*\}\s*\.wc-card \.act \{ justify-self: start; \}/.test(css)
     && /\.ln-arrow:hover:not\(\[aria-disabled="true"\]\) \{ color: var\(--link-quiet-hover\); \}/.test(css) && /\.ln-arrow:hover:not\(\[aria-disabled="true"\]\) \.lbl \{ text-decoration: underline;/.test(css)
+    && /@container \(max-width: 259px\) \{ \.wc-cards \{ display: none; \} \}/.test(css)
     && /\.ln-arrow::before \{ content: ""; position: absolute; left: 0; right: 0; top: -6px; bottom: -6px; \}/.test(css) && /min-height: 32px/.test(css.slice(css.indexOf(".ln-arrow {")))
     && !/\.st-row|\.tag\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, "")));
   // 骨架→真卡不跳版:骨架拿樣板策略走 wcCard 原樣建(同斷行),字換透明條;真卡的名字區只在一行排(≥640)先留名字一行＋meta 兩行(兩排時不留,設計稽核 D2)
