@@ -254,32 +254,80 @@ def _strategy_phrase(names):
     return f"{names[0]} 等 {len(names)} 支策略的 "
 
 
+# HALT reason prefix for an unknown outcome Blave cannot track: the pages and api notify read
+# it (and the symbol after it) to say it in words — the English rest never reaches the user
+UNPARKED_TAG = '[order_unconfirmed_unparked]'
+# orders whose park entry could not be written (a full disk): retried every round, their
+# symbols held in this process meanwhile — 啟動下單 on the same live process cannot resend
+# them; a restart forgets them (canon notifications §3: what a full disk still risks)
+_park_retry = []
+
+
 def park_or_halt(symbol, exchange, error, signed_diff, reduce_only, asset_spec=None,
                  contributors=None):
-    """An order whose outcome is unknown (lib/unconfirmed.OrderOutcomeUnknown): park it, or —
-    when it carries no ids to look it up with, or the park file cannot be written (a full
-    disk) — HALT, like a lost orders.jsonl line (_append_reconciler_log). Either way it
-    is never reported as a rejection: that would let the next round send it again.
+    """An order whose outcome is unknown (lib/unconfirmed.OrderOutcomeUnknown). Never reported
+    as a rejection — that would let the next round send it again.
+    - It carries the ids to look it up: parked; its symbol takes no entries until it is known.
+    - It does not (no ids, or a venue / order type with no lookup): parked as manual — the
+      symbol is held across 啟動下單 and resolve() can book it — and the whole machine HALTs
+      (Wei 10-27: decision 2 A), since nothing will ever settle it by itself.
+    - The park file cannot be written (a full disk): HALT; kept in memory and re-parked as
+      soon as the file can be written.
     Returns 'parked' or 'halted'."""
     names = _strategy_names(contributors)
-    if error.parkable():
-        try:
-            _unconfirmed.park(symbol, error, signed_diff, reduce_only, asset_spec, contributors,
-                              netted_room=getattr(error, 'netted_room', 0.0),
-                              netted_exit=getattr(error, 'netted_exit', False))
-        except Exception as e:
-            logging.error(f"[reconcile] {symbol}: could not park the unconfirmed order ({e})")
-        else:
-            _record_order_error(symbol, exchange, error,
-                                extra={'kind': 'order_unconfirmed', 'strategies': names})
-            return 'parked'
-    reason = (f"{symbol}: an order's outcome is unknown and could not be parked "
-              f"({str(error)[:60]}) — check the position on the exchange before resuming")
+    manual = not error.parkable()
+    pid = None
+    args = (symbol, error, signed_diff, reduce_only, asset_spec, contributors)
+    kw = {'netted_room': getattr(error, 'netted_room', 0.0),
+          'netted_exit': getattr(error, 'netted_exit', False), 'manual': manual}
     try:
-        guard.trip_halt(reason[:200], 'reconciler')
+        pid = _unconfirmed.park(*args, **kw)
+    except Exception as e:
+        logging.error(f"[reconcile] {symbol}: could not park the unconfirmed order ({e}) — HALT")
+        _park_retry.append((args, kw, exchange, names))
+    if pid and not manual:
+        _record_order_error(symbol, exchange, error,
+                            extra={'kind': 'order_unconfirmed', 'strategies': names, 'park_id': pid})
+        return 'parked'
+    reason = (f"{UNPARKED_TAG} {symbol}: an order's outcome is unknown and Blave cannot track it "
+              f"({str(error)[:60]}) — check the position, tell the agent what filled")
+    try:
+        guard.trip_halt(reason[:200], 'reconciler', unconfirmed={'symbol': symbol, 'park_id': pid})
     except Exception as e:  # the in-memory flag is set first (lib/guard)
         logging.error(f"[reconcile] HALT for the unparked order did not persist: {e}")
     return 'halted'
+
+
+def _retry_parks():
+    """Re-park what a full disk refused; the keys still waiting are held like parked ones."""
+    left = []
+    for args, kw, exchange, names in _park_retry:
+        try:
+            _unconfirmed.park(*args, **kw)
+        except Exception:
+            left.append((args, kw, exchange, names))
+    _park_retry[:] = left
+    return {a[0] for a, _, _, _ in left}
+
+
+def mark_park_released(pid, filled):
+    """The order_errors rows of a park that was settled get released / filled, so the pages
+    stop painting 暫停開倉 for it and the platform logs the release (P3). Best-effort."""
+    try:
+        path = 'manager/order_errors.json'
+        rows = _order_errors_for_update(path)
+        hit = [r for r in rows or [] if isinstance(r, dict) and r.get('park_id') == pid]
+        if not hit:
+            return
+        now = datetime.utcnow().isoformat()
+        for r in hit:
+            r.update(released=True, released_at=now, filled=bool(filled))
+        tmp = f'{path}.{os.getpid()}.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(rows[-5:], f, indent=2)
+        atomic_replace(tmp, path)
+    except Exception as e:
+        logging.warning(f'failed to mark park {pid} released: {e}')
 
 
 def _booked_park_ids():
@@ -326,21 +374,22 @@ def _settle_parked(query=None, now=None):
     trade this round. One order's trouble keeps only that order parked."""
     if _unconfirmed is None:
         return {}
+    waiting = _retry_parks() if _park_retry else set()
     try:
         rows = _unconfirmed.load()
     except _unconfirmed.ParkUnreadable as e:
         logging.error(f"[reconcile] {e} — no orders this round")
         return None
     if not rows:
-        return {}
+        return {k: float('inf') for k in waiting}
     if query is None:
         from lib.venue_wiring import query_parked_order as query
     now = time.time() if now is None else now
-    held = {}
+    held = {k: float('inf') for k in waiting}
     for pid, entry in rows.items():
         key = entry.get('key') if isinstance(entry, dict) else None
         try:
-            res = query(entry)
+            res = None if entry.get('manual') else query(entry)
             if res is not None:
                 qty, price = res
 
@@ -349,6 +398,7 @@ def _settle_parked(query=None, now=None):
                         book_unconfirmed(e['key'], e, qty, price, source='venue', pid=pid)
 
                 if _unconfirmed.settle(pid, _book):
+                    mark_park_released(pid, qty > 0)
                     guard.audit('order_unconfirmed_resolved', symbol=key, park_id=pid,
                                 executed_qty=qty)
                     logging.info(f"[reconcile] parked {key} {pid} resolved: filled {qty:g}")
@@ -364,7 +414,7 @@ def _settle_parked(query=None, now=None):
                     key, entry.get('venue'),
                     f"order {pid} outcome still unknown — new entries on this symbol stay "
                     f"paused; check the position on the venue",
-                    extra={'kind': 'order_unconfirmed', 'stuck': True,
+                    extra={'kind': 'order_unconfirmed', 'stuck': True, 'park_id': pid,
                            'strategies': _strategy_names(entry.get('contributors'))})
         except Exception as e:
             logging.error(f"[reconcile] parked {key} {pid}: {type(e).__name__}: {e} — kept parked")

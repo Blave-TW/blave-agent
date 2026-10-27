@@ -130,9 +130,12 @@ def held_keys(rows):
 
 
 def park(key, err, signed_diff, reduce_only, asset_spec=None, contributors=None, now=None,
-         netted_room=0.0, netted_exit=False):
-    """Raises OSError when the file cannot be written — the caller HALTs then."""
-    pid = park_id(err)
+         netted_room=0.0, netted_exit=False, manual=False):
+    """Raises OSError when the file cannot be written — the caller HALTs then. manual=True: an
+    order Blave cannot look up (no ids, or a venue / order type without a lookup): parked all the
+    same so its symbol stays held after 啟動下單 and resolve() can book it, but never queried."""
+    pid = (f"manual:{key}:{int((time.time() if now is None else now) * 1000)}" if manual
+           else park_id(err))
     with _locked():
         rows = _read()
         rows[pid] = {
@@ -144,7 +147,7 @@ def park(key, err, signed_diff, reduce_only, asset_spec=None, contributors=None,
             "netted_room": float(netted_room or 0), "netted_exit": bool(netted_exit),
             "parked_at": time.time() if now is None else now,
             "at": datetime.utcnow().isoformat(), "reads": 0, "reminded_at": None,
-            "error": str(err)[:200],
+            "error": str(err)[:200], "manual": bool(manual),
         }
         _write(rows)
     return pid
@@ -229,8 +232,10 @@ def resolve(symbol, filled_qty, avg_price=None):
         return market_key(sym.replace("-", "").upper(), market)
 
     rows = load()
+    want = canon(symbol)
     hits = sorted(((e.get("parked_at") or 0, pid) for pid, e in rows.items()
-                   if canon(e.get("key")) == canon(symbol) or e.get("venue_symbol") == symbol))
+                   if canon(e.get("key")) == want or e.get("venue_symbol") == symbol
+                   or split_key(canon(e.get("key")))[0] == split_key(want)[0] == want))
     if not hits:
         raise KeyError(f"{symbol} has no parked order")
     pid = hits[0][1]
@@ -242,5 +247,7 @@ def resolve(symbol, filled_qty, avg_price=None):
 
     if not settle(pid, book):
         raise KeyError(f"{symbol}: the parked order was settled meanwhile")
+    from lib.portfolio import mark_park_released
+    mark_park_released(pid, filled_qty > 0)
     logging.info(f"[unconfirmed] {entry['key']} park {pid} resolved by the user: filled {filled_qty:g}")
     return entry

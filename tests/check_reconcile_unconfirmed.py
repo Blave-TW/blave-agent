@@ -230,15 +230,55 @@ unconfirmed.park = keep_park
 check(guard.halted() and marker(), f"park file not writable: HALT, inflight marker kept (halted {guard.halted()}, marker {marker()})")
 check(not [r for r in rows() if "X4" in str(r.get("error")) and not r.get("kind")],
       "…and not recorded as a rejection")
-guard.clear_halt("test")
+MODE["raise"] = None
+check("X4" not in parked() and round_() == 0,
+      "…and the next round sends nothing for it (re-parked from memory first)")
+n = round_()
+check("X4" in parked(), "once the file can be written again it is parked from memory")
+guard.clear_halt("test")   # 啟動下單
 for f in os.listdir("state/execution/inflight"):
     os.remove(os.path.join("state/execution/inflight", f))
+check(round_() == 0, "啟動下單 after that HALT: the same entry is not sent again (still parked)")
+unconfirmed.resolve("2330", 0)
+
 MODE["raise"] = NotConfirmed("no ids at all")
 round_()
-check(guard.halted(), "an unknown outcome without ids: HALT")
-guard.clear_halt("test")
+MODE["raise"] = None
+h = json.load(open(guard.HALT_PATH))
+man = [e for pid, e in parked().items() if pid.startswith("manual:")]
+check(guard.halted() and h["reason"].startswith(portfolio.UNPARKED_TAG + " " + KEY)
+      and h.get("unconfirmed", {}).get("park_id", "").startswith("manual:"),
+      f"an unknown outcome without ids: HALT, tagged reason, the park id in the HALT file ({h})")
+check(len(man) == 1 and man[0]["key"] == KEY, "…recorded as a manual park so it can be accounted for")
+guard.clear_halt("test")   # 啟動下單 before the user answered
 for f in os.listdir("state/execution/inflight"):
     os.remove(os.path.join("state/execution/inflight", f))
+check(round_() == 0, "啟動下單 before resolving: the entry is not resent")
+n_rows = len(rows())
+unconfirmed.resolve("2330", 0)
+check(round_() == 1, "after resolve(symbol, 0) the next round trades it")
+
+# ── a released park: its rows say so (the pages stop painting 暫停開倉) ───────
+MODE["raise"] = unknown("X7")
+amount(96_000)
+round_()
+MODE["raise"] = None
+r7 = [r for r in rows("order_unconfirmed") if r.get("park_id") == "X7"]
+check(len(r7) == 1 and not r7[0].get("released"), "a parked order's row carries its park id")
+ANSWER["res"] = (0.0, 0.0)
+round_()
+ANSWER["res"] = None
+r7 = [r for r in rows("order_unconfirmed") if r.get("park_id") == "X7"]
+check(r7 and r7[0].get("released") is True and r7[0].get("filled") is False and r7[0].get("released_at"),
+      f"auto-released (nothing filled): row marked released, filled false ({r7})")
+MODE["raise"] = unknown("X8")
+amount(128_000)
+round_()
+MODE["raise"] = None
+unconfirmed.resolve("2330", 1.0, 75.0)
+r8 = [r for r in rows("order_unconfirmed") if r.get("park_id") == "X8"]
+check(r8 and r8[0].get("released") is True and r8[0].get("filled") is True,
+      f"resolved by the user with a fill: row marked released, filled true ({r8})")
 
 # ── a plain rejection: strategy names, no kind, nothing parked ───────────────
 MODE["raise"] = RuntimeError("insufficient paper cash (1 < 2)")
