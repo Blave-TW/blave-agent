@@ -1131,6 +1131,8 @@ function trErrToken(err) {
   const e = String(err == null ? "" : err);
   // Bitget 40092(地區／帳戶資格):lib 照樣標 symbol_unavailable(舊外殼走 tr.err.symbol),後面多一個固定標記——要先認,不然被通用那條吃掉
   if (/\[bitget_account_eligibility\]/.test(e)) return "bitget_account_eligibility";
+  // Bitget 40731(跟單金鑰):lib 標 key_permission 加這個標記,同上要先認,不然講成「交易所拒絕這把金鑰」、不知道要換哪種金鑰
+  if (/\[bitget_copy_trading_key\]/.test(e)) return "bitget_copy_trading_key";
   // Bitget 統一帳戶還沒開放:lib 標 key_permission,不先認會講成「交易所拒絕這把金鑰」(同 cloudcmd 的 MODE_UNVERIFIED 判法)
   if (/\[bitget_account_mode:uta\]/.test(e) && BITGET_VERIFIED_MODES.indexOf("uta") < 0) return "bitget_uta_unsupported";
   // lib/order_reject 的拒單分類(spec-0.1.13-order-copy #14):lib 放在最前面、六種之一;舊 lib 沒有 → 照舊認下面那兩個或原文
@@ -1142,7 +1144,8 @@ function trErrToken(err) {
 // 拒單分類 → 那一句的 key(每句自己帶標的)
 const TR_REJECT_TEXT = { insufficient_margin: "tr.err.margin", below_min_size: "tr.err.minSize", symbol_unavailable: "tr.err.symbol",
   key_permission: "tr.err.key", reduce_only_rejected: "tr.err.reduceOnly", paper_margin: "tr.err.paperMargin",
-  bitget_account_eligibility: "tr.err.bitgetEligibility", bitget_uta_unsupported: "tr.err.bitgetUta" };
+  bitget_account_eligibility: "tr.err.bitgetEligibility", bitget_uta_unsupported: "tr.err.bitgetUta",
+  bitget_copy_trading_key: "tr.err.bitgetCopyKey" };
 /* 拒單原文 → { kind, … }:lib 的 token 先認;lib/order_paper.py 比對英文原文是權宜(之後 order_errors[] 有 code 欄位就改認 code)。比不到回 null */
 function trOrderErrParse(err) {
   const tok = trErrToken(err);
@@ -4576,6 +4579,7 @@ function trPaintSet() {
     if (!ro && trPresLoginStopped(r, id)) box.appendChild(errLine(t("cx.presStopped")));
     // 帳戶模式擋下(Bitget 統一帳戶還沒開放;OKX 不支援合約):讀帳戶就會擋,講怎麼改,不出原文
     else if (trErrToken(ae.msg) === "bitget_uta_unsupported") box.appendChild(errLine(t("cx.err.bitgetUtaBound")));
+    else if (trErrToken(ae.msg) === "bitget_copy_trading_key") box.appendChild(errLine(t("cx.err.bitgetCopyKeyBound")));
     else if (trErrToken(ae.msg) === "okx_account_mode") box.appendChild(errLine(t("cx.err.okxMode")));
     // 列上已有「串接失敗」記號與交易所名:這一行只留原因,有階段代碼才帶括號(設計稽核 desktop-10-08 #5)
     else box.appendChild(errLine(ae.stage === "—" ? ae.msg.slice(0, 200) : t("cx.fail", { stage: ae.stage, msg: ae.msg.slice(0, 200) })));
@@ -5332,6 +5336,7 @@ function cxChkTextVenue(r) {
   if (c === "INCOMPLETE_PAIR") return CX_VENUES[CXF.venue] && CX_VENUES[CXF.venue].pass ? t("cx.chk.incompletePass") : t("cx.chk.incomplete");
   if (c === "MODE_UNVERIFIED") return d.mode === "uta" ? t("cx.err.bitgetUta") : t("cx.err.bitgetClassic");
   if (c === "REJECTED" && trErrToken(d.reason) === "bitget_uta_unsupported") return t("cx.err.bitgetUta");
+  if (c === "REJECTED" && trErrToken(d.reason) === "bitget_copy_trading_key") return t("cx.err.bitgetCopyKey");
   if (c === "REJECTED") return trErrToken(d.reason) === "okx_account_mode" ? t("cx.err.okxMode") : t("cx.chk.rejectedV", { venue: name, reason: String(d.reason || "—").slice(0, 200) });
   if (c === "UNKNOWN") return t("cx.chk.unknownV", { venue: name });
   if (c === "NO_CHECK") return t("cx.chk.noCheckV", { venue: name });
@@ -5368,7 +5373,8 @@ function cxChkTextCloud(r) {
     : c === "BAD_SECRET" ? t("cx.chk.secret") : c === "CLOCK" ? t("cx.chk.clockCloud") : c === "NETWORK" ? t("cx.chk.networkCloud")
     : c === "RATE_LIMITED" ? t("cx.chk.rateCloud") : c === "RATE_BANNED" ? t("cx.chk.bannedCloud") : c === "RATE_BACKOFF" ? t("cx.chk.backoffCloud")
     : c === "REJECTED" ? (trErrToken(d.error) === "okx_account_mode" ? t("cx.err.okxMode")
-      : trErrToken(d.error) === "bitget_uta_unsupported" ? t("cx.err.bitgetUta") : t("tr.cloud.cmdRejected", { err: String(d.error || "—").slice(0, 200) }))
+      : trErrToken(d.error) === "bitget_uta_unsupported" ? t("cx.err.bitgetUta")
+      : trErrToken(d.error) === "bitget_copy_trading_key" ? t("cx.err.bitgetCopyKey") : t("tr.cloud.cmdRejected", { err: String(d.error || "—").slice(0, 200) }))
     : c === "CMD_UNKNOWN" ? t("tr.cloud.cxUnknown")
     : c === "UNDELIVERED" ? (trSendError({ error: d.error, kind: d.kind || "undelivered", machineState: d.machineState }, "connect", "cloud") || t("side.stopped"))
     : t("cx.chk.unknown");
