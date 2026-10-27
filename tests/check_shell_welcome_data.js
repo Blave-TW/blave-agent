@@ -350,7 +350,7 @@ app.whenReady().then(async () => {
       html: $("wl").innerHTML, old: $("wl").querySelectorAll("table, .wd-catw, .wd-cat, .wd-foot, .wd-tag").length, ext: window.__ext.slice(),
       ta: $("ta").value, msgs: $("chat-scroll").querySelectorAll(".msg").length, running, tf: window.__tf.slice() }; })()`);
   const paint = (code) => js(`(() => { ${code}; WD.key = ""; wdPaint(); return true; })()`);
-  const Z = STR.zh, DAY = 86400000;
+  const Z = STR.zh, E = STR.en, DAY = 86400000;
   const askB = (L, id) => String(STR[L]["wd.ask.build"]).replace("{name}", STR[L]["wd.r." + id + ".an"]);
   // 起手句版:整頁等第一次清單讀完才出現(stub 的 listStrategies 回空陣列);三列起手句;資料摺疊預設收起,點了才展開並記 wd_fold_open
   { const f0 = await js(`({ wc: $("wc").hidden, wl: $("wl").hidden, exp: $("wl-fold").getAttribute("aria-expanded"), loaded: RP.loaded === true, cards: $("wc-cards").hidden, tf: window.__tf.slice() })`);
@@ -463,6 +463,24 @@ app.whenReady().then(async () => {
     const c2 = await wcGeo();
     await js(`(() => { $("main-empty").style.maxWidth = ""; return true; })()`);
     ok("③ 中欄壓到 440(內容 < 420):①的卡三排——名字、數字、CTA 各一排,CTA 靠左(貼卡內距 12)、不溢出", c2.w - 48 < 420 && c2.rows.length === 2 && c2.rows.every((x) => x.sT >= x.iB - 0.5 && x.aT >= x.sB - 0.5 && Math.abs(x.aL - 12) < 0.6 && x.over <= 0), JSON.stringify(c2));
+    // en 的標籤最長(Annual Return / Max Drawdown,lib.kv.ann / lib.kv.mdd 跟策略庫共用):1024 與中欄壓到 440 都量一次——
+    // 每格標籤 scrollWidth ≤ clientWidth(不截斷)、單行(高 ≤ 1.5 行高)、不超出卡的內距;卡不橫向溢出;排法照 zh 那兩條
+    const enGeo = () => js(`(() => { const cards = [...$("wc-cards").querySelectorAll(".wc-card")];
+      return cards.map((c) => { const cr = c.getBoundingClientRect(), pr = parseFloat(getComputedStyle(c).paddingRight);
+        return { over: c.scrollWidth - c.clientWidth, ks: [...c.querySelectorAll(".wc-stat .k")].map((k) => { const r = k.getBoundingClientRect(), lh = parseFloat(getComputedStyle(k).lineHeight);
+          return { t: (k.querySelector(".mp-tip") || k).textContent, cut: k.scrollWidth - k.clientWidth, h: r.height, lh, out: r.right - (cr.right - pr) }; }) }; }); })()`);
+    await js(`(() => { setLang("en"); applyStatic(); LIB.data = { strategies: ${JSON.stringify(WC_LIST)}, signedIn: false, dataAccess: null, why: null, lang: LANG }; WC.key = null; wcPaint(); return true; })()`);
+    w.setSize(1024, 900); await wait(400);
+    const e1 = await wcGeo(), k1 = await enGeo();
+    await js(`(() => { $("main-empty").style.maxWidth = "440px"; return true; })()`); await wait(100);
+    const e2 = await wcGeo(), k2 = await enGeo();
+    await js(`(() => { $("main-empty").style.maxWidth = ""; setLang("zh"); applyStatic(); return true; })()`); w.setSize(1000, 900); await wait(300);
+    const labOk = (k) => k.length === 2 && k.every((c) => c.over <= 0 && c.ks.length === 3 && c.ks[0].t === E["lib.kv.ann"] && c.ks[2].t === E["lib.kv.mdd"]
+      && c.ks.every((x) => x.cut <= 0 && x.h <= x.lh * 1.5 && x.out <= 0.5));
+    ok("③ en 1024:①的卡 Annual Return / Max Drawdown 不截斷、不換行、不超出卡;名字｜數字｜CTA 不重疊、卡不溢出", E["lib.kv.ann"] === "Annual Return" && E["lib.kv.mdd"] === "Max Drawdown" && labOk(k1)
+      && e1.rows.every((x) => (x.sL >= x.iR - 0.5 || x.sT >= x.iB - 0.5) && (x.aX >= x.sR - 0.5 || x.aT >= x.sB - 0.5) && x.over <= 0), JSON.stringify([e1, k1]));
+    ok("③ en 中欄壓到 440:三排(名字、數字、CTA)、CTA 貼內距 12;Annual Return / Max Drawdown 不截斷、不換行、不超出卡", e2.w - 48 < 420 && E["lib.kv.ann"] === "Annual Return" && E["lib.kv.mdd"] === "Max Drawdown" && labOk(k2)
+      && e2.rows.every((x) => x.sT >= x.iB - 0.5 && x.aT >= x.sB - 0.5 && Math.abs(x.aL - 12) < 0.6 && x.over <= 0), JSON.stringify([e2, k2]));
     await js(`(() => { LIB.data = null; WC.key = null; wcPaint(); return true; })()`); }
   w.setSize(1600, 900); await wait(400);
   // 台指期:免費欄是日線那一列(期交所),分線在 Blave 欄
