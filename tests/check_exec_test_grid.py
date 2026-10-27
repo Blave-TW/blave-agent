@@ -372,12 +372,40 @@ sp.write_text(json.dumps(doc))
 legacy, _ = backtest(rcfg, FULL, trend, **LIVE, **{XT: "0"})
 check(XK not in legacy, "a block without code_hash (10-26-e) is dropped on the next run that does not compute")
 
+# the requested compute fails: the same-code block already in stats.json stays (the page calls it stale)
+kcfg = strat("fa_keep")
+kept0, _ = backtest(kcfg, SHORT, trend, **BUTTON)
 real_cell = runner._exec_cell
 runner._exec_cell = lambda *a, **k: 1 / 0
 try:
+    kept1, _ = backtest(kcfg, FULL, trend, **BUTTON)
     broken, _ = backtest(strat("fa_broken"), lambda h: DA.copy(), trend, **BUTTON)
 finally:
     runner._exec_cell = real_cell
+check(kept0.get(XK) and kept1.get(XK) == kept0[XK], "the button's compute fails, same code: the previous block is kept, not dropped")
+
+# the old block is read under the results lock, right before the write: a refresh landing while this run
+# computed (MCPT takes tens of seconds) is what gets carried, not the file as it was when the run started
+landed = dict(kept0[XK], position_changes=987654)
+real_lock = runner._results_lock_for
+
+
+@contextlib.contextmanager
+def lock_after_refresh(*a, **k):
+    doc = json.loads((WS / "strategies" / "fa_keep" / "stats.json").read_text())
+    doc[XK] = landed
+    (WS / "strategies" / "fa_keep" / "stats.json").write_text(json.dumps(doc))
+    with real_lock(*a, **k):
+        yield
+
+
+runner._results_lock_for = lock_after_refresh
+try:
+    raced, _ = backtest(kcfg, FULL, trend)
+finally:
+    runner._results_lock_for = real_lock
+check((raced.get(XK) or {}).get("position_changes") == 987654,
+      "carry-over reads the file under the results lock (the block a refresh wrote meanwhile survives)")
 check(runner.EXEC_TEST_KEY not in broken and broken.get("Sharpe Ratio") is not None,
       "a failing exec_test drops only its key; the backtest's stats.json is still written")
 

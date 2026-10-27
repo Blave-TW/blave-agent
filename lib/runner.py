@@ -508,6 +508,16 @@ def _exec_test_kept(out_dir, src0):
     return None
 
 
+def _keep_exec_test(stats, out_dir, src0):
+    """Not computed this run, or the requested compute failed: keep the same-code block from the
+    file about to be replaced. Read under the results lock, right before the write — read any
+    earlier and a refresh that landed meanwhile (MCPT takes tens of seconds) is written back over."""
+    if EXEC_TEST_KEY not in stats:
+        kept = _exec_test_kept(out_dir, src0)
+        if kept:
+            stats[EXEC_TEST_KEY] = kept
+
+
 def _build_levels(raw):
     """opts["levels"] → stats.json panes[].levels (horizontal threshold lines).
 
@@ -2545,7 +2555,7 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         pf_series = pd.Series(pf_ret, index=df.index)
         sharpe, sortino, omega, mdd_raw, _ = compute_stats(pf_ret, df.index)
         exec_test = (_exec_test_stamped(_exec_test(close_v, open_v, w_curr, exec_shifted, fee, df.index), src0)
-                     if _exec_test_wanted(mode, refresh) else _exec_test_kept(out_dir, src0))
+                     if _exec_test_wanted(mode, refresh) else None)
 
         total_ret  = float(np.prod(1 + np.nan_to_num(pf_ret)) - 1) * 100
         mdd        = -abs(mdd_raw) * 100  # drawdown is a loss from peak → always ≤ 0
@@ -2718,6 +2728,7 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                 return
             if mode == 'backtest':
                 _index_readable_or_raise(strategy_name)
+            _keep_exec_test(stats, out_dir, src0)
             _write_stats(out_dir, stats)
             _write_preview(out_dir, backtest_state, src0)
             if mode == 'backtest':
@@ -2827,7 +2838,7 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         total_ret = pf_equity[-1] - 1
         sharpe, sortino, omega, mdd, ann_ret = compute_stats(pf_ret, close_df.index)
         exec_test = (_exec_test_stamped(_exec_test(close_v, open_v, w_curr, exec_shifted_c, fee, close_df.index), src0)
-                     if _exec_test_wanted(mode, refresh) else _exec_test_kept(out_dir, src0))
+                     if _exec_test_wanted(mode, refresh) else None)
 
         n_trades = count_trades(delta_w)
 
@@ -2908,6 +2919,7 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                 return
             if mode == 'backtest':
                 _index_readable_or_raise(strategy_name)
+            _keep_exec_test(stats, out_dir, src0)
             _write_stats(out_dir, stats)
             _write_preview(out_dir, backtest_state, src0)
             if mode == 'backtest':
