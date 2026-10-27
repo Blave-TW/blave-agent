@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **投資組合回報帶 runtime 與 workspace 版號(`portfolio_reporter.build_report` 多兩個頂層欄位 `runtime_version`、`workspace_version`;desktop 0.1.34)**:雲端回報原本沒有任何版號,`publish.py promote` 之後看不出機隊換上新版了沒。`runtime_version` 是這支程式 import 時讀到的 `runtime/VERSION`(常駐的 web／telegram bridge 報的是自己正在跑的那版,不是更新器之後放到磁碟上的);`workspace_version` 每份回報重讀 workspace `VERSION`;讀不到都是 `null`,不擋回報。三個發送點(timer `main()`、`web_bridge`、`telegram_bridge`)都經過 `build_report()`,所以每份都帶。api 原樣存、不用改;機隊統計用 api `python -m openclaw.fleet_versions`(唯讀)。電腦版 `local_status.json` 也會多這兩欄,上傳時被 `desktop_portfolio.ALLOWED_KEYS` 丟掉,那條路照舊看 `daemon.version`。測試 `tests/check_report_versions.py`(新;舊碼 3 條紅)。
+
 ## 1.1.143 — 2026-10-26(desktop 0.1.33;canary:29026、uid=1)
 
 - **Bitget 翻開經典帳戶與統一帳戶(desktop 0.1.33)**(`venue_traits` 的 `bitget` `verified_modes` = `("classic", "uta")`;經典 2026-10-22、統一帳戶 T1–T12 真帳驗過,T11c 停損 10-26 補驗):`account_reader` 讀 Bitget、`local_daemon` 放行 `BITGET`、電腦版連接框兩個視角都列 Bitget(`cloudcmd.BITGET_VERIFIED_MODES` 同值,兩種都開所以連接框不再講「只收經典帳戶」)、聊天綁定收 `bitget`。broker attribution 還是空的(`BROKER_CHANNEL_CODE`)。測試 `tests/check_bitget_lib.py`、`tests/check_bitget_surfaces.py`、`tests/check_venue_traits.py`、`tests/check_shell_connect_venues.js`、`tests/check_desktop_venue_env.py`、`tests/check_local_real_key_gate.py`。

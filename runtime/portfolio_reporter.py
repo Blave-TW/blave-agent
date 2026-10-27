@@ -101,6 +101,19 @@ def _mtime(path):
         return None
 
 
+def _version_file(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read(64).strip() or None
+    except (OSError, ValueError):
+        return None
+
+
+# Read once at import: a long-lived bridge that sends this report must say which
+# code it is running, not what the updater has since put on disk.
+RUNTIME_VERSION = _version_file(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION"))
+
+
 # Type A/C strategies picked in 下單設定 have NO crontab line and NO scheduled
 # task — command_listener's in-process scheduler runs them and records them
 # here instead (its _sync_deployment_registry / _prune_deployment_registry run
@@ -2182,6 +2195,10 @@ def build_report():
         # except when 群益 is the only venue it could close and this identity
         # can't log in to SKCOM (see can_flatten()).
         "platform": platform.system(),
+        # fleet adoption after a runtime promote / workspace update (api openclaw.fleet_versions);
+        # None = file unreadable. The desktop's daemon.version is the same runtime file.
+        "runtime_version": RUNTIME_VERSION,
+        "workspace_version": _version_file(os.path.join(WORKSPACE, "VERSION")),
         "can_flatten": can_flatten(vens),
         # self_ledger: whether this machine diffs against the bot's own book —
         # the web's stop dialog phrases what 「關閉 bot 部位」actually closes
