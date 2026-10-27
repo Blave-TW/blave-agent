@@ -246,7 +246,15 @@
     const go = el("button", "btn-fill", opts.t("minv.btn"));
     go.type = "button";
     go.addEventListener("click", () => { if (typeof opts.onUpdate === "function") opts.onUpdate(go); });
-    const line = el("p", lead ? "rob-empty-txt" : "xt-busy-line", opts.t("xt.behind"));
+    let line;
+    if (lead) line = el("p", "rob-empty-txt", opts.t("xt.behind"));
+    else {   // 結果頁:同鈕下那一行的元件(灰記號),搬到頂列後面那一列
+      line = el("p", "upd-fail is-calm");
+      line.dataset.xtLine = "1";
+      const m = el("span", "fault-mark");
+      m.setAttribute("aria-hidden", "true");
+      line.append(m, el("span", null, opts.t("xt.behind")));
+    }
     if (lead) box.append(line, go); else box.append(go, line);
     return box;
   }
@@ -397,6 +405,14 @@
     const c = xtCell(opts, cell, stale ? "stale" : "fresh");
     if (c) top.appendChild(c);
     root.appendChild(top);
+    // 鈕下那一行(落後、BUSY、失敗、回合中的原因)在頂列後面自成一列(同 web、同回測數據的失敗行):放進頂列會把 meta 往下推
+    const lines = el("div", "xt-lines"), anchor = el("span", "xt-lines-anchor");
+    lines.id = "xt-lines";
+    anchor.id = "xt-lines-anchor";
+    anchor.hidden = true;
+    lines.appendChild(anchor);
+    if (c) (c.children ? Array.from(c.children) : c.kids || []).filter((n) => n.dataset && n.dataset.xtLine).forEach((n) => lines.appendChild(n));
+    root.appendChild(lines);
     if (collapsed) return;
     const v = xtVerdict(x), ctx = { container, data, opts };
     const card = el("div", "rob-card xt-card");
@@ -410,7 +426,22 @@
   }
 
   window.BlaveReport = window.BlaveReport || {};
-  window.BlaveReport.renderXt = function (container, data, opts) { paint(container, data, opts || {}); };
+  /* 整片重畫(資料推來、這頁按的那次開始／結束)會把焦點所在的節點拿掉:表頭切指標鈕交還同一顆,鈕那一格交還新的鈕(停用時交給那一格),
+   * 不掉到 <body>、也不從表頭搶到別處 */
+  window.BlaveReport.renderXt = function (container, data, opts) {
+    const a = typeof document !== "undefined" ? document.activeElement : null;
+    const inside = !!a && typeof container.contains === "function" && container.contains(a);
+    const pick = inside && a.dataset && a.dataset.xtSec ? [a.dataset.xtSec, a.dataset.xtKey] : null;
+    const inCell = inside && !pick && typeof a.closest === "function" && !!a.closest("[data-xt-upd]");
+    paint(container, data, opts || {});
+    if (pick) {
+      const nb = container.querySelector('button[data-xt-sec="' + pick[0] + '"][data-xt-key="' + pick[1] + '"]');
+      if (nb) nb.focus();
+    } else if (inCell) {
+      const cell = container.querySelector("[data-xt-upd]"), b = cell && cell.querySelector("[data-perf-btn]");
+      if (b && !b.disabled) b.focus(); else if (cell) cell.focus();
+    }
+  };
   // 純計算函式掛出來給核對腳本用(tests/check_shell_xt.js);畫面不靠這個
   window.BlaveReport._xt = { XT_TH, XT_LAGS, XT_COSTS, XT_COST_SAY, xtSanitize, xtVerdict, xtCloseFill, xtLagRange, xtCostRange, xtBreakeven, xtFeeDp, xtStale, xtPageOf, xtCellOf };
 })();

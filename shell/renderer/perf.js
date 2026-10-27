@@ -153,40 +153,51 @@ function perfXtSlot(B, kind) {
   const btn = pfEl("button", kind === "fresh" ? "btn-out" : "btn-fill"); btn.type = "button"; btn.dataset.perfBtn = "1"; btn.dataset.xtBtn = "1";
   const tip = t("xt.btnTip"); btn.title = tip; btn.dataset.tip = tip;   // 回合中 perfBusy 會暫時換成原因,所以另存一份
   if (st.kind === "running") {
-    btn.disabled = true; box.setAttribute("role", "status");
+    // 跑的期間鈕停用:焦點交給這一格(role=status、tabindex -1,同 web 的狀態節點),不帶回分頁列
+    btn.disabled = true; box.setAttribute("role", "status"); box.setAttribute("tabindex", "-1");
     const sp = pfEl("span", "spin16"); sp.setAttribute("aria-hidden", "true");
     btn.append(sp, pfEl("span", "", t(info.mine === "run" ? "xt.btnBusy" : "perf.busy")));
   } else btn.textContent = t(box.dataset.xtKind === "empty" ? "xt.btnRun" : "xt.btnRerun");
   btn.addEventListener("click", () => perfClick(B, btn));
   box.appendChild(btn);
-  if (st.kind === "running" && info.mine === "busy") box.appendChild(pfEl("p", "xt-busy-line", t("xt.busyRefresh")));
-  if (st.kind === "failed" && info.mine === "fail") box.appendChild(perfFailLine(side, st, "xt.updFail"));
+  // 鈕下那一行(data-xt-line):空狀態留在這一格裡、鈕下置中;結果頁由 report-xt.js / perfXtSync 搬到頂列後面那一列(#xt-lines,同 web)
+  if (st.kind === "running" && info.mine === "busy") box.appendChild(perfXtNote(t("xt.busyRefresh")));
+  if (st.kind === "failed" && info.mine === "fail") { const f = perfFailLine(side, st, "xt.updFail"); f.dataset.xtLine = "1"; box.appendChild(f); }
   return box;
 }
-/* 疊層換態時:這頁按的那次開始／結束跑(結果要收掉／回來)→ 整片重畫;否則就地換那一格(圖不閃)。焦點在舊鈕上就交給新鈕,
-   新鈕停用(跑的期間)就交給成交測試那顆分頁鈕,不掉到 <body> */
+// 鈕下那一行的說明句(BUSY):同失敗行的元件,灰記號(.upd-fail.is-calm)——不是這次跑壞了
+function perfXtNote(text) {
+  const line = pfEl("p", "upd-fail is-calm"); line.setAttribute("role", "status"); line.dataset.xtLine = "1";
+  const m = pfEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
+  line.append(m, pfEl("span", "", text));
+  return line;
+}
+/* 疊層換態時:這頁按的那次開始／結束跑(結果要收掉／回來)→ 整片重畫(焦點由 renderXt 交還同一顆表頭鈕／這一格);
+   否則就地換那一格與頂列後那一列(圖不閃)。焦點只在原本就在舊那一格裡時才交給新的——用戶在表頭或圖上時,
+   晨間自動更新、回測數據那顆按的換態都不搶焦點 */
 function perfXtSync(B) {
   if (rpBag() !== B || !B.drawn.xt) return;
   const panel = $("rp-xt"), root = panel.querySelector(".xt"), old = panel.querySelector("[data-xt-upd]");
-  const had = panel.contains(document.activeElement), info = perfXtInfo(B);
-  const refocus = (b) => {
-    if (!had) return;
-    if (b && !b.disabled) { b.focus(); return; }
-    const tab = $("rp-tabs-scroll") && $("rp-tabs-scroll").querySelector('.rp-tab[data-tab="xt"]');
-    if (tab) tab.focus();
-  };
+  const info = perfXtInfo(B);
   if (root && root.dataset.xtMineRun && String(!!info && info.perf === "running" && info.mine === "run") !== root.dataset.xtMineRun) {
     B.drawn.xt = false;
-    if (B.tab === "xt" && !$("rp").hidden) { rpShowTab("xt"); refocus(panel.querySelector("[data-perf-btn]")); }
+    if (B.tab === "xt" && !$("rp").hidden) rpShowTab("xt");
     return;
   }
   if (!old) return;
   const next = perfXtSlot(B, old.dataset.xtKind);
   if (!next) { old.remove(); return; }
   if (next.dataset.xtSig === old.dataset.xtSig) return;
+  const had = typeof old.contains === "function" && old.contains(document.activeElement);
   old.replaceWith(next);
+  const row = old.dataset.xtKind === "empty" ? null : $("xt-lines");
+  if (row) {
+    [...row.querySelectorAll("[data-xt-line]")].forEach((x) => x.remove());
+    const at = $("xt-lines-anchor");
+    [...next.querySelectorAll("[data-xt-line]")].forEach((x) => row.insertBefore(x, at ? at.nextSibling : null));
+  }
   perfBusy();
-  refocus(next.querySelector("[data-perf-btn]"));
+  if (had) { const b = next.querySelector("[data-perf-btn]"); (b && !b.disabled ? b : next).focus(); }
 }
 // 回合進行中:鈕 aria-disabled(同版本還原那兩顆;spec §8),點了在 meta 列下講原因＋查看(busy.js)。app.js 在上鎖 / 解鎖的同一處叫它
 function perfBusy() {
@@ -203,7 +214,9 @@ function perfBusy() {
    PF_WHY 有的 skip 碼(CODE_CHANGED / INDEX_BROKEN / NOT_RUNNABLE / CONFIG_UNREADABLE)= 失敗行寫專屬原因;其餘(拒收、NO_STATS、daemon 不在)= 沒更新成功,鈕就是重試 */
 async function perfClick(B, opener) {
   const b = opener || $("perf-btn");   // opener = 成交測試那顆(原因句講在它下面)
-  if (b && b.getAttribute("aria-disabled") === "true") { busyTell(busySlot("perf-why", opener || $("rp-bt").querySelector(".bt-meta") || b), opener ? "xtPerf" : "perf"); return; }   // 回合進行中:觸控看不到 title
+  // 回合進行中:觸控看不到 title。成交測試結果頁的原因句放頂列後面那一列(#xt-lines 的錨點後,同 web;不擠進頂列推動 meta),空狀態放鈕下
+  const xtAnchor = () => (opener.parentNode && opener.parentNode.dataset && opener.parentNode.dataset.xtKind !== "empty" && $("xt-lines-anchor")) || opener;
+  if (b && b.getAttribute("aria-disabled") === "true") { busyTell(busySlot("perf-why", opener ? xtAnchor() : $("rp-bt").querySelector(".bt-meta") || b), opener ? "xtPerf" : "perf"); return; }
   const side = pfSide(B), name = B.name, p = perfOf(B);
   if (!p || !name) return;
   const o = { at0: p.at, ref0: pfRefKey(p.refresh), ackAt: 0, failed: null };

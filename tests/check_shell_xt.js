@@ -14,7 +14,9 @@ let red = 0; const ok = (n, c, why) => { console.log((c ? "PASS  " : "FAIL  ") +
 // ── 最小假 DOM:renderXt 只用到 createElement / 文字節點 / fragment / dataset / querySelector(依 data 屬性找鈕) ──
 class Node {
   constructor(tag) { this.tag = tag; this.kids = []; this.parentNode = null; this.attrs = {}; this.dataset = {}; this.style = {}; this.on = {}; this._t = ""; this.className = ""; this.hidden = false; this.disabled = false; this.type = ""; this.id = ""; }
-  appendChild(c) { if (c instanceof Frag) { c.kids.slice().forEach((k) => this.appendChild(k)); c.kids = []; return c; } c.parentNode = this; this.kids.push(c); return c; }
+  appendChild(c) { if (c instanceof Frag) { c.kids.slice().forEach((k) => this.appendChild(k)); c.kids = []; return c; } if (c.parentNode && c.parentNode.kids) c.parentNode.kids.splice(c.parentNode.kids.indexOf(c), 1); c.parentNode = this; this.kids.push(c); return c; }
+  contains(n) { return this.all().includes(n); }
+  closest(sel) { const m = /^\[data-([\w-]+)\]$/.exec(sel), key = m && m[1].replace(/-(\w)/g, (_, c) => c.toUpperCase()); let n = this; while (n) { if (key && n.dataset && key in n.dataset) return n; n = n.parentNode; } return null; }
   append(...cs) { cs.forEach((c) => this.appendChild(typeof c === "string" ? new Text(c) : c)); }
   setAttribute(k, v) { this.attrs[k] = String(v); }
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
@@ -23,13 +25,18 @@ class Node {
   set textContent(v) { this._t = String(v); this.kids = []; }
   all() { return [this].concat(...this.kids.map((k) => (k.all ? k.all() : []))); }
   has(cls) { return (" " + this.className + " ").includes(" " + cls + " "); }
-  querySelector(sel) { const m = /data-xt-sec="(\w+)"\]\[data-xt-key="(\w+)"/.exec(sel); return m ? this.all().find((n) => n.dataset && n.dataset.xtSec === m[1] && n.dataset.xtKey === m[2]) || null : null; }
+  querySelector(sel) {
+    const m = /data-xt-sec="(\w+)"\]\[data-xt-key="(\w+)"/.exec(sel);
+    if (m) return this.all().find((n) => n.dataset && n.dataset.xtSec === m[1] && n.dataset.xtKey === m[2]) || null;
+    const d = /^\[data-([\w-]+)\]$/.exec(sel), key = d && d[1].replace(/-(\w)/g, (_, c) => c.toUpperCase());
+    return key ? this.all().find((n) => n !== this && n.dataset && key in n.dataset) || null : null;
+  }
   focus() { FOCUS.at = this; }
 }
 class Text { constructor(s) { this.s = s; } get textContent() { return this.s; } }
 class Frag extends Node {}
 const FOCUS = { at: null };
-const document = { createElement: (t) => new Node(t), createDocumentFragment: () => new Frag("#frag"), createTextNode: (s) => new Text(s) };
+const document = { createElement: (t) => new Node(t), createDocumentFragment: () => new Frag("#frag"), createTextNode: (s) => new Text(s), get activeElement() { return FOCUS.at; } };
 const window = {};
 const sb = { window, document, Node, console };
 vm.createContext(sb);
@@ -130,9 +137,29 @@ const go = beh.nodes.find((n) => n.tag === "button"), bcell = beh.cls("rob-empty
 ok("② 主機落後、空狀態(#3):.rob-empty 裡那一格 = 先更新那句(lead,在鈕上)＋〔去更新〕(onUpdate),不給開始測試", beh.cls("rob-empty").length === 1 && bcell.kids[0].textContent === "先更新主機程式，才能跑成交測試。"
   && bcell.kids[1] === go && beh.slots.length === 0 && !!go && (go.on.click(), beh.updated === true));
 const behRes = run(fresh, { behind: true });
-const rcell = behRes.cls("rob-top")[0].kids[1];
-ok("② 主機落後而且有結果:只換頂列那一格(〔去更新〕在上、句子在下),結論卡與兩段照畫", rcell.has("xt-upd") && rcell.kids[0].tag === "button" && rcell.kids[1].textContent === "先更新主機程式，才能跑成交測試。"
-  && behRes.cls("xt-sec").length === 2 && behRes.slots.length === 0);
+const rcell = behRes.cls("rob-top")[0].kids[1], rlines = behRes.cls("xt-lines")[0];
+ok("② 主機落後而且有結果:頂列那一格只換成〔去更新〕(格裡只有鈕,meta 不被推);句子在頂列後面那一列(灰記號 .upd-fail.is-calm,同 web);結論卡與兩段照畫",
+  rcell.has("xt-upd") && rcell.kids.length === 1 && rcell.kids[0].tag === "button" && behRes.box.kids[0].kids[1] === rlines && rlines.id === "xt-lines"
+  && rlines.kids.some((n) => n.has && n.has("upd-fail") && n.has("is-calm") && n.textContent === "先更新主機程式，才能跑成交測試。") && behRes.cls("xt-sec").length === 2 && behRes.slots.length === 0);
+{ const line = run(fresh, { rerun: (kind) => { const n = new Node("div"); n.className = "SLOT"; n.dataset.xtUpd = "1"; const b = new Node("button"); const l = new Node("p"); l.className = "upd-fail"; l.dataset.xtLine = "1"; l._t = "沒測成功"; n.append(b, l); return n; } });
+  const top = line.cls("rob-top")[0], row = line.cls("xt-lines")[0];
+  ok("② 結果頁:perf.js 給的那一格裡帶 data-xt-line 的那一行搬到頂列後面那一列,格裡只留鈕;那一列先有錨點(回合中的原因句接在它後面)",
+    top.kids[1].kids.length === 1 && row.kids[0].id === "xt-lines-anchor" && row.kids[0].hidden === true && row.kids[1].textContent === "沒測成功"); }
+{ const empty2 = run({ ...STATS }, { rerun: () => { const n = new Node("div"); n.dataset.xtUpd = "1"; const l = new Node("p"); l.dataset.xtLine = "1"; n.append(new Node("button"), l); return n; } });
+  ok("② 空狀態:那一行留在那一格裡(鈕下置中),沒有頂列後那一列", empty2.cls("xt-lines").length === 0 && empty2.cls("rob-empty")[0].kids[0].kids.length === 2); }
+// 整片重畫時焦點:表頭切指標鈕交還同一顆(不被搶、也不掉到 body);焦點在鈕那一格裡就交還新的鈕,停用時交給那一格
+{ const box = new Node("div"), mkSlot = (dis) => () => { const n = new Node("div"); n.dataset.xtUpd = "1"; const b = new Node("button"); b.dataset.perfBtn = "1"; b.disabled = dis; n.appendChild(b); return n; };
+  window.BlaveReport.renderXt(box, { stats: fresh }, { t, rerun: mkSlot(false) });
+  const ann = box.querySelector('button[data-xt-sec="lag"][data-xt-key="ann"]'); FOCUS.at = ann;
+  window.BlaveReport.renderXt(box, { stats: fresh }, { t, rerun: mkSlot(false) });
+  const ann2 = box.querySelector('button[data-xt-sec="lag"][data-xt-key="ann"]');
+  ok("② 整片重畫(資料推來):焦點在表頭「年化」→ 交還新畫的同一顆,不搶到〔重新測試〕", ann2 && ann2 !== ann && FOCUS.at === ann2);
+  FOCUS.at = box.querySelector("[data-perf-btn]");
+  window.BlaveReport.renderXt(box, { stats: fresh }, { t, rerun: mkSlot(true) });
+  ok("② 整片重畫:焦點在鈕那一格、新鈕停用(這頁按的那次開始跑)→ 交給那一格(role=status 的狀態節點),不帶回分頁列", FOCUS.at === box.querySelector("[data-xt-upd]"));
+  window.BlaveReport.renderXt(box, { stats: fresh }, { t, rerun: mkSlot(false) });
+  ok("② 整片重畫:焦點在那一格、新鈕可按 → 交給新鈕", FOCUS.at === box.querySelector("[data-perf-btn]"));
+  FOCUS.at = null; }
 const behRun = run(fresh, { behind: true, ui: () => ({ perf: "running", mine: "run" }) });
 ok("② 主機落後時不收結果(落後那格蓋過測試中);perfXtSync 比的旗標仍是「這頁按的那次在跑」= true(跟 perf.js 同一個量,不會一直重畫)", behRun.cls("xt-sec").length === 2 && behRun.box.kids[0].dataset.xtMineRun === "true");
 // 兩層狀態(parity 測試另比兩邊同一組情境)

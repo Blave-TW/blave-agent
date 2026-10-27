@@ -81,10 +81,13 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     set textContent(v) { this.kids = v === "" || v == null ? [] : [String(v)]; }
     get textContent() { return this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }
     append(...xs) { xs.forEach((x) => this.appendChild(x)); }
-    appendChild(x) { if (typeof x !== "string") { x.parentNode = this; } this.kids.push(x); return x; }
-    insertBefore(x, ref) { x.parentNode = this; const i = ref ? this.kids.indexOf(ref) : -1; if (i < 0) this.kids.push(x); else this.kids.splice(i, 0, x); return x; }
+    appendChild(x) { if (typeof x !== "string") { if (x.parentNode) x.parentNode.kids.splice(x.parentNode.kids.indexOf(x), 1); x.parentNode = this; } this.kids.push(x); return x; }
+    insertBefore(x, ref) { if (x.parentNode) x.parentNode.kids.splice(x.parentNode.kids.indexOf(x), 1); x.parentNode = this; const i = ref ? this.kids.indexOf(ref) : -1; if (i < 0) this.kids.push(x); else this.kids.splice(i, 0, x); return x; }
     get nextSibling() { const p = this.parentNode; if (!p) return null; const i = p.kids.indexOf(this); return p.kids[i + 1] || null; }
     remove() { const p = this.parentNode; if (p) p.kids.splice(p.kids.indexOf(this), 1); this.parentNode = null; }
+    replaceWith(n) { const p = this.parentNode; if (!p) return; p.kids.splice(p.kids.indexOf(this), 1, n); n.parentNode = p; this.parentNode = null; }
+    contains(n) { return n === this || this.all(() => true).includes(n); }
+    focus() { FOC.at = this; }
     setAttribute(k, v) { this.attrs[k] = String(v); } getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; } removeAttribute(k) { if (k === "title") this.title = undefined; delete this.attrs[k]; }
     addEventListener(ev, fn) { (this.on[ev] = this.on[ev] || []).push(fn); }
     click() { (this.on.click || []).forEach((f) => f({ detail: 1 })); }
@@ -97,12 +100,13 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
       const cls = sel.split(",").map((x) => x.trim().replace(/^\./, "")); return this.all((k) => cls.some((c) => k.has(c)));
     }
   }
-  const doc = { createElement: (tag) => new El(tag) };
+  const FOC = { at: null };
+  const doc = { createElement: (tag) => new El(tag), get activeElement() { return FOC.at; } };
   // 成交測試「算出來了沒」用的清洗與過時判準只有一份(report-xt.js 的純邏輯,perf.js 經 window.BlaveReport._xt 讀)
   const XT_WIN = {}; new Function("window", "document", read(path.join(R, "report-xt.js")))(XT_WIN, doc);
   const XT_GRID = (s0) => ({ lag: Object.fromEntries(["0", "1", "2", "3", "5", "10"].map((k) => [k, [s0, 10, -10]])), close_fill: [s0, 10, -10],
     cost: Object.fromEntries(["free", "0.01", "0.02", "0.05", "0.1", "0.2", "0.5"].map((k) => [k, [s0, 10, -10]])), fee_per_side_pct: 0.05, position_changes: 40 });
-  const names = ["pfEl", "pfNowWhy", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfFailLine", "perfXtInfo", "perfXtFresh", "perfXtSlot", "perfXtSync", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
+  const names = ["pfEl", "pfNowWhy", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfFailLine", "perfXtInfo", "perfXtFresh", "perfXtSlot", "perfXtNote", "perfXtSync", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
   const body = ["PF", "PFL", "PFP", "PFX", "PF_POLL_MS", "PF_POLL_MAX_MS", "PF_ERRS", "PF_NO_DATA", "PF_WHY", "pfSide", "pfRefKey"].map((n) => constSrc(perfSrc, n)).join("") + names.map((n) => fnSrc(perfSrc, n)).join("\n")
     + "\nreturn { " + names.join(", ") + ", PF, PFL, PFP, PFX };";
   const clock = { now: new Date(new Date().getFullYear(), 8, 28, 10, 0, 0).getTime() };   // 今年 9/28 10:00 本地時間(格式斷言不隨時區翻)
@@ -389,8 +393,8 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   { const z = rig("zh"); z.F.perfXtSlot(z.B, "fresh").kids[0].click(); await flush();
     z.acks[0]({ ok: true, result: { started: [], skipped: { momo: "BUSY" } } }); await flush();
     const s = z.F.perfXtSlot(z.B, "fresh");
-    ok("成交測試:ack BUSY(同一支已經在跑,那次沒帶 exec_test)=「更新中」+ 鈕下「績效正在更新，跑完再按一次。」、不記埋點", z.F.perfXtInfo(z.B).mine === "busy" && s.kids[0].textContent === "更新中"
-      && s.kids[1] && s.kids[1].textContent === "績效正在更新，跑完再按一次。" && z.tracked.length === 0);
+    ok("成交測試:ack BUSY(同一支已經在跑,那次沒帶 exec_test)=「更新中」+ 鈕下「績效正在更新，跑完再按一次。」(灰記號 .upd-fail.is-calm、data-xt-line)、不記埋點", z.F.perfXtInfo(z.B).mine === "busy" && s.kids[0].textContent === "更新中"
+      && s.kids[1] && s.kids[1].textContent === "績效正在更新，跑完再按一次。" && s.kids[1].has("upd-fail") && s.kids[1].has("is-calm") && s.kids[1].kids[0].has("fault-mark") && s.kids[1].dataset.xtLine === "1" && z.tracked.length === 0);
     z.B.data.perf = { at: nowS() + 60 }; z.F.PF.local.delete("momo");
     ok("成交測試:BUSY 那次跑完 → 那一行消失", z.F.perfXtInfo(z.B).mine === null && z.F.perfXtSlot(z.B, "fresh").kids.length === 1); }
   { const f = rig("zh"); f.F.perfXtSlot(f.B, "empty").kids[0].click(); await flush();
@@ -400,12 +404,35 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
       && s.kids[1].has("upd-fail") && s.kids[1].textContent === "沒測成功" && s.kids[1].title === "程式碼改過還沒回測，請先回測" && f.F.perfXtInfo(f.B).mine === "fail"); }
   { const g = rig("zh", { perf: { at: nowS() - 100, refresh: { status: "failed", at: nowS() - 50, err: "EXIT" } } }), s = g.F.perfXtSlot(g.B, "fresh");
     ok("成交測試:別處按的那次失敗不在這頁講(沒有「沒測成功」)", s.kids.length === 1 && s.kids[0].textContent === "重新測試"); }
+  // 就地換那一格(perfXtSync):焦點在別處(表頭切指標鈕)時不搶;在舊那一格裡才交給新的;結果頁的鈕下那一行換進頂列後面那一列
+  { const w = rig("zh"); w.B.drawn.xt = true; w.B.tab = "xt";
+    const panel = w.$("rp-xt"), root = new El("div"), top = new El("div"), row = new El("div"), anc = new El("span"), pick = new El("button");
+    root.className = "bt xt"; root.dataset.xtMineRun = "false"; top.className = "rob-top"; row.id = "xt-lines"; anc.id = "xt-lines-anchor"; pick.dataset.xtSec = "lag";
+    const cell0 = w.F.perfXtSlot(w.B, "fresh"); top.appendChild(cell0); row.appendChild(anc); root.append(top, row, pick); panel.appendChild(root);
+    FOC.at = pick;
+    w.B.data.perf = { at: nowS() - 3600, refresh: { status: "running", at: nowS() - 5 } }; w.F.perfXtSync(w.B);
+    const cell1 = panel.querySelector("[data-xt-upd]");
+    ok("perfXtSync:別處按的開始跑(晨間自動更新、回測數據那顆)→ 那一格就地換成「更新中」,焦點留在表頭鈕上不被搶", cell1 !== cell0 && cell1.kids[0].textContent === "更新中" && FOC.at === pick);
+    FOC.at = cell1;
+    w.B.data.perf = { at: nowS() + 30 }; w.F.perfXtSync(w.B);
+    const cell2 = panel.querySelector("[data-xt-upd]");
+    ok("perfXtSync:焦點在舊那一格裡 → 交給新鈕", cell2 !== cell1 && FOC.at === cell2.kids[0] && cell2.kids[0].textContent === "重新測試");
+    FOC.at = pick; w.F.PFX.local.set("momo", { busy: true, done: false, at0: nowS() + 30 });
+    w.B.data.perf = { at: nowS() + 30, refresh: { status: "running", at: nowS() + 31 } }; w.F.perfXtSync(w.B);
+    const cell3 = panel.querySelector("[data-xt-upd]"), lines = row.kids.filter((k) => k.dataset && k.dataset.xtLine);
+    ok("perfXtSync:結果頁 BUSY 那一行換進頂列後面那一列(接在錨點後),那一格裡只剩鈕;焦點沒動", cell3.kids.length === 1 && lines.length === 1 && row.kids[0] === anc
+      && lines[0].textContent === "績效正在更新，跑完再按一次。" && FOC.at === pick);
+    w.F.PFX.local.delete("momo"); w.B.data.perf = { at: nowS() + 60 }; w.F.perfXtSync(w.B);
+    ok("perfXtSync:那次跑完 → 那一列的舊句子收掉", row.kids.filter((k) => k.dataset && k.dataset.xtLine).length === 0);
+    FOC.at = null; }
   { const tb = rig("zh", { code: "# Type: B\n" }), nop = rig("zh", { perf: null });
     ok("成交測試:Type B / 沒有 perf → null(不出鈕)", tb.F.perfXtSlot(tb.B, "empty") === null && nop.F.perfXtSlot(nop.B, "empty") === null); }
   { const bz = rig("zh", { running: true }), s = bz.F.perfXtSlot(bz.B, "fresh"); bz.$("rp-xt").appendChild(s); bz.F.perfBusy();
     ok("成交測試:回合中(#9)鈕 aria-disabled、title 是成交測試自己那句", s.kids[0].getAttribute("aria-disabled") === "true" && s.kids[0].title === "agent 正在回覆，可能還在改策略，回覆完再測。");
     s.kids[0].click(); await flush();
-    ok("成交測試:回合中按 = 不送,原因句講在鈕下(xtPerf → busy_lock 埋點同 perf 那把鎖)", bz.sent.length === 0 && bz.env.told.length === 1 && bz.env.told[0][1] === "xtPerf" && bz.env.told[0][2] === s.kids[0]); }
+    ok("成交測試:回合中按 = 不送;結果頁的原因句接在頂列後面那一列的錨點後(不擠進頂列推動 meta;xtPerf → 埋點同 perf 那把鎖)", bz.sent.length === 0 && bz.env.told.length === 1 && bz.env.told[0][1] === "xtPerf" && bz.env.told[0][2].id === "xt-lines-anchor");
+    const e = bz.F.perfXtSlot(bz.B, "empty"); bz.$("rp-xt").appendChild(e); bz.F.perfBusy(); e.kids[0].click(); await flush();
+    ok("成交測試:空狀態回合中按 = 原因句在那顆鈕下(那一格裡、置中)", bz.sent.length === 0 && bz.env.told.length === 2 && bz.env.told[1][2] === e.kids[0]); }
   { const busySrc = read(path.join(R, "busy.js"));
     ok("busy.js:xtPerf 的句子是 xt.busyTurn、埋點同 perf(lock_perf)", /xtPerf:\s+\{ key: "xt\.busyTurn",\s+fix: "view" \}/.test(busySrc) && /xtPerf: "lock_perf"/.test(busySrc)); }
   { const { argsOk } = require(path.join(S, "daemon.js")), A = (a) => argsOk("stats_refresh", a);

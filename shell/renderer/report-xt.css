@@ -5,7 +5,10 @@
 .xt > * {
   max-width: 760px;
 }
-.xt > .rob-top + * { margin-top: var(--space-16); }
+.xt > .rob-top + .xt-lines + * { margin-top: var(--space-16); }
+/* 頂列後面那一列:鈕下那一行(落後、BUSY、失敗、回合中的原因),沒有句子時零高度 */
+.xt-lines > .upd-fail,
+.xt-lines > .busy-why { margin: var(--space-8) 0 0; }
 .xt-sec {
   margin-top: var(--space-48);
 }
@@ -176,17 +179,13 @@
   gap: var(--space-8);
   white-space: nowrap;
 }
+/* 空狀態那一格裡的鈕下那一行:置中、鈕下 */
 .xt-upd > .upd-fail,
-.xt-upd > .busy-why,
-.xt-busy-line {
+.xt-upd > .busy-why {
   margin: 0;
   max-width: 36ch;
 }
-.xt-busy-line {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--ink-2);
-}
+.rob-empty .xt-upd > .upd-fail { justify-content: center; }
 /* 時光機看舊版本:一句說明,同網頁 .vpanel-note */
 .xt .vpanel-note {
   max-width: 60ch;
