@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.145 — 2026-10-27(desktop 0.1.34)
+
 - **成交測試按了才算(`command_listener._stats_refresh_args`／`_refresh_stats`／`_strategy_subprocess_env`、`strategy_reporter` manifest 的 `can_exec_test`;spec lag-test-tab-2026-10-26 §5-2)**:`stats_refresh` 多收選填 `exec_test: true`(只配一支,同 api `_stats_refresh_args_error`;false／其他型別／兩支一律 `BAD_ARGS`)。帶了的那次子行程設 `BLAVE_EXEC_TEST=1`(live 刷新與沒部署的安靜回測兩條都設);其他所有策略子行程(更新績效、報告前的自動更新、還原重跑、tick)一律 `"0"`,workspace lib 下一個 VERSION(分支 v034-xt-ondemand-lib-only)起收到 `"0"` 就不算成交測試(沒設＝舊 runtime,照算)。同一支已經排著或在跑時帶 `exec_test` 照舊回 `BUSY`、不併進那次。manifest 帶 `can_exec_test: true`,web／電腦版雲端視角照它決定要不要帶參數。**出貨順序:api 151283f0 先上;這版要跟電腦版 0.1.34 一起出;lib 那顆最後、在 0.1.34 對外之後才合,合的同一顆 bump VERSION。**測試 `tests/check_stats_refresh_command.py` 1／1b(舊碼紅)、`tests/check_stats_refresh_parallel.py`(替身改簽名)。
 
 ## 1.1.144 — 2026-10-27(canary:29026、uid=1)
