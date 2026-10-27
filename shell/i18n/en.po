@@ -4574,7 +4574,7 @@ msgid "lib.years"
 msgstr "{n}-yr sample"
 
 msgid "lib.annLabel"
-msgstr "Annualized · backtest"
+msgstr "Annual Return · backtest"
 
 msgid "lib.installs"
 msgstr "{n} installs"

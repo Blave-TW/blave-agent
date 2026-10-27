@@ -4586,7 +4586,7 @@ msgid "lib.years"
 msgstr "樣本 {n} 年"
 
 msgid "lib.annLabel"
-msgstr "年化・回測"
+msgstr "年化報酬・回測"
 
 msgid "lib.installs"
 msgstr "{n} 人安裝"

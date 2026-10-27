@@ -282,7 +282,7 @@ if (!process.versions.electron) {
     ok("② 0.1.34 起手句退役:七個 starter_* 字串兩語字串表與 .po 都沒有;①策略卡的 workspace_lib_bt_span 加回(zh「回測 {span}」、en「Backtest {span}」);0.1.27 卡片其餘專用字(wc.annLabel、workspace_wel_or / _more、workspace_lib_detail)不回來,策略庫面板的 lib.annLabel 不動",
       ["crypto_row", "crypto_send", "tw_row", "tw_send", "txf_row", "txf_send", "since"].every((k) => !(("starter_" + k) in STR.zh) && !(("starter_" + k) in STR.en)) && !/msgid "starter_/.test(zpo)
       && STR.zh["workspace_lib_bt_span"] === "回測 {span}" && STR.en["workspace_lib_bt_span"] === "Backtest {span}"
-      && ["wc.annLabel", "workspace_wel_or", "workspace_wel_more", "workspace_lib_detail"].every((k) => !(k in STR.zh) && !(k in STR.en)) && STR.en["lib.annLabel"] === "Annualized · backtest" && STR.zh["lib.annLabel"] === "年化・回測"
+      && ["wc.annLabel", "workspace_wel_or", "workspace_wel_more", "workspace_lib_detail"].every((k) => !(k in STR.zh) && !(k in STR.en)) && STR.en["lib.annLabel"] === "Annual Return · backtest" && STR.zh["lib.annLabel"] === "年化報酬・回測"
       && !/wcCurve|SEND_ROW_IC|ST_ROWS|ST_FEATURE|stPaint|stGo|stSync|stTurnEnd/.test(src));
     ok("② tag 用既有的 wd.mk.*(en 台股改 TW Stocks);輸入框提示改成講想法的短句(spec §9:聊天欄最窄 336 也放得下)",
       STR.en["wd.mk.tw"] === "TW Stocks" && STR.zh["wd.mk.tw"] === "台股" && STR.zh["ws.placeholder"] === "說一個交易想法…" && STR.en["ws.placeholder"] === "Describe a trading idea…");

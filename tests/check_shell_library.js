@@ -739,7 +739,7 @@ app.whenReady().then(async () => {
   // 沒有 benchmark(上面那格)→ 一條線、沒有圖例、兩欄 kv 照舊;換主題基準線跟著換色
   const BENCH_OF = `(() => { const q = (x) => [...document.querySelectorAll(x)], c = LIB.chart, ser = c ? c.panes()[0].getSeries() : [], tok = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
     const split = q("#lib-det .lib-split")[0], lg = q("#lib-det .lib-legend")[0], host = document.getElementById("lib-chart"), tip = q("#lib-det .lib-cmp .tip")[0], btn = q("#lib-det .lib-cmp .mp-tip")[0];
-    return { n: ser.length, o0: ser[0] && { color: ser[0].options().color, style: ser[0].options().lineStyle, w: ser[0].options().lineWidth }, o1: ser[1] && { color: ser[1].options().color }, grey: tok("--color-greyMedium"), green: tok("--color-green"), dashed: LightweightCharts.LineStyle.Dashed,
+    return { n: ser.length, o0: ser[0] && { color: ser[0].options().color, style: ser[0].options().lineStyle, w: ser[0].options().lineWidth }, o1: ser[1] && { color: ser[1].options().color }, grey: tok("--color-greyMedium"), green: tok("--color-green"), dashed: LightweightCharts.LineStyle.LargeDashed,
       legend: q("#lib-det .lib-legend .bt-legend").map((x) => x.textContent + ":" + x.className).join("|"), legendBefore: !!lg && lg.nextElementSibling === host, legends: q("#lib-det .lib-legend").length, legendMono: q("#lib-det .lib-legend .bh .mono").map((x) => x.textContent).join(),
       wide: split.classList.contains("wide"), head: q("#lib-det .lib-cmp thead th").map((x) => (x.querySelector(".mp-tip") || x).textContent + "/" + x.scope).join("|"), rows: q("#lib-det .lib-cmp tbody tr").map((tr) => [...tr.children].map((x) => x.textContent).join(",")).join("|"),
       rowScope: q("#lib-det .lib-cmp tbody th").every((x) => x.scope === "row"), tone: q("#lib-det .lib-cmp td").filter((x) => /\b(up|down)\b/.test(x.className)).length, bhInk: q("#lib-det .lib-cmp td.bh").every((x) => getComputedStyle(x).color === getComputedStyle(q("#lib-det .lib-cmp td")[0]).color),
@@ -754,7 +754,7 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 80)); const off = ${BENCH_OF};
     document.getElementById("lib-back").click(); LIB.reports.clear(); window.__lib.report = ${JSON.stringify(REPORT)}; return { stage1, on, flip, off }; })()`);
   { const z = STR.zh, on = r.on, days = String(Math.max(0, Math.floor((Date.now() - Date.parse("2026-06-10T00:00:00")) / 86400000)));
-    ok("④ 基準:第一段(spark)只有一條線、沒有圖例與對照表;/report 回來兩條線——第一條是基準(灰 greyMedium、虛線、1px)、第二條策略綠線壓在上面", r.stage1.n === 1 && r.stage1.legends === 0 && r.stage1.cmp === 0
+    ok("④ 基準:第一段(spark)只有一條線、沒有圖例與對照表;/report 回來兩條線——第一條是基準(灰 greyMedium、LargeDashed 虛線、1px)、第二條策略綠線壓在上面", r.stage1.n === 1 && r.stage1.legends === 0 && r.stage1.cmp === 0
       && on.n === 2 && on.o0.color === on.grey && on.o0.style === on.dashed && on.o0.w === 1 && on.o1.color === on.green, JSON.stringify([r.stage1, on.n, on.o0, on.o1, on.grey]));
     ok("④ 基準圖例:在圖的正上方、只有兩項「權益」「BTC 持有」(BTCUSDT 寫 BTC、代號進 .mono)、虛線那項是 .bh", on.legends === 1 && on.legendBefore && on.legend === z["bt.equity"] + ":bt-legend|BTC 持有:bt-legend bh" && on.legendMono === "BTC", JSON.stringify(on));
     ok("④ 基準對照表:表頭「回測 · 6.5 年|策略|BTC 持有」(scope col)、四列總報酬 / 年化 / Sharpe / 最大回撤,回撤兩欄都 ≤ 0(api 給正 34 也寫 −34.00%);兩欄都不上漲跌色;上架欄照舊在右(.wide)",

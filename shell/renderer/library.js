@@ -1058,8 +1058,8 @@ function libChartDraw(host, r) {
     localization: { priceFormatter: (v) => +v.toFixed(v >= 10 ? 0 : v >= 2 ? 1 : 2) + "×" },   // 去尾零:1× / 1.5× / 2× / 4×
   });
   try {
-    // 基準先畫、策略線壓在上面;log 軸照兩條一起 autoscale,基準不會被裁掉
-    const bs = bench ? chart.addSeries(LWC.LineSeries, { color: tok("--color-greyMedium"), lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }) : null;
+    // 基準先畫、策略線壓在上面;log 軸照兩條一起 autoscale,基準不會被裁掉。LargeDashed 對齊 web 的 4/4,也跟 1× 那條 Dashed 分得開
+    const bs = bench ? chart.addSeries(LWC.LineSeries, { color: tok("--color-greyMedium"), lineWidth: 1, lineStyle: LWC.LineStyle.LargeDashed, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }) : null;
     if (bs) bs.setData(bench);
     const series = chart.addSeries(LWC.LineSeries, { color: tok("--color-green"), lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
     series.setData(data);
