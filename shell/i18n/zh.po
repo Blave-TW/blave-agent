@@ -1476,13 +1476,13 @@ msgstr "還不支援 Bitget 統一帳戶（UTA），讀不到這個帳戶。請�
 msgid "cx.err.bitgetClassic"
 msgstr "這把金鑰是 Bitget 經典帳戶，沒有儲存。到 Bitget App 升級成統一帳戶再連，或改綁其他交易所。"
 
-# Bitget 40731:綁的是跟單金鑰,一般帳戶讀不到也不能下單(lib [bitget_copy_trading_key] → trade.js trErrToken);連接框拒收那一句
+# Bitget 40731:跟單金鑰或帶單帳戶,一般帳戶讀不到也不能下單(lib [bitget_copy_trading_key] → trade.js trErrToken);連接框拒收那一句
 msgid "cx.err.bitgetCopyKey"
-msgstr "這是 Bitget 跟單金鑰，沒有儲存。到 Bitget「API 管理」建一把交易金鑰，勾讀取與交易、不勾提領。"
+msgstr "這是跟單或帶單帳戶的金鑰，沒有儲存。用一般帳戶在「API 管理」建交易金鑰，勾讀取與交易、不勾提領。"
 
 # 同上,已綁的金鑰讀帳失敗那一列
 msgid "cx.err.bitgetCopyKeyBound"
-msgstr "這是 Bitget 跟單金鑰，讀不到帳戶。到 Bitget「API 管理」建一把交易金鑰，勾讀取與交易、不勾提領。"
+msgstr "跟單或帶單帳戶的金鑰讀不到帳戶。用一般帳戶在「API 管理」建交易金鑰，勾讀取與交易、不勾提領。"
 
 msgid "cx.failShort"
 msgstr "串接失敗"
@@ -1634,7 +1634,7 @@ msgstr "{sym} 沒有下單：還不支援 Bitget 統一帳戶（UTA）。請改�
 
 # 同上,下單被拒
 msgid "tr.err.bitgetCopyKey"
-msgstr "{sym} 沒有下單：這是 Bitget 跟單金鑰。到 Bitget「API 管理」建一把交易金鑰，勾讀取與交易、不勾提領。"
+msgstr "{sym} 沒有下單：這是跟單或帶單帳戶。用一般帳戶在「API 管理」建交易金鑰，勾讀取與交易、不勾提領。"
 
 msgid "tr.err.key"
 msgstr "{sym} 沒有下單：交易所拒絕這把金鑰。到「自動下單 › 設定」看帳戶狀態，有「重新測試」就按。"
@@ -9016,6 +9016,10 @@ msgstr "Bitget 換成統一帳戶後，{n} 個倉位跟換之前對不上。暫�
 
 msgid "tr.haltBitgetMismatchClassic"
 msgstr "Bitget 換成經典帳戶後，{n} 個倉位跟換之前對不上。暫停期間什麼單都不送。"
+
+# Bitget 40731 讓對帳器 HALT(reason 帶 [bitget_copy_trading_key];trade.js trHaltReasonText)
+msgid "tr.haltBitgetCopyKey"
+msgstr "Bitget 跟單或帶單帳戶的金鑰下不了單。用一般帳戶在「API 管理」建交易金鑰，勾讀取與交易、不勾提領。"
 
 # 對不上的倉位清單(trade.js trPaintMismatch):欄名與出口句
 msgid "tr.mm.colSym"

@@ -257,6 +257,8 @@ function trHaltReasonText(r, done) {
   // 主機重開停住(machine)仍優先:那時什麼單都不下的原因是重開,清單照樣畫
   const mm = rk !== "machine" ? trHaltMismatch(r) : null;
   if (mm) return t(mm.mode === "classic" ? "tr.haltBitgetMismatchClassic" : "tr.haltBitgetMismatchUta", { n: mm.legs.length });
+  // Bitget 40731 的 CREDENTIAL HALT:通用那句叫人「修金鑰」,同一種金鑰重綁也沒用,講要換哪一種
+  if (H && rk !== "machine" && /\[bitget_copy_trading_key\]/.test(String((r.halt && r.halt.reason) || ""))) return t("tr.haltBitgetCopyKey");
   // 照 HALT 的實際原因講(Mac e2e 10-14:解綁造成的暫停被講成「Blave 重開過」)。主機重開停住(machine)那一種最根本,照舊優先;
   // 解綁那一種再分下單程式在不在跑:沒在跑就什麼單都不下,在跑照 A 的規則(不開新倉、平倉照常)
   // 「平倉與停損停利照常執行」只有對帳器真的活著才成立(從沒啟動過、自己掛了、解綁時被停掉都不成立;稽核 r4 P1-2)

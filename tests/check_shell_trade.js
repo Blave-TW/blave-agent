@@ -184,12 +184,14 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
       && trErrToken("[order_reject:key_permission] x [bitget_account_mode:classic]") === "key_permission"
       && src.includes('else if (trErrToken(ae.msg) === "bitget_uta_unsupported") box.appendChild(errLine(t("cx.err.bitgetUtaBound")));')); }
   // Bitget 40731(lib/account_bitget error_of 的句子形狀,kind=key_permission):跟單金鑰先認,不落成 tr.err.key;連接框、讀帳那列、雲端視角都換句
-  { const c = "[order_reject:key_permission] 這組 Bitget 金鑰是跟單金鑰 [bitget_copy_trading_key]（code=40731），讀不到帳戶也不能下單";
+  { const c = "[order_reject:key_permission] 這組 Bitget 金鑰屬於跟單或帶單帳戶 [bitget_copy_trading_key]（code=40731），Bitget 不讓它讀一般帳戶或下單";
     ok("Bitget 40731:[bitget_copy_trading_key] → tr.err.bitgetCopyKey(下單)、cx.err.bitgetCopyKeyBound(讀帳那列)、cx.err.bitgetCopyKey(連接框本機與雲端)",
       trErrToken(c) === "bitget_copy_trading_key" && trErrToken("close_symbol: " + c) === "bitget_copy_trading_key" && TR_REJECT_TEXT.bitget_copy_trading_key === "tr.err.bitgetCopyKey"
       && src.includes('else if (trErrToken(ae.msg) === "bitget_copy_trading_key") box.appendChild(errLine(t("cx.err.bitgetCopyKeyBound")));')
       && src.includes('if (c === "REJECTED" && trErrToken(d.reason) === "bitget_copy_trading_key") return t("cx.err.bitgetCopyKey");')
-      && src.includes(': trErrToken(d.error) === "bitget_copy_trading_key" ? t("cx.err.bitgetCopyKey")')); }
+      && src.includes(': trErrToken(d.error) === "bitget_copy_trading_key" ? t("cx.err.bitgetCopyKey")')
+      // 對帳器的 CREDENTIAL HALT(manager/reconciler reason 尾端帶標記)→ 橫幅 tr.haltBitgetCopyKey
+      && src.includes('if (H && rk !== "machine" && /\\[bitget_copy_trading_key\\]/.test(String((r.halt && r.halt.reason) || ""))) return t("tr.haltBitgetCopyKey");')); }
   const vm = require("vm"), ta = { value: "", focused: false, focus() { this.focused = true; } }, ctx = { $: () => ta, t: (k, v) => k + "|" + v.sym + "|" + v.err, TR: { env: "local" }, autosize() {}, tracked: [], String,
     paneSt: { chat: { off: true } }, opened: [], paneToggle(k, off) { ctx.opened.push([k, off]); }, trackFeature: (x) => ctx.tracked.push(x) };
   vm.createContext(ctx); vm.runInContext(src.slice(src.indexOf("function trErrAsk("), src.indexOf("function trLivePositions(")), ctx);
