@@ -119,6 +119,48 @@ for (const lang of ["zh", "en"]) {
   ok(`Bitget 換帳戶類型的暫停句／清單／事件列 ${lang} 兩邊逐字一致(${Object.keys(BITGET_PAIRS).length} 句)`, bad.length === 0,
     bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
+// 下單結果不明(canon notifications §3 order_unconfirmed)與兩型事件的策略段:zh / en 逐字一致,任一邊找不到也算紅
+const UNCONFIRMED_PAIRS = {
+  "tr.err.unconfirmed": "workspace_pf_err_unconfirmed", "tr.ov.evUnconfirmed": "workspace_ov_ev_unconfirmed",
+  "tr.ov.evUnconfirmedStuck": "workspace_ov_ev_unconfirmed_stuck", "tr.ov.evUnconfirmedNote": "workspace_ov_ev_unconfirmed_note",
+  "tr.ov.evUnconfirmedStuckNote": "workspace_ov_ev_unconfirmed_stuck_note",
+  "tr.ov.evStratOne": "workspace_ov_ev_strat_one", "tr.ov.evStratTwo": "workspace_ov_ev_strat_two", "tr.ov.evStratMany": "workspace_ov_ev_strat_many",
+  // 停車解除後(released／filled)與追蹤不了而整台暫停([order_unconfirmed_unparked])
+  "tr.ov.evUnconfirmedReleased": "workspace_ov_ev_unconfirmed_released",
+  "tr.ov.evUnconfirmedReleasedFilled": "workspace_ov_ev_unconfirmed_released_filled",
+  "tr.ov.evUnconfirmedReleasedNone": "workspace_ov_ev_unconfirmed_released_none",
+  "tr.ov.evHaltUnconfirmedNote": "workspace_ov_ev_halt_unconfirmed_note", "tr.haltUnconfirmed": "workspace_pf_halt_unconfirmed",
+  // designer v034 UX 定稿:沒有標的的退路、全部平倉沒平到那一型與它的收尾、manual 停車部位表那句
+  "tr.ov.evHaltUnconfirmedNoteNosym": "workspace_ov_ev_halt_unconfirmed_note_nosym",
+  "tr.ov.evUnconfirmedCloseAll": "workspace_ov_ev_unconfirmed_close_all",
+  "tr.ov.evUnconfirmedCloseAllNote": "workspace_ov_ev_unconfirmed_close_all_note",
+  "tr.ov.evUnconfirmedReleasedCloseAllFilled": "workspace_ov_ev_unconfirmed_released_close_all_filled",
+  "tr.ov.evUnconfirmedReleasedCloseAllNone": "workspace_ov_ev_unconfirmed_released_close_all_none",
+  "tr.ov.evUnconfirmedInterruptedNote": "workspace_ov_ev_unconfirmed_interrupted_note",
+  "tr.err.unconfirmedManual": "workspace_pf_err_unconfirmed_manual",
+  "tr.haltUnconfirmedNosym": "workspace_pf_halt_unconfirmed_nosym" };
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const bad = Object.entries(UNCONFIRMED_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== wp[w]);
+  ok(`下單結果不明與策略段 ${lang} 兩邊逐字一致(${Object.keys(UNCONFIRMED_PAIRS).length} 句)`, bad.length === 0,
+    bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
+// 事件型別集合(cross-surface-parity 規則三:列舉,不只靠上面手寫的配對表):電腦版 trEventText ∪ trOvEvents 認得的型別,
+// 跟網頁 ovEventRow 認得的同一組。order_error / order_unconfirmed 在電腦版從 order_errors[] 那列畫(trOvEvents 讀 e.kind),
+// 不走 `type ===`;只在電腦版的三個是這台電腦自己的指令回音與舊型別(halt_close／resume_wait 是本機指令、downtime_paused 已被
+// machine_restart_stopped 取代,網頁從沒畫過)。新型別只出現在一邊就紅。
+{ const seg = (src, a, b) => { const i = src.indexOf(a); return i < 0 ? "" : src.slice(i, src.indexOf(b, i + 1)); };
+  const types = (src) => new Set([...src.matchAll(/type === "([a-z_]+)"/g)].map((m) => m[1]));
+  const dSet = new Set([...types(seg(desk, "function trEventText(", "\nfunction ")), ...types(seg(desk, "function trOvEvents(", "\nfunction "))]);
+  const rows = seg(desk, "function trOvEvents(", "\nfunction ");
+  if (/r\.order_errors/.test(rows)) dSet.add("order_error");
+  if (/e\.kind === "order_unconfirmed"/.test(rows)) dSet.add("order_unconfirmed");
+  if (/e\.released === true/.test(rows)) dSet.add("order_unconfirmed_released");   // 同一列 released 時畫成灰字;網頁畫平台的 P3 事件
+  const wSet = types(seg(web, "function ovEventRow(", "\n        function "));
+  const DESK_ONLY = new Set(["halt_close", "resume_wait", "downtime_paused"]);
+  const onlyD = [...dSet].filter((x) => !wSet.has(x) && !DESK_ONLY.has(x)), onlyW = [...wSet].filter((x) => !dSet.has(x));
+  ok(`事件型別集合兩邊一致(電腦版 ${dSet.size}、網頁 ${wSet.size})`, wSet.size > 20 && !onlyD.length && !onlyW.length,
+    "只在電腦版:" + onlyD.join(",") + " 只在網頁:" + onlyW.join(",")); }
 // Type C 的買進持有基準(0050／BTC／SPY,{sym} 由各表面代入):統計列標籤／圖例、三句 tooltip、圖的 aria——zh / en 兩邊逐字同一份
 const poRaw = (file) => { const o = {}; if (fs.existsSync(file)) for (const m of fs.readFileSync(file, "utf8").matchAll(/^msgid "([^"]+)"\nmsgstr "((?:[^"\\]|\\.)*)"$/gm)) o[m[1]] = m[2]; return o; };
 const BH_KEYS = { workspace_bt_benchmark_bh: "bt.benchmarkBh", workspace_bt_benchmark_bh_tip_adj: "bt.tip.benchmarkBhAdj",

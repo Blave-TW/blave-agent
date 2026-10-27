@@ -80,11 +80,25 @@ CID_MAX = 36                  # Binance newClientOrderId hard limit
 RETRYABLE_CODES = {-1001}  # internal error / disconnected. Rate limits
                            # (-1003 / HTTP 429) are deliberately NOT retried:
                            # hammering through them escalates to an IP ban.
+                           # Reads only: an order POST is never resent (_send no_resend).
+# An order POST answered with one of these (or a read timeout, a dropped connection, a
+# 5xx) may have executed: the futures error-code page says -1006 / -1007 "execution
+# status unknown", general-info says an HTTP 503 "Unknown error…" "could have been a
+# success". -1000 / -1001 are listed as failures there, but a resend under the same
+# newClientOrderId is only refused while that order is OPEN ("A unique id among open
+# orders") and a market order is terminal at once — so the POST is not resent; the
+# order is looked up by its client id instead (lib/unconfirmed).
+SEND_UNKNOWN_CODES = {-1000, -1001, -1006, -1007}
 RECV_WINDOW = "5000"
 
 _rules_cache = {}          # symbol -> contract rules (per-process)
 _position_mode_cache = {}  # api_key -> "hedge" | "oneway"
 _time_offset = {"ms": 0}   # server-clock correction, set on -1021
+
+
+class _SendUnknown(Exception):
+    """An order POST whose outcome is unknown (see SEND_UNKNOWN_CODES); _request turns
+    it into OrderNotConfirmed carrying the client order id."""
 
 
 class BinanceError(Exception):
@@ -118,9 +132,23 @@ def _reject_kind(code, msg):
     return reject_token.from_code(code, _REJECT_CODES, reject_token.credential_codes("binance"))
 
 
-class OrderNotConfirmed(Exception):
+try:
+    from lib.unconfirmed import OrderOutcomeUnknown as _OutcomeUnknown
+except ImportError:  # half-updated workspace: not parkable, reported as an order failure
+    class _OutcomeUnknown(Exception):
+        def __init__(self, msg, venue=None, venue_symbol=None, order_id=None, client_order_id=None):
+            super().__init__(msg)
+            self.venue, self.venue_symbol, self.order_id = venue, venue_symbol, order_id
+            self.client_order_id = client_order_id
+
+        def parkable(self):
+            return False
+
+
+class OrderNotConfirmed(_OutcomeUnknown):
     """Order was accepted but did not reach a terminal state within timeout.
-    The order may still fill — query it again before assuming anything."""
+    The order may still fill — query it again before assuming anything.
+    Carries venue / venue_symbol / order_id so lib/portfolio.reconcile can park it."""
 
 
 class ProtectionFailed(Exception):
@@ -210,6 +238,7 @@ def _request(method, path, env, params=None, signed=True, retries=3, spot=False)
     intent = _order_intent(method, path, params)
     if intent is None:
         return _send(method, path, env, params, signed, retries, spot)
+    placing = _MUTATING_PATHS.get((method, path)) == "place"
 
     fields = {k: params[k] for k in _AUDIT_PARAM_KEYS if k in (params or {})}
     fields["intent"] = intent
@@ -228,7 +257,18 @@ def _request(method, path, env, params=None, signed=True, retries=3, spot=False)
 
     guard.audit("order_attempt", **fields)
     try:
-        data = _send(method, path, env, params, signed, retries, spot)
+        data = _send(method, path, env, params, signed, retries, spot, no_resend=placing)
+    except _SendUnknown as e:
+        cid = (params or {}).get("newClientOrderId")
+        guard.audit("order_unknown", error=str(e), client_order_id=cid, **fields)
+        # only a futures order can be looked up again by its client id here (get_order);
+        # spot / algo orders raise without a venue = not parkable = HALT (lib/portfolio)
+        futures = path == "/fapi/v1/order"
+        raise OrderNotConfirmed(
+            f"order {cid} sent, no answer ({e}) — it may have filled; check the position, "
+            f"do not resubmit", venue="binance" if futures else None,
+            venue_symbol=(params or {}).get("symbol") if futures else None,
+            client_order_id=cid) from e
     except Exception as e:
         guard.audit("order_error", error=str(e), **fields)
         raise
@@ -237,7 +277,12 @@ def _request(method, path, env, params=None, signed=True, retries=3, spot=False)
     return data
 
 
-def _send(method, path, env, params=None, signed=True, retries=3, spot=False, plain_text=False):
+def _send(method, path, env, params=None, signed=True, retries=3, spot=False, plain_text=False,
+          no_resend=False):
+    """no_resend (order POSTs): once the request may have reached Binance it is never sent
+    again — a read timeout, a dropped connection, a 5xx or a SEND_UNKNOWN_CODES answer raises
+    _SendUnknown. Only a connect timeout (nothing sent) and -1021 (refused before matching,
+    re-signed) are retried."""
     api_key = env.get("BINANCE_API_KEY")
     secret_key = env.get("BINANCE_SECRET_KEY")
     if signed and (not api_key or not secret_key):
@@ -266,16 +311,38 @@ def _send(method, path, env, params=None, signed=True, retries=3, spot=False, pl
             else:
                 url = f"{_base(env, spot)}{path}" + (f"?{payload}" if payload else "")
                 r = requests.request(method, url, headers=headers, timeout=10)
-        except requests.exceptions.ConnectionError as e:
+        except requests.exceptions.ConnectTimeout as e:
+            last_err = e   # no connection was made: nothing reached Binance
+            if attempt == retries - 1:
+                raise
+            time.sleep(1 + attempt)
+            continue
+        except (requests.exceptions.InvalidURL, requests.exceptions.MissingSchema,
+                requests.exceptions.InvalidSchema, requests.exceptions.InvalidHeader):
+            raise   # refused before anything was sent
+        except requests.exceptions.RequestException as e:
+            # an order POST: anything after the connection was made may have reached Binance —
+            # a reset, a read timeout, a body cut mid-transfer (ChunkedEncodingError /
+            # ContentDecodingError are not ConnectionError subclasses)
+            if no_resend:
+                raise _SendUnknown(f"{type(e).__name__}: {str(e)[:120]}") from e
+            if not isinstance(e, requests.exceptions.ConnectionError) \
+                    or isinstance(e, requests.exceptions.Timeout):
+                raise
             last_err = e
             if attempt == retries - 1:
                 raise
             time.sleep(1 + attempt)
             continue
+        if no_resend and r.status_code >= 500:
+            raise _SendUnknown(f"HTTP {r.status_code}: {r.text[:120]}")
 
         try:
             data = r.json()
         except ValueError:
+            if no_resend and 200 <= r.status_code < 300:
+                # accepted, but the body is not Binance's (a proxy page, a cut stream): unknown
+                raise _SendUnknown(f"HTTP {r.status_code} non-JSON ({r.text[:80]})")
             # plain_text: endpoints that answer a bare word on success (sign_stock_agreement → "SUCCESS")
             if plain_text and 200 <= r.status_code < 300:
                 return r.text.strip()
@@ -288,6 +355,8 @@ def _send(method, path, env, params=None, signed=True, retries=3, spot=False, pl
                 _sync_time(env)
                 last_err = BinanceError(code, data.get("msg"), path)
                 continue  # resigned with corrected clock next attempt
+            if no_resend and code in SEND_UNKNOWN_CODES:
+                raise _SendUnknown(f"{code}: {data.get('msg')}")
             if code in RETRYABLE_CODES and attempt < retries - 1:
                 last_err = BinanceError(code, data.get("msg"), path)
                 time.sleep(1 + attempt)
@@ -461,7 +530,11 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
         raise
     if not placed.get("orderId"):
         raise BinanceError("N/A", f"order response missing orderId: {placed}", "order")
-    return confirm_order(env, symbol, placed["orderId"], timeout=confirm_timeout)
+    try:
+        return confirm_order(env, symbol, placed["orderId"], timeout=confirm_timeout)
+    except OrderNotConfirmed as e:
+        e.client_order_id = e.client_order_id or params["newClientOrderId"]
+        raise
 
 
 def place_limit_order(env, symbol, direction, qty, price, client_order_id=None,
@@ -521,12 +594,15 @@ def place_limit_order(env, symbol, direction, qty, price, client_order_id=None,
     return placed
 
 
-def get_order(env, symbol, order_id):
-    """Order details by orderId. Normalized: status, avg_price, executed_qty,
-    orig_qty, client_order_id, plus the raw dict under 'raw'. Commission is
-    NOT in Binance's order query — confirm_order adds it from userTrades."""
-    o = _norm_ids(_request("GET", "/fapi/v1/order", env,
-                           {"symbol": _canonical(symbol), "orderId": str(order_id)}))
+def get_order(env, symbol, order_id=None, client_order_id=None):
+    """Order details by orderId, or by our newClientOrderId (origClientOrderId — Query
+    Order takes either). Normalized: status, avg_price, executed_qty, orig_qty,
+    client_order_id, plus the raw dict under 'raw'. Commission is NOT in Binance's
+    order query — confirm_order adds it from userTrades."""
+    ident = {"orderId": str(order_id)} if order_id else {"origClientOrderId": str(client_order_id)}
+    if not order_id and not client_order_id:
+        raise ValueError("get_order needs order_id or client_order_id")
+    o = _norm_ids(_request("GET", "/fapi/v1/order", env, {"symbol": _canonical(symbol), **ident}))
     if "status" not in o:
         raise BinanceError("N/A", f"order query missing status: {o}", "order")
     return {
@@ -541,30 +617,108 @@ def get_order(env, symbol, order_id):
 
 
 TERMINAL_STATUSES = {"FILLED", "CANCELED", "REJECTED", "EXPIRED", "EXPIRED_IN_MATCH"}
+ORDER_NOT_VISIBLE = -2013  # "Order does not exist."
 
 
 def confirm_order(env, symbol, order_id, timeout=15):
     """Poll until the order reaches a terminal state. Returns get_order()'s
     dict plus 'commission' (summed from userTrades, best-effort — a stats
-    lookup failing must not turn a FILLED order into an exception). Raises
-    BinanceError if the exchange reports CANCELED/REJECTED/EXPIRED,
-    OrderNotConfirmed if still pending after timeout — the order MAY STILL
-    FILL; re-query, do not blindly resubmit."""
+    lookup failing must not turn a FILLED order into an exception) once it is
+    FILLED, or terminal with a partial fill (CANCELED / EXPIRED /
+    EXPIRED_IN_MATCH after some executed_qty: the caller books what filled).
+    Raises BinanceError if it ended with nothing filled, OrderNotConfirmed if
+    no terminal state was read before timeout — the order MAY STILL FILL;
+    re-query, do not blindly resubmit."""
     symbol = _canonical(symbol)
     deadline = time.time() + timeout
     order = None
+    last_err = None
     while time.time() < deadline:
-        order = get_order(env, symbol, order_id)
+        try:
+            order = get_order(env, symbol, order_id)
+        except Exception as e:
+            # The id came from the placement response, so every failure here — -2013
+            # (the query side lagging the matching engine: measured live 0.18 s after a
+            # market order that did fill), a read timeout, a dropped connection, a 5xx,
+            # -1001 — leaves the order's fate unknown, never rejected.
+            last_err = e
+            time.sleep(1)
+            continue
         if order["status"] == "FILLED":
             order["commission"], order["commission_asset"] = \
                 _order_commission(env, symbol, order_id)
             return order
         if order["status"] in TERMINAL_STATUSES:
+            if order["executed_qty"] > 0:
+                order["commission"], order["commission_asset"] = \
+                    _order_commission(env, symbol, order_id)
+                return order
             raise BinanceError("N/A", f"order {order_id} ended {order['status']}", "confirm")
         time.sleep(1)
+    if order is None:
+        why = ("not queryable (-2013)" if isinstance(last_err, BinanceError)
+               and last_err.code == ORDER_NOT_VISIBLE else
+               f"not queryable ({type(last_err).__name__}: {str(last_err)[:80]})")
+        raise OrderNotConfirmed(
+            f"order {order_id} accepted but {why} for {timeout}s — "
+            f"it may have filled; check the position, do not resubmit",
+            venue="binance", venue_symbol=symbol, order_id=order_id)
     raise OrderNotConfirmed(
-        f"order {order_id} still {order['status'] if order else 'UNKNOWN'} after {timeout}s"
-    )
+        f"order {order_id} still {order['status'] if order else 'UNKNOWN'} after {timeout}s",
+        venue="binance", venue_symbol=symbol, order_id=order_id)
+
+
+PARK_NOT_SENT_GRACE_S = 120
+# how far before the park the trade window starts: the park time is this machine's clock, the
+# trade times are Binance's — shifted by the measured offset and widened, so a fast local clock
+# can only make the window bigger (an unseen fill would release a filled order)
+PARK_TRADE_LOOKBACK_S = 300
+
+
+def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, parked_at=None,
+                          now=None):
+    """A parked order's outcome (lib/unconfirmed): (executed_qty, avg_price) once known —
+    qty 0 = it ended, or never reached Binance, without a fill — None while unknown.
+    Read-only: Query Order (by orderId, or origClientOrderId when only ours is known),
+    cross-checked with userTrades.
+    - terminal → its executed_qty / avgPrice;
+    - not readable but userTrades for the orderId has fills → those (a market order fills
+      at once);
+    - only a client id, -2013 past PARK_NOT_SENT_GRACE_S and no trade on the symbol since
+      PARK_TRADE_LOOKBACK_S before the send (server time) → never reached the matching engine (Query Order finds every
+      order younger than 3 days, filled or not — USD-M "Query Order" notes).
+    Anything else (a key that cannot see the order, the venue down) stays unknown."""
+    symbol = _canonical(symbol)
+    now = time.time() if now is None else now
+    order = None
+    not_found = False
+    try:
+        order = get_order(env, symbol, order_id=order_id, client_order_id=client_order_id)
+    except BinanceError as e:
+        not_found = e.code == ORDER_NOT_VISIBLE
+    except Exception:
+        return None
+    if order is not None:
+        if order["status"] not in TERMINAL_STATUSES:
+            return None
+        qty, price = order["executed_qty"], order["avg_price"]
+        return (qty, price) if qty <= 0 or price > 0 else None
+    try:
+        if order_id:
+            fills = _request("GET", "/fapi/v1/userTrades", env,
+                             {"symbol": symbol, "orderId": str(order_id)}) or []
+            qty = sum(float(f.get("qty") or 0) for f in fills)
+            if qty > 0:
+                return qty, sum(float(f["qty"]) * float(f["price"]) for f in fills) / qty
+            return None
+        if not_found and parked_at and now - float(parked_at) >= PARK_NOT_SENT_GRACE_S:
+            start = int((float(parked_at) - PARK_TRADE_LOOKBACK_S) * 1000) + int(_time_offset["ms"])
+            fills = _request("GET", "/fapi/v1/userTrades", env,
+                             {"symbol": symbol, "startTime": start}) or []
+            return (0.0, 0.0) if not fills else None
+    except Exception:
+        return None
+    return None
 
 
 def _sum_by_asset(fills):

@@ -1068,7 +1068,9 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         ns[0] === "tr.ov.evBitgetNoStopUta" && ns[1] === "tr.ov.evBitgetNoStopNote" && ns[2] === 1 && ns[4] === "ACNUSDT tr.rel.short"
         && nu[0] === "tr.ov.evBitgetStopsUnreadUta" && nu[4] === "NVDAUSDT tr.rel.long"
         && trEventText("venue_stops_missing", { venue: "okx", legs: [] }) === null
-        && /const P1_TYPES = \[[^\]]*"venue_stops_missing"\]/.test(mainSrc2) && /ev_venue_stops_missing: t\("tm\.evBitgetNoStop"\)/.test(src));
+        && /const P1_TYPES = \[[^\]]*"venue_stops_missing"[^\]]*\]/.test(mainSrc2) && /ev_venue_stops_missing: t\("tm\.evBitgetNoStop"\)/.test(src));
+      ok("order_unconfirmed 跟 order_error 一樣只從 order_errors[] 那列畫(雲端事件流不再畫一次,免得同一件事兩列)",
+        trEventText("order_unconfirmed", { symbol: "BTCUSDT", strategies: ["a"] }) === null && trEventText("order_error", {}) === null);
       const S4 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
       ok("讀不到止損單那兩句拆成兩句(每句 ≤25 字,同 api notify.py):統一／經典",
         S4.includes('"tr.ov.evBitgetStopsUnreadUta": "Bitget 換成統一帳戶後讀不到止損單。以下倉位當成沒有止損："')
@@ -1150,7 +1152,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const head = fnS("trPaintHead");
     ok("A′ / B / B0 的原因行升正文墨色,用原因句本身定位(前面有「串接失敗 · 」也照升)", /const inkReason = state === "halted" && \(trRestartKind\(hr\) \|\| \(trHaltStopsAll\(hr\.halt\) && !\(trHaltFreeze\(hr\) && trHaltByUser\(hr\.halt\)\)\) \|\| trAcctAsk\(hr\)\) \? trHaltReasonText\(hr, TR\.acctDone\) : state === "noaccount" && trNoAccountStopped\(hr\) \? t\("tr\.cloud\.restartNoAccountZ"\) : "";/.test(head)
       && /const inkAt = inkReason \? full\.indexOf\(inkReason\) : -1;/.test(head) && !/full === text && !trFailedIds/.test(head.slice(head.indexOf("const inkReason"))));
-    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : closes \? null : t\("tr\.ov\.evHaltNote"\);/.test(src)
+    ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = trHaltUnconfirmedSym\(d\) != null \? trHaltUnconfirmedNote\(d\) : trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : closes \? null : t\("tr\.ov\.evHaltNote"\);/.test(src)
       && /trHaltStopsAll\(halt\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\)/.test(src)); }
   { // audit 2-1(B0):沒有交易所 + 重開停止
     const B0 = (o) => ({ alive: true, report: { venues: {}, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1, ...o } } } });
@@ -2622,6 +2624,50 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       /id="tr-desc"><\/div>\s*(<!--[\s\S]*?-->\s*)?<p class="tr-ro-note" id="tr-quote" hidden>/.test(html) && /\$\("tr-quote"\)\.after\(p\)/.test(src)
       && /\.tr-ro-note\.is-fallback \{ color: var\(--ink-2\); \}/.test(css) && /trPaintQuote\(TR\.pending \? null : state\);/.test(src)
       && !/feature_used[^\n]*quote/.test(src)); }
+  { // 下單結果不明:追蹤不了而整台暫停的狀態句、已解除的停車單不再掛在部位表
+    t = (k, v) => k + (v ? JSON.stringify(v) : "");
+    const UH = { halted: true, at: "2026-10-27T01:00:00+00:00", source: "reconciler",
+      reason: "[order_unconfirmed_unparked] BTCUSDT: an order's outcome is unknown and Blave cannot track it (x) — check" };
+    ok("HALT reason 帶 [order_unconfirmed_unparked]:認出標的,狀態句換 tr.haltUnconfirmed(不顯示英文)",
+      trHaltUnconfirmedSym(UH) === "BTCUSDT" && trHaltUnconfirmedSym({ reason: "close all positions" }) === null
+      && trHaltReasonText({ halt: UH, reconciler: { alive: true }, venues: V }) === 'tr.haltUnconfirmed{"sym":"BTCUSDT"}');
+    const LE = (rel) => trLiveOrderErrs([{ ts: "2026-10-27T01:00:00", symbol: "BTCUSDT", exchange: "binance", kind: "order_unconfirmed", released: rel, error: "x" }],
+      new Set(["BTCUSDT"]), { open: new Set(), running: true, orders: [] });
+    ok("已解除(released)的停車單不掛在部位表;還沒解除的照掛", LE(true).size === 0 && LE(undefined).size === 1);
+    globalThis.t = (k, v) => k + (v ? JSON.stringify(v) : "");   // the eval'd pure block reads the global t
+    { // designer v034 UX 定稿(Wei:不掛例外):這批每一條都 ≤2 句、整條 ≤40(計法同 web tools/check_copy_length)
+      const raw = fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "zh.po"), "utf8");
+      const val = (k) => { const m = new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^"]*)"').exec(raw); return m ? m[1] : null; };
+      const count = (v) => (v.match(/[\u4e00-\u9fff]/g) || []).length + (v.match(/\{[a-z_]+\}|[A-Za-z0-9]+/g) || []).length;
+      const KEYS = ["tr.haltUnconfirmed", "tr.haltUnconfirmedNosym", "tr.ov.evHaltUnconfirmedNote", "tr.ov.evHaltUnconfirmedNoteNosym", "tm.evHaltUnconfirmedNote",
+        "tr.ov.evUnconfirmedStuckNote", "tr.ov.evUnconfirmedCloseAllNote", "tr.ov.evUnconfirmedReleasedCloseAllFilled",
+        "tr.ov.evUnconfirmedReleasedCloseAllNone", "tr.err.unconfirmedManual", "tr.ov.evUnconfirmedNote", "tr.err.unconfirmed"];
+      const bad = KEYS.filter((k) => { const v = val(k); return v == null || v.split("。").filter(Boolean).length > 2 || count(v) > 40; });
+      ok("下單結果不明這批的字:每條 ≤2 句、≤40 字", !bad.length);
+      ok("stuck 那句與 manual 部位表那句都有「不要手動補單」;全部平倉那句講「不要自己下單」",
+        /不要手動補單/.test(val("tr.ov.evUnconfirmedStuckNote")) && /不要手動補單/.test(val("tr.err.unconfirmedManual"))
+        && /不要自己下單/.test(val("tr.ov.evUnconfirmedCloseAllNote")));
+      ok("整台暫停的事件說明帶標的,讀不到標的走沒有標的那句",
+        trHaltUnconfirmedNote({ reason: "[order_unconfirmed_unparked] BTCUSDT@spot: x" }) === 'tr.ov.evHaltUnconfirmedNote{"sym":"BTCUSDT"}'
+        && trHaltUnconfirmedNote({ reason: "[order_unconfirmed_unparked]" }) === "tr.ov.evHaltUnconfirmedNoteNosym"
+        && trHaltReasonText({ halt: { halted: true, source: "reconciler", reason: "[order_unconfirmed_unparked]" }, reconciler: { alive: true }, venues: V }) === "tr.haltUnconfirmedNosym"); }
+    { // 一張單一列(designer v034 UX P2-1):解除了只剩那一列 P3、時間用 released_at;manual 沒解除不畫;沒有 id 的照舊
+      const R = trUnconfirmedRows([
+        { kind: "order_unconfirmed", park_id: "P1", ts: "2026-10-27T01:00:00" },
+        { kind: "order_unconfirmed", park_id: "P1", ts: "2026-10-27T02:00:00", stuck: true },
+        { kind: "order_unconfirmed", park_id: "P2", ts: "2026-10-27T01:10:00" },
+        { kind: "order_unconfirmed", park_id: "P2", ts: "2026-10-27T02:10:00", stuck: true, released: true, released_at: "2026-10-27T03:00:00", filled: true },
+        { kind: "order_unconfirmed", park_id: "manual:X:1", ts: "2026-10-27T01:20:00", manual: true },
+        { kind: "order_unconfirmed", inflight_id: "ETH_market", ts: "2026-10-27T01:30:00", close_all: true, stuck: true },
+        { kind: "order_unconfirmed", ts: "2026-10-27T01:40:00" }, { kind: "order_unconfirmed", ts: "2026-10-27T01:41:00" },
+        { symbol: "S", error: "x", ts: "2026-10-27T01:50:00" }]);
+      const by = (f) => R.filter(({ e }) => f(e));
+      ok("一張單一列:還沒解除畫最新那列,解除了只畫那列(時間 released_at),manual 沒解除不畫,沒有 id 的一列一列",
+        by((e) => e.park_id === "P1").length === 1 && by((e) => e.park_id === "P1")[0].e.stuck === true
+        && by((e) => e.park_id === "P2").length === 1 && R.find(({ e }) => e.park_id === "P2").ms === trMs("2026-10-27T03:00:00")
+        && by((e) => e.manual === true).length === 0 && by((e) => e.inflight_id === "ETH_market").length === 1
+        && by((e) => e.kind === "order_unconfirmed" && !e.park_id && !e.inflight_id).length === 2 && by((e) => e.symbol === "S").length === 1); }
+  }
   console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();
 
