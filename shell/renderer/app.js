@@ -1114,7 +1114,7 @@ $("set-rn-sw").addEventListener("click", async () => {
 $("set-rs-sw").addEventListener("click", async () => {
   let r = null;
   try { r = await window.blave.replySoundSet(!RN.sound); } catch (_) { r = null; }
-  if (typeof r !== "boolean") return;
+  if (typeof r !== "boolean" || r === RN.sound) return;   // 沒切成(寫不進去回舊值):不記、不動
   RN.sound = r; rnPaint();
   trackFeature(r ? "reply_snd_on" : "reply_snd_off");
   if (r) rsArm();

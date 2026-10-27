@@ -158,6 +158,20 @@ ok("silent: true 整個 main.js 只有一處、在 replyCue 裡(P1 與其他通�
     ['{"replyNotify":true,"replySound":false}', false], ["null", true], ["{bad", true], ['{"replyNotify":false,"replySound":"x"}', false]];
   for (const [raw, exp] of CASES) ok(`replySoundGet(${raw}) → ${exp}`, run(raw) === exp);
   ok("…寫入只動 replySound", /uiPrefsPatch\(\{ replySound: on === true \}\)/.test(fn(main, "replySoundSet"))); }
+// 切「回覆好了通知我」:提示音沒存過 → 先把當下的值存下來(之後脫鉤);存過 → 不動它。寫不進去照舊值
+{ const PREFS = [line(/const replySoundSaved = .*;/), line(/const replySoundGet = .*;/), line(/const replyNotifyGet = .*;/), fn(main, "uiPrefsPatch"), fn(main, "replyNotifySet")].join("\n");
+  const run = (raw, on, failWrite) => { let file = raw; const tracked = [];
+    const fsx = { readFileSync: () => { if (file === undefined) throw new Error("ENOENT"); return file; }, writeFileSync: (p, d) => { if (failWrite) throw new Error("EROFS"); fsx.tmp = d; }, renameSync: () => { file = fsx.tmp; }, unlinkSync: () => {} };
+    const r = new Function("fs", "uiPrefsPath", "tm", PREFS + "\nreturn { set: replyNotifySet, snd: replySoundGet };")(fsx, () => "/x", () => ({ track: (e, p) => tracked.push(p.act) }));
+    const ret = r.set(on); return { ret, snd: r.snd(), file: file === undefined ? {} : JSON.parse(file), tracked }; };
+  let x = run(undefined, false);
+  ok("沒存過、通知 開→關:提示音存成開(脫鉤),之後照樣是開", x.ret === false && x.file.replySound === true && x.snd === true && x.tracked.join() === "off");
+  x = run('{"replyNotify":false}', true);
+  ok("沒存過、通知 關→開:提示音存成關(之前跟著通知是關),不突然變開", x.ret === true && x.file.replySound === false && x.snd === false);
+  x = run('{"replyNotify":true,"replySound":false}', false);
+  ok("存過:切通知不動提示音", x.file.replySound === false && x.snd === false && x.file.replyNotify === false);
+  x = run(undefined, false, true);
+  ok("寫不進去:回舊值、不記埋點", x.ret === true && x.tracked.length === 0); }
 // 畫面:rsArm／rsPlay 用假的 AudioContext 跑;playRise 照表排兩個正弦音
 const asyncChecks = (async () => {
   const RS = [/^const RISE = \[[\s\S]*?^\];$/m, /^const RISE_GAIN = .*;/m, /^const SOUND_GAP_MS = .*;/m].map((re) => (app.match(re) || [""])[0]).join("\n");
@@ -197,7 +211,7 @@ const asyncChecks = (async () => {
   ok("回覆音峰值 ≤ −20 dBFS(主增益 × 相對峰值 1)", 20 * Math.log10(R.RISE_GAIN) <= -20 && R.SOUND_GAP_MS === 2000);
 })();
 ok("畫面:每個送出入口都經過的 submitMessage 第一行就 rsArm(在任何 await 之前);sendDraft 不再自己叫", /^function submitMessage\(msg, opts\) \{[^\n]*\n  rsArm\(\);/.test(fn(app, "submitMessage")) && !/rsArm/.test(fn(app, "sendDraft")));
-ok("畫面:切提示音送 reply_snd_on／off;開 → arm,關 → close 並放掉", /RN\.sound = r; rnPaint\(\);\n  trackFeature\(r \? "reply_snd_on" : "reply_snd_off"\);\n  if \(r\) rsArm\(\);\n  else if \(rsCtx\) \{ rsCtx\.close\(\)\.catch\(\(\) => \{\}\); rsCtx = null; \}/.test(app));
+ok("畫面:切提示音送 reply_snd_on／off(值真的變了才送);開 → arm,關 → close 並放掉", /if \(typeof r !== "boolean" \|\| r === RN\.sound\) return;[^\n]*\n  RN\.sound = r; rnPaint\(\);\n  trackFeature\(r \? "reply_snd_on" : "reply_snd_off"\);\n  if \(r\) rsArm\(\);\n  else if \(rsCtx\) \{ rsCtx\.close\(\)\.catch\(\(\) => \{\}\); rsCtx = null; \}/.test(app));
 ok("畫面:主行程叫 reply-sound 才響(onReplySound → rsPlay)", /window\.blave\.onReplySound\(\(\) => \{ rsPlay\(Date\.now\(\)\); \}\);/.test(app)
   && /onReplySound: \(fn\) => ipcRenderer\.on\("reply-sound", /.test(fs.readFileSync(path.join(S, "preload.js"), "utf8")));
 const TM = require(path.join(S, "telemetry.js"));
