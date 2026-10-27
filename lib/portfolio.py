@@ -324,9 +324,14 @@ def park_or_halt(symbol, exchange, error, signed_diff, reduce_only, asset_spec=N
     except Exception as e:
         logging.error(f"[reconcile] {symbol}: could not park the unconfirmed order ({e}) — HALT")
         _park_retry.append((args, kw, exchange, names))
-    if pid and not manual:
+    if pid:
+        # a manual park gets its row too (designer v034 UX P2-4): the position line and the
+        # release have something to show after 啟動下單; the platform sends no event for its
+        # first row — the HALT below is the P1 — and the pages do not list it until released
         _record_order_error(symbol, exchange, error,
-                            extra={'kind': 'order_unconfirmed', 'strategies': names, 'park_id': pid})
+                            extra={'kind': 'order_unconfirmed', 'strategies': names, 'park_id': pid,
+                                   **({'manual': True} if manual else {})})
+    if pid and not manual:
         return 'parked'
     reason = (f"{UNPARKED_TAG} {symbol}: an order's outcome is unknown and Blave cannot track it "
               f"({str(error)[:60]}) — check the position, tell the agent what filled")
@@ -347,6 +352,72 @@ def _retry_parks():
             left.append((args, kw, exchange, names))
     _park_retry[:] = left
     return {a[0] for a, _, _, _ in left}
+
+
+def mark_inflight_released(ids, interrupted=False):
+    """The 全部平倉 rows of in-flight orders (inflight_id = the marker's file name) end in place:
+    released once the marker is gone. interrupted = reap_dead_inflight took it (that P1 —
+    前次執行中斷 — carries it from there, so no filled is claimed). Best-effort."""
+    try:
+        path = 'manager/order_errors.json'
+        rows = _order_errors_for_update(path)
+        hit = [r for r in rows or [] if isinstance(r, dict) and r.get('inflight_id') in ids
+               and not r.get('released')]
+        if not hit:
+            return
+        now = datetime.utcnow().isoformat()
+        for r in hit:
+            r.update(released=True, released_at=now)
+            if interrupted:
+                r['interrupted'] = True
+            else:
+                r['filled'] = _filled_since(r.get('symbol'), r.get('ts'))
+        tmp = f'{path}.{os.getpid()}.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(rows[-5:], f, indent=2)
+        atomic_replace(tmp, path)
+    except Exception as e:
+        logging.warning(f'failed to mark inflight rows {ids} released: {e}')
+
+
+def _filled_since(symbol, ts):
+    """Did the book get a fill on this symbol at or after ts (orders.jsonl)?"""
+    try:
+        with open(_ORDERS_LOG_PATH) as f:
+            for ln in f:
+                if symbol not in ln:
+                    continue
+                try:
+                    e = json.loads(ln)
+                except ValueError:
+                    continue
+                if e.get('symbol') == symbol and str(e.get('ts') or '') >= str(ts or '') and any(
+                        float(l.get('executed_qty') or 0) > 0 for l in e.get('legs') or []):
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+def _close_inflight_rows():
+    """Each round: 全部平倉 rows whose inflight marker is gone end (mark_inflight_released)."""
+    try:
+        rows = load_json('manager/order_errors.json')
+    except (OSError, ValueError):
+        return
+    if not isinstance(rows, list):
+        return
+    open_ids = {r.get('inflight_id') for r in rows
+                if isinstance(r, dict) and r.get('inflight_id') and not r.get('released')}
+    if not open_ids:
+        return
+    try:
+        from lib.execute import _INFLIGHT_DIR
+    except ImportError:
+        return
+    gone = {i for i in open_ids if not os.path.exists(os.path.join(_INFLIGHT_DIR, i + '.json'))}
+    if gone:
+        mark_inflight_released(gone)
 
 
 def mark_park_released(pid, filled):
@@ -421,6 +492,7 @@ def _settle_parked(query=None, now=None):
     trade this round. One order's trouble keeps only that order parked."""
     if _unconfirmed is None:
         return {}
+    _close_inflight_rows()
     waiting = _retry_parks() if _park_retry else set()
     try:
         rows = _unconfirmed.load()
@@ -462,7 +534,8 @@ def _settle_parked(query=None, now=None):
                     f"order {pid} outcome still unknown — new entries on this symbol stay "
                     f"paused; check the position on the venue",
                     extra={'kind': 'order_unconfirmed', 'stuck': True, 'park_id': pid,
-                           'strategies': _strategy_names(entry.get('contributors'))})
+                           'strategies': _strategy_names(entry.get('contributors')),
+                           **({'manual': True} if entry.get('manual') else {})})
         except Exception as e:
             logging.error(f"[reconcile] parked {key} {pid}: {type(e).__name__}: {e} — kept parked")
             if key:

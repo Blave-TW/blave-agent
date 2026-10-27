@@ -371,6 +371,9 @@ round_()
 MODE["raise"] = None
 man = [e for pid, e in parked().items() if pid.startswith("manual:")]
 check(man and man[-1]["venue"] == "paper", f"manual park: venue from the order's exchange ({man[-1:]})")
+mrow = [r for r in rows("order_unconfirmed") if str(r.get("park_id", "")).startswith("manual:")]
+check(mrow and mrow[-1].get("manual") is True and mrow[-1].get("strategies") == ["tw_c"],
+      f"manual park: an order_errors row (manual, park_id) for the position line ({mrow[-1:]})")
 guard.clear_halt("test")
 for f in os.listdir("state/execution/inflight"):
     os.remove(os.path.join("state/execution/inflight", f))
@@ -478,10 +481,35 @@ check(os.path.realpath(os.getcwd()) == os.path.realpath(WS) and not os.path.exis
 check(held_at_zero and all(d > 0 for d in held_at_zero),
       f"全部平倉 zeroes the book holding the park lock — nothing settles in between ({held_at_zero})")
 fl = [r for r in rows("order_unconfirmed") if "close-all" in str(r.get("error"))]
-check(len([r for r in fl if r["symbol"] == KEY]) == 1 and [r for r in fl if r["symbol"] == KEY][0].get("stuck") is True
-      and [r for r in fl if r["symbol"] == KEY][0]["exchange"] == "paper",
-      f"全部平倉 with an order still parked: a row says it may have filled and was not closed ({fl})")
-check(any(r["symbol"] == "ETHUSDT" for r in fl), f"…and one for a symbol whose inflight marker is still there ({fl})")
+kp = [r for r in fl if r["symbol"] == KEY]
+check(len(kp) == 1 and kp[0].get("stuck") is True and kp[0].get("close_all") is True
+      and kp[0].get("park_id") == "X6" and kp[0]["exchange"] == "paper",
+      f"全部平倉 with an order still parked: one close_all row with its park_id ({fl})")
+ep = [r for r in fl if r["symbol"] == "ETHUSDT"]
+check(len(ep) == 1 and ep[0].get("close_all") is True and ep[0].get("inflight_id") == "ETHUSDT_market",
+      f"…and one for an in-flight order, with its inflight_id ({ep})")
+# the in-flight one ends in place when its marker goes away
+os.remove("state/execution/inflight/ETHUSDT_market.json")
+guard.clear_halt("test")
+round_()
+ep = [r for r in rows("order_unconfirmed") if r.get("inflight_id") == "ETHUSDT_market"]
+check(ep and ep[0].get("released") is True and ep[0].get("filled") is False and ep[0].get("released_at"),
+      f"marker gone, nothing booked: the 全部平倉 row is released, filled false ({ep})")
+# the parked one ends through its park
+unconfirmed.resolve("2330", 0, park_id="X6")
+kp = [r for r in rows("order_unconfirmed") if r.get("park_id") == "X6" and r.get("close_all")]
+check(kp and kp[0].get("released") is True and kp[0].get("filled") is False,
+      f"resolve: the 全部平倉 row of that park is released too ({kp})")
+# a marker reaped at startup ends its row as interrupted (前次執行中斷 takes over)
+_ex = __import__("lib.execute", fromlist=["x"])
+_ex._write_inflight_marker("BNBUSDT#market", "market", 5.0)
+portfolio._record_order_error("BNBUSDT", "*", "close-all: x", extra={"kind": "order_unconfirmed", "stuck": True,
+                              "close_all": True, "inflight_id": "BNBUSDT_market"})
+with contextlib.redirect_stdout(io.StringIO()):
+    _ex.reap_dead_inflight()
+bp = [r for r in rows("order_unconfirmed") if r.get("inflight_id") == "BNBUSDT_market"]
+check(bp and bp[0].get("released") is True and bp[0].get("interrupted") is True and "filled" not in bp[0],
+      f"reaped marker: the row is released as interrupted, no filled claimed ({bp})")
 
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)

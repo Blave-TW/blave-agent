@@ -442,6 +442,12 @@ def reap_dead_inflight():
     if not dead:
         return 0
     labels = ", ".join(f"{m.get('key')}({m.get('style')})" for m in dead)
+    try:  # a 全部平倉 row waiting on one of these markers ends as interrupted (that P1 takes over)
+        from lib.portfolio import mark_inflight_released
+        mark_inflight_released({os.path.basename(_marker_path(m.get("key")))[:-5] for m in dead},
+                               interrupted=True)
+    except Exception:
+        pass
     try:
         self_ledger = _own_only()
     except Exception:

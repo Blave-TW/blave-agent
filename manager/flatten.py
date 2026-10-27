@@ -894,18 +894,21 @@ def _flatten():
         else:
             zero_ledger_symbols(done - unclosed_by[vid])
     # no settle here: flatten() holds the park lock (see there), so what was parked after the
-    # opening settle is still parked now — its fill, if any, is booked only after this run
+    # opening settle is still parked now — its fill, if any, is booked only after this run.
+    # One row per order left out (designer v034 UX P1-2): close_all marks the 「沒有一起平倉」
+    # kind; park_id / inflight_id let it end in place once the order is known.
+    left = []   # (key, venue, {"park_id": …} or {"inflight_id": …})
     try:
-        rows_now = _pf._unconfirmed.read_held()
-        still = {e.get("key") for e in rows_now.values()}
-        venues = {e.get("key"): e.get("venue") for e in rows_now.values()}
+        for pid, e in _pf._unconfirmed.read_held().items():
+            if e.get("key"):
+                left.append((e["key"], e.get("venue"), {"park_id": pid}))
     except Exception:
-        still, venues = set(parked_before or {}), {}
+        left = [(k, None, {}) for k in sorted(parked_before or {}) if k]
     # an order still in flight (its marker survived _wait_for_inflight) may have an outcome
     # nobody knows yet either — the same row, so 全部平倉 never reads as flat over it
     try:
         from lib.execute import _INFLIGHT_DIR
-        for f in os.listdir(_INFLIGHT_DIR):
+        for f in sorted(os.listdir(_INFLIGHT_DIR)):
             if f.endswith(".json"):
                 try:
                     with open(os.path.join(_INFLIGHT_DIR, f)) as fh:
@@ -913,14 +916,14 @@ def _flatten():
                 except (OSError, ValueError):
                     continue
                 if mk:
-                    still.add(mk)
+                    left.append((mk, None, {"inflight_id": f[:-5]}))
     except (ImportError, OSError):
         pass
-    for key in sorted(k for k in still if k):
-        # 全部平倉 closed the book; an order still parked here may have filled and is not in it
-        _record_order_error(key, venues.get(key) or "*",
+    for key, venue, ident in left:
+        _record_order_error(key, venue or "*",
                             "close-all: 這個標的有一筆結果不明的單，可能已經成交，不在這次平倉裡。"
-                            "請到交易所核對部位。", extra={"kind": "order_unconfirmed", "stuck": True})
+                            "請到交易所核對部位。",
+                            extra={"kind": "order_unconfirmed", "stuck": True, "close_all": True, **ident})
         errors += 1
     if any(unclosed_by.values()):
         # a close accepted but not confirmed filled (群益) is still in the book;

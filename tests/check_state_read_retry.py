@@ -505,6 +505,8 @@ EXEMPT = [
      'setting', 'the reply language for the order-unconfirmed notice: a failed read keeps Chinese'),
     ('manager/flatten.py', '_flatten', 'os.path.join(_INFLIGHT_DIR, f)',
      'failclosed', 'inflight markers at the end of 全部平倉: an unreadable one is skipped, the run already warned per key'),
+    ('lib/portfolio.py', '_filled_since', '_ORDERS_LOG_PATH',
+     'append', 'manager/orders.jsonl: did a 全部平倉 row\'s in-flight order fill (append-only)'),
     ('lib/unconfirmed.py', 'load_json', 'path',
      'helper', "the half-updated-workspace fallback (lib/winreplace.py without load_json)"),
 ]
