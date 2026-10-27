@@ -3414,18 +3414,20 @@ def _saved_contracts(cfg):
 
 
 def _pending_sent_roots():
-    """Roots with 統一 lots parked unclaimed (manager/reconciler PENDING_SENT_PATH);
-    None = the file is there but unreadable."""
-    try:
-        rows = atomic_file.load_json(os.path.join(WORKSPACE_STATE, "president_pending_sent.json"),
-                                     encoding="utf-8")
-    except FileNotFoundError:
-        return set()
-    except (OSError, ValueError):
-        return None
-    if not isinstance(rows, dict):
-        return None
-    return {r.get("root") for r in rows.values() if isinstance(r, dict)}
+    """Roots with 統一 or 群益 lots parked unclaimed (manager/reconciler PENDING_SENT_PATH,
+    CAPITAL_PENDING_PATH; same row shape); None = a file is there but unreadable."""
+    roots = set()
+    for name in ("president_pending_sent.json", "capital_pending_sent.json"):
+        try:
+            rows = atomic_file.load_json(os.path.join(WORKSPACE_STATE, name), encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError):
+            return None
+        if not isinstance(rows, dict):
+            return None
+        roots |= {r.get("root") for r in rows.values() if isinstance(r, dict)}
+    return roots
 
 
 _CONTRACT_CV = {"TXF": 200, "MXF": 50, "TMF": 10}
@@ -3623,7 +3625,7 @@ def _contracts_for_save(args, clean, prev_amounts, cfg):
     parked = _pending_sent_roots()
     for k in sorted(rolling):
         if parked is None or keys_of(k) & parked:
-            raise ValueError(f"CONTRACT_PARKED: 「{k}」的合約還有統一未回報成交的委託,"
+            raise ValueError(f"CONTRACT_PARKED: 「{k}」的合約還有券商未回報成交的委託,"
                              "請等對帳確認後再換")
     return out
 

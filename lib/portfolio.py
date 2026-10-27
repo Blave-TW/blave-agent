@@ -1818,13 +1818,14 @@ def settle_expired_months(actual, venue=_CURRENT, now=None):
     return changed
 
 
-def book_late_fill(symbol, venue, contract, lots):
+def book_late_fill(symbol, venue, contract, lots, price=None):
     """One orders.jsonl line for `lots` (signed) of `symbol` in `contract` that
     the venue confirmed only after the order call had returned without the fill
     (統一 'sent' / 'unknown' — manager/reconciler._president_claim_pending). The
     usual replay (_ledger_walk) books it and takes its month from `contract`, so
     the trade history and the book stay one source; a guess row stays a guess.
-    No fill price: none was reported. _append_reconciler_log's write failure
+    `price`: what the venue's avg cost implies (群益), history only — the lots
+    book costs lots; None = not reported. _append_reconciler_log's write failure
     trips HALT — a late fill left out is exactly the fill the next diff re-sends."""
     venue = _resolve_venue(venue)
     lots = float(lots)
@@ -1834,7 +1835,8 @@ def book_late_fill(symbol, venue, contract, lots):
                             'contributors': [],
                             'legs': [{'signed_diff': lots, 'reduce_only': held * lots < 0,
                                       'signed_qty': lots, 'executed_qty': abs(lots),
-                                      'resolved_symbol': contract}]})
+                                      'resolved_symbol': contract,
+                                      **({'fill_price': float(price)} if price else {})}]})
 
 
 def _rebase_ledger_symbol(symbol, venue, months, qty=None):
@@ -4449,7 +4451,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
             filled = abs(leg['signed_diff'])
             log_dir = 'BUY' if sub_diff > 0 else 'SELL'
             logging.info(f"{log_dir}{'(reduce)' if reduce_only else ''} {symbol} {filled:.2f}")
-            notices.append((key, default, {'symbol': symbol, 'amount': filled}))
+            if filled > 0:  # an unconfirmed leg ('sent', 0) is no fill; 群益's claim announces it later
+                notices.append((key, default, {'symbol': symbol, 'amount': filled}))
 
         _flush_legs()
         if marked:

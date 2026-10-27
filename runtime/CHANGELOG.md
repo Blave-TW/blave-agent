@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **換合約守門也看群益的停放單(`command_listener._pending_sent_roots`)**:除了 `president_pending_sent.json`,也讀 workspace lib 新寫的 `capital_pending_sent.json`(同一種列形狀);群益台指期有送出後沒收到成交回報、還沒認領的單時,換合約一樣回 `CONTRACT_PARKED`,任一檔讀不出來也擋。訊息從「統一」改成「券商」。測試 `tests/check_contract_switch_runtime.py`。
+
 ## 1.1.143 — 2026-10-26(desktop 0.1.33;canary:29026、uid=1)
 
 - **Bitget 翻開經典帳戶與統一帳戶(desktop 0.1.33)**(`venue_traits` 的 `bitget` `verified_modes` = `("classic", "uta")`;經典 2026-10-22、統一帳戶 T1–T12 真帳驗過,T11c 停損 10-26 補驗):`account_reader` 讀 Bitget、`local_daemon` 放行 `BITGET`、電腦版連接框兩個視角都列 Bitget(`cloudcmd.BITGET_VERIFIED_MODES` 同值,兩種都開所以連接框不再講「只收經典帳戶」)、聊天綁定收 `bitget`。broker attribution 還是空的(`BROKER_CHANNEL_CODE`)。測試 `tests/check_bitget_lib.py`、`tests/check_bitget_surfaces.py`、`tests/check_venue_traits.py`、`tests/check_shell_connect_venues.js`、`tests/check_desktop_venue_env.py`、`tests/check_local_real_key_gate.py`。
