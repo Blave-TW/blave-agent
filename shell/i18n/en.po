@@ -9047,7 +9047,7 @@ msgid "xt.lagOneFive"
 msgstr "One bar late, Sharpe {m1}, five bars late {m5}"
 
 msgid "xt.lagMixed"
-msgstr "Up to 5 bars late, Sharpe ranges from {lo} to {hi}, and is {v10} at 10 bars"
+msgstr "Up to 5 bars late, Sharpe ranges from {lo} to {hi}, and is {v10} at 10 bars late"
 
 msgid "xt.lagLow"
 msgstr "Sharpe is {s0} now, {s1} one bar late, {s10} 10 bars late"
