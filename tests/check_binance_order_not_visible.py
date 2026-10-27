@@ -8,7 +8,7 @@ for an order that had filled.
 
 Asserts: -2013 then FILLED → place_market_order returns the fill, never sends a
 second POST; -2013 for the whole window → OrderNotConfirmed (unknown, may have
-filled), not BinanceError; any other error on the poll still raises BinanceError.
+filled), not BinanceError; any other error on the poll is OrderNotConfirmed too.
 
 Run: cd blave-agent && .venv/bin/python tests/check_binance_order_not_visible.py
 """
@@ -40,7 +40,7 @@ def run(get_replies, timeout=15):
     CALLS.update(POST=0, GET=0)
 
     def fake_send(method, path, env, params=None, signed=True, retries=3, spot=False,
-                  plain_text=False):
+                  plain_text=False, no_resend=False):
         CALLS[method] += 1
         if method == "POST":
             return {"orderId": 1173539174627}
@@ -83,9 +83,12 @@ except Exception as e:
 
 try:
     run([{"code": -2019, "msg": "Margin is insufficient."}])
-    check(False, "-2019 on the poll must raise")
-except ob.BinanceError as e:
-    check(e.code == -2019 and CALLS["GET"] == 1, "other poll errors still raise BinanceError")
+    check(False, "-2019 on the poll must not return a fill")
+except ob.OrderNotConfirmed as e:
+    # the order id is in hand: any poll failure leaves its fate unknown (audit v034 P0-1)
+    check(CALLS["POST"] == 1 and e.parkable(), "other poll errors → OrderNotConfirmed too, no second placement")
+except Exception as e:
+    check(False, f"-2019 on the poll raised {type(e).__name__}, not OrderNotConfirmed")
 
 print("FAILED" if fails else "all ok")
 sys.exit(1 if fails else 0)

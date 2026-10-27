@@ -519,8 +519,13 @@ def _netted_exit(env, vid, order, sym, direction, signed_diff, row, sold=0.0, ke
                     f"position is restored")
     from lib import guard
     with guard.netted_restore(sym, other, want, source):
-        result = order.place_market_order(env, sym, other, want, client_order_id=_cid(),
-                                          reduce_only=False)
+        try:
+            result = order.place_market_order(env, sym, other, want, client_order_id=_cid(),
+                                              reduce_only=False)
+        except Exception as e:
+            if hasattr(e, "parkable"):  # lib/unconfirmed.OrderOutcomeUnknown: booked as a netted exit
+                e.netted_exit = True
+            raise
     if result is False:
         return False
     _account_short(key or sym, False)
@@ -1088,19 +1093,26 @@ def _paper_contract_order(env, symbol, signed_diff, asset_spec, reduce_only):
     return placed
 
 
-def query_parked_order(venue, venue_symbol, order_id):
-    """A parked order's outcome (lib/unconfirmed.outcome): (executed_qty, avg_price)
-    once terminal, None while unknown — including any query failure. Read-only."""
+def query_parked_order(entry):
+    """A parked order's outcome (lib/unconfirmed): (executed_qty, avg_price) once known,
+    None while unknown — including any query failure. Read-only. The venue lib's
+    resolve_unknown_order when it has one (Binance: by order id or client id, with a
+    userTrades cross-check), else get_order + its TERMINAL_STATUSES."""
     from lib.unconfirmed import outcome
-    order = importlib.import_module(f"lib.order_{venue}")
-    terminal = getattr(order, "TERMINAL_STATUSES", None)
-    if not terminal or not hasattr(order, "get_order"):
-        return None
+    venue, sym, oid = entry.get("venue"), entry.get("venue_symbol"), entry.get("order_id")
     try:
-        return outcome(order.get_order(read_env(), venue_symbol, order_id), terminal)
+        order = importlib.import_module(f"lib.order_{venue}")
+        if hasattr(order, "resolve_unknown_order"):
+            return order.resolve_unknown_order(read_env(), sym, order_id=oid,
+                                               client_order_id=entry.get("client_order_id"),
+                                               parked_at=entry.get("parked_at"))
+        terminal = getattr(order, "TERMINAL_STATUSES", None)
+        if not terminal or not hasattr(order, "get_order") or not oid:
+            return None
+        return outcome(order.get_order(read_env(), sym, oid), terminal)
     except Exception as e:
-        logging.info(f"[venue_wiring] parked {venue} order {order_id} not answered yet "
-                     f"({type(e).__name__}: {str(e)[:120]})")
+        logging.info(f"[venue_wiring] parked {venue} order {oid or entry.get('client_order_id')} "
+                     f"not answered yet ({type(e).__name__}: {str(e)[:120]})")
         return None
 
 
@@ -1264,7 +1276,13 @@ def auto_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
             result = order.place_market_order(env, sym, direction, qty,
                                               client_order_id=cid,
                                               reduce_only=reduce_only)
-        except ValueError as e:
+        except Exception as e:
+            if hasattr(e, "parkable") and not reduce_only:
+                # lib/unconfirmed.OrderOutcomeUnknown: what of it nets into the user's opposite
+                # position, for the book once it resolves (same as netted_qty on a fill)
+                e.netted_room = netted_room if _own_only() else 0.0
+            if not isinstance(e, ValueError):
+                raise
             # the older bingx lib RAISES below-min (predates the False-skip
             # contract). WHITELIST the min-size wording (audit M2): the same
             # type also carries real faults (missing keys, underivable

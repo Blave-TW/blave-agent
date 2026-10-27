@@ -957,8 +957,32 @@ def _account_held(exchange):
     return bool(venue) and guard.account_held(str(venue).lower())
 
 
+def _place_or_park(symbol, signed, asset_spec, reduce_only, exchange, contributors, stop,
+                   why=None, **kw):
+    """auto_place_order for the async styles. An order whose outcome is unknown
+    (lib/unconfirmed.OrderOutcomeUnknown) is parked — or HALTs when it cannot be — and the
+    whole execution stops: treating it as a failed slice would book it as unfilled and the
+    completion re-diff would send it again (audit v034 P1-2)."""
+    from lib.venue_wiring import auto_place_order
+    try:
+        return auto_place_order(symbol, signed, asset_spec, reduce_only, exchange, **kw)
+    except Exception as e:
+        try:
+            from lib.unconfirmed import OrderOutcomeUnknown
+        except ImportError:
+            raise e
+        if not isinstance(e, OrderOutcomeUnknown):
+            raise
+        from lib.portfolio import park_or_halt
+        got = park_or_halt(symbol, exchange, e, signed, reduce_only, asset_spec, contributors)
+        if why is not None:
+            why["stop"] = "unknown"
+        stop.set()
+        raise RuntimeError(f"order outcome unknown — {got}, stopping execution") from e
+
+
 def _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop, venue_seen,
-                   why=None):
+                   why=None, contributors=None):
     """USD-denominated market slice via the venue wiring. fill_qty is returned
     in USD (not base units) so run_twap's target/filled accounting stays in
     one currency. `why` (optional dict) records the stop reason so the caller
@@ -996,8 +1020,8 @@ def _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop, venue_
             stop.set()
             raise RuntimeError("exchange account unconfirmed — stopping execution")
         signed = usd if side == "buy" else -usd
-        placed = auto_place_order(symbol, signed, asset_spec, reduce_only, exchange,
-                                  **_sold_kw(venue_seen))
+        placed = _place_or_park(symbol, signed, asset_spec, reduce_only, exchange, contributors,
+                                stop, why, **_sold_kw(venue_seen))
         if isinstance(placed, dict) and placed.get("writeoff"):
             venue_seen["writeoff"] = placed["writeoff"]
             if not float(placed.get("executed_qty") or 0):
@@ -1130,7 +1154,7 @@ def _twap_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
         summary = run_twap(
             symbol, side, total, duration_min, n_slices,
             _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop,
-                           venue_seen, why),
+                           venue_seen, why, contributors=contributors),
             twap_key, signal_price=_venue_mark_price(symbol),
             send_telegram_fn=notify, stop_event=stop, notify_slices=False)
         filled = float(summary.get("total_filled") or 0)
@@ -1141,9 +1165,9 @@ def _twap_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
         # remainder instead of an abort/re-dispatch loop that never converges.
         remaining = total - filled
         if why.get("stop") == "below_min" and remaining > _RESIDUAL_USD:
-            placed = auto_place_order(symbol, remaining if signed_diff > 0 else -remaining,
-                                      asset_spec, reduce_only, exchange,
-                                      **_sold_kw(venue_seen))
+            placed = _place_or_park(symbol, remaining if signed_diff > 0 else -remaining,
+                                    asset_spec, reduce_only, exchange, contributors, stop, why,
+                                    **_sold_kw(venue_seen))
             if isinstance(placed, dict):
                 if placed.get("writeoff"):
                     venue_seen["writeoff"] = placed["writeoff"]
@@ -1165,7 +1189,8 @@ def _twap_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                 contributors, style, filled, vwap, aborted,
                 below_min=why.get("stop") == "below_min",
                 filled_base=venue_seen.get("base"), writeoff=venue_seen.get("writeoff"),
-                netted_qty=venue_seen.get("netted", 0.0))
+                netted_qty=venue_seen.get("netted", 0.0),
+                halted="order outcome unknown" if why.get("stop") == "unknown" else False)
     except Exception as e:
         logging.error(f"[execute] {key} {style} crashed: {e}")
         from lib.portfolio import _record_order_error
@@ -1407,9 +1432,9 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
         remaining = max(0.0, total - sum(f["fill_qty"] for f in fills))
         if remaining > _RESIDUAL_USD and not stop.is_set() and not cancel_uncertain:
             seen["base"] = sum(f["base"] for f in fills)
-            placed = auto_place_order(symbol, remaining if buy else -remaining,
-                                      asset_spec, reduce_only, exchange,
-                                      **_sold_kw(seen))
+            placed = _place_or_park(symbol, remaining if buy else -remaining,
+                                    asset_spec, reduce_only, exchange, contributors, stop, None,
+                                    **_sold_kw(seen))
             if isinstance(placed, dict):
                 if placed.get("writeoff"):
                     seen["writeoff"] = placed["writeoff"]
@@ -1566,7 +1591,7 @@ def _custom_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
     why = {}
     total = abs(round(signed_diff, 2))
     raw_slice = _make_slice_fn(symbol, asset_spec, reduce_only, exchange, side, stop,
-                               venue_seen, why)
+                               venue_seen, why, contributors=contributors)
 
     def _tracked(_s, _d, usd):
         # a buggy executor looping "to be safe" must not build N× the order —
@@ -1599,7 +1624,8 @@ def _custom_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
                     contributors, style, filled, vwap, aborted or stop.is_set(),
                     filled_base=venue_seen.get("base"),
                     netted_qty=venue_seen.get("netted", 0.0),
-                    writeoff=venue_seen.get("writeoff"))
+                    writeoff=venue_seen.get("writeoff"),
+                    halted="order outcome unknown" if why.get("stop") == "unknown" else False)
             notify(f"Executor {module} done: {side.upper()} "
                    f"${filled:,.2f}/${total:,.2f} {symbol} | VWAP={vwap}")
         except Exception as e:

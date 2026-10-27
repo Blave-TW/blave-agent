@@ -531,6 +531,9 @@ def flatten():
     # to strategy-targeted symbols, and spot+self_ledger has not been
     # integrated/live-tested yet (swap-only feature as shipped 2026-08-20).
     import lib.portfolio as _pf
+    # an order parked with an unknown outcome (lib/unconfirmed): ask the venue first, so a
+    # fill that can be found now is in the book this close reads, and closed with it
+    parked_before = _pf._settle_parked() if hasattr(_pf, "_settle_parked") else {}
     cfg = load_portfolio_config()
     own = _pf.own_positions_only(cfg) if hasattr(_pf, "own_positions_only") else cfg.get("self_ledger")
     per_venue = hasattr(_pf, "book_ready")  # a lib whose book is kept per venue
@@ -778,6 +781,14 @@ def flatten():
                         kw["book_months"] = months_by_key.get(key, set())
                     result = order.close_position_partial(env, sym, side, size, client_order_id=cid, **kw)
             except Exception as e:
+                if sym and hasattr(_pf, "_outcome_unknown") and _pf._outcome_unknown(e):
+                    # the close may have filled: parked, its key keeps its book until it is known
+                    _pf.park_or_halt(_book_key(vid, sym), vid, e,
+                                     (-1.0 if side == "long" else 1.0) * float(size) * float(p.get("mark_price", 0) or 0),
+                                     True)
+                    unclosed.add(_book_key(vid, sym))
+                    errors += 1
+                    continue
                 d = _defer_tw_close(vid, _book_key(vid, sym), e) if sym else None
                 if d:
                     unclosed.add(_book_key(vid, sym))
@@ -857,6 +868,20 @@ def flatten():
             zero_ledger_symbols(done - unclosed_by[vid], venue=vid)
         else:
             zero_ledger_symbols(done - unclosed_by[vid])
+    try:
+        still = _pf._settle_parked() if hasattr(_pf, "_settle_parked") else {}
+    except Exception:
+        still = parked_before
+    try:
+        venues = {e.get("key"): e.get("venue") for e in _pf._unconfirmed.load().values()}
+    except Exception:
+        venues = {}
+    for key in sorted(k for k in (still if still is not None else parked_before or {}) if k):
+        # 全部平倉 closed the book; an order still parked here may have filled and is not in it
+        _record_order_error(key, venues.get(key) or "*",
+                            "close-all: 這個標的有一筆結果不明的單，可能已經成交，不在這次平倉裡。"
+                            "請到交易所核對部位。", extra={"kind": "order_unconfirmed", "stuck": True})
+        errors += 1
     if any(unclosed_by.values()):
         # a close accepted but not confirmed filled (群益) is still in the book;
         # the reconciler's capital positions snapshot is up to 300 s old, so a
