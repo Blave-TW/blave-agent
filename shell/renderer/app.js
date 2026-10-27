@@ -1094,14 +1094,16 @@ $("set-awake-sw").addEventListener("click", async () => {
   if (AWAKE && !r) trackFeature("awake_off");
   AWAKE = r; awakePaint(); srSay($("set-awake-lead").textContent);
 });
-/* 設定 › 一般:回覆好了通知我(主行程 ui-prefs replyNotify,缺 = 開)。osOff = 這次啟動後系統通知收到過 failed、之後還沒有一則成功出現 */
-let RN = { on: true, osOff: false };
-async function rnLoad() { try { const r = await window.blave.replyNotify(); RN = { on: !(r && r.on === false), osOff: !!(r && r.osOff) }; } catch (_) { RN = { on: true, osOff: false }; } rnPaint(); }
+/* 設定 › 一般:回覆好了通知我(主行程 ui-prefs replyNotify,缺 = 開)與提示音(replySound,缺 = 開,兩個各管各的)。
+   osOff = 這次啟動後系統通知收到過 failed、之後還沒有一則成功出現 */
+let RN = { on: true, osOff: false, sound: true };
+async function rnLoad() { try { const r = await window.blave.replyNotify(); RN = { on: !(r && r.on === false), osOff: !!(r && r.osOff), sound: !(r && r.sound === false) }; } catch (_) { RN = { on: true, osOff: false, sound: true }; } rnPaint(); }
 function rnPaint() {
   const sw = $("set-rn-sw"); if (!sw) return;
   sw.classList.toggle("off", !RN.on); sw.setAttribute("aria-checked", RN.on ? "true" : "false");
   const os = RN.on && RN.osOff; $("set-rn-os").hidden = !os;
   if (os) sw.setAttribute("aria-describedby", "set-rn-os"); else sw.removeAttribute("aria-describedby");
+  const rs = $("set-rs-sw"); rs.classList.toggle("off", !RN.sound); rs.setAttribute("aria-checked", RN.sound ? "true" : "false");
 }
 $("set-rn-sw").addEventListener("click", async () => {
   let r = null;
@@ -1109,6 +1111,57 @@ $("set-rn-sw").addEventListener("click", async () => {
   if (typeof r !== "boolean") return;   // 沒切成:畫面維持原狀
   RN.on = r; rnPaint();
 });
+$("set-rs-sw").addEventListener("click", async () => {
+  let r = null;
+  try { r = await window.blave.replySoundSet(!RN.sound); } catch (_) { r = null; }
+  if (typeof r !== "boolean") return;
+  RN.sound = r; rnPaint();
+  if (r) rsArm();   // 切開那一下也是用戶動作
+});
+/* 回覆音 04 Rise(canon › Sound)。數字同網頁 reply_cue.js,tests/check_web_desktop_parity.js 逐值比對;改一邊另一邊就紅 */
+const RISE = [
+  { f: 523.25, start: 0, attack: 0.006, decay: 0.12 },
+  { f: 783.99, start: 0.11, attack: 0.006, decay: 0.16 },
+];
+const RISE_GAIN = 0.0797;   // 48 kHz 離線算出相對峰值 0.9965 → 10^(−22/20)/0.9965,實際峰值 −22 dBFS
+const SOUND_GAP_MS = 2000;
+function playRise(ctx) {
+  const t0 = ctx.currentTime + 0.02;
+  const out = ctx.createGain();
+  out.gain.value = RISE_GAIN;
+  out.connect(ctx.destination);
+  for (const v of RISE) {
+    const st = t0 + v.start, pk = st + v.attack, end = pk + v.decay;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, st);
+    g.gain.linearRampToValueAtTime(1, pk);
+    g.gain.exponentialRampToValueAtTime(0.0001, end);
+    g.gain.setValueAtTime(0, end + 0.001);
+    const o = ctx.createOscillator();
+    o.type = "sine";
+    o.frequency.setValueAtTime(v.f, st);
+    o.connect(g); g.connect(out);
+    o.start(st); o.stop(end + 0.01);
+  }
+}
+// AudioContext 在用戶送出(點擊或 Enter)或切開提示音時建立／resume(canon › Sound 自動播放限制);提示音關著不建
+let rsCtx = null, rsLast = 0;
+function rsArm() {
+  if (!RN.sound) return;
+  try {
+    if (!rsCtx) rsCtx = new window.AudioContext();
+    if (rsCtx.state !== "running") rsCtx.resume().catch(() => {});
+  } catch (_) { rsCtx = null; }
+}
+// 主行程只在該響時叫(一輪一次);多條對話 2 秒內接連結束只響一聲。要響時不是 running 就不響
+function rsPlay(now) {
+  if (now - rsLast < SOUND_GAP_MS) return false;
+  rsLast = now;
+  if (!rsCtx || rsCtx.state !== "running") return false;
+  try { playRise(rsCtx); return true; } catch (_) { return false; }
+}
+window.blave.onReplySound(() => { rsPlay(Date.now()); });
+rnLoad();   // 提示音開關要在第一次送出前讀到(關著的人不建 AudioContext);設定頁打開時再讀一次
 $("set-rn-os-go").addEventListener("click", () => { window.blave.replyNotifyOs().catch(() => {}); });
 /* 點了回合結束的系統通知:主行程已叫出視窗,這裡打開那條對話。已經是那條、回合進行中、那條被刪了 → 不動(只叫出視窗) */
 window.blave.onOpenSession(async (id) => {
@@ -3195,6 +3248,7 @@ function stopRestore(text, attachments) {   // attachments:那一句帶的整份
   autosize(); ta.focus();
 }
 async function sendDraft() {
+  rsArm();   // 點擊或 Enter 這一下就是用戶動作:回覆音的 AudioContext 在這裡建／resume
   const msg = $("ta").value.trim();
   const attachments = attachedFiles;   // 純附件(沒打字)也可以送,同雲端
   if ((!msg && !attachments.length) || running) return;

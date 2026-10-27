@@ -538,6 +538,10 @@
             <div class="sw-row"><label class="sw-l" id="set-rn-l" for="set-rn-sw" data-i18n="set.rn"></label><button type="button" class="sw" id="set-rn-sw" role="switch" aria-checked="true" aria-labelledby="set-rn-l"></button></div>
             <p class="priv-lead set-rn-os" id="set-rn-os" hidden><span data-i18n="set.rn.osOff"></span><button type="button" class="btn-quiet" id="set-rn-os-go" data-i18n="set.rn.osGo"></button></p>
           </div>
+          <!-- 提示音(ui-prefs replySound,缺 = 開;不綁上面那個開關:通知關著照響)。說明走 .tip 泡泡,同建議下一步那列 -->
+          <div class="set-rs">
+            <div class="sw-row"><label class="sw-l" for="set-rs-sw"><span class="set-rs-l" id="set-rs-l" data-i18n="set.rs"></span><span class="tip" id="set-rs-tip" role="tooltip" data-i18n="set.rs.tip"></span></label><button type="button" class="sw" id="set-rs-sw" role="switch" aria-checked="true" aria-labelledby="set-rs-l" aria-describedby="set-rs-tip"></button></div>
+          </div>
           <!-- 建議下一步(renderer/suggest.js;localStorage ws_sug_on,"0" = 關、其他或沒有 = 開;只管這台電腦)。說明走 .tip 泡泡,滑鼠停在字上或鍵盤 focus 開關時出 -->
           <div class="set-sug">
             <div class="sw-row"><label class="sw-l" for="set-sug-sw"><span class="set-sug-l" id="set-sug-l" data-i18n="set.sug"></span><span class="tip" id="set-sug-tip" role="tooltip" data-i18n="set.sug.tip"></span></label><button type="button" class="sw" id="set-sug-sw" role="switch" aria-checked="true" aria-labelledby="set-sug-l" aria-describedby="set-sug-tip"></button></div>

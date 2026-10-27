@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld("blave", {
   // 回覆好了通知我(設定 › 一般):開關與「系統通知已關閉」那一行;reply-cue 是回合結束時交給主行程判斷要不要發系統通知
   replyNotify: () => ipcRenderer.invoke("reply-notify"),
   replyNotifySet: (on) => ipcRenderer.invoke("reply-notify-set", on === true),
+  replySoundSet: (on) => ipcRenderer.invoke("reply-sound-set", on === true),
   replyNotifyOs: () => ipcRenderer.invoke("reply-notify-os"),
   replyCue: (kind, snippet) => ipcRenderer.send("reply-cue", { kind: String(kind), snippet: typeof snippet === "string" ? snippet : "" }),
   theme: () => ipcRenderer.invoke("theme"),
@@ -146,6 +147,7 @@ contextBridge.exposeInMainWorld("blave", {
   venueConnect: (a) => ipcRenderer.invoke("venue-connect", { venue: a && a.venue, apiKey: a && a.apiKey, secret: a && a.secret, passphrase: a && a.passphrase }),
   onBinanceState: (fn) => ipcRenderer.on("binance-state", (_e, st) => fn(st)),
   onOpenSession: (fn) => ipcRenderer.on("open-session", (_e, id) => fn(typeof id === "string" ? id : "")),   // 點了回合結束的系統通知
+  onReplySound: (fn) => ipcRenderer.on("reply-sound", () => fn()),   // 回合結束、視窗不在前面、提示音開著:主行程叫畫面響那一聲
   tradeStatus: () => ipcRenderer.invoke("trade-status"),
   tradeEvents: (q) => ipcRenderer.invoke("trade-events", q),
   tradeEquity: (q) => ipcRenderer.invoke("trade-equity", q),
