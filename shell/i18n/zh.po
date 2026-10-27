@@ -9052,3 +9052,137 @@ msgstr "Bitget 有倉位沒有止損"
 # 事件列 P3 的註解:Blave 自己的下單紀錄讀不到,無法確認換帳戶後止損還在不在
 msgid "tr.ov.evBitgetStopsUnknown"
 msgstr "無法確認止損：讀不到 Blave 的下單紀錄，請到 Bitget 看止損還在不在。"
+
+# 報告頁「成交測試」分頁(renderer/report-xt.js;spec lag-test-tab-2026-10-26):字與 web workspace_xt_* 逐字同一份
+# (web 的 %% 是 Jinja 的轉義,畫面上是 %;tests/check_web_desktop_parity.js 比對前還原)
+msgid "rp.tab.xt"
+msgstr "成交測試"
+
+msgid "xt.verdict"
+msgstr "{lag}。{cost}。"
+
+msgid "xt.lagFlat"
+msgstr "晚到 10 根 Sharpe 都在 {lo}–{hi}"
+
+msgid "xt.lagOne"
+msgstr "晚一根 Sharpe {m1}"
+
+msgid "xt.lagOneFive"
+msgstr "晚一根 Sharpe {m1}，晚五根 {m5}"
+
+msgid "xt.lagMixed"
+msgstr "晚到 5 根 Sharpe 都在 {lo}–{hi}，晚 10 根 {v10}"
+
+msgid "xt.lagLow"
+msgstr "現行 Sharpe {s0}，晚 1 根 {s1}、晚 10 根 {s10}"
+
+msgid "xt.up"
+msgstr "升 {p}"
+
+msgid "xt.down"
+msgstr "掉 {p}"
+
+msgid "xt.costDown"
+msgstr "每邊成本多 {x}，Sharpe 從 {s0} 掉到 {s1}"
+
+msgid "xt.costTo"
+msgstr "每邊成本多 {x}，Sharpe 從 {s0} 到 {s1}"
+
+msgid "xt.few"
+msgstr "交易太少（回測期間換倉 {n} 次），延遲和成本都測不出東西。"
+
+msgid "xt.lagH"
+msgstr "晚幾根成交"
+
+msgid "xt.lagSub"
+msgstr "1 根＝{one}，晚 10 根＝{ten}"
+
+msgid "xt.unit.m"
+msgstr "{n} 分鐘"
+
+msgid "xt.unit.h"
+msgstr "{n} 小時"
+
+msgid "xt.unit.d"
+msgstr "{n} 天"
+
+msgid "xt.unit.td"
+msgstr "{n} 個交易日"
+
+msgid "xt.unit.w"
+msgstr "{n} 週"
+
+msgid "xt.lagLbl"
+msgstr "{metric} · 晚幾根成交"
+
+msgid "xt.colLag"
+msgstr "晚幾根"
+
+msgid "xt.cur"
+msgstr "現行"
+
+msgid "xt.m.sharpe"
+msgstr "Sharpe"
+
+msgid "xt.m.ann"
+msgstr "年化"
+
+msgid "xt.m.mdd"
+msgstr "最大回撤"
+
+msgid "xt.closeAte"
+msgstr "訊號那根收盤就成交：Sharpe {a}（現行 {b}）。開盤跳空吃掉 {c}。"
+
+msgid "xt.closeGain"
+msgstr "訊號那根收盤就成交：Sharpe {a}（現行 {b}）。開盤跳空反而多賺 {c}。"
+
+msgid "xt.lagHow"
+msgstr "每一點是整個部位晚 k 根成交的結果，虛線是現行。點表頭換圖上的指標。"
+
+msgid "xt.costH"
+msgstr "成本高一點"
+
+msgid "xt.costSub"
+msgstr "現行每邊 {fee}・年換手 {n} 倍"
+
+msgid "xt.costLbl"
+msgstr "{metric} · 每邊交易成本再多（%）"
+
+msgid "xt.colCost"
+msgstr "每邊交易成本"
+
+msgid "xt.free"
+msgstr "不計交易成本"
+
+msgid "xt.freeAx"
+msgstr "不計"
+
+msgid "xt.perSide"
+msgstr "每邊 {fee}"
+
+msgid "xt.beK"
+msgstr "Sharpe 歸零的交易成本"
+
+msgid "xt.beLine"
+msgstr "Sharpe 歸零：每邊 {fee}"
+
+msgid "xt.beOut"
+msgstr "Sharpe 歸零在每邊 {fee}，超出此圖"
+
+msgid "xt.clip"
+msgstr "方點＝低於 {v}，實際值看下表。"
+
+msgid "xt.costHow"
+msgstr "每一點是每邊交易成本多 X% 的結果。交易成本含手續費、稅、滑價。"
+
+msgid "xt.fog"
+msgstr "看晚幾根、成本高一點還撐不撐得住。"
+
+msgid "xt.fogOld"
+msgstr "舊版本沒存這一頁的數字。"
+
+msgid "xt.behind"
+msgstr "先更新主機程式，才能跑成交測試。"
+
+msgid "xt.updFail"
+msgstr "沒更新成功"

@@ -340,8 +340,8 @@ if (!process.versions.electron) {
   ok("③ stratRefresh:只跑了驗證的那一輪(wfMtime 變了)開著的那支也原地重讀", /if \(was && now && \(resStratSub\(was, now\) \|\| \(now\.wfMtime \|\| 0\) !== \(was\.wfMtime \|\| 0\)\)\) \{ await stratReload\(RP\.name\); return; \}/.test(app));
   const { interpretStrategy } = require(path.join(SHELL, "cloud.js"));
   ok("③ cloud.js interpretStrategy 留 wf(物件才給,否則 null)", interpretStrategy({ status: 200, body: { strategy: { name: "m", wf: SAMPLE } } }, "m").strategy.wf.n_runs === 11 && interpretStrategy({ status: 200, body: { strategy: { name: "m", wf: [1] } } }, "m").strategy.wf === null);
-  ok("③ 分頁列:參數掃描之後、程式碼之前;面板、css、js 都在;js 在 report-robust.js 之後(借它的 _rob)",
-    /data-tab="rob" data-i18n="rp\.tab\.rob"><\/button>\s*<button class="rp-tab" type="button" role="tab" data-tab="wf" data-i18n="rp\.tab\.wf"><\/button>\s*<button[^>]*data-tab="code"/.test(html)
+  ok("③ 分頁列:參數掃描之後、成交測試之前(成交測試之後才是程式碼);面板、css、js 都在;js 在 report-robust.js 之後(借它的 _rob)",
+    /data-tab="rob" data-i18n="rp\.tab\.rob"><\/button>\s*<button class="rp-tab" type="button" role="tab" data-tab="wf" data-i18n="rp\.tab\.wf"><\/button>\s*<button[^>]*data-tab="xt"[^>]*><\/button>\s*<button[^>]*data-tab="code"/.test(html)
     && /id="rp-wf" role="tabpanel" hidden/.test(html) && /report-wf\.css/.test(html) && /<script src="report-robust\.js"><\/script>\s*<script src="report-wf\.js"><\/script>/.test(html));
   ok("③ rpShowTab 把 wf 交給 renderWf(t / busy / turn / scope / gate / onRun / onUpdate / buildMeta 從外面交進去);三處回合開始 / 結束都叫 rpWfSync;雲端狀態輪詢也叫(閘門翻面)",
     /R\.renderWf\(\$\("rp-wf"\), rpWfData\(B\.data, B\.name\), rpWfOpts\(\)\)/.test(app) && /function rpWfData\(data, name\) \{ return \{ stats: data\.stats, wf: data\.wf \|\| null, code: data\.code, name \}; \}/.test(app)
@@ -352,7 +352,7 @@ if (!process.versions.electron) {
   ok("③ 送出:確認框 → 先 begin()(暖機那段也算已送出,稽核 P2-1)→ 固定訊息(msgRun,name 傳資料夾名)→ 成功才記 wf_requested、回合序號;不覆寫 viewing",
     /onOk: \(\) => \{ if \(typeof begin === "function"\) begin\(\); rpWfAuto\.delete\(name\); submitMessage\(t\("wf\.msgRun", \{ name, lookback: String\(lookback\), step: String\(step\) \}\)\)\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? turnSeq : false\); \}\); \}/.test(app)
     && !/viewing/.test(app.slice(app.indexOf("function rpWfAsk"), app.indexOf("function rpWfUpdate"))) && /lines: \(behindMaybe \? \[t\("wf\.needUpdate"\)\] : \[\]\)\.concat\(\[t\("wf\.emptyBoundary"\), t\("wf\.confirmBody"\)\]\)/.test(app));
-  ok("③ 還原凍結:時光機 / 重跑中 wf 分頁跟進出場、參數掃描一起 disabled、面板一起收", /b\.disabled = b\.dataset\.tab === "tr" \|\| b\.dataset\.tab === "rob" \|\| b\.dataset\.tab === "wf";/.test(ver) && /for \(const k of \["bt", "tr", "rob", "wf", "code"\]\) \$\("rp-" \+ k\)\.hidden = true;/.test(ver));
+  ok("③ 還原凍結:時光機 / 重跑中 wf 分頁跟進出場、參數掃描一起 disabled、面板一起收", /b\.disabled = b\.dataset\.tab === "tr" \|\| b\.dataset\.tab === "rob" \|\| b\.dataset\.tab === "wf" \|\|/.test(ver) && /for \(const k of \["bt", "tr", "rob", "wf", "xt", "code"\]\) \$\("rp-" \+ k\)\.hidden = true;/.test(ver));
 
   { const css = read("renderer/report-wf.css"), wfjs = read("renderer/report-wf.js"), robjs = read("renderer/report-robust.js");
     ok("③ R1 每輪明細:表頭固定 58(折不折行看資料不看語言),捲動框上限 = 表頭 + 12.5 列 × 50(12 輪不捲、13 輪起固定露出半列)",

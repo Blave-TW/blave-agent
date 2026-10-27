@@ -93,7 +93,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     querySelectorAll(sel) { const cls = sel.split(",").map((x) => x.trim().replace(/^\./, "")); return this.all((k) => cls.some((c) => k.has(c))); }
   }
   const doc = { createElement: (tag) => new El(tag) };
-  const names = ["pfEl", "pfNowWhy", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
+  const names = ["pfEl", "pfNowWhy", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfFailLine", "perfXtSlot", "perfXtSync", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
   const body = ["PF", "PFL", "PFP", "PF_POLL_MS", "PF_POLL_MAX_MS", "PF_ERRS", "PF_NO_DATA", "PF_WHY", "pfSide", "pfRefKey"].map((n) => constSrc(perfSrc, n)).join("") + names.map((n) => fnSrc(perfSrc, n)).join("\n")
     + "\nreturn { " + names.join(", ") + ", PF, PFL, PFP };";
   const clock = { now: new Date(new Date().getFullYear(), 8, 28, 10, 0, 0).getTime() };   // 今年 9/28 10:00 本地時間(格式斷言不隨時區翻)
@@ -341,6 +341,21 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   ok("稽核後五句(perf.superseded / lockBusy / indexBroken / notRunnable / configUnreadable)zh / en 都有、PF_ERRS = 六碼", ["perf.superseded", "perf.lockBusy", "perf.indexBroken", "perf.notRunnable", "perf.configUnreadable"].every((k) => STR.zh[k] && STR.en[k])
     && /const PF_ERRS = \["REFUSED", "DATA", "TIMEOUT", "EXIT", "SUPERSEDED", "BUSY"\]/.test(perfSrc));
   ok("註解不再說 live tick 每根 K 重寫 stats.json(main.js / results.js)", !/live tick 每根 K 重寫 stats\.json|每根 K 的 live tick 都重寫/.test(mainSrc + read(path.join(R, "results.js"))));
+
+  // 成交測試霧卡那一格(perfXtSlot;report-xt.js 經 opts.rerun 拿):同一個動作、同一份疊層、ack started 才記 perf_update
+  { const x = rig("zh"), s = x.F.perfXtSlot(x.B), b = s.kids[0];
+    ok("成交測試霧卡:閒置 = 〔更新績效〕(data-perf-btn),沒有失敗行", b.textContent === "更新績效" && b.dataset.perfBtn === "1" && s.dataset.xtUpd === "1" && s.kids.length === 1);
+    b.click(); await flush();
+    const run = x.F.perfXtSlot(x.B).kids[0];
+    ok("成交測試霧卡:按下送 stats_refresh {names:[momo]}(不開確認框);當下就是更新中(停用 + 更新中)", JSON.stringify(x.sent) === '[["stats_refresh",{"names":["momo"]}]]' && run.disabled === true && run.textContent === "更新中" && x.tracked.length === 0);
+    x.acks[0]({ ok: true, result: { started: ["momo"], skipped: {} } }); await flush();
+    ok("成交測試霧卡:ack started 才記 perf_update(一次)", x.tracked.join() === "perf_update"); }
+  { const f = rig("zh", { perf: { at: nowS() - 100, refresh: { status: "failed", at: nowS() - 50, err: "EXIT" } } }), s = f.F.perfXtSlot(f.B);
+    ok("成交測試霧卡:失敗 = 鈕照出(就是重試)+ 下一行「沒更新成功」(不講數字是舊的),原因在 title", s.kids[0].disabled !== true && s.kids[0].textContent === "更新績效" && s.kids[1].has("upd-fail") && s.kids[1].textContent === "沒更新成功" && !!s.kids[1].title); }
+  { const tb = rig("zh", { code: "# Type: B\n" }), nop = rig("zh", { perf: null });
+    ok("成交測試霧卡:Type B / 沒有 perf → null(只有霧)", tb.F.perfXtSlot(tb.B) === null && nop.F.perfXtSlot(nop.B) === null); }
+  { const bz = rig("zh", { running: true }), s = bz.F.perfXtSlot(bz.B); s.kids[0].setAttribute("aria-disabled", "true"); s.kids[0].click(); await flush();
+    ok("成交測試霧卡:回合中按 = 不送,原因句講在那一格下面", bz.sent.length === 0 && bz.env.told.length === 1 && bz.env.told[0][1] === "perf" && bz.env.told[0][2] === s); }
 
   console.log(red ? `\n${red} FAILED` : "\nALL PASS");
   process.exit(red ? 1 : 0);

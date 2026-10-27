@@ -2500,6 +2500,141 @@
     return article;
   }
 
+  // Sharpe 軸:niceScale 的 1、2、5 階在跨度 1.5 左右會從 0.5 跳到 1(0.56–2.1 畫成 0–3,
+  // 掉 65% 看起來像緩坡)。步距是 10 的次方時多試一半,≤5 格就用;上下各留跨度 3% 的邊,
+  // 點不貼在最外那條格線上。共用的 niceScale 不動
+  function levelScale(lo, hi) {
+    var scale = niceScale(lo, hi);
+    var step = scale.ticks.length > 1 ? scale.ticks[1] - scale.ticks[0] : 0;
+    var k = Math.log(step) / Math.LN10;
+    if (!(step > 0) || Math.abs(k - Math.round(k)) > 1e-9) return scale;
+    var half = Math.pow(10, Math.round(k)) / 2;
+    var pad = (hi - lo) * 0.03;
+    // 留邊不跨過 0:全正值的圖仍從 0 起,不多出一條負的格線
+    var a = Math.floor((lo >= 0 ? Math.max(0, lo - pad) : lo - pad) / half + 1e-9);
+    var b = Math.ceil((hi <= 0 ? Math.min(0, hi + pad) : hi + pad) / half - 1e-9);
+    if (b - a > 5 || b <= a) return scale;
+    var ticks = [];
+    for (var i = a; i <= b; i++) ticks.push(i * half);
+    return { lo: a * half, hi: b * half, ticks: ticks, dp: scale.dp + 1 };
+  }
+
+  // 工作頁「成交測試」的類別軸折線(不是契約 block):line_chart 的邊距、刻度、格線與
+  // 署名列,x 換成等距類別。有圓點,所以 1:1 量寬繪製、不拉伸(拉伸會把圓壓成橢圓)。
+  // 縱軸範圍由呼叫端決定(spec 要固定涵蓋範圍,不自動縮放):lo/hi 是至少要涵蓋的值;
+  // floor 給了就是下限,低於刻度底的點畫在底緣、改方點,onDraw 收到被截的那個刻度值
+  // spec = { labels, values, cur, lo, hi, floor?, base?, vx?, vxLabel?, vxOut?, unit?, aria?, onDraw? }
+  function levelSvg(sp, W, H) {
+    var vals = sp.values;
+    var n = vals.length;
+    var right = W - 8;
+    var top = 24;
+    var bottom = plotBottom(top, H - 44);
+    var finite = vals.filter(function (v) {
+      return num(v) !== null;
+    });
+    var lo = Math.min.apply(null, finite.concat([sp.lo]));
+    var hi = Math.max.apply(null, finite.concat([sp.hi]));
+    if (num(sp.floor) !== null) lo = Math.max(lo, sp.floor);
+    var unit = str(sp.unit);
+    var scale = unit ? niceScale(lo, hi) : levelScale(lo, hi);
+    // 沒有單位 = Sharpe 這類水準值:刻度不帶 +、整條軸同一個小數位(同表格的 1.62);
+    // 有單位(%)照 line_chart 的 fmtAxis。共用的 yAxis／fmtAxis 不動
+    var level = !unit;
+    var tick = level
+      ? function (v) {
+          var t = Math.abs(v).toFixed(2);
+          return (v < 0 && Number(t) !== 0 ? MINUS : "") + t;
+        }
+      : function (v) {
+          return fmtAxis(v, unit, scale.lo <= 0, scale.dp);
+        };
+    var padL = 36;
+    scale.ticks.forEach(function (t) {
+      padL = Math.max(padL, 2 + textWidth(tick(t)) + 6);
+    });
+    var x0 = padL + 4, x1 = W - 20;
+    var s = chartSvg({ title: sp.aria }, W, H + WM_ROW, false);
+    watermark(s, right, H + WM_ROW - 4);
+    var yAt = function (v) {
+      return bottom - ((v - scale.lo) / (scale.hi - scale.lo)) * (bottom - top);
+    };
+    scale.ticks.forEach(function (t) {
+      gridLine(s, padL, yAt(t), right);
+      s.appendChild(svgText(padL - 6, yAt(t) + 3, tick(t), { "text-anchor": "end" }));
+    });
+    var xAt = function (i) {
+      return x0 + (n > 1 ? (i * (x1 - x0)) / (n - 1) : 0);
+    };
+    if (num(sp.base) !== null) {
+      s.appendChild(
+        svgEl("line", { class: "rb-ref", x1: padL, y1: yAt(sp.base), x2: right, y2: yAt(sp.base) })
+      );
+    }
+    if (num(sp.vx) !== null) {
+      var bx = xAt(sp.vx);
+      s.appendChild(svgEl("line", { class: "rb-vref", x1: bx, y1: top - 8, x2: bx, y2: bottom }));
+      var atRight = bx > W - 140;
+      s.appendChild(
+        svgText(atRight ? bx - 4 : bx + 4, top - 10, str(sp.vxLabel), {
+          class: "rb-vref-label",
+          "text-anchor": atRight ? "end" : "start",
+        })
+      );
+    } else if (sp.vxOut) {
+      s.appendChild(svgText(right, top - 10, str(sp.vxOut), { class: "rb-vref-label", "text-anchor": "end" }));
+    }
+    var clipped = false;
+    var pts = [];
+    vals.forEach(function (v, i) {
+      if (num(v) === null) return;
+      var cut = v < scale.lo;
+      if (cut) clipped = true;
+      pts.push([xAt(i), yAt(cut ? scale.lo : v), cut, i]);
+    });
+    polyline(s, "rb-lvl", pts);
+    pts.forEach(function (p) {
+      if (p[2]) {
+        s.appendChild(svgEl("rect", { class: "rb-lvl-pt", x: p[0] - 3, y: p[1] - 3, width: 6, height: 6 }));
+      } else {
+        var cur = p[3] === sp.cur;
+        s.appendChild(
+          svgEl("circle", { class: cur ? "rb-lvl-cur" : "rb-lvl-pt", cx: p[0], cy: p[1], r: cur ? 3.5 : 2.5 })
+        );
+      }
+    });
+    arr(sp.labels).forEach(function (lab, i) {
+      s.appendChild(svgText(xAt(i), H - 10, str(lab), { "text-anchor": "middle" }));
+    });
+    if (typeof sp.onDraw === "function") sp.onDraw(clipped ? tick(scale.lo) : null);
+    return s;
+  }
+
+  function renderLevels(sp) {
+    var wrap = el("div");
+    if (!sp || !arr(sp.values).length) return wrap;
+    var svg = null;
+    var drawnW = 0;
+    function draw(W) {
+      W = Math.round(W);
+      if (W < 160 || W === drawnW) return;
+      drawnW = W;
+      var next = levelSvg(sp, W, 210);
+      if (svg) wrap.replaceChild(next, svg);
+      else wrap.insertBefore(next, wrap.firstChild);
+      svg = next;
+    }
+    if (typeof global.ResizeObserver !== "function") {
+      draw(680);
+      return wrap;
+    }
+    sweepDetached();
+    var ruler = el("div");
+    wrap.appendChild(ruler);
+    watchWidth(ruler, draw);
+    return wrap;
+  }
+
   // 報告尾的產出說明列——不是 block 之一,由 meta.origin 推;時間與機器名已在
   // 報告頭那行,這裡只講「這份東西是你自己機器上的 agent 產的」
   function reportFoot(meta, ctx) {
@@ -2512,6 +2647,7 @@
   }
 
   global.renderAgentReport = renderAgentReport;
+  global.renderReportLevels = renderLevels;   // 報告頁「成交測試」分頁的類別軸折線(report-xt.js;同 web report_blocks.js)
   global.renderReportBlock = renderReportBlock;
   global.drawReportCharts = drawChartsNow;
 })(window);
