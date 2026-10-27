@@ -332,6 +332,140 @@ def _capital_check_snapshot_caught_up(query_started_at):
             f",下單於 {last:.0f},需晚 {ORDER_SETTLE_S} 秒)—— 本輪跳過,等下一輪快取更新")
 
 
+# An order the lib returned without the full fill ('sent' after confirm_timeout +
+# LATE_REPORT_S, or short) may still have filled — 10-27 win-test-5: TM0000 +1
+# 'sent'/0, the account showed TM2611 +1 a minute later, and with the book at 0
+# that month read as the user's (manual_month_excluded), so the bot never closed
+# it. The unfilled lots are parked per root with the per-contract nets the book
+# expects; 'sent' carries only the alias, so the month is learned from which
+# contract moved. Every caught-up snapshot of a reconcile round tries to claim
+# them: exactly one contract moved by exactly the lots → booked in that contract
+# (lib.portfolio.book_late_fill); nothing moved → dropped; anything else →
+# PENDING_SENT_MAX_READS distinct snapshots, then order_errors (P1) + HALT, as
+# 統一's. Unlike 統一 (closes go), every leg of a parked root waits: sNewClose=2
+# cannot keep a close from opening, and a second fill would blur the claim.
+# Same self_ledger gap as 統一's: a manual order in that root while lots are
+# parked can be adopted as the bot's or hide its fill.
+CAPITAL_PENDING_PATH = 'state/capital_pending_sent.json'
+
+
+def _capital_nets(raw, prefix):
+    """{contract: signed lots} of the account's `prefix` futures rows (all months)."""
+    from lib.order_capital import CAPITAL_FUT_RE
+    nets = {}
+    for code, pos in raw.items():
+        sym = str(code).strip().upper()
+        m = CAPITAL_FUT_RE.match(sym)
+        if m and m.group(1) == prefix and pos.get('side') in ('long', 'short'):
+            nets[sym] = nets.get(sym, 0.0) + float(pos['size']) * (1 if pos['side'] == 'long' else -1)
+    return nets
+
+
+_capital_pending_unreadable_noted = False
+
+
+def _capital_pending():
+    """The parked rows, or None (logged; one order_errors row per process) when the
+    file cannot be read — whether lots are parked is then unknown: nothing is sent."""
+    global _capital_pending_unreadable_noted
+    try:
+        return _pending_sent(CAPITAL_PENDING_PATH)
+    except PendingUnreadable as e:
+        logging.error(f"[reconciler/capital] {e} — no 群益 order until it is fixed or removed")
+        if not _capital_pending_unreadable_noted:
+            _capital_pending_unreadable_noted = True
+            from lib.portfolio import _record_order_error
+            _record_order_error('TXF/MXF/TMF', venue_traits.CAPITAL,
+                                f"群益未回報成交的紀錄檔讀不出來({e}):不確定有沒有送出未回報的單,"
+                                f"先不下群益單;修好或移除 {CAPITAL_PENDING_PATH} 後恢復")
+        return None
+
+
+def _capital_park_unfilled(canon, result, requested, nets_before):
+    """`requested` signed lots asked for; `nets_before` the root's per-contract
+    account nets from the caught-up snapshot the send was decided on."""
+    filled = float(result.get('fill_qty') or 0) * (1 if requested > 0 else -1)
+    unfilled = requested - filled
+    expected = dict(nets_before)
+    if filled:
+        contract = str(result.get('symbol') or '').upper()
+        expected[contract] = expected.get(contract, 0.0) + filled
+    pending = _capital_pending()
+    if pending is None:
+        guard.audit('order_unfilled_unparked', venue=venue_traits.CAPITAL, symbol=canon, lots=unfilled)
+        return
+    pending[canon] = {'root': canon, 'lots': unfilled, 'expected': expected, 'reads': [],
+                      'legs': [{'at': time.time(), 'lots': unfilled, 'status': result.get('status'),
+                                'seq_no': result.get('seq_no')}]}
+    _save_pending_sent(pending, CAPITAL_PENDING_PATH)
+    guard.audit('order_unfilled_parked', venue=venue_traits.CAPITAL, symbol=canon, lots=unfilled,
+                status=result.get('status'), seq_no=result.get('seq_no'))
+    logging.warning(f"[reconciler/capital] {canon}: {unfilled:+g} lots reported no fill in time — "
+                    f"parked; no {canon} order until a snapshot claims it")
+
+
+def _capital_claim_pending(started, raw):
+    """Match every parked root against the caught-up snapshot `raw` whose read
+    started at `started`. Each claim is saved the moment it is booked."""
+    pending = _capital_pending()
+    if not pending:
+        return
+    from lib import portfolio
+    for canon, row in list(pending.items()):
+        spec = _CAPITAL_FUTURES_SPEC.get(canon)
+        if not spec:
+            continue
+        lots, expected = float(row['lots']), row.get('expected') or {}
+        nets = _capital_nets(raw, spec['resolved_prefix'])
+        moved = {c: nets.get(c, 0.0) - expected.get(c, 0.0) for c in set(nets) | set(expected)}
+        moved = {c: q for c, q in moved.items() if abs(q) > 1e-9}
+        if len(moved) == 1 and abs(next(iter(moved.values())) - lots) < 1e-9:
+            contract = next(iter(moved))
+            portfolio.book_late_fill(canon, venue_traits.CAPITAL, contract, lots)
+            del pending[canon]
+            _save_pending_sent(pending, CAPITAL_PENDING_PATH)
+            guard.audit('late_fill_adopted', venue=venue_traits.CAPITAL, symbol=canon, contract=contract,
+                        lots=lots, legs=row.get('legs'))
+            logging.warning(f"[reconciler/capital] {contract}: the account shows the {lots:+g} lots the "
+                            f"order reported no fill for — booked, not re-sent")
+        elif not moved:
+            del pending[canon]
+            _save_pending_sent(pending, CAPITAL_PENDING_PATH)
+            guard.audit('unfilled_order_cleared', venue=venue_traits.CAPITAL, symbol=canon, lots=lots,
+                        legs=row.get('legs'))
+            logging.info(f"[reconciler/capital] {canon}: the {lots:+g} lots did not fill (account "
+                         f"unchanged) — cleared, the next diff may send again")
+        elif row.get('halted'):
+            if guard.halted():
+                continue
+            del pending[canon]
+            _save_pending_sent(pending, CAPITAL_PENDING_PATH)
+            guard.audit('parked_order_dropped', venue=venue_traits.CAPITAL, symbol=canon, lots=lots,
+                        legs=row.get('legs'))
+            logging.warning(f"[reconciler/capital] {canon}: HALT cleared with {lots:+g} parked lots "
+                            f"still unexplained — dropped as the user's; orders resume")
+        else:
+            reads = row.setdefault('reads', [])
+            if started not in reads:
+                reads.append(started)
+            if len(reads) < PENDING_SENT_MAX_READS:
+                logging.warning(f"[reconciler/capital] {canon}: account moved {moved} since the send, "
+                                f"which {lots:+g} lots in one contract does not explain ({len(reads)}/"
+                                f"{PENDING_SENT_MAX_READS} reads) — {canon} orders still wait")
+                _save_pending_sent(pending, CAPITAL_PENDING_PATH)
+                continue
+            seqs = ', '.join(str(l.get('seq_no') or '?') for l in row.get('legs') or [])
+            moved_txt = '、'.join(f"{c} {q:+g} 口" for c, q in sorted(moved.items()))
+            msg = (f"群益 {canon} {'買' if lots > 0 else '賣'} {abs(lots):g} 口送出後沒收到成交回報"
+                   f"(序號 {seqs}),之後 {len(reads)} 次帳戶讀數都對不上(送單後變動:{moved_txt}):"
+                   f"已停止下單。請到群益下單軟體核對:若顯示這口已成交,先在群益把它平掉再按恢復下單"
+                   f"——Blave 不會把它算成策略部位")
+            portfolio._record_order_error(canon, venue_traits.CAPITAL, msg)
+            guard.trip_halt(msg, 'reconciler')
+            row['halted'] = True
+            _save_pending_sent(pending, CAPITAL_PENDING_PATH)
+
+
 def _hand_wired_routed():
     """One-machine-one-venue (AGENTS.md § Broker Onboarding): the hand-wired
     venue (lib.venue_traits) this machine is bound to — the bind manifest's,
@@ -348,7 +482,7 @@ _is_capital_routed = _hand_wired_routed
 
 
 
-def _capital_get_positions():
+def _capital_get_positions(claim=False):
     """Actual capital futures positions as {symbol: {'side':'long'|'short',
     'size': lots}} — 'size' is a LOT COUNT (2026-08-14: lots stored/compared
     directly end-to-end, no price round-trip — see references/manager.md §
@@ -367,13 +501,18 @@ def _capital_get_positions():
     check passes, also refuses a snapshot whose read did not start settled
     after this machine's last capital order (_capital_check_snapshot_caught_up)
     — raises CapitalCacheLagError in that post-order window instead of
-    returning stale positions."""
+    returning stale positions. `claim`: a reconcile round's read — parked
+    unfilled orders are claimed (and may write the book) before the book's
+    months decide which rows are the bot's; read-only callers never claim."""
     from lib import account_capital
     from lib.account_capital import get_positions as _acct_positions, get_query_started_at
     from lib.order_capital import CAPITAL_FUT_RE
     from lib.portfolio import book_months
     raw = _acct_positions({})  # env unused — reads state/capital_account.json
-    _capital_check_snapshot_caught_up(get_query_started_at())
+    started = get_query_started_at()
+    _capital_check_snapshot_caught_up(started)
+    if claim:
+        _capital_claim_pending(started, raw)
     # the contract months the bot's book holds per root: a month it does not hold
     # is the user's and stays out of the read (None = no book, a guessed month or
     # an account lib without contract_month: every month counts, as before)
@@ -513,12 +652,34 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     if lots < 1:
         return False  # below half a lot — nothing to trade
 
+    sym = str(symbol).upper()
+    pending = _capital_pending()
+    if pending is None:
+        return False
+    if sym in pending:
+        logging.info(f"[reconciler/capital] {sym}: {lots} lots wait — an earlier order's unconfirmed "
+                     f"lots are parked until a snapshot claims them (_capital_claim_pending)")
+        return False
+    # the park baseline must come from a snapshot read after the last send settled
+    # (a flip's entry runs seconds after its close): not caught up → next round
+    from lib.account_capital import get_positions as _acct_positions, get_query_started_at
+    raw = _acct_positions({})
+    try:
+        _capital_check_snapshot_caught_up(get_query_started_at())
+    except CapitalCacheLagError:
+        logging.info(f"[reconciler/capital] {sym}: {lots} lots wait — the snapshot has not caught up "
+                     f"with the last order")
+        return False
+    nets_before = _capital_nets(raw, spec['resolved_prefix'])
+
     action = 'buy' if signed_diff > 0 else 'sell'
     intent = 'reduce' if reduce_only else 'entry'
     env = dotenv_values()
     # the Read-Your-Writes mark is written by the order lib, around the send
     result = place_futures_market_order(env, spec['capital_symbol'], action, lots, intent)
     got = float(result.get('fill_qty') or 0)
+    if got + 1e-9 < lots:
+        _capital_park_unfilled(sym, result, lots if action == 'buy' else -lots, nets_before)
     if result.get('status') != 'filled' or got + 1e-9 < lots:
         # P1 (notifications.md 下單失敗 row): order_errors.json is diffed by the platform into an
         # order_error event — workspace, TG, email. Under self_ledger the book counts only `got`,
@@ -590,19 +751,20 @@ class PendingUnreadable(RuntimeError):
     whether lots are parked is unknown, so entries wait (fail-closed)."""
 
 
-def _pending_sent():
+def _pending_sent(path=None):
+    path = path or PENDING_SENT_PATH
     try:
-        raw = read_retry(Path(PENDING_SENT_PATH).read_text, encoding='utf-8')
+        raw = read_retry(Path(path).read_text, encoding='utf-8')
     except FileNotFoundError:
         return {}
     except OSError as e:
-        raise PendingUnreadable(f"{PENDING_SENT_PATH}: {type(e).__name__}") from e
+        raise PendingUnreadable(f"{path}: {type(e).__name__}") from e
     try:
         d = json.loads(raw)
     except ValueError as e:
-        raise PendingUnreadable(f"{PENDING_SENT_PATH} does not parse ({e})") from e
+        raise PendingUnreadable(f"{path} does not parse ({e})") from e
     if not isinstance(d, dict):
-        raise PendingUnreadable(f"{PENDING_SENT_PATH} is not a JSON object")
+        raise PendingUnreadable(f"{path} is not a JSON object")
     return d
 
 
@@ -623,9 +785,9 @@ def _note_pending_unreadable(sym, err):
                         f"不進場、平倉照常;修好或移除 {PENDING_SENT_PATH} 後恢復")
 
 
-def _save_pending_sent(pending):
+def _save_pending_sent(pending, path=None):
     from lib import president_vault
-    president_vault.replace_json(PENDING_SENT_PATH, pending)
+    president_vault.replace_json(path or PENDING_SENT_PATH, pending)
 
 
 def _president_nets():
@@ -915,7 +1077,8 @@ def get_positions():
     hand_wired = _hand_wired_routed()
     if hand_wired:
         read = _hand_wired_impl(hand_wired)[0]
-        return read(claim=True) if _claim_parked and hand_wired == venue_traits.PRESIDENT else read()
+        claims = hand_wired in (venue_traits.PRESIDENT, venue_traits.CAPITAL)
+        return read(claim=True) if _claim_parked and claims else read()
     from lib.venue_wiring import auto_get_positions
     return auto_get_positions()
 
