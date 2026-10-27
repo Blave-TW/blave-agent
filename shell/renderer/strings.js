@@ -5887,7 +5887,7 @@ const STRINGS = {
     "tr.ov.evUnconfirmed": "下單結果不明",
     "tr.ov.evUnconfirmedStuck": "下單結果還是不明",
     "tr.ov.evUnconfirmedNote": "這筆單可能已經成交。這個標的已暫停下單，查到結果會自動接續。",
-    "tr.ov.evUnconfirmedStuckNote": "一小時還查不到這筆單。請到交易所核對部位，再告訴 agent 實際成交多少。",
+    "tr.ov.evUnconfirmedStuckNote": "一小時還查不到這筆單。請核對交易所部位，再告訴 agent 成交多少。",
     "tm.evUnconfirmedNote": "這筆單可能已經成交。請先到交易所核對部位，不要手動補單。",
     "tr.err.unconfirmed": "結果不明，可能已經成交。這個標的暫停下單，查到結果會自動接續。",
     "tr.ov.evStrat": "策略 {names}",
