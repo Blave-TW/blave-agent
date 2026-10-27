@@ -69,10 +69,13 @@ STATS_REFRESH_ENV = 'BLAVE_STATS_REFRESH'
 
 
 # 成交測試 tab: the same position / weights filled k bars later and at a higher per-side cost,
-# through this backtest's own precise_pnl arrays. Recomputed on every stats.json write
-# (backtest and performance refresh), never carried over: a refresh moves the Sharpe, and
-# lag["0"] must stay equal to it.
+# through this backtest's own precise_pnl arrays. Computed only when the user asks (the tab's
+# button: runtime stats_refresh with exec_test → EXEC_TEST_ENV "1"), so an agent backtest does
+# not pay for it; see _exec_test_wanted. A run that does not compute it keeps the previous block
+# while the code is the same (code_hash) — its Sharpe may have moved since, and the page marks
+# that stale by comparing lag["0"] with the new Sharpe Ratio.
 EXEC_TEST_KEY = 'exec_test'
+EXEC_TEST_ENV = 'BLAVE_EXEC_TEST'
 EXEC_TEST_LAGS = (0, 1, 2, 3, 5, 10)
 EXEC_TEST_EXTRA_PCT = ('0.01', '0.02', '0.05', '0.1', '0.2', '0.5')
 
@@ -468,6 +471,41 @@ def _exec_test(close_v, open_v, w_curr, exec_shifted, fee, index):
     except Exception as e:
         logging.warning("exec_test skipped (backtest stats still written without it): %s", e)
         return None
+
+
+def _exec_test_wanted(mode, refresh):
+    """Spec lag-test-tab §4: only a performance refresh computes the grid — the live refresh
+    (`refresh`) or the undeployed strategy's quiet backtest (BLAVE_QUIET=1) — and only when the
+    runtime asked ("1") or said nothing: an old runtime never sets EXEC_TEST_ENV and its 更新績效
+    must still fill the tab. A current runtime sets "0" on every other strategy subprocess."""
+    if not (refresh or (mode == 'backtest' and os.environ.get('BLAVE_QUIET') == '1')):
+        return False
+    return os.environ.get(EXEC_TEST_ENV) in (None, '1')
+
+
+def _exec_test_stamped(grid, src0):
+    """The freshly computed block plus the code_hash it was computed on (what _exec_test_kept
+    compares); no source to hash → no code_hash, and the next run that skips the grid drops it."""
+    if grid and src0 is not None:
+        from lib.strategy import code_hash
+        grid['code_hash'] = code_hash(src0)
+    return grid
+
+
+def _exec_test_kept(out_dir, src0):
+    """The previous stats.json's exec_test when it was computed on this very code, else None.
+    Not _carry_over: that drops everything on a backtest, and the undeployed refresh IS one."""
+    if src0 is None:
+        return None
+    try:
+        old = load_json(Path(out_dir) / 'stats.json', encoding='utf-8').get(EXEC_TEST_KEY)
+    except Exception as e:  # no file yet, or a half-written one — nothing to keep
+        logging.debug("exec_test carry-over skipped: %s", e)
+        return None
+    from lib.strategy import code_hash
+    if isinstance(old, dict) and old.get('code_hash') == code_hash(src0):
+        return old
+    return None
 
 
 def _build_levels(raw):
@@ -2506,7 +2544,8 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
 
         pf_series = pd.Series(pf_ret, index=df.index)
         sharpe, sortino, omega, mdd_raw, _ = compute_stats(pf_ret, df.index)
-        exec_test = _exec_test(close_v, open_v, w_curr, exec_shifted, fee, df.index)
+        exec_test = (_exec_test_stamped(_exec_test(close_v, open_v, w_curr, exec_shifted, fee, df.index), src0)
+                     if _exec_test_wanted(mode, refresh) else _exec_test_kept(out_dir, src0))
 
         total_ret  = float(np.prod(1 + np.nan_to_num(pf_ret)) - 1) * 100
         mdd        = -abs(mdd_raw) * 100  # drawdown is a loss from peak → always ≤ 0
@@ -2787,7 +2826,8 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         pf_series = pd.Series(pf_ret, index=close_df.index)
         total_ret = pf_equity[-1] - 1
         sharpe, sortino, omega, mdd, ann_ret = compute_stats(pf_ret, close_df.index)
-        exec_test = _exec_test(close_v, open_v, w_curr, exec_shifted_c, fee, close_df.index)
+        exec_test = (_exec_test_stamped(_exec_test(close_v, open_v, w_curr, exec_shifted_c, fee, close_df.index), src0)
+                     if _exec_test_wanted(mode, refresh) else _exec_test_kept(out_dir, src0))
 
         n_trades = count_trades(delta_w)
 

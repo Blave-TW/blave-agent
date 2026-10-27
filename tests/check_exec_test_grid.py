@@ -2,10 +2,17 @@
 
 Runs runner.run() end to end on five fixture strategies — Type A, Type A with exec_at_close,
 Type A TAIFEX roll with a planted +5% basis gap, Type C with warmup / late listing /
-suspension / close-filled rebalances, Type C with the settlement mask on its weights — and
-requires lag["0"] to equal stats.json's Sharpe / MDD (Type C: also Ann. Return), the raw k=0
-Sharpe to equal the backtest's bit for bit, a lag never to hold a position across a roll, a
-performance refresh to recompute (not carry) the block, and the whole grid to fit the budget.
+suspension / close-filled rebalances, Type C with the settlement mask on its weights — each as
+the tab's button runs it (the undeployed quiet backtest, BLAVE_EXEC_TEST=1), and requires
+lag["0"] to equal stats.json's Sharpe / MDD (Type C: also Ann. Return), the raw k=0 Sharpe to
+equal the backtest's bit for bit, a lag never to hold a position across a roll, and the whole
+grid to fit the budget.
+
+When it is computed (spec lag-test-tab-2026-10-26 §4, 10-27): never by the agent's own backtest;
+a performance refresh (live BLAVE_STATS_REFRESH=1, or the quiet backtest BLAVE_QUIET=1) with
+BLAVE_EXEC_TEST "1" or unset (an old runtime); "0" computes nothing and keeps the previous block
+only while its code_hash is this file's (both modes — not _carry_over, which drops everything on a
+backtest); a code change, or a block without code_hash (10-26-e), is dropped.
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_exec_test_grid.py
 """
@@ -35,10 +42,13 @@ import pandas as pd
 
 import lib.runner as runner
 from lib.analysis import precise_pnl, compute_stats
+from lib.strategy import code_hash
 
 runner.dotenv_values = lambda *a, **k: {}
 os.chdir(WS)
 runner._REPO_ROOT = WS
+import lib.strategy  # noqa: E402
+lib.strategy._REPO_ROOT = WS   # versions/ of the fixtures: otherwise minted into this repo's strategies/
 os.environ["BLAVE_MODE"] = "backtest"
 
 exec_test, _exec_cell, _lagged, _v = runner._exec_test, runner._exec_cell, runner._lagged, runner._round4
@@ -82,12 +92,41 @@ def strat(name, market="swap"):
             "FEE": 0.0005, "MCPT": False, "MARKET": market, "__file__": str(d / "strategy.py")}
 
 
-def backtest(cfg, fetch, compute):
+@contextlib.contextmanager
+def env(**kw):
+    """kw: name → value, None = unset; restored afterwards."""
+    saved = {k: os.environ.get(k) for k in kw}
+    for k, v in kw.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+XT = "BLAVE_EXEC_TEST"   # = runner.EXEC_TEST_ENV (literal: against an older runner the checks fail, not the import)
+BUTTON = {"BLAVE_QUIET": "1", XT: "1"}                      # the tab's button, undeployed strategy
+LIVE = {"BLAVE_MODE": "live", runner.STATS_REFRESH_ENV: "1"}   # the deployed strategy's refresh
+
+
+def backtest(cfg, fetch, compute, **envkw):
+    """envkw: the run's env on top of BLAVE_MODE=backtest; default = the agent's own backtest."""
     captured.clear()
-    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+    with env(**envkw), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         runner.run(dict(cfg), fetch, compute)
     stats = json.loads((WS / "strategies" / cfg["STRATEGY_NAME"] / "stats.json").read_text())
     return stats, captured[0]
+
+
+def stats_file_src(stats):
+    return WS / "strategies" / stats["strategy"] / "strategy.py"
 
 
 def parity(label, stats, cap):
@@ -105,8 +144,11 @@ def parity(label, stats, cap):
           f"{label}: stats.json carries {runner.EXEC_TEST_KEY} with every lag and cost cell")
     if not isinstance(grid, dict):
         return {}
-    check(grid == json.loads(json.dumps(exec_test(close_v, open_v, w_curr, exec_shifted, fee, cap["index"]))),
+    check({k: v for k, v in grid.items() if k != "code_hash"}
+          == json.loads(json.dumps(exec_test(close_v, open_v, w_curr, exec_shifted, fee, cap["index"]))),
           f"{label}: the block is _exec_test of the backtest's own precise_pnl arrays")
+    check(grid.get("code_hash") == code_hash(Path(stats_file_src(stats)).read_bytes()),
+          f"{label}: the block carries the strategy file's code_hash ({grid.get('code_hash')})")
     check(grid["lag"]["0"][0] == stats["Sharpe Ratio"],
           f"{label}: grid 現行 Sharpe == stats.json ({grid['lag']['0'][0]} vs {stats['Sharpe Ratio']})")
     check(grid["lag"]["0"][2] == stats["Max Drawdown [%]"],
@@ -144,13 +186,15 @@ def trend(df):
 PX = 100 * np.exp(np.cumsum(rng.normal(0.0005, 0.02, N)))
 DA = ohlc(PX)
 DA.iloc[400, DA.columns.get_loc("Open")] = 0.0
-stats, cap = backtest(strat("fa_plain"), lambda h: DA.copy(), trend)
+agent, _ = backtest(strat("fa_plain"), lambda h: DA.copy(), trend)
+check(runner.EXEC_TEST_KEY not in agent, "the agent's own backtest writes no exec_test")
+stats, cap = backtest(strat("fa_plain"), lambda h: DA.copy(), trend, **BUTTON)
 print("Type A plain")
 parity("A", stats, cap)
 
 # 2. Type A with a generic exec_at_close mask
 EA = pd.Series(rng.random(N) < 0.05, index=IDX)
-stats, cap = backtest(strat("fa_eac"), lambda h: DA.copy(), lambda d: (trend(d), EA))
+stats, cap = backtest(strat("fa_eac"), lambda h: DA.copy(), lambda d: (trend(d), EA), **BUTTON)
 print("Type A exec_at_close")
 parity("A eac", stats, cap)
 c_, o_, w_, _, e_, f_ = cap["args"]
@@ -173,7 +217,7 @@ def txf(d):
     return s, settle
 
 
-stats, cap = backtest(strat("fa_txf"), lambda h: DT.copy(), txf)
+stats, cap = backtest(strat("fa_txf"), lambda h: DT.copy(), txf, **BUTTON)
 print("Type A TAIFEX settlement")
 grid = parity("A txf", stats, cap)
 close_v, open_v, w_curr, _, ex, fee = cap["args"]
@@ -222,7 +266,7 @@ def momentum(d):
 
 
 ccfg = dict(strat("fc_mom", market="spot"), SYMBOL=None, WARMUP=WARMUP)
-stats, cap = backtest(ccfg, lambda h: (CLOSE.copy(), OPEN.copy()), momentum)
+stats, cap = backtest(ccfg, lambda h: (CLOSE.copy(), OPEN.copy()), momentum, **BUTTON)
 print("Type C momentum")
 gridc = parity("C", stats, cap)
 
@@ -275,31 +319,63 @@ def mom_settle(d):
 
 
 stats, cap = backtest(dict(strat("fc_txf", market="spot"), SYMBOL=None),
-                      lambda h: (CT.copy(), OT.copy()), mom_settle)
+                      lambda h: (CT.copy(), OT.copy()), mom_settle, **BUTTON)
 print("Type C settlement")
 parity("C txf", stats, cap)
 _, _, wc, _, ex, _ = cap["args"]
 check(all(np.all(_lagged(wc, ex, k)[np.flatnonzero(ex)] == 0.0) for k in (1, 5, 10)),
       "C txf: lagged weights are flat on every settlement-priced bar")
 
-# 6. Performance refresh recomputes on the longer data — a carried block would no longer match
-print("Refresh / failure")
+check(getattr(runner, "EXEC_TEST_ENV", None) == XT, "runner reads BLAVE_EXEC_TEST (= runtime command_listener.EXEC_TEST_ENV)")
+
+# 6. When the block is computed, kept or dropped (spec §4 何時算 / 舊結果的去留)
+print("When computed / carry-over / failure")
+XK = runner.EXEC_TEST_KEY
+SHORT, FULL = (lambda h: DA.iloc[:-120].copy()), (lambda h: DA.copy())
+
+
+def xt0(st):
+    return ((st.get(XK) or {}).get("lag") or {}).get("0", [None])[0]
+
+
 rcfg = strat("fa_refresh")
-old, _ = backtest(rcfg, lambda h: DA.iloc[:-60].copy(), trend)
-os.environ.update(BLAVE_MODE="live", **{runner.STATS_REFRESH_ENV: "1"})
-try:
-    new, cap = backtest(rcfg, lambda h: DA.copy(), trend)
-finally:
-    os.environ["BLAVE_MODE"] = "backtest"
-    os.environ.pop(runner.STATS_REFRESH_ENV, None)
-check(new["end"] != old["end"] and new["Sharpe Ratio"] != old["Sharpe Ratio"], "refresh: longer data, Sharpe moved")
-check(new.get(runner.EXEC_TEST_KEY, {}).get("lag", {}).get("0", [None])[0] == new["Sharpe Ratio"],
-      f"refresh: exec_test recomputed, 現行 == the refreshed Sharpe ({new['Sharpe Ratio']})")
+old, _ = backtest(rcfg, SHORT, trend, **BUTTON)
+check(xt0(old) == old["Sharpe Ratio"] and old[XK].get("code_hash"), "button: computed, 現行 == Sharpe, code_hash stamped")
+new, _ = backtest(rcfg, FULL, trend, **LIVE, **{XT: "0"})
+check(new["end"] != old["end"] and new["Sharpe Ratio"] != old["Sharpe Ratio"], "live refresh \"0\": longer data, Sharpe moved")
+check(new.get(XK) == old[XK] and xt0(new) != new["Sharpe Ratio"],
+      "live refresh \"0\", same code: the old block carried as is (stale against the new Sharpe)")
+quiet, _ = backtest(rcfg, SHORT, trend, BLAVE_QUIET="1", **{XT: "0"})
+check(quiet.get(XK) == old[XK], "undeployed quiet backtest \"0\", same code: carried (not dropped by _carry_over's backtest rule)")
+agent, _ = backtest(rcfg, FULL, trend)
+check(agent.get(XK) == old[XK], "agent backtest, same code: carried, not recomputed")
+agent1, _ = backtest(rcfg, FULL, trend, **{XT: "1"})
+check(agent1.get(XK) == old[XK], "agent backtest with BLAVE_EXEC_TEST=1 (no BLAVE_QUIET): still not computed")
+compat, _ = backtest(rcfg, FULL, trend, **LIVE, **{XT: None})
+check(xt0(compat) == compat["Sharpe Ratio"] and compat[XK] != old[XK],
+      f"live refresh with BLAVE_EXEC_TEST unset (old runtime): recomputed, 現行 == the refreshed Sharpe ({compat['Sharpe Ratio']})")
+compat_q, _ = backtest(rcfg, SHORT, trend, BLAVE_QUIET="1", **{XT: None})
+check(xt0(compat_q) == compat_q["Sharpe Ratio"], "quiet backtest with BLAVE_EXEC_TEST unset (old runtime): recomputed")
+live1, _ = backtest(rcfg, FULL, trend, **LIVE, **{XT: "1"})
+check(xt0(live1) == live1["Sharpe Ratio"], "live refresh \"1\": recomputed")
+
+src_path = Path(rcfg["__file__"])
+src_path.write_text(src_path.read_text() + "# edited\n")
+edited, _ = backtest(rcfg, FULL, trend, **LIVE, **{XT: "0"})
+check(XK not in edited, "code changed, \"0\": the old block is dropped (empty state, not another code's numbers)")
+edited_bt, _ = backtest(rcfg, FULL, trend, BLAVE_QUIET="1", **{XT: "1"})
+check(xt0(edited_bt) == edited_bt["Sharpe Ratio"], "code changed, then the button: computed again")
+sp = WS / "strategies" / "fa_refresh" / "stats.json"
+doc = json.loads(sp.read_text())
+doc[XK].pop("code_hash", None)
+sp.write_text(json.dumps(doc))
+legacy, _ = backtest(rcfg, FULL, trend, **LIVE, **{XT: "0"})
+check(XK not in legacy, "a block without code_hash (10-26-e) is dropped on the next run that does not compute")
 
 real_cell = runner._exec_cell
 runner._exec_cell = lambda *a, **k: 1 / 0
 try:
-    broken, _ = backtest(strat("fa_broken"), lambda h: DA.copy(), trend)
+    broken, _ = backtest(strat("fa_broken"), lambda h: DA.copy(), trend, **BUTTON)
 finally:
     runner._exec_cell = real_cell
 check(runner.EXEC_TEST_KEY not in broken and broken.get("Sharpe Ratio") is not None,
@@ -320,5 +396,7 @@ for n, k in ((51007, None), (2752, 283)):
     print(f"        {n}×{k or 1}: {dt * 1000:.0f} ms for the whole grid")
     check(dt < 1.0, f"cost {n}×{k or 1} under 1 s ({dt:.3f}s)")
 
-print(f"\n{'ALL PASS' if not fails else f'{fails} FAIL'}  (workspace {WS})")
+import shutil
+shutil.rmtree(WS, ignore_errors=True)
+print(f"\n{'ALL PASS' if not fails else f'{fails} FAIL'}")
 sys.exit(1 if fails else 0)
