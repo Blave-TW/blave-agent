@@ -680,16 +680,15 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     got = float(result.get('fill_qty') or 0)
     if got + 1e-9 < lots:
         _capital_park_unfilled(sym, result, lots if action == 'buy' else -lots, nets_before)
-    if result.get('status') != 'filled' or got + 1e-9 < lots:
+    # 'sent' (no fill report at all) is parked silently, as 統一's: the claim books it
+    # within a read or two, and a P1 asking the user to check the app invited a hand
+    # close before that read — the claim then saw no change and the next diff re-bought.
+    # The parked row's own P1 (three unexplained reads, then HALT) covers real trouble.
+    if result.get('status') != 'sent' and got + 1e-9 < lots:
         # P1 (notifications.md 下單失敗 row): order_errors.json is diffed by the platform into an
-        # order_error event — workspace, TG, email. Under self_ledger the book counts only `got`,
-        # so the user has to check the real position before the next round acts on it.
+        # order_error event — workspace, TG, email.
         from lib.portfolio import _record_order_error
-        if result.get('status') == 'sent':
-            msg = (f"群益已收單(序號 {result.get('seq_no') or '?'})但 {lots} 口在等待時間內都沒有成交回報,"
-                   f"Blave 先記 0 口——請到群益下單軟體確認 {symbol} 的實際部位")
-        else:
-            msg = f"群益只回報成交 {got:g}/{lots} 口,Blave 照 {got:g} 口記——請到群益下單軟體確認 {symbol} 的實際部位"
+        msg = f"群益只回報成交 {got:g}/{lots} 口,Blave 照 {got:g} 口記——請到群益下單軟體確認 {symbol} 的實際部位"
         if result.get('error'):
             msg += f"({result['error']})"
         _record_order_error(symbol, venue_traits.CAPITAL, msg)

@@ -106,7 +106,7 @@ check(r["fill_qty"] == 5 and "OSError" in r.get("error", ""),
 audit = open("state/audit.jsonl").read() if os.path.exists("state/audit.jsonl") else ""
 check('"late": true' in audit, "a late fill is audited as order_filled (late)")
 
-# reconciler: still unconfirmed / short → recorded in order_errors (the platform turns it into a P1 order_error)
+# reconciler: short → recorded in order_errors (the platform turns it into a P1 order_error); 'sent' → parked, no row
 from manager import reconciler  # noqa: E402
 import lib.portfolio as portfolio  # noqa: E402
 rec = []
@@ -127,7 +127,7 @@ if os.path.exists(oc.capital_vault.LAST_ORDER_PATH):
     os.remove(oc.capital_vault.LAST_ORDER_PATH)
 json.dump({"ok": True, "positions": [], "read_at": _time.time(), "query_started_at": _time.time()},
           open(account_capital._SNAPSHOT, "w"))
-for res, want in (({"status": "sent", "fill_qty": 0.0, "seq_no": "0000000000009", "symbol": "TM0000"}, "沒有成交回報"),
+for res, want in (({"status": "sent", "fill_qty": 0.0, "seq_no": "0000000000009", "symbol": "TM0000"}, "parked"),
                   ({"status": "filled", "fill_qty": 5.0, "seq_no": "1", "symbol": "TM2610"}, "5/8"),
                   ({"status": "filled", "fill_qty": 8.0, "seq_no": "1", "symbol": "TM2610"}, None)):
     rec.clear()
@@ -140,6 +140,9 @@ for res, want in (({"status": "sent", "fill_qty": 0.0, "seq_no": "0000000000009"
         oc.place_futures_market_order = place
     if want is None:
         check(not rec and leg["executed_qty"] == 8.0, "fully filled: nothing recorded")
+    elif want == "parked":
+        check(not rec and leg["executed_qty"] == 0.0,
+              f"sent 0/8 → no immediate order_errors row: parked, the claim or its 3-read HALT tells the user ({rec})")
     else:
         check(len(rec) == 1 and rec[0][:2] == ("TMF", "capital") and want in rec[0][2] and "請到群益" in rec[0][2] and "實際部位" in rec[0][2],
               f"{res['status']} {res['fill_qty']:g}/8 → one order_errors row telling the user to check 群益 ({rec})")
