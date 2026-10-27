@@ -2634,6 +2634,13 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const LE = (rel) => trLiveOrderErrs([{ ts: "2026-10-27T01:00:00", symbol: "BTCUSDT", exchange: "binance", kind: "order_unconfirmed", released: rel, error: "x" }],
       new Set(["BTCUSDT"]), { open: new Set(), running: true, orders: [] });
     ok("已解除(released)的停車單不掛在部位表;還沒解除的照掛", LE(true).size === 0 && LE(undefined).size === 1);
+    { const raw = fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "zh.po"), "utf8");
+      const m = /msgid "tr\.haltUnconfirmed"\nmsgstr "([^"]*)"/.exec(raw), v = m ? m[1] : "";
+      const sents = v.split("。").filter(Boolean);
+      ok("追蹤不了而整台暫停的狀態句:三句(design-system 錯誤例外三句共 ≤60),留「不要手動補單」",
+        sents.length === 3 && v.includes("不要手動補單")
+        // 長度算法同 web tools/check_copy_length:漢字一字一個、{x} 與英數詞各一個,標點不算
+        && ((v.match(/[\u4e00-\u9fff]/g) || []).length + (v.match(/\{[a-z_]+\}|[A-Za-z0-9]+/g) || []).length) <= 60); }
   }
   console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();

@@ -9067,7 +9067,7 @@ msgid "tr.ov.evUnconfirmedReleasedNone"
 msgstr "It did not fill; new entries on this symbol resume."
 
 msgid "tr.haltUnconfirmed"
-msgstr "An order on {sym} has an unknown outcome and may have filled. Nothing goes out while paused. Check your position on the exchange; don't place it again yourself. Tell your agent how much filled, then press Start trading."
+msgstr "An order on {sym} has an unknown outcome and may have filled; nothing goes out while paused. Check your position on the exchange; don't place it again yourself. Tell your agent how much filled, then press Start trading."
 
 msgid "tr.ov.evHaltUnconfirmedNote"
 msgstr "nothing goes out. An order has an unknown outcome and may have filled — don't place it again yourself. Tell your agent how much filled, then press Start trading."

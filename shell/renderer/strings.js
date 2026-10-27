@@ -2952,7 +2952,7 @@ const STRINGS = {
     "tr.ov.evUnconfirmedReleased": "Order outcome found",
     "tr.ov.evUnconfirmedReleasedFilled": "It filled and is in the book; new entries on this symbol resume.",
     "tr.ov.evUnconfirmedReleasedNone": "It did not fill; new entries on this symbol resume.",
-    "tr.haltUnconfirmed": "An order on {sym} has an unknown outcome and may have filled. Nothing goes out while paused. Check your position on the exchange; don't place it again yourself. Tell your agent how much filled, then press Start trading.",
+    "tr.haltUnconfirmed": "An order on {sym} has an unknown outcome and may have filled; nothing goes out while paused. Check your position on the exchange; don't place it again yourself. Tell your agent how much filled, then press Start trading.",
     "tr.ov.evHaltUnconfirmedNote": "nothing goes out. An order has an unknown outcome and may have filled — don't place it again yourself. Tell your agent how much filled, then press Start trading.",
   },
   zh: {
@@ -5902,7 +5902,7 @@ const STRINGS = {
     "tr.ov.evUnconfirmedReleased": "下單結果已查到",
     "tr.ov.evUnconfirmedReleasedFilled": "這筆單已成交，已記進帳本，這個標的恢復開倉。",
     "tr.ov.evUnconfirmedReleasedNone": "這筆單沒有成交，這個標的恢復開倉。",
-    "tr.haltUnconfirmed": "{sym} 有一筆單結果不明，可能已經成交。暫停期間什麼單都不送。請核對交易所部位，不要手動補單。告訴 agent 成交多少，再按「啟動下單」。",
+    "tr.haltUnconfirmed": "{sym} 有一筆單結果不明、可能已成交，暫停期間什麼單都不送。請核對交易所部位，不要手動補單。告訴 agent 成交多少，再按「啟動下單」。",
     "tr.ov.evHaltUnconfirmedNote": "什麼單都不送。有一筆單結果不明，可能已經成交，不要手動補單。告訴 agent 成交多少，再按「啟動下單」。",
   },
 };
