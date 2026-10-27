@@ -286,4 +286,30 @@ for (const lang of ["zh", "en"]) {
   const badS = CASES.filter(([k, i, want]) => !dS || !wS || dS[k](i) !== want || wS[k](i) !== want).map(([k, i, want]) => k + JSON.stringify(i) + "→" + want + " 電腦版 " + (dS && dS[k](i)) + " web " + (wS && wS[k](i)));
   ok("成交測試畫面狀態兩邊同一組情境同一個答案(" + CASES.length + " 組)", badS.length === 0, badS.join(";"));
   ok("成交測試分頁位置兩邊同一處(樣本外驗證 → 成交測試 → 程式碼)", order(html, /class="rp-tab"[^>]*data-tab="(\w+)"/g) === "wf,xt,code" && order(web, /class="main-tab"[\s\S]*?data-tab="(\w+)"/g) === "wf,xt,code"); }
+// 歡迎頁①策略卡挑哪三張:電腦版 library.js 的 wcReco(雲端視角)與網頁 wcReco(libReco + library_rules.js)各自切出來跑同一組策略,
+// 要挑到同一批、同一順序。網頁還沒有 wcReco = web 那顆還沒上線,SKIP 並講原因;有 wcReco 但切不出來或答案不同一律紅
+{ const wfn = (n) => { const a = web.indexOf("        function " + n + "("), b = a < 0 ? -1 : web.indexOf("\n        }\n", a); return a < 0 || b < 0 ? null : web.slice(a, b + 10); };
+  if (web.indexOf("        function wcReco(") < 0) console.log("SKIP  歡迎頁策略卡挑選兩邊同一批(網頁還沒有 wcReco:web 歡迎卡那顆還沒上線)");
+  else {
+    const lib = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "library.js"), "utf8");
+    const dfn = (n) => { const a = lib.indexOf("\nfunction " + n + "(") + 1; if (a < 1) return null; let i = lib.indexOf("{", a), d = 0; for (; i < lib.length; i++) { if (lib[i] === "{") d++; else if (lib[i] === "}" && --d === 0) break; } return lib.slice(a, i + 1) + "\n"; };
+    const dconst = (n) => { const m = new RegExp("^const " + n + " = [^\\n]*;$", "m").exec(lib); return m ? m[0] + "\n" : null; };
+    const dParts = ["LIB_DAY", "LIB_MARKETS", "LIB_CATEGORY_MARKET"].map(dconst).concat(["libMarket", "libSampleYears", "libCreated", "libIsFree", "libNeeds", "libAnonOk", "libCompare", "libVisible", "wcReco"].map(dfn));
+    const wParts = ["libCommunity", "libReco", "wcReco"].map(wfn), rulesPath = path.join(webDir, "app", "static", "js", "library_rules.js");
+    const installed = new Set([5]), isInst = (s) => installed.has(s.id);
+    let dPick = null, wPick = null, err = "";
+    try { dPick = new Function("inst", dParts.join("") + "return (l) => wcReco(l, { env: 'cloud', installed: inst });")(isInst); } catch (e) { err += " 電腦版:" + e.message; }
+    try { globalThis.window = globalThis; delete require.cache[require.resolve(rulesPath)]; require(rulesPath);
+      wPick = new Function("env", "with (env) {" + wParts.join("") + "return wcReco; }")({ LIB: globalThis.BlaveLibrary, libInstalled: isInst }); } catch (e) { err += " 網頁:" + e.message; }
+    // 三市場各兩支(驗證過的 vs 樣本更長沒驗證的、已裝的、樣本年數差 <0.05 年的一對)＋美股付費一支、社群驗證一支
+    const S = (id, o) => Object.assign({ id, price: 0, is_official: true, created_at: "2026-0" + (1 + id % 9) + "-01 00:00:00" }, o);
+    const R = (f, t) => ({ report: { equity_from: f, equity_to: t || "2026-10-01" } });
+    const pool = [S(1, { market: "crypto", verified: true, ...R("2023-01-01") }), S(2, { market: "crypto", ...R("2015-01-01") }),
+      S(3, { market: "txf", ...R("2016-01-01") }), S(4, { market: "txf", ...R("2016-01-10") }),
+      S(5, { market: "twstock", verified: true, ...R("2017-01-01") }), S(6, { market: "twstock", ...R("2018-01-01") }),
+      S(7, { market: "usstock", price: 5, verified: true, ...R("2010-01-01") }), S(8, { market: "usstock", is_official: false, verified: true, ...R("2010-01-01") })];
+    let d = null, w = null;
+    try { d = dPick && dPick(pool).map((s) => s.id); w = wPick && wPick(pool).map((s) => s.id); } catch (e) { err += " 執行:" + e.message; }
+    ok("歡迎頁策略卡挑選兩邊同一批、同一順序(雲端視角,8 支測資挑 3 張)", !dParts.includes(null) && !wParts.includes(null) && !!d && d.length === 3 && JSON.stringify(d) === JSON.stringify(w),
+      (dParts.includes(null) || wParts.includes(null) ? "切不出函式;" : "") + "電腦版 " + JSON.stringify(d) + " vs 網頁 " + JSON.stringify(w) + err); } }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
