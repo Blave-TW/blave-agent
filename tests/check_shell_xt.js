@@ -94,6 +94,9 @@ ok("② 表頭鈕 aria-pressed、指向說明句;點年化 → 只換晚幾根�
   })());
 window.BlaveReport.renderXt(new Node("div"), { stats: { ...STATS, exec_test: A } }, { t });   // 下一個測試從 Sharpe 起
 full.box.querySelector('button[data-xt-sec="lag"][data-xt-key="sharpe"]').on.click();
+{ let n = 0; const m = run({ ...STATS, exec_test: A }, { onMetric: () => { n++; } }), q = (k) => m.box.querySelector('button[data-xt-sec="cost"][data-xt-key="' + k + '"]');
+  q("mdd").on.click(); const a = n; q("mdd").on.click(); const b = n; q("sharpe").on.click();
+  ok("② 換指標才叫 onMetric(埋點 xt_metric 在 app.js):換一次一次、點已選的那顆不叫", a === 1 && b === 1 && n === 2, String([a, b, n])); }
 const few = run({ ...STATS, exec_test: mk([1, 1, 1, 1, 1, 1], flat7, { position_changes: 7 }) });
 ok("② 交易太少:只有結論卡那一句,兩段不畫", few.cls("rob-verdict")[0].textContent === "交易太少（回測期間換倉 7 次），延遲和成本都測不出東西。" && few.cls("xt-sec").length === 0);
 const fog = run({ ...STATS });
@@ -127,9 +130,9 @@ ok("③ 雲端落後只認 config_supports_exec_test === false(null = api 還沒
 ok("③ 時光機:看舊版本 xt 點得開、畫霧不給鈕;重跑中跟其他三個一起停用",
   /const cur = tab === "code" \? "code" : tab === "xt" && S\.open !== null \? "xt" : "bt";/.test(ver) && /\|\| \(b\.dataset\.tab === "xt" && S\.open === null\);/.test(ver)
   && /renderXt\(\$\("rp-xt"\), null, \{ t, old: true \}\)/.test(ver));
-ok("③ 霧上的鈕 = 更新績效同一條路(perfClick → stats_refresh、ack 才記 perf_update),不開確認框、不送對話;回合中一起 aria-disabled",
+ok("③ 霧上的鈕 = 更新績效同一條路(perfClick → stats_refresh、ack 才記 perf_update_xt),不開確認框、不送對話;回合中一起 aria-disabled",
   /btn\.addEventListener\("click", \(\) => perfClick\(B, btn\)\);/.test(perf) && /function perfXtSlot\(B\)/.test(perf) && !/confirmBox|submitMessage/.test(perf)
-  && /\[\$\("perf-btn"\)\]\.concat\(xt \? \[\.\.\.xt\.querySelectorAll\("\[data-perf-btn\]"\)\] : \[\]\)/.test(perf) && /tradeSend\("stats_refresh", \{ names: \[name\] \}\)/.test(perf) && /perfXtSlot\(B\) : null/.test(app));
+  && /\[\$\("perf-btn"\)\]\.concat\(xt \? \[\.\.\.xt\.querySelectorAll\("\[data-perf-btn\]"\)\] : \[\]\)/.test(perf) && /tradeSend\("stats_refresh", \{ names: \[name\] \}\)/.test(perf) && /perfXtSlot\(B\) : null/.test(app) && /onMetric: \(\) => \{ trackFeature\("xt_metric"\); \},/.test(app));
 ok("③ 霧卡失敗句用 xt.updFail(霧上沒有數字,不講「數字是舊的」)", /perfFailLine\(side, st, "xt\.updFail"\)/.test(perf) && zh["xt.updFail"] === "沒更新成功");
 
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

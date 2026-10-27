@@ -8,7 +8,7 @@
    失敗(meta 列下一行「沒更新成功,數字是舊的」,原因進 title,鈕就是重試)。
    資料:B.data.perf = { at, refresh? }(主行程 stratPerf / 雲端 strategies report 的 perf):at = stats.json mtime(秒),不是 Generated At;
    refresh = { status: running|failed, at, err? },err 是版本重跑那四個分類碼、字串沿用 ver.rerunWhy.*。
-   按下當下就畫更新中(疊層 PF,不等 ack);ack 說排進佇列才記埋點 perf_update。之後輪詢報告(本機 2 秒、雲端 5 秒):refresh 消失且 at 前進 = 完成,
+   按下當下就畫更新中(疊層 PF,不等 ack);ack 說排進佇列才記埋點 perf_update(成交測試霧卡那顆記 perf_update_xt)。之後輪詢報告(本機 2 秒、雲端 5 秒):refresh 消失且 at 前進 = 完成,
    數字原地換(回測分頁重畫)、讀屏另唸一句;refresh failed = 失敗。ack 後 2 分鐘報告都沒跟上就拿掉疊層回閒置(不知道有沒有跑,不假稱失敗)。
    成交測試分頁(report-xt.js)只有舊回測沒有 exec_test 時,霧卡上也有一顆(perfXtSlot):同一個動作、同一份疊層,perfPaint 換態時就地換它。
    用到 app.js 的 $ / t / RP / RPC / RPC_CACHE / rpBag / rpPaintHead / rpShowTab / rpTab / running / trackFeature / srSay、
@@ -164,7 +164,7 @@ async function perfClick(B, opener) {
   try { r = await TR_BAGS[side].api.tradeSend("stats_refresh", { names: [name] }); } catch (_) { r = null; }
   if (PF[side].get(name) !== o) return;   // 又按了一次、或報告已跟上:那一次說了算
   const res = r && r.ok && r.result && typeof r.result === "object" ? r.result : null;
-  if (res && Array.isArray(res.started) && res.started.indexOf(name) >= 0) { trackFeature("perf_update"); o.ackAt = Date.now(); }
+  if (res && Array.isArray(res.started) && res.started.indexOf(name) >= 0) { trackFeature(opener ? "perf_update_xt" : "perf_update"); o.ackAt = Date.now(); }
   else if (res && res.skipped && res.skipped[name] === "BUSY") o.ackAt = Date.now();
   else if (res && res.skipped && PF_WHY[res.skipped[name]]) o.failed = res.skipped[name];
   else if (!r || r.kind === "unknown" || r.error === "TIMEOUT" || r.error === "UNKNOWN_RESULT") o.ackAt = Date.now();

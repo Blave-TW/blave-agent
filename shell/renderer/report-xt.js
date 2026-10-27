@@ -7,7 +7,8 @@
  *
  * 這支**不依賴桌面版的全域**,環境全在 opts:`t` = i18n;`buildMeta(o)` = 回測那一行 meta(只交標的 / 週期 / 期間,全頁叫交易成本、
  * 費率由成本段標題列講);`old` = 時光機看舊版本(版本不存 exec_test:只霧、不給鈕);`behind` = 雲端主機的 lib 確定不算 exec_test
- * (一句先更新 + `onUpdate(btn)`);`rerun()` = 霧卡上的〔更新績效〕那一格(回 null = 這支不能更新績效,只有霧)。
+ * (一句先更新 + `onUpdate(btn)`);`rerun()` = 霧卡上的〔更新績效〕那一格(回 null = 這支不能更新績效,只有霧);
+ * `onMetric()` = 表頭換了指標(值有變才叫;埋點在 app.js,這支不碰 telemetry)。
  *
  * SECURITY: exec_test 是 VM 端未信任輸入(雲端那份又經 api 轉過一手)——xtSanitize 逐格型別檢查,文字一律 textContent。 */
 (function () {
@@ -262,6 +263,7 @@
       b.addEventListener("click", () => {
         if (xtPick[sec] === key) return;
         xtPick[sec] = key;
+        if (typeof ctx.opts.onMetric === "function") ctx.opts.onMetric();
         paint(ctx.container, ctx.data, ctx.opts);
         const nb = ctx.container.querySelector('button[data-xt-sec="' + sec + '"][data-xt-key="' + key + '"]');
         if (nb) nb.focus();

@@ -2036,6 +2036,7 @@ if (window.blave.onWindowActive) window.blave.onWindowActive((on) => { if (on) r
 function rpXtOpts(B) {
   const R = window.BlaveReport || {}, cloud = B === RPC;
   return { t, buildMeta: R.buildMeta, behind: cloud && rpWfCloud().config_supports_exec_test === false, onUpdate: rpWfUpdate,
+    onMetric: () => { trackFeature("xt_metric"); },
     rerun: () => (typeof perfXtSlot === "function" ? perfXtSlot(B) : null) };
 }
 // 雲端狀態輪詢叫(同 rpWfSync):主機的 config_supports_exec_test 翻面了才重畫(落後態 ↔ 霧上的〔更新績效〕)
@@ -2075,7 +2076,7 @@ function rpWfSync() {
   const B = rpBag(), R = window.BlaveReport || {};
   if (B.drawn.wf && R.wfSync) R.wfSync($("rp-wf"), rpWfOpts());
 }
-const RP_TAB_FEATURE = { bt: "report_backtest", tr: "report_trades", rob: "report_scan", wf: "report_wf", code: "report_code" };
+const RP_TAB_FEATURE = { bt: "report_backtest", tr: "report_trades", rob: "report_scan", wf: "report_wf", xt: "report_xt", code: "report_code" };
 $("rp-tabs").addEventListener("click", (e) => {   // 只有人點的才算用過:程式自動選預設分頁(stratSelect / rpCloudSelect)不記
   const b = e.target.closest(".rp-tab"); if (!b || b.disabled) return;
   rpShowTab(b.dataset.tab); trackFeature(RP_TAB_FEATURE[b.dataset.tab]);
