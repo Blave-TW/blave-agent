@@ -3848,8 +3848,8 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_execution_stuck: "Execution is stuck", ev_execution_stuck_n: "Later orders for this symbol are waiting on it.",
   ev_machine_restart_stopped: "Machine restarted — trading paused", ev_machine_restart_stopped_n: "No orders are going out — nothing is managing your positions, and exits and stops won't run. Press Start trading to resume.",
   ev_venue_stops_missing: "Bitget positions without a stop-loss", ev_venue_stops_missing_n: "After the account switch some positions have no stop-loss on Bitget. Trading continues; Blave won’t re-place them.",
-  ev_order_unconfirmed: "Order outcome unknown", ev_order_unconfirmed_n: "This order may have filled. Check your position on the exchange; don't place it again yourself.",
-  ev_order_unconfirmed_stuck: "Order outcome still unknown", ev_order_unconfirmed_stuck_n: "An hour on, the order still can't be found. Check your position on the exchange, then tell your agent how much filled.",
+  ev_order_unconfirmed: "Order outcome unknown", ev_order_unconfirmed_n: "This order may have filled — don't place it again yourself. New entries on this symbol are paused; closes still run.",
+  ev_order_unconfirmed_stuck: "Order outcome still unknown", ev_order_unconfirmed_stuck_n: "The order still can't be found. New entries on this symbol stay paused. Check your position on the exchange, then tell your agent how much filled.",
   stratOne: "", stratTwo: "", stratMany: "", withStrat: "",
   // 有了雲端視角之後的字(字串表 tm.*)。**預設是空的 = renderer 還沒交**:空的時候相關的那一行 / 那一句 / 那個前綴整個不出現,
   // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單(menu*)例外:退路是 MENU_EN。

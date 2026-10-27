@@ -9033,16 +9033,16 @@ msgid "tr.ov.evUnconfirmedStuck"
 msgstr "Order outcome still unknown"
 
 msgid "tr.ov.evUnconfirmedNote"
-msgstr "This order may have filled. Orders for this symbol are paused and resume once the result is found."
+msgstr "This order may have filled — don't place it again yourself. New entries on this symbol are paused, closes still run, and it resumes once the result is found."
 
 msgid "tr.ov.evUnconfirmedStuckNote"
-msgstr "An hour on, the order still can't be found. Check your position on the exchange, then tell your agent how much filled."
+msgstr "The order still can't be found. New entries on this symbol stay paused. Check your position on the exchange, then tell your agent how much filled."
 
 msgid "tm.evUnconfirmedNote"
-msgstr "This order may have filled. Check your position on the exchange; don't place it again yourself."
+msgstr "This order may have filled — don't place it again yourself. New entries on this symbol are paused; closes still run."
 
 msgid "tr.err.unconfirmed"
-msgstr "Outcome unknown — it may have filled. Orders for this symbol are paused until the result is found."
+msgstr "Outcome unknown — it may have filled; don't place it again yourself. New entries on this symbol are paused; closes still run."
 
 msgid "tr.ov.evStratOne"
 msgstr "strategy {name}"

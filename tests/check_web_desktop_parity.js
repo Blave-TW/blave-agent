@@ -131,6 +131,21 @@ for (const lang of ["zh", "en"]) {
   ok(`下單結果不明與策略段 ${lang} 兩邊逐字一致(${Object.keys(UNCONFIRMED_PAIRS).length} 句)`, bad.length === 0,
     bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
+// 事件型別集合(cross-surface-parity 規則三:列舉,不只靠上面手寫的配對表):電腦版 trEventText ∪ trOvEvents 認得的型別,
+// 跟網頁 ovEventRow 認得的同一組。order_error / order_unconfirmed 在電腦版從 order_errors[] 那列畫(trOvEvents 讀 e.kind),
+// 不走 `type ===`;只在電腦版的三個是這台電腦自己的指令回音與舊型別(halt_close／resume_wait 是本機指令、downtime_paused 已被
+// machine_restart_stopped 取代,網頁從沒畫過)。新型別只出現在一邊就紅。
+{ const seg = (src, a, b) => { const i = src.indexOf(a); return i < 0 ? "" : src.slice(i, src.indexOf(b, i + 1)); };
+  const types = (src) => new Set([...src.matchAll(/type === "([a-z_]+)"/g)].map((m) => m[1]));
+  const dSet = new Set([...types(seg(desk, "function trEventText(", "\nfunction ")), ...types(seg(desk, "function trOvEvents(", "\nfunction "))]);
+  const rows = seg(desk, "function trOvEvents(", "\nfunction ");
+  if (/r\.order_errors/.test(rows)) dSet.add("order_error");
+  if (/e\.kind === "order_unconfirmed"/.test(rows)) dSet.add("order_unconfirmed");
+  const wSet = types(seg(web, "function ovEventRow(", "\n        function "));
+  const DESK_ONLY = new Set(["halt_close", "resume_wait", "downtime_paused"]);
+  const onlyD = [...dSet].filter((x) => !wSet.has(x) && !DESK_ONLY.has(x)), onlyW = [...wSet].filter((x) => !dSet.has(x));
+  ok(`事件型別集合兩邊一致(電腦版 ${dSet.size}、網頁 ${wSet.size})`, wSet.size > 20 && !onlyD.length && !onlyW.length,
+    "只在電腦版:" + onlyD.join(",") + " 只在網頁:" + onlyW.join(",")); }
 // Type C 的買進持有基準(0050／BTC／SPY,{sym} 由各表面代入):統計列標籤／圖例、三句 tooltip、圖的 aria——zh / en 兩邊逐字同一份
 const poRaw = (file) => { const o = {}; if (fs.existsSync(file)) for (const m of fs.readFileSync(file, "utf8").matchAll(/^msgid "([^"]+)"\nmsgstr "((?:[^"\\]|\\.)*)"$/gm)) o[m[1]] = m[2]; return o; };
 const BH_KEYS = { workspace_bt_benchmark_bh: "bt.benchmarkBh", workspace_bt_benchmark_bh_tip_adj: "bt.tip.benchmarkBhAdj",

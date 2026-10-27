@@ -1069,14 +1069,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && nu[0] === "tr.ov.evBitgetStopsUnreadUta" && nu[4] === "NVDAUSDT tr.rel.long"
         && trEventText("venue_stops_missing", { venue: "okx", legs: [] }) === null
         && /const P1_TYPES = \[[^\]]*"venue_stops_missing"[^\]]*\]/.test(mainSrc2) && /ev_venue_stops_missing: t\("tm\.evBitgetNoStop"\)/.test(src));
-      { const u = trEventText("order_unconfirmed", { symbol: "BTCUSDT", strategies: ["btc_trend"] }),
-          us = trEventText("order_unconfirmed", { symbol: "BTCUSDT", stuck: true, strategies: ["a", "b", "c"] });
-        ok("order_unconfirmed(下單結果不明):P1 紅字、標的、策略段;stuck 用「還是不明」那兩句",
-          u[0] === "tr.ov.evUnconfirmed" && u[1] === "tr.ov.evUnconfirmedNote" && u[2] === 1 && u[4] === "BTCUSDT"
-          && u[5] === 'tr.ov.evStratOne{"name":"btc_trend"}'
-          && trEventText("order_unconfirmed", { symbol: "B", strategies: ["a", "b"] })[5] === 'tr.ov.evStratTwo{"a":"a","b":"b"}'
-          && us[0] === "tr.ov.evUnconfirmedStuck" && us[1] === "tr.ov.evUnconfirmedStuckNote" && us[5] === 'tr.ov.evStratMany{"name":"a","n":3,"more":2}'
-          && trEventText("order_unconfirmed", { symbol: "X" })[5] === null); }
+      ok("order_unconfirmed 跟 order_error 一樣只從 order_errors[] 那列畫(雲端事件流不再畫一次,免得同一件事兩列)",
+        trEventText("order_unconfirmed", { symbol: "BTCUSDT", strategies: ["a"] }) === null && trEventText("order_error", {}) === null);
       const S4 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
       ok("讀不到止損單那兩句拆成兩句(每句 ≤25 字,同 api notify.py):統一／經典",
         S4.includes('"tr.ov.evBitgetStopsUnreadUta": "Bitget 換成統一帳戶後讀不到止損單。以下倉位當成沒有止損："')

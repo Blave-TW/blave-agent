@@ -5088,13 +5088,8 @@ function trEventText(type, d) {
     const syms = String(d.symbols || "").split(",").map((x) => x.trim()).filter(Boolean).join(", ");
     return out(t("tr.ov.evManualClose"), t("tr.ov.evManualCloseNote"), null, syms);
   }
-  if (type === "downtime_paused") return out(t("tr.ov.evHaltAuto"), t("tr.ov.evDowntimeNote"));
-  // 下單結果不明(雲端事件;本機的從 order_errors[] 帶 kind 那列畫):stuck = 停車滿 1 小時那一則
-  if (type === "order_unconfirmed") {
-    const strat = trStratText(d.strategies);
-    return out(t(d.stuck === true ? "tr.ov.evUnconfirmedStuck" : "tr.ov.evUnconfirmed"),
-      t(d.stuck === true ? "tr.ov.evUnconfirmedStuckNote" : "tr.ov.evUnconfirmedNote"), null, str(d.symbol).replace(/@spot$/, ""), strat || null);
-  }   // 不是 HALT:連平倉都凍結,不能用 evHaltNote 那句
+  if (type === "downtime_paused") return out(t("tr.ov.evHaltAuto"), t("tr.ov.evDowntimeNote"));   // 不是 HALT:連平倉都凍結,不能用 evHaltNote 那句
+  // order_error / order_unconfirmed 不在這裡:兩型都從 order_errors[] 那列畫(trOvEvents),雲端事件流再畫一次就是兩列
   // 以下同網頁 ovEventRow(網頁原本就有、電腦版補上的 8 種,加稽核補畫的 5 種)
   if (type === "reconciler_dead") return out(t("tr.ov.evRecDead"), null);
   if (type === "reconciler_recovered") return out(t("tr.ov.evRecBack"), null);
