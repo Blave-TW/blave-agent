@@ -2909,6 +2909,12 @@ function replyNotifySet(on) {
   if (now !== was) tm().track("reply_notif", { act: now ? "on" : "off" });
   return now;
 }
+/* 設定 › 一般「提示音」:ui-prefs replySound,缺 = 開;跟 replyNotify 各管各的(canon › Sound:要橫幅不要聲音、要聲音不要橫幅是兩群人) */
+const replySoundGet = () => { try { return JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")).replySound !== false; } catch (_) { return true; } };
+function replySoundSet(on) {
+  try { uiPrefsPatch({ replySound: on === true }); } catch (_) { /* 寫不進去:照舊值 */ }
+  return replySoundGet();
+}
 function awakeSync() {
   const st = _tradeHost ? _tradeHost.status() : null;
   const want = awakeWanted({ st, startAt: awakeStartAt, now: Date.now(), keepAwake: keepAwakeGet(), win: WIN, twHeld: WIN ? twLots().held : false, prev: awakeBlocker !== null });
@@ -3082,13 +3088,17 @@ function replyTitle(sid) {
   try { const r = db.prepare("SELECT content FROM turns WHERE session_id = ? AND role = 'user' ORDER BY id LIMIT 1").get(sid); return replyTitleOf(r && r.content); }
   catch (_) { return replyTitleOf(""); } finally { db.close(); }
 }
-function replyCue(cue) {
+// sender = 送 reply-cue 的那個畫面:提示音交回它播(Web Audio 只在畫面裡有)
+function replyCue(cue, sender) {
   const p = replyPending; replyPending = null;
   if (!p || !okSessionId(p.sid) || !cue || typeof cue !== "object") return false;
-  const show = replyCuePick({ kind: cue.kind === "done" && p.awaiting ? "await" : cue.kind, focused: !!BrowserWindow.getFocusedWindow(), pref: replyNotifyGet() });
+  const o = { kind: cue.kind === "done" && p.awaiting ? "await" : cue.kind, focused: !!BrowserWindow.getFocusedWindow() };
+  // 聲音不排在通知的早退後面:通知關著、系統不支援通知、字還沒交過來,提示音照響。2 秒內只響一聲由畫面管
+  if (replyCuePick({ ...o, pref: replySoundGet() }) && sender && !sender.isDestroyed()) sender.send("reply-sound");
+  const show = replyCuePick({ ...o, pref: replyNotifyGet() });
   if (!show || !Notification.isSupported()) return false;
   const body = replyBody(show, cue.snippet, tmLabels); if (!body) return false;
-  const n = new Notification({ title: replyTitle(p.sid), body });
+  const n = new Notification({ title: replyTitle(p.sid), body, silent: true });   // 一律不出系統聲:回覆的聲音只有 Blave 那一聲(canon › Sound),P1 照用系統聲
   p1Alive.add(n); replyLast = n;
   const drop = () => { p1Alive.delete(n); if (replyLast === n) replyLast = null; };
   n.on("show", () => { replyOsOff = false; tm().track("reply_notif", { act: show }); });
@@ -3692,10 +3702,11 @@ app.whenReady().then(() => {
   // 側欄偏好(renderer/stratflags.js):順序與旗標只收自家頁面;拒絕時回空的 = 照預設序、沒旗標
   handle("keep-awake", () => keepAwakeGet(), true);
   handle("keep-awake-set", (_e, on) => keepAwakeSet(on === true), null);
-  handle("reply-notify", () => ({ on: replyNotifyGet(), osOff: replyOsOff }), { on: true, osOff: false });
+  handle("reply-notify", () => ({ on: replyNotifyGet(), osOff: replyOsOff, sound: replySoundGet() }), { on: true, osOff: false, sound: true });
   handle("reply-notify-set", (_e, on) => replyNotifySet(on === true), null);
+  handle("reply-sound-set", (_e, on) => replySoundSet(on === true), null);
   handle("reply-notify-os", () => replyOsSettings(), false);
-  ipcMain.on("reply-cue", (e, cue) => { if (fromOurPage(e)) replyCue(cue); });
+  ipcMain.on("reply-cue", (e, cue) => { if (fromOurPage(e)) replyCue(cue, e.sender); });
   handle("theme", () => themeGet(), "system");
   handle("theme-set", (_e, v) => themeSet(v), null);
   handle("welcome-prefs", () => onbPrefsGet(), { done: false, cloudDone: false });

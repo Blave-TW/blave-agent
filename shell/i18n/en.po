@@ -1812,6 +1812,14 @@ msgstr "System notifications are off."
 msgid "set.rn.osGo"
 msgstr "Open System Settings"
 
+# 設定 › 一般「回覆好了通知我」下面那列:回覆好了響回覆音(ui-prefs replySound,跟通知開關各管各的)。字同網頁 workspace_rn_sound
+msgid "set.rs"
+msgstr "Sound"
+
+# 上面那個開關的說明泡泡(網頁講「分頁在背景」,電腦版是視窗)
+msgid "set.rs.tip"
+msgstr "When the window isn’t in front, a reply plays a short sound."
+
 msgid "rc.await"
 msgstr "Waiting for you:"
 
