@@ -9075,7 +9075,7 @@ msgid "xt.lagOneFive"
 msgstr "晚一根 Sharpe {m1}，晚五根 {m5}"
 
 msgid "xt.lagMixed"
-msgstr "晚到 5 根 Sharpe 都在 {lo}–{hi}，晚 10 根 {v10}"
+msgstr "晚 5 根內 Sharpe 最低 {lo}、最高 {hi}，晚 10 根 {v10}"
 
 msgid "xt.lagLow"
 msgstr "現行 Sharpe {s0}，晚 1 根 {s1}、晚 10 根 {s10}"
