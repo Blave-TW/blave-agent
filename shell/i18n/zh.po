@@ -9052,3 +9052,35 @@ msgstr "Bitget 有倉位沒有止損"
 # 事件列 P3 的註解:Blave 自己的下單紀錄讀不到,無法確認換帳戶後止損還在不在
 msgid "tr.ov.evBitgetStopsUnknown"
 msgstr "無法確認止損：讀不到 Blave 的下單紀錄，請到 Bitget 看止損還在不在。"
+
+# 下單結果不明(order_unconfirmed,canon notifications §3):事件列標題／說明、本機 P1 通知內文、列下那一句;策略段(策略檔名)組字
+msgid "tr.ov.evUnconfirmed"
+msgstr "下單結果不明"
+
+msgid "tr.ov.evUnconfirmedStuck"
+msgstr "下單結果還是不明"
+
+msgid "tr.ov.evUnconfirmedNote"
+msgstr "這筆單可能已經成交。這個標的已暫停下單，查到結果會自動接續。"
+
+msgid "tr.ov.evUnconfirmedStuckNote"
+msgstr "一小時還查不到這筆單。請到交易所核對部位，再告訴 agent 實際成交多少。"
+
+msgid "tm.evUnconfirmedNote"
+msgstr "這筆單可能已經成交。請先到交易所核對部位，不要手動補單。"
+
+msgid "tr.err.unconfirmed"
+msgstr "結果不明，可能已經成交。這個標的暫停下單，查到結果會自動接續。"
+
+msgid "tr.ov.evStrat"
+msgstr "策略 {names}"
+
+msgid "tr.ov.evStratMany"
+msgstr "{name} 等 {n} 支策略"
+
+msgid "tr.ov.evStratSep"
+msgstr "、"
+
+msgid "tm.evWithStrat"
+msgstr "{strat}：{note}"
+

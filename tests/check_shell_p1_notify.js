@@ -59,4 +59,17 @@ t("時間解析:垃圾不炸、回 NaN", [null, undefined, "", "yesterday", {}, 
   t("畫面交給主行程的字:重開那一型用定稿標題與 P1 內文(不講時間);舊的 downtime_paused 標籤退場",
     /ev_machine_restart_stopped: t\("tr\.ov\.evRestartStopped"\), ev_machine_restart_stopped_n: t\("tm\.evRestartStoppedNote"\)/.test(tr) && !/ev_downtime_paused/.test(tr + src)); }
 t("每個 P1 型別在 tmLabels 都有標題與註解", P1_TYPES.every((ty) => src.includes("ev_" + ty + ":") && src.includes("ev_" + ty + "_n:")));
+// — 下單結果不明(canon notifications §3 order_unconfirmed):order_errors[] 帶 kind 的那列分型,帶策略名與 stuck;沒 kind 的照舊是拒單
+s0 = p1FromState(R({ halted: false }, [{ ts: NOW - 30, symbol: "BTCUSDT", kind: "order_unconfirmed", strategies: ["btc_trend"] },
+  { ts: NOW - 20, symbol: "BTCUSDT", kind: "order_unconfirmed", stuck: true, strategies: ["btc_trend"] },
+  { ts: NOW - 10, symbol: "ETHUSDT", strategies: ["a", "b"] }, { ts: NOW - 5, symbol: "SOLUSDT", kind: "halt" }]), { halt: 0, err: 0 }, NOW);
+t("狀態:kind=order_unconfirmed 分成自己的型別、帶 stuck;沒 kind 或別的 kind 照舊拒單",
+  s0.show.map((e) => e.type + (e.payload.stuck ? "!" : "")).join() === "order_unconfirmed,order_unconfirmed!,order_error,order_error");
+t("狀態:策略名帶進 payload", s0.show[0].payload.strategies.join() === "btc_trend" && s0.show[2].payload.strategies.join() === "a,b");
+t("order_unconfirmed 是 P1 型別、但不從 events 來", P1_TYPES.includes("order_unconfirmed") && !P1_EVENT_TYPES.includes("order_unconfirmed")
+  && p1Pick([ev(70, "order_unconfirmed", {})], 61, NOW).show.length === 0);
+var tmLabels = {}; tmLabels.strat = "策略 {names}"; tmLabels.stratMany = "{name} 等 {n} 支策略"; tmLabels.stratSep = "、"; tmLabels.withStrat = "{strat}：{note}";
+t("通知內文:一支、兩支、三支以上、沒有策略", p1WithStrat(["a"], "N") === "策略 a：N" && p1WithStrat(["a", "b"], "N") === "策略 a、b：N"
+  && p1WithStrat(["a", "b", "c"], "N") === "a 等 3 支策略：N" && p1WithStrat([], "N") === "N" && p1WithStrat(undefined, "N") === "N");
+t("stuck 那則有自己的標題與內文", src.includes("ev_order_unconfirmed_stuck:") && src.includes("ev_order_unconfirmed_stuck_n:"));
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

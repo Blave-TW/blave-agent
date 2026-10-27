@@ -1068,7 +1068,14 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         ns[0] === "tr.ov.evBitgetNoStopUta" && ns[1] === "tr.ov.evBitgetNoStopNote" && ns[2] === 1 && ns[4] === "ACNUSDT tr.rel.short"
         && nu[0] === "tr.ov.evBitgetStopsUnreadUta" && nu[4] === "NVDAUSDT tr.rel.long"
         && trEventText("venue_stops_missing", { venue: "okx", legs: [] }) === null
-        && /const P1_TYPES = \[[^\]]*"venue_stops_missing"\]/.test(mainSrc2) && /ev_venue_stops_missing: t\("tm\.evBitgetNoStop"\)/.test(src));
+        && /const P1_TYPES = \[[^\]]*"venue_stops_missing"[^\]]*\]/.test(mainSrc2) && /ev_venue_stops_missing: t\("tm\.evBitgetNoStop"\)/.test(src));
+      { const u = trEventText("order_unconfirmed", { symbol: "BTCUSDT", strategies: ["btc_trend"] }),
+          us = trEventText("order_unconfirmed", { symbol: "BTCUSDT", stuck: true, strategies: ["a", "b", "c"] });
+        ok("order_unconfirmed(下單結果不明):P1 紅字、標的、策略段;stuck 用「還是不明」那兩句",
+          u[0] === "tr.ov.evUnconfirmed" && u[1] === "tr.ov.evUnconfirmedNote" && u[2] === 1 && u[4] === "BTCUSDT"
+          && u[5] === 'tr.ov.evStrat{"names":"btc_trend"}'
+          && us[0] === "tr.ov.evUnconfirmedStuck" && us[1] === "tr.ov.evUnconfirmedStuckNote" && us[5] === 'tr.ov.evStratMany{"name":"a","n":3,"more":2}'
+          && trEventText("order_unconfirmed", { symbol: "X" })[5] === null); }
       const S4 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
       ok("讀不到止損單那兩句拆成兩句(每句 ≤25 字,同 api notify.py):統一／經典",
         S4.includes('"tr.ov.evBitgetStopsUnreadUta": "Bitget 換成統一帳戶後讀不到止損單。以下倉位當成沒有止損："')

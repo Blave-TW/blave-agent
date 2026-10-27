@@ -1765,6 +1765,10 @@ function trPushLabels() {
     ev_execution_stuck: t("tr.ov.evExecStuck"), ev_execution_stuck_n: t("tr.ov.evExecStuckNote"),
     ev_machine_restart_stopped: t("tr.ov.evRestartStopped"), ev_machine_restart_stopped_n: t("tm.evRestartStoppedNote"),
     ev_venue_stops_missing: t("tm.evBitgetNoStop"), ev_venue_stops_missing_n: t("tr.ov.evBitgetNoStopNote"),
+    ev_order_unconfirmed: t("tr.ov.evUnconfirmed"), ev_order_unconfirmed_n: t("tm.evUnconfirmedNote"),
+    ev_order_unconfirmed_stuck: t("tr.ov.evUnconfirmedStuck"), ev_order_unconfirmed_stuck_n: t("tr.ov.evUnconfirmedStuckNote"),
+    strat: t("tr.ov.evStrat", { names: "{names}" }), stratMany: t("tr.ov.evStratMany", { name: "{name}", n: "{n}", more: "{more}" }),
+    stratSep: t("tr.ov.evStratSep"), withStrat: t("tm.evWithStrat", { strat: "{strat}", note: "{note}" }),
     // 選單列兩行狀態、app 選單「顯示」兩項與官網、結束攔截多的那一句、通知標題的前綴(主行程:traytext.js / main.js)
     lang: LANG, stLocal: t("tm.stLocal"), stLocalOnly: t("tm.stLocalOnly"), noAccount: t("tr.noAccount"), runningZ: t("tr.runningZ"), stCloud: t("tm.stCloud"), stOn: t("tm.stOn"), stPaused: t("tm.stPaused"), stUnknown: t("tm.stUnknown"), stMayTrade: t("tm.stMayTrade"), stNotStarted: t("tr.notStarted"),
     moneyPaper: t("tr.mode.paper"), moneyReal: t("tr.mode.real"), venueCapital: t("cap.venue"), venuePresident: t("pres.venue"), pauseLocal: t("tm.pauseLocal"), quitCloudNote: t("tm.quitCloudNote"),
@@ -4323,7 +4327,7 @@ function poSigTable(r, stored, states, mode) {
   const errs = firstRead ? new Map() : trLiveOrderErrs(r.order_errors, pending, { open: openSet, twOpen: [...openSet].some((k) => !!trTxfSpec(k)), running, orders: r.orders });
   errs.forEach((le, key) => {
     const sym = String(le.symbol || "—").replace(/@spot$/, ""), err = String(le.error || le.message || ""), closeAll = err.indexOf("close-all:") === 0;
-    const plain = trOrderErrParse(err) ? trOrderErrText("", err).replace(/^[\s:：—-]+/, "").replace(/^[a-z]/, (c) => c.toUpperCase()) : null;
+    const plain = le.kind === "order_unconfirmed" ? t("tr.err.unconfirmed") : trOrderErrParse(err) ? trOrderErrText("", err).replace(/^[\s:：—-]+/, "").replace(/^[a-z]/, (c) => c.toUpperCase()) : null;
     const loud = !closeAll && trErrLoud(le, hs, TR.startAt, r.last_reconcile);
     const line = trEl("span", loud ? "pf-note err" : "pf-note past");
     // 節流中的重複失敗只更新那一列的 last_at／count(4647a2e):時間寫最後一次失敗;哪一筆還在失敗照舊看 ts(trLiveOrderErrs)
@@ -5007,11 +5011,18 @@ function trOrderErrText(sym, err) {
 }
 /* 事件級別:先讀 api 帶的 level(trEvApiLevel),缺欄位才用這張表——鏡射 api agent_events.SPECS + level_for
    (halt 看 source、主機重開看 trigger),同網頁 ovEvLevel;不在表裡的當 P3。標題顏色只看它:1 紅、2 強調、3 一般字 */
-const TR_EV_P1 = ["order_error", "manual_close_required", "execution_interrupted", "execution_fallback_market", "execution_stuck",
+const TR_EV_P1 = ["order_error", "order_unconfirmed", "manual_close_required", "execution_interrupted", "execution_fallback_market", "execution_stuck",
   "market_hold", "settings_unsafe", "machine_restart_stop_failed", "downtime_paused", "venue_stops_missing"];
 const TR_EV_P2 = ["reconciler_dead", "venue_disconnected", "strategy_failed", "bar_stale", "target_stale", "dead_members", "scheduler_error",
   "venue_unbound", "market_check_off", "ui_override", "settings_rollback_failed", "report_degraded", "exchange_unreachable",
   "machine_silent", "disk_full", "memory_low", "report_rejected"];
+// 下單那一腿背後的策略(策略檔名):一支、兩支照列,三支以上「A 等 N 支策略」;沒有回 ""
+function trStratText(names) {
+  const list = Array.isArray(names) ? names.filter((x) => typeof x === "string" && x).map((x) => x.slice(0, 40)) : [];
+  if (!list.length) return "";
+  return list.length <= 2 ? t("tr.ov.evStrat", { names: list.join(t("tr.ov.evStratSep")) })
+    : t("tr.ov.evStratMany", { name: list[0], n: list.length, more: list.length - 1 });
+}
 // api(/cloud/events)每筆帶的級別 "P1"/"P2"/"P3";沒帶或認不得(舊 api、這台電腦記的那份)回 null,交給 trEvLevel
 function trEvApiLevel(ev) { const m = /^P([123])$/.exec(ev && typeof ev.level === "string" ? ev.level : ""); return m ? Number(m[1]) : null; }
 function trEvLevel(type, d) {
@@ -5076,7 +5087,13 @@ function trEventText(type, d) {
     const syms = String(d.symbols || "").split(",").map((x) => x.trim()).filter(Boolean).join(", ");
     return out(t("tr.ov.evManualClose"), t("tr.ov.evManualCloseNote"), null, syms);
   }
-  if (type === "downtime_paused") return out(t("tr.ov.evHaltAuto"), t("tr.ov.evDowntimeNote"));   // 不是 HALT:連平倉都凍結,不能用 evHaltNote 那句
+  if (type === "downtime_paused") return out(t("tr.ov.evHaltAuto"), t("tr.ov.evDowntimeNote"));
+  // 下單結果不明(雲端事件;本機的從 order_errors[] 帶 kind 那列畫):stuck = 停車滿 1 小時那一則
+  if (type === "order_unconfirmed") {
+    const strat = trStratText(d.strategies);
+    return out(t(d.stuck === true ? "tr.ov.evUnconfirmedStuck" : "tr.ov.evUnconfirmed"),
+      t(d.stuck === true ? "tr.ov.evUnconfirmedStuckNote" : "tr.ov.evUnconfirmedNote"), null, str(d.symbol).replace(/@spot$/, ""), strat || null);
+  }   // 不是 HALT:連平倉都凍結,不能用 evHaltNote 那句
   // 以下同網頁 ovEventRow(網頁原本就有、電腦版補上的 8 種,加稽核補畫的 5 種)
   if (type === "reconciler_dead") return out(t("tr.ov.evRecDead"), null);
   if (type === "reconciler_recovered") return out(t("tr.ov.evRecBack"), null);
@@ -5205,9 +5222,18 @@ function trOvEvents(r, z) {
   (Array.isArray(r.order_errors) ? r.order_errors : []).forEach((e) => {
     if (!e || typeof e !== "object") return;
     push(trMs(e.ts), (body) => {
+      const sym = String(e.symbol || "").replace(/@spot$/, ""), raw = String(e.error || e.message || ""), twn = trTwName(sym), tw = trTwNameEl(sym);
+      const strat = trStratText(e.strategies);
+      if (e.kind === "order_unconfirmed") {   // 停車的單(lib/portfolio):原文不進畫面,講後果
+        body.appendChild(trEl("span", "err", t(e.stuck === true ? "tr.ov.evUnconfirmedStuck" : "tr.ov.evUnconfirmed")));
+        body.append(" ", trEl("span", "mono", sym)); if (tw) body.appendChild(tw);
+        if (strat) body.append(" ", trEl("span", "dim", strat));
+        body.append(" ", trEl("span", "dim", "— " + t(e.stuck === true ? "tr.ov.evUnconfirmedStuckNote" : "tr.ov.evUnconfirmedNote")));
+        return;
+      }
       body.appendChild(trEl("span", "err", t("tr.ov.evErr")));
       trEvCount(body, e.count);   // lib/portfolio._record_order_error 同標的同原因併成一列、累加 count
-      const sym = String(e.symbol || "").replace(/@spot$/, ""), raw = String(e.error || e.message || ""), twn = trTwName(sym), tw = trTwNameEl(sym);
+      if (strat) body.append(" ", trEl("span", "dim", strat));
       if (trOrderErrParse(raw)) body.append(" ", trEl("span", "dim", "— " + trOrderErrText(twn ? sym + " " + twn : sym, raw)));   // 認得的原因:整句在地化(句子自己帶標的;台股帶名字)
       else { body.append(" ", trEl("span", "mono", sym)); if (tw) body.appendChild(tw); body.append(" ", trEl("span", "dim", "— " + raw.slice(0, 160))); }
     });
