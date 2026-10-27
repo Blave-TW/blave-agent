@@ -314,7 +314,8 @@ function verBack() {
 }
 /* app.js rpShowTab 的第一行:時光機開著就由這裡畫(回 true),否則回 false 照原本的畫。
    進出場紀錄 / 參數掃描 / 樣本外驗證真的 disabled,原因講在分頁列正下方那一行(#rp-nobt,「沒有回測」同一個槽)。
-   成交測試照 spec lag-test-tab §3.4:看舊版本點得開、只有霧(版本不存 exec_test,重跑也補不回,不給鈕);重跑中跟其他三個一起 disabled(重跑完目前版就有) */
+   成交測試照 spec lag-test-tab §3.5 #1–#2:看舊版本點得開、只有一句 vpanel-note(版本不存 exec_test,重跑也補不回,不給鈕);
+   還原後重跑中跟其他三個一起 disabled、同一句 ver.frozenRerun(重跑完這頁是空狀態,要再按〔開始測試〕) */
 /* 重跑中 / 沒完成(pending,看的是目前版)也由這裡畫:stats.json 已移開、或還是別的碼的結果,回測分頁畫 vN 存的 blob(spec §3、§10 最後一條) */
 function verShowTab(tab) {
   const B = rpBag(), side = verSideOf(B), S = VS[side], nobt = $("rp-nobt");

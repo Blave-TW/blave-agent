@@ -91,12 +91,16 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     has(c) { return this.className.split(/\s+/).includes(c); }
     all(pred, out = []) { this.kids.forEach((k) => { if (typeof k !== "string") { if (pred(k)) out.push(k); k.all(pred, out); } }); return out; }
     querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
-    querySelectorAll(sel) { const cls = sel.split(",").map((x) => x.trim().replace(/^\./, "")); return this.all((k) => cls.some((c) => k.has(c))); }
+    querySelectorAll(sel) {
+      const ds = /^\[data-([\w-]+)\]$/.exec(sel.trim());   // [data-perf-btn] → dataset.perfBtn
+      if (ds) { const key = ds[1].replace(/-(\w)/g, (_, c) => c.toUpperCase()); return this.all((k) => key in k.dataset); }
+      const cls = sel.split(",").map((x) => x.trim().replace(/^\./, "")); return this.all((k) => cls.some((c) => k.has(c)));
+    }
   }
   const doc = { createElement: (tag) => new El(tag) };
-  const names = ["pfEl", "pfNowWhy", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfFailLine", "perfXtSlot", "perfXtSync", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
-  const body = ["PF", "PFL", "PFP", "PF_POLL_MS", "PF_POLL_MAX_MS", "PF_ERRS", "PF_NO_DATA", "PF_WHY", "pfSide", "pfRefKey"].map((n) => constSrc(perfSrc, n)).join("") + names.map((n) => fnSrc(perfSrc, n)).join("\n")
-    + "\nreturn { " + names.join(", ") + ", PF, PFL, PFP };";
+  const names = ["pfEl", "pfNowWhy", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfFailLine", "perfXtInfo", "perfXtSlot", "perfXtSync", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
+  const body = ["PF", "PFL", "PFP", "PFX", "PF_POLL_MS", "PF_POLL_MAX_MS", "PF_ERRS", "PF_NO_DATA", "PF_WHY", "pfSide", "pfRefKey"].map((n) => constSrc(perfSrc, n)).join("") + names.map((n) => fnSrc(perfSrc, n)).join("\n")
+    + "\nreturn { " + names.join(", ") + ", PF, PFL, PFP, PFX };";
   const clock = { now: new Date(new Date().getFullYear(), 8, 28, 10, 0, 0).getTime() };   // 今年 9/28 10:00 本地時間(格式斷言不隨時區翻)
   class FakeDate extends Date { static now() { return clock.now; } }
   const nowS = () => Math.floor(clock.now / 1000);
@@ -127,6 +131,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
       // 這台現在的帳號狀態(策略庫 libCtx 那份;libCtx 的 env 是目前的分頁,pfNowWhy 自己蓋成 local)
       LIB: { data: opt.acct === undefined ? null : opt.acct && { dataAccess: opt.acct.dataAccess || null, why: opt.acct.why || null }, stale: !!(opt.acct && opt.acct.stale) },
       libCtx: () => ({ env: "local", signedIn: !(opt.acct && opt.acct.signedIn === false), dataAccess: opt.acct && opt.acct.dataAccess || null, why: opt.acct && opt.acct.why || null }), libGrouping,
+      rpWfCloud: () => ({ can_exec_test: opt.canXt === true }),
       told: [], busySlot: (id, anchor) => ({ id, anchor }), busyTell: (slot, kind) => env.told.push([slot.id, kind, slot.anchor]) };
     env.verPicked = new Function("TR_BAGS", verPickedSrc + "\nreturn verPicked;")(env.TR_BAGS);
     const F = new Function(...Object.keys(env), body)(...Object.values(env));
@@ -343,20 +348,52 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     && /const PF_ERRS = \["REFUSED", "DATA", "TIMEOUT", "EXIT", "SUPERSEDED", "BUSY"\]/.test(perfSrc));
   ok("註解不再說 live tick 每根 K 重寫 stats.json(main.js / results.js)", !/live tick 每根 K 重寫 stats\.json|每根 K 的 live tick 都重寫/.test(mainSrc + read(path.join(R, "results.js"))));
 
-  // 成交測試霧卡那一格(perfXtSlot;report-xt.js 經 opts.rerun 拿):同一個動作、同一份疊層、ack started 才記 perf_update
-  { const x = rig("zh"), s = x.F.perfXtSlot(x.B), b = s.kids[0];
-    ok("成交測試霧卡:閒置 = 〔更新績效〕(data-perf-btn),沒有失敗行", b.textContent === "更新績效" && b.dataset.perfBtn === "1" && s.dataset.xtUpd === "1" && s.kids.length === 1);
+  // 成交測試的〔開始測試〕／〔重新測試〕那一格(perfXtSlot;report-xt.js 經 opts.rerun 拿;spec lag-test-tab §3.5):同一個動作、同一份疊層,只多帶 exec_test
+  { const x = rig("zh"), s = x.F.perfXtSlot(x.B, "empty"), b = s.kids[0];
+    ok("成交測試:空狀態那格 = 〔開始測試〕(填色、data-perf-btn),title = 績效會一起更新那句,沒有下一行", b.textContent === "開始測試" && b.has("btn-fill") && b.dataset.perfBtn === "1" && s.dataset.xtUpd === "1" && s.kids.length === 1
+      && b.title === "用最新資料重跑回測，績效會一起更新。");
+    ok("成交測試:頂列那格新鮮 = 〔重新測試〕描邊、過時 = 填色", (() => { const f = x.F.perfXtSlot(x.B, "fresh").kids[0], st = x.F.perfXtSlot(x.B, "stale").kids[0]; return f.textContent === "重新測試" && f.has("btn-out") && st.textContent === "重新測試" && st.has("btn-fill"); })());
     b.click(); await flush();
-    const run = x.F.perfXtSlot(x.B).kids[0];
-    ok("成交測試霧卡:按下送 stats_refresh {names:[momo]}(不開確認框);當下就是更新中(停用 + 更新中)", JSON.stringify(x.sent) === '[["stats_refresh",{"names":["momo"]}]]' && run.disabled === true && run.textContent === "更新中" && x.tracked.length === 0);
+    const run = x.F.perfXtSlot(x.B, "empty").kids[0];
+    ok("成交測試(本機):按下送 stats_refresh {names:[momo], exec_test:true}(不開確認框);當下就是「測試中」(停用 + 圓環)", JSON.stringify(x.sent) === '[["stats_refresh",{"names":["momo"],"exec_test":true}]]' && run.disabled === true && run.textContent === "測試中" && x.tracked.length === 0
+      && x.F.perfXtInfo(x.B).mine === "run");
     x.acks[0]({ ok: true, result: { started: ["momo"], skipped: {} } }); await flush();
-    ok("成交測試霧卡:ack started 才記 perf_update_xt(一次;回測數據分頁那顆才是 perf_update)", x.tracked.join() === "perf_update_xt"); }
-  { const f = rig("zh", { perf: { at: nowS() - 100, refresh: { status: "failed", at: nowS() - 50, err: "EXIT" } } }), s = f.F.perfXtSlot(f.B);
-    ok("成交測試霧卡:失敗 = 鈕照出(就是重試)+ 下一行「沒更新成功」(不講數字是舊的),原因在 title", s.kids[0].disabled !== true && s.kids[0].textContent === "更新績效" && s.kids[1].has("upd-fail") && s.kids[1].textContent === "沒更新成功" && !!s.kids[1].title); }
+    ok("成交測試:ack started 才記 perf_update_xt(一次;回測數據分頁那顆才是 perf_update)", x.tracked.join() === "perf_update_xt");
+    x.B.data.perf = { at: nowS() + 60 }; x.F.PF.local.delete("momo");
+    ok("成交測試:跑完成功(at 前進、沒有 refresh)→ 這頁按的記號收掉,回到〔開始測試〕", x.F.perfXtInfo(x.B).mine === null && x.F.perfXtSlot(x.B, "empty").kids[0].textContent === "開始測試"); }
+  { const c = rig("zh", { cloud: true }), cx = rig("zh", { cloud: true, canXt: true });
+    c.F.perfXtSlot(c.B, "empty").kids[0].click(); cx.F.perfXtSlot(cx.B, "empty").kids[0].click(); await flush();
+    ok("成交測試(雲端):can_exec_test 不是 true(舊 runtime)送不帶參數的、true 才帶 exec_test", JSON.stringify(c.sent[0][1]) === '{"names":["momo"]}' && JSON.stringify(cx.sent[0][1]) === '{"names":["momo"],"exec_test":true}'); }
+  { const bt = rig("zh"); bt.F.perfPaint(bt.B); bt.btn().click(); await flush();
+    ok("回測數據分頁的〔更新績效〕永遠不帶 exec_test", JSON.stringify(bt.sent[0][1]) === '{"names":["momo"]}' && bt.F.perfXtInfo(bt.B).mine === null); }
+  { const o = rig("zh", { perf: { at: nowS() - 100, refresh: { status: "running", at: nowS() - 10 } } }), s = o.F.perfXtSlot(o.B, "fresh");
+    ok("成交測試:別處按的在跑(晨間自動更新、回測數據那顆)= 停用 +「更新中」、沒有下一行", s.kids[0].disabled === true && s.kids[0].textContent === "更新中" && s.kids.length === 1); }
+  { const z = rig("zh"); z.F.perfXtSlot(z.B, "fresh").kids[0].click(); await flush();
+    z.acks[0]({ ok: true, result: { started: [], skipped: { momo: "BUSY" } } }); await flush();
+    const s = z.F.perfXtSlot(z.B, "fresh");
+    ok("成交測試:ack BUSY(同一支已經在跑,那次沒帶 exec_test)=「更新中」+ 鈕下「績效正在更新，跑完再按一次。」、不記埋點", z.F.perfXtInfo(z.B).mine === "busy" && s.kids[0].textContent === "更新中"
+      && s.kids[1] && s.kids[1].textContent === "績效正在更新，跑完再按一次。" && z.tracked.length === 0);
+    z.B.data.perf = { at: nowS() + 60 }; z.F.PF.local.delete("momo");
+    ok("成交測試:BUSY 那次跑完 → 那一行消失", z.F.perfXtInfo(z.B).mine === null && z.F.perfXtSlot(z.B, "fresh").kids.length === 1); }
+  { const f = rig("zh"); f.F.perfXtSlot(f.B, "empty").kids[0].click(); await flush();
+    f.acks[0]({ ok: true, result: { started: [], skipped: { momo: "CODE_CHANGED" } } }); await flush();
+    const s = f.F.perfXtSlot(f.B, "empty");
+    ok("成交測試:這頁按的那次失敗(沒部署、碼改過 → CODE_CHANGED)= 鈕照出(就是重試)+ 下一行「沒測成功」,title 是 CODE_CHANGED 那句", s.kids[0].disabled !== true && s.kids[0].textContent === "開始測試"
+      && s.kids[1].has("upd-fail") && s.kids[1].textContent === "沒測成功" && s.kids[1].title === "程式碼改過還沒回測，請先回測" && f.F.perfXtInfo(f.B).mine === "fail"); }
+  { const g = rig("zh", { perf: { at: nowS() - 100, refresh: { status: "failed", at: nowS() - 50, err: "EXIT" } } }), s = g.F.perfXtSlot(g.B, "fresh");
+    ok("成交測試:別處按的那次失敗不在這頁講(沒有「沒測成功」)", s.kids.length === 1 && s.kids[0].textContent === "重新測試"); }
   { const tb = rig("zh", { code: "# Type: B\n" }), nop = rig("zh", { perf: null });
-    ok("成交測試霧卡:Type B / 沒有 perf → null(只有霧)", tb.F.perfXtSlot(tb.B) === null && nop.F.perfXtSlot(nop.B) === null); }
-  { const bz = rig("zh", { running: true }), s = bz.F.perfXtSlot(bz.B); s.kids[0].setAttribute("aria-disabled", "true"); s.kids[0].click(); await flush();
-    ok("成交測試霧卡:回合中按 = 不送,原因句講在那一格下面", bz.sent.length === 0 && bz.env.told.length === 1 && bz.env.told[0][1] === "perf" && bz.env.told[0][2] === s); }
+    ok("成交測試:Type B / 沒有 perf → null(不出鈕)", tb.F.perfXtSlot(tb.B, "empty") === null && nop.F.perfXtSlot(nop.B, "empty") === null); }
+  { const bz = rig("zh", { running: true }), s = bz.F.perfXtSlot(bz.B, "fresh"); bz.$("rp-xt").appendChild(s); bz.F.perfBusy();
+    ok("成交測試:回合中(#9)鈕 aria-disabled、title 是成交測試自己那句", s.kids[0].getAttribute("aria-disabled") === "true" && s.kids[0].title === "agent 正在回覆，可能還在改策略，回覆完再測。");
+    s.kids[0].click(); await flush();
+    ok("成交測試:回合中按 = 不送,原因句講在鈕下(xtPerf → busy_lock 埋點同 perf 那把鎖)", bz.sent.length === 0 && bz.env.told.length === 1 && bz.env.told[0][1] === "xtPerf" && bz.env.told[0][2] === s.kids[0]); }
+  { const busySrc = read(path.join(R, "busy.js"));
+    ok("busy.js:xtPerf 的句子是 xt.busyTurn、埋點同 perf(lock_perf)", /xtPerf:\s+\{ key: "xt\.busyTurn",\s+fix: "view" \}/.test(busySrc) && /xtPerf: "lock_perf"/.test(busySrc)); }
+  { const { argsOk } = require(path.join(S, "daemon.js")), A = (a) => argsOk("stats_refresh", a);
+    ok("daemon.js stats_refresh 形狀(本機那條不經 api;= runtime / api):exec_test:true 一支收;兩支、false、字串、只有 exec_test、多一個 key 拒;不帶照舊",
+      A({ names: ["momo"], exec_test: true }) && A({ names: ["momo", "b"] }) && !A({ names: ["momo", "b"], exec_test: true }) && !A({ names: ["momo"], exec_test: false })
+      && !A({ names: ["momo"], exec_test: "true" }) && !A({ exec_test: true }) && !A({ names: ["momo"], exec_test: true, x: 1 })); }
 
   console.log(red ? `\n${red} FAILED` : "\nALL PASS");
   process.exit(red ? 1 : 0);

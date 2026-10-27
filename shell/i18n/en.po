@@ -6299,7 +6299,7 @@ msgid "ver.rerunDoneSr"
 msgstr "The backtest for {v} has rerun on the latest data."
 
 msgid "ver.frozenRerun"
-msgstr "The Trades tab fills in once the backtest reruns; run the parameter scan and out-of-sample validation again."
+msgstr "The Trades tab fills in once the backtest reruns. Run the parameter scan, out-of-sample validation and execution test again."
 
 msgid "ver.frozenRerunFailed"
 msgstr "The greyed-out tabs have no data until the backtest reruns."
@@ -9147,9 +9147,6 @@ msgstr "Square points are below {v}; the table has the actual values."
 msgid "xt.costHow"
 msgstr "Each point adds X% cost per side. Trading cost covers fees, tax and slippage."
 
-msgid "xt.fog"
-msgstr "See how it holds up with late fills and higher costs."
-
 msgid "xt.fogOld"
 msgstr "Older versions didn't save this tab's numbers."
 
@@ -9157,4 +9154,26 @@ msgid "xt.behind"
 msgstr "Update your server first to run the execution test."
 
 msgid "xt.updFail"
-msgstr "Update failed."
+msgstr "Test failed."
+
+# 〔開始測試〕／〔重新測試〕(spec lag-test-tab §3.6;按了才算,同 web workspace_xt_btn_* 等)
+msgid "xt.btnRun"
+msgstr "Start Test"
+
+msgid "xt.btnRerun"
+msgstr "Rerun Test"
+
+msgid "xt.btnBusy"
+msgstr "Testing"
+
+msgid "xt.btnTip"
+msgstr "Reruns the backtest on the latest data. Performance updates too."
+
+msgid "xt.verdictStale"
+msgstr "Performance was updated. Rerun the test to update this."
+
+msgid "xt.busyRefresh"
+msgstr "Performance is updating. Press again when it finishes."
+
+msgid "xt.busyTurn"
+msgstr "The agent is replying and may still be editing strategies. Test after it finishes."

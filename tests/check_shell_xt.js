@@ -1,8 +1,11 @@
 // 報告頁「成交測試」分頁(shell/renderer/report-xt.js;spec .claude/output/specs/lag-test-tab-2026-10-26.md)。
 //   ① 純函式(node vm 載入):挑數字的門檻、契約清洗、y 軸範圍、歸零成本位置——測資同 web tests/check_exec_test_tab.js
-//   ② renderXt 用最小假 DOM 跑四態:有結果(結論卡＋兩段)、交易太少(只有卡)、舊回測(霧＋更新績效那一格)、
-//      時光機(霧、不給鈕)、雲端主機落後(先更新);禁用的判讀標籤／評語字不出現在程式與兩語譯文
-//   ③ 接線:分頁位置(樣本外驗證 → 成交測試 → 程式碼)、每一份分頁清單都有 xt、時光機只在重跑中停用、霧上的鈕走 perf.js(stats_refresh)
+//   ② renderXt 用最小假 DOM 跑 spec §3.5 的兩層狀態(按了才算,10-27):xtPageOf 整頁、xtCellOf 鈕那一格;有結果(頂列 meta＋〔重新測試〕＋結論卡＋兩段)、
+//      新鮮描邊／過時填色＋卡頂過時句、交易太少(只有卡)、空狀態(.rob-empty 只有〔開始測試〕那一格,沒有說明句)、
+//      這頁按的那次在跑(舊結果整塊收掉、只留頂列)、別處按的在跑(結果照畫)、時光機(vpanel-note、不給鈕)、
+//      主機落後(只換鈕那一格:空狀態句子在鈕上、結果頁句子在鈕下,結果照畫);
+//      禁用的判讀標籤／評語字不出現在程式與兩語譯文
+//   ③ 接線:分頁位置(樣本外驗證 → 成交測試 → 程式碼)、每一份分頁清單都有 xt、時光機只在重跑中停用、鈕走 perf.js(stats_refresh 帶 exec_test)
 // 跑法:node tests/check_shell_xt.js
 const path = require("path"), fs = require("fs"), vm = require("vm");
 const SHELL = path.join(__dirname, "..", "shell"), R = (f) => fs.readFileSync(path.join(SHELL, f), "utf8");
@@ -20,7 +23,7 @@ class Node {
   set textContent(v) { this._t = String(v); this.kids = []; }
   all() { return [this].concat(...this.kids.map((k) => (k.all ? k.all() : []))); }
   has(cls) { return (" " + this.className + " ").includes(" " + cls + " "); }
-  querySelector(sel) { const m = /data-xt-sec="(\w+)"\]\[data-xt-key="(\w+)"/.exec(sel); return m ? this.all().find((n) => n.dataset.xtSec === m[1] && n.dataset.xtKey === m[2]) || null : null; }
+  querySelector(sel) { const m = /data-xt-sec="(\w+)"\]\[data-xt-key="(\w+)"/.exec(sel); return m ? this.all().find((n) => n.dataset && n.dataset.xtSec === m[1] && n.dataset.xtKey === m[2]) || null : null; }
   focus() { FOCUS.at = this; }
 }
 class Text { constructor(s) { this.s = s; } get textContent() { return this.s; } }
@@ -73,15 +76,17 @@ const STATS = { symbol: "BTCUSDT", interval: "1h", start: "2023-01-01", end: "20
 const metaSeen = [];
 const run = (stats, extra) => {
   const box = new Node("div"), slots = [];
-  const opts = Object.assign({ t, buildMeta: (o) => { metaSeen.push(o); const n = new Node("div"); n.className = "bt-meta"; return n; }, rerun: () => { const n = new Node("div"); n.className = "SLOT"; slots.push(n); return n; } }, extra || {});
+  const opts = Object.assign({ t, buildMeta: (o) => { metaSeen.push(o); const n = new Node("div"); n.className = "bt-meta"; return n; }, rerun: (kind) => { const n = new Node("div"); n.className = "SLOT"; n.kind = kind; slots.push(n); return n; } }, extra || {});
   window.BlaveReport.renderXt(box, { stats, name: "s1", market: "crypto" }, opts);
   const nodes = box.all();
   return { box, nodes, text: box.textContent, slots, cls: (c) => nodes.filter((n) => n.has && n.has(c)) };
 };
-const full = run({ ...STATS, exec_test: A });
-ok("② 有結果:meta → 結論卡(判讀句兩句、晚一根掉 24%、+0.02%)→ 晚幾根成交 → 成本高一點;沒有霧也沒有更新績效",
-  full.cls("rob-verdict").length === 1 && full.cls("rob-verdict")[0].textContent === "晚一根 Sharpe 掉 24%。每邊成本多 0.02%，Sharpe 從 1.62 掉到 1.06。"
-  && full.cls("xt-sec").length === 2 && full.text.includes("晚幾根成交") && full.text.includes("成本高一點") && full.cls("xt-fog").length === 0 && full.slots.length === 0,
+const fresh = { ...STATS, "Sharpe Ratio": 1.618, exec_test: A };
+const full = run(fresh);
+ok("② 有結果、新鮮:頂列(meta＋〔重新測試〕描邊那格)→ 結論卡(判讀句兩句、晚一根掉 24%、+0.02%、沒有過時句)→ 晚幾根成交 → 成本高一點",
+  full.cls("rob-top").length === 1 && full.cls("rob-top")[0].kids.map((k) => k.className).join() === "bt-meta,SLOT" && full.slots.length === 1 && full.slots[0].kind === "fresh"
+  && full.cls("rob-verdict").length === 1 && full.cls("rob-verdict")[0].textContent === "晚一根 Sharpe 掉 24%。每邊成本多 0.02%，Sharpe 從 1.62 掉到 1.06。"
+  && full.cls("xt-sec").length === 2 && full.text.includes("晚幾根成交") && full.text.includes("成本高一點") && full.cls("xt-stale").length === 0 && full.box.kids[0].dataset.xtMineRun === "false",
   full.cls("rob-verdict").map((n) => n.textContent));
 ok("② meta 只交標的／週期／期間(全頁叫交易成本,費率由成本段標題列講)", JSON.stringify(Object.keys(metaSeen[0])) === '["symbol","interval","start","end"]' && full.text.includes("現行每邊 0.005%・年換手 511 倍"));
 ok("② 晚幾根的圖:橫軸 現行 +1…+10、Sharpe 不帶單位、虛線在現行;1 根＝1 小時", (() => { const s = full.cls("levels")[0].spec; return s.labels.join() === "現行,+1,+2,+3,+5,+10" && s.unit === "" && s.base === 1.618 && s.cur === 0; })() && full.text.includes("1 根＝1 小時，晚 10 根＝10 小時"));
@@ -97,17 +102,46 @@ full.box.querySelector('button[data-xt-sec="lag"][data-xt-key="sharpe"]').on.cli
 { let n = 0; const m = run({ ...STATS, exec_test: A }, { onMetric: () => { n++; } }), q = (k) => m.box.querySelector('button[data-xt-sec="cost"][data-xt-key="' + k + '"]');
   q("mdd").on.click(); const a = n; q("mdd").on.click(); const b = n; q("sharpe").on.click();
   ok("② 換指標才叫 onMetric(埋點 xt_metric 在 app.js):換一次一次、點已選的那顆不叫", a === 1 && b === 1 && n === 2, String([a, b, n])); }
-const few = run({ ...STATS, exec_test: mk([1, 1, 1, 1, 1, 1], flat7, { position_changes: 7 }) });
+const few = run({ ...STATS, "Sharpe Ratio": 1, exec_test: mk([1, 1, 1, 1, 1, 1], flat7, { position_changes: 7 }) });
 ok("② 交易太少:只有結論卡那一句,兩段不畫", few.cls("rob-verdict")[0].textContent === "交易太少（回測期間換倉 7 次），延遲和成本都測不出東西。" && few.cls("xt-sec").length === 0);
-const fog = run({ ...STATS });
-ok("② 舊回測(沒有 exec_test):霧＋霧卡句＋更新績效那一格(perf.js 給)", fog.cls("xt-fog").length === 1 && fog.text.includes("看晚幾根、成本高一點還撐不撐得住。") && fog.slots.length === 1 && fog.cls("SLOT").length === 1);
+const stale = run({ ...STATS, "Sharpe Ratio": 1.7, exec_test: A });
+ok("② 有結果、過時(現行 1.618 ≠ Sharpe Ratio 1.7):卡頂先一句過時句、判讀句照出、〔重新測試〕那格是 stale(填色)、兩段照畫",
+  stale.cls("xt-stale").length === 1 && stale.cls("rob-card")[0].kids[0].textContent === "績效更新過，重新測試後才會更新。" && stale.cls("rob-verdict").length === 2
+  && stale.slots[0].kind === "stale" && stale.cls("xt-sec").length === 2);
+const empty = run({ ...STATS });
+ok("② 空狀態(沒有 exec_test):.rob-empty 裡只有〔開始測試〕那一格(empty),沒有說明句、沒有霧、沒有 meta", empty.cls("rob-empty").length === 1 && empty.cls("rob-empty")[0].kids.length === 1
+  && empty.slots.length === 1 && empty.slots[0].kind === "empty" && empty.cls("rob-empty-txt").length === 0 && empty.cls("xt-fog").length === 0 && empty.cls("bt-meta").length === 0 && !empty.text.includes("看晚幾根"));
+const bad = run({ ...STATS, exec_test: { lag: {} } });
+ok("② exec_test 壞形狀(xtSanitize 不過)= 空狀態", bad.cls("rob-empty").length === 1 && bad.slots[0].kind === "empty");
 const nos = run({ ...STATS }, { rerun: () => null });
-ok("② 不能更新績效(perfShown 假):只有霧與句子", nos.cls("xt-fog").length === 1 && nos.cls("fog-card")[0].kids.length === 1);
+ok("② 不能更新績效(perfShown 假):空的 .rob-empty,沒有鈕", nos.cls("rob-empty").length === 1 && nos.cls("rob-empty")[0].kids.length === 0);
+const mineRun = run(fresh, { ui: () => ({ perf: "running", mine: "run" }) });
+ok("② 這頁按的那次在跑(#5):只留頂列(meta＋鈕那格),結論卡與兩段整塊收掉,不淡化", mineRun.cls("rob-top").length === 1 && mineRun.cls("rob-card").length === 0 && mineRun.cls("xt-sec").length === 0
+  && mineRun.box.kids[0].dataset.xtMineRun === "true");
+const otherRun = run(fresh, { ui: () => ({ perf: "running", mine: null }) }), busyRun = run(fresh, { ui: () => ({ perf: "running", mine: "busy" }) });
+ok("② 別處按的在跑、或這頁按的那次 BUSY:結果照畫(那次不會算 exec_test)", otherRun.cls("xt-sec").length === 2 && busyRun.cls("xt-sec").length === 2
+  && otherRun.box.kids[0].dataset.xtMineRun === "false" && busyRun.box.kids[0].dataset.xtMineRun === "false");
+const failRun = run(fresh, { ui: () => ({ perf: "failed", mine: "fail" }) });
+ok("② 這頁按的那次失敗(#8):有結果時結果不收", failRun.cls("xt-sec").length === 2 && failRun.slots.length === 1);
 const old = run(null, { old: true });
-ok("② 時光機看舊版本:霧、「舊版本沒存這一頁的數字。」、不給鈕(rerun 不被叫)", old.cls("xt-fog").length === 1 && old.text.includes("舊版本沒存這一頁的數字。") && old.slots.length === 0 && old.nodes.every((n) => n.tag !== "button"));
+ok("② 時光機看舊版本(#1):只有一句 vpanel-note「舊版本沒存這一頁的數字。」、不給鈕(rerun 不被叫)", old.cls("vpanel-note").length === 1 && old.text === "舊版本沒存這一頁的數字。" && old.slots.length === 0 && old.nodes.every((n) => n.tag !== "button"));
 const beh = run({ ...STATS }, { behind: true, onUpdate: () => { beh.updated = true; } });
-const go = beh.nodes.find((n) => n.tag === "button");
-ok("② 雲端主機落後:先更新那句＋更新鈕(onUpdate),不給更新績效", beh.text.includes("先更新主機程式，才能跑成交測試。") && beh.slots.length === 0 && !!go && (go.on.click(), beh.updated === true));
+const go = beh.nodes.find((n) => n.tag === "button"), bcell = beh.cls("rob-empty")[0].kids[0];
+ok("② 主機落後、空狀態(#3):.rob-empty 裡那一格 = 先更新那句(lead,在鈕上)＋〔去更新〕(onUpdate),不給開始測試", beh.cls("rob-empty").length === 1 && bcell.kids[0].textContent === "先更新主機程式，才能跑成交測試。"
+  && bcell.kids[1] === go && beh.slots.length === 0 && !!go && (go.on.click(), beh.updated === true));
+const behRes = run(fresh, { behind: true });
+const rcell = behRes.cls("rob-top")[0].kids[1];
+ok("② 主機落後而且有結果:只換頂列那一格(〔去更新〕在上、句子在下),結論卡與兩段照畫", rcell.has("xt-upd") && rcell.kids[0].tag === "button" && rcell.kids[1].textContent === "先更新主機程式，才能跑成交測試。"
+  && behRes.cls("xt-sec").length === 2 && behRes.slots.length === 0);
+const behRun = run(fresh, { behind: true, ui: () => ({ perf: "running", mine: "run" }) });
+ok("② 主機落後時不收結果(落後那格蓋過測試中);perfXtSync 比的旗標仍是「這頁按的那次在跑」= true(跟 perf.js 同一個量,不會一直重畫)", behRun.cls("xt-sec").length === 2 && behRun.box.kids[0].dataset.xtMineRun === "true");
+// 兩層狀態(parity 測試另比兩邊同一組情境)
+{ const P = X.xtPageOf, C = X.xtCellOf, x0 = X.xtSanitize(A);
+  const pages = [P({ verActive: true, x: x0 }), P({ restoring: true }), P({ x: null }), P({ x: x0, sharpe: 1.618 }), P({ x: x0, sharpe: 1.6 }), P({ cfg: false, perf: "running", x: x0, sharpe: 1.618 })];
+  const cells = [C({ cfg: false, perf: "running" }), C({ cfg: null }), C({ cfg: true, perf: "running", mine: "busy" }), C({ cfg: true, perf: "failed", mine: "fail", turn: true }),
+    C({ cfg: true, perf: "failed", mine: "busy" }), C({ cfg: true, perf: "failed", mine: null }), C({ cfg: true, turn: true }), C({ cfg: true })];
+  ok("② xtPageOf:1 時光機、2 還原重跑、4 空、6 新鮮、7 過時(落後、在跑都不影響整頁)", pages.join() === "1,2,4,6,7,6", pages.join());
+  ok("② xtCellOf:3 落後(蓋過在跑、null 也算)、5 在跑(BUSY 也是)、8 這頁按的失敗(蓋過回合中)、BUSY／別處的失敗不算 8、9 回合中、0 一般鈕", cells.join() === "3,3,5,8,0,0,9,0", cells.join()); }
 
 // 禁用字:判讀標籤與評語(spec §1、§3.1)不准出現在這頁的程式與兩語譯文
 const FORBID = ["緩坡", "斷崖", "完全不動", "越晚越高", "看不出方向", "敏感", "下單要快", "不怕慢", "可疑"];
@@ -124,15 +158,19 @@ const lists = [app, ver].map((s) => [...s.matchAll(/for \(const k of (\[[^\]]*\]
 ok("③ 每一份「藏面板」清單都有 xt(app.js 兩處、versions.js 一處)", lists.length === 3 && lists.every((l) => l === '["bt", "tr", "rob", "wf", "xt", "code"]'), lists);
 ok("③ rpShowTab 把 xt 交給 renderXt(落後旗標記在面板上)並叫 perfPaint 接上疊層;雲端狀態輪詢叫 rpXtSync",
   /R\.renderXt\(\$\("rp-xt"\), rpXtData\(B\), o\); if \(typeof perfPaint === "function"\) perfPaint\(B\);/.test(app) && /if \(typeof rpXtSync === "function"\) rpXtSync\(\);/.test(R("renderer/trade.js")));
-ok("③ 雲端落後只認 config_supports_exec_test === false(null = api 還沒回這欄,照給更新績效);cloud.js 留這欄、進 summaryKey",
-  /behind: cloud && rpWfCloud\(\)\.config_supports_exec_test === false/.test(app) && /config_supports_exec_test: typeof b\.config_supports_exec_test === "boolean" \? b\.config_supports_exec_test : null,/.test(cloud)
-  && /s\.config_supports_wf, s\.config_supports_exec_test,/.test(cloud));
-ok("③ 時光機:看舊版本 xt 點得開、畫霧不給鈕;重跑中跟其他三個一起停用",
+ok("③ 雲端落後 = config_supports_exec_test 不是 true(spec §3.5 #3);cloud.js 留這欄與 can_exec_test(只認 true)、兩個都進 summaryKey",
+  /behind: cloud && rpWfCloud\(\)\.config_supports_exec_test !== true/.test(app) && /config_supports_exec_test: typeof b\.config_supports_exec_test === "boolean" \? b\.config_supports_exec_test : null,/.test(cloud)
+  && /can_exec_test: b\.can_exec_test === true,/.test(cloud) && /s\.config_supports_wf, s\.config_supports_exec_test, s\.can_exec_test,/.test(cloud));
+ok("③ 時光機:看舊版本 xt 點得開、只有 vpanel-note 不給鈕;重跑中跟其他三個一起停用(同一句 ver.frozenRerun)",
   /const cur = tab === "code" \? "code" : tab === "xt" && S\.open !== null \? "xt" : "bt";/.test(ver) && /\|\| \(b\.dataset\.tab === "xt" && S\.open === null\);/.test(ver)
   && /renderXt\(\$\("rp-xt"\), null, \{ t, old: true \}\)/.test(ver));
-ok("③ 霧上的鈕 = 更新績效同一條路(perfClick → stats_refresh、ack 才記 perf_update_xt),不開確認框、不送對話;回合中一起 aria-disabled",
-  /btn\.addEventListener\("click", \(\) => perfClick\(B, btn\)\);/.test(perf) && /function perfXtSlot\(B\)/.test(perf) && !/confirmBox|submitMessage/.test(perf)
-  && /\[\$\("perf-btn"\)\]\.concat\(xt \? \[\.\.\.xt\.querySelectorAll\("\[data-perf-btn\]"\)\] : \[\]\)/.test(perf) && /tradeSend\("stats_refresh", \{ names: \[name\] \}\)/.test(perf) && /perfXtSlot\(B\) : null/.test(app) && /onMetric: \(\) => \{ trackFeature\("xt_metric"\); \},/.test(app));
-ok("③ 霧卡失敗句用 xt.updFail(霧上沒有數字,不講「數字是舊的」)", /perfFailLine\(side, st, "xt\.updFail"\)/.test(perf) && zh["xt.updFail"] === "沒更新成功");
+ok("③ 鈕 = 更新績效同一條路(perfClick → stats_refresh、ack 才記 perf_update_xt),不開確認框、不送對話;回合中一起 aria-disabled",
+  /btn\.addEventListener\("click", \(\) => perfClick\(B, btn\)\);/.test(perf) && /function perfXtSlot\(B, kind\)/.test(perf) && !/confirmBox|submitMessage/.test(perf)
+  && /\[\$\("perf-btn"\)\]\.concat\(xt \? \[\.\.\.xt\.querySelectorAll\("\[data-perf-btn\]"\)\] : \[\]\)/.test(perf) && /tradeSend\("stats_refresh", args\)/.test(perf)
+  && /perfXtSlot\(B, kind\) : null/.test(app) && /perfXtInfo\(B\) : null/.test(app) && /onMetric: \(\) => \{ trackFeature\("xt_metric"\); \},/.test(app));
+ok("③ 失敗句 xt.updFail = 「沒測成功」;§3.6 新字都在", /perfFailLine\(side, st, "xt\.updFail"\)/.test(perf) && zh["xt.updFail"] === "沒測成功"
+  && zh["xt.btnRun"] === "開始測試" && zh["xt.btnRerun"] === "重新測試" && zh["xt.btnBusy"] === "測試中" && zh["xt.btnTip"] === "用最新資料重跑回測，績效會一起更新。"
+  && zh["xt.verdictStale"] === "績效更新過，重新測試後才會更新。" && zh["xt.busyRefresh"] === "績效正在更新，跑完再按一次。" && zh["xt.busyTurn"] === "agent 正在回覆，可能還在改策略，回覆完再測。"
+  && !("xt.fog" in zh) && !/xt\.fog"/.test(R("renderer/report-xt.js")));
 
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

@@ -214,7 +214,11 @@ for (const lang of ["zh", "en"]) {
     "xt.m.mdd": "workspace_xt_m_mdd", "xt.closeAte": "workspace_xt_close_ate", "xt.closeGain": "workspace_xt_close_gain", "xt.lagHow": "workspace_xt_lag_how", "xt.costH": "workspace_xt_cost_h",
     "xt.costSub": "workspace_xt_cost_sub", "xt.costLbl": "workspace_xt_cost_lbl", "xt.colCost": "workspace_xt_col_cost", "xt.free": "workspace_xt_free", "xt.freeAx": "workspace_xt_free_ax",
     "xt.perSide": "workspace_xt_per_side", "xt.beK": "workspace_xt_be_k", "xt.beLine": "workspace_xt_be_line", "xt.beOut": "workspace_xt_be_out", "xt.clip": "workspace_xt_clip",
-    "xt.costHow": "workspace_xt_cost_how", "xt.fog": "workspace_xt_fog", "xt.fogOld": "workspace_xt_fog_old", "xt.behind": "workspace_xt_behind", "xt.updFail": "workspace_xt_upd_fail" };
+    "xt.costHow": "workspace_xt_cost_how", "xt.fogOld": "workspace_xt_fog_old", "xt.behind": "workspace_xt_behind", "xt.updFail": "workspace_xt_upd_fail",
+    // 按了才算(spec §3.6,10-27):鈕、過時句、BUSY 那行、回合中那句;還原後重跑中那句是掃描／驗證／成交測試共用的
+    "xt.btnRun": "workspace_xt_btn_run", "xt.btnRerun": "workspace_xt_btn_rerun", "xt.btnBusy": "workspace_xt_btn_busy", "xt.btnTip": "workspace_xt_btn_tip",
+    "xt.verdictStale": "workspace_xt_verdict_stale", "xt.busyRefresh": "workspace_xt_busy_refresh", "xt.busyTurn": "workspace_xt_busy_turn",
+    "ver.frozenRerun": "workspace_ver_frozen_rerun" };
   for (const lang of ["zh", "en"]) {
     const d = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), w = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
     const bad = Object.entries(XT_PAIRS).filter(([dk, wk]) => typeof d[dk] !== "string" || typeof w[wk] !== "string" || d[dk] !== w[wk].replace(/%%/g, "%"));
@@ -222,5 +226,16 @@ for (const lang of ["zh", "en"]) {
   }
   const html = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8");
   const order = (src, re) => [...src.matchAll(re)].map((m) => m[1]).filter((k) => k === "wf" || k === "xt" || k === "code").join(",");
+  // 畫面狀態(§3.5 兩層):xtPageOf(整頁)／xtCellOf(鈕那一格)在上面的純邏輯段裡逐字比過;這裡另把兩邊各自切出來的那段跑同一組情境,結果要一樣
+  const stateFns = (src) => { try { const p = pure(src); return p ? new Function(p + "\nreturn { page: xtPageOf, cell: xtCellOf };")() : null; } catch (e) { return null; } };
+  const dS = stateFns(xtSrc), wS = stateFns(web);
+  const X0 = { lag: { "0": [1.2, 10, -10] } };
+  const CASES = [["page", { verActive: true, x: X0 }, 1], ["page", { restoring: true }, 2], ["page", { x: null }, 4], ["page", { x: X0, sharpe: 1.2 }, 6], ["page", { x: X0, sharpe: 1.21 }, 7],
+    ["page", { cfg: false, perf: "running", mine: "run", x: X0, sharpe: 1.2 }, 6],
+    ["cell", { cfg: false, perf: "running" }, 3], ["cell", { cfg: null }, 3], ["cell", { cfg: true, perf: "running", mine: "run" }, 5], ["cell", { cfg: true, perf: "running", mine: "busy", turn: true }, 5],
+    ["cell", { cfg: true, perf: "failed", mine: "fail", turn: true }, 8], ["cell", { cfg: true, perf: "failed", mine: "busy" }, 0], ["cell", { cfg: true, perf: "failed", mine: null }, 0],
+    ["cell", { cfg: true, turn: true }, 9], ["cell", { cfg: true }, 0]];
+  const badS = CASES.filter(([k, i, want]) => !dS || !wS || dS[k](i) !== want || wS[k](i) !== want).map(([k, i, want]) => k + JSON.stringify(i) + "→" + want + " 電腦版 " + (dS && dS[k](i)) + " web " + (wS && wS[k](i)));
+  ok("成交測試畫面狀態兩邊同一組情境同一個答案(" + CASES.length + " 組)", badS.length === 0, badS.join(";"));
   ok("成交測試分頁位置兩邊同一處(樣本外驗證 → 成交測試 → 程式碼)", order(html, /class="rp-tab"[^>]*data-tab="(\w+)"/g) === "wf,xt,code" && order(web, /class="main-tab"[\s\S]*?data-tab="(\w+)"/g) === "wf,xt,code"); }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

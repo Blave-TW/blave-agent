@@ -2031,15 +2031,16 @@ function rpWfAutoRefetch(now) {
   return rpWfRefetch(RPC.name);
 }
 if (window.blave.onWindowActive) window.blave.onWindowActive((on) => { if (on) rpWfAutoRefetch(); });
-/* 成交測試的環境(report-xt.js)。exec_test 是 lib 寫 stats.json 時順手算的:這台電腦的 lib 跟 app 同包,永遠算;
-   雲端讀 /cloud/state 的 config_supports_exec_test,false 才算落後(一句先更新 + 更新雲端主機,同樣本外驗證);沒這欄(null)照給〔更新績效〕 */
+/* 成交測試的環境(report-xt.js;spec lag-test-tab §3.5)。按〔開始測試〕／〔重新測試〕才算:鈕與 perf 狀態由 perf.js 給(perfXtSlot / perfXtInfo)。
+   這台電腦的 lib 跟 app 同包,永遠算得出;雲端讀 /cloud/state 的 config_supports_exec_test,不是 true 就是落後(只換鈕那一格:先更新那句 + 更新雲端主機,結果照畫;同樣本外驗證) */
 function rpXtOpts(B) {
   const R = window.BlaveReport || {}, cloud = B === RPC;
-  return { t, buildMeta: R.buildMeta, behind: cloud && rpWfCloud().config_supports_exec_test === false, onUpdate: rpWfUpdate,
-    onMetric: () => { trackFeature("xt_metric"); },
-    rerun: () => (typeof perfXtSlot === "function" ? perfXtSlot(B) : null) };
+  return { t, buildMeta: R.buildMeta, behind: cloud && rpWfCloud().config_supports_exec_test !== true, onUpdate: rpWfUpdate,
+    turn: running === true, onMetric: () => { trackFeature("xt_metric"); },
+    ui: () => (typeof perfXtInfo === "function" ? perfXtInfo(B) : null),
+    rerun: (kind) => (typeof perfXtSlot === "function" ? perfXtSlot(B, kind) : null) };
 }
-// 雲端狀態輪詢叫(同 rpWfSync):主機的 config_supports_exec_test 翻面了才重畫(落後態 ↔ 霧上的〔更新績效〕)
+// 雲端狀態輪詢叫(同 rpWfSync):主機的 config_supports_exec_test 翻面了才重畫(落後態 ↔ 開始測試)
 function rpXtSync() {
   const B = rpBag();
   if (!B.drawn.xt || !B.data || !B.data.stats || $("rp-xt").dataset.behind === String(rpXtOpts(B).behind)) return;

@@ -2,11 +2,10 @@
    單欄三段——結論卡 → 晚幾根成交 → 成本高一點。內容欄上限 760(圖與表同寬、左緣對齊);段與段 48,
    段內 標題列 12 → 指標名 8 → 圖 12 → 表 8 → 補充 → 說明。比較值全中性墨色,不上漲跌色。
    卡(.rob-card / .rob-verdict)、小標(.bt-label)、meta 列沿用既有 recipe,這裡只寫新的。 */
-.xt > *,
-.xt-fog .fog-under > * {
+.xt > * {
   max-width: 760px;
 }
-.xt > .bt-meta + * { margin-top: var(--space-16); }
+.xt > .rob-top + * { margin-top: var(--space-16); }
 .xt-sec {
   margin-top: var(--space-48);
 }
@@ -154,38 +153,45 @@
   line-height: 1.4;
   color: var(--ink);
 }
-/* 霧:不在 .pf 裡,不吃 trade.css .fog 的負 margin;霧貼著 .bt 的內距 */
-.xt-fog {
-  margin: 0;
-  min-height: 420px;
+/* 過時句在卡頂(同樣本外驗證 wf.verdictStale),跟判讀句隔一行 */
+.xt-stale + .rob-verdict { margin-top: var(--space-8); }
+/* 〔開始測試〕／〔重新測試〕那一格(perf.js perfXtSlot):鈕＋鈕下一行(BUSY 那句 / 失敗 / 回合中的原因)。
+   頂列裡靠右(位置同參數掃描的〔重新掃描〕),空狀態裡置中 */
+.xt-upd {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
 }
-.xt-fog .fog-under {
-  padding: 0;
+.rob-top > .xt-upd {
+  margin-left: auto;
+  align-items: flex-end;
+  text-align: right;
 }
-.xt-fog .fog-card .btn-fill {
+.xt-upd > .btn-fill,
+.xt-upd > .btn-out {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-8);
+  white-space: nowrap;
 }
-/* 重跑鈕失敗那一行(同回測數據的 .upd-fail):卡片置中,行在鈕下 */
-.xt-fog .fog-card .upd-fail {
-  justify-content: center;
-  margin: var(--space-12) 0 0;
-  text-align: left;
+.xt-upd > .upd-fail,
+.xt-upd > .busy-why,
+.xt-busy-line {
+  margin: 0;
+  max-width: 36ch;
 }
-.xt-fog .fog-card .busy-why {
-  margin: var(--space-12) 0 0;
+.xt-busy-line {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-2);
 }
-.xt-sk {
-  display: block;
-  max-width: 100%;
-  height: 10px;
-  margin-bottom: var(--space-8);
-  border-radius: var(--radius-micro);
-  background: var(--surface-muted);
-}
-.xt-fog-frame {
-  height: 180px;
-  margin-top: var(--space-8);
+/* 時光機看舊版本:一句說明,同網頁 .vpanel-note */
+.xt .vpanel-note {
+  max-width: 60ch;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-3);
 }

@@ -6313,7 +6313,7 @@ msgid "ver.rerunDoneSr"
 msgstr "{v} 的回測已用最新資料重跑完。"
 
 msgid "ver.frozenRerun"
-msgstr "回測重跑完就有進出場紀錄；參數掃描與樣本外驗證要再跑一次。"
+msgstr "回測重跑完就有進出場紀錄。參數掃描、樣本外驗證、成交測試要再跑一次。"
 
 msgid "ver.frozenRerunFailed"
 msgstr "灰掉的分頁沒有資料，回測重跑完才有。"
@@ -9175,9 +9175,6 @@ msgstr "方點＝低於 {v}，實際值看下表。"
 msgid "xt.costHow"
 msgstr "每一點是每邊交易成本多 X% 的結果。交易成本含手續費、稅、滑價。"
 
-msgid "xt.fog"
-msgstr "看晚幾根、成本高一點還撐不撐得住。"
-
 msgid "xt.fogOld"
 msgstr "舊版本沒存這一頁的數字。"
 
@@ -9185,4 +9182,26 @@ msgid "xt.behind"
 msgstr "先更新主機程式，才能跑成交測試。"
 
 msgid "xt.updFail"
-msgstr "沒更新成功"
+msgstr "沒測成功"
+
+# 〔開始測試〕／〔重新測試〕(spec lag-test-tab §3.6;按了才算,同 web workspace_xt_btn_* 等)
+msgid "xt.btnRun"
+msgstr "開始測試"
+
+msgid "xt.btnRerun"
+msgstr "重新測試"
+
+msgid "xt.btnBusy"
+msgstr "測試中"
+
+msgid "xt.btnTip"
+msgstr "用最新資料重跑回測，績效會一起更新。"
+
+msgid "xt.verdictStale"
+msgstr "績效更新過，重新測試後才會更新。"
+
+msgid "xt.busyRefresh"
+msgstr "績效正在更新，跑完再按一次。"
+
+msgid "xt.busyTurn"
+msgstr "agent 正在回覆，可能還在改策略，回覆完再測。"

@@ -472,9 +472,9 @@ if (!process.versions.electron) {
   const vals = (b) => Object.fromEntries([...b.matchAll(/^\s*("(?:[^"\\]|\\.)*"): ("(?:[^"\\]|\\.)*"),?$/gm)].map((m) => [JSON.parse(m[1]), JSON.parse(m[2])]));
   const DT = { en: vals(block("en")), zh: vals(block("zh")) };
   // 設計精簡稽核 A7 / A8 的定稿(逐字照抄 audit-0.1.10-uiux-simplicity.md §2)
-  const FR = { zh: ["回測重跑完就有進出場紀錄；參數掃描與樣本外驗證要再跑一次。", "灰掉的分頁沒有資料，回測重跑完才有。"],
-    en: ["The Trades tab fills in once the backtest reruns; run the parameter scan and out-of-sample validation again.", "The greyed-out tabs have no data until the backtest reruns."] };
-  ok("③ A7 / A8 重跑中 / 沒完成那兩句 = 精簡稽核定稿(zh / en;en 帶 0.1.11 B6 rerun、D1 Trades 分頁)", ["zh", "en"].every((l) => DT[l]["ver.frozenRerun"] === FR[l][0] && DT[l]["ver.frozenRerunFailed"] === FR[l][1]));
+  const FR = { zh: ["回測重跑完就有進出場紀錄。參數掃描、樣本外驗證、成交測試要再跑一次。", "灰掉的分頁沒有資料，回測重跑完才有。"],
+    en: ["The Trades tab fills in once the backtest reruns. Run the parameter scan, out-of-sample validation and execution test again.", "The greyed-out tabs have no data until the backtest reruns."] };
+  ok("③ A7 / A8 重跑中 / 沒完成那兩句 = 精簡稽核定稿(zh / en;en 帶 0.1.11 B6 rerun、D1 Trades 分頁;重跑中那句補成交測試、斷成兩句,lag-test-tab §3.6)", ["zh", "en"].every((l) => DT[l]["ver.frozenRerun"] === FR[l][0] && DT[l]["ver.frozenRerunFailed"] === FR[l][1]));
   ok("③ A10 en 大小寫:Param Scan / Start Scan / Sent — See Chat", DT.en["rp.tab.rob"] === "Param Scan" && DT.en["rob.btnScan"] === "Start Scan" && DT.en["rob.btnSent"] === "Sent — See Chat");
   if (!fs.existsSync(WS)) console.log("SKIP  ③ 字串逐字比對(需要 web 樹)");
   else {
