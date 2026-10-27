@@ -231,14 +231,15 @@ function wcPaint() {
   }
   wcBusySync();
 }
-// 骨架卡:同真卡的格線與行高,讀到時版面不跳
+/* 骨架卡:拿一支樣板策略走 wcCard 原樣建 DOM(同字型、同 mono、同斷行),字換成透明的條。卡高跟著每個寬度級距自己算,
+   meta 在窄欄折兩行時骨架也折兩行,讀到時版面不跳。樣板取最常見的形狀(永續合約 × 週期 × 多年樣本) */
+const WC_SKEL = { id: 0, title: "BTC Channel Momentum", report: { symbol: "BTCUSDT", interval: "4h", annual_return: 24.61, sharpe: 1.62, max_drawdown: -20.96, equity_from: "2020-01-01", equity_to: "2026-06-30" } };
 function wcSkel() {
-  const c = wdEl("div", "wc-card is-skel"), info = wdEl("div", "info"), stats = wdEl("div", "wc-stats"), act = wdEl("div", "act");
-  c.setAttribute("aria-hidden", "true");
-  [["t", 70], ["m", 45]].forEach(([k, w]) => { const l = wdEl("div", "skl " + k), b = wdEl("div", "sk"); b.style.width = w + "%"; l.appendChild(b); info.appendChild(l); });
-  stats.appendChild(wdEl("div", "sk"));
-  act.appendChild(wdEl("div", "sk"));
-  c.append(info, stats, act);
+  const c = wcCard(WC_SKEL, false), texts = [];
+  const walk = (n) => n.childNodes.forEach((k) => (k.nodeType === 3 ? k.nodeValue.trim() && texts.push(k) : walk(k)));
+  walk(c);
+  texts.forEach((n) => { const k = wdEl("span", "skt"); n.replaceWith(k); k.appendChild(n); });
+  c.classList.add("is-skel"); c.setAttribute("aria-hidden", "true"); c.inert = true;
   return c;
 }
 // 這支的詳情(名字、狀態不是 free 的 CTA):不記 library_open
@@ -284,7 +285,7 @@ function wcUse(s, a) {
 function wcBusySync() {
   const box = $("wc-cards"); if (!box || box.hidden) return;
   const busy = runningNow() || !!LIB.pending, pid = LIB.pending && LIB.pending.env === onbEnv() ? String(LIB.pending.id) : null;
-  box.querySelectorAll(".ln-arrow").forEach((a) => {
+  box.querySelectorAll(".wc-card:not(.is-skel) .ln-arrow").forEach((a) => {
     const mine = a.dataset.id === pid, tx = a.querySelector(".lbl"), want = t(mine ? "lib.pending" : "lib.use");
     busyLock(a, busy);
     if (tx.textContent !== want) tx.textContent = want;

@@ -178,9 +178,9 @@ if (!process.versions.electron) {
       && /\.wd-row:hover \{ background: var\(--surface-muted\); \}/.test(css) && /\.wd-row:hover \.wd-mt \{ color: var\(--ink-2\); \}/.test(css) && /\.wd-row:hover::after \{ color: var\(--ink\); \}/.test(css)
       && /\.wd-row:focus-visible \{ outline-offset: -2px; \}/.test(css) && /prefers-reduced-motion: reduce\) \{ \.wd-row, \.wd-row::after, \.ln-arrow, \.wl-fold, \.wl-fold \.mp-chev, button\.onb-h \{ transition: none; \} \}/.test(css)
       && !/wd-go|"go"/.test(src));
-    ok("② 完整目錄退役:welcome.js / welcome.css / index.html 沒有目錄的程式與樣式(wdCatalog、WD.all、WD_NT、.wd-cat* / .wd-foot / .wd-tag、放寬 1040、一列一塊的 860 斷點),兩語 .po 與字串表沒有目錄的字(wd.less / wd.h.* / wd.src.* / wd.foot.* / wd.mk.txfo);容器查詢只有三條:兩欄清單 760、①策略卡的兩排 520 與三排 420(0.1.27 卡片三欄 640 與起手句窄版 480 都退役)",
+    ok("② 完整目錄退役:welcome.js / welcome.css / index.html 沒有目錄的程式與樣式(wdCatalog、WD.all、WD_NT、.wd-cat* / .wd-foot / .wd-tag、放寬 1040、一列一塊的 860 斷點),兩語 .po 與字串表沒有目錄的字(wd.less / wd.h.* / wd.src.* / wd.foot.* / wd.mk.txfo);容器查詢只有三條:兩欄清單 760、①策略卡的兩排 640 與三排 420(0.1.27 卡片三欄 640 與起手句窄版 480 都退役)",
       !/wdCatalog|WD\.all|\ball:\s*(true|false)|WD_NT|wd-cat|wd-foot|wd-tag|wd\.less|wd\.h\.|wd\.src\.|wd\.foot\.|txfo|<table|"table"/.test(src + css + html.slice(html.indexOf('id="wl"'), html.indexOf("</section>", html.indexOf('id="wl"'))))
-      && !/1040px|859\.98|max-width: (?!(?:519|419)px\))\d+(\.\d+)?px\)/.test(css) && /@container \(min-width: 760px\) \{\s*\.wl-body\.cmp2/.test(css) && (css.match(/@container \([^)]*\)/g) || []).sort().join() === ["@container (min-width: 760px)", "@container (max-width: 519px)", "@container (max-width: 419px)"].sort().join()
+      && !/1040px|859\.98|max-width: (?!(?:639|419)px\))\d+(\.\d+)?px\)/.test(css) && /@container \(min-width: 760px\) \{\s*\.wl-body\.cmp2/.test(css) && (css.match(/@container \([^)]*\)/g) || []).sort().join() === ["@container (min-width: 760px)", "@container (max-width: 639px)", "@container (max-width: 419px)"].sort().join()
       && !/msgid "wd\.(less|h\.|src\.|foot\.|mk\.txfo)/.test(po) && !/msgid "wd\.r\.[a-z0-9]+\.(nt|sn|us|wnm)"/.test(po));
     // 「看全部資料」:wdDocs 原文 + app.js 的 docsUrl 原文在純 node 跑;外開與埋點換成記錄器
     { const dl = /^const docsUrl = \(page\) => "https:\/\/blave\.org\/docs\/" \+ LANG \+ "\/" \+ page;$/m.exec(appSrc);
@@ -421,7 +421,7 @@ app.whenReady().then(async () => {
         return { iB: i.bottom, iR: i.right, sT: s.top, sB: s.bottom, sL: s.left, sR: s.right, aT: a.top, aL: a.left - cr.left, aX: a.left, over: c.scrollWidth - c.clientWidth }; }) }; })()`);
   { await js(`(() => { hasToken = false; acct = null; LIB.data = { strategies: ${JSON.stringify(WC_LIST)}, signedIn: false, dataAccess: null, why: null, lang: LANG }; WC.key = null; wcPaint(); return true; })()`); await wait(50);
     const c1 = await wcGeo();
-    ok("③ ①的卡 1600 寬(中欄 ≥ 520):沒登入只出免登入的兩支(要 Blave 資料的台指期不出、不補)、一張一行(名字｜數字｜CTA 左右排)、只有第一張帶 gloss、不溢出",
+    ok("③ ①的卡 1600 寬(中欄 ≥ 640):沒登入只出免登入的兩支(要 Blave 資料的台指期不出、不補)、一張一行(名字｜數字｜CTA 左右排)、只有第一張帶 gloss、不溢出",
       !c1.hidden && c1.ids === "901,902" && c1.tips === 3 && c1.rows.every((x) => x.sL >= x.iR - 0.5 && x.aX >= x.sR - 0.5 && x.over <= 0), JSON.stringify(c1));
     const hit = await js(`(() => { const a = $("wc-cards").querySelector(".ln-arrow"); a.scrollIntoView({ block: "center" }); const r = a.getBoundingClientRect(), x = r.left + r.width / 2, cy = (r.top + r.bottom) / 2; let n = 0;
       for (let y = Math.floor(cy) - 30; y <= Math.ceil(cy) + 30; y++) { const e = document.elementFromPoint(x, y); if (e && (e === a || a.contains(e))) n++; } return { h: r.height, n }; })()`);

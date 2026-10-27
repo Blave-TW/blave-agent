@@ -107,13 +107,18 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
   ok("② 三格:第一格年化依正負上色、Sharpe 兩位不上色、最大回撤一律紅;樣本未滿 1 年第一格換總報酬(label 與 gloss 一起換)",
     cls(c1, "v").map((n) => n.className + "=" + n.textContent).join("|") === "v mono up=+12.30%|v mono=1.23|v mono down=−18.50%"
     && cls(short, "mp-tip")[0].textContent === "<lib.kv.total>" && cls(short, "tip")[0].textContent === "<bt.tip.totalReturn>" && cls(short, "v")[0].textContent === "+40.00%", JSON.stringify([cls(c1, "v").map((n) => n.className + "=" + n.textContent), cls(short, "v")[0]]));
-  ok("② welcome.css:卡一張一列(info／stats／act 三格)、<520 兩排、<420 三排且 CTA 靠左;Arrow link hover 字換 --link-quiet-hover、只有 .lbl 補底線、熱區上下補到 44;不再有 .st-row／.tag 規則",
+  ok("② welcome.css:卡一張一列(info／stats／act 三格)、<640 兩排、<420 三排且 CTA 靠左;Arrow link hover 字換 --link-quiet-hover、只有 .lbl 補底線、熱區上下補到 44;不再有 .st-row／.tag 規則",
     /\.wc-card \{\s*display: grid; grid-template-columns: minmax\(0, 1fr\) auto auto; grid-template-areas: "info stats act";/.test(css)
-    && /@container \(max-width: 519px\) \{\s*\.wc-card \{ grid-template-columns: minmax\(0, 1fr\) auto; grid-template-areas: "info info" "stats act";/.test(css)
+    && /@container \(max-width: 639px\) \{\s*\.wc-card \{ grid-template-columns: minmax\(0, 1fr\) auto; grid-template-areas: "info info" "stats act";/.test(css)
     && /@container \(max-width: 419px\) \{\s*\.wc-card \{ grid-template-columns: minmax\(0, 1fr\); grid-template-areas: "info" "stats" "act";[^}]*\}\s*\.wc-card \.act \{ justify-self: start; \}/.test(css)
     && /\.ln-arrow:hover:not\(\[aria-disabled="true"\]\) \{ color: var\(--link-quiet-hover\); \}/.test(css) && /\.ln-arrow:hover:not\(\[aria-disabled="true"\]\) \.lbl \{ text-decoration: underline;/.test(css)
     && /\.ln-arrow::before \{ content: ""; position: absolute; left: 0; right: 0; top: -6px; bottom: -6px; \}/.test(css) && /min-height: 32px/.test(css.slice(css.indexOf(".ln-arrow {")))
-    && !/\.st-row|\.tag\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, ""))); }
+    && !/\.st-row|\.tag\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, "")));
+  // 骨架→真卡不跳版:骨架拿樣板策略走 wcCard 原樣建(同斷行),字換透明條;真卡的名字區先留好名字一行＋meta 兩行,meta 短的卡不會比骨架矮
+  ok("② 骨架由 wcCard(樣板策略)建、每段字包進 .skt、整張 aria-hidden + inert;.info 先留名字一行＋meta 兩行的高度;wcBusySync 不碰骨架",
+    /const c = wcCard\(WC_SKEL, false\)/.test(cutFn(src, "wcSkel")) && /k = wdEl\("span", "skt"\)/.test(cutFn(src, "wcSkel")) && /c\.setAttribute\("aria-hidden", "true"\); c\.inert = true;/.test(cutFn(src, "wcSkel"))
+    && /\.wc-card \.info \{ min-height: calc\(13px \* 1\.45 \+ var\(--space-2\) \+ 2 \* 12px \* 1\.5\); \}/.test(css) && /\.wc-card\.is-skel \.skt \{ color: transparent;/.test(css)
+    && /querySelectorAll\("\.wc-card:not\(\.is-skel\) \.ln-arrow"\)/.test(cutFn(src, "wcBusySync"))); }
 // ── en Title Case(設計稽核 P2-5)──
 { const S = {}; vm.createContext(S); vm.runInContext(read(path.join(R, "strings.js")).replace(/^const STRINGS/m, "var STRINGS"), S);
   ok("② en:tr.pick／tr.pick.title = Pick Strategies、po.goAmounts = Set Amounts(同一位置的兩種字一起 Title Case);zh 選擇策略／設定金額",
