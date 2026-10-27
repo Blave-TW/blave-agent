@@ -118,9 +118,18 @@ def _reject_kind(code, msg):
     return reject_token.from_code(code, _REJECT_CODES, reject_token.credential_codes("binance"))
 
 
-class OrderNotConfirmed(Exception):
+try:
+    from lib.unconfirmed import OrderOutcomeUnknown as _OutcomeUnknown
+except ImportError:  # half-updated workspace: not parkable, reported as an order failure
+    class _OutcomeUnknown(Exception):
+        def __init__(self, msg, venue=None, venue_symbol=None, order_id=None):
+            super().__init__(msg)
+
+
+class OrderNotConfirmed(_OutcomeUnknown):
     """Order was accepted but did not reach a terminal state within timeout.
-    The order may still fill — query it again before assuming anything."""
+    The order may still fill — query it again before assuming anything.
+    Carries venue / venue_symbol / order_id so lib/portfolio.reconcile can park it."""
 
 
 class ProtectionFailed(Exception):
@@ -575,10 +584,11 @@ def confirm_order(env, symbol, order_id, timeout=15):
     if order is None:
         raise OrderNotConfirmed(
             f"order {order_id} accepted but not queryable (-2013) for {timeout}s — "
-            f"it may have filled; check the position, do not resubmit")
+            f"it may have filled; check the position, do not resubmit",
+            venue="binance", venue_symbol=symbol, order_id=order_id)
     raise OrderNotConfirmed(
-        f"order {order_id} still {order['status'] if order else 'UNKNOWN'} after {timeout}s"
-    )
+        f"order {order_id} still {order['status'] if order else 'UNKNOWN'} after {timeout}s",
+        venue="binance", venue_symbol=symbol, order_id=order_id)
 
 
 def _sum_by_asset(fills):

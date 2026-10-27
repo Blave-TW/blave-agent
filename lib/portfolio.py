@@ -11,6 +11,10 @@ try:
 except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
     atomic_replace = os.replace
 try:
+    from lib import unconfirmed as _unconfirmed
+except ImportError:  # half-updated workspace: nothing is parked, failures report as before
+    _unconfirmed = None
+try:
     from lib.winreplace import load_json
 except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
     def load_json(path, **open_kw):
@@ -227,6 +231,83 @@ def _order_errors_for_update(path):
         return rows
     atomic_replace(path, path + '.corrupt')
     return []
+
+
+def _strategy_names(contributors, cap=10):
+    """The strategies behind a netted order — their file names, for the order notices."""
+    names = [c.get('strategy') for c in contributors or [] if isinstance(c, dict)]
+    return list(dict.fromkeys(n for n in names if isinstance(n, str) and n))[:cap]
+
+
+def _parkable(error):
+    return (_unconfirmed is not None and isinstance(error, _unconfirmed.OrderOutcomeUnknown)
+            and error.parkable())
+
+
+def book_unconfirmed(key, entry, qty, price, source):
+    """Book a parked order's fill (lib/unconfirmed) the way a confirmed leg is
+    booked: notional signed_diff for the cost, signed_qty for the quantity."""
+    sign = 1.0 if float(entry.get('signed_diff') or 0) >= 0 else -1.0
+    leg = {'signed_diff': round(sign * qty * price, 2), 'reduce_only': bool(entry.get('reduce_only')),
+           'fill_price': price, 'executed_qty': qty, 'exchange': entry.get('venue'),
+           'signed_qty': sign * qty}
+    _append_reconciler_log({
+        'action': 'BUY' if sign > 0 else 'SELL', 'symbol': key,
+        'signed_diff': entry.get('signed_diff'), 'exchange': entry.get('venue'),
+        'asset_spec': entry.get('asset_spec'), 'contributors': entry.get('contributors') or [],
+        'legs': [leg], 'unconfirmed_order_id': entry.get('order_id'), 'resolved_by': source})
+    guard.audit('order_unconfirmed_booked', symbol=key, order_id=entry.get('order_id'),
+                executed_qty=qty, avg_price=price, source=source)
+
+
+def _settle_parked(query=None, now=None):
+    """Query every parked order first thing in a round (before the book is read, so a
+    fill booked here is in this round's diff). Returns the keys still held; None =
+    the park file is unreadable — nothing may trade this round."""
+    if _unconfirmed is None:
+        return set()
+    try:
+        rows = _unconfirmed.load()
+        if not rows:
+            return set()
+        if query is None:
+            from lib.venue_wiring import query_parked_order as query
+        now = time.time() if now is None else now
+        held = set()
+        for key, entry in rows.items():
+            oid = entry.get('order_id')
+            try:
+                res = query(entry.get('venue'), entry.get('venue_symbol'), oid)
+            except Exception as e:
+                logging.info(f"[reconcile] parked {key} order {oid}: query failed ({e})")
+                res = None
+            if res is not None:
+                qty, price = res
+                if _unconfirmed.release(key, oid):
+                    if qty > 0:
+                        book_unconfirmed(key, entry, qty, price, source='venue')
+                    guard.audit('order_unconfirmed_resolved', symbol=key, order_id=oid,
+                                executed_qty=qty)
+                    logging.info(f"[reconcile] parked {key} order {oid} resolved: "
+                                 f"filled {qty:g} — trading it again")
+                continue
+            held.add(key)
+            remind = (not entry.get('reminded') and
+                      now - float(entry.get('parked_at') or now) >= _unconfirmed.REMIND_AFTER_S)
+            fields = {'reads': int(entry.get('reads') or 0) + 1}
+            if remind:
+                fields['reminded'] = True
+            if _unconfirmed.update(key, oid, **fields) and remind:
+                _record_order_error(
+                    key, entry.get('venue'),
+                    f"order {oid} outcome still unknown after an hour — orders for this "
+                    f"symbol stay paused; check the position on the venue",
+                    extra={'kind': 'order_unconfirmed', 'stuck': True,
+                           'strategies': _strategy_names(entry.get('contributors'))})
+        return held
+    except _unconfirmed.ParkUnreadable as e:
+        logging.error(f"[reconcile] {e} — no orders this round")
+        return None
 
 
 # ── self-ledger (bot's own tracked position, decoupled from the exchange's
@@ -3826,6 +3907,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
     # Clearing HALT changes the reconciler's watched __halt__ mtime, so a
     # clean round follows within one poll tick — the cost is one round's delay.
     halted_at_start = guard.halted()
+    # an order the venue took without a known outcome holds its symbol, never the round
+    parked = _settle_parked()
 
     target = aggregate_portfolio()
     actual = get_positions_fn()
@@ -3988,6 +4071,11 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
     if closed_keys:
         target = {k: v for k, v in target.items() if k not in closed_keys}
         diff_actual = {k: v for k, v in diff_actual.items() if k not in closed_keys}
+    if parked:
+        logging.warning(f"[reconcile] {sorted(parked)} held — an order's outcome is unknown "
+                        f"(state/order_unconfirmed.json)")
+        target = {k: v for k, v in target.items() if k not in parked}
+        diff_actual = {k: v for k, v in diff_actual.items() if k not in parked}
 
     # per-symbol venue gates, for the snapshot (unrelated to gated_symbols
     # above — that is the SIGNAL gate). The drift band only when the diff is
@@ -4044,6 +4132,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
         logging.info("[reconcile] portfolio config saved — reconciling normally")
         _unconfigured_logged = False
     if needs_baseline is not None:
+        orders = []
+    if parked is None:
         orders = []
 
     # Reduces before entries (stable: set order means nothing): a contract
@@ -4303,8 +4393,32 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                                          exchange=order.get('exchange'),
                                          contributors=order.get('contributors'))
             except Exception as e:
+                names = _strategy_names(order.get('contributors'))
+                parked_now = False
+                if _parkable(e):
+                    try:
+                        _unconfirmed.park(symbol, e, sub_diff, reduce_only, asset_spec,
+                                          order.get('contributors'))
+                        parked_now = True
+                    except Exception as pe:
+                        logging.error(f"[reconcile] {symbol}: could not park the unconfirmed "
+                                      f"order ({pe}) — reported as an order failure")
+                if parked_now:
+                    # not throttled: every parked order is a different order, and the
+                    # symbol is held, so no second one can follow while it is parked
+                    _record_order_error(symbol, order.get('exchange'), e,
+                                        extra={'kind': 'order_unconfirmed', 'strategies': names})
+                    logging.error(f"order outcome unknown {symbol}: {e} — held until it is known")
+                    notices.append(('order_unconfirmed',
+                                    '⚠️ Order outcome unknown {symbol}: it may have filled — '
+                                    'orders for this symbol are paused until the result is found',
+                                    {'symbol': symbol}))
+                    failed = True
+                    break
                 fresh = _order_error_fresh(symbol, e, 'reduce' if reduce_only else 'entry')
-                _record_order_error(symbol, order.get('exchange'), e, repeat=not fresh)
+                _record_order_error(symbol, order.get('exchange'), e,
+                                    extra={'strategies': names} if names else None,
+                                    repeat=not fresh)
                 if fresh:
                     logging.error(f"order error {symbol}: {e}")
                     notices.append(('order_error', '⚠️ Order failed {symbol}: {error}',

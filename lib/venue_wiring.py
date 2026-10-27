@@ -1088,6 +1088,22 @@ def _paper_contract_order(env, symbol, signed_diff, asset_spec, reduce_only):
     return placed
 
 
+def query_parked_order(venue, venue_symbol, order_id):
+    """A parked order's outcome (lib/unconfirmed.outcome): (executed_qty, avg_price)
+    once terminal, None while unknown — including any query failure. Read-only."""
+    from lib.unconfirmed import outcome
+    order = importlib.import_module(f"lib.order_{venue}")
+    terminal = getattr(order, "TERMINAL_STATUSES", None)
+    if not terminal or not hasattr(order, "get_order"):
+        return None
+    try:
+        return outcome(order.get_order(read_env(), venue_symbol, order_id), terminal)
+    except Exception as e:
+        logging.info(f"[venue_wiring] parked {venue} order {order_id} not answered yet "
+                     f"({type(e).__name__}: {str(e)[:120]})")
+        return None
+
+
 def auto_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
                      exchange=None, sold=0.0):
     """Reconciler place_order: routes on the key's market. Spot buys are sized

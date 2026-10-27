@@ -74,6 +74,10 @@ try:
 except ob.OrderNotConfirmed as e:
     check("-2013" in str(e) and CALLS["POST"] == 1,
           "-2013 for the whole window → OrderNotConfirmed, no second placement")
+    from lib.unconfirmed import OrderOutcomeUnknown
+    check(isinstance(e, OrderOutcomeUnknown) and e.parkable() and e.venue == "binance"
+          and e.venue_symbol == "BTCUSDT" and str(e.order_id) == "1173539174627",
+          "…carrying venue / symbol / order id, so the reconciler can park it")
 except Exception as e:
     check(False, f"-2013 for the whole window raised {type(e).__name__}, not OrderNotConfirmed")
 
