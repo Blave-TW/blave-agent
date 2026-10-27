@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **成交測試按了才算(`command_listener._stats_refresh_args`／`_refresh_stats`／`_strategy_subprocess_env`、`strategy_reporter` manifest 的 `can_exec_test`;spec lag-test-tab-2026-10-26 §5-2)**:`stats_refresh` 多收選填 `exec_test: true`(只配一支,同 api `_stats_refresh_args_error`;false／其他型別／兩支一律 `BAD_ARGS`)。帶了的那次子行程設 `BLAVE_EXEC_TEST=1`(live 刷新與沒部署的安靜回測兩條都設);其他所有策略子行程(更新績效、報告前的自動更新、還原重跑、tick)一律 `"0"`,workspace lib 下一個 VERSION(分支 v034-xt-ondemand-lib-only)起收到 `"0"` 就不算成交測試(沒設＝舊 runtime,照算)。同一支已經排著或在跑時帶 `exec_test` 照舊回 `BUSY`、不併進那次。manifest 帶 `can_exec_test: true`,web／電腦版雲端視角照它決定要不要帶參數。**出貨順序:api fd868111 先上;這版要跟電腦版 0.1.34 一起出;lib 那顆最後、在 0.1.34 對外之後才合,合的同一顆 bump VERSION。**測試 `tests/check_stats_refresh_command.py` 1／1b(舊碼紅)、`tests/check_stats_refresh_parallel.py`(替身改簽名)。
+
 ## 1.1.143 — 2026-10-26(desktop 0.1.33;canary:29026、uid=1)
 
 - **Bitget 翻開經典帳戶與統一帳戶(desktop 0.1.33)**(`venue_traits` 的 `bitget` `verified_modes` = `("classic", "uta")`;經典 2026-10-22、統一帳戶 T1–T12 真帳驗過,T11c 停損 10-26 補驗):`account_reader` 讀 Bitget、`local_daemon` 放行 `BITGET`、電腦版連接框兩個視角都列 Bitget(`cloudcmd.BITGET_VERIFIED_MODES` 同值,兩種都開所以連接框不再講「只收經典帳戶」)、聊天綁定收 `bitget`。broker attribution 還是空的(`BROKER_CHANNEL_CODE`)。測試 `tests/check_bitget_lib.py`、`tests/check_bitget_surfaces.py`、`tests/check_venue_traits.py`、`tests/check_shell_connect_venues.js`、`tests/check_desktop_venue_env.py`、`tests/check_local_real_key_gate.py`。

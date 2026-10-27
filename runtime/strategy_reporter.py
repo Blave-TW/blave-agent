@@ -1797,8 +1797,10 @@ def report_cache(strategies, token=None, image_sigs=None, record=True):
             print(f"[strategy_reporter] api refused {name}: {e}", file=sys.stderr)
             refused.add(name)
 
+    # can_exec_test: command_listener._stats_refresh_args takes `exec_test` (ships in the same
+    # runtime, so a literal); the page sends it only when this is True (spec lag-test-tab §5-2)
     payload = {"names": names, "markers": markers, "round": round_id,
-               "can_report": _can_report()}
+               "can_report": _can_report(), "can_exec_test": True}
     version = _config_version()
     if version:
         payload["config_version"] = version
