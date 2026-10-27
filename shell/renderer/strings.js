@@ -2962,6 +2962,7 @@ const STRINGS = {
     "tr.ov.evUnconfirmedReleasedCloseAllNone": "It did not fill. Nothing else to do.",
     "tr.ov.evUnconfirmedInterruptedNote": "See “Previous execution interrupted”.",
     "tr.err.unconfirmedManual": "Outcome unknown — it may have filled; don't place it again yourself. New entries resume once you tell your agent how much filled.",
+    "tr.haltUnconfirmedNosym": "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading.",
   },
   zh: {
     "cn.h": "Blave 不內建 AI。",
@@ -5920,5 +5921,6 @@ const STRINGS = {
     "tr.ov.evUnconfirmedReleasedCloseAllNone": "這筆單沒有成交，不用再處理。",
     "tr.ov.evUnconfirmedInterruptedNote": "改看「前次執行中斷」那則。",
     "tr.err.unconfirmedManual": "結果不明，可能已經成交，不要手動補單。告訴 agent 成交多少才會恢復開倉。",
+    "tr.haltUnconfirmedNosym": "有一筆單結果不明、可能已成交，什麼單都不送。不要手動補單，告訴 agent 成交多少再按「啟動下單」。",
   },
 };

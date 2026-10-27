@@ -2639,7 +2639,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const raw = fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "zh.po"), "utf8");
       const val = (k) => { const m = new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^"]*)"').exec(raw); return m ? m[1] : null; };
       const count = (v) => (v.match(/[\u4e00-\u9fff]/g) || []).length + (v.match(/\{[a-z_]+\}|[A-Za-z0-9]+/g) || []).length;
-      const KEYS = ["tr.haltUnconfirmed", "tr.ov.evHaltUnconfirmedNote", "tr.ov.evHaltUnconfirmedNoteNosym", "tm.evHaltUnconfirmedNote",
+      const KEYS = ["tr.haltUnconfirmed", "tr.haltUnconfirmedNosym", "tr.ov.evHaltUnconfirmedNote", "tr.ov.evHaltUnconfirmedNoteNosym", "tm.evHaltUnconfirmedNote",
         "tr.ov.evUnconfirmedStuckNote", "tr.ov.evUnconfirmedCloseAllNote", "tr.ov.evUnconfirmedReleasedCloseAllFilled",
         "tr.ov.evUnconfirmedReleasedCloseAllNone", "tr.err.unconfirmedManual", "tr.ov.evUnconfirmedNote", "tr.err.unconfirmed"];
       const bad = KEYS.filter((k) => { const v = val(k); return v == null || v.split("。").filter(Boolean).length > 2 || count(v) > 40; });
@@ -2650,7 +2650,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("整台暫停的事件說明帶標的,讀不到標的走沒有標的那句",
         trHaltUnconfirmedNote({ reason: "[order_unconfirmed_unparked] BTCUSDT@spot: x" }) === 'tr.ov.evHaltUnconfirmedNote{"sym":"BTCUSDT"}'
         && trHaltUnconfirmedNote({ reason: "[order_unconfirmed_unparked]" }) === "tr.ov.evHaltUnconfirmedNoteNosym"
-        && !/haltUnconfirmed|evHaltUnconfirmed/.test(trHaltReasonText({ halt: { halted: true, source: "reconciler", reason: "[order_unconfirmed_unparked]" }, reconciler: { alive: true }, venues: V }))); }
+        && trHaltReasonText({ halt: { halted: true, source: "reconciler", reason: "[order_unconfirmed_unparked]" }, reconciler: { alive: true }, venues: V }) === "tr.haltUnconfirmedNosym"); }
     { // 一張單一列(designer v034 UX P2-1):解除了只剩那一列 P3、時間用 released_at;manual 沒解除不畫;沒有 id 的照舊
       const R = trUnconfirmedRows([
         { kind: "order_unconfirmed", park_id: "P1", ts: "2026-10-27T01:00:00" },

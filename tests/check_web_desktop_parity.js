@@ -137,7 +137,8 @@ const UNCONFIRMED_PAIRS = {
   "tr.ov.evUnconfirmedReleasedCloseAllFilled": "workspace_ov_ev_unconfirmed_released_close_all_filled",
   "tr.ov.evUnconfirmedReleasedCloseAllNone": "workspace_ov_ev_unconfirmed_released_close_all_none",
   "tr.ov.evUnconfirmedInterruptedNote": "workspace_ov_ev_unconfirmed_interrupted_note",
-  "tr.err.unconfirmedManual": "workspace_pf_err_unconfirmed_manual" };
+  "tr.err.unconfirmedManual": "workspace_pf_err_unconfirmed_manual",
+  "tr.haltUnconfirmedNosym": "workspace_pf_halt_unconfirmed_nosym" };
 for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
   const bad = Object.entries(UNCONFIRMED_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== wp[w]);

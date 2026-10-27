@@ -9125,3 +9125,6 @@ msgstr "改看「前次執行中斷」那則。"
 msgid "tr.err.unconfirmedManual"
 msgstr "結果不明，可能已經成交，不要手動補單。告訴 agent 成交多少才會恢復開倉。"
 
+# 追蹤不了而整台暫停、HALT reason 讀不到標的時的狀態句(大寫開頭;同網頁 workspace_pf_halt_unconfirmed_nosym)
+msgid "tr.haltUnconfirmedNosym"
+msgstr "有一筆單結果不明、可能已成交，什麼單都不送。不要手動補單，告訴 agent 成交多少再按「啟動下單」。"

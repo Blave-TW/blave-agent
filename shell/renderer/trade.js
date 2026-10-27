@@ -270,7 +270,8 @@ function trHaltReasonText(r, done) {
   // 主機重開停住(machine)仍優先:那時什麼單都不下的原因是重開,清單照樣畫
   const mm = rk !== "machine" ? trHaltMismatch(r) : null;
   const us = H && rk !== "machine" ? trHaltUnconfirmedSym(r.halt) : null;
-  if (us) return t("tr.haltUnconfirmed", { sym: us });   // tagged without a readable symbol: the generic pause sentence below (同網頁)
+  if (us) return t("tr.haltUnconfirmed", { sym: us });
+  if (us === "") return t("tr.haltUnconfirmedNosym");   // 讀不到標的:大寫開頭、留「不要手動補單」的那句(designer 複查 P3)
   if (mm) return t(mm.mode === "classic" ? "tr.haltBitgetMismatchClassic" : "tr.haltBitgetMismatchUta", { n: mm.legs.length });
   // 照 HALT 的實際原因講(Mac e2e 10-14:解綁造成的暫停被講成「Blave 重開過」)。主機重開停住(machine)那一種最根本,照舊優先;
   // 解綁那一種再分下單程式在不在跑:沒在跑就什麼單都不下,在跑照 A 的規則(不開新倉、平倉照常)
