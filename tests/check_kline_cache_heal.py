@@ -273,7 +273,7 @@ kc.heal = real_heal
 
 order = []
 pr.PROXY_TOKEN = "t"
-pr.build_report = lambda: {"config": {}}
+pr.build_report = lambda **kw: {"config": {}}
 pr.report = lambda p: order.append(("report", dict(p))) or '{"status": "ok"}'
 pr._handle_ack = lambda resp: order.append(("ack",))
 kc.run = lambda: order.append(("heal",)) or (_ for _ in ()).throw(RuntimeError("boom"))

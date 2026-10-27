@@ -230,7 +230,7 @@ def sync_portfolio(since=None):
             return
         _last_portfolio_started = time.time()
         try:
-            portfolio_reporter.report(portfolio_reporter.build_report(), token=PROXY_TOKEN)
+            portfolio_reporter.report(portfolio_reporter.build_report(reporter="web_bridge"), token=PROXY_TOKEN)
         except Exception as e:
             print(f"[web_bridge] portfolio report failed: {e}", file=sys.stderr)
 

@@ -144,7 +144,7 @@ def _push_report():
     push one now instead of leaving the settings page on 「等待配對」 for up to the
     2-minute timer."""
     try:
-        portfolio_reporter.report(portfolio_reporter.build_report())
+        portfolio_reporter.report(portfolio_reporter.build_report(reporter="telegram_bridge"))
     except Exception as e:
         print(f"[telegram_bridge] post-pair report failed: {type(e).__name__}", file=sys.stderr)
 

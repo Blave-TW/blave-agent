@@ -88,6 +88,21 @@ def read_bytes(path):
     return read_retry(_read_bytes, path)
 
 
+def _read_head(path, n):
+    with open(path, "rb") as f:
+        return f.read(n)
+
+
+def read_version(path):
+    """A VERSION file's text, None when missing, unreadable or empty. Only the first 64 bytes:
+    the workspace one is agent-writable and read on every report. utf-8-sig: a BOM left by a
+    Windows editor would otherwise make the version look invalid to the api."""
+    try:
+        return read_retry(_read_head, path, 64).decode("utf-8-sig").strip() or None
+    except (OSError, ValueError):
+        return None
+
+
 @contextlib.contextmanager
 def replacing(path, mode="w", *, perm=None, prepare=None, replace=None, **open_kw):
     """`with replacing(path) as f: json.dump(doc, f)` — same file object as

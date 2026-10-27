@@ -1415,11 +1415,7 @@ def sync_versions(strategies, token=None):
 def _config_version():
     """workspace 根的 VERSION(config 更新流程會 copy 進來)。讀不到 = None,
     fail-soft:舊機沒這個檔是常態,不值得噪音。"""
-    try:
-        with open(os.path.join(WORKSPACE, "VERSION")) as f:
-            return f.read().strip() or None
-    except OSError:
-        return None
+    return atomic_file.read_version(os.path.join(WORKSPACE, "VERSION"))
 
 
 def _can_report():

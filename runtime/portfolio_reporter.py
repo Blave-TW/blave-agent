@@ -101,17 +101,11 @@ def _mtime(path):
         return None
 
 
-def _version_file(path):
-    try:
-        with open(path, encoding="utf-8") as f:
-            return f.read(64).strip() or None
-    except (OSError, ValueError):
-        return None
-
-
 # Read once at import: a long-lived bridge that sends this report must say which
-# code it is running, not what the updater has since put on disk.
-RUNTIME_VERSION = _version_file(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION"))
+# code it is running, not what the updater has since put on disk. The updater
+# restarts both bridges on every swap (control/updater.py restart_bridges, a failed
+# restart rolls the swap back), so the two only differ for the seconds in between.
+RUNTIME_VERSION = atomic_file.read_version(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION"))
 
 
 # Type A/C strategies picked in 下單設定 have NO crontab line and NO scheduled
@@ -2103,7 +2097,7 @@ def _save_routing(cfg):
         return None
 
 
-def build_report():
+def build_report(reporter=None):
     # generation BEFORE the chat ids: a reset landing between the two reads then pairs
     # an old generation with the cleared chats (refused / harmless), never an old chat
     # with the new generation (which the api would accept and write back)
@@ -2198,7 +2192,7 @@ def build_report():
         # fleet adoption after a runtime promote / workspace update (api openclaw.fleet_versions);
         # None = file unreadable. The desktop's daemon.version is the same runtime file.
         "runtime_version": RUNTIME_VERSION,
-        "workspace_version": _version_file(os.path.join(WORKSPACE, "VERSION")),
+        "workspace_version": atomic_file.read_version(os.path.join(WORKSPACE, "VERSION")),
         "can_flatten": can_flatten(vens),
         # self_ledger: whether this machine diffs against the bot's own book —
         # the web's stop dialog phrases what 「關閉 bot 部位」actually closes
@@ -2241,6 +2235,10 @@ def build_report():
         "events": events.unsent(),
         "reported_at": int(time.time()),
     }
+    # which sender: timer / web_bridge / telegram_bridge. The bridges are long-lived and
+    # all write the same api key, so fleet_versions splits runtime_version by this.
+    if reporter is not None:
+        report["reporter"] = reporter
     # False = amounts were never saved AND the reconcile that runs next is the
     # read-only one (places nothing, closes included, until a save). None = the
     # key is left out: see portfolio_configured() — an absent key is the pages'
@@ -2569,7 +2567,7 @@ def main():
     if not PROXY_TOKEN:
         print("[portfolio_reporter] BLAVE_PROXY_TOKEN not set; exiting", file=sys.stderr)
         sys.exit(1)
-    payload = build_report()
+    payload = build_report(reporter="timer")
     heal_rec = kline_cache_heal.read_record()
     if heal_rec:
         payload["kline2_heal"] = heal_rec
