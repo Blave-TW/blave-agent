@@ -142,7 +142,8 @@ function caplTrack(k) { if (CAPL_FEATURE[k] && !CAPL.seen[k]) { CAPL.seen[k] = t
 function caplForget() {
   CAPL = caplBlank();
   caplWatch(false);
-  if (window.blave && typeof window.blave.caplForget === "function") window.blave.caplForget().catch(() => {});
+  // 連接框開關、換交易所都會走到這裡;旗標關時主行程沒註冊 capl-forget,叫了只會記一行 No handler registered
+  if (CAPL_LOCAL_ON && window.blave && typeof window.blave.caplForget === "function") window.blave.caplForget().catch(() => {});
 }
 const caplCC = () => { const r = TR_BAGS.local.st && TR_BAGS.local.st.report; const c = r && r.capital_local_connect; return c && typeof c === "object" ? c : null; };
 const caplDown = () => !(TR_BAGS.local.st && TR_BAGS.local.st.running);
