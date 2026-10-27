@@ -161,6 +161,53 @@ err = save({"btc_sma": 100, "txf_sma": 1})
 check(err is None and json.load(open(CONFIG))["exchanges"] == {"btc_sma": "binance", "txf_sma": "binance"},
       f"another venue: the same BTCUSDT strategy saves as before ({err})")
 
+# ── market × venue × amount, every cell ─────────────────────────────────────
+# Only a TW-market member on a crypto venue at amount 0 changed (saved, routed there — it
+# produces no reconcile row); every other cell is the refusal (or pass) it always was.
+d = os.path.join(WS, "strategies", "stk_fut")
+os.makedirs(d, exist_ok=True)
+with open(os.path.join(d, "stats.json"), "w") as f:
+    json.dump({"symbol": "CDF", "trades": 3}, f)
+with open(os.path.join(d, "strategy.py"), "w") as f:
+    f.write('from lib.data import fetch_twfutures_ohlcv\nSTRATEGY_NAME = "stk_fut"\nSYMBOL = "CDF"\nINTERVAL = "1h"\n')
+check(cl._strategy_market_of("stk_fut") == "tw_stock_futures", "fixture: stk_fut reads as tw_stock_futures")
+MARKETS = {"tw_stock": "tw_stock_a", "tw_stock_futures": "stk_fut", "tw_index_futures": "txf_live",
+           "crypto": "btc_live"}
+VENUES = {"okx": "OKX_API_KEY=a\nOKX_SECRET_KEY=b\nOKX_PASSPHRASE=c\n", "capital": CAPITAL,
+          "president": PRESIDENT, "paper": "PAPER_API_KEY=paper\nPAPER_SECRET_KEY=paper\nPAPER_BOUND_TS=1\n"}
+EXPECT = {  # (market, venue): (amount 0, amount 1) — None = saved, else the refusal code
+    ("tw_stock", "okx"): (None, "MARKET_VENUE"),
+    ("tw_stock_futures", "okx"): (None, "MARKET_VENUE"),
+    ("tw_index_futures", "okx"): (None, "MARKET_VENUE"),
+    ("crypto", "okx"): (None, None),
+    ("tw_stock", "capital"): ("MARKET_VENUE", "MARKET_VENUE"),
+    ("tw_stock_futures", "capital"): ("MARKET_VENUE", "MARKET_VENUE"),
+    ("tw_index_futures", "capital"): (None, None),
+    ("crypto", "capital"): ("MARKET_VENUE", "MARKET_VENUE"),
+    ("tw_stock", "president"): ("NOT_TXF", "NOT_TXF"),
+    ("tw_stock_futures", "president"): ("NOT_TXF", "NOT_TXF"),
+    ("tw_index_futures", "president"): (None, None),
+    ("crypto", "president"): ("NOT_TXF", "NOT_TXF"),
+    ("tw_stock", "paper"): (None, None),
+    ("tw_stock_futures", "paper"): (None, None),
+    ("tw_index_futures", "paper"): (None, None),
+    ("crypto", "paper"): (None, None),
+}
+for market, name in MARKETS.items():
+    for venue, env_lines in VENUES.items():
+        for i, amt in enumerate((0, 1)):
+            bind(env_lines)
+            err = save({name: amt})
+            got = err.split(":", 1)[0] if err else None
+            want = EXPECT[(market, venue)][i]
+            if want is None:
+                saved = json.load(open(CONFIG)) if os.path.exists(CONFIG) else {}
+                ok = got is None and saved.get("exchanges") == {name: venue} \
+                    and saved.get("amounts") == {name: float(amt)}
+            else:
+                ok = got == want and not os.path.exists(CONFIG) and not os.path.exists(MIRROR)
+            check(ok, f"{market} × {venue} × {amt}: want {want or 'saved'}, got {err or 'saved'}")
+
 # ── asset_specs of a strategy taken out of the 下單設定 are pruned once nothing is held ──
 SNAPF = os.path.join(WS, "manager", "last_reconcile.json")
 bind(CAPITAL)

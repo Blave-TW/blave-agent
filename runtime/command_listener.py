@@ -4125,6 +4125,10 @@ def _cmd_amounts(args):
                     f"{code}: 「{k}」的標的是 {sym},{label}只能下台指期(TXF／MXF／TMF)"
                     "——請取消勾選後再儲存")
         elif venue_traits.get(venue, "perp"):   # a crypto exchange
+            # amount 0 makes no reconcile row (lib skips it), so a parked TW member keeps its
+            # inherited route instead of failing the whole save; the TW broker branch above still refuses
+            if clean[k] <= 0:
+                continue
             market = _strategy_market_of(k)
             if market in _TW_MARKETS:
                 raise ValueError(

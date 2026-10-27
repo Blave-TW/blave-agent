@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.144 — 2026-10-27(canary:29026、uid=1)
+
+- **綁加密交易所時,金額 0 的台股／個股期貨／台指期策略不再讓整份下單設定存不進去(`command_listener._cmd_amounts` MARKET_VENUE 加密所分支;Wei 10-25 綁 OKX 撞到)**:金額 ≤ 0 的成員跳過市場判斷,路由照舊繼承綁定的交易所(不留空,`save_routing`、NEEDS_ROUTING、電腦版 `trUnrouted`／web `pfUnrouted` 都不用改)。lib 的 `aggregate_portfolio`／`spot_symbols`／`_first_signal_holds` 都略過金額 0,所以不產生對帳列、不去 OKX 查價或下單。金額 > 0 照舊退 MARKET_VENUE;統一／群益分支與 `_us_signal_refusal` 金額 0 仍然擋(刻意,另案)。測試 `tests/check_amounts_president_symbol.py` 市場×交易所×金額 32 格列舉(舊碼紅 3 格:台灣三市場×okx×0)。
+
 - **回報多帶 `reporter`(`timer`／`web_bridge`／`telegram_bridge`)、版號檔改共用 `atomic_file.read_version`(稽核 v034-rt-version P2／P3)**:常駐 bridge 的 `runtime_version` 是它 import 當下的版號,跟 timer 寫同一把 api key,`fleet_versions` 照 `reporter` 分開數。換版時 updater 會重啟兩個 bridge(`control/updater.py` `restart_bridges`,重啟證明不了就回滾),所以兩者只在換版那幾秒、或回滾後重啟沒證明時不一致。`build_report(reporter=None)`:電腦版 daemon 不帶、回報就沒有這欄。`read_version` 用 `utf-8-sig`(Windows 編輯器留的 BOM 不再讓版號變成不合法),`strategy_reporter._config_version` 也改用它(原本沒指定編碼、不接 `ValueError`)。另修上一條漏掉的 `tests/check_state_read_retry.py` ④(`_version_file` 的 open 沒列豁免,那條在 main 上是紅的)。測試 `tests/check_report_versions.py`(舊碼紅:BOM 兩條、`reporter` 參數 TypeError)、`tests/check_state_read_retry.py`、`tests/check_kline_cache_heal.py`(假 `build_report` 收 `**kw`)。
 
 - **投資組合回報帶 runtime 與 workspace 版號(`portfolio_reporter.build_report` 多兩個頂層欄位 `runtime_version`、`workspace_version`;desktop 0.1.34)**:雲端回報原本沒有任何版號,`publish.py promote` 之後看不出機隊換上新版了沒。`runtime_version` 是這支程式 import 時讀到的 `runtime/VERSION`(常駐的 web／telegram bridge 報的是自己正在跑的那版,不是更新器之後放到磁碟上的);`workspace_version` 每份回報重讀 workspace `VERSION`;讀不到都是 `null`,不擋回報。三個發送點(timer `main()`、`web_bridge`、`telegram_bridge`)都經過 `build_report()`,所以每份都帶。api 原樣存、不用改;機隊統計用 api `python -m openclaw.fleet_versions`(唯讀)。電腦版 `local_status.json` 也會多這兩欄,上傳時被 `desktop_portfolio.ALLOWED_KEYS` 丟掉,那條路照舊看 `daemon.version`。測試 `tests/check_report_versions.py`(新;舊碼 3 條紅)。
