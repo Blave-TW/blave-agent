@@ -64,6 +64,7 @@ Semantics — panic button, not portfolio management:
 """
 import importlib
 import inspect
+import json
 import logging
 import os
 import re
@@ -504,8 +505,21 @@ def flatten():
     order meanwhile. A fill found by the reconciler between this run's ledger zeroing and its
     end would otherwise be booked after the zeroing — open, not closed, and not reported
     (re-audit v034 R-P2-3). The opening settle books what can be found before anything is
-    closed; whatever is still parked at the end gets its row. The reconciler waits for the
-    lock meanwhile; it is halted anyway."""
+    closed; whatever is still parked at the end gets its row. The reconciler gives up on the
+    lock after a few seconds and skips that round (lib/unconfirmed.LOCK_TIMEOUT_S); it is
+    halted anyway.
+
+    The single-flight lock comes FIRST and the park lock only after it: a second press must
+    exit at once, not queue behind the first and close everything again (third audit T-P1 —
+    群益's auto open/close would open the reverse of a close not yet confirmed)."""
+    global _LOCK
+    _LOCK = _singleflight()
+    if _LOCK is None:
+        # Deliberately before the HALT trip: whoever holds the lock tripped it
+        # already, and command_listener._cmd_close_all trips it synchronously
+        # before launching us — the stop half of the button is never skipped.
+        logging.info(f"close-all: another flatten holds {LOCK_PATH} — this one exits")
+        return ALREADY_RUNNING
     try:
         import lib.portfolio as _pf
         hold = _pf._unconfirmed.hold if getattr(_pf, "_unconfirmed", None) is not None else None
@@ -518,14 +532,6 @@ def flatten():
 
 
 def _flatten():
-    global _LOCK
-    _LOCK = _singleflight()
-    if _LOCK is None:
-        # Deliberately before the HALT trip: whoever holds the lock tripped it
-        # already, and command_listener._cmd_close_all trips it synchronously
-        # before launching us — the stop half of the button is never skipped.
-        logging.info(f"close-all: another flatten holds {LOCK_PATH} — this one exits")
-        return ALREADY_RUNNING
     env = _read_env()
     if guard.restart_stopped():
         # Machine restarted, trading stays stopped: only the user's close_all may
@@ -895,6 +901,21 @@ def _flatten():
         venues = {e.get("key"): e.get("venue") for e in rows_now.values()}
     except Exception:
         still, venues = set(parked_before or {}), {}
+    # an order still in flight (its marker survived _wait_for_inflight) may have an outcome
+    # nobody knows yet either — the same row, so 全部平倉 never reads as flat over it
+    try:
+        from lib.execute import _INFLIGHT_DIR
+        for f in os.listdir(_INFLIGHT_DIR):
+            if f.endswith(".json"):
+                try:
+                    with open(os.path.join(_INFLIGHT_DIR, f)) as fh:
+                        mk = str(json.load(fh).get("key") or "").split("#")[0]
+                except (OSError, ValueError):
+                    continue
+                if mk:
+                    still.add(mk)
+    except (ImportError, OSError):
+        pass
     for key in sorted(k for k in still if k):
         # 全部平倉 closed the book; an order still parked here may have filled and is not in it
         _record_order_error(key, venues.get(key) or "*",

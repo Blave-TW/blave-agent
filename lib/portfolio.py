@@ -247,23 +247,25 @@ def _outcome_unknown(error):
     return _unconfirmed is not None and isinstance(error, _unconfirmed.OrderOutcomeUnknown)
 
 
-def _machine_lang_zh():
-    """The machine's reply language (state/reply_lang, runtime strategy_reporter's file): zh / cn
-    or unset → Chinese, any other set code → English. A custom or unreadable setting → Chinese."""
+def _machine_lang():
+    """The machine's reply language (state/reply_lang, runtime strategy_reporter's file): 'zh'
+    (also unset, custom or unreadable), 'cn' (Simplified), or 'en' for any other set code."""
     try:
         with open('state/reply_lang', 'rb') as f:
             raw = f.read(200)
         text = raw.decode('utf-16' if raw[:2] in (b'\xff\xfe', b'\xfe\xff') else 'utf-8-sig')
         code = text.strip().splitlines()[0].strip().lower() if text.strip() else ''
     except (OSError, UnicodeDecodeError, IndexError):
-        return True
-    return code not in ('en', 'es', 'pt', 'vi', 'ja')
+        return 'zh'
+    return 'cn' if code == 'cn' else 'en' if code in ('en', 'es', 'pt', 'vi', 'ja') else 'zh'
 
 
 _UNCONFIRMED_TG = {
-    True: ('🚨 下單結果不明：{strategy}{symbol}（{exchange}）。這筆單可能已經成交。'
+    'zh': ('🚨 下單結果不明：{strategy}{symbol}（{exchange}）。這筆單可能已經成交。'
            '這個標的暫停開倉，平倉照常，查到結果自動接續。請先到交易所核對部位，不要手動補單。'),
-    False: ("🚨 Order outcome unknown — {symbol} on {exchange}{strategy_en}. This order may have filled. "
+    'cn': ('🚨 下单结果不明：{strategy}{symbol}（{exchange}）。这笔单可能已经成交。'
+           '这个标的暂停开仓，平仓照常，查到结果自动接续。请先到交易所核对部位，不要手动补单。'),
+    'en': ("🚨 Order outcome unknown — {symbol} on {exchange}{strategy_en}. This order may have filled. "
             "New entries on this symbol are paused (closes still run) and resume once the result is "
             "found. Check your position on the exchange and don't place it again yourself."),
 }
@@ -368,12 +370,19 @@ def mark_park_released(pid, filled):
 
 
 def _booked_park_ids():
+    out = set()
     try:
         with open(_ORDERS_LOG_PATH) as f:
-            return {json.loads(ln).get('unconfirmed_park_id') for ln in f
-                    if '"unconfirmed_park_id"' in ln}
+            for ln in f:
+                if '"unconfirmed_park_id"' not in ln:
+                    continue
+                try:
+                    out.add(json.loads(ln).get('unconfirmed_park_id'))
+                except ValueError:
+                    continue  # a line cut by a full disk: it booked nothing
     except FileNotFoundError:
-        return set()
+        pass
+    return out
 
 
 def book_unconfirmed(key, entry, qty, price, source, pid=None):
@@ -4571,7 +4580,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                                        asset_spec, order.get('contributors'))
                     logging.error(f"order outcome unknown {symbol}: {e} — {got}")
                     if got == 'parked':
-                        notices.append(('order_unconfirmed', _UNCONFIRMED_TG[_machine_lang_zh()],
+                        notices.append(('order_unconfirmed', _UNCONFIRMED_TG[_machine_lang()],
                                         {'symbol': symbol, 'strategy': _strategy_phrase(names),
                                          'strategy_en': _strategy_phrase_en(names),
                                          'exchange': order.get('exchange') or ''}))

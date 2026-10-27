@@ -501,8 +501,10 @@ EXEMPT = [
      'code', 'strategy source read as code, not a state file'),
     ('lib/portfolio.py', '_booked_park_ids', '_ORDERS_LOG_PATH',
      'append', 'manager/orders.jsonl: which parked orders the book already holds (append-only)'),
-    ('lib/portfolio.py', '_machine_lang_zh', "'state/reply_lang'",
+    ('lib/portfolio.py', '_machine_lang', "'state/reply_lang'",
      'setting', 'the reply language for the order-unconfirmed notice: a failed read keeps Chinese'),
+    ('manager/flatten.py', '_flatten', 'os.path.join(_INFLIGHT_DIR, f)',
+     'failclosed', 'inflight markers at the end of 全部平倉: an unreadable one is skipped, the run already warned per key'),
     ('lib/unconfirmed.py', 'load_json', 'path',
      'helper', "the half-updated-workspace fallback (lib/winreplace.py without load_json)"),
 ]

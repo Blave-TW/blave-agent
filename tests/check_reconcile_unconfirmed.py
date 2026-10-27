@@ -124,10 +124,17 @@ def parked():
 
 
 def booked():
+    out = []
     try:
-        return [json.loads(x) for x in open("manager/orders.jsonl") if "unconfirmed_park_id" in x]
+        for x in open("manager/orders.jsonl"):
+            if "unconfirmed_park_id" in x:
+                try:
+                    out.append(json.loads(x))
+                except ValueError:
+                    pass
     except OSError:
-        return []
+        pass
+    return out
 
 
 def book_cost():
@@ -386,8 +393,52 @@ round_()
 MODE["raise"] = None
 check(any(x.startswith("🚨 Order outcome unknown — 2330@spot on paper, strategy tw_c.") for x in sent),
       f"reply language en: the machine notice is English ({sent[-1:]})")
+unconfirmed.resolve("2330", 0)
+Path("state/reply_lang").write_text("cn\n")
+MODE["raise"] = unknown("L2")
+del sent[:]
+round_()
+MODE["raise"] = None
+check(any(x.startswith("🚨 下单结果不明：策略 tw_c 的 2330@spot") and "不要手动补单" in x for x in sent),
+      f"reply language cn: Simplified ({sent[-1:]})")
 os.remove("state/reply_lang")
 unconfirmed.resolve("2330", 0)
+
+# a booked line cut by a full disk does not block releasing parks forever
+with open("manager/orders.jsonl", "a") as f:
+    f.write('{"ts": "x", "unconfirmed_park_id": "CUT\n')
+portfolio.book_unconfirmed(KEY, {"signed_diff": 1.0, "venue": "paper", "key": KEY}, 1.0, 1.0,
+                           source="venue", pid="AFTERCUT")
+check(any(x.get("unconfirmed_park_id") == "AFTERCUT" for x in booked()), "a truncated orders.jsonl line is skipped")
+
+# another process holds the park lock (a 全部平倉): the round gives up after LOCK_TIMEOUT_S,
+# sends nothing, and does not hang or raise
+import subprocess  # noqa: E402
+HOLDER = ("import fcntl, sys, time\n"
+          "f = open('state/order_unconfirmed.lock', 'a+')\n"
+          "fcntl.flock(f, fcntl.LOCK_EX)\n"
+          "print('locked', flush=True)\n"
+          "time.sleep(float(sys.argv[1]))\n")
+
+
+def hold_park_lock(seconds):
+    p = subprocess.Popen([sys.executable, "-c", HOLDER, str(seconds)], cwd=WS, stdout=subprocess.PIPE, text=True)
+    p.stdout.readline()
+    return p
+
+
+amount(288_000)
+holder = hold_park_lock(15)
+t0 = time.time()
+try:
+    n = round_()
+    dt = time.time() - t0
+    check(n == 0 and dt < unconfirmed.LOCK_TIMEOUT_S + 4,
+          f"park lock held elsewhere: the round sends nothing and ends after the timeout ({n} orders, {dt:.1f}s)")
+except Exception as e:
+    check(False, f"park lock held elsewhere: the round raised {type(e).__name__}: {e}")
+holder.kill()
+holder.wait()
 
 # ── 全部平倉 asks about parked orders first and says what it could not close ─
 MODE["raise"] = unknown("X6")
@@ -397,6 +448,24 @@ MODE["raise"] = None
 from manager import flatten  # noqa: E402
 os.chdir(WS)   # importing flatten chdirs to the repo it sits in — run it against the test workspace
 flatten._inflight_wait_s = lambda: 0
+
+# a second 全部平倉 while one runs: exits at once — it must not queue on the park lock and then
+# close everything again (third audit T-P1)
+first = flatten._singleflight()   # the first flatten's single-flight lock
+holder = hold_park_lock(10)        # …and its park lock, held by that process
+t0 = time.time()
+second = flatten.flatten()
+dt = time.time() - t0
+holder.kill()
+holder.wait()
+first.close()
+check(second == flatten.ALREADY_RUNNING and dt < 2,
+      f"a second 全部平倉 returns ALREADY_RUNNING at once ({second!r}, {dt:.1f}s)")
+
+# a market order still marked in flight at the end is reported like a parked one
+os.makedirs("state/execution/inflight", exist_ok=True)
+json.dump({"key": "ETHUSDT#market", "style": "market", "signed_diff": 10.0, "started_ts": "x"},
+          open("state/execution/inflight/ETHUSDT_market.json", "w"))
 held_at_zero = []
 keep_zero = flatten.zero_ledger_symbols
 flatten.zero_ledger_symbols = lambda *a, **k: (held_at_zero.append(unconfirmed._held["depth"]), keep_zero(*a, **k))[1]
@@ -409,8 +478,10 @@ check(os.path.realpath(os.getcwd()) == os.path.realpath(WS) and not os.path.exis
 check(held_at_zero and all(d > 0 for d in held_at_zero),
       f"全部平倉 zeroes the book holding the park lock — nothing settles in between ({held_at_zero})")
 fl = [r for r in rows("order_unconfirmed") if "close-all" in str(r.get("error"))]
-check(len(fl) == 1 and fl[0]["symbol"] == KEY and fl[0].get("stuck") is True and fl[0]["exchange"] == "paper",
+check(len([r for r in fl if r["symbol"] == KEY]) == 1 and [r for r in fl if r["symbol"] == KEY][0].get("stuck") is True
+      and [r for r in fl if r["symbol"] == KEY][0]["exchange"] == "paper",
       f"全部平倉 with an order still parked: a row says it may have filled and was not closed ({fl})")
+check(any(r["symbol"] == "ETHUSDT" for r in fl), f"…and one for a symbol whose inflight marker is still there ({fl})")
 
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)

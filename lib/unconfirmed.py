@@ -44,6 +44,9 @@ PATH = "state/order_unconfirmed.json"
 LOCK_PATH = "state/order_unconfirmed.lock"
 REMIND_AFTER_S = 3600
 REMIND_EVERY_S = 86400
+# how long a reconciler / agent call waits for the park lock (a 全部平倉 holds it for its whole
+# run) before treating the file as unreadable for that call — never a hung round
+LOCK_TIMEOUT_S = 5
 
 
 class OrderOutcomeUnknown(Exception):
@@ -64,8 +67,8 @@ class OrderOutcomeUnknown(Exception):
 
 
 class ParkUnreadable(RuntimeError):
-    """The park file exists but cannot be read: which orders are parked is
-    unknown, so nothing is sent this round (fail-closed)."""
+    """The park file exists but cannot be read (or its lock is held past LOCK_TIMEOUT_S):
+    which orders are parked is unknown, so nothing is sent this round (fail-closed)."""
 
 
 def park_id(entry_or_err):
@@ -78,26 +81,34 @@ _rlock = threading.RLock()
 _held = {"depth": 0, "fh": None}
 
 
+def _take(fh, timeout):
+    """Non-blocking attempts until timeout (None = wait for it). Raises ParkUnreadable."""
+    deadline = None if timeout is None else time.time() + timeout
+    while True:
+        try:
+            if fcntl is not None:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            elif msvcrt is not None:
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            return
+        except OSError:
+            if deadline is not None and time.time() >= deadline:
+                raise ParkUnreadable(f"{LOCK_PATH} held by another process past {timeout}s")
+            time.sleep(0.1)
+
+
 @contextmanager
-def _locked():
+def _locked(timeout=LOCK_TIMEOUT_S):
     """The park file's lock — across processes (flock / msvcrt), re-entrant inside one
     (hold() wraps a whole 全部平倉 and the parks it makes inside take it again)."""
-    with _rlock:
+    if not _rlock.acquire(timeout=-1 if timeout is None else timeout):
+        raise ParkUnreadable(f"{LOCK_PATH} busy in this process past {timeout}s")
+    try:
         if _held["depth"] == 0:
             os.makedirs(os.path.dirname(LOCK_PATH), exist_ok=True)
             fh = open(LOCK_PATH, "a+")
             try:
-                if fcntl is not None:
-                    fcntl.flock(fh, fcntl.LOCK_EX)
-                elif msvcrt is not None:
-                    deadline = time.time() + 30
-                    while True:
-                        try:
-                            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
-                            break
-                        except OSError:
-                            if time.time() > deadline:
-                                raise
+                _take(fh, timeout)
             except Exception:
                 fh.close()
                 raise
@@ -110,12 +121,14 @@ def _locked():
             if _held["depth"] == 0:
                 _held["fh"].close()
                 _held["fh"] = None
+    finally:
+        _rlock.release()
 
 
 def hold():
     """Keep every other process from settling a park meanwhile (manager/flatten: a fill
-    booked after its ledger zeroing would be left open and unreported)."""
-    return _locked()
+    booked after its ledger zeroing would be left open and unreported). Waits for the lock."""
+    return _locked(timeout=None)
 
 
 def read_held():
