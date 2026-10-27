@@ -241,7 +241,9 @@ const EVENTS = {
     // 霧卡〔更新績效〕ack 排進佇列(perf.js perfClick;回測數據分頁那顆照舊是 perf_update,web 同一顆是 perf_update_request placement exec_test)
     "report_xt", "xt_metric", "perf_update_xt",
     // 歡迎頁①策略卡(0.1.34;renderer/library.js libSend、welcome.js wcCard):從卡確認後回合真的跑起來、點策略名開詳情;雲端視角寫進名字
-    "wcard_use", "wcard_use_cloud", "wcard_open", "wcard_open_cloud"] },
+    "wcard_use", "wcard_use_cloud", "wcard_open", "wcard_open_cloud",
+    // 0.1.34 回覆音(renderer/app.js):設定 › 一般切「提示音」開／關;回合結束該響時真的響了／resume 後仍不是 running 沒響
+    "reply_snd_on", "reply_snd_off", "reply_snd_play", "reply_snd_block"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

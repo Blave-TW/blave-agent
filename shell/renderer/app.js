@@ -1114,9 +1114,11 @@ $("set-rn-sw").addEventListener("click", async () => {
 $("set-rs-sw").addEventListener("click", async () => {
   let r = null;
   try { r = await window.blave.replySoundSet(!RN.sound); } catch (_) { r = null; }
-  if (typeof r !== "boolean") return;
+  if (typeof r !== "boolean" || r === RN.sound) return;   // 沒切成(寫不進去回舊值):不記、不動
   RN.sound = r; rnPaint();
-  if (r) rsArm();   // 切開那一下也是用戶動作
+  trackFeature(r ? "reply_snd_on" : "reply_snd_off");
+  if (r) rsArm();
+  else if (rsCtx) { rsCtx.close().catch(() => {}); rsCtx = null; }   // 電腦版常整天開著:關掉就放掉音訊裝置
 });
 /* 回覆音 04 Rise(canon › Sound)。數字同網頁 reply_cue.js,tests/check_web_desktop_parity.js 逐值比對;改一邊另一邊就紅 */
 const RISE = [
@@ -1144,7 +1146,8 @@ function playRise(ctx) {
     o.start(st); o.stop(end + 0.01);
   }
 }
-// AudioContext 在用戶送出(點擊或 Enter)或切開提示音時建立／resume(canon › Sound 自動播放限制);提示音關著不建
+// AudioContext 在送出或切開提示音時先建;提示音關著不建。Electron 預設 autoplayPolicy 免手勢(Electron 44 實測:沒有用戶動作
+// 新建就是 running、suspended 也 resume 得回來),所以要響時沒建就建、不是 running 先 resume——漏掉的入口與睡醒後掛起都靠這步補
 let rsCtx = null, rsLast = 0;
 function rsArm() {
   if (!RN.sound) return;
@@ -1153,12 +1156,18 @@ function rsArm() {
     if (rsCtx.state !== "running") rsCtx.resume().catch(() => {});
   } catch (_) { rsCtx = null; }
 }
-// 主行程只在該響時叫(一輪一次);多條對話 2 秒內接連結束只響一聲。要響時不是 running 就不響
-function rsPlay(now) {
+// 主行程只在該響時叫(一輪一次);多條對話 2 秒內接連結束只響一聲。resume 之後仍不是 running 就不響
+async function rsPlay(now) {
   if (now - rsLast < SOUND_GAP_MS) return false;
   rsLast = now;
-  if (!rsCtx || rsCtx.state !== "running") return false;
-  try { playRise(rsCtx); return true; } catch (_) { return false; }
+  try {
+    if (!rsCtx) rsCtx = new window.AudioContext();
+    if (rsCtx.state !== "running") await rsCtx.resume();
+  } catch (_) { }   // 建不起來或 resume 被拒:下面照 state 判
+  let ok = false;
+  if (rsCtx && rsCtx.state === "running") { try { playRise(rsCtx); ok = true; } catch (_) { ok = false; } }
+  trackFeature(ok ? "reply_snd_play" : "reply_snd_block");
+  return ok;
 }
 window.blave.onReplySound(() => { rsPlay(Date.now()); });
 rnLoad();   // 提示音開關要在第一次送出前讀到(關著的人不建 AudioContext);設定頁打開時再讀一次
@@ -3248,7 +3257,6 @@ function stopRestore(text, attachments) {   // attachments:那一句帶的整份
   autosize(); ta.focus();
 }
 async function sendDraft() {
-  rsArm();   // 點擊或 Enter 這一下就是用戶動作:回覆音的 AudioContext 在這裡建／resume
   const msg = $("ta").value.trim();
   const attachments = attachedFiles;   // 純附件(沒打字)也可以送,同雲端
   if ((!msg && !attachments.length) || running) return;
@@ -3259,6 +3267,7 @@ async function sendDraft() {
 }
 /* 真的送出一句話。回傳這一輪有沒有跑起來(「再送一次」要知道)。不碰輸入框的字;這一句帶的檔送出去了就把 chip 清掉。 */
 async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / 拉回」確認框送的那句才有(handoff.js);重送(lastUserText)不帶
+  rsArm();   // 每個送出入口都經過這裡:回覆音的 AudioContext 先建好
   // opts.attachments:這一句帶的清單 [{ file, name, from }](sendDraft,以及重送 / 安裝失敗後重試帶的同一份)。
   // 「再送一次」連檔一起重送(resendLast)——跟雲端不同:雲端的重送鈕出現時檔已經落在機器上,這裡 started 回來時主行程還沒落地,
   // 失敗的那一輪(Codex 不見、金鑰不見、形狀不對)可能根本沒存到檔;只重送句子的話檔就無聲不見,純附件那句更是無從重送
