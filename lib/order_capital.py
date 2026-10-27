@@ -141,6 +141,24 @@ class _Events:
         self.stock_accounts = []
         self.seen = set()   # (KeyNo idx45, type idx2, exchange seq idx30)
         self.fills = {}     # seq_no -> [fill dicts]
+        self.reply_code = None       # SKReplyLib OnConnect nErrorCode; None = no callback (yet)
+        self.reply_complete = False  # SKReplyLib OnComplete seen
+
+    # SKReplyLib link state (_ISKReplyLibEvents dispid 1/2/3, read from the SKCOM
+    # typelib); _ISKOrderLibEvents has no event of these names, so the shared sink
+    # only ever gets them from the reply lib. Logged only: whether a missing fill
+    # report lines up with a link that was not up yet is what the next live run measures.
+    def OnConnect(self, bstrUserID, nErrorCode):
+        self.reply_code = nErrorCode
+        logging.info(f"capital reply OnConnect code={nErrorCode}")
+
+    def OnDisconnect(self, bstrUserID, nErrorCode):
+        self.reply_code, self.reply_complete = None, False
+        logging.warning(f"capital reply OnDisconnect code={nErrorCode}")
+
+    def OnComplete(self, bstrUserID):
+        self.reply_complete = True
+        logging.info("capital reply OnComplete")
 
     def OnReplyMessage(self, bstrUserID, bstrMessages):
         return -1  # MUST return -1, registered BEFORE login (else code 2017)
@@ -218,6 +236,9 @@ def _get_session(env):
 # anything, stops included, until it restarts — more attempts during an outage only bring that
 # closer, to save at most 2 min.
 RELOGIN_BACKOFF_S, RELOGIN_BACKOFF_MAX_S = 30, 120
+# login waits this long for the reply link (OnComplete) before sending anyway;
+# flatten logs in too, so the user's close-all pays it once
+REPLY_READY_S = 8
 _relogin = {"n": 0, "until": 0.0, "loaded": False}
 # The backoff outlives the process on the desktop: after 9997 the reconciler exits for a fresh one
 # (restart_needed), and that one must not log in again the moment it starts. Same __file__-derived
@@ -354,6 +375,19 @@ def _new_session(env):
     # in _Events). 0 = success.
     if (rc := reply.SKReplyLib_ConnectByID(login_id)) != 0:
         raise CapitalError(f"SKReplyLib_ConnectByID code={rc}")
+    # rc 0 = the request went out, not that the link is up. Wait a little for
+    # OnComplete, then send anyway: nothing has shown yet that it always fires,
+    # and an order whose report never comes is parked by the reconciler.
+    t0 = time.time()
+    if _pump_until(lambda: events.reply_complete, REPLY_READY_S):
+        logging.info(f"capital reply ready in {time.time() - t0:.1f}s (code={events.reply_code})")
+    else:
+        try:
+            linked = reply.SKReplyLib_IsConnectedByID(login_id)
+        except Exception as e:
+            linked = f"{type(e).__name__}"
+        logging.warning(f"capital reply not complete after {REPLY_READY_S}s (code={events.reply_code}, "
+                        f"IsConnectedByID={linked}) — sending anyway")
 
     s = _Session()
     s.center, s.reply, s.order, s.events = center, reply, order, events
@@ -556,6 +590,10 @@ def place_futures_market_order(env, symbol, action, lots, intent, confirm_timeou
         r = _finish(sess, seq_no, symbol, confirm_timeout, fields)
         if r["status"] != "filled" or r["fill_qty"] < lots:
             r = _late_rows(sess, r, lots, fields)
+        if r["status"] == "sent":
+            ev = sess.events
+            logging.warning(f"capital {seq_no}: no fill report — reply link code="
+                            f"{getattr(ev, 'reply_code', None)} complete={getattr(ev, 'reply_complete', None)}")
         return r
     finally:
         capital_vault.mark_order_sent()
