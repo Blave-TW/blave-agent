@@ -117,10 +117,22 @@ check(not hasattr(reconciler, "_capital_mark_order_sent") and callable(oc.capita
       "the send mark lives in lib.capital_vault, the reconciler has no copy to stub")
 place = oc.place_futures_market_order
 os.makedirs("manager", exist_ok=True)
+import json  # noqa: E402
+import time as _time  # noqa: E402  (oc.time is the virtual clock)
+from lib import account_capital  # noqa: E402
+account_capital._SNAPSHOT = os.path.abspath("state/capital_account.json")
+oc.capital_vault.LAST_ORDER_PATH = os.path.abspath("state/capital_last_order_at")
+oc.capital_vault._last_order_mem = 0.0
+if os.path.exists(oc.capital_vault.LAST_ORDER_PATH):
+    os.remove(oc.capital_vault.LAST_ORDER_PATH)
+json.dump({"ok": True, "positions": [], "read_at": _time.time(), "query_started_at": _time.time()},
+          open(account_capital._SNAPSHOT, "w"))
 for res, want in (({"status": "sent", "fill_qty": 0.0, "seq_no": "0000000000009", "symbol": "TM0000"}, "沒有成交回報"),
                   ({"status": "filled", "fill_qty": 5.0, "seq_no": "1", "symbol": "TM2610"}, "5/8"),
                   ({"status": "filled", "fill_qty": 8.0, "seq_no": "1", "symbol": "TM2610"}, None)):
     rec.clear()
+    if os.path.exists(reconciler.CAPITAL_PENDING_PATH):
+        os.remove(reconciler.CAPITAL_PENDING_PATH)  # the unfilled lots park (check_capital_unconfirmed_fill)
     oc.place_futures_market_order = lambda env, sym, action, lots, intent, _r=res: _r
     try:
         leg = reconciler._capital_place_order("TMF", 8, {"type": "futures_contracts"})

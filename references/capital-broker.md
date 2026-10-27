@@ -702,6 +702,15 @@ still go out on the near-month alias (a far-month close during a roll can open t
 known, accepted). 群益 gives no contract list here, so a book month past its settlement time
 (third Wednesday 13:30) counts as cash-settled once the account has no row of it on two reads ≥5 s
 apart; a row still held past that time is a postponed settlement and stays the bot's.
+
+**An order with no fill report is parked, not forgotten** (`manager/reconciler.py`
+`_capital_park_unfilled` / `_capital_claim_pending`). `status='sent'` (or a short fill) carries only
+the alias, so the book gets 0 and the lot would later read as a month the book does not hold. The
+unfilled lots are parked in `state/capital_pending_sent.json` with the root's per-contract nets
+before the send. The first caught-up snapshot of a reconcile round claims them: exactly one contract
+moved by exactly those lots → booked in that contract (`late_fill_adopted`); nothing moved → dropped
+(`unfilled_order_cleared`); anything else → three reads, then order_errors + HALT. While a root is
+parked, every order for that root waits (closes too: `sNewClose=2` can open the other side).
 **Unverified:** whether `GetOpenInterest` keeps a settled month's row after cash settlement (統一
 does; if 群益 does too, the book keeps that month as held and the strategy does not re-enter —
 check on the first real settlement day, 2026-10-21).
