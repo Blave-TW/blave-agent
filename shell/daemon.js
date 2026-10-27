@@ -133,9 +133,11 @@ function argsOk(cmd, a, trusted) {
      版號同 main.js versionN。有金額的策略由機器端的 restore() 在動檔前拒絕,這一層只擋形狀 */
   if (cmd === "version_restore") return keys.length === 2 && typeof a.name === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(a.name)
     && Number.isInteger(a.n) && a.n > 0 && a.n <= 1000000;
-  // 更新績效(renderer/perf.js):剛好 names,1–50 支、不重複,名字規則同 version_restore(= runtime _stats_refresh_args)
-  if (cmd === "stats_refresh") return keys.length === 1 && Array.isArray(a.names) && a.names.length >= 1 && a.names.length <= 50
-    && a.names.every((n) => typeof n === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(n)) && new Set(a.names).size === a.names.length;
+  // 更新績效(renderer/perf.js):names,1–50 支、不重複,名字規則同 version_restore;成交測試那顆多帶 exec_test,只能是 true、只配一支
+  // (= runtime _stats_refresh_args、api _stats_refresh_args_error)
+  if (cmd === "stats_refresh") return keys.every((k) => k === "names" || k === "exec_test") && Array.isArray(a.names) && a.names.length >= 1 && a.names.length <= 50
+    && a.names.every((n) => typeof n === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(n)) && new Set(a.names).size === a.names.length
+    && (a.exec_test === undefined || (a.exec_test === true && a.names.length === 1)) && keys.indexOf("names") >= 0;
   // 密文只驗形狀(base64、長度);內容由 daemon 解開後再驗
   if (cmd === "president_local") {
     if (PRESIDENT_OPS.indexOf(a.op) < 0) return false;

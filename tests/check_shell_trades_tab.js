@@ -18,9 +18,9 @@ if (!body) { console.log("FAIL  app.js 找不到 rpShowTab"); process.exit(1); }
 
 function run(stats, tab) {
   const el = () => ({ hidden: false, disabled: false, attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } });
-  const tabs = ["bt", "tr", "rob", "wf", "code"].map((k) => Object.assign(el(), { dataset: { tab: k } }));
+  const tabs = ["bt", "tr", "rob", "wf", "xt", "code"].map((k) => Object.assign(el(), { dataset: { tab: k } }));
   const els = { "rp-wait": el(), "rp-tabs": Object.assign(el(), { querySelectorAll: () => tabs }) };
-  ["bt", "tr", "rob", "wf", "code"].forEach((k) => { els["rp-" + k] = el(); });
+  ["bt", "tr", "rob", "wf", "xt", "code"].forEach((k) => { els["rp-" + k] = el(); });
   const drawn = [], B = { data: stats === undefined ? null : { stats }, drawn: {}, tab: null };
   const ctx = { $: (id) => els[id], rpBag: () => B, rpNobtPaint: () => {}, rpChartSource: () => null, rpRobOpts: () => ({}), rpWfData: () => ({}), rpWfOpts: () => ({}),
     window: { BlaveReport: { renderBacktest: () => drawn.push("bt"), renderTrades: () => drawn.push("tr") } } };

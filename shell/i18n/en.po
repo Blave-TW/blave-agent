@@ -6299,7 +6299,7 @@ msgid "ver.rerunDoneSr"
 msgstr "The backtest for {v} has rerun on the latest data."
 
 msgid "ver.frozenRerun"
-msgstr "The Trades tab fills in once the backtest reruns; run the parameter scan and out-of-sample validation again."
+msgstr "The Trades tab fills in once the backtest reruns. Run the parameter scan, out-of-sample validation and execution test again."
 
 msgid "ver.frozenRerunFailed"
 msgstr "The greyed-out tabs have no data until the backtest reruns."
@@ -9024,3 +9024,156 @@ msgstr "Bitget positions without a stop-loss"
 # 事件列 P3 的註解:Blave 自己的下單紀錄讀不到,無法確認換帳戶後止損還在不在
 msgid "tr.ov.evBitgetStopsUnknown"
 msgstr "Stops couldn’t be confirmed: Blave’s order record is unreadable. Check your stops on Bitget."
+
+# 報告頁「成交測試」分頁(renderer/report-xt.js;spec lag-test-tab-2026-10-26):字與 web workspace_xt_* 逐字同一份
+# (web 的 %% 是 Jinja 的轉義,畫面上是 %;tests/check_web_desktop_parity.js 比對前還原)
+msgid "rp.tab.xt"
+msgstr "Execution Test"
+
+msgid "xt.verdict"
+msgstr "{lag}. {cost}."
+
+msgid "xt.lagFlat"
+msgstr "Up to 10 bars late, Sharpe stays within {lo}–{hi}"
+
+msgid "xt.lagOne"
+msgstr "One bar late, Sharpe {m1}"
+
+msgid "xt.lagOneFive"
+msgstr "One bar late, Sharpe {m1}, five bars late {m5}"
+
+msgid "xt.lagMixed"
+msgstr "Up to 5 bars late, Sharpe stays within {lo}–{hi}, 10 bars late {v10}"
+
+msgid "xt.lagLow"
+msgstr "Sharpe is {s0} now, {s1} one bar late, {s10} 10 bars late"
+
+msgid "xt.up"
+msgstr "rises {p}"
+
+msgid "xt.down"
+msgstr "falls {p}"
+
+msgid "xt.costDown"
+msgstr "With {x} more cost per side, Sharpe falls from {s0} to {s1}"
+
+msgid "xt.costTo"
+msgstr "With {x} more cost per side, Sharpe goes from {s0} to {s1}"
+
+msgid "xt.few"
+msgstr "Too few trades (position changed {n} times in the backtest) for delay or cost to show anything."
+
+msgid "xt.lagH"
+msgstr "Late Fills"
+
+msgid "xt.lagSub"
+msgstr "1 bar = {one}, 10 bars late = {ten}"
+
+msgid "xt.unit.m"
+msgstr "{n} min"
+
+msgid "xt.unit.h"
+msgstr "{n} hr"
+
+msgid "xt.unit.d"
+msgstr "{n} day(s)"
+
+msgid "xt.unit.td"
+msgstr "{n} trading day(s)"
+
+msgid "xt.unit.w"
+msgstr "{n} wk"
+
+msgid "xt.lagLbl"
+msgstr "{metric} · Late Fills"
+
+msgid "xt.colLag"
+msgstr "Bars late"
+
+msgid "xt.cur"
+msgstr "Current"
+
+msgid "xt.m.sharpe"
+msgstr "Sharpe"
+
+msgid "xt.m.ann"
+msgstr "Annualized"
+
+msgid "xt.m.mdd"
+msgstr "Max Drawdown"
+
+msgid "xt.closeAte"
+msgstr "Filled at the signal bar's close: Sharpe {a} (now {b}). The opening gap takes {c}."
+
+msgid "xt.closeGain"
+msgstr "Filled at the signal bar's close: Sharpe {a} (now {b}). The opening gap adds {c}."
+
+msgid "xt.lagHow"
+msgstr "Each point fills the whole position k bars late; the dashed line is current. Click a column header to chart it."
+
+msgid "xt.costH"
+msgstr "Higher Costs"
+
+msgid "xt.costSub"
+msgstr "Now {fee} per side · {n}× turnover a year"
+
+msgid "xt.costLbl"
+msgstr "{metric} · Extra cost per side (%)"
+
+msgid "xt.colCost"
+msgstr "Cost per side"
+
+msgid "xt.free"
+msgstr "No trading cost"
+
+msgid "xt.freeAx"
+msgstr "None"
+
+msgid "xt.perSide"
+msgstr "{fee} per side"
+
+msgid "xt.beK"
+msgstr "Trading cost where Sharpe hits zero"
+
+msgid "xt.beLine"
+msgstr "Sharpe zero: {fee} per side"
+
+msgid "xt.beOut"
+msgstr "Sharpe hits zero at {fee} per side, off this chart"
+
+msgid "xt.clip"
+msgstr "Square points are below {v}; the table has the actual values."
+
+msgid "xt.costHow"
+msgstr "Each point adds X% cost per side. Trading cost covers fees, tax and slippage."
+
+msgid "xt.fogOld"
+msgstr "Older versions didn't save this tab's numbers."
+
+msgid "xt.behind"
+msgstr "Update your server first to run the execution test."
+
+msgid "xt.updFail"
+msgstr "Test failed."
+
+# 〔開始測試〕／〔重新測試〕(spec lag-test-tab §3.6;按了才算,同 web workspace_xt_btn_* 等)
+msgid "xt.btnRun"
+msgstr "Start Test"
+
+msgid "xt.btnRerun"
+msgstr "Rerun Test"
+
+msgid "xt.btnBusy"
+msgstr "Testing"
+
+msgid "xt.btnTip"
+msgstr "Reruns the backtest on the latest data. Performance updates too."
+
+msgid "xt.verdictStale"
+msgstr "Performance was updated. Rerun the test to update this."
+
+msgid "xt.busyRefresh"
+msgstr "Performance is updating. Press again when it finishes."
+
+msgid "xt.busyTurn"
+msgstr "The agent is replying and may still be editing strategies. Test after it finishes."

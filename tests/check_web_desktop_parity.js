@@ -1,4 +1,4 @@
-// 電腦版與網頁兩個表面要同一份的常數(稽核 audit-0.1.13-web C3):階段表 PHASE_OF / PHASE_NONE、設定 modal 的分類名與順序(方案 B)、
+// 電腦版與網頁兩個表面要同一份的常數(稽核 audit-0.1.13-web C3;成交測試的純邏輯與字串見檔尾):階段表 PHASE_OF / PHASE_NONE、設定 modal 的分類名與順序(方案 B)、
 // 回測 Type C 的買進持有基準字串、回覆通知的摘錄測資／標記 regex／前綴字串,以及讀帳失敗時的帳戶幣別對照表(十個帳戶,統一期貨 president 與 Bitget 在網頁是 hidden 條目、仍要帶 ccy)。一邊改了、另一邊沒跟就紅。
 // (倍數提醒門檻 LEV_T* 已隨電腦版安全檢查拿掉,Wei 10-13;不再比對)
 //   電腦版:shell/renderer/trade.js 的 CX_VENUES[].ccy + TR_VENUE_CCY_OTHER
@@ -198,4 +198,44 @@ for (const lang of ["zh", "en"]) {
   const dc = catsOf(html, "set-cats"), wc = catsOf(web, "set_cats");
   let i = 0; for (const c of dc) if (c === wc[i]) i++;
   ok("web 設定分類(" + wc.join(",") + ")是電腦版(" + dc.join(",") + ")的子序列", dc.length === 7 && wc.length > 0 && i === wc.length); }
+// 成交測試分頁(spec lag-test-tab-2026-10-26 §4、§6):挑數字的純邏輯(門檻常數 XT_TH、k 與成本檔位、判讀選句、y 軸範圍、歸零位置)兩邊逐字同一份——
+// 切兩邊「成交測試純邏輯(」那一行到「成交測試純邏輯 end」之間,去掉行首縮排比;分頁名、判讀模板、交易太少句、成本段標題列等全部 xt 字串 zh / en 逐字一致
+// (web 的 %% 是 Jinja 轉義,畫面上是 %,比之前還原);分頁位置兩邊都是 樣本外驗證 → 成交測試 → 程式碼
+{ const xtSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "report-xt.js"), "utf8");
+  const pure = (src) => { const a = src.search(/^[ \t]*\/\/ ---- 成交測試純邏輯\(/m), b = src.search(/^[ \t]*\/\/ ---- 成交測試純邏輯 end ----/m);
+    if (a < 0 || b < a) return null; const body = src.slice(src.indexOf("\n", a) + 1, b); return body.split("\n").map((l) => l.trim()).filter(Boolean).join("\n"); };
+  const dp = pure(xtSrc), wpu = pure(web);
+  ok("成交測試純邏輯兩邊逐字同一份(門檻、檔位、選句、y 軸、歸零位置)", !!dp && dp.length > 2000 && dp === wpu, dp && wpu ? "第一個不同的行:" + (dp.split("\n").find((l, i) => l !== wpu.split("\n")[i]) || "(長度不同)") : "找不到標記行");
+  const XT_PAIRS = { "rp.tab.xt": "workspace_tab_xt", "xt.verdict": "workspace_xt_verdict", "xt.lagFlat": "workspace_xt_lag_flat", "xt.lagOne": "workspace_xt_lag_one",
+    "xt.lagOneFive": "workspace_xt_lag_one_five", "xt.lagMixed": "workspace_xt_lag_mixed", "xt.lagLow": "workspace_xt_lag_low", "xt.up": "workspace_xt_up", "xt.down": "workspace_xt_down",
+    "xt.costDown": "workspace_xt_cost_down", "xt.costTo": "workspace_xt_cost_to", "xt.few": "workspace_xt_few", "xt.lagH": "workspace_xt_lag_h", "xt.lagSub": "workspace_xt_lag_sub",
+    "xt.unit.m": "workspace_xt_unit_min", "xt.unit.h": "workspace_xt_unit_hour", "xt.unit.d": "workspace_xt_unit_day", "xt.unit.td": "workspace_xt_unit_tday", "xt.unit.w": "workspace_xt_unit_week",
+    "xt.lagLbl": "workspace_xt_lag_lbl", "xt.colLag": "workspace_xt_col_lag", "xt.cur": "workspace_xt_cur", "xt.m.sharpe": "workspace_xt_m_sharpe", "xt.m.ann": "workspace_xt_m_ann",
+    "xt.m.mdd": "workspace_xt_m_mdd", "xt.closeAte": "workspace_xt_close_ate", "xt.closeGain": "workspace_xt_close_gain", "xt.lagHow": "workspace_xt_lag_how", "xt.costH": "workspace_xt_cost_h",
+    "xt.costSub": "workspace_xt_cost_sub", "xt.costLbl": "workspace_xt_cost_lbl", "xt.colCost": "workspace_xt_col_cost", "xt.free": "workspace_xt_free", "xt.freeAx": "workspace_xt_free_ax",
+    "xt.perSide": "workspace_xt_per_side", "xt.beK": "workspace_xt_be_k", "xt.beLine": "workspace_xt_be_line", "xt.beOut": "workspace_xt_be_out", "xt.clip": "workspace_xt_clip",
+    "xt.costHow": "workspace_xt_cost_how", "xt.fogOld": "workspace_xt_fog_old", "xt.behind": "workspace_xt_behind", "xt.updFail": "workspace_xt_upd_fail",
+    // 按了才算(spec §3.6,10-27):鈕、過時句、BUSY 那行、回合中那句;還原後重跑中那句是掃描／驗證／成交測試共用的
+    "xt.btnRun": "workspace_xt_btn_run", "xt.btnRerun": "workspace_xt_btn_rerun", "xt.btnBusy": "workspace_xt_btn_busy", "xt.btnTip": "workspace_xt_btn_tip",
+    "xt.verdictStale": "workspace_xt_verdict_stale", "xt.busyRefresh": "workspace_xt_busy_refresh", "xt.busyTurn": "workspace_xt_busy_turn",
+    "ver.frozenRerun": "workspace_ver_frozen_rerun" };
+  for (const lang of ["zh", "en"]) {
+    const d = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), w = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+    const bad = Object.entries(XT_PAIRS).filter(([dk, wk]) => typeof d[dk] !== "string" || typeof w[wk] !== "string" || d[dk] !== w[wk].replace(/%%/g, "%"));
+    ok("成交測試的字兩邊逐字一致(" + lang + "," + Object.keys(XT_PAIRS).length + " 句)", bad.length === 0, bad.map(([dk, wk]) => dk + "「" + d[dk] + "」 vs " + wk + "「" + w[wk] + "」").join(";"));
+  }
+  const html = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8");
+  const order = (src, re) => [...src.matchAll(re)].map((m) => m[1]).filter((k) => k === "wf" || k === "xt" || k === "code").join(",");
+  // 畫面狀態(§3.5 兩層):xtPageOf(整頁)／xtCellOf(鈕那一格)在上面的純邏輯段裡逐字比過;這裡另把兩邊各自切出來的那段跑同一組情境,結果要一樣
+  const stateFns = (src) => { try { const p = pure(src); return p ? new Function(p + "\nreturn { page: xtPageOf, cell: xtCellOf };")() : null; } catch (e) { return null; } };
+  const dS = stateFns(xtSrc), wS = stateFns(web);
+  const X0 = { lag: { "0": [1.2, 10, -10] } };
+  const CASES = [["page", { verActive: true, x: X0 }, 1], ["page", { restoring: true }, 2], ["page", { x: null }, 4], ["page", { x: X0, sharpe: 1.2 }, 6], ["page", { x: X0, sharpe: 1.21 }, 7],
+    ["page", { cfg: false, perf: "running", mine: "run", x: X0, sharpe: 1.2 }, 6],
+    ["cell", { cfg: false, perf: "running" }, 3], ["cell", { cfg: null }, 3], ["cell", { cfg: true, perf: "running", mine: "run" }, 5], ["cell", { cfg: true, perf: "running", mine: "busy", turn: true }, 5],
+    ["cell", { cfg: true, perf: "failed", mine: "fail", turn: true }, 8], ["cell", { cfg: true, perf: "failed", mine: "busy" }, 0], ["cell", { cfg: true, perf: "failed", mine: null }, 0],
+    ["cell", { cfg: true, turn: true }, 9], ["cell", { cfg: true }, 0]];
+  const badS = CASES.filter(([k, i, want]) => !dS || !wS || dS[k](i) !== want || wS[k](i) !== want).map(([k, i, want]) => k + JSON.stringify(i) + "→" + want + " 電腦版 " + (dS && dS[k](i)) + " web " + (wS && wS[k](i)));
+  ok("成交測試畫面狀態兩邊同一組情境同一個答案(" + CASES.length + " 組)", badS.length === 0, badS.join(";"));
+  ok("成交測試分頁位置兩邊同一處(樣本外驗證 → 成交測試 → 程式碼)", order(html, /class="rp-tab"[^>]*data-tab="(\w+)"/g) === "wf,xt,code" && order(web, /class="main-tab"[\s\S]*?data-tab="(\w+)"/g) === "wf,xt,code"); }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

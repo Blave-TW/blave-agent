@@ -313,25 +313,32 @@ function verBack() {
   rpShowTab(rpTab(B));
 }
 /* app.js rpShowTab 的第一行:時光機開著就由這裡畫(回 true),否則回 false 照原本的畫。
-   進出場紀錄 / 參數掃描 / 樣本外驗證真的 disabled,原因講在分頁列正下方那一行(#rp-nobt,「沒有回測」同一個槽) */
+   進出場紀錄 / 參數掃描 / 樣本外驗證真的 disabled,原因講在分頁列正下方那一行(#rp-nobt,「沒有回測」同一個槽)。
+   成交測試照 spec lag-test-tab §3.5 #1–#2:看舊版本點得開、只有一句 vpanel-note(版本不存 exec_test,重跑也補不回,不給鈕);
+   還原後重跑中跟其他三個一起 disabled、同一句 ver.frozenRerun(重跑完這頁是空狀態,要再按〔開始測試〕) */
 /* 重跑中 / 沒完成(pending,看的是目前版)也由這裡畫:stats.json 已移開、或還是別的碼的結果,回測分頁畫 vN 存的 blob(spec §3、§10 最後一條) */
 function verShowTab(tab) {
   const B = rpBag(), side = verSideOf(B), S = VS[side], nobt = $("rp-nobt");
   const pd = S.data && S.open === null && S.name === B.name && VER ? VER.pending(S.data) : null;
   if (!S.data || (S.open === null && !pd) || S.name !== B.name) { nobt.textContent = t("rp.noBt"); return false; }
   const n = S.open !== null ? S.open : S.data.current;
-  const cur = tab === "code" ? "code" : "bt";
+  const cur = tab === "code" ? "code" : tab === "xt" && S.open !== null ? "xt" : "bt";
   B.tab = cur; B.drawn = {};   // 面板被 blob 蓋過:回到一般畫法時要重畫
   $("rp-tabs").hidden = false;
   $("rp-tabs").querySelectorAll(".rp-tab").forEach((b) => {
     b.setAttribute("aria-selected", b.dataset.tab === cur ? "true" : "false");
-    b.disabled = b.dataset.tab === "tr" || b.dataset.tab === "rob" || b.dataset.tab === "wf";
+    b.disabled = b.dataset.tab === "tr" || b.dataset.tab === "rob" || b.dataset.tab === "wf" || (b.dataset.tab === "xt" && S.open === null);
   });
   if (typeof rpTabRevealSelected === "function") rpTabRevealSelected();
   const why = !pd ? "ver.frozenTab" : pd.status === "failed" ? "ver.frozenRerunFailed" : "ver.frozenRerun";
   nobt.classList.remove("is-miss"); nobt.dataset.i18n = why; nobt.textContent = t(why); nobt.hidden = false;   // 時光機開著:講的是舊版,缺金鑰那態讓位
   const w = $("rp-wait");
-  for (const k of ["bt", "tr", "rob", "wf", "code"]) $("rp-" + k).hidden = true;
+  for (const k of ["bt", "tr", "rob", "wf", "xt", "code"]) $("rp-" + k).hidden = true;
+  if (cur === "xt") {
+    w.hidden = true; w.textContent = ""; $("rp-xt").hidden = false;
+    if (window.BlaveReport && window.BlaveReport.renderXt) window.BlaveReport.renderXt($("rp-xt"), null, { t, old: true });
+    return true;
+  }
   if (!S.blob) {
     if (!S.state) { verLoad(side, n); if (S.blob) return true; }   // 重跑中那一版的 blob 多半已在快取(時光機剛看過),零等待
     verStatePaint(S); return true;

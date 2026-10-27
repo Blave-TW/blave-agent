@@ -87,6 +87,10 @@ function interpret(res) {
     latest_config_version: typeof b.latest_config_version === "string" ? b.latest_config_version : null,
     // 主機的 lib 有沒有 walk_forward(api 同 web 的三態):false = 確定太舊,樣本外驗證擋下送出;null = 不知道(舊 api / 沒回報),不擋
     config_supports_wf: typeof b.config_supports_wf === "boolean" ? b.config_supports_wf : null,
+    // 主機的 lib 會不會算成交測試(exec_test):成交測試分頁只認 true,其餘(false、api 還沒回這欄的 null)講先更新主機程式
+    config_supports_exec_test: typeof b.config_supports_exec_test === "boolean" ? b.config_supports_exec_test : null,
+    // 主機的 runtime 收不收 stats_refresh 的 exec_test:true 才帶參數送(成交測試鈕);其餘送不帶參數的,舊 runtime／舊 lib 照算
+    can_exec_test: b.can_exec_test === true,
     data_sources: Array.isArray(b.data_sources) ? b.data_sources.filter((n) => typeof n === "string") : [],
     // 側欄偏好(web 工作頁設的順序與旗標,agent_user_prefs 同一份):api 還沒回這兩個 key 時 = 空,行為零變化。寫回走 setStratPrefs
     strat_order: prefOrder(b.strat_order),
@@ -359,7 +363,7 @@ function createCloudHost(opts) {
   const summaryKey = (s) => [s.code, s.transient, s.machine && s.machine.state, s.alive, s.stale,
     s.report && s.report.halt && s.report.halt.halted, s.report && s.report.reconciler && s.report.reconciler.alive, (s.strategies || []).length,
     // 版本也要推:看這台電腦時畫面 60 秒才問一次,「關於」那一行要跟上主機回報的版本
-    s.config_version, s.latest_config_version, s.config_supports_wf,
+    s.config_version, s.latest_config_version, s.config_supports_wf, s.config_supports_exec_test, s.can_exec_test,
     // 側欄偏好改了(在網頁拖過 / 掛了旗標)也要推,不然要等別的欄位變
     JSON.stringify(s.strat_order || null), JSON.stringify(s.strat_flags || null),
     // 顯示幣別換了(這裡或網頁設定改了偏好)要推:合計、投入資金幣別、總權益跟著換

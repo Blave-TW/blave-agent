@@ -8,13 +8,17 @@
    失敗(meta 列下一行「沒更新成功,數字是舊的」,原因進 title,鈕就是重試)。
    資料:B.data.perf = { at, refresh? }(主行程 stratPerf / 雲端 strategies report 的 perf):at = stats.json mtime(秒),不是 Generated At;
    refresh = { status: running|failed, at, err? },err 是版本重跑那四個分類碼、字串沿用 ver.rerunWhy.*。
-   按下當下就畫更新中(疊層 PF,不等 ack);ack 說排進佇列才記埋點 perf_update。之後輪詢報告(本機 2 秒、雲端 5 秒):refresh 消失且 at 前進 = 完成,
+   按下當下就畫更新中(疊層 PF,不等 ack);ack 說排進佇列才記埋點 perf_update(成交測試那顆記 perf_update_xt)。之後輪詢報告(本機 2 秒、雲端 5 秒):refresh 消失且 at 前進 = 完成,
    數字原地換(回測分頁重畫)、讀屏另唸一句;refresh failed = 失敗。ack 後 2 分鐘報告都沒跟上就拿掉疊層回閒置(不知道有沒有跑,不假稱失敗)。
-   用到 app.js 的 $ / t / RP / RPC / RPC_CACHE / rpBag / rpPaintHead / rpShowTab / rpTab / running / trackFeature / srSay、
+   成交測試分頁(report-xt.js;spec lag-test-tab §3.5)的〔開始測試〕／〔重新測試〕也是這一個動作、這一份疊層(perfXtSlot),只多帶 exec_test:true
+   (本機永遠帶;雲端看 /cloud/state 的 can_exec_test,舊 runtime 不帶也照算)。「這頁按的」另記在 PFX:測試中 vs 更新中、失敗行只出在這頁按的那次、
+   BUSY 那一行;perfPaint 換態時 perfXtSync 就地換那一格,只有「這頁按的那次開始／結束跑」才整片重畫(結果收掉／回來)。
+   用到 app.js 的 $ / t / RP / RPC / RPC_CACHE / rpBag / rpPaintHead / rpShowTab / rpTab / rpWfCloud / running / trackFeature / srSay、
    trade.js 的 TR_BAGS、versions.js 的 verPicked / verPendingOf / VS / RERUN_WHY、export.js 的 xpIsTypeB、report-sharelist.js 的 shlFmtTime——都在呼叫時才取。 */
 const PF = { local: new Map(), cloud: new Map() };     // side → name → { at0, ref0, ackAt, failed }:按下之後、報告跟上之前的疊層
 const PFL = { local: null, cloud: null };              // 上一次畫的 { name, kind, at }:更新中 → 閒置且時間前進 = 完成,唸一句
 const PFP = { local: null, cloud: null };              // 每邊一支輪詢
+const PFX = { local: new Map(), cloud: new Map() };    // side → name → { busy, done }:成交測試那顆按的(busy = ack BUSY、那次沒排進去;done = 那次已失敗)
 const PF_POLL_MS = { local: 2000, cloud: 5000 }, PF_GRACE_MS = 120000;
 // 機器端一次只跑一支:鈕排的佇列會等前一支(live 刷新每支上限 600 秒、非上線的回測 15 分、報告前那一批整批最多 600 秒),再加餘裕
 const PF_POLL_MAX_MS = (900 + 900 + 120) * 1000;
@@ -75,6 +79,7 @@ function perfState(side, B, now) {
 function perfPaint(B) {
   const side = pfSide(B), host = $("rp-bt"), meta = host ? host.querySelector(".bt-meta") : null;
   if (host) host.querySelectorAll(".upd, .upd-fail").forEach((x) => x.remove());
+  perfXtSync(B);
   if (!meta || !perfShown(side, B)) { PFL[side] = null; perfPollEnsure(side, B); return; }
   const now = Date.now(), st = perfState(side, B, now), last = PFL[side];
   // 完成:上一次畫的是更新中、這次不是而且時間前進 → 數字已原地換(renderBacktest 重畫過),視覺不出字、讀屏唸一句
@@ -95,41 +100,141 @@ function perfPaint(B) {
     upd.appendChild(btn);
   }
   meta.appendChild(upd);
-  if (st.kind === "failed") {
-    const calm = side === "local" && PF_NO_DATA[st.why] && pfNowWhy() === st.why ? PF_NO_DATA[st.why] : null;
-    const line = pfEl("p", calm ? "upd-fail is-calm" : "upd-fail"); line.setAttribute("role", "status");
-    if (!calm) line.title = t(PF_WHY[st.err] || "ver.rerunWhy." + (RERUN_WHY[st.err] || "exit"));   // 四個分類碼沿用版本重跑的字串,不另造一組
-    const m = pfEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
-    line.append(m, pfEl("span", "", t(calm || "perf.fail")));
-    meta.parentNode.insertBefore(line, meta.nextSibling);
-  }
+  if (st.kind === "failed") meta.parentNode.insertBefore(perfFailLine(side, st, "perf.fail"), meta.nextSibling);
   perfBusy();
   perfPollEnsure(side, B);
 }
+/* 失敗那一行:回測數據分頁 meta 下、成交測試霧卡的鈕下共用。failKey = 看得到的那句(霧卡上沒有數字,不講「數字是舊的」) */
+function perfFailLine(side, st, failKey) {
+  const calm = side === "local" && PF_NO_DATA[st.why] && pfNowWhy() === st.why ? PF_NO_DATA[st.why] : null;
+  const line = pfEl("p", calm ? "upd-fail is-calm" : "upd-fail"); line.setAttribute("role", "status");
+  if (!calm) line.title = t(PF_WHY[st.err] || "ver.rerunWhy." + (RERUN_WHY[st.err] || "exit"));   // 四個分類碼沿用版本重跑的字串,不另造一組
+  const m = pfEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
+  line.append(m, pfEl("span", "", t(calm || failKey)));
+  return line;
+}
+/* 成交測試那一格要的狀態(report-xt.js 經 opts.ui 拿;perfShown 假 = null):{ st, perf: idle|running|failed, mine: run|busy|fail|null }(= web xtReq)。
+   run = 這頁按的那次在跑(測試中、整塊收掉);fail = 那次失敗了(失敗行);busy = 那次 ack BUSY(別人的那次在跑,鈕下多一行)。
+   按了卻沒算出來(稽核 v034-xt-ondemand P2-2):這頁按的那次跑完(idle、stats.json 比按下時新),卻沒有 exec_test、或現行那列對不上 Sharpe
+   (主機沒收到 exec_test:can_exec_test 還沒跟上、或算失敗留著舊的)——當成這頁按的失敗,鈕下「沒測成功」,不默默回到空狀態。
+   順手收記號:跑完而且算出來了、BUSY 那次跑完、失敗之後又有一次在跑(報告前的自動更新、回測數據那顆)、或失敗之後別處又更新成功——那都不是這頁按的了 */
+function perfXtInfo(B) {
+  const side = pfSide(B);
+  if (!perfShown(side, B)) return null;
+  const st = perfState(side, B, Date.now()), m = PFX[side].get(B.name);
+  if (m) {
+    if ((m.busy && st.kind !== "running") || (m.done && st.kind === "running")) PFX[side].delete(B.name);
+    else if (st.kind === "failed") { m.done = true; m.empty = false; }
+    else if (st.kind === "idle" && !m.done) {
+      if (st.at > m.at0 && !perfXtFresh(B)) { m.done = true; m.empty = true; m.at1 = st.at; }   // 跑完了,沒算出來
+      else PFX[side].delete(B.name);   // 算出來了;或報告沒跟上就過了寬限(不知道有沒有跑,不假稱失敗)
+    } else if (st.kind === "idle" && !(m.empty && st.at === m.at1)) PFX[side].delete(B.name);
+  }
+  const k = PFX[side].get(B.name);
+  if (k && k.empty) return { st: { kind: "failed", at: st.at, err: "EXIT" }, perf: "failed", mine: "fail" };
+  return { st, perf: st.kind, mine: !k ? null : k.busy ? "busy" : k.done ? "fail" : "run" };
+}
+// stats.json 有這次算出來的 exec_test:清洗得過,而且現行那列等於目前的 Sharpe(同 report-xt.js 的過時判準)
+function perfXtFresh(B) {
+  const X = (window.BlaveReport || {})._xt, bt = B.data && B.data.stats;
+  if (!X || !bt) return false;
+  const x = X.xtSanitize(bt.exec_test);
+  return !!x && !X.xtStale(x, bt["Sharpe Ratio"]);
+}
+/* 〔開始測試〕(kind empty,空狀態那顆)／〔重新測試〕(fresh 描邊、stale 填色,頂列右側)那一格:同〔更新績效〕一個動作、同一份疊層與輪詢,
+   不開對話回合、沒有確認框、不花額度。跑的期間停用 + 圓環:這頁按的「測試中」、別處按的「更新中」;BUSY 那次鈕下多一行「跑完再按一次」;
+   這頁按的那次失敗 = 鈕照出(就是重試)、下一行「沒測成功」、原因在 title */
+function perfXtSlot(B, kind) {
+  const side = pfSide(B), info = perfXtInfo(B);
+  if (!info) return null;
+  const st = info.st, box = pfEl("div", "xt-upd");
+  box.dataset.xtUpd = "1"; box.dataset.xtKind = kind || "empty";
+  box.dataset.xtSig = [box.dataset.xtKind, st.kind, info.mine, st.err || "", st.why || ""].join(":");
+  const btn = pfEl("button", kind === "fresh" ? "btn-out" : "btn-fill"); btn.type = "button"; btn.dataset.perfBtn = "1"; btn.dataset.xtBtn = "1";
+  const tip = t("xt.btnTip"); btn.title = tip; btn.dataset.tip = tip;   // 回合中 perfBusy 會暫時換成原因,所以另存一份
+  if (st.kind === "running") {
+    // 跑的期間鈕停用:焦點交給這一格(role=status、tabindex -1,同 web 的狀態節點),不帶回分頁列
+    btn.disabled = true; box.setAttribute("role", "status"); box.setAttribute("tabindex", "-1");
+    const sp = pfEl("span", "spin16"); sp.setAttribute("aria-hidden", "true");
+    btn.append(sp, pfEl("span", "", t(info.mine === "run" ? "xt.btnBusy" : "perf.busy")));
+  } else btn.textContent = t(box.dataset.xtKind === "empty" ? "xt.btnRun" : "xt.btnRerun");
+  btn.addEventListener("click", () => perfClick(B, btn));
+  box.appendChild(btn);
+  // 鈕下那一行(data-xt-line):空狀態留在這一格裡、鈕下置中;結果頁由 report-xt.js / perfXtSync 搬到頂列後面那一列(#xt-lines,同 web)
+  if (st.kind === "running" && info.mine === "busy") box.appendChild(perfXtNote(t("xt.busyRefresh")));
+  if (st.kind === "failed" && info.mine === "fail") { const f = perfFailLine(side, st, "xt.updFail"); f.dataset.xtLine = "1"; box.appendChild(f); }
+  return box;
+}
+// 鈕下那一行的說明句(BUSY):同失敗行的元件,灰記號(.upd-fail.is-calm)——不是這次跑壞了
+function perfXtNote(text) {
+  const line = pfEl("p", "upd-fail is-calm"); line.setAttribute("role", "status"); line.dataset.xtLine = "1";
+  const m = pfEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
+  line.append(m, pfEl("span", "", text));
+  return line;
+}
+/* 疊層換態時:這頁按的那次開始／結束跑(結果要收掉／回來)→ 整片重畫(焦點由 renderXt 交還同一顆表頭鈕／這一格);
+   否則就地換那一格與頂列後那一列(圖不閃)。焦點只在原本就在舊那一格裡時才交給新的——用戶在表頭或圖上時,
+   晨間自動更新、回測數據那顆按的換態都不搶焦點 */
+function perfXtSync(B) {
+  if (rpBag() !== B || !B.drawn.xt) return;
+  const panel = $("rp-xt"), root = panel.querySelector(".xt"), old = panel.querySelector("[data-xt-upd]");
+  const info = perfXtInfo(B);
+  if (root && root.dataset.xtMineRun && String(!!info && info.perf === "running" && info.mine === "run") !== root.dataset.xtMineRun) {
+    B.drawn.xt = false;
+    if (B.tab === "xt" && !$("rp").hidden) rpShowTab("xt");
+    return;
+  }
+  if (!old) return;
+  const next = perfXtSlot(B, old.dataset.xtKind);
+  if (!next) { old.remove(); return; }
+  if (next.dataset.xtSig === old.dataset.xtSig) return;
+  const had = typeof old.contains === "function" && old.contains(document.activeElement);
+  old.replaceWith(next);
+  const row = old.dataset.xtKind === "empty" ? null : $("xt-lines");
+  if (row) {
+    [...row.querySelectorAll("[data-xt-line]")].forEach((x) => x.remove());
+    const at = $("xt-lines-anchor");
+    [...next.querySelectorAll("[data-xt-line]")].forEach((x) => row.insertBefore(x, at ? at.nextSibling : null));
+  }
+  perfBusy();
+  if (had) { const b = next.querySelector("[data-perf-btn]"); (b && !b.disabled ? b : next).focus(); }
+}
 // 回合進行中:鈕 aria-disabled(同版本還原那兩顆;spec §8),點了在 meta 列下講原因＋查看(busy.js)。app.js 在上鎖 / 解鎖的同一處叫它
 function perfBusy() {
-  const b = $("perf-btn"); if (!b) return;
-  if (typeof running !== "undefined" && running === true) { b.setAttribute("aria-disabled", "true"); b.title = t("busy.perf"); return; }
-  b.removeAttribute("aria-disabled");
-  if (b.dataset.tip) b.title = b.dataset.tip; else b.removeAttribute("title");
+  const xt = $("rp-xt");   // 成交測試那顆(perfXtSlot)同一套,原因句用它自己那句
+  [$("perf-btn")].concat(xt ? [...xt.querySelectorAll("[data-perf-btn]")] : []).forEach((b) => {
+    if (!b) return;
+    const lock = typeof running !== "undefined" && running === true;
+    // 成交測試那顆是 .btn-fill／.btn-out:灰階靠 .is-lock(同參數掃描;aria-disabled 本身在這兩種鈕上不變灰)
+    if (b.dataset.xtBtn) b.className = b.className.replace(/\s*\bis-lock\b/g, "") + (lock ? " is-lock" : "");
+    if (lock) { b.setAttribute("aria-disabled", "true"); b.title = t(b.dataset.xtBtn ? "xt.busyTurn" : "busy.perf"); return; }
+    b.removeAttribute("aria-disabled");
+    if (b.dataset.tip) b.title = b.dataset.tip; else b.removeAttribute("title");
+  });
 }
-/* 按下:當下畫更新中、送 stats_refresh {names:[name]}。ack 排進佇列(started)才記埋點;BUSY(已經在跑)與結果不明都等報告;
+/* 按下:當下畫更新中、送 stats_refresh {names:[name]}(成交測試那顆另帶 exec_test:true:本機永遠帶、雲端 can_exec_test 為 true 才帶)。
+   ack 排進佇列(started)才記埋點;BUSY(已經在跑)與結果不明都等報告;
    PF_WHY 有的 skip 碼(CODE_CHANGED / INDEX_BROKEN / NOT_RUNNABLE / CONFIG_UNREADABLE)= 失敗行寫專屬原因;其餘(拒收、NO_STATS、daemon 不在)= 沒更新成功,鈕就是重試 */
-async function perfClick(B) {
-  const b = $("perf-btn");
-  if (b && b.getAttribute("aria-disabled") === "true") { busyTell(busySlot("perf-why", $("rp-bt").querySelector(".bt-meta") || b), "perf"); return; }   // 回合進行中:觸控看不到 title
+async function perfClick(B, opener) {
+  const b = opener || $("perf-btn");   // opener = 成交測試那顆(原因句講在它下面)
+  // 回合進行中:觸控看不到 title。成交測試結果頁的原因句放頂列後面那一列(#xt-lines 的錨點後,同 web;不擠進頂列推動 meta),空狀態放鈕下
+  const xtAnchor = () => (opener.parentNode && opener.parentNode.dataset && opener.parentNode.dataset.xtKind !== "empty" && $("xt-lines-anchor")) || opener;
+  if (b && b.getAttribute("aria-disabled") === "true") { busyTell(busySlot("perf-why", opener ? xtAnchor() : $("rp-bt").querySelector(".bt-meta") || b), opener ? "xtPerf" : "perf"); return; }
   const side = pfSide(B), name = B.name, p = perfOf(B);
   if (!p || !name) return;
   const o = { at0: p.at, ref0: pfRefKey(p.refresh), ackAt: 0, failed: null };
   PF[side].set(name, o);
+  if (opener) PFX[side].set(name, { busy: false, done: false, at0: p.at }); else PFX[side].delete(name);
   perfPollStop(side);   // 上一輪封頂留下的佔位讓開,這一輪重新輪詢
   if (rpBag() === B && !$("rp").hidden) perfPaint(B);
+  const args = { names: [name] };
+  if (opener && (side === "local" || (typeof rpWfCloud === "function" && rpWfCloud().can_exec_test === true))) args.exec_test = true;
   let r = null;
-  try { r = await TR_BAGS[side].api.tradeSend("stats_refresh", { names: [name] }); } catch (_) { r = null; }
+  try { r = await TR_BAGS[side].api.tradeSend("stats_refresh", args); } catch (_) { r = null; }
   if (PF[side].get(name) !== o) return;   // 又按了一次、或報告已跟上:那一次說了算
   const res = r && r.ok && r.result && typeof r.result === "object" ? r.result : null;
-  if (res && Array.isArray(res.started) && res.started.indexOf(name) >= 0) { trackFeature("perf_update"); o.ackAt = Date.now(); }
-  else if (res && res.skipped && res.skipped[name] === "BUSY") o.ackAt = Date.now();
+  if (res && Array.isArray(res.started) && res.started.indexOf(name) >= 0) { trackFeature(opener ? "perf_update_xt" : "perf_update"); o.ackAt = Date.now(); }
+  else if (res && res.skipped && res.skipped[name] === "BUSY") { o.ackAt = Date.now(); const m = opener && PFX[side].get(name); if (m) m.busy = true; }
   else if (res && res.skipped && PF_WHY[res.skipped[name]]) o.failed = res.skipped[name];
   else if (!r || r.kind === "unknown" || r.error === "TIMEOUT" || r.error === "UNKNOWN_RESULT") o.ackAt = Date.now();
   else o.failed = "EXIT";

@@ -6,6 +6,7 @@
 const BUSY = {
   update:   { key: "busy.update",   fix: "view" },
   perf:     { key: "busy.perf",     fix: "view" },
+  xtPerf:   { key: "xt.busyTurn",   fix: "view" },   // 成交測試的〔開始測試〕／〔重新測試〕:同一條指令、同一把鎖,句子換它自己的
   rerun:    { key: "busy.rerun",    fix: "view" },
   restore:  { key: "busy.restore",  fix: "view" },
   chatDel:  { key: "busy.chatDel",  fix: "stop" },
@@ -16,7 +17,7 @@ const BUSY = {
   sendAway: { key: "turn.busy",     fix: "stop" },   // 不在輸入框旁的送一句話(看不到送出鍵):補〔停止〕
 };
 // 埋點名(spec §4;tests/check_shell_telemetry.js 掃這張表):被擋那一下記哪一把鎖。del 不在 BUSY:刪策略被鎖時不講原因(Wei),只記埋點
-const BUSY_FEATURE = { update: "lock_update", perf: "lock_perf", rerun: "lock_perf", restore: "lock_restore", del: "lock_del", chatDel: "lock_chat_del", switch: "lock_switch", new: "lock_switch", cloudUpd: "lock_send", send: "lock_send", sendAway: "lock_send" };
+const BUSY_FEATURE = { update: "lock_update", perf: "lock_perf", xtPerf: "lock_perf", rerun: "lock_perf", restore: "lock_restore", del: "lock_del", chatDel: "lock_chat_del", switch: "lock_switch", new: "lock_switch", cloudUpd: "lock_send", send: "lock_send", sendAway: "lock_send" };
 // 停止之後等回合真的收掉再做(登出 / 換 AI / 移除自帶金鑰);主行程 STOP_KILL_MS 5 秒沒輸出就砍,這裡給到 20 秒。
 // 逾時不照做:確認框說了「會先停止」,停不下來就在原位講一句、留「停止」再按
 const BUSY_STOP_WAIT_MS = 20000;

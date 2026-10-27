@@ -1,0 +1,196 @@
+/* 報告頁「成交測試」分頁(report-xt.js;雲端工作頁 .xt-* 家族的移植,spec lag-test-tab-2026-10-26、mockup lag-mockup 定稿):
+   單欄三段——結論卡 → 晚幾根成交 → 成本高一點。內容欄上限 760(圖與表同寬、左緣對齊);段與段 48,
+   段內 標題列 12 → 指標名 8 → 圖 12 → 表 8 → 補充 → 說明。比較值全中性墨色,不上漲跌色。
+   卡(.rob-card / .rob-verdict)、小標(.bt-label)、meta 列沿用既有 recipe,這裡只寫新的。 */
+.xt > * {
+  max-width: 760px;
+}
+.xt > .rob-top + .xt-lines + * { margin-top: var(--space-16); }
+/* 頂列後面那一列:鈕下那一行(落後、BUSY、失敗、回合中的原因),沒有句子時零高度 */
+.xt-lines > .upd-fail,
+.xt-lines > .busy-why { margin: var(--space-8) 0 0; }
+.xt-sec {
+  margin-top: var(--space-48);
+}
+.xt-hrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-12);
+  margin-bottom: var(--space-12);
+}
+.xt-h {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.xt-sub {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.xt-sub .mono {
+  color: var(--ink-2);
+}
+.xt-how {
+  margin: var(--space-8) 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  max-width: 72ch;
+}
+.xt-cf,
+.xt-clip {
+  margin: var(--space-8) 0 0;
+}
+.xt-clip[hidden] {
+  display: none;
+}
+/* 圖框同 .bt-frame(內距 16、hairline、radius lg);報告的 .rb-report 自帶 680 上限置中,這裡跟著框走滿寬 */
+.xt-chart {
+  padding: var(--space-16);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--bg-body);
+  overflow: hidden;
+}
+.xt-chart .rb-report {
+  max-width: none;
+  margin: 0;
+}
+.xt-chart .rb-report .rb-chart {
+  margin-top: 0;
+}
+.xt-tbl {
+  margin-top: var(--space-12);
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.xt-tbl th,
+.xt-tbl td {
+  padding: var(--space-4) 0 var(--space-4) var(--space-4);
+  text-align: right;
+  white-space: nowrap;
+}
+.xt-tbl th:first-child,
+.xt-tbl td:first-child {
+  width: 64px;
+  padding-left: 0;
+  text-align: left;
+  color: var(--ink-2);
+}
+.xt-cost th:first-child,
+.xt-cost td:first-child {
+  width: 132px;
+  white-space: normal;
+}
+.xt-tbl thead th {
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--ink-3);
+  vertical-align: bottom;
+  padding-bottom: var(--space-6);
+  line-height: 1;
+}
+.xt-tbl td.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.xt-tbl td.num.is-on {
+  color: var(--ink);
+}
+.xt-tbl td.num.na {
+  color: var(--ink-disabled);
+}
+.xt-rsub {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+/* 表頭選指標:選中欄 = 分頁同一套選中語言(2px 底線 + ink 600);鈕本身 44×44;長欄頭(en Max Drawdown)折兩行,不撐出橫捲 */
+.xt-pick th.pickable {
+  padding: 0 0 0 var(--space-4);
+  white-space: normal;
+  text-align: right;
+}
+.xt-pick .pick {
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  min-width: 44px;
+  height: 44px;
+  margin-left: auto;
+  padding: 0 0 var(--space-6);
+  border: 0;
+  background: none;
+  font: 500 11px/1.2 var(--font-sans);
+  color: var(--ink-3);
+  white-space: normal;
+  text-align: right;
+  cursor: pointer;
+  box-shadow: inset 0 -2px 0 transparent;
+}
+.xt-pick .pick:hover {
+  color: var(--ink);
+}
+.xt-pick th.is-on .pick {
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--ink);
+}
+.xt-kpi {
+  margin-top: var(--space-16);
+}
+.xt-kpi .k {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.xt-kpi .v {
+  margin-top: var(--space-2);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--ink);
+}
+/* 過時句在卡頂(同樣本外驗證 wf.verdictStale),跟判讀句隔一行 */
+.xt-stale + .rob-verdict { margin-top: var(--space-8); }
+/* 〔開始測試〕／〔重新測試〕那一格(perf.js perfXtSlot):鈕＋鈕下一行(BUSY 那句 / 失敗 / 回合中的原因)。
+   頂列裡靠右(位置同參數掃描的〔重新掃描〕),空狀態裡置中 */
+.xt-upd {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+}
+.rob-top > .xt-upd {
+  margin-left: auto;
+  align-items: flex-end;
+  text-align: right;
+}
+.xt-upd > .btn-fill,
+.xt-upd > .btn-out {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  white-space: nowrap;
+}
+/* 空狀態那一格裡的鈕下那一行:置中、鈕下 */
+.xt-upd > .upd-fail,
+.xt-upd > .busy-why {
+  margin: 0;
+  max-width: 36ch;
+}
+.rob-empty .xt-upd > .upd-fail { justify-content: center; }
+/* 時光機看舊版本:一句說明,同網頁 .vpanel-note */
+.xt .vpanel-note {
+  max-width: 60ch;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-3);
+}

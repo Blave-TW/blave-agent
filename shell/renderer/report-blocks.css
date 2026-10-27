@@ -236,6 +236,30 @@
 .rb-report .rb-chart .rb-ref-label.is-em {
   fill: var(--color-red);
 }
+/* 類別軸折線(renderReportLevels,報告頁成交測試;同 web report.css):比較值不是損益,單一折線全墨色、
+   不上語意色;現行那一點空心。直虛線標「Sharpe 歸零」的位置,同墨色 */
+.rb-report .rb-chart .rb-lvl {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.rb-report .rb-chart .rb-lvl-pt {
+  fill: var(--ink);
+}
+.rb-report .rb-chart .rb-lvl-cur {
+  fill: var(--bg-body);
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+.rb-report .rb-chart .rb-vref {
+  stroke: var(--ink);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+.rb-report .rb-chart .rb-vref-label {
+  fill: var(--ink-2);
+}
 .rb-report .rb-chart .rb-dd-area {
   fill: var(--color-red);
   fill-opacity: 0.18;

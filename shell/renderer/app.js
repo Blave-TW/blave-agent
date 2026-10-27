@@ -1776,7 +1776,7 @@ function rpBodyPaint(B) {
   const w = $("rp-wait"), pend = B.data && B.data.pending;
   if (!pend) { rpShowTab(rpTab(B)); return; }
   $("rp-tabs").hidden = true; $("rp-nobt").hidden = true;
-  for (const k of ["bt", "tr", "rob", "wf", "code"]) $("rp-" + k).hidden = true;
+  for (const k of ["bt", "tr", "rob", "wf", "xt", "code"]) $("rp-" + k).hidden = true;
   w.hidden = false; w.textContent = "";
   const line = document.createElement("p");
   if (pend === "loading") {
@@ -1902,7 +1902,7 @@ function rpShowTab(tab) {
   });
   if (typeof rpTabRevealSelected === "function") rpTabRevealSelected();   // 測試會單獨切出 rpShowTab 來跑,守一下
   rpNobtPaint(B, has);
-  for (const k of ["bt", "tr", "rob", "wf", "code"]) $("rp-" + k).hidden = k !== tab;
+  for (const k of ["bt", "tr", "rob", "wf", "xt", "code"]) $("rp-" + k).hidden = k !== tab;
   if (!has || B.drawn[tab]) return;
   B.drawn[tab] = true;
   const R = window.BlaveReport || {};
@@ -1913,6 +1913,11 @@ function rpShowTab(tab) {
   if (tab === "rob" && R.renderRobust) R.renderRobust($("rp-rob"), { stats: B.data.stats, scan: B.data.scan || null, code: B.data.code, name: B.name }, rpRobOpts());
   // 樣本外驗證(report-wf.js 同樣不碰桌面版全域;閘門、送出、回合狀態都從這裡交進去)
   if (tab === "wf" && R.renderWf) R.renderWf($("rp-wf"), rpWfData(B.data, B.name), rpWfOpts());
+  // 成交測試(report-xt.js 同樣不碰桌面版全域);霧上的〔更新績效〕要 perfPaint 接上疊層與輪詢(renderer/perf.js)
+  if (tab === "xt" && R.renderXt) {
+    const o = rpXtOpts(B); $("rp-xt").dataset.behind = String(o.behind);
+    R.renderXt($("rp-xt"), rpXtData(B), o); if (typeof perfPaint === "function") perfPaint(B);
+  }
 }
 /* 進出場分頁往左補的分塊來源:這台電腦讀 strategies/<name>/chart/,雲端打 /cloud/chart_data(都在主行程,renderer 只給名字與塊號) */
 function rpChartSource(B) {
@@ -2026,6 +2031,27 @@ function rpWfAutoRefetch(now) {
   return rpWfRefetch(RPC.name);
 }
 if (window.blave.onWindowActive) window.blave.onWindowActive((on) => { if (on) rpWfAutoRefetch(); });
+/* 成交測試的環境(report-xt.js;spec lag-test-tab §3.5)。按〔開始測試〕／〔重新測試〕才算:鈕與 perf 狀態由 perf.js 給(perfXtSlot / perfXtInfo)。
+   這台電腦的 lib 跟 app 同包,永遠算得出;雲端讀 /cloud/state 的 config_supports_exec_test,不是 true 就是落後(只換鈕那一格:先更新那句 + 更新雲端主機,結果照畫;同樣本外驗證) */
+function rpXtOpts(B) {
+  const R = window.BlaveReport || {}, cloud = B === RPC;
+  return { t, buildMeta: R.buildMeta, behind: cloud && rpWfCloud().config_supports_exec_test !== true, onUpdate: rpWfUpdate,
+    turn: running === true, onMetric: () => { trackFeature("xt_metric"); },
+    ui: () => (typeof perfXtInfo === "function" ? perfXtInfo(B) : null),
+    rerun: (kind) => (typeof perfXtSlot === "function" ? perfXtSlot(B, kind) : null) };
+}
+// 雲端狀態輪詢叫(同 rpWfSync):主機的 config_supports_exec_test 翻面了才重畫(落後態 ↔ 開始測試)
+function rpXtSync() {
+  const B = rpBag();
+  if (!B.drawn.xt || !B.data || !B.data.stats || $("rp-xt").dataset.behind === String(rpXtOpts(B).behind)) return;
+  B.drawn.xt = false;
+  if (B.tab === "xt" && !$("rp").hidden) rpShowTab("xt");
+}
+// 「1 根＝1 天／1 個交易日」要市場:同金額表 trSrcMarket(雲端讀清單的 srcMarket、本機讀回報的 strategy_kinds);讀不到 = null,只看標的
+function rpXtData(B) {
+  const market = typeof trSrcMarket === "function" && typeof trReport === "function" ? trSrcMarket(trReport(), B.name) : null;
+  return { stats: B.data.stats, name: B.name, market };
+}
 // 掃描鈕被停用時(暖機 / 送不出去)焦點交給參數掃描那顆分頁鈕(設計複稽核 R2)
 function rpRobRefocus() { const b = $("rp-tabs-scroll").querySelector('.rp-tab[data-tab="rob"]'); if (b && !b.disabled) b.focus(); }
 // 整片重畫拿掉了焦點所在的鈕(送出後變「已送出」、回合結束舊結果回來):焦點交給樣本外驗證那顆分頁鈕,不掉到 <body>(設計稽核 S2)
@@ -2051,7 +2077,7 @@ function rpWfSync() {
   const B = rpBag(), R = window.BlaveReport || {};
   if (B.drawn.wf && R.wfSync) R.wfSync($("rp-wf"), rpWfOpts());
 }
-const RP_TAB_FEATURE = { bt: "report_backtest", tr: "report_trades", rob: "report_scan", wf: "report_wf", code: "report_code" };
+const RP_TAB_FEATURE = { bt: "report_backtest", tr: "report_trades", rob: "report_scan", wf: "report_wf", xt: "report_xt", code: "report_code" };
 $("rp-tabs").addEventListener("click", (e) => {   // 只有人點的才算用過:程式自動選預設分頁(stratSelect / rpCloudSelect)不記
   const b = e.target.closest(".rp-tab"); if (!b || b.disabled) return;
   rpShowTab(b.dataset.tab); trackFeature(RP_TAB_FEATURE[b.dataset.tab]);

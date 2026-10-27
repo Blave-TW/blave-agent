@@ -236,7 +236,10 @@ const EVENTS = {
     // 0.1.33 第一次對話 modal(renderer/intro.js):真的顯示出來(同一刻寫 introSeen)、主鈕送出且回合跑起來、✕／Esc 關掉、〔我有想法，自己打〕
     "intro_shown", "intro_send", "intro_close", "intro_type",
     // 0.1.33 綁卡前額度只能用 DeepSeek V4 Pro(renderer/app.js):點了鎖住的型號列、撞到鎖的錯誤卡上按綁卡
-    "mp_locked_click", "bind_model"] },
+    "mp_locked_click", "bind_model",
+    // 成交測試分頁:切到分頁(renderer/app.js 分頁列)、表頭換指標且值有變(report-xt.js 經 opts.onMetric)、
+    // 霧卡〔更新績效〕ack 排進佇列(perf.js perfClick;回測數據分頁那顆照舊是 perf_update,web 同一顆是 perf_update_request placement exec_test)
+    "report_xt", "xt_metric", "perf_update_xt"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。
