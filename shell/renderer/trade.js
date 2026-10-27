@@ -1767,8 +1767,8 @@ function trPushLabels() {
     ev_venue_stops_missing: t("tm.evBitgetNoStop"), ev_venue_stops_missing_n: t("tr.ov.evBitgetNoStopNote"),
     ev_order_unconfirmed: t("tr.ov.evUnconfirmed"), ev_order_unconfirmed_n: t("tm.evUnconfirmedNote"),
     ev_order_unconfirmed_stuck: t("tr.ov.evUnconfirmedStuck"), ev_order_unconfirmed_stuck_n: t("tr.ov.evUnconfirmedStuckNote"),
-    strat: t("tr.ov.evStrat", { names: "{names}" }), stratMany: t("tr.ov.evStratMany", { name: "{name}", n: "{n}", more: "{more}" }),
-    stratSep: t("tr.ov.evStratSep"), withStrat: t("tm.evWithStrat", { strat: "{strat}", note: "{note}" }),
+    stratOne: t("tr.ov.evStratOne", { name: "{name}" }), stratTwo: t("tr.ov.evStratTwo", { a: "{a}", b: "{b}" }),
+    stratMany: t("tr.ov.evStratMany", { name: "{name}", n: "{n}", more: "{more}" }), withStrat: t("tm.evWithStrat", { strat: "{strat}", note: "{note}" }),
     // 選單列兩行狀態、app 選單「顯示」兩項與官網、結束攔截多的那一句、通知標題的前綴(主行程:traytext.js / main.js)
     lang: LANG, stLocal: t("tm.stLocal"), stLocalOnly: t("tm.stLocalOnly"), noAccount: t("tr.noAccount"), runningZ: t("tr.runningZ"), stCloud: t("tm.stCloud"), stOn: t("tm.stOn"), stPaused: t("tm.stPaused"), stUnknown: t("tm.stUnknown"), stMayTrade: t("tm.stMayTrade"), stNotStarted: t("tr.notStarted"),
     moneyPaper: t("tr.mode.paper"), moneyReal: t("tr.mode.real"), venueCapital: t("cap.venue"), venuePresident: t("pres.venue"), pauseLocal: t("tm.pauseLocal"), quitCloudNote: t("tm.quitCloudNote"),
@@ -5016,12 +5016,13 @@ const TR_EV_P1 = ["order_error", "order_unconfirmed", "manual_close_required", "
 const TR_EV_P2 = ["reconciler_dead", "venue_disconnected", "strategy_failed", "bar_stale", "target_stale", "dead_members", "scheduler_error",
   "venue_unbound", "market_check_off", "ui_override", "settings_rollback_failed", "report_degraded", "exchange_unreachable",
   "machine_silent", "disk_full", "memory_low", "report_rejected"];
-// 下單那一腿背後的策略(策略檔名):一支、兩支照列,三支以上「A 等 N 支策略」;沒有回 ""
+// 下單那一腿背後的策略(策略檔名):一支、兩支照列,三支以上「A 等 N 支策略」;沒有回 ""。三個 key 同網頁 workspace_ov_ev_strat_one/two/many
 function trStratText(names) {
   const list = Array.isArray(names) ? names.filter((x) => typeof x === "string" && x).map((x) => x.slice(0, 40)) : [];
   if (!list.length) return "";
-  return list.length <= 2 ? t("tr.ov.evStrat", { names: list.join(t("tr.ov.evStratSep")) })
-    : t("tr.ov.evStratMany", { name: list[0], n: list.length, more: list.length - 1 });
+  if (list.length === 1) return t("tr.ov.evStratOne", { name: list[0] });
+  if (list.length === 2) return t("tr.ov.evStratTwo", { a: list[0], b: list[1] });
+  return t("tr.ov.evStratMany", { name: list[0], n: list.length, more: list.length - 1 });
 }
 // api(/cloud/events)每筆帶的級別 "P1"/"P2"/"P3";沒帶或認不得(舊 api、這台電腦記的那份)回 null,交給 trEvLevel
 function trEvApiLevel(ev) { const m = /^P([123])$/.exec(ev && typeof ev.level === "string" ? ev.level : ""); return m ? Number(m[1]) : null; }

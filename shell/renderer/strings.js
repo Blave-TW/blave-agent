@@ -2945,9 +2945,9 @@ const STRINGS = {
     "tr.ov.evUnconfirmedStuckNote": "An hour on, the order still can't be found. Check your position on the exchange, then tell your agent how much filled.",
     "tm.evUnconfirmedNote": "This order may have filled. Check your position on the exchange; don't place it again yourself.",
     "tr.err.unconfirmed": "Outcome unknown — it may have filled. Orders for this symbol are paused until the result is found.",
-    "tr.ov.evStrat": "strategy {names}",
+    "tr.ov.evStratOne": "strategy {name}",
+    "tr.ov.evStratTwo": "strategies {a}, {b}",
     "tr.ov.evStratMany": "{name} and {more} more strategies",
-    "tr.ov.evStratSep": ", ",
     "tm.evWithStrat": "{strat}: {note}",
   },
   zh: {
@@ -5890,9 +5890,9 @@ const STRINGS = {
     "tr.ov.evUnconfirmedStuckNote": "一小時還查不到這筆單。請核對交易所部位，再告訴 agent 成交多少。",
     "tm.evUnconfirmedNote": "這筆單可能已經成交。請先到交易所核對部位，不要手動補單。",
     "tr.err.unconfirmed": "結果不明，可能已經成交。這個標的暫停下單，查到結果會自動接續。",
-    "tr.ov.evStrat": "策略 {names}",
+    "tr.ov.evStratOne": "策略 {name}",
+    "tr.ov.evStratTwo": "策略 {a}、{b}",
     "tr.ov.evStratMany": "{name} 等 {n} 支策略",
-    "tr.ov.evStratSep": "、",
     "tm.evWithStrat": "{strat}：{note}",
   },
 };

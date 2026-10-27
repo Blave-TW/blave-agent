@@ -119,6 +119,18 @@ for (const lang of ["zh", "en"]) {
   ok(`Bitget 換帳戶類型的暫停句／清單／事件列 ${lang} 兩邊逐字一致(${Object.keys(BITGET_PAIRS).length} 句)`, bad.length === 0,
     bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
+// 下單結果不明(canon notifications §3 order_unconfirmed)與兩型事件的策略段:zh / en 逐字一致,任一邊找不到也算紅
+const UNCONFIRMED_PAIRS = {
+  "tr.err.unconfirmed": "workspace_pf_err_unconfirmed", "tr.ov.evUnconfirmed": "workspace_ov_ev_unconfirmed",
+  "tr.ov.evUnconfirmedStuck": "workspace_ov_ev_unconfirmed_stuck", "tr.ov.evUnconfirmedNote": "workspace_ov_ev_unconfirmed_note",
+  "tr.ov.evUnconfirmedStuckNote": "workspace_ov_ev_unconfirmed_stuck_note",
+  "tr.ov.evStratOne": "workspace_ov_ev_strat_one", "tr.ov.evStratTwo": "workspace_ov_ev_strat_two", "tr.ov.evStratMany": "workspace_ov_ev_strat_many" };
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const bad = Object.entries(UNCONFIRMED_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== wp[w]);
+  ok(`下單結果不明與策略段 ${lang} 兩邊逐字一致(${Object.keys(UNCONFIRMED_PAIRS).length} 句)`, bad.length === 0,
+    bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
 // Type C 的買進持有基準(0050／BTC／SPY,{sym} 由各表面代入):統計列標籤／圖例、三句 tooltip、圖的 aria——zh / en 兩邊逐字同一份
 const poRaw = (file) => { const o = {}; if (fs.existsSync(file)) for (const m of fs.readFileSync(file, "utf8").matchAll(/^msgid "([^"]+)"\nmsgstr "((?:[^"\\]|\\.)*)"$/gm)) o[m[1]] = m[2]; return o; };
 const BH_KEYS = { workspace_bt_benchmark_bh: "bt.benchmarkBh", workspace_bt_benchmark_bh_tip_adj: "bt.tip.benchmarkBhAdj",

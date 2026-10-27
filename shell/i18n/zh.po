@@ -9072,14 +9072,14 @@ msgstr "這筆單可能已經成交。請先到交易所核對部位，不要手
 msgid "tr.err.unconfirmed"
 msgstr "結果不明，可能已經成交。這個標的暫停下單，查到結果會自動接續。"
 
-msgid "tr.ov.evStrat"
-msgstr "策略 {names}"
+msgid "tr.ov.evStratOne"
+msgstr "策略 {name}"
+
+msgid "tr.ov.evStratTwo"
+msgstr "策略 {a}、{b}"
 
 msgid "tr.ov.evStratMany"
 msgstr "{name} 等 {n} 支策略"
-
-msgid "tr.ov.evStratSep"
-msgstr "、"
 
 msgid "tm.evWithStrat"
 msgstr "{strat}：{note}"

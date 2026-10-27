@@ -1073,7 +1073,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           us = trEventText("order_unconfirmed", { symbol: "BTCUSDT", stuck: true, strategies: ["a", "b", "c"] });
         ok("order_unconfirmed(下單結果不明):P1 紅字、標的、策略段;stuck 用「還是不明」那兩句",
           u[0] === "tr.ov.evUnconfirmed" && u[1] === "tr.ov.evUnconfirmedNote" && u[2] === 1 && u[4] === "BTCUSDT"
-          && u[5] === 'tr.ov.evStrat{"names":"btc_trend"}'
+          && u[5] === 'tr.ov.evStratOne{"name":"btc_trend"}'
+          && trEventText("order_unconfirmed", { symbol: "B", strategies: ["a", "b"] })[5] === 'tr.ov.evStratTwo{"a":"a","b":"b"}'
           && us[0] === "tr.ov.evUnconfirmedStuck" && us[1] === "tr.ov.evUnconfirmedStuckNote" && us[5] === 'tr.ov.evStratMany{"name":"a","n":3,"more":2}'
           && trEventText("order_unconfirmed", { symbol: "X" })[5] === null); }
       const S4 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");

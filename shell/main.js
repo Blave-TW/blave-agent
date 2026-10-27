@@ -3850,7 +3850,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_venue_stops_missing: "Bitget positions without a stop-loss", ev_venue_stops_missing_n: "After the account switch some positions have no stop-loss on Bitget. Trading continues; Blave won’t re-place them.",
   ev_order_unconfirmed: "Order outcome unknown", ev_order_unconfirmed_n: "This order may have filled. Check your position on the exchange; don't place it again yourself.",
   ev_order_unconfirmed_stuck: "Order outcome still unknown", ev_order_unconfirmed_stuck_n: "An hour on, the order still can't be found. Check your position on the exchange, then tell your agent how much filled.",
-  strat: "", stratMany: "", stratSep: "", withStrat: "",
+  stratOne: "", stratTwo: "", stratMany: "", withStrat: "",
   // 有了雲端視角之後的字(字串表 tm.*)。**預設是空的 = renderer 還沒交**:空的時候相關的那一行 / 那一句 / 那個前綴整個不出現,
   // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單(menu*)例外:退路是 MENU_EN。
   // Binance 金鑰重查(tm.key.*):空的 = renderer 還沒交,那一則通知不發(不拿英文退路塞給中文用戶;下一輪 24 小時重查 verdict 還在,畫面上看得到)
@@ -4183,9 +4183,10 @@ function p1FromState(r, mark, nowS) {   // 純函式:halt / 拒單從狀態檔�
 // 策略名(策略檔名)放在通知內文前面(canon §3 下單失敗列:一支、兩支、三支以上);字還沒交或沒有策略名 → 原句
 function p1WithStrat(names, note) {
   const list = Array.isArray(names) ? names.filter((x) => typeof x === "string" && x).map((x) => x.slice(0, 40)) : [];
-  if (!list.length || !tmLabels.withStrat || !tmLabels.strat || !tmLabels.stratMany) return note;
-  const strat = list.length <= 2 ? tmLabels.strat.replace("{names}", () => list.join(tmLabels.stratSep || ", "))
-    : tmLabels.stratMany.replace("{name}", () => list[0]).replace("{n}", String(list.length)).replace("{more}", String(list.length - 1));
+  if (!list.length || !tmLabels.withStrat || !tmLabels.stratOne || !tmLabels.stratTwo || !tmLabels.stratMany) return note;
+  const strat = list.length === 1 ? tmLabels.stratOne.replace("{name}", () => list[0])
+    : list.length === 2 ? tmLabels.stratTwo.replace("{a}", () => list[0]).replace("{b}", () => list[1])
+      : tmLabels.stratMany.replace("{name}", () => list[0]).replace("{n}", String(list.length)).replace("{more}", String(list.length - 1));
   return tmLabels.withStrat.replace("{strat}", () => strat).replace("{note}", () => note);
 }
 function p1Pick(events, mark, nowS) {   // 純函式(tests/check_shell_p1_notify.js):回 { mark, show:[事件] }

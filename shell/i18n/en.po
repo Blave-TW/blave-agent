@@ -9044,14 +9044,14 @@ msgstr "This order may have filled. Check your position on the exchange; don't p
 msgid "tr.err.unconfirmed"
 msgstr "Outcome unknown — it may have filled. Orders for this symbol are paused until the result is found."
 
-msgid "tr.ov.evStrat"
-msgstr "strategy {names}"
+msgid "tr.ov.evStratOne"
+msgstr "strategy {name}"
+
+msgid "tr.ov.evStratTwo"
+msgstr "strategies {a}, {b}"
 
 msgid "tr.ov.evStratMany"
 msgstr "{name} and {more} more strategies"
-
-msgid "tr.ov.evStratSep"
-msgstr ", "
 
 msgid "tm.evWithStrat"
 msgstr "{strat}: {note}"
