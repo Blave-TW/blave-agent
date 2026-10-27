@@ -315,13 +315,13 @@ for (const lang of ["zh", "en"]) {
     ok("歡迎頁策略卡挑選兩邊同一批、同一順序(雲端視角,8 支測資挑 3 張)", !dParts.includes(null) && !wParts.includes(null) && !!d && d.length === 3 && JSON.stringify(d) === JSON.stringify(w),
       (dParts.includes(null) || wParts.includes(null) ? "切不出函式;" : "") + "電腦版 " + JSON.stringify(d) + " vs 網頁 " + JSON.stringify(w) + err); } }
 // 策略庫詳情跟基準比(spec library-benchmark-2026-10-27 B;電腦版 library.js libBench* + main.js libBenchSanitize、網頁 workspace.html libBench / libCmpTable):
-// 圖例「權益」、as_of 那句、表頭的「回測」「{n} 年」、「總報酬」逐字比(tip_adj / tip_raw 已在上面 BH_KEYS);欄名「策略」是這次新增——網頁還沒有那個 msgid = web 那顆還沒上線,SKIP 講原因,有了就逐字比。
+// 圖例「權益」、as_of 那句、表頭的「回測」「{n} 年」、總報酬／年化報酬／最大回撤逐字比(歡迎卡同 key)(tip_adj / tip_raw 已在上面 BH_KEYS);欄名「策略」是這次新增——網頁還沒有那個 msgid = web 那顆還沒上線,SKIP 講原因,有了就逐字比。
 // 判斷:同一組 /report 形狀(api _benchmark_payload 會給的),兩邊要嘛都畫基準、要嘛都不畫,畫的話代號同一個(BTCUSDT 寫 BTC)
-{ const PAIRS = { workspace_bt_legend_equity: "bt.equity", workspace_bt_benchmark_bh_as_of: "bt.tip.benchmarkBhAsOf", bc_mp_report_total: "lib.cmp.total", workspace_lib_kv_bt: "lib.kv.bt", bc_mp_years: "lib.sampleYrs" }, NEW = { workspace_lib_cmp_strategy: "lib.cmp.strategy" };
+{ const PAIRS = { workspace_bt_legend_equity: "bt.equity", workspace_bt_benchmark_bh_as_of: "bt.tip.benchmarkBhAsOf", bc_mp_report_total: "lib.cmp.total", workspace_lib_kv_bt: "lib.kv.bt", bc_mp_years: "lib.sampleYrs", bc_mp_report_annual: "lib.kv.ann", bc_mp_sort_mdd_short: "lib.kv.mdd" }, NEW = { workspace_lib_cmp_strategy: "lib.cmp.strategy" };
   for (const lang of ["zh", "en"]) {
     const w = poRaw(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po")), d = poRaw(path.join(__dirname, "..", "shell", "i18n", lang + ".po"));
     const off = Object.keys(PAIRS).filter((k) => !w[k] || w[k] !== d[PAIRS[k]]);
-    ok("策略庫基準:圖例「權益」、as_of 那句、表頭「回測 · N 年」、「總報酬」兩邊同一份(" + lang + ")", off.length === 0, off.map((k) => k + ": " + w[k] + " vs " + d[PAIRS[k]]).join(";"));
+    ok("策略庫基準:圖例「權益」、as_of 那句、表頭「回測 · N 年」、總報酬／年化報酬／最大回撤兩邊同一份(" + lang + ")", off.length === 0, off.map((k) => k + ": " + w[k] + " vs " + d[PAIRS[k]]).join(";"));
     for (const k of Object.keys(NEW)) {
       if (!d[NEW[k]]) ok("策略庫基準:電腦版有 " + NEW[k] + "(" + lang + ")", false);
       else if (!(k in w)) console.log("SKIP  策略庫基準欄名 " + k + " 兩邊同一份(" + lang + ";網頁 messages.po 還沒有這個 msgid:web 那顆還沒上線)");

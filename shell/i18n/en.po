@@ -4613,13 +4613,13 @@ msgid "lib.kv.listed"
 msgstr "Listed"
 
 msgid "lib.kv.ann"
-msgstr "Annualized"
+msgstr "Annual Return"
 
 msgid "lib.kv.sharpe"
 msgstr "Sharpe"
 
 msgid "lib.kv.mdd"
-msgstr "Max DD"
+msgstr "Max Drawdown"
 
 msgid "lib.kv.sample"
 msgstr "Sample"

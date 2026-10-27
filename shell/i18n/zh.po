@@ -4626,7 +4626,7 @@ msgid "lib.kv.listed"
 msgstr "上架"
 
 msgid "lib.kv.ann"
-msgstr "年化"
+msgstr "年化報酬"
 
 msgid "lib.kv.sharpe"
 msgstr "Sharpe"

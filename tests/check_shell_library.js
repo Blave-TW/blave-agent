@@ -729,7 +729,7 @@ app.whenReady().then(async () => {
   { const s = r.sync;
     ok("④ 詳情:返回鈕出、清單頭 / 閘門卡收;標題 / meta(7 人安裝)/ 摘要;曲線先用 spark 畫出來(canvas、圖高 200);回測欄總報酬在第一列 + 四個數字 + 上架兩格;三道關卡都通過、右欄帶數值(費率兩行、p < 0.001、鄰域 91%);官方不出結論段;說明留換行;dl 回測期間先用曲線區間 / 標的 / 方向 / 曝險;沒有「用了之後」卡;焦點在返回鈕",
       s.back && s.headList && s.rows === 0 && s.gate && s.h5 === "BTC 通道動能共振" && s.meta === "Blave 官方 · BTC/USDT 永續 · 5 分 K · 7 人安裝" && s.sum === "通道 + 動能。" && s.chart === 1 && s.chartH === 200 && s.canvas >= 1 && s.c0
-      && s.kv === "總報酬|年化|Sharpe|最大回撤|樣本|上架天數|安裝 / +312.50%|+24.61%|1.50|−20.00%|6.5 年|107|7".replace("107", String(Math.max(0, Math.floor((Date.now() - Date.parse("2026-06-10T00:00:00")) / 86400000))))
+      && s.kv === "總報酬|年化報酬|Sharpe|最大回撤|樣本|上架天數|安裝 / +312.50%|+24.61%|1.50|−20.00%|6.5 年|107|7".replace("107", String(Math.max(0, Math.floor((Date.now() - Date.parse("2026-06-10T00:00:00")) / 86400000))))
       && s.gates === "誠實回測=通過[假設 0.05%;交易所 0.04%]|統計顯著=通過[p < 0.001]|參數穩健=通過[鄰域保留 91%]" && s.lead === null
       && s.how === "第一段。\n第二段。" && s.dl === "2020-01-01 — 2026-06-30|BTC/USDT 永續 · 5 分 K|純做多|1 倍" && s.period === "2020-01-01 — 2026-06-30" && s.steps === 0 && s.focus === "lib-back", JSON.stringify(s));
     ok("④ 免費態:主鈕「用這支」、沒有說明句(免費不寫)", s.cta === (await T("lib.use")) && s.note === "", JSON.stringify(s.note)); }
@@ -759,10 +759,10 @@ app.whenReady().then(async () => {
     ok("④ 基準圖例:在圖的正上方、只有兩項「權益」「BTC 持有」(BTCUSDT 寫 BTC、代號進 .mono)、虛線那項是 .bh", on.legends === 1 && on.legendBefore && on.legend === z["bt.equity"] + ":bt-legend|BTC 持有:bt-legend bh" && on.legendMono === "BTC", JSON.stringify(on));
     ok("④ 基準對照表:表頭「回測 · 6.5 年|策略|BTC 持有」(scope col)、四列總報酬 / 年化 / Sharpe / 最大回撤,回撤兩欄都 ≤ 0(api 給正 34 也寫 −34.00%);兩欄都不上漲跌色;上架欄照舊在右(.wide)",
       on.cmp === 1 && on.wide && on.head === "回測 · 6.5 年/col|" + z["lib.cmp.strategy"] + "/col|BTC 持有/col" && on.rowScope
-      && on.rows === z["lib.cmp.total"] + ",+312.50%,+794.00%|年化,+24.61%,+20.60%|Sharpe,1.50,1.05|最大回撤,−20.00%,−34.00%" && on.tone === 0 && on.bhInk && on.kv === "上架天數|安裝" && on.kvcols === 2, JSON.stringify(on));
+      && on.rows === z["lib.cmp.total"] + ",+312.50%,+794.00%|年化報酬,+24.61%,+20.60%|Sharpe,1.50,1.05|最大回撤,−20.00%,−34.00%" && on.tone === 0 && on.bhInk && on.kv === "上架天數|安裝" && on.kvcols === 2, JSON.stringify(on));
     ok("④ 基準表頭 tooltip:永續那句(adjusted false)接 as_of 那句、zh 不加空白;role=tooltip、按鈕 aria-describedby 指過去", on.tip === z["bt.tip.benchmarkBhRaw"].replace("{sym}", "BTC") + z["bt.tip.benchmarkBhAsOf"].replace("{date}", "2026-06-20") && on.tipRole === "tooltip" && on.described, JSON.stringify(on.tip));
     ok("④ 換主題:基準線換成新主題的 greyMedium(亮暗不同值)", r.flip.n === 2 && r.flip.grey !== on.grey && r.flip.o0.color === r.flip.grey, JSON.stringify([on.grey, r.flip.grey, r.flip.o0]));
-    ok("④ benchmark 是 null:一條線、沒有圖例、沒有對照表、不加 .wide,回測欄回到原本的五列 kv", r.off.n === 1 && r.off.legends === 0 && r.off.cmp === 0 && !r.off.wide && r.off.kv === "總報酬|年化|Sharpe|最大回撤|樣本|上架天數|安裝", JSON.stringify(r.off)); }
+    ok("④ benchmark 是 null:一條線、沒有圖例、沒有對照表、不加 .wide,回測欄回到原本的五列 kv", r.off.n === 1 && r.off.legends === 0 && r.off.cmp === 0 && !r.off.wide && r.off.kv === "總報酬|年化報酬|Sharpe|最大回撤|樣本|上架天數|安裝", JSON.stringify(r.off)); }
   // 降級:主行程回 null / 打不到 → 停在 spark、回測期間留曲線區間、不出任何錯誤字;下次進詳情再問(失敗不記)
   r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; document.getElementById("lib-back").click(); window.__lib.report = null; window.__lib.reportCalls = []; q('#lib-rows .lib-row[data-id="72"]')[0].click(); const c0 = LIB.chart;
     await new Promise((r) => setTimeout(r, 80)); const a = { same: LIB.chart === c0 && !!c0, canvas: q("#lib-det #lib-chart canvas").length, period: document.getElementById("lib-period").textContent, err: q("#lib-det .err, #lib-det .plan-err, #lib-det [role=alert]").length, none: q("#lib-det .chart-none").length, cached: LIB.reports.has(72) };
