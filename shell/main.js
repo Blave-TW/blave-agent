@@ -3848,9 +3848,10 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_execution_stuck: "Execution is stuck", ev_execution_stuck_n: "Later orders for this symbol are waiting on it.",
   ev_machine_restart_stopped: "Machine restarted — trading paused", ev_machine_restart_stopped_n: "No orders are going out — nothing is managing your positions, and exits and stops won't run. Press Start trading to resume.",
   ev_venue_stops_missing: "Bitget positions without a stop-loss", ev_venue_stops_missing_n: "After the account switch some positions have no stop-loss on Bitget. Trading continues; Blave won’t re-place them.",
-  ev_halt_unconfirmed_n: "Nothing goes out. An order has an unknown outcome and may have filled — don't place it again yourself. Tell your agent how much filled, then press Start trading.",
+  ev_halt_unconfirmed_n: "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading.",
+  ev_order_unconfirmed_close_all: "Not closed with the rest", ev_order_unconfirmed_close_all_n: "An order here has an unknown outcome and was left out of this close. Don't trade it yourself: tell your agent how much filled, then press Pause and close positions again.",
   ev_order_unconfirmed: "Order outcome unknown", ev_order_unconfirmed_n: "This order may have filled — don't place it again yourself. New entries on this symbol are paused; closes still run.",
-  ev_order_unconfirmed_stuck: "Order outcome still unknown", ev_order_unconfirmed_stuck_n: "The order still can't be found. New entries on this symbol stay paused. Check your position on the exchange, then tell your agent how much filled.",
+  ev_order_unconfirmed_stuck: "Order outcome still unknown", ev_order_unconfirmed_stuck_n: "Still no result, so new entries on this symbol stay paused. Check the exchange, tell your agent how much filled, and don't place it again yourself.",
   stratOne: "", stratTwo: "", stratMany: "", withStrat: "",
   // 有了雲端視角之後的字(字串表 tm.*)。**預設是空的 = renderer 還沒交**:空的時候相關的那一行 / 那一句 / 那個前綴整個不出現,
   // 行為跟以前一樣——不拿英文退路硬塞進中文的選單列。app 選單(menu*)例外:退路是 MENU_EN。
@@ -4160,23 +4161,30 @@ const p1Sec = (v) => {
   const ms = Date.parse(/(Z|[+-]\d{2}:?\d{2})$/.test(v) ? v : v + "Z");
   return !Number.isFinite(ms) ? NaN : ms / 1000 + (us ? Number("0." + us) - Number("0." + us.slice(0, 3)) : 0);
 };
+// 追蹤不了而整台暫停的 HALT:內文換專屬那句,標題帶「· 標的」(p1Sync 接 payload.symbol)
+function p1HaltPayload(h) {
+  const reason = String((h && h.reason) || ""), unconfirmed = /^\[order_unconfirmed_unparked\]/.test(reason);
+  const m = unconfirmed ? /^\[order_unconfirmed_unparked\] (\S+?):/.exec(reason) : null;
+  return m ? { unconfirmed, symbol: m[1] } : { unconfirmed };
+}
 function p1FromState(r, mark, nowS) {   // 純函式:halt / 拒單從狀態檔現況推導。mark = { halt, err }(null = 第一次,只記不發)
   const out = { halt: mark.halt, err: mark.err, show: [] }, h = r && r.halt;
   const at = h && h.halted ? p1Sec(h.at) : NaN;
   if (at > (mark.halt == null ? -1 : mark.halt)) {
     out.halt = at;
     if (mark.halt != null && HALT_AUTO_SOURCES.indexOf(h.source) >= 0 && nowS - at <= 900)
-      out.show.push({ type: "halt", ts: at, payload: { unconfirmed: /^\[order_unconfirmed_unparked\] /.test(String(h.reason || "")) } });
+      out.show.push({ type: "halt", ts: at, payload: p1HaltPayload(h) });
   } else if (mark.halt == null) out.halt = 0;
   let top = mark.err == null ? -1 : mark.err;
   for (const e of r && Array.isArray(r.order_errors) ? r.order_errors : []) {
     const ts = e && typeof e === "object" ? p1Sec(e.ts) : NaN;
     if (!(ts > (mark.err == null ? -1 : mark.err))) continue;
     if (ts > top) top = ts;
-    if (mark.err != null && nowS - ts <= 900) {
+    // manual 停車的第一列不叫:同一刻的 HALT 已經叫了(只有部位表那句用它)
+    if (mark.err != null && nowS - ts <= 900 && !(e.kind === "order_unconfirmed" && e.manual === true && e.stuck !== true)) {
       const strategies = Array.isArray(e.strategies) ? e.strategies.filter((x) => typeof x === "string" && x).slice(0, 10) : [];
       out.show.push({ type: e.kind === "order_unconfirmed" ? "order_unconfirmed" : "order_error", ts,
-        payload: { symbol: typeof e.symbol === "string" ? e.symbol : "", strategies, stuck: e.stuck === true } });
+        payload: { symbol: typeof e.symbol === "string" ? e.symbol : "", strategies, stuck: e.stuck === true, close_all: e.close_all === true } });
     }
   }
   out.err = top < 0 ? 0 : top;
@@ -4220,11 +4228,13 @@ function p1Sync() {
     const sym = e.payload && typeof e.payload.symbol === "string" ? e.payload.symbol.replace(/@spot$/, "").slice(0, 24) : "";
     if (!Notification.isSupported()) continue;
     // 這裡的事件全部來自這台電腦的狀態檔:標題第一個詞講是哪一邊(雲端的通知之後由它自己的來源加 notifPrefixCloud)
-    const stuck = e.type === "order_unconfirmed" && e.payload && e.payload.stuck === true;
-    const head = tmLabels["ev_" + e.type + (stuck ? "_stuck" : "")];
+    const closeAll = e.type === "order_unconfirmed" && e.payload && e.payload.close_all === true;
+    const stuck = !closeAll && e.type === "order_unconfirmed" && e.payload && e.payload.stuck === true;
+    const variant = closeAll ? "_close_all" : stuck ? "_stuck" : "";
+    const head = tmLabels["ev_" + e.type + variant] || tmLabels["ev_" + e.type];
     // 下單結果不明、追蹤不了而整台暫停:講可能已成交、不要手動補單、怎麼恢復,不是只有「什麼單都不送」
     const note = e.type === "halt" && e.payload && e.payload.unconfirmed && tmLabels.ev_halt_unconfirmed_n ? tmLabels.ev_halt_unconfirmed_n
-      : tmLabels["ev_" + e.type + (stuck ? "_stuck" : "") + "_n"];
+      : tmLabels["ev_" + e.type + variant + "_n"] || tmLabels["ev_" + e.type + "_n"];
     const n = new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, head + (sym ? " · " + sym : "")), body: p1WithStrat(e.payload && e.payload.strategies, note) });
     p1Alive.add(n); const drop = () => p1Alive.delete(n);
     n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop); notifWatch(n, "p1 " + e.type);

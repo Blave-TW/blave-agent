@@ -9064,7 +9064,7 @@ msgid "tr.ov.evUnconfirmedNote"
 msgstr "這筆單可能已經成交，不要手動補單。這個標的暫停開倉，平倉照常，查到結果自動接續。"
 
 msgid "tr.ov.evUnconfirmedStuckNote"
-msgstr "還是查不到這筆單的結果。這個標的仍暫停開倉。請核對交易所部位，再告訴 agent 成交多少。"
+msgstr "還是查不到結果，這個標的仍暫停開倉。請核對交易所部位、告訴 agent 成交多少，不要手動補單。"
 
 msgid "tm.evUnconfirmedNote"
 msgstr "這筆單可能已經成交，不要手動補單。這個標的暫停開倉，平倉照常。"
@@ -9095,8 +9095,33 @@ msgid "tr.ov.evUnconfirmedReleasedNone"
 msgstr "這筆單沒有成交，這個標的恢復開倉。"
 
 msgid "tr.haltUnconfirmed"
-msgstr "{sym} 有一筆單結果不明、可能已成交，暫停期間什麼單都不送。請核對交易所部位，不要手動補單。告訴 agent 成交多少，再按「啟動下單」。"
+msgstr "{sym} 有一筆單結果不明、可能已成交，什麼單都不送。不要手動補單，告訴 agent 成交多少再按「啟動下單」。"
 
 msgid "tr.ov.evHaltUnconfirmedNote"
-msgstr "什麼單都不送。有一筆單結果不明，可能已經成交，不要手動補單。告訴 agent 成交多少，再按「啟動下單」。"
+msgstr "{sym} 有一筆單結果不明、可能已成交，什麼單都不送。不要手動補單，告訴 agent 成交多少再按「啟動下單」。"
+
+# 下單結果不明(designer v034 UX 定稿):全部平倉沒平到那一型與它的收尾、整台暫停沒有標的的退路與本機通知內文、manual 停車部位表那句
+msgid "tr.ov.evHaltUnconfirmedNoteNosym"
+msgstr "有一筆單結果不明、可能已成交，什麼單都不送。不要手動補單，告訴 agent 成交多少再按「啟動下單」。"
+
+msgid "tm.evHaltUnconfirmedNote"
+msgstr "有一筆單結果不明、可能已成交，什麼單都不送。不要手動補單，告訴 agent 成交多少再按「啟動下單」。"
+
+msgid "tr.ov.evUnconfirmedCloseAll"
+msgstr "沒有一起平倉"
+
+msgid "tr.ov.evUnconfirmedCloseAllNote"
+msgstr "有一筆單結果不明，不在這次平倉裡。不要自己下單，告訴 agent 成交多少再按「暫停並關閉部位」。"
+
+msgid "tr.ov.evUnconfirmedReleasedCloseAllFilled"
+msgstr "這筆單已成交、已記進帳本。要全平，再按「暫停並關閉部位」。"
+
+msgid "tr.ov.evUnconfirmedReleasedCloseAllNone"
+msgstr "這筆單沒有成交，不用再處理。"
+
+msgid "tr.ov.evUnconfirmedInterruptedNote"
+msgstr "改看「前次執行中斷」那則。"
+
+msgid "tr.err.unconfirmedManual"
+msgstr "結果不明，可能已經成交，不要手動補單。告訴 agent 成交多少才會恢復開倉。"
 

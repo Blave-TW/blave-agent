@@ -129,7 +129,15 @@ const UNCONFIRMED_PAIRS = {
   "tr.ov.evUnconfirmedReleased": "workspace_ov_ev_unconfirmed_released",
   "tr.ov.evUnconfirmedReleasedFilled": "workspace_ov_ev_unconfirmed_released_filled",
   "tr.ov.evUnconfirmedReleasedNone": "workspace_ov_ev_unconfirmed_released_none",
-  "tr.ov.evHaltUnconfirmedNote": "workspace_ov_ev_halt_unconfirmed_note", "tr.haltUnconfirmed": "workspace_pf_halt_unconfirmed" };
+  "tr.ov.evHaltUnconfirmedNote": "workspace_ov_ev_halt_unconfirmed_note", "tr.haltUnconfirmed": "workspace_pf_halt_unconfirmed",
+  // designer v034 UX 定稿:沒有標的的退路、全部平倉沒平到那一型與它的收尾、manual 停車部位表那句
+  "tr.ov.evHaltUnconfirmedNoteNosym": "workspace_ov_ev_halt_unconfirmed_note_nosym",
+  "tr.ov.evUnconfirmedCloseAll": "workspace_ov_ev_unconfirmed_close_all",
+  "tr.ov.evUnconfirmedCloseAllNote": "workspace_ov_ev_unconfirmed_close_all_note",
+  "tr.ov.evUnconfirmedReleasedCloseAllFilled": "workspace_ov_ev_unconfirmed_released_close_all_filled",
+  "tr.ov.evUnconfirmedReleasedCloseAllNone": "workspace_ov_ev_unconfirmed_released_close_all_none",
+  "tr.ov.evUnconfirmedInterruptedNote": "workspace_ov_ev_unconfirmed_interrupted_note",
+  "tr.err.unconfirmedManual": "workspace_pf_err_unconfirmed_manual" };
 for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
   const bad = Object.entries(UNCONFIRMED_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== wp[w]);

@@ -252,8 +252,15 @@ function trHaltMismatch(r) {
 /* 下單結果不明、Blave 追蹤不了而整台暫停(lib/portfolio.UNPARKED_TAG 開頭的 HALT reason):回那個標的,不是就 null。
    英文 reason 不顯示,換成 tr.haltUnconfirmed / tr.ov.evHaltUnconfirmedNote */
 function trHaltUnconfirmedSym(h) {
-  const m = /^\[order_unconfirmed_unparked\] (\S+?):/.exec(String((h && h.reason) || ""));
-  return m ? m[1].replace(/@spot$/, "") : null;
+  const reason = String((h && h.reason) || "");
+  if (!/^\[order_unconfirmed_unparked\]/.test(reason)) return null;
+  const m = /^\[order_unconfirmed_unparked\] (\S+?):/.exec(reason);
+  return m ? m[1].replace(/@spot$/, "") : "";   // "" = tagged, symbol unreadable → the nosym sentence
+}
+/* 事件列「已自動暫停下單 — 」後面那句:帶標的;讀不到標的用沒有標的的那句 */
+function trHaltUnconfirmedNote(h) {
+  const sym = trHaltUnconfirmedSym(h);
+  return sym ? t("tr.ov.evHaltUnconfirmedNote", { sym }) : t("tr.ov.evHaltUnconfirmedNoteNosym");
 }
 function trHaltReasonText(r, done) {
   const rk = trRestartKind(r), z = trNoAmounts(r) && !trRestartUnconfirmed(r), H = !!(r && r.halt && r.halt.halted);
@@ -263,7 +270,7 @@ function trHaltReasonText(r, done) {
   // 主機重開停住(machine)仍優先:那時什麼單都不下的原因是重開,清單照樣畫
   const mm = rk !== "machine" ? trHaltMismatch(r) : null;
   const us = H && rk !== "machine" ? trHaltUnconfirmedSym(r.halt) : null;
-  if (us) return t("tr.haltUnconfirmed", { sym: us });
+  if (us) return t("tr.haltUnconfirmed", { sym: us });   // tagged without a readable symbol: the generic pause sentence below (同網頁)
   if (mm) return t(mm.mode === "classic" ? "tr.haltBitgetMismatchClassic" : "tr.haltBitgetMismatchUta", { n: mm.legs.length });
   // 照 HALT 的實際原因講(Mac e2e 10-14:解綁造成的暫停被講成「Blave 重開過」)。主機重開停住(machine)那一種最根本,照舊優先;
   // 解綁那一種再分下單程式在不在跑:沒在跑就什麼單都不下,在跑照 A 的規則(不開新倉、平倉照常)
@@ -1223,6 +1230,33 @@ function trLiveOrderErrs(errs, pending, ctx) {
   });
   return out;
 }
+/* 下單結果不明在事件列:同一張單(park_id,全部平倉那種 inflight_id)只畫一列(designer v034 UX P2-1)——
+   解除了就畫那一列 P3(時間用 released_at),還沒解除畫最新那列;manual 停車沒解除前不畫(同一刻的 HALT 已講,
+   只掛部位表那句)。沒有 id 的舊列、其他列照原樣。回 [{ e, ms }] */
+function trUnconfirmedRows(errs) {
+  const out = [], groups = new Map();
+  (Array.isArray(errs) ? errs : []).forEach((e) => {
+    if (!e || typeof e !== "object") return;
+    const id = e.kind === "order_unconfirmed" ? (e.park_id || (e.inflight_id ? "i:" + e.inflight_id : null)) : null;
+    if (!id) { out.push({ e, ms: trMs(e.ts) }); return; }
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(e);
+  });
+  groups.forEach((list) => {
+    const rel = list.filter((e) => e.released === true);
+    if (rel.length) {
+      const e = rel.reduce((a, b) => ((trMs(b.released_at) || 0) >= (trMs(a.released_at) || 0) ? b : a));
+      // the close-all row says what to do next; prefer it over the plain one when both were released
+      const pick = rel.find((x) => x.close_all === true) || e;
+      out.push({ e: pick, ms: trMs(pick.released_at) || trMs(pick.ts) });
+      return;
+    }
+    const e = list.reduce((a, b) => ((trMs(b.ts) || 0) >= (trMs(a.ts) || 0) ? b : a));
+    if (e.manual === true && e.stuck !== true) return;
+    out.push({ e, ms: trMs(e.ts) });
+  });
+  return out;
+}
 /* 列下面那一句(白話不帶標的:它就掛在那個標的的列下面;同網頁 pfOrderErrPlain / pfOrderErrRaw)。認得的原因 = 在地化句去掉開頭的標的;
    認不得 = 原文拿掉機器端的分類前綴、截 200 */
 function trOrderErrRaw(err) { return String(err == null ? "" : err).replace(/^close-all: /, "").replace(/^\s*\[order_reject:[a-z_]+\]\s*/, "").slice(0, 200); }
@@ -1774,7 +1808,8 @@ function trPushLabels() {
     ev_machine_restart_stopped: t("tr.ov.evRestartStopped"), ev_machine_restart_stopped_n: t("tm.evRestartStoppedNote"),
     ev_venue_stops_missing: t("tm.evBitgetNoStop"), ev_venue_stops_missing_n: t("tr.ov.evBitgetNoStopNote"),
     ev_order_unconfirmed: t("tr.ov.evUnconfirmed"), ev_order_unconfirmed_n: t("tm.evUnconfirmedNote"),
-    ev_halt_unconfirmed_n: t("tr.ov.evHaltUnconfirmedNote"),
+    ev_halt_unconfirmed_n: t("tm.evHaltUnconfirmedNote"),   // 大寫開頭、不帶標的(標題已帶「· 標的」)
+    ev_order_unconfirmed_close_all: t("tr.ov.evUnconfirmedCloseAll"), ev_order_unconfirmed_close_all_n: t("tr.ov.evUnconfirmedCloseAllNote"),
     ev_order_unconfirmed_stuck: t("tr.ov.evUnconfirmedStuck"), ev_order_unconfirmed_stuck_n: t("tr.ov.evUnconfirmedStuckNote"),
     stratOne: t("tr.ov.evStratOne", { name: "{name}" }), stratTwo: t("tr.ov.evStratTwo", { a: "{a}", b: "{b}" }),
     stratMany: t("tr.ov.evStratMany", { name: "{name}", n: "{n}", more: "{more}" }), withStrat: t("tm.evWithStrat", { strat: "{strat}", note: "{note}" }),
@@ -4336,7 +4371,8 @@ function poSigTable(r, stored, states, mode) {
   const errs = firstRead ? new Map() : trLiveOrderErrs(r.order_errors, pending, { open: openSet, twOpen: [...openSet].some((k) => !!trTxfSpec(k)), running, orders: r.orders });
   errs.forEach((le, key) => {
     const sym = String(le.symbol || "—").replace(/@spot$/, ""), err = String(le.error || le.message || ""), closeAll = err.indexOf("close-all:") === 0;
-    const plain = le.kind === "order_unconfirmed" ? t("tr.err.unconfirmed") : trOrderErrParse(err) ? trOrderErrText("", err).replace(/^[\s:：—-]+/, "").replace(/^[a-z]/, (c) => c.toUpperCase()) : null;
+    const plain = le.kind === "order_unconfirmed" ? t(le.close_all === true ? "tr.ov.evUnconfirmedCloseAllNote"   // close_all 優先(同網頁)
+      : le.manual === true ? "tr.err.unconfirmedManual" : "tr.err.unconfirmed") : trOrderErrParse(err) ? trOrderErrText("", err).replace(/^[\s:：—-]+/, "").replace(/^[a-z]/, (c) => c.toUpperCase()) : null;
     const loud = !closeAll && trErrLoud(le, hs, TR.startAt, r.last_reconcile);
     const line = trEl("span", loud ? "pf-note err" : "pf-note past");
     // 節流中的重複失敗只更新那一列的 last_at／count(4647a2e):時間寫最後一次失敗;哪一筆還在失敗照舊看 ts(trLiveOrderErrs)
@@ -5025,13 +5061,21 @@ const TR_EV_P1 = ["order_error", "order_unconfirmed", "manual_close_required", "
 const TR_EV_P2 = ["reconciler_dead", "venue_disconnected", "strategy_failed", "bar_stale", "target_stale", "dead_members", "scheduler_error",
   "venue_unbound", "market_check_off", "ui_override", "settings_rollback_failed", "report_degraded", "exchange_unreachable",
   "machine_silent", "disk_full", "memory_low", "report_rejected"];
-// 下單那一腿背後的策略(策略檔名):一支、兩支照列,三支以上「A 等 N 支策略」;沒有回 ""。三個 key 同網頁 workspace_ov_ev_strat_one/two/many
-function trStratText(names) {
+// 下單那一腿背後的策略(策略檔名):一支、兩支照列,三支以上「A 等 N 支策略」;沒有回 null。三個 key 同網頁
+// workspace_ov_ev_strat_one/two/many。檔名包 .mono、其餘字灰(designer v034 UX P3),一律走 textContent
+function trStratEl(names) {
   const list = Array.isArray(names) ? names.filter((x) => typeof x === "string" && x).map((x) => x.slice(0, 40)) : [];
-  if (!list.length) return "";
-  if (list.length === 1) return t("tr.ov.evStratOne", { name: list[0] });
-  if (list.length === 2) return t("tr.ov.evStratTwo", { a: list[0], b: list[1] });
-  return t("tr.ov.evStratMany", { name: list[0], n: list.length, more: list.length - 1 });
+  if (!list.length) return null;
+  const A = "\u0001", B = "\u0002", N = "\u0003", M = "\u0004";
+  const tpl = list.length === 1 ? t("tr.ov.evStratOne", { name: A }) : list.length === 2 ? t("tr.ov.evStratTwo", { a: A, b: B })
+    : t("tr.ov.evStratMany", { name: A, n: N, more: M });
+  const mono = { [A]: list[0], [B]: list[1], [N]: String(list.length), [M]: String(list.length - 1) };   // 數字也 mono(同網頁)
+  const span = trEl("span", "dim");
+  tpl.split(/([\u0001-\u0004])/).forEach((part) => {
+    if (Object.prototype.hasOwnProperty.call(mono, part)) span.appendChild(trEl("span", "mono", mono[part]));
+    else if (part) span.append(part);
+  });
+  return span;
 }
 // api(/cloud/events)每筆帶的級別 "P1"/"P2"/"P3";沒帶或認不得(舊 api、這台電腦記的那份)回 null,交給 trEvLevel
 function trEvApiLevel(ev) { const m = /^P([123])$/.exec(ev && typeof ev.level === "string" ? ev.level : ""); return m ? Number(m[1]) : null; }
@@ -5204,7 +5248,7 @@ function trOvEvents(r, z) {
     let head = null, note = null, lv = 3, tip = null, code = null, tail = null;
     // 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);這台電腦記的那一筆沒有 source = 人按的
     // halt 的字照 source(trEvLevel);顏色在 push 那裡讓 api 的 level 蓋過
-    if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, trHaltNow(ev, d, r)); head = t(lv === 1 ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : "tr.ov.evHalt"); note = trHaltUnconfirmedSym(d) ? t("tr.ov.evHaltUnconfirmedNote") : trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : closes ? null : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
+    if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, trHaltNow(ev, d, r)); head = t(lv === 1 ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : "tr.ov.evHalt"); note = trHaltUnconfirmedSym(d) != null ? trHaltUnconfirmedNote(d) : trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : closes ? null : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
     // 前一筆是暫停才叫「恢復」;第一次啟動(或之前的暫停不在紀錄裡,例如對帳器自動暫停)寫「已啟動下單」。標題已經講完,不帶說明
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t(lastRun === "halt" ? "tr.ov.evResume" : "tr.ov.evStart"); lastRun = "resume"; }
     else if (ev.type === "venue_connected" && venue) head = ["tr.ov.evConnected", { venue }];
@@ -5223,31 +5267,30 @@ function trOvEvents(r, z) {
     const closes = !auto && trHaltCloses("halt", halt);
     body.appendChild(trEl("span", trEvClass(trEvLevel("halt", halt)), auto ? t("tr.ov.evHaltAuto") : t(closes ? "tr.ov.evHaltClose" : "tr.ov.evHalt")));
     // 平倉那一列標題已經講完,不再帶「平倉與停損停利照常執行」(設計稽核 S2);什麼單都不下那句照舊
-    if (trHaltUnconfirmedSym(halt)) body.append(" ", trEl("span", "dim", "— " + t("tr.ov.evHaltUnconfirmedNote")));
+    if (trHaltUnconfirmedSym(halt) != null) body.append(" ", trEl("span", "dim", "— " + trHaltUnconfirmedNote(halt)));
     else if (trHaltStopsAll(halt) || !closes) body.append(" ", trEl("span", "dim", "— " + (trHaltStopsAll(halt) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"))));   // A′:什麼單都不下,同重開那一句
   });
-  (Array.isArray(r.order_errors) ? r.order_errors : []).forEach((e) => {
-    if (!e || typeof e !== "object") return;
-    push(trMs(e.ts), (body) => {
+  trUnconfirmedRows(r.order_errors).forEach(({ e, ms }) => {
+    push(ms, (body) => {
       const sym = String(e.symbol || "").replace(/@spot$/, ""), raw = String(e.error || e.message || ""), twn = trTwName(sym), tw = trTwNameEl(sym);
-      const strat = trStratText(e.strategies);
-      if (e.kind === "order_unconfirmed" && e.released === true) {   // 已查到結果、解除了:灰字,講結果,不再講暫停開倉
+      const strat = trStratEl(e.strategies);
+      const tail = (note) => { body.append(" ", trEl("span", "mono", sym)); if (tw) body.appendChild(tw); if (strat) body.append(" ", strat); body.append(" ", trEl("span", "dim", "— " + note)); };
+      if (e.kind === "order_unconfirmed" && e.released === true) {   // 查到結果、解除了:P3 列(標題一般字、說明灰),講結果
+        if (e.interrupted === true) { body.appendChild(trEl("span", "", t("tr.ov.evUnconfirmedCloseAll"))); tail(t("tr.ov.evUnconfirmedInterruptedNote")); return; }
         body.appendChild(trEl("span", "", t("tr.ov.evUnconfirmedReleased")));
-        body.append(" ", trEl("span", "mono", sym)); if (tw) body.appendChild(tw);
-        if (strat) body.append(" ", trEl("span", "dim", strat));
-        body.append(" ", trEl("span", "dim", "— " + t(e.filled === true ? "tr.ov.evUnconfirmedReleasedFilled" : "tr.ov.evUnconfirmedReleasedNone")));
+        tail(t(e.close_all === true ? (e.filled === true ? "tr.ov.evUnconfirmedReleasedCloseAllFilled" : "tr.ov.evUnconfirmedReleasedCloseAllNone")
+          : e.filled === true ? "tr.ov.evUnconfirmedReleasedFilled" : "tr.ov.evUnconfirmedReleasedNone"));
         return;
       }
       if (e.kind === "order_unconfirmed") {   // 停車的單(lib/portfolio):原文不進畫面,講後果
+        if (e.close_all === true) { body.appendChild(trEl("span", "err", t("tr.ov.evUnconfirmedCloseAll"))); tail(t("tr.ov.evUnconfirmedCloseAllNote")); return; }
         body.appendChild(trEl("span", "err", t(e.stuck === true ? "tr.ov.evUnconfirmedStuck" : "tr.ov.evUnconfirmed")));
-        body.append(" ", trEl("span", "mono", sym)); if (tw) body.appendChild(tw);
-        if (strat) body.append(" ", trEl("span", "dim", strat));
-        body.append(" ", trEl("span", "dim", "— " + t(e.stuck === true ? "tr.ov.evUnconfirmedStuckNote" : "tr.ov.evUnconfirmedNote")));
+        tail(t(e.stuck === true ? "tr.ov.evUnconfirmedStuckNote" : "tr.ov.evUnconfirmedNote"));
         return;
       }
       body.appendChild(trEl("span", "err", t("tr.ov.evErr")));
       trEvCount(body, e.count);   // lib/portfolio._record_order_error 同標的同原因併成一列、累加 count
-      if (strat) body.append(" ", trEl("span", "dim", strat));
+      if (strat) body.append(" ", strat);
       if (trOrderErrParse(raw)) body.append(" ", trEl("span", "dim", "— " + trOrderErrText(twn ? sym + " " + twn : sym, raw)));   // 認得的原因:整句在地化(句子自己帶標的;台股帶名字)
       else { body.append(" ", trEl("span", "mono", sym)); if (tw) body.appendChild(tw); body.append(" ", trEl("span", "dim", "— " + raw.slice(0, 160))); }
     });

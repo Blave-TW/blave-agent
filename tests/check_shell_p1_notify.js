@@ -76,4 +76,10 @@ t("stuck 那則有自己的標題與內文", src.includes("ev_order_unconfirmed_
   t("追蹤不了而整台暫停:halt 那則帶 unconfirmed,內文用專屬那句(有英文退路)", x.show.length === 1 && x.show[0].payload.unconfirmed === true
     && p1FromState(R({ halted: true, at: NOW - 5, source: "reconciler", reason: "3 strikes" }), { halt: 0, err: 0 }, NOW).show[0].payload.unconfirmed === false
     && src.includes("ev_halt_unconfirmed_n:")); }
+{ const x = p1FromState(R({ halted: true, at: NOW - 5, source: "reconciler", reason: "[order_unconfirmed_unparked] BTCUSDT: unknown" }), { halt: 0, err: 0 }, NOW);
+  t("追蹤不了而整台暫停:payload 帶標的(標題接「· BTCUSDT」)", x.show[0].payload.symbol === "BTCUSDT"); }
+{ const x = p1FromState(R({ halted: false }, [{ ts: NOW - 9, symbol: "BTCUSDT", kind: "order_unconfirmed", manual: true, park_id: "manual:B:1" },
+  { ts: NOW - 8, symbol: "ETHUSDT", kind: "order_unconfirmed", stuck: true, close_all: true, inflight_id: "ETHUSDT_market" }]), { halt: 0, err: 0 }, NOW);
+  t("manual 停車第一列不叫(HALT 已叫);全部平倉沒平到那列帶 close_all", x.show.length === 1 && x.show[0].payload.close_all === true
+    && src.includes("ev_order_unconfirmed_close_all:") && src.includes("ev_order_unconfirmed_close_all_n:")); }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

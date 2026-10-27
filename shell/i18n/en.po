@@ -9036,7 +9036,7 @@ msgid "tr.ov.evUnconfirmedNote"
 msgstr "This order may have filled — don't place it again yourself. New entries on this symbol are paused, closes still run, and it resumes once the result is found."
 
 msgid "tr.ov.evUnconfirmedStuckNote"
-msgstr "The order still can't be found. New entries on this symbol stay paused. Check your position on the exchange, then tell your agent how much filled."
+msgstr "Still no result, so new entries on this symbol stay paused. Check the exchange, tell your agent how much filled, and don't place it again yourself."
 
 msgid "tm.evUnconfirmedNote"
 msgstr "This order may have filled — don't place it again yourself. New entries on this symbol are paused; closes still run."
@@ -9067,8 +9067,33 @@ msgid "tr.ov.evUnconfirmedReleasedNone"
 msgstr "It did not fill; new entries on this symbol resume."
 
 msgid "tr.haltUnconfirmed"
-msgstr "An order on {sym} has an unknown outcome and may have filled; nothing goes out while paused. Check your position on the exchange; don't place it again yourself. Tell your agent how much filled, then press Start trading."
+msgstr "An order on {sym} may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
 
 msgid "tr.ov.evHaltUnconfirmedNote"
-msgstr "nothing goes out. An order has an unknown outcome and may have filled — don't place it again yourself. Tell your agent how much filled, then press Start trading."
+msgstr "an order on {sym} may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
+
+# 下單結果不明(designer v034 UX 定稿):全部平倉沒平到那一型與它的收尾、整台暫停沒有標的的退路與本機通知內文、manual 停車部位表那句
+msgid "tr.ov.evHaltUnconfirmedNoteNosym"
+msgstr "an order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
+
+msgid "tm.evHaltUnconfirmedNote"
+msgstr "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
+
+msgid "tr.ov.evUnconfirmedCloseAll"
+msgstr "Not closed with the rest"
+
+msgid "tr.ov.evUnconfirmedCloseAllNote"
+msgstr "An order here has an unknown outcome and was left out of this close. Don't trade it yourself: tell your agent how much filled, then press Pause and close positions again."
+
+msgid "tr.ov.evUnconfirmedReleasedCloseAllFilled"
+msgstr "It filled and is in the book. To close it, press Pause and close positions again."
+
+msgid "tr.ov.evUnconfirmedReleasedCloseAllNone"
+msgstr "It did not fill. Nothing else to do."
+
+msgid "tr.ov.evUnconfirmedInterruptedNote"
+msgstr "See “Previous execution interrupted”."
+
+msgid "tr.err.unconfirmedManual"
+msgstr "Outcome unknown — it may have filled; don't place it again yourself. New entries resume once you tell your agent how much filled."
 
