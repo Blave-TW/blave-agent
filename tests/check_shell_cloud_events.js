@@ -102,8 +102,8 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
     && trHaltCloses("halt", { source: "web", reason: "close all positions" }) && trHaltCloses("halt", { source: "flatten", reason: "close all positions" })
     && !trHaltCloses("halt", { source: "web", reason: "user request" }) && !trHaltCloses("halt", {}) && !trHaltCloses("halt", null)
     && !trHaltCloses("halt", { source: "web", reason: "close all positions", closing: false }) && trHaltCloses("halt", { source: "web", reason: "close all positions", closing: true })
-    && /const closes = !auto && trHaltCloses\("halt", halt\);/.test(cut("// 目前的 HALT", "(Array.isArray(r.order_errors)"))
-    && /t\(closes \? "tr\.ov\.evHaltClose" : "tr\.ov\.evHalt"\)/.test(cut("// 目前的 HALT", "(Array.isArray(r.order_errors)")));
+    && /const closes = !auto && trHaltCloses\("halt", halt\);/.test(cut("// 目前的 HALT", "trUnconfirmedRows(r.order_errors)"))
+    && /t\(closes \? "tr\.ov\.evHaltClose" : "tr\.ov\.evHalt"\)/.test(cut("// 目前的 HALT", "trUnconfirmedRows(r.order_errors)")));
   ok("ui:下單失敗不在這一段(雲端的 portfolio 仍帶 order_errors,兩邊都畫會重複)", !/order_error/.test(loop));
   // 稽核 r2 P2-2／r3 P3-1、P3-3:雲端 halt 事件對到現在這筆 HALT 的規則(同網頁 ovHaltCloses)——ts 與 halt.at 差 ≤1 秒、reason 相同;
   // 對到時 closing 先看報告現在的值,對不上照事件自己的(再退回 reason)。這台電腦記的那筆(欄位在最外層)不動
@@ -130,11 +130,11 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
       !bad.length && H.trHaltNow(local, local, { halt: cur(T, true) }) === local); }
   ok("ui:時間仍然是秒(平台與這台電腦同一個單位)", /uiHalts\.push\(ev\.ts \* 1000\)/.test(loop) && /push\(ev\.ts \* 1000,/.test(loop));
   ok("ui:雲端記的 venue_disconnected P2、這台電腦自己按的一般字", /lv = d !== ev \? 2 : 3;/.test(loop));
-  ok("現在的 HALT 那列顏色照級別(execute/settings 暫停不再紅,P1 由對應事件那列承擔)", /trEl\("span", trEvClass\(trEvLevel\("halt", halt\)\),/.test(cut("// 目前的 HALT", "(Array.isArray(r.order_errors)")));
+  ok("現在的 HALT 那列顏色照級別(execute/settings 暫停不再紅,P1 由對應事件那列承擔)", /trEl\("span", trEvClass\(trEvLevel\("halt", halt\)\),/.test(cut("// 目前的 HALT", "trUnconfirmedRows(r.order_errors)")));
   ok("ui 與機器事件兩段都走 trEvBody(帶 ev.count)", (src.match(/trEvBody\(body, .*?, ev\.count, .*?\)\);/g) || []).length === 2);
   ok("兩段的顏色都先讀 api 的 level、缺才用自己算的", /trEvBody\(body, head, note, trEvApiLevel\(ev\) \|\| lv, tip, ev\.count, code, tail\)/.test(src)
     && /trEvBody\(body, txt\[0\], txt\[1\], trEvApiLevel\(ev\) \|\| txt\[2\], txt\[3\], ev\.count, txt\[4\], txt\[5\]\)/.test(src));
-  ok("下單失敗那列也接 ×N(order_errors 的 count),在標題後、標的前", /t\("tr\.ov\.evErr"\)\)\);\n\s*trEvCount\(body, e\.count\);/.test(cut("push(trMs(e.ts), (body) => {", "(Array.isArray(r.events)"))); }
+  ok("下單失敗那列也接 ×N(order_errors 的 count),在標題後、標的前", /t\("tr\.ov\.evErr"\)\)\);\n\s*trEvCount\(body, e\.count\);/.test(cut("trUnconfirmedRows(r.order_errors).forEach(", "(Array.isArray(r.events)"))); }
 ok("trEvApiLevel:P1/P2/P3 → 1/2/3;缺、小寫、P4、數字、非物件 → null",
   JSON.stringify([trEvApiLevel({ level: "P1" }), trEvApiLevel({ level: "P2" }), trEvApiLevel({ level: "P3" }), trEvApiLevel({}), trEvApiLevel({ level: "p1" }),
     trEvApiLevel({ level: "P4" }), trEvApiLevel({ level: 1 }), trEvApiLevel({ level: " P1" }), trEvApiLevel(null)]) === JSON.stringify([1, 2, 3, null, null, null, null, null, null]));
