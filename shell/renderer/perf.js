@@ -115,17 +115,31 @@ function perfFailLine(side, st, failKey) {
 }
 /* 成交測試那一格要的狀態(report-xt.js 經 opts.ui 拿;perfShown 假 = null):{ st, perf: idle|running|failed, mine: run|busy|fail|null }(= web xtReq)。
    run = 這頁按的那次在跑(測試中、整塊收掉);fail = 那次失敗了(失敗行);busy = 那次 ack BUSY(別人的那次在跑,鈕下多一行)。
-   順手收記號:跑完成功、BUSY 那次跑完、或失敗之後又有一次在跑(報告前的自動更新、回測數據那顆)——那都不是這頁按的了 */
+   按了卻沒算出來(稽核 v034-xt-ondemand P2-2):這頁按的那次跑完(idle、stats.json 比按下時新),卻沒有 exec_test、或現行那列對不上 Sharpe
+   (主機沒收到 exec_test:can_exec_test 還沒跟上、或算失敗留著舊的)——當成這頁按的失敗,鈕下「沒測成功」,不默默回到空狀態。
+   順手收記號:跑完而且算出來了、BUSY 那次跑完、失敗之後又有一次在跑(報告前的自動更新、回測數據那顆)、或失敗之後別處又更新成功——那都不是這頁按的了 */
 function perfXtInfo(B) {
   const side = pfSide(B);
   if (!perfShown(side, B)) return null;
   const st = perfState(side, B, Date.now()), m = PFX[side].get(B.name);
   if (m) {
-    if (st.kind === "idle" || (m.busy && st.kind !== "running") || (m.done && st.kind === "running")) PFX[side].delete(B.name);
-    else if (st.kind === "failed") m.done = true;
+    if ((m.busy && st.kind !== "running") || (m.done && st.kind === "running")) PFX[side].delete(B.name);
+    else if (st.kind === "failed") { m.done = true; m.empty = false; }
+    else if (st.kind === "idle" && !m.done) {
+      if (st.at > m.at0 && !perfXtFresh(B)) { m.done = true; m.empty = true; m.at1 = st.at; }   // 跑完了,沒算出來
+      else PFX[side].delete(B.name);   // 算出來了;或報告沒跟上就過了寬限(不知道有沒有跑,不假稱失敗)
+    } else if (st.kind === "idle" && !(m.empty && st.at === m.at1)) PFX[side].delete(B.name);
   }
   const k = PFX[side].get(B.name);
+  if (k && k.empty) return { st: { kind: "failed", at: st.at, err: "EXIT" }, perf: "failed", mine: "fail" };
   return { st, perf: st.kind, mine: !k ? null : k.busy ? "busy" : k.done ? "fail" : "run" };
+}
+// stats.json 有這次算出來的 exec_test:清洗得過,而且現行那列等於目前的 Sharpe(同 report-xt.js 的過時判準)
+function perfXtFresh(B) {
+  const X = (window.BlaveReport || {})._xt, bt = B.data && B.data.stats;
+  if (!X || !bt) return false;
+  const x = X.xtSanitize(bt.exec_test);
+  return !!x && !X.xtStale(x, bt["Sharpe Ratio"]);
 }
 /* 〔開始測試〕(kind empty,空狀態那顆)／〔重新測試〕(fresh 描邊、stale 填色,頂列右側)那一格:同〔更新績效〕一個動作、同一份疊層與輪詢,
    不開對話回合、沒有確認框、不花額度。跑的期間停用 + 圓環:這頁按的「測試中」、別處按的「更新中」;BUSY 那次鈕下多一行「跑完再按一次」;
@@ -194,7 +208,7 @@ async function perfClick(B, opener) {
   if (!p || !name) return;
   const o = { at0: p.at, ref0: pfRefKey(p.refresh), ackAt: 0, failed: null };
   PF[side].set(name, o);
-  if (opener) PFX[side].set(name, { busy: false, done: false }); else PFX[side].delete(name);
+  if (opener) PFX[side].set(name, { busy: false, done: false, at0: p.at }); else PFX[side].delete(name);
   perfPollStop(side);   // 上一輪封頂留下的佔位讓開,這一輪重新輪詢
   if (rpBag() === B && !$("rp").hidden) perfPaint(B);
   const args = { names: [name] };

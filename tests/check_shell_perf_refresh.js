@@ -98,7 +98,11 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     }
   }
   const doc = { createElement: (tag) => new El(tag) };
-  const names = ["pfEl", "pfNowWhy", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfFailLine", "perfXtInfo", "perfXtSlot", "perfXtSync", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
+  // 成交測試「算出來了沒」用的清洗與過時判準只有一份(report-xt.js 的純邏輯,perf.js 經 window.BlaveReport._xt 讀)
+  const XT_WIN = {}; new Function("window", "document", read(path.join(R, "report-xt.js")))(XT_WIN, doc);
+  const XT_GRID = (s0) => ({ lag: Object.fromEntries(["0", "1", "2", "3", "5", "10"].map((k) => [k, [s0, 10, -10]])), close_fill: [s0, 10, -10],
+    cost: Object.fromEntries(["free", "0.01", "0.02", "0.05", "0.1", "0.2", "0.5"].map((k) => [k, [s0, 10, -10]])), fee_per_side_pct: 0.05, position_changes: 40 });
+  const names = ["pfEl", "pfNowWhy", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfFailLine", "perfXtInfo", "perfXtFresh", "perfXtSlot", "perfXtSync", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
   const body = ["PF", "PFL", "PFP", "PFX", "PF_POLL_MS", "PF_POLL_MAX_MS", "PF_ERRS", "PF_NO_DATA", "PF_WHY", "pfSide", "pfRefKey"].map((n) => constSrc(perfSrc, n)).join("") + names.map((n) => fnSrc(perfSrc, n)).join("\n")
     + "\nreturn { " + names.join(", ") + ", PF, PFL, PFP, PFX };";
   const clock = { now: new Date(new Date().getFullYear(), 8, 28, 10, 0, 0).getTime() };   // 今年 9/28 10:00 本地時間(格式斷言不隨時區翻)
@@ -127,7 +131,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
       // 上線中的判準只有一份(versions.js verPicked:下單設定有這個 key,金額 0 也算);真的那支,讀 env.TR_BAGS
       verPicked: null,
       xpIsTypeB, verPendingOf: () => opt.pending || null, VS, RERUN_WHY: { DATA: "data", REFUSED: "refused", TIMEOUT: "timeout" }, shlFmtTime,
-      window: { blave: { loadStrategy: async () => (opt.reload ? opt.reload() : null) } }, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; }, clearTimeout() {}, Date: FakeDate,
+      window: { blave: { loadStrategy: async () => (opt.reload ? opt.reload() : null) } , BlaveReport: XT_WIN.BlaveReport }, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; }, clearTimeout() {}, Date: FakeDate,
       // 這台現在的帳號狀態(策略庫 libCtx 那份;libCtx 的 env 是目前的分頁,pfNowWhy 自己蓋成 local)
       LIB: { data: opt.acct === undefined ? null : opt.acct && { dataAccess: opt.acct.dataAccess || null, why: opt.acct.why || null }, stale: !!(opt.acct && opt.acct.stale) },
       libCtx: () => ({ env: "local", signedIn: !(opt.acct && opt.acct.signedIn === false), dataAccess: opt.acct && opt.acct.dataAccess || null, why: opt.acct && opt.acct.why || null }), libGrouping,
@@ -359,8 +363,22 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
       && x.F.perfXtInfo(x.B).mine === "run");
     x.acks[0]({ ok: true, result: { started: ["momo"], skipped: {} } }); await flush();
     ok("成交測試:ack started 才記 perf_update_xt(一次;回測數據分頁那顆才是 perf_update)", x.tracked.join() === "perf_update_xt");
+    // 按了卻沒算出來(稽核 P2-2):跑完(at 前進、沒有 refresh)但 stats.json 沒有 exec_test → 這頁按的失敗「沒測成功」,不默默回空狀態
     x.B.data.perf = { at: nowS() + 60 }; x.F.PF.local.delete("momo");
-    ok("成交測試:跑完成功(at 前進、沒有 refresh)→ 這頁按的記號收掉,回到〔開始測試〕", x.F.perfXtInfo(x.B).mine === null && x.F.perfXtSlot(x.B, "empty").kids[0].textContent === "開始測試"); }
+    { const s1 = x.F.perfXtSlot(x.B, "empty"), info = x.F.perfXtInfo(x.B);
+      ok("成交測試:這頁按的那次跑完、卻沒有 exec_test(主機沒收到參數 / 算失敗)→ 鈕照出(重試)+「沒測成功」", info.mine === "fail" && info.perf === "failed"
+        && s1.kids[0].textContent === "開始測試" && s1.kids[1] && s1.kids[1].textContent === "沒測成功" && !!s1.kids[1].title); }
+    ok("成交測試:「沒測成功」留著(重畫幾次都一樣),直到別處又更新了一次", x.F.perfXtInfo(x.B).mine === "fail" && (() => { x.B.data.perf = { at: nowS() + 120 }; return x.F.perfXtInfo(x.B).mine === null; })()); }
+  { const y = rig("zh"); y.B.data.stats["Sharpe Ratio"] = 1.2;
+    y.F.perfXtSlot(y.B, "fresh").kids[0].click(); await flush(); y.acks[0]({ ok: true, result: { started: ["momo"], skipped: {} } }); await flush();
+    y.B.data = Object.assign({}, y.B.data, { stats: Object.assign({}, y.B.data.stats, { "Sharpe Ratio": 1.3, exec_test: XT_GRID(1.2) }), perf: { at: nowS() + 60 } }); y.F.PF.local.delete("momo");
+    ok("成交測試:跑完但 exec_test 是舊的(現行 1.2 ≠ 新 Sharpe 1.3)→ 也是「沒測成功」", y.F.perfXtInfo(y.B).mine === "fail");
+    const z = rig("zh"); z.F.perfXtSlot(z.B, "fresh").kids[0].click(); await flush(); z.acks[0]({ ok: true, result: { started: ["momo"], skipped: {} } }); await flush();
+    z.B.data = Object.assign({}, z.B.data, { stats: Object.assign({}, z.B.data.stats, { "Sharpe Ratio": 1.3, exec_test: XT_GRID(1.3) }), perf: { at: nowS() + 60 } }); z.F.PF.local.delete("momo");
+    ok("成交測試:跑完而且算出來了(現行 = 新 Sharpe)→ 記號收掉,沒有失敗行", z.F.perfXtInfo(z.B).mine === null && z.F.perfXtSlot(z.B, "fresh").kids.length === 1);
+    const g = rig("zh"); g.F.perfXtSlot(g.B, "empty").kids[0].click(); await flush(); g.acks[0]({ ok: true, result: { started: ["momo"], skipped: {} } }); await flush();
+    g.F.PF.local.delete("momo");
+    ok("成交測試:報告沒跟上就過了寬限(at 沒前進)→ 不假稱失敗,記號收掉", g.F.perfXtInfo(g.B).mine === null); }
   { const c = rig("zh", { cloud: true }), cx = rig("zh", { cloud: true, canXt: true });
     c.F.perfXtSlot(c.B, "empty").kids[0].click(); cx.F.perfXtSlot(cx.B, "empty").kids[0].click(); await flush();
     ok("成交測試(雲端):can_exec_test 不是 true(舊 runtime)送不帶參數的、true 才帶 exec_test", JSON.stringify(c.sent[0][1]) === '{"names":["momo"]}' && JSON.stringify(cx.sent[0][1]) === '{"names":["momo"],"exec_test":true}'); }
