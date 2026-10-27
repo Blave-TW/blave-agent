@@ -436,7 +436,7 @@ def bh_benchmark(bench_close, close_df, kind, symbol, adjusted=True):
     px = s.reindex(s.index.union(idx)).ffill().reindex(idx).values
     ret = np.zeros(len(px))
     ret[1:] = px[1:] / px[:-1] - 1
-    _, _, _, mdd, ann = compute_stats(ret, idx)
+    sharpe, _, _, mdd, ann = compute_stats(ret, idx)
     equity = px / px[0]
     day_end = (pd.Series(np.arange(len(idx)), index=idx)
                .resample('1D').last().ffill().astype(int).values)
@@ -444,6 +444,8 @@ def bh_benchmark(bench_close, close_df, kind, symbol, adjusted=True):
             'ret_pct':  round(float(equity[-1] - 1) * 100, 2),
             'cagr_pct': round(float(ann) * 100, 2) if math.isfinite(ann) else None,
             'mdd_pct':  round(float(mdd) * 100, 2),
+            # per bar like the strategy's own 'Sharpe Ratio'; api marketplace reads this key
+            'sharpe_ratio': round(float(sharpe), 4) if math.isfinite(sharpe) else None,
             'series':   np.round(equity[day_end], 4).tolist()}
     return stats, pd.Series(equity, index=idx)
 

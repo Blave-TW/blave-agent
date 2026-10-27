@@ -36,6 +36,8 @@ const S = (o) => Object.assign({ id: 1, title: "x", summary: null, description: 
 const EQ400 = Array.from({ length: 400 }, (_, i) => +(1 + i * 0.005).toFixed(4));
 const GATES = { mcpt_status: "pass", mcpt_p: 0.0004, mcpt_n: 1000, robust: { ratio: 0.91, raw_sharpe: 1.5, plateau_sharpe: 1.37 }, fee: { rate: 0.0005, actual: 0.0004 } };
 const REP = (o) => Object.assign({ total_return: 312.5, annual_return: 24.61, sharpe: 1.5, max_drawdown: -20, symbol: "BTCUSDT", interval: "5m", gate_checks: { mcpt: "pass", robust: "pass", fee: "pass" }, gates: GATES, spark: SPARK, equity_from: "2020-01-01", equity_to: "2026-06-30" }, o);
+// max_drawdown 給正數:畫面要照 web library_rules.mdd 寫成負的
+const BENCH = { symbol: "BTCUSDT", adjusted: false, total_return: 794, annual_return: 20.6, max_drawdown: 34, sharpe: 1.05, equity: EQ400.map((v) => +(1 + (v - 1) * 0.6).toFixed(4)), as_of: "2026-06-20" };
 const REPORT = { strategy_id: 101, title: "x", equity: EQ400, equity_from: "2020-01-01", equity_to: "2026-06-30", backtest_start: "2019-12-02", backtest_end: "2026-06-30", created_at: "2026-06-10 00:00:00", gates: GATES };
 const LIST = [
   S({ id: 101, title: "BTC 通道動能共振", summary: "通道 + 動能。", description: "第一段。\n第二段。", created_at: "2026-06-10 00:00:00", purchase_count: 7, direction: "long", max_exposure: 1, report: REP({}) }),
@@ -212,6 +214,7 @@ if (!process.versions.electron) {
   // ── ② 主行程 ──
   const M = {}; vm.createContext(M);
   vm.runInContext(["LIB_TITLE_MAX", "LIB_DAY_RE", "LIB_MARKETS", "libFin", "libDay", "libCurveOk", "LIB_NAME_RE"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n") + "\n" + cutFn(mainSrc, "libSanitize") + "\n" + cutFn(mainSrc, "libNoteLangs") + "\n" + cutFn(mainSrc, "libInstalledClean") + "\n" + cutFn(mainSrc, "libReportSanitize")
+  + (mainSrc.includes("function libBenchSanitize(") ? "\n" + mainSrc.match(/^const LIB_BENCH_SYM_RE = [^\n]*$/m)[0].replace(/^const /, "var ") + "\n" + cutFn(mainSrc, "libBenchSanitize") : "")
   + "\n" + mainSrc.match(/^const LIB_NOTE_HTML_MAX = [^\n]*$/m)[0].replace(/^const /, "var ") + "\n" + cutFn(mainSrc, "libNoteSanitize"), M);
   ok("② 清單不是陣列 / body 不是物件 → null", M.libSanitize(null) === null && M.libSanitize({}) === null && M.libSanitize({ strategies: "x" }) === null && M.libSanitize([]) === null);
   const good = M.libSanitize({ strategies: LIST });
@@ -220,9 +223,20 @@ if (!process.versions.electron) {
   ok("② gates 有格壞 / 缺格 → 那格 null、其餘照收;gates 不是物件 → null;total_return 不是數 → null", JSON.stringify(M.libSanitize({ strategies: [S({ report: REP({ total_return: "9", gates: { mcpt_p: "x", robust: 5, fee: { rate: 0.0005 } } }) })] })[0].report.gates) === '{"mcpt_p":null,"robust":{"ratio":null},"fee":{"rate":0.0005,"actual":null}}'
     && M.libSanitize({ strategies: [S({ report: REP({ total_return: "9", gates: [] }) })] })[0].report.gates === null && M.libSanitize({ strategies: [S({ report: REP({ total_return: "9" }) })] })[0].report.total_return === null);
   const rep = M.libReportSanitize(REPORT);
-  ok("② libReportSanitize:只留 400 點曲線 + 兩組日期、其餘欄位不帶;曲線 401 點 / 有 0 / 不是陣列 → null;日期只認 YYYY-MM-DD;body 不是物件 → null", JSON.stringify(Object.keys(rep)) === '["equity","equity_from","equity_to","backtest_start","backtest_end"]' && rep.equity.length === 400 && rep.backtest_start === "2019-12-02" && rep.equity_to === "2026-06-30"
+  ok("② libReportSanitize:只留 400 點曲線 + 兩組日期、其餘欄位不帶;曲線 401 點 / 有 0 / 不是陣列 → null;日期只認 YYYY-MM-DD;body 不是物件 → null", JSON.stringify(Object.keys(rep)) === '["equity","equity_from","equity_to","backtest_start","backtest_end","benchmark"]' && rep.benchmark === null && rep.equity.length === 400 && rep.backtest_start === "2019-12-02" && rep.equity_to === "2026-06-30"
     && M.libReportSanitize(Object.assign({}, REPORT, { equity: Array(401).fill(1) })).equity === null && M.libReportSanitize(Object.assign({}, REPORT, { equity: [1, 0] })).equity === null && M.libReportSanitize(Object.assign({}, REPORT, { equity: null, backtest_start: "2019-12-02 00:00:00" })).backtest_start === null
     && M.libReportSanitize(null) === null && M.libReportSanitize("x") === null);
+  // 買進持有基準(spec library-benchmark-2026-10-27;api marketplace._benchmark_payload):逐欄驗,壞一欄就整個 null、報告照收
+  { const RB = (b) => M.libReportSanitize(Object.assign({}, REPORT, { benchmark: Object.assign({}, BENCH, b) }));
+    const okB = RB({ extra: "x" }), bad = (b) => { const x = RB(b); return !!x && x.benchmark === null && x.equity.length === 400; };
+    ok("② benchmark:只留八欄(symbol / adjusted / 四個數 / 400 點曲線 / as_of)、多的不帶", !!okB && JSON.stringify(Object.keys(okB.benchmark || {})) === '["symbol","adjusted","total_return","annual_return","max_drawdown","sharpe","equity","as_of"]'
+      && okB.benchmark.symbol === "BTCUSDT" && okB.benchmark.adjusted === false && okB.benchmark.max_drawdown === 34 && okB.benchmark.equity.length === 400 && okB.benchmark.as_of === "2026-06-20", JSON.stringify(okB && okB.benchmark && Object.keys(okB.benchmark)));
+    ok("② benchmark 壞形狀 → 整個 null、策略曲線照收:曲線跟策略不同長 / 有 0 / 不是陣列、代號空 / 帶標籤 / 太長、adjusted 不是布林、總報酬不是數、benchmark 是陣列 / 字串;策略曲線沒有 → 基準也 null",
+      bad({ equity: EQ400.slice(1) }) && bad({ equity: [0].concat(EQ400.slice(1)) }) && bad({ equity: "x" }) && bad({ symbol: " " }) && bad({ symbol: "<img onerror=x>" }) && bad({ symbol: "A".repeat(21) }) && bad({ adjusted: "true" }) && bad({ total_return: "794" }) && bad({ total_return: null })
+      && M.libReportSanitize(Object.assign({}, REPORT, { benchmark: [BENCH] })).benchmark === null && M.libReportSanitize(Object.assign({}, REPORT, { benchmark: "x" })).benchmark === null
+      && M.libReportSanitize(Object.assign({}, REPORT, { equity: null, benchmark: BENCH })).benchmark === null);
+    const opt = RB({ annual_return: "x", max_drawdown: null, sharpe: Infinity, as_of: "2026-06-20 00:00:00" });
+    ok("② benchmark 選填欄壞了只那格 null(年化 / 回撤 / Sharpe / as_of),其餘照收", !!opt && !!opt.benchmark && opt.benchmark.annual_return === null && opt.benchmark.max_drawdown === null && opt.benchmark.sharpe === null && opt.benchmark.as_of === null && opt.benchmark.total_return === 794, JSON.stringify(opt && opt.benchmark && Object.assign({}, opt.benchmark, { equity: 0 }))); }
   ok("② 全空的報告(200 + 全 null,S3 暫時讀不到)→ null、不進快取;只有回測期間也算有東西", M.libReportSanitize({}) === null && M.libReportSanitize({ equity: null, equity_from: null, equity_to: null, backtest_start: null, backtest_end: null }) === null
     && M.libReportSanitize({ equity: [1, 0], backtest_start: "2020-01-01", backtest_end: "2021-01-01" }).equity === null && M.libReportSanitize({ backtest_start: "2020-01-01", backtest_end: "2021-01-01" }).backtest_end === "2021-01-01");
   ok("② blave_data:只收 none / required,其餘(缺、布林、大小寫錯)一律 null", M.libSanitize({ strategies: [S({ id: 1, blave_data: "none" }), S({ id: 2, blave_data: "required" }), S({ id: 3 }), S({ id: 4, blave_data: true }), S({ id: 5, blave_data: "None" })] }).map((x) => x.blave_data).join() === "none,required,,,");
@@ -721,6 +735,34 @@ app.whenReady().then(async () => {
     ok("④ 免費態:主鈕「用這支」、沒有說明句(免費不寫)", s.cta === (await T("lib.use")) && s.note === "", JSON.stringify(s.note)); }
   ok("④ /report 回來(問一次、帶語言):只換曲線(#lib-chart 還在、LIB.chart 換新、canvas 在)與回測期間(backtest_start — backtest_end、.mono);頭部 / CTA / 焦點都沒重畫", JSON.stringify(r.after.calls) === "[[101,\"zh\"]]" && r.after.swapped && r.after.chart === 1 && r.after.canvas >= 1
     && r.after.period === "2019-12-02 — 2026-06-30" && r.after.periodMono === 1 && r.after.focus === "lib-back" && r.after.h5 === 1 && r.after.cta === (await T("lib.use")), JSON.stringify(r.after));
+  // 跟基準比(spec library-benchmark-2026-10-27 B):/report 帶 benchmark → 第二條灰虛線(先畫、壓在下面)+ 圖例兩項 + 回測欄換成三欄表;
+  // 沒有 benchmark(上面那格)→ 一條線、沒有圖例、兩欄 kv 照舊;換主題基準線跟著換色
+  const BENCH_OF = `(() => { const q = (x) => [...document.querySelectorAll(x)], c = LIB.chart, ser = c ? c.panes()[0].getSeries() : [], tok = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    const split = q("#lib-det .lib-split")[0], lg = q("#lib-det .lib-legend")[0], host = document.getElementById("lib-chart"), tip = q("#lib-det .lib-cmp .tip")[0], btn = q("#lib-det .lib-cmp .mp-tip")[0];
+    return { n: ser.length, o0: ser[0] && { color: ser[0].options().color, style: ser[0].options().lineStyle, w: ser[0].options().lineWidth }, o1: ser[1] && { color: ser[1].options().color }, grey: tok("--color-greyMedium"), green: tok("--color-green"), dashed: LightweightCharts.LineStyle.Dashed,
+      legend: q("#lib-det .lib-legend .bt-legend").map((x) => x.textContent + ":" + x.className).join("|"), legendBefore: !!lg && lg.nextElementSibling === host, legends: q("#lib-det .lib-legend").length, legendMono: q("#lib-det .lib-legend .bh .mono").map((x) => x.textContent).join(),
+      wide: split.classList.contains("wide"), head: q("#lib-det .lib-cmp thead th").map((x) => (x.querySelector(".mp-tip") || x).textContent + "/" + x.scope).join("|"), rows: q("#lib-det .lib-cmp tbody tr").map((tr) => [...tr.children].map((x) => x.textContent).join(",")).join("|"),
+      rowScope: q("#lib-det .lib-cmp tbody th").every((x) => x.scope === "row"), tone: q("#lib-det .lib-cmp td").filter((x) => /\b(up|down)\b/.test(x.className)).length, bhInk: q("#lib-det .lib-cmp td.bh").every((x) => getComputedStyle(x).color === getComputedStyle(q("#lib-det .lib-cmp td")[0]).color),
+      tip: tip && tip.textContent, tipRole: tip && tip.getAttribute("role"), described: !!btn && !!tip && btn.getAttribute("aria-describedby") === tip.id, cmp: q("#lib-det .lib-cmp").length,
+      kv: q("#lib-det .lib-kv .k").map((x) => x.textContent).join("|"), kvcols: q("#lib-det .lib-split > .lib-kvcol").length }; })()`;
+  r = await js(`(async () => { document.getElementById("lib-back").click(); LIB.reports.clear(); window.__lib.report = ${JSON.stringify(Object.assign({}, REPORT, { benchmark: BENCH }))};
+    document.querySelector('#lib-rows .lib-row[data-id="101"]').click(); const stage1 = { legends: document.querySelectorAll("#lib-det .lib-legend").length, cmp: document.querySelectorAll("#lib-det .lib-cmp").length, n: LIB.chart.panes()[0].getSeries().length };
+    await new Promise((r) => setTimeout(r, 80)); const on = ${BENCH_OF};
+    const root = document.documentElement, was = root.getAttribute("data-theme"); root.setAttribute("data-theme", was === "light" ? "dark" : "light"); window.dispatchEvent(new Event("blave:theme"));
+    const flip = ${BENCH_OF}; if (was) root.setAttribute("data-theme", was); else root.removeAttribute("data-theme"); window.dispatchEvent(new Event("blave:theme"));
+    document.getElementById("lib-back").click(); LIB.reports.clear(); window.__lib.report = ${JSON.stringify(Object.assign({}, REPORT, { benchmark: null }))}; document.querySelector('#lib-rows .lib-row[data-id="101"]').click();
+    await new Promise((r) => setTimeout(r, 80)); const off = ${BENCH_OF};
+    document.getElementById("lib-back").click(); LIB.reports.clear(); window.__lib.report = ${JSON.stringify(REPORT)}; return { stage1, on, flip, off }; })()`);
+  { const z = STR.zh, on = r.on, days = String(Math.max(0, Math.floor((Date.now() - Date.parse("2026-06-10T00:00:00")) / 86400000)));
+    ok("④ 基準:第一段(spark)只有一條線、沒有圖例與對照表;/report 回來兩條線——第一條是基準(灰 greyMedium、虛線、1px)、第二條策略綠線壓在上面", r.stage1.n === 1 && r.stage1.legends === 0 && r.stage1.cmp === 0
+      && on.n === 2 && on.o0.color === on.grey && on.o0.style === on.dashed && on.o0.w === 1 && on.o1.color === on.green, JSON.stringify([r.stage1, on.n, on.o0, on.o1, on.grey]));
+    ok("④ 基準圖例:在圖的正上方、只有兩項「權益」「BTC 持有」(BTCUSDT 寫 BTC、代號進 .mono)、虛線那項是 .bh", on.legends === 1 && on.legendBefore && on.legend === z["bt.equity"] + ":bt-legend|BTC 持有:bt-legend bh" && on.legendMono === "BTC", JSON.stringify(on));
+    ok("④ 基準對照表:表頭「回測 · 6.5 年|策略|BTC 持有」(scope col)、四列總報酬 / 年化 / Sharpe / 最大回撤,回撤兩欄都 ≤ 0(api 給正 34 也寫 −34.00%);兩欄都不上漲跌色;上架欄照舊在右(.wide)",
+      on.cmp === 1 && on.wide && on.head === "回測 · 6.5 年/col|" + z["lib.cmp.strategy"] + "/col|BTC 持有/col" && on.rowScope
+      && on.rows === z["lib.cmp.total"] + ",+312.50%,+794.00%|年化,+24.61%,+20.60%|Sharpe,1.50,1.05|最大回撤,−20.00%,−34.00%" && on.tone === 0 && on.bhInk && on.kv === "上架天數|安裝" && on.kvcols === 2, JSON.stringify(on));
+    ok("④ 基準表頭 tooltip:永續那句(adjusted false)接 as_of 那句、zh 不加空白;role=tooltip、按鈕 aria-describedby 指過去", on.tip === z["bt.tip.benchmarkBhRaw"].replace("{sym}", "BTC") + z["bt.tip.benchmarkBhAsOf"].replace("{date}", "2026-06-20") && on.tipRole === "tooltip" && on.described, JSON.stringify(on.tip));
+    ok("④ 換主題:基準線換成新主題的 greyMedium(亮暗不同值)", r.flip.n === 2 && r.flip.grey !== on.grey && r.flip.o0.color === r.flip.grey, JSON.stringify([on.grey, r.flip.grey, r.flip.o0]));
+    ok("④ benchmark 是 null:一條線、沒有圖例、沒有對照表、不加 .wide,回測欄回到原本的五列 kv", r.off.n === 1 && r.off.legends === 0 && r.off.cmp === 0 && !r.off.wide && r.off.kv === "總報酬|年化|Sharpe|最大回撤|樣本|上架天數|安裝", JSON.stringify(r.off)); }
   // 降級:主行程回 null / 打不到 → 停在 spark、回測期間留曲線區間、不出任何錯誤字;下次進詳情再問(失敗不記)
   r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; document.getElementById("lib-back").click(); window.__lib.report = null; window.__lib.reportCalls = []; q('#lib-rows .lib-row[data-id="72"]')[0].click(); const c0 = LIB.chart;
     await new Promise((r) => setTimeout(r, 80)); const a = { same: LIB.chart === c0 && !!c0, canvas: q("#lib-det #lib-chart canvas").length, period: document.getElementById("lib-period").textContent, err: q("#lib-det .err, #lib-det .plan-err, #lib-det [role=alert]").length, none: q("#lib-det .chart-none").length, cached: LIB.reports.has(72) };

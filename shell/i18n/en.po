@@ -4633,6 +4633,14 @@ msgstr "Installs"
 msgid "lib.sampleYrs"
 msgstr "{n} yrs"
 
+# 策略庫詳情「回測」對照表的欄名(spec library-benchmark-2026-10-27 B):指標｜策略｜{sym} 持有;只在 /report 有買進持有基準時出現。同 web workspace_lib_cmp_strategy
+msgid "lib.cmp.strategy"
+msgstr "Strategy"
+
+# 同一張對照表的「總報酬」列;字同 web bc_mp_report_total(en 大寫 R)。沒有基準時的兩欄 kv 照舊用 lib.kv.total
+msgid "lib.cmp.total"
+msgstr "Total Return"
+
 msgid "lib.gates.title"
 msgstr "Quality Gates"
 

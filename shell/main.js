@@ -2472,7 +2472,17 @@ async function libraryList(langRaw, force) {
 function libReportSanitize(body) {
   if (!body || typeof body !== "object") return null;
   const r = { equity: libCurveOk(body.equity, LIB_EQUITY_MAX), equity_from: libDay(body.equity_from), equity_to: libDay(body.equity_to), backtest_start: libDay(body.backtest_start), backtest_end: libDay(body.backtest_end) };
+  r.benchmark = libBenchSanitize(body.benchmark, r.equity);
   return r.equity || r.backtest_start || r.backtest_end ? r : null;   // 全空(S3 暫時讀不到時 api 回 200 + 全 null)= 沒東西可套:當失敗、不進快取,下次再問
+}
+/* 買進持有基準(api marketplace._benchmark_payload):哪一欄壞了就整個 null、報告照用;曲線要跟策略那條同長,第 i 點才是同一天。
+   代號只收英數與 . _ -(畫面要拼進字串);總報酬是表上一定有的那格,沒有就不算有基準 */
+const LIB_BENCH_SYM_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,19}$/;
+function libBenchSanitize(b, equity) {
+  if (!b || typeof b !== "object" || Array.isArray(b) || !equity) return null;
+  const eq = libCurveOk(b.equity, LIB_EQUITY_MAX), sym = typeof b.symbol === "string" ? b.symbol.trim() : "";
+  if (!eq || eq.length !== equity.length || !LIB_BENCH_SYM_RE.test(sym) || typeof b.adjusted !== "boolean" || libFin(b.total_return) === null) return null;
+  return { symbol: sym, adjusted: b.adjusted, total_return: b.total_return, annual_return: libFin(b.annual_return), max_drawdown: libFin(b.max_drawdown), sharpe: libFin(b.sharpe), equity: eq, as_of: libDay(b.as_of) };
 }
 const libReportCache = new Map();   // `${id}:${lang}` → { at, report }
 async function libraryReport(id, langRaw) {

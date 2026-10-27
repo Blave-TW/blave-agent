@@ -108,6 +108,24 @@
 .lib-kv { display: grid; grid-template-columns: auto 1fr; gap: var(--space-4) var(--space-12); align-items: baseline; }
 .lib-kv .k { font-size: 12px; color: var(--ink-3); }
 .lib-kv .v { font-size: 13px; text-align: right; color: var(--ink); }
+/* 跟基準比(spec library-benchmark-2026-10-27 B):圖例借回測分頁的 .bt-legend,策略線在這裡是綠;
+   對照表不畫橫線、只靠列距,值字級同 .lib-kv .v;窄於 560(同 web 工作頁 .lib-split.is-cmp)上架欄落到表下 */
+.lib-legend .bt-legend:not(.bh)::before { background: var(--color-green); }
+.lib-split.wide { grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr); }
+.lib-cmp { width: 100%; border-collapse: collapse; }
+.lib-cmp th, .lib-cmp td { padding: var(--space-2) 0; font-weight: 400; text-align: right; white-space: nowrap; }
+.lib-cmp thead th { padding-bottom: var(--space-4); font-size: 11px; color: var(--ink-3); }
+.lib-cmp thead th.gh { text-align: left; }
+.lib-cmp tbody th { text-align: left; font-size: 12px; color: var(--ink-3); padding-right: var(--space-12); }
+.lib-cmp td { padding-left: var(--space-12); font-size: 13px; color: var(--ink); }
+.lib-tipw { position: relative; display: inline-block; }
+.lib-tipw .mp-tip { font-size: inherit; }
+.lib-tipw .tip { left: auto; right: 0; width: max-content; }
+@container (max-width: 559px) {
+  .lib-split.wide { grid-template-columns: minmax(0, 1fr); row-gap: var(--space-16); }
+  .lib-split.wide .lib-kvcol { padding: 0; }
+  .lib-split.wide .lib-kvcol + .lib-kvcol { border-left: 0; }
+}
 .lib .gates { list-style: none; margin: 0; padding: 0; }
 .lib .gates li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2) var(--space-12); padding: var(--space-8) 0; border-top: 1px solid var(--border-hairline); }
 .lib .gates li:first-child { border-top: 0; padding-top: 0; }

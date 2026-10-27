@@ -314,4 +314,38 @@ for (const lang of ["zh", "en"]) {
     try { d = dPick && dPick(pool).map((s) => s.id); w = wPick && wPick(pool).map((s) => s.id); } catch (e) { err += " 執行:" + e.message; }
     ok("歡迎頁策略卡挑選兩邊同一批、同一順序(雲端視角,8 支測資挑 3 張)", !dParts.includes(null) && !wParts.includes(null) && !!d && d.length === 3 && JSON.stringify(d) === JSON.stringify(w),
       (dParts.includes(null) || wParts.includes(null) ? "切不出函式;" : "") + "電腦版 " + JSON.stringify(d) + " vs 網頁 " + JSON.stringify(w) + err); } }
+// 策略庫詳情跟基準比(spec library-benchmark-2026-10-27 B;電腦版 library.js libBench* + main.js libBenchSanitize、網頁 workspace.html libBench / libCmpTable):
+// 圖例「權益」、as_of 那句、表頭的「回測」「{n} 年」、「總報酬」逐字比(tip_adj / tip_raw 已在上面 BH_KEYS);欄名「策略」是這次新增——網頁還沒有那個 msgid = web 那顆還沒上線,SKIP 講原因,有了就逐字比。
+// 判斷:同一組 /report 形狀(api _benchmark_payload 會給的),兩邊要嘛都畫基準、要嘛都不畫,畫的話代號同一個(BTCUSDT 寫 BTC)
+{ const PAIRS = { workspace_bt_legend_equity: "bt.equity", workspace_bt_benchmark_bh_as_of: "bt.tip.benchmarkBhAsOf", bc_mp_report_total: "lib.cmp.total", workspace_lib_kv_bt: "lib.kv.bt", bc_mp_years: "lib.sampleYrs" }, NEW = { workspace_lib_cmp_strategy: "lib.cmp.strategy" };
+  for (const lang of ["zh", "en"]) {
+    const w = poRaw(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po")), d = poRaw(path.join(__dirname, "..", "shell", "i18n", lang + ".po"));
+    const off = Object.keys(PAIRS).filter((k) => !w[k] || w[k] !== d[PAIRS[k]]);
+    ok("策略庫基準:圖例「權益」、as_of 那句、表頭「回測 · N 年」、「總報酬」兩邊同一份(" + lang + ")", off.length === 0, off.map((k) => k + ": " + w[k] + " vs " + d[PAIRS[k]]).join(";"));
+    for (const k of Object.keys(NEW)) {
+      if (!d[NEW[k]]) ok("策略庫基準:電腦版有 " + NEW[k] + "(" + lang + ")", false);
+      else if (!(k in w)) console.log("SKIP  策略庫基準欄名 " + k + " 兩邊同一份(" + lang + ";網頁 messages.po 還沒有這個 msgid:web 那顆還沒上線)");
+      else ok("策略庫基準:欄名 " + k + " = " + NEW[k] + "(" + lang + ")", w[k] === d[NEW[k]], w[k] + " vs " + d[NEW[k]]);
+    }
+  }
+  const wa = web.indexOf("        function libBench("), wb = wa < 0 ? -1 : web.indexOf("\n        }\n", wa);
+  if (wa < 0) console.log("SKIP  策略庫基準畫不畫兩邊同一個判斷(網頁還沒有 libBench:web 那顆還沒上線)");
+  else {
+    const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), libSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "library.js"), "utf8");
+    const cut = (src, n) => { const a = src.indexOf("\nfunction " + n + "(") + 1; if (a < 1) return null; let i = src.indexOf("{", a), dd = 0; for (; i < src.length; i++) { if (src[i] === "{") dd++; else if (src[i] === "}" && --dd === 0) break; } return src.slice(a, i + 1) + "\n"; };
+    const cst = (src, n) => { const m = new RegExp("^const " + n + " = [^\\n]*;$", "m").exec(src); return m ? m[0] + "\n" : null; };
+    const dParts = [cst(mainSrc, "LIB_EQUITY_MAX"), cst(mainSrc, "libFin"), cst(mainSrc, "LIB_DAY_RE"), cst(mainSrc, "libDay"), cst(mainSrc, "libCurveOk"), cst(mainSrc, "LIB_BENCH_SYM_RE"), cut(mainSrc, "libBenchSanitize"), cut(libSrc, "libBenchSym")];
+    let dF = null, wF = null, err = "";
+    // LIB_EQUITY_MAX 跟別的常數同一行宣告:整行拿進來
+    if (dParts[0] === null) { const m = /^const LIB_TITLE_MAX = [^\n]*LIB_EQUITY_MAX = [^\n]*;$/m.exec(mainSrc); dParts[0] = m ? m[0] + "\n" : null; }
+    try { dF = new Function(dParts.join("") + "return (rep) => { const b = libBenchSanitize(rep.benchmark, libCurveOk(rep.equity, LIB_EQUITY_MAX)); return b ? libBenchSym(b) : null; };")(); } catch (e) { err += " 電腦版:" + e.message; }
+    try { wF = new Function("env", "with (env) {" + web.slice(wa, wb + 10) + "return (rep) => { env.libReports.set(1, rep); const b = libBench(1); return b ? b.sym : null; }; }")({ libReports: new Map() }); } catch (e) { err += " 網頁:" + e.message; }
+    const EQ = Array.from({ length: 400 }, (_, i) => 1 + i / 400), B = (o) => Object.assign({ symbol: "0050", adjusted: true, total_return: 794, annual_return: 20.6, max_drawdown: -34, sharpe: 1.05, equity: EQ.map((v) => v * 0.9 + 0.1), as_of: null }, o);
+    const CASES = [["台股 0050", { equity: EQ, benchmark: B({}) }], ["加密 BTCUSDT → BTC", { equity: EQ, benchmark: B({ symbol: "BTCUSDT", adjusted: false }) }], ["美股 SPY、as_of", { equity: EQ, benchmark: B({ symbol: "SPY", as_of: "2026-10-20" }) }],
+      ["沒有基準", { equity: EQ, benchmark: null }], ["舊 api 沒有這欄", { equity: EQ }], ["曲線不同長", { equity: EQ, benchmark: B({ equity: EQ.slice(1) }) }], ["沒有總報酬", { equity: EQ, benchmark: B({ total_return: null }) }],
+      ["Sharpe／年化缺(lib 還沒補)", { equity: EQ, benchmark: B({ sharpe: null, annual_return: null }) }], ["策略曲線沒有", { equity: null, benchmark: B({}) }]];
+    const call = (f, rep) => { try { return f(JSON.parse(JSON.stringify(rep))); } catch (e) { return "例外 " + e.message; } };
+    const bad = dF && wF ? CASES.filter(([, rep]) => call(dF, rep) !== call(wF, rep)).map(([n, rep]) => n + ":電腦版 " + call(dF, rep) + " / 網頁 " + call(wF, rep)) : ["切不出函式" + err];
+    ok("策略庫基準畫不畫、代號寫什麼兩邊同一個答案(" + CASES.length + " 組)", !dParts.includes(null) && bad.length === 0, bad.join(";"));
+  } }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
