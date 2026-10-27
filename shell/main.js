@@ -2909,8 +2909,9 @@ function replyNotifySet(on) {
   if (now !== was) tm().track("reply_notif", { act: now ? "on" : "off" });
   return now;
 }
-/* 設定 › 一般「提示音」:ui-prefs replySound,缺 = 開;跟 replyNotify 各管各的(canon › Sound:要橫幅不要聲音、要聲音不要橫幅是兩群人) */
-const replySoundGet = () => { try { return JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")).replySound !== false; } catch (_) { return true; } };
+/* 設定 › 一般「提示音」:ui-prefs replySound,跟 replyNotify 各管各的(canon › Sound:要橫幅不要聲音、要聲音不要橫幅是兩群人)。
+   沒存過時跟著 replyNotify:0.1.33 以前關通知＝連系統聲一起關,升級後不該突然有聲音(Wei 定) */
+const replySoundGet = () => { try { const p = JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")); return typeof p.replySound === "boolean" ? p.replySound : p.replyNotify !== false; } catch (_) { return true; } };
 function replySoundSet(on) {
   try { uiPrefsPatch({ replySound: on === true }); } catch (_) { /* 寫不進去:照舊值 */ }
   return replySoundGet();
