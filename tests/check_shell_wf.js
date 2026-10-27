@@ -473,7 +473,7 @@ if (!process.versions.electron) {
   const DT = { en: vals(block("en")), zh: vals(block("zh")) };
   // 設計精簡稽核 A7 / A8 的定稿(逐字照抄 audit-0.1.10-uiux-simplicity.md §2)
   const FR = { zh: ["回測重跑完就有進出場紀錄。參數掃描、樣本外驗證、成交測試要再跑一次。", "灰掉的分頁沒有資料，回測重跑完才有。"],
-    en: ["The Trades tab fills in once the backtest reruns. Run the parameter scan, out-of-sample validation and execution test again.", "The greyed-out tabs have no data until the backtest reruns."] };
+    en: ["The Trades tab fills in once the backtest reruns. Run the parameter scan, out-of-sample validation and fill test again.", "The greyed-out tabs have no data until the backtest reruns."] };
   ok("③ A7 / A8 重跑中 / 沒完成那兩句 = 精簡稽核定稿(zh / en;en 帶 0.1.11 B6 rerun、D1 Trades 分頁;重跑中那句補成交測試、斷成兩句,lag-test-tab §3.6)", ["zh", "en"].every((l) => DT[l]["ver.frozenRerun"] === FR[l][0] && DT[l]["ver.frozenRerunFailed"] === FR[l][1]));
   ok("③ A10 en 大小寫:Param Scan / Start Scan / Sent — See Chat", DT.en["rp.tab.rob"] === "Param Scan" && DT.en["rob.btnScan"] === "Start Scan" && DT.en["rob.btnSent"] === "Sent — See Chat");
   if (!fs.existsSync(WS)) console.log("SKIP  ③ 字串逐字比對(需要 web 樹)");
@@ -660,6 +660,17 @@ app.whenReady().then(async () => {
       const code = sc.querySelector('[data-tab="code"]'); out.codeIn = R(code).right <= R(sc).right + 1 && R(code).left >= R(sc).left - 1;
       if (!more.hidden) { const cls = more.className; out.back = cls.includes("is-back"); }
       rpShowTab("bt"); await new Promise((r) => setTimeout(r, 100)); const bt = sc.querySelector('[data-tab="bt"]'); out.btIn = R(bt).left >= R(sc).left - 1;
+      // 六顆逐一選:捷徑收起時這一列還剩多少(捷徑在的話把它佔的寬加回去);en 選中加粗會寬 1–2px,取最小
+      const gap = parseFloat(getComputedStyle(sc).columnGap) || 0, fitNow = () => { const tabs = [...sc.querySelectorAll(".rp-tab")].filter((b) => !b.hidden);
+        return sc.clientWidth + (more.hidden ? 0 : more.offsetWidth + gap) - (tabs.reduce((s, b) => s + R(b).width, 0) + (tabs.length - 1) * gap + 8); };
+      out.nTabs = [...sc.querySelectorAll(".rp-tab")].filter((b) => !b.hidden).length; out.fitMin = Infinity; out.overAny = false; out.moreAny = false;
+      for (const k of ["bt", "tr", "rob", "wf", "xt", "code"]) { rpShowTab(k); await new Promise((r) => setTimeout(r, 100));
+        out.fitMin = Math.min(out.fitMin, +fitNow().toFixed(1)); out.overAny = out.overAny || sc.scrollWidth > sc.clientWidth + 1; out.moreAny = out.moreAny || !more.hidden; }
+      // 拖寬聊天欄再拖回(拖曳時 body.resizing 關掉寬度轉場,不然 ResizeObserver 會在轉場中途觸發)
+      const root = document.documentElement, cw = root.style.getPropertyValue("--chat-w"); document.body.classList.add("resizing");
+      root.style.setProperty("--chat-w", "540px"); await new Promise((r) => setTimeout(r, 200)); out.dragMore = !more.hidden;
+      if (cw) root.style.setProperty("--chat-w", cw); else root.style.removeProperty("--chat-w"); await new Promise((r) => setTimeout(r, 200));
+      out.backMore = !more.hidden; out.backOver = sc.scrollWidth > sc.clientWidth + 1; document.body.classList.remove("resizing");
       return out; })()`, true);
     w2.destroy(); return m;
   };
@@ -668,8 +679,10 @@ app.whenReady().then(async () => {
     console.log("      " + loc + " 1024:" + JSON.stringify(a) + "\n      " + loc + " 1280:" + JSON.stringify(b) + "\n      " + loc + " 1280/13 輪:" + JSON.stringify(c));
     ok("② B1 " + loc + " 1024 聊天欄開著:分頁段溢出 → 捲動捷徑出現;轉出鈕看得到且右緣不出中欄;選程式碼 / 回測都捲得進可視範圍;選中分頁底線壓在列底(窄版 padding 不吃掉 hairline 那 1px)",
       a.over && a.more && a.xpShown && a.xpR <= a.mainR && a.codeIn && a.btIn && a.selBottom === a.barBottom, JSON.stringify(a));
-    // 0.1.34 多了〔成交測試〕,1280 聊天欄開著也溢出(zh 82、en 155px);Wei 10-27:測試軌先照捲動捷徑出,正式軌前改版面、這條改回「放得下」
-    ok("② B1 " + loc + " 1280:分頁段溢出時捲動捷徑出現、程式碼 / 回測捲得到;轉出鈕右緣不出中欄(0.1.34 測試軌暫態,正式軌前改回放得下)", b.over === b.more && b.codeIn && b.btIn && b.xpShown && b.xpR <= b.mainR && b.selBottom === b.barBottom, JSON.stringify(b));
+    // 留 8px:Windows Segoe UI 的字寬跟 SF 差幾個百分點
+    ok("② B1 " + loc + " 1280 聊天欄開著:六顆分頁 + 轉出鈕放得下(留 ≥ 8px)、捲動捷徑不出現;選哪一顆都一樣",
+      b.nTabs === 6 && !b.over && !b.more && !b.overAny && !b.moreAny && b.fitMin >= 8 && b.xpShown && b.xpR <= b.mainR && b.selBottom === b.barBottom, JSON.stringify(b));
+    ok("② B1 " + loc + " 1280 聊天欄拖寬到 540 → 捷徑出現;拖回預設 → 捷徑收得回來、不溢出", b.dragMore && !b.backMore && !b.backOver, JSON.stringify(b));
     ok("② S1 " + loc + " 1280:每輪明細日期兩行,七欄放得進捲動框(不橫捲)", b.tblW <= b.boxW + 1, JSON.stringify(b));
     const vis = (c.boxH - c.head) / c.row;   // 13 輪時框裡看得到幾列(R1:表頭固定 58、上限 12.5 列 → 恰好 12.5)
     ok("② S1 " + loc + " .wf-scroll 高度上限:12 輪整張不出直捲;13 輪才捲、框裡看得到 12 列以上不到 13 列(列高一致)", b.boxSH <= b.boxH + 1 && c.rowsSame && c.boxSH > c.boxH + 1 && Math.abs(c.head - 58) < 0.5 && Math.abs(vis - 12.5) < 0.05, JSON.stringify(c) + " 可見 " + vis.toFixed(2) + " 列");

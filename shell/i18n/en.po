@@ -6017,7 +6017,7 @@ msgstr "Open anyway"
 
 # 策略轉出(renderer/export.js;spec-desktop-strategy-export-0.1.8)。觸發器、選單、確認框、轉出卡的字照 web 工作頁 workspace_xp_*
 msgid "xp.btn"
-msgstr "Export Code"
+msgstr "Export"
 
 msgid "xp.lang.xq"
 msgstr "XS language"
@@ -6319,7 +6319,7 @@ msgid "ver.rerunDoneSr"
 msgstr "The backtest for {v} has rerun on the latest data."
 
 msgid "ver.frozenRerun"
-msgstr "The Trades tab fills in once the backtest reruns. Run the parameter scan, out-of-sample validation and execution test again."
+msgstr "The Trades tab fills in once the backtest reruns. Run the parameter scan, out-of-sample validation and fill test again."
 
 msgid "ver.frozenRerunFailed"
 msgstr "The greyed-out tabs have no data until the backtest reruns."
@@ -9032,7 +9032,7 @@ msgstr "Stops couldn’t be confirmed: Blave’s order record is unreadable. Che
 # 報告頁「成交測試」分頁(renderer/report-xt.js;spec lag-test-tab-2026-10-26):字與 web workspace_xt_* 逐字同一份
 # (web 的 %% 是 Jinja 的轉義,畫面上是 %;tests/check_web_desktop_parity.js 比對前還原)
 msgid "rp.tab.xt"
-msgstr "Execution Test"
+msgstr "Fill Test"
 
 msgid "xt.verdict"
 msgstr "{lag}. {cost}."
@@ -9155,7 +9155,7 @@ msgid "xt.fogOld"
 msgstr "Older versions didn't save this tab's numbers."
 
 msgid "xt.behind"
-msgstr "Update your server first to run the execution test."
+msgstr "Update your server first to run the fill test."
 
 msgid "xt.updFail"
 msgstr "Test failed."

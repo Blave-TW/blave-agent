@@ -266,7 +266,9 @@ for (const lang of ["zh", "en"]) {
     // 按了才算(spec §3.6,10-27):鈕、過時句、BUSY 那行、回合中那句;還原後重跑中那句是掃描／驗證／成交測試共用的
     "xt.btnRun": "workspace_xt_btn_run", "xt.btnRerun": "workspace_xt_btn_rerun", "xt.btnBusy": "workspace_xt_btn_busy", "xt.btnTip": "workspace_xt_btn_tip",
     "xt.verdictStale": "workspace_xt_verdict_stale", "xt.busyRefresh": "workspace_xt_busy_refresh", "xt.busyTurn": "workspace_xt_busy_turn",
-    "ver.frozenRerun": "workspace_ver_frozen_rerun" };
+    "ver.frozenRerun": "workspace_ver_frozen_rerun",
+    // 轉出鈕跟成交測試分頁在同一列、同一次為 1280 放得下改字(desktop-tabs-1280 §5),一起比
+    "xp.btn": "workspace_xp_btn" };
   for (const lang of ["zh", "en"]) {
     const d = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), w = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
     const bad = Object.entries(XT_PAIRS).filter(([dk, wk]) => typeof d[dk] !== "string" || typeof w[wk] !== "string" || d[dk] !== w[wk].replace(/%%/g, "%"));

@@ -2159,7 +2159,10 @@ function rpTabRevealSelected() { rpTabReveal($("rp-tabs-scroll").querySelector('
 function tabsMoreWire(box, more, tabSel) {
   box.querySelectorAll(tabSel).forEach((b) => b.addEventListener("focus", () => rpTabReveal(b)));
   const sync = () => {
-    const over = box.scrollWidth > box.clientWidth + 1;
+    // 捷徑自己佔的寬(本身 + 一個 gap)要算回去:用它在的時候的 clientWidth 判斷,拖寬聊天欄再拖回就收不回來
+    const g = parseFloat(getComputedStyle(box.parentNode).columnGap) || 0;
+    const room = box.clientWidth + (more.hidden ? 0 : more.offsetWidth + g);
+    const over = box.scrollWidth > room + 1;
     more.hidden = !over;
     if (over) more.classList.toggle("is-back", box.scrollLeft >= box.scrollWidth - box.clientWidth - 1);
   };
