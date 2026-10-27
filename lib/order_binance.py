@@ -541,6 +541,7 @@ def get_order(env, symbol, order_id):
 
 
 TERMINAL_STATUSES = {"FILLED", "CANCELED", "REJECTED", "EXPIRED", "EXPIRED_IN_MATCH"}
+ORDER_NOT_VISIBLE = -2013  # "Order does not exist."
 
 
 def confirm_order(env, symbol, order_id, timeout=15):
@@ -548,13 +549,22 @@ def confirm_order(env, symbol, order_id, timeout=15):
     dict plus 'commission' (summed from userTrades, best-effort — a stats
     lookup failing must not turn a FILLED order into an exception). Raises
     BinanceError if the exchange reports CANCELED/REJECTED/EXPIRED,
-    OrderNotConfirmed if still pending after timeout — the order MAY STILL
-    FILL; re-query, do not blindly resubmit."""
+    OrderNotConfirmed if still pending (or still not queryable) after
+    timeout — the order MAY STILL FILL; re-query, do not blindly resubmit."""
     symbol = _canonical(symbol)
     deadline = time.time() + timeout
     order = None
     while time.time() < deadline:
-        order = get_order(env, symbol, order_id)
+        try:
+            order = get_order(env, symbol, order_id)
+        except BinanceError as e:
+            # The id came from the placement response moments ago, so -2013 here is the
+            # query side lagging the matching engine (measured live: 0.18 s after a market
+            # order that did fill), not a rejection.
+            if e.code != ORDER_NOT_VISIBLE:
+                raise
+            time.sleep(1)
+            continue
         if order["status"] == "FILLED":
             order["commission"], order["commission_asset"] = \
                 _order_commission(env, symbol, order_id)
@@ -562,6 +572,10 @@ def confirm_order(env, symbol, order_id, timeout=15):
         if order["status"] in TERMINAL_STATUSES:
             raise BinanceError("N/A", f"order {order_id} ended {order['status']}", "confirm")
         time.sleep(1)
+    if order is None:
+        raise OrderNotConfirmed(
+            f"order {order_id} accepted but not queryable (-2013) for {timeout}s — "
+            f"it may have filled; check the position, do not resubmit")
     raise OrderNotConfirmed(
         f"order {order_id} still {order['status'] if order else 'UNKNOWN'} after {timeout}s"
     )
