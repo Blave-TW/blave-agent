@@ -36,7 +36,8 @@ function introInputs() {
   return {
     done: INTRO.done, conn: c != null && !$("view-ws").hidden, engine: INTRO.engine, acctKnown,
     fill: acctKnown && stFill({ engine: c, signedIn: tok, canRun: a ? a.can_run : null }),
-    sent: INTRO.sent, running: typeof running !== "undefined" && running === true,
+    // 代下載那一兩秒(歡迎頁卡或策略庫確認後)running 還是 false:也算在跑,不然 modal 會蓋上剛確認的安裝、主鈕那句還會讓安裝送不出去
+    sent: INTRO.sent, running: (typeof running !== "undefined" && running === true) || (typeof LIB !== "undefined" && !!LIB.pending),
     modal: brModalOpen(), visible: document.visibilityState === "visible", check: INTRO.check,
   };
 }
@@ -134,7 +135,7 @@ function introClose(how) {
   $("ta").focus();
   trackFeature(how === "type" ? "intro_type" : "intro_close");
 }
-// 主鈕:回合中 csStartNew 不做事也不報錯,不擋的話框收了畫面卻沒動靜(同 welcome.js stGo)
+// 主鈕:回合中 csStartNew 不做事也不報錯,不擋的話框收了畫面卻沒動靜
 function introAsk() {
   if (runningNow()) { busySendTell(); return; }
   introHide();

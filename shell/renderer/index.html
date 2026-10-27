@@ -302,9 +302,9 @@
           <div class="rpt-read" id="rpt-read" hidden></div>
         </div>
       </div>
-      <!-- 歡迎頁(renderer/welcome.js;spec agent-onboarding-e-f):只有「這台電腦」視角有。onboarding 期間是步驟清單(#wc,E),
+      <!-- 歡迎頁(renderer/welcome.js;spec agent-onboarding-e-f、desktop-welcome-library-first):兩個視角各一份。onboarding 期間是步驟清單(#wc,E),
            做完之後是淡化記號＋一列籤(#wf,F)。兩個都等第一次策略清單讀完(app.js stratRefresh 設 RP.loaded)與入門偏好讀到才出,不閃錯的步驟。
-           步驟的標題列由 welcome.js onbPaint 畫(完成的那一步是可以重新展開的按鈕);每一步下面的鈕是靜態的,只切 hidden -->
+           步驟的標題列由 welcome.js onbPaint 畫(完成的那一步是可以重新展開的按鈕);①的策略卡由 wcPaint 畫(挑法 library.js wcReco),其餘的鈕是靜態的,只切 hidden -->
       <div class="main-empty" id="main-empty">
         <div class="wc-inner" id="wc" hidden>
           <svg class="wc-mark" viewBox="0 0 180 180" aria-hidden="true">
@@ -314,6 +314,7 @@
             <li class="onb-step" data-step="1">
               <div class="onb-hw" id="onb-h1"></div>
               <div class="onb-body" id="onb-b1">
+                <div class="wc-cards" id="wc-cards" role="group" aria-labelledby="onb-h1" hidden></div>
                 <div class="onb-opts">
                   <!-- 「上網找點子」:只在這台電腦視角、內建瀏覽器開著、引擎跑得動時出(library.js libIdeaPaint 切 hidden) -->
                   <button class="wc-chip" id="chat-idea" type="button" data-i18n="idea.chip" hidden></button>
@@ -324,7 +325,6 @@
             <li class="onb-step" data-step="2">
               <div class="onb-hw" id="onb-h2"></div>
               <div class="onb-body" id="onb-b2">
-                <div class="st-rows" id="st-rows" role="group" aria-labelledby="onb-h2"></div>
                 <div class="onb-opts">
                   <!-- 「新增策略」開框、不送訊息(同雲端歡迎頁那顆) -->
                   <button class="wc-chip" id="chat-ns" type="button" data-i18n="ns.chip"></button>
@@ -357,11 +357,11 @@
           <p class="onb-fin" id="onb-fin" role="status" hidden><span class="num" aria-hidden="true">✓</span><span data-i18n="onb.fin"></span></p>
         </div>
         <!-- 完成後的首頁(F):實色 --color-watermark 的記號(canon 具名例外,不用 opacity)＋一列不分主次的籤;不帶市場 -->
-        <div class="wf" id="wf" hidden>
-          <svg class="wf-mark" viewBox="0 0 180 180" aria-hidden="true">
+        <div class="wc-fin" id="wf" hidden>
+          <svg class="wc-fin-mark" viewBox="0 0 180 180" aria-hidden="true">
             <path d="M0 108.973 A90 90 0 0 1 76.668 108.182 A20 20 0 0 0 105 90 A45 45 0 0 1 180 56.459 L180 180 L0 180 Z" fill="currentColor" />
           </svg>
-          <div class="wf-acts">
+          <div class="wc-fin-acts">
             <button class="wc-chip" id="wf-idea" type="button" data-i18n="idea.chip" hidden></button>
             <button class="wc-chip" id="wf-lib" type="button" data-i18n="lib.nav"></button>
             <button class="wc-chip" id="wf-ns" type="button" data-i18n="ns.chip"></button>

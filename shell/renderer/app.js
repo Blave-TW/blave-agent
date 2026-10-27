@@ -3213,7 +3213,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (typeof sugCollapse === "function") sugCollapse();   // 任何入口送出,上一句建議都作廢(renderer/suggest.js)
   if (typeof introMarkSent === "function") introMarkSent();   // 這次開著送出過:第一次對話 modal 不再彈(renderer/intro.js)
   UPD.turnCloud = false; turnSeq++;   // 這一回合碰過雲端沒有,從零開始記(tool chunk 的 where);回合序號 +1(參數掃描的「已送出」只認這一輪)
-  running = true; sendBtnSync(); stratDelSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof stSync === "function") stSync(); if (typeof xpSync === "function") xpSync(); csLock(true); busySync();   // 回合在跑:更新入口是鎖(更新會重開 app)
+  running = true; sendBtnSync(); stratDelSync(); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof wcBusySync === "function") wcBusySync(); if (typeof xpSync === "function") xpSync(); csLock(true); busySync();   // 回合在跑:更新入口是鎖(更新會重開 app)
   // 操作對象在送出當下定案:之後切視角不改這一輪。opts.viewing = 呼叫端指定(更新雲端那一句永遠帶 env:cloud)
   const viewing = opts && opts.viewing && typeof opts.viewing === "object" ? opts.viewing : chatViewing();
   chatStick = true;   // 送出新訊息:往上捲著也恢復跟著捲
@@ -3232,7 +3232,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
   if (!csTitle) { csTitle = msg || attachments[0].name; csRenderHead(); csRemember(); }   // 純附件開頭的對話:清單上用檔名當標題(純文字,不放圖示)
   liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = []; turnAiBubbles = []; turnFaultEl = null;
-  const unlock = () => { if (typeof sugUnsend === "function") sugUnsend(); running = false; turnStopping = false; sendBtnSync(); stratDelSync(); csLock(false); busySync(); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof stSync === "function") stSync(); if (typeof xpSync === "function") xpSync(); };
+  const unlock = () => { if (typeof sugUnsend === "function") sugUnsend(); running = false; turnStopping = false; sendBtnSync(); stratDelSync(); csLock(false); busySync(); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof wcBusySync === "function") wcBusySync(); if (typeof xpSync === "function") xpSync(); };
   try {
     // 引擎還沒裝好時由安裝進度卡交代(engine.js),指示器不在這段亮——那段還沒開始思考,掛「思考中 58s」是假的
     engineWait = true;
@@ -3692,11 +3692,13 @@ function acctPaint() {
 }
 function resendSecond() { return { label: t("fault.resend"), on: () => { resendLast(); } }; }
 let acctPending = 0;
+// 這次開 app 至少查完過一次(不論查到沒):歡迎頁的卡在這之前出骨架,之後查不到就當 unknown(離線時不能永遠停在骨架)
+let acctSettled = false;
 async function acctCheck() {
   if (!hasToken) { acct = null; planWatchIdle(); return; }   // 帳號狀態跟「有沒有登入」走,不看連的是誰
   acctAt = Date.now();
   acctPending++;
-  const s = await window.blave.accountStatus().finally(() => { acctPending--; });
+  const s = await window.blave.accountStatus().finally(() => { acctPending--; acctSettled = true; });
   if (!hasToken) return;                    // 在途時登出了:這筆是舊帳號的
   await authSync();
   if (AUTH.revoked) acct = null;            // 登入已失效:手上那份是失效前的,不拿它畫「已登入」的方案
@@ -4212,7 +4214,7 @@ async function acctPrecheck() {
   acctCard = null;
   if (!hasToken) { acct = null; planWatchIdle(); return; }
   acctSet(await window.blave.accountStatus()); acctAt = Date.now();
-  if (acct) planWatch(acct);                  // 方案狀態(側欄那行字、啟動中的輪詢)不看能不能跑
+  acctSettled = true; if (acct) planWatch(acct);                  // 方案狀態(側欄那行字、啟動中的輪詢)不看能不能跑
   if (typeof wdPaint === "function") wdPaint();   // 能跑的人不會走到下面的 acctPaint,歡迎頁的清單在這裡換版
   if (cur !== "blave") return;                // 預檢卡講的是「Blave AI 能不能跑」,自帶 CLI 的人用不到
   if (!acct || acct.can_run) return;
@@ -4376,7 +4378,7 @@ window.blave.onTurnEnd(async (r) => {
   // 這一輪有真的回覆、沒有分類過的錯誤 → 那個 model 是能用的
   if (r.code === 0 && turnGotReply && !faultShown && turnModel) mpMarkWorks(turnModel);
   const rt = typeof resTurnClose === "function" ? resTurnClose() : null;   // 這一輪的結果卡(results.js):策略清單與報告都重讀完、回覆定稿之後才出
-  stratRefresh(true).catch(() => {}).then(() => { if (typeof stTurnEnd === "function") stTurnEnd(); if (typeof libTurnEnd === "function") libTurnEnd(); const rx = typeof rptTurnEnd === "function" ? rptTurnEnd(rt) : null; if (rt) resTurnParts(rt, rx); });   // 策略庫的「用這支」:清單重讀完才知道有沒有多一支;重讀失敗也要收掉 pending
+  stratRefresh(true).catch(() => {}).then(() => { if (typeof libTurnEnd === "function") libTurnEnd(); const rx = typeof rptTurnEnd === "function" ? rptTurnEnd(rt) : null; if (rt) resTurnParts(rt, rx); });   // 策略庫的「用這支」:清單重讀完才知道有沒有多一支;重讀失敗也要收掉 pending
   // 連的是 Codex 但這台電腦上找不到它了:主行程刻意讓這一輪失敗(不會偷偷改跑 Claude)。講人話,不要丟代碼給用戶看
   const exitLine = r.code !== 0 && !stopped
     ? (/AGENT_BIN_MISSING/.test(r.errTail || "") ? t("AGENT_BIN_MISSING") : /APIKEY_MISSING/.test(r.errTail || "") ? t("APIKEY_MISSING") : t("turn.exit", { code: r.code }) + (r.errTail ? ": " + r.errTail.slice(-300) : ""))
@@ -4412,7 +4414,7 @@ window.blave.onTurnEnd(async (r) => {
   // 樣本外驗證:送出的那一回合結束了(失敗 / 被停止 → 雲端那支的「已送出」當場退回)。要在下面 running = false 那一行的 rpWfSync 之前
   if (window.BlaveReport && window.BlaveReport.wfTurnEnded) window.BlaveReport.wfTurnEnded(turnSeq, faulted || stopped, { refetch: rpWfRefetch });
   upTurnEnded(faulted);
-  running = false; turnStopping = false; sendBtnSync(); stratDelSync(); csLock(false); busySync(); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof stSync === "function") stSync(); if (typeof xpSync === "function") xpSync();
+  running = false; turnStopping = false; sendBtnSync(); stratDelSync(); csLock(false); busySync(); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy(); upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof wcBusySync === "function") wcBusySync(); if (typeof xpSync === "function") xpSync();
   if (stopped && lastUserTyped) {
     // 停止把句子放回輸入框時,聊天裡舊的那則一併收回——不然重送就同一句兩則(Wei 實測)。
     // 只在這一輪沒有回覆、也沒有工具收據時收(有收據要留上下文);session.db 照實留,只是畫面不重複

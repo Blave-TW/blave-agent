@@ -8613,29 +8613,9 @@ msgstr "保證金 {v}"
 msgid "po.dLev"
 msgstr "（{x}×）"
 
-# 歡迎頁起手句(0.1.26;renderer/welcome.js;spec-starters §1.7 / §5.1)。key 名借網頁工作頁的。
-# 列上只寫規則,送出的是 _send 那一整句。任何地方都不准寫報酬率,也不准跟大盤或 0050 比較
-msgid "starter_crypto_row"
-msgstr "BTC 日線：收盤站上 200 日均線買進，跌破賣出"
-
-msgid "starter_crypto_send"
-msgstr "BTC 日線：收盤站上 200 日均線買進，跌破賣出。幫我建成策略，回測 2020 年至今。"
-
-msgid "starter_tw_row"
-msgstr "台積電、聯發科、鴻海、台達電、富邦金五檔等權持有，每月再平衡"
-
-msgid "starter_tw_send"
-msgstr "台積電（2330）、聯發科（2454）、鴻海（2317）、台達電（2308）、富邦金（2881）五檔等權持有，每月再平衡。幫我建成策略，回測 2022 年至今。"
-
-msgid "starter_txf_row"
-msgstr "台指期日線：收盤突破 20 日高點做多，跌破 10 日低點平倉"
-
-msgid "starter_txf_send"
-msgstr "台指期日線：收盤突破 20 日高點做多，跌破 10 日低點平倉。幫我建成策略，回測 2015 年至今。"
-
-# {y} = 回測起始年
-msgid "starter_since"
-msgstr "{y} 起"
+# 歡迎頁①策略卡的回測期間(0.1.34;renderer/welcome.js wcCard);{span} =「2020–2025」或單一年
+msgid "workspace_lib_bt_span"
+msgstr "回測 {span}"
 
 # 用戶拿得到的資料列(單一清單、對比版的免費欄);{name} = wd.r.<id>.an。只填不送
 msgid "wd.ask.build"

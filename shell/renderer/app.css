@@ -1281,7 +1281,7 @@ body.resizing * { cursor: col-resize !important; }
 .strat-flagbtn::before { content: ""; position: absolute; top: calc(50% - 17px); left: calc(50% - 17px); width: 34px; height: 34px; }
 .strat-wrap:is(:hover, :has(:focus-visible), .flag-open) .strat-flagbtn { opacity: 1; pointer-events: auto; }
 .strat-flagbtn:hover { background: var(--bg-body); color: var(--ink); }
-.strat-wrap .cs-del .ic, .strat-flagbtn .ic, .sug-glyph .ic, .st-row .g .ic { stroke-width: 1.5; }   /* 列內動作 icon 跟著列的文字走(16px、1.5);✕ 跟旗標同一個重量 */
+.strat-wrap .cs-del .ic, .strat-flagbtn .ic, .sug-glyph .ic { stroke-width: 1.5; }   /* 列內動作 icon 跟著列的文字走(16px、1.5);✕ 跟旗標同一個重量 */
 /* 沒有 ✕ 的列(回合中、雲端機器停著)旗標鈕移到 ✕ 的位置 */
 .strat-wrap:not(:has(.cs-del:not(:disabled))) .strat-flagbtn { right: var(--space-6); }
 /* 旗標色 → 區域變數(canon › Color › Flag colors;面板色塊同吃);色條 = 2×16 pill 置中在軌內:列緣 5 / 條 2 / 淨空 5 */
