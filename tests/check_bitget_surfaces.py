@@ -103,6 +103,7 @@ const cut = (n) => { const i = src.indexOf("function " + n + "("); let d = 0; fo
 const t = (k) => k;
 eval(src.slice(src.indexOf("const PAPER = "), src.indexOf("\nfunction trEl(")).replace(/^const /gm, "var "));
 eval(cut("trEnvNames"));
+eval(cut("trErrToken"));
 // 說明區:cxModalPaint 裡 Bitget 那一句的條件,用同一個式子算
 const notePart = /if \(venue === "bitget" && BITGET_VERIFIED_MODES\.length === 1\) note\.appendChild\(trEl\("p", "", (.*?)\)\);/.exec(src);
 const noteKey = notePart && BITGET_VERIFIED_MODES.length === 1 ? eval(notePart[1]) : null;
@@ -121,6 +122,7 @@ process.stdout.write(JSON.stringify({
   pass: !!(CX_VENUES.bitget && CX_VENUES.bitget.pass), label: CX_VENUES.bitget && CX_VENUES.bitget.label,
   noteKey, passHint, modeText,
   modeErr: Object.fromEntries(Object.entries(reasons).map(([k, v]) => [k, CC.interpretVenueBind({ ok: false, error: v }, {})])),
+  token: Object.fromEntries(Object.entries(reasons).map(([k, v]) => { const o = CC.interpretVenueBind({ ok: false, error: v }, {}); return [k, trErrToken((o.detail || {}).reason)]; })),
 }));
 """
 TRIO = ["BITGET_API_KEY", "BITGET_SECRET_KEY", "BITGET_PASSPHRASE"]
@@ -252,6 +254,34 @@ r = refused()
 o = shell_view(True, {"uta": "ValueError: " + (r or "")})
 check(r is not None and o["modeErr"]["uta"]["code"] == "MODE_UNVERIFIED",
       "④ 統一帳戶但讀不到帳戶設定(lib 叫人去勾權限)→ 統一帳戶沒開放時,外殼改講「只支援經典帳戶」")
+
+
+class _Reply:
+    status_code = 400
+
+    def __init__(self, code, msg):
+        self._body = {"code": code, "msg": msg, "requestTime": 1, "data": None}
+        self.text = json.dumps(self._body)
+
+    def json(self):
+        return self._body
+
+
+def copy_trading_key(env, path, params=None, timeout=10):
+    # a copy-trading key: the v3 settings answer "classic", every account read 40731 (error_of's real sentence)
+    if path == "/api/v3/account/settings":
+        return {"accountMode": "classic", "accountLevel": "basic", "holdMode": "hedge_mode"}
+    raise ab.error_of(env, _Reply("40731", "This product does not support copy trading"), path)
+
+
+ab._mode.update(mode=None, at=0.0)
+ab.send_get = copy_trading_key
+r = refused()
+o = shell_view(True, {"copy": "ValueError: " + (r or "")})
+check(r is not None and not os.path.exists(ENV_PATH) and "帳戶模式是" not in r
+      and o["modeErr"]["copy"]["code"] == "REJECTED" and o["token"]["copy"] == "bitget_copy_trading_key",
+      "④ 跟單金鑰(40731):被拒、沒寫;經過 _scrub 與 interpretVenueBind 的遮罩後標記還在 → 連接框 cx.err.bitgetCopyKey,"
+      "不是「帳戶模式 classic 不支援」:" + str(r)[:160])
 check(not wire, "全程沒有任何連線")
 
 print("all ok" if not fails else f"{fails} FAILED")

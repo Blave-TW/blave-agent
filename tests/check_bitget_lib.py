@@ -254,6 +254,51 @@ except Exception as e:
           and "[bitget_account_mode:uta]" in str(e),
           "UTA closed: 40085 while the UTA settings refuse the key → UNKNOWN, says UTA is not supported yet", str(e))
 acct.VERIFIED_MODES = BOTH
+# a copy-trading key: signature passes, every account read answers 40731. Both probe orders — the
+# v3 settings refusing like a trading key's (40084), or answering accountMode "classic"
+COPY_MSG = "This product does not support copy trading"
+route("GET", "/api/v2/mix/account/accounts", lambda p: err("40731", COPY_MSG))
+for label, settings in (("v3 settings 40084", lambda p: err("40084", "not a unified account")),
+                        ("v3 settings accountMode classic", lambda p: ok({"uid": "1", "accountMode": "classic",
+                                                                          "accountLevel": "basic", "holdMode": "hedge_mode"}))):
+    route("GET", "/api/v3/account/settings", settings)
+    acct._mode.update(mode=None, at=0.0)
+    try:
+        acct.get_equity(ENV)
+        check(False, f"copy-trading key ({label}) raises")
+    except Exception as e:
+        check(acct.classify(e) == "credential" and "[bitget_copy_trading_key]" in str(e)
+              and str(e).startswith("[order_reject:key_permission]") and "帳戶模式是" not in str(e)
+              and "[bitget_account_mode:" not in str(e),
+              f"copy-trading key ({label}) → CREDENTIAL, key_permission + [bitget_copy_trading_key], "
+              "never the mode-unsupported sentence", str(e))
+# v3 settings themselves answering 40731: the reason as is, even when the classic API reads
+route("GET", "/api/v3/account/settings", lambda p: err("40731", COPY_MSG))
+route("GET", "/api/v2/mix/account/accounts", lambda p: ok([]))
+acct._mode.update(mode=None, at=0.0)
+try:
+    acct.account_mode(ENV)
+    check(False, "v3 settings 40731 raises")
+except acct.BitgetError as e:
+    check(acct.classify(e) == "credential" and "[bitget_copy_trading_key]" in str(e),
+          "v3 settings 40731 (classic API reads) → the copy-trading reason, never read as classic", str(e))
+# an accountMode outside the documented enum is never traded on, whatever the classic API answers:
+# a read that passes, or 40085 (a UTA) — refused with the mode sentence, no guessed API
+for am, v2, label in (("classic", lambda p: ok([]), "classic + v2 reads"),
+                      ("classic", lambda p: err("40085", "You are in Unified Account mode"), "classic + v2 40085"),
+                      ("", lambda p: ok([]), "empty + v2 reads"),
+                      ("portfolio", lambda p: ok([]), "a new value + v2 reads")):
+    route("GET", "/api/v3/account/settings", lambda p, am=am: ok({"uid": "1", "accountMode": am}))
+    route("GET", "/api/v2/mix/account/accounts", v2)
+    acct._mode.update(mode=None, at=0.0)
+    try:
+        got = acct.account_mode(ENV)
+        check(False, f"accountMode {label} → refused, not {got!r}")
+    except acct.BitgetError as e:
+        check(e.code == acct.MODE_UNSUPPORTED and "還沒支援這種模式" in str(e) and acct._mode["mode"] is None,
+              f"accountMode {label} → refused with the mode sentence (MODE_UNSUPPORTED), nothing cached", str(e))
+route("GET", "/api/v2/mix/account/accounts", lambda p: ok([]))
+route("GET", "/api/v3/account/settings", lambda p: err("40084", "not a unified account"))
 acct._mode.update(mode="classic", at=acct.time.time())  # back to the classic account for the sections below
 route("GET", "/api/v2/mix/account/accounts", lambda p: err("429", "Too Many Requests", 429))
 try:
@@ -421,6 +466,19 @@ try:
     check(False, "40762 raises")
 except Exception as e:
     check(str(e).startswith("[order_reject:insufficient_margin]"), "40762 tags insufficient_margin", str(e))
+COPY_MSG = "This product does not support copy trading"
+n_place = sum(1 for c in CALLS if c["path"] == "/api/v2/mix/order/place-order")
+route("POST", "/api/v2/mix/order/place-order", lambda p: err("40731", COPY_MSG))
+try:
+    order.place_market_order(ENV, "NVDAUSDT", "long", 0.03)
+    check(False, "40731 on an order raises")
+except Exception as e:
+    check(str(e).startswith("[order_reject:key_permission]") and "[bitget_copy_trading_key]" in str(e)
+          and sum(1 for c in CALLS if c["path"] == "/api/v2/mix/order/place-order") == n_place + 1,
+          "40731 on an order: key_permission + the copy-trading marker, sent once (not retried)", str(e))
+    check(acct.COPY_KEY_TAG in str(e)[:200] and acct.COPY_KEY_TAG in reject_token.to_front("close_symbol: " + str(e))[:200],
+          "40731: the [bitget_copy_trading_key] marker survives order_errors' 200-char cut", str(e))
+route("POST", "/api/v2/mix/order/place-order", place)
 
 
 def place_no_id(p):

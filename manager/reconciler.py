@@ -1139,6 +1139,9 @@ def _reset_outage():
         _save_outage()
 
 
+_BITGET_COPY_KEY = "[bitget_copy_trading_key]"  # lib/account_bitget.COPY_KEY_TAG (40731)
+
+
 def _on_read_failure(venue, exc, kind, now):
     global _consecutive_failures, _guard_due
     if isinstance(exc, CapitalCacheLagError):
@@ -1170,6 +1173,14 @@ def _on_read_failure(venue, exc, kind, now):
         return
     if kind == venue_errors.CREDENTIAL:
         logging.error(f"get_positions: the venue rejected the API key ({what}): {exc}")
+        if _BITGET_COPY_KEY in str(exc):
+            # a rebind of the same kind of key cannot fix this one: say which kind. Readable text
+            # first, the marker the desktop / api read last (the reason stays far under 200)
+            why = ("a copy-trading or elite-trader account's key — bind a trading key of a regular "
+                   "account (read + trade, no withdrawal)")
+            _halt(f"the exchange rejected the API key ({venue} {code}): {why} {_BITGET_COPY_KEY}",
+                  f"🚨 HALT engaged: the exchange rejected the API key ({venue} {code}): {why}, then resume")
+            return
         _halt(f"the exchange rejected the API key / permission ({venue} {code})",
               f"🚨 HALT engaged: the exchange rejected the API key / permission "
               f"({venue} {code}) — fix or rebind the key, then resume")
