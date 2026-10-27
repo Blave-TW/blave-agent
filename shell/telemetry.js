@@ -188,8 +188,8 @@ const EVENTS = {
     "po_help_cfg", "po_help_opt",
     // 策略庫市場選單(0.1.26;renderer/library.js libMktPick):選了不同的市場才送,重選同一項不送;不帶選了哪個市場。網頁 GA4 同一件事是 library_filter_change(filter=market)
     "lib_mkt_pick",
-    // 歡迎頁起手句(0.1.26;renderer/welcome.js):starter_crypto / _tw / _txf = 點了、回合真的跑起來;starter_fill = Blave AI 跑不了、只填進輸入框(不分市場);
-    // starter_new / starter_no_new = 送出起手句的那一輪結束時本機策略清單有沒有多一支(同 lib_installed / library_no_new);wd_fold_open = 點開「可以回測的資料」
+    // 歡迎頁起手句(0.1.26–0.1.33):starter_* 六個本版起沒有送出點(0.1.34 換成①的策略卡 wcard_*),0.1.33 以前的外殼還在送,api 兩端逐字比對,留著;
+    // wd_fold_open = 點開「可以回測的資料」(renderer/welcome.js,照舊有送出點)
     "starter_crypto", "starter_tw", "starter_txf", "starter_fill", "starter_new", "starter_no_new", "wd_fold_open",
     // 按下「登入 Blave」、瀏覽器打開之前(0.1.26;renderer/app.js blaveGo / blaveLoginFlow / planLogin):對 login_done 算 app 帶去網頁登入／註冊的完成率
     "login_click",
@@ -239,7 +239,9 @@ const EVENTS = {
     "mp_locked_click", "bind_model",
     // 成交測試分頁:切到分頁(renderer/app.js 分頁列)、表頭換指標且值有變(report-xt.js 經 opts.onMetric)、
     // 霧卡〔更新績效〕ack 排進佇列(perf.js perfClick;回測數據分頁那顆照舊是 perf_update,web 同一顆是 perf_update_request placement exec_test)
-    "report_xt", "xt_metric", "perf_update_xt"] },
+    "report_xt", "xt_metric", "perf_update_xt",
+    // 歡迎頁①策略卡(0.1.34;renderer/library.js libSend、welcome.js wcCard):從卡確認後回合真的跑起來、點策略名開詳情;雲端視角寫進名字
+    "wcard_use", "wcard_use_cloud", "wcard_open", "wcard_open_cloud"] },
 };
 const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   // 每個安裝只送一次:自己記,不靠 api 去重
 // 每安裝每屬性值每 UTC 日只送一次(契約 §「外殼端同日同 name 也不重送」):送過的記在狀態檔、換日整組清掉。

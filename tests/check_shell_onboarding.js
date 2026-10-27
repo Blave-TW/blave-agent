@@ -66,12 +66,15 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
   ok("② onbData(cloud):回測過看雲端清單(不看本機 RP.list)、金額看雲端那一袋;清單沒載入 → known false", c1.known && c1.bt && c1.funded && !c2.known && c3.known && !c3.bt && !c3.funded, JSON.stringify([c1, c2, c3]));
   const paint = cutFn(src, "onbPaint");
   ok("② onbPaint:鈕字照 amt 換(po.goAmounts／tr.pick),指紋帶 amt;click 把 ONB.amt 交給 poPick",
-    /\$\("onb-po"\)\.textContent = t\(d\.amt \? "po\.goAmounts" : "tr\.pick"\);/.test(paint) && /JSON\.stringify\(\[LANG, env, ph\.view, S\.steps, d\.amt\]\)/.test(paint) && /poPick\(ONB\.amt\)/.test(src)); }
+    /\$\("onb-po"\)\.textContent = t\(d\.amt \? "po\.goAmounts" : "tr\.pick"\);/.test(paint) && /JSON\.stringify\(\[LANG, env, ph\.view, S\.steps, d\.amt\]\)/.test(paint) && /poPick\(ONB\.amt\)/.test(src));
+  // ①的策略卡(spec desktop-welcome-library-first §2.5):onbPaint 有三個提早 return,wcPaint 要在 onbEval 之後、指紋 return 之前,雲端轉 stale／stopped 才收得起來
+  ok("② onbPaint:onbEval(env) 之後、if (key === ONB.key) return 之前叫 wcPaint",
+    paint.indexOf("wcPaint();") > paint.indexOf("onbEval(env);") && paint.indexOf("wcPaint();") < paint.indexOf("if (key === ONB.key) return;") && paint.indexOf("onbEval(env);") > 0); }
 // 設計稽核 v030 S4:雲端主機本來就含資料,步驟②不出「可以回測的資料」(免費 vs Blave 兩欄會講錯事實);本機照舊、切回本機要再露出來
 { const run = (envs) => {
     const el = (id) => ({ id, hidden: false, textContent: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } });
     const els = {}; ["wc", "wf", "onb-fin", "onb-steps", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl"].forEach((id) => { els[id] = el(id); });
-    const C = { $: (id) => els[id], t: (k) => k, LANG: "zh", JSON, WC: { shown: true }, ONB: { prefs: {}, key: null, amt: false }, onbHead() {}, ENVNOW: "local",
+    const C = { $: (id) => els[id], t: (k) => k, LANG: "zh", JSON, WC: { shown: true }, ONB: { prefs: {}, key: null, amt: false }, onbHead() {}, wcPaint() {}, ENVNOW: "local",
       onbEnv: () => C.ENVNOW, onbEval: () => ({ d: { amt: false }, S: { steps: [{ open: true }, { open: true }, { open: false }] }, ph: { view: "E" } }) };
     vm.createContext(C); vm.runInContext(paint, C);
     return envs.map((e) => { C.ENVNOW = e; if (e === "local-open") { C.ENVNOW = "local"; els.wl.hidden = false; els["wl-fold"].attrs["aria-expanded"] = "true"; } C.onbPaint();
@@ -80,10 +83,37 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
   const r = run(["local-open", "cloud", "local"]);
   ok("② 雲端歡迎頁步驟②不出「可以回測的資料」:#wl-fold 收掉、#wl 收起、aria-expanded false;本機照舊(展開著的不被收);切回本機 #wl-fold 再出現",
     JSON.stringify(r) === JSON.stringify(["local-open,false,false,true", "cloud,true,true,false", "local,false,true,false"]), JSON.stringify(r)); }
-// ── ② 起手句不帶市場 tag(設計稽核 P2-4)──
-{ const css = read(path.join(R, "welcome.css")), st = cutFn(src, "stPaint");
-  ok("② 起手句沒有市場 tag:stPaint 不畫 .tag;.st-rows 三欄 auto minmax(0, 1fr) auto;welcome.css 不再有 .tag 規則",
-    !/"tag"|wd\.mk\./.test(st) && /\.st-rows \{[^}]*grid-template-columns: auto minmax\(0, 1fr\) auto; \}/.test(css) && !/\.tag\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, ""))); }
+// ── ② ①的策略卡(spec desktop-welcome-library-first §2.2):wcCard 原文接假 DOM 跑 ──
+{ const css = read(path.join(R, "welcome.css")), lib = read(path.join(R, "library.js"));
+  const mkEl = (tag, cls, txt) => ({ tag, className: cls || "", textContent: txt == null ? "" : String(txt), kids: [], attrs: {}, dataset: {}, on: {}, id: "",
+    append(...xs) { xs.forEach((x) => this.kids.push(x)); }, appendChild(x) { this.kids.push(x); return x; }, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener(k, f) { this.on[k] = f; } });
+  const C = { wdEl: mkEl, t: (k) => "<" + k + ">", WC: { tip: 0 }, libSymbolNodes: () => ["BTC/USDT"], libRich: (k, v) => mkEl("frag", "", k), libMono: (x) => mkEl("span", "mono", x),
+    trackFeature() {}, onbEnv: () => "local", wcDetail() {}, wcUse() {} };
+  vm.createContext(C);
+  const blk = lib.slice(lib.indexOf("/* ── 純邏輯("), lib.indexOf("/* ── 純邏輯到此"));
+  vm.runInContext(blk.replace(/^const /gm, "var ") + "\n" + cutFn(src, "wcCard"), C);
+  const rep = { annual_return: 12.3, total_return: 40, sharpe: 1.234, max_drawdown: -18.5, equity_from: "2020-01-01", equity_to: "2026-06-30" };
+  const walk = (n, out) => { out.push(n); (n.kids || []).forEach((k) => typeof k === "object" && walk(k, out)); return out; };
+  const c1 = walk(C.wcCard({ id: 7, title: "A", report: rep }, true), []), c2 = walk(C.wcCard({ id: 8, title: "B", report: rep }, false), []);
+  const short = walk(C.wcCard({ id: 9, title: "C", report: Object.assign({}, rep, { equity_from: "2026-01-01", equity_to: "2026-06-30" }) }, true), []);
+  const cls = (all, c) => all.filter((n) => (" " + n.className + " ").includes(" " + c + " "));
+  const arrow = cls(c1, "ln-arrow")[0], tips = cls(c1, "mp-tip");
+  ok("② 卡不畫 tag、不畫曲線(沒有 LWC);名字是按鈕;CTA 是 .ln-arrow、字是 lib.use、箭頭 aria-hidden",
+    !c1.some((n) => /\btag\b|wc-curve/.test(n.className)) && !/LightweightCharts|wcCurve|createChart/.test(src) && cls(c1, "t")[0].tag === "button"
+    && arrow && arrow.tag === "button" && cls(c1, "lbl")[0].textContent === "<lib.use>" && cls(c1, "ar")[0].attrs["aria-hidden"] === "true", JSON.stringify(c1.map((n) => n.className)));
+  ok("② gloss 只掛第一張卡的三個 label:.mp-tip 按鈕 + 緊鄰的 span.tip[role=tooltip](aria-describedby 對上 id),字重用 bt.tip.*;第二張沒有",
+    tips.length === 3 && cls(c2, "mp-tip").length === 0 && cls(c1, "k").every((k) => k.kids.length === 2 && k.kids[0].className === "mp-tip" && k.kids[1].className === "tip" && k.kids[1].attrs.role === "tooltip" && k.kids[0].attrs["aria-describedby"] === k.kids[1].id && k.kids[1].id)
+    && cls(c1, "tip").map((n) => n.textContent).join() === "<bt.tip.annReturn>,<bt.tip.sharpe>,<bt.tip.maxDrawdown>", JSON.stringify(cls(c1, "tip").map((n) => n.textContent)));
+  ok("② 三格:第一格年化依正負上色、Sharpe 兩位不上色、最大回撤一律紅;樣本未滿 1 年第一格換總報酬(label 與 gloss 一起換)",
+    cls(c1, "v").map((n) => n.className + "=" + n.textContent).join("|") === "v mono up=+12.30%|v mono=1.23|v mono down=−18.50%"
+    && cls(short, "mp-tip")[0].textContent === "<lib.kv.total>" && cls(short, "tip")[0].textContent === "<bt.tip.totalReturn>" && cls(short, "v")[0].textContent === "+40.00%", JSON.stringify([cls(c1, "v").map((n) => n.className + "=" + n.textContent), cls(short, "v")[0]]));
+  ok("② welcome.css:卡一張一列(info／stats／act 三格)、<520 兩排、<420 三排且 CTA 靠左;Arrow link hover 字換 --link-quiet-hover、只有 .lbl 補底線、熱區上下補到 44;不再有 .st-row／.tag 規則",
+    /\.wc-card \{\s*display: grid; grid-template-columns: minmax\(0, 1fr\) auto auto; grid-template-areas: "info stats act";/.test(css)
+    && /@container \(max-width: 519px\) \{\s*\.wc-card \{ grid-template-columns: minmax\(0, 1fr\) auto; grid-template-areas: "info info" "stats act";/.test(css)
+    && /@container \(max-width: 419px\) \{\s*\.wc-card \{ grid-template-columns: minmax\(0, 1fr\); grid-template-areas: "info" "stats" "act";[^}]*\}\s*\.wc-card \.act \{ justify-self: start; \}/.test(css)
+    && /\.ln-arrow:hover:not\(\[aria-disabled="true"\]\) \{ color: var\(--link-quiet-hover\); \}/.test(css) && /\.ln-arrow:hover:not\(\[aria-disabled="true"\]\) \.lbl \{ text-decoration: underline;/.test(css)
+    && /\.ln-arrow::before \{ content: ""; position: absolute; left: 0; right: 0; top: -6px; bottom: -6px; \}/.test(css) && /min-height: 32px/.test(css.slice(css.indexOf(".ln-arrow {")))
+    && !/\.st-row|\.tag\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, ""))); }
 // ── en Title Case(設計稽核 P2-5)──
 { const S = {}; vm.createContext(S); vm.runInContext(read(path.join(R, "strings.js")).replace(/^const STRINGS/m, "var STRINGS"), S);
   ok("② en:tr.pick／tr.pick.title = Pick Strategies、po.goAmounts = Set Amounts(同一位置的兩種字一起 Title Case);zh 選擇策略／設定金額",

@@ -302,9 +302,9 @@
           <div class="rpt-read" id="rpt-read" hidden></div>
         </div>
       </div>
-      <!-- 歡迎頁(renderer/welcome.js;spec agent-onboarding-e-f):只有「這台電腦」視角有。onboarding 期間是步驟清單(#wc,E),
+      <!-- 歡迎頁(renderer/welcome.js;spec agent-onboarding-e-f、desktop-welcome-library-first):兩個視角各一份。onboarding 期間是步驟清單(#wc,E),
            做完之後是淡化記號＋一列籤(#wf,F)。兩個都等第一次策略清單讀完(app.js stratRefresh 設 RP.loaded)與入門偏好讀到才出,不閃錯的步驟。
-           步驟的標題列由 welcome.js onbPaint 畫(完成的那一步是可以重新展開的按鈕);每一步下面的鈕是靜態的,只切 hidden -->
+           步驟的標題列由 welcome.js onbPaint 畫(完成的那一步是可以重新展開的按鈕);①的策略卡由 wcPaint 畫(挑法 library.js wcReco),其餘的鈕是靜態的,只切 hidden -->
       <div class="main-empty" id="main-empty">
         <div class="wc-inner" id="wc" hidden>
           <svg class="wc-mark" viewBox="0 0 180 180" aria-hidden="true">
@@ -314,6 +314,7 @@
             <li class="onb-step" data-step="1">
               <div class="onb-hw" id="onb-h1"></div>
               <div class="onb-body" id="onb-b1">
+                <div class="wc-cards" id="wc-cards" role="group" aria-labelledby="onb-h1" hidden></div>
                 <div class="onb-opts">
                   <!-- 「上網找點子」:只在這台電腦視角、內建瀏覽器開著、引擎跑得動時出(library.js libIdeaPaint 切 hidden) -->
                   <button class="wc-chip" id="chat-idea" type="button" data-i18n="idea.chip" hidden></button>
@@ -324,7 +325,6 @@
             <li class="onb-step" data-step="2">
               <div class="onb-hw" id="onb-h2"></div>
               <div class="onb-body" id="onb-b2">
-                <div class="st-rows" id="st-rows" role="group" aria-labelledby="onb-h2"></div>
                 <div class="onb-opts">
                   <!-- 「新增策略」開框、不送訊息(同雲端歡迎頁那顆) -->
                   <button class="wc-chip" id="chat-ns" type="button" data-i18n="ns.chip"></button>

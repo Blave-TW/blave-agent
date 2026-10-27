@@ -138,7 +138,49 @@ if (!process.versions.electron) {
   const pubComm = S({ id: 130, title: "comm", is_official: false, verified: false, blave_data: "none" }), pubPaid = S({ id: 131, title: "paid", price: 500, blave_data: "none" });
   ok("① libAnonOk(§1.1b):官方 × 免費 × none 三個缺一不可;未標不算", P.libAnonOk(pubOff) && !P.libAnonOk(reqOff) && !P.libAnonOk(nullOff) && !P.libAnonOk(pubComm) && !P.libAnonOk(pubPaid)
     && !P.libAnonOk(Object.assign({}, pubOff, { is_official: "true" })) && !P.libAnonOk(null));
-  ok("① 歡迎頁三張卡 wcReco 退役(onboarding E:策略庫是①的一顆鈕)", typeof P.wcReco === "undefined" && !/wcReco|wcPaint/.test(src));
+  { // 歡迎頁①的卡 wcReco(spec desktop-welcome-library-first §2.3):候選 = 免費 × 官方 × 這個視角沒裝過 × 不是自己的(免費的 purchased 不算數);
+    // 只留現在就能跑的、不拿要資料的補滿;每市場先一支再補滿 3;回傳照 libVisible 的順序;帳號狀態還在讀 → null(骨架)
+    const c1 = S({ id: 201, market: "crypto", blave_data: "none" }), c2 = S({ id: 202, market: "crypto", blave_data: "required" }), c3 = S({ id: 203, market: "crypto", blave_data: "required" });
+    const t1 = S({ id: 211, market: "txf", blave_data: "required" }), w1 = S({ id: 221, market: "twstock", verified: false, blave_data: "none" });
+    const junk = [S({ id: 231, market: "txf", price: 500, blave_data: "none" }), S({ id: 232, market: "usstock", is_official: false, verified: false, blave_data: "none" }), S({ id: 233, market: "usstock", price: 500, purchased: true, blave_data: "none" }), S({ id: 234, market: "usstock", is_owner: true, blave_data: "none" })];
+    const ids = (list, c) => { const r = P.wcReco(list, Object.assign({ env: "local" }, c)); return r === null ? "WAIT" : r.map((x) => x.id).join(); };
+    const all = [w1, t1, c2, c1, ...junk];
+    ok("① wcReco:資料已含(included)→ 全部可選、已驗證在前、一個市場一支;付費(買過的也是)、社群、自己的都不進",
+      ids(all, { dataAccess: "included", signedIn: true }) === "211,202,221", ids(all, { dataAccess: "included", signedIn: true }));
+    ok("① wcReco:登入但 billed／none／plan_required／payment_failed／查不到(null)→ 只出不用 Blave 資料的,不拿要資料的補滿",
+      ["billed", "none", "plan_required", "payment_failed", null].every((da) => ids(all, { dataAccess: da, signedIn: true }) === "201,221"), ["billed", "none", null].map((da) => ids(all, { dataAccess: da, signedIn: true })).join(" | "));
+    ok("① wcReco:沒登入 → 只出 libAnonOk 的(就算清單那份說 included);未標資料需求的不算",
+      ids(all, { dataAccess: "included", signedIn: false }) === "201,221" && ids([S({ id: 261, market: "crypto" }), c1], { dataAccess: null, signedIn: false }) === "201", ids(all, { dataAccess: "included", signedIn: false }));
+    ok("① wcReco:雲端視角 → 全部(主機含資料),不看登入與資料權限", ids(all, { env: "cloud", dataAccess: null, signedIn: true }) === "211,202,221" && ids(all, { env: "cloud", dataAccess: "none", signedIn: false }) === "211,202,221");
+    ok("① wcReco:帳號狀態還在讀(wait)→ null = 骨架,不先挑一份", P.wcReco(all, { env: "local", wait: true, signedIn: true, dataAccess: "included" }) === null && ids(all, { wait: false, signedIn: true, dataAccess: "included" }) !== "WAIT");
+    { const k1 = S({ id: 251, market: "crypto", blave_data: "none", created_at: "2026-06-12 00:00:00" }), k2 = S({ id: 252, market: "crypto", blave_data: "none", created_at: "2026-06-11 00:00:00" }), k3 = S({ id: 253, market: "txf", blave_data: "none", created_at: "2026-06-10 00:00:00" });
+      ok("① wcReco:三支都能用、市場依序 加密、加密、台指期 → 每市場先一支再補,回傳照 libVisible 排序(加密、加密、台指期),不是挑的順序(加密、台指期、加密)",
+        ids([k3, k2, k1], { dataAccess: "included", signedIn: true }) === "251,252,253", ids([k3, k2, k1], { dataAccess: "included", signedIn: true })); }
+    ok("① wcReco:不滿三個市場就照順序補滿 3;裝過的(installed 回呼)扣掉;全裝過、空清單、壞輸入回空陣列",
+      ids([c1, c2, c3], { dataAccess: "included", signedIn: true }).split(",").length === 3 && ids(all, { dataAccess: "none", signedIn: true, installed: (x) => x.id === 201 }) === "221"
+      && ids(all, { dataAccess: "included", signedIn: true, installed: () => true }) === "" && P.wcReco([], {}).length === 0 && P.wcReco(null, null).length === 0,
+      ids(all, { dataAccess: "none", signedIn: true, installed: (x) => x.id === 201 }));
+    { // Wei 實機:帳號領過全部免費官方策略(/code 抓過就記 0 元購買)、這台一支都沒裝 → 照常三張
+      const bought = [w1, t1, c2, c1].map((x) => Object.assign({}, x, { purchased: true }));
+      ok("① wcReco:免費官方全部 purchased、這台沒裝 → 照常 3 張、每市場一支", ids(bought, { dataAccess: "included", signedIn: true }) === "211,202,221"); }
+    const yr = (from, to) => S({ report: REP({ equity_from: from, equity_to: to }) });
+    ok("① wcFirstKv:回測樣本未滿 1 年 → total(總報酬),滿 1 年 → ann(年化;365 天 = 0.9993 年仍是 total,同 web 不捨入);沒有報告或期間 → ann",
+      P.wcFirstKv(yr("2026-01-01", "2026-06-30")) === "total" && P.wcFirstKv(yr("2020-01-01", "2026-06-30")) === "ann" && P.wcFirstKv(yr("2025-01-01", "2026-01-02")) === "ann" && P.wcFirstKv(yr("2025-01-01", "2026-01-01")) === "total" && P.wcFirstKv(S({})) === "ann");
+    { // 樣本長度不捨入(web library_rules.years 同一份):只差 11 天(< 0.05 年)時,捨到 0.1 年會變平手、改比上架日,web 不會
+      const lo = S({ id: 271, created_at: "2026-06-10 00:00:00", report: REP({ equity_from: "2020-01-01", equity_to: "2026-06-30" }) });
+      const sh = S({ id: 272, created_at: "2026-06-12 00:00:00", report: REP({ equity_from: "2020-01-12", equity_to: "2026-06-30" }) });
+      const near1 = S({ report: REP({ equity_from: "2025-01-15", equity_to: "2026-01-01" }) });
+      ok("① 推薦排序比不捨入的樣本年數:樣本長 11 天的排前面(就算上架較早);libYears(畫面)照舊捨到 0.1;0.96 年的第一格是總報酬(捨入後 1.0 會誤判年化)",
+        P.libVisible([sh, lo], "all").map((x) => x.id).join() === "271,272" && P.libYears(lo) === P.libYears(sh) && P.wcFirstKv(near1) === "total" && P.libYears(near1) === 1
+        && P.libSampleYears(S({ report: REP({ equity_from: "2026-01-01", equity_to: "2026-01-01" }) })) === null && P.libSampleYears(S({})) === null);
+      const webJs = path.join(process.env.BLAVE_WEB_DIR || path.join(__dirname, "..", "..", "web"), "app", "static", "js", "library_rules.js");
+      if (!fs.existsSync(webJs)) console.log("SKIP  web library_rules.years 比對(需要 BLAVE_WEB_DIR 或 monorepo 版面)");
+      else { const Wb = { window: {} }; vm.createContext(Wb); vm.runInContext(read(webJs), Wb); const BL = Wb.window.BlaveLibrary;
+        const cases = [lo, sh, near1, S({}), S({ report: REP({ equity_from: "2026-01-01", equity_to: "2026-01-01" }) }), S({ report: REP({ equity_from: "2018-03-07", equity_to: "2026-10-26" }) })];
+        ok("① libSampleYears 逐筆等於 web library_rules.years(含 null 的情形);兩邊 recoSort 順序相同", cases.every((x) => P.libSampleYears(x) === BL.years(x))
+          && BL.recoSort([sh, lo]).map((x) => x.id).join() === P.libVisible([sh, lo], "all").map((x) => x.id).join(), JSON.stringify(cases.map((x) => [P.libSampleYears(x), BL.years(x)]))); } }
+    ok("① 歡迎頁不畫曲線:library.js／welcome.js 沒有 wcCurve,welcome.js 沒有 LightweightCharts", !/wcCurve/.test(src + read(path.join(R, "welcome.js"))) && !/LightweightCharts/.test(read(path.join(R, "welcome.js"))));
+  }
   ok("① libPickData(§8):none / required / 未標 → unknown", P.libPickData(pubOff) === "none" && P.libPickData(reqOff) === "required" && P.libPickData(nullOff) === "unknown" && P.libPickData({ blave_data: "x" }) === "unknown");
   const G = (c) => P.libGrouping(Object.assign({ env: "local", signedIn: true, dataAccess: "included", why: null }, c));
   ok("① libGrouping(§1.2):雲端 null > 沒登入 signedOut > 有卡(included / billed)null > none 照 why(壞值 unknown)> 登入但查不到 unknown",
@@ -451,7 +493,7 @@ if (!process.versions.electron) {
   ok("③ 開別的視圖就 libLeave:trOpen(那一邊)、stratSelect(本機,選了才)、rpCloudSelect(雲端,選了才)", /if \(typeof libLeave === "function"\) libLeave\(S\.env\);/.test(cutFn(trSrc, "trOpen"))
     && /if \(name && typeof libLeave === "function"\) libLeave\("local"\);/.test(cutFn(appSrc, "stratSelect")) && /if \(name && typeof libLeave === "function"\) libLeave\("cloud"\);/.test(cutFn(appSrc, "rpCloudSelect")));
   ok("③ 回合的三個出口(上鎖、失敗解鎖、turn-end)都叫 libSync;turn-end 等 stratRefresh(true) 回來才 libTurnEnd;trPoll 每次讀到雲端清單都叫 libCloudChanged(緊接 rpCloudPrune)", (appSrc.match(/if \(typeof libSync === "function"\) libSync\(\);/g) || []).length === 3
-    && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ (?:if \(typeof stTurnEnd === "function"\) stTurnEnd\(\); )?if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc.slice(appSrc.indexOf("window.blave.onTurnEnd(")))
+    && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc.slice(appSrc.indexOf("window.blave.onTurnEnd(")))
     && /rpCloudPrune\(C\.list\);[^\n]*\n\s*if \(typeof libCloudChanged === "function"\) libCloudChanged\(C\.list\);/.test(cutFn(trSrc, "trPoll")));
   ok("③ 已購:鈕下不寫說明句(lib.note.owned 連字串一起拿掉);未購的付費策略也不寫(lib.note.paid 連字串一起拿掉,扣款去向只在購買框 lib.buy.lead)", !/lib\.note\.owned/.test(src) && !("lib.note.owned" in STR.zh) && !("lib.note.owned" in STR.en) && /case "owned": [^\n]*libAsk\(s, b\)\)\); break;/.test(src) && !/t\("lib\.pub"\)/.test(src) && !("lib.pub" in STR.zh)
     && !/lib\.note\.paid|paidNote/.test(src) && !("lib.note.paid" in STR.zh) && !("lib.note.paid" in STR.en) && /case "paid": [^\n]*libBuyBox\(s, "confirm", b, \{\}\)\)\); break;/.test(src) && /case "buying": row\.appendChild\(dis\(t\("lib\.buy\.busy"\)\)\); break;/.test(src));

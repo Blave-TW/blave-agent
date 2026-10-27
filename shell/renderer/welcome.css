@@ -1,5 +1,5 @@
 /* 歡迎頁(renderer/welcome.js;mockup welcome-directions A2)。
-   全部靠左、同一條軸:記號、步驟編號圈貼這條線;每一步的內容(起手句、籤、資料清單)內縮 32。
+   全部靠左、同一條軸:記號、步驟編號圈貼這條線;每一步的內容(策略卡、籤、資料清單)內縮 32。
    整份清單是一張卡(--surface-card、--radius-lg),沒有包裝元素:列自己上底色、頭尾兩列收圓角、列之間 hairline(welcome.js 的 DOM 不必動)。
    一列一行:名字靠左、小字靠右成欄、行尾 ›;放不下時小字整段折到名字下面;整列可點、列與列緊貼,所以列高下限 44 就是熱區(單行時字在 44 裡垂直置中);
    市場分段沿用 .lib-seg(Outlined control segment);小標同 .sug-cap(13/600 --ink-3);文字鈕沿用 .btn-quiet。
@@ -31,36 +31,58 @@ button.onb-h:focus-visible { outline-offset: -2px; }
 .onb-h.is-done .num, .onb-fin .num { background: var(--ink-3); border-color: var(--ink-3); color: var(--bg-body); }
 .onb-body { padding-left: var(--space-32); margin: var(--space-4) 0 var(--space-24); display: flex; flex-direction: column; }
 .onb-opts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); }
-.onb-body .st-rows + .onb-opts { margin-top: var(--space-8); }
+.onb-body .wc-cards + .onb-opts { margin-top: var(--space-12); }
 .onb-opts .wl-fold { margin: 0 0 0 var(--space-8); }
 .onb-fin { margin: var(--space-24) 0 0; display: flex; align-items: center; gap: var(--space-12); min-height: 36px; font-size: 14px; color: var(--ink-2); }
 /* 完成後的首頁(F;§3.2,mockup f-watermark):中欄垂直、水平置中;記號實色 --color-watermark(canon Brand logo 誤用的具名例外,不用 opacity) */
 .wf { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--space-24); padding-bottom: var(--space-48); }
 .wf-mark { width: 104px; height: auto; flex: none; color: var(--color-watermark); }
 .wf-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-8); }
-/* 起手句(§1.4):照舊版「建議下一步」的列(0.1.30 以前的 suggest.css .sug-item)多一格起始年;不帶市場 tag(0.1.29 設計稽核:句子開頭就講了市場)。
-   subgrid 讓三列的起始年欄對齊。左右 -12 抵掉列的內距,字的左緣對齊標題 */
-.st-rows { margin: 0 calc(-1 * var(--space-12)); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
-.st-row {
-  display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: var(--space-12); align-items: baseline;
-  min-height: 36px; padding: var(--space-8) var(--space-12); border-radius: var(--radius-sm);
-  font-size: 13px; line-height: 1.6; color: var(--ink-2); text-align: left;
-  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+/* ①的策略卡(spec desktop-welcome-library-first §2.2;殼照 0.1.27 的 .wc-card:--surface-card、--radius-lg、無框無陰影、內距 12、卡距 8)。
+   一張一列:名字區 | 三格數字 | CTA;排法看中欄寬(.main-empty 是容器):≥520 一行、420–519 名字一排＋數字與 CTA 一排、<420 三排且 CTA 靠左 */
+.wc-cards { display: flex; flex-direction: column; gap: var(--space-8); }
+.wc-card {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "info stats act"; align-items: center; gap: var(--space-8) var(--space-16);
+  min-width: 0; padding: var(--space-12); border-radius: var(--radius-lg); background: var(--surface-card);
 }
-.st-row .g { align-self: start; display: flex; align-items: center; height: calc(13px * 1.6); color: var(--ink-3); }   /* 同舊版建議列的 .sug-glyph:icon 留在第一行 */
-.st-row .txt { min-width: 0; overflow-wrap: anywhere; }
-.st-row .since { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* hover 底色照策略庫列(library.css .lib-row:hover,spec §10-1)。
-   列裡的灰字一起提亮(canon);disabled 沒有 hover、字取 --ink-3、不用 opacity */
-.st-row:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--surface-card); color: var(--ink); }
-.st-row:hover:not(:disabled):not([aria-disabled="true"]) .g { color: var(--ink); }
-.st-row:hover:not(:disabled):not([aria-disabled="true"]) .since { color: var(--ink-2); }
-.st-row:disabled, .st-row[aria-disabled="true"] { cursor: not-allowed; color: var(--ink-3); }
-.st-row:focus-visible { outline-offset: -2px; }
-/* 窄(容器 < 480;1024 視窗的中欄約 336):起始年移到句子下一行 */
-@container (max-width: 479px) {
-  .st-rows { grid-template-columns: auto minmax(0, 1fr); }
-  .st-row .since { grid-column: 2; }
+.wc-card .info { grid-area: info; min-width: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.wc-card .t { align-self: flex-start; max-width: 100%; padding: 0; font-size: 13px; font-weight: 600; line-height: 1.45; color: var(--ink); text-align: left; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.wc-card .t:hover { text-decoration: underline; text-underline-offset: 3px; }
+.wc-card .m { font-size: 12px; line-height: 1.5; color: var(--ink-3); overflow-wrap: anywhere; }
+.wc-card .m .nw { white-space: nowrap; }   /* 「回測 2014–2026」要換就整段一起換 */
+.wc-stats { grid-area: stats; display: grid; grid-template-columns: repeat(3, auto); grid-template-rows: auto auto; grid-auto-flow: column; justify-content: start; gap: var(--space-2) var(--space-12); }
+.wc-stat { display: contents; }
+/* .wc-stat 是 display: contents,泡泡的定位框要掛在標籤上;觸發點沿用 app.css 的 .mp-tip,字級跟著標籤 */
+.wc-stat .k { position: relative; justify-self: start; font-size: 11px; line-height: 1.5; color: var(--ink-3); white-space: nowrap; }
+.wc-stat .k .mp-tip { font-size: inherit; }
+.wc-stat .k .tip { width: max-content; }
+.wc-stat .v { font-size: 14px; line-height: 1.5; color: var(--ink); white-space: nowrap; }
+.wc-stat .v.up { color: var(--color-greenText); }
+.wc-stat .v.down { color: var(--color-redText); }
+.wc-card .act { grid-area: act; }
+/* canon › Arrow link(Terminal 頁 13/500):hover 字換 --link-quiet-hover、只有文字補底線、箭頭不位移;熱區上下補到 44 */
+.ln-arrow { position: relative; display: inline-flex; align-items: center; gap: var(--space-4); min-height: 32px; padding: 0; font-size: 13px; font-weight: 500; color: var(--link-quiet); white-space: nowrap;
+  transition: color var(--motion-fast) var(--ease-standard); }
+.ln-arrow::before { content: ""; position: absolute; left: 0; right: 0; top: -6px; bottom: -6px; }
+.ln-arrow:hover:not([aria-disabled="true"]) { color: var(--link-quiet-hover); }
+.ln-arrow:hover:not([aria-disabled="true"]) .lbl { text-decoration: underline; text-underline-offset: 3px; }
+.ln-arrow[aria-disabled="true"] { color: var(--ink-3); cursor: not-allowed; }
+/* 骨架:同真卡的格線與行高(名字 13×1.45、meta 12×1.5、數字兩排、CTA 32),讀到時不跳 */
+.wc-card.is-skel .skl { display: flex; align-items: center; }
+.wc-card.is-skel .skl.t { height: calc(13px * 1.45); }
+.wc-card.is-skel .skl.m { height: calc(12px * 1.5); }
+.wc-card.is-skel .skl .sk { width: 100%; }
+.wc-card.is-skel .wc-stats { display: flex; align-items: center; height: calc(11px * 1.5 + 14px * 1.5 + var(--space-2)); }
+.wc-card.is-skel .wc-stats .sk { width: 180px; }
+.wc-card.is-skel .act { display: flex; align-items: center; height: 32px; }
+.wc-card.is-skel .act .sk { width: 96px; }
+@container (max-width: 519px) {
+  .wc-card { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "info info" "stats act"; align-items: end; }
+}
+/* 1024 視窗、聊天欄開著時中欄只剩 288:數字與 CTA 放不進同一排,CTA 自己一排、靠左 */
+@container (max-width: 419px) {
+  .wc-card { grid-template-columns: minmax(0, 1fr); grid-template-areas: "info" "stats" "act"; align-items: start; }
+  .wc-card .act { justify-self: start; }
 }
 /* 「可以回測的資料」:disclosure 文字鈕。箭頭共用 .mp-chev(canon Dropdown › Trigger + caret 的安靜觸發器版;同策略頁「策略邏輯」.lg-tog):
    收起朝下、展開翻上;翻轉只綁 aria-expanded。字到箭頭 6、垂直置中靠 inline-flex(Wei:› 沒對齊字的中線、方向也不對) */
@@ -112,4 +134,4 @@ button.onb-h:focus-visible { outline-offset: -2px; }
   .wl-body.cmp2 .wl-col:first-child > * { grid-column: 1; }
   .wl-body.cmp2 .wl-col:last-child > * { grid-column: 2; }
 }
-@media (prefers-reduced-motion: reduce) { .wd-row, .wd-row::after, .st-row, .wl-fold, .wl-fold .mp-chev, button.onb-h { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .wd-row, .wd-row::after, .ln-arrow, .wl-fold, .wl-fold .mp-chev, button.onb-h { transition: none; } }

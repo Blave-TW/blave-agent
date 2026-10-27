@@ -8594,29 +8594,9 @@ msgstr "Margin {v}"
 msgid "po.dLev"
 msgstr " ({x}×)"
 
-# Welcome page starters (0.1.26; renderer/welcome.js; spec-starters §1.7 / §5.1). Key names borrowed from the web workspace.
-# Row text shows the rule only; the _send sentence is what gets sent. Rows use U+2011 (non-breaking hyphen) in "N‑day" so it never breaks at the hyphen; _send keeps a plain hyphen. Never add a return figure or a comparison with the market / 0050.
-msgid "starter_crypto_row"
-msgstr "BTC daily: buy on a close above the 200‑day MA, sell on a close below"
-
-msgid "starter_crypto_send"
-msgstr "BTC daily: buy on a close above the 200-day MA, sell on a close below. Build it as a strategy and backtest from 2020."
-
-msgid "starter_tw_row"
-msgstr "Hold TSMC, MediaTek, Hon Hai, Delta Electronics and Fubon Financial in equal weights, rebalanced monthly"
-
-msgid "starter_tw_send"
-msgstr "Hold TSMC (2330), MediaTek (2454), Hon Hai (2317), Delta Electronics (2308) and Fubon Financial (2881) in equal weights, rebalanced monthly. Build it as a strategy and backtest from 2022."
-
-msgid "starter_txf_row"
-msgstr "TAIEX futures daily: go long on a close above the 20‑day high, exit on a close below the 10‑day low"
-
-msgid "starter_txf_send"
-msgstr "TAIEX futures daily: go long on a close above the 20-day high, exit on a close below the 10-day low. Build it as a strategy and backtest from 2015."
-
-# {y} = the year the backtest starts
-msgid "starter_since"
-msgstr "From {y}"
+# Welcome page step ① strategy card meta (0.1.34; renderer/welcome.js wcCard): {span} = "2020–2025" or a single year
+msgid "workspace_lib_bt_span"
+msgstr "Backtest {span}"
 
 # Data rows the user can actually use (single list; the free column of the two-column version); {name} = wd.r.<id>.an. Filled in, not sent
 msgid "wd.ask.build"

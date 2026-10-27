@@ -28,7 +28,6 @@ const EXEMPT = [
   [/^(pv\.[df]|cf\.m)\./, "付款牆與方案確認框的扣款條件(金額、何時扣、不退款),誠實句要講全"],
   [/(^|\.)msg(?!\w*(Label|Title)$)/, "送給 agent 的提示詞(*.msg*,不含畫面上的 Label/Title),讀者是模型不是用戶"],
   [/^cap\.ho\.prompt|^tr\.err\.askPrompt/, "送給 agent 的提示詞(群益開通交接、下單失敗請 agent 查)"],
-  [/^starter_\w+_send$/, "起手句點了直接送給 agent 的提示詞"],
   [/^rpt\.new\.tpl\./, "新報告範本,填進描述欄後送給 agent 的提示詞"],
   [/^cx\.paper\.fill$/, "同頁展開內文(「模擬怎麼成交？」),canon 文案密度 #4 不設字數"],
 ];

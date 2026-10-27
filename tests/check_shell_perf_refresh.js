@@ -47,8 +47,8 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   ok("perf_update 在 browser_hb_card 之後(0.1.23 的 pres_have_cert、0.1.24 的 contract_switch 接在後面)、≤16 字", F.slice(F.indexOf("browser_hb_card"), F.indexOf("contract_switch") + 1).join() === "browser_hb_card,perf_update,pres_have_cert,contract_switch" && "perf_update".length <= 16);
   const click = fnSrc(perfSrc, "perfClick");
   const PF_TRACK = 'trackFeature(opener ? "perf_update_xt" : "perf_update")';   // opener = 成交測試霧卡那顆
-  ok("送出點只有 perfClick 一處,而且在 ack started 之後(按下、BUSY、結果不明、拒收都不記);成交測試霧卡那顆記 perf_update_xt、接在白名單最後", perfSrc.split(PF_TRACK).length === 2 && !/trackFeature\("perf_update(_xt)?"\)/.test(perfSrc)
-    && click.includes("res.started.indexOf(name) >= 0) { " + PF_TRACK + ";") && click.indexOf('tradeSend("stats_refresh"') < click.indexOf(PF_TRACK) && F[F.length - 1] === "perf_update_xt");
+  ok("送出點只有 perfClick 一處,而且在 ack started 之後(按下、BUSY、結果不明、拒收都不記);成交測試霧卡那顆記 perf_update_xt、接在 xt_metric 後(0.1.34 歡迎頁卡 wcard_* 再接在後面)", perfSrc.split(PF_TRACK).length === 2 && !/trackFeature\("perf_update(_xt)?"\)/.test(perfSrc)
+    && click.includes("res.started.indexOf(name) >= 0) { " + PF_TRACK + ";") && click.indexOf('tradeSend("stats_refresh"') < click.indexOf(PF_TRACK) && F[F.indexOf("perf_update_xt") - 1] === "xt_metric" && F.indexOf("perf_update_xt") >= 0);
 
   // ── ③ 主行程 stratPerf ──
   {

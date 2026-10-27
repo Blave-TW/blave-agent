@@ -5,9 +5,11 @@
    做完③的當下原地一行「都設好了」(這次開著期間留著),之後就是完成後的首頁(F,#wf):淡化記號＋一列籤。
    「已進 F」兩個視角分開存主行程 ui-prefs(IPC welcome-prefs:done = 這台電腦、cloudDone = 雲端),不上傳。既有用戶第一次判斷就已經完成的直接進 F,不顯示「都設好了」、不送 onb_done——
    所以那一次判斷要等到狀態檔真的讀到(報告還沒來時③一律當沒輪到,不下結論)。
-   起手句(spec-starters):三句並列、點了就把 starter_<mk>_send 送給現在連的 AI,只有 stFill 判定跑不了才填進輸入框。
+   ①放最多三張現成策略卡(spec desktop-welcome-library-first;挑法 library.js wcReco):名字開詳情、「安裝並回測 →」走策略庫同一個確認框,確定後切到詳情再送。
+   0.1.26 的起手句 0.1.34 退役;stFill 留著給 intro.js(第一次對話 modal)用。
    整頁等 app.js stratRefresh 第一次讀完清單(RP.loaded)與入門偏好讀到才顯示。
-   接線:app.js stratRefresh → wcSync;trade.js trPoll → onbPaint;送出／解鎖那三排 → stSync;回合結束 → stTurnEnd;切視角 → trade.js envSwitch 叫 onbPaint。
+   接線:app.js stratRefresh → wcSync;trade.js trPoll → onbPaint(→ wcPaint);送出／解鎖那三排與 library.js libSync → wcBusySync;
+   library.js libLoad／libTurnEnd／libCloudChanged／已安裝對照表回來 → wcPaint;切視角 → trade.js envSwitch 叫 onbPaint。
 
    歡迎頁的資料清單(0.1.17;設計:.claude/output/designer/data-scope-2026-10/mockup-data-scope.html §1 歡迎頁)。
    工作頁沒選策略時的空狀態,籤下面列「可以回測的資料」:依市場分段,每一列一行 = 資料名 + 緊跟在後的小字(頻率・起始年),
@@ -42,7 +44,7 @@ function wdAsk(tpl, name) {
   const a = tpl.slice(0, i), b = tpl.slice(i + 6), han = /[\u2e80-\u9fff]/, lat = /[A-Za-z0-9]/;
   return a + (han.test(a.slice(-1)) && lat.test(name[0]) ? " " : "") + name + (han.test(b[0] || "") && lat.test(name.slice(-1)) ? " " : "") + b;
 }
-/* 起手句要不要改成只填不送(spec-starters §2.2):確定跑不了才擋——還沒連 AI,或連 Blave AI、已登入而帳號不能跑。
+/* 送一句固定的話之前,要不要改成只填不送(intro.js 第一次對話 modal 用;原本是 0.1.26 起手句的規則):確定跑不了才擋——還沒連 AI,或連 Blave AI、已登入而帳號不能跑。
    查不到 / 還在查(canRun null)當作能跑;沒登入照樣送,proxy 403 之後由登入卡接手(只填不送的話畫面上沒有下一步) */
 function stFill(c) { return c.engine == null || (c.engine === "blave" && c.signedIn === true && c.canRun === false); }
 /* 入門步驟(spec §2.3–2.4、§3.1)。o = { bt, funded, known, open[3] }:known = 狀態檔讀到了(還沒讀到時③不下結論,一律沒輪到)。
@@ -112,7 +114,6 @@ function wdFillText(text) {
   ta.value = WD.pre ? WD.pre + "\n" + text : text;
   WD.filled = ta.value; autosize(); ta.focus();
 }
-// 埋點分開送:起手句只填不送時走 wdFillText + starter_fill,不能灌進資料列的 welcome_data_row
 function wdFill(text) { wdFillText(text); trackFeature("welcome_data_row"); }
 const wdWel = (mk) => WD_ROWS.filter((r) => r[1] === mk);
 /* 「看全部資料」:外開網站的資料文件頁,跟著目前的市場分頁與語言;台指期在台股那一頁。清單畫面不動 */
@@ -124,7 +125,7 @@ function wdDocs() {
    沒登入時那句要的試用天數來自公開價目(app.js pubLoad,一次,拿不到就用不帶數字的句子) */
 function wdPaint() {
   const box = $("wl"); if (!box) return;
-  stPaint();   // 換語言、帳號狀態變了都走這裡:起手句換字
+  wcReconcile(); wcLoad(); wcPaint();   // 換語言、帳號狀態變了都走這裡:①的卡換字、帳號的資料權限跟清單那份對不上就重抓
   const s = hasToken ? acct : null, v = planVars(), m = wdMode(hasToken, s, dataAccessOf(s), v.n);
   if (!hasToken && !pub && !WD.pubAsked) { WD.pubAsked = true; pubLoad().then(() => wdPaint()); }
   const key = JSON.stringify([LANG, m.k, m.cmp, WD.mk, v.t, v.r, v.d, planMo()]);
@@ -149,53 +150,7 @@ function wdPaint() {
 $("wl-seg").addEventListener("click", (e) => { const b = e.target.closest("button[data-mk]"); if (!b || b.dataset.mk === WD.mk) return; WD.mk = b.dataset.mk; wdPaint(); });
 $("wl-all").addEventListener("click", wdDocs);
 
-/* ── 起手句(spec-starters §1.4、§2)── */
-// 「點了 = 送成一句話」的列:lucide corner-down-right(原本跟建議列共用,建議改成輸入框灰字後只剩這裡用)
-const SEND_ROW_IC = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 10 5 5-5 5"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/></svg>';
-const ST_ROWS = [["crypto", 2020], ["tw", 2022], ["txf", 2015]];   // 順序固定、沒有預設市場;年份 = 送出那句「回測 X 年至今」
-const ST = { lang: "", pending: null };
-const ST_FEATURE = { crypto: "starter_crypto", tw: "starter_tw", txf: "starter_txf" };   // 送出點的名字要是字面(tests/check_shell_telemetry.js 掃的是這張表)
 const runningNow = () => typeof running !== "undefined" && running === true;
-function stPaint() {
-  const box = $("st-rows"); if (!box || ST.lang === LANG) return;
-  ST.lang = LANG; box.textContent = "";
-  ST_ROWS.forEach(([mk, y]) => {
-    const b = wdEl("button", "st-row"); b.type = "button"; b.dataset.starter = mk; busyLock(b, runningNow());
-    const g = wdEl("span", "g"); g.setAttribute("aria-hidden", "true"); g.innerHTML = SEND_ROW_IC;
-    const rowKey = "starter_" + mk + "_row";   // key 先組好再查(同 wdK;各市場兩語齊不齊由 tests/check_shell_welcome_data.js 列舉)
-    // 不帶市場 tag(0.1.29 設計稽核:句子開頭就講了市場)。中間的空白文字節點給讀屏斷詞(grid 裡看不出來)
-    b.append(g, wdEl("span", "txt", t(rowKey)), " ", wdEl("span", "since", t("starter_since", { y })));
-    b.addEventListener("click", () => stGo(mk));
-    box.appendChild(b);
-  });
-}
-// 回合進行中三列是鎖(busy.js):aria-disabled、點了在輸入框上方講原因;app.js 送出 / 解鎖那三排跟 nsSync 一起叫
-function stSync() { const box = $("st-rows"); if (box) box.querySelectorAll(".st-row").forEach((b) => busyLock(b, runningNow())); }
-function stGo(mk) {
-  if (runningNow()) { busySendTell(); return; }
-  WD.mk = mk; wdPaint();   // 資料摺疊的分段跟著最後點的那句走
-  const sendKey = "starter_" + mk + "_send", text = t(sendKey), a = typeof acct !== "undefined" ? acct : null;
-  // 新策略開新對話(Wei;同 nsSend、策略庫、找點子):這條對話講過話(csTitle 在 submitMessage 第一個 await 之前就設好)就先開新的。
-  // 只填不送也一樣先開,不然填進去的字送出時還是接在舊對話後面
-  if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 過程在對話欄回報
-  const fresh = !!csTitle;
-  if (fresh) csStartNew();
-  if (stFill({ engine: typeof cur !== "undefined" ? cur : null, signedIn: !!hasToken, canRun: a ? a.can_run : null })) {
-    wdFillText(text); trackFeature("starter_fill");
-    if (fresh && typeof acctPrecheck === "function") acctPrecheck();   // 換了新對話,預檢卡(這時唯一要做的事)跟著清掉了:補回來
-    return;
-  }
-  const env = onbEnv(), before = new Set((env === "cloud" ? TR_BAGS.cloud.list || [] : RP.list).map((x) => x.name));
-  submitMessage(text).then((ok) => { if (ok) { trackFeature(ST_FEATURE[mk]); ST.pending = { before, env }; } });
-}
-// 起手句送出的那一輪結束(app.js onTurnEnd,stratRefresh(true) 之後;同 libTurnEnd):送出時那一邊的清單多了一支 = starter_new
-// (雲端歡迎頁的起手句,策略建在雲端)
-function stTurnEnd() {
-  const p = ST.pending; if (!p) return;
-  ST.pending = null;
-  const list = p.env === "cloud" ? TR_BAGS.cloud.list || [] : RP.list;
-  trackFeature(list.some((x) => !p.before.has(x.name)) ? "starter_new" : "starter_no_new");
-}
 
 /* ── 可以回測的資料 ›(§1.5):每次開 app 都收起來,不記住 ── */
 $("wl-fold").addEventListener("click", () => {
@@ -205,7 +160,8 @@ $("wl-fold").addEventListener("click", () => {
 });
 
 /* ── 入門步驟(E)與完成後的首頁(F)── */
-const WC = { shown: false, armed: false };
+// key:①策略卡的指紋;retried:清單讀不到只重試一次的語言;synced:對帳過的(帳號, 清單)資料權限組;tip:gloss 泡泡的 id 流水號
+const WC = { shown: false, armed: false, key: null, retried: null, synced: null, tip: 0 };
 // prefs:null = 還在讀(讀到之前不畫,不然已進 F 的人會先閃一下步驟清單)。base／fin／open 兩個視角各一份(ONB.v),畫面只有一份(key、amt 跟著現在的視角)
 const onbV = () => ({ base: null, fin: false, open: [false, false, false] });
 const ONB = { prefs: null, v: { local: onbV(), cloud: onbV() }, key: null, amt: false };
@@ -217,6 +173,7 @@ const ONB_STEP_KEYS = ["onb.s1", "onb.s2", "onb.s3"];   // 字逐字同網頁 wo
 function wcSync() {
   if (!WC.shown) WC.shown = true;
   onbPaint();
+  wcLoad(); wcPaint();   // 沒開過策略庫的新安裝 LIB.data 是 null:①的卡靠這裡第一次抓
 }
 // 讀清單一直失敗(RP.loaded 不會變)也不能讓歡迎頁永遠空白:進工作頁(app.js enterWorkspace)起算 3 秒照樣出。
 // 從 script 載入起算的話,停在連線頁超過 3 秒的人會在還沒連 AI 時就看到歡迎頁(稽核 B1)
@@ -235,6 +192,104 @@ function onbData(env) {
   // ③ 已經勾了沒存、或存了但金額全 0:下一步是填金額,不是再開一次框(借頁首 trZCase 的 draft／amt 兩個判斷;那支要綁好帳戶才回值,新手多半沒綁,不整支照搬)
   const amt = known && !funded && (Object.keys(stored).length > 0 || trWith(L, () => trZDraft()));
   return { known, bt: (cloud ? (L && L.list) || [] : RP.list).some((x) => x.hasBacktest), funded, amt };
+}
+/* ── ①的策略卡(spec desktop-welcome-library-first §2–3)── */
+// 手上沒有、作廢了、換了語言才問(主行程有 5 分鐘快取)。不從 wcPaint 叫:libLoad 結束會叫 wcPaint,讀不到時會一直重打。
+// 讀不到(主行程不快取失敗)只再試一次:之後要等登入翻轉(libInvalidate 標 stale)或換語言(稽核 B2)
+function wcLoad() {
+  if (!WC.shown || LIB.loading) return;
+  if (LIB.data && !LIB.stale && LIB.data.lang === LANG) return;
+  if (!LIB.data && LIB.failed && !LIB.stale) { if (WC.retried === LANG) return; WC.retried = LANG; }
+  libLoad(false);
+}
+/* 清單的 dataAccess 是讀清單那一刻的快照(卡與詳情的鈕都只看它)。帳號狀態跟它兩邊都已知又不一樣(剛綁卡、方案生效)就作廢重抓;
+   同一組只對帳一次:api 查不到時 acct 留著舊值、主行程那份過 5 分鐘回 null,不加這道每輪回合結束都會重抓,跟 LLM 搶每分鐘 30 次的桶 */
+function wcReconcile() {
+  if (!LIB.data || !hasToken) return;
+  const a = dataAccessOf(acct), b = LIB.data.dataAccess, pair = a + "|" + b;
+  if (a && b && a !== b && WC.synced !== pair) { WC.synced = pair; LIB.stale = true; }
+}
+// 登入著、這次開 app 還沒查完過帳號(或手上沒有、正在查):先出骨架,讀到再挑,不先挑一份再整組換掉。手上有值時重查不閃
+const wcAcctWait = () => !!hasToken && acct === null && (acctPending > 0 || !acctSettled);
+// libInstalledName 會把「名字不在本機清單」的對照刪掉:本機清單還沒讀到(3 秒保底那條路)時只看對照表,不能拿空清單去刪
+const wcInstalled = (s, env) => (env === "cloud" || RP.loaded ? !!libInstalledOf(s, env) : !!LIB.installed[String(s.id)]);
+/* 重畫。指紋(語言、視角、雲端狀態、資料權限、骨架、挑出來的那幾支)沒變就不碰卡,hover 與焦點不被洗掉;回合鎖與代下載鎖由 wcBusySync 就地換 */
+function wcPaint() {
+  const box = $("wc-cards"); if (!box || !WC.shown) return;
+  const env = onbEnv(), cloud = env === "cloud" ? libCloud() : null;
+  // 雲端主機停了或沒跟上:歡迎頁照樣出(trade.js envPaint 的 gate 不擋 stopped／stale),這裡是唯一一道;原因句住在策略庫詳情
+  const off = cloud !== null && cloud !== "live";
+  const picks = off || !LIB.data ? [] : wcReco(LIB.data.strategies, { env, signedIn: !!hasToken, dataAccess: LIB.data.dataAccess, wait: env !== "cloud" && wcAcctWait(), installed: (s) => wcInstalled(s, env) });
+  const skel = !off && (picks === null || (!LIB.data && LIB.skel));
+  const shown = skel ? [] : picks;
+  const key = JSON.stringify([LANG, env, cloud, LIB.data ? LIB.data.dataAccess : null, skel, shown.map((s) => [s.id, s.title, s.report])]);
+  if (key !== WC.key) {
+    WC.key = key; box.textContent = "";
+    if (skel) for (let i = 0; i < 3; i++) box.appendChild(wcSkel());
+    else shown.forEach((s, i) => box.appendChild(wcCard(s, i === 0)));
+    box.hidden = !skel && !shown.length;   // 讀不到、策略庫空、都裝過了:整塊不見,①只剩兩顆籤;不出錯誤字
+  }
+  wcBusySync();
+}
+// 骨架卡:同真卡的格線與行高,讀到時版面不跳
+function wcSkel() {
+  const c = wdEl("div", "wc-card is-skel"), info = wdEl("div", "info"), stats = wdEl("div", "wc-stats"), act = wdEl("div", "act");
+  c.setAttribute("aria-hidden", "true");
+  [["t", 70], ["m", 45]].forEach(([k, w]) => { const l = wdEl("div", "skl " + k), b = wdEl("div", "sk"); b.style.width = w + "%"; l.appendChild(b); info.appendChild(l); });
+  stats.appendChild(wdEl("div", "sk"));
+  act.appendChild(wdEl("div", "sk"));
+  c.append(info, stats, act);
+  return c;
+}
+// 這支的詳情(名字、狀態不是 free 的 CTA):不記 library_open
+async function wcDetail(s) { await libOpen({ silent: true }); libShowDetail(s.id); }
+function wcCard(s, first) {
+  const c = wdEl("article", "wc-card"), r = s.report || {}, info = wdEl("div", "info");
+  const nm = wdEl("button", "t", s.title); nm.type = "button";
+  nm.addEventListener("click", () => { trackFeature(onbEnv() === "cloud" ? "wcard_open_cloud" : "wcard_open"); wcDetail(s); });
+  const meta = wdEl("div", "m"), y1 = String(r.equity_from || "").slice(0, 4), y2 = String(r.equity_to || "").slice(0, 4);
+  meta.append(...libSymbolNodes(s));
+  if (y1 && y2) { const sp = wdEl("span", "nw"); sp.appendChild(libRich("workspace_lib_bt_span", { span: libMono(y1 === y2 ? y1 : y1 + "–" + y2) })); meta.append(" · ", sp); }
+  info.append(nm, meta);
+  // 第一格:樣本未滿 1 年講總報酬;最大回撤一律紅、Sharpe 不上色。gloss 只掛第一張卡(首次出現),重用回測頁同一句
+  const tot = wcFirstKv(s) === "total", v1 = tot ? r.total_return : r.annual_return, mdd = typeof r.max_drawdown === "number" ? -Math.abs(r.max_drawdown) : null;
+  const stats = wdEl("div", "wc-stats");
+  [[tot ? t("lib.kv.total") : t("lib.kv.ann"), tot ? t("bt.tip.totalReturn") : t("bt.tip.annReturn"), libPct(v1), v1 > 0 ? " up" : v1 < 0 ? " down" : ""],
+    [t("lib.kv.sharpe"), t("bt.tip.sharpe"), libFixed(r.sharpe, 2), ""],
+    [t("lib.kv.mdd"), t("bt.tip.maxDrawdown"), libPct(mdd), " down"]].forEach(([k, tip, v, cls]) => {
+    const d = wdEl("div", "wc-stat"), lab = wdEl("span", "k");
+    if (first) {   // 照 report-backtest.js:觸發點 .mp-tip、泡泡是緊鄰的 .tip(app.js 的 Esc 靠 nextElementSibling 找它)
+      const id = "wc-tip-" + ++WC.tip, b = wdEl("button", "mp-tip", k), bub = wdEl("span", "tip", tip);
+      b.type = "button"; b.setAttribute("aria-describedby", id); bub.id = id; bub.setAttribute("role", "tooltip");
+      lab.append(b, bub);
+    } else lab.textContent = k;
+    d.append(lab, wdEl("span", "v mono" + cls, v)); stats.appendChild(d);
+  });
+  const act = wdEl("div", "act"), a = wdEl("button", "ln-arrow"), ar = wdEl("span", "ar", "→");
+  a.type = "button"; a.dataset.id = String(s.id); ar.setAttribute("aria-hidden", "true");
+  a.append(wdEl("span", "lbl", t("lib.use")), ar);
+  a.addEventListener("click", () => wcUse(s, a));
+  act.appendChild(a);
+  c.append(info, stats, act);
+  return c;
+}
+/* 「安裝並回測 →」:不是一鍵,走策略庫同一個確認框(libAsk from welcome)。先擋回合中與代下載中——別支在代下載時這張的 libCtaOf 仍是 free,
+   不先擋的話 libAsk 會靜默 return、畫面沒反應。狀態不是 free(例如剛登出)只開詳情,閘門與原因句由詳情講 */
+function wcUse(s, a) {
+  if (runningNow() || LIB.pending) { busySendTell(); return; }
+  if (libCtaOf(s).state !== "free") { wcDetail(s); return; }
+  libAsk(s, a, { from: "welcome" });
+}
+// 回合鎖與代下載鎖(app.js 送出／解鎖那三排、library.js libSync):就地換,不重建卡。正在裝的那支換成「安裝與回測中…」;名字按鈕不鎖
+function wcBusySync() {
+  const box = $("wc-cards"); if (!box || box.hidden) return;
+  const busy = runningNow() || !!LIB.pending, pid = LIB.pending && LIB.pending.env === onbEnv() ? String(LIB.pending.id) : null;
+  box.querySelectorAll(".ln-arrow").forEach((a) => {
+    const mine = a.dataset.id === pid, tx = a.querySelector(".lbl"), want = t(mine ? "lib.pending" : "lib.use");
+    busyLock(a, busy);
+    if (tx.textContent !== want) tx.textContent = want;
+    a.querySelector(".ar").hidden = mine;
+  });
 }
 /* 標題列:完成的那一步是按鈕,其餘是灰或亮的字。完成列不帶 meta(Wei 10-21:策略名、金額、帳戶名都不放)。
    ①② 點了就地展開／收起;③ 直接到策略組合頁(做完之後要看的就是那一頁,展開只會露出用過的鈕) */
@@ -279,6 +334,7 @@ function onbPaint() {
   onbEval(env === "cloud" ? "local" : "cloud");
   const { d, S, ph } = onbEval(env);
   ONB.amt = d.amt;
+  wcPaint();   // 放在指紋 return 之前:切視角、雲端轉 stale／stopped 都走這裡,卡要跟著換或收(自己有指紋)
   const key = JSON.stringify([LANG, env, ph.view, S.steps, d.amt]);
   if (key === ONB.key) return;
   ONB.key = key;
