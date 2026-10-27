@@ -30,7 +30,8 @@ State: state/bar_wait/<name>.json
                         the currently-expected bar)
   pending_since       : ISO timestamp of the first poll that found the
                          CURRENTLY-expected bucket not yet ready (reset once
-                         it lands)
+                         it lands; restarted when the data moves but is still
+                         short of it — see the not-ready path in _tick)
   last_seen_bar       : ISO timestamp of the latest bar actually observed in
                          fetch_data() on the last check, whether or not it
                          was enough to be "ready" (Type C: the straggler
@@ -153,7 +154,9 @@ out of UNIVERSE. A column that never had any data still blocks.
 
 Timeout: if the bar hasn't landed within STALE_TIMEOUT_MINUTES of when this
 script first noticed it pending, send one Telegram alert (not a repeat every
-minute) and keep polling — never give up silently.
+minute) and keep polling — never give up silently. Data that moves forward but is
+still short of the bar starts that count again from the poll that saw it move
+(an align_feed wait keeps counting from the row's due time).
 
 Concurrency: a stale-safe lock file (state/bar_wait/<name>.lock) guards the
 fetch+run section so an overrunning previous tick's subprocess can't overlap
@@ -877,9 +880,21 @@ def _tick(name):
         # handled correctly below purely because stall_alert_at (not this block)
         # is what decides "already alerted", so a permanently-None observed_iso
         # still gets exactly one alert then a 24h repeat, never zero.
+        # The wait restarts here too: a pending_since left from an earlier episode (last night's
+        # close) would re-alert at once and set stall_alert_at again, which throttles this tick
+        # and denies the runtime's same-minute retry — a 1m bar landing after :05 then never ran.
+        # Timed from now, like a first poll, not from the expected bar's close: a strategy's first
+        # look at a bar already 15 minutes due must not alert before waiting at all. A _FeedWait
+        # keeps its due time.
         if observed_iso is not None and observed_iso != state.get("last_seen_bar"):
+            try:   # forward only: a Type C straggler that steps back is not new progress
+                forward = observed_ts > datetime.fromisoformat(state["last_seen_bar"])
+            except (TypeError, ValueError):   # None (first look) or a state file from elsewhere
+                forward = True
             state["last_seen_bar"] = observed_iso
             state["stall_alert_at"] = None
+            if forward and not isinstance(straggler_symbol, _FeedWait):
+                state["pending_since"] = now.isoformat()
 
         if fut_kind and not isinstance(straggler_symbol, _FeedWait) and \
                 _tw_fut_quiet(fut_kind, expected, fut_td, observed_iso, holiday_fn,
