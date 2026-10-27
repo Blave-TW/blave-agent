@@ -204,7 +204,10 @@ function perfBusy() {
   const xt = $("rp-xt");   // 成交測試那顆(perfXtSlot)同一套,原因句用它自己那句
   [$("perf-btn")].concat(xt ? [...xt.querySelectorAll("[data-perf-btn]")] : []).forEach((b) => {
     if (!b) return;
-    if (typeof running !== "undefined" && running === true) { b.setAttribute("aria-disabled", "true"); b.title = t(b.dataset.xtBtn ? "xt.busyTurn" : "busy.perf"); return; }
+    const lock = typeof running !== "undefined" && running === true;
+    // 成交測試那顆是 .btn-fill／.btn-out:灰階靠 .is-lock(同參數掃描;aria-disabled 本身在這兩種鈕上不變灰)
+    if (b.dataset.xtBtn) b.className = b.className.replace(/\s*\bis-lock\b/g, "") + (lock ? " is-lock" : "");
+    if (lock) { b.setAttribute("aria-disabled", "true"); b.title = t(b.dataset.xtBtn ? "xt.busyTurn" : "busy.perf"); return; }
     b.removeAttribute("aria-disabled");
     if (b.dataset.tip) b.title = b.dataset.tip; else b.removeAttribute("title");
   });

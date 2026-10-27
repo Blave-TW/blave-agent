@@ -428,7 +428,10 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   { const tb = rig("zh", { code: "# Type: B\n" }), nop = rig("zh", { perf: null });
     ok("成交測試:Type B / 沒有 perf → null(不出鈕)", tb.F.perfXtSlot(tb.B, "empty") === null && nop.F.perfXtSlot(nop.B, "empty") === null); }
   { const bz = rig("zh", { running: true }), s = bz.F.perfXtSlot(bz.B, "fresh"); bz.$("rp-xt").appendChild(s); bz.F.perfBusy();
-    ok("成交測試:回合中(#9)鈕 aria-disabled、title 是成交測試自己那句", s.kids[0].getAttribute("aria-disabled") === "true" && s.kids[0].title === "agent 正在回覆，可能還在改策略，回覆完再測。");
+    ok("成交測試:回合中(#9)鈕 aria-disabled + .is-lock(變灰,同參數掃描)、title 是成交測試自己那句", s.kids[0].getAttribute("aria-disabled") === "true" && s.kids[0].has("is-lock") && s.kids[0].title === "agent 正在回覆，可能還在改策略，回覆完再測。");
+    bz.env.running = false; { const F2 = new Function(...Object.keys(bz.env), body)(...Object.values(bz.env)); F2.perfBusy(); }
+    ok("成交測試:回合結束 → .is-lock 拿掉、title 回到 tooltip", !s.kids[0].has("is-lock") && s.kids[0].title === "用最新資料重跑回測，績效會一起更新。" && s.kids[0].getAttribute("aria-disabled") === null);
+    bz.env.running = true; bz.F.perfBusy();
     s.kids[0].click(); await flush();
     ok("成交測試:回合中按 = 不送;結果頁的原因句接在頂列後面那一列的錨點後(不擠進頂列推動 meta;xtPerf → 埋點同 perf 那把鎖)", bz.sent.length === 0 && bz.env.told.length === 1 && bz.env.told[0][1] === "xtPerf" && bz.env.told[0][2].id === "xt-lines-anchor");
     const e = bz.F.perfXtSlot(bz.B, "empty"); bz.$("rp-xt").appendChild(e); bz.F.perfBusy(); e.kids[0].click(); await flush();
