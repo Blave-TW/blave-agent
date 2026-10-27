@@ -499,6 +499,12 @@ EXEMPT = [
      'code', 'strategy source read as code, not a state file'),
     ('lib/strategy.py', 'restore', 'path.read_bytes',
      'code', 'strategy source read as code, not a state file'),
+    ('lib/portfolio.py', '_booked_park_ids', '_ORDERS_LOG_PATH',
+     'append', 'manager/orders.jsonl: which parked orders the book already holds (append-only)'),
+    ('lib/portfolio.py', '_machine_lang_zh', "'state/reply_lang'",
+     'setting', 'the reply language for the order-unconfirmed notice: a failed read keeps Chinese'),
+    ('lib/unconfirmed.py', 'load_json', 'path',
+     'helper', "the half-updated-workspace fallback (lib/winreplace.py without load_json)"),
 ]
 
 WIN = (0.05, 0.1, 0.2, 0.4, 0.5)

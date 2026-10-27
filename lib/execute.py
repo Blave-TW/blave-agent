@@ -381,8 +381,10 @@ def _write_inflight_marker(key, style, signed_diff):
                        "signed_diff": round(float(signed_diff), 2),
                        "started_ts": datetime.now(timezone.utc).isoformat()}, f)
         atomic_replace(tmp, _marker_path(key))
+        return True
     except OSError as e:
         logging.warning(f"[execute] inflight marker write failed for {key}: {e}")
+        return False
 
 
 def _remove_inflight_marker(key):

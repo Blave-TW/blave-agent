@@ -22,7 +22,7 @@ except ImportError:  # half-updated workspace (lib/winreplace.py without load_js
             return json.load(f)
 
 
-def _append_reconciler_log(order):
+def _append_reconciler_log(order, strict=False):
     guard.mark_money_process()  # writes the ledger: Stop in the chat never kills this process (lib/guard)
     # Best-effort in account-read mode: a full disk (measured on the fleet)
     # must not abort the reconcile loop mid-round — the order already
@@ -56,6 +56,10 @@ def _append_reconciler_log(order):
                         "下單,請先核對「交易所實際部位」再啟動。")
         except Exception as e2:
             logging.error(f"orders.jsonl fail-loud halt itself failed: {e2}")
+        if strict:
+            # a parked order's fill (book_unconfirmed): the park row is its only other record —
+            # the caller keeps it parked instead of releasing it into a book that never got it
+            raise
 
 
 def _notify_best_effort(msg):
@@ -243,6 +247,38 @@ def _outcome_unknown(error):
     return _unconfirmed is not None and isinstance(error, _unconfirmed.OrderOutcomeUnknown)
 
 
+def _machine_lang_zh():
+    """The machine's reply language (state/reply_lang, runtime strategy_reporter's file): zh / cn
+    or unset → Chinese, any other set code → English. A custom or unreadable setting → Chinese."""
+    try:
+        with open('state/reply_lang', 'rb') as f:
+            raw = f.read(200)
+        text = raw.decode('utf-16' if raw[:2] in (b'\xff\xfe', b'\xfe\xff') else 'utf-8-sig')
+        code = text.strip().splitlines()[0].strip().lower() if text.strip() else ''
+    except (OSError, UnicodeDecodeError, IndexError):
+        return True
+    return code not in ('en', 'es', 'pt', 'vi', 'ja')
+
+
+_UNCONFIRMED_TG = {
+    True: ('🚨 下單結果不明：{strategy}{symbol}（{exchange}）。這筆單可能已經成交。'
+           '這個標的暫停開倉，平倉照常，查到結果自動接續。請先到交易所核對部位，不要手動補單。'),
+    False: ("🚨 Order outcome unknown — {symbol} on {exchange}{strategy_en}. This order may have filled. "
+            "New entries on this symbol are paused (closes still run) and resume once the result is "
+            "found. Check your position on the exchange and don't place it again yourself."),
+}
+
+
+def _strategy_phrase_en(names):
+    if not names:
+        return ''
+    if len(names) == 1:
+        return f", strategy {names[0]}"
+    if len(names) == 2:
+        return f", strategies {names[0]}, {names[1]}"
+    return f", {names[0]} and {len(names) - 1} more strategies"
+
+
 def _strategy_phrase(names):
     """canon §3 (下單失敗列):策略 A／策略 A、B／A 等 N 支策略, followed by 的; '' without names."""
     if not names:
@@ -264,7 +300,7 @@ _park_retry = []
 
 
 def park_or_halt(symbol, exchange, error, signed_diff, reduce_only, asset_spec=None,
-                 contributors=None):
+                 contributors=None, sign=None):
     """An order whose outcome is unknown (lib/unconfirmed.OrderOutcomeUnknown). Never reported
     as a rejection — that would let the next round send it again.
     - It carries the ids to look it up: parked; its symbol takes no entries until it is known.
@@ -279,7 +315,8 @@ def park_or_halt(symbol, exchange, error, signed_diff, reduce_only, asset_spec=N
     pid = None
     args = (symbol, error, signed_diff, reduce_only, asset_spec, contributors)
     kw = {'netted_room': getattr(error, 'netted_room', 0.0),
-          'netted_exit': getattr(error, 'netted_exit', False), 'manual': manual}
+          'netted_exit': getattr(error, 'netted_exit', False), 'manual': manual,
+          'venue': exchange, 'sign': sign}
     try:
         pid = _unconfirmed.park(*args, **kw)
     except Exception as e:
@@ -348,7 +385,8 @@ def book_unconfirmed(key, entry, qty, price, source, pid=None):
     if pid in _booked_park_ids():
         logging.info(f"[reconcile] parked {key} {pid} already in the book — not booked again")
         return
-    sign = 1.0 if float(entry.get('signed_diff') or 0) >= 0 else -1.0
+    sign = (float(entry['sign']) if entry.get('sign') in (1, -1)
+            else 1.0 if float(entry.get('signed_diff') or 0) >= 0 else -1.0)
     leg = {'signed_diff': round(sign * qty * price, 2), 'reduce_only': bool(entry.get('reduce_only')),
            'fill_price': price, 'executed_qty': qty, 'exchange': entry.get('venue'),
            'signed_qty': sign * qty}
@@ -361,7 +399,7 @@ def book_unconfirmed(key, entry, qty, price, source, pid=None):
         'signed_diff': entry.get('signed_diff'), 'exchange': entry.get('venue'),
         'asset_spec': entry.get('asset_spec'), 'contributors': entry.get('contributors') or [],
         'legs': [leg], 'unconfirmed_order_id': entry.get('order_id'),
-        'unconfirmed_park_id': pid, 'resolved_by': source})
+        'unconfirmed_park_id': pid, 'resolved_by': source}, strict=True)
     guard.audit('order_unconfirmed_booked', symbol=key, park_id=pid,
                 executed_qty=qty, avg_price=price, source=source)
 
@@ -4506,8 +4544,15 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
             # after the restart. The marker (the one TWAP / chase write) outlives
             # such a kill, and the next start's reap_dead_inflight HALTs on it.
             if mark_inflight and not marked:
-                mark_inflight(f"{symbol}#market", "market", sub_diff)
-                marked = True
+                ok = mark_inflight(f"{symbol}#market", "market", sub_diff)
+                if ok is False and is_entry:
+                    # no marker = a kill mid-order leaves no trace (reap_dead_inflight): the full
+                    # disk that refused it would refuse the park too — no new exposure this round
+                    logging.warning(f"[reconcile] {symbol} entry {sub_diff:+.2f} held — the "
+                                    f"inflight marker could not be written")
+                    failed = True
+                    break
+                marked = ok is not False
             try:
                 if close_all_leg:
                     with guard.halt_close_pass(symbol, 'close_all_deferred'):
@@ -4526,11 +4571,9 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                                        asset_spec, order.get('contributors'))
                     logging.error(f"order outcome unknown {symbol}: {e} — {got}")
                     if got == 'parked':
-                        notices.append(('order_unconfirmed',
-                                        '🚨 下單結果不明：{strategy}{symbol}（{exchange}）。'
-                                        '這筆單可能已經成交。這個標的暫停開倉，平倉照常，查到結果自動接續。'
-                                        '請先到交易所核對部位，不要手動補單。',
+                        notices.append(('order_unconfirmed', _UNCONFIRMED_TG[_machine_lang_zh()],
                                         {'symbol': symbol, 'strategy': _strategy_phrase(names),
+                                         'strategy_en': _strategy_phrase_en(names),
                                          'exchange': order.get('exchange') or ''}))
                     else:
                         keep_marker = True

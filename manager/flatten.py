@@ -498,7 +498,26 @@ def _kick_reconciler():
 
 def flatten():
     """Returns True (flat, no errors), False (ran, hit errors) or
-    ALREADY_RUNNING (did nothing — another flatten holds the lock)."""
+    ALREADY_RUNNING (did nothing — another flatten holds the lock).
+
+    Runs holding the park lock (lib/unconfirmed.hold): no other process may settle a parked
+    order meanwhile. A fill found by the reconciler between this run's ledger zeroing and its
+    end would otherwise be booked after the zeroing — open, not closed, and not reported
+    (re-audit v034 R-P2-3). The opening settle books what can be found before anything is
+    closed; whatever is still parked at the end gets its row. The reconciler waits for the
+    lock meanwhile; it is halted anyway."""
+    try:
+        import lib.portfolio as _pf
+        hold = _pf._unconfirmed.hold if getattr(_pf, "_unconfirmed", None) is not None else None
+    except Exception:
+        hold = None
+    if hold is None or not callable(hold):
+        return _flatten()
+    with hold():
+        return _flatten()
+
+
+def _flatten():
     global _LOCK
     _LOCK = _singleflight()
     if _LOCK is None:
@@ -785,7 +804,7 @@ def flatten():
                     # the close may have filled: parked, its key keeps its book until it is known
                     _pf.park_or_halt(_book_key(vid, sym), vid, e,
                                      (-1.0 if side == "long" else 1.0) * float(size) * float(p.get("mark_price", 0) or 0),
-                                     True)
+                                     True, sign=-1 if side == "long" else 1)
                     unclosed.add(_book_key(vid, sym))
                     errors += 1
                     continue
@@ -868,15 +887,15 @@ def flatten():
             zero_ledger_symbols(done - unclosed_by[vid], venue=vid)
         else:
             zero_ledger_symbols(done - unclosed_by[vid])
+    # no settle here: flatten() holds the park lock (see there), so what was parked after the
+    # opening settle is still parked now — its fill, if any, is booked only after this run
     try:
-        still = _pf._settle_parked() if hasattr(_pf, "_settle_parked") else {}
+        rows_now = _pf._unconfirmed.read_held()
+        still = {e.get("key") for e in rows_now.values()}
+        venues = {e.get("key"): e.get("venue") for e in rows_now.values()}
     except Exception:
-        still = parked_before
-    try:
-        venues = {e.get("key"): e.get("venue") for e in _pf._unconfirmed.load().values()}
-    except Exception:
-        venues = {}
-    for key in sorted(k for k in (still if still is not None else parked_before or {}) if k):
+        still, venues = set(parked_before or {}), {}
+    for key in sorted(k for k in still if k):
         # 全部平倉 closed the book; an order still parked here may have filled and is not in it
         _record_order_error(key, venues.get(key) or "*",
                             "close-all: 這個標的有一筆結果不明的單，可能已經成交，不在這次平倉裡。"

@@ -319,6 +319,76 @@ check(n == 0, f"park file unreadable: nothing is sent this round ({n})")
 check(Path(unconfirmed.PATH).read_text() == "{not json", "…and the file is left as is")
 os.remove(unconfirmed.PATH)
 
+# ── re-audit fixes ───────────────────────────────────────────────────────────
+import builtins  # noqa: E402
+# a fill found while orders.jsonl cannot be written: the park row stays (its only other record)
+MODE["raise"] = unknown("X9")
+amount(160_000)
+round_()
+MODE["raise"] = None
+real_open = builtins.open
+portfolio.open = lambda f, *a, **k: ((_ for _ in ()).throw(OSError(28, "No space left on device"))
+                                     if str(f).endswith("orders.jsonl") and a and "a" in a[0] else real_open(f, *a, **k))
+ANSWER["res"] = (1.0, 75.0)
+round_()
+del portfolio.open
+ANSWER["res"] = None
+check("X9" in parked() and not any(b.get("unconfirmed_park_id") == "X9" for b in booked()),
+      "a fill found but the book cannot be written: the park row is kept, not released")
+guard.clear_halt("test")
+unconfirmed.resolve("2330", 0, park_id="X9")
+
+# two parks on one symbol: resolve(park_id=) picks the one asked for
+for oid in ("Y1", "Y2"):
+    MODE["raise"] = unknown(oid)
+    amount(192_000 if oid == "Y1" else 0)
+    round_()
+MODE["raise"] = None
+both = sorted(pid for pid, e in parked().items() if e["key"] == KEY)
+got = unconfirmed.resolve("2330", 0, park_id="Y2") if "Y2" in both else {}
+check(both == ["Y1", "Y2"] and got.get("park_id") == "Y2" and "Y1" in parked() and "Y2" not in parked(),
+      f"resolve(park_id=) releases that park only, and says which ({both}, {got.get('park_id')})")
+unconfirmed.resolve("2330", 0)
+
+# the direction is stored on its own: a close sized at mark 0 is booked as a sell
+portfolio.book_unconfirmed(KEY, {"signed_diff": -0.0, "sign": -1, "reduce_only": True, "venue": "paper",
+                                 "key": KEY}, 1.0, 75.0, source="venue", pid="S1")
+s1 = [x for x in booked() if x["unconfirmed_park_id"] == "S1"]
+check(s1 and s1[0]["legs"][0]["signed_qty"] < 0 and s1[0]["action"] == "SELL",
+      f"a park with signed_diff -0.0 and sign -1 books a SELL ({s1})")
+
+# a manual park keeps the venue the order went to (no （） in its reminders)
+MODE["raise"] = NotConfirmed("no ids at all")
+amount(224_000)
+round_()
+MODE["raise"] = None
+man = [e for pid, e in parked().items() if pid.startswith("manual:")]
+check(man and man[-1]["venue"] == "paper", f"manual park: venue from the order's exchange ({man[-1:]})")
+guard.clear_halt("test")
+for f in os.listdir("state/execution/inflight"):
+    os.remove(os.path.join("state/execution/inflight", f))
+unconfirmed.resolve("2330", 0)
+
+# the inflight marker cannot be written: no entry this round (closes would still go)
+from lib import execute as _ex  # noqa: E402
+keep_mark = _ex._write_inflight_marker
+_ex._write_inflight_marker = lambda *a, **k: False
+amount(256_000)
+n = round_()
+_ex._write_inflight_marker = keep_mark
+check(n == 0, f"inflight marker not writable: the entry is held this round ({CALLS})")
+
+# the machine's TG copy follows its reply language
+Path("state/reply_lang").write_text("en\n")
+MODE["raise"] = unknown("L1")
+del sent[:]
+round_()
+MODE["raise"] = None
+check(any(x.startswith("🚨 Order outcome unknown — 2330@spot on paper, strategy tw_c.") for x in sent),
+      f"reply language en: the machine notice is English ({sent[-1:]})")
+os.remove("state/reply_lang")
+unconfirmed.resolve("2330", 0)
+
 # ── 全部平倉 asks about parked orders first and says what it could not close ─
 MODE["raise"] = unknown("X6")
 amount(64_000)
@@ -327,12 +397,17 @@ MODE["raise"] = None
 from manager import flatten  # noqa: E402
 os.chdir(WS)   # importing flatten chdirs to the repo it sits in — run it against the test workspace
 flatten._inflight_wait_s = lambda: 0
+held_at_zero = []
+keep_zero = flatten.zero_ledger_symbols
+flatten.zero_ledger_symbols = lambda *a, **k: (held_at_zero.append(unconfirmed._held["depth"]), keep_zero(*a, **k))[1]
 check("X6" in parked(), "an entry parked before 全部平倉")
 with contextlib.redirect_stdout(io.StringIO()):
     flatten.flatten()
 # realpath: mkdtemp under /var/folders is /private/var/folders once chdir'd into (macOS symlink)
 check(os.path.realpath(os.getcwd()) == os.path.realpath(WS) and not os.path.exists(os.path.join(ROOT, "manager", "order_errors.json")),
       "flatten ran in the test workspace")
+check(held_at_zero and all(d > 0 for d in held_at_zero),
+      f"全部平倉 zeroes the book holding the park lock — nothing settles in between ({held_at_zero})")
 fl = [r for r in rows("order_unconfirmed") if "close-all" in str(r.get("error"))]
 check(len(fl) == 1 and fl[0]["symbol"] == KEY and fl[0].get("stuck") is True and fl[0]["exchange"] == "paper",
       f"全部平倉 with an order still parked: a row says it may have filled and was not closed ({fl})")

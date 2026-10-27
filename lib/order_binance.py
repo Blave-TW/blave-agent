@@ -317,10 +317,17 @@ def _send(method, path, env, params=None, signed=True, retries=3, spot=False, pl
                 raise
             time.sleep(1 + attempt)
             continue
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+        except (requests.exceptions.InvalidURL, requests.exceptions.MissingSchema,
+                requests.exceptions.InvalidSchema, requests.exceptions.InvalidHeader):
+            raise   # refused before anything was sent
+        except requests.exceptions.RequestException as e:
+            # an order POST: anything after the connection was made may have reached Binance —
+            # a reset, a read timeout, a body cut mid-transfer (ChunkedEncodingError /
+            # ContentDecodingError are not ConnectionError subclasses)
             if no_resend:
                 raise _SendUnknown(f"{type(e).__name__}: {str(e)[:120]}") from e
-            if isinstance(e, requests.exceptions.Timeout):
+            if not isinstance(e, requests.exceptions.ConnectionError) \
+                    or isinstance(e, requests.exceptions.Timeout):
                 raise
             last_err = e
             if attempt == retries - 1:
@@ -333,6 +340,9 @@ def _send(method, path, env, params=None, signed=True, retries=3, spot=False, pl
         try:
             data = r.json()
         except ValueError:
+            if no_resend and 200 <= r.status_code < 300:
+                # accepted, but the body is not Binance's (a proxy page, a cut stream): unknown
+                raise _SendUnknown(f"HTTP {r.status_code} non-JSON ({r.text[:80]})")
             # plain_text: endpoints that answer a bare word on success (sign_stock_agreement → "SUCCESS")
             if plain_text and 200 <= r.status_code < 300:
                 return r.text.strip()
@@ -659,6 +669,10 @@ def confirm_order(env, symbol, order_id, timeout=15):
 
 
 PARK_NOT_SENT_GRACE_S = 120
+# how far before the park the trade window starts: the park time is this machine's clock, the
+# trade times are Binance's — shifted by the measured offset and widened, so a fast local clock
+# can only make the window bigger (an unseen fill would release a filled order)
+PARK_TRADE_LOOKBACK_S = 300
 
 
 def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, parked_at=None,
@@ -671,7 +685,7 @@ def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, park
     - not readable but userTrades for the orderId has fills → those (a market order fills
       at once);
     - only a client id, -2013 past PARK_NOT_SENT_GRACE_S and no trade on the symbol since
-      shortly before the send → never reached the matching engine (Query Order finds every
+      PARK_TRADE_LOOKBACK_S before the send (server time) → never reached the matching engine (Query Order finds every
       order younger than 3 days, filled or not — USD-M "Query Order" notes).
     Anything else (a key that cannot see the order, the venue down) stays unknown."""
     symbol = _canonical(symbol)
@@ -698,8 +712,9 @@ def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, park
                 return qty, sum(float(f["qty"]) * float(f["price"]) for f in fills) / qty
             return None
         if not_found and parked_at and now - float(parked_at) >= PARK_NOT_SENT_GRACE_S:
+            start = int((float(parked_at) - PARK_TRADE_LOOKBACK_S) * 1000) + int(_time_offset["ms"])
             fills = _request("GET", "/fapi/v1/userTrades", env,
-                             {"symbol": symbol, "startTime": int((float(parked_at) - 60) * 1000)}) or []
+                             {"symbol": symbol, "startTime": start}) or []
             return (0.0, 0.0) if not fills else None
     except Exception:
         return None

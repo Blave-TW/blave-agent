@@ -18,6 +18,7 @@ Stdlib only, no lib/portfolio import at module level (portfolio imports this).
 import json
 import logging
 import os
+import threading
 import time
 from contextlib import contextmanager
 from datetime import datetime
@@ -73,22 +74,54 @@ def park_id(entry_or_err):
     return str(g("order_id")) if g("order_id") else f"cid:{g('client_order_id')}"
 
 
+_rlock = threading.RLock()
+_held = {"depth": 0, "fh": None}
+
+
 @contextmanager
 def _locked():
-    os.makedirs(os.path.dirname(LOCK_PATH), exist_ok=True)
-    with open(LOCK_PATH, "a+") as fh:
-        if fcntl is not None:
-            fcntl.flock(fh, fcntl.LOCK_EX)
-        elif msvcrt is not None:
-            deadline = time.time() + 30
-            while True:
-                try:
-                    msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
-                    break
-                except OSError:
-                    if time.time() > deadline:
-                        raise
-        yield
+    """The park file's lock — across processes (flock / msvcrt), re-entrant inside one
+    (hold() wraps a whole 全部平倉 and the parks it makes inside take it again)."""
+    with _rlock:
+        if _held["depth"] == 0:
+            os.makedirs(os.path.dirname(LOCK_PATH), exist_ok=True)
+            fh = open(LOCK_PATH, "a+")
+            try:
+                if fcntl is not None:
+                    fcntl.flock(fh, fcntl.LOCK_EX)
+                elif msvcrt is not None:
+                    deadline = time.time() + 30
+                    while True:
+                        try:
+                            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+                            break
+                        except OSError:
+                            if time.time() > deadline:
+                                raise
+            except Exception:
+                fh.close()
+                raise
+            _held["fh"] = fh
+        _held["depth"] += 1
+        try:
+            yield
+        finally:
+            _held["depth"] -= 1
+            if _held["depth"] == 0:
+                _held["fh"].close()
+                _held["fh"] = None
+
+
+def hold():
+    """Keep every other process from settling a park meanwhile (manager/flatten: a fill
+    booked after its ledger zeroing would be left open and unreported)."""
+    return _locked()
+
+
+def read_held():
+    """load() for a caller already inside hold()."""
+    with _locked():
+        return _read()
 
 
 def _read():
@@ -130,7 +163,7 @@ def held_keys(rows):
 
 
 def park(key, err, signed_diff, reduce_only, asset_spec=None, contributors=None, now=None,
-         netted_room=0.0, netted_exit=False, manual=False):
+         netted_room=0.0, netted_exit=False, manual=False, venue=None, sign=None):
     """Raises OSError when the file cannot be written — the caller HALTs then. manual=True: an
     order Blave cannot look up (no ids, or a venue / order type without a lookup): parked all the
     same so its symbol stays held after 啟動下單 and resolve() can book it, but never queried."""
@@ -139,7 +172,10 @@ def park(key, err, signed_diff, reduce_only, asset_spec=None, contributors=None,
     with _locked():
         rows = _read()
         rows[pid] = {
-            "key": key, "venue": err.venue, "venue_symbol": err.venue_symbol,
+            "key": key, "venue": err.venue or venue, "venue_symbol": err.venue_symbol,
+            # the order's direction on its own: signed_diff is 0 when it was sized without a
+            # price (flatten at mark 0), and -0.0 would book a sell as a buy
+            "sign": sign if sign in (1, -1) else (1 if float(signed_diff or 0) >= 0 else -1),
             "order_id": str(err.order_id) if err.order_id else None,
             "client_order_id": err.client_order_id or None,
             "signed_diff": signed_diff, "reduce_only": bool(reduce_only),
@@ -216,12 +252,13 @@ def outcome(order, terminal):
     return qty, price
 
 
-def resolve(symbol, filled_qty, avg_price=None):
+def resolve(symbol, filled_qty, avg_price=None, park_id=None):
     """The user checked the venue: book what filled (base units, the venue's average
     fill price — required when anything filled) and release the symbol's parked
     order. 0 = nothing filled. Returns the released entry. For the agent, after the
     user has said how much filled; never guess the numbers. One parked order per
-    call (the oldest on that symbol)."""
+    call: park_id when given (a symbol can have two — an entry and a close), else the
+    oldest on that symbol; the returned entry says which one it was."""
     filled_qty = abs(float(filled_qty))
     if filled_qty > 0 and not (avg_price and float(avg_price) > 0):
         raise ValueError("avg_price is required when anything filled — the book needs the cost")
@@ -236,8 +273,10 @@ def resolve(symbol, filled_qty, avg_price=None):
     hits = sorted(((e.get("parked_at") or 0, pid) for pid, e in rows.items()
                    if canon(e.get("key")) == want or e.get("venue_symbol") == symbol
                    or split_key(canon(e.get("key")))[0] == split_key(want)[0] == want))
+    if park_id is not None:
+        hits = [h for h in hits if h[1] == park_id]
     if not hits:
-        raise KeyError(f"{symbol} has no parked order")
+        raise KeyError(f"{symbol} has no parked order" + (f" {park_id}" if park_id else ""))
     pid = hits[0][1]
     entry = rows[pid]
 
@@ -250,4 +289,4 @@ def resolve(symbol, filled_qty, avg_price=None):
     from lib.portfolio import mark_park_released
     mark_park_released(pid, filled_qty > 0)
     logging.info(f"[unconfirmed] {entry['key']} park {pid} resolved by the user: filled {filled_qty:g}")
-    return entry
+    return dict(entry, park_id=pid)

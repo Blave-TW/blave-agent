@@ -102,6 +102,10 @@ for label, post_answer in (
         ("HTTP 503 Unknown error", Resp(503, {"code": -1000, "msg": "Unknown error, please check your request or try again later."})),
         ("-1001 DISCONNECTED", Resp(400, {"code": -1001, "msg": "Internal error"})),
         ("-1007 TIMEOUT", Resp(408, {"code": -1007, "msg": "Timeout waiting for response from backend server."})),
+        # re-audit R-P1: not ConnectionError subclasses — a body cut mid-transfer after Binance answered
+        ("a ChunkedEncodingError", requests.exceptions.ChunkedEncodingError("Connection broken: IncompleteRead")),
+        ("a ContentDecodingError", requests.exceptions.ContentDecodingError("bad gzip")),
+        ("HTTP 200 non-JSON", Resp(200, None, "<html>proxy</html>")),
 ):
     wire([post_answer], [FILLED])
     try:
@@ -114,6 +118,14 @@ for label, post_answer in (
     except Exception as e:
         check(False, f"POST {label}: raised {type(e).__name__}: {e}")
 
+wire([requests.exceptions.InvalidURL("bad url")], [FILLED])
+try:
+    place()
+    check(False, "an invalid URL must raise")
+except ob.OrderNotConfirmed:
+    check(False, "an invalid URL never sent anything: not an unknown outcome")
+except requests.exceptions.InvalidURL:
+    check(len(CALLS["POST"]) == 1, "an invalid URL (nothing sent) raises as is")
 wire([requests.exceptions.ConnectTimeout("connect timed out"), Resp(200, {"orderId": 77})], [FILLED])
 r = place()
 check(r["status"] == "FILLED" and len(CALLS["POST"]) == 2, "a connect timeout (nothing sent) is retried")
@@ -183,9 +195,12 @@ wire([Resp(200, {})], [NOT, Resp(200, [])])
 check(ob.resolve_unknown_order(ENV, "BTCUSDT", client_order_id="c", parked_at=now - 30, now=now) is None,
       "resolve: client id not found inside the grace → still unknown")
 wire([Resp(200, {})], [NOT, Resp(200, [])])
+ob._time_offset["ms"] = -90_000   # this machine's clock runs 90 s ahead of Binance
 check(ob.resolve_unknown_order(ENV, "BTCUSDT", client_order_id="c", parked_at=now - 600, now=now) == (0.0, 0.0)
-      and "startTime=" in CALLS["GET"][1],
-      "resolve: client id not found past the grace and no trade since → never arrived, nothing filled")
+      and f"startTime={int((now - 600 - 300) * 1000) - 90_000}" in CALLS["GET"][1],
+      "resolve: client id not found past the grace and no trade since → never arrived; the trade window "
+      "starts 300 s before the park, in Binance's time")
+ob._time_offset["ms"] = 0
 wire([Resp(200, {})], [NOT, Resp(200, [{"qty": "0.001", "price": "1"}])])
 check(ob.resolve_unknown_order(ENV, "BTCUSDT", client_order_id="c", parked_at=now - 600, now=now) is None,
       "resolve: …but a trade on the symbol since then → still unknown")
