@@ -118,6 +118,8 @@ book_order_line(leg)
 order_at = capital_vault.last_order_at()
 check(sent == [("TM0000", "buy", 1, "entry")] and leg["executed_qty"] == 0.0,
       "entry TMF +1 on TM0000 comes back 'sent' / 0 and is booked at 0", (sent, leg))
+check(not os.path.exists("manager/order_errors.json"),
+      "…with no immediate P1 (order_errors row): parked silently, as 統一")
 snap({"TM2611": 1}, order_at - 23)  # the worker's read began before the order
 try:
     round_read()
