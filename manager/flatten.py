@@ -215,6 +215,47 @@ def _book_key(vid, sym):
     return sym
 
 
+def _load_json(path, **open_kw):
+    try:
+        from lib.winreplace import load_json
+    except ImportError:  # half-updated workspace: no read retry
+        with open(path, **open_kw) as f:
+            return json.load(f)
+    return load_json(path, **open_kw)
+
+
+# manager/reconciler PENDING_SENT_PATH / CAPITAL_PENDING_PATH: lots sent with no fill
+# report yet, which the book does not hold until the reconciler's claim books them
+_PARK_FILES = {venue_traits.PRESIDENT: ("state/president_pending_sent.json", "統一", "統一 app"),
+               venue_traits.CAPITAL: ("state/capital_pending_sent.json", "群益", "群益下單軟體")}
+
+
+def _note_parked(vid):
+    """1 (an order_errors row, P1) when `vid` has parked lots, else 0. They are not
+    closed: the book holds none of them, and whether they filled is not known yet.
+    The park is left for the reconciler to claim, so the book keeps describing the
+    account after this run's zeroing; the user is told to check the app."""
+    spec = _PARK_FILES.get(vid)
+    if not spec:
+        return 0
+    path, name, app = spec
+    try:
+        rows = _load_json(path, encoding="utf-8")
+    except FileNotFoundError:
+        return 0
+    except (OSError, ValueError):
+        rows = None
+    if isinstance(rows, dict) and not rows:
+        return 0
+    roots = (sorted({str(r.get("root")) for r in rows.values() if isinstance(r, dict)})
+             if isinstance(rows, dict) else [])
+    keys = ",".join(roots) or "*"
+    logging.error(f"[{vid}] {keys}: lots sent with no fill report are parked — not closed by close-all")
+    _record_order_error(keys, vid, f"close-all: {name} {keys if roots else ''}還有送出後沒收到成交回報的單,"
+                                   f"這次全部平倉沒有平它;請到{app}核對,若已成交請手動平倉")
+    return 1
+
+
 def _read_env(path=".env"):
     from lib.venue_wiring import read_env
     return read_env(path)
@@ -637,6 +678,7 @@ def _flatten():
         ledger, spot_book = _venue_book(vid)
         if ledger:
             swept_by[vid] = set(ledger)
+        errors += _note_parked(vid)
         has_account = os.path.isfile(f"lib/account_{vid}.py")
         has_order = os.path.isfile(f"lib/order_{vid}.py")
         if not has_account:

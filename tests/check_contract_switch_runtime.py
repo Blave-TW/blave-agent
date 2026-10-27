@@ -51,6 +51,7 @@ HB = os.path.join(WS, "state", "heartbeat", "reconciler")
 HALT = os.path.join(WS, "state", "HALT")
 GATE = os.path.join(WS, "state", "signal_gate.json")
 PARK = os.path.join(WS, "state", "president_pending_sent.json")
+CAPITAL_PARK = os.path.join(WS, "state", "capital_pending_sent.json")
 
 
 def check(cond, msg):
@@ -235,6 +236,11 @@ refused("CONTRACT_PARKED", {"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"}, "統一 
 open(PARK, "w").write("{not json")
 refused("CONTRACT_PARKED", {"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"}, "park file unreadable")
 os.remove(PARK)
+json.dump({"TMF": {"root": "TMF", "lots": 1, "expected": {}}}, open(CAPITAL_PARK, "w"))
+refused("CONTRACT_PARKED", {"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"}, "群益 lots parked on the new contract")
+open(CAPITAL_PARK, "w").write("{not json")
+refused("CONTRACT_PARKED", {"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"}, "群益 park file unreadable")
+os.remove(CAPITAL_PARK)
 err = save({"txf_a": 20, "txf_b": 1}, {"txf_a": "TMF"})
 check(err is None and stored()[0]["contracts"] == {"txf_a": "TMF"}, f"X with none of the above it saves ({err})")
 lib_disk(False)

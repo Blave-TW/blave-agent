@@ -440,27 +440,20 @@ def mark_park_released(pid, filled):
         logging.warning(f'failed to mark park {pid} released: {e}')
 
 
-def _booked_park_ids(field='unconfirmed_park_id'):
-    """Park ids already in orders.jsonl under `field` ('unconfirmed_park_id': lib/unconfirmed;
-    'late_fill_park_id': the reconciler's hand-wired parks). An unreadable file raises."""
+def _booked_park_ids():
     out = set()
     try:
         with open(_ORDERS_LOG_PATH) as f:
             for ln in f:
-                if f'"{field}"' not in ln:
+                if '"unconfirmed_park_id"' not in ln:
                     continue
                 try:
-                    out.add(json.loads(ln).get(field))
+                    out.add(json.loads(ln).get('unconfirmed_park_id'))
                 except ValueError:
                     continue  # a line cut by a full disk: it booked nothing
     except FileNotFoundError:
         pass
     return out
-
-
-def late_fill_booked(park_id):
-    """True when book_late_fill already wrote `park_id`. Raises when orders.jsonl is unreadable."""
-    return park_id in _booked_park_ids('late_fill_park_id')
 
 
 def book_unconfirmed(key, entry, qty, price, source, pid=None):
@@ -2139,34 +2132,25 @@ def settle_expired_months(actual, venue=_CURRENT, now=None):
     return changed
 
 
-def book_late_fill(symbol, venue, contract, lots, park_id=None):
+def book_late_fill(symbol, venue, contract, lots, price=None):
     """One orders.jsonl line for `lots` (signed) of `symbol` in `contract` that
     the venue confirmed only after the order call had returned without the fill
     (統一 'sent' / 'unknown' — manager/reconciler._president_claim_pending). The
     usual replay (_ledger_walk) books it and takes its month from `contract`, so
     the trade history and the book stay one source; a guess row stays a guess.
-    No fill price: none was reported.
-
-    `park_id` makes it idempotent, the way book_unconfirmed is: an id already in
-    the book is not written again (False), and the line is appended strictly, so
-    any failure — the book unreadable, the append refused — raises and the caller
-    keeps its park row for the next round. Returns True when the line was written.
-    Without `park_id` (an older caller): not idempotent, a failed append only HALTs."""
+    `price`: what the venue's avg cost implies (群益), history only — the lots
+    book costs lots; None = not reported. _append_reconciler_log's write failure
+    trips HALT — a late fill left out is exactly the fill the next diff re-sends."""
     venue = _resolve_venue(venue)
     lots = float(lots)
-    if park_id is not None and late_fill_booked(park_id):
-        logging.info(f"[reconcile] late fill {symbol} {park_id} already in the book — not booked again")
-        return False
     held = (ledger_book(venue).get(symbol) or {}).get('qty') or 0.0
     _append_reconciler_log({'action': 'BUY' if lots > 0 else 'SELL', 'symbol': symbol,
                             'signed_diff': lots, 'exchange': venue, 'late_fill': True,
                             'contributors': [],
                             'legs': [{'signed_diff': lots, 'reduce_only': held * lots < 0,
                                       'signed_qty': lots, 'executed_qty': abs(lots),
-                                      'resolved_symbol': contract}],
-                            **({'late_fill_park_id': park_id} if park_id is not None else {})},
-                           strict=park_id is not None)
-    return True
+                                      'resolved_symbol': contract,
+                                      **({'fill_price': float(price)} if price else {})}]})
 
 
 def _rebase_ledger_symbol(symbol, venue, months, qty=None):
@@ -4827,7 +4811,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
             filled = abs(leg['signed_diff'])
             log_dir = 'BUY' if sub_diff > 0 else 'SELL'
             logging.info(f"{log_dir}{'(reduce)' if reduce_only else ''} {symbol} {filled:.2f}")
-            notices.append((key, default, {'symbol': symbol, 'amount': filled}))
+            if filled > 0:  # an unconfirmed leg ('sent', 0) is no fill; 群益's claim announces it later
+                notices.append((key, default, {'symbol': symbol, 'amount': filled}))
 
         _flush_legs()
         if marked and not keep_marker:

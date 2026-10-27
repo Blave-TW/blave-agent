@@ -40,6 +40,9 @@ Scenarios (each in its own child process and scratch dir):
   F   a plain flip +2 -> -2 with nothing manual, the entry leg reading a snapshot from
       before its own close: the entry waits a round, no order error (統一 used to re-split
       the entry against that stale snapshot, try a second close and log a P1).
+  L   (群益 only) the entry fills but its fill report never comes ('sent' / 0 — 10-27
+      win-test-5): parked, claimed on the next round's read, booked in the real month,
+      one late "Bought" notice and no "0 lots" one; the exit sells exactly those lots.
   M   the user holds 1 lot in the bot's own month (same side): the bot's exits sell only
       its own 2 lots, every time.
   M2  same, but the user's lot is on the OTHER side: the bot's entry nets into it at the
@@ -100,6 +103,7 @@ class World:
         self.stale = False
         self.lag = False  # True: the snapshot's read started before this round's sends
         self.fake = None  # rows the snapshot reports instead of the real ones (a wrong read)
+        self.no_report = False  # the order fills, its fill report never arrives (群益 'sent')
 
     def setup(self, lots):
         os.makedirs("manager", exist_ok=True)
@@ -151,8 +155,9 @@ def capital_world(tmp):
                 w.rows[w.near] = w.rows.get(w.near, 0) + (p.nQty if side == "buy" else -p.nQty)
                 w.rows = {k: v for k, v in w.rows.items() if v}
                 seq = f"{len(w.sent):013d}"
-                pending.append((seq, {"qty": float(p.nQty), "price": 23000.0, "symbol": w.near,
-                                      "fill_id": seq, "market": "TF"}))
+                if not w.no_report:
+                    pending.append((seq, {"qty": float(p.nQty), "price": 23000.0, "symbol": w.near,
+                                          "fill_id": seq, "market": "TF"}))
                 return seq, 0
 
     oc.pythoncom = Pump
@@ -329,6 +334,8 @@ def child(venue, sid, tmp):
         months_listed((2023, 1), (2023, 2), (2023, 3))
     if sid in ("R1", "R2"):
         w.rows[code(2026, 11)] = -1 if sid == "R1" else 1  # the user's own, opened in the app
+    if sid == "L":
+        w.no_report = True
     round_("entry")
     round_("converged")
     ok, why = True, ""
@@ -401,6 +408,22 @@ def child(venue, sid, tmp):
         ok = w.net() == -2 and ledger_txf(last) == -2 and min(nets) >= -2 and not r1["sent"]
         why = (f"flip after the manual close: first round sent={r1['sent']}, broker nets per round={nets}, "
                f"book TXF={ledger_txf(last)}")
+    elif sid == "L":
+        # 10-27 win-test-5: the entry filled, no fill report ever came ('sent' / 0)
+        w.no_report = False
+        first, conv = log[0], log[1]
+        w.signal(0)
+        time.sleep(5.5)
+        last = round_("signal -> 0")
+        bought = [m for m in tg if "Bought" in m]
+        ok = ([o["lots"] for o in first["sent"]] == [2] and not conv["sent"] and ledger_txf(conv) == 2
+              and len(audits("late_fill_adopted")) == 1 and not audits("manual_month_excluded")
+              and [(o["side"], o["lots"]) for o in last["sent"]] == [("sell", 2)]
+              and w.net() == 0 and ledger_txf(last) == 0 and not last["halt"]
+              and len(bought) == 1 and "late" in bought[0] and not any(" 0 lots" in m for m in tg))
+        why = (f"entry sent={first['sent']}, next round sent={conv['sent']} book TXF={ledger_txf(conv)}, "
+               f"adopted={len(audits('late_fill_adopted'))}, excluded={len(audits('manual_month_excluded'))}; "
+               f"exit sent={last['sent']}, broker={w.rows}, book TXF={ledger_txf(last)}, telegram={tg}")
     elif sid == "F":
         w.signal(-1)
         if venue == "president":
@@ -577,7 +600,9 @@ def main():
     verbose = "-v" in sys.argv
     failed, xfail = [], []
     for venue in venues:
-        for sid in ("A", "A2", "A3", "A4", "A5", "A6", "F", "M", "M2", "Z", "R1", "R2", "B1", "B2", "B2R", "B3", "H1", "H2"):
+        for sid in ("A", "A2", "A3", "A4", "A5", "A6", "F", "L", "M", "M2", "Z", "R1", "R2", "B1", "B2", "B2R", "B3", "H1", "H2"):
+            if sid == "L" and venue != "capital":
+                continue  # 統一's no-report path: tests/check_president_lib.py
             cid = f"{venue}:{sid}"
             tmp = tempfile.mkdtemp(prefix=f"ledgerpaths-{venue}-{sid}-")
             try:

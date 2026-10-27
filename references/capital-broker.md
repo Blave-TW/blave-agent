@@ -706,11 +706,30 @@ apart; a row still held past that time is a postponed settlement and stays the b
 **An order with no fill report is parked, not forgotten** (`manager/reconciler.py`
 `_capital_park_unfilled` / `_capital_claim_pending`). `status='sent'` (or a short fill) carries only
 the alias, so the book gets 0 and the lot would later read as a month the book does not hold. The
-unfilled lots are parked in `state/capital_pending_sent.json` with the root's per-contract nets
-before the send. The first caught-up snapshot of a reconcile round claims them: exactly one contract
-moved by exactly those lots → booked in that contract (`late_fill_adopted`); nothing moved → dropped
-(`unfilled_order_cleared`); anything else → three reads, then order_errors + HALT. While a root is
-parked, every order for that root waits (closes too: `sNewClose=2` can open the other side).
+unfilled lots are parked in `state/capital_pending_sent.json` with the root's per-contract nets and
+avg costs before the send; no P1 goes out at that moment. Each caught-up snapshot of a reconcile
+round tries to claim them, with months past settlement left out of the comparison:
+- exactly one contract moved by exactly those lots → booked in that contract (`late_fill_adopted`),
+  with the price the avg cost implies when it can, and one late "Bought/Sold" notice;
+- nothing moved on two distinct reads ≥5 s apart → dropped (`unfilled_order_cleared`); one read is
+  not enough, the open interest may still be catching up;
+- anything else → three reads, then order_errors + HALT.
+
+While a root is parked, every order for that root waits (closes too: `sNewClose=2` can open the other
+side). If the park file cannot be written or read right after the broker accepted the order, the
+lots are kept in that process and HALT is tripped with the sequence number (a restart would forget
+them). 全部平倉 does not close parked lots — the book holds none of them yet — and records one
+order_errors row telling the user to check the app; the park stays, so the claim books the lot if it
+filled.
+
+**The claim baseline is the whole root, every month.** 群益 says which month the alias reached only
+through what moved, so narrowing to the computed front month would read a fill that landed elsewhere
+(roll day) as "not filled" and send it again. The cost: a manual order in ANY month of that root while
+lots are parked makes the claim fail (HALT after three reads), and a manual ±lots in one month is
+adopted as the bot's fill. A fill adopted outside the front month at send time is audited
+(`late_fill_month_unexpected`). Measure on a live run: send time, the lib's status, and each
+snapshot's `query_started_at` with its TM rows — how late `GetOpenInterest` shows a fill is not known.
+
 **Unverified:** whether `GetOpenInterest` keeps a settled month's row after cash settlement (統一
 does; if 群益 does too, the book keeps that month as held and the strategy does not re-enter —
 check on the first real settlement day, 2026-10-21).
