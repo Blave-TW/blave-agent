@@ -458,8 +458,11 @@ app.whenReady().then(async () => {
   // 窄:上下疊、免費在上
   w.setSize(1000, 900); await wait(400); s = await snap();
   ok("③ 1000 寬(中欄 < 760):上下疊、免費欄在上", s.cols[1].r.top >= s.cols[0].r.bottom - 1 && s.cmp2 && s.cols.length === 2 && s.cols[0].cap === Z["wd.col.free"], JSON.stringify([s.cols[0].r, s.cols[1].r]));
-  { const c2 = await wcGeo();
-    ok("③ 1000 寬(中欄 < 420):①的卡三排——名字、數字、CTA 各一排,CTA 靠左(貼卡內距 12)、不溢出", c2.w - 48 < 420 && c2.rows.length === 2 && c2.rows.every((x) => x.sT >= x.iB - 0.5 && x.aT >= x.sB - 0.5 && Math.abs(x.aL - 12) < 0.6 && x.over <= 0), JSON.stringify(c2));
+  { // 視窗最小 1024、中欄最窄 432(welcome.css <420 那條的註記),真視窗到不了 <420:把中欄壓到 440(內容 392)量那條斷點,量完放回
+    await js(`(() => { $("main-empty").style.maxWidth = "440px"; return true; })()`); await wait(100);
+    const c2 = await wcGeo();
+    await js(`(() => { $("main-empty").style.maxWidth = ""; return true; })()`);
+    ok("③ 中欄壓到 440(內容 < 420):①的卡三排——名字、數字、CTA 各一排,CTA 靠左(貼卡內距 12)、不溢出", c2.w - 48 < 420 && c2.rows.length === 2 && c2.rows.every((x) => x.sT >= x.iB - 0.5 && x.aT >= x.sB - 0.5 && Math.abs(x.aL - 12) < 0.6 && x.over <= 0), JSON.stringify(c2));
     await js(`(() => { LIB.data = null; WC.key = null; wcPaint(); return true; })()`); }
   w.setSize(1600, 900); await wait(400);
   // 台指期:免費欄是日線那一列(期交所),分線在 Blave 欄

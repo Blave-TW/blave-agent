@@ -114,9 +114,9 @@ app.whenReady().then(async () => {
   ok("⑥ 平台沒開放手機查看時,「連結」那顆真的不佔位(display: none)", hit.connHidden);
   const gap = await X(`(() => { const r = (id) => document.querySelector(id).getBoundingClientRect(), rows = [...document.querySelectorAll('#set-modal .set-pane[data-set-cat="display"] > .set-row')].filter((x) => !x.hidden).map((x) => x.getBoundingClientRect());
     const sc = document.querySelector(".set-content").getBoundingClientRect();
-    return { inRows: rows.slice(1).map((x, i) => Math.round(x.top - rows[i].bottom)), toRn: Math.round(r(".set-rn").top - rows[rows.length - 1].bottom), rnSug: Math.round(r(".set-sug").top - r(".set-rn").bottom), sugAwake: Math.round(r(".set-awake").top - r(".set-sug").bottom),
+    return { inRows: rows.slice(1).map((x, i) => Math.round(x.top - rows[i].bottom)), toRn: Math.round(r(".set-rn").top - rows[rows.length - 1].bottom), rnRs: Math.round(r(".set-rs").top - r(".set-rn").bottom), rsSug: Math.round(r(".set-sug").top - r(".set-rs").bottom), sugAwake: Math.round(r(".set-awake").top - r(".set-sug").bottom),
       awakeAbout: Math.round(r("#set-up").top - r(".set-awake").bottom), aboutGap: Math.round(sc.bottom - r("#set-up").bottom) }; })()`);
-  ok(`⑦ S8 一般:組內 8(${gap.inRows.join("/")}、${gap.rnSug}、${gap.sugAwake})、組間 32(→回覆通知 ${gap.toRn}、→關於 ${gap.awakeAbout});關於不釘底`, gap.inRows.every((g) => g === 8) && gap.rnSug === 8 && gap.sugAwake === 8 && gap.toRn === 32 && gap.awakeAbout === 32, JSON.stringify(gap));
+  ok(`⑦ S8 一般:組內 8(${gap.inRows.join("/")}、${gap.rnRs}、${gap.rsSug}、${gap.sugAwake})、組間 32(→回覆通知 ${gap.toRn}、→關於 ${gap.awakeAbout});關於不釘底`, gap.inRows.every((g) => g === 8) && gap.rnRs === 8 && gap.rsSug === 8 && gap.sugAwake === 8 && gap.toRn === 32 && gap.awakeAbout === 32, JSON.stringify(gap));
   const tops = {};
   for (const cat of ["display", "model", "src", "plan", "priv"]) {
     await X(`setCat(${JSON.stringify(cat)})`); await nap(350);
