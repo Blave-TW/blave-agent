@@ -3,7 +3,11 @@ runtime half of 0.1.21 資源優化案 A (lib half: tests/check_live_tick_lean.p
 .claude/output/backend/live-tick-cpu-spec-2026-10-10.md §2–3). No network; real subprocesses in
 a temp workspace carrying a copy of this repo's lib/.
 
-  1. args: exactly {names: [1..50 names]}, each [A-Za-z0-9_-]{1,128}, no duplicates.
+  1. args: {names: [1..50 names]}, each [A-Za-z0-9_-]{1,128}, no duplicates; optional
+     exec_test, only true and only with one name (spec lag-test-tab-2026-10-26 §5-2).
+  1b. BLAVE_EXEC_TEST: "0" on every strategy subprocess (_strategy_subprocess_env, every branch),
+     "1" only for an exec_test run (live and quiet-backtest paths); the 更新績效 run, BUSY with
+     exec_test and the sweep stay "0"; the reporter tells the api can_exec_test.
   2. per name: a Type B strategy → NOT_RUNNABLE; no stats.json → NO_STATS; queued twice → BUSY.
   3. the happy path, deployed (a key of portfolio_config.json's amounts): ack {started, skipped}
      at once, perf_refresh.json `running` + a push; the run is BLAVE_MODE=live +
@@ -173,8 +177,8 @@ def wait_idle(timeout=90):
     return False
 
 
-def send(names):
-    return cl.dispatch({"cmd": "stats_refresh", "args": {"names": names}})
+def send(names, **extra):
+    return cl.dispatch({"cmd": "stats_refresh", "args": dict({"names": names}, **extra)})
 
 
 def refused(args):
@@ -197,6 +201,36 @@ check("stats_refresh" in cl.HANDLERS, "the command has a handler")
 for a in ({"name": NAME}, {"names": NAME}, {"names": []}, {"names": ["a" * 129]}, {"names": ["bad.name"]},
           {"names": [NAME, NAME]}, {"names": [f"s{i}" for i in range(51)]}, {"names": [NAME], "extra": 1}):
     check(refused(a) == "BAD_ARGS", f"bad args refused: {str(a)[:60]}")
+for a in ({"names": [NAME, "tb"], "exec_test": True}, {"names": [NAME], "exec_test": False},
+          {"names": [NAME], "exec_test": "true"}, {"names": [NAME], "exec_test": 1},
+          {"names": [NAME], "exec_test": None}, {"exec_test": True}, {"names": [NAME], "exec_test": True, "x": 1}):
+    check(refused(a) == "BAD_ARGS", f"bad exec_test refused: {str(a)[:60]}")
+check(cl._stats_refresh_args({"names": [NAME], "exec_test": True}) == ([NAME], True)
+      and cl._stats_refresh_args({"names": [NAME, "tb"]}) == ([NAME, "tb"], False),
+      "exec_test: true with one name is taken; without it, as before")
+
+# ── 1b. BLAVE_EXEC_TEST on every strategy subprocess ────────────────────────
+XT = cl.EXEC_TEST_ENV
+check(XT == "BLAVE_EXEC_TEST", "the variable lib/runner reads")
+_real_local, _real_sys = cl._local_mode, cl.platform.system
+for label, local, system in (("local", True, None), ("Linux", False, "Linux"), ("Windows", False, "Windows")):
+    cl._local_mode = (lambda v: (lambda: v))(local)
+    if system:
+        cl.platform.system = (lambda v: (lambda: v))(system)
+    e_live, e_bt = cl._strategy_subprocess_env(), cl._strategy_subprocess_env("backtest", BLAVE_QUIET="1")
+    e_on = cl._strategy_subprocess_env("live", **{XT: "1"})
+    check(e_live.get(XT) == "0" and e_bt.get(XT) == "0" and e_on.get(XT) == "1",
+          f"{label}: default \"0\" on live and backtest children, the caller's \"1\" wins ({e_live.get(XT)}, {e_bt.get(XT)}, {e_on.get(XT)})")
+    cl._local_mode, cl.platform.system = _real_local, _real_sys
+MANIFEST = {}
+_real_manifest = rep._send_manifest
+rep._send_manifest = lambda payload, *a, **k: MANIFEST.update(payload) or {}
+try:
+    rep.report_cache([], token="t", record=False)
+finally:
+    rep._send_manifest = _real_manifest
+check(MANIFEST.get("can_exec_test") is True,
+      f"the manifest tells the api can_exec_test: True (same runtime as this handler) ({MANIFEST.get('can_exec_test')})")
 
 # ── 2. per-name skips ────────────────────────────────────────────────────────
 r = send(["tb", NAME])
@@ -238,16 +272,26 @@ check(not os.path.exists(os.path.join(SDIR, "state.json")), "no state.json writt
 env = child_env()
 check(env.get("BLAVE_MODE") == "live" and env.get(cl.STATS_REFRESH_ENV) == "1",
       f"child ran as BLAVE_MODE=live + BLAVE_STATS_REFRESH=1 ({env})")
+check(env.get(XT) == "0", f"更新績效 (no exec_test) → BLAVE_EXEC_TEST=0 ({env.get(XT)})")
 check(perf_doc() is None and len(PUSHES) == 2, f"record gone and a second push on completion ({len(PUSHES)})")
 p = perf_of(NAME)
 check(p == {"at": int(os.stat(os.path.join(SDIR, "stats.json")).st_mtime)} and p["at"] > int(mtime0),
       f"report: perf.at advanced, no refresh block ({p})")
+time.sleep(1.1)
+os.remove(os.path.join(SDIR, "env.json"))
+r = send([NAME], exec_test=True)
+check(r == {"started": [NAME], "skipped": {}} and wait_idle(), f"exec_test: ack started, finished ({r})")
+env = child_env()
+check(env.get("BLAVE_MODE") == "live" and env.get(cl.STATS_REFRESH_ENV) == "1" and env.get(XT) == "1",
+      f"exec_test on the live path → BLAVE_EXEC_TEST=1, still the live refresh ({env})")
 
 # BUSY while one is running; the report shows running meanwhile
 flags(n=360, sleep=4)
 send([NAME])
 r = send([NAME])
 check(r == {"started": [], "skipped": {NAME: "BUSY"}}, f"queued again while running → BUSY ({r})")
+r = send([NAME], exec_test=True)
+check(r == {"started": [], "skipped": {NAME: "BUSY"}}, f"exec_test while running → BUSY, not merged ({r})")
 p = perf_of(NAME)
 check(isinstance(p, dict) and p.get("refresh", {}).get("status") == "running",
       f"report: perf.refresh running mid-run ({p})")
@@ -328,11 +372,17 @@ c1, env = read(cold("stats.json")), read(cold("env.json")) or {}
 check(env.get("BLAVE_MODE") == "backtest" and env.get("BLAVE_QUIET") == "1" and env.get("BLAVE_EXPECT_CODE_HASH") == v1_hash
       and cl.STATS_REFRESH_ENV not in env,
       f"cold ran as a quiet backtest pinned to v1's code_hash, not the live refresh ({env})")
+check(env.get(XT) == "0", f"cold 更新績效 → BLAVE_EXEC_TEST=0 ({env.get(XT)})")
 check(c1 is not None and c1["end"] > c0["end"] and c1["Generated At"] > c0["Generated At"],
       f"cold: the backtest re-ran on the longer data, Generated At restamped ({c0['end']} → {c1['end']})")
 cidx = read(cold(os.path.join("versions", "index.json"))) or {}
 check(cidx.get("current") == 1 and not os.path.exists(cold(os.path.join("versions", "v2.json"))) and read(cold(cl.PERF_REFRESH_FILE)) is None,
       f"cold: same code → nothing minted, current stays 1, record cleared ({cidx.get('current')})")
+os.remove(cold("env.json"))
+r = send([COLD], exec_test=True)
+env = read(cold("env.json")) if wait_idle() else {}
+check(r == {"started": [COLD], "skipped": {}} and (env or {}).get("BLAVE_QUIET") == "1" and (env or {}).get(XT) == "1",
+      f"cold exec_test → the quiet backtest with BLAVE_EXEC_TEST=1 ({r}, {env})")
 with open(cold("strategy.py"), "a", encoding="utf-8") as f:
     f.write("\n# edited after the last backtest\n")
 os.remove(cold("env.json"))
@@ -344,7 +394,7 @@ check(not os.path.exists(cold("env.json")) and not os.path.exists(cold(os.path.j
 shutil.rmtree(cold("versions"))
 TIMEOUTS = {}
 _orig_refresh_stats = cl._refresh_stats
-cl._refresh_stats = lambda name, timeout, backtest_hash=None: TIMEOUTS.__setitem__(name, timeout) or _orig_refresh_stats(name, timeout, backtest_hash)
+cl._refresh_stats = lambda name, timeout, *a: TIMEOUTS.__setitem__(name, timeout) or _orig_refresh_stats(name, timeout, *a)
 import hashlib
 with open(cold("strategy.py"), "rb") as f:
     edited_hash = hashlib.sha256(f.read()).hexdigest()[:16]
@@ -465,6 +515,7 @@ for _ in range(50):
     time.sleep(0.1)
 check(os.path.exists(MARK) and open(MARK).read() == "daily", "the report job started after the sweep")
 check(len(PUSHES) == 1 and perf_doc() is None, f"sweep: one push, record cleared ({len(PUSHES)})")
+check(child_env().get(XT) == "0", f"the sweep's live refresh → BLAVE_EXEC_TEST=0 ({child_env().get(XT)})")
 fresh = os.stat(os.path.join(SDIR, "stats.json")).st_mtime
 os.remove(os.path.join(SDIR, "env.json"))
 cl._refresh_live_stats("again")

@@ -1873,7 +1873,10 @@ def _strategy_subprocess_env(mode="live", **extra):
     (state/timezone, contract §2b) while the scheduler does not.
     `mode` / `extra`: a restore's background re-run is a quiet BACKTEST (BLAVE_MODE=backtest,
     BLAVE_QUIET=1) under the same allowlist — passed explicitly, since the Windows local
-    denylist strips every inherited BLAVE_*."""
+    denylist strips every inherited BLAVE_*.
+    BLAVE_EXEC_TEST is always set, "0" unless the caller says "1" (the 成交測試 button's
+    stats_refresh): lib/runner computes exec_test when it is unset, which only an old runtime does."""
+    extra = {EXEC_TEST_ENV: "0", **extra}
     if _local_mode():
         if mode == "live":
             extra = {**_tw_broker_flag(), **extra}
@@ -6591,6 +6594,10 @@ def _cmd_version_restore(args):
 # 10-14). An old lib (live tick still rewriting stats.json) runs the live command as an
 # ordinary live tick: it writes stats.json too.
 STATS_REFRESH_ENV = "BLAVE_STATS_REFRESH"            # = lib/runner.STATS_REFRESH_ENV
+# `exec_test: true` (one name: the 成交測試 tab's button) → "1" for that run; every other strategy
+# subprocess gets "0" (_strategy_subprocess_env), so a sweep, a restore re-run or the 更新績效
+# button never computes the grid. Spec lag-test-tab-2026-10-26 §4 / §5-2.
+EXEC_TEST_ENV = "BLAVE_EXEC_TEST"                    # = lib/runner.EXEC_TEST_ENV
 STATS_REFRESH_TIMEOUT_S = 1200                       # = manager/wait_for_bar.RUN_TIMEOUT_SECONDS
 # The sweep as a whole: a cold 1-min cache on a 1 GB box took 11 minutes per strategy
 # (10-06); five of those in front of a morning report would make it an hour late.
@@ -6673,8 +6680,9 @@ _PERF_PENDING_LOCK = threading.Lock()
 
 
 def _stats_refresh_args(args):
-    if not isinstance(args, dict) or set(args) != {"names"}:
-        raise ValueError("BAD_ARGS: stats_refresh takes exactly names")
+    """(names, exec_test) — the same shape the api checks (agent_command._stats_refresh_args_error)."""
+    if not isinstance(args, dict) or set(args) not in ({"names"}, {"names", "exec_test"}):
+        raise ValueError("BAD_ARGS: stats_refresh takes names and optionally exec_test")
     names = args["names"]
     if not isinstance(names, list) or not 1 <= len(names) <= STATS_REFRESH_MAX_NAMES:
         raise ValueError(f"BAD_ARGS: names must list 1–{STATS_REFRESH_MAX_NAMES} strategies")
@@ -6682,7 +6690,9 @@ def _stats_refresh_args(args):
         raise ValueError("BAD_ARGS: bad strategy name")
     if len(set(names)) != len(names):
         raise ValueError("BAD_ARGS: duplicate strategy name")
-    return names
+    if "exec_test" in args and (args["exec_test"] is not True or len(names) != 1):
+        raise ValueError("BAD_ARGS: exec_test is true and takes exactly one name")
+    return names, "exec_test" in args
 
 
 def _stats_path(name):
@@ -6753,22 +6763,24 @@ def _refresh_plan(name):
     return None, "INDEX_BROKEN" if any(not isinstance(h, str) or not h for h in stored) else "CODE_CHANGED"
 
 
-def _refresh_stats(name, timeout, backtest_hash=None):
+def _refresh_stats(name, timeout, backtest_hash=None, exec_test=False):
     """One strategy's performance refresh, synchronously (callers hold _STATS_REFRESH_LOCK).
     `backtest_hash` (the file's code_hash, _refresh_plan) = a quiet backtest of an undeployed
     strategy; None = the live refresh. Returns stats.json's new mtime (epoch seconds);
     RuntimeError "<CODE>: …" with CODE in _RERUN_ERRS otherwise (the log tail classified like
     a restore's re-run; SUPERSEDED when the run exited 0 without touching stats.json — the
-    runner discards a run whose strategy file changed under it, both paths)."""
+    runner discards a run whose strategy file changed under it, both paths). `exec_test`: the
+    run also computes the 成交測試 grid (EXEC_TEST_ENV "1"), both paths."""
     script = os.path.join("strategies", name, "strategy.py")
     before = _stats_sig(name)
+    xt = {EXEC_TEST_ENV: "1" if exec_test else "0"}
     if backtest_hash:
         # BLAVE_EXPECT_CODE_HASH: an edit landing between the ack and the child's import would
         # otherwise mint (runner._superseded closes exactly that gap, as for a restore's re-run)
         env = _strategy_subprocess_env("backtest", BLAVE_QUIET="1", BLAVE_EXPECT_CODE_HASH=backtest_hash,
-                                       PYTHONPATH=WORKSPACE)
+                                       PYTHONPATH=WORKSPACE, **xt)
     else:
-        env = _strategy_subprocess_env("live", **{STATS_REFRESH_ENV: "1", "PYTHONPATH": WORKSPACE})
+        env = _strategy_subprocess_env("live", **{STATS_REFRESH_ENV: "1", "PYTHONPATH": WORKSPACE}, **xt)
     rc, out, err, seconds, peak = _run_measured(name, [_workspace_python(), script], env, timeout)
     sdir = os.path.join(WORKSPACE, "strategies", name)
     if rc is None:
@@ -6858,7 +6870,7 @@ def _stats_sig(name):
     return st.st_mtime_ns, st.st_size
 
 
-def _refresh_one(name, deadline, what, backtest_hash=None, shared=False):
+def _refresh_one(name, deadline, what, backtest_hash=None, shared=False, exec_test=False):
     """Refresh `name` with the record the page reads: running while it runs, gone on success,
     failed + code otherwise. `deadline` (monotonic) bounds the lock wait and the run; None =
     no budget (the button). `shared`: the caller already holds a shared slot (the button queue);
@@ -6875,7 +6887,7 @@ def _refresh_one(name, deadline, what, backtest_hash=None, shared=False):
         timeout = RESTORE_RERUN_TIMEOUT_S if backtest_hash else STATS_REFRESH_TIMEOUT_S
         if deadline is not None:
             timeout = max(1.0, min(timeout, deadline - time.monotonic()))
-        _refresh_stats(name, timeout, backtest_hash)
+        _refresh_stats(name, timeout, backtest_hash, exec_test)
     except Exception as e:
         code = str(e).split(":", 1)[0]
         _mark_perf(name, "failed", code if code in _RERUN_ERRS else "EXIT", getattr(e, "data_why", None))
@@ -6901,9 +6913,9 @@ def _run_refresh_queue(queued):
     """Start each queued refresh as soon as refresh_capacity allows (a shared slot), shortest
     first; several run at once. A name is in _PERF_PENDING from the ack until its run ends, so
     the same strategy never runs twice at once (button, chip or sweep)."""
-    def one(name, backtest_hash):
+    def one(name, backtest_hash, exec_test):
         try:
-            _refresh_one(name, None, "stats refresh", backtest_hash, shared=True)
+            _refresh_one(name, None, "stats refresh", backtest_hash, shared=True, exec_test=exec_test)
         finally:
             _STATS_REFRESH_LOCK.release_shared(name)
             with _PERF_PENDING_LOCK:
@@ -6913,10 +6925,10 @@ def _run_refresh_queue(queued):
             _push(_ON_APPLIED, "stats refresh")
 
     workers = []
-    for name, backtest_hash in _refresh_order(queued):
+    for name, backtest_hash, exec_test in _refresh_order(queued):
         est = refresh_capacity.estimate_mb(os.path.join(WORKSPACE, "strategies", name))
         _STATS_REFRESH_LOCK.acquire_shared(name, est)
-        t = threading.Thread(target=one, args=(name, backtest_hash), daemon=True,
+        t = threading.Thread(target=one, args=(name, backtest_hash, exec_test), daemon=True,
                              name=f"stats-refresh-{name}")
         try:
             t.start()
@@ -6933,7 +6945,9 @@ def _run_refresh_queue(queued):
 
 
 def _cmd_stats_refresh(args):
-    """{"names": [STRATEGY_NAME, …]} → queue a performance refresh of each; ack result
+    """{"names": [STRATEGY_NAME, …], "exec_test"?: true} → queue a performance refresh of each
+    (exec_test: one name, the run also computes the 成交測試 grid — a name already queued or
+    running is BUSY like any other, never merged into that run); ack result
     {started: [names], skipped: {name: CODE}} with CODE in NOT_RUNNABLE (not a Type A/C
     strategy — a Type B script places its own orders, running it IS trading) / NO_STATS (never
     backtested, or restore() stashed the results: canon §5 leaves that to the next backtest) /
@@ -6945,7 +6959,7 @@ def _cmd_stats_refresh(args):
     unreadable (who is live cannot be told, and a deployed strategy must not get a backtest).
     Shape errors raise "ValueError: BAD_ARGS: …". The runs' own outcome is perf.refresh in the
     strategies report, not the ack."""
-    names = _stats_refresh_args(args)
+    names, exec_test = _stats_refresh_args(args)
     deployed = _deployed_names()
     if deployed is None:
         return {"started": [], "skipped": {n: "CONFIG_UNREADABLE" for n in names}}
@@ -6971,7 +6985,7 @@ def _cmd_stats_refresh(args):
             _PERF_PENDING.add(name)
         _mark_perf(name, "running")   # every queued one reads 更新中 from the ack-time push on
         started.append(name)
-        queued.append((name, backtest_hash))
+        queued.append((name, backtest_hash, exec_test))
     if started:
         threading.Thread(target=_run_refresh_queue, args=(queued,), daemon=True,
                          name="stats-refresh").start()
