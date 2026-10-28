@@ -111,13 +111,13 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       const at6 = new Date(2026, 9, 29, 6, 5).getTime();
       const ctx = { _schedRunning: false, draftOk: false, quitAsking: false, moveAsking: false, restarting: null, quitConfirmed: false, quitting: false, activeTurn: null, turnStarting: false, _engineRun: null,
         updater: () => ({ state: () => ({ phase: o.phase || "ready", version: "0.1.36" }), install: () => { log.push("install"); return o.installRes || { ok: true }; } }),
-        _tradeHost: { status: () => ({ alive: o.alive !== false, report: { daemon: { reports: o.reports === undefined ? { running: false, next_due_at: null } : o.reports } } }) },
+        _tradeHost: o.noHost ? null : { status: () => ({ running: o.daemonRunning !== false, alive: o.alive !== false, lockRetry: o.lockRetry || null, report: { daemon: o.reports === "absent" ? {} : { reports: o.reports === undefined ? { running: false, next_due_at: null } : o.reports } } }) },
         updAutoGet: () => o.on !== false, updSchedRec: () => ({ target: null, failed: o.failed || null }), tradeMaybeLive: () => (o.trading ? { venue: "x" } : null), twLots: () => ({ held: !!o.twHeld }),
         engineSetup: () => ({ busy: () => false }), require: (m) => (m === "electron" ? { powerMonitor: { getSystemIdleTime: () => (o.idle === undefined ? 900 : o.idle) } } : require(path.join(SHELL, m))),
         pageAsk: async (expr) => { log.push(/trUnsavedAny/.test(expr) ? "ask:draft" : "ask:ui"); if (o.onAsk) o.onAsk(ctx); return /trUnsavedAny/.test(expr) ? (o.dirty === undefined ? false : o.dirty) : o.idleUi === undefined ? true : o.idleUi; },
         tm: () => ({ track: (ev, p) => log.push("track:" + ev + ":" + (p.name || p.stage)) }), engineAbort: async () => { log.push("engineAbort"); },
         uiPrefsPatch: (p) => { Object.assign(prefs, p); log.push("prefs:" + JSON.stringify(p)); }, Date: { now: () => at6 } };
-      const fn = new Function("ctx", "with (ctx) { " + SCHED + "\n return scheduledInstall; }")(ctx);
+      const fn = new Function("ctx", "with (ctx) { " + cut(src, "function updSchedReports(") + "\n" + SCHED + "\n return scheduledInstall; }")(ctx);
       return { run: () => fn(at6), log, prefs, ctx };
     };
     { const r = rig({}), res = await r.run();
@@ -132,7 +132,12 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       t("問畫面那段時間開始下單:重判一次,不重開", res.go === false && res.why === "trading" && !r.log.includes("install"), r.log); }
     { const r = rig({ onAsk: (c) => { c.activeTurn = {}; } }), res = await r.run();
       t("…開始回合:同上", res.go === false && !r.log.includes("install")); }
-    for (const [why, o] of [["daemon 不新鮮(alive false,報告欄位不可信)", { alive: false }], ["狀態檔沒有 daemon.reports(舊 runtime)", { reports: null }], ["引擎在跑", {}]]) {
+    // 條件 10 的 daemon 判斷(Wei 10-28 拍板):沒在跑 = 不會有報告,照常排;在跑但讀不到欄位 = 當作有報告
+    for (const [why, o] of [["daemon 沒在跑(沒有子行程、也不在等鎖重試)", { daemonRunning: false, alive: false, reports: "absent" }], ["從沒起過 daemon(_tradeHost 是 null)", { noHost: true }]]) {
+      const r = rig(o), res = await r.run();
+      t("條件 10:" + why + " → 當作沒有報告,照常重開", res.go === true && r.log.includes("install"), [res, r.log]); }
+    for (const [why, o] of [["daemon 在跑但狀態檔缺 daemon.reports(舊 runtime)", { reports: "absent" }], ["daemon 在跑、欄位是 null", { reports: null }], ["daemon 在跑但心跳不新鮮(alive false)", { alive: false }],
+      ["daemon 沒在跑但正在等鎖重試", { daemonRunning: false, alive: false, lockRetry: { attempt: 1 }, reports: "absent" }], ["引擎在跑", {}]]) {
       const r = rig(o); if (why === "引擎在跑") r.ctx._engineRun = Promise.resolve();
       const res = await r.run();
       t("主行程收集的條件:" + why + " → 不重開,也不去問畫面", res.go === false && !r.log.some((x) => /^ask:/.test(x)), [res, r.log]); }
@@ -148,7 +153,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       && /getHours\(\) === WINDOW_HOUR && d\.getMinutes\(\) < WINDOW_MIN/.test(fs.readFileSync(path.join(SHELL, "schedupdate.js"), "utf8")));
     t("updSchedBoot:沒追上就送 update_failed stage=install(主行程送,經 schedBoot)", /if \(b\.report\) \{ try \{ tm\(\)\.track\("update_failed", \{ stage: "install" \}\); \}/.test(cut(src, "function updSchedBoot(")));
     t("預設開、存 ui-prefs autoUpdate(缺 = 開,舊版升上來也是開)", /autoUpdate !== false; \} catch \(_\) \{ return true; \}/.test(src) && /handle\("update-auto-set", \(_e, on\) => updAutoSet\(on === true\), null\);/.test(src));
-    t("條件 10 讀的是 runtime 寫的 daemon.reports(runtime/local_daemon.py write_status),daemon 不新鮮就不信", /host && host\.alive && host\.report && host\.report\.daemon \? host\.report\.daemon\.reports : undefined/.test(SCHED)
+    t("條件 10 讀的是 runtime 寫的 daemon.reports(runtime/local_daemon.py write_status),daemon 在跑時心跳不新鮮就不信", /return host\.alive && host\.report && host\.report\.daemon \? host\.report\.daemon\.reports : undefined;/.test(cut(src, "function updSchedReports(")) && /reports: updSchedReports\(host\) \}/.test(SCHED)
       && /doc\["daemon"\]\["reports"\] = self\.cl\.report_activity\(\)/.test(fs.readFileSync(path.join(SHELL, "..", "runtime", "local_daemon.py"), "utf8"))); }
 
   // ── §4.2 主行程↔畫面往返(updAsk)與取消後 Cmd+Q／選單列「結束」仍有效 ──

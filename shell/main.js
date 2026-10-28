@@ -4155,6 +4155,12 @@ async function pageAsk(expr) {
     return await Promise.race([ask, new Promise((r) => setTimeout(() => r(null), 1500))]);
   } catch (_) { return null; }
 }
+/* 條件 10 的輸入(Wei 10-28 拍板):daemon 根本沒在跑(沒有子行程、也不在等鎖重試)= 不會有報告,當作沒有;
+   daemon 在跑時只信新鮮心跳下的 daemon.reports,讀不到這兩個欄位一律當作有報告 */
+function updSchedReports(host) {
+  if (!host || (!host.running && !host.lockRetry)) return { running: false, next_due_at: null };
+  return host.alive && host.report && host.report.daemon ? host.report.daemon.reports : undefined;
+}
 let _schedRunning = false;
 async function scheduledInstall(now = Date.now()) {
   if (_schedRunning) return { go: false, why: "running" };
@@ -4164,7 +4170,7 @@ async function scheduledInstall(now = Date.now()) {
     const base = { now, on: updAutoGet(), phase: st.phase, version: st.version, failed: updSchedRec().failed, trading: !!tradeMaybeLive(),
       turn: !!(activeTurn || turnStarting), idleSec: require("electron").powerMonitor.getSystemIdleTime(), twHeld: twLots().held,
       asking: !!(quitAsking || moveAsking || restarting || quitConfirmed || quitting), engineBusy: !!(engineSetup().busy() || _engineRun),
-      reports: host && host.alive && host.report && host.report.daemon ? host.report.daemon.reports : undefined };
+      reports: updSchedReports(host) };
     const S = require("./schedupdate");
     let d = S.schedPlan({ ...base, dirty: false, uiBusy: false });
     if (!d.go) return d;
