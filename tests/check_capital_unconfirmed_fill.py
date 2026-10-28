@@ -46,7 +46,7 @@ def check(cond, msg, detail=None):
 
 def reset(seed_symbols=None):
     for p in ("manager/orders.jsonl", "manager/order_errors.json", "state/audit.jsonl", "state/HALT",
-              PENDING, capital_vault.LAST_ORDER_PATH):
+              PENDING, capital_vault.LAST_ORDER_PATH, "state/capital_cleared.json"):
         if os.path.exists(p):
             os.remove(p)
     capital_vault._last_order_mem = 0.0
@@ -352,8 +352,8 @@ reconciler._capital_place_order("TMF", 1.0, SPEC)
 snap({"TM2611": 1}, capital_vault.last_order_at() + S + 1)
 round_read()
 lo = json.loads(open("manager/orders.jsonl", encoding="utf-8").read().strip().splitlines()[-1])
-check(len(tg) == 1 and "Bought TMF 1 lots" in tg[0] and "46,597" in tg[0] and "late" in tg[0],
-      "one 'Bought TMF 1 lots @ 46,597 (fill report came late)' notice", tg)
+check(tg == ["📈 買進 TMF 1 口 @ 46,597(成交回報晚到)"],
+      "one late-fill notice in the machine's language (zh default), with the price", tg)
 check(lo.get("late_fill") and lo["legs"][0].get("fill_price") == 46597.0, "…and the booked line carries that price", lo)
 
 # ── two unchanged reads closer than PENDING_UNCHANGED_MIN_S do not clear (audit P1-1) ──
@@ -462,23 +462,198 @@ round_read()
 lo = json.loads(open("manager/orders.jsonl", encoding="utf-8").read().strip().splitlines()[-1])
 book = portfolio.ledger_positions("capital").get("TMF") or {}
 check(lo.get("late_fill") and lo["action"] == "SELL" and "fill_price" not in lo["legs"][0]
-      and len(tg) == 1 and "Sold TMF 1 lots" in tg[0] and "@" not in tg[0] and not book.get("qty"),
+      and tg == ["📉 平掉多單 TMF 1 口(成交回報晚到)"] and not book.get("qty"),
       "the close's late fill: booked SELL, no price on the line or in the notice, book flat", (lo, tg, book))
 
-# ── close-all with lots parked: told, not silently skipped (audit P1-2) ──
+# ── a claim whose park-file save fails books nothing; later rounds book it once (v035 P1-1) ──
+reset()
+snap({}, time.time())
+broker(SENT)
+reconciler._capital_place_order("TMF", 1.0, SPEC)
+snap({"TM2611": 1}, capital_vault.last_order_at() + S + 1)
+real_save = reconciler._save_pending_sent
+
+
+def save_fails_once(p, path=None):
+    reconciler._save_pending_sent = real_save
+    raise PermissionError(13, "locked by AV (fake)")
+
+
+reconciler._save_pending_sent = save_fails_once
+raised = None
+try:
+    round_read()
+except OSError as e:
+    raised = e
+reconciler._save_pending_sent = real_save
+qty = lambda: (portfolio.ledger_positions("capital").get("TMF") or {}).get("qty") or 0.0  # noqa: E731
+check(raised is not None and qty() == 0 and "TMF" in pending() and not audits("late_fill_adopted"),
+      "park-file save fails mid-claim: the round fails, nothing booked, the row still on disk", (raised, qty()))
+round_read()
+round_read()
+check(qty() == 1.0 and pending() == {} and len(audits("late_fill_adopted")) == 1,
+      "…the next rounds book it exactly once", qty())
+
+# killed between the save and the book: the next round does not book it again
+reset()
+snap({}, time.time())
+broker(SENT)
+reconciler._capital_place_order("TMF", 1.0, SPEC)
+snap({"TM2611": 1}, capital_vault.last_order_at() + S + 1)
+real_book = portfolio.book_late_fill
+
+
+def killed(*a, **k):
+    raise KeyboardInterrupt("killed (fake)")
+
+
+portfolio.book_late_fill = killed
+try:
+    round_read()
+except KeyboardInterrupt:
+    pass
+portfolio.book_late_fill = real_book
+round_read()
+check(qty() == 0 and pending() == {}, "killed after the row was saved away: not booked on the next round", qty())
+
+# ── one snapshot read: positions and query_started_at never come from two files (v035 P2-2) ──
+reset()
+snap({}, time.time())
+broker(SENT)
+reconciler._capital_place_order("TMF", 1.0, SPEC)
+order_at = capital_vault.last_order_at()
+old = {"ok": True, "error": None, "holdings": [], "equity": 1.0, "currency": "TWD", "positions": [],
+       "query_started_at": order_at - 5, "read_at": int(time.time())}
+new = dict(old, query_started_at=order_at + S + 1)
+reads = iter([old, new, new, new])
+real_read = account_capital._read_snapshot
+account_capital._read_snapshot = lambda: next(reads)
+try:
+    round_read()
+except reconciler.CapitalCacheLagError:
+    pass
+account_capital._read_snapshot = real_read
+check(not (pending().get("TMF") or {}).get("unchanged"),
+      "an old snapshot read next to a newer start time is not counted as an unchanged read", pending())
+
+# ── unchanged reads are a worker poll apart (v035 P2-3) ──
+import re as _re  # noqa: E402
+polls = [int(_re.search(r"^POLL_S = (\d+)", open(os.path.join(ROOT, "lib", w), encoding="utf-8").read(), _re.M).group(1))
+         for w in ("capital_worker.py", "president_worker.py")]
+check(GAP >= max(polls), f"PENDING_UNCHANGED_MIN_S ({GAP}) >= the workers' POLL_S ({polls})")
+
+# ── cleared three times in a row: P1 + HALT, not a silent send/clear loop (v035 P2-4) ──
+reset()
+errs = []
+real_err = portfolio._record_order_error
+portfolio._record_order_error = lambda sym, venue, err, extra=None, repeat=False: errs.append((sym, venue, err))
+sent.clear()
+broker(SENT)
+for i in range(reconciler.CLEARED_MAX):
+    snap({}, capital_vault.last_order_at() + S + 1)
+    reconciler._capital_place_order("TMF", 1.0, SPEC)
+    t = capital_vault.last_order_at() + S + 1
+    for dt in (0, GAP):
+        snap({}, t + dt)
+        round_read()
+    if i < reconciler.CLEARED_MAX - 1:
+        check(not guard.halted() and not errs, f"cleared {i + 1}/{reconciler.CLEARED_MAX}: no alarm yet")
+portfolio._record_order_error = real_err
+check(len(sent) == reconciler.CLEARED_MAX and guard.halted() and len(errs) == 1 and "連續" in errs[0][2]
+      and audits("unfilled_order_cleared_repeatedly"),
+      f"{reconciler.CLEARED_MAX} clears in a row: one order_errors row and HALT", errs)
+guard.clear_halt("test")
+reset()
+broker(SENT)
+for i in range(reconciler.CLEARED_MAX - 1):
+    snap({}, capital_vault.last_order_at() + S + 1)
+    reconciler._capital_place_order("TMF", 1.0, SPEC)
+    t = capital_vault.last_order_at() + S + 1
+    for dt in (0, GAP):
+        snap({}, t + dt)
+        round_read()
+broker({"seq_no": "9", "status": "filled", "symbol": "TM2611", "fill_qty": 1.0, "avg_fill_price": 1.0,
+        "fill_ids": ["f"], "market": "TF"})
+snap({}, capital_vault.last_order_at() + S + 1)
+reconciler._capital_place_order("TMF", 1.0, SPEC)
+check(reconciler._capital_cleared() == {}, "a confirmed fill resets the count", reconciler._capital_cleared())
+
+# ── more lots reported than were sent: not booked, P1 + HALT (v035 P2-5) ──
+reset()
+snap({}, time.time())
+broker({"seq_no": "7", "status": "filled", "symbol": "TM2611", "fill_qty": 3.0, "avg_fill_price": 1.0,
+        "fill_ids": ["a", "b", "c"], "market": "TF"})
+errs = []
+portfolio._record_order_error = lambda sym, venue, err, extra=None, repeat=False: errs.append((sym, venue, err))
+r = reconciler._capital_place_order("TMF", 1.0, SPEC)
+portfolio._record_order_error = real_err
+check(r is False and guard.halted() and len(errs) == 1 and "比送出的" in errs[0][2] and pending() == {}
+      and audits("order_overfill_refused"),
+      "3 lots reported for a 1-lot order: nothing returned to book, one order_errors row, HALT", (r, errs))
+guard.clear_halt("test")
+
+# ── no price for a partial close (the avg cost of what is left says nothing) or after a partial fill ──
+reset()
+portfolio._append_reconciler_log({"action": "BUY", "symbol": "TMF", "signed_diff": 2.0, "exchange": "capital",
+                                  "asset_spec": SPEC, "contributors": [],
+                                  "legs": [{"signed_diff": 2.0, "reduce_only": False, "executed_qty": 2.0,
+                                            "exchange": "capital", "signed_qty": 2.0, "resolved_symbol": "TM2611"}]})
+snap({"TM2611": 2}, time.time(), cost=46000.0)
+broker(SENT)
+reconciler._capital_place_order("TMF", -1.0, SPEC, reduce_only=True)
+snap({"TM2611": 1}, capital_vault.last_order_at() + S + 1, cost=93000.0)
+round_read()
+lo = json.loads(open("manager/orders.jsonl", encoding="utf-8").read().strip().splitlines()[-1])
+check(lo.get("late_fill") and "fill_price" not in lo["legs"][0] and "@" not in (tg or ["@"])[-1],
+      "partial close 2 → 1: no price even when the leftover avg cost would make one", (lo, tg))
+reset()
+portfolio._append_reconciler_log({"action": "BUY", "symbol": "TMF", "signed_diff": 1.0, "exchange": "capital",
+                                  "asset_spec": SPEC, "contributors": [],
+                                  "legs": [{"signed_diff": 1.0, "reduce_only": False, "executed_qty": 1.0,
+                                            "exchange": "capital", "signed_qty": 1.0, "resolved_symbol": "TM2611"}]})
+snap({"TM2611": 1}, time.time(), cost=46000.0)
+broker({"seq_no": "5", "status": "filled", "symbol": "TM2611", "fill_qty": 1.0, "avg_fill_price": 46200.0,
+        "fill_ids": ["a"], "market": "TF"})
+reconciler._capital_place_order("TMF", 2.0, SPEC)
+snap({"TM2611": 3}, capital_vault.last_order_at() + S + 1, cost=46100.0)
+round_read()
+lo = json.loads(open("manager/orders.jsonl", encoding="utf-8").read().strip().splitlines()[-1])
+check(lo.get("late_fill") and "fill_price" not in lo["legs"][0], "late rest of a partial fill: no price", lo)
+
+# ── the late-fill notice: machine language, the user's template, the late marker kept ──
+reset()
+open("state/reply_lang", "w").write("en")
+snap({}, time.time())
+broker(SENT)
+reconciler._capital_place_order("TMF", 1.0, SPEC)
+snap({"TM2611": 1}, capital_vault.last_order_at() + S + 1)
+round_read()
+os.remove("state/reply_lang")
+check(tg == ["📈 Bought TMF 1 lots @ 46,597 (fill report came late)"], "reply_lang en: the English notice", tg)
+reset()
+json.dump(dict(CONFIG, messages={"order_buy": "BUY {symbol} x{amount:g}"}), open("manager/portfolio_config.json", "w"))
+snap({}, time.time())
+broker(SENT)
+reconciler._capital_place_order("TMF", 1.0, SPEC)
+snap({"TM2611": 1}, capital_vault.last_order_at() + S + 1)
+round_read()
+check(tg == ["BUY TMF x1 @ 46,597(成交回報晚到)"], "the user's order_buy template, late marker added", tg)
+
+# ── close-all with lots parked: the root is left out, told once (audit P1-2 / v035 P2-1) ──
 from manager import flatten  # noqa: E402
 os.chdir(TMP)  # flatten chdirs to the repo on import; the rows below must land in the test dir
 reset()
-note = getattr(flatten, "_note_parked", None)
-check(note is not None and note("capital") == 0, "close-all, nothing parked: no row")
+keys = getattr(flatten, "_parked_keys", None)
+check(keys is not None and keys("capital") == set() and not os.path.exists("manager/order_errors.json"),
+      "close-all, nothing parked: no key, no row")
 json.dump({"TMF": {"root": "TMF", "lots": 1.0, "expected": {}}}, open(PENDING, "w"))
-n = note("capital") if note else 0
+got_keys = keys("capital") if keys else None
 errs_now = json.load(open("manager/order_errors.json", encoding="utf-8")) if os.path.exists("manager/order_errors.json") else []
-check(n == 1 and any("TMF" in e.get("error", "") and "沒收到成交回報" in e.get("error", "") and "手動平倉" in e.get("error", "")
-                     for e in errs_now) and "TMF" in pending(),
-      "close-all with TMF parked: one order_errors row (P1) to check the app; the park stays for the claim", errs_now)
+check(got_keys == {"TMF"} and len(errs_now) == 1 and errs_now[0].get("kind") == "order_unconfirmed"
+      and errs_now[0].get("close_all") is True and "先不平" in errs_now[0].get("error", "") and "TMF" in pending(),
+      "close-all with TMF parked: TMF left out, one order_unconfirmed close_all row (P1); the park stays", errs_now)
 open(PENDING, "w").write("{not json")
-check(note is not None and note("capital") == 1, "…an unreadable park file counts as parked")
+check(keys is not None and keys("capital") is None, "…an unreadable park file: every key may be parked (None)")
 os.remove(PENDING)
 
 print("all checks passed" if not fails else f"FAILED: {fails}")

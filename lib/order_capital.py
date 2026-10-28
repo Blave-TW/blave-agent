@@ -177,6 +177,7 @@ class _Events:
 
     def OnSolaceReplyDisconnect(self, bstrUserID, nErrorCode):
         self.solace = f"disconnect:{nErrorCode}"
+        self.reply_complete = False
         logging.warning(f"capital reply OnSolaceReplyDisconnect code={nErrorCode}")
 
     def OnAccount(self, bstrLogInID, bstrAccountData):

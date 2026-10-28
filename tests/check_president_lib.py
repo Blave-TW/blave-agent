@@ -1056,7 +1056,13 @@ try:
     r = reconciler.place_order("TMF", 1, exchange="president")
     check(r is False and sent_legs == [("TMF", "buy", 1, "entry")], "the same entry is NOT re-sent next round")
     snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1, "net_current": 1}])
+    late_tg = []
+    real_send = reconciler.send_telegram
+    reconciler.send_telegram = late_tg.append
     pos = gp()
+    reconciler.send_telegram = real_send
+    check(late_tg == ["📈 買進 TMF 1 口(成交回報晚到)"],
+          "統一's late fill gets its fill notice too (the 0-lot leg sent none)", late_tg)
     book = ledger_positions("president").get("TMF") or {}
     lo = last_order()
     check(pending() == {} and (book.get("side"), book.get("qty"), book.get("months")) == ("long", 1.0, {"2026-10": 1.0})

@@ -240,11 +240,13 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   `status='unknown'` means the broker answered a status code the SDK does not define — none of
   them is resubmitted; check the position first. The reconciler parks the unfilled lots
   (`state/president_pending_sent.json`) and claims them from the next caught-up snapshot: account
-  net moved by exactly those lots → booked (`late_fill_adopted`); unchanged on two distinct
-  snapshots ≥5 s apart → dropped; three distinct snapshots fitting neither → one `order_errors`
+  net moved by exactly those lots → the row is removed and saved, then booked (`late_fill_adopted`,
+  with a late fill notice); unchanged on two distinct snapshots at least one worker poll (60 s)
+  apart → dropped; three distinct snapshots fitting neither → one `order_errors`
   row (P1) + HALT. A park the file does not take (locked, unreadable) is kept in that process and
   trips HALT. No entry for that root
-  goes out while lots are parked; closes still do. `unknown` is **P3 today** (the lib's
+  goes out while lots are parked; closes still do. 全部平倉 leaves a parked root out, book included,
+  until the claim settles it (manager/flatten `_parked_keys`). `unknown` is **P3 today** (the lib's
   `order_unknown_status` audit line + a reconciler log warning; it is deliberately not written to
   `manager/order_errors.json`, because the platform turns every row there into a P1 下單失敗 TG +
   email). Raising it to P2 needs, in this order: api routing that `kind` to its own P2 event,

@@ -716,19 +716,30 @@ apart; a row still held past that time is a postponed settlement and stays the b
 the alias, so the book gets 0 and the lot would later read as a month the book does not hold. The
 unfilled lots are parked in `state/capital_pending_sent.json` with the root's per-contract nets and
 avg costs before the send; no P1 goes out at that moment. Each caught-up snapshot of a reconcile
-round tries to claim them, with months past settlement left out of the comparison:
-- exactly one contract moved by exactly those lots → booked in that contract (`late_fill_adopted`),
-  with the price the avg cost implies when it can, and one late "Bought/Sold" notice;
-- nothing moved on two distinct reads ≥5 s apart → dropped (`unfilled_order_cleared`); one read is
-  not enough, the open interest may still be catching up;
+round tries to claim them, with months past settlement left out of the comparison. Positions and
+`query_started_at` come from one read of the snapshot (`account_capital.read_positions`):
+- exactly one contract moved by exactly those lots → the park row is removed and saved first, then
+  the lots are booked in that contract (`late_fill_adopted`) — a failed save or a kill in between
+  leaves the fill unbooked rather than booked twice. It carries the price the avg cost implies when
+  lots were added on the same side and nothing of that order filled at send time, and one late fill
+  notice in the machine's language (the user's `messages` template for the first part);
+- nothing moved on two distinct reads at least one worker poll (60 s) apart → dropped
+  (`unfilled_order_cleared`); one read is not enough, the open interest may still be catching up.
+  Three of those in a row for one root (no fill in between) → order_errors + HALT
+  (`unfilled_order_cleared_repeatedly`): an exchange-side rejection the fill report never shows
+  would otherwise loop send → clear → send unseen;
 - anything else → three reads, then order_errors + HALT.
+
+A fill report of more lots than were sent is not booked: order_errors + HALT (`order_overfill_refused`).
 
 While a root is parked, every order for that root waits (closes too: `sNewClose=2` can open the other
 side). If the park file cannot be written or read right after the broker accepted the order, the
 lots are kept in that process and HALT is tripped with the sequence number (a restart would forget
-them). 全部平倉 does not close parked lots — the book holds none of them yet — and records one
-order_errors row telling the user to check the app; the park stays, so the claim books the lot if it
-filled.
+them). 全部平倉 leaves a parked root out entirely — its book lots too, and every 群益 root when the
+park file is unreadable: a close sent now would move the nets the claim compares against and be read
+as the parked order's fill (a phantom book) or hide the real one. One order_errors row
+(`kind: order_unconfirmed`, `close_all`) tells the user to press 全部平倉 again once the claim has
+settled it, or close in the 群益 app.
 
 **The claim baseline is the whole root, every month.** 群益 says which month the alias reached only
 through what moved, so narrowing to the computed front month would read a fill that landed elsewhere

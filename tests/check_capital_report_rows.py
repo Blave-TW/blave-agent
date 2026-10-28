@@ -78,7 +78,10 @@ ev = oc._Events()
 ev.OnSolaceReplyConnection("u", 0)
 ev.OnSolaceReplyDisconnect("u", 3021)
 check("solace=disconnect:3021" in ev.diag(), "a dropped reply link shows in the 'sent' log")
-check("complete=False" in ev.diag(), "the 'sent' log carries whether OnComplete came")
+ev = oc._Events()
+ev.OnComplete("u")
+ev.OnSolaceReplyDisconnect("u", 3021)
+check("complete=False" in ev.diag(), "a link that dropped after OnComplete is not shown as complete")
 
 # full order path on the 2.13.59 layout: the real _Events behind a fake SKCOM
 clk = types.SimpleNamespace(t=0.0)

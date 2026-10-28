@@ -415,12 +415,12 @@ def child(venue, sid, tmp):
         w.signal(0)
         time.sleep(5.5)
         last = round_("signal -> 0")
-        bought = [m for m in tg if "Bought" in m]
+        bought = [m for m in tg if "Bought" in m or "買進" in m]
         ok = ([o["lots"] for o in first["sent"]] == [2] and not conv["sent"] and ledger_txf(conv) == 2
               and len(audits("late_fill_adopted")) == 1 and not audits("manual_month_excluded")
               and [(o["side"], o["lots"]) for o in last["sent"]] == [("sell", 2)]
               and w.net() == 0 and ledger_txf(last) == 0 and not last["halt"]
-              and len(bought) == 1 and "late" in bought[0] and not any(" 0 lots" in m for m in tg))
+              and len(bought) == 1 and "晚到" in bought[0] and not any(" 0 lots" in m or " 0 口" in m for m in tg))
         why = (f"entry sent={first['sent']}, next round sent={conv['sent']} book TXF={ledger_txf(conv)}, "
                f"adopted={len(audits('late_fill_adopted'))}, excluded={len(audits('manual_month_excluded'))}; "
                f"exit sent={last['sent']}, broker={w.rows}, book TXF={ledger_txf(last)}, telegram={tg}")
