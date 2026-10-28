@@ -718,9 +718,11 @@ unfilled lots are parked in `state/capital_pending_sent.json` with the root's pe
 avg costs before the send; no P1 goes out at that moment. Each caught-up snapshot of a reconcile
 round tries to claim them, with months past settlement left out of the comparison. Positions and
 `query_started_at` come from one read of the snapshot (`account_capital.read_positions`):
-- exactly one contract moved by exactly those lots → the park row is removed and saved first, then
-  the lots are booked in that contract (`late_fill_adopted`) — a failed save or a kill in between
-  leaves the fill unbooked rather than booked twice. It carries the price the avg cost implies when
+- exactly one contract moved by exactly those lots → booked in that contract (`late_fill_adopted`)
+  under the row's park id (`late_fill_park_id` on the orders.jsonl line), then the row is dropped. A
+  row whose id is already in the book is dropped without booking, so a refused save or a kill between
+  the two steps never books it twice; a booking failure (book unreadable, append refused) is
+  order_errors + HALT with the row kept, so it is booked once after resume. It carries the price the avg cost implies when
   lots were added on the same side and nothing of that order filled at send time, and one late fill
   notice in the machine's language (the user's `messages` template for the first part);
 - nothing moved on two distinct reads at least one worker poll (60 s) apart → dropped

@@ -465,41 +465,67 @@ check(lo.get("late_fill") and lo["action"] == "SELL" and "fill_price" not in lo[
       and tg == ["📉 平掉多單 TMF 1 口(成交回報晚到)"] and not book.get("qty"),
       "the close's late fill: booked SELL, no price on the line or in the notice, book flat", (lo, tg, book))
 
-# ── a claim whose park-file save fails books nothing; later rounds book it once (v035 P1-1) ──
-reset()
-snap({}, time.time())
-broker(SENT)
-reconciler._capital_place_order("TMF", 1.0, SPEC)
-snap({"TM2611": 1}, capital_vault.last_order_at() + S + 1)
+# ── a late-fill claim at every failure point: booked exactly once, never lost silently (v035 P1-1) ──
+# booked under the row's park id first, the row dropped after; any failure keeps the row
+import builtins  # noqa: E402
+qty = lambda: (portfolio.ledger_positions("capital").get("TMF") or {}).get("qty") or 0.0  # noqa: E731
 real_save = reconciler._save_pending_sent
 
 
-def save_fails_once(p, path=None):
-    reconciler._save_pending_sent = real_save
+def park_tmf():
+    reset()
+    snap({}, time.time())
+    broker(SENT)
+    reconciler._capital_place_order("TMF", 1.0, SPEC)
+    snap({"TM2611": 1}, capital_vault.last_order_at() + S + 1)
+
+
+def failing_read(exc):
+    try:
+        round_read()
+    except exc as e:
+        return e
+    return None
+
+
+# 1. the save is refused after booking: the round goes on, the next one drops the row by its id
+park_tmf()
+
+
+def locked(p, path=None):
     raise PermissionError(13, "locked by AV (fake)")
 
 
-reconciler._save_pending_sent = save_fails_once
-raised = None
-try:
-    round_read()
-except OSError as e:
-    raised = e
+reconciler._save_pending_sent = locked
+e = failing_read(OSError)
 reconciler._save_pending_sent = real_save
-qty = lambda: (portfolio.ledger_positions("capital").get("TMF") or {}).get("qty") or 0.0  # noqa: E731
-check(raised is not None and qty() == 0 and "TMF" in pending() and not audits("late_fill_adopted"),
-      "park-file save fails mid-claim: the round fails, nothing booked, the row still on disk", (raised, qty()))
+check(e is None and qty() == 1.0 and "TMF" in pending() and len(audits("late_fill_adopted")) == 1,
+      "save refused after booking: no exception (not a failed read), booked once, row still on disk", (e, qty()))
 round_read()
-round_read()
-check(qty() == 1.0 and pending() == {} and len(audits("late_fill_adopted")) == 1,
-      "…the next rounds book it exactly once", qty())
+check(qty() == 1.0 and pending() == {} and audits("late_fill_already_booked"),
+      "…next round: the id is in the book, row dropped, not booked again", qty())
 
-# killed between the save and the book: the next round does not book it again
-reset()
-snap({}, time.time())
-broker(SENT)
-reconciler._capital_place_order("TMF", 1.0, SPEC)
-snap({"TM2611": 1}, capital_vault.last_order_at() + S + 1)
+# 2. killed between the booked line and the save
+park_tmf()
+calls = {"n": 0}
+
+
+def killed_on_save(p, path=None):
+    calls["n"] += 1
+    if calls["n"] == 1:
+        raise KeyboardInterrupt("killed (fake)")
+    return real_save(p, path)
+
+
+reconciler._save_pending_sent = killed_on_save
+e = failing_read(KeyboardInterrupt)
+reconciler._save_pending_sent = real_save
+round_read()
+check(e is not None and qty() == 1.0 and pending() == {} and not guard.halted(),
+      "killed after booking, before the save: one lot booked, row dropped next round", qty())
+
+# 3. killed before the line is written
+park_tmf()
 real_book = portfolio.book_late_fill
 
 
@@ -508,13 +534,70 @@ def killed(*a, **k):
 
 
 portfolio.book_late_fill = killed
-try:
-    round_read()
-except KeyboardInterrupt:
-    pass
+e = failing_read(KeyboardInterrupt)
 portfolio.book_late_fill = real_book
+check(e is not None and qty() == 0 and "TMF" in pending(), "killed before booking: row kept, nothing booked")
 round_read()
-check(qty() == 0 and pending() == {}, "killed after the row was saved away: not booked on the next round", qty())
+check(qty() == 1.0 and pending() == {}, "…next round books it once", qty())
+
+# 4. the book cannot be read: HALT + order_errors, raised, row kept, no late_fill_adopted
+park_tmf()
+real_lb = portfolio.ledger_book
+
+
+def unreadable(*a, **k):
+    raise PermissionError(13, "orders.jsonl locked (fake)")
+
+
+portfolio.ledger_book = unreadable
+e = failing_read(PermissionError)
+portfolio.ledger_book = real_lb
+errs_now = json.load(open("manager/order_errors.json", encoding="utf-8")) if os.path.exists("manager/order_errors.json") else []
+check(e is not None and guard.halted() and any("記不進帳本" in x.get("error", "") for x in errs_now)
+      and "TMF" in pending() and qty() == 0 and not audits("late_fill_adopted") and not tg,
+      "book unreadable: HALT + order_errors, raised, row kept, no adopted audit, no notice", (e, errs_now))
+guard.clear_halt("test")
+round_read()
+check(qty() == 1.0 and pending() == {}, "…after resume booked once", qty())
+
+# 5. the append is refused (full disk)
+park_tmf()
+
+
+def disk_full(path, mode="r", *a, **k):
+    if str(path).endswith("orders.jsonl") and "a" in mode:
+        raise OSError(28, "No space left on device (fake)")
+    return builtins.open(path, mode, *a, **k)
+
+
+portfolio.open = disk_full
+try:
+    e = failing_read(OSError)
+finally:
+    del portfolio.open
+check(e is not None and guard.halted() and "TMF" in pending() and qty() == 0 and not audits("late_fill_adopted"),
+      "append refused: HALT, raised, row kept, nothing booked", (e, pending()))
+guard.clear_halt("test")
+round_read()
+check(qty() == 1.0 and pending() == {}, "…after resume booked once", qty())
+
+# 6. append and the HALT file both refused: halted in memory only; after a restart the row books
+park_tmf()
+real_halt_path = guard.HALT_PATH
+open("state/halt_blocker", "w").write("")
+guard.HALT_PATH = "state/halt_blocker/HALT"
+portfolio.open = disk_full
+try:
+    e = failing_read(OSError)
+finally:
+    del portfolio.open
+    guard.HALT_PATH = real_halt_path
+    os.remove("state/halt_blocker")
+check(e is not None and guard._halt_flag and "TMF" in pending() and qty() == 0,
+      "append and HALT file refused: halted in memory, row kept", (e, pending()))
+guard._halt_flag = False  # the restart
+round_read()
+check(qty() == 1.0 and pending() == {}, "…after a restart booked once", qty())
 
 # ── one snapshot read: positions and query_started_at never come from two files (v035 P2-2) ──
 reset()

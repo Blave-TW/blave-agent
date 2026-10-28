@@ -240,8 +240,9 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   `status='unknown'` means the broker answered a status code the SDK does not define — none of
   them is resubmitted; check the position first. The reconciler parks the unfilled lots
   (`state/president_pending_sent.json`) and claims them from the next caught-up snapshot: account
-  net moved by exactly those lots → the row is removed and saved, then booked (`late_fill_adopted`,
-  with a late fill notice); unchanged on two distinct snapshots at least one worker poll (60 s)
+  net moved by exactly those lots → booked under the row's park id (`late_fill_adopted`, with a late
+  fill notice), then the row is dropped — an id already in the book is not booked again, a booking
+  failure is order_errors + HALT with the row kept; unchanged on two distinct snapshots at least one worker poll (60 s)
   apart → dropped; three distinct snapshots fitting neither → one `order_errors`
   row (P1) + HALT. A park the file does not take (locked, unreadable) is kept in that process and
   trips HALT. No entry for that root
