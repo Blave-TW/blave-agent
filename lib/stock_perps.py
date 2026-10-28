@@ -7,8 +7,9 @@ stock under the same name; two do not:
           displayName carries the ticker, except where a coin owns it: AMDUS-USDT).
   Bybit — AMDSTOCKUSDT, NOKIAUSDT … where a coin owns the bare name; underlyingTicker
           carries the ticker.
-  Bitget — isRwa=YES rows; ACNSTOCKUSDT, BBSTOCKUSDT … where a coin owns the bare name
-          (baseCoin ACNSTOCK: the ticker is baseCoin without the STOCK suffix).
+  Bitget — stock rows of the v3 instrument list (bitget_is_stock); ACNSTOCKUSDT,
+          BBSTOCKUSDT … where a coin owns the bare name (baseCoin ACNSTOCK: the ticker is
+          baseCoin without the STOCK suffix).
 Only names read from the venues' own public lists are used — never a guessed spelling:
 a near-name is a different instrument (BingX NCSKSKHYNIX2USD is a KRW listing at 7×
 the price of SKHY). Anything other than EQUITY keeps the plain mapping it had before.
@@ -64,11 +65,20 @@ _BINGX_STOCK = ("NCSK", "NCSI")  # BingX files EWJ / EWY (ETFs) as NCSI, indices
 _BINGX_ASSET = re.compile(r"^NC(?:SK|SI)(.+)2USD$")
 
 
+def bitget_is_stock(row):
+    """A Bitget v3 instrument row (/api/v3/market/instruments) is a stock contract.
+    v2's isRwa cannot tell: it is YES for stocks, metals (PAXGUSDT) and FX alike. The two
+    v3 fields disagree on some rows (BHPUSDT crypto/stock, TWTSMUSDT stock/crypto), so
+    either one saying stock counts; index rows count only under symbolType stock (SP500 —
+    H100 is crypto/index, a GPU rental index)."""
+    return row.get("symbolType") == "stock" or row.get("instrumentType") in ("stock", "etf")
+
+
 def _is_stock_row(vid, r):
     if vid == "bingx":
         return str(r.get("symbol", "")).startswith(_BINGX_STOCK)
     if vid == "bitget":
-        return r.get("isRwa") == "YES"
+        return bitget_is_stock(r)
     return r.get("symbolType") in ("stock", "ETF")
 
 
@@ -85,8 +95,8 @@ def _tickers(vid, r):
             out.add(d[:-5].strip())
         return out
     if vid == "bitget":
-        # isRwa also covers commodities and HK names; only a Binance EQUITY ticker ever
-        # looks a row up, so those never match one
+        # stock rows include HK and Taiwan names; only a Binance EQUITY ticker ever looks
+        # a row up, so those never match one
         base = str(r.get("baseCoin") or "")
         return {base[:-5]} if base.endswith("STOCK") and len(base) > 5 else ({base} if base else set())
     t = r.get("underlyingTicker")
@@ -104,6 +114,8 @@ def _need_rows(vid, rows, what):
     if not rows:  # an empty list is a failed read, never "nothing renamed"
         raise requests.exceptions.ConnectionError(
             f"{_LABELS.get(vid, vid)} contract list empty — cannot name {what}")
+    if vid == "bitget" and "instrumentType" not in rows[0]:  # v2 rows: every stock reads as a coin
+        raise requests.exceptions.ConnectionError(f"Bitget list is not v3 — cannot name {what}")
 
 
 def venue_name(vid, sym, rows):

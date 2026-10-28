@@ -1,5 +1,5 @@
 """
-Bitget order execution — USDT-M perpetuals (coins, US stock perps (isRwa) and the
+Bitget order execution — USDT-M perpetuals (coins, US stock perps and the
 eight Taiwan stock perps) on a classic account (v2 API, real-account run passed
 2026-10-22) or a UTA (v3 API, real-account run passed: T1–T12, T11c re-run 2026-10-26).
 Every call picks the API by lib/account_bitget.account_mode(); a request that meets a
@@ -143,7 +143,7 @@ def venue_symbol(symbol):
                                           f"cannot derive a Bitget USDT contract from {symbol!r}"))
     if stock_perps is None or stock_perps.binance_class(s) != stock_perps.STOCK:
         return s
-    return stock_perps.venue_name("bitget", s, acct.contract_rows()) or s
+    return stock_perps.venue_name("bitget", s, acct.instrument_rows()) or s
 
 
 canonical_symbol = acct.canonical
@@ -330,9 +330,27 @@ def _tick(row):
     return format(Decimal(str(row.get("priceEndStep") or 1)).scaleb(-places), "f")
 
 
+def _equity(vsym):
+    """True / False = Bitget's v3 class says stock contract / not; None = unreadable or not
+    listed on v3 (25100). Read per symbol, not from instrument_rows' 6-hour list, so a stock
+    listed today under a coin's name is gated as soon as it trades. Never raises: step and
+    tick do not depend on it."""
+    try:
+        rows = acct.public("/api/v3/market/instruments", {"category": PRODUCT, "symbol": vsym}) or []
+        row = next((r for r in rows if r.get("symbol") == vsym), None)
+        if row is None:
+            logging.warning(f"bitget {vsym}: no v3 instrument row")
+            return None
+        return stock_perps.bitget_is_stock(row)
+    except Exception as e:
+        logging.warning(f"bitget {vsym}: v3 instrument class unreadable ({e})")
+        return None
+
+
 def get_contract_rules(env, symbol):
     """{'step','min_qty','min_notional','contract_value' (1: size is base),'tick',
-    'equity' (isRwa: a stock perp, read by lib.venue_wiring.instrument_gate),'status'}.
+    'equity' (a stock contract by the v3 class, read by lib.venue_wiring.instrument_gate;
+    None when v3 cannot be read — not cached, the next call asks again),'status'}.
     Public data only. A contract Bitget does not list, has delisted ('off') or closed to
     the API ('restrictedAPI') is refused with the symbol_unavailable token."""
     vsym = venue_symbol(symbol)
@@ -355,17 +373,17 @@ def get_contract_rules(env, symbol):
         why = "已下架" if status == "off" else "不開放 API 下單，只能在 Bitget App 手動交易"
         raise BitgetError(f"Bitget 的 {vsym} {why}（symbolStatus={status}）",
                           kind=reject_token.SYMBOL_UNAVAILABLE)
-    rwa = row.get("isRwa")
     rules = {
         "step": str(row["sizeMultiplier"]),
         "min_qty": float(row["minTradeNum"]),
         "min_notional": float(row.get("minTradeUSDT") or 0),
         "contract_value": 1.0,
         "tick": _tick(row),
-        "equity": None if rwa is None else rwa == "YES",
+        "equity": _equity(vsym),
         "status": status,
     }
-    _rules_cache[vsym] = (time.time(), rules)
+    if rules["equity"] is not None:
+        _rules_cache[vsym] = (time.time(), rules)
     return rules
 
 

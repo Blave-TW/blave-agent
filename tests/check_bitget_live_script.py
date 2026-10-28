@@ -402,6 +402,11 @@ class Bitget:
                      "volumePlace": "4", "symbolStatus": "normal", "isRwa": "NO" if s == "BTCUSDT" else "YES",
                      "symbolType": "perpetual", "maxLever": "20"} for s in MARK]
             return 200, ok([r for r in rows if r["symbol"] == q.get("symbol", r["symbol"])])
+        if path == "/api/v3/market/instruments":
+            cls = lambda s: ("crypto", "crypto") if s == "BTCUSDT" else (  # noqa: E731
+                ("stock", "crypto") if s == "TWTSMUSDT" else ("stock", "stock"))  # as read 2026-10-28
+            return 200, ok([{"symbol": s, "baseCoin": s[:-4], "symbolType": cls(s)[0],
+                             "instrumentType": cls(s)[1]} for s in MARK if q.get("symbol", s) == s])
         if path == "/api/v2/mix/market/ticker":
             bid, ask = self.book(q["symbol"])
             m = str(MARK[q["symbol"]])

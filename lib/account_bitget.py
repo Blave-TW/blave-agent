@@ -744,9 +744,8 @@ CONTRACTS_TTL_S = 6 * 3600
 
 
 def contract_rows():
-    """Every USDT-FUTURES contract (one public call, ~850 rows) — the stock names for
-    lib/stock_perps, shared with lib/order_bitget. An error or an empty list raises and
-    is never cached: an empty list would read every renamed stock position as flat."""
+    """Every USDT-FUTURES contract on v2 (one public call, ~850 rows) — step sizes. An
+    error or an empty list raises and is never cached."""
     c = _contracts
     if c["rows"] and time.time() - c["at"] < CONTRACTS_TTL_S:
         return c["rows"]
@@ -757,13 +756,31 @@ def contract_rows():
     return rows
 
 
+_instruments = {"rows": None, "at": 0.0}
+
+
+def instrument_rows():
+    """Every USDT-FUTURES instrument on v3 (public, no key) — symbolType / instrumentType,
+    the class lib/stock_perps.bitget_is_stock reads; the stock names for lib/stock_perps.
+    An error or an empty list raises and is never cached: an empty list would read every
+    renamed stock position as flat."""
+    c = _instruments
+    if c["rows"] and time.time() - c["at"] < CONTRACTS_TTL_S:
+        return c["rows"]
+    rows = public("/api/v3/market/instruments", {"category": PRODUCT}) or []
+    if not rows:
+        raise requests.exceptions.ConnectionError("bitget instruments: empty list")
+    c.update(rows=rows, at=time.time())
+    return rows
+
+
 def canonical(venue_sym):
     """Bitget's name → the strategy's (ACNSTOCKUSDT → ACNUSDT, lib/stock_perps). A name
-    Binance lists as a coin is taken as is without reading the contract list."""
+    Binance lists as a coin is taken as is without reading the instrument list."""
     sym = str(venue_sym or "").upper()
     if stock_perps is None or not sym or stock_perps.binance_class(sym) == "COIN":
         return sym
-    return stock_perps.canonical("bitget", sym, contract_rows())
+    return stock_perps.canonical("bitget", sym, instrument_rows())
 
 
 # ── equity / positions ───────────────────────────────────────────────────────

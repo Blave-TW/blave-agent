@@ -174,7 +174,10 @@ do not assume casing or invent names.
    Chinese; tell the user that venue's contract under this ticker is a stock,
    not the coin the strategy was backtested on, and never place it by hand.
    The mirror case is refused too: Binance has the ticker as a US stock, the
-   venue as a coin. Closes are never refused.
+   venue as a coin. Closes are never refused. On Bitget a stock contract is
+   a v3 instrument row with `symbolType` or `instrumentType` `stock` (or
+   `instrumentType` `etf`), not `isRwa` (which also flags gold and FX): metal
+   (`PAXGUSDT`, `XAUTUSDT`), energy and FX rows enter normally.
    US stock perps (`fetch_kline("NVDAUSDT")`, Binance `underlyingType`
    EQUITY) trade under the venue's own name where it differs — BingX
    `NCSKNVDA2USD-USDT`, Bybit `AMDSTOCKUSDT` — mapped from each venue's public

@@ -4,8 +4,9 @@ has the same symbol as a coin — no network.
 The libs' real get_contract_rules run with only their HTTP read stubbed, so a lib that stops
 reading its venue's class field fails here. Real rows are the venues' public replies as read
 2026-10-19 (OKX BB-USDT-SWAP instCategory 3, Bybit ONUSDT symbolType stock, Gate PAXG_USDT
-contract_type metals); XYZ / ETFX / USO / SOFTBANK are synthetic, one per branch. The mirror (Binance US
-stock, venue coin) is refused too. Unreadable on
+contract_type metals; 2026-10-28 Bitget v3 PAXGUSDT metal/metal while v2 isRwa is YES,
+BHPUSDT and MDTUSDT crypto/stock, v3 code 25100 for a symbol it does not list); XYZ / ETFX / USO / SOFTBANK and Bitget BB as a stock are synthetic,
+one per branch. The mirror (Binance US stock, venue coin) is refused too. Unreadable on
 either side must allow, and a close must always pass — at the gate and through dispatch_order.
 Run: cd blave-agent && .venv/bin/python tests/check_instrument_gate.py
 """
@@ -15,7 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 os.chdir(tempfile.mkdtemp(prefix="instgate-"))
 
-from lib import execute, order_bybit, order_gateio, order_okx, venue_wiring as vw  # noqa: E402
+from lib import execute, order_bitget, order_bybit, order_gateio, order_okx, venue_wiring as vw  # noqa: E402
 
 fails = 0
 
@@ -28,7 +29,8 @@ def check(cond, msg):
 
 BINANCE = {"BTCUSDT": "COIN", "BBUSDT": "COIN", "ONUSDT": "COIN", "PAXGUSDT": "COIN",
            "XYZUSDT": "COIN", "ETFXUSDT": "COIN", "NVDAUSDT": "EQUITY",
-           "USOUSDT": "COMMODITY", "SOFTBANKUSDT": "JP_EQUITY", "MIRRUSDT": "EQUITY"}
+           "USOUSDT": "COMMODITY", "SOFTBANKUSDT": "JP_EQUITY", "MIRRUSDT": "EQUITY",
+           "BHPUSDT": "COIN", "MDTUSDT": "EQUITY", "NEWUSDT": "COIN"}
 binance_up = [True]
 
 
@@ -62,6 +64,33 @@ order_gateio._send = lambda m, p, env, body=None, query="", retries=3: {
     "quanto_multiplier": "0.01", "order_size_min": 1,
     "contract_type": {"/futures/usdt/contracts/PAXG_USDT": "metals",
                       "/futures/usdt/contracts/XYZ_USDT": "stocks"}[p]}
+
+# Bitget: v2 rows carry isRwa (YES on all but BTC, PAXG included); the class is v3's
+BITGET_V3 = {"PAXGUSDT": ("metal", "metal"), "NVDAUSDT": ("stock", "stock"),
+             "BBUSDT": ("stock", "stock"), "BHPUSDT": ("crypto", "stock"),
+             "BTCUSDT": ("crypto", "crypto"), "MDTUSDT": ("crypto", "stock")}
+bitget_v3_up = [True]
+v3_calls = []
+
+
+def _bitget_public(path, params=None):
+    if path == "/api/v2/mix/market/contracts":
+        return [{"symbol": params["symbol"], "isRwa": "NO" if params["symbol"] == "BTCUSDT" else "YES",
+                 "symbolType": "perpetual", "symbolStatus": "normal", "sizeMultiplier": "0.001",
+                 "minTradeNum": "0.001", "minTradeUSDT": "5", "pricePlace": "2", "priceEndStep": "1"}]
+    if path == "/api/v3/market/instruments" and params.get("category") == "USDT-FUTURES":
+        v3_calls.append(params.get("symbol"))
+        if not bitget_v3_up[0]:
+            raise requests.exceptions.ConnectionError("stub: Bitget v3 down")
+        rows = [{"symbol": s, "baseCoin": s[:-4], "symbolType": st, "instrumentType": it}
+                for s, (st, it) in BITGET_V3.items() if params.get("symbol") in (None, s)]
+        if not rows:
+            raise order_bitget.BitgetError(f"Trading pair {params['symbol']} does not exist", code="25100")
+        return rows
+    raise AssertionError(f"unstubbed Bitget call {path} {params}")
+
+
+order_bitget.acct.public = _bitget_public
 
 venue = ["okx"]
 vw.read_env = lambda path=".env": {}
@@ -128,6 +157,32 @@ check(refused("BTCUSDT") is None, "Bybit BTC: allowed")
 venue[0] = "gateio"
 check(refused("XYZUSDT") is not None, "Gate contract_type stocks vs Binance coin: refused")
 check(refused("PAXGUSDT") is None, "Gate PAXG (metals, a coin on Binance): allowed")
+
+venue[0] = "bitget"
+check(refused("PAXGUSDT") is None, "Bitget PAXG (isRwa YES, v3 metal) vs Binance coin: allowed")
+check(refused("NVDAUSDT") is None, "Bitget NVDA (v3 stock) vs Binance EQUITY: allowed")
+msg = refused("BBUSDT")
+check(msg == "交易所上的 BBUSDT（Bitget）是股票合約，不是加密幣，已擋下",
+      f"Bitget BB (v3 stock) vs Binance coin: refused ({msg})")
+check(refused("BHPUSDT") is not None, "Bitget crypto/stock row (fields disagree) counts as a stock: refused")
+check(refused("BTCUSDT") is None, "Bitget BTC (crypto/crypto): allowed")
+check(refused("MDTUSDT") is None,
+      "Bitget MDT (crypto/stock, real) vs Binance EQUITY: allowed (no mirror refusal)")
+check(order_bitget.get_contract_rules({}, "NEWUSDT")["equity"] is None,
+      "Bitget v3 single read answers 25100 (v2 lists it): equity None")
+BITGET_V3["NEWUSDT"] = ("stock", "stock")  # listed after the 6-hour list was read
+check(refused("NEWUSDT") is not None and order_bitget.acct._instruments["rows"]
+      and "NEWUSDT" not in {r["symbol"] for r in order_bitget.acct._instruments["rows"]},
+      "a stock listed after the cached v3 list, Binance coin: refused at once (per-symbol read)")
+order_bitget._rules_cache.clear()
+bitget_v3_up[0] = False
+check(order_bitget.get_contract_rules({}, "BBUSDT")["equity"] is None,
+      "Bitget v3 unreadable: equity None (isRwa YES is not read as a stock)")
+check(refused("BBUSDT") is None, "Bitget v3 unreadable: allowed and logged (no class given)")
+bitget_v3_up[0] = True
+del v3_calls[:]
+check(refused("BBUSDT") is not None and v3_calls == ["BBUSDT"],
+      "after a v3 failure the None was not cached: the next call reads v3 again and refuses")
 
 venue[0] = "binance"
 check(refused("NVDAUSDT") is None, "Binance itself: never gated")
