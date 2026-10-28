@@ -2336,7 +2336,7 @@ async function publicPricing() {
   const n = (v) => (Number(v) > 0 ? Number(v) : null);
   const hr = st ? n(st.twd_per_hour) : null, pl = b.plan && typeof b.plan === "object" ? b.plan : {};
   // 方案制的月價／年價一律讀 api(monthly_twd / annual_twd);舊 api 沒有 monthly_twd 才退回時價 × 720
-  // free_ai_credit:綁卡前的 AI 額度(連結畫面的數字);api 沒給或 0(停發)→ null,畫面維持原字
+  // free_ai_credit:綁卡前的 AI 額度(連結畫面換版與否看它;數字本身不上畫面);api 沒給或 0(停發)→ null,畫面維持原字
   return { trial: b.trial, free_ai_credit: n(b.free_ai_credit), starter_hourly: hr, starter_monthly: (st && n(st.monthly_twd)) || (hr ? Math.round(hr * 720) : null),
     starter_annual: st ? n(st.annual_twd) : null,
     plan: { monthly_billing_active: pl.monthly_billing_active === true, annual_pay_months: n(pl.annual_pay_months),

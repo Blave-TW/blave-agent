@@ -262,8 +262,9 @@ function paintBlaveBtn() {
   cnFreePaint();
 }
 /* 連結畫面的大標與 Blave 那一列的標題／副標(0.1.22;spec desktop-precard-credit §5.2、mockup 01 步 B 版):偵測完本機兩個 CLI 都不能用、
-   還沒登入、而且公開價目有綁卡前額度 → 大標從「Blave 不內建 AI。」(對這群人整頁讀起來是死路)換成出路,副標講登入就有的額度。
-   數字來自 api(public_tiers.free_ai_credit),拿不到或 0(停發)維持原字;有本機 AI 的人那條路已經走得通、已登入的人「登入就有」不是事實,
+   還沒登入、而且公開價目有綁卡前額度 → 大標從「Blave 不內建 AI。」(對這群人整頁讀起來是死路)換成出路,副標只說登入就能用——
+   額度與金額事先不講,用完才由卡片叫他綁卡。
+   數字來自 api(public_tiers.free_ai_credit),拿不到或 0(停發)維持原字;有本機 AI 的人那條路已經走得通、已登入的人「登入就能用」不是新消息,
    都維持原字。applyStatic 的 data-i18n 會把字寫回原句,所以換語言之後要再畫一次 */
 const cnFreeQ = () => (pub && Number(pub.free_ai_credit) > 0 ? Number(pub.free_ai_credit).toLocaleString("en-US") : "");
 function cnFreeMode() { return !!cnFreeQ() && !hasToken && lastDetect !== null && !localReady; }
@@ -273,7 +274,7 @@ function cnFreePaint() {
   const free = cnFreeMode();
   h.textContent = t(free ? "cn.h.free" : "cn.h");
   ttl.textContent = t(free ? "cn.blave.name" : "cn.blave.title");
-  meta.textContent = free ? t("cn.blave.descFree", { q: cnFreeQ() }) : t("cn.blave.desc");
+  meta.textContent = t(free ? "cn.blave.descFree" : "cn.blave.desc");
 }
 
 /* ── 設定 › 模型接入 ───────────────────────────────────────
@@ -3720,8 +3721,8 @@ function acctCardKind(where, s) {
   const free = !!s && s.reason === "NO_CARD" && s.free_ai_credit_used_up === true;   // 綁卡前的 30 TWD 用完、還沒綁卡:講「額度用完了」那組字(*_free)
   return where === "pre" ? (s && s.reason === "NO_CREDIT" ? "pre_credit" : free ? "pre_free" : "pre_card") : (s && s.reason === "NO_CARD" ? (free ? "turn_free" : "turn_card") : "turn_credit");
 }
-// 額度用完那組字:他剛用了好幾輪都沒綁卡,這時說「要先綁卡」跟他的經驗矛盾;數字來自公開價目,拿不到就不帶數字
-function acctFreeUpText(where) { const q = cnFreeQ(); return t((where === "pre" ? "acct.freeUp" : "fault.freeUp") + (q ? "" : "NoNum"), { q }); }
+// 額度用完那組字:他剛用了好幾輪都沒綁卡,這時說「要先綁卡」跟他的經驗矛盾。不帶數字:那筆額度事先沒預告
+function acctFreeUpText(where) { return t(where === "pre" ? "acct.freeUpNoNum" : "fault.freeUpNoNum"); }
 // 額度用完的預檢卡先講他已經建了幾支(spec-starters §1.7);0 支不講。en 兩句之間要空格
 function acctBuiltText(n) { return n > 0 ? t(n === 1 ? "acct.built1" : "acct.builtN", { n }) + (LANG === "zh" ? "" : " ") : ""; }
 function acctBackState(s, again) { return !s ? null : s.can_run ? "ready" : again ? null : s.reason === "NO_CREDIT" ? "no_credit" : "no_card"; }
@@ -3987,8 +3988,9 @@ function planPaint() {
     const hint = el("p", "cn-hint"); hint.id = "acct-hint"; hint.hidden = !HINT;
     hintFill(hint);
     id.append(who, hint);
-    // 綁卡前的 AI 額度(0.1.22;spec desktop-precard-credit §5.2):領過才有這一列(沒領過 api 回 null);用完也畫 0,要綁卡的事由卡片講
-    if (hasToken && balFreeNow() !== null) { const row = el("div", "plan-bal"); row.append(el("span", "l", t("plan.free")), el("span", "v", balFreeNow() + " TWD")); id.append(row); }
+    // 綁卡前的 AI 額度(0.1.22;spec desktop-precard-credit §5.2):領過才有這一列(沒領過 api 回 null);用完也畫 0,要綁卡的事由卡片講。
+    // 沒綁卡的人不出:這筆額度事先不預告;帳號狀態還沒讀到也不出,免得閃一下
+    if (hasToken && balFreeNow() !== null && acct && !acctNoCard(acct)) { const row = el("div", "plan-bal"); row.append(el("span", "l", t("plan.free")), el("span", "v", balFreeNow() + " TWD")); id.append(row); }
     if (hasToken) {
       const n = balNow(), row = el("div", "plan-bal"), val = el("span", "v" + (n ? "" : " na"), n ? n + " TWD" : "—");
       if (!n) { val.title = t("plan.balNa"); val.setAttribute("aria-label", t("plan.balNa")); }
