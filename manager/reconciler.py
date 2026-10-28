@@ -583,7 +583,7 @@ def _capital_claim_pending(started, raw):
         if park_id in booked:
             # booked last time, the file kept the row (save refused, or killed before it)
             del pending[canon]
-            _save_claimed(pending, venue_traits.CAPITAL, CAPITAL_PENDING_PATH)
+            _save_claimed(pending, venue_traits.CAPITAL, CAPITAL_PENDING_PATH, booked_id=park_id)
             guard.audit('late_fill_already_booked', venue=venue_traits.CAPITAL, symbol=canon,
                         lots=float(row['lots']), park_id=park_id)
             logging.info(f"[reconciler/capital] {canon}: park {park_id} is already in the book — row dropped")
@@ -599,7 +599,7 @@ def _capital_claim_pending(started, raw):
             notice = _book_late_fill_or_halt('群益', canon, venue_traits.CAPITAL, contract, lots, park_id,
                                              price=price)
             del pending[canon]
-            _save_claimed(pending, venue_traits.CAPITAL, CAPITAL_PENDING_PATH)
+            _save_claimed(pending, venue_traits.CAPITAL, CAPITAL_PENDING_PATH, booked_id=park_id)
             _capital_cleared_reset(canon)
             guard.audit('late_fill_adopted', venue=venue_traits.CAPITAL, symbol=canon, contract=contract,
                         lots=lots, price=price, legs=row.get('legs'), park_id=park_id)
@@ -1031,7 +1031,14 @@ def _president_park_unfilled(sym, leg, requested, net_before):
                     lots=row.get('lots'), park_id=_park_id(pid, row))
         row = None
     elif booked is None:
-        _halt_unknown_booked(sym, pid, row)
+        pk = _park_id(pid, row)
+        if venue_traits.PRESIDENT in _claim_saved and pk not in _booked_unsaved.get(venue_traits.PRESIDENT, ()):
+            # since this process's last claim save went through, only a booked row whose drop
+            # was refused can still be on file — this one is not, so it was never booked
+            logging.warning(f"[reconciler/president] {pid}: book unreadable, but park {pk} was not booked "
+                            f"in this process — leg merged")
+        else:
+            _halt_unknown_booked(sym, pid, row)
     row = row or {'root': sym, 'productid': pid, 'lots': 0.0,
                   'net_expected': float(net_before), 'legs': [], 'reads': []}
     rebased = bool(row.pop('halted', None))
@@ -1076,13 +1083,16 @@ def _row_booked(key, row):
 
 def _halt_unknown_booked(sym, pid, row):
     """A new leg is parked onto a row whether booked or not is unknown (the book went
-    unreadable after this round's send). The merge goes ahead — the order is already
-    out, nothing is left to hold back — but if that row was booked the next claim drops
-    it by its id and this leg with it, so the user is told and HALT is tripped
-    (the _book_late_fill_or_halt pattern)."""
+    unreadable after this round's send): this process booked it and could not save the
+    drop, or no claim save has gone through since the process started (a restart). The
+    merge goes ahead — the order is already out, nothing is left to hold back — but if
+    that row was booked the next claim drops it by its id and this leg with it (the book
+    then holds one lot the account does not, which the next reduce corrects through
+    hand_wired_reduce_cap), so the user is told and HALT is tripped."""
     from lib import portfolio
-    msg = (f"統一 {pid} 有一筆送出後沒收到成交回報的單,記進等待區時讀不到帳本,確認不了同合約前一筆"
-           f"是否已記帳:已停止下單。請到統一 app 核對 {pid} 的部位,處理好再按恢復下單")
+    msg = (f"已停止下單：統一 {pid} 的帳本暫時讀不到。剛送出的這筆若晚到成交，可能不會算進帳本。"
+           f"請到統一 app 核對 {pid} 的部位。部位不一致時，不要自行補單。"
+           f"恢復下單後，Blave 會在下次減碼或平倉時對齊。")
     guard.audit('order_unfilled_park_unverified', venue=venue_traits.PRESIDENT, symbol=sym, contract=pid,
                 park_id=_park_id(pid, row))
     try:
@@ -1097,15 +1107,21 @@ def _halt_unknown_booked(sym, pid, row):
 
 CLAIM_SAVE_FAILS_MAX = 3
 _claim_save_fails = {}
+# per venue, this process: park ids booked whose row the park file still holds (the save
+# that drops them was refused), and whether any claim save has gone through — after one
+# has, a row still on file that is not in the set was not booked (_halt_unknown_booked)
+_booked_unsaved = {}
+_claim_saved = set()
 
 
-def _save_claimed(pending, venue, path=None, end_of_round=False):
+def _save_claimed(pending, venue, path=None, end_of_round=False, booked_id=None):
     """A claim's save of the park file (`path`: 群益's; None = 統一's). Never raises: a
     row the file still holds is settled again next round (a booked one by its park id),
     and a locked file here is not a failed account read (it would be counted as one by
     _get_positions_guarded). The claim's last save of a round (`end_of_round`) counts:
     CLAIM_SAVE_FAILS_MAX failed rounds in a row → one order_errors row (P1), since rows
-    the file keeps hold their roots' orders back, unseen otherwise."""
+    the file keeps hold their roots' orders back, unseen otherwise. `booked_id`: the park id of the booked
+    row this save drops — kept in _booked_unsaved while the file still holds it."""
     try:
         if path is None:
             _save_pending_sent(pending)
@@ -1113,8 +1129,12 @@ def _save_claimed(pending, venue, path=None, end_of_round=False):
             _save_pending_sent(pending, path)
         if end_of_round:
             _claim_save_fails.pop(venue, None)
+        _booked_unsaved.pop(venue, None)  # the file now holds no booked row
+        _claim_saved.add(venue)
         return True
     except OSError as e:
+        if booked_id is not None:
+            _booked_unsaved.setdefault(venue, set()).add(booked_id)
         n = _claim_save_fails.get(venue, 0)
         if end_of_round:
             n = _claim_save_fails[venue] = n + 1
@@ -1137,8 +1157,8 @@ def _book_late_fill_or_halt(name, root, venue, contract, lots, park_id, price=No
     try:
         return portfolio.book_late_fill(root, venue, contract, lots, price=price, park_id=park_id)
     except Exception as e:
-        msg = (f"{name} {contract} 送出後晚到的 {lots:+g} 口成交記不進帳本({type(e).__name__}):"
-               f"已停止下單。這筆仍在等待區,下一輪會重新記帳;恢復下單前請先核對 {root} 的部位")
+        msg = (f"已停止下單。{name} {contract} 晚到的 {lots:+g} 口記不進帳本。"
+               f"這筆還在等待區，下一輪會重新記帳。請先核對 {root} 的部位。部位不一致時，不要自行補單。")
         logging.error(f"[reconciler/{venue}] {contract}: late fill of {lots:+g} lots not booked "
                       f"({type(e).__name__}: {e}) — HALT, the park row is kept")
         try:
@@ -1180,14 +1200,14 @@ def _president_claim_pending(started):
         if park_id in booked:
             # booked last time, the file kept the row (save refused, or killed before it)
             del pending[pid]
-            _save_claimed(pending, venue_traits.PRESIDENT)
+            _save_claimed(pending, venue_traits.PRESIDENT, booked_id=park_id)
             guard.audit('late_fill_already_booked', venue=venue_traits.PRESIDENT, symbol=root,
                         contract=pid, lots=lots, park_id=park_id)
             logging.info(f"[reconciler/president] {pid}: park {park_id} is already in the book — row dropped")
         elif abs(net - (expected + lots)) < 1e-9:
             notice = _book_late_fill_or_halt('統一', root, venue_traits.PRESIDENT, pid, lots, park_id)
             del pending[pid]
-            _save_claimed(pending, venue_traits.PRESIDENT)
+            _save_claimed(pending, venue_traits.PRESIDENT, booked_id=park_id)
             guard.audit('late_fill_adopted', venue=venue_traits.PRESIDENT, symbol=root, contract=pid,
                         lots=lots, legs=row['legs'], park_id=park_id)
             logging.warning(f"[reconciler/president] {pid}: the account shows the {lots:+g} lots the "

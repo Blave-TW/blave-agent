@@ -1490,13 +1490,50 @@ try:
     reconciler.place_order("TMF", -1, exchange="president", reduce_only=True)
     FILL.clear()
     _pf.late_fill_booked = real_lfb
-    check(guard.halted() and any("確認不了" in x.get("error", "") for x in errors())
+    check(guard.halted() and any("不要自行補單" in x.get("error", "") for x in errors())
           and audits("order_unfilled_park_unverified"),
-          "a leg parked onto a row whose booking can't be read: one order_errors row and HALT", errors()[-1:])
+          "a leg parked onto a row this process booked but could not drop, book unreadable: "
+          "one order_errors row and HALT", errors()[-1:])
     guard.clear_halt("test")
     acct[0] = n - 1
     snapshot([{"root": "TMF", "productid": "TMFJ6", "net": n - 1, "net_current": n - 1}] if n - 1 else [])
     gp()
+
+    # 10. the same unreadable book onto a row this process never booked (its claim saves went
+    #     through): no HALT, the leg is merged. 11. after a restart that can't be told: HALT
+    def tmf(n_):
+        return [{"root": "TMF", "productid": "TMFJ6", "net": n_, "net_current": n_}] if n_ else []
+
+    n = acct[0]
+    FILL["entry"] = "sent"
+    snapshot(tmf(n))
+    reconciler.place_order("TMF", 1, exchange="president")
+    FILL.clear()
+    snapshot(tmf(n))
+    gp()  # one unchanged read: the row stays, the claim's save goes through
+    n_unverified = len(audits("order_unfilled_park_unverified"))
+
+    def close_onto_row():
+        _pf.late_fill_booked = lfb_locked
+        FILL["reduce"] = "sent"
+        try:
+            reconciler.place_order("TMF", -1, exchange="president", reduce_only=True)
+        finally:
+            FILL.clear()
+            _pf.late_fill_booked = real_lfb
+
+    close_onto_row()
+    row10 = pending().get("TMFJ6") or {}
+    check(not guard.halted() and len(row10.get("legs") or []) == 2
+          and len(audits("order_unfilled_park_unverified")) == n_unverified,
+          "book unreadable, row never booked in this process: leg merged, no HALT", row10)
+    reconciler._claim_saved.clear()
+    reconciler._booked_unsaved.clear()  # the restart
+    close_onto_row()
+    check(guard.halted() and len(audits("order_unfilled_park_unverified")) == n_unverified + 1,
+          "…after a restart (no claim save yet in this process): HALT")
+    guard.clear_halt("test")
+    os.remove(reconciler.PENDING_SENT_PATH)
     guard.clear_halt("test")
     for f in ("manager/ledger_seed.json", "manager/orders.jsonl"):
         if os.path.exists(f):
