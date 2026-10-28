@@ -17,6 +17,7 @@ os.chdir(tempfile.mkdtemp(prefix="capital-rows-", dir=os.environ.get("SCRATCHPAD
 os.makedirs("state", exist_ok=True)
 
 import lib.order_capital as oc
+oc.capital_vault.LAST_ORDER_PATH = os.path.abspath("state/capital_last_order_at")  # not the repo's state/
 
 fails = 0
 
@@ -77,6 +78,7 @@ ev = oc._Events()
 ev.OnSolaceReplyConnection("u", 0)
 ev.OnSolaceReplyDisconnect("u", 3021)
 check("solace=disconnect:3021" in ev.diag(), "a dropped reply link shows in the 'sent' log")
+check("complete=False" in ev.diag(), "the 'sent' log carries whether OnComplete came")
 
 # full order path on the 2.13.59 layout: the real _Events behind a fake SKCOM
 clk = types.SimpleNamespace(t=0.0)

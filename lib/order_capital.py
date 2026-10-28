@@ -233,7 +233,8 @@ class _Events:
     def diag(self):
         return (f"rows={self.rows} short={self.short_rows} fill_rows={self.d_rows} "
                 f"fill_rows_without_seq={self.d_no_seq} fill_rows_unfit={self.d_unfit} fill_shapes={sorted(self.d_shapes)} "
-                f"solace={self.solace} same_thread={self.login_thread == threading.get_ident()}")
+                f"solace={self.solace} reply_code={self.reply_code} complete={self.reply_complete} "
+                f"same_thread={self.login_thread == threading.get_ident()}")
 
 
 class _Session:
@@ -649,10 +650,6 @@ def place_futures_market_order(env, symbol, action, lots, intent, confirm_timeou
         r = _finish(sess, seq_no, symbol, confirm_timeout, fields)
         if r["status"] != "filled" or r["fill_qty"] < lots:
             r = _late_rows(sess, r, lots, fields)
-        if r["status"] == "sent":
-            ev = sess.events
-            logging.warning(f"capital {seq_no}: no fill report — reply link code="
-                            f"{getattr(ev, 'reply_code', None)} complete={getattr(ev, 'reply_complete', None)}")
         return r
     finally:
         capital_vault.mark_order_sent()

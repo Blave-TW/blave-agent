@@ -58,9 +58,9 @@ def reset(seed_symbols=None):
               open("manager/ledger_seed.json", "w"))
 
 
-def snap(positions, started):
+def snap(positions, started, cost=46597.0):
     json.dump({"ok": True, "error": None, "holdings": [], "equity": 46483.0, "currency": "TWD",
-               "positions": [{"symbol": c, "side": "buy" if q > 0 else "sell", "lots": abs(q), "avg_cost": 46597.0}
+               "positions": [{"symbol": c, "side": "buy" if q > 0 else "sell", "lots": abs(q), "avg_cost": cost}
                              for c, q in positions.items()],
                "query_started_at": started, "read_at": int(time.time())}, open(SNAP, "w"))
 
@@ -356,8 +356,118 @@ check(len(tg) == 1 and "Bought TMF 1 lots" in tg[0] and "46,597" in tg[0] and "l
       "one 'Bought TMF 1 lots @ 46,597 (fill report came late)' notice", tg)
 check(lo.get("late_fill") and lo["legs"][0].get("fill_price") == 46597.0, "…and the booked line carries that price", lo)
 
+# ── two unchanged reads closer than PENDING_UNCHANGED_MIN_S do not clear (audit P1-1) ──
+reset()
+snap({}, time.time())
+sent.clear()
+broker(SENT)
+reconciler._capital_place_order("TMF", 1.0, SPEC)
+base = capital_vault.last_order_at() + S + 1
+for dt in (0, GAP - 1):
+    snap({}, base + dt)
+    round_read()
+check("TMF" in pending() and not audits("unfilled_order_cleared"),
+      f"two unchanged reads {GAP - 1}s apart: still parked", pending())
+snap({}, base + GAP)
+round_read()
+check(pending() == {} and len(audits("unfilled_order_cleared")) == 1, "a third read ≥GAP after the first clears it")
+
+# ── HALT from three unexplained reads, then the user resumes: the park is dropped ──
+reset()
+snap({}, time.time())
+sent.clear()
+broker(SENT)
+reconciler._capital_place_order("TMF", 1.0, SPEC)
+base = capital_vault.last_order_at() + S
+for i in range(reconciler.PENDING_SENT_MAX_READS):
+    snap({"TM2611": 2}, base + i)
+    round_read()
+check(guard.halted() and pending()["TMF"].get("halted"), "three unexplained reads: HALT, park marked halted")
+snap({"TM2611": 2}, base + 10)
+round_read()
+check("TMF" in pending() and not audits("parked_order_dropped"), "while HALT is set the halted park stays")
+guard.clear_halt("test")
+snap({"TM2611": 2}, base + 20)
+round_read()
+dropped = audits("parked_order_dropped")
+check(pending() == {} and len(dropped) == 1 and dropped[0].get("lots") == 1.0 and not audits("late_fill_adopted"),
+      "HALT cleared: the park is dropped as the user's, nothing booked", (pending(), dropped))
+check(reconciler._capital_place_order("TMF", 1.0, SPEC) is not False and len(sent) == 2,
+      "…and TMF orders resume", sent)
+
+# ── the park file is unreadable before the send: nothing sent, one order_errors row ──
+reset()
+snap({}, time.time())
+sent.clear()
+broker(SENT)
+open(PENDING, "w").write("{not json")
+reconciler._capital_pending_unreadable_noted = False
+errs = []
+real_err = portfolio._record_order_error
+portfolio._record_order_error = lambda sym, venue, err, extra=None, repeat=False: errs.append((sym, venue, err))
+r1 = reconciler._capital_place_order("TMF", 1.0, SPEC)
+r2 = reconciler._capital_place_order("TMF", -1.0, SPEC, reduce_only=True)
+portfolio._record_order_error = real_err
+check(r1 is False and r2 is False and sent == [], "unreadable park file: no 群益 order, entry or close", sent)
+check(len(errs) == 1 and errs[0][1] == "capital" and "讀不出來" in errs[0][2],
+      "…one order_errors row per process, not one per order", errs)
+os.remove(PENDING)
+
+# ── the late fill lands outside the front month: booked, audited ──
+import lib.president_contracts as tw  # noqa: E402
+real_front = tw.front_ym
+tw.front_ym = lambda now=None: "2026-11"
+for contract, flagged in (("TM2611", False), ("TM2612", True)):
+    reset()
+    snap({}, time.time())
+    broker(SENT)
+    reconciler._capital_place_order("TMF", 1.0, SPEC)
+    snap({contract: 1}, capital_vault.last_order_at() + S + 1)
+    round_read()
+    odd = audits("late_fill_month_unexpected")
+    check(audits("late_fill_adopted") and (bool(odd) == flagged)
+          and (not flagged or (odd[0].get("contract") == contract and odd[0].get("front") == "2026-11")),
+          f"late fill in {contract} with front 2026-11: month_unexpected audit {'yes' if flagged else 'no'}", odd)
+tw.front_ym = real_front
+
+# ── the avg cost implies the price of lots added on the same side ──
+reset()
+portfolio._append_reconciler_log({"action": "BUY", "symbol": "TMF", "signed_diff": 1.0, "exchange": "capital",
+                                  "asset_spec": SPEC, "contributors": [],
+                                  "legs": [{"signed_diff": 1.0, "reduce_only": False, "executed_qty": 1.0,
+                                            "exchange": "capital", "signed_qty": 1.0, "resolved_symbol": "TM2611"}]})
+snap({"TM2611": 1}, time.time(), cost=46000.0)
+broker(SENT)
+reconciler._capital_place_order("TMF", 1.0, SPEC)
+snap({"TM2611": 2}, capital_vault.last_order_at() + S + 1, cost=46100.0)
+round_read()
+lo = json.loads(open("manager/orders.jsonl", encoding="utf-8").read().strip().splitlines()[-1])
+check(lo.get("late_fill") and lo["legs"][0].get("fill_price") == 46200.0 and "46,200" in (tg or [""])[-1],
+      "1 @ 46,000 → 2 @ 46,100: the late lot is priced 46,200", (lo, tg))
+
+# ── a close's late fill has no price (avg cost of what is left says nothing about it) ──
+reset()
+portfolio._append_reconciler_log({"action": "BUY", "symbol": "TMF", "signed_diff": 1.0, "exchange": "capital",
+                                  "asset_spec": SPEC, "contributors": [],
+                                  "legs": [{"signed_diff": 1.0, "reduce_only": False, "executed_qty": 1.0,
+                                            "exchange": "capital", "signed_qty": 1.0, "resolved_symbol": "TM2611"}]})
+check((portfolio.ledger_positions("capital").get("TMF") or {}).get("qty") == 1.0, "book seeded TMF +1 in TM2611")
+snap({"TM2611": 1}, time.time())
+sent.clear()
+broker(SENT)
+reconciler._capital_place_order("TMF", -1.0, SPEC, reduce_only=True)
+check((pending().get("TMF") or {}).get("lots") == -1.0, "a reduce 'sent' parks −1")
+snap({}, capital_vault.last_order_at() + S + 1)
+round_read()
+lo = json.loads(open("manager/orders.jsonl", encoding="utf-8").read().strip().splitlines()[-1])
+book = portfolio.ledger_positions("capital").get("TMF") or {}
+check(lo.get("late_fill") and lo["action"] == "SELL" and "fill_price" not in lo["legs"][0]
+      and len(tg) == 1 and "Sold TMF 1 lots" in tg[0] and "@" not in tg[0] and not book.get("qty"),
+      "the close's late fill: booked SELL, no price on the line or in the notice, book flat", (lo, tg, book))
+
 # ── close-all with lots parked: told, not silently skipped (audit P1-2) ──
 from manager import flatten  # noqa: E402
+os.chdir(TMP)  # flatten chdirs to the repo on import; the rows below must land in the test dir
 reset()
 note = getattr(flatten, "_note_parked", None)
 check(note is not None and note("capital") == 0, "close-all, nothing parked: no row")
