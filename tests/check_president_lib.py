@@ -1409,6 +1409,46 @@ try:
           "park file refused three rounds in a row: one order_errors row on the third, booked once", seen)
     gp()
     check(pending() == {} and book_qty() == q0 + 1, "…the file takes it again: row dropped by its id")
+    # …and that successful save reset the count: three more refused rounds give one more row
+    def save_fail_rows():
+        return [x.get("ts") for x in errors() if "連續" in x.get("error", "") and "存不進去" in x.get("error", "")]
+
+    q0 = park_one()
+    before = save_fail_rows()
+    reconciler._save_pending_sent = locked
+    seen = []
+    for _ in range(reconciler.CLAIM_SAVE_FAILS_MAX):
+        failing_round(PermissionError)
+        seen.append(len(set(save_fail_rows()) - set(before)))
+    reconciler._save_pending_sent = real_save
+    gp()
+    check(seen == [0] * (reconciler.CLAIM_SAVE_FAILS_MAX - 1) + [1],
+          "after a save that went through, the count starts over: one new row on the third refusal", seen)
+
+    # 9. booked-but-unsaved row, then a close parks onto it while orders.jsonl is unreadable: whether
+    #    the row was booked is unknown, so the merge is told and HALTed (not silent)
+    q0 = park_one()
+    reconciler._save_pending_sent = locked
+    failing_round(PermissionError)
+    reconciler._save_pending_sent = real_save
+    n = acct[0]
+    real_lfb = _pf.late_fill_booked
+
+    def lfb_locked(_pid):
+        raise PermissionError(13, "orders.jsonl locked (fake)")
+
+    _pf.late_fill_booked = lfb_locked
+    FILL["reduce"] = "sent"
+    reconciler.place_order("TMF", -1, exchange="president", reduce_only=True)
+    FILL.clear()
+    _pf.late_fill_booked = real_lfb
+    check(guard.halted() and any("確認不了" in x.get("error", "") for x in errors())
+          and audits("order_unfilled_park_unverified"),
+          "a leg parked onto a row whose booking can't be read: one order_errors row and HALT", errors()[-1:])
+    guard.clear_halt("test")
+    acct[0] = n - 1
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": n - 1, "net_current": n - 1}] if n - 1 else [])
+    gp()
     guard.clear_halt("test")
     for f in ("manager/ledger_seed.json", "manager/orders.jsonl"):
         if os.path.exists(f):
