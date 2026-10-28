@@ -683,6 +683,24 @@
   </div>
 </div>
 
+<!-- 改用自己的 AI(0.1.36;spec free-credit-usedup-local-ai §3):額度用完卡片的第二顆開。殼同 #del-scrim 的 440 框(DOM 排在 #del-scrim 前面:確認框要疊得到它上面,回合中按〔使用〕會跳「先停下」);列由 app.js laiPaint 畫,
+     只列 Claude Code、Codex(名稱純文字、不放 logo)。腳只放〔重新偵測〕,兩列都能用時整條不出;不放〔取消〕,關掉用 ✕ 或 Esc -->
+<div class="scrim" id="lai-scrim" role="dialog" aria-modal="true" aria-labelledby="lai-title" aria-describedby="lai-lede" hidden>
+  <div class="set-modal del-modal" id="lai-modal">
+    <div class="modal-head">
+      <h6 id="lai-title" data-i18n="cn.local.label"></h6>
+      <button type="button" class="modal-close" id="lai-close" data-i18n-aria="set.close">✕</button>
+    </div>
+    <div class="del-body">
+      <p class="lai-lede" id="lai-lede" data-i18n="lai.lede"></p>
+      <div id="lai-rows"></div>
+    </div>
+    <div class="modal-foot lai-foot" id="lai-foot" hidden>
+      <button type="button" class="btn-quiet" id="lai-redetect" data-i18n="cn.redetect"></button>
+    </div>
+  </div>
+</div>
+
 <!-- 刪對話的確認框(外框沿用 .scrim / .set-modal;寬 440 = 雲端 .ns-modal) -->
 <div class="scrim" id="del-scrim" role="dialog" aria-modal="true" aria-labelledby="del-title" aria-describedby="del-body" hidden>
   <div class="set-modal del-modal" id="del-modal">
@@ -701,24 +719,6 @@
       <button type="button" class="btn-out" id="del-cancel" data-i18n="del.cancel"></button>
       <button type="button" class="btn-out" id="del-alt" hidden></button>
       <button type="button" class="btn-fill" id="del-ok" data-i18n="del.ok"></button>
-    </div>
-  </div>
-</div>
-
-<!-- 改用自己的 AI(0.1.36;spec free-credit-usedup-local-ai §3):額度用完卡片的第二顆開。殼同 #del-scrim 的 440 框;列由 app.js laiPaint 畫,
-     只列 Claude Code、Codex(名稱純文字、不放 logo)。腳只放〔重新偵測〕,兩列都能用時整條不出;不放〔取消〕,關掉用 ✕ 或 Esc -->
-<div class="scrim" id="lai-scrim" role="dialog" aria-modal="true" aria-labelledby="lai-title" aria-describedby="lai-lede" hidden>
-  <div class="set-modal del-modal" id="lai-modal">
-    <div class="modal-head">
-      <h6 id="lai-title" data-i18n="cn.local.label"></h6>
-      <button type="button" class="modal-close" id="lai-close" data-i18n-aria="set.close">✕</button>
-    </div>
-    <div class="del-body">
-      <p class="lai-lede" id="lai-lede" data-i18n="lai.lede"></p>
-      <div id="lai-rows"></div>
-    </div>
-    <div class="modal-foot lai-foot" id="lai-foot" hidden>
-      <button type="button" class="btn-quiet" id="lai-redetect" data-i18n="cn.redetect"></button>
     </div>
   </div>
 </div>

@@ -192,7 +192,7 @@ async function localLogin(kind, b) {
   const host = () => $(inLai ? "lai-rows" : inRow ? "agent-rows" : "set-model");
   loginPending = kind;
   if (inRow) { ROWMSG[kind] = null; setHint(null); paintRows(lastDetect); }
-  else if (inLai) { LAI.msg[kind] = null; laiPaint(); }
+  else if (inLai) { LAI.msg[kind] = null; LAI.login = kind; laiPaint(); }
   else {
     // 等的那一顆變「取消等待」(不是變灰),其他登入鈕鎖住
     b.textContent = t("login.cancel");
@@ -209,11 +209,14 @@ async function localLogin(kind, b) {
   loginPending = null;
   if (!r.ok && !r.cancelled && !r.busy) trackEvent("connect_failed", { kind: kind === "codex" ? "codex_login" : "claude_login" });
   if (inRow) ROWMSG[kind] = null;
-  if (inLai) LAI.msg[kind] = null;
+  if (inLai) { LAI.msg[kind] = null; LAI.login = null; }
   await detect();
   const x = (lastDetect && lastDetect[kind]) || {};
   if (r.ok && x.loggedIn) trackFeature(kind === "codex" ? "codex_login_ok" : "claude_login_ok");   // 登入指令回 0 但偵測仍沒登入:畫面講的是失敗,不記成功
-  if ((inRow || inLai) && r.ok && x.installed && x.loggedIn) return connect(kind, x);
+  if ((inRow || inLai) && r.ok && x.installed && x.loggedIn) {
+    if (inLai && !laiOn()) LAI.late = kind;   // 登入完成的同一刻按了 ✕:照樣換過去,也照樣算從這個框換的(laiDone)
+    return connect(kind, x);
+  }
   // 登入指令本身跑不起來(127、126、ENOENT),偵測卻沒看出來(login status 跑得動):兩個表面都改畫「無法啟動」,不叫他重登
   if (r.cantRun && x.installed && !x.loggedIn && !whyState(x)) { x.why = kind + "_cantrun"; paintRows(lastDetect); srSay(t("st.cantRun") + (LANG === "zh" ? "。" : ". ") + t("row.reinstall", { name })); }
   if (!r.cancelled && !r.busy && !(x.installed && x.loggedIn) && !whyState(x)) {
@@ -2650,7 +2653,7 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
   $("del-modal").classList.toggle("has-alt", !!alt);
   $("del-modal").classList.toggle("has-choices", !!choices);
   delCtx = { custom: true, onOk: choices ? (pre ? pre.onOk : null) : onOk, onAlt: alt && alt.onOk, opener, onCancel };
-  $("view-ws").inert = true; $("set-scrim").inert = true;
+  $("view-ws").inert = true; $("set-scrim").inert = true; $("lai-scrim").inert = true;   // 疊在「用你自己的 AI」上面時(回合中按〔使用〕):底下那層也鎖
   // single:只有一顆鈕(「知道了」那種:沒有要取消的事)。焦點給它;Esc / 框外 / ✕ 照舊關
   $("del-cancel").hidden = !!single;
   const sc = $("del-scrim"); sc.hidden = false;
@@ -2660,7 +2663,8 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
 function delClose(deleted) {
   const sc = $("del-scrim"); if (sc.hidden || sc.dataset.lock) return;   // lock:策略庫購買扣款在路上(library.js libPurchase),Esc / ✕ / 框外都不關
   sc.classList.remove("open"); sc.hidden = true;
-  $("view-ws").inert = false; $("set-scrim").inert = false;
+  $("set-scrim").inert = false; $("lai-scrim").inert = false;
+  $("view-ws").inert = laiOn();   // 確認框疊在「用你自己的 AI」上面:關掉確認框,工作頁仍歸那個框鎖著
   const c = delCtx; delCtx = null;
   if (c && c.onCancel && !c.acted) c.onCancel();   // 取消 / ✕ / Esc / 框外 / 被程式收掉都算沒按主鈕
   // 下一個用這個框的人(刪對話)不該看到上一個的第二顆鈕、也不該看到上一個的「雲端」記號
@@ -3949,7 +3953,7 @@ function resendSecond() { return { label: t("fault.resend"), on: () => { resendL
 let acctPending = 0;
 // 這次開 app 至少查完過一次(不論查到沒):歡迎頁的卡在這之前出骨架,之後查不到就當 unknown(離線時不能永遠停在骨架)
 let acctSettled = false;
-async function acctCheck() {
+async function acctCheck(o) {
   if (!hasToken) { acct = null; planWatchIdle(); return; }   // 帳號狀態跟「有沒有登入」走,不看連的是誰
   acctAt = Date.now();
   acctPending++;
@@ -3965,9 +3969,10 @@ async function acctCheck() {
   // 還是不能跑:再等 5 秒查一次,最多 3 次(藍新回呼到我們這邊有幾秒延遲)
   // 只在連的是 Blave AI、而且真的有卡片在等的時候重試:自帶 CLI 的登入者 can_run=false 是常態,
   // 照舊重試會把跟 LLM 共用的每分鐘 30 次的桶打滿
-  const again = !!(cur === "blave" && acct && !acct.can_run && (acctCard || creditCards.length) && acctRetry < 3);
+  // noRetry = 輸入框補的那次重查(acctFreeDue):他沒綁卡時一直點輸入框,不要每次都重開一輪 3 次重試
+  const again = !!(!(o && o.noRetry) && cur === "blave" && acct && !acct.can_run && (acctCard || creditCards.length) && acctRetry < 3);
   if (again) { acctRetry++; setTimeout(acctCheck, 5000); }
-  else acctRetry = 0;
+  else if (!(o && o.noRetry)) acctRetry = 0;
   acctBackTrack(again);
 }
 /* ── 改用自己的 AI(0.1.36;spec free-credit-usedup-local-ai)──────────────────
@@ -3975,8 +3980,9 @@ async function acctCheck() {
    (使用／登入／怎麼安裝)。它是 localLogin 的第三個表面:等待與失敗的字寫在列上(LAI.msg),登入成功直接 connect。
    卡片換字在 acctLocalSwap(enterWorkspace → acctPrecheck,從設定 › 模型接入換過去也走這條);這裡只收框、記埋點、放焦點。
    用自己的 .scrim、不借 set-scrim:enterWorkspace 看到 set-scrim 開著會走「留在設定、重畫模型接入」那條 */
-const LAI_INSTALL = { claude: "https://code.claude.com/docs/en/setup", codex: "https://developers.openai.com/codex/quickstart" };
-const LAI = { card: null, turn: false, msg: { claude: null, codex: null } };
+const LAI_INSTALL = { claude: "https://code.claude.com/docs/en/setup", codex: "https://developers.openai.com/codex/cli" };
+// login = 這個框自己起的那次登入(關框只取消它);late = 登入成功前一刻框被關掉、仍要換過去的那一家;focus = 列上還沒有鈕、焦點先放 ✕
+const LAI = { card: null, turn: false, msg: { claude: null, codex: null }, login: null, late: null, focus: false };
 // 函式宣告不是 const:mdlPaint 在開機時就會叫到 laiPaint,那時這一段的 const 還沒初始化
 function laiOn() { const sc = $("lai-scrim"); return !!sc && !sc.hidden; }
 function laiSecond(card) { return { label: t("acct.useLocal"), quiet: true, on: () => laiOpen(card) }; }
@@ -4010,7 +4016,10 @@ function laiPaint() {
   $("lai-foot").hidden = !mdlNeedsRedetect(lastDetect);
   $("lai-redetect").disabled = MDL.busy || waiting;
   if (had) { const again = box.querySelector('[data-kind="' + had.kind + '"] button'); if (again && !again.disabled) again.focus(); }
+  // 開框時列上還沒有鈕(自己或別處正在偵測):列畫出鈕之後,焦點還在 ✕ 就換到第一顆能按的
+  if (LAI.focus && !MDL.busy) { LAI.focus = false; if (document.activeElement === $("lai-close")) laiFocusFirst(); }
 }
+function laiFocusFirst() { const b = [...$("lai-rows").querySelectorAll("button")].find((x) => !x.disabled); (b || $("lai-close")).focus(); }
 function laiAct(r, b) {
   if (r.act === "login.cancel") return window.blave.cancelAgentLogin();
   if (r.act === "lai.install") return window.blave.openExternal(LAI_INSTALL[r.kind]);
@@ -4026,41 +4035,46 @@ function laiOpen(card) {
   sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));
   // 偵測結果用上一次的;超過 15 秒沒偵測過就重偵測(列先畫「偵測中…」,列數不變)
-  // 焦點給第一顆能按的鈕;重偵測中列上還沒有鈕,先放 ✕,偵測完焦點沒被他移走才換過去
-  const focusFirst = () => { const b = [...$("lai-rows").querySelectorAll("button")].find((x) => !x.disabled); (b || $("lai-close")).focus(); };
-  if (!loginPending && !MDL.busy && (!lastDetect || Date.now() - detectAt >= REDETECT_GAP_MS)) {
-    $("lai-close").focus();
-    Promise.resolve(detect()).then(() => { if (laiOn() && document.activeElement === $("lai-close")) focusFirst(); });
-  } else { laiPaint(); focusFirst(); }
+  // 焦點給第一顆能按的鈕;偵測中(自己剛起的或別處在跑的)列上還沒有鈕,先放 ✕,列畫好以後由 laiPaint 換過去
+  LAI.focus = true; $("lai-close").focus();
+  if (!loginPending && !MDL.busy && (!lastDetect || Date.now() - detectAt >= REDETECT_GAP_MS)) detect(); else laiPaint();
 }
 function laiHide() {
   const sc = $("lai-scrim"); sc.classList.remove("open"); sc.hidden = true;
   $("view-ws").inert = false; $("set-scrim").inert = false;
-  LAI.msg = { claude: null, codex: null };
+  LAI.msg = { claude: null, codex: null }; LAI.focus = false;
 }
-// ✕／Esc／點遮罩:卡不變,焦點回卡上的〔改用 Claude Code 或 Codex〕;正在等瀏覽器的話一起取消
+// ✕／Esc／點遮罩:卡不變,焦點回卡上的〔改用 Claude Code 或 Codex〕;這個框起的登入還在等瀏覽器的話一起取消(設定裡起的那次不碰)
 function laiClose() {
   if (!laiOn()) return;
-  if (loginPending) window.blave.cancelAgentLogin();
+  if (loginPending && loginPending === LAI.login) window.blave.cancelAgentLogin();
   laiHide();
   const c = LAI.card; LAI.card = null;
   if (c && c.b2 && c.b2.isConnected && !c.b2.hidden) c.b2.focus();
 }
 // enterWorkspace 換好之後叫:modal 沒開(從別處換的)回 false,照原本把焦點給輸入框
 function laiDone(kind) {
-  if (!laiOn() || (kind !== "claude" && kind !== "codex")) return false;
+  const late = LAI.late === kind; LAI.late = null;
+  if ((!laiOn() && !late) || (kind !== "claude" && kind !== "codex")) return false;
   trackFeature("acct_local_use");
+  if (late) return false;   // 框已經關了:焦點照原本給輸入框
   laiHide();
   const c = LAI.card, turn = LAI.turn; LAI.card = null;
   if (turn && c && c.el.isConnected && c.b1 && !c.b1.hidden) c.b1.focus();
   else $("ta").focus();
   return true;
 }
-/* 換成本機 AI 時(acctPrecheck 第一件事):預檢卡換字留著,不無聲消失(對話最後一則是擋住他的卡);額度用完的回合卡換成
-   〔再送一次〕。換完都不再歸 acctPaint 管。API 金鑰那條沒有這組字,照舊由 acctPrecheck 拿掉預檢卡 */
+/* 換成不是 Blave AI 的那條時(acctPrecheck 第一件事):預檢卡換字留著,不無聲消失(對話最後一則是擋住他的卡);額度用完的回合卡換成
+   〔再送一次〕。換完都不再歸 acctPaint 管。API 金鑰那條 {name} 是存的那家供應商(查不到就叫「API 金鑰」) */
+function acctLocalName(kind) {
+  if (kind === "claude") return "Claude Code";
+  if (kind === "codex") return "Codex";
+  const ak = typeof AK === "object" && AK.info, p = ak && ak.saved && (ak.presets || []).find((x) => x.id === ak.saved);
+  return (p && p.name) || t("ak.row");
+}
 function acctLocalSwap(kind) {
-  if (kind !== "claude" && kind !== "codex") return;
-  const name = kind === "codex" ? "Codex" : "Claude Code";
+  if (kind !== "claude" && kind !== "codex" && kind !== "apikey") return;
+  const name = acctLocalName(kind);
   if (acctCard && acctCard.el.isConnected) { acctCard.set({ calm: true, text: t("acct.localReady", { name }) }); acctCard = null; }
   for (let i = creditCards.length - 1; i >= 0; i--) {
     const c = creditCards[i]; if (!c._free) continue;
@@ -4076,8 +4090,8 @@ function acctFreeDue(now) {
   return !!(acctCard && acctCard._free && acctCard.el.isConnected) || creditCards.some((c) => c._free && c.el.isConnected);
 }
 let taKeyed = false;
-$("ta").addEventListener("focus", () => { taKeyed = false; if (acctFreeDue(Date.now())) acctCheck(); });
-$("ta").addEventListener("keydown", () => { if (taKeyed) return; taKeyed = true; if (acctFreeDue(Date.now())) acctCheck(); });
+$("ta").addEventListener("focus", () => { taKeyed = false; if (acctFreeDue(Date.now())) acctCheck({ noRetry: true }); });
+$("ta").addEventListener("keydown", () => { if (taKeyed) return; taKeyed = true; if (acctFreeDue(Date.now())) acctCheck({ noRetry: true }); });
 $("lai-close").addEventListener("click", laiClose);
 $("lai-redetect").addEventListener("click", detect);
 $("lai-scrim").addEventListener("mousedown", (e) => { if (e.target === $("lai-scrim")) laiClose(); });

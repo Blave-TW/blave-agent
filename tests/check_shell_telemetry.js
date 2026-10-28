@@ -348,7 +348,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     t("acct_card_back 接線:記過還不能跑 → owe;acctPaint(dataTurnEnd 也走這裡)補 ready、回前景那次留給 acctCheck 算完 again",
       /acctGone = back === "ready" \? null : \{ back: false, owe: true \};/.test(appSrc9)
       && /if \(!s\) return;[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*if \(acctGone && !acctGone\.back\) acctBackTrack\(false\);/.test(appSrc9)
-      && /else acctRetry = 0;\n\s*acctBackTrack\(again\);\n\}/.test(appSrc9)
+      && /else (?:if \(!\(o && o\.noRetry\)\) )?acctRetry = 0;\n\s*acctBackTrack\(again\);\n\}/.test(appSrc9)
       && /if \(fresh && hasToken\) \{ acctSet\(fresh\); acctPaint\(\); \}/.test(appSrc9));
     const T = [[{ flow: "credit" }, "API Error: 402 {}", "402"], [{ flow: "blave" }, "Failed to authenticate. API Error: 403 x", "403"], [null, "API Error: 429 {\"type\":\"error\"}", "429"],
       [null, "Failed to authenticate. API Error: 429 x", "429"], [null, "API Error: 500 Internal", "other"], [{ flow: "local", kind: "claude" }, "Not logged in · Please run /login", "auth"], [{ flow: "local", kind: "codex" }, "API Error: 401 x", "auth"],

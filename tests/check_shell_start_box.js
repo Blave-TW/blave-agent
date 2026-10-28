@@ -45,7 +45,7 @@ function world(o) {
     trRun: async (want, steps) => { for (const st of steps) { const r = await st(env.TR); if (!r || !r.ok || env.trHeldVenue(r)) break; } },
     window: { blave: { platform: o.platform || "darwin" } },
     LANG: "zh", trTwName: (s) => ({ "2330": "台積電" })[s] || "",
-    AWAKE: o.awake, tracked: [], switched: [], trackFeature: (n) => env.tracked.push(n), envSwitchGuarded: (e) => { env.switched.push(e); return true; },
+    AWAKE: o.awake, tracked: [], switched: [], trackFeature: (n) => env.tracked.push(n), laiOn: () => false, envSwitchGuarded: (e) => { env.switched.push(e); return true; },
   };
   const names = Object.keys(env);
   const body = `let delCtx = null; ${fn(app, "cfSupersede")}\n${fn(app, "confirmBox")}\n${fn(app, "delClose")}\n${fn(trade, "trCloudBox")}\n${fn(trade, "trTwBroker")}\n${fn(trade, "trExecKey")}\n${fn(trade, "trExecStored")}\n${fn(trade, "trExecCurrent")}\n${fn(trade, "trCatchHow")}\n${fn(trade, "trStartNotes")}\n${fn(trade, "trAwakeCloudGo")}\n${fn(trade, "trDeferredCloseLine")}\n${fn(trade, "trAskStart")}\n

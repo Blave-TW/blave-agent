@@ -1,7 +1,7 @@
 // 登入額度用完卡片的〔改用 Claude Code 或 Codex〕＋連結本機 AI 的 modal(0.1.36;spec free-credit-usedup-local-ai)。
 //   ① 卡片按鈕組合:pre_free／turn_free 第二顆是文字鈕〔改用 Claude Code 或 Codex〕、回合卡的〔再送一次〕讓位;其他卡不動
 //   ② modal 每一列的狀態(laiRows):已登入〔使用〕／已裝沒登入〔登入〕／沒裝〔怎麼安裝〕,加偵測中、等瀏覽器、登入沒完成、跑不起來
-//   ③ 換成功後卡片換字(acctLocalSwap):預檢卡換字留著不拿掉、回合卡換成〔再送一次〕
+//   ③ 換成功後卡片換字(acctLocalSwap):預檢卡換字留著不拿掉、回合卡換成〔再送一次〕(本機兩個 CLI 與 API 金鑰都是)
 //   ④ 換成本機以後帳號重查不把卡畫回「額度用完」(acctPaint 只在 cur === "blave" 時畫這兩種卡)
 //   ⑤ 擋著的 *_free 卡還在時,輸入框焦點／第一次按鍵補一次重查(15 秒限頻)
 //   ⑥ 真的 index.html(隨包 Electron、offscreen、window.blave 換成假的):兩條完整流程 + 鍵盤
@@ -77,8 +77,8 @@ if (!process.versions.electron) {
 
   // ③ 換好以後卡片換字
   {
-    const S = new Function("t", "st", "acctCardIn", "creditCards", `let acctCard = acctCardIn; const resendState = (c, x) => ({ calm: true, text: x, label: "fault.resend" });
-      ${fn("acctLocalSwap")}\nacctLocalSwap(st.kind); return acctCard;`);
+    const S = new Function("t", "st", "acctCardIn", "creditCards", `let acctCard = acctCardIn; const resendState = (c, x) => ({ calm: true, text: x, label: "fault.resend" }), AK = { info: st.ak || null };
+      ${fn("acctLocalName")}\n${fn("acctLocalSwap")}\nacctLocalSwap(st.kind); return acctCard;`);
     const tt = (k, v) => k + (v && v.name ? "{" + v.name + "}" : "");
     const pre = mk(), t1 = mk(), t2 = mk(), tGone = mk(false), tCard = mk(); t1._free = t2._free = tGone._free = true;
     const cards = [t1, tCard, t2, tGone];
@@ -87,7 +87,14 @@ if (!process.versions.electron) {
     ok("③ 額度用完的回合卡:換成「已改用 Codex,可以再送了。」+〔再送一次〕,從 creditCards 拿掉;已不在畫面上的只拿掉不畫", t1.last.text === "acct.localResend{Codex}" && t1.last.label === "fault.resend" && t2.last.text === "acct.localResend{Codex}" && tGone.sets === 0 && cards.length === 1 && cards[0] === tCard && tCard.sets === 0);
     const p2 = mk(), c2 = mk(); c2._free = true; const cs2 = [c2];
     ok("③ Claude Code 同一組字", S(tt, { kind: "claude" }, p2, cs2) === null && p2.last.text === "acct.localReady{Claude Code}" && c2.last.text === "acct.localResend{Claude Code}");
-    for (const k of ["blave", "apikey", null]) { const p = mk(), c = mk(); c._free = true; const cs = [c]; const back = S(tt, { kind: k }, p, cs); ok("③ 換成 " + k + ":不動(API 金鑰那條沒有這組字,照舊由 acctPrecheck 拿掉預檢卡)", back === p && p.sets === 0 && c.sets === 0 && cs.length === 1); }
+    for (const k of ["blave", null]) { const p = mk(), c = mk(); c._free = true; const cs = [c]; const back = S(tt, { kind: k }, p, cs); ok("③ 換成 " + k + ":不動", back === p && p.sets === 0 && c.sets === 0 && cs.length === 1); }
+    { const p = mk(), c = mk(), keep = mk(); c._free = true; const cs = [c, keep];
+      const back = S(tt, { kind: "apikey", ak: { saved: "openrouter", presets: [{ id: "deepseek", name: "DeepSeek" }, { id: "openrouter", name: "OpenRouter" }] } }, p, cs);
+      ok("③ 換成 API 金鑰:同一組字,{name} 是存的那家供應商;預檢卡換字留著、額度用完的回合卡有〔再送一次〕(spec §4 cur !== \"blave\")",
+        back === null && p.last.text === "acct.localReady{OpenRouter}" && c.last.text === "acct.localResend{OpenRouter}" && c.last.label === "fault.resend" && cs.length === 1 && cs[0] === keep && keep.sets === 0, [p.last, c.last]);
+      const p2 = mk(), c2 = mk(); c2._free = true;
+      S((k, v) => k === "ak.row" ? "API 金鑰" : tt(k, v), { kind: "apikey", ak: null }, p2, [c2]);
+      ok("③ API 金鑰、查不到是哪一家:{name} 退成「API 金鑰」", p2.last.text === "acct.localReady{API 金鑰}" && c2.last.text === "acct.localResend{API 金鑰}", [p2.last, c2.last]); }
     ok("③ acctPrecheck 第一件事就是 acctLocalSwap(cur),在拿掉預檢卡那行之前(enterWorkspace 每次都叫,設定 › 模型接入換過去也走)", /^function acctPrecheck\(\) \{\n  acctLocalSwap\(cur\);[^\n]*\n  if \(acctCard && acctCard\.el\.isConnected\) acctCard\.el\.remove\(\);/m.test(fn("acctPrecheck")));
   }
 
@@ -100,7 +107,7 @@ if (!process.versions.electron) {
     ok("⑤ 擋著的 *_free 卡(預檢卡或回合卡)還在、距上次查超過 15 秒 → 查", F({ ...base, card: free }) && F({ ...base, cards: [plain, free] }));
     ok("⑤ 15 秒內不查;不是 Blave AI、沒登入、上一次還在途都不查", !F({ ...base, card: free, at: 6000 }) && !F({ ...base, cur: "claude", card: free }) && !F({ ...base, tok: false, card: free }) && !F({ ...base, pend: 1, card: free }));
     ok("⑤ 沒有 *_free 卡、或那張已不在畫面上 → 不查", !F({ ...base, card: plain, cards: [plain] }) && !F({ ...base, cards: [gone] }));
-    ok("⑤ 掛在輸入框:拿到焦點查一次、焦點已在框裡的第一次按鍵查一次", /\$\("ta"\)\.addEventListener\("focus", \(\) => \{ taKeyed = false; if \(acctFreeDue\(Date\.now\(\)\)\) acctCheck\(\); \}\);/.test(app) && /\$\("ta"\)\.addEventListener\("keydown", \(\) => \{ if \(taKeyed\) return; taKeyed = true; if \(acctFreeDue\(Date\.now\(\)\)\) acctCheck\(\); \}\);/.test(app));
+    ok("⑤ 掛在輸入框:拿到焦點查一次、焦點已在框裡的第一次按鍵查一次;這兩次不重開重試鏈(noRetry)", /\$\("ta"\)\.addEventListener\("focus", \(\) => \{ taKeyed = false; if \(acctFreeDue\(Date\.now\(\)\)\) acctCheck\(\{ noRetry: true \}\); \}\);/.test(app) && /\$\("ta"\)\.addEventListener\("keydown", \(\) => \{ if \(taKeyed\) return; taKeyed = true; if \(acctFreeDue\(Date\.now\(\)\)\) acctCheck\(\{ noRetry: true \}\); \}\);/.test(app));
   }
 
   // 接線
@@ -108,20 +115,22 @@ if (!process.versions.electron) {
     const trade = fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8"), html = fs.readFileSync(path.join(SHELL, "renderer", "index.html"), "utf8");
     const mainSrc = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
     ok("接線:mdlPaint 第一行畫 modal(detect／偵測中／paintRows／setHint 都經過它)", /^function mdlPaint\(\) \{\n  laiPaint\(\);/m.test(app));
-    ok("接線:localLogin 的第三個表面(modal 列):先判 #lai-rows,成功一樣直接 connect、字寫在列上", /const inLai = !!b\.closest\("#lai-rows"\), inRow = !inLai && !b\.closest\("\.cn-opts"\);/.test(app) && /if \(\(inRow \|\| inLai\) && r\.ok && x\.installed && x\.loggedIn\) return connect\(kind, x\);/.test(app) && /if \(inLai\) \{ LAI\.msg\[kind\] = "failed"; laiPaint\(\);/.test(app));
+    ok("接線:localLogin 的第三個表面(modal 列):先判 #lai-rows,成功一樣直接 connect、字寫在列上", /const inLai = !!b\.closest\("#lai-rows"\), inRow = !inLai && !b\.closest\("\.cn-opts"\);/.test(app) && /if \(\(inRow \|\| inLai\) && r\.ok && x\.installed && x\.loggedIn\) \{\n    if \(inLai && !laiOn\(\)\) LAI\.late = kind;[^\n]*\n    return connect\(kind, x\);/.test(app) && /if \(inLai\) \{ LAI\.msg\[kind\] = "failed"; laiPaint\(\);/.test(app));
     ok("接線:enterWorkspace 換好後先給 laiDone 收框與放焦點,沒開才給輸入框", /  if \(laiDone\(kind\)\) return;[^\n]*\n  \$\("ta"\)\.focus\(\);\n\}/.test(fn("enterWorkspace")));
     ok("接線:Esc 由 escTop 關(跟其他同層的框並列,排在連接交易所之後);切視角守門算它", /\(\) => cxModalClose\(false\) : !\$\("lai-scrim"\)\.hidden \? laiClose :/.test(fn("escTop")) && /\$\("lai-scrim"\)\.hidden/.test(trade));
     ok("接線:回前景重偵測把這個 modal 算進去(裝完回來不用按重新偵測)", /\|\| onModel \|\| laiOn\(\)\)/.test(fn("focusRedetect")));
     ok("接線:開框送 acct_local_open、換成功送 acct_local_use;不送 acct_card_click、不設 acctGone", /trackFeature\("acct_local_open"\)/.test(fn("laiOpen")) && /trackFeature\("acct_local_use"\)/.test(fn("laiDone")) && !/acctClicked|acctGone/.test(fn("laiOpen") + fn("laiDone") + fn("laiAct")));
-    ok("接線:✕／Esc 關掉時正在等瀏覽器就一起取消、焦點回卡上的〔改用 Claude Code 或 Codex〕", /if \(loginPending\) window\.blave\.cancelAgentLogin\(\);/.test(fn("laiClose")) && /c\.b2\.focus\(\)/.test(fn("laiClose")));
+    ok("接線:✕／Esc 關掉時正在等瀏覽器就一起取消、焦點回卡上的〔改用 Claude Code 或 Codex〕", /if \(loginPending && loginPending === LAI\.login\) window\.blave\.cancelAgentLogin\(\);/.test(fn("laiClose")) && /c\.b2\.focus\(\)/.test(fn("laiClose")));
     ok("index.html:自己的 .scrim(不借 set-scrim)、440 的 del-modal 外框、標題沿用 cn.local.label、第一行 lai.lede、腳只有〔重新偵測〕",
       /<div class="scrim" id="lai-scrim" role="dialog" aria-modal="true"[^>]*hidden>\s*<div class="set-modal del-modal" id="lai-modal">/.test(html) && /id="lai-title" data-i18n="cn\.local\.label"/.test(html) && /id="lai-lede" data-i18n="lai\.lede"/.test(html)
       && /<div class="modal-foot lai-foot" id="lai-foot" hidden>\s*<button type="button" class="btn-quiet" id="lai-redetect" data-i18n="cn\.redetect"><\/button>\s*<\/div>/.test(html) && !/lai-[a-z]*cancel/.test(html));
+    ok("疊層:#lai-scrim 在 DOM 裡排在 #del-scrim 前面(同 z-index,確認框才疊得到它上面);confirmBox 開框時把它鎖住、delClose 解鎖時工作頁仍歸它鎖",
+      html.indexOf('id="lai-scrim"') > 0 && html.indexOf('id="lai-scrim"') < html.indexOf('id="del-scrim"') && /\$\("lai-scrim"\)\.inert = true;/.test(fn("confirmBox")) && /\$\("view-ws"\)\.inert = laiOn\(\);/.test(fn("delClose")));
     // 安裝頁走 open-external IPC(main.js webUrl:任何 https、不帶帳密),不走 window.open 的 EXTERNAL_HOSTS
     const cutMain = (name) => { const i = mainSrc.indexOf("function " + name + "("); let d = 0; for (let k = mainSrc.indexOf("{", i); k < mainSrc.length; k++) { if (mainSrc[k] === "{") d++; else if (mainSrc[k] === "}" && --d === 0) return mainSrc.slice(i, k + 1); } return ""; };
     const webUrl = new Function("return (" + cutMain("webUrl") + ")")();
     const urls = new Function(line(/^const LAI_INSTALL = .*$/m) + "; return LAI_INSTALL;")();
-    ok("安裝頁:官方兩頁、https;外開走 open-external(webUrl 放行原網址)", urls.claude === "https://code.claude.com/docs/en/setup" && urls.codex === "https://developers.openai.com/codex/quickstart" && webUrl(urls.claude) === urls.claude && webUrl(urls.codex) === urls.codex
+    ok("安裝頁:官方兩頁、https;外開走 open-external(webUrl 放行原網址)", urls.claude === "https://code.claude.com/docs/en/setup" && urls.codex === "https://developers.openai.com/codex/cli" && webUrl(urls.claude) === urls.claude && webUrl(urls.codex) === urls.codex
       && /window\.blave\.openExternal\(LAI_INSTALL\[r\.kind\]\)/.test(fn("laiAct")) && /openExternal: \(url\) => ipcRenderer\.invoke\("open-external", url\)/.test(fs.readFileSync(path.join(SHELL, "preload.js"), "utf8")));
     const { en, zh } = new Function(fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "utf8") + "; return STRINGS;")();
     ok("字串:五條新字、產品名純文字;不寫免費／推薦", zh["acct.useLocal"] === "改用 Claude Code 或 Codex" && en["acct.useLocal"] === "Use Claude Code or Codex" && zh["lai.lede"] === "走你自己的帳號，Blave 不收 AI 費用。" && en["lai.lede"] === "Runs on your own account. No AI charges from Blave."
@@ -151,7 +160,7 @@ const STUB = `window.__log = []; window.__S = {
     : k.startsWith("on") ? () => {} : k === "tradeLabels" ? () => {}
     : k === "trackFeature" ? (n) => { window.__log.push("f:" + n); }
     : k === "openExternal" ? async (u) => { window.__log.push("o:" + u); return true; }
-    : k === "cancelAgentLogin" ? async () => { window.__log.push("cancel"); if (window.__loginDone) window.__loginDone({ ok: false, cancelled: true }); }
+    : k === "cancelAgentLogin" ? async () => { window.__log.push("cancel"); if (window.__loginDone && !window.__noCancel) window.__loginDone({ ok: false, cancelled: true }); }
     : k === "agentLogin" ? (kind) => { window.__log.push("login:" + kind); setTimeout(() => window.__spawned && window.__spawned(), 10); return new Promise((res) => { window.__loginDone = res; }); }
     : k === "saveConnection" ? async (c) => { window.__log.push("save:" + c.kind); return window.__S.saveConnection; }
     : async () => window.__S[k] });`;
@@ -180,7 +189,7 @@ eapp.whenReady().then(async () => {
   ok("⑥ A 埋點:開框記 acct_local_open;沒有 acct_card_click", await js(`window.__log.includes("f:acct_local_open")`));
   ok("⑥ A 焦點進 modal(第一顆能按的鈕)", m.active === "使用", m.active);
   await js(`$("lai-rows").querySelector('[data-kind="codex"] button').click()`); await wait(100);
-  ok("⑥ A〔怎麼安裝〕外開 Codex 官方頁、modal 留著", (await js(`window.__log.includes("o:https://developers.openai.com/codex/quickstart")`)) && (await modal()).open);
+  ok("⑥ A〔怎麼安裝〕外開 Codex 官方頁、modal 留著", (await js(`window.__log.includes("o:https://developers.openai.com/codex/cli")`)) && (await modal()).open);
   await js(`$("lai-rows").querySelector('[data-kind="claude"] button').click()`); await wait(500);
   m = await modal(); const pc2 = await card(`document.querySelector("#chat-scroll .msg.fault")`);
   ok("⑥ A〔使用〕→ 換成 Claude Code、modal 關掉、記 acct_local_use", !m.open && (await js(`cur === "claude" && window.__log.includes("save:claude") && window.__log.includes("f:acct_local_use")`)), m);
@@ -219,6 +228,50 @@ eapp.whenReady().then(async () => {
   await js(`window.__S.saveConnection = true; window.__log.length = 0; $("lai-rows").querySelector('[data-kind="codex"] button').click()`); await wait(1300);
   await js(`$("lai-close").click()`); await wait(400);
   ok("⑥ C 等瀏覽器時按 ✕:一起取消等待、modal 關掉、卡不變", !(await modal()).open && (await js(`window.__log.includes("cancel") && cur === "blave"`)) && (await card(`[...document.querySelectorAll("#chat-scroll .msg.fault")].pop()`)).btns.length === 3);
+
+  // E. 回合進行中按〔使用〕:「先停下」確認框疊在這個框上面,Esc 先關確認框,框還在、工作頁仍鎖著
+  await js(`window.__S.detectAgents = { claude: { installed: true, loggedIn: true, path: "/x/claude" }, codex: { installed: false } }; detectAt = 0; [...document.querySelectorAll("#chat-scroll .msg.fault")].pop().querySelector(".fault-act button:nth-child(2)").click()`); await wait(500);
+  const hit = await js(`(() => { const r = $("lai-rows").querySelector('[data-kind="codex"] button'), b = r.getBoundingClientRect(), pb = getComputedStyle(r, "::before"); return { h: b.height, top: parseFloat(pb.top), bottom: parseFloat(pb.bottom) }; })()`);
+  ok("⑥ E〔怎麼安裝〕熱區補到整列 44 高(視覺不動)", Math.abs(hit.h - hit.top - hit.bottom - 44) < 0.5, hit);
+  await js(`running = true; $("lai-rows").querySelector('[data-kind="claude"] button').click()`); await wait(400);
+  const top = await js(`(() => { const m = $("del-modal").getBoundingClientRect(), e = document.elementFromPoint(m.left + m.width / 2, m.top + m.height / 2);
+    return { del: !$("del-scrim").hidden, lai: !$("lai-scrim").hidden, onTop: !!e && $("del-modal").contains(e), laiInert: $("lai-scrim").inert, title: $("del-title").textContent }; })()`);
+  ok("⑥ E 回合中按〔使用〕:「先停下」確認框在最上層(畫面中點點得到它),底下這個框被鎖住", top.del && top.lai && top.onTop && top.laiInert, top);
+  await key("Escape");
+  const after = await js(`({ del: !$("del-scrim").hidden, lai: !$("lai-scrim").hidden, wsInert: $("view-ws").inert, laiInert: $("lai-scrim").inert, cur })`);
+  ok("⑥ E Esc 關的是確認框:這個框還開著、工作頁仍鎖著、沒有換過去", !after.del && after.lai && after.wsInert && !after.laiInert && after.cur === "blave", after);
+  await key("Escape"); await js(`running = false`);
+  ok("⑥ E 再按一次 Esc 才關這個框", !(await modal()).open && !(await js(`$("view-ws").inert`)));
+
+  // F. 這個框起的登入,完成的同一刻按 ✕:照樣換過去、照樣記 acct_local_use
+  await js(`window.__S.detectAgents = { claude: { installed: false }, codex: { installed: true, loggedIn: false, via: "cli", path: "/x/codex" } }; enterWorkspace("blave", {})`); await wait(500);
+  await js(`detectAt = 0; addFault({ flow: "credit" })`); await wait(600);
+  await js(`[...document.querySelectorAll("#chat-scroll .msg.fault")].pop().querySelector(".fault-act button:nth-child(2)").click()`); await wait(500);
+  await js(`window.__log.length = 0; $("lai-rows").querySelector('[data-kind="codex"] button').click()`); await wait(1200);
+  await js(`window.__noCancel = true; laiClose(); window.__S.detectAgents = { claude: { installed: false }, codex: { installed: true, loggedIn: true, via: "cli", path: "/x/codex" } }; window.__loginDone({ ok: true })`); await wait(700);
+  ok("⑥ F 登入剛完成就按 ✕:照樣換成 Codex、記 acct_local_use、焦點回輸入框", (await js(`cur === "codex" && window.__log.includes("f:acct_local_use") && document.activeElement === $("ta")`)), await js(`({ cur, log: window.__log })`));
+  await js(`window.__noCancel = false`);
+
+  // G. 設定裡起的登入還在等時開這個框,Esc 只關框、不取消那次登入
+  await js(`window.__S.detectAgents = { claude: { installed: true, loggedIn: false, path: "/x/claude" }, codex: { installed: false } }; enterWorkspace("blave", {})`); await wait(500);
+  await js(`detectAt = 0; addFault({ flow: "credit" })`); await wait(600);
+  await js(`loginPending = "claude"; window.__log.length = 0; [...document.querySelectorAll("#chat-scroll .msg.fault")].pop().querySelector(".fault-act button:nth-child(2)").click()`); await wait(400);
+  await key("Escape");
+  ok("⑥ G 別處起的登入:Esc 關框、不送取消", !(await modal()).open && !(await js(`window.__log.includes("cancel")`)), await js(`window.__log`));
+  await js(`loginPending = null`);
+
+  // H. 別處正在偵測時開框:焦點先在 ✕,列畫出鈕以後移到第一顆能按的
+  await js(`MDL.busy = true; [...document.querySelectorAll("#chat-scroll .msg.fault")].pop().querySelector(".fault-act button:nth-child(2)").click()`); await wait(300);
+  const h1 = await js(`document.activeElement === $("lai-close")`);
+  await js(`paintRows(lastDetect)`); await wait(200);
+  ok("⑥ H 別處偵測中開框:先放 ✕,偵測完焦點移到第一顆能按的鈕", h1 && (await js(`document.activeElement === [...$("lai-rows").querySelectorAll("button")].find((x) => !x.disabled)`)), await js(`document.activeElement.id || document.activeElement.textContent`));
+  await key("Escape");
+
+  // I. 輸入框補的重查不重開 3 次重試鏈
+  await js(`(async () => { acctRetry = 0; acctAt = 0; await acctCheck({ noRetry: true }); })()`); await wait(300);
+  const rr = await js(`acctRetry`);
+  await js(`(async () => { acctAt = 0; await acctCheck(); })()`); await wait(300);
+  ok("⑥ I 輸入框那次(noRetry)不排重試;一般那次照舊排", rr === 0 && (await js(`acctRetry`)) === 1, [rr, await js(`acctRetry`)]);
 
   // D. 英文:鈕字照 Title Case、modal 的〔怎麼安裝〕sentence case
   await js(`(async () => { setLang("en"); applyStatic(); acctAt = 0; await acctCheck(); })()`); await wait(400);

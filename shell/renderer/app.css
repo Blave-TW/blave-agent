@@ -1403,6 +1403,7 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 /* 改用自己的 AI 的 modal(app.js laiPaint):第一行講誰收錢,底下兩列 .cn-row;腳只有〔重新偵測〕,靠左 */
 .lai-lede { margin: 0 0 var(--space-4); }
 .lai-foot { justify-content: flex-start; }
+#lai-rows .btn-quiet::before { inset: calc(50% - 22px) -4px; }   /* 〔怎麼安裝〕熱區補到整列 44 高(.cn-row min-height),視覺不動 */
 
 /* 聊天裡的圖:跟回覆同寬,不加框(圖自己有底色);說明字同聊天的次要文字 */
 .msg.img { margin: 0 0 var(--space-24); }   /* figure 的 UA 預設是 1em 40px */
