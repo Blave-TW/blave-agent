@@ -76,11 +76,12 @@ State: state/bar_wait/<name>.json
                          TW_FUT_NIGHT_KEEP_DAYS after it (_tw_fut_lots_night)
   not_waited / dead_noticed : Type C members readiness does not wait for (lib.bar_ready.dead_members),
                          and those of them already notified as long dead (_note_dead)
-  lag_since / lag_base : INTERVAL up to 15m only: the poll that first saw data past the last
-                         computed bar (`lag_base`) while the expected bar was still not in;
-                         restarted when lag_base changes, cleared by a run and by a quiet close
-  lag_alert_at        : epoch seconds of the last lag alert (_alert_lag), repeated at most every
-                         STALL_REALERT_SECONDS; never touches stall_alert_at or the poll throttle
+  lag_since / lag_seen_at : INTERVAL up to 15m only: the poll that first saw data past the last
+                         computed bar (or any data, never computed) while the expected bar was
+                         still not in, and the latest poll that still did. Cleared when the bar
+                         lands, a prime computes, or a quiet close; restarted after a gap in polling
+  lag_alert_at        : epoch seconds of the last lag alert (_alert_lag). At most one a day, kept
+                         across recoveries on purpose; never touches stall_alert_at or the throttle
 
 Priming (Wei: a signal is always computed on the newest data there is): while the expected bar
 is not in, a strategy whose data moved since it last computed — any member's newest closed bar
@@ -171,8 +172,10 @@ Lag (INTERVAL up to 15m): a feed that keeps moving but stays one bar short resta
 every minute, so the timeout above never fires — a 1m bar always landing after the :35 retry
 computes nothing all session (priming stays inside its grace). _track_lag times from the first
 poll whose data passed the last computed bar instead, and alerts once STALE_TIMEOUT_MINUTES
-pass without a run or a prime moving it (_alert_lag, same bar_stale event). Not while a stall
-alert stands (that one already said it) and not on a quiet TAIFEX/TWSE close.
+pass without a run or a prime moving it (_alert_lag, same bar_stale event). A strategy never
+computed yet (just deployed: the runtime deletes its state) counts from its first data. Not
+while a stall alert stands (that one already said it), not on a quiet TAIFEX/TWSE close, and a
+gap in polling longer than STALE_TIMEOUT_MINUTES (machine off) restarts the count.
 
 Concurrency: a stale-safe lock file (state/bar_wait/<name>.lock) guards the
 fetch+run section so an overrunning previous tick's subprocess can't overlap
@@ -361,7 +364,7 @@ def _default_state():
         "not_waited": [],
         "dead_noticed": [],
         "lag_since": None,
-        "lag_base": None,
+        "lag_seen_at": None,
         "lag_alert_at": None,
     }
 
@@ -684,19 +687,20 @@ def _alert_stale(name, expected, minutes_waited, straggler_symbol, computed=Fals
              minutes=minutes_waited, computed=bool(computed))
     except Exception:
         pass
-    who = f"（卡住的是 {straggler_symbol}，若已下市/長期停牌請從 UNIVERSE 移除）" if straggler_symbol is not None else ""
+    who = f"卡住的是 {straggler_symbol}。若已下市或長期停牌，請從 UNIVERSE 移除。" \
+        if straggler_symbol is not None else ""
     if isinstance(straggler_symbol, _FeedWait):
         due = straggler_symbol.due_at.strftime('%m-%d %H:%M')
         if straggler_symbol == "twstock_price":   # the bars themselves are late (Blave CDN behind)
-            who = f"（等的是台股日 K 本身：應在 {due} 前發布，還沒進來）"
+            who = f"等的是台股日 K 本身，應在 {due} 前發布。"
         else:
-            who = f"（K 棒已到，等的是外部資料 {straggler_symbol}：應在 {due} 前發布，還沒進來）"
+            who = f"K 棒已到，等的是外部資料 {straggler_symbol}，應在 {due} 前發布。"
     try:
         from lib.notify import send_text
         send_text(
-            f"⚠️ {name}：{expected.strftime('%Y-%m-%d %H:%M')} 那根 K 棒等了 "
-            f"{minutes_waited} 分鐘還沒到位{who}，仍在重試，"
-            + ("訊號已先用現有最新資料算出，那檔沿用最後一筆。" if computed else "訊號會晚發。")
+            f"⚠️ {name}：{expected.strftime('%m-%d %H:%M')} 的 K 棒晚了 {minutes_waited} 分鐘。"
+            + ("訊號已先用最新資料算出，那檔沿用最後一筆。" if computed else "仍在重試，訊號會晚發。")
+            + (f"\n{who}" if who else "")
         )
     except Exception as e:  # best-effort — the alerter itself must never crash the cron job
         logging.warning(f"[wait_for_bar] stale-bar notification dropped ({e})")
@@ -711,8 +715,7 @@ def _alert_lag(name, minutes, straggler_symbol):
     who = f"（落後的是 {straggler_symbol}）" if straggler_symbol is not None else ""
     try:
         from lib.notify import send_text
-        send_text(f"⚠️ {name}：資料有在更新，但一直差一根 K 棒，已經 {minutes} 分鐘沒算出新訊號{who}，"
-                  f"仍在重試，訊號會晚發。")
+        send_text(f"⚠️ {name}：K 棒一直晚一根才到{who}。已 {minutes} 分鐘沒算出訊號，仍在重試。")
     except Exception as e:  # best-effort, like _alert_stale
         logging.warning(f"[wait_for_bar] lag notification dropped ({e})")
 
@@ -723,17 +726,21 @@ def _track_lag(name, state, now, td, observed_ts, straggler_symbol):
             isinstance(straggler_symbol, _FeedWait) or state.get("stall_alert_at") is not None:
         state["lag_since"] = None
         return
-    try:
-        base = max(datetime.fromisoformat(b) for b in (state.get("last_processed_bar"),
-                                                       state.get("computed_bar")) if b)
-        past = observed_ts > base
-    except (TypeError, ValueError):   # never computed (bar_stale covers no data), foreign state
+    computed = [b for b in (state.get("last_processed_bar"), state.get("computed_bar")) if b]
+    try:   # never computed (a new deployment) and data in: every bar of it is uncomputed
+        past = not computed or observed_ts > max(datetime.fromisoformat(b) for b in computed)
+    except (TypeError, ValueError):   # a foreign state file
         past = False
     if not past:   # nothing past the last computed bar: a stall, bar_stale's case
         state["lag_since"] = None
         return
-    if state.get("lag_since") is None or state.get("lag_base") != base.isoformat():
-        state["lag_since"], state["lag_base"] = now.isoformat(), base.isoformat()
+    try:
+        gap = now - datetime.fromisoformat(state["lag_seen_at"])
+    except (TypeError, ValueError):
+        gap = None
+    state["lag_seen_at"] = now.isoformat()
+    if state.get("lag_since") is None or gap is None or gap > timedelta(minutes=STALE_TIMEOUT_MINUTES):
+        state["lag_since"] = now.isoformat()   # first look, or polling stopped (machine off) in between
         return
     waited = now - datetime.fromisoformat(state["lag_since"])
     last = state.get("lag_alert_at")
@@ -818,6 +825,7 @@ def _tick(name):
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     expected = _expected_closed_bar_open(interval, now)
+    td = _interval_to_timedelta(interval)
     tw_stock = interval == "1d" and _tw_stock_daily(name)
     us_stock = interval == "1d" and not tw_stock and _us_stock_daily(name)
     if tw_stock:
@@ -841,22 +849,17 @@ def _tick(name):
         return
 
     # A TAIFEX or TWSE intraday strategy between sessions: quiet (module docstring, _tw_fut_quiet).
-    tw_kind = fut_td = holiday_fn = None
-    if not (tw_stock or us_stock):
-        try:
-            fut_td = _interval_to_timedelta(interval)
-        except ValueError:
-            fut_td = None
-        if fut_td is not None and fut_td < timedelta(days=1):
-            tw_kind = _tw_futures_kind(name)
-            if tw_kind and not _tw_fut_data(name):
-                tw_kind = None   # sized in contracts, priced off something else: its own hours
-            if tw_kind is None and _tw_stock_minute(name):
-                tw_kind = "stock"
+    tw_kind = holiday_fn = None
+    if not (tw_stock or us_stock) and td < timedelta(days=1):
+        tw_kind = _tw_futures_kind(name)
+        if tw_kind and not _tw_fut_data(name):
+            tw_kind = None   # sized in contracts, priced off something else: its own hours
+        if tw_kind is None and _tw_stock_minute(name):
+            tw_kind = "stock"
     if tw_kind:
         holiday_fn = _tw_fut_holiday_memo(state)
         lots_night = _tw_fut_lots_night(state, now)
-        quiet = _tw_fut_quiet(tw_kind, expected, fut_td, state.get("last_seen_bar"), holiday_fn,
+        quiet = _tw_fut_quiet(tw_kind, expected, td, state.get("last_seen_bar"), holiday_fn,
                               lots_night)
     else:
         quiet = False
@@ -914,7 +917,7 @@ def _tick(name):
         observed_iso = observed_ts.isoformat() if observed_ts is not None else None
         fp, newest_iso = _fingerprint(latest)
 
-        if tw_kind == "lots" and observed_ts is not None and _tw_fut_night_label(observed_ts, fut_td):
+        if tw_kind == "lots" and observed_ts is not None and _tw_fut_night_label(observed_ts, td):
             state["tw_fut_night_bar"] = observed_iso   # on the ready path too: a prompt feed is never pending
 
         if ready:
@@ -931,7 +934,7 @@ def _tick(name):
             _save_state(name, state)
             return
 
-        _maybe_prime(name, state, now, expected, _interval_to_timedelta(interval), latest,
+        _maybe_prime(name, state, now, expected, td, latest,
                      straggler_symbol)
 
         # Not ready yet. Data moved forward (even if still not enough) since the
@@ -960,7 +963,7 @@ def _tick(name):
                 state["pending_since"] = now.isoformat()
 
         if tw_kind and not isinstance(straggler_symbol, _FeedWait) and \
-                _tw_fut_quiet(tw_kind, expected, fut_td, observed_iso, holiday_fn,
+                _tw_fut_quiet(tw_kind, expected, td, observed_iso, holiday_fn,
                               _tw_fut_lots_night(state, now)):
             state["pending_since"] = None   # stall_alert_at stays: it may be a real stall's
             state["lag_since"] = None
@@ -990,7 +993,7 @@ def _tick(name):
                     _alert_stale(name, expected, int(waited.total_seconds() // 60), straggler_symbol,
                                  computed=computed)
                     state["stall_alert_at"] = time.time()
-        _track_lag(name, state, now, _interval_to_timedelta(interval), observed_ts, straggler_symbol)
+        _track_lag(name, state, now, td, observed_ts, straggler_symbol)
         _save_state(name, state)
     finally:
         _release_lock(lock_path)
@@ -1443,6 +1446,7 @@ def _maybe_prime(name, state, now, expected, td, latest, straggler_symbol):
     state["prime_tried_fp"] = fp
     if _run_strategy_protected(name):
         state["computed_fp"], state["computed_bar"] = fp, newest_iso
+        state["lag_since"] = None
         print(f"[wait_for_bar] {name}: computed on data up to {newest_iso} "
               f"(expected {expected.isoformat()} not in yet)")
     else:

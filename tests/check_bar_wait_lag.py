@@ -7,7 +7,10 @@ alerted: 0 signals all session, no word. Asserted here, the real _tick on a fake
 
   L  crypto 1m, every bar 40s past its minute: one lag alert 15 minutes in, no bar_stale,
      nothing more inside 24h, again after; TWSE 1m the same mid-session; a Type C member two
-     bars behind and moving: one alert naming it.
+     bars behind and moving: one alert naming it. A new deployment (no state): the same one
+     alert, bar_stale alone when its data stops, nothing when each bar is in by :35. Off an hour
+     mid-lag: no alert on the way back, and the minutes start after it. 15m: timed, but a feed
+     16 minutes late primes every bar, no alert. TAIFEX 1m 13:45→15:00 and 05:00→08:45: none.
   Q  TWSE 1m quiet: prompt bars over the close, a weekend and a holiday on the table → no
      alert of either kind; Monday's open one bar short with Friday 13:30 the last run → no
      alert by 09:10; no lunch break: a feed stopping at 12:00 still sends bar_stale at 12:15,
@@ -71,8 +74,10 @@ TW = ('SYMBOL = "2330"\nINTERVAL = "{iv}"\nfrom lib.data import fetch_twstock_oh
       'def fetch_data(h):\n    return fetch_twstock_ohlcv(SYMBOL, "{iv}", h)\n')
 BTC = ('SYMBOL = "BTCUSDT"\nINTERVAL = "{iv}"\nfrom lib.data import fetch_kline\n'
        'def fetch_data(h):\n    return fetch_kline(SYMBOL, "{iv}", "2026-01-01", None, h)\n')
-for n, src in (("tw1", TW.format(iv="1m")), ("btc1", BTC.format(iv="1m")),
-               ("btc30", BTC.format(iv="30m")), ("c1", BTC.format(iv="1m"))):
+TXF = ('SYMBOL = "TXF"\nINTERVAL = "1m"\nfrom lib.data import fetch_twfutures_ohlcv\n'
+       'def fetch_data(h):\n    return fetch_twfutures_ohlcv(SYMBOL, "1m", h)\n')
+for n, src in (("tw1", TW.format(iv="1m")), ("btc1", BTC.format(iv="1m")), ("btc15", BTC.format(iv="15m")),
+               ("btc30", BTC.format(iv="30m")), ("c1", BTC.format(iv="1m")), ("txf1", TXF)):
     os.makedirs(os.path.join(WS, "strategies", n))
     open(os.path.join(WS, "strategies", n, "strategy.py"), "w").write(src)
 os.makedirs(os.path.join(WS, "manager"))
@@ -123,7 +128,8 @@ try:
     def bars(start, end, td=M1, tw=False):
         out, x = [], start
         while x < end:
-            if not tw or wfb._tw_stock_bar_exists(x, td, lambda d: d in HOLIDAYS):
+            if not tw or (wfb._tw_fut_bar_exists("index", x, td, lambda d: d in HOLIDAYS) if tw == "txf"
+                          else wfb._tw_stock_bar_exists(x, td, lambda d: d in HOLIDAYS)):
                 out.append(x)
             x += td
         return out
@@ -150,6 +156,7 @@ try:
         feed.update(extra or {})
 
     late = timedelta(seconds=40)
+    prompt = timedelta(seconds=2)
 
     # ── L ──────────────────────────────────────────────────────────────────────
     s0, s1 = T(10, 27, 10, 0), T(10, 27, 13, 0)   # Tuesday 10:00–13:00 Taipei
@@ -180,8 +187,68 @@ try:
           f"Type C, BBB two bars behind and moving (inside the priming grace): one lag alert naming it → "
           f"{[(tpe([a])[0], m, w) for a, m, w in lags]} stale={len(stale)}")
 
+    # a new deployment (the runtime deletes its state): never computed, every bar 40s late
+    one(M1, late, s0 - timedelta(hours=1), s1)
+    drive("btc1", s0, s0 + timedelta(hours=1))
+    check(len(lags) == 1 and not stale and s0 + 14 * M1 <= lags[0][0] <= s0 + 17 * M1 and not runs,
+          f"fresh state, 1m one bar short: one lag alert ~15 min in, no bar_stale → "
+          f"lag={tpe(a for a, _, _ in lags)} stale={len(stale)} runs={len(runs)}")
+    one(M1, late, s0 - timedelta(hours=1), s1, stop=s0 + 3 * M1)
+    drive("btc1", s0, s0 + timedelta(minutes=40))
+    check(len(stale) == 1 and not lags, f"…fresh state, data stops: bar_stale once, no lag alert beside it "
+                                        f"(stale={len(stale)} lag={len(lags)})")
+    one(M1, timedelta(seconds=30), s0 - timedelta(hours=1), s1)
+    drive("btc1", s0, s0 + timedelta(minutes=30))
+    check(not lags and not stale and len(runs) == 30,
+          f"…fresh state, each bar in by the :35 retry: no alert ({len(lags)}, {len(stale)}, runs={len(runs)})")
+
+    # the machine goes off mid-lag: lag_since left behind must not alert on the first tick back
+    one(M1, late, s0 - timedelta(hours=1), s1)
+    drive("btc1", s0, s0 + 10 * M1, caught_up)
+    one(M1, timedelta(seconds=15), s0 - timedelta(hours=1), s1)
+    drive("btc1", s0 + timedelta(minutes=70), s0 + timedelta(minutes=90), keep=True)
+    check(not lags and not stale and len(runs) == 20,
+          f"off an hour mid-lag, back with each bar in by :20: no alert, every bar runs "
+          f"(lag={[(tpe([a])[0], m) for a, m, _ in lags]} stale={len(stale)} runs={len(runs)})")
+    one(M1, late, s0 - timedelta(hours=1), s1 + timedelta(hours=2))
+    drive("btc1", s0 + timedelta(minutes=90), s0 + timedelta(minutes=120), keep=True)
+    check(len(lags) == 1 and 15 <= lags[0][1] <= 16,
+          f"…back still one bar short: one alert, minutes counted from the restart, not the outage → "
+          f"{[(tpe([a])[0], m) for a, m, _ in lags]}")
+
+    # 15m sits inside the gate (lag_since written), a feed 16 minutes late primes every bar: no alert
+    td15 = timedelta(minutes=15)
+    one(td15, timedelta(minutes=16), s0 - timedelta(hours=6), s0 + timedelta(hours=6))
+    sts = drive("btc15", s0, s0 + timedelta(hours=3),
+                {"last_processed_bar": (s0 - 2 * td15).isoformat(), "last_seen_bar": (s0 - 2 * td15).isoformat()})
+    check(not lags and not stale and any(s.get("lag_since") for s in sts) and len(runs) >= 11,
+          f"15m, every bar 16 minutes late: lag timed, primed each bar, no alert "
+          f"(lag={len(lags)} stale={len(stale)} runs={len(runs)})")
+
+    # TAIFEX day/night handoff: prompt except the last 10 minutes of each session (40s late)
+    lab = bars(T(10, 26, 8, 45), T(10, 27, 13, 45), tw="txf")
+    feed.clear()
+    slow = {x for x in lab if (x + TPE).strftime("%H:%M") >= "13:35" and (x + TPE).strftime("%H:%M") < "13:45"
+            or "04:50" <= (x + TPE).strftime("%H:%M") < "05:00"}
+    feed["fast"] = ([x for x in lab if x not in slow], M1, prompt, None)
+    feed[""] = (sorted(slow), M1, late, None)
+
+    def txf_fresh(mod, expected):
+        now = _Clock.at
+        seen = [x for x in feed["fast"][0] if x + M1 + prompt <= now] + \
+               [x for x in feed[""][0] if x + M1 + late <= now]
+        last = max(seen) if seen else None
+        return last, last is not None and last >= expected, None, ({"": last} if last else None)
+    wfb._check_freshness = txf_fresh
+    drive("txf1", T(10, 26, 13, 0), T(10, 27, 9, 30),
+          {"last_processed_bar": T(10, 26, 12, 58).isoformat(), "last_seen_bar": T(10, 26, 12, 58).isoformat()})
+    wfb._check_freshness = freshness
+    r = tpe(runs)
+    check(not lags and not stale and "10-26 15:01" in r and "10-27 08:46" in r,
+          f"TXF 1m 13:45→15:00 and 05:00→08:45: no alert of either kind, 15:00 and 08:45 bars run "
+          f"(lag={len(lags)} stale={len(stale)})")
+
     # ── Q ──────────────────────────────────────────────────────────────────────
-    prompt = timedelta(seconds=2)
     one(M1, prompt, T(10, 22, 9, 0), T(10, 28, 13, 31), tw=True)
     drive("tw1", T(10, 23, 13, 0), T(10, 26, 9, 30))
     first = [r for r in runs if r > T(10, 26, 8)][:1]
