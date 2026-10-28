@@ -28,7 +28,8 @@ import strategy_reporter as SR  # noqa: E402
 SAME = {"crypto": "crypto", "tw_stock": "tw", "tw_futures": "twfutures", "tw_stock_futures": "twfutures",
         "us_stock": "us", "global_futures": "cme"}
 RUNTIME_GAP = {"fetch_binance_ticker_24h", "fetch_twmarket_index", "fetch_twmarket_index_public",
-               "fetch_twse_day_all_public", "fetch_twstock_quote", "fetch_twstock_quote_batch"}
+               "fetch_twse_day_all_public", "fetch_twstock_quote", "fetch_twstock_quote_all",
+               "fetch_twstock_quote_batch"}
 rt = SR._PRICE_FETCHERS
 for label, bad in (("runtime names not in lib", set(rt) - price),
                    ("runtime / lib disagree on the market", {n for n in set(rt) & price

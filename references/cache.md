@@ -45,7 +45,7 @@ Intraday / minute-frequency time series (kline, alpha indicators, TW futures, TW
 
 ## Single file per id — daily 台股 / 台市 datasets
 
-Daily-frequency datasets (`twstock_price3` (Blave adjusted), `twstock_price_nonadj`, `twstock_inst`, `twstock_shareholding`, `twstock_per`, `twstock_foreign_sh`, `twmarket_index`, `twmarket_turnover`, `twmarket_institutional`, `twmarket_margin` — the set is `_SINGLE_FILE_PREFIXES` in `lib/data.py`) keep **one parquet per (prefix, id)** whose parquet footer metadata (`blave_cache_meta`: `from` / `to` month covered, `tail_fetched_at`) carries the coverage — frame and meta are always written together in one atomic replace. Same contract as monthly (past data immutable, current month delta-updated, a month fetched before it ended is completed once), just stored in one file: a daily series is ~20 rows a month, so a 300-stock universe under the monthly layout was 41,400 tiny files — measured on a customer box, cold write ≈ 13 min and warm read 32 s vs 2.3 s / 1.1 s for 300 single files. An old monthly directory for the same id is consolidated into the single file on first touch and removed — existing machines migrate by themselves.
+Daily-frequency datasets (`twstock_price3` (Blave adjusted), `twstock_price_nonadj`, `twstock_inst`, `twstock_margin`, `twstock_shareholding`, `twstock_per`, `twstock_foreign_sh`, `twmarket_index`, `twmarket_turnover`, `twmarket_institutional`, `twmarket_margin` — the set is `_SINGLE_FILE_PREFIXES` in `lib/data.py`) keep **one parquet per (prefix, id)** whose parquet footer metadata (`blave_cache_meta`: `from` / `to` month covered, `tail_fetched_at`) carries the coverage — frame and meta are always written together in one atomic replace. Same contract as monthly (past data immutable, current month delta-updated, a month fetched before it ended is completed once), just stored in one file: a daily series is ~20 rows a month, so a 300-stock universe under the monthly layout was 41,400 tiny files — measured on a customer box, cold write ≈ 13 min and warm read 32 s vs 2.3 s / 1.1 s for 300 single files. An old monthly directory for the same id is consolidated into the single file on first touch and removed — existing machines migrate by themselves.
 
 ## Cache helpers (internal)
 
@@ -62,7 +62,7 @@ _normalise_index(df)                 # convert tz-aware → tz-naive UTC
 | Type | Cache style | Location |
 |---|---|---|
 | Broker/trader per-day flows | One file per trading day | `cache/twstock_broker_stock_{id}/{date}.parquet` |
-| Fundamental data (financials, balance sheet, revenue, ratios) | Single file, 30-day mtime TTL | `cache/twstock_fin_{id}.parquet` (ratios: `twstock_ratios_{id}.parquet`, whole history — `start` / `end` cut on read); a `types=` subset in `twstock_fin_types-{hash}_{id}.parquet` |
+| Fundamental data (financials, balance sheet, cash flow, revenue, ratios) | Single file, 30-day mtime TTL | `cache/twstock_fin_{id}.parquet` (ratios: `twstock_ratios_{id}.parquet`, whole history — `start` / `end` cut on read); a `types=` subset in `twstock_fin_types-{hash}_{id}.parquet` |
 | 注意股／處置股 (`fetch_twstock_alerts`) | Whole market: one file per kind × calendar year, kept for good once written after Feb 1 of the next year, else 1 h; per stock: whole history, 1 h | `cache/twstock_alerts_y_{kind}_{year}.parquet`, `cache/twstock_alerts_{id}.parquet` |
 
 These types have their own caching logic and are not affected by the monthly system.

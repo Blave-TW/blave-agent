@@ -576,7 +576,8 @@ row reaches intraday bars from the first bar closing after 18:05; on `'1d'` bars
 | `futures_institutional` 期貨三大法人 | `'TX'` / `'MTX'` / `'TMF'` (`TXF`/`MXF` accepted) | `fut_{foreign\|investment_trust\|dealer}_{net_oi\|long_oi\|short_oi\|net_deal}` — 外資期貨淨多單 = `fut_foreign_net_oi`, 當日淨買賣口數 = `fut_foreign_net_deal` |
 | `stock_institutional` 個股三大法人 | stock id | `inst_foreign_net` + the raw buy/sell columns |
 | `market_institutional` 大盤三大法人金額 | — | `mkt_foreign`, `mkt_investment_trust`, `mkt_dealer`, `mkt_total` |
-| `margin` 大盤融資融券 | — | `margin_balance`, `margin_balance_prev`, `margin_balance_value`, `short_balance`, `short_balance_prev` |
+| `margin` 大盤融資融券 (whole market) | — | `margin_balance`, `margin_balance_prev`, `margin_balance_value`, `short_balance`, `short_balance_prev` |
+| `stock_margin` 個股融資融券 | stock id | `sm_margin_balance`, `sm_margin_limit`, `sm_short_balance` … — every `fetch_twstock_margin` column (lots) prefixed `sm_` |
 | `pcr` 選擇權 PCR | — | `pcr` |
 | `carrying_cost` 法人台指期持倉成本 | `'foreign'` / `'investment_trust'` / `'dealer'` | `cc_net_open_interest`, `cc_net_open_interest_change`, `cc_cost`, `cc_mark_price`, `cc_txf_close`, `cc_unrealized_pnl`, `cc_realized_pnl`, `cc_total_pnl`, `cc_cycle_start` |
 | `per` 本益比 | stock id | `dividend_yield`, `PER`, `PBR` |
@@ -637,6 +638,7 @@ is kept on purpose — never tighten one from memory:
 | `twstock_foreign_shareholding_batch` | D+1 08:00 | TWSE 外資持股 final 21:30; api UTC-day cache |
 | `twmarket_institutional` | D 19:45 | TWSE 三大法人買賣金額 約19:40 with 鉅額 (14:50 without); + 5 min. Assumes the stored history is the 19:40 version (FinMind says 15:00) — **unconfirmed**; if it is the 14:50 one this is 4.7 h late, never early |
 | `twmarket_margin` | D 21:05 | TWSE 融資融券餘額 約21:00; FinMind 21:00; + 5 min |
+| `twstock_margin` (個股融資融券) | D 21:05 | the same TWSE report, per stock; + 5 min |
 | `twmarket_turnover` | D+1 00:00 (unconfirmed) | TWSE publishes no time for FMTQIK |
 | `twfutures_institutional` | D 18:05 | FinMind 18:00 (TAIFEX ~15:00); + 5 min |
 | `twfutures_pcr` | D+1 00:00 (unconfirmed) | TAIFEX publishes no time for pcRatio |
@@ -645,7 +647,7 @@ is kept on purpose — never tighten one from memory:
 | `twstock_all_broker_net` / `branch_daily_net` / `trader_flows` / `broker_net` | D+1 00:00 | TWSE 買賣日報表 16:00; FinMind 21:00; Blave's store is written only by its job at 21:30 with a 23:30 retry (one run observed: 2026-09-23, day written 21:31) → 00:00 covers the retry; `broker_net` is sparse → no freshness check |
 | `twstock_monthly_revenue` (+`_batch`) | the day after the 10th, 08:00 (a weekend 10th → the day after Monday) | 證券交易法 §36; FinMind weekdays 18:00; api UTC-day cache; stamp 04-01 = March. FSC may extend a holiday month (特殊適用範圍辦法 §4-1) |
 | `twstock_monthly_revenue_insurance` | as above with the 15th, from 2026 revenue | 特殊適用範圍辦法 §3(5) |
-| `twstock_financials` / `balance_sheet` / `twstock_ratios` (+`_batch`) | 5/16, 8/15, 11/15, next 4/1 — 08:00 | 證券交易法 §36; api UTC-day cache; FinMind's own ingest time undocumented (a late one → live warning) |
+| `twstock_financials` / `balance_sheet` / `cashflow` / `twstock_ratios` (+`_batch`) | 5/16, 8/15, 11/15, next 4/1 — 08:00 | 證券交易法 §36; api UTC-day cache; FinMind's own ingest time undocumented (a late one → live warning) |
 | `twstock_financials_finance` | 5/16, **9/1**, 11/15, next 4/1 — 08:00 | 金控·銀行·證券·期貨·保險: Q2 within two months (特殊適用範圍辦法 §3(3)) |
 | `twstock_alerts` (注意股／處置股, row = announcement day) | D+1 07:30 (unconfirmed) | TWSE / TPEx announce after the close and publish no time; Blave's store is rewritten at 17:45 / 21:30 / 07:00 and a TPEx evening announcement may first land in the 07:00 run. A disposal is in force from the next trading day — `twstock_disposal_mask` is the in-force view. Sparse → no freshness check |
 | `twstock_shareholding` (+`_batch`) | data date + 3 days 08:00 (unconfirmed) | TDCC / FinMind publish no time |

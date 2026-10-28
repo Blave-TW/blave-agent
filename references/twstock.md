@@ -70,10 +70,14 @@ Equal draw per industry, the shortfall topped up at random; a fixed `seed` (defa
 |---|---|---|
 | `fetch_twstock_quote(sid, headers)` | `/twstock/quote/<sid>` | Single stock — current price check before a trade decision, "what's it trading at right now" |
 | `fetch_twstock_quote_batch(stock_ids, headers)` | `/twstock/quote` | Multiple stocks in one call (max 50) — checking several holdings at once |
+| `fetch_twstock_quote_all(headers)` | `/twstock/quote/all` | The whole market (~2,800 rows) in ONE request — today's top movers, volume-ratio scans, any "which stocks right now" question |
 
-Both return a plain **dict** (or `{stock_id: dict}` for batch), not a DataFrame — there is
-no date range to index on, only the current snapshot. Refreshes approximately every 10
-seconds during market and post-market sessions; there is no history endpoint variant.
+The first two return a plain **dict** (or `{stock_id: dict}` for batch), not a DataFrame — there is
+no date range to index on, only the current snapshot. `fetch_twstock_quote_all` returns a
+**DataFrame indexed by `stock_id`** with the same fields as columns (never loop
+`fetch_twstock_quote_batch` over the market — one `quote_all` call replaces ~56 of them).
+Refreshes approximately every 10 seconds during market and post-market sessions; there is no
+history endpoint variant.
 
 ```python
 quote = fetch_twstock_quote('2330', headers)
@@ -372,13 +376,55 @@ avg_fee = df.groupby("date").apply(lambda x: x["value"].sum() / x["volume"].sum(
 
 ---
 
+## Per-stock margin trading (個股融資融券)
+
+One stock's daily 融資 / 融券 — balances, the day's buys and sells, limits. This is NOT the
+whole-market total (`fetch_twmarket_margin`, next section): a question about one stock's
+融資餘額 / 融資使用率 / 券資比 is answered here.
+
+```python
+from lib.data import fetch_twstock_margin
+
+m = fetch_twstock_margin('2330', '2024-01-01', None, hdrs)   # naive date index, one row per trading day
+m['margin_util'] = m['margin_balance'] / m['margin_limit']   # 融資使用率
+m['short_margin_ratio'] = m['short_balance'] / m['margin_balance']   # 券資比
+```
+
+API: `GET /studio/market/twstock/margin/<stock_id>`. **Every column is in lots (張), not shares.**
+
+| Column | Meaning |
+|---|---|
+| `margin_buy` / `margin_sell` | 融資買進 / 賣出 |
+| `margin_cash_repay` | 融資現金償還 |
+| `margin_balance` / `margin_prev_balance` | 融資今日 / 前日餘額 |
+| `margin_limit` | 融資限額 — the cap published on that row's date for the NEXT business day |
+| `short_buy` / `short_sell` | 融券買進 / 賣出 |
+| `short_cash_repay` | 融券現金償還 |
+| `short_balance` / `short_prev_balance` | 融券今日 / 前日餘額 |
+| `short_limit` | 融券限額 |
+| `offset_loan_short` | 資券相抵 |
+
+Notes:
+- Take every figure of a ratio from the same row: `margin_limit` is re-published daily and changes over time.
+- History depth is per stock, not one fixed date (`2330`: from 2001-01-05, observed). A deep-end
+  question → one narrow probe (`references/lib.md` › *Data-depth discipline*), never a remembered date.
+- Per-stock only, no `*_batch` variant: for many stocks, narrow the pool first (Whole-market
+  Screening below) and call it on the narrowed pool only, one stock at a time.
+- Never sum it across stocks to get the market — `fetch_twmarket_margin` is the official total.
+- In a strategy: `join_tw_flow(df, 'stock_margin', INTERVAL, START, END, hdrs, id='2330')` adds the
+  columns prefixed `sm_` (`sm_margin_balance` …), attached by publication time (D 21:05 Taipei) —
+  `references/strategy-code.md` › *Taiwan daily flows*.
+
+---
+
 ## Market-wide data (大盤)
 
-**In a strategy, attach 三大法人 / 融資融券 / 本益比 / 分點 / PCR with `lib.data.join_tw_flow` (one call, by publication time) — `references/strategy-code.md` › *Taiwan daily flows*; many stocks at once (Type C) → `align_feed` in the same section.**
+**In a strategy, attach 三大法人 / 融資融券 / 本益比 / 分點 / PCR with `lib.data.join_tw_flow` (one call, by publication time) — `references/strategy-code.md` › *Taiwan daily flows*; many stocks at once (Type C) → `align_feed` in the same section. 融資融券 has two kinds there: `margin` = the whole market, `stock_margin` = one stock (previous section).**
 
 Whole-market series — no `stock_id` dimension. Use these for index level, market breadth /
-turnover, and market-wide institutional or margin flows; the per-stock `fetch_twstock_*`
-functions above answer a different question and must not be summed as a substitute.
+turnover, and market-wide institutional or margin flows; the per-stock functions
+(`fetch_twstock_institutional`, `fetch_twstock_margin` above, …) answer a different question
+and must not be summed as a substitute.
 
 ```python
 from lib.data import (
@@ -406,7 +452,7 @@ Notes:
   is part of `dealer` once and never part of `foreign` (`foreign` is 外資及陸資(不含外資自營商)).
   TWSE prints 外資自營商 as its own row only from 2017-12-18; before that there is one
   外資(及陸資) row, taken whole as `foreign` (in both this series and the key-free twin).
-- Margin balances are whole-market; `margin_balance_value` is the only TWD column, the rest are lots.
+- Margin balances here are whole-market; `margin_balance_value` is the only TWD column, the rest are lots. One stock's 融資融券 → `fetch_twstock_margin` (previous section).
 - TXO put/call ratio is a futures/options dataset — see `fetch_twfutures_pcr` in
   `references/twfutures.md`, not here.
 - TAIEX daily index dividend points (`fetch_twmarket_dividend_points` — realized +
@@ -460,6 +506,7 @@ from lib.data import (
 
 分點資料（非 batch，按 trader 維度）：
 - `fetch_twstock_trader_flows(trader_id, start, end, headers)` → MultiIndex (date, stock_id)，`net` 欄（買 - 賣股數）；trader_id 例如 `'9217'`（凱基-松山）
+- `fetch_twstock_broker_search(name, headers)` (`GET /studio/market/twstock/broker/search`) → list of `{'broker_id', 'broker_name'}` — the way from a branch name the user typed to its `trader_id` / `broker_id`. `name` is any part of the name, case-insensitive, and every branch containing it comes back (`'松山'` includes `凱基-松山` `'9217'`); `[]` = no match. Several hits → show them and ask which one, never pick one yourself. Never guess a branch code from memory.
 
 Per-stock branch flows (one stock, every branch; shares, net = buy − sell; daily, naive date index):
 - `fetch_twstock_branch_daily_net(stock_id, start, end, headers)` → DataFrame, rows = dates, columns = `broker_id`; a branch that did not trade that day is 0.
@@ -483,8 +530,8 @@ Work as a funnel — narrow the pool first, then pull time series (measured on t
 1. **Narrow the pool (seconds)**: `fetch_twstock_market_value_all` (whole-market market-cap
    ranking in one call — THE first-layer filter for market-cap conditions: top-N pool, 前十大權值股;
    ETFs are in it, drop them with `~df["is_etf"]` and never by code prefix;
-   `fetch_twstock_list` itself has no market-cap column), `fetch_twstock_list` (industry), `fetch_twstock_quote_batch`
-   (whole-market change/volume ratio, ~24s), `fetch_twstock_monthly_revenue_batch` /
+   `fetch_twstock_list` itself has no market-cap column), `fetch_twstock_list` (industry), `fetch_twstock_quote_all`
+   (whole-market change/volume ratio, one request), `fetch_twstock_monthly_revenue_batch` /
    `fetch_twstock_per_batch` (fundamental / value conditions) → down to a few hundred stocks.
    Per-stock `/market_value/{stock_id}` history is for the already-narrowed pool only.
 2. **Time-series conditions (~10–30s per 100 stocks)**: on the narrowed pool use
@@ -686,6 +733,38 @@ call; an empty list raises `ValueError` (pass `None` for every item).
 損益表 key types：`Revenue`、`GrossProfit`、`OperatingIncome`、`IncomeAfterTaxes`、`EPS`
 
 資產負債表 key types：`TotalAssets`、`Equity`
+
+### Cash-flow statement (現金流量表)
+
+Ready-made free cash flow per quarter / TTM is in `fetch_twstock_ratios` (`fcf_*`, Financial
+ratios above) — use that first. The raw statement, one stock at a time (no `*_batch` variant):
+
+```python
+from lib.data import fetch_twstock_cashflow
+
+cf  = fetch_twstock_cashflow('2330', hdrs)      # long format: index = quarter end, type / value / origin_name
+ytd = cf.pivot_table(index='date', columns='type', values='value', aggfunc='last')
+cfo = ytd['CashFlowsFromOperatingActivities']
+prev = cfo.reindex(cfo.index - pd.offsets.QuarterEnd(1)).values   # the row three months earlier, NaN if missing
+cfo_q = cfo.where(cfo.index.month == 3, cfo - prev)                # YTD → single quarter (Q1 as is)
+```
+
+API: `GET /studio/market/twstock/cashflow/<stock_id>`; history from 2013, cache refreshed when a
+filing falls due (attach with `align_feed` source `'twstock_cashflow'`, after pivoting).
+
+- **Flow items are year-to-date cumulative, as filed in Taiwan:** the `03-31` row is Q1, `06-30`
+  is Q1+Q2, `09-30` Q1–Q3, `12-31` the full year. One quarter = the row minus the same year's row
+  three months earlier (Q1 as is); a missing earlier row → NaN, never the YTD figure. The snippet
+  above does exactly that.
+- Balances (`CashBalancesBeginningOfPeriod` = start of the YEAR, `CashBalancesEndOfPeriod` =
+  quarter end) are point-in-time — never difference them.
+- Filter on `type`, not `origin_name` (the same item's label changes between years). The item
+  set varies by company and year; treat the returned `type`s as the list.
+
+Key types: `CashFlowsFromOperatingActivities` 營業活動、`CashProvidedByInvestingActivities` 投資活動、
+`CashFlowsProvidedFromFinancingActivities` 籌資活動、`PropertyAndPlantAndEquipment` 取得不動產廠房及設備
+(capex, negative)、`Depreciation` / `AmortizationExpense`、`CashBalancesIncrease`、
+`CashBalancesBeginningOfPeriod` / `CashBalancesEndOfPeriod`
 
 ---
 

@@ -599,8 +599,8 @@ def _save_monthly(prefix, params, df):
 # tail would land on an under-adjusted history with a fake gap at the seam, so the old
 # `twstock_price_<id>` / `twstock_price2_<id>` files are left unread.
 _SINGLE_FILE_PREFIXES = frozenset({
-    'twstock_price3', 'twstock_price_nonadj', 'twstock_inst', 'twstock_shareholding',
-    'twstock_per', 'twstock_foreign_sh',
+    'twstock_price3', 'twstock_price_nonadj', 'twstock_inst', 'twstock_margin',
+    'twstock_shareholding', 'twstock_per', 'twstock_foreign_sh',
     'twmarket_index', 'twmarket_turnover', 'twmarket_institutional', 'twmarket_margin',
     'twfutures_institutional',
 })
@@ -3135,6 +3135,18 @@ def fetch_twstock_quote_batch(stock_ids, headers):
     return r.json().get('data', {})
 
 
+def fetch_twstock_quote_all(headers):
+    """Whole-market 即時報價 snapshot in one request (~2,800 rows) — a DataFrame indexed by
+    stock_id, same fields as fetch_twstock_quote per row. For screening the whole market on
+    today's change / volume ratio; fetch_twstock_quote_batch stays the call for a known list.
+    No local cache, same as the single-stock version (server cache 10 s)."""
+    r = _retry_get(f'{BASE}/studio/market/twstock/quote/all', headers=headers, timeout=60)
+    df = pd.DataFrame(r.json().get('data', []))
+    if df.empty:
+        return df
+    return df.set_index('stock_id')
+
+
 # ── Taiwan stock minute-line OHLCV ────────────────────────────────────────────
 
 _TWSTOCK_MINUTE_CHUNK_DAYS = {'1d': 3650, '1m': 28, '5m': 28, '15m': 28, '30m': 28, '60m': 28}
@@ -3276,6 +3288,42 @@ def fetch_twstock_institutional(stock_id, start, end, headers):
     return _extend_cache_monthly(
         'twstock_inst', {'id': stock_id},
         lambda s, e: _fetch_twstock_inst_raw(stock_id, s, e, headers),
+        start, end,
+    )
+
+
+_TWSTOCK_MARGIN_COLUMNS = [
+    'margin_buy', 'margin_sell', 'margin_cash_repay', 'margin_balance', 'margin_prev_balance',
+    'margin_limit', 'short_buy', 'short_sell', 'short_cash_repay', 'short_balance',
+    'short_prev_balance', 'short_limit', 'offset_loan_short',
+]
+
+
+def _fetch_twstock_margin_raw(stock_id, start, end, headers):
+    end_str = end or datetime.utcnow().strftime('%Y-%m-%d')
+    r = _retry_get(f'{BASE}/studio/market/twstock/margin/{stock_id}',
+                   headers=headers, params={'start': start, 'end': end_str}, timeout=60)
+    data = r.json().get('data', [])
+    if not data:
+        return pd.DataFrame(columns=_TWSTOCK_MARGIN_COLUMNS)
+    df = pd.DataFrame(data)
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.set_index('date').sort_index()
+    df = df[~df.index.duplicated(keep='last')]
+    return df.reindex(columns=_TWSTOCK_MARGIN_COLUMNS).fillna(0).astype('int64')
+
+
+def fetch_twstock_margin(stock_id, start, end, headers):
+    """個股融資融券 (per-stock margin trading), one row per trading day. Naive date index.
+    Every column is in lots (張), not shares: margin_buy / margin_sell / margin_cash_repay,
+    margin_balance / margin_prev_balance (融資今日 / 前日餘額), margin_limit (融資限額 as
+    published that day = the cap for the NEXT business day), the same six for 融券 with a
+    short_ prefix, and offset_loan_short (資券相抵). Take every figure of a ratio from the
+    same row (融資使用率 = margin_balance / margin_limit). History is per stock (2330 from
+    2001). Whole-market totals are fetch_twmarket_margin — never sum this across stocks."""
+    return _extend_cache_monthly(
+        'twstock_margin', {'id': stock_id},
+        lambda s, e: _fetch_twstock_margin_raw(stock_id, s, e, headers),
         start, end,
     )
 
@@ -3738,6 +3786,20 @@ def fetch_twstock_broker_net(stock_id, broker_id, start, end, headers,
     return result.set_index('date').sort_index()
 
 
+def fetch_twstock_broker_search(name, headers):
+    """券商分點查詢: branch name → broker_id, for fetch_twstock_broker_net / trader_flows.
+    `name` is any part of the branch name, case-insensitive ('松山' → 凱基-松山 '9217').
+    Returns a list of {'broker_id', 'broker_name'}; [] = no branch matches. ~1,000 branches,
+    no local cache (the server holds the directory)."""
+    name = (name or '').strip()
+    if not name:
+        raise ValueError('fetch_twstock_broker_search: name must be a non-empty string')
+    # the server matches `name` as a regular expression; escaped, '(' or '+' is just a character
+    r = _retry_get(f'{BASE}/studio/market/twstock/broker/search', headers=headers,
+                   params={'name': re.escape(name)}, timeout=30)
+    return r.json().get('data', [])
+
+
 def fetch_twstock_all_broker_net(stock_id, start, end, headers,
                                   max_workers=10, rate_limit=270, period=300,
                                   max_retries=5):
@@ -3889,6 +3951,7 @@ def _filing_due_since(prefix, written_epoch):
     rules = {'twstock_rev':  ('MS', (_revenue_available, _revenue_available_insurance)),
              'twstock_fin':  ('QS', (_quarterly_report_available, _quarterly_report_available_finance)),
              'twstock_bs':   ('QS', (_quarterly_report_available, _quarterly_report_available_finance)),
+             'twstock_cf':   ('QS', (_quarterly_report_available, _quarterly_report_available_finance)),
              'twstock_ratios': ('QS', (_quarterly_report_available, _quarterly_report_available_finance))}
     if prefix not in rules:
         return False
@@ -4010,6 +4073,18 @@ def fetch_twstock_balance_sheet(stock_id, headers):
     """台股季頻資產負債表 (long format). index=date, columns: type, value, origin_name.
     Key types: TotalAssets, Equity. ROE = IncomeAfterTaxes / Equity."""
     return _fetch_fundamental('twstock_bs', 'balance_sheet', stock_id, headers)
+
+
+def fetch_twstock_cashflow(stock_id, headers):
+    """台股季頻現金流量表 (long format). index=date (quarter end), columns: type, value,
+    origin_name; history from 2013. Key types: CashFlowsFromOperatingActivities,
+    CashProvidedByInvestingActivities, CashFlowsProvidedFromFinancingActivities,
+    PropertyAndPlantAndEquipment (capex, negative), CashBalancesEndOfPeriod.
+    Flow items are YEAR-TO-DATE cumulative, as filed: the 06-30 row is Q1+Q2. One quarter =
+    this row − the same year's row three months earlier (03-31 as is); balances
+    (CashBalances*) are point-in-time and never differenced. Filter on `type`, not
+    origin_name. Ready-made free cash flow per quarter / TTM: fetch_twstock_ratios."""
+    return _fetch_fundamental('twstock_cf', 'cashflow', stock_id, headers)
 
 
 def fetch_twstock_monthly_revenue(stock_id, headers):
@@ -7244,6 +7319,9 @@ FEED_TIMING = {
         f"({_TWSE_ESHOP}d31c1b9570ae47058ec83a0bb1ffa419); FinMind 15:00 ({_FINMIND_CHIP}); + api "
         "cache 5 min. Assumes the stored history is the 19:40 version (unconfirmed) — if it is the "
         "14:50 one this is late, never early"),
+    'twstock_margin': _tw_daily(
+        _same_day_at(21, 5), f"TWSE 融資融券 per stock, same 約21:00 report as twmarket_margin "
+        f"({_TWSE_ESHOP}388dd3a09824427d8c01a9d2b21e820b); + api cache 5 min"),
     'twmarket_margin': _tw_daily(
         _same_day_at(21, 5), f"TWSE 融資融券餘額 約21:00 ({_TWSE_ESHOP}388dd3a09824427d8c01a9d2b21e820b); "
         f"FinMind 21:00 ({_FINMIND_CHIP}); + api cache 5 min"),
@@ -7338,6 +7416,7 @@ for _alias, _key in (('twstock_price_adj', 'twstock_price'),
                      ('twstock_shareholding_batch', 'twstock_shareholding'),
                      ('twstock_monthly_revenue_batch', 'twstock_monthly_revenue'),
                      ('twstock_balance_sheet', 'twstock_financials'),
+                     ('twstock_cashflow', 'twstock_financials'),
                      ('twstock_financials_batch', 'twstock_financials'),
                      ('twstock_balance_sheet_batch', 'twstock_financials'),
                      ('twstock_ratios', 'twstock_financials'),
@@ -7572,6 +7651,7 @@ TW_FLOWS = {
     'stock_institutional':   ('fetch_twstock_institutional',   'twstock_institutional',   True, 'inst_'),
     'market_institutional':  ('fetch_twmarket_institutional',  'twmarket_institutional',  False, 'mkt_'),
     'margin':                ('fetch_twmarket_margin',         'twmarket_margin',         False, ''),
+    'stock_margin':          ('fetch_twstock_margin',          'twstock_margin',          True, 'sm_'),
     'pcr':                   ('fetch_twfutures_pcr',           'twfutures_pcr',           False, ''),
     'carrying_cost':         ('fetch_twfutures_carrying_cost', 'twfutures_carrying_cost', True, 'cc_'),
     'per':                   ('fetch_twstock_per',             'twstock_per',             True, ''),
@@ -7589,7 +7669,8 @@ def join_tw_flow(df, kind, interval, start, end, headers, id=None, prefix=None):
     futures_institutional  'TX' / 'MTX' / 'TMF' (TXF/MXF accepted)   {foreign|investment_trust|dealer}_{net_oi|long_oi|short_oi|net_deal}
     stock_institutional    stock id        foreign_net + the raw buy/sell columns
     market_institutional   —               foreign, investment_trust, dealer, total (元)
-    margin                 —               margin_balance(_prev), margin_balance_value, short_balance(_prev)
+    margin                 —               WHOLE MARKET: margin_balance(_prev), margin_balance_value, short_balance(_prev)
+    stock_margin           stock id        one stock's 融資融券 (lots): margin_/short_{buy|sell|cash_repay|balance|prev_balance|limit}, offset_loan_short
     pcr                    —               pcr
     carrying_cost          'foreign' / 'investment_trust' / 'dealer'   net_open_interest(_change), cost, mark_price, txf_close, {unrealized|realized|total}_pnl, cycle_start
     per                    stock id        dividend_yield, PER, PBR
@@ -7631,6 +7712,7 @@ _PRICE_FETCHERS = {
     'fetch_twstock_price': 'tw', 'fetch_twstock_price_adj': 'tw',
     'fetch_twstock_price_batch': 'tw', 'fetch_twstock_price_adj_batch': 'tw',
     'fetch_twstock_ohlcv': 'tw', 'fetch_twstock_quote': 'tw', 'fetch_twstock_quote_batch': 'tw',
+    'fetch_twstock_quote_all': 'tw',
     'fetch_twse_day_all_public': 'tw', 'fetch_twmarket_index': 'tw',
     'fetch_twmarket_index_public': 'tw',
     'fetch_twfutures_ohlcv': 'twfutures', 'fetch_twfutures_ohlcv_batch': 'twfutures',
@@ -7656,10 +7738,12 @@ _NON_PRICE_FETCHERS = frozenset({
     'fetch_twmarket_margin_public', 'fetch_twmarket_turnover', 'fetch_twmarket_turnover_public',
     'fetch_twstock_alerts', 'fetch_twstock_all_broker_net', 'fetch_twstock_balance_sheet',
     'fetch_twstock_balance_sheet_batch', 'fetch_twstock_branch_daily_net',
-    'fetch_twstock_broker_net', 'fetch_twstock_dividend', 'fetch_twstock_dividend_batch',
+    'fetch_twstock_broker_net', 'fetch_twstock_broker_search', 'fetch_twstock_cashflow',
+    'fetch_twstock_dividend', 'fetch_twstock_dividend_batch',
     'fetch_twstock_financials', 'fetch_twstock_financials_batch',
     'fetch_twstock_foreign_shareholding_batch', 'fetch_twstock_holidays', 'fetch_twstock_info',
     'fetch_twstock_institutional', 'fetch_twstock_institutional_batch', 'fetch_twstock_list',
+    'fetch_twstock_margin',
     'fetch_twstock_market_value_all', 'fetch_twstock_monthly_revenue',
     'fetch_twstock_monthly_revenue_batch', 'fetch_twstock_ohlcv_symbols', 'fetch_twstock_per',
     'fetch_twstock_per_batch', 'fetch_twstock_ratios', 'fetch_twstock_ratios_batch',
