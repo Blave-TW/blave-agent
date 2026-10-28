@@ -52,6 +52,7 @@ def reset(seed_symbols=None):
     capital_vault._last_order_mem = 0.0
     reconciler._manual_noted.clear()
     getattr(reconciler, "_PARKED_MEM", {}).clear()
+    getattr(reconciler, "_claim_save_fails", {}).clear()
     tg.clear()
     json.dump(CONFIG, open("manager/portfolio_config.json", "w"))
     json.dump({"seeded_at": "2026-10-27T01:37:41.641854", "symbols": seed_symbols or {}},
@@ -598,6 +599,20 @@ check(e is not None and guard._halt_flag and "TMF" in pending() and qty() == 0,
 guard._halt_flag = False  # the restart
 round_read()
 check(qty() == 1.0 and pending() == {}, "…after a restart booked once", qty())
+
+# 7. the park file refuses every claim save: one order_errors row on the third round, not before
+park_tmf()
+reconciler._save_pending_sent = locked
+seen = []
+for _ in range(reconciler.CLAIM_SAVE_FAILS_MAX):
+    failing_read(OSError)
+    rows_ = json.load(open("manager/order_errors.json", encoding="utf-8")) if os.path.exists("manager/order_errors.json") else []
+    seen.append(len([x for x in rows_ if "連續" in x.get("error", "") and "存不進去" in x.get("error", "")]))
+reconciler._save_pending_sent = real_save
+check(seen == [0] * (reconciler.CLAIM_SAVE_FAILS_MAX - 1) + [1] and qty() == 1.0,
+      "park file refused three rounds in a row: one order_errors row on the third, booked once", seen)
+round_read()
+check(qty() == 1.0 and pending() == {}, "…the file takes it again: row dropped by its id", qty())
 
 # ── one snapshot read: positions and query_started_at never come from two files (v035 P2-2) ──
 reset()

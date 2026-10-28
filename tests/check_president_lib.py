@@ -1425,6 +1425,38 @@ try:
     guard._halt_flag = False  # the restart
     gp()
     check(pending() == {} and book_qty() == q0 + 1, "…after a restart the row is booked once", book_qty())
+
+    # 7. save refused after booking, then a close of the same contract comes back 'sent' in that
+    #    round: it gets a row of its own, not merged into the booked one (which next round drops)
+    q0 = park_one()
+    reconciler._save_pending_sent = locked
+    e = failing_round(PermissionError)
+    reconciler._save_pending_sent = real_save
+    n = acct[0]
+    FILL["reduce"] = "sent"
+    reconciler.place_order("TMF", -1, exchange="president", reduce_only=True)
+    FILL.clear()
+    row7 = pending().get("TMFJ6") or {}
+    check(e is None and book_qty() == q0 + 1 and row7.get("lots") == -1 and len(row7.get("legs") or []) == 1,
+          "a close parked after a booked-but-unsaved claim opens a new row (−1, one leg)", row7)
+    acct[0] = n - 1  # the close filled late
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": n - 1, "net_current": n - 1}] if n - 1 else [])
+    gp()
+    check(pending() == {} and book_qty() == q0 and not guard.halted(),
+          "…next round books the close's late fill: book back to where it was", (pending(), book_qty()))
+
+    # 8. the park file refuses every claim save: one order_errors row on the third round, not before
+    q0 = park_one()
+    reconciler._save_pending_sent = locked
+    seen = []
+    for _ in range(reconciler.CLAIM_SAVE_FAILS_MAX):
+        failing_round(PermissionError)
+        seen.append(len([x for x in errors() if "連續" in x.get("error", "") and "存不進去" in x.get("error", "")]))
+    reconciler._save_pending_sent = real_save
+    check(seen == [0] * (reconciler.CLAIM_SAVE_FAILS_MAX - 1) + [1] and book_qty() == q0 + 1,
+          "park file refused three rounds in a row: one order_errors row on the third, booked once", seen)
+    gp()
+    check(pending() == {} and book_qty() == q0 + 1, "…the file takes it again: row dropped by its id")
     guard.clear_halt("test")
     for f in ("manager/ledger_seed.json", "manager/orders.jsonl"):
         if os.path.exists(f):
