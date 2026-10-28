@@ -290,6 +290,7 @@ _TW_INDEX_LEG = "tw_index_leg"   # internal: resolved by SYMBOL, never reported
 _HINT_FETCHERS = {
     "fetch_binance_ticker_24h": "crypto",
     "fetch_twstock_quote": "tw_stock", "fetch_twstock_quote_batch": "tw_stock",
+    "fetch_twstock_quote_all": "tw_stock",
     "fetch_twse_day_all_public": "tw_stock",
     "fetch_twmarket_index": _TW_INDEX_LEG, "fetch_twmarket_index_public": _TW_INDEX_LEG,
 }
