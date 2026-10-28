@@ -2356,7 +2356,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, isFinite, console,
       $: (id) => (id === "tr-hist" ? hist : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "zh", CX_VENUES: {}, PAPER: "paper", trShould: () => true, trUnit: () => "TWD", trSetTab: (tab, focus) => { ctx.tabbed = [tab, focus]; } });
     vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "\n" + src.slice(src.indexOf("const TR_EV_P1 = ["), src.indexOf("function trOvEvents(")).replace(/^const /gm, "var ")
-      + ["trEl", "trSec", "trFmt", "trFmtPrice", "trStamp", "trHM", "trReport", "trDisplay", "trVenueLabel", "trTxfSymInto", "trOrderContract", "trWithUnit", "trPaintHist", "trTwNamesWant", "trTwName", "trTwNameEl", "trOvFills", "trOvEvents"].map(cutF).join("\n"), ctx);
+      + src.match(/^let trHistTipEl = [^\n]*/m)[0].replace(/^let /, "var ") + "\n"
+      + ["trEl", "trSec", "trFmt", "trFmtPrice", "trStamp", "trHM", "trReport", "trDisplay", "trVenueLabel", "trTxfSymInto", "trOrderContract", "trWithUnit", "trPosKey", "trPosFocusOf", "trHistTipBox", "trHistTipShow", "trHistTipHide", "trHistTipBtn", "trPaintHist", "trTwNamesWant", "trTwName", "trTwNameEl", "trOvFills", "trOvEvents"].map(cutF).join("\n"), ctx);
     const now = Math.floor(Date.now() / 1000);
     const CAP = { ts: now - 60, action: "BUY", symbol: "TX2610", exchange: "capital", signed_diff: 2, legs: [{ executed_qty: 2, fill_price: 23000 }] };
     const CAP_SPEC = { ts: now - 50, action: "SELL", symbol: "TMF", exchange: "paper", asset_spec: { type: "futures_contracts", contract_value: 10 }, signed_diff: -3, legs: [] };
@@ -2390,6 +2391,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       { const hist7 = paintHist([CAP, { ...CAP, ts: now - 31 * 86400 }]).filter((n) => n.className === "pf-log-row").length;
         const f = paintEv({ orders: [CAP, { ...CAP, ts: now - 31 * 86400 }] }, 30).find((n) => n.className === "pf-acts ev-fills");
         ok("§1.4 N = 交易歷史的列數:區間外(31 天前)的單也算,兩邊對得上", hist7 === 2 && !!f && f.kids[0].kids.some((k) => k && k.className === "mono" && k.textContent === "2"), J([hist7, f && f.textContent])); }
+      { const f = paintEv({ orders: [CAP, { ...CAP, ts: now - 50, fill_state: "unconfirmed" }, { ...CAP, ts: now - 40, fill_state: "unfilled" }, { ...CAP, ts: now - 30, fill_state: "late" }] }).find((n) => n.className === "pf-acts ev-fills");
+        ok("§1.4 N 不算送出未確認／未成交的列(fill_state),補記成交照算", !!f && f.kids[0].kids.some((k) => k && k.className === "mono" && k.textContent === "2"), J(f && f.textContent)); }
       { const evRows = (ui, halt) => { ctx.TR = { st: { report: { orders: [], halt } }, list: [], ov: { days: 30, ui, uiErr: false } };
           return flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)).filter((n) => n.className === "ev-row").map((x) => x.textContent); };
         const rc = evRows([{ ts: now - 60, type: "halt_close", closing: true }]), rh = evRows([{ ts: now - 60, type: "halt_close", closing: false }]), rp = evRows([{ ts: now - 60, type: "halt" }]);
@@ -2454,18 +2457,50 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const syms = paintHist([REAL, OLD]).filter((n) => n.tag === "span" && n.kids.some((k) => k && k.className === "mkt-tag")).map((n) => n.textContent);
       ok("#14 真資料:symbol TXF + legs[].resolved_symbol TX2610 → 下單紀錄寫「大台（TX2610）」;舊列沒有 resolved_symbol 只寫商品名(總覽事件自 0.1.20 不列成交)",
         syms.includes("tr.txfProd.txf（TX2610）tr.mkt.fut") && syms.includes("tr.txfProd.txftr.mkt.fut"), J(syms)); }
-    { // 送出後沒回報成交(runtime pair_unconfirmed_orders 配好的 fill_state):未確認、確認沒成交、補記成交
+    { // 送出後沒回報成交(runtime pair_unconfirmed_orders 配好的 fill_state);設計稽核 order-history-fill-state-2026-10-28 §4
       const base = { action: "BUY", symbol: "TMF", exchange: "capital", asset_spec: { type: "futures_contracts", contract_value: 10 }, signed_diff: 1 };
-      const UNC = { ...base, ts: now - 30, fill_state: "unconfirmed", legs: [{ executed_qty: 0, fill_price: 0 }] };
-      const NONE = { ...base, ts: now - 20, action: "SELL", signed_diff: -1, fill_state: "unfilled", legs: [{ executed_qty: 0, fill_price: 0 }] };
-      const LATE = { ...base, ts: now - 10, late_fill: true, fill_state: "late", legs: [{ executed_qty: 1, fill_price: 46934, resolved_symbol: "TM2611" }] };
-      const rows = paintHist([UNC, NONE, LATE]).filter((n) => n.className === "pf-log-row");
-      const [late, none, unc] = rows, kid = (r, c) => r.kids.find((k) => k && k.className === c);
-      ok("下單紀錄 fill_state:未確認 → 「買單已送出」+「未確認成交」(說明進 title)、不寫買進;確認沒成交 → 「賣單已送出」+「沒有成交」;補記 → 照常買進、合約月份與成交價,列的 title 講補記",
-        rows.length === 3 && kid(unc, "act pend") && kid(unc, "act pend").textContent === "tr.sentBuy" && kid(unc, "px").textContent === "tr.fillUnconfirmed" && kid(unc, "px").title === "tr.fillUnconfirmedTip"
-        && kid(none, "act pend").textContent === "tr.sentSell" && kid(none, "px").textContent === "tr.fillNone" && kid(none, "px").title === "tr.fillNoneTip"
-        && kid(late, "act buy").textContent === "tr.buy" && /TM2611/.test(late.textContent) && kid(late, "px mono").textContent === "@ 46,934.0" && late.title === "tr.fillLateTip"
-        && !unc.title && !kid(unc, "act buy"), J(rows.map((r) => [r.textContent, r.title]))); }
+      const UNC = { ...base, ts: now - 40, fill_state: "unconfirmed", legs: [{ executed_qty: 0, fill_price: 0 }] };
+      const NONE = { ...base, ts: now - 30, action: "SELL", signed_diff: -1, fill_state: "unfilled", legs: [{ executed_qty: 0, fill_price: 0 }] };
+      const LATE = { ...base, ts: now - 20, late_fill: true, fill_state: "late", legs: [{ executed_qty: 1, fill_price: 46934, resolved_symbol: "TM2611" }] };
+      const LATE0 = { ...base, ts: now - 10, action: "SELL", signed_diff: -1, late_fill: true, fill_state: "late", legs: [{ executed_qty: 1, resolved_symbol: "TM2611" }] };
+      const rows = paintHist([UNC, NONE, LATE, LATE0]).filter((n) => /^pf-log-row/.test(n.className));
+      const [late0, late, none, unc] = rows, kid = (r, c) => r.kids.find((k) => k && k.className === c);
+      const ub = kid(unc, "tr-tipb px");
+      ok("下單紀錄 fill_state:未確認 → 動作照「買進」、class act pend;狀態是可 focus 的 button.tr-tipb(aria-describedby=hist-tip、data-fk),沒有原生 title",
+        rows.length === 4 && kid(unc, "act pend") && kid(unc, "act pend").textContent === "tr.buy" && !kid(unc, "act buy")
+        && ub && ub.tag === "button" && ub.type === "button" && ub.textContent === "tr.fillUnconfirmed" && ub.attrs["aria-describedby"] === "hist-tip" && !!ub.dataset.fk
+        && ["mouseenter", "focus", "mouseleave", "blur", "click"].every((e) => typeof ub.on[e] === "function") && !ub.title && !unc.title, J(rows.map((r) => r.textContent)));
+      ok("下單紀錄 fill_state:未成交 → 列加 unfilled、「賣出」act pend、狀態 span.px「未成交」無 title",
+        none.className === "pf-log-row unfilled" && kid(none, "act pend").textContent === "tr.sell" && kid(none, "px").textContent === "tr.fillNone" && !kid(none, "px").title, J(none.textContent));
+      ok("下單紀錄 fill_state:補記 → 照常買賣色、合約月份;有價寫 @ 價,沒價常駐「成交價未回報」(sans);整列沒有 title",
+        kid(late, "act buy").textContent === "tr.buy" && /TM2611/.test(late.textContent) && kid(late, "px mono").textContent === "@ 46,934.0"
+        && kid(late0, "act sell") && kid(late0, "px").textContent === "tr.pxUnreported" && !kid(late0, "px mono") && !late.title && !late0.title, J([late.textContent, late0.textContent]));
+      const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
+      ok("文案(設計稽核版):未確認說明講 Blave 怎麼記、不叫用戶做事;未成交;成交價未回報;已送出／補記說明那幾條拿掉",
+        S.includes('"tr.fillUnconfirmedTip": "沒回報成交的口數沒算進策略部位。實際部位以券商軟體為準。"') && S.includes('"tr.fillNone": "未成交"') && S.includes('"tr.pxUnreported": "成交價未回報"')
+        && S.includes('"tr.pxUnreported": "Price not reported"') && S.includes("\"tr.fillUnconfirmedTip\": \"Lots with no fill report aren't counted in the strategy position. The broker's app shows the actual position.\"")
+        && !/tr\.(sentBuy|sentSell|fillNoneTip|fillLateTip)/.test(S + cutF("trPaintHist")));
+      const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
+      ok("CSS:act pend 用 --ink-3、未成交口數 --ink-3;說明氣泡是 fixed 單例 .hist-tip(同 .rob-tip)",
+        /\.pf-log-row \.act\.pend \{ color: var\(--ink-3\); \}/.test(css) && /\.pf-log-row\.unfilled \.amt \{ color: var\(--ink-3\); \}/.test(css)
+        && /\.tip\.hist-tip \{ position: fixed;[^}]*z-index: 60; \}/.test(css) && /\.tip\.hist-tip\.is-on \{ display: block; \}/.test(css)
+        && /document\.body\.appendChild\(trHistTipEl\)/.test(cutF("trHistTipBox")) && /e\.key === "Escape"/.test(cutF("trHistTipBox"))); }
+    { // 說明氣泡的開關:hover / focus 開、Esc / blur 收、觸控 focus 後緊接的 click 不收、之後再點一次收
+      const mk = (tag) => { const cls = new Set(); const n = { tag, className: "", kids: [], attrs: {}, dataset: {}, style: {}, on: {}, text: "",
+        classList: { add: (c) => cls.add(c), remove: (c) => cls.delete(c), contains: (c) => cls.has(c) },
+        setAttribute(k, v) { this.attrs[k] = v; }, appendChild(c) { this.kids.push(c); return c; }, addEventListener(e, f) { this.on[e] = f; },
+        getBoundingClientRect: () => ({ left: 900, bottom: 50 }), getClientRects: () => [1], set textContent(v) { this.text = v; }, get textContent() { return this.text; } }; return n; };
+      const docOn = {}, body = mk("body"), clock = { t: 1000 };
+      const c2 = vm.createContext({ document: { createElement: mk, body, addEventListener: (e, f) => { docOn[e] = f; } }, window: { innerWidth: 1024 }, Date: { now: () => clock.t }, Math });
+      vm.runInContext(src.match(/^let trHistTipEl = [^\n]*/m)[0].replace(/^let /, "var ") + "\n" + ["trEl", "trHistTipBox", "trHistTipShow", "trHistTipHide", "trHistTipBtn"].map(cutF).join("\n"), c2);
+      const b = vm.runInContext("trHistTipBtn('未確認成交', '說明', 'hist:x')", c2), tip = () => body.kids[0], on = () => !!tip() && tip().classList.contains("is-on");
+      b.on.focus(); const shown = on() && tip().text === "說明" && tip().id === "hist-tip" && tip().attrs.role === "tooltip" && tip().style.left === "752px" && tip().style.top === "56px";
+      b.on.click(); const keptOnTap = on();
+      clock.t += 1000; b.on.click(); const toggledOff = !on();
+      b.on.mouseenter(); docOn.keydown({ key: "Escape" }); const escOff = !on();
+      b.on.focus(); b.on.blur(); const blurOff = !on();
+      ok("說明氣泡:focus 開(限制在視窗內、掛 body、role=tooltip);觸控那一下 click 不收、再點一次收;Esc、blur 收;只建一顆",
+        shown && keptOnTap && toggledOff && escOff && blurOff && body.kids.length === 1 && tip().attrs["aria-hidden"] === "true", J([shown, keptOnTap, toggledOff, escOff, blurOff, body.kids.length])); }
     { ctx.trUnit = () => null; const all = paintHist([CAP, BTC]); ctx.trUnit = () => "TWD";
       const b = all.filter((n) => n.className === "amt mono")[0];
       ok("spec-0.1.13 #3 下單紀錄:帳戶幣未知 → 加密單不帶幣別、表下改講 tr.ccyUnknown(不出「金額單位：null」)", b.textContent === "500" && all.some((n) => n.className === "pf-foot" && n.textContent === "tr.ccyUnknown")
@@ -2593,7 +2628,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const bound = (...ids) => ({ orders: rows, venues: Object.fromEntries(ids.map((i) => [i, { credentials: true, pair: true, order: true, account: true }])) });
     ok("下單紀錄／事件只列目前連著的交易所:綁統一時模擬交易那幾筆不列、沒寫交易所的舊列照列;沒綁任何交易所全列;壞列丟掉", J(trOrdersShown(bound("president")).map((o) => o.symbol)) === J(["TMF", "TXF"])
       && J(trOrdersShown(bound("paper")).map((o) => o.symbol)) === J(["BTCUSDT", "TXF"]) && trOrdersShown(bound()).length === 3 && trOrdersShown(null).length === 0
-      && /const orders = trOrdersShown\(r\)\.slice\(\)\.reverse\(\);/.test(src) && /const n = trOrdersShown\(r\)\.length;/.test(src)); }
+      && /const orders = trOrdersShown\(r\)\.slice\(\)\.reverse\(\);/.test(src) && /const n = trOrdersShown\(r\)\.filter\(\(o\) => !\(o && \(o\.fill_state === "unconfirmed" \|\| o\.fill_state === "unfilled"\)\)\)\.length;/.test(src)); }
   // 0.1.18 設計師裁定 A:統一在倉橫幅整塊拿掉,改在狀態句「自動下單執行中」尾接「統一有 {n} 口在倉,電腦保持清醒」(只在這台電腦 + Windows;不講「不會平倉」)
   { const vm = require("vm"), R = path.join(__dirname, "..", "shell", "renderer");
     const cutB = (x, y) => src.slice(src.indexOf(x), src.indexOf(y));

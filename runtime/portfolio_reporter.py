@@ -892,7 +892,10 @@ def recent_orders():
 # (desktop, web workspace, App) reads this report's `orders`, so the pairing lives
 # here and nowhere else (.claude/docs/cross-surface-parity.md). orders.jsonl itself
 # stays as written: it is the self_ledger book, replayed line by line.
-#   row A  the send: executed_qty short of |signed_diff|, no leg error
+#   row A  the send: a leg that reported 0 filled (the parked leg is always written
+#          that way). Never "short of signed_diff": the row's signed_diff is the
+#          request before rounding, the reduce cap and a 統一 flip's deferred entry,
+#          so fully filled rows fall short of it all the time
 #   row B  lib.portfolio.book_late_fill: `late_fill`, the month contract, maybe a price
 #   audit  unfilled_order_cleared: the account never moved, the order did not fill
 # `fill_state` on the rows it concerns:
@@ -901,6 +904,8 @@ def recent_orders():
 #   "unconfirmed"  A with neither: still parked, dropped as the user's after a HALT,
 #                  or sent by a lib older than the parking (no claim ever came)
 #   "unfilled"     A the account showed never filled
+# A partial fill (a leg with 1 of 2 lots) is not an A: it reads as the fill it is,
+# and its late remainder stays its own "late" row.
 # B's ts, not A's: api agent_overview dedups orders on ts, so the late fill still
 # lands as its own order event the way it did before the pairing.
 # A late fill pairs with the nearest earlier unpaired A of the same venue, symbol
@@ -911,44 +916,29 @@ ORDERS_PAIR_TAIL = 100
 _AUDIT_TAIL_BYTES = 256 * 1024
 
 
-def _row_epoch(v):
-    if isinstance(v, (int, float)) and not isinstance(v, bool):
-        return float(v)
-    if not isinstance(v, str) or not v:
-        return None
-    try:
-        d = datetime.fromisoformat(v.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if d.tzinfo is None:
-        d = d.replace(tzinfo=timezone.utc)  # orders.jsonl: naive UTC (datetime.utcnow)
-    return d.timestamp()
+def _legs(o):
+    legs = o.get("legs") if isinstance(o, dict) else None
+    return [l for l in legs if isinstance(l, dict)] if isinstance(legs, list) else []
 
 
 def _leg_lots(legs):
     try:
-        return sum(abs(float(l.get("executed_qty") or 0)) for l in legs if isinstance(l, dict))
+        return sum(abs(float(l.get("executed_qty") or 0)) for l in legs)
     except (TypeError, ValueError):
         return None
 
 
-def _unfilled_lots(o):
-    if (not isinstance(o, dict) or o.get("late_fill")
-            or not venue_traits.has(o.get("exchange"), "hand_wired")):
-        return 0.0
-    legs = o.get("legs") if isinstance(o.get("legs"), list) else []
-    if any(isinstance(l, dict) and l.get("error") for l in legs):
-        return 0.0
-    got = _leg_lots(legs)
-    try:
-        want = abs(float(o.get("signed_diff") or 0))
-    except (TypeError, ValueError):
-        return 0.0
-    return want - got if got is not None and want - got > 1e-9 else 0.0
+def _is_unconfirmed_send(o):
+    return (isinstance(o, dict) and not o.get("late_fill") and "fill_state" not in o
+            and venue_traits.has(o.get("exchange"), "hand_wired")
+            and any(isinstance(l.get("executed_qty"), (int, float)) and not isinstance(l["executed_qty"], bool)
+                    and l["executed_qty"] == 0 for l in _legs(o)))
 
 
 def _audit_events(names):
-    """Rows of state/audit.jsonl's tail whose event is in `names` (append-only, lib/guard)."""
+    """Rows of state/audit.jsonl's tail whose event is in `names` (append-only, lib/guard).
+    Only the last 256 KB: a clear that has scrolled out leaves its row "unconfirmed",
+    never the other way round — the cut can only under-claim."""
     path = os.path.join(WORKSPACE_STATE, "audit.jsonl")
     try:
         with open(path, "rb") as f:
@@ -981,32 +971,29 @@ def pair_unconfirmed_orders(rows, audit_events):
             continue
         side = o.get("action")
         hit = next((i for i in range(len(out) - 1, -1, -1)
-                    if isinstance(out[i], dict) and "fill_state" not in out[i]
-                    and out[i].get("action") == side and out[i].get("exchange") == o.get("exchange")
-                    and out[i].get("symbol") == o.get("symbol") and _unfilled_lots(out[i]) > 0), None)
+                    if _is_unconfirmed_send(out[i]) and out[i].get("action") == side
+                    and out[i].get("exchange") == o.get("exchange") and out[i].get("symbol") == o.get("symbol")), None)
         if hit is None:
             out.append(dict(o, fill_state="late"))
             continue
         a = out.pop(hit)
-        legs = [l for l in a.get("legs") or [] if isinstance(l, dict) and _leg_lots([l])]
-        legs += [l for l in o.get("legs") or [] if isinstance(l, dict)]
+        legs = [l for l in _legs(a) if _leg_lots([l])] + _legs(o)
         lots = _leg_lots(legs) or 0.0
         out.append(dict(a, ts=o.get("ts"), legs=legs, late_fill=True, fill_state="late",
                         signed_diff=-lots if side == "SELL" else lots))
-    pending = [i for i, a in enumerate(out)
-               if isinstance(a, dict) and "fill_state" not in a and _unfilled_lots(a) > 0]
+    pending = [i for i, a in enumerate(out) if _is_unconfirmed_send(a)]
     if not pending:
         return out
     for i in pending:
         out[i] = dict(out[i], fill_state="unconfirmed")
     for ev in audit_events({"unfilled_order_cleared"}):
-        at = _row_epoch(ev.get("ts"))
+        at = _naive_utc(ev.get("ts"))
         try:
             side = "BUY" if float(ev.get("lots")) > 0 else "SELL"
         except (TypeError, ValueError):
             continue
         for i in reversed(pending):
-            a, t = out[i], _row_epoch(out[i].get("ts"))
+            a, t = out[i], _naive_utc(out[i].get("ts"))
             if (at is not None and t is not None and t <= at and a["fill_state"] == "unconfirmed"
                     and a.get("action") == side and a.get("exchange") == ev.get("venue")
                     and a.get("symbol") == ev.get("symbol")):

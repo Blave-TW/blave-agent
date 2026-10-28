@@ -4505,22 +4505,68 @@ function trPaintMargin(box, m, ccy, twd) {
   }
   box.appendChild(list);
 }
+// 「未確認成交」的說明:body 層級的 fixed 單例(同 report-wf 的 .wf-tip)——列在橫捲容器裡,行內氣泡會被裁掉。
+// hover 與鍵盤 focus 開,點一下切換(觸控);leave / blur / Esc 收
+let trHistTipEl = null, trHistTipAt = null, trHistTipOpened = 0;
+function trHistTipBox() {
+  if (trHistTipEl) return trHistTipEl;
+  trHistTipEl = trEl("div", "tip hist-tip");
+  trHistTipEl.id = "hist-tip";
+  trHistTipEl.setAttribute("role", "tooltip");
+  trHistTipEl.setAttribute("aria-hidden", "true");
+  document.body.appendChild(trHistTipEl);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") trHistTipHide(); });
+  const gone = () => { if (trHistTipAt && !trHistTipAt.getClientRects().length) trHistTipHide(); };
+  document.addEventListener("pointermove", gone);
+  document.addEventListener("keyup", gone);
+  return trHistTipEl;
+}
+function trHistTipShow(anchor, text) {
+  const tip = trHistTipBox(), r = anchor.getBoundingClientRect();
+  trHistTipAt = anchor; trHistTipOpened = Date.now();
+  tip.textContent = text;
+  tip.style.left = Math.max(0, Math.min(r.left, window.innerWidth - 272)) + "px";
+  tip.style.top = r.bottom + 6 + "px";
+  tip.classList.add("is-on");
+  tip.setAttribute("aria-hidden", "false");
+}
+function trHistTipHide() {
+  if (!trHistTipEl) return;
+  trHistTipAt = null;
+  trHistTipEl.classList.remove("is-on");
+  trHistTipEl.setAttribute("aria-hidden", "true");
+}
+function trHistTipBtn(text, tip, fk) {
+  const b = trEl("button", "tr-tipb px", text);
+  b.type = "button"; b.dataset.fk = fk;
+  b.setAttribute("aria-describedby", "hist-tip");
+  const open = () => trHistTipShow(b, tip);
+  b.addEventListener("mouseenter", open);
+  b.addEventListener("focus", open);
+  b.addEventListener("mouseleave", trHistTipHide);
+  b.addEventListener("blur", trHistTipHide);
+  // 觸控一點會先 focus 再 click:剛被 focus 打開的那一下不算「再點一次收起」
+  b.addEventListener("click", () => { if (trHistTipAt === b && Date.now() - trHistTipOpened > 400) trHistTipHide(); else open(); });
+  return b;
+}
 function trPaintHist() {
   const box = $("tr-hist"), r = trReport() || {};
   const orders = trOrdersShown(r).slice().reverse();
   if (!trShould("hist", box, [orders, trUnit(), TR.list.map((x) => x.displayName)])) return;
+  const refocus = trPosFocusOf(box);
+  trHistTipHide();
   box.textContent = "";
   box.appendChild(trSec(trEl("span", "label", t("tr.recentOrders"))));
   if (!orders.length) { box.appendChild(trEl("div", "pf-state", t("tr.noOrders"))); return; }
   const log = trEl("div", "pf-log");
   orders.forEach((o) => {
     if (!o || typeof o !== "object") return;
-    const row = trEl("div", "pf-log-row");
-    row.appendChild(trEl("span", "ts mono", trStamp(o.ts)));
-    const sell = o.action === "SELL";
     // fill_state:runtime portfolio_reporter.pair_unconfirmed_orders 配好的(各表面同一份規則,這裡只照著畫)
     const fstate = o.fill_state, unsettled = fstate === "unconfirmed" || fstate === "unfilled";
-    const act = trEl("span", "act " + (unsettled ? "pend" : sell ? "sell" : "buy"), unsettled ? t(sell ? "tr.sentSell" : "tr.sentBuy") : sell ? t("tr.sell") : t("tr.buy"));
+    const row = trEl("div", fstate === "unfilled" ? "pf-log-row unfilled" : "pf-log-row");
+    row.appendChild(trEl("span", "ts mono", trStamp(o.ts)));
+    const sell = o.action === "SELL";
+    const act = trEl("span", "act " + (unsettled ? "pend" : sell ? "sell" : "buy"), sell ? t("tr.sell") : t("tr.buy"));
     // 由哪些策略觸發:除錯用的補充,收進 title(這一列在橫捲容器裡,氣泡會被裁掉)
     const who = (Array.isArray(o.contributors) ? o.contributors : []).map((c) => (typeof c === "string" ? c : c && c.strategy)).filter(Boolean);
     if (who.length) act.title = t("tr.contributors", { names: who.map(trDisplay).join(LANG === "zh" ? "、" : ", ") });
@@ -4556,15 +4602,18 @@ function trPaintHist() {
     }
     row.appendChild(amt);
     const px = legs.map((l) => trFmtPrice(l && l.fill_price)).filter(Boolean);
-    if (unsettled) { const st = row.appendChild(trEl("span", "px", t(fstate === "unfilled" ? "tr.fillNone" : "tr.fillUnconfirmed"))); st.title = t(fstate === "unfilled" ? "tr.fillNoneTip" : "tr.fillUnconfirmedTip"); }
+    if (fstate === "unconfirmed") row.appendChild(trHistTipBtn(t("tr.fillUnconfirmed"), t("tr.fillUnconfirmedTip"), "hist:" + o.ts + ":" + sym + ":" + o.action));
+    else if (fstate === "unfilled") row.appendChild(trEl("span", "px", t("tr.fillNone")));
+    else if (fstate === "late" && !px.length) row.appendChild(trEl("span", "px", t("tr.pxUnreported")));
     else row.appendChild(trEl("span", "px mono", px.length ? "@ " + px.join(" → ") : ""));
-    if (fstate === "late") row.title = t("tr.fillLateTip");
     row.appendChild(trEl("span", "ex mono", trVenueLabel(String(o.exchange || ""), true)));
     log.appendChild(row);
   });
   box.appendChild(log);
   // 窄欄(<520)時列內的幣別收到這一行;口數單的「口」留在列內,全是口數單時這一行沒有對象,不出
   if (orders.some((o) => o && typeof o === "object" && !trOrderLots(o))) box.appendChild(trUnit() ? trEl("div", "pf-foot unit-note", t("tr.unitNote", { c: trUnit() })) : trEl("div", "pf-foot", t("tr.ccyUnknown")));
+  // 重畫後焦點回到同一顆「未確認成交」;那一列不在了就不搶焦點(不走 trPosFocusBack 的 #po-h 兜底:那在別的分頁)
+  if (refocus) { const b = [...box.querySelectorAll("[data-fk]")].find((x) => trPosKey(x) === refocus); if (b) b.focus(); }
 }
 function trPaintSet() {
   const box = $("tr-set"), r = trReport(), id = trVenueId(), ro = TR.env === "cloud";
@@ -5229,7 +5278,8 @@ function trEvBody(body, head, note, lv, tip, count, code, tail) {
    這裡標題列右側數成交筆數帶路過去。數的是連結打開的那一組(交易歷史畫的 trOrdersShown,不分區間):
    只數事件區間內的話,區間外的舊單會讓「成交 6 筆」對上 7 列(0.1.28 Wei 實測)。0 筆整行不出 */
 function trOvFills(r) {
-  const n = trOrdersShown(r).length;
+  // 送出沒確認／確認沒成交的列(fill_state)在交易歷史照列,但不算「成交」
+  const n = trOrdersShown(r).filter((o) => !(o && (o.fill_state === "unconfirmed" || o.fill_state === "unfilled"))).length;
   if (!n) return null;
   const acts = trEl("div", "pf-acts ev-fills"), cnt = trEl("span", "");
   const parts = t(n === 1 ? "tr.ov.evFillsOne" : "tr.ov.evFills").split("{n}");   // 數字單獨一個 .mono,字串自己決定數字落在哪
