@@ -1239,6 +1239,71 @@ try:
             os.remove(f)
     snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
 
+    # ── a claim drops its park row (saved) before it books: never booked twice (audit P1-1) ──
+    import lib.portfolio as _pf
+
+    def book_qty():
+        return (ledger_positions("president").get("TMF") or {}).get("qty") or 0.0
+
+    def park_one(net):
+        FILL["entry"] = "sent"
+        snapshot([{"root": "TMF", "productid": "TMFJ6", "net": net, "net_current": net}] if net else [])
+        reconciler.place_order("TMF", 1, exchange="president")
+        FILL.clear()
+        snapshot([{"root": "TMF", "productid": "TMFJ6", "net": net + 1, "net_current": net + 1}])
+
+    park_one(0)
+    n_adopt = len(audits("late_fill_adopted"))
+    real_save = reconciler._save_pending_sent
+
+    def locked(_pending):
+        raise PermissionError(13, "locked (fake)")
+
+    reconciler._save_pending_sent = locked
+    e = raises(PermissionError, gp)
+    reconciler._save_pending_sent = real_save
+    check(e is not None and "TMFJ6" in pending() and book_qty() == 0 and len(audits("late_fill_adopted")) == n_adopt,
+          "park-file save fails mid-claim: the round fails, nothing booked, the row is still on disk", (book_qty(), pending()))
+    gp()
+    gp()
+    check(pending() == {} and book_qty() == 1.0 and len(audits("late_fill_adopted")) == n_adopt + 1,
+          "…the next rounds book it exactly once", book_qty())
+
+    park_one(1)
+    real_book = _pf.book_late_fill
+
+    def killed(*a, **k):
+        raise KeyboardInterrupt("process killed between the save and the book")
+
+    _pf.book_late_fill = killed
+    e = raises(KeyboardInterrupt, gp)
+    _pf.book_late_fill = real_book
+    gp()
+    check(e is not None and pending() == {} and book_qty() == 1.0,
+          "killed after the row was saved away, before booking: the next round does not book it (no double book)",
+          (book_qty(), pending()))
+
+    park_one(1)
+    import builtins
+
+    def disk_full(path, mode="r", *a, **k):  # only the book's append fails
+        if str(path).endswith("orders.jsonl") and "a" in mode:
+            raise OSError(28, "No space left on device (fake)")
+        return builtins.open(path, mode, *a, **k)
+
+    _pf.open = disk_full
+    try:
+        gp()
+    finally:
+        del _pf.open
+    check(guard.halted() and pending() == {} and book_qty() == 1.0,
+          "the book write fails after the row is gone: HALT (the missed fill is loud, not re-booked)", book_qty())
+    guard.clear_halt("test")
+    for f in ("manager/ledger_seed.json", "manager/orders.jsonl"):
+        if os.path.exists(f):
+            os.remove(f)
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
+
     FILL.clear()
     sent_legs.clear()
     reconciler.place_order("TMF", 0.4, exchange="president")

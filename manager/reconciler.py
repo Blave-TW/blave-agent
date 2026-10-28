@@ -674,8 +674,11 @@ def _president_park_unfilled(sym, leg, requested, net_before):
 
 def _president_claim_pending(started):
     """Match every parked order against the snapshot whose read started at
-    `started` (already caught up with the last send). Each claim is saved the
-    moment it is booked: a process killed in between must not book it twice."""
+    `started` (already caught up with the last send). A claim drops its row and
+    saves the file BEFORE booking: a failed save or a process killed in between
+    then leaves the fill unbooked instead of booking it again on the next read —
+    the lesser failure: a double-booked lot makes the next diff sell a real one.
+    A failed book write trips HALT (_append_reconciler_log)."""
     try:
         pending = _pending_sent()
     except PendingUnreadable as e:
@@ -689,9 +692,9 @@ def _president_claim_pending(started):
         root, lots, expected = row['root'], float(row['lots']), float(row['net_expected'])
         net = float(nets.get(pid, 0))
         if abs(net - (expected + lots)) < 1e-9:
-            portfolio.book_late_fill(root, venue_traits.PRESIDENT, pid, lots)
             del pending[pid]
             _save_pending_sent(pending)
+            portfolio.book_late_fill(root, venue_traits.PRESIDENT, pid, lots)
             guard.audit('late_fill_adopted', venue=venue_traits.PRESIDENT, symbol=root, contract=pid,
                         lots=lots, legs=row['legs'])
             logging.warning(f"[reconciler/president] {pid}: the account shows the {lots:+g} lots the "
