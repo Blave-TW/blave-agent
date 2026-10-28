@@ -846,11 +846,40 @@ body.resizing * { cursor: col-resize !important; }
   padding: var(--space-8) var(--space-12);         /* 左緣 12 = 策略列同一條對齊邊 */
   border-radius: var(--radius-md);
   text-align: left; white-space: nowrap;
+  min-height: 44px;                                /* 熱區 44(spec desktop-update-pill §3.2) */
   font-size: 13px; line-height: 1.4;
   color: var(--ink-3);                             /* 比策略名低一階:chrome 不是內容 */
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
 .ws-more:hover:not(:disabled), .ws-more[aria-expanded="true"] { background: var(--surface-muted); color: var(--ink); }
+/* 更新膠囊(spec desktop-update-pill §3;canon › In-app 功能動作鈕 › 具名例外:電腦版更新膠囊)。
+   橘實心墨字、hover primaryDark;視覺 32 / 熱區 44(透明 ::before)。停用照 Disabled 退灰(不用 opacity)。
+   細軌那顆是 28 的圓、熱區 44,同一個 class 加 .up-rail */
+.up-pill-wrap { margin: 0 0 var(--space-8); padding: 0 var(--space-4); }
+.up-pill {
+  position: relative; display: inline-flex; align-items: center; gap: var(--space-6);
+  max-width: 100%; height: 32px; min-height: 0; padding: 0 var(--space-12) 0 var(--space-8); overflow: hidden;
+  border: 1px solid transparent; border-radius: var(--radius-pill);
+  background: var(--color-primary); color: var(--ink-on-primary);
+  font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.up-pill::before { content: ""; position: absolute; inset: -7px -4px; }
+.up-pill:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--color-primaryDark); }
+.up-pill:disabled, .up-pill[aria-disabled="true"] { background: var(--surface-muted); border-color: var(--border-hairline); color: var(--ink-disabled); cursor: not-allowed; }
+.up-pill-ic { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.up-pill-t { overflow: hidden; }
+.up-pill.no-ic .up-pill-ic { display: none; }
+.up-pill-wrap .busy-why { margin: var(--space-8) var(--space-4) 0; text-align: left; white-space: normal; }
+.up-rail { width: 28px; height: 28px; padding: 0; justify-content: center; margin-top: auto; }
+.up-rail::before { inset: -8px; }
+html.ws-sc .side-rail { flex: 1 1 auto; }
+@media (prefers-reduced-motion: reduce) { .up-pill { transition: none; } }
+/* 更新 modal 的「這版改了什麼」:純文字條列 */
+.del-body .up-notes { margin: 0; padding-left: 18px; color: var(--ink); }
+.del-body .up-notes li { margin-bottom: var(--space-4); }
+.set-upsch { margin: var(--space-8) 0; }
+
 .ws-more:disabled { cursor: not-allowed; color: var(--ink-disabled); }
 .ws-more:focus-visible { outline-offset: -2px; }
 .ws-more-ic {

@@ -120,7 +120,15 @@ contextBridge.exposeInMainWorld("blave", {
   onEnvSwitch: (fn) => ipcRenderer.on("env-switch", (_e, env) => fn(env)),
   updateState: () => ipcRenderer.invoke("update-state"),
   updateCheck: () => ipcRenderer.invoke("update-check"),
-  updateInstall: () => ipcRenderer.invoke("update-install"),
+  updateInstall: (opts) => ipcRenderer.invoke("update-install", { confirmed: !!(opts && opts.confirmed === true) }),   // confirmed = 已在 §4.1 按了重新啟動
+  // 更新 modal 的主行程↔畫面往返:主行程送 update-ask → 畫面來拿 → 答 ok / 取消;update-ask-close = 主行程那邊已當取消,框收掉
+  updateAskGet: () => ipcRenderer.invoke("update-ask-get"),
+  updateAskAnswer: (id, ok) => ipcRenderer.invoke("update-ask-answer", id, ok === true),
+  onUpdateAsk: (fn) => ipcRenderer.on("update-ask", () => fn()),
+  onUpdateAskClose: (fn) => ipcRenderer.on("update-ask-close", (_e, id) => fn(id)),
+  updateNotes: () => ipcRenderer.invoke("update-notes"),   // { v, zh, en } | null:不在 update-state 廣播裡
+  updateAuto: () => ipcRenderer.invoke("update-auto"),
+  updateAutoSet: (on) => ipcRenderer.invoke("update-auto-set", on === true),
   updateShowBackup: () => ipcRenderer.invoke("update-show-backup"),   // 換版時備份的資料夾:主行程開 Finder(路徑不經畫面)
   onUpdateState: (fn) => ipcRenderer.on("update-state", (_e, st) => fn(st)),
   telemetryGet: () => ipcRenderer.invoke("telemetry-get"),

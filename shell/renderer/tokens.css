@@ -26,6 +26,7 @@
   --font-mono: "Roboto Mono", "SF Mono", Menlo, Consolas, monospace;
   /* brand */
   --color-primary: #ff9960;
+  --color-primaryDark: #f3915a;   /* 只給 primary 實心鈕的 hover(電腦版只有更新膠囊) */
   /* neutrals(冷藍染) */
   --color-black: #1a222c;
   --color-greyDark: #3f4a57;
@@ -133,6 +134,7 @@
   /* in-app 功能動作鈕(canon › Interaction states › 橘的邊界):中性反白,不用橘 */
   --control-fill: var(--color-black);
   --control-fill-text: var(--color-pureWhite);
+  --ink-on-primary: var(--color-black);   /* 橘底一律墨字(canon › Color › Brand):更新膠囊 */
   --focus-ring: var(--color-black);
   /* canon › Arrow link(歡迎頁①策略卡的 CTA):字色與 hover 字色,值同 web main.css */
   --link-quiet: var(--color-black);
@@ -186,6 +188,7 @@
   --chart-rest: var(--color-greyDark);
   --control-fill: var(--color-darkText);
   --control-fill-text: var(--color-darkBody);
+  --ink-on-primary: var(--color-darkBody);
   --focus-ring: var(--color-darkText);
   --link-quiet: var(--color-darkText);
   --link-quiet-hover: var(--color-greyLightMedium);

@@ -43,7 +43,7 @@ const QUIET = [
   ["perf.js", "b.setAttribute(\"aria-disabled\", \"true\"); b.title = t(b.dataset.xtBtn ? \"xt.busyTurn\" : \"busy.perf\"); return;", "perfBusy 畫鎖態,不是點擊(成交測試那顆換自己那句)"],
   ["portfolio.js", "if (!running && !mgBacktest()", "畫面組字(running 是本地變數)"],
   ["busy.js", "", "鎖本身"],
-  ["app.js", "if (upLocalTurn()) return;", "upInstall:兩個入口(ws-update、set-up-btn)先看 busyLocked、講原因"],
+  ["app.js", "if (upLocalTurn()) return;", "upInstall / upRestartAsk:入口(更新膠囊、細軌圓鈕、set-up-btn)先看 busyLocked、講原因;選單列那條由主行程擋(TURN_BUSY)"],
   ["export.js", "if (!XP_PLATFORM[target] || xpDisabled() ||", "xpAsk:入口 xpOpen 與 again 鈕先講原因(xpNote)"],
   ["report-robust.js", "const isSent = (st, opts) =>", "「已送出」態的述詞,不是點擊守門"],
   ["report-wf.js", "if (s.pending) return !!opts.busy;", "「已送出」態的述詞"],
@@ -92,7 +92,7 @@ ok("② 雲端策略列 ✕ 回合中照畫(canDel 不看 running),畫出來就�
 ok("② 對話清單:切換別條、新對話、刪回覆中這條都是鎖＋原因;刪別條不鎖",
   /else if \(busyOn\(\)\) busyTell\(csWhy\(\), "switch"\)/.test(fnSrc(appSrc, "csRow")) && /if \(m\.id === sessionId\) \{ busyLock\(del, busyOn\(\)\); del\.onBusy = \(\) => busyTell\(csWhy\(\), "chatDel"\); \}/.test(fnSrc(appSrc, "csRow"))
   && /busyTell\(csWhy\(\), "new"\)/.test(fnSrc(appSrc, "csNewClick")) && /\$\("cs-new"\)\.addEventListener\("click", csNewClick\);/.test(appSrc) && /\$\("cs-newrow"\)\.addEventListener\("click", csNewClick\);/.test(appSrc));
-ok("② 更新三顆(重新啟動以完成更新 × 2、更新雲端主機):回合中 aria-disabled、點了講原因", /busyTell\(busySlot\("ws-up-why", w\), "update"\)/.test(appSrc) && /busyTell\(busySlot\("set-up-why", b\.parentNode\), "update"\)/.test(appSrc)
+ok("② 更新三處(更新膠囊與細軌圓鈕、關於列的重新啟動以完成更新、更新雲端主機):回合中 aria-disabled、點了講原因", /busyTell\(busySlot\("up-pill-why", anchor\), "update"\)/.test(fnSrc(appSrc, "upPillClick")) && /busyLock\(b, p\.kind === "busy"\)/.test(fnSrc(appSrc, "upPillPaint")) && /busyTell\(busySlot\("set-up-why", b\.parentNode\), "update"\)/.test(appSrc)
   && /if \(upLocalTurn\(\)\) \{ busyTell\(busySlot\("upc-why"/.test(fnSrc(appSrc, "upCloudUpdate")) && /busyLock\(btn, upBusy\)/.test(fnSrc(appSrc, "upPaint")) && /busyLock\(cbtn, cBusy\)/.test(fnSrc(appSrc, "upPaint")));
 const flips = appSrc.split("\n").filter((l) => /(^\s*|[;{]\s*)running = (true|false);/.test(l) && !/^let running/.test(l));
 ok("② 每一個改 running 的地方都叫 busySync(鎖態與原因句跟著回合走)", flips.length >= 3 && flips.every((l) => /busySync\(\)/.test(l)), flips.filter((l) => !/busySync\(\)/.test(l)).map((l) => l.trim().slice(0, 80)));

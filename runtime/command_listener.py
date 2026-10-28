@@ -3125,6 +3125,39 @@ def _report_jobs_wanted():
 # not made up (cron semantics), and after a restart every job is re-armed from now.
 _report_next = {}
 _report_fire_lock = threading.Lock()  # scheduler thread + dispatch thread both call
+# Runs this process started and has not seen end: the desktop app's 06:00 update must not restart
+# the machine under one (spawned runners die with the app). A start thread still in its
+# performance sweep counts too — its runner is seconds or minutes away. Runs started by anyone
+# else (a turn's own Bash) are not tracked; the desktop update also waits for no turn.
+_report_children = []
+_report_starting = 0
+_report_children_lock = threading.Lock()
+
+
+def _report_spawn(job_id):
+    proc = subprocess.Popen(_report_runner_cmd(job_id), cwd=WORKSPACE,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_child_kw())
+    with _report_children_lock:
+        _report_children.append(proc)
+    return proc
+
+
+def report_activity():
+    """{running, next_due_at} for the desktop status file's daemon block. next_due_at = the
+    earliest coming slot across enabled jobs as UTC ISO, None when nothing is scheduled. An armed
+    slot already past (the 60 s tick has not fired it yet) counts: it is about to start."""
+    with _report_children_lock:
+        _report_children[:] = [p for p in _report_children if p.poll() is None]
+        running = bool(_report_children) or _report_starting > 0
+    now = int(time.time())
+    report_runner = _report_runner_mod()
+    wanted = _report_jobs_wanted()
+    slots = [report_runner.cron_next(cron, now, tz) for cron, tz in wanted.values()]
+    with _report_fire_lock:
+        slots += [v[2] for k, v in _report_next.items() if k in wanted]
+    slots = [x for x in slots if x is not None]
+    iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(min(slots))) if slots else None
+    return {"running": running, "next_due_at": iso}
 
 
 def _fire_due_reports():
@@ -3178,17 +3211,22 @@ def _start_report_job(job_id):
     otherwise stop at deploy time), then start the job. Best-effort: a failed sweep never
     costs the report its run. Not for report_run_now — the user pressed that; a fresh
     performance is the 更新績效 button."""
+    global _report_starting
+    with _report_children_lock:
+        _report_starting += 1
     try:
-        _refresh_live_stats(f"report {job_id}")
-    except Exception as e:
-        _log(f"report trigger: {job_id}: performance sweep skipped: {type(e).__name__}: {e}")
-    try:
-        subprocess.Popen(_report_runner_cmd(job_id), cwd=WORKSPACE,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         **_child_kw())
-        _log(f"report trigger: started {job_id}")
-    except Exception as e:
-        _log(f"report trigger: {job_id} failed to start: {type(e).__name__}: {e}")
+        try:
+            _refresh_live_stats(f"report {job_id}")
+        except Exception as e:
+            _log(f"report trigger: {job_id}: performance sweep skipped: {type(e).__name__}: {e}")
+        try:
+            _report_spawn(job_id)
+            _log(f"report trigger: started {job_id}")
+        except Exception as e:
+            _log(f"report trigger: {job_id} failed to start: {type(e).__name__}: {e}")
+    finally:
+        with _report_children_lock:
+            _report_starting -= 1
 
 
 def _sweep_legacy_report_schedules():
@@ -3289,8 +3327,7 @@ def _cmd_report_run_now(args):
     """Kick one run in the background; the ack says "started", the next report
     carries the outcome from runs.jsonl. A paused job may be run this way."""
     job_id, _d = _report_job(args)
-    subprocess.Popen(_report_runner_cmd(job_id), cwd=WORKSPACE,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_child_kw())
+    _report_spawn(job_id)
     return {"started": True}
 
 

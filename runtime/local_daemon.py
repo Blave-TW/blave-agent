@@ -1250,6 +1250,10 @@ class Daemon:
                 "heartbeat_at": int(time.time()), "version": self.version,
                 "signed": bool(self.secret), "reconciler": self.sup.info(),
             }
+            try:
+                doc["daemon"]["reports"] = self.cl.report_activity()
+            except Exception as e:   # absent = the app's scheduled update treats it as a report due
+                _log(f"report activity failed: {type(e).__name__}: {e}")
             doc["president_local"] = self.pc.local_info()
             doc["capital_local"] = self.capl.local_info()
             try:

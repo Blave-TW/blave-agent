@@ -1803,7 +1803,7 @@ function trPushLabels() {
     quitTurnTitle: t("tm.quitTurnTitle"), quitTurnBody: t("tm.quitTurnBody"),   // 結束攔截:本機 agent 回合還在跑
     unsavedTitle: t("tm.unsavedTitle"), unsavedBody: t("tm.unsavedBody"), unsavedGo: t("tm.unsavedGo"), unsavedNote: t("tm.unsavedNote"),   // 結束 / 關窗攔截:策略組合有還沒儲存的變更
     presQuitTitle: t("pres.quit.title"), presQuitBody: t("pres.quit.body", { lots: "{lots}" }), caplQuitBody: t("capl.quit.body", { lots: "{lots}" }), presQuitUnknown: t("pres.quit.unknown"), caplQuitUnknown: t("capl.quit.unknown"),   // 結束攔截:統一還有部位(主行程填口數)
-    updateBody: t("tm.updateBody"), moveTitle: t("tm.move.title"), moveBody: t("tm.move.body"), moveGo: t("tm.move.go"), moveNo: t("tm.move.no"),   // 下單中重新啟動更新的確認框、搬到「應用程式」那一問
+    moveTitle: t("tm.move.title"), moveBody: t("tm.move.body"), moveGo: t("tm.move.go"), moveNo: t("tm.move.no"),   // 搬到「應用程式」那一問
     moveAuthExists: t("tm.move.authExists"), moveAuthApps: t("tm.move.authApps"), gotIt: t("src.gotIt"),   // 搬移要系統授權時的提示框(只有「知道了」)
     // 本機 P1 通知的字:跟總覽時間軸同一組(trEventText),只有拒單的註解是通知專用
     ev_halt: t("tr.ov.evHaltAuto"), ev_halt_n: t("tr.ov.evRestartStoppedNote"),   // 本機的 lib 隨 app 出貨:0.1.27 起 HALT 是完全凍結

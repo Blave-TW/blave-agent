@@ -15,30 +15,32 @@ let red = 0; const t = (n, ok, d) => { console.log((ok ? "PASS  " : "FAIL  ") + 
 const tick = () => new Promise((r) => setImmediate(r));
 const S = fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "utf8");
 const zh = (k) => { const m = new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"').exec(S.slice(S.indexOf("zh:"))); if (!m) throw new Error("字串表沒有 " + k); return m[1]; };
-const L = { quitTitle: zh("tm.quitTitle"), updateBody: zh("tm.updateBody"), quitCloudNote: zh("tm.quitCloudNote"), quitStay: zh("tm.quitStay"), updateReady: zh("tm.updateReady"), paperVenue: "模擬交易",
+const L = { quitTitle: zh("tm.quitTitle"), quitCloudNote: zh("tm.quitCloudNote"), quitStay: zh("tm.quitStay"), updateReady: zh("tm.updateReady"), paperVenue: "模擬交易",
   moveTitle: zh("tm.move.title"), moveBody: zh("tm.move.body"), moveGo: zh("tm.move.go"), moveNo: zh("tm.move.no"),
   moveAuthExists: zh("tm.move.authExists"), moveAuthApps: zh("tm.move.authApps"), gotIt: zh("src.gotIt") };
 
 const RESTART = cut(src, "async function restartToUpdate("), MOVE = cut(src, "async function askMoveToApps(");
 const MOVE_PATH = /^const moveDeclinedPath = [^\n]*;$/m.exec(src)[0];
 
-// ── §0 / §1 restartToUpdate ──
+// ── §0 / §1 restartToUpdate(0.1.36 起確認一律在 app 內的更新 modal:updAsk 叫畫面開框;spec desktop-update-pill §4)──
 // 假收工同 probe(稽核 scratchpad/audit-0110/probe.js):stop 收完 child 才清掉,之後 tradeMaybeLive 才變 null(daemon.js 的實際行為)
+// updAsk 用假的(畫面那一端);真的 updAsk 往返與取消在 tests/check_shell_update_pill.js
 function rig(o) {
   const log = [], boxes = [], tracked = [];
-  let quitConfirmed = false, child = !!o.trading, phase = o.phase || "blocked", nDialog = 0;
+  let quitConfirmed = false, child = !!o.trading, phase = o.phase || "blocked", nAsk = 0;
   const ctx = {
-    // 草稿關卡(0.1.26 稽核 M1):沒給 o.draft = 已經問過(draftOk);給了就是畫面上有 / 沒有草稿、草稿框按留下 / 離開
+    // 草稿:沒給 o.draft = 已經問過(draftOk);給了就是畫面上有 / 沒有草稿(draftDirty 只在下單中那一支叫)
     draftOk: o.draft === undefined, draftNote: false,
-    draftDirty: async () => { log.push("draftDirty"); if (o.stopDuringDraft) child = false; return o.draft === "stay" || o.draft === "leave"; },
-    draftGate: async () => { log.push("draftGate"); return o.draft !== "stay"; },
+    draftDirty: async () => { log.push("draftDirty"); if (o.stopDuringDraft) child = false; return o.draft === "dirty"; },
+    draftGate: async () => { log.push("draftGate"); return true; },
     quitAsking: !!o.asking, moveAsking: !!o.moveAsking, quitting: false, restarting: null, setRestarting: (v) => { ctx.restarting = v; }, activeTurn: o.turn ? {} : null, turnStarting: false, tmLabels: { ...L }, TT: { quitDetail: TT.quitDetail, cloudTrading: (s) => !!(s && s.trading), stayGo: TT.stayGo }, process: { platform: o.platform || "darwin" },
     planRestart, cloudSt: () => (o.cloud ? { trading: true } : null), BrowserWindow: { getAllWindows: () => [] },
     tradeMaybeLive: () => (child ? { venue: "binance" } : null), venueName: (id) => (id === "binance" ? "Binance" : ""),
-    showMain: () => { log.push("showMain"); if (o.showMainThrows) throw new Error("window gone"); },
+    showMain: () => { log.push("showMain"); },
     tm: () => ({ track: (ev, p) => { tracked.push(ev + ":" + p.name); log.push("used"); } }),
-    dialog: { showMessageBox: (_w, opts) => { boxes.push(opts); log.push("dialog"); nDialog++; if (o.onDialog) o.onDialog(nDialog); return o.dialogThrows ? Promise.reject(new Error("x")) : Promise.resolve({ response: typeof o.response === "function" ? o.response(nDialog) : o.response }); } },
-    updater: () => ({ state: () => ({ phase }), install: () => { const res = o.installRes || (phase !== "ready" && phase !== "blocked" ? { ok: false, error: "NOT_READY" } : child ? { ok: false, error: "TRADING" } : { ok: true }); log.push("install:" + (res.ok ? "ok" : res.error)); if (o.installThrows) throw new Error("boom"); return res; } }),
+    dialog: { showMessageBox: () => { log.push("NATIVE DIALOG"); return Promise.resolve({ response: 0 }); } },
+    updAsk: (kind, data) => { boxes.push({ kind, data }); log.push("ask:" + kind); nAsk++; if (o.onAsk) o.onAsk(nAsk, kind); const go = typeof o.go === "function" ? o.go(nAsk, kind) : !!o.go; return Promise.resolve(go); },
+    updater: () => ({ state: () => ({ phase, version: "0.1.36" }), install: () => { const res = o.installRes || (phase !== "ready" && phase !== "blocked" ? { ok: false, error: "NOT_READY" } : child ? { ok: false, error: "TRADING" } : { ok: true }); log.push("install:" + (res.ok ? "ok" : res.error)); if (o.installThrows) throw new Error("boom"); return res; } }),
     app: { quit: () => log.push("app.quit") },
     _tradeHost: { noteQuit: () => { log.push("noteQuit"); if (o.noteQuitThrows) throw new Error("note"); },
       stop: () => { log.push("stop:start"); return new Promise((ok) => setTimeout(() => { child = false; log.push("stop:done"); ok(); }, 30)); } },
@@ -48,112 +50,100 @@ function rig(o) {
   };
   Object.defineProperty(ctx, "quitConfirmed", { get: () => quitConfirmed, set: (v) => { quitConfirmed = v; log.push("quitConfirmed=" + v); } });
   const fn = new Function("ctx", "with (ctx) { " + RESTART + "\n return restartToUpdate; }")(ctx);
-  return { run: () => fn(), log, boxes, tracked, ctx, confirmed: () => quitConfirmed, setPhase: (p) => { phase = p; } };
+  return { run: (opts) => fn(opts), log, boxes, tracked, ctx, confirmed: () => quitConfirmed, setPhase: (p) => { phase = p; } };
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
-  { const r = rig({ trading: false, phase: "ready" }), res = await r.run();
-    t("沒在下單:直接 install,不跳框、不收工;裝成才送埋點 feature_used update_restart", res.ok === true && r.log.join() === "install:ok,used" && r.boxes.length === 0 && r.tracked.join() === "feature_used:update_restart", r.log); }
-  // ── 0.1.26 稽核 M1:更新重開也先過草稿關卡,而且在任何收工與 install 之前 ──
-  { const r = rig({ trading: false, phase: "ready", draft: "stay" }), res = await r.run();
-    t("M1 沒在下單、有草稿、按留下:只問草稿那一道,不 install、不送埋點,回 CANCELED;draftOk 不設", res.error === "CANCELED" && r.log.join() === "draftGate" && r.ctx.draftOk === false, r.log); }
-  { const r = rig({ trading: false, phase: "ready", draft: "leave" }), res = await r.run();
-    t("M1 …按離開:記 draftOk(之後 quitAndInstall 關窗、before-quit 都不再擋)才 install", res.ok === true && r.log.join() === "draftGate,install:ok,used" && r.ctx.draftOk === true, r.log); }
-  { const r = rig({ trading: false, phase: "ready", draft: "clean" }), res = await r.run();
-    t("M1 …沒有草稿:草稿關卡放行,照常 install", res.ok === true && r.log.join() === "draftGate,install:ok,used" && r.ctx.draftOk === true, r.log); }
-  { const r = rig({ trading: false, phase: "ready", draft: "leave", installRes: { ok: false, error: "NOT_READY" } }), res = await r.run();
-    t("M1 …install 沒成:收回 draftOk(app 還開著,下次結束再問草稿)", res.ok === false && r.ctx.draftOk === false, r.log); }
-  { const r = rig({ trading: true, response: 1, draft: "leave" }); r.ctx.tmLabels.unsavedNote = "NOTE"; const res = await r.run();
-    t("M1 下單中、有草稿:不另跳草稿框,那句併進更新確認框;按確認照樣停單收工再 install,draftOk 記下",
-      res.ok === true && !r.log.includes("draftGate") && r.log[0] === "draftDirty" && r.boxes.length === 1 && /\n\nNOTE$/.test(r.boxes[0].detail) && r.log.includes("install:ok") && r.ctx.draftOk === true, [r.log, r.boxes.map((b) => b.detail)]); }
-  { const r = rig({ trading: true, response: 0, draft: "leave" }); r.ctx.tmLabels.unsavedNote = "NOTE"; const res = await r.run();
-    t("M1 …按取消:什麼都不動、draftOk 不設", res.error === "CANCELED" && !r.log.includes("stop:start") && !r.log.some((x) => /^install/.test(x)) && r.ctx.draftOk === false, r.log); }
-  { const r = rig({ trading: true, response: 1, draft: "clean" }); r.ctx.tmLabels.unsavedNote = "NOTE"; await r.run();
-    t("M1 …下單中、沒有草稿:確認框不帶那一句", r.boxes.length === 1 && !/NOTE/.test(r.boxes[0].detail), r.boxes.map((b) => b.detail)); }
-  // 稽核 P3-2:下單中按更新、查草稿那段剛好停了單 → 改走直接裝之前要單獨問草稿
-  { const r = rig({ trading: true, phase: "blocked", draft: "stay", stopDuringDraft: true }), res = await r.run();
-    t("P3-2 下單中查草稿時剛好停單、有草稿、按留下:不 install,回 CANCELED", res.error === "CANCELED" && r.log.join() === "draftDirty,draftGate" && r.ctx.draftOk === false, r.log); }
-  { const r = rig({ trading: true, phase: "blocked", draft: "leave", stopDuringDraft: true }), res = await r.run();
-    t("P3-2 …按離開:問過才 install", res.ok === true && r.log.join() === "draftDirty,draftGate,install:ok,used" && r.ctx.draftOk === true, r.log); }
-  { const r = rig({ trading: true, phase: "blocked", draft: "clean", stopDuringDraft: true }), res = await r.run();
-    t("P3-2 …沒有草稿:不問,照常 install", res.ok === true && r.log.join() === "draftDirty,install:ok,used", r.log); }
+  { const r = rig({ trading: false, phase: "ready", draft: "clean" }), res = await r.run({ confirmed: true });
+    t("沒在下單、畫面已開過 §4.1(confirmed):直接 install,不再問、不跑 draftGate;裝成才送埋點 feature_used update_restart", res.ok === true && r.log.join() === "install:ok,used" && r.boxes.length === 0 && r.tracked.join() === "feature_used:update_restart" && r.ctx.draftOk === true, r.log); }
+  { const r = rig({ trading: false, phase: "ready", draft: "dirty" }), res = await r.run({ confirmed: true });
+    t("…有草稿也不跑 draftGate、不跳系統框(草稿那句 §4.1 已經講了)", res.ok === true && !r.log.includes("draftGate") && !r.log.includes("draftDirty") && !r.log.includes("NATIVE DIALOG"), r.log); }
+  { const r = rig({ trading: false, phase: "ready", go: true }), res = await r.run();
+    t("沒在下單、沒帶 confirmed(選單列入口):主行程叫畫面開 §4.1(plain、帶已暫存的版號),按重新啟動才 install", res.ok === true && r.log.join() === "ask:plain,install:ok,used" && r.boxes[0].data.v === "0.1.36", r.log); }
+  { const r = rig({ trading: false, phase: "ready", go: false, draft: "clean" }), res = await r.run();
+    t("…§4.1 按取消:回 CANCELED,不 install、不送埋點、draftOk 不設", res.error === "CANCELED" && r.log.join() === "ask:plain" && r.tracked.length === 0 && r.ctx.draftOk === false, r.log); }
+  for (const bad of [{ confirmed: "true" }, { confirmed: 1 }, "confirmed", null]) {
+    const r = rig({ trading: false, phase: "ready", go: false }); await r.run(bad);
+    t("confirmed 只認 === true(" + JSON.stringify(bad) + " 當沒帶,照樣先問)", r.log.join() === "ask:plain", r.log); }
+  { const r = rig({ trading: false, phase: "ready", draft: "clean", installRes: { ok: false, error: "NOT_READY" } }), res = await r.run({ confirmed: true });
+    t("…install 沒成:收回 draftOk、不送埋點(不多算,稽核 P2-6)", res.ok === false && r.ctx.draftOk === false && r.tracked.length === 0, r.log); }
+  { const r = rig({ trading: true, go: true, draft: "dirty" }), res = await r.run();
+    t("下單中、有草稿:主行程用 draftDirty 判,草稿那句併進 §4.2(unsaved: true);按確認照樣停單收工再 install,draftOk 記下",
+      res.ok === true && r.log[0] === "draftDirty" && !r.log.includes("draftGate") && r.boxes.length === 1 && r.boxes[0].kind === "trading" && r.boxes[0].data.unsaved === true && r.log.includes("install:ok") && r.ctx.draftOk === true, [r.log, r.boxes]); }
+  { const r = rig({ trading: true, go: false, draft: "dirty" }), res = await r.run();
+    t("…按取消:什麼都不動、draftOk 不設", res.error === "CANCELED" && !r.log.includes("stop:start") && !r.log.some((x) => /^install/.test(x)) && r.ctx.draftOk === false, r.log); }
+  { const r = rig({ trading: true, go: false, draft: "clean" }); await r.run();
+    t("…下單中、沒有草稿:§4.2 的 unsaved 是 false", r.boxes.length === 1 && r.boxes[0].data.unsaved === false, r.boxes); }
+  { const r = rig({ trading: true, go: false }); await r.run({ confirmed: true });
+    t("下單中帶 confirmed(§4.1 開著時開始下單):照樣改問 §4.2,不直接裝", r.boxes.length === 1 && r.boxes[0].kind === "trading" && !r.log.some((x) => /^install/.test(x)), r.log); }
+  // 稽核 P3-2:下單中按更新、查草稿那段剛好停了單 → 改走直接裝之前要先開 §4.1(草稿那句在那裡)
+  { const r = rig({ trading: true, phase: "blocked", draft: "dirty", stopDuringDraft: true, go: false }), res = await r.run();
+    t("P3-2 下單中查草稿時剛好停單:改開 §4.1,按取消就不 install", res.error === "CANCELED" && r.log.join() === "draftDirty,ask:plain", r.log); }
+  { const r = rig({ trading: true, phase: "blocked", draft: "dirty", stopDuringDraft: true, go: true }), res = await r.run();
+    t("P3-2 …§4.1 按重新啟動:問過才 install", res.ok === true && r.log.join() === "draftDirty,ask:plain,install:ok,used" && r.ctx.draftOk === true, r.log); }
+  { const r = rig({ trading: false, phase: "ready" }); let n = 0;
+    r.ctx.updAsk = (kind) => { r.boxes.push({ kind }); r.log.push("ask:" + kind); n++; if (n === 1) r.ctx.tradeMaybeLive = () => ({ venue: "binance" }); return Promise.resolve(n === 1); };
+    const res = await r.run();
+    t("§4.1 開著時開始下單:按重新啟動後主行程改問 §4.2(由主行程回畫面開),不直接裝", r.log.join() === "ask:plain,ask:trading" && res.error === "CANCELED", r.log); }
   // 稽核 P3-1:直接裝送出之後 Squirrel／NSIS 才失敗(onState phase error、restarting 不是 installing):收回 draftOk
-  { const ON = cut(src, "onState: (st) =>").replace(/^onState: /, ""), log = [];
-    const ctx = { BrowserWindow: { getAllWindows: () => [] }, _officialBackup: null, restarting: null, draftOk: true, app: { quit: () => log.push("app.quit") } };
+  { const ON = cut(src, "const onState = (st) =>").replace(/^const onState = /, ""), log = [];
+    const ctx = { BrowserWindow: { getAllWindows: () => [] }, _officialBackup: null, restarting: null, draftOk: true, app: { quit: () => log.push("app.quit") }, upNotesKick: (v) => log.push("notes:" + v) };
     const on = new Function("ctx", "with (ctx) { return (" + ON + "); }")(ctx);
-    on({ phase: "ready" }); const kept = ctx.draftOk;
-    on({ phase: "error" }); const dropped = ctx.draftOk === false && log.length === 0;
+    on({ phase: "ready", version: "0.1.36" }); const kept = ctx.draftOk;
+    on({ phase: "error" }); const dropped = ctx.draftOk === false && log.join() === "notes:0.1.36";
     ctx.draftOk = true; ctx.restarting = "installing"; on({ phase: "error" });
-    t("P3-1 直接裝之後才失敗:draftOk 收回(下次結束照樣問草稿);收工後失敗那條照舊 app.quit()", kept === true && dropped && log.join() === "app.quit", [kept, dropped, log]); }
-  { const r = rig({ trading: false, phase: "ready", installing: true }), res = await r.run();
+    t("P3-1 直接裝之後才失敗:draftOk 收回(下次結束照樣問草稿);收工後失敗那條照舊 app.quit();進 ready 時抓一次更新說明", kept === true && dropped && log.join() === "notes:0.1.36,app.quit", [kept, dropped, log]); }
+  { const r = rig({ trading: false, phase: "ready", installing: true }), res = await r.run({ confirmed: true });
     t("0.1.12 背景安裝的 pip 在跑:先收掉 pip(等它結束)再 install", res.ok === true && r.log.join() === "engineAbort,install:ok,used", r.log); }
-  { const r = rig({ trading: true, response: 1, installing: true }), res = await r.run();
-    t("0.1.12 下單中、按確認、pip 也在跑:停單收完 → 收 pip → install", res.ok === true && r.log.join() === "showMain,dialog,used,quitConfirmed=true,noteQuit,stop:start,stop:done,engineAbort,install:ok", r.log); }
-  { const r = rig({ trading: false, phase: "ready", installRes: { ok: false, error: "NOT_READY" } }), res = await r.run();
-    t("…直接 install 當下沒成:不送埋點(不多算,稽核 P2-6)", res.ok === false && r.tracked.length === 0); }
-  { const r = rig({ trading: true, response: 0 }), res = await r.run();
-    t("下單中、按取消(回應 0):先 showMain 再跳框;沒 noteQuit、沒 stop、沒 install;回 CANCELED", res.error === "CANCELED" && r.log.join() === "showMain,dialog", r.log);
-    t("…取消後旗標都還原:quitAsking false、quitConfirmed 沒設、restarting 沒設(下次結束 / 再按照樣會問)", r.ctx.quitAsking === false && r.confirmed() === false && r.ctx.restarting === null);
+  { const r = rig({ trading: true, go: true, installing: true }), res = await r.run();
+    t("0.1.12 下單中、按確認、pip 也在跑:停單收完 → 收 pip → install", res.ok === true && r.log.join() === "ask:trading,used,quitConfirmed=true,noteQuit,stop:start,stop:done,engineAbort,install:ok", r.log); }
+  { const r = rig({ trading: true, go: false }), res = await r.run();
+    t("下單中、按取消:沒 noteQuit、沒 stop、沒 install;回 CANCELED", res.error === "CANCELED" && r.log.join() === "ask:trading", r.log);
+    t("…取消後旗標都還原:quitConfirmed 沒設、restarting 沒設(下次結束 / 再按照樣會問)", r.confirmed() === false && r.ctx.restarting === null);
     t("…按取消不送埋點(沒有用到)", r.tracked.length === 0);
-    const b = r.boxes[0];
-    t("確認框:warning、標題 tm.quitTitle、內文 tm.updateBody 帶 venue、鈕 [取消, 重新啟動以完成更新]、預設與 Esc 都是取消", b.type === "warning" && b.message === L.quitTitle
-      && b.detail === L.updateBody.replace("{venue}", "Binance") && JSON.stringify(b.buttons) === JSON.stringify([L.quitStay, L.updateReady]) && b.defaultId === 0 && b.cancelId === 0, b); }
-  // 0.1.12 設計稽核:noLink 之後 Windows 照陣列由左往右畫——動作在左、取消在最右;預設與 Esc 仍是取消。macOS 照上面那組不動
-  { const r = rig({ trading: true, response: 1, platform: "win32" }), res = await r.run(), b = r.boxes[0];
-    t("Windows:鈕 [重新啟動以完成更新, 取消]、預設與 Esc 都是取消(1);按取消(回 1)→ CANCELED,什麼都沒動", JSON.stringify(b.buttons) === JSON.stringify([L.updateReady, L.quitStay]) && b.defaultId === 1 && b.cancelId === 1 && b.noLink === true
-      && res.error === "CANCELED" && r.log.join() === "showMain,dialog", JSON.stringify([b, r.log])); }
-  { const r = rig({ trading: true, response: 0, platform: "win32" }), res = await r.run();
-    t("Windows:按左邊那顆(回 0 = 重新啟動)→ 收工再裝", res.ok === true && r.log.indexOf("noteQuit") > 0 && r.log.some((x) => /^install:/.test(x)), r.log); }
-  { const r = rig({ trading: true, cloud: true, response: 0 }); await r.run();
-    t("雲端也確定在下單:內文多一段 tm.quitCloudNote(同結束攔截,經 TT.quitDetail)", r.boxes[0].detail === TT.quitDetail(L.updateBody.replace("{venue}", "Binance"), L.quitCloudNote) && r.boxes[0].detail.includes(L.quitCloudNote)); }
-  { const r = rig({ trading: true, response: 1 }), res = await r.run();
-    t("按確認(回應 1):順序 quitConfirmed=true → noteQuit → stop 收完 → install(收工走結束 app 同一條)", r.log.join() === "showMain,dialog,used,quitConfirmed=true,noteQuit,stop:start,stop:done,install:ok" && res.ok === true, r.log);
+    t("§4.2 的內容由主行程算:交易所名(venueName)、雲端在下單與否、草稿;畫面不重算", JSON.stringify(r.boxes[0].data) === '{"venue":"Binance","cloud":false,"unsaved":false}', r.boxes[0]); }
+  { const r = rig({ trading: true, cloud: true, go: false }); await r.run();
+    t("雲端也確定在下單:§4.2 帶 cloud: true(畫面加 tm.quitCloudNote)", r.boxes[0].data.cloud === true); }
+  t("系統原生框退役:restartToUpdate 裡沒有 dialog.showMessageBox、沒有 stayGo、沒有 updateBody", !/showMessageBox|stayGo|updateBody/.test(RESTART));
+  { const r = rig({ trading: true, go: true }), res = await r.run();
+    t("按確認:順序 quitConfirmed=true → noteQuit → stop 收完 → install(收工走結束 app 同一條)", r.log.join() === "ask:trading,used,quitConfirmed=true,noteQuit,stop:start,stop:done,install:ok" && res.ok === true, r.log);
     t("…交給 quitAndInstall 之後 restarting = installing(紅燈、Cmd+Q 放行,它要關視窗才能重開)", r.ctx.restarting === "installing");
     t("…沒有另外接回下單(重開後對帳器照規矩停著)", !/_tradeHost\.(start|send)\(|tradeHost\(\)\.(start|send)\(|tradeStartIfReady|"resume"/.test(RESTART));
     t("…埋點 feature_used update_restart 一次(確認後,stop 最多 11 秒,送得出去)", r.tracked.join() === "feature_used:update_restart"); }
-  { const r = rig({ trading: true, response: 1 }); const p = r.run(); await sleep(5);
-    t("框開著那段時間 quitAsking = true(Cmd+Q 不會疊第二個框)", r.ctx.quitAsking === true || r.log.includes("stop:start")); await p; }
 
   // ── 稽核 P1-1:確認到裝好之間(probe A / A2 / B)──
-  { const r = rig({ trading: true, response: 1 }); const p1 = r.run(); await sleep(10);
+  { const r = rig({ trading: true, go: true }); const p1 = r.run(); await sleep(10);
     t("收工中 restarting = stopping(send-message 回忙碌、選單列那一行停用、紅燈只收視窗都看它)", r.ctx.restarting === "stopping");
     const p2 = r.run(); const res = await Promise.all([p1, p2]);
-    t("A 收工中再按一次:不跳第二個框、noteQuit / stop / install 各一次,第二次回 ASKING", r.boxes.length === 1 && r.log.filter((x) => x === "noteQuit").length === 1 && r.log.filter((x) => x === "stop:start").length === 1
+    t("A 收工中再按一次:不開第二個框、noteQuit / stop / install 各一次,第二次回 ASKING", r.boxes.length === 1 && r.log.filter((x) => x === "noteQuit").length === 1 && r.log.filter((x) => x === "stop:start").length === 1
       && r.log.filter((x) => /^install/.test(x)).length === 1 && res[1].error === "ASKING", [r.log, res]); }
-  { const r = rig({ trading: true, response: (n) => (n === 1 ? 1 : 0) }); const p1 = r.run(); await sleep(10); const p2 = r.run(); await Promise.all([p1, p2]);
-    t("A2 收工中再按:根本不會出現第二個框,也就沒有「按了取消其實取消不了」", r.boxes.length === 1, r.log); }
-  { const r = rig({ trading: true, response: 1, onDialog: () => {} }); const p1 = r.run(); await sleep(10);
+  { const r = rig({ trading: true, go: true }); const p1 = r.run(); await sleep(10);
     const src2 = cut(src, 'ipcMain.handle("send-message", async (e, payload) =>');
     t("B 收工中送聊天:send-message 把 restarting 算進忙碌(回合開不起來,不會被無聲砍掉)", /if \(activeTurn \|\| turnStarting \|\| restarting\) return \{ busy: true \};/.test(src2) && !!r.ctx.restarting); await p1; }
-  { const r = rig({ trading: true, response: 1, onDialog: () => {} }); r.ctx.dialog.showMessageBox = (_w, opts) => { r.boxes.push(opts); r.log.push("dialog"); r.ctx.turnStarting = true; return Promise.resolve({ response: 1 }); };
+  { const r = rig({ trading: true }); r.ctx.updAsk = (kind) => { r.boxes.push({ kind }); r.log.push("ask:" + kind); r.ctx.turnStarting = true; return Promise.resolve(true); };
     const res = await r.run();
     t("框開著時回合開始了(程式觸發):按確認也不收工,回 TURN_BUSY,旗標不動", res.error === "TURN_BUSY" && !r.log.includes("noteQuit") && !r.log.includes("stop:start") && r.confirmed() === false && r.ctx.restarting === null, r.log); }
   // ── 稽核 P1-2:收工前 phase 變了 / 收工後沒裝成(probe C)──
-  { const r = rig({ trading: true, response: 1 }); r.ctx.dialog.showMessageBox = (_w, opts) => { r.boxes.push(opts); r.log.push("dialog"); r.setPhase("error"); return Promise.resolve({ response: 1 }); };
+  { const r = rig({ trading: true }); r.ctx.updAsk = (kind) => { r.boxes.push({ kind }); r.log.push("ask:" + kind); r.setPhase("error"); return Promise.resolve(true); };
     const res = await r.run();
     t("C 框開著時 updater 出錯(phase → error):不收工、回 NOT_READY、quitConfirmed 沒設", res.error === "NOT_READY" && !r.log.includes("noteQuit") && !r.log.includes("stop:start") && r.confirmed() === false && r.ctx.restarting === null, r.log); }
-  { const r = rig({ trading: true, response: 1 }); const p = r.run(); await sleep(10); r.setPhase("error"); const res = await p;
+  { const r = rig({ trading: true, go: true }); const p = r.run(); await sleep(10); r.setPhase("error"); const res = await p;
     t("C' 收工期間 phase → error、install 回 NOT_READY:改走 app.quit()(已同意停單,不留停一半、app 沒重開)", r.log.slice(-2).join() === "install:NOT_READY,app.quit" && res.quit === true, r.log); }
-  { const r = rig({ trading: true, response: 1, installRes: { ok: false, error: "TRADING" } }), res = await r.run();
+  { const r = rig({ trading: true, go: true, installRes: { ok: false, error: "TRADING" } }), res = await r.run();
     t("收工後 install 不管回什麼錯(TRADING 也一樣):一律 app.quit()", r.log.slice(-2).join() === "install:TRADING,app.quit" && res.quit === true, r.log); }
-  { const r = rig({ trading: true, response: 1, noteQuitThrows: true }); let threw = false, res = null; try { res = await r.run(); } catch (_) { threw = true; }
+  { const r = rig({ trading: true, go: true, noteQuitThrows: true }); let threw = false, res = null; try { res = await r.run(); } catch (_) { threw = true; }
     t("確認後整段拋例外(noteQuit 炸了):不往外拋,改走 app.quit()", !threw && res && res.quit === true && r.log.slice(-1)[0] === "app.quit", r.log); }
-  { const r = rig({ trading: true, response: 1, installThrows: true }); let threw = false; try { await r.run(); } catch (_) { threw = true; }
+  { const r = rig({ trading: true, go: true, installThrows: true }); let threw = false; try { await r.run(); } catch (_) { threw = true; }
     t("install 拋例外:同上,app.quit()", !threw && r.log.slice(-1)[0] === "app.quit", r.log); }
-  // ── 稽核 P2-1 ──
-  { const r = rig({ trading: true, response: 0, showMainThrows: true }), res = await r.run();
-    t("showMain 拋例外:照樣問、quitAsking 還原(不會之後 Cmd+Q 永遠沒反應)", res.error === "CANCELED" && r.boxes.length === 1 && r.ctx.quitAsking === false, r.log); }
-  { const r = rig({ trading: true, dialogThrows: true }), res = await r.run();
-    t("對話框自己出錯:當成取消,旗標還原", res.error === "CANCELED" && r.ctx.quitAsking === false && r.confirmed() === false && !r.log.some((x) => /^install/.test(x))); }
   { const r = rig({ trading: true, asking: true }), res = await r.run();
     t("已經有確認框開著(quitAsking,跟結束攔截共用):不疊第二個,回 ASKING", res.error === "ASKING" && r.boxes.length === 0 && r.log.length === 0); }
   { const r = rig({ trading: true, moveAsking: true }), res = await r.run();
     t("搬移框開著(moveAsking):更新重開也不疊框,回 ASKING(稽核 integ-0124 P2-2)", res.error === "ASKING" && r.boxes.length === 0 && r.log.length === 0); }
   { const r = rig({ trading: true }); r.ctx.quitting = true; const res = await r.run();
     t("app 已經在結束(quitting):不問、不收工,回 ASKING", res.error === "ASKING" && r.log.length === 0); }
-  { const r = rig({ trading: false, turn: true, phase: "ready" }), res = await r.run();
-    t("本機回合在跑:回 TURN_BUSY、不裝(同今天)", res.error === "TURN_BUSY" && r.log.length === 0); }
-  { const r = rig({ trading: false, phase: "downloading" }), res = await r.run();
+  { const r = rig({ trading: false, turn: true, phase: "ready" }), res = await r.run({ confirmed: true });
+    t("本機回合在跑:回 TURN_BUSY、不裝(帶 confirmed 也一樣)", res.error === "TURN_BUSY" && r.log.length === 0); }
+  { const r = rig({ trading: false, phase: "downloading" }), res = await r.run({ confirmed: true });
     t("還沒下載好:回 NOT_READY", res.error === "NOT_READY" && r.log.length === 0); }
   // ── 設計複驗 0.1.10:restarting 一變就推給畫面、重建選單列(不等 5 秒)──
   { const SR = cut(src, "function setRestarting("), sent = [], steps = [];
@@ -323,7 +313,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const pa = await a.fire(), pb = await b.fire(), pc = await c.fire();
       t("P2-2 搬移框開著時按 Cmd+Q:下單中 / 回合在跑兩道都先擋、不疊結束確認框;沒開搬移框照常問", pa && pb && !a.log.includes("dialog") && !b.log.includes("dialog") && pc && c.log.includes("dialog"), [a.log, b.log, c.log]); } }
   // ── 接線:三個入口都走 restartToUpdate ──
-  t("IPC update-install 改叫 restartToUpdate", /ipcMain\.handle\("update-install", \(e\) => \(!fromOurPage\(e\) \? \{ ok: false, error: "NOT_ALLOWED" \} : restartToUpdate\(\)\)\);/.test(src));
+  t("IPC update-install 改叫 restartToUpdate;confirmed 只在過了 fromOurPage 之後才交進去、只認 === true", /ipcMain\.handle\("update-install", \(e, opts\) => \(!fromOurPage\(e\) \? \{ ok: false, error: "NOT_ALLOWED" \} : restartToUpdate\(\{ confirmed: !!\(opts && opts\.confirmed === true\) \}\)\)\);/.test(src));
   t("選單列那一行 click = restartToUpdate()", /click: \(\) => \{ restartToUpdate\(\)\.catch\(/.test(cut(src, "function trayMenu(")));
   t("埋點只用 feature_used 的兩個 name(不開新事件型別):update_restart 在 restartToUpdate、app_move 在 askMoveToApps", (RESTART.match(/tm\(\)\.track\(/g) || []).length === 1 && /tm\(\)\.track\("feature_used", \{ name: "update_restart" \}\)/.test(RESTART)
     && (MOVE.match(/tm\(\)\.track\(/g) || []).length === 1 && /tm\(\)\.track\("feature_used", \{ name: "app_move" \}\)/.test(MOVE) && !/update_restart|app_move/.test(Object.keys(require("../shell/telemetry.js").EVENTS).join()));
@@ -335,24 +325,30 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const upInstall = cut(upSrc, "function install(");
   t("§5 quitAndInstall 整個外殼只出現一次,在 updater.js 的 install() 裡", qai.length === 1 && qai[0][0] === "updater.js" && upInstall.includes("quitAndInstall("), qai);
   const rs = src.indexOf(RESTART), re = rs + RESTART.length;
+  // 0.1.36 起第二條:每天 06:00 的 scheduledInstall(spec desktop-update-pill §5)。只有它與 restartToUpdate 叫得到 install()
+  const SCHED = cut(src, "async function scheduledInstall("), ss = src.indexOf(SCHED), se = ss + SCHED.length;
   const installs = [...src.matchAll(/\.install\(\)/g)].map((m) => m.index);
-  t("§5 main.js 裡每一個 .install() 都在 restartToUpdate 裡面", installs.length >= 1 && installs.every((i) => i > rs && i < re), installs.length);
+  t("§5 main.js 裡每一個 .install() 都在 restartToUpdate 或 scheduledInstall 裡面", installs.length >= 2 && installs.every((i) => (i > rs && i < re) || (i > ss && i < se)), installs.length);
+  const schedCallers = src.split("\n").filter((l) => /scheduledInstall\(/.test(l) && !/async function scheduledInstall\(/.test(l) && !/^\s*(\/\/|\/\*|\*)/.test(l));
+  t("§5 scheduledInstall 只有一個呼叫點:啟動時掛的每分鐘計時器;IPC 叫不到它(handle / ipcMain 那幾行沒有它)", schedCallers.length === 1 && /setInterval\(\(\) => \{ scheduledInstall\(\)\.catch\(/.test(schedCallers[0])
+    && !src.split("\n").some((l) => /ipcMain\.|\bhandle\("/.test(l) && /scheduledInstall/.test(l)), schedCallers);
+  t("§5 scheduledInstall 不跳任何框、不送 update_restart、不叫 restartToUpdate;判斷交給 schedupdate.js", !/showMessageBox|updAsk|update_restart|restartToUpdate|new Notification/.test(SCHED) && /require\("\.\/schedupdate"\)/.test(SCHED));
   const callers = src.split("\n").filter((l) => /restartToUpdate\(/.test(l) && !/async function restartToUpdate\(/.test(l) && !/^\s*(\/\/|\/\*|\*)/.test(l));
   t("§5 restartToUpdate 只有兩個呼叫點(IPC、選單列那一行),都不在計時器裡", callers.length === 2 && callers.every((l) => !/setTimeout|setInterval|setImmediate/.test(l)), callers);
-  t("§5 restartToUpdate / askMoveToApps / updater.js 裡沒有計時器、沒有系統通知", ![RESTART, MOVE].some((s) => /setTimeout|setInterval|new Notification/.test(s)) && !/new Notification/.test(upSrc)
-    && !/setTimeout\([^\n]*(install|restartToUpdate)/.test(src) && !/setInterval\([^\n]*(install|restartToUpdate)/.test(src));
+  t("§5 restartToUpdate / askMoveToApps 裡沒有計時器;updater.js 沒有系統通知;除了排程那一支,沒有計時器叫 install / restartToUpdate", ![RESTART, MOVE].some((s) => /setTimeout|setInterval|new Notification/.test(s)) && !/new Notification/.test(upSrc)
+    && !/setTimeout\([^\n]*(install|restartToUpdate)/i.test(src) && src.split("\n").filter((l) => /setInterval\([^\n]*(install|restartToUpdate)/i.test(l)).length === 1);
   t("§5 5 秒那一輪只叫 poll()(推畫面),不叫 install / restartToUpdate", /startStep\("update poll", \(\) => updater\(\)\.poll\(\)\)/.test(cut(src, "function trayStart(")) && !/install|restartToUpdate/.test(cut(src, "function trayStart(")));
 
   // ── 字 ──
   const po = { zh: fs.readFileSync(path.join(SHELL, "i18n", "zh.po"), "utf8"), en: fs.readFileSync(path.join(SHELL, "i18n", "en.po"), "utf8") };
-  const W = { zh: { "tm.updateBody": "重新啟動之後，這台電腦就不會再下單，也不會平倉；部位留在{venue}。重開後要重新按「啟動下單」。", "tm.move.title": "把 Blave 移到「應用程式」資料夾？",
+  const W = { zh: { "tm.updateBody": "重新啟動後，這台電腦不會再下單，也不會平倉。部位留在{venue}，重開後要按「啟動下單」。", "tm.move.title": "把 Blave 移到「應用程式」資料夾？",
       "tm.move.body": "在這裡 Blave 無法自動更新。移過去後會自動重新開啟。", "tm.move.go": "移到應用程式", "tm.move.no": "不要移" },
-    en: { "tm.updateBody": "After the restart, this computer places no more orders and closes nothing; positions stay at {venue}. Press Start trading to resume.",
+    en: { "tm.updateBody": "After the restart, this computer places no more orders and closes nothing. Positions stay at {venue}, so press Start trading once it reopens.",
       "tm.move.title": "Move Blave to the Applications folder?", "tm.move.body": "Blave can’t update itself from here. It reopens after the move.", "tm.move.go": "Move to Applications", "tm.move.no": "Don’t Move" } };
-  t("五個新 key 兩語逐字在 .po(spec §1 / §4)", ["zh", "en"].every((l) => Object.keys(W[l]).every((k) => po[l].includes('msgid "' + k + '"\nmsgstr "' + W[l][k] + '"\n'))));
+  t("五個 key 兩語逐字在 .po(spec §1 / §4;tm.updateBody 0.1.36 改成兩句、去分號)", ["zh", "en"].every((l) => !/[；;]/.test(W[l]["tm.updateBody"])) && ["zh", "en"].every((l) => Object.keys(W[l]).every((k) => po[l].includes('msgid "' + k + '"\nmsgstr "' + W[l][k] + '"\n'))));
   const trSrc = fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8");
-  t("trPushLabels 交這五個;tmLabels 的 updateBody 英文退路 = en、move 四個預設空的(沒交字就不問)", /updateBody: t\("tm\.updateBody"\), moveTitle: t\("tm\.move\.title"\), moveBody: t\("tm\.move\.body"\), moveGo: t\("tm\.move\.go"\), moveNo: t\("tm\.move\.no"\)/.test(trSrc)
-    && src.includes('updateBody: "' + W.en["tm.updateBody"] + '",') && /moveTitle: "", moveBody: "", moveGo: "", moveNo: "",/.test(src));
+  t("trPushLabels 交 move 四個、不再交 updateBody(§4.2 改由畫面自己翻);tmLabels 沒有 updateBody 退路、move 四個預設空的(沒交字就不問)", /moveTitle: t\("tm\.move\.title"\), moveBody: t\("tm\.move\.body"\), moveGo: t\("tm\.move\.go"\), moveNo: t\("tm\.move\.no"\)/.test(trSrc)
+    && !/updateBody/.test(trSrc) && !/updateBody/.test(src) && /moveTitle: "", moveBody: "", moveGo: "", moveNo: "",/.test(src));
   t("提示框的字:兩語逐字在 .po、trPushLabels 交這三個、tmLabels 預設空的",
     po.zh.includes('msgid "tm.move.authExists"\nmsgstr "應用程式資料夾已經有 Blave，請改開那一份。"\n') && po.zh.includes('msgid "tm.move.authApps"\nmsgstr "請把 Blave 拖進應用程式資料夾，才收得到更新。"\n')
     && po.en.includes('msgid "tm.move.authExists"\nmsgstr "Blave is already in your Applications folder. Please open that copy instead."\n') && po.en.includes('msgid "tm.move.authApps"\nmsgstr "Drag Blave into your Applications folder to receive updates."\n')

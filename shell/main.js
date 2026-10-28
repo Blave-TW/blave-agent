@@ -440,6 +440,17 @@ let _up = null;
 function updater() {
   if (_up) return _up;
   const feedUrl = app.isPackaged ? require("./package.json").blaveUpdateUrl || null : null;
+  const onState = (st) => {
+    for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update-state", { ...st, backup: _officialBackup, restarting: !!restarting });
+    // 已經為了更新收工、交給 quitAndInstall 之後 Squirrel 才失敗(它是 setImmediate 排的,restartToUpdate 早就回了):改走結束 app(稽核 P1-2)
+    if (restarting === "installing" && st.phase === "error") app.quit();
+    // 直接裝那一支(沒在下單)先設了 draftOk 才 install:Squirrel／NSIS 之後才失敗、app 還開著,收回——下次結束照樣問草稿(稽核 P3-1)
+    else if (st.phase === "error") draftOk = false;
+    if (st.phase === "ready" || st.phase === "blocked") upNotesKick(st.version);
+  };
+  // 開發版沒有更新來源,膠囊永遠不出:BLAVE_DEV_FAKE_UPDATE 給一份假的「已暫存」(只在沒打包時生效)
+  const fake = require("./updater").devFakeVersion(process.env, app.isPackaged);
+  if (fake) { _up = require("./updater").createDevFake({ version: fake, currentVersion: app.getVersion(), isTrading: () => !!tradeMaybeLive(), onState, log: (m) => console.error("[updater] " + m) }); return _up; }
   _up = require("./updater").createUpdater({
     autoUpdater: feedUrl ? require("electron-updater").autoUpdater : null,
     // Squirrel 暫存完成的事件只有原生這顆會發(updater.js 檔頭);Windows 是 NSIS,沒有原生這一層 → 不給,electron-updater 下載完就算 ready
@@ -448,13 +459,7 @@ function updater() {
     signed: feedUrl && process.platform === "win32" ? { keys: require("./update-keys.json") } : null,
     feedUrl, currentVersion: app.getVersion(),
     isTrading: () => !!tradeMaybeLive(),   // 保守判定:可能還在下單就不裝
-    onState: (st) => {
-      for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update-state", { ...st, backup: _officialBackup, restarting: !!restarting });
-      // 已經為了更新收工、交給 quitAndInstall 之後 Squirrel 才失敗(它是 setImmediate 排的,restartToUpdate 早就回了):改走結束 app(稽核 P1-2)
-      if (restarting === "installing" && st.phase === "error") app.quit();
-      // 直接裝那一支(沒在下單)先設了 draftOk 才 install:Squirrel／NSIS 之後才失敗、app 還開著,收回——下次結束照樣問草稿(稽核 P3-1)
-      else if (st.phase === "error") draftOk = false;
-    },
+    onState,
     log: (m) => console.error("[updater] " + m),
     onFail: (stage) => tm().track("update_failed", { stage }),
   });
@@ -3644,8 +3649,14 @@ app.whenReady().then(() => {
   handle("min-version-state", () => minGate().state());
   handle("update-state", () => ({ ...updater().state(), backup: _officialBackup, restarting: !!restarting }));
   ipcMain.handle("update-check", (e) => (fromOurPage(e) ? updater().check() : false));
-  // 聊天那一格 / 關於列按的:走 restartToUpdate(回合在跑不重開、下單中先問再收工)
-  ipcMain.handle("update-install", (e) => (!fromOurPage(e) ? { ok: false, error: "NOT_ALLOWED" } : restartToUpdate()));
+  // 膠囊 / 關於列按的:走 restartToUpdate(回合在跑不重開、下單中先問再收工)。confirmed 只有過了 fromOurPage 才認
+  ipcMain.handle("update-install", (e, opts) => (!fromOurPage(e) ? { ok: false, error: "NOT_ALLOWED" } : restartToUpdate({ confirmed: !!(opts && opts.confirmed === true) })));
+  // 更新 modal 往返(updAsk):只認主行程正在等的那一頁、那一個 id
+  handle("update-ask-get", (e) => (_upAsk && _upAsk.pickedBy(e.sender) ? { id: _upAsk.id, kind: _upAsk.kind, data: _upAsk.data } : null), null);
+  handle("update-ask-answer", (e, id, ok) => { if (_upAsk && _upAsk.id === id && _upAsk.pickedBy(e.sender)) _upAsk.done(ok === true); return true; }, false);
+  handle("update-notes", () => upNotesGet(), null);
+  handle("update-auto", () => updAutoGet(), true);
+  handle("update-auto-set", (_e, on) => updAutoSet(on === true), null);
   // 換版時備份的資料夾:在 Finder 裡選起來。路徑由主行程自己算(畫面不交路徑),沒有備份就什麼都不做
   handle("update-show-backup", () => { if (!_officialBackup) return false; shell.showItemInFolder(path.join(WS, _officialBackup.dir)); return true; }, false);
   ipcMain.handle("telemetry-get", (e) => (fromOurPage(e) ? tm().isEnabled() : null));
@@ -3824,6 +3835,12 @@ app.whenReady().then(() => {
   });
   startStep("app state", () => { accountStatus(); });   // 已登入就補報一次現況:關掉開關之後沒再用的人,下次開 app 就送到(沒登入不打)
   startStep("updater", () => updater().start());
+  // 每天 06:00 自動更新:每分鐘看一次,只在 06:00–06:30 才判(schedupdate.js)。第二份 app 不排(兩份會搶同一次重開)
+  if (app.hasSingleInstanceLock()) startStep("update schedule", () => {
+    updSchedBoot();
+    const t = setInterval(() => { scheduledInstall().catch((e) => console.error("[updater] scheduled: " + ((e && e.message) || e))); }, 60000);
+    if (t.unref) t.unref();
+  });
   startStep("min version gate", () => minGate().start());
 });
 /* 啟動步驟各自隔開:一步拋例外只記一行、不擋後面的步驟(選單、選單列、更新、遙測彼此無關) */
@@ -3878,7 +3895,6 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   unsavedNote: "Unsaved Portfolio changes will be lost.",
   hidden: WIN ? "Blave is still running in the system tray." : "Blave is still running in the menu bar.",
   updateReady: "Restart to finish updating", restarting: "Restarting…",
-  updateBody: "After the restart, this computer places no more orders and closes nothing; positions stay at {venue}. Press Start trading to resume.",
   ev_halt: "Trading was paused automatically", ev_halt_n: "No orders at all — exits and stops won’t run. Open Blave to check.",
   ev_order_error: "Order failed", ev_order_error_n: "The exchange rejected an order. Open Blave to check.",
   ev_execution_interrupted: "Last execution was interrupted", ev_execution_interrupted_n: "A fill may be missing from the ledger. Check positions before restarting.",
@@ -3999,52 +4015,42 @@ async function pauseFromMenu() {
 }
 // 新版已經暫存好、但因為正在下單而沒裝:桌機用戶的 app 常常整天開著,不講的話他們不會知道有新版在等
 const updateWaiting = () => { try { const p = updater().state().phase; return p === "blocked" || p === "ready"; } catch (_) { return false; } };
-/* 「重新啟動以完成更新」的唯一一條路(聊天那一格、關於列、選單列都叫這支;spec-desktop-update-prompt-0.1.10 §0)。
-   下單中:先問(同結束攔截的框,共用 quitAsking);確認後走結束 app 同一條收工(noteQuit → stop:對帳器先撤自己掛的限價單),
-   收完才 install。先設 quitConfirmed:quitAndInstall 關視窗、before-quit 兩道攔截都直接放行,不會再問一次。
-   重開之後**不自動接回下單**(Wei 拍板):對帳器照規矩停著,等用戶自己按啟動。
+/* 「重新啟動以完成更新」(膠囊、關於列、選單列都叫這支;spec desktop-update-pill §4)。確認一律在 app 內的更新 modal,不跳系統框:
+   沒在下單 = §4.1(標題寫新版號、改了什麼、草稿那句);下單中 = §4.2(問暫停)。opts.confirmed = 畫面已經開過 §4.1 而且按了重新啟動
+   (只有 IPC update-install 會帶,那支已過 fromOurPage);沒帶就由主行程叫畫面開框(updAsk)。
+   下單中確認後走結束 app 同一條收工(noteQuit → stop:對帳器先撤自己掛的限價單),收完才 install。先設 quitConfirmed:
+   quitAndInstall 關視窗、before-quit 兩道攔截都直接放行,不會再問一次。重開之後**不自動接回下單**(Wei 拍板):對帳器照規矩停著。
    stop 放棄等待、狀態還說在下單 → install 回 TRADING:改走 app.quit(),autoInstallOnAppQuit 照樣裝,只是不自己重開 */
 // 埋點:feature_used 的 update_restart(隱私頁「分頁與按鈕的名稱」那一類),只在真的走下去時送——直接裝、或下單中按了確認
-async function restartToUpdate() {
+async function restartToUpdate(opts) {
+  let confirmed = !!(opts && opts.confirmed === true);
   const used = () => { try { tm().track("feature_used", { name: "update_restart" }); } catch (_) { /* 追蹤不擋更新 */ } };
   const phase = () => updater().state().phase, turnBusy = () => !!(activeTurn || turnStarting);
   // 已經在收工 / 結束(restarting、quitConfirmed、quitting)跟「框開著」同一種:不再問、不再收一次工
   const plan = () => planRestart({ phase: phase(), turn: turnBusy(), asking: quitAsking || moveAsking || !!restarting || quitConfirmed || quitting, trading: !!tradeMaybeLive() });
   const stop = (st) => (st === "not_ready" ? { ok: false, error: "NOT_READY" } : st === "busy" ? { ok: false, error: "TURN_BUSY" } : st === "asking" ? { ok: false, error: "ASKING" } : null);
-  let step = plan();
-  if (stop(step)) return stop(step);
-  /* 策略組合有沒存的草稿(稽核 M1):在任何收工與 install 之前先問——quitAndInstall 一送出去就收不回來。
-     直接裝那一支單獨問這一道、留下就什麼都不動;下單中那一支下面本來就有框,草稿那句併進去(同結束攔截)。
-     問完狀態可能變了(開始下單、回合開始):重新判一次 */
   let note = false;
-  if (!draftOk) {
-    if (step === "install") {
-      if (!(await draftGate(null))) return { ok: false, error: "CANCELED" };
-    } else {
-      quitAsking = true;
-      try { note = await draftDirty(null); } finally { quitAsking = false; }
-    }
-    step = plan();
+  // 問的期間狀態會變(開始下單、停了單):每問完一道重判一次。上限只防兩邊來回翻,正常最多走兩輪
+  for (let round = 0; ; round++) {
+    const step = plan();
     if (stop(step)) return stop(step);
-    // 下單中那一支只記了有沒有草稿;問的那 1.5 秒剛好停了單、改走直接裝:這時要單獨問(稽核 P3-2)
-    if (step === "install" && note && !(await draftGate(null, true))) return { ok: false, error: "CANCELED" };
+    if (round > 3) return { ok: false, error: "ASKING" };
+    if (step === "install") {
+      if (!confirmed) {
+        if (!(await updAsk("plain", { v: updater().state().version || "" }))) return { ok: false, error: "CANCELED" };
+        confirmed = true;
+        continue;
+      }
+      // 草稿那句 §4.1 已經講過:不再跑 draftGate。安裝程式不能留著:結束後它還在寫 venv(Windows 上它還握著隨包 Python 的 DLL)
+      draftOk = true;   // quitAndInstall 會關視窗、走 before-quit
+      await engineAbort(); const res = updater().install(); if (res.ok) used(); else draftOk = false; return res;
+    }
+    // 下單中:有沒有草稿由主行程問(畫面重算會慢一步);查的那 1.5 秒裡停了單 → 重判,改開 §4.1
+    if (!draftOk) { quitAsking = true; try { note = await draftDirty(null); } finally { quitAsking = false; } }
+    if (plan() === "confirm") break;
   }
   const live = tradeMaybeLive() || {};   // 問草稿那段之間剛好停了:字裡的交易所名留空,不拋例外
-  // 安裝程式不能留著:結束後它還在寫 venv,下次開 app 就是兩支 pip 寫同一個資料夾(Windows 上它還握著隨包 Python 的 DLL)
-  if (step === "install") {
-    draftOk = true;   // quitAndInstall 會關視窗、走 before-quit:草稿那一道已經問過了
-    await engineAbort(); const res = updater().install(); if (res.ok) used(); else draftOk = false; return res;
-  }
-  let r = null;
-  try { showMain(); } catch (_) { /* 叫不出視窗也照問;先叫再立旗標,拋例外不會把 quitAsking 卡在 true(稽核 P2-1) */ }
-  quitAsking = true;
-  const sg = TT.stayGo(process.platform, tmLabels.quitStay, tmLabels.updateReady);
-  try {
-    r = await dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: tmLabels.quitTitle,
-      detail: TT.quitDetail(tmLabels.updateBody.replace("{venue}", () => venueName(live.venue)), TT.cloudTrading(cloudSt()) ? tmLabels.quitCloudNote : "") + (note && tmLabels.unsavedNote ? "\n\n" + tmLabels.unsavedNote : ""),
-      buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId });
-  } catch (_) { r = null; } finally { quitAsking = false; }
-  if (!r || r.response !== sg.goIndex) return { ok: false, error: "CANCELED" };
+  if (!(await updAsk("trading", { venue: venueName(live.venue), cloud: !!TT.cloudTrading(cloudSt()), unsaved: !!note }))) return { ok: false, error: "CANCELED" };
   // 框開著的時候可能變了:回合開始了(程式觸發的)、updater 自己出錯了 → 不收工,什麼都沒動
   if (turnBusy()) return { ok: false, error: "TURN_BUSY" };
   const ph = phase();
@@ -4063,6 +4069,111 @@ async function restartToUpdate() {
   setRestarting("installing");
   app.quit();
   return { ok: true, quit: true };
+}
+/* 更新 modal 的主行程↔畫面往返(§4.2;選單列入口的 §4.1 也走這裡)。主行程開一道「問題」,送 update-ask 叫畫面來拿
+   (update-ask-get),畫面答 update-ask-answer。都只認 draftMainWin() 那一頁(不用 getAllWindows()[0]:可能是藏著的 PDF 視窗)。
+   等的期間 quitAsking = true(Cmd+Q、搬移框不疊);視窗關掉／藏起來、render-process-gone、重新載入、畫面 10 秒內沒來拿,
+   一律當取消並放回 quitAsking——不然 before-quit 會一直 return,Cmd+Q 與選單列「結束」都失效。 */
+const UP_ASK_PICKUP_MS = 10000;
+let _upAsk = null, _upAskSeq = 0;
+function updAsk(kind, data) {
+  try { showMain(); } catch (_) { /* 叫不出視窗:下面找不到頁就當取消 */ }
+  const id = ++_upAskSeq;
+  quitAsking = true;
+  return new Promise((resolve) => {
+    let win = null, findT = null;
+    const offs = [];
+    const done = (ok) => {
+      if (!_upAsk || _upAsk.id !== id) return;
+      _upAsk = null; clearTimeout(pickT); clearTimeout(findT);
+      offs.splice(0).forEach((f) => { try { f(); } catch (_) { /* 視窗已經沒了 */ } });
+      quitAsking = false;
+      if (ok !== true && win && !win.isDestroyed()) { try { win.webContents.send("update-ask-close", id); } catch (_) { /* 頁已經走了 */ } }
+      resolve(ok === true);
+    };
+    const on = (em, ev, fn) => { em.on(ev, fn); offs.push(() => em.removeListener(ev, fn)); };
+    const cancel = () => done(false);
+    // 重新載入:主框架換文件就算(同一頁的 hash 不算)。新版 Electron 傳 details、舊版傳 (event, url, inPlace, isMainFrame)
+    const onNav = (d, _url, inPlace, mainFrame) => { const x = d && typeof d === "object" && "isMainFrame" in d ? d : { isMainFrame: mainFrame, isSameDocument: inPlace }; if (x.isMainFrame && !x.isSameDocument) cancel(); };
+    const pickT = setTimeout(cancel, UP_ASK_PICKUP_MS);
+    _upAsk = { id, kind, data, done,
+      pickedBy: (wc) => { if (!win || win.isDestroyed() || wc !== win.webContents) return false; if (!_upAsk.seen) { _upAsk.seen = true; clearTimeout(pickT); on(win.webContents, "did-start-navigation", onNav); } return true; } };
+    const attach = () => {
+      if (!_upAsk || _upAsk.id !== id) return;
+      win = draftMainWin();
+      if (!win) { findT = setTimeout(attach, 250); return; }   // 視窗剛建、頁還沒載好:等它(上限是 pickT)
+      on(win, "closed", cancel); on(win, "hide", cancel);
+      on(win.webContents, "render-process-gone", cancel); on(win.webContents, "destroyed", cancel);
+      try { win.webContents.send("update-ask"); } catch (_) { cancel(); }
+    };
+    attach();
+  });
+}
+/* 「這版改了什麼」(§4.3):進 ready 時抓一次;沒拿到的話畫面開 §4.1 那一刻(update-notes)再抓一次。結果只經 invoke 給畫面,
+   不放進廣播給所有視窗的 update-state */
+let _upNotes = { v: null, res: null, tries: 0, inflight: null };
+function upNotesKick(v) {
+  if (typeof v !== "string" || !v) return null;
+  if (_upNotes.v !== v) _upNotes = { v, res: null, tries: 0, inflight: null };
+  if (_upNotes.res || _upNotes.inflight || _upNotes.tries >= 2) return _upNotes.inflight;
+  _upNotes.tries++;
+  const mine = _upNotes;
+  mine.inflight = require("./relnotes").fetchNotes(v).catch(() => null).then((r) => { mine.res = r; mine.inflight = null; return r; });
+  return mine.inflight;
+}
+async function upNotesGet() {
+  const v = updater().state().version;
+  if (typeof v !== "string" || !v) return null;
+  if (_upNotes.v === v && _upNotes.res) return _upNotes.res;
+  const p = upNotesKick(v);
+  return p ? p : _upNotes.v === v ? _upNotes.res : null;
+}
+/* 每天 06:00 自動更新(§5)。判斷在 schedupdate.js;這支只收集狀態、照做。不跳任何框、不送 update_restart(那個口徑留給人按的)。
+   install() 回 ok 才記目標版號(下次啟動對版號,沒追上 = 換版失敗,同一版不再排);在下單的人永遠不會走到這裡 */
+const updAutoGet = () => { try { return JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")).autoUpdate !== false; } catch (_) { return true; } };
+function updAutoSet(on) { try { uiPrefsPatch({ autoUpdate: on === true }); } catch (_) { /* 寫不進去:照舊值 */ } return updAutoGet(); }
+const updSchedRec = () => { try { const p = JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")); return { target: typeof p.updSchedTarget === "string" ? p.updSchedTarget : null, failed: typeof p.updSchedFailed === "string" ? p.updSchedFailed : null }; } catch (_) { return { target: null, failed: null }; } };
+function updSchedBoot() {
+  const r = updSchedRec(), b = require("./schedupdate").schedBoot({ current: app.getVersion(), ...r });
+  if (r.target !== b.target || r.failed !== b.failed) { try { uiPrefsPatch({ updSchedTarget: b.target, updSchedFailed: b.failed }); } catch (_) { /* 下次啟動再對 */ } }
+  if (b.report) { try { tm().track("update_failed", { stage: "install" }); } catch (_) { /* 追蹤不擋 */ } }
+}
+// 畫面那兩問:逾時或出錯回 null(= 有東西,不重開;跟人在場時的 draftDirty 相反)。沒有我們的頁 = 沒有草稿、沒有框
+async function pageAsk(expr) {
+  const w = draftMainWin();
+  if (!w) return false;
+  try {
+    const ask = w.webContents.executeJavaScript(expr).then((v) => v === true, () => null);
+    return await Promise.race([ask, new Promise((r) => setTimeout(() => r(null), 1500))]);
+  } catch (_) { return null; }
+}
+let _schedRunning = false;
+async function scheduledInstall(now = Date.now()) {
+  if (_schedRunning) return { go: false, why: "running" };
+  _schedRunning = true;
+  try {
+    const st = updater().state(), host = _tradeHost ? _tradeHost.status() : null;
+    const base = { now, on: updAutoGet(), phase: st.phase, version: st.version, failed: updSchedRec().failed, trading: !!tradeMaybeLive(),
+      turn: !!(activeTurn || turnStarting), idleSec: require("electron").powerMonitor.getSystemIdleTime(), twHeld: twLots().held,
+      asking: !!(quitAsking || moveAsking || restarting || quitConfirmed || quitting), engineBusy: !!(engineSetup().busy() || _engineRun),
+      reports: host && host.alive && host.report && host.report.daemon ? host.report.daemon.reports : undefined };
+    const S = require("./schedupdate");
+    let d = S.schedPlan({ ...base, dirty: false, uiBusy: false });
+    if (!d.go) return d;
+    const dirty = await pageAsk("typeof trUnsavedAny === 'function' && trUnsavedAny() === true");
+    const idle = await pageAsk("typeof upIdleUi === 'function' && upIdleUi() === true");
+    // 問畫面那段時間狀態可能變了:全部重判一次再動
+    d = S.schedPlan({ ...base, now: Date.now(), trading: !!tradeMaybeLive(), turn: !!(activeTurn || turnStarting), asking: !!(quitAsking || moveAsking || restarting || quitConfirmed || quitting),
+      phase: updater().state().phase, dirty: dirty === null ? null : dirty, uiBusy: idle === null ? null : !idle });
+    if (!d.go) return d;
+    try { tm().track("feature_used", { name: "upd_sched_run" }); } catch (_) { /* 追蹤不擋 */ }
+    draftOk = true;   // quitAndInstall 關視窗時不再問草稿(上面已確認沒有)
+    await engineAbort();
+    const res = updater().install();
+    if (res.ok) { try { uiPrefsPatch({ updSchedTarget: st.version }); } catch (_) { /* 記不下:下次啟動不會發現失敗,只是少一道防重開 */ } }
+    else { draftOk = false; try { uiPrefsPatch({ updSchedTarget: null }); } catch (_) { /* 照舊 */ } }
+    return { go: res.ok, why: res.ok ? "go" : "install:" + res.error };
+  } finally { _schedRunning = false; }
 }
 /* 啟動時不在「應用程式」資料夾就問一次(§4)。「不要移」寫一個記號、之後永遠不問;搬移出錯不記,下次啟動再問。
    要系統授權才搬得過去的(moveAuthReason)不問也不叫 moveToApplicationsFolder:授權分支會讓別的子行程永遠收不到結束(updater.js shouldAskMove)。

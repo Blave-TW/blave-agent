@@ -2,7 +2,8 @@
 //
 // app 版號 = 框架版號:runtime / lib / references 是隨包的 extraResources,一次更新換一整包。
 // 規則:
-//   - 啟動後與之後每 4 小時查一次;有新版就在背景下載。**永遠不自己重啟。**
+//   - 啟動後與之後每 4 小時查一次;有新版就在背景下載。自己重啟只有一條:每天 06:00 的排程(main.js scheduledInstall,
+//     沒在下單、沒人在用才走;spec desktop-update-pill §5),其餘都等人按。
 //   - 自動下單在跑的時候不安裝:「重新啟動並更新」那顆鈕在執行中是擋下來的(isTrading),
 //     用戶先暫停、或正常結束 app(結束 = 停止下單)時才裝。結束時自動安裝是安全的——那一刻已經沒有東西在下單。
 //   - 用戶的東西(策略、帳本、state/、workspace .env)都在 BLAVE_HOME,不在 app 包裡,更新碰不到。
@@ -163,4 +164,26 @@ function moveAuthReason(exePath, appsDir = "/Applications") {
 }
 const moveNeedsAuth = (exePath, appsDir) => moveAuthReason(exePath, appsDir) !== null;
 
-module.exports = { createUpdater, planRestart, shouldAskMove, moveNeedsAuth, moveAuthReason, CHECK_EVERY_MS };
+/* 開發版的假更新(spec desktop-update-pill §10):開發版沒有更新來源,膠囊與更新 modal 看不到。BLAVE_DEV_FAKE_UPDATE=1 或給一個 x.y.z,
+   只在沒打包時生效;打包版一律 null(包裡帶著這個變數也不會變成「有新版」)。 */
+function devFakeVersion(env, isPackaged) {
+  const v = !isPackaged && env ? env.BLAVE_DEV_FAKE_UPDATE : null;
+  if (!v) return null;
+  return /^\d+\.\d+\.\d+$/.test(v) ? v : "9.9.9";
+}
+// 同 createUpdater 的介面;install 不真的重開(只記一行),畫面停在「重新啟動中…」可以看第四態
+function createDevFake(opts) {
+  const log = opts.log || (() => {});
+  const publicState = () => ({ phase: opts.isTrading() ? "blocked" : "ready", version: opts.version, percent: 100, error: null, current: opts.currentVersion });
+  let pushed = null;
+  const push = () => { const ps = publicState(); pushed = ps.phase; try { opts.onState(ps); } catch (_) { /* 畫面壞掉不影響 */ } };
+  return {
+    start() { setTimeout(push, 1000).unref?.(); return true; },
+    check() { push(); return true; },
+    poll() { const ps = publicState(); if (ps.phase === pushed) return false; push(); return true; },
+    install() { if (opts.isTrading()) return { ok: false, error: "TRADING" }; log("dev fake update: install requested (not restarting)"); return { ok: true }; },
+    state: publicState,
+  };
+}
+
+module.exports = { createUpdater, planRestart, devFakeVersion, createDevFake, shouldAskMove, moveNeedsAuth, moveAuthReason, CHECK_EVERY_MS };

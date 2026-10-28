@@ -107,7 +107,7 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
   t("整個檔只有 install() 一處會叫 quitAndInstall(永遠不自己重啟)", (src.match(/quitAndInstall\(/g) || []).length === 1);
   const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
   t("main.js:原生 Squirrel 那顆只在 darwin 注入(win32 是 null)", /nativeUpdater: feedUrl && process\.platform === "darwin" \? require\("electron"\)\.autoUpdater : null/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8")));
-  t("main.js:isTrading 走保守判定 tradeMaybeLive;開發版沒有更新來源;安裝 IPC 只收自家頁面", /isTrading: \(\) => !!tradeMaybeLive\(\)/.test(mainSrc) && /const feedUrl = app\.isPackaged \?/.test(mainSrc) && /"update-install", \(e\) => \(!fromOurPage\(e\) \? \{ ok: false, error: "NOT_ALLOWED" \} : restartToUpdate\(\)\)\);/.test(mainSrc));
+  t("main.js:isTrading 走保守判定 tradeMaybeLive;開發版沒有更新來源;安裝 IPC 只收自家頁面", /isTrading: \(\) => !!tradeMaybeLive\(\)/.test(mainSrc) && /const feedUrl = app\.isPackaged \?/.test(mainSrc) && /"update-install", \(e, opts\) => \(!fromOurPage\(e\) \? \{ ok: false, error: "NOT_ALLOWED" \} : restartToUpdate\(\{ confirmed: !!\(opts && opts\.confirmed === true\) \}\)\)\);/.test(mainSrc));
   t("tmLabels 預設物件就有回合中結束那兩句(畫面還沒交字前按結束也不會是空的)", (() => { const i = mainSrc.indexOf("let tmLabels = {"), j = mainSrc.indexOf("};", i); const d = mainSrc.slice(i, j);
     return /quitTurnTitle: "/.test(d) && /quitTurnBody: "/.test(d); })() && !/tmLabels\.quitTurnTitle \|\|/.test(mainSrc));
   t("關視窗:本機 agent 回合在跑時也只藏起來(同下單中);「背景照常下單」那則只在真的在下單時講",

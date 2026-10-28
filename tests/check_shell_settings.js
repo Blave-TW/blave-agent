@@ -33,7 +33,8 @@ const t = (k, v) => { if (!v) return k; const { view, ...rest } = v; return k + 
 const busyPin = () => {}, scrollChat = () => {}, said = []; const srSay = (x) => { said.push(x); };
 const store = {}; const lsGet = (k) => (k in store ? store[k] : null), lsSet = (k, v) => { store[k] = String(v); };
 const calls = []; let UP = null, hasToken = false, cloudSt = null, startOk = true;
-const window = { blave: { updateCheck: () => { calls.push("check"); return Promise.resolve(true); }, updateInstall: () => { calls.push("install"); return Promise.resolve({ ok: true }); },
+let lastInstall = null;
+const window = { blave: { updateCheck: () => { calls.push("check"); return Promise.resolve(true); }, updateInstall: (o) => { calls.push("install"); lastInstall = o || {}; return Promise.resolve({ ok: true }); },
   updateState: () => Promise.resolve(UP), updateShowBackup: () => { calls.push("showBackup"); return Promise.resolve(true); }, cloudRefresh: () => { refreshes++; return Promise.resolve(); } } };
 /* 「關於」兩行 + 聊天那一格 + 事後一行(upPlan / upDoneLine 決策、upPaint 照畫;upCheck 只查不送、upCloudUpdate 先問再送、upInstall)。雲端那一袋、聊天送出、確認框用假的。
    Wei 09-22 原則不變:用本機 app 不得觸發雲端 agent 回合——雲端那半在本機聊天送一句(帶 viewing env:cloud),不送雲端指令 */
@@ -57,8 +58,12 @@ var CS_BOOTED = false, UP_CHECKING = false, UP_CLOUD_BUSY = false;
 var UP_LINE_OF = new WeakMap();
 eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upCloudWhere", "upDoneLine", "upBackupLine", "upRich", "upPaintLine", "upSayLines", "upSayLine", "upRelang", "upView", "upLocalTurn", "upNow", "upTurnEnded", "upPaint", "acctPaintAcct"].map(fnSrc).join("\n"));
 eval(["upCheck", "upCloudRefresh", "upCloudUpdate", "upCloudSend", "upInstall"].map((n) => "async " + fnSrc(n)).join("\n"));
+// 0.1.36 側欄更新膠囊(spec desktop-update-pill §3):真的那幾支;更新 modal 本體(upModal)用假的記下參數,行為在 check_shell_update_pill.js
+var UP_PILL_DAY_KEY = "ws_upd_pill_day", UP_BOX = null, UP_AUTO = true; const modals = [];
+const upModal = (kind, data, opener, done) => { modals.push({ kind, data, done }); };
+eval(["upPillPlan", "upPillNow", "upPillPaint", "upPillFit", "upPillClick", "upRestartAsk", "upSchedPaint"].map(fnSrc).join("\n"));
 eval(src.match(/^function upRefresh\(\) \{[^\n]*\}$/m)[0]);
-eval([/^\$\("ws-update"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-up-btn"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-upc-btn"\)\.addEventListener\("click", [^\n]*$/m].map((re) => src.match(re)[0]).join("\n"));   // 三個入口的接線
+eval([/^\$\("up-pill"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("up-rail"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-up-btn"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-upc-btn"\)\.addEventListener\("click", [^\n]*$/m].map((re) => src.match(re)[0]).join("\n"));   // 入口的接線
 const stepWhere = (c) => (c && c.where) || "local";
 const C = { current: "0.0.7", version: "0.0.8" };
 // alive = cloud.js status() 的「主機在跑而且回報夠新」;過期那條路在 check_shell_cloud_update.js
@@ -67,7 +72,9 @@ const plan = (up, st, x) => upPlan({ up, cloud: st && st.cloud, kind: st ? envCl
 const paint = (up, st) => { UP = up; TR_BAGS.cloud.st = st === undefined ? TR_BAGS.cloud.st : st; upPaint(); const b = $("set-up-btn"), w = $("ws-update");
   const cb = $("set-upc-btn");
   return { cspin: cb.children.some((c) => c && c.className === "spin16"), caria: cb.attrs["aria-label"], ctitle: cb.title, line: $("set-up-line").textContent, cline: $("set-upc").hidden ? null : $("set-upc-line").textContent, clink: cb.hidden ? null : cb.textContent, cdis: cb.disabled, caria2: cb.attrs["aria-disabled"] === undefined ? null : cb.attrs["aria-disabled"], aria: b.attrs["aria-disabled"] === undefined ? null : b.attrs["aria-disabled"], link: b.textContent, kind: b.dataset.kind, dis: b.disabled, spin: b.children.some((c) => c && c.className === "spin16"), title: b.title,
-    slot: w.hidden ? null : w.firstElementChild.textContent, slotKind: w.dataset.kind, slotDis: w.disabled, slotAria: w.attrs["aria-disabled"], status: w.classList.has("is-status"), slotTitle: w.title }; };
+    slot: w.hidden ? null : w.firstElementChild.textContent, slotKind: w.dataset.kind, slotDis: w.disabled, slotAria: w.attrs["aria-disabled"], status: w.classList.has("is-status"), slotTitle: w.title,
+    pill: $("up-pill-wrap").hidden ? null : $("up-pill-t").textContent, pillKind: $("up-pill").dataset.kind, pillDis: $("up-pill").disabled, pillAria: $("up-pill").attrs["aria-disabled"] || null, pillTitle: $("up-pill").title,
+    rail: $("up-rail").hidden ? null : $("up-rail").attrs["aria-label"], railAria: $("up-rail").attrs["aria-disabled"] || null }; };
 const mono = (n, s) => (n.children || []).some((c) => c && c.className === "mono" && c.textContent === s);
 // ── 關於那一行:七種寫法(§4)。字一律由 upPlan 決定,upPaint 用「 · 」接、版號 mono ──
 const idle = { ...C, phase: "idle", checkedAt: 1 }, fresh = { ...C, phase: "idle" };
@@ -120,32 +127,31 @@ ok("安裝失敗在 Windows:換 up.installFailed.win(沒有「應用程式」資
   && /win: window\.blave\.platform === "win32" \}\);/.test(src) && /blave\.org/.test(STR.zh["up.installFailed.win"]) && !/應用程式|磁碟映像/.test(STR.zh["up.installFailed.win"]) && !/Applications|disk image/.test(STR.en["up.installFailed.win"]));
 ok("背景下載 / 暫存中 / 沒有更新來源:關於列不寫狀態字(沒有東西可等)", ["downloading", "staging", "off"].every((ph) => paint({ ...C, phase: ph }, cloud()).line === 'up.row.app{"av":"0.0.7"}'));
 ok("狀態字不換色:upPlan 不回任何 cls,CSS 沒有 .st.up / .st.ok / 舊兩行版的 id;檢查更新不再掛「也會更新雲端」的 hover(up.check.cloudTip 刪了)", !("cls" in plan(idle, cloud()).row) && !("cls" in plan(idle, cloud()).cloud) && !/\.set-about \.st|set-up-(ver|txt|cver|ctxt|cnote|lbtn|head)|up-dot/.test(css + html + src) && !/cloudTip/.test(src + fs.readFileSync(path.join(R, "strings.js"), "utf8")));
-ok("DOM:關於兩行(0.1.15):第一行電腦版 + 檢查更新;第二行 #set-upc(預設 hidden)雲端主機 + 更新雲端主機;兩行都 role=status;#ws-update 的字不走 data-i18n", /<p class="set-up-line" id="set-up-line" role="status"><\/p>\s*<button type="button" class="btn-quiet" id="set-up-btn"><\/button>\s*<\/div>\s*<div class="set-up-row" id="set-upc" hidden>\s*<p class="set-up-line" id="set-upc-line" role="status"><\/p>\s*<button type="button" class="btn-quiet" id="set-upc-btn" hidden><\/button>/.test(html)
+ok("DOM:關於兩行(0.1.15):第一行電腦版 + 檢查更新,底下是排程自動更新的開關(0.1.36);第二行 #set-upc(預設 hidden)雲端主機 + 更新雲端主機;兩行都 role=status;#ws-update 的字不走 data-i18n", /<p class="set-up-line" id="set-up-line" role="status"><\/p>\s*<button type="button" class="btn-quiet" id="set-up-btn"><\/button>\s*<\/div>\s*<!--[^>]*-->\s*<div class="set-upsch" id="set-upsch" hidden>[\s\S]*?<\/p>\s*<\/div>\s*<div class="set-up-row" id="set-upc" hidden>\s*<p class="set-up-line" id="set-upc-line" role="status"><\/p>\s*<button type="button" class="btn-quiet" id="set-upc-btn" hidden><\/button>/.test(html)
   && (() => { const span = html.slice(html.indexOf('id="ws-update"'), html.indexOf("</button>", html.indexOf('id="ws-update"'))); return !/data-i18n/.test(span) && /<span><\/span>/.test(span); })());
-// ── 聊天輸入列右上那一格:(b) 重新啟動以完成更新 / (c) 更新中… / 沒有東西 ──
+// ── 聊天輸入列右上那一格只剩 (c) 更新中…;本機等重開的提示搬到側欄膠囊(0.1.36 spec desktop-update-pill §3.2:同一件事只講一處)──
 p = paint({ ...C, phase: "ready" }, cloud());
-ok("(b) ready 而且沒在下單:那一格出「重新啟動以完成更新」,可點", p.slot === "up.restart" && p.slotKind === "restart" && !p.slotDis && p.slotAria === "false" && !p.status);
+ok("(b) ready 而且沒在下單:那一格不出;側欄膠囊出「有新版 · 重新啟動」、細軌圓鈕 aria-label 同一句,可點", p.slot === null && p.pill === "up.pill" && p.pillKind === "ready" && !p.pillDis && p.pillAria === null && p.rail === "up.pill" && p.railAria === null);
 p = paint({ ...C, phase: "blocked" }, cloud());
-ok("(b) 下單中(blocked,0.1.10):那一格照出,字尾接「…」(按了主行程先問、確認後收工再裝),可點", p.slot === "up.restart…" && p.slotKind === "restart" && !p.slotDis);
+ok("(b) 下單中(blocked):那一格不出;膠囊字尾接「…」(按了主行程開 §4.2),可點", p.slot === null && p.pill === "up.pill…" && p.pillKind === "trading" && !p.pillDis && p.rail === "up.pill…");
 { const pb = plan({ ...C, phase: "blocked" }, cloud()), pr = plan({ ...C, phase: "ready" }, cloud()), pt = plan({ ...C, phase: "blocked" }, cloud(), { localTurn: true }), pe = plan({ ...C, phase: "error", error: "INSTALL_FAILED" }, cloud());
-  ok("upPlan:blocked → slot restart、ask:true;ready → ask:false;回合中 disabled;error → 沒有 slot;blocked 的關於列 link 是 restart、狀態字 up.row.ready",
+  ok("upPlan(關於列與那一格的決策,沒改):blocked → slot restart、ask:true;ready → ask:false;回合中 disabled;error → 沒有 slot;blocked 的關於列 link 是 restart、狀態字 up.row.ready",
     pb.slot.kind === "restart" && pb.slot.ask === true && pr.slot.ask === false && pt.slot.disabled === true && pe.slot === null
     && pb.link.kind === "restart" && pb.link.ask === true && pb.row.status[0] === "up.row.ready" && !/readyQuit/.test(src)); }
-{ const pr = paint({ ...C, phase: "blocked", restarting: true }, cloud()), plr = plan({ ...C, phase: "ready", restarting: true }, cloud());
-  ok("重新啟動中(主行程 restarting,設計複驗 0.1.10):那一格與關於列的連結都是「重新啟動中…」、停用;不掛 up.busy、沒有「…」以外的字",
-    pr.slot === "up.restarting" && pr.slotKind === "restarting" && pr.slotDis && pr.slotTitle === "" && pr.link === "up.restarting" && pr.kind === "restarting" && pr.dis
-    && plr.slot.kind === "restarting" && plr.link.kind === "restarting" && plan({ ...C, phase: "ready", restarting: true }, applying).slot.kind === "restarting");
-  calls.length = 0; $("ws-update").onclick && $("ws-update").onclick(); $("set-up-btn").onclick && $("set-up-btn").onclick();
-  ok("…按了什麼都不做(不重裝、不查更新)", calls.length === 0);
+{ const pr = paint({ ...C, phase: "blocked", restarting: true }, cloud());
+  ok("重新啟動中(主行程 restarting):膠囊換「重新啟動中…」、原生 disabled;關於列的連結同字、停用;那一格不出",
+    pr.slot === null && pr.pill === "up.restarting" && pr.pillKind === "restarting" && pr.pillDis && pr.pillTitle === "" && pr.link === "up.restarting" && pr.kind === "restarting" && pr.dis);
+  calls.length = 0; modals.length = 0; $("up-pill").onclick(); $("up-rail").onclick(); $("set-up-btn").onclick && $("set-up-btn").onclick();
+  ok("…按了什麼都不做(不重裝、不開框、不查更新)", calls.length === 0 && modals.length === 0);
   const zhS = fs.readFileSync(path.join(R, "strings.js"), "utf8");
   ok("…字 up.restarting:zh「重新啟動中…」、en「Restarting…」(U+2026)", /"up\.restarting": "Restarting…"/.test(zhS) && /"up\.restarting": "重新啟動中…"/.test(zhS)); }
 p = paint(idle, applying);
 ok("(c) 雲端換檔中:同一格不可點的「更新中…」(aria-disabled,不是 disabled;is-status;沒有時鐘、沒有百分比)", p.slot === "up.applying" && p.slotKind === "applying" && p.slotAria === "true" && !p.slotDis && p.status && !/\d/.test(p.slot));
 p = paint({ ...C, phase: "ready" }, applying);
-ok("(c) 壓過 (b):雲端換檔中時那一格是更新中;關於第一行照舊給重新啟動(只管電腦版;回合在跑時另有 up.busy 擋)", p.slot === "up.applying" && p.link === "up.restart" && !p.dis);
+ok("(c) 雲端換檔中時那一格是更新中;關於第一行與膠囊照舊給重新啟動(只管電腦版)", p.slot === "up.applying" && p.link === "up.restart" && !p.dis && p.pill === "up.pill");
 p = paint(idle, cloud());
-ok("(a) 兩邊都最新:那一格什麼都不出", p.slot === null);
-ok("(a) 背景下載 / 暫存中 / 檢查中:那一格也不出", ["downloading", "staging", "checking"].every((ph) => paint({ ...C, phase: ph }, cloud()).slot === null));
+ok("(a) 兩邊都最新:那一格與膠囊什麼都不出", p.slot === null && p.pill === null && p.rail === null);
+ok("(a) 背景下載 / 暫存中 / 檢查中 / 出錯 / 沒有更新來源:那一格與膠囊也不出", ["downloading", "staging", "checking", "error", "off", "idle"].every((ph) => { const x = paint({ ...C, phase: ph }, cloud()); return x.slot === null && x.pill === null; }));
 ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件 / 缺席都當沒有", upWu({ workspace_update: { state: "weird" } }) === null && upWu({ workspace_update: "applying" }) === null && upWu({}) === null && upWu(null) === null
   && upWu({ workspace_update: { state: "done", to: "x".repeat(100), replaced_changed: -1, backup_dir: 5, restarted: "true", restart_stopped: 1, outcome: "weird" } }).to.length === 40 && upWu({ workspace_update: { state: "done", replaced_changed: "lib/data.py" } }).replaced === 0
   && upWu({ workspace_update: { state: "done", backup_dir: 5, restarted: "true", restart_stopped: 1, outcome: "weird" } }).dir === null && upWu({ workspace_update: { state: "done", restarted: "true", restart_stopped: 1, outcome: "weird" } }).restarted === false
@@ -156,21 +162,27 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
   ok("…不合形狀就當沒有(那一行就不出「查看」):../、帶空白、帶引號、別的資料夾、缺時間戳、超長", [".official-backup/../", ".official-backup/../x-20260924T051200Z", ".official-backup/a b-20260924T051200Z",
     ".official-backup/a\"-20260924T051200Z", "lib/2026-09-22-p-20260924T051200Z", ".official-backup/2026-09-22-p", ".official-backup/" + "x".repeat(41) + "-20260924T051200Z", "d/", "", "ls -la; rm -rf ~"].every((d) => dir(d) === null)); }
 (async () => {
-  calls.length = 0; paint({ ...C, phase: "ready" }, cloud()); await $("ws-update").onclick(); await new Promise((r) => setImmediate(r));
-  ok("(b) 按那一格 = 重開換版(updateInstall),不送任何雲端指令", calls.join() === "install" && sent.length === 0);
-  calls.length = 0; await $("set-up-btn").onclick(); await new Promise((r) => setImmediate(r));
-  ok("關於列的「重新啟動以完成更新」同一條路(updateInstall)", calls.join() === "install");
+  calls.length = 0; modals.length = 0; featured.length = 0; paint({ ...C, phase: "ready" }, cloud()); await $("up-pill").onclick(); await new Promise((r) => setImmediate(r));
+  ok("(b) 按膠囊(沒在下單):畫面開 §4.1(plain,帶已暫存的版號),先不裝;記 upd_go_pill", calls.length === 0 && modals.length === 1 && modals[0].kind === "plain" && modals[0].data.v === "0.0.8" && featured.join() === "upd_go_pill" && sent.length === 0);
+  modals[0].done(true); await new Promise((r) => setImmediate(r));
+  ok("…§4.1 按重新啟動 = updateInstall({ confirmed: true }),不送任何雲端指令", calls.join() === "install" && JSON.stringify(lastInstall) === '{"confirmed":true}' && sent.length === 0);
+  calls.length = 0; modals.length = 0; modals.length = 0; paint({ ...C, phase: "ready" }, cloud()); await $("up-pill").onclick(); modals[0].done(false); await new Promise((r) => setImmediate(r));
+  ok("…§4.1 按取消:不裝", calls.length === 0);
+  calls.length = 0; modals.length = 0; featured.length = 0; paint({ ...C, phase: "blocked" }, cloud()); await $("up-rail").onclick(); await new Promise((r) => setImmediate(r));
+  ok("(b) 下單中按細軌圓鈕:直接叫主行程(updateInstall 不帶 confirmed),畫面不先開 §4.1;同樣記 upd_go_pill", calls.join() === "install" && modals.length === 0 && JSON.stringify(lastInstall) === '{}' && featured.join() === "upd_go_pill");
+  calls.length = 0; modals.length = 0; paint({ ...C, phase: "ready" }, cloud()); await $("set-up-btn").onclick(); await new Promise((r) => setImmediate(r));
+  ok("關於列的「重新啟動以完成更新」同一套:沒在下單開 §4.1", calls.length === 0 && modals.length === 1 && modals[0].kind === "plain");
+  calls.length = 0; modals.length = 0; paint({ ...C, phase: "blocked" }, cloud()); await $("set-up-btn").onclick(); await new Promise((r) => setImmediate(r));
+  ok("…下單中直接叫主行程", calls.join() === "install" && modals.length === 0);
   { const realI = window.blave.updateInstall, realS = window.blave.updateState; let reads = 0, threw = false;
     window.blave.updateInstall = () => Promise.reject(new Error("main threw")); window.blave.updateState = () => { reads++; return Promise.resolve(UP); };
     try { await upInstall(); } catch (_) { threw = true; }
     window.blave.updateInstall = realI; window.blave.updateState = realS;
     ok("主行程那邊拋例外(IPC reject):upInstall 不冒 unhandled rejection、當成沒裝成重讀狀態(稽核 P2-3)", !threw && reads === 1); }
-  calls.length = 0; paint(idle, applying); await $("ws-update").onclick();
-  ok("(c) 按更新中那一格什麼都不做", calls.length === 0 && sent.length === 0);
-  running = true; p = paint({ ...C, phase: "ready" }, cloud()); calls.length = 0; told.length = 0; await $("ws-update").onclick(); await $("set-up-btn").onclick();
-  ok("(b) 這台電腦有回合在跑:那一格與關於的連結都是鎖(aria-disabled、不是原生 disabled)、title busy.update(重開會把回合斷掉);按了不裝,原因寫進各自的槽",
-    p.slot === "up.restart" && !p.slotDis && p.slotAria === "true" && p.slotTitle === "busy.update" && p.link === "up.restart" && !p.dis && p.aria === "true" && p.title === "busy.update" && calls.length === 0
-    && JSON.stringify(told) === '[["ws-up-why","update"],["set-up-why","update"]]');
+  running = true; p = paint({ ...C, phase: "ready" }, cloud()); calls.length = 0; told.length = 0; modals.length = 0; featured.length = 0; await $("up-pill").onclick(); await $("up-rail").onclick(); await $("set-up-btn").onclick();
+  ok("(b) 這台電腦有回合在跑:膠囊、細軌圓鈕與關於的連結都是鎖(aria-disabled、不是原生 disabled)、title busy.update;按了不裝、不開框、不記 upd_go_pill,原因寫進各自的槽",
+    p.pill === "up.pill" && !p.pillDis && p.pillAria === "true" && p.pillTitle === "busy.update" && p.railAria === "true" && p.link === "up.restart" && !p.dis && p.aria === "true" && p.title === "busy.update" && calls.length === 0 && modals.length === 0
+    && !featured.includes("upd_go_pill") && JSON.stringify(told) === '[["up-pill-why","update"],["up-pill-why","update"],["set-up-why","update"]]');
   running = false;
   document.activeElement = $("ws-update"); paint(idle, cloud());
   ok("那一格收掉時焦點交給輸入框(不掉到 BODY)", document.activeElement === $("ta"));
@@ -238,7 +250,7 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
     /UPD\.turnCloud = false;[^\n]*\n\s*running = true; sendBtnSync\(\);/.test(fnSrc("submitMessage")) && !/UPD\.done/.test(fnSrc("submitMessage"))
     && /if \(!UPD\.turnCloud && stepWhere\(c\) === "cloud"\) \{ UPD\.turnCloud = true; upPaint\(\); \}\s*busyStep\(c\);/.test(src)
     && /const faulted = !stopped && \(r\.code !== 0 \|\| turnFaulted \|\| turnErrored \|\| !turnGotReply \|\| loggedOut\);/.test(src) && /upTurnEnded\(faulted\);\s*running = false;/.test(src) && !/UPD/.test(fnSrc("busyStep")));
-  ok("接線:關於第一行的連結 = 重新啟動 / 檢查更新;第二行 = upCloudUpdate;那一格只有 restart 會做事;up.c.msg 只在 upCloudSend 送;沒有 upGo / 每秒重畫 / open-about", /const b = \$\("set-up-btn"\), k = b\.dataset\.kind; if \(k === "restart" && busyLocked\(b\)\) \{[^}]*\} if \(k === "restart"\) upInstall\(\); else if \(k === "check"\) upCheck\(\);/.test(src) && /const w = \$\("ws-update"\); if \(w\.dataset\.kind !== "restart"\) return; if \(busyLocked\(w\)\) \{[^}]*\} upInstall\(\);/.test(src)
+  ok("接線:關於第一行的連結 = 重新啟動 / 檢查更新;第二行 = upCloudUpdate;那一格不再接點擊(只剩狀態字);up.c.msg 只在 upCloudSend 送;沒有 upGo / 每秒重畫 / open-about", /const b = \$\("set-up-btn"\), k = b\.dataset\.kind; if \(k === "restart" && busyLocked\(b\)\) \{[^}]*\} if \(k === "restart"\) upRestartAsk\(b, upNow\(\)\.link\.ask\); else if \(k === "check"\) upCheck\(\);/.test(src) && !/\$\("ws-update"\)\.addEventListener/.test(src)
     && /\$\("set-upc-btn"\)\.addEventListener\("click", \(\) => upCloudUpdate\(\$\("set-upc-btn"\)\)\);/.test(src) && (src.match(/t\("up\.c\.msg"\)/g) || []).length === 1 && /t\("up\.c\.msg"\)/.test(fnSrc("upCloudSend")) && !/upCloudRecheck/.test(src)
     && !/upGo|upInstallLocal|UP_TICK|upClock|onOpenAbout|doneChatHidden|UP_REPORT_WAIT_MS/.test(src));
   // ── 主機刪掉又重開:落後 / 追上 / 更新期間都是那台的事,清掉 ──

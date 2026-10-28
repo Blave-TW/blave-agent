@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **電腦版狀態檔多一塊報告排程狀態 `daemon.reports = {running, next_due_at}`(`command_listener.report_activity`／`_report_spawn`、`local_daemon.write_status`;desktop 0.1.36 每天 06:00 自動更新 spec desktop-update-pill §5.2 條件 10)**:`running` = 這個行程起的 report_runner 子行程還有活著的(`_start_report_job` 與 `report_run_now` 都改經 `_report_spawn` 記下 Popen,讀的時候把結束的清掉;到期那支還在跑績效 sweep、runner 還沒起來也算);`next_due_at` = 所有啟用排程最近的到期時間(UTC ISO,`report_runner.cron_next` 從現在算,另併 `_report_next` 裡已經到點、60 秒那一輪還沒發的那一格;沒有排程是 null,永遠不會對到的 cron 不算)。外殼只讀這兩個值,不自己解鎖檔或重算 cron;算出錯只少 `reports` 這個鍵,狀態檔照寫,外殼讀不到就當作有報告、那天不自動重開。agent 自己用 Bash 起的 runner 不在 `running` 裡(自動重開另外要求沒有回合在跑)。跟電腦版 0.1.36 同包發;舊外殼不讀這個鍵。測試 `tests/check_report_activity.py`(新)。
+
 ## 1.1.147 — 2026-10-28(desktop 0.1.35)
 
 - **交易歷史不再把一筆群益／統一的單畫成兩列(`portfolio_reporter.recent_orders`／`pair_unconfirmed_orders`;desktop 0.1.35)**:送出後等不到成交回報的那列(A:venue `hand_wired`、有一條腿回報成交 0 口——不拿 `signed_diff` 比,它是取整、cap、統一翻向 entry 延後之前的請求)和之後 `book_late_fill` 補記的那列(B:`late_fill`)在回報裡合成一列——B 的時間、腿(月份合約、有就帶成交價),A 的 `asset_spec`／`contributors`,`signed_diff` 改成實際成交口數,帶 `fill_state: "late"`。沒配到 B 的 A 帶 `fill_state: "unconfirmed"`;audit `unfilled_order_cleared`(同 venue、標的、方向,時間在 A 之後)對到的改 `"unfilled"`。orders.jsonl 原樣不動(它是 self_ledger 帳本)。配對前讀 100 列再切回 20 列,A、B 跨過切點也配得到。用 B 的時間是為了 api `agent_overview` 的 order 事件照舊各算一次。部分成交的列不算 A(照成交畫,晚到的那口自成一列 late);壞列(legs 不是 list)不讓回報失敗。各表面讀的都是這份 `orders`:電腦版這版照 `fill_state` 畫狀態字(設計稽核 order-history-fill-state-2026-10-28),總覽「成交 N 筆」不算未確認／未成交;web 工作頁、App 要各自照欄位畫(未改前合併列已經對,未確認列仍顯示成買進 N 口)。測試 `tests/check_order_history_pairing.py`(新,舊碼紅)、`tests/check_shell_trade.js`(fill_state 一條,舊碼紅)、`tests/check_state_read_retry.py`(`_audit_events` 列入豁免)。

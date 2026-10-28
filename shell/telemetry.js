@@ -251,7 +251,10 @@ const EVENTS = {
     // 0.1.34 回覆音(renderer/app.js):設定 › 一般切「提示音」開／關;回合結束該響時真的響了／resume 後仍不是 running 沒響
     "reply_snd_on", "reply_snd_off", "reply_snd_play", "reply_snd_block",
     // 0.1.35 本機 AI 登入成功(renderer/app.js):連結畫面按登入後偵測確實已登入、聊天裡登入卡按登入回 ok
-    "claude_login_ok", "codex_login_ok"] },
+    "claude_login_ok", "codex_login_ok",
+    // 0.1.36 更新膠囊與排程自動更新(renderer/app.js;upd_sched_run 是 main.js scheduledInstall):膠囊當天第一次畫出、按膠囊、
+    // 更新 modal 按取消、設定開關切開／關、排程真的觸發重開(install 前)
+    "upd_pill_shown", "upd_go_pill", "upd_cf_cancel", "upd_sched_on", "upd_sched_off", "upd_sched_run"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other
