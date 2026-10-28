@@ -1239,65 +1239,144 @@ try:
             os.remove(f)
     snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
 
-    # ── a claim drops its park row (saved) before it books: never booked twice (audit P1-1) ──
+    # ── a late-fill claim at every failure point: booked exactly once, never lost silently ──
+    # (audits v035-capital-park P1-1, v035-pres-claim-fix P1-1/P2-1/P2-3). The claim books under
+    # the row's park id, then drops the row; any failure keeps the row for the next round.
+    import builtins
     import lib.portfolio as _pf
 
     def book_qty():
         return (ledger_positions("president").get("TMF") or {}).get("qty") or 0.0
 
-    def park_one(net):
+    acct = [0]
+
+    def park_one():
         FILL["entry"] = "sent"
-        snapshot([{"root": "TMF", "productid": "TMFJ6", "net": net, "net_current": net}] if net else [])
+        n = acct[0]
+        snapshot([{"root": "TMF", "productid": "TMFJ6", "net": n, "net_current": n}] if n else [])
         reconciler.place_order("TMF", 1, exchange="president")
         FILL.clear()
-        snapshot([{"root": "TMF", "productid": "TMFJ6", "net": net + 1, "net_current": net + 1}])
+        acct[0] = n + 1
+        snapshot([{"root": "TMF", "productid": "TMFJ6", "net": n + 1, "net_current": n + 1}])
+        return book_qty()
 
-    park_one(0)
-    n_adopt = len(audits("late_fill_adopted"))
+    def failing_round(exc):
+        try:
+            gp()
+        except exc as e:
+            return e
+        except BaseException as e:  # noqa: B036 — a different failure is a test failure
+            return ("unexpected", e)
+        return None
+
+    def adopted():
+        return len(audits("late_fill_adopted"))
+
     real_save = reconciler._save_pending_sent
+
+    # 1. the park file refuses the save after the line is booked
+    q0, a0 = park_one(), adopted()
 
     def locked(_pending):
         raise PermissionError(13, "locked (fake)")
 
     reconciler._save_pending_sent = locked
-    e = raises(PermissionError, gp)
+    e = failing_round(PermissionError)
     reconciler._save_pending_sent = real_save
-    check(e is not None and "TMFJ6" in pending() and book_qty() == 0 and len(audits("late_fill_adopted")) == n_adopt,
-          "park-file save fails mid-claim: the round fails, nothing booked, the row is still on disk", (book_qty(), pending()))
+    check(e is None and book_qty() == q0 + 1 and "TMFJ6" in pending() and adopted() == a0 + 1,
+          "save refused after booking: the round goes on (not a read failure), booked once, row still on disk",
+          (e, book_qty(), pending()))
     gp()
-    gp()
-    check(pending() == {} and book_qty() == 1.0 and len(audits("late_fill_adopted")) == n_adopt + 1,
-          "…the next rounds book it exactly once", book_qty())
+    check(pending() == {} and book_qty() == q0 + 1 and audits("late_fill_already_booked"),
+          "…next round: the park id is in the book, the row is dropped, not booked again", book_qty())
 
-    park_one(1)
+    # 2. killed between the booked line and the save
+    q0 = park_one()
+    state_ = {"n": 0}
+
+    def killed_on_save(_pending):
+        state_["n"] += 1
+        if state_["n"] == 1:
+            raise KeyboardInterrupt("killed after the book line (fake)")
+        return real_save(_pending)
+
+    reconciler._save_pending_sent = killed_on_save
+    e = failing_round(KeyboardInterrupt)
+    reconciler._save_pending_sent = real_save
+    gp()
+    check(isinstance(e, KeyboardInterrupt) and pending() == {} and book_qty() == q0 + 1 and not guard.halted(),
+          "killed after booking, before the save: next round drops the row by its id, one lot booked", (e, book_qty()))
+
+    # 3. killed before the line is written
+    q0 = park_one()
     real_book = _pf.book_late_fill
 
-    def killed(*a, **k):
-        raise KeyboardInterrupt("process killed between the save and the book")
+    def killed_on_book(*a, **k):
+        raise KeyboardInterrupt("killed before the book line (fake)")
 
-    _pf.book_late_fill = killed
-    e = raises(KeyboardInterrupt, gp)
+    _pf.book_late_fill = killed_on_book
+    e = failing_round(KeyboardInterrupt)
     _pf.book_late_fill = real_book
+    check(isinstance(e, KeyboardInterrupt) and "TMFJ6" in pending() and book_qty() == q0,
+          "killed before booking: the row stays, nothing booked", (e, book_qty(), pending()))
     gp()
-    check(e is not None and pending() == {} and book_qty() == 1.0,
-          "killed after the row was saved away, before booking: the next round does not book it (no double book)",
-          (book_qty(), pending()))
+    check(pending() == {} and book_qty() == q0 + 1, "…next round books it once", book_qty())
 
-    park_one(1)
-    import builtins
+    # 4. the book cannot be read before the line is written (book_late_fill's ledger_book)
+    q0, a4 = park_one(), adopted()
+    n_err = len([x for x in errors() if "記不進帳本" in x.get("error", "")])
+    real_lb = _pf.ledger_book
 
-    def disk_full(path, mode="r", *a, **k):  # only the book's append fails
+    def unreadable(*a, **k):
+        raise PermissionError(13, "orders.jsonl locked (fake)")
+
+    _pf.ledger_book = unreadable
+    e = failing_round(PermissionError)
+    _pf.ledger_book = real_lb
+    check(isinstance(e, PermissionError) and guard.halted()
+          and len([x for x in errors() if "記不進帳本" in x.get("error", "")]) == n_err + 1
+          and "TMFJ6" in pending() and book_qty() == q0 and adopted() == a4,
+          "book unreadable: HALT + one order_errors row, raised, row kept, no late_fill_adopted", (e, errors()[-1:]))
+    guard.clear_halt("test")
+    gp()
+    check(pending() == {} and book_qty() == q0 + 1, "…after resume the next round books it once", book_qty())
+
+    # 5. the append is refused (full disk)
+    def disk_full(path, mode="r", *a, **k):
         if str(path).endswith("orders.jsonl") and "a" in mode:
             raise OSError(28, "No space left on device (fake)")
         return builtins.open(path, mode, *a, **k)
 
+    q0, a5 = park_one(), adopted()
     _pf.open = disk_full
     try:
-        gp()
+        e = failing_round(OSError)
     finally:
         del _pf.open
-    check(guard.halted() and pending() == {} and book_qty() == 1.0,
-          "the book write fails after the row is gone: HALT (the missed fill is loud, not re-booked)", book_qty())
+    check(isinstance(e, OSError) and guard.halted() and "TMFJ6" in pending() and book_qty() == q0 and adopted() == a5,
+          "append refused: HALT, raised, row kept, nothing booked, no late_fill_adopted", (e, book_qty(), pending()))
+    guard.clear_halt("test")
+    gp()
+    check(pending() == {} and book_qty() == q0 + 1, "…after resume booked once", book_qty())
+
+    # 6. append refused AND the HALT file refused: only this process is halted; after a restart the
+    #    row is still there, so the fill is booked then instead of being lost with the HALT
+    q0 = park_one()
+    real_halt_path = guard.HALT_PATH
+    open("state/halt_blocker", "w").write("")
+    guard.HALT_PATH = "state/halt_blocker/HALT"
+    _pf.open = disk_full
+    try:
+        e = failing_round(OSError)
+    finally:
+        del _pf.open
+        guard.HALT_PATH = real_halt_path
+        os.remove("state/halt_blocker")
+    check(isinstance(e, OSError) and guard._halt_flag and "TMFJ6" in pending() and book_qty() == q0,
+          "append and HALT file both refused: halted in memory, row kept", (e, pending()))
+    guard._halt_flag = False  # the restart
+    gp()
+    check(pending() == {} and book_qty() == q0 + 1, "…after a restart the row is booked once", book_qty())
     guard.clear_halt("test")
     for f in ("manager/ledger_seed.json", "manager/orders.jsonl"):
         if os.path.exists(f):
