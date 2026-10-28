@@ -4507,7 +4507,7 @@ function trPaintMargin(box, m, ccy, twd) {
 }
 // 「未確認成交」的說明:body 層級的 fixed 單例(同 report-wf 的 .wf-tip)——列在橫捲容器裡,行內氣泡會被裁掉。
 // hover 與鍵盤 focus 開,點一下切換(觸控);leave / blur / Esc 收
-let trHistTipEl = null, trHistTipAt = null, trHistTipOpened = 0;
+let trHistTipEl = null, trHistTipAt = null, trHistTipOpened = 0, trHistTipQuiet = false;
 function trHistTipBox() {
   if (trHistTipEl) return trHistTipEl;
   trHistTipEl = trEl("div", "tip hist-tip");
@@ -4519,6 +4519,8 @@ function trHistTipBox() {
   const gone = () => { if (trHistTipAt && !trHistTipAt.getClientRects().length) trHistTipHide(); };
   document.addEventListener("pointermove", gone);
   document.addEventListener("keyup", gone);
+  document.addEventListener("scroll", trHistTipHide, true);   // fixed 的氣泡不跟著觸發鈕捲
+  if (window.blave && window.blave.onWindowActive) window.blave.onWindowActive((on) => { if (!on) trHistTipHide(); });
   return trHistTipEl;
 }
 function trHistTipShow(anchor, text) {
@@ -4526,8 +4528,9 @@ function trHistTipShow(anchor, text) {
   trHistTipAt = anchor; trHistTipOpened = Date.now();
   tip.textContent = text;
   tip.style.left = Math.max(0, Math.min(r.left, window.innerWidth - 272)) + "px";
-  tip.style.top = r.bottom + 6 + "px";
-  tip.classList.add("is-on");
+  tip.classList.add("is-on");   // 先顯示才量得到高度:下方放不下(最舊那列在視窗底)就放上方
+  const h = tip.offsetHeight;
+  tip.style.top = (r.bottom + 6 + h > window.innerHeight ? Math.max(0, r.top - 6 - h) : r.bottom + 6) + "px";
   tip.setAttribute("aria-hidden", "false");
 }
 function trHistTipHide() {
@@ -4540,7 +4543,8 @@ function trHistTipBtn(text, tip, fk) {
   const b = trEl("button", "tr-tipb px", text);
   b.type = "button"; b.dataset.fk = fk;
   b.setAttribute("aria-describedby", "hist-tip");
-  const open = () => trHistTipShow(b, tip);
+  trHistTipBox();   // 先建好:讀屏第一次 focus 就念得到 aria-describedby 指的說明
+  const open = () => { if (!trHistTipQuiet) trHistTipShow(b, tip); };
   b.addEventListener("mouseenter", open);
   b.addEventListener("focus", open);
   b.addEventListener("mouseleave", trHistTipHide);
@@ -4553,7 +4557,7 @@ function trPaintHist() {
   const box = $("tr-hist"), r = trReport() || {};
   const orders = trOrdersShown(r).slice().reverse();
   if (!trShould("hist", box, [orders, trUnit(), TR.list.map((x) => x.displayName)])) return;
-  const refocus = trPosFocusOf(box);
+  const refocus = trPosFocusOf(box), tipWasOn = !!trHistTipAt;
   trHistTipHide();
   box.textContent = "";
   box.appendChild(trSec(trEl("span", "label", t("tr.recentOrders"))));
@@ -4613,7 +4617,8 @@ function trPaintHist() {
   // 窄欄(<520)時列內的幣別收到這一行;口數單的「口」留在列內,全是口數單時這一行沒有對象,不出
   if (orders.some((o) => o && typeof o === "object" && !trOrderLots(o))) box.appendChild(trUnit() ? trEl("div", "pf-foot unit-note", t("tr.unitNote", { c: trUnit() })) : trEl("div", "pf-foot", t("tr.ccyUnknown")));
   // 重畫後焦點回到同一顆「未確認成交」;那一列不在了就不搶焦點(不走 trPosFocusBack 的 #po-h 兜底:那在別的分頁)
-  if (refocus) { const b = [...box.querySelectorAll("[data-fk]")].find((x) => trPosKey(x) === refocus); if (b) b.focus(); }
+  // 焦點還回去會再觸發 focus:重畫前氣泡是收著的(例如剛按 Esc)就別讓它自己打開
+  if (refocus) { const b = [...box.querySelectorAll("[data-fk]")].find((x) => trPosKey(x) === refocus); if (b) { trHistTipQuiet = !tipWasOn; b.focus(); trHistTipQuiet = false; } }
 }
 function trPaintSet() {
   const box = $("tr-set"), r = trReport(), id = trVenueId(), ro = TR.env === "cloud";

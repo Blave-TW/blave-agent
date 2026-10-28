@@ -386,6 +386,10 @@ html.ws-sc .side-gate { display: none; }
 .pf-log-row .px .tr-tipb, .pf-log-row .tr-tipb.px { font-size: inherit; line-height: inherit; }
 .tip.hist-tip { position: fixed; left: 0; top: 0; bottom: auto; z-index: 60; }  /* 同 .rob-tip:橫捲容器會裁掉行內氣泡 */
 .tip.hist-tip.is-on { display: block; }
+/* 整張表共用一組欄(同 web .exec-body .pf-log):flex 列的口數貼著價格欄跑,價格欄寬一點口數就歪 */
+.pf-log { display: grid; grid-template-columns: max-content max-content 1fr max-content max-content max-content; }
+.pf-log-row { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; align-items: baseline; }
+.pf-log-row .amt { margin-left: 0; text-align: right; }
 
 /* ---- 總覽:PnL 條三格 / 曲線 / 事件 ---- */
 .bt-stats.ov-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border-hairline); border: 1px solid var(--border-hairline); border-radius: var(--radius-lg); }
@@ -497,6 +501,7 @@ html.ws-sc .side-gate { display: none; }
   .pf-log-row .ts { width: 84px; }
   /* 一次只能連一個交易所,狀態帶已經寫了是哪一家:窄欄時這一欄是多餘的;單位同部位表收到表下一行 */
   .pf-log-row .ex, .pf-log-row .ccy:not(.lots) { display: none; }   /* 「口」不收:沒有單位的口數會被讀成錢 */
+  .pf-log { grid-template-columns: max-content max-content 1fr max-content max-content; }   /* .ex 收起來,少一欄 */
 }
 /* app.js 的 MAIN_MIN = 480:現行設定下這一段不會觸發,留著當保險(哪天中欄下限調低才用得到) */
 @container (max-width: 400px) {

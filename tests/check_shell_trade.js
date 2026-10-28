@@ -2349,11 +2349,11 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const cutF = (n) => { const i = src.indexOf("function " + n + "("); if (i < 0) throw new Error("no " + n); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(i, k + 1); } throw new Error("no " + n); };
     const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
     const consts = ["tr2", "trMD"].map((c) => src.match(new RegExp("^const " + c + " = [^\\n]*", "m"))[0].replace(/^const /, "var ")).join("\n");
-    const node = (tag) => ({ tag, id: "", className: "", kids: [], text: "", attrs: {}, title: "", dataset: {}, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); },
+    const node = (tag) => ({ tag, id: "", className: "", kids: [], text: "", attrs: {}, title: "", dataset: {}, style: {}, classList: { add() {}, remove() {}, contains: () => false }, appendChild(c) { this.kids.push(c); return c; }, append(...c) { c.forEach((x) => this.kids.push(x)); },
       setAttribute(k, v) { this.attrs[k] = v; }, on: {}, addEventListener(e, f) { this.on = Object.assign({}, this.on, { [e]: f }); }, get textContent() { return this.text + this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }, set textContent(v) { this.text = v; this.kids = []; } });
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const hist = node("div");
-    const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, isFinite, console,
+    const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag"), body: node("body"), addEventListener() {} }, window: {}, Date, Math, JSON, Array, Object, Number, String, isFinite, console,
       $: (id) => (id === "tr-hist" ? hist : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "zh", CX_VENUES: {}, PAPER: "paper", trShould: () => true, trUnit: () => "TWD", trSetTab: (tab, focus) => { ctx.tabbed = [tab, focus]; } });
     vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "\n" + src.slice(src.indexOf("const TR_EV_P1 = ["), src.indexOf("function trOvEvents(")).replace(/^const /gm, "var ")
       + src.match(/^let trHistTipEl = [^\n]*/m)[0].replace(/^let /, "var ") + "\n"
@@ -2489,18 +2489,33 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const mk = (tag) => { const cls = new Set(); const n = { tag, className: "", kids: [], attrs: {}, dataset: {}, style: {}, on: {}, text: "",
         classList: { add: (c) => cls.add(c), remove: (c) => cls.delete(c), contains: (c) => cls.has(c) },
         setAttribute(k, v) { this.attrs[k] = v; }, appendChild(c) { this.kids.push(c); return c; }, addEventListener(e, f) { this.on[e] = f; },
-        getBoundingClientRect: () => ({ left: 900, bottom: 50 }), getClientRects: () => [1], set textContent(v) { this.text = v; }, get textContent() { return this.text; } }; return n; };
+        getBoundingClientRect: () => rect, offsetHeight: 47, getClientRects: () => [1], set textContent(v) { this.text = v; }, get textContent() { return this.text; } }; return n; };
+      let rect = { left: 900, top: 32, bottom: 50 }, winOn = null;
       const docOn = {}, body = mk("body"), clock = { t: 1000 };
-      const c2 = vm.createContext({ document: { createElement: mk, body, addEventListener: (e, f) => { docOn[e] = f; } }, window: { innerWidth: 1024 }, Date: { now: () => clock.t }, Math });
+      const c2 = vm.createContext({ document: { createElement: mk, body, addEventListener: (e, f, cap) => { docOn[e] = [f, cap]; } },
+        window: { innerWidth: 1024, innerHeight: 680, blave: { onWindowActive: (f) => { winOn = f; } } }, Date: { now: () => clock.t }, Math });
       vm.runInContext(src.match(/^let trHistTipEl = [^\n]*/m)[0].replace(/^let /, "var ") + "\n" + ["trEl", "trHistTipBox", "trHistTipShow", "trHistTipHide", "trHistTipBtn"].map(cutF).join("\n"), c2);
       const b = vm.runInContext("trHistTipBtn('未確認成交', '說明', 'hist:x')", c2), tip = () => body.kids[0], on = () => !!tip() && tip().classList.contains("is-on");
-      b.on.focus(); const shown = on() && tip().text === "說明" && tip().id === "hist-tip" && tip().attrs.role === "tooltip" && tip().style.left === "752px" && tip().style.top === "56px";
+      const early = body.kids.length === 1 && tip().id === "hist-tip" && !on();
+      b.on.focus(); const shown = on() && tip().text === "說明" && tip().attrs.role === "tooltip" && tip().style.left === "752px" && tip().style.top === "56px";
       b.on.click(); const keptOnTap = on();
       clock.t += 1000; b.on.click(); const toggledOff = !on();
-      b.on.mouseenter(); docOn.keydown({ key: "Escape" }); const escOff = !on();
+      b.on.mouseenter(); docOn.keydown[0]({ key: "Escape" }); const escOff = !on();
       b.on.focus(); b.on.blur(); const blurOff = !on();
-      ok("說明氣泡:focus 開(限制在視窗內、掛 body、role=tooltip);觸控那一下 click 不收、再點一次收;Esc、blur 收;只建一顆",
-        shown && keptOnTap && toggledOff && escOff && blurOff && body.kids.length === 1 && tip().attrs["aria-hidden"] === "true", J([shown, keptOnTap, toggledOff, escOff, blurOff, body.kids.length])); }
+      rect = { left: 10, top: 642, bottom: 660 }; b.on.focus(); const above = on() && tip().style.top === "589px";
+      docOn.scroll[0](); const scrollOff = !on() && docOn.scroll[1] === true;
+      b.on.focus(); winOn(false); const winOff = !on();
+      ok("說明氣泡:按鈕一建就先建好氣泡(讀屏);focus 開(限制在視窗內、掛 body、role=tooltip);觸控那一下 click 不收、再點一次收;Esc、blur、捲動(capture)、視窗失焦收;下方放不下改放上方;只建一顆",
+        early && shown && keptOnTap && toggledOff && escOff && blurOff && above && scrollOff && winOff && body.kids.length === 1 && tip().attrs["aria-hidden"] === "true",
+        J([early, shown, keptOnTap, toggledOff, escOff, blurOff, above, tip().style.top, scrollOff, winOff, body.kids.length])); }
+    { const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
+      const narrow = css.slice(css.indexOf("@container (max-width: 520px)"));
+      ok("交易歷史欄位對齊(設計複驗):.pf-log 是 grid 六欄、.pf-log-row 是 subgrid 跨滿、口數不靠 margin-left:auto;窄欄(@container 520)同一區塊改五欄",
+        /\.pf-log \{ display: grid; grid-template-columns: max-content max-content 1fr max-content max-content max-content; \}/.test(css)
+        && /\.pf-log-row \{ display: grid; grid-template-columns: subgrid; grid-column: 1 \/ -1; align-items: baseline; \}/.test(css)
+        && /\.pf-log-row \.amt \{ margin-left: 0; text-align: right; \}/.test(css)
+        && css.indexOf(".pf-log-row .amt { margin-left: 0;") > css.indexOf(".pf-log-row .amt { margin-left: auto; }")
+        && /^  \.pf-log \{ grid-template-columns: max-content max-content 1fr max-content max-content; \}/m.test(narrow.slice(0, narrow.indexOf("\n}")))); }
     { ctx.trUnit = () => null; const all = paintHist([CAP, BTC]); ctx.trUnit = () => "TWD";
       const b = all.filter((n) => n.className === "amt mono")[0];
       ok("spec-0.1.13 #3 下單紀錄:帳戶幣未知 → 加密單不帶幣別、表下改講 tr.ccyUnknown(不出「金額單位：null」)", b.textContent === "500" && all.some((n) => n.className === "pf-foot" && n.textContent === "tr.ccyUnknown")
