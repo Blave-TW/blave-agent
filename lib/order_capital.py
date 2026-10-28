@@ -147,7 +147,7 @@ class _Events:
         self.login_thread = None
         # what reached OnNewData, for the 'sent' log: no rows at all and rows that carry no
         # 13-digit seq are different faults
-        self.rows = self.short_rows = self.d_rows = self.d_no_seq = 0
+        self.rows = self.short_rows = self.d_rows = self.d_no_seq = self.d_unfit = 0
         self.d_shapes = set()   # (field count, indexes holding a 13-digit seq) per D row
 
     # SKReplyLib link state (_ISKReplyLibEvents dispid 1/2/3, read from the SKCOM
@@ -198,12 +198,23 @@ class _Events:
         self.d_shapes.add((len(f), at))
         if not seqs:
             self.d_no_seq += 1
+        # columns 8/11/20 are pinned on 2.13.58 only: a row they do not fit is not booked, the
+        # order stays unconfirmed and the reconciler parks it instead of booking a wrong fill
+        try:
+            price, qty = float(f[11] or 0), float(f[20] or 0)
+        except ValueError:
+            price = qty = 0.0
+        if qty <= 0 or (f[1] == "TF" and not CAPITAL_FUT_RE.match(f[8])):
+            self.d_unfit += 1
+            logging.warning(f"capital fill row not booked: {f[1]} fields={len(f)} seq_at={list(at)} "
+                            "— contract/qty columns do not fit")
+            return
         logging.info(f"capital fill row: {f[1]} {f[8]} fields={len(f)} seq_at={list(at)}")
         fill = {
             "market": f[1],                                   # TF / TS / TC
             "symbol": f[8],                                   # RESOLVED contract / ticker
-            "price": float(f[11]) if f[11] else 0.0,
-            "qty": float(f[20]) if f[20] else 0.0,            # lots (TF) / SHARES (TS, TC)
+            "price": price,
+            "qty": qty,                                       # lots (TF) / SHARES (TS, TC)
             "fill_id": f[38],                                 # 成交編號
         }
         for seq in seqs:
@@ -211,7 +222,7 @@ class _Events:
 
     def diag(self):
         return (f"rows={self.rows} short={self.short_rows} fill_rows={self.d_rows} "
-                f"fill_rows_without_seq={self.d_no_seq} fill_shapes={sorted(self.d_shapes)} "
+                f"fill_rows_without_seq={self.d_no_seq} fill_rows_unfit={self.d_unfit} fill_shapes={sorted(self.d_shapes)} "
                 f"same_thread={self.login_thread == threading.get_ident()}")
 
 

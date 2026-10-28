@@ -65,6 +65,14 @@ ev.OnNewData("u", row(40, 39, SEQ))
 check(not ev.fills and ev.d_no_seq == 1 and ev.short_rows == 1 and ev.rows == 3,
       f"no 13-digit seq / order row / short row: nothing booked, each counted ({ev.diag()})")
 
+ev = oc._Events()
+bad = row(50, 47, SEQ).split(",")
+bad[8] = "F0200001234567"
+ev.OnNewData("u", ",".join(bad))
+ev.OnNewData("u", row(50, 47, SEQ, qty="", msg_no="2120000003"))
+check(not ev.fills and ev.d_unfit == 2,
+      "TF fill row whose contract column is not a contract, or with no qty: not booked (left for the park)")
+
 # full order path on the 2.13.59 layout: the real _Events behind a fake SKCOM
 clk = types.SimpleNamespace(t=0.0)
 oc.time = types.SimpleNamespace(time=lambda: clk.t, sleep=lambda s: setattr(clk, "t", clk.t + s))
