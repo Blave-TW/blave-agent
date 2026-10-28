@@ -385,6 +385,7 @@ const loadConnection = () => connStore().load();
 
 // ── 使用追蹤(telemetry.js:三十個事件、屬性只有列舉、沒有自由文字的入口;設定裡可關)──
 let _tm = null;
+let cliAuthTried = false;   // 開 app 補 cli_auth 的背景偵測:這次啟動試過了
 let _deviceKind = null;   // device_type:啟動時偵測一次(devicetype.js),之後心跳那一輪補跨日那一則都用這個值
 const telemetryLive = () => app.isPackaged || process.env.BLAVE_TELEMETRY === "1";
 function tm() {
@@ -3804,10 +3805,12 @@ app.whenReady().then(() => {
   startStep("tray", trayStart);
   startStep("inbound prune", () => require("./attach").prune(WS));   // 聊天附件放超過七天的(雲端由 runtime/prune_job.py 清)
   startStep("telemetry", () => tm().start());
-  // cli_auth:存好 Claude 連線的人開 app 直接進工作頁、畫面不跑偵測,這裡每天補問一次;今天送過就不開子行程
+  // cli_auth:存好 Claude 連線的人開 app 直接進工作頁、畫面不跑偵測,這裡每天補問一次;今天送過就不開子行程。
+  // 一次啟動最多試一次(不管偵測結果、送沒送成功)
   if (app.hasSingleInstanceLock()) startStep("cli auth", () => {
     const c = loadConnection();
-    if (!c || c.kind !== "claude" || !telemetryLive() || !tm().isEnabled() || tm().sentToday("cli_auth")) return;
+    if (cliAuthTried || !c || c.kind !== "claude" || !telemetryLive() || !tm().isEnabled() || tm().sentToday("cli_auth")) return;
+    cliAuthTried = true;
     detectAgents().then((d) => { tm().track("cli_auth", { how: d.claude.how }); }).catch(() => {});
   });
   startStep("device type", () => require("./devicetype").detectDeviceType().then((kind) => { _deviceKind = kind; tm().track("device_type", { kind }); }));

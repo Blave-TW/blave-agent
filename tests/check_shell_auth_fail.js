@@ -77,6 +77,8 @@ async function run({ cur = "claude", turnFail = null, turnFailSrc = null, errTai
   t("按停止的回合:都不送、照樣清掉", x.sent.length === 0 && x.calls.detect === 0 && x.ctx.turnFail === null && x.ctx.turnFailSrc === null, x.sent);
   x = await run({ turnFail: "402", turnFailSrc: null }); await x.settle();
   t("不是 auth:只有 turn_failed", x.sent.join() === "turn_failed:402" && x.calls.detect === 0, x.sent);
+  x = await run({ cur: "codex", turnFail: "auth", turnFailSrc: "401" }); await x.settle();
+  t("Codex 的 401／403(不在白名單):只有 turn_failed,不開補問", x.sent.join() === "turn_failed:auth" && x.calls.detect === 0, x.sent);
   x = await run({ turnFail: "auth", turnFailSrc: null }); await x.settle();
   t("auth 但來源認不出來:不送 auth_fail、不補問", x.sent.join() === "turn_failed:auth" && x.calls.detect === 0, x.sent);
 
@@ -98,7 +100,8 @@ async function run({ cur = "claude", turnFail = null, turnFailSrc = null, errTai
   t("主行程:detectAgents 在 JSON 讀得出來時才算 how(其餘留 null);saveConnection 在 connect_done 之後送;開 app 那條先看今天送過沒才開子行程",
     /out\.claude\.authMethod = j\.authMethod \|\| null;\n\s*out\.claude\.how = cliAuthHow\(j\.authMethod\);/.test(main) && /authOutside: false, how: null \}/.test(main)
     && /tm\(\)\.track\("connect_done", \{ kind: saved\.kind \}\);\n\s*if \(saved\.kind === "claude" && d\) tm\(\)\.track\("cli_auth", \{ how: d\.claude\.how \}\);/.test(main)
-    && /if \(!c \|\| c\.kind !== "claude" \|\| !telemetryLive\(\) \|\| !tm\(\)\.isEnabled\(\) \|\| tm\(\)\.sentToday\("cli_auth"\)\) return;\n\s*detectAgents\(\)\.then/.test(main)
+    && /if \(cliAuthTried \|\| !c \|\| c\.kind !== "claude" \|\| !telemetryLive\(\) \|\| !tm\(\)\.isEnabled\(\) \|\| tm\(\)\.sentToday\("cli_auth"\)\) return;\n\s*cliAuthTried = true;\n\s*detectAgents\(\)\.then/.test(main)
+    && /^let cliAuthTried = false;/m.test(main)
     && (main.match(/CLI_AUTH_HOW|"claude\.ai": "claude_ai"/g) || []).length === 0);
 
   // ── sentToday:每日鍵的前綴,含送出中 ──

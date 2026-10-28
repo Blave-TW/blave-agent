@@ -45,7 +45,7 @@ t("切換開關的當下打一次 account_status(先改開關、再打)",
 const login = main.slice(main.indexOf('tm().track("login_done")'), main.indexOf("return { ok: true };", main.indexOf('tm().track("login_done")')));
 t("登入完成時打一次(新 token 存好之後)", /\n\s*const acctNow = accountStatus\(\)\.catch\(\(\) => null\);/.test(login) && login.indexOf("saveToken") < 0 && main.indexOf("saveToken(r.body.access_token)") < main.indexOf('tm().track("login_done")'));
 const cut = (name) => { const i = main.indexOf(name); return main.slice(i, main.indexOf("\n}", i) + 2); };
-t("換 AI 成功後打一次(存成功才打,存失敗的那條 return false 在前面)", /tm\(\)\.track\("connect_done", \{ kind: saved\.kind \}\);\s*\n(?:\s*if \(saved\.kind === "claude" && d\) tm\(\)\.track\("cli_auth", \{ how: d\.claude\.how \}\);\n)?\s*accountStatus\(\);[^\n]*\n\s*return true;/.test(cut("async function saveConnection")));
+t("換 AI 成功後打一次(存成功才打,存失敗的那條 return false 在前面)", /tm\(\)\.track\("connect_done", \{ kind: saved\.kind \}\);\s*\n\s*if \(saved\.kind === "claude" && d\) tm\(\)\.track\("cli_auth", \{ how: d\.claude\.how \}\);\n\s*accountStatus\(\);[^\n]*\n\s*return true;/.test(cut("async function saveConnection")));
 t("清掉 AI 連結後也打一次", /const clearConnection = \(\) => \{ const r = connStore\(\)\.clear\(\); accountStatus\(\); return r; \};/.test(main));
 t("開 app 時補報一次(已登入才會真的打:accountStatus 自己看 token)", /startStep\("app state", \(\) => \{ accountStatus\(\); \}\);/.test(main));
 t("只有主行程送:renderer 與 preload 不碰這幾個 header", ["renderer/app.js", "preload.js"].every((f) =>
