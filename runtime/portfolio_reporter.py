@@ -873,7 +873,9 @@ def recent_orders():
     path = os.path.join(WORKSPACE, "manager", "orders.jsonl")
     try:
         with open(path) as f:
-            lines = f.readlines()[-ORDERS_TAIL:]
+            # wider than the screen: an unconfirmed send and its late fill must both be in
+            # the window, or the pair straddles the cut and shows as two rows
+            lines = f.readlines()[-ORDERS_PAIR_TAIL:]
     except OSError:
         return []
     out = []
@@ -882,6 +884,134 @@ def recent_orders():
             out.append(json.loads(line))
         except ValueError:
             continue
+    return pair_unconfirmed_orders(out, _audit_events)[-ORDERS_TAIL:]
+
+
+# The trade history's one rule for an order a hand-wired venue (群益, 統一) took
+# without reporting the fill in time (manager/reconciler parks it). Every surface
+# (desktop, web workspace, App) reads this report's `orders`, so the pairing lives
+# here and nowhere else (.claude/docs/cross-surface-parity.md). orders.jsonl itself
+# stays as written: it is the self_ledger book, replayed line by line.
+#   row A  the send: executed_qty short of |signed_diff|, no leg error
+#   row B  lib.portfolio.book_late_fill: `late_fill`, the month contract, maybe a price
+#   audit  unfilled_order_cleared: the account never moved, the order did not fill
+# `fill_state` on the rows it concerns:
+#   "late"         A merged into B's place (B's ts and legs: contract, price; A's
+#                  asset_spec / contributors); signed_diff = the lots that filled
+#   "unconfirmed"  A with neither: still parked, dropped as the user's after a HALT,
+#                  or sent by a lib older than the parking (no claim ever came)
+#   "unfilled"     A the account showed never filled
+# B's ts, not A's: api agent_overview dedups orders on ts, so the late fill still
+# lands as its own order event the way it did before the pairing.
+# A late fill pairs with the nearest earlier unpaired A of the same venue, symbol
+# and side. Known limit: 統一 claims one contract's parked legs as a single net B;
+# a second A of that contract stays "unconfirmed" (entries wait while lots are
+# parked, so only an opposite-side close can be parked beside an entry).
+ORDERS_PAIR_TAIL = 100
+_AUDIT_TAIL_BYTES = 256 * 1024
+
+
+def _row_epoch(v):
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return float(v)
+    if not isinstance(v, str) or not v:
+        return None
+    try:
+        d = datetime.fromisoformat(v.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)  # orders.jsonl: naive UTC (datetime.utcnow)
+    return d.timestamp()
+
+
+def _leg_lots(legs):
+    try:
+        return sum(abs(float(l.get("executed_qty") or 0)) for l in legs if isinstance(l, dict))
+    except (TypeError, ValueError):
+        return None
+
+
+def _unfilled_lots(o):
+    if (not isinstance(o, dict) or o.get("late_fill")
+            or not venue_traits.has(o.get("exchange"), "hand_wired")):
+        return 0.0
+    legs = o.get("legs") if isinstance(o.get("legs"), list) else []
+    if any(isinstance(l, dict) and l.get("error") for l in legs):
+        return 0.0
+    got = _leg_lots(legs)
+    try:
+        want = abs(float(o.get("signed_diff") or 0))
+    except (TypeError, ValueError):
+        return 0.0
+    return want - got if got is not None and want - got > 1e-9 else 0.0
+
+
+def _audit_events(names):
+    """Rows of state/audit.jsonl's tail whose event is in `names` (append-only, lib/guard)."""
+    path = os.path.join(WORKSPACE_STATE, "audit.jsonl")
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - _AUDIT_TAIL_BYTES))
+            lines = f.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        return []
+    if size > _AUDIT_TAIL_BYTES:
+        lines = lines[1:]  # the seek landed mid-line
+    out = []
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("event") in names:
+            out.append(row)
+    return out
+
+
+def pair_unconfirmed_orders(rows, audit_events):
+    """`rows` in file order; `audit_events(names)` → audit rows, called only when an
+    unpaired A is left. Rows it does not concern come back as the same objects."""
+    out = []
+    for o in rows:
+        if not (isinstance(o, dict) and o.get("late_fill")):
+            out.append(o)
+            continue
+        side = o.get("action")
+        hit = next((i for i in range(len(out) - 1, -1, -1)
+                    if isinstance(out[i], dict) and "fill_state" not in out[i]
+                    and out[i].get("action") == side and out[i].get("exchange") == o.get("exchange")
+                    and out[i].get("symbol") == o.get("symbol") and _unfilled_lots(out[i]) > 0), None)
+        if hit is None:
+            out.append(dict(o, fill_state="late"))
+            continue
+        a = out.pop(hit)
+        legs = [l for l in a.get("legs") or [] if isinstance(l, dict) and _leg_lots([l])]
+        legs += [l for l in o.get("legs") or [] if isinstance(l, dict)]
+        lots = _leg_lots(legs) or 0.0
+        out.append(dict(a, ts=o.get("ts"), legs=legs, late_fill=True, fill_state="late",
+                        signed_diff=-lots if side == "SELL" else lots))
+    pending = [i for i, a in enumerate(out)
+               if isinstance(a, dict) and "fill_state" not in a and _unfilled_lots(a) > 0]
+    if not pending:
+        return out
+    for i in pending:
+        out[i] = dict(out[i], fill_state="unconfirmed")
+    for ev in audit_events({"unfilled_order_cleared"}):
+        at = _row_epoch(ev.get("ts"))
+        try:
+            side = "BUY" if float(ev.get("lots")) > 0 else "SELL"
+        except (TypeError, ValueError):
+            continue
+        for i in reversed(pending):
+            a, t = out[i], _row_epoch(out[i].get("ts"))
+            if (at is not None and t is not None and t <= at and a["fill_state"] == "unconfirmed"
+                    and a.get("action") == side and a.get("exchange") == ev.get("venue")
+                    and a.get("symbol") == ev.get("symbol")):
+                out[i] = dict(a, fill_state="unfilled")
+                break
     return out
 
 

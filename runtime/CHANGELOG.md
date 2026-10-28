@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **交易歷史不再把一筆群益／統一的單畫成兩列(`portfolio_reporter.recent_orders`／`pair_unconfirmed_orders`;desktop 0.1.35)**:送出後等不到成交回報的那列(A:成交口數不足 `signed_diff`、腿上沒有 error、venue `hand_wired`)和之後 `book_late_fill` 補記的那列(B:`late_fill`)在回報裡合成一列——B 的時間、腿(月份合約、有就帶成交價),A 的 `asset_spec`／`contributors`,`signed_diff` 改成實際成交口數,帶 `fill_state: "late"`。沒配到 B 的 A 帶 `fill_state: "unconfirmed"`;audit `unfilled_order_cleared`(同 venue、標的、方向,時間在 A 之後)對到的改 `"unfilled"`。orders.jsonl 原樣不動(它是 self_ledger 帳本)。配對前讀 100 列再切回 20 列,A、B 跨過切點也配得到。用 B 的時間是為了 api `agent_overview` 的 order 事件照舊各算一次。各表面讀的都是這份 `orders`:電腦版這版照 `fill_state` 畫狀態字;web 工作頁、App 要各自照欄位畫(未改前合併列已經對,未確認列仍顯示成買進 N 口)。測試 `tests/check_order_history_pairing.py`(新,舊碼紅)、`tests/check_shell_trade.js`(fill_state 一條,舊碼紅)、`tests/check_state_read_retry.py`(`_audit_events` 列入豁免)。
+
+## 1.1.146 — 2026-10-28(desktop 0.1.35)
+
 - **策略市場判不出時補一個只給埋點的 `market_hint`(1.1.146;`strategy_reporter.strategy_market_hint`／`_type_market`、`local_daemon.strategy_kinds`;spec strategy-market-hint-2026-10-27)**:`strategy_market` 回 None 時,另看推斷表 `_HINT_FETCHERS`(鍵＝`tests/check_price_fetchers.py` 的 `RUNTIME_GAP` 六個:幣安 24h 行情→crypto、台股報價／上市全市場日行情→tw_stock、加權指數看字串常數 `SYMBOL`)與 SYMBOL 不是常數的台指期(只用 `fetch_txf_daily_public`→tw_index_futures;否則看全部字串常數整串比對,有 TXF／MXF／TMF 且沒有個股期代號才算)。`_PRICE_FETCHERS`、`strategy_market`、`_referenced_fetchers` 一律不動,下單／幣別／等 K／畫面都不讀 `market_hint`。雲端回報只在 `market` 是 None 且推斷得出時多帶 `market_hint` 鍵;marker 與 `_scan_sources` 不含它,升級不重送;推斷出錯只少這一鍵,`type`／`market` 照帶。`local_daemon.strategy_kinds` 每支固定多帶 `market_hint`(字串或 None),電腦版外殼 0.1.35 起 `market` 判不出才用它算 `kind`。**出貨順序:api(v035-market-hint-api)→ 這版 runtime → 電腦版 0.1.35**,三者互相向下相容;runtime 可以先 promote、不等 0.1.35。測試 `tests/check_strategy_type_market.py`(新增推斷段,舊碼 AttributeError 全紅)、`tests/check_price_fetchers.py`(`_HINT_FETCHERS` 鍵＝RUNTIME_GAP)、`tests/check_local_strategy_kinds.py`(舊碼 6 條紅)、`tests/check_shell_telemetry.js`(舊碼 2 條紅)。
 
 ## 1.1.145 — 2026-10-27(desktop 0.1.34)

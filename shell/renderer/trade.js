@@ -4518,7 +4518,9 @@ function trPaintHist() {
     const row = trEl("div", "pf-log-row");
     row.appendChild(trEl("span", "ts mono", trStamp(o.ts)));
     const sell = o.action === "SELL";
-    const act = trEl("span", "act " + (sell ? "sell" : "buy"), sell ? t("tr.sell") : t("tr.buy"));
+    // fill_state:runtime portfolio_reporter.pair_unconfirmed_orders 配好的(各表面同一份規則,這裡只照著畫)
+    const fstate = o.fill_state, unsettled = fstate === "unconfirmed" || fstate === "unfilled";
+    const act = trEl("span", "act " + (unsettled ? "pend" : sell ? "sell" : "buy"), unsettled ? t(sell ? "tr.sentSell" : "tr.sentBuy") : sell ? t("tr.sell") : t("tr.buy"));
     // 由哪些策略觸發:除錯用的補充,收進 title(這一列在橫捲容器裡,氣泡會被裁掉)
     const who = (Array.isArray(o.contributors) ? o.contributors : []).map((c) => (typeof c === "string" ? c : c && c.strategy)).filter(Boolean);
     if (who.length) act.title = t("tr.contributors", { names: who.map(trDisplay).join(LANG === "zh" ? "、" : ", ") });
@@ -4554,7 +4556,9 @@ function trPaintHist() {
     }
     row.appendChild(amt);
     const px = legs.map((l) => trFmtPrice(l && l.fill_price)).filter(Boolean);
-    row.appendChild(trEl("span", "px mono", px.length ? "@ " + px.join(" → ") : ""));
+    if (unsettled) { const st = row.appendChild(trEl("span", "px", t(fstate === "unfilled" ? "tr.fillNone" : "tr.fillUnconfirmed"))); st.title = t(fstate === "unfilled" ? "tr.fillNoneTip" : "tr.fillUnconfirmedTip"); }
+    else row.appendChild(trEl("span", "px mono", px.length ? "@ " + px.join(" → ") : ""));
+    if (fstate === "late") row.title = t("tr.fillLateTip");
     row.appendChild(trEl("span", "ex mono", trVenueLabel(String(o.exchange || ""), true)));
     log.appendChild(row);
   });

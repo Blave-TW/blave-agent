@@ -363,6 +363,7 @@ EXEMPT = [
      'broken file restarts from {} and drops other sessions\' model choices — low stakes'),
     ('runtime/portfolio_reporter.py', '_ac_interval', 'os.path.join(WORKSPACE, "strategies", name, "strategy.py")',
      'code', 'code / doc / VERSION text, not a state file'),
+    ('runtime/portfolio_reporter.py', '_audit_events', 'path', 'append', 'state/audit.jsonl, append-only'),
     ('runtime/portfolio_reporter.py', '_halt_denials', 'path', 'append', 'state/audit.jsonl, append-only'),
     ('runtime/portfolio_reporter.py', '_memory', '"/proc/meminfo"', 'proc', '/proc pseudo-file (Linux)'),
     ('runtime/portfolio_reporter.py', '_module_literals', 'path', 'code', 'workspace module source'),

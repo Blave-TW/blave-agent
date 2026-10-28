@@ -2454,6 +2454,18 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const syms = paintHist([REAL, OLD]).filter((n) => n.tag === "span" && n.kids.some((k) => k && k.className === "mkt-tag")).map((n) => n.textContent);
       ok("#14 真資料:symbol TXF + legs[].resolved_symbol TX2610 → 下單紀錄寫「大台（TX2610）」;舊列沒有 resolved_symbol 只寫商品名(總覽事件自 0.1.20 不列成交)",
         syms.includes("tr.txfProd.txf（TX2610）tr.mkt.fut") && syms.includes("tr.txfProd.txftr.mkt.fut"), J(syms)); }
+    { // 送出後沒回報成交(runtime pair_unconfirmed_orders 配好的 fill_state):未確認、確認沒成交、補記成交
+      const base = { action: "BUY", symbol: "TMF", exchange: "capital", asset_spec: { type: "futures_contracts", contract_value: 10 }, signed_diff: 1 };
+      const UNC = { ...base, ts: now - 30, fill_state: "unconfirmed", legs: [{ executed_qty: 0, fill_price: 0 }] };
+      const NONE = { ...base, ts: now - 20, action: "SELL", signed_diff: -1, fill_state: "unfilled", legs: [{ executed_qty: 0, fill_price: 0 }] };
+      const LATE = { ...base, ts: now - 10, late_fill: true, fill_state: "late", legs: [{ executed_qty: 1, fill_price: 46934, resolved_symbol: "TM2611" }] };
+      const rows = paintHist([UNC, NONE, LATE]).filter((n) => n.className === "pf-log-row");
+      const [late, none, unc] = rows, kid = (r, c) => r.kids.find((k) => k && k.className === c);
+      ok("下單紀錄 fill_state:未確認 → 「買單已送出」+「未確認成交」(說明進 title)、不寫買進;確認沒成交 → 「賣單已送出」+「沒有成交」;補記 → 照常買進、合約月份與成交價,列的 title 講補記",
+        rows.length === 3 && kid(unc, "act pend") && kid(unc, "act pend").textContent === "tr.sentBuy" && kid(unc, "px").textContent === "tr.fillUnconfirmed" && kid(unc, "px").title === "tr.fillUnconfirmedTip"
+        && kid(none, "act pend").textContent === "tr.sentSell" && kid(none, "px").textContent === "tr.fillNone" && kid(none, "px").title === "tr.fillNoneTip"
+        && kid(late, "act buy").textContent === "tr.buy" && /TM2611/.test(late.textContent) && kid(late, "px mono").textContent === "@ 46,934.0" && late.title === "tr.fillLateTip"
+        && !unc.title && !kid(unc, "act buy"), J(rows.map((r) => [r.textContent, r.title]))); }
     { ctx.trUnit = () => null; const all = paintHist([CAP, BTC]); ctx.trUnit = () => "TWD";
       const b = all.filter((n) => n.className === "amt mono")[0];
       ok("spec-0.1.13 #3 下單紀錄:帳戶幣未知 → 加密單不帶幣別、表下改講 tr.ccyUnknown(不出「金額單位：null」)", b.textContent === "500" && all.some((n) => n.className === "pf-foot" && n.textContent === "tr.ccyUnknown")
