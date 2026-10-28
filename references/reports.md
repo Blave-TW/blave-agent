@@ -194,7 +194,7 @@ questions*): that probe decides whether there is a report at all.
    `liq_map(symbol)` — a coin's liquidation profile over a continuous price axis (`bar_chart`
    variant `profile`, contract 1.5): solid bars = force orders that happened in the last 24 h
    (each bucket keeps both sides — `neg` = long liquidations/red, `pos` = shorts/green, never
-   netted; ×3.3 Binance-share scaling), dashed line = the model-estimated exposure from leaderboard positions —
+   netted; extrapolated to a market-wide estimate), dashed line = the model-estimated exposure —
    an estimate, never real orders, and the caption says so. Use it when the story is leverage,
    liquidations or a cascade; any other brick works too (`price_chart` of a Taiwan
    stock, `tw_institutional(symbol=…)`). **At most 3 extras, each one fetch**; at least one of them
@@ -676,7 +676,7 @@ publish(pack, narrative={
   - W2 each `read` item opens with its conclusion in bold, the figure after a colon:
     「- **賣壓沒有量**：成交值只有 5 日均的八成。」
   - W3 a Blave indicator's first appearance carries its plain reading — the bricks put it in the
-    KPI delta (「0 = 歷史平均」, 「正 = 淨多」); do not add an explanation paragraph.
+    KPI delta (「0 = 平常」, 「正 = 淨多」, 「正 = 空單爆倉較多」); do not add an explanation paragraph.
   - W4 Chinese uses full-width punctuation. `publish()` converts `,` `:` `;` `()` next to Chinese
     in your narrative (numbers, times, links and `code` stay as they are); write it right anyway.
   - W5 the 「總結」 closes every report, and `risk` — the signal that voids the reading, pointing

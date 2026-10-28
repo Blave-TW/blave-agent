@@ -1704,13 +1704,12 @@ def fetch_open_interest_history(symbol, interval, start, end, headers, exchange=
 def fetch_liquidation_map(symbol, headers):
     """爆倉地圖 Liquidation map (GET /liquidation/get_map) — one coin, two layers over the same
     200 price buckets (labels, USDT), around the current `price`:
-      actual     liquidation['24h']: buy_liq[] / sell_liq[] — Binance force-order liquidations
-                 that HAPPENED in the last 24 h, bucketed by fill price, USD; each value is
-                 divided by a fixed 0.3 Binance-share assumption to estimate the whole market.
-                 buy_liq = short liquidations (above price), sell_liq = long liquidations.
-      estimated  oi_value[] / cumsum[] — a MODEL ESTIMATE of where Binance open interest would
-                 be liquidated (leaderboard positions + OI + volume), USD. Not real orders and
-                 not actual events; any block built from it must say so.
+      actual     liquidation['24h']: buy_liq[] / sell_liq[] — liquidations that HAPPENED in
+                 the last 24 h, bucketed by fill price, USD, extrapolated to a market-wide
+                 estimate. buy_liq = short liquidations (above price), sell_liq = long liquidations.
+      estimated  oi_value[] / cumsum[] — a MODEL ESTIMATE of where open interest would be
+                 liquidated, USD. Not real orders and not actual events; any block built from
+                 it must say so.
     `symbol` accepts BTC / BTCUSDT / btc. Needs data access (cloud plan, API plan or, before plan billing, the data fee); no cache —
     the server snapshot is the state. 400 with "symbol is required" never happens from here."""
     sym = normalize_symbol(symbol if str(symbol).upper().endswith('USDT') else str(symbol).upper() + 'USDT')

@@ -716,13 +716,17 @@ _INDICATORS = {
     "爆倉指標": ("fetch_liquidation", True), "巨鯨警報": ("fetch_whale_hunter", True),
     "多空力道": ("fetch_taker_intensity", True),
 }
-# 不是 z-score 的那一支(實測值約 20–30):不能跟 z-score 同軸,單獨一張、不標單位。
+# 原始值的那一支(實測值約 20–30):刻度跟 Blave 自製指標不同,不能同軸,單獨一張、不標單位。
 _RAW_INDICATORS = ("頂尖交易員曝險",)
+# 爆倉指標的 0 不是平常水準(canon 例外句),讀法另寫。
+_SCALE_READ = "數值沒有上下限，0 附近是這個幣的平常水準，絕對值越大越反常；±2 以上少見、±3 以上極端，各幣用同一把尺；門檻請用回測自己掃"
+_LIQ_READ = "爆倉指標:正值代表空單爆倉較多、負值代表多單較多，0 不等於這個幣的平常水準"
+_GLOSS = {"頂尖交易員曝險": "正 = 淨多", "爆倉指標": "正 = 空單爆倉較多"}
 
 
 def blave_indicators(b, names=("市場方向", "資金稀缺", "頂尖交易員曝險"), symbol=None, kpi=None, raw_chart=True,
                      days=None):
-    """#15 Blave 指標: the z-score series share one line chart (≤4); 頂尖交易員曝險 (raw value)
+    """#15 Blave 指標: the Blave-built indicator series share one line chart (≤4); 頂尖交易員曝險 (raw value)
     gets its own unless `raw_chart=False`. Market-wide names need no symbol; 爆倉 / 巨鯨 /
     多空力道 are per coin. `kpi`: which names go to the KPI row (default all). `days`: the
     chart's window when it is not the recipe's `lookback_days` (which also sets the quote
@@ -748,7 +752,7 @@ def blave_indicators(b, names=("市場方向", "資金稀缺", "頂尖交易員�
     for n in names:
         mine = []
         got[n] = T._indicator(replay, (n,), _mark(b, coin, n) if per_coin(n) else n, b.ctx, mine, b.notes, b.missing,
-                              gloss="正 = 淨多" if n in _RAW_INDICATORS else "0 = 歷史平均")
+                              gloss=_GLOSS.get(n, "0 = 平常"))
         if kpi is None or n in kpi:
             kpis += mine
     z = [(n, "benchmark", x) for n, x in got.items() if x is not None and n not in _RAW_INDICATORS]
@@ -757,21 +761,22 @@ def blave_indicators(b, names=("市場方向", "資金稀缺", "頂尖交易員�
         z[0] = (z[0][0], "primary", z[0][2])
         z0 = z[0][2]
         lead = f"{coin} {z[0][0]}" if per_coin(z[0][0]) else z[0][0]
-        blocks.append(T.line_chart(f"{lead} {float(z0.iloc[-1]):+.2f}(0 = 歷史平均),7 日均 {float(z0.tail(7).mean()):+.2f}", z[:4],
-                                   caption=T._cap("標準化分數,0 = 樣本均值", "日頻資料只到前一個完整日",
+        blocks.append(T.line_chart(f"{lead} {float(z0.iloc[-1]):+.2f}({_GLOSS.get(z[0][0], '0 = 平常')}),7 日均 {float(z0.tail(7).mean()):+.2f}", z[:4],
+                                   caption=T._cap(_SCALE_READ, _LIQ_READ if any(n == "爆倉指標" for n, _, _ in z[:4]) else None,
+                                                  "日頻資料只到前一個完整日",
                                                   f"{z[0][0]} {T._vs7(z[0][2])}")))
     raw = [(n, x) for n, x in got.items() if x is not None and n in _RAW_INDICATORS]
     for n, x in (raw if raw_chart else []):
         blocks.append(T.line_chart(f"{n} {float(x.iloc[-1]):+.2f}(正 = 淨多),7 日均 {float(x.tail(7).mean()):+.2f}",
                                    [("曝險", "primary", x)],
-                                   caption=T._cap("Blave 頂尖交易員曝險指標原始值(非標準化),日頻資料只到前一個完整日",
+                                   caption=T._cap("Blave 頂尖交易員曝險指標原始值,日頻資料只到前一個完整日",
                                                   T._vs7(x))))
     if symbol:
         if z:
-            foot.append(("src", "爆倉 / 巨鯨 / 多空力道為 Blave 指標 z-score。"))
+            foot.append(("src", "爆倉 / 巨鯨 / 多空力道為 Blave 自製指標。"))
     else:
         if z:
-            foot.append(("src", "市場方向 / 資金稀缺為 Blave 指標(z-score)" + (";" if raw else "。")))
+            foot.append(("src", "市場方向 / 資金稀缺為 Blave 自製指標" + (";" if raw else "。")))
         if raw:
             foot.append(("src", "頂尖交易員曝險為指標原始值。"))
         if z or raw:
@@ -1044,7 +1049,7 @@ def _movers_crypto(b, n):
     b.ctx["24 小時跌幅最大"] = f"{down.index[0].replace('USDT', '')} {T._pct(float(bot['change_pct']))}"
     title = f"24 小時漲幅最大 {b.ctx['24 小時漲幅最大']},跌幅最大 {b.ctx['24 小時跌幅最大']}"
     cap = (f"Binance USDT 永續,24 小時成交額前 100 名中漲幅前 {n} 與跌幅前 {n};滾動 24 小時"
-           + (";異常漲跌為 Blave 指標 z-score(日頻,只到前一個完整日)" if signal else ""))
+           + (";異常漲跌為 Blave 自製指標(日頻,只到前一個完整日)" if signal else ""))
     return Brick([T.table(title, cols, rows, caption=cap)], foot=[("src", "漲跌幅:Binance 公開 24 小時行情。")])
 
 
@@ -1246,9 +1251,9 @@ def _volume_vs_20d(b, pair, df):
 
 
 LIQ_MAP_BUCKETS = 50    # 200 桶 4 併 1;連續軸讀的是叢集,契約可讀性建議 ≤60(caption 交代口徑)
-_LIQ_MAP_CAPTION = ("Binance 已發生強平單按成交價位分桶(近 24 小時);單位:百萬 USD;按「Binance 約佔全市場 3 成」"
-                    "的假設放大(×3.3)。綠＝空單爆倉(上漲觸發)、紅＝多單爆倉(下跌觸發);豎虛線＝發稿時現價。"
-                    "曲線虛線＝自排行榜持倉估算的累積清算量,為模型估計、非實際掛單。")
+_LIQ_MAP_CAPTION = ("已發生爆倉按成交價位分桶(近 24 小時),已外推為全市場估計;單位:百萬 USD。"
+                    "綠＝空單爆倉(上漲觸發)、紅＝多單爆倉(下跌觸發);豎虛線＝發稿時現價。"
+                    "曲線虛線＝估算的累積清算量,為模型估計、非實際掛單。")
 
 
 def liq_map(b, symbol):
@@ -1256,8 +1261,8 @@ def liq_map(b, symbol):
     variant "profile", contract 1.5) — two layers on the same buckets. Solid bars = force-order
     liquidations that HAPPENED in the last 24 h, each bucket carrying both sides un-netted
     (neg = long liqs/red, pos = short liqs/green); dashed line = the MODEL-ESTIMATED liquidation exposure
-    (leaderboard positions + OI), drawn by the web as a cumsum from the current-price refline.
-    Blave-only (needs data access); the exchange share scaling (×3.3) is in the caption."""
+    drawn by the web as a cumsum from the current-price refline. Blave-only (needs data
+    access); the caption says the solid bars are a market-wide estimate."""
     pair = _coin_pair(symbol)
     coin = pair.replace("USDT", "")
     state, m = _cached(b, ("liq_map", pair), lambda: _data.fetch_liquidation_map(pair, b.headers))
@@ -1307,7 +1312,7 @@ def liq_map(b, symbol):
     if pf is None:
         b.notes.append(f"{coin} 爆倉地圖桶形不合法,省略")
         return Brick()
-    return Brick([pf], foot=[("liqmap", "爆倉地圖:實心為已發生強平(Binance,×3.3 放大);虛線為排行榜持倉的模型估計,非實際掛單。")])
+    return Brick([pf], foot=[("liqmap", "爆倉地圖:實心為已發生爆倉,已外推為全市場估計;虛線為模型估計,非實際掛單。")])
 
 
 # Blave 有收的交易所(爆倉矩陣 / 未平倉表 / 資金費率);其他交易所的事件只能講價格與新聞

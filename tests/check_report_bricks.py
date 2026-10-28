@@ -434,8 +434,9 @@ except ValueError as e:
 check(len(pf["est"]) == 50 and all(r["value"] >= 0 for r in pf["est"])
       and abs(sum(r["value"] for r in pf["est"]) * 1e6 - 1e6 * 200) < 1e-3   # 每桶原始值,不是累加(渲染端自己畫 cumsum)
       and [(r["x0"], r["x1"]) for r in pf["est"]] == [(r["x0"], r["x1"]) for r in bks]
-      and "模型估計、非實際掛單" in pf["caption"] and "×3.3" in pf["caption"],
-      "liq_map:est 每桶 ≥0、桶界跟 buckets 對齊;caption 標明模型估計與 ×3.3 口徑")
+      and "模型估計、非實際掛單" in pf["caption"] and "全市場估計" in pf["caption"]
+      and not any(w in pf["caption"] for w in ("Binance", "×3.3", "排行榜")),
+      "liq_map:est 每桶 ≥0、桶界跟 buckets 對齊;caption 標明模型估計與全市場估計、不寫配方")
 check("多單" in pf["title"] and "集中在" in pf["title"] and "80,000" in pf["title"],
       f"liq_map:結論式標題點出最集中價位帶與方向 — {pf['title']}")
 d.fetch_liquidation_map = lambda sym, h: {"price": 90000.0, "labels": list(_LM_LABELS), "oi_value": [1e6] * 200,

@@ -243,7 +243,7 @@ Rules that shape every script:
 Do not emit the marker when the strategy needs any of:
 
 - Blave-only data: liquidation, holder concentration, whale, taker intensity, funding rate,
-  alpha/screener scores, 籌碼 z-scores from `lib/data.py`, economic calendar.
+  alpha/screener scores, any other Blave indicator from `lib/data.py`, economic calendar.
 - Anything fetched from an external API or the web at run time.
 - Cross-symbol / cross-market logic (Type C portfolios, pairs, TXF vs spot basis).
 - Fractional or volatility-scaled sizing that the user refuses to replace with fixed lots.

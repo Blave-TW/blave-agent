@@ -1187,7 +1187,7 @@ def research_pack(symbol, topics=None, date=None, headers=None, lookback_days=90
                    question spans weeks; "24h" only for a question about today) and long/short ratio (coin)
     `days` is the relative-performance window (default 30): set it to the span the user asked
     about. It does not change how many candles a chart draws.
-      indicators   Blave 爆倉 / 巨鯨 / 多空力道 z-scores (coin)
+      indicators   Blave 自製指標 爆倉 / 巨鯨 / 多空力道 (coin)
       levels       recent highs / lows and moving averages as a table
       flows        外資買賣超, last 10 sessions (Taiwan stock)
     A section this machine has no data for is left out and named, as in any pack."""
