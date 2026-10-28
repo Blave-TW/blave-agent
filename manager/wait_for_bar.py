@@ -76,6 +76,11 @@ State: state/bar_wait/<name>.json
                          TW_FUT_NIGHT_KEEP_DAYS after it (_tw_fut_lots_night)
   not_waited / dead_noticed : Type C members readiness does not wait for (lib.bar_ready.dead_members),
                          and those of them already notified as long dead (_note_dead)
+  lag_since / lag_base : INTERVAL up to 15m only: the poll that first saw data past the last
+                         computed bar (`lag_base`) while the expected bar was still not in;
+                         restarted when lag_base changes, cleared by a run and by a quiet close
+  lag_alert_at        : epoch seconds of the last lag alert (_alert_lag), repeated at most every
+                         STALL_REALERT_SECONDS; never touches stall_alert_at or the poll throttle
 
 Priming (Wei: a signal is always computed on the newest data there is): while the expected bar
 is not in, a strategy whose data moved since it last computed — any member's newest closed bar
@@ -161,6 +166,13 @@ script first noticed it pending, send one Telegram alert (not a repeat every
 minute) and keep polling — never give up silently. Data that moves forward but is
 still short of the bar starts that count again from the poll that saw it move
 (an align_feed wait keeps counting from the row's due time).
+
+Lag (INTERVAL up to 15m): a feed that keeps moving but stays one bar short restarts that count
+every minute, so the timeout above never fires — a 1m bar always landing after the :35 retry
+computes nothing all session (priming stays inside its grace). _track_lag times from the first
+poll whose data passed the last computed bar instead, and alerts once STALE_TIMEOUT_MINUTES
+pass without a run or a prime moving it (_alert_lag, same bar_stale event). Not while a stall
+alert stands (that one already said it) and not on a quiet TAIFEX/TWSE close.
 
 Concurrency: a stale-safe lock file (state/bar_wait/<name>.lock) guards the
 fetch+run section so an overrunning previous tick's subprocess can't overlap
@@ -348,6 +360,9 @@ def _default_state():
         "prime_tried_fp": None,
         "not_waited": [],
         "dead_noticed": [],
+        "lag_since": None,
+        "lag_base": None,
+        "lag_alert_at": None,
     }
 
 
@@ -687,6 +702,47 @@ def _alert_stale(name, expected, minutes_waited, straggler_symbol, computed=Fals
         logging.warning(f"[wait_for_bar] stale-bar notification dropped ({e})")
 
 
+def _alert_lag(name, minutes, straggler_symbol):
+    try:
+        from lib.events import emit
+        emit("bar_stale", strategy=name, symbol=straggler_symbol, minutes=minutes, computed=False)
+    except Exception:
+        pass
+    who = f"（落後的是 {straggler_symbol}）" if straggler_symbol is not None else ""
+    try:
+        from lib.notify import send_text
+        send_text(f"⚠️ {name}：資料有在更新，但一直差一根 K 棒，已經 {minutes} 分鐘沒算出新訊號{who}，"
+                  f"仍在重試，訊號會晚發。")
+    except Exception as e:  # best-effort, like _alert_stale
+        logging.warning(f"[wait_for_bar] lag notification dropped ({e})")
+
+
+def _track_lag(name, state, now, td, observed_ts, straggler_symbol):
+    """Lag (module docstring). Not-ready path, after the stall alert had its say this tick."""
+    if td > timedelta(minutes=STALE_TIMEOUT_MINUTES) or observed_ts is None or \
+            isinstance(straggler_symbol, _FeedWait) or state.get("stall_alert_at") is not None:
+        state["lag_since"] = None
+        return
+    try:
+        base = max(datetime.fromisoformat(b) for b in (state.get("last_processed_bar"),
+                                                       state.get("computed_bar")) if b)
+        past = observed_ts > base
+    except (TypeError, ValueError):   # never computed (bar_stale covers no data), foreign state
+        past = False
+    if not past:   # nothing past the last computed bar: a stall, bar_stale's case
+        state["lag_since"] = None
+        return
+    if state.get("lag_since") is None or state.get("lag_base") != base.isoformat():
+        state["lag_since"], state["lag_base"] = now.isoformat(), base.isoformat()
+        return
+    waited = now - datetime.fromisoformat(state["lag_since"])
+    last = state.get("lag_alert_at")
+    if waited >= timedelta(minutes=STALE_TIMEOUT_MINUTES) and \
+            (last is None or time.time() - last >= STALL_REALERT_SECONDS):
+        _alert_lag(name, int(waited.total_seconds() // 60), straggler_symbol)
+        state["lag_alert_at"] = time.time()
+
+
 def _note_dead(name, state, dead, long_dead, latest=None):
     """Members readiness stopped waiting for: logged when the set changes; one long dead
     (delisted, most likely) is notified once — again only if it trades and stops once more.
@@ -862,6 +918,7 @@ def _tick(name):
             state["tw_fut_night_bar"] = observed_iso   # on the ready path too: a prompt feed is never pending
 
         if ready:
+            state["lag_since"] = None   # the bar is in: a failing run is strategy_failed's, not lag
             if _run_strategy_protected(name):
                 state["last_processed_bar"] = expected_iso
                 state["pending_since"] = None
@@ -906,6 +963,7 @@ def _tick(name):
                 _tw_fut_quiet(tw_kind, expected, fut_td, observed_iso, holiday_fn,
                               _tw_fut_lots_night(state, now)):
             state["pending_since"] = None   # stall_alert_at stays: it may be a real stall's
+            state["lag_since"] = None
             _save_state(name, state)
             return
 
@@ -918,23 +976,21 @@ def _tick(name):
 
         if state.get("pending_since") is None:
             state["pending_since"] = now.isoformat()
-            _save_state(name, state)
-            return
-
-        pending_since = datetime.fromisoformat(state["pending_since"])
-        waited = now - pending_since
-        if waited >= timedelta(minutes=STALE_TIMEOUT_MINUTES):
-            stall_alert_at = state.get("stall_alert_at")
-            # stall_alert_at is None ⇒ never alerted for this episode yet (covers
-            # both a brand-new stall AND a strategy that has NEVER had a single
-            # data point — see comment above, that must not silently never-alert).
-            due = stall_alert_at is None or (time.time() - stall_alert_at >= STALL_REALERT_SECONDS)
-            if due:
-                computed = bool(state.get("computed_bar") and observed_iso
-                                and state["computed_bar"] > observed_iso)
-                _alert_stale(name, expected, int(waited.total_seconds() // 60), straggler_symbol,
-                             computed=computed)
-                state["stall_alert_at"] = time.time()
+        else:
+            waited = now - datetime.fromisoformat(state["pending_since"])
+            if waited >= timedelta(minutes=STALE_TIMEOUT_MINUTES):
+                stall_alert_at = state.get("stall_alert_at")
+                # stall_alert_at is None ⇒ never alerted for this episode yet (covers
+                # both a brand-new stall AND a strategy that has NEVER had a single
+                # data point — see comment above, that must not silently never-alert).
+                due = stall_alert_at is None or (time.time() - stall_alert_at >= STALL_REALERT_SECONDS)
+                if due:
+                    computed = bool(state.get("computed_bar") and observed_iso
+                                    and state["computed_bar"] > observed_iso)
+                    _alert_stale(name, expected, int(waited.total_seconds() // 60), straggler_symbol,
+                                 computed=computed)
+                    state["stall_alert_at"] = time.time()
+        _track_lag(name, state, now, _interval_to_timedelta(interval), observed_ts, straggler_symbol)
         _save_state(name, state)
     finally:
         _release_lock(lock_path)
