@@ -1023,12 +1023,15 @@ def _president_park_unfilled(sym, leg, requested, net_before):
                      sym, unfilled, leg.get('orderno'), str(e))
         return
     row = pending.get(pid)
-    if row is not None and _row_booked(pid, row):
+    booked = _row_booked(pid, row) if row is not None else False
+    if booked:
         # a claim booked this row but its save was refused: the row is done, and merging
         # this leg into it would drop the leg with it next round (the id is in the book)
         guard.audit('late_fill_already_booked', venue=venue_traits.PRESIDENT, symbol=sym, contract=pid,
                     lots=row.get('lots'), park_id=_park_id(pid, row))
         row = None
+    elif booked is None:
+        _halt_unknown_booked(sym, pid, row)
     row = row or {'root': sym, 'productid': pid, 'lots': 0.0,
                   'net_expected': float(net_before), 'legs': [], 'reads': []}
     rebased = bool(row.pop('halted', None))
@@ -1060,16 +1063,36 @@ def _park_id(key, row):
 
 
 def _row_booked(key, row):
-    """True when the claim already booked `row` (its park id is in the book). A book
-    that cannot be read answers False and is logged: the row is merged into as before,
-    and the round's own book read fails on the same file."""
+    """True when the claim already booked `row` (its park id is in the book), None when
+    orders.jsonl cannot be read to tell."""
     from lib import portfolio
     try:
         return portfolio.late_fill_booked(_park_id(key, row))
     except OSError as e:
         logging.error(f"[reconciler] {key}: orders.jsonl unreadable ({e}) — can't tell whether the "
-                      f"parked row was booked; leg merged into it")
-        return False
+                      f"parked row was booked")
+        return None
+
+
+def _halt_unknown_booked(sym, pid, row):
+    """A new leg is parked onto a row whether booked or not is unknown (the book went
+    unreadable after this round's send). The merge goes ahead — the order is already
+    out, nothing is left to hold back — but if that row was booked the next claim drops
+    it by its id and this leg with it, so the user is told and HALT is tripped
+    (the _book_late_fill_or_halt pattern)."""
+    from lib import portfolio
+    msg = (f"統一 {pid} 有一筆送出後沒收到成交回報的單,記進等待區時讀不到帳本,確認不了同合約前一筆"
+           f"是否已記帳:已停止下單。請到統一 app 核對 {pid} 的部位,處理好再按恢復下單")
+    guard.audit('order_unfilled_park_unverified', venue=venue_traits.PRESIDENT, symbol=sym, contract=pid,
+                park_id=_park_id(pid, row))
+    try:
+        portfolio._record_order_error(sym, venue_traits.PRESIDENT, msg)
+    except Exception as e:
+        logging.error(f"[reconciler/president] order_errors row not written: {e}")
+    try:
+        guard.trip_halt(msg, 'reconciler')
+    except Exception as e:
+        logging.error(f"[reconciler/president] HALT file not written ({e}) — halted in this process")
 
 
 CLAIM_SAVE_FAILS_MAX = 3
