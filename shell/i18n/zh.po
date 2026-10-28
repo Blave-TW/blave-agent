@@ -685,6 +685,18 @@ msgstr "買進"
 msgid "tr.sell"
 msgstr "賣出"
 
+msgid "tr.fillUnconfirmed"
+msgstr "未確認成交"
+
+msgid "tr.fillUnconfirmedTip"
+msgstr "沒回報成交的口數沒算進策略部位。實際部位以券商軟體為準。"
+
+msgid "tr.fillNone"
+msgstr "未成交"
+
+msgid "tr.pxUnreported"
+msgstr "成交價未回報"
+
 msgid "tr.kind.open"
 msgstr "開倉"
 

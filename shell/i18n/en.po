@@ -678,6 +678,18 @@ msgstr "Buy"
 msgid "tr.sell"
 msgstr "Sell"
 
+msgid "tr.fillUnconfirmed"
+msgstr "Fill unconfirmed"
+
+msgid "tr.fillUnconfirmedTip"
+msgstr "Lots with no fill report aren't counted in the strategy position. The broker's app shows the actual position."
+
+msgid "tr.fillNone"
+msgstr "Not filled"
+
+msgid "tr.pxUnreported"
+msgstr "Price not reported"
+
 msgid "tr.kind.open"
 msgstr "Open"
 
