@@ -14,11 +14,11 @@ function world(o) {
   const els = {}, focused = [], checks = [];
   const row = { focus() { focused.push("row"); } };
   const $ = (id) => els[id] || (els[id] = { id, hidden: id === "mp-panel", attrs: {}, cls: new Set(), classList: { add: (c) => els[id].cls.add(c), remove: (c) => els[id].cls.delete(c) },
-    setAttribute(k, v) { this.attrs[k] = v; }, focus() { focused.push(id); }, querySelector: () => (o.noRow ? null : row) });
+    setAttribute(k, v) { this.attrs[k] = v; }, focus() { focused.push(id); }, querySelector: () => (o.noRow ? null : row), querySelectorAll: () => [] });
   // 外層的 cur / running 等照 app.js 是 let:包在同一層宣告,函式照原文放進來——遮蔽與 TDZ 才會跟真的一樣
   const M = new Function("$", "balLoad", "o", `let cur = o.cur, running = !!o.running, hasToken = !!o.hasToken;
-    const MP = { model: "a", kind: "claude", prefs: {} }; const mpEffort = () => "high", mpCur = () => ({ efforts: ["high"] }), mpSave = () => {}, mpPaint = () => {}, mpLocked = () => false;
-    ${fn("mpOpen")}\n${fn("mpClose")}\n${fn("mpPickModel")}\n return { mpOpen, mpClose, mpPickModel };`)($, () => checks.push(1), o);
+    const MP = { model: "a", kind: "claude", prefs: {}, models: [] }; const mpEffort = () => "high", mpCur = () => ({ efforts: ["high"] }), mpSave = () => {}, mpPaint = () => {}, mpLocked = () => false, t = (k) => k;
+    ${fn("mpLockRowPaint")}\n${fn("mpOpen")}\n${fn("mpClose")}\n${fn("mpPickModel")}\n return { mpOpen, mpClose, mpPickModel };`)($, () => checks.push(1), o);
   return { M, $, focused, checks };
 }
 const open = (o, viaMouse) => { const w = world(o); let err = null; try { w.M.mpOpen(viaMouse); } catch (e) { err = String(e); } return Object.assign(w, { err }); };

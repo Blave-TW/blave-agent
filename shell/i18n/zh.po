@@ -564,9 +564,13 @@ msgstr "你的 {name} 訂閱用量到上限了。重置之前可以到「設定 
 msgid "fault.limitBtn"
 msgstr "切換 AI"
 
-# 0.1.33 模型選單:有鎖住的列時,型號清單下面那一行(只講一次;鎖住列 aria-describedby 指它)。336 寬不折行
+# 0.1.33 模型選單:有鎖住的列時的完整原因——畫面上不出,只給讀屏(sr-only;鎖住列 aria-describedby 指它,點的當下 srSay)
 msgid "mp.locked"
 msgstr "其他模型綁卡或儲值後可用"
+
+# 點了鎖住的列(或方向鍵越過它),在那一列右邊出的短句,同「預設」的小字;不折行
+msgid "mp.lockedRow"
+msgstr "綁卡或儲值後可用"
 
 msgid "mp.na"
 msgstr "你的方案沒有"
@@ -1060,10 +1064,6 @@ msgstr "Blave 餘額"
 
 msgid "plan.balNa"
 msgstr "現在讀不到餘額"
-
-# 設定 › 帳號與方案:綁卡前的 AI 額度那一列(餘額列上面;領過而且已綁卡才出——沒綁卡的人事先不預告這筆額度)。叫「AI 額度」不叫「餘額」——這筆付不了資料費
-msgid "plan.free"
-msgstr "AI 額度"
 
 msgid "plan.month"
 msgstr "{p} TWD／月"

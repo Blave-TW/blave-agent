@@ -1,7 +1,7 @@
 // 綁卡前 30 TWD AI 額度的外殼三處(0.1.22;spec desktop-precard-credit §5.2 / §5.4)。不打 api、不開 Electron。
 //   登入送的額度事先不預告(不講有、不講多少),用完才由卡片叫他綁卡。
 //   ① 連結畫面:偵測完本機都不能用、沒登入、公開價目有額度 → 大標／標題／副標換版(副標不帶數字);數字 0 或拿不到、已登入、有本機 AI、還在偵測 → 原字;換語言後再畫
-//   ② 設定 › 帳號與方案:balance 多接 free_ai_credit_left(沒領過 null);那一列只給已綁卡的人(0 也畫);沒綁卡、帳號狀態未讀到不出;登出清掉
+//   ② 設定 › 帳號與方案:balance 照收 free_ai_credit_left(沒領過 null),但「AI 額度」那一列對誰都不出(已綁卡也不出)
 //   ③ 用完的卡:NO_CARD + free_ai_credit_used_up → 預檢卡 / 402 卡換「額度用完了」那組字(不帶數字)、埋點 pre_free / turn_free(兩個事件同順序接在表尾);NO_CREDIT 照舊
 // 跑法:node tests/check_shell_free_credit.js
 const fs = require("fs"), path = require("path");
@@ -46,40 +46,21 @@ const line = (re) => { const m = app.match(re); if (!m) throw new Error("找不�
   ok("① 主行程 publicPricing 帶 free_ai_credit(> 0 才是數字,其餘 null);renderer 不自己打 api", /free_ai_credit: n\(b\.free_ai_credit\)/.test(mainSrc) && !/"\/openclaw\/public_tiers"/.test(app));
 }
 
-// ② 餘額端點多接一個欄位;設定頁那一列
+// ② 餘額端點多接一個欄位;設定頁不畫
 {
   const r = (b) => interpret({ status: 200, body: b });
   ok("② free_ai_credit_left:數字照收、null / 缺 / 字串 → null;balance 與 trial 不受影響",
     r({ balance: 0, trial_ai_credit_left: null, free_ai_credit_left: 12.4 }).free === 12.4 && r({ balance: 0, trial_ai_credit_left: 5, free_ai_credit_left: 0 }).free === 0
     && r({ balance: 1, trial_ai_credit_left: null, free_ai_credit_left: null }).free === null && r({ balance: 1, trial_ai_credit_left: null }).free === null && r({ balance: 1, free_ai_credit_left: "30" }).free === null
     && JSON.stringify(r({ balance: 7, trial_ai_credit_left: 3, free_ai_credit_left: 30 })) === '{"balance":7,"trial":3,"free":30}');
-  const painted = [];
-  const M = new Function("window", "$", "mpBillPaint", "planPaint", `let hasToken = true, balLast = null, balFree = null, balSeq = 0;
-    ${fn("balNum")}\n${fn("balNow")}\n${fn("balFreeNow")}\nasync ${fn("balLoad").replace(/^async /, "")}
-    return { free: balFreeNow, load: balLoad, token: (v) => { hasToken = v; } };`)(
-    { blave: { balance: async () => painted.reply } }, () => ({ hidden: true }), () => {}, () => {});
   (async () => {
-    painted.reply = { balance: 0, trial: null, free: 29.6 }; await M.load();
-    ok("② 讀到 29.6 → 列上「30」(同餘額的四捨五入)", M.free() === "30");
-    painted.reply = { balance: 0, trial: null, free: 0 }; await M.load();
-    ok("② 用完(0)→ 仍是 \"0\"(那一列照畫 0 TWD,不是消失)", M.free() === "0");
-    painted.reply = { balance: 0, trial: null, free: null }; await M.load();
-    ok("② 沒領過(null)→ null(不出那一列)", M.free() === null);
-    painted.reply = null; await M.load();
-    ok("② 讀不到 → null(不留著舊數字)", M.free() === null);
-    painted.reply = { balance: 0, trial: null, free: 5 }; M.token(false); await M.load();
-    ok("② 沒登入 → null", M.free() === null);
+    // 那一列對誰都不出(Wei 拍板 2B):畫它的唯一一處連同狀態一起拿掉——列舉 renderer 每個檔,沒有任何地方再讀這筆額度或用那個字串
+    const R = path.join(SHELL, "renderer"), files = fs.readdirSync(R).filter((f) => /\.(js|html)$/.test(f) && f !== "strings.js");
+    const hits = files.filter((f) => /plan\.free\b|balFree|\br\.free\b/.test(fs.readFileSync(path.join(R, f), "utf8")));
+    ok("② 帳號與方案:「AI 額度」那一列任何狀態都不出——renderer 沒有一個檔再用 plan.free / balFree / balance 的 free(列舉 " + files.length + " 個檔)", files.length > 10 && hits.length === 0, hits);
+    ok("② plan.free 兩個語言都已拿掉", !("plan.free" in zh) && !("plan.free" in en));
     const pp = fn("planPaint");
-    const rowRe = /if \((hasToken && balFreeNow\(\) !== null && acct && !acctNoCard\(acct\))\) \{ const row = el\("div", "plan-bal"\); row\.append\(el\("span", "l", t\("plan\.free"\)\), el\("span", "v", balFreeNow\(\) \+ " TWD"\)\); id\.append\(row\); \}\n    if \(hasToken\) \{\n      const n = balNow\(\)/;
-    const rowM = pp.match(rowRe);
-    ok("② 帳號與方案:「AI 額度 N TWD」那一列放在 Blave 餘額列之前、同 .plan-bal 配方;餘額列那段一字不改", !!rowM);
-    // 真的跑那一列的條件:登入送的額度事先不預告,沒綁卡的人不出;帳號狀態還沒讀到也不出
-    const show = new Function("hasToken", "free", "acct", `${line(/^const acctNoCard = .*$/m)}\nconst balFreeNow = () => free;\nreturn !!(${rowM ? rowM[1] : "null"});`);
-    ok("② 那一列:已綁卡且領過 → 出(0 也出);沒綁卡(has_card false,或舊 api 沒 has_card 但 NO_CARD)→ 不出;帳號狀態未讀到 → 不出;沒領過 / 沒登入 → 不出",
-      show(true, "12", { has_card: true }) === true && show(true, "0", { has_card: true }) === true && show(true, "12", { can_run: true }) === true
-      && show(true, "12", { has_card: false }) === false && show(true, "12", { reason: "NO_CARD" }) === false && show(true, "12", null) === false
-      && show(true, null, { has_card: true }) === false && show(false, "12", { has_card: true }) === false);
-    ok("② 登出、登入、換帳號把額度跟餘額一起清掉", (app.match(/balFree = null; (?:hasToken = false; )?acct = null; balLast = null;/g) || []).length === 3);
+    ok("② 帳號列之後直接接 Blave 餘額列", /id\.append\(who, hint\);\n    if \(hasToken\) \{\n      const n = balNow\(\)/.test(pp));
 
     // ③ 用完的卡
     const kind = new Function("return (" + fn("acctCardKind") + ")")();
@@ -108,13 +89,13 @@ const line = (re) => { const m = app.match(re); if (!m) throw new Error("找不�
       /acctBuiltText\(RP\.list\.length\) \+ acctFreeUpText\("pre"\) : t\(s\.reason === "NO_CREDIT" \? "acct\.noCredit" : "acct\.noCard"\), sub: acctSub\(s\), \.\.\.acctAction\(s, "pre"\)/.test(app)
       && /acctFreeUpText\("turn"\) : t\("fault\.needCard"\), sub: acctSub\(s\), \.\.\.acctAction\(s, "turn"\), second: resendSecond\(\)/.test(app));
     // 字串:zh / en 都有、zh 逐字
-    const KEYS = ["cn.h.free", "cn.blave.descFree", "plan.free", "acct.freeUpNoNum", "fault.freeUpNoNum"];
-    ok("字串:五個 key zh / en 都有;帶數字的 acct.freeUp / fault.freeUp 已拿掉", KEYS.every((k) => zh[k] && en[k]) && ["acct.freeUp", "fault.freeUp"].every((k) => !(k in zh) && !(k in en)));
+    const KEYS = ["cn.h.free", "cn.blave.descFree", "acct.freeUpNoNum", "fault.freeUpNoNum"];
+    ok("字串:四個 key zh / en 都有;帶數字的 acct.freeUp / fault.freeUp 已拿掉", KEYS.every((k) => zh[k] && en[k]) && ["acct.freeUp", "fault.freeUp"].every((k) => !(k in zh) && !(k in en)));
     ok("字串:zh 逐字(登入送的額度事先不預告、不寫夠跑幾輪;402 那句「沒有跑完」——進行中的請求放行、下一筆才擋)",
-      zh["cn.h.free"] === "先用 Blave AI 開始" && zh["cn.blave.descFree"] === "登入就能直接開始用" && zh["plan.free"] === "AI 額度"
+      zh["cn.h.free"] === "先用 Blave AI 開始" && zh["cn.blave.descFree"] === "登入就能直接開始用"
       && zh["acct.freeUpNoNum"] === "AI 額度用完了。" && zh["fault.freeUpNoNum"] === "AI 額度用完了，這一輪沒有跑完。"
       && KEYS.every((k) => !/夠跑|回測|幾輪/.test(zh[k]) && !/enough|backtest|\d+ turns/.test(en[k])));
-    ok("字串:事先不預告——五句都不帶數字、{q} 或 TWD", KEYS.every((k) => ![zh[k], en[k]].some((x) => /\d|\{q\}|TWD/.test(x))));
+    ok("字串:事先不預告——四句都不帶數字、{q} 或 TWD", KEYS.every((k) => ![zh[k], en[k]].some((x) => /\d|\{q\}|TWD/.test(x))));
     console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
   })().catch((e) => { console.log("FAIL  " + (e && e.stack)); process.exit(1); });
 }

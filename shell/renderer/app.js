@@ -419,7 +419,7 @@ async function acctSignOut() {
   if (!hasToken || oauthPending || planLoginBusy || acctOutBusy) return;
   acctOutBusy = true;
   const r = await window.blave.signOutBlave().finally(() => { acctOutBusy = false; });
-  balFree = null; hasToken = false; acct = null; balLast = null; planErr = null; planBusy = false;
+  hasToken = false; acct = null; balLast = null; planErr = null; planBusy = false;
   if (typeof wdPaint === "function") wdPaint();   // 歡迎頁的資料清單退回沒登入那一版
   MP.freeOnly = false; if (mpFreeSync()) mpPaint();   // 綁卡前額度的鎖跟著帳號走:登出才清(讀不到狀態不清)
   RPC_CACHE.clear();   // 上一個帳號的雲端報告不能在下一個帳號點同名策略時先畫出來
@@ -1391,7 +1391,7 @@ $("ta").addEventListener("input", autosize);
    換 model 時 effort 能留就留,留不住就落回該 model 的預設——面板不自動關,軌的格數與
    選中格當場跟著變,看得到。
    選擇按引擎各記一組(model + 每個 model 各自的 effort),存本機、跨重啟保留。 */
-const MP = { kind: null, models: [], prefs: {}, model: null, freeOnly: false, displaced: null };
+const MP = { kind: null, models: [], prefs: {}, model: null, freeOnly: false, displaced: null, lockRow: null };
 
 function mpLevel(lv) { const k = "lv." + lv; const v = t(k); return v === k ? lv.charAt(0).toUpperCase() + lv.slice(1) : v; }
 function mpCur() { return MP.models.find((m) => m.id === MP.model) || null; }
@@ -1484,6 +1484,15 @@ async function mpInit(kind) {
 // 選擇器就一直藏著。每輪收尾(成功失敗都算,失敗那輪也可能已寫出)再讀一次,讀到就長出來。
 function mpTurnEnd() { if (MP.kind === "codex" && !MP.models.length) mpInit("codex"); }
 
+/* 鎖住型號的原因(綁卡前只能用 free_credit 的型號):不換型號的人不必看到,點了(或在鎖住的列按 Enter / Space、方向鍵越過它)
+   才在**那一列右邊**出短句(同「預設」的小字):寫在清單下會把往上開的面板撐高、整排型號上移,游標下就換成別的型號。
+   同時只有最後那一列帶;關掉選單清掉。螢幕閱讀器:#mp-lock-note(sr-only)一直有完整那句、鎖住列 aria-describedby 指它,點的當下再 srSay */
+function mpLockRowPaint() {
+  $("mp-models").querySelectorAll(".mp-lockrow").forEach((x) => x.remove());
+  const b = MP.lockRow && [...$("mp-models").querySelectorAll('[role="radio"]')].find((r) => r.dataset.id === MP.lockRow);
+  if (b) { const s = document.createElement("span"); s.className = "mp-def mp-lockrow"; s.textContent = t("mp.lockedRow"); b.appendChild(s); }
+}
+function mpLockSay(id) { const first = !MP.lockRow; MP.lockRow = id; mpLockRowPaint(); if (first) srSay(t("mp.locked")); }
 function mpPaint() {
   const m = mpCur(); if (!m) return;
   const eff = mpEffort();
@@ -1499,10 +1508,11 @@ function mpPaint() {
     b.type = "button"; b.className = "mp-row"; b.setAttribute("role", "radio");
     const on = x.id === MP.model;
     b.setAttribute("aria-checked", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
-    const nm = document.createElement("span"); nm.textContent = x.name; b.appendChild(nm);
+    b.dataset.id = x.id;
+    const nm = document.createElement("span"); nm.textContent = x.name; nm.title = x.name; b.appendChild(nm);
     const locked = mpLocked(x.id);
     if (locked) {
-      // 原因只講一次:清單下面那行(#mp-lock-note),列上只留名字
+      // 列上平常只留名字;點過才在這一列右邊出短句(mpLockRowPaint)
       b.classList.add("is-locked"); b.setAttribute("aria-disabled", "true"); b.setAttribute("aria-describedby", "mp-lock-note");
     } else if (((MP.prefs[MP.kind] || {}).unavailable || []).includes(x.id)) {
       b.classList.add("is-na");
@@ -1511,14 +1521,14 @@ function mpPaint() {
     if (x.id === MP.defaultModel) { const d = document.createElement("span"); d.className = "mp-def"; d.textContent = t("mp.default"); b.appendChild(d); }
     // 鎖住的列:方向鍵跳過它,走到這裡的只有滑鼠點與停在它上面按 Enter / Space,都算一次點擊
     b.addEventListener("click", (e) => {
-      if (locked) { trackFeature("mp_locked_click"); return; }
+      if (locked) { trackFeature("mp_locked_click"); MP.lockRow = null; mpLockSay(x.id); return; }   // 點了一律念
       mpPickModel(x.id, e.detail > 0);   // detail > 0 = 真的滑鼠點;鍵盤的 Enter / Space 是 0
     });
     box.appendChild(b);
   });
-
-  const lockNote = $("mp-lock-note"), anyLocked = MP.models.some((x) => mpLocked(x.id));
-  lockNote.textContent = anyLocked ? t("mp.locked") : ""; lockNote.hidden = !anyLocked;
+  mpLockRowPaint();
+  const anyLocked = MP.models.some((x) => mpLocked(x.id));
+  $("mp-lock-note").textContent = anyLocked ? t("mp.locked") : "";
 
   const rail = $("mp-rail"); rail.textContent = "";
   rail.setAttribute("aria-label", t("mp.effort"));
@@ -1587,6 +1597,7 @@ function mpPickEffort(lv) {
 /* 選了立即生效,面板**不自動關**(要讓人看到軌變了)。關閉 = Esc / 點面板外 / 再按
    觸發鈕,焦點一律回觸發鈕。 */
 function mpOpen(viaMouse) {
+  MP.lockRow = null; mpLockRowPaint();   // 每次打開都從「不說原因」開始
   if (cur === "blave" && hasToken) balLoad();   // 打開選單時重讀餘額(主行程 10 秒內用上一次的答案)
   $("mp-panel").hidden = false; $("mp").classList.add("is-open");
   $("mp-trigger").setAttribute("aria-expanded", "true");
@@ -1597,6 +1608,7 @@ function mpOpen(viaMouse) {
 function mpClose(refocus) {
   if ($("mp-panel").hidden) return;
   $("mp-panel").hidden = true; $("mp").classList.remove("is-open");
+  MP.lockRow = null; mpLockRowPaint();
   $("mp-trigger").setAttribute("aria-expanded", "false");
   if (refocus) $("mp-trigger").focus();
 }
@@ -1623,11 +1635,14 @@ $("mp-panel").addEventListener("keydown", (e) => {
   const d = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key]; if (!d) return;
   e.preventDefault();
   const items = [...group.querySelectorAll('[role="radio"]')];
-  let i = items.indexOf(e.target);
+  let i = items.indexOf(e.target), skipped = null;
   for (let n = 0; n < items.length; n++) {   // 跳過鎖住的列(aria-disabled);讀屏照樣讀得到它們
     i = (i + d + items.length) % items.length;
     if (items[i].getAttribute("aria-disabled") !== "true") { items[i].click(); break; }
+    if (!skipped) skipped = items[i].dataset.id;
   }
+  // 鍵盤走不到鎖住的列:方向鍵越過它就等於想換過去,跟點它一樣在越過的第一列出原因(這次打開只念一次;不記 mp_locked_click,那是點擊)
+  if (skipped && group.id === "mp-models") mpLockSay(skipped);
 });
 
 
@@ -3636,11 +3651,10 @@ let acct = null, acctCard = null, acctAt = 0, acctRetry = 0;
    整數、千分位、四捨五入——跟網頁同一個算法(Intl.NumberFormat 的預設),同一個人在兩邊要看到同一個數字。一律 TWD。
    回 "1,234" 或 null(讀不到:非 200、舊登入、api 還沒部署……一律畫「—」/ 只出規則那半句,不把讀不到畫成 0)。
    什麼時候讀:打開「帳號與方案」、打開模型選單(引擎是 Blave AI)、Blave AI 的回合結束、登入回來。不輪詢 */
-let balLast = null, balFree = null, balSeq = 0;   // balFree:綁卡前的 AI 額度剩多少(領過才有;沒領過 null → 設定頁不出那一列)
+let balLast = null, balSeq = 0;
 function balNum(v) { return typeof v === "number" && isFinite(v) ? (Math.round(v) || 0).toLocaleString("en-US") : null; }
 // 還在讀沿用上一個數字,讀到才換;登入 / 登出 / 換帳號由呼叫端把 balLast 清掉
 function balNow() { return hasToken ? balLast : null; }
-function balFreeNow() { return hasToken ? balFree : null; }
 async function balLoad() {
   if (!hasToken) { balLast = null; return; }
   const seq = ++balSeq;
@@ -3648,7 +3662,6 @@ async function balLoad() {
   try { r = await window.blave.balance(); } catch (_) { r = null; }
   if (!hasToken || seq !== balSeq) return;   // 在途時登出了,或後面又讀了一次:這一筆不算
   balLast = r ? balNum(r.balance) : null;
-  balFree = r ? balNum(r.free) : null;
   if (typeof mpBillPaint === "function" && $("mp-bill")) mpBillPaint();
   if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint();
 }
@@ -3988,9 +4001,6 @@ function planPaint() {
     const hint = el("p", "cn-hint"); hint.id = "acct-hint"; hint.hidden = !HINT;
     hintFill(hint);
     id.append(who, hint);
-    // 綁卡前的 AI 額度(0.1.22;spec desktop-precard-credit §5.2):領過才有這一列(沒領過 api 回 null);用完也畫 0,要綁卡的事由卡片講。
-    // 沒綁卡的人不出:這筆額度事先不預告;帳號狀態還沒讀到也不出,免得閃一下
-    if (hasToken && balFreeNow() !== null && acct && !acctNoCard(acct)) { const row = el("div", "plan-bal"); row.append(el("span", "l", t("plan.free")), el("span", "v", balFreeNow() + " TWD")); id.append(row); }
     if (hasToken) {
       const n = balNow(), row = el("div", "plan-bal"), val = el("span", "v" + (n ? "" : " na"), n ? n + " TWD" : "—");
       if (!n) { val.title = t("plan.balNa"); val.setAttribute("aria-label", t("plan.balNa")); }
@@ -4109,7 +4119,7 @@ async function planLogin() {
   setHint(null);                             // 上一則(例如離線登出「還要去補撤」)講的是上一次的事,不該活過這次登入
   planLoginBusy = oauthPending = true; planErr = null; planPaint(); waitChanged();
   trackFeature("login_click");
-  try { await window.blave.startOAuth(LANG); hasToken = true; balFree = null; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); acctPaintAcct(); await acctCheck(); balLoad(); }
+  try { await window.blave.startOAuth(LANG); hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); acctPaintAcct(); await acctCheck(); balLoad(); }
   // 取消或失敗:留在原地,不報錯
   catch (_) { planErr = null; }
   planLoginBusy = oauthPending = planLoginOut = false; planPaint(); waitChanged();
@@ -4230,7 +4240,7 @@ async function planRelogin() {
   if (oauthPending || planLoginBusy) return;
   oauthPending = true; waitChanged();
   // 可能換了帳號:上一個帳號的數字不能留到花錢確認框
-  try { await window.blave.startOAuth(LANG); planErr = null; hasToken = true; balFree = null; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); await acctCheck(); balLoad(); }
+  try { await window.blave.startOAuth(LANG); planErr = null; hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); await acctCheck(); balLoad(); }
   // 取消或失敗:那句話留著,鈕還在
   catch (_) { /* noop */ }
   oauthPending = false; waitChanged();

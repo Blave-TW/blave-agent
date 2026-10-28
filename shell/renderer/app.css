@@ -579,7 +579,11 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .mp-row:focus-visible { outline-offset: -2px; }
 /* 選中 = 純加粗(canon › Active),不加勾勾、不填色 */
 .mp-row[aria-checked="true"] { color: var(--ink); font-weight: 600; }
-.mp-def { font-size: 12px; font-weight: 400; color: var(--ink-3); }
+.mp-def { font-size: 12px; font-weight: 400; color: var(--ink-3); white-space: nowrap; }
+/* 最窄的聊天欄(面板 ~248px、Windows 的 Segoe UI 更寬)放不下「名字＋右邊小字」時,截的是型號名(title 有全名),不折行:
+   折行會把那一列撐高、往上開的面板整排上移,游標下就換成別的型號 */
+.mp-row > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-row > .mp-def { flex: none; }
 .mp-div { height: 1px; margin: var(--space-6) 0; background: var(--border-hairline); }
 .mp-rail { display: flex; margin: 0 10px; }
 /* 內距 4 不是 8:聊天欄最窄時軌只有約 236px,五格(含 Extra High)用 8 會超出去,
@@ -620,7 +624,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 /* 這個帳號用不了的 model:名字退一階灰、旁邊標一句,但**不鎖**——訂閱升級之後就能用,
    鎖死的話用戶得去刪檔。成功跑過一輪標記就會自己消失。 */
 .mp-row.is-na { color: var(--ink-3); }
-/* 綁卡前額度用不了的型號:照列、選不了(app.js mpLocked);右邊小字講怎麼解開 */
+/* 綁卡前額度用不了的型號:照列、選不了(app.js mpLocked);點了才在那一列右邊出短句(mpLockRowPaint) */
 .mp-row.is-locked { color: var(--ink-3); cursor: not-allowed; }
 .mp-row.is-locked:hover { background: none; }   /* canon › Disabled:無 hover */
 

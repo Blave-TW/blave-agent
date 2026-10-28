@@ -14,7 +14,7 @@ const fn = (name) => { const i = app.indexOf("function " + name + "("); if (i < 
 // 畫面那一半:真的 balLoad / balNow / balNum,window.blave.balance 接到假的主行程
 function screen(host) {
   const painted = [], els = { "mp-bill": {}, "set-scrim": { hidden: false }, "set-plan": { hidden: false } };
-  const M = new Function("window", "$", "mpBillPaint", "planPaint", `let hasToken = true, balLast = null, balFree = null, balSeq = 0;
+  const M = new Function("window", "$", "mpBillPaint", "planPaint", `let hasToken = true, balLast = null, balSeq = 0;
     ${fn("balNum")}\n${fn("balNow")}\nasync ${fn("balLoad").replace(/^async /, "")}
     return { balNum, balNow, balLoad, token: (v) => { hasToken = v; }, clear: () => { balLast = null; } };`)(
     { blave: { balance: () => host.read() } }, (id) => els[id], () => painted.push("menu"), () => painted.push("plan"));

@@ -561,6 +561,9 @@ msgstr "Switch AI"
 msgid "mp.locked"
 msgstr "Add a card or top up to use other models"
 
+msgid "mp.lockedRow"
+msgstr "Add a card or top up"
+
 msgid "mp.na"
 msgstr "Not on your plan"
 
@@ -1053,9 +1056,6 @@ msgstr "Blave balance"
 
 msgid "plan.balNa"
 msgstr "Balance unavailable right now"
-
-msgid "plan.free"
-msgstr "AI credit"
 
 msgid "plan.month"
 msgstr "{p} TWD / month"
