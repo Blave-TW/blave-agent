@@ -372,9 +372,9 @@ def _park_failed(venue, path, key, row, sym, lots, seq, err):
     guard.audit('order_unfilled_park_failed', venue=venue, symbol=sym, contract=key, lots=lots,
                 seq_no=seq, error=err)
     name, app = (('群益', '群益下單軟體') if venue == venue_traits.CAPITAL else ('統一', '統一 app'))
-    msg = (f"{name} {sym} {'買' if lots > 0 else '賣'} {abs(lots):g} 口已送出(序號 {seq or '?'}),"
-           f"沒收到成交回報,紀錄也寫不進去({err}):可能已成交,已停止下單。請到{app}核對:"
-           f"若已成交,先在{app}把它平掉再按恢復下單")
+    msg = (f"已停止下單。{name} {sym} {'買' if lots > 0 else '賣'} {abs(lots):g} 口已送出，沒收到成交回報。"
+           f"等待區紀錄也寫不進去，這筆可能已成交。序號 {seq or '?'}。"
+           f"請先到{app}核對 {sym} 的部位。若已成交，先平掉再按恢復下單。")
     logging.error(f"[reconciler/{venue}] {key}: park not saved ({err}) — kept in this process, HALT")
     portfolio._record_order_error(sym, venue, msg)
     guard.trip_halt(msg, 'reconciler')
@@ -426,8 +426,8 @@ def _capital_pending():
             _capital_pending_unreadable_noted = True
             from lib.portfolio import _record_order_error
             _record_order_error('TXF/MXF/TMF', venue_traits.CAPITAL,
-                                f"群益未回報成交的紀錄檔讀不出來({e}):不確定有沒有送出未回報的單,"
-                                f"先不下群益單;修好或移除 {CAPITAL_PENDING_PATH} 後恢復")
+                                "群益的等待區紀錄檔讀不出來，先不下群益單。"
+                                "不確定有沒有送出後還沒回報的單。請修好或移除等待區紀錄檔。")
         return None
 
 
@@ -479,9 +479,9 @@ def _capital_cleared_bump(canon, row):
     _capital_cleared_write(d)
     from lib import portfolio
     lots = float(row.get('lots') or 0)
-    msg = (f"群益 {canon} 連續 {n} 次送出後沒收到成交回報、帳戶也沒有變(序號 "
-           f"{', '.join(str(x or '?') for x in seqs[-CLEARED_MAX:])}):可能是券商端退單(例如保證金不足),"
-           f"已停止下單。請到群益下單軟體看這幾筆委託的狀態,處理好再按恢復下單")
+    msg = (f"已停止下單。群益 {canon} 連續 {n} 次送出都沒成交。帳戶也沒有變。"
+           f"可能是券商端退單，例如保證金不足。最後一筆序號 {seqs[-1] if seqs else '?'}。"
+           f"請到群益下單軟體看這幾筆委託的狀態。處理好再按恢復下單。")
     guard.audit('unfilled_order_cleared_repeatedly', venue=venue_traits.CAPITAL, symbol=canon, count=n,
                 lots=lots, seqs=seqs[-CLEARED_MAX:])
     logging.error(f"[reconciler/capital] {canon}: {n} unfilled sends cleared in a row — HALT")
@@ -572,9 +572,9 @@ def _capital_claim_pending(started, raw):
         return
     from lib import portfolio
     try:
-        booked = portfolio._booked_park_ids('late_fill_park_id')
+        booked, booked_read = portfolio._booked_park_ids('late_fill_park_id'), True
     except OSError:
-        booked = set()  # unreadable book: a matching row's booking below raises and HALTs
+        booked, booked_read = set(), False  # a matching row's booking below raises and HALTs
     for canon, row in list(pending.items()):
         spec = _CAPITAL_FUTURES_SPEC.get(canon)
         if not spec:
@@ -642,15 +642,16 @@ def _capital_claim_pending(started, raw):
                 continue
             seqs = ', '.join(str(l.get('seq_no') or '?') for l in row.get('legs') or [])
             moved_txt = '、'.join(f"{c} {q:+g} 口" for c, q in sorted(moved.items()))
-            msg = (f"群益 {canon} {'買' if lots > 0 else '賣'} {abs(lots):g} 口送出後沒收到成交回報"
-                   f"(序號 {seqs}),之後 {len(reads)} 次帳戶讀數都對不上(送單後變動:{moved_txt}):"
-                   f"已停止下單。請到群益下單軟體核對:若顯示這口已成交,先在群益把它平掉再按恢復下單"
-                   f"——Blave 不會把它算成策略部位")
+            msg = (f"已停止下單。群益 {canon} {'買' if lots > 0 else '賣'} {abs(lots):g} 口送出後沒收到成交回報。"
+                   f"之後 {len(reads)} 次帳戶讀數都對不上。送單後變動：{moved_txt}。序號 {seqs}。"
+                   f"請到群益下單軟體核對這口是否成交。已成交的話，先平掉再按恢復下單。"
+                   f"Blave 不會把它算成策略部位。")
             portfolio._record_order_error(canon, venue_traits.CAPITAL, msg)
             guard.trip_halt(msg, 'reconciler')
             row['halted'] = True
             _save_claimed(pending, venue_traits.CAPITAL, CAPITAL_PENDING_PATH)
-    _save_claimed(pending, venue_traits.CAPITAL, CAPITAL_PENDING_PATH, end_of_round=True)
+    if _save_claimed(pending, venue_traits.CAPITAL, CAPITAL_PENDING_PATH, end_of_round=True) and booked_read:
+        _claim_saved.add(venue_traits.CAPITAL)
 
 
 def _hand_wired_routed():
@@ -871,15 +872,23 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     if got > lots + 1e-9:
         # more than was sent can only be a misread report (a column that moved, a replayed row
         # counted twice): booking it would size the book off a number the account never held
+        # Parked as unconfirmed ('sent', 0 filled) so the account snapshot claims or clears it:
+        # without a park the lots that did fill read as a month the book does not hold, and
+        # after the user resumes the next diff buys them again.
         from lib.portfolio import _record_order_error
-        msg = (f"群益回報成交 {got:g} 口,比送出的 {lots} 口還多(序號 {result.get('seq_no') or '?'}):"
-               f"Blave 沒有記這筆,已停止下單。請到群益下單軟體核對 {symbol} 的實際部位,處理好再按恢復下單")
+        msg = (f"已停止下單。群益回報 {symbol} 成交 {got:g} 口。比送出的 {lots} 口多。"
+               f"Blave 沒有記這筆，先放進等待區。序號 {result.get('seq_no') or '?'}。"
+               f"請先在群益 app 核對 {symbol} 的部位。多出的口數先平掉，再按恢復下單。")
         guard.audit('order_overfill_refused', venue=venue_traits.CAPITAL, symbol=sym, lots=lots, fill_qty=got,
                     seq_no=result.get('seq_no'))
         logging.error(f"[reconciler/capital] {sym}: {got:g} lots reported filled for a {lots}-lot order — "
-                      f"not booked, HALT")
+                      f"not booked, parked as unconfirmed, HALT")
         _record_order_error(symbol, venue_traits.CAPITAL, msg)
-        guard.trip_halt(msg, 'reconciler')
+        try:
+            guard.trip_halt(msg, 'reconciler')
+        finally:
+            _capital_park_unfilled(sym, dict(result, fill_qty=0.0), lots if action == 'buy' else -lots,
+                                   nets_before, costs_before)
         return False
     if got > 0:
         _capital_cleared_reset(sym)
@@ -1108,8 +1117,9 @@ def _halt_unknown_booked(sym, pid, row):
 CLAIM_SAVE_FAILS_MAX = 3
 _claim_save_fails = {}
 # per venue, this process: park ids booked whose row the park file still holds (the save
-# that drops them was refused), and whether any claim save has gone through — after one
-# has, a row still on file that is not in the set was not booked (_halt_unknown_booked)
+# that drops them was refused), and whether a claim round has read the booked ids and saved
+# — after one has, a row still on file that is not in the set was not booked
+# (_halt_unknown_booked)
 _booked_unsaved = {}
 _claim_saved = set()
 
@@ -1129,8 +1139,13 @@ def _save_claimed(pending, venue, path=None, end_of_round=False, booked_id=None)
             _save_pending_sent(pending, path)
         if end_of_round:
             _claim_save_fails.pop(venue, None)
-        _booked_unsaved.pop(venue, None)  # the file now holds no booked row
-        _claim_saved.add(venue)
+        # the file is `pending` now: a booked id is still on file only if its row still is
+        on_file = {_park_id(k, r) for k, r in pending.items() if isinstance(r, dict)}
+        left = _booked_unsaved.get(venue, set()) & on_file
+        if left:
+            _booked_unsaved[venue] = left
+        else:
+            _booked_unsaved.pop(venue, None)
         return True
     except OSError as e:
         if booked_id is not None:
@@ -1142,10 +1157,14 @@ def _save_claimed(pending, venue, path=None, end_of_round=False, booked_id=None)
                         f"the row is settled again next round")
         if end_of_round and n == CLAIM_SAVE_FAILS_MAX:
             from lib import portfolio
+            logging.error(f"[reconciler/{venue}] {path or PENDING_SENT_PATH}: {n} claim saves refused in a row")
+            # what waits differs: 統一 closes still go while a contract is parked, 群益 sends
+            # nothing for a parked root (sNewClose=2 can open the other side)
+            held = ("還在等待區的商品暫停進場，平倉照常。" if venue == venue_traits.PRESIDENT
+                    else "還在等待區的商品暫停下單，平倉也先等。")
             portfolio._record_order_error('TXF/MXF/TMF', venue,
-                                          f"等待成交確認的紀錄檔連續 {n} 次存不進去({type(e).__name__}):"
-                                          f"還在等待區的商品暫停下單。請檢查 {path or PENDING_SENT_PATH} "
-                                          f"是否被其他程式(例如防毒)鎖住")
+                                          f"等待成交確認的紀錄檔連續 {n} 次存不進去。{held}"
+                                          f"請檢查紀錄檔是否被防毒等程式鎖住。")
         return False
 
 
@@ -1190,9 +1209,9 @@ def _president_claim_pending(started):
     from lib import account_president, portfolio
     nets = _president_nets()
     try:
-        booked = portfolio._booked_park_ids('late_fill_park_id')
+        booked, booked_read = portfolio._booked_park_ids('late_fill_park_id'), True
     except OSError:
-        booked = set()  # unreadable book: a matching row's booking below raises and HALTs
+        booked, booked_read = set(), False  # a matching row's booking below raises and HALTs
     for pid, row in list(pending.items()):
         root, lots, expected = row['root'], float(row['lots']), float(row['net_expected'])
         net = float(nets.get(pid, 0))
@@ -1253,7 +1272,10 @@ def _president_claim_pending(started):
             guard.trip_halt(msg, 'reconciler')
             row['halted'] = True
             _save_claimed(pending, venue_traits.PRESIDENT)
-    _save_claimed(pending, venue_traits.PRESIDENT, end_of_round=True)
+    if _save_claimed(pending, venue_traits.PRESIDENT, end_of_round=True) and booked_read:
+        # every booked row on file was recognised and dropped this round: what is still
+        # on file now is unbooked, apart from _booked_unsaved (see _halt_unknown_booked)
+        _claim_saved.add(venue_traits.PRESIDENT)
 
 
 def _president_get_positions(claim=False):

@@ -732,7 +732,9 @@ round tries to claim them, with months past settlement left out of the compariso
   would otherwise loop send → clear → send unseen;
 - anything else → three reads, then order_errors + HALT.
 
-A fill report of more lots than were sent is not booked: order_errors + HALT (`order_overfill_refused`).
+A fill report of more lots than were sent is not booked: the order is parked as unconfirmed (0 filled) so the
+snapshot claims what really filled, plus order_errors + HALT (`order_overfill_refused`); the message asks the
+user to check the 群益 app and close any extra lots before resuming.
 
 While a root is parked, every order for that root waits (closes too: `sNewClose=2` can open the other
 side). If the park file cannot be written or read right after the broker accepted the order, the

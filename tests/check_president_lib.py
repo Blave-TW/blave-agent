@@ -1453,8 +1453,10 @@ try:
         failing_round(PermissionError)
         seen.append(len([x for x in errors() if "連續" in x.get("error", "") and "存不進去" in x.get("error", "")]))
     reconciler._save_pending_sent = real_save
-    check(seen == [0] * (reconciler.CLAIM_SAVE_FAILS_MAX - 1) + [1] and book_qty() == q0 + 1,
-          "park file refused three rounds in a row: one order_errors row on the third, booked once", seen)
+    check(seen == [0] * (reconciler.CLAIM_SAVE_FAILS_MAX - 1) + [1] and book_qty() == q0 + 1
+          and any("平倉照常" in x.get("error", "") for x in errors() if "存不進去" in x.get("error", "")),
+          "park file refused three rounds in a row: one order_errors row on the third (統一: closes go on), "
+          "booked once", seen)
     gp()
     check(pending() == {} and book_qty() == q0 + 1, "…the file takes it again: row dropped by its id")
     # …and that successful save reset the count: three more refused rounds give one more row
@@ -1532,6 +1534,50 @@ try:
     close_onto_row()
     check(guard.halted() and len(audits("order_unfilled_park_unverified")) == n_unverified + 1,
           "…after a restart (no claim save yet in this process): HALT")
+    guard.clear_halt("test")
+    os.remove(reconciler.PENDING_SENT_PATH)
+
+    # 12. a booked-but-unsaved id stays known after a later save that went through while the row
+    #     itself is still on file (the booked ids were unreadable that round, so it was not dropped)
+    real_bpi = _pf._booked_park_ids
+
+    def bpi_locked(*a, **k):
+        raise PermissionError(13, "orders.jsonl locked (fake)")
+
+    park_one()
+    reconciler._save_pending_sent = locked
+    failing_round(PermissionError)  # booked, the drop refused
+    reconciler._save_pending_sent = real_save
+    n = acct[0]
+    _pf._booked_park_ids = bpi_locked
+    snapshot(tmf(n + 2))  # explains neither: the row stays (reads), the round's save goes through
+    gp()
+    _pf._booked_park_ids = real_bpi
+    reconciler._claim_saved.add("president")
+    n_unverified = len(audits("order_unfilled_park_unverified"))
+    close_onto_row()
+    check(guard.halted() and len(audits("order_unfilled_park_unverified")) == n_unverified + 1,
+          "booked row still on file after a save that went through: still known as booked → HALT")
+    guard.clear_halt("test")
+    os.remove(reconciler.PENDING_SENT_PATH)
+    acct[0] = n + 2
+
+    # 13. a claim round that could not read the booked ids does not vouch for the file
+    reconciler._claim_saved.clear()
+    reconciler._booked_unsaved.clear()
+    n = acct[0]
+    FILL["entry"] = "sent"
+    snapshot(tmf(n))
+    reconciler.place_order("TMF", 1, exchange="president")
+    FILL.clear()
+    snapshot(tmf(n))
+    _pf._booked_park_ids = bpi_locked
+    gp()  # unchanged read, the save goes through, but the booked ids were not read
+    _pf._booked_park_ids = real_bpi
+    n_unverified = len(audits("order_unfilled_park_unverified"))
+    close_onto_row()
+    check(guard.halted() and len(audits("order_unfilled_park_unverified")) == n_unverified + 1,
+          "only a round that read the booked ids counts as a claim save: still HALT")
     guard.clear_halt("test")
     os.remove(reconciler.PENDING_SENT_PATH)
     guard.clear_halt("test")

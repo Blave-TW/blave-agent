@@ -609,8 +609,10 @@ for _ in range(reconciler.CLAIM_SAVE_FAILS_MAX):
     rows_ = json.load(open("manager/order_errors.json", encoding="utf-8")) if os.path.exists("manager/order_errors.json") else []
     seen.append(len([x for x in rows_ if "連續" in x.get("error", "") and "存不進去" in x.get("error", "")]))
 reconciler._save_pending_sent = real_save
-check(seen == [0] * (reconciler.CLAIM_SAVE_FAILS_MAX - 1) + [1] and qty() == 1.0,
-      "park file refused three rounds in a row: one order_errors row on the third, booked once", seen)
+check(seen == [0] * (reconciler.CLAIM_SAVE_FAILS_MAX - 1) + [1] and qty() == 1.0
+      and any("平倉也先等" in x.get("error", "") for x in rows_ if "存不進去" in x.get("error", "")),
+      "park file refused three rounds in a row: one order_errors row on the third (群益: closes wait too), "
+      "booked once", seen)
 round_read()
 check(qty() == 1.0 and pending() == {}, "…the file takes it again: row dropped by its id", qty())
 
@@ -685,10 +687,49 @@ errs = []
 portfolio._record_order_error = lambda sym, venue, err, extra=None, repeat=False: errs.append((sym, venue, err))
 r = reconciler._capital_place_order("TMF", 1.0, SPEC)
 portfolio._record_order_error = real_err
-check(r is False and guard.halted() and len(errs) == 1 and "比送出的" in errs[0][2] and pending() == {}
-      and audits("order_overfill_refused"),
-      "3 lots reported for a 1-lot order: nothing returned to book, one order_errors row, HALT", (r, errs))
+p = pending().get("TMF") or {}
+check(r is False and guard.halted() and len(errs) == 1 and "比送出的" in errs[0][2] and "多出的口數先平掉" in errs[0][2]
+      and p.get("lots") == 1.0 and p.get("expected") == {} and audits("order_overfill_refused"),
+      "3 lots reported for a 1-lot order: nothing booked, parked as +1 unconfirmed, one order_errors row, HALT",
+      (r, errs, p))
+# the account shows the 1 lot that really filled: the claim books it (also under HALT), and after
+# the user resumes the next diff sees the book at target instead of buying it again
+snap({"TM2611": 1}, capital_vault.last_order_at() + S + 1)
+round_read()
+check(qty() == 1.0 and pending() == {} and audits("late_fill_adopted"),
+      "…the snapshot claims the lot that filled: booked once", (qty(), pending()))
 guard.clear_halt("test")
+os.makedirs("strategies/tmf_capital_oneshot", exist_ok=True)
+json.dump({"symbol": "TMF", "position": 1}, open("strategies/tmf_capital_oneshot/state.json", "w"))
+
+
+def reconcile_round():
+    """One full reconcile round, the daemon's: claim, diff against the book, send, notify."""
+    reconciler._claim_parked = True
+    try:
+        return portfolio.reconcile(get_positions_fn=reconciler.get_positions, place_order_fn=reconciler.place_order,
+                                   threshold=reconciler._symbol_threshold, send_telegram_fn=tg.append)
+    finally:
+        reconciler._claim_parked = False
+
+
+sent.clear()
+broker(SENT)
+snap({"TM2611": 1}, capital_vault.last_order_at() + S + 1)
+reconcile_round()
+check(sent == [], "…after resume the strategy's +1 is already in the book: nothing re-bought", sent)
+
+# ── M12: a 'sent' leg (0 filled) sends no fill notice; its claim announces it later ──
+reset()
+snap({}, time.time())
+broker(SENT)
+reconcile_round()
+check(sent and sent[-1][1] == "buy" and "TMF" in pending()
+      and not any(" 0 lots" in m or " 0 口" in m or "Bought" in m for m in tg),
+      "a 'sent' / 0 leg through reconcile(): parked, no 'Bought TMF 0 lots' notice", tg)
+snap({"TM2611": 1}, capital_vault.last_order_at() + S + 1)
+reconcile_round()
+check(len(tg) == 1 and "晚到" in tg[0], "…the claim's late-fill notice is the only one", tg)
 
 # ── no price for a partial close (the avg cost of what is left says nothing) or after a partial fill ──
 reset()

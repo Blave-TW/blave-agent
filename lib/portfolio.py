@@ -2170,7 +2170,12 @@ def book_late_fill(symbol, venue, contract, lots, price=None, park_id=None):
                                       **({'fill_price': float(price)} if price else {})}],
                             **({'late_fill_park_id': park_id} if park_id is not None else {})},
                            strict=park_id is not None)
-    return late_fill_notice(symbol, lots, reduce_only, price)
+    # the line is written: a notice that fails to build must not read as a booking failure
+    try:
+        return late_fill_notice(symbol, lots, reduce_only, price)
+    except Exception as e:
+        logging.warning(f"[reconcile] late fill notice for {symbol} not built ({type(e).__name__}: {e})")
+        return None
 
 
 # Defaults per machine language for a fill booked after the order call returned without it;

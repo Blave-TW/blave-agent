@@ -256,9 +256,9 @@ def _parked_keys(vid):
     keys = ",".join(sorted(roots)) if roots else "*"
     what = f"{name} {keys}" if roots else f"{name}的期貨部位"
     logging.error(f"[{vid}] {keys}: lots sent with no fill report are parked — left out of close-all")
-    _record_order_error(keys, vid, f"close-all: {what}有送出後還沒收到成交回報的單,這次全部平倉先不平"
-                                   f"(帳本也不動),等對帳確認那筆有沒有成交;確認後再按一次全部平倉,"
-                                   f"或到{app}手動平倉",
+    _record_order_error(keys, vid, f"close-all: {what} 有單還沒收到成交回報。這次全部平倉先不平它，"
+                                   f"帳本也不動。等對帳確認那筆有沒有成交。之後再按一次全部平倉，"
+                                   f"或到{app}手動平倉。",
                         extra={"kind": "order_unconfirmed", "stuck": True, "close_all": True})
     return roots
 
