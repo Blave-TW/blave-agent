@@ -1251,7 +1251,7 @@ msgid "pv.d.noneNoNum"
 msgstr "Each clock hour that uses data costs a server & data fee. Top up and it’s back right away, without waiting for the next hour."
 
 msgid "pv.usage"
-msgstr "Usage & billing"
+msgstr "Plan and Billing"
 
 msgid "pv.d.starting"
 msgstr "Blave data is available right now, before the machine is up. You can close this window."

@@ -764,7 +764,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
         st: all.filter((n) => /^plan-st/.test(n.className || "")).map((n) => n.className + ":" + n.textContent).join(), texts: all.map((n) => n.textContent).join("|") }; };
     PV_P = "1,440"; PV_R = "2";
     const b = paintOf({ data_access: "billed", data_included: false, data_hourly: 2 });
-    ok("billed:狀態「可用」(跟 included 同一個字,計費方式由標題講——設計稽核 005 第 6 條)、說明帶時價(讀 data_hourly,不寫死)、鈕 = 安靜的〔用量與帳務〕+ 描邊的〔啟動方案〕",
+    ok("billed:狀態「可用」(跟 included 同一個字,計費方式由標題講——設計稽核 005 第 6 條)、說明帶時價(讀 data_hourly,不寫死)、鈕 = 安靜的〔方案與付款〕+ 描邊的〔啟動方案〕",
       /pv\.st\.ok/.test(b.st) && !/pv\.st\.billed/.test(b.st) && /^plan-st on/.test(b.st) && b.lead === "pv.d.billed" + JSON.stringify(planVars()) && planVars().r === "2"
       && JSON.stringify(b.acts) === JSON.stringify([["btn-quiet", "pv.usage"], ["btn-out", "plan.start"]]));
     const n = paintOf({ data_access: "none", data_included: false, data_hourly: 2 });

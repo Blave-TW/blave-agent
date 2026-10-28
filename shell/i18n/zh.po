@@ -1259,7 +1259,7 @@ msgid "pv.d.noneNoNum"
 msgstr "每個有用到資料的整點小時收主機與資料費。儲值後馬上恢復，不必等下一個小時。"
 
 msgid "pv.usage"
-msgstr "用量與帳務"
+msgstr "方案與付款"
 
 msgid "pv.d.starting"
 msgstr "Blave 的資料現在就能用，不用等主機開好。可以關掉這個視窗。"

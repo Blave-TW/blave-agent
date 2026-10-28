@@ -1,4 +1,4 @@
-// 沒綁卡(NO_CARD)的預檢卡與 402 卡:綁卡之外多一顆「用加密貨幣轉帳儲值」文字鈕,外開網站用量頁的加密分頁、記 feature_used crypto_topup。
+// 沒綁卡(NO_CARD)的預檢卡與 402 卡:綁卡之外多一顆「用加密貨幣轉帳儲值」文字鈕,外開網站帳戶頁錢包的加密分頁、記 feature_used crypto_topup。
 // 不打 api、不開 Electron。跑法:node tests/check_shell_crypto_topup.js
 const fs = require("fs"), path = require("path");
 const SHELL = path.join(__dirname, "..", "shell");
@@ -23,10 +23,10 @@ const run = (acct, lang) => { const pre = mk(), turn = mk(); P((k) => k, acct, p
   ok("NO_CARD:兩張卡都是「前往綁卡」+「用加密貨幣轉帳儲值」;402 卡的「再送一次」還在",
     pre.label === "acct.addCard" && pre.third && pre.third.label === "acct.cryptoTopup" && turn.label === "acct.addCard" && turn.third && turn.third.label === "acct.cryptoTopup" && turn.second && turn.second.label === "fault.resend", [pre, turn]);
   log.length = 0; pre.third.on();
-  ok("按加密鈕:只記 crypto_topup(不進綁卡漏斗 acct_card_click)、外開 ?from=desktop&pay=crypto#topup",
-    log.join() === "t:crypto_topup,o:https://blave.org/agent/zh/usage?from=desktop&pay=crypto#topup", log);
+  ok("按加密鈕:只記 crypto_topup(不進綁卡漏斗 acct_card_click)、外開帳戶頁錢包的加密分頁",
+    log.join() === "t:crypto_topup,o:https://blave.org/landing/zh/setting?tab=billing&pay=crypto&cp_from_desktop=1#agent-wallet", log);
   log.length = 0; run({ can_run: false, reason: "NO_CARD" }, "en")[1].third.on();
-  ok("網址跟著介面語言", log[1] === "o:https://blave.org/agent/en/usage?from=desktop&pay=crypto#topup", log);
+  ok("網址跟著介面語言", log[1] === "o:https://blave.org/landing/en/setting?tab=billing&pay=crypto&cp_from_desktop=1#agent-wallet", log);
   log.length = 0; pre.on();
   ok("綁卡鈕不變:記 acct_card_click、外開原本的 ?from=desktop#topup", log.join() === "click,o:https://blave.org/agent/zh/usage?from=desktop#topup", log);
 }

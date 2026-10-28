@@ -3668,12 +3668,12 @@ async function balLoad() {
 const creditCards = [];                     // 402 那張(可能不只一張:他連送了兩句)
 const acctVars = (s) => ({ q: s.trial_ai_credit, t: s.trial_days, lo: s.auto_topup_min, a: s.auto_topup_amount, m: s.min_topup });
 const acctUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop#topup";
-/* 沒綁卡的另一條路:加密貨幣轉帳儲值。pay=crypto 讓網站儲值卡停在加密分頁;from=desktop 要留著——
-   網站靠它記「從電腦版來」(回站入帳多接回電腦版那一行、GA from_desktop) */
-const cryptoTopupUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop&pay=crypto#topup";
-// 方案頁(web /agent/<lang>/usage#plan;api 通知連結也指這裡):重新付款、換卡、取消、升級、月繳↔年繳都在那邊
-const planPayUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop#plan";
-const usageUrl = () => "https://blave.org/agent/" + LANG + "/usage?from=desktop";
+/* 沒綁卡的另一條路:加密貨幣轉帳儲值,落在帳戶 › 方案與付款的錢包。pay=crypto 讓儲值區停在加密分頁;
+   cp_from_desktop=1 讓網站記「從電腦版來」(回站入帳多接回電腦版那一行、GA from_desktop) */
+const cryptoTopupUrl = () => "https://blave.org/landing/" + LANG + "/setting?tab=billing&pay=crypto&cp_from_desktop=1#agent-wallet";
+// 帳戶 › 方案與付款的 Agent 方案卡(api 通知連結也指這裡):重新付款、換卡、取消、升級、月繳↔年繳都在那邊
+const planPayUrl = () => "https://blave.org/landing/" + LANG + "/setting?tab=billing#agent-plan";
+const usageUrl = () => "https://blave.org/landing/" + LANG + "/setting?tab=billing#agent";
 // 網站定價頁的 API 卡(api ERR007 的 next_steps.api_plan 同一處):#api 讓手機直接落在 API 卡而不是排第二的 Pro;from=desktop 給定價頁事件分來源
 const apiPlanUrl = () => "https://blave.org/landing/" + LANG + "/pricing?from=desktop#api";
 function planRepay() { trackFeature("plan_repay"); window.blave.openExternal(planPayUrl()); }
