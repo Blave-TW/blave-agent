@@ -149,6 +149,7 @@ class _Events:
         # 13-digit seq are different faults
         self.rows = self.short_rows = self.d_rows = self.d_no_seq = self.d_unfit = 0
         self.d_shapes = set()   # (field count, indexes holding a 13-digit seq) per D row
+        self.solace = None      # last OnSolaceReplyConnection / OnSolaceReplyDisconnect
 
     # SKReplyLib link state (_ISKReplyLibEvents dispid 1/2/3, read from the SKCOM
     # typelib); _ISKOrderLibEvents has no event of these names, so the shared sink
@@ -168,6 +169,15 @@ class _Events:
 
     def OnReplyMessage(self, bstrUserID, bstrMessages):
         return -1  # MUST return -1, registered BEFORE login (else code 2017)
+
+    # manual 4-3-a: from v2.13.48 the reply link reports through these, not OnConnect/OnDisconnect
+    def OnSolaceReplyConnection(self, bstrUserID, nErrorCode):
+        self.solace = f"connect:{nErrorCode}"
+        logging.info(f"capital reply OnSolaceReplyConnection code={nErrorCode}")
+
+    def OnSolaceReplyDisconnect(self, bstrUserID, nErrorCode):
+        self.solace = f"disconnect:{nErrorCode}"
+        logging.warning(f"capital reply OnSolaceReplyDisconnect code={nErrorCode}")
 
     def OnAccount(self, bstrLogInID, bstrAccountData):
         f = bstrAccountData.split(",")
@@ -223,7 +233,7 @@ class _Events:
     def diag(self):
         return (f"rows={self.rows} short={self.short_rows} fill_rows={self.d_rows} "
                 f"fill_rows_without_seq={self.d_no_seq} fill_rows_unfit={self.d_unfit} fill_shapes={sorted(self.d_shapes)} "
-                f"same_thread={self.login_thread == threading.get_ident()}")
+                f"solace={self.solace} same_thread={self.login_thread == threading.get_ident()}")
 
 
 class _Session:

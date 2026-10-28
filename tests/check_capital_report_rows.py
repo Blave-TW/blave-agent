@@ -73,6 +73,11 @@ ev.OnNewData("u", row(50, 47, SEQ, qty="", msg_no="2120000003"))
 check(not ev.fills and ev.d_unfit == 2,
       "TF fill row whose contract column is not a contract, or with no qty: not booked (left for the park)")
 
+ev = oc._Events()
+ev.OnSolaceReplyConnection("u", 0)
+ev.OnSolaceReplyDisconnect("u", 3021)
+check("solace=disconnect:3021" in ev.diag(), "a dropped reply link shows in the 'sent' log")
+
 # full order path on the 2.13.59 layout: the real _Events behind a fake SKCOM
 clk = types.SimpleNamespace(t=0.0)
 oc.time = types.SimpleNamespace(time=lambda: clk.t, sleep=lambda s: setattr(clk, "t", clk.t + s))
