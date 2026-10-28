@@ -731,7 +731,7 @@ Taiwan-broker shape (follows `lib/order_sinopac.py`, not the perp template); all
 - `place_stock_order(env, symbol, action, lots, price=None)` — whole-lot 整股 (sPeriod=0, ROD); `lots` = **張 (1000 shares — fill reports come back in SHARES)**; `price=None` → market, numeric → limit. The broker does NOT pre-check funding on buys — remind the user to fund the settlement account by T+2.
 - `place_odd_lot_order(env, symbol, action, shares, price)` — 盤中零股 (sPeriod=4, full struct), `shares` = raw shares 1–999, LIMIT-only; reports arrive under market type `TC`.
 - All prices/amounts in **TWD**.
-  - Every accepted order returns a 13-digit seq; fill confirmation comes async via `OnNewData` `D` rows deduped on (KeyNo, type, exchange seq) — connect REPLAYS the whole session day and TS rows arrive duplicated.
+  - Every accepted order returns a 13-digit seq; fill confirmation comes async via `OnNewData` `D` rows matched on the seq by VALUE (its column moved between SKCOM 2.13.58 and 2.13.59) and deduped on (seq, type, exchange seq) — connect REPLAYS the whole session day and TS rows arrive duplicated.
   - `status='filled'` carries the **RESOLVED contract** (`TM2608`, never the `TM0000` alias you sent — always reconcile positions/fills on the resolved code) plus exchange-reported `fill_qty`/`avg_fill_price`/`fill_ids`; timeout → `status='sent'` (order ACCEPTED — a resting ROD limit is normal, and it may have filled unseen: query reports, never blindly resubmit).
 - Entry orders pass through `lib/guard` (halt + audit: `order_denied_halt`/`order_sent`/`order_error`/`order_filled`); closes/sells are HALT-blocked too outside the user's explicit close. **No broker attribution — 群益 is the broker itself** (no header/prefix/aff code, unlike every exchange lib).
 
