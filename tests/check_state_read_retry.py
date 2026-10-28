@@ -1011,7 +1011,8 @@ try:
     check("③d index locked: checked before stats.json is written (the backtest writes nothing)",
           isinstance(err, getattr(runner, "VersionIndexUnreadable", ())), (out, err))
     check("③d both call sites run that check before _write_stats",
-          src.count("_index_readable_or_raise(strategy_name)\n            _write_stats(out_dir, stats)") == 2)
+          src.count("_index_readable_or_raise(strategy_name)\n            _keep_exec_test(stats, out_dir, src0)\n"
+                    "            _write_stats(out_dir, stats)") == 2)
 
     # ── ③e runtime capital_connect: an unreadable block is a block, shown as re-enter password ──
     cc_block = cc._paths()["block"]
