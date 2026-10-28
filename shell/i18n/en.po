@@ -1018,6 +1018,27 @@ msgstr "Add a Card"
 msgid "acct.cryptoTopup"
 msgstr "Top Up with Crypto Transfer"
 
+# 登入送的 AI 額度用完、還沒綁卡的預檢卡與 402 卡第二顆(文字鈕,0.1.36;spec free-credit-usedup-local-ai):開連結本機 AI 的 modal。
+# 產品名一律純文字,不放 logo。EN 超過鈕字上限是具名例外(產品名就是這顆鈕要講的事,Wei 核准)
+msgid "acct.useLocal"
+msgstr "Use Claude Code or Codex"
+
+# 從那個 modal 換成本機 AI 之後:402 卡換這句 +〔再送一次〕;{name} = Claude Code | Codex
+msgid "acct.localResend"
+msgstr "Switched to {name}. You can send again."
+
+# 換成本機 AI 之後的預檢卡(沒有鈕);{name} = Claude Code | Codex
+msgid "acct.localReady"
+msgstr "Switched to {name}. Ready to go."
+
+# 連結本機 AI 的 modal 標題下那一行:講誰收錢,不講要不要錢
+msgid "lai.lede"
+msgstr "Runs on your own account. No AI charges from Blave."
+
+# 那個 modal 裡沒裝的那一列(文字鈕):外開官方安裝頁
+msgid "lai.install"
+msgstr "How to install"
+
 msgid "acct.sub"
 msgstr "A first-time card gets {q} TWD of AI credit and Blave data in the desktop app, both for {t} days."
 

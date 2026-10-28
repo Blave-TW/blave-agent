@@ -73,7 +73,7 @@ const line = (re) => { const m = app.match(re); if (!m) throw new Error("找不�
     // 卡片的字:切 acctPaint 出來跑,只看 text
     const cards = [];
     const P = new Function("t", "acct", "acctCard", "creditCards", "cnFreeQ", "RP", "LANG", `let acctGone = null, dataCardSync = () => {}, mpBillPaint = undefined, planWatch = () => {}, libIdeaPaint = undefined, wdPaint = undefined, $ = () => null;
-      const acctSub = () => null, acctAction = () => ({}), acctCrypto = () => null, resendSecond = () => null, resendState = (c, x) => ({ text: x }), acctShown = () => {}, acctBackTrack = () => {};
+      const cur = "blave", laiSecond = () => null, acctSub = () => null, acctAction = () => ({}), acctCrypto = () => null, resendSecond = () => null, resendState = (c, x) => ({ text: x }), acctShown = () => {}, acctBackTrack = () => {};
       ${fn("acctCardKind")}\n${fn("acctFreeUpText")}\n${fn("acctBuiltText")}\n${fn("acctPaint")}\nacctPaint();`);
     const mk = () => { const c = {}; c.set = (s) => { c.last = s; }; return c; };
     const run = (acct, q, n, lang) => { const pre = mk(), turn = mk(); P((k, v) => k + (v && v.q ? "{" + v.q + "}" : "") + (v && v.n ? "{" + v.n + "}" : ""), acct, pre, [turn], () => q, { list: Array(n || 0).fill({}) }, lang || "zh"); return [pre.last.text, turn.last.text].join(" / "); };
@@ -85,9 +85,9 @@ const line = (re) => { const m = app.match(re); if (!m) throw new Error("找不�
     ok("③ 沒綁卡、沒用完(或舊 api):原字 acct.noCard / fault.needCard", run({ can_run: false, reason: "NO_CARD" }, "30") === "acct.noCard / fault.needCard");
     ok("③ 有卡沒餘額:原字,不管 used_up", run({ can_run: false, reason: "NO_CREDIT", free_ai_credit_used_up: true }, "30") === "acct.noCredit / fault.noCredit");
     ok("③ 能跑:原字(可以開始了 / 額度到了)", run({ can_run: true, free_ai_credit_used_up: true }, "30") === "acct.ready / acct.creditIn");
-    ok("③ 鈕與小字不動:兩張卡仍走 acctAction(前往綁卡)+ acctSub;402 卡第二顆仍是「再送一次」(「改用自己的 AI」先不做)",
-      /acctBuiltText\(RP\.list\.length\) \+ acctFreeUpText\("pre"\) : t\(s\.reason === "NO_CREDIT" \? "acct\.noCredit" : "acct\.noCard"\), sub: acctSub\(s\), \.\.\.acctAction\(s, "pre"\)/.test(app)
-      && /acctFreeUpText\("turn"\) : t\("fault\.needCard"\), sub: acctSub\(s\), \.\.\.acctAction\(s, "turn"\), second: resendSecond\(\)/.test(app));
+    ok("③ 主鈕與小字不動:兩張卡仍走 acctAction(前往綁卡)+ acctSub;第二顆額度用完時是〔改用 Claude Code 或 Codex〕(0.1.36,check_shell_local_ai_card.js 驗),其餘 402 卡仍是「再送一次」",
+      /acctBuiltText\(RP\.list\.length\) \+ acctFreeUpText\("pre"\) : t\(s\.reason === "NO_CREDIT" \? "acct\.noCredit" : "acct\.noCard"\), sub: acctSub\(s\), \.\.\.acctAction\(s, "pre"\), second: free \? laiSecond\(acctCard\) : null/.test(app)
+      && /acctFreeUpText\("turn"\) : t\("fault\.needCard"\), sub: acctSub\(s\), \.\.\.acctAction\(s, "turn"\), second: free \? laiSecond\(card\) : resendSecond\(\)/.test(app));
     // 字串:zh / en 都有、zh 逐字
     const KEYS = ["cn.h.free", "cn.blave.descFree", "acct.freeUpNoNum", "fault.freeUpNoNum"];
     ok("字串:四個 key zh / en 都有;帶數字的 acct.freeUp / fault.freeUp 已拿掉", KEYS.every((k) => zh[k] && en[k]) && ["acct.freeUp", "fault.freeUp"].every((k) => !(k in zh) && !(k in en)));

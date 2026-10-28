@@ -1025,6 +1025,27 @@ msgstr "前往綁卡"
 msgid "acct.cryptoTopup"
 msgstr "用加密貨幣轉帳儲值"
 
+# 登入送的 AI 額度用完、還沒綁卡的預檢卡與 402 卡第二顆(文字鈕,0.1.36;spec free-credit-usedup-local-ai):開連結本機 AI 的 modal。
+# 產品名一律純文字,不放 logo
+msgid "acct.useLocal"
+msgstr "改用 Claude Code 或 Codex"
+
+# 從那個 modal 換成本機 AI 之後:402 卡換這句 +〔再送一次〕;{name} = Claude Code | Codex
+msgid "acct.localResend"
+msgstr "已改用 {name}，可以再送了。"
+
+# 換成本機 AI 之後的預檢卡(沒有鈕);{name} = Claude Code | Codex
+msgid "acct.localReady"
+msgstr "已改用 {name}，可以開始了。"
+
+# 連結本機 AI 的 modal 標題下那一行:講誰收錢,不講要不要錢(不寫免費:Claude Code 要付費方案,那是他自己的帳號)
+msgid "lai.lede"
+msgstr "走你自己的帳號，Blave 不收 AI 費用。"
+
+# 那個 modal 裡沒裝的那一列(文字鈕):外開官方安裝頁
+msgid "lai.install"
+msgstr "怎麼安裝"
+
 msgid "acct.sub"
 msgstr "首次綁卡，{t} 天內有 {q} TWD 的 AI 額度，電腦版也拿得到 Blave 的資料。"
 

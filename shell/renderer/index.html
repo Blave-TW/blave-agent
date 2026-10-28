@@ -705,6 +705,24 @@
   </div>
 </div>
 
+<!-- 改用自己的 AI(0.1.36;spec free-credit-usedup-local-ai §3):額度用完卡片的第二顆開。殼同 #del-scrim 的 440 框;列由 app.js laiPaint 畫,
+     只列 Claude Code、Codex(名稱純文字、不放 logo)。腳只放〔重新偵測〕,兩列都能用時整條不出;不放〔取消〕,關掉用 ✕ 或 Esc -->
+<div class="scrim" id="lai-scrim" role="dialog" aria-modal="true" aria-labelledby="lai-title" aria-describedby="lai-lede" hidden>
+  <div class="set-modal del-modal" id="lai-modal">
+    <div class="modal-head">
+      <h6 id="lai-title" data-i18n="cn.local.label"></h6>
+      <button type="button" class="modal-close" id="lai-close" data-i18n-aria="set.close">✕</button>
+    </div>
+    <div class="del-body">
+      <p class="lai-lede" id="lai-lede" data-i18n="lai.lede"></p>
+      <div id="lai-rows"></div>
+    </div>
+    <div class="modal-foot lai-foot" id="lai-foot" hidden>
+      <button type="button" class="btn-quiet" id="lai-redetect" data-i18n="cn.redetect"></button>
+    </div>
+  </div>
+</div>
+
 <!-- 比較兩個版本(versions.js;策略版本 spec §5):640 框、唯讀、沒有腳。差異在這台電腦由主行程跑 difflib、雲端由 api 算好 -->
 <div class="scrim" id="vc-scrim" role="dialog" aria-modal="true" aria-labelledby="vc-title" hidden>
   <div class="set-modal vc-modal" id="vc-modal">

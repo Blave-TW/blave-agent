@@ -157,6 +157,7 @@ exit 2
      ${fnOf(app, "localFaultsLive")}
      ${fnOf(app, "localFaultsRecheck")}
      ${fnOf(app, "localLoginFlow")}
+     function laiOn() { return false; }   // 額度用完卡片開的 modal(check_shell_local_ai_card.js 驗)
      ${fnOf(app, "focusRedetect")}
      ${constOf(app, "whyState")}
      ${fnOf(app, "mdlNeedsRedetect")}
@@ -314,7 +315,7 @@ exit 2
 
   // 回合結束的登入失效判斷:跑不起來 / 沒有回應不出登入卡
   t("回合結束:loggedOut 排除 whyState(跑不起來、沒有回應)", /loggedOut = !!\(d\[cur\] && d\[cur\]\.installed && !d\[cur\]\.loggedIn && !whyState\(d\[cur\]\)\);/.test(app));
-  t("連結畫面登入成功直接連上(方案 B):localLogin 在列裡成功 → connect", /if \(inRow && r\.ok && x\.installed && x\.loggedIn\) return connect\(kind, x\);/.test(app));
+  t("連結畫面登入成功直接連上(方案 B):localLogin 在列裡成功 → connect(額度用完卡片開的 modal 那一列同一條)", /if \(\(inRow \|\| inLai\) && r\.ok && x\.installed && x\.loggedIn\) return connect\(kind, x\);/.test(app));
   t("設定 › 模型接入保留〔登入〕(mdlOptions 仍用 cn.signIn)", /"cn\.signIn" : null\) : curKind === kind/.test(app));
 
   // CSS 註解不能巢狀:多一個 /* 會把前一條規則的說明吞進去(稽核 P2-6),renderer 每支 css 都掃

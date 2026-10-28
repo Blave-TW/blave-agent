@@ -1400,6 +1400,9 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 .envm[hidden] { display: none; }
 .del-where { flex-basis: 100%; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 .del-where[hidden] { display: none; }
+/* 改用自己的 AI 的 modal(app.js laiPaint):第一行講誰收錢,底下兩列 .cn-row;腳只有〔重新偵測〕,靠左 */
+.lai-lede { margin: 0 0 var(--space-4); }
+.lai-foot { justify-content: flex-start; }
 
 /* 聊天裡的圖:跟回覆同寬,不加框(圖自己有底色);說明字同聊天的次要文字 */
 .msg.img { margin: 0 0 var(--space-24); }   /* figure 的 UA 預設是 1em 40px */
@@ -1429,6 +1432,8 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 /* 只有鈕、沒有句子(資料卡的試用態):鈕頂貼齊、記號對 32 高那顆鈕的中線;旁邊是文字鈕,拉開一階才看得出是兩件事 */
 .msg.fault.act-only .fault-act { margin-top: 0; column-gap: var(--space-16); }
 .msg.fault.act-only .fault-mark { margin-top: 15px; }
+/* 額度用完卡片:〔改用 Claude Code 或 Codex〕與〔用加密貨幣轉帳儲值〕兩顆文字鈕同一列,8 的話兩條底線讀起來黏成一條(同 act-only 的 16);行距仍是 8 */
+.msg.fault.two-quiet .fault-act { column-gap: var(--space-16); }
 .fault-sub { margin-top: var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .fault-sub code, .cn-hint code { font-family: var(--font-mono); color: var(--ink-2); }
 /* disabled 原本完全沒有樣式:鈕鎖住之後外觀不變,看不出按下去有沒有生效(設計師 M7) */
