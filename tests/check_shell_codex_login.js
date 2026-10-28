@@ -31,10 +31,10 @@ const PIECES = [constOf(src, "cmdWrap"), constOf(src, "WIN_ENV_DROP"), fnOf(src,
 function mkMain(envPath, chatgpt, bundled) {
   const logged = [];
   const api = new Function("execFile", "spawn", "fs", "path", "process", "loginShellPath", "CODEX_IN_CHATGPT", "bundledClaude", "BASE", "WIN", "detectLogWrite",
-    "winRealExe", "storeCodexPath", "winOnPath", "pickWinBin",
+    "winRealExe", "storeCodexPath", "winOnPath", "pickWinBin", "cliAuthHow",
     PIECES + "\nreturn { detectAgents, agentLogin, cancelAgentLogin, codexPath, claudePath, BAD_BIN };")(
     require("child_process").execFile, require("child_process").spawn, fs, path, process, async () => envPath, chatgpt, () => bundled, "/b", false, (f, e) => logged.push(e),
-    (b) => b, async () => null, (s) => s, () => null);
+    (b) => b, async () => null, (s) => s, () => null, require(path.join(SHELL, "telemetry.js")).cliAuthHow);
   api.logged = logged; return api;
 }
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-codex-login-"));
@@ -117,9 +117,9 @@ exit 2
     { const d = binDir("bclaude"); script(path.join(d, "claude"), "#!/bin/sh\nexit 127\n");
       const bundled = script(path.join(ROOT, "venv", "claude_agent_sdk", "_bundled", "claude"), "#!/bin/sh\necho '{\"loggedIn\":true,\"authMethod\":\"x\"}'\n");
       const m = mkMain(PATH_OF(d), MISSING_APP, bundled), r = await m.detectAgents();
-      t("claude 127 → 退到隨包那顆、已登入", r.claude.loggedIn && r.claude.path === bundled && r.claude.why === null && m.BAD_BIN.claude === path.join(d, "claude"), r.claude);
+      t("claude 127 → 退到隨包那顆、已登入;表外的 authMethod → how other(cli_auth)", r.claude.loggedIn && r.claude.path === bundled && r.claude.why === null && m.BAD_BIN.claude === path.join(d, "claude") && r.claude.how === "other", r.claude);
       const m2 = mkMain(PATH_OF(d), MISSING_APP, null), r2 = await m2.detectAgents();
-      t("…沒有隨包那顆 → claude_cantrun", r2.claude.installed && r2.claude.why === "claude_cantrun", r2.claude); }
+      t("…沒有隨包那顆 → claude_cantrun;JSON 讀不出來 how 留 null(不送 cli_auth)", r2.claude.installed && r2.claude.why === "claude_cantrun" && r2.claude.how === null, r2.claude); }
   }
 
   // ── 畫面:原文切出來配假的 DOM ──
@@ -145,7 +145,7 @@ exit 2
     `let LANG; const sync = () => { LANG = getLang(); };
      let loginPending = null, oauthPending = false, lastDetect = null, cur = null, HINT = null, detects = 0, said = [];
      let loginSpawned = null;
-     const MDL = { busy: false }, mdlPaint = () => {}, paintBlaveBtn = () => {}, connect = (k) => { state.connected = k; }, srSay = (x) => said.push(x), trackEvent = () => {};
+     const MDL = { busy: false }, mdlPaint = () => {}, paintBlaveBtn = () => {}, connect = (k) => { state.connected = k; }, srSay = (x) => said.push(x), trackEvent = () => {}, trackFeature = () => {};
      ${fnOf(app, "cmdLine")}
      function detect() { detects++; detectAt = Date.now(); if (state.next) lastDetect = state.next; }
      function setHint(h) { HINT = h || null; }
@@ -262,9 +262,9 @@ exit 2
   { const flow = (spawnAt, endAt, res) => { const sets = []; let listener = null;
       const blave = { onAgentLoginSpawned: (fn) => { listener = fn; }, cancelAgentLogin: () => {},
         agentLogin: async () => { if (spawnAt !== null) { await new Promise((r) => setTimeout(r, spawnAt)); listener(); } await new Promise((r) => setTimeout(r, endAt - (spawnAt || 0))); return res; } };
-      const f = new Function("window", "t", "LOGIN_OPENED_MS", "cmdLine", "resendState", "trackEvent",
+      const f = new Function("window", "t", "LOGIN_OPENED_MS", "cmdLine", "resendState", "trackEvent", "trackFeature",
         "let loginPending = null, oauthPending = false, loginSpawned = null; const LOCAL_FAULTS = [];\n" + LISTEN + "\n" + fnOf(app, "agentLoginRun") + "\n" + fnOf(app, "localLoginFlow") + "\nreturn localLoginFlow;")(
-        { blave }, (k, v) => tr(k, v), 1000, (k) => k, () => ({ text: "ok" }), () => {});
+        { blave }, (k, v) => tr(k, v), 1000, (k) => k, () => ({ text: "ok" }), () => {}, () => {});
       const card = { set: (st) => sets.push(st) };
       f(card, "codex"); sets[0].on();   // 卡先畫失效句,按〔登入〕
       return new Promise((r) => setTimeout(r, endAt + 300)).then(() => sets.map((x) => x.text)); };

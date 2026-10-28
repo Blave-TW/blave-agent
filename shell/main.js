@@ -11,6 +11,7 @@ const os = require("os");
 const fs = require("fs");
 const { createDaemonHost } = require("./daemon.js");
 const wsfile = require("./wsfile");
+const { cliAuthHow } = require("./telemetry");
 
 // 打包版的名字 = userData 目錄名(~/Library/Application Support/Blave)與 Keychain 項目名。
 // electron-builder 的 productName 不會寫進 asar 裡的 package.json,不設的話打包版會跟開發版
@@ -157,8 +158,8 @@ function detectLogWrite(f, entry) {
 }
 
 // 偵測結果契約(renderer 據此畫各列):
-// { claude: {installed, loggedIn, authMethod, email, path, why}, codex: {installed, loggedIn, path, why, via} }
-// why = detectWhy,能用時 null;via = codex 是哪種裝法("app" = ChatGPT.app / Store 版內附那顆,"cli" = 其他),失敗時給哪一種退路看它
+// { claude: {installed, loggedIn, authMethod, email, path, why, how}, codex: {installed, loggedIn, path, why, via} }
+// why = detectWhy,能用時 null;how = cliAuthHow(authMethod)(telemetry.js),JSON 讀不出來是 null;via = codex 是哪種裝法("app" = ChatGPT.app / Store 版內附那顆,"cli" = 其他),失敗時給哪一種退路看它
 const CODEX_IN_CHATGPT = "/Applications/ChatGPT.app/Contents/Resources/codex";
 /* Windows 的 codex.cmd 要解到真的 codex.exe:runtime/codex_engine.py 用 create_subprocess_exec 起它,吃不了 .cmd。
    npm 的 bin/codex.js(0.156.1)找的是 <平台套件>/vendor/<triple>/bin/codex.exe,退路是 @openai/codex 自己的 vendor/;
@@ -241,7 +242,7 @@ async function codexBinNow() { return codexPath(await loginShellPath()); }
 async function detectAgents() {
   const envPath = await loginShellPath();
   const out = {
-    claude: { installed: false, loggedIn: false, authMethod: null, email: null, path: null, why: null, authOutside: false },
+    claude: { installed: false, loggedIn: false, authMethod: null, email: null, path: null, why: null, authOutside: false, how: null },
     codex: { installed: false, loggedIn: false, path: null, why: null, via: null, authOutside: false },
   };
   const rec = { claude: {}, codex: {} };
@@ -282,6 +283,7 @@ async function detectAgents() {
       const j = JSON.parse(r.stdout);
       out.claude.loggedIn = !!j.loggedIn;
       out.claude.authMethod = j.authMethod || null;
+      out.claude.how = cliAuthHow(j.authMethod);   // cli_auth 的值;JSON 讀不出來(逾時、跑不起來)留 null = 不送
       out.claude.email = j.email || null;
     } catch (_) { if (r.code === 0) rec.claude.json = false; /* 舊版沒有這個子指令:當成未知,顯示成未登入;跑不起來(退出碼非 0、stdout 空)不算壞 JSON */ }
     if (!out.claude.loggedIn && !cantRun(r) && !r.timedOut) {
@@ -368,18 +370,20 @@ function connStore() {
 async function saveConnection(choice) {
   const kind = choice && choice.kind;
   let agentPath = null;
-  if (kind === "claude" || kind === "codex") { agentPath = ((await detectAgents())[kind] || {}).path || null; if (!agentPath) return false; }
+  let d = null;
+  if (kind === "claude" || kind === "codex") { d = await detectAgents(); agentPath = (d[kind] || {}).path || null; if (!agentPath) return false; }
   if (kind === "apikey" && !loadLlmKey()) return false;   // 連得上的前提是這台電腦上有一把驗過的金鑰
   const saved = connStore().save({ kind, path: agentPath, email: choice && choice.email });
   if (!saved) return false;
   tm().track("connect_done", { kind: saved.kind });
+  if (saved.kind === "claude" && d) tm().track("cli_auth", { how: d.claude.how });
   accountStatus();   // 換了 AI:現況立刻帶給 api(提醒信 K 型以它為準;沒登入就不打)
   return true;
 }
 const clearConnection = () => { const r = connStore().clear(); accountStatus(); return r; };
 const loadConnection = () => connStore().load();
 
-// ── 使用追蹤(telemetry.js:十八個事件、屬性只有列舉、沒有自由文字的入口;設定裡可關)──
+// ── 使用追蹤(telemetry.js:三十個事件、屬性只有列舉、沒有自由文字的入口;設定裡可關)──
 let _tm = null;
 let _deviceKind = null;   // device_type:啟動時偵測一次(devicetype.js),之後心跳那一輪補跨日那一則都用這個值
 const telemetryLive = () => app.isPackaged || process.env.BLAVE_TELEMETRY === "1";
@@ -3800,6 +3804,12 @@ app.whenReady().then(() => {
   startStep("tray", trayStart);
   startStep("inbound prune", () => require("./attach").prune(WS));   // 聊天附件放超過七天的(雲端由 runtime/prune_job.py 清)
   startStep("telemetry", () => tm().start());
+  // cli_auth:存好 Claude 連線的人開 app 直接進工作頁、畫面不跑偵測,這裡每天補問一次;今天送過就不開子行程
+  if (app.hasSingleInstanceLock()) startStep("cli auth", () => {
+    const c = loadConnection();
+    if (!c || c.kind !== "claude" || !telemetryLive() || !tm().isEnabled() || tm().sentToday("cli_auth")) return;
+    detectAgents().then((d) => { tm().track("cli_auth", { how: d.claude.how }); }).catch(() => {});
+  });
   startStep("device type", () => require("./devicetype").detectDeviceType().then((kind) => { _deviceKind = kind; tm().track("device_type", { kind }); }));
   if (app.hasSingleInstanceLock()) startStep("mobile view", () => mobileView().start());   // 第二份 app 不送:兩份會搶同一個裝置代號
   // 帳號 token 輪替:開 app 就檢查一次(0.1.15 以前沒有期限的那顆在這裡第一次換掉),之後每 10 分鐘看一次。

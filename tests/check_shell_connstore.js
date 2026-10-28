@@ -82,7 +82,7 @@ const write = (dir, obj) => fs.writeFileSync(path.join(dir, FILE), JSON.stringif
 // 接線(原文列舉):main.js 不再自己讀寫 connect.json;token 進環境的判斷吃的是 connStore 的 kind
 { const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), main = mainSrc.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
   t("main.js 沒有第二條讀寫 connect.json 的路", !/connect\.json/.test(main) && /const loadConnection = \(\) => connStore\(\)\.load\(\);/.test(main));
-  t("save-connection:過 fromOurPage,path 用當下偵測到的、不用畫面送來的", /handle\("save-connection"/.test(main) && /agentPath = \(\(await detectAgents\(\)\)\[kind\] \|\| \{\}\)\.path \|\| null; if \(!agentPath\) return false;/.test(main) && !/save\(\{[^}]*choice\.path/.test(main));
+  t("save-connection:過 fromOurPage,path 用當下偵測到的、不用畫面送來的", /handle\("save-connection"/.test(main) && /d = await detectAgents\(\); agentPath = \(d\[kind\] \|\| \{\}\)\.path \|\| null; if \(!agentPath\) return false;/.test(main) && !/save\(\{[^}]*choice\.path/.test(main));
   t("send-message:版本閘那一段拋例外也會還原 turnStarting(不然之後每次送出都回 busy)", /\} catch \(err\) \{ turnStarting = false; throw err; \}/.test(main));
   t("codex 的執行檔用當下偵測到的,不用連結紀錄裡的 path(舊明文檔遷移來的 path 是 agent 寫得到的字)", /const codexBin = conn\.kind === "codex" \? await codexBinNow\(\) : null;/.test(main) && /"--codex-bin", codexBin\]/.test(main) && !/"--codex-bin", conn\.path/.test(main));
   // 稽核 ①:連的是 Codex 卻偵測不到時,**不可以**靜默改跑 Claude(換一家供應商、換一條帳,而畫面還寫著 Codex)

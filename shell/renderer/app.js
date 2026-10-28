@@ -208,6 +208,7 @@ async function localLogin(kind, b) {
   if (inRow) ROWMSG[kind] = null;
   await detect();
   const x = (lastDetect && lastDetect[kind]) || {};
+  if (r.ok && x.loggedIn) trackFeature(kind === "codex" ? "codex_login_ok" : "claude_login_ok");   // 登入指令回 0 但偵測仍沒登入:畫面講的是失敗,不記成功
   if (inRow && r.ok && x.installed && x.loggedIn) return connect(kind, x);
   // 登入指令本身跑不起來(127、126、ENOENT),偵測卻沒看出來(login status 跑得動):兩個表面都改畫「無法啟動」,不叫他重登
   if (r.cantRun && x.installed && !x.loggedIn && !whyState(x)) { x.why = kind + "_cantrun"; paintRows(lastDetect); srSay(t("st.cantRun") + (LANG === "zh" ? "。" : ". ") + t("row.reinstall", { name })); }
@@ -3588,7 +3589,7 @@ function localLoginFlow(card, kind) {
     const r = await agentLoginRun(kind, () => card.set({ calm: true, text: t("login.opened", { name }), label: t("login.cancel"), out: true, on: cancel }));
     loginPending = null;
     if (!r.ok && !r.cancelled && !r.busy) trackEvent("connect_failed", { kind: kind === "codex" ? "codex_login" : "claude_login" });
-    if (r.ok) me.done();
+    if (r.ok) { trackFeature(kind === "codex" ? "codex_login_ok" : "claude_login_ok"); me.done(); }
     else fault(!r.cancelled && !r.busy);      // 取消不是錯誤,回到原本那句
   }
   fault(false);
@@ -4350,12 +4351,37 @@ function turnFailOf(f, text) {
   return m ? (m[1] === "429" ? "429" : "other") : null;
 }
 let turnFail = null;   // 這一輪認到的失敗原因(回合結束時送 turn_failed 後清掉)
+let turnFailSrc = null;   // turnFail 是 auth 時它從哪來(auth_fail 的來源段);跟 turnFail 一起指定、一起清
+/* auth_fail(0.1.35)三個純函式,tests/check_shell_auth_fail.js 切出來跑。
+   authFailSrc:classifyFault 判成本機沒登入的那段字是哪一種(同它的 regex);認不出來 null = 不送。
+   turnReasonOf:turn_failed 最後送的 reason(找不到引擎優先)。
+   authFailWhy:引擎_來源_狀態;d = 失敗當下那次 detectAgents 的結果,問不到(丟例外)給 null。
+   狀態只看偵測:跑不起來／沒回應、或這個引擎不在結果裡 → unk;loggedIn 只看本機有沒有憑證、不去伺服器驗,所以過期的 token 會是 in */
+function authFailSrc(text) {
+  if (/^Not logged in\b|Please run \/login/.test(text || "")) return "nologin";
+  const m = /^(?:Failed to authenticate\. )?API Error: (40[13])\b/.exec(text || "");
+  return m ? m[1] : null;
+}
+function turnReasonOf(errTail, fail) { return /AGENT_BIN_MISSING/.test(errTail || "") ? "engine_missing" : fail || "other"; }
+function authFailWhy(kind, src, d) {
+  if (!src || (kind !== "claude" && kind !== "codex")) return null;
+  const x = d && d[kind];
+  const st = !x || whyState(x) ? "unk" : x.loggedIn ? "in" : x.authOutside ? "out" : "no";
+  return (kind === "codex" ? "x" : "c") + "_" + src + "_" + st;
+}
+function cliAuthSend(d) { if (d && d.claude) trackEvent("cli_auth", { how: d.claude.how }); }
+/* classifyFault 那條:送出當下就把引擎與來源定下來(.then 回來時 turnFail 已清、用戶可能已換引擎)。補問不 await——
+   最壞 20 秒,轉圈、通知、結果卡都不等它;結果只拿來記,不設 loggedOut、不畫卡(這條已經畫過登入卡) */
+function authFailProbe(kind, src) {
+  const send = (d) => { const why = authFailWhy(kind, src, d); if (why) trackEvent("auth_fail", { why }); if (kind === "claude") cliAuthSend(d); };
+  try { window.blave.detectAgents().then(send, () => send(null)); } catch (_) { send(null); }
+}
 function draftPromote() {
   const text = draft; draft = "";
   ACT.textStart = 0;
   if (!text.trim()) return;
   const f = classifyFault(text);
-  const fail = turnFailOf(f, text); if (fail) turnFail = fail;
+  const fail = turnFailOf(f, text); if (fail) { turnFail = fail; turnFailSrc = fail === "auth" ? authFailSrc(text) : null; }
   if (f) { faultShown = true; turnFaulted = true; turnLimit = !!f.limit; addFault(f); liveBubble = null; return; }
   busyHide();   // 回覆定稿了:指示器收起(同以前「回覆在串流了,字本身就是還在跑」)
   if (!liveBubble) { liveBubble = addMsg("ai", ""); turnAiBubbles.push(liveBubble); }
@@ -4455,9 +4481,10 @@ window.blave.onTurnEnd(async (r) => {
   // CLI 現在是不是登入狀態。沒登入 → 只出登入卡,那串給工程師看的錯誤丟掉;有登入 → 才畫通用訊息。
   // 等待指示器留到判斷完才收,中間不留空窗。
   let loggedOut = false;
+  let d = null;   // 重問的結果;auth_fail 的 probe 那條要讀它的 authOutside
   if (!stopped && (cur === "claude" || cur === "codex") && (turnErrored || !turnGotReply) && !turnFaulted) {
     // 跑不起來、沒有回應不是登出:出登入卡只會叫他去重登一個本來就登入著的帳號
-    try { const d = await window.blave.detectAgents(); loggedOut = !!(d[cur] && d[cur].installed && !d[cur].loggedIn && !whyState(d[cur])); }
+    try { d = await window.blave.detectAgents(); loggedOut = !!(d[cur] && d[cur].installed && !d[cur].loggedIn && !whyState(d[cur])); if (cur === "claude") cliAuthSend(d); }
     // 問不到就當成一般失敗
     catch (_) { /* noop */ }
   }
@@ -4466,10 +4493,14 @@ window.blave.onTurnEnd(async (r) => {
   // 上限的那句沒以回覆的形式出來(走 error chunk 或直接結束)時 turnFailOf 看不到:這一輪收過 llm_cap 就照樣記 cap
   if (!stopped && cur === "apikey" && turnCap) turnFail = "cap";
   if (loggedOut) turnFail = "auth";
+  if (loggedOut) turnFailSrc = "probe";
   const faulted = !stopped && (r.code !== 0 || turnFaulted || turnErrored || !turnGotReply || loggedOut);   // 同 upTurnEnded 的判準
   busyEnd(faulted, stopped);
-  if (!stopped && (faulted || turnFail)) trackEvent("turn_failed", { reason: /AGENT_BIN_MISSING/.test(r.errTail || "") ? "engine_missing" : turnFail || "other" });
-  turnFail = null;
+  const reason = !stopped && (faulted || turnFail) ? turnReasonOf(r.errTail, turnFail) : null;
+  if (reason) trackEvent("turn_failed", { reason });
+  if (reason === "auth" && turnFailSrc === "probe") { const why = authFailWhy(cur, "probe", d); if (why) trackEvent("auth_fail", { why }); }
+  else if (reason === "auth" && turnFailSrc) authFailProbe(cur, turnFailSrc);
+  turnFail = null; turnFailSrc = null;
   if (!loggedOut && r.code === 0) dataTurnEnd();
   if (planDonePending) planSayDone();
   if (loggedOut) addFault(localAuthFault(cur));

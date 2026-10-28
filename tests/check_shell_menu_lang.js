@@ -35,6 +35,7 @@ function run(throwing) {
     updater: () => ({ start: () => { if (throwing.has("updater")) throw new Error("updater"); } }),
     minGate: () => ({ start: () => { if (throwing.has("gate")) throw new Error("gate"); } }),
     mobileView: () => ({ start: () => { if (throwing.has("mv")) throw new Error("mv"); } }),   // 0.1.28 手機查看部位
+    loadConnection: () => null,   // 0.1.35 開 app 補 cli_auth:沒有存好的 Claude 連線就不偵測(tests/check_shell_auth_fail.js 另外測)
     // 0.1.16 帳號 token 輪替:開 app 檢查一次、之後定期;回合狀態是 main.js 既有那一對
     activeTurn: null, turnStarting: false, ROTATE_MIN_LEFT_MS: 0, ROTATE_CHECK_MS: 1e9, setInterval: () => ({ unref() {} }),
     rotator: () => { if (throwing.has("rotate")) throw new Error("rotate"); return { ensure: () => Promise.resolve() }; },
