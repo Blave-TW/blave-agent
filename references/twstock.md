@@ -383,11 +383,12 @@ whole-market total (`fetch_twmarket_margin`, next section): a question about one
 融資餘額 / 融資使用率 / 券資比 is answered here.
 
 ```python
+import numpy as np
 from lib.data import fetch_twstock_margin
 
 m = fetch_twstock_margin('2330', '2024-01-01', None, hdrs)   # naive date index, one row per trading day
-m['margin_util'] = m['margin_balance'] / m['margin_limit']   # 融資使用率
-m['short_margin_ratio'] = m['short_balance'] / m['margin_balance']   # 券資比
+m['margin_util'] = m['margin_balance'] / m['margin_limit'].replace(0, np.nan)            # 融資使用率
+m['short_margin_ratio'] = m['short_balance'] / m['margin_balance'].replace(0, np.nan)    # 券資比
 ```
 
 API: `GET /studio/market/twstock/margin/<stock_id>`. **Every column is in lots (張), not shares.**
@@ -410,6 +411,12 @@ Notes:
   question → one narrow probe (`references/lib.md` › *Data-depth discipline*), never a remembered date.
 - Per-stock only, no `*_batch` variant: for many stocks, narrow the pool first (Whole-market
   Screening below) and call it on the narrowed pool only, one stock at a time.
+- **A limit of 0 is real:** a stock under 停止融資／停止融券 (e.g. moved to 全額交割) keeps its daily row,
+  with `margin_limit` / `short_limit` 0 and the old balance winding down — divide only with the
+  zero replaced by NaN (as above), never let a 0 limit become `inf`.
+- A stock that was never eligible for margin trading (a new listing in its first months, most
+  創新板 stocks, some -KY / DR) has no rows at all: the fetch raises an HTTP 404. Leave it out of a
+  margin universe; it is not a fetch to retry.
 - Never sum it across stocks to get the market — `fetch_twmarket_margin` is the official total.
 - In a strategy: `join_tw_flow(df, 'stock_margin', INTERVAL, START, END, hdrs, id='2330')` adds the
   columns prefixed `sm_` (`sm_margin_balance` …), attached by publication time (D 21:05 Taipei) —
@@ -749,7 +756,8 @@ prev = cfo.reindex(cfo.index - pd.offsets.QuarterEnd(1)).values   # the row thre
 cfo_q = cfo.where(cfo.index.month == 3, cfo - prev)                # YTD → single quarter (Q1 as is)
 ```
 
-API: `GET /studio/market/twstock/cashflow/<stock_id>`; history from 2013, cache refreshed when a
+API: `GET /studio/market/twstock/cashflow/<stock_id>`; history from 2013; values in **TWD (元, full
+amount, not thousands)** — the same numbers `fcf_*` is computed from; cache refreshed when a
 filing falls due (attach with `align_feed` source `'twstock_cashflow'`, after pivoting).
 
 - **Flow items are year-to-date cumulative, as filed in Taiwan:** the `03-31` row is Q1, `06-30`

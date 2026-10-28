@@ -3144,6 +3144,8 @@ def fetch_twstock_quote_all(headers):
     df = pd.DataFrame(r.json().get('data', []))
     if df.empty:
         return df
+    if 'stock_id' not in df.columns:
+        raise ValueError(f'fetch_twstock_quote_all: the api rows carry no stock_id (columns: {list(df.columns)})')
     return df.set_index('stock_id')
 
 
@@ -3310,7 +3312,11 @@ def _fetch_twstock_margin_raw(stock_id, start, end, headers):
     df['date'] = pd.to_datetime(df['date'])
     df = df.set_index('date').sort_index()
     df = df[~df.index.duplicated(keep='last')]
-    return df.reindex(columns=_TWSTOCK_MARGIN_COLUMNS).fillna(0).astype('int64')
+    missing = [c for c in _TWSTOCK_MARGIN_COLUMNS if c not in df.columns]
+    if missing:
+        # a column the api stopped sending must not turn into zeros (a 0 margin_limit reads as a real cap)
+        raise ValueError(f'twstock margin {stock_id}: the api answer lacks {missing}')
+    return df[_TWSTOCK_MARGIN_COLUMNS].fillna(0).astype('int64')
 
 
 def fetch_twstock_margin(stock_id, start, end, headers):
@@ -3794,9 +3800,8 @@ def fetch_twstock_broker_search(name, headers):
     name = (name or '').strip()
     if not name:
         raise ValueError('fetch_twstock_broker_search: name must be a non-empty string')
-    # the server matches `name` as a regular expression; escaped, '(' or '+' is just a character
     r = _retry_get(f'{BASE}/studio/market/twstock/broker/search', headers=headers,
-                   params={'name': re.escape(name)}, timeout=30)
+                   params={'name': name}, timeout=30)
     return r.json().get('data', [])
 
 
@@ -4077,8 +4082,8 @@ def fetch_twstock_balance_sheet(stock_id, headers):
 
 def fetch_twstock_cashflow(stock_id, headers):
     """台股季頻現金流量表 (long format). index=date (quarter end), columns: type, value,
-    origin_name; history from 2013. Key types: CashFlowsFromOperatingActivities,
-    CashProvidedByInvestingActivities, CashFlowsProvidedFromFinancingActivities,
+    origin_name; history from 2013; values in TWD (元, full amount, not thousands). Key types:
+    CashFlowsFromOperatingActivities, CashProvidedByInvestingActivities, CashFlowsProvidedFromFinancingActivities,
     PropertyAndPlantAndEquipment (capex, negative), CashBalancesEndOfPeriod.
     Flow items are YEAR-TO-DATE cumulative, as filed: the 06-30 row is Q1+Q2. One quarter =
     this row − the same year's row three months earlier (03-31 as is); balances
