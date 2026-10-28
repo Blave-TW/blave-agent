@@ -858,7 +858,7 @@ body.resizing * { cursor: col-resize !important; }
 .up-pill-wrap { margin: 0 0 var(--space-8); padding: 0 var(--space-4); }
 .up-pill {
   position: relative; display: inline-flex; align-items: center; gap: var(--space-6);
-  max-width: 100%; height: 32px; min-height: 0; padding: 0 var(--space-12) 0 var(--space-8); overflow: hidden;
+  max-width: 100%; height: 32px; min-height: 0; padding: 0 var(--space-12) 0 var(--space-8);   /* 不裁切:::before 的熱區要伸出去;裁切在 .up-pill-t */
   border: 1px solid transparent; border-radius: var(--radius-pill);
   background: var(--color-primary); color: var(--ink-on-primary);
   font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer;
@@ -866,18 +866,21 @@ body.resizing * { cursor: col-resize !important; }
 }
 .up-pill::before { content: ""; position: absolute; inset: -7px -4px; }
 .up-pill:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--color-primaryDark); }
-.up-pill:disabled, .up-pill[aria-disabled="true"] { background: var(--surface-muted); border-color: var(--border-hairline); color: var(--ink-disabled); cursor: not-allowed; }
+.up-pill:disabled, .up-pill[aria-disabled="true"] { background: var(--surface-muted); border-color: var(--color-greyMedium); color: var(--ink-3); cursor: not-allowed; }   /* 同 .btn-fill:disabled */
 .up-pill-ic { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.up-pill-t { overflow: hidden; }
+.up-pill-t { min-width: 0; overflow: hidden; }
+.up-pill.no-ic { padding-left: var(--space-12); }
 .up-pill.no-ic .up-pill-ic { display: none; }
 .up-pill-wrap .busy-why { margin: var(--space-8) var(--space-4) 0; text-align: left; white-space: normal; }
-.up-rail { width: 28px; height: 28px; padding: 0; justify-content: center; margin-top: auto; }
-.up-rail::before { inset: -8px; }
+.up-rail { flex: none; width: 28px; height: 28px; padding: 0; justify-content: center; margin-top: auto; }
+.up-rail::before { inset: -9px; }   /* 1px 透明框不算在 padding box 裡:28 − 2 + 18 = 44 */
 html.ws-sc .side-rail { flex: 1 1 auto; }
 @media (prefers-reduced-motion: reduce) { .up-pill { transition: none; } }
 /* 更新 modal 的「這版改了什麼」:純文字條列 */
 .del-body .up-notes { margin: 0; padding-left: 18px; color: var(--ink); }
 .del-body .up-notes li { margin-bottom: var(--space-4); }
+.del-body .up-notes li:last-child { margin-bottom: 0; }
+.del-body .up-notes-slot { margin-bottom: var(--space-12); }   /* 條列是一組,跟後面的草稿句分開(組內 4 < 組間) */
 .set-upsch { margin: var(--space-8) 0; }
 
 .ws-more:disabled { cursor: not-allowed; color: var(--ink-disabled); }
@@ -929,6 +932,8 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
 .modal-close:hover { background: var(--surface-muted); color: var(--ink); }
+.modal-close { position: relative; }
+.modal-close::before { content: ""; position: absolute; inset: -6px; }   /* 視覺 32、熱區 44 */
 
 .set-body { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; }
 .set-cats {
@@ -1005,7 +1010,8 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 /* 安裝識別碼:標籤 --ink-3、值 mono --ink-2 整串 36 字不截;放不下就整串換到標籤下一行(不在連字號處斷) */
 .set-id-line { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-8); }
 .set-idv { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); white-space: nowrap; user-select: all; -webkit-user-select: all; }
-#set-up-btn .spin16 { vertical-align: -3px; }   /* 檢查中:連結本身變成圓環(被按的控件自己的回饋) */
+#set-up-btn .spin16 { vertical-align: -3px; }
+#set-up-btn::before { inset: -15px -4px; }   /* 12px 字的文字鈕:熱區補到 44 高(更新流程三個入口之一) */   /* 檢查中:連結本身變成圓環(被按的控件自己的回饋) */
 .set-about button { flex: none; }
 /* ── 設定 › 帳號與方案(設計師 mockup-desktop-plan-in-app;0.1.32 方案 B 併入公開連結)──────────────
    兩個區段同一頁、跟其他分類一樣由 .set-content 捲:帳號與方案(.plan-scroll → .plan-foot)→ 組間距 32 → 公開連結(#set-shares)。

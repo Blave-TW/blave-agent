@@ -67,7 +67,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     t("§4.3 離線(請求 error)→ null、不拋", (await fetchNotes("0.1.34", { get: errGet })) === null);
     t("§4.3 說明不放進 update-state 廣播;畫面用 invoke(update-notes)取,過 fromOurPage", !/_upNotes|notes/.test(src.split("\n").filter((l) => /send\("update-state"/.test(l)).join("\n")) && /handle\("update-notes", \(\) => upNotesGet\(\), null\);/.test(src)
       && /updateNotes: \(\) => ipcRenderer\.invoke\("update-notes"\)/.test(pre));
-    t("§4.3 何時抓:updater 進 ready／blocked 時抓一次(onState → upNotesKick),開 §4.1 那一刻沒拿到再抓(upNotesGet → upNotesKick,最多兩次)", /if \(st\.phase === "ready" \|\| st\.phase === "blocked"\) upNotesKick\(st\.version\);/.test(src) && /_upNotes\.tries >= 2/.test(cut(src, "function upNotesKick("))); }
+    t("§4.3 何時抓:updater 進 ready／blocked 那一刻抓一次(onState → upNotesKick;實跑見下面 P3-2),開 §4.1 那一刻沒拿到再抓(upNotesGet → upNotesKick,最多兩次)", /if \(staged && was !== _upStaged\) upNotesKick\(st\.version\);/.test(src) && /_upNotes\.tries >= 2/.test(cut(src, "function upNotesKick("))); }
 
   // ── §5.2 排程:十個條件 ──
   { const at = (h, m) => new Date(2026, 9, 29, h, m, 0).getTime(), NOW = at(6, 5);
@@ -156,7 +156,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     const mkWin = (url) => { const w = new EventEmitter(), wc = new EventEmitter(); wc.sent = []; wc.send = (ch, a) => wc.sent.push([ch, a]); wc.getURL = () => url; w.webContents = wc; w.destroyed = false; w.isDestroyed = () => w.destroyed; return w; };
     const rig = (o) => {
       const log = [], win = o && o.noWin ? null : mkWin("file:///app/index.html");
-      const ctx = { _upAsk: null, _upAskSeq: 0, quitAsking: false, UP_ASK_PICKUP_MS: (o && o.pickupMs) || 200, showMain: () => log.push("showMain"), draftMainWin: () => win, setTimeout, clearTimeout, Promise,
+      const ctx = { _upAsk: null, _upAskSeq: 0, quitAsking: false, UP_ASK_PICKUP_MS: (o && o.pickupMs) || 200, UP_ASK_HOLD_MS: 60000, showMain: () => log.push("showMain"), draftMainWin: () => win, setTimeout, clearTimeout, Promise,
         // before-quit 用的(同 check_shell_update_restart.js 的 quitRig)
         restarting: null, quitting: false, quitConfirmed: false, draftOk: false, draftNote: false, draftNoted: (d) => d, moveAsking: false, activeTurn: null, turnStarting: false,
         draftDirty: () => { log.push("draftDirty"); return new Promise(() => {}); }, tradeMaybeLive: () => null, twLots: () => ({ held: false }), _tradeHost: null, _engineSetup: null, engineAbort: () => Promise.resolve(),
@@ -197,7 +197,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       r.win.webContents.emit("did-start-navigation", { url: "about:blank", isMainFrame: false, isSameDocument: false });
       t("同一頁的 hash、子框架的導航不算重新載入", r.ctx._upAsk !== null && r.ctx.quitAsking === true); r.win.emit("hide"); await p; }
     { const r = rig({ pickupMs: 40 }), p = r.ask("trading", {}); const res = await p;
-      t("頁 10 秒內沒來拿(畫面卡死、還沒載好又壞掉):當取消、quitAsking 放回;預設 10 秒", res === false && r.ctx.quitAsking === false && /const UP_ASK_PICKUP_MS = 10000;/.test(src) && (r.quit(), r.log.includes("draftDirty"))); }
+      t("頁 30 秒內沒來拿(畫面卡死、還沒載好又壞掉;Windows 冷啟動要時間):當取消、quitAsking 放回", res === false && r.ctx.quitAsking === false && /const UP_ASK_PICKUP_MS = 30000,/.test(src) && (r.quit(), r.log.includes("draftDirty"))); }
     { const r = rig({ noWin: true, pickupMs: 40 }), res = await r.ask("plain", {});
       t("找不到我們那一頁(只剩藏著的 PDF 視窗):等到期限當取消,quitAsking 放回", res === false && r.ctx.quitAsking === false); }
     { const r = rig(), p = r.ask("trading", {}); r.pick(r.win.webContents); r.win.emit("hide"); await p;
@@ -217,6 +217,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       t: (k, v) => k + (v ? JSON.stringify(v) : ""), trackFeature: (n) => tracked.push(n), get LANG() { return LANGV; }, delCtx: null,
       confirmBox: (o) => { boxes.push(o); env.delCtx = { onCancel: o.onCancel, onOk: o.onOk }; env.$("del-scrim").hidden = false; if (o.extra) env.$("del-body").appendChild(o.extra); },
       delClose: () => { const c = env.delCtx; env.delCtx = null; env.$("del-scrim").hidden = true; if (c && c.onCancel && !c.acted) c.onCancel(); },
+      trPadLatin: (n) => (LANGV === "zh" && /^[\x20-\x7e]+$/.test(n) ? " " + n + " " : n),
       trUnsavedAny: () => unsaved, window: { blave: { updateNotes: () => Promise.resolve(notes), updateAskGet: () => Promise.resolve(env.pending), updateAskAnswer: (id, ok) => { answers.push([id, ok]); return Promise.resolve(true); } } }, pending: null, UP_BOX: null };
     env.$("del-scrim").hidden = true;
     const fns = ["upModal", "upBoxClose", "upAskPull", "upIdleUi"].map((n) => cut(app, (n === "upAskPull" ? "async " : "") + "function " + n + "(")).concat([cut(app, "async function upNotesFill(")]);
@@ -243,10 +244,17 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     t("程式收掉(phase 變了／主行程已取消):done(false)、不記 upd_cf_cancel", JSON.stringify(done) === "[false]" && tracked.length === 0 && env.$("del-scrim").hidden === true);
     done = []; boxes.length = 0; LANGV = "zh";
     R.upModal("trading", { venue: "Binance", cloud: true, unsaved: true }, null, (ok) => done.push(ok));
-    t("§4.2:標題 tm.quitTitle、內文兩句後果(tm.updateBody{venue}、up.md.stay)＋雲端句＋草稿句;不列改了什麼;主鈕 up.md.go", boxes[0].title === "tm.quitTitle" && JSON.stringify(boxes[0].lines) === JSON.stringify(['tm.updateBody{"venue":"Binance"}', "up.md.stay", "tm.quitCloudNote", "tm.unsavedNote"]) && !boxes[0].extra && boxes[0].ok === "up.md.go");
+    t("§4.2:標題 tm.quitTitle、內文兩句後果(tm.updateBody{venue},中文裡拉丁名前後補空格;up.md.stay)＋雲端句＋草稿句;不列改了什麼;主鈕 up.md.go", boxes[0].title === "tm.quitTitle" && JSON.stringify(boxes[0].lines) === JSON.stringify(['tm.updateBody{"venue":" Binance "}', "up.md.stay", "tm.quitCloudNote", "tm.unsavedNote"]) && !boxes[0].extra && boxes[0].ok === "up.md.go");
+    t("§4.2 沒給 paper:不出真錢／模擬記號", boxes[0].mark === null && boxes[0].markKind === null);
+    R.upBoxClose(); boxes.length = 0;
+    R.upModal("trading", { venue: "Binance", paper: false }, null, () => {}); const realBox = boxes[0]; R.upBoxClose();
+    R.upModal("trading", { venue: "模擬交易", paper: true }, null, () => {}); const paperBox = boxes[1];
+    t("§4.2 真錢／模擬記號(設計稽核):paper false → tr.mode.real／real;true → tr.mode.paper／paper", realBox.mark === "tr.mode.real" && realBox.markKind === "real" && paperBox.mark === "tr.mode.paper" && paperBox.markKind === "paper" && paperBox.lines[0] === 'tm.updateBody{"venue":"模擬交易"}');
     R.upBoxClose(); boxes.length = 0;
     R.upModal("trading", { venue: 5, cloud: "yes", unsaved: 1 }, null, () => {});
-    t("§4.2 資料形狀不對:交易所名留空、雲端句與草稿句不出(只認 === true)", JSON.stringify(boxes[0].lines) === JSON.stringify(['tm.updateBody{"venue":""}', "up.md.stay"])); R.upBoxClose();
+    t("§4.2 資料形狀不對／讀不到交易所:換不帶名字的那句 tm.updateBodyBare(不寫成「部位留在，」)、雲端句與草稿句不出、不出記號(paper 只認 boolean)", JSON.stringify(boxes[0].lines) === JSON.stringify(["tm.updateBodyBare", "up.md.stay"]) && boxes[0].mark === null); R.upBoxClose();
+    boxes.length = 0; R.upModal("trading", { venue: "  " }, null, () => {});
+    t("§4.2 交易所名只有空白也算讀不到", boxes[0].lines[0] === "tm.updateBodyBare"); R.upBoxClose();
     boxes.length = 0; answers.length = 0; env.pending = { id: 7, kind: "trading", data: { venue: "OKX" } };
     await R.upAskPull(); await R.upAskPull();
     t("主行程叫畫面開框:upAskPull 拿到就開(同一個 id 不開第二次)", boxes.length === 1 && boxes[0].title === "tm.quitTitle");
@@ -254,6 +262,11 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     t("…按〔重新啟動〕→ update-ask-answer(id, true)", JSON.stringify(answers) === "[[7,true]]");
     boxes.length = 0; answers.length = 0; env.pending = { id: 8, kind: "trading", data: {} }; await R.upAskPull(); env.delClose(); await sleep(1);
     t("…取消 → update-ask-answer(id, false)", JSON.stringify(answers) === "[[8,false]]");
+    boxes.length = 0; answers.length = 0; env.pending = { id: 9, kind: "trading", data: { venue: "OKX" } };
+    const realCB = env.confirmBox; env.confirmBox = () => { throw new Error("del-title gone"); };
+    let threw = false; try { await R.upAskPull(); } catch (_) { threw = true; } await sleep(1); env.confirmBox = realCB;
+    t("稽核 P2-1:開框途中拋例外 → 不往外拋、當場答取消(update-ask-answer(id, false))", !threw && JSON.stringify(answers) === "[[9,false]]");
+    env.UP_BOX = null;
     boxes.length = 0; env.pending = null; await R.upAskPull();
     t("…沒有待問的(null)什麼都不開", boxes.length === 0);
     t("onUpdateState:框開著時 phase 不再是已暫存或進入重新啟動中 → 收掉(§9);update-ask-close 只收同一個 id", /if \(UP_BOX && \(st\.restarting \|\| \(st\.phase !== "ready" && st\.phase !== "blocked"\)\)\) upBoxClose\(\);/.test(app) && /onUpdateAskClose\(\(id\) => \{ if \(UP_BOX && UP_BOX\.id === id\) upBoxClose\(\); \}\);/.test(app));
@@ -267,11 +280,100 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     t("條件 6 upIdleUi:空輸入框、沒框 → true;有字／有附件／[aria-modal=true]:not([hidden])／#mp-panel 開著 → false", idle0 === true && typed === false && modal === false && mp === false && chips === false
       && /document\.querySelector\('\[aria-modal="true"\]:not\(\[hidden\]\)'\)/.test(cut(app, "function upIdleUi("))); }
 
+  // ── 稽核 P1-1:更新框被別的框蓋掉 → 舊框的 onCancel 照叫,主行程收到取消、quitAsking 放回,Cmd+Q 仍有效 ──
+  { const CFS = cut(app, "function cfSupersede(");
+    t("confirmBox 一進來先 cfSupersede()(改寫 delCtx 之前)", /^function confirmBox\(\{[^\n]*\) \{\n  cfSupersede\(\);/m.test(app));
+    // 畫面端:真的 upModal／upAskPull／cfSupersede,confirmBox 只做「蓋掉舊框 + 記下新的 delCtx」
+    const mk = () => ({ hidden: true, children: [], appendChild(c) { this.children.push(c); return c; }, insertBefore() {}, isConnected: true });
+    const dom = {}, opened = [];
+    const env = { $: (id) => dom[id] || (dom[id] = mk()), document: { createElement: () => mk() }, t: (k) => k, trackFeature: () => {}, LANG: "zh", delCtx: null, UP_BOX: null, trUnsavedAny: () => false, trPadLatin: (n) => n,
+      delClose: () => { const c = env.delCtx; env.delCtx = null; if (c && c.onCancel && !c.acted) c.onCancel(); },
+      window: { blave: { updateNotes: () => Promise.resolve(null), updateAskGet: () => Promise.resolve(env.pending), updateAskAnswer: (id, ok) => { env.onAnswer(id, ok); return Promise.resolve(true); } } } };
+    env.confirmBox = (o) => { env.cfSupersede(); opened.push(o.title); env.delCtx = { custom: true, onOk: o.onOk, onCancel: o.onCancel }; };
+    const R = new Function("env", "with (env) { " + [CFS, cut(app, "function upModal("), cut(app, "function upBoxClose("), cut(app, "async function upAskPull(")].join("\n") + "\n return { cfSupersede, upAskPull }; }")(env);
+    env.cfSupersede = R.cfSupersede;
+    // 主行程端:真的 updAsk + before-quit(同上一節)
+    const UA = cut(src, "function updAsk("), BQ = cut(src, 'app.on("before-quit", (e) => {');
+    const w = new EventEmitter(), wc = new EventEmitter(); wc.send = (ch) => { if (ch === "update-ask") env.pending = mctx._upAsk && { id: mctx._upAsk.id, kind: mctx._upAsk.kind, data: mctx._upAsk.data }; }; wc.getURL = () => "file:///app/index.html"; w.webContents = wc; w.isDestroyed = () => false;
+    const log = [];
+    const mctx = { _upAsk: null, _upAskSeq: 0, quitAsking: false, UP_ASK_PICKUP_MS: 5000, UP_ASK_HOLD_MS: 60000, showMain: () => {}, draftMainWin: () => w, setTimeout, clearTimeout, Promise,
+      restarting: null, quitting: false, quitConfirmed: false, draftOk: false, draftNote: false, draftNoted: (d) => d, moveAsking: false, activeTurn: null, turnStarting: false,
+      draftDirty: () => { log.push("draftDirty"); return new Promise(() => {}); }, tradeMaybeLive: () => null, twLots: () => ({ held: false }), _tradeHost: null, _engineSetup: null, engineAbort: () => Promise.resolve(),
+      app: { on: (ev, fn) => { mctx.handler = fn; }, quit: () => log.push("app.quit") }, console: { error: () => {} } };
+    const updAsk = new Function("ctx", "with (ctx) { " + UA + "\n return updAsk; }")(mctx);
+    new Function("ctx", "with (ctx) { " + BQ + "); }")(mctx);
+    env.onAnswer = (id, ok) => { if (mctx._upAsk && mctx._upAsk.id === id && mctx._upAsk.pickedBy(wc)) mctx._upAsk.done(ok === true); };
+    env.window.blave.updateAskGet = () => Promise.resolve(mctx._upAsk && mctx._upAsk.pickedBy(wc) ? { id: mctx._upAsk.id, kind: mctx._upAsk.kind, data: mctx._upAsk.data } : null);
+    const p = updAsk("trading", { venue: "Binance" });
+    await R.upAskPull();
+    const q = () => { const e = { prevented: false, preventDefault() { this.prevented = true; } }; mctx.handler(e); return e; };
+    const blocked = q().prevented && !log.includes("draftDirty");
+    env.confirmBox({ title: "PDF 失敗", onOk: () => {} });   // 非同步結果回來、自己開了一個框
+    const res = await Promise.race([p, sleep(500).then(() => "HANG")]);
+    t("P1-1 §4.2 開著時別的框蓋上來:主行程收到取消(不是一直等)", opened.join() === "tm.quitTitle,PDF 失敗" && res === false, { opened, res });
+    t("P1-1 …quitAsking 放回 false;之前 Cmd+Q 被擋、之後 Cmd+Q／選單列「結束」照常往下走", blocked && mctx.quitAsking === false && mctx._upAsk === null && (q(), log.includes("draftDirty")), log);
+    t("P1-1 …新框照常開著(它的 delCtx 沒被動),UP_BOX 收掉", env.delCtx && env.delCtx.onCancel === undefined && env.UP_BOX === null);
+    // cfSupersede 自己:已按過主鈕(acted)或沒有 onCancel 的舊框不叫
+    let n = 0; env.delCtx = { onCancel: () => n++, acted: true }; R.cfSupersede(); env.delCtx = { m: {} }; R.cfSupersede(); env.delCtx = { onCancel: () => n++ }; R.cfSupersede(); R.cfSupersede();
+    t("cfSupersede:已按主鈕的、刪對話那種沒有 onCancel 的不叫;沒處理過的只叫一次", n === 1); }
+  // ── 稽核 P2-1:畫面拿走之後沒答 → 長逾時保底 ──
+  { const UA = cut(src, "function updAsk(");
+    const w = new EventEmitter(), wc = new EventEmitter(); wc.send = () => {}; w.webContents = wc; w.isDestroyed = () => false;
+    const ctx = { _upAsk: null, _upAskSeq: 0, quitAsking: false, UP_ASK_PICKUP_MS: 5000, UP_ASK_HOLD_MS: 60, showMain: () => {}, draftMainWin: () => w, setTimeout, clearTimeout, Promise };
+    const updAsk = new Function("ctx", "with (ctx) { " + UA + "\n return updAsk; }")(ctx);
+    const p = updAsk("trading", {}); ctx._upAsk.pickedBy(wc);
+    const res = await Promise.race([p, sleep(1000).then(() => "HANG")]);
+    t("P2-1 畫面拿走那一問之後一直沒答(卡死沒死):長逾時到了當取消、quitAsking 放回;預設 15 分鐘;取件逾時 30 秒", res === false && ctx.quitAsking === false && /const UP_ASK_PICKUP_MS = 30000, UP_ASK_HOLD_MS = 15 \* 60000;/.test(src)); }
+  // ── 設計稽核 M1／M2:熱區 44 ──
+  { const css = fs.readFileSync(path.join(SHELL, "renderer", "app.css"), "utf8");
+    const rule = (sel) => { const re = new RegExp("^" + sel.replace(/[.*+?^${}()|[\]\\#:]/g, "\\$&") + " \\{([^}]*)\\}", "m"); const m = re.exec(css); return m ? m[1] : null; };
+    const px = (v) => Number((/(-?\d+)px/.exec(v) || [])[1]);
+    const pill = rule(".up-pill"), pb = rule(".up-pill::before"), pt = rule(".up-pill-t"), rail = rule(".up-rail"), rb = rule(".up-rail::before");
+    const inset = (r) => (/inset: ([^;]+);/.exec(r) || [])[1].split(/\s+/).map(px);
+    const pi = inset(pb), ri = inset(rb);
+    t("M1 膠囊不裁切(熱區要伸出去),裁切在 .up-pill-t 並帶 min-width:0", pill && !/overflow/.test(pill) && /min-width: 0;/.test(pt) && /overflow: hidden;/.test(pt));
+    // ::before 錨在 padding box:1px 透明框不算,所以是 視覺 − 2 + 2×inset
+    t("M1 膠囊熱區:視覺高 32 − 框 2 + ::before 上下各 " + -pi[0] + " = " + (30 - 2 * pi[0]) + " ≥ 44", /height: 32px;/.test(pill) && /border: 1px solid transparent;/.test(pill) && 30 - 2 * pi[0] >= 44);
+    t("M2 細軌圓鈕:28 正圓、flex:none(不被 .side-rail 擠扁)、不裁切;熱區 28 − 框 2 + 2×" + -ri[0] + " = " + (26 - 2 * ri[0]) + " ≥ 44", /flex: none;/.test(rail) && /width: 28px; height: 28px;/.test(rail) && !/overflow/.test(rail) && 26 - 2 * ri[0] >= 44 && ri.length === 1);
+    t("S3 拿掉圖示時左右內距一致(12)", /^\.up-pill\.no-ic \{ padding-left: var\(--space-12\); \}/m.test(css) && /padding: 0 var\(--space-12\) 0 var\(--space-8\)/.test(pill));
+    t("S4 停用:底、字、框照 .btn-fill:disabled(surface-muted／ink-3／greyMedium)", /\.up-pill:disabled, \.up-pill\[aria-disabled="true"\] \{ background: var\(--surface-muted\); border-color: var\(--color-greyMedium\); color: var\(--ink-3\);/.test(css)
+      && /\.btn-fill:disabled[^{]*\{ background: var\(--surface-muted\); color: var\(--ink-3\); border: 1px solid var\(--color-greyMedium\);/.test(css));
+    t("S1 條列最後一條不留底距、整組跟後面的草稿句隔 12", /\.del-body \.up-notes li:last-child \{ margin-bottom: 0; \}/.test(css) && /\.del-body \.up-notes-slot \{ margin-bottom: var\(--space-12\); \}/.test(css));
+    t("舊帳:modal ✕ 視覺 32 + ::before 6×2 = 44;關於列文字鈕 ::before 上下 15(12px 字 → 44)", /^\.modal-close::before \{ content: ""; position: absolute; inset: -6px; \}/m.test(css) && /^\.modal-close \{ position: relative; \}/m.test(css) && /flex: 0 0 32px; width: 32px; height: 32px;/.test(css)
+      && /^#set-up-btn::before \{ inset: -15px -4px; \}/m.test(css)); }
+  // ── 設計:細軌展開後焦點接到膠囊 ──
+  { const focus = [], toggles = [];
+    const env = { upPillNow: () => ({ show: true, kind: "busy", ask: false }), $: (id) => ({ id, focus: () => focus.push(id) }), busyLocked: () => true, paneSt: { side: { off: true } }, paneToggle: (k, off) => { toggles.push(k + ":" + off); env.paneSt.side.off = off; },
+      busyTell: () => focus.push("told"), busySlot: () => ({}), trackFeature: () => {}, upRestartAsk: () => {} };
+    const click = new Function("env", "with (env) { " + cut(app, "function upPillClick(") + "\n return upPillClick; }")(env);
+    click({ id: "up-rail" });
+    t("細軌回合中按圓鈕:展開側欄、講原因、焦點移到膠囊(不掉到 BODY)", toggles.join() === "side:false" && focus.join() === "told,up-pill");
+    focus.length = 0; toggles.length = 0; click({ id: "up-pill" });
+    t("…側欄本來就展開(按的是膠囊):不動側欄、不搬焦點", toggles.length === 0 && focus.join() === "told"); }
+  // ── 稽核 P3-2:更新說明的第二次抓取不被 ready↔blocked 用掉(實際跑 onState + upNotesKick)──
+  { const ON = cut(src, "const onState = (st) =>").replace(/^const onState = /, ""), KICK = cut(src, "function upNotesKick("), GET = cut(src, "async function upNotesGet(");
+    let fetches = 0, answer = null;
+    const ctx = { BrowserWindow: { getAllWindows: () => [] }, _officialBackup: null, restarting: null, draftOk: true, app: { quit: () => {} }, _upStaged: null, _upNotes: { v: null, res: null, tries: 0, inflight: null },
+      require: () => ({ fetchNotes: () => { fetches++; return Promise.resolve(answer); } }), updater: () => ({ state: () => ({ version: "0.1.36" }) }) };
+    const fns = new Function("ctx", "with (ctx) { " + KICK + "\n" + GET + "\n return { onState: (" + ON + "), upNotesGet }; }")(ctx);
+    fns.onState({ phase: "ready", version: "0.1.36" }); await sleep(1);
+    fns.onState({ phase: "blocked", version: "0.1.36" }); fns.onState({ phase: "ready", version: "0.1.36" }); fns.onState({ phase: "blocked", version: "0.1.36" }); await sleep(1);
+    t("進 ready 抓一次;之後 ready↔blocked 來回(開始／暫停下單)不再抓", fetches === 1, fetches);
+    answer = { v: "0.1.36", zh: ["a"], en: ["a"] }; const got = await fns.upNotesGet();
+    t("…第一次 404(正式軌 Release 還沒建):開 §4.1 那一刻還有第二次,拿到就給", fetches === 2 && got && got.zh[0] === "a");
+    await fns.upNotesGet();
+    t("…拿到之後不再抓", fetches === 2);
+    fns.onState({ phase: "error" }); fns.onState({ phase: "ready", version: "0.1.37" }); await sleep(1);
+    t("新的一版暫存好:重新算(再抓)", fetches === 3, fetches); }
+  t("bidi 另擋 U+061C(Arabic Letter Mark)", parseNotes("- a\u061cb\n---\n- c\u061cd").zh[0] === "ab" && parseNotes("- a\u061cb\n---\n- c\u061cd").en[0] === "cd");
+
   // ── 開發版假更新 ──
   { t("BLAVE_DEV_FAKE_UPDATE 只在 !app.isPackaged 生效", U.devFakeVersion({ BLAVE_DEV_FAKE_UPDATE: "1" }, true) === null && U.devFakeVersion({ BLAVE_DEV_FAKE_UPDATE: "0.1.40" }, true) === null
       && U.devFakeVersion({ BLAVE_DEV_FAKE_UPDATE: "1" }, false) === "9.9.9" && U.devFakeVersion({ BLAVE_DEV_FAKE_UPDATE: "0.1.40" }, false) === "0.1.40" && U.devFakeVersion({}, false) === null && U.devFakeVersion(null, false) === null);
     t("main.js 拿 app.isPackaged 判,沒打包才換成假的", /const fake = require\("\.\/updater"\)\.devFakeVersion\(process\.env, app\.isPackaged\);/.test(src));
     let trading = false; const st = []; const f = U.createDevFake({ version: "9.9.9", currentVersion: "0.1.36", isTrading: () => trading, onState: (s) => st.push(s.phase) });
+    let installed = 0; const f2 = U.createDevFake({ version: "9.9.9", currentVersion: "0.1.36", isTrading: () => false, onState: () => {}, onInstall: () => installed++ }); f2.install();
+    t("假更新 install 叫 onInstall;main.js 幾秒後收回 quitConfirmed／draftOk／restarting(不留著)", installed === 1 && /const fakeDone = \(\) => setTimeout\(\(\) => \{ quitConfirmed = false; draftOk = false; if \(restarting\) setRestarting\(null\); \}, 3000\);/.test(src) && /onInstall: fakeDone/.test(src));
     t("假更新:沒在下單 ready、下單中 blocked;install 不真的重開(沒有 quitAndInstall)", f.state().phase === "ready" && ((trading = true), f.state().phase === "blocked") && f.install().error === "TRADING" && ((trading = false), f.install().ok === true)
       && !/quitAndInstall/.test(cut(fs.readFileSync(path.join(SHELL, "updater.js"), "utf8"), "function createDevFake("))); }
 

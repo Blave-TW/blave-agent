@@ -171,7 +171,8 @@ function devFakeVersion(env, isPackaged) {
   if (!v) return null;
   return /^\d+\.\d+\.\d+$/.test(v) ? v : "9.9.9";
 }
-// 同 createUpdater 的介面;install 不真的重開(只記一行),畫面停在「重新啟動中…」可以看第四態
+/* 同 createUpdater 的介面;install 不真的重開,只記一行並叫 opts.onInstall(main.js 幾秒後收回 restarting／quitConfirmed／draftOk)。
+   下單中那條會先照真的流程停掉開發版的下單、設 restarting,所以收回之前看得到「重新啟動中…」;沒在下單那條不設 restarting */
 function createDevFake(opts) {
   const log = opts.log || (() => {});
   const publicState = () => ({ phase: opts.isTrading() ? "blocked" : "ready", version: opts.version, percent: 100, error: null, current: opts.currentVersion });
@@ -181,7 +182,12 @@ function createDevFake(opts) {
     start() { setTimeout(push, 1000).unref?.(); return true; },
     check() { push(); return true; },
     poll() { const ps = publicState(); if (ps.phase === pushed) return false; push(); return true; },
-    install() { if (opts.isTrading()) return { ok: false, error: "TRADING" }; log("dev fake update: install requested (not restarting)"); return { ok: true }; },
+    install() {
+      if (opts.isTrading()) return { ok: false, error: "TRADING" };
+      log("dev fake update: install requested (not restarting)");
+      try { if (opts.onInstall) opts.onInstall(); } catch (_) { /* 開發用 */ }
+      return { ok: true };
+    },
     state: publicState,
   };
 }

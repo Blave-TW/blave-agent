@@ -4,9 +4,9 @@ const https = require("https");
 
 const VER_RE = /^\d+\.\d+\.\d+$/;
 const MAX_BYTES = 256 * 1024, TIMEOUT_MS = 5000, MAX_ITEMS = 3, ZH_CHARS = 40, EN_WORDS = 25;
-// 控制字元、零寬字元、bidi 嵌入／覆寫／隔離(U+200B–U+200F、U+2028–U+202E、U+2060–U+2069、U+FEFF)與反引號:說明是別人寫的字,畫面只收看得見、方向不會被翻的字。
+// 控制字元、零寬字元、bidi 嵌入／覆寫／隔離與記號(U+061C、U+200B–U+200F、U+2028–U+202E、U+2060–U+2069、U+FEFF)與反引號:說明是別人寫的字,畫面只收看得見、方向不會被翻的字。
 // U+2010–U+2027 是一般標點(— … ’ “),照留
-const STRIP_RE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff`]/g;
+const STRIP_RE = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff`]/g;
 
 function clip(s, lang) {
   if (lang === "zh") { const a = Array.from(s); return a.length > ZH_CHARS ? a.slice(0, ZH_CHARS).join("") + "…" : s; }

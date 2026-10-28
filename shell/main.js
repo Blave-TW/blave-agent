@@ -436,7 +436,7 @@ function cloudCmd() {
 
 // ── 自動更新(updater.js;規則見 spec §13)────────────────────
 // 更新來源由打包時的 BLAVE_UPDATE_URL 蓋進 package.json(blaveUpdateUrl);開發版與沒設的包 = 不更新,畫面只顯示版號。
-let _up = null;
+let _up = null, _upStaged = null;   // _upStaged = 上一次推的狀態已暫存哪一版(沒暫存 = null)
 function updater() {
   if (_up) return _up;
   const feedUrl = app.isPackaged ? require("./package.json").blaveUpdateUrl || null : null;
@@ -446,11 +446,16 @@ function updater() {
     if (restarting === "installing" && st.phase === "error") app.quit();
     // 直接裝那一支(沒在下單)先設了 draftOk 才 install:Squirrel／NSIS 之後才失敗、app 還開著,收回——下次結束照樣問草稿(稽核 P3-1)
     else if (st.phase === "error") draftOk = false;
-    if (st.phase === "ready" || st.phase === "blocked") upNotesKick(st.version);
+    // 進 ready／blocked 那一刻抓一次(下單開始／暫停的 ready↔blocked 來回不算,不然會把開 §4.1 那一刻的第二次用掉)
+    const staged = st.phase === "ready" || st.phase === "blocked", was = _upStaged;
+    _upStaged = staged ? st.version || true : null;
+    if (staged && was !== _upStaged) upNotesKick(st.version);
   };
   // 開發版沒有更新來源,膠囊永遠不出:BLAVE_DEV_FAKE_UPDATE 給一份假的「已暫存」(只在沒打包時生效)
   const fake = require("./updater").devFakeVersion(process.env, app.isPackaged);
-  if (fake) { _up = require("./updater").createDevFake({ version: fake, currentVersion: app.getVersion(), isTrading: () => !!tradeMaybeLive(), onState, log: (m) => console.error("[updater] " + m) }); return _up; }
+  // 假 install 不重開:幾秒後把重開前設的旗標收回(不然之後關窗不問草稿、Cmd+Q 直接放行)。收回前那幾秒看得到「重新啟動中…」
+  const fakeDone = () => setTimeout(() => { quitConfirmed = false; draftOk = false; if (restarting) setRestarting(null); }, 3000);
+  if (fake) { _up = require("./updater").createDevFake({ version: fake, currentVersion: app.getVersion(), isTrading: () => !!tradeMaybeLive(), onState, onInstall: fakeDone, log: (m) => console.error("[updater] " + m) }); return _up; }
   _up = require("./updater").createUpdater({
     autoUpdater: feedUrl ? require("electron-updater").autoUpdater : null,
     // Squirrel 暫存完成的事件只有原生這顆會發(updater.js 檔頭);Windows 是 NSIS,沒有原生這一層 → 不給,electron-updater 下載完就算 ready
@@ -4050,7 +4055,8 @@ async function restartToUpdate(opts) {
     if (plan() === "confirm") break;
   }
   const live = tradeMaybeLive() || {};   // 問草稿那段之間剛好停了:字裡的交易所名留空,不拋例外
-  if (!(await updAsk("trading", { venue: venueName(live.venue), cloud: !!TT.cloudTrading(cloudSt()), unsaved: !!note }))) return { ok: false, error: "CANCELED" };
+  // paper = 真錢／模擬記號;讀不到交易所就不給(畫面不出記號、換不帶名字的那句)
+  if (!(await updAsk("trading", { venue: venueName(live.venue), cloud: !!TT.cloudTrading(cloudSt()), unsaved: !!note, ...(live.venue ? { paper: live.venue === "paper" } : {}) }))) return { ok: false, error: "CANCELED" };
   // 框開著的時候可能變了:回合開始了(程式觸發的)、updater 自己出錯了 → 不收工,什麼都沒動
   if (turnBusy()) return { ok: false, error: "TURN_BUSY" };
   const ph = phase();
@@ -4072,20 +4078,21 @@ async function restartToUpdate(opts) {
 }
 /* 更新 modal 的主行程↔畫面往返(§4.2;選單列入口的 §4.1 也走這裡)。主行程開一道「問題」,送 update-ask 叫畫面來拿
    (update-ask-get),畫面答 update-ask-answer。都只認 draftMainWin() 那一頁(不用 getAllWindows()[0]:可能是藏著的 PDF 視窗)。
-   等的期間 quitAsking = true(Cmd+Q、搬移框不疊);視窗關掉／藏起來、render-process-gone、重新載入、畫面 10 秒內沒來拿,
-   一律當取消並放回 quitAsking——不然 before-quit 會一直 return,Cmd+Q 與選單列「結束」都失效。 */
-const UP_ASK_PICKUP_MS = 10000;
+   等的期間 quitAsking = true(Cmd+Q、搬移框不疊);視窗關掉／藏起來、render-process-gone、重新載入、畫面 30 秒內沒來拿
+   (Windows 冷啟動建視窗、載頁要時間),或拿走之後 15 分鐘都沒答(畫面卡死但沒死),一律當取消並放回 quitAsking——
+   不然 before-quit 會一直 return,Cmd+Q 與選單列「結束」都失效。 */
+const UP_ASK_PICKUP_MS = 30000, UP_ASK_HOLD_MS = 15 * 60000;
 let _upAsk = null, _upAskSeq = 0;
 function updAsk(kind, data) {
   try { showMain(); } catch (_) { /* 叫不出視窗:下面找不到頁就當取消 */ }
   const id = ++_upAskSeq;
   quitAsking = true;
   return new Promise((resolve) => {
-    let win = null, findT = null;
+    let win = null, findT = null, holdT = null;
     const offs = [];
     const done = (ok) => {
       if (!_upAsk || _upAsk.id !== id) return;
-      _upAsk = null; clearTimeout(pickT); clearTimeout(findT);
+      _upAsk = null; clearTimeout(pickT); clearTimeout(findT); clearTimeout(holdT);
       offs.splice(0).forEach((f) => { try { f(); } catch (_) { /* 視窗已經沒了 */ } });
       quitAsking = false;
       if (ok !== true && win && !win.isDestroyed()) { try { win.webContents.send("update-ask-close", id); } catch (_) { /* 頁已經走了 */ } }
@@ -4097,7 +4104,7 @@ function updAsk(kind, data) {
     const onNav = (d, _url, inPlace, mainFrame) => { const x = d && typeof d === "object" && "isMainFrame" in d ? d : { isMainFrame: mainFrame, isSameDocument: inPlace }; if (x.isMainFrame && !x.isSameDocument) cancel(); };
     const pickT = setTimeout(cancel, UP_ASK_PICKUP_MS);
     _upAsk = { id, kind, data, done,
-      pickedBy: (wc) => { if (!win || win.isDestroyed() || wc !== win.webContents) return false; if (!_upAsk.seen) { _upAsk.seen = true; clearTimeout(pickT); on(win.webContents, "did-start-navigation", onNav); } return true; } };
+      pickedBy: (wc) => { if (!win || win.isDestroyed() || wc !== win.webContents) return false; if (!_upAsk.seen) { _upAsk.seen = true; clearTimeout(pickT); holdT = setTimeout(cancel, UP_ASK_HOLD_MS); on(win.webContents, "did-start-navigation", onNav); } return true; } };
     const attach = () => {
       if (!_upAsk || _upAsk.id !== id) return;
       win = draftMainWin();
@@ -4138,7 +4145,8 @@ function updSchedBoot() {
   if (r.target !== b.target || r.failed !== b.failed) { try { uiPrefsPatch({ updSchedTarget: b.target, updSchedFailed: b.failed }); } catch (_) { /* 下次啟動再對 */ } }
   if (b.report) { try { tm().track("update_failed", { stage: "install" }); } catch (_) { /* 追蹤不擋 */ } }
 }
-// 畫面那兩問:逾時或出錯回 null(= 有東西,不重開;跟人在場時的 draftDirty 相反)。沒有我們的頁 = 沒有草稿、沒有框
+// 畫面那兩問:逾時或出錯回 null(= 有東西,不重開;跟人在場時的 draftDirty 相反)。沒有我們的頁回 false:
+// 草稿那一問 = 沒有草稿;upIdleUi 那一問 = 畫面不閒(uiBusy),所以視窗整個關掉時這天也不重開(保守)
 async function pageAsk(expr) {
   const w = draftMainWin();
   if (!w) return false;

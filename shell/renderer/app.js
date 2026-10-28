@@ -1091,9 +1091,14 @@ function upModal(kind, data, opener, done, id) {
   if (!sc.hidden) { delClose(false); if (!sc.hidden) { once(false); return; } }   // 另一個框鎖著(策略庫扣款在路上):這次當取消
   UP_BOX = box;
   let title, lines = [], extra = null;
+  let mark = null, markKind = null;
   if (kind === "trading") {
     title = t("tm.quitTitle");
-    lines = [t("tm.updateBody", { venue: typeof d.venue === "string" ? d.venue : "" }), t("up.md.stay")];
+    // 交易所名讀不到:換不帶名字的那句(不寫成「部位留在，」);中文裡的拉丁名前後補空格(同下單確認框)
+    const venue = typeof d.venue === "string" ? d.venue.trim() : "";
+    lines = [venue ? t("tm.updateBody", { venue: typeof trPadLatin === "function" ? trPadLatin(venue) : venue }) : t("tm.updateBodyBare"), t("up.md.stay")];
+    // 真錢／模擬記號(設計稽核 2026-10-28:同本機下單確認框);主行程讀不到交易所時不給 paper,這時不出記號
+    if (typeof d.paper === "boolean") { mark = t(d.paper ? "tr.mode.paper" : "tr.mode.real"); markKind = d.paper ? "paper" : "real"; }
     if (d.cloud === true) lines.push(t("tm.quitCloudNote"));
     if (d.unsaved === true) lines.push(t("tm.unsavedNote"));
   } else {
@@ -1101,7 +1106,7 @@ function upModal(kind, data, opener, done, id) {
     extra = document.createElement("div"); extra.className = "up-notes-slot"; extra.hidden = true;
     if (typeof trUnsavedAny === "function" && trUnsavedAny()) lines = [t("tm.unsavedNote")];
   }
-  confirmBox({ title, lines, extra, ok: t("up.md.go"), opener: opener || null, onOk: () => once(true), onCancel: box.onCancel });
+  confirmBox({ title, lines, extra, mark, markKind, ok: t("up.md.go"), opener: opener || null, onOk: () => once(true), onCancel: box.onCancel });
   if (kind === "plain") upNotesFill(extra, box);
 }
 // 說明拿到再補上(框立刻開,不等):只用 textContent,不經 t() 或 upRich 的 {} 替換
@@ -1125,7 +1130,10 @@ function upBoxClose() {
 async function upAskPull() {
   let a = null; try { a = await window.blave.updateAskGet(); } catch (_) { a = null; }
   if (!a || !a.id || (UP_BOX && UP_BOX.id === a.id)) return;
-  upModal(a.kind === "trading" ? "trading" : "plain", a.data, null, (ok) => { window.blave.updateAskAnswer(a.id, ok).catch(() => {}); }, a.id);
+  // 答不出去(橋拋例外)也不拋:主行程那邊有長逾時保底
+  const answer = (ok) => { try { window.blave.updateAskAnswer(a.id, ok).catch(() => {}); } catch (_) { return; } };
+  // 開框途中拋例外(節點不在、t() 出錯):當場答取消,不讓主行程一直等(quitAsking 會擋住 Cmd+Q)
+  try { upModal(a.kind === "trading" ? "trading" : "plain", a.data, null, answer, a.id); } catch (_) { answer(false); }
 }
 /* 膠囊與細軌圓鈕:同一份 plan 畫兩顆(.ws-foot 在細軌時整塊藏起來)。側欄窄到放不下:拿掉圖示,不折行 */
 var UP_PILL_DAY_KEY = "ws_upd_pill_day";   // var:upPaint 可能在這一行之前被叫到
@@ -1161,8 +1169,11 @@ function upPillClick(btn) {
   if (!p.show || p.kind === "restarting") return;
   const anchor = $("up-pill-wrap");   // 原因句掛在膠囊那一塊底下
   if (busyLocked(btn)) {   // 回合中是鎖:講原因(lock_update)。細軌 44 寬寫不下一句:先把側欄展開,句子出在膠囊底下
-    if (btn.id === "up-rail" && typeof paneSt !== "undefined" && paneSt.side.off) paneToggle("side", false);
-    busyTell(busySlot("up-pill-why", anchor), "update"); return;
+    const opened = btn.id === "up-rail" && typeof paneSt !== "undefined" && paneSt.side.off;
+    if (opened) paneToggle("side", false);
+    busyTell(busySlot("up-pill-why", anchor), "update");
+    if (opened) $("up-pill").focus();   // 圓鈕跟著細軌藏起來了:焦點接到膠囊,不掉到 BODY
+    return;
   }
   trackFeature("upd_go_pill");
   upRestartAsk(btn, p.ask);
@@ -2575,7 +2586,17 @@ function delConfirm(m, opener) {
      那個選項的 ok、按下去做它的 onOk。warn = 掛在那個選項裡的情境句;disabled + why = 這個選項現在不能選,說明換成原因句(aria-describedby 指它)。
      choicesLabel = 這一組的名字(只給讀屏)。這時 lines 是最上面的狀態句(主墨)。
    keep = 常駐的安全句(每次都要看的);details = [{ label, text | items }] 收在「細節」裡(看懂一次就好的),detailsOpen = 預設展開 */
+/* 新框蓋掉還開著的舊框:舊框沒按主鈕,照 delClose 的契約叫它的 onCancel(更新框靠它回答主行程,不叫的話
+   主行程一直等、quitAsking 卡在 true,Cmd+Q 與選單列「結束」都失效;稽核 v036 P1-1) */
+function cfSupersede() {
+  const c = delCtx;
+  if (!c || !c.onCancel || c.acted) return;
+  delCtx = null; c.acted = true;
+  // 舊框的收尾出錯不擋新框
+  try { c.onCancel(); } catch (_) { return; }
+}
 function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel }) {
+  cfSupersede();
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   $("del-title").textContent = title;
   $("del-cancel").textContent = cancel || t("del.cancel");

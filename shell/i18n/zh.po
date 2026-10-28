@@ -2714,6 +2714,10 @@ msgstr "重新啟動中…"
 msgid "tm.updateBody"
 msgstr "重新啟動後，這台電腦不會再下單，也不會平倉。部位留在{venue}，重開後要按「啟動下單」。"
 
+# 同上,主行程讀不到交易所名時用(不寫成「部位留在，」)
+msgid "tm.updateBodyBare"
+msgstr "重新啟動後，這台電腦不會再下單，也不會平倉。部位留在交易所，重開後要按「啟動下單」。"
+
 # 啟動時不在「應用程式」資料夾問一次(§4;main.js askMoveToApps)
 msgid "tm.move.title"
 msgstr "把 Blave 移到「應用程式」資料夾？"

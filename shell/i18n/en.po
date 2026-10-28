@@ -2701,7 +2701,11 @@ msgstr "Restarting…"
 
 # 更新 modal 下單中(spec desktop-update-pill §4.2):重新啟動的後果,兩句(標題 tm.quitTitle、主鈕 up.md.go)
 msgid "tm.updateBody"
-msgstr "After the restart, this computer places no more orders and closes nothing. Positions stay at {venue}, so press Start trading once it reopens."
+msgstr "After the restart, this computer places no more orders and closes no positions. Positions stay at {venue}, and it won't trade again until you press Start trading."
+
+# 同上,主行程讀不到交易所名時用(不寫成「部位留在，」)
+msgid "tm.updateBodyBare"
+msgstr "After the restart, this computer places no more orders and closes no positions. Positions stay at the exchange, and it won't trade again until you press Start trading."
 
 # 啟動時不在「應用程式」資料夾問一次(§4;main.js askMoveToApps)
 msgid "tm.move.title"

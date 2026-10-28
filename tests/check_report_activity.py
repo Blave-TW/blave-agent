@@ -3,7 +3,8 @@ daemon.reports): the app's 06:00 scheduled update restarts only when no report r
 and none comes due within 10 minutes; a missing field means "assume one is" on the shell side.
 
   1. running: a runner started by _start_report_job or report_run_now is tracked until it exits;
-     a start thread still in its performance sweep counts as running.
+     a start thread still in its performance sweep counts as running, and so does a due slot the
+     scheduler fired whose thread has not started yet.
   2. next_due_at: earliest slot over enabled jobs as UTC ISO; a paused job, a never-matching cron
      and no jobs at all give None; an armed slot already past (tick not fired yet) still counts.
   3. local_daemon writes it as daemon.reports, and a failure only drops that key.
@@ -89,6 +90,40 @@ cl._refresh_live_stats = lambda why: None
 cl._report_runner_cmd = lambda job_id: ["/nonexistent/python-xyz"]
 cl._start_report_job("broken")
 check(cl.report_activity()["running"] is False and cl._report_starting == 0, "a runner that fails to start does not leave running stuck")
+
+# a due slot fired by the scheduler counts as running from the moment _report_next moves on,
+# before the start thread has run a single line (audit v036 P3-9)
+held = []
+real_thread = cl.threading.Thread
+
+
+class _HeldThread:
+    def __init__(self, target=None, args=(), **kw):
+        self.target, self.args = target, args
+
+    def start(self):
+        held.append(self)
+
+
+cl.threading.Thread = _HeldThread
+JOBS["due"] = ("* * * * *", None)
+cl._report_next["due"] = ("* * * * *", None, int(time.time()) - 1)
+cl._fire_due_reports()
+cl.threading.Thread = real_thread
+a = cl.report_activity()
+check(len(held) == 1 and a["running"] is True and cl._report_starting == 1,
+      f"scheduler fired a due job: running before its start thread runs ({a}, {cl._report_starting})")
+open(STOP, "w").close()
+held[0].target(*held[0].args)
+for _ in range(100):
+    if not cl.report_activity()["running"]:
+        break
+    time.sleep(0.05)
+check(cl._report_starting == 0 and cl.report_activity()["running"] is False,
+      "…the thread does not count it twice; done → released")
+os.remove(STOP)
+JOBS.clear()
+cl._report_next.clear()
 
 # ── 2. next_due_at ──
 now = int(time.time())

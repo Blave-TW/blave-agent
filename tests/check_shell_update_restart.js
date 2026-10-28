@@ -87,7 +87,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     t("§4.1 開著時開始下單:按重新啟動後主行程改問 §4.2(由主行程回畫面開),不直接裝", r.log.join() === "ask:plain,ask:trading" && res.error === "CANCELED", r.log); }
   // 稽核 P3-1:直接裝送出之後 Squirrel／NSIS 才失敗(onState phase error、restarting 不是 installing):收回 draftOk
   { const ON = cut(src, "const onState = (st) =>").replace(/^const onState = /, ""), log = [];
-    const ctx = { BrowserWindow: { getAllWindows: () => [] }, _officialBackup: null, restarting: null, draftOk: true, app: { quit: () => log.push("app.quit") }, upNotesKick: (v) => log.push("notes:" + v) };
+    const ctx = { BrowserWindow: { getAllWindows: () => [] }, _officialBackup: null, restarting: null, draftOk: true, app: { quit: () => log.push("app.quit") }, upNotesKick: (v) => log.push("notes:" + v), _upStaged: null };
     const on = new Function("ctx", "with (ctx) { return (" + ON + "); }")(ctx);
     on({ phase: "ready", version: "0.1.36" }); const kept = ctx.draftOk;
     on({ phase: "error" }); const dropped = ctx.draftOk === false && log.join() === "notes:0.1.36";
@@ -101,7 +101,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     t("下單中、按取消:沒 noteQuit、沒 stop、沒 install;回 CANCELED", res.error === "CANCELED" && r.log.join() === "ask:trading", r.log);
     t("…取消後旗標都還原:quitConfirmed 沒設、restarting 沒設(下次結束 / 再按照樣會問)", r.confirmed() === false && r.ctx.restarting === null);
     t("…按取消不送埋點(沒有用到)", r.tracked.length === 0);
-    t("§4.2 的內容由主行程算:交易所名(venueName)、雲端在下單與否、草稿;畫面不重算", JSON.stringify(r.boxes[0].data) === '{"venue":"Binance","cloud":false,"unsaved":false}', r.boxes[0]); }
+    t("§4.2 的內容由主行程算:交易所名(venueName)、雲端在下單與否、草稿;畫面不重算", JSON.stringify(r.boxes[0].data) === '{"venue":"Binance","cloud":false,"unsaved":false,"paper":false}', r.boxes[0]); }
+  { const r = rig({ trading: true, go: false }); r.ctx.tradeMaybeLive = () => ({ venue: "paper" }); r.ctx.venueName = () => "模擬交易"; await r.run();
+    t("§4.2 模擬帳戶:paper: true(畫面出模擬記號)", r.boxes[0].data.paper === true, r.boxes[0]); }
+  { const r = rig({ trading: true, go: false }); r.ctx.tradeMaybeLive = () => ({ venue: null }); r.ctx.venueName = () => ""; await r.run();
+    t("§4.2 讀不到交易所(tradeMaybeLive 只知道可能在下單):不給 paper、venue 空字串(畫面不出記號、換不帶名字的那句)", !("paper" in r.boxes[0].data) && r.boxes[0].data.venue === "", r.boxes[0]); }
   { const r = rig({ trading: true, cloud: true, go: false }); await r.run();
     t("雲端也確定在下單:§4.2 帶 cloud: true(畫面加 tm.quitCloudNote)", r.boxes[0].data.cloud === true); }
   t("系統原生框退役:restartToUpdate 裡沒有 dialog.showMessageBox、沒有 stayGo、沒有 updateBody", !/showMessageBox|stayGo|updateBody/.test(RESTART));
@@ -343,7 +347,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const po = { zh: fs.readFileSync(path.join(SHELL, "i18n", "zh.po"), "utf8"), en: fs.readFileSync(path.join(SHELL, "i18n", "en.po"), "utf8") };
   const W = { zh: { "tm.updateBody": "重新啟動後，這台電腦不會再下單，也不會平倉。部位留在{venue}，重開後要按「啟動下單」。", "tm.move.title": "把 Blave 移到「應用程式」資料夾？",
       "tm.move.body": "在這裡 Blave 無法自動更新。移過去後會自動重新開啟。", "tm.move.go": "移到應用程式", "tm.move.no": "不要移" },
-    en: { "tm.updateBody": "After the restart, this computer places no more orders and closes nothing. Positions stay at {venue}, so press Start trading once it reopens.",
+    en: { "tm.updateBody": "After the restart, this computer places no more orders and closes no positions. Positions stay at {venue}, and it won't trade again until you press Start trading.",
       "tm.move.title": "Move Blave to the Applications folder?", "tm.move.body": "Blave can’t update itself from here. It reopens after the move.", "tm.move.go": "Move to Applications", "tm.move.no": "Don’t Move" } };
   t("五個 key 兩語逐字在 .po(spec §1 / §4;tm.updateBody 0.1.36 改成兩句、去分號)", ["zh", "en"].every((l) => !/[；;]/.test(W[l]["tm.updateBody"])) && ["zh", "en"].every((l) => Object.keys(W[l]).every((k) => po[l].includes('msgid "' + k + '"\nmsgstr "' + W[l][k] + '"\n'))));
   const trSrc = fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8");

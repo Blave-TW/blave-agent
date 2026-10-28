@@ -3200,20 +3200,32 @@ def _fire_due_reports():
             _report_next[job_id] = (cron, tz, nxt)
             if not due:
                 continue
-            # off this thread: the performance sweep in front of the job can take minutes
-            threading.Thread(target=_start_report_job, args=(job_id,), daemon=True,
-                             name=f"report-start-{job_id}").start()
+            # off this thread: the performance sweep in front of the job can take minutes. Counted
+            # before start(): _report_next already points at the next slot, so a status write in
+            # between would otherwise read "nothing running, nothing due" for one round.
+            _report_count_start(1)
+            try:
+                threading.Thread(target=_start_report_job, args=(job_id, True), daemon=True,
+                                 name=f"report-start-{job_id}").start()
+            except Exception:
+                _report_count_start(-1)
+                raise
 
 
-def _start_report_job(job_id):
+def _report_count_start(n):
+    global _report_starting
+    with _report_children_lock:
+        _report_starting += n
+
+
+def _start_report_job(job_id, counted=False):
     """A scheduled report's fire: refresh every live strategy's performance first (a live
     tick no longer writes stats.json — the figures the report and the manager read would
     otherwise stop at deploy time), then start the job. Best-effort: a failed sweep never
     costs the report its run. Not for report_run_now — the user pressed that; a fresh
     performance is the 更新績效 button."""
-    global _report_starting
-    with _report_children_lock:
-        _report_starting += 1
+    if not counted:
+        _report_count_start(1)
     try:
         try:
             _refresh_live_stats(f"report {job_id}")
@@ -3225,8 +3237,7 @@ def _start_report_job(job_id):
         except Exception as e:
             _log(f"report trigger: {job_id} failed to start: {type(e).__name__}: {e}")
     finally:
-        with _report_children_lock:
-            _report_starting -= 1
+        _report_count_start(-1)
 
 
 def _sweep_legacy_report_schedules():

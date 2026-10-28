@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-- **電腦版狀態檔多一塊報告排程狀態 `daemon.reports = {running, next_due_at}`(`command_listener.report_activity`／`_report_spawn`、`local_daemon.write_status`;desktop 0.1.36 每天 06:00 自動更新 spec desktop-update-pill §5.2 條件 10)**:`running` = 這個行程起的 report_runner 子行程還有活著的(`_start_report_job` 與 `report_run_now` 都改經 `_report_spawn` 記下 Popen,讀的時候把結束的清掉;到期那支還在跑績效 sweep、runner 還沒起來也算);`next_due_at` = 所有啟用排程最近的到期時間(UTC ISO,`report_runner.cron_next` 從現在算,另併 `_report_next` 裡已經到點、60 秒那一輪還沒發的那一格;沒有排程是 null,永遠不會對到的 cron 不算)。外殼只讀這兩個值,不自己解鎖檔或重算 cron;算出錯只少 `reports` 這個鍵,狀態檔照寫,外殼讀不到就當作有報告、那天不自動重開。agent 自己用 Bash 起的 runner 不在 `running` 裡(自動重開另外要求沒有回合在跑)。跟電腦版 0.1.36 同包發;舊外殼不讀這個鍵。測試 `tests/check_report_activity.py`(新)。
+- **電腦版狀態檔多一塊報告排程狀態 `daemon.reports = {running, next_due_at}`(`command_listener.report_activity`／`_report_spawn`、`local_daemon.write_status`;desktop 0.1.36 每天 06:00 自動更新 spec desktop-update-pill §5.2 條件 10)**:`running` = 這個行程起的 report_runner 子行程還有活著的(`_start_report_job` 與 `report_run_now` 都改經 `_report_spawn` 記下 Popen,讀的時候把結束的清掉;到期那支還在跑績效 sweep、runner 還沒起來也算;排程到點時在起執行緒之前就先記一筆,`_report_next` 已經推到下一格、執行緒還沒跑的那一瞬間也算在跑);`next_due_at` = 所有啟用排程最近的到期時間(UTC ISO,`report_runner.cron_next` 從現在算,另併 `_report_next` 裡已經到點、60 秒那一輪還沒發的那一格;沒有排程是 null,永遠不會對到的 cron 不算)。外殼只讀這兩個值,不自己解鎖檔或重算 cron;算出錯只少 `reports` 這個鍵,狀態檔照寫,外殼讀不到就當作有報告、那天不自動重開。agent 自己用 Bash 起的 runner 不在 `running` 裡(自動重開另外要求沒有回合在跑)。跟電腦版 0.1.36 同包發;舊外殼不讀這個鍵。測試 `tests/check_report_activity.py`(新)。
 
 ## 1.1.147 — 2026-10-28(desktop 0.1.35)
 
