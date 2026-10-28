@@ -249,7 +249,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     t("程式收掉(phase 變了／主行程已取消):done(false)、不記 upd_cf_cancel", JSON.stringify(done) === "[false]" && tracked.length === 0 && env.$("del-scrim").hidden === true);
     done = []; boxes.length = 0; LANGV = "zh";
     R.upModal("trading", { venue: "Binance", cloud: true, unsaved: true }, null, (ok) => done.push(ok));
-    t("§4.2:標題 tm.quitTitle、內文兩句後果(tm.updateBody{venue},中文裡拉丁名前後補空格;up.md.stay)＋雲端句＋草稿句;不列改了什麼;主鈕 up.md.go", boxes[0].title === "tm.quitTitle" && JSON.stringify(boxes[0].lines) === JSON.stringify(['tm.updateBody{"venue":" Binance "}', "up.md.stay", "tm.quitCloudNote", "tm.unsavedNote"]) && !boxes[0].extra && boxes[0].ok === "up.md.go");
+    t("§4.2:標題 tm.quitTitle、內文兩句後果(tm.updateBody{venue},中文裡拉丁名只補前面的空格,後面緊接全形逗號;up.md.stay)＋雲端句＋草稿句;不列改了什麼;主鈕 up.md.go", boxes[0].title === "tm.quitTitle" && JSON.stringify(boxes[0].lines) === JSON.stringify(['tm.updateBody{"venue":" Binance"}', "up.md.stay", "tm.quitCloudNote", "tm.unsavedNote"]) && !boxes[0].extra && boxes[0].ok === "up.md.go");
     t("§4.2 沒給 paper:不出真錢／模擬記號", boxes[0].mark === null && boxes[0].markKind === null);
     R.upBoxClose(); boxes.length = 0;
     R.upModal("trading", { venue: "Binance", paper: false }, null, () => {}); const realBox = boxes[0]; R.upBoxClose();
@@ -339,7 +339,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     t("M1 膠囊不裁切(熱區要伸出去),裁切在 .up-pill-t 並帶 min-width:0", pill && !/overflow/.test(pill) && /min-width: 0;/.test(pt) && /overflow: hidden;/.test(pt));
     // ::before 錨在 padding box:1px 透明框不算,所以是 視覺 − 2 + 2×inset
     t("M1 膠囊熱區:視覺高 32 − 框 2 + ::before 上下各 " + -pi[0] + " = " + (30 - 2 * pi[0]) + " ≥ 44", /height: 32px;/.test(pill) && /border: 1px solid transparent;/.test(pill) && 30 - 2 * pi[0] >= 44);
-    t("M2 細軌圓鈕:28 正圓、flex:none(不被 .side-rail 擠扁)、不裁切;熱區 28 − 框 2 + 2×" + -ri[0] + " = " + (26 - 2 * ri[0]) + " ≥ 44", /flex: none;/.test(rail) && /width: 28px; height: 28px;/.test(rail) && !/overflow/.test(rail) && 26 - 2 * ri[0] >= 44 && ri.length === 1);
+    t("M2 細軌圓鈕:28 正圓、flex:none(不被 .side-rail 擠扁)、max-width:none(不被 .up-pill 的 max-width:100% 卡成 27)、不裁切;熱區 28 − 框 2 + 2×" + -ri[0] + " = " + (26 - 2 * ri[0]) + " ≥ 44", /flex: none;/.test(rail) && /max-width: none;/.test(rail) && /max-width: 100%;/.test(pill) && /width: 28px; height: 28px;/.test(rail) && !/overflow/.test(rail) && 26 - 2 * ri[0] >= 44 && ri.length === 1);
     t("S3 拿掉圖示時左右內距一致(12)", /^\.up-pill\.no-ic \{ padding-left: var\(--space-12\); \}/m.test(css) && /padding: 0 var\(--space-12\) 0 var\(--space-8\)/.test(pill));
     t("S4 停用:底、字、框照 .btn-fill:disabled(surface-muted／ink-3／greyMedium)", /\.up-pill:disabled, \.up-pill\[aria-disabled="true"\] \{ background: var\(--surface-muted\); border-color: var\(--color-greyMedium\); color: var\(--ink-3\);/.test(css)
       && /\.btn-fill:disabled[^{]*\{ background: var\(--surface-muted\); color: var\(--ink-3\); border: 1px solid var\(--color-greyMedium\);/.test(css));

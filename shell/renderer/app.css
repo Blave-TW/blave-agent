@@ -872,7 +872,7 @@ body.resizing * { cursor: col-resize !important; }
 .up-pill.no-ic { padding-left: var(--space-12); }
 .up-pill.no-ic .up-pill-ic { display: none; }
 .up-pill-wrap .busy-why { margin: var(--space-8) var(--space-4) 0; text-align: left; white-space: normal; }
-.up-rail { flex: none; width: 28px; height: 28px; padding: 0; justify-content: center; margin-top: auto; }
+.up-rail { flex: none; max-width: none; width: 28px; height: 28px; padding: 0; justify-content: center; margin-top: auto; }
 .up-rail::before { inset: -9px; }   /* 1px 透明框不算在 padding box 裡:28 − 2 + 18 = 44 */
 html.ws-sc .side-rail { flex: 1 1 auto; }
 @media (prefers-reduced-motion: reduce) { .up-pill { transition: none; } }

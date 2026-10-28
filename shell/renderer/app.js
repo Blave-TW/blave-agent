@@ -1094,9 +1094,9 @@ function upModal(kind, data, opener, done, id) {
   let mark = null, markKind = null;
   if (kind === "trading") {
     title = t("tm.quitTitle");
-    // 交易所名讀不到:換不帶名字的那句(不寫成「部位留在，」);中文裡的拉丁名前後補空格(同下單確認框)
+    // 交易所名讀不到:換不帶名字的那句(不寫成「部位留在，」);中文裡的拉丁名前面補空格,後面緊接全形逗號不補
     const venue = typeof d.venue === "string" ? d.venue.trim() : "";
-    lines = [venue ? t("tm.updateBody", { venue: typeof trPadLatin === "function" ? trPadLatin(venue) : venue }) : t("tm.updateBodyBare"), t("up.md.stay")];
+    lines = [venue ? t("tm.updateBody", { venue: typeof trPadLatin === "function" ? trPadLatin(venue).replace(/ $/, "") : venue }) : t("tm.updateBodyBare"), t("up.md.stay")];
     // 真錢／模擬記號(設計稽核 2026-10-28:同本機下單確認框);主行程讀不到交易所時不給 paper,這時不出記號
     if (typeof d.paper === "boolean") { mark = t(d.paper ? "tr.mode.paper" : "tr.mode.real"); markKind = d.paper ? "paper" : "real"; }
     if (d.cloud === true) lines.push(t("tm.quitCloudNote"));

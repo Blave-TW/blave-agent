@@ -3988,6 +3988,11 @@ function tradeLive(st = _tradeHost ? _tradeHost.status() : null) {
   const id = Object.keys(r.venues).filter((k) => venueReady(r.venues[k])).sort()[0];
   return id ? { venue: id } : null;
 }
+// 已連上的交易所全都是模擬帳戶才算模擬(同畫面 trCfPaperOnly):模擬加真錢同時下單時,記號要標真錢
+function tradePaperOnly(st = _tradeHost ? _tradeHost.status() : null) {
+  const v = (st && st.report && st.report.venues) || {}, ids = Object.keys(v).filter((k) => venueReady(v[k]));
+  return ids.length > 0 && ids.every((id) => id === "paper");
+}
 function tradeMaybeLive(st = _tradeHost ? _tradeHost.status() : null) {
   const live = tradeLive(st);
   if (live) return live;
@@ -4056,7 +4061,7 @@ async function restartToUpdate(opts) {
   }
   const live = tradeMaybeLive() || {};   // 問草稿那段之間剛好停了:字裡的交易所名留空,不拋例外
   // paper = 真錢／模擬記號;讀不到交易所就不給(畫面不出記號、換不帶名字的那句)
-  if (!(await updAsk("trading", { venue: venueName(live.venue), cloud: !!TT.cloudTrading(cloudSt()), unsaved: !!note, ...(live.venue ? { paper: live.venue === "paper" } : {}) }))) return { ok: false, error: "CANCELED" };
+  if (!(await updAsk("trading", { venue: venueName(live.venue), cloud: !!TT.cloudTrading(cloudSt()), unsaved: !!note, ...(live.venue ? { paper: tradePaperOnly() } : {}) }))) return { ok: false, error: "CANCELED" };
   // 框開著的時候可能變了:回合開始了(程式觸發的)、updater 自己出錯了 → 不收工,什麼都沒動
   if (turnBusy()) return { ok: false, error: "TURN_BUSY" };
   const ph = phase();

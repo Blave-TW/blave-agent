@@ -25,6 +25,7 @@ const MOVE_PATH = /^const moveDeclinedPath = [^\n]*;$/m.exec(src)[0];
 // ── §0 / §1 restartToUpdate(0.1.36 起確認一律在 app 內的更新 modal:updAsk 叫畫面開框;spec desktop-update-pill §4)──
 // 假收工同 probe(稽核 scratchpad/audit-0110/probe.js):stop 收完 child 才清掉,之後 tradeMaybeLive 才變 null(daemon.js 的實際行為)
 // updAsk 用假的(畫面那一端);真的 updAsk 往返與取消在 tests/check_shell_update_pill.js
+const READY = { credentials: true, pair: true, order: true, account: true };
 function rig(o) {
   const log = [], boxes = [], tracked = [];
   let quitConfirmed = false, child = !!o.trading, phase = o.phase || "blocked", nAsk = 0;
@@ -42,13 +43,15 @@ function rig(o) {
     updAsk: (kind, data) => { boxes.push({ kind, data }); log.push("ask:" + kind); nAsk++; if (o.onAsk) o.onAsk(nAsk, kind); const go = typeof o.go === "function" ? o.go(nAsk, kind) : !!o.go; return Promise.resolve(go); },
     updater: () => ({ state: () => ({ phase, version: "0.1.36" }), install: () => { const res = o.installRes || (phase !== "ready" && phase !== "blocked" ? { ok: false, error: "NOT_READY" } : child ? { ok: false, error: "TRADING" } : { ok: true }); log.push("install:" + (res.ok ? "ok" : res.error)); if (o.installThrows) throw new Error("boom"); return res; } }),
     app: { quit: () => log.push("app.quit") },
-    _tradeHost: { noteQuit: () => { log.push("noteQuit"); if (o.noteQuitThrows) throw new Error("note"); },
+    _tradeHost: { status: () => ({ report: { venues: o.venues || { binance: READY } } }), noteQuit: () => { log.push("noteQuit"); if (o.noteQuitThrows) throw new Error("note"); },
       stop: () => { log.push("stop:start"); return new Promise((ok) => setTimeout(() => { child = false; log.push("stop:done"); ok(); }, 30)); } },
     console: { error: () => {} },
     // 0.1.12:背景安裝的 pip 在跑時要先收掉(稽核 0.1.12 P1-1);沒在裝時是立刻回來的 no-op,不進 log
     engineAbort: () => (o.installing ? new Promise((ok) => setTimeout(() => { log.push("engineAbort"); ok(true); }, 10)) : Promise.resolve(false)),
   };
   Object.defineProperty(ctx, "quitConfirmed", { get: () => quitConfirmed, set: (v) => { quitConfirmed = v; log.push("quitConfirmed=" + v); } });
+  ctx.venueReady = (v) => !!(v && v.credentials && v.pair && v.order && v.account);
+  ctx.tradePaperOnly = new Function("ctx", "with (ctx) { " + cut(src, "function tradePaperOnly(") + "\n return tradePaperOnly; }")(ctx);
   const fn = new Function("ctx", "with (ctx) { " + RESTART + "\n return restartToUpdate; }")(ctx);
   return { run: (opts) => fn(opts), log, boxes, tracked, ctx, confirmed: () => quitConfirmed, setPhase: (p) => { phase = p; } };
 }
@@ -102,8 +105,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     t("…取消後旗標都還原:quitConfirmed 沒設、restarting 沒設(下次結束 / 再按照樣會問)", r.confirmed() === false && r.ctx.restarting === null);
     t("…按取消不送埋點(沒有用到)", r.tracked.length === 0);
     t("§4.2 的內容由主行程算:交易所名(venueName)、雲端在下單與否、草稿;畫面不重算", JSON.stringify(r.boxes[0].data) === '{"venue":"Binance","cloud":false,"unsaved":false,"paper":false}', r.boxes[0]); }
-  { const r = rig({ trading: true, go: false }); r.ctx.tradeMaybeLive = () => ({ venue: "paper" }); r.ctx.venueName = () => "模擬交易"; await r.run();
-    t("§4.2 模擬帳戶:paper: true(畫面出模擬記號)", r.boxes[0].data.paper === true, r.boxes[0]); }
+  { const r = rig({ trading: true, go: false, venues: { paper: READY } }); r.ctx.tradeMaybeLive = () => ({ venue: "paper" }); r.ctx.venueName = () => "模擬交易"; await r.run();
+    t("§4.2 只有模擬帳戶:paper: true(畫面出模擬記號)", r.boxes[0].data.paper === true, r.boxes[0]); }
+  { const r = rig({ trading: true, go: false, venues: { paper: READY, president: READY, binance: { credentials: true } } }); r.ctx.tradeMaybeLive = () => ({ venue: "paper" }); await r.run();
+    t("§4.2 模擬加真錢(統一)同時下單:排序後第一個是 paper 也標真錢(paper: false;同畫面 trCfPaperOnly,沒連好的不算)", r.boxes[0].data.paper === false, r.boxes[0]); }
   { const r = rig({ trading: true, go: false }); r.ctx.tradeMaybeLive = () => ({ venue: null }); r.ctx.venueName = () => ""; await r.run();
     t("§4.2 讀不到交易所(tradeMaybeLive 只知道可能在下單):不給 paper、venue 空字串(畫面不出記號、換不帶名字的那句)", !("paper" in r.boxes[0].data) && r.boxes[0].data.venue === "", r.boxes[0]); }
   { const r = rig({ trading: true, cloud: true, go: false }); await r.run();
