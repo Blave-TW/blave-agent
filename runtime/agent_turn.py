@@ -4724,10 +4724,10 @@ def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule=""
 def _remove_cloud_handoff_dir(workspace=None, session_id=None):
     """回合結束一律清掉這一輪的 `<workspace>/tmp/cloud-handoff/<turn>/`(雲端交接的短效 SSH 金鑰與憑證)。
     規則要 agent 在回合結束前自己刪,但回合出錯(撞 max_turns、半途、崩潰)時它沒機會刪,
-    金鑰就留在磁碟上等下一個回合碰巧清。只動這一輪自己的子資料夾:別條對話同時在用它們自己的(電腦版並行);
-    舊版 runtime 直接放在 cloud-handoff/ 底下的檔案(不是資料夾)也一起清,清完空了就拿掉 cloud-handoff/。
-    沒帶 session_id 照舊整個清(沒有並行的呼叫端)。不存在就算了;是連結就只拿掉連結;
-    `tmp` 本身是指到 workspace 外面的連結時整個不碰——絕不刪到 workspace/tmp 以外的東西。"""
+    金鑰就留在磁碟上等下一個回合碰巧清。帶 session_id 時只動這一輪自己的子資料夾,`cloud-handoff/` 根目錄一個都不碰:
+    agent 漏帶 handoff_dir 時 api 的退路把金鑰放在根目錄,可能正被別條回合用著(電腦版並行;稽核 s1 P2-1)。
+    沒帶 session_id(沒有並行的呼叫端):根目錄的檔只清超過憑證效期(15 分鐘)加餘裕的,資料夾不動。
+    不存在就算了;是連結就只拿掉連結;`tmp` 本身是指到 workspace 外面的連結時整個不碰——絕不刪到 workspace/tmp 以外的東西。"""
     ws = os.path.realpath(workspace or WORKSPACE)
     tmp = os.path.join(ws, "tmp")
     root = os.path.join(tmp, "cloud-handoff")
@@ -4743,19 +4743,23 @@ def _remove_cloud_handoff_dir(workspace=None, session_id=None):
         except OSError as e:
             print(f"[agent_turn] 清不掉 {path}: {e}", file=sys.stderr)
 
-    if session_id is None or os.path.islink(root) or not os.path.isdir(root):
+    if os.path.islink(root) or not os.path.isdir(root):
         drop(root)
         return
-    drop(os.path.join(root, handoff_folder(session_id)))
+    if session_id is not None:
+        drop(os.path.join(root, handoff_folder(session_id)))
+        return
+    cutoff = time.time() - HANDOFF_ROOT_STALE_S
     try:
         for name in os.listdir(root):
             p = os.path.join(root, name)
-            if os.path.islink(p) or not os.path.isdir(p):
+            if (os.path.islink(p) or not os.path.isdir(p)) and os.lstat(p).st_mtime < cutoff:
                 drop(p)
-        if not os.listdir(root):
-            os.rmdir(root)
     except OSError as e:
         print(f"[agent_turn] 清不掉 {root}: {e}", file=sys.stderr)
+
+
+HANDOFF_ROOT_STALE_S = 20 * 60   # get_ssh_access 的憑證 15 分鐘,多留 5 分鐘
 
 
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
