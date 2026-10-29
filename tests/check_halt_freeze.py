@@ -408,26 +408,29 @@ for v in ("binance", "okx", "gateio", "bingx"):
               f"position has no stop ({str(err)[:90]})")
         reset_halt()
 
-    # SL went out, then the pause: the TP alone is refused (a real _request for the SL would hit the
-    # venue, so the SL's POST is answered here and the pause lands right after it)
-    real_request = m._request
+    # OKX sends SL+TP as ONE oco order (a second whole-position TP/SL is refused 51088): there is
+    # no "SL out, TP refused" in between
+    if v != "okx":
+        # SL went out, then the pause: the TP alone is refused (a real _request for the SL would hit the
+        # venue, so the SL's POST is answered here and the pause lands right after it)
+        real_request = m._request
 
-    def _sl_then_halt(*a, **k):
-        guard.trip_halt("user request", "web")
+        def _sl_then_halt(*a, **k):
+            guard.trip_halt("user request", "web")
+            m._request = real_request
+            return ([{"algoId": "s1"}] if v == "okx" else {"algoId": "s1", "id": "s1", "orderId": "s1"})
+
+        if v == "bingx":
+            m._unwrap_order = lambda o: o
+        m._request = _sl_then_halt
+        m.get_open_algo_orders = lambda env, symbol=None: []
+        before = _denied()
+        err = _w_err(lambda: m.place_protective_orders({}, "BTCUSDT", "long", sl_price=90000.0, tp_price=110000.0))
         m._request = real_request
-        return ([{"algoId": "s1"}] if v == "okx" else {"algoId": "s1", "id": "s1", "orderId": "s1"})
-
-    if v == "bingx":
-        m._unwrap_order = lambda o: o
-    m._request = _sl_then_halt
-    m.get_open_algo_orders = lambda env, symbol=None: []
-    before = _denied()
-    err = _w_err(lambda: m.place_protective_orders({}, "BTCUSDT", "long", sl_price=90000.0, tp_price=110000.0))
-    m._request = real_request
-    check(ok_pf(err, before) and "take-profit was not placed" in str(err) and "stop-loss went out" in str(err)
-          and "NO STOP-LOSS" not in str(err) and "entry" not in str(err),
-          f"W2 {v}: SL placed, TP refused — names only the TP, says the SL is there ({str(err)[:90]})")
-    reset_halt()
+        check(ok_pf(err, before) and "take-profit was not placed" in str(err) and "stop-loss went out" in str(err)
+              and "NO STOP-LOSS" not in str(err) and "entry" not in str(err),
+              f"W2 {v}: SL placed, TP refused — names only the TP, says the SL is there ({str(err)[:90]})")
+        reset_halt()
 
     guard.trip_halt("user request", "web")
     before = _denied()

@@ -814,6 +814,7 @@ def cancel_order(env, symbol, order_id=None, client_order_id=None):
 # "not including ... Trailing Stop". Not live-verified for move_order_stop —
 # manager/close_symbol.py re-reads afterwards and fails loud if one survives.
 CLOSE_ALGO_ORD_TYPES = ("conditional", "oco", "trigger", "move_order_stop")
+PROTECTIVE_ALGO_ORD_TYPES = ("conditional", "oco")   # what place_protective_orders places
 
 
 def get_open_algo_orders(env, symbol=None, ord_types=("conditional",)):
@@ -841,7 +842,7 @@ def _find_pending_algo(env, symbol, algo_cl_ord_id):
     the caller then reports the position as possibly unprotected, never as protected)."""
     for i in range(ALGO_LOOKUP_READS):
         try:
-            for row in get_open_algo_orders(env, symbol):
+            for row in get_open_algo_orders(env, symbol, PROTECTIVE_ALGO_ORD_TYPES):
                 if row.get("algoClOrdId") == algo_cl_ord_id:
                     return row
         except Exception:
@@ -853,29 +854,34 @@ def _find_pending_algo(env, symbol, algo_cl_ord_id):
 
 def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
                             tp_price=None, verify=True, _after_entry=False):
-    """Reduce-only conditional SL/TP for an EXISTING swap position via
-    /api/v5/trade/order-algo (ordType=conditional, market execution via
-    ordPx=-1). qty=None protects the whole position (closeFraction=1).
+    """Reduce-only SL/TP for an EXISTING swap position via /api/v5/trade/order-algo, market
+    execution on trigger (ordPx=-1). qty=None protects the whole position (closeFraction=1).
+    SL or TP alone is one `conditional` order; SL and TP together are ONE `oco` order — OKX
+    allows a single whole-position TP/SL per position (51088, measured on demo 2026-10-30), and a
+    `conditional` carrying both triggers runs only the stop-loss ("only stop-loss logic will be
+    performed and take-profit logic will be ignored", OKX v5 Place algo order). Returns
+    {'sl': ..., 'tp': ...} for what was asked; with both, the two entries share one algoId.
     Verified in orders-algo-pending; raises ProtectionFailed otherwise."""
     inst = _swap_inst(symbol)
     mode = get_position_mode(env)
     close_side = "sell" if direction == "long" else "buy"
+    wanted = [k for k, p in (("sl", sl_price), ("tp", tp_price)) if p is not None]
     placed = {}
     try:
-        for kind, trig_key, px_key, trigger in (
-            ("sl", "slTriggerPx", "slOrdPx", sl_price),
-            ("tp", "tpTriggerPx", "tpOrdPx", tp_price),
-        ):
-            if trigger is None:
-                continue
+        if wanted:
+            label = "+".join(wanted)
             body = {
                 "instId": inst,
                 "tdMode": "cross",
                 "side": close_side,
-                "ordType": "conditional",
-                trig_key: format_price(env, symbol, trigger),
-                px_key: "-1",  # market execution on trigger
+                "ordType": "oco" if len(wanted) == 2 else "conditional",
             }
+            if sl_price is not None:
+                body["slTriggerPx"] = format_price(env, symbol, sl_price)
+                body["slOrdPx"] = "-1"  # market execution on trigger
+            if tp_price is not None:
+                body["tpTriggerPx"] = format_price(env, symbol, tp_price)
+                body["tpOrdPx"] = "-1"
             if mode == "long_short_mode":
                 body["posSide"] = direction
             else:
@@ -885,7 +891,7 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
             else:
                 body["sz"] = format_qty(env, symbol, qty)
             # our id, so an algo POST whose outcome is unknown can be found in the pending list
-            body["algoClOrdId"] = f"bl{kind}{int(time.time() * 1000):x}"
+            body["algoClOrdId"] = f"bl{label.replace('+', '')}{int(time.time() * 1000):x}"
             try:
                 rows = _request("POST", "/api/v5/trade/order-algo", env, body)
                 algo_id = (rows[0] if rows else {}).get("algoId")
@@ -895,17 +901,17 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
                 row = _find_pending_algo(env, symbol, body["algoClOrdId"])
                 if row is None:
                     raise ProtectionFailed(
-                        f"{symbol} {direction} position may have NO {kind.upper()} — the {kind} order "
+                        f"{symbol} {direction} position may have NO {label.upper()} — the {label} order "
                         f"(algoClOrdId {body['algoClOrdId']}) got no answer"
                         f"{f' ({rows})' if rows is not None else ''} and is not in OKX's pending algo "
                         f"orders. Tell the user now; read the pending algo orders again before placing "
-                        f"it, it may still show up. Placed before it: {list(placed)}")
+                        f"it, it may still show up.")
                 algo_id, rows = row.get("algoId"), [row]
-            placed[kind] = {"algoId": str(algo_id), "raw": rows[0]}
+            for k in wanted:
+                placed[k] = {"algoId": str(algo_id), "raw": rows[0]}
     except ProtectionFailed:
         raise
     except guard.Halted as e:
-        wanted = [k for k, p in (("sl", sl_price), ("tp", tp_price)) if p is not None]
         raise ProtectionFailed(
             guard.protection_halted_text(symbol, direction, wanted, placed, _after_entry) + f" {e}"
         ) from e
@@ -916,7 +922,7 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
         ) from e
 
     if verify and placed:
-        open_ids = {str(o.get("algoId")) for o in get_open_algo_orders(env, symbol)}
+        open_ids = {str(o.get("algoId")) for o in get_open_algo_orders(env, symbol, PROTECTIVE_ALGO_ORD_TYPES)}
         missing = [k for k, o in placed.items() if o["algoId"] not in open_ids]
         if missing:
             raise ProtectionFailed(

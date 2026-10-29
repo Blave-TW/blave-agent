@@ -310,11 +310,32 @@ for label, answer in (("a read timeout", requests.exceptions.ReadTimeout("t")),
         check(False, f"SL {label}, not pending: must raise")
     except ok.ProtectionFailed as e:
         check(len(CALLS["POST"]) == 1 and "Tell the user" in str(e) and "do not resubmit" not in str(e)
-              and "algoClOrdId bl" in str(e) and len(CALLS["GET"]) == ok.ALGO_LOOKUP_READS,
+              and "algoClOrdId bl" in str(e) and len(CALLS["GET"]) == ok.ALGO_LOOKUP_READS * len(ok.PROTECTIVE_ALGO_ORD_TYPES),
               f"SL {label}, not pending: sent once, ProtectionFailed telling to check first ({e})")
 algo_wire(okx([{"algoId": "A2", "sCode": "0"}]), lambda b: landed(b))
 got = ok.place_protective_orders(ENV, "BTCUSDT", "long", sl_price=60000, verify=False)
 check(got["sl"]["algoId"] == "A2" and "algoClOrdId" in CALLS["POST"][0], "a plain SL carries an algoClOrdId")
+
+# SL and TP together: ONE oco order (a second whole-position TP/SL is refused 51088; a conditional
+# carrying both runs only the stop-loss — OKX v5 Place algo order)
+algo_wire(okx([{"algoId": "A3", "sCode": "0"}]), lambda b: [{"algoId": "A3", "algoClOrdId": b.get("algoClOrdId")}])
+got = ok.place_protective_orders(ENV, "BTCUSDT", "long", sl_price=60000, tp_price=80000)
+b = __import__("json").loads(CALLS["POST"][0])
+check(len(CALLS["POST"]) == 1 and b["ordType"] == "oco" and b.get("slTriggerPx") and b.get("tpTriggerPx")
+      and b["slOrdPx"] == b["tpOrdPx"] == "-1" and b.get("closeFraction") == "1" and b.get("reduceOnly") == "true"
+      and got["sl"]["algoId"] == got["tp"]["algoId"] == "A3"
+      and any("ordType=oco" in g for g in CALLS["GET"]),
+      f"SL+TP: one oco POST with both triggers, verified in the oco pending list ({b}, {CALLS['GET']})")
+algo_wire(requests.exceptions.ReadTimeout("t"),
+          lambda b: [{"algoId": "A4", "algoClOrdId": b.get("algoClOrdId")}] if b.get("ordType") == "oco" else [])
+got = ok.place_protective_orders(ENV, "BTCUSDT", "long", sl_price=60000, tp_price=80000)
+check(len(CALLS["POST"]) == 1 and got["sl"]["algoId"] == got["tp"]["algoId"] == "A4",
+      "SL+TP oco POST answer lost: found by algoClOrdId, sent once")
+algo_wire(okx([{"algoId": "A5", "sCode": "0"}]), lambda b: [{"algoId": "A5", "algoClOrdId": b.get("algoClOrdId")}])
+ok.place_protective_orders(ENV, "BTCUSDT", "long", sl_price=60000)
+b = __import__("json").loads(CALLS["POST"][0])
+check(b["ordType"] == "conditional" and "tpTriggerPx" not in b and len(CALLS["POST"]) == 1,
+      "SL alone stays one conditional order")
 
 # half-updated workspace (lib/order_okx.py landed, lib/unconfirmed.py not): the fallback base must
 # take the same keywords, or the unknown POST would raise TypeError and read as a rejection
