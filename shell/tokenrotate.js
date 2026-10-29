@@ -131,6 +131,7 @@ function createRotator(opts) {
       const cur = opts.loadToken();
       if (!cur) return false;
       if (cur !== rejected) return true;          // 已經換過了
+      if (now() < backoffUntil) return false;     // 剛換失敗在退讓中:補救也不打 api(轉送口每一筆被拒的請求都會叫到這裡;稽核 s1 P2-2)
       // 手上有換到但沒存下來的新值:只試存它,不拿舊值去換——寬限內換會把它作廢,寬限外換只會拿到 401(稽核 r4 P1-1)
       if (unsaved) return flushUnsaved() === "rotated";
       if (recovered === cur) return false;

@@ -7,8 +7,9 @@
 //     輪替跟回合完全脫鉤,agent 也從此讀不到帳號 token(輪替本來就是因為它讀得到)。
 //   - 只放行回合真的會打的兩組路徑:/openclaw/proxy/(LLM、摘要、型錄)與 /openclaw/agent/report/(lib/report.py 的驗證)。
 //     目的地是呼叫端給的 apiBase(main.js 寫死的 API_BASE),這個檔不讀 fs、不讀 process.env:兩者 agent 都寫得到。
-//   - 被 api 拒(401、403 ACCOUNT_TOKEN_INVALID)時照 rotator().recover() 補救一次再重送;只在還沒寫任何東西給客戶端時做得到,
-//     所以請求內文整份先收著(上限 MAX_BODY),回應是 401/403 才先收著看,其餘原樣串流。
+//   - 被 api 拒(403 ACCOUNT_TOKEN_INVALID:api 對帳號 token 一律回這個,不回 401)時照 rotator().recover() 補救一次再重送;
+//     只在還沒寫任何東西給客戶端時做得到,所以請求內文整份先收著(上限 MAX_BODY),回應是 403 才先收著看,其餘原樣串流。
+//     上游的 401 是 api 把供應商那邊原樣交回的,跟帳號 token 無關:原樣交回、不輪替(稽核 s1 P2-2)。
 //
 // 這個檔不 require electron;上游可以注入(測試用假的)。
 const http = require("http");
@@ -63,14 +64,14 @@ function createAccountRelay(opts) {
       const status = upRes.statusCode || 502;
       const out = {};
       for (const [k, v] of Object.entries(upRes.headers)) if (!DROP_DOWN.test(k)) out[k] = v;
-      if ((status === 401 || status === 403) && !retried) {
+      if (status === 403 && !retried) {
         const bufs = []; let n = 0;
         upRes.on("data", (c) => { n += c.length; if (n <= AUTH_PEEK_MAX) bufs.push(c); });
         upRes.on("end", async () => {
           const raw = Buffer.concat(bufs);
           let code = ""; try { code = String((JSON.parse(raw.toString("utf8")) || {}).error_code || ""); } catch (_) { code = ""; }
-          // 401 = 這顆不認得;403 只認 ACCOUNT_TOKEN_INVALID(餘額、方案的 403 是別的事,補救也沒用)
-          const rejected = status === 401 || code === "ACCOUNT_TOKEN_INVALID";
+          // 只認 ACCOUNT_TOKEN_INVALID(餘額、方案的 403 是別的事,補救也沒用)
+          const rejected = code === "ACCOUNT_TOKEN_INVALID";
           let fresh = null;
           if (rejected && !gone) {
             let ok = false; try { ok = await opts.recover(acct); } catch (_) { ok = false; }

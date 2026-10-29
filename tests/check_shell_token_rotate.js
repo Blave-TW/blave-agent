@@ -167,6 +167,13 @@ process.exitCode = 1;   // 哪個 await 掛住、事件迴圈空了就會靜靜�
     w.clock += R.GRACE_MS + 1;
     t("寬限過了 → 拿被拒的那顆自己換(過期未撤銷換得動)", (await w.rot.recover(B)) === true && w.api.posts[1].b.token === B); }
 
+  { const w = world(), cur = w.token; w.api.mode = "503";
+    await w.rot.ensure(12 * H);   // 503 → 退讓 30 分鐘
+    const n = w.api.posts.length; w.api.mode = "ok";
+    t("退讓中被拒(轉送口每一筆被拒的請求都會叫):recover 不打 api、回 false(稽核 s1 P2-2)", (await w.rot.recover(cur)) === false && w.api.posts.length === n);
+    w.clock += R.UNAVAILABLE_MS + 1;
+    t("…退讓過了照常補救", (await w.rot.recover(cur)) === true); }
+
   // ── 登出 / 重新登入:清掉寬限舊值、作廢在途、刪期限檔 ──
   { const w = world(); await w.rot.ensure(12 * H);
     t("換完之後記憶體裡有寬限舊值", w.rot.state().prev === true && fs.existsSync(w.expFile));

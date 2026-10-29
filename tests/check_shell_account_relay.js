@@ -3,7 +3,7 @@
 //   2. 轉送 token 作廢後回 401(x-should-retry: false);不認得的 token、帶 Origin、Host 不對一律拒
 //   3. 只放行 /openclaw/proxy/ 與 /openclaw/agent/report/,`..`、編碼過的點與斜線不算
 //   4. 串流原樣轉送(分段、content-type、狀態碼);客戶端送來的 x-api-key／authorization／cookie 不往上游送
-//   5. 401／403 ACCOUNT_TOKEN_INVALID → recover 一次、換到新的就重送同一份內文;換不到或別的 403 原樣交回
+//   5. 403 ACCOUNT_TOKEN_INVALID → recover 一次、換到新的就重送同一份內文;換不到、別的 403、上游的 401 原樣交回
 //   6. 接線:runTurn 的環境裡沒有帳號 token(只有轉送 token),回合收尾作廢;runtime 認 BLAVE_PROXY_BASE 但只收 127.0.0.1
 // 跑法:node tests/check_shell_account_relay.js
 const http = require("http"), path = require("path"), fs = require("fs");
@@ -18,6 +18,7 @@ const up = http.createServer((req, res) => {
   req.on("end", () => {
     seen.push({ path: req.url, method: req.method, key: req.headers["x-api-key"], auth: req.headers["authorization"], cookie: req.headers["cookie"], origin: req.headers["origin"], body: Buffer.concat(bufs).toString() });
     if (upMode === "invalid-once" && req.headers["x-api-key"] === "proxy-acct-OLD") { res.writeHead(403, { "content-type": "application/json" }); return res.end(JSON.stringify({ error_code: "ACCOUNT_TOKEN_INVALID" })); }
+    if (upMode === "up401") { res.writeHead(401, { "content-type": "application/json" }); return res.end(JSON.stringify({ type: "error", error: { message: "upstream key revoked" } })); }
     if (upMode === "credit") { res.writeHead(403, { "content-type": "application/json" }); return res.end(JSON.stringify({ error_code: "INSUFFICIENT_CREDIT" })); }
     if (req.url.startsWith("/openclaw/proxy/v1/messages") && /stream/.test(seen[seen.length - 1].body)) {
       res.writeHead(200, { "content-type": "text/event-stream" });
@@ -84,6 +85,9 @@ function call(port, p, o = {}) {
   acct = "acct-OLD"; recoverTo = "acct-NEW"; upMode = "invalid-once"; const n0 = seen.length;
   r = await call(port, "/openclaw/proxy/v1/messages", { token: m.token, body: '{"q":7}' });
   ok("403 ACCOUNT_TOKEN_INVALID → recover 一次、換到新的就用同一份內文重送", r.status === 201 && recovers === 1 && seen.length === n0 + 2 && seen[n0 + 1].key === "proxy-acct-NEW" && seen[n0 + 1].body === '{"q":7}', [r.status, recovers, seen.slice(n0)]);
+  upMode = "up401"; acct = "acct-NEW"; const r401 = recovers;
+  r = await call(port, "/openclaw/proxy/v1/messages", { token: m.token });
+  ok("上游的 401(api 原樣交回供應商的)→ 不輪替、原樣交回(稽核 s1 P2-2)", r.status === 401 && recovers === r401 && /upstream key/.test(r.body), [r.status, recovers]);
   upMode = "credit"; const rc = recovers;
   r = await call(port, "/openclaw/proxy/v1/messages", { token: m.token });
   ok("別的 403(額度不足)不補救、原樣交回內文", r.status === 403 && recovers === rc && /INSUFFICIENT_CREDIT/.test(r.body));
