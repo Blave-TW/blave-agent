@@ -37,6 +37,9 @@ SAMPLES = {
     "exit_loop": HEAD + "def compute_signals(df):\n    entry = None\n    for i in range(len(df)):\n"
                  "        entry = df.close[i]\n        stop = entry * 0.9\n        if df.close[i] < stop:\n"
                  "            pass\n    return (df.close > 1).astype(float)\n",
+    "lib_caps": HEAD + "def compute_signals(df):\n    from lib.exits import apply_exits\n"
+                "    return apply_exits((df.close > 1).astype(float), df, stop_pct=0.03, entry_level=df.low, "
+                "trigger='intrabar')\n",
     "ladder_roll": 'SYMBOL = "TMF"\nFEE = 0.0005\n' + "def compute_signals(df):\n"
                    "    settle = txf_settlement_mask(df.index)\n"
                    "    return ladder_position(df.close > 1, df, [0.02]), settle\n",

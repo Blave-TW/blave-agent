@@ -1,4 +1,4 @@
-import contextlib, hashlib, json, logging, math, os, re, shutil, time
+import contextlib, hashlib, json, logging, math, os, re, shutil, sys, time
 from pathlib import Path
 try:
     import fcntl
@@ -1491,6 +1491,21 @@ def _lookahead_skip_mask(result, data, index):
     return skip
 
 
+_NEWER_LIB_RE = re.compile(r"(\w+)\(\) got an unexpected keyword argument '(\w+)'")
+
+
+def _raise_if_newer_lib(e):
+    """A strategy written on a newer lib, run on this one, calls a lib function with an argument
+    it does not have yet: one sentence that says update, not a traceback (a live tick's output
+    reaches the user through manager/alert_failure.py)."""
+    m = _NEWER_LIB_RE.search(str(e))
+    if m and any(callable(getattr(mod, m.group(1), None))
+                 for name, mod in list(sys.modules.items()) if name.startswith('lib.')):
+        raise SystemExit(f"❌ This strategy calls {m.group(1)}({m.group(2)}=...), which this machine's lib "
+                         f"does not have yet — update first (say 「更新」 / press Update), then run it "
+                         f"again.") from e
+
+
 def _lookahead_source_hints(config):
     """Lines of the strategy file that match a known look-ahead pattern — attached to a
     refusal only (never a finding on their own: `shift(-1)` in a comment is harmless)."""
@@ -2455,7 +2470,11 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
         if _data is not None:
             _data._feed_trims = None
     compute_t0 = time.monotonic()
-    result = compute_fn(data)
+    try:
+        result = compute_fn(data)
+    except TypeError as e:
+        _raise_if_newer_lib(e)
+        raise
     if mode == 'backtest':
         _enforce_lookahead(config, fetch_data_fn, compute_fn, hdrs, data, result, recorder,
                            time.monotonic() - compute_t0)

@@ -1,6 +1,7 @@
 """Exits layered on top of a strategy's own signal: stop-loss, take-profit, trailing stop,
-time stop, breakeven move, re-entry cooldown — and the spot long-only clamp.
-Tests: tests/check_exits.py.
+time stop, breakeven move, re-entry cooldown, a stop / take-profit at the strategy's own price
+level — and the spot long-only clamp.
+Tests: tests/check_exits.py, tests/check_exit_levels.py.
 
 Why a lib function and not a recipe: a hand-written exit loop that exits and then re-checks
 the entry *state* on the same bar re-enters at once, and the stop silently does nothing
@@ -40,9 +41,26 @@ def _distance(name, v, df, n):
     return arr
 
 
+def _level(name, v, df, n):
+    if v is None:
+        return None
+    if not isinstance(v, (pd.Series, np.ndarray)):
+        raise ValueError(f"{name} must be a price Series on df's index (NaN = no level on that bar), got {v!r}")
+    if isinstance(v, pd.Series) and not v.index.equals(df.index):
+        raise ValueError(f"{name} must have df's index (build it from df's own columns)")
+    arr = np.asarray(v, dtype=float)
+    if arr.shape != (n,):
+        raise ValueError(f"{name} must be one price per bar of df ({n}), got shape {arr.shape}")
+    arr = np.where(np.isfinite(arr), arr, np.nan)
+    if (arr <= 0).any():
+        raise ValueError(f"{name} must be a price above 0 or NaN on every bar")
+    return arr
+
+
 def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars=None, trigger="close", *,
                 stop_dist=None, tp_dist=None, trail_dist=None,
-                breakeven_at=None, breakeven_dist=None, cooldown_bars=None):
+                breakeven_at=None, breakeven_dist=None, cooldown_bars=None,
+                stop_level=None, tp_level=None):
     """Position Series = `signal` with the given exits applied. Give at least one exit.
 
     stop_pct  : exit once the trade is down this fraction from its fill   (0.03 = 3%)
@@ -62,6 +80,14 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
     cooldown_bars : after an exit (any reason), if the base signal is still on that side, enter
                 again once the position has been flat this many valid bars (>= 1). Not given:
                 flat until the base signal changes side, as below.
+    stop_level / tp_level : the strategy's own absolute PRICE level, a Series on df's index, NaN =
+                no level on that bar — a stop that moves to the latest signal bar's low
+                (`df['Low'].where(event).ffill()`), a take-profit at a signal bar's high. Only
+                while a trade is open: a long exits when its Low (Close in "close") reaches
+                stop_level or its High reaches tp_level; a short the other way round. Reasons
+                "stop_level" / "tp_level". stop_level is the trade's whole stop: with stop_pct,
+                stop_dist, breakeven_at or breakeven_dist it raises, and so does tp_level with
+                tp_pct / tp_dist; trail_* and max_bars combine with it as with stop_pct.
     Long and short may differ: every exit above (not `trigger`, not `cooldown_bars`) also takes
     a `(long, short)` tuple; `None` in it switches that side off — `stop_pct=(0.03, 0.05)`,
     `tp_dist=(3 * atr, None)`.
@@ -80,6 +106,13 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
       other exits still run. Each such trade is a row in `result.attrs["exits_unarmed"]`
       (time = its fill bar, exit, dist) on every call; a RuntimeWarning says so once per
       process and exit. The usual cause is an entry inside the indicator's warm-up.
+    - stop_level / tp_level are read every bar like trail_dist: bar t is tested with the value
+      on the last valid bar before t — do not shift the Series yourself. NaN there = no level
+      on bar t (ffill the Series to keep one), never "unarmed". The level is a price, not a
+      distance: a gap does not shift it, a fill already beyond it (gap through, or a level set
+      on the wrong side) exits at once — at the fill bar's Open in "intrabar". With an
+      `instrument_id` column the roll bar tests no level (the value is the old contract's
+      price); a level ffilled across a roll stays the old contract's — ffill per contract.
 
     Breakeven: the move is armed by a bar that reaches the threshold (its High / Low in
     "intrabar", its Close in "close") and is in force from the NEXT bar — like trailing below,
@@ -101,8 +134,9 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
     One bar touching both the stop and the take-profit ("intrabar"): if the bar OPENED beyond
     one of them, that one fired first at the Open; otherwise the stop is assumed to have fired
     first (the order inside a bar is unknown, so the losing side is assumed). Priority when
-    several exits fire on one bar: breakeven (armed), stop, trailing, time, take-profit. The
-    position series is the same whichever fired; only `attrs["exits"]` says which. Trailing
+    several exits fire on one bar: breakeven (armed), stop / stop_level, trailing, time,
+    take-profit / tp_level. The position series is the same whichever fired; only
+    `attrs["exits"]` says which. Trailing
     ("intrabar"): the bar's adverse extreme is tested against the best price BEFORE this bar,
     then the best is raised by this bar's favourable extreme — no same-bar high-then-low is
     assumed.
@@ -144,9 +178,17 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
                          ("breakeven_at", "breakeven_dist", be_p, be_d)):
         if any(v is not None for v in pp) and any(v is not None for v in dd):
             raise ValueError(f"give {a} or {b}, not both")
-    if all(v is None for pair in (stop_p, tp_p, trail_p, be_p, bars_max, stop_d, tp_d, trail_d, be_d) for v in pair):
+    stop_l, tp_l = _sides("stop_level", stop_level), _sides("tp_level", tp_level)
+    for name, lv, others, what in (("stop_level", stop_l, (stop_p, stop_d, be_p, be_d),
+                                    "stop_pct / stop_dist / breakeven_at / breakeven_dist"),
+                                   ("tp_level", tp_l, (tp_p, tp_d), "tp_pct / tp_dist")):
+        if any(v is not None for v in lv) and any(v is not None for pair in others for v in pair):
+            raise ValueError(f"give {name} or {what}, not both")
+    if all(v is None for pair in (stop_p, tp_p, trail_p, be_p, bars_max, stop_d, tp_d, trail_d, be_d,
+                                  stop_l, tp_l) for v in pair):
         raise ValueError("apply_exits needs at least one of stop_pct / tp_pct / trail_pct / max_bars "
-                         "/ stop_dist / tp_dist / trail_dist / breakeven_at / breakeven_dist")
+                         "/ stop_dist / tp_dist / trail_dist / breakeven_at / breakeven_dist "
+                         "/ stop_level / tp_level")
     if trigger not in ("close", "intrabar"):
         raise ValueError(f'trigger must be "close" or "intrabar", got {trigger!r}')
     intrabar = trigger == "intrabar"
@@ -165,6 +207,9 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
     n = len(base)
     stop_d, tp_d, trail_d, be_d = (tuple(_distance(name, v, df, n) for v in pair) for name, pair in (
         ("stop_dist", stop_d), ("tp_dist", tp_d), ("trail_dist", trail_d), ("breakeven_dist", be_d)))
+    stop_l, tp_l = (tuple(_level(name, v, df, n) for v in pair) for name, pair in (
+        ("stop_level", stop_l), ("tp_level", tp_l)))
+    has_lv = any(v is not None for v in (*stop_l, *tp_l))
 
     def ok(x):
         return np.isfinite(x) and x > 0
@@ -176,6 +221,7 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
     bars = 0
     t_stop = t_tp = t_trail = t_be = t_bars = t_trail_d = None     # this trade's own levels
     trail_now, armed, wait = np.nan, False, None
+    t_sl = t_tl = None
     for t in range(n):
         if not ok(close[t]):
             out[t] = held
@@ -200,6 +246,7 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
             t_tp = frozen("tp", tp_p[i], tp_d[i], side < 0)
             t_be = frozen("breakeven", be_p[i], be_d[i], side < 0)
             t_trail, t_trail_d, t_bars = trail_p[i], trail_d[i], bars_max[i]
+            t_sl, t_tl = stop_l[i], tp_l[i]
             trail_now, armed = np.nan, False
             if t_trail_d is not None and not ok(t_trail_d[last]):
                 unarmed.append({"time": index[t], "exit": "trail", "dist": float(t_trail_d[last])})
@@ -224,19 +271,30 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
             def beyond(price, pct):                 # price at or past that level
                 return ((price * k - 1) * side - pct) * np.sign(pct) >= 0
 
-            reason = level = None
+            reason = level = sl = tl = None
+            if has_lv and (inst is None or inst[t] == inst[last]):
+                if t_sl is not None and t_sl[last] == t_sl[last]:
+                    sl = t_sl[last]
+                if t_tl is not None and t_tl[last] == t_tl[last]:
+                    tl = t_tl[last]
             o = fill if bars == 1 else (opn[t] if ok(opn[t]) else close[t])   # a gap fills here
             if intrabar:
                 if armed and (o * k - 1) * side <= 0:
                     reason, level = "breakeven", o
                 elif t_stop is not None and beyond(o, -t_stop):
                     reason, level = "stop", o
+                elif sl is not None and (o - sl) * side <= 0:
+                    reason, level = "stop_level", o
                 elif t_tp is not None and beyond(o, t_tp):
                     reason, level = "tp", o
+                elif tl is not None and (o - tl) * side >= 0:
+                    reason, level = "tp_level", o
             if reason is None and armed and (adverse * k - 1) * side <= 0:
                 reason, level = "breakeven", 1 / k
             if reason is None and t_stop is not None and beyond(adverse, -t_stop):
                 reason, level = "stop", hit_at(-t_stop)
+            if reason is None and sl is not None and (adverse - sl) * side <= 0:
+                reason, level = "stop_level", sl
             if reason is None and (t_trail is not None or ok(trail_now)):
                 ref = adverse if intrabar else close[t]
                 b = best if intrabar else (max(best, close[t] * k) if side > 0 else min(best, close[t] * k))
@@ -252,6 +310,8 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
                 reason, level = "time", None
             if reason is None and t_tp is not None and beyond(favour, t_tp):
                 reason, level = "tp", hit_at(t_tp)
+            if reason is None and tl is not None and (favour - tl) * side >= 0:
+                reason, level = "tp_level", tl
             best = max(best, favour * k) if side > 0 else min(best, favour * k)
             if t_be is not None and not armed and beyond(favour, t_be):
                 armed = True

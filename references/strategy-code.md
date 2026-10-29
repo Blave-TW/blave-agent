@@ -328,7 +328,7 @@ def compute_signals(df):
 
 `compute_signals` must be a **pure function** (no API calls, no I/O, no side effects).
 
-## Exits on top of an existing signal — stop-loss, take-profit, trailing, time stop, ATR distances, breakeven, cooldown
+## Exits on top of an existing signal — stop-loss, take-profit, trailing, time stop, ATR distances, breakeven, cooldown, price levels
 
 "Add a 3% stop-loss / take profit at 8% / a 5% trailing stop / hold at most 48 bars / a stop 2 ATR away / move the stop to breakeven" = keep the strategy's own `compute_signals` logic as it is and wrap its result with **`lib.exits.apply_exits`**. Call it — never write your own exit loop, and never paste an older recipe from a strategy file:
 
@@ -375,6 +375,31 @@ def compute_signals(df, fast=MA_FAST, slow=MA_SLOW, stop_atr=STOP_ATR, tp_atr=TP
 - `cooldown_bars=N` (N >= 1): after an exit, if the base signal is still on that side, enter again after N flat bars. Without it the position waits for the base signal to change side.
 - Every exit takes `(long, short)`: `stop_pct=(0.03, 0.05)`, `tp_dist=(3 * atr, None)` (`None` = off for that side).
 
+**A stop / take-profit at the strategy's own price level — "move the stop to each new buy signal's low", "take profit at the signal bar's high":** `stop_level` / `tp_level` take an absolute price Series on `df`'s index; NaN = no level on that bar. The strategy builds the level, the lib applies it while a trade is open:
+
+```python
+def compute_signals(df, fast=MA_FAST, slow=MA_SLOW, tp_pct=TP_PCT):
+    from lib.exits import apply_exits
+    ...                                   # the strategy's own signal, unchanged
+    event = (signal.ffill() > 0) & (df['Close'] >= df['Close'].rolling(BREAKOUT_N).max())   # each new same-side signal bar
+    return apply_exits(signal, df, stop_level=df['Low'].where(event).ffill(), tp_pct=tp_pct, trigger="intrabar")
+```
+
+- **Which bar's value:** bar t is tested with the level on the bar before it (like `trail_dist`) — do not shift the Series yourself. A NaN there means no level on bar t, so `ffill()` it to keep the last one.
+- A long exits when its Low reaches `stop_level` (Close in `"close"`) or its High reaches `tp_level`; a short the other way round. Reasons in `attrs["exits"]`: `stop_level` / `tp_level`.
+- The level is a price: a gap does not shift it, and a fill already beyond it exits at once.
+- `stop_level` is the trade's whole stop: with `stop_pct` / `stop_dist` / `breakeven_*` it raises, and `tp_level` with `tp_pct` / `tp_dist` raises. To combine, fold the other rule into the level (e.g. `np.maximum` of two level Series). `trail_*`, `max_bars`, `cooldown_bars` and the other side's exits combine freely.
+- Futures with `instrument_id`: a level ffilled across a roll is the old contract's price — ffill per contract (`.groupby(df['instrument_id']).ffill()`); the roll bar itself tests no level.
+- After a `stop_level` exit the position waits, like every exit, for the base signal to change side (or `cooldown_bars`). **"Re-enter on the next same-side signal after the stop"** is not that: write the position directly, vectorised (sanctioned — it is not a hand-written exit loop, and it matches the runner's next-Open fill):
+
+```python
+L   = df['Low'].where(event).ffill()                 # stop = low of the latest signal bar
+hit = df['Low'] <= L.shift(1)                        # this bar touched the stop in force before it
+signal = pd.Series(np.where(event, 1.0, np.where(hit | exit_rule, 0.0, np.nan)), index=df.index).ffill()
+```
+
+  It has no `order_price`, no gap / invalid-bar / roll handling — TAIFEX still needs its settlement mask, a `fetch_db_kline` futures series `settlement_signals_from_db`. Prefer `stop_level` whenever the re-entry rule is not the point.
+
 With `settlement_signals_from_db`, exits first and settlement last: `return settlement_signals_from_db(df, apply_exits(signal, df, stop_pct=stop_pct, trigger="intrabar"))`. What it guarantees (fill point, rolls, bars the runner drops) is in `references/lib.md` › `lib.exits`.
 
 **Pass `trigger` every time — which one:**
@@ -383,7 +408,25 @@ With `settlement_signals_from_db`, exits first and settlement last: `return sett
 
 In both modes the exit fills at the **next bar's Open** — the runner cannot fill at a stop price, and live works the same way (the tick after the bar exits). `result.attrs["exits"]` records, per exit, the reason and (intrabar) the price a resting order would have filled at — the level, or the Open when the bar gapped through it. When you report a stop's effect, say the backtest exits at the next Open, and quote `order_price` only as "a resting order would have filled at". A bar touching both the stop and the take-profit counts as the stop (unless it opened beyond the TP).
 
-**"`apply_exits` can't do X" is never a reason to write your own exit loop.** If the rule the user asked for is not one it models (partial exits / scaling out, a take-profit that changes after entry on a signal that does not itself scale in — a DCA ladder is *Scaling in*, an exit on another instrument's price…), say so in one sentence — what it can't model and what the closest supported exit is — and let the user choose. Do not hand-roll a loop "because the helper is close-only / can't see High/Low / can't reach the entry price": it can (`trigger="intrabar"` measures from the fill), and a hand-rolled one is how the same-bar re-entry bug shipped.
+**"`apply_exits` can't do X" is never a reason to write your own exit loop — and never a reason to stop.** When the rule is not one `apply_exits` takes as is, answer in this order:
+1. **Name the closest supported form or sanctioned recipe, say in one sentence how it differs from what was asked, and let the user choose** — a stop that moves on each new signal → `stop_level`; re-enter on the next signal after a stop → the vectorised recipe above; a take-profit that moves → `tp_level`; scale in with an average-cost take-profit → `ladder_position` (*Scaling in*); a stop that follows price → `trail_*`; move to breakeven → `breakeven_*`.
+2. **Only when none of them comes close** (an exit on another instrument's price, a fixed number of lots per entry…), say it can't be backtested here, in one sentence, and why.
+
+**Separate lots — "each entry its own stop and take-profit", 分筆進出:** it can be approximated, but it is slow — say both and let the user choose (or take `ladder_position` / one position with `stop_level` instead). One `apply_exits` per entry, each lot a fixed fraction, summed into the net position the runner and live trade:
+
+```python
+net = pd.Series(0.0, index=df.index)
+for t in df.index[entries.to_numpy()]:                  # one call per ENTRY, not per bar
+    if net[t] >= LOT * MAX_LOTS - 1e-9:
+        continue                                        # MAX_LOTS lots already open
+    one = pd.Series(np.nan, index=df.index); one[t] = 1.0
+    net = net + LOT * apply_exits(one, df, stop_pct=stop_pct, tp_pct=tp_pct, trigger="intrabar")
+return net
+```
+
+What to tell the user with it: each lot is a fixed fraction of equity, not a fixed number of units; two lots crossing on one bar net out, so fees come out lower than lot-by-lot fills; live sends the net target, and a lot's exit sells by the average cost, not that lot's units; the trade list shows net changes, not lot A / lot B. It costs one full pass per entry (40,000 bars with ~800 entries ≈ 30 s), so a long backtest skips the look-ahead check past its time budget — **do not use it for a parameter scan or walk-forward**; backtest a short window and say why those two are missing.
+
+Do not hand-roll a loop "because the helper is close-only / can't see High/Low / can't reach the entry price": it can (`trigger="intrabar"` measures from the fill), and a hand-rolled one is how the same-bar re-entry bug shipped.
 
 **The pitfall `apply_exits` avoids:** a hand-written loop that exits on the stop and then, on the same bar, re-checks the entry *state* (`MA_F > MA_S`, `x > BUY_TH`) re-enters at once — the position series comes out bar-for-bar identical and the stop does nothing. A trend filter stays true for hundreds of bars; after an exit the strategy must wait for a fresh entry (the base signal leaving and re-taking that side), which `apply_exits` does.
 
