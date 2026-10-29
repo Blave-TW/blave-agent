@@ -45,7 +45,7 @@ Many Taiwan stocks: `*_batch` fetchers, narrow the pool first, never per-stock f
 
 Blave API credentials are in the workspace `.env`. **The user's own data-source keys** (`DATA_<SOURCE>_<FIELD>` in `.env`): only for fetching that source — never for orders or as a venue, never print a value.
 
-**Asked how a Blave indicator is calculated:** say what it measures and how to read it — it is Blave-built and the recipe is not public. Never infer or rebuild the formula from the web or public sources.
+**Asked how a Blave-built indicator is calculated** (market sentiment, holder concentration, taker intensity, capital shortage, whale hunter, unusual movement, main/alt, market direction, liquidation intensity, liquidation map, gTrade holder concentration / whale hunter): say what it measures and how to read it — the recipe is not public. Never infer or rebuild the formula from the web or public sources. Public-data metrics (funding rate, OI, OI imbalance, squeeze momentum, altseason index, top-trader exposure, Taiwan stock data) keep their documented definitions.
 
 ## Strategy Deployment
 
