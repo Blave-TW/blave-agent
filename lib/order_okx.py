@@ -625,8 +625,11 @@ def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, park
     BASE units once it is terminal — qty 0 = it ended without a fill — None while unknown.
     Read-only: Get order details by ordId, or clOrdId when only ours is known (rc… ids are
     unique, so "only the latest one will be returned" cannot pick another order). An order
-    OKX cannot find stays unknown: what OKX answers for an order that never arrived is not
-    measured yet, and releasing a filled order would send it again."""
+    OKX cannot find stays unknown. Measured on demo 2026-10-30: a clOrdId that never arrived
+    answers 51603 (HTTP 200, code 51603, no rows); a new market order is readable by ordId /
+    clOrdId within 0.2 s; filled and canceled-unfilled orders are still readable at 75 min —
+    how long after that is not measured, so a 51603 cannot yet tell "never arrived" from
+    "aged out", and releasing a filled order would send it again."""
     try:
         order = get_order(env, symbol, order_id, client_order_id=client_order_id)
     except Exception:
@@ -828,7 +831,9 @@ def cancel_algo_order(env, symbol, algo_id):
                     [{"instId": _swap_inst(symbol), "algoId": str(algo_id)}])
 
 
-ALGO_LOOKUP_READS = 3   # pending-list reads (1 s apart) before an unanswered algo POST counts as absent
+# pending-list reads (1 s apart) before an unanswered algo POST counts as absent; on demo
+# (2026-10-30) a placed algo showed in orders-algo-pending, algoClOrdId echoed as sent, by 0.25 s
+ALGO_LOOKUP_READS = 3
 
 
 def _find_pending_algo(env, symbol, algo_cl_ord_id):
