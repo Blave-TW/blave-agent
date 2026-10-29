@@ -125,6 +125,12 @@ for label, post_answer in (
         ("50004 in the row", okx([{"sCode": "50004", "sMsg": "Endpoint request timeout"}], code="1",
                                  msg="Operation failed")),
         ("HTTP 200 non-JSON", Resp(200, None, "<html>proxy</html>")),
+        ("50004 in the row under code 0", okx([{"ordId": "", "sCode": "50004", "sMsg": "Endpoint request timeout"}])),
+        ("51149 in the row", okx([{"sCode": "51149", "sMsg": "Order timed out"}], code="1", msg="Operation failed")),
+        ("51149 HTTP 500", Resp(500, {"code": "51149", "msg": "Order timed out", "data": []})),
+        ("50026 top-level", okx([], code="50026", msg="System error")),
+        ("50001 top-level (HTTP 200)", okx([], code="50001", msg="Service temporarily unavailable")),
+        ("code 0 without an ordId", okx([{"ordId": "", "clOrdId": "rc1", "sCode": "0"}])),
 ):
     wire([post_answer, ACCEPTED], [FILLED])
     try:
@@ -152,6 +158,22 @@ check(r["status"] == "filled" and len(CALLS["POST"]) == 2, "a connect timeout (n
 wire([okx([], code="50102", msg="Timestamp request expired"), ACCEPTED], [FILLED])
 r = place()
 check(r["status"] == "filled" and len(CALLS["POST"]) == 2, "50102 (refused at authentication) is re-signed and resent")
+from urllib3.exceptions import MaxRetryError, NameResolutionError, NewConnectionError  # noqa: E402
+for label, reason in (("a refused connection", NewConnectionError(None, "Connection refused")),
+                      ("a DNS failure", NameResolutionError("www.okx.com", None, OSError("nodename nor servname")))):
+    refused = requests.exceptions.ConnectionError(MaxRetryError(None, "/api/v5/trade/order", reason=reason))
+    wire([refused, ACCEPTED], [FILLED])
+    r = place()
+    check(r["status"] == "filled" and len(CALLS["POST"]) == 2, f"{label} (no socket, nothing sent) is retried")
+    wire([refused], [FILLED])
+    try:
+        place()
+        check(False, f"{label} every time must raise")
+    except ok.OrderNotConfirmed:
+        check(False, f"{label} every time: nothing was sent, not an unknown outcome")
+    except requests.exceptions.ConnectionError:
+        check(len(CALLS["POST"]) == 3, f"{label} every time: raised as is after the retries (a plain failure)")
+
 wire([requests.exceptions.InvalidURL("bad url")], [FILLED])
 try:
     place()
@@ -252,6 +274,47 @@ try:
     check(False, "limit POST unknown must raise")
 except ok.OrderNotConfirmed as e:
     check(len(CALLS["POST"]) == 1 and not e.parkable(), "limit POST unknown: sent once, not parkable")
+
+# ── SL/TP: an algo POST is never resent; found by algoClOrdId, else ProtectionFailed ─
+def algo_wire(post_answer, pending):
+    """pending(body) → the rows orders-algo-pending answers, given the POSTed algo body."""
+    CALLS["POST"].clear()
+    CALLS["GET"].clear()
+    box = {}
+
+    def post(url, data=None, headers=None, timeout=None):
+        CALLS["POST"].append(data)
+        box["body"] = __import__("json").loads(data)
+        if isinstance(post_answer, BaseException):
+            raise post_answer
+        return post_answer
+
+    def get(url, headers=None, timeout=None):
+        CALLS["GET"].append(url)
+        return okx(pending(box.get("body") or {}) if "orders-algo-pending" in url else [])
+
+    ok.requests.post, ok.requests.get = post, get
+
+
+landed = lambda b: [{"algoId": "A1", "algoClOrdId": b.get("algoClOrdId"), "instId": "BTC-USDT-SWAP"}]
+algo_wire(requests.exceptions.ReadTimeout("t"), landed)
+got = ok.place_protective_orders(ENV, "BTCUSDT", "long", sl_price=60000)
+check(len(CALLS["POST"]) == 1 and got["sl"]["algoId"] == "A1",
+      f"SL POST read timeout, the order is pending under our algoClOrdId: placed, sent once ({got})")
+for label, answer in (("a read timeout", requests.exceptions.ReadTimeout("t")),
+                      ("HTTP 502", Resp(502, None, "Bad Gateway")),
+                      ("code 0 without an algoId", okx([{"algoId": "", "sCode": "0"}]))):
+    algo_wire(answer, lambda b: [])
+    try:
+        ok.place_protective_orders(ENV, "BTCUSDT", "long", sl_price=60000)
+        check(False, f"SL {label}, not pending: must raise")
+    except ok.ProtectionFailed as e:
+        check(len(CALLS["POST"]) == 1 and "Tell the user" in str(e) and "do not resubmit" not in str(e)
+              and "algoClOrdId bl" in str(e) and len(CALLS["GET"]) == ok.ALGO_LOOKUP_READS,
+              f"SL {label}, not pending: sent once, ProtectionFailed telling to check first ({e})")
+algo_wire(okx([{"algoId": "A2", "sCode": "0"}]), lambda b: landed(b))
+got = ok.place_protective_orders(ENV, "BTCUSDT", "long", sl_price=60000, verify=False)
+check(got["sl"]["algoId"] == "A2" and "algoClOrdId" in CALLS["POST"][0], "a plain SL carries an algoClOrdId")
 
 # half-updated workspace (lib/order_okx.py landed, lib/unconfirmed.py not): the fallback base must
 # take the same keywords, or the unknown POST would raise TypeError and read as a rejection

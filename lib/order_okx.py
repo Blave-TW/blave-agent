@@ -49,6 +49,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN
 
 import requests
+from urllib3.exceptions import NewConnectionError
 
 from lib import guard
 try:
@@ -140,11 +141,11 @@ class ProtectionFailed(Exception):
 # ── transport ────────────────────────────────────────────────────────────────
 
 TIMESTAMP_ERROR = "50102"  # "Timestamp request expired"
-# An order POST answered with one of these may have executed. 50004: "Endpoint request timeout
-# (does not mean that the request was successful or failed, please check the request result)"
-# (OKX v5 error codes). 50001 "Service temporarily unavailable" comes with HTTP 503, which the
-# 5xx rule in _send already treats as unknown.
-SEND_UNKNOWN_CODES = {"50004"}
+# An order POST answered with one of these may have executed (OKX v5 error codes): 50004 and
+# 51149 say "does not mean that the request was successful or failed, please check the request
+# result"; 50001 (service unavailable) and 50026 (system error) are documented with HTTP 503 /
+# 500. Caught as the top-level code and as a row sCode — 51xxx normally ride a row under code 1.
+SEND_UNKNOWN_CODES = {"50004", "51149", "50001", "50026"}
 _time_offset = {"ms": 0}  # OKX's clock − ours, set by _sync_time
 
 
@@ -180,7 +181,7 @@ _MUTATING_PATHS = {
 }
 
 _AUDIT_PARAM_KEYS = ("instId", "tdMode", "side", "posSide", "ordType", "sz",
-                     "px", "tgtCcy", "reduceOnly", "clOrdId", "algoId",
+                     "px", "tgtCcy", "reduceOnly", "clOrdId", "algoId", "algoClOrdId",
                      "slTriggerPx", "tpTriggerPx")
 
 
@@ -240,7 +241,7 @@ def _request(method, path, env, body=None, params=None, retries=3):
             data = _send(method, path, env, body, params, retries, no_resend=placing)
         except _SendUnknown as e:
             p = body if isinstance(body, dict) else {}
-            cid = p.get("clOrdId")
+            cid = p.get("clOrdId") or p.get("algoClOrdId")
             guard.audit("order_unknown", error=str(e), client_order_id=cid, **fields)
             # only a swap market order is looked up again (resolve_unknown_order); spot,
             # limit and algo orders raise without a venue = not parkable
@@ -262,11 +263,21 @@ def _request(method, path, env, body=None, params=None, retries=3):
     return _send(method, path, env, body, params, retries)
 
 
+def _never_connected(e):
+    """A connection refused or a DNS failure: requests wraps urllib3's NewConnectionError
+    (NameResolutionError is a subclass) in MaxRetryError.reason — raised before any socket
+    existed. An SSL error is not counted: it can also happen mid-transfer."""
+    if not isinstance(e, requests.exceptions.ConnectionError):
+        return False
+    inner = e.args[0] if e.args else None
+    return isinstance(getattr(inner, "reason", inner), NewConnectionError)
+
+
 def _send(method, path, env, body=None, params=None, retries=3, no_resend=False):
     """no_resend (order POSTs): once the request may have reached OKX it is never sent again —
     a read timeout, a dropped connection, a 5xx, a 2xx that is not JSON or a SEND_UNKNOWN_CODES
-    answer raises _SendUnknown. Only a connect timeout (nothing sent) and 50102 (refused at
-    authentication, re-signed) are retried."""
+    answer raises _SendUnknown. Only a connect timeout, a refused connection or a DNS failure
+    (nothing sent) and 50102 (refused at authentication, re-signed) are retried."""
     api_key = env.get("OKX_API_KEY")
     secret = env.get("OKX_SECRET_KEY")
     passphrase = env.get("OKX_PASSPHRASE")
@@ -313,6 +324,12 @@ def _send(method, path, env, body=None, params=None, retries=3, no_resend=False)
                 requests.exceptions.InvalidSchema, requests.exceptions.InvalidHeader):
             raise  # refused before anything was sent
         except requests.exceptions.RequestException as e:
+            if _never_connected(e):
+                last_err = e  # refused / DNS failure: no socket, nothing reached OKX
+                if attempt == retries - 1:
+                    raise
+                time.sleep(1 + attempt)
+                continue
             # an order POST: anything after the connection was made may have reached OKX — a
             # reset, a read timeout (not a ConnectionError subclass), a body cut mid-transfer
             if no_resend:
@@ -588,7 +605,11 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
         rows = _request("POST", "/api/v5/trade/order", env, body)
         ord_id = (rows[0] if rows else {}).get("ordId")
         if not ord_id:
-            raise OKXError("N/A", f"order response missing ordId: {rows}", "trade/order")
+            # code 0 is OKX's success: the order may be in, only its id is missing
+            raise OrderNotConfirmed(
+                f"order {client_order_id} accepted without an ordId ({rows}) — it may have filled; "
+                f"check the position, do not resubmit", venue="okx", venue_symbol=symbol,
+                client_order_id=client_order_id)
         return _confirm(env, symbol, ord_id, get_order, timeout=confirm_timeout, venue="okx")
     except OrderNotConfirmed as e:
         # the canonical symbol: the parked order is queried with it through get_order
@@ -807,6 +828,24 @@ def cancel_algo_order(env, symbol, algo_id):
                     [{"instId": _swap_inst(symbol), "algoId": str(algo_id)}])
 
 
+ALGO_LOOKUP_READS = 3   # pending-list reads (1 s apart) before an unanswered algo POST counts as absent
+
+
+def _find_pending_algo(env, symbol, algo_cl_ord_id):
+    """The pending algo row carrying our algoClOrdId, or None (a failed read counts as absent:
+    the caller then reports the position as possibly unprotected, never as protected)."""
+    for i in range(ALGO_LOOKUP_READS):
+        try:
+            for row in get_open_algo_orders(env, symbol):
+                if row.get("algoClOrdId") == algo_cl_ord_id:
+                    return row
+        except Exception:
+            pass
+        if i < ALGO_LOOKUP_READS - 1:
+            time.sleep(1)
+    return None
+
+
 def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
                             tp_price=None, verify=True, _after_entry=False):
     """Reduce-only conditional SL/TP for an EXISTING swap position via
@@ -840,12 +879,26 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
                 body["closeFraction"] = "1"
             else:
                 body["sz"] = format_qty(env, symbol, qty)
-            rows = _request("POST", "/api/v5/trade/order-algo", env, body)
-            algo_id = (rows[0] if rows else {}).get("algoId")
+            # our id, so an algo POST whose outcome is unknown can be found in the pending list
+            body["algoClOrdId"] = f"bl{kind}{int(time.time() * 1000):x}"
+            try:
+                rows = _request("POST", "/api/v5/trade/order-algo", env, body)
+                algo_id = (rows[0] if rows else {}).get("algoId")
+            except OrderNotConfirmed:
+                rows, algo_id = None, None
             if not algo_id:
-                raise OKXError("N/A", f"{kind} response missing algoId: {rows}",
-                               "order-algo")
+                row = _find_pending_algo(env, symbol, body["algoClOrdId"])
+                if row is None:
+                    raise ProtectionFailed(
+                        f"{symbol} {direction} position may have NO {kind.upper()} — the {kind} order "
+                        f"(algoClOrdId {body['algoClOrdId']}) got no answer"
+                        f"{f' ({rows})' if rows is not None else ''} and is not in OKX's pending algo "
+                        f"orders. Tell the user now; read the pending algo orders again before placing "
+                        f"it, it may still show up. Placed before it: {list(placed)}")
+                algo_id, rows = row.get("algoId"), [row]
             placed[kind] = {"algoId": str(algo_id), "raw": rows[0]}
+    except ProtectionFailed:
+        raise
     except guard.Halted as e:
         wanted = [k for k, p in (("sl", sl_price), ("tp", tp_price)) if p is not None]
         raise ProtectionFailed(
