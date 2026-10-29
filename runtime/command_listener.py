@@ -5334,6 +5334,8 @@ def _flatten_already_running():
 _FLATTEN_PROCS = []
 _FLATTEN_LOCK = threading.Lock()
 _FLATTEN_PIDS_MAX = 8   # flatten_running reads only the newest this many
+_FLATTEN_CHECK_BUDGET_S = 10   # all lookups of one flatten_running, inside _status_lock
+_FLATTEN_PIDS_STALE_S = 6 * 3600   # list untouched this long → dropped whole
 
 
 def _flatten_pids_path():
@@ -5364,6 +5366,13 @@ def flatten_running():
             return True
     path = _flatten_pids_path()
     try:
+        if time.time() - os.path.getmtime(path) > _FLATTEN_PIDS_STALE_S:
+            # no flatten runs this long: whatever is listed is long gone, and checking it costs a
+            # ps / powershell per pid every status write
+            with _FLATTEN_LOCK:
+                if time.time() - os.path.getmtime(path) > _FLATTEN_PIDS_STALE_S:
+                    os.remove(path)
+            return False
         raw = atomic_file.read_bytes(path).decode("ascii", errors="replace")
     except OSError:
         return False
@@ -5374,7 +5383,10 @@ def flatten_running():
     # outside the lock: on Windows each check is a powershell, and _record_flatten (the close_all
     # ack path) must not wait behind it. A lookup that failed (None) is neither: kept for next time,
     # not counted — pruning it would lose a live flatten for good
-    cmds = {pid: _pid_cmdline_or_none(pid) for pid in pids}
+    deadline = time.monotonic() + _FLATTEN_CHECK_BUDGET_S
+    cmds = {}
+    for pid in sorted(pids):   # past the budget the rest count as not looked up: kept, not counted
+        cmds[pid] = _pid_cmdline_or_none(pid) if time.monotonic() < deadline else None
     alive = {pid for pid, c in cmds.items() if c is not None and "manager/flatten.py" in c.replace("\\", "/")}
     dead = {pid for pid, c in cmds.items() if c is not None and pid not in alive}
     if dead or len(tail) < len(raw.split()) or not raw.endswith("\n"):

@@ -235,6 +235,45 @@ for run in (_ps("C:\\py.exe manager/flatten.py\r\n"), _ps(""), _ps("", 1), _ps(N
 cl.subprocess.run, _platform.system = real_run, real_sys
 check(win[0].startswith("C:") and win[1] == "" and win[2] is None and win[3] is None,
       f"Windows lookup: found → command line, empty with exit 0 → no such pid, a failed or timed-out powershell → None ({win})")
+# macOS / no-/proc path: ps exit codes
+real_isdir = os.path.isdir
+def _no_proc_open(*a, **k):
+    raise FileNotFoundError("/proc")
+cl.open = _no_proc_open
+os.path.isdir = lambda p: False if p == "/proc/self" else real_isdir(p)
+posix = []
+for run in (_ps("python manager/flatten.py\n"), _ps("", 1), _ps("", 2), _ps(None, exc=_sp.TimeoutExpired("ps", 10))):
+    cl.subprocess.run = run
+    posix.append(real_cmd(1234))
+cl.subprocess.run, os.path.isdir = real_run, real_isdir
+del cl.open
+check(posix[0].startswith("python") and posix[1] == "" and posix[2] is None and posix[3] is None,
+      f"ps lookup: found → command line, exit 1 empty → no such pid, exit 2 empty or a timeout → None ({posix})")
+# time budget: lookups stop after ~10 s; the rest are not looked up (kept, not counted)
+clock, looked = [0.0], []
+real_mono = cl.time.monotonic
+cl.time.monotonic = lambda: clock[0]
+def _slow(pid):
+    looked.append(pid)
+    clock[0] += 4
+    return ""
+with open(PIDS, "w") as f:
+    f.write("".join(f"{800000 + k}\n" for k in range(8)))
+cl._pid_cmdline_or_none = _slow
+r_budget = cl.flatten_running()
+cl._pid_cmdline_or_none, cl.time.monotonic = real_cmd, real_mono
+check(r_budget is False and len(looked) == 3 and len(pids_on_disk() or []) == 5,
+      f"a slow lookup: stops at the 10 s budget, the unlooked pids stay listed ({len(looked)} looked up, {pids_on_disk()})")
+os.remove(PIDS)
+# a list untouched for 6 hours is dropped whole, nothing looked up
+with open(PIDS, "w") as f:
+    f.write(f"{os.getpid()}\n")
+os.utime(PIDS, (time.time() - 6 * 3600 - 5,) * 2)
+looked.clear()
+cl._pid_cmdline_or_none = lambda pid: (looked.append(pid), "python manager/flatten.py")[1]
+r_stale = cl.flatten_running()
+cl._pid_cmdline_or_none = real_cmd
+check(r_stale is False and not looked and pids_on_disk() is None, f"a pid list older than 6 hours → dropped, no lookup ({looked}, {pids_on_disk()})")
 asked = []
 with open(PIDS, "w") as f:
     f.write("".join(f"{900000 + k}\n" for k in range(50)))
