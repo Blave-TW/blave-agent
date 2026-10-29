@@ -4644,7 +4644,7 @@ app.on("browser-window-created", (_e, win) => {
 function quitTurnBody(n, L, q) {
   const run = n < 1 ? "" : n >= 2 && L.quitTurnBodyN ? L.quitTurnBodyN.replace("{n}", () => String(n)) : L.quitTurnBody;
   const qs = q > 0 && L.quitQueuedN ? L.quitQueuedN.replace("{n}", () => String(q)) : "";
-  return [run, qs].filter(Boolean).join(" ");
+  return run && qs ? run + (/[。！？]$/.test(run) ? "" : " ") + qs : run || qs;   // 中文句接句不留空格(全形句號結尾),英文留一格
 }
 function quitOnSignals(proc, quit) {
   if (proc.platform === "win32") return [];

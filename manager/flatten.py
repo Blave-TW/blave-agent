@@ -513,6 +513,17 @@ def flatten():
     exit at once, not queue behind the first and close everything again (third audit T-P1 —
     群益's auto open/close would open the reverse of a close not yet confirmed)."""
     global _LOCK
+    # From an agent turn: another turn's order / close on this machine finishes first, and only then are the
+    # positions read (lib/guard). BEFORE the single-flight lock: a turn's flatten waiting here must not hold
+    # flatten.lock, or the user's 全部平倉 button (the daemon's flatten, no turn lock) would see it taken,
+    # exit as ALREADY_RUNNING and close nothing while this one waits and then gives up. Busy past the wait →
+    # nothing closed by this run, one error row saying why.
+    try:
+        guard.hold_turn_money()
+    except guard.TurnMoneyBusy as e:
+        logging.error(f"close-all: {e}")
+        _record_order_error("*", "*", f"close-all: {e}")
+        return False
     _LOCK = _singleflight()
     if _LOCK is None:
         # Deliberately before the HALT trip: whoever holds the lock tripped it
@@ -520,14 +531,6 @@ def flatten():
         # before launching us — the stop half of the button is never skipped.
         logging.info(f"close-all: another flatten holds {LOCK_PATH} — this one exits")
         return ALREADY_RUNNING
-    # From an agent turn: another turn's order / close on this machine finishes first, and only then are the
-    # positions read (lib/guard). Busy past the wait → nothing closed anywhere, one error row saying why.
-    try:
-        guard.hold_turn_money()
-    except guard.TurnMoneyBusy as e:
-        logging.error(f"close-all: {e}")
-        _record_order_error("*", "*", f"close-all: {e}")
-        return False
     try:
         import lib.portfolio as _pf
         hold = _pf._unconfirmed.hold if getattr(_pf, "_unconfirmed", None) is not None else None

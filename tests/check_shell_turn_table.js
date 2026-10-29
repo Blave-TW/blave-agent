@@ -141,6 +141,8 @@ const ends = (r) => r.sent.filter(([ch]) => ch === "turn-end").map(([, p]) => p)
   const LQ = { ...L, quitQueuedN: "排隊中的 {n} 句不會送出。" };
   ok("結束框:一條用舊句、兩條以上帶數字;字還沒交過來(沒有 N 句)退回舊句", qtb(1, L, 0) === "one" && qtb(3, L, 0) === "3 個回覆還在跑" && qtb(3, { quitTurnBody: "one" }, 0) === "one");
   ok("結束框:有排隊的接一句排隊句;只有排隊時只講排隊那句(spec §3)", qtb(2, LQ, 1) === "2 個回覆還在跑 排隊中的 1 句不會送出。" && qtb(0, LQ, 2) === "排隊中的 2 句不會送出。");
+  ok("結束框組句:中文句(全形句號結尾)接排隊句不留空格,英文留一格", qtb(2, { quitTurnBodyN: "結束會中斷 {n} 個回覆。", quitQueuedN: "排隊中的 {n} 句不會送出。" }, 1) === "結束會中斷 2 個回覆。排隊中的 1 句不會送出。"
+    && qtb(2, { quitTurnBodyN: "Quitting stops {n} replies.", quitQueuedN: "Queued messages won't be sent." }, 1) === "Quitting stops 2 replies. Queued messages won't be sent.");
   const po = (lang) => fs.readFileSync(path.join(SH, "i18n", lang + ".po"), "utf8");
   ok("tm.quitTurnBodyN 兩語都有 {n};trade.js 把它交給主行程", ["zh", "en"].every((l) => /msgid "tm\.quitTurnBodyN"\nmsgstr "[^"]*\{n\}[^"]*"/.test(po(l)) && /msgid "tm\.quitQueuedTitle"\nmsgstr "[^"]+"/.test(po(l)))
     && /quitTurnBodyN: t\("tm\.quitTurnBodyN", \{ n: "\{n\}" \}\)/.test(fs.readFileSync(path.join(SH, "renderer", "trade.js"), "utf8")));

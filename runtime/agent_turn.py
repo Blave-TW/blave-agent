@@ -5302,6 +5302,10 @@ MESSAGE_STDIN_MAX = 1024 * 1024  # --message-stdin 讀的上限(同電腦版外�
 
 
 def main():
+    # lib/guard's turn order lock: a process this turn starts and leaves running (nohup / tmux) checks this pid
+    # and stops counting as part of the turn once this process is gone
+    if os.environ.get(turn_stop.ENV):
+        os.environ["BLAVE_TURN_PID"] = str(os.getpid())
     parser = argparse.ArgumentParser()
     parser.add_argument("session_id")
     # 電腦版用 --message-stdin 把訊息從 stdin 送進來(argv 同機的人 `ps` 看得到,而聊天貼 key 是支援的流程);

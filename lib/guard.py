@@ -210,9 +210,11 @@ def check_restart_stop(intent, fields=None):
     for any order intent while the restart record exists, and — the HALT
     freeze — while state/HALT exists. `fields` = the audit dict."""
     fields = fields or {}
+    # every mutating request in an agent turn, cancels / leverage included: a busy answer to a script's first
+    # step (cancel the old stop, then place the new one) must leave nothing changed, so "Nothing was sent" holds
+    _turn_money_lock(0)   # no waiting here (see TURN_MONEY_LOCK)
     if intent in _RESTART_PASS:
         return
-    _turn_money_lock(0)   # an order is about to leave: no waiting here (see TURN_MONEY_LOCK)
     if restart_stopped():
         if not (_close_all_granted and intent == "reduce"):
             audit("order_denied_restart", **{**fields, "intent": intent})
@@ -478,7 +480,9 @@ _money_marked = False
 #   - check_restart_stop() (the gate every lib/order_* passes before an order reaches the venue) takes it
 #     without waiting: an ad-hoc script read its position before that point, so going on after a wait would
 #     act on a stale read. Busy → TurnMoneyBusy at once, nothing sent.
-#   Importing an order lib (research / price scripts) takes nothing.
+#   Importing an order lib (research / price scripts) takes nothing. Resident processes never take it:
+#   the reconciler and the strategy wrappers drop the turn variables at start, and any process a turn left
+#   behind (BLAVE_TURN_PID — the agent_turn process — no longer exists) counts as outside the turn.
 # TURN_MONEY_WAIT_S stays well under the agent's Bash default timeout (runtime/agent_turn.py
 # BASH_DEFAULT_TIMEOUT_MS, 120 s): a wait that ran into it would be moved to the background and the agent
 # would never see "Nothing was sent" (tests/check_turn_money_lock.py pins the gap).
@@ -511,10 +515,41 @@ def _try_lock(fd):
 _turn_money_shared = False
 
 
+def _turn_process_gone():
+    """True when BLAVE_TURN_PID (the agent_turn process, runtime/agent_turn.main) no longer exists: this is a
+    process a turn left behind (nohup / tmux started from inside it), not part of a live turn — it takes no
+    turn lock. No / unparsable BLAVE_TURN_PID (an older runtime) → False: treated as in the turn, as before."""
+    raw = os.environ.get("BLAVE_TURN_PID") or ""
+    if not raw.isdigit() or int(raw) <= 0:
+        return False
+    pid = int(raw)
+    if os.name == "nt":
+        try:
+            import ctypes
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.OpenProcess.restype = ctypes.c_void_p
+            h = k32.OpenProcess(0x00100000 | 0x1000, False, pid)   # SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                return ctypes.get_last_error() == 87   # ERROR_INVALID_PARAMETER: no such process
+            try:
+                return k32.WaitForSingleObject(ctypes.c_void_p(h), 0) == 0   # signaled = exited
+            finally:
+                k32.CloseHandle(ctypes.c_void_p(h))
+        except Exception:
+            return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
 def _turn_money_lock(wait_s):
     global _turn_money_fd, _turn_money_shared
     turn = os.environ.get("BLAVE_TURN_INTERRUPT_FILE") or ""
-    if not turn or _turn_money_fd is not None or _turn_money_shared:
+    if not turn or _turn_money_fd is not None or _turn_money_shared or _turn_process_gone():
         return
     owner = TURN_MONEY_LOCK + ".owner"
     try:
