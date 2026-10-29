@@ -549,6 +549,7 @@ if (!process.versions.electron) {
       var t = (k, p) => STR[k].replace(/[{]([a-z]+)[}]/g, (m, n) => (p && n in p ? p[n] : m)), libEnv = () => env, ctaState = "free", libCtaOf = () => ({ state: ctaState }), libWhere = () => STR["lib.where." + (env === "cloud" ? "cloud" : "local")], envCanSwitch = () => true, paneToggle = () => {}, csStartNew = () => {}, libSync = () => {}, libCtaMain = () => null, libCloudList = () => [];
       var libTrack = (n) => calls.track.push(n), libBlocked = () => {}, libInvalidate = () => { calls.inval++; LIB.dlFail = null; }, $ = () => ({ title: "", textContent: "" });
       var confirmBox = (o) => calls.box.push(o), submitMessage = async (m, o) => { calls.sent.push(m); calls.opts.push(o); return subOk; }, csSendAway = (m, o) => submitMessage(m, o);
+      var sessionId = "desktop-lib1", CS = { away: { sid: "desktop-lib1", seq: 1 } };   // 單分頁:送出那一條 = 結束那一條
       var chatViewing = () => ({ env: env === "cloud" ? "cloud" : "local", strategy: "seen" });
       var window = { blave: { libraryDownload: (id) => { calls.dl.push(id); return new Promise((res, rej) => { dlNext = { res, rej }; }); }, trackEvent: (e, p) => calls.events.push(e + ":" + JSON.stringify(p)) } };
       var libInstalledSet = (id, n) => calls.inst.push(id + "=" + n), libCloudSettle = () => settle, libCloudRepaintList = () => {}, LIB_CLOUD_WAIT_MS = 1000;

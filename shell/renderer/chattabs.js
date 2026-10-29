@@ -6,7 +6,7 @@
    哪些全域是每輪狀態:TAB_KEYS 這張表(tests/check_shell_chat_tabs.js 列舉 app.js 與每輪模組的頂層狀態,每個都要在這裡或 GLOBAL_OK)。
    在 app.js、suggest.js 之後載入。 */
 let tabsK = 0;   // 分頁列 tick 現在亮第幾格(每秒進一格;建 tick 時就帶上,重畫不閃)
-const CS = { tabs: new Map(), order: [], cur: null, loaded: null, bg: false, closed: [], main: new Map(), bootDone: false };
+const CS = { away: { sid: null, seq: 0 }, tabs: new Map(), order: [], cur: null, loaded: null, bg: false, closed: [], main: new Map(), bootDone: false };
 
 // [名字, 讀, 寫, 新分頁的初值]——初值是工廠,物件每個分頁各一份
 const TAB_KEYS = [
@@ -146,7 +146,14 @@ const tabRun = (T) => (T === CS.loaded ? running : T.st.running) === true;
 /* 從別處送一句話(策略頁的掃描／重跑／還原、策略庫〔使用〕、報告〔問〕、歡迎頁的籤、送上雲端…;spec §3 sendAway):
    眼前分頁閒著而且還沒講過話 → 送進這裡;其他情況開新分頁送,直接跑。兩件事不混在同一串脈絡裡 */
 function csAway() { if (csTitle || running) csStartNew({ force: true, quiet: true }); }
-function csSendAway(msg, opts) { csAway(); return submitMessage(msg, opts); }
+// CS.away = 剛送出的那一輪是哪一條、第幾輪(submitMessage 的同步段已記好 turnSeqMine):等「這一輪」結束的人(策略庫〔使用〕、
+// 新增報告、更新雲端、掃描／樣本外的「已送出」)記 sid／序號,別條先結束時不當成自己的收掉
+function csSendAway(msg, opts) {
+  csAway();
+  const T = CS.loaded, p = submitMessage(msg, opts);
+  CS.away = { sid: T ? T.sid : sessionId, seq: turnSeqMine };
+  return p;
+}
 
 function csStopOne(sid) { const T = CS.tabs.get(sid); if (T && tabRun(T)) withTab(T, () => { stopTurn(); }); else window.blave.stopTurn(sid); }
 function csStopAll() { for (const T of [...CS.tabs.values()]) if (tabRun(T)) withTab(T, () => { stopTurn(); }); }
@@ -157,9 +164,14 @@ function tabsOf(sid) { return sid ? CS.tabs.get(sid) || null : CS.cur; }
 function tabsOnEvent(c) {
   if (!c || typeof c !== "object") return;
   const T = tabsOf(c.sid);
-  if (!T) { if (c.sid && c.type === "queued") CS.main.set(c.sid, "queued"); return; }   // 沒開著的(重載之後、手機來的還沒開成分頁):只記清單狀態
+  if (!T) { if (c.sid && (c.type === "queued" || c.type === "started")) CS.main.set(c.sid, c.type === "queued" ? "queued" : "running"); return; }   // 沒開著的(重載之後、手機來的還沒開成分頁):只記清單狀態,開成分頁時接上(csOpen)
   if (c.type === "queued") { tabsQueued(T, true); return; }
-  if (c.type === "started") { tabsQueued(T, false); withTab(T, () => busyStart()); tabsPaint(); return; }
+  if (c.type === "started") {
+    tabsQueued(T, false);
+    // 不是這個畫面送出的那一輪(手機來的、開成分頁的):這裡才知道它在跑——記成回合中,機器層級的鎖與分頁的「回覆中」才看得到
+    withTab(T, () => { if (!running) { running = true; turnSeq++; turnSeqMine = turnSeq; } busyStart(); });
+    tabsPaint(); return;
+  }
   if (c.type === "browser_wait") { withTab(T, () => { busySet(t("tabs.brWait"), "", "wait"); if (ACT) ACT.shown = "browser_wait|"; }); return; }
   if (c.type === "done") T.awaiting = c.awaiting === true;
   withTab(T, () => turnEventIn(c));
@@ -258,6 +270,15 @@ function tabsLayout(width, order, curSid) {
 }
 function tabsPaint() {
   const bar = $("cs-tabs"); if (!bar) return;
+  // 整列重建:焦點在分頁或選單列上時照 sid 還回去(不然每次有回合翻面,鍵盤焦點就掉回 body)
+  const fa = document.activeElement, fSid = fa && fa.dataset && fa.dataset.sid && (bar.contains(fa) || $("cs-menu").contains(fa)) ? fa.dataset.sid : null, fMenu = !!(fSid && $("cs-menu").contains(fa));
+  try { tabsPaintIn(bar); }
+  finally {
+    if (fSid) { const n = (fMenu ? $("cs-menu") : bar).querySelector('[data-sid="' + fSid + '"]'); if (n && n !== document.activeElement) { if (!fMenu) { bar.querySelectorAll('[role="tab"]').forEach((x) => { x.tabIndex = -1; }); n.tabIndex = 0; } n.focus({ preventScroll: true }); } }
+    tabsTipTick();
+  }
+}
+function tabsPaintIn(bar) {
   const order = CS.order.filter((s) => CS.tabs.has(s));
   // 只有一條、而且還沒講過話:列上只有 ☰ 與 ＋,不畫空分頁(spec §1-1)
   const lone = order.length === 1 && CS.cur && order[0] === CS.cur.sid && !csTitle && !running;
@@ -327,7 +348,7 @@ function tabsMenuPaint() {
   m.textContent = "";
   hidden.forEach((sid) => {
     const T = CS.tabs.get(sid); if (!T) return;
-    const st = tabsStateOf(T), it = document.createElement("button"); it.type = "button"; it.className = "mi" + (tabsNeedsYou(st) ? " attn" : ""); it.setAttribute("role", "menuitem");
+    const st = tabsStateOf(T), it = document.createElement("button"); it.type = "button"; it.className = "mi" + (tabsNeedsYou(st) ? " attn" : ""); it.setAttribute("role", "menuitem"); it.dataset.sid = sid;
     const lead = tabsLead(st); if (lead) it.appendChild(lead); else { const s = document.createElement("span"); s.className = "tab-lead"; it.appendChild(s); }
     const ti = document.createElement("span"); ti.className = "mi-t"; ti.textContent = tabsTitle(T); it.appendChild(ti);
     const word = tabsStateWord(T, st);
@@ -439,9 +460,16 @@ setInterval(() => {
   tabsK = (tabsK + 1) % 3;
   const k = tabsTickK();
   document.querySelectorAll(".tab-ticks").forEach((el) => { el.dataset.k = k; });
-  if (!$("cs-menu").hidden) tabsMenuPaint();
+  if (!$("cs-menu").hidden) tabsMenuTick();
   tabsTipTick();
 }, 1000);
+// 選單開著:每秒只換回覆中那幾列的時長字,不重建(重建會讓方向鍵移到一半的焦點掉回 body)
+function tabsMenuTick() {
+  for (const it of $("cs-menu").querySelectorAll(".mi")) {
+    const T = CS.tabs.get(it.dataset.sid), w = it.querySelector(".mi-s");
+    if (T && w && tabsStateOf(T) === "run") w.textContent = tabsStateWord(T, "run");
+  }
+}
 
 /* 歷史清單那一列的狀態(app.js csRow):優先序回覆中 ＞ 等你回覆 ＞ 排隊中 ＞ 沒做完 ＞ 做完，還沒看;眼前那條不算 */
 function csListState(m) {

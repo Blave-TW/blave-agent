@@ -421,6 +421,7 @@ function libRefresh() { if (!$("lib").hidden) libLoad(false); }
 function libTurnEnd() {
   const p = LIB.pending;
   if (!p || p.stage === "dl") return;   // 還在代下載:結束的是用戶另外送的那一輪,不是這支的
+  if (p.sid && p.sid !== sessionId) return;   // 結束的是別條(對話分頁並行):這支那一輪還在跑
   LIB.pending = null;
   if (p.env === "local") {
     // 新出現、或同名但 mtime 變了(「再下載一份」是整份覆蓋同名那支)都算成功;對照表已記的名字優先認它
@@ -935,9 +936,11 @@ async function libSend(s, o) {
     }
     LIB.pending.stage = "turn"; libSync();
   }
-  csSendAway(send, opts).then((ok) => {
+  const sent = csSendAway(send, opts), at = CS.away;
+  if (LIB.pending) LIB.pending.sid = at.sid;   // 代下載那段的 pending(stage turn)也只認這一條
+  sent.then((ok) => {
     if (ok) {
-      LIB.pending = { id: s.id, env, before }; LIB.noNew = null; libTrack("library_use");
+      LIB.pending = { id: s.id, env, before, sid: at.sid }; LIB.noNew = null; libTrack("library_use");
       if (o && o.from === "welcome") libTrack(local ? "wcard_use" : "wcard_use_cloud");
       // 這支的資料需求(§8):只在本機送——雲端沒有資料牆,這個屬性在那邊沒有意義
       if (local) { try { window.blave.trackEvent("lib_pick", { data: libPickData(s) }); } catch (_) { } }

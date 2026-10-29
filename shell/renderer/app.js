@@ -781,7 +781,7 @@ function connectPaint() {
    「更新雲端主機」才在本機聊天送那一句固定的話(up.c.msg),自動下單可能在跑時先問。報告還沒有 workspace_update 欄位之前,
    (c) 由那一回合推得(送出的那一回合在跑、或之後碰過雲端的回合在跑),事後那一行由版號追上推得(只有 from → to)。
    決策全在 upPlan / upDoneLine(純函式,tests/check_shell_settings.js 直接跑);upPaint 只照它畫。 */
-var UPD = { cloudTurn: false, turnCloud: false, session: null, lagCv: null, done: null };
+var UPD = { cloudSid: null, turnCloud: false, session: null, lagCv: null, done: null };   // cloudSid = 送「更新雲端主機」那一條(別條先結束不收它的)
 const UP_SESSION_IDLE_MS = 30 * 60000;   // 更新期間 30 分鐘沒有回合就結束(兜底)
 /* 更新期間裡最後一個回合結束滿 3 分鐘(> 雲端 2 分鐘一次的回報,成功的更新這時一定已經回報),再按「更新雲端主機」而雲端仍落後 = 上一次沒成功:
    允許重送。不然讀不到最新版號(lv null)時更新期間只能等 30 分鐘閒置才結束,這段時間按了沒有任何反應(設計複稽核 R4) */
@@ -791,7 +791,7 @@ const UP_RETRY_MS = 3 * 60000;
 function upObserve(mem, cloud, stale, localTurn, now) {
   const c = cloud || {}, cv = c.config_version || null, lv = c.latest_config_version || null;
   const lag = !!(cv && lv && cv !== lv) || !!stale, caughtUp = !!(cv && lv && cv === lv) && !stale;
-  const endSession = () => { mem.session = null; mem.cloudTurn = false; };
+  const endSession = () => { mem.session = null; mem.cloudSid = null; };
   if (mem.session && localTurn) mem.session.lastTurnAt = now;
   if (lag) { mem.done = null; if (cv) mem.lagCv = mem.lagCv || cv; }
   if (caughtUp) {
@@ -806,7 +806,7 @@ function upObserve(mem, cloud, stale, localTurn, now) {
 /* 雲端是「沒有主機」或「啟動中」= 舊主機已經不在了:之前記的落後、追上、更新期間都是那台的事,清掉——
    不清的話新開的主機一跑起來就被當成「已更新到」。停機(同一台)與讀不到不清。 */
 function upMachineGone(mem, kind) {
-  if (kind === "none" || kind === "starting") Object.assign(mem, { lagCv: null, done: null, session: null, cloudTurn: false });
+  if (kind === "none" || kind === "starting") Object.assign(mem, { lagCv: null, done: null, session: null, cloudSid: null });
   return mem;
 }
 const UP_WU_STATES = ["applying", "done", "failed"], UP_WU_OUTCOMES = ["updated", "up_to_date", "restart_failed", "restart_deferred", "stopped", "error", "partial"];
@@ -836,7 +836,7 @@ function upPlan(o) {
   // config_supports_wf === false 也算落後:api 讀不到最新版號(lv null)時,樣本外驗證的落後態〔去更新〕→「檢查更新」才有出口(稽核 P2-5)
   const cloudLag = o.kind === "running" && (!!(cv && lv && cv !== lv) || !!o.cloudStale || c.config_supports_wf === false);
   // (c):報告說正在換檔;沒有那個欄位時由本機那一回合推得(檢查更新送出的那一回合在跑、或更新期間內碰過雲端的回合在跑)
-  const applying = !!(wu && wu.state === "applying") || (turn && !!mem.session && (!!mem.cloudTurn || !!mem.turnCloud));
+  const applying = !!(wu && wu.state === "applying") || (turn && !!mem.session && (!!mem.cloudSid || !!mem.turnCloud));
   // (b):Squirrel 已暫存好(updater 的 publicState 每次都重看 isTrading:下單中是 blocked)。回合在跑時不能重開(會把它斷掉)。
   // 下單中也照出(0.1.10):ask = 按了主行程會先問、確認後收工再裝,字尾接「…」
   const ready = ph === "ready" || ph === "blocked", ask = ph === "blocked";
@@ -972,9 +972,10 @@ function upNow() {
    回合出錯、或整回合沒碰雲端主機:什麼都沒換,更新期間到此為止(之後無關的回合不再被畫成更新中);
    碰了雲端、正常結束:立刻強制問一次雲端(主機已回報就不必等下一輪輪詢),期間留到版號追上 / 30 分鐘沒回合 */
 function upTurnEnded(faulted) {
-  if (!UPD.cloudTurn && !UPD.session) return;
+  if (!UPD.cloudSid && !UPD.session) return;
+  if (UPD.cloudSid && UPD.cloudSid !== sessionId) return;   // 結束的是別條:更新那一輪還在跑,不收它的(turnCloud 是那一條自己的)
   const touched = UPD.turnCloud;
-  UPD.cloudTurn = false; UPD.turnCloud = false;
+  UPD.cloudSid = null; UPD.turnCloud = false;
   if (faulted || !touched) { UPD.session = null; return; }
   if (window.blave && typeof window.blave.cloudRefresh === "function") window.blave.cloudRefresh().catch(() => {}).then(() => { ENV.cloudDirty = true; if (typeof trPoll === "function") trPoll(); });
 }
@@ -1071,10 +1072,14 @@ async function upCloudSend() {
   if (!(p.cloud && p.cloud.link && !p.cloud.link.disabled)) return;
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著就先展開:過程在那裡
   const c = (TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud) || {}, now = Date.now();
-  Object.assign(UPD, { done: null, cloudTurn: true, session: { startAt: now, lastTurnAt: now, fromCv: c.config_version || null, nv: c.latest_config_version || null } });
-  const sentOk = await csSendAway(t("up.c.msg"), { viewing: { env: "cloud" } });
+  Object.assign(UPD, { done: null, cloudSid: null, session: { startAt: now, lastTurnAt: now, fromCv: c.config_version || null, nv: c.latest_config_version || null } });
+  const sending = csSendAway(t("up.c.msg"), { viewing: { env: "cloud" } }), sid = CS.away.sid;
+  UPD.cloudSid = sid;
+  const sentOk = await sending;
   if (sentOk) trackFeature("cloud_upd_ok");
-  if (!upLocalTurn()) upTurnEnded(true);   // 沒送出去(上一輪還在跑 / 版本被停用)、或回合在回來之前就結束了(同步拋錯):不進更新期間
+  // 沒送出去(版本被停用等)、或那一條在回來之前就結束了(同步拋錯):不進更新期間。只看送出的那一條,別條在跑不算
+  const T = CS.tabs.get(sid), alive = T ? tabRun(T) : upLocalTurn();
+  if (!sentOk || !alive) { if (UPD.cloudSid === sid) { UPD.cloudSid = null; UPD.session = null; } }
 }
 async function upInstall(opts) {
   if (upLocalTurn()) return;   // 主行程也擋一次(update-install):回合在跑不重開(重開會把它斷掉)
@@ -2218,7 +2223,7 @@ function rpRobAsk(name, opener, begin, info) {
   const msg = grid ? t(grid.single ? "rob.msgRescan1" : "rob.msgRescan", { name, start: now.start || D, end: now.end || D, fee: now.fee || D, ...grid.raw }) : t("rob.msgScan", { name });
   return new Promise((resolve) => confirmBox({ title: t(grid ? "rob.btnRescan" : "rob.btnScan"), lines: [t(grid ? (grid.single ? "rob.cfLead1" : "rob.cfLead") : "rob.emptyCap")], extra, ok: t("rob.cfOk"), opener, env: rpBag() === RPC ? "cloud" : undefined,
     // begin():同樣本外驗證,送出前先記「這一支正在送」(暖機那段不顯示「agent 正在回覆上一則訊息」,稽核 P2-1)
-    onOk: () => { if (typeof begin === "function") begin(); csSendAway(msg).then((ok) => { if (ok) trackFeature("scan_requested"); resolve(ok ? turnSeq : false); }); } }));
+    onOk: () => { if (typeof begin === "function") begin(); const p = csSendAway(msg), at = CS.away; p.then((ok) => { if (ok) trackFeature("scan_requested"); resolve(ok ? at.seq : false); }); } }));
 }
 /* 回合開始 / 結束:參數掃描分頁的鈕跟著換態(回合中鎖鈕、結束解鎖)。就地改鈕;結果頁的「已送出」翻面時模組自己整片重畫(焦點交給分頁鈕) */
 function rpRobSync() {
@@ -2307,7 +2312,7 @@ function rpWfAsk(name, lookback, step, rerun, opener, begin) {
     lines: (behindMaybe ? [t("wf.needUpdate")] : []).concat([t("wf.emptyBoundary"), t("wf.confirmBody")]), ok: t("rob.cfOk"), opener, env: cloud ? "cloud" : undefined,
     // begin():送出前先記「這一支正在送」,暖機那段(running 已 true、還沒回來)畫成已送出而不是「agent 正在回覆上一則訊息」(稽核 P2-1)
     // 新的一次送出:補抓的次數重新起算(不然上一段抓滿 8 次、中間沒切過視窗的話,這一段一次都不抓;0.1.11 code 複驗 R-P2-1)
-    onOk: () => { if (typeof begin === "function") begin(); rpWfAuto.delete(name); csSendAway(t("wf.msgRun", { name, lookback: String(lookback), step: String(step) })).then((ok) => { if (ok) trackFeature("wf_requested"); resolve(ok ? turnSeq : false); }); } }));
+    onOk: () => { if (typeof begin === "function") begin(); rpWfAuto.delete(name); const p = csSendAway(t("wf.msgRun", { name, lookback: String(lookback), step: String(step) })), at = CS.away; p.then((ok) => { if (ok) trackFeature("wf_requested"); resolve(ok ? at.seq : false); }); } }));
 }
 // 雲端主機太舊:去設定 › 一般、焦點在「更新雲端主機」(同 versions.js verNeedUpdate)——電腦版更新雲端一律開本機回合走 MCP,不觸發雲端回合
 function rpWfUpdate() { setOpen().then(() => { setCat("display"); const b = $("set-upc-btn"); if (b && !b.hidden) b.focus(); }); }
@@ -2505,6 +2510,10 @@ async function csOpen(id, o) {
   const had = CS.tabs.get(id);
   if (had) { if (had.closed) tabsAdd(had); if (!(o && o.focus === false)) tabShow(had); if (!had.drawn) await csDraw(had); return had; }
   const T = tabMake(id, { title: (csItems.find((m) => m && m.id === id) || {}).title || "" });
+  // 主行程那邊這一條已經在跑(手機來的、重載前就開跑的):先記成回合中,再畫歷史(即時那一段接在歷史後面)
+  const ph = CS.main.get(id);
+  if (ph) withTab(T, () => { running = true; turnSeq++; turnSeqMine = turnSeq; turnUiSync(); if (ph !== "queued") busyStart(); });
+  if (ph === "queued") tabsQueued(T, true);
   tabsAdd(T);
   if (!(o && o.focus === false)) tabShow(T);
   await csDraw(T);
@@ -2525,7 +2534,10 @@ async function csDraw(T) {
 }
 function csPaintHistory(T, turns, imgs, brs, xps, ress) {
   const live = running ? [...chatEl().childNodes] : [];   // 背景開的那條已經在跑(手機來的):即時那一段接在歷史後面
+  // 那一輪的狀態列、串流泡泡、瀏覽器區塊跟著即時那一段留下(清掉的話每秒的計時器成了孤兒,狀態列永遠停在思考中)
+  const keep = running ? { busy, liveBubble, blocks: typeof BR !== "undefined" ? BR.blocks : null, cur: typeof BR !== "undefined" ? BR.cur : null } : null;
   csClearChat();
+  if (keep) { busy = keep.busy; liveBubble = keep.liveBubble; if (typeof BR !== "undefined") { BR.blocks = keep.blocks || []; BR.cur = keep.cur; } }
   { const first = splitAttachNote((turns.find((x) => x.role === "user") || {}).content || ""); csTitle = first.text || first.attachments[0] || ""; }   // 標題不帶給引擎看的附件那行;純附件開頭的只留檔名(標題是純文字,不放圖示)
   // 舊回合只有文字(工具收據與思考過程沒有存),照角色畫回去;圖另外存在
   // state/chat-images/,照時間插回去——它落在那一輪的提問與回覆之間,跟當時看到的順序一樣
@@ -3488,7 +3500,7 @@ async function stopTurn() {
   if (engineWait && engineAbort) { const abort = engineAbort; engineSeq++; engineWait = false; engineAbort = null; trackFeature("chat_stop"); abort(); return; }
   const T = CS.loaded;
   turnStopping = true; turnStopped = true; sendBtnSync();
-  trackFeature(T && T.queued ? "queue_cancel" : "chat_stop");
+  if (!(T && T.queued)) trackFeature("chat_stop");   // 排隊中按 = 取消排隊:queue_cancel 由主行程 turnDequeue 記(只記一次)
   let ok = false;
   try { ok = await window.blave.stopTurn(sessionId); } catch (_) { ok = false; }
   withTab(T, () => { if (!ok && !engineWait && running) { turnStopping = false; turnStopped = false; sendBtnSync(); } });   // 沒送到:讓用戶再按一次
@@ -3544,7 +3556,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (typeof engAfter === "function") engAfter(bubble);   // 安裝中送出:進度卡移到這句底下
   if (typeof rptTurnStart === "function") rptTurnStart(viewing);   // 這一輪寫出的報告,回合結束出結果卡(reports.js)
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
-  if (!csTitle) { csTitle = msg || attachments[0].name; csRenderHead(); csRemember(); }   // 純附件開頭的對話:清單上用檔名當標題(純文字,不放圖示)
+  if (!csTitle) { csTitle = msg || attachments[0].name; csRenderHead(); csRemember(); if (CS.loaded) CS.loaded.title = csTitle; tabsSave(); }   // 分頁記憶:送出第一句就記(馬上結束 app 重開也還在)   // 純附件開頭的對話:清單上用檔名當標題(純文字,不放圖示)
   liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = []; turnAiBubbles = []; turnFaultEl = null;
   const unlock = () => { if (typeof sugUnsend === "function") sugUnsend(); running = false; turnStopping = false; turnUiSync(); };
   // 送出那一刻的分頁:下面每一個 await 之後都換回它再動(用戶可能在等引擎、讀附件、等主行程回覆的時候切到別的分頁)
@@ -4634,7 +4646,7 @@ function planWatch(s) {
   } else planSince = 0;
   if (planWas === "starting" && st === "running" && !planDoneSaid) {
     planDoneSaid = true;
-    if (running) planDonePending = true; else planSayDone();     // 一輪串流進行中不插
+    if (running) planDonePending = sessionId; else planSayDone();     // 一輪串流進行中不插:記是眼前哪一條,那一條結束時才講(別條先結束不寫進別條)
   }
   // 啟動中掉回未啟動 = 那次建機沒成功(搶輸的一方先看到 starting、贏家失敗):要講,不能靜悄悄把鈕變回來
   if (planWas === "starting" && st === "none") { planErr = { key: "plan.err.server" }; srSay(t("plan.err.server")); }
@@ -4898,7 +4910,7 @@ function turnEndPost(r, pre, d) {
   else if (reason === "auth" && turnFailSrc) authFailProbe(cur, turnFailSrc);
   turnFail = null; turnFailSrc = null;
   if (!loggedOut && r.code === 0) dataTurnEnd();
-  if (planDonePending) planSayDone();
+  if (planDonePending && planDonePending === sessionId) planSayDone();
   if (loggedOut) addFault(localAuthFault(cur));
   // 上限到了但引擎那句錯誤沒以回覆的形式出來(走 error chunk 或直接結束):照樣講「這一輪用量到上限」
   else if (!stopped && cur === "apikey" && turnCap && !turnFaulted && typeof akFault === "function") { turnFaulted = true; addFault(akFault("API Error: 429", true)); }

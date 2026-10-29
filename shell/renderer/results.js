@@ -219,7 +219,13 @@ function resSlotPut(host, node) {
 }
 function resHostFor(rt) {
   if (rt.host && rt.host.isConnected) return rt.host;
+  // 對話分頁:那一輪的分頁還開著就到它的容器裡找(背景分頁做完、沒有回覆文字的那一輪也出卡);關掉收掉了才放棄
+  const T = typeof CS !== "undefined" && rt.sid ? CS.tabs.get(rt.sid) : null;
+  if (T && T.el) return withTab(T, () => resHostIn(rt));
   if (rt.sid !== sessionId) return null;
+  return resHostIn(rt);
+}
+function resHostIn(rt) {
   const again = [...chatEl().querySelectorAll(".msg.ai")].find((n) => n.dataset.resTs === String(rt.ts));   // 切走又切回來(csOpen 重畫過)
   if (again) return again;
   if (rt.host || !rt.anchor || !rt.anchor.isConnected) return null;   // 原本那則被重畫掉了:不猜位置,紀錄已存,下次打開就在

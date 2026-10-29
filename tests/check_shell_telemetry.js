@@ -241,14 +241,14 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     const bg = /function bindGo\(name\) \{[^\n]*\}/.exec(app), calls = [];
     if (bg) new Function("window", "acctUrl", bg[0] + "\nbindGo(\"bind_set\");")({ blave: { trackFeature: (n) => { calls.push("t:" + n); throw new Error("x"); }, openExternal: (u) => calls.push("o:" + u) } }, () => "U");
     t("…bindGo 先送 feature_used 再外開同一頁;送的那一步丟例外也照樣外開", calls.join() === "t:bind_set,o:U"); }
-  t("送出點只在功能那一層:report 六個分頁在 #rp-tabs 的 click(程式自動選預設分頁不記)、下單分頁在 trSetTab、選擇策略在 psOpen、切雲端在 envSwitch、掃描在 rpRobAsk 送出成功、樣本外驗證在 rpWfAsk 送出成功、聊天在 started、停止在 stopTurn 按下(排隊中按 = queue_cancel)、設定兩類在 setCat、送上 / 拉回在 hoAsk 確認",
+  t("送出點只在功能那一層:report 六個分頁在 #rp-tabs 的 click(程式自動選預設分頁不記)、下單分頁在 trSetTab、選擇策略在 psOpen、切雲端在 envSwitch、掃描在 rpRobAsk 送出成功、樣本外驗證在 rpWfAsk 送出成功、聊天在 started、停止在 stopTurn 按下(排隊中按 = queue_cancel,由主行程記)、設定兩類在 setCat、送上 / 拉回在 hoAsk 確認",
     /const RP_TAB_FEATURE = \{ bt: "report_backtest", tr: "report_trades", rob: "report_scan", wf: "report_wf", xt: "report_xt", code: "report_code" \};\n\$\("rp-tabs"\)\.addEventListener\("click", \(e\) => \{[^\n]*\n\s*const b = e\.target\.closest\("\.rp-tab"\); if \(!b \|\| b\.disabled\) return;\n\s*rpShowTab\(b\.dataset\.tab\); trackFeature\(RP_TAB_FEATURE\[b\.dataset\.tab\]\);\n/.test(appSrc)
     && !/trackFeature/.test(appSrc.slice(appSrc.indexOf("function rpShowTab("), appSrc.indexOf("function rpRobOpts(")))
     && /function trSetTab\(tab, focus\) \{\n\s*TR\.tab = tab; TR\.landed = true;\n\s*trackFeature\(TR_TAB_FEATURE\[tab\]\);/.test(trSrc)
     && /\(!mg && trPickOff\(\)\)\) return;\n\s*psMode = [^\n]*\n\s*if \(!mg\) trackFeature\("strategy_picker"\);/.test(trSrc) && /if \(env === ENV\.cur\) \{ if \(via === "link"\) head\(\); return; \}\n\s*if \(env === "cloud"\) trackFeature\("view_cloud"\);/.test(trSrc)
-    && /\.then\(\(ok\) => \{ if \(ok\) trackFeature\("scan_requested"\); resolve\(ok \? turnSeq : false\); \}\)/.test(appSrc)
-    && /\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? turnSeq : false\); \}\)/.test(appSrc) && /if \(r\.started \|\| r\.queued\) \{ trackFeature\("chat_sent"\); for \(const k of attachKinds\(attachments\)\) trackFeature\(ATTACH_FEATURE\[k\]\); if \(attachments\.length > 1\) trackFeature\("attach_multi"\); \}/.test(appSrc)
-    && /turnStopping = true; turnStopped = true; sendBtnSync\(\);\n\s*trackFeature\(T && T\.queued \? "queue_cancel" : "chat_stop"\);/.test(appSrc)
+    && /\.then\(\(ok\) => \{ if \(ok\) trackFeature\("scan_requested"\); resolve\(ok \? at\.seq : false\); \}\)/.test(appSrc)
+    && /\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? at\.seq : false\); \}\)/.test(appSrc) && /if \(r\.started \|\| r\.queued\) \{ trackFeature\("chat_sent"\); for \(const k of attachKinds\(attachments\)\) trackFeature\(ATTACH_FEATURE\[k\]\); if \(attachments\.length > 1\) trackFeature\("attach_multi"\); \}/.test(appSrc)
+    && /turnStopping = true; turnStopped = true; sendBtnSync\(\);\n\s*if \(!\(T && T\.queued\)\) trackFeature\("chat_stop"\);/.test(appSrc)
     && /if \(cat === "src"\) \{ srcLoad\(\); trackFeature\("settings_datasrc"\); \}/.test(appSrc) && /if \(cat === "plan"\) \{ planPaint\(\); trackFeature\("settings_plan"\);/.test(appSrc)
     && /csSendAway\(msg, \{ handoff: dir, noBacktest: tb === "B" \}\)[^\n]*\n\s*\.then\(\(ok\) => \{ if \(ok\) trackFeature\(dir === "up" \? "handoff_cloud" : "handoff_pull"\); \}\);/.test(hoSrc));
   // 主行程:preload 只暴露 send、主行程只收自家頁面、名字交給 track()——表外的整則不送、表內的 props 只有 name 一格

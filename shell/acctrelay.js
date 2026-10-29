@@ -27,6 +27,7 @@ const HOP = /^(host|connection|keep-alive|proxy-connection|transfer-encoding|upg
 const DROP_DOWN = /^(connection|keep-alive|transfer-encoding|upgrade|set-cookie)$/i;
 const sha = (t) => crypto.createHash("sha256").update(t).digest("hex");
 
+// 轉送口自己拒絕一律 403 permission_error,不回 401:CLI 遇到 401 會退避重試兩分鐘以上(api 對帳號 token 改回 403 是同一個理由)
 function deny(res, status, message) {
   res.writeHead(status, { "content-type": "application/json", "x-should-retry": "false" });
   res.end(JSON.stringify({ type: "error", error: { type: status === 401 ? "authentication_error" : "permission_error", message } }));
@@ -104,15 +105,15 @@ function createAccountRelay(opts) {
     // Host 釘死、帶 Origin 的一律拒:擋內建瀏覽器裡的網頁(DNS rebinding、fetch 到 127.0.0.1)
     if (req.headers.host !== `127.0.0.1:${port}` || req.headers.origin !== undefined) return deny(res, 403, "bad request target");
     const t = presented(req);
-    if (!t || !tokens.has(sha(t))) return deny(res, 401, "relay token invalid");
+    if (!t || !tokens.has(sha(t))) return deny(res, 403, "relay token invalid");
     if (!pathOk(req.url)) return deny(res, 404, "not found");
     const bufs = []; let size = 0, tooBig = false;
     req.on("data", (c) => { size += c.length; if (size > MAX_BODY) { tooBig = true; bufs.length = 0; if (size > 4 * MAX_BODY) req.destroy(); return; } bufs.push(c); });
     req.on("end", () => {
       if (tooBig) return deny(res, 413, "request body too large");
-      if (!tokens.has(sha(t))) return deny(res, 401, "relay token invalid");   // 收內文的期間這一輪結束了
+      if (!tokens.has(sha(t))) return deny(res, 403, "relay token invalid");   // 收內文的期間這一輪結束了
       const acct = opts.loadToken();
-      if (!acct) return deny(res, 401, "not signed in");   // 登出了:不替任何人送
+      if (!acct) return deny(res, 403, "not signed in");   // 登出了:不替任何人送
       forward(req, res, Buffer.concat(bufs), acct, false);
     });
   }

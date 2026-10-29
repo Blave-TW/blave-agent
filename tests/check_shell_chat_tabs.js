@@ -41,6 +41,58 @@ ok("每輪模組的每輪欄位也進 TAB_KEYS:SUG(托盤跟著分頁)、XP.pend
   ["SUG", "XP.pending", "RES.turn", "RPT.turnAt", "RPT.cloudTurn", "BR.blocks", "BR.cur", "UPD.turnCloud"].every((k) => tabKeys.includes(k)) && /^let SUG = /m.test(read("suggest.js")) && /^let ACT = /m.test(app) && /^let creditCards = /m.test(app));
 ok("物件型的初值是工廠(每個分頁各一份,不共用同一個 Map／陣列)", /\["ACT", [^\n]*\(\) => \(\{ running: new Map\(\)/.test(ct) && /\["creditCards", [^\n]*\(\) => \[\]\]/.test(ct) && /\["SUG", [^\n]*\(\) => \(\{ pending: null/.test(ct));
 
+// 1b. 其他 renderer 檔的模組層 let／var,以及每輪模組物件(LIB／RPT／XP／RES／BR／UPD)的每一個欄位:
+//     TAB = 每個分頁一份(TAB_KEYS);SID = 記著發起那一條的 sid／序號,收尾只認那一條;GLOBAL = 全 app 一份(寫明為什麼)
+const MOD_GLOBAL = {
+  "browser.js": { brTipOn: "tooltip", brSyncQueued: "版面同步節流", brLastBounds: "內建瀏覽器的框(全 app 一個)" },
+  "busy.js": { BUSY_PENDING: "原因句的一次性提示" }, "capital.js": { CAP: "群益交接頁" }, "capital_local.js": { CAPL: "群益本機", caplTimer: "同上" },
+  "chattabs.js": { tabsK: "分頁列 tick 第幾格(全列一起)", tabsSaid: "讀屏播報合併" }, "i18n.js": { LANG: "語言" },
+  "portfolio.js": { PO_ADD_SIG: "策略組合", ctMenu: "同上", ctOpen: "同上", mgmPend: "同上", mgmOpener: "同上", mgsDraft: "同上", mgsOpener: "同上" },
+  "president.js": { PRES: "統一期貨", presTimer: "同上", PRES_FIRST_ARMED: "同上" }, "report-sharelist.js": { SHL_IO: "分享清單" }, "stratflags.js": { sfPop: "彈出層" },
+  "suggest.js": { SUG: "TAB_KEYS 整個換(托盤跟著分頁)" },
+  "trade.js": { TR_AS_SAVED: "自動下單頁", TR: "同上", trTipSeq: "同上", trHistTipEl: "同上", trHistTipAt: "同上", trHistTipOpened: "同上", trHistTipQuiet: "同上", cxOpener: "同上", psOpener: "同上", psMode: "同上", psToAmt: "同上", psLoading: "同上", ENV_COMPOSING: "輸入法" },
+  "versions.js": { vcSeq: "版本頁", vcSide: "同上" },
+};
+const FIELDS = {
+  LIB: { pending: "SID", seq: "GLOBAL 清單請求流水號(丟掉晚到的舊回應)", noNew: "GLOBAL 灰字掛在那一支卡上", cloudWait: "GLOBAL 一次只等一支(換一支就放掉)" },
+  RPT: { pending: "SID", seq: "GLOBAL 清單請求流水號", readSeq: "GLOBAL 閱讀頁請求流水號", turnAt: "TAB", cloudTurn: "TAB", cloudRes: "GLOBAL 每筆帶 rt(那一輪)", noNew: "GLOBAL 灰字掛在框上", poll: "GLOBAL 一次一個輪詢" },
+  XP: { pending: "TAB" }, RES: { turn: "TAB", cw: "GLOBAL 一次等一輪,帶 rt" }, BR: { blocks: "TAB", cur: "TAB" },
+  UPD: { cloudSid: "SID", turnCloud: "TAB", session: "GLOBAL 更新期間,只由 cloudSid 那一條的結束收", lagCv: "GLOBAL", done: "GLOBAL" },
+};
+const OBJ_FILE = { LIB: "library.js", RPT: "reports.js", XP: "export.js", RES: "results.js", BR: "browser.js", UPD: "app.js" };
+const topNames = (src) => { const out = []; for (const m of src.matchAll(/^(?:let|var) ([^\n]*)/gm)) { let d = 0, cur = ""; const parts = [];
+  for (const ch of m[1]) { if ("([{".includes(ch)) d++; else if (")]}".includes(ch)) d--; if (ch === "," && d === 0) { parts.push(cur); cur = ""; continue; } if (ch === ";" && d === 0) break; cur += ch; }
+  parts.push(cur); for (const q of parts) { const n = (q.trim().match(/^([A-Za-z_$][\w$]*)/) || [])[1]; if (n) out.push(n); } } return out; };
+{ const miss = [];
+  for (const f of fs.readdirSync(R).filter((n) => n.endsWith(".js") && !["strings.js", "app.js"].includes(n)).sort())
+    for (const n of topNames(read(f))) if (!(MOD_GLOBAL[f] && n in MOD_GLOBAL[f])) miss.push(f + ":" + n);
+  ok("其他 renderer 檔的模組層 let／var 都歸類(沒有每輪狀態藏在全 app 一份裡)", miss.length === 0, miss);
+  const appVars = topNames(app).filter((n) => /^var /m.test(app) && new RegExp("^var " + n + "\\b", "m").test(app));
+  ok("app.js 的 var 也在清單(GLOBAL_OK 或 UPD 欄位表)", appVars.every((n) => n in GLOBAL_OK || n === "UPD" || /^UP|^CS_BOOTED$|^INSTALL_ID|^AWAKE$|^THEME$/.test(n)), appVars);
+  const fbad = [];
+  for (const [O, f] of Object.entries(OBJ_FILE)) {
+    const src = read(f), m = src.match(new RegExp("^(?:const|let|var) " + O + " = \\{", "m"));
+    if (!m) { fbad.push(O + " 找不到"); continue; }
+    let i = m.index + m[0].length - 1, d = 0, j = i; for (; j < src.length; j++) { const c = src[j]; if (c === "{") d++; else if (c === "}") { d--; if (!d) break; } }
+    let dd = 0, cur = ""; const keys = [];
+    for (const c of src.slice(i + 1, j).replace(/\/\/[^\n]*/g, "")) { if ("([{".includes(c)) dd++; else if (")]}".includes(c)) dd--; if (c === "," && dd === 0) { keys.push(cur); cur = ""; continue; } cur += c; }
+    keys.push(cur);
+    for (const k of keys.map((x) => (x.trim().match(/^([A-Za-z_$][\w$]*)/) || [])[1]).filter(Boolean)) {
+      const cls = FIELDS[O][k];
+      if (cls === "TAB" && !tabKeys.includes(O + "." + k)) fbad.push(O + "." + k + " 標 TAB 卻不在 TAB_KEYS");
+      if (cls === undefined && /pending|turn|Turn|sid|Sid|seq|wait|Wait/.test(k)) fbad.push(O + "." + k + " 看起來是每輪狀態、沒有歸類");
+    }
+  }
+  ok("每輪模組物件裡看起來是「這一輪」的欄位(pending／turn／sid／seq／wait)都歸類;標 TAB 的真的在 TAB_KEYS", fbad.length === 0, fbad);
+  ok("SID 類的收尾只認發起那一條:策略庫〔使用〕、新增報告、更新雲端主機、方案開好那句、掃描／樣本外的「已送出」序號",
+    /if \(p\.sid && p\.sid !== sessionId\) return;/.test(read("library.js")) && /LIB\.pending = \{ id: s\.id, env, before, sid: at\.sid \}/.test(read("library.js")) && /if \(LIB\.pending\) LIB\.pending\.sid = at\.sid;/.test(read("library.js"))
+    && /const mine = \(q\) => !!q && \(!q\.sid \|\| q\.sid === sessionId\);/.test(read("reports.js")) && /RPT\.pending\[env\] = \{ env, before, sid: at && at\.sid \}/.test(read("reports.js"))
+    && /if \(UPD\.cloudSid && UPD\.cloudSid !== sessionId\) return;/.test(app) && /UPD\.cloudSid = sid;/.test(app)
+    && /planDonePending = sessionId;/.test(app) && /if \(planDonePending && planDonePending === sessionId\) planSayDone\(\);/.test(app)
+    && (app.match(/resolve\(ok \? at\.seq : false\)/g) || []).length === 2 && !/resolve\(ok \? turnSeq : false\)/.test(app)
+    && /CS\.away = \{ sid: T \? T\.sid : sessionId, seq: turnSeqMine \};/.test(ct));
+}
+
 // ── 2. 「有沒有回合」的每一處 ──
 const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).replace(/(^|[^:"'`\\])\/\/[^\n]*/g, "$1");
 const TAB = [   // 眼前這一條(分頁自己的 running;切分頁時整組換)
@@ -56,7 +108,10 @@ const TAB = [   // 眼前這一條(分頁自己的 running;切分頁時整組換
   ["app.js", /if \(running === true\) \{ swHeld = \{ from, to \}; return; \}/, "切視角的系統行等這一輪結束"],
   ["app.js", /function canResend\(\) \{ return !running/, "重送"], ["app.js", /if \(running\) \{ busySendTell\(\); return; \}   \/\/ 卡上的鈕回合中照畫/, "錯誤卡的重送"],
   ["app.js", /st\.on = async \(\) => \{ if \(running\) \{ busySendTell\(\); return; \}/, "資料卡的重送"],
-  ["app.js", /if \(running\) planDonePending = true; else planSayDone\(\);/, "方案開好了那句不插進眼前這條的串流"],
+  ["app.js", /if \(running\) planDonePending = sessionId; else planSayDone\(\);/, "方案開好了那句不插進眼前這條的串流,記是哪一條"],
+  ["app.js", /if \(ph\) withTab\(T, \(\) => \{ running = true; turnSeq\+\+; turnSeqMine = turnSeq;/, "開成分頁時主行程那邊已在跑(手機來的):記成回合中"],
+  ["app.js", /const keep = running \? \{ busy, liveBubble,/, "畫歷史時那一條在跑:狀態列與串流泡泡留著"],
+  ["chattabs.js", /withTab\(T, \(\) => \{ if \(!running\) \{ running = true; turnSeq\+\+; turnSeqMine = turnSeq; \} busyStart\(\); \}\);/, "started:不是這個畫面送出的那一輪也記成回合中"],
   ["app.js", /^let running = false;/, "宣告"],
   ["chattabs.js", /\["running", \(\) => running, \(v\) => \{ running = v; \}/, "TAB_KEYS"],
   ["chattabs.js", /function csAway\(\) \{ if \(csTitle \|\| running\)/, "從別處送一句話:眼前這條在跑就另開"],
@@ -159,5 +214,11 @@ ok("共用畫面背景期間不畫:捲動、讀屏、送出鈕、托盤;輸入�
   ok("分頁名稱(讀屏)不帶會凍住的時長;tooltip 每秒跟著跳、Esc 隨時收得掉、離分頁 6px;× 熱區 28×44", /const word = st === "run" \? t\("tabs\.st\.running"\) : tabsStateWord\(T, st\);/.test(ct) && /tabsTipTick\(\);\n\}, 1000\);/.test(ct)
     && /document\.addEventListener\("keydown", \(e\) => \{ if \(e\.key !== "Escape"\) return; const tip = \$\("tabs-tip"\);/.test(ct) && css.includes(".tabs-tip { top: 44px;") && /\.cs-tabs \{[^}]*height: 44px;[^}]*align-items: center;/.test(css) && css.includes("inset: -12px -4px;"));
 }
+// 程式稽核 s2 P3
+ok("+N 選單開著:每秒只換時長字,不重建(焦點不掉);整列重建時照 sid 把焦點還回分頁或選單列", /if \(!\$\("cs-menu"\)\.hidden\) tabsMenuTick\(\);/.test(ct) && /function tabsMenuTick\(\) \{/.test(ct)
+  && /it\.dataset\.sid = sid;/.test(ct) && /function tabsPaint\(\) \{[\s\S]{0,900}try \{ tabsPaintIn\(bar\); \}\n  finally \{\n    if \(fSid\)/.test(ct));
+ok("結果卡:那一輪的分頁還開著就到它的容器裡找落點(背景分頁沒有回覆文字的那一輪也出卡)", /const T = typeof CS !== "undefined" && rt\.sid \? CS\.tabs\.get\(rt\.sid\) : null;\n  if \(T && T\.el\) return withTab\(T, \(\) => resHostIn\(rt\)\);/.test(read("results.js")));
+ok("送出第一句就存分頁記憶", /csRemember\(\); if \(CS\.loaded\) CS\.loaded\.title = csTitle; tabsSave\(\); \}/.test(app));
+ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \(!\(T && T\.queued\)\) trackFeature\("chat_stop"\);/.test(app) && !/trackFeature\("queue_cancel"\)/.test(fs.readdirSync(R).filter((n) => n.endsWith(".js")).map(read).join("\n")));
 console.log(red ? `\n${red} 紅` : "\nALL PASS");
 process.exit(red ? 1 : 0);

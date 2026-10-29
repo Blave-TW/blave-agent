@@ -350,7 +350,7 @@ if (!process.versions.electron) {
     && /const gate = !cloud \? true : typeof c\.config_supports_wf === "boolean" \? c\.config_supports_wf : null;/.test(app)
     && /rpRobSync\(\); rpWfSync\(\);/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")) && /if \(typeof rpWfSync === "function"\) rpWfSync\(\);/.test(tr));
   ok("③ 送出:確認框 → 先 begin()(暖機那段也算已送出,稽核 P2-1)→ 固定訊息(msgRun,name 傳資料夾名)→ 成功才記 wf_requested、回合序號;不覆寫 viewing",
-    /onOk: \(\) => \{ if \(typeof begin === "function"\) begin\(\); rpWfAuto\.delete\(name\); csSendAway\(t\("wf\.msgRun", \{ name, lookback: String\(lookback\), step: String\(step\) \}\)\)\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? turnSeq : false\); \}\); \}/.test(app)
+    /onOk: \(\) => \{ if \(typeof begin === "function"\) begin\(\); rpWfAuto\.delete\(name\); const p = csSendAway\(t\("wf\.msgRun", \{ name, lookback: String\(lookback\), step: String\(step\) \}\)\), at = CS\.away; p\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? at\.seq : false\); \}\); \}/.test(app)
     && !/viewing/.test(app.slice(app.indexOf("function rpWfAsk"), app.indexOf("function rpWfUpdate"))) && /lines: \(behindMaybe \? \[t\("wf\.needUpdate"\)\] : \[\]\)\.concat\(\[t\("wf\.emptyBoundary"\), t\("wf\.confirmBody"\)\]\)/.test(app));
   ok("③ 還原凍結:時光機 / 重跑中 wf 分頁跟進出場、參數掃描一起 disabled、面板一起收", /b\.disabled = b\.dataset\.tab === "tr" \|\| b\.dataset\.tab === "rob" \|\| b\.dataset\.tab === "wf" \|\|/.test(ver) && /for \(const k of \["bt", "tr", "rob", "wf", "xt", "code"\]\) \$\("rp-" \+ k\)\.hidden = true;/.test(ver));
 
@@ -415,7 +415,7 @@ if (!process.versions.electron) {
     { // 複驗 R-P2-1:第一段抓滿 8 次 → 重新送出 → 回合中一次都沒切視窗、沒點分頁(兩段之間沒有任何 awaiting=false 的呼叫)→ 第二段照樣抓
       const ask = app.slice(app.indexOf("function rpWfAsk("), app.indexOf("\n}\n", app.indexOf("function rpWfAsk(")) + 2);
       c = mk(); Object.assign(c, { confirmBox: (o) => o.onOk(), rpBag: () => c.RPC, rpWfCloud: () => ({ config_supports_wf: true }), upNow: () => ({}), UPD: {}, turnSeq: 5, t: (k) => k, trackFeature: () => {},
-        submitMessage: () => ({ then: (f) => f(true) }), csSendAway: () => ({ then: (f) => f(true) }), Promise: function (fn) { fn(() => {}); } });
+        submitMessage: () => ({ then: (f) => f(true) }), csSendAway: () => { c.CS.away = { sid: "desktop-wf1", seq: c.turnSeq }; return { then: (f) => f(true) }; }, CS: { away: { sid: null, seq: 0 } }, Promise: function (fn) { fn(() => {}); } });
       vm.runInContext(ask + "\nthis.ask = rpWfAsk;", c);
       for (let k = 0; k < 40; k++) c.f(k * 700 * 1000);
       const first = c.fetched.length; c.f(60 * 60 * 1000); const capped = c.fetched.length === first;

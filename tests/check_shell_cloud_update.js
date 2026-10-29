@@ -44,7 +44,7 @@ const REP = { running: {}, halted: { halt: { halted: true } }, dead: { reconcile
   unconfirmed: {}, unknown: { error: "build failed", venues: null } };
 const st = (exec, o) => ({ kind: "running", alive: !(o && o.alive === false), cloud: { config_version: "2026-10-04-c", latest_config_version: "2026-10-04-d", ...((o && o.cloud) || {}) },
   report: exec === "loading" ? null : { venue: "binance", venues: {}, reconciler: { alive: true }, ...(REP[exec] || {}), ...((o && o.report) || {}) } });
-const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent = []; boxes = []; tracked = []; checks = 0; refreshes = 0; Object.assign(UPD, { cloudTurn: false, turnCloud: false, session: null, lagCv: null, done: null }); };
+const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent = []; boxes = []; tracked = []; checks = 0; refreshes = 0; Object.assign(UPD, { cloudSid: null, turnCloud: false, session: null, lagCv: null, done: null }); };
 
 (async () => {
   reset(st("running")); await upCheck();

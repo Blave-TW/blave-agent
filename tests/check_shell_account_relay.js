@@ -1,6 +1,6 @@
 // 帳號轉送口(shell/acctrelay.js;0.1.37 技術方案 chat-tabs-parallel-tech §1.3)。用真 HTTP 打一個假的上游。
 //   1. 轉出去帶的是 Keychain「當下那顆」帳號 token;回合中途換 token,下一筆就帶新的
-//   2. 轉送 token 作廢後回 401(x-should-retry: false);不認得的 token、帶 Origin、Host 不對一律拒
+//   2. 轉送 token 作廢後回 403 permission_error(x-should-retry: false;不回 401,CLI 遇 401 會退避重試);不認得的 token、帶 Origin、Host 不對一律拒
 //   3. 只放行 /openclaw/proxy/,`..`、編碼過的點與斜線不算
 //   4. 串流原樣轉送(分段、content-type、狀態碼);客戶端送來的 x-api-key／authorization／cookie 不往上游送
 //   5. 403 ACCOUNT_TOKEN_INVALID → recover 一次、換到新的就重送同一份內文;換不到、別的 403、上游的 401 原樣交回
@@ -71,7 +71,7 @@ function call(port, p, o = {}) {
   }
   ok("只放行 /openclaw/proxy/;`..`、%2e、%2f 都擋(404、不往上游)", denied.length === 0 && seen.length === before, denied);
   r = await call(port, "/openclaw/proxy/v1/messages", { token: "acct-relay-nope" });
-  ok("不認得的轉送 token → 401、x-should-retry: false、不往上游", r.status === 401 && r.headers["x-should-retry"] === "false" && seen.length === before);
+  ok("不認得的轉送 token → 403 permission_error、x-should-retry: false、不往上游", r.status === 403 && /permission_error/.test(r.body) && r.headers["x-should-retry"] === "false" && seen.length === before);
   r = await call(port, "/openclaw/proxy/v1/messages", { token: m.token, headers: { origin: "https://evil.example" } });
   ok("帶 Origin(網頁發的)→ 403", r.status === 403 && seen.length === before);
   r = await call(port, "/openclaw/proxy/v1/messages", { token: m.token, host: "evil.example:80" });
@@ -97,13 +97,13 @@ function call(port, p, o = {}) {
   upMode = "ok";
   acct = null;
   r = await call(port, "/openclaw/proxy/v1/messages", { token: m.token });
-  ok("登出了(Keychain 沒有 token):401、不替任何人送", r.status === 401);
+  ok("登出了(Keychain 沒有 token):403、不替任何人送", r.status === 403);
   acct = "acct-B";
   const m2 = R.issue("desktop-bbbb2222");
   R.revoke(m.token);
   r = await call(port, "/openclaw/proxy/v1/messages", { token: m.token });
   const r2 = await call(port, "/openclaw/proxy/v1/messages", { token: m2.token });
-  ok("一輪作廢只作廢那一顆:A 回 401,並行的 B 照常", r.status === 401 && r2.status === 201 && R.active() === 1);
+  ok("一輪作廢只作廢那一顆:A 回 403,並行的 B 照常", r.status === 403 && r2.status === 201 && R.active() === 1);
 
   // ── 接線 ──
   const main = fs.readFileSync(path.join(SH, "main.js"), "utf8");
