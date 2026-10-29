@@ -84,7 +84,9 @@ async function run({ cur = "claude", turnFail = null, turnFailSrc = null, errTai
 
   // ── 接線 ──
   t("draftPromote 指定 turnFail 時一起覆寫來源", /if \(fail\) \{ turnFail = fail; turnFailSrc = fail === "auth" \? authFailSrc\(text\) : null; \}/.test(app));
-  t("重問:d 提到 try 外面、loggedOut 那行照舊、Claude 順手送 cli_auth;判成 loggedOut 才記來源 probe", /let d = null;[^\n]*\n[^\n]*\n[^\n]*\n\s*try \{ d = await window\.blave\.detectAgents\(\); loggedOut = !!\(d\[cur\] && d\[cur\]\.installed && !d\[cur\]\.loggedIn && !whyState\(d\[cur\]\)\); if \(cur === "claude"\) cliAuthSend\(d\); \}/.test(app)
+  t("重問(0.1.37 拆成 turnEndPre／turnEndPost,中間的 await 在 chattabs.js tabsOnEnd):要不要問只看 pre.probe、loggedOut 照舊、Claude 順手送 cli_auth;判成 loggedOut 才記來源 probe", /const probe = !stopped && \(cur === "claude" \|\| cur === "codex"\) && \(turnErrored \|\| !turnGotReply\) && !turnFaulted;/.test(app)
+    && /const loggedOut = !!\(d && d\[cur\] && d\[cur\]\.installed && !d\[cur\]\.loggedIn && !whyState\(d\[cur\]\)\);\n\s*if \(pre\.probe && d && cur === "claude"\) cliAuthSend\(d\);/.test(app)
+    && /if \(pre\.probe\) \{ try \{ d = await window\.blave\.detectAgents\(\); \} catch \(_\) \{ d = null; \} \}/.test(fs.readFileSync(path.join(SHELL, "renderer", "chattabs.js"), "utf8"))
     && /\n\s*if \(loggedOut\) turnFailSrc = "probe";\n/.test(app));
   t("auth_fail、cli_auth 在 FROM_RENDERER、每日去重", FROM_RENDERER.includes("auth_fail") && FROM_RENDERER.includes("cli_auth")
     && /const DAILY = \[[^\]]*"auth_fail", "cli_auth"\]/.test(fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8")));

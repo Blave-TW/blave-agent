@@ -94,7 +94,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   // ── cloud_started:「送上雲端」確認框 → submitMessage(msg, { handoff: "up" }) → send-message → runTurn 成功才送。把真的那支 handler 切出來跑 ──
   const R = path.join(__dirname, "..", "shell", "renderer");
   const hoSrc = fs.readFileSync(path.join(R, "handoff.js"), "utf8"), appSrc = fs.readFileSync(path.join(R, "app.js"), "utf8");
-  t("接線:確認框 onOk 帶 handoff 方向;submitMessage 原樣轉進 payload;重送(lastUserText)不帶", /submitMessage\(msg, \{ handoff: dir, noBacktest: tb === "B" \}\)/.test(hoSrc)
+  t("接線:確認框 onOk 帶 handoff 方向;submitMessage 原樣轉進 payload;重送(lastUserText)不帶", /csSendAway\(msg, \{ handoff: dir, noBacktest: tb === "B" \}\)/.test(hoSrc)
     && /async function submitMessage\(msg, opts\)/.test(appSrc) && /message: msg, handoff: opts && opts\.handoff, note: lastUserNote, model:/.test(appSrc) && (appSrc.match(/submitMessage\(lastUserText\b[^\n]*/g) || []).every((x) => !/handoff/.test(x)) && /function resendLast\(\) \{ return canResend\(\) \? submitMessage\(lastUserText, \{ attachments: lastUserAttachments \}\) : Promise\.resolve\(false\); \}/.test(appSrc));
   t("主行程:標記只認 \"up\" 且旗標要開;事件掛在 runTurn 的 then(spawn + stdin 成功),不在 catch", /const cloudUp = cloudHandoffOn\(\) && payload && payload\.handoff === "up";/.test(mainSrc)
     && /runTurn\(rec, payload\)\.then\(\(\) => \{ if \(cloudUp\) tm\(\)\.track\("cloud_started"\); \}\)\.catch\(/.test(mainSrc));
@@ -168,11 +168,10 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   // 0.1.6 起沒送出點(社群段平鋪),但 0.1.5 舊外殼還在送、api 要繼續收、兩端順序要一致:留到 0.1.5 退場。
   // browser_source 同理:0.1.8 拿掉來源卡、沒有送出點了,0.1.7 還在送
   // tv_read / tv_fix / tv_fail_compile:送進 TradingView 的流程改成停在交接(Wei 2026-09-28),三個入口拿掉之後沒有送出點;0.1.8 開發版之前的外殼還在送
-  const LEGACY = ["library_comm", "browser_source", "tv_read", "tv_fix", "tv_fail_compile"];
+  const LEGACY = ["library_comm", "browser_source", "tv_read", "tv_fix", "tv_fail_compile", "lock_switch"];   // lock_switch:0.1.37 起切換／新對話不再上鎖,舊外殼還在送
   // 先佔名字、送出點還沒併進來的(report_pdf = 報告「存成 PDF」):送出點一進來這條就紅,提醒把它從這裡拿掉
   // contract_switch:0.1.24 只顯示生效合約、不做換合約的下拉(策略組合頁還沒有);下拉進來時從這裡拿掉
-  // 0.1.37 分頁列與歷史八個是畫面下一段才有的送出點;tab_remote 等手機通道上線才送
-  const RESERVED = ["report_pdf", "tab_new", "tab_close", "tab_close_busy", "tab_switch", "tab_overflow", "hist_open", "hist_search", "hist_resume", "tab_remote"];   // contract_switch 0.1.24 有送出點了(策略組合的合約下拉)
+  const RESERVED = ["report_pdf"];   // contract_switch 0.1.24 有送出點了(策略組合的合約下拉)
   // 0.1.12 起無送出點:市場檢查出貨前整個拿掉,名字已在 api 白名單、兩端逐字比對,留著不動;不准再有送出點
   // browser_hb_head:0.1.20 A 案把標題列的交還鈕搬進請求卡(browser_hb_card),0.1.19 以前的外殼還在送;等它們退場再三處一起拿
   const DROPPED = ["pick_gate_lock", "browser_hb_head", "trade_lev_ack"];   // trade_lev_ack:0.1.24 拿掉 ≥10 倍勾選(Wei 10-13),舊外殼還在送
@@ -248,10 +247,10 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     && /function trSetTab\(tab, focus\) \{\n\s*TR\.tab = tab; TR\.landed = true;\n\s*trackFeature\(TR_TAB_FEATURE\[tab\]\);/.test(trSrc)
     && /\(!mg && trPickOff\(\)\)\) return;\n\s*psMode = [^\n]*\n\s*if \(!mg\) trackFeature\("strategy_picker"\);/.test(trSrc) && /if \(env === ENV\.cur\) \{ if \(via === "link"\) head\(\); return; \}\n\s*if \(env === "cloud"\) trackFeature\("view_cloud"\);/.test(trSrc)
     && /\.then\(\(ok\) => \{ if \(ok\) trackFeature\("scan_requested"\); resolve\(ok \? turnSeq : false\); \}\)/.test(appSrc)
-    && /\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? turnSeq : false\); \}\)/.test(appSrc) && /if \(r\.started\) \{ busyStart\(\); trackFeature\("chat_sent"\); for \(const k of attachKinds\(attachments\)\) trackFeature\(ATTACH_FEATURE\[k\]\); if \(attachments\.length > 1\) trackFeature\("attach_multi"\); return true; \}/.test(appSrc)
+    && /\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? turnSeq : false\); \}\)/.test(appSrc) && /if \(r\.started \|\| r\.queued\) \{ trackFeature\("chat_sent"\); for \(const k of attachKinds\(attachments\)\) trackFeature\(ATTACH_FEATURE\[k\]\); if \(attachments\.length > 1\) trackFeature\("attach_multi"\); \}/.test(appSrc)
     && /turnStopping = true; turnStopped = true; sendBtnSync\(\);\n\s*trackFeature\("chat_stop"\);/.test(appSrc)
     && /if \(cat === "src"\) \{ srcLoad\(\); trackFeature\("settings_datasrc"\); \}/.test(appSrc) && /if \(cat === "plan"\) \{ planPaint\(\); trackFeature\("settings_plan"\);/.test(appSrc)
-    && /submitMessage\(msg, \{ handoff: dir, noBacktest: tb === "B" \}\)[^\n]*\n\s*\.then\(\(ok\) => \{ if \(ok\) trackFeature\(dir === "up" \? "handoff_cloud" : "handoff_pull"\); \}\);/.test(hoSrc));
+    && /csSendAway\(msg, \{ handoff: dir, noBacktest: tb === "B" \}\)[^\n]*\n\s*\.then\(\(ok\) => \{ if \(ok\) trackFeature\(dir === "up" \? "handoff_cloud" : "handoff_pull"\); \}\);/.test(hoSrc));
   // 主行程:preload 只暴露 send、主行程只收自家頁面、名字交給 track()——表外的整則不送、表內的 props 只有 name 一格
   t("接線:preload trackFeature → send(\"track-feature\");主行程 fromOurPage 才 tm().track(\"feature_used\", { name })",
     /trackFeature: \(name\) => ipcRenderer\.send\("track-feature", name\),/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8"))

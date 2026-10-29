@@ -35,6 +35,7 @@ let UP = { phase: "idle", current: "0.1.14", checkedAt: 1 };
 eval("var UPD = " + src.match(/var UPD = (\{[^\n]*\});/)[1]);
 eval(["UP_SESSION_IDLE_MS", "UP_RETRY_MS", "UP_WU_STATES", "UP_WU_DIR_RE"].map((k) => src.match(new RegExp("^const " + k + " = [^\\n]*;", "m"))[0].replace(/^const /, "var ")).join("\n"));
 var UP_CHECKING = false, UP_CLOUD_BUSY = false;
+eval(require("./_tabs_stub").SRC);   // csSendAway／csAnyTurn 的單分頁版本(對話分頁核心不在這個切片裡)
 eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upLocalTurn", "upNow", "upTurnEnded", "upCloudWhere", "upRich"].map((n) => fnOr(n)).join("\n"));
 eval(["upCheck", "upCloudRefresh", "upCloudUpdate", "upCloudSend"].map((n) => fnOr(n, true)).join("\n"));
 

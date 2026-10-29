@@ -156,6 +156,18 @@ for (const lang of ["zh", "en"]) {
   ok(`交易歷史成交狀態 ${lang} 兩邊逐字一致(${Object.keys(FILL_PAIRS).length} 句)`, bad.length === 0,
     bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
+// 對話分頁(0.1.37;技術方案 §1.4、§4):對著雲端主機、名額滿了的排隊行與〔取消排隊〕,電腦版 chattabs.js tabsQueued 與網頁 csShowQueued 同一句;
+// 歷史清單的狀態字(回覆中／排隊中／做完，還沒看)與分組(今天／昨天／更早)也跟網頁 workspace_cs_* 同一組
+const TAB_PAIRS = { "tabs.queue": "workspace_cs_queue_line", "tabs.queueCancel": "workspace_cs_cancel_queued", "tabs.st.queued": "workspace_cs_queued",
+  "tabs.st.unseen": "workspace_cs_unread", "tabs.group.today": "workspace_cs_today", "tabs.group.yesterday": "workspace_cs_yesterday", "tabs.group.earlier": "workspace_cs_earlier",
+  "tabs.search": "workspace_cs_search_ph" };
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const bad = Object.entries(TAB_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== wp[w]);
+  ok(`對話分頁的排隊行與狀態字 ${lang} 兩邊逐字一致(${Object.keys(TAB_PAIRS).length} 句)`, bad.length === 0,
+    bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
+ok("電腦版排隊行用的是 tabs.queue 與 tabs.queueCancel(不另寫一句)", /t\("tabs\.queue"\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")) && /t\("tabs\.queueCancel"\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")));
 // 事件型別集合(cross-surface-parity 規則三:列舉,不只靠上面手寫的配對表):電腦版 trEventText ∪ trOvEvents 認得的型別,
 // 跟網頁 ovEventRow 認得的同一組。order_error / order_unconfirmed 在電腦版從 order_errors[] 那列畫(trOvEvents 讀 e.kind),
 // 不走 `type ===`;只在電腦版的三個是這台電腦自己的指令回音與舊型別(halt_close／resume_wait 是本機指令、downtime_paused 已被

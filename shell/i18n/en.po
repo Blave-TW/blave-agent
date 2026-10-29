@@ -8719,12 +8719,6 @@ msgstr "The agent is replying and may be editing this strategy. Restore after it
 msgid "busy.chatDel"
 msgstr "This conversation is still replying. Stop it before deleting."
 
-msgid "busy.switch"
-msgstr "Wait for this reply to finish before switching conversations."
-
-msgid "busy.new"
-msgstr "Wait for this reply to finish before starting a new conversation."
-
 msgid "busy.cloudUpd"
 msgstr "Wait for this reply to finish before sending the update."
 
@@ -9331,3 +9325,72 @@ msgstr "Outcome unknown — it may have filled; don't place it again yourself. N
 # 追蹤不了而整台暫停、HALT reason 讀不到標的時的狀態句(大寫開頭;同網頁 workspace_pf_halt_unconfirmed_nosym)
 msgid "tr.haltUnconfirmedNosym"
 msgstr "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
+
+# 對話分頁(0.1.37;spec chat-tabs-2026-10-29 §2–§4;排隊行與狀態字同 web workspace_cs_*,tests/check_web_desktop_parity.js 比對;tabs.brWait 待設計師過字)
+msgid "tabs.list"
+msgstr "Conversations"
+
+msgid "tabs.search"
+msgstr "Search conversation titles"
+
+msgid "tabs.queue"
+msgstr "Queued: the maximum number of replies are already running. This one starts when a slot frees up."
+
+msgid "tabs.queueCancel"
+msgstr "Cancel queued message"
+
+msgid "tabs.brWait"
+msgstr "Waiting for the built-in browser"
+
+msgid "tabs.st.run"
+msgstr "Replying · {d}"
+
+msgid "tabs.st.running"
+msgstr "Replying"
+
+msgid "tabs.st.wait"
+msgstr "Waiting for you"
+
+msgid "tabs.st.fail"
+msgstr "Didn’t finish"
+
+msgid "tabs.st.unseen"
+msgstr "Done, not viewed"
+
+msgid "tabs.st.queued"
+msgstr "Queued"
+
+msgid "tabs.hint.run"
+msgstr "{n} replying"
+
+msgid "tabs.hint.queued"
+msgstr "{n} queued"
+
+msgid "tabs.more.attn"
+msgstr "{n} need you"
+
+msgid "tabs.more.run"
+msgstr "{n} replying"
+
+msgid "tabs.many"
+msgstr "{n} conversations need you"
+
+msgid "tabs.group.today"
+msgstr "Today"
+
+msgid "tabs.group.yesterday"
+msgstr "Yesterday"
+
+msgid "tabs.group.earlier"
+msgstr "Earlier"
+
+# 對話分頁:app 選單「檔案」的新分頁／關閉分頁(⌘T／⌘W);結束框排隊那句(主行程填 {n};待設計師過字)
+msgid "menu.newTab"
+msgstr "New Tab"
+
+msgid "menu.closeTab"
+msgstr "Close Tab"
+
+msgid "tm.quitQueuedN"
+msgstr "{n} queued messages won’t be sent."
+

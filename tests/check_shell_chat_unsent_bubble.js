@@ -16,8 +16,8 @@ ok("busy(上一輪還在跑):收回泡泡再上系統行", /unsend\(\); addMsg\(
 ok("版本閘 blocked:收回泡泡", /minv\.chat[\s\S]{0,200}unsend\(\); unlock\(\); return false;/.test(sub));
 ok("暖機中按停止:收回泡泡(還原照舊只認打字的)", /if \(turnStopped\) \{ turnStopped = false; unlock\(\); unsend\(\); return false; \}/.test(sub));
 ok("引擎起不來(catch):收回泡泡", /turn\.engineFailed[\s\S]{0,120}unsend\(\); unlock\(\); return false;/.test(sub));
-ok("真的送出(started)那條不收泡泡", /if \(r\.started\) \{ busyStart\(\); trackFeature\("chat_sent"\); for \(const k of attachKinds\(attachments\)\) trackFeature\(ATTACH_FEATURE\[k\]\); if \(attachments\.length > 1\) trackFeature\("attach_multi"\); return true; \}/.test(sub));
-ok("addMsg 回傳節點(收回靠它)", /\$\("chat-scroll"\)\.appendChild\(el\);[\s\S]{0,120}return el;\n\}/.test(src));
+ok("真的送出(started)或排隊(queued)那條不收泡泡", /if \(r\.started\) \{ busyStart\(\); return true; \}\n\s*if \(r\.queued\) \{ tabsQueued\(T, true\); return true; \}/.test(sub));
+ok("addMsg 回傳節點(收回靠它)", /chatEl\(\)\.appendChild\(el\);[\s\S]{0,120}return el;\n\}/.test(src));
 
 // ---- 停止後重複(Wei 定性):按停止把句子放回輸入框時,舊的那則泡泡一併收回;
 // 有工具收據(摺疊)時保留——收據需要上下文。session.db 照實留,只是畫面不重複。

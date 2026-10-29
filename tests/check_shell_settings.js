@@ -51,6 +51,7 @@ const paneSt = { chat: { off: false } }, paneToggle = () => {};
 // busy.js(回合中的鎖):鎖態用真的兩支,原因句記下來
 const busySrc = fs.readFileSync(path.join(R, "busy.js"), "utf8"), busyFn = (n) => { const i = busySrc.indexOf("function " + n + "("); return busySrc.slice(i, busySrc.indexOf("\n", i)); };
 eval(busyFn("busyLock") + "\n" + busyFn("busyLocked") + "\n" + busyFn("busyOn"));
+eval(require("./_tabs_stub").SRC.replace("function csAnyTurn", "function csAnyTurnStub"));   // 單分頁(csSendAway 等);busyOn 用上面那支
 const told = [], busySlot = (id, anchor) => ({ id, anchor }), busyTell = (slot, kind) => { told.push([slot.id, kind]); }, busySendTell = () => told.push(["ta-wait", "send"]), busyStopThen = (fn) => fn();
 eval("var UPD = " + src.match(/var UPD = (\{[^\n]*\});/)[1]);
 eval(["UP_SESSION_IDLE_MS", "UP_RETRY_MS", "UP_WU_STATES", "UP_WU_DIR_RE", "UP_SAID_KEY"].map((k) => src.match(new RegExp("^const " + k + " = [^\\n]*;", "m"))[0].replace(/^const /, "var ")).join("\n"));
@@ -247,7 +248,7 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
   { const real = window.blave.cloudRefresh; window.blave.cloudRefresh = () => Promise.reject(new Error("main threw")); await upCloudUpdate(); window.blave.cloudRefresh = real; }
   ok("刷新失敗(主行程沒回):這次不動雲端,不送也不問", sent.length === 0 && boxes.length === 0);
   ok("接線:submitMessage 每一句都把 turnCloud 歸零;tool chunk 第一次帶 where: cloud 就記下並重畫;turn-end 把出錯交給 upTurnEnded;busyStep 不碰 UPD",
-    /UPD\.turnCloud = false;[^\n]*\n\s*running = true; sendBtnSync\(\);/.test(fnSrc("submitMessage")) && !/UPD\.done/.test(fnSrc("submitMessage"))
+    /UPD\.turnCloud = false;[^\n]*\n\s*running = true; turnSeqMine = turnSeq; turnUiSync\(\);/.test(fnSrc("submitMessage")) && !/UPD\.done/.test(fnSrc("submitMessage"))
     && /if \(!UPD\.turnCloud && stepWhere\(c\) === "cloud"\) \{ UPD\.turnCloud = true; upPaint\(\); \}\s*busyStep\(c\);/.test(src)
     && /const faulted = !stopped && \(r\.code !== 0 \|\| turnFaulted \|\| turnErrored \|\| !turnGotReply \|\| loggedOut\);/.test(src) && /upTurnEnded\(faulted\);\s*running = false;/.test(src) && !/UPD/.test(fnSrc("busyStep")));
   ok("接線:關於第一行的連結 = 重新啟動 / 檢查更新;第二行 = upCloudUpdate;那一格不再接點擊(只剩狀態字);up.c.msg 只在 upCloudSend 送;沒有 upGo / 每秒重畫 / open-about", /const b = \$\("set-up-btn"\), k = b\.dataset\.kind; if \(k === "restart" && busyLocked\(b\)\) \{[^}]*\} if \(k === "restart"\) upRestartAsk\(b, upNow\(\)\.link\.ask\); else if \(k === "check"\) upCheck\(\);/.test(src) && !/\$\("ws-update"\)\.addEventListener/.test(src)

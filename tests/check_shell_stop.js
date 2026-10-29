@@ -72,31 +72,34 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const mkEl = () => { const cls = new Set(), attr = {}; return { cls, attr, dataset: {}, disabled: true, value: "", focused: false,
     classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)) }, setAttribute: (k, v) => { attr[k] = v; }, focus() { this.focused = true; } }; };
   const els = { "btn-send": mkEl(), ta: mkEl(), "ta-wait": Object.assign(mkEl(), { textContent: "上一輪還在跑" }) };
-  const tracked = []; let stopReply = true; const calls = [];
+  const tracked = []; let stopReply = true; const calls = [], stopSids = [];
   const R = new Function("$", "t", "trackFeature", "autosize", "window", "state", `
     let running = false;
+    var CS = { loaded: null }, sessionId = "desktop-stop0001"; const withTab = (T, fn) => fn(); const tabBg = () => false;
     ${rCut}
     return { sendBtnSync, stopTurn, stopRestore, set running(v) { running = v; }, get stopping() { return turnStopping; },
       get stopped() { return turnStopped; }, set engineWait(v) { engineWait = v; } };`)(
     (id) => els[id], (k) => ({ "ws.stop": "停止", "ws.send": "送出" })[k], (n) => tracked.push(n), () => {},
-    { blave: { stopTurn: async () => { calls.push("stop"); return stopReply; } } });
+    { blave: { stopTurn: async (sid) => { calls.push("stop"); stopSids.push(sid); return stopReply; } } });
   const b = els["btn-send"];
   R.running = true; R.sendBtnSync();
   ok("回合中:送出鈕換成停止鈕(is-stop)、aria=停止、可按", b.cls.has("is-stop") && b.attr["aria-label"] === "停止" && b.dataset.i18nAria === "ws.stop" && b.disabled === false);
   await R.stopTurn();
-  ok("按停止:請主行程停、記 chat_stop", calls.length === 1 && tracked.join() === "chat_stop");
+  ok("按停止:請主行程停這一條(帶 sid)、記 chat_stop", calls.length === 1 && stopSids[0] === "desktop-stop0001" && tracked.join() === "chat_stop");
   ok("…轉停止中(變淡),仍是停止鈕——不先切回送出", b.cls.has("is-stopping") && b.cls.has("is-stop"));
   await R.stopTurn();
   ok("停止中再按:不重送", calls.length === 1);
   R.running = false; R.sendBtnSync();
   ok("回合結束:回到送出鈕、aria=送出;輸入框上方那一行(#71)跟著收掉", !b.cls.has("is-stop") && !b.cls.has("is-stopping") && b.attr["aria-label"] === "送出" && els["ta-wait"].textContent === "");
   // 沒送到(主行程沒有回合)→ 還原,讓用戶再按
-  const R2 = new Function("$", "t", "trackFeature", "autosize", "window", `let running = true; ${rCut} return { stopTurn, get stopping() { return turnStopping; }, get stopped() { return turnStopped; } };`)(
+  const R2 = new Function("$", "t", "trackFeature", "autosize", "window", `let running = true; var CS = { loaded: null }, sessionId = "desktop-stop0001"; const withTab = (T, fn) => fn(); const tabBg = () => false;
+    ${rCut} return { stopTurn, get stopping() { return turnStopping; }, get stopped() { return turnStopped; } };`)(
     (id) => els[id], (k) => k, () => {}, () => {}, { blave: { stopTurn: async () => false } });
   await R2.stopTurn();
   ok("主行程回 false:停止中還原,可以再按", R2.stopping === false && R2.stopped === false);
   // 暖機中(主行程還沒有回合):不還原,submitMessage 暖機完看到 turnStopped 就不送
-  const R3 = new Function("$", "t", "trackFeature", "autosize", "window", `let running = true; ${rCut} engineWait = true; return { stopTurn, get stopped() { return turnStopped; } };`)(
+  const R3 = new Function("$", "t", "trackFeature", "autosize", "window", `let running = true; var CS = { loaded: null }, sessionId = "desktop-stop0001"; const withTab = (T, fn) => fn(); const tabBg = () => false;
+    ${rCut} engineWait = true; return { stopTurn, get stopped() { return turnStopped; } };`)(
     (id) => els[id], (k) => k, () => {}, () => {}, { blave: { stopTurn: async () => false } });
   await R3.stopTurn();
   ok("暖機中按停止:記住要停", R3.stopped === true);
@@ -106,10 +109,10 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   els.ta.value = "改成 ETH"; R.stopRestore("幫我跑 BTC 回側");
   ok("輸入框已經有字:原句接在前面、不覆寫(同雲端 csJoinDraft)", els.ta.value === "幫我跑 BTC 回側\n改成 ETH");
   ok("按鈕分流:回合中按 = 停止,閒著按 = 送出", /\$\("btn-send"\)\.addEventListener\("click", \(\) => \(running \? stopTurn\(\) : sendDraft\(\)\)\);/.test(appSrc));
-  const endCut = cutFrom(appSrc, "window.blave.onTurnEnd(async (r) => {", "/* 側欄 / 聊天欄");
+  const endCut = cutFrom(appSrc, "function turnEndPre(r) {", "/* 側欄 / 聊天欄");
   ok("turn-end:停止不算失敗(不問登入、不攤收據、保險殺掉的結束碼不顯示)", /const stopped = turnStopped; turnStopped = false;/.test(endCut)
-    && /const exitLine = r\.code !== 0 && !stopped/.test(endCut) && /if \(!stopped && \(cur === "claude"/.test(endCut) && /const faulted = !stopped && \(/.test(endCut));
-  ok("turn-end:切回送出鈕、原句放回", /turnStopping = false; sendBtnSync\(\);/.test(endCut) && /if \(stopped && lastUserTyped\) \{/.test(endCut) && /stopRestore\(lastUserText, lastUserAttachments\);/.test(endCut));
+    && /const exitLine = r\.code !== 0 && !stopped/.test(endCut) && /const probe = !stopped && \(cur === "claude"/.test(endCut) && /const faulted = !stopped && \(/.test(endCut));
+  ok("turn-end:切回送出鈕、原句放回", /turnStopping = false; turnUiSync\(\);/.test(endCut) && /if \(stopped && lastUserTyped\) \{/.test(endCut) && /stopRestore\(lastUserText, lastUserAttachments\);/.test(endCut));
   // 只放回用戶自己打的:把 submitMessage 裡算來源的那一行切出來跑
   const typedLine = /addMsg\("you", msg, attachments\.map\(\(a\) => a\.name\)\); (lastUserTyped = [^;]+;) lastUserText = msg;/.exec(appSrc);
   ok("來源那一行在 submitMessage 裡", !!typedLine);

@@ -382,18 +382,22 @@
           <svg class="ic cs-ico-list" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/></svg>
           <svg class="ic cs-ico-back" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
         </button>
-        <span class="cs-title" id="cs-title"></span>
+        <!-- 對話分頁列(chattabs.js;spec chat-tabs §2):☰ ｜ 關掉的對話提示 ｜ 分頁… ｜ +N ▾ ｜ ＋。#cs-title 只給讀屏與舊測試:畫面上看分頁 -->
+        <button class="cs-hint" id="cs-hint" type="button" hidden></button>
+        <div class="cs-tabs" id="cs-tabs" role="tablist" data-i18n-aria="tabs.list"></div>
+        <button class="cs-more" id="cs-more" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="cs-menu" hidden></button>
+        <span class="cs-title sr-only" id="cs-title"></span>
         <button class="cs-btn cs-new" id="cs-new" type="button" data-i18n-aria="cs.new">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg>
         </button>
+        <div class="cs-menu" id="cs-menu" role="menu" hidden></div>
+        <div class="tip tabs-tip" id="tabs-tip" aria-hidden="true" hidden></div>
       </div>
+      <div id="tabs-live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
       <!-- 清單層蓋在聊天本體上、不替換它:捲動位置與打到一半的字原封不動 -->
       <div class="chat-body">
       <div class="chat-list" id="cs-list" role="region" data-i18n-aria="cs.all" hidden>
-        <button class="cs-newrow" id="cs-newrow" type="button">
-          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg>
-          <span data-i18n="cs.new"></span>
-        </button>
+        <input class="cs-search" id="cs-search" type="search" autocomplete="off" spellcheck="false" data-i18n-ph="tabs.search" data-i18n-aria="tabs.search">
         <div class="cs-rows" id="cs-rows"></div>
       </div>
       <div class="chat-scroll" id="chat-scroll">
@@ -907,4 +911,5 @@
 <script src="stratflags.js"></script>
 <script src="welcome.js"></script>
 <script src="intro.js"></script>
+<script src="chattabs.js"></script>
 </body></html>

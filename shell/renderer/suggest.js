@@ -3,7 +3,7 @@
    在 app.js 之後載入(用它的 $、sessionId、running、composing、attachedFiles、autosize、scrollChat、srSay、trackFeature、motionBaseMs、escTop、lsGet、lsSet)。
    runtime 回合收尾把 <suggest> 剝成 {type:"suggestions", items, kind};這裡先收著,回合結束(沒出錯、沒被停)停一拍才畫。
    句子只在記憶體:重開 app、換對話都不留——同雲端(逐字稿裡沒有這段)。開關與沒用計數在 localStorage,各台電腦各自計。 */
-const SUG = { pending: null, timer: null, text: null, kind: null, shownOnce: false, used: false, gone: false, files: 0, filledText: null, inflight: null };
+let SUG = { pending: null, timer: null, text: null, kind: null, shownOnce: false, used: false, gone: false, files: 0, filledText: null, inflight: null };
 // 下面五個跟網頁工作頁同名同值(web tests/check_suggest_v2.js 與 tests/check_web_desktop_parity.js 逐字比對原文)
 const SUG_MAX_CHARS = 60;   // 托盤單行截尾;超過整句丟、不截(runtime 規則一般句 ≤20／48、導航句 ≤28／60)
 const SUG_MISS_LIMIT = 5;
@@ -41,12 +41,12 @@ function sugTurnEnd(ok) {
   SUG.pending = null;
   if (!ok || !p) return;
   clearTimeout(SUG.timer);
-  SUG.timer = setTimeout(() => {
+  SUG.timer = setTimeout(tabBound(() => {
     SUG.timer = null;
     if (running) return;   // 停一拍之間又送出了一句:這句已經過期
     Object.assign(SUG, { text: p.text, kind: p.kind, shownOnce: false, used: false, gone: false, files: attachedFiles.length, filledText: null });
     sugPaint();
-  }, motionBaseMs());
+  }), motionBaseMs());
 }
 // 在場 = 有一句沒作廢、沒用過、沒被打字收掉,輸入框是空的、沒有附件、不在組字中、沒有回合在跑。不在場就先等,等到在場那一刻才畫
 function sugPresent() {
@@ -55,6 +55,7 @@ function sugPresent() {
 // 收掉只設 gone、不清 text:出現過的那句,之後自己打字送出照算一次沒用(v2 §0.3)
 function sugGone() { if (SUG.text && !SUG.used) SUG.gone = true; sugPaint(); }
 function sugPaint() {
+  if (typeof tabBg === "function" && tabBg()) return;   // 托盤是眼前分頁的;背景那條的建議收在它自己的 SUG,切過去時 tabShow 畫
   if (attachedFiles.length > SUG.files && SUG.text && !SUG.used) SUG.gone = true;   // setAttachments 之後呼叫:多了附件才算「加了」
   SUG.files = attachedFiles.length;
   const show = sugPresent(), tray = $("sug-tray");

@@ -104,7 +104,7 @@ ok("卡的「下載…」用 id 找回那一輪的快照;亂給的 id / 別的 s
 
 // ── ③ 接線 ──
 ok("onTurnEvent 有 export 分支,交給 xpChunk", /else if \(c\.type === "export"\) \{\s*\n\s*if \(typeof xpChunk === "function"\) xpChunk\(c\);/.test(app));
-const end = app.indexOf("window.blave.onTurnEnd("), paintAt = app.indexOf("paintAi(liveBubble, liveBubble._raw, false)", end), cardAt = app.indexOf("xpTurnEnd()", end);
+const end = app.indexOf("function turnEndPre("), paintAt = app.indexOf("paintAi(liveBubble, liveBubble._raw, false)", end), cardAt = app.indexOf("xpTurnEnd()", end);
 ok("回合結束:paintAi 定稿之後才掛轉出卡(順序反了卡會被清掉)", end > 0 && paintAt > end && cardAt > paintAt);
 ok("rpPaintHead 叫 xpPaint(觸發器與程式碼分頁跟著換策略 / 視角)", /function rpPaintHead\(B\) \{[\s\S]*?xpPaint\(\);[\s\S]*?\n\}/.test(app));
 ok("save-export / reveal-export 走 handle()(過 fromOurPage),reveal 只認 token", /handle\("save-export", /.test(main) && /handle\("reveal-export", \(_e, token\) => \{ const p = savedExports\.get\(/.test(main));

@@ -1221,6 +1221,70 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 13px; font-weight: 600; color: var(--ink);
 }
+/* ── 對話分頁列(spec chat-tabs-2026-10-29 §2;mockup chat-tabs-unread-v2 品牌橘那一節)──
+   [☰ 28][提示][分頁…][+N ▾][＋ 28],列高 44、左右內距 8、列內間距 4、分頁之間 2 */
+.chat-head:has(#cs-tabs) { height: 44px; padding: 0 var(--space-8); position: relative; }
+.cs-hint { flex: none; height: 28px; padding: 0 var(--space-6); border-radius: var(--radius-sm); font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.cs-hint:hover { background: var(--surface-row-hover); color: var(--ink); }
+.cs-tabs { flex: 1; min-width: 0; display: flex; gap: var(--space-2); overflow: hidden; }
+.cs-tabs .tab { flex: 0 1 168px; min-width: 88px; height: 32px; display: flex; align-items: center; gap: var(--space-6);
+  padding: 0 var(--space-8); border-radius: var(--radius-sm); color: var(--ink-2); font-size: 13px; font-weight: 400; position: relative; cursor: default;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+.cs-tabs .tab:hover { background: var(--surface-row-hover); color: var(--ink); }
+.cs-tabs .tab[aria-selected="true"] { background: var(--surface-muted); color: var(--ink); font-weight: 600; min-width: 128px; padding-right: var(--space-4); }
+.cs-tabs .tab.attn { color: var(--ink); font-weight: 600; }
+.cs-tabs .tab:focus-visible, .cs-more:focus-visible, .cs-menu .mi:focus-visible { outline-offset: -2px; }   /* 分頁列 overflow:hidden,外擴的環會被裁(先例 .mp-row、.cs-item) */
+.tab-lead { flex: none; width: 14px; display: flex; align-items: center; justify-content: center; }
+.tab-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 未讀點:淺色 primaryText、深色 primary(canon › Attention dot › 分頁未讀點);語意變數重映射,不寫兩套選擇器 */
+:root { --dot-unread: var(--color-primaryText); }
+[data-theme="dark"] { --dot-unread: var(--color-primary); }
+.tab-dot { width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--dot-unread); }
+/* 回覆中:3 格 tick(2×8、間距 4),一秒一格(同 .think-ticks 的節奏);排隊中用收據短劃的灰,不動 */
+.tab-ticks { display: flex; gap: 2px; align-items: center; }
+.tab-ticks i { display: block; width: 2px; height: 8px; background: var(--ink-3); opacity: .26; }   /* 直角切邊,同 .think-ticks-in i */
+.tab-ticks[data-k="0"] i:nth-child(1), .tab-ticks[data-k="1"] i:nth-child(2), .tab-ticks[data-k="2"] i:nth-child(3) { opacity: 1; }   /* 第幾格亮由 chattabs.js 每秒換 */
+.tab-ticks.is-queued i { opacity: .55; }
+.tab-x { flex: none; width: 20px; height: 20px; border-radius: var(--radius-micro); display: none; align-items: center; justify-content: center; color: var(--ink-3); }
+.tab-x .ic { width: 12px; height: 12px; }
+.tab-x::before { content: ""; position: absolute; inset: -6px -4px; }   /* 視覺 20、熱區 28×44 夾在列高內 */
+.tab-x:hover { color: var(--ink); background: var(--surface-muted); }
+.cs-tabs .tab[aria-selected="true"] .tab-x { display: flex; position: relative; }
+/* 沒選中:× 滑過才出,蓋在尾端(墊 hover 底),不佔位 */
+.cs-tabs .tab:not([aria-selected="true"]) .tab-x { position: absolute; right: 4px; top: 6px; background: var(--surface-row-hover); }
+.cs-tabs .tab:not([aria-selected="true"]):hover .tab-x { display: flex; }
+.cs-more { flex: none; height: 28px; padding: 0 var(--space-6) 0 var(--space-8); border-radius: var(--radius-sm); display: flex; align-items: center; gap: var(--space-6);
+  font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.cs-more[hidden] { display: none; }
+.cs-more:hover, .cs-more.on { background: var(--surface-muted); color: var(--ink); }
+.cs-more.attn { color: var(--ink); font-weight: 600; }
+.cs-more .tab-lead { width: auto; }
+/* +N 選單:Dropdown menu recipe(Panel surface-card、shadow md、radius lg、內距 6;觸發器下方 8、右邊夾回 8);Items 6px 10px、radius xs */
+.cs-menu { position: absolute; z-index: 9; top: 44px; right: 8px; width: 280px; max-width: calc(100% - 16px); max-height: 284px; overflow-y: auto;
+  padding: 6px; border-radius: var(--radius-lg); background: var(--surface-card); box-shadow: var(--shadow-md); }
+.cs-menu .mi { display: flex; align-items: center; gap: var(--space-6); width: 100%; min-height: 36px; padding: 6px 10px; border-radius: var(--radius-xs); font-size: 13px; color: var(--ink-2); text-align: left; }
+.cs-menu .mi:hover { background: var(--surface-muted); color: var(--ink); }
+.cs-menu .mi-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-menu .mi-s { flex: none; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.cs-menu .mi:hover .mi-s { color: var(--ink-2); }
+.cs-menu .mi.attn .mi-t { color: var(--ink); font-weight: 600; }
+.cs-menu .mi-s.s-strong { color: var(--ink); font-weight: 600; }
+.cs-menu .mi-s.s-soft { color: var(--ink-2); }
+.tabs-tip { top: 42px; bottom: auto; left: 8px; display: block; pointer-events: none; }
+.tabs-tip[hidden] { display: none; }
+.tabs-tip b { display: block; color: var(--ink); font-weight: 600; }
+/* 每條對話的容器(全放在 #chat-scroll 裡,同時只顯示一個) */
+.chat-thread[hidden] { display: none; }
+/* 歷史:搜尋格(高 32)、今天／昨天／更早、列上的狀態字(只用灰階與字重,canon › 對話狀態字) */
+.cs-search { width: 100%; height: 32px; margin-bottom: var(--space-8); padding: 0 var(--space-12); border-radius: var(--radius-sm);
+  border: 1px solid var(--border-hairline); background: var(--surface-card); color: var(--ink); font-size: 13px; }
+.cs-search::placeholder { color: var(--ink-3); }
+.cs-group { padding: var(--space-8) var(--space-12) var(--space-4); font-size: 12px; color: var(--ink-3); }
+.cs-item.is-attn .cs-name { color: var(--ink); }
+.cs-meta.st-wait, .cs-meta.st-fail { color: var(--ink); font-weight: 600; }
+.cs-meta.st-unseen { color: var(--ink-2); }
+.cs-queued { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4); font-size: 13px; color: var(--ink-2); }
+
 /* 聊天本體 + 蓋在上面的清單層 */
 .chat-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .chat-list {

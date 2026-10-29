@@ -1800,7 +1800,7 @@ function trPushLabels() {
   window.blave.tradeLabels({ running: t("tr.autoOn"), paperVenue: t("cx.paperShort"), pause: t("tm.pause"), open: t("tm.open"), quit: t("tm.quit"),
     notifTitle: t("tm.notifTitle"), notifBody: t("tm.notifBody"), pauseFail: t("tm.pauseFail"), pauseUnknown: t("tr.cmdUnknown"), quitTitle: t("tm.quitTitle"), quitBody: t("tm.quitBody"),
     quitGo: t("tm.quitGo"), quitStay: t("tm.quitStay"), ok: t("tm.ok"), hidden: t(window.blave.platform === "win32" ? "tm.hiddenWin" : "tm.hidden"), updateReady: t("tm.updateReady"), restarting: t("tm.restarting"),
-    quitTurnTitle: t("tm.quitTurnTitle"), quitTurnBody: t("tm.quitTurnBody"), quitTurnBodyN: t("tm.quitTurnBodyN", { n: "{n}" }),   // 結束攔截:本機 agent 回合還在跑(兩條以上主行程填數字)
+    quitTurnTitle: t("tm.quitTurnTitle"), quitTurnBody: t("tm.quitTurnBody"), quitTurnBodyN: t("tm.quitTurnBodyN", { n: "{n}" }), quitQueuedN: t("tm.quitQueuedN", { n: "{n}" }),   // 結束攔截:本機 agent 回合還在跑(兩條以上主行程填數字)
     unsavedTitle: t("tm.unsavedTitle"), unsavedBody: t("tm.unsavedBody"), unsavedGo: t("tm.unsavedGo"), unsavedNote: t("tm.unsavedNote"),   // 結束 / 關窗攔截:策略組合有還沒儲存的變更
     presQuitTitle: t("pres.quit.title"), presQuitBody: t("pres.quit.body", { lots: "{lots}" }), caplQuitBody: t("capl.quit.body", { lots: "{lots}" }), presQuitUnknown: t("pres.quit.unknown"), caplQuitUnknown: t("capl.quit.unknown"),   // 結束攔截:統一還有部位(主行程填口數)
     moveTitle: t("tm.move.title"), moveBody: t("tm.move.body"), moveGo: t("tm.move.go"), moveNo: t("tm.move.no"),   // 搬到「應用程式」那一問
@@ -1833,7 +1833,7 @@ function trPushLabels() {
     ...Object.fromEntries(TR_MENU_KEYS.map((k) => ["menu" + k.charAt(5).toUpperCase() + k.slice(6), t(k)])) });
 }
 // app 選單每一格的字(主行程 main.js appMenuTemplate 的 MENU_EN;字串表 menu.x → tm 的鍵 menuX)
-const TR_MENU_KEYS = ["menu.about", "menu.services", "menu.hide", "menu.hideOthers", "menu.showAll", "menu.quit", "menu.file", "menu.close", "menu.edit",
+const TR_MENU_KEYS = ["menu.about", "menu.services", "menu.hide", "menu.hideOthers", "menu.showAll", "menu.quit", "menu.file", "menu.newTab", "menu.closeTab", "menu.close", "menu.edit",
   "menu.undo", "menu.redo", "menu.cut", "menu.copy", "menu.paste", "menu.pasteStyle", "menu.delete", "menu.selectAll", "menu.view", "menu.local", "menu.cloud",
   "menu.actualSize", "menu.zoomIn", "menu.zoomOut", "menu.fullEnter", "menu.fullExit", "menu.window", "menu.minimize", "menu.zoom", "menu.front", "menu.help", "menu.site"];
 function trWire() {

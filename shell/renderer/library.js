@@ -329,7 +329,7 @@ function libCtx() {
 function libCtaOf(s) {
   const c = libCtx();
   return libCta(s, Object.assign(c, {
-    running: typeof running !== "undefined" && running === true, cloud: c.env === "cloud" ? libCloud() : null,
+    running: false, cloud: c.env === "cloud" ? libCloud() : null,   // 回合中不再擋〔使用〕:另開分頁送(csSendAway);進度看 LIB.pending
     pending: LIB.pending ? LIB.pending.id : null, noNew: LIB.noNew, buying: LIB.buying,
     installedName: libInstalledOf(s, c.env),
   }));
@@ -441,7 +441,7 @@ function libInstalledSet(id, name) {
 }
 // 回合開始 / 結束(running 變了)、購買中、對照表變了:詳情的 CTA 就地重畫;清單的 tag 在 libStratChanged
 function libSync() {
-  if (!(typeof running !== "undefined" && running === true)) LIB.busyTold = null;   // 清在這裡、不在 libPaintCta:忙碌中也會重畫,會把剛講的那句抹掉
+  if (!csAnyTurn()) LIB.busyTold = null;   // 清在這裡、不在 libPaintCta:忙碌中也會重畫,會把剛講的那句抹掉
   if (typeof wcBusySync === "function") wcBusySync();   // 歡迎頁卡的回合鎖與代下載鎖:用戶在歡迎頁時策略庫是藏著的,要在下一行之前
   if ($("lib").hidden) return;
   const B = libBag(), s = B.detail ? libFind(B.detail) : null;
@@ -890,7 +890,6 @@ async function libNoteLoad(s, id) {
 /* o.from === "welcome"(歡迎頁①的卡):確定後先切到這支的詳情再送。下載失敗、沒送出、沒新策略只畫在詳情的 #lib-cta,
    從歡迎頁直送的話錯誤畫進藏著的面板(稽核 M1)。焦點由 delClose 先還給卡的 CTA,libShowDetail 再交給詳情的返回鈕 */
 function libAsk(s, opener, o) {
-  if (typeof running !== "undefined" && running) return;
   if (LIB.pending) return;   // 代下載那一兩秒 running 還是 false:切到另一支再按不能起第二個下載
   if (typeof envCanSwitch === "function" && !envCanSwitch()) return;   // 別的框開著 / 選字中
   const cloud = libEnv() === "cloud", fee = libFeeLine(libEnv(), LIB.data ? LIB.data.dataAccess : null, libNeeds(s));
@@ -936,8 +935,7 @@ async function libSend(s, o) {
     }
     LIB.pending.stage = "turn"; libSync();
   }
-  if (csTitle) csStartNew();
-  submitMessage(send, opts).then((ok) => {
+  csSendAway(send, opts).then((ok) => {
     if (ok) {
       LIB.pending = { id: s.id, env, before }; LIB.noNew = null; libTrack("library_use");
       if (o && o.from === "welcome") libTrack(local ? "wcard_use" : "wcard_use_cloud");

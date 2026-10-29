@@ -292,7 +292,7 @@ function brVerifyRow(id, on) {
   x.verify = false;
   BR.blocks.forEach((b) => { const i = b.ids.indexOf(id); if (i < 0 || b.sum) return; b.ids.splice(i, 1); b.wall.querySelectorAll(".pt").forEach((el) => { if (el.dataset.id === id) el.remove(); }); brPaintHead(b); });
 }
-function brAppend(el) { $("chat-scroll").appendChild(el); if (typeof busyPin === "function") busyPin(); scrollChat(); }
+function brAppend(el) { chatEl().appendChild(el); if (typeof busyPin === "function") busyPin(); scrollChat(); }
 function brAddRow(b, id) {
   if (b.ids.includes(id)) return;
   b.ids.push(id);
@@ -704,6 +704,7 @@ function brPaintTabStrip(bw) {
 // ── 事件 ─────────────────────────────────────────────────────
 function brOnEvent(ev) {
   if (!ev || typeof ev !== "object") return;
+  // 每條對話的瀏覽卡畫在自己的分頁裡(chattabs.js 換進那個分頁之後才叫到這裡);沒開著的對話不畫,展開層與分頁狀態照舊是全 app 一份
   if (ev.session_id && typeof sessionId !== "undefined" && ev.session_id !== sessionId) return;
   const id = typeof ev.id === "string" ? ev.id : null;
   const x = id ? brTab(id) : null;
@@ -766,7 +767,7 @@ function brOnEvent(ev) {
   }
   if (id) brPaint(id);
 }
-window.blave.onBrowserEvent(brOnEvent);
+window.blave.onBrowserEvent((ev) => { const T = ev && ev.session_id && typeof CS !== "undefined" ? CS.tabs.get(ev.session_id) : null; if (T) withTab(T, () => brOnEvent(ev)); else brOnEvent(ev); });
 
 // ── 舊對話:照時間把每一輪的摘要列插回逐字稿(app.js csOpen 用) ──
 async function brHistoryItems(sid) {
@@ -795,7 +796,7 @@ function brRestore(item) {
   const srcs = Array.isArray(r.sources) ? r.sources : [];
   srcs.forEach((s) => s && brNoteFav(s.url, s.fav, s.plate));
   brTakeSources(b, r.tabs, srcs);
-  $("chat-scroll").appendChild(b.el);
+  chatEl().appendChild(b.el);
   brFinish(b);
 }
 /* 換對話 / 新對話:區塊跟著聊天欄一起清掉;展開在中欄的收回 */

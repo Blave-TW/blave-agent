@@ -125,10 +125,11 @@ ok("IPC:reply-cue(聲音交回 e.sender)與四支設定 handler 都只收自家�
 ok("「開啟系統設定」網址寫死(Windows ms-settings:notifications;macOS 系統設定的通知頁)", /ms-settings:notifications/.test(fn(main, "replyOsSettings")) && /x-apple\.systempreferences:/.test(fn(main, "replyOsSettings")));
 ok("tmLabels 預先列好五個 rc_ 鍵(trade-labels 只收已經在表上的鍵)", /rc_await: "", rc_fail: "", rc_doneEmpty: "", rc_awaitEmpty: "", rc_failEmpty: "",/.test(main));
 ok("回合結束提示那段不碰 p1Badge／setBadge", !/p1Badge|setBadge/.test(fn(main, "replyCue") + fn(main, "replyTurnStart") + fn(main, "replyBody")));
-const te = app.slice(app.indexOf("window.blave.onTurnEnd("));
+const te = app.slice(app.indexOf("function turnEndPre("));
 ok("畫面:faulted 算完、錯誤卡都掛好之後才送 reply-cue(停止 → stopped)", /pendingErr = \[\];\n  replyCueSend\(stopped \? "stopped" : faulted \? "fail" : "done"/.test(te) && te.indexOf("replyCueSend(") > te.indexOf("const faulted ="));
 ok("畫面:摘錄走 replySnippet;沒做完又沒回覆時用錯誤卡那一句,不用 errTail", /replySnippet\(reply\)/.test(fn(app, "replyCueSend")) && /\.fault-body > div/.test(fn(app, "replyCueSend")) && /!turnFaultEl\.classList\.contains\("is-calm"\)/.test(fn(app, "replyCueSend")) && !/errTail/.test(fn(app, "replyCueSend")));
-ok("畫面:點通知開那條對話——已是那條、回合中、清單上沒有(被刪了)都不動", /if \(!id \|\| id === sessionId \|\| busyOn\(\)\) return;/.test(app) && /list\.some\(\(m\) => m && m\.id === id\) && !busyOn\(\)\) csOpen\(id\)/.test(app));
+ok("畫面:點通知開那條對話(0.1.37 分頁:開著的切過去、沒開的開成分頁;回合中也照開;清單上沒有(被刪了)不動)", /if \(CS\.tabs\.has\(id\)\) \{ csOpen\(id\); return; \}/.test(app) && /if \(Array\.isArray\(list\) && list\.some\(\(m\) => m && m\.id === id\)\) csOpen\(id\);/.test(app) && !/onOpenSession\(async \(id\) => \{\n[^\n]*busyOn/.test(app));
+ok("畫面:回合結束交 reply-cue 時帶這一條的 sid(稽核 s1 P3-1:多條並行時主行程不猜)", /window\.blave\.replyCue\(kind, snip, sessionId\);/.test(app) && /replyCue: \(kind, snippet, sid\) =>/.test(fs.readFileSync(path.join(S, "preload.js"), "utf8")));
 
 // ---- 6. 設定列與字
 const html = fs.readFileSync(path.join(S, "renderer", "index.html"), "utf8");

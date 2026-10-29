@@ -2663,6 +2663,15 @@ function stratPrefsClean(o) {
     for (const k of Object.keys(f)) if (LIB_NAME_RE.test(k) && Number.isInteger(f[k]) && f[k] >= 1 && f[k] <= 6) out.stratFlags[k] = f[k];
   return out;
 }
+/* 對話分頁(renderer/chattabs.js):開著哪些、順序、選中哪個——這台裝置的版面偏好,存 ui-prefs、不上傳(spec chat-tabs §2 順序與記憶)。
+   形狀不對的丟掉:只收主行程自己發的對話 id 格式,最多 200 個 */
+function tabsPrefsClean(o) {
+  const tabs = o && Array.isArray(o.tabs) ? [...new Set(o.tabs.filter(okSessionId))].slice(0, 200) : [];
+  const sel = o && okSessionId(o.sel) && tabs.includes(o.sel) ? o.sel : null;
+  return { tabs, sel };
+}
+function tabsPrefsGet() { try { return tabsPrefsClean(JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")).chatTabs); } catch (_) { return tabsPrefsClean(null); } }
+function tabsPrefsSet(p) { const c = tabsPrefsClean(p); try { uiPrefsPatch({ chatTabs: c }); } catch (_) { /* 寫不進去:這次只在記憶體 */ } return c; }
 function stratPrefsGet() {
   try { return stratPrefsClean(JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8"))); } catch (_) { return stratPrefsClean(null); }
 }
@@ -3419,6 +3428,8 @@ async function startTurn(payload, origin) {
   if (restarting || turns.has(sid)) return { busy: true };   // 更新重開收工中:開了也會被砍掉
   const rec = newTurnRec(sid, origin === "mobile" ? "mobile" : "desktop", turnCountsCloud(payload));
   turns.set(sid, rec);
+  // 手機來的對話:畫面開成背景分頁(加在最後、不切過去,spec 技術方案 §1.5);事件照 sid 畫進去
+  if (rec.origin === "mobile") sendTurn(sid, "tab-open", { origin: "mobile", focus: false });
   if (rec.cloud) { try { cloudHost().start(); } catch (_) { /* 起不來:名額照讀不到算 */ } }
   // 最低版本閘:只擋 Blave AI;連自己 CLI 的人照常聊
   try {
@@ -3910,6 +3921,10 @@ app.whenReady().then(() => {
     return startTurn(payload, "desktop");
   });
   handle("turns-state", () => turnsState(), []);
+  handle("tabs-prefs", () => tabsPrefsGet(), { tabs: [], sel: null });
+  handle("tabs-prefs-set", (_e, p) => tabsPrefsSet(p), { tabs: [], sel: null });
+  // 最後一個分頁被 ⌘W 關掉時畫面請主行程關窗:走 close 事件,有回合在跑／在下單照紅燈的規則只收起來
+  ipcMain.on("window-close", (e) => { if (!fromOurPage(e)) return; const w = BrowserWindow.fromWebContents(e.sender); if (w && !w.isDestroyed()) w.close(); });
   // 選單字由畫面交過來(trPushLabels):收件的 handler 要在視窗之前掛好,而且 app 選單先重建、再動選單列——
   // 以前掛在一串啟動步驟的最後,中間任何一步拋例外 handler 就沒掛上,app 選單停在英文(File／Edit／View…)、畫面其他都正常
   ipcMain.on("trade-labels", (e, labels) => {
@@ -3984,7 +3999,7 @@ app.on("window-all-closed", () => app.quit());
    - 字由 renderer 依目前語言交過來(.po 是唯一的字串來源);還沒交之前用英文退路。 */
 /* app 選單的英文退路(renderer 還沒交字之前,不到一秒)。字串表 menu.* 是唯一來源,這裡只是退路 */
 const MENU_EN = { menuAbout: "About Blave", menuServices: "Services", menuHide: "Hide Blave", menuHideOthers: "Hide Others", menuShowAll: "Show All",
-  menuQuit: "Quit Blave", menuFile: "File", menuClose: "Close Window", menuEdit: "Edit", menuUndo: "Undo", menuRedo: "Redo", menuCut: "Cut",
+  menuQuit: "Quit Blave", menuFile: "File", menuNewTab: "New Tab", menuCloseTab: "Close Tab", menuClose: "Close Window", menuEdit: "Edit", menuUndo: "Undo", menuRedo: "Redo", menuCut: "Cut",
   menuCopy: "Copy", menuPaste: "Paste", menuPasteStyle: "Paste and Match Style", menuDelete: "Delete", menuSelectAll: "Select All",
   menuView: "View", menuLocal: "This Computer", menuCloud: "Cloud", menuActualSize: "Actual Size", menuZoomIn: "Zoom In", menuZoomOut: "Zoom Out",
   menuFullEnter: "Enter Full Screen", menuFullExit: "Exit Full Screen", menuWindow: "Window", menuMinimize: "Minimize", menuZoom: "Zoom",
@@ -4056,6 +4071,14 @@ function envSwitchFromMenu(env) {
   showMain();
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("env-switch", env);
 }
+/* 送給主視窗的分頁指令;視窗收起來(紅燈)時先叫出來。沒有自家頁面的視窗(登入頁之類)就是關那個視窗 */
+function tabCmd(ch) {
+  const f = BrowserWindow.getFocusedWindow();
+  if (f && !f.isDestroyed() && !isOurPageUrl(f.webContents.getURL())) { if (ch === "tab-close") f.close(); return; }
+  const w = turnWin(); if (!w) return;
+  if (!w.isVisible()) { try { showMain(); } catch (_) { /* 叫不出來也照送 */ } }
+  w.webContents.send(ch);
+}
 /* app 選單。Electron 內建 role 的預設字是寫死的英文(electron_api_menu_roles.cc),不跟系統語言翻,
    所以每一個 role 項目都帶 label,字跟 **app 的語言**走(renderer 交過來;字照 macOS zh_TW 系統用字,設計師 spec §1.2)。
    編輯選單逐項列:editMenu 整包會帶「Substitutions」「Speech」兩個寫死英文、聊天輸入用不到的子選單。
@@ -4073,7 +4096,10 @@ function appMenuTemplate(L, dev, full, onEnv, onSite, onFull, ask = false) {
     // 結束:可能在下單 / 回合在跑時 before-quit 會先問,字尾「…」(同選單列 trayQuitLabel 的規則;HIG)
     { label: app.name, submenu: [r("about", "menuAbout"), sep, r("services", "menuServices"), sep,
       r("hide", "menuHide"), r("hideOthers", "menuHideOthers"), r("unhide", "menuShowAll"), sep, r("quit", "menuQuit", ask ? { label: L.quit || l("menuQuit") + "…" } : {})] },
-    { label: l("menuFile"), submenu: [r("close", "menuClose")] },
+    // ⌘T／⌘W 給對話分頁(spec chat-tabs §2 鍵盤):選單快捷鍵比畫面的 keydown 先吃,所以由這裡送給畫面;畫面判斷是不是最後一個分頁,
+    // 是的話回 window-close 照紅燈的規則關。關視窗本身移到 ⌘⇧W(同瀏覽器)
+    { label: l("menuFile"), submenu: [{ label: l("menuNewTab"), accelerator: "CmdOrCtrl+T", click: () => tabCmd("tab-new") },
+      { label: l("menuCloseTab"), accelerator: "CmdOrCtrl+W", click: () => tabCmd("tab-close") }, sep, r("close", "menuClose", { accelerator: "CmdOrCtrl+Shift+W" })] },
     { label: l("menuEdit"), submenu: [r("undo", "menuUndo"), r("redo", "menuRedo"), sep, r("cut", "menuCut"), r("copy", "menuCopy"), r("paste", "menuPaste"),
       r("pasteAndMatchStyle", "menuPasteStyle"), r("delete", "menuDelete"), r("selectAll", "menuSelectAll")] },
     { label: l("menuView"), submenu: [

@@ -8738,12 +8738,6 @@ msgstr "agent 正在回覆，可能正在改這支策略，回覆完再還原。
 msgid "busy.chatDel"
 msgstr "這條還在回覆，停止後才能刪除。"
 
-msgid "busy.switch"
-msgstr "這條回覆完才能切換對話。"
-
-msgid "busy.new"
-msgstr "這條回覆完才能開新對話。"
-
 msgid "busy.cloudUpd"
 msgstr "這條回覆完才能送更新。"
 
@@ -9359,3 +9353,72 @@ msgstr "結果不明，可能已經成交，不要手動補單。告訴 agent �
 # 追蹤不了而整台暫停、HALT reason 讀不到標的時的狀態句(大寫開頭;同網頁 workspace_pf_halt_unconfirmed_nosym)
 msgid "tr.haltUnconfirmedNosym"
 msgstr "有一筆單結果不明、可能已成交，什麼單都不送。不要手動補單，告訴 agent 成交多少再按「啟動下單」。"
+
+# 對話分頁(0.1.37;spec chat-tabs-2026-10-29 §2–§4;排隊行與狀態字同 web workspace_cs_*,tests/check_web_desktop_parity.js 比對;tabs.brWait 待設計師過字)
+msgid "tabs.list"
+msgstr "對話分頁"
+
+msgid "tabs.search"
+msgstr "搜尋對話標題"
+
+msgid "tabs.queue"
+msgstr "排隊中：同時在跑的回覆已滿，空出來就開始。"
+
+msgid "tabs.queueCancel"
+msgstr "取消排隊"
+
+msgid "tabs.brWait"
+msgstr "等內建瀏覽器空出來"
+
+msgid "tabs.st.run"
+msgstr "回覆中 · {d}"
+
+msgid "tabs.st.running"
+msgstr "回覆中"
+
+msgid "tabs.st.wait"
+msgstr "等你回覆"
+
+msgid "tabs.st.fail"
+msgstr "沒做完"
+
+msgid "tabs.st.unseen"
+msgstr "做完，還沒看"
+
+msgid "tabs.st.queued"
+msgstr "排隊中"
+
+msgid "tabs.hint.run"
+msgstr "{n} 個回覆中"
+
+msgid "tabs.hint.queued"
+msgstr "{n} 個排隊"
+
+msgid "tabs.more.attn"
+msgstr "{n} 個要你看"
+
+msgid "tabs.more.run"
+msgstr "{n} 個回覆中"
+
+msgid "tabs.many"
+msgstr "{n} 個對話要你看"
+
+msgid "tabs.group.today"
+msgstr "今天"
+
+msgid "tabs.group.yesterday"
+msgstr "昨天"
+
+msgid "tabs.group.earlier"
+msgstr "更早"
+
+# 對話分頁:app 選單「檔案」的新分頁／關閉分頁(⌘T／⌘W);結束框排隊那句(主行程填 {n};待設計師過字)
+msgid "menu.newTab"
+msgstr "新分頁"
+
+msgid "menu.closeTab"
+msgstr "關閉分頁"
+
+msgid "tm.quitQueuedN"
+msgstr "排隊中的 {n} 句不會送出。"
+
