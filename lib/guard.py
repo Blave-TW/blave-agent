@@ -465,11 +465,80 @@ MONEY_PID_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
                              "state", "execution", "money_pids")
 _money_marked = False
 
+# Desktop app with several conversations running at once: two turns' manual orders / closes on the same
+# position would race (both read "1 lot open", both close it). A process that moves money from INSIDE a chat
+# turn (it carries BLAVE_TURN_INTERRUPT_FILE; the reconciler, the daemon and scheduled jobs never do) holds one
+# machine-wide lock for its whole life, so a second turn's order script waits for the first to finish. Same
+# turn (a script and its children) shares it via the owner file. Bounded wait: never hangs a turn.
+TURN_MONEY_LOCK = os.path.join(os.path.dirname(MONEY_PID_DIR), "turn_money.lock")
+TURN_MONEY_WAIT_S = 120
+_turn_money_fd = None
+
+
+class TurnMoneyBusy(RuntimeError):
+    pass
+
+
+def _try_lock(fd):
+    if os.name == "nt":
+        import msvcrt
+        try:
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            return False
+    import fcntl
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except OSError:
+        return False
+
+
+def _turn_money_lock():
+    global _turn_money_fd
+    turn = os.environ.get("BLAVE_TURN_INTERRUPT_FILE") or ""
+    if not turn or _turn_money_fd is not None:
+        return
+    owner = TURN_MONEY_LOCK + ".owner"
+    try:
+        os.makedirs(os.path.dirname(TURN_MONEY_LOCK), exist_ok=True)
+        fd = os.open(TURN_MONEY_LOCK, os.O_RDWR | os.O_CREAT, 0o600)
+    except OSError as e:
+        logging.warning(f"guard: turn money lock unavailable: {e}")
+        return
+    deadline = time.monotonic() + TURN_MONEY_WAIT_S
+    while True:
+        if _try_lock(fd):
+            _turn_money_fd = fd
+            try:
+                with open(owner, "w") as f:
+                    f.write(turn)
+            except OSError:
+                pass
+            return
+        try:
+            with open(owner) as f:
+                if f.read() == turn:   # this turn already holds it (a parent script): share, never self-deadlock
+                    os.close(fd)
+                    return
+        except OSError:
+            pass
+        if time.monotonic() >= deadline:
+            os.close(fd)
+            raise TurnMoneyBusy(
+                "Another conversation on this computer is placing or closing an order right now, and this one "
+                f"waited {TURN_MONEY_WAIT_S} s for it. Nothing was sent. Tell the user, and run this again once "
+                "that conversation has finished — re-read the position first, it may already have changed.")
+        time.sleep(0.25)
+
 
 def mark_money_process():
     global _money_marked
     if _money_marked:
         return
+    _turn_money_lock()   # before marking: a process that gave up waiting must not be spared by Stop as a money process
     _money_marked = True
     path = os.path.join(MONEY_PID_DIR, str(os.getpid()))
     try:
