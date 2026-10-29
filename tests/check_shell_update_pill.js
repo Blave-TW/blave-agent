@@ -110,18 +110,23 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       const log = [], prefs = {};
       const at6 = new Date(2026, 9, 29, 6, 5).getTime();
       const ctx = { _schedRunning: false, draftOk: false, quitAsking: false, moveAsking: false, restarting: null, quitConfirmed: false, quitting: false, activeTurn: null, turnStarting: false, _engineRun: null,
-        updater: () => ({ state: () => ({ phase: o.phase || "ready", version: "0.1.36" }), install: () => { log.push("install"); return o.installRes || { ok: true }; } }),
+        updater: () => ({ state: () => { log.push("collect"); return { phase: o.phase || "ready", version: "0.1.36" }; }, install: () => { log.push("install"); return o.installRes || { ok: true }; } }),
         _tradeHost: o.noHost ? null : { status: () => ({ running: o.daemonRunning !== false, alive: o.alive !== false, lockRetry: o.lockRetry || null, report: { daemon: o.reports === "absent" ? {} : { reports: o.reports === undefined ? { running: false, next_due_at: null } : o.reports } } }) },
-        updAutoGet: () => o.on !== false, updSchedRec: () => ({ target: null, failed: o.failed || null }), tradeMaybeLive: () => (o.trading ? { venue: "x" } : null), twLots: () => ({ held: !!o.twHeld }),
-        engineSetup: () => ({ busy: () => false }), require: (m) => (m === "electron" ? { powerMonitor: { getSystemIdleTime: () => (o.idle === undefined ? 900 : o.idle) } } : require(path.join(SHELL, m))),
+        updAutoGet: () => o.on !== false, updSchedRec: () => ({ target: null, failed: o.failed || null }), tradeMaybeLive: () => (o.trading ? { venue: "x" } : null), twLots: () => { log.push("collect"); return { held: !!o.twHeld }; },
+        engineSetup: () => ({ busy: () => false }), require: (m) => (m === "electron" ? { powerMonitor: { getSystemIdleTime: () => { log.push("collect"); return o.idle === undefined ? 900 : o.idle; } } } : require(path.join(SHELL, m))),
         pageAsk: async (expr) => { log.push(/trUnsavedAny/.test(expr) ? "ask:draft" : "ask:ui"); if (o.onAsk) o.onAsk(ctx); return /trUnsavedAny/.test(expr) ? (o.dirty === undefined ? false : o.dirty) : o.idleUi === undefined ? true : o.idleUi; },
-        tm: () => ({ track: (ev, p) => log.push("track:" + ev + ":" + (p.name || p.stage)) }), engineAbort: async () => { log.push("engineAbort"); },
+        tm: () => ({ track: (ev, p) => log.push("track:" + ev + ":" + (p.name || p.stage)) }), engineAbort: async () => { log.push("engineAbort"); if (o.onAbort) o.onAbort(ctx); },
         uiPrefsPatch: (p) => { Object.assign(prefs, p); log.push("prefs:" + JSON.stringify(p)); }, Date: { now: () => at6 } };
       const fn = new Function("ctx", "with (ctx) { " + cut(src, "function updSchedReports(") + "\n" + SCHED + "\n return scheduledInstall; }")(ctx);
-      return { run: () => fn(at6), log, prefs, ctx };
+      return { run: () => fn(o.now || at6), log, prefs, ctx };
     };
+    for (const [why, o, code] of [["開關關掉", { on: false }, "off"], ["窗外 05:59", { now: new Date(2026, 9, 29, 5, 59).getTime() }, "window"], ["窗外 06:30", { now: new Date(2026, 9, 29, 6, 30).getTime() }, "window"]]) {
+      const r = rig(o), res = await r.run();
+      t("先判開關與時間窗:" + why + " → 不讀狀態檔、twLots、powerMonitor", res.go === false && res.why === code && r.log.length === 0 && r.ctx._schedRunning === false, [res, r.log]); }
+    { const r = rig({ onAbort: (c) => { c.turnStarting = true; } }), res = await r.run();
+      t("收引擎那段開始回合:不 install、收回 draftOk、不寫目標版號", res.go === false && res.why === "turn" && !r.log.includes("install") && r.ctx.draftOk === false && !("updSchedTarget" in r.prefs), [res, r.log]); }
     { const r = rig({}), res = await r.run();
-      t("全部成立:先問畫面(草稿、輸入框與框)→ 送 upd_sched_run → 收引擎 → install → 才寫目標版號", res.go === true && r.log.join() === 'ask:draft,ask:ui,track:feature_used:upd_sched_run,engineAbort,install,prefs:{"updSchedTarget":"0.1.36"}', r.log);
+      t("全部成立:先問畫面(草稿、輸入框與框)→ 送 upd_sched_run → 收引擎 → install → 才寫目標版號", res.go === true && r.log.filter((x) => x !== "collect").join() === 'ask:draft,ask:ui,track:feature_used:upd_sched_run,engineAbort,install,prefs:{"updSchedTarget":"0.1.36"}', r.log);
       t("…不送 update_restart、設 draftOk(quitAndInstall 關窗時不再問草稿)", !r.log.some((x) => /update_restart/.test(x)) && r.ctx.draftOk === true); }
     { const r = rig({ installRes: { ok: false, error: "TRADING" } }), res = await r.run();
       t("install 回 TRADING／失敗:不寫目標版號(已寫的刪掉)、收回 draftOk", res.go === false && r.prefs.updSchedTarget === null && r.ctx.draftOk === false && !r.log.some((x) => /0\.1\.36"\}$/.test(x)), r.log); }

@@ -4171,12 +4171,15 @@ async function scheduledInstall(now = Date.now()) {
   if (_schedRunning) return { go: false, why: "running" };
   _schedRunning = true;
   try {
+    const S = require("./schedupdate"), on = updAutoGet();
+    // 一天只有半小時在窗內:窗外與關掉時先回,不必每分鐘讀狀態檔、twLots、powerMonitor
+    if (!on) return { go: false, why: "off" };
+    if (!S.inWindow(now)) return { go: false, why: "window" };
     const st = updater().state(), host = _tradeHost ? _tradeHost.status() : null;
-    const base = { now, on: updAutoGet(), phase: st.phase, version: st.version, failed: updSchedRec().failed, trading: !!tradeMaybeLive(),
+    const base = { now, on, phase: st.phase, version: st.version, failed: updSchedRec().failed, trading: !!tradeMaybeLive(),
       turn: !!(activeTurn || turnStarting), idleSec: require("electron").powerMonitor.getSystemIdleTime(), twHeld: twLots().held,
       asking: !!(quitAsking || moveAsking || restarting || quitConfirmed || quitting), engineBusy: !!(engineSetup().busy() || _engineRun),
       reports: updSchedReports(host) };
-    const S = require("./schedupdate");
     let d = S.schedPlan({ ...base, dirty: false, uiBusy: false });
     if (!d.go) return d;
     const dirty = await pageAsk("typeof trUnsavedAny === 'function' && trUnsavedAny() === true");
@@ -4188,6 +4191,8 @@ async function scheduledInstall(now = Date.now()) {
     try { tm().track("feature_used", { name: "upd_sched_run" }); } catch (_) { /* 追蹤不擋 */ }
     draftOk = true;   // quitAndInstall 關視窗時不再問草稿(上面已確認沒有)
     await engineAbort();
+    // install() 只擋下單不擋回合;收引擎那段 await 期間開了回合就放掉這一輪
+    if (activeTurn || turnStarting) { draftOk = false; return { go: false, why: "turn" }; }
     const res = updater().install();
     if (res.ok) { try { uiPrefsPatch({ updSchedTarget: st.version }); } catch (_) { /* 記不下:下次啟動不會發現失敗,只是少一道防重開 */ } }
     else { draftOk = false; try { uiPrefsPatch({ updSchedTarget: null }); } catch (_) { /* 照舊 */ } }
