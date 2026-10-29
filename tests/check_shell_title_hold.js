@@ -104,38 +104,43 @@ app.whenReady().then(async () => {
   const st = () => js(`(() => { const e = document.getElementById("th-ext"), tip = document.getElementById("bv-ext-tip"); return { title: e.getAttribute("title"), on: tip.classList.contains("is-on"), shown: tip.getClientRects().length > 0, described: e.getAttribute("aria-describedby") === tip.id }; })()`);
   const J = JSON.stringify;
   const X = 214, Y = 214, AWAY = [700, 500];
+  /* 合成滑鼠事件在 Windows 的不顯示視窗上會晚到(CI 慢機實測 120ms 內還沒觸發 mouseenter):
+     等「應該成立的那個狀態」出現(最多 2 秒),不賭固定的等待時間;要驗「不會出現」的那幾步照舊用固定等待 */
+  const until = async (cond) => { let s; for (let i = 0; i < 40; i++) { s = { ...(await st()), clicks: await js("window.__clicks") }; if (cond(s)) return s; await wait(50); } return s; };
+  // 第一個真的滑鼠位置先落在泡泡外面:游標從「未知」直接出現在鈕上,有的平台不發 mouseenter
+  await mouse("mouseMove", ...AWAY);
 
   ok("② 畫面有把 onWindowActive 接起來", await js(`typeof window.__active === "function"`));
   let s = await st();
   ok("② 一開始:鈕沒有 title、泡泡收著、aria-describedby 指到泡泡", s.title === null && !s.on && !s.shown && s.described, J(s));
-  await mouse("mouseMove", X, Y); s = await st();
+  await mouse("mouseMove", X, Y); s = await until((x) => x.on && x.shown);
   ok("② 滑過:自家泡泡出現(畫在 DOM 裡、量得到位置);仍然沒有 title", s.on && s.shown && s.title === null, J(s));
-  await mouse("mouseDown", X, Y); s = await st();
+  await mouse("mouseDown", X, Y); s = await until((x) => !x.on && !x.shown);
   ok("② 按下去(游標還在鈕上):泡泡當場收——系統瀏覽器跳到前面之後畫面上不會留著它", !s.on && !s.shown, J(s));
-  await mouse("mouseUp", X, Y); s = await st();
-  ok("② 放開:click 照常、泡泡不回來", (await js("window.__clicks")) === 1 && !s.on, J(s));
-  await mouse("mouseMove", ...AWAY); await mouse("mouseMove", X, Y); s = await st();
+  await mouse("mouseUp", X, Y); s = await until((x) => x.clicks === 1); await wait(150); s = { ...(await st()), clicks: await js("window.__clicks") };
+  ok("② 放開:click 照常、泡泡不回來", s.clicks === 1 && !s.on, J(s));
+  await mouse("mouseMove", ...AWAY); await mouse("mouseMove", X, Y); s = await until((x) => x.on && x.shown);
   ok("② 移開再移回來:又出", s.on && s.shown, J(s));
-  await mouse("mouseMove", ...AWAY); s = await st();
+  await mouse("mouseMove", ...AWAY); s = await until((x) => !x.on && !x.shown);
   ok("② 移開:收", !s.on && !s.shown, J(s));
   // 重現的那條路:按下去 → 別的 app 到前面 → 回到 app、切到別頁
-  await mouse("mouseMove", X, Y); await mouse("mouseDown", X, Y); await mouse("mouseUp", X, Y);
+  await mouse("mouseMove", X, Y); await until((x) => x.on); await mouse("mouseDown", X, Y); await mouse("mouseUp", X, Y); await until((x) => x.clicks === 2);
   await js(`window.__active(false)`); s = await st();
   ok("② 按下去後視窗退到背景:收著", !s.on && !s.shown, J(s));
   await js(`window.__active(true)`); s = await st();
   ok("② 視窗回來、游標沒動:不會自己再出", !s.on && !s.shown, J(s));
   // 滑過中視窗退到背景(沒按):也收
-  await mouse("mouseMove", ...AWAY); await mouse("mouseMove", X, Y);
+  await mouse("mouseMove", ...AWAY); await mouse("mouseMove", X, Y); await until((x) => x.on);   // 先確定真的滑過了,再退背景(不然晚到的 mouseenter 會在收完之後才出)
   await js(`window.__active(false)`); s = await st();
   ok("② 滑過中視窗退到背景:收", !s.on, J(s));
   await js(`window.__active(true)`); await mouse("mouseMove", ...AWAY);
   // 滑過中按 Esc:收
-  await mouse("mouseMove", X, Y);
+  await mouse("mouseMove", X, Y); await until((x) => x.on);
   w.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" }); w.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" }); await wait(150);
   s = await st();
   ok("② 滑過中按 Esc:收", !s.on, J(s));
   await mouse("mouseMove", ...AWAY);
-  await mouse("mouseMove", X, Y); await mouse("mouseDown", X, Y); await mouse("mouseUp", X, Y); await wait(100); s = await st();
+  await mouse("mouseMove", X, Y); await until((x) => x.on); await mouse("mouseDown", X, Y); await mouse("mouseUp", X, Y); await until((x) => x.clicks === 3); await wait(150); s = await st();
   ok("② 滑鼠按出來的焦點不是 focus-visible:按完泡泡不回來", !s.on && !s.shown, J(s));
 
   console.log(red ? `\n${red} FAILED` : "\nALL PASS");

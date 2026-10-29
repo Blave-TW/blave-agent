@@ -12,7 +12,7 @@ const GATE = require("./_electron_gate");
 const app = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || d === undefined ? "" : "  " + JSON.stringify(d))); if (!c) red++; };
 
-if (!process.versions.electron) {
+if (!process.versions.electron) (async () => {
   const fn = (name) => { const i = app.indexOf("function " + name + "("); if (i < 0) throw new Error("找不到 " + name); let d = 0; for (let k = app.indexOf("{", app.indexOf(")", i)); k < app.length; k++) { if (app[k] === "{") d++; else if (app[k] === "}" && --d === 0) return app.slice(i, k + 1); } throw new Error("切不出 " + name); };
   const line = (re) => { const m = app.match(re); if (!m) throw new Error("找不到 " + re); return m[0]; };
   const mk = (connected = true) => { const c = { sets: 0, el: { isConnected: connected } }; c.set = (s) => { c.last = s; c.sets++; }; return c; };
@@ -110,6 +110,18 @@ if (!process.versions.electron) {
     ok("⑤ 掛在輸入框:拿到焦點查一次、焦點已在框裡的第一次按鍵查一次;這兩次不重開重試鏈(noRetry)", /\$\("ta"\)\.addEventListener\("focus", \(\) => \{ taKeyed = false; if \(acctFreeDue\(Date\.now\(\)\)\) acctCheck\(\{ noRetry: true \}\); \}\);/.test(app) && /\$\("ta"\)\.addEventListener\("keydown", \(\) => \{ if \(taKeyed\) return; taKeyed = true; if \(acctFreeDue\(Date\.now\(\)\)\) acctCheck\(\{ noRetry: true \}\); \}\);/.test(app));
   }
 
+  // ⑤ 輸入框補的那次不重開重試鏈:真的跑 acctCheck,setTimeout 換成記錄器(不等真的時間;Windows 慢時舊的重試計時器不會混進來)
+  {
+    const C = new Function("st", `let hasToken = true, acct = null, acctAt = 0, acctPending = 0, acctSettled = false, acctRetry = st.retry, acctCard = { _free: true }, cur = st.cur;
+      const creditCards = [], AUTH = { revoked: false }, armed = [], window = { blave: { accountStatus: async () => ({ can_run: false, reason: "NO_CARD", free_ai_credit_used_up: true }) } };
+      const setTimeout = (f, ms) => { armed.push(ms); return 0; }, planWatchIdle = () => {}, authSync = async () => {}, acctSet = (x) => { acct = x; }, acctPaint = () => {}, acctBackTrack = () => {};
+      async ${fn("acctCheck")}
+      return acctCheck(st.o).then(() => ({ armed, retry: acctRetry }));`);
+    const runs = await Promise.all([C({ retry: 0, cur: "blave", o: { noRetry: true } }), C({ retry: 2, cur: "blave", o: { noRetry: true } }), C({ retry: 0, cur: "blave" }), C({ retry: 3, cur: "blave" }), C({ retry: 0, cur: "codex" })]);
+    ok("⑤ noRetry:不排計時器、也不動進行中那一輪的重試次數", runs[0].armed.length === 0 && runs[0].retry === 0 && runs[1].armed.length === 0 && runs[1].retry === 2, runs.slice(0, 2));
+    ok("⑤ 一般那次照舊:還不能跑就 5 秒後再查(次數 +1)、滿 3 次歸零不再排;不是 Blave AI 不排", JSON.stringify(runs[2].armed) === "[5000]" && runs[2].retry === 1 && runs[3].armed.length === 0 && runs[3].retry === 0 && runs[4].armed.length === 0, runs.slice(2));
+  }
+
   // 接線
   {
     const trade = fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8"), html = fs.readFileSync(path.join(SHELL, "renderer", "index.html"), "utf8");
@@ -144,7 +156,8 @@ if (!process.versions.electron) {
   if (r.status !== 0) red++;
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   process.exit(red ? 1 : 0);
-}
+})().catch((e) => { console.log("FAIL  " + (e && e.stack || e)); process.exit(1); });
+else {
 
 // ⑥ Electron:真的 index.html,window.blave 換成假的(偵測結果、帳號狀態、登入結果都由 window.__S 給)
 const { app: eapp, BrowserWindow } = require("electron");
@@ -267,12 +280,6 @@ eapp.whenReady().then(async () => {
   ok("⑥ H 別處偵測中開框:先放 ✕,偵測完焦點移到第一顆能按的鈕", h1 && (await js(`document.activeElement === [...$("lai-rows").querySelectorAll("button")].find((x) => !x.disabled)`)), await js(`document.activeElement.id || document.activeElement.textContent`));
   await key("Escape");
 
-  // I. 輸入框補的重查不重開 3 次重試鏈
-  await js(`(async () => { acctRetry = 0; acctAt = 0; await acctCheck({ noRetry: true }); })()`); await wait(300);
-  const rr = await js(`acctRetry`);
-  await js(`(async () => { acctAt = 0; await acctCheck(); })()`); await wait(300);
-  ok("⑥ I 輸入框那次(noRetry)不排重試;一般那次照舊排", rr === 0 && (await js(`acctRetry`)) === 1, [rr, await js(`acctRetry`)]);
-
   // D. 英文:鈕字照 Title Case、modal 的〔怎麼安裝〕sentence case
   await js(`(async () => { setLang("en"); applyStatic(); acctAt = 0; await acctCheck(); })()`); await wait(400);
   await js(`[...document.querySelectorAll("#chat-scroll .msg.fault")].pop().querySelector(".fault-act button:nth-child(2)").click()`); await wait(400);
@@ -283,3 +290,4 @@ eapp.whenReady().then(async () => {
   console.log(red ? `\n${red} 紅(Electron 段)` : "\nElectron 段 ALL PASS");
   eapp.exit(red ? 1 : 0);
 });
+}
