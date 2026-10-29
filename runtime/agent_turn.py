@@ -5301,11 +5301,42 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 MESSAGE_STDIN_MAX = 1024 * 1024  # --message-stdin 讀的上限(同電腦版外殼的 MESSAGE_MAX_BYTES):不無上限地把 stdin 讀進記憶體
 
 
+def _proc_started(pid):
+    """Start stamp of `pid`; must be the exact string lib/guard._proc_started gives (tests/check_turn_money_lock.py
+    compares the two). None when unreadable — then BLAVE_TURN_PID carries the pid alone."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.OpenProcess.restype = ctypes.c_void_p
+            h = k32.OpenProcess(0x1000, False, pid)
+            if not h:
+                return None
+            try:
+                k32.GetProcessTimes.argtypes = [ctypes.c_void_p] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+                c, e, k, u = (wintypes.FILETIME() for _ in range(4))
+                if not k32.GetProcessTimes(ctypes.c_void_p(h), ctypes.byref(c), ctypes.byref(e), ctypes.byref(k), ctypes.byref(u)):
+                    return None
+                return str((c.dwHighDateTime << 32) | c.dwLowDateTime)
+            finally:
+                k32.CloseHandle(ctypes.c_void_p(h))
+        if sys.platform.startswith("linux"):
+            with open(f"/proc/{pid}/stat") as f:
+                return f.read().rsplit(")", 1)[1].split()[19]
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=5,
+                             env={**os.environ, "LC_ALL": "C"}).stdout   # same text whatever the caller's locale
+        return " ".join(out.split()) or None
+    except Exception:
+        return None
+
+
 def main():
     # lib/guard's turn order lock: a process this turn starts and leaves running (nohup / tmux) checks this pid
     # and stops counting as part of the turn once this process is gone
     if os.environ.get(turn_stop.ENV):
-        os.environ["BLAVE_TURN_PID"] = str(os.getpid())
+        stamp = _proc_started(os.getpid())   # pid + start stamp: a reused pid is not this turn
+        os.environ["BLAVE_TURN_PID"] = f"{os.getpid()}:{stamp}" if stamp else str(os.getpid())
     parser = argparse.ArgumentParser()
     parser.add_argument("session_id")
     # 電腦版用 --message-stdin 把訊息從 stdin 送進來(argv 同機的人 `ps` 看得到,而聊天貼 key 是支援的流程);

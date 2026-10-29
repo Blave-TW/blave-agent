@@ -202,6 +202,41 @@ t("常駐入口一開頭清掉回合變數:reconciler __main__、start_reconcile
   and "unset BLAVE_TURN_INTERRUPT_FILE BLAVE_TURN_PID" in open(os.path.join(ROOT, "manager", "start_reconciler.sh"), encoding="utf-8").read()
   and "unset BLAVE_TURN_INTERRUPT_FILE BLAVE_TURN_PID" in open(os.path.join(ROOT, "manager", "run_strategy.sh"), encoding="utf-8").read()
   and "Remove-Item Env:BLAVE_TURN_INTERRUPT_FILE" in open(os.path.join(ROOT, "manager", "start_reconciler_windows.ps1"), encoding="utf-8").read())
-t("agent_turn 帶回合變數時把自己的 pid 放進 BLAVE_TURN_PID(子行程繼承)", 'os.environ["BLAVE_TURN_PID"] = str(os.getpid())' in at_src)
+t("agent_turn 帶回合變數時把自己的 pid＋行程建立時間放進 BLAVE_TURN_PID(子行程繼承;讀不到建立時間只放 pid)",
+  'os.environ["BLAVE_TURN_PID"] = f"{os.getpid()}:{stamp}" if stamp else str(os.getpid())' in at_src)
+
+# pid 重用:BLAVE_TURN_PID 的 pid 還在,但建立時間不一樣 = 被別的行程拿走了 → 不算回合裡;查不到一律當還在
+import ast  # noqa: E402
+sys.path.insert(0, ROOT)
+from lib import guard as G  # noqa: E402
+tree = ast.parse(at_src)
+fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_proc_started")
+ns = {"os": os, "sys": sys, "subprocess": subprocess}
+exec(compile(ast.Module(body=[fn], type_ignores=[]), "agent_turn._proc_started", "exec"), ns)
+me = G._proc_started(os.getpid())
+t("guard 與 agent_turn 算出的建立時間是同一個字串(兩份實作逐字對得上)", me is not None and ns["_proc_started"](os.getpid()) == me, (me, ns["_proc_started"](os.getpid())))
+other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(3)"])
+t("不同行程的建立時間不同(拿來分辨 pid 重用)", G._proc_started(other.pid) not in (None, me))
+other.kill(); other.wait()
+holder = run("/t/turn-H", 3)
+first(holder)
+reused = run("/t/turn-I", 0, mode="gate", wait=5, env_extra={"BLAVE_TURN_PID": f"{os.getpid()}:not-the-same-start"})
+rr = first(reused)
+t("pid 還在但建立時間不同(pid 被重用):不算回合裡,送單不拿鎖、別條拿著也照送", "got" in rr and not rr["held"], rr)
+same = run("/t/turn-I", 0, mode="gate", wait=5, env_extra={"BLAVE_TURN_PID": f"{os.getpid()}:{me}"})
+rs = first(same)
+t("pid 與建立時間都對得上:照樣是回合裡,別條拿著就拋", "busy" in rs, rs)
+for p in (holder, reused, same):
+    p.wait()
+saved = (G._proc_started, os.environ.get("BLAVE_TURN_PID"))
+G._proc_started = lambda pid: None
+os.environ["BLAVE_TURN_PID"] = f"{os.getpid()}:whatever"
+G._turn_gone = False
+t("建立時間讀不到:一律當還在(不放掉鎖的判斷)", G._turn_process_gone() is False)
+G._proc_started = saved[0]
+if saved[1] is None:
+    os.environ.pop("BLAVE_TURN_PID", None)
+else:
+    os.environ["BLAVE_TURN_PID"] = saved[1]
 print(("\n%d 紅" % red) if red else "\nALL PASS")
 sys.exit(1 if red else 0)

@@ -43,6 +43,7 @@ import atexit
 import json
 import logging
 import os
+import sys
 import threading
 import time
 try:
@@ -515,14 +516,56 @@ def _try_lock(fd):
 _turn_money_shared = False
 
 
+def _proc_started(pid):
+    """An opaque start stamp of process `pid` (the same string runtime/agent_turn._proc_started writes next to its
+    pid in BLAVE_TURN_PID — tests/check_turn_money_lock.py pins the two), or None when it cannot be read.
+    Linux: /proc/<pid>/stat starttime; macOS: `ps -o lstart=`; Windows: GetProcessTimes creation time."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.OpenProcess.restype = ctypes.c_void_p
+            h = k32.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                return None
+            try:
+                k32.GetProcessTimes.argtypes = [ctypes.c_void_p] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+                c, e, k, u = (wintypes.FILETIME() for _ in range(4))
+                if not k32.GetProcessTimes(ctypes.c_void_p(h), ctypes.byref(c), ctypes.byref(e), ctypes.byref(k), ctypes.byref(u)):
+                    return None
+                return str((c.dwHighDateTime << 32) | c.dwLowDateTime)
+            finally:
+                k32.CloseHandle(ctypes.c_void_p(h))
+        if sys.platform.startswith("linux"):
+            with open(f"/proc/{pid}/stat") as f:
+                return f.read().rsplit(")", 1)[1].split()[19]
+        import subprocess
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=5,
+                             env={**os.environ, "LC_ALL": "C"}).stdout   # same text whatever the caller's locale
+        return " ".join(out.split()) or None
+    except Exception:
+        return None
+
+
+_turn_gone = False
+
+
 def _turn_process_gone():
-    """True when BLAVE_TURN_PID (the agent_turn process, runtime/agent_turn.main) no longer exists: this is a
-    process a turn left behind (nohup / tmux started from inside it), not part of a live turn — it takes no
-    turn lock. No / unparsable BLAVE_TURN_PID (an older runtime) → False: treated as in the turn, as before."""
+    """True when BLAVE_TURN_PID ("<pid>:<start stamp>", the agent_turn process — runtime/agent_turn.main) no
+    longer exists, or that pid now belongs to another process (its start stamp differs: pid reuse). Such a
+    process is one a turn left behind (nohup / tmux started from inside it), not part of a live turn — it takes
+    no turn lock. Anything that cannot be read counts as still there (in the turn, as before): no / unparsable
+    BLAVE_TURN_PID (an older runtime), a pid we may not query, a stamp we cannot read."""
+    global _turn_gone
+    if _turn_gone:
+        return True
     raw = os.environ.get("BLAVE_TURN_PID") or ""
-    if not raw.isdigit() or int(raw) <= 0:
+    pid_s, _, stamp = raw.partition(":")
+    if not pid_s.isdigit() or int(pid_s) <= 0:
         return False
-    pid = int(raw)
+    pid = int(pid_s)
+    gone = False
     if os.name == "nt":
         try:
             import ctypes
@@ -530,20 +573,26 @@ def _turn_process_gone():
             k32.OpenProcess.restype = ctypes.c_void_p
             h = k32.OpenProcess(0x00100000 | 0x1000, False, pid)   # SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION
             if not h:
-                return ctypes.get_last_error() == 87   # ERROR_INVALID_PARAMETER: no such process
-            try:
-                return k32.WaitForSingleObject(ctypes.c_void_p(h), 0) == 0   # signaled = exited
-            finally:
-                k32.CloseHandle(ctypes.c_void_p(h))
+                gone = ctypes.get_last_error() == 87   # ERROR_INVALID_PARAMETER: no such process
+            else:
+                try:
+                    gone = k32.WaitForSingleObject(ctypes.c_void_p(h), 0) == 0   # signaled = exited
+                finally:
+                    k32.CloseHandle(ctypes.c_void_p(h))
         except Exception:
-            return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return True
-    except OSError:
-        return False
-    return False
+            gone = False
+    else:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            gone = True
+        except OSError:
+            gone = False
+    if not gone and stamp:
+        now = _proc_started(pid)
+        gone = now is not None and now != stamp   # unreadable stamp → still there
+    _turn_gone = gone   # gone stays gone; alive is checked again next time
+    return gone
 
 
 def _turn_money_lock(wait_s):
