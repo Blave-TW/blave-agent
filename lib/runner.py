@@ -1501,7 +1501,7 @@ def _raise_if_newer_lib(e):
     import difflib, inspect
     m = _NEWER_LIB_RE.search(str(e))
     fn = m and next((f for name, mod in list(sys.modules.items()) if name.startswith('lib.')
-                     for f in (getattr(mod, m.group(1), None),) if callable(f)), None)
+                     for f in (vars(mod).get(m.group(1)),) if callable(f)), None)   # not getattr: lib.data's module __getattr__ raises
     if not fn:
         return
     try:

@@ -223,7 +223,7 @@ Body: {title, description, category, code}
 ```
 `category` must be exactly `Crypto`, `TW Stock`, `US Stock`, `Forex` or `Other` (anything else is rejected with 400). Submissions (`/strategies/submit`) and private uploads (`/strategies/private`) accept any string category up to 100 characters (may be empty or omitted); a non-string or longer value is rejected with 400.
 
-**Not yet in any upload (official, for sale, shared):** a strategy whose `apply_exits` uses `stop_level=` / `tp_level=` — it needs `VERSION` 2026-10-28-l or later, and a machine still on an older lib cannot run it.
+<a id="no-stop-level-uploads"></a>**Not yet in any upload (official, for sale, shared):** a strategy whose `apply_exits` uses `stop_level=` / `tp_level=` — it needs `VERSION` 2026-10-28-l or later, and a machine still on an older lib cannot run it. This holds until Wei lifts it, once most machines are on `VERSION` 2026-10-28-l or later.
 
 ## Description format (required for all uploads)
 
@@ -243,7 +243,7 @@ run `python3 lib/quality_check.py --context edit strategies/<name>/strategy.py` 
 (inflates the Sharpe/return you're about to advertise to buyers), an unfilled
 `compute_signals()` template, and a TAIFEX futures strategy missing the mandatory
 `txf_settlement_mask` (its backtest books fake roll-gap PnL). Do what its `NEXT:` line says
-before calling the endpoint below.
+before calling the endpoint below. Not yet for a strategy using `stop_level=` / `tp_level=` ([see above](#no-stop-level-uploads)).
 
 ```
 POST /openclaw/marketplace/strategies/submit
@@ -357,7 +357,7 @@ Response: `{"status": "ok"}`
 - Owner only. Private strategies only — public strategies cannot be deleted.
 - Also removes all shares associated with the strategy.
 
-**Flow when user wants to share a private strategy with specific users:**
+**Flow when user wants to share a private strategy with specific users** (not yet for a strategy using `stop_level=` / `tp_level=` — [see above](#no-stop-level-uploads)):
 1. If the strategy isn't uploaded yet → `POST /openclaw/marketplace/strategies/private` first
 2. `POST /openclaw/marketplace/strategies/{id}/share` with the target user IDs
 3. Confirm back to the user which strategy ID was shared with which UIDs

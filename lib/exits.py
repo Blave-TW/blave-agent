@@ -103,7 +103,8 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
                 tp_dist; trail_* and max_bars combine with it as with stop_pct. With
                 cooldown_bars: a cooldown that ends with the Close at or past the level that would
                 apply (a long's Close <= stop_level or >= tp_level) does not re-enter until that
-                level takes another non-NaN value or the base signal changes side.
+                level takes another non-NaN value or the base signal changes side; a NaN level at
+                the gate counts as the trade's last valid one.
     Long and short may differ: every exit above (not `trigger`, not `cooldown_bars`) also takes
     a `(long, short)` tuple; `None` in it switches that side off — `stop_pct=(0.03, 0.05)`,
     `tp_dist=(3 * atr, None)`.
@@ -249,6 +250,7 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
     trail_now, armed, wait = np.nan, False, None
     t_sl = t_tl = None
     ex_side, blk = 0.0, None                # side of the last exit; the level(s) a re-entry waits past
+    lv_last = [np.nan, np.nan]              # latest valid stop / tp level, stands in for a NaN at the gate
     tr_time, tr_bars, tr_nan = None, 0, [0, 0]
 
     def end_trade():
@@ -289,7 +291,7 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
             if t_trail_d is not None and not ok(t_trail_d[last]):
                 unarmed.append({"time": index[t], "exit": "trail", "dist": float(t_trail_d[last])})
             if has_lv:
-                tr_time, tr_bars, tr_nan = index[t], 0, [0, 0]
+                tr_time, tr_bars, tr_nan, lv_last = index[t], 0, [0, 0], [np.nan, np.nan]
         elif side and inst is not None and inst[t] != inst[last]:
             acc, entry = acc * close[last] / entry, fill
         if stopped and wait is not None:          # bars after the exit bar: `wait` is set below it
@@ -302,8 +304,14 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
                 # bar) — so wait for a new level (another non-NaN value) or the base signal changing side
                 s = np.sign(base[t])
                 j = 0 if s > 0 else 1
-                cur = (stop_l[j][t] if stop_l[j] is not None else np.nan,
-                       tp_l[j][t] if tp_l[j] is not None else np.nan)
+                cur = [lv[t] if lv is not None else np.nan for lv in (stop_l[j], tp_l[j])]
+                for q in (0, 1):
+                    if s != ex_side:
+                        break
+                    if cur[q] == cur[q]:
+                        lv_last[q] = cur[q]
+                    else:
+                        cur[q] = lv_last[q]
                 if blk is None or any(v == v and v != b for v, b in zip(cur, blk)):
                     wrong = s == ex_side and ((cur[0] == cur[0] and (close[t] - cur[0]) * s <= 0)
                                               or (cur[1] == cur[1] and (close[t] - cur[1]) * s >= 0))
@@ -328,11 +336,11 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
             if has_lv and (inst is None or inst[t] == inst[last]):
                 tr_bars += 1
                 if t_sl is not None and t_sl[last] == t_sl[last]:
-                    sl = t_sl[last]
+                    sl = lv_last[0] = t_sl[last]
                 elif t_sl is not None:
                     tr_nan[0] += 1
                 if t_tl is not None and t_tl[last] == t_tl[last]:
-                    tl = t_tl[last]
+                    tl = lv_last[1] = t_tl[last]
                 elif t_tl is not None:
                     tr_nan[1] += 1
             o = fill if bars == 1 else (opn[t] if ok(opn[t]) else close[t])   # a gap fills here
@@ -403,9 +411,10 @@ def apply_exits(signal, df, stop_pct=None, tp_pct=None, trail_pct=None, max_bars
         res.attrs["exits_level_gaps"] = pd.DataFrame(lv_gaps, columns=["time", "exit", "bars", "nan_bars"])
         for name in sorted({r["exit"] for r in at_fill}):
             _warn_level_once("fill:" + name, f"apply_exits: {name} was already crossed at the fill of at least one "
-                             f"trade, so it exited at once (rows in result.attrs['exits_at_fill']). Usual cause: "
-                             f"the level still holds the previous trade's value — set it on the entry bar too and "
-                             f"NaN while flat (references/strategy-code.md). A real gap through it is right as is.")
+                             f"trade, so it exited at once (rows in result.attrs['exits_at_fill']). A real gap "
+                             f"through the level: nothing to fix. A level still holding the previous trade's "
+                             f"value: set it per trade — on the entry bar too, NaN while flat "
+                             f"(references/strategy-code.md).")
         for name in sorted({r["exit"] for r in lv_gaps}):
             _warn_level_once("gaps:" + name, f"apply_exits: {name} was NaN on more than half the bars of at least "
                              f"one trade — no {name} on those bars (rows in result.attrs['exits_level_gaps']). "

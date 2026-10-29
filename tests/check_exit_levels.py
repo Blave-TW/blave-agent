@@ -147,6 +147,9 @@ check(pos == [1, 0, 0, 0, 1, 1], "cooldown + Close past the level: waits (even a
 pos, _ = run([1, nan, nan, nan, nan, nan], G, trigger="intrabar", stop_level=pd.Series([98.0, 98, 98, 98, 99.5, 96]),
              cooldown_bars=1)
 check(pos == [1, 0, 0, 0, 0, 1], "…a new level the Close is also past keeps waiting; the next new one re-enters")
+pos, _ = run([1, nan, nan, nan, nan, nan], G, trigger="intrabar", stop_level=pd.Series([98.0, 98, nan, nan, 96, 96]),
+             cooldown_bars=1)
+check(pos == [1, 0, 0, 0, 1, 1], "…a NaN level when the cooldown ends counts as the trade's last one (98), like a NaN while waiting")
 pos, _ = run([1, nan, nan, nan, nan, nan], G, trigger="intrabar", tp_level=pd.Series([150.0, 99, 99, 99, 99, 120]),
              cooldown_bars=1)
 check(pos == [1, 1, 0, 0, 0, 1], "tp_level: a cooldown ending with the Close at or above it waits for a new level")
@@ -410,6 +413,16 @@ try:
     check(False, "runner: a typo in a lib function's argument → the closest argument")
 except SystemExit as e:
     check("Did you mean buy_th=?" in str(e) and "fix the name" in str(e), f"runner: a typo → the closest argument ({str(e)[:90]!r})")
+def get_levels(df, n=3): return df
+try:
+    get_levels(None, m=2)
+except TypeError as e:
+    te4 = e
+try:
+    runner._raise_if_newer_lib(te4)
+    check(True, "runner: the strategy's own get_* function with a bad argument stays a plain TypeError")
+except BaseException as e:
+    check(False, f"runner: the strategy's own get_* function with a bad argument stays a plain TypeError ({type(e).__name__}: {str(e)[:80]})")
 def own(x): return x
 try:
     own(1, y=2)
