@@ -12,9 +12,10 @@ never handle it.
 Design rules (same contract as lib/order_bingx.py / order_binance.py):
 FAIL LOUD / CONFIRMED-NOT-SENT / IDEMPOTENT (bounded: clOrdId dedup covers
 only the un-filled window — a reused id is ACCEPTED once the original is
-terminal, measured live 2026-08-05, same semantics as Binance; on
-OrderNotConfirmed re-query, never blindly resubmit) / HALTABLE+AUDITED via
-lib/guard / ATTRIBUTION on every order.
+terminal, measured live 2026-08-05, same semantics as Binance. So an order POST
+that may have reached OKX is never sent again: it raises OrderNotConfirmed,
+which lib/unconfirmed parks and resolve_unknown_order looks up by clOrdId) /
+HALTABLE+AUDITED via lib/guard / ATTRIBUTION on every order.
 
 OKX quirks handled here (verified against ccxt's production okx parser +
 official docs + live orders 2026-08-05):
@@ -105,9 +106,30 @@ def _okx_error(code, msg, path):
     return cls(code, msg, path)
 
 
-class OrderNotConfirmed(Exception):
-    """Order accepted but not terminal within timeout. It may still fill —
-    query again, never blindly resubmit."""
+try:
+    from lib.unconfirmed import OrderOutcomeUnknown as _OutcomeUnknown
+except ImportError:  # half-updated workspace: not parkable, reported as an order failure
+    class _OutcomeUnknown(Exception):
+        def __init__(self, msg, venue=None, venue_symbol=None, order_id=None, client_order_id=None):
+            super().__init__(msg)
+            self.venue, self.venue_symbol, self.order_id = venue, venue_symbol, order_id
+            self.client_order_id = client_order_id
+
+        def parkable(self):
+            return False
+
+
+class OrderNotConfirmed(_OutcomeUnknown):
+    """An order OKX took, or may have taken, whose outcome is not known: no answer
+    to the POST, or no terminal state read before the confirm timeout. It may
+    have filled — query it, never resubmit. A swap market order carries venue /
+    venue_symbol (canonical) / order_id or client_order_id so lib/portfolio can
+    park it; spot, limit and algo orders carry no venue (not parkable: a spot
+    market order HALTs in lib/portfolio)."""
+
+
+class _SendUnknown(Exception):
+    """An order POST whose outcome is unknown; _request turns it into OrderNotConfirmed."""
 
 
 class ProtectionFailed(Exception):
@@ -118,6 +140,11 @@ class ProtectionFailed(Exception):
 # ── transport ────────────────────────────────────────────────────────────────
 
 TIMESTAMP_ERROR = "50102"  # "Timestamp request expired"
+# An order POST answered with one of these may have executed. 50004: "Endpoint request timeout
+# (does not mean that the request was successful or failed, please check the request result)"
+# (OKX v5 error codes). 50001 "Service temporarily unavailable" comes with HTTP 503, which the
+# 5xx rule in _send already treats as unknown.
+SEND_UNKNOWN_CODES = {"50004"}
 _time_offset = {"ms": 0}  # OKX's clock − ours, set by _sync_time
 
 
@@ -208,8 +235,23 @@ def _request(method, path, env, body=None, params=None, retries=3):
                 f"clear the halt (guard.clear_halt)."
             )
         guard.audit("order_attempt", **fields)
+        placing = _MUTATING_PATHS.get((method, path)) == "place"
         try:
-            data = _send(method, path, env, body, params, retries)
+            data = _send(method, path, env, body, params, retries, no_resend=placing)
+        except _SendUnknown as e:
+            p = body if isinstance(body, dict) else {}
+            cid = p.get("clOrdId")
+            guard.audit("order_unknown", error=str(e), client_order_id=cid, **fields)
+            # only a swap market order is looked up again (resolve_unknown_order); spot,
+            # limit and algo orders raise without a venue = not parkable
+            swap_market = (path == "/api/v5/trade/order" and p.get("tdMode") != "cash"
+                           and p.get("ordType") == "market")
+            inst = str(p.get("instId") or "")
+            raise OrderNotConfirmed(
+                f"order {cid} sent, no answer ({e}) — it may have filled; check the position, "
+                f"do not resubmit", venue="okx" if swap_market else None,
+                venue_symbol=inst.replace("-SWAP", "").replace("-", "") if swap_market else None,
+                client_order_id=cid) from e
         except Exception as e:
             guard.audit("order_error", error=str(e), **fields)
             raise
@@ -220,7 +262,11 @@ def _request(method, path, env, body=None, params=None, retries=3):
     return _send(method, path, env, body, params, retries)
 
 
-def _send(method, path, env, body=None, params=None, retries=3):
+def _send(method, path, env, body=None, params=None, retries=3, no_resend=False):
+    """no_resend (order POSTs): once the request may have reached OKX it is never sent again —
+    a read timeout, a dropped connection, a 5xx, a 2xx that is not JSON or a SEND_UNKNOWN_CODES
+    answer raises _SendUnknown. Only a connect timeout (nothing sent) and 50102 (refused at
+    authentication, re-signed) are retried."""
     api_key = env.get("OKX_API_KEY")
     secret = env.get("OKX_SECRET_KEY")
     passphrase = env.get("OKX_PASSPHRASE")
@@ -257,15 +303,35 @@ def _send(method, path, env, body=None, params=None, retries=3):
                                   headers=headers, timeout=10)
             else:
                 r = requests.get(f"{BASE_URL}{request_path}", headers=headers, timeout=10)
-        except requests.exceptions.ConnectionError as e:
+        except requests.exceptions.ConnectTimeout as e:
+            last_err = e  # no connection was made: nothing reached OKX
+            if attempt == retries - 1:
+                raise
+            time.sleep(1 + attempt)
+            continue
+        except (requests.exceptions.InvalidURL, requests.exceptions.MissingSchema,
+                requests.exceptions.InvalidSchema, requests.exceptions.InvalidHeader):
+            raise  # refused before anything was sent
+        except requests.exceptions.RequestException as e:
+            # an order POST: anything after the connection was made may have reached OKX — a
+            # reset, a read timeout (not a ConnectionError subclass), a body cut mid-transfer
+            if no_resend:
+                raise _SendUnknown(f"{type(e).__name__}: {str(e)[:120]}") from e
+            if not isinstance(e, requests.exceptions.ConnectionError) \
+                    or isinstance(e, requests.exceptions.Timeout):
+                raise
             last_err = e
             if attempt == retries - 1:
                 raise
             time.sleep(1 + attempt)
             continue
+        if no_resend and r.status_code >= 500:
+            raise _SendUnknown(f"HTTP {r.status_code}: {r.text[:120]}")
         try:
             data = r.json()
         except ValueError:
+            if no_resend and 200 <= r.status_code < 300:
+                raise _SendUnknown(f"HTTP {r.status_code} non-JSON ({r.text[:80]})")
             raise OKXError(r.status_code, f"non-JSON response ({r.text[:120]})", path)
         code = str(data.get("code", ""))
         rows = data.get("data") or []
@@ -281,10 +347,14 @@ def _send(method, path, env, body=None, params=None, retries=3):
                 _sync_time(env)
                 last_err = OKXError(s_code, s_msg, path)
                 continue
+            if no_resend and str(s_code) in SEND_UNKNOWN_CODES:
+                raise _SendUnknown(f"{s_code}: {s_msg}")
             raise _okx_error(s_code, s_msg, path)
         # code 0 can still carry per-row failures on order endpoints
         for row in rows if isinstance(rows, list) else []:
             if isinstance(row, dict) and row.get("sCode") not in (None, "0", ""):
+                if no_resend and str(row.get("sCode")) in SEND_UNKNOWN_CODES:
+                    raise _SendUnknown(f"{row.get('sCode')}: {row.get('sMsg')}")
                 raise _okx_error(row.get("sCode"), row.get("sMsg") or "", path)
         return rows
     raise last_err
@@ -400,14 +470,20 @@ def get_position_mode(env):
 
 # ── orders (swap) ───────────────────────────────────────────────────────────
 
-def get_order(env, symbol, ord_id):
-    """Swap order by id, normalized. orig_qty / executed_qty are BASE units
+def get_order(env, symbol, ord_id, client_order_id=None):
+    """Swap order by ordId (or clOrdId when ord_id is None), normalized.
+    orig_qty / executed_qty are BASE units
     (sz / accFillSz are contracts — converted here; partial-fill accounting
     needs the original size, chase contract). commission from the order's fee
     field (negative on OKX — abs'd), commission_asset = feeCcy."""
     inst = _swap_inst(symbol)
-    rows = _send("GET", "/api/v5/trade/order", env,
-                 params={"instId": inst, "ordId": str(ord_id)})
+    if ord_id:
+        params = {"instId": inst, "ordId": str(ord_id)}
+    elif client_order_id:
+        params = {"instId": inst, "clOrdId": str(client_order_id)}
+    else:
+        raise ValueError("ord_id or client_order_id required")
+    rows = _send("GET", "/api/v5/trade/order", env, params=params)
     o = rows[0] if rows else {}
     if "state" not in o:
         raise OKXError("N/A", f"order query missing state: {list(o)}", "trade/order")
@@ -429,18 +505,29 @@ def get_order(env, symbol, ord_id):
 TERMINAL_STATES = {"filled", "canceled", "mmp_canceled"}
 
 
-def _confirm(env, symbol, ord_id, getter, timeout=15):
+def _confirm(env, symbol, ord_id, getter, timeout=15, venue=None):
     """Poll a market order to a terminal state. `canceled` is terminal but not
     necessarily empty: OKX cancels the unfilled rest of a market order that runs
     into its price limit / 5% slippage guard (cancelSource 14 / 15 / 27), and
     accFillSz then carries what DID fill (docs: "accFillSz may be non-zero").
     That fill is real money on the account, so it is returned with
     'partial': True — raising would keep it out of the ledger and the next round
-    would buy it again. Nothing filled → raise with the venue's own reason."""
+    would buy it again. Nothing filled → raise with the venue's own reason.
+    No terminal state read before timeout → OrderNotConfirmed with the order id
+    (venue set only by the swap market path: the parked order is looked up there)."""
     deadline = time.time() + timeout
     order = None
+    last_err = None
     while time.time() < deadline:
-        order = getter(env, symbol, ord_id)
+        try:
+            order = getter(env, symbol, ord_id)
+        except Exception as e:
+            # the id came from the placement response, so a read timeout, a dropped
+            # connection, a 5xx or "does not exist" (the query side lagging the engine)
+            # leaves the order's fate unknown, never rejected
+            last_err = e
+            time.sleep(1)
+            continue
         if order["status"] == "filled":
             return order
         if order["status"] in TERMINAL_STATES:
@@ -455,9 +542,12 @@ def _confirm(env, symbol, ord_id, getter, timeout=15):
                                   f"(cancelSource {order['cancel_source'] or '?'}: {why})",
                            "confirm")
         time.sleep(1)
+    state = (order["status"] if order else
+             f"not queryable ({type(last_err).__name__}: {str(last_err)[:80]})")
     raise OrderNotConfirmed(
-        f"order {ord_id} still {order['status'] if order else 'UNKNOWN'} after {timeout}s"
-    )
+        f"order {ord_id} accepted but {state} after {timeout}s — it may have filled; "
+        f"check the position, do not resubmit",
+        venue=venue, venue_symbol=symbol if venue else None, order_id=str(ord_id))
 
 
 def place_market_order(env, symbol, direction, qty, client_order_id=None,
@@ -491,13 +581,39 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
         body["posSide"] = direction  # open AND close address the position's side
     elif reduce_only:
         body["reduceOnly"] = "true"
-    if client_order_id:
-        body["clOrdId"] = client_order_id  # 1-32 alphanumeric
-    rows = _request("POST", "/api/v5/trade/order", env, body)
-    ord_id = (rows[0] if rows else {}).get("ordId")
-    if not ord_id:
-        raise OKXError("N/A", f"order response missing ordId: {rows}", "trade/order")
-    return _confirm(env, symbol, ord_id, get_order, timeout=confirm_timeout)
+    # always one: an order with no id cannot be looked up if its outcome is unknown (HALT)
+    client_order_id = client_order_id or f"bl{int(time.time() * 1000):x}"
+    body["clOrdId"] = client_order_id  # 1-32 alphanumeric
+    try:
+        rows = _request("POST", "/api/v5/trade/order", env, body)
+        ord_id = (rows[0] if rows else {}).get("ordId")
+        if not ord_id:
+            raise OKXError("N/A", f"order response missing ordId: {rows}", "trade/order")
+        return _confirm(env, symbol, ord_id, get_order, timeout=confirm_timeout, venue="okx")
+    except OrderNotConfirmed as e:
+        # the canonical symbol: the parked order is queried with it through get_order
+        # (_swap_inst cannot take an instId back)
+        e.venue_symbol = symbol
+        e.client_order_id = e.client_order_id or client_order_id
+        raise
+
+
+def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, parked_at=None,
+                          now=None):
+    """A parked swap market order's outcome (lib/unconfirmed): (executed_qty, avg_price) in
+    BASE units once it is terminal — qty 0 = it ended without a fill — None while unknown.
+    Read-only: Get order details by ordId, or clOrdId when only ours is known (rc… ids are
+    unique, so "only the latest one will be returned" cannot pick another order). An order
+    OKX cannot find stays unknown: what OKX answers for an order that never arrived is not
+    measured yet, and releasing a filled order would send it again."""
+    try:
+        order = get_order(env, symbol, order_id, client_order_id=client_order_id)
+    except Exception:
+        return None
+    if order["status"] not in TERMINAL_STATES:
+        return None
+    qty, price = order["executed_qty"], order["avg_price"]
+    return (qty, price) if qty <= 0 or price > 0 else None
 
 
 # time_in_force → OKX ordType: OKX has no separate TIF field, the order type
