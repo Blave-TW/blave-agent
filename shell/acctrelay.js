@@ -5,7 +5,8 @@
 //     多條對話接力重疊時永遠等不到空檔,token 到期就失效。
 //   - 現在回合環境裡只有一顆「這一輪」的轉送 token 和 127.0.0.1 的位址;轉出去時才從 Keychain 讀**當下那顆**帳號 token 換上。
 //     輪替跟回合完全脫鉤,agent 也從此讀不到帳號 token(輪替本來就是因為它讀得到)。
-//   - 只放行回合真的會打的兩組路徑:/openclaw/proxy/(LLM、摘要、型錄)與 /openclaw/agent/report/(lib/report.py 的驗證)。
+//   - 只放行回合真的會打的路徑:/openclaw/proxy/(LLM、摘要、型錄)。lib/report.py 的平台驗證看到 acct- 開頭的 token 就不送
+//     (電腦版本來就不送),所以 /openclaw/agent/report/ 沒有呼叫端、不放行(稽核 s1 P3-6)。
 //     目的地是呼叫端給的 apiBase(main.js 寫死的 API_BASE),這個檔不讀 fs、不讀 process.env:兩者 agent 都寫得到。
 //   - 被 api 拒(403 ACCOUNT_TOKEN_INVALID:api 對帳號 token 一律回這個,不回 401)時照 rotator().recover() 補救一次再重送;
 //     只在還沒寫任何東西給客戶端時做得到,所以請求內文整份先收著(上限 MAX_BODY),回應是 403 才先收著看,其餘原樣串流。
@@ -16,7 +17,7 @@ const http = require("http");
 const https = require("https");
 const crypto = require("crypto");
 
-const PATHS = ["/openclaw/proxy/", "/openclaw/agent/report/"];
+const PATHS = ["/openclaw/proxy/"];
 const MAX_BODY = 32 * 1024 * 1024;        // 同 llmrelay 的量級:1M context 純文字約 4MB,其餘留給圖片
 const UPSTREAM_TIMEOUT_MS = 300000;        // 串流中途沉默這麼久才斷(同 llmrelay)
 const AUTH_PEEK_MAX = 64 * 1024;           // 401/403 的內文只看這麼多(判 error_code)
@@ -30,7 +31,7 @@ function deny(res, status, message) {
   res.writeHead(status, { "content-type": "application/json", "x-should-retry": "false" });
   res.end(JSON.stringify({ type: "error", error: { type: status === 401 ? "authentication_error" : "permission_error", message } }));
 }
-// 路徑只認那兩組前綴,不收 `..`、編碼過的斜線與點(繞過前綴的老招)
+// 路徑只認那個前綴,不收 `..`、編碼過的斜線與點(繞過前綴的老招)
 function pathOk(raw) {
   if (typeof raw !== "string" || raw[0] !== "/" || raw.length > 4096) return false;
   const p = raw.split("?")[0];
@@ -128,7 +129,7 @@ function createAccountRelay(opts) {
       });
       return starting;
     },
-    /* 一輪一顆。base 已含 http://127.0.0.1:<port>,呼叫端自己接 /openclaw/proxy 與 /openclaw/agent/report */
+    /* 一輪一顆。base 已含 http://127.0.0.1:<port>,呼叫端自己接 /openclaw/proxy */
     issue(sid) {
       if (!port) throw new Error("account relay not started");
       const token = TOKEN_PREFIX + crypto.randomBytes(32).toString("hex");

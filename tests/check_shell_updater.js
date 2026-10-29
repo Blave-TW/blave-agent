@@ -113,7 +113,7 @@ function fakeAU() { const au = new EventEmitter(); au.calls = []; au.setFeedURL 
   t("關視窗:本機 agent 回合在跑時也只藏起來(同下單中);「背景照常下單」那則只在真的在下單時講",
     /const trading = tradeMaybeLive\(\), turn = anyTurn\(\);\s*if \(quitting \|\| quitConfirmed \|\| \(!trading && !turn\)\) \{[\s\S]{0,600}?\n      return;\n    \}\n    e\.preventDefault\(\); win\.hide\(\);/.test(mainSrc) && /if \(trading && !hiddenSaid/.test(mainSrc));
   t("回合收尾時視窗可能已關:回合事件(含 turn-end)只送還沒銷毀的主視窗、送失敗不拋", /function turnWin\(\) \{ return BrowserWindow\.getAllWindows\(\)\.find\(\(w\) => !w\.isDestroyed\(\) && isOurPageUrl/.test(mainSrc) && /try \{ w\.webContents\.send\(ch, \{ \.\.\.\(payload \|\| \{\}\), sid \}\); return true; \} catch/.test(mainSrc) && /sendTurn\(rec\.sid, "turn-end", end\);/.test(mainSrc));
-  t("結束 Blave:本機 agent 回合還在跑時先問一次(同自動下單那一道),確認過才結束", /if \(!quitting && !quitConfirmed && anyTurn\(\)\) \{\s*e\.preventDefault\(\);/.test(mainSrc) && /message: tmLabels\.quitTurnTitle/.test(mainSrc));
+  t("結束 Blave:本機 agent 回合還在跑時先問一次(同自動下單那一道),確認過才結束", /if \(!quitting && !quitConfirmed && anyTurnOrQueued\(\)\) \{\s*e\.preventDefault\(\);/.test(mainSrc) && /message: tmLabels\.quitTurnTitle/.test(mainSrc));
   const cfg = fs.readFileSync(path.join(__dirname, "..", "shell", "electron-builder.config.js"), "utf8");
   t("打包:updater.js 在 files、release 沒設更新來源會 throw、來源必須 https、有來源才出 zip", /"updater\.js"/.test(cfg) && /release 要設 BLAVE_UPDATE_URL/.test(cfg) && /\^https:/.test(cfg) && /target: "zip"/.test(cfg));
   t("release 指令不再把目標寫死成 dmg(不然 zip 不會出)", !/--mac dmg --publish never/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "package.json"), "utf8").split('"release"')[1]));

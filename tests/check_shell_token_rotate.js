@@ -260,7 +260,7 @@ process.exitCode = 1;   // 哪個 await 掛住、事件迴圈空了就會靜靜�
     && oa.indexOf("rotator().reset()") > oa.indexOf("saveToken(r.body.access_token)") && /noteLogin\(r\.body\.access_token, r\.body\.expires_in\)/.test(oa));
   const rt = body("runTurn");
   t("回合開跑不再先輪替(0.1.37 帳號轉送口):帳號 token 不進環境,進環境的是轉送口這一輪的 token", rt.indexOf("rotator().ensure(") < 0
-    && /const acct = plan\.proxyToken \? \(await acctRelay\(\)\.start\(\), acctRelay\(\)\.issue\(sessionId\)\) : null;/.test(rt) && rt.indexOf("loadToken() : null") < 0);
+    && /const acct = plan\.proxyToken \? acctRelay\(\)\.issue\(sessionId\) : null;/.test(rt) && rt.indexOf("loadToken() : null") < 0);
   t("定期檢查回合進行中照換(回合手上沒有帳號 token)、只在拿到單一實例鎖的那份跑", /if \(app\.hasSingleInstanceLock\(\)\) startStep\("token rotate"/.test(main) && /const tick = \(\) => \{ rotator\(\)\.ensure\(ROTATE_MIN_LEFT_MS\)\.catch\(\(\) => \{\}\); \};/.test(main));
   t("getCreds 一律走 blaveCreds(帶 who);沒有殘留只帶 token 的寫法", !/getCreds: \(\) => \{ const token = loadToken\(\)/.test(main) && (main.match(/getCreds: blaveCreds/g) || []).length === 6);
   t("account_status 被拒(403 ACCOUNT_TOKEN_INVALID)→ recover 一次再問", /ACCOUNT_TOKEN_INVALID" && await rotator\(\)\.recover\(acct\)\) return accountStatus\(true\)/.test(body("accountStatus")));

@@ -34,7 +34,7 @@ function rig(o) {
     draftOk: o.draft === undefined, draftNote: false,
     draftDirty: async () => { log.push("draftDirty"); if (o.stopDuringDraft) child = false; return o.draft === "dirty"; },
     draftGate: async () => { log.push("draftGate"); return true; },
-    quitAsking: !!o.asking, moveAsking: !!o.moveAsking, quitting: false, restarting: null, setRestarting: (v) => { ctx.restarting = v; }, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: o.turn ? {} : null, turnStarting: false, tmLabels: { ...L }, TT: { quitDetail: TT.quitDetail, cloudTrading: (s) => !!(s && s.trading), stayGo: TT.stayGo }, process: { platform: o.platform || "darwin" },
+    quitAsking: !!o.asking, moveAsking: !!o.moveAsking, quitting: false, restarting: null, setRestarting: (v) => { ctx.restarting = v; }, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: o.turn ? {} : null, turnStarting: false, tmLabels: { ...L }, TT: { quitDetail: TT.quitDetail, cloudTrading: (s) => !!(s && s.trading), stayGo: TT.stayGo }, process: { platform: o.platform || "darwin" },
     planRestart, cloudSt: () => (o.cloud ? { trading: true } : null), BrowserWindow: { getAllWindows: () => [] },
     tradeMaybeLive: () => (child ? { venue: "binance" } : null), venueName: (id) => (id === "binance" ? "Binance" : ""),
     showMain: () => { log.push("showMain"); },
@@ -181,7 +181,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     if (o.declined) fs.writeFileSync(path.join(dir, "move-declined.json"), "{}");
     const win = { destroyed: false, isDestroyed() { return this.destroyed; } };
     const ctx = { tmLabels: o.noLabels ? { moveTitle: "", moveBody: "", moveGo: "", moveNo: "" } : o.noAuthLabels ? { ...L, moveAuthExists: "", moveAuthApps: "", gotIt: "" } : { ...L }, shouldAskMove, fs, path, moveAsked: !!o.askedBefore,
-      quitting: false, quitConfirmed: false, quitAsking: false, moveAsking: false, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: null, turnStarting: false, win,
+      quitting: false, quitConfirmed: false, quitAsking: false, moveAsking: false, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: null, turnStarting: false, win,
       process: { platform: o.platform || "darwin" }, BrowserWindow: { getAllWindows: () => [win] }, tradeMaybeLive: () => (o.trading ? { venue: "x" } : null),
       tm: () => ({ track: (ev, p) => tracked.push(ev + ":" + p.name) }), console: { error: (e) => errs.push(String(e)) },
       engineSetup: () => ({ busy: () => !!(o.engineBusy || ctx.engineBusyNow), snapshot: () => ({ phase: ctx.enginePhase || "idle" }) }),
@@ -301,7 +301,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // ── 0.1.12 結束 app:背景安裝的 pip 在跑就先收掉(稽核 0.1.12 P1-1);沒在裝、常駐程式也沒在跑就直接放行 ──
   { const BQ = cut(src, 'app.on("before-quit", (e) => {');
     const quitRig = (o) => {
-      const log = [], ctx = { restarting: null, quitting: false, quitConfirmed: false, quitAsking: false, draftOk: true, draftNote: false, draftNoted: (d) => d, moveAsking: !!o.moveAsking, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: o.turn ? {} : null, turnStarting: false,
+      const log = [], ctx = { restarting: null, quitting: false, quitConfirmed: false, quitAsking: false, draftOk: true, draftNote: false, draftNoted: (d) => d, moveAsking: !!o.moveAsking, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: o.turn ? {} : null, turnStarting: false,
         tradeMaybeLive: () => (o.live ? { venue: "binance" } : null), showMain: () => log.push("showMain"), BrowserWindow: { getAllWindows: () => [] }, tmLabels: { ...L, quitBody: "q {venue}", quitTitle: "t", quitTurnTitle: "tt", quitTurnBody: "tb" }, venueName: () => "Binance", cloudSt: () => null, twLots: () => ({ pres: { lots: 0, known: true }, cap: { lots: 0, known: true }, held: false }),
         TT: { quitDetail: TT.quitDetail, cloudTrading: () => false, stayGo: TT.stayGo }, process: { platform: "darwin" }, dialog: { showMessageBox: () => { log.push("dialog"); return new Promise(() => {}); } },
         _tradeHost: o.daemon ? { isRunning: () => true, stop: () => new Promise((ok) => setTimeout(() => { log.push("daemon:stopped"); ok(); }, 10)) } : null,

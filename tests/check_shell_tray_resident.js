@@ -28,7 +28,7 @@ function world(real) {   // real:tradeLive / tradeMaybeLive 也用 main.js 原�
     tray: null, trayKey: "", trayLabelsIn: true, lastVenue: null, tmLabels: { ...L }, MENU_EN, TT, WIN: false, __dirname: "/x", path, fs, console,
     Tray, Menu: { buildFromTemplate: (x) => x }, nativeImage: { createFromPath: () => ({ isEmpty: () => false }) },
     app: { name: "Blave", dock: { setMenu: (m) => { w.dockMenu = m; } }, quit: () => {} },
-    tradeLive: () => w.live, tradeMaybeLive: () => w.live || w.maybe || null, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: null, turnStarting: false, restarting: null,
+    tradeLive: () => w.live, tradeMaybeLive: () => w.live || w.maybe || null, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: null, turnStarting: false, restarting: null,
     updateWaiting: () => false, cloudSt: () => null, pauseFromMenu: () => {}, showMain: () => {}, restartToUpdate: () => { w.restarts.push("restart"); return Promise.resolve({ ok: true }); },
   };
   Object.defineProperty(ctx, "_tradeHost", { get: () => (w.st ? { status: () => { w.reads++; return typeof w.st === "function" ? w.st(w.reads) : w.st; } } : null) });
@@ -184,7 +184,7 @@ const OPEN = zh("tm.open"), QUIT = zh("menu.quit"), QUIT_ASK = zh("tm.quit"), PA
   const run = (trading, turn, restarting) => {
     let handler = null, prevented = false, hidden = false;
     const ctx = { app: { on: (_ev, f) => f(null, { on: (ev, h) => { if (ev === "close") handler = h; }, hide: () => { hidden = true; } }) },
-      draftOk: true, tradeMaybeLive: () => trading, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: turn ? {} : null, turnStarting: false, quitting: false, quitConfirmed: !!restarting, restarting: restarting || null, hiddenSaid: true, tmLabels: {}, Notification: { isSupported: () => false } };
+      draftOk: true, tradeMaybeLive: () => trading, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: turn ? {} : null, turnStarting: false, quitting: false, quitConfirmed: !!restarting, restarting: restarting || null, hiddenSaid: true, tmLabels: {}, Notification: { isSupported: () => false } };
     new Function("ctx", "with (ctx) { " + CLOSE + "); }")(ctx);
     handler({ preventDefault: () => { prevented = true; } });
     return { prevented, hidden };

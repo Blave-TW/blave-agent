@@ -21,23 +21,23 @@ const ANY = [   // 機器層級:任何一條在跑都算
   ["browser-clear", /handle\("browser-clear", \(\) => \(anyTurn\(\) \? false : browser\(\)\.clearData\(\)\), false\);/],
   ["appMenuSync 結束那一格的「…」", /const ask = !!\(tradeMaybeLive\(\) \|\| anyTurn\(\)\);/],
   ["restartToUpdate", /turnBusy = \(\) => anyTurn\(\);/],
-  ["06:00 排程 第一次判", /^      turn: anyTurn\(\), idleSec:/],
-  ["06:00 排程 重判", /trading: !!tradeMaybeLive\(\), turn: anyTurn\(\), asking:/],
-  ["06:00 排程 收引擎之後", /^    if \(anyTurn\(\)\) \{ draftOk = false; return \{ go: false, why: "turn" \}; \}/],
+  ["06:00 排程 第一次判(含排隊)", /^      turn: anyTurnOrQueued\(\), idleSec:/],
+  ["06:00 排程 重判(含排隊)", /trading: !!tradeMaybeLive\(\), turn: anyTurnOrQueued\(\), asking:/],
+  ["06:00 排程 收引擎之後(含排隊)", /^    if \(anyTurnOrQueued\(\)\) \{ draftOk = false; return \{ go: false, why: "turn" \}; \}/],
   ["搬到應用程式", /if \(tradeMaybeLive\(\) \|\| anyTurn\(\) \|\| _engineRun/],
   ["選單列「結束」的「…」", /const trayQuitLabel = \(maybe\) => \(maybe \|\| anyTurn\(\) \?/],
   ["選單列更新那一行停用", /busy: !!\(anyTurn\(\) \|\| restarting\)/],
   ["關視窗只收起來", /const trading = tradeMaybeLive\(\), turn = anyTurn\(\);/],
-  ["結束前草稿那道併框", /const more = !!tradeMaybeLive\(\) \|\| anyTurn\(\) \|\| twLots\(\)\.held;/],
-  ["結束前的回合確認框", /if \(!quitting && !quitConfirmed && anyTurn\(\)\) \{/],
+  ["結束前草稿那道併框(含排隊)", /const more = !!tradeMaybeLive\(\) \|\| anyTurnOrQueued\(\) \|\| twLots\(\)\.held;/],
+  ["結束前的回合確認框(含排隊)", /if \(!quitting && !quitConfirmed && anyTurnOrQueued\(\)\) \{/],
 ];
 const ONE = [   // 那一條自己
   ["deleteSession", /if \(!okSessionId\(id\) \|\| turns\.has\(id\)\) return false;/],
   ["startTurn 同一條序列", /if \(restarting \|\| turns\.has\(sid\)\) return \{ busy: true \};/],
 ];
-const lines = main.replace(/\/\*[\s\S]*?\*\//g, "").split("\n").filter((l) => /anyTurn\(\)|turns\.has\(/.test(l) && !/^\s*(\/\/|\/\*|\*)/.test(l));
+const lines = main.replace(/\/\*[\s\S]*?\*\//g, "").split("\n").filter((l) => /anyTurn\(\)|anyTurnOrQueued\(\)|turns\.has\(/.test(l) && !/^\s*(\/\/|\/\*|\*)/.test(l));
 const unknown = lines.filter((l) => !ANY.concat(ONE).some(([, re]) => re.test(l)));
-ok("每一處 anyTurn() / turns.has( 都在清單上(新加的判斷要歸類:機器層級或那一條自己)", unknown.length === 0, unknown);
+ok("每一處 anyTurn() / anyTurnOrQueued() / turns.has( 都在清單上(新加的判斷要歸類:機器層級或那一條自己)", unknown.length === 0, unknown);
 const missing = ANY.concat(ONE).filter(([, re]) => !lines.some((l) => re.test(l))).map(([n]) => n);
 ok("清單上每一處都還在(" + (ANY.length + ONE.length) + " 處)", missing.length === 0, missing);
 ok("tick 輪替不再看回合(回合手上只有帳號轉送口的 token)", /const tick = \(\) => \{ rotator\(\)\.ensure\(ROTATE_MIN_LEFT_MS\)\.catch\(\(\) => \{\}\); \};/.test(main));
@@ -57,12 +57,13 @@ function rig(o = {}) {
     restarting: null, okSessionId: (id) => typeof id === "string" && /^desktop-[a-z0-9]{4,16}$/.test(id),
     BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents: { getURL: () => "ours", send: (ch, p) => sent.push([ch, p]) } }] }, isOurPageUrl: () => true,
     replyPending: new Map(), loadConnection: () => ({ kind: o.kind || "claude" }),
-    minGate: () => ({ ensureFresh: async () => { if (o.gateThrow) throw new Error("x"); }, turnAllowed: () => !o.blocked }),
+    minGate: () => ({ ensureFresh: async () => { if (o.gateThrow) throw new Error("x"); if (o.gateWait) await o.gateWait(); }, turnAllowed: (k) => (typeof o.blocked === "function" ? !o.blocked() : !o.blocked) }),
     _cloud: o.snap === undefined ? null : { snapshot: () => o.snap }, cloudHost: () => ({ start() {} }),
+    gateWait: o.gateWait || null,
     cloudHandoffOn: () => true, tm: () => ({ track: (e, p) => tracked.push(p && p.name ? p.name : e) }),
     runTurn: (rec, payload) => new Promise((resolve, reject) => { runs.push({ rec, payload, resolve, reject }); }),
   };
-  const api = new Function("ctx", "with (ctx) { " + SRC + "\n return { startTurn, turns, turnQueue, turnFinish, stopTurn, cloudTurnLimit, liveTurnCount, anyTurn, turnPump }; }")(ctx);
+  const api = new Function("ctx", "with (ctx) { " + SRC + "\n return { startTurn, turns, turnQueue, turnFinish, stopTurn, cloudTurnLimit, liveTurnCount, anyTurn, anyTurnOrQueued, turnPump }; }")(ctx);
   return { ctx, api, sent, tracked, runs };
 }
 const A = "desktop-aaaa1111", B = "desktop-bbbb2222", C = "desktop-cccc3333", D = "desktop-dddd4444";
@@ -106,7 +107,25 @@ const ends = (r) => r.sent.filter(([ch]) => ch === "turn-end").map(([, p]) => p)
   { ok("名額讀不到(還沒輪詢、不是 OK、舊 api 沒帶)= 1", rig().api.cloudTurnLimit() === 1 && rig({ snap: { code: "OFFLINE" } }).api.cloudTurnLimit() === 1 && rig({ snap: { code: "OK", max_turns: null } }).api.cloudTurnLimit() === 1 && rig({ snap: { code: "OK", max_turns: 4 } }).api.cloudTurnLimit() === 4); }
   { const r = rig(), cloud = (sid) => ({ sessionId: sid, message: "m", viewing: { env: "cloud" } });
     const s1 = await r.api.startTurn(cloud(A)), s2 = await r.api.startTurn(cloud(B));
-    ok("名額讀不到時:雲端第 2 條就排隊(保守,試用也是 1)", s1.started && s2.queued); }
+    ok("名額讀不到時:雲端第 2 條就排隊(保守,試用也是 1)", s1.started && s2.queued);
+    ok("只有排隊中的也算「有回合」給 06:00 排程與結束框(anyTurnOrQueued);在跑的才算 anyTurn", r.api.anyTurnOrQueued() && r.api.anyTurn());
+    r.api.turnFinish(r.runs[0].rec, { code: 0 }, false); await tick(); }
+  // 兩條雲端回合同時卡在版本閘(稽核 s1 P3-2):先送的先跑,後送的排隊;擋下的那條要補位
+  { let release; const gate = new Promise((res) => { release = res; });
+    let blockB = false;
+    const r = rig({ kind: "blave", gateWait: () => gate, blocked: () => blockB }), cloud = (sid) => ({ sessionId: sid, message: "m", viewing: { env: "cloud" } });
+    const pA = r.api.startTurn(cloud(A)), pB = r.api.startTurn(cloud(B));
+    release(); const [sa, sb] = await Promise.all([pA, pB]);
+    ok("同時卡在版本閘:先送的 A 開跑、後送的 B 排隊(FIFO 不倒)", sa.started && sb.queued, [sa, sb]);
+    const pC = r.api.startTurn(cloud(C)); blockB = true; const pD = r.api.startTurn(cloud(D));
+    await Promise.all([pC, pD]);
+    r.api.turnFinish(r.runs[0].rec, { code: 0 }, false); await tick();
+    ok("名額空出來:依序補上 B", r.api.turns.get(B) && r.api.turns.get(B).phase === "starting"); }
+  { let blocked = true; const r = rig({ kind: "blave", snap: { code: "OK", max_turns: 1 }, blocked: () => blocked }), cloud = (sid) => ({ sessionId: sid, message: "m", viewing: { env: "cloud" } });
+    blocked = false; await r.api.startTurn(cloud(A)); const q = await r.api.startTurn(cloud(B));
+    r.api.turnFinish(r.runs[0].rec, { code: 0 }, false); blocked = true; const n0 = r.runs.length;
+    const x = await r.api.startTurn(cloud(C));
+    ok("版本閘擋下的那條也叫 turnPump(排著的不會一直等)", q.queued && x.blocked === "UPDATE_REQUIRED" && r.runs.length === n0 && (r.api.turns.get(B) || {}).phase === "starting"); }
 
   // ── 3. cloud.js ──
   const { interpret } = require(path.join(SH, "cloud.js"));
@@ -116,8 +135,11 @@ const ends = (r) => r.sent.filter(([ch]) => ch === "turn-end").map(([, p]) => p)
 
   // ── 4. 結束框 ──
   const qtb = new Function(cut("function quitTurnBody(", "function quitOnSignals(") + "\n return quitTurnBody;")();
+  ok("結束框接線:帶在跑條數與排隊條數", /quitTurnBody\(liveTurnCount\(\), tmLabels, turnQueue\.length\)/.test(main));
   const L = { quitTurnBody: "one", quitTurnBodyN: "{n} 個回覆還在跑" };
-  ok("結束框:一條用舊句、兩條以上帶數字;字還沒交過來(沒有 N 句)退回舊句", qtb(1, L) === "one" && qtb(3, L) === "3 個回覆還在跑" && qtb(3, { quitTurnBody: "one" }) === "one");
+  const LQ = { ...L, quitQueuedN: "排隊中的 {n} 句不會送出。" };
+  ok("結束框:一條用舊句、兩條以上帶數字;字還沒交過來(沒有 N 句)退回舊句", qtb(1, L, 0) === "one" && qtb(3, L, 0) === "3 個回覆還在跑" && qtb(3, { quitTurnBody: "one" }, 0) === "one");
+  ok("結束框:有排隊的接一句排隊句;只有排隊時只講排隊那句(spec §3)", qtb(2, LQ, 1) === "2 個回覆還在跑 排隊中的 1 句不會送出。" && qtb(0, LQ, 2) === "排隊中的 2 句不會送出。");
   const po = (lang) => fs.readFileSync(path.join(SH, "i18n", lang + ".po"), "utf8");
   ok("tm.quitTurnBodyN 兩語都有 {n};trade.js 把它交給主行程", ["zh", "en"].every((l) => /msgid "tm\.quitTurnBodyN"\nmsgstr "\{n\}[^"]+"/.test(po(l)))
     && /quitTurnBodyN: t\("tm\.quitTurnBodyN", \{ n: "\{n\}" \}\)/.test(fs.readFileSync(path.join(SH, "renderer", "trade.js"), "utf8")));

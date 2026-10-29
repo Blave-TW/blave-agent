@@ -1,7 +1,7 @@
 // 帳號轉送口(shell/acctrelay.js;0.1.37 技術方案 chat-tabs-parallel-tech §1.3)。用真 HTTP 打一個假的上游。
 //   1. 轉出去帶的是 Keychain「當下那顆」帳號 token;回合中途換 token,下一筆就帶新的
 //   2. 轉送 token 作廢後回 401(x-should-retry: false);不認得的 token、帶 Origin、Host 不對一律拒
-//   3. 只放行 /openclaw/proxy/ 與 /openclaw/agent/report/,`..`、編碼過的點與斜線不算
+//   3. 只放行 /openclaw/proxy/,`..`、編碼過的點與斜線不算
 //   4. 串流原樣轉送(分段、content-type、狀態碼);客戶端送來的 x-api-key／authorization／cookie 不往上游送
 //   5. 403 ACCOUNT_TOKEN_INVALID → recover 一次、換到新的就重送同一份內文;換不到、別的 403、上游的 401 原樣交回
 //   6. 接線:runTurn 的環境裡沒有帳號 token(只有轉送 token),回合收尾作廢;runtime 認 BLAVE_PROXY_BASE 但只收 127.0.0.1
@@ -60,16 +60,16 @@ function call(port, p, o = {}) {
   await call(port, "/openclaw/proxy/v1/messages", { token: m.token });
   ok("回合中途換了 token:下一筆就帶新的(輪替跟回合脫鉤)", seen[1].key === "proxy-acct-B");
   r = await call(port, "/openclaw/agent/report/abc/validate", { token: m.token });
-  ok("報告驗證那條也放行", r.status === 201 && seen[2].path === "/openclaw/agent/report/abc/validate");
+  ok("報告驗證那條不放行(電腦版沒有呼叫端:lib/report.py 看到 acct- 就不送;稽核 s1 P3-6)", r.status === 404 && seen.length === 2);
   r = await call(port, "/openclaw/proxy/v1/models", { method: "GET", token: m.token, body: "" });
-  ok("型錄(GET)也放行", r.status === 201 && seen[3].method === "GET");
+  ok("型錄(GET)也放行", r.status === 201 && seen[2].method === "GET");
 
   const before = seen.length;
   const denied = [];
-  for (const p of ["/oauth/desktop/rotate", "/openclaw/proxyx", "/openclaw/proxy/../../oauth/desktop/rotate", "/openclaw/proxy/%2e%2e/x", "/openclaw/proxy/a%2fb", "/openclaw/agent/command/poll", "/"]) {
+  for (const p of ["/openclaw/agent/report/x/validate", "/oauth/desktop/rotate", "/openclaw/proxyx", "/openclaw/proxy/../../oauth/desktop/rotate", "/openclaw/proxy/%2e%2e/x", "/openclaw/proxy/a%2fb", "/openclaw/agent/command/poll", "/"]) {
     const x = await call(port, p, { token: m.token }); if (x.status !== 404) denied.push([p, x.status]);
   }
-  ok("只放行兩組前綴;`..`、%2e、%2f 都擋(404、不往上游)", denied.length === 0 && seen.length === before, denied);
+  ok("只放行 /openclaw/proxy/;`..`、%2e、%2f 都擋(404、不往上游)", denied.length === 0 && seen.length === before, denied);
   r = await call(port, "/openclaw/proxy/v1/messages", { token: "acct-relay-nope" });
   ok("不認得的轉送 token → 401、x-should-retry: false、不往上游", r.status === 401 && r.headers["x-should-retry"] === "false" && seen.length === before);
   r = await call(port, "/openclaw/proxy/v1/messages", { token: m.token, headers: { origin: "https://evil.example" } });
@@ -108,7 +108,7 @@ function call(port, p, o = {}) {
   // ── 接線 ──
   const main = fs.readFileSync(path.join(SH, "main.js"), "utf8");
   const rt = main.slice(main.indexOf("async function runTurn("), main.indexOf("function turnWin()"));
-  ok("runTurn:Blave AI 的環境只拿轉送口這一輪的 token;任何地方都不把 loadToken() 放進回合環境", /const acct = plan\.proxyToken \? \(await acctRelay\(\)\.start\(\), acctRelay\(\)\.issue\(sessionId\)\) : null;/.test(rt) && !/loadToken\(\) : null/.test(rt) && /\.\.\.llmEnv\(acct, relay\),/.test(rt));
+  ok("runTurn:Blave AI 的環境只拿轉送口這一輪的 token(緊貼 turnDone 才發,稽核 s1 P3-4);任何地方都不把 loadToken() 放進回合環境", /if \(plan\.proxyToken\) await acctRelay\(\)\.start\(\);/.test(rt) && /const acct = plan\.proxyToken \? acctRelay\(\)\.issue\(sessionId\) : null;\n  const acctDone = [^\n]*\n  \/\/ 每輪上限到的那一刻[^\n]*\n  const onRelay = [^\n]*\n  try \{ relay = /.test(rt) && !/loadToken\(\) : null/.test(rt) && /\.\.\.llmEnv\(acct, relay\),/.test(rt));
   ok("回合收尾(含起不來的那幾條)作廢轉送 token", /const turnDone = \(\) => \{[^\n]*acctDone\(\); \};/.test(rt) && /catch \(err\) \{ [^\n]*acctDone\(\); throw err; \}/.test(rt) && /const acctDone = \(\) => \{ if \(acct\) acctRelay\(\)\.revoke\(acct\.token\); \};/.test(rt));
   const llmEnv = new Function(main.slice(main.indexOf("function llmEnv("), main.indexOf("/* 帳號轉送口(acctrelay.js)")) + "\n return llmEnv;")();
   const env = llmEnv(m2, null);
