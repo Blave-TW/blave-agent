@@ -5,6 +5,7 @@
 //      焦點在密碼欄(含 shadow root 裡的)那一頁不交還
 // 跑法:node tests/check_shell_browser_auto_handback.js(② 要 BLAVE_TEST_WINDOW=1)
 const path = require("path"), fs = require("fs"), os = require("os"), { EventEmitter } = require("events");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell"), B = path.join(SHELL, "browser");
 const GATE = require("./_electron_gate");
 let red = 0, last = null; const t = (n, ok, d) => { console.log((ok ? "PASS  " : "FAIL  ") + n + (ok ? "" : "  " + JSON.stringify(d === undefined ? last : d).slice(0, 700))); if (!ok) red++; };
@@ -53,7 +54,7 @@ if (!process.versions.electron) (async () => {
   const Br = require(path.join(B, "index.js")).createBrowser({ electron: fakeE, stateDir: path.join(tmp, "snaps"), reportsDir: path.join(tmp, "reports"), getWin: () => win, uiLang: () => "en", track: () => {}, version: "test", reducedMotion: () => true, userPresent: () => true });
   const call = (n, a) => Br._call(n, a || {}, { live: () => true });
   // 0.1.37 起交還在這一輪拿到瀏覽器租約那一刻做(第一次呼叫瀏覽器工具時):beginTurn 之後先拿租約,再看事件
-  const turn = async (sid, opts) => { Br.endTurn(); const at = sent.length; const m = await Br.beginTurn(win, sid || SID, opts === undefined ? SENT : opts); if (m) await Br._acquire(m.key, {}); return sent.slice(at); };
+  const turn = async (sid, opts) => { BT.end(Br); const at = sent.length; const m = await BT.begin(Br, win, sid || SID, opts === undefined ? SENT : opts); if (m) await Br._acquire(m.key, {}); return sent.slice(at); };
   const backs = (evs, x) => evs.filter((e) => e.type === "handback" && e.id === x.tab.id);
   const row = async (x) => J(await call("browser_tabs")).tabs.find((r) => r.tab === x.alias);
   let host = 0;
@@ -74,7 +75,7 @@ if (!process.versions.electron) (async () => {
   const MAIL = "https://mail.google.com/mail/u/0/", SORRY = "https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3Dx";
 
   // ---- 1. 交還:agent 開的、用戶接手中的分頁,用戶送出訊息的新回合一開始就還回來
-  await Br.beginTurn(win, SID, SENT);
+  await BT.begin(Br, win, SID, SENT);
   const a = await open();
   J(await call("browser_read", { tab: a.alias }));
   Br.takeover(a.tab.id); a.wc._body = "second";   // 用戶接手、點開了別的區塊
@@ -99,7 +100,7 @@ if (!process.versions.electron) (async () => {
 
   // ---- 2b. 驗證頁:永不自動交還
   const v1 = await open(), v2 = await open();
-  Br.endTurn();
+  BT.end(Br);
   v1.tab.verify = "google"; Br.takeover(v1.tab.id);      // 搜尋時認出來的驗證頁,用戶在回合之間點了它
   v2.wc._go(SORRY); Br.takeover(v2.tab.id);             // 當下網址就是驗證頁
   evs = await turn();
@@ -321,7 +322,7 @@ if (!process.versions.electron) (async () => {
   evs = await turn();
   r = J(await call("browser_click", { tab: k.alias, ref: "@e1" }));
   t("下一輪:交還,同一個動作照常做得了", backs(evs, k).length === 1 && r.ok === true && k.page.clicks === 1, r);
-  Br.endTurn();
+  BT.end(Br);
 
   // ---- 原文鎖
   const idx = fs.readFileSync(path.join(B, "index.js"), "utf8"), main = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
@@ -389,9 +390,9 @@ else {
     const SID = "desktop-autohbe1";
     const call = (n, a) => Br._call(n, a || {}, { live: () => true });
     const wcOf = (frag) => electron.webContents.getAllWebContents().find((w) => w.getURL().includes(frag));
-    const turn = async () => { Br.endTurn(); const at = sent.length; await Br.beginTurn(win, SID, SENT); return sent.slice(at); };
+    const turn = async () => { BT.end(Br); const at = sent.length; await BT.begin(Br, win, SID, SENT); return sent.slice(at); };
     const openWait = async (url) => { const o = J(await call("browser_open", { url })); await call("browser_wait", { tab: o.tab }); return { alias: o.tab, tab: Br._tabs.byAlias(o.tab), wc: wcOf(url.replace("http://", "")) }; };
-    await Br.beginTurn(win, SID, SENT);
+    await BT.begin(Br, win, SID, SENT);
 
     // a. 用戶接手、點開「Source code」那個分頁 → 新回合 agent 讀到他改過之後的內容
     const p = await openWait("http://hb1.test/tabs");
@@ -503,7 +504,7 @@ else {
     Br.userDone(d.tab.id, "skip");
 
     t("整段沒有任何請求出到本機替身以外(https 一律被拒)", hits.every((h) => /^(GET|POST) hb\d\.test\//.test(h)), hits);
-    Br.endTurn();
+    BT.end(Br);
     srv.close(); try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* userData 還鎖著 */ }
     console.log(red ? `\n${red} FAILED` : "\nALL PASS(②)");
     app.exit(red ? 1 : 0);

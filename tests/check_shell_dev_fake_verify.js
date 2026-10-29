@@ -5,6 +5,7 @@
 // 絕不連真的搜尋引擎:③ 只做第一次搜尋,等到 need_user 就結束那一輪。
 // 跑法:node tests/check_shell_dev_fake_verify.js(③ 要 BLAVE_TEST_WINDOW=1)
 const path = require("path"), fs = require("fs"), os = require("os");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell");
 const GATE = require("./_electron_gate");
 const VF = require(path.join(SHELL, "browser", "verify.js"));
@@ -86,7 +87,7 @@ if (!process.versions.electron) {
       reducedMotion: () => true, engines: fake.engines, userPresent: () => true, notify: () => {} });
     const call = (n, a) => B._call(n, a || {}, { live: () => true });
     fake.arm();
-    await B.beginTurn(win, "desktop-fakeverify1");
+    await BT.begin(B, win, "desktop-fakeverify1");
     let settled = null;
     const pending = call("browser_search", { query: "cpi today", count: 3 }).then(J).then((r) => (settled = r));
     const need = await until(() => sent.find((e) => e.type === "need_user" && e.kind === "captcha"), 15000);
@@ -104,7 +105,7 @@ if (!process.versions.electron) {
     t("③ agent 不能自己開假頁的網址", r.ok === false, r);
     await sleep(300);
     t("③ 這次 browser_search 還在等用戶(沒有先回)", settled === null, settled);
-    B.endTurn();   // 到此為止:不按按鈕、不走退路,所以不會連到任何真的搜尋引擎
+    BT.end(B);   // 到此為止:不按按鈕、不走退路,所以不會連到任何真的搜尋引擎
     await Promise.race([pending, sleep(5000)]);
     t("③ 那一輪結束 → 這次呼叫收掉,沒有搜尋結果", !!settled && settled.ok === false, settled);
     fake.close();

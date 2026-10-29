@@ -6,6 +6,7 @@
 //   reduced-motion 優先(連單幀環都不出)。全在 app 端自己的時鐘判,不加 runtime 欄位。
 // 跑法:node tests/check_shell_browser_pace.js(找不到 Electron 只跑純函式+接線段)
 const path = require("path"), fs = require("fs"), os = require("os");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell");
 const GATE = require("./_electron_gate");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c ? "" : "  " + JSON.stringify(d))); if (!c) red++; };
@@ -89,7 +90,7 @@ app.whenReady().then(async () => {
   const ses = session.fromPartition("persist:agent-browser");
   await ses.setProxy({ proxyRules: "http=127.0.0.1:" + srv.address().port, proxyBypassRules: "<-loopback>" });
   const B = require(path.join(SHELL, "browser")).createBrowser({ electron, stateDir: path.join(app.getPath("userData"), "s"), getWin: () => win, uiLang: () => "en", track: () => {}, version: "test" });
-  await B.beginTurn(win, "desktop-pace");
+  await BT.begin(B, win, "desktop-pace");
   const ctx = { live: () => true };
   const call = async (n, a) => JSON.parse((await B._call(n, a || {}, ctx)).content[0].text);
   const r = await call("browser_open", { url: "http://pace.test/a" });

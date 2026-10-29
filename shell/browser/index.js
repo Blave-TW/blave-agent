@@ -977,8 +977,7 @@ function createBrowser(o) {
   async function waitNav(v) { await sleep(300); const end = Date.now() + 8000; while (Date.now() < end && v.wc.isLoading()) await sleep(200); }
 
   async function call(name, args, ctx) {
-    // 經 MCP 進來的已經在 acquire 拿過租約;直接呼叫(沒帶 turnId)的照單一回合的舊行為:有人拿著就是它,只有一輪在等就給它
-    if (ctx && ctx.turnId === undefined && !cur && pend.size === 1) await activate(pend.values().next().value);
+    // 經 MCP 進來的已經在 acquire 拿過租約(mcp.js 在計時之前叫)
     if (!cur || !ctx.live() || (ctx.turnId !== undefined && cur.turnKey !== ctx.turnId)) return ERR("browser_off", "this turn has ended");
     if (!prefs.enabled) return ERR("browser_off", MSG.browser_off);
     firstUse();
@@ -1295,18 +1294,12 @@ function createBrowser(o) {
       pend.set(turnKey, { sessionId, turnKey, noUser: !!(opts && opts.noUser), userSent: !!(opts && opts.userSent === true), waitSaid: false });
       return { url: mcp.url(), token: mcp.beginTurn(turnKey), key: turnKey };
     },
-    /** 回合結束:作廢 token;拿著租約的那一輪另外記下分頁與來源(endLeaseTurn)。
-        key = beginTurn 回的那一輪;沒帶 = 拿著租約的那一輪(單一回合的舊呼叫端)。只有拿著租約的那一輪收尾才還租約、交給下一個在等的 */
+    /** 回合結束(key = beginTurn 回的那一輪):作廢那一輪的 token;拿著租約的那一輪另外記下分頁與來源(endLeaseTurn)、
+        還租約、交給下一個在等的。沒帶 key 不做事 */
     endTurn(key) {
-      if (key === undefined) {   // 單一回合的舊呼叫端:全部作廢(還沒拿租約的、在等的一起)
-        if (mcp) mcp.endTurn();
-        for (const k of [...pend.keys()]) { pend.delete(k); dropTurnWaits(k); }
-        if (!cur) return;
-        key = cur.turnKey;
-      } else {
-        if (mcp) mcp.endTurn(key);
-        pend.delete(key); dropTurnWaits(key);
-      }
+      if (key === undefined || key === null) return;
+      if (mcp) mcp.endTurn(key);
+      pend.delete(key); dropTurnWaits(key);
       const k = key;
       if (!cur || cur.turnKey !== k) return;
       if (reportWatch) { try { reportWatch.close(); } catch (_) { /* 已關 */ } reportWatch = null; }
