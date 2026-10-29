@@ -589,7 +589,7 @@ A key without an IP whitelist still binds.
 - `open_position(env, symbol, direction, qty, sl_price=, tp_price=, client_order_id=)` — **the recommended entry flow**: ONE atomic market order with SL/TP attached (no naked window), polled to FILLED, protection verified in open orders. Returns `{'entry': confirmed, 'protection': [...]}`. Raises `ProtectionFailed` if protection isn't visible after the fill — treat that as an ALERT-THE-USER-NOW event, never swallow it.
 - `place_market_order(...)` — confirmed market order; returns exchange-reported `avg_price` / `executed_qty` / `commission` (never report the intent — report these)
 - `place_limit_order(...)` — returns unconfirmed order with `order_id`; track via `confirm_order`
-- `confirm_order(env, symbol, order_id, timeout=15)` — polls to terminal state; raises `BingXError` on CANCELED/FAILED, `OrderNotConfirmed` on timeout (order may still fill — re-query, do NOT blindly resubmit)
+- `confirm_order(env, symbol, order_id, timeout=15)` — polls to terminal state; returns a terminal order that filled partly (book its `executed_qty`); raises `BingXError` when it ended with nothing filled, `OrderNotConfirmed` on timeout or when the order could not be read (order may still fill — re-query, do NOT blindly resubmit)
 - `place_protective_orders(env, symbol, direction, qty=None, sl_price=, tp_price=)` — standalone SL/TP for an existing position; `qty=None` protects the whole position via `closePosition`; verified on-exchange, raises `ProtectionFailed` otherwise. Use for multi-level TPs or repairing protection.
 - `close_position(env, symbol, direction, qty)` — confirmed reduce-only market close
 - `get_order` / `get_open_orders` / `cancel_order` / `cancel_all_orders`
@@ -602,7 +602,7 @@ A key without an IP whitelist still binds.
   - guard buy=entry / sell=reduce;
   - spot client-id param is `newClientOrderId` (swap uses `clientOrderID`).
   - Plus `get_spot_balances` / `get_spot_price` / `get_spot_order` for reconciler wirings.
-- Always pass `client_order_id` (alphanumeric, ≤40 chars, unique per signal — e.g. `f"{strategy}{signal_ts:%Y%m%d%H%M%S}"`) so a resubmit is rejected by the exchange instead of doubling the position
+- Pass `client_order_id` (alphanumeric, ≤40 chars, unique per signal — e.g. `f"{strategy}{signal_ts:%Y%m%d%H%M%S}"`; one is generated when omitted). It is how an order whose answer was lost is found again (`get_order(env, symbol, client_order_id=)`), NOT a resubmit guard: whether BingX keeps refusing a used id (101481) after the order filled is unverified. An order POST that may have reached BingX (dropped connection, read timeout, 5xx, `100500`) is never resent — `place_market_order` raises `OrderNotConfirmed` and the reconciler parks it (`lib/unconfirmed.py`)
 - Wire `manager/reconciler.py`'s `get_positions()` / `place_order()` through this lib + `lib/account_bingx.py` for BingX users
 
 `lib/order_binance.py` — **Binance USDⓈ-M futures order execution. Ships implemented — NEVER hand-write Binance order calls in a strategy; import from here.** Same contract and surface as `lib/order_bingx.py` (all functions take `env` first; `direction` is the POSITION's direction; four reconciler names + limit/cancel/protective/leverage helpers; `lib/guard` halt + audit built in). Binance-specific facts, all measured live 2026-08-04:
@@ -863,7 +863,7 @@ One line per trap, collected from the sections above (the section named in *Wher
 | `lib/venue.py` | `.env` written by hand; a Binance bind retried in a loop | `bind(venue_id, env)` for binance / bingx / okx / gateio / bybit / stockcoin / bitget; `RATE_LIMITED` → back off |
 | `lib/guard.py` | A halt cleared on your own; the reconciler expected to read `HALT_<strategy>` | Clear only on explicit user instruction; call `halted_for` yourself before opening exposure |
 | `lib/order_*.py` | Exchange order calls hand-written in a strategy; the intent reported instead of the fill | Import the venue lib; report `avg_price` / `executed_qty` / `commission` |
-| `OrderNotConfirmed` | A blind resubmit | Re-query first: Gate.io `text` never dedups, Binance / OKX only while unfilled, Bybit `orderLinkId` forever |
+| `OrderNotConfirmed` | A blind resubmit | Re-query first: Gate.io `text` never dedups, Binance / OKX only while unfilled, BingX unverified once filled, Bybit `orderLinkId` forever |
 | `lib/unconfirmed.py` (parked orders) | Clearing `state/order_unconfirmed.json` by hand; guessing the fill; resending the order | The reconciler parks an order whose outcome is unknown: no new entries on that symbol until a query answers (closes of what the book holds still run). If the user checked the exchange and tells you what filled: `resolve(symbol, filled_qty, avg_price)` (base units and the venue's average price; `0` = nothing filled; one parked order per call — a symbol can have two (an entry and a close): `unconfirmed.load()` lists them, pass `park_id=` and tell the user which one) |
 | OKX `sz` / Gate.io `size` | Float division to contracts | Decimal end-to-end (the lib does it); `format_qty` is a min-gate only |
 | Spot buy fees (Gate.io, Bybit) | Sell sized from the buy's `executed_qty` / `cumExecQty` | The fee came out of the base coin — size sells from the wallet balance |
