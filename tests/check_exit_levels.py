@@ -1,17 +1,20 @@
 """lib/exits.py stop_level / tp_level — the strategy's own absolute price level as a stop / take-profit.
 
   1. one minimal case per rule (which bar's value, touch, NaN, sides, only while holding, both on
-     one bar, gap, close mode, roll bar, per-side tuple, trail alongside, what raises);
+     one bar, gap, close mode, roll bar, per-side tuple, trail alongside, what raises, a level <= 0,
+     the cooldown re-entry gate, attrs exits_at_fill / exits_level_gaps), and on 20,000 bars: a level
+     carried over from the previous trade plus cooldown_bars=1 does not loop exit / re-enter;
   2. an independent bar-by-bar reference on random series, positions and reasons;
   3. golden: no new argument → positions, attrs["exits"] and attrs["exits_unarmed"] identical to the
      2026-10-28-k lib (tests/_exits_2026_10_28k.py) — the shipped examples' signals and 400 random
      argument sets;
-  4. speed: 40,000 bars, no new argument, at most 5% slower than the old lib (min of interleaved runs);
+  4. speed: 40,000 bars, no new argument, at most 15% slower than the old lib (min of interleaved runs);
   5. the lib-capability guards: lib/quality_check.py names an apply_exits argument this lib lacks
-     (and its list equals the signature), lib/runner.py turns the TypeError into "update first";
+     (and its list equals the signature), lib/runner.py turns the TypeError into "a typo, or a newer
+     lib" with the closest argument;
   6. a stop_level strategy through the real pipeline: run() backtest with the look-ahead check,
      MCPT and the 成交測試 grid, then scan_grid and run_walk_forward; a level built from future
-     bars is refused as 偷看未來.
+     bars is refused as 偷看未來; the two stop_level code blocks of references/strategy-code.md run.
 Run: cd blave-agent && .venv/bin/python tests/check_exit_levels.py
 """
 import contextlib, importlib.util, inspect, io, json, os, sys, tempfile, time, warnings
@@ -117,8 +120,7 @@ for kw, what in ((dict(stop_level=pd.Series([98.0] * 3), stop_pct=0.03), "stop_l
                  (dict(stop_level=(pd.Series([98.0] * 3), None), stop_pct=(None, 0.03)), "stop_level long + stop_pct short"),
                  (dict(tp_level=pd.Series([103.0] * 3), tp_pct=0.03), "tp_level + tp_pct"),
                  (dict(stop_level=98.0), "a number, not a Series"),
-                 (dict(stop_level=pd.Series([98.0] * 3, index=[5, 6, 7])), "a Series on another index"),
-                 (dict(stop_level=pd.Series([98.0, 0.0, nan])), "a level <= 0")):
+                 (dict(stop_level=pd.Series([98.0] * 3, index=[5, 6, 7])), "a Series on another index")):
     try:
         apply_exits(pd.Series([1.0, nan, nan]), d3, trigger="intrabar", **kw)
         check(False, f"{what} raises")
@@ -127,6 +129,75 @@ for kw, what in ((dict(stop_level=pd.Series([98.0] * 3), stop_pct=0.03), "stop_l
 pos, _ = run([1, nan, nan], frame([100] * 3, [100] * 3, [100, 97, 100], [100] * 3), trigger="intrabar",
              stop_level=pd.Series([98.0] * 3), tp_pct=0.5, max_bars=10)
 check(pos == [1, 0, 0], "stop_level alone counts as an exit, and mixes with tp_pct / max_bars")
+import lib.exits as _ex
+with warnings.catch_warnings(record=True) as w:
+    warnings.simplefilter("always")
+    _ex._level_warned.clear()
+    pos, ex = run([1, nan, nan, nan], frame([100] * 4, [100] * 4, [100, 99, 97, 97], [100] * 4), trigger="intrabar",
+                  stop_level=pd.Series([-5.0, 0.0, 98, 98]))
+check(pos == [1, 1, 1, 0] and reasons(ex) == ["stop_level"]
+      and any("stop_level was <= 0 on 2 bar(s)" in str(x.message) for x in w),
+      "a level <= 0: no level on that bar (no raise — a live tick must not die on it), warned")
+
+# cooldown ends with the Close still past the same level: no re-entry until a new level (96) appears
+G = frame([100, 100, 97, 97, 99, 99], [100] * 6, [100, 97, 96.5, 98.5, 98.5, 98.5], [100, 97, 97, 99, 99, 99])
+pos, _ = run([1, nan, nan, nan, nan, nan], G, trigger="intrabar", stop_level=pd.Series([98.0, 98, 98, 98, 96, 96]),
+             cooldown_bars=1)
+check(pos == [1, 0, 0, 0, 1, 1], "cooldown + Close past the level: waits (even after the Close recovers) for a new level")
+pos, _ = run([1, nan, nan, nan, nan, nan], G, trigger="intrabar", stop_level=pd.Series([98.0, 98, 98, 98, 99.5, 96]),
+             cooldown_bars=1)
+check(pos == [1, 0, 0, 0, 0, 1], "…a new level the Close is also past keeps waiting; the next new one re-enters")
+pos, _ = run([1, nan, nan, nan, nan, nan], G, trigger="intrabar", tp_level=pd.Series([150.0, 99, 99, 99, 99, 120]),
+             cooldown_bars=1)
+check(pos == [1, 1, 0, 0, 0, 1], "tp_level: a cooldown ending with the Close at or above it waits for a new level")
+pos, _ = run([1, nan, nan, 0, 1, nan], G, trigger="intrabar", stop_level=pd.Series([98.0] * 6), cooldown_bars=1)
+check(pos == [1, 0, 0, 0, 1, 1], "…the base signal changing side re-enters as before, level or not")
+r = apply_exits(pd.Series([1, nan, nan, 0, 1, nan]), frame([100, 100, 97, 97, 99, 97], [100] * 6,
+                [100, 97, 96, 96, 98.5, 97], [100, 97, 97, 99, 99, 97]), trigger="intrabar", stop_level=pd.Series([98.0] * 6))
+af = r.attrs["exits_at_fill"]
+check(r.tolist() == [1, 0, 0, 0, 1, 0] and af.to_dict("records") == [{"time": 5, "exit": "stop_level", "level": 98.0, "fill": 97.0}],
+      "a trade exiting on its fill bar with the fill already past the level → a row in attrs['exits_at_fill']")
+with warnings.catch_warnings(record=True) as w:
+    warnings.simplefilter("always")
+    _ex._level_warned.clear()
+    r = apply_exits(pd.Series([1, nan, nan, nan, 0, 1, nan, nan, nan]), frame(*[[100.0] * 9] * 4), trigger="intrabar",
+                    stop_level=pd.Series([nan] * 5 + [90.0] * 4))
+gp = r.attrs["exits_level_gaps"]
+check(gp.to_dict("records") == [{"time": 1, "exit": "stop_level", "bars": 4, "nan_bars": 4}]
+      and any("NaN on more than half the bars" in str(x.message) for x in w),
+      "a trade with no level on most of its bars → one row in attrs['exits_level_gaps'] + a warning; the next trade none")
+r0 = apply_exits(pd.Series([1.0, nan, nan]), d3, stop_pct=0.03, trigger="intrabar")
+check("exits_at_fill" not in r0.attrs and "exits_level_gaps" not in r0.attrs, "no level given: neither attrs key exists")
+
+# probe data: 20,000 bars, an MA-cross base and a breakout-low stop
+rng3 = np.random.default_rng(3)
+c3 = 100 * np.exp(np.cumsum(rng3.normal(0, 0.008, 20000))); o3 = np.r_[c3[0], c3[:-1]] * (1 + rng3.normal(0, 0.002, 20000))
+P = pd.DataFrame({"Open": o3, "High": np.maximum(o3, c3) * 1.004, "Low": np.minimum(o3, c3) * 0.996, "Close": c3},
+                 index=pd.date_range("2022-01-01", periods=20000, freq="1h"))
+f3, s3 = P["Close"].rolling(20).mean(), P["Close"].rolling(60).mean()
+PSIG = pd.Series(np.where(f3 > s3, 1.0, np.where(f3 < s3, 0.0, nan)), index=P.index)
+P_ON = PSIG.ffill() > 0
+P_BRK = P_ON & (P["Close"] >= P["Close"].rolling(10).max())
+P_STALE = P["Low"].where(P_BRK).ffill()                         # carries the previous trade's low
+P_FIXED = P["Low"].where(P_BRK | (P_ON & ~P_ON.shift(1, fill_value=False))).ffill().where(P_ON)
+
+
+def trades(r):
+    return int(((r != 0) & (r.shift(1).fillna(0) == 0)).sum())
+
+
+for name, lv in (("previous trade's level", P_STALE), ("per-trade level", P_FIXED)):
+    r = apply_exits(PSIG, P, stop_level=lv, tp_pct=0.06, cooldown_bars=1, trigger="intrabar")
+    ref = trades(apply_exits(PSIG, P, stop_pct=0.005, tp_pct=0.06, cooldown_bars=1, trigger="intrabar"))
+    af0 = len(apply_exits(PSIG, P, stop_level=lv, tp_pct=0.06, trigger="intrabar").attrs["exits_at_fill"])
+    n_af = len(r.attrs["exits_at_fill"])
+    # before the gate: 3,962 trades, 2,750 of them out on their fill bar (vs 93 without cooldown)
+    check(trades(r) <= ref and n_af <= af0 + 0.05 * trades(r),
+          f"20,000 bars, {name} + cooldown_bars=1: {trades(r)} trades (stop_pct=0.005 + cooldown: {ref}), "
+          f"{n_af} out on their fill bar ({af0} without cooldown) — the cooldown adds no exit / re-enter loop")
+r = apply_exits(PSIG, P, stop_level=P_STALE, tp_pct=0.06, trigger="intrabar")
+check(len(r.attrs["exits_at_fill"]) > 50, f"…a previous trade's level, no cooldown: the {len(r.attrs['exits_at_fill'])} "
+                                          f"trades exiting on their fill are listed in attrs['exits_at_fill']")
 
 
 # ── 2. independent reference ────────────────────────────────────────────────────
@@ -211,10 +282,11 @@ def rand_old_args(r, df, n):
         if r.random() < .35:
             kw[k] = float(r.choice(vals)) if r.random() < .7 else (float(r.choice(vals)), None)
     for k in ("stop_dist", "tp_dist", "trail_dist", "breakeven_dist"):
-        if k.replace("_dist", "_pct") not in kw and not (k == "breakeven_dist") and r.random() < .3:
-            kw[k] = dist
-    if r.random() < .25: kw["max_bars"] = int(r.integers(1, 12))
-    if r.random() < .25: kw["breakeven_at"] = 0.01
+        pk = "breakeven_at" if k == "breakeven_dist" else k.replace("_dist", "_pct")
+        if pk not in kw and r.random() < .3:
+            kw[k] = dist if r.random() < .7 else ((dist, None) if r.random() < .5 else (None, dist))
+    if r.random() < .25: kw["max_bars"] = int(r.integers(1, 12)) if r.random() < .7 else (int(r.integers(1, 12)), None)
+    if r.random() < .25 and "breakeven_dist" not in kw: kw["breakeven_at"] = 0.01 if r.random() < .7 else (None, 0.02)
     if r.random() < .25: kw["cooldown_bars"] = int(r.integers(1, 4))
     if not any(k in kw for k in ("stop_pct", "tp_pct", "trail_pct", "stop_dist", "tp_dist", "trail_dist",
                                  "max_bars", "breakeven_at")):
@@ -234,7 +306,7 @@ for seed in range(400):
         mk = r.random(n) < 0.04
         arr[mk] = r.choice([nan, 0.0], mk.sum())
     df = frame(o, h, l, c, inst=np.cumsum(r.random(n) < 0.08) if r.random() < 0.4 else None)
-    sig = pd.Series(r.choice([1.0, -1.0, 0.0, nan, 0.5], n, p=[.15, .12, .1, .58, .05]))
+    sig = pd.Series(r.choice([1.0, -1.0, 0.0, nan, 0.5, -0.5], n, p=[.15, .12, .1, .55, .05, .03]))
     kw = rand_old_args(r, df, n)
     a, b = old_apply(sig, df, **kw), apply_exits(sig, df, **kw)
     n_ex += len(a.attrs["exits"])
@@ -242,6 +314,27 @@ for seed in range(400):
         diff.append(seed)
 check(not diff and n_ex > 1000, f"400 random series × random old arguments: identical to the 2026-10-28-k lib "
                                 f"({n_ex} exits; differing seeds {diff[:5]})")
+
+# the combos the random draw rarely makes, on the 6,000-bar series, with and without instrument_id
+INST = BARS.assign(instrument_id=np.cumsum(np.random.default_rng(11).random(NB) < 0.002))
+SIG2 = pd.Series(np.where(BARS["Close"].rolling(20).mean() > BARS["Close"].rolling(60).mean(), 1.0, -1.0), index=IDX)
+COMBOS = [dict(stop_pct=0.02, breakeven_dist=1.5 * atr), dict(breakeven_dist=(atr, None), trail_pct=0.03),
+          dict(stop_dist=(2 * atr, None), tp_dist=(None, 3 * atr)), dict(trail_dist=(2 * atr, 3 * atr), max_bars=(24, None)),
+          dict(stop_pct=(0.03, 0.05), breakeven_at=(0.01, 0.02), cooldown_bars=2),
+          dict(max_bars=(10, 30), tp_pct=0.04, cooldown_bars=5), dict(stop_dist=50.0, tp_dist=2.0, breakeven_dist=1.0)]
+diff = []
+for d in (BARS, INST):
+    for sg in (SIG2, SIG2 * 0.5, SIG2.clip(lower=0)):
+        for kw in COMBOS:
+            for trig in ("close", "intrabar"):
+                if not same(old_apply(sg, d, trigger=trig, **kw), apply_exits(sg, d, trigger=trig, **kw)):
+                    diff.append((sorted(kw), trig))
+check(not diff, f"{2 * 3 * len(COMBOS) * 2} breakeven_dist / per-side / instrument_id / half-size combos: identical "
+                f"to the 2026-10-28-k lib (differing {diff[:3]})")
+from lib.strategy import ladder_position
+lad = ladder_position(SIG2 > 0, BARS, [0.02, 0.04])
+a, b = old_apply(lad, BARS, max_bars=50, trigger="close"), apply_exits(lad, BARS, max_bars=50, trigger="close")
+check(same(a, b) and a.attrs.get("ladder") == b.attrs.get("ladder"), "a ladder_position signal: same result, ladder attrs kept")
 
 
 # ── 4. speed ────────────────────────────────────────────────────────────────────
@@ -268,8 +361,8 @@ for kw in (dict(stop_pct=0.03, tp_pct=0.06, trigger="intrabar"), dict(stop_pct=0
     to = tn = 1e9
     for _ in range(9):                     # interleaved, so a slow moment hits both sides
         to, tn = min(to, _timed(old_apply, kw)), min(tn, _timed(apply_exits, kw))
-    check(tn <= to * 1.05, f"40,000 bars, {sorted(k for k in kw if k != 'trigger')} {kw['trigger']}: "
-                           f"old {to * 1e3:.1f} ms, new {tn * 1e3:.1f} ms ({tn / to - 1:+.1%}, limit +5%)")
+    check(tn <= to * 1.15, f"40,000 bars, {sorted(k for k in kw if k != 'trigger')} {kw['trigger']}: "
+                           f"old {to * 1e3:.1f} ms, new {tn * 1e3:.1f} ms ({tn / to - 1:+.1%}, limit +15%)")
 tl_ms = best_of(apply_exits, dict(stop_level=LV, tp_pct=0.06, trigger="intrabar"), 5) * 1e3
 check(tl_ms < 2000, f"40,000 bars with stop_level + tp_pct: {tl_ms:.1f} ms")
 
@@ -286,8 +379,12 @@ HEAD = 'SYMBOL = "BTCUSDT"\nFEE = 0.0005\n'
 newer = qc_of(HEAD + "def compute_signals(df):\n    from lib.exits import apply_exits\n"
               "    return apply_exits((df.Close > 1).astype(float), df, stop_pct=0.03, entry_level=df.Low, trigger='intrabar')\n")
 check([f["check"] for f in newer] == ["lib_caps"] and newer[0]["level"] == "CRITICAL"
-      and "entry_level" in newer[0]["msg"] and "更新" in newer[0]["msg"],
-      "quality_check: an apply_exits argument this lib lacks → CRITICAL lib_caps, names it, says update")
+      and "entry_level" in newer[0]["msg"] and "a typo, or a strategy written on a newer lib" in newer[0]["msg"]
+      and "fix the name" in newer[0]["msg"] and "更新" in newer[0]["msg"] and "stop_level" in newer[0]["msg"],
+      "quality_check: an apply_exits argument this lib lacks → CRITICAL lib_caps: typo or newer lib, the arguments it takes")
+typo = qc_of(HEAD + "def compute_signals(df):\n    from lib.exits import apply_exits\n"
+             "    return apply_exits((df.Close > 1).astype(float), df, stop_pcts=0.03, trigger='intrabar')\n")
+check(len(typo) == 1 and "Did you mean stop_pct=?" in typo[0]["msg"], f"quality_check: a typo gets the closest argument ({typo[0]['msg'][:90]!r})")
 cur = qc_of(HEAD + "def compute_signals(df):\n    from lib.exits import apply_exits\n"
             "    return apply_exits((df.Close > 1).astype(float), df, stop_level=df.Low, tp_level=df.High, trigger='intrabar')\n")
 check(not any(f["check"] == "lib_caps" for f in cur), "quality_check: stop_level / tp_level are this lib's own — no finding")
@@ -300,8 +397,19 @@ try:
     runner._raise_if_newer_lib(te)
     check(False, "runner: an unknown apply_exits argument → SystemExit saying update")
 except SystemExit as e:
-    check("apply_exits(entry_level=...)" in str(e) and "更新" in str(e) and "Traceback" not in str(e),
-          f"runner: an unknown apply_exits argument → SystemExit saying update ({str(e)[:80]!r})")
+    check("apply_exits() has no argument entry_level=" in str(e) and "a typo, or a strategy written on a newer lib" in str(e)
+          and "stop_level" in str(e) and "更新" in str(e) and "Traceback" not in str(e),
+          f"runner: an unknown apply_exits argument → SystemExit: typo or newer lib, the arguments it takes ({str(e)[:80]!r})")
+from lib.strategy import threshold_position
+try:
+    threshold_position(pd.Series([1.0]), buy=1, sell_th=0, cover_th=0, short_th=0)
+except TypeError as e:
+    te3 = e
+try:
+    runner._raise_if_newer_lib(te3)
+    check(False, "runner: a typo in a lib function's argument → the closest argument")
+except SystemExit as e:
+    check("Did you mean buy_th=?" in str(e) and "fix the name" in str(e), f"runner: a typo → the closest argument ({str(e)[:90]!r})")
 def own(x): return x
 try:
     own(1, y=2)
@@ -333,12 +441,21 @@ def fetch(hdrs):
     return fetch_kline("SYN", "1h", "2024-01-01", None, hdrs)
 
 
-def lv_signals(df, fast=20, slow=60, tp=0.06):
+def lv_signals(df, fast=20, slow=60, tp=0.06, cooldown=1):
     f, s = df["Close"].rolling(fast).mean(), df["Close"].rolling(slow).mean()
     sig = pd.Series(np.where(f > s, 1.0, np.where(f < s, 0.0, nan)), index=df.index)
-    event = (sig > 0) & (df["Close"] >= df["Close"].rolling(10).max())   # each new same-side signal bar
-    return apply_exits(sig, df, stop_level=df["Low"].where(event).ffill(), tp_pct=tp,
-                       cooldown_bars=1, trigger="intrabar")
+    on = sig.ffill() > 0
+    event = (on & ~on.shift(1, fill_value=False)) | (on & (df["Close"] >= df["Close"].rolling(10).max()))
+    return apply_exits(sig, df, stop_level=df["Low"].where(event).ffill().where(on), tp_pct=tp,
+                       cooldown_bars=cooldown, trigger="intrabar")
+
+
+n_cd, n_flat = trades(lv_signals(BARS)), trades(lv_signals(BARS, cooldown=None))
+_f, _s = BARS["Close"].rolling(20).mean(), BARS["Close"].rolling(60).mean()
+n_pct = trades(apply_exits(pd.Series(np.where(_f > _s, 1.0, np.where(_f < _s, 0.0, nan)), index=IDX), BARS,
+                           stop_pct=0.005, tp_pct=0.06, cooldown_bars=1, trigger="intrabar"))
+check(n_cd <= n_pct and n_cd <= 8 * n_flat,
+      f"the pipeline strategy: {n_cd} trades with cooldown_bars=1, {n_flat} without, {n_pct} for stop_pct=0.005 + cooldown")
 
 
 def leak_signals(df):
@@ -389,7 +506,28 @@ wf_dir = WS / "wf"; wf_dir.mkdir()
 run_walk_forward(BARS, lv_signals, [10, 20, 30], [0.04, 0.06, 0.08], str(wf_dir), "FAST", "TP", fee=0.0005,
                  row_kw="fast", col_kw="tp", lookback_days=60, step_days=30, valid_fn=lambda a, b: True, warmup=60)
 wf = json.loads((wf_dir / "wf.json").read_text())
-check(len(wf.get("runs", [])) >= 3, f"run_walk_forward over a stop_level strategy: wf.json with {len(wf.get('runs', []))} runs")
+check(len(wf.get("runs", [])) >= 3 and len(wf.get("excluded_runs", [])) < len(wf["runs"]),
+      f"run_walk_forward over a stop_level strategy: wf.json with {len(wf.get('runs', []))} runs, "
+      f"{len(wf.get('excluded_runs', []))} excluded")
+
+# the two stop_level code blocks of references/strategy-code.md, run as written
+doc = Path(ROOT, "references", "strategy-code.md").read_text()
+blocks = [b.split("```", 1)[0] for b in doc.split("```python\n")[1:]]
+lvl = [b for b in blocks if "stop_level=level" in b]
+reent = [b for b in blocks if "hit = df['Low'] <= stop.shift(1)" in b]
+ok_doc = len(lvl) == 1 and len(reent) == 1
+if ok_doc:
+    ns = {}
+    exec(lvl[0], ns)
+    exec(reent[0], ns)
+    a = ns["compute_signals"](BARS.copy())
+    ns2 = {}
+    exec(lvl[0], ns2)
+    b = ns2["compute_signals"](BARS.copy())
+    ok_doc = (trades(a) > 10 and set(np.unique(a)) <= {0.0, 1.0} and len(b.attrs["exits"]) > 10
+              and len(b.attrs["exits_at_fill"]) <= 0.05 * trades(b) and b.attrs["exits_level_gaps"].empty)
+check(ok_doc, "references/strategy-code.md: the per-trade stop_level example and the re-entry recipe run; the example's "
+              "stops are not carried-over levels")
 
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)

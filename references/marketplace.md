@@ -223,6 +223,8 @@ Body: {title, description, category, code}
 ```
 `category` must be exactly `Crypto`, `TW Stock`, `US Stock`, `Forex` or `Other` (anything else is rejected with 400). Submissions (`/strategies/submit`) and private uploads (`/strategies/private`) accept any string category up to 100 characters (may be empty or omitted); a non-string or longer value is rejected with 400.
 
+**Not yet in any upload (official, for sale, shared):** a strategy whose `apply_exits` uses `stop_level=` / `tp_level=` — it needs `VERSION` 2026-10-28-l or later, and a machine still on an older lib cannot run it.
+
 ## Description format (required for all uploads)
 
 Description is **plain text only** — 1–2 sentences describing the strategy logic. No parameter values, no markdown sections.

@@ -1495,15 +1495,27 @@ _NEWER_LIB_RE = re.compile(r"(\w+)\(\) got an unexpected keyword argument '(\w+)
 
 
 def _raise_if_newer_lib(e):
-    """A strategy written on a newer lib, run on this one, calls a lib function with an argument
-    it does not have yet: one sentence that says update, not a traceback (a live tick's output
-    reaches the user through manager/alert_failure.py)."""
+    """A lib function called with an argument it does not take: a typo, or a strategy written on
+    a newer lib — one sentence that names the arguments it does take, not a traceback (a live
+    tick's output reaches the user through manager/alert_failure.py)."""
+    import difflib, inspect
     m = _NEWER_LIB_RE.search(str(e))
-    if m and any(callable(getattr(mod, m.group(1), None))
-                 for name, mod in list(sys.modules.items()) if name.startswith('lib.')):
-        raise SystemExit(f"❌ This strategy calls {m.group(1)}({m.group(2)}=...), which this machine's lib "
-                         f"does not have yet — update first (say 「更新」 / press Update), then run it "
-                         f"again.") from e
+    fn = m and next((f for name, mod in list(sys.modules.items()) if name.startswith('lib.')
+                     for f in (getattr(mod, m.group(1), None),) if callable(f)), None)
+    if not fn:
+        return
+    try:
+        params = [p for p in inspect.signature(fn).parameters if p not in ('args', 'kwargs')]
+    except (TypeError, ValueError):
+        params = []
+    close = difflib.get_close_matches(m.group(2), params, n=1)
+    raise SystemExit(
+        f"❌ {m.group(1)}() has no argument {m.group(2)}= in this machine's lib — a typo, or a strategy "
+        f"written on a newer lib."
+        + (f" Did you mean {close[0]}=?" if close else "")
+        + (f" It takes: {', '.join(params)}." if params else "")
+        + " Your own strategy: fix the name. A strategy from elsewhere (library, another machine) that "
+          "uses it as written: update first (say 「更新」 / press Update), then run it again.") from e
 
 
 def _lookahead_source_hints(config):

@@ -23,6 +23,7 @@ Exit codes (fallback only — PowerShell on Windows folds 1 and 2 into 1):
 """
 
 import ast
+import difflib
 import re
 import sys
 from pathlib import Path
@@ -555,9 +556,15 @@ def _check_lib_caps(tree: ast.AST) -> list[dict]:
         if isinstance(n, ast.Call) and _call_name(n) == "apply_exits":
             for kw in n.keywords:
                 if kw.arg is not None and kw.arg not in _APPLY_EXITS_KWARGS:
-                    found.append(_c(n.lineno, f"apply_exits({kw.arg}=...) needs a newer lib than this "
-                                              f"machine has — not a code fix: tell the user to update first "
-                                              f"(say 「更新」 / press Update), then run this check again."))
+                    close = difflib.get_close_matches(kw.arg, sorted(_APPLY_EXITS_KWARGS), n=1)
+                    found.append(_c(n.lineno, f"apply_exits({kw.arg}=...) is not an argument of this "
+                                              f"machine's lib — a typo, or a strategy written on a newer lib."
+                                              + (f" Did you mean {close[0]}=?" if close else "")
+                                              + f" It takes: {', '.join(sorted(_APPLY_EXITS_KWARGS - {'signal', 'df'}))}."
+                                              f" Your own strategy (--context edit): fix the name. A strategy "
+                                              f"from elsewhere (install, fork, handoff) that uses it as written: "
+                                              f"tell the user to update first (say 「更新」 / press Update), then "
+                                              f"run this check again."))
     return found
 
 
