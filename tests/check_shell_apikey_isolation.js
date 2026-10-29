@@ -101,8 +101,11 @@ async function unit() {
   relay2.stop(); mock.close();
 
   t("llmEnv:轉送模式只給位址與 token,沒有 BLAVE_PROXY_TOKEN", JSON.stringify(Object.keys(llmEnv("acct-x", { url: "u", token: "t" }))) === '["BLAVE_LLM_RELAY_URL","BLAVE_LLM_RELAY_TOKEN"]');
-  t("llmEnv:Blave AI 行為不變;自己的 CLI 什麼都不帶", llmEnv("acct-x", null).BLAVE_PROXY_TOKEN === "acct-x" && Object.keys(llmEnv(null, null)).length === 0);
-  t("runTurn 用 llmEnv 組 env、turnDone 收掉轉送口", /\.\.\.llmEnv\(acct, relay\),/.test(src) && /if \(relay\) relay\.stop\(\); \};/.test(src));
+  { const e = llmEnv({ token: "acct-relay-abc", base: "http://127.0.0.1:5" }, null);
+    t("llmEnv:Blave AI 只給帳號轉送口這一輪的 token 與位址(帳號 token 不進環境,0.1.37);自己的 CLI 什麼都不帶",
+      e.BLAVE_PROXY_TOKEN === "acct-relay-abc" && e.BLAVE_PROXY_BASE === "http://127.0.0.1:5/openclaw/proxy" && e.BLAVE_REPORT_URL === "http://127.0.0.1:5/openclaw/agent/report"
+      && Object.keys(e).length === 3 && Object.keys(llmEnv(null, null)).length === 0); }
+  t("runTurn 用 llmEnv 組 env、turnDone 收掉轉送口與帳號轉送 token", /\.\.\.llmEnv\(acct, relay\),/.test(src) && /if \(relay\) relay\.stop\(\); acctDone\(\); \};/.test(src));
   const turnSrc = cut("async function runTurn", "\n}\n");
   t("runTurn 裡真金鑰只交給 startRelay(llmKey.key 只出現一次)", (turnSrc.match(/llmKey\.key/g) || []).length === 1 && /startRelay\(\{ preset: llmKey\.preset, key: llmKey\.key, onEvent: onRelay \}\)/.test(turnSrc));
 }

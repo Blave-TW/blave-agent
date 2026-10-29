@@ -3763,6 +3763,10 @@ msgstr "The agent is still replying"
 msgid "tm.quitTurnBody"
 msgstr "Quitting Blave now cuts off this turn, including any cloud update in progress. It’s safer to wait until it finishes."
 
+# 結束攔截:兩條以上回合在跑(對話分頁並行;主行程填 {n})
+msgid "tm.quitTurnBodyN"
+msgstr "{n} replies are still running. Quitting Blave now cuts them all off, including any cloud update in progress. It’s safer to wait until they finish."
+
 # 結束 / 關窗攔截:策略組合有還沒儲存的勾選或金額(草稿不另外存)
 msgid "tm.unsavedTitle"
 msgstr "Leave without saving?"

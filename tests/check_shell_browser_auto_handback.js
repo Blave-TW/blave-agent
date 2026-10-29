@@ -52,7 +52,8 @@ if (!process.versions.electron) (async () => {
   const SID = "desktop-autohb1", OTHER = "desktop-autohb2";
   const Br = require(path.join(B, "index.js")).createBrowser({ electron: fakeE, stateDir: path.join(tmp, "snaps"), reportsDir: path.join(tmp, "reports"), getWin: () => win, uiLang: () => "en", track: () => {}, version: "test", reducedMotion: () => true, userPresent: () => true });
   const call = (n, a) => Br._call(n, a || {}, { live: () => true });
-  const turn = async (sid, opts) => { Br.endTurn(); const at = sent.length; await Br.beginTurn(win, sid || SID, opts === undefined ? SENT : opts); return sent.slice(at); };
+  // 0.1.37 起交還在這一輪拿到瀏覽器租約那一刻做(第一次呼叫瀏覽器工具時):beginTurn 之後先拿租約,再看事件
+  const turn = async (sid, opts) => { Br.endTurn(); const at = sent.length; const m = await Br.beginTurn(win, sid || SID, opts === undefined ? SENT : opts); if (m) await Br._acquire(m.key, {}); return sent.slice(at); };
   const backs = (evs, x) => evs.filter((e) => e.type === "handback" && e.id === x.tab.id);
   const row = async (x) => J(await call("browser_tabs")).tabs.find((r) => r.tab === x.alias);
   let host = 0;
@@ -81,7 +82,7 @@ if (!process.versions.electron) (async () => {
   let evs = await turn();
   const hb = backs(evs, a);
   t("交還:新回合開始時發既有的 handback 事件、帶 auto: true、帶這個對話的 session_id,而且只發一次", hb.length === 1 && hb[0].auto === true && hb[0].session_id === SID && a.tab.userControl === false, evs);
-  t("交還:在任何工具呼叫之前就發了(beginTurn 回來時已經交還)", evs.every((e) => e.type !== "block_open"));
+  t("交還:在任何工具動作之前就發了(拿到租約那一刻已經交還)", evs.every((e) => e.type !== "block_open"));
   let r = J(await call("browser_read", { tab: a.alias }));
   t("交還之後:同一個代號讀得到用戶改過之後的內容", r.ok === true && r.tab === a.alias && r.untrusted_content.includes("second"), r);
   t("交還之後:browser_tabs 不再標 user_control,帶網址與標題", (await row(a)).status === "ready" && last.tabs.find((x) => x.tab === a.alias).url === a.url);
@@ -324,15 +325,15 @@ if (!process.versions.electron) (async () => {
 
   // ---- 原文鎖
   const idx = fs.readFileSync(path.join(B, "index.js"), "utf8"), main = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
-  t("掛點:beginTurn 裡、tabs.newTurn 之後;要 userSent 而且不是 noUser", /tabs\.newTurn\(sessionId\);\n[^\n]*\n\s*if \(opts && opts\.userSent === true && !cur\.noUser\) await autoHandback\(cur\);/.test(idx));
+  t("掛點:拿到瀏覽器租約那一刻(activate)、tabs.newTurn 之後;要 userSent 而且不是 noUser;beginTurn 只記下 userSent", /tabs\.newTurn\(p\.sessionId\);[\s\S]{0,400}curReady = \(p\.userSent && !c\.noUser \? autoHandback\(c\) : Promise\.resolve\(\)\)/.test(idx) && /userSent: !!\(opts && opts\.userSent === true\)/.test(idx));
   t("只看這個對話 agent 指得到的分頁(tabs.reachable),而且只認 by === \"agent\";問焦點前後比一次用戶輸入的時間戳", /for \(const t of tabs\.reachable\(\)\) \{\n\s*if \(t\.by !== "agent" \|\| !t\.userControl\) continue;\n[^\n]*\n\s*const touched = v\.userInputs \|\| 0;\n\s*if \(!\(await handable\(t\)\)\) continue;\n[^\n]*\n\s*if \(cur === c && t\.userControl && \(v\.userInputs \|\| 0\) === touched\) handback\(t\.id, true\);/.test(idx));
   t("handable 是 fail-closed:問不到、null、看不進去(iframe / opaque)、敏感欄位都回 false", (() => { const h = idx.slice(idx.indexOf("async function handable("), idx.indexOf("async function autoHandback(")); return /catch \(_\) \{ return false; \}/.test(h) && /if \(!f \|\| !f\.desc \|\| !f\.desc\.tag\) return false;/.test(h) && /f\.desc\.tag === "iframe" \|\| f\.desc\.opaque \|\| gate\.sensitiveField\(f\.desc\)\) return false;/.test(h); })());
-  t("main.js:只有 send-message(用戶送出)會起回合,而且標了 userSent", (main.match(/\brunTurn\(/g) || []).length === 2 && /ipcMain\.handle\("send-message"[\s\S]{0,2500}runTurn\(win, payload\)/.test(main)
-    && /beginTurn\(win, sessionId, \{ userSent: true, noUser: !!viewing && viewing\.env === "cloud" \}\)/.test(main));
+  t("main.js:回合只從 startTurn → turnLaunch 起;只有這台電腦送出的(origin desktop)標 userSent,手機來的不標", (main.match(/\brunTurn\(/g) || []).length === 2 && /function turnLaunch\(rec, payload\) \{[\s\S]{0,600}runTurn\(rec, payload\)/.test(main)
+    && /return startTurn\(payload, "desktop"\);/.test(main) && /beginTurn\(win, sessionId, \{ userSent: rec\.origin === "desktop", noUser: !!viewing && viewing\.env === "cloud" \}\)/.test(main));
   // 稽核 P2-13:userSent 現在對每一個回合都是 true(打字的、畫面代組的固定句都是這台電腦的人按的)。它分辨的是「有沒有人在這台電腦按送出」,
   // 不是「打字 vs 固定句」;帶 false 的呼叫端(排程 / 雲端發起 / 自動回合)還不存在——這一條釘住:呼叫端只有一個,而且旁邊寫明了誰該帶 false
   t("main.js:beginTurn 只有一個呼叫端,旁邊寫明 userSent 代表什麼、哪種回合要帶 false", (main.match(/browser\(\)\.beginTurn\(/g) || []).length === 1
-    && /\/\/ userSent = 這一輪是人在這台電腦上按出來的[\s\S]{0,600}要帶 false 的是「沒有人在這台電腦按送出」的回合:\n\s*\/\/ 排程回合、雲端主機那邊發起的回合、任何自動回合[\s\S]{0,300}\n\s*try \{ brMount = await browser\(\)\.beginTurn\(/.test(main));
+    && /\/\/ userSent = 這一輪是人在這台電腦上按出來的[\s\S]{0,600}要帶 false 的是「沒有人在這台電腦按送出」的回合:\n\s*\/\/ 排程回合、雲端主機那邊發起的回合、手機來的回合[\s\S]{0,300}\n\s*try \{ brMount = await browser\(\)\.beginTurn\(/.test(main));
   { const head = (s) => String(s).slice(0, String(s).indexOf('"use strict";'));
     const was = require("child_process").spawnSync("git", ["show", "8bb6aaa:shell/browser/verify.js"], { cwd: path.join(__dirname, "..") }).stdout;
     t("verify.js 檔頭(紅線)沒動", !!was && head(was).length > 200 && head(was) === head(fs.readFileSync(path.join(B, "verify.js"), "utf8"))); }

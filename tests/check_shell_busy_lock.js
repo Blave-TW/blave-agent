@@ -211,22 +211,23 @@ ok("③ 回合結束(busySync):所有原因句收掉,借用的原因行(#rp-ho-n
 {
   const deletes = []; let failMeta = false;
   const M = new Function("fs", "path", "okSessionId", "sessionDb", "IMG_DIR", "RES_DIR", "META_DIR", "BASE", "XP_DIR", `
-    let activeTurn = null, turnStarting = false, turnSessionId = null;
+    const turns = new Map();
     ${fnSrc(mainSrc, "deleteSession")}
-    return { deleteSession, set: (a, s, id) => { activeTurn = a; turnStarting = s; turnSessionId = id; } };`)(
+    return { deleteSession, set: (...ids) => { turns.clear(); for (const [id, phase] of ids) turns.set(id, { sid: id, phase }); } };`)(
     { rmSync: () => {} }, path, (id) => /^desktop-[a-z0-9]{4,16}$/.test(id),
     () => ({ exec: (q) => deletes.push(q), prepare: (q) => ({ run: (id) => { if (failMeta && /session_meta/.test(q)) throw new Error("SQLITE_BUSY"); deletes.push(q.split(" ")[2] + ":" + id); } }), close: () => {} }), "/i", "/r", "/m", "/b", "/x");
-  M.set({}, false, "desktop-aaaa1111");
-  const busyCur = M.deleteSession("desktop-aaaa1111"), busyOther = M.deleteSession("desktop-bbbb2222");
-  M.set(null, true, "desktop-aaaa1111"); const starting = M.deleteSession("desktop-aaaa1111");
-  M.set(null, false, "desktop-aaaa1111"); const idle = M.deleteSession("desktop-aaaa1111");
-  ok("④ deleteSession:回合中(含正要開始)拒刪正在回覆的那條;別條照刪;回合結束後那條也能刪;寫之前先等寫鎖(busy_timeout)",
-    busyCur === false && busyOther === true && starting === false && idle === true && deletes.includes("PRAGMA busy_timeout = 3000") && deletes.includes("turns:desktop-bbbb2222"), { busyCur, busyOther, starting, idle });
+  M.set(["desktop-aaaa1111", "running"], ["desktop-eeee5555", "running"]);
+  const busyCur = M.deleteSession("desktop-aaaa1111"), busyPar = M.deleteSession("desktop-eeee5555"), busyOther = M.deleteSession("desktop-bbbb2222");
+  M.set(["desktop-aaaa1111", "starting"]); const starting = M.deleteSession("desktop-aaaa1111");
+  M.set(["desktop-aaaa1111", "queued"]); const queued = M.deleteSession("desktop-aaaa1111");
+  M.set(); const idle = M.deleteSession("desktop-aaaa1111");
+  ok("④ deleteSession:回合表上的(回覆中、正要開始、排隊中,並行的每一條)拒刪;別條照刪;回合結束後那條也能刪;寫之前先等寫鎖(busy_timeout)",
+    busyCur === false && busyPar === false && busyOther === true && starting === false && queued === false && idle === true && deletes.includes("PRAGMA busy_timeout = 3000") && deletes.includes("turns:desktop-bbbb2222"), { busyCur, busyOther, starting, idle });
   deletes.length = 0; const okRun = M.deleteSession("desktop-cccc3333");
   ok("④ 兩張表包在 BEGIN IMMEDIATE … COMMIT 裡", okRun === true && deletes.join() === "PRAGMA busy_timeout = 3000,BEGIN IMMEDIATE,turns:desktop-cccc3333,session_meta:desktop-cccc3333,COMMIT", deletes);
   deletes.length = 0; failMeta = true; const bad = M.deleteSession("desktop-dddd4444"); failMeta = false;
   ok("④ 第二句寫不進:ROLLBACK(turns 那句一起撤)、回 false", bad === false && deletes.join() === "PRAGMA busy_timeout = 3000,BEGIN IMMEDIATE,turns:desktop-dddd4444,ROLLBACK", deletes);
-  ok("④ send-message 開跑時記下是哪一條(turnSessionId 在 turnStarting 立起之前就設好)", /turnSessionId = payload && payload\.sessionId;[^\n]*\n\s*turnStarting = true;\n\s*newTurnStop\(\);/.test(mainSrc));
+  ok("④ startTurn 在任何 await 之前就把那一條放進回合表(deleteSession 看的就是它)", /const rec = newTurnRec\(sid, [^\n]*\n  turns\.set\(sid, rec\);/.test(mainSrc));
   ok("④ 畫面:刪對話沒刪成不無聲關框(清單上方講一句 cs.delFail)", /if \(!\(await window\.blave\.deleteSession\(m\.id\)\)\) \{ delClose\(false\); const w = csWhy\(\); w\.textContent = t\("cs\.delFail"\); w\.hidden = false; return; \}/.test(appSrc)
     && !!STR.zh["cs.delFail"] && !!STR.en["cs.delFail"]);
 }

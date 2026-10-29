@@ -536,7 +536,7 @@ function clearAppSecret() {
 /* 帳號 token 輪替(tokenrotate.js):token 每 24 小時換一顆,所以「token 換了」不再等於「換了人」。
    who = 這次登入的身分(app_secret 跟著同一列走、輪替不變、重新登入才換;舊登入沒有它就退回 token),
    拿來比對「在途的回應還是不是現在這個人的」;token 只拿來送。 */
-const ROTATE_MIN_LEFT_MS = 12 * 3600 * 1000;   // 回合開始前與定期檢查都保證至少這麼久:回合中途不換(換了舊值 10 分鐘後失效)
+const ROTATE_MIN_LEFT_MS = 12 * 3600 * 1000;   // 定期檢查保證至少這麼久;回合不持有帳號 token(帳號轉送口),回合中照換
 const ROTATE_CHECK_MS = 10 * 60 * 1000;
 let _rot = null;
 function rotator() {
@@ -1705,7 +1705,7 @@ function stratStopRerun(names, sys) {
    IN_PORTFOLIO(還在組合裡:對帳器照這個名字在下單,刪了訊號就凍住)/ CONFIG_UNREADABLE(讀不到下單設定,寧可等一下)/
    TRASH_FAILED(系統的垃圾桶不收) */
 async function deleteStrategy(name) {
-  if (activeTurn || turnStarting) return { ok: false, code: "TURN_RUNNING" };
+  if (anyTurn()) return { ok: false, code: "TURN_RUNNING" };   // 分不出哪一輪碰了哪一支:任何回合都擋(技術方案 §1.1),原因照講
   if (!stratNames().includes(name)) return { ok: false, code: "NOT_FOUND" };
   let sn = null; try { sn = stratMeta(fs.readFileSync(path.join(STRAT_DIR(), name, "strategy.py"), "utf8")).strategyName; } catch (_) { /* 讀不到檔:只比資料夾名 */ }
   const inPf = inPortfolio([name, sn]);
@@ -1751,10 +1751,10 @@ function loadSession(id) {
       .map((r) => ({ role: r.role, content: r.content, ts: r.created_at }));
   } catch (_) { return []; } finally { db.close(); }
 }
-// 回合中只拒刪正在回覆的那條(回覆沒地方落);別條照刪。runtime 那邊同時在寫 session.db(WAL、30 秒 busy timeout),
+// 只拒刪表上那條(回覆中、正要開始、排隊中:回覆沒地方落);別條照刪。runtime 那邊同時在寫 session.db(WAL、30 秒 busy timeout),
 // 這裡也等一下寫鎖,不然撞到它 commit 的那一瞬就回 false
 function deleteSession(id) {
-  if (!okSessionId(id) || ((activeTurn || turnStarting) && id === turnSessionId)) return false;
+  if (!okSessionId(id) || turns.has(id)) return false;
   const db = sessionDb(false); if (!db) return false;
   try {
     db.exec("PRAGMA busy_timeout = 3000");
@@ -2757,29 +2757,41 @@ function saveModelPrefs(prefs) {
 const SAFE_ID = /^[A-Za-z0-9][\w.:\/-]{0,127}$/;
 const safeId = (v) => (typeof v === "string" && SAFE_ID.test(v) ? v : null);
 
-let activeTurn = null, turnStarting = false, turnSessionId = null;   // turnSessionId:正在回覆的那條;只在 activeTurn / turnStarting 期間有意義
+/* 回合表(0.1.37 對話分頁,技術方案 chat-tabs-parallel-tech §1.1):sessionId → 一筆紀錄。同一條對話一次一輪(同一份逐字稿
+   交錯寫會壞),不同對話並行、本機不設上限;對著雲端主機的照那台的名額排隊(cloudTurnLimit)。
+   rec.phase:queued(只有超過雲端名額的才有;只放記憶體,關 app 就不送)| starting(送出到 spawn 之間,也擋同一條連按)| running。
+   「有沒有回合」一律問 anyTurn()(機器層級的鎖)或 turns.has(sid)(那一條自己);tests/check_shell_turn_table.js 列舉每一處 */
+const turns = new Map();
+const turnQueue = [];   // 排隊中的 sid,FIFO
+let turnSeqN = 0;
+const liveTurnCount = () => { let n = 0; for (const r of turns.values()) if (r.phase !== "queued") n++; return n; };
+const anyTurn = () => liveTurnCount() > 0;
 /* 停止鈕:每一輪一個旗標檔(runtime/turn_stop.py 的 BLAVE_TURN_INTERRUPT_FILE)。建檔 = 要停;runtime 輪詢到就殺掉這一輪
-   的工具與引擎、照「已停止」收尾。只動這一輪的子行程樹——常駐程式、策略、對帳器不是它的子行程。路徑在送出當下就定好,
+   的工具與引擎、照「已停止」收尾。只動這一輪的子行程樹——常駐程式、策略、對帳器、別條對話的回合都不是它的子行程。路徑在送出當下就定好,
    spawn 之前按停止也寫得進去(runtime 一起來就看到)。runtime 卡死時的保險:agent_turn 沉默滿 STOP_KILL_MS 才殺它。
    不看按下後過了多久——runtime 在等平倉腳本跑完(Codex 的工具寫進引擎的管線,引擎不能先死)時每秒送 ping;
-   收到 done 就不殺(之後是寫歷史與壓縮摘要,砍了只會丟那一段)。 */
-let turnStopFile = null, turnFinalized = false, turnLastOut = 0;
+   收到 done 就不殺(之後是寫歷史與壓縮摘要,砍了只會丟那一段)。保險只看這一筆自己的輸出時間與子行程:看全域的話 A 會照 B 的時間殺錯 */
 const STOP_KILL_MS = 5000;
-function newTurnStop() {
-  if (turnStopFile) { try { fs.rmSync(turnStopFile, { force: true }); } catch (_) { /* 換新檔名,留著也無害 */ } }
-  turnStopFile = path.join(BASE, "state", "turn_stop", crypto.randomBytes(8).toString("hex"));
-  turnFinalized = false;
+function newTurnRec(sid, origin, cloud) {
+  return { sid, origin, cloud: !!cloud, phase: "starting", child: null, finalized: false, lastOut: 0, seq: ++turnSeqN,
+    stopFile: path.join(BASE, "state", "turn_stop", crypto.randomBytes(8).toString("hex")) };
 }
-function stopTurn() {
-  if (!(activeTurn || turnStarting) || !turnStopFile) return false;
-  try { fs.mkdirSync(path.dirname(turnStopFile), { recursive: true }); fs.writeFileSync(turnStopFile, ""); } catch (_) { return false; }
-  const file = turnStopFile;
-  let seen = activeTurn;
+/* sid 沒帶:畫面還是單分頁的那一版(preload 的 stopTurn() 不帶參數)——只有一筆時就是它,多筆時不猜 */
+function turnSidOr(sid) {
+  if (typeof sid === "string" && sid) return sid;
+  return turns.size === 1 ? turns.keys().next().value : null;
+}
+function stopTurn(sidArg) {
+  const sid = turnSidOr(sidArg), rec = sid ? turns.get(sid) : null;
+  if (!rec) return false;
+  if (rec.phase === "queued") { turnDequeue(rec); return true; }   // 排隊中的停止 = 取消排隊
+  try { fs.mkdirSync(path.dirname(rec.stopFile), { recursive: true }); fs.writeFileSync(rec.stopFile, ""); } catch (_) { return false; }
+  let seen = rec.child;
   const arm = () => setTimeout(() => {
-    if (turnStopFile !== file || turnFinalized) return;   // 已經換下一輪 / runtime 已經收尾
-    if (activeTurn && activeTurn === seen && Date.now() - turnLastOut >= STOP_KILL_MS) { try { activeTurn.kill(); } catch (_) { /* 已經不在了 */ } return; }
-    seen = activeTurn;
-    if (seen || turnStarting) arm();   // 剛起來或還沒起來:再給它一段
+    if (turns.get(sid) !== rec || rec.finalized) return;   // 這一輪已經結束 / runtime 已經收尾
+    if (rec.child && rec.child === seen && Date.now() - rec.lastOut >= STOP_KILL_MS) { try { rec.child.kill(); } catch (_) { /* 已經不在了 */ } return; }
+    seen = rec.child;
+    arm();   // 剛起來或還沒起來:再給它一段
   }, STOP_KILL_MS);
   arm();
   return true;
@@ -3072,6 +3084,9 @@ function browser() {
     savePrefs: (p) => { try { fs.writeFileSync(BROWSER_PREFS(), JSON.stringify({ enabled: !!p.enabled }), { mode: 0o600 }); } catch (_) { /* 存不了就只在這次生效 */ } },
     notify: browserNotify,
     engines: fakeVerify ? fakeVerify.engines : undefined,
+    // 瀏覽器同時只給一輪用(租約):別條拿著時那個分頁的狀態列換字;等到逾時記一筆
+    onWait: (sid) => { sendTurn(sid, "turn-event", { type: "browser_wait" }); tm().track("feature_used", { name: "br_wait" }); },
+    onBusy: () => tm().track("feature_used", { name: "br_busy" }),
   });
   if (fakeVerify) fakeVerify.serve(require("electron").session.fromPartition(require("./browser").PARTITION)).catch(() => {});
   return _browser;
@@ -3089,8 +3104,10 @@ function browserNotify(kind) {
 /* 回合結束提示(spec agent-reply-notifications-0130 §3.1–3.5;不屬 P1／P2／P3):只通知這台 spawn 的回合、只在視窗不在前景、用戶按停止不跳。
    不亮 Dock 紅點、不動 p1Badge(紅點留給 P1)。畫面在回合結束時送 reply-cue {kind: done|fail|stopped, snippet};
    「等你回覆」看主行程自己記的 done.awaiting,對話是 runTurn 的 sessionId(不看畫面現在開著哪條)。
-   replyPending 一輪一個、reply-cue 用掉就清:畫面再送也發不出第二則。replyLast = 還沒點的那一則,下一輪開始時收掉 */
-let replyPending = null, replyLast = null, replyOsOff = false;
+   replyPending / replyLast 都以 sid 為 key(多條並行):每條一輪一個、reply-cue 用掉就清,畫面再送也發不出第二則;
+   replyLast = 那條還沒點的那一則,同一條的下一輪開始時才收掉(別條開跑不收) */
+const replyPending = new Map(), replyLast = new Map();
+let replyOsOff = false;
 const REPLY_KINDS = ["done", "await", "fail"];
 const replyGraphemes = (s) => { try { return [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(s)].map((x) => x.segment); } catch (_) { return Array.from(s); } };
 // 純函式(tests/check_shell_reply_cue.js):o = { kind, focused, pref } → 要發的型別或 null
@@ -3118,8 +3135,11 @@ function replyTitle(sid) {
   catch (_) { return replyTitleOf(""); } finally { db.close(); }
 }
 // sender = 送 reply-cue 的那個畫面:提示音交回它播(Web Audio 只在畫面裡有)
+// cue.sid 沒帶(畫面還是單分頁那一版):只有一筆在等時就是它,多筆不猜
 function replyCue(cue, sender) {
-  const p = replyPending; replyPending = null;
+  const want = cue && typeof cue === "object" && typeof cue.sid === "string" ? cue.sid : replyPending.size === 1 ? replyPending.keys().next().value : null;
+  const p = want != null ? replyPending.get(want) : null;
+  if (want != null) replyPending.delete(want);
   if (!p || !okSessionId(p.sid) || !cue || typeof cue !== "object") return false;
   const o = { kind: cue.kind === "done" && p.awaiting ? "await" : cue.kind, focused: !!BrowserWindow.getFocusedWindow() };
   // 聲音不排在通知的早退後面:通知關著、系統不支援通知、字還沒交過來,提示音照響。2 秒內只響一聲由畫面管
@@ -3128,8 +3148,8 @@ function replyCue(cue, sender) {
   if (!show || !Notification.isSupported()) return false;
   const body = replyBody(show, cue.snippet, tmLabels); if (!body) return false;
   const n = new Notification({ title: replyTitle(p.sid), body, silent: true });   // 一律不出系統聲:回覆的聲音只有 Blave 那一聲(canon › Sound),P1 照用系統聲
-  p1Alive.add(n); replyLast = n;
-  const drop = () => { p1Alive.delete(n); if (replyLast === n) replyLast = null; };
+  p1Alive.add(n); replyLast.set(p.sid, n);
+  const drop = () => { p1Alive.delete(n); if (replyLast.get(p.sid) === n) replyLast.delete(p.sid); };
   n.on("show", () => { replyOsOff = false; tm().track("reply_notif", { act: show }); });
   n.on("click", () => {
     drop(); tm().track("reply_notif", { act: "click" }); showMain();
@@ -3143,9 +3163,10 @@ function replyCue(cue, sender) {
   n.show();
   return true;
 }
-function replyTurnStart() {
-  replyPending = null;
-  if (replyLast) { try { replyLast.close(); } catch (_) { /* 已經不在了 */ } replyLast = null; }
+function replyTurnStart(sid) {
+  replyPending.delete(sid);
+  const n = replyLast.get(sid);
+  if (n) { try { n.close(); } catch (_) { /* 已經不在了 */ } replyLast.delete(sid); }
 }
 // 設定列下「開啟系統設定」:網址寫死在這裡(畫面的 open-external 只放行 https)
 function replyOsSettings() {
@@ -3164,10 +3185,19 @@ function turnCreds(kind, signedIn, included, handoffOn) {
   return { proxyToken: kind === "blave" && signedIn === true, dataKey: signedIn === true && included === true, mcp: handoffOn === true && signedIn === true };
 }
 /* 這一輪 LLM 憑證進子行程環境的那一塊(純函式;tests/check_shell_apikey_isolation.js 拿它組 env)。
-   自帶金鑰只給轉送口的位址與一次性 token,真金鑰從來不經過這裡 */
+   自帶金鑰只給轉送口的位址與一次性 token,真金鑰從來不經過這裡。
+   Blave AI 也一樣(0.1.37):acct = 帳號轉送口這一輪發的 { token, base },帳號 token 本身不進環境(acctrelay.js)。
+   runtime 照舊送 proxy-{BLAVE_PROXY_TOKEN},只是送到 BLAVE_PROXY_BASE(LocalSink 才認,runtime CHANGELOG Unreleased) */
 function llmEnv(acct, relay) {
   if (relay) return { BLAVE_LLM_RELAY_URL: relay.url, BLAVE_LLM_RELAY_TOKEN: relay.token };
-  return acct ? { BLAVE_PROXY_TOKEN: acct } : {};
+  return acct ? { BLAVE_PROXY_TOKEN: acct.token, BLAVE_PROXY_BASE: acct.base + "/openclaw/proxy", BLAVE_REPORT_URL: acct.base + "/openclaw/agent/report" } : {};
+}
+/* 帳號轉送口(acctrelay.js):回合環境裡只有一次性的轉送 token,轉出去才換上 Keychain 當下那顆——輪替跟回合脫鉤,回合中也能換 */
+let _acctRelay = null;
+function acctRelay() {
+  if (!_acctRelay) _acctRelay = require("./acctrelay").createAccountRelay({ apiBase: API_BASE, loadToken,
+    recover: (rejected) => rotator().recover(rejected), log: (m) => console.log("[token] " + m) });
+  return _acctRelay;
 }
 /* 選擇器畫得出來時,model **一律明確指定**:輸入框上寫的就是送出去的,不靠引擎那邊看不見的預設。
    只有型錄拿不到(沒畫選擇器、還沒回來)時 model 才是 null——那時 Blave AI 送 BLAVE_DEFAULT、自己的 Claude 送 Sonnet,
@@ -3183,11 +3213,11 @@ const MESSAGE_MAX_BYTES = 1024 * 1024;   // 同 runtime/agent_turn.py 的 MESSAG
 /* 外殼給這一輪的指示(renderer 只交代號,字在 runtime/agent_turn.py TURN_NOTES):跟用戶的訊息分開送,不進泡泡也不進對話存檔。
    只認這張表上的;renderer 會渲染 LLM 的文字,不能讓它把任意字串送成系統層級的規則 */
 const TURN_NOTES = ["report_once", "report_recur"];
-async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEffort, viewing, note, attachments, suggestMode }) {
+async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEffort, viewing, note, attachments, suggestMode }) {
   const model = safeId(rawModel), effort = safeId(rawEffort);
-  // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式
-  if (!okSessionId(sessionId)) throw new Error("bad session id");
-  replyTurnStart();
+  // 這個值會進命令列、SQL 參數與圖檔目錄名,只認外殼自己發的格式(startTurn 已驗過;這裡是縱深)
+  if (!okSessionId(sessionId) || sessionId !== rec.sid) throw new Error("bad session id");
+  replyTurnStart(sessionId);
   sessWaitingSave(sessionId, false);   // 這一句就是回答:等你回覆清掉(同 api /send → hdel waiting)
   // 訊息走 stdin:不是字串的話 stdin.end() 會拋、留下一支等不到 EOF 的子行程(稽核 R4)。上限同 runtime 的 --message-stdin
   if (typeof message !== "string" || Buffer.byteLength(message, "utf8") > MESSAGE_MAX_BYTES) throw new Error("bad message");
@@ -3201,6 +3231,8 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     if (!vs) throw new Error("bad attachment");
     if (Buffer.byteLength(at.withNotes(message, vs.map((v) => "0000000000_" + v.name)), "utf8") > MESSAGE_MAX_BYTES) throw new Error("bad message");
   }
+  // 回合不綁送出它的那個視窗(手機來的回合沒有送出者):事件一律送主視窗,視窗收起來或關掉期間照跑、照存,只是不送
+  const win = turnWin();
   imgWin = win;
   const envPath = await loginShellPath();
   // 用戶連的是哪一個,引擎就跑哪一個。原本這裡完全不看 kind,一律 spawn Claude
@@ -3221,12 +3253,13 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   // token 還在 Keychain 裡——照「有 token 就帶」會讓他以為在用自己的訂閱、實際上燒 Blave 額度
   // 資料則相反——**看有沒有登入,不看連的是誰**:登入 Blave 是帳號的事,資料 key 是另一把縮權的 key
   // (不能呼叫 LLM),給自帶 CLI 的人不會燒到他的 AI 額度;沒有主機 / 試用 / 方案時它按小時收資料費,不碰 AI 額度。
-  // 進環境的是這一輪開始時最新的那顆;剩不到 12 小時先換,回合中途就不必換(定期檢查在回合進行中不動它)
-  if (conn.kind === "blave" && loadToken()) await rotator().ensure(ROTATE_MIN_LEFT_MS);
+  // 帳號 token 不進環境:回合拿的是轉送口這一輪的 token(轉出去時才換上當下那顆),所以開跑前不必先輪替,回合中途也照換
   const signedIn = !!loadToken();
   const plan = turnCreds(conn.kind, signedIn, signedIn && await hasBlaveData(), cloudHandoffOn());
   const useBlave = conn.kind === "blave";
-  const acct = plan.proxyToken ? loadToken() : null;
+  // 轉送口起不來就整輪失敗(不退回把帳號 token 放進環境)
+  const acct = plan.proxyToken ? (await acctRelay().start(), acctRelay().issue(sessionId)) : null;
+  const acctDone = () => { if (acct) acctRelay().revoke(acct.token); };
   const dataAccess = syncDataAccess(plan.dataKey, signedIn);
   // `blave` MCP:拿得到碼才掛;拿不到(沒主機、端點還沒上線、被限速、連不上)= 這一輪不掛,回合照常。
   // 兩條引擎都寫同一份單次設定檔(0600、workspace 以外、回合結束就刪),runtime 用 --mcp-config 判「這一輪有沒有掛」。
@@ -3242,10 +3275,10 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   let brMount = null;
   // userSent = 這一輪是人在這台電腦上按出來的(自動交還的前提:人在、剛動手)。打字的、畫面代組的固定句(轉出、範例、新增報告、交接確認框)
   // 都算——它們都是這台電腦上的人按的;renderer 的 typed 旗標不傳過來,這裡不分。要帶 false 的是「沒有人在這台電腦按送出」的回合:
-  // 排程回合、雲端主機那邊發起的回合、任何自動回合——現在沒有這種呼叫端(runTurn 只有 send-message 一個入口),
-  // 加的時候就帶 false。雲端視角(viewing.env === "cloud")另外用 noUser 標:人在,但畫面上不是這台電腦的對話
+  // 排程回合、雲端主機那邊發起的回合、手機來的回合(startTurn origin "mobile",通道還沒上線)、任何自動回合——
+  // 由 rec.origin 決定:只有 desktop 帶 true。雲端視角(viewing.env === "cloud")另外用 noUser 標:人在,但畫面上不是這台電腦的對話
   if (fakeVerify) fakeVerify.arm();   // 這一輪的第一次搜尋先去假頁
-  try { brMount = await browser().beginTurn(win, sessionId, { userSent: true, noUser: !!viewing && viewing.env === "cloud" }); } catch (_) { brMount = null; }
+  try { brMount = await browser().beginTurn(win, sessionId, { userSent: rec.origin === "desktop", noUser: !!viewing && viewing.env === "cloud" }); } catch (_) { brMount = null; }
   if (brMount) { require("./mcpcode").removeConfig(mcpFile); mcpFile = require("./mcpcode").writeConfig(mcpDir(), mcpMount, brMount); }
   const mcpServers = mcpFile ? [...(mcpMount ? ["blave"] : []), ...(brMount ? ["blave_browser"] : [])] : [];
   // 上網只有內建瀏覽器一條路(e2e 0.1.8 #125):runtime 看到這個變數就把引擎自己的 WebSearch / WebFetch 關掉,
@@ -3255,11 +3288,12 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   // 轉送口起不來就整輪失敗,絕不退回別的引擎(同 Codex 的理由:靜默換一條帳)。緊貼 turnDone 起,中間沒有會拋的步驟
   let relay = null;
   // 每輪上限到的那一刻(轉送口回 429 之前)先告訴畫面:CLI 接著吐的 429 是我們的上限,不是供應商限流
-  const onRelay = (ev) => { if (ev && ev.type === "cap" && win && !win.isDestroyed()) win.webContents.send("turn-event", { type: "llm_cap" }); };
+  const onRelay = (ev) => { if (ev && ev.type === "cap") sendTurn(sessionId, "turn-event", { type: "llm_cap" }); };
   try { relay = llmKey ? await require("./llmrelay").startRelay({ preset: llmKey.preset, key: llmKey.key, onEvent: onRelay }) : null; }
-  catch (err) { require("./mcpcode").removeConfig(mcpFile); if (_browser) _browser.endTurn(); throw err; }
+  catch (err) { require("./mcpcode").removeConfig(mcpFile); if (_browser && brMount) _browser.endTurn(brMount.key); acctDone(); throw err; }
   const relayPreset = relay ? require("./llmrelay").PRESETS[llmKey.preset] : null;
-  const turnDone = () => { require("./mcpcode").removeConfig(mcpFile); if (_browser) _browser.endTurn(); if (relay) relay.stop(); };
+  // 瀏覽器只收這一輪自己的(別條可能正拿著租約);沒掛上的那一輪沒有 key,什麼都不收
+  const turnDone = () => { require("./mcpcode").removeConfig(mcpFile); if (_browser && brMount) _browser.endTurn(brMount.key); if (relay) relay.stop(); acctDone(); };
   const env = {
     // venv/bin 放最前面:Claude Code 的 Bash 直接繼承這個 PATH,`python3` 就是我們的。
     // 但這對 Codex 無效——它用登入 shell(`zsh -lc`)跑指令,profile 會把 PATH 重排
@@ -3267,9 +3301,8 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     // 「這個 workspace 的 python 是哪一顆」明寫進 prompt——環境變數不會被重排。
     PATH: path.join(BASE, "venv", VENV_BIN) + path.delimiter + envPath, HOME: os.homedir(),
     BLAVE_PYTHON: VENV_PY,
-    // 有帳號 token = 用 Blave AI:runtime 照舊送 proxy-{BLAVE_PROXY_TOKEN},
-    // 自然變成 proxy-acct-…,runtime 一行都不用改。沒有就什麼都不設,
-    // runtime 的本機分支會把 ANTHROPIC_* 拔掉、用戶自己的 CLI 登入生效。
+    // 用 Blave AI:runtime 照舊送 proxy-{BLAVE_PROXY_TOKEN}(這一輪的轉送 token)到 BLAVE_PROXY_BASE(本機轉送口)。
+    // 沒有就什麼都不設,runtime 的本機分支會把 ANTHROPIC_* 拔掉、用戶自己的 CLI 登入生效。
     ...llmEnv(acct, relay),
     // 接入碼只在 Codex 引擎進環境(Claude 走 --mcp-config 的檔)。Codex 預設會把整份環境(含 *TOKEN*)傳給 agent 跑的
     // shell,codex_engine 掛上時用 filters 只拔這一個、並關掉會繞過 filters 的 shell_snapshot
@@ -3282,7 +3315,7 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
     BLAVE_AGENT_BASE: BASE, BLAVE_AGENT_WORKSPACE: WS, BLAVE_AGENT_HOME: BASE,
     BLAVE_AGENT_STATE: path.join(BASE, "state"),
     BLAVE_AGENT_DB: path.join(BASE, "state", "session.db"),
-    ...(turnStopFile ? { BLAVE_TURN_INTERRUPT_FILE: turnStopFile } : {}),
+    BLAVE_TURN_INTERRUPT_FILE: rec.stopFile,
     // K 線走 Binance 公開 API(桌面版沒有 Blave 資料訂閱)。獨立、明確 opt-in 的
     // 變數,不用「有沒有 BLAVE_PROXY_TOKEN」推論——機隊上的 cron/manager 不一定
     // 帶著那顆 token,推論錯就是整支機隊無聲換資料源。
@@ -3322,20 +3355,21 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   child.on("error", () => turnDone());
   child.stdin.on("error", () => { /* 子行程一起來就死(EPIPE):close 事件會把失敗交給畫面 */ });
   try { child.stdin.end(message); } catch (err) { try { child.kill(); } catch (_) { /* 已經不在了 */ } turnDone(); throw err; }   // 不留一支卡在讀 stdin 的子行程
-  activeTurn = child;
+  rec.child = child; rec.phase = "running";
+  turnNice(child);
   let buf = "", turnAwaiting = false;
   const turnXp = [];   // 這一輪的轉出卡:回合結束才寫進 index(ts 要排在回覆之後)
   child.stdout.on("data", (d) => {
-    turnLastOut = Date.now();
+    rec.lastOut = Date.now();
     buf += d.toString();
     let i;
     while ((i = buf.indexOf("\n")) >= 0) {
       const line = buf.slice(0, i); buf = buf.slice(i + 1);
       if (line.startsWith("@@BLAVE@@")) {
         try {
-          const c = JSON.parse(line.slice(9)); if (c && c.type === "done") { turnFinalized = true; turnAwaiting = c.awaiting === true; sessWaitingSave(sessionId, turnAwaiting); }   // awaiting 只存;kinds 不存不畫
+          const c = JSON.parse(line.slice(9)); if (c && c.type === "done") { rec.finalized = true; turnAwaiting = c.awaiting === true; sessWaitingSave(sessionId, turnAwaiting); }   // awaiting 只存;kinds 不存不畫
           if (c && c.type === "export") { const rec = noteExport(c, sessionId); if (rec) { c.id = rec.id; turnXp.push(rec); } }   // 卡重開要畫回來:快照先落地,id 給卡的「下載…」
-          win.webContents.send("turn-event", c);
+          sendTurn(sessionId, "turn-event", c);
         } catch (_) {}
       }
     }
@@ -3344,12 +3378,111 @@ async function runTurn(win, { sessionId, message, model: rawModel, effort: rawEf
   child.stderr.on("data", (d) => { errTail = (errTail + d.toString()).slice(-2000); });
   child.on("close", (code) => {
     turnDone();   // 這一輪結束:設定檔(裡面是接入碼 / 瀏覽器 token)立刻刪,瀏覽器 token 作廢
-    activeTurn = null;
     flushExports(sessionId, turnXp);
-    replyPending = { sid: sessionId, awaiting: turnAwaiting };   // 畫面判完 stopped／faulted 才送 reply-cue
-    // 視窗可能已經關掉了(結束時回合才收尾):送到已銷毀的 webContents 會丟例外
-    if (!win.isDestroyed()) win.webContents.send("turn-end", { code, errTail: code === 0 ? "" : errTail });
+    turnFinish(rec, { code, errTail: code === 0 ? "" : errTail }, turnAwaiting);
   });
+}
+/* 回合的事件送主視窗(只有一個);每一則補 sid,畫面照它找分頁。視窗關掉(結束時回合才收尾)、還沒開:不送,送到已銷毀的 webContents 會丟例外 */
+function turnWin() { return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) || null; }
+function sendTurn(sid, ch, payload) {
+  const w = turnWin();
+  if (!w) return false;
+  try { w.webContents.send(ch, { ...(payload || {}), sid }); return true; } catch (_) { return false; }
+}
+/* 回合子行程降一級優先序(spec §12 第 6 條):引擎、工具跑的回測都繼承它;常駐程式與對帳器是 daemon.js 起的,不受影響,
+   下單訊號不會被並行的回測拖慢。調不了照跑 */
+function turnNice(child) {
+  try { os.setPriority(child.pid, os.constants.priority.PRIORITY_BELOW_NORMAL); } catch (_) { /* 沒權限 / 已經結束 */ }
+}
+/* 一輪結束(正常收尾或 spawn 之前就失敗):從表上拿掉、記 reply-cue 要用的那筆、送 turn-end、補排隊的。重複叫只算第一次 */
+function turnFinish(rec, end, awaiting) {
+  if (turns.get(rec.sid) !== rec) return false;
+  turns.delete(rec.sid);
+  try { fs.rmSync(rec.stopFile, { force: true }); } catch (_) { /* 留著也無害:下一輪是新檔名 */ }
+  replyPending.set(rec.sid, { sid: rec.sid, awaiting: awaiting === true });   // 畫面判完 stopped／faulted 才送 reply-cue
+  sendTurn(rec.sid, "turn-end", end);
+  if (typeof rec.onEnd === "function") { try { rec.onEnd(end); } catch (_) { /* 掛勾壞掉不擋收尾 */ } }   // 手機通道接上時用
+  turnPump();
+  return true;
+}
+
+/* 所有回合的入口:畫面的送出(send-message)、排隊輪到的(turnPump)、之後手機來的對話都走這裡,不經畫面也開得了跑。
+   回 { started } | { queued }(超過雲端名額)| { busy }(同一條在跑、重開收工中、對話 id 不合格)| { blocked }(最低版本閘)。
+   rec 在任何 await 之前就進表:連按兩下不會 spawn 兩顆 agent 搶同一份逐字稿;之後每一條沒開跑的路都要把它拿掉(稽核 R1:
+   拋了不還原,之後那條每一次送出都回 busy) */
+async function startTurn(payload, origin) {
+  const sid = payload && payload.sessionId;
+  if (!okSessionId(sid)) return { busy: true };   // 會進命令列、SQL 參數與檔名:先驗再進表,壞 key 不能卡在表上
+  if (restarting || turns.has(sid)) return { busy: true };   // 更新重開收工中:開了也會被砍掉
+  const rec = newTurnRec(sid, origin === "mobile" ? "mobile" : "desktop", turnCountsCloud(payload));
+  turns.set(sid, rec);
+  if (rec.cloud) { try { cloudHost().start(); } catch (_) { /* 起不來:名額照讀不到算 */ } }
+  // 最低版本閘:只擋 Blave AI;連自己 CLI 的人照常聊
+  try {
+    const kind = (loadConnection() || {}).kind;
+    if (kind === "blave") {
+      try { await minGate().ensureFresh(); } catch (_) { /* 問不到 = 照手上的答案 */ }
+      if (!minGate().turnAllowed(kind)) { turns.delete(sid); return { blocked: "UPDATE_REQUIRED" }; }
+    }
+  } catch (err) { turns.delete(sid); throw err; }
+  if (rec.cloud && cloudLiveCount(rec) >= cloudTurnLimit()) {
+    rec.phase = "queued"; rec.payload = payload; turnQueue.push(sid);
+    turnParTrack();
+    try { tm().track("feature_used", { name: "chat_queued" }); } catch (_) { /* 追蹤不擋 */ }
+    sendTurn(sid, "turn-event", { type: "queued" });
+    return { queued: true };
+  }
+  turnLaunch(rec, payload);
+  return { started: true };
+}
+/* 已經在表上的那一筆真的開跑。runTurn resolve = spawn 與 stdin 都成功、話交到 agent 手上;reject = 沒開跑,當一輪失敗收尾 */
+function turnLaunch(rec, payload) {
+  rec.phase = "starting";
+  turnParTrack();
+  // 使用追蹤「上雲端運行」:只認「送上雲端」確認框送的那句(payload.handoff === "up";拉回不算),而且旗標要開——關著時畫面到不了那條路,標記也不認
+  const cloudUp = cloudHandoffOn() && payload && payload.handoff === "up";
+  runTurn(rec, payload).then(() => { if (cloudUp) tm().track("cloud_started"); }).catch((err) => {
+    turnFinish(rec, { code: 1, errTail: String((err && err.message) || err) }, false);
+  });
+}
+/* 對著雲端主機的回合(spec §12 第 9 條):送出當下看的是雲端,或這一句是「送上雲端／拉回」。agent 會經 SSH 在那台跑回測、組報告,
+   電腦版不設上限就等於繞過那台的名額。兩件事送出時就定了,外殼不猜 */
+function turnCountsCloud(payload) {
+  return !!(payload && ((payload.viewing && typeof payload.viewing === "object" && payload.viewing.env === "cloud") || payload.handoff === "up" || payload.handoff === "down"));
+}
+function cloudLiveCount(except) { let n = 0; for (const r of turns.values()) if (r !== except && r.cloud && r.phase !== "queued") n++; return n; }
+/* 那台主機同時能跑幾輪:api /oauth/desktop/cloud/state 的 turn_limits.max_turns(同雲端 web_bridge 的名額)。讀不到、舊 api 沒帶 = 1 */
+function cloudTurnLimit() {
+  let n = null; try { const st = _cloud ? _cloud.snapshot() : null; n = st && st.code === "OK" ? st.max_turns : null; } catch (_) { n = null; }
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+}
+/* 有名額空出來(任何一輪結束、取消排隊)就依序補上。重開收工中不補:開了也會被砍掉 */
+function turnPump() {
+  while (turnQueue.length && !restarting) {
+    const sid = turnQueue[0], rec = turns.get(sid);
+    if (!rec || rec.phase !== "queued") { turnQueue.shift(); continue; }
+    if (cloudLiveCount(rec) >= cloudTurnLimit()) return;
+    turnQueue.shift();
+    const payload = rec.payload; delete rec.payload;
+    sendTurn(sid, "turn-event", { type: "started" });
+    turnLaunch(rec, payload);
+  }
+}
+/* 取消排隊:那一句不送,畫面照一輪結束收(turn-end 帶 canceled) */
+function turnDequeue(rec) {
+  const i = turnQueue.indexOf(rec.sid); if (i >= 0) turnQueue.splice(i, 1);
+  if (turns.get(rec.sid) !== rec) return false;
+  turns.delete(rec.sid);
+  try { tm().track("feature_used", { name: "queue_cancel" }); } catch (_) { /* 追蹤不擋 */ }
+  sendTurn(rec.sid, "turn-end", { code: 0, errTail: "", canceled: true });
+  return true;
+}
+function turnsState() { return [...turns.values()].map((r) => ({ sid: r.sid, phase: r.phase, origin: r.origin })); }
+/* 同時在跑的回合數當天第一次到 2／4／8(spec §5):判斷「不設上限」影響的唯一資料來源。只送門檻名,不帶 sid／標題 */
+const TURN_PAR_STEPS = [[8, "chat_par8"], [4, "chat_par4"], [2, "chat_par2"]];
+function turnParTrack() {
+  const n = liveTurnCount(), step = TURN_PAR_STEPS.find(([k]) => n >= k);
+  if (step) { try { tm().track("feature_used", { name: step[1] }); } catch (_) { /* 追蹤不擋 */ } }
 }
 
 /* 這個視窗只顯示我們自己的 index.html,永遠不該被導去別的地方。頁面裡有第三方畫的
@@ -3701,7 +3834,7 @@ app.whenReady().then(() => {
   handle("browser-open-external", (_e, id) => { const u = _browser && typeof id === "string" ? _browser.externalUrl(id) : null; return u ? openWebSafe(u) : false; }, false);
   handle("browser-prefs", () => browser().prefs(), { enabled: false });
   handle("browser-prefs-set", (_e, p) => browser().setPrefs({ enabled: !!(p && p.enabled === true) }), null);
-  handle("browser-clear", () => (activeTurn ? false : browser().clearData()), false);
+  handle("browser-clear", () => (anyTurn() ? false : browser().clearData()), false);
   // 送進 TradingView(browser/pine.js):外殼自己貼,不開 agent 回合。renderer 只給 ref。流程停在交接:貼完之後沒有任何一支 IPC 會再讀那一頁
   handle("pine-install", (_e, ref) => { const job = pineJob(ref && typeof ref === "object" ? ref : null); return job ? browser().pineInstall(job) : { state: "fail", why: "no_file" }; }, { state: "fail" });
   /* 自帶資料來源(datasrc.js;設定 › 資料來源)。金鑰的值只從 renderer 的表單經過 datasrc-save 一次,寫進 workspace 的 .env(拿 .env.lock);
@@ -3760,7 +3893,7 @@ app.whenReady().then(() => {
   handle("agent-login", (e, kind) => agentLogin(String(kind || ""),
     () => { if (!e.sender.isDestroyed()) e.sender.send("agent-login-spawned"); }));
   handle("cancel-agent-login", () => cancelAgentLogin());
-  handle("stop-turn", () => stopTurn(), false);
+  handle("stop-turn", (_e, sid) => stopTurn(typeof sid === "string" ? sid : null), false);
   // 自帶 API 金鑰:只有 set(驗過才存)/ test(重驗已存的那把)/ remove,加一支不帶值的取消。**沒有任何一支把金鑰交回畫面**
   const llmDenied = { ok: false, code: "NOT_ALLOWED", status: 0 };
   handle("apikey-set", (_e, a) => llmKeySet(a && typeof a === "object" ? { preset: a.preset, key: a.key, connect: a.connect === true } : null), llmDenied);
@@ -3769,29 +3902,9 @@ app.whenReady().then(() => {
   handle("apikey-cancel", () => { if (!llmVerify) return false; llmVerify.abort(); return true; }, false);
   ipcMain.handle("send-message", async (e, payload) => {
     if (!fromOurPage(e)) return { busy: true };   // 會 spawn agent、花 AI 額度:只收自家頁面
-    if (activeTurn || turnStarting || restarting) return { busy: true };   // 更新重開收工中:開了也會被砍掉
-    const win = BrowserWindow.fromWebContents(e.sender);
-    // 使用追蹤「上雲端運行」:只認「送上雲端」確認框送的那句(payload.handoff === "up";拉回不算),而且旗標要開——關著時畫面到不了那條路,標記也不認
-    const cloudUp = cloudHandoffOn() && payload && payload.handoff === "up";
-    // runTurn 要先 await 登入 shell 的 PATH 與 account_status 才 spawn;這段期間 activeTurn 還是 null,
-    // 不另外立旗標的話連按兩下會 spawn 兩顆 agent 搶同一個 session.db(下面補問版本閘的那段 await 也算在內)
-    turnSessionId = payload && payload.sessionId;   // deleteSession 只拒刪這一條
-    turnStarting = true;
-    newTurnStop();
-    // 最低版本閘:只擋 Blave AI;連自己 CLI 的人照常聊
-    try {
-      const kind = (loadConnection() || {}).kind;
-      if (kind === "blave") {
-        try { await minGate().ensureFresh(); } catch (_) { /* 問不到 = 照手上的答案 */ }
-        if (!minGate().turnAllowed(kind)) { turnStarting = false; return { blocked: "UPDATE_REQUIRED" }; }
-      }
-    } catch (err) { turnStarting = false; throw err; }   // 這一段拋了不還原的話,之後每一次送出都回 busy(稽核 R1)
-    runTurn(win, payload).then(() => { if (cloudUp) tm().track("cloud_started"); }).catch((err) => {   // resolve = spawn 與 stdin 都成功、話交到 agent 手上;失敗那條不送
-      replyPending = { sid: payload && payload.sessionId, awaiting: false };
-      if (win && !win.isDestroyed()) win.webContents.send("turn-end", { code: 1, errTail: String((err && err.message) || err) });
-    }).finally(() => { turnStarting = false; });
-    return { started: true };
+    return startTurn(payload, "desktop");
   });
+  handle("turns-state", () => turnsState(), []);
   // 選單字由畫面交過來(trPushLabels):收件的 handler 要在視窗之前掛好,而且 app 選單先重建、再動選單列——
   // 以前掛在一串啟動步驟的最後,中間任何一步拋例外 handler 就沒掛上,app 選單停在英文(File／Edit／View…)、畫面其他都正常
   ipcMain.on("trade-labels", (e, labels) => {
@@ -3832,9 +3945,9 @@ app.whenReady().then(() => {
   startStep("device type", () => require("./devicetype").detectDeviceType().then((kind) => { _deviceKind = kind; tm().track("device_type", { kind }); }));
   if (app.hasSingleInstanceLock()) startStep("mobile view", () => mobileView().start());   // 第二份 app 不送:兩份會搶同一個裝置代號
   // 帳號 token 輪替:開 app 就檢查一次(0.1.15 以前沒有期限的那顆在這裡第一次換掉),之後每 10 分鐘看一次。
-  // 回合進行中不換:那顆在 agent 的環境裡,換了它 10 分鐘後就失效。第二份 app 不碰(兩份同時換,先回來的那顆會作廢)
+  // 回合進行中照換(0.1.37):回合手上只有帳號轉送口的 token,轉出去時才讀當下那顆。第二份 app 不碰(兩份同時換,先回來的那顆會作廢)
   if (app.hasSingleInstanceLock()) startStep("token rotate", () => {
-    const tick = () => { if (!(activeTurn || turnStarting)) rotator().ensure(ROTATE_MIN_LEFT_MS).catch(() => {}); };
+    const tick = () => { rotator().ensure(ROTATE_MIN_LEFT_MS).catch(() => {}); };
     tick();
     const t = setInterval(tick, ROTATE_CHECK_MS); if (t.unref) t.unref();
   });
@@ -3882,6 +3995,7 @@ let restarting = null;
 /* 設 restarting 一律走這支:狀態一變就推給畫面(聊天那一格、關於列換「重新啟動中…」)並重建選單列,不等 5 秒那一輪 */
 function setRestarting(v) {
   restarting = v;
+  if (!v) turnPump();   // 重開被取消:收工期間沒補上的排隊接著補
   try { const st = { ...updater().state(), backup: _officialBackup, restarting: !!v }; for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("update-state", st); } catch (_) { /* 畫面壞掉不擋重開 */ }
   startStep("tray", traySync);
 }
@@ -3896,6 +4010,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   caplQuitUnknown: "Positions at 群益期貨 (Capital Futures) can't be read right now — some may still be open. After you quit, strategies place no more orders and nothing is closed — check them in the 群益 app.",
   caplQuitBody: "{lots} lot(s) are still open at 群益期貨 (Capital Futures). After you quit, strategies place no more orders and these positions are not closed — handle them in the 群益 app.",
   quitTurnTitle: "The agent is still replying", quitTurnBody: "Quitting Blave now cuts off this turn, including any cloud update in progress. It's safer to wait until it finishes.",
+  quitTurnBodyN: "{n} replies are still running. Quitting Blave now cuts them all off, including any cloud update in progress. It's safer to wait until they finish.",
   unsavedTitle: "Leave without saving?", unsavedBody: "Your Portfolio changes will be lost.", unsavedGo: "Leave",
   unsavedNote: "Unsaved Portfolio changes will be lost.",
   hidden: WIN ? "Blave is still running in the system tray." : "Blave is still running in the menu bar.",
@@ -3943,7 +4058,8 @@ function envSwitchFromMenu(env) {
    全螢幕**不用 role**:帶 togglefullscreen role(= toggleFullScreen: selector)時,macOS 26 會在同一個選單再插一份自己的
    (🌐F 那一格,字照抄我們的),0.0.4 上實際看到兩個「Toggle Full Screen」(Electron 44.4.3 的修正沒蓋到)。
    改成自己的 click + ⌃⌘F,實測選單裡只剩一格;系統那份 🌐F 快捷鍵跟著不見,⌃⌘F 與視窗綠燈照常。
-   ⌘1 / ⌘2 在 renderer 也有 keydown:macOS 上選單的快捷鍵先吃,頁面多半收不到;就算兩邊都觸發,切到「已經在的那一邊」
+   ⌘1–9 留給對話分頁(0.1.37,Wei 拍板):視角切換移到 ⌘⇧1 / ⌘⇧2。
+   ⌘⇧1 / ⌘⇧2 在 renderer 也有 keydown:macOS 上選單的快捷鍵先吃,頁面多半收不到;就算兩邊都觸發,切到「已經在的那一邊」
    是 no-op(renderer 的 envSwitch 開頭就擋),不會切兩次。確認框開著時該不該切由 renderer 收到 env-switch 後自己判(同 keydown 的規則)。 */
 function appMenuTemplate(L, dev, full, onEnv, onSite, onFull, ask = false) {
   const l = (k) => L[k] || MENU_EN[k], sep = { type: "separator" }, r = (role, k, extra) => ({ role, label: l(k), ...extra });
@@ -3955,8 +4071,8 @@ function appMenuTemplate(L, dev, full, onEnv, onSite, onFull, ask = false) {
     { label: l("menuEdit"), submenu: [r("undo", "menuUndo"), r("redo", "menuRedo"), sep, r("cut", "menuCut"), r("copy", "menuCopy"), r("paste", "menuPaste"),
       r("pasteAndMatchStyle", "menuPasteStyle"), r("delete", "menuDelete"), r("selectAll", "menuSelectAll")] },
     { label: l("menuView"), submenu: [
-      { label: l("menuLocal"), accelerator: "Cmd+1", click: () => onEnv("local") },
-      { label: l("menuCloud"), accelerator: "Cmd+2", click: () => onEnv("cloud") },
+      { label: l("menuLocal"), accelerator: "Cmd+Shift+1", click: () => onEnv("local") },
+      { label: l("menuCloud"), accelerator: "Cmd+Shift+2", click: () => onEnv("cloud") },
       sep,
       ...(dev ? [{ role: "reload" }, { role: "forceReload" }, { role: "toggleDevTools" }, sep] : []),   // 開發版才有,維持英文
       r("resetZoom", "menuActualSize"), r("zoomIn", "menuZoomIn"), r("zoomOut", "menuZoomOut"), sep,
@@ -3968,7 +4084,7 @@ function appMenuTemplate(L, dev, full, onEnv, onSite, onFull, ask = false) {
 }
 function appMenuSync() {
   const w = BrowserWindow.getAllWindows()[0], full = !!(w && !w.isDestroyed() && w.isFullScreen());
-  const ask = !!(tradeMaybeLive() || activeTurn || turnStarting);   // 結束那一格要不要「…」;traySync 每 5 秒叫一次補上變化
+  const ask = !!(tradeMaybeLive() || anyTurn());   // 結束那一格要不要「…」;traySync 每 5 秒叫一次補上變化
   const key = JSON.stringify([uiLang, full, ask, tmLabels.quit, Object.keys(MENU_EN).map((k) => tmLabels[k])]);   // 換語言、進出全螢幕、會不會先問都重建
   if (key === appMenuKey && Menu.getApplicationMenu()) return;
   appMenuKey = key;
@@ -4035,7 +4151,7 @@ const updateWaiting = () => { try { const p = updater().state().phase; return p 
 async function restartToUpdate(opts) {
   let confirmed = !!(opts && opts.confirmed === true);
   const used = () => { try { tm().track("feature_used", { name: "update_restart" }); } catch (_) { /* 追蹤不擋更新 */ } };
-  const phase = () => updater().state().phase, turnBusy = () => !!(activeTurn || turnStarting);
+  const phase = () => updater().state().phase, turnBusy = () => anyTurn();
   // 已經在收工 / 結束(restarting、quitConfirmed、quitting)跟「框開著」同一種:不再問、不再收一次工
   const plan = () => planRestart({ phase: phase(), turn: turnBusy(), asking: quitAsking || moveAsking || !!restarting || quitConfirmed || quitting, trading: !!tradeMaybeLive() });
   const stop = (st) => (st === "not_ready" ? { ok: false, error: "NOT_READY" } : st === "busy" ? { ok: false, error: "TURN_BUSY" } : st === "asking" ? { ok: false, error: "ASKING" } : null);
@@ -4201,7 +4317,7 @@ async function scheduledInstall(now = Date.now()) {
     if (!S.inWindow(now)) return { go: false, why: "window" };
     const st = updater().state(), host = _tradeHost ? _tradeHost.status() : null;
     const base = { now, on, phase: st.phase, version: st.version, failed: updSchedRec().failed, trading: !!tradeMaybeLive(),
-      turn: !!(activeTurn || turnStarting), idleSec: require("electron").powerMonitor.getSystemIdleTime(), twHeld: twLots().held,
+      turn: anyTurn(), idleSec: require("electron").powerMonitor.getSystemIdleTime(), twHeld: twLots().held,
       asking: !!(quitAsking || moveAsking || restarting || quitConfirmed || quitting), engineBusy: !!(engineSetup().busy() || _engineRun),
       reports: updSchedReports(host), ...updSchedJobs(host, now) };
     let d = S.schedPlan({ ...base, dirty: false, uiBusy: false });
@@ -4210,13 +4326,13 @@ async function scheduledInstall(now = Date.now()) {
     const idle = await pageAsk("typeof upIdleUi === 'function' && upIdleUi() === true");
     // 問畫面那段時間狀態可能變了:全部重判一次再動(報告與長工作也重讀,遠端可能剛按了全部平倉)
     const now2 = Date.now(), host2 = _tradeHost ? _tradeHost.status() : null;
-    d = S.schedPlan({ ...base, now: now2, reports: updSchedReports(host2), ...updSchedJobs(host2, now2), trading: !!tradeMaybeLive(), turn: !!(activeTurn || turnStarting), asking: !!(quitAsking || moveAsking || restarting || quitConfirmed || quitting),
+    d = S.schedPlan({ ...base, now: now2, reports: updSchedReports(host2), ...updSchedJobs(host2, now2), trading: !!tradeMaybeLive(), turn: anyTurn(), asking: !!(quitAsking || moveAsking || restarting || quitConfirmed || quitting),
       phase: updater().state().phase, dirty: dirty === null ? null : dirty, uiBusy: idle === null ? null : !idle });
     if (!d.go) return d;
     draftOk = true;   // quitAndInstall 關視窗時不再問草稿(上面已確認沒有)
     await engineAbort();
     // install() 只擋下單不擋回合;收引擎那段 await 期間開了回合就放掉這一輪
-    if (activeTurn || turnStarting) { draftOk = false; return { go: false, why: "turn" }; }
+    if (anyTurn()) { draftOk = false; return { go: false, why: "turn" }; }
     // 確定要裝才送(spec §6:install() 前),被上面的回合再判擋下的那輪不算
     try { tm().track("feature_used", { name: "upd_sched_run" }); } catch (_) { /* 追蹤不擋 */ }
     const res = updater().install();
@@ -4266,7 +4382,7 @@ async function askMoveToApps() {
   }
   // 框開著的時候開始下單 / 開始回合:搬移成功會走 before-quit,被結束攔截擋下的話 app 會從垃圾桶裡的 bundle 繼續跑。這次不搬,也不記(稽核 P2-2)
   // 框開著的時候引擎開始裝(送第一句話的 ensure-engine):同上,這次不搬、不記
-  if (tradeMaybeLive() || activeTurn || turnStarting || _engineRun || engineSetup().busy() || moveNeedsAuth(app.getPath("exe"))) return false;
+  if (tradeMaybeLive() || anyTurn() || _engineRun || engineSetup().busy() || moveNeedsAuth(app.getPath("exe"))) return false;
   // 埋點 feature_used 的 app_move = 按了「移」(不是搬成功:成功 app 會立刻結束重開,事後送不出去;授權框取消也算按過)
   try { tm().track("feature_used", { name: "app_move" }); } catch (_) { /* 追蹤不擋 */ }
   try { return app.moveToApplicationsFolder(); } catch (e) { console.error("[move] " + ((e && e.message) || e)); return false; }
@@ -4279,7 +4395,7 @@ function trayLocalLine(live, st) {
 }
 const trayCloudLine = () => TT.statusLine(tmLabels.stCloud, TT.cloudLine(cloudSt()), tmLabels);
 // 「…」= 按了會先跳確認框(before-quit 那兩道:可能在下單、回合在跑);不會跳的時候用不帶「…」的那一句(同 app 選單;HIG)
-const trayQuitLabel = (maybe) => (maybe || activeTurn || turnStarting ? tmLabels.quit : tmLabels.menuQuit || MENU_EN.menuQuit);
+const trayQuitLabel = (maybe) => (maybe || anyTurn() ? tmLabels.quit : tmLabels.menuQuit || MENU_EN.menuQuit);
 // 一組一組排,組跟組之間一條分隔線:缺席的組連它上面那條一起不出(不會兩條疊在一起、不會以分隔線開頭或結尾)
 const trayGroups = (groups) => groups.filter((g) => g.length).flatMap((g, i) => (i ? [{ type: "separator" }, ...g] : g));
 /* m = traySync 算好的那一份:{ local, cloud, update, pause, quit }。
@@ -4306,7 +4422,7 @@ function traySync() {
   const st = _tradeHost ? _tradeHost.status() : null, live = tradeLive(st);
   if (live) lastVenue = live.venue;
   const maybe = live || tradeMaybeLive(st), show = !!maybe || trayLabelsIn;
-  const m = { local: trayLocalLine(live, st), cloud: trayCloudLine(), update: updateWaiting() || restarting ? { ask: !!maybe, busy: !!(activeTurn || turnStarting || restarting), restarting: !!restarting } : null, pause: !!maybe, quit: trayQuitLabel(maybe) };
+  const m = { local: trayLocalLine(live, st), cloud: trayCloudLine(), update: updateWaiting() || restarting ? { ask: !!maybe, busy: !!(anyTurn() || restarting), restarting: !!restarting } : null, pause: !!maybe, quit: trayQuitLabel(maybe) };
   // 每一行的字、暫停有沒有出都進 key:少一樣,換語言之後要等別的欄位變了才會重建
   const key = JSON.stringify([show, m, pauseLabel(), tmLabels.open, m.update ? tmLabels.updateReady : "", m.update && m.update.restarting ? tmLabels.restarting : ""]);
   if (key === trayKey) return;   // 每 5 秒叫一次:沒變就不重建選單
@@ -4467,7 +4583,7 @@ app.on("browser-window-created", (_e, win) => {
     // 關視窗不等於結束:自動下單在跑、或本機 agent 回合在跑(可能正在更新雲端)時只把視窗藏起來,回合 / 下單照走
     // 更新重開收工中:紅燈只收視窗(放行會變成走結束 app → 裝了但不重開);交給 quitAndInstall 之後就放行,它要關視窗才能重開
     if (restarting === "stopping") { e.preventDefault(); win.hide(); return; }
-    const trading = tradeMaybeLive(), turn = !!(activeTurn || turnStarting);
+    const trading = tradeMaybeLive(), turn = anyTurn();
     if (quitting || quitConfirmed || (!trading && !turn)) {
       // 真的要關(不是收起來):主視窗有沒存的策略組合草稿就先問;只收起來的那兩態草稿還在記憶體裡,不問
       if (!quitting && !quitConfirmed && !draftOk && isOurPageUrl(win.webContents.getURL())) {
@@ -4485,6 +4601,8 @@ app.on("browser-window-created", (_e, win) => {
    不自己接的話 Chromium 的處理只管第一次:它收到一次訊號就把處理還原成系統預設,第一次被攔下(用戶按了取消)之後,
    第二次訊號直接殺掉行程——沒有框、daemon 沒收工、事件清單也沒記(實測 09-28)。要在 ready 之後掛:Chromium 的處理是啟動時裝的,
    後掛的才算數。Windows 沒有這幾個訊號的同等語意,不掛。tests/check_shell_quit_again.js 從原文切出來跑 */
+/* 結束框的回合那句:兩條以上帶數字(spec §12 第 2、8 條),一條照舊那句。純函式(tests/check_shell_turn_table.js) */
+function quitTurnBody(n, L) { return n >= 2 && L.quitTurnBodyN ? L.quitTurnBodyN.replace("{n}", () => String(n)) : L.quitTurnBody; }
 function quitOnSignals(proc, quit) {
   if (proc.platform === "win32") return [];
   const sigs = ["SIGTERM", "SIGINT", "SIGHUP"];
@@ -4528,7 +4646,7 @@ app.on("before-quit", (e) => {
     quitAsking = true;
     draftDirty(null).then((dirty) => {
       quitAsking = false;
-      const more = !!tradeMaybeLive() || !!(activeTurn || turnStarting) || twLots().held;
+      const more = !!tradeMaybeLive() || anyTurn() || twLots().held;
       if (!dirty || more) { draftOk = true; draftNote = dirty; app.quit(); return; }
       draftGate(null, true).then((go) => { if (go) { draftOk = true; app.quit(); } });
     });
@@ -4555,14 +4673,14 @@ app.on("before-quit", (e) => {
     return;
   }
   // 本機 agent 回合還在跑(可能正在更新雲端主機):結束會把它斷掉,先問一次(同自動下單那一道;已經確認過就不再問)
-  if (!quitting && !quitConfirmed && (activeTurn || turnStarting)) {
+  if (!quitting && !quitConfirmed && anyTurn()) {
     e.preventDefault();
     if (quitAsking || moveAsking) return;
     try { showMain(); } catch (_) { /* 同上 */ }
     quitAsking = true;
     const sg = TT.stayGo(process.platform, tmLabels.quitStay, tmLabels.quitGo);
     dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: tmLabels.quitTurnTitle,
-      detail: draftNoted(tmLabels.quitTurnBody), buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId })
+      detail: draftNoted(quitTurnBody(liveTurnCount(), tmLabels)), buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId })
       .then((r) => { quitAsking = false; if (r.response === sg.goIndex) { quitConfirmed = true; app.quit(); } else { draftOk = false; draftNote = false; } }, () => { quitAsking = false; draftOk = false; draftNote = false; });
     return;
   }

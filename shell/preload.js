@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld("blave", {
   replyNotifySet: (on) => ipcRenderer.invoke("reply-notify-set", on === true),
   replySoundSet: (on) => ipcRenderer.invoke("reply-sound-set", on === true),
   replyNotifyOs: () => ipcRenderer.invoke("reply-notify-os"),
-  replyCue: (kind, snippet) => ipcRenderer.send("reply-cue", { kind: String(kind), snippet: typeof snippet === "string" ? snippet : "" }),
+  replyCue: (kind, snippet, sid) => ipcRenderer.send("reply-cue", { kind: String(kind), snippet: typeof snippet === "string" ? snippet : "", ...(typeof sid === "string" && sid ? { sid } : {}) }),
   theme: () => ipcRenderer.invoke("theme"),
   themeSet: (v) => ipcRenderer.invoke("theme-set", typeof v === "string" ? v : ""),
   welcomePrefs: () => ipcRenderer.invoke("welcome-prefs"),
@@ -191,7 +191,8 @@ contextBridge.exposeInMainWorld("blave", {
   mobileViewSet: (on) => ipcRenderer.invoke("mobile-view-set", on === true),
   ensureEngine: () => ipcRenderer.invoke("ensure-engine"),
   sendMessage: (payload) => ipcRenderer.invoke("send-message", payload),
-  stopTurn: () => ipcRenderer.invoke("stop-turn"),   // true = 停止旗標寫下了;結果照樣等 turn-end
+  stopTurn: (sid) => ipcRenderer.invoke("stop-turn", typeof sid === "string" ? sid : null),   // true = 停止旗標寫下了;結果照樣等 turn-end。沒帶 sid = 只有一條在跑時停它
+  turnsState: () => ipcRenderer.invoke("turns-state"),   // [{ sid, phase, origin }]:畫面重載時補回哪幾條在跑
   // 安裝進度(renderer/engine.js):主行程那一份快照,拉一次 + 之後每次變動推過來
   engineState: () => ipcRenderer.invoke("engine-state"),
   onEngineState: (fn) => ipcRenderer.on("engine-state", (_e, s) => fn(s)),

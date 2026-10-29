@@ -106,9 +106,9 @@ try {
     t("外殼啟動時清一次(startStep,失敗不擋啟動);七天同 runtime/prune_job.py", /startStep\("inbound prune", \(\) => require\("\.\/attach"\)\.prune\(WS\)\);/.test(mainSrc) && /INBOUND_RETENTION_DAYS = 7\b/.test(fs.readFileSync(path.join(ROOT, "runtime", "prune_job.py"), "utf8")) && /const INBOUND_KEEP_MS = 7 \* 24 \* 3600 \* 1000;/.test(fs.readFileSync(path.join(SHELL, "attach.js"), "utf8"))); }
 
   // ── main.js 接線 ──
-  const rt = (mainSrc.match(/async function runTurn\(win, \{[^}]*\}\) \{[\s\S]*?\n\}/) || [""])[0];
+  const rt = (mainSrc.match(/async function runTurn\(rec, \{[^}]*\}\) \{[\s\S]*?\n\}/) || [""])[0];
   t("runTurn 收 attachments:先驗整份清單(個數 / 合計 / 重名 / 任一個壞 → 整輪不跑)與加上那幾行之後的 stdin 上限 → 落地 workspace/tmp/inbound → withNotes 接在訊息尾端",
-    /async function runTurn\(win, \{ sessionId, message, [^}]*attachments(, suggestMode)? \}\)/.test(rt)
+    /async function runTurn\(rec, \{ sessionId, message, [^}]*attachments(, suggestMode)? \}\)/.test(rt)
     && /const vs = at\.validateAll\(attachments\);\n\s*if \(!vs\) throw new Error\("bad attachment"\);\n\s*if \(Buffer\.byteLength\(at\.withNotes\(message, vs\.map\(\(v\) => "0000000000_" \+ v\.name\)\), "utf8"\) > MESSAGE_MAX_BYTES\) throw new Error\("bad message"\);/.test(rt)
     && /if \(at\) message = at\.withNotes\(message, at\.saveAll\(WS, attachments\)\);/.test(rt) && rt.indexOf("at.saveAll(") < rt.indexOf("child.stdin.end(message)"));
   { const iVal = rt.indexOf("at.validateAll(attachments)"), iSave = rt.indexOf("at.saveAll(WS, attachments)"), iCodex = rt.indexOf('throw new Error("AGENT_BIN_MISSING")'), iKey = rt.indexOf('throw new Error("APIKEY_MISSING")');

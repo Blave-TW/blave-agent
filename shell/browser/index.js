@@ -977,7 +977,9 @@ function createBrowser(o) {
   async function waitNav(v) { await sleep(300); const end = Date.now() + 8000; while (Date.now() < end && v.wc.isLoading()) await sleep(200); }
 
   async function call(name, args, ctx) {
-    if (!cur || !ctx.live()) return ERR("browser_off", "this turn has ended");
+    // 經 MCP 進來的已經在 acquire 拿過租約;直接呼叫(沒帶 turnId)的照單一回合的舊行為:有人拿著就是它,只有一輪在等就給它
+    if (ctx && ctx.turnId === undefined && !cur && pend.size === 1) await activate(pend.values().next().value);
+    if (!cur || !ctx.live() || (ctx.turnId !== undefined && cur.turnKey !== ctx.turnId)) return ERR("browser_off", "this turn has ended");
     if (!prefs.enabled) return ERR("browser_off", MSG.browser_off);
     firstUse();
     if (name === "browser_search") return doSearch(args, ctx);
@@ -1061,6 +1063,60 @@ function createBrowser(o) {
     if (name === "browser_capture") return doCapture(t, v, args);
     if (["browser_click", "browser_fill", "browser_type", "browser_press", "browser_scroll", "browser_back"].includes(name)) return doAct(name, t, v, args);
     return ERR("invalid_args", "unknown tool");
+  }
+
+  /* 租約(0.1.37 對話分頁並行):瀏覽器只有一個,同時只給一輪用。每一輪開跑都照樣掛 MCP、各一顆 token(pend),
+     **第一次呼叫瀏覽器工具時**才拿租約、這一輪結束才還——大部分回合不碰瀏覽器,開跑就佔會擋住別條。
+     拿到租約那一刻才設 cur、開新一輪的分頁 scope、自動交還、看報告資料夾(以前在 beginTurn 做的那幾件)。
+     別條拿著時原地等(FIFO),第一次等時告訴主行程(onWait:那個分頁的狀態列換字);等滿 LEASE_WAIT_MS 回 browser_busy。
+     LEASE_WAIT_MS + 最長的工具上限(搜尋 SEARCH_HARD_MAX_MS)要短於引擎那端的 600 秒(mcpcode BROWSER_TOOL_TIMEOUT_MS) */
+  const LEASE_WAIT_MS = o.leaseWaitMs || 240000;   // o.leaseWaitMs 只給測試縮短
+  const pend = new Map();   // turnKey → { sessionId, turnKey, noUser, userSent, waitSaid }
+  const leaseQ = [];        // [{ key, resolve, timer, connected }]
+  let curReady = null, lastKey = 0;
+  function activate(p) {
+    pend.delete(p.turnKey);
+    // seen / readText:外送檢查用(policy.exfilRisk)——這一輪開過的網域、讀過的字
+    // noUser:這一輪是從雲端視角送出的(畫面上不是這台電腦的對話)→ 遇到驗證頁不問,直接走退路
+    const c = cur = { sessionId: p.sessionId, turnKey: p.turnKey, used: false, captchas: 0, skipGoogle: false, verifyEnd: null, noUser: p.noUser, sources: [], seen: new Set(), readText: "" };
+    tabs.newTurn(p.sessionId);
+    for (const v of views.values()) v.pace.newTurn();   // 跨回合重置:每回合第一動作完整效果(canon 第 9 條)
+    watchReports(c);
+    // userSent:這一輪是用戶在這台電腦的聊天送出的(main.js send-message)。沒帶的、從雲端視角送的都不交還
+    curReady = (p.userSent && !c.noUser ? autoHandback(c) : Promise.resolve()).catch(() => {});
+    return curReady;
+  }
+  const BUSY_MSG = "the built-in browser is being used by another conversation on this computer and did not free up in time. Do not call it again right away";
+  /* 回 null = 這一輪拿著租約了;回一個工具結果 = 拿不到(這一輪已結束、等太久) */
+  async function acquire(key, ctx) {
+    if (cur && cur.turnKey === key) { if (curReady) await curReady; return null; }
+    const p = pend.get(key);
+    if (!p) return ERR("browser_off", "this turn has ended");
+    if (!cur && !leaseQ.length) { await activate(p); return null; }
+    if (!p.waitSaid) { p.waitSaid = true; if (o.onWait) { try { o.onWait(p.sessionId); } catch (_) { /* 主行程那邊壞掉不擋等待 */ } } }
+    const got = await new Promise((resolve) => {
+      const w = { key, resolve, connected: ctx && ctx.connected ? ctx.connected : () => true,
+        timer: setTimeout(() => { const i = leaseQ.indexOf(w); if (i >= 0) leaseQ.splice(i, 1); resolve("busy"); }, LEASE_WAIT_MS) };
+      leaseQ.push(w);
+    });
+    if (got === "busy") { if (o.onBusy) { try { o.onBusy(p.sessionId); } catch (_) { /* 同上 */ } } return ERR("browser_busy", BUSY_MSG); }
+    if (got !== "ok") return ERR("browser_off", "this turn has ended");
+    if (curReady) await curReady;
+    return null;
+  }
+  /* 租約空出來:依序找下一個還在等、那一輪也還在的,把同一輪排著的呼叫一起放行 */
+  function grantNext() {
+    while (!cur && leaseQ.length) {
+      const w = leaseQ.shift(); clearTimeout(w.timer);
+      const p = pend.get(w.key);
+      if (!p || !w.connected()) { w.resolve("off"); continue; }
+      activate(p);
+      for (let i = leaseQ.length - 1; i >= 0; i--) if (leaseQ[i].key === w.key) { const x = leaseQ.splice(i, 1)[0]; clearTimeout(x.timer); x.resolve("ok"); }
+      w.resolve("ok");
+    }
+  }
+  function dropTurnWaits(key) {
+    for (let i = leaseQ.length - 1; i >= 0; i--) if (leaseQ[i].key === key) { const x = leaseQ.splice(i, 1)[0]; clearTimeout(x.timer); x.resolve("off"); }
   }
 
   /* 「匯整成報告」只在這一輪真的有報告寫進 workspace/reports/ 時才顯示(canon 設計系統 第 1 條):
@@ -1192,6 +1248,37 @@ function createBrowser(o) {
     width: (t, v) => pineLayout.width(t, v), widen: (t, v, w) => pineLayout.widen(t, v, w), narrow: (t, v) => pineLayout.narrow(t, v),
   });
 
+  /* 拿著租約的那一輪收尾:記下這一輪的分頁與來源(重開 app 時重建聊天區塊)、發 turn_sources */
+  function endLeaseTurn(c) {
+    try { sweepCites(o.reportsDir, c.cites); } catch (_) { /* 清不掉:留著,不擋回合收尾 */ }
+    if (!c.used) return;
+    const favOf = (u) => { try { return favCache.get(new URL(u).host) || null; } catch (_) { return null; } };
+    // 這一輪開的(關掉的只留讀過的),加上前面回合留下來、這一輪讀過的分頁(稽核 P2-7:只記這一輪開的,重開 app 時那一輪的格子是空的、
+    // 整頁快照也不升級)。前面回合的分頁這一輪只操作沒讀:不進格子,跟即時的瀏覽卡一樣
+    const readNow = (t) => t.readTurn === c.turnKey;
+    const rows = tabs.inTurn().filter((t) => (t.turn === tabs.turn() && t.status !== "closed") || readNow(t)).map((t) => ({ id: t.id, url: C.scrub(t.url, 2000), title: C.scrub(t.title, 300), status: t.status === "blocked" ? "blocked" : t.status === "failed" ? "failed" : readNow(t) ? "done" : "open", snapshot_id: t.snapshotId || null, search: !!t.isSearch }));
+    const sources = c.sources.slice();
+    // ts = agent 第一次用瀏覽器的時間,不是回合開始:回合開始比 runtime 寫進逐字稿的那句用戶訊息早,
+    // 重開對話時區塊會排到那句的上面
+    snaps.logTurn(c.sessionId, { ts: (c.usedAt || c.turnKey) / 1000, end: Date.now() / 1000, tabs: rows, sources });
+    const withFav = (a) => a.map((r) => { const f = favOf(r.url); return Object.assign({}, r, { fav: f ? f.data : null, plate: !!(f && f.plate) }); });
+    emit("turn_sources", { session_id: c.sessionId, sources: withFav(sources), tabs: withFav(rows) });
+    for (const t of tabs.reachable()) { if (t.need && !t.userDone) { t.need = null; emit("need_clear", { id: t.id }); } }
+    // 驗證頁那一格:回合結束就沒有 agent 在等它了,「你在操作／交還 agent」收掉(e2e 0.1.8 #198)。頁面留著,用戶照樣可以繼續按;
+    // 那一格仍然是驗證頁(t.verify 不清),agent 的工具照樣碰不到
+    for (const t of tabs.reachable()) { if (t.verify && t.userControl) { t.userControl = false; emit("handback", { id: t.id, auto: true }); } }
+    // 快照圖升級成整頁版(beyond-viewport 只在這裡做:一輪一次;操作中存的是視口版,見 captureSnapshotImage)
+    (async () => {
+      for (const r of rows) {
+        if (!r.snapshot_id) continue;
+        const v = views.get(r.id); if (!v || !shootable(tabs.get(r.id))) continue;   // 讀過之後被用戶接手的頁:快照留著 agent 讀的那一版,不再拍
+        const image = await withMask(v, () => captureSnapshotImage(v, true), true);
+        if (image) snaps.updateImage(c.sessionId, r.snapshot_id, image);
+        if (expanded !== r.id) parkEmulate(v);   // 整頁擷取的 unEmulate 也清掉 park override,補回去(不然頁面回到 0 寬行動版)
+      }
+    })().catch(() => {});
+  }
+
   // ── 對外 ──
   return {
     PARTITION,
@@ -1200,52 +1287,31 @@ function createBrowser(o) {
     /** 回合開始:設定開著才回 { url, token };主行程把它寫進單次設定檔 / Codex 環境。 */
     async beginTurn(w, sessionId, opts) {
       if (!prefs.enabled) return null;
-      win = w;
-      if (!mcp) { mcp = createMcpServer({ tools: TOOLS, call, instructions: INSTRUCTIONS, version: o.version, maxMs: (name) => (name === "browser_search" ? SEARCH_HARD_MAX_MS : 0) }); await mcp.start(); }
-      const turnKey = Date.now();
-      // seen / readText:外送檢查用(policy.exfilRisk)——這一輪開過的網域、讀過的字
-      // noUser:這一輪是從雲端視角送出的(畫面上不是這台電腦的對話)→ 遇到驗證頁不問,直接走退路
-      cur = { sessionId, turnKey, used: false, captchas: 0, skipGoogle: false, verifyEnd: null, noUser: !!(opts && opts.noUser), sources: [], seen: new Set(), readText: "" };
-      tabs.newTurn(sessionId);
-      // userSent:這一輪是用戶在這台電腦的聊天送出的(main.js send-message)。沒帶的、從雲端視角送的都不交還
-      if (opts && opts.userSent === true && !cur.noUser) await autoHandback(cur);
-      for (const v of views.values()) v.pace.newTurn();   // 跨回合重置:每回合第一動作完整效果(canon 第 9 條)
-      watchReports(cur);
-      return { url: mcp.url(), token: mcp.beginTurn(turnKey) };
+      win = w || win;
+      if (!mcp) { mcp = createMcpServer({ tools: TOOLS, call, acquire, instructions: INSTRUCTIONS, version: o.version, maxMs: (name) => (name === "browser_search" ? SEARCH_HARD_MAX_MS : 0) }); await mcp.start(); }
+      // turnKey 也是這一輪的開始時間(logTurn 的 ts 退路):兩輪同一毫秒開跑時往後推一毫秒,不撞號
+      const turnKey = lastKey = Math.max(Date.now(), lastKey + 1);
+      // 租約不在這裡拿(見 acquire):這裡只記下這一輪,第一次呼叫瀏覽器工具時才變成 cur
+      pend.set(turnKey, { sessionId, turnKey, noUser: !!(opts && opts.noUser), userSent: !!(opts && opts.userSent === true), waitSaid: false });
+      return { url: mcp.url(), token: mcp.beginTurn(turnKey), key: turnKey };
     },
-    /** 回合結束:作廢 token、把這一輪的分頁與來源記下來(重開 app 時重建聊天區塊)、發 turn_sources。 */
-    endTurn() {
-      if (mcp) mcp.endTurn();
+    /** 回合結束:作廢 token;拿著租約的那一輪另外記下分頁與來源(endLeaseTurn)。
+        key = beginTurn 回的那一輪;沒帶 = 拿著租約的那一輪(單一回合的舊呼叫端)。只有拿著租約的那一輪收尾才還租約、交給下一個在等的 */
+    endTurn(key) {
+      if (key === undefined) {   // 單一回合的舊呼叫端:全部作廢(還沒拿租約的、在等的一起)
+        if (mcp) mcp.endTurn();
+        for (const k of [...pend.keys()]) { pend.delete(k); dropTurnWaits(k); }
+        if (!cur) return;
+        key = cur.turnKey;
+      } else {
+        if (mcp) mcp.endTurn(key);
+        pend.delete(key); dropTurnWaits(key);
+      }
+      const k = key;
+      if (!cur || cur.turnKey !== k) return;
       if (reportWatch) { try { reportWatch.close(); } catch (_) { /* 已關 */ } reportWatch = null; }
-      if (!cur) return;
-      const c = cur; cur = null;
-      try { sweepCites(o.reportsDir, c.cites); } catch (_) { /* 清不掉:留著,不擋回合收尾 */ }
-      if (!c.used) return;
-      const favOf = (u) => { try { return favCache.get(new URL(u).host) || null; } catch (_) { return null; } };
-      // 這一輪開的(關掉的只留讀過的),加上前面回合留下來、這一輪讀過的分頁(稽核 P2-7:只記這一輪開的,重開 app 時那一輪的格子是空的、
-      // 整頁快照也不升級)。前面回合的分頁這一輪只操作沒讀:不進格子,跟即時的瀏覽卡一樣
-      const readNow = (t) => t.readTurn === c.turnKey;
-      const rows = tabs.inTurn().filter((t) => (t.turn === tabs.turn() && t.status !== "closed") || readNow(t)).map((t) => ({ id: t.id, url: C.scrub(t.url, 2000), title: C.scrub(t.title, 300), status: t.status === "blocked" ? "blocked" : t.status === "failed" ? "failed" : readNow(t) ? "done" : "open", snapshot_id: t.snapshotId || null, search: !!t.isSearch }));
-      const sources = c.sources.slice();
-      // ts = agent 第一次用瀏覽器的時間,不是回合開始:回合開始比 runtime 寫進逐字稿的那句用戶訊息早,
-      // 重開對話時區塊會排到那句的上面
-      snaps.logTurn(c.sessionId, { ts: (c.usedAt || c.turnKey) / 1000, end: Date.now() / 1000, tabs: rows, sources });
-      const withFav = (a) => a.map((r) => { const f = favOf(r.url); return Object.assign({}, r, { fav: f ? f.data : null, plate: !!(f && f.plate) }); });
-      emit("turn_sources", { session_id: c.sessionId, sources: withFav(sources), tabs: withFav(rows) });
-      for (const t of tabs.reachable()) { if (t.need && !t.userDone) { t.need = null; emit("need_clear", { id: t.id }); } }
-      // 驗證頁那一格:回合結束就沒有 agent 在等它了,「你在操作／交還 agent」收掉(e2e 0.1.8 #198)。頁面留著,用戶照樣可以繼續按;
-      // 那一格仍然是驗證頁(t.verify 不清),agent 的工具照樣碰不到
-      for (const t of tabs.reachable()) { if (t.verify && t.userControl) { t.userControl = false; emit("handback", { id: t.id, auto: true }); } }
-      // 快照圖升級成整頁版(beyond-viewport 只在這裡做:一輪一次;操作中存的是視口版,見 captureSnapshotImage)
-      (async () => {
-        for (const r of rows) {
-          if (!r.snapshot_id) continue;
-          const v = views.get(r.id); if (!v || !shootable(tabs.get(r.id))) continue;   // 讀過之後被用戶接手的頁:快照留著 agent 讀的那一版,不再拍
-          const image = await withMask(v, () => captureSnapshotImage(v, true), true);
-          if (image) snaps.updateImage(c.sessionId, r.snapshot_id, image);
-          if (expanded !== r.id) parkEmulate(v);   // 整頁擷取的 unEmulate 也清掉 park override,補回去(不然頁面回到 0 寬行動版)
-        }
-      })().catch(() => {});
+      const c = cur; cur = null; curReady = null;
+      try { endLeaseTurn(c); } finally { grantNext(); }
     },
     active: () => !!cur,
     // ── renderer 的 IPC(main.js 用 fromOurPage 的 handle() 註冊)──
@@ -1330,7 +1396,7 @@ function createBrowser(o) {
       favCache.clear(); favTried.clear();   // 看過哪些網站也是瀏覽資料
       return true;
     },
-    _tabs: tabs, _call: call, _cur: () => cur, _oauth: oauth, _verifying: (alias) => verifying(tabs.byAlias(alias)),   // 測試用
+    _tabs: tabs, _call: call, _acquire: acquire, _cur: () => cur, _oauth: oauth, _verifying: (alias) => verifying(tabs.byAlias(alias)),   // 測試用
     _agentActive: (id) => { const v = views.get(id); return !!v && agentActive(v.wc.id); },
     _imageSize: (b) => imageSize(b), _needsPlate: (d) => needsPlate(d),
     _viewBounds: (id) => { const v = views.get(id); return v ? v.view.getBounds() : null; },

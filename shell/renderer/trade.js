@@ -1800,7 +1800,7 @@ function trPushLabels() {
   window.blave.tradeLabels({ running: t("tr.autoOn"), paperVenue: t("cx.paperShort"), pause: t("tm.pause"), open: t("tm.open"), quit: t("tm.quit"),
     notifTitle: t("tm.notifTitle"), notifBody: t("tm.notifBody"), pauseFail: t("tm.pauseFail"), pauseUnknown: t("tr.cmdUnknown"), quitTitle: t("tm.quitTitle"), quitBody: t("tm.quitBody"),
     quitGo: t("tm.quitGo"), quitStay: t("tm.quitStay"), ok: t("tm.ok"), hidden: t(window.blave.platform === "win32" ? "tm.hiddenWin" : "tm.hidden"), updateReady: t("tm.updateReady"), restarting: t("tm.restarting"),
-    quitTurnTitle: t("tm.quitTurnTitle"), quitTurnBody: t("tm.quitTurnBody"),   // 結束攔截:本機 agent 回合還在跑
+    quitTurnTitle: t("tm.quitTurnTitle"), quitTurnBody: t("tm.quitTurnBody"), quitTurnBodyN: t("tm.quitTurnBodyN", { n: "{n}" }),   // 結束攔截:本機 agent 回合還在跑(兩條以上主行程填數字)
     unsavedTitle: t("tm.unsavedTitle"), unsavedBody: t("tm.unsavedBody"), unsavedGo: t("tm.unsavedGo"), unsavedNote: t("tm.unsavedNote"),   // 結束 / 關窗攔截:策略組合有還沒儲存的變更
     presQuitTitle: t("pres.quit.title"), presQuitBody: t("pres.quit.body", { lots: "{lots}" }), caplQuitBody: t("capl.quit.body", { lots: "{lots}" }), presQuitUnknown: t("pres.quit.unknown"), caplQuitUnknown: t("capl.quit.unknown"),   // 結束攔截:統一還有部位(主行程填口數)
     moveTitle: t("tm.move.title"), moveBody: t("tm.move.body"), moveGo: t("tm.move.go"), moveNo: t("tm.move.no"),   // 搬到「應用程式」那一問
@@ -5943,16 +5943,17 @@ function psApply() {
 }
 
 /* ── 視角:「這台電腦｜雲端」切換器、頂列灰底、雲端側欄、雲端空態(spec-desktop-local-and-cloud §1–§4.1)────────
-   除了切換器、⌘1/⌘2 與畫面上的文字鈕,沒有任何東西會自己切視角;重開 app 一律回到這台電腦(雲端可能是真錢,開場不該落在那裡)。
+   除了切換器、⌘⇧1/⌘⇧2 與畫面上的文字鈕,沒有任何東西會自己切視角;重開 app 一律回到這台電腦(雲端可能是真錢,開場不該落在那裡)。
    雲端來的字串(策略名)一律 textContent。 */
 function envWire() {
-  // 切視角的三個入口(切換器、⌘1/⌘2、app 選單「顯示」)都走 envSwitchGuarded:守門規則只有一份
+  // 切視角的三個入口(切換器、⌘⇧1/⌘⇧2、app 選單「顯示」)都走 envSwitchGuarded:守門規則只有一份
   $("envsw").addEventListener("click", (e) => { const b = e.target.closest("button[data-env]"); if (b) envSwitchGuarded(b.dataset.env); });
-  // ⌘1 / ⌘2:輸入框有焦點時也生效;確認框、圖片放大開著時不生效(先讓人處理眼前那個框),設定開著可以
+  // ⌘⇧1 / ⌘⇧2(⌘1–9 留給對話分頁):輸入框有焦點時也生效;確認框、圖片放大開著時不生效(先讓人處理眼前那個框),設定開著可以。
+  // 看 e.code 不看 e.key:按著 ⇧ 時 e.key 是「!」「@」(依鍵盤配置而變)
   document.addEventListener("keydown", (e) => {
     if (e.isComposing || e.keyCode === 229) return;   // 輸入法組字中:不搶(搬焦點會把組到一半的字提交或丟掉)
-    if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || (e.key !== "1" && e.key !== "2")) return;
-    if (envSwitchGuarded(e.key === "1" ? "local" : "cloud")) e.preventDefault();
+    if (!e.metaKey || e.ctrlKey || e.altKey || !e.shiftKey || (e.code !== "Digit1" && e.code !== "Digit2")) return;
+    if (envSwitchGuarded(e.code === "Digit1" ? "local" : "cloud")) e.preventDefault();
   });
   if (typeof window.blave.onEnvSwitch === "function") window.blave.onEnvSwitch((env) => { envSwitchGuarded(env); });
   // 主行程說雲端那邊變了(另一邊出事、登入登出):下一輪就去拿新的那一份
@@ -5961,7 +5962,7 @@ function envWire() {
 }
 /* 現在能不能切視角:還沒進工作頁不行;確認框、連接交易所的框、圖片放大開著不行(先讓人處理眼前那個框)。
    設定開著可以(envSwitch 自己不搬焦點)。回 true = 有切(或本來就在那一邊)。 */
-// 組字中不切:app 選單有了 ⌘1/⌘2 之後 macOS 先讓選單吃鍵,keydown 上的 isComposing 守門看不到那一次——
+// 組字中不切:app 選單有了 ⌘⇧1/⌘⇧2 之後 macOS 先讓選單吃鍵,keydown 上的 isComposing 守門看不到那一次——
 // 所以改成自己記「現在有沒有在組字」,三個入口(點、鍵、選單)都看它。切過去會搬焦點,組到一半的字會丟
 let ENV_COMPOSING = false;
 document.addEventListener("compositionstart", () => { ENV_COMPOSING = true; }, true);
@@ -5984,7 +5985,7 @@ function envSwitch(env, via) {
   // 報告頁首那句「送不上去」講的是按下去那一刻的事:離開又回來時它會讀起來像現況,離開就收掉
   if (env === "local" && typeof hoNote === "function") hoNote(null);
   // 順序(spec §1.4):關確認框(等同取消,焦點不回 opener)→ 存這一邊 → 換 → 畫 → 標題 → 播報
-  // 關確認框這一行**目前走不到**:確認框開著時 ⌘1/⌘2 不生效、#view-ws 是 inert(切換器點不到)。留著當保險——
+  // 關確認框這一行**目前走不到**:確認框開著時 ⌘⇧1/⌘⇧2 不生效、#view-ws 是 inert(切換器點不到)。留著當保險——
   // 批次 ② 選單列的「顯示」兩項進來之後,才有確認框開著也能切視角的入口。
   if (!$("del-scrim").hidden) { if (delCtx) delCtx.opener = null; delClose(false); }
   const from = TR_BAGS[ENV.cur], list = $(ENV.cur === "cloud" ? "strat-list-cloud" : "strat-list");
@@ -6145,8 +6146,8 @@ function envPaintCell(env, c) {
   const money = w.money ? envMoneyText(c.money) : "", state = w.state ? t(w.state) : "";
   const where = envName(env), tip = money && state ? t("env.tip", { where, money, state }) : money || state ? t("env.tip1", { where, x: money || state }) : where;
   // 快捷鍵由程式接、不進譯文;只接在 title。讀屏會把符號唸出來,所以 aria-label 不接,改用 aria-keyshortcuts
-  b.title = tip + "  " + (env === "cloud" ? "\u23182" : "\u23181");
-  b.setAttribute("aria-label", tip); b.setAttribute("aria-keyshortcuts", env === "cloud" ? "Meta+2" : "Meta+1");
+  b.title = tip + "  " + (env === "cloud" ? "\u21e7\u23182" : "\u21e7\u23181");
+  b.setAttribute("aria-label", tip); b.setAttribute("aria-keyshortcuts", env === "cloud" ? "Meta+Shift+2" : "Meta+Shift+1");
   // 狀態詞變了播報一次(例:「雲端：已自動暫停」);第一次畫不算變化
   const word = c.word ? t(c.word) : "";
   if (!first && word && ENV.said[env] !== word) srSay(t("env.cellAria1", { where: envName(env), x: word }));

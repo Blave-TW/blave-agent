@@ -13,48 +13,58 @@ let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
-  // ── 1. 主行程 ──
-  const mainCut = cutFrom(mainSrc, "let turnStopFile = null, turnFinalized = false, turnLastOut = 0;", "/* 本機常駐程式的宿主");
+  // ── 1. 主行程(0.1.37 起每一輪一筆 rec:停止檔、輸出時間、子行程都在 rec 裡,stopTurn(sid) 只動那一筆) ──
+  const mainCut = cutFrom(mainSrc, "const STOP_KILL_MS = 5000;", "/* 本機常駐程式的宿主");
   const BASE = fs.mkdtempSync(path.join(os.tmpdir(), "blave-stop-"));
   const M = new Function("fs", "path", "crypto", "BASE", `
-    let activeTurn = null, turnStarting = false;
+    const turns = new Map(); const dequeued = []; let turnSeqN = 0;
+    function turnDequeue(rec) { dequeued.push(rec.sid); turns.delete(rec.sid); return true; }
     ${mainCut.replace("const STOP_KILL_MS = 5000;", "const STOP_KILL_MS = 60;")}
-    return { stopTurn, newTurnStop, get file() { return turnStopFile; }, set lastOut(v) { turnLastOut = v; }, set finalized(v) { turnFinalized = v; },
-      set active(c) { activeTurn = c; }, set starting(v) { turnStarting = v; } };`)(fs, path, require("crypto"), BASE);
-  ok("沒有回合:不寫旗標、回 false", M.stopTurn() === false);
-  M.newTurnStop(); const f1 = M.file;
-  ok("旗標在 <BASE>/state/turn_stop/ 底下", path.dirname(f1) === path.join(BASE, "state", "turn_stop"));
+    return { stopTurn, newTurnRec, turns, dequeued };`)(fs, path, require("crypto"), BASE);
+  const A = "desktop-aaaa1111", Bs = "desktop-bbbb2222";
+  ok("沒有回合:不寫旗標、回 false", M.stopTurn(A) === false && M.stopTurn() === false);
+  const r1 = M.newTurnRec(A, "desktop", false); M.turns.set(A, r1);
+  ok("旗標在 <BASE>/state/turn_stop/ 底下、每一輪各自一個檔名", path.dirname(r1.stopFile) === path.join(BASE, "state", "turn_stop") && M.newTurnRec(A).stopFile !== r1.stopFile);
   let kills = 0; const child = { kill: () => { kills++; } };
-  M.starting = true;
-  ok("正要開始(還沒 spawn)按停止:旗標寫得下去", M.stopTurn() === true && fs.existsSync(f1));
-  await wait(30); M.active = child; M.starting = false;
+  ok("正要開始(還沒 spawn)按停止:旗標寫得下去", M.stopTurn(A) === true && fs.existsSync(r1.stopFile));
+  await wait(30); r1.child = child; r1.phase = "running";
   await wait(60);
   ok("停止時還沒 spawn:保險不在 spawn 後馬上下手", kills === 0);
   await wait(80);
   ok("…spawn 後再等一段還沒收掉才殺", kills === 1);
   kills = 0;
-  ok("回合進行中:回 true", M.stopTurn() === true);
+  ok("回合進行中:回 true", M.stopTurn(A) === true);
   await wait(120);
   ok("runtime 沒收掉:STOP_KILL_MS 後殺 agent_turn(保險)", kills >= 1);
-  kills = 0; M.stopTurn(); M.newTurnStop(); const f2 = M.file;
+  kills = 0; M.stopTurn(A); M.turns.delete(A); const r2 = M.newTurnRec(A, "desktop", false); M.turns.set(A, r2); r2.child = child;
   await wait(120);
   ok("同一段時間裡換成下一輪了:不殺新那一輪", kills === 0);
-  ok("換下一輪:舊旗標刪掉、新檔名不同", !fs.existsSync(f1) && f2 !== f1);
   // runtime 在等平倉腳本(Codex 持住引擎)時每秒送 ping:還在說話就不殺,沉默了才殺
-  kills = 0; M.active = child; M.stopTurn();
-  const talk = setInterval(() => { M.lastOut = Date.now(); }, 20);
+  kills = 0; M.stopTurn(A);
+  const talk = setInterval(() => { r2.lastOut = Date.now(); }, 20);
   await wait(200);
   ok("agent_turn 還在送東西(等平倉腳本):保險不殺", kills === 0);
   clearInterval(talk); await wait(200);
   ok("…沉默滿 STOP_KILL_MS 才殺", kills === 1);
-  kills = 0; M.newTurnStop(); M.stopTurn(); M.finalized = true; await wait(200);
+  kills = 0; M.turns.delete(A); const r3 = M.newTurnRec(A, "desktop", false); M.turns.set(A, r3); r3.child = child; M.stopTurn(A); r3.finalized = true; await wait(200);
   ok("收到 done 之後(寫歷史、壓縮摘要)不殺", kills === 0);
-  ok("接線:stdout 每一段都記時間;done 那則記下已收尾", /child\.stdout\.on\("data", \(d\) => \{\n\s*turnLastOut = Date\.now\(\);/.test(mainSrc)
-    && /if \(c && c\.type === "done"\) \{ turnFinalized = true;/.test(mainSrc) && /turnFinalized = false;\n\}/.test(mainSrc));
-  ok("旗標路徑經環境變數交給 runtime(不上 argv)", /\.\.\.\(turnStopFile \? \{ BLAVE_TURN_INTERRUPT_FILE: turnStopFile \} : \{\}\),/.test(mainSrc));
-  ok("送出時先換新旗標(turnStarting 立起之後、任何 await 之前)", /turnStarting = true;\n\s*newTurnStop\(\);\n/.test(mainSrc));
-  ok("stop-turn IPC 只收自家頁面(走 handle)", /handle\("stop-turn", \(\) => stopTurn\(\), false\);/.test(mainSrc));
-  ok("preload 暴露 stopTurn", /stopTurn: \(\) => ipcRenderer\.invoke\("stop-turn"\)/.test(fs.readFileSync(path.join(SH, "preload.js"), "utf8")));
+  // 兩條並行:A 的保險只看 A 自己的輸出時間與子行程(看全域會照 B 的時間殺錯)
+  M.turns.clear(); let ka = 0, kb = 0;
+  const ra = M.newTurnRec(A, "desktop", false), rb = M.newTurnRec(Bs, "desktop", false);
+  ra.child = { kill: () => { ka++; } }; rb.child = { kill: () => { kb++; } }; M.turns.set(A, ra); M.turns.set(Bs, rb);
+  const talkB = setInterval(() => { rb.lastOut = Date.now(); }, 20);
+  M.stopTurn(A); await wait(200); clearInterval(talkB);
+  ok("並行:停 A 只寫 A 的旗標、B 一直在說話也不救 A、B 不被殺", ka === 1 && kb === 0 && fs.existsSync(ra.stopFile) && !fs.existsSync(rb.stopFile));
+  ok("並行:沒帶 sid 而且有兩條在跑:不猜、回 false", M.stopTurn() === false);
+  M.turns.delete(A);
+  ok("沒帶 sid、只剩一條:停那一條(畫面還是單分頁那一版)", M.stopTurn() === true && fs.existsSync(rb.stopFile));
+  M.turns.clear(); const rq = M.newTurnRec(A, "desktop", true); rq.phase = "queued"; M.turns.set(A, rq);
+  ok("排隊中的停止 = 取消排隊(不寫旗標)", M.stopTurn(A) === true && M.dequeued.join() === A && !fs.existsSync(rq.stopFile));
+  ok("接線:stdout 每一段記這一輪的時間;done 那則記下這一輪已收尾", /child\.stdout\.on\("data", \(d\) => \{\n\s*rec\.lastOut = Date\.now\(\);/.test(mainSrc)
+    && /if \(c && c\.type === "done"\) \{ rec\.finalized = true;/.test(mainSrc));
+  ok("旗標路徑經環境變數交給 runtime(不上 argv)", /BLAVE_TURN_INTERRUPT_FILE: rec\.stopFile,/.test(mainSrc));
+  ok("stop-turn IPC 只收自家頁面(走 handle)、帶 sid", /handle\("stop-turn", \(_e, sid\) => stopTurn\(typeof sid === "string" \? sid : null\), false\);/.test(mainSrc));
+  ok("preload 暴露 stopTurn(sid 可不帶)", /stopTurn: \(sid\) => ipcRenderer\.invoke\("stop-turn", typeof sid === "string" \? sid : null\)/.test(fs.readFileSync(path.join(SH, "preload.js"), "utf8")));
   ok("runtime 那半在:agent_turn 起 turn_stop 的 watcher", /stop_watch = turn_stop\.start\(sink, hold_engine=use_codex\)/.test(fs.readFileSync(path.join(SH, "..", "runtime", "agent_turn.py"), "utf8")));
 
   // ── 2. 畫面 ──

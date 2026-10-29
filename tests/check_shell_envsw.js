@@ -414,7 +414,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
 
   // ── 稽核 N8:兩袋不串(原文列舉;這些東西不起 DOM 測不到行為,只守住寫法)──
   const kd = code.slice(code.indexOf('document.addEventListener("keydown"', code.indexOf("function envWire(")), code.indexOf("onCloudState", code.indexOf("function envWire(")));
-  // 切視角的入口列舉:切換器的 click、⌘1/⌘2、app 選單的 IPC——全部走 envSwitchGuarded;守門規則只有 envCanSwitch 一份
+  // 切視角的入口列舉:切換器的 click、⌘⇧1/⌘⇧2、app 選單的 IPC——全部走 envSwitchGuarded;守門規則只有 envCanSwitch 一份
   const wire = fn("envWire"), direct = (code.match(/[^\w]envSwitch\(/g) || []).length;
   ok("N8 守門只有一份:確認框 / 連接交易所的框 / 圖片放大開著、還沒進工作頁都不切;組字中不生效", ["view-ws", "del-scrim", "cx-scrim", "lb-scrim"].every((id) => fn("envCanSwitch").includes(id)) && /!envCanSwitch\(\)\) return false;/.test(fn("envSwitchGuarded")) && /isComposing/.test(kd));
   ok("三個入口都走 envSwitchGuarded(click / keydown / onEnvSwitch),envWire 裡沒有人直接叫 envSwitch", (wire.match(/envSwitchGuarded\(/g) || []).length === 3 && !/[^\w]envSwitch\(/.test(wire) && /onEnvSwitch\(\(env\) => \{ envSwitchGuarded\(env\); \}\)/.test(wire));

@@ -65,7 +65,7 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
   ok("deleteStrategy:在組合裡回 IN_PORTFOLIO、讀不懂回 CONFIG_UNREADABLE,都在丟垃圾桶之前", del.indexOf('code: "IN_PORTFOLIO"') > 0 && del.indexOf('code: "CONFIG_UNREADABLE"') > 0 && del.indexOf("IN_PORTFOLIO") < del.indexOf("trashItem")); }
 
 // ── 本機刪策略:沒刪成的每一條路都要講原因(Wei 10-01 按「移到垃圾桶？」完全沒反應:主行程回裸 false,畫面無從講起)──
-{ const mainRun = (S) => new Function("S", "path", `let activeTurn = S.activeTurn, turnStarting = S.turnStarting;
+{ const mainRun = (S) => new Function("S", "path", `const anyTurn = () => !!(S.activeTurn || S.turnStarting);
     const stratNames = () => S.names, STRAT_DIR = () => "/ws/strategies", fs = { readFileSync: () => "" }, stratMeta = () => ({ strategyName: null });
     const inPortfolio = () => S.inPf, stratStopRerun = () => {}, shell = { trashItem: S.trash }, stratCache = new Map();
     async ${fnOf(mainSrc, "deleteStrategy")}\nreturn deleteStrategy("a");`)(S, path);
