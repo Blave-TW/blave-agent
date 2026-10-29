@@ -93,7 +93,8 @@ WAITS = []
 flatten._wait_for_inflight = lambda *a, **k: WAITS.append(k) or []
 flatten.guard = types.SimpleNamespace(halted=lambda: True, trip_halt=lambda *a: None,
                                       restart_stopped=lambda: False,
-                                      grant_halt_closes=lambda *a: None)
+                                      grant_halt_closes=lambda *a: None,
+                                      hold_turn_money=lambda: None, TurnMoneyBusy=type("TurnMoneyBusy", (RuntimeError,), {}))
 EXTRA_ENV = {}
 flatten._read_env = lambda path=".env": dict({
     "CAPITAL_API_KEY": "x", "CAPITAL_PASSWORD": "x",

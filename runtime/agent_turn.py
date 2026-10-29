@@ -4486,7 +4486,11 @@ def parallel_rule(sink):
     return ("\n\n---\n\n## Other conversations (this computer)\n"
             "Other conversations on this computer may be running at the same time. Right before you place or close an "
             "order, change order settings, or edit a strategy's files or `manager/portfolio_config.json`, read the "
-            "exchange position and those files again — never act on what you read earlier in this turn.\n")
+            "exchange position and those files again — never act on what you read earlier in this turn. Only one "
+            "conversation moves money at a time: a close script may wait up to 90 s for another one, so run order and "
+            "close scripts with a command timeout of at least 180000 ms, and if the command comes back while still "
+            "running, wait for it — never start it a second time. If it says another conversation is placing an order "
+            "and nothing was sent, tell the user; do not retry in a loop.\n")
 
 
 def turn_note_rule(sink):
@@ -4721,9 +4725,9 @@ def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule=""
 def _remove_cloud_handoff_dir(workspace=None, session_id=None):
     """回合結束一律清掉這一輪的 `<workspace>/tmp/cloud-handoff/<turn>/`(雲端交接的短效 SSH 金鑰與憑證)。
     規則要 agent 在回合結束前自己刪,但回合出錯(撞 max_turns、半途、崩潰)時它沒機會刪,
-    金鑰就留在磁碟上等下一個回合碰巧清。帶 session_id 時只動這一輪自己的子資料夾,`cloud-handoff/` 根目錄一個都不碰:
-    agent 漏帶 handoff_dir 時 api 的退路把金鑰放在根目錄,可能正被別條回合用著(電腦版並行;稽核 s1 P2-1)。
-    沒帶 session_id(沒有並行的呼叫端):根目錄的檔只清超過憑證效期(15 分鐘)加餘裕的,資料夾不動。
+    金鑰就留在磁碟上等下一個回合碰巧清。帶 session_id 時整個拿掉這一輪自己的子資料夾;別條的子資料夾不碰。
+    `cloud-handoff/` 根目錄的檔(agent 漏帶 handoff_dir 時 api 退路放的,可能正被別條回合用著;稽核 s1 P2-1)
+    不論帶不帶 session_id 都只清超過憑證效期(15 分鐘)加餘裕的(稽核 s2 P3-6:不然現在沒有人清它),資料夾不動。
     不存在就算了;是連結就只拿掉連結;`tmp` 本身是指到 workspace 外面的連結時整個不碰——絕不刪到 workspace/tmp 以外的東西。"""
     ws = os.path.realpath(workspace or WORKSPACE)
     tmp = os.path.join(ws, "tmp")
@@ -4745,7 +4749,6 @@ def _remove_cloud_handoff_dir(workspace=None, session_id=None):
         return
     if session_id is not None:
         drop(os.path.join(root, handoff_folder(session_id)))
-        return
     cutoff = time.time() - HANDOFF_ROOT_STALE_S
     try:
         for name in os.listdir(root):

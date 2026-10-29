@@ -167,6 +167,10 @@ def stop(name, also=(), flatten=None, halt_scope=()):
     if platform.system() == "Windows":
         raise cs.Refused("Windows is not supported (schtasks tasks under another name can't be "
                          "matched safely) — remove the scheduled tasks by hand and tell the user")
+    try:   # before anything is read: another agent turn's order / close on this machine finishes first
+        guard.hold_turn_money()
+    except guard.TurnMoneyBusy as e:
+        raise cs.Refused(str(e))
     names = [name, *[a for a in also if a != name]]
     for n in names:
         if not cs._NAME_RE.fullmatch(n):

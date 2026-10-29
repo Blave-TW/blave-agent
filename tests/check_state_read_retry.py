@@ -107,6 +107,8 @@ EXEMPT = [
     ('lib/execute.py', 'load_twap_log', 'log_path', 'append', 'append-only log, never replaced'),
     ('lib/guard.py', 'claim_close_all_pass', 'claimed',
      'own', 'renamed to a per-pid name first: no other process touches it'),
+    ('lib/guard.py', '_turn_money_release', 'owner',
+     'own', "atexit: the holder reads its own owner file to clear it only if it still names this turn; a failed read leaves it"),
     ('lib/guard.py', '_turn_money_lock', 'owner',
      'worker', 'polled every 0.25 s while waiting for the turn money lock; a failed read just waits for the next poll'),
     ('lib/guard.py', 'load_json', 'path',

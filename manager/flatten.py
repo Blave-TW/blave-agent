@@ -520,6 +520,14 @@ def flatten():
         # before launching us — the stop half of the button is never skipped.
         logging.info(f"close-all: another flatten holds {LOCK_PATH} — this one exits")
         return ALREADY_RUNNING
+    # From an agent turn: another turn's order / close on this machine finishes first, and only then are the
+    # positions read (lib/guard). Busy past the wait → nothing closed anywhere, one error row saying why.
+    try:
+        guard.hold_turn_money()
+    except guard.TurnMoneyBusy as e:
+        logging.error(f"close-all: {e}")
+        _record_order_error("*", "*", f"close-all: {e}")
+        return False
     try:
         import lib.portfolio as _pf
         hold = _pf._unconfirmed.hold if getattr(_pf, "_unconfirmed", None) is not None else None
@@ -698,7 +706,16 @@ def _flatten():
                                     {"kind": "manual_close_required", "symbols": keys,
                                      "reason": "identity"})
             continue
-        order = importlib.import_module(f"lib.order_{vid}") if has_order else None
+        try:
+            order = importlib.import_module(f"lib.order_{vid}") if has_order else None
+        except Exception as e:   # one venue's lib failing to load stops only that venue's close
+            logging.error(f"[{vid}] lib.order_{vid} failed to load: {e}")
+            _record_order_error("*", vid, f"close-all: lib.order_{vid} failed to load ({type(e).__name__}: "
+                                          f"{str(e)[:200]}) — this venue not closed")
+            unclosed |= {_book_key(vid, str(p.get("symbol") or "*").upper()) for p in (positions or [])}
+            errors += 1
+            sweep_ok = False
+            continue
         # managed SPOT inventory sells down too(2026-08-05「現貨也賣掉」)—
         # must run even when swap is flat, so no early-continue before it
         if order is not None and hasattr(order, "place_spot_market_order"):

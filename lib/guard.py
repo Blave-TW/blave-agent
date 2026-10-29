@@ -212,6 +212,7 @@ def check_restart_stop(intent, fields=None):
     fields = fields or {}
     if intent in _RESTART_PASS:
         return
+    _turn_money_lock(0)   # an order is about to leave: no waiting here (see TURN_MONEY_LOCK)
     if restart_stopped():
         if not (_close_all_granted and intent == "reduce"):
             audit("order_denied_restart", **{**fields, "intent": intent})
@@ -465,13 +466,24 @@ MONEY_PID_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__f
                              "state", "execution", "money_pids")
 _money_marked = False
 
-# Desktop app with several conversations running at once: two turns' manual orders / closes on the same
-# position would race (both read "1 lot open", both close it). A process that moves money from INSIDE a chat
-# turn (it carries BLAVE_TURN_INTERRUPT_FILE; the reconciler, the daemon and scheduled jobs never do) holds one
-# machine-wide lock for its whole life, so a second turn's order script waits for the first to finish. Same
-# turn (a script and its children) shares it via the owner file. Bounded wait: never hangs a turn.
+# Two agent turns running at once (desktop chat tabs; also the cloud's web turns and scheduled-report turns,
+# which set the same variable — runtime/web_bridge.py, runtime/report_runner.py): two turns' manual orders /
+# closes on the same position would race (both read "1 lot open", both close it). A process that moves money
+# from INSIDE an agent turn (it carries BLAVE_TURN_INTERRUPT_FILE; the reconciler, the daemon, strategy
+# processes and cron never do) holds one machine-wide lock from its first order to its exit. Same turn (a
+# script and its children) shares it via the owner file.
+#   - hold_turn_money(): the close / execution entry points (flatten, close_symbol, stop_strategy, run_twap)
+#     call it BEFORE reading any position, and only there it waits (TURN_MONEY_WAIT_S) — what they read
+#     after the wait is current.
+#   - check_restart_stop() (the gate every lib/order_* passes before an order reaches the venue) takes it
+#     without waiting: an ad-hoc script read its position before that point, so going on after a wait would
+#     act on a stale read. Busy → TurnMoneyBusy at once, nothing sent.
+#   Importing an order lib (research / price scripts) takes nothing.
+# TURN_MONEY_WAIT_S stays well under the agent's Bash default timeout (runtime/agent_turn.py
+# BASH_DEFAULT_TIMEOUT_MS, 120 s): a wait that ran into it would be moved to the background and the agent
+# would never see "Nothing was sent" (tests/check_turn_money_lock.py pins the gap).
 TURN_MONEY_LOCK = os.path.join(os.path.dirname(MONEY_PID_DIR), "turn_money.lock")
-TURN_MONEY_WAIT_S = 120
+TURN_MONEY_WAIT_S = 90
 _turn_money_fd = None
 
 
@@ -496,10 +508,13 @@ def _try_lock(fd):
         return False
 
 
-def _turn_money_lock():
-    global _turn_money_fd
+_turn_money_shared = False
+
+
+def _turn_money_lock(wait_s):
+    global _turn_money_fd, _turn_money_shared
     turn = os.environ.get("BLAVE_TURN_INTERRUPT_FILE") or ""
-    if not turn or _turn_money_fd is not None:
+    if not turn or _turn_money_fd is not None or _turn_money_shared:
         return
     owner = TURN_MONEY_LOCK + ".owner"
     try:
@@ -508,37 +523,64 @@ def _turn_money_lock():
     except OSError as e:
         logging.warning(f"guard: turn money lock unavailable: {e}")
         return
-    deadline = time.monotonic() + TURN_MONEY_WAIT_S
+    deadline = time.monotonic() + wait_s
     while True:
         if _try_lock(fd):
-            _turn_money_fd = fd
             try:
                 with open(owner, "w") as f:
                     f.write(turn)
-            except OSError:
-                pass
+            except OSError as e:
+                # an owner file still naming the previous holder would let that turn's scripts "share" a lock
+                # they do not hold: no owner, no lock
+                os.close(fd)
+                raise TurnMoneyBusy(
+                    f"Could not record this conversation as the order-lock holder ({e}). Nothing was sent. "
+                    "Tell the user; this usually means the disk is full.") from None
+            _turn_money_fd = fd
+            atexit.register(_turn_money_release, owner, turn)
             return
         try:
             with open(owner) as f:
                 if f.read() == turn:   # this turn already holds it (a parent script): share, never self-deadlock
                     os.close(fd)
+                    _turn_money_shared = True
                     return
         except OSError:
             pass
         if time.monotonic() >= deadline:
             os.close(fd)
+            waited = f", and this one waited {wait_s} s for it" if wait_s else ""
             raise TurnMoneyBusy(
-                "Another conversation on this computer is placing or closing an order right now, and this one "
-                f"waited {TURN_MONEY_WAIT_S} s for it. Nothing was sent. Tell the user, and run this again once "
-                "that conversation has finished — re-read the position first, it may already have changed.")
+                "Another conversation on this computer is placing or closing an order right now"
+                f"{waited}. Nothing was sent. Tell the user, and run this again once that conversation has "
+                "finished — re-read the position first, it may already have changed.")
         time.sleep(0.25)
+
+
+def _turn_money_release(owner, turn):
+    """atexit: clear the owner file if it still names this turn, so no later script of this turn reads it
+    as "my turn holds the lock" after this process (the holder) is gone. The flock itself goes with the fd."""
+    try:
+        with open(owner) as f:
+            if f.read() != turn:
+                return
+        os.remove(owner)
+    except OSError:
+        pass
+
+
+def hold_turn_money():
+    """Close / execution entry points: take the turn money lock BEFORE reading any position (waits up to
+    TURN_MONEY_WAIT_S, then TurnMoneyBusy). No-op outside an agent turn. Marks the process as a money
+    process too (the chat's Stop spares it)."""
+    _turn_money_lock(TURN_MONEY_WAIT_S)
+    mark_money_process()
 
 
 def mark_money_process():
     global _money_marked
     if _money_marked:
         return
-    _turn_money_lock()   # before marking: a process that gave up waiting must not be spared by Stop as a money process
     _money_marked = True
     path = os.path.join(MONEY_PID_DIR, str(os.getpid()))
     try:

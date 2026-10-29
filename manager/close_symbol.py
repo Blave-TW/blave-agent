@@ -621,6 +621,11 @@ def run_close(ctx, dry_run=False):
 def close_symbol(venue, symbol, side, key_name=None, secret_name=None, passphrase_name=None,
                  demo_name=None, dry_run=False):
     """Run from the workspace root. Returns an exit code; raises Refused."""
+    from lib import guard
+    try:   # before anything is read: another agent turn's close on this machine finishes first (lib/guard)
+        guard.hold_turn_money()
+    except guard.TurnMoneyBusy as e:
+        raise Refused(str(e))
     ctx = prepare(venue, symbol, side, key_name, secret_name, passphrase_name, demo_name)
     return run_close(ctx, dry_run)
 

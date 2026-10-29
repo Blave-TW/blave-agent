@@ -103,13 +103,21 @@ with open(os.path.join(HANDOFF, "id"), "w") as fh:
 at._remove_cloud_handoff_dir(WS, "desktop-aaaa1111")
 t("並行:這一輪(A)的子資料夾清掉", not os.path.lexists(os.path.join(HANDOFF, "desktop-aaaa1111")))
 t("並行:別條(B)的子資料夾與金鑰原封不動", os.path.isfile(os.path.join(HANDOFF, "desktop-bbbb2222", "id")))
-t("並行:帶 session_id 時根目錄的檔不碰(稽核 s1 P2-1)", os.path.isfile(os.path.join(HANDOFF, "id")))
+t("並行:帶 session_id 時沒過期的根目錄檔不碰(稽核 s1 P2-1)", os.path.isfile(os.path.join(HANDOFF, "id")))
 at._remove_cloud_handoff_dir(WS)
 t("沒帶 session_id:沒過期的根目錄檔不動、資料夾不動", os.path.isfile(os.path.join(HANDOFF, "id")) and os.path.isdir(os.path.join(HANDOFF, "desktop-bbbb2222")))
 old = time.time() - at.HANDOFF_ROOT_STALE_S - 5
 os.utime(os.path.join(HANDOFF, "id"), (old, old))
 at._remove_cloud_handoff_dir(WS)
 t("沒帶 session_id:超過憑證效期的根目錄殘檔才清", not os.path.lexists(os.path.join(HANDOFF, "id")) and os.path.isdir(os.path.join(HANDOFF, "desktop-bbbb2222")))
+with open(os.path.join(HANDOFF, "id"), "w") as fh:
+    fh.write("root")
+os.utime(os.path.join(HANDOFF, "id"), (old, old))
+plant("desktop-aaaa1111")
+at._remove_cloud_handoff_dir(WS, "desktop-aaaa1111")
+t("帶 session_id(run_turn 唯一的呼叫法)也清超過效期的根目錄殘檔;別條的子資料夾照留(稽核 s2 P3-6)",
+  not os.path.lexists(os.path.join(HANDOFF, "id")) and not os.path.lexists(os.path.join(HANDOFF, "desktop-aaaa1111"))
+  and os.path.isfile(os.path.join(HANDOFF, "desktop-bbbb2222", "id")))
 t("子資料夾名就是對話 id;怪字退回固定字(會被貼進命令列)",
   at.handoff_folder("desktop-ab12cd34") == "desktop-ab12cd34" and at.handoff_folder("../x") == "turn" and at.handoff_folder(None) == "turn" and at.handoff_folder("d" * 65) == "turn" and at.handoff_folder("d" * 64) == "d" * 64)
 rule = at.mcp_rule(True, "desktop-ab12cd34")
