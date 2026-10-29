@@ -5328,38 +5328,66 @@ def _flatten_already_running():
         fh.close()
 
 
-_FLATTEN_PROC = {"proc": None}  # the local-mode flatten this process launched (flatten_running)
+# Every local-mode flatten launched, for flatten_running: this process's Popens, and their pids
+# appended to state/flatten_pids (one per line) so a restarted daemon still sees them. A list, not
+# one slot: a double press can start two before either takes flatten.lock (the loser exits at once).
+_FLATTEN_PROCS = []
+_FLATTEN_LOCK = threading.Lock()
+
+
+def _flatten_pids_path():
+    return os.path.join(WORKSPACE_STATE, "flatten_pids")
+
+
+def _record_flatten(proc):
+    with _FLATTEN_LOCK:
+        _FLATTEN_PROCS.append(proc)
+        try:
+            atomic_file.append_line(_flatten_pids_path(), f"{proc.pid}\n")
+        except OSError as e:   # only a restarted daemon loses sight of it; the flatten itself runs
+            _log(f"close_all: flatten pid not recorded: {type(e).__name__}")
 
 
 def flatten_running():
     """Is a close-all flatten running right now? For the desktop status file (daemon.flattening:
-    the 06:00 scheduled update waits it out). Never probes state/flatten.lock with a lock of its
-    own: the status loop calls this every few seconds, and a flatten starting in that instant
-    would find the lock held and exit as already-running, closing nothing. Our own Popen first;
-    otherwise (this daemon restarted under a running flatten) the pid flatten.py writes into the
-    lock file on POSIX, identity-checked on its command line like _mgmt_pid_alive. Windows
-    writes no pid there, so a flatten started by an earlier daemon is not seen on Windows."""
-    proc = _FLATTEN_PROC["proc"]
-    if proc is not None and proc.poll() is None:
-        return True
-    if platform.system() == "Windows":
-        return False
+    the 06:00 scheduled update waits it out). Never touches state/flatten.lock — taking it, even
+    for a moment every few seconds, would make a flatten starting in that instant exit as
+    already-running and close nothing; on Windows flatten.py's msvcrt lock also fails a plain read.
+    This process's Popens first (poll, no subprocess); then the recorded pids, identity-checked on
+    the command line like _mgmt_pid_alive (a reused pid is not a flatten). Dead pids are pruned,
+    so the list empties once every flatten is gone. A flatten not launched by a daemon (an agent
+    running manager/flatten.py by hand) is not seen."""
+    with _FLATTEN_LOCK:
+        _FLATTEN_PROCS[:] = [p for p in _FLATTEN_PROCS if p.poll() is None]
+        if _FLATTEN_PROCS:
+            return True
+    path = _flatten_pids_path()
     try:
-        pid = int(atomic_file.read_bytes(os.path.join(WORKSPACE, "state", "flatten.lock")).strip() or 0)
-    except (OSError, ValueError):
-        return False
-    if pid <= 1 or (proc is not None and proc.pid == pid):
-        return False
-    try:
-        os.kill(pid, 0)
+        raw = atomic_file.read_bytes(path).decode("ascii", errors="replace")
     except OSError:
         return False
-    return "manager/flatten.py" in _pid_cmdline(pid)
+    pids = {int(x) for x in raw.split() if x.isdigit() and int(x) > 1}
+    # outside the lock: on Windows each check is a powershell, and _record_flatten (the close_all
+    # ack path) must not wait behind it
+    dead = {pid for pid in pids if "manager/flatten.py" not in _pid_cmdline(pid).replace("\\", "/")}
+    if dead or not raw.endswith("\n"):
+        with _FLATTEN_LOCK:   # re-read: a pid appended meanwhile is kept
+            try:
+                cur = atomic_file.read_bytes(path).decode("ascii", errors="replace").split()
+                keep = [x for x in cur if x.isdigit() and int(x) > 1 and int(x) not in dead]
+                if keep:
+                    with atomic_file.replacing(path) as f:
+                        f.write("".join(f"{x}\n" for x in keep))
+                else:
+                    os.remove(path)
+            except OSError:
+                pass   # pruned next time
+    return len(dead) < len(pids)
 
 
 def optimize_running():
     """manage_optimize holds _OPT_LOCK from validation until its Deferred cleanup — the status
-    file's manager.optimizing. Dies with this process; the shell only trusts a fresh heartbeat."""
+    file's daemon.optimizing. Dies with this process; the shell only trusts a fresh heartbeat."""
     return _OPT_LOCK.locked()
 
 
@@ -5597,7 +5625,7 @@ def _launch_flatten(prefix):
                                     env=_local_child_env(**flags),
                                     stdout=logf, stderr=logf, start_new_session=True,
                                     **_child_kw(**({"stdin": subprocess.PIPE} if line else {})))
-        _FLATTEN_PROC["proc"] = proc
+        _record_flatten(proc)
         if line:
             try:
                 proc.stdin.write(line.encode("utf-8"))

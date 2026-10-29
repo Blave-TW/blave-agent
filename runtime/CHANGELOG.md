@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-- **電腦版狀態檔多三個「正在做」欄位(`command_listener.flatten_running`／`optimize_running`／`_mark_perf`、`local_daemon.write_status`;desktop 0.1.37 每天 06:00 自動更新不在這些時候重開,更新膠囊稽核 P3-5)**:`daemon.flattening` = 全部平倉行程還活著(本行程起的 Popen 還沒結束;daemon 重啟過就看 `state/flatten.lock` 裡 flatten.py 寫的 pid 活著且命令列是 `manager/flatten.py`,Windows 那檔沒有 pid 所以看不到上一個 daemon 起的平倉)——絕不自己去鎖 `flatten.lock`(狀態迴圈每幾秒一次,剛好起跑的平倉會以為有人在平而什麼都不平);`manager.optimizing` = `_OPT_LOCK` 被 manage_optimize 持有(行程死了狀態檔就不再更新,外殼只信新鮮心跳);`strategies/<name>/perf_refresh.json` 在成交測試那次 running 時多帶 `exec_test: true`。跟 `halt.closing` 不同,這三個結束就不成立。舊外殼不讀;舊 runtime 沒這些欄位外殼當作沒有。測試 `tests/check_report_activity.py` 第 4 段。
+- **電腦版狀態檔多三個「正在做」欄位(`command_listener.flatten_running`／`_record_flatten`／`optimize_running`／`_mark_perf`、`local_daemon.write_status`;desktop 0.1.37 每天 06:00 自動更新不在這些時候重開,更新膠囊稽核 P3-5)**:`daemon.flattening` = 全部平倉行程還活著——local mode 每起一支 flatten 就把 Popen 記在行程內、pid 附加進 `state/flatten_pids`(清單,雙按兩支都記);先看本行程的 Popen(不起子行程),否則逐個 pid 用 `_pid_cmdline` 核身分(命令列要有 `manager/flatten.py`),死掉的修剪掉、清單空了刪檔,daemon 重啟後 macOS／Windows 都看得到。絕不讀也不鎖 `flatten.lock`(狀態迴圈每幾秒一次,鎖一下會讓剛起跑的平倉以為有人在平而什麼都不平;Windows 那把 msvcrt 鎖連讀都會失敗)。agent 手動跑的 flatten 不在清單裡。`daemon.optimizing` = `_OPT_LOCK` 被 manage_optimize 持有(在 daemon 區塊,報告組不出來那輪照寫;行程死了狀態檔不再更新,外殼只信新鮮心跳);`strategies/<name>/perf_refresh.json` 在成交測試那次 running 時多帶 `exec_test: true`。跟 `halt.closing` 不同,這三個結束就不成立。舊外殼不讀;舊 runtime 沒這些欄位外殼當作沒有。測試 `tests/check_report_activity.py` 第 4 段。
 
 ## 1.1.148 — 2026-10-29(desktop 0.1.36)
 

@@ -1256,8 +1256,7 @@ class Daemon:
                 _log(f"report activity failed: {type(e).__name__}: {e}")
             try:   # the 06:00 scheduled update waits out a close-all and an optimise; absent = none
                 doc["daemon"]["flattening"] = self.cl.flatten_running()
-                if isinstance(doc.get("manager"), dict):
-                    doc["manager"]["optimizing"] = self.cl.optimize_running()
+                doc["daemon"]["optimizing"] = self.cl.optimize_running()
             except Exception as e:
                 _log(f"long job state failed: {type(e).__name__}: {e}")
             doc["president_local"] = self.pc.local_info()

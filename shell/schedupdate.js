@@ -12,7 +12,7 @@ function reportsClear(reports, now) {
   const t = typeof reports.next_due_at === "string" ? Date.parse(reports.next_due_at) : NaN;
   return Number.isFinite(t) && t - now > REPORT_AHEAD_MS;
 }
-/* o:{ now, on, phase, version, failed, trading, turn, idleSec, dirty, uiBusy, twHeld, asking, engineBusy, reports, backtesting, optimizing, exectesting, refreshing, closing }
+/* o:{ now, on, phase, version, failed, trading, turn, idleSec, dirty, uiBusy, twHeld, asking, engineBusy, reports, backtesting, optimizing, exectesting, refreshing, rerunning, closing }
    dirty / uiBusy:畫面回的值;逾時、出錯傳 null(= 有東西,不重開)。回 { go, why } */
 function schedPlan(o) {
   const no = (why) => ({ go: false, why });
@@ -32,6 +32,7 @@ function schedPlan(o) {
   if (o.optimizing) return no("optimize");
   if (o.exectesting) return no("exectest");
   if (o.refreshing) return no("stats");
+  if (o.rerunning) return no("rerun");
   if (o.closing) return no("closing");
   if (o.dirty !== false) return no("draft");
   if (o.uiBusy !== false) return no("ui");

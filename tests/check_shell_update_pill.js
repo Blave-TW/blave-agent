@@ -89,8 +89,8 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
         { reports: { running: false, next_due_at: new Date(NOW + 10 * 60000).toISOString() } }, { reports: { running: false, next_due_at: new Date(NOW - 60000).toISOString() } }, { reports: undefined }, { reports: null }, { reports: {} },
         { reports: { running: false } }, { reports: { next_due_at: null } }, { reports: { running: "false", next_due_at: null } }, { reports: { running: false, next_due_at: "soon" } }, { reports: { running: false, next_due_at: 123 } }]],
     ];
-    for (const [x, why] of [[{ backtesting: true }, "backtest"], [{ optimizing: true }, "optimize"], [{ exectesting: true }, "exectest"], [{ refreshing: true }, "stats"], [{ closing: true }, "closing"]])
-      t("§5.2 daemon 長工作:" + why + " → 不重開(why " + why + ")", go(x).go === false && go(x).why === why, go(x));
+    for (const [x, why] of [[{ backtesting: true }, "backtest"], [{ optimizing: true }, "optimize"], [{ exectesting: true }, "exectest"], [{ refreshing: true }, "stats"], [{ rerunning: true }, "rerun"], [{ closing: true }, "closing"]])
+      t("§5.2 條件 11 daemon 長工作:" + why + " → 不重開(why " + why + ")", go(x).go === false && go(x).why === why, go(x));
     for (const [name, xs] of NO) t("§5.2 條件 " + name + " → 不重開", xs.every((x) => go(x).go === false), xs.map((x) => go(x).why));
     t("§5.2 條件 10 反面:下一個報告在 10 分鐘之後、或沒有排程(null)→ 可以", go({ reports: { running: false, next_due_at: new Date(NOW + 11 * 60000).toISOString() } }).go === true && go({ reports: { running: false, next_due_at: null } }).go === true);
     t("§5.2 開關關著 → 不重開", go({ on: false }).go === false);
@@ -114,9 +114,10 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       const ctx = { _schedRunning: false, draftOk: false, quitAsking: false, moveAsking: false, restarting: null, quitConfirmed: false, quitting: false, activeTurn: null, turnStarting: false, _engineRun: null,
         updater: () => ({ state: () => { log.push("collect"); return { phase: o.phase || "ready", version: "0.1.36" }; }, install: () => { log.push("install"); return o.installRes || { ok: true }; } }),
         _tradeHost: o.noHost ? null : { status: () => ({ running: o.daemonRunning !== false, alive: o.alive !== false, lockRetry: o.lockRetry || null,
-          report: { daemon: { pid: 4242, ...(o.flattening !== undefined ? { flattening: o.flattening } : {}), ...(o.reports === "absent" ? {} : { reports: o.reports === undefined ? { running: false, next_due_at: null } : o.reports }) }, ...(o.manager ? { manager: o.manager } : {}), ...(o.halt ? { halt: o.halt } : {}) } }) },
-        STRAT_DIR: () => "/S", path, fs: { readdirSync: (d) => { log.push("collect"); if (d !== "/S") throw new Error("dir"); return Object.keys(o.perf || {}); },
-          readFileSync: (f) => { const m = /^\/S\/([^/]+)\/perf_refresh\.json$/.exec(f.replace(/\\/g, "/")); if (!m || !(o.perf || {})[m[1]]) throw new Error("ENOENT"); return JSON.stringify(o.perf[m[1]]); } },
+          report: { daemon: { pid: 4242, ...(o.flattening !== undefined ? { flattening: o.flattening } : {}), ...(o.optimizing !== undefined ? { optimizing: o.optimizing } : {}), ...(o.reports === "absent" ? {} : { reports: o.reports === undefined ? { running: false, next_due_at: null } : o.reports }) }, ...(o.manager ? { manager: o.manager } : {}), ...(o.halt ? { halt: o.halt } : {}) } }) },
+        STRAT_DIR: () => "/S", path, fs: { readdirSync: (d) => { log.push("collect"); if (d !== "/S") throw new Error("dir"); return [...new Set([...Object.keys(o.perf || {}), ...Object.keys(o.rerun || {})])]; },
+          readFileSync: (f) => { const g = f.replace(/\\/g, "/"), m = /^\/S\/([^/]+)\/perf_refresh\.json$/.exec(g), v = /^\/S\/([^/]+)\/versions\/rerun\.json$/.exec(g);
+            const doc = m ? (o.perf || {})[m[1]] : v ? (o.rerun || {})[v[1]] : null; if (!doc) throw new Error("ENOENT"); return JSON.stringify(doc); } },
         updAutoGet: () => o.on !== false, updSchedRec: () => ({ target: null, failed: o.failed || null }), tradeMaybeLive: () => (o.trading ? { venue: "x" } : null), twLots: () => { log.push("collect"); return { held: !!o.twHeld }; },
         engineSetup: () => ({ busy: () => false }), require: (m) => (m === "electron" ? { powerMonitor: { getSystemIdleTime: () => { log.push("collect"); return o.idle === undefined ? 900 : o.idle; } } } : require(path.join(SHELL, m))),
         pageAsk: async (expr) => { log.push(/trUnsavedAny/.test(expr) ? "ask:draft" : "ask:ui"); if (o.onAsk) o.onAsk(ctx); return /trUnsavedAny/.test(expr) ? (o.dirty === undefined ? false : o.dirty) : o.idleUi === undefined ? true : o.idleUi; },
@@ -129,9 +130,9 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       const r = rig(o), res = await r.run();
       t("先判開關與時間窗:" + why + " → 不讀狀態檔、twLots、powerMonitor", res.go === false && res.why === code && r.log.length === 0 && r.ctx._schedRunning === false, [res, r.log]); }
     { const r = rig({ onAbort: (c) => { c.turnStarting = true; } }), res = await r.run();
-      t("收引擎那段開始回合:不 install、收回 draftOk、不寫目標版號", res.go === false && res.why === "turn" && !r.log.includes("install") && r.ctx.draftOk === false && !("updSchedTarget" in r.prefs), [res, r.log]); }
+      t("收引擎那段開始回合:不 install、不送 upd_sched_run、收回 draftOk、不寫目標版號", res.go === false && res.why === "turn" && !r.log.includes("install") && !r.log.some((x) => /upd_sched_run/.test(x)) && r.ctx.draftOk === false && !("updSchedTarget" in r.prefs), [res, r.log]); }
     { const r = rig({}), res = await r.run();
-      t("全部成立:先問畫面(草稿、輸入框與框)→ 送 upd_sched_run → 收引擎 → install → 才寫目標版號", res.go === true && r.log.filter((x) => x !== "collect").join() === 'ask:draft,ask:ui,track:feature_used:upd_sched_run,engineAbort,install,prefs:{"updSchedTarget":"0.1.36"}', r.log);
+      t("全部成立:先問畫面(草稿、輸入框與框)→ 收引擎 → 確定要裝才送 upd_sched_run → install → 才寫目標版號", res.go === true && r.log.filter((x) => x !== "collect").join() === 'ask:draft,ask:ui,engineAbort,track:feature_used:upd_sched_run,install,prefs:{"updSchedTarget":"0.1.36"}', r.log);
       t("…不送 update_restart、設 draftOk(quitAndInstall 關窗時不再問草稿)", !r.log.some((x) => /update_restart/.test(x)) && r.ctx.draftOk === true); }
     { const r = rig({ installRes: { ok: false, error: "TRADING" } }), res = await r.run();
       t("install 回 TRADING／失敗:不寫目標版號(已寫的刪掉)、收回 draftOk", res.go === false && r.prefs.updSchedTarget === null && r.ctx.draftOk === false && !r.log.some((x) => /0\.1\.36"\}$/.test(x)), r.log); }
@@ -151,22 +152,32 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       const r = rig(o); if (why === "引擎在跑") r.ctx._engineRun = Promise.resolve();
       const res = await r.run();
       t("主行程收集的條件:" + why + " → 不重開,也不去問畫面", res.go === false && !r.log.some((x) => /^ask:/.test(x)), [res, r.log]); }
-    // daemon 長工作(Wei 10-29):在跑就不重開、也不去問畫面;下一分鐘再判
-    for (const [why, o, code] of [["組合回測在跑(manager.backtest_job running)", { manager: { backtest_job: { status: "running", pid: 99 } } }, "backtest"],
-      ["組合最佳化在跑(manager.optimizing)", { manager: { backtest_job: null, optimizing: true } }, "optimize"],
-      ["成交測試在跑(perf_refresh.json running + exec_test、pid 是這個 daemon)", { perf: { a: { status: "running", at: 1, pid: 4242, exec_test: true } } }, "exectest"],
-      ["成交測試與更新績效同時在跑 → 報成交測試", { perf: { a: { status: "running", at: 1, pid: 4242 }, b: { status: "running", at: 1, pid: 4242, exec_test: true } } }, "exectest"],
-      ["更新績效在跑(perf_refresh.json running、pid 是這個 daemon)", { perf: { a: { status: "failed", at: 1 }, b: { status: "running", at: 1, pid: 4242 } } }, "stats"],
+    // 條件 11 daemon 長工作:在跑就不重開、也不去問畫面;下一分鐘再判
+    const T = new Date(2026, 9, 29, 6, 5).getTime() / 1000, OLD = T - 6 * 3600 - 1;
+    for (const [why, o, code] of [["組合回測在跑(manager.backtest_job running)", { manager: { backtest_job: { status: "running", pid: 99, started_at: T - 3600 } } }, "backtest"],
+      ["組合最佳化在跑(daemon.optimizing)", { optimizing: true }, "optimize"],
+      ["成交測試在跑(perf_refresh.json running + exec_test、pid 是這個 daemon)", { perf: { a: { status: "running", at: T - 60, pid: 4242, exec_test: true } } }, "exectest"],
+      ["成交測試與更新績效同時在跑 → 報成交測試", { perf: { a: { status: "running", at: T - 60, pid: 4242 }, b: { status: "running", at: T - 60, pid: 4242, exec_test: true } } }, "exectest"],
+      ["更新績效在跑(perf_refresh.json running、pid 是這個 daemon)", { perf: { a: { status: "failed", at: T - 60 }, b: { status: "running", at: T - 60, pid: 4242 } } }, "stats"],
+      ["版本還原重跑在跑(versions/rerun.json running)", { rerun: { c: { n: 3, status: "running", at: T - 60, pid: 77 } } }, "rerun"],
       ["全部平倉進行中(daemon.flattening)", { flattening: true }, "closing"]]) {
       const r = rig(o), res = await r.run();
-      t("daemon 長工作:" + why + " → 不重開、不問畫面", res.go === false && res.why === code && !r.log.includes("install") && !r.log.some((x) => /^ask:/.test(x)), [res, r.log]); }
-    for (const [why, o] of [["回測已結束(done)", { manager: { backtest_job: { status: "done" }, optimizing: false } }], ["perf running 但 pid 是上一個 daemon 的", { perf: { b: { status: "running", at: 1, pid: 7, exec_test: true } } }],
-      ["perf running 但沒有 pid", { perf: { b: { status: "running", at: 1 } } }], ["平倉已結束(flattening false)", { flattening: false }],
+      t("條件 11:" + why + " → 不重開、不問畫面", res.go === false && res.why === code && !r.log.includes("install") && !r.log.some((x) => /^ask:/.test(x)), [res, r.log]); }
+    for (const [why, o] of [["回測已結束(done)", { manager: { backtest_job: { status: "done", started_at: T - 60 } }, optimizing: false }],
+      ["回測 running 但起算超過 6 小時(watcher 死掉留下的)", { manager: { backtest_job: { status: "running", started_at: OLD } } }], ["回測 running 但沒有 started_at", { manager: { backtest_job: { status: "running" } } }],
+      ["perf running 但 pid 是上一個 daemon 的", { perf: { b: { status: "running", at: T - 60, pid: 7, exec_test: true } } }],
+      ["perf running 但沒有 pid", { perf: { b: { status: "running", at: T - 60 } } }], ["perf running 但超過 6 小時", { perf: { b: { status: "running", at: OLD, pid: 4242, exec_test: true }, c: { status: "running", at: OLD, pid: 4242 } } }],
+      ["重跑已結束或失敗", { rerun: { c: { n: 3, status: "failed", at: T - 60 } } }], ["重跑 running 但超過 6 小時", { rerun: { c: { n: 3, status: "running", at: OLD } } }],
+      ["平倉已結束(flattening false)", { flattening: false }],
       ["暫停並全部平倉之後還停著(halt.closing 留著,但平倉行程已結束)", { halt: { halted: true, closing: true }, flattening: false }],
-      ["舊 runtime 沒有這些欄位(manager／flattening／exec_test 都沒有)", { halt: { halted: true, closing: true } }],
-      ["daemon 沒在跑(狀態檔留著 running 的回測、最佳化、平倉)", { daemonRunning: false, alive: false, reports: "absent", manager: { backtest_job: { status: "running" }, optimizing: true }, flattening: true, perf: { b: { status: "running", at: 1, pid: 4242 } } }]]) {
+      ["舊 runtime 沒有這些欄位(optimizing／flattening／exec_test 都沒有)", { halt: { halted: true, closing: true }, manager: { optimizing: true } }],
+      ["daemon 沒在跑(狀態檔留著 running 的回測、最佳化、平倉)", { daemonRunning: false, alive: false, reports: "absent", manager: { backtest_job: { status: "running", started_at: T - 60 } }, optimizing: true, flattening: true, perf: { b: { status: "running", at: T - 60, pid: 4242 } }, rerun: { c: { status: "running", at: T - 60 } } }]]) {
       const r = rig(o), res = await r.run();
-      t("daemon 長工作反面:" + why + " → 照常重開", res.go === true && r.log.includes("install"), [res, r.log]); }
+      t("條件 11 反面:" + why + " → 照常重開", res.go === true && r.log.includes("install"), [res, r.log]); }
+    for (const [why, x, code] of [["全部平倉", { flattening: true }, "closing"], ["報告開始跑", { reports: { running: true, next_due_at: null } }, "report"], ["組合回測", { manager: { backtest_job: { status: "running", started_at: T } } }, "backtest"]]) {
+      const o = {}; o.onAsk = () => Object.assign(o, x);
+      const r = rig(o), res = await r.run();
+      t("問畫面那段時間遠端開始" + why + ":第二次判斷重讀狀態檔,不重開", res.go === false && res.why === code && !r.log.includes("install"), [res, r.log]); }
     { const r = rig({}); r.ctx._schedRunning = true; const res = await r.run();
       t("上一輪還在問畫面:這一輪不疊", res.why === "running" && r.log.length === 0); }
     // pageAsk:逾時或出錯回 null;沒有我們的頁 = false(沒有草稿、沒有框)
@@ -179,7 +190,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       && /getHours\(\) === WINDOW_HOUR && d\.getMinutes\(\) < WINDOW_MIN/.test(fs.readFileSync(path.join(SHELL, "schedupdate.js"), "utf8")));
     t("updSchedBoot:沒追上就送 update_failed stage=install(主行程送,經 schedBoot)", /if \(b\.report\) \{ try \{ tm\(\)\.track\("update_failed", \{ stage: "install" \}\); \}/.test(cut(src, "function updSchedBoot(")));
     t("預設開、存 ui-prefs autoUpdate(缺 = 開,舊版升上來也是開)", /autoUpdate !== false; \} catch \(_\) \{ return true; \}/.test(src) && /handle\("update-auto-set", \(_e, on\) => updAutoSet\(on === true\), null\);/.test(src));
-    t("條件 10 讀的是 runtime 寫的 daemon.reports(runtime/local_daemon.py write_status),daemon 在跑時心跳不新鮮就不信", /return host\.alive && host\.report && host\.report\.daemon \? host\.report\.daemon\.reports : undefined;/.test(cut(src, "function updSchedReports(")) && /reports: updSchedReports\(host\), \.\.\.updSchedJobs\(host\) \}/.test(SCHED)
+    t("條件 10 讀的是 runtime 寫的 daemon.reports(runtime/local_daemon.py write_status),daemon 在跑時心跳不新鮮就不信", /return host\.alive && host\.report && host\.report\.daemon \? host\.report\.daemon\.reports : undefined;/.test(cut(src, "function updSchedReports(")) && /reports: updSchedReports\(host\), \.\.\.updSchedJobs\(host, now\) \}/.test(SCHED) && /reports: updSchedReports\(host2\), \.\.\.updSchedJobs\(host2, now2\)/.test(SCHED)
       && /doc\["daemon"\]\["reports"\] = self\.cl\.report_activity\(\)/.test(fs.readFileSync(path.join(SHELL, "..", "runtime", "local_daemon.py"), "utf8"))); }
 
   // ── §4.2 主行程↔畫面往返(updAsk)與取消後 Cmd+Q／選單列「結束」仍有效 ──

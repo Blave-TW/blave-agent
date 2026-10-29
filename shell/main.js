@@ -4166,24 +4166,29 @@ function updSchedReports(host) {
   if (!host || (!host.running && !host.lockRetry)) return { running: false, next_due_at: null };
   return host.alive && host.report && host.report.daemon ? host.report.daemon.reports : undefined;
 }
-/* daemon 的長工作(Wei 10-29),都是 runtime 寫的「正在做」:組合回測(manager.backtest_job)、組合最佳化(manager.optimizing)、
+/* 條件 11 daemon 的長工作,都是 runtime 寫的「正在做」:組合回測(manager.backtest_job)、組合最佳化(daemon.optimizing)、
    更新績效與成交測試(strategies/<name>/perf_refresh.json running,pid 要是這個 daemon 的,exec_test 分成交測試)、
-   全部平倉(daemon.flattening,平倉行程活著才是 true)。daemon 沒在跑 = 都沒有;在跑但心跳不新鮮時條件 10 已經擋下;舊 runtime 沒欄位 = 沒有 */
-function updSchedJobs(host) {
-  const none = { backtesting: false, optimizing: false, exectesting: false, refreshing: false, closing: false };
+   版本還原重跑(strategies/<name>/versions/rerun.json running)、全部平倉(daemon.flattening,平倉行程活著才是 true)。
+   跟條件 10 相反,讀不到一律當作沒有:daemon 沒在跑、舊 runtime 沒欄位、紀錄起算超過 6 小時(watcher 死掉留下的 running),
+   都不能讓更新永遠不來。在跑但心跳不新鮮時條件 10 已經擋下 */
+function updSchedJobs(host, now = Date.now()) {
+  const MAX_S = 6 * 3600;
+  const none = { backtesting: false, optimizing: false, exectesting: false, refreshing: false, rerunning: false, closing: false };
   const r = host && host.alive ? host.report : null;
   if (!r) return none;
   const m = r.manager || {}, dm = r.daemon || {}, pid = dm.pid;
-  let refreshing = false, exectesting = false;
-  if (Number.isInteger(pid)) {
-    let names = []; try { names = fs.readdirSync(STRAT_DIR()); } catch (_) { /* 沒有策略資料夾 */ }
-    for (const n of names) {
-      let d = null; try { d = JSON.parse(fs.readFileSync(path.join(STRAT_DIR(), n, "perf_refresh.json"), "utf8")); } catch (_) { continue; }
-      if (!d || d.status !== "running" || d.pid !== pid) continue;
-      if (d.exec_test === true) exectesting = true; else refreshing = true;
-    }
+  const fresh = (at) => typeof at === "number" && Number.isFinite(at) && now / 1000 - at < MAX_S;
+  const readJson = (...p) => { try { return JSON.parse(fs.readFileSync(path.join(STRAT_DIR(), ...p), "utf8")); } catch (_) { return null; } };
+  let refreshing = false, exectesting = false, rerunning = false;
+  let names = []; try { names = fs.readdirSync(STRAT_DIR()); } catch (_) { /* 沒有策略資料夾 */ }
+  for (const n of names) {
+    const d = Number.isInteger(pid) ? readJson(n, "perf_refresh.json") : null;
+    if (d && d.status === "running" && d.pid === pid && fresh(d.at)) { if (d.exec_test === true) exectesting = true; else refreshing = true; }
+    const v = readJson(n, "versions", "rerun.json");
+    if (v && v.status === "running" && fresh(v.at)) rerunning = true;
   }
-  return { backtesting: !!(m.backtest_job && m.backtest_job.status === "running"), optimizing: m.optimizing === true, exectesting, refreshing, closing: dm.flattening === true };
+  const job = m.backtest_job;
+  return { backtesting: !!(job && job.status === "running" && fresh(job.started_at)), optimizing: dm.optimizing === true, exectesting, refreshing, rerunning, closing: dm.flattening === true };
 }
 let _schedRunning = false;
 async function scheduledInstall(now = Date.now()) {
@@ -4198,20 +4203,22 @@ async function scheduledInstall(now = Date.now()) {
     const base = { now, on, phase: st.phase, version: st.version, failed: updSchedRec().failed, trading: !!tradeMaybeLive(),
       turn: !!(activeTurn || turnStarting), idleSec: require("electron").powerMonitor.getSystemIdleTime(), twHeld: twLots().held,
       asking: !!(quitAsking || moveAsking || restarting || quitConfirmed || quitting), engineBusy: !!(engineSetup().busy() || _engineRun),
-      reports: updSchedReports(host), ...updSchedJobs(host) };
+      reports: updSchedReports(host), ...updSchedJobs(host, now) };
     let d = S.schedPlan({ ...base, dirty: false, uiBusy: false });
     if (!d.go) return d;
     const dirty = await pageAsk("typeof trUnsavedAny === 'function' && trUnsavedAny() === true");
     const idle = await pageAsk("typeof upIdleUi === 'function' && upIdleUi() === true");
-    // 問畫面那段時間狀態可能變了:全部重判一次再動
-    d = S.schedPlan({ ...base, now: Date.now(), trading: !!tradeMaybeLive(), turn: !!(activeTurn || turnStarting), asking: !!(quitAsking || moveAsking || restarting || quitConfirmed || quitting),
+    // 問畫面那段時間狀態可能變了:全部重判一次再動(報告與長工作也重讀,遠端可能剛按了全部平倉)
+    const now2 = Date.now(), host2 = _tradeHost ? _tradeHost.status() : null;
+    d = S.schedPlan({ ...base, now: now2, reports: updSchedReports(host2), ...updSchedJobs(host2, now2), trading: !!tradeMaybeLive(), turn: !!(activeTurn || turnStarting), asking: !!(quitAsking || moveAsking || restarting || quitConfirmed || quitting),
       phase: updater().state().phase, dirty: dirty === null ? null : dirty, uiBusy: idle === null ? null : !idle });
     if (!d.go) return d;
-    try { tm().track("feature_used", { name: "upd_sched_run" }); } catch (_) { /* 追蹤不擋 */ }
     draftOk = true;   // quitAndInstall 關視窗時不再問草稿(上面已確認沒有)
     await engineAbort();
     // install() 只擋下單不擋回合;收引擎那段 await 期間開了回合就放掉這一輪
     if (activeTurn || turnStarting) { draftOk = false; return { go: false, why: "turn" }; }
+    // 確定要裝才送(spec §6:install() 前),被上面的回合再判擋下的那輪不算
+    try { tm().track("feature_used", { name: "upd_sched_run" }); } catch (_) { /* 追蹤不擋 */ }
     const res = updater().install();
     if (res.ok) { try { uiPrefsPatch({ updSchedTarget: st.version }); } catch (_) { /* 記不下:下次啟動不會發現失敗,只是少一道防重開 */ } }
     else { draftOk = false; try { uiPrefsPatch({ updSchedTarget: null }); } catch (_) { /* 照舊 */ } }
