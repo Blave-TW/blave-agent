@@ -44,7 +44,7 @@ const EVENTS = {
   plan_start_res: { result: ["ok", "no_card", "no_credit", "error", "confirm"] },
   update_failed: { stage: ["check", "download", "staging", "install", "other"] },
   // no_plan / plan_failed:方案制(api 切換之後)沒有含資料的方案、方案扣款失敗
-  lib_blocked: { why: ["signed_out", "no_card", "no_balance", "unknown", "cloud_off", "ai_no_card", "ai_no_credit", "no_plan", "plan_failed"] },
+  lib_blocked: { why: ["signed_out", "no_card", "no_balance", "unknown", "cloud_off", "ai_no_card", "ai_no_credit", "no_plan", "plan_failed", "agent_old"] },
   // 每日在線心跳:app 一直開著不重開的人沒有 app_open,靠它量到。事件本身就是「這台在線」;live = 本機對帳器在跑(含模擬)
   heartbeat: { live: ["on", "off"] },
   // 引擎安裝(0.1.12;shell/enginesetup.js,主行程送):一輪真的有東西要裝的安裝跑完的結果(first / upd × done / net / other / timeout;

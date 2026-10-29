@@ -288,7 +288,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       connect_failed: ["kind", ["claude_login", "codex_login", "claude_gone", "codex_gone", "blave_oauth", "blave_cancel", "no_local", "apikey_key", "apikey_credit", "apikey_net", "apikey_other"]],
       first_reply_done: ["kind", ["blave", "claude", "codex", "apikey"]], plan_start_res: ["result", ["ok", "no_card", "no_credit", "error", "confirm"]],
       update_failed: ["stage", ["check", "download", "staging", "install", "other"]],
-      lib_blocked: ["why", ["signed_out", "no_card", "no_balance", "unknown", "cloud_off", "ai_no_card", "ai_no_credit", "no_plan", "plan_failed"]] };
+      lib_blocked: ["why", ["signed_out", "no_card", "no_balance", "unknown", "cloud_off", "ai_no_card", "ai_no_credit", "no_plan", "plan_failed", "agent_old"]] };
     t("九個新事件逐字在白名單上:一個屬性、值全是列舉、事件名與值都 ≤16 字", Object.keys(NEW).every((ev) => EVENTS[ev] && JSON.stringify(Object.keys(EVENTS[ev])) === JSON.stringify([NEW[ev][0]]) && JSON.stringify(EVENTS[ev][NEW[ev][0]]) === JSON.stringify(NEW[ev][1]) && ev.length <= 16 && NEW[ev][1].every((v) => v.length <= 16))
       && Object.keys(EVENTS).every((ev) => ev.length <= 19));   // 舊的 first_backtest_done 19 字,新名字一律 ≤16
     const tmSrc9 = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8");
