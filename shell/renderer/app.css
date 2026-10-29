@@ -1226,7 +1226,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .chat-head:has(#cs-tabs) { height: 44px; padding: 0 var(--space-8); position: relative; }
 .cs-hint { flex: none; height: 28px; padding: 0 var(--space-6); border-radius: var(--radius-sm); font-size: 12px; color: var(--ink-2); white-space: nowrap; }
 .cs-hint:hover { background: var(--surface-row-hover); color: var(--ink); }
-.cs-tabs { flex: 1; min-width: 0; display: flex; gap: var(--space-2); overflow: hidden; }
+.cs-tabs { flex: 1; min-width: 0; height: 44px; display: flex; align-items: center; gap: var(--space-2); overflow: hidden; }   /* 44 高:× 的熱區往上下擴到 44 不被 overflow 裁掉;分頁本身 32 */
 .cs-tabs .tab { flex: 0 1 168px; min-width: 88px; height: 32px; display: flex; align-items: center; gap: var(--space-6);
   padding: 0 var(--space-8); border-radius: var(--radius-sm); color: var(--ink-2); font-size: 13px; font-weight: 400; position: relative; cursor: default;
   transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
@@ -1240,14 +1240,15 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 :root { --dot-unread: var(--color-primaryText); }
 [data-theme="dark"] { --dot-unread: var(--color-primary); }
 .tab-dot { width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--dot-unread); }
-/* 回覆中:3 格 tick(2×8、間距 4),一秒一格(同 .think-ticks 的節奏);排隊中用收據短劃的灰,不動 */
-.tab-ticks { display: flex; gap: 2px; align-items: center; }
-.tab-ticks i { display: block; width: 2px; height: 8px; background: var(--ink-3); opacity: .26; }   /* 直角切邊,同 .think-ticks-in i */
+/* 回覆中:3 格 tick(2×8、間距 4 → 3×2+2×4 = 14 填滿那一格),一秒一格(同 .think-ticks 的節奏);亮格 ink、暗格 .2 */
+.tab-ticks { display: flex; gap: var(--space-4); align-items: center; }
+.tab-ticks i { display: block; width: 2px; height: 8px; background: var(--ink); opacity: .2; }   /* 直角切邊,同 .think-ticks-in i */
 .tab-ticks[data-k="0"] i:nth-child(1), .tab-ticks[data-k="1"] i:nth-child(2), .tab-ticks[data-k="2"] i:nth-child(3) { opacity: 1; }   /* 第幾格亮由 chattabs.js 每秒換 */
-.tab-ticks.is-queued i { opacity: .55; }
+/* 排隊中:收據的 8×2 短劃,不動 */
+.tab-dash { display: block; width: 8px; height: 2px; background: var(--ink-3); }
 .tab-x { flex: none; width: 20px; height: 20px; border-radius: var(--radius-micro); display: none; align-items: center; justify-content: center; color: var(--ink-3); }
 .tab-x .ic { width: 12px; height: 12px; }
-.tab-x::before { content: ""; position: absolute; inset: -6px -4px; }   /* 視覺 20、熱區 28×44 夾在列高內 */
+.tab-x::before { content: ""; position: absolute; inset: -12px -4px; }   /* 視覺 20、熱區 28×44(分頁列 44 高,不被裁) */
 .tab-x:hover { color: var(--ink); background: var(--surface-muted); }
 .cs-tabs .tab[aria-selected="true"] .tab-x { display: flex; position: relative; }
 /* 沒選中:× 滑過才出,蓋在尾端(墊 hover 底),不佔位 */
@@ -1270,7 +1271,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cs-menu .mi.attn .mi-t { color: var(--ink); font-weight: 600; }
 .cs-menu .mi-s.s-strong { color: var(--ink); font-weight: 600; }
 .cs-menu .mi-s.s-soft { color: var(--ink-2); }
-.tabs-tip { top: 42px; bottom: auto; left: 8px; display: block; pointer-events: none; }
+.tabs-tip { top: 44px; bottom: auto; left: 8px; display: block; pointer-events: none; }
 .tabs-tip[hidden] { display: none; }
 .tabs-tip b { display: block; color: var(--ink); font-weight: 600; }
 /* 每條對話的容器(全放在 #chat-scroll 裡,同時只顯示一個) */
@@ -1279,11 +1280,13 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cs-search { width: 100%; height: 32px; margin-bottom: var(--space-8); padding: 0 var(--space-12); border-radius: var(--radius-sm);
   border: 1px solid var(--border-hairline); background: var(--surface-card); color: var(--ink); font-size: 13px; }
 .cs-search::placeholder { color: var(--ink-3); }
+.cs-search:focus { outline: none; border-color: var(--ink); }   /* 焦點一律灰階(同 .f-area:focus):框本身就是焦點提示,不吃系統強調色 */
 .cs-group { padding: var(--space-8) var(--space-12) var(--space-4); font-size: 12px; color: var(--ink-3); }
 .cs-item.is-attn .cs-name { color: var(--ink); }
 .cs-meta.st-wait, .cs-meta.st-fail { color: var(--ink); font-weight: 600; }
 .cs-meta.st-unseen { color: var(--ink-2); }
-.cs-queued { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4); font-size: 13px; color: var(--ink-2); }
+/* 排隊行(同 web .cs-queued):佔思考列那一格、同字級同色,一行置中;高度對齊思考列頭 26px,開跑換回思考列時不跳位 */
+.cs-queued { flex-direction: row; align-items: center; justify-content: center; min-height: 26px; }
 
 /* 聊天本體 + 蓋在上面的清單層 */
 .chat-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }

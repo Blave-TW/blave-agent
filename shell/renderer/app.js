@@ -2577,7 +2577,11 @@ function csRow(m) {
   // 狀態字(優先序同 canon:回覆中 ＞ 等你回覆 ＞ 排隊中 ＞ 沒做完 ＞ 做完，還沒看);沒有狀態寫時間
   const meta = document.createElement("span"); meta.className = "cs-meta";
   const st = csListState(m);
-  if (st) { meta.textContent = st.word; meta.classList.add("st-" + st.kind); if (st.kind !== "run" && st.kind !== "queued") item.classList.add("is-attn"); }
+  if (st) {
+    meta.textContent = st.word; meta.classList.add("st-" + st.kind);
+    // 等你回覆／沒做完／做完還沒看接「· 時間」(canon › 對話狀態字):靠時間分辨是哪一輪;回覆中自帶時長、排隊中不接
+    if (st.kind !== "run" && st.kind !== "queued") { item.classList.add("is-attn"); const at = document.createElement("span"); at.className = "mono"; at.textContent = csTime(m.last); meta.append(" · ", at); }
+  }
   else meta.textContent = csTime(m.last);
   item.append(name, meta);
   item.addEventListener("click", () => { csShowList(false); if (m.id !== sessionId) { const was = CS.tabs.has(m.id) && !CS.tabs.get(m.id).closed; csOpen(m.id); trackFeature(was ? "tab_switch" : "hist_resume"); } });
@@ -3470,8 +3474,11 @@ function sendBtnSync() {
   const b = $("btn-send");
   b.classList.toggle("is-stop", running);
   b.classList.toggle("is-stopping", running && turnStopping);
-  b.dataset.i18nAria = running ? "ws.stop" : "ws.send";
+  // 排隊中的停止 = 取消排隊(同 web sendBtnSync):句子撤回、放回輸入框;排隊行本身不放鈕
+  const queued = running && !!(CS.loaded && CS.loaded.queued);
+  b.dataset.i18nAria = queued ? "tabs.queueCancel" : running ? "ws.stop" : "ws.send";
   b.setAttribute("aria-label", t(b.dataset.i18nAria));
+  if (queued) b.title = t("tabs.queueCancelTitle"); else b.removeAttribute("title");
   b.disabled = false;
   if (!running) taWaitShow(false);
 }
@@ -3479,9 +3486,9 @@ async function stopTurn() {
   if (!running || turnStopping) return;
   // 還在等引擎裝好(還沒有回合可停):這一句不送、馬上放回輸入框;安裝照跑,進度卡跟著安裝走,不在這裡收
   if (engineWait && engineAbort) { const abort = engineAbort; engineSeq++; engineWait = false; engineAbort = null; trackFeature("chat_stop"); abort(); return; }
-  turnStopping = true; turnStopped = true; sendBtnSync();
-  trackFeature("chat_stop");
   const T = CS.loaded;
+  turnStopping = true; turnStopped = true; sendBtnSync();
+  trackFeature(T && T.queued ? "queue_cancel" : "chat_stop");
   let ok = false;
   try { ok = await window.blave.stopTurn(sessionId); } catch (_) { ok = false; }
   withTab(T, () => { if (!ok && !engineWait && running) { turnStopping = false; turnStopped = false; sendBtnSync(); } });   // 沒送到:讓用戶再按一次

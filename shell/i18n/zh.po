@@ -3773,11 +3773,11 @@ msgid "tm.quitTurnTitle"
 msgstr "agent 還在回覆"
 
 msgid "tm.quitTurnBody"
-msgstr "現在結束 Blave 會把這一回合中斷（包括正在做的雲端更新）。等它跑完再結束比較安全。"
+msgstr "結束會中斷這個回覆，包括正在做的雲端更新。"
 
 # 結束攔截:兩條以上回合在跑(對話分頁並行;主行程填 {n})
 msgid "tm.quitTurnBodyN"
-msgstr "{n} 個回覆還在跑，現在結束 Blave 會全部中斷（包括正在做的雲端更新）。等它們跑完再結束比較安全。"
+msgstr "結束會中斷 {n} 個回覆，包括正在做的雲端更新。"
 
 # 結束 / 關窗攔截:策略組合有還沒儲存的勾選或金額(草稿不另外存)
 msgid "tm.unsavedTitle"
@@ -9367,8 +9367,12 @@ msgstr "排隊中：同時在跑的回覆已滿，空出來就開始。"
 msgid "tabs.queueCancel"
 msgstr "取消排隊"
 
+# 排隊中的送出鍵 title(同 web workspace_cs_cancel_queued_title)
+msgid "tabs.queueCancelTitle"
+msgstr "取消排隊，原句放回輸入框"
+
 msgid "tabs.brWait"
-msgstr "等內建瀏覽器空出來"
+msgstr "等另一個對話用完瀏覽器"
 
 msgid "tabs.st.run"
 msgstr "回覆中 · {d}"
@@ -9412,13 +9416,16 @@ msgstr "昨天"
 msgid "tabs.group.earlier"
 msgstr "更早"
 
-# 對話分頁:app 選單「檔案」的新分頁／關閉分頁(⌘T／⌘W);結束框排隊那句(主行程填 {n};待設計師過字)
+# 對話分頁:app 選單「檔案」的新對話(同 ＋ 的名字)／關閉分頁(⌘T／⌘W);結束框排隊那句(主行程填 {n})與只有排隊時的標題
 msgid "menu.newTab"
-msgstr "新分頁"
+msgstr "新對話"
 
 msgid "menu.closeTab"
 msgstr "關閉分頁"
 
 msgid "tm.quitQueuedN"
 msgstr "排隊中的 {n} 句不會送出。"
+
+msgid "tm.quitQueuedTitle"
+msgstr "還有訊息在排隊"
 

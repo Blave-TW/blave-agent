@@ -3999,7 +3999,7 @@ app.on("window-all-closed", () => app.quit());
    - 字由 renderer 依目前語言交過來(.po 是唯一的字串來源);還沒交之前用英文退路。 */
 /* app 選單的英文退路(renderer 還沒交字之前,不到一秒)。字串表 menu.* 是唯一來源,這裡只是退路 */
 const MENU_EN = { menuAbout: "About Blave", menuServices: "Services", menuHide: "Hide Blave", menuHideOthers: "Hide Others", menuShowAll: "Show All",
-  menuQuit: "Quit Blave", menuFile: "File", menuNewTab: "New Tab", menuCloseTab: "Close Tab", menuClose: "Close Window", menuEdit: "Edit", menuUndo: "Undo", menuRedo: "Redo", menuCut: "Cut",
+  menuQuit: "Quit Blave", menuFile: "File", menuNewTab: "New Chat", menuCloseTab: "Close Tab", menuClose: "Close Window", menuEdit: "Edit", menuUndo: "Undo", menuRedo: "Redo", menuCut: "Cut",
   menuCopy: "Copy", menuPaste: "Paste", menuPasteStyle: "Paste and Match Style", menuDelete: "Delete", menuSelectAll: "Select All",
   menuView: "View", menuLocal: "This Computer", menuCloud: "Cloud", menuActualSize: "Actual Size", menuZoomIn: "Zoom In", menuZoomOut: "Zoom Out",
   menuFullEnter: "Enter Full Screen", menuFullExit: "Exit Full Screen", menuWindow: "Window", menuMinimize: "Minimize", menuZoom: "Zoom",
@@ -4029,9 +4029,9 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   presQuitUnknown: "Positions at 統一期貨 (President Futures) can't be read right now — some may still be open. After you quit, strategies place no more orders and nothing is closed — check them in the 統一 app.",
   caplQuitUnknown: "Positions at 群益期貨 (Capital Futures) can't be read right now — some may still be open. After you quit, strategies place no more orders and nothing is closed — check them in the 群益 app.",
   caplQuitBody: "{lots} lot(s) are still open at 群益期貨 (Capital Futures). After you quit, strategies place no more orders and these positions are not closed — handle them in the 群益 app.",
-  quitTurnTitle: "The agent is still replying", quitTurnBody: "Quitting Blave now cuts off this turn, including any cloud update in progress. It's safer to wait until it finishes.",
-  quitQueuedN: "{n} queued messages won't be sent.",
-  quitTurnBodyN: "{n} replies are still running. Quitting Blave now cuts them all off, including any cloud update in progress. It's safer to wait until they finish.",
+  quitTurnTitle: "The agent is still replying", quitTurnBody: "Quitting stops this reply, including any cloud update in progress.",
+  quitQueuedN: "Queued messages won't be sent.", quitQueuedTitle: "Messages are still queued",
+  quitTurnBodyN: "Quitting stops {n} replies, including any cloud update in progress.",
   unsavedTitle: "Leave without saving?", unsavedBody: "Your Portfolio changes will be lost.", unsavedGo: "Leave",
   unsavedNote: "Unsaved Portfolio changes will be lost.",
   hidden: WIN ? "Blave is still running in the system tray." : "Blave is still running in the menu bar.",
@@ -4072,8 +4072,14 @@ function envSwitchFromMenu(env) {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("env-switch", env);
 }
 /* 送給主視窗的分頁指令;視窗收起來(紅燈)時先叫出來。沒有自家頁面的視窗(登入頁之類)就是關那個視窗 */
-function tabCmd(ch) {
+function tabCmd(ch, ev) {
   const f = BrowserWindow.getFocusedWindow();
+  // ⌘W 按在內建瀏覽器的頁上(焦點在那個 partition 的 WebContentsView):他要關的多半是眼前那一頁,不是聊天分頁——不做事。
+  // 從選單用滑鼠點「關閉分頁」照關(那是明說要關聊天分頁)
+  if (ch === "tab-close" && ev && ev.triggeredByAccelerator && _browser) {
+    let fc = null; try { fc = require("electron").webContents.getFocusedWebContents(); } catch (_) { fc = null; }
+    try { if (fc && fc.session === require("electron").session.fromPartition(_browser.PARTITION)) return; } catch (_) { /* 判不出:照關 */ }
+  }
   if (f && !f.isDestroyed() && !isOurPageUrl(f.webContents.getURL())) { if (ch === "tab-close") f.close(); return; }
   const w = turnWin(); if (!w) return;
   if (!w.isVisible()) { try { showMain(); } catch (_) { /* 叫不出來也照送 */ } }
@@ -4098,8 +4104,8 @@ function appMenuTemplate(L, dev, full, onEnv, onSite, onFull, ask = false) {
       r("hide", "menuHide"), r("hideOthers", "menuHideOthers"), r("unhide", "menuShowAll"), sep, r("quit", "menuQuit", ask ? { label: L.quit || l("menuQuit") + "…" } : {})] },
     // ⌘T／⌘W 給對話分頁(spec chat-tabs §2 鍵盤):選單快捷鍵比畫面的 keydown 先吃,所以由這裡送給畫面;畫面判斷是不是最後一個分頁,
     // 是的話回 window-close 照紅燈的規則關。關視窗本身移到 ⌘⇧W(同瀏覽器)
-    { label: l("menuFile"), submenu: [{ label: l("menuNewTab"), accelerator: "CmdOrCtrl+T", click: () => tabCmd("tab-new") },
-      { label: l("menuCloseTab"), accelerator: "CmdOrCtrl+W", click: () => tabCmd("tab-close") }, sep, r("close", "menuClose", { accelerator: "CmdOrCtrl+Shift+W" })] },
+    { label: l("menuFile"), submenu: [{ label: l("menuNewTab"), accelerator: "CmdOrCtrl+T", click: (_i, _w, ev) => tabCmd("tab-new", ev) },
+      { label: l("menuCloseTab"), accelerator: "CmdOrCtrl+W", click: (_i, _w, ev) => tabCmd("tab-close", ev) }, sep, r("close", "menuClose", { accelerator: "CmdOrCtrl+Shift+W" })] },
     { label: l("menuEdit"), submenu: [r("undo", "menuUndo"), r("redo", "menuRedo"), sep, r("cut", "menuCut"), r("copy", "menuCopy"), r("paste", "menuPaste"),
       r("pasteAndMatchStyle", "menuPasteStyle"), r("delete", "menuDelete"), r("selectAll", "menuSelectAll")] },
     { label: l("menuView"), submenu: [
@@ -4716,8 +4722,9 @@ app.on("before-quit", (e) => {
     try { showMain(); } catch (_) { /* 同上 */ }
     quitAsking = true;
     const sg = TT.stayGo(process.platform, tmLabels.quitStay, tmLabels.quitGo);
-    dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: tmLabels.quitTurnTitle,
-      detail: draftNoted(quitTurnBody(liveTurnCount(), tmLabels, turnQueue.length)), buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId })
+    const nLive = liveTurnCount();   // 只有排隊、沒有在跑的:標題講排隊(「agent 還在回覆」不是事實)
+    dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: nLive < 1 && turnQueue.length && tmLabels.quitQueuedTitle ? tmLabels.quitQueuedTitle : tmLabels.quitTurnTitle,
+      detail: draftNoted(quitTurnBody(nLive, tmLabels, turnQueue.length)), buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId })
       .then((r) => { quitAsking = false; if (r.response === sg.goIndex) { quitConfirmed = true; app.quit(); } else { draftOk = false; draftNote = false; } }, () => { quitAsking = false; draftOk = false; draftNote = false; });
     return;
   }

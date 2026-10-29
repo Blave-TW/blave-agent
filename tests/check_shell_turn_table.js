@@ -135,13 +135,14 @@ const ends = (r) => r.sent.filter(([ch]) => ch === "turn-end").map(([, p]) => p)
 
   // ── 4. 結束框 ──
   const qtb = new Function(cut("function quitTurnBody(", "function quitOnSignals(") + "\n return quitTurnBody;")();
-  ok("結束框接線:帶在跑條數與排隊條數", /quitTurnBody\(liveTurnCount\(\), tmLabels, turnQueue\.length\)/.test(main));
+  ok("結束框接線:帶在跑條數與排隊條數", /const nLive = liveTurnCount\(\);/.test(main) && /quitTurnBody\(nLive, tmLabels, turnQueue\.length\)/.test(main)
+    && /message: nLive < 1 && turnQueue\.length && tmLabels\.quitQueuedTitle \? tmLabels\.quitQueuedTitle : tmLabels\.quitTurnTitle/.test(main));   // 只有排隊:標題講排隊
   const L = { quitTurnBody: "one", quitTurnBodyN: "{n} 個回覆還在跑" };
   const LQ = { ...L, quitQueuedN: "排隊中的 {n} 句不會送出。" };
   ok("結束框:一條用舊句、兩條以上帶數字;字還沒交過來(沒有 N 句)退回舊句", qtb(1, L, 0) === "one" && qtb(3, L, 0) === "3 個回覆還在跑" && qtb(3, { quitTurnBody: "one" }, 0) === "one");
   ok("結束框:有排隊的接一句排隊句;只有排隊時只講排隊那句(spec §3)", qtb(2, LQ, 1) === "2 個回覆還在跑 排隊中的 1 句不會送出。" && qtb(0, LQ, 2) === "排隊中的 2 句不會送出。");
   const po = (lang) => fs.readFileSync(path.join(SH, "i18n", lang + ".po"), "utf8");
-  ok("tm.quitTurnBodyN 兩語都有 {n};trade.js 把它交給主行程", ["zh", "en"].every((l) => /msgid "tm\.quitTurnBodyN"\nmsgstr "\{n\}[^"]+"/.test(po(l)))
+  ok("tm.quitTurnBodyN 兩語都有 {n};trade.js 把它交給主行程", ["zh", "en"].every((l) => /msgid "tm\.quitTurnBodyN"\nmsgstr "[^"]*\{n\}[^"]*"/.test(po(l)) && /msgid "tm\.quitQueuedTitle"\nmsgstr "[^"]+"/.test(po(l)))
     && /quitTurnBodyN: t\("tm\.quitTurnBodyN", \{ n: "\{n\}" \}\)/.test(fs.readFileSync(path.join(SH, "renderer", "trade.js"), "utf8")));
 
   console.log(red ? `\n${red} 紅` : "\nALL PASS");

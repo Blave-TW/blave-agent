@@ -70,7 +70,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   // ── 2. 畫面 ──
   const rCut = cutFrom(appSrc, "let turnStopping = false, turnStopped = false, engineWait = false, lastUserTyped = false;", "async function sendDraft() {");
   const mkEl = () => { const cls = new Set(), attr = {}; return { cls, attr, dataset: {}, disabled: true, value: "", focused: false,
-    classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)) }, setAttribute: (k, v) => { attr[k] = v; }, focus() { this.focused = true; } }; };
+    classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)) }, setAttribute: (k, v) => { attr[k] = v; }, removeAttribute: (k) => { delete attr[k]; }, focus() { this.focused = true; } }; };
   const els = { "btn-send": mkEl(), ta: mkEl(), "ta-wait": Object.assign(mkEl(), { textContent: "上一輪還在跑" }) };
   const tracked = []; let stopReply = true; const calls = [], stopSids = [];
   const R = new Function("$", "t", "trackFeature", "autosize", "window", "state", `

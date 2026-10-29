@@ -5,6 +5,7 @@
    共用的畫面(送出鈕、輸入框、策略刪除鎖、更新入口…)只畫眼前分頁:背景期間 CS.bg 為真,換回後 turnUiSync() 照眼前分頁重畫一次。
    哪些全域是每輪狀態:TAB_KEYS 這張表(tests/check_shell_chat_tabs.js 列舉 app.js 與每輪模組的頂層狀態,每個都要在這裡或 GLOBAL_OK)。
    在 app.js、suggest.js 之後載入。 */
+let tabsK = 0;   // 分頁列 tick 現在亮第幾格(每秒進一格;建 tick 時就帶上,重畫不閃)
 const CS = { tabs: new Map(), order: [], cur: null, loaded: null, bg: false, closed: [], main: new Map(), bootDone: false };
 
 // [名字, 讀, 寫, 新分頁的初值]——初值是工廠,物件每個分頁各一份
@@ -191,14 +192,13 @@ window.blave.onTurnEnd(tabsOnEnd);
 function tabsQueued(T, on) {
   T.queued = !!on;
   if (on && !T.queueEl) {
+    // 同 web csShowQueued:一行排隊句,取消靠送出鍵(sendBtnSync 在排隊時改名「取消排隊」)
     const q = document.createElement("div"); q.className = "think-indicator cs-queued"; q.setAttribute("role", "status");
-    const s = document.createElement("span"); s.textContent = t("tabs.queue"); s.dataset.i18n = "tabs.queue";
-    const b = document.createElement("button"); b.type = "button"; b.className = "btn-quiet"; b.textContent = t("tabs.queueCancel"); b.dataset.i18n = "tabs.queueCancel";
-    b.addEventListener("click", () => { trackFeature("queue_cancel"); csStopOne(T.sid); });
-    q.append(s, " ", b);
+    q.textContent = t("tabs.queue"); q.dataset.i18n = "tabs.queue";
     T.el.appendChild(q); T.queueEl = q;
     withTab(T, () => scrollChat());
   } else if (!on && T.queueEl) { T.queueEl.remove(); T.queueEl = null; }
+  withTab(T, () => sendBtnSync());
   tabsPaint();
 }
 /* 同時在跑的回合數(含這一句)當天第一次到 2／4／8 由主行程記(chat_par*);這裡只在送出時算眼前看不到的那些,給分頁列重畫 */
@@ -237,8 +237,11 @@ function tabsStateWord(T, st) {
   return st ? t(TAB_ST_KEY[st]) : "";
 }
 const tabsNeedsYou = (st) => st === "wait" || st === "fail" || st === "unseen";
+// 回覆中:3 格 tick,建的時候就帶目前那一格(重畫不閃);減少動態固定第 3 格亮。排隊中:收據的 8×2 短劃,不動(停住的 tick 讀成卡住)
+const tabsTickK = () => (reducedMotion() ? "2" : String(tabsK));
 function tabsLead(st) {
-  if (st === "run" || st === "queued") { const s = document.createElement("span"); s.className = "tab-lead"; const k = document.createElement("span"); k.className = "tab-ticks" + (st === "queued" ? " is-queued" : ""); k.setAttribute("aria-hidden", "true"); k.innerHTML = "<i></i><i></i><i></i>"; s.appendChild(k); return s; }
+  if (st === "run") { const s = document.createElement("span"); s.className = "tab-lead"; const k = document.createElement("span"); k.className = "tab-ticks"; k.dataset.k = tabsTickK(); k.setAttribute("aria-hidden", "true"); k.innerHTML = "<i></i><i></i><i></i>"; s.appendChild(k); return s; }
+  if (st === "queued") { const s = document.createElement("span"); s.className = "tab-lead"; const d = document.createElement("span"); d.className = "tab-dash"; d.setAttribute("aria-hidden", "true"); s.appendChild(d); return s; }
   if (tabsNeedsYou(st)) { const s = document.createElement("span"); s.className = "tab-lead"; const d = document.createElement("span"); d.className = "tab-dot"; d.setAttribute("aria-hidden", "true"); s.appendChild(d); return s; }
   return null;
 }
@@ -274,7 +277,7 @@ function tabsTabEl(T) {
   el.setAttribute("role", "tab"); el.setAttribute("aria-selected", sel ? "true" : "false"); el.tabIndex = sel ? 0 : -1; el.dataset.sid = T.sid;
   const lead = tabsLead(st); if (lead) el.appendChild(lead);
   const ti = document.createElement("span"); ti.className = "tab-t"; ti.textContent = tabsTitle(T); el.appendChild(ti);
-  const word = tabsStateWord(T, st);
+  const word = st === "run" ? t("tabs.st.running") : tabsStateWord(T, st);   // 分頁名稱不帶時長:讀屏念的是畫的那一刻,數字會凍住
   if (word) { const sr = document.createElement("span"); sr.className = "sr-only"; sr.textContent = "，" + word; el.appendChild(sr); }
   const x = document.createElement("span"); x.className = "tab-x"; x.setAttribute("aria-hidden", "true"); x.tabIndex = -1; x.innerHTML = TAB_X;
   x.addEventListener("click", (e) => { e.stopPropagation(); tabsClose(T); });
@@ -295,16 +298,23 @@ function tabsTip(el, T) {
   if (!tip.childNodes.length) { tip.hidden = true; return; }
   const head = $("cs-head").getBoundingClientRect(), r = el.getBoundingClientRect();
   tip.style.left = Math.max(8, Math.min(r.left - head.left, head.width - 268)) + "px";
-  tip.hidden = false;
+  tip.hidden = false; tip.dataset.sid = T.sid;
 }
-function tabsTipOff() { const tip = $("tabs-tip"); if (tip) { tip.hidden = true; delete tip.dataset.off; } }
+function tabsTipOff() { const tip = $("tabs-tip"); if (tip) { tip.hidden = true; delete tip.dataset.off; delete tip.dataset.sid; } }
+// 每秒:開著的 tooltip 跟著跳秒(分頁每次重畫是新元素,照 sid 找回來)
+function tabsTipTick() {
+  const tip = $("tabs-tip"); if (!tip || tip.hidden || !tip.dataset.sid) return;
+  const T = CS.tabs.get(tip.dataset.sid), el = $("cs-tabs").querySelector('.tab[data-sid="' + tip.dataset.sid + '"]');
+  if (T && el) tabsTip(el, T); else tabsTipOff();
+}
 /* +N:收起來的那幾條;有要你看的放點並加粗,否則有回覆中的放 tick。aria-label 例外:可見字只有「+N」(spec §2 可及性) */
 function tabsMorePaint(hidden) {
   const b = $("cs-more"); b.hidden = !hidden.length; if (!hidden.length) { tabsMenuClose(); return; }
   const Ts = hidden.map((s) => CS.tabs.get(s)), sts = Ts.map(tabsStateOf);
   const nd = sts.filter(tabsNeedsYou).length, run = sts.filter((s) => s === "run" || s === "queued").length;
   b.textContent = ""; b.classList.toggle("attn", nd > 0);
-  const lead = nd ? tabsLead("unseen") : run ? tabsLead("run") : null; if (lead) b.appendChild(lead);
+  // 有一條真的在跑就放 tick(「有東西在跑」);全是排隊才放短劃
+  const lead = nd ? tabsLead("unseen") : sts.includes("run") ? tabsLead("run") : run ? tabsLead("queued") : null; if (lead) b.appendChild(lead);
   b.appendChild(document.createTextNode("+" + hidden.length));
   const chev = document.createElement("span"); chev.className = "cv7"; chev.setAttribute("aria-hidden", "true"); b.appendChild(chev);
   const parts = ["+" + hidden.length]; if (nd) parts.push(t("tabs.more.attn", { n: nd })); if (run) parts.push(t("tabs.more.run", { n: run }));
@@ -408,8 +418,9 @@ $("cs-tabs").addEventListener("keydown", (e) => {
   if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); const n = tabs[(i + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length]; tabs.forEach((x) => { x.tabIndex = -1; }); n.tabIndex = 0; n.focus(); }
   else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tabs[i].click(); }
   else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); const T = CS.tabs.get(tabs[i].dataset.sid); if (T) tabsClose(T); }
-  else if (e.key === "Escape") { const tip = $("tabs-tip"); if (tip && !tip.hidden) { tip.hidden = true; tip.dataset.off = "1"; } }
 });
+// Esc 收 tooltip:滑鼠滑過(焦點不在分頁列)時也收得掉(WCAG 1.4.13);不攔 Esc,別的層照收
+document.addEventListener("keydown", (e) => { if (e.key !== "Escape") return; const tip = $("tabs-tip"); if (tip && !tip.hidden) { tip.hidden = true; tip.dataset.off = "1"; } });
 $("cs-more").addEventListener("click", () => { if ($("cs-menu").hidden) tabsMenuOpen(); else tabsMenuClose(); });
 $("cs-menu").addEventListener("keydown", (e) => {
   const items = [...$("cs-menu").querySelectorAll(".mi")], i = items.indexOf(document.activeElement);
@@ -423,12 +434,13 @@ if (typeof window.blave.onTabClose === "function") window.blave.onTabClose(() =>
 if (typeof window.blave.onTabOpen === "function") window.blave.onTabOpen((o) => { if (o && typeof o.sid === "string") { csOpen(o.sid, { focus: o.focus !== false }); if (o.origin === "mobile") trackFeature("tab_remote"); } });
 new ResizeObserver(() => tabsPaint()).observe($("cs-tabs"));
 // 回覆中的時長每秒進一格(tooltip、+N 選單裡的字);只在有回合時跑
-let tabsK = 0;
 setInterval(() => {
   if (!csAnyTurn()) return;
   tabsK = (tabsK + 1) % 3;
-  document.querySelectorAll(".tab-ticks:not(.is-queued)").forEach((k) => { k.dataset.k = reducedMotion() ? "" : String(tabsK); });
+  const k = tabsTickK();
+  document.querySelectorAll(".tab-ticks").forEach((el) => { el.dataset.k = k; });
   if (!$("cs-menu").hidden) tabsMenuPaint();
+  tabsTipTick();
 }, 1000);
 
 /* 歷史清單那一列的狀態(app.js csRow):優先序回覆中 ＞ 等你回覆 ＞ 排隊中 ＞ 沒做完 ＞ 做完，還沒看;眼前那條不算 */

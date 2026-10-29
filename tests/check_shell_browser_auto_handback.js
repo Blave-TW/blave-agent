@@ -192,6 +192,17 @@ if (!process.versions.electron) (async () => {
   for (const tool of ["browser_read", "browser_snapshot", "browser_screenshot"]) { r = J(await call(tool, { tab: s.alias })); t("交還不會繞過網址政策:" + tool + " → blocked_policy,沒進頁面", r.ok === false && r.error === "blocked_policy" && s.page.entered.length === 0 && !JSON.stringify(r).includes(SECRET), r); }
   s.wc._go(s.url);
 
+  // ---- 2d. 送出之後、agent 第一次用瀏覽器之前他又碰了那一頁:不交還(對照點是送出當下,設計稽核 P2-7)
+  { const d = await open(); Br.takeover(d.tab.id); BT.end(Br);
+    const at = sent.length, m = await Br.beginTurn(win, SID, SENT);
+    d.wc.emit("input-event", {}, { type: "mouseDown" });   // 送出後、拿租約前:他在那一頁點了一下
+    await Br._acquire(m.key, {});
+    const e1 = sent.slice(at);
+    t("不交還:送出之後他又碰過那一頁(拿到租約前)→ 還是「你在操作」", d.tab.userControl === true && backs(e1, d).length === 0, e1);
+    const e2 = await turn();
+    t("對照:下一輪送出後沒再碰 → 交還", backs(e2, d).length === 1 && d.tab.userControl === false, e2);
+    Br._tabs.close(d.tab.id); }
+
   // ---- 3. 交還之後的守門一條都不少
   Br.takeover(s.tab.id); evs = await turn();
   t("(準備)交還了", backs(evs, s).length === 1);
@@ -326,8 +337,8 @@ if (!process.versions.electron) (async () => {
 
   // ---- 原文鎖
   const idx = fs.readFileSync(path.join(B, "index.js"), "utf8"), main = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
-  t("掛點:拿到瀏覽器租約那一刻(activate)、tabs.newTurn 之後;要 userSent 而且不是 noUser;beginTurn 只記下 userSent", /tabs\.newTurn\(p\.sessionId\);[\s\S]{0,400}curReady = \(p\.userSent && !c\.noUser \? autoHandback\(c\) : Promise\.resolve\(\)\)/.test(idx) && /userSent: !!\(opts && opts\.userSent === true\)/.test(idx));
-  t("只看這個對話 agent 指得到的分頁(tabs.reachable),而且只認 by === \"agent\";問焦點前後比一次用戶輸入的時間戳", /for \(const t of tabs\.reachable\(\)\) \{\n\s*if \(t\.by !== "agent" \|\| !t\.userControl\) continue;\n[^\n]*\n\s*const touched = v\.userInputs \|\| 0;\n\s*if \(!\(await handable\(t\)\)\) continue;\n[^\n]*\n\s*if \(cur === c && t\.userControl && \(v\.userInputs \|\| 0\) === touched\) handback\(t\.id, true\);/.test(idx));
+  t("掛點:拿到瀏覽器租約那一刻(activate)、tabs.newTurn 之後;要 userSent 而且不是 noUser;beginTurn 只記下 userSent", /tabs\.newTurn\(p\.sessionId\);[\s\S]{0,400}curReady = \(p\.userSent && !c\.noUser \? autoHandback\(c, p\.inputs\) : Promise\.resolve\(\)\)/.test(idx) && /userSent: !!\(opts && opts\.userSent === true\)/.test(idx));
+  t("只看這個對話 agent 指得到的分頁(tabs.reachable),而且只認 by === \"agent\";問焦點前後比一次用戶輸入的時間戳", /for \(const t of tabs\.reachable\(\)\) \{\n\s*if \(t\.by !== "agent" \|\| !t\.userControl\) continue;\n[^\n]*\n\s*const touched = v\.userInputs \|\| 0;\n\s*if \(since && since\.has\(t\.id\) && since\.get\(t\.id\) !== touched\) continue;\n\s*if \(!\(await handable\(t\)\)\) continue;\n[^\n]*\n\s*if \(cur === c && t\.userControl && \(v\.userInputs \|\| 0\) === touched\) handback\(t\.id, true\);/.test(idx));
   t("handable 是 fail-closed:問不到、null、看不進去(iframe / opaque)、敏感欄位都回 false", (() => { const h = idx.slice(idx.indexOf("async function handable("), idx.indexOf("async function autoHandback(")); return /catch \(_\) \{ return false; \}/.test(h) && /if \(!f \|\| !f\.desc \|\| !f\.desc\.tag\) return false;/.test(h) && /f\.desc\.tag === "iframe" \|\| f\.desc\.opaque \|\| gate\.sensitiveField\(f\.desc\)\) return false;/.test(h); })());
   t("main.js:回合只從 startTurn → turnLaunch 起;只有這台電腦送出的(origin desktop)標 userSent,手機來的不標", (main.match(/\brunTurn\(/g) || []).length === 2 && /function turnLaunch\(rec, payload\) \{[\s\S]{0,600}runTurn\(rec, payload\)/.test(main)
     && /return startTurn\(payload, "desktop"\);/.test(main) && /beginTurn\(win, sessionId, \{ userSent: rec\.origin === "desktop", noUser: !!viewing && viewing\.env === "cloud" \}\)/.test(main));

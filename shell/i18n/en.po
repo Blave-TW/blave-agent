@@ -3761,11 +3761,11 @@ msgid "tm.quitTurnTitle"
 msgstr "The agent is still replying"
 
 msgid "tm.quitTurnBody"
-msgstr "Quitting Blave now cuts off this turn, including any cloud update in progress. It’s safer to wait until it finishes."
+msgstr "Quitting stops this reply, including any cloud update in progress."
 
 # 結束攔截:兩條以上回合在跑(對話分頁並行;主行程填 {n})
 msgid "tm.quitTurnBodyN"
-msgstr "{n} replies are still running. Quitting Blave now cuts them all off, including any cloud update in progress. It’s safer to wait until they finish."
+msgstr "Quitting stops {n} replies, including any cloud update in progress."
 
 # 結束 / 關窗攔截:策略組合有還沒儲存的勾選或金額(草稿不另外存)
 msgid "tm.unsavedTitle"
@@ -9339,8 +9339,12 @@ msgstr "Queued: the maximum number of replies are already running. This one star
 msgid "tabs.queueCancel"
 msgstr "Cancel queued message"
 
+# 排隊中的送出鍵 title(同 web workspace_cs_cancel_queued_title)
+msgid "tabs.queueCancelTitle"
+msgstr "Cancel and move the message back to the input"
+
 msgid "tabs.brWait"
-msgstr "Waiting for the built-in browser"
+msgstr "Waiting for another chat to finish with the browser"
 
 msgid "tabs.st.run"
 msgstr "Replying · {d}"
@@ -9384,13 +9388,16 @@ msgstr "Yesterday"
 msgid "tabs.group.earlier"
 msgstr "Earlier"
 
-# 對話分頁:app 選單「檔案」的新分頁／關閉分頁(⌘T／⌘W);結束框排隊那句(主行程填 {n};待設計師過字)
+# 對話分頁:app 選單「檔案」的新對話(同 ＋ 的名字)／關閉分頁(⌘T／⌘W);結束框排隊那句(主行程填 {n})與只有排隊時的標題
 msgid "menu.newTab"
-msgstr "New Tab"
+msgstr "New Chat"
 
 msgid "menu.closeTab"
 msgstr "Close Tab"
 
 msgid "tm.quitQueuedN"
-msgstr "{n} queued messages won’t be sent."
+msgstr "Queued messages won’t be sent."
+
+msgid "tm.quitQueuedTitle"
+msgstr "Messages are still queued"
 

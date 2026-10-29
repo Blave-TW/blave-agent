@@ -49,7 +49,7 @@ const TAB = [   // 眼前這一條(分頁自己的 running;切分頁時整組換
   ["app.js", /if \(C && !csTitle && !running && !\(o && o\.force\)\)/, "眼前那條空著又閒著就用它"],
   ["app.js", /const live = running \? \[\.\.\.chatEl\(\)\.childNodes\] : \[\];/, "背景開的那條已在跑:即時那段接在歷史後面"],
   ["app.js", /b\.classList\.toggle\("is-stop", running\);/, "送出鈕"], ["app.js", /b\.classList\.toggle\("is-stopping", running && turnStopping\);/, "送出鈕"],
-  ["app.js", /b\.dataset\.i18nAria = running \? "ws\.stop" : "ws\.send";/, "送出鈕"], ["app.js", /if \(!running\) taWaitShow\(false\);/, "輸入框上方那行"],
+  ["app.js", /const queued = running && !!\(CS\.loaded && CS\.loaded\.queued\);/, "送出鈕:排隊中的停止 = 取消排隊"], ["app.js", /b\.dataset\.i18nAria = queued \? "tabs\.queueCancel" : running \? "ws\.stop" : "ws\.send";/, "送出鈕"], ["app.js", /if \(!running\) taWaitShow\(false\);/, "輸入框上方那行"],
   ["app.js", /if \(!running \|\| turnStopping\) return;/, "stopTurn"], ["app.js", /if \(!ok && !engineWait && running\)/, "stopTurn 沒送到"],
   ["app.js", /if \(\(!msg && !attachments\.length\) \|\| running\) return;/, "sendDraft"], ["app.js", /if \(\(!msg && !attachments\.length\) \|\| running\) return false;/, "submitMessage"],
   ["app.js", /running = true; turnSeqMine = turnSeq;/, "開跑"], ["app.js", /sugUnsend\(\); running = false;/, "沒送出去"], ["app.js", /^\s*running = false; turnStopping = false; turnUiSync\(\);/, "回合結束"],
@@ -148,5 +148,16 @@ ok("延後才跑的回合計時器都捕住分頁:狀態列每秒、動詞停留
   && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(tabBound\(/.test(app));
 ok("共用畫面背景期間不畫:捲動、讀屏、送出鈕、托盤;輸入框的字放回那個分頁自己的草稿", /if \(tabBg\(\)\) return;   \/\/ 背景分頁的事件:捲動容器/.test(app) && /function srSay\(text\) \{ if \(tabBg\(\)\) return;/.test(app)
   && /if \(tabBg\(\)\) \{ CS\.dirtyUi = true; return; \}   \/\/ 送出鈕/.test(app) && /function sugPaint\(\) \{\n  if \(typeof tabBg === "function" && tabBg\(\)\) return;/.test(read("suggest.js")) && /if \(tabBg\(\)\) \{   \/\/ 背景分頁:輸入框是眼前那條的/.test(app));
+// 設計稽核(v037-tabs-design-audit)P2 的落點
+{ const css = read("app.css");
+  ok("tick 建元素就帶目前那一格(重畫不閃);減少動態固定第 3 格亮;排隊是 8×2 短劃不是 tick", /const tabsTickK = \(\) => \(reducedMotion\(\) \? "2" : String\(tabsK\)\);/.test(ct) && /k\.className = "tab-ticks"; k\.dataset\.k = tabsTickK\(\);/.test(ct)
+    && /d\.className = "tab-dash";/.test(ct) && !/is-queued/.test(ct + css) && css.includes(".tab-dash { display: block; width: 8px; height: 2px; background: var(--ink-3); }"));
+  ok("tick 間距 4、亮格 ink、暗格 .2", css.includes(".tab-ticks { display: flex; gap: var(--space-4); align-items: center; }") && /\.tab-ticks i \{[^}]*background: var\(--ink\); opacity: \.2; \}/.test(css));
+  ok("+N:有一條真的在跑才放 tick,全是排隊放短劃", /sts\.includes\("run"\) \? tabsLead\("run"\) : run \? tabsLead\("queued"\) : null/.test(ct));
+  ok("歷史搜尋格的焦點是灰階框(不吃系統強調色)", css.includes(".cs-search:focus { outline: none; border-color: var(--ink); }"));
+  ok("歷史列:等你回覆／沒做完／做完還沒看接「· 時間」(mono)", /if \(st\.kind !== "run" && st\.kind !== "queued"\) \{ item\.classList\.add\("is-attn"\); const at = document\.createElement\("span"\); at\.className = "mono"; at\.textContent = csTime\(m\.last\); meta\.append\(" · ", at\); \}/.test(app));
+  ok("分頁名稱(讀屏)不帶會凍住的時長;tooltip 每秒跟著跳、Esc 隨時收得掉、離分頁 6px;× 熱區 28×44", /const word = st === "run" \? t\("tabs\.st\.running"\) : tabsStateWord\(T, st\);/.test(ct) && /tabsTipTick\(\);\n\}, 1000\);/.test(ct)
+    && /document\.addEventListener\("keydown", \(e\) => \{ if \(e\.key !== "Escape"\) return; const tip = \$\("tabs-tip"\);/.test(ct) && css.includes(".tabs-tip { top: 44px;") && /\.cs-tabs \{[^}]*height: 44px;[^}]*align-items: center;/.test(css) && css.includes("inset: -12px -4px;"));
+}
 console.log(red ? `\n${red} 紅` : "\nALL PASS");
 process.exit(red ? 1 : 0);

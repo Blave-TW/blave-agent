@@ -356,11 +356,13 @@ function createBrowser(o) {
     if (f.desc.tag === "iframe" || f.desc.opaque || gate.sensitiveField(f.desc)) return false;
     return open();
   }
-  async function autoHandback(c) {
+  // since = 送出當下每一頁的輸入計數(beginTurn 記的):送出到 agent 第一次用瀏覽器之間可能隔幾分鐘,這段時間他又碰過的那頁還是他的
+  async function autoHandback(c, since) {
     for (const t of tabs.reachable()) {
       if (t.by !== "agent" || !t.userControl) continue;
       const v = views.get(t.id); if (!v) continue;
       const touched = v.userInputs || 0;
+      if (since && since.has(t.id) && since.get(t.id) !== touched) continue;
       if (!(await handable(t))) continue;
       // 等焦點的這段時間他又在這一頁動手了(輸入計數變了)→ 這一輪還是他的
       if (cur === c && t.userControl && (v.userInputs || 0) === touched) handback(t.id, true);
@@ -1070,7 +1072,7 @@ function createBrowser(o) {
      別條拿著時原地等(FIFO),第一次等時告訴主行程(onWait:那個分頁的狀態列換字);等滿 LEASE_WAIT_MS 回 browser_busy。
      LEASE_WAIT_MS + 最長的工具上限(搜尋 SEARCH_HARD_MAX_MS)要短於引擎那端的 600 秒(mcpcode BROWSER_TOOL_TIMEOUT_MS) */
   const LEASE_WAIT_MS = o.leaseWaitMs || 240000;   // o.leaseWaitMs 只給測試縮短
-  const pend = new Map();   // turnKey → { sessionId, turnKey, noUser, userSent, waitSaid }
+  const pend = new Map();   // turnKey → { sessionId, turnKey, noUser, userSent, waitSaid, inputs }
   const leaseQ = [];        // [{ key, resolve, timer, connected }]
   let curReady = null, lastKey = 0;
   function activate(p) {
@@ -1082,7 +1084,7 @@ function createBrowser(o) {
     for (const v of views.values()) v.pace.newTurn();   // 跨回合重置:每回合第一動作完整效果(canon 第 9 條)
     watchReports(c);
     // userSent:這一輪是用戶在這台電腦的聊天送出的(main.js send-message)。沒帶的、從雲端視角送的都不交還
-    curReady = (p.userSent && !c.noUser ? autoHandback(c) : Promise.resolve()).catch(() => {});
+    curReady = (p.userSent && !c.noUser ? autoHandback(c, p.inputs) : Promise.resolve()).catch(() => {});
     return curReady;
   }
   const BUSY_MSG = "the built-in browser is being used by another conversation on this computer and did not free up in time. Do not call it again right away";
@@ -1291,7 +1293,8 @@ function createBrowser(o) {
       // turnKey 也是這一輪的開始時間(logTurn 的 ts 退路):兩輪同一毫秒開跑時往後推一毫秒,不撞號
       const turnKey = lastKey = Math.max(Date.now(), lastKey + 1);
       // 租約不在這裡拿(見 acquire):這裡只記下這一輪,第一次呼叫瀏覽器工具時才變成 cur
-      pend.set(turnKey, { sessionId, turnKey, noUser: !!(opts && opts.noUser), userSent: !!(opts && opts.userSent === true), waitSaid: false });
+      pend.set(turnKey, { sessionId, turnKey, noUser: !!(opts && opts.noUser), userSent: !!(opts && opts.userSent === true), waitSaid: false,
+        inputs: new Map([...views].map(([id, v]) => [id, v.userInputs || 0])) });   // 送出當下的輸入計數(autoHandback 比對)
       return { url: mcp.url(), token: mcp.beginTurn(turnKey), key: turnKey };
     },
     /** 回合結束(key = beginTurn 回的那一輪):作廢那一輪的 token;拿著租約的那一輪另外記下分頁與來源(endLeaseTurn)、
