@@ -36,9 +36,8 @@ RETENTION_DAYS = 365
 # (can't import agent_turn here — it imports us). deepseek-v4-flash is the cheap
 # tier on the proxy; summarization doesn't need more.
 # Same override as agent_turn.PROXY_BASE_URL (the desktop's local account relay; 127.0.0.1 only).
-PROXY_BASE_URL = (os.environ.get("BLAVE_PROXY_BASE", "")
-                  if os.environ.get("BLAVE_PROXY_BASE", "").startswith("http://127.0.0.1:")
-                  else "https://api.blave.org/openclaw/proxy")
+import local_proxy  # noqa: E402  (desktop relay override; see local_proxy.py)
+PROXY_BASE_URL = local_proxy.proxy_base()
 SUMMARY_MODEL = "deepseek/deepseek-v4-flash"
 SUMMARY_TIMEOUT = 90
 SUMMARY_MAX_TOKENS = 4096

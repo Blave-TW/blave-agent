@@ -114,7 +114,7 @@ function call(port, p, o = {}) {
   const env = llmEnv(m2, null);
   ok("子行程環境:找不到帳號 token、只有轉送 token 與本機位址", !Object.values(env).some((v) => v === "acct-B") && env.BLAVE_PROXY_TOKEN === m2.token && env.BLAVE_PROXY_BASE.startsWith("http://127.0.0.1:"));
   const pyAt = fs.readFileSync(path.join(SH, "..", "runtime", "agent_turn.py"), "utf8"), pySs = fs.readFileSync(path.join(SH, "..", "runtime", "session_store.py"), "utf8");
-  ok("runtime 兩處 PROXY_BASE_URL 認 BLAVE_PROXY_BASE,只收 http://127.0.0.1: 開頭,其餘照舊打 api", [pyAt, pySs].every((s) => /PROXY_BASE_URL = \(os\.environ\.get\("BLAVE_PROXY_BASE", ""\)\n\s+if os\.environ\.get\("BLAVE_PROXY_BASE", ""\)\.startswith\("http:\/\/127\.0\.0\.1:"\)\n\s+else "https:\/\/api\.blave\.org\/openclaw\/proxy"\)/.test(s)));
+  ok("runtime 兩處 PROXY_BASE_URL 都走 local_proxy.proxy_base(解析過網址,只收 http://127.0.0.1:<port>)", [pyAt, pySs].every((s) => /\nimport local_proxy[^\n]*\nPROXY_BASE_URL = local_proxy\.proxy_base\(\)\n/.test(s)) && !/startswith\("http:\/\/127\.0\.0\.1:"\)/.test(pyAt + pySs));
   ok("打包:acctrelay.js 在 files", /"acctrelay\.js"/.test(fs.readFileSync(path.join(SH, "electron-builder.config.js"), "utf8")));
 
   R.stop(); up.close();

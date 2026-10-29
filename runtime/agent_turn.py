@@ -66,12 +66,9 @@ BLAVE_AGENT_HOME = (os.environ.get("BLAVE_AGENT_HOME")
 # deduction — this is the actual billing integration, not a POC shortcut.
 # Auth is a single per-machine token (BLAVE_PROXY_TOKEN, matches this
 # instance's openclaw_instances.ttyd_password), sent as "proxy-{token}".
-# The desktop app points this at its local account relay (shell/acctrelay.js): the turn's env then holds a
-# one-turn relay token instead of the account token, so the token can rotate mid-turn. Only a 127.0.0.1 URL is
-# honoured — a cloud machine never sets it, and nothing on one may redirect the real machine token elsewhere.
-PROXY_BASE_URL = (os.environ.get("BLAVE_PROXY_BASE", "")
-                  if os.environ.get("BLAVE_PROXY_BASE", "").startswith("http://127.0.0.1:")
-                  else "https://api.blave.org/openclaw/proxy")
+# The desktop app points this at its local account relay (local_proxy.py; shell/acctrelay.js).
+import local_proxy  # noqa: E402  (desktop relay override; see local_proxy.py)
+PROXY_BASE_URL = local_proxy.proxy_base()
 PROXY_ENV = {
     "ANTHROPIC_BASE_URL": PROXY_BASE_URL,
     "ANTHROPIC_API_KEY": f"proxy-{os.environ.get('BLAVE_PROXY_TOKEN', '')}",
