@@ -35,7 +35,10 @@ RETENTION_DAYS = 365
 # LLM rolling-summary settings. Same proxy/token wiring as agent_turn.PROXY_ENV
 # (can't import agent_turn here — it imports us). deepseek-v4-flash is the cheap
 # tier on the proxy; summarization doesn't need more.
-PROXY_BASE_URL = "https://api.blave.org/openclaw/proxy"
+# Same override as agent_turn.PROXY_BASE_URL (the desktop's local account relay; 127.0.0.1 only).
+PROXY_BASE_URL = (os.environ.get("BLAVE_PROXY_BASE", "")
+                  if os.environ.get("BLAVE_PROXY_BASE", "").startswith("http://127.0.0.1:")
+                  else "https://api.blave.org/openclaw/proxy")
 SUMMARY_MODEL = "deepseek/deepseek-v4-flash"
 SUMMARY_TIMEOUT = 90
 SUMMARY_MAX_TOKENS = 4096

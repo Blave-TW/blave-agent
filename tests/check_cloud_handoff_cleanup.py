@@ -91,6 +91,28 @@ os.symlink(outside, os.path.join(WS, "tmp"))
 at._remove_cloud_handoff_dir(WS)
 t("tmp 指到 workspace 外面:外面的 cloud-handoff 不碰", os.path.isdir(os.path.join(outside, "cloud-handoff")))
 
+# ⑥ 多條對話並行(0.1.37):只清這一輪自己的子資料夾,別條的原封不動;舊版直接放在 cloud-handoff/ 底下的檔一起清
+os.unlink(os.path.join(WS, "tmp"))
+os.makedirs(os.path.join(WS, "tmp"))
+for sid in ("desktop-aaaa1111", "desktop-bbbb2222"):
+    os.makedirs(os.path.join(HANDOFF, sid))
+    with open(os.path.join(HANDOFF, sid, "id"), "w") as fh:
+        fh.write("fake")
+with open(os.path.join(HANDOFF, "id"), "w") as fh:
+    fh.write("legacy")
+at._remove_cloud_handoff_dir(WS, "desktop-aaaa1111")
+t("並行:這一輪(A)的子資料夾清掉", not os.path.lexists(os.path.join(HANDOFF, "desktop-aaaa1111")))
+t("並行:別條(B)的子資料夾與金鑰原封不動", os.path.isfile(os.path.join(HANDOFF, "desktop-bbbb2222", "id")))
+t("並行:舊版留在 cloud-handoff/ 底下的檔一起清", not os.path.lexists(os.path.join(HANDOFF, "id")))
+at._remove_cloud_handoff_dir(WS, "desktop-bbbb2222")
+t("最後一條收尾:cloud-handoff/ 空了就拿掉", not os.path.lexists(HANDOFF))
+t("子資料夾名就是對話 id;怪字退回固定字(會被貼進命令列)",
+  at.handoff_folder("desktop-ab12cd34") == "desktop-ab12cd34" and at.handoff_folder("../x") == "turn" and at.handoff_folder(None) == "turn")
+rule = at.mcp_rule(True, "desktop-ab12cd34")
+t("mcp_rule 寫明這一輪的資料夾、get_ssh_access 帶 handoff_dir、別碰別條的",
+  "`tmp/cloud-handoff/desktop-ab12cd34/`" in rule and "`handoff_dir` = `desktop-ab12cd34`" in rule and "never touch those" in rule)
+t("run_turn 收尾只清這一輪的(帶 session_id)", "_remove_cloud_handoff_dir(session_id=session_id)" in open(os.path.join(ROOT, "runtime", "agent_turn.py"), encoding="utf-8").read())
+
 # ⑤ 雲端視角(掛上 MCP)那一段:cloud-handoff.md 不要一次 cat;不綁引擎(Codex 沒有 Read 工具)
 seg = at._viewing_env_segment(True)
 t("雲端視角提示:cloud-handoff.md 不要一次 cat 整份,沒有讀檔工具就分段讀",

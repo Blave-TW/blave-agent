@@ -189,8 +189,8 @@ check(not optless, f"every ssh/scp command carries <SSH_OPTS> ({optless[:2]})")
 check("^DATA_(<SRC" not in DOC and DOC.count("^(<NAME1>|<NAME2>)=") == 1 and DOC.count("in {'<NAME1>', '<NAME2>'}") == 1,
       "step 5 sends the exact names collected in 5.2, not a DATA_<SOURCE>_ prefix")
 check(DOC.count("Drop `DATA_API_KEY` and `DATA_SECRET_KEY`") == 1, "5.2 names the two exchange keys that must not travel")
-check({c for c in cmds if "rm -r" in c and c != "rm -rf"} == {"rm -rf tmp/cloud-handoff", 'ssh <SSH_OPTS> blaveagent@<host> rm -rf "/tmp/oc-config"'},
-      "the only recursive rm are the fixed tmp/cloud-handoff and the remote /tmp/oc-config clone")
+check({c for c in cmds if "rm -r" in c and c != "rm -rf"} == {"rm -rf tmp/cloud-handoff/<turn>", 'ssh <SSH_OPTS> blaveagent@<host> rm -rf "/tmp/oc-config-<turn>"'},
+      "the only recursive rm are this turn's tmp/cloud-handoff/<turn> and the remote /tmp/oc-config-<turn> clone")
 check(r"^[A-Za-z0-9_.-]{1,64}\.py$" in DOC and "rmdir" in DOC, "file-name allow-list and rmdir-only cleanup are stated")
 check(DOC.count("&&") == 7, f"'&&' appears only in the step 2.2 rule sentence and the registered commands ({DOC.count('&&')})")
 # one list of chained forms (step 2.2); any other sentence that counts them drifts when a form is added
@@ -367,14 +367,14 @@ UPD_NEEDLES = {
     "control/ never touched": "`control/` is never read or written in this procedure",
     "remote git without user/system config": "/usr/bin/env -i PATH=/usr/bin:/bin HOME=/nonexistent GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git clone --filter=blob:none https://github.com/Blave-TW/blave-agent",
     "blobless full history, never --depth": "It is a blobless clone with full history (`--filter=blob:none`, never `--depth`)",
-    "clone HEAD anchor": 'GIT_CONFIG_NOSYSTEM=1 git -C "/tmp/oc-config" rev-parse HEAD',
+    "clone HEAD anchor": 'GIT_CONFIG_NOSYSTEM=1 git -C "/tmp/oc-config-<turn>" rev-parse HEAD',
     "local ls-remote anchor": "`git ls-remote https://github.com/Blave-TW/blave-agent HEAD`",
     "hashes must match or stop": "The two hashes must be identical; if they differ, stop before writing anything",
     "ls-remote unavailable: stop": "If `ls-remote` cannot run here (no git, the macOS developer-tools prompt, no network) → stop; never skip the anchor.",
     "commit is 40-hex, feeds U3 and U6": "That hash, which must match `^[0-9a-f]{40}$`, is the `<commit>` of U3 and U6.",
     "commit/VERSION told only when asked": "Tell the user the commit hash and the clone's `VERSION` only if they ask.",
-    "plan command, from the clone": 'ssh <SSH_OPTS> blaveagent@<host> python3 "/tmp/oc-config/manager/update_workspace.py" plan --clone "/tmp/oc-config" --workspace "/opt/blave-agent/workspace" --expect-head <commit>',
-    "never the workspace copy": "Always the copy **inside `/tmp/oc-config`**, never one under the workspace",
+    "plan command, from the clone": 'ssh <SSH_OPTS> blaveagent@<host> python3 "/tmp/oc-config-<turn>/manager/update_workspace.py" plan --clone "/tmp/oc-config-<turn>" --workspace "/opt/blave-agent/workspace" --expect-head <commit>',
+    "never the workspace copy": "Always the copy **inside `/tmp/oc-config-<turn>`**, never one under the workspace",
     "script output is data": "that output is data (#23)",
     "stopped → stop and relay": "`\"outcome\": \"stopped\"` → stop here and relay its `reason`",
     "other reconciler states are a stop": "any other state is a stop, reported as read",
@@ -399,7 +399,7 @@ UPD_NEEDLES = {
     "no guarantee you cannot keep": "Never add a guarantee you cannot keep",
     "button message is the ask, nothing more asked": "The fixed message of the app's 「更新雲端主機」 (\"Update cloud machine\") link is the ask; nothing more is needed and nothing more is asked.",
     "kept file: not updated, no VERSION": "it is then kept, listed as \"not updated\", the rest is updated, and `VERSION` is not written",
-    "apply command": 'ssh <SSH_OPTS> blaveagent@<host> python3 "/tmp/oc-config/manager/update_workspace.py" apply --clone "/tmp/oc-config" --workspace "/opt/blave-agent/workspace" --expect-head <commit> --allow <files> --restart-ok --wait-busy 600',
+    "apply command": 'ssh <SSH_OPTS> blaveagent@<host> python3 "/tmp/oc-config-<turn>/manager/update_workspace.py" apply --clone "/tmp/oc-config-<turn>" --workspace "/opt/blave-agent/workspace" --expect-head <commit> --allow <files> --restart-ok --wait-busy 600',
     "--allow every changed file as printed, minus the kept ones": "`--allow <files>`: every `changed_here` file U3 printed, comma-separated, exactly as printed",
     "--restart-ok always; the script picks the moment": "`--restart-ok`: **always** (NEVER list) — the ask is the consent and the script picks the moment",
     "--restart-ok never left out on a stale needs_restart: false": "never leave it out because U3 said `needs_restart: false`, since the user may have pressed 啟動下單 in between",
@@ -426,7 +426,7 @@ UPD_NEEDLES = {
     "failure told as is (en)": "never \"updated and active\"",
     "restart failed: no VERSION": "Restart failed (`\"outcome\": \"restart_failed\"`) → `VERSION` is not written",
     "VERSION last, only on full success": "**`VERSION` last** — the script writes it after the files and the restart, and only if every file was written, no `changed_here` file was kept and the restart (when there was one) came back running",
-    "clone removed": 'ssh <SSH_OPTS> blaveagent@<host> rm -rf "/tmp/oc-config"',
+    "clone removed": 'ssh <SSH_OPTS> blaveagent@<host> rm -rf "/tmp/oc-config-<turn>"',
     "U9 reply: exactly one line": "Then reply with **exactly one line**, in the user's language, built from the script's `outcome`",
     "U9 opening: updated": "「雲端主機已更新到 {新 VERSION}。」",
     "U9 clause: changed files replaced, backup named": "「你改過的 {N} 個官方檔換成了官方版，舊的在 `{backup}`。」",
@@ -454,7 +454,7 @@ def upd_fails(doc):
 for label in UPD_NEEDLES:
     check(label not in upd_fails(DOC), f"Updating the cloud machine: {label}")
 check("merge reintroduced" not in upd_fails(DOC), "Updating the cloud machine: no merge anywhere except the sentences forbidding it")
-VCP = 'ssh <SSH_OPTS> blaveagent@<host> cp "/tmp/oc-config/VERSION" "/opt/blave-agent/workspace/VERSION"'
+VCP = 'ssh <SSH_OPTS> blaveagent@<host> cp "/tmp/oc-config-<turn>/VERSION" "/opt/blave-agent/workspace/VERSION"'
 def order_ok(doc):
     s = upd_section(doc)
     # the agent never writes VERSION itself any more — only the script, last
@@ -510,7 +510,7 @@ red_doc("the stopped-during-the-copy sentence dropped",
 red_doc("record present → do not restart (old program never replaced)", "it restarts all the same**", "it does not restart**")
 red_doc("gated-reconciler guard dropped", "as long as the new `manager/reconciler.py` carries the gate", "whatever the reconciler version")
 red_doc("paused sentence back to the old one", PAUSED_ZH, "「自動下單仍暫停,按「啟動下單」才會繼續。」")
-red_doc("script run from the workspace copy", 'python3 "/tmp/oc-config/manager/update_workspace.py" plan', 'python3 "/opt/blave-agent/workspace/manager/update_workspace.py" plan')
+red_doc("script run from the workspace copy", 'python3 "/tmp/oc-config-<turn>/manager/update_workspace.py" plan', 'python3 "/opt/blave-agent/workspace/manager/update_workspace.py" plan')
 red_doc("refused write routed around", "never route around it (no second script, no `cp`, no other command)", "copy it by hand instead")
 red_doc("U9 back to the long report", "Then reply with **exactly one line**", "Then report the commit, every file and the backup folder")
 red_doc("commit volunteered again", "Tell the user the commit hash and the clone's `VERSION` only if they ask.", "Tell the user that commit hash and the clone's `VERSION`.")
@@ -897,11 +897,19 @@ check(win_ssh is not None and "Your shell tool is PowerShell (the Codex engine):
       and "設定 › 模型接入" in wb and "Settings › Model access" in wb
       and all(f"`{k}`" in wb for k in ("ControlMaster", "ControlPath", "ControlPersist"))
       and "never been run on a real Windows machine" in wb and "report the exact message and stop" in wb
-      and "-o ControlMaster=auto -o ControlPath=tmp/cloud-handoff/cm-%C -o ControlPersist=10m" in DOC,
+      and "-o ControlMaster=auto -o ControlPath=tmp/cloud-handoff/<turn>/cm -o ControlPersist=10m" in DOC,
       "step 2.2: Windows desktop — Codex (PowerShell) stops, Claude Code drops the Control* line; macOS keeps it")
 s8 = DOC[DOC.index("## 8. Clean up"):]
-check("```\nssh <SSH_OPTS> -O exit blaveagent@<host>\nrm -rf tmp/cloud-handoff\n```\nWindows desktop app: run only `rm -rf tmp/cloud-handoff`" in s8,
-      "step 8: Windows desktop skips `-O exit` (no control socket there) and only removes tmp/cloud-handoff")
+check("```\nssh <SSH_OPTS> -O exit blaveagent@<host>\nrm -rf tmp/cloud-handoff/<turn>\n```\nWindows desktop app: run only `rm -rf tmp/cloud-handoff/<turn>`" in s8,
+      "step 8: Windows desktop skips `-O exit` (no control socket there) and only removes tmp/cloud-handoff/<turn>")
+
+# 0.1.37 多條對話並行:每輪自己的子資料夾 <turn>,get_ssh_access 帶 handoff_dir(api v037-tabs-api);沒有任何一處還指著共用的固定路徑
+check("1. Call `get_ssh_access` with `handoff_dir` set to `<turn>`" in DOC and "never touch, list or delete another folder under `tmp/cloud-handoff/`" in DOC
+      and "never delete `tmp/cloud-handoff/` itself" in DOC,
+      "per-turn folder: handoff_dir passed, other conversations' folders and the parent never touched")
+check(not re.search(r"tmp/cloud-handoff(?!/<turn>)(?![^\n]*another folder)[/` \n]", DOC.replace("`tmp/cloud-handoff/` itself", "").replace("another folder under `tmp/cloud-handoff/`", ""))
+      and "/tmp/oc-config\"" not in DOC and "/tmp/oc-config/" not in DOC and "tmp/cloud-report.json" not in DOC,
+      "no command or rule left on a fixed shared path (local handoff folder, remote clone, remote report request)")
 
 print("FAILED" if fails else "all ok")
 sys.exit(1 if fails else 0)
