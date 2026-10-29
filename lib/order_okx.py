@@ -855,31 +855,33 @@ def _find_pending_algo(env, symbol, algo_cl_ord_id):
 def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
                             tp_price=None, verify=True, _after_entry=False):
     """Reduce-only SL/TP for an EXISTING swap position via /api/v5/trade/order-algo, market
-    execution on trigger (ordPx=-1). qty=None protects the whole position (closeFraction=1).
-    SL or TP alone is one `conditional` order; SL and TP together are ONE `oco` order — OKX
-    allows a single whole-position TP/SL per position (51088, measured on demo 2026-10-30), and a
-    `conditional` carrying both triggers runs only the stop-loss ("only stop-loss logic will be
-    performed and take-profit logic will be ignored", OKX v5 Place algo order). Returns
-    {'sl': ..., 'tp': ...} for what was asked; with both, the two entries share one algoId.
-    Verified in orders-algo-pending; raises ProtectionFailed otherwise."""
+    execution on trigger (ordPx=-1). qty=None protects the whole position (closeFraction=1):
+    there SL and TP together are ONE `oco` order — OKX allows a single whole-position TP/SL per
+    position (51088, measured on demo 2026-10-30), and a `conditional` carrying both triggers runs
+    only the stop-loss ("only stop-loss logic will be performed and take-profit logic will be
+    ignored", OKX v5 Place algo order); the two entries of the result then share one algoId. With
+    a qty, and for SL or TP alone, each is its own `conditional` order (cancelled on its own).
+    Returns {'sl': ..., 'tp': ...} for what was asked. Verified in orders-algo-pending; raises
+    ProtectionFailed otherwise."""
     inst = _swap_inst(symbol)
     mode = get_position_mode(env)
     close_side = "sell" if direction == "long" else "buy"
     wanted = [k for k, p in (("sl", sl_price), ("tp", tp_price)) if p is not None]
+    legs = [wanted] if len(wanted) == 2 and qty is None else [[k] for k in wanted]
     placed = {}
     try:
-        if wanted:
-            label = "+".join(wanted)
+        for leg in legs:
+            label = "+".join(leg)
             body = {
                 "instId": inst,
                 "tdMode": "cross",
                 "side": close_side,
-                "ordType": "oco" if len(wanted) == 2 else "conditional",
+                "ordType": "oco" if len(leg) == 2 else "conditional",
             }
-            if sl_price is not None:
+            if "sl" in leg:
                 body["slTriggerPx"] = format_price(env, symbol, sl_price)
                 body["slOrdPx"] = "-1"  # market execution on trigger
-            if tp_price is not None:
+            if "tp" in leg:
                 body["tpTriggerPx"] = format_price(env, symbol, tp_price)
                 body["tpOrdPx"] = "-1"
             if mode == "long_short_mode":
@@ -905,9 +907,9 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
                         f"(algoClOrdId {body['algoClOrdId']}) got no answer"
                         f"{f' ({rows})' if rows is not None else ''} and is not in OKX's pending algo "
                         f"orders. Tell the user now; read the pending algo orders again before placing "
-                        f"it, it may still show up.")
+                        f"it, it may still show up. Placed before it: {list(placed)}")
                 algo_id, rows = row.get("algoId"), [row]
-            for k in wanted:
+            for k in leg:
                 placed[k] = {"algoId": str(algo_id), "raw": rows[0]}
     except ProtectionFailed:
         raise

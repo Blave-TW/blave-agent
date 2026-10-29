@@ -337,6 +337,28 @@ b = __import__("json").loads(CALLS["POST"][0])
 check(b["ordType"] == "conditional" and "tpTriggerPx" not in b and len(CALLS["POST"]) == 1,
       "SL alone stays one conditional order")
 
+# with a qty: two conditional orders, each cancellable on its own (no closeFraction, no 51088)
+algo_wire(okx([{"algoId": "A6", "sCode": "0"}]), lambda b: [{"algoId": "A6", "algoClOrdId": b.get("algoClOrdId")}])
+ok.place_protective_orders(ENV, "BTCUSDT", "long", qty=0.01, sl_price=60000, tp_price=80000, verify=False)
+bs = [__import__("json").loads(x) for x in CALLS["POST"]]
+check(len(bs) == 2 and all(x["ordType"] == "conditional" and x.get("sz") and "closeFraction" not in x for x in bs)
+      and ("slTriggerPx" in bs[0]) != ("slTriggerPx" in bs[1]) and ("tpTriggerPx" in bs[0]) != ("tpTriggerPx" in bs[1]),
+      f"SL+TP with a qty: two conditional orders, one trigger each, sized ({bs})")
+# TP alone: one conditional
+algo_wire(okx([{"algoId": "A7", "sCode": "0"}]), lambda b: [{"algoId": "A7", "algoClOrdId": b.get("algoClOrdId")}])
+ok.place_protective_orders(ENV, "BTCUSDT", "long", tp_price=80000)
+b = __import__("json").loads(CALLS["POST"][0])
+check(len(CALLS["POST"]) == 1 and b["ordType"] == "conditional" and "slTriggerPx" not in b and b.get("tpTriggerPx"),
+      f"TP alone: one conditional order ({b})")
+# hedge (long_short) mode: the whole-position oco addresses the position's side, no reduceOnly
+ok.get_position_mode = lambda env: "long_short_mode"
+algo_wire(okx([{"algoId": "A8", "sCode": "0"}]), lambda b: [{"algoId": "A8", "algoClOrdId": b.get("algoClOrdId")}])
+ok.place_protective_orders(ENV, "BTCUSDT", "short", sl_price=90000, tp_price=60000)
+b = __import__("json").loads(CALLS["POST"][0])
+check(len(CALLS["POST"]) == 1 and b["ordType"] == "oco" and b.get("posSide") == "short" and b["side"] == "buy"
+      and "reduceOnly" not in b, f"hedge mode: one oco with posSide of the position, no reduceOnly ({b})")
+ok.get_position_mode = lambda env: "net_mode"
+
 # half-updated workspace (lib/order_okx.py landed, lib/unconfirmed.py not): the fallback base must
 # take the same keywords, or the unknown POST would raise TypeError and read as a rejection
 _src = open(os.path.join(ROOT, "lib", "order_okx.py"), encoding="utf-8").read()
