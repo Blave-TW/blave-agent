@@ -741,7 +741,11 @@ def confirm_order(env, symbol, order_id, timeout=15):
         venue="bingx", venue_symbol=symbol, order_id=order_id)
 
 
-PARK_TRADE_LOOKBACK_S = 300  # fills searched from this long before the park (clock skew, lag)
+# fills are searched from PARK_TRADE_LOOKBACK_S before the park to PARK_TRADE_LOOKAHEAD_S after
+# it — a market order fills before it is parked, so the window is fixed, never grows with the
+# park's age (allFillOrders documents no row cap, so a growing window could be cut short)
+PARK_TRADE_LOOKBACK_S = 300
+PARK_TRADE_LOOKAHEAD_S = 600
 
 
 def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, parked_at=None,
@@ -770,13 +774,14 @@ def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, park
 
 
 def _fills_of(env, symbol, order_id, client_order_id, parked_at, now):
+    """allFillOrders rows carry orderId, not our client id (official api-reference), so a
+    client-id-only park is matched only if a row happens to carry it."""
     if not parked_at:
         return None
-    now = time.time() if now is None else now
     try:
         start = int((float(parked_at) - PARK_TRADE_LOOKBACK_S) * 1000) + int(_time_offset["ms"])
-        end = int((now + 60) * 1000) + int(_time_offset["ms"])
-        rows = get_fills(env, symbol, start, end) or []
+        end = int((float(parked_at) + PARK_TRADE_LOOKAHEAD_S) * 1000) + int(_time_offset["ms"])
+        rows = get_fills(env, symbol, start, end, order_id=order_id) or []
     except Exception:
         return None
     want_oid = str(order_id) if order_id else None
@@ -980,17 +985,21 @@ def close_position(env, symbol, direction, qty, client_order_id=None):
 
 # ── fills ────────────────────────────────────────────────────────────────────
 
-def get_fills(env, symbol, start_ms, end_ms):
-    """Fill records for a time range (≤30 days back). Quirks handled: params
+def get_fills(env, symbol, start_ms, end_ms, order_id=None):
+    """Fill records for a time range (≤30 days back), only one order's when order_id is
+    given (the endpoint's own orderId filter). Quirks handled: params
     are startTs/endTs (NOT startTime/endTime), response key is data.fill_orders
     (snake_case), filledTime is an ISO-8601 STRING (not ms). tradingUnit=COIN
     is sent so `volume` is already coin quantity (CONT would mean contracts)."""
-    data = _request("GET", "/openApi/swap/v2/trade/allFillOrders", env, {
+    params = {
         "symbol": _swap_symbol(env, symbol),
         "startTs": str(int(start_ms)),
         "endTs": str(int(end_ms)),
         "tradingUnit": "COIN",
-    }) or {}
+    }
+    if order_id:
+        params["orderId"] = str(order_id)
+    data = _request("GET", "/openApi/swap/v2/trade/allFillOrders", env, params) or {}
     fills = data.get("fill_orders") if isinstance(data, dict) else data
     if fills is None:
         raise BingXError("N/A", f"allFillOrders missing fill_orders key: {list(data)}",

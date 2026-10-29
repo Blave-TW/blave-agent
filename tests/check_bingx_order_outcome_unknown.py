@@ -376,8 +376,19 @@ wire([ACCEPTED], [GONE, fills({"orderId": OID, "volume": "0.0006", "price": "100
 got = ob.resolve_unknown_order(ENV, "BTCUSDT", order_id=OID, parked_at=now - 60, now=now)
 check(got is not None and abs(got[0] - 0.001) < 1e-12 and abs(got[1] - 140.0) < 1e-9
       and "allFillOrders" in CALLS["GET"][1]
-      and f"startTs={int((now - 60 - 300) * 1000)}" in CALLS["GET"][1],
-      f"resolve: query cannot find it, its fills since the park are there → those, at their VWAP ({got})")
+      and f"startTs={int((now - 60 - 300) * 1000)}" in CALLS["GET"][1]
+      and f"endTs={int((now - 60 + 600) * 1000)}" in CALLS["GET"][1] and f"orderId={OID}" in CALLS["GET"][1],
+      f"resolve: query cannot find it, its fills around the park are there → those, at their VWAP ({got})")
+wire([ACCEPTED], [GONE, fills()])
+ob.resolve_unknown_order(ENV, "BTCUSDT", order_id=OID, parked_at=now - 30 * 86400, now=now)
+check(f"endTs={int((now - 30 * 86400 + 600) * 1000)}" in CALLS["GET"][1],
+      "resolve: the fills window ends 600 s after the park, not now (does not grow with the park's age)")
+for label, ans in (("100500", err(100500, "System busy")), ("a 5xx", Resp(502, None, "Bad Gateway")),
+                   ("109400", err(109400, "invalid parameters"))):
+    wire([ACCEPTED], [ans, fills({"orderId": OID, "volume": "0.001", "price": "100"})])
+    check(ob.resolve_unknown_order(ENV, "BTCUSDT", order_id=OID, parked_at=now - 60, now=now) is None
+          and CALLS["GET"] and not any("allFillOrders" in u for u in CALLS["GET"]),
+          f"resolve: the order query answers {label} → unknown, fills not read (only 'does not exist' reads them)")
 wire([ACCEPTED], [GONE, fills({"orderId": "999", "clientOrderId": "other", "volume": "5", "price": "1"})])
 check(ob.resolve_unknown_order(ENV, "BTCUSDT", order_id=OID, client_order_id="t1", parked_at=now - 60, now=now) is None,
       "resolve: only other orders' fills → still unknown (never released)")
