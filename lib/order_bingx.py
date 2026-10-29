@@ -47,6 +47,8 @@ import os
 import time
 from decimal import Decimal, ROUND_DOWN
 
+import logging
+
 import requests
 
 from lib import guard
@@ -161,6 +163,20 @@ def _sync_time(env):
         pass
 
 
+def _never_sent(e):
+    """A requests ConnectionError raised before any byte went out: the socket could not be
+    opened (refused, unreachable, DNS — urllib3 NewConnectionError / NameResolutionError,
+    wrapped in MaxRetryError). A TLS handshake timeout surfaces as ReadTimeout and cannot be
+    told apart from a lost answer, so it stays unknown."""
+    try:
+        from urllib3.exceptions import NewConnectionError
+    except ImportError:
+        return False
+    inner = e.args[0] if e.args else None
+    return isinstance(getattr(inner, "reason", None), NewConnectionError) \
+        or isinstance(inner, NewConnectionError)
+
+
 def _sign(secret_key, params):
     params = dict(params)
     params["timestamp"] = str(int(time.time() * 1000) + _time_offset["ms"])
@@ -251,8 +267,8 @@ def _request(method, path, env, params=None, signed=True, retries=3):
         cid = (params or {}).get("clientOrderID")
         guard.audit("order_unknown", error=str(e), client_order_id=cid, **fields)
         raise OrderNotConfirmed(
-            f"order {cid} sent, no answer ({e}) — it may have filled; check the position, "
-            f"do not resubmit", venue="bingx", venue_symbol=(params or {}).get("symbol"),
+            f"order {cid + ' ' if cid else ''}sent, no answer ({e}) — it may have filled; check the "
+            f"position, do not resubmit", venue="bingx", venue_symbol=(params or {}).get("symbol"),
             client_order_id=cid) from e
     except Exception as e:
         guard.audit("order_error", error=str(e), **fields)
@@ -266,8 +282,8 @@ def _send(method, path, env, params=None, signed=True, retries=3, no_resend=Fals
     """no_resend (swap order POSTs): once the request may have reached BingX it is never
     sent again — not to the fallback domain, not on a later attempt. A dropped connection,
     a read timeout, a body cut mid-transfer, a 5xx, a 2xx that is not JSON or a
-    SEND_UNKNOWN_CODES answer raises _SendUnknown. Only a connect timeout (nothing sent:
-    the fallback domain is tried), 100410 (rate limited) and 100421 (refused at
+    SEND_UNKNOWN_CODES answer raises _SendUnknown. Only a connect timeout or a socket that
+    never opened (refused, DNS — nothing sent: the fallback domain is tried), 100410 (rate limited) and 100421 (refused at
     authentication, re-signed) go out again — none of them can have executed."""
     api_key = env.get("BINGX_API_KEY")
     secret_key = env.get("BINGX_SECRET_KEY")
@@ -302,17 +318,19 @@ def _send(method, path, env, params=None, signed=True, retries=3, no_resend=Fals
             except (requests.exceptions.InvalidURL, requests.exceptions.MissingSchema,
                     requests.exceptions.InvalidSchema, requests.exceptions.InvalidHeader):
                 raise  # refused before anything was sent
-            except requests.exceptions.RequestException as e:
-                # ReadTimeout / ChunkedEncodingError / ContentDecodingError are not
-                # ConnectionError subclasses — after the connection was made any of them may
-                # follow an order BingX took
-                if no_resend:
+            except requests.exceptions.ConnectionError as e:
+                # a reset after the request went out may follow an order BingX took; a socket
+                # that never opened (refused, DNS) did not send anything
+                if no_resend and not _never_sent(e):
                     raise _SendUnknown(f"{type(e).__name__}: {str(e)[:120]}") from e
-                if not isinstance(e, requests.exceptions.ConnectionError) \
-                        or isinstance(e, requests.exceptions.Timeout):
-                    raise
                 last_err = e
                 continue  # next base
+            except requests.exceptions.RequestException as e:
+                # ReadTimeout (a TLS handshake timeout too) / ChunkedEncodingError /
+                # ContentDecodingError are not ConnectionError subclasses
+                if no_resend:
+                    raise _SendUnknown(f"{type(e).__name__}: {str(e)[:120]}") from e
+                raise
             if no_resend and r.status_code >= 500:
                 raise _SendUnknown(f"HTTP {r.status_code}: {r.text[:120]}")
             try:
@@ -481,6 +499,8 @@ def _unwrap_order(data):
     """BingX nests the order object: {data: {order: {...}}}. orderId is a huge
     integer — return it as str and never let callers do float math on it."""
     order = (data or {}).get("order", data) or {}
+    if not order.get("orderId") and order.get("orderID"):
+        order["orderId"] = order["orderID"]  # the place answer also carries it as a string
     if "orderId" in order:
         order["orderId"] = str(order["orderId"])
     return order
@@ -576,6 +596,10 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
 
     try:
         placed = _unwrap_order(_request("POST", "/openApi/swap/v2/trade/order", env, params))
+        echo = placed.get("clientOrderId") or placed.get("clientOrderID")
+        if echo and str(echo).lower() != params["clientOrderID"].lower():
+            logging.warning(f"[order_bingx] order answer carries client id {echo!r}, sent "
+                            f"{params['clientOrderID']!r} — a lost answer could not be found by it")
         if not placed.get("orderId"):
             # code 0 = BingX took it; only the id is missing from the answer
             raise OrderNotConfirmed(
@@ -584,8 +608,14 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
                 venue="bingx", client_order_id=params["clientOrderID"])
         return confirm_order(env, symbol, placed["orderId"], timeout=confirm_timeout)
     except OrderNotConfirmed as e:
-        # the strategy's own symbol, not BingX's BTC-USDT / NCSK… (the park is queried with it)
+        # the strategy's own symbol, not BingX's BTC-USDT / NCSK… (the park is queried with it);
+        # close_position / open_position hand over the venue's name
         e.venue_symbol = asked
+        if "-" in asked:
+            try:
+                e.venue_symbol = _canonical_symbol(env, asked) or asked
+            except Exception:
+                pass
         e.client_order_id = e.client_order_id or params["clientOrderID"]
         raise
 
@@ -710,22 +740,53 @@ def confirm_order(env, symbol, order_id, timeout=15):
         venue="bingx", venue_symbol=symbol, order_id=order_id)
 
 
+PARK_TRADE_LOOKBACK_S = 300  # fills searched from this long before the park (clock skew, lag)
+
+
 def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, parked_at=None,
                           now=None):
     """A parked order's outcome (lib/unconfirmed): (executed_qty, avg_price) once it is
     terminal — qty 0 = it ended without a fill — None while unknown. Read-only: Query
-    Order by orderId, or by our client id when only that is known. An order the query
-    cannot find stays unknown however long ago it was parked: what BingX answers for an
-    id that never arrived is unmeasured, and releasing an order that did fill is the
-    duplicate this exists to prevent (the user's way out is unconfirmed.resolve)."""
+    Order by orderId, or by our client id when only that is known; when the query cannot
+    find it (109421 — "may have been filled, cancelled, or the order ID is incorrect"), the
+    fills since the park (allFillOrders) matched on that orderId / client id: any → those,
+    at their VWAP. An order neither finds stays unknown however long ago it was parked:
+    what BingX answers for an id that never arrived is unmeasured, and releasing an order
+    that did fill is the duplicate this exists to prevent (the way out is
+    unconfirmed.resolve)."""
     try:
         order = get_order(env, symbol, order_id=order_id, client_order_id=client_order_id)
+    except BingXError as e:
+        if not _is_order_gone(e, SWAP_ORDER_GONE_CODES):
+            return None
+        return _fills_of(env, symbol, order_id, client_order_id, parked_at, now)
     except Exception:
         return None
     if order["status"] not in TERMINAL_STATUSES:
         return None
     qty, price = order["executed_qty"], order["avg_price"]
     return (qty, price) if qty <= 0 or price > 0 else None
+
+
+def _fills_of(env, symbol, order_id, client_order_id, parked_at, now):
+    if not parked_at:
+        return None
+    now = time.time() if now is None else now
+    try:
+        start = int((float(parked_at) - PARK_TRADE_LOOKBACK_S) * 1000) + int(_time_offset["ms"])
+        end = int((now + 60) * 1000) + int(_time_offset["ms"])
+        rows = get_fills(env, symbol, start, end) or []
+    except Exception:
+        return None
+    want_oid = str(order_id) if order_id else None
+    want_cid = str(client_order_id).lower() if client_order_id else None
+    mine = [f for f in rows if (want_oid and str(f.get("orderId") or "") == want_oid)
+            or (want_cid and str(f.get("clientOrderId") or f.get("clientOrderID") or "").lower() == want_cid)]
+    qty = sum(abs(float(f.get("volume") or f.get("qty") or 0)) for f in mine)
+    if qty <= 0:
+        return None
+    px = sum(abs(float(f.get("volume") or f.get("qty") or 0)) * float(f.get("price") or 0) for f in mine) / qty
+    return (qty, px) if px > 0 else None
 
 
 def get_open_orders(env, symbol=None):
@@ -841,6 +902,14 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
         wanted = [k for k, p in (("sl", sl_price), ("tp", tp_price)) if p is not None]
         raise ProtectionFailed(
             guard.protection_halted_text(symbol, direction, wanted, placed, False) + f" {e}"
+        ) from e
+    except OrderNotConfirmed as e:
+        # the SL/TP POST got no usable answer: it may or may not be on the book — placing it
+        # again blind could stack a second one
+        raise ProtectionFailed(
+            f"{symbol} {direction}: a protective order may NOT be placed (no answer from BingX "
+            f"after {list(placed)} succeeded) — it may also be on the book already: read "
+            f"get_open_orders before re-placing, and tell the user the position may be naked: {e}"
         ) from e
     except Exception as e:
         raise ProtectionFailed(
