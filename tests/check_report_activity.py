@@ -8,8 +8,12 @@ and none comes due within 10 minutes; a missing field means "assume one is" on t
   2. next_due_at: earliest slot over enabled jobs as UTC ISO; a paused job, a never-matching cron
      and no jobs at all give None; an armed slot already past (tick not fired yet) still counts.
   3. local_daemon writes it as daemon.reports, and a failure only drops that key.
+  4. the other long jobs the 06:00 update waits out, each true only while it is really running:
+     daemon.flattening (flatten_running: our Popen, else the lock file's pid alive + its command
+     line; never takes the lock), manager.optimizing (_OPT_LOCK), perf_refresh.json exec_test.
 Run: cd blave-agent && .venv/bin/python tests/check_report_activity.py
 """
+import json
 import os
 import sys
 import tempfile
@@ -156,6 +160,62 @@ cl_src = open(os.path.join(RUNTIME, "command_listener.py"), encoding="utf-8").re
 spawns = [l for l in cl_src.splitlines() if "_report_runner_cmd(" in l and "def _report_runner_cmd" not in l]
 check(len(spawns) == 1 and "subprocess.Popen(_report_runner_cmd(job_id)" in spawns[0],
       f"every runner Popen goes through _report_spawn (one call site, {len(spawns)})")
+
+# ── 4. long jobs the scheduled update waits out ──
+import platform as _platform  # noqa: E402
+import subprocess as _sp  # noqa: E402
+import fcntl as _fcntl  # noqa: E402
+LOCK = os.path.join(WS, "state", "flatten.lock")
+flocks = []
+real_flock = _fcntl.flock
+_fcntl.flock = lambda *a: (flocks.append(a), real_flock(*a))[1]
+check(cl.flatten_running() is False, "no flatten launched, no lock file → not flattening")
+fake = _sp.Popen([sys.executable, "-c", "import time; time.sleep(30)", "manager/flatten.py"])
+cl._FLATTEN_PROC["proc"] = fake
+check(cl.flatten_running() is True, "our own flatten Popen alive → flattening")
+fake.kill(); fake.wait()
+check(cl.flatten_running() is False, "our own flatten exited → not flattening (no sticky flag)")
+cl._FLATTEN_PROC["proc"] = None
+other = _sp.Popen([sys.executable, "-c", "import time; time.sleep(30)", "manager/flatten.py"])
+with open(LOCK, "w") as f:
+    f.write(str(other.pid))
+check(cl.flatten_running() is True, "a flatten from an earlier daemon (lock file pid alive, flatten.py on its command line) → flattening")
+real_sys = _platform.system
+_platform.system = lambda: "Windows"
+check(cl.flatten_running() is False, "Windows: the lock file carries no pid, an earlier daemon's flatten is not seen")
+_platform.system = real_sys
+other.kill(); other.wait()
+check(cl.flatten_running() is False, "that pid gone → not flattening, lock file left behind or not")
+with open(LOCK, "w") as f:
+    f.write(str(os.getpid()))
+check(cl.flatten_running() is False, "a live pid that is not flatten.py (pid reused) → not flattening")
+with open(LOCK, "w") as f:
+    f.write("garbage")
+check(cl.flatten_running() is False, "unreadable pid → not flattening")
+check(not flocks, f"flatten_running never takes state/flatten.lock (a flatten starting then would exit closing nothing; {len(flocks)} flock calls)")
+_fcntl.flock = real_flock
+check(cl.optimize_running() is False, "no manage_optimize → not optimizing")
+cl._OPT_LOCK.acquire()
+check(cl.optimize_running() is True, "manage_optimize holding _OPT_LOCK → optimizing")
+cl._OPT_LOCK.release()
+check(cl.optimize_running() is False, "released by the Deferred cleanup → not optimizing")
+os.makedirs(os.path.join(WS, "strategies", "xt"), exist_ok=True)
+pf = lambda: json.load(open(os.path.join(WS, "strategies", "xt", "perf_refresh.json"), encoding="utf-8"))
+cl._mark_perf("xt", "running", exec_test=True)
+check(pf().get("exec_test") is True and pf().get("pid") == os.getpid(), f"a 成交測試 run's record carries exec_test ({pf()})")
+cl._mark_perf("xt", "running")
+check("exec_test" not in pf(), f"a plain 更新績效 record has no exec_test ({pf()})")
+cl._mark_perf("xt", "failed", "EXIT", exec_test=True)
+check("exec_test" not in pf(), "a failed record never says exec_test (only a running one is waited on)")
+cl_src = open(os.path.join(RUNTIME, "command_listener.py"), encoding="utf-8").read()
+marks = [l.strip() for l in cl_src.splitlines() if '_mark_perf(name, "running"' in l]
+check(len(marks) == 2 and all("exec_test=exec_test" in l for l in marks),
+      f"both running marks (the queue at ack time, the run itself) pass exec_test ({marks})")
+check(cl_src.count('_FLATTEN_PROC["proc"] = proc') == 1, "the local-mode flatten launch records its Popen")
+for key in ('doc["daemon"]["flattening"] = self.cl.flatten_running()', 'doc["manager"]["optimizing"] = self.cl.optimize_running()'):
+    check(key in blk and blk.index('doc["daemon"] = {') < blk.index(key), f"write_status writes {key.split(' = ')[0]}")
+sub = blk[blk.index('doc["daemon"]["flattening"]') - 120:blk.index('doc["manager"]["optimizing"]') + 200]
+check("try:" in sub and "except Exception" in sub, "a failure there only drops those keys (status file still written)")
 
 print("\nALL PASS" if not fails else f"\n{fails} FAIL")
 sys.exit(1 if fails else 0)

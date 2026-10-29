@@ -89,7 +89,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
         { reports: { running: false, next_due_at: new Date(NOW + 10 * 60000).toISOString() } }, { reports: { running: false, next_due_at: new Date(NOW - 60000).toISOString() } }, { reports: undefined }, { reports: null }, { reports: {} },
         { reports: { running: false } }, { reports: { next_due_at: null } }, { reports: { running: "false", next_due_at: null } }, { reports: { running: false, next_due_at: "soon" } }, { reports: { running: false, next_due_at: 123 } }]],
     ];
-    for (const [x, why] of [[{ backtesting: true }, "backtest"], [{ refreshing: true }, "stats"], [{ closing: true }, "closing"]])
+    for (const [x, why] of [[{ backtesting: true }, "backtest"], [{ optimizing: true }, "optimize"], [{ exectesting: true }, "exectest"], [{ refreshing: true }, "stats"], [{ closing: true }, "closing"]])
       t("§5.2 daemon 長工作:" + why + " → 不重開(why " + why + ")", go(x).go === false && go(x).why === why, go(x));
     for (const [name, xs] of NO) t("§5.2 條件 " + name + " → 不重開", xs.every((x) => go(x).go === false), xs.map((x) => go(x).why));
     t("§5.2 條件 10 反面:下一個報告在 10 分鐘之後、或沒有排程(null)→ 可以", go({ reports: { running: false, next_due_at: new Date(NOW + 11 * 60000).toISOString() } }).go === true && go({ reports: { running: false, next_due_at: null } }).go === true);
@@ -114,7 +114,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       const ctx = { _schedRunning: false, draftOk: false, quitAsking: false, moveAsking: false, restarting: null, quitConfirmed: false, quitting: false, activeTurn: null, turnStarting: false, _engineRun: null,
         updater: () => ({ state: () => { log.push("collect"); return { phase: o.phase || "ready", version: "0.1.36" }; }, install: () => { log.push("install"); return o.installRes || { ok: true }; } }),
         _tradeHost: o.noHost ? null : { status: () => ({ running: o.daemonRunning !== false, alive: o.alive !== false, lockRetry: o.lockRetry || null,
-          report: { daemon: { pid: 4242, ...(o.reports === "absent" ? {} : { reports: o.reports === undefined ? { running: false, next_due_at: null } : o.reports }) }, ...(o.manager ? { manager: o.manager } : {}), ...(o.halt ? { halt: o.halt } : {}) } }) },
+          report: { daemon: { pid: 4242, ...(o.flattening !== undefined ? { flattening: o.flattening } : {}), ...(o.reports === "absent" ? {} : { reports: o.reports === undefined ? { running: false, next_due_at: null } : o.reports }) }, ...(o.manager ? { manager: o.manager } : {}), ...(o.halt ? { halt: o.halt } : {}) } }) },
         STRAT_DIR: () => "/S", path, fs: { readdirSync: (d) => { log.push("collect"); if (d !== "/S") throw new Error("dir"); return Object.keys(o.perf || {}); },
           readFileSync: (f) => { const m = /^\/S\/([^/]+)\/perf_refresh\.json$/.exec(f.replace(/\\/g, "/")); if (!m || !(o.perf || {})[m[1]]) throw new Error("ENOENT"); return JSON.stringify(o.perf[m[1]]); } },
         updAutoGet: () => o.on !== false, updSchedRec: () => ({ target: null, failed: o.failed || null }), tradeMaybeLive: () => (o.trading ? { venue: "x" } : null), twLots: () => { log.push("collect"); return { held: !!o.twHeld }; },
@@ -153,13 +153,18 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       t("主行程收集的條件:" + why + " → 不重開,也不去問畫面", res.go === false && !r.log.some((x) => /^ask:/.test(x)), [res, r.log]); }
     // daemon 長工作(Wei 10-29):在跑就不重開、也不去問畫面;下一分鐘再判
     for (const [why, o, code] of [["組合回測在跑(manager.backtest_job running)", { manager: { backtest_job: { status: "running", pid: 99 } } }, "backtest"],
-      ["更新績效／成交測試在跑(perf_refresh.json running、pid 是這個 daemon)", { perf: { a: { status: "failed", at: 1 }, b: { status: "running", at: 1, pid: 4242 } } }, "stats"],
-      ["暫停並全部平倉(halt.closing)", { halt: { halted: true, closing: true } }, "closing"]]) {
+      ["組合最佳化在跑(manager.optimizing)", { manager: { backtest_job: null, optimizing: true } }, "optimize"],
+      ["成交測試在跑(perf_refresh.json running + exec_test、pid 是這個 daemon)", { perf: { a: { status: "running", at: 1, pid: 4242, exec_test: true } } }, "exectest"],
+      ["成交測試與更新績效同時在跑 → 報成交測試", { perf: { a: { status: "running", at: 1, pid: 4242 }, b: { status: "running", at: 1, pid: 4242, exec_test: true } } }, "exectest"],
+      ["更新績效在跑(perf_refresh.json running、pid 是這個 daemon)", { perf: { a: { status: "failed", at: 1 }, b: { status: "running", at: 1, pid: 4242 } } }, "stats"],
+      ["全部平倉進行中(daemon.flattening)", { flattening: true }, "closing"]]) {
       const r = rig(o), res = await r.run();
       t("daemon 長工作:" + why + " → 不重開、不問畫面", res.go === false && res.why === code && !r.log.includes("install") && !r.log.some((x) => /^ask:/.test(x)), [res, r.log]); }
-    for (const [why, o] of [["回測已結束(done)", { manager: { backtest_job: { status: "done" } } }], ["perf running 但 pid 是上一個 daemon 的", { perf: { b: { status: "running", at: 1, pid: 7 } } }],
-      ["perf running 但沒有 pid", { perf: { b: { status: "running", at: 1 } } }], ["暫停但沒在平倉(closing false／沒有)", { halt: { halted: true, closing: false } }], ["舊 runtime 沒有 manager 區塊", {}],
-      ["daemon 沒在跑(狀態檔留著 running 的回測、closing)", { daemonRunning: false, alive: false, reports: "absent", manager: { backtest_job: { status: "running" } }, halt: { halted: true, closing: true }, perf: { b: { status: "running", at: 1, pid: 4242 } } }]]) {
+    for (const [why, o] of [["回測已結束(done)", { manager: { backtest_job: { status: "done" }, optimizing: false } }], ["perf running 但 pid 是上一個 daemon 的", { perf: { b: { status: "running", at: 1, pid: 7, exec_test: true } } }],
+      ["perf running 但沒有 pid", { perf: { b: { status: "running", at: 1 } } }], ["平倉已結束(flattening false)", { flattening: false }],
+      ["暫停並全部平倉之後還停著(halt.closing 留著,但平倉行程已結束)", { halt: { halted: true, closing: true }, flattening: false }],
+      ["舊 runtime 沒有這些欄位(manager／flattening／exec_test 都沒有)", { halt: { halted: true, closing: true } }],
+      ["daemon 沒在跑(狀態檔留著 running 的回測、最佳化、平倉)", { daemonRunning: false, alive: false, reports: "absent", manager: { backtest_job: { status: "running" }, optimizing: true }, flattening: true, perf: { b: { status: "running", at: 1, pid: 4242 } } }]]) {
       const r = rig(o), res = await r.run();
       t("daemon 長工作反面:" + why + " → 照常重開", res.go === true && r.log.includes("install"), [res, r.log]); }
     { const r = rig({}); r.ctx._schedRunning = true; const res = await r.run();

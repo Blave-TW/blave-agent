@@ -5328,6 +5328,41 @@ def _flatten_already_running():
         fh.close()
 
 
+_FLATTEN_PROC = {"proc": None}  # the local-mode flatten this process launched (flatten_running)
+
+
+def flatten_running():
+    """Is a close-all flatten running right now? For the desktop status file (daemon.flattening:
+    the 06:00 scheduled update waits it out). Never probes state/flatten.lock with a lock of its
+    own: the status loop calls this every few seconds, and a flatten starting in that instant
+    would find the lock held and exit as already-running, closing nothing. Our own Popen first;
+    otherwise (this daemon restarted under a running flatten) the pid flatten.py writes into the
+    lock file on POSIX, identity-checked on its command line like _mgmt_pid_alive. Windows
+    writes no pid there, so a flatten started by an earlier daemon is not seen on Windows."""
+    proc = _FLATTEN_PROC["proc"]
+    if proc is not None and proc.poll() is None:
+        return True
+    if platform.system() == "Windows":
+        return False
+    try:
+        pid = int(atomic_file.read_bytes(os.path.join(WORKSPACE, "state", "flatten.lock")).strip() or 0)
+    except (OSError, ValueError):
+        return False
+    if pid <= 1 or (proc is not None and proc.pid == pid):
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return "manager/flatten.py" in _pid_cmdline(pid)
+
+
+def optimize_running():
+    """manage_optimize holds _OPT_LOCK from validation until its Deferred cleanup — the status
+    file's manager.optimizing. Dies with this process; the shell only trusts a fresh heartbeat."""
+    return _OPT_LOCK.locked()
+
+
 def _capital_only_unflattenable():
     """Same verdict the report sends as can_flatten=false (flatten.py already
     known present here). Unreadable → False: never let this be why a panic
@@ -5562,6 +5597,7 @@ def _launch_flatten(prefix):
                                     env=_local_child_env(**flags),
                                     stdout=logf, stderr=logf, start_new_session=True,
                                     **_child_kw(**({"stdin": subprocess.PIPE} if line else {})))
+        _FLATTEN_PROC["proc"] = proc
         if line:
             try:
                 proc.stdin.write(line.encode("utf-8"))
@@ -6751,13 +6787,15 @@ def _perf_path(name):
     return os.path.join(WORKSPACE, "strategies", name, PERF_REFRESH_FILE)
 
 
-def _mark_perf(name, status, err=None, why=None):
+def _mark_perf(name, status, err=None, why=None, exec_test=False):
     # the strategy was deleted while its refresh ran: a record now would recreate the folder as a ghost
     if not os.path.isdir(os.path.join(WORKSPACE, "strategies", name)):
         return
     doc = {"status": status, "at": int(time.time())}
     if status == "running":
         doc["pid"] = os.getpid()   # whose run: a record from a process that is gone is settled at start
+        if exec_test:
+            doc["exec_test"] = True   # 成交測試: the desktop's scheduled update names it apart from 更新績效
     if err:
         doc["err"] = err
     if why:
@@ -6923,7 +6961,7 @@ def _refresh_one(name, deadline, what, backtest_hash=None, shared=False, exec_te
     failed + code otherwise. `deadline` (monotonic) bounds the lock wait and the run; None =
     no budget (the button). `shared`: the caller already holds a shared slot (the button queue);
     otherwise the machine is taken exclusively (the sweep). Returns True on success."""
-    _mark_perf(name, "running")
+    _mark_perf(name, "running", exec_test=exec_test)
     wait = None if deadline is None else max(0.0, deadline - time.monotonic())
     if not shared and not _STATS_REFRESH_LOCK.acquire(timeout=-1 if wait is None else wait):
         # not this strategy's failure: the sweep's budget went to whoever held the machine
@@ -7031,7 +7069,7 @@ def _cmd_stats_refresh(args):
                 skipped[name] = "BUSY"
                 continue
             _PERF_PENDING.add(name)
-        _mark_perf(name, "running")   # every queued one reads 更新中 from the ack-time push on
+        _mark_perf(name, "running", exec_test=exec_test)   # every queued one reads 更新中 from the ack-time push on
         started.append(name)
         queued.append((name, backtest_hash, exec_test))
     if started:

@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **電腦版狀態檔多三個「正在做」欄位(`command_listener.flatten_running`／`optimize_running`／`_mark_perf`、`local_daemon.write_status`;desktop 0.1.37 每天 06:00 自動更新不在這些時候重開,更新膠囊稽核 P3-5)**:`daemon.flattening` = 全部平倉行程還活著(本行程起的 Popen 還沒結束;daemon 重啟過就看 `state/flatten.lock` 裡 flatten.py 寫的 pid 活著且命令列是 `manager/flatten.py`,Windows 那檔沒有 pid 所以看不到上一個 daemon 起的平倉)——絕不自己去鎖 `flatten.lock`(狀態迴圈每幾秒一次,剛好起跑的平倉會以為有人在平而什麼都不平);`manager.optimizing` = `_OPT_LOCK` 被 manage_optimize 持有(行程死了狀態檔就不再更新,外殼只信新鮮心跳);`strategies/<name>/perf_refresh.json` 在成交測試那次 running 時多帶 `exec_test: true`。跟 `halt.closing` 不同,這三個結束就不成立。舊外殼不讀;舊 runtime 沒這些欄位外殼當作沒有。測試 `tests/check_report_activity.py` 第 4 段。
+
 ## 1.1.148 — 2026-10-29(desktop 0.1.36)
 
 - **電腦版狀態檔多一塊報告排程狀態 `daemon.reports = {running, next_due_at}`(`command_listener.report_activity`／`_report_spawn`、`local_daemon.write_status`;desktop 0.1.36 每天 06:00 自動更新 spec desktop-update-pill §5.2 條件 10)**:`running` = 這個行程起的 report_runner 子行程還有活著的(`_start_report_job` 與 `report_run_now` 都改經 `_report_spawn` 記下 Popen,讀的時候把結束的清掉;到期那支還在跑績效 sweep、runner 還沒起來也算;排程到點時在起執行緒之前就先記一筆,`_report_next` 已經推到下一格、執行緒還沒跑的那一瞬間也算在跑);`next_due_at` = 所有啟用排程最近的到期時間(UTC ISO,`report_runner.cron_next` 從現在算,另併 `_report_next` 裡已經到點、60 秒那一輪還沒發的那一格;沒有排程是 null,永遠不會對到的 cron 不算)。外殼只讀這兩個值,不自己解鎖檔或重算 cron;算出錯只少 `reports` 這個鍵,狀態檔照寫,外殼讀不到就當作有報告、那天不自動重開。agent 自己用 Bash 起的 runner 不在 `running` 裡(自動重開另外要求沒有回合在跑)。跟電腦版 0.1.36 同包發;舊外殼不讀這個鍵。測試 `tests/check_report_activity.py`(新)。

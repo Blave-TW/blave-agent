@@ -4166,23 +4166,24 @@ function updSchedReports(host) {
   if (!host || (!host.running && !host.lockRetry)) return { running: false, next_due_at: null };
   return host.alive && host.report && host.report.daemon ? host.report.daemon.reports : undefined;
 }
-/* daemon 的長工作(Wei 10-29):組合回測(manager.backtest_job)、更新績效與成交測試(strategies/<name>/perf_refresh.json,
-   pid 要是這個 daemon 的,不然是上一個行程留下的)、暫停並全部平倉(halt.closing)。daemon 沒在跑 = 都沒有;
-   在跑但心跳不新鮮時條件 10 已經擋下。halt.closing 從平倉起跑一直留到恢復下單,不是「還在平倉」。
-   manage_optimize 只有 runtime 行程內的鎖、perf 紀錄不分成交測試:這兩件狀態檔讀不到 */
+/* daemon 的長工作(Wei 10-29),都是 runtime 寫的「正在做」:組合回測(manager.backtest_job)、組合最佳化(manager.optimizing)、
+   更新績效與成交測試(strategies/<name>/perf_refresh.json running,pid 要是這個 daemon 的,exec_test 分成交測試)、
+   全部平倉(daemon.flattening,平倉行程活著才是 true)。daemon 沒在跑 = 都沒有;在跑但心跳不新鮮時條件 10 已經擋下;舊 runtime 沒欄位 = 沒有 */
 function updSchedJobs(host) {
+  const none = { backtesting: false, optimizing: false, exectesting: false, refreshing: false, closing: false };
   const r = host && host.alive ? host.report : null;
-  if (!r) return { backtesting: false, refreshing: false, closing: false };
-  const job = r.manager && r.manager.backtest_job, pid = r.daemon && r.daemon.pid;
-  let refreshing = false;
+  if (!r) return none;
+  const m = r.manager || {}, dm = r.daemon || {}, pid = dm.pid;
+  let refreshing = false, exectesting = false;
   if (Number.isInteger(pid)) {
     let names = []; try { names = fs.readdirSync(STRAT_DIR()); } catch (_) { /* 沒有策略資料夾 */ }
     for (const n of names) {
       let d = null; try { d = JSON.parse(fs.readFileSync(path.join(STRAT_DIR(), n, "perf_refresh.json"), "utf8")); } catch (_) { continue; }
-      if (d && d.status === "running" && d.pid === pid) { refreshing = true; break; }
+      if (!d || d.status !== "running" || d.pid !== pid) continue;
+      if (d.exec_test === true) exectesting = true; else refreshing = true;
     }
   }
-  return { backtesting: !!(job && job.status === "running"), refreshing, closing: !!(r.halt && r.halt.closing === true) };
+  return { backtesting: !!(m.backtest_job && m.backtest_job.status === "running"), optimizing: m.optimizing === true, exectesting, refreshing, closing: dm.flattening === true };
 }
 let _schedRunning = false;
 async function scheduledInstall(now = Date.now()) {
