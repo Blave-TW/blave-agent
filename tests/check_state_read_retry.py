@@ -314,7 +314,7 @@ EXEMPT = [
     ('runtime/command_listener.py', '_file_is_version', 'os.path.join(WORKSPACE, script)',
      'code', 'a workspace script'),
     ('runtime/command_listener.py', '_log_tail', 'path', 'append', 'log tail'),
-    ('runtime/command_listener.py', '_pid_cmdline', 'f"/proc/{pid}/cmdline"',
+    ('runtime/command_listener.py', '_pid_cmdline_or_none', 'f"/proc/{pid}/cmdline"',
      'proc', '/proc pseudo-file (Linux)'),
     ('runtime/command_listener.py', '_read_boot_record', 'BOOT_RECORD',
      'own', "state/boot_id, this process's own record"),

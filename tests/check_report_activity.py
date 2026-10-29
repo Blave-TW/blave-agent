@@ -168,7 +168,7 @@ import fcntl as _fcntl  # noqa: E402
 import atomic_file as _af  # noqa: E402
 PIDS = os.path.join(WS, "state", "flatten_pids")
 lock_reads, flocks = [], []
-real_read, real_flock, real_cmd, real_sys = _af.read_bytes, _fcntl.flock, cl._pid_cmdline, _platform.system
+real_read, real_flock, real_cmd, real_sys = _af.read_bytes, _fcntl.flock, cl._pid_cmdline_or_none, _platform.system
 _af.read_bytes = lambda p, *a, **k: (lock_reads.append(p) if os.path.basename(p) == "flatten.lock" else None, real_read(p, *a, **k))[1]
 _fcntl.flock = lambda *a: (flocks.append(a), real_flock(*a))[1]
 spawn = lambda: _sp.Popen([sys.executable, "-c", "import time; time.sleep(30)", "manager/flatten.py"])
@@ -179,18 +179,18 @@ cl._record_flatten(a)
 cl._record_flatten(b)   # double press: both started before either took flatten.lock
 check(pids_on_disk() == [str(a.pid), str(b.pid)], f"each launch appends its pid ({pids_on_disk()})")
 cmd_calls = []
-cl._pid_cmdline = lambda pid: (cmd_calls.append(pid), real_cmd(pid))[1]
+cl._pid_cmdline_or_none = lambda pid: (cmd_calls.append(pid), real_cmd(pid))[1]
 check(cl.flatten_running() is True and not cmd_calls, f"our own flatten Popens alive → flattening, without a command-line lookup (a powershell each on Windows; {cmd_calls})")
-cl._pid_cmdline = real_cmd
+cl._pid_cmdline_or_none = real_cmd
 a.kill(); a.wait()
 check(cl.flatten_running() is True, "double press: the loser exits, the winner still runs → still flattening")
 cl._FLATTEN_PROCS.clear()   # a restarted daemon: no Popens, only the list on disk
 check(cl.flatten_running() is True and pids_on_disk() == [str(b.pid)],
       f"daemon restarted under it: the listed pid alive with flatten.py on its command line → flattening, dead one pruned ({pids_on_disk()})")
 _platform.system = lambda: "Windows"
-cl._pid_cmdline = lambda pid: (r"C:\venv\Scripts\python.exe manager\flatten.py" if pid == b.pid else "")
+cl._pid_cmdline_or_none = lambda pid: (r"C:\venv\Scripts\python.exe manager\flatten.py" if pid == b.pid else "")
 check(cl.flatten_running() is True, "Windows, daemon restarted under it: seen through the pid list (no pid in flatten.lock there)")
-_platform.system, cl._pid_cmdline = real_sys, real_cmd
+_platform.system, cl._pid_cmdline_or_none = real_sys, real_cmd
 b.kill(); b.wait()
 check(cl.flatten_running() is False and pids_on_disk() is None, "every flatten gone → not flattening, the list file removed (no sticky flag)")
 with open(PIDS, "w") as f:
@@ -204,11 +204,45 @@ def _cmd_and_append(pid):
         late.append(1)
         _af.append_line(PIDS, "424242\n")   # a close_all landing while the check runs
     return ""
-cl._pid_cmdline = _cmd_and_append
+cl._pid_cmdline_or_none = _cmd_and_append
 cl.flatten_running()
-cl._pid_cmdline = real_cmd
+cl._pid_cmdline_or_none = real_cmd
 check(pids_on_disk() == ["424242"], f"pruning keeps a pid appended while the check ran ({pids_on_disk()})")
 os.remove(PIDS)
+c = spawn()
+with open(PIDS, "w") as f:
+    f.write(f"{c.pid}\n")
+cl._pid_cmdline_or_none = lambda pid: None   # powershell timed out / ps failed
+check(cl.flatten_running() is False and pids_on_disk() == [str(c.pid)],
+      f"a lookup that failed is neither alive nor dead: kept on the list, not counted ({pids_on_disk()})")
+cl._pid_cmdline_or_none = real_cmd
+check(cl.flatten_running() is True, "…and the next check that can read it sees the flatten again")
+c.kill(); c.wait()
+check(cl.flatten_running() is False and pids_on_disk() is None, "then it is gone → pruned")
+check(real_cmd(999999) == "" and real_cmd(os.getpid()) not in ("", None), "the lookup itself: no such pid → \"\", a live one → its command line")
+real_run = cl.subprocess.run
+_platform.system = lambda: "Windows"
+def _ps(out, rc=0, exc=None):
+    def run(*a, **k):
+        if exc:
+            raise exc
+        return types.SimpleNamespace(stdout=out, returncode=rc)
+    return run
+win = []
+for run in (_ps("C:\\py.exe manager/flatten.py\r\n"), _ps(""), _ps("", 1), _ps(None, exc=_sp.TimeoutExpired("powershell", 5))):
+    cl.subprocess.run = run
+    win.append(real_cmd(1234))
+cl.subprocess.run, _platform.system = real_run, real_sys
+check(win[0].startswith("C:") and win[1] == "" and win[2] is None and win[3] is None,
+      f"Windows lookup: found → command line, empty with exit 0 → no such pid, a failed or timed-out powershell → None ({win})")
+asked = []
+with open(PIDS, "w") as f:
+    f.write("".join(f"{900000 + k}\n" for k in range(50)))
+cl._pid_cmdline_or_none = lambda pid: (asked.append(pid), "")[1]
+cl.flatten_running()
+cl._pid_cmdline_or_none = real_cmd
+check(len(asked) <= 8 and min(asked) >= 900042, f"a padded list: only the newest 8 pids are looked up ({len(asked)} lookups)")
+check(pids_on_disk() is None, "…and the file is cut back (here: all dead → removed)")
 check(not lock_reads and not flocks, f"flatten_running never reads or locks state/flatten.lock ({lock_reads}, {len(flocks)} flock calls)")
 _af.read_bytes, _fcntl.flock = real_read, real_flock
 check(cl.optimize_running() is False, "no manage_optimize → not optimizing")

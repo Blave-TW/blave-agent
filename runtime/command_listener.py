@@ -5333,6 +5333,7 @@ def _flatten_already_running():
 # one slot: a double press can start two before either takes flatten.lock (the loser exits at once).
 _FLATTEN_PROCS = []
 _FLATTEN_LOCK = threading.Lock()
+_FLATTEN_PIDS_MAX = 8   # flatten_running reads only the newest this many
 
 
 def _flatten_pids_path():
@@ -5366,15 +5367,21 @@ def flatten_running():
         raw = atomic_file.read_bytes(path).decode("ascii", errors="replace")
     except OSError:
         return False
-    pids = {int(x) for x in raw.split() if x.isdigit() and int(x) > 1}
+    # only the newest few: state/ is agent-writable, and each check below is a ps / powershell
+    # inside _status_lock — a padded list must not stall the heartbeat
+    tail = raw.split()[-_FLATTEN_PIDS_MAX:]
+    pids = {int(x) for x in tail if x.isdigit() and int(x) > 1}
     # outside the lock: on Windows each check is a powershell, and _record_flatten (the close_all
-    # ack path) must not wait behind it
-    dead = {pid for pid in pids if "manager/flatten.py" not in _pid_cmdline(pid).replace("\\", "/")}
-    if dead or not raw.endswith("\n"):
+    # ack path) must not wait behind it. A lookup that failed (None) is neither: kept for next time,
+    # not counted — pruning it would lose a live flatten for good
+    cmds = {pid: _pid_cmdline_or_none(pid) for pid in pids}
+    alive = {pid for pid, c in cmds.items() if c is not None and "manager/flatten.py" in c.replace("\\", "/")}
+    dead = {pid for pid, c in cmds.items() if c is not None and pid not in alive}
+    if dead or len(tail) < len(raw.split()) or not raw.endswith("\n"):
         with _FLATTEN_LOCK:   # re-read: a pid appended meanwhile is kept
             try:
                 cur = atomic_file.read_bytes(path).decode("ascii", errors="replace").split()
-                keep = [x for x in cur if x.isdigit() and int(x) > 1 and int(x) not in dead]
+                keep = [x for x in cur[-_FLATTEN_PIDS_MAX:] if x.isdigit() and int(x) > 1 and int(x) not in dead]
                 if keep:
                     with atomic_file.replacing(path) as f:
                         f.write("".join(f"{x}\n" for x in keep))
@@ -5382,7 +5389,7 @@ def flatten_running():
                     os.remove(path)
             except OSError:
                 pass   # pruned next time
-    return len(dead) < len(pids)
+    return bool(alive)
 
 
 def optimize_running():
@@ -6001,6 +6008,12 @@ def _log_tail(path, n=_MANAGE_ERR_TAIL):
 
 def _pid_cmdline(pid):
     """Command line of `pid`, "" when it doesn't exist / can't be read."""
+    return _pid_cmdline_or_none(pid) or ""
+
+
+def _pid_cmdline_or_none(pid):
+    """Command line of `pid`; "" = no such process; None = could not tell (the lookup itself
+    failed or timed out — a loaded Windows box can take powershell past 5 s)."""
     if platform.system() == "Windows":
         try:
             r = subprocess.run(
@@ -6008,19 +6021,23 @@ def _pid_cmdline(pid):
                  f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine"],
                 capture_output=True, text=True, timeout=5, **_child_kw())  # runs on the poll loop
         except (OSError, subprocess.SubprocessError, ValueError):
-            return ""
-        return r.stdout or ""
+            return None
+        return r.stdout or ("" if r.returncode == 0 else None)
     try:
         with open(f"/proc/{pid}/cmdline", "rb") as f:
             return f.read().replace(b"\0", b" ").decode("utf-8", errors="replace")
+    except FileNotFoundError:
+        if os.path.isdir("/proc/self"):
+            return ""   # /proc is there, the pid is not
     except OSError:
         pass
     try:  # no /proc (dev macOS)
         r = subprocess.run(["ps", "-o", "args=", "-p", str(int(pid))],
                            capture_output=True, text=True, timeout=10, **_child_kw())
     except (OSError, subprocess.SubprocessError, ValueError):
-        return ""
-    return r.stdout or ""
+        return None
+    # ps exits 1 with nothing printed for a pid that is not there
+    return r.stdout or ("" if r.returncode in (0, 1) else None)
 
 
 def _mgmt_pid_alive(pid):
