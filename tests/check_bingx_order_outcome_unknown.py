@@ -3,7 +3,7 @@ as a rejection — no network (requests.post / requests.request are faked), no k
 
 What it protects (spec order-unknown-outcome-2026-10-29, BingX):
 - the order POST: a dropped connection after the send was resent to the fallback domain under the
-  same clientOrderID, 100500 was resent too, a read timeout (not a ConnectionError subclass) / a
+  same client id, 100500 was resent too, a read timeout (not a ConnectionError subclass) / a
   5xx / a non-JSON 2xx escaped as an error → recorded as 拒單 → the next round sent a new order;
 - the confirm poll after an accepted order: a read timeout, a 5xx or 109421 (not visible yet)
   escaped as the error itself, the poll timeout was an OrderNotConfirmed nothing could park;
@@ -224,7 +224,7 @@ except ob.BingXError as e:
 
 wire([ACCEPTED], [FILLED])
 ob.place_market_order(ENV, "BTCUSDT", "long", 0.001)
-cid = [kv.split("=", 1)[1] for kv in CALLS["POST"][0][1].split("&") if kv.startswith("clientOrderID=")]
+cid = [kv.split("=", 1)[1] for kv in CALLS["POST"][0][1].split("&") if kv.startswith("clientOrderId=")]
 check(cid and cid[0].isalnum() and cid[0] == cid[0].lower() and len(cid[0]) <= 40,
       f"no client_order_id passed: one is generated and sent ({cid})")
 
@@ -270,6 +270,27 @@ wire([requests.exceptions.ConnectionError("RemoteDisconnected"), ok({"orderId": 
 r = ob.place_spot_market_order(ENV, "BTCUSDT", "buy", quote_qty=10)
 check(r["status"] == "FILLED" and len(CALLS["POST"]) == 2 and len(posts_to(ob.LIVE_FALLBACK)) == 1,
       "a spot POST dropped connection: still resent to the fallback domain (unchanged)")
+
+# the swap client id goes out as clientOrderId (official api-reference / ccxt) everywhere
+wire([ACCEPTED], [FILLED])
+place()
+sent = CALLS["POST"][0][1].split("&")
+check("clientOrderId=t1" in sent and not any(kv.startswith("clientOrderID=") for kv in sent),
+      "market order POST: clientOrderId=t1, no clientOrderID")
+wire([ok({"order": {"orderId": OID, "status": "NEW"}})])
+ob.place_limit_order(ENV, "BTCUSDT", "long", 0.001, 67000, client_order_id="l2")
+check("clientOrderId=l2" in CALLS["POST"][0][1].split("&"), "limit order POST: clientOrderId")
+seen = []
+_req = ob.requests.request
+ob.requests.request = lambda method, url, headers=None, timeout=None: (seen.append((method, url)),
+                                                                       ok({"order": {"orderId": OID}}))[1]
+ob.cancel_order(ENV, "BTCUSDT", client_order_id="c9")
+ob.requests.request = _req
+check(seen and seen[0][0] == "DELETE" and "clientOrderId=c9" in seen[0][1] and "clientOrderID" not in seen[0][1],
+      "cancel by client id: clientOrderId")
+wire([ACCEPTED], [ok({"order": {"orderId": OID, "status": "FILLED", "avgPrice": "1", "executedQty": "1",
+                                "origQty": "1", "clientOrderID": "t1"}})])
+check(ob.get_order(ENV, "BTCUSDT", OID)["client_order_id"] == "t1", "an answer spelling it clientOrderID is read too")
 
 # GETs keep their transport
 wire([ACCEPTED], [requests.exceptions.ConnectionError("reset"), FILLED])

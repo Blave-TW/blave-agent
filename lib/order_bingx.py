@@ -34,8 +34,8 @@ layer caused naked positions, duplicate orders, and TP-reported-as-SL bugs):
 
 Verified against ccxt's production parser + BingX official docs + two
 fleet-debugged implementations. Known quirks handled here so callers never
-meet them: response nested under data.order; clientOrderID (order POST) vs
-clientOrderId (order query and its response); fills under data.fill_orders with startTs/
+meet them: response nested under data.order; the swap client id is clientOrderId
+on every request (place, cancel, query) and answers spell it either way; fills under data.fill_orders with startTs/
 endTs and ISO-string filledTime; position mode as string "true"/"false";
 orderId as huge integer (kept as str); commission returned negative.
 """
@@ -202,7 +202,7 @@ _PROTECTIVE_TYPES = {"STOP_MARKET", "TAKE_PROFIT_MARKET", "STOP", "TAKE_PROFIT"}
 # Params worth keeping in the audit line (no secrets live in params — the
 # signature and timestamp are added later, inside _sign's own copy).
 _AUDIT_PARAM_KEYS = ("symbol", "side", "positionSide", "type", "quantity",
-                     "quoteOrderQty", "price", "stopPrice", "clientOrderID",
+                     "quoteOrderQty", "price", "stopPrice", "clientOrderId",
                      "newClientOrderId", "reduceOnly", "closePosition",
                      "leverage", "orderId")
 
@@ -264,7 +264,7 @@ def _request(method, path, env, params=None, signed=True, retries=3):
     try:
         data = _send(method, path, env, params, signed, retries, no_resend=placing)
     except _SendUnknown as e:
-        cid = (params or {}).get("clientOrderID")
+        cid = (params or {}).get("clientOrderId")
         guard.audit("order_unknown", error=str(e), client_order_id=cid, **fields)
         raise OrderNotConfirmed(
             f"order {cid + ' ' if cid else ''}sent, no answer ({e}) — it may have filled; check the "
@@ -570,9 +570,11 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
     generated when omitted) — what an order whose answer was lost is looked up by
     (OrderNotConfirmed). It is not a resubmit guard: whether BingX refuses a reused
     id (101481) after the order filled is unverified. ALPHANUMERIC ONLY, 1-40
-    chars, lowercased by BingX. Note the request param spelling is clientOrderID
-    (official docs mix both spellings; capital ID is what ccxt ships in
-    production), while query RESPONSES come back as clientOrderId."""
+    chars, lowercased by BingX. Sent as clientOrderId (lowercase d) — the spelling of
+    BingX's official swap api-reference (Place / Cancel / Query Order) and of ccxt's
+    bingx.py (exchangeClientOrderId = 'clientOrderId' for swap; only spot uses
+    newClientOrderId); clientOrderID appears only in BingX's error-code text. Not
+    verified live."""
     guard.arm_restore(symbol, direction, qty, reduce_only)  # HALT's one netted-restore pass
     asked = symbol
     symbol = _swap_symbol(env, symbol)
@@ -591,21 +593,21 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
     if reduce_only and mode == "oneway":
         params["reduceOnly"] = "true"  # hedge mode expresses this via positionSide
     # without an id an order whose answer was lost could not be looked up again (= HALT)
-    params["clientOrderID"] = client_order_id or f"bx{int(time.time() * 1000):x}{os.urandom(3).hex()}"
+    params["clientOrderId"] = client_order_id or f"bx{int(time.time() * 1000):x}{os.urandom(3).hex()}"
     _attach_protection(params, sl_price, tp_price)
 
     try:
         placed = _unwrap_order(_request("POST", "/openApi/swap/v2/trade/order", env, params))
         echo = placed.get("clientOrderId") or placed.get("clientOrderID")
-        if echo and str(echo).lower() != params["clientOrderID"].lower():
+        if echo and str(echo).lower() != params["clientOrderId"].lower():
             logging.warning(f"[order_bingx] order answer carries client id {echo!r}, sent "
-                            f"{params['clientOrderID']!r} — a lost answer could not be found by it")
+                            f"{params['clientOrderId']!r} — a lost answer could not be found by it")
         if not placed.get("orderId"):
             # code 0 = BingX took it; only the id is missing from the answer
             raise OrderNotConfirmed(
-                f"order {params['clientOrderID']} accepted without an orderId ({placed}) — "
+                f"order {params['clientOrderId']} accepted without an orderId ({placed}) — "
                 f"it may have filled; check the position, do not resubmit",
-                venue="bingx", client_order_id=params["clientOrderID"])
+                venue="bingx", client_order_id=params["clientOrderId"])
         return confirm_order(env, symbol, placed["orderId"], timeout=confirm_timeout)
     except OrderNotConfirmed as e:
         # the strategy's own symbol, not BingX's BTC-USDT / NCSK… (the park is queried with it);
@@ -616,7 +618,7 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
                 e.venue_symbol = _canonical_symbol(env, asked) or asked
             except Exception:
                 pass
-        e.client_order_id = e.client_order_id or params["clientOrderID"]
+        e.client_order_id = e.client_order_id or params["clientOrderId"]
         raise
 
 
@@ -659,7 +661,7 @@ def place_limit_order(env, symbol, direction, qty, price, client_order_id=None,
     if reduce_only and mode == "oneway":
         params["reduceOnly"] = "true"
     if client_order_id:
-        params["clientOrderID"] = client_order_id
+        params["clientOrderId"] = client_order_id
     try:
         order = _unwrap_order(_request("POST", "/openApi/swap/v2/trade/order", env, params))
     except BingXError as e:
@@ -693,7 +695,6 @@ def get_order(env, symbol, order_id=None, client_order_id=None):
         "executed_qty": float(o.get("executedQty") or 0),
         "orig_qty": float(o.get("origQty") or 0),
         "commission": abs(float(o.get("commission") or 0)),
-        # response uses lowercase-d clientOrderId (request uses clientOrderID)
         "client_order_id": o.get("clientOrderId") or o.get("clientOrderID") or "",
         "raw": o,
     }
@@ -817,7 +818,7 @@ def get_bbo(env, symbol):
 
 
 def cancel_order(env, symbol, order_id=None, client_order_id=None):
-    """Cancel one order by orderId or clientOrderID. Returns the canceled
+    """Cancel one order by orderId or clientOrderId. Returns the canceled
     order's raw dict (with order_id). Idempotent-safe: an order that is
     already filled / cancelled / unknown (109421, legacy 80016/80017) returns
     {'status': 'already_gone', ...} instead of raising — the caller always
@@ -827,7 +828,7 @@ def cancel_order(env, symbol, order_id=None, client_order_id=None):
     if order_id:
         params["orderId"] = str(order_id)
     elif client_order_id:
-        params["clientOrderID"] = client_order_id
+        params["clientOrderId"] = client_order_id
     else:
         raise ValueError("order_id or client_order_id required")
     try:
@@ -1050,7 +1051,7 @@ def close_position_partial(env, symbol, direction, qty, client_order_id=None):
 # Same guard/audit discipline as the swap layer; BingX spot quirks (verified
 # against ccxt's production bingx parser): symbols are DASHED (BTC-USDT, same
 # as swap); the client-id param is newClientOrderId (the swap layer's is
-# clientOrderID — different casing AND name); market BUYs size in QUOTE
+# clientOrderId — a different name); market BUYs size in QUOTE
 # currency via quoteOrderQty; spot rules come from the public
 # /openApi/spot/v1/common/symbols where stepSize/tickSize are SIZES
 # (0.0001), unlike swap's digit counts; placement may return status PENDING
@@ -1170,7 +1171,7 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
     rules = get_spot_rules(env, sym)
     params = {"symbol": sym, "side": side.upper(), "type": "MARKET"}
     if client_order_id:
-        params["newClientOrderId"] = client_order_id  # spot param name (swap uses clientOrderID)
+        params["newClientOrderId"] = client_order_id  # spot param name (swap uses clientOrderId)
     if side == "buy":
         if quote_qty is None:
             raise ValueError("spot buys are sized in quote currency — pass quote_qty")
@@ -1258,7 +1259,7 @@ def place_spot_limit_order(env, symbol, side, base_qty, price, client_order_id=N
         "timeInForce": "PostOnly" if post_only else "GTC",
     }
     if client_order_id:
-        params["newClientOrderId"] = client_order_id  # spot param name (swap uses clientOrderID)
+        params["newClientOrderId"] = client_order_id  # spot param name (swap uses clientOrderId)
     try:
         data = _request("POST", "/openApi/spot/v1/trade/order", env, params)
     except BingXError as e:
