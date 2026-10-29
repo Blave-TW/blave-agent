@@ -228,6 +228,26 @@ rs = first(same)
 t("pid 與建立時間都對得上:照樣是回合裡,別條拿著就拋", "busy" in rs, rs)
 for p in (holder, reused, same):
     p.wait()
+# 建立時間不隨 TZ 變(macOS ps lstart 印本地時間;回合裡的工具常帶用戶時區 TZ,複稽核 Q-P1):真的 ps,在三種 TZ 下對同一個 pid 算
+probe = ("import sys; sys.path.insert(0, %r); from lib import guard; print(guard._proc_started(int(sys.argv[1])))" % ROOT)
+stamps = []
+for tz in (None, "America/New_York", "Asia/Taipei", "UTC"):
+    env = {k: v for k, v in os.environ.items() if k != "TZ"}
+    if tz:
+        env["TZ"] = tz
+    stamps.append(subprocess.run([sys.executable, "-c", probe, str(os.getpid())], env=env, capture_output=True, text=True).stdout.strip())
+t("同一個 pid 的建立時間在不同 TZ 下算出同一個字串(guard 的 ps 固定 TZ=UTC0、LC_ALL=C)", len(set(stamps)) == 1 and stamps[0] not in ("", "None"), stamps)
+t("agent_turn 那份 ps 也固定 TZ=UTC0", '"LC_ALL": "C", "TZ": "UTC0"' in at_src)
+
+# 回合裡 flatten 最壞的等待:回合鎖 + 執行中的單排空 + 快取跟上(一次總預算),要低於 parallel_rule 給 flatten 的 timeout − 15 秒
+sys.path.insert(0, os.path.join(ROOT, "manager"))
+import flatten as FL  # noqa: E402
+m_rule = re.search(r"`manager/flatten\.py`: at least (\d+) ms", at_src)
+worst = wait_s + FL._inflight_wait_s() + FL.TURN_SETTLE_BUDGET_S
+t("回合裡 flatten 最壞等待(%.0f s)< parallel_rule 給 flatten 的 timeout − 15 秒" % worst, bool(m_rule) and worst < int(m_rule.group(1)) / 1000 - 15, (worst, m_rule and m_rule.group(1)))
+t("快取等待在回合裡共用一個總預算(多家不各等 90 秒);daemon 那支照舊每家 90 秒",
+  'settle_end = time.time() + TURN_SETTLE_BUDGET_S if os.environ.get("BLAVE_TURN_INTERRUPT_FILE") else None' in open(os.path.join(ROOT, "manager", "flatten.py"), encoding="utf-8").read()
+  and "wait_s=None if settle_end is None else max(0.0, settle_end - time.time())" in open(os.path.join(ROOT, "manager", "flatten.py"), encoding="utf-8").read())
 saved = (G._proc_started, os.environ.get("BLAVE_TURN_PID"))
 G._proc_started = lambda pid: None
 os.environ["BLAVE_TURN_PID"] = f"{os.getpid()}:whatever"

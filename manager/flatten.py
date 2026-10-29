@@ -490,6 +490,10 @@ def _wait_for_inflight(timeout_s=30.0, poll_s=1.0, symbol=None):
 # do (a turn's flatten that waited for the turn lock while the 全部平倉 button's flatten closed everything), so
 # a venue with a last-order marker is read only once its snapshot has caught up; past the wait it is not closed.
 SETTLE_WAIT_S = 90.0
+# From an agent turn the wait shares one budget across venues: hold_turn_money (guard.TURN_MONEY_WAIT_S) +
+# in-flight drain (_inflight_wait_s) + this must stay under the timeout parallel_rule asks for manager/flatten.py
+# (tests/check_turn_money_lock.py pins the sum). The 全部平倉 button's flatten (no turn) waits the full 90 s per venue.
+TURN_SETTLE_BUDGET_S = 25.0
 
 
 class _SnapshotLag(RuntimeError):
@@ -707,6 +711,8 @@ def _flatten():
     # False once any venue's positions went unread or unclosable: ledger keys
     # carry no venue, so the stale-entry sweep can't tell that venue's book apart
     sweep_ok = True
+    # one settle-wait budget for the whole run when this is an agent turn (TURN_SETTLE_BUDGET_S); None = per venue
+    settle_end = time.time() + TURN_SETTLE_BUDGET_S if os.environ.get("BLAVE_TURN_INTERRUPT_FILE") else None
     for vid in _venues(env):
         closed_symbols = closed_by.setdefault(vid, set())
         unclosed = unclosed_by.setdefault(vid, set())
@@ -727,7 +733,7 @@ def _flatten():
             continue
         try:
             acct = importlib.import_module(f"lib.account_{vid}")
-            _wait_snapshot_settled(vid, acct)
+            _wait_snapshot_settled(vid, acct, wait_s=None if settle_end is None else max(0.0, settle_end - time.time()))
             months_by_key = _book_months(vid, ledger)
             if months_by_key is not None and _takes(acct.get_positions, "book_months"):
                 # TW futures: only the contract months the book holds are the bot's
@@ -737,8 +743,17 @@ def _flatten():
                 positions = acct.get_positions(env)
         except _SnapshotLag as e:
             logging.error(f"[{vid}] position snapshot has not caught up with the last order: {e} — not closed")
-            _record_order_error("*", vid, "close-all: 部位快取還沒跟上剛才送出的單(剛平過一次?),這一次沒有平這家,"
-                                          f"避免把舊部位再平一次變成反向開倉;稍後再按一次全部平倉 ({e})")
+            # a deliberate skip with positions possibly still open = P1 (.claude/docs/notifications.md,
+            # manual_close_required): the user must hear it; the raw times stay in the log, not in the row
+            keys = ",".join(sorted(ledger)) if ledger else ""
+            if ledger:
+                unclosed |= set(ledger)
+            _record_order_error(keys or "*", vid,
+                                "close-all: 部位快取還沒跟上剛才送出的單,這一次沒有平這家(避免把舊部位再平一次變成反向開倉),"
+                                "請稍後再按一次全部平倉,或到券商下單軟體手動平倉 / positions here were not closed: the "
+                                "position snapshot has not caught up with the order just sent (closing on it again could "
+                                "open the reverse). Press Close all again in a minute, or close at the broker.",
+                                {"kind": "manual_close_required", "symbols": keys, "reason": "snapshot_lag"})
             errors += 1
             sweep_ok = False
             continue

@@ -4488,7 +4488,8 @@ def parallel_rule(sink):
             "order, change order settings, or edit a strategy's files or `manager/portfolio_config.json`, read the "
             "exchange position and those files again — never act on what you read earlier in this turn. Only one "
             "conversation moves money at a time: a close script may wait up to 90 s for another one, so run order and "
-            "close scripts with a command timeout of at least 180000 ms, and if the command comes back while still "
+            "close scripts with a command timeout of at least 180000 ms (`manager/flatten.py`: at least 300000 ms — "
+            "it may also wait for running executions and for the broker's position snapshot), and if the command comes back while still "
             "running, wait for it — never start it a second time. If it says another conversation is placing an order "
             "and nothing was sent, tell the user; do not retry in a loop.\n")
 
@@ -5325,7 +5326,7 @@ def _proc_started(pid):
             with open(f"/proc/{pid}/stat") as f:
                 return f.read().rsplit(")", 1)[1].split()[19]
         out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=5,
-                             env={**os.environ, "LC_ALL": "C"}).stdout   # same text whatever the caller's locale
+                             env={**os.environ, "LC_ALL": "C", "TZ": "UTC0"}).stdout   # lstart prints LOCAL time: pin locale and zone, or a turn script with another TZ reads a different stamp
         return " ".join(out.split()) or None
     except Exception:
         return None

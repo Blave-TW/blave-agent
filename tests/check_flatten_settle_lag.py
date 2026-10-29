@@ -107,9 +107,20 @@ t("帳戶 lib 沒有 get_query_started_at(舊 lib):不擋", wait("capital", obje
 src = open(os.path.join(ROOT, "manager", "flatten.py"), encoding="utf-8").read()
 body = src[src.index("def _flatten():"):src.index('\nif __name__ == "__main__":')]
 t("_flatten:每家先 _wait_snapshot_settled 才讀部位;沒跟上 → 記一列、這家不平、照平下一家",
-  body.index("_wait_snapshot_settled(vid, acct)") < body.index("acct.get_positions(env")
+  body.index("_wait_snapshot_settled(vid, acct, wait_s=") < body.index("acct.get_positions(env")
   and "except _SnapshotLag as e:" in body and body.index("except _SnapshotLag as e:") < body.index("except Exception as e:\n            logging.error(f\"[{vid}] get_positions failed"))
 lag_blk = body[body.index("except _SnapshotLag as e:"):body.index("except Exception as e:\n            logging.error(f\"[{vid}] get_positions failed")]
 t("…那一列講清楚為什麼沒平(避免把舊部位再平一次變成反向開倉),整輪算有錯、不清帳本", "反向開倉" in lag_blk and "errors += 1" in lag_blk and "sweep_ok = False" in lag_blk and "continue" in lag_blk)
+t("…那一列帶 kind manual_close_required(P1,notifications canon)、symbols 是這家帳本的 key、reason snapshot_lag;這家帳本的 key 進 unclosed",
+  '{"kind": "manual_close_required", "symbols": keys, "reason": "snapshot_lag"}' in lag_blk and 'keys = ",".join(sorted(ledger)) if ledger else ""' in lag_blk
+  and "unclosed |= set(ledger)" in lag_blk)
+import re  # noqa: E402
+msg = re.search(r'"close-all: 部位快取[\s\S]*?close at the broker\."', lag_blk)
+t("…給用戶看的字中英都有、沒有 epoch 原始數字(數字只在 log)", bool(msg) and "positions here were not closed" in msg.group(0) and not re.search(r"\d{6,}|\{e\}", msg.group(0)), msg and msg.group(0)[:80])
+a0 = Acct([now - 5])
+capital_vault.last_order_at = lambda: now
+t0 = time.time()
+t("回合裡總預算用完(wait_s=0):看一眼就放棄,不再等", wait("capital", a0, wait_s=0).startswith("lag:") and time.time() - t0 < 0.3)
+capital_vault.last_order_at = real_last
 print(("\n%d 紅" % red) if red else "\nALL PASS")
 sys.exit(1 if red else 0)

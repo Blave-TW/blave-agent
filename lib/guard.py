@@ -542,7 +542,7 @@ def _proc_started(pid):
                 return f.read().rsplit(")", 1)[1].split()[19]
         import subprocess
         out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=5,
-                             env={**os.environ, "LC_ALL": "C"}).stdout   # same text whatever the caller's locale
+                             env={**os.environ, "LC_ALL": "C", "TZ": "UTC0"}).stdout   # lstart prints LOCAL time: pin locale and zone, or a turn script with another TZ reads a different stamp
         return " ".join(out.split()) or None
     except Exception:
         return None
