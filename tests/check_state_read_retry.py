@@ -219,6 +219,7 @@ EXEMPT = [
     ('manager/manager.py', 'load_json', 'path',
      'helper', "the retry helper's own open, or the half-updated-workspace fallback"),
     ('manager/reconciler.py', '_load_outage', 'OUTAGE_PATH', 'own', "the reconciler's own outage record"),
+    ('manager/flatten.py', '_load_json', 'path', 'helper', 'half-updated fallback (lib/winreplace without load_json)'),
     ('manager/reconciler.py', 'load_json', 'path',
      'helper', "the retry helper's own open, or the half-updated-workspace fallback"),
     ('manager/stop_strategy.py', 'halt_scopes', 'p', 'code', 'strategy sources scanned for scope names'),

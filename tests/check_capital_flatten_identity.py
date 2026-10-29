@@ -276,6 +276,35 @@ EXTRA_ENV.clear()
 run_flatten(True, BOOK, capital={"": {"side": "long", "size": 1}})
 check("ETHUSDT" not in zeroed and "BTCUSDT" in zeroed, "nameless position row → no sweep")
 
+# ── lots parked by the reconciler (sent, no fill report): that root is left out, book and all ──
+# A close sent while lots are parked moves the nets the claim compares against: it would be
+# read as the parked order's fill (a phantom book) or hide the real one (v035 P2-1).
+PARK = os.path.join(BASE, "capital_pending_sent.json")
+real_park_files = dict(flatten._PARK_FILES)
+flatten._PARK_FILES[flatten.venue_traits.CAPITAL] = (PARK, "群益", "群益下單軟體")
+json.dump({"TMF": {"root": "TMF", "lots": -1.0, "expected": {"TM2610": 2.0}}}, open(PARK, "w"))
+res = run_flatten(True, BOOK, capital={"TM2610": {"side": "long", "size": 2}, "TX2610": {"side": "long", "size": 1}})
+parked_rows = [e for e in errors if (e[3] or {}).get("kind") == "order_unconfirmed"]
+check(("capital", "TM2610") not in closes and "TMF" not in zeroed and "TMF" not in logged,
+      f"TMF parked: not closed, its book not zeroed ({closes}, {sorted(zeroed)})")
+check(("binance", "BTCUSDT") in closes and "BTCUSDT" in zeroed, "…the rest of the run still closes")
+check(len(parked_rows) == 1 and parked_rows[0][0] == "TMF" and parked_rows[0][3].get("close_all") is True
+      and res is False, f"…one order_unconfirmed close_all row for TMF ({errors})")
+BOOK_TXF = dict(BOOK, TXF={"side": "long", "size": 1.0, "qty": 1.0})
+run_flatten(True, BOOK_TXF, capital={"TM2610": {"side": "long", "size": 2}, "TX2610": {"side": "long", "size": 1}})
+check(("capital", "TX2610") in closes and "TXF" in zeroed and ("capital", "TM2610") not in closes,
+      f"…another root of the same venue closes as usual ({closes}, {sorted(zeroed)})")
+open(PARK, "w").write("{not json")
+run_flatten(True, BOOK_TXF, capital={"TM2610": {"side": "long", "size": 2}, "TX2610": {"side": "long", "size": 1}})
+check(not [c for c in closes if c[0] == "capital"] and "TMF" not in zeroed and "TXF" not in zeroed
+      and [e[:2] for e in errors if e[1] == "capital"] == [("*", "capital")],
+      f"park file unreadable: no 群益 close, no 群益 book zeroed, one row ({closes}, {sorted(zeroed)}, {errors})")
+os.remove(PARK)
+run_flatten(True, BOOK)
+check(("capital", "TM2610") in closes and "TMF" in zeroed and not errors, "nothing parked: TMF closes as before")
+flatten._PARK_FILES.clear()
+flatten._PARK_FILES.update(real_park_files)
+
 # ── the real identity checks ─────────────────────────────────────────────────
 if os.name != "nt":
     check(REAL_FLATTEN_ID() is False and REAL_REPORTER_ID() is False,

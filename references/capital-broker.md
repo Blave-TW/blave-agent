@@ -635,7 +635,7 @@ Same mechanism for futures and stocks: call `reply.SKReplyLib_ConnectByID(env['c
 TC odd-lot), 0-based:
 
 - 0 委託序號 KeyNo 13碼 — **empty on futures `D` rows** (present on stock `D` rows); the
-  reliable copy for ALL rows is index 45 (second-to-last field)
+  seq is also carried further right, but its column depends on the component version (below)
 - 1 market (`TF` futures / `TS` stock / `TC` 盤中零股), 2 type (`N`委託 `D`成交 `C`取消
   `P`改價 `S`動態退單), 3 error flag (`N` ok)
 - 4 branch, 5 account, 6 order-kind code (futures `BNI10`/`SOI10` = buy-new/sell-offset IOC;
@@ -647,12 +647,20 @@ TC odd-lot), 0-based:
   (stock `N` rows)
 - 23 date, 24 time (HH:MM:SS), 30 exchange seq (`1010/2110...`=委託, `1020/2120...`=成交),
   32/33 futures: series+month (`FITM`,`202608`), 38 成交編號 (`D` rows only),
-  45 KeyNo, 46 time with milliseconds
+  45 KeyNo, 46 time with milliseconds (as seen on 2.13.58)
+
+**The seq column moves between component versions — match it by value, never by index.** On
+2.13.58 (8/14) the 13-digit seq sat at idx45. The V2.13.59 manual lists SeqNo at idx47 (45/46 =
+CancelOrderMarkByExchange / ExchangeTandemMsg), then OFSTPFlag, then a new Timefff field, and the
+2.13.59 changelog also says 「修正index不一致問題」. Every desktop order on 2.13.59 (10-27, 10-28)
+filled with no fill report matched by idx45. `lib/order_capital` now books a `D` row under every
+13-digit numeric field it carries. The live 2.13.59 column is still unconfirmed; so is how the
+2.13.58 row had a millisecond time at idx46 when the manual only adds Timefff in 2.13.59.
 
 **Two consumer-side rules (both live-observed):** ① `SKReplyLib_ConnectByID` **replays every
 report from the whole session day** on each connect — a fresh process re-receives this morning's
 fills; ② stock (`TS`) reports arrived **duplicated** (same row delivered twice back-to-back).
-Any consumer MUST dedupe on (KeyNo idx45, type idx2, exchange seq idx30) before acting.
+Any consumer MUST dedupe on (the row's 13-digit seq, type idx2, exchange seq idx30) before acting.
 
 ---
 
@@ -702,6 +710,49 @@ still go out on the near-month alias (a far-month close during a roll can open t
 known, accepted). 群益 gives no contract list here, so a book month past its settlement time
 (third Wednesday 13:30) counts as cash-settled once the account has no row of it on two reads ≥5 s
 apart; a row still held past that time is a postponed settlement and stays the bot's.
+
+**An order with no fill report is parked, not forgotten** (`manager/reconciler.py`
+`_capital_park_unfilled` / `_capital_claim_pending`). `status='sent'` (or a short fill) carries only
+the alias, so the book gets 0 and the lot would later read as a month the book does not hold. The
+unfilled lots are parked in `state/capital_pending_sent.json` with the root's per-contract nets and
+avg costs before the send; no P1 goes out at that moment. Each caught-up snapshot of a reconcile
+round tries to claim them, with months past settlement left out of the comparison. Positions and
+`query_started_at` come from one read of the snapshot (`account_capital.read_positions`):
+- exactly one contract moved by exactly those lots → booked in that contract (`late_fill_adopted`)
+  under the row's park id (`late_fill_park_id` on the orders.jsonl line), then the row is dropped. A
+  row whose id is already in the book is dropped without booking, so a refused save or a kill between
+  the two steps never books it twice; a booking failure (book unreadable, append refused) is
+  order_errors + HALT with the row kept, so it is booked once after resume. It carries the price the avg cost implies when
+  lots were added on the same side and nothing of that order filled at send time, and one late fill
+  notice in the machine's language (the user's `messages` template for the first part);
+- nothing moved on two distinct reads at least one worker poll (60 s) apart → dropped
+  (`unfilled_order_cleared`); one read is not enough, the open interest may still be catching up.
+  Three of those in a row for one root (no fill in between) → order_errors + HALT
+  (`unfilled_order_cleared_repeatedly`): an exchange-side rejection the fill report never shows
+  would otherwise loop send → clear → send unseen;
+- anything else → three reads, then order_errors + HALT.
+
+A fill report of more lots than were sent is not booked: the order is parked as unconfirmed (0 filled) so the
+snapshot claims what really filled, plus order_errors + HALT (`order_overfill_refused`); the message asks the
+user to check the 群益 app and close any extra lots before resuming.
+
+While a root is parked, every order for that root waits (closes too: `sNewClose=2` can open the other
+side). If the park file cannot be written or read right after the broker accepted the order, the
+lots are kept in that process and HALT is tripped with the sequence number (a restart would forget
+them). 全部平倉 leaves a parked root out entirely — its book lots too, and every 群益 root when the
+park file is unreadable: a close sent now would move the nets the claim compares against and be read
+as the parked order's fill (a phantom book) or hide the real one. One order_errors row
+(`kind: order_unconfirmed`, `close_all`) tells the user to press 全部平倉 again once the claim has
+settled it, or close in the 群益 app.
+
+**The claim baseline is the whole root, every month.** 群益 says which month the alias reached only
+through what moved, so narrowing to the computed front month would read a fill that landed elsewhere
+(roll day) as "not filled" and send it again. The cost: a manual order in ANY month of that root while
+lots are parked makes the claim fail (HALT after three reads), and a manual ±lots in one month is
+adopted as the bot's fill. A fill adopted outside the front month at send time is audited
+(`late_fill_month_unexpected`). Measure on a live run: send time, the lib's status, and each
+snapshot's `query_started_at` with its TM rows — how late `GetOpenInterest` shows a fill is not known.
+
 **Unverified:** whether `GetOpenInterest` keeps a settled month's row after cash settlement (統一
 does; if 群益 does too, the book keeps that month as held and the strategy does not re-enter —
 check on the first real settlement day, 2026-10-21).

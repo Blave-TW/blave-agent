@@ -215,6 +215,54 @@ def _book_key(vid, sym):
     return sym
 
 
+def _load_json(path, **open_kw):
+    try:
+        from lib.winreplace import load_json
+    except ImportError:  # half-updated workspace: no read retry
+        with open(path, **open_kw) as f:
+            return json.load(f)
+    return load_json(path, **open_kw)
+
+
+# manager/reconciler PENDING_SENT_PATH / CAPITAL_PENDING_PATH: lots sent with no fill
+# report yet, which the book does not hold until the reconciler's claim books them
+_PARK_FILES = {venue_traits.PRESIDENT: ("state/president_pending_sent.json", "統一", "統一 app"),
+               venue_traits.CAPITAL: ("state/capital_pending_sent.json", "群益", "群益下單軟體")}
+
+
+def _parked_keys(vid):
+    """Book keys of `vid` with lots parked by the reconciler (sent, no fill report yet):
+    set() = none, None = the park file is there but unreadable (any key may be parked).
+
+    Those keys are left out of 全部平倉, book included. The claim matches the account
+    against the nets from before the parked send; a close sent here moves those nets,
+    so it would be read as the parked order's fill (a phantom book) or hide the real
+    one. The reconciler claims or clears the park within a read or two; the user is
+    told to press 全部平倉 again after that. One order_errors row per venue (P1)."""
+    spec = _PARK_FILES.get(vid)
+    if not spec:
+        return set()
+    path, name, app = spec
+    try:
+        rows = _load_json(path, encoding="utf-8")
+    except FileNotFoundError:
+        return set()
+    except (OSError, ValueError):
+        rows = None
+    if isinstance(rows, dict) and not rows:
+        return set()
+    roots = ({str(r.get("root")) for r in rows.values() if isinstance(r, dict) and r.get("root")}
+             if isinstance(rows, dict) else None)
+    keys = ",".join(sorted(roots)) if roots else "*"
+    what = f"{name} {keys}" if roots else f"{name}的期貨部位"
+    logging.error(f"[{vid}] {keys}: lots sent with no fill report are parked — left out of close-all")
+    _record_order_error(keys, vid, f"close-all: {what} 有單還沒收到成交回報。這次全部平倉先不平它，"
+                                   f"帳本也不動。等對帳確認那筆有沒有成交。之後再按一次全部平倉，"
+                                   f"或到{app}手動平倉。",
+                        extra={"kind": "order_unconfirmed", "stuck": True, "close_all": True})
+    return roots
+
+
 def _read_env(path=".env"):
     from lib.venue_wiring import read_env
     return read_env(path)
@@ -637,6 +685,13 @@ def _flatten():
         ledger, spot_book = _venue_book(vid)
         if ledger:
             swept_by[vid] = set(ledger)
+        parked = _parked_keys(vid)
+        if parked is None or parked:
+            errors += 1
+            # kept out of the end-of-run zeroing too: an emptied book is a move the claim reads
+            unclosed |= set(ledger or ()) if parked is None else parked
+            if parked is None:
+                continue
         has_account = os.path.isfile(f"lib/account_{vid}.py")
         has_order = os.path.isfile(f"lib/order_{vid}.py")
         if not has_account:
@@ -723,6 +778,9 @@ def _flatten():
             try:
                 sym = (p.get("symbol") or "").replace("-", "").upper()
                 key = _book_key(vid, sym)
+                if key in parked:
+                    logging.info(f"[{vid}] {sym}: lots parked on {key} — not closed this run")
+                    continue
                 side, size = p.get("side"), float(p.get("size", 0))
                 if not sym or side not in ("long", "short") or size <= 0:
                     logging.error(f"[{vid}] unflattenable row skipped: {p!r:.120}")

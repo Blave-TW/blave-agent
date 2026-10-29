@@ -100,7 +100,10 @@ def get_positions(env: dict) -> dict:
     of the net. unrealized_pnl, margin, leverage are None — GetOpenInterest
     has no PnL (the worker has no quote feed), margin is account-level only
     (get_equity), and TW futures have no leverage setting."""
-    snap = _read_snapshot()
+    return _positions_of(_read_snapshot())
+
+
+def _positions_of(snap):
     net, sides, cost = {}, {}, {}
     for p in snap.get("positions", []):
         lots = p.get("lots", 0.0) or 0.0
@@ -143,9 +146,20 @@ def get_query_started_at() -> float:
     older than this field falls back to read_at: nothing restarts the
     blave-agent-capital service on a workspace update, and refusing those
     snapshots would pause every running 群益 machine until someone does."""
-    snap = _read_snapshot()
+    return _started_of(_read_snapshot())
+
+
+def _started_of(snap):
     q = snap.get("query_started_at")
     return float(q if q else snap["read_at"])
+
+
+def read_positions(env=None):
+    """(get_positions(), get_query_started_at()) from ONE read of the snapshot: two
+    reads can straddle a worker write and pair an old snapshot's positions with the
+    new one's start time — a read the reconciler would take as caught up."""
+    snap = _read_snapshot()
+    return _positions_of(snap), _started_of(snap)
 
 
 def get_holdings(env: dict) -> list:

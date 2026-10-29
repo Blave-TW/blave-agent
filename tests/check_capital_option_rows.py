@@ -64,6 +64,7 @@ acct.get_query_started_at = lambda: 1e12
 RAW = {s: {"side": "long", "size": 3.0} for s in OPTIONS}
 RAW.update({"TM2608": {"side": "short", "size": 1.0}, "MTX2610": {"side": "long", "size": 2.0}})
 acct.get_positions = lambda env: RAW
+acct.read_positions = lambda env=None: (RAW, 1e12)
 sys.modules["lib.account_capital"] = acct
 got = reconciler._capital_get_positions()
 check(set(got) == {"TMF", "MXF"}, f"positions keep futures only: {sorted(got)}")

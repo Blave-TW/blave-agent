@@ -32,14 +32,15 @@ futures round trip, whole-lot + intraday odd-lot stock fills). Design rules:
    qty is raw shares (1–999). All prices/amounts are TWD.
 3. SENT ≠ FILLED. ncode 0 + a 13-digit sequence number means the broker
    ACCEPTED the order. Fill confirmation arrives async via OnNewData `D` rows
-   matched on our sequence number (idx 45 — idx 0 is empty on futures D
-   rows). Confirmation timeout returns status 'sent', not an error: a resting
-   ROD limit order is normal, and futures IOC may still have filled — query
+   matched on our sequence number by value (its column moved between SKCOM
+   2.13.58 and 2.13.59 — idx 0 is empty on futures D rows). Confirmation
+   timeout returns status 'sent', not an error: a resting ROD limit order is
+   normal, and futures IOC may still have filled — query
    reports before resubmitting.
 4. REPORT REPLAY + DUPLICATES. SKReplyLib_ConnectByID replays every report
    of the session day on each connect, and TS rows arrive duplicated —
-   every OnNewData row is deduped on (KeyNo idx45, type idx2, exchange seq
-   idx30) before use.
+   every OnNewData row is deduped on (its 13-digit seqs, type idx2, exchange
+   seq idx30) before use.
 5. ALIAS vs RESOLVED CODE. Orders are sent with the near-month alias
    (TM0000), but every report/position carries the RESOLVED contract
    (e.g. TM2608) — reconcile on the resolved code, never the alias.
@@ -139,11 +140,45 @@ class _Events:
     def __init__(self):
         self.futures_accounts = []
         self.stock_accounts = []
-        self.seen = set()   # (KeyNo idx45, type idx2, exchange seq idx30)
+        self.seen = set()   # (13-digit seqs in the row, type idx2, exchange seq idx30)
         self.fills = {}     # seq_no -> [fill dicts]
+        self.reply_code = None       # SKReplyLib OnConnect nErrorCode; None = no callback (yet)
+        self.reply_complete = False  # SKReplyLib OnComplete seen
+        self.login_thread = None
+        # what reached OnNewData, for the 'sent' log: no rows at all and rows that carry no
+        # 13-digit seq are different faults
+        self.rows = self.short_rows = self.d_rows = self.d_no_seq = self.d_unfit = 0
+        self.d_shapes = set()   # (field count, indexes holding a 13-digit seq) per D row
+        self.solace = None      # last OnSolaceReplyConnection / OnSolaceReplyDisconnect
+
+    # SKReplyLib link state (_ISKReplyLibEvents dispid 1/2/3, read from the SKCOM
+    # typelib); _ISKOrderLibEvents has no event of these names, so the shared sink
+    # only ever gets them from the reply lib. Logged only: whether a missing fill
+    # report lines up with a link that was not up yet is what the next live run measures.
+    def OnConnect(self, bstrUserID, nErrorCode):
+        self.reply_code = nErrorCode
+        logging.info(f"capital reply OnConnect code={nErrorCode}")
+
+    def OnDisconnect(self, bstrUserID, nErrorCode):
+        self.reply_code, self.reply_complete = None, False
+        logging.warning(f"capital reply OnDisconnect code={nErrorCode}")
+
+    def OnComplete(self, bstrUserID):
+        self.reply_complete = True
+        logging.info("capital reply OnComplete")
 
     def OnReplyMessage(self, bstrUserID, bstrMessages):
         return -1  # MUST return -1, registered BEFORE login (else code 2017)
+
+    # manual 4-3-a: from v2.13.48 the reply link reports through these, not OnConnect/OnDisconnect
+    def OnSolaceReplyConnection(self, bstrUserID, nErrorCode):
+        self.solace = f"connect:{nErrorCode}"
+        logging.info(f"capital reply OnSolaceReplyConnection code={nErrorCode}")
+
+    def OnSolaceReplyDisconnect(self, bstrUserID, nErrorCode):
+        self.solace = f"disconnect:{nErrorCode}"
+        self.reply_complete = False
+        logging.warning(f"capital reply OnSolaceReplyDisconnect code={nErrorCode}")
 
     def OnAccount(self, bstrLogInID, bstrAccountData):
         f = bstrAccountData.split(",")
@@ -154,21 +189,53 @@ class _Events:
             self.stock_accounts.append(acct)
 
     def OnNewData(self, bstrUserID, bstrData):
+        self.rows += 1
         f = bstrData.split(",")
         if len(f) < 46:
+            self.short_rows += 1
             return
-        key = (f[45], f[2], f[30])
+        # The seq SendFutureOrderCLR/SendStockOrder returned sits at idx45 in the 2.13.58 rows
+        # pinned 8/14, while the manual puts SeqNo at idx47 and 2.13.59 appended Timefff after
+        # it — match it by value so a layout change cannot drop every fill report silently.
+        at = tuple(i for i, x in enumerate(f) if len(x) == 13 and x.isdigit())
+        seqs = tuple(sorted({f[i] for i in at}))
+        key = (seqs, f[2], f[30])
         if key in self.seen:  # session-day replay + duplicated TS rows
             return
         self.seen.add(key)
-        if f[2] == "D" and f[45]:
-            self.fills.setdefault(f[45], []).append({
-                "market": f[1],                                   # TF / TS / TC
-                "symbol": f[8],                                   # RESOLVED contract / ticker
-                "price": float(f[11]) if f[11] else 0.0,
-                "qty": float(f[20]) if f[20] else 0.0,            # lots (TF) / SHARES (TS, TC)
-                "fill_id": f[38],                                 # 成交編號
-            })
+        if f[2] != "D":
+            return
+        self.d_rows += 1
+        self.d_shapes.add((len(f), at))
+        if not seqs:
+            self.d_no_seq += 1
+        # columns 8/11/20 are pinned on 2.13.58 only: a row they do not fit is not booked, the
+        # order stays unconfirmed and the reconciler parks it instead of booking a wrong fill
+        try:
+            price, qty = float(f[11] or 0), float(f[20] or 0)
+        except ValueError:
+            price = qty = 0.0
+        if qty <= 0 or (f[1] == "TF" and not CAPITAL_FUT_RE.match(f[8])):
+            self.d_unfit += 1
+            logging.warning(f"capital fill row not booked: {f[1]} fields={len(f)} seq_at={list(at)} "
+                            "— contract/qty columns do not fit")
+            return
+        logging.info(f"capital fill row: {f[1]} {f[8]} fields={len(f)} seq_at={list(at)}")
+        fill = {
+            "market": f[1],                                   # TF / TS / TC
+            "symbol": f[8],                                   # RESOLVED contract / ticker
+            "price": price,
+            "qty": qty,                                       # lots (TF) / SHARES (TS, TC)
+            "fill_id": f[38],                                 # 成交編號
+        }
+        for seq in seqs:
+            self.fills.setdefault(seq, []).append(fill)
+
+    def diag(self):
+        return (f"rows={self.rows} short={self.short_rows} fill_rows={self.d_rows} "
+                f"fill_rows_without_seq={self.d_no_seq} fill_rows_unfit={self.d_unfit} fill_shapes={sorted(self.d_shapes)} "
+                f"solace={self.solace} reply_code={self.reply_code} complete={self.reply_complete} "
+                f"same_thread={self.login_thread == threading.get_ident()}")
 
 
 class _Session:
@@ -218,6 +285,9 @@ def _get_session(env):
 # anything, stops included, until it restarts — more attempts during an outage only bring that
 # closer, to save at most 2 min.
 RELOGIN_BACKOFF_S, RELOGIN_BACKOFF_MAX_S = 30, 120
+# login waits this long for the reply link (OnComplete) before sending anyway;
+# flatten logs in too, so the user's close-all pays it once
+REPLY_READY_S = 8
 _relogin = {"n": 0, "until": 0.0, "loaded": False}
 # The backoff outlives the process on the desktop: after 9997 the reconciler exits for a fresh one
 # (restart_needed), and that one must not log in again the moment it starts. Same __file__-derived
@@ -316,6 +386,7 @@ def _new_session(env):
     reply = comtypes.client.CreateObject(sk.SKReplyLib, interface=sk.ISKReplyLib)
     order = comtypes.client.CreateObject(sk.SKOrderLib, interface=sk.ISKOrderLib)
     events = _Events()
+    events.login_thread = threading.get_ident()  # COM events only reach the thread that pumps
     conns = [comtypes.client.GetEvents(reply, events),
              comtypes.client.GetEvents(order, events)]
 
@@ -354,6 +425,19 @@ def _new_session(env):
     # in _Events). 0 = success.
     if (rc := reply.SKReplyLib_ConnectByID(login_id)) != 0:
         raise CapitalError(f"SKReplyLib_ConnectByID code={rc}")
+    # rc 0 = the request went out, not that the link is up. Wait a little for
+    # OnComplete, then send anyway: nothing has shown yet that it always fires,
+    # and an order whose report never comes is parked by the reconciler.
+    t0 = time.time()
+    if _pump_until(lambda: events.reply_complete, REPLY_READY_S):
+        logging.info(f"capital reply ready in {time.time() - t0:.1f}s (code={events.reply_code})")
+    else:
+        try:
+            linked = reply.SKReplyLib_IsConnectedByID(login_id)
+        except Exception as e:
+            linked = f"{type(e).__name__}"
+        logging.warning(f"capital reply not complete after {REPLY_READY_S}s (code={events.reply_code}, "
+                        f"IsConnectedByID={linked}) — sending anyway")
 
     s = _Session()
     s.center, s.reply, s.order, s.events = center, reply, order, events
@@ -439,6 +523,13 @@ def _await_fill(sess, seq_no, sent_symbol, timeout):
             "market": rows[0]["market"]}
 
 
+def _diag(sess):
+    try:  # a log line must never fail an order the broker already accepted
+        return sess.events.diag()
+    except Exception as e:
+        return type(e).__name__
+
+
 def _finish(sess, seq_no, symbol, timeout, fields):
     result = _await_fill(sess, seq_no, symbol, timeout)
     if result["status"] == "filled":
@@ -448,7 +539,8 @@ def _finish(sess, seq_no, symbol, timeout, fields):
         _request_snapshot_refresh()  # fill may land after the send-time tick
     logging.info(
         f"capital {fields['action']} {symbol} {fields['qty']} {fields['unit']} → "
-        f"{result['status']} filled={result['fill_qty']} avg={result['avg_fill_price']:.2f}")
+        f"{result['status']} filled={result['fill_qty']} avg={result['avg_fill_price']:.2f}"
+        + ("" if result["status"] == "filled" else f" — reports {_diag(sess)}"))
     return result
 
 
@@ -483,6 +575,9 @@ def _late_rows(sess, r, want, fields):
         guard.audit("order_filled", seq_no=r["seq_no"], fill_qty=qty, avg_fill_price=r["avg_fill_price"],
                     resolved_symbol=r["symbol"], late=True, **fields)
         _request_snapshot_refresh()
+    if qty < want:
+        logging.warning(f"capital {r['seq_no']}: {qty:g}/{want} confirmed after the late wait — "
+                        f"reports {_diag(sess)}")
     return r
 
 

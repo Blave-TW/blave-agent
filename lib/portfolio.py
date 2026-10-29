@@ -2139,35 +2139,74 @@ def settle_expired_months(actual, venue=_CURRENT, now=None):
     return changed
 
 
-def book_late_fill(symbol, venue, contract, lots, park_id=None):
+def book_late_fill(symbol, venue, contract, lots, price=None, park_id=None):
     """One orders.jsonl line for `lots` (signed) of `symbol` in `contract` that
     the venue confirmed only after the order call had returned without the fill
-    (統一 'sent' / 'unknown' — manager/reconciler._president_claim_pending). The
+    (統一 'sent' / 'unknown', 群益 'sent' — manager/reconciler's claims). The
     usual replay (_ledger_walk) books it and takes its month from `contract`, so
     the trade history and the book stay one source; a guess row stays a guess.
-    No fill price: none was reported.
+    `price`: what the venue's avg cost implies (群益), history only — the lots
+    book costs lots; None = not reported.
 
     `park_id` makes it idempotent, the way book_unconfirmed is: an id already in
-    the book is not written again (False), and the line is appended strictly, so
-    any failure — the book unreadable, the append refused — raises and the caller
-    keeps its park row for the next round. Returns True when the line was written.
-    Without `park_id` (an older caller): not idempotent, a failed append only HALTs."""
+    the book is not written again (returns None), and the line is appended
+    strictly, so any failure — the book unreadable, the append refused — raises
+    and the caller keeps its park row for the next round. Without `park_id` (an
+    older caller): not idempotent, a failed append only HALTs.
+    Returns the late-fill notice (late_fill_notice) when the line was written."""
     venue = _resolve_venue(venue)
     lots = float(lots)
     if park_id is not None and late_fill_booked(park_id):
         logging.info(f"[reconcile] late fill {symbol} {park_id} already in the book — not booked again")
-        return False
+        return None
     held = (ledger_book(venue).get(symbol) or {}).get('qty') or 0.0
+    reduce_only = held * lots < 0
     _append_reconciler_log({'action': 'BUY' if lots > 0 else 'SELL', 'symbol': symbol,
                             'signed_diff': lots, 'exchange': venue, 'late_fill': True,
                             'contributors': [],
-                            'legs': [{'signed_diff': lots, 'reduce_only': held * lots < 0,
+                            'legs': [{'signed_diff': lots, 'reduce_only': reduce_only,
                                       'signed_qty': lots, 'executed_qty': abs(lots),
-                                      'resolved_symbol': contract}],
+                                      'resolved_symbol': contract,
+                                      **({'fill_price': float(price)} if price else {})}],
                             **({'late_fill_park_id': park_id} if park_id is not None else {})},
                            strict=park_id is not None)
-    return True
+    # the line is written: a notice that fails to build must not read as a booking failure
+    try:
+        return late_fill_notice(symbol, lots, reduce_only, price)
+    except Exception as e:
+        logging.warning(f"[reconcile] late fill notice for {symbol} not built ({type(e).__name__}: {e})")
+        return None
 
+
+# Defaults per machine language for a fill booked after the order call returned without it;
+# the user's own reconcile templates (portfolio_config "messages", same keys as a normal fill)
+# win for the first part, the late marker is always added.
+_LATE_FILL_TG = {
+    'order_buy':         {'zh': '📈 買進 {symbol} {amount:g} 口', 'cn': '📈 买进 {symbol} {amount:g} 口',
+                          'en': '📈 Bought {symbol} {amount:g} lots'},
+    'order_sell':        {'zh': '📉 賣出 {symbol} {amount:g} 口', 'cn': '📉 卖出 {symbol} {amount:g} 口',
+                          'en': '📉 Sold {symbol} {amount:g} lots'},
+    'order_close_long':  {'zh': '📉 平掉多單 {symbol} {amount:g} 口', 'cn': '📉 平掉多单 {symbol} {amount:g} 口',
+                          'en': '📉 Closed long {symbol} {amount:g} lots'},
+    'order_close_short': {'zh': '📈 平掉空單 {symbol} {amount:g} 口', 'cn': '📈 平掉空单 {symbol} {amount:g} 口',
+                          'en': '📈 Closed short {symbol} {amount:g} lots'},
+}
+_LATE_FILL_MARK = {'zh': '(成交回報晚到)', 'cn': '(成交回报晚到)', 'en': ' (fill report came late)'}
+
+
+def late_fill_notice(symbol, lots, reduce_only, price=None):
+    if reduce_only:
+        key = 'order_close_long' if lots < 0 else 'order_close_short'
+    else:
+        key = 'order_buy' if lots > 0 else 'order_sell'
+    lang = _machine_lang()
+    default = _LATE_FILL_TG[key][lang]
+    kw = {'symbol': symbol, 'amount': abs(float(lots))}
+    try:
+        text = (load_portfolio_config().get('messages') or {}).get(key, default).format(**kw)
+    except (KeyError, ValueError, IndexError, OSError, AttributeError):
+        text = default.format(**kw)
+    return text + (f" @ {float(price):,.0f}" if price else "") + _LATE_FILL_MARK[lang]
 
 def _rebase_ledger_symbol(symbol, venue, months, qty=None):
     """One symbol's book restarts now at `months` ({} = flat) — a lots row,
@@ -4827,7 +4866,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
             filled = abs(leg['signed_diff'])
             log_dir = 'BUY' if sub_diff > 0 else 'SELL'
             logging.info(f"{log_dir}{'(reduce)' if reduce_only else ''} {symbol} {filled:.2f}")
-            notices.append((key, default, {'symbol': symbol, 'amount': filled}))
+            if filled > 0:  # an unconfirmed leg ('sent', 0) is no fill; the reconciler's claim (群益, 統一) announces it
+                notices.append((key, default, {'symbol': symbol, 'amount': filled}))
 
         _flush_legs()
         if marked and not keep_marker:
