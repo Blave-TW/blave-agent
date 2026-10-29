@@ -4412,8 +4412,8 @@ def local_mcp_config(sink, mcp_config):
 def handoff_folder(session_id):
     """這一輪雲端交接的子資料夾名(references/cloud-handoff.md 的 `<turn>`,`tmp/cloud-handoff/<turn>/`)。
     電腦版多條對話會同時跑(0.1.37),共用一個固定資料夾時 A 收尾會刪掉 B 的金鑰;同一條對話一次一輪,所以用對話 id。
-    形狀不合的退回固定字:這個值會被 agent 貼進命令列。"""
-    return session_id if isinstance(session_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", session_id) else "turn"
+    形狀不合的退回固定字:這個值會被 agent 貼進命令列,也是 get_ssh_access 的 handoff_dir(api 只收 1–32 字,ControlPath 的 socket 長度)。"""
+    return session_id if isinstance(session_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,32}", session_id) else "turn"
 
 
 def mcp_rule(mounted, session_id=None):

@@ -107,7 +107,7 @@ t("並行:舊版留在 cloud-handoff/ 底下的檔一起清", not os.path.lexist
 at._remove_cloud_handoff_dir(WS, "desktop-bbbb2222")
 t("最後一條收尾:cloud-handoff/ 空了就拿掉", not os.path.lexists(HANDOFF))
 t("子資料夾名就是對話 id;怪字退回固定字(會被貼進命令列)",
-  at.handoff_folder("desktop-ab12cd34") == "desktop-ab12cd34" and at.handoff_folder("../x") == "turn" and at.handoff_folder(None) == "turn")
+  at.handoff_folder("desktop-ab12cd34") == "desktop-ab12cd34" and at.handoff_folder("../x") == "turn" and at.handoff_folder(None) == "turn" and at.handoff_folder("d" * 33) == "turn" and at.handoff_folder("d" * 32) == "d" * 32)
 rule = at.mcp_rule(True, "desktop-ab12cd34")
 t("mcp_rule 寫明這一輪的資料夾、get_ssh_access 帶 handoff_dir、別碰別條的",
   "`tmp/cloud-handoff/desktop-ab12cd34/`" in rule and "`handoff_dir` = `desktop-ab12cd34`" in rule and "never touch those" in rule)
