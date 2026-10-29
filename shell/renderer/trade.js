@@ -5161,6 +5161,7 @@ function trEvNote(key, vars) {
 const trEvNum = (x) => (typeof x === "number" && isFinite(x) ? String(Math.round(x * 100) / 100) : null);
 /* 機器／平台事件 → [標題, 後果註解, 級別, 註解的 tooltip, 代號, 代號後的補充]。標題是字串,或 [key, vars](值要包 .mono 的句子,trEvBody 拼)。白名單:不認得的型別回 null 不畫。desktop_action(用戶自己按的指令回音)
    整類不畫(Wei 10-20,designer events-list-audit-2026-10-20);bar_stale 帶 computed=true 時訊號已準時算出,不畫 */
+const TR_BROKER_KEY = { capital: "tr.ov.brokerCapital", president: "tr.ov.brokerPresident" };
 function trEventText(type, d) {
   const v = { venue: trVenueLabel(String(d.venue || ""), true), minutes: d.minutes };
   const lv = trEvLevel(type, d), str = (x) => (typeof x === "string" ? x : "");
@@ -5202,9 +5203,15 @@ function trEventText(type, d) {
   // 主機重開、對帳那支程式停著:標題已暫停,說明講「什麼單都不下」——跟 HALT 那列(平倉停損照常)並排時要分得出來;顏色跟 trigger
   if (type === "machine_restart_stopped") return out(t("tr.ov.evRestartStopped"), t("tr.ov.evRestartStoppedNote"));
   if (type === "machine_restart_stop_failed") return out(t("tr.ov.evRestartStopFailed"), t("tr.ov.evRestartStopFailedNote"));
-  // 群益部位要人手動平:symbols 是逗號分隔的帳本 key,讀不到快照時是空字串 → 只講那一句、不帶標的
+  // 全部平倉跳過這家、部位還開著:symbols 是逗號分隔的帳本 key,讀不到快照時是空字串 → 只講那一句、不帶標的。
+  // reason snapshot_lag(群益、統一):部位快照還沒跟上剛送的單,一分鐘後再按就平得掉——講「沒替哪家平倉」(券商名照固定對照表,
+  // 不讀 payload 原文;同 api notify.py _VENUE_NAMES 的短名)。其他(群益的執行身分登不進 API)沿用原句
   if (type === "manual_close_required") {
     const syms = String(d.symbols || "").split(",").map((x) => x.trim()).filter(Boolean).join(", ");
+    if (d.reason === "snapshot_lag") {
+      const broker = t(Object.prototype.hasOwnProperty.call(TR_BROKER_KEY, d.exchange) ? TR_BROKER_KEY[d.exchange] : "tr.ov.brokerOther");
+      return out(t("tr.ov.evManualCloseLag", { broker }), null, null, syms);   // 整句同 api(TG／信件同一句),不拆說明
+    }
     return out(t("tr.ov.evManualClose"), t("tr.ov.evManualCloseNote"), null, syms);
   }
   if (type === "downtime_paused") return out(t("tr.ov.evHaltAuto"), t("tr.ov.evDowntimeNote"));   // 不是 HALT:連平倉都凍結,不能用 evHaltNote 那句

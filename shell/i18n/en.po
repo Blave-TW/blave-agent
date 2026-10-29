@@ -3748,6 +3748,20 @@ msgstr "Capital positions still open"
 msgid "tr.ov.evManualCloseNote"
 msgstr "close them in Capital’s trading software"
 
+# 全部平倉跳過這家是因為部位快照還沒跟上剛送出的單(manual_close_required reason snapshot_lag;群益、統一都會發;
+# 字同 api openclaw/notify.py _MANUAL_CLOSE_SNAPSHOT_LAG(券商名同 _VENUE_NAMES 短名),web workspace_ov_ev_manual_close_lag;整句一則,不拆說明,與 api 逐字同);{broker} 照下面對照表
+msgid "tr.ov.evManualCloseLag"
+msgstr "Not closed on {broker}: position data lags the last order. In a minute, press “Pause and close positions” again, or close at your broker."
+
+msgid "tr.ov.brokerCapital"
+msgstr "Capital"
+
+msgid "tr.ov.brokerPresident"
+msgstr "President"
+
+msgid "tr.ov.brokerOther"
+msgstr "your broker"
+
 msgid "up.c.msg"
 msgstr "Update the cloud machine to the latest version"
 

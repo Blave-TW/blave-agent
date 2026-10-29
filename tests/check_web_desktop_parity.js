@@ -103,6 +103,17 @@ for (const lang of ["zh", "en"]) {
   const diff = Object.entries(EV_PAIRS).filter(([d, w]) => !dp["tr.ov." + d] || dp["tr.ov." + d] !== wp["workspace_ov_ev_" + w]).map(([d]) => d);
   ok(`事件文案 ${lang} 兩邊逐字一致(${Object.keys(EV_PAIRS).length} 句)`, diff.length === 0, diff.join(", "));
 }
+// 全部平倉快照落後(manual_close_required reason snapshot_lag;api 1aed82a8 起群益、統一都走這個型別):整句與券商短名兩邊逐字同。
+// 網頁這幾個 key 還沒上(同步改中):網頁沒有就只記一筆 NOTE,有了就必須逐字一致
+const LAG_PAIRS = { "tr.ov.evManualCloseLag": "workspace_ov_ev_manual_close_lag", "tr.ov.brokerCapital": "workspace_ov_broker_capital",
+  "tr.ov.brokerPresident": "workspace_ov_broker_president", "tr.ov.brokerOther": "workspace_ov_broker_other" };
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const absent = Object.values(LAG_PAIRS).filter((w) => typeof wp[w] !== "string");
+  if (absent.length) console.log(`NOTE  全部平倉快照落後 ${lang}:網頁還沒有 ${absent.join(", ")}(同步改中;上了之後這裡會逐字比)`);
+  const bad = Object.entries(LAG_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || (typeof wp[w] === "string" && dp[d].replace("{broker}", "%(broker)s") !== wp[w] && dp[d] !== wp[w]));
+  ok(`全部平倉快照落後 ${lang}:電腦版有這幾句,網頁有的那幾句逐字一致(${Object.keys(LAG_PAIRS).length} 句)`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
 // Bitget 換帳戶類型:對不上的暫停句與清單(halt.mismatch)、事件列兩型(venue_mode_switched／venue_stops_missing)——zh / en 逐字一致,
 // 任一邊找不到這個 key 也算紅(稽核 v033-integ 第二輪 R2-P3-3)
 const BITGET_PAIRS = {
