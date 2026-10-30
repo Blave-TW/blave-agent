@@ -732,6 +732,7 @@ async function phLoad() {
   return PH;
 }
 /* 授權手機清單(spec §2.6):帳號下每一支手機、這台有沒有勾;最近操作只列送到這台的。字是佔位,版面待設計師 */
+const PH_ACT = { send: "ph.act.send", stop: "ph.act.stop", withdraw: "ph.act.withdraw", session_new: "ph.act.session_new", session_rename: "ph.act.session_rename", session_delete: "ph.act.session_delete", pair: "ph.act.pair", auth: "ph.act.auth", revoke: "ph.act.revoke", grant: "ph.act.grant", ungrant: "ph.act.ungrant" };   // api app_action 的操作種類 → 字
 const phDate = (iso) => { const d = iso ? new Date(iso) : null; return d && !isNaN(d) ? d.toLocaleDateString() : "—"; };
 async function phPhonesReload() { try { PH_PHONES = await window.blave.relayPhones(); } catch (_) { PH_PHONES = null; } privPaint(); }
 async function phPair() {
@@ -777,7 +778,7 @@ function phPhonesBlock(mk) {
       const al = mk("ul", "ph-acts");
       if (!PH_ACTS.rows) al.append(mk("li", "", t("ph.phonesFail")));
       else if (!PH_ACTS.rows.length) al.append(mk("li", "", t("ph.noActs")));
-      else PH_ACTS.rows.forEach((a) => al.append(mk("li", "", [a.ts ? new Date(a.ts).toLocaleString() : "—", a.action, a.ip].filter(Boolean).join(" · "))));
+      else PH_ACTS.rows.forEach((a) => al.append(mk("li", "", [a.ts ? new Date(a.ts).toLocaleString() : "—", PH_ACT[a.action] ? t(PH_ACT[a.action]) : a.action, a.ip].filter(Boolean).join(" · "))));
       li.append(al);
     }
     ul.append(li);
