@@ -829,8 +829,8 @@ def get_order(env: dict, symbol: str, order_id: str) -> dict:
 
 
 # fills are searched from PARK_TRADE_LOOKBACK_S before the park to PARK_TRADE_LOOKAHEAD_S after
-# it — a market order fills before it is parked, so the window is fixed, never grows with the
-# park's age (one page of execution/list holds at most 100 rows)
+# it. Demo 2026-10-30: when orderId/orderLinkId is given, execution/list ignores startTime/endTime,
+# so the id does the filtering and the window only bounds the id-less case (100 rows per page)
 PARK_TRADE_LOOKBACK_S = 300
 PARK_TRADE_LOOKAHEAD_S = 600
 
