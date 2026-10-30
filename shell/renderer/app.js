@@ -3872,7 +3872,7 @@ function faultCard() {
       const key = JSON.stringify([!!s.calm, s.text, s.label || null, !!s.disabled, s.second ? s.second.label : null, s.third ? s.third.label : null, s.sub ? (typeof s.sub === "string" ? s.sub : s.sub.textContent) : null]);
       const changed = key !== shown; shown = key;
       el.classList.toggle("is-calm", !!s.calm);
-      // 只有鈕、沒有句子(資料卡的試用態:agent 那一輪已經講了拿不到什麼):記號改對鈕的中線,讀屏念鈕字
+      // 只有鈕、沒有句子(資料卡的試用態:agent 那一輪已經講了拿不到什麼):不放記號,讀屏念鈕字
       el.classList.toggle("act-only", !s.text);
       el.classList.toggle("two-quiet", !!(s.second && s.second.quiet && s.third));   // 同一列兩顆文字鈕:拉開一階,兩條底線才不會黏成一條
       text.textContent = s.text || ""; text.hidden = !s.text;

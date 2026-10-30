@@ -1511,9 +1511,9 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 .msg.fault.is-calm .fault-mark { background: var(--ink-3); }      /* 等待中 / 已完成:不是錯誤了,記號退灰 */
 .fault-body { min-width: 0; overflow-wrap: anywhere; }
 .fault-act { margin-top: var(--space-8); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); }
-/* 只有鈕、沒有句子(資料卡的試用態):鈕頂貼齊、記號對 32 高那顆鈕的中線;旁邊是文字鈕,拉開一階才看得出是兩件事 */
+/* 只有鈕、沒有句子(資料卡的試用態):不放記號,鈕跟上面那段回覆左緣對齊;旁邊是文字鈕,拉開一階才看得出是兩件事 */
 .msg.fault.act-only .fault-act { margin-top: 0; column-gap: var(--space-16); }
-.msg.fault.act-only .fault-mark { margin-top: 15px; }
+.msg.fault.act-only .fault-mark { display: none; }
 /* 額度用完卡片:〔改用 Claude Code 或 Codex〕與〔用加密貨幣轉帳儲值〕兩顆文字鈕同一列,8 的話兩條底線讀起來黏成一條(同 act-only 的 16);行距仍是 8 */
 .msg.fault.two-quiet .fault-act { column-gap: var(--space-16); }
 .fault-sub { margin-top: var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
