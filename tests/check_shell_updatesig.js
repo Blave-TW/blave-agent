@@ -216,7 +216,7 @@ const V = (info, o = {}) => sig.verifyManifest(info, { keys: o.keys || [pubA], f
   const nsisSrc = fs.readFileSync(path.join(SHELL, "node_modules", "electron-updater", "out", "NsisUpdater.js"), "utf8");
   const baseSrc = fs.readFileSync(path.join(SHELL, "node_modules", "electron-updater", "out", "BaseUpdater.js"), "utf8");
   const dl = nsisSrc.slice(nsisSrc.indexOf("doDownloadUpdate("), nsisSrc.indexOf("async verifySignature("));
-  t("electron-updater 釘死 6.8.9(掛點是內部方法)", require(path.join(SHELL, "package.json")).dependencies["electron-updater"] === "6.8.9");
+  t("electron-updater 釘死 6.8.12(掛點是內部方法)", require(path.join(SHELL, "package.json")).dependencies["electron-updater"] === "6.8.12");
   t("NsisUpdater:下載完在暫存前叫 this.verifySignature(暫存檔),回字串就刪檔丟 ERR_UPDATER_INVALID_SIGNATURE",
     /const signatureVerificationStatus = await this\.verifySignature\(destinationFile\);\s*if \(signatureVerificationStatus != null\) \{\s*await removeTempDirIfAny\(\);[\s\S]{0,400}ERR_UPDATER_INVALID_SIGNATURE/.test(dl));
   t("BaseUpdater:先發 update-downloaded 再掛結束時安裝(update-downloaded 裡同步關 autoInstallOnAppQuit 才有用)", /this\.dispatchUpdateDownloaded\(event\);\s*this\.addQuitHandler\(\);/.test(baseSrc) && /if \(this\.quitHandlerAdded \|\| !this\.autoInstallOnAppQuit\) \{\s*return;/.test(baseSrc));
