@@ -332,7 +332,8 @@ function createRelay(opts) {
       if (r.noCreds || stopped || r.status === 401 || r.status === 403 || r.status === 409) return "cancel";   // 這台沒開／憑證失效:call 已經收掉
       const retry = r.status === 0 || r.status === 429 || r.status >= 500;   // 斷線、限流、部署中的 5xx:重送
       if (!retry) return "rejected";   // 其他 4xx:api 沒收下這筆 started
-      if (clock() + gap > until) return "lost";
+      // 同上面兩處:斷線這段別條排定的重送失敗會把退避疊高,接著補送的 start_aborted／message_failed 不該再等那麼久
+      if (clock() + gap > until) { resetFlushBackoff(); return "lost"; }
       await pause(gap); gap = Math.min(gap * 2, 4000);
     }
   }

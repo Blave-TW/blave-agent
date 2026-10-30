@@ -454,6 +454,24 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
       && m.chunks().some((c) => c.type === "message_failed" && c.message_id === "msg000000e2"), m.chunks().map((c) => c.type));
     await m.end(); }
 
+  { let down = false, mfAt = 0;
+    const m = rig({ claimDeadlineMs: 1500, sessions: { "desktop-f0000001": { last: 1, rows: [row(1, "user", "x")] }, "desktop-f0000002": { last: 1, rows: [row(1, "user", "x")] } } });
+    await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.resp[RL.EP.report] = (b) => {
+      if (down) return { status: 502, body: null };
+      if (b.chunks.some((c) => c.type === "message_failed" && c.message_id === "msg000000f1")) mfAt = Date.now();
+      return { status: 200, body: { results: b.chunks.map(() => ({ status: "ok" })), interrupt: [], cancel: [] } };
+    };
+    m.feed([msg("desktop-f0000002", "msg000000f2")]); await wait(100);
+    down = true; const t0 = Date.now();
+    m.r.onTurn("desktop-f0000002", "turn-event", { type: "text", text: "別條的字" }); await wait(400);
+    m.feed([msg("desktop-f0000001", "msg000000f1")]);
+    // 這條直送 started 一路 502 → 約 1 秒判 lost;歸零重排在 lost 後 2 秒(約 3 秒),沒歸零就等別條那次(2 秒失敗、再 4 秒)
+    while (Date.now() - t0 < 2500) await wait(20);
+    const back = Date.now(); down = false; await wait(4000);
+    ok("8 直送 started 判 lost:退避歸零,補送的 message_failed 很快送到", mfAt && mfAt - back < 2000, mfAt ? mfAt - back : null);
+    await m.end(); }
+
   // ── 9 ──
   const send = main.slice(main.indexOf("function sendTurn(sid, ch, payload) {"), main.indexOf("function turnNice("));
   ok("9 sendTurn 先交給 relay,再看有沒有視窗", send.indexOf("_relay.onTurn(sid, ch, payload)") > 0 && send.indexOf("_relay.onTurn") < send.indexOf("const w = turnWin();"));
