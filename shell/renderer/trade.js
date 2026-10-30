@@ -5767,7 +5767,7 @@ function cxWire() {
   $("cx-cancel").addEventListener("click", cxDismiss);
   $("cx-close").addEventListener("click", cxDismiss);
   $("cx-go").addEventListener("click", cxConnect);
-  $("cx-scrim").addEventListener("mousedown", (e) => { if (e.target === $("cx-scrim")) cxModalClose(false); });
+  $("cx-scrim").addEventListener("mousedown", (e) => { if (e.target === $("cx-scrim")) cxDismiss(); });   // 驗證碼那一步點框外 = 退回表單(金鑰留著),同取消
   $("cx-scrim").addEventListener("keydown", (e) => trapTab(e, $("cx-modal")));   // Esc 在 app.js 的 escTop(document 層)
   // 重查結果:開場拿一次,之後主行程有變就推過來(設定分頁帳戶那一列)
   const onBn = (st) => { CXF.bn = st && typeof st === "object" ? st : null; trRepaint(); };   // 標題列、切換器那格、設定分頁帳戶列都看它

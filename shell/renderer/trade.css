@@ -276,7 +276,7 @@ html.ws-sc .side-gate { display: none; }
 .amt-in:focus { border-color: var(--ink); outline: none; }
 .amt-in[aria-invalid="true"] { border-color: var(--color-redText); }
 .pf-note.err { color: var(--color-redText); }
-.amt-in:disabled { color: var(--ink-3); border-color: var(--border-hairline); }
+.amt-in:disabled { color: var(--ink-3); border-color: var(--border-hairline); background: var(--field-disabled-bg); }
 /* 雲端存完、報告還沒對上(.pend,spec-desktop-cloud-writable §1.2):數字灰一階 + 右邊 6×1 短線,不閃不轉;
    記號一定配儲存列那句字。短線那格在改過的列上留位不畫,欄不跳。目標部位欄整欄降灰 */
 .amt-in.pend { color: var(--ink-2); }
@@ -552,7 +552,7 @@ html.ws-sc .side-gate { display: none; }
 }
 .f-input:focus { outline: none; border-color: var(--ink); }
 /* 停用:真 disabled、灰階、不用 opacity(canon › Disabled;同 .amt-in:disabled)。所有 .f-input 共用 */
-.f-input:disabled { color: var(--ink-3); border-color: var(--border-hairline); cursor: not-allowed; opacity: 1; }   /* 蓋掉 Chromium 內建 select:disabled 的 .7 */
+.f-input:disabled { color: var(--ink-3); border-color: var(--border-hairline); background: var(--field-disabled-bg); cursor: not-allowed; opacity: 1; }   /* 蓋掉 Chromium 內建 select:disabled 的 .7 */
 .f-selw:has(.f-input:disabled)::after { border-color: var(--border-hairline); }
 .cx-manual-note { margin: var(--space-12) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .cx-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-12); row-gap: var(--space-8); margin-top: var(--space-12); }
