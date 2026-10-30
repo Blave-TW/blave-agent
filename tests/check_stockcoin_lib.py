@@ -17,7 +17,7 @@ canonical symbol; trade rows that lag the fill are re-read for the fee; base qty
 False / ValueError; a reduce is capped at the leg's available contracts; a
 cancelled-with-fill market order reports the fill; -1141 resolves to the
 existing order instead of raising; a dropped POST is looked up by clientOrderId
-and never resent; a multiplier the 24h turnover contradicts, or an order reply
+and never resent (not found: a parkable OrderNotConfirmed); a multiplier the 24h turnover contradicts, or an order reply
 whose contractMultiplier differs, refuses; positions / equity shapes; canonical
 symbols both ways and through lib.data.normalize_symbol.
 
@@ -356,8 +356,9 @@ del CALLS[:]
 try:
     order.place_market_order(ENV, "NVDAUSDT", "long", 0.0003, client_order_id="neverplaced")
     check(False, "a dropped POST that cannot be found raises")
-except requests.exceptions.ConnectionError:
-    check(sum(c["method"] == "POST" for c in CALLS) == 1, "a dropped POST that cannot be found raises, one POST")
+except order.OrderNotConfirmed as e:
+    check(sum(c["method"] == "POST" for c in CALLS) == 1 and e.parkable() and e.client_order_id == "neverplaced",
+          "a dropped POST that cannot be found raises a parkable OrderNotConfirmed, one POST")
 try:
     order._cid("bad id!")
     check(False, "a client order id with odd characters is refused")

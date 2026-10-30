@@ -618,8 +618,8 @@ def probe_all(env, order, acct, requests, say, legs, one, out_path, symbols=froz
                     res["result"] = "api_closed"
                 else:
                     res["result"] = "error"
-                if isinstance(e, order.OrderNotConfirmed):
-                    time.sleep(3)
+                if isinstance(e, order.OrderNotConfirmed) and getattr(e, "order_id", None):
+                    time.sleep(3)  # placed, not confirmed in time: the leg check below settles it
                 elif res["result"] != "api_closed" and _is_global(e, order):
                     stop = e
             finally:
