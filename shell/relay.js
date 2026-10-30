@@ -28,7 +28,7 @@ const EP = {
   poll: "/oauth/desktop/relay/poll",         // + ver, restarting → { enabled, messages, controls, server_time } | { enabled:false, reason }
   ack: "/oauth/desktop/relay/ack",           // + message_ids → { acked, rejected }
   report: "/oauth/desktop/relay/report",     // + chunks(每段帶 session_id)→ { results, interrupt, cancel }
-  image: "/oauth/desktop/relay/image",       // + session_id, mime, b64, caption?(只限手機那一輪)
+  image: "/oauth/desktop/relay/image",       // + session_id, message_id, mime, b64, caption?(只限手機那一輪)
   syncState: "/oauth/desktop/relay/sync_state",   // → { sessions: [{ session_id, last_id }], tombstones: [sid] }
   sync: "/oauth/desktop/relay/sync",         // + sessions: [{ session_id, title, last_at(ms), turns: [{ id, role, content, created_at(ms), origin?, message_id? }] }]
   pairCode: "/oauth/desktop/relay/pair_code",   // → { code, expires_in }
@@ -96,6 +96,7 @@ function createRelay(opts) {
   const active = new Map();  // sid → { message_id, ended, idBefore }:正在跑的手機那一輪
   let pending = [];          // 待送的 chunk(每段帶 session_id),照收到的順序
   let batchTimer = null, reporting = null, retryTimer = null, flushBackoff = BACKOFF_MIN_MS, pingTimer = null;
+  let inflight = null;       // 在路上那一批:{ sids, p }(認領只等自己那條的)
   const tombstones = new Set();
   const sync = { running: false, done: 0, total: 0, error: false, lastIds: null, again: new Set() };
 
@@ -190,22 +191,33 @@ function createRelay(opts) {
             if (take.length && bytes + b > REPORT_MAX_BYTES) break;
             take.push(pending.shift()); bytes += b;
           }
-          const r = await call(EP.report, { chunks: take }, quitting ? QUIT_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
+          const p = call(EP.report, { chunks: take }, quitting ? QUIT_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
+          inflight = { sids: new Set(take.map((c) => c.session_id)), p };
+          const r = await p;
+          inflight = null;
           if (r.status === 200 && r.body) { flushBackoff = BACKOFF_MIN_MS; reportAnswer(r.body); continue; }
           // 斷線、限流、部署中的 5xx:放回最前面、過一下再送(同 claimStart)。done／start_aborted 丟了,api 那條會一直停在回覆中
           if ((r.status === 0 || r.status === 429 || r.status >= 500) && !r.noCreds && !quitting) {
             if (pending.length + take.length <= 2000) pending = take.concat(pending);
             log("relay: report not sent (" + (r.status || "offline") + "), retry in " + flushBackoff + " ms");
-            if (!retryTimer) { retryTimer = setTimeout(() => { retryTimer = null; flush(); }, flushBackoff); if (retryTimer.unref) retryTimer.unref(); }
-            flushBackoff = Math.min(flushBackoff * 2, BACKOFF_MAX_MS);
+            // 退避只在排定的那次重送也失敗時翻倍:已經排著一次時,中途硬送(馬上要送的事件、認領)失敗不累加
+            if (!retryTimer) {
+              retryTimer = setTimeout(() => { retryTimer = null; flush(); }, flushBackoff); if (retryTimer.unref) retryTimer.unref();
+              flushBackoff = Math.min(flushBackoff * 2, BACKOFF_MAX_MS);
+            }
             break;
           }
           log("relay: report rejected (" + (r.status || "no creds") + ")");   // 400／401／403／409:這批不重送
         }
         await outboxFlush();
-      } finally { reporting = null; }
+      } finally { reporting = null; inflight = null; }
     })();
     return reporting;
+  }
+  /* 認領放棄時:它在等的那段裡重送失敗累加的退避歸零,上一句的 done 不會因此晚一分鐘才再送 */
+  function resetFlushBackoff() {
+    flushBackoff = BACKOFF_MIN_MS;
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = setTimeout(() => { retryTimer = null; flush(); }, BACKOFF_MIN_MS); if (retryTimer.unref) retryTimer.unref(); }
   }
   /* report 回應:interrupt = 手機按了停止的那幾條;cancel = api 已經告訴手機「沒跑」的那幾句,不得跑、跑了就停 */
   function reportAnswer(b) {
@@ -287,17 +299,23 @@ function createRelay(opts) {
      → "ok" | "cancel"(api 說不得跑,或 401／409 已收掉)| "off"(總開關關了)| "rejected"(api 拒收這筆 started)| "lost"(一直沒回應) */
   async function claimStart(sid, mid) {
     const until = clock() + (opts.claimDeadlineMs || CLAIM_DEADLINE_MS);
-    let gap = CLAIM_RETRY_MS;
+    let gap = CLAIM_RETRY_MS, kick = true;
     for (;;) {
-      // started 不准超車同一條還沒送到的 chunk(上一輪的 done 斷線退回 pending):先到的 started 會讓 api 把那條換成這句,
-      // 上一輪的 done 之後只會被丟掉、它的字併進這一輪。不併進 flush 的佇列:這裡要拿這一筆自己的結果,也不能等 flush 最長
-      // 60 秒的退避;代價是認領那 15 秒內 flush 照認領的間隔重送
-      await flush();
-      while (reporting) await reporting.catch(() => {});   // flush 的 then 鏈會在別人接手的那一批還在路上時就先回來
-      if (pending.some((c) => c.session_id === sid)) {
+      // started 不准超車同一條還沒送到的 chunk(上一輪的 done 斷線退回 pending、或還在路上):先到的 started 會讓 api 把那條
+      // 換成這句,上一輪的 done 之後只會被丟掉、它的字併進這一輪。只等這一條的:別條一直在吐字不能把認領拖過期限。
+      // 不併進 flush 的佇列:這裡要拿這一筆自己的結果,也不能等 flush 最長 60 秒的退避;代價是認領期間 flush 照認領的間隔重送
+      const onWire = () => !!(inflight && inflight.sids.has(sid));
+      if (pending.some((c) => c.session_id === sid) || onWire()) {
         if (stopped) return "cancel";
-        if (clock() + gap > until) return "lost";
-        await pause(gap); gap = Math.min(gap * 2, 4000);
+        if (kick && !onWire() && !reporting) flush();   // 送不出去、在等退避:認領這邊先重送(每個間隔一次)
+        kick = false;
+        if (onWire()) {
+          await inflight.p;
+          if (clock() > until) { resetFlushBackoff(); return "lost"; }
+          if (!pending.some((c) => c.session_id === sid) && !onWire()) continue;
+        }
+        if (clock() + gap > until) { resetFlushBackoff(); return "lost"; }
+        await pause(gap); gap = Math.min(gap * 2, 4000); kick = true;
         continue;
       }
       const r = await call(EP.report, { chunks: [{ type: "started", session_id: sid, message_id: mid }] });
@@ -409,7 +427,8 @@ function createRelay(opts) {
     // 認領中:這條上跑的是電腦前那個人的回合(同 onTurn)
     if (!a || a.claiming || !live() || typeof b64 !== "string") return Promise.resolve(false);
     const cap = typeof caption === "string" && caption.trim() ? redact(caption.slice(0, 500), known()) : "";
-    return call(EP.image, { session_id: sid, mime, b64, ...(cap && cap !== "⟦R:msg⟧" ? { caption: cap } : {}) }).then((r) => r.status === 200);
+    // 帶呼叫當下那一句:圖跟 report 不同路,可能在這一輪收尾、下一句開跑之後才到,api 對不上就丟,不掛到下一句
+    return call(EP.image, { session_id: sid, message_id: a.message_id, mime, b64, ...(cap && cap !== "⟦R:msg⟧" ? { caption: cap } : {}) }).then((r) => r.status === 200);
   }
 
   /* ── controls ─────────────────────────────────────── */

@@ -53,7 +53,7 @@ function rig(o = {}) {
     },
     turnArgs: () => ({ model: "m1" }), known: () => ["envSecretVal99"],
     origins: { add: (sid, rows) => { origins[sid] = (origins[sid] || []).concat(rows); }, get: (sid) => new Map((origins[sid] || []).map((x) => [x.id, x.mid])) },
-    track: (n) => tracked.push(n), now: o.now, pingMs: o.pingMs,
+    track: (n) => tracked.push(n), now: o.now, pingMs: o.pingMs, claimDeadlineMs: o.claimDeadlineMs,
   });
   return { r, dir, stateDir, calls, polls, started, stopped, removed, tracked, origins, busy, sessions, resp,
     feed: (msgs, controls, extra) => { const v = { status: 200, body: Object.assign({ enabled: true, messages: msgs || [], controls: controls || [], server_time: 1 }, extra || {}) }; if (pollWaiter) { const w = pollWaiter; pollWaiter = null; w(v); } else polls.push(v); },
@@ -364,7 +364,7 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     m.feed([msg("desktop-i0000001", "msg0000000i")]); await wait(30);
     await m.r.image("desktop-i0000001", "image/png", "AAAA", "說明 " + TOKEN);
     const im = m.of(RL.EP.image)[0];
-    ok("8 圖:手機那一輪送 /relay/image(session_id、mime、b64),說明過遮蔽", im && im.session_id === "desktop-i0000001" && im.mime === "image/png" && im.b64 === "AAAA" && !im.caption.includes(TOKEN), im);
+    ok("8 圖:手機那一輪送 /relay/image(session_id、那一句的 message_id、mime、b64),說明過遮蔽", im && im.session_id === "desktop-i0000001" && im.message_id === "msg0000000i" && im.mime === "image/png" && im.b64 === "AAAA" && !im.caption.includes(TOKEN), im);
     m.r.onTurn("desktop-i0000001", "turn-end", { code: 0 }); m.busy.delete("desktop-i0000001"); await wait(30);
     let release; const gate = new Promise((res) => { release = res; });
     m.resp[RL.EP.report] = (b) => (b.chunks.some((c) => c.type === "started") ? gate.then(() => ({ status: 200, body: { results: [{ status: "ok" }], interrupt: [], cancel: [] } }))
@@ -391,6 +391,67 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     m.busy.delete("desktop-p0000001"); m.r.onTurn("desktop-p0000001", "turn-event", { type: "done" }); m.r.onTurn("desktop-p0000001", "turn-end", { code: 0 }); await wait(50);
     const n = m.chunks().filter((c) => c.type === "ping").length; await wait(600);
     ok("8 那一輪結束:不再送 ping", m.chunks().filter((c) => c.type === "ping").length === n);
+    await m.end(); }
+
+  // ── 8 認領只等自己那條 ──
+  { const m = rig({ sessions: { "desktop-c0000001": { last: 1, rows: [row(1, "user", "x")] }, "desktop-c0000002": { last: 1, rows: [row(1, "user", "x")] } } });
+    await m.r.tick(); await m.r.setOn(true); await wait(20);
+    const okBody = (b) => ({ status: 200, body: { results: b.chunks.map(() => ({ status: "ok" })), interrupt: [], cancel: [] } });
+    m.resp[RL.EP.report] = (b) => wait(120).then(() => okBody(b));
+    m.feed([msg("desktop-c0000002", "msg000000c2")]); await wait(400);
+    let streaming = true; (async () => { while (streaming) { m.r.onTurn("desktop-c0000002", "turn-event", { type: "text", text: "x" }); await wait(40); } })();
+    await wait(300);
+    const t0 = Date.now(); m.feed([msg("desktop-c0000001", "msg000000c1")]);
+    while (!m.started.some((x) => x[0].sessionId === "desktop-c0000001") && Date.now() - t0 < 4000) await wait(20);
+    const dt = Date.now() - t0;
+    ok("8 另一條手機那一輪一直在吐字:這條的認領不用等它(2 秒內開跑)", dt < 2000, dt);
+    streaming = false; await wait(300); await m.end(); }
+  { let down = false, doneOkAt = 0;
+    const m = rig({ claimDeadlineMs: 1500, sessions: { "desktop-d0000001": { last: 1, rows: [row(1, "user", "x")] } } });
+    await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.resp[RL.EP.report] = (b) => {
+      if (down) return { status: 502, body: null };
+      if (b.chunks.some((c) => c.type === "done")) doneOkAt = Date.now();
+      return { status: 200, body: { results: b.chunks.map(() => ({ status: "ok" })), interrupt: [], cancel: [] } };
+    };
+    m.feed([msg("desktop-d0000001", "msg000000d1")]); await wait(100);
+    m.feed([msg("desktop-d0000001", "msg000000d2")]); await wait(100);
+    down = true; m.busy.delete("desktop-d0000001");
+    m.r.onTurn("desktop-d0000001", "turn-event", { type: "done" }); m.r.onTurn("desktop-d0000001", "turn-end", { code: 0 });
+    // 斷 2.2 秒:蓋過最早排的那次重送(2 秒),沒蓋過放棄時歸零重排的那次(放棄在 0.5 秒,再 2 秒)。
+    // 沒歸零時,認領那段的重送把退避疊到 32 秒,done 要半分鐘後才再送
+    await wait(2200); const back = Date.now(); down = false; await wait(4000);
+    ok("8 認領等到放棄(lost):重送退避歸零,網路回來後上一句的 done 幾秒內就送到", doneOkAt && doneOkAt - back < 3000, doneOkAt ? doneOkAt - back : null);
+    ok("8 lost 那句沒跑", m.started.length === 1);
+    await m.end(); }
+  { let down = false, doneOkAt = 0;
+    const m = rig({ claimDeadlineMs: 1500, sessions: { "desktop-d0000001": { last: 1, rows: [row(1, "user", "x")] } } });
+    await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.resp[RL.EP.report] = (b) => {
+      if (down) return { status: 502, body: null };
+      if (b.chunks.some((c) => c.type === "done")) doneOkAt = Date.now();
+      return { status: 200, body: { results: b.chunks.map(() => ({ status: "ok" })), interrupt: [], cancel: [] } };
+    };
+    m.feed([msg("desktop-d0000001", "msg000000d1")]); await wait(100);
+    m.feed([msg("desktop-d0000001", "msg000000d2")]); await wait(100);
+    down = true; m.busy.delete("desktop-d0000001");
+    m.r.onTurn("desktop-d0000001", "turn-event", { type: "done" }); m.r.onTurn("desktop-d0000001", "turn-end", { code: 0 });
+    // 斷 3 秒:放棄時歸零重排的那次(2.5 秒)也失敗。放棄當下補送的 start_aborted／message_failed 失敗不累加退避,
+    // 下一次 2 秒後(4.5 秒);累加的話是 8 秒後
+    await wait(3000); const back = Date.now(); down = false; await wait(4000);
+    ok("8 認領放棄當下補送的失敗不累加退避:網路回來後上一句的 done 很快送到", doneOkAt && doneOkAt - back < 2500, doneOkAt ? doneOkAt - back : null);
+        await m.end(); }
+
+  { const m = rig({ claimDeadlineMs: 1500, sessions: { "desktop-e0000001": { last: 1, rows: [row(1, "user", "x")] } } });
+    await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.resp[RL.EP.report] = (b) => wait(b.chunks.some((c) => c.type === "done") ? 2500 : 0).then(() => ({ status: 200, body: { results: b.chunks.map(() => ({ status: "ok" })), interrupt: [], cancel: [] } }));
+    m.feed([msg("desktop-e0000001", "msg000000e1")]); await wait(100);
+    m.feed([msg("desktop-e0000001", "msg000000e2")]); await wait(100);
+    m.busy.delete("desktop-e0000001"); m.r.onTurn("desktop-e0000001", "turn-event", { type: "done" }); m.r.onTurn("desktop-e0000001", "turn-end", { code: 0 });
+    await wait(3500);
+    const st = m.chunks().filter((c) => c.type === "started" && c.message_id === "msg000000e2");
+    ok("8 等自己那條在路上的那批等過了認領期限:不再送 started,走 lost(start_aborted＋message_failed)", !st.length && m.started.length === 1
+      && m.chunks().some((c) => c.type === "message_failed" && c.message_id === "msg000000e2"), m.chunks().map((c) => c.type));
     await m.end(); }
 
   // ── 9 ──
