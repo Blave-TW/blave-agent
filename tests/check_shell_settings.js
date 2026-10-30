@@ -1263,8 +1263,9 @@ ok("確認框字(r8):body1 有 Linux Starter;鈕「付 {x} TWD 開通」/ Pay {x
     && /id="set-id-copy" data-i18n="about\.idCopy" aria-describedby="set-id-tip"/.test(html) && /id="set-id-tip" role="tooltip" data-i18n="about\.idNote"/.test(html)
     && !/set-id-note|set-upsch-lead/.test(html + src));
   { const esc = fnSrc("tipEsc");
-    ok("Esc 收泡泡也認 aria-describedby(開關跟泡泡不相鄰),而且先於關框(有看得見的泡泡就只收它);焦點那條 CSS 帶 :not([data-tip-off])", /getAttribute\("aria-describedby"\)/.test(esc)
-      && /if \(tipEsc\(\)\) \{ e\.preventDefault\(\); return; \}\n  const close = escTop\(\);/.test(src)
+    ok("Esc 收泡泡也認 aria-describedby(開關跟泡泡不相鄰),而且先於關框(window capture 先收看得見的泡泡、不往下傳;escTop 監聽裡沒有重複那一行);焦點那條 CSS 帶 :not([data-tip-off])", /getAttribute\("aria-describedby"\)/.test(esc)
+      && /\nwindow\.addEventListener\("keydown", \(e\) => \{\n  if \(e\.key === "Escape" && !e\.isComposing && e\.keyCode !== 229 && tipEsc\(\)\) \{ e\.preventDefault\(\); e\.stopPropagation\(\); \}\n\}, true\);/.test(src)
+      && !/if \(tipEsc\(\)\) \{ e\.preventDefault\(\); return; \}/.test(src)
       && [".set-rs:has(.sw:focus-visible:not([data-tip-off])) .tip", ".set-awake:has(.sw:focus-visible:not([data-tip-off])) .tip", ".set-upsch:has(.sw:focus-visible:not([data-tip-off])) .tip", "#set-id:has(#set-id-copy:focus-visible:not([data-tip-off])) .tip"].every((r) => css.includes(r))
       && !/:has\(\.sw:focus-visible\) \.tip/.test(css + fs.readFileSync(path.join(R, "suggest.css"), "utf8"))); }
   { const mk = (tag, cls, text) => { const n = { tag, cls, text, kids: [], append(...k) { this.kids.push(...k); }, setAttribute() {}, addEventListener() {} }; return n; };

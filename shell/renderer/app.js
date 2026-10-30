@@ -1813,7 +1813,6 @@ function escTop() {
 }
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.isComposing || e.keyCode === 229) return;   // 輸入法組字中的 Esc 是取消選字(同 trade.js envWire)
-  if (tipEsc()) { e.preventDefault(); return; }
   const close = escTop(); if (close) { e.preventDefault(); close(); }
 });
 $("mp-panel").addEventListener("keydown", (e) => {
@@ -5200,7 +5199,7 @@ window.addEventListener("keydown", (e) => {
 
 /* 泡泡由 CSS 的 :hover / :focus-visible + .tip 帶出來的那幾種(.mp-tip、.tr-tipb、.rules-tipb、瀏覽器的 .ibtn):Esc 要收得掉(canon › Tooltip),
    但 CSS 狀態收不掉——給觸發點掛 data-tip-off(CSS 帶 :not([data-tip-off])),滑出或失焦再拿掉 */
-// 回傳這一下有沒有收掉一個看得見的泡泡:有的話 Esc 只收泡泡、不往下關框(escTop 先問這裡,一次只關一層)
+// 回傳這一下有沒有收掉一個看得見的泡泡:有的話 Esc 只收泡泡、不往下關框(上面那個 window capture 監聽先呼叫它、收掉就 stopPropagation,escTop 收不到這一下;一次只關一層)
 function tipEsc() {
   let shut = false;
   for (const x of [document.activeElement, ...document.querySelectorAll(":hover")]) {
