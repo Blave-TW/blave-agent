@@ -57,7 +57,9 @@ const SHIP = [
 const tracked = execFileSync("git", ["-C", REPO, "ls-files", "-z", "--", ...SHIP], { maxBuffer: 1 << 24 })
   .toString().split("\0").filter((f) => f && fs.existsSync(path.join(REPO, f)));
 // .pdb 是 Windows 除錯符號(python-win-x64 150MB 裡佔 82MB):Python 當掉時的堆疊我們本來就不收
-const PY_FILTER = ["**/*", "!**/__pycache__{,/**}", "!**/*.pdb"];
+// lib/libpython*.dylib(mac 每顆 18MB):直譯器靜態連結,lib-dynload 的 .so 也沒有一個連它(otool -L 逐一查過)。
+// include/ 留著:agent 幫用戶 pip install 要編 C 擴充時用得到。Windows 的 python312.dll 是直譯器本身,這條碰不到它
+const PY_FILTER = ["**/*", "!**/__pycache__{,/**}", "!**/*.pdb", "!lib/libpython*.dylib"];
 
 module.exports = {
   appId: "org.blave.desktop",
