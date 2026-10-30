@@ -137,25 +137,28 @@ function capBurst() { ENV.burst = trBurstBump(ENV.burst, Date.now(), TR_BURST_MS
 async function capSaveCreds(then) {
   if (CAP.busy || capDown()) return;
   const before = capCC(), upd = before ? before.updated_at || 0 : null;
-  // 改金鑰驗證碼(同連接框,trade.js kcNext):每次送都是新的 request_id;碼過期 = 不帶碼再送一次,讓 api 寄新的一組
-  if (CAP.kc && !/^\d{6}$/.test(CAP.kc.code)) { CAP.msg = { code: "KC_FORMAT", detail: {} }; capPaint(); srSay(t("cx.kc.format")); kcFocus(); return false; }
+  // 改金鑰驗證碼(同連接框,trade.js kcNext):關卡擋下 → 框換成驗證碼那一步,主鈕「確認」用同一個 then 再送。
+  // 每次送都是新的 request_id;碼過期 = 不帶碼再送一次,讓 api 寄新的一組
+  const kc0 = CAP.kc;
+  if (kc0 && !kcReady(kc0)) return false;
   CAP.busy = true; CAP.msg = null; capPaint();
   const send = (code) => window.blave.capitalCreds(CAP.id, CAP.pw, { keyChangeCode: code || undefined, lang: LANG });
   let r = null, expired = false;
   try {
-    r = await send(CAP.kc && CAP.kc.code);
+    r = await send(kc0 && kc0.code);
     if (r && r.code === "KEY_CHANGE_CODE_EXPIRED") { expired = true; r = await send(null); }
   } catch (_) { }
   CAP.busy = false;
+  // 送碼途中退回了:沒過的結果不上畫面;過了照走(帳密已經存了)
+  if (kc0 && CAP.kc !== kc0 && !(r && r.code === "OK")) { capPaint(); return false; }
   if (!r || r.code !== "OK") {
     CAP.msg = r && r.code === "NOT_CAPABLE" ? { code: "UNDELIVERED", error: "UNKNOWN_COMMAND" } : r ? Object.assign({}, r, { expired }) : { code: "UNDELIVERED" };
-    CAP.kc = kcNext(CAP.kc, CAP.msg.code);
+    CAP.kc = kcNext(kc0, CAP.msg);
+    if (CAP.kc) { CAP.kc.then = then; CAP.msg = null; capPaint(); srSay(kcSay(CAP.kc.view)); kcFocus(CAP.kc); return false; }
     capPaint();
-    const said = cxKcText(CAP.msg); if (said) srSay(said);
-    if (CAP.kc) kcFocus();
     return false;
   }
-  kcNext(CAP.kc, "OK"); CAP.kc = null;
+  kcNext(kc0, { code: "OK" }); CAP.kc = null;
   CAP.id = ""; CAP.pw = ""; CAP.recheck = false; CAP.unlockUsed = false; CAP.credsUpd = upd; CAP.finishSent = false;
   capTrack("form");
   if (then) await then();
@@ -293,7 +296,6 @@ function capMsgText(m) {
   if (c === "BAD_FORMAT") return t("cap.err.idFormat");
   if (c === "KEY_TIMEOUT" || c === "KEY_EXPIRED" || c === "KEY_INVALID") return t("cap.pfx.errKey");
   if (c === "CRYPTO_MISSING") return t("cap.err.notReady");
-  const kc = cxKcText(m); if (kc) return kc;
   if (c === "UNDELIVERED") return trSendError({ error: m.error, kind: m.kind || "undelivered", machineState: m.machineState }, "connect", "cloud") || t("side.stopped");
   return t("cap.err.generic");
 }
@@ -383,7 +385,7 @@ function capRows(view, cc) {
     const go = capBtn("btn-fill", t("cap.recheck"), () => capSaveCreds(() => capStep("probe")), "cap-recheck", !ready); go.dataset.need = "id,pw";
     rows.push(capRow("bad", t("cap.s.pw"), "", capFrag(noCreds ? capDo(t("cap.err.noCreds")) : null, capField("cap-id", t("cap.id"), "id", { plain: true, ro: CAP.busy }),
       capField("cap-pw", t("cap.pw"), "pw", { ro: CAP.busy, err: pwErr, enter: () => { if (CAP.id.trim() && CAP.pw) capSaveCreds(() => capStep("probe")); } }),
-      CAP.kc ? kcField(CAP.kc, CAP.busy, () => { if (CAP.id.trim() && CAP.pw) capSaveCreds(() => capStep("probe")); }) : null, capActs(go), capStore(cc))));   // 揭露句在鈕之後:不把欄位和它的鈕拆開
+      capActs(go), capStore(cc))));   // 揭露句在鈕之後:不把欄位和它的鈕拆開
   } else if (view === "c-pw-locked") {
     rows.push(capRow("bad", t("cap.s.pw"), "", capFrag(capDo(t("cap.err.pwLocked")), capDo(t("cap.c.unlockDo"), true), capActs(capBtn("btn-fill", t("cap.unlocked"), () => capStep("unlock"), "cap-unlock", off)))));
   } else if (view === "c-probe" && probeRow === "pw") rows.push(runRow(t("cap.s.pw"), t("cap.s.probe")));
@@ -444,6 +446,17 @@ function capHandoffBody() {
 function capFoot(view) {
   const go = $("cx-go"), cancel = $("cx-cancel"), foot = go.parentNode, where = $("cx-where");
   let msg = $("cap-foot-msg");
+  if (CAP.kc) {   // 驗證碼那一步:取消退回原本那一步,主鈕「確認」
+    if (msg) msg.remove();
+    cancel.hidden = false; cancel.textContent = t("del.cancel"); go.hidden = false;
+    if (go.textContent.trim() !== t("cx.kc.ok") || !!go.querySelector(".spin16") !== CAP.busy) {
+      go.textContent = "";
+      if (CAP.busy) { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); go.append(sp, " "); }
+      go.append(t("cx.kc.ok"));
+    }
+    go.classList.toggle("is-busy", CAP.busy);
+    return capSyncGo(view);
+  }
   if (view === "c-form") { if (!msg) { msg = trEl("span", "foot-msg"); msg.id = "cap-foot-msg"; foot.insertBefore(msg, foot.firstChild); } msg.textContent = t("cap.beforeC"); }
   else if (msg) msg.remove();
   const flow = view !== "c-form" && view !== "c-win" && view !== "c-handoff";
@@ -464,6 +477,7 @@ function capFoot(view) {
 function capSyncGo(view) {
   const v = view || CAP.view, go = $("cx-go"), down = capDown();
   let off = down || CAP.busy;
+  if (CAP.kc) { go.setAttribute("aria-disabled", off || !kcReady(CAP.kc) ? "true" : "false"); return; }
   if (v === "c-form") off = off || !CAP.id.trim() || !CAP.pw;
   if (v === "c-handoff") off = off || (typeof running !== "undefined" && running);
   go.setAttribute("aria-disabled", off ? "true" : "false");
@@ -482,6 +496,7 @@ function capFootRestore() {
 }
 // cx-go 按下(trade.js 的 cxConnect 交過來)
 function capPrimary() {
+  if (CAP.kc) { if (kcReady(CAP.kc) && !CAP.busy && !capDown()) capSaveCreds(CAP.kc.then); return; }
   if (CAP.view === "c-handoff" && typeof running !== "undefined" && running && !capDown() && !CAP.busy) return capHandoff("setup");   // 只因回合在跑而鎖:講原因
   if ($("cx-go").getAttribute("aria-disabled") === "true") return;
   if (CAP.view === "c-form") return capGo();
@@ -499,23 +514,23 @@ function capPaint() {
   CAP.view = view;
   if ((view === "c-done" || view === "c-done-ts") && CAP.base && (CAP.base.worker !== "ok" || CAP.finishSent)) capTrack("ready");
   const box = $("cx-body"), down = capDown();
-  $("cx-title").textContent = view === "c-form" || view === "c-win" ? t("cx.title") : t("cap.title");
+  $("cx-title").textContent = CAP.kc ? t("cx.kc.title") : view === "c-form" || view === "c-win" ? t("cx.title") : t("cap.title");
   capFoot(view);
   box.setAttribute("aria-busy", CAP.busy || view === "c-finish" || view === "c-probe" || view === "c-importing" ? "true" : "false");
-  const sig = LANG + "|" + JSON.stringify([view, cc, CAP.route, CAP.busy, CAP.msg, !!CAP.kc, CAP.file, CAP.fileErr, CAP.signOpened, CAP.unlockUsed, CAP.verifyDl, CAP.verifyChecked, down,
+  const sig = LANG + "|" + JSON.stringify([view, cc, CAP.route, CAP.busy, CAP.msg, CAP.kc && CAP.kc.view, CAP.file, CAP.fileErr, CAP.signOpened, CAP.unlockUsed, CAP.verifyDl, CAP.verifyChecked, down,
     CAP.sent && Date.now() - CAP.sent.at >= CAP_NO_MOVE_MS, typeof running !== "undefined" && running]);
   if (CAP.sig === sig && box.firstChild) return;
   CAP.sig = sig;
   const hadId = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
-  if (view === "c-form" || view === "c-win") {
+  if (CAP.kc) box.appendChild(kcStep(CAP.kc, CAP.busy, capPrimary, () => capSyncGo()));
+  else if (view === "c-form" || view === "c-win") {
     box.appendChild(cxVenueField(TR_BAGS.cloud));
     if (view === "c-win") box.appendChild(trEl("p", "cap-lead", t("cap.needWin")));
     else {
       box.appendChild(trEl("p", "cx-manual-note", t("cap.meta")));
       box.appendChild(capField("cap-id", t("cap.id"), "id", { plain: true, ro: CAP.busy, enter: capPrimary }));
       box.appendChild(capField("cap-pw", t("cap.pw"), "pw", { ro: CAP.busy, enter: capPrimary }));
-      if (CAP.kc) box.appendChild(kcField(CAP.kc, CAP.busy, capPrimary));
       const st = capStore(cc); if (st) box.appendChild(st);
     }
   } else if (view === "c-handoff") box.appendChild(capHandoffBody());
@@ -523,11 +538,18 @@ function capPaint() {
   else box.appendChild(capRows(view, cc));
   const slot = trEl("div", ""); slot.setAttribute("role", "status"); box.appendChild(slot);
   const m = down ? t("side.stopped") : capMsgText(CAP.msg);
-  if (m) slot.appendChild(capErr(m, !down && CAP.msg && (CAP.msg.code === "BUSY" || kcCalm(CAP.msg))));
+  if (m) slot.appendChild(capErr(m, !down && CAP.msg && CAP.msg.code === "BUSY"));
   capSyncGo(view);
   const back = hadId && $(hadId);
   if (back && !back.disabled) back.focus();
   else if (hadId || !box.contains(document.activeElement)) { const f = box.querySelector("input:not([readonly]), .cap-step.is-cur button:not([disabled]):not([aria-disabled='true']), select"); if (f && hadId) f.focus(); }
+}
+// 驗證碼那一步按取消／✕／Esc(trade.js cxDismiss):退回表單或重填帳密那一列,焦點回那一步的送出鈕
+function capKcBack() {
+  CAP.kc = null; CAP.msg = null; CAP.sig = null; capPaint();
+  const go = CAP.view === "c-form" ? $("cx-go") : $("cap-recheck");
+  const f = go && go.getAttribute("aria-disabled") !== "true" && !go.hidden ? go : $("cx-body").querySelector("input:not([disabled]), select:not([disabled]), button:not([disabled])");
+  if (f) f.focus();
 }
 // 設定 › 帳戶 的解除綁定(群益的兩個名字由主行程決定)→ trade.js trSendError 認得的形狀
 async function capUnbindSend() {

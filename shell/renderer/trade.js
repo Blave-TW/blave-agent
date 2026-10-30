@@ -5514,8 +5514,6 @@ const cxGateSlow = (r) => !!r && r.code === "SEND_FAILED" && !!r.detail && r.det
    本機那組寫死「這台電腦」的(時間、網路、限速)另寫雲端版;「上面這個 IP」在雲端就是主機的 IP,沿用。 */
 function cxChkTextCloud(r) {
   const c = r && r.code, d = (r && r.detail) || {};
-  const kc = cxKcText(r);
-  if (kc) return kc;
   return c === "TRADING_DISABLED" ? (cxCloudIp() ? t("cx.chk.trading") : t("cx.chk.tradingNoIp"))
     : c === "INCOMPLETE_PAIR" ? t("cx.chk.incomplete") : c === "IP_OR_KEY" ? t("cx.chk.ipOrKey") : c === "BAD_KEY_FORMAT" ? t("cx.chk.keyFormat")
     : c === "BAD_SECRET" ? t("cx.chk.secret") : c === "CLOCK" ? t("cx.chk.clockCloud") : c === "NETWORK" ? t("cx.chk.networkCloud")
@@ -5527,47 +5525,76 @@ function cxChkTextCloud(r) {
     : c === "UNDELIVERED" ? (trSendError({ error: d.error, kind: d.kind || "undelivered", machineState: d.machineState }, "connect", "cloud") || t("side.stopped"))
     : t("cx.chk.unknown");
 }
-/* 改金鑰驗證碼(api key_change_gate:帳號 24 小時內配對過新手機)。until = 這道關自己消失的時間,不是鎖的時間 */
-function cxKcText(r) {
-  const c = r && r.code, d = (r && r.detail) || {}, time = trStamp(d.until);
-  if (c === "KC_FORMAT") return t("cx.kc.format");
-  if (c === "KEY_CHANGE_CODE_INVALID") return t("cx.kc.invalid");
-  if (c === "VERIFY_LOCKED") return t("cx.kc.locked", { time });
-  if (c !== "KEY_CHANGE_VERIFY") return null;
-  if (d.sent) return r.expired ? t("cx.kc.expiredSent") : t("cx.kc.sent");
-  if (d.reason === "cooldown") return t("cx.kc.cooldown");
-  if (d.reason === "limited") return t("cx.kc.limited", { time });
-  if (d.reason === "send_failed") return t("cx.kc.sendFail");
-  return t("cx.kc.noEmail", { time });
+/* 改金鑰驗證碼(api key_change_gate:帳號 24 小時內配對過新手機)。關卡擋下時連接框換成驗證碼那一步,雲端連接與雲端群益共用;
+   狀態與字串照網頁 js/key_verify.js 的 view／statusText。until = 這道關自己消失的時間,不是鎖的時間 */
+const KC_GATE = { KEY_CHANGE_VERIFY: 1, KEY_CHANGE_CODE_INVALID: 1, VERIFY_LOCKED: 1 };
+const KC_REASON = { cooldown: "cooldown", limited: "limited", send_failed: "failed" };
+const KC_TEXT = { sent: "cx.kc.sent", resent: "cx.kc.resent", cooldown: "cx.kc.cooldown", limited: "cx.kc.limited", failed: "cx.kc.failed", noemail: "cx.kc.noemail", invalid: "cx.kc.invalid", locked: "cx.kc.locked" };
+// 關卡回應 → 這一步的畫面。prev = 上一個畫面:碼錯時寄送狀態那句沿用。dead = 沒有碼可輸(鎖住、沒有 email)。
+// 紅字只有碼錯與鎖住;過期不是用戶的錯:重寄成功是 resent 一句,重寄沒成功(冷卻、達上限)才在狀態句前講過期
+function kcView(r, prev) {
+  const c = r && r.code, d = (r && r.detail) || {};
+  if (c === "VERIFY_LOCKED") return { status: null, err: "locked", until: d.until || null, dead: true, expired: false };
+  if (c === "KEY_CHANGE_CODE_INVALID") return { status: prev ? prev.status : "sent", err: "invalid", until: prev ? prev.until : null, dead: false, expired: prev ? prev.expired : false };
+  const status = d.sent ? (r.expired ? "resent" : "sent") : KC_REASON[d.reason] || (d.reason ? "failed" : "noemail");
+  // 過期後重寄撞到上限:手上沒有能用的碼,比照沒有 email(停用輸入、焦點給取消)
+  const expired = !!r.expired && (status === "cooldown" || status === "limited");
+  return { status, err: null, until: !d.sent && d.reason !== "cooldown" ? d.until || null : null, dead: status === "noemail" || (expired && status === "limited"), expired };
 }
-// 驗證碼寄出了(或剛寄過)是下一步,不是錯:灰記號
-const kcCalm = (r) => !!r && r.code === "KEY_CHANGE_VERIFY" && !!r.detail && (r.detail.sent || r.detail.reason === "cooldown");
+// 寄送狀態那一句:CJK 句號結尾直接接,其他語言隔一格(同網頁 statusText)
+function kcStatusText(v) {
+  if (!v.status) return "";
+  const s = t(KC_TEXT[v.status]);
+  if (!v.expired) return s;
+  const e = t("cx.kc.expired");
+  if (v.dead) return e;   // 過期＋達上限:只講過期,時間句另起一行
+  return e + (/[。！？]$/.test(e) ? "" : " ") + s;
+}
+const kcSay = (v) => [kcStatusText(v), v.err ? t(KC_TEXT[v.err]) : "", v.until ? t("cx.kc.until", { t: trStamp(v.until) }) : ""].filter(Boolean).join(" ");
+const kcReady = (kc) => !!kc && !kc.view.dead && /^\d{6}$/.test(kc.code);
 // 埋點 key_verify(canon product-telemetry):step 只有 shown / ok / locked,不帶碼
 function kcTrack(step) { try { window.blave.trackEvent("key_verify", { step }); } catch (_) { } }
-/* 送完之後驗證碼那一格的下一個狀態(連接框與雲端群益共用):要碼 / 錯碼 → 顯示、清空;被鎖 → 收起;
-   沒送出去(UNDELIVERED)、碼的形狀不對 → 原樣;其他 = 過了關卡(碼一次性,已經用掉)→ 收起,下一次改再寄新的 */
-function kcNext(kc, code) {
-  if (code === "KEY_CHANGE_VERIFY" || code === "KEY_CHANGE_CODE_INVALID") { if (!kc) kcTrack("shown"); return { code: "" }; }
-  if (code === "VERIFY_LOCKED") { kcTrack("locked"); return null; }
-  if (code === "UNDELIVERED" || code === "KC_FORMAT") return kc;
-  if (kc) kcTrack("ok");
-  return null;
+/* 送完之後驗證碼那一步的下一個狀態:關卡回應 → 這一步(碼清空);其他 = 退回原本的流程(null)。
+   碼帶著送、回的不是關卡也不是沒送到 = 過了關卡(碼一次性,已經用掉)→ ok */
+function kcNext(kc, r) {
+  const c = r && r.code;
+  if (c === "VERIFY_LOCKED") kcTrack("locked");
+  else if (KC_GATE[c]) { if (!kc) kcTrack("shown"); }
+  else { if (kc && c !== "UNDELIVERED" && c !== "UNKNOWN") kcTrack("ok"); return null; }
+  return { code: "", view: kcView(r, kc && kc.view) };
 }
-// 驗證碼那一格:同金鑰欄位的殼;碼只在 holder.code(CXF.kc / CAP.kc),框關掉 / 成功就丟
-function kcField(holder, ro, enter) {
+/* 驗證碼那一步的內容(框標題與主鈕由呼叫端換):原因、寄送狀態、欄位、紅字、時間句。碼只在 holder.code(CXF.kc / CAP.kc),
+   退回表單、框關掉、通過就丟。sync = 打字時只改主鈕能不能按,不重畫 */
+function kcStep(holder, busy, ok, sync) {
+  const v = holder.view, w = trEl("div", "cx-kc-step");
+  w.appendChild(trEl("p", "cx-manual-note", t("cx.kc.why")));
+  const st = kcStatusText(v); if (st) w.appendChild(trEl("p", "cx-manual-note", st));
   const l = trEl("label", "fld"); l.appendChild(trEl("span", "fld-l", t("cx.kc.label")));
   const i = trEl("input", "f-input"); i.id = "cx-kc"; i.type = "text"; i.inputMode = "numeric"; i.autocomplete = "one-time-code"; i.maxLength = 6; i.spellcheck = false;
-  i.value = holder.code; i.readOnly = !!ro;
-  i.addEventListener("input", () => { holder.code = i.value.replace(/\D/g, "").slice(0, 6); if (i.value !== holder.code) i.value = holder.code; });
-  i.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); enter(); } });
-  const h = trEl("p", "cx-hint", t("cx.kc.hint")); h.id = "cx-kc-hint"; i.setAttribute("aria-describedby", h.id);
-  l.append(i, h);
-  return l;
+  i.value = holder.code; i.readOnly = !!busy; i.disabled = v.dead;
+  i.addEventListener("input", () => { holder.code = i.value.replace(/\D/g, "").slice(0, 6); if (i.value !== holder.code) i.value = holder.code; sync(); });
+  i.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); if (kcReady(holder) && !busy) ok(); } });
+  l.appendChild(i); w.appendChild(l);
+  if (v.err) { const p = trEl("p", "plan-err"), m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); p.append(m, trEl("span", "", t(KC_TEXT[v.err]))); w.appendChild(p); }
+  if (v.until) {   // 時間整段一個 mono(canon:時間戳用等寬)
+    const p = trEl("p", "cx-hint");
+    t("cx.kc.until").split("{t}").forEach((part, k) => { if (k) p.appendChild(trEl("span", "mono", trStamp(v.until))); if (part) p.append(part); });
+    w.appendChild(p);
+  }
+  return w;
 }
-// 驗證碼那一格在長表單的最底:聚焦時連同說明與結果那一句一起捲進來
-function kcFocus() { const k = $("cx-kc"); if (!k) return false; k.focus(); $("cx-body").lastElementChild.scrollIntoView({ block: "nearest" }); return true; }
-// 灰記號(不是錯):限速兩種輕的、驗證碼寄出了
-const cxCalm = (r) => !!r && (r.code === "RATE_LIMITED" || r.code === "RATE_BACKOFF" || kcCalm(r));
+// 這一步開著時焦點去哪:沒有碼可輸 → 取消;其他 → 欄位
+function kcFocus(kc) { const f = kc && kc.view.dead ? $("cx-cancel") : $("cx-kc"); if (f) f.focus(); }
+// 取消／✕／Esc:驗證碼那一步開著 → 退回表單(用戶剛填的金鑰還在),焦點回送出鈕;沒開 → 關框
+function cxDismiss() {
+  if (CXF.env === "cloud" && CXF.venue === CAPITAL && typeof CAP !== "undefined" && CAP.kc) return capKcBack();
+  if (!CXF.kc) return cxModalClose(false);
+  CXF.kc = null; CXF.res = null; cxBag().sig.cxm = null; cxModalPaint();
+  const go = $("cx-go");
+  if (!go.hidden) go.focus(); else { const f = $("cx-modal").querySelector("#cx-body input:not([disabled]), #cx-body select:not([disabled]), #cx-body button:not([disabled])"); if (f) f.focus(); }
+}
+// 灰記號(不是錯):限速兩種輕的
+const cxCalm = (r) => !!r && (r.code === "RATE_LIMITED" || r.code === "RATE_BACKOFF");
 /* 框頂:模擬交易／真實帳戶兩個大選項(預設模擬;canon Radio,沿用確認框的 .cf-opt),選真實帳戶才出交易所選單。
    兩個視角共用;群益那條 capital.js、統一那條 president.js 也用,所以選項在那兩條裡照樣看得到、切得回模擬 */
 // 句子裡的數字(100,000)用 mono(canon:數字一律 mono);其餘照原字
@@ -5650,13 +5677,16 @@ function cxModalPaint() {
   const L = cxBag(), box = $("cx-body"), go = $("cx-go"), cloud = CXF.env === "cloud";
   // 雲端:框開著時主機停了 → 框不自己關(可能正在貼金鑰),主鈕鎖住、結果那一格講原因;限速不做 app 端計時鎖(主機自己在冷卻)
   const down = cloud && envCloudKind(TR_BAGS.cloud.st) !== "running";
-  const venue = CXF.venue, locked = !cloud && Date.now() < CXF.lockUntil, off = L.cx.busy || (venue === BINANCE && locked) || down;
+  const venue = CXF.venue, locked = !cloud && Date.now() < CXF.lockUntil, kc = cloud ? CXF.kc : null;
+  const off = L.cx.busy || (venue === BINANCE && locked) || down || (!!kc && !kcReady(kc));
   const cip = cloud ? cxCloudIp() : null;
-  const sig = LANG + "|" + JSON.stringify([CXF.env, CXF.mode, CXF.bound, venue, L.cx, cloud ? cip : CXF.ip === undefined ? "?" : CXF.ip, CXF.ipBusy, CXF.res && [CXF.res.code, CXF.res.detail, CXF.res.expired], !!CXF.kc, locked, down]);
+  const sig = LANG + "|" + JSON.stringify([CXF.env, CXF.mode, CXF.bound, venue, L.cx, cloud ? cip : CXF.ip === undefined ? "?" : CXF.ip, CXF.ipBusy, CXF.res && [CXF.res.code, CXF.res.detail, CXF.res.expired], kc && kc.view, locked, down]);
   // 等的時候圓環在字前(同 app.js 更新鈕);只在字換了才重組——輪詢重畫不能重啟圓環的動畫
   // 已綁定的真實帳戶:主鈕跟入口同一個字「換金鑰」(一次只綁一家,「連接交易所」會被讀成再接一家);已綁模擬沒有主鈕
-  const goLabel = L.cx.busy ? t("cx.connecting") : venue === PAPER ? t("cx.goPaper") : CXF.bound ? t("cx.changeKey") : t("cx.connect");
+  // 驗證碼那一步:主鈕就是這一步的動作「確認」,送的時候圓環在字前
+  const goLabel = kc ? t("cx.kc.ok") : L.cx.busy ? t("cx.connecting") : venue === PAPER ? t("cx.goPaper") : CXF.bound ? t("cx.changeKey") : t("cx.connect");
   go.hidden = CXF.bound && venue === PAPER;
+  $("cx-title").textContent = kc ? t("cx.kc.title") : t("cx.title");   // 框的名稱(aria-labelledby)跟著這一步換
   if (go.textContent.trim() !== goLabel || !!go.querySelector(".spin16") !== !!L.cx.busy) {
     go.textContent = "";
     if (L.cx.busy) { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); go.append(sp, " "); }
@@ -5673,6 +5703,12 @@ function cxModalPaint() {
   L.sig.cxm = sig;
   const hadId = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
+  if (kc) {
+    box.appendChild(kcStep(kc, L.cx.busy, cxConnect, () => go.setAttribute("aria-disabled", L.cx.busy || down || !kcReady(CXF.kc) ? "true" : "false")));
+    if (down) { const p = trEl("p", "plan-err"), m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); p.append(m, trEl("span", "", t("side.stopped"))); box.appendChild(p); }
+    const back = hadId && $(hadId); if (back && !back.disabled) back.focus();
+    return;
+  }
   box.appendChild(cxVenueField(L));
   if (venue === PAPER) box.appendChild(cxPaperNote());
   else {
@@ -5716,7 +5752,6 @@ function cxModalPaint() {
     note.append(disc, store);
     box.appendChild(note);
   }
-  if (cloud && CXF.kc) box.appendChild(kcField(CXF.kc, L.cx.busy, cxConnect));
   const slot = trEl("div", ""); slot.setAttribute("role", "status"); box.appendChild(slot);
   const msg = down ? t("side.stopped") : (venue !== PAPER || cloud) && CXF.res ? cxChkText(CXF.res) : L.cx.err;
   const calm = !down && CXF.res && (cloud ? cxCalm(CXF.res) : (CXF.res.code === "RATE_LIMITED" && venue === BINANCE) || cxGateSlow(CXF.res));
@@ -5726,8 +5761,8 @@ function cxModalPaint() {
   const back = hadId && $(hadId); if (back && !back.disabled) back.focus(); else if (hadId) ($("cx-venue") || $("cx-mode-" + CXF.mode)).focus();
 }
 function cxWire() {
-  $("cx-cancel").addEventListener("click", () => cxModalClose(false));
-  $("cx-close").addEventListener("click", () => cxModalClose(false));
+  $("cx-cancel").addEventListener("click", cxDismiss);
+  $("cx-close").addEventListener("click", cxDismiss);
   $("cx-go").addEventListener("click", cxConnect);
   $("cx-scrim").addEventListener("mousedown", (e) => { if (e.target === $("cx-scrim")) cxModalClose(false); });
   $("cx-scrim").addEventListener("keydown", (e) => trapTab(e, $("cx-modal")));   // Esc 在 app.js 的 escTop(document 層)
@@ -5777,20 +5812,23 @@ async function cxConnectBinance() {
 async function cxConnectCloud() {
   const C = TR_BAGS.cloud;
   if (envCloudKind(C.st) !== "running") { cxModalPaint(); return; }
-  if (CXF.kc && !/^\d{6}$/.test(CXF.kc.code)) { CXF.res = { code: "KC_FORMAT", detail: {} }; C.sig.cxm = null; cxModalPaint(); srSay(t("cx.kc.format")); kcFocus(); return; }
+  const kc0 = CXF.kc;
+  if (kc0 && !kcReady(kc0)) return;   // 碼沒滿 6 位(或沒有碼可輸):主鈕停用,Enter 也不能用空欄位重送金鑰
   C.cx = { busy: true, err: null, retest: false }; CXF.res = null; cxModalPaint();
   const venue = CXF.venue;
   // 每一趟主行程都鑄新的 request_id(關卡擋下時 api 沒佔那顆);碼過期 = 不帶碼再送一次,讓 api 寄新的一組
   const go = (code) => window.blave.cloudConnect(Object.assign(venue === PAPER ? { venue: "paper" } : { venue, apiKey: CXF.apiKey, secret: CXF.secret, passphrase: CXF.passphrase }, { keyChangeCode: code || undefined, lang: LANG }));
   let r = null, expired = false;
   try {
-    r = await go(CXF.kc && CXF.kc.code);
+    r = await go(kc0 && kc0.code);
     if (r && r.code === "KEY_CHANGE_CODE_EXPIRED") { expired = true; r = await go(null); }
   } catch (_) { }
   C.cx.busy = false;
   if ($("cx-scrim").hidden || CXF.env !== "cloud") { cxForget(); return; }   // 等的時候用戶關了框:結果不上畫面(寫進去的話下一份報告會帶出已連接)
+  // 送碼途中退回了表單:沒過的結果不上畫面;過了照走(金鑰已經存了)
+  if (kc0 && CXF.kc !== kc0 && !(r && r.ok)) { C.sig.cxm = null; cxModalPaint(); return; }
   if (r && r.ok) {
-    kcNext(CXF.kc, "OK");
+    kcNext(kc0, { code: "OK" });
     cxForget();
     trackFeature(venue === PAPER ? "cx_paper_ok" : "cx_real_ok");
     C.cxSaved = { venue, code: r.code, detail: r.detail || {}, at: Date.now() };
@@ -5802,10 +5840,10 @@ async function cxConnectCloud() {
   }
   CXF.res = r && typeof r.code === "string" ? Object.assign({}, r, { expired }) : { code: "UNKNOWN", detail: {} };
   if (CXF.res.code === "BAD_SECRET") CXF.secret = "";
-  CXF.kc = kcNext(CXF.kc, CXF.res.code);
+  CXF.kc = kcNext(kc0, CXF.res);
+  if (CXF.kc) { CXF.res = null; srSay(kcSay(CXF.kc.view)); C.sig.cxm = null; cxModalPaint(); kcFocus(CXF.kc); return; }
   srSay(cxChkText(CXF.res));
   C.sig.cxm = null; cxModalPaint();
-  if (CXF.kc && kcFocus()) return;
   const c = CXF.res.code, f = c === "BAD_SECRET" ? $("cx-secret") : c === "IP_OR_KEY" || c === "BAD_KEY_FORMAT" ? $("cx-api") : $("cx-go");
   if (f) f.focus();
 }

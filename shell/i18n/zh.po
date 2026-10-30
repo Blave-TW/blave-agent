@@ -9360,37 +9360,46 @@ msgstr "結果不明，可能已經成交，不要手動補單。告訴 agent �
 msgid "tr.haltUnconfirmedNosym"
 msgstr "有一筆單結果不明、可能已成交，什麼單都不送。不要手動補單，告訴 agent 成交多少再按「啟動下單」。"
 
-# 改金鑰驗證碼(api key_change_gate:帳號 24 小時內配對過新手機,任何來源改交易所金鑰都要 email 驗證碼)。{time} = 這道關消失的時間
-msgid "cx.kc.label"
-msgstr "Email 驗證碼"
+# 改金鑰驗證碼(api key_change_gate:帳號 24 小時內配對過新手機,改交易所金鑰要 email 驗證碼)。字串同網頁 kc_*(parity 測試逐字比);{t} = 這道關消失的時間
+msgid "cx.kc.title"
+msgstr "輸入驗證碼"
 
-msgid "cx.kc.hint"
-msgstr "24 小時內配對過新手機，改金鑰要先驗證。"
+msgid "cx.kc.why"
+msgstr "這個帳號剛配對新手機，改金鑰要先驗證。"
+
+msgid "cx.kc.label"
+msgstr "驗證碼"
+
+msgid "cx.kc.ok"
+msgstr "確認"
 
 msgid "cx.kc.sent"
-msgstr "驗證碼已寄到帳號 email。輸入 6 位數後再按一次。"
+msgstr "驗證碼已寄到帳號 email。"
 
-msgid "cx.kc.expiredSent"
+msgid "cx.kc.resent"
 msgstr "驗證碼過期了，新的一組已寄到帳號 email。"
 
 msgid "cx.kc.cooldown"
-msgstr "剛寄過驗證碼，請查收帳號 email。"
+msgstr "剛寄過驗證碼，請先收信。"
 
 msgid "cx.kc.limited"
-msgstr "今天寄太多次驗證碼了。{time} 後改金鑰就不用驗證。"
+msgstr "寄送次數已達上限，請用最近收到的驗證碼。"
 
-msgid "cx.kc.sendFail"
-msgstr "驗證碼寄送失敗，金鑰沒有儲存。請稍後再按一次。"
+msgid "cx.kc.failed"
+msgstr "驗證碼沒寄出去，金鑰沒有儲存，請稍後再試。"
 
-msgid "cx.kc.noEmail"
-msgstr "帳號沒有 email，收不到驗證碼。{time} 後就能直接改。"
+msgid "cx.kc.noemail"
+msgstr "帳號沒有設定 email，收不到驗證碼。"
 
 msgid "cx.kc.invalid"
-msgstr "驗證碼不對，請重新輸入。"
+msgstr "驗證碼不對，請再輸入一次。"
+
+msgid "cx.kc.expired"
+msgstr "驗證碼過期了。"
 
 msgid "cx.kc.locked"
-msgstr "驗證碼錯太多次，今天不能再試。{time} 後就不用驗證。"
+msgstr "錯太多次，今天不能再試。"
 
-msgid "cx.kc.format"
-msgstr "請輸入 6 位數驗證碼。"
+msgid "cx.kc.until"
+msgstr "{t} 之後改金鑰就不用驗證。"
 

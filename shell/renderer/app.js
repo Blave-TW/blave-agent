@@ -1782,7 +1782,7 @@ document.addEventListener("mousedown", (e) => { if (!$("mp").contains(e.target))
 /* Esc 關最上面那一層,焦點在哪都一樣:點了框裡的字、從對話清單的 ✕ 開、視窗切回來,焦點會落在 body,
    掛在各框 scrim 上的 keydown 收不到(Wei 09-23 實機)。一次只關一層;由上往下照 DOM 疊的順序 */
 function escTop() {
-  return !$("del-scrim").hidden ? () => delClose(false) : !$("rpn-scrim").hidden ? rptNewClose : !$("ns-scrim").hidden ? nsClose : !$("idea-scrim").hidden ? ideaClose : !$("cx-scrim").hidden ? () => cxModalClose(false) : !$("lai-scrim").hidden ? laiClose : !$("shr-scrim").hidden ? shrClose
+  return !$("del-scrim").hidden ? () => delClose(false) : !$("rpn-scrim").hidden ? rptNewClose : !$("ns-scrim").hidden ? nsClose : !$("idea-scrim").hidden ? ideaClose : !$("cx-scrim").hidden ? cxDismiss : !$("lai-scrim").hidden ? laiClose : !$("shr-scrim").hidden ? shrClose
     : !$("lb-scrim").hidden ? lbClose : !$("set-scrim").hidden ? (rulesEscFn() || setClose) : !$("intro-scrim").hidden ? () => introClose("close") : !$("mp-panel").hidden ? () => mpClose(true)
     : !$("cs-list").hidden ? () => { csShowList(false); $("cs-toggle").focus(); } : null;
 }

@@ -9331,37 +9331,46 @@ msgstr "Outcome unknown — it may have filled; don't place it again yourself. N
 msgid "tr.haltUnconfirmedNosym"
 msgstr "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
 
-# Key-change code gate (api key_change_gate: a phone paired in the last 24 hours). {time} = when the gate lifts
-msgid "cx.kc.label"
-msgstr "Email code"
+# Key-change code gate (api key_change_gate: a phone paired in the last 24 hours). Same strings as web kc_* (parity test compares); {t} = when the gate lifts
+msgid "cx.kc.title"
+msgstr "Enter verification code"
 
-msgid "cx.kc.hint"
-msgstr "A phone was paired in the last 24 hours, so key changes need a code."
+msgid "cx.kc.why"
+msgstr "A new phone was just paired with this account, so key changes need a code."
+
+msgid "cx.kc.label"
+msgstr "Verification code"
+
+msgid "cx.kc.ok"
+msgstr "Confirm"
 
 msgid "cx.kc.sent"
-msgstr "We sent a code to your account email. Enter the 6 digits, then press again."
+msgstr "We sent a code to your account email."
 
-msgid "cx.kc.expiredSent"
+msgid "cx.kc.resent"
 msgstr "That code expired. A new one is in your account email."
 
 msgid "cx.kc.cooldown"
-msgstr "A code was just sent. Check your account email."
+msgstr "A code was just sent. Check your inbox."
 
 msgid "cx.kc.limited"
-msgstr "Too many codes sent today. From {time}, no code is needed."
+msgstr "Send limit reached. Use the latest code you received."
 
-msgid "cx.kc.sendFail"
-msgstr "The code couldn't be sent, and the key wasn't saved. Press again soon."
+msgid "cx.kc.failed"
+msgstr "The code couldn't be sent, so the key wasn't saved. Try again later."
 
-msgid "cx.kc.noEmail"
-msgstr "Your account has no email for a code. From {time}, no code is needed."
+msgid "cx.kc.noemail"
+msgstr "This account has no email, so it can't get a code."
 
 msgid "cx.kc.invalid"
-msgstr "That code is wrong. Enter it again."
+msgstr "Wrong code. Enter it again."
+
+msgid "cx.kc.expired"
+msgstr "That code expired."
 
 msgid "cx.kc.locked"
-msgstr "Too many wrong codes today. From {time}, no code is needed."
+msgstr "Too many wrong tries. No more tries today."
 
-msgid "cx.kc.format"
-msgstr "Enter the 6-digit code."
+msgid "cx.kc.until"
+msgstr "After {t}, key changes won't need a code."
 
