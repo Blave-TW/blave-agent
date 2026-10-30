@@ -258,15 +258,10 @@ def _request(method, path, env, body=None, query="", retries=3):
             p = body or {}
             cid = p.get("text")
             guard.audit("order_unknown", error=str(e), client_order_id=cid, **fields)
-            # only a futures market order is looked up again (resolve_unknown_order); spot and
-            # limit orders raise without a venue = not parkable
-            fut_market = (path == "/futures/usdt/orders" and str(p.get("price")) == "0"
-                          and p.get("tif") == "ioc")
+            # no venue = not parkable; place_market_order sets it (the only order looked up again)
             raise OrderNotConfirmed(
                 f"order {cid} sent, no answer ({e}) — it may have filled; check the position, "
-                f"do not resubmit", venue="gateio" if fut_market else None,
-                venue_symbol=str(p.get("contract") or "").replace("_", "") if fut_market else None,
-                client_order_id=cid) from e
+                f"do not resubmit", client_order_id=cid) from e
         except Exception as e:
             guard.audit("order_error", error=str(e), **fields)
             raise
@@ -369,17 +364,22 @@ def _send(method, path, env, body=None, query="", retries=3, no_resend=False):
             if no_resend and label in SEND_UNKNOWN_LABELS:
                 raise _SendUnknown(f"{label}: {err.get('message', '')}")
             cls = PriceDeviatedError if label == "MARKET_PRICE_TOO_DEVIATED" else GateioError
-            raise cls(label, err.get("message", r.text[:120]), path)
+            ex = cls(label, err.get("message", r.text[:120]), path)
+            ex.status = r.status_code
+            raise ex
         if not r.text:
             if no_resend:
                 raise _SendUnknown(f"HTTP {r.status_code} empty body")
             return {}  # DELETE endpoints return empty bodies
         try:
-            return r.json()
+            data = r.json()
         except ValueError:
             if no_resend:
                 raise _SendUnknown(f"HTTP {r.status_code} non-JSON ({r.text[:80]})")
             raise GateioError(r.status_code, f"non-JSON response ({r.text[:120]})", path)
+        if no_resend and not isinstance(data, dict):
+            raise _SendUnknown(f"HTTP {r.status_code} not an order ({r.text[:80]})")
+        return data
     raise last_err
 
 
@@ -598,7 +598,8 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
             raise OrderNotConfirmed(
                 f"order {text} accepted without an id ({str(placed)[:120]}) — it may have filled; "
                 f"check the position, do not resubmit", venue="gateio", client_order_id=text)
-        if placed.get("status") == "finished" and not _filled_ct(placed):
+        if (placed.get("status") == "finished" and "size" in placed and "left" in placed
+                and placed.get("finish_as") != "filled" and not _filled_ct(placed)):
             # the POST answer itself says it ended with nothing filled (e.g. ioc on an empty
             # book): known, and polling it could read "not found" for the whole window
             raise GateioError("N/A", f"order {order_id} ended {placed.get('finish_as')} with "
@@ -654,7 +655,9 @@ def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, park
     try:
         order = get_order(env, symbol, ident)
     except GateioError as e:
-        if e.code != "ORDER_NOT_FOUND":
+        # a text past its lookup window may answer another 4xx label than ORDER_NOT_FOUND
+        by_text_4xx = not order_id and 400 <= (getattr(e, "status", None) or 0) < 500
+        if e.code != "ORDER_NOT_FOUND" and not by_text_4xx:
             return None
         return _fills_of(env, symbol, order_id, client_order_id, parked_at)
     except Exception:
@@ -672,12 +675,14 @@ def _fills_of(env, symbol, order_id, client_order_id, parked_at):
         mult = Decimal(_futures_rules(env, symbol)["multiplier"])
         start = int(float(parked_at) - PARK_TRADE_LOOKBACK_S + _time_offset["s"])
         end = int(float(parked_at) + PARK_TRADE_LOOKAHEAD_S + _time_offset["s"])
-        rows = []
+        rows = {}   # by trade id: a fill landing between pages shifts the offsets
         for page in range(_TRADES_MAX_PAGES):
             got = _send("GET", "/futures/usdt/my_trades_timerange", env,
                         query=f"contract={_contract(symbol)}&from={start}&to={end}"
                               f"&limit={_TRADES_PAGE}&offset={page * _TRADES_PAGE}") or []
-            rows.extend(got)
+            for f in got:
+                key = (f.get("trade_id") or f.get("id")) if isinstance(f, dict) else None
+                rows[key if key is not None else ("row", page, len(rows))] = f
             if len(got) < _TRADES_PAGE:
                 break
         else:
@@ -686,7 +691,7 @@ def _fills_of(env, symbol, order_id, client_order_id, parked_at):
         return None
     want_oid = str(order_id) if order_id else None
     want_text = str(client_order_id) if client_order_id else None
-    mine = [f for f in rows if isinstance(f, dict) and (
+    mine = [f for f in rows.values() if isinstance(f, dict) and (
         (want_oid and str(f.get("order_id") or "") == want_oid)
         or (want_text and str(f.get("text") or "") == want_text))]
     ct = sum(abs(Decimal(str(f.get("size") or 0))) for f in mine)

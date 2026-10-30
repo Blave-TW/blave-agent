@@ -67,10 +67,11 @@ CALLS = {"POST": [], "GET": [], "HEADERS": []}
 
 def wire(posts, gets=None, trades=None):
     """posts / gets: lists of a Resp or an exception instance, consumed in order (last repeats);
-    trades: rows my_trades_timerange answers (offset-paged)."""
+    trades: rows my_trades_timerange answers (offset-paged), or fn(offset, limit) → rows."""
     for v in CALLS.values():
         v.clear()
-    posts, gets, trades = list(posts), list(gets or [Resp(200, {})]), list(trades or [])
+    posts, gets = list(posts), list(gets or [Resp(200, {})])
+    trades = trades if callable(trades) else list(trades or [])
 
     def nxt(q):
         x = q.pop(0) if len(q) > 1 else q[0]
@@ -87,7 +88,7 @@ def wire(posts, gets=None, trades=None):
         if "/my_trades_timerange" in url:
             q = dict(kv.split("=") for kv in url.split("?", 1)[1].split("&"))
             off, lim = int(q["offset"]), int(q["limit"])
-            return Resp(200, trades[off:off + lim])
+            return Resp(200, trades(off, lim) if callable(trades) else trades[off:off + lim])
         if "/my_trades" in url:
             return Resp(200, [])
         return nxt(gets)
@@ -135,6 +136,8 @@ for label, post_answer in (
         ("HTTP 201 non-JSON", Resp(201, None, "<html>proxy</html>")),
         ("HTTP 201 empty body", Resp(201, None, "")),
         ("2xx without an id", Resp(201, {"contract": "BTC_USDT", "status": "open"})),
+        ("2xx JSON list", Resp(201, [{"id": 77}])),
+        ("2xx JSON string", Resp(201, "ok")),
 ):
     wire([post_answer, accepted()], [NOT_FOUND])
     try:
@@ -264,6 +267,23 @@ try:
 except gt.GateioError as e:
     check(not portfolio._outcome_unknown(e) and not CALLS["GET"],
           "POST answer already finished, nothing filled: GateioError without polling")
+wire([accepted(status="finished", finish_as="ioc", left=60, fill_price="67010")], [part])
+try:
+    r = place()
+    check(r["status"] == "filled" and abs(r["executed_qty"] - 0.004) < 1e-12 and len(CALLS["POST"]) == 1,
+          "POST answer finished after a partial fill: polled, the fill returned, not a rejection")
+except Exception as e:
+    check(False, f"POST answer finished after a partial fill: raised {type(e).__name__} (reads as 拒單)")
+_shape = {"id": 77, "status": "finished", "finish_as": "ioc", "text": TEXT}
+for label, ans in (("without size / left", dict(_shape)), ("without left", dict(_shape, size=100)),
+                   ("finish_as filled, size = left", dict(_shape, finish_as="filled", size=100, left=100))):
+    wire([Resp(201, ans)], [FILLED])
+    try:
+        r = place()
+        check(r["status"] == "filled" and any(g.endswith("/orders/77") for g in CALLS["GET"]),
+              f"POST answer finished {label}: not taken as a no-fill, polled to the fill")
+    except Exception as e:
+        check(False, f"POST answer finished {label}: raised {type(e).__name__} (reads as 拒單)")
 
 # ── resolve_unknown_order, through the reconciler's own entry point ──────────
 venue_wiring.read_env = lambda: ENV
@@ -304,6 +324,15 @@ check(q.get("contract") == "BTC_USDT" and int(q.get("from", 0)) == int(PARKED - 
 wire([accepted()], [NOT_FOUND], trades=TRADES)
 got = query(order_id="91", cid="t-nomatch")
 check(got == (0.05, 66000.0), f"order id not findable (zero-fill aged out or not): matched on order_id ({got})")
+for label, ans in (("ORDER_NOT_FOUND under 400", Resp(400, {"label": "ORDER_NOT_FOUND", "message": "x"})),
+                   ("INVALID_PARAM_VALUE", Resp(400, {"label": "INVALID_PARAM_VALUE", "message": "bad id"})),
+                   ("a 404 without a label", Resp(404, None, "Not Found"))):
+    wire([accepted()], [ans], trades=TRADES)
+    got = query()
+    check(got is not None and abs(got[0] - 0.01) < 1e-12,
+          f"text lookup answered {label}: the fills are matched all the same ({got})")
+wire([accepted()], [Resp(400, {"label": "INVALID_PARAM_VALUE", "message": "x"})], trades=TRADES)
+check(query(order_id="77") is None, "an order id lookup answered a 4xx other than ORDER_NOT_FOUND: unknown")
 wire([accepted()], [NOT_FOUND], trades=[t for t in TRADES if t["text"] != TEXT])
 check(query() is None, "not found and no fill of ours: still unknown (kept parked, never released as 0)")
 many = [{"trade_id": str(i), "order_id": str(1000 + i), "size": 1, "price": "1", "text": "t-x"} for i in range(150)]
@@ -312,10 +341,24 @@ wire([accepted()], [NOT_FOUND], trades=many)
 got = query()
 check(got == (0.01, 67000.0) and len([g for g in CALLS["GET"] if "/my_trades_timerange" in g]) == 2,
       f"fills past the first page are read (offset paging) ({got})")
+# the page cap: ours sits on page 0, which is full, so only the cap can make it unknown
+full = [{"trade_id": "z", "order_id": "77", "size": 100, "price": "67000", "text": TEXT}]
+full += [{"trade_id": str(i), "order_id": str(1000 + i), "size": 1, "price": "1", "text": "t-x"} for i in range(99)]
 gt._TRADES_MAX_PAGES, _keep = 1, gt._TRADES_MAX_PAGES
-wire([accepted()], [NOT_FOUND], trades=many)
-check(query() is None, "more fills than the pages read: unknown, not a partial answer")
+wire([accepted()], [NOT_FOUND], trades=lambda off, lim: full[off:off + lim] if off == 0 else full[:lim])
+check(query() is None, "page 0 full and the page cap reached: unknown, not a partial answer")
 gt._TRADES_MAX_PAGES = _keep
+# a fill landing between pages shifts the offsets: page 1 repeats page 0's last row (ours)
+shifted = full[1:] + full[:1]   # ours last on page 0
+
+
+def _pages(off, lim):
+    return shifted[:lim] if off == 0 else [shifted[lim - 1]]
+
+
+wire([accepted()], [NOT_FOUND], trades=_pages)
+got = query()
+check(got == (0.01, 67000.0), f"a row read on two pages is counted once (by trade id) ({got})")
 for label, ans in (("a read timeout", requests.exceptions.ReadTimeout("t")),
                    ("HTTP 502", Resp(502, None, "Bad Gateway")),
                    ("still open", order_row("open", left=100, finish_as=None)),
