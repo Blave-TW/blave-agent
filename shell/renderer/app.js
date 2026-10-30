@@ -5193,6 +5193,11 @@ document.addEventListener("keydown", (e) => {
   sel.selectAllChildren(region);
 });
 
+// 泡泡是最上層的暫態層:window capture 比 escTop、versions.js 的 capture、各選單自己的 Esc 都先跑,收掉看得見的泡泡就不往下傳
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229 && tipEsc()) { e.preventDefault(); e.stopPropagation(); }
+}, true);
+
 /* 泡泡由 CSS 的 :hover / :focus-visible + .tip 帶出來的那幾種(.mp-tip、.tr-tipb、.rules-tipb、瀏覽器的 .ibtn):Esc 要收得掉(canon › Tooltip),
    但 CSS 狀態收不掉——給觸發點掛 data-tip-off(CSS 帶 :not([data-tip-off])),滑出或失焦再拿掉 */
 // 回傳這一下有沒有收掉一個看得見的泡泡:有的話 Esc 只收泡泡、不往下關框(escTop 先問這裡,一次只關一層)

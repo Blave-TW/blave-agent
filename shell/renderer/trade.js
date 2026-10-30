@@ -4515,7 +4515,7 @@ function trHistTipBox() {
   trHistTipEl.setAttribute("role", "tooltip");
   trHistTipEl.setAttribute("aria-hidden", "true");
   document.body.appendChild(trHistTipEl);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") trHistTipHide(); });
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229 && trHistTipHide()) { e.preventDefault(); e.stopPropagation(); } }, true);   // 同 report-robust.js:先收泡泡、不往下傳
   const gone = () => { if (trHistTipAt && !trHistTipAt.getClientRects().length) trHistTipHide(); };
   document.addEventListener("pointermove", gone);
   document.addEventListener("keyup", gone);
@@ -4534,10 +4534,12 @@ function trHistTipShow(anchor, text) {
   tip.setAttribute("aria-hidden", "false");
 }
 function trHistTipHide() {
-  if (!trHistTipEl) return;
+  if (!trHistTipEl) return false;
+  const shown = trHistTipEl.classList.contains("is-on");
   trHistTipAt = null;
   trHistTipEl.classList.remove("is-on");
   trHistTipEl.setAttribute("aria-hidden", "true");
+  return shown;
 }
 function trHistTipBtn(text, tip, fk) {
   const b = trEl("button", "tr-tipb px", text);
