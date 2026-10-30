@@ -105,7 +105,7 @@ DUPLICATED_ORDER = "-1141"
 # -1001 DISCONNECTED — the same codes and names as Binance's, where they are "execution
 # status unknown" (lib/order_binance SEND_UNKNOWN_CODES). A false unknown only parks the order until it is looked up or the user
 # resolves it; a false rejection sends it again.
-SEND_UNKNOWN_CODES = {"-1000", "-1001", "-1006", "-1007", DUPLICATED_ORDER}
+SEND_UNKNOWN_CODES = {"-1000", "-1001", "-1006", "-1007"}
 NO_SUCH_ORDER = "-2013"
 # cancel of an order that is gone (filled / cancelled) or never existed. -1150
 # CANCEL_ORDER_FAILED is not in it: the order may still rest, so the caller
@@ -138,7 +138,8 @@ class StockcoinError(Exception):
 
 class MultiplierMismatch(StockcoinError):
     """An order reply's contractMultiplier is not the one this lib sized with — every
-    further order on the symbol would be wrong-sized; never retried or polled past."""
+    further order on the symbol would be wrong-sized. In the confirm poll it becomes an
+    OrderNotConfirmed that cannot be parked (the order was accepted): HALT, never resent."""
 
 
 # lib/reject_token kinds, from the venue doc §6.3 plus two codes the doc does
@@ -323,10 +324,10 @@ def _never_sent(e):
 def _send(method, path, env, params=None, retries=3, no_resend=False):
     """no_resend (market order POSTs): once the request may have reached StockCoin it is
     never sent again. A dropped connection, a read timeout, a body cut mid-transfer, a 5xx,
-    a 2xx that is not JSON or a SEND_UNKNOWN_CODES answer is looked up once by its
+    a 408, a 2xx that is not JSON, -1141 or a SEND_UNKNOWN_CODES answer is looked up once by its
     clientOrderId; found → that order, else _SendUnknown (the query side may lag the
     engine — lib/unconfirmed keeps looking). Only a request that never left (_never_sent),
-    -1021 (refused at authentication, re-signed) and -1003 (rate limited) go out again.
+    -1021 (refused at authentication, re-signed) and -1003 / 429 (rate limited) go out again.
     Other order POSTs (limit, STOP) are looked up the same way and raise their own error."""
     api_key, secret = _creds(env)
     method = method.upper()
@@ -399,13 +400,15 @@ def _send(method, path, env, params=None, retries=3, no_resend=False):
             _sync_time(env)
             last_err = e
             continue
-        retryable = code == RATE_LIMITED or (method != "POST" and r.status_code >= 500)
+        retryable = (code == RATE_LIMITED or r.status_code == 429
+                     or (method != "POST" and r.status_code >= 500))
         if retryable and attempt < retries - 1:
             time.sleep(1 + attempt * 2)
             last_err = e
             continue
+        # 408: the gateway gave up waiting on the backend, which may still have taken it
         if order_post and (r.status_code >= 500 or code == DUPLICATED_ORDER
-                           or (no_resend and code in SEND_UNKNOWN_CODES)):
+                           or (no_resend and (code in SEND_UNKNOWN_CODES or r.status_code == 408))):
             return landed_or(e)
         raise e
     raise last_err
@@ -758,8 +761,13 @@ def _confirm(env, symbol, order_id, timeout=20):
     while time.time() < deadline:
         try:
             o = get_order(env, symbol, order_id)
-        except MultiplierMismatch:
-            raise
+        except MultiplierMismatch as e:
+            # StockCoin took the order (it may have filled) with another multiplier than the
+            # book's: booking it would be wrong-sized and a rejection would send it again
+            # next round — not parkable, so lib/portfolio parks it as manual and HALTs
+            raise OrderNotConfirmed(
+                f"{e} — order {order_id} was accepted and may have filled; check the position "
+                f"on StockCoin, do not resubmit", order_id=str(order_id)) from e
         except Exception as e:
             # the id came from the placement answer: a read timeout, a 5xx or -2013 (the
             # query side not caught up yet) leave the order's fate unknown, not rejected
@@ -773,10 +781,12 @@ def _confirm(env, symbol, order_id, timeout=20):
         delay = min(delay * 1.6, 2.0)
     state = (f"still {o['raw_status']}" if o else
              f"not queryable ({type(last_err).__name__}: {str(last_err)[:80]})")
-    raise OrderNotConfirmed(
+    err = OrderNotConfirmed(
         f"stockcoin {symbol} order {order_id} accepted but {state} after {timeout}s — it may "
         f"have filled; check the position, do not resubmit",
         venue="stockcoin", venue_symbol=symbol, order_id=str(order_id))
+    err.last_status = o["raw_status"] if o else None  # None: never read (query side down)
+    raise err
 
 
 def place_market_order(env, symbol, direction, qty, client_order_id=None,
@@ -809,7 +819,7 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
     started = _now_ms() - 5000
     try:
         placed = _request("POST", "/futures/order", env, params)
-        oid = (placed or {}).get("orderId")
+        oid = placed.get("orderId") if isinstance(placed, dict) else None
         if not oid:
             # a success answer: the order may be in, only its id is missing
             raise OrderNotConfirmed(

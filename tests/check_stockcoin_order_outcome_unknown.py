@@ -51,6 +51,7 @@ clock = {"t": 1_000_000.0}
 sc.time = SimpleNamespace(time=lambda: clock["t"], sleep=lambda s: clock.__setitem__("t", clock["t"] + s),
                           strftime=_time.strftime, gmtime=_time.gmtime)
 sc._sync_time = lambda env: None
+_real_rules = sc.get_contract_rules
 sc.get_contract_rules = lambda env, symbol: {"step": "1", "min_qty": 0.0001, "min_notional": 0.0,
                                              "contract_value": 0.0001}
 sc._available = lambda env, vsym, direction: 10
@@ -151,6 +152,10 @@ for label, answer in (
         ("HTTP 200 non-JSON", Resp(200, None, "<html>proxy</html>")),
         ("HTTP 200 without an orderId", Resp(200, {"code": 200, "msg": "ok"})),
         ("HTTP 200 empty body", Resp(200, None, "")),
+        ("HTTP 200 JSON list", Resp(200, ["x"])),
+        ("HTTP 200 JSON string", Resp(200, "OK")),
+        ("HTTP 408 (non-JSON)", Resp(408, None, "<html>Request Timeout</html>")),
+        ("HTTP 408 JSON", Resp(408, {"code": -1007, "msg": "timeout"})),
 ):
     wire(answer, NOT_FOUND)
     try:
@@ -212,6 +217,10 @@ wire([Resp(400, {"code": -1021, "msg": "timestamp"}), ACCEPTED], FILLED)
 check(place()["order_id"] == "9001" and len(posts()) == 2, "-1021 (refused at authentication) is re-signed and resent")
 wire([Resp(400, {"code": -1003, "msg": "Too many requests"}), ACCEPTED], FILLED)
 check(place()["order_id"] == "9001" and len(posts()) == 2, "-1003 (rate limited) is retried")
+wire([Resp(429, None, "<html>Too Many Requests</html>"), ACCEPTED], FILLED)
+check(place()["order_id"] == "9001" and len(posts()) == 2, "HTTP 429 (non-JSON, rate limited) is retried")
+check("-1141" not in sc.SEND_UNKNOWN_CODES and sc.DUPLICATED_ORDER == "-1141",
+      "-1141 is handled on its own (looked up, then unknown), not through SEND_UNKNOWN_CODES")
 wire(requests.exceptions.InvalidURL("bad"), FILLED)
 try:
     place()
@@ -259,12 +268,39 @@ except sc.OrderNotConfirmed:
     check(False, "canceled with nothing filled is known, not unknown")
 except sc.StockcoinError as e:
     check(not portfolio._outcome_unknown(e), "canceled with nothing filled: StockcoinError (a known no-fill)")
+# a new contract with no 24h volume skips the turnover check (_check_multiplier), so the first
+# order is accepted and its reply shows another multiplier: accepted = never a rejection
+# (the next round would send it again), and not parkable (booking it would be wrong-sized)
+_stub_rules, _stub_ticker = sc.get_contract_rules, sc._ticker
+sc.get_contract_rules = _real_rules
+sc._ticker = lambda vsym: {"symbol": vsym, "volume": "0", "quoteVolume": "0", "highPrice": "0",
+                           "lowPrice": "0", "lastPrice": "180"}
+sc._rules_cache.clear()
 wire(ACCEPTED, Resp(200, {**row(), "contractMultiplier": "0.001"}))
 try:
     place()
     check(False, "a multiplier mismatch must raise")
-except sc.MultiplierMismatch as e:
-    check(not portfolio._outcome_unknown(e), "a reply with another contractMultiplier stops the order, not polled past")
+except sc.OrderNotConfirmed as e:
+    check(portfolio._outcome_unknown(e) and not e.parkable() and str(e.order_id) == "9001"
+          and isinstance(e.__cause__, sc.MultiplierMismatch) and "contractMultiplier" in str(e)
+          and len(posts()) == 1 and not [c for c in CALLS if c["method"] == "DELETE"],
+          "no 24h volume, the reply's multiplier differs: an unknown outcome that cannot be parked "
+          "(HALT), one POST, the multiplier named")
+except Exception as e:
+    check(False, f"a multiplier mismatch raised {type(e).__name__} (reads as 拒單 → resent next round)")
+sc.get_contract_rules, sc._ticker = _stub_rules, _stub_ticker
+sc._rules_cache.clear()
+# the confirm timeout says whether the order was read at all (live_stockcoin_verify stops if not)
+wire(ACCEPTED, ACCEPTED)
+try:
+    place()
+except sc.OrderNotConfirmed as e:
+    check(e.last_status == "NEW", f"poll timeout after reading NEW: last_status NEW ({e.last_status})")
+wire(ACCEPTED, requests.exceptions.ReadTimeout("t"))
+try:
+    place()
+except sc.OrderNotConfirmed as e:
+    check(e.last_status is None, "poll timeout, never read: last_status None")
 
 # ── resolve_unknown_order, through the reconciler's own entry point ──────────
 venue_wiring.read_env = lambda *a, **k: ENV

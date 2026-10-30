@@ -333,8 +333,9 @@ route("POST", "/futures/order", lambda p: (ORDERS.__setitem__("9001", {**order_r
 try:
     order.place_market_order(ENV, "NVDAUSDT", "long", 0.0005)
     check(False, "an order reply with another contractMultiplier raises")
-except order.StockcoinError as e:
-    check("contractMultiplier" in str(e), "an order reply with another contractMultiplier raises")
+except order.OrderNotConfirmed as e:
+    check("contractMultiplier" in str(e) and not e.parkable(),
+          "an order reply with another contractMultiplier raises a not-parkable unknown outcome (HALT)")
 
 # -1141: the clientOrderId already exists → that order, not a second one
 ORDERS.clear()

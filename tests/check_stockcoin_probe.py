@@ -53,8 +53,10 @@ CONTRACTS = [{"symbol": s, "baseToken": s.split("-")[0], "lastPrice": px, "bid":
 
 
 class Venue:
-    def __init__(self, open_reply, leftover=None, start_legs=None, close_fails=(), msgs=None):
+    def __init__(self, open_reply, leftover=None, start_legs=None, close_fails=(), msgs=None,
+                 query_down=()):
         self.msgs = msgs or {}
+        self.query_down = set(query_down)  # venue symbols whose OPEN order's query always times out
         self.open_reply = open_reply      # venue symbol -> "fill" | error code
         self.legs = dict(start_legs or {})  # venue symbol -> contracts long
         self.leftover = leftover          # venue symbol whose close never lands
@@ -83,6 +85,8 @@ class Venue:
         if path == "/futures/trades":
             return Resp([{"orderId": oid, "fee": "0.01"} for oid in self.orders])
         if path == "/futures/order" and method == "GET":
+            if q.get("symbol") in self.query_down and self.orders[q["orderId"]].get("side") == "BUY_OPEN":
+                raise requests.exceptions.ReadTimeout("fake query timeout")
             return Resp(self.orders[q["orderId"]])
         if path == "/futures/order" and method == "POST":
             sym, side = q["symbol"], q["side"]
@@ -103,7 +107,8 @@ class Venue:
             oid = str(self.n)
             px = next(c["lastPrice"] for c in CONTRACTS if c["symbol"] == sym)
             self.orders[oid] = {"orderId": oid, "clientOrderId": q["clientOrderId"], "status": "FILLED",
-                                "executedQty": q["quantity"], "origQty": q["quantity"], "avgPrice": px}
+                                "executedQty": q["quantity"], "origQty": q["quantity"], "avgPrice": px,
+                                "side": side}
             return Resp({"orderId": oid})
         raise AssertionError(f"unmocked {method} {path}")
 
@@ -202,6 +207,19 @@ for exc, label in ((requests.exceptions.ConnectionError("fake drop"), "a dropped
     check(not any(s in ("XAU-PERP-USDT", "TSLA-PERP-USDT") for s, _ in v.posts())
           and any(p == "/futures/positions" and not q.get("symbol") for m, p, q in v.calls[i_fail + 1:]),
           f"{label} stops the probe and CLEANUP still reads every contract", (code, v.posts()))
+
+# 4c: the open is accepted but its query times out for the whole confirm window (an
+# OrderNotConfirmed that never read the order); the leftover close goes through. Stop anyway,
+# never order the next contract on a live key while orders cannot be read
+from lib import order_stockcoin as _osc  # noqa: E402
+_defaults = _osc._confirm.__defaults__
+_osc._confirm.__defaults__ = (0.2,)
+v = Venue({}, query_down={"SAMSUNG-PERP-USDT"})
+code, rep = run(v)
+_osc._confirm.__defaults__ = _defaults
+check(("SAMSUNG-PERP-USDT", "BUY_OPEN") in v.posts()
+      and not any(s in ("XAU-PERP-USDT", "TSLA-PERP-USDT") for s, _ in v.posts()) and rep and rep["stopped"],
+      "an order the query side cannot read stops the probe before the next contract", (code, v.posts()))
 
 # 5: not flat at the start → refused, no order
 v = Venue({}, start_legs={"BTC-PERP-USDT": 1})

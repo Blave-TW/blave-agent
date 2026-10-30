@@ -15,7 +15,9 @@ Asserts:
 - StockCoin answers FILLED: booked once from its qty (contracts → base) and price, park cleared,
   no POST that round or the next (the book holds it);
 - POST -1007, then the order reads CANCELED with nothing filled: released, nothing booked, the
-  order is sent once more and fills — the book ends at the target, neither doubled nor missing.
+  order is sent once more and fills — the book ends at the target, neither doubled nor missing;
+- an accepted order whose reply shows another contractMultiplier: parked as manual, HALT, no
+  rejection row, nothing booked, nothing sent the next round.
 
 Run: cd blave-agent && .venv/bin/python tests/check_reconcile_unconfirmed_stockcoin.py
 """
@@ -227,6 +229,22 @@ POS[:] = [0.2]
 n = round_()
 check(n == 0 and abs(book_qty() - 0.2) < 1e-12,
       f"the book ends at the target: 0.2 NVDA, neither doubled nor missing ({n}, {book_qty()})")
+
+# ── accepted, but the reply's contractMultiplier differs → HALT, never resent ──
+amount(54)
+NET["post"] = Resp(200, {"orderId": "120", "clientOrderId": "x", "status": "NEW", "executedQty": "0"})
+NET["order"] = lambda q: Resp(200, {"orderId": "120", "clientOrderId": "x", "symbol": "NVDA-PERP-USDT",
+                                    "side": "BUY_OPEN", "status": "FILLED", "executedQty": "1000",
+                                    "origQty": "1000", "avgPrice": str(MARK), "contractMultiplier": "0.001"})
+plain_before = len([r for r in rows() if not r.get("kind")])
+n = round_()
+mp = [e for e in unconfirmed.load().values() if str(e.get("order_id")) == "120"]
+check(n == 1 and guard.halted() and mp and mp[0].get("manual") is True
+      and len([r for r in rows() if not r.get("kind")]) == plain_before and len(booked()) == 1,
+      f"multiplier mismatch on an accepted order: one POST, parked as manual, HALT, no rejection row, "
+      f"nothing booked ({n}, {mp})")
+check(round_() == 0 and abs(book_qty() - 0.2) < 1e-12,
+      "the next round sends nothing (HALT) and the book is unchanged")
 
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)
