@@ -42,6 +42,7 @@ const POLL_HOLD_MS = 25000, POLL_TIMEOUT_MS = 40000, REQUEST_TIMEOUT_MS = 10000,
 const FLAG_TICK_MS = 2 * 60 * 1000;
 const BATCH_MS = 300;
 const REPORT_MAX_CHUNKS = 50, REPORT_MAX_BYTES = 1536 * 1024;   // api REPORT_CHUNKS_MAX = 50、body 上限 2 MB(留給憑證與 JSON 外殼)
+const CLAIM_RETRY_MS = 500, CLAIM_DEADLINE_MS = 15000;   // started 沒回應:重送到 15 秒,之後 start_aborted
 const BACKOFF_MIN_MS = 2000, BACKOFF_MAX_MS = 60000, REENABLE_GAP_MS = 30000;
 const SYNC_DAYS = 30, SYNC_MAX_SESSIONS = 200, SYNC_PER_SESSION = 500;
 const SYNC_BATCH_TURNS = 100, SYNC_BATCH_BYTES = 512 * 1024, SYNC_GAP_MS = 1000, TURN_MAX_BYTES = 32 * 1024;
@@ -128,7 +129,7 @@ function createRelay(opts) {
     let r = null;
     try { r = await withTimeout(opts.post(opts.apiBase + ep, b, { timeout: timeoutMs || REQUEST_TIMEOUT_MS }), (timeoutMs || REQUEST_TIMEOUT_MS) + 1000); } catch (_) { r = null; }
     const code = r && r.body && r.body.error_code;
-    if (r && r.status === 403 && code === OFF_CODE) setFlag(false);
+    if (r && r.status === 403 && code === OFF_CODE) { dropMobile(); setFlag(false); }   // 總開關關:手機的都停、排隊的回 not_run、relay 停
     // 憑證失效或 api 說這台沒開:手機的回合一律停、排隊清空(再跑下去回報也送不到,手機會以為還在等)
     if (r && (r.status === 401 || (r.status === 409 && code === NOT_ENABLED_CODE))) { dropMobile(); if (r.status === 409) reenable(); }
     return r || { status: 0, body: null };
@@ -269,57 +270,64 @@ function createRelay(opts) {
     }
     await launch(sid, mid, m.content);
   }
-  /* 排隊叫出的那一句:先回報 started、api 回 ok 才開跑(那段時間 api 可能已經判它沒跑、手機撤回或被撤銷)。
-     回 true = 可以跑 */
-  async function startedOk(sid, mid) {
+  /* 先認領、後開跑(直接開跑與排隊叫出都一樣):單獨回報 started,api 回 ok 才 startTurn。那段時間 api 可能已經判它沒跑、
+     手機撤回或被撤銷。started 沒回應就重送(api 對已經 STARTED 的冪等回 ok),期限到了還是沒回應 → "lost"。
+     → "ok" | "cancel"(api 說不得跑)| "lost" */
+  async function claimStart(sid, mid) {
+    const until = clock() + (opts.claimDeadlineMs || CLAIM_DEADLINE_MS);
+    let gap = CLAIM_RETRY_MS;
     await flush();
-    const r = await call(EP.report, { chunks: [{ type: "started", session_id: sid, message_id: mid }] });
-    if (r.status !== 200 || !r.body) return false;
-    const res = Array.isArray(r.body.results) ? r.body.results[0] : null;
-    const go = !!res && res.status === "ok" && !(Array.isArray(r.body.cancel) && r.body.cancel.includes(mid));
-    // 這一句還沒開跑:先從 active 拿掉,回應裡對它的 cancel 才不會去停一輪不存在的回合
-    if (!go && active.get(sid) && active.get(sid).message_id === mid) active.delete(sid);
-    reportAnswer(r.body);
-    return go;
+    for (;;) {
+      const r = await call(EP.report, { chunks: [{ type: "started", session_id: sid, message_id: mid }] });
+      if (r.status === 200 && r.body) {
+        const res = Array.isArray(r.body.results) ? r.body.results[0] : null;
+        const go = !!res && res.status === "ok" && !(Array.isArray(r.body.cancel) && r.body.cancel.includes(mid));
+        // 這一句還沒開跑:先從 active 拿掉,回應裡對它的 cancel 才不會去停一輪不存在的回合
+        if (!go && active.get(sid) && active.get(sid).message_id === mid) active.delete(sid);
+        reportAnswer(r.body);
+        return go ? "ok" : "cancel";
+      }
+      if (r.status !== 0 || r.noCreds || stopped) return "cancel";   // 4xx:這台沒開／憑證失效／總開關關(call 已處理)
+      if (clock() + gap > until) return "lost";
+      await pause(gap); gap = Math.min(gap * 2, 4000);
+    }
   }
-  async function launch(sid, mid, content, fromQueue) {
+  /* 認領之後、沒開跑成:api 那邊這句已經 STARTED 但沒有任何輸出,start_aborted 讓它改回沒跑 */
+  const startAborted = (sid, mid) => enqueueChunk({ type: "start_aborted", session_id: sid, message_id: mid }, true);
+  /* 一句撤回處理完的答覆(照 webchat withdraw_result:withdrawn／running／not_found;已經開跑的不停) */
+  const withdrawResult = (sid, mid, result) => enqueueChunk({ type: "withdraw_result", session_id: sid, message_id: mid, result }, true);
+  async function launch(sid, mid, content) {
     let idBefore = 0; try { idBefore = opts.sessions.maxId(sid) || 0; } catch (_) { idBefore = 0; }
-    active.set(sid, { message_id: mid, ended: false, idBefore });
+    const rec = { message_id: mid, ended: false, idBefore, claiming: true, withdrawn: false };
+    active.set(sid, rec);
     mobileActiveSync();
-    if (fromQueue && !(await startedOk(sid, mid))) {
-      if (active.get(sid) && active.get(sid).message_id === mid) active.delete(sid);
+    const claim = await claimStart(sid, mid);
+    const mine = active.get(sid) === rec;
+    if (claim !== "ok" || !mine || rec.withdrawn || !live()) {
+      if (mine) active.delete(sid);
+      // api 已經記成開跑(ok)或不知道有沒有記到(lost):告訴它這句沒跑;cancel 的那句 api 自己判過了
+      if (claim === "ok" || claim === "lost") startAborted(sid, mid);
+      if (rec.withdrawn) { enqueueChunk({ type: "cancelled", session_id: sid, message_ids: [mid] }, true); withdrawResult(sid, mid, "withdrawn"); }
       mobileActiveSync(); pump(sid);
       return;
     }
+    rec.claiming = false;
     let r = null;
     try { r = await opts.startTurn({ sessionId: sid, message: content, ...(opts.turnArgs ? opts.turnArgs() : {}) }, "mobile"); }
     catch (_) { r = { failed: true }; }
-    const a = active.get(sid);
-    if (r && r.started) {
+    if (r && (r.started || r.queued)) {   // queued = 回合表為了雲端名額排著,它自己會開跑(手機的回合不帶雲端視角,實際不會走到)
       track("phone_turn");
-      if (!fromQueue) shellEvent("started", sid, mid);
       return;
     }
-    if (a && a.message_id === mid) active.delete(sid);
-    if (fromQueue) {   // 已經回報 started:這時沒跑成是回合的失敗,不是「沒跑」
-      enqueueChunk({ type: "error", session_id: sid, message_id: mid, message: r && r.busy ? "busy" : "turn_failed" }, true);
-      mobileActiveSync(); pump(sid);
-      return;
-    }
-    if (r && r.busy && !opts.isRestarting()) {   // 跟電腦前的人同時按下:排在後面
-      const q = queue.get(sid) || []; q.unshift({ message_id: mid, content }); queue.set(sid, q);
-      track("phone_turn_q"); shellEvent("queued", sid, mid);
-      mobileActiveSync();
-      return;
-    }
-    msgFailed(sid, mid, r && r.busy ? DESKTOP_RESTARTING : NOT_RUN);
-    mobileActiveSync();
-    pump(sid);
+    if (active.get(sid) === rec) active.delete(sid);
+    // 認領之後沒開跑成(電腦前的人同一瞬間按了送出、版本閘、引擎起不來):還沒有任何輸出,改回沒跑
+    startAborted(sid, mid);
+    mobileActiveSync(); pump(sid);
   }
   /* 那條的上一輪(手機或電腦前的人)結束:排在後面的下一句開跑 */
   function pump(sid) {
     const q = queue.get(sid);
-    if (!q || !q.length || active.has(sid) || opts.turnBusy(sid) || stopped) return;
+    if (!q || !q.length || active.has(sid) || opts.turnBusy(sid) || stopped || !live()) return;
     if (opts.isRestarting()) {
       queue.delete(sid);
       for (const x of q) msgFailed(sid, x.message_id, DESKTOP_RESTARTING);
@@ -327,7 +335,7 @@ function createRelay(opts) {
       return;
     }
     const next = q.shift(); if (!q.length) queue.delete(sid);
-    launch(sid, next.message_id, next.content, true);
+    launch(sid, next.message_id, next.content);
   }
   /* main.js sendTurn 的每一則都經過這裡(視窗關著也是):只轉手機那一輪的。回合的 chunk 帶那一輪的 message_id 當關聯
      (「那一句沒跑」另外有 message_failed,api 不拿回合的 chunk 判) */
@@ -374,13 +382,24 @@ function createRelay(opts) {
     if (!c || typeof c !== "object" || typeof c.session_id !== "string") return;
     const sid = c.session_id;
     if (c.type === "interrupt") {
-      if (active.has(sid)) { stopActive(sid); return; }
-      const q = queue.get(sid) || []; queue.delete(sid);   // 還在排隊 = 取消排隊
+      // 停的是那一條:跑中的停、排在後面的手機句一起取消(不然停完下一句「下單」就自己開跑)
+      const a = active.get(sid);
+      if (a) { if (a.claiming) a.withdrawn = true; else stopActive(sid); }
+      const q = queue.get(sid) || []; queue.delete(sid);
       if (q.length) enqueueChunk({ type: "cancelled", session_id: sid, message_ids: q.map((x) => x.message_id) }, true);
       mobileActiveSync();
       return;
     }
-    if (c.type === "withdraw") { if (typeof c.message_id === "string") cancelMessage(c.message_id, true); return; }
+    if (c.type === "withdraw") {
+      const mid = c.message_id; if (typeof mid !== "string") return;
+      const a = active.get(sid);
+      if (a && a.message_id === mid) {
+        if (a.claiming) { a.withdrawn = true; return; }   // started 還在路上:認領回來後不跑,那時才回 withdrawn
+        withdrawResult(sid, mid, "running"); return;      // 已經開跑:不停(要停按停止)
+      }
+      withdrawResult(sid, mid, cancelMessage(mid, true) ? "withdrawn" : "not_found");
+      return;
+    }
     if (c.type === "session_delete") {
       let ok = false;
       if (!opts.turnBusy(sid) && !active.has(sid) && !(queue.get(sid) || []).length) { try { ok = opts.sessions.remove(sid) === true; } catch (_) { ok = false; } }
@@ -398,9 +417,12 @@ function createRelay(opts) {
     if (!ids.length) return [];
     let r = await call(EP.ack, { message_ids: ids });
     if (r.status === 409 && r.body && r.body.error_code === NOT_ENABLED_CODE && (await reenable())) r = await call(EP.ack, { message_ids: ids });
-    if (r.status !== 200 || !r.body) return [];   // ack 沒回來(網路、逾時)也不跑:api 60 秒沒等到 ack 會告訴手機「沒送到」
-    const acked = new Set(Array.isArray(r.body.acked) ? r.body.acked : []);
-    for (const mid of Array.isArray(r.body.rejected) ? r.body.rejected : []) cancelMessage(mid, false);
+    if (r.status === 403 || r.status === 401 || r.status === 409) return [];   // 總開關關／憑證失效／這台沒開:call 已經收掉,不另外回
+    const acked = new Set(r.status === 200 && r.body && Array.isArray(r.body.acked) ? r.body.acked : []);
+    const rejected = new Set(r.status === 200 && r.body && Array.isArray(r.body.rejected) ? r.body.rejected : []);
+    for (const mid of rejected) cancelMessage(mid, false);
+    // ack 沒回來(網路、逾時)、或回應裡沒提到的那幾句:不跑,而且明講沒跑(api 那邊可能已經記成收下了)
+    for (const m of msgs) if (!acked.has(m.message_id) && !rejected.has(m.message_id)) msgFailed(m.session_id, m.message_id, NOT_RUN);
     return msgs.filter((m) => acked.has(m.message_id));
   }
   function startPoll() {
@@ -615,13 +637,14 @@ function createRelay(opts) {
   }
 
   /* ── 設定頁:配對碼、授權手機清單、勾選、撤銷、最近操作(回給畫面的只有 api 回的欄位,沒有憑證)── */
-  const okBody = (r) => (r.status === 200 && r.body ? { ok: true, ...r.body } : { ok: false, code: (r.body && r.body.error_code) || (r.status ? "FAILED" : "OFFLINE") });
+  // api 的回應只在 relay.js 裡讀;回給畫面的一律另外組白名單欄位
+const okBody = (r) => (r.status === 200 && r.body ? { ok: true, ...r.body } : { ok: false, code: /^[A-Z_]{2,40}$/.test((r.body && r.body.error_code) || "") ? r.body.error_code : r.status ? "FAILED" : "OFFLINE" });
   /* 出碼之後 10 分鐘內每 5 秒看一次清單,多出一支就是配對完成(埋點 phone_pair;api 不推通知過來) */
   let pairWatch = null;
   async function pairCode() {
     const before = await phones();
     const r = okBody(await call(EP.pairCode));
-    if (!r.ok || typeof r.code !== "string") return r.ok ? { ok: false, code: "FAILED" } : r;
+    if (!r.ok || typeof r.code !== "string" || !/^[0-9A-Z]{8}$/.test(r.code)) return { ok: false, code: r.ok ? "FAILED" : r.code };
     if (pairWatch) clearInterval(pairWatch);
     const had = new Set(before.ok ? before.phones.map((p) => p.device_id) : []), until = clock() + (Number(r.expires_in) || 600) * 1000;
     pairWatch = setInterval(async () => {
@@ -641,13 +664,14 @@ function createRelay(opts) {
   }
   async function grant(deviceId, granted) {
     if (!DEVICE_ID_RE.test(deviceId || "") || typeof granted !== "boolean") return { ok: false, code: "BAD_REQUEST" };
-    return okBody(await call(EP.grant, { device_id: deviceId, granted }));
+    const r = okBody(await call(EP.grant, { device_id: deviceId, granted }));
+    return r.ok ? { ok: true, device_id: deviceId, granted: r.granted === true } : { ok: false, code: r.code };
   }
   async function revoke(deviceId, lang) {
     if (!DEVICE_ID_RE.test(deviceId || "")) return { ok: false, code: "BAD_REQUEST" };
     const r = okBody(await call(EP.revoke, { device_id: deviceId, lang: ["zh", "cn", "en"].includes(lang) ? lang : "zh" }));
     if (r.ok && r.revoked) track("phone_revoke");
-    return r;
+    return r.ok ? { ok: true, revoked: r.revoked === true } : { ok: false, code: r.code };
   }
   async function actions(deviceId) {
     if (deviceId != null && !DEVICE_ID_RE.test(deviceId)) return { ok: false, code: "BAD_REQUEST" };

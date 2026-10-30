@@ -144,7 +144,7 @@
     },
     {
       "name": "withdraw_queued",
-      "desc": "同一條在跑(電腦前的人):排隊回 queued → 手機撤回 → cancelled",
+      "desc": "同一條在跑(電腦前的人):排隊回 queued → 手機撤回 → cancelled＋withdraw_result withdrawn",
       "requests": [
         {
           "endpoint": "/oauth/desktop/relay/ack",
@@ -176,6 +176,19 @@
                 "message_ids": [
                   "msgreplay0004"
                 ]
+              }
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "withdraw_result",
+                "session_id": "desktop-busy0001",
+                "message_id": "msgreplay0004",
+                "result": "withdrawn"
               }
             ]
           }
@@ -235,13 +248,26 @@
     },
     {
       "name": "no_ack",
-      "desc": "送出當下 ack 沒回應(60 秒內沒 ack):外殼不跑、不回 started",
+      "desc": "送出當下 ack 沒回應(60 秒內沒 ack):外殼不跑、不回 started,回 message_failed not_run",
       "requests": [
         {
           "endpoint": "/oauth/desktop/relay/ack",
           "body": {
             "message_ids": [
               "msgreplay0006"
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "message_failed",
+                "session_id": "desktop-mreplay0001",
+                "message_id": "msgreplay0006",
+                "code": "not_run"
+              }
             ]
           }
         }

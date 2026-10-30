@@ -62,7 +62,7 @@ const SCENARIOS = [
     m.r.onTurn(SID, "turn-event", { type: "done", awaiting: false, interrupted: true }); m.busy.delete(SID);
     m.r.onTurn(SID, "turn-end", { code: 0, errTail: "" }); await settle();
   }],
-  ["withdraw_queued", "同一條在跑(電腦前的人):排隊回 queued → 手機撤回 → cancelled", async (m) => {
+  ["withdraw_queued", "同一條在跑(電腦前的人):排隊回 queued → 手機撤回 → cancelled＋withdraw_result withdrawn", async (m) => {
     m.feed([msg(SID_BUSY, "msgreplay0004", "再看一次")]); await wait(30);
     m.feed([], [{ type: "withdraw", session_id: SID_BUSY, message_id: "msgreplay0004" }]); await settle();
   }, { busy: [SID_BUSY] }],
@@ -72,7 +72,7 @@ const SCENARIOS = [
     m.r.onTurn(SID_BUSY, "turn-event", { type: "done", awaiting: false }); m.busy.delete(SID_BUSY);
     m.r.onTurn(SID_BUSY, "turn-end", { code: 0, errTail: "" }); await settle();
   }, { busy: [SID_BUSY] }],
-  ["no_ack", "送出當下 ack 沒回應(60 秒內沒 ack):外殼不跑、不回 started", async (m) => {
+  ["no_ack", "送出當下 ack 沒回應(60 秒內沒 ack):外殼不跑、不回 started,回 message_failed not_run", async (m) => {
     m.feed([msg(SID, "msgreplay0006", "下單")]); await settle();
   }, { noAck: true }],
 ];
@@ -92,11 +92,11 @@ const SCENARIOS = [
   ok("fixture 等於 relay.js 現在跑出來的(不等就重產:--write)", fs.existsSync(FIX) && fs.readFileSync(FIX, "utf8") === text);
   const sc = (n) => out.scenarios.find((s) => s.name === n).requests;
   const types = (n) => sc(n).flatMap((r) => (r.endpoint === RL.EP.ack ? ["ack"] : r.body.chunks.map((c) => c.type)));
-  ok("直接開跑:ack → started → 輸出 → done", types("direct_start").join() === "ack,started,text,tool,done", types("direct_start"));
+  ok("直接開跑:ack → started(單獨一筆,回 ok 才開跑)→ 輸出 → done", types("direct_start").join() === "ack,started,text,tool,done" && sc("direct_start")[1].body.chunks.length === 1, types("direct_start"));
   ok("開跑後出錯:error 不是 message_failed", types("error_after_start").includes("error") && !types("error_after_start").includes("message_failed"));
-  ok("撤回排隊中:queued → cancelled{message_ids}", types("withdraw_queued").join() === "ack,queued,cancelled" && JSON.stringify(sc("withdraw_queued").slice(-1)[0].body.chunks[0].message_ids) === '["msgreplay0004"]');
+  ok("撤回排隊中:queued → cancelled{message_ids} → withdraw_result", types("withdraw_queued").join() === "ack,queued,cancelled,withdraw_result" && JSON.stringify(sc("withdraw_queued").find((r) => r.body.chunks && r.body.chunks[0].type === "cancelled").body.chunks[0].message_ids) === '["msgreplay0004"]');
   ok("排隊叫出:started 單獨一筆、在 done 之前", (() => { const r = sc("queued_then_started").filter((x) => x.endpoint === RL.EP.report); const i = r.findIndex((x) => x.body.chunks.some((c) => c.type === "started")); return i >= 0 && r[i].body.chunks.length === 1 && types("queued_then_started").indexOf("started") < types("queued_then_started").indexOf("done"); })());
-  ok("沒 ack:只有 ack 那一筆", types("no_ack").join() === "ack");
+  ok("沒 ack:ack 之後只回 message_failed not_run,不跑", types("no_ack").join() === "ack,message_failed" && sc("no_ack")[1].body.chunks[0].code === "not_run");
   ok("fixture 裡沒有憑證", !/t-replay|s-replay/.test(text));
   const apiCopy = path.join(process.env.BLAVE_RELAY_API_DIR || path.join(__dirname, "..", "..", "api"), "tests", "fixtures", "relay_shell_replay.json");
   if (!fs.existsSync(apiCopy)) console.log("SKIP  api 那份逐字比對(設 BLAVE_RELAY_API_DIR 指到 api checkout)");

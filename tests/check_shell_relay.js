@@ -175,7 +175,7 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
   { const m = rig({ startResult: () => ({ blocked: "UPDATE_REQUIRED" }), sessions: { "desktop-b0000001": { last: 1, rows: [row(1, "user", "x")] } } });
     await m.r.tick(); await m.r.setOn(true); await wait(20);
     m.feed([msg("desktop-b0000001", "msg0000000v")]); await wait(20);
-    ok("4 版本閘擋下:那句回 message_failed not_run、沒有 started", m.chunks().some((c) => c.type === "message_failed" && c.code === "not_run" && c.message_id === "msg0000000v") && !m.chunks().some((c) => c.type === "started"));
+    ok("4 版本閘擋下(認領之後):回 start_aborted,api 改回沒跑", m.chunks().some((c) => c.type === "started" && c.message_id === "msg0000000v") && m.chunks().some((c) => c.type === "start_aborted" && c.message_id === "msg0000000v"));
     await m.end(); }
 
   { // 排隊叫出:先 started、api 回 ok 才開跑;回 cancel 就不跑
@@ -214,7 +214,7 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     m.polls.push({ status: 403, body: { error_code: "APP_CHAT_OFF", controls: [{ type: "interrupt", session_id: "desktop-o0000001" }, { type: "withdraw", session_id: "desktop-o0000002", message_id: "msg000000o2" }] } });
     m.feed([]); await wait(60);
     const n = m.of(RL.EP.poll).length; await wait(50);
-    ok("7 poll 回 403 APP_CHAT_OFF:body 的停止與撤回照做、停輪詢、畫面藏起來", m.stopped.includes("desktop-o0000001") && m.chunks().some((c) => c.type === "cancelled" && c.message_ids.includes("msg000000o2")) && m.r.state().visible === false && m.of(RL.EP.poll).length === n);
+    ok("7 poll 回 403 APP_CHAT_OFF:跑中的停、排隊的回 message_failed not_run、停輪詢、畫面藏起來", m.stopped.includes("desktop-o0000001") && m.chunks().some((c) => c.type === "message_failed" && c.code === "not_run" && c.message_id === "msg000000o2") && m.r.state().visible === false && m.of(RL.EP.poll).length === n && m.r.state().mobileTurns === 0);
     await m.end(); }
   { // poll 回 409 RELAY_NOT_ENABLED:補打 enable 再輪;一直 409 就停
     const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20);
