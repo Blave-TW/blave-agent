@@ -25,6 +25,10 @@ account currency). Trait meanings:
   lots_close_partial flatten closes its lots through close_position_partial
                      (not place_contract_market_order)
   close_needs_fill   flatten books a close as done only on a confirmed fill
+  snapshot_settle_wait  the worker's position snapshot lags an order sent on
+                     this machine: flatten reads it only once a read started
+                     lib.<venue>_vault.ORDER_SETTLE_S after the last send
+                     (last_order_at on the vault, else on lib.order_<venue>)
   reference          the onboarding doc chat binding points to
   label              the broker's name in user-facing messages
   verified_modes     the account types whose real-account run passed (Bitget:
@@ -52,6 +56,7 @@ TRAITS = {
         "resolved_contracts": True,
         "lots_close_partial": True,
         "close_needs_fill": True,
+        "snapshot_settle_wait": True,
         "reference": "references/capital-broker.md",
         "label": "群益",
     },
@@ -74,6 +79,7 @@ TRAITS = {
         "native_units": True,
         "perp": False,
         "close_needs_fill": True,
+        "snapshot_settle_wait": True,
         "reference": "references/president-broker.md",
         "label": "統一期貨",
         # the five names bound machines already use are locked; the last two

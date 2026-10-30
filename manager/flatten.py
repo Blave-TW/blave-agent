@@ -584,16 +584,16 @@ def _refresh_snapshot(vid):
 
 def _settle_marker(vid):
     """(ORDER_SETTLE_S, last_order_at) for a venue whose snapshot lags its sends, else None."""
-    if vid == "capital":
-        from lib import capital_vault
-        return capital_vault.ORDER_SETTLE_S, capital_vault.last_order_at
-    if vid == "president":
-        from lib import president_vault
+    if not venue_traits.has(vid, "snapshot_settle_wait"):
+        return None
+    vault = importlib.import_module(f"lib.{vid}_vault")
+    if hasattr(vault, "last_order_at"):
+        return vault.ORDER_SETTLE_S, vault.last_order_at
 
-        def last():
-            return importlib.import_module("lib.order_president").last_order_at()
-        return president_vault.ORDER_SETTLE_S, last
-    return None
+    # 統一 keeps the marker in its order lib; imported per call so a reload is seen
+    def last():
+        return importlib.import_module(f"lib.order_{vid}").last_order_at()
+    return vault.ORDER_SETTLE_S, last
 
 
 def _wait_snapshot_settled(vid, acct, wait_s=None, poll_s=2.0):
