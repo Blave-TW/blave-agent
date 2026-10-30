@@ -64,6 +64,8 @@ ok("N2 含 / 的 base64 金鑰整串遮", R.redact("key q8Zt/Kp2+Lm9Wx4Rb7Vn1Yc3
     "GATE_ACCOUNT=Futures", "BITGET_ACCOUNT=futures1", "X_KEY=testnet"].join("\n"));
   ok("6 鍵名像秘密、值是常見設定字(futures、isolated、unified…):不收,這個字不會從每則對話被抹掉", !["futures", "isolated", "unified", "paper", "testnet"].some((v) => cfg.includes(v)), cfg);
   ok("6 只認全小寫原字:大小寫混雜、帶數字的照收", cfg.includes("Futures") && cfg.includes("futures1"), cfg);
+  const strict = R.envSecretValues(["OKX_PASSPHRASE=futures", "CAPITAL_PASSWORD=testnet", "BINANCE_SECRET_KEY=isolated", "PRESIDENT_PIN=unified"].join("\n"));
+  ok("6 鍵名是 SECRET／PASSPHRASE／PASSWORD／PIN 的:值是設定字也照收", ["futures", "testnet", "isolated", "unified"].every((v) => strict.includes(v)), strict);
   ok("6 設定字照樣出現在遮過的對話裡", R.redact("帳戶是 futures 模式", R.envSecretValues("BINANCE_ACCOUNT_TYPE=futures")) === "帳戶是 futures 模式"); }
 ok("6 讀不到 .env(非字串)回空清單", R.envSecretValues(null).length === 0);
 ok("6 已知值一併遮、不進輸出", R.redact("key 是 Ab12Cd34Ef56 跟 9876543", vals) === "key 是 ⟦R⟧ 跟 ⟦R⟧");
