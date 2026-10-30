@@ -588,17 +588,11 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
         try:
             placed = _request("POST", "/futures/usdt/orders", env, body)
         except OrderNotConfirmed:
-            # a text lookup works only for a short while (get_order) and the next round is
-            # minutes away: read it now; not found / any error = still unknown (parked,
-            # resolve_unknown_order then matches fills by text)
-            try:
-                order_id = get_order(env, symbol, text)["order_id"]
-            except Exception:
-                order_id = None
+            order_id = _id_by_text(env, symbol, text)
             if not order_id:
                 raise
             placed = {"id": order_id}
-        order_id = placed.get("id")
+        order_id = placed.get("id") or _id_by_text(env, symbol, text)
         if not order_id:
             # a 2xx JSON answer is Gate.io's success: the order may be in, only its id is missing
             raise OrderNotConfirmed(
@@ -617,6 +611,16 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
         e.venue_symbol = c.replace("_", "")
         e.client_order_id = e.client_order_id or text
         raise
+
+
+def _id_by_text(env, symbol, text):
+    """A text lookup works only for a short while (get_order) and the next round is minutes
+    away: read it now. None = not found / any error — still unknown (parked;
+    resolve_unknown_order then matches fills by text)."""
+    try:
+        return get_order(env, symbol, text)["order_id"] or None
+    except Exception:
+        return None
 
 
 def _filled_ct(o):

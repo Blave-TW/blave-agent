@@ -143,7 +143,7 @@ for label, post_answer in (
     except gt.OrderNotConfirmed as e:
         looked = [g for g in CALLS["GET"] if g.endswith(f"/futures/usdt/orders/{TEXT}")]
         check(len(CALLS["POST"]) == 1 and unknown_ok(e) and e.order_id is None
-              and (label == "2xx without an id" or len(looked) == 1) and attributed(),
+              and len(looked) == 1 and attributed(),
               f"POST {label}: sent once, text read once, parkable unknown outcome with the text "
               f"({len(CALLS['POST'])} sends, {len(looked)} text reads, venue_symbol {e.venue_symbol!r})")
     except Exception as e:
@@ -155,6 +155,11 @@ r = place()
 check(r["status"] == "filled" and abs(r["executed_qty"] - 0.01) < 1e-12 and len(CALLS["POST"]) == 1
       and CALLS["GET"][0].endswith(f"/orders/{TEXT}") and any(g.endswith("/orders/77") for g in CALLS["GET"]),
       f"POST read timeout, the text read finds it: confirmed by id 77, one POST ({CALLS['GET']})")
+# a 2xx without an id, the text read finds it: confirmed by its id
+wire([Resp(201, {"contract": "BTC_USDT", "status": "open"})], [FILLED])
+r = place()
+check(r["status"] == "filled" and len(CALLS["POST"]) == 1 and CALLS["GET"][0].endswith(f"/orders/{TEXT}"),
+      "2xx without an id, the text read finds it: confirmed by id, one POST")
 # the text read errors (read timeout): still unknown, parkable
 wire([requests.exceptions.ReadTimeout("t")], [requests.exceptions.ReadTimeout("t")])
 try:
