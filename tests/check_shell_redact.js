@@ -44,7 +44,7 @@ const N = 200000;
 for (const [name, text] of [["全 a", "a".repeat(N)], ["純 hex", "0123456789abcdef".repeat(N / 16)], ["eyJ 重複", "eyJ".repeat(66667)],
   ["eyJ 加點重複", "eyJa.".repeat(N / 5)], ["鍵名＝值重複", "key=".repeat(N / 4)], ["一長串名字字元接 =", "a".repeat(N) + "=x"],
   ["名字字元夾冒號", "a_key:".repeat(N / 6)], ["助記詞字重複", "abandon ".repeat(N / 8)], ["斜線", "/".repeat(N)], ["使用者資料夾重複", "/Users/".repeat(N / 7)],
-  ["路徑字判斷:a 接一串數字再接 =", "a" + "1".repeat(N) + "="], ["路徑字判斷:camelCase 重複接 +", "aB1".repeat(N / 3) + "+"], ["名字段重複不含關鍵字", "note=".repeat(N / 5)]]) {
+  ["路徑字判斷:a 接一串數字再接 =", "a" + "1".repeat(N) + "="], ["路徑字判斷:x/a 接一串數字再接 =(api 那條指數級的輸入)", "x/a" + "1".repeat(N) + "="], ["路徑字判斷:camelCase 重複接 +", "aB1".repeat(N / 3) + "+"], ["名字段重複不含關鍵字", "note=".repeat(N / 5)]]) {
   const t0 = process.hrtime.bigint(); R.redact(text, ["Xy7Qw2Lp9Zr4"]); const ms = Number(process.hrtime.bigint() - t0) / 1e6;
   ok(`5 ${name} ${text.length} 字 < 1 秒`, ms < 1000, ms);
 }

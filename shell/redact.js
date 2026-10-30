@@ -20,13 +20,15 @@ const LONG_TOKEN_MIN = 32;   // = LONG_TOKEN_RE 的 {32,}
 const WS = "\\t\\n\\v\\f\\r\\x1c-\\x20\\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
 const PRIVATE_KEY_RE = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/;
 const NUMBERING_RE = /^[0-9]+[.)]?$/;
+const LEADING_NUMBER_RE = /^[0-9]+[.)]/;   // 「1.abandon」(編號黏在字前面)拿掉編號
 const WORD_EDGE = ".,;:!?\"'()[]{}";
-const WORD_SPLIT_RE = new RegExp("[" + WS + "\"',\\[\\]{}\\-]+", "u");
-/* 名=值(api 複稽核 N1 後的寫法):只掃「名字段」,名字含關鍵字才吃它後面的值;不含就只前進到名字結尾——
+const WORD_SPLIT_RE = new RegExp("[" + WS + "\"',\\[\\]{}\\-_]+", "u");   // JSON 陣列、- 或 _ 串起來的助記詞一樣切得開
+/* 名=值(api 81cc7e50 的寫法):只掃「名字段」,名字含關鍵字才吃它後面的值;不含就只前進到名字結尾——
    值裡面可能還有下一對 key=value。名字段的 lookbehind 只讓比對從一串名字字元的開頭起跑,整段線性。
    u 旗標:{6,} 跟 Python 一樣按字(code point)數 */
 const KV_NAME_PART_RE = new RegExp("(?<![A-Za-z0-9_.\\-])[A-Za-z0-9_.\\-]+[\"']?[" + WS + "]*[:=][" + WS + "]*[\"']?", "gu");
-const KV_VALUE_RE = new RegExp("[^" + WS + "\"'`,;&]{6,}", "yu");
+const KV_VALUE_RE = new RegExp("[^" + WS + "\"'`,;&(){}\\[\\]]{6,}", "yu");
+const BEARER_RE = new RegExp("(?<![A-Za-z0-9_])(bearer[" + WS + "]+)([A-Za-z0-9._~+/\\-]{16,}=*)", "giu");   // Authorization 標頭:只遮 token
 const KV_NAME_RE = /key|secret|token|passphrase|password|passwd|pwd|private/i;
 const PREFIX_RE = new RegExp(
   "(?<![A-Za-z0-9_\\-.])eyJ[A-Za-z0-9_\\-]+\\.eyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+"
@@ -59,7 +61,7 @@ function hasMnemonic(text) {
   let run = 0;
   for (const tok of text.split(WORD_SPLIT_RE)) {
     if (!tok || NUMBERING_RE.test(tok)) continue;
-    if (words.has(stripEdge(tok).toLowerCase())) { if (++run >= MNEMONIC_MIN_WORDS) return true; }
+    if (words.has(stripEdge(tok.replace(LEADING_NUMBER_RE, "")).toLowerCase())) { if (++run >= MNEMONIC_MIN_WORDS) return true; }
     else run = 0;
   }
   return false;
@@ -73,7 +75,7 @@ function longTokenIsSecret(tok) {
 }
 
 /* 像路徑字的一段:小寫起頭的 camelCase／帶數字、全大寫帶數字、大寫起頭的字、純數字,用 _ . - 串起來。
-   = api 原型的 _WORDISH_RE,但每一段連續的小寫／數字都吃到底(lookahead),不回溯——原型那條在「a + 一串數字 + =」上是指數級 */
+   = api _PATH_SEGMENT_RE(81cc7e50)接受的同一組字,但每一段連續的小寫／數字都吃到底(lookahead),不回溯——api 那條在「x/a + 28 個 1 + =」(32 字)上要 27 秒 */
 const L = "[a-z]+(?![a-z])", D = "[0-9]+(?![0-9])";
 const TAIL = "(?:[A-Z]" + L + "|[A-Z]?" + D + ")*";
 const UNIT = "(?:" + L + TAIL + "[A-Z]?(?![a-z0-9])|[A-Z]+(?![A-Z])[0-9]*(?![0-9])|[A-Z]" + L + TAIL + "|" + D + ")";
@@ -106,13 +108,14 @@ function redact(text, known) {
     }
     text = out + text.slice(pos);
   }
+  text = text.replace(BEARER_RE, (m, head) => { masks++; return head + MASK; });
   text = text.replace(PREFIX_RE, () => { masks++; return MASK; });
   text = text.replace(HOME_RE, "~").replace(URL_QUERY_RE, "$1?…").replace(PATH_QUERY_RE, "$1$2?…");
   // 這組字元類含 "/":每一段都像路徑字(策略名、網址的一段)才按 "/" 切開各自判斷;不然整串當一顆判斷——
   // base64 金鑰本身就可能帶 "/"(api 複稽核 N2)。regex 本體不動
   text = text.replace(LONG_TOKEN_RE, (m) => {
     const parts = m.split("/");
-    if (!parts.every((seg) => !seg || wordish(seg))) {
+    if (parts.length === 1 || !parts.every((seg) => !seg || wordish(seg))) {
       if (!longTokenIsSecret(m)) return m;
       masks++;
       return MASK;
