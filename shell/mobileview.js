@@ -247,5 +247,5 @@ function createMobileView(opts) {
   return { start, stop, tick, kick, setOn, signOut, closing, wantsClosing, state, refreshFlag, isVisible: () => flag };
 }
 
-module.exports = { createMobileView, cleanReport, strategyNames, withStrategyNames, NAME_STRIP_RE, deviceOf, signature, ALLOWED_KEYS, NAME_MAX_CHARS, MAX_BYTES, REPORT_MAX_BYTES, TICK_MS, EARLY_MIN_GAP_MS,
+module.exports = { createMobileView, cleanReport, HOME_RE, URL_QUERY_RE, PATH_QUERY_RE, LONG_TOKEN_RE, strategyNames, withStrategyNames, NAME_STRIP_RE, deviceOf, signature, ALLOWED_KEYS, NAME_MAX_CHARS, MAX_BYTES, REPORT_MAX_BYTES, TICK_MS, EARLY_MIN_GAP_MS,
   FLAG_ENDPOINT, REPORT_ENDPOINT, DELETE_ENDPOINT, CLOSING_TIMEOUT_MS, CLOSING_SETTLE_MS, DELETE_TIMEOUT_MS, FREE_TEXT_KEYS };
