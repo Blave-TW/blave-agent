@@ -272,7 +272,7 @@ function createRelay(opts) {
   }
   /* 先認領、後開跑(直接開跑與排隊叫出都一樣):單獨回報 started,api 回 ok 才 startTurn。那段時間 api 可能已經判它沒跑、
      手機撤回或被撤銷。started 沒回應就重送(api 對已經 STARTED 的冪等回 ok),期限到了還是沒回應 → "lost"。
-     → "ok" | "cancel"(api 說不得跑)| "lost" */
+     → "ok" | "cancel"(api 說不得跑,或 401／403／409 已收掉)| "rejected"(api 拒收這筆 started)| "lost"(一直沒回應) */
   async function claimStart(sid, mid) {
     const until = clock() + (opts.claimDeadlineMs || CLAIM_DEADLINE_MS);
     let gap = CLAIM_RETRY_MS;
@@ -287,7 +287,9 @@ function createRelay(opts) {
         reportAnswer(r.body);
         return go ? "ok" : "cancel";
       }
-      if (r.status !== 0 || r.noCreds || stopped) return "cancel";   // 4xx:這台沒開／憑證失效／總開關關(call 已處理)
+      if (r.noCreds || stopped || r.status === 401 || r.status === 403 || r.status === 409) return "cancel";   // 這台沒開／憑證失效／總開關關:call 已經收掉
+      const retry = r.status === 0 || r.status === 429 || r.status >= 500;   // 斷線、限流、部署中的 5xx:重送
+      if (!retry) return "rejected";   // 其他 4xx:api 沒收下這筆 started
       if (clock() + gap > until) return "lost";
       await pause(gap); gap = Math.min(gap * 2, 4000);
     }
@@ -298,16 +300,19 @@ function createRelay(opts) {
   const withdrawResult = (sid, mid, result) => enqueueChunk({ type: "withdraw_result", session_id: sid, message_id: mid, result }, true);
   async function launch(sid, mid, content) {
     let idBefore = 0; try { idBefore = opts.sessions.maxId(sid) || 0; } catch (_) { idBefore = 0; }
-    const rec = { message_id: mid, ended: false, idBefore, claiming: true, withdrawn: false };
+    const rec = { message_id: mid, ended: false, idBefore, claiming: true, abort: null };   // abort:認領途中手機撤回(withdraw)或停止(interrupt)
     active.set(sid, rec);
     mobileActiveSync();
     const claim = await claimStart(sid, mid);
     const mine = active.get(sid) === rec;
-    if (claim !== "ok" || !mine || rec.withdrawn || !live()) {
+    if (claim !== "ok" || !mine || rec.abort || !live()) {
       if (mine) active.delete(sid);
-      // api 已經記成開跑(ok)或不知道有沒有記到(lost):告訴它這句沒跑;cancel 的那句 api 自己判過了
+      // 告訴 api 這句沒跑:記成開跑了(ok)→ start_aborted;拒收(rejected)→ message_failed;不知道有沒有記到(lost)→ 兩個都送,
+      // api 照它手上的狀態認其中一個。cancel 的那句 api 自己判過了
       if (claim === "ok" || claim === "lost") startAborted(sid, mid);
-      if (rec.withdrawn) { enqueueChunk({ type: "cancelled", session_id: sid, message_ids: [mid] }, true); withdrawResult(sid, mid, "withdrawn"); }
+      if (claim === "rejected" || claim === "lost") msgFailed(sid, mid, NOT_RUN);
+      if (rec.abort) enqueueChunk({ type: "cancelled", session_id: sid, message_ids: [mid] }, true);
+      if (rec.abort === "withdraw") withdrawResult(sid, mid, "withdrawn");
       mobileActiveSync(); pump(sid);
       return;
     }
@@ -384,7 +389,7 @@ function createRelay(opts) {
     if (c.type === "interrupt") {
       // 停的是那一條:跑中的停、排在後面的手機句一起取消(不然停完下一句「下單」就自己開跑)
       const a = active.get(sid);
-      if (a) { if (a.claiming) a.withdrawn = true; else stopActive(sid); }
+      if (a) { if (a.claiming) a.abort = a.abort || "interrupt"; else stopActive(sid); }
       const q = queue.get(sid) || []; queue.delete(sid);
       if (q.length) enqueueChunk({ type: "cancelled", session_id: sid, message_ids: q.map((x) => x.message_id) }, true);
       mobileActiveSync();
@@ -394,7 +399,7 @@ function createRelay(opts) {
       const mid = c.message_id; if (typeof mid !== "string") return;
       const a = active.get(sid);
       if (a && a.message_id === mid) {
-        if (a.claiming) { a.withdrawn = true; return; }   // started 還在路上:認領回來後不跑,那時才回 withdrawn
+        if (a.claiming) { a.abort = "withdraw"; return; }   // started 還在路上:認領回來後不跑,那時才回 withdrawn
         withdrawResult(sid, mid, "running"); return;      // 已經開跑:不停(要停按停止)
       }
       withdrawResult(sid, mid, cancelMessage(mid, true) ? "withdrawn" : "not_found");
@@ -458,7 +463,9 @@ function createRelay(opts) {
           backoff = BACKOFF_MIN_MS;
           const msgs = (Array.isArray(b.messages) ? b.messages : []).filter((m) => m && typeof m.message_id === "string" && MSG_ID_RE.test(m.message_id) && typeof m.session_id === "string");
           for (const c of Array.isArray(b.controls) ? b.controls : []) control(c);
-          for (const m of await ackAll(msgs)) await route(m);
+          // 不等開跑:認領(started)可能重送到 15 秒,卡在這裡別條的停止、撤回就收不到。active 在 launch 第一個 await 之前
+          // 就記上,同一條後面的照樣排隊
+          for (const m of await ackAll(msgs)) route(m).catch((e) => log("relay: route " + ((e && e.message) || e)));
           continue;
         }
         if (r.status === 401 || r.noCreds) break;   // 憑證失效:等下一輪 tick 重新判斷

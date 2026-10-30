@@ -105,6 +105,20 @@ const CASES = [
   async (m, o) => { m.feed([msg(S, "msgresp00013", "排隊那句")]); await wait(40); m.busy.delete(S); m.r.onTurn(S, "turn-end", { code: 0 }); await wait(40);
     m.feed([], [{ type: "withdraw", session_id: S, message_id: "msgresp00013" }]); await wait(40); o.gate(); await settle(); },
   (m) => m.started.length === 0 && m.stopped.length === 0 && ["start_aborted", "cancelled", "withdraw_result"].every((t) => sent(m, t).length) && sent(m, "withdraw_result")[0].result === "withdrawn"],
+  ["B2_interrupt_during_started", "started 還在路上時手機按停止 → 不跑;start_aborted、cancelled,沒有 withdraw_result(沒人撤回)", (() => {
+    let release; const gate = new Promise((r) => { release = r; });
+    return { gate: () => release(), script: (ep, b) => (ep === RL.EP.report && b.chunks.some((c) => c.type === "started") ? gate.then(() => okReport(b)) : undefined) };
+  })(),
+  async (m, o) => { m.feed([msg(S, "msgresp00018", "掃參數")]); await wait(40); m.feed([], [{ type: "interrupt", session_id: S }]); await wait(40); o.gate(); await settle(); },
+  (m) => m.started.length === 0 && m.stopped.length === 0 && sent(m, "start_aborted").length === 1 && sent(m, "cancelled").length === 1 && !sent(m, "withdraw_result").length],
+  ["started_502_then_ok", "started 回 502(部署中)→ 重送,第二次 ok 才開跑", {
+    script: (ep, b, n) => (ep === RL.EP.report && b.chunks.some((c) => c.type === "started") && !rig.seen502 ? (rig.seen502 = true, { status: 502, body: null }) : undefined) },
+  async (m) => { rig.seen502 = false; m.feed([msg(S, "msgresp00019", "看一下")]); await wait(900); },
+  (m) => m.started.length === 1 && m.log.filter((x) => x.body && x.body.chunks && x.body.chunks[0].type === "started").length === 2],
+  ["started_400", "started 回 400(api 拒收)→ 不跑、回 message_failed not_run", {
+    script: (ep, b) => (ep === RL.EP.report && b.chunks.some((c) => c.type === "started") ? { status: 400, body: { error_code: "BAD_REQUEST" } } : undefined) },
+  async (m) => { m.feed([msg(S, "msgresp00020", "看一下")]); await settle(); },
+  (m) => m.started.length === 0 && sent(m, "message_failed").some((c) => c.message_id === "msgresp00020" && c.code === "not_run") && !sent(m, "start_aborted").length],
   ["withdraw_running", "撤回已經開跑的那句:不停,withdraw_result running", {},
   async (m) => { m.feed([msg(S, "msgresp00014", "跑")]); await wait(40); m.feed([], [{ type: "withdraw", session_id: S, message_id: "msgresp00014" }]); await settle(); },
   (m) => m.stopped.length === 0 && sent(m, "withdraw_result").some((c) => c.result === "running")],
@@ -113,10 +127,11 @@ const CASES = [
   async (m) => { m.feed([msg(S, "msgresp00015", "第一句")]); await wait(40); m.feed([msg(S, "msgresp00016", "第二句")]); await wait(40);
     m.r.onTurn(S, "turn-event", { type: "text", text: "x" }); await settle(); m.endTurn(S); await settle(); },
   (m) => m.started.join() === "第一句" && m.stopped.includes(S) && m.r.state().visible === false && m.r.state().mobileTurns === 0 && m.r.state().queued === 0],
-  ["D_started_lost", "探針 D:started 一直沒回應 → 重送到期限 → start_aborted,不跑", {
+  ["D_started_lost", "探針 D:started 一直沒回應 → 重送到期限 → start_aborted＋message_failed not_run(不知道 api 有沒有記到開跑,api 認其中一個),不跑", {
     script: (ep, b) => (ep === RL.EP.report && b.chunks.some((c) => c.type === "started") ? { status: 0, body: null } : undefined) },
   async (m) => { m.feed([msg(S, "msgresp00017", "下單")]); await wait(2200); },
-  (m) => m.started.length === 0 && m.log.filter((x) => x.body && x.body.chunks && x.body.chunks[0].type === "started").length >= 2 && m.r.state().mobileTurns === 0],
+  (m) => m.started.length === 0 && m.log.filter((x) => x.body && x.body.chunks && x.body.chunks[0].type === "started").length >= 2 && m.r.state().mobileTurns === 0
+    && sent(m, "start_aborted").length === 1 && sent(m, "message_failed").some((c) => c.code === "not_run")],
 ];
 
 (async () => {
