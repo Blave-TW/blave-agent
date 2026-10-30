@@ -871,9 +871,9 @@ def _flatten():
                         size *= share
                     else:
                         share = _unparked_share(led.get("size"), held_back)
-                        own = (float(led["qty"]) if led.get("qty") is not None and not led.get("legacy")
-                               else float(led["size"]) / price)
-                        size = min(float(p.get("size", 0)), own * share)
+                        bot_qty = (float(led["qty"]) if led.get("qty") is not None and not led.get("legacy")
+                                   else float(led["size"]) / price)
+                        size = min(float(p.get("size", 0)), bot_qty * share)
                     size = float(f"{size:.12g}")
                     unclosed.add(key)  # its book keeps describing the parked part
                     logging.warning(f"[{vid}] {key}: a close of unknown outcome is parked — "

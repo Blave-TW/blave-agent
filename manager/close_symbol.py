@@ -522,9 +522,12 @@ def _park_close(ctx, sym, side, size, u):
         logging.error(f"close_symbol {sym}: not parked ({type(err).__name__}: {err}) — HALT")
         from lib import guard
         tag = getattr(pf, "UNPARKED_TAG", "[order_unconfirmed_unparked]")
-        guard.trip_halt(f"{tag} {sym}: a close's outcome is unknown and Blave cannot track it "
-                        f"— check the position, tell the agent what filled"[:200], "close_symbol",
-                        unconfirmed={"symbol": sym, "park_id": None})
+        try:
+            guard.trip_halt(f"{tag} {sym}: a close's outcome is unknown and Blave cannot track it "
+                            f"— check the position, tell the agent what filled"[:200], "close_symbol",
+                            unconfirmed={"symbol": sym, "park_id": None})
+        except Exception as e:  # the in-memory flag is set first (lib/guard)
+            logging.error(f"close_symbol {sym}: HALT for the unparked close did not persist: {e}")
         return "halted"
     return pf.park_or_halt(sym, ctx.venue, u, (-1.0 if side == "long" else 1.0) * cost, True,
                            sign=-1 if side == "long" else 1, **cap)
