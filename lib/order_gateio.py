@@ -484,9 +484,10 @@ def get_order(env, symbol, order_id):
     """Futures order by id, normalized. executed_qty is BASE units (size/left
     are contracts — converted here). Order responses carry no fee; commission
     is fetched best-effort from my_trades. order_id may also be our `t-` text,
-    for a short while only: "within 60 seconds after the end of the order"
-    (SDK FuturesApi.md, get_futures_order), "only for 30 minutes since
-    creation" (APIv4 docs) — after that only by id. Not measured."""
+    for a limited time: the docs disagree ("within 60 seconds after the end of
+    the order", SDK FuturesApi.md; "only for 30 minutes since creation", APIv4).
+    Testnet 2026-10-30: a filled order was still found by text 1,883 s after it
+    ended; zero-fill / cancelled orders and mainnet not measured."""
     o = _send("GET", f"/futures/usdt/orders/{order_id}", env)
     if "status" not in o:
         raise GateioError("N/A", f"order query missing status: {list(o)}", "orders")
@@ -615,7 +616,7 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
 
 
 def _id_by_text(env, symbol, text):
-    """A text lookup works only for a short while (get_order) and the next round is minutes
+    """A text lookup has a limited lifetime (get_order) and the next round is minutes
     away: read it now. None = not found / any error — still unknown (parked;
     resolve_unknown_order then matches fills by text)."""
     try:
@@ -642,7 +643,7 @@ def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, park
     """A parked futures market order's outcome (lib/unconfirmed): (executed_qty, avg_price) in
     BASE units once it is terminal — qty 0 = it ended without a fill — None while unknown.
     Read-only. Query single order by id, or by our `t-` text when only that is known (Gate.io
-    finds a text only for a short while — see get_order); when that answers ORDER_NOT_FOUND, the
+    finds a text only for a limited time — see get_order); when that answers ORDER_NOT_FOUND, the
     account's fills on the contract around the park (my_trades_timerange — each row carries the
     order's text and order_id) matched on that id / text: any → those, at their VWAP. Nothing
     matched stays unknown however long ago it was parked: a zero-fill order is not retrievable
