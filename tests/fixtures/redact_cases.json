@@ -1,0 +1,344 @@
+{
+ "spec": "mobile-agent-chat-mvp §4.3",
+ "mask": "⟦R⟧",
+ "excluded": "⟦R:msg⟧",
+ "note": "rule 0 是不屬於任何一條的邊界；有 known 的是第 1 條，那些值只有電腦版有（api 測試照樣帶進去跑）",
+ "cases": [
+  {
+   "rule": 1,
+   "name": "已知值逐字遮(電腦版才有)",
+   "in": "金鑰是 Xy7Qw2Lp9Zr4 請收好",
+   "out": "金鑰是 ⟦R⟧ 請收好",
+   "known": [
+    "Xy7Qw2Lp9Zr4"
+   ]
+  },
+  {
+   "rule": 1,
+   "name": "不是已知值的字不動",
+   "in": "BINANCE_DEMO=1 照舊",
+   "out": "BINANCE_DEMO=1 照舊",
+   "known": [
+    "Xy7Qw2Lp9Zr4"
+   ]
+  },
+  {
+   "rule": 2,
+   "name": "私鑰區塊整則排除",
+   "in": "給你\n-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 2,
+   "name": "只有開頭那行也排除",
+   "in": "-----BEGIN OPENSSH PRIVATE KEY----- 後面斷了",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 2,
+   "name": "公鑰不算",
+   "in": "-----BEGIN PUBLIC KEY-----\nabc\n-----END PUBLIC KEY-----",
+   "out": "-----BEGIN PUBLIC KEY-----\nabc\n-----END PUBLIC KEY-----"
+  },
+  {
+   "rule": 2,
+   "name": "PGP 私鑰區塊(… KEY BLOCK)",
+   "in": "-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOYBF\n-----END PGP PRIVATE KEY BLOCK-----",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 3,
+   "name": "12 個助記詞整則排除",
+   "in": "我的助記詞 abandon ability able about above absent absorb abstract absurd abuse access accident",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 3,
+   "name": "編號隔開的助記詞也排除",
+   "in": "1. abandon 2. ability 3. able 4. about 5. above 6. absent 7. absorb 8. abstract 9. absurd 10. abuse 11. access 12. accident",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 3,
+   "name": "11 個不算",
+   "in": "abandon ability able about above absent absorb abstract absurd abuse access",
+   "out": "abandon ability able about above absent absorb abstract absurd abuse access"
+  },
+  {
+   "rule": 3,
+   "name": "一般英文句子不算",
+   "in": "I want to buy more BTC when the price drops below the moving average",
+   "out": "I want to buy more BTC when the price drops below the moving average"
+  },
+  {
+   "rule": 3,
+   "name": "JSON 陣列的助記詞",
+   "in": "[\"abandon\",\"ability\",\"able\",\"about\",\"above\",\"absent\",\"absorb\",\"abstract\",\"absurd\",\"abuse\",\"access\",\"accident\"]",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 3,
+   "name": "用 - 串起來的助記詞",
+   "in": "abandon-ability-able-about-above-absent-absorb-abstract-absurd-abuse-access-accident",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 3,
+   "name": "用 _ 串起來的助記詞",
+   "in": "abandon_ability_able_about_above_absent_absorb_abstract_absurd_abuse_access_accident",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 3,
+   "name": "編號黏在字前面(1.abandon)",
+   "in": "1.abandon 2.ability 3.able 4.about 5.above 6.absent 7.absorb 8.abstract 9.absurd 10.abuse 11.access 12.accident",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 4,
+   "name": "名=值：遮值留鍵名",
+   "in": "api_key=abcd1234efgh",
+   "out": "api_key=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "JSON 形狀",
+   "in": "\"secret\": \"s3cr3tValue\"",
+   "out": "\"secret\": \"⟦R⟧\""
+  },
+  {
+   "rule": 4,
+   "name": "冒號加空白",
+   "in": "PASSWORD: hunter2hunter2 記得換",
+   "out": "PASSWORD: ⟦R⟧ 記得換"
+  },
+  {
+   "rule": 4,
+   "name": "值不到 6 字不遮",
+   "in": "token: abc12",
+   "out": "token: abc12"
+  },
+  {
+   "rule": 4,
+   "name": "鍵名沒有關鍵字不遮",
+   "in": "max_drawdown=0.25 stop_loss=0.05",
+   "out": "max_drawdown=0.25 stop_loss=0.05"
+  },
+  {
+   "rule": 4,
+   "name": "YAML 巢狀：上一層的名字不吞掉下一行",
+   "in": "okx:\n  passphrase: Hunter2pass",
+   "out": "okx:\n  passphrase: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "YAML 巢狀兩把",
+   "in": "okx:\n  api_key: abcd1234efgh\n  secret: zyxw9876vuts",
+   "out": "okx:\n  api_key: ⟦R⟧\n  secret: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "錯誤訊息裡的環境變數",
+   "in": "Error: OKX_PASSPHRASE=Hunter2pass",
+   "out": "Error: OKX_PASSPHRASE=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "env: 前綴",
+   "in": "env: BINANCE_SECRET=abcd1234efgh",
+   "out": "env: BINANCE_SECRET=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "名=名=值",
+   "in": "params=apiKey=abcd1234efgh",
+   "out": "params=apiKey=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "大括號裡的鍵值",
+   "in": "cfg:{secret:abcd1234efgh}",
+   "out": "cfg:{secret:⟦R⟧}"
+  },
+  {
+   "rule": 4,
+   "name": "前一對沒有關鍵字",
+   "in": "a=b:password=Hunter2pass",
+   "out": "a=b:password=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "log: 前綴",
+   "in": "log: password: Hunter2pass",
+   "out": "log: password: ⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "sk-ant- 金鑰",
+   "in": "我的 key 是 sk-ant-api03-AbCdEfGhIjKlMnOpQrSt",
+   "out": "我的 key 是 ⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "AWS AKIA",
+   "in": "AKIAIOSFODNN7EXAMPLE 外洩了",
+   "out": "⟦R⟧ 外洩了"
+  },
+  {
+   "rule": 5,
+   "name": "GitHub ghp_",
+   "in": "ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+   "out": "⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "Slack xoxb-",
+   "in": "xoxb-123456789012-abcdefABCDEF",
+   "out": "⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "Google AIza",
+   "in": "AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q",
+   "out": "⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "JWT 三段",
+   "in": "token 是 eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl",
+   "out": "token 是 ⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "UUID",
+   "in": "帳號 550e8400-e29b-41d4-a716-446655440000",
+   "out": "帳號 ⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "sk-learn 不算",
+   "in": "sk-learn 很好用",
+   "out": "sk-learn 很好用"
+  },
+  {
+   "rule": 5,
+   "name": "Authorization: Bearer",
+   "in": "Authorization: Bearer abcdefghijklmnop1234",
+   "out": "Authorization: Bearer ⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "使用者資料夾換成 ~",
+   "in": "檔案在 /Users/wei/Blave/workspace/x.py",
+   "out": "檔案在 ~/Blave/workspace/x.py"
+  },
+  {
+   "rule": 6,
+   "name": "Windows 使用者資料夾",
+   "in": "C:\\Users\\wei\\Blave\\x.py",
+   "out": "~\\Blave\\x.py"
+  },
+  {
+   "rule": 6,
+   "name": "網址 query 換成 ?…",
+   "in": "打 https://api.binance.com/fapi/v1/order?symbol=BTCUSDT&signature=abc 失敗",
+   "out": "打 https://api.binance.com/fapi/v1/order?… 失敗"
+  },
+  {
+   "rule": 6,
+   "name": "沒有 scheme 的路徑 query",
+   "in": "with url: /fapi/v1/order?symbol=BTCUSDT&signature=abc",
+   "out": "with url: /fapi/v1/order?…"
+  },
+  {
+   "rule": 6,
+   "name": "32 碼 hex 地址遮",
+   "in": "地址 3f9a1c0e7b2d4a6f8e1c3b5a7d9f0e2c",
+   "out": "地址 ⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "大小寫數字齊全的長亂碼遮",
+   "in": "nonce Zx9Qw8Er7Ty6Ui5Op4As3Df2Gh1Jk0Lm",
+   "out": "nonce ⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "策略名不遮",
+   "in": "策略 binance_funding_rate_strategy_v2 上線了",
+   "out": "策略 binance_funding_rate_strategy_v2 上線了"
+  },
+  {
+   "rule": 6,
+   "name": "全小寫長字不遮",
+   "in": "abcdefghijklmnopqrstuvwxyzabcdefghij",
+   "out": "abcdefghijklmnopqrstuvwxyzabcdefghij"
+  },
+  {
+   "rule": 6,
+   "name": "0x 開頭的 64 碼 hex 遮",
+   "in": "私鑰 0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318",
+   "out": "私鑰 ⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "GitHub 網址不遮(用 / 切段各自判斷)",
+   "in": "看 https://github.com/Blave-TW/blave-agent/blob/main/lib/strategy_runner_v2.py",
+   "out": "看 https://github.com/Blave-TW/blave-agent/blob/main/lib/strategy_runner_v2.py"
+  },
+  {
+   "rule": 6,
+   "name": "策略路徑不遮",
+   "in": "結果在 ~/Blave/workspace/strategies/btc_funding_rate_v2/backtest/report_2026.json",
+   "out": "結果在 ~/Blave/workspace/strategies/btc_funding_rate_v2/backtest/report_2026.json"
+  },
+  {
+   "rule": 6,
+   "name": "含 / 的 base64 金鑰(AWS secret)",
+   "in": "aws wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+   "out": "aws ⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "含 / 的 base64 金鑰(88 字)",
+   "in": "kraken kQH5HW/8p1uGOVjbgWA7FunAmGO8lsSUXNsu3eow76sz84Q18fWxnyRzBHCd3pd5nE9qa99HAZtuZuj6F1huXg==",
+   "out": "kraken ⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "含 + 與 / 的 base64",
+   "in": "key 3n+7Q2xk/9Lm4Pz8Rt1Vw6Yb0Ac5De2Fg7Hj/Kl9Mn3",
+   "out": "key ⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "camelCase 路徑的網址不遮",
+   "in": "看 https://github.com/johnDoe/repoName1/blob/main/strategyRunnerV2Final.py",
+   "out": "看 https://github.com/johnDoe/repoName1/blob/main/strategyRunnerV2Final.py"
+  },
+  {
+   "rule": 7,
+   "name": "遮 5 處照傳",
+   "in": "550e8400-e29b-41d4-a716-446655440000 550e8400-e29b-41d4-a716-446655440001 550e8400-e29b-41d4-a716-446655440002 550e8400-e29b-41d4-a716-446655440003 550e8400-e29b-41d4-a716-446655440004",
+   "out": "⟦R⟧ ⟦R⟧ ⟦R⟧ ⟦R⟧ ⟦R⟧"
+  },
+  {
+   "rule": 7,
+   "name": "遮超過 5 處整則排除",
+   "in": "550e8400-e29b-41d4-a716-446655440000 550e8400-e29b-41d4-a716-446655440001 550e8400-e29b-41d4-a716-446655440002 550e8400-e29b-41d4-a716-446655440003 550e8400-e29b-41d4-a716-446655440004 550e8400-e29b-41d4-a716-446655440005",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 0,
+   "name": "空字串",
+   "in": "",
+   "out": ""
+  },
+  {
+   "rule": 0,
+   "name": "沒東西要遮",
+   "in": "回測完成：年化 38.2%，最大回撤 12%",
+   "out": "回測完成：年化 38.2%，最大回撤 12%"
+  }
+ ]
+}
