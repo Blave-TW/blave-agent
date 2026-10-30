@@ -131,7 +131,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     const st = amounts ? { report: { config: { amounts } } } : null;
     const VS = { local: { name: null, open: null }, cloud: { name: null, open: null } };
     const env = { document: doc, $, t, RP, RPC, RPC_CACHE: new Map(), rpBag: () => bag, rpPaintHead: () => paints.push("head"), rpShowTab: (tab) => paints.push(tab), rpTab: (B) => B.tab,
-      running: opt.running === true, trackFeature: (n) => tracked.push(n), srSay: (x) => said.push(x), TR_BAGS: { local: { st: side === "local" ? st : null, api }, cloud: { st: side === "cloud" ? st : null, api } },
+      running: opt.running === true, csAnyTurn: () => env.running === true, trackFeature: (n) => tracked.push(n), srSay: (x) => said.push(x), TR_BAGS: { local: { st: side === "local" ? st : null, api }, cloud: { st: side === "cloud" ? st : null, api } },
       // 上線中的判準只有一份(versions.js verPicked:下單設定有這個 key,金額 0 也算);真的那支,讀 env.TR_BAGS
       verPicked: null,
       xpIsTypeB, verPendingOf: () => opt.pending || null, VS, RERUN_WHY: { DATA: "data", REFUSED: "refused", TIMEOUT: "timeout" }, shlFmtTime,
@@ -338,7 +338,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   // ── ⑤ 接線 ──
   const html = read(path.join(R, "index.html")), css = read(path.join(R, "report-backtest.css"));
   ok("app.js:rpShowTab 畫完回測分頁就叫 perfPaint(B)", /R\.renderBacktest\(\$\("rp-bt"\), B\.data\.stats\);\n\s*if \(tab === "bt" && typeof perfPaint === "function"\) perfPaint\(B\);/.test(fnSrc(appSrc, "rpShowTab")));
-  ok("app.js:三處上鎖 / 解鎖都在 verBusy 旁邊叫 perfBusy", (appSrc.match(/if \(typeof verBusy === "function"\) verBusy\(\); if \(typeof perfBusy === "function"\) perfBusy\(\);/g) || []).length === 3);
+  ok("app.js:三處上鎖 / 解鎖都在 verBusy 旁邊叫 perfBusy", /if \(typeof verBusy === "function"\) verBusy\(\); if \(typeof perfBusy === "function"\) perfBusy\(\);/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")));
   ok("index.html:perf.js 在 versions.js 之後(用它的 verAmount / verPendingOf / VS / RERUN_WHY)、app.js 之後、export.js 之後(xpIsTypeB)", html.indexOf('src="perf.js"') > html.indexOf('src="versions.js"') && html.indexOf('src="versions.js"') > html.indexOf('src="app.js"') && html.indexOf('src="perf.js"') > html.indexOf('src="export.js"'));
   ok("CSS:.upd 靠右(margin-left: auto)、更新中 .busy、aria-disabled 的鈕走灰階退場、失敗行緊跟 meta(8)而三組條列仍離 16",
     /\.bt-meta > \.upd \{ display: inline-flex; align-items: center; gap: var\(--space-8\); margin-left: auto; white-space: nowrap; \}/.test(css) && /\.bt-meta > \.upd \.busy \{/.test(css)

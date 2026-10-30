@@ -7,6 +7,7 @@
 // 外殼與 agent 的工具都沒有碰那一頁。
 // 跑法:node tests/check_shell_search_verify_wait.js(③ 要 BLAVE_TEST_WINDOW=1,約 70 秒)
 const path = require("path"), fs = require("fs"), os = require("os"), http = require("http");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell");
 const GATE = require("./_electron_gate");
 const VF = require(path.join(SHELL, "browser", "verify.js"));
@@ -126,7 +127,7 @@ if (!process.versions.electron) {
 
     // ── 場景 A:等超過 60 秒才過假頁 → 同一次搜尋自動回結果
     fake.arm();
-    await B.beginTurn(win, "desktop-svw1");
+    await BT.begin(B, win, "desktop-svw1");
     const t0 = Date.now();
     let settled = null;
     const pending = call("browser_search", { query: "cpi-a", count: 3 }).then(J).then((r) => (settled = r));
@@ -143,11 +144,11 @@ if (!process.versions.electron) {
     t("A 第 60 秒之後才過 → 同一次呼叫自動回結果,用戶不用再做任何事", !!res && res.ok === true && res.source === "google" && res.untrusted_content.results.length === 2 && res.untrusted_content.results[0].url === "http://news-a.test/one", res);
     t("A 過了之後畫面收乾淨:need_clear、自動交還,那一格不再是驗證中 / 用戶接手", sent.some((e) => e.type === "need_clear" && e.id === tab.id) && sent.some((e) => e.type === "handback" && e.id === tab.id && e.auto === true) && !tab.verify && !tab.userControl && !tab.need);
     console.log("      (A 等了 " + (Date.now() - t0) + " ms)");
-    B.endTurn();
+    BT.end(B);
 
     // ── 場景 B:呼叫的那一端不等了(引擎逾時、回合被中斷)→ 搜尋收掉,「等你操作」跟著收
     sent.length = 0; fake.arm();
-    await B.beginTurn(win, "desktop-svw2");
+    await BT.begin(B, win, "desktop-svw2");
     let connected = true, settledB = null;
     const pB = call("browser_search", { query: "cpi-b" }, { live: () => true, connected: () => connected }).then(J).then((r) => (settledB = r));
     const needB = await until(needOf, 15000);
@@ -159,17 +160,17 @@ if (!process.versions.electron) {
     t("B 那一端不等了 → 這次搜尋馬上結束,不再往退路搜", !!settledB && settledB.ok === false && settledB.error === "cancelled" && !hits.some((h) => h.startsWith("GET d.test")), [settledB, hits]);
     t("B 「等你操作」收掉:發了 need_clear,那一格沒有 need;它仍然是驗證頁(agent 的工具碰不到)", sent.some((e) => e.type === "need_clear" && e.id === tabB.id) && !tabB.need
       && J(await call("browser_read", { tab: tabB.alias })).error === "needs_user_verification");
-    B.endTurn();
+    BT.end(B);
 
     // ── 場景 C:用戶接手之後回合結束 → 「你在操作／交還 agent」收掉
     sent.length = 0; fake.arm();
-    await B.beginTurn(win, "desktop-svw3");
+    await BT.begin(B, win, "desktop-svw3");
     const pC = call("browser_search", { query: "cpi-c" }).then(J);
     const needC = await until(needOf, 15000);
     const tabC = needC && B._tabs.get(needC.id);
     B.takeover(tabC.id);
     t("C 用戶接手中", !!tabC && tabC.userControl === true && sent.some((e) => e.type === "user_takeover" && e.id === tabC.id));
-    B.endTurn();
+    BT.end(B);
     const rC = await Promise.race([pC, sleep(3000).then(() => null)]);
     t("C 回合結束 → 這次搜尋收掉", !!rC && rC.ok === false, rC);
     t("C 回合結束 → 那一格不再是「你在操作」、沒有 need:發了 handback(auto) 與 need_clear;頁面留著", tabC.userControl === false && !tabC.need && tabC.status !== "closed"
@@ -177,7 +178,7 @@ if (!process.versions.electron) {
 
     // ── 場景 D:並行的 browser_wait until=user_done 不吃掉驗證頁的按鈕結果(稽核 P2-7)
     sent.length = 0; fake.arm();
-    await B.beginTurn(win, "desktop-svw4");
+    await BT.begin(B, win, "desktop-svw4");
     const pD = call("browser_search", { query: "cpi-d" }).then(J);
     const needD = await until(needOf, 15000);
     const tabD = needD && B._tabs.get(needD.id);
@@ -189,7 +190,7 @@ if (!process.versions.electron) {
     t("D 並行的 browser_wait 只回別的分頁,驗證頁那一格不在清單裡", r.ok === true && r.tabs.length === 1 && r.tabs[0].tab === other.tab, r);
     const rD = await Promise.race([pD, sleep(15000).then(() => null)]);
     t("D 按鈕結果沒有被吃掉:搜尋馬上退到 DuckDuckGo 拿到結果(不是空等到逾時)", !!rD && rD.ok === true && rD.source === "ddg" && rD.fallback_reason === "captcha", rD);
-    B.endTurn();
+    BT.end(B);
 
     t("全程沒有連到任何真的搜尋引擎(https 一律經 CONNECT,被本機代理記下並拒絕)", !hits.some((h) => h.startsWith("CONNECT")) && !hits.some((h) => /google|duckduckgo/.test(h)), hits.filter((h) => h.startsWith("CONNECT")));
     srv.close();

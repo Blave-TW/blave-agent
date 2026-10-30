@@ -59,8 +59,9 @@ const mk = (o = {}) => {
     app: { dock: { setBadge: (v) => { badge = v; } } }, showMain: () => { shown++; }, tm: () => ({ track: (ev, p) => tracked.push(ev + ":" + p.act) }),
     replyNotifyGet: () => o.pref !== false, replySoundGet: () => o.sound !== false, okSessionId: (id) => typeof id === "string" && /^desktop-[a-z0-9]{4,16}$/.test(id), replyTitle: (sid) => "T:" + sid, require };
   vm.createContext(ctx);
-  vm.runInContext(["let replyPending = null, replyLast = null, replyOsOff = false;", PURE, fn(main, "notifWatch"), fn(main, "replyCue"), fn(main, "replyTurnStart"),
-    "this.get = () => ({ replyPending, replyLast, replyOsOff }); this.setPending = (p) => { replyPending = p; };"].join("\n"), ctx);
+  vm.runInContext(["const replyPending = new Map(), replyLast = new Map(); let replyOsOff = false;", PURE, fn(main, "notifWatch"), fn(main, "replyCue"), fn(main, "replyTurnStart"),
+    "const one = (m) => (m.size ? m.values().next().value : null);",
+    "this.get = () => ({ replyPending: one(replyPending), replyLast: one(replyLast), replyOsOff, pendingN: replyPending.size }); this.setPending = (p) => { replyPending.set(p.sid, p); };"].join("\n"), ctx);
   const snd = [], sender = { isDestroyed: () => !!o.senderGone, send: (ch) => snd.push(ch) };
   return { ctx, made, tracked, sent, snd, badge: () => badge, shown: () => shown, cue: (c) => ctx.replyCue(c, sender) };
 };
@@ -101,24 +102,34 @@ ok("failed(作業系統關了通知):記 os_off、osOff 立起、從存活集合
 { const y = mk(); y.ctx.setPending({ sid: SID, awaiting: false }); vm.runInContext("replyOsOff = true", y.ctx); y.cue({ kind: "done", snippet: "x" });
   ok("下一則成功 show:osOff 收掉", y.ctx.get().replyOsOff === false); }
 { const y = mk(); y.ctx.setPending({ sid: SID, awaiting: false }); y.cue({ kind: "done", snippet: "x" }); y.ctx.setPending({ sid: SID, awaiting: false });
-  y.ctx.replyTurnStart();
-  ok("下一輪開始:上一則還沒點的收掉、pending 清掉", y.made[0].closed === true && y.ctx.get().replyLast === null && y.ctx.get().replyPending === null); }
+  y.ctx.replyTurnStart("desktop-other999");
+  ok("別條開跑:這條還沒點的那則與 pending 都不動", y.made[0].closed !== true && y.ctx.get().replyLast !== null && y.ctx.get().replyPending !== null);
+  y.ctx.replyTurnStart(SID);
+  ok("同一條的下一輪開始:上一則還沒點的收掉、pending 清掉", y.made[0].closed === true && y.ctx.get().replyLast === null && y.ctx.get().replyPending === null); }
+// 並行:兩條都在等 reply-cue。帶 sid 的只用那條;沒帶 sid(單分頁那版畫面)而且有兩筆:不猜、不發
+{ const y = mk(); const S2 = "desktop-efgh5678"; y.ctx.setPending({ sid: SID, awaiting: false }); y.ctx.setPending({ sid: S2, awaiting: true });
+  ok("並行:沒帶 sid 而且兩條都在等 → 不發", y.cue({ kind: "done", snippet: "x" }) === false && y.made.length === 0);
+  ok("並行:帶 sid 只用那一條(awaiting 照那條的)、另一條留著", y.cue({ kind: "done", snippet: "x", sid: S2 }) === true && y.made[0].a.title === "T:" + S2 && /^等你回覆/.test(y.made[0].a.body) && y.ctx.get().pendingN === 1);
+  ok("並行:剩一條時沒帶 sid 就是它", y.cue({ kind: "done", snippet: "y" }) === true && y.made[1].a.title === "T:" + SID && y.ctx.get().pendingN === 0); }
 
 // ---- 5. 接線
 const rt = fn(main, "runTurn");
-ok("runTurn:一開始先收掉上一則(replyTurnStart)", /replyTurnStart\(\);\n  sessWaitingSave\(sessionId, false\);/.test(rt));
+ok("runTurn:一開始先收掉同一條的上一則(replyTurnStart(sessionId))", /replyTurnStart\(sessionId\);\n  sessWaitingSave\(sessionId, false\);/.test(rt));
 ok("runTurn:done chunk 記 awaiting(同 sessWaitingSave 那個值)", /turnAwaiting = c\.awaiting === true; sessWaitingSave\(sessionId, turnAwaiting\);/.test(rt));
-ok("runTurn:close 時記 pending(用 runTurn 的 sessionId,不看畫面開著哪條)、在送 turn-end 之前", /replyPending = \{ sid: sessionId, awaiting: turnAwaiting \};[^\n]*\n[^\n]*\n    if \(!win\.isDestroyed\(\)\) win\.webContents\.send\("turn-end"/.test(rt));
-ok("send-message:runTurn 失敗那條(畫面也會收到 turn-end)也記 pending", /\.catch\(\(err\) => \{[^\n]*\n      replyPending = \{ sid: payload && payload\.sessionId, awaiting: false \};\n      if \(win && !win\.isDestroyed\(\)\) win\.webContents\.send\("turn-end"/.test(main));
+ok("runTurn:close 時交給 turnFinish(用這一輪的 rec,不看畫面開著哪條)", /turnFinish\(rec, \{ code, errTail: code === 0 \? "" : errTail \}, turnAwaiting\);/.test(rt));
+{ const fin = fn(main, "turnFinish");
+  ok("turnFinish:記 pending(那一條)在送 turn-end 之前", /replyPending\.set\(rec\.sid, \{ sid: rec\.sid, awaiting: awaiting === true \}\);[^\n]*\n  sendTurn\(rec\.sid, "turn-end", end\);/.test(fin)); }
+ok("turnLaunch:runTurn 失敗那條(畫面也會收到 turn-end)也走 turnFinish 記 pending", /\.catch\(\(err\) => \{\n    turnFinish\(rec, \{ code: 1, errTail: String\(\(err && err\.message\) \|\| err\) \}, false\);/.test(main));
 ok("IPC:reply-cue(聲音交回 e.sender)與四支設定 handler 都只收自家頁面", /ipcMain\.on\("reply-cue", \(e, cue\) => \{ if \(fromOurPage\(e\)\) replyCue\(cue, e\.sender\); \}\);/.test(main)
   && /handle\("reply-notify", \(\) => \(\{ on: replyNotifyGet\(\), osOff: replyOsOff, sound: replySoundGet\(\) \}\)/.test(main) && /handle\("reply-notify-set", /.test(main) && /handle\("reply-sound-set", \(_e, on\) => replySoundSet\(on === true\)/.test(main) && /handle\("reply-notify-os", /.test(main));
 ok("「開啟系統設定」網址寫死(Windows ms-settings:notifications;macOS 系統設定的通知頁)", /ms-settings:notifications/.test(fn(main, "replyOsSettings")) && /x-apple\.systempreferences:/.test(fn(main, "replyOsSettings")));
 ok("tmLabels 預先列好五個 rc_ 鍵(trade-labels 只收已經在表上的鍵)", /rc_await: "", rc_fail: "", rc_doneEmpty: "", rc_awaitEmpty: "", rc_failEmpty: "",/.test(main));
 ok("回合結束提示那段不碰 p1Badge／setBadge", !/p1Badge|setBadge/.test(fn(main, "replyCue") + fn(main, "replyTurnStart") + fn(main, "replyBody")));
-const te = app.slice(app.indexOf("window.blave.onTurnEnd("));
+const te = app.slice(app.indexOf("function turnEndPre("));
 ok("畫面:faulted 算完、錯誤卡都掛好之後才送 reply-cue(停止 → stopped)", /pendingErr = \[\];\n  replyCueSend\(stopped \? "stopped" : faulted \? "fail" : "done"/.test(te) && te.indexOf("replyCueSend(") > te.indexOf("const faulted ="));
 ok("畫面:摘錄走 replySnippet;沒做完又沒回覆時用錯誤卡那一句,不用 errTail", /replySnippet\(reply\)/.test(fn(app, "replyCueSend")) && /\.fault-body > div/.test(fn(app, "replyCueSend")) && /!turnFaultEl\.classList\.contains\("is-calm"\)/.test(fn(app, "replyCueSend")) && !/errTail/.test(fn(app, "replyCueSend")));
-ok("畫面:點通知開那條對話——已是那條、回合中、清單上沒有(被刪了)都不動", /if \(!id \|\| id === sessionId \|\| busyOn\(\)\) return;/.test(app) && /list\.some\(\(m\) => m && m\.id === id\) && !busyOn\(\)\) csOpen\(id\)/.test(app));
+ok("畫面:點通知開那條對話(0.1.37 分頁:開著的切過去、沒開的開成分頁;回合中也照開;清單上沒有(被刪了)不動)", /if \(CS\.tabs\.has\(id\)\) \{ csOpen\(id\); return; \}/.test(app) && /if \(Array\.isArray\(list\) && list\.some\(\(m\) => m && m\.id === id\)\) csOpen\(id\);/.test(app) && !/onOpenSession\(async \(id\) => \{\n[^\n]*busyOn/.test(app));
+ok("畫面:回合結束交 reply-cue 時帶這一條的 sid(稽核 s1 P3-1:多條並行時主行程不猜)", /window\.blave\.replyCue\(kind, snip, sessionId\);/.test(app) && /replyCue: \(kind, snippet, sid\) =>/.test(fs.readFileSync(path.join(S, "preload.js"), "utf8")));
 
 // ---- 6. 設定列與字
 const html = fs.readFileSync(path.join(S, "renderer", "index.html"), "utf8");

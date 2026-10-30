@@ -32,13 +32,13 @@ ok("出錯:手上的半截先升格", JSON.stringify(r.out) === JSON.stringify([
 r = run([{ type: "text", text: "還在打" }]);
 ok("還沒 done:不升格(留給 turn-end)", r.out.length === 0 && r.left === "還在打", r);
 
-const onEv = cut("window.blave.onTurnEvent((c) => {", "// turnFaulted:");
+const onEv = cut("function turnEventIn(c) {", "// turnFaulted:");
 ok("接線:每個 chunk 先過 collectDraft,要升格就 draftPromote", /const d = collectDraft\(\{ draft \}, c\);\n\s*draft = d\.draft;\n\s*if \(d\.promote\) draftPromote\(\);/.test(onEv));
 ok("接線:text / text_replace 只畫草稿行,不直接進泡泡", /c\.type === "text" \|\| c\.type === "text_replace"\) \{\n\s*draftShow\(\);\n\s*\}/.test(onEv) && !/addMsg\("ai"/.test(onEv));
-const prom = cut("function draftPromote(", "window.blave.onTurnEvent(");
+const prom = cut("function draftPromote(", "function turnEventIn(");
 ok("升格:先分類錯誤(登入 / 額度 / model),再畫泡泡、記 turnGotReply、設思考過程錨點",
   /const f = classifyFault\(text\);/.test(prom) && /paintAi\(liveBubble, \(liveBubble\._raw \|\| ""\) \+ text\); turnGotReply = true;/.test(prom) && /busy\.anchor = liveBubble/.test(prom));
-ok("turn-end 先升格(runtime 沒送 done 就結束時)", /window\.blave\.onTurnEnd\(async \(r\) => \{\n\s*draftPromote\(\);/.test(src));
+ok("turn-end 先升格(runtime 沒送 done 就結束時)", /function turnEndPre\(r\) \{\n\s*draftPromote\(\);/.test(src));
 const show = cut("function draftShow(", "function draftPromote(");
 ok("草稿行拿掉了(Wei 拍板):不建 .think-draft,draftShow 只記 text delta 的時間給狀態機、不碰 DOM",
   !/think-draft/.test(src) && !/think-draft/.test(css) && /ACT\.textStart = now;/.test(show) && /ACT\.lastDelta = now;/.test(show)

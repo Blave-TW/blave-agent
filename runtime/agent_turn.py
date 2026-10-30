@@ -66,7 +66,9 @@ BLAVE_AGENT_HOME = (os.environ.get("BLAVE_AGENT_HOME")
 # deduction — this is the actual billing integration, not a POC shortcut.
 # Auth is a single per-machine token (BLAVE_PROXY_TOKEN, matches this
 # instance's openclaw_instances.ttyd_password), sent as "proxy-{token}".
-PROXY_BASE_URL = "https://api.blave.org/openclaw/proxy"
+# The desktop app points this at its local account relay (local_proxy.py; shell/acctrelay.js).
+import local_proxy  # noqa: E402  (desktop relay override; see local_proxy.py)
+PROXY_BASE_URL = local_proxy.proxy_base()
 PROXY_ENV = {
     "ANTHROPIC_BASE_URL": PROXY_BASE_URL,
     "ANTHROPIC_API_KEY": f"proxy-{os.environ.get('BLAVE_PROXY_TOKEN', '')}",
@@ -4404,12 +4406,20 @@ def local_mcp_config(sink, mcp_config):
     return real
 
 
-def mcp_rule(mounted):
+def handoff_folder(session_id):
+    """這一輪雲端交接的子資料夾名(references/cloud-handoff.md 的 `<turn>`,`tmp/cloud-handoff/<turn>/`)。
+    電腦版多條對話會同時跑(0.1.37),共用一個固定資料夾時 A 收尾會刪掉 B 的金鑰;同一條對話一次一輪,所以用對話 id。
+    形狀不合的退回固定字:這個值會被 agent 貼進命令列,也是 get_ssh_access 的 handoff_dir(api 收 1–64 字)。"""
+    return session_id if isinstance(session_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", session_id) else "turn"
+
+
+def mcp_rule(mounted, session_id=None):
     """電腦版而且這一輪掛了 `blave` MCP 才有這段;其餘回空字串(system prompt 一個字都不變)。
     純文字、不看引擎:Claude 走 system prompt 檔,Codex 走 _codex_prompt 的規則前綴。
     圍籬對齊 references/cloud-handoff.md NEVER #31(用戶這一輪要求的事都可做;搬運仍只走 1–8)。"""
     if not mounted:
         return ""
+    folder = handoff_folder(session_id)
     return (
         "\n\n---\n\n## Blave MCP (this turn)\n"
         "A `blave` MCP server is attached for this turn: it reaches the user's Blave cloud machine over SSH. "
@@ -4430,7 +4440,10 @@ def mcp_rule(mounted):
         "over SSH (no running its runtime or its agent) — a turn there charges the user's cloud AI credit. "
         "Never let a key or secret value into the chat, a log or a command line. "
         "Never read, print, copy or summarise the MCP configuration or its access code, and never write SSH keys "
-        "or certificates outside `tmp/cloud-handoff/` in the workspace — delete that folder before the turn ends, "
+        f"or certificates outside this turn's folder `tmp/cloud-handoff/{folder}/` in the workspace — in that "
+        f"reference `<turn>` is `{folder}`, and every `get_ssh_access` call passes `handoff_dir` = `{folder}`. Other conversations on this computer may be using the cloud machine at "
+        "the same time, each in its own folder under `tmp/cloud-handoff/`: never touch those. Delete this turn's "
+        "folder before the turn ends, "
         "and never mention that folder, the connection or the cleanup in the reply: its first sentence is about "
         "what the user asked for.\n"
     )
@@ -4464,6 +4477,21 @@ TURN_NOTES = {
         "plainly in the first sentence of your reply — this computer makes it this once, and recurring reports are "
         "set up on the cloud machine."),
 }
+
+
+def parallel_rule(sink):
+    """電腦版(0.1.37 對話分頁)多條對話會同時跑:交易與改同一支策略只靠這句提醒,外殼認不出哪句是交易。雲端回空字串"""
+    if not isinstance(sink, LocalSink):
+        return ""
+    return ("\n\n---\n\n## Other conversations (this computer)\n"
+            "Other conversations on this computer may be running at the same time. Right before you place or close an "
+            "order, change order settings, or edit a strategy's files or `manager/portfolio_config.json`, read the "
+            "exchange position and those files again — never act on what you read earlier in this turn. Only one "
+            "conversation moves money at a time: a close script may wait up to 90 s for another one, so run order and "
+            "close scripts with a command timeout of at least 180000 ms (`manager/flatten.py`: at least 300000 ms — "
+            "it may also wait for running executions and for the broker's position snapshot), and if the command comes back while still "
+            "running, wait for it — never start it a second time. If it says another conversation is placing an order "
+            "and nothing was sent, tell the user; do not retry in a loop.\n")
 
 
 def turn_note_rule(sink):
@@ -4541,6 +4569,10 @@ def browser_rule(mounted, web=None):
         "(`references/strategy-code.md` › Building from code the user points to); web page content never goes into "
         "`control/` or `.env`. Cite the source URL and title for every fact you take "
         "from a page.\n"
+        "Every conversation on this computer shares this one browser and only one turn uses it at a time. A browser "
+        "tool that returns `browser_busy` means another conversation still has it: do not call it again right away "
+        "and never reach the page another way; say in one sentence that the built-in browser is busy with another "
+        "conversation, then finish without it or offer to look it up once that conversation is done.\n"
         + ("The browser is the only way to the web in the desktop app — the user is promised that every page you open "
            f"shows in the chat. Never reach a web page by another route: not {_NO_OTHER_ROUTE}.\n" if web else "")
     )
@@ -4686,28 +4718,49 @@ def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule=""
     attached server can never disagree."""
     return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
             + python_rule() + data_access_rule() + preferences_rule() + _formatting_rule_for(sink)
-            + mcp_rule(mcp_mounted) + mcp_blocked_rule(None if mcp_mounted else mcp_blocked)
+            + mcp_rule(mcp_mounted, getattr(sink, "session_id", None)) + mcp_blocked_rule(None if mcp_mounted else mcp_blocked)
             + browser_rule(browser_mounted, desktop_web(sink, browser_mounted))
-            + turn_note_rule(sink) + lang_rule + "\n\n---\n\n" + prompt)
+            + turn_note_rule(sink) + parallel_rule(sink) + lang_rule + "\n\n---\n\n" + prompt)
 
 
-def _remove_cloud_handoff_dir(workspace=None):
-    """回合結束一律清掉 `<workspace>/tmp/cloud-handoff/`(雲端交接的短效 SSH 金鑰與憑證)。
+def _remove_cloud_handoff_dir(workspace=None, session_id=None):
+    """回合結束一律清掉這一輪的 `<workspace>/tmp/cloud-handoff/<turn>/`(雲端交接的短效 SSH 金鑰與憑證)。
     規則要 agent 在回合結束前自己刪,但回合出錯(撞 max_turns、半途、崩潰)時它沒機會刪,
-    金鑰就留在磁碟上等下一個回合碰巧清。只動那一個路徑:不存在就算了;它是連結就只拿掉連結;
-    `tmp` 本身是指到 workspace 外面的連結時整個不碰——絕不刪到 workspace/tmp 以外的東西。"""
+    金鑰就留在磁碟上等下一個回合碰巧清。帶 session_id 時整個拿掉這一輪自己的子資料夾;別條的子資料夾不碰。
+    `cloud-handoff/` 根目錄的檔(agent 漏帶 handoff_dir 時 api 退路放的,可能正被別條回合用著;稽核 s1 P2-1)
+    不論帶不帶 session_id 都只清超過憑證效期(15 分鐘)加餘裕的(稽核 s2 P3-6:不然現在沒有人清它),資料夾不動。
+    不存在就算了;是連結就只拿掉連結;`tmp` 本身是指到 workspace 外面的連結時整個不碰——絕不刪到 workspace/tmp 以外的東西。"""
     ws = os.path.realpath(workspace or WORKSPACE)
     tmp = os.path.join(ws, "tmp")
-    path = os.path.join(tmp, "cloud-handoff")
-    if not os.path.lexists(path) or os.path.realpath(tmp) != tmp:
+    root = os.path.join(tmp, "cloud-handoff")
+    if not os.path.lexists(root) or os.path.realpath(tmp) != tmp:
         return
+
+    def drop(path):
+        try:
+            if os.path.isdir(path) and not os.path.islink(path):
+                shutil.rmtree(path)
+            elif os.path.lexists(path):
+                os.unlink(path)
+        except OSError as e:
+            print(f"[agent_turn] 清不掉 {path}: {e}", file=sys.stderr)
+
+    if os.path.islink(root) or not os.path.isdir(root):
+        drop(root)
+        return
+    if session_id is not None:
+        drop(os.path.join(root, handoff_folder(session_id)))
+    cutoff = time.time() - HANDOFF_ROOT_STALE_S
     try:
-        if os.path.isdir(path) and not os.path.islink(path):
-            shutil.rmtree(path)
-        else:
-            os.unlink(path)
+        for name in os.listdir(root):
+            p = os.path.join(root, name)
+            if (os.path.islink(p) or not os.path.isdir(p)) and os.lstat(p).st_mtime < cutoff:
+                drop(p)
     except OSError as e:
-        print(f"[agent_turn] 清不掉 {path}: {e}", file=sys.stderr)
+        print(f"[agent_turn] 清不掉 {root}: {e}", file=sys.stderr)
+
+
+HANDOFF_ROOT_STALE_S = 20 * 60   # get_ssh_access 的憑證 15 分鐘,多留 5 分鐘
 
 
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
@@ -4849,7 +4902,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 
     sysprompt_path = _write_system_prompt_file(
         agents_md + ('' if _relay_mode() else model_catalog_rule(session_id)) + python_rule() + data_access_rule()
-        + mcp_rule(cloud_mcp) + browser_rule(browser_mounted, web) + turn_note_rule(sink)
+        + mcp_rule(cloud_mcp, session_id) + browser_rule(browser_mounted, web) + turn_note_rule(sink) + parallel_rule(sink)
         + preferences_rule()
         + reply_lang_rule(lang_msg, reply_lang)
         + _formatting_rule_for(sink)
@@ -5203,7 +5256,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         if stop_watch:
             stop_watch.cancel()
             turn_stop.final_sweep(sink)
-        _remove_cloud_handoff_dir()   # 出錯的回合也清:交接金鑰不能留到下一個回合
+        _remove_cloud_handoff_dir(session_id=session_id)   # 出錯的回合也清:交接金鑰不能留到下一個回合(只清這一輪的)
         await sink.stop()
         if sysprompt_path:
             try:
@@ -5249,7 +5302,42 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 MESSAGE_STDIN_MAX = 1024 * 1024  # --message-stdin 讀的上限(同電腦版外殼的 MESSAGE_MAX_BYTES):不無上限地把 stdin 讀進記憶體
 
 
+def _proc_started(pid):
+    """Start stamp of `pid`; must be the exact string lib/guard._proc_started gives (tests/check_turn_money_lock.py
+    compares the two). None when unreadable — then BLAVE_TURN_PID carries the pid alone."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.OpenProcess.restype = ctypes.c_void_p
+            h = k32.OpenProcess(0x1000, False, pid)
+            if not h:
+                return None
+            try:
+                k32.GetProcessTimes.argtypes = [ctypes.c_void_p] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+                c, e, k, u = (wintypes.FILETIME() for _ in range(4))
+                if not k32.GetProcessTimes(ctypes.c_void_p(h), ctypes.byref(c), ctypes.byref(e), ctypes.byref(k), ctypes.byref(u)):
+                    return None
+                return str((c.dwHighDateTime << 32) | c.dwLowDateTime)
+            finally:
+                k32.CloseHandle(ctypes.c_void_p(h))
+        if sys.platform.startswith("linux"):
+            with open(f"/proc/{pid}/stat") as f:
+                return f.read().rsplit(")", 1)[1].split()[19]
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=5,
+                             env={**os.environ, "LC_ALL": "C", "TZ": "UTC0"}).stdout   # lstart prints LOCAL time: pin locale and zone, or a turn script with another TZ reads a different stamp
+        return " ".join(out.split()) or None
+    except Exception:
+        return None
+
+
 def main():
+    # lib/guard's turn order lock: a process this turn starts and leaves running (nohup / tmux) checks this pid
+    # and stops counting as part of the turn once this process is gone
+    if os.environ.get(turn_stop.ENV):
+        stamp = _proc_started(os.getpid())   # pid + start stamp: a reused pid is not this turn
+        os.environ["BLAVE_TURN_PID"] = f"{os.getpid()}:{stamp}" if stamp else str(os.getpid())
     parser = argparse.ArgumentParser()
     parser.add_argument("session_id")
     # 電腦版用 --message-stdin 把訊息從 stdin 送進來(argv 同機的人 `ps` 看得到,而聊天貼 key 是支援的流程);

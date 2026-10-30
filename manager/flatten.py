@@ -558,6 +558,75 @@ def _wait_for_inflight(timeout_s=30.0, poll_s=1.0, symbol=None):
     return remaining
 
 
+# 群益 / 統一: the worker's position snapshot lags an order sent on this machine. A read that STARTED less than
+# ORDER_SETTLE_S after the last send still shows the old open interest — on 群益's auto open/close (sNewClose=2)
+# a second close on it opens the reverse. That is exactly what a second flatten right after another one would
+# do (a turn's flatten that waited for the turn lock while the 全部平倉 button's flatten closed everything), so
+# a venue with a last-order marker is read only once its snapshot has caught up; past the wait it is not closed.
+SETTLE_WAIT_S = 90.0
+# From an agent turn the wait shares one budget across venues: hold_turn_money (guard.TURN_MONEY_WAIT_S) +
+# in-flight drain (_inflight_wait_s) + this must stay under the timeout parallel_rule asks for manager/flatten.py
+# (tests/check_turn_money_lock.py pins the sum). The 全部平倉 button's flatten (no turn) waits the full 90 s per venue.
+TURN_SETTLE_BUDGET_S = 25.0
+
+
+class _SnapshotLag(RuntimeError):
+    pass
+
+
+def _refresh_snapshot(vid):
+    """Ask the venue's worker for an early re-read (best effort: the worker's own poll still covers it)."""
+    try:
+        getattr(importlib.import_module(f"lib.order_{vid}"), "_request_snapshot_refresh")()
+    except Exception:
+        pass
+
+
+def _settle_marker(vid):
+    """(ORDER_SETTLE_S, last_order_at) for a venue whose snapshot lags its sends, else None."""
+    if vid == "capital":
+        from lib import capital_vault
+        return capital_vault.ORDER_SETTLE_S, capital_vault.last_order_at
+    if vid == "president":
+        from lib import president_vault
+
+        def last():
+            return importlib.import_module("lib.order_president").last_order_at()
+        return president_vault.ORDER_SETTLE_S, last
+    return None
+
+
+def _wait_snapshot_settled(vid, acct, wait_s=None, poll_s=2.0):
+    """Wait (up to SETTLE_WAIT_S) until `vid`'s snapshot read started ≥ ORDER_SETTLE_S after the last send on this
+    machine. Raises _SnapshotLag past the wait, or when the marker / snapshot cannot be read (fail closed: an
+    unknown position is not closed)."""
+    if not hasattr(acct, "get_query_started_at"):
+        return
+    try:
+        m = _settle_marker(vid)
+    except Exception as e:
+        raise _SnapshotLag(f"last-order marker unavailable ({type(e).__name__}: {str(e)[:120]})")
+    if m is None:
+        return
+    settle_s, last_order_at = m
+    deadline = time.time() + (SETTLE_WAIT_S if wait_s is None else wait_s)
+    asked = False
+    while True:
+        try:
+            last, q = last_order_at(), acct.get_query_started_at()
+        except Exception as e:
+            raise _SnapshotLag(f"position snapshot / last-order marker unreadable ({type(e).__name__}: {str(e)[:120]})")
+        if not last or q >= last + settle_s:
+            return
+        if not asked:
+            _refresh_snapshot(vid)   # the worker re-reads early once the send has settled
+            asked = True
+        if time.time() >= deadline:
+            raise _SnapshotLag(f"snapshot read started at {q:.0f}, last order at {last:.0f} — needs a read "
+                               f"{settle_s} s after it")
+        time.sleep(poll_s)
+
+
 def _kick_reconciler():
     """state/execution/kick is a watched mtime: the reconciler re-reads actuals
     within one poll and rewrites manager/last_reconcile.json — the positions
@@ -587,6 +656,17 @@ def flatten():
     exit at once, not queue behind the first and close everything again (third audit T-P1 —
     群益's auto open/close would open the reverse of a close not yet confirmed)."""
     global _LOCK
+    # From an agent turn: another turn's order / close on this machine finishes first, and only then are the
+    # positions read (lib/guard). BEFORE the single-flight lock: a turn's flatten waiting here must not hold
+    # flatten.lock, or the user's 全部平倉 button (the daemon's flatten, no turn lock) would see it taken,
+    # exit as ALREADY_RUNNING and close nothing while this one waits and then gives up. Busy past the wait →
+    # nothing closed by this run, one error row saying why.
+    try:
+        guard.hold_turn_money()
+    except guard.TurnMoneyBusy as e:
+        logging.error(f"close-all: {e}")
+        _record_order_error("*", "*", f"close-all: {e}")
+        return False
     _LOCK = _singleflight()
     if _LOCK is None:
         # Deliberately before the HALT trip: whoever holds the lock tripped it
@@ -729,6 +809,8 @@ def _flatten():
     # False once any venue's positions went unread or unclosable: ledger keys
     # carry no venue, so the stale-entry sweep can't tell that venue's book apart
     sweep_ok = True
+    # one settle-wait budget for the whole run when this is an agent turn (TURN_SETTLE_BUDGET_S); None = per venue
+    settle_end = time.time() + TURN_SETTLE_BUDGET_S if os.environ.get("BLAVE_TURN_INTERRUPT_FILE") else None
     for vid in _venues(env):
         closed_symbols = closed_by.setdefault(vid, set())
         unclosed = unclosed_by.setdefault(vid, set())
@@ -749,6 +831,7 @@ def _flatten():
             continue
         try:
             acct = importlib.import_module(f"lib.account_{vid}")
+            _wait_snapshot_settled(vid, acct, wait_s=None if settle_end is None else max(0.0, settle_end - time.time()))
             months_by_key = _book_months(vid, ledger)
             if months_by_key is not None and _takes(acct.get_positions, "book_months"):
                 # TW futures: only the contract months the book holds are the bot's
@@ -756,6 +839,22 @@ def _flatten():
             else:
                 months_by_key = None
                 positions = acct.get_positions(env)
+        except _SnapshotLag as e:
+            logging.error(f"[{vid}] position snapshot has not caught up with the last order: {e} — not closed")
+            # a deliberate skip with positions possibly still open = P1 (.claude/docs/notifications.md,
+            # manual_close_required): the user must hear it; the raw times stay in the log, not in the row
+            keys = ",".join(sorted(ledger)) if ledger else ""
+            if ledger:
+                unclosed |= set(ledger)
+            _record_order_error(keys or "*", vid,
+                                "close-all: 部位快取還沒跟上剛才送出的單,這一次沒有平這家(避免把舊部位再平一次變成反向開倉),"
+                                "請稍後再按一次全部平倉,或到券商下單軟體手動平倉 / positions here were not closed: the "
+                                "position snapshot has not caught up with the order just sent (closing on it again could "
+                                "open the reverse). Press Close all again in a minute, or close at the broker.",
+                                {"kind": "manual_close_required", "symbols": keys, "reason": "snapshot_lag"})
+            errors += 1
+            sweep_ok = False
+            continue
         except Exception as e:
             logging.error(f"[{vid}] get_positions failed: {e}")
             _record_order_error("*", vid, f"close-all: get_positions failed: {e}")
@@ -796,7 +895,16 @@ def _flatten():
                                     {"kind": "manual_close_required", "symbols": keys,
                                      "reason": "identity"})
             continue
-        order = importlib.import_module(f"lib.order_{vid}") if has_order else None
+        try:
+            order = importlib.import_module(f"lib.order_{vid}") if has_order else None
+        except Exception as e:   # one venue's lib failing to load stops only that venue's close
+            logging.error(f"[{vid}] lib.order_{vid} failed to load: {e}")
+            _record_order_error("*", vid, f"close-all: lib.order_{vid} failed to load ({type(e).__name__}: "
+                                          f"{str(e)[:200]}) — this venue not closed")
+            unclosed |= {_book_key(vid, str(p.get("symbol") or "*").upper()) for p in (positions or [])}
+            errors += 1
+            sweep_ok = False
+            continue
         # managed SPOT inventory sells down too(2026-08-05「現貨也賣掉」)—
         # must run even when swap is flat, so no early-continue before it
         if order is not None and hasattr(order, "place_spot_market_order"):

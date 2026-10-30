@@ -193,9 +193,8 @@ async function capUpload() {
 /* 交給 agent(過渡期與遠端桌面後備):本機 agent 經 blave MCP 帶用戶走 RDP 流程。聊天欄收著就先展開(過程在那裡);
    回合在跑時鈕是停用的(submitMessage 也會擋) */
 async function capHandoff(which) {
-  if (typeof running !== "undefined" && running) { CAP.msg = { code: "TURN_BUSY" }; capPaint(); busyHit("send"); return; }   // 送一句話:回合中送不出去,原因寫在框裡的訊息槽
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);
-  const ok = await submitMessage(t(which === "rdp" ? "cap.ho.promptRdp" : which === "verify" ? "cap.ho.promptVerify" : which === "read" ? "cap.ho.promptRead" : "cap.ho.prompt"), { viewing: { env: "cloud" } });
+  const ok = await csSendAway(t(which === "rdp" ? "cap.ho.promptRdp" : which === "verify" ? "cap.ho.promptVerify" : which === "read" ? "cap.ho.promptRead" : "cap.ho.prompt"), { viewing: { env: "cloud" } });
   if (ok) { capTrack("rdp"); cxModalClose(true); }
 }
 function capSign() { window.blave.openExternal(CAP_SIGN_URL); CAP.signOpened = true; capTrack("sign"); capPaint(); }
@@ -324,8 +323,8 @@ function capPickBody() {
   opts.appendChild(o);
   return capFrag(opts, capActs(capBtn("btn-quiet", t("cap.c.rdp"), () => { CAP.route = "rdp"; capPaint(); }, "cap-opt-rdp")));
 }
-const capReadHo = () => capBtn("btn-quiet", t("cap.ho.go"), () => capHandoff("read"), "cap-ho", false, typeof running !== "undefined" && running);
-const capHoBtn = (which, id) => capBtn("btn-fill", t("cap.ho.go"), () => capHandoff(which), id, false, typeof running !== "undefined" && running);
+const capReadHo = () => capBtn("btn-quiet", t("cap.ho.go"), () => capHandoff("read"), "cap-ho", false, false);   // 從別處送一句話:眼前這條在跑就另開分頁送(csSendAway;spec chat-tabs §3),不再擋
+const capHoBtn = (which, id) => capBtn("btn-fill", t("cap.ho.go"), () => capHandoff(which), id, false, false);
 function capRdpBody() {
   return capFrag(capDo(t("cap.c.rdpDo")), capActs(capHoBtn("rdp", "cap-ho"), capBtn("btn-quiet", t("cap.c.other"), () => { CAP.route = null; capPaint(); }, "cap-other")));
 }
@@ -378,7 +377,7 @@ function capRows(view, cc) {
     // 先下載檢核工具,按過就翻成「再查一次」(同簽署列);再查過還是 321 → 列頭一句「還沒記到」
     const dl = () => { window.blave.openExternal(CAP_VERIFY_URL); CAP.verifyDl = true; capPaint(); };
     const again = () => { CAP.verifyChecked = true; capStep("probe"); };
-    const ho = capBtn("btn-quiet", t("cap.ho.go"), () => capHandoff("verify"), "cap-ho", false, typeof running !== "undefined" && running);
+    const ho = capBtn("btn-quiet", t("cap.ho.go"), () => capHandoff("verify"), "cap-ho", false, false);
     rows.push(capRow("cur", t("cap.s.verify"), "", capFrag(CAP.verifyChecked ? capErr(t("cap.s.verifyNot")) : null, capDo(t("cap.c.verifyDo")),
       CAP.verifyDl || CAP.verifyChecked ? capActs(capBtn("btn-fill", t("cap.retry"), again, "cap-probe", off), capBtn("btn-quiet", t("cap.c.verifyDl"), dl, "cap-verify-dl"), ho)
         : capActs(capBtn("btn-fill", t("cap.c.verifyDl"), dl, "cap-verify-dl"), ho))));
@@ -451,7 +450,6 @@ function capSyncGo(view) {
   const v = view || CAP.view, go = $("cx-go"), down = capDown();
   let off = down || CAP.busy;
   if (v === "c-form") off = off || !CAP.id.trim() || !CAP.pw;
-  if (v === "c-handoff") off = off || (typeof running !== "undefined" && running);
   go.setAttribute("aria-disabled", off ? "true" : "false");
   document.querySelectorAll("#cx-body [data-need]").forEach((b) => {
     const need = b.dataset.need.split(","), miss = need.some((k) => (k === "file" ? !CAP.file : !String(CAP[k] || "").trim()));
@@ -468,7 +466,6 @@ function capFootRestore() {
 }
 // cx-go 按下(trade.js 的 cxConnect 交過來)
 function capPrimary() {
-  if (CAP.view === "c-handoff" && typeof running !== "undefined" && running && !capDown() && !CAP.busy) return capHandoff("setup");   // 只因回合在跑而鎖:講原因
   if ($("cx-go").getAttribute("aria-disabled") === "true") return;
   if (CAP.view === "c-form") return capGo();
   if (CAP.view === "c-done" || CAP.view === "c-done-ts") return cxModalClose(true);
@@ -477,7 +474,7 @@ function capPrimary() {
 
 function capPaint() {
   if ($("cx-scrim").hidden || CXF.venue !== CAPITAL || CXF.env !== "cloud") return;
-  if (CAP.msg && CAP.msg.code === "TURN_BUSY" && !(typeof running !== "undefined" && running)) CAP.msg = null;
+  if (CAP.msg && CAP.msg.code === "TURN_BUSY") CAP.msg = null;   // 舊版留下的「回合中送不出去」:0.1.37 起不會再有
   const cc = capCC(), ctx = capCtx();
   let view = capView(cc, CAP, ctx);
   capAdvance(view, cc);
@@ -489,7 +486,7 @@ function capPaint() {
   capFoot(view);
   box.setAttribute("aria-busy", CAP.busy || view === "c-finish" || view === "c-probe" || view === "c-importing" ? "true" : "false");
   const sig = LANG + "|" + JSON.stringify([view, cc, CAP.route, CAP.busy, CAP.msg, CAP.file, CAP.fileErr, CAP.signOpened, CAP.unlockUsed, CAP.verifyDl, CAP.verifyChecked, down,
-    CAP.sent && Date.now() - CAP.sent.at >= CAP_NO_MOVE_MS, typeof running !== "undefined" && running]);
+    CAP.sent && Date.now() - CAP.sent.at >= CAP_NO_MOVE_MS, false]);
   if (CAP.sig === sig && box.firstChild) return;
   CAP.sig = sig;
   const hadId = box.contains(document.activeElement) ? document.activeElement.id : null;

@@ -52,7 +52,9 @@ function box(extra) {
     window: { BlaveReport: null, blave: {} }, LANG: "zh", sessionId: "desktop-aaaa1111", RP: { list: [], name: null, data: null, tab: "bt", drawn: {} },
     t: (k, v) => { let s = STR.zh[k] || k; if (v) for (const x in v) s = s.split("{" + x + "}").join(v[x]); return s; },
     $: (id) => (id === "chat-scroll" ? CHAT : S.__els[id] || (S.__els[id] = El("div"))), __els: {}, calls: [],
-    addMsg: (cls) => { const e = El("div"); e.className = "msg " + cls; CHAT.appendChild(e); return e; }, scrollChat: () => {}, srSay: (x) => S.calls.push("say:" + x), trackFeature: (n) => S.calls.push("track:" + n) };
+    addMsg: (cls) => { const e = El("div"); e.className = "msg " + cls; CHAT.appendChild(e); return e; }, scrollChat: () => {},
+    chatEl: () => CHAT, withTab: (T, fn) => fn(), tabBound: (fn) => fn, csAnyTurn: () => false, tabBg: () => false,
+    srSay: (x) => S.calls.push("say:" + x), trackFeature: (n) => S.calls.push("track:" + n) };
   S.window.document = DOC; Object.assign(S, extra || {});
   vm.createContext(S);
   vm.runInContext("window.BlaveReport = {};" + read("report-backtest.js").replace(/window\./g, "window."), S);

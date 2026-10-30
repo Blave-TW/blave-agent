@@ -45,8 +45,8 @@ ok("<suggest> 的既有行為不變(半截先藏、定稿留著)", ["<s", "<sug"
   fs.rmSync(tmp, { recursive: true, force: true });
   const store = cut(mainSrc, "/* ── 對話 meta(", "// ── 聊天裡的圖");
   ok("接線:done 那一行存 awaiting(=== true)、runTurn 一開始清掉(同 api /send)、listSessions 帶 waiting、deleteSession 連檔一起刪;kinds 不存",
-    /if \(c && c\.type === "done"\) \{ turnFinalized = true; turnAwaiting = c\.awaiting === true; sessWaitingSave\(sessionId, turnAwaiting\); \}/.test(mainSrc)
-    && /if \(!okSessionId\(sessionId\)\) throw new Error\("bad session id"\);\n  replyTurnStart\(\);\n  sessWaitingSave\(sessionId, false\);/.test(mainSrc)
+    /if \(c && c\.type === "done"\) \{ rec\.finalized = true; turnAwaiting = c\.awaiting === true; sessWaitingSave\(sessionId, turnAwaiting\); \}/.test(mainSrc)
+    && /if \(!okSessionId\(sessionId\) \|\| sessionId !== rec\.sid\) throw new Error\("bad session id"\);\n  replyTurnStart\(sessionId\);\n  sessWaitingSave\(sessionId, false\);/.test(mainSrc)
     && /waiting: sessWaitingLoad\(r\.id\) \}\)\);/.test(cut(mainSrc, "function listSessions(", "function loadSession("))
     && /fs\.rmSync\(path\.join\(META_DIR, id \+ "\.json"\), \{ force: true \}\);/.test(cut(mainSrc, "function deleteSession(", "/* ── 聊天結果卡"))
     && !/\bc\.kinds\b|kinds:/.test(mainSrc));

@@ -46,7 +46,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
     await w.M.mpInit("codex"); w.M.mpTurnEnd(); await tick();
     ok("重讀仍空 → #mp 維持隱藏", w.$("mp").hidden === true && w.reads() === 2);
   }
-  const i = src.indexOf("window.blave.onTurnEnd(async (r) => {");
+  const i = src.indexOf("function turnEndPre(r) {");
   const end = src.slice(i, src.indexOf("\n});\n", i));
   const at = end.indexOf("mpTurnEnd();");
   ok("onTurnEnd 收尾呼叫 mpTurnEnd,在 running = false 之後、不包條件(成功失敗都重讀)",

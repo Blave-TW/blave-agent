@@ -7,6 +7,7 @@
 //   ④ 停在視窗外(收回展開層)再放回中欄:寬版面期間仍是寬的
 // 跑法:BLAVE_TEST_WINDOW=1 node tests/check_shell_pine_narrow.js(沒設就 SKIP)
 const path = require("path"), fs = require("fs"), os = require("os");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell");
 const GATE = require("./_electron_gate");
 if (!process.versions.electron) {
@@ -37,7 +38,7 @@ app.whenReady().then(async () => {
   const ses = session.fromPartition("persist:agent-browser");
   await ses.setProxy({ proxyRules: "http=127.0.0.1:" + srv.address().port + ";https=127.0.0.1:" + srv.address().port, proxyBypassRules: "<-loopback>" });
   const B = require(path.join(SHELL, "browser")).createBrowser({ electron, stateDir: path.join(tmp, "snaps"), reportsDir: path.join(tmp, "reports"), getWin: () => win, uiLang: () => "en", track: () => {}, version: "test", reducedMotion: () => true, userPresent: () => true });
-  await B.beginTurn(win, "desktop-narrowtest1");
+  await BT.begin(B, win, "desktop-narrowtest1");
   const r = JSON.parse((await B._call("browser_open", { url: "http://tv.test/chart/" }, { live: () => true })).content[0].text);
   await B._call("browser_wait", { tab: r.tab }, { live: () => true });
   const tab = B._tabs.byAlias(r.tab), wc = electron.webContents.getAllWebContents().find((w) => w.session === ses && w.getURL().includes("tv.test"));
@@ -76,7 +77,7 @@ app.whenReady().then(async () => {
   B.bounds({ x: 260, y: 143, width: 560, height: 600 });
   await sleep(500); g = await look();
   await tt("③ 還原之後照一般分頁:換位置不再套寬版面", g.w !== 1280 && g.pine === false && B._viewBounds(tab.id).width === 560, g);
-  B.endTurn();
+  BT.end(B);
   srv.close(); try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* userData 還鎖著 */ }
   console.log(red ? `\n${red} FAILED` : "\nALL PASS");
   app.exit(red ? 1 : 0);

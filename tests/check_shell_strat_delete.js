@@ -65,7 +65,7 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
   ok("deleteStrategy:在組合裡回 IN_PORTFOLIO、讀不懂回 CONFIG_UNREADABLE,都在丟垃圾桶之前", del.indexOf('code: "IN_PORTFOLIO"') > 0 && del.indexOf('code: "CONFIG_UNREADABLE"') > 0 && del.indexOf("IN_PORTFOLIO") < del.indexOf("trashItem")); }
 
 // ── 本機刪策略:沒刪成的每一條路都要講原因(Wei 10-01 按「移到垃圾桶？」完全沒反應:主行程回裸 false,畫面無從講起)──
-{ const mainRun = (S) => new Function("S", "path", `let activeTurn = S.activeTurn, turnStarting = S.turnStarting;
+{ const mainRun = (S) => new Function("S", "path", `const anyTurn = () => !!(S.activeTurn || S.turnStarting);
     const stratNames = () => S.names, STRAT_DIR = () => "/ws/strategies", fs = { readFileSync: () => "" }, stratMeta = () => ({ strategyName: null });
     const inPortfolio = () => S.inPf, stratStopRerun = () => {}, shell = { trashItem: S.trash }, stratCache = new Map();
     async ${fnOf(mainSrc, "deleteStrategy")}\nreturn deleteStrategy("a");`)(S, path);
@@ -99,7 +99,7 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
     trOpen: () => {}, confirmBox: (o) => boxes.push(o), told: [], hits: [], busySlot: (id) => { scope.told.push(["slot", id]); return { id }; }, busyTell: (slot, kind) => scope.told.push(["tell", kind]), busyHit: (kind) => scope.hits.push(kind),
     window: { blave: { platform: "darwin", listStrategies: async () => { lists++; return items.slice(); }, deleteStrategy: async () => result } } };
   const hasSync = /\nfunction stratDelSync\(/.test(appSrc), hasAt = /\nasync function stratRefreshAt\(/.test(appSrc);
-  const api = new Function(...Object.keys(scope), ["var running = false;", fnOf(busySrc, "busyLock"), fnOf(busySrc, "busyLocked"), fnOf(appSrc, "armedDelete"), fnOf(trSrc, "trEl"), fnOf(trSrc, "cdelBoth"), ...["stratDelBody", "stratBlockedNote"].filter((f) => appSrc.includes("\nfunction " + f + "(")).map((f) => fnOf(appSrc, f)),   // 舊版(修之前)沒有 stratDelBody:照樣跑完、逐條紅
+  const api = new Function(...Object.keys(scope), ["var running = false; function csAnyTurn() { return running === true; }", fnOf(busySrc, "busyLock"), fnOf(busySrc, "busyLocked"), fnOf(appSrc, "armedDelete"), fnOf(trSrc, "trEl"), fnOf(trSrc, "cdelBoth"), ...["stratDelBody", "stratBlockedNote"].filter((f) => appSrc.includes("\nfunction " + f + "(")).map((f) => fnOf(appSrc, f)),   // 舊版(修之前)沒有 stratDelBody:照樣跑完、逐條紅
     hasSync ? fnOf(appSrc, "stratDelSync") : "function stratDelSync() {}", hasAt ? "var stratRefreshAt = async " + fnOf(appSrc, "stratRefreshAt") : "",
     "var stratRefresh = async " + fnOf(appSrc, "stratRefresh").replace(/^async /, ""), "return { stratRefresh, stratDelSync, setRunning: (v) => { running = v; } };"].join("\n"))(...Object.values(scope));
   const wrapOf = (name) => $("strat-list").kids.find((w) => w.kids[0].dataset.name === name), delOf = (name) => wrapOf(name).kids[1], rowOf = (name) => wrapOf(name).kids[0];
@@ -119,7 +119,7 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
     api.setRunning(false); api.stratDelSync();
     ok("回合中重建的列:✕ 一樣畫、一樣鎖;回合結束那次重讀趕在 running 歸零前畫好列:歸零後解鎖", hasSync && drawnBusy && !("aria-disabled" in delOf("a").attrs));
     const flips = appSrc.split("\n").filter((l) => /(^\s*|[;{]\s*)running = (true|false);/.test(l) && !/^let running/.test(l));
-    ok("列舉:每一個改 running 的地方都同步刪除鈕(" + flips.length + " 處)", flips.length >= 3 && flips.every((l) => /stratDelSync\(\)/.test(l)), flips.filter((l) => !/stratDelSync\(\)/.test(l)).map((l) => l.trim().slice(0, 80)));
+    ok("列舉:每一個改 running 的地方都叫 turnUiSync(它同步刪除鈕;" + flips.length + " 處)", flips.length >= 3 && flips.every((l) => /turnUiSync\(\)/.test(l)) && /function turnUiSync\(\) \{[\s\S]{0,80}stratDelSync\(\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")), flips.filter((l) => !/turnUiSync\(\)/.test(l)).map((l) => l.trim().slice(0, 80)));
     const tryDel = async (r, name) => { result = r; boxes.length = 0; await api.stratRefresh(false); const d = delOf(name || "a"); await d.fire("click"); await d.fire("click"); return boxes; };
     const want = { TURN_RUNNING: "lines:strat.delBusy", NOT_FOUND: "lines:strat.delGone", TRASH_FAILED: "red:strat.delFailed|plain:strat.delFailedHint",
       IN_PORTFOLIO: "red:strat.delInPf", CONFIG_UNREADABLE: "red:strat.delCfgUnread" };
@@ -261,7 +261,7 @@ ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/d
   const window = { blave: { listStrategies: async () => [{ name: "a", displayName: "A", mtime: 1 }, { name: "b", displayName: "B", mtime: 2 }],
     loadStrategy: async (n) => { loads++; return { name: n, stats: null, code: "x" }; }, deleteStrategy: async () => true } };
   const armedDelete = () => mkEl("button"), stratTip = (d) => d, stratNameFill = (nm, x) => { nm.textContent = x; }, trLeave = () => {}, rpBag = () => RP, rpPaintHead = () => {}, rpShowTab = () => {}, rpTab = (B) => (B.data && B.data.stats ? B.tab : "code"), confirmBox = () => {};
-  const document = doc, busyLock = () => {};
+  const document = doc, busyLock = () => {}, csAnyTurn = () => false;
   eval(fnOf(trSrc, "envShowMain").replace(/^function envShowMain/, "var envShowMain = function"));
   eval(fnOf(trSrc, "envNavMark").replace(/^function envNavMark/, "var envNavMark = function"));
   eval("var stratRefresh = async " + fnOf(appSrc, "stratRefresh").replace(/^async /, ""));

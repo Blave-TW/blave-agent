@@ -440,7 +440,7 @@ if (!process.versions.electron) {
     const pc = cutFn(src, "libPaintCta"), sy = cutFn(src, "libSync"), pn = cutFn(src, "libNoteLoad");
     ok("⑤ 回合中「點了才講」:busy 主鈕 aria-disabled + title、那一格空著也不 hidden(live region 先在樹裡)、點了叫 libBusyTell(不 libAsk / libBuyBox)、只有講過才補那句;清在 libSync 開頭(不在 libPaintCta)",
       /case "busy": \{[\s\S]*?btn\("btn-fill", c\.paid \? buyLabel\(\) : t\("lib\.use"\), \(\) => libBusyTell\(s\)\);[\s\S]*?setAttribute\("aria-disabled", "true"\); b\.title = t\("turn\.busy"\);[\s\S]*?if \(LIB\.busyTold === s\.id\) \{ note\.textContent = t\("turn\.busy"\);/.test(pc)
-      && !/busyTold = null/.test(pc) && /^function libSync\(\) \{\n  if \(!\(typeof running !== "undefined" && running === true\)\) LIB\.busyTold = null;/.test(sy)
+      && !/busyTold = null/.test(pc) && /^function libSync\(\) \{\n  if \(!csAnyTurn\(\)\) LIB\.busyTold = null;/.test(sy)
       && /libBusyTell\(s\) \{\n  LIB\.busyTold = s\.id;/.test(src) && /note\.hidden = !note\.textContent && c\.state !== "busy";/.test(pc) && /\.lib-cta \.btn-fill\[aria-disabled="true"\]/.test(read(path.join(R, "app.css"))));
     ok("⑤ 閱讀頁:內文只經 DOMParser + libNoteBuild(不 innerHTML);重試先把焦點交給 #lib-nt-title 才清掉內容(按下的鈕被拿掉不會把焦點丟到 BODY);成功才送 library_note;讀不到給 lib.note.err + lib.retry;入口卡在回測卡之後、關卡卡之前,沒有筆記不出",
       /libNoteBuild\(new DOMParser\(\)\.parseFromString\(n\.html, "text\/html"\)\.body, /.test(pn) && /libTrack\("library_note"\);\n\}$/.test(pn) && /t\("lib\.note\.err"\)/.test(pn) && /t\("lib\.retry"\)/.test(pn)
@@ -506,8 +506,8 @@ if (!process.versions.electron) {
       && /const gate = !\$\("cv-empty"\)\.hidden, rp = !gate && typeof RPC !== "undefined" && !!\(RPC\.name && RPC\.data\);/.test(esm) && /\$\("rp"\)\.hidden = !rp; \$\("main-empty"\)\.hidden = gate \|\| rp \|\| open; \$\("tr"\)\.hidden = gate \|\| rp \|\| !open \|\| po; \$\("po"\)\.hidden = gate \|\| rp \|\| !open \|\| !po;/.test(esm)); }
   ok("③ 開別的視圖就 libLeave:trOpen(那一邊)、stratSelect(本機,選了才)、rpCloudSelect(雲端,選了才)", /if \(typeof libLeave === "function"\) libLeave\(S\.env\);/.test(cutFn(trSrc, "trOpen"))
     && /if \(name && typeof libLeave === "function"\) libLeave\("local"\);/.test(cutFn(appSrc, "stratSelect")) && /if \(name && typeof libLeave === "function"\) libLeave\("cloud"\);/.test(cutFn(appSrc, "rpCloudSelect")));
-  ok("③ 回合的三個出口(上鎖、失敗解鎖、turn-end)都叫 libSync;turn-end 等 stratRefresh(true) 回來才 libTurnEnd;trPoll 每次讀到雲端清單都叫 libCloudChanged(緊接 rpCloudPrune)", (appSrc.match(/if \(typeof libSync === "function"\) libSync\(\);/g) || []).length === 3
-    && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc.slice(appSrc.indexOf("window.blave.onTurnEnd(")))
+  ok("③ 回合的三個出口(上鎖、失敗解鎖、turn-end)都叫 libSync;turn-end 等 stratRefresh(true) 回來才 libTurnEnd;trPoll 每次讀到雲端清單都叫 libCloudChanged(緊接 rpCloudPrune)", (appSrc.match(/turnUiSync\(\)/g) || []).length >= 3 && /if \(typeof libSync === "function"\) libSync\(\);/.test(read(path.join(R, "chattabs.js")))
+    && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(tabBound\(\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc.slice(appSrc.indexOf("function turnEndPre(")))
     && /rpCloudPrune\(C\.list\);[^\n]*\n\s*if \(typeof libCloudChanged === "function"\) libCloudChanged\(C\.list\);/.test(cutFn(trSrc, "trPoll")));
   ok("③ 已購:鈕下不寫說明句(lib.note.owned 連字串一起拿掉);未購的付費策略也不寫(lib.note.paid 連字串一起拿掉,扣款去向只在購買框 lib.buy.lead)", !/lib\.note\.owned/.test(src) && !("lib.note.owned" in STR.zh) && !("lib.note.owned" in STR.en) && /case "owned": [^\n]*libAsk\(s, b\)\)\); break;/.test(src) && !/t\("lib\.pub"\)/.test(src) && !("lib.pub" in STR.zh)
     && !/lib\.note\.paid|paidNote/.test(src) && !("lib.note.paid" in STR.zh) && !("lib.note.paid" in STR.en) && /case "paid": [^\n]*libBuyBox\(s, "confirm", b, \{\}\)\)\); break;/.test(src) && /case "buying": row\.appendChild\(dis\(t\("lib\.buy\.busy"\)\)\); break;/.test(src));
@@ -548,7 +548,8 @@ if (!process.versions.electron) {
       var LIB = { pending: null, noNew: null, dlFail: null, data: { dataAccess: "billed" }, installed: {} }, running = false, csTitle = "", RP = { list: [{ name: "old", mtime: 1 }] }, paneSt = { chat: { off: false } };
       var t = (k, p) => STR[k].replace(/[{]([a-z]+)[}]/g, (m, n) => (p && n in p ? p[n] : m)), libEnv = () => env, ctaState = "free", libCtaOf = () => ({ state: ctaState }), libWhere = () => STR["lib.where." + (env === "cloud" ? "cloud" : "local")], envCanSwitch = () => true, paneToggle = () => {}, csStartNew = () => {}, libSync = () => {}, libCtaMain = () => null, libCloudList = () => [];
       var libTrack = (n) => calls.track.push(n), libBlocked = () => {}, libInvalidate = () => { calls.inval++; LIB.dlFail = null; }, $ = () => ({ title: "", textContent: "" });
-      var confirmBox = (o) => calls.box.push(o), submitMessage = async (m, o) => { calls.sent.push(m); calls.opts.push(o); return subOk; };
+      var confirmBox = (o) => calls.box.push(o), submitMessage = async (m, o) => { calls.sent.push(m); calls.opts.push(o); return subOk; }, csSendAway = (m, o) => submitMessage(m, o);
+      var sessionId = "desktop-lib1", CS = { away: { sid: "desktop-lib1", seq: 1 } };   // 單分頁:送出那一條 = 結束那一條
       var chatViewing = () => ({ env: env === "cloud" ? "cloud" : "local", strategy: "seen" });
       var window = { blave: { libraryDownload: (id) => { calls.dl.push(id); return new Promise((res, rej) => { dlNext = { res, rej }; }); }, trackEvent: (e, p) => calls.events.push(e + ":" + JSON.stringify(p)) } };
       var libInstalledSet = (id, n) => calls.inst.push(id + "=" + n), libCloudSettle = () => settle, libCloudRepaintList = () => {}, LIB_CLOUD_WAIT_MS = 1000;

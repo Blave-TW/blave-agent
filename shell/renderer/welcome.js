@@ -150,7 +150,6 @@ function wdPaint() {
 $("wl-seg").addEventListener("click", (e) => { const b = e.target.closest("button[data-mk]"); if (!b || b.dataset.mk === WD.mk) return; WD.mk = b.dataset.mk; wdPaint(); });
 $("wl-all").addEventListener("click", wdDocs);
 
-const runningNow = () => typeof running !== "undefined" && running === true;
 
 /* ── 可以回測的資料 ›(§1.5):每次開 app 都收起來,不記住 ── */
 $("wl-fold").addEventListener("click", () => {
@@ -285,14 +284,14 @@ function wcCard(s, first) {
 /* 「安裝並回測 →」:不是一鍵,走策略庫同一個確認框(libAsk from welcome)。先擋回合中與代下載中——別支在代下載時這張的 libCtaOf 仍是 free,
    不先擋的話 libAsk 會靜默 return、畫面沒反應。狀態不是 free(例如剛登出)只開詳情,閘門與原因句由詳情講 */
 function wcUse(s, a) {
-  if (runningNow() || LIB.pending) { busySendTell(); return; }
+  if (LIB.pending) { busySendTell(); return; }   // 代下載中(另一支):回合中不再擋,另開分頁送
   if (libCtaOf(s).state !== "free") { wcDetail(s); return; }
   libAsk(s, a, { from: "welcome" });
 }
 // 回合鎖與代下載鎖(app.js 送出／解鎖那三排、library.js libSync):就地換,不重建卡。正在裝的那支換成「安裝與回測中…」;名字按鈕不鎖
 function wcBusySync() {
   const box = $("wc-cards"); if (!box || box.hidden) return;
-  const busy = runningNow() || !!LIB.pending, pid = LIB.pending && LIB.pending.env === onbEnv() ? String(LIB.pending.id) : null;
+  const busy = !!LIB.pending, pid = LIB.pending && LIB.pending.env === onbEnv() ? String(LIB.pending.id) : null;
   box.querySelectorAll(".wc-card:not(.is-skel) .ln-arrow").forEach((a) => {
     const mine = a.dataset.id === pid, tx = a.querySelector(".lbl"), want = t(mine ? "lib.pending" : "lib.use");
     busyLock(a, busy);

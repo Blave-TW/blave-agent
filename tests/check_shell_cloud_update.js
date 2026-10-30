@@ -35,6 +35,7 @@ let UP = { phase: "idle", current: "0.1.14", checkedAt: 1 };
 eval("var UPD = " + src.match(/var UPD = (\{[^\n]*\});/)[1]);
 eval(["UP_SESSION_IDLE_MS", "UP_RETRY_MS", "UP_WU_STATES", "UP_WU_DIR_RE"].map((k) => src.match(new RegExp("^const " + k + " = [^\\n]*;", "m"))[0].replace(/^const /, "var ")).join("\n"));
 var UP_CHECKING = false, UP_CLOUD_BUSY = false;
+eval(require("./_tabs_stub").SRC);   // csSendAway／csAnyTurn 的單分頁版本(對話分頁核心不在這個切片裡)
 eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upLocalTurn", "upNow", "upTurnEnded", "upCloudWhere", "upRich"].map((n) => fnOr(n)).join("\n"));
 eval(["upCheck", "upCloudRefresh", "upCloudUpdate", "upCloudSend"].map((n) => fnOr(n, true)).join("\n"));
 
@@ -43,7 +44,7 @@ const REP = { running: {}, halted: { halt: { halted: true } }, dead: { reconcile
   unconfirmed: {}, unknown: { error: "build failed", venues: null } };
 const st = (exec, o) => ({ kind: "running", alive: !(o && o.alive === false), cloud: { config_version: "2026-10-04-c", latest_config_version: "2026-10-04-d", ...((o && o.cloud) || {}) },
   report: exec === "loading" ? null : { venue: "binance", venues: {}, reconciler: { alive: true }, ...(REP[exec] || {}), ...((o && o.report) || {}) } });
-const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent = []; boxes = []; tracked = []; checks = 0; refreshes = 0; Object.assign(UPD, { cloudTurn: false, turnCloud: false, session: null, lagCv: null, done: null }); };
+const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent = []; boxes = []; tracked = []; checks = 0; refreshes = 0; Object.assign(UPD, { cloudSid: null, turnCloud: false, session: null, lagCv: null, done: null }); };
 
 (async () => {
   reset(st("running")); await upCheck();

@@ -1089,7 +1089,22 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && S4.includes('these positions have no stop-loss:"')
         && /if \(code\) body\.append\(typeof head === "string" && \/：\$\/\.test\(head\) \? "" : " ", trEl\("span", "mono", code\)\);/.test(src)); }
     const mc = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF, TXF", reason: "x" }), mc0 = trEventText("manual_close_required", { symbols: "" });
-    ok("manual_close_required:帶標的時接在後面;symbols 空字串只講那一句;註解同網頁", mc[0] === "tr.ov.evManualClose" && mc[4] === "TMF, TXF" && mc[1] === "tr.ov.evManualCloseNote" && mc0[0] === "tr.ov.evManualClose" && !mc0[4]); }
+    ok("manual_close_required:帶標的時接在後面;symbols 空字串只講那一句;註解同網頁", mc[0] === "tr.ov.evManualClose" && mc[4] === "TMF, TXF" && mc[1] === "tr.ov.evManualCloseNote" && mc0[0] === "tr.ov.evManualClose" && !mc0[4]);
+    // snapshot_lag(api cf3ce179 起群益、統一都分流成 manual_close_required):講「沒替哪家平倉」,不再說群益;券商名照對照表
+    const lagC = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF", reason: "snapshot_lag" }),
+      lagP = trEventText("manual_close_required", { exchange: "president", symbols: "", reason: "snapshot_lag" }),
+      lagX = trEventText("manual_close_required", { exchange: "constructor", reason: "snapshot_lag" }), idC = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF", reason: "identity" });
+    const SZ = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "; return STRINGS;")();
+    ok("manual_close_required snapshot_lag:整句「沒替{券商}平倉：…」(不拆說明);群益／統一照對照表,表外(含 constructor 這種原型名)= 這家券商;身分問題沿用原句",
+      lagC[0] === 'tr.ov.evManualCloseLag{"broker":"tr.ov.brokerCapital"}' && lagC[1] === null && lagC[4] === "TMF"
+      && lagP[0] === 'tr.ov.evManualCloseLag{"broker":"tr.ov.brokerPresident"}' && !lagP[4] && lagX[0] === 'tr.ov.evManualCloseLag{"broker":"tr.ov.brokerOther"}'
+      && idC[0] === "tr.ov.evManualClose" && idC[1] === "tr.ov.evManualCloseNote"
+      && /const TR_BROKER_KEY = \{ capital: "tr\.ov\.brokerCapital", president: "tr\.ov\.brokerPresident" \};/.test(src) 
+      && /Object\.prototype\.hasOwnProperty\.call\(TR_BROKER_KEY, d\.exchange\) \? TR_BROKER_KEY\[d\.exchange\] : "tr\.ov\.brokerOther"/.test(src));
+    ok("…整句與 api notify.py _MANUAL_CLOSE_SNAPSHOT_LAG 逐字同(去掉 🚨、{broker_zh} → {broker});券商短名同 _VENUE_NAMES",
+      SZ.zh["tr.ov.evManualCloseLag"] === "沒替{broker}平倉：部位資料還沒跟上剛送的單。一分鐘後再按「暫停並關閉部位」，或到券商平倉。"
+      && SZ.en["tr.ov.evManualCloseLag"] === "Not closed on {broker}: position data lags the last order. In a minute, press “Pause and close positions” again, or close at your broker." && !("tr.ov.evManualCloseLagNote" in SZ.zh)
+      && SZ.zh["tr.ov.brokerCapital"] === "群益" && SZ.zh["tr.ov.brokerPresident"] === "統一" && SZ.en["tr.ov.brokerCapital"] === "Capital" && SZ.en["tr.ov.brokerPresident"] === "President" && SZ.zh["tr.ov.brokerOther"] === "這家券商" && SZ.en["tr.ov.brokerOther"] === "your broker"); }
   { // 設計稽核可後修 §3-1:雲端的投資組合策略那句講真話;L3:框開著時變成讀不到設定 → 送出前再擋一次;L2:=absent 講明
     ok("order-copy #12 沒撥過款的投資組合策略:金額表那一列講「要先更新」(雲端 tr.typeCHost、本機 tr.typeC),tr.cloud.typeC 退役", /if \(locked\) first\.appendChild\(trEl\("span", "pf-note", cloud \? t\("tr\.typeCHost"\) : t\("tr\.typeC"\)\)\);/.test(src) && !/tr\.cloud\.typeC/.test(src));
     const save = src.slice(src.indexOf("function trSaveAmounts("), src.indexOf("\nfunction ", src.indexOf("function trSaveAmounts(") + 1));

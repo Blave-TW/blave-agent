@@ -89,7 +89,7 @@ const xpLang = (k) => (k === "xq" ? t("xp.lang.xq") : k === "mc" ? t("xp.lang.mc
 const xpTitle = (k) => (k === "xq" ? t("xp.cf.title.xq") : k === "mc" ? t("xp.cf.title.mc") : t("xp.cf.title.pine"));
 const xpTpl = () => ({ xq: t("xp.msg.xq"), mc: t("xp.msg.mc"), pine: t("xp.msg.pine") });
 const xpLocal = () => typeof ENV === "undefined" || ENV.cur !== "cloud";
-const xpDisabled = () => running === true || !!XP.tm;
+const xpDisabled = () => !!XP.tm;   // 回合中不再擋:轉出是從別處送一句話,眼前這條在跑就另開分頁送(csSendAway)
 // 三個平台都轉不了(組合、Type B):選單打開會一個能選的都沒有,觸發器直接停用、按了講原因(設計稽核 S6,同時光機)
 const xpOffNow = () => (typeof RP !== "undefined" && RP ? xpOffAll(RP.data) : null);
 const XP_OFF_KEY = { portfolio: "xp.off.portfolio", nosignal: "xp.off.nosignal", crypto: "xp.off.crypto" };
@@ -129,7 +129,6 @@ function xpSync() {
   const b = $("xp-btn"); if (!b) return;
   if (xpDisabled() || xpOffNow()) { b.setAttribute("aria-disabled", "true"); if (!$("xp-menu").hidden) xpClose(false); }
   else { b.removeAttribute("aria-disabled"); xpNote(null); }
-  const again = $("xp-again"); if (again) { if (running === true) again.setAttribute("aria-disabled", "true"); else again.removeAttribute("aria-disabled"); }
 }
 /* 策略版本(另案)的時光機進出時呼叫:label = 正在看的那一版(如 "v5"),null = 回到目前版。
    時光機裡觸發器 aria-disabled、程式碼分頁只剩 Python(轉出檔只屬於目前版本) */
@@ -139,7 +138,7 @@ function xpSetTimeMachine(label) { XP.tm = label || null; if (XP.tm) XP.sel = "p
 function xpNote(text) { const n = $("xp-note"); if (!n) return; delete n.dataset.busy; n.textContent = text || ""; n.hidden = !text; }
 function xpOpen() {
   const b = $("xp-btn"), m = $("xp-menu");
-  if (xpDisabled()) { if (running === true) { busyHit("send"); xpNote(t("xp.why.busy")); busyFixLink($("xp-note"), "stop"); } else xpNote(t("xp.why.tm")); return; }
+  if (xpDisabled()) { xpNote(t("xp.why.tm")); return; }
   const off0 = xpOffNow(); if (off0) { xpNote(xpEnd(t(XP_OFF_KEY[off0]))); return; }
   const d = RP.data; m.textContent = "";
   for (const k of XP_ORDER) {
@@ -178,7 +177,7 @@ function xpAsk(target, opener) {
     onOk: () => {
       const msg = xpMsg(target, id, xpTpl()); if (!msg) return;
       if (paneSt.chat.off) paneToggle("chat", false);                     // 聊天欄收著就先展開:轉的過程在那裡
-      submitMessage(msg).then((ok) => { if (ok) trackFeature(XP_FEATURE[target]); });   // 跑起來才算用過(同 rpRobAsk)
+      csSendAway(msg).then((ok) => { if (ok) trackFeature(XP_FEATURE[target]); });   // 跑起來才算用過(同 rpRobAsk)
     } });
   $("del-title").title = title;
 }
@@ -299,7 +298,7 @@ function xpView(host, ex, d) {
   cp.addEventListener("click", () => xpCopy(cp, ex.content));
   if (ex.stale) {
     const again = xpMk("button", "btn-fill", t("xp.again")); again.type = "button"; again.id = "xp-again";
-    again.addEventListener("click", () => { if (running === true) { busyHit("send"); xpNote(t("xp.why.busy")); busyFixLink($("xp-note"), "stop"); return; } xpAsk(k, again); });
+    again.addEventListener("click", () => xpAsk(k, again));
     grp.append(again, cp);
   } else {
     const dl = xpMk("button", "btn-out", t("xp.dl")); dl.type = "button";

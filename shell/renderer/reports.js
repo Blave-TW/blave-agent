@@ -75,7 +75,7 @@ function rptNewBag() { return { open: false, reading: null, scroll: 0, row: null
 const rptBag = (env) => RPT.bags[(env || libEnv()) === "cloud" ? "cloud" : "local"];
 const rptVisible = (env) => !$("rpt").hidden && libEnv() === env;
 function rptCtx(env) {
-  return { running: typeof running !== "undefined" && running === true, env, cloud: env === "cloud" ? libCloud() : null, pending: !!RPT.pending[env] };
+  return { running: false, env, cloud: env === "cloud" ? libCloud() : null, pending: !!RPT.pending[env] };   // 回合中不再擋〔問〕／新增報告:另開分頁送(csSendAway)
 }
 // 渲染器要的字串包(web REPORT_I18N 的 15 個 key):{where} 先代好再交進去,渲染器不改
 function rptI18n(env) {
@@ -158,7 +158,7 @@ function rptInvalidate() {
 }
 // 回合開始 / 結束(running 變了):工具列的鈕與那一行就地重畫;新增報告框開著也跟著
 function rptSync() {
-  if (!(typeof running !== "undefined" && running === true)) RPT.busyTold = false;   // 清在這裡、不在 rptPaintTools:忙碌中也會重畫
+  if (!csAnyTurn()) RPT.busyTold = false;   // 清在這裡、不在 rptPaintTools:忙碌中也會重畫
   if (!$("rpt").hidden && !rptBag().reading) rptPaintTools();
   if (!$("rpn-scrim").hidden) rptNewPaint();
 }
@@ -186,10 +186,12 @@ const rptListShown = (env) => rptVisible(env) && !rptBag(env).reading;
 function rptTurnEnd(rt) {
   const ct = RPT.cloudTurn;
   RPT.cloudTurn = null;
+  // 框送出的那份只由送出那一條的結束收(對話分頁並行:別條先結束不算「這一輪沒寫出報告」)
+  const mine = (q) => !!q && (!q.sid || q.sid === sessionId);
   if (ct && ct.touched && !RPT.pending.cloud) RPT.pending.cloud = { env: "cloud", since: ct.at, auto: true };
   if (rt && ct && RPT.pending.cloud) RPT.cloudRes.push({ rt, at: ct.at });
-  if (RPT.pending.cloud && !RPT.poll) rptCloudPollStart(RPT.pending.cloud);   // 已在輪詢就不重開 10 分鐘窗(用戶接著聊天,每一輪都會到這裡)
-  const p = RPT.pending.local, since = RPT.turnAt;
+  if (mine(RPT.pending.cloud) && !RPT.poll) rptCloudPollStart(RPT.pending.cloud);   // 已在輪詢就不重開 10 分鐘窗(用戶接著聊天,每一輪都會到這裡)
+  const p = mine(RPT.pending.local) ? RPT.pending.local : null, since = RPT.turnAt;
   RPT.turnAt = null;
   if (!p && since == null) return Promise.resolve([]);
   if (p) { RPT.pending.local = null; rptPaintTools(); }
@@ -465,16 +467,16 @@ async function rptSend() {
   const fm = $("rpn-msg"), busy = libEl("span", "cf-busy"), sp = libEl("span", "spin16"); sp.setAttribute("aria-hidden", "true");
   busy.append(sp, t("rpt.new.sending")); fm.textContent = ""; fm.appendChild(busy);
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著就先展開:過程在那裡回報
-  if (csTitle) csStartNew();
   const before = new Set((RPT.data[env] || []).map(rptKey));
   let ok = false;
-  try { ok = await submitMessage(msg, { note: rptNote(desc) }); } catch (_) { ok = false; }
+  let at = null;
+  try { const sp = csSendAway(msg, { note: rptNote(desc) }); at = CS.away; ok = await sp; } catch (_) { ok = false; }
   RPT.sending = false;
   rptNewLock(false);
   if (!ok) { RPT.fail = true; rptNewPaint(); return; }   // 框留著、欄位不清、鈕回復,腳放那一句:讓人原樣重送
   fm.textContent = "";
   // 先記 pending、畫成原生 disabled 再關框:回合中鈕只是 aria-disabled,先關會把焦點還給它,緊接著停用焦點就掉到 body
-  RPT.pending[env] = { env, before }; RPT.noNew = null;
+  RPT.pending[env] = { env, before, sid: at && at.sid }; RPT.noNew = null;
   rptSync();
   rptNewClose();
   d.value = ""; d.style.height = "";

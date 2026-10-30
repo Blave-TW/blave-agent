@@ -27,6 +27,7 @@
   /* brand */
   --color-primary: #ff9960;
   --color-primaryDark: #f3915a;   /* 只給 primary 實心鈕的 hover(電腦版只有更新膠囊) */
+  --color-primaryText: #b05723;   /* = web main.css;電腦版只拿來畫淺色的分頁未讀點(canon › Attention dot › 分頁未讀點) */
   /* neutrals(冷藍染) */
   --color-black: #1a222c;
   --color-greyDark: #3f4a57;

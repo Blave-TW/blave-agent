@@ -43,6 +43,7 @@ import atexit
 import json
 import logging
 import os
+import sys
 import threading
 import time
 try:
@@ -210,6 +211,9 @@ def check_restart_stop(intent, fields=None):
     for any order intent while the restart record exists, and — the HALT
     freeze — while state/HALT exists. `fields` = the audit dict."""
     fields = fields or {}
+    # every mutating request in an agent turn, cancels / leverage included: a busy answer to a script's first
+    # step (cancel the old stop, then place the new one) must leave nothing changed, so "Nothing was sent" holds
+    _turn_money_lock(0)   # no waiting here (see TURN_MONEY_LOCK)
     if intent in _RESTART_PASS:
         return
     if restart_stopped():
@@ -464,6 +468,197 @@ def clear_halt_for(strategy, source):
 MONEY_PID_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                              "state", "execution", "money_pids")
 _money_marked = False
+
+# Two agent turns running at once (desktop chat tabs; also the cloud's web turns and scheduled-report turns,
+# which set the same variable — runtime/web_bridge.py, runtime/report_runner.py): two turns' manual orders /
+# closes on the same position would race (both read "1 lot open", both close it). A process that moves money
+# from INSIDE an agent turn (it carries BLAVE_TURN_INTERRUPT_FILE; the reconciler, the daemon, strategy
+# processes and cron never do) holds one machine-wide lock from its first order to its exit. Same turn (a
+# script and its children) shares it via the owner file.
+#   - hold_turn_money(): the close / execution entry points (flatten, close_symbol, stop_strategy, run_twap)
+#     call it BEFORE reading any position, and only there it waits (TURN_MONEY_WAIT_S) — what they read
+#     after the wait is current.
+#   - check_restart_stop() (the gate every lib/order_* passes before an order reaches the venue) takes it
+#     without waiting: an ad-hoc script read its position before that point, so going on after a wait would
+#     act on a stale read. Busy → TurnMoneyBusy at once, nothing sent.
+#   Importing an order lib (research / price scripts) takes nothing. Resident processes never take it:
+#   the reconciler and the strategy wrappers drop the turn variables at start, and any process a turn left
+#   behind (BLAVE_TURN_PID — the agent_turn process — no longer exists) counts as outside the turn.
+# TURN_MONEY_WAIT_S stays well under the agent's Bash default timeout (runtime/agent_turn.py
+# BASH_DEFAULT_TIMEOUT_MS, 120 s): a wait that ran into it would be moved to the background and the agent
+# would never see "Nothing was sent" (tests/check_turn_money_lock.py pins the gap).
+TURN_MONEY_LOCK = os.path.join(os.path.dirname(MONEY_PID_DIR), "turn_money.lock")
+TURN_MONEY_WAIT_S = 90
+_turn_money_fd = None
+
+
+class TurnMoneyBusy(RuntimeError):
+    pass
+
+
+def _try_lock(fd):
+    if os.name == "nt":
+        import msvcrt
+        try:
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            return False
+    import fcntl
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except OSError:
+        return False
+
+
+_turn_money_shared = False
+
+
+def _proc_started(pid):
+    """An opaque start stamp of process `pid` (the same string runtime/agent_turn._proc_started writes next to its
+    pid in BLAVE_TURN_PID — tests/check_turn_money_lock.py pins the two), or None when it cannot be read.
+    Linux: /proc/<pid>/stat starttime; macOS: `ps -o lstart=`; Windows: GetProcessTimes creation time."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.OpenProcess.restype = ctypes.c_void_p
+            h = k32.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                return None
+            try:
+                k32.GetProcessTimes.argtypes = [ctypes.c_void_p] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+                c, e, k, u = (wintypes.FILETIME() for _ in range(4))
+                if not k32.GetProcessTimes(ctypes.c_void_p(h), ctypes.byref(c), ctypes.byref(e), ctypes.byref(k), ctypes.byref(u)):
+                    return None
+                return str((c.dwHighDateTime << 32) | c.dwLowDateTime)
+            finally:
+                k32.CloseHandle(ctypes.c_void_p(h))
+        if sys.platform.startswith("linux"):
+            with open(f"/proc/{pid}/stat") as f:
+                return f.read().rsplit(")", 1)[1].split()[19]
+        import subprocess
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=5,
+                             env={**os.environ, "LC_ALL": "C", "TZ": "UTC0"}).stdout   # lstart prints LOCAL time: pin locale and zone, or a turn script with another TZ reads a different stamp
+        return " ".join(out.split()) or None
+    except Exception:
+        return None
+
+
+_turn_gone = False
+
+
+def _turn_process_gone():
+    """True when BLAVE_TURN_PID ("<pid>:<start stamp>", the agent_turn process — runtime/agent_turn.main) no
+    longer exists, or that pid now belongs to another process (its start stamp differs: pid reuse). Such a
+    process is one a turn left behind (nohup / tmux started from inside it), not part of a live turn — it takes
+    no turn lock. Anything that cannot be read counts as still there (in the turn, as before): no / unparsable
+    BLAVE_TURN_PID (an older runtime), a pid we may not query, a stamp we cannot read."""
+    global _turn_gone
+    if _turn_gone:
+        return True
+    raw = os.environ.get("BLAVE_TURN_PID") or ""
+    pid_s, _, stamp = raw.partition(":")
+    if not pid_s.isdigit() or int(pid_s) <= 0:
+        return False
+    pid = int(pid_s)
+    gone = False
+    if os.name == "nt":
+        try:
+            import ctypes
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.OpenProcess.restype = ctypes.c_void_p
+            h = k32.OpenProcess(0x00100000 | 0x1000, False, pid)   # SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                gone = ctypes.get_last_error() == 87   # ERROR_INVALID_PARAMETER: no such process
+            else:
+                try:
+                    gone = k32.WaitForSingleObject(ctypes.c_void_p(h), 0) == 0   # signaled = exited
+                finally:
+                    k32.CloseHandle(ctypes.c_void_p(h))
+        except Exception:
+            gone = False
+    else:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            gone = True
+        except OSError:
+            gone = False
+    if not gone and stamp:
+        now = _proc_started(pid)
+        gone = now is not None and now != stamp   # unreadable stamp → still there
+    _turn_gone = gone   # gone stays gone; alive is checked again next time
+    return gone
+
+
+def _turn_money_lock(wait_s):
+    global _turn_money_fd, _turn_money_shared
+    turn = os.environ.get("BLAVE_TURN_INTERRUPT_FILE") or ""
+    if not turn or _turn_money_fd is not None or _turn_money_shared or _turn_process_gone():
+        return
+    owner = TURN_MONEY_LOCK + ".owner"
+    try:
+        os.makedirs(os.path.dirname(TURN_MONEY_LOCK), exist_ok=True)
+        fd = os.open(TURN_MONEY_LOCK, os.O_RDWR | os.O_CREAT, 0o600)
+    except OSError as e:
+        logging.warning(f"guard: turn money lock unavailable: {e}")
+        return
+    deadline = time.monotonic() + wait_s
+    while True:
+        if _try_lock(fd):
+            try:
+                with open(owner, "w") as f:
+                    f.write(turn)
+            except OSError as e:
+                # an owner file still naming the previous holder would let that turn's scripts "share" a lock
+                # they do not hold: no owner, no lock
+                os.close(fd)
+                raise TurnMoneyBusy(
+                    f"Could not record this conversation as the order-lock holder ({e}). Nothing was sent. "
+                    "Tell the user; this usually means the disk is full.") from None
+            _turn_money_fd = fd
+            atexit.register(_turn_money_release, owner, turn)
+            return
+        try:
+            with open(owner) as f:
+                if f.read() == turn:   # this turn already holds it (a parent script): share, never self-deadlock
+                    os.close(fd)
+                    _turn_money_shared = True
+                    return
+        except OSError:
+            pass
+        if time.monotonic() >= deadline:
+            os.close(fd)
+            waited = f", and this one waited {wait_s} s for it" if wait_s else ""
+            raise TurnMoneyBusy(
+                "Another conversation on this computer is placing or closing an order right now"
+                f"{waited}. Nothing was sent. Tell the user, and run this again once that conversation has "
+                "finished — re-read the position first, it may already have changed.")
+        time.sleep(0.25)
+
+
+def _turn_money_release(owner, turn):
+    """atexit: clear the owner file if it still names this turn, so no later script of this turn reads it
+    as "my turn holds the lock" after this process (the holder) is gone. The flock itself goes with the fd."""
+    try:
+        with open(owner) as f:
+            if f.read() != turn:
+                return
+        os.remove(owner)
+    except OSError:
+        pass
+
+
+def hold_turn_money():
+    """Close / execution entry points: take the turn money lock BEFORE reading any position (waits up to
+    TURN_MONEY_WAIT_S, then TurnMoneyBusy). No-op outside an agent turn. Marks the process as a money
+    process too (the chat's Stop spares it)."""
+    _turn_money_lock(TURN_MONEY_WAIT_S)
+    mark_money_process()
 
 
 def mark_money_process():

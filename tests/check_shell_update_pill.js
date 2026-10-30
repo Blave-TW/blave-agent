@@ -111,7 +111,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     const rig = (o) => {
       const log = [], prefs = {};
       const at6 = new Date(2026, 9, 29, 6, 5).getTime();
-      const ctx = { _schedRunning: false, draftOk: false, quitAsking: false, moveAsking: false, restarting: null, quitConfirmed: false, quitting: false, activeTurn: null, turnStarting: false, _engineRun: null,
+      const ctx = { _schedRunning: false, draftOk: false, quitAsking: false, moveAsking: false, restarting: null, quitConfirmed: false, quitting: false, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: null, turnStarting: false, _engineRun: null,
         updater: () => ({ state: () => { log.push("collect"); return { phase: o.phase || "ready", version: "0.1.36" }; }, install: () => { log.push("install"); return o.installRes || { ok: true }; } }),
         _tradeHost: o.noHost ? null : { status: () => ({ running: o.daemonRunning !== false, alive: o.alive !== false, lockRetry: o.lockRetry || null,
           report: { daemon: { pid: 4242, ...(o.flattening !== undefined ? { flattening: o.flattening } : {}), ...(o.optimizing !== undefined ? { optimizing: o.optimizing } : {}), ...(o.reports === "absent" ? {} : { reports: o.reports === undefined ? { running: false, next_due_at: null } : o.reports }) }, ...(o.manager ? { manager: o.manager } : {}), ...(o.halt ? { halt: o.halt } : {}) } }) },
@@ -200,7 +200,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       const log = [], win = o && o.noWin ? null : mkWin("file:///app/index.html");
       const ctx = { _upAsk: null, _upAskSeq: 0, quitAsking: false, UP_ASK_PICKUP_MS: (o && o.pickupMs) || 200, UP_ASK_HOLD_MS: 60000, showMain: () => log.push("showMain"), draftMainWin: () => win, setTimeout, clearTimeout, Promise,
         // before-quit 用的(同 check_shell_update_restart.js 的 quitRig)
-        restarting: null, quitting: false, quitConfirmed: false, draftOk: false, draftNote: false, draftNoted: (d) => d, moveAsking: false, activeTurn: null, turnStarting: false,
+        restarting: null, quitting: false, quitConfirmed: false, draftOk: false, draftNote: false, draftNoted: (d) => d, moveAsking: false, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: null, turnStarting: false,
         draftDirty: () => { log.push("draftDirty"); return new Promise(() => {}); }, tradeMaybeLive: () => null, twLots: () => ({ held: false }), _tradeHost: null, _engineSetup: null, engineAbort: () => Promise.resolve(),
         app: { on: (ev, fn) => { ctx.handler = fn; }, quit: () => { log.push("app.quit"); } }, console: { error: () => {} } };
       const updAsk = new Function("ctx", "with (ctx) { " + UA + "\n return updAsk; }")(ctx);
@@ -339,7 +339,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     const w = new EventEmitter(), wc = new EventEmitter(); wc.send = (ch) => { if (ch === "update-ask") env.pending = mctx._upAsk && { id: mctx._upAsk.id, kind: mctx._upAsk.kind, data: mctx._upAsk.data }; }; wc.getURL = () => "file:///app/index.html"; w.webContents = wc; w.isDestroyed = () => false;
     const log = [];
     const mctx = { _upAsk: null, _upAskSeq: 0, quitAsking: false, UP_ASK_PICKUP_MS: 5000, UP_ASK_HOLD_MS: 60000, showMain: () => {}, draftMainWin: () => w, setTimeout, clearTimeout, Promise,
-      restarting: null, quitting: false, quitConfirmed: false, draftOk: false, draftNote: false, draftNoted: (d) => d, moveAsking: false, activeTurn: null, turnStarting: false,
+      restarting: null, quitting: false, quitConfirmed: false, draftOk: false, draftNote: false, draftNoted: (d) => d, moveAsking: false, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: null, turnStarting: false,
       draftDirty: () => { log.push("draftDirty"); return new Promise(() => {}); }, tradeMaybeLive: () => null, twLots: () => ({ held: false }), _tradeHost: null, _engineSetup: null, engineAbort: () => Promise.resolve(),
       app: { on: (ev, fn) => { mctx.handler = fn; }, quit: () => log.push("app.quit") }, console: { error: () => {} } };
     const updAsk = new Function("ctx", "with (ctx) { " + UA + "\n return updAsk; }")(mctx);

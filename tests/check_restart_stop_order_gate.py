@@ -727,6 +727,41 @@ check("tb" not in paused and "tb" in running,
 check("tc" in paused and "no crontab entry" in paused,
       f"H2: during the pause a STRUCTURAL problem (crontab line gone) is still reported ({paused[:90]})")
 
+# Part 3 — 群益／統一／永豐 cancels (0.1.37 audit s2 third round): today cancel_order / modify_order are
+# NotImplementedError stubs (sinopac has none). The day one is implemented it must pass the same gate as every
+# order — the turn order lock lives in check_restart_stop, and an agent turn's "cancel the old stop, place the
+# new one" must stop at its first step when another turn is placing orders. Enumerated, so a new cancel-like
+# function is red until it is either a stub or reaches the gate.
+CANCEL_RE = re.compile(r"(cancel|modify|amend|replace|change)", re.I)
+for venue in ("capital", "president", "sinopac"):
+    path = os.path.join(ROOT, "lib", f"order_{venue}.py")
+    src3 = open(path, encoding="utf-8").read()
+    tree3 = ast.parse(src3)
+    fns = {n.name: n for n in tree3.body if isinstance(n, ast.FunctionDef)}
+    gated = {name for name, n in fns.items() if "check_restart_stop(" in ast.get_source_segment(src3, n)}
+
+    def reaches_gate(n, seen=()):
+        seg = ast.get_source_segment(src3, n)
+        if "check_restart_stop(" in seg:
+            return True
+        for c in ast.walk(n):
+            if isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id in fns and c.func.id not in seen:
+                if reaches_gate(fns[c.func.id], seen + (n.name,)):
+                    return True
+        return False
+
+    def stub(n):
+        body = [x for x in n.body if not (isinstance(x, ast.Expr) and isinstance(x.value, ast.Constant))]
+        return len(body) == 1 and isinstance(body[0], ast.Raise) and "NotImplementedError" in ast.get_source_segment(src3, body[0])
+
+    for name, n in fns.items():
+        if name.startswith("_") or not CANCEL_RE.search(name):
+            continue
+        check(stub(n) or reaches_gate(n),
+              f"order_{venue}.{name}: a cancel / modify must reach guard.check_restart_stop (the turn order lock) "
+              f"or stay a NotImplementedError stub")
+    check(bool(gated), f"order_{venue}: at least one function calls guard.check_restart_stop (the gate exists)")
+
 os.chdir(cwd)
 shutil.rmtree(TMP, ignore_errors=True)
 print("\nFAILED" if fails else "\nall ok")

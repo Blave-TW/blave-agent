@@ -8,6 +8,7 @@
 //   一層化之後(spec-turn-phases-one-layer):展開區只剩階段清單＋思考文字,role=status 只包狀態列那一行,清單沒有高度上限
 // 純 node:切 app.js 原文跑在假 DOM 上(不起 Electron);「看得到」= 清單沒 hidden、在展開區裡、而展開區開著(app.css 的 1fr 規則)
 // 跑法:node tests/check_shell_receipt_collapse.js
+const TABS_STUB = require("./_tabs_stub").SRC;
 const fs = require("fs"), path = require("path");
 const R = path.join(__dirname, "..", "shell", "renderer");
 const src = fs.readFileSync(path.join(R, "app.js"), "utf8"), css = fs.readFileSync(path.join(R, "app.css"), "utf8");
@@ -51,7 +52,7 @@ const ctx = {
   whereTag: () => new El("span"), stepWhere: (c) => (c && String(c.tool || "").indexOf("mcp__blave__") === 0 ? "cloud" : "local"),
 };
 const body = cut("let busy = null;", "/* 停止(照雲端工作頁") + cut("function receiptFold(", "/* 舊回合的使用者那句");
-const M = new Function(...Object.keys(ctx), body + "; return { busyStart, busyStep, busyStepDone, busyReason, busyEnd, receiptFold, phasesPaint, get busy() { return busy; } };")(...Object.values(ctx));
+const M = new Function(...Object.keys(ctx), TABS_STUB + body + "; return { busyStart, busyStep, busyStepDone, busyReason, busyEnd, receiptFold, phasesPaint, get busy() { return busy; } };")(...Object.values(ctx));
 
 const inWrap = (n) => { for (let p = n.parentNode; p; p = p.parentNode) if (p.classList.contains("think-reason-wrap")) return p; return null; };
 function phasesShown(el) {

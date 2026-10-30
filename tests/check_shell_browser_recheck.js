@@ -5,6 +5,7 @@
 // 不開視窗:shell/browser/index.js 照常載入,視窗、分頁的 webContents、頁面物件(cdp.js)都是假的。
 // 跑法:node tests/check_shell_browser_recheck.js
 const path = require("path"), fs = require("fs"), os = require("os"), { EventEmitter } = require("events");
+const BT = require("./_browser_turn");
 const B = path.join(__dirname, "..", "shell", "browser");
 const IP = require(path.join(B, "inpage"));
 let red = 0, last = null; const t = (n, ok, d) => { console.log((ok ? "PASS  " : "FAIL  ") + n + (ok ? "" : "  " + JSON.stringify(d === undefined ? last : d).slice(0, 600))); if (!ok) red++; };
@@ -55,7 +56,7 @@ const J = (r) => (last = JSON.parse(r.content[0].text));
 
 (async () => {
   const Br = require(path.join(B, "index.js")).createBrowser({ electron: fakeE, stateDir: snapDir, reportsDir: path.join(tmp, "reports"), getWin: () => win, uiLang: () => "en", track: () => {}, version: "test", reducedMotion: () => true, userPresent: () => true });
-  await Br.beginTurn(win, SID);
+  await BT.begin(Br, win, SID);
   const call = (n, a) => Br._call(n, a || {}, { live: () => true });
   let host = 0;
   // 開一頁(還在載);land(url) = 這一格導覽到 url 並載完
@@ -117,7 +118,7 @@ const J = (r) => (last = JSON.parse(r.content[0].text));
     /await waitLoaded\(t, READ_WAIT_MS\);\s*(\/\/[^\n]*\n\s*)?const gone = recheck\(t, v\); if \(gone\) return gone;\s*let ex; try \{ ex = await v\.page\.extract\(\); \}[^\n]*\n\s*const late = recheck\(t, v\); if \(late\) return late;\s*const r = C\.readPart\(/.test(idx));
   t("browser_capture 拿到同一支 recheck", /createCapture\(\{[^}]*\brecheck\b/.test(idx));
 
-  Br.endTurn();
+  BT.end(Br);
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })().catch((e) => { console.log("FAIL  " + (e && e.stack) + "\n      last: " + JSON.stringify(last).slice(0, 500)); process.exit(1); });

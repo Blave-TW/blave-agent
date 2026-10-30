@@ -58,7 +58,7 @@ t_("幾萬層的 > 與 - 不會把堆疊撐爆、也不會卡住(< 1s)", deepOk 
 
 // ── planWatch ──
 var timers = [], now = 1_000_000, said = [], sr = [], painted = 0, checks = 0;
-var running = false, acct = null, planErr = null, planSince = 0, planTimer = null, planWas = null, planDoneSaid = false, planDonePending = false;
+var running = false, acct = null, planErr = null, planSince = 0, planTimer = null, planWas = null, planDoneSaid = false, planDonePending = false, sessionId = "desktop-p1";
 var PLAN_POLL_MS = 20000, PLAN_SLOW_MS = 15 * 60 * 1000;
 const _Date = Date; global.Date = class extends _Date { static now() { return now; } };
 global.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length; };
@@ -72,7 +72,7 @@ timers[0].fn(); t_("timer 到了會重查、而且把自己清掉", checks === 1
 now += 16 * 60 * 1000; planWatch(P("starting"));
 t_("超過 15 分鐘不再掛 timer", timers.length === 1);
 running = true; planWatch(P("running"));
-t_("一輪進行中:完成的那句延後、不插進去", said.length === 0 && planDonePending === true);
+t_("一輪進行中:完成的那句延後、不插進去", said.length === 0 && planDonePending === "desktop-p1");   // 記的是哪一條(那一條結束時才講)
 running = false; planSayDone(); planWatch(P("running")); planWatch(P("running"));
 t_("開好了只講一次", said.length === 1 && said[0] === "plan.done");
 planWas = null; planDoneSaid = false; planWatch(P("running"));

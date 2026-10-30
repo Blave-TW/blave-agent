@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld("blave", {
   replyNotifySet: (on) => ipcRenderer.invoke("reply-notify-set", on === true),
   replySoundSet: (on) => ipcRenderer.invoke("reply-sound-set", on === true),
   replyNotifyOs: () => ipcRenderer.invoke("reply-notify-os"),
-  replyCue: (kind, snippet) => ipcRenderer.send("reply-cue", { kind: String(kind), snippet: typeof snippet === "string" ? snippet : "" }),
+  replyCue: (kind, snippet, sid) => ipcRenderer.send("reply-cue", { kind: String(kind), snippet: typeof snippet === "string" ? snippet : "", ...(typeof sid === "string" && sid ? { sid } : {}) }),
   theme: () => ipcRenderer.invoke("theme"),
   themeSet: (v) => ipcRenderer.invoke("theme-set", typeof v === "string" ? v : ""),
   welcomePrefs: () => ipcRenderer.invoke("welcome-prefs"),
@@ -191,7 +191,15 @@ contextBridge.exposeInMainWorld("blave", {
   mobileViewSet: (on) => ipcRenderer.invoke("mobile-view-set", on === true),
   ensureEngine: () => ipcRenderer.invoke("ensure-engine"),
   sendMessage: (payload) => ipcRenderer.invoke("send-message", payload),
-  stopTurn: () => ipcRenderer.invoke("stop-turn"),   // true = 停止旗標寫下了;結果照樣等 turn-end
+  stopTurn: (sid) => ipcRenderer.invoke("stop-turn", typeof sid === "string" ? sid : null),   // true = 停止旗標寫下了;結果照樣等 turn-end。沒帶 sid = 只有一條在跑時停它
+  turnsState: () => ipcRenderer.invoke("turns-state"),   // [{ sid, phase, origin }]:畫面重載時補回哪幾條在跑
+  // 對話分頁(renderer/chattabs.js):開著哪些／順序／選中存 ui-prefs;⌘T／⌘W 由選單送來;手機來的對話開成背景分頁;最後一個分頁關掉時請主行程關窗
+  tabsPrefs: () => ipcRenderer.invoke("tabs-prefs"),
+  tabsPrefsSet: (p) => ipcRenderer.invoke("tabs-prefs-set", p && typeof p === "object" ? { tabs: Array.isArray(p.tabs) ? p.tabs.filter((x) => typeof x === "string") : [], sel: typeof p.sel === "string" ? p.sel : null } : null),
+  onTabNew: (fn) => ipcRenderer.on("tab-new", () => fn()),
+  onTabClose: (fn) => ipcRenderer.on("tab-close", () => fn()),
+  onTabOpen: (fn) => ipcRenderer.on("tab-open", (_e, o) => fn(o && typeof o === "object" ? { sid: typeof o.sid === "string" ? o.sid : "", origin: o.origin === "mobile" ? "mobile" : "desktop", focus: o.focus !== false } : null)),
+  windowClose: () => ipcRenderer.send("window-close"),
   // 安裝進度(renderer/engine.js):主行程那一份快照,拉一次 + 之後每次變動推過來
   engineState: () => ipcRenderer.invoke("engine-state"),
   onEngineState: (fn) => ipcRenderer.on("engine-state", (_e, s) => fn(s)),

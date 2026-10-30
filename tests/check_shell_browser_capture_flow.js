@@ -117,7 +117,8 @@ fs.mkdirSync(outside);
   t("資料夾是 symlink / 在 reports 以外 / 檔名帶路徑:不動", sweepCites(rp, [{ dir: path.join(rp, "link.files"), file: "cite-out.png" }]) === 0 && fs.existsSync(path.join(out2, "cite-out.png")) && sweepCites(rp, "x") === 0 && sweepCites(null, [a]) === 0);
   const idx = fs.readFileSync(path.join(B, "index.js"), "utf8");
   t("接線:doCapture 把存好的檔記在這一輪的狀態;endTurn 清(在 used 判斷之前,清不掉不擋收尾)", /\(cur\.cites \|\| \(cur\.cites = \[\]\)\)\.push\(\{ dir: saveCite\(d\.reportsDir, report, file, buf\), file \}\);/.test(fs.readFileSync(path.join(B, "capture.js"), "utf8"))
-    && /const c = cur; cur = null;\s*try \{ sweepCites\(o\.reportsDir, c\.cites\); \} catch \(_\) \{[^}]*\}\s*if \(!c\.used\) return;/.test(idx));
+    && /const c = cur; cur = null; curReady = null;\s*try \{ endLeaseTurn\(c\); \} finally \{ grantNext\(\); \}/.test(idx)
+    && /function endLeaseTurn\(c\) \{\s*try \{ sweepCites\(o\.reportsDir, c\.cites\); \} catch \(_\) \{[^}]*\}\s*if \(!c\.used\) return;/.test(idx));
 }
 
 // ── 流程 ──

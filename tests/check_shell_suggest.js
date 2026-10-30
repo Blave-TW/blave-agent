@@ -52,8 +52,8 @@ const LS = new Map();
 const ctx = { $: (id) => W[id], sessionId: "desktop-aaaa", running: false, composing: false, attachedFiles: [], tracked: [], said: [],
   trackFeature: (n) => ctx.tracked.push(n), scrollChat: (force) => { if (force === true) W["chat-scroll"].scrollTop = W["chat-scroll"].scrollHeight; }, srSay: (s) => ctx.said.push(s), autosize: () => {}, motionBaseMs: () => 0,
   escTop: () => ctx.topLayer || null, t: (k, v) => k + (v ? ":" + v.s : ""),
-  lsGet: (k) => (LS.has(k) ? LS.get(k) : null), lsSet: (k, v) => LS.set(k, String(v)), setTimeout, clearTimeout };
-new Function("ctx", "with (ctx) { " + sugSrc.replace(/^const SUG = /m, "var SUG = ") +
+  lsGet: (k) => (LS.has(k) ? LS.get(k) : null), lsSet: (k, v) => LS.set(k, String(v)), setTimeout, clearTimeout, tabBound: (f) => f, tabBg: () => false };
+new Function("ctx", "with (ctx) { " + sugSrc.replace(/^(?:const|let) SUG = /m, "var SUG = ") +
   "\n Object.assign(ctx, { sugPick, sugKindOf, sugChunk, sugTurnEnd, sugCollapse, sugPaint, sugSnap, sugSettle, sugUnsend, sugMode, SUG }); }")(ctx);
 const wait = () => new Promise((r) => setTimeout(r, 20));
 const shown = () => !W["sug-tray"].hidden;
@@ -219,13 +219,14 @@ const send = (msg, started = true) => { ctx.sugSnap(msg); W.ta.value = ""; ctx.s
   const sd = cut(app, "async function sendDraft()", "/* 真的送出一句話。");
   ok("sendDraft:清空輸入框之前先存快照", /running\) return;\n\s*if \(typeof sugSnap === "function"\) sugSnap\(msg\);[^\n]*\n\s*\$\("ta"\)\.value = "";/.test(sd));
   ok("submitMessage 開頭作廢(任何入口)", /if \(\(!msg && !attachments\.length\) \|\| running\) return false;\n\s*if \(typeof sugCollapse === "function"\) sugCollapse\(\);/.test(sub));
-  ok("跑起來(r.started)那一支之前結算", /if \(r\.started && typeof sugSettle === "function"\) sugSettle\(msg\);[^\n]*\n(?:\s*\/\/[^\n]*\n)?\s*if \(r\.started && attachments\.length[^\n]*\n\s*if \(r\.started\) \{ busyStart\(\); trackFeature\("chat_sent"\);/.test(sub));
+  ok("送出去了(started／queued)那一支之前結算", /if \(\(r\.started \|\| r\.queued\) && typeof sugSettle === "function"\) sugSettle\(msg\);[^\n]*\n(?:\s*\/\/[^\n]*\n)?\s*if \(\(r\.started \|\| r\.queued\) && attachments\.length[^\n]*\n\s*if \(r\.started \|\| r\.queued\) \{ trackFeature\("chat_sent"\);/.test(sub));
   ok("沒送出去的路都走 unlock:還原填入狀態", /const unlock = \(\) => \{ if \(typeof sugUnsend === "function"\) sugUnsend\(\);/.test(sub) && (sub.match(/unsend\(\); unlock\(\);|unlock\(\); unsend\(\);/g) || []).length >= 4);
-  ok("送出帶 suggestMode", /sendMessage\(\{\n\s*sessionId, suggestMode: typeof sugMode === "function" \? sugMode\(\) : "normal", message: msg,/.test(sub));
+  ok("送出帶 suggestMode", /const payload = inT\(\(\) => \(\{ sessionId, suggestMode: typeof sugMode === "function" \? sugMode\(\) : "normal", message: msg,/.test(sub) && /await window\.blave\.sendMessage\(payload\);/.test(sub));
   ok("setAttachments 之後重畫托盤", /box\.hidden = !attachedFiles\.length;\n\s*if \(typeof sugPaint === "function"\) sugPaint\(\);/.test(app));
-  ok("換對話 / 新對話(csClearChat)作廢", /function csClearChat\(\) \{[\s\S]*?sugCollapse\(\)[\s\S]*?\n\}/.test(app));
+  { const ct = fs.readFileSync(path.join(R, "chattabs.js"), "utf8");
+    ok("托盤跟著分頁走(0.1.37):換分頁不作廢(SUG 在每個分頁各一份),關分頁才作廢;csClearChat 不碰它", /\["SUG", \(\) => SUG, \(v\) => \{ SUG = v; \}/.test(ct) && /function tabsClose\([\s\S]*?sugCollapse\(\)[\s\S]*?\n\}/.test(ct) && !/sugCollapse/.test(app.slice(app.indexOf("function csClearChat("), app.indexOf("function csStartNew(")))); }
   ok("turn-event:suggestions → sugChunk", /c\.type === "suggestions"\) \{\n\s*if \(typeof sugChunk === "function"\) sugChunk\(c\);/.test(app));
-  const end = cut(app, "window.blave.onTurnEnd(async (r) => {", "\n});\n");
+  const end = cut(app, "function turnEndPre(r) {", "\n});\n");
   ok("turn-end 收尾才畫,出錯與停止都不畫", /sugTurnEnd\(!stopped && !faulted\);/.test(end) && end.indexOf("sugTurnEnd(") > end.indexOf("xpTurnEnd()"));
   ok("collectDraft 不認 suggestions(不會被升成回覆)", !/suggestions/.test(cut(app, "function collectDraft(", "function draftShow(")));
   ok("index.html:舊建議列與灰字拿掉;托盤是 .chat-input 第一個子元素(句子鈕 + ×),在 textarea 之前、.ci-bar 之前",

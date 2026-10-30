@@ -42,7 +42,7 @@ else {
 ok("接線:歷史的 assistant 走 addHistoryAi(user 走 addHistoryYou:拆掉附件那行再 addMsg)",
   /x\.turn\.role === "user" \? addHistoryYou\(x\.turn\.content\) : addHistoryAi\(x\.turn\.content\)/.test(src));
 const hist = cut("function addHistoryAi(", "async function csOpen(");
-ok("收據畫在回覆上面(進了 DOM 才截受詞)、只剩收據時不畫空泡泡", /fitSteps\(\$\("chat-scroll"\)\.appendChild\(receiptFold\(r\.steps\)\)\);[^\n]*\n\s*if \(!r\.steps \|\| r\.text\.trim\(\)\) addMsg\("ai", r\.text\);/.test(hist));
+ok("收據畫在回覆上面(進了 DOM 才截受詞)、只剩收據時不畫空泡泡", /fitSteps\(chatEl\(\)\.appendChild\(receiptFold\(r\.steps\)\)\);[^\n]*\n\s*if \(!r\.steps \|\| r\.text\.trim\(\)\) addMsg\("ai", r\.text\);/.test(hist));
 const fold = cut("function receiptFold(", "function addHistoryAi(");
 ok("收據長得跟即時回合結束時一樣(think-indicator is-done、思考過程、階段清單＋最後幾步走同一支 faultPaint、位置記號);回放預設攤開(Wei 10-16)",
   /"think-indicator is-done"/.test(fold) && /dataset\.i18n = "turn\.process"/.test(fold) && /el\.classList\.add\("is-open"\); head\.setAttribute\("aria-expanded", "true"\);/.test(fold)

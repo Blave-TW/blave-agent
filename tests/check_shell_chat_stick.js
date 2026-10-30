@@ -5,6 +5,7 @@
 //   4. 程式捲到底的 scroll 事件晚到、那時內容又長高了:不算用戶往上捲
 //   5. 往上捲一點點也放開(稽核 M1):同一個 frame「chunk 捲到底＋用戶上捲」、觸控板每次只捲幾 px、滾輪往上;開較短的舊對話後內容晚長高不誤放開
 // 純 node:切 app.js 原文跑在假 DOM、假時鐘上(不起 Electron)。跑法:node tests/check_shell_chat_stick.js
+const TABS_STUB = require("./_tabs_stub").SRC;
 const fs = require("fs"), path = require("path");
 const src = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
 const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); if (i < 0 || j < 0) throw new Error("找不到標記:" + a); return src.slice(i, j); };
@@ -54,7 +55,7 @@ const ctx = {
 const body = cut("function scrollChat", "/* ── agent 回覆的顯示") + cut("let busy = null;", "/* 停止(照雲端工作頁") + cut("function faultCard()", "/* 「再送一次」");
 // 舊程式沒有黏底那段(只有一行 scrollChat):照樣切得出來跑,這條測試對舊程式要紅
 const stickSrc = src.indexOf("let chatStick") >= 0 ? cut("const CHAT_STICK_PX", "function scrollChat") : "";
-const M = new Function(...Object.keys(ctx), stickSrc + body +
+const M = new Function(...Object.keys(ctx), TABS_STUB + stickSrc + body +
   "; return { scrollChat, faultCard, busyStart, busyStep, busyStepDone, busyReason, get busy() { return busy; } };")(...Object.values(ctx));
 const at = (ms) => { env.now = ms; const due = env.timers.filter((x) => x.at <= ms); env.timers = env.timers.filter((x) => x.at > ms); due.forEach((x) => x.f()); box.flush(); };
 const grow = (px) => { box.scrollHeight += px; };

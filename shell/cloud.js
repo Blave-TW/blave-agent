@@ -95,7 +95,14 @@ function interpret(res) {
     // 側欄偏好(web 工作頁設的順序與旗標,agent_user_prefs 同一份):api 還沒回這兩個 key 時 = 空,行為零變化。寫回走 setStratPrefs
     strat_order: prefOrder(b.strat_order),
     strat_flags: prefFlags(b.strat_flags),
+    // 那台主機同時能跑幾輪(api turn_limits,同雲端 web_bridge 的名額):電腦版對著雲端的回合照它排隊。舊 api 沒帶 = null,main.js 當 1
+    max_turns: maxTurnsOf(b.turn_limits),
   };
+}
+const MAX_TURNS_CAP = 64;
+function maxTurnsOf(v) {
+  const n = v && typeof v === "object" && !Array.isArray(v) ? v.max_turns : null;
+  return Number.isInteger(n) && n >= 1 ? Math.min(n, MAX_TURNS_CAP) : null;
 }
 
 /* 事件清單的回應 → { code, events }(純函式)。**「讀不到」與「真的沒有事件」是兩件事**:

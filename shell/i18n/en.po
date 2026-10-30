@@ -3748,6 +3748,20 @@ msgstr "Capital positions still open"
 msgid "tr.ov.evManualCloseNote"
 msgstr "close them in Capital’s trading software"
 
+# 全部平倉跳過這家是因為部位快照還沒跟上剛送出的單(manual_close_required reason snapshot_lag;群益、統一都會發;
+# 字同 api openclaw/notify.py _MANUAL_CLOSE_SNAPSHOT_LAG(券商名同 _VENUE_NAMES 短名),web workspace_ov_ev_manual_close_lag;整句一則,不拆說明,與 api 逐字同);{broker} 照下面對照表
+msgid "tr.ov.evManualCloseLag"
+msgstr "Not closed on {broker}: position data lags the last order. In a minute, press “Pause and close positions” again, or close at your broker."
+
+msgid "tr.ov.brokerCapital"
+msgstr "Capital"
+
+msgid "tr.ov.brokerPresident"
+msgstr "President"
+
+msgid "tr.ov.brokerOther"
+msgstr "your broker"
+
 msgid "up.c.msg"
 msgstr "Update the cloud machine to the latest version"
 
@@ -3761,7 +3775,11 @@ msgid "tm.quitTurnTitle"
 msgstr "The agent is still replying"
 
 msgid "tm.quitTurnBody"
-msgstr "Quitting Blave now cuts off this turn, including any cloud update in progress. It’s safer to wait until it finishes."
+msgstr "Quitting stops this reply, including any cloud update in progress."
+
+# 結束攔截:兩條以上回合在跑(對話分頁並行;主行程填 {n})
+msgid "tm.quitTurnBodyN"
+msgstr "Quitting stops {n} replies, including any cloud update in progress."
 
 # 結束 / 關窗攔截:策略組合有還沒儲存的勾選或金額(草稿不另外存)
 msgid "tm.unsavedTitle"
@@ -8715,12 +8733,6 @@ msgstr "The agent is replying and may be editing this strategy. Restore after it
 msgid "busy.chatDel"
 msgstr "This conversation is still replying. Stop it before deleting."
 
-msgid "busy.switch"
-msgstr "Wait for this reply to finish before switching conversations."
-
-msgid "busy.new"
-msgstr "Wait for this reply to finish before starting a new conversation."
-
 msgid "busy.cloudUpd"
 msgstr "Wait for this reply to finish before sending the update."
 
@@ -9327,3 +9339,79 @@ msgstr "Outcome unknown — it may have filled; don't place it again yourself. N
 # 追蹤不了而整台暫停、HALT reason 讀不到標的時的狀態句(大寫開頭;同網頁 workspace_pf_halt_unconfirmed_nosym)
 msgid "tr.haltUnconfirmedNosym"
 msgstr "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
+
+# 對話分頁(0.1.37;spec chat-tabs-2026-10-29 §2–§4;排隊行與狀態字同 web workspace_cs_*,tests/check_web_desktop_parity.js 比對;tabs.brWait 待設計師過字)
+msgid "tabs.list"
+msgstr "Conversations"
+
+msgid "tabs.search"
+msgstr "Search conversation titles"
+
+msgid "tabs.queue"
+msgstr "Queued: the maximum number of replies are already running. This one starts when a slot frees up."
+
+msgid "tabs.queueCancel"
+msgstr "Cancel queued message"
+
+# 排隊中的送出鍵 title(同 web workspace_cs_cancel_queued_title)
+msgid "tabs.queueCancelTitle"
+msgstr "Cancel and move the message back to the input"
+
+msgid "tabs.brWait"
+msgstr "Waiting for another chat to finish with the browser"
+
+msgid "tabs.st.run"
+msgstr "Replying · {d}"
+
+msgid "tabs.st.running"
+msgstr "Replying"
+
+msgid "tabs.st.wait"
+msgstr "Waiting for you"
+
+msgid "tabs.st.fail"
+msgstr "Didn’t finish"
+
+msgid "tabs.st.unseen"
+msgstr "Done, not viewed"
+
+msgid "tabs.st.queued"
+msgstr "Queued"
+
+msgid "tabs.hint.run"
+msgstr "{n} replying"
+
+msgid "tabs.hint.queued"
+msgstr "{n} queued"
+
+msgid "tabs.more.attn"
+msgstr "{n} need you"
+
+msgid "tabs.more.run"
+msgstr "{n} replying"
+
+msgid "tabs.many"
+msgstr "{n} conversations need you"
+
+msgid "tabs.group.today"
+msgstr "Today"
+
+msgid "tabs.group.yesterday"
+msgstr "Yesterday"
+
+msgid "tabs.group.earlier"
+msgstr "Earlier"
+
+# 對話分頁:app 選單「檔案」的新對話(同 ＋ 的名字)／關閉分頁(⌘T／⌘W);結束框排隊那句(主行程填 {n})與只有排隊時的標題
+msgid "menu.newTab"
+msgstr "New Chat"
+
+msgid "menu.closeTab"
+msgstr "Close Tab"
+
+msgid "tm.quitQueuedN"
+msgstr "Queued messages won’t be sent."
+
+msgid "tm.quitQueuedTitle"
+msgstr "Messages are still queued"
+

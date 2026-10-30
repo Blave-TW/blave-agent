@@ -5,6 +5,7 @@
 // 不開視窗:視窗、webContents、頁面物件都是假的;搜尋引擎的結果頁由假頁面回「這是驗證頁」。
 // 跑法:node tests/check_shell_browser_verify_outcome.js(約 30 秒:兩次搜尋之間有 4 秒間隔)
 const path = require("path"), fs = require("fs"), os = require("os"), { EventEmitter } = require("events");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell"), B = path.join(SHELL, "browser");
 let red = 0, last = null; const t = (n, ok, d) => { console.log((ok ? "PASS  " : "FAIL  ") + n + (ok ? "" : "  " + JSON.stringify(d === undefined ? last : d).slice(0, 600))); if (!ok) red++; };
 const J = (r) => (last = JSON.parse(r.content[0].text));
@@ -41,7 +42,7 @@ let serp = async () => ({ captcha: true, items: [] });
   const asks = (from) => sent.slice(from).filter((e) => e.type === "need_user" && e.kind === "captcha");
   // 等到請求卡就做 fn;搜尋自己先回來(沒問)就回 null——不問的情況不能吊死在這裡
   const onAsk = (from, p, fn) => new Promise((res) => { const iv = setInterval(() => { const a = asks(from); if (a.length) { clearInterval(iv); fn(a[0]); res(a[0]); } }, 50); p.then(() => { clearInterval(iv); res(null); }, () => { clearInterval(iv); res(null); }); });
-  await Br.beginTurn(win, "desktop-vo1", { userSent: true });
+  await BT.begin(Br, win, "desktop-vo1", { userSent: true });
 
   // ---- 1. 引擎在等驗證的時候斷線:不算用戶拒絕;回 cancelled;同一輪的下一次搜尋照樣問
   let at = sent.length;
@@ -58,21 +59,21 @@ let serp = async () => ({ captcha: true, items: [] });
 
   // ---- 2. 逾時與人不在各記各的:之後的搜尋回同一種原因,不是一律 captcha
   for (const [end, reason] of [["timeout", "timeout"], ["absent", "no_user"]]) {
-    Br.endTurn(); await Br.beginTurn(win, "desktop-vo1", { userSent: true });
+    BT.end(Br); await BT.begin(Br, win, "desktop-vo1", { userSent: true });
     Br._cur().verifyEnd = end;   // 這一輪稍早的那一次驗證是這樣收場的
     at = sent.length; r = J(await search());
     t("2 這一輪之前" + (end === "timeout" ? "逾時" : "人不在") + "過 → 不再問、reason " + reason, asks(at).length === 0 && r.error === "search_unavailable" && r.reason === reason, r);
   }
 
   // ---- 3. 用戶把驗證頁那一格關掉 = 這次不做:算他跳過
-  Br.endTurn(); await Br.beginTurn(win, "desktop-vo1", { userSent: true });
+  BT.end(Br); await BT.begin(Br, win, "desktop-vo1", { userSent: true });
   at = sent.length;
   p = search(); t("3(前提)問了他", !!(await onAsk(at, p, (a) => Br._tabs.close(a.id))));
   r = J(await p);
   t("3 關掉驗證頁那一格 → reason user_skipped,記成跳過", r.error === "search_unavailable" && r.reason === "user_skipped" && Br._cur().verifyEnd === "declined", [r, Br._cur().verifyEnd]);
 
   // ---- 4. 用戶過了驗證、自動接續漏判,按「交還 agent」→ 重判,用這一頁的結果接著搜(不是放棄 Google、改去 DuckDuckGo)
-  Br.endTurn(); await Br.beginTurn(win, "desktop-vo1", { userSent: true });
+  BT.end(Br); await BT.begin(Br, win, "desktop-vo1", { userSent: true });
   const PASSED = "https://www.google.com/search?q=btc+etf+flows&sei=1";
   let early = 0;
   serp = async (url) => {
@@ -101,7 +102,7 @@ let serp = async () => ({ captcha: true, items: [] });
   serp = async () => ({ captcha: true, items: [] });
 
   // ---- 4b. 還在驗證頁就按「好了，交還 agent」(0.1.20 起是卡上主鈕,誤按會變多):不當放棄——卡與「你在操作」留著、繼續偵測;他之後過了照樣接著搜
-  Br.endTurn(); await Br.beginTurn(win, "desktop-vo1", { userSent: true });
+  BT.end(Br); await BT.begin(Br, win, "desktop-vo1", { userSent: true });
   serp = async (url) => (url === PASSED ? { captcha: false, items: [{ href: "https://news-a.test/one", title: "First result", snippet: "one" }] } : { captcha: true, items: [] });
   at = sent.length;
   p = search();
@@ -129,7 +130,7 @@ let serp = async () => ({ captcha: true, items: [] });
   t("handVerify:closed 不記(引擎斷線 / 回合結束 / 分頁壞掉);分頁是用戶關掉的才當 exit;其餘照 timeout / absent / declined 分開記", /if \(got === "closed"\) \{/.test(hand) && /t\.status === "closed"/.test(hand)
     && /c\.verifyEnd = got === "timeout" \? "timeout" : got === "absent" \? "absent" : "declined";/.test(hand) && !/verifyDeclined/.test(idx));
   t("searchOnce:closed 對模型講 failed(不是 no_user)", /got === "closed" \? "failed"/.test(idx));
-  Br.endTurn();
+  BT.end(Br);
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })().catch((e) => { console.log("FAIL  " + (e && e.stack) + "\n      last: " + JSON.stringify(last).slice(0, 500)); process.exit(1); });

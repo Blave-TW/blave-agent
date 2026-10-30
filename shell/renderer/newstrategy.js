@@ -47,7 +47,8 @@ const NS = { sending: false, opener: null, fail: false };   // fail = 上一次�
 function nsStrings() { return { lead: t("ns.msgLead"), symbol: t("ns.msgSymbol"), timeframe: t("ns.msgTimeframe"), indicators: t("ns.msgIndicators"), logic: t("ns.msgLogic") }; }
 function nsFields() { const f = $("ns-modal"), o = {}; NS_FIELDS.forEach((k) => { const el = f.elements[k]; o[k] = el ? el.value : ""; }); return o; }
 // 閘門同「新增報告」的鈕(停機 / 逾時 / 回合中);這個框沒有 pending 態
-function nsGate() { const env = libEnv(); return rptAskState({ running: typeof running !== "undefined" && running === true, env, cloud: env === "cloud" ? libCloud() : null, pending: false }); }
+function nsGate() { const env = libEnv(); return rptAskState({ running: false, env,   // 回合中不再擋:另開分頁送(csSendAway)
+   cloud: env === "cloud" ? libCloud() : null, pending: false }); }
 // 每次 input 重算(照 web nsRefresh):預覽句、送出鈕 disabled 直到任一格有字、閘門句;送出中 foot-msg 不動
 function nsRefresh() {
   const msg = nsCompose(nsFields(), LANG, nsStrings()), pv = $("ns-preview");
@@ -99,9 +100,8 @@ async function nsSend() {
   const fm = $("ns-msg"), busy = libEl("span", "cf-busy"), sp = libEl("span", "spin16"); sp.setAttribute("aria-hidden", "true");
   busy.append(sp, t("ns.sending")); fm.textContent = ""; fm.appendChild(busy);
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著就先展開:回覆在那裡
-  if (csTitle) csStartNew();
   let ok = false;
-  try { ok = await submitMessage(msg); } catch (_) { ok = false; }
+  try { ok = await csSendAway(msg); } catch (_) { ok = false; }
   NS.sending = false;
   nsLock(false);
   if (!ok) { NS.fail = true; nsRefresh(); return; }   // 框留著、欄位不清、鈕回復,腳放那一句
@@ -118,7 +118,7 @@ const IDEA_FROM = ["welcome", "lib_head", "lib_empty"];
 function ideaStrings() { return { msg: t("idea.msg"), topicTpl: t("idea.topicTpl"), mkt: { crypto: t("idea.mkt.crypto"), tw: t("idea.mkt.tw"), txf: t("idea.mkt.txf"), us: t("idea.mkt.us"), any: "" } }; }
 function ideaMsg() { return ideaCompose(IDEA.mkt, $("idea-topic").value, ideaStrings()); }
 // 找點子框只在這台電腦視角開:閘門只看回合在不在跑(沒有雲端主機停機 / 逾時那兩態)
-function ideaGate() { return rptAskState({ running: typeof running !== "undefined" && running === true, env: "local", cloud: null, pending: false }); }
+function ideaGate() { return rptAskState({ running: false, env: "local", cloud: null, pending: false }); }
 function ideaRefresh() {
   const msg = ideaMsg(), st = ideaGate();
   $("idea-mkt").querySelectorAll("button[data-mkt]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.mkt === IDEA.mkt ? "true" : "false"));
@@ -163,9 +163,8 @@ async function ideaSend() {
   busy.append(sp, t("ns.sending")); fm.textContent = ""; fm.appendChild(busy);
   $("idea-submit").textContent = t("ns.sending");
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著就先展開:回覆在那裡
-  if (csTitle) csStartNew();
   let ok = false;
-  try { ok = await submitMessage(msg); } catch (_) { ok = false; }
+  try { ok = await csSendAway(msg); } catch (_) { ok = false; }
   IDEA.sending = false;
   ideaLock(false); $("idea-submit").textContent = t("ns.submit");
   if (!ok) { IDEA.fail = true; ideaRefresh(); return; }   // 框留著、方向不清,腳放那一句

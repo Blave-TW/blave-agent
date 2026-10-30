@@ -117,7 +117,7 @@ function tvPaintSlot(e) {
   if (cap) { cap.hidden = !m.cap; if (m.cap) cap.textContent = t(m.cap, { platform: "TradingView" }); }
   const mk = (tag, cls, text) => xpMk(tag, cls + " tv-x", text);
   const own = c.row.querySelector(".xp-st:not(.tv-x)");   // 存檔結果那一格(export.js);我們的東西插在它前面
-  const soft = m.soft && running === true ? m.soft : null;   // 回合結束就收:那句只在「現在按不了」的時候成立
+  const soft = null;   // 0.1.37 起回合中也按得了(另開分頁送,csSendAway):「現在按不了」那句不再出
   /* 卡:說明句在動作列上面,鈕與狀態在動作列裡。程式碼分頁固定三層:動作列 / 句子自己一行 / 出口鈕一行——
      後兩層裝在動作列後面另起的 .xv-msg 裡。塞在動作列裡時同一個狀態 zh 排成一行、en 折成兩行(設計稽核 0.1.8 第三批 D2) */
   const code = c.where === "code";
@@ -172,10 +172,9 @@ async function tvSend(c) {
 }
 async function tvAgentPaste(e) {
   const key = tvKeyOf(e.ctx), id = e.ctx.strategy;
-  if (running === true) { if (key) tvSet(key, { type: "busy" }); busyHit("send"); return; }
   const msg = tvPasteMsg(id, t("tv.msg.paste")); if (!msg) return;
   if (paneSt.chat.off) paneToggle("chat", false);
-  if (await submitMessage(msg)) trackFeature("tv_agent_paste");
+  if (await csSendAway(msg)) trackFeature("tv_agent_paste");
 }
 const tvSlotOf = (key) => TV.slots.find((e) => e.ctx.row.isConnected && tvKeyOf(e.ctx) === key) || null;
 

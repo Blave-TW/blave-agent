@@ -12,7 +12,9 @@ import json, os, re, subprocess, sys, tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 doc = open(os.path.join(ROOT, "references", "cloud-handoff.md"), encoding="utf-8").read()
 sec = doc[doc.index("## Reports asked from the cloud view"):doc.index("## Updating the cloud machine")]
-SCRIPT = re.search(r"```py\n(.*?\n)```\n", sec, re.S).group(1)
+# 0.1.37:主機上的請求檔帶這一輪的資料夾名(references 裡寫 <turn>,agent 照提示換成對話 id)
+TURN = "desktop-report01"
+SCRIPT = re.search(r"```py\n(.*?\n)```\n", sec, re.S).group(1).replace("<turn>", TURN)
 
 COMMON = '''
 import json
@@ -60,11 +62,11 @@ def run(lib_src, mode, req):
     os.makedirs(os.path.join(ws, "lib")); os.makedirs(os.path.join(ws, "tmp"))
     open(os.path.join(ws, "lib", "__init__.py"), "w").close()
     open(os.path.join(ws, "lib", "report_templates.py"), "w").write(lib_src)
-    json.dump(req, open(os.path.join(ws, "tmp", "cloud-report.json"), "w"))
+    json.dump(req, open(os.path.join(ws, "tmp", "cloud-report-" + TURN + ".json"), "w"))
     p = subprocess.run([sys.executable, "-", mode], input=SCRIPT, text=True, capture_output=True, cwd=ws)
     lines = [json.loads(x) for x in p.stdout.splitlines() if x.startswith("{")]
     pub = os.path.join(ws, "published.json")
-    return p, lines, (json.load(open(pub)) if os.path.exists(pub) else None), os.path.exists(os.path.join(ws, "tmp", "cloud-report.json"))
+    return p, lines, (json.load(open(pub)) if os.path.exists(pub) else None), os.path.exists(os.path.join(ws, "tmp", "cloud-report-" + TURN + ".json"))
 
 
 BUILD = {"template": "crypto_market_brief", "args": [], "kwargs": {"extra": ["x"]}}

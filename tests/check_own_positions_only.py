@@ -654,7 +654,8 @@ flatten._record_order_error = lambda *a, **k: FERR.append(a)
 flatten._wait_for_inflight = lambda *a, **k: []
 flatten.guard = types.SimpleNamespace(halted=lambda: True, trip_halt=lambda *a: None,
                                       restart_stopped=lambda: False,
-                                      grant_halt_closes=lambda *a: None)
+                                      grant_halt_closes=lambda *a: None,
+                                      hold_turn_money=lambda: None, TurnMoneyBusy=type("TurnMoneyBusy", (RuntimeError,), {}))
 
 
 def close_all():

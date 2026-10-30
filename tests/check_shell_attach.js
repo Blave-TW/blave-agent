@@ -106,9 +106,9 @@ try {
     t("外殼啟動時清一次(startStep,失敗不擋啟動);七天同 runtime/prune_job.py", /startStep\("inbound prune", \(\) => require\("\.\/attach"\)\.prune\(WS\)\);/.test(mainSrc) && /INBOUND_RETENTION_DAYS = 7\b/.test(fs.readFileSync(path.join(ROOT, "runtime", "prune_job.py"), "utf8")) && /const INBOUND_KEEP_MS = 7 \* 24 \* 3600 \* 1000;/.test(fs.readFileSync(path.join(SHELL, "attach.js"), "utf8"))); }
 
   // ── main.js 接線 ──
-  const rt = (mainSrc.match(/async function runTurn\(win, \{[^}]*\}\) \{[\s\S]*?\n\}/) || [""])[0];
+  const rt = (mainSrc.match(/async function runTurn\(rec, \{[^}]*\}\) \{[\s\S]*?\n\}/) || [""])[0];
   t("runTurn 收 attachments:先驗整份清單(個數 / 合計 / 重名 / 任一個壞 → 整輪不跑)與加上那幾行之後的 stdin 上限 → 落地 workspace/tmp/inbound → withNotes 接在訊息尾端",
-    /async function runTurn\(win, \{ sessionId, message, [^}]*attachments(, suggestMode)? \}\)/.test(rt)
+    /async function runTurn\(rec, \{ sessionId, message, [^}]*attachments(, suggestMode)? \}\)/.test(rt)
     && /const vs = at\.validateAll\(attachments\);\n\s*if \(!vs\) throw new Error\("bad attachment"\);\n\s*if \(Buffer\.byteLength\(at\.withNotes\(message, vs\.map\(\(v\) => "0000000000_" \+ v\.name\)\), "utf8"\) > MESSAGE_MAX_BYTES\) throw new Error\("bad message"\);/.test(rt)
     && /if \(at\) message = at\.withNotes\(message, at\.saveAll\(WS, attachments\)\);/.test(rt) && rt.indexOf("at.saveAll(") < rt.indexOf("child.stdin.end(message)"));
   { const iVal = rt.indexOf("at.validateAll(attachments)"), iSave = rt.indexOf("at.saveAll(WS, attachments)"), iCodex = rt.indexOf('throw new Error("AGENT_BIN_MISSING")'), iKey = rt.indexOf('throw new Error("APIKEY_MISSING")');
@@ -221,12 +221,12 @@ try {
     t("貼上:剪貼簿沒檔 → 文字照常貼(不 preventDefault)", paste(cd([], "純文字")) === "text:0" && paste(null) === "text:0" && paste({}) === "text:0"); }
   const sd = cut("sendDraft"), sub = (appSrc.match(/async function submitMessage\(msg, opts\) \{[\s\S]*?\n\}/) || [""])[0];
   t("sendDraft:純附件可送;交出整份清單(同一份陣列);chip 不在這裡清(由 submitMessage 在 started 那一刻清:還掛著同一批才清)", /const attachments = attachedFiles;[^\n]*\n\s*if \(\(!msg && !attachments\.length\) \|\| running\) return;/.test(sd) && /await submitMessage\(msg, \{ typed: true, attachments \}\);/.test(sd) && !/setAttachments\(/.test(sd)
-    && /if \(r\.started && attachments\.length && attachedFiles === attachments\) setAttachments\(\[\]\);\n\s*if \(r\.started\) \{/.test(sub) && (sub.match(/setAttachments\(/g) || []).length === 1);
+    && /if \(\(r\.started \|\| r\.queued\) && attachments\.length\) \{ if \(T === CS\.cur && attachedFiles === attachments\) setAttachments\(\[\]\); else if \(T\.composer\.files === attachments\) T\.composer\.files = \[\]; \}/.test(sub) && (sub.match(/setAttachments\(/g) || []).length === 1);
   t("submitMessage:純附件可送;泡泡一個檔一行;送出那一刻才讀位元組(任一個讀不到 → 整句不送、講一行、收泡泡、chip 留著);payload 帶 attachments: [{ name, mime, data }]",
     /const attachments = opts && Array\.isArray\(opts\.attachments\) \? opts\.attachments : \[\];\n\s*if \(\(!msg && !attachments\.length\) \|\| running\) return false;/.test(sub) && /addMsg\("you", msg, attachments\.map\(\(a\) => a\.name\)\)/.test(sub)
     && /att = await Promise\.all\(attachments\.map\(async \(a\) => \(\{ name: a\.name, mime: a\.file\.type \|\| "application\/octet-stream", data: await readAttachment\(a\.file\) \}\)\)\);/.test(sub)
-    && /catch \(_\) \{ addMsg\("sys", t\("ws\.attachReadFail"\)\)\.dataset\.i18n = "ws\.attachReadFail"; unsend\(\); unlock\(\); return false; \}/.test(sub) && /viewing, attachments: att \}\);/.test(sub) && !/\battachment\b/.test(sub.replace(/\/\/[^\n]*/g, "")));
-  t("…回合跑起來才送埋點(chat_sent 之後):一則裡出現哪幾種來源各送一次、2 個以上加送 attach_multi;busy / 版本閘那幾條不送", /if \(r\.started\) \{ busyStart\(\); trackFeature\("chat_sent"\); for \(const k of attachKinds\(attachments\)\) trackFeature\(ATTACH_FEATURE\[k\]\); if \(attachments\.length > 1\) trackFeature\("attach_multi"\); return true; \}/.test(sub) && (sub.match(/attachKinds\(/g) || []).length === 1);
+    && /catch \(_\) \{ return inT\(\(\) => \{ addMsg\("sys", t\("ws\.attachReadFail"\)\)\.dataset\.i18n = "ws\.attachReadFail"; unsend\(\); unlock\(\); return false; \}\); \}/.test(sub) && /viewing, attachments: att \}\)\);/.test(sub) && !/\battachment\b/.test(sub.replace(/\/\/[^\n]*/g, "")));
+  t("…回合跑起來才送埋點(chat_sent 之後):一則裡出現哪幾種來源各送一次、2 個以上加送 attach_multi;busy / 版本閘那幾條不送", /if \(r\.started \|\| r\.queued\) \{ trackFeature\("chat_sent"\); for \(const k of attachKinds\(attachments\)\) trackFeature\(ATTACH_FEATURE\[k\]\); if \(attachments\.length > 1\) trackFeature\("attach_multi"\); \}\n\s*if \(r\.started\) \{ busyStart\(\); return true; \}/.test(sub) && (sub.match(/attachKinds\(/g) || []).length === 1);
   { const ks = vm.runInNewContext(cut("attachKind") + "\n" + cut("attachKinds") + "\nattachKinds");
     const k = ks([{ file: { type: "image/png" }, from: "paste" }, { file: { type: "image/png" }, from: "paste" }, { file: { type: "image/jpeg" }, from: "file" }, { file: { type: "text/csv" }, from: "file" }]);
     t("attachKinds:去重、順序同第一次出現", k.join() === "paste,image,file" && ks([{ file: { type: "text/csv" }, from: "file" }, { file: { type: "text/plain" }, from: "file" }]).join() === "file" && ks([]).length === 0, k); }
@@ -244,14 +244,14 @@ try {
       && (appSrc.match(/resendLast\(\)/g) || []).length >= 4 && /const resend = \(\) => \{ resendLast\(\); \};/.test(akSrc) && /if \(!canResend\(\)\) return; if \(dataCard === card\) dataCard = null;/.test(appSrc)); }
   { // 停止還原:真的跑 stopRestore 與 turn-end 那一段
     const mk = (chip) => { const els = { ta: { value: "", focused: false, focus() { this.focused = true; } } }, st = { set: [] };
-      const fn = new Function("$", "autosize", "st", "chip", "let attachedFiles = chip; const setAttachments = (list) => { attachedFiles = list; st.set.push(list); };\n" + cut("stopRestore") + "\nreturn stopRestore;")((id) => els[id], () => {}, st, chip); return { fn, ta: els.ta, st }; };
+      const fn = new Function("$", "autosize", "st", "chip", "let attachedFiles = chip; const setAttachments = (list) => { attachedFiles = list; st.set.push(list); }; const tabBg = () => false;\n" + cut("stopRestore") + "\nreturn stopRestore;")((id) => els[id], () => {}, st, chip); return { fn, ta: els.ta, st }; };
     const list = [{ name: "a.csv" }, { name: "b.png" }], other = [{ name: "c.csv" }];
     const a = mk([]); a.fn("", list); const b2 = mk(other); b2.fn("看一下", list); const c = mk([]); c.fn("看一下", list); const d = mk([]); d.fn("", []);
     t("stopRestore:純附件那句 → 整份清單放回 chip(同一份陣列)、輸入框不動、游標回輸入框", a.st.set.length === 1 && a.st.set[0] === list && a.ta.value === "" && a.ta.focused);
     t("stopRestore:字與清單一起放回;chip 已經掛了別的 → 不蓋,字照樣放回;什麼都沒有 → 不動", c.st.set.length === 1 && c.ta.value === "看一下" && b2.st.set.length === 0 && b2.ta.value === "看一下" && d.st.set.length === 0 && !d.ta.focused);
     const stopBlk = (appSrc.match(/if \(stopped && lastUserTyped\) \{[\s\S]*?\n  \}/) || [""])[0];
     const nm = (l) => (l && l.length ? l.map((x) => x.name).join("+") : "-");
-    const end = (o) => { const log = []; new Function("stopped", "lastUserTyped", "lastUserText", "lastUserAttachments", "attachedFiles", "turnGotReply", "turnHadTool", "turnBubble", "stopRestore", stopBlk)(true, true, o.text, o.att, o.chip, !!o.reply, false, { parentNode: {}, remove: () => log.push("bubble-removed") }, (x, l) => log.push("restore:" + x + ":" + nm(l))); return log.join(); };
+    const end = (o) => { const log = []; new Function("stopped", "lastUserTyped", "lastUserText", "lastUserAttachments", "attachedFiles", "turnGotReply", "turnHadTool", "turnBubble", "stopRestore", "tabBg", stopBlk)(true, true, o.text, o.att, o.chip, !!o.reply, false, { parentNode: {}, remove: () => log.push("bubble-removed") }, (x, l) => log.push("restore:" + x + ":" + nm(l)), () => false); return log.join(); };
     t("停止(turn-end):純附件那句不再無聲消失——泡泡收回、整份清單回到 chip", end({ text: "", att: list, chip: [] }) === "bubble-removed,restore::a.csv+b.png", end({ text: "", att: list, chip: [] }));
     t("…chip 被回合中另外掛的佔住(放不回去)→ 泡泡留著;沒帶檔的句子照舊收泡泡;有回覆的照舊留泡泡、清單仍放回", end({ text: "", att: list, chip: other }) === "restore::a.csv+b.png" && end({ text: "嗨", att: [], chip: other }) === "bubble-removed,restore:嗨:-" && end({ text: "嗨", att: list, chip: [], reply: true }) === "restore:嗨:a.csv+b.png");
     // 沒送出去的路(unsend):真的跑那一行。稽核 P2:「再送一次」遇到 busy / 版本閘 / 讀檔失敗,而 chip 已被另一批佔住 → 原本泡泡照收、檔放不回,無聲消失
@@ -261,7 +261,7 @@ try {
     t("…chip 被另一批佔住(放不回去)→ 泡泡留著,檔不無聲消失;自動組的固定句(沒帶檔)照舊只收泡泡、不塞回輸入框", un({ text: "", att: list, chip: other }) === "restore::a.csv+b.png" && un({ text: "看一下", att: list, chip: other }) === "restore:看一下:a.csv+b.png" && un({ text: "轉出", att: [], chip: [], typed: false }) === "bubble-removed", unLine); }
   t("addMsg:帶檔名時原句之後一個檔一行「迴紋針 + 檔名」(設計稽核 0.1.17:不用 📎 emoji;圖示複製輸入框那顆 .icon-attach、檔名走文字節點、不拼 innerHTML)", /\(attachments \|\| \[\]\)\.forEach\(\(name, i\) => \{ if \(text \|\| i\) b\.appendChild\(document\.createTextNode\("\\n"\)\); b\.appendChild\(attachLine\(name\)\); \}\);/.test(cut("addMsg"))
     && /s\.className = "msg-attach";\n\s*s\.append\(\$\("attach-btn"\)\.querySelector\("\.icon-attach"\)\.cloneNode\(true\), document\.createTextNode\(name\)\);/.test(cut("attachLine")) && !/innerHTML/.test(cut("attachLine")));
-  t("app.js / index.html 沒有 📎(canon:不用 emoji);純文字場合(對話標題)只留檔名", !/📎/.test(appSrc) && !/📎/.test(html) && /if \(!csTitle\) \{ csTitle = msg \|\| attachments\[0\]\.name; csRenderHead\(\); csRemember\(\); \}/.test(appSrc));
+  t("app.js / index.html 沒有 📎(canon:不用 emoji);純文字場合(對話標題)只留檔名", !/📎/.test(appSrc) && !/📎/.test(html) && /if \(!csTitle\) \{ csTitle = msg \|\| attachments\[0\]\.name; csRenderHead\(\); csRemember\(\);[^\n]*tabsSave\(\); \}/.test(appSrc));
   t("舊對話畫回去:使用者那句走 addHistoryYou(拆掉那一行、畫迴紋針 + 檔名);標題不帶那一行、純附件開頭的只留檔名", /x\.turn\.role === "user" \? addHistoryYou\(x\.turn\.content\)/.test(appSrc) && /function addHistoryYou\(content\) \{ const a = splitAttachNote\(content\); return addMsg\("you", a\.text, a\.attachments\); \}/.test(appSrc) && /csTitle = first\.text \|\| first\.attachments\[0\] \|\| "";/.test(appSrc));
   t("畫面拿不到路徑:app.js 沒讀 File.path、沒有 webUtils", !/\.path\b[^\n]*attach|webUtils|getPathForFile/i.test(appSrc.split("聊天附件")[1] || "x"));
   t("telemetry 不記檔名:trackFeature 只收名字", !/trackFeature\([^)]*\.name/.test(appSrc));

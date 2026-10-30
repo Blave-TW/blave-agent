@@ -5,6 +5,7 @@
 //   上傳 needs_user、GET 搜尋框可以送出、接手期間工具回 user_in_control、read 的 meta / outline / section、8 頁上限第 9 頁排隊。
 // 跑法:node tests/check_shell_browser_e2e.js(找不到 shell/node_modules 的 Electron 就 SKIP)
 const path = require("path"), fs = require("fs"), os = require("os");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell");
 const GATE = require("./_electron_gate");
 if (!process.versions.electron) {
@@ -97,7 +98,7 @@ app.whenReady().then(async () => {
   win.webContents.send = (ch, ev) => { if (ch === "browser-event") sent.push(ev); return realSend(ch, ev); };
   let REDUCED = false;
   const B = require(path.join(SHELL, "browser")).createBrowser({ electron, stateDir: path.join(tmp, "snaps"), reportsDir, getWin: () => win, uiLang: () => "en", track: (n) => tracked.push(n), version: "test", reducedMotion: () => REDUCED });
-  const m = await B.beginTurn(win, "desktop-e2etest1");
+  const m = await BT.begin(B, win, "desktop-e2etest1");
   t("beginTurn → 本機 MCP 網址 + token", /^http:\/\/127\.0\.0\.1:\d+\/mcp$/.test(m.url) && /^[0-9a-f]{48}$/.test(m.token));
   const ctx = { live: () => true };
   const call = (n, a) => { if (process.env.E2E_TRACE) console.log("TRACE", n, JSON.stringify(a || {}).slice(0, 80)); return B._call(n, a || {}, ctx); };
@@ -173,7 +174,7 @@ app.whenReady().then(async () => {
   t("交還後恢復", J(await call("browser_read", { tab: at, part: "meta" })).ok);
 
   // ── 稽核修正 ──
-  B.endTurn(); await B.beginTurn(win, "desktop-e2etest3");
+  BT.end(B); await BT.begin(B, win, "desktop-e2etest3");
   r = J(await call("browser_open", { url: "http://fx7.test/typing" })); const ty = r.tab; await call("browser_wait", { tab: ty });
   const tyT = B._tabs.byAlias(ty);
   r = J(await call("browser_snapshot", { tab: ty }));
@@ -290,8 +291,8 @@ app.whenReady().then(async () => {
   t("favicon 抓不到的網站最多試兩個網址,換頁也不再重試", hits.filter((h) => /fa2\.test\/(big\.ico|favicon\.ico)/.test(h)).length <= 2 && hits.filter((h) => /fa2\.test\/(big\.ico|favicon\.ico)/.test(h)).length >= 1);
   t("favicon 超過 64KB、或 content-type 不是 image/* → 不收(畫字母格)", !sent.some((e) => e.type === "page_favicon" && (e.id === bigId || e.id === htmlId)));
   fs.writeFileSync(path.join(reportsDir, "notes.txt"), "x");
-  B.endTurn();
-  await B.beginTurn(win, "desktop-e2etest2");   // 新回合:每回合的開頁上限歸零(速率另有每分鐘 20 頁)
+  BT.end(B);
+  await BT.begin(B, win, "desktop-e2etest2");   // 新回合:每回合的開頁上限歸零(速率另有每分鐘 20 頁)
   // ── 縮圖:分頁停在視窗外(capturePage 回空圖)也拍得到;讀完之後多拍兩輪才停 ──
   { win.showInactive(); await new Promise((res) => setTimeout(res, 300));   // 真實情況下主視窗是顯示中的;分頁照樣停在視窗外
     const x = J(await call("browser_open", { url: "http://fx.test/article" })); await call("browser_wait", { tab: x.tab });
@@ -346,7 +347,7 @@ app.whenReady().then(async () => {
   r = J(await call("browser_open_many", { urls }));
   const r9 = J(await call("browser_open", { url: "http://fx9.test/p" }));
   t("活的分頁滿 8 頁 → 之後的排隊", r.ok && B._tabs.liveCount() <= 8 && (r9.status === "queued" || r.tabs.some((x) => x.status === "queued")));
-  B.endTurn();
+  BT.end(B);
   r = J(await B._call("browser_tabs", {}, { live: () => false }));
   t("回合結束後工具一律拒(browser_off)", !r.ok && r.error === "browser_off");
   t("回合紀錄寫了、來源有快照", B.history("desktop-e2etest1").length === 1 && B.history("desktop-e2etest1")[0].sources.length >= 1);

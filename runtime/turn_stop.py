@@ -614,7 +614,9 @@ async def _watch(sink, task, path, hold_engine):
                   "holding the engine", file=sys.stderr)
         hold = hold_engine and not gave_up
         sweep = loop.run_in_executor(None, kill_tree, None, hold)
-        while hold and not (await asyncio.wait({sweep}, timeout=1.0))[0]:
+        # wake when the next ping is due, not on a fixed 1 s tick: a tick that lands a few ms short of the
+        # 1 s threshold would push that ping to the next tick (~2 s gaps against the shell's 5 s silence limit)
+        while hold and not (await asyncio.wait({sweep}, timeout=max(0.05, 1.0 - (time.monotonic() - last_ping))))[0]:
             ping_due()
         _, labels = await sweep
         left.update(labels)

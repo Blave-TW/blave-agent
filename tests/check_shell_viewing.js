@@ -34,7 +34,7 @@ t("runtime 認得 --message-stdin,而且訊息的位置參數變選填(機隊照
 t("runtime 認得 --suggest-mode(建議下一步 v2,外殼 main.js suggestArgs 會帶;runtime 那半沒接上前外殼不可以出貨)", (() => { const rt = fs.readFileSync(path.join(__dirname, "..", "runtime", "agent_turn.py"), "utf8"); return /add_argument\("--suggest-mode", default="normal", choices=\["normal", "reduced", "off"\]\)/.test(rt); })());
 t("runtime 認得 --viewing-env(runtime 那半;沒接上前外殼不可以出貨)", (() => { const rt = fs.readFileSync(path.join(__dirname, "..", "runtime", "agent_turn.py"), "utf8"); return /add_argument\("--viewing-env"/.test(rt); })());
 t("runTurn 真的把它接上 spawn 的參數", /\.\.\.viewingArgs\(viewing\),/.test(mainSrc) && /effort: rawEffort, viewing, note, attachments, suggestMode \}/.test(mainSrc));
-t("send-message:turnStarting 在第一個 await 之前就立起(挪到後面,連按兩下會 spawn 兩顆 agent 搶同一個 session.db)", (() => { const i = mainSrc.indexOf('ipcMain.handle("send-message"'), body = mainSrc.slice(i, mainSrc.indexOf("runTurn(win, payload)", i)).replace(/\/\/.*$/gm, ""); const a = body.indexOf("turnStarting = true"), w = body.indexOf("await "); return a > 0 && w > 0 && a < w; })());
+t("startTurn:回合表那一筆在第一個 await 之前就進表(挪到後面,連按兩下會 spawn 兩顆 agent 搶同一個 session.db)", (() => { const i = mainSrc.indexOf("async function startTurn("), body = mainSrc.slice(i, mainSrc.indexOf("function turnLaunch(", i)).replace(/\/\/.*$/gm, ""); const a = body.indexOf("turns.set(sid, rec)"), w = body.indexOf("await "); return a > 0 && w > 0 && a < w; })());
 t("send-message 只收自家頁面(會 spawn agent、花 AI 額度)", /ipcMain\.handle\("send-message", async \(e, payload\) => \{\s*if \(!fromOurPage\(e\)\) return/.test(mainSrc));
 
 // renderer:送出當下的畫面 → payload(兩袋:RP = 這台電腦選中的、RPC = 雲端選中的;#tr / #rp 誰開著由 envShowMain 決定)
