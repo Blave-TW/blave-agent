@@ -1881,7 +1881,7 @@ msgid "set.awake.lead"
 msgstr "Only blocks idle sleep (the screen still turns off). A closed lid, a dead battery or manual sleep still stops auto-trading."
 
 msgid "set.awake.leadWin"
-msgstr "Only blocks idle sleep (the screen still turns off); a laptop must stay plugged in. A closed lid, a dead battery or manual sleep still stops auto-trading."
+msgstr "Only blocks idle sleep (the screen still turns off); keep a laptop plugged in. A closed lid, dead battery or manual sleep stops auto-trading."
 
 msgid "set.awake.leadOff"
 msgstr "Auto-trading stops while the computer sleeps."
@@ -3058,6 +3058,12 @@ msgstr "Uploads strategies, positions and equity every 2 minutes, visible only t
 msgid "mv.leadNoName"
 msgstr "Uploads strategies, positions and equity every 2 minutes, visible only to your account. Turning it off deletes this computer’s data on Blave."
 
+msgid "mv.appIos"
+msgstr "App Store"
+
+msgid "mv.appAndroid"
+msgstr "Google Play"
+
 msgid "mv.leadPending"
 msgstr "Off, but this computer’s data on Blave hasn’t been deleted yet. It’s deleted automatically once you’re back online."
 
@@ -3392,9 +3398,6 @@ msgstr "Got It"
 
 msgid "src.empty1"
 msgstr "No data sources with your own key yet."
-
-msgid "src.empty2"
-msgstr "Don’t paste keys into the chat."
 
 msgid "src.rowLocal.one"
 msgstr "{n} field · used by: {names}"
@@ -6647,9 +6650,6 @@ msgstr "For example: every strategy needs a stop loss, 2% below the entry price 
 
 msgid "rules.emptyLead"
 msgstr "No rules yet."
-
-msgid "rules.emptyHow"
-msgstr "Saying “always set a stop loss” in the chat also adds a rule."
 
 msgid "rules.full"
 msgstr "10 rules is the limit. Delete one to add another — nothing gets dropped for you."

@@ -39,4 +39,4 @@
 .set-sug .sw-l { position: relative; }
 .set-sug-l { cursor: help; text-decoration: underline dotted var(--color-greyLightMedium); text-underline-offset: 3px; }
 [data-theme="dark"] .set-sug-l { text-decoration-color: var(--ink-3); }
-.set-sug-l:hover:not([data-tip-off]) + .tip, .set-sug:has(.sw:focus-visible) .tip { display: block; }
+.set-sug-l:hover:not([data-tip-off]) + .tip, .set-sug:has(.sw:focus-visible:not([data-tip-off])) .tip { display: block; }

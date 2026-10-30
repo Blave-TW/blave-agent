@@ -48,7 +48,7 @@ function srcPaintList(box) {
   if (!names.length && !missing.length) {
     const e = srcMk("div", "src-empty");
     if (cloud) e.append(srcMk("p", "", t("src.cloudEmpty")));
-    else { e.append(srcMk("p", "", t("src.empty1")), srcBtn("btn-out", t("src.add"), () => srcOpenForm(null)), srcMk("p", "src-fine", t("src.empty2"))); }   // 名詞句 → 鈕 → 金鑰那句(canon States › Empty)
+    else e.append(srcMk("p", "", t("src.empty1")), srcBtn("btn-out", t("src.add"), () => srcOpenForm(null)));   // 名詞句 → 鈕(canon States › Empty)
     box.append(e); return;
   }
   const rows = srcMk("div", "src-rows");

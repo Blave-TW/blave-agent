@@ -256,7 +256,9 @@ const EVENTS = {
     // 更新 modal 按取消、設定開關切開／關、排程真的觸發重開(install 前)
     "upd_pill_shown", "upd_go_pill", "upd_cf_cancel", "upd_sched_on", "upd_sched_off", "upd_sched_run",
     // 0.1.36 登入額度用完卡片的〔改用 Claude Code 或 Codex〕(renderer/app.js):按了開連結本機 AI 的 modal、從那個 modal 換成功
-    "acct_local_open", "acct_local_use"] },
+    "acct_local_open", "acct_local_use",
+    // 0.1.37 設定 › 連結 QR 底下的商店名稱(renderer/app.js mvQr):按了、開系統瀏覽器之前送。掃 QR 在手機上發生、這裡看不到
+    "app_link_ios", "app_link_android"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other
