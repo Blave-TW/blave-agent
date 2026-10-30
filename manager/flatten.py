@@ -241,6 +241,16 @@ def _book_cost(row, qty, fallback):
     return abs(float(fallback or 0))
 
 
+def _unparked_share(cost, held):
+    """The part of a book row a close-all may still send, as a fraction: what a parked close
+    holds back (`held`, its book cost) is left alone — reconcile's |book| − held. 1.0 = none
+    held; 0 = all of it held."""
+    if not held:
+        return 1.0
+    cost = abs(float(cost or 0))
+    return max(0.0, cost - float(held)) / cost if cost > 0 else 0.0
+
+
 def _read_env(path=".env"):
     from lib.venue_wiring import read_env
     return read_env(path)
@@ -265,7 +275,7 @@ def _venues(env):
     return sorted(set(out) - venue_traits.unverified())
 
 
-def _flatten_spot(vid, order, env, book=None, parked=frozenset()):
+def _flatten_spot(vid, order, env, book=None, parked_held=None):
     """Sell the bot's spot coins. `book` = the bot's spot book rows
     ({"SYM": ledger_positions() row}, own_positions_only): each sells
     min(book quantity, wallet) — the wallet is one pool of the bot's and the
@@ -297,11 +307,6 @@ def _flatten_spot(vid, order, env, book=None, parked=frozenset()):
         _record_order_error("*", vid, f"close-all spot: scope read failed: {e}")
         return closed, errors + 1, closed_symbols, set(f"{s}@spot" for s in (book or {}))
     for sym, usd in scope.items():
-        if f"{sym}@spot" in parked:
-            # its earlier sale may have filled: never sold a second time before it is known
-            logging.warning(f"[{vid}] {sym} spot: a sale of unknown outcome is parked — not resent")
-            unclosed.add(f"{sym}@spot")
-            continue
         amt = balances.get(_spot_base(sym), 0.0)
         if book is not None:
             row = book[sym] or {}
@@ -317,6 +322,19 @@ def _flatten_spot(vid, order, env, book=None, parked=frozenset()):
                 unclosed.add(f"{sym}@spot")
                 continue
             amt = min(amt, float(qty))
+        held_back = parked_held(f"{sym}@spot") if parked_held else 0.0
+        if held_back:
+            # a sale of unknown outcome is parked: only the rest of the bot's share is sold
+            if book is not None:
+                share = _unparked_share(book[sym].get("size"), held_back)
+                amt = min(balances.get(_spot_base(sym), 0.0), float(book[sym]["qty"]) * share)
+            else:
+                share = _unparked_share(usd, held_back)
+                amt *= share
+            amt = float(f"{amt:.12g}")
+            unclosed.add(f"{sym}@spot")  # its book keeps describing the parked part
+            logging.warning(f"[{vid}] {sym} spot: a sale of unknown outcome is parked — selling "
+                            f"{share:.0%} of the bot's share, the parked part is left")
         if amt <= 0:
             continue
         try:
@@ -408,7 +426,7 @@ def _defer_tw_close(vid, key, exc):
 
 
 def _restore_netted(vid, order, env, positions, ledger, closed_symbols, unclosed,
-                    parked=frozenset()):
+                    parked_held=None):
     """Close-all's twin of lib.venue_wiring._netted_exit: a book row whose side
     the account does not show, while the account holds the other side on a
     one-way venue, is the bot's entry netted into the user's position. The
@@ -430,8 +448,8 @@ def _restore_netted(vid, order, env, positions, ledger, closed_symbols, unclosed
             held[sym][p["side"]] += float(p.get("size") or 0)
     for key, row in ledger.items():
         netted = float(row.get("netted") or 0)
-        if netted <= 0 or row.get("legacy") or key in parked:
-            continue  # parked: the main pass skips it too and says so
+        if netted <= 0 or row.get("legacy"):
+            continue
         sym, side = key, row.get("side")
         other = "short" if side == "long" else "long"
         h = held.get(sym, {})
@@ -440,6 +458,13 @@ def _restore_netted(vid, order, env, positions, ledger, closed_symbols, unclosed
         if _net_position_mode(order, vid, env, sym) is not True:
             continue
         qty = float(f"{min(netted, float(row.get('qty') or 0), h[other]):.12g}")
+        held_back = parked_held(key) if parked_held else 0.0
+        if held_back:
+            # a close of unknown outcome is parked on this row: only what it leaves is restored
+            qty = float(f"{qty * _unparked_share(row.get('size'), held_back):.12g}")
+            unclosed.add(key)
+            if qty <= 0:
+                continue
         try:
             order.format_qty(env, sym, qty)
         except ValueError:
@@ -608,8 +633,30 @@ def _flatten():
     # an order parked with an unknown outcome (lib/unconfirmed): ask the venue first, so a
     # fill that can be found now is in the book this close reads, and closed with it
     parked_before = _pf._settle_parked() if hasattr(_pf, "_settle_parked") else {}
-    # keys a parked CLOSE holds (a cost > 0): not closed again until its outcome is known
-    parked_close = frozenset(k for k, v in (parked_before or {}).items() if k and v)
+    # (venue, key) → the book cost a parked CLOSE holds back (entries hold none): the part a
+    # close-all leaves alone until its outcome is known. venue None = every venue.
+    parked_held = {}
+    try:
+        if parked_before is None:
+            raise RuntimeError("park file unreadable")
+        rows = (_pf._unconfirmed.read_held().values()
+                if getattr(_pf, "_unconfirmed", None) is not None else [])
+    except Exception as e:
+        # which closes may already be out is unknown: none is sent (reconcile skips its round)
+        logging.error(f"close-all: parked orders unreadable ({e}) — nothing closed")
+        _record_order_error("*", "*", "close-all: 結果不明的單的紀錄讀不到，這次沒有平倉。"
+                                      "請稍後再按一次，或到交易所核對部位。")
+        return False
+    for e in rows:
+        if isinstance(e, dict) and e.get("key") and e.get("reduce_only"):
+            k = (e.get("venue"), e["key"])
+            parked_held[k] = parked_held.get(k, 0.0) + abs(float(e.get("signed_diff") or 0))
+    for k, v in parked_before.items():
+        if v == float("inf"):  # a park a full disk refused: all of it held
+            parked_held[(None, k)] = v
+
+    def _held(vid, key):
+        return parked_held.get((vid, key), 0.0) + parked_held.get((None, key), 0.0)
     cfg = load_portfolio_config()
     own = _pf.own_positions_only(cfg) if hasattr(_pf, "own_positions_only") else cfg.get("self_ledger")
     per_venue = hasattr(_pf, "book_ready")  # a lib whose book is kept per venue
@@ -753,7 +800,8 @@ def _flatten():
         # managed SPOT inventory sells down too(2026-08-05「現貨也賣掉」)—
         # must run even when swap is flat, so no early-continue before it
         if order is not None and hasattr(order, "place_spot_market_order"):
-            c2, e2, s2, u2 = _flatten_spot(vid, order, env, spot_book, parked_close)
+            c2, e2, s2, u2 = _flatten_spot(vid, order, env, spot_book,
+                                           lambda k, vid=vid: _held(vid, k))
             closed += c2
             errors += e2
             closed_symbols |= s2
@@ -764,7 +812,7 @@ def _flatten():
             # the bot's netted share (a one-way account merged its entry into the
             # user's opposite position): give the user their position back first
             c3, e3 = _restore_netted(vid, order, env, positions, ledger, closed_symbols, unclosed,
-                                     parked_close)
+                                     lambda k, vid=vid: _held(vid, k))
             closed += c3
             errors += e3
         for p in positions:
@@ -777,12 +825,6 @@ def _flatten():
                 sym = (p.get("symbol") or "").replace("-", "").upper()
                 key = _book_key(vid, sym)
                 side, size = p.get("side"), float(p.get("size", 0))
-                if key in parked_close:
-                    # a close of unknown outcome is parked on it: sending the same close again
-                    # could take the user's own position too (its row is written below)
-                    logging.warning(f"[{vid}] {key}: a close of unknown outcome is parked — not resent")
-                    unclosed.add(key)
-                    continue
                 if not sym or side not in ("long", "short") or size <= 0:
                     logging.error(f"[{vid}] unflattenable row skipped: {p!r:.120}")
                     if sym:
@@ -820,6 +862,24 @@ def _flatten():
                         continue
                     else:
                         size = min(size, float(led["size"]) / price)
+                held_back = _held(vid, key)
+                if held_back:
+                    # a close of unknown outcome is parked on it: only the rest is closed —
+                    # resending the parked part could take the user's own position too
+                    if ledger is None:
+                        share = _unparked_share(size * price, held_back)
+                        size *= share
+                    else:
+                        share = _unparked_share(led.get("size"), held_back)
+                        own = (float(led["qty"]) if led.get("qty") is not None and not led.get("legacy")
+                               else float(led["size"]) / price)
+                        size = min(float(p.get("size", 0)), own * share)
+                    size = float(f"{size:.12g}")
+                    unclosed.add(key)  # its book keeps describing the parked part
+                    logging.warning(f"[{vid}] {key}: a close of unknown outcome is parked — "
+                                    f"closing {share:.0%} of it, the parked part is left")
+                    if size <= 0:
+                        continue
                 # Known, accepted (Wei): a non-near-month row is still sent — the
                 # close goes out as the near-month alias, so during a roll it can
                 # open the near month instead of closing the far one.
@@ -983,7 +1043,7 @@ def _flatten():
         pass
     for key, venue, ident in left:
         _record_order_error(key, venue or "*",
-                            "close-all: 這個標的有一筆結果不明的單，可能已經成交，不在這次平倉裡。"
+                            "close-all: 這個標的有一筆結果不明的單，那部分沒平。"
                             "請到交易所核對部位。",
                             extra={"kind": "order_unconfirmed", "stuck": True, "close_all": True, **ident})
         errors += 1

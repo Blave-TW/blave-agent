@@ -302,7 +302,7 @@ _park_retry = []
 
 
 def park_or_halt(symbol, exchange, error, signed_diff, reduce_only, asset_spec=None,
-                 contributors=None, sign=None, limit=False, book_cap=None):
+                 contributors=None, sign=None, limit=False, book_cap=None, book_cap_cost=None):
     """An order whose outcome is unknown (lib/unconfirmed.OrderOutcomeUnknown). Never reported
     as a rejection — that would let the next round send it again.
     - It carries the ids to look it up: parked; its symbol takes no entries until it is known.
@@ -323,6 +323,8 @@ def park_or_halt(symbol, exchange, error, signed_diff, reduce_only, asset_spec=N
         kw['limit'] = True
     if book_cap is not None:
         kw['book_cap'] = book_cap
+    if book_cap_cost is not None:
+        kw['book_cap_cost'] = book_cap_cost
     try:
         pid = _unconfirmed.park(*args, **kw)
     except Exception as e:
@@ -473,9 +475,12 @@ def book_unconfirmed(key, entry, qty, price, source, pid=None):
     netted part (lib/venue_wiring._netted_room / _netted_exit). A park id the book
     already has is not booked twice (a crash between booking and the release)."""
     pid = pid or _unconfirmed.park_id(entry)
-    if entry.get('book_cap') is not None and qty > float(entry['book_cap']):
-        # a close of the whole account position: past the bot's own share it was the user's
-        qty = float(entry['book_cap'])
+    # a close of the whole account position: past the bot's own share it was the user's
+    cap = entry.get('book_cap')
+    if cap is None and entry.get('book_cap_cost') is not None and price > 0:
+        cap = float(entry['book_cap_cost']) / price
+    if cap is not None and qty > float(cap):
+        qty = float(f"{float(cap):.12g}")
         if qty <= 0:
             return
     if pid in _booked_park_ids():

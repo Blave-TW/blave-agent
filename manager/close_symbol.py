@@ -492,22 +492,42 @@ def _outcome_unknown(ctx, e, cid):
 
 
 def _book_share(ctx, sym, side, size):
-    """(book cost of what this close may have taken, the most of its fill the book may take):
-    the bot's own row on that side, else (0, 0) — a legacy row with no quantity: its whole
-    cost, no cap."""
-    try:
-        import lib.portfolio as pf
-        book = pf.ledger_positions(ctx.venue) if hasattr(pf, "book_ready") else pf.ledger_positions()
-        row = book.get(sym) or {}
-    except Exception:
-        row = {}
+    """(book cost of what this close may have taken, cap kwargs for park_or_halt): the bot's
+    own row on that side; no row = (0, cap 0) — the account row was the user's. A row with no
+    quantity caps in cost (book_cap_cost). Raises when the book cannot be read."""
+    import lib.portfolio as pf
+    book = pf.ledger_positions(ctx.venue) if hasattr(pf, "book_ready") else pf.ledger_positions()
+    row = book.get(sym) or {}
     if row.get("side") != side:
-        return 0.0, 0.0
+        return 0.0, {"book_cap": 0.0}
     qty = None if row.get("legacy") else float(row.get("qty") or 0)
     cost = abs(float(row.get("size") or 0))
     if not qty:
-        return cost, None
-    return cost * min(1.0, float(size) / qty), qty
+        return cost, {"book_cap_cost": cost}
+    return cost * min(1.0, float(size) / qty), {"book_cap": qty}
+
+
+def _park_close(ctx, sym, side, size, u):
+    """Park a close of unknown outcome on the generic key (lib/portfolio.park_or_halt). The book
+    unreadable, or a lib/portfolio that cannot cap the booking: HALT instead — a park without
+    the book's share would book the user's part of the fill as the bot's."""
+    import inspect
+    import lib.portfolio as pf
+    try:
+        cost, cap = _book_share(ctx, sym, side, size)
+        params = inspect.signature(pf.park_or_halt).parameters
+        if not all(k in params for k in cap):
+            raise RuntimeError("lib/portfolio predates capped parks")
+    except Exception as err:
+        logging.error(f"close_symbol {sym}: not parked ({type(err).__name__}: {err}) — HALT")
+        from lib import guard
+        tag = getattr(pf, "UNPARKED_TAG", "[order_unconfirmed_unparked]")
+        guard.trip_halt(f"{tag} {sym}: a close's outcome is unknown and Blave cannot track it "
+                        f"— check the position, tell the agent what filled"[:200], "close_symbol",
+                        unconfirmed={"symbol": sym, "park_id": None})
+        return "halted"
+    return pf.park_or_halt(sym, ctx.venue, u, (-1.0 if side == "long" else 1.0) * cost, True,
+                           sign=-1 if side == "long" else 1, **cap)
 
 
 def run_close(ctx, dry_run=False):
@@ -585,10 +605,7 @@ def run_close(ctx, dry_run=False):
                     # (lib/portfolio.park_or_halt), booked once the venue answers — at most the
                     # book's own share (the close took the whole account row), held back at its cost
                     logging.warning(f"close_symbol {sym}: outcome unknown: {e}")
-                    from lib.portfolio import park_or_halt
-                    cost, cap = _book_share(ctx, sym, side, size)
-                    got = park_or_halt(sym, ctx.venue, u, (-1.0 if side == "long" else 1.0) * cost,
-                                       True, sign=-1 if side == "long" else 1, book_cap=cap)
+                    got = _park_close(ctx, sym, side, size, u)
                     print(f"close outcome unknown — it may have filled; {got}. Check the "
                           f"{side} {sym} position on the exchange; do not close it again by hand")
                     unknown = True

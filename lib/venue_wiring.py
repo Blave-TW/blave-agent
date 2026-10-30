@@ -1156,6 +1156,8 @@ def cancel_parked_order(entry):
     is then read by query_parked_order. False on any failure — retried next round."""
     venue, sym = entry.get("venue"), entry.get("venue_symbol")
     oid, cid = entry.get("order_id"), entry.get("client_order_id")
+    if str(entry.get("key") or "").endswith("@spot"):
+        return False  # no spot limit is parked with a venue yet; its cancel is cancel_spot_order
     try:
         order = importlib.import_module(f"lib.order_{venue}")
         if oid:

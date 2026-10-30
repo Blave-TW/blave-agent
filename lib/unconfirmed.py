@@ -191,12 +191,13 @@ def held_keys(rows):
 
 def park(key, err, signed_diff, reduce_only, asset_spec=None, contributors=None, now=None,
          netted_room=0.0, netted_exit=False, manual=False, venue=None, sign=None, limit=False,
-         book_cap=None):
+         book_cap=None, book_cap_cost=None):
     """Raises OSError when the file cannot be written — the caller HALTs then. manual=True: an
     order Blave cannot look up (no ids, or a venue / order type without a lookup): parked all the
     same so its symbol stays held after 啟動下單 and resolve() can book it, but never queried.
     limit=True: a limit order that may still rest — cancelled each round it reads unfinished.
-    book_cap: the most of its fill the book may take (a close of a whole account position)."""
+    book_cap: the most of its fill the book may take (a close of a whole account position);
+    book_cap_cost the same in book cost, for a book row with no quantity (converted at the fill)."""
     pid = (f"manual:{key}:{int((time.time() if now is None else now) * 1000)}" if manual
            else park_id(err))
     with _locked():
@@ -216,6 +217,7 @@ def park(key, err, signed_diff, reduce_only, asset_spec=None, contributors=None,
             "error": str(err)[:200], "manual": bool(manual),
             **({"limit": True} if limit else {}),
             **({"book_cap": float(book_cap)} if book_cap is not None else {}),
+            **({"book_cap_cost": float(book_cap_cost)} if book_cap_cost is not None else {}),
         }
         _write(rows)
     return pid

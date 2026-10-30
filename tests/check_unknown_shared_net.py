@@ -397,26 +397,36 @@ check(errs == 1 and not unconfirmed.load() and len(rows) == 1 and not rows[0].ge
 
 
 # ── close-all's main pass, end to end ────────────────────────────────────────
-def book(qty, cost):
+def book(qty, cost, legacy=False):
     json.dump({"seeded_at": "2026-09-01T00:00:00", "own_only_basis": 1, "symbols": {}},
               open("manager/ledger_seed.json", "w"))
+    leg = {"signed_diff": cost} if legacy else {"signed_diff": cost, "signed_qty": qty,
+                                                "executed_qty": qty}
     open("manager/orders.jsonl", "w").write(json.dumps(
         {"ts": "2026-09-02T00:00:00", "symbol": "BTCUSDT", "exchange": "fakex",
-         "legs": [{"signed_diff": cost, "signed_qty": qty, "executed_qty": qty}]}) + "\n")
+         "legs": [leg]}) + "\n")
     json.dump({"amounts": {"btc": cost}, "exchanges": {"btc": "fakex"}},
               open("manager/portfolio_config.json", "w"))
 
 
+def own_qty():
+    return float((pf.ledger_positions("fakex").get("BTCUSDT") or {}).get("qty") or 0)
+
+
+ACCT = {"size": 0.01}
 facct = types.ModuleType("lib.account_fakex")
-facct.get_positions = lambda env: [{"symbol": "BTCUSDT", "side": "long", "size": 0.01,
+facct.get_positions = lambda env: [{"symbol": "BTCUSDT", "side": "long", "size": ACCT["size"],
                                     "mark_price": 50000.0}]
 facct.get_equity = lambda env: {"equity": 1000}
 fmain = types.ModuleType("lib.order_fakex")
 CLOSES = []
+MAIN = {"fill": False}
 
 
 def _main_close(env, sym, side, size, client_order_id=None):
     CLOSES.append((sym, side, size))
+    if MAIN["fill"]:
+        return {"status": "filled", "executed_qty": size, "avg_price": 70000.0}
     raise OrderNotConfirmed(f"order {client_order_id} still NEW after 15s")
 
 
@@ -433,29 +443,122 @@ vw.query_parked_order = lambda entry: None
 
 def close_all():
     flatten._LOCK = None
+    del CLOSES[:]
     with contextlib.redirect_stderr(io.StringIO()):
-        return flatten.flatten()
+        ok = flatten.flatten()
+    guard.clear_halt("test")
+    return ok
+
+
+def park_close(cost, venue="fakex", reduce_only=True):
+    err = unconfirmed.OrderOutcomeUnknown("sent", venue=venue, venue_symbol="BTCUSDT",
+                                          client_order_id=f"rcP{cost}{venue}")
+    pf.park_or_halt("BTCUSDT", venue, err, -cost if reduce_only else cost, reduce_only,
+                    sign=-1 if reduce_only else 1)
 
 
 reset()
 book(0.01, 700.0)
+ACCT["size"], MAIN["fill"] = 0.01, False
 ok = close_all()
 parks = list(unconfirmed.load().values())
 check(ok is False and len(CLOSES) == 1 and len(parks) == 1 and parks[0]["key"] == "BTCUSDT"
       and parks[0]["signed_diff"] == -700.0 and str(parks[0]["client_order_id"]).startswith("flat"),
       f"F4 main pass: an older lib's OrderNotConfirmed is parked at the book's cost 700, not the "
       f"500 at the mark ({CLOSES}, {parks})")
-check(abs(pf.ledger_positions("fakex").get("BTCUSDT", {}).get("qty", 0) - 0.01) < 1e-12,
-      f"F4 its book is kept ({pf.ledger_positions('fakex')})")
-check(not [r for r in errors() if not r.get("kind")],
-      f"F4 no 下單失敗 row ({errors()})")
+check(abs(own_qty() - 0.01) < 1e-12, f"F4 its book is kept ({pf.ledger_positions('fakex')})")
+check(not [r for r in errors() if not r.get("kind")], f"F4 no 下單失敗 row ({errors()})")
 ok = close_all()
-check(ok is False and len(CLOSES) == 1 and len(unconfirmed.load()) == 1,
-      f"B1 close-all again over the parked close: nothing sent a second time ({CLOSES})")
-check(any(r.get("close_all") and r.get("kind") == "order_unconfirmed" for r in errors()),
-      f"B1 …and the row says why (結果不明，不在這次平倉裡) ({errors()[-1:]})")
+check(ok is False and CLOSES == [] and len(unconfirmed.load()) == 1,
+      f"B1 close-all again over a parked close of the whole row: nothing sent ({CLOSES})")
+check(any(r.get("close_all") and r.get("kind") == "order_unconfirmed" and "那部分沒平" in r["error"]
+          for r in errors()), f"B1 …and the row says that part was not closed ({errors()[-1:]})")
+
+reset()
+book(0.02, 1400.0)
+ACCT["size"], MAIN["fill"] = 0.02, False
+close_all()
+parks = list(unconfirmed.load().values())
+check(len(CLOSES) == 1 and CLOSES[0][2] == 0.02 and parks and parks[0]["signed_diff"] == -1400.0,
+      f"F5 a whole 0.02 / 1400 close of unknown outcome holds its cost 1400 ({CLOSES}, {parks})")
+reset()
+book(0.02, 1400.0)
+ACCT["size"] = 0.01  # the account shows half the book: the close's cost is half of it
+close_all()
+parks = list(unconfirmed.load().values())
+check(len(CLOSES) == 1 and CLOSES[0][2] == 0.01 and parks and parks[0]["signed_diff"] == -700.0,
+      f"F5 0.01 closed of a 0.02 / 1400 book: the park holds 700, not 1400 ({CLOSES}, {parks})")
+
+reset()
+book(0.02, 1400.0)
+ACCT["size"], MAIN["fill"] = 0.02, True
+park_close(700.0)
+ok = close_all()
+check(len(CLOSES) == 1 and abs(CLOSES[0][2] - 0.01) < 1e-12 and abs(own_qty() - 0.01) < 1e-12,
+      f"A1 book 0.02 / 1400 with a −700 close parked: the other 0.01 is closed, the parked "
+      f"0.01 stays in the book ({CLOSES}, {own_qty()})")
+check(ok is False and any("那部分沒平" in r["error"] for r in errors()),
+      f"A1 …and the row says the parked part was not closed ({errors()[-1:]})")
+reset()
+book(0.02, 1400.0)
+park_close(300.0, reduce_only=False)
+close_all()
+check(len(CLOSES) == 1 and abs(CLOSES[0][2] - 0.02) < 1e-12 and own_qty() == 0,
+      f"A2 a parked ENTRY holds nothing back: the whole 0.02 is closed ({CLOSES}, {own_qty()})")
+reset()
+book(0.02, 1400.0)
+park_close(1400.0, venue="otherx")
+close_all()
+check(len(CLOSES) == 1 and abs(CLOSES[0][2] - 0.02) < 1e-12,
+      f"A3 a close parked on another venue holds nothing back here ({CLOSES})")
+reset()
+book(0.02, 1400.0)
+park_close(1400.0)
+open(unconfirmed.PATH, "w").write("{not json")
+ok = close_all()
+check(ok is False and CLOSES == [] and any("讀不到" in r["error"] for r in errors()),
+      f"C3 the park file unreadable: nothing is closed, the row says why ({CLOSES}, {errors()[-1:]})")
+reset()
+book(0.02, 1400.0)
+_settle = pf._settle_parked
+pf._settle_parked = lambda *a, **k: None  # the round's own read failed (a lock held too long)
+ok = close_all()
+pf._settle_parked = _settle
+check(ok is False and CLOSES == [], f"C4 the opening settle could not read the parks: nothing closed ({CLOSES})")
+MAIN["fill"] = False
+
+# spot and netted: only the unparked share goes
+SOLD = []
+forder.place_spot_market_order = lambda env, sym, side, base_qty=None, quote_qty=None, \
+    client_order_id=None: SOLD.append(base_qty) or {"status": "filled", "executed_qty": base_qty,
+                                                    "avg_price": 2000.0}
+reset()
+with contextlib.redirect_stderr(io.StringIO()):
+    _, _, done, unclosed = flatten._flatten_spot(
+        "fakex", forder, {}, {"ETHUSDT": {"side": "long", "qty": 0.5, "size": 1000.0}},
+        lambda k: 500.0 if k == "ETHUSDT@spot" else 0.0)
+check(SOLD == [0.25] and "ETHUSDT@spot" in unclosed,
+      f"S3 spot: 500 of 1000 parked → 0.25 of 0.5 sold, its book kept ({SOLD}, {unclosed})")
+del SOLD[:]
+with contextlib.redirect_stderr(io.StringIO()):
+    flatten._flatten_spot("fakex", forder, {}, {"ETHUSDT": {"side": "long", "qty": 0.5, "size": 1000.0}},
+                          lambda k: 1000.0)
+check(SOLD == [], f"S3 spot: all of it parked → nothing sold ({SOLD})")
+RESTORES = []
+forder.place_market_order = lambda env, sym, direction, qty, client_order_id=None, reduce_only=False: \
+    RESTORES.append(qty) or {"status": "filled", "executed_qty": qty, "avg_price": 70000.0}
+reset()
+for held_back, want in ((350.0, [0.005]), (700.0, [])):
+    del RESTORES[:]
+    done, unclosed = set(), set()
+    with contextlib.redirect_stderr(io.StringIO()):
+        flatten._restore_netted(
+            "fakex", forder, {}, [{"symbol": "BTCUSDT", "side": "short", "size": 0.02}],
+            {"BTCUSDT": {"side": "long", "qty": 0.01, "netted": 0.01, "size": 700.0}}, done,
+            unclosed, lambda k, h=held_back: h)
+    check(RESTORES == want and "BTCUSDT" in unclosed,
+          f"N1 netted restore with {held_back:g} of 700 parked: sends {want} ({RESTORES}, {unclosed})")
 vw.query_parked_order = _real_query
-guard.clear_halt("test")
 
 # ── close_symbol caps what it books at the book's share ──────────────────────
 reset()
@@ -468,6 +571,31 @@ pf._settle_parked(query=lambda entry: (0.01, 70000.0), cancel=lambda entry: Fals
 row = pf.ledger_positions("fakex").get("BTCUSDT")
 check(not row or abs(float(row.get("qty") or 0)) < 1e-12,
       f"D1 the account's 0.01 filled: the book goes to 0, not a 0.004 phantom short ({row})")
+reset()
+book(0.02, 1400.0)
+rc, out = close(True)
+parks = list(unconfirmed.load().values())
+check(parks and parks[0]["signed_diff"] == -700.0 and parks[0].get("book_cap") == 0.02,
+      f"D2 0.01 closed of a 0.02 / 1400 book: holds 700, caps at 0.02 ({parks})")
+reset()
+book(None, 420.0, legacy=True)
+rc, out = close(True)
+parks = list(unconfirmed.load().values())
+check(parks and parks[0].get("book_cap_cost") == 420.0 and "book_cap" not in parks[0],
+      f"D3 a book row with no quantity caps in cost ({parks})")
+pf._settle_parked(query=lambda entry: (0.01, 70000.0), cancel=lambda entry: False)
+booked = [json.loads(x) for x in open("manager/orders.jsonl") if "unconfirmed_park_id" in x]
+check(booked and abs(booked[0]["legs"][0]["executed_qty"] - 0.006) < 1e-12,
+      f"D3 …the 0.01 fill is booked as 420 ÷ 70000 = 0.006 ({booked})")
+reset()
+book(0.01, 700.0)
+_ledger = pf.ledger_positions
+pf.ledger_positions = lambda *a, **k: (_ for _ in ()).throw(OSError("orders.jsonl unreadable"))
+rc, out = close(True)
+pf.ledger_positions = _ledger
+check(rc == cs.FAILED and not unconfirmed.load() and guard.halted(),
+      f"D4 the book unreadable: not parked as an empty book — HALT instead ({unconfirmed.load()})")
+guard.clear_halt("test")
 
 print("\n" + ("all ok" if not fails else f"{fails} FAILED"))
 sys.exit(1 if fails else 0)
