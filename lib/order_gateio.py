@@ -14,8 +14,10 @@ FAIL LOUD / CONFIRMED-NOT-SENT / HALTABLE+AUDITED via lib/guard /
 ATTRIBUTION on every request. Idempotency caveat: the `text` custom id is a
 LABEL — Gate.io does NOT reject duplicate ids AT ALL (measured live
 2026-08-05: two orders with the identical text both filled; there is not
-even Binance/OKX's un-filled-window dedup), so on OrderNotConfirmed always
-re-query (get_open_orders / order list), never blindly resubmit.
+even Binance/OKX's un-filled-window dedup), so an order POST that may have
+reached Gate.io is never sent again: a futures market order whose outcome is
+unknown raises a parkable OrderNotConfirmed (lib/unconfirmed) and is looked up
+by resolve_unknown_order, never resubmitted.
 
 Gate.io quirks handled here (SDK-cross-checked AND measured live 2026-08-05
 on a real account, single and dual mode, futures + spot):
@@ -117,9 +119,31 @@ class PriceDeviatedError(GateioError):
                      f"(Gate.io {code}: {msg} | {path})",)
 
 
-class OrderNotConfirmed(Exception):
-    """Order accepted but not terminal within timeout. It may still fill —
-    query again, never blindly resubmit (text ids do NOT dedup here)."""
+try:
+    from lib.unconfirmed import OrderOutcomeUnknown as _OutcomeUnknown
+except ImportError:  # half-updated workspace: not parkable, reported as an order failure
+    class _OutcomeUnknown(Exception):
+        def __init__(self, msg, venue=None, venue_symbol=None, order_id=None, client_order_id=None):
+            super().__init__(msg)
+            self.venue, self.venue_symbol, self.order_id = venue, venue_symbol, order_id
+            self.client_order_id = client_order_id
+
+        def parkable(self):
+            return False
+
+
+class OrderNotConfirmed(_OutcomeUnknown):
+    """An order Gate.io took, or may have taken, whose outcome is not known: no
+    usable answer to the POST, or no terminal state read before the confirm
+    timeout. It may have filled — query it, never resubmit (text ids do NOT
+    dedup here). A futures market order carries venue / venue_symbol (canonical)
+    / order_id or client_order_id (the full `t-` text) so lib/portfolio can park
+    it; spot and limit orders carry no venue (not parkable: a spot market order
+    HALTs in lib/portfolio)."""
+
+
+class _SendUnknown(Exception):
+    """An order POST whose outcome is unknown; _request turns it into OrderNotConfirmed."""
 
 
 class ProtectionFailed(Exception):
@@ -227,8 +251,22 @@ def _request(method, path, env, body=None, query="", retries=3):
                 f"out. Only the user may clear the halt (guard.clear_halt)."
             )
         guard.audit("order_attempt", **fields)
+        placing = method == "POST" and path in _PLACING_PATHS
         try:
-            data = _send(method, path, env, body, query, retries)
+            data = _send(method, path, env, body, query, retries, no_resend=placing)
+        except _SendUnknown as e:
+            p = body or {}
+            cid = p.get("text")
+            guard.audit("order_unknown", error=str(e), client_order_id=cid, **fields)
+            # only a futures market order is looked up again (resolve_unknown_order); spot and
+            # limit orders raise without a venue = not parkable
+            fut_market = (path == "/futures/usdt/orders" and str(p.get("price")) == "0"
+                          and p.get("tif") == "ioc")
+            raise OrderNotConfirmed(
+                f"order {cid} sent, no answer ({e}) — it may have filled; check the position, "
+                f"do not resubmit", venue="gateio" if fut_market else None,
+                venue_symbol=str(p.get("contract") or "").replace("_", "") if fut_market else None,
+                client_order_id=cid) from e
         except Exception as e:
             guard.audit("order_error", error=str(e), **fields)
             raise
@@ -238,7 +276,35 @@ def _request(method, path, env, body=None, query="", retries=3):
     return _send(method, path, env, body, query, retries)
 
 
-def _send(method, path, env, body=None, query="", retries=3):
+# order POSTs that are never resent once they may have reached Gate.io (price_orders: SL/TP
+# keep the old transport)
+_PLACING_PATHS = ("/futures/usdt/orders", "/spot/orders")
+# Gate.io APIv4 error labels, "Server errors" section: INTERNAL / SERVER_ERROR "Internal server
+# error", INTERNAL_SERVER_ERROR "Operation failed, please try again later", TOO_BUSY "Server is
+# too busy at the moment" — an order POST answered with one may have executed, whatever its status
+SEND_UNKNOWN_LABELS = {"INTERNAL", "SERVER_ERROR", "INTERNAL_SERVER_ERROR", "TOO_BUSY"}
+
+
+def _never_sent(e):
+    """A requests ConnectionError raised before any byte went out: the socket could not be
+    opened (refused, unreachable, DNS — urllib3 NewConnectionError / NameResolutionError,
+    wrapped in MaxRetryError). A TLS handshake timeout surfaces as ReadTimeout and cannot be
+    told apart from a lost answer, so it stays unknown."""
+    try:
+        from urllib3.exceptions import NewConnectionError
+    except ImportError:
+        return False
+    inner = e.args[0] if e.args else None
+    return isinstance(getattr(inner, "reason", None), NewConnectionError) \
+        or isinstance(inner, NewConnectionError)
+
+
+def _send(method, path, env, body=None, query="", retries=3, no_resend=False):
+    """no_resend (order POSTs): once the request may have reached Gate.io it is never sent
+    again — `text` ids have ZERO dedup (measured: two identical-text orders both fill). A
+    dropped connection, a read timeout, a body cut mid-transfer, a 5xx, or a 2xx that is
+    empty or not JSON raises _SendUnknown. Only a connect timeout, a socket that never opened
+    (refused, DNS) and REQUEST_EXPIRED (refused at authentication, re-signed) go out again."""
     api_key, secret = _creds(env)
     body_str = "" if body is None else json.dumps(body)
     last_err = None
@@ -259,20 +325,35 @@ def _send(method, path, env, body=None, query="", retries=3):
         try:
             r = requests.request(method, url, headers=headers,
                                  data=body_str or None, timeout=10)
-        except requests.exceptions.ConnectionError as e:
-            # POST only fails loud: a reset AFTER the request went out means the
-            # order may have landed even though the response died, and Gate.io
-            # `text` ids have ZERO dedup (measured: two identical-text orders
-            # both fill) — a blind resend can double a position. The reconciler
-            # re-derives the diff from live positions next round, which is the
-            # only reliable "did it land" check. GET/DELETE stay retryable.
-            if method.upper() == "POST":
+        except requests.exceptions.ConnectTimeout as e:
+            last_err = e  # no connection was made: nothing reached Gate.io
+            if attempt == retries - 1 or (method.upper() == "POST" and not no_resend):
+                raise
+            time.sleep(1 + attempt)
+            continue
+        except (requests.exceptions.InvalidURL, requests.exceptions.MissingSchema,
+                requests.exceptions.InvalidSchema, requests.exceptions.InvalidHeader):
+            raise  # refused before anything was sent
+        except requests.exceptions.RequestException as e:
+            if no_resend and _never_sent(e):
+                last_err = e  # refused / DNS failure: no socket, nothing reached Gate.io
+                if attempt == retries - 1:
+                    raise
+                time.sleep(1 + attempt)
+                continue
+            if no_resend:
+                # a reset, a read timeout, a body cut mid-transfer: the order may be in
+                raise _SendUnknown(f"{type(e).__name__}: {str(e)[:120]}") from e
+            # other POSTs (leverage, SL/TP) fail loud; GET/DELETE retry a dropped connection
+            if method.upper() == "POST" or not isinstance(e, requests.exceptions.ConnectionError):
                 raise
             last_err = e
             if attempt == retries - 1:
                 raise
             time.sleep(1 + attempt)
             continue
+        if no_resend and r.status_code >= 500:
+            raise _SendUnknown(f"HTTP {r.status_code}: {r.text[:120]}")
         if not r.ok:
             try:
                 err = r.json()
@@ -285,13 +366,19 @@ def _send(method, path, env, body=None, query="", retries=3):
                 _sync_time(env)
                 last_err = GateioError(label, err.get("message", ""), path)
                 continue
+            if no_resend and label in SEND_UNKNOWN_LABELS:
+                raise _SendUnknown(f"{label}: {err.get('message', '')}")
             cls = PriceDeviatedError if label == "MARKET_PRICE_TOO_DEVIATED" else GateioError
             raise cls(label, err.get("message", r.text[:120]), path)
         if not r.text:
+            if no_resend:
+                raise _SendUnknown(f"HTTP {r.status_code} empty body")
             return {}  # DELETE endpoints return empty bodies
         try:
             return r.json()
         except ValueError:
+            if no_resend:
+                raise _SendUnknown(f"HTTP {r.status_code} non-JSON ({r.text[:80]})")
             raise GateioError(r.status_code, f"non-JSON response ({r.text[:120]})", path)
     raise last_err
 
@@ -396,7 +483,10 @@ def get_position_mode(env):
 def get_order(env, symbol, order_id):
     """Futures order by id, normalized. executed_qty is BASE units (size/left
     are contracts — converted here). Order responses carry no fee; commission
-    is fetched best-effort from my_trades."""
+    is fetched best-effort from my_trades. order_id may also be our `t-` text,
+    for a short while only: "within 60 seconds after the end of the order"
+    (SDK FuturesApi.md, get_futures_order), "only for 30 minutes since
+    creation" (APIv4 docs) — after that only by id. Not measured."""
     o = _send("GET", f"/futures/usdt/orders/{order_id}", env)
     if "status" not in o:
         raise GateioError("N/A", f"order query missing status: {list(o)}", "orders")
@@ -414,7 +504,7 @@ def get_order(env, symbol, order_id):
     if status == "finished" and filled_ct > 0:
         try:  # best-effort — fee lives on trades, not the order
             trades = _send("GET", "/futures/usdt/my_trades", env,
-                           query=f"contract={_contract(symbol)}&order={order_id}")
+                           query=f"contract={_contract(symbol)}&order={o.get('id', order_id)}")
             commission = sum(abs(float(t.get("fee", 0) or 0)) for t in trades)
             commission_asset = "USDT" if commission else ""
         except Exception:
@@ -432,21 +522,36 @@ def get_order(env, symbol, order_id):
     }
 
 
-def _confirm(env, symbol, order_id, getter, timeout=15):
+TERMINAL_STATUSES = {"filled", "canceled"}  # get_order / get_spot_order normalized
+
+
+def _confirm(env, symbol, order_id, getter, timeout=15, venue=None):
+    """Poll an accepted order to a terminal state. A read that fails (timeout, 5xx, not
+    found — the query side lagging the engine) leaves its fate unknown, never rejected: the
+    poll goes on, and no terminal state before timeout raises OrderNotConfirmed with the
+    order id (venue set only by the futures market path: the parked order is looked up there)."""
     deadline = time.time() + timeout
     order = None
+    last_err = None
     while time.time() < deadline:
-        order = getter(env, symbol, order_id)
+        try:
+            order = getter(env, symbol, order_id)
+        except Exception as e:
+            last_err = e
+            time.sleep(1)
+            continue
         if order["status"] == "filled":
             return order
         if order["status"] == "canceled":
             raise GateioError("N/A", f"order {order_id} ended canceled with zero fill",
                               "confirm")
         time.sleep(1)
+    state = (order["status"] if order else
+             f"not queryable ({type(last_err).__name__}: {str(last_err)[:80]})")
     raise OrderNotConfirmed(
-        f"order {order_id} still {order['status'] if order else 'UNKNOWN'} after "
-        f"{timeout}s — re-query before any resubmit (text ids do not dedup)"
-    )
+        f"order {order_id} accepted but {state} after {timeout}s — it may have filled; "
+        f"check the position, do not resubmit (text ids do not dedup)",
+        venue=venue, venue_symbol=symbol if venue else None, order_id=str(order_id))
 
 
 def place_market_order(env, symbol, direction, qty, client_order_id=None,
@@ -478,11 +583,115 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
     }
     if reduce_only:
         body["reduce_only"] = True
-    placed = _request("POST", "/futures/usdt/orders", env, body)
-    order_id = placed.get("id")
-    if not order_id:
-        raise GateioError("N/A", f"order response missing id: {placed}", "orders")
-    return _confirm(env, symbol, order_id, get_order, timeout=confirm_timeout)
+    text = body["text"]
+    try:
+        try:
+            placed = _request("POST", "/futures/usdt/orders", env, body)
+        except OrderNotConfirmed:
+            # a text lookup works only for a short while (get_order) and the next round is
+            # minutes away: read it now; not found / any error = still unknown (parked,
+            # resolve_unknown_order then matches fills by text)
+            try:
+                order_id = get_order(env, symbol, text)["order_id"]
+            except Exception:
+                order_id = None
+            if not order_id:
+                raise
+            placed = {"id": order_id}
+        order_id = placed.get("id")
+        if not order_id:
+            # a 2xx JSON answer is Gate.io's success: the order may be in, only its id is missing
+            raise OrderNotConfirmed(
+                f"order {text} accepted without an id ({str(placed)[:120]}) — it may have filled; "
+                f"check the position, do not resubmit", venue="gateio", client_order_id=text)
+        if placed.get("status") == "finished" and not _filled_ct(placed):
+            # the POST answer itself says it ended with nothing filled (e.g. ioc on an empty
+            # book): known, and polling it could read "not found" for the whole window
+            raise GateioError("N/A", f"order {order_id} ended {placed.get('finish_as')} with "
+                                     f"zero fill", "orders")
+        return _confirm(env, symbol, order_id, get_order, timeout=confirm_timeout,
+                        venue="gateio")
+    except OrderNotConfirmed as e:
+        # canonical dashless: the parked order is queried with it through get_order
+        e.venue = "gateio"
+        e.venue_symbol = c.replace("_", "")
+        e.client_order_id = e.client_order_id or text
+        raise
+
+
+def _filled_ct(o):
+    return abs(abs(float(o.get("size", 0) or 0)) - abs(float(o.get("left", 0) or 0)))
+
+
+# fills are searched from PARK_TRADE_LOOKBACK_S before the park to PARK_TRADE_LOOKAHEAD_S after
+# it — a market order fills before it is parked, so the window is fixed, never grows with the
+# park's age (same as order_bingx)
+PARK_TRADE_LOOKBACK_S = 300
+PARK_TRADE_LOOKAHEAD_S = 600
+_TRADES_PAGE = 100   # my_trades_timerange's documented default; its maximum is not documented
+_TRADES_MAX_PAGES = 20
+
+
+def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, parked_at=None,
+                          now=None):
+    """A parked futures market order's outcome (lib/unconfirmed): (executed_qty, avg_price) in
+    BASE units once it is terminal — qty 0 = it ended without a fill — None while unknown.
+    Read-only. Query single order by id, or by our `t-` text when only that is known (Gate.io
+    finds a text only for a short while — see get_order); when that answers ORDER_NOT_FOUND, the
+    account's fills on the contract around the park (my_trades_timerange — each row carries the
+    order's text and order_id) matched on that id / text: any → those, at their VWAP. Nothing
+    matched stays unknown however long ago it was parked: a zero-fill order is not retrievable
+    10 minutes after it is cancelled (official API docs), so "not found, no fills" cannot tell
+    "never arrived" from "aged out", and releasing an order that did fill sends it again (the
+    way out is unconfirmed.resolve)."""
+    ident = order_id or client_order_id
+    if not ident:
+        return None
+    try:
+        order = get_order(env, symbol, ident)
+    except GateioError as e:
+        if e.code != "ORDER_NOT_FOUND":
+            return None
+        return _fills_of(env, symbol, order_id, client_order_id, parked_at)
+    except Exception:
+        return None
+    if order["status"] not in TERMINAL_STATUSES:
+        return None
+    qty, price = order["executed_qty"], order["avg_price"]
+    return (qty, price) if qty <= 0 or price > 0 else None
+
+
+def _fills_of(env, symbol, order_id, client_order_id, parked_at):
+    if not parked_at:
+        return None
+    try:
+        mult = Decimal(_futures_rules(env, symbol)["multiplier"])
+        start = int(float(parked_at) - PARK_TRADE_LOOKBACK_S + _time_offset["s"])
+        end = int(float(parked_at) + PARK_TRADE_LOOKAHEAD_S + _time_offset["s"])
+        rows = []
+        for page in range(_TRADES_MAX_PAGES):
+            got = _send("GET", "/futures/usdt/my_trades_timerange", env,
+                        query=f"contract={_contract(symbol)}&from={start}&to={end}"
+                              f"&limit={_TRADES_PAGE}&offset={page * _TRADES_PAGE}") or []
+            rows.extend(got)
+            if len(got) < _TRADES_PAGE:
+                break
+        else:
+            return None  # more fills than the pages read: the order's could be past them
+    except Exception:
+        return None
+    want_oid = str(order_id) if order_id else None
+    want_text = str(client_order_id) if client_order_id else None
+    mine = [f for f in rows if isinstance(f, dict) and (
+        (want_oid and str(f.get("order_id") or "") == want_oid)
+        or (want_text and str(f.get("text") or "") == want_text))]
+    ct = sum(abs(Decimal(str(f.get("size") or 0))) for f in mine)
+    if ct <= 0:
+        return None
+    notional = sum(abs(Decimal(str(f.get("size") or 0))) * Decimal(str(f.get("price") or 0))
+                   for f in mine)
+    px = float(notional / ct)
+    return (float(ct * mult), px) if px > 0 else None
 
 
 def place_limit_order(env, symbol, direction, qty, price, client_order_id=None,
