@@ -210,8 +210,9 @@ ok("③ 回合結束(busySync):所有原因句收掉,借用的原因行(#rp-ho-n
   const deletes = []; let failMeta = false;
   const M = new Function("fs", "path", "okSessionId", "sessionDb", "IMG_DIR", "RES_DIR", "META_DIR", "BASE", "XP_DIR", `
     const turns = new Map();
-    ${fnSrc(mainSrc, "deleteSession")}
-    return { deleteSession, set: (...ids) => { turns.clear(); for (const [id, phase] of ids) turns.set(id, { sid: id, phase }); } };`)(
+    const _relay = null, ORIGIN_DIR = "/o";
+    ${fnSrc(mainSrc, "deleteSessionLocal")}
+    return { deleteSession: deleteSessionLocal, set: (...ids) => { turns.clear(); for (const [id, phase] of ids) turns.set(id, { sid: id, phase }); } };`)(
     { rmSync: () => {} }, path, (id) => /^desktop-[a-z0-9]{4,16}$/.test(id),
     () => ({ exec: (q) => deletes.push(q), prepare: (q) => ({ run: (id) => { if (failMeta && /session_meta/.test(q)) throw new Error("SQLITE_BUSY"); deletes.push(q.split(" ")[2] + ":" + id); } }), close: () => {} }), "/i", "/r", "/m", "/b", "/x");
   M.set(["desktop-aaaa1111", "running"], ["desktop-eeee5555", "running"]);

@@ -181,6 +181,7 @@ async function tabsOnEnd(r) {
   const T = tabsOf(r.sid);
   CS.main.delete(r.sid);
   if (!T) { tabsPaint(); return; }
+  T.phone = false;
   tabsQueued(T, false);
   if (r.canceled) withTab(T, () => { turnStopped = true; });   // 取消排隊 = 沒開跑就停下:照停止收(句子放回輸入框)
   const pre = withTab(T, () => turnEndPre(r));
@@ -298,6 +299,7 @@ function tabsTabEl(T) {
   el.setAttribute("role", "tab"); el.setAttribute("aria-selected", sel ? "true" : "false"); el.tabIndex = sel ? 0 : -1; el.dataset.sid = T.sid;
   const lead = tabsLead(st); if (lead) el.appendChild(lead);
   const ti = document.createElement("span"); ti.className = "tab-t"; ti.textContent = tabsTitle(T); el.appendChild(ti);
+  if (T.phone) { const ph = document.createElement("span"); ph.className = "tab-phone"; ph.textContent = t("tabs.phone"); el.appendChild(ph); }   // 佔位:記號畫法待設計師
   const word = st === "run" ? t("tabs.st.running") : tabsStateWord(T, st);   // 分頁名稱不帶時長:讀屏念的是畫的那一刻,數字會凍住
   if (word) { const sr = document.createElement("span"); sr.className = "sr-only"; sr.textContent = "，" + word; el.appendChild(sr); }
   const x = document.createElement("span"); x.className = "tab-x"; x.setAttribute("aria-hidden", "true"); x.tabIndex = -1; x.innerHTML = TAB_X;
@@ -452,7 +454,15 @@ document.addEventListener("mousedown", (e) => { if (!$("cs-menu").hidden && !e.t
 $("cs-hint").addEventListener("click", () => { csShowList(true); trackFeature("hist_open"); });
 if (typeof window.blave.onTabNew === "function") window.blave.onTabNew(() => csNewClick());
 if (typeof window.blave.onTabClose === "function") window.blave.onTabClose(() => tabsCloseCur());
-if (typeof window.blave.onTabOpen === "function") window.blave.onTabOpen((o) => { if (o && typeof o.sid === "string") { csOpen(o.sid, { focus: o.focus !== false }); if (o.origin === "mobile") trackFeature("tab_remote"); } });
+// 手機來的那一輪(relay.js):分頁記成「有手機的回合」(記號的畫法待設計師,先用純文字),手機送的那句接在歷史後面、帶「來自手機」
+if (typeof window.blave.onTabOpen === "function") window.blave.onTabOpen((o) => {
+  if (!o || typeof o.sid !== "string") return;
+  const p = csOpen(o.sid, { focus: o.focus !== false });
+  if (o.origin !== "mobile") return;
+  trackFeature("tab_remote");
+  const T0 = CS.tabs.get(o.sid); if (T0) { T0.phone = true; tabsPaint(); }
+  if (o.echo) p.then((T) => { if (T && !T.dead) withTab(T, () => addHistoryYou(o.echo, "mobile")); }).catch(() => {});
+});
 new ResizeObserver(() => tabsPaint()).observe($("cs-tabs"));
 // 回覆中的時長每秒進一格(tooltip、+N 選單裡的字);只在有回合時跑
 setInterval(() => {

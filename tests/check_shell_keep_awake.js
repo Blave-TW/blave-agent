@@ -72,7 +72,7 @@ for (const [name, s, o, exp] of rows) ok(`${exp ? "持有" : "放掉"}:${name}`,
 ok("5 秒那一輪(trayStart)叫 awakeSync", /function trayStart\(\)[^\n]*startStep\("awake", awakeSync\)/.test(main));
 ok("啟動指令(START_CMDS 非 release、restart_reconciler)記下啟動時間;halt 清掉", /START_CMDS\.has\(cmd\) && intent !== "release"\) \|\| cmd === "restart_reconciler"\) \{\s*const at = awakeStartAt = Date\.now\(\)/.test(main)
   && /cmd === "halt"\) \{ awakeStartAt = 0;/.test(main));
-ok("awakeSync 把上一輪有沒有持有交進去(prev,報告錯誤時沿用)", /function awakeSync\(\)[\s\S]*?prev: awakeBlocker !== null \}\)/.test(main));
+ok("awakeSync 把上一輪有沒有持有交進去(prev,報告錯誤時沿用)", /function awakeSync\(\)[\s\S]*?prev: awakeBlocker !== null, phone \}\)/.test(main));
 ok("結束 app 放掉", /app\.on\("will-quit", \(\) => startStep\("awake", awakeRelease\)\)/.test(main));
 { // 0.1.28:B = 台灣券商(統一 + 群益本機)有部位,或綁著卻讀不到(保守當有);舊宿主沒有 twHeld 就當沒有
   const tw = (host) => new Function("_tradeHost", fn(main, "twLots") + "\nreturn twLots();")(host);

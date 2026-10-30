@@ -27,12 +27,13 @@ const ANY = [   // 機器層級:任何一條在跑都算
   ["搬到應用程式", /if \(tradeMaybeLive\(\) \|\| anyTurn\(\) \|\| _engineRun/],
   ["選單列「結束」的「…」", /const trayQuitLabel = \(maybe\) => \(maybe \|\| anyTurn\(\) \?/],
   ["選單列更新那一行停用", /busy: !!\(anyTurn\(\) \|\| restarting\)/],
-  ["關視窗只收起來", /const trading = tradeMaybeLive\(\), turn = anyTurn\(\);/],
+  ["關視窗只收起來", /const trading = tradeMaybeLive\(\), turn = anyTurn\(\), phone = /],
   ["結束前草稿那道併框(含排隊)", /const more = !!tradeMaybeLive\(\) \|\| anyTurnOrQueued\(\) \|\| twLots\(\)\.held;/],
   ["結束前的回合確認框(含排隊)", /if \(!quitting && !quitConfirmed && anyTurnOrQueued\(\)\) \{/],
 ];
 const ONE = [   // 那一條自己
-  ["deleteSession", /if \(!okSessionId\(id\) \|\| turns\.has\(id\)\) return false;/],
+  ["deleteSession", /if \(!okSessionId\(id\) \|\| turns\.has\(id\) \|\| \(typeof _relay !== "undefined" && _relay && _relay\.isMobile\(id\)\)\) return false;/],
+  ["手機那一句:同一條在跑就排在後面(relay.js 自己排)", /turnBusy: \(sid\) => turns\.has\(sid\),/],
   ["startTurn 同一條序列", /if \(restarting \|\| turns\.has\(sid\)\) return \{ busy: true \};/],
 ];
 const lines = main.replace(/\/\*[\s\S]*?\*\//g, "").split("\n").filter((l) => /anyTurn\(\)|anyTurnOrQueued\(\)|turns\.has\(/.test(l) && !/^\s*(\/\/|\/\*|\*)/.test(l));

@@ -543,7 +543,7 @@ function setCat(cat) {
   if (cat === "display") aboutIdLoad();
   if (cat === "display" && typeof awakeLoad === "function") { themeLoad(); awakeLoad(); rnLoad(); }   // 設定 › 一般的外觀與防睡開關
   if (cat === "display" && typeof ccyPaint === "function") ccyPaint();   // 設定 › 顯示幣別(帳號偏好)
-  if (cat === "priv") privLoad();
+  if (cat === "priv") { privLoad(); if (typeof phLoad === "function") phLoad().then(() => { if (!$("set-priv").hidden) privPaint(); }); }
   if (cat === "connect") { connectPaint(); mvLoad().then(() => { connectCatSync(); if (!$("set-connect").hidden) connectPaint(); }); }
   if (cat === "plan" && typeof mvLoad === "function") mvLoad();   // 登出確認框要知道手機查看開著沒
   if (cat === "plan") shlOpen();   // 公開連結區段(renderer/report-sharelist.js):每次切到這一類重抓
@@ -723,6 +723,63 @@ function mvBlock(mk) {
   wrap.append(lead);
   return wrap;
 }
+/* 設定 › 隱私「允許手機對話」(主行程 relay.js;spec mobile-agent-chat-mvp §2.6、§4.2)。總開關不開時整區不出(PH.visible)。
+   從關打開每次都先跳確認框,按〔開啟〕才交給主行程;關掉也先問(手機那一輪會停、伺服器那份會刪)。PH = 主行程 relayStateOut,null = 讀不到 = 不出 */
+let PH = null, PH_BUSY = false, PH_ERR = "";
+async function phLoad() { try { PH = await window.blave.relayState(); } catch (_) { PH = null; } return PH; }
+const phShown = () => !!(PH && PH.visible === true);
+async function phSet(on) {
+  if (PH_BUSY) return;
+  PH_BUSY = true; PH_ERR = "";
+  try { const r = await window.blave.relaySet(on); if (r && r.state) PH = r.state; if (!r || !r.ok) PH_ERR = t(r && r.code === "SIGNED_OUT" ? "mv.leadOut" : "ph.err"); }
+  catch (_) { PH_ERR = t("ph.err"); } finally { PH_BUSY = false; }
+  privPaint(); const sw = $("ph-sw"); if (sw) sw.focus();
+  const lead = document.querySelector(".ph .priv-lead"); if (lead) srSay(lead.textContent);
+}
+function phToggle(e) {
+  if (!phShown() || !PH.signedIn || PH_BUSY) return;
+  const opener = e && e.currentTarget;
+  if (!PH.on) {
+    confirmBox({ title: t("ph.cf.title"), lines: [], keep: ["ph.cf.1", "ph.cf.2", "ph.cf.3", "ph.cf.4", "ph.cf.5", "ph.cf.6"].map((k) => t(k)), ok: t("ph.cf.ok"), opener, onOk: () => phSet(true) });
+    return;
+  }
+  const live = (PH.mobileTurns || 0) + (PH.queued || 0) > 0;
+  confirmBox({ title: t("ph.off.title"), lines: live ? [t("ph.off.live"), t("ph.off.del")] : [t("ph.off.del")], ok: t("ph.off.ok"), opener, onOk: () => phSet(false) });
+}
+async function phRetry() { if (PH_BUSY) return; PH_BUSY = true; try { PH = (await window.blave.relayRetry()) || PH; } catch (_) { /* noop */ } finally { PH_BUSY = false; } privPaint(); }
+function phSyncLine(mk) {
+  const s = PH.sync || {};
+  if (s.error) {
+    const p = mk("p", "priv-lead", t("ph.syncFail") + " "), b = mk("button", "btn-quiet", t("ph.retry")); b.type = "button"; b.id = "ph-retry";
+    b.addEventListener("click", phRetry); p.append(b); return p;
+  }
+  if (s.running && s.total) return mk("p", "priv-lead", t("ph.syncing", { n: s.done || 0, m: s.total }));
+  if (s.synced) return mk("p", "priv-lead", t("ph.synced"));
+  return null;
+}
+function phBlock(mk) {
+  if (!phShown()) return null;
+  const wrap = mk("div", "ph"), row = mk("div", "sw-row"), lbl = mk("label", "sw-l", t("ph.switch")); lbl.htmlFor = "ph-sw"; row.append(lbl);
+  const out = !PH.signedIn, on = !out && PH.on === true;
+  const sw = mk("button", "sw" + (on ? "" : " off")); sw.type = "button"; sw.id = "ph-sw";
+  sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", on ? "true" : "false");
+  sw.disabled = out; sw.addEventListener("click", phToggle);
+  row.append(sw); wrap.append(row);
+  if (out) {
+    const lead = mk("p", "priv-lead", t("mv.leadOut")), go = mk("button", "btn-quiet", t("mv.goLogin")); go.type = "button"; go.addEventListener("click", () => setCat("plan")); lead.append(go);
+    wrap.append(lead); return wrap;
+  }
+  if (PH_ERR) wrap.append(mk("p", "priv-lead", PH_ERR));
+  if (!on) { if (PH.pending) wrap.append(mk("p", "priv-lead", t("ph.pending"))); return wrap; }
+  wrap.append(mk("p", "priv-lead", t("ph.lead")));
+  const line = phSyncLine(mk); if (line) wrap.append(line);
+  return wrap;
+}
+if (typeof window.blave.onRelayState === "function") window.blave.onRelayState((st) => {
+  if (!st) return;
+  const was = PH; PH = st;
+  if ($("set-priv") && !$("set-priv").hidden && (!was || JSON.stringify(was) !== JSON.stringify(st))) privPaint();
+});
 // 連點:前一次還沒回來就不再送(不用 disabled:按鈕一停用焦點就掉到 body)
 let PRIV_BUSY = false;
 async function privToggle() {
@@ -754,8 +811,9 @@ function privPaint() {
   /* 隱私權政策的入口(法遵稽核):政策 §9.1 叫人到這一頁關遙測(安裝識別碼在 設定 › 一般 › 關於),這一頁要能連回那份政策 */
   const legal = mk("p", "set-legal"), pl = mk("button", "btn-quiet", t("legal.privacy")); pl.type = "button"; pl.id = "priv-legal";
   pl.addEventListener("click", () => window.blave.openExternal(legalUrl("privacy_policy")));
+  const ph = typeof phBlock === "function" ? phBlock(mk) : null; if (ph) box.append(ph);   // 允許手機對話:總開關不開時不出
   legal.append(pl); box.append(legal);
-  if (had) sw.focus();
+  if (had && !box.contains(document.activeElement)) sw.focus();
   setFocusGuard();
 }
 /* 設定 › 連結(手機 App 查看)。分類鈕跟著平台旗標出不出:旗標是發佈層級的,同一版本裡固定,不隨用戶狀態增減(canon › modal 內分類欄) */
@@ -2490,7 +2548,11 @@ function receiptFold(steps) {
   return el;
 }
 /* 舊回合的使用者那句:尾端給引擎的附件行拆掉、畫回「迴紋針 + 檔名」(同送出當下) */
-function addHistoryYou(content) { const a = splitAttachNote(content); return addMsg("you", a.text, a.attachments); }
+function addHistoryYou(content, origin) {
+  const a = splitAttachNote(content), el = addMsg("you", a.text, a.attachments);
+  if (origin === "mobile") el.appendChild(Object.assign(document.createElement("span"), { className: "msg-from", textContent: t("chat.fromPhone") }));   // 佔位:畫法待設計師
+  return el;
+}
 function addHistoryAi(content) {
   const r = splitReceipt(content);
   if (r.steps && r.steps.length) fitSteps(chatEl().appendChild(receiptFold(r.steps)));   // 進了 DOM 才量得到欄寬
@@ -2544,7 +2606,7 @@ function csPaintHistory(T, turns, imgs, brs, xps, ress) {
   turns.map((x) => ({ ts: x.ts, turn: x })).concat(imgs.map((x) => ({ ts: x.ts, img: x })), brs, xps, ress)
     .sort((a, b) => a.ts - b.ts)
     .reduce(histFixOrder, [])
-    .forEach((x) => (x.xp ? xpRestore(x.xp) : x.res ? resRestore(x.res) : x.br ? brRestore(x.br) : x.img ? addImage(x.img.src, x.img.caption) : x.turn.role === "user" ? addHistoryYou(x.turn.content) : addHistoryAi(x.turn.content)));
+    .forEach((x) => (x.xp ? xpRestore(x.xp) : x.res ? resRestore(x.res) : x.br ? brRestore(x.br) : x.img ? addImage(x.img.src, x.img.caption) : x.turn.role === "user" ? addHistoryYou(x.turn.content, x.turn.origin) : addHistoryAi(x.turn.content)));
   live.forEach((n) => chatEl().appendChild(n));
   if (typeof engReattach === "function") engReattach();   // 舊回合畫回去之後,安裝進度卡移到最下面(csClearChat 補回來時在最上面)
   T.title = csTitle; csRenderHead(); scrollChat(true);

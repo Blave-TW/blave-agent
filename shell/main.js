@@ -575,6 +575,43 @@ function mobileView() {
   return _mv;
 }
 const mobileViewState = () => ({ ...mobileView().state(), name: deviceLabel() });
+/* 手機 App 跟這台電腦的 agent 對話(relay.js;spec mobile-agent-chat-mvp §1.3)。憑證與第 1 條遮蔽要比對的值只在這個行程 */
+let _relay = null, relayPhoneEndAt = 0, relayPhoneOn = false;
+const RELAY_AWAKE_TAIL_MS = 2 * 60 * 1000;   // 手機那一輪結束後再撐 2 分鐘(等用戶回下一句)
+function relay() {
+  if (!_relay) _relay = require("./relay").createRelay({
+    dir: app.getPath("userData"), stateDir: path.join(BASE, "state"), apiBase: API_BASE,
+    post: (u, b, extra) => postJSON(u, b, extra), getCreds: blaveCreds, installId: () => tm().installId(), ver: app.getVersion(),
+    log: (m) => console.error("[relay]", m),
+    startTurn: (payload, origin) => startTurn(payload, origin), stopTurn: (sid) => stopTurn(sid, "phone"), turnBusy: (sid) => turns.has(sid),
+    isRestarting: () => !!restarting,
+    sessions: { list: listSessions, rowsAfter: sessionRowsAfter, maxId: sessionMaxId, exists: sessionExists, remove: deleteSessionLocal },
+    turnArgs: relayTurnArgs, known: relayKnown, origins: { add: chatOriginAdd, has: chatOriginHas },
+    track: (name) => tm().track("feature_used", { name }),
+    onChange: (st) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("relay-state", relayStateOut(st)); },
+    onMobileActive: (on) => { if (relayPhoneOn && !on) relayPhoneEndAt = Date.now(); relayPhoneOn = on; startStep("awake", awakeSync); },
+  });
+  return _relay;
+}
+// 給畫面的只有開關、同步進度與數字,沒有憑證、沒有對話內容
+const relayStateOut = (st) => ({ visible: st.visible, on: st.on, pending: st.pending, signedIn: st.signedIn, sync: st.sync, mobileTurns: st.mobileTurns, queued: st.queued });
+/* 手機那一輪用電腦當下存的引擎與型號(手機 MVP 不給選):照設定頁選擇器存的那一組;沒有就交給 turnModelArgs 的預設 */
+function relayTurnArgs() {
+  const kind = (loadConnection() || {}).kind, slot = (loadModelPrefs() || {})[kind] || {};
+  const model = typeof slot.model === "string" ? slot.model : null;
+  const effort = model && slot.efforts && typeof slot.efforts[model] === "string" ? slot.efforts[model] : null;
+  return { ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
+}
+/* 第 1 條遮蔽(spec §4.3):workspace/.env 像秘密的值、自帶的 AI 金鑰。值只在這個行程比對,不寫檔、不 log;.env 5 秒內不重讀 */
+let _relayEnv = { at: 0, vals: [] };
+function relayKnown() {
+  if (Date.now() - _relayEnv.at > 5000) {
+    let txt = null; try { txt = fs.readFileSync(path.join(WS, ".env"), "utf8"); } catch (_) { txt = null; }
+    _relayEnv = { at: Date.now(), vals: require("./redact").envSecretValues(txt) };
+  }
+  let llm = null; try { const k = loadLlmKey(); llm = k && typeof k.key === "string" ? k.key : null; } catch (_) { llm = null; }
+  return llm ? [..._relayEnv.vals, llm] : _relayEnv.vals;
+}
 /* Blave 餘額(balance.js):電腦版自己的端點,帶帳號 token + app_secret;只回數字給自家畫面,憑證不出主行程。 */
 let _balance = null;
 function balanceHost() {
@@ -781,6 +818,7 @@ async function signOutBlave() {
   rotator().pause();          // 撤銷要等網路(最長 20 秒),這段期間定期檢查不許再換:換了就撤不到、伺服器留一列沒人持有的
   // 平台上這台的部位快照要在撤銷之前刪:撤銷之後這組憑證就刪不了(刪不成也照樣登出,api 讀取時會濾掉已撤銷的那台)
   try { await mobileView().signOut(); } catch (_) { /* 不擋登出 */ }
+  try { await relay().signOut(); } catch (_) { /* 同上:伺服器那份跟著撤銷的 token 藏起來,30 天無活動自己清 */ }
   const tok = loadToken();
   let revoked = false;
   if (tok) {
@@ -1747,14 +1785,50 @@ function loadSession(id) {
   if (!okSessionId(id)) return [];
   const db = sessionDb(true); if (!db) return [];
   try {
-    return db.prepare("SELECT role, content, created_at FROM turns WHERE session_id = ? ORDER BY id").all(id)
-      .map((r) => ({ role: r.role, content: r.content, ts: r.created_at }));
+    const mob = new Set(chatOriginLoad(id));
+    return db.prepare("SELECT id, role, content, created_at FROM turns WHERE session_id = ? ORDER BY id").all(id)
+      .map((r) => ({ role: r.role, content: r.content, ts: r.created_at, ...(mob.has(r.id) ? { origin: "mobile" } : {}) }));
   } catch (_) { return []; } finally { db.close(); }
+}
+/* relay.js 用:取 id 的那幾支。latest = 從最新往回取 limit 則再照時間排(第一次上傳只要最新 500 則) */
+function sessionRowsAfter(id, afterId, limit, latest) {
+  if (!okSessionId(id)) return [];
+  const db = sessionDb(true); if (!db) return [];
+  const n = Math.max(1, Math.min(Number(limit) || 100, 1000)), after = Number(afterId) || 0;
+  try {
+    if (latest && !after) return db.prepare("SELECT id, role, content, created_at FROM turns WHERE session_id = ? ORDER BY id DESC LIMIT ?").all(id, n).reverse();
+    return db.prepare("SELECT id, role, content, created_at FROM turns WHERE session_id = ? AND id > ? ORDER BY id LIMIT ?").all(id, after, n);
+  } catch (_) { return []; } finally { db.close(); }
+}
+function sessionMaxId(id) {
+  if (!okSessionId(id)) return 0;
+  const db = sessionDb(true); if (!db) return 0;
+  try { const r = db.prepare("SELECT MAX(id) AS m FROM turns WHERE session_id = ?").get(id); return (r && r.m) || 0; } catch (_) { return 0; } finally { db.close(); }
+}
+const sessionExists = (id) => sessionMaxId(id) > 0;
+/* 哪幾句是手機送的(對話裡「來自手機」標籤;上傳時 origin = app):state/chat-origin/<sid>.json 記 session.db 的 turn id。
+   刪對話一起刪 */
+const ORIGIN_DIR = path.join(BASE, "state", "chat-origin");
+function chatOriginLoad(id) {
+  if (!okSessionId(id)) return [];
+  try { const o = JSON.parse(fs.readFileSync(path.join(ORIGIN_DIR, id + ".json"), "utf8")); return Array.isArray(o.mobile) ? o.mobile.filter(Number.isInteger) : []; } catch (_) { return []; }
+}
+function chatOriginAdd(id, ids) {
+  if (!okSessionId(id) || !Array.isArray(ids)) return false;
+  const all = [...new Set([...chatOriginLoad(id), ...ids.filter(Number.isInteger)])].slice(-2000);
+  try { fs.mkdirSync(ORIGIN_DIR, { recursive: true }); fs.writeFileSync(path.join(ORIGIN_DIR, id + ".json"), JSON.stringify({ mobile: all }), { mode: 0o600 }); return true; } catch (_) { return false; }
+}
+const chatOriginHas = (id, turnId) => chatOriginLoad(id).includes(turnId);
+/* 畫面刪的:刪成功就讓 relay 記一筆待送(手機那邊也刪);手機要刪的走 deleteSessionLocal,不再回送一次 */
+function deleteSession(id) {
+  const ok = deleteSessionLocal(id);
+  if (ok && typeof _relay !== "undefined" && _relay) { try { _relay.sessionDeleted(id); } catch (_) { /* 待送記不成:api 30 天無活動自己清 */ } }
+  return ok;
 }
 // 只拒刪表上那條(回覆中、正要開始、排隊中:回覆沒地方落);別條照刪。runtime 那邊同時在寫 session.db(WAL、30 秒 busy timeout),
 // 這裡也等一下寫鎖,不然撞到它 commit 的那一瞬就回 false
-function deleteSession(id) {
-  if (!okSessionId(id) || turns.has(id)) return false;
+function deleteSessionLocal(id) {
+  if (!okSessionId(id) || turns.has(id) || (typeof _relay !== "undefined" && _relay && _relay.isMobile(id))) return false;
   const db = sessionDb(false); if (!db) return false;
   try {
     db.exec("PRAGMA busy_timeout = 3000");
@@ -1768,6 +1842,7 @@ function deleteSession(id) {
     try { fs.rmSync(path.join(IMG_DIR, id), { recursive: true, force: true }); } catch (_) { /* 圖刪不掉不擋 */ }
     try { fs.rmSync(path.join(RES_DIR, id), { recursive: true, force: true }); } catch (_) { /* 結果卡同上 */ }
     try { fs.rmSync(path.join(META_DIR, id + ".json"), { force: true }); } catch (_) { /* 對話 meta 同上 */ }
+    try { fs.rmSync(path.join(ORIGIN_DIR, id + ".json"), { force: true }); } catch (_) { /* 手機標記同上 */ }
     try { fs.rmSync(path.join(BASE, "state", "browser-snapshots", id), { recursive: true, force: true }); } catch (_) { /* 瀏覽器快照同上 */ }
     try { fs.rmSync(path.join(XP_DIR, id), { recursive: true, force: true }); } catch (_) { /* 轉出卡的快照同上 */ }
     return true;
@@ -2792,9 +2867,10 @@ function turnSidOr(sid) {
   if (typeof sid === "string" && sid) return sid;
   return turns.size === 1 ? turns.keys().next().value : null;
 }
-function stopTurn(sidArg) {
+function stopTurn(sidArg, by) {
   const sid = turnSidOr(sidArg), rec = sid ? turns.get(sid) : null;
   if (!rec) return false;
+  if (rec.origin === "mobile" && by !== "phone") tm().track("feature_used", { name: "phone_turn_stop" });   // 電腦前的人停掉手機那一輪(手機自己按的停止 by = phone)
   if (rec.phase === "queued") { turnDequeue(rec); return true; }   // 排隊中的停止 = 取消排隊
   try { fs.mkdirSync(path.dirname(rec.stopFile), { recursive: true }); fs.writeFileSync(rec.stopFile, ""); } catch (_) { return false; }
   let seen = rec.child;
@@ -2871,6 +2947,7 @@ const AWAKE_START_MS = 60000;   // 剛按啟動、報告還沒收斂的那一段
 function awakeWanted(o) {
   if (o.win && o.twHeld) return true;
   if (!o.keepAwake) return false;
+  if (o.phone) return true;   // 手機那一輪在跑或排隊、或結束不到 2 分鐘(spec mobile-agent-chat-mvp §1.3)
   if (o.startAt && o.now - o.startAt < AWAKE_START_MS) return true;
   const st = o.st, r = st && st.report;
   if (!r) return false;
@@ -2969,7 +3046,8 @@ function replySoundSet(on) {
 }
 function awakeSync() {
   const st = _tradeHost ? _tradeHost.status() : null;
-  const want = awakeWanted({ st, startAt: awakeStartAt, now: Date.now(), keepAwake: keepAwakeGet(), win: WIN, twHeld: WIN ? twLots().held : false, prev: awakeBlocker !== null });
+  const phone = relayPhoneOn || (relayPhoneEndAt > 0 && Date.now() - relayPhoneEndAt < RELAY_AWAKE_TAIL_MS);
+  const want = awakeWanted({ st, startAt: awakeStartAt, now: Date.now(), keepAwake: keepAwakeGet(), win: WIN, twHeld: WIN ? twLots().held : false, prev: awakeBlocker !== null, phone });
   awakeBlocker = awakeApply(want, awakeBlocker, powerSaveBlocker);
 }
 const awakeRelease = () => { awakeBlocker = awakeApply(false, awakeBlocker, powerSaveBlocker); };
@@ -3328,6 +3406,8 @@ async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEf
     BLAVE_AGENT_STATE: path.join(BASE, "state"),
     BLAVE_AGENT_DB: path.join(BASE, "state", "session.db"),
     BLAVE_TURN_INTERRUPT_FILE: rec.stopFile,
+    // 回合來源(spec §2.8):外殼內部叫 mobile,對 runtime 與 api 一律 app;runtime 只寫進回合 log
+    ...(rec.origin === "mobile" ? { BLAVE_TURN_ORIGIN: "app" } : {}),
     // K 線走 Binance 公開 API(桌面版沒有 Blave 資料訂閱)。獨立、明確 opt-in 的
     // 變數,不用「有沒有 BLAVE_PROXY_TOKEN」推論——機隊上的 cron/manager 不一定
     // 帶著那顆 token,推論錯就是整支機隊無聲換資料源。
@@ -3397,6 +3477,8 @@ async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEf
 /* 回合的事件送主視窗(只有一個);每一則補 sid,畫面照它找分頁。視窗關掉(結束時回合才收尾)、還沒開:不送,送到已銷毀的 webContents 會丟例外 */
 function turnWin() { return BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) || null; }
 function sendTurn(sid, ch, payload) {
+  // 手機那一輪的輸出要在「有沒有視窗」之前接走:視窗收起來正是手機回合最常見的情形
+  if (typeof _relay !== "undefined" && _relay) { try { _relay.onTurn(sid, ch, payload); } catch (e) { console.error("[relay] tap " + ((e && e.message) || e)); } }
   const w = turnWin();
   if (!w) return false;
   try { w.webContents.send(ch, { ...(payload || {}), sid }); return true; } catch (_) { return false; }
@@ -3429,7 +3511,8 @@ async function startTurn(payload, origin) {
   const rec = newTurnRec(sid, origin === "mobile" ? "mobile" : "desktop", turnCountsCloud(payload));
   turns.set(sid, rec);
   // 手機來的對話:畫面開成背景分頁(加在最後、不切過去,spec 技術方案 §1.5);事件照 sid 畫進去
-  if (rec.origin === "mobile") sendTurn(sid, "tab-open", { origin: "mobile", focus: false });
+  // started:這一輪不是畫面送出的,畫面要從這裡才知道那個分頁在回覆中;echo = 手機送的那句,歷史畫完後接在後面(帶「來自手機」)
+  if (rec.origin === "mobile") { sendTurn(sid, "tab-open", { origin: "mobile", focus: false, echo: typeof payload.message === "string" ? payload.message : "" }); sendTurn(sid, "turn-event", { type: "started" }); }
   if (rec.cloud) { try { cloudHost().start(); } catch (_) { /* 起不來:名額照讀不到算 */ } }
   // 最低版本閘:只擋 Blave AI;連自己 CLI 的人照常聊
   try {
@@ -3910,6 +3993,10 @@ app.whenReady().then(() => {
     () => { if (!e.sender.isDestroyed()) e.sender.send("agent-login-spawned"); }));
   handle("cancel-agent-login", () => cancelAgentLogin());
   handle("stop-turn", (_e, sid) => stopTurn(typeof sid === "string" ? sid : null), false);
+  handle("relay-state", () => relayStateOut(relay().state()), null);
+  // 打開前畫面已經跳過確認框(§4.2);這裡只收布林
+  handle("relay-set", async (_e, on) => (typeof on === "boolean" ? { ...(await relay().setOn(on)), state: relayStateOut(relay().state()) } : { ok: false }), { ok: false });
+  handle("relay-retry", async () => { await relay().retry(); return relayStateOut(relay().state()); }, null);
   // 自帶 API 金鑰:只有 set(驗過才存)/ test(重驗已存的那把)/ remove,加一支不帶值的取消。**沒有任何一支把金鑰交回畫面**
   const llmDenied = { ok: false, code: "NOT_ALLOWED", status: 0 };
   handle("apikey-set", (_e, a) => llmKeySet(a && typeof a === "object" ? { preset: a.preset, key: a.key, connect: a.connect === true } : null), llmDenied);
@@ -3963,7 +4050,8 @@ app.whenReady().then(() => {
     detectAgents().then((d) => { tm().track("cli_auth", { how: d.claude.how }); }).catch(() => {});
   });
   startStep("device type", () => require("./devicetype").detectDeviceType().then((kind) => { _deviceKind = kind; tm().track("device_type", { kind }); }));
-  if (app.hasSingleInstanceLock()) startStep("mobile view", () => mobileView().start());   // 第二份 app 不送:兩份會搶同一個裝置代號
+  if (app.hasSingleInstanceLock()) startStep("mobile view", () => mobileView().start());
+  if (app.hasSingleInstanceLock()) startStep("relay", () => relay().start());   // 同上:兩份會搶同一個裝置代號的長輪詢   // 第二份 app 不送:兩份會搶同一個裝置代號
   // 帳號 token 輪替:開 app 就檢查一次(0.1.15 以前沒有期限的那顆在這裡第一次換掉),之後每 10 分鐘看一次。
   // 回合進行中照換(0.1.37):回合手上只有帳號轉送口的 token,轉出去時才讀當下那顆。第二份 app 不碰(兩份同時換,先回來的那顆會作廢)
   if (app.hasSingleInstanceLock()) startStep("token rotate", () => {
@@ -4035,6 +4123,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   unsavedTitle: "Leave without saving?", unsavedBody: "Your Portfolio changes will be lost.", unsavedGo: "Leave",
   unsavedNote: "Unsaved Portfolio changes will be lost.",
   hidden: WIN ? "Blave is still running in the system tray." : "Blave is still running in the menu bar.",
+  phoneHiddenTitle: "Phone chat is on", phoneHidden: WIN ? "Blave stays in the system tray so your phone can reach it. Quit from the tray icon." : "Blave stays in the menu bar so your phone can reach it. Quit from the menu bar or the Dock.",
   updateReady: "Restart to finish updating", restarting: "Restarting…",
   ev_halt: "Trading was paused automatically", ev_halt_n: "No orders at all — exits and stops won’t run. Open Blave to check.",
   ev_order_error: "Order failed", ev_order_error_n: "The exchange rejected an order. Open Blave to check.",
@@ -4616,13 +4705,15 @@ function binanceNotify(v) {
 }
 // updater().poll():ready ↔ blocked 只跟著下單狀態變、沒有事件,靠這 5 秒那一輪補推(聊天那一格的「…」跟著暫停 / 開始下單換)
 function trayStart() { if (!trayTimer) { trayTimer = setInterval(() => { startStep("tray", traySync); startStep("app menu", appMenuSync); startStep("p1", p1Sync); startStep("awake", awakeSync); startStep("update poll", () => updater().poll()); }, 5000); if (trayTimer.unref) trayTimer.unref(); traySync(); } }   // 可能在下單的話一開就出,不等第一個 5 秒(常駐的那顆等畫面交字)
+const phoneHiddenSaid = () => { try { return JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")).phoneHiddenSaid === true; } catch (_) { return false; } };
+const phoneHiddenSaidSet = () => { try { uiPrefsPatch({ phoneHiddenSaid: true }); } catch (_) { /* 記不住:下次再講一次 */ } };
 app.on("browser-window-created", (_e, win) => {
   win.on("close", (e) => {
     // 關視窗不等於結束:自動下單在跑、或本機 agent 回合在跑(可能正在更新雲端)時只把視窗藏起來,回合 / 下單照走
     // 更新重開收工中:紅燈只收視窗(放行會變成走結束 app → 裝了但不重開);交給 quitAndInstall 之後就放行,它要關視窗才能重開
     if (restarting === "stopping") { e.preventDefault(); win.hide(); return; }
-    const trading = tradeMaybeLive(), turn = anyTurn();
-    if (quitting || quitConfirmed || (!trading && !turn)) {
+    const trading = tradeMaybeLive(), turn = anyTurn(), phone = !!(typeof _relay !== "undefined" && _relay && _relay.isOn() && _relay.isVisible());
+    if (quitting || quitConfirmed || (!trading && !turn && !phone)) {
       // 真的要關(不是收起來):主視窗有沒存的策略組合草稿就先問;只收起來的那兩態草稿還在記憶體裡,不問
       if (!quitting && !quitConfirmed && !draftOk && isOurPageUrl(win.webContents.getURL())) {
         e.preventDefault();
@@ -4633,6 +4724,8 @@ app.on("browser-window-created", (_e, win) => {
     e.preventDefault(); win.hide(); draftOk = false; draftNote = false;   // 只收起來、沒結束:這一次「要離開」不算數
     // 「背景照常下單」那則只在真的在下單時講(字寫的是下單)
     if (trading && !hiddenSaid && tmLabels.hidden && Notification.isSupported()) { hiddenSaid = true; notifWatch(new Notification({ title: tmLabels.running, body: tmLabels.hidden }), "hidden").show(); }
+    // 「允許手機對話」開著:關視窗 = 收進背景。第一次收起時講一次(存 ui-prefs,不每次講)
+    else if (phone && !trading && tmLabels.phoneHidden && Notification.isSupported() && !phoneHiddenSaid()) { phoneHiddenSaidSet(); notifWatch(new Notification({ title: tmLabels.phoneHiddenTitle, body: tmLabels.phoneHidden }), "phone hidden").show(); }
   });
 });
 /* 結束訊號(SIGTERM / SIGINT / SIGHUP:kill、登出與關機、終端機 Ctrl+C)每一次都走 app.quit(),也就是每一次都過 before-quit 的攔截。
@@ -4735,7 +4828,9 @@ app.on("before-quit", (e) => {
   const rotating = typeof _rot !== "undefined" && !!(_rot && _rot.state().inflight);
   // 手機 App 那邊要看得到「已正常關閉」:最後一筆 closing(mobileview.js 自己限時 3 秒,送不出去也照樣結束)
   const closingMv = !quitting && typeof _mv !== "undefined" && !!_mv && _mv.wantsClosing();
-  if (quitting || (!daemon && !installing && !rotating && !closingMv)) return;
+  // 手機那邊排隊中的句子:結束前每一則回 not_run(relay.js 自己限時 3 秒)
+  const relayQuit = !quitting && typeof _relay !== "undefined" && !!_relay && _relay.isOn();
+  if (quitting || (!daemon && !installing && !rotating && !closingMv && !relayQuit)) return;
   e.preventDefault(); quitting = true;
-  Promise.all([closingMv ? _mv.closing().catch(() => false) : null, daemon ? _tradeHost.stop() : null, engineAbort(), rotating ? Promise.race([_rot.settle(), new Promise((r) => setTimeout(r, 5000))]) : null]).finally(() => app.quit());
+  Promise.all([closingMv ? _mv.closing().catch(() => false) : null, relayQuit ? _relay.quit().catch(() => false) : null, daemon ? _tradeHost.stop() : null, engineAbort(), rotating ? Promise.race([_rot.settle(), new Promise((r) => setTimeout(r, 5000))]) : null]).finally(() => app.quit());
 });

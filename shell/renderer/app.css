@@ -999,6 +999,10 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .priv-two li::before { content: ""; position: absolute; left: 0; top: 10px; width: 6px; height: 1px; background: var(--ink-3); }
 /* 法遵入口(服務條款 / 隱私權政策):安靜文字鈕自己一行,跟上面那一段拉開一個群組間距 */
 .set-legal { margin: var(--space-16) 0 0; font-size: 12px; color: var(--ink-3); }   /* 字級 / 色給兩份之間的「·」 */
+/* 「來自手機」與分頁上的「手機」:佔位,畫法待設計師(spec mobile-agent-chat-mvp §3.2) */
+.msg.you .msg-from { display: block; margin-top: var(--space-4); font-size: 12px; color: var(--ink-3); text-align: right; }
+.tab .tab-phone { flex: none; margin-left: var(--space-4); font-size: 11px; color: var(--ink-3); }
+.ph { margin-top: var(--space-24); }
 .priv-fine { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); max-width: 60ch; }
 @media (prefers-reduced-motion: reduce) { .sw, .sw::after { transition: none; } }
 /* 關於:標題下面一行「Blave {app} · 雲端主機 {ws} · 已是最新版」+ 右邊一個文字連結(mockup-desktop-update-flow-v4 §2)。
