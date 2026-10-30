@@ -500,9 +500,9 @@ def t_workspace_deps():
     names = [p.split("==")[0] for p in pins]
     need = ["curl_cffi", "lxml", "peewee", "protobuf", "websockets", "beautifulsoup4", "multitasking",
             "platformdirs", "pytz", "yfinance"]
-    check(all(re.fullmatch(r"[A-Za-z0-9_.-]+==[0-9][0-9A-Za-z.]*", p) for p in pins) and len(pins) == 17
+    check(all(re.fullmatch(r"[A-Za-z0-9_.-]+==[0-9][0-9A-Za-z.]*", p) for p in pins) and len(pins) == 18
           and all(n in names for n in need) and names[-1] == "yfinance",
-          "WORKSPACE_DEPS installs yfinance and the nine it pulls in, every one pinned, yfinance last (17 in all)")
+          "WORKSPACE_DEPS installs yfinance and the nine it pulls in, every one pinned, yfinance last (18 in all, certifi pinned directly since 0.1.37)")
 
 
 def main():
