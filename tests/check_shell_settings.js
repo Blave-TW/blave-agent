@@ -1021,7 +1021,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
       // en 的 {t}‑day 用 U+2011(h5 的 text-wrap: balance 會把一般連字號折在「14-」後);三條各講結果、不碰績效、不講 AI 判斷;聊天卡 pv.e.out / pv.e.card* 同口徑
       ok("D 版的字:pv.f.out.m 只講「試用結束後自動開始計費,{p} TWD／月」;pv.h.offer.m「首次綁卡,免費試用 {t} 天」(en 連字號 U+2011);三條列式兩語都在、AI 那條帶 {q};聊天卡不再「送 {t} 天」",
         str(zh, "pv.f.out.m") === "試用結束後自動開始計費，{p} TWD／月。" && str(enp, "pv.f.out.m") === "After the trial, billing starts automatically at {p} TWD a month."
-        && str(zh, "pv.h.offer.m") === "首次綁卡，免費試用 {t} 天" && str(enp, "pv.h.offer.m") === "Your first card starts a {t}\u2011day free trial" && str(zh, "pv.h.offerNoNum.m") === "首次綁卡，免費試用一段時間" && !!str(enp, "pv.h.offerNoNum.m")
+        && str(zh, "pv.h.offer.m") === "首次綁卡免費試用 {t} 天" && str(enp, "pv.h.offer.m") === "Your first card starts a {t}\u2011day free trial" && str(zh, "pv.h.offerNoNum.m") === "首次綁卡免費試用一段時間" && !!str(enp, "pv.h.offerNoNum.m")
         && ["pv.offer.li.data", "pv.offer.li.server", "pv.offer.li.ai"].every((k) => !!str(zh, k) && !!str(enp, k)) && /\{q\} TWD/.test(str(zh, "pv.offer.li.ai")) && /\{q\} TWD/.test(str(enp, "pv.offer.li.ai")) && /排程/.test(str(zh, "pv.offer.li.server")) && /on schedule/.test(str(enp, "pv.offer.li.server"))
         && ["pv.e.out", "pv.e.card", "pv.e.card.cli"].every((k) => /免費試用 \{t\} 天/.test(str(zh, k)) && !/送 \{t\}/.test(str(zh, k)) && /\{t\}\u2011day free trial/.test(str(enp, k))) && /免費試用一段時間/.test(str(zh, "pv.e.outNoNum")) && /free trial/.test(str(enp, "pv.e.outNoNum"))); }
     PV_P = ""; PV_PR = null; acct = { plan: { state: "running" } }; }
@@ -1062,7 +1062,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   c = dataCardState();
   ok("方案制沒有方案:講清楚「開雲端方案或 API 方案」;主鈕〔看方案〕開設定 › 帳號與方案、第二顆〔API 方案〕",
     c.text === "data.noPlan" && c.label === "data.seePlan" && !c.out && c.second && c.second.label === "pv.apiPlan" && !/noCreditBtn|addCard/.test(JSON.stringify(c)));
-  /* paywall-redesign-2026-10-21 §2.2 A 版:方案制、有試用資格又沒卡 → 只放動作:灰記號、填色〔綁卡，免費試用 {t} 天〕直開綁卡頁(bind_data)、
+  /* paywall-redesign-2026-10-21 §2.2 A 版:方案制、有試用資格又沒卡 → 只放動作:灰記號、填色〔綁卡免費試用 {t} 天〕直開綁卡頁(bind_data)、
      文字鈕〔看方案〕(plan_data);沒有句子、沒有收費小字、沒有〔API 方案〕。沒卡看 has_card(跟 can_run 脫鉤),舊 api 退回 reason */
   { const trialCard = (a) => { acct = A(a); const c = dataCardState(); went.length = 0; if (c.on) c.on(); const main = went.join(); went.length = 0; if (c.second) c.second.on(); return { c, main, side: went.join() }; };
     const isA = (r) => r.c.calm === true && !r.c.text && !r.c.sub && !r.c.out && r.c.label === "lib.gate.trial" + JSON.stringify(V) && r.main === "bind:bind_data"
