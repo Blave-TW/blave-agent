@@ -1825,7 +1825,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const box = node("div");
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag"), createTextNode: (s) => s }, requestAnimationFrame: () => 0, Date, Math, JSON, Array, Object, Number, String, isFinite, console,
-      $: (id) => (id === "tr-over" ? box : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "en", CX_VENUES: {}, PAPER: "paper", BINANCE: "binance", trShould: () => true, trOvEvents: () => node("div"), trEvListFocus: () => {}, trDrawCurve: () => {}, trZDraft: () => false });
+      $: (id) => (id === "tr-over" ? box : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "en", CX_VENUES: {}, PAPER: "paper", BINANCE: "binance", trShould: () => true, trOvEvents: () => node("div"), trEvListFocus: () => {}, trDrawCurve: () => {}, trCvEscWire: () => {}, trZDraft: () => false });
     vm.runInContext((pure + envb).replace(/^const /gm, "var ") + "\n" + consts + "\n" + fns + "\nvar trTipSeq = 0;", ctx);
     // 有一支策略設了金額:這一段測的是一般總覽;還沒選策略／金額全 0 的總覽另在 check_shell_autotrade_empty.js
     const REPORT = { venues: { binance: { credentials: true, pair: true, order: true, account: true } }, account: { venues: { binance: { ok: true, equity: 1234.5, currency: "USDT" } } }, config: { amounts: { s1: 100 } } };

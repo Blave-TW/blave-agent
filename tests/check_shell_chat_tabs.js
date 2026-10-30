@@ -50,7 +50,7 @@ const MOD_GLOBAL = {
   "portfolio.js": { PO_ADD_SIG: "策略組合", ctMenu: "同上", ctOpen: "同上", mgmPend: "同上", mgmOpener: "同上", mgsDraft: "同上", mgsOpener: "同上" },
   "president.js": { PRES: "統一期貨", presTimer: "同上", PRES_FIRST_ARMED: "同上" }, "report-sharelist.js": { SHL_IO: "分享清單" }, "stratflags.js": { sfPop: "彈出層" },
   "suggest.js": { SUG: "TAB_KEYS 整個換(托盤跟著分頁)" },
-  "trade.js": { TR_AS_SAVED: "自動下單頁", TR: "同上", trTipSeq: "同上", trHistTipEl: "同上", trHistTipAt: "同上", trHistTipOpened: "同上", trHistTipQuiet: "同上", cxOpener: "同上", psOpener: "同上", psMode: "同上", psToAmt: "同上", psLoading: "同上", ENV_COMPOSING: "輸入法" },
+  "trade.js": { TR_AS_SAVED: "自動下單頁", TR: "同上", trTipSeq: "同上", trHistTipEl: "同上", trHistTipAt: "同上", trHistTipOpened: "同上", trHistTipQuiet: "同上", trCvHide: "同上", trCvEscN: "同上", cxOpener: "同上", psOpener: "同上", psMode: "同上", psToAmt: "同上", psLoading: "同上", ENV_COMPOSING: "輸入法" },
   "versions.js": { vcSeq: "版本頁", vcSide: "同上" },
 };
 const FIELDS = {

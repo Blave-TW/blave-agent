@@ -228,7 +228,7 @@ function sfPopBuild() {
   const d1 = sep(); d1.dataset.rm = "1"; rm.dataset.rm = "1";   // 沒有旗標時「移除旗標」連同它上面那條線一起收
   sfPop.append(d1, rm, d2, del);   // 鍵盤排序提示那行 Wei 10-12 拿掉(Alt+↑/↓ 仍可用,只是不印)
   sfPop.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { e.stopPropagation(); sfPopClose(true); return; }   // 不給 app.js 的 escTop:一次只關一層
+    if (e.key === "Escape") { if (e.isComposing || e.keyCode === 229) return; e.preventDefault(); e.stopPropagation(); sfPopClose(true); return; }   // 不給 app.js 的 escTop:一次只關一層
     if (["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].indexOf(e.key) < 0) return;
     e.preventDefault();
     const items = [...sfPop.querySelectorAll("button")].filter((b) => !b.hidden);
