@@ -134,8 +134,12 @@ for label, reason in (("a refused connection", NewConnectionError(None, "Connect
                       ("a DNS failure", NameResolutionError("fapi.binance.com", None, OSError("nodename nor servname")))):
     refused = requests.exceptions.ConnectionError(MaxRetryError(None, "/fapi/v1/order", reason=reason))
     wire([refused, Resp(200, {"orderId": 77})], [FILLED])
-    r = place()
-    check(r["status"] == "FILLED" and len(CALLS["POST"]) == 2, f"{label} (no socket, nothing sent) is retried")
+    try:
+        r = place()
+    except Exception as e:
+        r = {"status": f"raised {type(e).__name__}"}
+    check(r["status"] == "FILLED" and len(CALLS["POST"]) == 2,
+          f"{label} (no socket, nothing sent) is retried ({r['status']}, {len(CALLS['POST'])} sends)")
     wire([refused], [FILLED])
     try:
         place()

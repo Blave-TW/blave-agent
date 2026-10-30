@@ -15,6 +15,14 @@
   F1  close-all spot: a sale of unknown outcome is parked and its book is kept
   F2  close-all netted restore: parked as a netted exit, its book is kept
   F3  close-all on a TW broker (not a perp venue): its plain OrderNotConfirmed is not wrapped
+  T1  the limit toolkit stores the canonical symbol on a lib's unknown (BingX said BTC-USDT)
+  L1  a parked chase limit (limit=True) that reads unfinished is cancelled each round, then
+      booked from its end; a cancel that fails keeps it parked and held
+  F1/F2/F4  every close-all park holds the book's COST of what it closed (_settle_parked held)
+  F4  close-all's main pass wraps an older lib's plain OrderNotConfirmed and parks it
+  B1  close-all again over a parked close: the same close is not sent a second time
+  D1  close_symbol over a whole account row larger than the book: the fill is booked up to
+      the book's own quantity — never through zero into a phantom opposite position
 
 Run: cd blave-agent && .venv/bin/python tests/check_unknown_shared_net.py
 """
@@ -151,6 +159,7 @@ class LimitVenue:
 
     def tools(self):
         return {"venue": "binance", "bbo": lambda: (100.0, 100.1), "place": self.place,
+                "netted_room": lambda buy: 0.4,
                 "status": self.status, "cancel": lambda oid: self.calls.append(("cancel", oid)),
                 "cancel_cid": lambda cid: self.calls.append(("cancel_cid", cid)) or
                 {"status": "already_gone"}}
@@ -195,8 +204,10 @@ rows = errors()
 parks = unconfirmed.load()
 check(v.count("place") == 1 and not sent, f"C1 no re-post, no market remainder ({v.calls}, {len(sent)})")
 check(("cancel_cid", "x-52DDFAFNrc1") in v.calls, f"C1 cancelled by its client id ({v.calls})")
-check(len(parks) == 1 and list(parks.values())[0]["key"] == "BTCUSDT",
-      f"C1 the post is parked ({parks})")
+check(len(parks) == 1 and list(parks.values())[0]["key"] == "BTCUSDT"
+      and list(parks.values())[0].get("limit") is True
+      and list(parks.values())[0]["netted_room"] == 0.4,
+      f"C1 the post is parked as a limit, with the entry's netted room ({parks})")
 check(len(rows) == 1 and rows[0].get("kind") == "order_unconfirmed",
       f"C1 one order_unconfirmed row, no 下單失敗 row ({rows})")
 check(not os.path.exists("state/execution/kick") and not os.path.exists("state/HALT"),
@@ -215,6 +226,72 @@ check(len(rows) == 1 and rows[0].get("kind") == "order_unconfirmed",
       f"C2 one order_unconfirmed row, no crash row ({rows})")
 check(not os.path.exists("state/execution/kick") and not any("execution error" in n for n in notes),
       f"C2 no kick, no 'Chase execution error' ({notes})")
+
+
+# ── the limit toolkit ────────────────────────────────────────────────────────
+lim = types.ModuleType("lib.order_fakex")
+lim.get_bbo = lambda env, sym: {"bid": 100.0, "ask": 100.1}
+lim.get_order = lambda env, sym, oid: {}
+lim.cancel_order = lambda env, sym, order_id=None, client_order_id=None: {}
+
+
+def _limit_unknown(env, sym, direction, qty, price, client_order_id=None, reduce_only=False,
+                   post_only=False):
+    raise unconfirmed.OrderOutcomeUnknown("sent, no answer", venue="fakex",
+                                          venue_symbol="BTC-USDT", client_order_id=client_order_id)
+
+
+lim.place_limit_order = _limit_unknown
+sys.modules["lib.order_fakex"] = lim
+tk = vw.auto_limit_toolkit("BTCUSDT")
+try:
+    tk["place"](100.0, 100.0, None, True)
+    e = None
+except Exception as x:
+    e = x
+check(isinstance(e, unconfirmed.OrderOutcomeUnknown) and e.venue_symbol == "BTCUSDT"
+      and "cancel_cid" in tk,
+      f"T1 toolkit: the unknown carries the canonical symbol, cancel_cid offered "
+      f"({getattr(e, 'venue_symbol', None)}, {sorted(tk)})")
+sys.modules["lib.order_fakex"] = fake
+
+# ── a parked limit is cancelled until it ends ────────────────────────────────
+lx = types.ModuleType("lib.order_limitx")
+LX = {"cancels": [], "cancel_ok": True, "cancelled": False}
+
+
+def _lx_cancel(env, sym, order_id=None, client_order_id=None):
+    LX["cancels"].append(client_order_id)
+    if not LX["cancel_ok"]:
+        raise requests.exceptions.ConnectionError("reset")
+    LX["cancelled"] = True
+    return {"status": "canceled"}
+
+
+lx.cancel_order = _lx_cancel
+lx.resolve_unknown_order = lambda env, sym, order_id=None, client_order_id=None, parked_at=None: \
+    (0.002, 100.0) if LX["cancelled"] else None
+sys.modules["lib.order_limitx"] = lx
+
+
+def park_limit():
+    err = unconfirmed.OrderOutcomeUnknown("sent", venue="limitx", venue_symbol="BTCUSDT",
+                                          client_order_id="rcL1")
+    return pf.park_or_halt("BTCUSDT", "limitx", err, -50.0, True, sign=-1, limit=True)
+
+
+reset()
+LX.update(cancels=[], cancel_ok=False, cancelled=False)
+park_limit()
+held = pf._settle_parked()
+check(LX["cancels"] == ["rcL1"] and len(unconfirmed.load()) == 1 and held == {"BTCUSDT": 50.0},
+      f"L1 cancel fails: tried once by client id, still parked and held ({LX['cancels']}, {held})")
+LX["cancel_ok"] = True
+held = pf._settle_parked()
+booked = [json.loads(x) for x in open("manager/orders.jsonl")] if os.path.exists("manager/orders.jsonl") else []
+check(LX["cancels"] == ["rcL1", "rcL1"] and not unconfirmed.load() and held == {}
+      and len(booked) == 1 and booked[0]["legs"][0]["signed_qty"] == -0.002,
+      f"L1 next round: cancelled, its partial fill booked from the venue, released ({booked}, {held})")
 
 # ── close_symbol ─────────────────────────────────────────────────────────────
 sys.path.append(os.path.join(ROOT, "manager"))  # close_symbol imports `flatten` as a sibling
@@ -268,6 +345,10 @@ check(rc == cs.FAILED and not unconfirmed.load() and len(rows) == 1
       f"S2 named key: not parked, the row says 結果不明 ({rows})")
 
 # ── close-all ────────────────────────────────────────────────────────────────
+def still_held():
+    return pf._settle_parked(query=lambda entry: None, cancel=lambda entry: False)
+
+
 forder = types.ModuleType("lib.order_fakex")
 forder.get_spot_balances = lambda env: {"ETH": 1.0}
 forder.get_spot_price = lambda env, sym: 2000.0
@@ -278,12 +359,14 @@ MODE.update(place=OrderNotConfirmed("order still NEW"))
 reset()
 with contextlib.redirect_stderr(io.StringIO()):
     closed, errs, done, unclosed = flatten._flatten_spot(
-        "fakex", forder, {}, {"ETHUSDT": {"side": "long", "qty": 0.5}})
+        "fakex", forder, {}, {"ETHUSDT": {"side": "long", "qty": 0.5, "size": 1000.0}})
 parks = list(unconfirmed.load().values())
 rows = errors()
 check(errs == 1 and "ETHUSDT@spot" in unclosed and "ETHUSDT@spot" not in done
       and len(parks) == 1 and parks[0]["key"] == "ETHUSDT@spot" and parks[0]["sign"] == -1,
       f"F1 close-all spot: parked, its book kept ({errs}, {unclosed}, {parks})")
+check(parks and parks[0]["signed_diff"] == -1000.0 and still_held() == {"ETHUSDT@spot": 1000.0},
+      f"F1 the park holds the book's cost of the 0.5 sold (1000), not 0 ({parks and parks[0]['signed_diff']})")
 check(len(rows) == 1 and rows[0].get("kind") == "order_unconfirmed",
       f"F1 one order_unconfirmed row, no 下單失敗 ({rows})")
 
@@ -293,22 +376,98 @@ done, unclosed = set(), set()
 with contextlib.redirect_stderr(io.StringIO()):
     c3, e3 = flatten._restore_netted(
         "fakex", forder, {}, [{"symbol": "BTCUSDT", "side": "short", "size": 0.02}],
-        {"BTCUSDT": {"side": "long", "qty": 0.01, "netted": 0.01}}, done, unclosed)
+        {"BTCUSDT": {"side": "long", "qty": 0.01, "netted": 0.01, "size": 700.0}}, done, unclosed)
 parks = list(unconfirmed.load().values())
 rows = errors()
 check(e3 == 1 and "BTCUSDT" in unclosed and len(parks) == 1 and parks[0]["netted_exit"] is True
       and parks[0]["sign"] == -1,
       f"F2 netted restore: parked as a netted exit reducing the bot's long ({e3}, {parks})")
+check(parks and parks[0]["signed_diff"] == -700.0 and still_held() == {"BTCUSDT": 700.0},
+      f"F2 the park holds the netted share's book cost (700), not 0 ({parks and parks[0]['signed_diff']})")
 check(len(rows) == 1 and rows[0].get("kind") == "order_unconfirmed",
       f"F2 one order_unconfirmed row, no 下單失敗 ({rows})")
 
 reset()
 with contextlib.redirect_stderr(io.StringIO()):
     closed, errs, done, unclosed = flatten._flatten_spot(
-        "sinopac", forder, {}, {"ETHUSDT": {"side": "long", "qty": 0.5}})
+        "sinopac", forder, {}, {"ETHUSDT": {"side": "long", "qty": 0.5, "size": 1000.0}})
 rows = errors()
 check(errs == 1 and not unconfirmed.load() and len(rows) == 1 and not rows[0].get("kind"),
       f"F3 a TW broker's plain OrderNotConfirmed is not parked as a crypto order ({rows})")
+
+
+# ── close-all's main pass, end to end ────────────────────────────────────────
+def book(qty, cost):
+    json.dump({"seeded_at": "2026-09-01T00:00:00", "own_only_basis": 1, "symbols": {}},
+              open("manager/ledger_seed.json", "w"))
+    open("manager/orders.jsonl", "w").write(json.dumps(
+        {"ts": "2026-09-02T00:00:00", "symbol": "BTCUSDT", "exchange": "fakex",
+         "legs": [{"signed_diff": cost, "signed_qty": qty, "executed_qty": qty}]}) + "\n")
+    json.dump({"amounts": {"btc": cost}, "exchanges": {"btc": "fakex"}},
+              open("manager/portfolio_config.json", "w"))
+
+
+facct = types.ModuleType("lib.account_fakex")
+facct.get_positions = lambda env: [{"symbol": "BTCUSDT", "side": "long", "size": 0.01,
+                                    "mark_price": 50000.0}]
+facct.get_equity = lambda env: {"equity": 1000}
+fmain = types.ModuleType("lib.order_fakex")
+CLOSES = []
+
+
+def _main_close(env, sym, side, size, client_order_id=None):
+    CLOSES.append((sym, side, size))
+    raise OrderNotConfirmed(f"order {client_order_id} still NEW after 15s")
+
+
+fmain.close_position_partial = _main_close
+fmain.format_qty = lambda env, s, q, price=None: "0.01"
+for name in ("lib/account_fakex.py", "lib/order_fakex.py"):
+    open(name, "w").close()
+sys.modules["lib.account_fakex"], sys.modules["lib.order_fakex"] = facct, fmain
+flatten._read_env = lambda path=".env": {"FAKEX_API_KEY": "x", "FAKEX_SECRET_KEY": "x"}
+flatten._wait_for_inflight = lambda *a, **k: []
+_real_query = vw.query_parked_order
+vw.query_parked_order = lambda entry: None
+
+
+def close_all():
+    flatten._LOCK = None
+    with contextlib.redirect_stderr(io.StringIO()):
+        return flatten.flatten()
+
+
+reset()
+book(0.01, 700.0)
+ok = close_all()
+parks = list(unconfirmed.load().values())
+check(ok is False and len(CLOSES) == 1 and len(parks) == 1 and parks[0]["key"] == "BTCUSDT"
+      and parks[0]["signed_diff"] == -700.0 and str(parks[0]["client_order_id"]).startswith("flat"),
+      f"F4 main pass: an older lib's OrderNotConfirmed is parked at the book's cost 700, not the "
+      f"500 at the mark ({CLOSES}, {parks})")
+check(abs(pf.ledger_positions("fakex").get("BTCUSDT", {}).get("qty", 0) - 0.01) < 1e-12,
+      f"F4 its book is kept ({pf.ledger_positions('fakex')})")
+check(not [r for r in errors() if not r.get("kind")],
+      f"F4 no 下單失敗 row ({errors()})")
+ok = close_all()
+check(ok is False and len(CLOSES) == 1 and len(unconfirmed.load()) == 1,
+      f"B1 close-all again over the parked close: nothing sent a second time ({CLOSES})")
+check(any(r.get("close_all") and r.get("kind") == "order_unconfirmed" for r in errors()),
+      f"B1 …and the row says why (結果不明，不在這次平倉裡) ({errors()[-1:]})")
+vw.query_parked_order = _real_query
+guard.clear_halt("test")
+
+# ── close_symbol caps what it books at the book's share ──────────────────────
+reset()
+book(0.006, 420.0)
+rc, out = close(True)
+parks = list(unconfirmed.load().values())
+check(parks and parks[0]["signed_diff"] == -420.0 and parks[0].get("book_cap") == 0.006,
+      f"D1 the park holds the book's cost 420 and caps the booking at its 0.006 ({parks})")
+pf._settle_parked(query=lambda entry: (0.01, 70000.0), cancel=lambda entry: False)
+row = pf.ledger_positions("fakex").get("BTCUSDT")
+check(not row or abs(float(row.get("qty") or 0)) < 1e-12,
+      f"D1 the account's 0.01 filled: the book goes to 0, not a 0.004 phantom short ({row})")
 
 print("\n" + ("all ok" if not fails else f"{fails} FAILED"))
 sys.exit(1 if fails else 0)

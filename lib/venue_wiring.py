@@ -1150,6 +1150,27 @@ def query_parked_order(entry):
         return None
 
 
+def cancel_parked_order(entry):
+    """Cancel a parked limit order that may still rest (lib/unconfirmed limit=True), by its
+    order id or our client id. True = the venue took the cancel (or said it is gone): its end
+    is then read by query_parked_order. False on any failure — retried next round."""
+    venue, sym = entry.get("venue"), entry.get("venue_symbol")
+    oid, cid = entry.get("order_id"), entry.get("client_order_id")
+    try:
+        order = importlib.import_module(f"lib.order_{venue}")
+        if oid:
+            order.cancel_order(read_env(), sym, order_id=oid)
+        elif cid and _takes_kw(order.cancel_order, "client_order_id"):
+            order.cancel_order(read_env(), sym, client_order_id=cid)
+        else:
+            return False
+        return True
+    except Exception as e:
+        logging.info(f"[venue_wiring] parked {venue} limit {oid or cid} not cancelled yet "
+                     f"({type(e).__name__}: {str(e)[:120]})")
+        return False
+
+
 def auto_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
                      exchange=None, sold=0.0):
     """Reconciler place_order: routes on the key's market. Spot buys are sized

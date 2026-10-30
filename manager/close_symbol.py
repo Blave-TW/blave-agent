@@ -7,8 +7,8 @@
 For "close that one coin" requests. manager/flatten.py is the whole-account
 panic button and trips the global HALT; this touches nothing but the named
 symbol and never trips HALT (every other strategy keeps trading) — except a
-close of unknown outcome on the generic key that carries no id to look it up
-by (lib/portfolio.park_or_halt). Under HALT it still closes: an explicit close
+close of unknown outcome on the generic key that cannot be parked (no id to
+look it up by, or the park file cannot be written — lib/portfolio.park_or_halt). Under HALT it still closes: an explicit close
 takes the guard's close pass (reduces only).
 
 Keys: the .env NAMES are passed explicitly and only those are used. Every
@@ -491,6 +491,25 @@ def _outcome_unknown(ctx, e, cid):
     return wrap(e, ctx.venue, ctx.sym, cid) if wrap else None
 
 
+def _book_share(ctx, sym, side, size):
+    """(book cost of what this close may have taken, the most of its fill the book may take):
+    the bot's own row on that side, else (0, 0) — a legacy row with no quantity: its whole
+    cost, no cap."""
+    try:
+        import lib.portfolio as pf
+        book = pf.ledger_positions(ctx.venue) if hasattr(pf, "book_ready") else pf.ledger_positions()
+        row = book.get(sym) or {}
+    except Exception:
+        row = {}
+    if row.get("side") != side:
+        return 0.0, 0.0
+    qty = None if row.get("legacy") else float(row.get("qty") or 0)
+    cost = abs(float(row.get("size") or 0))
+    if not qty:
+        return cost, None
+    return cost * min(1.0, float(size) / qty), qty
+
+
 def run_close(ctx, dry_run=False):
     from lib.portfolio import _append_reconciler_log, _record_order_error, zero_ledger_symbols
 
@@ -563,20 +582,23 @@ def run_close(ctx, dry_run=False):
                     _record_order_error(sym, ctx.venue, f"close_symbol: {e}")
                 elif ctx.generic:
                     # the account the book tracks: parked like any other close of unknown outcome
-                    # (lib/portfolio.park_or_halt), booked once the venue answers
+                    # (lib/portfolio.park_or_halt), booked once the venue answers — at most the
+                    # book's own share (the close took the whole account row), held back at its cost
+                    logging.warning(f"close_symbol {sym}: outcome unknown: {e}")
                     from lib.portfolio import park_or_halt
-                    got = park_or_halt(sym, ctx.venue, u,
-                                       (-1.0 if side == "long" else 1.0) * size * price, True,
-                                       sign=-1 if side == "long" else 1)
-                    print(f"close outcome unknown ({e}) — it may have filled; {got}. Check the "
+                    cost, cap = _book_share(ctx, sym, side, size)
+                    got = park_or_halt(sym, ctx.venue, u, (-1.0 if side == "long" else 1.0) * cost,
+                                       True, sign=-1 if side == "long" else 1, book_cap=cap)
+                    print(f"close outcome unknown — it may have filled; {got}. Check the "
                           f"{side} {sym} position on the exchange; do not close it again by hand")
                     unknown = True
                 else:
                     # a named key's account is not the book's: nothing would ever look it up
-                    print(f"close outcome unknown ({e}) — it may have filled. Check the {side} "
+                    logging.warning(f"close_symbol {sym}: outcome unknown: {e}")
+                    print(f"close outcome unknown — it may have filled. Check the {side} "
                           f"{sym} position on the exchange; do not close it again by hand")
-                    _record_order_error(sym, ctx.venue, f"close_symbol: 平倉結果不明，可能已經成交，"
-                                                        f"請到交易所核對部位，不要再平一次（{e}）")
+                    _record_order_error(sym, ctx.venue, "平倉結果不明，可能已成交。"
+                                                        "先到交易所核對部位，不要再平。")
                     unknown = True
                 result, ok = None, False
             if closed and result is False:

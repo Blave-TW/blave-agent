@@ -76,6 +76,7 @@ def as_outcome_unknown(error, venue, venue_symbol, client_order_id):
     if isinstance(error, OrderOutcomeUnknown) or type(error).__name__ != "OrderNotConfirmed":
         return None
     return OrderOutcomeUnknown(str(error), venue=venue, venue_symbol=venue_symbol,
+                               order_id=getattr(error, "order_id", None),
                                client_order_id=client_order_id)
 
 
@@ -189,10 +190,13 @@ def held_keys(rows):
 
 
 def park(key, err, signed_diff, reduce_only, asset_spec=None, contributors=None, now=None,
-         netted_room=0.0, netted_exit=False, manual=False, venue=None, sign=None):
+         netted_room=0.0, netted_exit=False, manual=False, venue=None, sign=None, limit=False,
+         book_cap=None):
     """Raises OSError when the file cannot be written — the caller HALTs then. manual=True: an
     order Blave cannot look up (no ids, or a venue / order type without a lookup): parked all the
-    same so its symbol stays held after 啟動下單 and resolve() can book it, but never queried."""
+    same so its symbol stays held after 啟動下單 and resolve() can book it, but never queried.
+    limit=True: a limit order that may still rest — cancelled each round it reads unfinished.
+    book_cap: the most of its fill the book may take (a close of a whole account position)."""
     pid = (f"manual:{key}:{int((time.time() if now is None else now) * 1000)}" if manual
            else park_id(err))
     with _locked():
@@ -210,6 +214,8 @@ def park(key, err, signed_diff, reduce_only, asset_spec=None, contributors=None,
             "parked_at": time.time() if now is None else now,
             "at": datetime.utcnow().isoformat(), "reads": 0, "reminded_at": None,
             "error": str(err)[:200], "manual": bool(manual),
+            **({"limit": True} if limit else {}),
+            **({"book_cap": float(book_cap)} if book_cap is not None else {}),
         }
         _write(rows)
     return pid

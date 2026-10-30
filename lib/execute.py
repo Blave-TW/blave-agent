@@ -1340,7 +1340,7 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
         if is_entry:
             e.netted_room = max(0.0, room - sum(f["base"] for f in fills))
         got = park_or_halt(symbol, tools.get("venue") or exchange, e, usd if buy else -usd,
-                           reduce_only, asset_spec, contributors)
+                           reduce_only, asset_spec, contributors, limit=True)
         cid = getattr(e, "client_order_id", None)
         logging.warning(f"[execute] {key} chase: limit post outcome unknown ({cid}) — {got}")
         if not cid or "cancel_cid" not in tools:
