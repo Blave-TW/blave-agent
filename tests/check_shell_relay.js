@@ -207,6 +207,37 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     ok("4 report 回 401:手機那一輪停、排隊清空", m.stopped.includes("desktop-y0000001") && !(m.r._internals.queue.get("desktop-y0000002") || []).length && m.r.state().mobileTurns === 0);
     delete m.resp[RL.EP.report];
     await m.end(); }
+  { // poll 回 403 APP_CHAT_OFF(body 帶 controls):停止與撤回照做,然後停
+    const m = rig({ busy: ["desktop-o0000002"], sessions: { "desktop-o0000001": { last: 1, rows: [row(1, "user", "x")] }, "desktop-o0000002": { last: 1, rows: [row(1, "user", "x")] } } });
+    await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.feed([msg("desktop-o0000001", "msg000000o1"), msg("desktop-o0000002", "msg000000o2")]); await wait(30);
+    m.polls.push({ status: 403, body: { error_code: "APP_CHAT_OFF", controls: [{ type: "interrupt", session_id: "desktop-o0000001" }, { type: "withdraw", session_id: "desktop-o0000002", message_id: "msg000000o2" }] } });
+    m.feed([]); await wait(60);
+    const n = m.of(RL.EP.poll).length; await wait(50);
+    ok("7 poll 回 403 APP_CHAT_OFF:body 的停止與撤回照做、停輪詢、畫面藏起來", m.stopped.includes("desktop-o0000001") && m.chunks().some((c) => c.type === "cancelled" && c.message_ids.includes("msg000000o2")) && m.r.state().visible === false && m.of(RL.EP.poll).length === n);
+    await m.end(); }
+  { // poll 回 409 RELAY_NOT_ENABLED:補打 enable 再輪;一直 409 就停
+    const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20);
+    const en0 = m.of(RL.EP.enable).length, p0 = m.of(RL.EP.poll).length;
+    m.polls.push({ status: 409, body: { error_code: "RELAY_NOT_ENABLED" } });
+    m.feed([]); await wait(60);
+    ok("7 poll 回 409 RELAY_NOT_ENABLED:補打 enable、再輪一次", m.of(RL.EP.enable).length === en0 + 1 && m.of(RL.EP.poll).length >= p0 + 2);
+    await m.end(); }
+  { const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.polls.push({ status: 409, body: { error_code: "RELAY_NOT_ENABLED" } }, { status: 409, body: { error_code: "RELAY_NOT_ENABLED" } }, { status: 409, body: { error_code: "RELAY_NOT_ENABLED" } });
+    const p0 = m.of(RL.EP.poll).length, en0 = m.of(RL.EP.enable).length;
+    m.feed([]); await wait(80);
+    ok("7 poll 一直回 409:enable 只補打一次、輪詢停下(不空轉)", m.of(RL.EP.enable).length === en0 + 1 && m.of(RL.EP.poll).length - p0 <= 3, [m.of(RL.EP.poll).length - p0]);
+    await m.end(); }
+  { // report 回 cancel＋同一條的 interrupt:只停一次
+    const m = rig({ sessions: { "desktop-w0000001": { last: 1, rows: [row(1, "user", "x")] } } });
+    await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.feed([msg("desktop-w0000001", "msg000000w1")]); await wait(30);
+    m.resp[RL.EP.report] = { status: 200, body: { results: [], interrupt: ["desktop-w0000001"], cancel: ["msg000000w1"] } };
+    m.r.onTurn("desktop-w0000001", "turn-event", { type: "text", text: "x" }); await wait(RL.BATCH_MS + 120);
+    ok("2 report 回 cancel 與同一條的 interrupt:stopTurn 只叫一次", m.stopped.filter((s) => s === "desktop-w0000001").length === 1, m.stopped);
+    delete m.resp[RL.EP.report];
+    await m.end(); }
   { // poll 連續回 not_enabled、enable 卻回 200:補打一次,第二次就停(不在 30 秒內空轉)
     const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20);
     m.polls.push({ status: 200, body: { enabled: false, reason: "not_enabled", messages: [], controls: [] } }, { status: 200, body: { enabled: false, reason: "not_enabled", messages: [], controls: [] } });
@@ -299,7 +330,7 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
   { const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20);
     m.feed([], [{ type: "interrupt", session_id: "desktop-x0000001" }], { enabled: false, reason: "off" }); await wait(30);
     const n = m.of(RL.EP.poll).length; await wait(50);
-    ok("7 poll 回 enabled:false reason off:停輪詢、畫面藏起來", m.r.state().visible === false && m.of(RL.EP.poll).length === n);
+    ok("7 poll 回 enabled:false reason off(舊形狀):停輪詢、畫面藏起來", m.r.state().visible === false && m.of(RL.EP.poll).length === n);
     await m.end(); }
   { const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20);
     const en0 = m.of(RL.EP.enable).length;

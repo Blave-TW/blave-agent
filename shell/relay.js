@@ -196,12 +196,14 @@ function createRelay(opts) {
   }
   /* report 回應:interrupt = 手機按了停止的那幾條;cancel = api 已經告訴手機「沒跑」的那幾句,不得跑、跑了就停 */
   function reportAnswer(b) {
-    for (const sid of Array.isArray(b.interrupt) ? b.interrupt : []) if (typeof sid === "string" && active.has(sid)) stopActive(sid);
-    for (const mid of Array.isArray(b.cancel) ? b.cancel : []) if (typeof mid === "string") cancelMessage(mid, false);
+    // cancel 那幾句的對話也會出現在 interrupt:同一輪只停一次
+    const stops = new Set();
+    for (const mid of Array.isArray(b.cancel) ? b.cancel : []) if (typeof mid === "string") cancelMessage(mid, false, stops);
+    for (const sid of Array.isArray(b.interrupt) ? b.interrupt : []) if (typeof sid === "string" && active.has(sid) && !stops.has(sid)) { stops.add(sid); stopActive(sid); }
   }
   function stopActive(sid) { try { opts.stopTurn(sid); } catch (_) { /* 已經結束 */ } }
   /* 一句不得跑:還在排隊就拿掉(report = 要不要回報 cancelled;api 自己判的不用回),已經開跑就停 */
-  function cancelMessage(mid, report) {
+  function cancelMessage(mid, report, stops) {
     for (const [sid, q] of queue) {
       const i = q.findIndex((x) => x.message_id === mid);
       if (i < 0) continue;
@@ -210,7 +212,7 @@ function createRelay(opts) {
       mobileActiveSync();
       return true;
     }
-    for (const [sid, a] of active) if (a.message_id === mid) { stopActive(sid); return true; }
+    for (const [sid, a] of active) if (a.message_id === mid) { if (!stops || !stops.has(sid)) { if (stops) stops.add(sid); stopActive(sid); } return true; }
     return false;
   }
 
@@ -408,8 +410,20 @@ function createRelay(opts) {
     (async () => {
       let backoff = BACKOFF_MIN_MS;
       while (gen === pollGen && live()) {
+        const fired0 = reenableAt;
         const r = await call(EP.poll, { ver: opts.ver || "", restarting: !!opts.isRestarting() }, POLL_TIMEOUT_MS);
+        const code = r.body && r.body.error_code;
+        // 總開關關:body 帶的停止與撤回照做,然後停。排在世代檢查前面:call 裡的 setFlag(false) 已經換掉世代
+        if (r.status === 403 && code === OFF_CODE) {
+          for (const c of Array.isArray(r.body.controls) ? r.body.controls : []) control(c);
+          break;
+        }
         if (gen !== pollGen) break;
+        if (r.status === 409 && code === NOT_ENABLED_CODE) {
+          // 這台在 api 那邊沒記成開著:call 已經補打 enable;這一次真的打了而且成功才再輪,否則停、等 2 分鐘那一輪(不空轉)
+          if (reenableAt !== fired0 && reenabling && (await reenabling)) continue;
+          break;
+        }
         const b = r.status === 200 ? r.body : null;
         if (b && b.enabled === false) {
           for (const c of Array.isArray(b.controls) ? b.controls : []) control(c);   // 停止與撤回照收
