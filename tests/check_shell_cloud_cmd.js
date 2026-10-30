@@ -314,7 +314,38 @@ const ackCalls = (w) => w.posts.filter((p) => p.u.indexOf("/ack") >= 0).length;
     const CCap = require("../shell/cloud_capital.js");
     const cap = CCap.createCapital({ send: async () => r1 });
     const sc = await cap.saveCreds({ id: "A123456789", pw: "pw1234" });
-    t("雲端群益:關卡回 UNDELIVERED + 原代號 + until(畫面講何時能改)", sc.code === "UNDELIVERED" && sc.error === "KEY_CHANGE_VERIFY" && sc.until === UNTIL); }
+    t("雲端群益:關卡代號原樣、明細同連接框(畫面走同一套輸碼流程)", sc.code === "KEY_CHANGE_VERIFY" && sc.detail.until === UNTIL && sc.detail.sent === true);
+    let seen = null; const cap2 = CCap.createCapital({ send: async (c, a, sx, o) => { seen = o; return r1; } });
+    await cap2.saveCreds({ id: "A123456789", pw: "pw1234", keyChangeCode: "654321", lang: "en" });
+    const mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+    t("雲端群益:碼與語言交給 cloudCmd.send 的第四個參數(cloudcmd 再驗形狀、鑄新的 request_id)", seen && seen.keyChangeCode === "654321" && seen.lang === "en"
+      && /send: \(cmd, args, secrets, o\) => cloudCmd\(\)\.send\(cmd, args, secrets, o\)/.test(mainSrc2)); }
+
+  // ── 畫面:驗證碼那一格的狀態機(trade.js kcNext,連接框與雲端群益共用)與雲端群益送出流程(capital.js capSaveCreds)──
+  { const rd = (f) => fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", f), "utf8");
+    const fn = (src, name) => { const i = src.indexOf((src.indexOf("async function " + name + "(") >= 0 ? "async " : "") + "function " + name + "("); return src.slice(i, src.indexOf("\n}", i) + 2); };
+    const ev = []; const kcTrack = (step) => ev.push(step);   // eslint-disable-line no-unused-vars
+    const kcNext = eval("(" + fn(rd("trade.js"), "kcNext") + ")");
+    let kc = kcNext(null, "KEY_CHANGE_VERIFY"); const shown = !!kc && kc.code === "" && ev.join() === "shown";
+    kc.code = "111111"; kc = kcNext(kc, "KEY_CHANGE_CODE_INVALID");
+    const kept = kcNext({ code: "123456" }, "UNDELIVERED"), fmt = kcNext({ code: "12" }, "KC_FORMAT");
+    const passed = kcNext({ code: "123456" }, "REJECTED"), none = kcNext(null, "OK"), locked = kcNext({ code: "" }, "VERIFY_LOCKED");
+    t("kcNext:要碼出現(shown 一次)、錯碼清空不重送 shown、沒送出去／形狀不對保留原碼、過了關卡收起(ok)、被鎖收起(locked);沒在驗證的成功不送",
+      shown && kc.code === "" && kept.code === "123456" && fmt.code === "12" && passed === null && none === null && locked === null && ev.join() === "shown,ok,locked");
+    // capSaveCreds:錯碼重輸、過期不帶碼再送一次、每趟都經主行程(主行程鑄新的 request_id)、通過送 ok
+    const q = [], calls = [], said = []; let CAP = { kc: { code: "" }, id: "A123456789", pw: "pw", busy: false, msg: null };
+    const window = { blave: { capitalCreds: async (id, pw, o) => { calls.push(o.keyChangeCode || null); return q.shift(); } } };   // eslint-disable-line no-unused-vars
+    const capDown = () => false, capCC = () => null, capPaint = () => {}, kcFocus = () => true, capTrack = () => {}, srSay = (x) => said.push(x), t2 = (k) => k;   // eslint-disable-line no-unused-vars
+    const LANG = "zh", cxKcText = (m) => m && m.code;   // eslint-disable-line no-unused-vars
+    const capSaveCreds = eval("(" + fn(rd("capital.js"), "capSaveCreds").replace(/\bt\(/g, "t2(") + ")");
+    ev.length = 0;
+    CAP.kc.code = "12"; const r0 = await capSaveCreds();
+    q.push({ code: "KEY_CHANGE_CODE_INVALID", detail: {} }); CAP.kc.code = "111111"; await capSaveCreds(); const afterInvalid = CAP.kc && CAP.kc.code === "" && CAP.msg.code === "KEY_CHANGE_CODE_INVALID";
+    q.push({ code: "KEY_CHANGE_CODE_EXPIRED", detail: {} }, { code: "KEY_CHANGE_VERIFY", detail: { sent: true } }); CAP.kc.code = "222222"; await capSaveCreds();
+    const afterExpired = CAP.msg.code === "KEY_CHANGE_VERIFY" && CAP.msg.expired === true && !!CAP.kc;
+    q.push({ code: "OK" }); CAP.kc.code = "333333"; const ok = await capSaveCreds();
+    t("capSaveCreds:形狀不對不送、錯碼留著格子、過期自動不帶碼再送、通過收起並送 ok",
+      r0 === false && CAP.kc === null && ok === true && afterInvalid && afterExpired && JSON.stringify(calls) === JSON.stringify(["111111", "222222", null, "333333"]) && ev.join() === "ok"); }
 
   // ── 原文:不 require electron、不 log、不落地 ──
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "cloudcmd.js"), "utf8");

@@ -3124,6 +3124,10 @@ msgstr "本機 AI 的登入方式，例如訂閱或 API 金鑰；不含帳號與
 msgid "priv.collect.10"
 msgstr "登入失敗的類別，以及當下是否判定為已登入"
 
+# 0.1.37 改金鑰驗證碼(key_verify);面板排在 priv.collect.10 之後
+msgid "priv.collect.11"
+msgstr "改金鑰時驗證碼框的出現、通過與鎖住；不含驗證碼"
+
 msgid "priv.never.h"
 msgstr "使用資料不收"
 
@@ -9390,6 +9394,3 @@ msgstr "驗證碼錯太多次，今天不能再試。{time} 後就不用驗證�
 msgid "cx.kc.format"
 msgstr "請輸入 6 位數驗證碼。"
 
-# 雲端群益開通這條路沒有輸碼的格子:講關卡何時消失
-msgid "cap.err.keyVerify"
-msgstr "帳號剛配對新手機，{time} 後才能在這裡改帳密。"

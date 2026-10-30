@@ -3616,14 +3616,14 @@ app.whenReady().then(() => {
   /* 雲端主機的群益開通(cloud_capital.js;畫面 renderer/capital.js)。pfx 與匯出密碼只在這個行程裡封裝,renderer 只拿得到檔名與代號;
      指令只收固定那幾步。送完不管結果都要一份新狀態:長步驟的結果在主機回報的 capital_connect 裡,不在回條裡 */
   const capital = () => _capital || (_capital = require("./cloud_capital").createCapital({
-    send: (cmd, args, secrets) => cloudCmd().send(cmd, args, secrets),
+    send: (cmd, args, secrets, o) => cloudCmd().send(cmd, args, secrets, o),
     pick: async () => { const w = BrowserWindow.getAllWindows()[0]; const r = await dialog.showOpenDialog(w, { properties: ["openFile"], filters: [{ name: "PFX", extensions: ["pfx", "p12"] }] }); return r.canceled ? null : r.filePaths[0]; },
     stat: (p) => fs.statSync(p), readFile: (p) => fs.readFileSync(p), basename: (p) => path.basename(p),
     after: () => { cloudHost().start(); cloudHost().refresh(true).catch(() => {}); },
   }));
   const capDenied = { code: "NOT_ALLOWED" };
   handle("capital-pick", () => capital().pickPfx(), capDenied);
-  handle("capital-creds", (_e, a) => capital().saveCreds({ id: a && a.id, pw: a && a.pw }), capDenied);
+  handle("capital-creds", (_e, a) => capital().saveCreds({ id: a && a.id, pw: a && a.pw, keyChangeCode: a && typeof a.keyChangeCode === "string" ? a.keyChangeCode : null, lang: a && a.lang }), capDenied);
   handle("capital-step", (_e, name) => capital().step(String(name || "")), capDenied);
   handle("capital-upload", (_e, pw) => capital().upload(pw), capDenied);
   handle("capital-unbind", () => capital().unbind(), capDenied);

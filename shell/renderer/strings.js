@@ -1015,6 +1015,7 @@ const STRINGS = {
     "priv.collect.8": "When you download a no-sign-in library strategy: which one (its library number) and the installation ID, to count installs; once you sign in, it is linked to your Blave account",
     "priv.collect.9": "How the local AI is signed in, e.g. subscription or API key; no account or key data",
     "priv.collect.10": "Which kind of sign-in failure, and whether the AI counted as signed in",
+    "priv.collect.11": "Whether the key-change code box appeared, passed or locked, never the code",
     "priv.never.h": "Not in usage data",
     "priv.never.1": "Chat content",
     "priv.never.2": "Your own strategies' code and names",
@@ -3042,7 +3043,6 @@ const STRINGS = {
     "cx.kc.invalid": "That code is wrong. Enter it again.",
     "cx.kc.locked": "Too many wrong codes today. From {time}, no code is needed.",
     "cx.kc.format": "Enter the 6-digit code.",
-    "cap.err.keyVerify": "A phone was paired recently. You can change this login here from {time}.",
   },
   zh: {
     "cn.h": "Blave 不內建 AI。",
@@ -4054,6 +4054,7 @@ const STRINGS = {
     "priv.collect.8": "沒登入或登入失效時從策略庫下載免登入策略：哪一支（策略庫編號）和安裝識別碼，用來算安裝人數；之後登入就會跟你的帳號對上",
     "priv.collect.9": "本機 AI 的登入方式，例如訂閱或 API 金鑰；不含帳號與金鑰",
     "priv.collect.10": "登入失敗的類別，以及當下是否判定為已登入",
+    "priv.collect.11": "改金鑰時驗證碼框的出現、通過與鎖住；不含驗證碼",
     "priv.never.h": "使用資料不收",
     "priv.never.1": "對話內容",
     "priv.never.2": "你自己的策略：程式碼與名稱",
@@ -6081,6 +6082,5 @@ const STRINGS = {
     "cx.kc.invalid": "驗證碼不對，請重新輸入。",
     "cx.kc.locked": "驗證碼錯太多次，今天不能再試。{time} 後就不用驗證。",
     "cx.kc.format": "請輸入 6 位數驗證碼。",
-    "cap.err.keyVerify": "帳號剛配對新手機，{time} 後才能在這裡改帳密。",
   },
 };

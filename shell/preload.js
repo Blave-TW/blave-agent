@@ -86,7 +86,7 @@ contextBridge.exposeInMainWorld("blave", {
   cloudConnect: (a) => ipcRenderer.invoke("cloud-connect", { venue: a && a.venue, apiKey: a && a.apiKey, secret: a && a.secret, passphrase: a && a.passphrase, keyChangeCode: a && a.keyChangeCode, lang: a && a.lang }),
   // 雲端群益開通(cloud_capital.js):憑證檔由主行程開對話框讀進記憶體,這裡只拿得到檔名與代號
   capitalPick: () => ipcRenderer.invoke("capital-pick"),
-  capitalCreds: (id, pw) => ipcRenderer.invoke("capital-creds", { id, pw }),
+  capitalCreds: (id, pw, o) => ipcRenderer.invoke("capital-creds", { id, pw, keyChangeCode: o && o.keyChangeCode, lang: o && o.lang }),
   capitalStep: (name) => ipcRenderer.invoke("capital-step", name),
   capitalUpload: (pw) => ipcRenderer.invoke("capital-upload", pw),
   capitalUnbind: () => ipcRenderer.invoke("capital-unbind"),
