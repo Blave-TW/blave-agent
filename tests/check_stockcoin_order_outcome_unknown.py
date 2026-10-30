@@ -219,6 +219,21 @@ wire([Resp(400, {"code": -1003, "msg": "Too many requests"}), ACCEPTED], FILLED)
 check(place()["order_id"] == "9001" and len(posts()) == 2, "-1003 (rate limited) is retried")
 wire([Resp(429, None, "<html>Too Many Requests</html>"), ACCEPTED], FILLED)
 check(place()["order_id"] == "9001" and len(posts()) == 2, "HTTP 429 (non-JSON, rate limited) is retried")
+wire([Resp(429, {"code": -1003, "msg": "Too many requests"}), ACCEPTED], FILLED)
+check(place()["order_id"] == "9001" and len(posts()) == 2, "HTTP 429 -1003 is retried")
+wire([Resp(429, {"code": -1007, "msg": "TIMEOUT"}), ACCEPTED], NOT_FOUND)
+try:
+    place()
+    check(False, "HTTP 429 -1007: must not return a fill")
+except sc.OrderNotConfirmed as e:
+    looked = [c for c in CALLS if c["method"] == "GET" and c["query"].get("clientOrderId") == "rc1"]
+    check(len(posts()) == 1 and looked and unknown_ok(e),
+          "HTTP 429 carrying -1007: not retried, looked up by clientOrderId, parkable unknown outcome")
+except Exception as e:
+    check(False, f"HTTP 429 -1007 raised {type(e).__name__}: {e}")
+wire([Resp(429, {"code": -1007, "msg": "TIMEOUT"}), ACCEPTED], FILLED)
+check(place()["order_id"] == "9001" and len(posts()) == 1,
+      "HTTP 429 carrying -1007, found by clientOrderId: confirmed, one POST")
 check("-1141" not in sc.SEND_UNKNOWN_CODES and sc.DUPLICATED_ORDER == "-1141",
       "-1141 is handled on its own (looked up, then unknown), not through SEND_UNKNOWN_CODES")
 wire(requests.exceptions.InvalidURL("bad"), FILLED)
@@ -294,11 +309,13 @@ sc._rules_cache.clear()
 wire(ACCEPTED, ACCEPTED)
 try:
     place()
+    check(False, "poll timeout after reading NEW: must raise")
 except sc.OrderNotConfirmed as e:
     check(e.last_status == "NEW", f"poll timeout after reading NEW: last_status NEW ({e.last_status})")
 wire(ACCEPTED, requests.exceptions.ReadTimeout("t"))
 try:
     place()
+    check(False, "poll timeout, never read: must raise")
 except sc.OrderNotConfirmed as e:
     check(e.last_status is None, "poll timeout, never read: last_status None")
 

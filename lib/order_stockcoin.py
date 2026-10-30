@@ -400,7 +400,9 @@ def _send(method, path, env, params=None, retries=3, no_resend=False):
             _sync_time(env)
             last_err = e
             continue
-        retryable = (code == RATE_LIMITED or r.status_code == 429
+        # a 429 is a rate limit only when it says so (-1003) or carries no venue code; a 429
+        # carrying another code (-1007…) is classified by that code
+        retryable = (code == RATE_LIMITED or (r.status_code == 429 and code == "429")
                      or (method != "POST" and r.status_code >= 500))
         if retryable and attempt < retries - 1:
             time.sleep(1 + attempt * 2)
