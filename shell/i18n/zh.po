@@ -3069,6 +3069,12 @@ msgstr "每 2 分鐘上傳策略、部位與權益，只有你看得到。手機
 msgid "mv.leadNoName"
 msgstr "每 2 分鐘上傳策略、部位與權益，只有你的帳號看得到。關掉會刪掉平台上這台的資料。"
 
+msgid "mv.appIos"
+msgstr "App Store"
+
+msgid "mv.appAndroid"
+msgstr "Google Play"
+
 msgid "mv.leadPending"
 msgstr "已關閉，但平台上這台的資料還沒刪成；連上網路後會自動再刪。"
 
@@ -3407,9 +3413,6 @@ msgstr "知道了"
 
 msgid "src.empty1"
 msgstr "還沒有自帶金鑰的資料來源。"
-
-msgid "src.empty2"
-msgstr "金鑰不要貼在對話裡。"
 
 msgid "src.rowLocal.one"
 msgstr "{n} 個欄位 · 用到它的策略：{names}"
@@ -6691,9 +6694,6 @@ msgstr "例如：每個策略都要設停損，預設用進場價的 2%。"
 
 msgid "rules.emptyLead"
 msgstr "還沒有任何規則。"
-
-msgid "rules.emptyHow"
-msgstr "在對話裡說「以後都要設停損」，也會記成一條規則。"
 
 msgid "rules.full"
 msgstr "已經 10 條，是上限。要新增請先刪掉一條——不會自動丟掉舊的。"

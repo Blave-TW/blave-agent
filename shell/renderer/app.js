@@ -721,7 +721,24 @@ function mvBlock(mk) {
     lead.append(a || ""); lead.append(mk("span", "dn", MV.name)); lead.append(b || "");
   } else lead.textContent = t("mv.leadNoName");
   wrap.append(lead);
+  if (on) wrap.append(mvQr(mk));
   return wrap;
+}
+/* 開著之後的下一步是拿手機開 App:兩個商店 QR(圖是 web footer 那兩張,靜態檔、不在 runtime 產生)。
+   圖是透明底黑碼,暗色也固定白底才掃得到;商店名稱是給不能掃的人的替代路徑,所以圖 alt="" */
+const MV_APP_IOS = "https://apps.apple.com/tw/app/blave/id6747014559";
+const MV_APP_ANDROID = "https://play.google.com/store/apps/details?id=org.wuchi.blave.android";
+function mvQr(mk) {
+  const box = mk("div", "mv-qr");
+  for (const ios of [true, false]) {
+    const fig = mk("figure"), plate = mk("div", "qr-plate"), img = mk("img");
+    img.src = ios ? "img/qr_ios.png" : "img/qr_android.png"; img.alt = ""; img.width = img.height = 112;
+    plate.append(img);
+    const go = mk("button", "btn-quiet", t(ios ? "mv.appIos" : "mv.appAndroid")); go.type = "button";
+    go.addEventListener("click", () => { trackFeature(ios ? "app_link_ios" : "app_link_android"); window.blave.openExternal(ios ? MV_APP_IOS : MV_APP_ANDROID); });
+    fig.append(plate, go); box.append(fig);
+  }
+  return box;
 }
 // 連點:前一次還沒回來就不再送(不用 disabled:按鈕一停用焦點就掉到 body)
 let PRIV_BUSY = false;
@@ -1235,7 +1252,7 @@ var INSTALL_ID = null, INSTALL_ID_T = 0;   // var:同 UP,這一行還沒跑到�
 async function aboutIdLoad() {
   try { const id = await window.blave.telemetryInstallId(); INSTALL_ID = typeof id === "string" && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id) ? id : null; } catch (_) { INSTALL_ID = null; }
   $("set-idv").textContent = INSTALL_ID || "";
-  $("set-id").hidden = $("set-id-note").hidden = !INSTALL_ID;
+  $("set-id").hidden = !INSTALL_ID;
 }
 $("set-id-copy").addEventListener("click", async () => {
   if (!INSTALL_ID) return;
@@ -1249,16 +1266,19 @@ async function awakeLoad() { try { AWAKE = (await window.blave.keepAwake()) !== 
 function awakePaint() {
   const sw = $("set-awake-sw"); if (!sw) return;
   sw.classList.toggle("off", !AWAKE); sw.setAttribute("aria-checked", AWAKE ? "true" : "false");
-  // Windows 開著時限定接電源(Modern Standby 用電池時系統仍會收回);關掉時多講一句:統一期貨有部位那條不看這個開關(Wei 10-07 的規則照擋)
-  const win = window.blave.platform === "win32";
-  $("set-awake-lead").textContent = t(AWAKE ? (win ? "set.awake.leadWin" : "set.awake.lead") : win ? "set.awake.leadOffWin" : "set.awake.leadOff");
+  // 泡泡只講開著時會怎樣、不隨開關換(Switch recipe);Windows 限定接電源(Modern Standby 用電池時系統仍會收回)。
+  // 關掉的後果是停單、跟錢有關,留在看得到的那句;Windows 多講統一期貨有部位那條不看這個開關(Wei 10-07 的規則照擋)
+  const win = window.blave.platform === "win32", lead = $("set-awake-lead");
+  $("set-awake-tip").textContent = t(win ? "set.awake.leadWin" : "set.awake.lead");
+  lead.hidden = AWAKE;
+  lead.textContent = AWAKE ? "" : t(win ? "set.awake.leadOffWin" : "set.awake.leadOff");
 }
 $("set-awake-sw").addEventListener("click", async () => {
   let r = null;
   try { r = await window.blave.keepAwakeSet(!AWAKE); } catch (_) { r = null; }
   if (typeof r !== "boolean") return;   // 沒切成:畫面維持原狀
   if (AWAKE && !r) trackFeature("awake_off");
-  AWAKE = r; awakePaint(); srSay($("set-awake-lead").textContent);
+  AWAKE = r; awakePaint(); srSay($(AWAKE ? "set-awake-tip" : "set-awake-lead").textContent);
 });
 /* 設定 › 一般:回覆好了通知我(主行程 ui-prefs replyNotify,缺 = 開)與提示音(replySound,缺 = 開,兩個各管各的)。
    osOff = 這次啟動後系統通知收到過 failed、之後還沒有一則成功出現 */
@@ -1793,6 +1813,7 @@ function escTop() {
 }
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.isComposing || e.keyCode === 229) return;   // 輸入法組字中的 Esc 是取消選字(同 trade.js envWire)
+  if (tipEsc()) { e.preventDefault(); return; }
   const close = escTop(); if (close) { e.preventDefault(); close(); }
 });
 $("mp-panel").addEventListener("keydown", (e) => {
@@ -5134,13 +5155,18 @@ document.addEventListener("keydown", (e) => {
 
 /* 泡泡由 CSS 的 :hover / :focus-visible + .tip 帶出來的那幾種(.mp-tip、.tr-tipb、.rules-tipb、瀏覽器的 .ibtn):Esc 要收得掉(canon › Tooltip),
    但 CSS 狀態收不掉——給觸發點掛 data-tip-off(CSS 帶 :not([data-tip-off])),滑出或失焦再拿掉 */
-document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
+// 回傳這一下有沒有收掉一個看得見的泡泡:有的話 Esc 只收泡泡、不往下關框(escTop 先問這裡,一次只關一層)
+function tipEsc() {
+  let shut = false;
   for (const x of [document.activeElement, ...document.querySelectorAll(":hover")]) {
-    const btn = x && x.nextElementSibling && x.nextElementSibling.classList.contains("tip") ? x : null;
-    if (!btn || btn.hasAttribute("data-tip-off")) continue;
-    btn.setAttribute("data-tip-off", "");
-    const on = () => { btn.removeAttribute("data-tip-off"); btn.removeEventListener("blur", on); btn.removeEventListener("mouseleave", on); };
-    btn.addEventListener("blur", on); btn.addEventListener("mouseleave", on);
+    // 設定頁的開關與〔複製〕跟泡泡不相鄰(泡泡在 label 裡),靠 aria-describedby 認
+    const desc = x && x.getAttribute && x.getAttribute("aria-describedby"), dt = desc && document.getElementById(desc);
+    const tip = x && x.nextElementSibling && x.nextElementSibling.classList.contains("tip") ? x.nextElementSibling : dt && dt.classList.contains("tip") ? dt : null;
+    if (!tip || x.hasAttribute("data-tip-off")) continue;
+    if (getComputedStyle(tip).display !== "none") shut = true;
+    x.setAttribute("data-tip-off", "");
+    const on = () => { x.removeAttribute("data-tip-off"); x.removeEventListener("blur", on); x.removeEventListener("mouseleave", on); };
+    x.addEventListener("blur", on); x.addEventListener("mouseleave", on);
   }
-});
+  return shut;
+}

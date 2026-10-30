@@ -128,7 +128,7 @@ ok("安裝失敗在 Windows:換 up.installFailed.win(沒有「應用程式」資
   && /win: window\.blave\.platform === "win32" \}\);/.test(src) && /blave\.org/.test(STR.zh["up.installFailed.win"]) && !/應用程式|磁碟映像/.test(STR.zh["up.installFailed.win"]) && !/Applications|disk image/.test(STR.en["up.installFailed.win"]));
 ok("背景下載 / 暫存中 / 沒有更新來源:關於列不寫狀態字(沒有東西可等)", ["downloading", "staging", "off"].every((ph) => paint({ ...C, phase: ph }, cloud()).line === 'up.row.app{"av":"0.0.7"}'));
 ok("狀態字不換色:upPlan 不回任何 cls,CSS 沒有 .st.up / .st.ok / 舊兩行版的 id;檢查更新不再掛「也會更新雲端」的 hover(up.check.cloudTip 刪了)", !("cls" in plan(idle, cloud()).row) && !("cls" in plan(idle, cloud()).cloud) && !/\.set-about \.st|set-up-(ver|txt|cver|ctxt|cnote|lbtn|head)|up-dot/.test(css + html + src) && !/cloudTip/.test(src + fs.readFileSync(path.join(R, "strings.js"), "utf8")));
-ok("DOM:關於兩行(0.1.15):第一行電腦版 + 檢查更新,底下是排程自動更新的開關(0.1.36);第二行 #set-upc(預設 hidden)雲端主機 + 更新雲端主機;兩行都 role=status;#ws-update 的字不走 data-i18n", /<p class="set-up-line" id="set-up-line" role="status"><\/p>\s*<button type="button" class="btn-quiet" id="set-up-btn"><\/button>\s*<\/div>\s*<!--[^>]*-->\s*<div class="set-upsch" id="set-upsch" hidden>[\s\S]*?<\/p>\s*<\/div>\s*<div class="set-up-row" id="set-upc" hidden>\s*<p class="set-up-line" id="set-upc-line" role="status"><\/p>\s*<button type="button" class="btn-quiet" id="set-upc-btn" hidden><\/button>/.test(html)
+ok("DOM:關於兩行(0.1.15):第一行電腦版 + 檢查更新,底下是排程自動更新的開關(0.1.36);第二行 #set-upc(預設 hidden)雲端主機 + 更新雲端主機;兩行都 role=status;#ws-update 的字不走 data-i18n", /<p class="set-up-line" id="set-up-line" role="status"><\/p>\s*<button type="button" class="btn-quiet" id="set-up-btn"><\/button>\s*<\/div>\s*<!--[^>]*-->\s*<div class="set-upsch" id="set-upsch" hidden>[\s\S]*?<\/button><\/div>\s*<\/div>\s*<div class="set-up-row" id="set-upc" hidden>\s*<p class="set-up-line" id="set-upc-line" role="status"><\/p>\s*<button type="button" class="btn-quiet" id="set-upc-btn" hidden><\/button>/.test(html)
   && (() => { const span = html.slice(html.indexOf('id="ws-update"'), html.indexOf("</button>", html.indexOf('id="ws-update"'))); return !/data-i18n/.test(span) && /<span><\/span>/.test(span); })());
 // ── 聊天輸入列右上那一格只剩 (c) 更新中…;本機等重開的提示搬到側欄膠囊(0.1.36 spec desktop-update-pill §3.2:同一件事只講一處)──
 p = paint({ ...C, phase: "ready" }, cloud());
@@ -380,14 +380,13 @@ ok("分類順序(0.1.32 方案 B):一般 → 模型接入 → Agent → 資料�
 const PO2 = ["zh", "en"].map((l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8"));
 { // 設定 modal 方案 B 的定稿字串(spec settings-modal-b-2026-10-24 S3 / S10 / S11 / S14 / S17 / S18;S10 另由 check_web_desktop_parity.js 跟 web 逐字比)
   const want = { "set.cat.rules": ["Agent", "Agent"], "set.cat.connect": ["連結", "Connections"], "set.cat.shares": ["公開連結", "Public links"],
-    "rules.emptyHow": ["在對話裡說「以後都要設停損」，也會記成一條規則。", "Saying “always set a stop loss” in the chat also adds a rule."],
-    "src.empty1": ["還沒有自帶金鑰的資料來源。", "No data sources with your own key yet."], "src.empty2": ["金鑰不要貼在對話裡。", "Don’t paste keys into the chat."],
+    "src.empty1": ["還沒有自帶金鑰的資料來源。", "No data sources with your own key yet."],
     "br.set.lead": ["不開交易所後台、券商與銀行。登入、送出、付款由你按。", "It never opens exchange account pages, brokers or banks. You sign in, submit and pay."],
     "src.cloudLead": ["雲端主機上的資料來源，唯讀。", "Data sources on the cloud machine. Read-only."],
     "plan.topupShort": ["低於 {a} TWD 時從卡自動儲值 {b} TWD。可在網頁關閉。", "Under {a} TWD, your card tops up {b} TWD. You can turn this off on the web."] };
   const S2 = eval(fs.readFileSync(path.join(R, "strings.js"), "utf8") + ";STRINGS");
   const off = Object.keys(want).filter((k) => S2.zh[k] !== want[k][0] || S2.en[k] !== want[k][1]);
-  ok("方案 B 定稿字串 zh / en 逐字(" + Object.keys(want).length + " 個 key);刪掉的 shl.title、pv.d.running 兩語都不在", off.length === 0 && ["shl.title", "pv.d.running"].every((k) => !(k in S2.zh) && !(k in S2.en)), off.join(",")); }
+  ok("方案 B 定稿字串 zh / en 逐字(" + Object.keys(want).length + " 個 key);刪掉的 shl.title、pv.d.running、rules.emptyHow、src.empty2 兩語都不在", off.length === 0 && ["shl.title", "pv.d.running", "rules.emptyHow", "src.empty2"].every((k) => !(k in S2.zh) && !(k in S2.en)), off.join(",")); }
 ok("那一類定名「一般」;指到它的句子(minv.trade)兩語都跟著改", /msgid "set\.cat\.display"\nmsgstr "一般"/.test(PO2[0]) && /msgid "set\.cat\.display"\nmsgstr "General"/.test(PO2[1])
   && /msgid "minv\.trade"\nmsgstr "[^\n]*設定 › 一般/.test(PO2[0]) && /msgid "minv\.trade"\nmsgstr "[^\n]*Settings › General/.test(PO2[1]));
 
@@ -559,9 +558,9 @@ ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效
   ok("三顆開關(mv-sw / priv-sw / br-sw)的字是 label[for] 指向開關、沒有 aria-label;清除瀏覽資料與隱私權政策不在 label 裡",
     /lbl = mk\("label", "sw-l", t\("mv\.switch"\)\); lbl\.htmlFor = "mv-sw"; row\.append\(lbl\);/.test(fnSrc("mvBlock"))
     && /lbl = mk\("label", "sw-l", t\("priv\.switch"\)\); lbl\.htmlFor = "priv-sw"; row\.append\(lbl\);/.test(fnSrc("privPaint"))
-    && /lbl = brEl\("label", "sw-l", t\("br\.set\.switch"\)\); lbl\.htmlFor = "br-sw"; row\.append\(lbl\);/.test(brFn)
-    && ![fnSrc("mvBlock"), fnSrc("privPaint"), brFn].some((f) => /"span", "sw-l"|aria-label/.test(f))
-    && /box\.append\(row, lead, clr\);/.test(brFn) && /legal\.append\(pl\); box\.append\(legal\);/.test(fnSrc("privPaint")));
+    && /lbl = brEl\("label", "sw-l"\); lbl\.htmlFor = "br-sw";/.test(brFn) && /lbl\.append\(name, tip\); row\.append\(lbl\);/.test(brFn)
+    && ![fnSrc("mvBlock"), fnSrc("privPaint"), brFn].some((f) => /"span", "sw-l"|aria-label(?!ledby)/.test(f))
+    && /box\.append\(row, clr\);/.test(brFn) && /legal\.append\(pl\); box\.append\(legal\);/.test(fnSrc("privPaint")));
   ok("S2 隱私頁只剩使用資料:privPaint 不再畫手機查看、不再叫內建瀏覽器;手機查看由 connectPaint 畫在 #set-connect、開關切完重畫的是它", !/mvBlock|brPrivPaint|brSetPaint/.test(fnSrc("privPaint")) && !/brPrivPaint/.test(src + br + rules)
     && /const box = \$\("set-connect"\)/.test(fnSrc("connectPaint")) && /const mv = mvBlock\(mk\); if \(mv\) box\.append\(mv\);/.test(fnSrc("connectPaint")) && /connectPaint\(\); const sw = \$\("mv-sw"\)/.test(fnSrc("mvToggle"))
     && /go\.addEventListener\("click", \(\) => setCat\("plan"\)\)/.test(fnSrc("mvBlock")));
@@ -1257,8 +1256,27 @@ ok("409 重開那一句跟網站 bc_cycle_requote 同字", STR.zh["cf.m.repriced
 ok("確認框字(r8):body1 有 Linux Starter;鈕「付 {x} TWD 開通」/ Pay {x} TWD to Start Plan;試用 en Start Now, Pay {x} TWD on {d};計費週期;Yearly",
   STR.zh["cf.m.body1"].includes("Linux Starter") && STR.en["cf.m.body1"].includes("Linux Starter") && STR.zh["cf.m.ok"] === "付 {x} TWD 開通" && STR.en["cf.m.ok"] === "Pay {x} TWD to Start Plan"
   && STR.en["cf.m.okTrial"] === "Start Now, Pay {x} TWD on {d}" && STR.zh["cf.m.pick"] === "計費週期" && STR.en["plan.cyc.annual"] === "Yearly");
-  // 資料來源空狀態那句「金鑰不要貼在對話裡。」是第 0 關、必須被讀到的次要字:12px、--ink-2(設計師稽核 D5)
-  ok("資料來源空狀態的金鑰提醒 12px、--ink-2", /\.src-empty \.src-fine \{[^}]*font-size: 12px; color: var\(--ink-2\); \}/.test(fs.readFileSync(path.join(R, "datasrc.css"), "utf8")));
+  // 0.1.37 說明句收進泡泡、空狀態那句拿掉(spec desktop-settings-tooltips-qr-2026-10-30)
+  ok("防睡／06:00 自動更新／識別碼三列:泡泡 role=tooltip,開關或〔複製〕aria-describedby 指它;名稱只指 label 裡那個 span;#set-id-note 刪了",
+    /aria-labelledby="set-awake-l" aria-describedby="set-awake-tip"/.test(html) && /<span class="tip" id="set-awake-tip" role="tooltip"><\/span>/.test(html)
+    && /aria-labelledby="set-upsch-l" aria-describedby="set-upsch-tip"/.test(html) && /id="set-upsch-tip" role="tooltip" data-i18n="up\.sch\.lead"/.test(html)
+    && /id="set-id-copy" data-i18n="about\.idCopy" aria-describedby="set-id-tip"/.test(html) && /id="set-id-tip" role="tooltip" data-i18n="about\.idNote"/.test(html)
+    && !/set-id-note|set-upsch-lead/.test(html + src));
+  { const esc = fnSrc("tipEsc");
+    ok("Esc 收泡泡也認 aria-describedby(開關跟泡泡不相鄰),而且先於關框(有看得見的泡泡就只收它);焦點那條 CSS 帶 :not([data-tip-off])", /getAttribute\("aria-describedby"\)/.test(esc)
+      && /if \(tipEsc\(\)\) \{ e\.preventDefault\(\); return; \}\n  const close = escTop\(\);/.test(src)
+      && [".set-rs:has(.sw:focus-visible:not([data-tip-off])) .tip", ".set-awake:has(.sw:focus-visible:not([data-tip-off])) .tip", ".set-upsch:has(.sw:focus-visible:not([data-tip-off])) .tip", "#set-id:has(#set-id-copy:focus-visible:not([data-tip-off])) .tip"].every((r) => css.includes(r))
+      && !/:has\(\.sw:focus-visible\) \.tip/.test(css + fs.readFileSync(path.join(R, "suggest.css"), "utf8"))); }
+  { const mk = (tag, cls, text) => { const n = { tag, cls, text, kids: [], append(...k) { this.kids.push(...k); }, setAttribute() {}, addEventListener() {} }; return n; };
+    const flat = (n) => [n, ...(n.kids || []).flatMap((k) => (typeof k === "object" ? flat(k) : []))];
+    const block = (mv) => new Function("MV", "mvShown", "t", "setCat", "mvToggle", "mvQr", fnSrc("mvBlock") + "; return mvBlock;")(mv, () => true, (k) => k, () => {}, () => {}, new Function("t", "trackFeature", "window", src.slice(src.indexOf("const MV_APP_IOS"), src.indexOf("\n}", src.indexOf("function mvQr(")) + 2) + "; return mvQr;")((k) => k, () => {}, {}))(mk);
+    const imgs = (mv) => flat(block(mv)).filter((n) => n.tag === "img");
+    const on = imgs({ visible: true, signedIn: true, on: true, name: "Mac" });
+    ok("連結頁 QR:登入且開著才出兩張(iOS、Android,alt 空);關著、pending、登出都不出;圖檔在 renderer/img", on.length === 2 && on.map((n) => n.src).join() === "img/qr_ios.png,img/qr_android.png" && on.every((n) => n.alt === "")
+      && [{ visible: true, signedIn: true, on: false }, { visible: true, signedIn: true, on: false, pending: true }, { visible: true, signedIn: false, on: true }].every((m) => imgs(m).length === 0)
+      && ["qr_ios.png", "qr_android.png"].every((f) => fs.existsSync(path.join(R, "img", f)))
+      && /const MV_APP_IOS = "https:\/\/apps\.apple\.com\/tw\/app\/blave\/id6747014559";/.test(src) && /const MV_APP_ANDROID = "https:\/\/play\.google\.com\/store\/apps\/details\?id=org\.wuchi\.blave\.android";/.test(src)); }
+  ok("資料來源空狀態的金鑰那句拿掉了,.src-fine 跟著刪", !/src-fine/.test(fs.readFileSync(path.join(R, "datasrc.css"), "utf8") + fs.readFileSync(path.join(R, "datasrc.js"), "utf8")));
 })().then(() => {
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 });

@@ -262,7 +262,9 @@ const EVENTS = {
     // 0.1.37 對話分頁與並行回合(同 api openclaw/desktop_telemetry.py 那 16 個、同順序;api 先上):分頁與歷史八個(renderer,下一段)、
     // 同時在跑的回合數當天第一次到 2／4／8、雲端名額滿進排隊／取消排隊、內建瀏覽器租約要等／等到逾時(main.js)、手機來的對話開成分頁(通道上線才送)
     "tab_new", "tab_close", "tab_close_busy", "tab_switch", "tab_overflow", "hist_open", "hist_search", "hist_resume",
-    "chat_par2", "chat_par4", "chat_par8", "chat_queued", "queue_cancel", "br_wait", "br_busy", "tab_remote"] },
+    "chat_par2", "chat_par4", "chat_par8", "chat_queued", "queue_cancel", "br_wait", "br_busy", "tab_remote",
+    // 0.1.37 設定 › 連結 QR 底下的商店名稱(renderer/app.js mvQr):按了、開系統瀏覽器之前送。掃 QR 在手機上發生、這裡看不到
+    "app_link_ios", "app_link_android"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

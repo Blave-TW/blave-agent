@@ -807,13 +807,17 @@ function brRepaint() { BR.sig = null; BR.blocks.forEach((b) => { brPaintHead(b);
 async function brSetPaint(box) {
   let p = null; try { p = await window.blave.browserPrefs(); } catch (_) { return; }
   if (!box.isConnected || box.querySelector("#br-sw")) return;
-  const row = brEl("div", "sw-row"), lbl = brEl("label", "sw-l", t("br.set.switch")); lbl.htmlFor = "br-sw"; row.append(lbl);
+  // 說明句走泡泡(同 設定 › 一般 的提示音):開關兩態都看得到,內容只講開著時的邊界
+  const row = brEl("div", "sw-row"), lbl = brEl("label", "sw-l"); lbl.htmlFor = "br-sw";
+  const name = brEl("span", "set-tipl", t("br.set.switch")); name.id = "br-set-l";
+  const tip = brEl("span", "tip", t("br.set.lead")); tip.id = "br-set-tip"; tip.setAttribute("role", "tooltip");
+  lbl.append(name, tip); row.append(lbl);
   const sw = brEl("button", "sw" + (p && p.enabled ? "" : " off")); sw.type = "button"; sw.id = "br-sw";
   sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", p && p.enabled ? "true" : "false");
-  const lead = brEl("p", "priv-lead", t("br.set.lead")); lead.hidden = !(p && p.enabled);   // 只在開著時講(同「傳送使用資料」那顆的做法)
-  sw.addEventListener("click", async () => { const on = sw.getAttribute("aria-checked") !== "true"; const r = await window.blave.browserPrefsSet({ enabled: on }); const v = !!(r && r.enabled); sw.classList.toggle("off", !v); sw.setAttribute("aria-checked", v ? "true" : "false"); lead.hidden = !v; if (typeof tvPrefs === "function") tvPrefs(); if (typeof libIdeaSync === "function") libIdeaSync(); });
+  sw.setAttribute("aria-labelledby", "br-set-l"); sw.setAttribute("aria-describedby", "br-set-tip");
+  sw.addEventListener("click", async () => { const on = sw.getAttribute("aria-checked") !== "true"; const r = await window.blave.browserPrefsSet({ enabled: on }); const v = !!(r && r.enabled); sw.classList.toggle("off", !v); sw.setAttribute("aria-checked", v ? "true" : "false"); if (typeof tvPrefs === "function") tvPrefs(); if (typeof libIdeaSync === "function") libIdeaSync(); });
   row.append(sw);
   const clr = brEl("button", "btn-quiet", t("br.set.clear")); clr.type = "button";
   clr.addEventListener("click", async () => { const ok = await window.blave.browserClear(); if (ok) BR_FAVS.clear(); clr.textContent = t(ok ? "br.set.cleared" : "br.set.busy"); srSay(clr.textContent); setTimeout(() => { if (clr.isConnected) clr.textContent = t("br.set.clear"); }, 2500); });
-  box.append(row, lead, clr);
+  box.append(row, clr);
 }
