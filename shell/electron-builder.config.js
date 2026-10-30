@@ -56,7 +56,8 @@ const SHIP = [
 ];
 const tracked = execFileSync("git", ["-C", REPO, "ls-files", "-z", "--", ...SHIP], { maxBuffer: 1 << 24 })
   .toString().split("\0").filter((f) => f && fs.existsSync(path.join(REPO, f)));
-const PY_FILTER = ["**/*", "!**/__pycache__{,/**}"];
+// .pdb 是 Windows 除錯符號(python-win-x64 150MB 裡佔 82MB):Python 當掉時的堆疊我們本來就不收
+const PY_FILTER = ["**/*", "!**/__pycache__{,/**}", "!**/*.pdb"];
 
 module.exports = {
   appId: "org.blave.desktop",
