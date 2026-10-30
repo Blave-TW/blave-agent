@@ -10,9 +10,10 @@ Companion to lib/account_bitget.py (credentials, signing, contract list, error
 table, mode). NEVER hand-write Bitget order calls; import from here.
 
 LAYERS SHIPPED HERE: the reconciler's four fixed names, get_mark_price,
-get_position_mode, session_open; the limit layer (place_limit_order / get_bbo /
-get_order / cancel_order / get_open_orders); SL/TP (place_protective_orders /
-open_position / cancel_protective_orders, sweep_orphan_stops). Not here: spot.
+get_position_mode, session_open, resolve_unknown_order (parked orders); the limit
+layer (place_limit_order / get_bbo / get_order / cancel_order / get_open_orders); SL/TP
+(place_protective_orders / open_position / cancel_protective_orders, sweep_orphan_stops).
+Not here: spot.
 
 MEASURED vs DOCUMENTED: facts marked "measured" come from tests/live_bitget_verify.py
 runs on a real key (venue-onboarding §3); the rest come from Bitget's docs and the
@@ -45,6 +46,12 @@ Other facts this lib relies on:
   symbol; both are read before every order, never cached — a stale mode is a reject
   or an order on the wrong leg.
 - a reduce-only order's reply may carry no orderId (doc) — it is found by clientOid.
+- an order POST that may have reached Bitget is never sent again: it is looked up by
+  clientOid once, and when that cannot find it raises OrderNotConfirmed, which
+  lib/unconfirmed parks and resolve_unknown_order settles later. Neither account type's
+  clientOid stops a resend for good: classic refuses a duplicate (40786, measured), a UTA
+  refills a filled one (measured; "can be reused after the order is filled or cancelled",
+  UTA common-error-handling 25212).
 - stop-loss / take-profit trigger on the mark price: the Taiwan perps' books are thin,
   a last-trade trigger would fire on one print. Classic: position TP/SL (pos_loss /
   pos_profit); UTA: a `tpsl` strategy order in `full` mode, one per kind.
@@ -57,6 +64,7 @@ import time
 from decimal import ROUND_DOWN, ROUND_HALF_UP, ROUND_UP, Decimal
 
 import requests
+from urllib3.exceptions import NewConnectionError
 
 from lib import guard
 from lib import account_bitget as acct
@@ -107,11 +115,13 @@ _V3_ORDER_GONE = {"25204", "40109", ORDER_ABSENT}
 _PLAN_GONE = {"43025"}
 UNVERIFIED = acct.UNVERIFIED
 # the order may have landed — query by clientOid (UTA Place-Order doc names the first three);
+# 40015 "System is abnormal" is one of the replies the classic FAQ lists for a backend release;
 # duplicate clientOid — 25212 (UTA error page), 40786 (classic, measured T2 2026-10-22): an
 # earlier send of this very order landed. A UTA does NOT refuse the clientOid of a FILLED
 # order — it fills it again (measured T2 2026-10-23) — so every v3 place-order is preceded by
 # a clientOid lookup (_v3_existing)
-_UNCERTAIN = {"40725", "45001", "40010", "25212", "40786"}
+_UNCERTAIN = {"40725", "45001", "40010", "40015", "25212", "40786"}
+_PLACE_PATHS = (ORDER_PATH, V3_ORDER_PATH)
 
 _FILLED = {"filled", "full_fill"}
 _GONE = {"canceled", "cancelled", "cancel"}
@@ -122,9 +132,29 @@ _CID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 _rules_cache = {}
 
 
-class OrderNotConfirmed(Exception):
-    """Placed but not terminal within the timeout — it may still fill.
-    Re-query by clientOid; NEVER blindly resubmit."""
+try:
+    from lib.unconfirmed import OrderOutcomeUnknown as _OutcomeUnknown
+except ImportError:  # half-updated workspace: not parkable, reported as an order failure
+    class _OutcomeUnknown(Exception):
+        def __init__(self, msg, venue=None, venue_symbol=None, order_id=None, client_order_id=None):
+            super().__init__(msg)
+            self.venue, self.venue_symbol, self.order_id = venue, venue_symbol, order_id
+            self.client_order_id = client_order_id
+
+        def parkable(self):
+            return False
+
+
+class OrderNotConfirmed(_OutcomeUnknown):
+    """An order Bitget took, or may have taken, whose outcome is not known: no usable answer
+    to the POST and no clientOid match, or no terminal state read before the confirm timeout.
+    It MAY HAVE FILLED — query it, never resubmit. A market order carries venue /
+    venue_symbol (canonical) / order_id or client_order_id so lib/portfolio can park it; a
+    limit order carries no venue (not parkable)."""
+
+
+class _SendUnknown(Exception):
+    """An order POST whose outcome is unknown; _request turns it into OrderNotConfirmed."""
 
 
 class ProtectionFailed(Exception):
@@ -215,6 +245,16 @@ def _request(method, path, env, params=None, retries=3):
     guard.audit("order_attempt", **fields)
     try:
         data = _send(method, path, env, params, retries)
+    except _SendUnknown as e:
+        p = params or {}
+        cid = p.get("clientOid")
+        guard.audit("order_unknown", error=str(e), client_order_id=cid, **fields)
+        # only a market order is looked up again (resolve_unknown_order)
+        market = str(p.get("orderType") or "") == "market"
+        raise OrderNotConfirmed(
+            f"bitget order {cid} sent, no answer ({e}) — it may have filled; check the position, "
+            f"do not resubmit", venue="bitget" if market else None,
+            venue_symbol=p.get("symbol") if market else None, client_order_id=cid) from e
     except Exception as e:
         guard.audit("order_error", error=str(e), **fields)
         raise
@@ -223,9 +263,27 @@ def _request(method, path, env, params=None, retries=3):
     return data
 
 
+def _never_sent(e):
+    """A connect timeout, or a socket that never opened (refused, unreachable, DNS — urllib3
+    NewConnectionError / NameResolutionError wrapped in MaxRetryError): nothing reached
+    Bitget. An SSL error or a read timeout can follow a request that went out: not counted."""
+    if isinstance(e, requests.exceptions.ConnectTimeout):
+        return True
+    if not isinstance(e, requests.exceptions.ConnectionError):
+        return False
+    inner = e.args[0] if e.args else None
+    return isinstance(getattr(inner, "reason", inner), NewConnectionError)
+
+
 def _send(method, path, env, params=None, retries=3):
+    """An order POST (place-order, either API) that may have reached Bitget is never sent again:
+    a dropped connection, a read timeout, a 5xx, a 2xx that is not JSON or an _UNCERTAIN code
+    is looked up by clientOid once; found → that order, not found → _SendUnknown. Only a
+    socket that never opened (_never_sent), a timestamp refusal (re-signed) and 429 go out
+    again — none of them can have executed."""
     method = method.upper()
     params = dict(params or {})
+    placing = method == "POST" and path in _PLACE_PATHS
     last_err = None
     resynced = False
     for attempt in range(retries):
@@ -240,14 +298,20 @@ def _send(method, path, env, params=None, retries=3):
         h = acct.headers(env, method, rp, payload)
         try:
             r = requests.request(method, f"{acct.HOST}{rp}", headers=h, data=payload or None, timeout=15)
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-            # a POST whose reply died may have landed: never resend it — find it by
-            # its clientOid (the reconciler re-reads positions next round if even
-            # that cannot tell)
-            if method == "POST":
-                found = _lookup_cid(env, params) if path in (ORDER_PATH, V3_ORDER_PATH) else None
+        except (requests.exceptions.InvalidURL, requests.exceptions.MissingSchema,
+                requests.exceptions.InvalidSchema, requests.exceptions.InvalidHeader):
+            raise  # refused before anything was sent
+        except requests.exceptions.RequestException as e:
+            if placing and not _never_sent(e):
+                # may have landed, and the next round's diff reads the book, not the account:
+                # a resend here or there is a second order — find it, else park it
+                found = _lookup_cid(env, params)
                 if found:
                     return found
+                raise _SendUnknown(f"{type(e).__name__}: {str(e)[:120]}") from e
+            if method == "POST" and not placing:
+                raise
+            if not isinstance(e, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
                 raise
             last_err = e
             if attempt == retries - 1:
@@ -272,10 +336,12 @@ def _send(method, path, env, params=None, retries=3):
             time.sleep(1 + attempt * 2)
             last_err = err
             continue
-        if path in (ORDER_PATH, V3_ORDER_PATH) and (err.code in _UNCERTAIN or r.status_code >= 500):
+        if placing and (err.code in _UNCERTAIN or r.status_code >= 500
+                        or (err.code is None and 200 <= r.status_code < 300)):
             found = _lookup_cid(env, params)
             if found:
                 return found
+            raise _SendUnknown(f"HTTP {r.status_code}: {err}") from err
         raise err
     raise last_err
 
@@ -587,18 +653,28 @@ def get_order(env, symbol, order_id=None, client_order_id=None):
 
 
 def _confirm(env, symbol, order_id, cid, timeout=20):
+    """Poll an accepted order to a terminal state. The order was accepted, so a read that fails
+    — a timeout, a 5xx, "does not exist" while the query side lags the engine — leaves its fate
+    unknown, never rejected: keep polling; at the timeout raise OrderNotConfirmed."""
     deadline = time.time() + timeout
     delay = 0.4
     o = None
+    last_err = None
     while time.time() < deadline:
-        o = get_order(env, symbol, order_id=order_id, client_order_id=None if order_id else cid)
-        if o["status"] != "open":
-            return o
+        try:
+            o = get_order(env, symbol, order_id=order_id, client_order_id=None if order_id else cid)
+        except Exception as e:
+            last_err = e
+        else:
+            if o["status"] != "open":
+                return o
         time.sleep(delay)
         delay = min(delay * 1.6, 2.0)
+    state = o["raw_status"] if o else f"not readable ({type(last_err).__name__}: {str(last_err)[:80]})"
     raise OrderNotConfirmed(
-        f"bitget {symbol} order {order_id or cid} still {o and o['raw_status']} after {timeout}s "
-        f"— re-query by clientOid, do NOT resubmit")
+        f"bitget {symbol} order {order_id or cid} accepted but {state} after {timeout}s — it may "
+        f"have filled; check the position, do not resubmit", venue="bitget", venue_symbol=symbol,
+        order_id=str(order_id) if order_id else None, client_order_id=cid)
 
 
 def _sized(env, symbol, vsym, direction, qty, reduce_only, rules):
@@ -659,23 +735,29 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None, reduce
     body = _order_body(api, vsym, sized, "market", cid,
                              _sides(direction, reduce_only, pos_mode, api), margin_mode)
     try:
-        placed = _post_order(env, api, body)
-    except BitgetError as e:
-        if e.code in BELOW_MIN:  # value under minTradeUSDT after the venue's own rounding
-            return False
-        if not (reduce_only and e.code in OVER_CLOSE):
-            raise
-        # the leg shrank between the read and the send (a stop fired, a resting close filled):
-        # a one-way close over the held size is refused whole (measured) — re-read, send what is left
-        sized = _sized(env, symbol, vsym, direction, qty, reduce_only, rules)
-        if sized is None:
-            return False
-        cid = _cid()
-        body = _order_body(api, vsym, sized, "market", cid,
-                           _sides(direction, reduce_only, pos_mode, api), margin_mode)
-        placed = _post_order(env, api, body)
-    oid = (placed or {}).get("orderId")
-    o = _confirm(env, symbol, oid, cid)
+        try:
+            placed = _post_order(env, api, body)
+        except BitgetError as e:
+            if e.code in BELOW_MIN:  # value under minTradeUSDT after the venue's own rounding
+                return False
+            if not (reduce_only and e.code in OVER_CLOSE):
+                raise
+            # the leg shrank between the read and the send (a stop fired, a resting close filled):
+            # a one-way close over the held size is refused whole (measured) — re-read, send what is left
+            sized = _sized(env, symbol, vsym, direction, qty, reduce_only, rules)
+            if sized is None:
+                return False
+            cid = _cid()
+            body = _order_body(api, vsym, sized, "market", cid,
+                               _sides(direction, reduce_only, pos_mode, api), margin_mode)
+            placed = _post_order(env, api, body)
+        oid = (placed or {}).get("orderId")
+        o = _confirm(env, symbol, oid, cid)
+    except OrderNotConfirmed as e:
+        # the canonical symbol: the parked order is queried with it through get_order
+        e.venue, e.venue_symbol = "bitget", symbol
+        e.client_order_id = e.client_order_id or cid
+        raise
     if o["status"] != "filled":
         raise BitgetError(f"bitget {vsym} market order {o['order_id'] or cid} ended {o['raw_status']} "
                           f"with nothing filled ({o['cancel_reason'] or 'no reason given'})")
@@ -688,6 +770,108 @@ def close_position_partial(env, symbol, direction, qty, client_order_id=None):
     explicit close (lib.guard halt close pass)."""
     return place_market_order(env, symbol, direction, qty,
                               client_order_id=client_order_id, reduce_only=True)
+
+
+# fills of a parked order are searched from PARK_TRADE_LOOKBACK_S before the park to
+# PARK_TRADE_LOOKAHEAD_S after it (an order parked at the confirm timeout was sent ~20 s before
+# the park); the window does not grow with the park's age, so later fills cannot crowd it out
+PARK_TRADE_LOOKBACK_S = 300
+PARK_TRADE_LOOKAHEAD_S = 600
+FILL_PAGE = 100   # both fill endpoints' maximum page
+FILL_PAGES = 10
+
+
+def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, parked_at=None,
+                          now=None):
+    """A parked market order's outcome (lib/unconfirmed): (executed_qty, avg_price) in BASE units
+    once it is terminal — qty 0 = it ended without a fill — None while unknown. Read-only, either
+    account type (get_order follows account_mode): the order detail by orderId, or by clientOid
+    when only ours is known. When the detail says there is no such order (25204 / 40109 /
+    ORDER_ABSENT), the fills around the park matched on that orderId / clientOid: any → those, at
+    their VWAP. A UTA keeps a cancelled API order on order-info for 2 hours only (Get Order
+    Details doc), and a partly filled market order ends cancelled — its fills stay 90 days. An
+    order neither finds stays unknown however long ago it was parked: "no such order" cannot
+    tell "never arrived" from "aged out", and releasing an order that did fill is the duplicate
+    this exists to prevent (the way out is unconfirmed.resolve)."""
+    try:
+        o = get_order(env, symbol, order_id=order_id, client_order_id=client_order_id)
+    except BitgetError as e:
+        if e.code not in _V3_ORDER_GONE:
+            return None
+        return _fills_of(env, symbol, order_id, client_order_id, parked_at, now)
+    except Exception:
+        return None
+    if o["status"] == "open":
+        return None
+    qty, price = o["executed_qty"], o["avg_price"]
+    return (qty, price) if qty <= 0 or price > 0 else None
+
+
+def _fills_of(env, symbol, order_id, client_order_id, parked_at, now):
+    """UTA fill rows carry orderId and clientOid (GET /api/v3/trade/fills); classic rows carry
+    orderId only (GET /api/v2/mix/order/fills), so a classic park known by clientOid alone is
+    not matched here and stays unknown."""
+    if not parked_at:
+        return None
+    try:
+        api = acct.account_mode(env)
+        if api != "uta" and not order_id:
+            return None
+        vsym = venue_symbol(symbol)
+        off = int(acct._time_offset["ms"])
+        start = int((float(parked_at) - PARK_TRADE_LOOKBACK_S) * 1000) + off
+        end = min(int((float(parked_at) + PARK_TRADE_LOOKAHEAD_S) * 1000),
+                  int(float(time.time() if now is None else now) * 1000)) + off
+        if end <= start:
+            return None
+        rows = _fill_rows(env, api, vsym, order_id, start, end)
+    except Exception:
+        return None
+    if rows is None:
+        return None
+    want_oid = str(order_id) if order_id else None
+    want_cid = str(client_order_id) if client_order_id and api == "uta" else None
+    qty = value = 0.0
+    for f in rows:
+        if str(f.get("symbol") or "").upper() != vsym:
+            continue
+        if not ((want_oid and str(f.get("orderId") or "") == want_oid)
+                or (want_cid and str(f.get("clientOid") or "") == want_cid)):
+            continue
+        q = abs(float((f.get("execQty") if api == "uta" else f.get("baseVolume")) or 0))
+        px = float((f.get("execPrice") if api == "uta" else f.get("price")) or 0)
+        if px <= 0:
+            return None
+        qty += q
+        value += q * px
+    return (qty, value / qty) if qty > 0 else None
+
+
+def _fill_rows(env, api, vsym, order_id, start, end):
+    """Every fill row in [start, end] ms (filtered by orderId when known), each once; None when
+    the pages run out before the window does (a partial list could under-book the order)."""
+    if api == "uta":
+        path, list_key, id_key = "/api/v3/trade/fills", "list", "execId"
+        q = {"category": CATEGORY}
+    else:
+        path, list_key, id_key = "/api/v2/mix/order/fills", "fillList", "tradeId"
+        q = {"productType": PRODUCT, "symbol": vsym}
+    if order_id:
+        q["orderId"] = str(order_id)
+    q.update(startTime=str(start), endTime=str(end), limit=str(FILL_PAGE))
+    seen = {}
+    for _ in range(FILL_PAGES):
+        data = _request("GET", path, env, q) or {}
+        page = (data.get(list_key) if isinstance(data, dict) else None) or []
+        for f in page:
+            seen[str(f.get(id_key) or len(seen))] = f
+        if len(page) < FILL_PAGE:
+            return list(seen.values())
+        nxt = data.get("cursor") if api == "uta" else data.get("endId")
+        if not nxt:
+            return None
+        q = {**q, ("cursor" if api == "uta" else "idLessThan"): str(nxt)}
+    return None
 
 
 def cancel_order(env, symbol, order_id=None, client_order_id=None):
