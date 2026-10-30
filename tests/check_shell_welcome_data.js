@@ -143,9 +143,9 @@ if (!process.versions.electron) {
       const into = C.document.createElement("span"); C.wdNote(k, v, into);
       if (click) { const b = into.kids.find((x) => typeof x !== "string"); C.went = null; if (b && b.click) b.click(); return C.went; }
       return into.kids.map((x) => (typeof x === "string" ? x : x.textContent)).join("|"); };
-    ok("② 右欄那句(zh)兩態:方案制 →「登入並綁卡，免費試用 14 天 Blave 資料」/「綁卡，免費試用 14 天」(欄名已寫 Blave 資料,paywall-redesign §2.2);切換前 →「送 14 天」照舊;沒天數兩態都不帶數字、是一顆鈕",
-      note("zh", true, "out", { t: "14" }) === "登入並綁卡，免費試用 14 天 Blave 資料" && note("zh", false, "out", { t: "14" }) === "登入並綁卡，送 14 天 Blave 資料"
-      && note("zh", true, "none", { t: "14" }) === "綁卡，免費試用 14 天" && note("zh", true, "none", { t: "7" }) === "綁卡，免費試用 7 天" && note("zh", false, "none", { t: "14" }) === "綁卡，送 14 天 Blave 資料"
+    ok("② 右欄那句(zh)兩態:方案制 →「登入並綁卡免費試用 14 天 Blave 資料」/「綁卡免費試用 14 天」(欄名已寫 Blave 資料,paywall-redesign §2.2);切換前 →「送 14 天」照舊;沒天數兩態都不帶數字、是一顆鈕",
+      note("zh", true, "out", { t: "14" }) === "登入並綁卡免費試用 14 天 Blave 資料" && note("zh", false, "out", { t: "14" }) === "登入並綁卡，送 14 天 Blave 資料"
+      && note("zh", true, "none", { t: "14" }) === "綁卡免費試用 14 天" && note("zh", true, "none", { t: "7" }) === "綁卡免費試用 7 天" && note("zh", false, "none", { t: "14" }) === "綁卡，送 14 天 Blave 資料"
       && note("zh", true, "out", { t: "" }) === "登入並綁卡後就能用" && note("zh", false, "none", { t: "" }) === "綁卡後就能用", [note("zh", true, "out", { t: "14" }), note("zh", true, "none", { t: "14" })].join(" / "));
     ok("② 右欄那句(en)兩態:方案制 free trial(連字號 U+2011,同 pv.h.offer.m);切換前 days free", note("en", true, "out", { t: "14" }) === "Sign in and add a card for a 14\u2011day free trial of Blave data"
       && note("en", true, "none", { t: "14" }) === "Add a card for a 14\u2011day free trial" && note("en", false, "out", { t: "14" }) === "Sign in and add a card: 14 days of Blave data free", note("en", true, "out", { t: "14" }));

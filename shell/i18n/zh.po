@@ -1359,16 +1359,16 @@ msgid "pv.signin"
 msgstr "登入 Blave"
 
 msgid "pv.e.out"
-msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡，免費試用 {t} 天；AI 照用你的 {name}。"
+msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡免費試用 {t} 天；AI 照用你的 {name}。"
 
 msgid "pv.e.outNoNum"
-msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡，免費試用一段時間；AI 照用你的 {name}。"
+msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡免費試用一段時間；AI 照用你的 {name}。"
 
 msgid "pv.e.card"
-msgstr "這台還拿不到 Blave 的資料。首次綁卡，免費試用 {t} 天。"
+msgstr "這台還拿不到 Blave 的資料。首次綁卡免費試用 {t} 天。"
 
 msgid "pv.e.card.cli"
-msgstr "這台還拿不到 Blave 的資料。首次綁卡，免費試用 {t} 天；AI 照用你的 {name}。"
+msgstr "這台還拿不到 Blave 的資料。首次綁卡免費試用 {t} 天；AI 照用你的 {name}。"
 
 msgid "pv.e.noTrial"
 msgstr "這台還拿不到 Blave 的資料：它在 Blave Agent 雲端方案裡。"
@@ -5405,7 +5405,7 @@ msgstr "綁卡，送 {t} 天資料"
 
 # 方案制(planMo)、有試用資格又沒卡的那一組:填色鈕,直接開瀏覽器綁卡頁;聊天資料卡同一顆(spec paywall-redesign-2026-10-21 §2.2)
 msgid "lib.gate.trial"
-msgstr "綁卡，免費試用 {t} 天"
+msgstr "綁卡免費試用 {t} 天"
 
 msgid "lib.gate.topup"
 msgstr "儲值"
@@ -6881,11 +6881,11 @@ msgstr "綁卡後就能用"
 
 # 方案制(planMo):試用結束會自動開始扣方案費,不是「送」——沒登入那句換 .m,同 pv.h.offer.m(沒卡那句是 wd.note.trial)
 msgid "wd.note.out.m"
-msgstr "登入並綁卡，免費試用 {t} 天 Blave 資料"
+msgstr "登入並綁卡免費試用 {t} 天 Blave 資料"
 
 # 方案制、有試用資格又沒卡:欄名已經寫了「Blave 資料」,鈕字不再重複;按下直接開瀏覽器綁卡頁
 msgid "wd.note.trial"
-msgstr "綁卡，免費試用 {t} 天"
+msgstr "綁卡免費試用 {t} 天"
 
 msgid "wd.note.billed"
 msgstr "有用到的那個小時收 {r} TWD，同一小時只收一次"
@@ -7559,10 +7559,10 @@ msgstr "AI 照用你現在的設定。試用結束自動扣第一期方案費，
 
 # 標題只講試用(會自動轉付費,所以不用「送」;「送」只給真的是禮物的 AI 額度那條)
 msgid "pv.h.offer.m"
-msgstr "首次綁卡，免費試用 {t} 天"
+msgstr "首次綁卡免費試用 {t} 天"
 
 msgid "pv.h.offerNoNum.m"
-msgstr "首次綁卡，免費試用一段時間"
+msgstr "首次綁卡免費試用一段時間"
 
 # 「自動」不能拿掉,否則會被讀成可選訂閱;扣第一期／取消就不扣留給綁卡那一步的 pv.f.offer.m
 msgid "pv.f.out.m"
