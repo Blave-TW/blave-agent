@@ -443,4 +443,20 @@ for (const lang of ["zh", "en"]) {
       : ROWS.filter(([p, a, b, k]) => V.fmt("mcpt_p", p) !== a || V.fillP("p = {p}", p) !== b || V.mcptBeat(p, 2000) !== k).map((r) => JSON.stringify(r)).concat(V.mcptBeat(0.016, 20000) === null ? [] : ["n=20000 應不講次數"]);
     ok("MCPT p 值共用測資(§4.2,9 組)在" + side + "那支全對", bad.length === 0, bad.join(";"));
   } }
+// 改金鑰驗證碼(表面表 keyverify-surfaces-2026-10-30 §2、§3;網頁 js/key_verify.js + kc_*、電腦版 trade.js kcView + cx.kc.*):
+// api 關卡代號對到哪一句兩邊同一份(sent:false 的 reason 對照),14 句 zh／en 逐字一致;寄不出那句鎖在換步驟後的定稿(沒有鈕可以「再按」)
+{ const kvPath = path.join(webDir, "app", "static", "js", "key_verify.js");
+  const kv = fs.existsSync(kvPath) ? fs.readFileSync(kvPath, "utf8") : "";
+  const obj = (src, re) => { const m = re.exec(src), o = {}; if (m) for (const x of m[1].matchAll(/(\w+): "(\w+)"/g)) o[x[1]] = x[2]; return o; };
+  const wr = obj(kv, /var REASON = \{([^}]*)\}/), dr = obj(desk, /const KC_REASON = \{([^}]*)\}/);
+  ok("改金鑰驗證碼:sent:false 的 reason → 句子兩邊同一份對照(冷卻／達上限／寄不出;沒有 reason = 沒有 email)", Object.keys(dr).length === 3 && sorted(dr) === sorted(wr), sorted(dr) + " vs " + sorted(wr));
+  ok("改金鑰驗證碼:沒有 reason 的 sent:false 兩邊都是 noemail、其他不認得的 reason 都是 failed",
+    /REASON\[st\.reason\] \|\| \(st\.reason \? "failed" : "noemail"\)/.test(kv) && /KC_REASON\[d\.reason\] \|\| \(d\.reason \? "failed" : "noemail"\)/.test(desk));
+  const KC = ["title", "why", "label", "ok", "sent", "resent", "cooldown", "limited", "failed", "noemail", "invalid", "expired", "locked", "until"];
+  for (const lang of ["zh", "en"]) {
+    const w = poRaw(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po")), d = poRaw(path.join(__dirname, "..", "shell", "i18n", lang + ".po"));
+    const off = KC.filter((k) => !w["kc_" + k] || w["kc_" + k] !== d["cx.kc." + k]);
+    ok("改金鑰驗證碼:kc_* 與 cx.kc.* 14 句兩邊同一份(" + lang + ")", off.length === 0, off.map((k) => k + ": " + w["kc_" + k] + " vs " + d["cx.kc." + k]).join(";"));
+    if (lang === "zh") ok("改金鑰驗證碼:寄不出那句是換步驟後的定稿(zh)", d["cx.kc.failed"] === "驗證碼沒寄出去，金鑰沒有儲存，請稍後再試。", d["cx.kc.failed"]);
+  } }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

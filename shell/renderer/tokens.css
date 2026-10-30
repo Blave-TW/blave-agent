@@ -116,6 +116,7 @@
   --surface-muted: var(--color-greyLight);       /* 軌道 / outlined hover 填色 */
   --surface-row-hover: var(--color-white);       /* 表格列與清單列 hover:落在頁面地色,比卡面低一階(= web main.css) */
   --surface-field: var(--color-pureWhite);
+  --field-disabled-bg: var(--color-greyLight);   /* 停用欄位的底(canon › Input disabled;= web main.css) */
   --surface-control-on: var(--color-pureWhite);  /* 不是 segment 的選中填色(canon 語意角色變數) */
   --surface-segment-on: var(--color-pureWhite);  /* segment 選中格(canon 語意角色變數) */
   --border-hairline: var(--color-greyLight);
@@ -176,6 +177,7 @@
   --surface-muted: var(--color-darkBorder);
   --surface-row-hover: var(--color-darkBody);
   --surface-field: var(--color-darkBody);
+  --field-disabled-bg: var(--color-darkCard);
   --surface-control-on: var(--color-darkBorder);
   --surface-segment-on: var(--color-greyDark);   /* control-on 的 darkBorder 跟 --surface-muted 同色,當 segment 選中格分不出來 */
   --border-hairline: var(--color-darkBorder);
