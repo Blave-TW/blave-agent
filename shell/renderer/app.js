@@ -2789,7 +2789,6 @@ function paintAi(el, raw, live) {
 /* 聊天裡的連結(spec chat-long-url-2026-10-30):title 一律換成解碼後的完整網址;連結字就是網址本身才縮短(md.js urlLabel)。
    描述字像網址、網域卻跟 href 不同時,改顯示 href 算出來的字(防釣魚);沒有斜線的 AGENTS.md、v0.1.37 是檔名與版號,不算像網址。
    比對前兩邊都過 new URL:吸收結尾斜線、大小寫、CJK 轉碼的差異(網頁 marked 會 encodeURI href)。縮過的掛 data-url-short,複製時換回 href */
-const URL_LIKE = /^(?:https?:\/\/|www\.)|^[\w-]+(?:\.[\w-]+)+\//i;
 const urlHost = (s) => { try { return new URL(/^https?:\/\//i.test(s) ? s : "https://" + s).hostname.replace(/^www\./, ""); } catch (_) { return null; } };
 function chatUrls(el) {
   el.querySelectorAll("a[href]").forEach((a) => {

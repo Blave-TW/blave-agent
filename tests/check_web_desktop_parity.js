@@ -358,7 +358,7 @@ for (const lang of ["zh", "en"]) {
     ok("策略庫基準畫不畫、代號寫什麼兩邊同一個答案(" + CASES.length + " 組)", !dParts.includes(null) && bad.length === 0, bad.join(";"));
   } }
 // 聊天長網址縮短(spec designer/chat-long-url-2026-10-30 §6):18 條測資逐項相同、上限與兩條 regex 逐值相同
-//   電腦版:tests/check_shell_url_label.js 的 CASES、renderer/md.js 的 URL_LABEL_MAX / URL_WIDE / URL_UNSAFE
+//   電腦版:tests/check_shell_url_label.js 的 CASES、renderer/md.js 的 URL_LABEL_MAX / URL_WIDE / URL_UNSAFE / URL_LIKE
 //   網頁:tests/url_label_vectors.json 的 url_label([輸入, 期望] 或 {in, expect})、app/static/js/agent/url_label.js
 { const vecPath = path.join(webDir, "tests", "url_label_vectors.json"), ulPath = path.join(webDir, "app", "static", "js", "agent", "url_label.js");
   const casesDef = (fs.readFileSync(path.join(__dirname, "check_shell_url_label.js"), "utf8").match(/^const CASES = \[[\s\S]*?^\];$/m) || [""])[0];
@@ -380,5 +380,14 @@ for (const lang of ["zh", "en"]) {
     const at = x.flags !== y.flags ? "flags " + x.flags + " vs " + y.flags : diffAt(x, y);
     if (at) why.push(n + " 在 " + at + " 不同");
   }
-  ok("長網址上限 URL_LABEL_MAX 與 URL_WIDE / URL_UNSAFE 兩邊同一份(regex 逐碼位比)", why.length === 0, ul ? why.join(";") : "找不到 " + ulPath); }
+  // URL_LIKE 不是單一字元集合,逐碼位比不出差異(單一字元兩邊都不配):比 source 與 flags,再跑一組探針字串
+  const dl = cv(mdSrc, "URL_LIKE"), wl = cv(ul, "URL_LIKE");
+  if (!(dl instanceof RegExp) || !(wl instanceof RegExp)) why.push("URL_LIKE 切不出來");
+  else {
+    if (dl.source !== wl.source || dl.flags !== wl.flags) why.push("URL_LIKE: " + dl + " vs " + wl);
+    const PROBE = ["https://x.com", "http://a", "www.blave.org", "WWW.x", "github.com/x", "my_host.example.com/p", "a-b.c/d", "AGENTS.md", "v0.1.37", "blave.org", "官網", "x.y", "ftp://a.b/c", " https://x"];
+    const off = PROBE.filter((x) => dl.test(x) !== wl.test(x));
+    if (off.length) why.push("URL_LIKE 判斷不同:" + off.join("、"));
+  }
+  ok("長網址上限 URL_LABEL_MAX、URL_WIDE / URL_UNSAFE(逐碼位比)與 URL_LIKE(原文＋flags＋探針)兩邊同一份", why.length === 0, ul ? why.join(";") : "找不到 " + ulPath); }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

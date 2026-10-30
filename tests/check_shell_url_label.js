@@ -50,6 +50,7 @@ if (!process.versions.electron) {
   ok("報告那一層不縮:md.js 只定義、不呼叫 urlLabel / urlTitle(mdPaintInl 的 title 照舊)", !/[^\w]urlLabel\(/.test(md.slice(a1)) && !/urlTitle\(/.test(md.slice(0, a0) + md.slice(a1)));
   const app = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
   ok("縮短只在 paintAi(聊天)跑", /mdPaint\(el, r\.blocks\);\n  chatUrls\(el\);/.test(app) && (app.match(/chatUrls\(/g) || []).length === 2);
+  ok("URL_LIKE 只定義在 md.js(parity 只讀 md.js)", /^const URL_LIKE = /m.test(md) && !/^const URL_LIKE = /m.test(app));
   ok("聊天容器掛 copy 事件", app.includes('$("chat-scroll").addEventListener("copy", chatCopy);'));
   const main = fs.readFileSync(path.join(SHELL, "main.js"), "utf8"), cm = main.indexOf('win.webContents.on("context-menu"'), cmBody = cm < 0 ? "" : main.slice(cm, main.indexOf("});", cm));
   ok("右鍵選單:只在 http(s) 連結上跳、只有一格、寫進剪貼簿的是 linkURL", cm > 0 && /\^https\?:/.test(cmBody) && /clipboard\.writeText\(p\.linkURL\)/.test(cmBody) && (cmBody.match(/label:/g) || []).length === 1 && /nativeTheme, clipboard \} = require\("electron"\)/.test(main));

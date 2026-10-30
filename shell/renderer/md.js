@@ -199,6 +199,8 @@ const URL_LABEL_MAX = 40;
 // 範圍寫成 \u 跳脫:直接寫字的話,編輯器做 NFC 時會把相容字 U+F900 換成 U+8C48,範圍整個跑掉
 const URL_WIDE = /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]|[\uD800-\uDBFF][\uDC00-\uDFFF]/;
 const URL_UNSAFE = /[\s\p{C}\/?#\\\u2044\u2215\u29F8\uFF0F]/u;
+// 描述字「像網址」:http(s)://、www. 開頭,或網域樣式而且含斜線(AGENTS.md、v0.1.37 沒有斜線,不算);網頁 url_label.js 同名同內容
+const URL_LIKE = /^(?:https?:\/\/|www\.)|^[\w-]+(?:\.[\w-]+)+\//i;
 const urlW = (s) => { let n = 0; for (const c of s) n += URL_WIDE.test(c) ? 2 : 1; return n; };
 const urlCut = (s, max) => { let o = "", w = 0; for (const c of s) { const cw = URL_WIDE.test(c) ? 2 : 1; if (w + cw > max) break; o += c; w += cw; } return o.replace(/[\/\-_.~]+$/, ""); };
 function urlSeg(s) { let d; try { d = decodeURIComponent(s); } catch (_) { return s; } return URL_UNSAFE.test(d) ? s : d; }
