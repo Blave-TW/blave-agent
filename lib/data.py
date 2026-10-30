@@ -1139,6 +1139,32 @@ def fetch_kline(symbol, interval, start, end, headers, max_retries=6):
     return _drop_forming_bar(_sanity_check_ohlc(df, f'{symbol} {interval} kline'), interval)
 
 
+def price_at(df, t, interval):
+    """Close of the last bar already closed at time t — the price an event at t sees.
+
+    Bars are labelled by their open time (crypto klines: UTC, 24/7), so the bar labelled t
+    closes at t + interval and `close.asof(t)` / `.loc[t]` return a price from after the
+    event. This returns the Close of the last row with label + interval <= t, or NaN when
+    that bar is missing (no row closing in (t - interval, t]) — never an older price.
+
+    df: a frame with a `Close` column (fetch_kline / fetch_kline_batch) or a close Series,
+    sorted tz-naive UTC index. t: a timestamp; naive is read as UTC. interval: the bars'
+    interval ('1h', '15min', '1d'). Not for series labelled by date or by close time
+    (Taiwan daily bars).
+    """
+    close = df['Close'] if isinstance(df, pd.DataFrame) else df
+    td = pd.Timedelta(interval)
+    t = pd.Timestamp(t)
+    if close.index.tz is None:
+        t = t.tz_convert('UTC').tz_localize(None) if t.tz is not None else t
+    elif t.tz is None:
+        t = t.tz_localize('UTC')
+    pos = close.index.searchsorted(t - td, side='right') - 1
+    if pos < 0 or close.index[pos] + td <= t - td:
+        return np.nan
+    return float(close.iloc[pos])
+
+
 def fetch_kline_batch(symbols, interval, start, end, headers):
     """Batch fetch OHLCV kline for many symbols via /kline/batch (chunk_size=20).
     Returns dict {symbol: DataFrame(Open, High, Low, Close, Volume)} — keys are
