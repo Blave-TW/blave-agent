@@ -6112,7 +6112,6 @@ def _txf_daily_cdn(start, end):
             # from `asof`, not the day after: a cache window [d, …) in naive UTC starts with d+1's bar
             extra = _txf_daily_taifex(asof, end)
             if not extra.empty:
-                extra = extra[extra.index > pd.Timestamp(asof) - pd.Timedelta(hours=8)]
                 df = pd.concat([df, extra[_TW_DAILY_COLS].astype(float)])
         except (TwPublicUnavailable, requests.exceptions.RequestException) as e:
             print(f"  ⚠️  TXF daily bars: days after the CDN's {asof} not available from TAIFEX "
