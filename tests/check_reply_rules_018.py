@@ -274,6 +274,14 @@ t("研究題 reports.md:Research scripts 的「做成報告」是留在對話那
   and "A research question runs its data check before step 1 (§1b › *Research questions*)" in flat
   and "**Search first**, before any code but the data check" in flat)
 
+# 聊天長網址(spec designer/chat-long-url-2026-10-30 §4):web 與電腦版共用的格式規則要 agent 用 [來源標題](網址),Telegram 吃的 _STYLE_RULES 不帶
+web_rule = re.search(r"^WEB_FORMATTING_RULE = \((.*?)\n    \+ _STYLE_RULES", turn_src, re.M | re.S)
+style = re.search(r"^_STYLE_RULES = \((.*?)^\)", turn_src, re.M | re.S)
+URL_RULE = "附網址一律寫成 `[來源標題](網址)`，不要貼裸網址；標題用頁面標題或網站名。"
+t("長網址:WEB_FORMATTING_RULE 自己那段帶「附網址寫成 [來源標題](網址)」(LOCAL 由它衍生),_STYLE_RULES 不帶",
+  web_rule is not None and style is not None and URL_RULE in ast.literal_eval("(" + web_rule.group(1) + ")")
+  and "LOCAL_FORMATTING_RULE = WEB_FORMATTING_RULE.replace(" in turn_src and "裸網址" not in style.group(1))
+
 if fails:
     sys.exit(f"{len(fails)} failed")
 print("all passed")

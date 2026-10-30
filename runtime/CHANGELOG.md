@@ -8,6 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **web 與電腦版的回覆規則多一句:附網址寫成 `[來源標題](網址)`、不貼裸網址(`agent_turn.WEB_FORMATTING_RULE`,`LOCAL_FORMATTING_RULE` 跟著衍生;spec designer/chat-long-url-2026-10-30 §4,Wei 拍板)**:長網址在聊天欄會佔好幾行,外殼與 web 縮短顯示只是最後一道防線。Telegram 吃的 `_STYLE_RULES` 不動。測試 `tests/check_reply_rules_018.py`(新增一條)。
 - **電腦版狀態檔多三個「正在做」欄位(`command_listener.flatten_running`／`_record_flatten`／`optimize_running`／`_mark_perf`、`local_daemon.write_status`;desktop 0.1.37 每天 06:00 自動更新不在這些時候重開,更新膠囊稽核 P3-5)**:`daemon.flattening` = 全部平倉行程還活著——local mode 每起一支 flatten 就把 Popen 記在行程內、pid 附加進 `state/flatten_pids`(清單,雙按兩支都記);先看本行程的 Popen(不起子行程),否則讀清單最後 8 個 pid(`state/` agent 寫得到,塞爆的清單不能在 `_status_lock` 裡跑上百次 ps／powershell),逐個用 `_pid_cmdline_or_none` 核身分(命令列要有 `manager/flatten.py`);確定不在或不是 flatten 的修剪掉、清單空了刪檔,查不到的(powershell 逾時、ps 逾時或結束碼不是 0／1)留著下次再查、這次不算;一次判斷所有查詢合計約 10 秒預算,超過的當查不到;清單檔 mtime 超過 6 小時整份丟掉、不查,daemon 重啟後 macOS／Windows 都看得到。絕不讀也不鎖 `flatten.lock`(狀態迴圈每幾秒一次,鎖一下會讓剛起跑的平倉以為有人在平而什麼都不平;Windows 那把 msvcrt 鎖連讀都會失敗)。agent 手動跑的 flatten 不在清單裡。`daemon.optimizing` = `_OPT_LOCK` 被 manage_optimize 持有(在 daemon 區塊,報告組不出來那輪照寫;行程死了狀態檔不再更新,外殼只信新鮮心跳);`strategies/<name>/perf_refresh.json` 在成交測試那次 running 時多帶 `exec_test: true`。跟 `halt.closing` 不同,這三個結束就不成立。舊外殼不讀;舊 runtime 沒這些欄位外殼當作沒有。`_pid_cmdline` 改成包 `_pid_cmdline_or_none`(`""` = 沒這個 pid、`None` = 查不到),對外行為不變。測試 `tests/check_report_activity.py` 第 4 段、`tests/check_state_read_retry.py`(豁免列改函式名)。
 
 ## 1.1.148 — 2026-10-29(desktop 0.1.36)
