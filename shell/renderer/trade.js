@@ -5036,8 +5036,16 @@ function trOvCurve(z) {
   if (typeof window !== "undefined" && window.addEventListener) window.addEventListener("blave:theme", onTheme);
   /* hover(設計師 spec-desktop-ov-curve-hover-2026-09-25,照網頁 ovHover):重畫底圖再疊垂直指示線 + 線上圓點;小卡跟著點水平走、
      垂直釘在圖框頂(不跟 y 走才不抖),只落在繪圖區 [padL, W−padR](不進右軸欄、chips 在框外碰不到),右邊放不下翻左、都放不下貼 padL */
+  trCvEscWire();
+  // Esc 收掉之後游標還在圖上也不再出現,離開 canvas 才恢復(同 tipEsc 的 data-tip-off):不然手一抖下一個 mousemove 就把卡叫回來
+  let quiet = false;
+  const hide = () => {
+    if (!canvas.isConnected || tip.hidden) return false;   // 圖被換掉:舊閉包不吃這一下 Esc
+    tip.hidden = true; trDrawCurve(canvas, series, isPnl); quiet = true;
+    return true;
+  };
   canvas.addEventListener("mousemove", (e) => {
-    if (!TR.ov.geo) return;   // 還沒畫過(requestAnimationFrame 之前)
+    if (quiet || !TR.ov.geo) return;   // 還沒畫過(requestAnimationFrame 之前)
     trDrawCurve(canvas, series, isPnl);   // 先重畫(清掉上一條線、幾何跟著目前尺寸)再讀 geo:canvas 剛被拉寬時第一個 mousemove 才不會畫錯位
     const g = TR.ov.geo, x = e.offsetX; let bi = -1, bd = Infinity;
     series.forEach((p, i) => { const d = Math.abs(g.xAt(p.t) - x); if (d < bd) { bd = d; bi = i; } });
@@ -5058,9 +5066,17 @@ function trOvCurve(z) {
     const tw = tip.offsetWidth;
     let left = px + 16; if (left + tw > right) left = px - 16 - tw; if (left < g.padL) left = g.padL;
     tip.style.left = left + "px";
+    trCvHide = hide;
   });
-  canvas.addEventListener("mouseleave", () => { tip.hidden = true; trDrawCurve(canvas, series, isPnl); });
+  canvas.addEventListener("mouseleave", () => { tip.hidden = true; trDrawCurve(canvas, series, isPnl); quiet = false; if (trCvHide === hide) trCvHide = null; });
   return frag;
+}
+// 曲線讀數卡的 Esc:模組層只掛一支(曲線每次重畫都重建,掛在 trOvCurve 裡會一次漏一支)。trCvHide = 目前顯示中那張圖的收法
+let trCvHide = null, trCvEscN = 0;
+function trCvEscWire() {
+  if (trCvEscN) return;
+  trCvEscN++;
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229 && trCvHide && trCvHide()) { e.preventDefault(); e.stopPropagation(); } }, true);   // 同 trHistTipBox:先收讀數卡、不往下傳
 }
 // 重畫之後把焦點放回同一顆鈕(整段是重建的,不放回去焦點會掉到 BODY)
 function trRefocus(groupCls, label) {
