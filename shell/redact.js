@@ -131,6 +131,10 @@ function redact(text, known) {
 /* 第 1 條要比對的值:workspace/.env 裡鍵名像秘密、值 ≥ 6 字的,加上鍵名不像、但值本身就像金鑰(≥ 32 字、第 6 條那層過濾會遮)的。
    *_DEMO 這類旗標不收:交易所名、1 / true 會從每一則對話裡被抹掉。只回值,不回鍵名;讀不到檔回空清單 */
 const ENV_SECRET_KEY_RE = /KEY|SECRET|PASSPHRASE|PASSWORD|TOKEN|ACCOUNT|PIN|PFX|CERT/i;
+/* 設定值,不是秘密(ACCOUNT_TYPE=futures 這種):照 spec「*_DEMO=1 這類設定值不比對」的意思,值是這些字就不收,
+   不然這個字會從每一則對話裡被抹掉。只認全小寫英文單字(大小寫混雜或帶數字的值照收) */
+const ENV_SETTING_WORDS = new Set(["futures", "spot", "swap", "margin", "paper", "true", "false", "demo", "live",
+  "testnet", "mainnet", "real", "cross", "isolated", "linear", "inverse", "unified", "classic", "hedge", "oneway", "yes", "no", "on", "off"]);
 function envSecretValues(envText) {
   const out = [];
   if (typeof envText !== "string") return out;
@@ -142,7 +146,7 @@ function envSecretValues(envText) {
     const key = m[1];
     let val = m[2].trim();
     if (/^(['"]).*\1$/.test(val)) val = val.slice(1, -1);
-    if (/_DEMO$/i.test(key) || cpLen(val) < 6) continue;
+    if (/_DEMO$/i.test(key) || cpLen(val) < 6 || ENV_SETTING_WORDS.has(val)) continue;
     const tokenish = new RegExp("^" + LONG_TOKEN_RE.source + "$").test(val) && val.split("/").some((s) => s.length >= LONG_TOKEN_MIN && longTokenIsSecret(s));
     if (ENV_SECRET_KEY_RE.test(key) || tokenish) out.push(val);
   }

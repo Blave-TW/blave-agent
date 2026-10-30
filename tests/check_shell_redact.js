@@ -60,6 +60,11 @@ ok("6 鍵名不像、值像金鑰的也收", vals.includes("Zx9Qw8Er7Ty6Ui5Op4As
 ok("6 *_DEMO、短值、註解、一般設定值、策略名不收", !["1", "okx_demo_flag", "short", "commented", "verbose", "binance_funding_rate_strategy_v2_xxxxxx"].some((v) => vals.includes(v)), vals);
 ok("N1 不是關鍵字的名=值後面還有一對 key=value:後面那對照遮", R.redact("url=http://x?api_key=abcd1234efgh&a=1").indexOf("abcd1234efgh") < 0);
 ok("N2 含 / 的 base64 金鑰整串遮", R.redact("key q8Zt/Kp2+Lm9Wx4Rb7Vn1Yc3Hd6Jf0Gs/Ae5UoIi") === "key ⟦R⟧", R.redact("key q8Zt/Kp2+Lm9Wx4Rb7Vn1Yc3Hd6Jf0Gs/Ae5UoIi"));
+{ const cfg = R.envSecretValues(["BINANCE_ACCOUNT_TYPE=futures", "OKX_ACCOUNT_MODE=isolated", "BYBIT_ACCOUNT=unified", "PAPER_TOKEN_MODE=paper",
+    "GATE_ACCOUNT=Futures", "BITGET_ACCOUNT=futures1", "X_KEY=testnet"].join("\n"));
+  ok("6 鍵名像秘密、值是常見設定字(futures、isolated、unified…):不收,這個字不會從每則對話被抹掉", !["futures", "isolated", "unified", "paper", "testnet"].some((v) => cfg.includes(v)), cfg);
+  ok("6 只認全小寫原字:大小寫混雜、帶數字的照收", cfg.includes("Futures") && cfg.includes("futures1"), cfg);
+  ok("6 設定字照樣出現在遮過的對話裡", R.redact("帳戶是 futures 模式", R.envSecretValues("BINANCE_ACCOUNT_TYPE=futures")) === "帳戶是 futures 模式"); }
 ok("6 讀不到 .env(非字串)回空清單", R.envSecretValues(null).length === 0);
 ok("6 已知值一併遮、不進輸出", R.redact("key 是 Ab12Cd34Ef56 跟 9876543", vals) === "key 是 ⟦R⟧ 跟 ⟦R⟧");
 
