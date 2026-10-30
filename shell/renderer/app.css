@@ -1370,6 +1370,54 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 .flag-pop .item.danger { color: var(--ink-2); }
 .flag-pop .item[hidden], .flag-pop .divider[hidden] { display: none; }
 .flag-pop .divider { border-top: 1px solid var(--border-hairline); margin: 6px 0; }
+/* ── 側欄策略資料夾(spec strategy-sidebar-folders §9、§11;renderer/stratgroups.js)──
+   組標題 .sg-head 與列是 .strat-list 的兄弟節點(絕不包容器);列高 44 = 熱區,hover 填色與字的視覺高 32(上下各留 6)。
+   圖示左緣對齊列文字 x=24,不縮排;組距 16 = margin-top 10 + 填色上方留白 6;sticky 釘頂、底鋪 --bg-body,z-index 低於拖拉中的列(3) */
+.strat-head .sg-add:not([hidden]) + .strat-add { margin-left: var(--space-2); }
+.strat-add:disabled { color: var(--ink-disabled); background: none; cursor: not-allowed; }   /* canon › Disabled:無 hover */
+.sg-limit { padding: 0 var(--space-4) var(--space-8); font-size: 12px; color: var(--ink-3); }
+.sg-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; height: 44px; margin-top: 10px; padding-left: var(--space-12); background: var(--bg-body); }
+.sg-head.is-first { margin-top: 0; }
+.sg-head[hidden] { display: none; }
+.sg-head:focus-within, .sg-head.menu-open { z-index: 2; }   /* 釘頂疊放時 Tab 到被蓋住的那顆:浮到最上面,仍低於拖拉中的列 */
+.sg-tog { position: relative; flex: 1; min-width: 0; height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 var(--space-12); font-size: 12px; color: var(--ink-3); text-align: left; }
+.sg-tog::before { content: ""; position: absolute; inset: 6px 0; z-index: -1; border-radius: var(--radius-md); }
+.sg-head:is(:hover, .menu-open, .sg-drop) .sg-tog::before { background: var(--surface-card); }   /* 由 .sg-head 層驅動:滑到 ⋯ 上不熄;當落點時同一個灰階,不畫插入線 */
+.sg-head:is(:hover, .menu-open) .sg-tog { color: var(--ink-2); }
+.sg-ic { flex: none; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; }
+.sg-ic.is-emoji { font: 14px/16px var(--font-emoji); }   /* emoji 不套透明度、不跟 hover 變色 */
+.sg-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sg-n { flex: none; font-size: 11px; font-weight: 500; }
+.sg-live { flex: none; margin-left: auto; display: flex; align-items: center; font-size: 11px; font-weight: 500; }
+.sg-live[hidden] { display: none; }
+.sg-live .run-dot { margin-right: var(--space-4); background: var(--color-green); }   /* 靜止:呼吸是單列「活著」的語意,一排組標題一起閃會變成警報 */
+.sg-chev { margin-left: auto; }
+.sg-live:not([hidden]) + .sg-chev { margin-left: 0; }
+.sg-head.is-collapsed .sg-chev { transform: rotate(-90deg); }
+.sg-more { position: absolute; right: 34px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-micro); color: var(--ink-2); opacity: 0; pointer-events: none; }
+.sg-head:is(:hover, :has(:focus-visible), .menu-open) .sg-more { opacity: 1; pointer-events: auto; }
+.sg-head:is(:hover, :has(:focus-visible), .menu-open) .sg-live { margin-right: 28px; }
+.sg-more:hover { background: var(--bg-body); color: var(--ink); }
+.strat-list.has-groups > .strat-wrap { scroll-margin-top: 44px; }   /* 釘頂的組標題會蓋住捲到頂的列 */
+/* 「建市場資料夾」:清單最上方一顆 32 高的文字鈕,hover 同列 */
+.sg-auto { display: flex; align-items: center; width: calc(100% - var(--space-12)); height: 32px; margin: 0 0 var(--space-4) var(--space-12); padding: 0 var(--space-12); border-radius: var(--radius-md); font-size: 12px; color: var(--ink-2); text-align: left; }
+.sg-auto:hover { background: var(--surface-card); color: var(--ink); }
+/* 編輯列:圖示鈕(視覺 24,圖示左緣仍在 x=24)＋名稱框 */
+.sg-edit { display: flex; align-items: center; gap: 6px; height: 44px; margin-top: 10px; padding: 0 var(--space-12) 0 20px; }
+.sg-edit:first-child { margin-top: 0; }
+.sg-ebtn { flex: none; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-micro); color: var(--ink-3); }
+.sg-ebtn:hover { background: var(--surface-muted); color: var(--ink); }
+.sg-input { flex: 1; min-width: 0; height: 32px; padding: 0 var(--space-8); border: 1px solid var(--border-frame); border-radius: var(--radius-sm); background: var(--surface-field); font: inherit; font-size: 13px; color: var(--ink); }
+.sg-input:focus { outline: none; border-color: var(--ink); }
+/* emoji 選擇器(Dropdown Panel):6 欄 32×32、格距 4、內容高上限 320 內捲;選中 = 1px --active-line 框、無填色,hover / 焦點 = --surface-muted 底,兩者疊加都看得到 */
+.flag-pop.sg-pick { width: 224px; max-height: 320px; overflow-y: auto; }
+.sg-cat-l { padding: 6px 4px 4px; font-size: 12px; color: var(--ink-3); }
+.sg-grid { display: grid; grid-template-columns: repeat(6, 32px); gap: 4px; }
+.sg-cell { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-xs); font: 18px/1 var(--font-emoji); }
+.sg-cell:hover, .sg-cell:focus-visible { background: var(--surface-muted); }
+.sg-cell.is-on { box-shadow: inset 0 0 0 1px var(--active-line); }
+.flag-pop .sg-moves { max-height: 240px; overflow-y: auto; }   /* 資料夾多時不分層、內捲 */
+.flag-pop .sg-moves .item[aria-current] { color: var(--ink); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
   .strat-wrap.shifting, .strat-flagbtn, .flag-pop .item { transition: none; }
   .flag-pop, .flag-pop.up { transition: opacity var(--motion-fast) var(--ease-standard); transform: none; }   /* 留 fade、去位移 */

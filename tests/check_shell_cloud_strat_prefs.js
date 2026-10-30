@@ -6,7 +6,9 @@
 //      寫回成功時作廢在途的狀態請求(舊信封晚到不蓋回去);一次只送一包(前一包落地才送下一包);
 //      epoch 對不上 / 鑰匙圈換人但信封還沒換 → NO_LOGIN 不送
 //   ③ sfCloudHold:拖拉中擋重建、只排一次補畫;拖完 waiters 跑完
-//   ④ 送出前修剪(清單完整時丟掉不存在的旗標名、≤200)、429 / 失敗補送一次、送出中又改過的鍵不放手;preload 只轉三個鍵
+//   ④ 送出前修剪(清單完整時丟掉不存在的旗標名、≤200)、429 / 失敗補送一次、送出中又改過的鍵不放手;preload 只轉四個鍵
+//   ⑤ 資料夾 strat_groups(spec strategy-sidebar-folders §3 舊 api):只帶 groups 回 BAD_CURRENCY → 只關資料夾寫回;帶了順序 → 200 但回應沒 strat_groups
+//      → groupsOff、不標已同步(覆蓋留著,下一輪輪詢不把資料夾洗掉);關掉後順序與旗標照寫;換帳號重試;修剪只在清單完整時;刪策略清 map
 // 跑法:node tests/check_shell_cloud_strat_prefs.js
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const SHELL = path.join(__dirname, "..", "shell"), R = path.join(SHELL, "renderer");
@@ -40,17 +42,19 @@ const env = (o) => ({ status: 200, body: Object.assign({ machine: { state: "runn
   r = await sp({ strat_order: ["a"] });
   reply = () => ({ status: 500 });
   const r5 = await sp({ strat_order: ["a"] });
-  ok("① 429 → RATE_LIMITED、500 → FAIL,兩次都真的送了(暫時的,下次照送)", r.code === "RATE_LIMITED" && r5.code === "FAIL" && posts.length === n0 + 2);
+  reply = () => ({ status: 400, body: { error_code: "BAD_STRAT_GROUPS" } });
+  const r4 = await sp({ strat_order: ["a"] });
+  ok("① 429 → RATE_LIMITED、500 → FAIL、其他 4xx → REJECTED(內容被拒,補送也一樣),三次都真的送了", r.code === "RATE_LIMITED" && r5.code === "FAIL" && r4.code === "REJECTED" && posts.length === n0 + 3);
   reply = () => ({ status: 400, body: { error_code: "BAD_CURRENCY", options: ["USD"] } });
   r = await sp({ strat_flags: { a: 2 } });
   const r2 = await sp({ strat_order: ["b"] });
-  ok("① 舊 api(400 BAD_CURRENCY)→ UNSUPPORTED;之後同一個帳號不再送(不燒指令那一桶)", r.code === "UNSUPPORTED" && r2.code === "UNSUPPORTED" && posts.length === n0 + 3, J({ r, r2, n: posts.length - n0 }));
+  ok("① 舊 api(400 BAD_CURRENCY)→ UNSUPPORTED;之後同一個帳號不再送(不燒指令那一桶)", r.code === "UNSUPPORTED" && r2.code === "UNSUPPORTED" && posts.length === n0 + 4, J({ r, r2, n: posts.length - n0 }));
   ok("① 失敗不動 snapshot", J(h.snapshot().strat_order) === J(["b", "a"]) && J(h.snapshot().strat_flags) === J({ b: 3 }));
   h.reset(); creds = { token: "t2", appSecret: "s2", who: "u2" }; reply = () => ({ status: 200, body: { status: "ok" } });
   r = await sp({ strat_order: ["x"] });
-  ok("① 換帳號(reset)後重新試(新部署的 api 或另一個人)", r.ok === true && posts.length === n0 + 4);
+  ok("① 換帳號(reset)後重新試(新部署的 api 或另一個人)", r.ok === true && posts.length === n0 + 5);
   creds = null;
-  ok("① 沒登入 → NO_LOGIN,不打 api", (await sp({ strat_order: ["x"] })).code === "NO_LOGIN" && posts.length === n0 + 4);
+  ok("① 沒登入 → NO_LOGIN,不打 api", (await sp({ strat_order: ["x"] })).code === "NO_LOGIN" && posts.length === n0 + 5);
   {
     // 寫回成功作廢在途的狀態請求 / 一次一包 / epoch 與換人
     let cr = { token: "t", appSecret: "s", who: "u1" }, serverPrefs = { strat_order: ["a", "b"], strat_flags: { a: 1 } }, stateGate = null, prefGate = null;
@@ -96,7 +100,7 @@ const env = (o) => ({ status: 200, body: Object.assign({ machine: { state: "runn
   vm.runInNewContext([
     "const SF = { dragActive: false, waiters: [], popStore: null };",
     /^const SF_SAVE_MS = .*$/m.exec(sfSrc)[0], /^const SF_RETRY_MS = .*$/m.exec(sfSrc)[0],
-    /^const SFC = .*$/m.exec(sfSrc)[0], /^const SFC_KEYS = .*$/m.exec(sfSrc)[0],
+    /^const SFC = .*$/m.exec(sfSrc)[0], /^const SFC_KEYS = .*$/m.exec(sfSrc)[0], /^const sgEditing = .*$/m.exec(sfSrc)[0],
     cut(sfSrc, "function sfApplyOrder("), cut(sfSrc, "function sfCloudPrefs("), cut(sfSrc, "function sfCloudSave("), cut(sfSrc, "function sfCloudArm("), cut(sfSrc, "function sfCloudTrim("), cut(sfSrc, "function sfCloudFlush("), cut(sfSrc, "function sfCloudForget("),
     cut(sfSrc, "const SF_CLOUD = {"), cut(sfSrc, "function sfCloudHold("),
     "this.SF = SF; this.SFC = SFC; this.SF_CLOUD = SF_CLOUD; this.prefs = sfCloudPrefs; this.apply = sfApplyOrder; this.forget = sfCloudForget; this.hold = sfCloudHold;",
@@ -105,10 +109,11 @@ const env = (o) => ({ status: 200, body: Object.assign({ machine: { state: "runn
   const L = (...n) => n.map((name) => ({ name })), names = (l) => l.map((x) => x.name).join();
   let snap = { epoch: 1, fetched_at: 100, strat_order: ["b", "a"], strat_flags: { a: 1 } };
   let p = ctx.prefs(snap);
-  ok("② 沒改過 = api 那一份;套序 order 內的先、新策略 append", J(p) === J({ order: ["b", "a"], flags: { a: 1 } }) && names(ctx.apply(L("a", "b", "c"), p.order)) === "b,a,c", J(p));
+  const OF = (x) => J({ order: x.order, flags: x.flags });
+  ok("② 沒改過 = api 那一份;套序 order 內的先、新策略 append", OF(p) === J({ order: ["b", "a"], flags: { a: 1 } }) && J(p.groups) === '{"v":1,"folders":[],"map":{}}' && names(ctx.apply(L("a", "b", "c"), p.order)) === "b,a,c", J(p));
   ctx.SF_CLOUD.moved(["c", "a", "b"]); ctx.SF_CLOUD.setFlag("b", 3); ctx.SF_CLOUD.setFlag("a", null);
   p = ctx.prefs(snap);
-  ok("② 剛拖 / 剛掛:舊信封上疊本機值(重畫不跳回去)", J(p) === J({ order: ["c", "a", "b"], flags: { b: 3 } }) && names(ctx.apply(L("a", "b", "c"), p.order)) === "c,a,b", J(p));
+  ok("② 剛拖 / 剛掛:舊信封上疊本機值(重畫不跳回去)", OF(p) === J({ order: ["c", "a", "b"], flags: { b: 3 } }) && names(ctx.apply(L("a", "b", "c"), p.order)) === "c,a,b", J(p));
   ok("② debounce:300ms 之前一包都沒送", sent.length === 0 && timers.filter((x) => x.fn).length === 1 && timers.filter((x) => x.fn)[0].ms === 300);
   await flush();
   ok("② 300ms 後一包、帶兩個改過的鍵、整份送;帶信封的 epoch", sent.length === 1 && J(sent[0]) === J({ strat_order: ["c", "a", "b"], strat_flags: { b: 3 } }) && epochs[0] === 1, J({ sent, epochs }));
@@ -130,7 +135,7 @@ const env = (o) => ({ status: 200, body: Object.assign({ machine: { state: "runn
   ctx.SF_CLOUD.setFlag("z", 2);
   ok("② 沒有信封(還沒第一份)不算換帳號:覆蓋不清", J(ctx.prefs({}).flags) === J({ c: 2, a: 1, z: 2 }) && J(ctx.prefs(undefined).flags) === J({ c: 2, a: 1, z: 2 })
     && J(ctx.SF_CLOUD.flags()) === J({ c: 2, a: 1, z: 2 }), J({ p: ctx.prefs({}), cur: ctx.SF_CLOUD.flags() }));
-  ok("② 換帳號(epoch 變了)→ 覆蓋清掉、還沒送的那包作廢", J(ctx.prefs({ epoch: 2, strat_order: [], strat_flags: {} })) === J({ order: [], flags: {} }) && timers.every((x) => !x.fn));
+  ok("② 換帳號(epoch 變了)→ 覆蓋清掉、還沒送的那包作廢", OF(ctx.prefs({ epoch: 2, strat_order: [], strat_flags: {} })) === J({ order: [], flags: {} }) && timers.every((x) => !x.fn));
   // ── ④ 修剪 / 補送 / 送出中又改 ──
   answer = { ok: true, code: "OK" }; sent.length = 0; timers.length = 0;
   snap = { epoch: 2, fetched_at: 300, strat_order: [], strat_flags: { a: 1, gone: 2 }, strategies_ok: true, strategies_partial: false, strategies: [{ name: "a" }, { name: "b" }] };
@@ -147,6 +152,8 @@ const env = (o) => ({ status: 200, body: Object.assign({ machine: { state: "runn
   ok("④ 補送同一包;再失敗不再排(只補一次)", sent.length === 2 && J(sent[1]) === J(sent[0]) && timers.every((x) => !x.fn), J({ sent, t: timers.map((x) => [!!x.fn, x.ms]) }));
   answer = { ok: false, code: "UNSUPPORTED" }; ctx.SF_CLOUD.setFlag("b", 2); await flush();
   ok("④ 舊 api / NO_LOGIN 不補送", sent.length === 3 && timers.every((x) => !x.fn));
+  answer = { ok: false, code: "REJECTED" }; ctx.SF_CLOUD.setFlag("b", 3); await flush();
+  ok("④ 4xx 被拒(REJECTED)不補送(同網頁:只補 429 / 5xx / 連不上)", sent.length === 4 && timers.every((x) => !x.fn));
   let resolveA; answer = () => new Promise((res) => { resolveA = res; });
   ctx.SF_CLOUD.setFlag("a", 3); const due = timers.splice(0); due.forEach((x) => x.fn && x.fn());
   answer = { ok: true, code: "OK" };
@@ -157,7 +164,69 @@ const env = (o) => ({ status: 200, body: Object.assign({ machine: { state: "runn
     vm.runInNewContext(preSrc, { require: () => ({ contextBridge: { exposeInMainWorld: (_n, o) => { api = o; } }, ipcRenderer: { invoke: (...a) => { calls.push(a); return Promise.resolve(); }, on: () => {}, send: () => {}, removeListener: () => {} } }),
       process: { platform: "darwin", argv: [] }, console });
     api.cloudStratPrefsSet({ strat_order: ["a"], strat_flags: { a: 1 }, epoch: 4, token: "x", app_secret: "y", base_currency: "TWD" });
-    ok("④ preload 只轉 strat_order / strat_flags / epoch 三個鍵到 cloud-strat-prefs", calls.length === 1 && calls[0][0] === "cloud-strat-prefs" && J(Object.keys(calls[0][1]).sort()) === J(["epoch", "strat_flags", "strat_order"]), J(calls)); }
+    api.cloudStratPrefsSet({ strat_groups: { v: 1, folders: [], map: {} }, epoch: 4 });
+    ok("④ preload 只轉 strat_order / strat_flags / strat_groups / epoch 四個鍵到 cloud-strat-prefs", calls.length === 2 && calls[0][0] === "cloud-strat-prefs" && J(Object.keys(calls[0][1]).sort()) === J(["epoch", "strat_flags", "strat_groups", "strat_order"])
+      && J(calls[1][1].strat_groups) === '{"v":1,"folders":[],"map":{}}', J(calls)); }
+  // ── ⑤ 資料夾 ──
+  {
+    const GR = (map) => ({ v: 1, folders: [{ id: "fok0001", name: "主力", emoji: "🪙" }], map: map || { a: "fok0001" } });
+    let cr = { token: "t", appSecret: "s", who: "u1" }, rep = null; const pp = [];
+    const post3 = async (url, body) => (url.endsWith(PREFS_ENDPOINT) ? (pp.push(body), rep(body)) : env());
+    const k = createCloudHost({ apiBase: "https://x", getCreds: () => cr, post: post3, now: () => Date.now(), setTimer: () => 0, clearTimer: () => {} });
+    await k.refresh(true);
+    const sg = (q) => k.setStratPrefs({ ...q, epoch: k.snapshot().epoch });
+    rep = (b) => ({ status: 200, body: { status: "ok", ...(b.strat_groups ? { strat_groups: { ...b.strat_groups, map: {} } } : {}) } });
+    let r = await sg({ strat_groups: GR() });
+    ok("⑤ 新 api:只送 strat_groups 一鍵(不認得的 emoji 原樣送,權威在 api);snapshot 換成 api 回的清過值", r.ok === true && !r.groupsOff && J(Object.keys(pp[0]).sort()) === J(["app_secret", "strat_groups", "token"])
+      && pp[0].strat_groups.folders[0].emoji === "🪙" && J(k.snapshot().strat_groups.map) === "{}", J({ r, s: k.snapshot().strat_groups }));
+    const n0 = pp.length;
+    const bad = [await sg({ strat_groups: { v: 1, folders: [{ id: "fok0001", name: "x", emoji: "123456789" }], map: {} } }), await sg({ strat_groups: { v: 2, folders: [], map: {} } }), await sg({ strat_groups: { folders: "x", map: {} } })];
+    ok("⑤ 形狀不對(emoji 過長、v 不是 1、folders 不是陣列)→ BAD,不打 api", bad.every((x) => x.code === "BAD") && pp.length === n0, J(bad));
+    // 舊 api 第一種:只帶 groups → 400 BAD_CURRENCY
+    rep = (b) => (b.strat_order || b.strat_flags ? { status: 200, body: { status: "ok", ...(b.strat_order ? { strat_order: b.strat_order } : {}) } } : { status: 400, body: { error_code: "BAD_CURRENCY" } });
+    r = await sg({ strat_groups: GR() });
+    const r2 = await sg({ strat_groups: GR() });
+    ok("⑤ 舊 api(只帶 groups → 400 BAD_CURRENCY):UNSUPPORTED,之後只帶 groups 不再送", r.code === "UNSUPPORTED" && r2.code === "UNSUPPORTED" && pp.length === n0 + 1, J({ r, r2, n: pp.length - n0 }));
+    r = await sg({ strat_order: ["b", "a"], strat_groups: GR() });
+    ok("⑤ 資料夾關了、順序照寫:body 拿掉 strat_groups(不設 stratPrefsOff)", r.ok === true && !("strat_groups" in pp[pp.length - 1]) && J(pp[pp.length - 1].strat_order) === J(["b", "a"]), J(pp[pp.length - 1]));
+    k.reset(); cr = { token: "t2", appSecret: "s2", who: "u2" }; await k.refresh(true);
+    // 舊 api 第二種:帶了順序 → 200、靜默丟掉 groups(回應沒有 strat_groups 鍵)
+    const before = J(k.snapshot().strat_groups);
+    r = await sg({ strat_order: ["a"], strat_groups: GR() });
+    ok("⑤ 換帳號後重試;舊 api 第二種(帶順序 → 200 沒回 strat_groups):ok + groupsOff、snapshot 的資料夾不動", r.ok === true && r.groupsOff === true && "strat_groups" in pp[pp.length - 1] && J(k.snapshot().strat_groups) === before, J({ r, s: k.snapshot().strat_groups }));
+    const n1 = pp.length, r3 = await sg({ strat_groups: GR() }), r4 = await sg({ strat_flags: { a: 1 }, strat_groups: GR() });
+    ok("⑤ groupsOff 之後:只帶 groups → UNSUPPORTED 不送;帶旗標照送、不帶 groups", r3.code === "UNSUPPORTED" && r4.ok === true && pp.length === n1 + 1 && !("strat_groups" in pp[n1]), J({ r3, r4 }));
+    // 更舊的 api:連順序都不收(BAD_CURRENCY)→ 整個關(既有行為)
+    k.reset(); cr = { token: "t3", appSecret: "s3", who: "u3" }; await k.refresh(true);
+    rep = () => ({ status: 400, body: { error_code: "BAD_CURRENCY" } });
+    r = await sg({ strat_order: ["a"], strat_groups: GR() });
+    const n2 = pp.length, r5 = await sg({ strat_order: ["b"] });
+    ok("⑤ 帶了順序也 BAD_CURRENCY(連順序都不收的 api):整個關掉,之後順序也不送", r.code === "UNSUPPORTED" && r5.code === "UNSUPPORTED" && pp.length === n2);
+  }
+  {
+    // renderer 覆蓋層:送出、修剪、groupsOff 不放手、刪策略清 map
+    sent.length = 0; timers.length = 0; answer = { ok: true, code: "OK" };
+    const full = { epoch: 7, fetched_at: 1000, strat_order: [], strat_flags: {}, strat_groups: { v: 1, folders: [], map: {} }, strategies_ok: true, strategies_partial: false, strategies: [{ name: "a" }, { name: "b" }] };
+    ctx.prefs(full);
+    const G1 = { v: 1, folders: [{ id: "fok0001", name: "主力", emoji: "⭐" }], map: { a: "fok0001", gone: "fok0001" } };
+    ctx.SF_CLOUD.setGroups(G1); await flush();
+    ok("⑤ setGroups → 300ms 後一包 strat_groups;清單完整時 map 丟掉不存在的策略(覆蓋本身不動)", sent.length === 1 && J(sent[0]) === J({ strat_groups: { v: 1, folders: G1.folders, map: { a: "fok0001" } } }) && "gone" in ctx.SFC.over.groups.map, J(sent));
+    ctx.prefs({ ...full, epoch: 8, strategies_partial: true }); sent.length = 0;
+    ctx.SF_CLOUD.setGroups(G1); await flush();
+    ok("⑤ 清單讀不全(strategies_partial):不修剪 map(不吃真的歸屬)", J(sent[0].strat_groups.map) === J({ a: "fok0001", gone: "fok0001" }), J(sent[0]));
+    ctx.prefs({ ...full, epoch: 9, strategies: [] }); sent.length = 0;
+    ctx.SF_CLOUD.setGroups(G1); await flush();
+    ok("⑤ 主機停機 / 清單空:不修剪", J(sent[0].strat_groups.map) === J({ a: "fok0001", gone: "fok0001" }));
+    answer = { ok: true, code: "OK", groupsOff: true }; sent.length = 0;
+    ctx.prefs({ ...full, epoch: 10 }); ctx.SF_CLOUD.setGroups(G1); ctx.SF_CLOUD.moved(["b", "a"]); await flush();
+    const later = ctx.prefs({ ...full, epoch: 10, fetched_at: 999999, strat_order: ["b", "a"] });
+    ok("⑤ 回 groupsOff:順序照常放手、資料夾不標已同步——之後更新的信封(沒有資料夾)也照畫本機的資料夾", !ctx.SFC.syncedAt.groups && "groups" in ctx.SFC.over && !("order" in ctx.SFC.over) && J(later.groups.folders) === J(G1.folders), J({ s: ctx.SFC.syncedAt, g: later.groups }));
+    answer = { ok: true, code: "OK" }; sent.length = 0;
+    ctx.prefs({ ...full, epoch: 11, strat_groups: { v: 1, folders: G1.folders, map: { a: "fok0001", b: "fok0001" } } });
+    ctx.forget("a"); await flush();
+    ok("⑤ 刪策略成功:map 拿掉那個名字", J(sent[0].strat_groups.map) === J({ b: "fok0001" }) && !("a" in ctx.SFC.cur.groups.map), J(sent));
+    ctx.SF.dragActive = false;
+  }
   // ── ③ sfCloudHold ──
   let repaints = 0;
   ctx.SF.dragActive = true;

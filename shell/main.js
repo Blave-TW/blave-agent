@@ -2651,8 +2651,52 @@ function libraryInstalled(patch) {
    讀取清洗同 libInstalledClean 的精神:形狀不對當沒設、絕不 throw;stratOrder 去重保序、旗標值收 1–6(api 同一條寬容規則,畫面只畫 1–3)。
    listStrategies 不排、不帶偏好——套用在 renderer(同 web「api 不排序」的分工) */
 const STRAT_PREFS_MAX = 200;
+/* 側欄策略資料夾(spec strategy-sidebar-folders §3、§10)。72 個 emoji 與上限以 api openclaw/agent_strategies.py 為準,
+   renderer/stratgroups.js 與 api 各一份副本,tests/check_web_desktop_parity.js 逐字比對 */
+const SG_EMOJI = (
+  "⭐🔥💡🎯🧪🚀💎🏆📌🔖📦🧩"
+  + "📈📉📊💹💰💵💴💶💷🏦🌐🌏"
+  + "⏰⏳🔁🔄🔀🔍🧭🔭🌊🎲🧠🔬"
+  + "🐂🐻🐳🦈🦅🦊🦉🐢🐇🐝🐙🦄"
+  + "🌱🌲🌵🍀🌸🌙⛅🌈🌋🌞☔🍁"
+  + "⚓🔑🔧🔨🧰🧲📚📝📎🎁🎨🎈"
+);
+const SG_EMOJI_SET = new Set([...SG_EMOJI]);
+const SG_FOLDERS_MAX = 20, SG_NAME_MAX = 20, SG_ID_RE = /^f[0-9a-z]{6,12}$/, SG_COLL_RE = /^(f[0-9a-z]{6,12}|_u)$/;
+/* 讀取端只驗形狀:emoji 不比對清單(新版加的值舊版原樣保留),寫入端 stratPrefsSet 才比。
+   超限不整包失效:folders 截 20;map 超過 200 先丟不在 stratNames() 的鍵——讀不到目錄(回 [])時跳過這步直接截,否則清光歸屬 */
+function stratGroupsClean(g) {
+  const out = { v: 1, folders: [], map: {} };
+  if (!g || typeof g !== "object" || Array.isArray(g) || (g.v !== undefined && g.v !== 1)) return out;
+  const ids = new Set();
+  for (const f of Array.isArray(g.folders) ? g.folders : []) {
+    if (out.folders.length >= SG_FOLDERS_MAX) break;
+    if (!f || typeof f !== "object") continue;
+    const { id, name, emoji } = f;
+    if (typeof id !== "string" || !SG_ID_RE.test(id) || ids.has(id)) continue;
+    if (typeof name !== "string" || !name.trim() || [...name].length > SG_NAME_MAX) continue;
+    ids.add(id);
+    out.folders.push({ id, name, emoji: typeof emoji === "string" && emoji && emoji.length <= 8 ? emoji : null });
+  }
+  const m = g.map && typeof g.map === "object" && !Array.isArray(g.map) ? g.map : {};
+  let keys = Object.keys(m).filter((k) => LIB_NAME_RE.test(k) && typeof m[k] === "string" && ids.has(m[k]));
+  if (keys.length > STRAT_PREFS_MAX) {
+    const have = new Set(stratNames());
+    if (have.size) keys = keys.filter((k) => have.has(k));
+    keys = keys.slice(0, STRAT_PREFS_MAX);
+  }
+  for (const k of keys) out.map[k] = m[k];
+  return out;
+}
+// 收合狀態是版面偏好(canon › 可收合側欄),兩個視角各一份;_u = 未分類
+function stratGroupsCollapsedClean(c) {
+  const out = { local: [], cloud: [] };
+  if (!c || typeof c !== "object" || Array.isArray(c)) return out;
+  for (const k of ["local", "cloud"]) if (Array.isArray(c[k])) out[k] = [...new Set(c[k].filter((x) => typeof x === "string" && SG_COLL_RE.test(x)))].slice(0, SG_FOLDERS_MAX + 1);
+  return out;
+}
 function stratPrefsClean(o) {
-  const out = { stratOrder: [], stratFlags: {} };
+  const out = { stratOrder: [], stratFlags: {}, stratGroups: stratGroupsClean(null), stratGroupsCollapsed: stratGroupsCollapsedClean(null) };
   if (!o || typeof o !== "object" || Array.isArray(o)) return out;
   if (Array.isArray(o.stratOrder) && o.stratOrder.length <= STRAT_PREFS_MAX) {
     const seen = new Set();
@@ -2661,17 +2705,27 @@ function stratPrefsClean(o) {
   const f = o.stratFlags;
   if (f && typeof f === "object" && !Array.isArray(f) && Object.keys(f).length <= STRAT_PREFS_MAX)
     for (const k of Object.keys(f)) if (LIB_NAME_RE.test(k) && Number.isInteger(f[k]) && f[k] >= 1 && f[k] <= 6) out.stratFlags[k] = f[k];
+  out.stratGroups = stratGroupsClean(o.stratGroups);
+  out.stratGroupsCollapsed = stratGroupsCollapsedClean(o.stratGroupsCollapsed);
   return out;
 }
 function stratPrefsGet() {
   try { return stratPrefsClean(JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8"))); } catch (_) { return stratPrefsClean(null); }
 }
-// patch = { stratOrder?, stratFlags? }:只動有帶(且形狀對)的鍵;寫不進去不回報——順序 / 旗標是偏好不是資料,畫面靠記憶體值維持
+const plainObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+/* patch = { stratOrder?, stratFlags?, stratGroups?, stratGroupsCollapsed? }:只動有帶(且形狀對)的鍵;寫不進去不回報——偏好不是資料,畫面靠記憶體值維持。
+   stratGroups 收到的是整包,分不出這次改了哪個:emoji 跟檔內同 id 比,沒變放行(舊版看不懂的值不被改壞),變了且不在清單 → null */
 function stratPrefsSet(patch) {
-  const p = patch && typeof patch === "object" && !Array.isArray(patch) ? patch : {};
+  const p = plainObj(patch) ? patch : {};
   const c = stratPrefsClean(p), w = {};
   if (Array.isArray(p.stratOrder)) w.stratOrder = c.stratOrder;
-  if (p.stratFlags && typeof p.stratFlags === "object" && !Array.isArray(p.stratFlags)) w.stratFlags = c.stratFlags;
+  if (plainObj(p.stratFlags)) w.stratFlags = c.stratFlags;
+  if (plainObj(p.stratGroups)) {
+    const was = new Map(stratPrefsGet().stratGroups.folders.map((x) => [x.id, x.emoji]));
+    c.stratGroups.folders.forEach((x) => { if (x.emoji !== null && x.emoji !== was.get(x.id) && !SG_EMOJI_SET.has(x.emoji)) x.emoji = null; });
+    w.stratGroups = c.stratGroups;
+  }
+  if (plainObj(p.stratGroupsCollapsed)) w.stratGroupsCollapsed = c.stratGroupsCollapsed;
   if (Object.keys(w).length) try { uiPrefsPatch(w); } catch (_) { /* 寫不進去:這一次的記憶只在畫面上 */ }
   return stratPrefsGet();
 }
@@ -3748,8 +3802,8 @@ app.whenReady().then(() => {
   handle("welcome-prefs-set", (_e, p) => onbPrefsSet(p), { done: false, cloudDone: false });
   handle("intro-check", () => introCheck(), { show: false });
   handle("intro-seen", () => introSeenSet(), false);
-  handle("strat-prefs", () => stratPrefsGet(), { stratOrder: [], stratFlags: {} });
-  handle("strat-prefs-set", (_e, patch) => stratPrefsSet(patch), { stratOrder: [], stratFlags: {} });
+  handle("strat-prefs", () => stratPrefsGet(), stratPrefsClean(null));
+  handle("strat-prefs-set", (_e, patch) => stratPrefsSet(patch), stratPrefsClean(null));
   handle("mg-sizing-cloud", () => mgSizingCloudGet(), null);
   handle("mg-sizing-cloud-set", (_e, v) => mgSizingCloudSet(v), false);
   handle("library-download", (_e, id) => libraryDownload(id), { ok: false, kind: "fail" });

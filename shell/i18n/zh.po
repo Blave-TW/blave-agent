@@ -3670,6 +3670,325 @@ msgstr "紫"
 msgid "side.moved"
 msgstr "已移到第 {n} 位"
 
+# 側欄策略資料夾(spec strategy-sidebar-folders §14);emoji 名稱 key 是碼點,選擇器每格的 aria-label 與 title
+msgid "sg.add"
+msgstr "新增資料夾"
+
+msgid "sg.newName"
+msgstr "新資料夾"
+
+msgid "sg.uncat"
+msgstr "未分類"
+
+msgid "sg.auto"
+msgstr "建市場資料夾"
+
+msgid "sg.max"
+msgstr "最多 20 個資料夾"
+
+msgid "sg.rename"
+msgstr "改名"
+
+msgid "sg.emoji"
+msgstr "換圖示"
+
+msgid "sg.up"
+msgstr "上移"
+
+msgid "sg.down"
+msgstr "下移"
+
+msgid "sg.del"
+msgstr "刪除資料夾"
+
+msgid "sg.emojiNone"
+msgstr "移除圖示"
+
+msgid "sg.cat.common"
+msgstr "常用"
+
+msgid "sg.cat.market"
+msgstr "市場"
+
+msgid "sg.cat.strategy"
+msgstr "策略"
+
+msgid "sg.cat.animal"
+msgstr "動物"
+
+msgid "sg.cat.nature"
+msgstr "自然"
+
+msgid "sg.cat.object"
+msgstr "物品"
+
+msgid "sg.delTitle"
+msgstr "刪除「{name}」？"
+
+msgid "sg.delBody"
+msgstr "裡面 {n} 支移到未分類。"
+
+msgid "sg.delOk"
+msgstr "刪除"
+
+msgid "sg.moved"
+msgstr "已移到{name}"
+
+msgid "sg.headAria"
+msgstr "{name}，{n} 支"
+
+msgid "sg.headLive"
+msgstr "，{m} 支上線中"
+
+msgid "sg.more"
+msgstr "{name}選項"
+
+msgid "sg.nameAria"
+msgstr "資料夾名稱"
+
+msgid "sg.moveTo"
+msgstr "移到{name}"
+
+msgid "sg.moveOut"
+msgstr "移出資料夾"
+
+msgid "sg.mkt.crypto"
+msgstr "加密"
+
+msgid "sg.mkt.txf"
+msgstr "台指期"
+
+msgid "sg.mkt.tw"
+msgstr "台股"
+
+msgid "sg.mkt.us"
+msgstr "美股"
+
+msgid "sg.mkt.stockFut"
+msgstr "個股期貨"
+
+msgid "sg.mkt.global"
+msgstr "國際期貨"
+
+msgid "sg.mkt.mixed"
+msgstr "混合"
+
+msgid "sg.e.2B50"
+msgstr "星星"
+
+msgid "sg.e.1F525"
+msgstr "火"
+
+msgid "sg.e.1F4A1"
+msgstr "燈泡"
+
+msgid "sg.e.1F3AF"
+msgstr "靶心"
+
+msgid "sg.e.1F9EA"
+msgstr "試管"
+
+msgid "sg.e.1F680"
+msgstr "火箭"
+
+msgid "sg.e.1F48E"
+msgstr "鑽石"
+
+msgid "sg.e.1F3C6"
+msgstr "獎盃"
+
+msgid "sg.e.1F4CC"
+msgstr "圖釘"
+
+msgid "sg.e.1F516"
+msgstr "書籤"
+
+msgid "sg.e.1F4E6"
+msgstr "箱子"
+
+msgid "sg.e.1F9E9"
+msgstr "拼圖"
+
+msgid "sg.e.1F4C8"
+msgstr "上升圖"
+
+msgid "sg.e.1F4C9"
+msgstr "下降圖"
+
+msgid "sg.e.1F4CA"
+msgstr "長條圖"
+
+msgid "sg.e.1F4B9"
+msgstr "圖表日圓"
+
+msgid "sg.e.1F4B0"
+msgstr "錢袋"
+
+msgid "sg.e.1F4B5"
+msgstr "美元鈔"
+
+msgid "sg.e.1F4B4"
+msgstr "日圓鈔"
+
+msgid "sg.e.1F4B6"
+msgstr "歐元鈔"
+
+msgid "sg.e.1F4B7"
+msgstr "英鎊鈔"
+
+msgid "sg.e.1F3E6"
+msgstr "銀行"
+
+msgid "sg.e.1F310"
+msgstr "網路地球"
+
+msgid "sg.e.1F30F"
+msgstr "亞洲地球"
+
+msgid "sg.e.23F0"
+msgstr "鬧鐘"
+
+msgid "sg.e.23F3"
+msgstr "沙漏"
+
+msgid "sg.e.1F501"
+msgstr "循環"
+
+msgid "sg.e.1F504"
+msgstr "更新"
+
+msgid "sg.e.1F500"
+msgstr "交叉"
+
+msgid "sg.e.1F50D"
+msgstr "放大鏡"
+
+msgid "sg.e.1F9ED"
+msgstr "指南針"
+
+msgid "sg.e.1F52D"
+msgstr "望遠鏡"
+
+msgid "sg.e.1F30A"
+msgstr "海浪"
+
+msgid "sg.e.1F3B2"
+msgstr "骰子"
+
+msgid "sg.e.1F9E0"
+msgstr "大腦"
+
+msgid "sg.e.1F52C"
+msgstr "顯微鏡"
+
+msgid "sg.e.1F402"
+msgstr "公牛"
+
+msgid "sg.e.1F43B"
+msgstr "熊"
+
+msgid "sg.e.1F433"
+msgstr "鯨魚"
+
+msgid "sg.e.1F988"
+msgstr "鯊魚"
+
+msgid "sg.e.1F985"
+msgstr "老鷹"
+
+msgid "sg.e.1F98A"
+msgstr "狐狸"
+
+msgid "sg.e.1F989"
+msgstr "貓頭鷹"
+
+msgid "sg.e.1F422"
+msgstr "烏龜"
+
+msgid "sg.e.1F407"
+msgstr "兔子"
+
+msgid "sg.e.1F41D"
+msgstr "蜜蜂"
+
+msgid "sg.e.1F419"
+msgstr "章魚"
+
+msgid "sg.e.1F984"
+msgstr "獨角獸"
+
+msgid "sg.e.1F331"
+msgstr "幼苗"
+
+msgid "sg.e.1F332"
+msgstr "樹"
+
+msgid "sg.e.1F335"
+msgstr "仙人掌"
+
+msgid "sg.e.1F340"
+msgstr "幸運草"
+
+msgid "sg.e.1F338"
+msgstr "櫻花"
+
+msgid "sg.e.1F319"
+msgstr "月亮"
+
+msgid "sg.e.26C5"
+msgstr "晴時多雲"
+
+msgid "sg.e.1F308"
+msgstr "彩虹"
+
+msgid "sg.e.1F30B"
+msgstr "火山"
+
+msgid "sg.e.1F31E"
+msgstr "太陽"
+
+msgid "sg.e.2614"
+msgstr "雨傘"
+
+msgid "sg.e.1F341"
+msgstr "楓葉"
+
+msgid "sg.e.2693"
+msgstr "錨"
+
+msgid "sg.e.1F511"
+msgstr "鑰匙"
+
+msgid "sg.e.1F527"
+msgstr "扳手"
+
+msgid "sg.e.1F528"
+msgstr "鎚子"
+
+msgid "sg.e.1F9F0"
+msgstr "工具箱"
+
+msgid "sg.e.1F9F2"
+msgstr "磁鐵"
+
+msgid "sg.e.1F4DA"
+msgstr "書"
+
+msgid "sg.e.1F4DD"
+msgstr "筆記"
+
+msgid "sg.e.1F4CE"
+msgstr "迴紋針"
+
+msgid "sg.e.1F381"
+msgstr "禮物"
+
+msgid "sg.e.1F3A8"
+msgstr "調色盤"
+
+msgid "sg.e.1F388"
+msgstr "氣球"
+
 msgid "rp.noBt"
 msgstr "這一支還沒有回測結果，所以只看得到程式碼。要看數字，可以請右邊的 agent 跑一次回測。"
 
