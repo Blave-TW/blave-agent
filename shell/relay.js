@@ -93,7 +93,7 @@ function createRelay(opts) {
   const queue = new Map();   // sid → [{ message_id, content }]:同一條在跑時排在後面
   const active = new Map();  // sid → { message_id, ended, idBefore }:正在跑的手機那一輪
   let pending = [];          // 待送的 chunk(每段帶 session_id),照收到的順序
-  let batchTimer = null, reporting = null;
+  let batchTimer = null, reporting = null, retryTimer = null, flushBackoff = BACKOFF_MIN_MS;
   const tombstones = new Set();
   const sync = { running: false, done: 0, total: 0, error: false, lastIds: null, again: new Set() };
 
@@ -182,13 +182,16 @@ function createRelay(opts) {
             take.push(pending.shift()); bytes += b;
           }
           const r = await call(EP.report, { chunks: take }, quitting ? QUIT_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
-          if (r.status === 200 && r.body) { reportAnswer(r.body); continue; }
-          if (r.status === 0 && !r.noCreds && !quitting) {
+          if (r.status === 200 && r.body) { flushBackoff = BACKOFF_MIN_MS; reportAnswer(r.body); continue; }
+          // 斷線、限流、部署中的 5xx:放回最前面、過一下再送(同 claimStart)。done／start_aborted 丟了,api 那條會一直停在回覆中
+          if ((r.status === 0 || r.status === 429 || r.status >= 500) && !r.noCreds && !quitting) {
             if (pending.length + take.length <= 2000) pending = take.concat(pending);
-            log("relay: report not sent (offline)");
+            log("relay: report not sent (" + (r.status || "offline") + "), retry in " + flushBackoff + " ms");
+            if (!retryTimer) { retryTimer = setTimeout(() => { retryTimer = null; flush(); }, flushBackoff); if (retryTimer.unref) retryTimer.unref(); }
+            flushBackoff = Math.min(flushBackoff * 2, BACKOFF_MAX_MS);
             break;
           }
-          log("relay: report rejected (" + (r.status || "no creds") + ")");   // 400／403／409:這批不重送
+          log("relay: report rejected (" + (r.status || "no creds") + ")");   // 400／401／403／409:這批不重送
         }
         await outboxFlush();
       } finally { reporting = null; }
@@ -272,7 +275,7 @@ function createRelay(opts) {
   }
   /* 先認領、後開跑(直接開跑與排隊叫出都一樣):單獨回報 started,api 回 ok 才 startTurn。那段時間 api 可能已經判它沒跑、
      手機撤回或被撤銷。started 沒回應就重送(api 對已經 STARTED 的冪等回 ok),期限到了還是沒回應 → "lost"。
-     → "ok" | "cancel"(api 說不得跑,或 401／403／409 已收掉)| "rejected"(api 拒收這筆 started)| "lost"(一直沒回應) */
+     → "ok" | "cancel"(api 說不得跑,或 401／409 已收掉)| "off"(總開關關了)| "rejected"(api 拒收這筆 started)| "lost"(一直沒回應) */
   async function claimStart(sid, mid) {
     const until = clock() + (opts.claimDeadlineMs || CLAIM_DEADLINE_MS);
     let gap = CLAIM_RETRY_MS;
@@ -287,7 +290,9 @@ function createRelay(opts) {
         reportAnswer(r.body);
         return go ? "ok" : "cancel";
       }
-      if (r.noCreds || stopped || r.status === 401 || r.status === 403 || r.status === 409) return "cancel";   // 這台沒開／憑證失效／總開關關:call 已經收掉
+      // 總開關在重送途中關了:api 可能已經記成開跑(前一次的回應掉了),補 start_aborted(它在總開關關時照收)
+      if (r.status === 403 && r.body && r.body.error_code === OFF_CODE) return "off";
+      if (r.noCreds || stopped || r.status === 401 || r.status === 403 || r.status === 409) return "cancel";   // 這台沒開／憑證失效:call 已經收掉
       const retry = r.status === 0 || r.status === 429 || r.status >= 500;   // 斷線、限流、部署中的 5xx:重送
       if (!retry) return "rejected";   // 其他 4xx:api 沒收下這筆 started
       if (clock() + gap > until) return "lost";
@@ -309,7 +314,7 @@ function createRelay(opts) {
       if (mine) active.delete(sid);
       // 告訴 api 這句沒跑:記成開跑了(ok)→ start_aborted;拒收(rejected)→ message_failed;不知道有沒有記到(lost)→ 兩個都送,
       // api 照它手上的狀態認其中一個。cancel 的那句 api 自己判過了
-      if (claim === "ok" || claim === "lost") startAborted(sid, mid);
+      if (claim === "ok" || claim === "lost" || claim === "off") startAborted(sid, mid);
       if (claim === "rejected" || claim === "lost") msgFailed(sid, mid, NOT_RUN);
       if (rec.abort) enqueueChunk({ type: "cancelled", session_id: sid, message_ids: [mid] }, true);
       if (rec.abort === "withdraw") withdrawResult(sid, mid, "withdrawn");
@@ -345,7 +350,10 @@ function createRelay(opts) {
   /* main.js sendTurn 的每一則都經過這裡(視窗關著也是):只轉手機那一輪的。回合的 chunk 帶那一輪的 message_id 當關聯
      (「那一句沒跑」另外有 message_failed,api 不拿回合的 chunk 判) */
   function onTurn(sid, ch, payload) {
-    const a = active.get(sid);
+    const a0 = active.get(sid);
+    // 認領中(started 還在路上、手機那一輪還沒開跑):這條上的回合事件都不是手機的——電腦前的人那輪不轉給手機,它的 turn-end 也不收掉認領中那筆
+    if (a0 && a0.claiming) return;
+    const a = a0;
     if (ch === "turn-event" && a && payload && typeof payload === "object") {
       if (!TURN_TYPES.includes(payload.type)) return;
       // 轉出卡帶的是策略程式全文:策略程式不出這台電腦(§4.1),手機只畫一行「到電腦上看」
@@ -696,6 +704,7 @@ const okBody = (r) => (r.status === 200 && r.body ? { ok: true, ...r.body } : { 
   return { start, tick, setOn, retry, signOut, quit, onTurn, image, sessionDeleted, state, pairCode, phones, grant, revoke, actions,
     isOn: () => load().on, isVisible: () => flag, mobileLive: () => active.size > 0,
     isMobile: (sid) => active.has(sid) || (queue.get(sid) || []).length > 0,
+    claiming: (sid) => !!(active.get(sid) && active.get(sid).claiming),
     _internals: { route, control, flush, syncAll, queue, active } };
 }
 

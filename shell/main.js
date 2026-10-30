@@ -4022,6 +4022,8 @@ app.whenReady().then(() => {
   handle("apikey-cancel", () => { if (!llmVerify) return false; llmVerify.abort(); return true; }, false);
   ipcMain.handle("send-message", async (e, payload) => {
     if (!fromOurPage(e)) return { busy: true };   // 會 spawn agent、花 AI 額度:只收自家頁面
+    // 手機那一句正在認領(api 回 ok 就開跑):這條這時算回覆中,畫面照 turn.busy 講「這條回覆完才能送出」
+    if (typeof _relay !== "undefined" && _relay && payload && _relay.claiming(payload.sessionId)) return { busy: true };
     return startTurn(payload, "desktop");
   });
   handle("turns-state", () => turnsState(), []);

@@ -21,10 +21,8 @@ function rig(o = {}) {
   const post = async (url, body) => {
     const ep = url.slice(API.length), n = counts[ep] = (counts[ep] || 0);
     counts[ep]++;
-    if (ep === RL.EP.poll) {
-      log.push({ endpoint: name(ep) });
-      return new Promise((res) => { pollWaiter = (resp) => { log[log.findIndex((x) => x.endpoint === "poll" && !x.response)].response = resp; res(resp); }; });
-    }
+    // 一律在回應回到外殼的那一刻記(實際發生的順序):掛著的 poll 是「回來」的時候才算數
+    if (ep === RL.EP.poll) return new Promise((res) => { pollWaiter = (resp) => { log.push({ endpoint: name(ep), response: resp }); res(resp); }; });
     let resp = o.script ? o.script(ep, body, n) : undefined;
     if (resp && typeof resp.then === "function") resp = await resp;
     if (resp === undefined) {
@@ -119,6 +117,26 @@ const CASES = [
     script: (ep, b) => (ep === RL.EP.report && b.chunks.some((c) => c.type === "started") ? { status: 400, body: { error_code: "BAD_REQUEST" } } : undefined) },
   async (m) => { m.feed([msg(S, "msgresp00020", "看一下")]); await settle(); },
   (m) => m.started.length === 0 && sent(m, "message_failed").some((c) => c.message_id === "msgresp00020" && c.code === "not_run") && !sent(m, "start_aborted").length],
+  ["desktop_turn_during_claim", "稽核 P2-1:認領途中電腦前的人那輪的事件與 turn-end 都不轉給手機、不收掉認領中那筆;認領回來時那條在忙 → start_aborted", (() => {
+    let release; const gate = new Promise((r) => { release = r; });
+    return { gate: () => release(), script: (ep, b) => (ep === RL.EP.report && b.chunks.some((c) => c.type === "started") ? gate.then(() => okReport(b)) : undefined) };
+  })(),
+  async (m, o) => { m.feed([msg(S, "msgresp00021", "手機:下單")]); await wait(40);
+    m.busy.add(S); m.r.onTurn(S, "turn-event", { type: "text", text: "電腦前那個人的回覆" }); m.r.onTurn(S, "turn-end", { code: 0 }); await wait(40);
+    o.gate(); await settle(); },
+  (m) => !sent(m, "text").length && m.started.length === 0 && sent(m, "start_aborted").length === 1],
+  ["done_502_retry", "稽核 P2-2:done 遇 502 → 放回去重送,不丟", (() => {
+    let k = 0;
+    return { script: (ep, b) => (ep === RL.EP.report && b.chunks.some((c) => c.type === "done") && !k++ ? { status: 502, body: null } : undefined) };
+  })(),
+  async (m) => { m.feed([msg(S, "msgresp00022", "看一下")]); await wait(40); m.endTurn(S); await wait(2600); },
+  (m) => m.log.filter((x) => x.body && x.body.chunks && x.body.chunks.some((c) => c.type === "done")).length === 2],
+  ["switch_off_during_claim_retry", "稽核 P3-2:started 第一次回應掉了、重送時總開關關(403)→ 補 start_aborted", (() => {
+    let k = 0;
+    return { script: (ep, b) => (ep === RL.EP.report && b.chunks.some((c) => c.type === "started") ? (k++ === 0 ? { status: 0, body: null } : { status: 403, body: { error_code: "APP_CHAT_OFF" } }) : undefined) };
+  })(),
+  async (m) => { m.feed([msg(S, "msgresp00023", "下單")]); await wait(1200); },
+  (m) => m.started.length === 0 && sent(m, "start_aborted").some((c) => c.message_id === "msgresp00023")],
   ["withdraw_running", "撤回已經開跑的那句:不停,withdraw_result running", {},
   async (m) => { m.feed([msg(S, "msgresp00014", "跑")]); await wait(40); m.feed([], [{ type: "withdraw", session_id: S, message_id: "msgresp00014" }]); await settle(); },
   (m) => m.stopped.length === 0 && sent(m, "withdraw_result").some((c) => c.result === "running")],
@@ -136,7 +154,7 @@ const CASES = [
 
 (async () => {
   const out = { spec: "mobile-agent-chat-mvp §1.3", source: "blave-agent shell/relay.js via tests/check_shell_relay_api_responses.js",
-    note: "api 回應 → 外殼反應。requests = 外殼依序送出的請求(token、app_secret、device 拿掉)與 api 那次的回應;poll 只記回應;shell = 外殼叫了哪些 startTurn(訊息)／stopTurn(對話)", cases: [] };
+    note: "api 回應 → 外殼反應。requests = 照回應回到外殼的先後(實際發生的順序)記的請求(token、app_secret、device 拿掉)與 api 那次的回應;poll 只記回應;shell = 外殼叫了哪些 startTurn(訊息)／stopTurn(對話)", cases: [] };
   const checks = [];
   for (const [nm, desc, o, run, check] of CASES) {
     const m = rig(o);
@@ -144,7 +162,7 @@ const CASES = [
     await run(m, o);
     checks.push([nm, desc, check(m), { started: m.started, stopped: m.stopped, sent: sent(m).map((c) => c.type) }]);
     await m.end();
-    out.cases.push({ name: nm, desc, requests: m.log.filter((x) => x.endpoint !== "poll" || x.response), shell: { startTurn: m.started, stopTurn: m.stopped } });
+    out.cases.push({ name: nm, desc, requests: m.log, shell: { startTurn: m.started, stopTurn: m.stopped } });
   }
   const text = JSON.stringify(out, null, 2) + "\n";
   if (process.argv.includes("--write")) { fs.writeFileSync(FIX, text); console.log("wrote " + FIX); }

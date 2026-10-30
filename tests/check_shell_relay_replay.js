@@ -15,19 +15,22 @@ function rig(o = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "relay-replay-"));
   const reqs = [], busy = new Set(o.busy || []);
   let pollWaiter = null;
-  const post = async (url, body) => {
-    const ep = url.slice(API.length);
-    if (ep === RL.EP.ack || ep === RL.EP.report) {
-      const { token, app_secret, device, ...rest } = body;   // eslint-disable-line no-unused-vars
-      reqs.push({ endpoint: ep, body: rest });
-    }
+  const answer = (ep, body) => {
     if (ep === RL.EP.enabled) return { status: 200, body: { enabled: true, on: true } };
-    if (ep === RL.EP.poll) return new Promise((res) => { pollWaiter = res; });
     if (ep === RL.EP.ack) return o.noAck ? { status: 0, body: null } : { status: 200, body: { acked: body.message_ids, rejected: [] } };
     if (ep === RL.EP.report) return { status: 200, body: { results: body.chunks.map(() => ({ status: "ok" })), interrupt: [], cancel: [] } };
     if (ep === RL.EP.syncState) return { status: 200, body: { sessions: [], tombstones: [] } };
     return { status: 200, body: {} };
   };
+  const post = async (url, body) => {
+    const ep = url.slice(API.length);
+    if (ep === RL.EP.poll) return new Promise((res) => { pollWaiter = res; });
+    const resp = answer(ep, body);
+    // 在回應回到外殼的那一刻記(實際發生的順序)
+    if (ep === RL.EP.ack || ep === RL.EP.report) { const { token, app_secret, device, ...rest } = body; reqs.push({ endpoint: ep, body: rest }); }   // eslint-disable-line no-unused-vars
+    return resp;
+  };
+
   const r = RL.createRelay({
     dir, stateDir: path.join(dir, "state"), apiBase: API, post, getCreds: () => ({ token: "t-replay", appSecret: "s-replay" }),
     installId: () => "11111111-2222-4333-8444-555555555555", ver: "0.1.37",
