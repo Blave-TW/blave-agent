@@ -1416,8 +1416,8 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
 
   When a check does not support the claim, report it as it came out and weaken the lead
   and the title to match (A1, A4). Never swap in a check that passes. When the average cannot be
-  told from zero or the baseline — it does not stand clear of the random dates, or the halves
-  disagree — the title, the summary and the chat reply say there is no clear direction
+  told from the baseline (from zero when there is none) — it does not stand clear of the random
+  dates, the halves disagree, or its standard error spans zero — the title, the summary and the chat reply say there is no clear direction
   (「看不出方向」), with the figure and the sample size; never 「偏弱」 / 「偏強」. *Why:* a claim that holds on
   one window only is the most common way a research report is wrong, and this is the
   section that catches it.

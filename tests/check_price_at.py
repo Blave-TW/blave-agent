@@ -49,6 +49,16 @@ check(price_at(df, "2026-01-01 06:00", "1h") == 105.0, "06:00 → the last bar 0
 check(price_at(df, pd.Timestamp("2025-12-31 22:00", tz="America/New_York"), "1h") == 102.0,
       "tz-aware t (22:00 ET = 03:00 UTC) → bar 02:00")
 check(price_at(df["Close"], "2026-01-01 03:00", "1h") == 102.0, "a close Series works the same")
+aware = df.tz_localize("UTC")
+check(price_at(aware, "2026-01-01 03:00", "1h") == 102.0,
+      "tz-aware index, naive t (read as UTC) → bar 02:00")
+check(price_at(aware, pd.Timestamp("2026-01-01 11:00", tz="Asia/Taipei"), "1h") == 102.0,
+      "tz-aware index, Taipei t (11:00 = 03:00 UTC) → bar 02:00")
+try:
+    price_at(df.iloc[::-1], "2026-01-01 03:00", "1h")
+    check(False, "unsorted index → ValueError")
+except ValueError:
+    check(True, "unsorted index → ValueError")
 
 gap = df.drop(pd.Timestamp("2026-01-01 02:00"))
 check(math.isnan(price_at(gap, "2026-01-01 03:00", "1h")),

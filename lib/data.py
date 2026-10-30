@@ -1149,10 +1149,16 @@ def price_at(df, t, interval):
 
     df: a frame with a `Close` column (fetch_kline / fetch_kline_batch) or a close Series,
     sorted tz-naive UTC index. t: a timestamp; naive is read as UTC. interval: the bars'
-    interval ('1h', '15min', '1d'). Not for series labelled by date or by close time
-    (Taiwan daily bars).
+    interval ('1h', '15min', '1d'). Not for series labelled by date (Taiwan daily bars).
+
+    Taiwan intraday (fetch_twstock_ohlcv / fetch_twfutures_ohlcv under 1d): the index is
+    naive UTC; pass a tz-aware t (Asia/Taipei) — a naive Taipei string is read as UTC and is
+    off by 8h. Events outside the session return NaN. TAIFEX 1m bars are labelled by their
+    close minute, so there the result is one minute older than needed, never later.
     """
     close = df['Close'] if isinstance(df, pd.DataFrame) else df
+    if not close.index.is_monotonic_increasing:
+        raise ValueError("price_at needs a sorted index (df.sort_index())")
     td = pd.Timedelta(interval)
     t = pd.Timestamp(t)
     if close.index.tz is None:
