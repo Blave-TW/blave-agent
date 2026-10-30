@@ -64,7 +64,9 @@ function interpret(r) {
   }
   if (r && r.error === "UNKNOWN_COMMAND") return { code: "NOT_CAPABLE" };
   if (r && r.kind === "unknown") return { code: "SENT" };
-  return { code: "UNDELIVERED", error: (r && r.error) || "OFFLINE", kind: (r && r.kind) || "undelivered", machineState: (r && r.machineState) || null };
+  const out = { code: "UNDELIVERED", error: (r && r.error) || "OFFLINE", kind: (r && r.kind) || "undelivered", machineState: (r && r.machineState) || null };
+  if (r && r.gate) out.until = r.gate.until;   // 改金鑰驗證碼關卡:這條路沒有輸碼的格子,畫面講關卡何時消失
+  return out;
 }
 
 // 身分證字號 + 交易密碼 → credentials 的 secrets(名字在這裡決定,renderer 給不了)

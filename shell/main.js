@@ -3572,7 +3572,9 @@ app.whenReady().then(() => {
     const CC = require("./cloudcmd");
     const built = CC.connectSecrets(a, require("./binance_link").keyShapeOk, Date.now() / 1000);
     if (built.error) return { ok: false, code: built.error, detail: {} };
-    const r = await cloudCmd().send("credentials", {}, built.secrets);
+    // 改金鑰驗證碼(api key_change_gate):帶碼重送也走這裡,不沿用上一趟的 request_id(send 自己鑄新的)
+    const code = a && typeof a.keyChangeCode === "string" && CC.KEY_CHANGE_CODE_RE.test(a.keyChangeCode) ? a.keyChangeCode : null;
+    const r = await cloudCmd().send("credentials", {}, built.secrets, { keyChangeCode: code, lang: a && a.lang });
     const out = CC.interpretConnect(r, built.secrets);
     if (out.ok) { cloudHost().start(); cloudHost().refresh(true).catch(() => {}); }
     return out;

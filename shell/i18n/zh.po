@@ -9355,3 +9355,41 @@ msgstr "結果不明，可能已經成交，不要手動補單。告訴 agent �
 # 追蹤不了而整台暫停、HALT reason 讀不到標的時的狀態句(大寫開頭;同網頁 workspace_pf_halt_unconfirmed_nosym)
 msgid "tr.haltUnconfirmedNosym"
 msgstr "有一筆單結果不明、可能已成交，什麼單都不送。不要手動補單，告訴 agent 成交多少再按「啟動下單」。"
+
+# 改金鑰驗證碼(api key_change_gate:帳號 24 小時內配對過新手機,任何來源改交易所金鑰都要 email 驗證碼)。{time} = 這道關消失的時間
+msgid "cx.kc.label"
+msgstr "Email 驗證碼"
+
+msgid "cx.kc.hint"
+msgstr "24 小時內配對過新手機，改金鑰要先驗證。"
+
+msgid "cx.kc.sent"
+msgstr "驗證碼已寄到帳號 email。輸入 6 位數後再按一次。"
+
+msgid "cx.kc.expiredSent"
+msgstr "驗證碼過期了，新的一組已寄到帳號 email。"
+
+msgid "cx.kc.cooldown"
+msgstr "剛寄過驗證碼，請查收帳號 email。"
+
+msgid "cx.kc.limited"
+msgstr "今天寄太多次驗證碼了。{time} 後改金鑰就不用驗證。"
+
+msgid "cx.kc.sendFail"
+msgstr "驗證碼寄送失敗，金鑰沒有儲存。請稍後再按一次。"
+
+msgid "cx.kc.noEmail"
+msgstr "帳號沒有 email，收不到驗證碼。{time} 後就能直接改。"
+
+msgid "cx.kc.invalid"
+msgstr "驗證碼不對，請重新輸入。"
+
+msgid "cx.kc.locked"
+msgstr "驗證碼錯太多次，今天不能再試。{time} 後就不用驗證。"
+
+msgid "cx.kc.format"
+msgstr "請輸入 6 位數驗證碼。"
+
+# 雲端群益開通這條路沒有輸碼的格子:講關卡何時消失
+msgid "cap.err.keyVerify"
+msgstr "帳號剛配對新手機，{time} 後才能在這裡改帳密。"

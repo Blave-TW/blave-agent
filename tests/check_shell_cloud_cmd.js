@@ -278,8 +278,43 @@ const ackCalls = (w) => w.posts.filter((p) => p.u.indexOf("/ack") >= 0).length;
   { const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
     const h = (mainSrc.match(/\n  handle\("cloud-connect"[\s\S]*?\n  \}, cxDenied\);/) || [""])[0];
     t("main.js:cloud-connect 走 handle()(只收自家頁面)、送的是 credentials + connectSecrets 的 secrets、每次新的 request_id(不帶第四個參數)、不跑本機 Binance 檢查",
-      h.length > 100 && /cloudCmd\(\)\.send\("credentials", \{\}, built\.secrets\);/.test(h) && !/binanceLink|binance_check|requestId/.test(h.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, ""))
-      && /cloudConnect: \(a\) => ipcRenderer\.invoke\("cloud-connect", \{ venue: a && a\.venue, apiKey: a && a\.apiKey, secret: a && a\.secret, passphrase: a && a\.passphrase \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8"))); }
+      h.length > 100 && /cloudCmd\(\)\.send\("credentials", \{\}, built\.secrets, \{ keyChangeCode: code, lang: a && a\.lang \}\);/.test(h) && !/binanceLink|binance_check|requestId/.test(h.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, ""))
+      && /cloudConnect: \(a\) => ipcRenderer\.invoke\("cloud-connect", \{ venue: a && a\.venue, apiKey: a && a\.apiKey, secret: a && a\.secret, passphrase: a && a\.passphrase, keyChangeCode: a && a\.keyChangeCode, lang: a && a\.lang \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8"))); }
+
+  // ── 改金鑰驗證碼關卡(api app_auth.key_change_gate):403 / 429 的代號與明細、帶碼重送換一顆 request_id ──
+  { const UNTIL = "2026-10-31T08:00:00+00:00";
+    const v = M.interpret({ status: 403, body: { error_code: "KEY_CHANGE_VERIFY", until: UNTIL, retry_after: 100, sent: false, reason: "cooldown" } });
+    const lk = M.interpret({ status: 429, body: { error_code: "VERIFY_LOCKED", until: UNTIL } });
+    t("關卡:403 三個代號原樣、429 VERIFY_LOCKED 不當一般限速;明細只收 until / sent / 認得的 reason",
+      v.code === "KEY_CHANGE_VERIFY" && v.gate.until === UNTIL && v.gate.sent === false && v.gate.reason === "cooldown"
+      && ["KEY_CHANGE_CODE_INVALID", "KEY_CHANGE_CODE_EXPIRED"].every((c) => M.interpret({ status: 403, body: { error_code: c, until: UNTIL } }).code === c)
+      && lk.code === "VERIFY_LOCKED" && lk.gate.until === UNTIL && M.interpret({ status: 429, body: {} }).code === "RATE_LIMITED"
+      && M.interpret({ status: 403, body: { error_code: "KEY_CHANGE_VERIFY", until: "nope", reason: "x " + SKEY } }).gate.until === null
+      && M.interpret({ status: 403, body: { error_code: "KEY_CHANGE_VERIFY", reason: "weird" } }).gate.reason === null
+      && M.interpret({ status: 403, body: { error_code: "OTHER" } }).code === "BAD_RESPONSE");
+    t("關卡的代號都是 undelivered(api 在佔 request_id 之前就擋)",
+      ["KEY_CHANGE_VERIFY", "KEY_CHANGE_CODE_INVALID", "KEY_CHANGE_CODE_EXPIRED", "VERIFY_LOCKED", "KEY_CHANGE_CHECK_UNAVAILABLE"].every((c) => M.KIND[c] === "undelivered"));
+    let n = 0;
+    const w = world({ cmdRes: () => (++n === 1 ? { status: 403, body: { error_code: "KEY_CHANGE_VERIFY", until: UNTIL, sent: true } } : queued()),
+      ackRes: ackDone({ cmd: "credentials", result: { credentials: 2, binance: null } }) });
+    const sec = { BINANCE_API_KEY: KEY, BINANCE_SECRET_KEY: SKEY };
+    const r1 = await w.cmd.send("credentials", {}, sec, { lang: "zh" });
+    const r2 = await w.cmd.send("credentials", {}, sec, { keyChangeCode: "123456", lang: "zh" });
+    const b1 = w.posts[0].b, b2 = w.posts[1].b;
+    t("關卡:第一趟沒帶碼、回 gate 明細;帶碼重送 body 多 key_change_code、request_id 換一顆;lang 只收 zh / en",
+      !r1.ok && r1.error === "KEY_CHANGE_VERIFY" && r1.kind === "undelivered" && r1.gate.sent === true
+      && !("key_change_code" in b1) && b1.lang === "zh" && b2.key_change_code === "123456" && b2.request_id !== b1.request_id && r2.ok
+      && M.interpretConnect(r1, sec).code === "KEY_CHANGE_VERIFY" && M.interpretConnect(r1, sec).detail.until === UNTIL);
+    const w2 = world({ ackRes: ackDone() });
+    await w2.cmd.send("halt", {}, null, { keyChangeCode: "123456", lang: "zh" });
+    await w2.cmd.send("credentials", {}, sec, { keyChangeCode: "12345x", lang: "fr" });
+    t("關卡:碼與 lang 只隨 credentials;形狀不對的碼、不認得的語言不送",
+      !("key_change_code" in w2.posts[0].b) && !("lang" in w2.posts[0].b)
+      && !("key_change_code" in w2.posts[2].b) && !("lang" in w2.posts[2].b));
+    const CCap = require("../shell/cloud_capital.js");
+    const cap = CCap.createCapital({ send: async () => r1 });
+    const sc = await cap.saveCreds({ id: "A123456789", pw: "pw1234" });
+    t("雲端群益:關卡回 UNDELIVERED + 原代號 + until(畫面講何時能改)", sc.code === "UNDELIVERED" && sc.error === "KEY_CHANGE_VERIFY" && sc.until === UNTIL); }
 
   // ── 原文:不 require electron、不 log、不落地 ──
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "cloudcmd.js"), "utf8");

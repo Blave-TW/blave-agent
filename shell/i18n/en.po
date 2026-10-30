@@ -9327,3 +9327,40 @@ msgstr "Outcome unknown — it may have filled; don't place it again yourself. N
 # 追蹤不了而整台暫停、HALT reason 讀不到標的時的狀態句(大寫開頭;同網頁 workspace_pf_halt_unconfirmed_nosym)
 msgid "tr.haltUnconfirmedNosym"
 msgstr "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
+
+# Key-change code gate (api key_change_gate: a phone paired in the last 24 hours). {time} = when the gate lifts
+msgid "cx.kc.label"
+msgstr "Email code"
+
+msgid "cx.kc.hint"
+msgstr "A phone was paired in the last 24 hours, so key changes need a code."
+
+msgid "cx.kc.sent"
+msgstr "We sent a code to your account email. Enter the 6 digits, then press again."
+
+msgid "cx.kc.expiredSent"
+msgstr "That code expired. A new one is in your account email."
+
+msgid "cx.kc.cooldown"
+msgstr "A code was just sent. Check your account email."
+
+msgid "cx.kc.limited"
+msgstr "Too many codes sent today. From {time}, no code is needed."
+
+msgid "cx.kc.sendFail"
+msgstr "The code couldn't be sent, and the key wasn't saved. Press again soon."
+
+msgid "cx.kc.noEmail"
+msgstr "Your account has no email for a code. From {time}, no code is needed."
+
+msgid "cx.kc.invalid"
+msgstr "That code is wrong. Enter it again."
+
+msgid "cx.kc.locked"
+msgstr "Too many wrong codes today. From {time}, no code is needed."
+
+msgid "cx.kc.format"
+msgstr "Enter the 6-digit code."
+
+msgid "cap.err.keyVerify"
+msgstr "A phone was paired recently. You can change this login here from {time}."

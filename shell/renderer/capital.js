@@ -281,6 +281,7 @@ function capMsgText(m) {
   if (c === "BAD_FORMAT") return t("cap.err.idFormat");
   if (c === "KEY_TIMEOUT" || c === "KEY_EXPIRED" || c === "KEY_INVALID") return t("cap.pfx.errKey");
   if (c === "CRYPTO_MISSING") return t("cap.err.notReady");
+  if (c === "UNDELIVERED" && /^(KEY_CHANGE_|VERIFY_LOCKED$)/.test(String(m.error || "")) && m.error !== "KEY_CHANGE_CHECK_UNAVAILABLE") return t("cap.err.keyVerify", { time: trStamp(m.until) });
   if (c === "UNDELIVERED") return trSendError({ error: m.error, kind: m.kind || "undelivered", machineState: m.machineState }, "connect", "cloud") || t("side.stopped");
   return t("cap.err.generic");
 }
