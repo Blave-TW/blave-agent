@@ -946,8 +946,19 @@ def _sold_kw(venue_seen):
     return {"sold": venue_seen.get("base", 0.0)} if venue_seen.get("book") else {}
 
 
-# the reasons a chase stops on without an order error: 暫停, machine-restart stop, account hold
-_CHASE_STOPS = ("state/HALT set", "machine restarted", "exchange account unconfirmed")
+_UNKNOWN_STOP = "order outcome unknown"
+# the reasons a chase stops on without an order error: 暫停, machine-restart stop, account hold,
+# an order parked with an unknown outcome (its P1 is the park's own row)
+_CHASE_STOPS = ("state/HALT set", "machine restarted", "exchange account unconfirmed",
+                _UNKNOWN_STOP)
+
+
+def _is_outcome_unknown(e):
+    try:
+        from lib.unconfirmed import OrderOutcomeUnknown
+    except ImportError:
+        return False
+    return isinstance(e, OrderOutcomeUnknown)
 
 
 def _account_held(exchange):
@@ -1320,6 +1331,28 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
     # terminal on a successful cancel (may mean filled-first — _account
     # reads the fills either way)
 
+    def _park_post(e, usd):
+        """A limit post whose answer was lost may be resting on the book: parked first (the
+        record a fill is booked from, and nothing re-posts over it), then cancelled by our
+        client id. The cancel's answer proves nothing (an order not yet visible also reads
+        as gone) — the park's query settles what filled."""
+        from lib.portfolio import park_or_halt
+        if is_entry:
+            e.netted_room = max(0.0, room - sum(f["base"] for f in fills))
+        got = park_or_halt(symbol, tools.get("venue") or exchange, e, usd if buy else -usd,
+                           reduce_only, asset_spec, contributors)
+        cid = getattr(e, "client_order_id", None)
+        logging.warning(f"[execute] {key} chase: limit post outcome unknown ({cid}) — {got}")
+        if not cid or "cancel_cid" not in tools:
+            return
+        for _ in range(2):
+            try:
+                tools["cancel_cid"](cid)
+                return
+            except Exception as ce:
+                logging.warning(f"[execute] {key} chase: cancel by client id {cid} failed ({ce})")
+                time.sleep(1.0)
+
     def _retire(oid):
         """Cancel + CONFIRM terminal. True only when the venue says the order
         is dead/filled — re-posting while the old order may still rest is the
@@ -1365,7 +1398,16 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
             bid, ask = tools["bbo"]()
             px = bid if buy else ask
             seen["base"] = sum(f["base"] for f in fills)
-            placed = tools["place"](remaining, px, None, buy, **_sold_kw(seen))
+            try:
+                placed = tools["place"](remaining, px, None, buy, **_sold_kw(seen))
+            except Exception as e:
+                if not _is_outcome_unknown(e):
+                    raise
+                _park_post(e, remaining)
+                # no re-post, no market remainder, no kick: the parked order may still rest
+                reason, aborted, cancel_uncertain = _UNKNOWN_STOP, True, True
+                stop.set()
+                break
             if placed is False:
                 reason = "below venue minimum"
                 below_min = True
@@ -1440,9 +1482,16 @@ def _chase_thread(symbol, signed_diff, asset_spec, reduce_only, exchange,
         remaining = max(0.0, total - sum(f["fill_qty"] for f in fills))
         if remaining > _RESIDUAL_USD and not stop.is_set() and not cancel_uncertain:
             seen["base"] = sum(f["base"] for f in fills)
-            placed = _place_or_park(symbol, remaining if buy else -remaining,
-                                    asset_spec, reduce_only, exchange, contributors, stop, None,
-                                    **_sold_kw(seen))
+            why = {}
+            try:
+                placed = _place_or_park(symbol, remaining if buy else -remaining,
+                                        asset_spec, reduce_only, exchange, contributors, stop,
+                                        why, **_sold_kw(seen))
+            except RuntimeError:
+                if why.get("stop") != "unknown":
+                    raise
+                placed = None  # parked by _place_or_park: its row is the P1, not a crash
+                reason, aborted, cancel_uncertain = _UNKNOWN_STOP, True, True
             if isinstance(placed, dict):
                 if placed.get("writeoff"):
                     seen["writeoff"] = placed["writeoff"]

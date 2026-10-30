@@ -66,6 +66,19 @@ class OrderOutcomeUnknown(Exception):
         return bool(self.venue and self.venue_symbol and (self.order_id or self.client_order_id))
 
 
+def as_outcome_unknown(error, venue, venue_symbol, client_order_id):
+    """An order lib's OrderNotConfirmed that predates the base class (a plain Exception): the
+    same order outcome unknown, rebuilt as an OrderOutcomeUnknown carrying the caller's own ids.
+    Only that class name, and only from the order call itself — it is raised after the POST
+    by construction. A raw requests / JSON error is not wrapped: the lib reads rules, positions
+    and prices before sending, and from outside a timeout there cannot be told from one after.
+    None = not that case."""
+    if isinstance(error, OrderOutcomeUnknown) or type(error).__name__ != "OrderNotConfirmed":
+        return None
+    return OrderOutcomeUnknown(str(error), venue=venue, venue_symbol=venue_symbol,
+                               client_order_id=client_order_id)
+
+
 class ParkUnreadable(RuntimeError):
     """The park file exists but cannot be read (or its lock is held past LOCK_TIMEOUT_S):
     which orders are parked is unknown, so nothing is sent this round (fail-closed)."""

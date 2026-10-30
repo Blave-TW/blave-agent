@@ -215,6 +215,21 @@ def _book_key(vid, sym):
     return sym
 
 
+def _unknown_outcome(e, vid, sym, cid):
+    """The close's lib/unconfirmed.OrderOutcomeUnknown — an older lib's plain OrderNotConfirmed
+    rebuilt as one with this close's ids — or None."""
+    import lib.portfolio as _pf
+    u = getattr(_pf, "_unconfirmed", None)
+    if u is None:
+        return None
+    if isinstance(e, u.OrderOutcomeUnknown):
+        return e
+    if not venue_traits.has(vid, "perp"):
+        return None  # the TW brokers' unconfirmed fills are their own system (spec 4.7)
+    wrap = getattr(u, "as_outcome_unknown", None)
+    return wrap(e, vid, sym, cid) if wrap else None
+
+
 def _read_env(path=".env"):
     from lib.venue_wiring import read_env
     return read_env(path)
@@ -293,6 +308,14 @@ def _flatten_spot(vid, order, env, book=None):
             result = order.place_spot_market_order(env, sym, "sell", base_qty=amt,
                                                    client_order_id=cid)
         except Exception as e:
+            u = _unknown_outcome(e, vid, sym, cid)
+            if u is not None:
+                # the sale may have filled: parked, its key keeps its book until it is known
+                import lib.portfolio as _pf
+                _pf.park_or_halt(f"{sym}@spot", vid, u, -float(usd or 0), True, sign=-1)
+                unclosed.add(f"{sym}@spot")
+                errors += 1
+                continue
             d = _defer_tw_close(vid, f"{sym}@spot", e)
             if d:
                 unclosed.add(f"{sym}@spot")
@@ -404,13 +427,20 @@ def _restore_netted(vid, order, env, positions, ledger, closed_symbols, unclosed
         except ValueError:
             logging.info(f"[{vid}] {sym}: netted share {qty} below minimum — left")
             continue
+        cid = f"flat{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
         try:
             with guard.netted_restore(sym, other, qty, "flatten"):
-                result = order.place_market_order(
-                    env, sym, other, qty,
-                    client_order_id=f"flat{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}",
-                    reduce_only=False)
+                result = order.place_market_order(env, sym, other, qty, client_order_id=cid,
+                                                  reduce_only=False)
         except Exception as e:
+            u = _unknown_outcome(e, vid, sym, cid)
+            if u is not None:
+                import lib.portfolio as _pf
+                u.netted_exit = True  # booked as the netted exit it is (venue_wiring._netted_exit)
+                _pf.park_or_halt(key, vid, u, 0.0, True, sign=-1 if side == "long" else 1)
+                unclosed.add(key)
+                errors += 1
+                continue
             logging.error(f"[{vid}] restoring the netted {sym} failed: {e}")
             _record_order_error(key, vid, f"close-all: 還原被淨額的部位失敗: {e}")
             unclosed.add(key)
@@ -719,6 +749,7 @@ def _flatten():
             # One bad row must not abort the rest of the flatten — every branch
             # below either closes, records dust, or records a visible error.
             sym = ""
+            cid = None
             lots_row = False
             try:
                 sym = (p.get("symbol") or "").replace("-", "").upper()
@@ -806,9 +837,10 @@ def _flatten():
                         kw["book_months"] = months_by_key.get(key, set())
                     result = order.close_position_partial(env, sym, side, size, client_order_id=cid, **kw)
             except Exception as e:
-                if sym and hasattr(_pf, "_outcome_unknown") and _pf._outcome_unknown(e):
+                u = _unknown_outcome(e, vid, sym, cid) if sym else None
+                if u is not None:
                     # the close may have filled: parked, its key keeps its book until it is known
-                    _pf.park_or_halt(_book_key(vid, sym), vid, e,
+                    _pf.park_or_halt(_book_key(vid, sym), vid, u,
                                      (-1.0 if side == "long" else 1.0) * float(size) * float(p.get("mark_price", 0) or 0),
                                      True, sign=-1 if side == "long" else 1)
                     unclosed.add(_book_key(vid, sym))

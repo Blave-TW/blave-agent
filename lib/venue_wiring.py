@@ -236,6 +236,30 @@ def _cid():
     return "rc" + datetime.now(timezone.utc).strftime("%y%m%d%H%M%S%f")
 
 
+def _takes_kw(fn, name):
+    try:
+        return name in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+
+
+def _placing(vid, sym, cid, fn, *args, **kw):
+    """fn(*args, **kw), an order call. A lib whose OrderNotConfirmed does not derive from
+    lib/unconfirmed.OrderOutcomeUnknown yet would read as a rejection and be sent again
+    next round; it is raised as a parkable one with this wiring's ids (spec 4.5)."""
+    try:
+        return fn(*args, **kw)
+    except Exception as e:
+        try:
+            from lib.unconfirmed import as_outcome_unknown
+        except ImportError:
+            raise e
+        wrapped = as_outcome_unknown(e, vid, sym, cid)
+        if wrapped is None:
+            raise
+        raise wrapped from e
+
+
 # fetch_kline's candles are Binance USDⓈ-M (lib/data.py _BINANCE_KLINES), so Binance's
 # class of a symbol is what the strategy was backtested on. The same ticker can be a
 # coin there and a stock swap elsewhere (OKX BB/QNT/ON-USDT-SWAP, Bybit ONUSDT).
@@ -520,8 +544,9 @@ def _netted_exit(env, vid, order, sym, direction, signed_diff, row, sold=0.0, ke
     from lib import guard
     with guard.netted_restore(sym, other, want, source):
         try:
-            result = order.place_market_order(env, sym, other, want, client_order_id=_cid(),
-                                              reduce_only=False)
+            cid = _cid()
+            result = _placing(vid, sym, cid, order.place_market_order, env, sym, other, want,
+                              client_order_id=cid, reduce_only=False)
         except Exception as e:
             if hasattr(e, "parkable"):  # lib/unconfirmed.OrderOutcomeUnknown: booked as a netted exit
                 e.netted_exit = True
@@ -849,6 +874,8 @@ def auto_limit_toolkit(symbol, reduce_only=False):
             "place": _place,
             "status": _spot_status,
             "cancel": lambda oid: order.cancel_spot_order(env, sym, oid),
+            **({"cancel_cid": lambda c: order.cancel_spot_order(env, sym, client_order_id=c)}
+               if _takes_kw(order.cancel_spot_order, "client_order_id") else {}),
         }
 
     need = ("place_limit_order", "cancel_order", "get_order", "get_bbo")
@@ -870,9 +897,14 @@ def auto_limit_toolkit(symbol, reduce_only=False):
         else:
             direction = "long" if _buy else "short"
             qty = _entry_qty(order, env, sym, qty)
-        return order.place_limit_order(
-            env, sym, direction, qty, price, client_order_id=cid or _cid(),
-            reduce_only=reduce_only, post_only=True)
+        try:
+            return order.place_limit_order(
+                env, sym, direction, qty, price, client_order_id=cid or _cid(),
+                reduce_only=reduce_only, post_only=True)
+        except Exception as e:
+            if hasattr(e, "parkable") and getattr(e, "venue", None):
+                e.venue_symbol = sym  # the park is queried with the strategy's symbol (spec 4.1)
+            raise
 
     def _swap_bbo():
         b = order.get_bbo(env, sym)
@@ -898,6 +930,8 @@ def auto_limit_toolkit(symbol, reduce_only=False):
         "place": _place,
         "status": lambda oid: _norm_order(order.get_order(env, sym, oid)),
         "cancel": lambda oid: order.cancel_order(env, sym, order_id=oid),
+        **({"cancel_cid": lambda c: order.cancel_order(env, sym, client_order_id=c)}
+           if _takes_kw(order.cancel_order, "client_order_id") else {}),
     }
 
 
@@ -1188,8 +1222,8 @@ def auto_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
                                f"spot strategy cannot trade on it")
         base = _spot_base(sym)  # unknown quote raises — never trade blind (H1)
         if signed_diff > 0:
-            result = order.place_spot_market_order(
-                env, sym, "buy", quote_qty=abs(signed_diff), client_order_id=cid)
+            result = _placing(vid, sym, cid, order.place_spot_market_order,
+                              env, sym, "buy", quote_qty=abs(signed_diff), client_order_id=cid)
             if result is not False:
                 placed = _book_spot_fill(vid, symbol, sym, "buy", result)
                 placed["exchange"] = vid
@@ -1212,9 +1246,9 @@ def auto_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
                 # (_account_short). Spot has no reduce-only order to let the
                 # venue decide, so the first read sells what is there and waits.
                 confirmed = owned > 0 and _account_short(symbol, held < owned * (1 - 1e-9))
-                result = (order.place_spot_market_order(
-                    env, sym, "sell", base_qty=qty, client_order_id=cid)
-                    if qty > 0 else False)
+                result = (_placing(vid, sym, cid, order.place_spot_market_order,
+                                   env, sym, "sell", base_qty=qty, client_order_id=cid)
+                          if qty > 0 else False)
                 if result is False:
                     if not (row["full"] and owned > 0) or (held <= 0 and not confirmed):
                         return False
@@ -1229,8 +1263,8 @@ def auto_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
                 if why:
                     placed["writeoff"] = why
                 return placed
-            result = order.place_spot_market_order(
-                env, sym, "sell", base_qty=qty, client_order_id=cid)
+            result = _placing(vid, sym, cid, order.place_spot_market_order,
+                              env, sym, "sell", base_qty=qty, client_order_id=cid)
     else:
         row = _book_row(symbol, signed_diff) if reduce_only else None
         # a close sized from the book needs no price (it sells the book's own
@@ -1273,9 +1307,8 @@ def auto_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
             # thing a later netted exit may undo (_netted_exit)
             netted_room = _netted_room(env, vid, order, sym, direction) if _own_only() else 0.0
         try:
-            result = order.place_market_order(env, sym, direction, qty,
-                                              client_order_id=cid,
-                                              reduce_only=reduce_only)
+            result = _placing(vid, sym, cid, order.place_market_order, env, sym, direction,
+                              qty, client_order_id=cid, reduce_only=reduce_only)
         except Exception as e:
             if hasattr(e, "parkable") and not reduce_only:
                 # lib/unconfirmed.OrderOutcomeUnknown: what of it nets into the user's opposite

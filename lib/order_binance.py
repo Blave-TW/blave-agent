@@ -277,12 +277,28 @@ def _request(method, path, env, params=None, signed=True, retries=3, spot=False)
     return data
 
 
+def _never_sent(e):
+    """A requests ConnectionError raised before any byte went out: the socket could not be
+    opened (refused, unreachable, DNS — urllib3 NewConnectionError / NameResolutionError,
+    wrapped in MaxRetryError). An SSL error or a TLS handshake timeout can also happen after
+    the request left, so it stays unknown."""
+    try:
+        from urllib3.exceptions import NewConnectionError
+    except ImportError:
+        return False
+    if not isinstance(e, requests.exceptions.ConnectionError):
+        return False
+    inner = e.args[0] if e.args else None
+    return isinstance(getattr(inner, "reason", None), NewConnectionError) \
+        or isinstance(inner, NewConnectionError)
+
+
 def _send(method, path, env, params=None, signed=True, retries=3, spot=False, plain_text=False,
           no_resend=False):
     """no_resend (order POSTs): once the request may have reached Binance it is never sent
     again — a read timeout, a dropped connection, a 5xx or a SEND_UNKNOWN_CODES answer raises
-    _SendUnknown. Only a connect timeout (nothing sent) and -1021 (refused before matching,
-    re-signed) are retried."""
+    _SendUnknown. Only a connect timeout, a refused connection or a DNS failure (nothing
+    sent) and -1021 (refused before matching, re-signed) are retried."""
     api_key = env.get("BINANCE_API_KEY")
     secret_key = env.get("BINANCE_SECRET_KEY")
     if signed and (not api_key or not secret_key):
@@ -324,7 +340,7 @@ def _send(method, path, env, params=None, signed=True, retries=3, spot=False, pl
             # an order POST: anything after the connection was made may have reached Binance —
             # a reset, a read timeout, a body cut mid-transfer (ChunkedEncodingError /
             # ContentDecodingError are not ConnectionError subclasses)
-            if no_resend:
+            if no_resend and not _never_sent(e):
                 raise _SendUnknown(f"{type(e).__name__}: {str(e)[:120]}") from e
             if not isinstance(e, requests.exceptions.ConnectionError) \
                     or isinstance(e, requests.exceptions.Timeout):

@@ -6,8 +6,10 @@
 
 For "close that one coin" requests. manager/flatten.py is the whole-account
 panic button and trips the global HALT; this touches nothing but the named
-symbol and never trips HALT (every other strategy keeps trading). Under HALT
-it still closes: an explicit close takes the guard's close pass (reduces only).
+symbol and never trips HALT (every other strategy keeps trading) — except a
+close of unknown outcome on the generic key that carries no id to look it up
+by (lib/portfolio.park_or_halt). Under HALT it still closes: an explicit close
+takes the guard's close pass (reduces only).
 
 Keys: the .env NAMES are passed explicitly and only those are used. Every
 other credential and demo flag of the venue is removed from the env the libs
@@ -476,6 +478,19 @@ def _cancel(order, env, sym, regular, algo):
     return False
 
 
+def _outcome_unknown(ctx, e, cid):
+    """The close's lib/unconfirmed.OrderOutcomeUnknown — an older lib's plain OrderNotConfirmed
+    rebuilt as one with this close's ids — or None."""
+    try:
+        from lib import unconfirmed
+    except ImportError:
+        return None
+    if isinstance(e, unconfirmed.OrderOutcomeUnknown):
+        return e
+    wrap = getattr(unconfirmed, "as_outcome_unknown", None)
+    return wrap(e, ctx.venue, ctx.sym, cid) if wrap else None
+
+
 def run_close(ctx, dry_run=False):
     from lib.portfolio import _append_reconciler_log, _record_order_error, zero_ledger_symbols
 
@@ -523,7 +538,7 @@ def run_close(ctx, dry_run=False):
               f"closing the pre-cancel size reduce-only")
         target, ok = before, False
     size = float(target[0]["size"]) if target else 0.0
-    closed = False
+    closed = unknown = False
     if not target:
         print(f"{side} {sym} is already gone after the cancel (a trigger fired?) — no close sent")
     else:
@@ -541,9 +556,28 @@ def run_close(ctx, dry_run=False):
                 result = order.close_position_partial(env, sym, side, size, client_order_id=cid)
                 closed = True
             except Exception as e:
-                print(f"close failed: {type(e).__name__}: {e}")
-                print(unprotected)
-                _record_order_error(sym, ctx.venue, f"close_symbol: {e}")
+                u = _outcome_unknown(ctx, e, cid)
+                if u is None:
+                    print(f"close failed: {type(e).__name__}: {e}")
+                    print(unprotected)
+                    _record_order_error(sym, ctx.venue, f"close_symbol: {e}")
+                elif ctx.generic:
+                    # the account the book tracks: parked like any other close of unknown outcome
+                    # (lib/portfolio.park_or_halt), booked once the venue answers
+                    from lib.portfolio import park_or_halt
+                    got = park_or_halt(sym, ctx.venue, u,
+                                       (-1.0 if side == "long" else 1.0) * size * price, True,
+                                       sign=-1 if side == "long" else 1)
+                    print(f"close outcome unknown ({e}) — it may have filled; {got}. Check the "
+                          f"{side} {sym} position on the exchange; do not close it again by hand")
+                    unknown = True
+                else:
+                    # a named key's account is not the book's: nothing would ever look it up
+                    print(f"close outcome unknown ({e}) — it may have filled. Check the {side} "
+                          f"{sym} position on the exchange; do not close it again by hand")
+                    _record_order_error(sym, ctx.venue, f"close_symbol: 平倉結果不明，可能已經成交，"
+                                                        f"請到交易所核對部位，不要再平一次（{e}）")
+                    unknown = True
                 result, ok = None, False
             if closed and result is False:
                 # the lib sent nothing (nothing closable on that leg, or below the minimum):
@@ -602,12 +636,13 @@ def run_close(ctx, dry_run=False):
         rows, regular, algo = read_state(ctx, "after")
     except Exception as e:
         print(f"read after the close failed ({type(e).__name__}: {e}) — result unverified")
-        if not closed:
+        if not closed and not unknown:
             print(unprotected)
         return FAILED
     if [p for p in rows if p.get("side") == side] and (closed or not ok):
         print(f"WARNING: {side} {sym} still open")
-        print(unprotected)
+        if not unknown:  # "close it now" next to a close that may have filled = a double close
+            print(unprotected)
         ok = False
     if regular or algo:
         print(f"WARNING: {sym} still has open orders")

@@ -129,6 +129,21 @@ except requests.exceptions.InvalidURL:
 wire([requests.exceptions.ConnectTimeout("connect timed out"), Resp(200, {"orderId": 77})], [FILLED])
 r = place()
 check(r["status"] == "FILLED" and len(CALLS["POST"]) == 2, "a connect timeout (nothing sent) is retried")
+from urllib3.exceptions import MaxRetryError, NameResolutionError, NewConnectionError  # noqa: E402
+for label, reason in (("a refused connection", NewConnectionError(None, "Connection refused")),
+                      ("a DNS failure", NameResolutionError("fapi.binance.com", None, OSError("nodename nor servname")))):
+    refused = requests.exceptions.ConnectionError(MaxRetryError(None, "/fapi/v1/order", reason=reason))
+    wire([refused, Resp(200, {"orderId": 77})], [FILLED])
+    r = place()
+    check(r["status"] == "FILLED" and len(CALLS["POST"]) == 2, f"{label} (no socket, nothing sent) is retried")
+    wire([refused], [FILLED])
+    try:
+        place()
+        check(False, f"{label} every time must raise")
+    except ob.OrderNotConfirmed:
+        check(False, f"{label} every time: nothing was sent, not an unknown outcome")
+    except requests.exceptions.ConnectionError:
+        check(len(CALLS["POST"]) == 3, f"{label} every time: raised as is after the retries (not parked)")
 wire([Resp(400, {"code": -1021, "msg": "Timestamp outside recvWindow"}), Resp(200, {"orderId": 77})], [FILLED])
 ob._sync_time = lambda env: None
 r = place()
