@@ -1398,6 +1398,8 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
   font-size: 11px; font-weight: 600; line-height: 1; white-space: nowrap; color: var(--ink-2);
 }
 .envm[hidden] { display: none; }
+/* light 的灰標題列底(--surface-muted)與 .envm 框(--border-frame)都是 greyLight,框會整個不見:框退一階;dark 本來就看得到 */
+[data-theme="light"] .modal-head.cloud .envm { border-color: var(--color-greyLightMedium); }
 .del-where { flex-basis: 100%; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 .del-where[hidden] { display: none; }
 /* 改用自己的 AI 的 modal(app.js laiPaint):第一行講誰收錢,底下兩列 .cn-row;腳只有〔重新偵測〕,靠左 */
