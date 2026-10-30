@@ -23,13 +23,17 @@ const NUMBERING_RE = /^[0-9]+[.)]?$/;
 const LEADING_NUMBER_RE = /^[0-9]+[.)]/;   // 「1.abandon」(編號黏在字前面)拿掉編號
 const WORD_EDGE = ".,;:!?\"'()[]{}";
 const WORD_SPLIT_RE = new RegExp("[" + WS + "\"',\\[\\]{}\\-_]+", "u");   // JSON 陣列、- 或 _ 串起來的助記詞一樣切得開
-/* 名=值(api 81cc7e50 的寫法):只掃「名字段」,名字含關鍵字才吃它後面的值;不含就只前進到名字結尾——
+/* 名=值(api 34ed3832 的寫法):只掃「名字段」,名字含關鍵字才吃它後面的值;不含就只前進到分隔符後——
    值裡面可能還有下一對 key=value。名字段的 lookbehind 只讓比對從一串名字字元的開頭起跑,整段線性。
-   u 旗標:{6,} 跟 Python 一樣按字(code point)數 */
-const KV_NAME_PART_RE = new RegExp("(?<![A-Za-z0-9_.\\-])[A-Za-z0-9_.\\-]+[\"']?[" + WS + "]*[:=][" + WS + "]*[\"']?", "gu");
-const KV_VALUE_RE = new RegExp("[^" + WS + "\"'`,;&(){}\\[\\]]{6,}", "yu");
+   分隔符兩邊只認同一行的空白(空的 api_key: 不會把下一行的 passphrase: 當成值);全形冒號、中文關鍵字也算 */
+const KV_NAME_PART_RE = new RegExp("(?<![A-Za-z0-9_.\\-\\u4e00-\\u9fff])[A-Za-z0-9_.\\-\\u4e00-\\u9fff]+[\"']?[ \\t\\u3000]*[:=：][ \\t\\u3000]*[\"']?", "gu");
+// 值前面可以有一個開括號;值裡的括號算值,結尾多出來、沒在值裡開過的收尾括號留給外面(cfg:{secret:x} 的 } 不算值)
+const KV_VALUE_RE = new RegExp("[({\\[「]?[^" + WS + "\"'`,;&]+", "yu");
+const KV_NAMEISH_RE = /^[A-Za-z0-9_.\-]+[:=：]$/;   // 吃到的「值」其實是下一對的名字
+const KV_VALUE_MIN = 6;
+const KV_CLOSER = { ")": "(", "}": "{", "]": "[", "」": "「" };
 const BEARER_RE = new RegExp("(?<![A-Za-z0-9_])(bearer[" + WS + "]+)([A-Za-z0-9._~+/\\-]{16,}=*)", "giu");   // Authorization 標頭:只遮 token
-const KV_NAME_RE = /key|secret|token|passphrase|password|passwd|pwd|private/i;
+const KV_NAME_RE = /key|secret|token|passphrase|password|passwd|pwd|private|密碼|密码|金鑰|金钥|私鑰|私钥|密鑰|密钥|口令/i;
 const PREFIX_RE = new RegExp(
   "(?<![A-Za-z0-9_\\-.])eyJ[A-Za-z0-9_\\-]+\\.eyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+"
   + "|(?<![A-Za-z0-9_])(?:"
@@ -74,14 +78,33 @@ function longTokenIsSecret(tok) {
   return hasAll || HEX_RE.test(bare);
 }
 
-/* 像路徑字的一段:小寫起頭的 camelCase／帶數字、全大寫帶數字、大寫起頭的字、純數字,用 _ . - 串起來。
-   = api _PATH_SEGMENT_RE(81cc7e50)接受的同一組字,但每一段連續的小寫／數字都吃到底(lookahead),不回溯——api 那條在「x/a + 28 個 1 + =」(32 字)上要 27 秒 */
+/* 像路徑字的一段:小寫起頭的 camelCase(可夾縮寫,getHTTPData2)／帶數字、大寫起頭的字、縮寫接小寫(HTTPserver)、
+   全大寫帶數字、7–40 碼小寫 hex(短 commit)、純數字,用 _ . - 串起來。= api _PATH_SEGMENT_RE(34ed3832)逐字同一條:
+   每一段連續的小寫／數字／大寫都吃到底(lookahead),一個單元用 (?=(…))\1 原子化,只能停在 _ . - 或段尾——不回溯 */
 const L = "[a-z]+(?![a-z])", D = "[0-9]+(?![0-9])";
-const TAIL = "(?:[A-Z]" + L + "|[A-Z]?" + D + ")*";
-const UNIT = "(?:" + L + TAIL + "[A-Z]?(?![a-z0-9])|[A-Z]+(?![A-Z])[0-9]*(?![0-9])|[A-Z]" + L + TAIL + "|" + D + ")";
-const WORDISH_RE = new RegExp("^" + UNIT + "(?:[_.\\-]" + UNIT + ")*$");
+const CAMEL = "(?:[A-Z]" + L + "|[A-Z]{2,}(?=[A-Z][a-z])|[A-Z]?" + D + ")*";
+const UNIT = "(?=((?:" + L + CAMEL + "[A-Z]?|[A-Z]" + L + CAMEL + "|[A-Z]{2,}(?![A-Z])(?:" + L + ")?"
+  + "|[A-Z]+(?![A-Z])(?:" + D + ")?|[0-9a-f]{7,40}|" + D + ")(?=[_.\\-]|$)))\\1";
+const WORDISH_RE = new RegExp("^" + UNIT + "(?:[_.\\-]" + UNIT.replace("\\1", "\\2") + ")*$");
 const wordish = (seg) => WORDISH_RE.test(seg);
 const cpLen = (s) => Array.from(s).length;
+/* 關鍵字名字後面那個值的 [起, 迄),沒有就 null(= api _kv_value) */
+function kvValue(text, start) {
+  KV_VALUE_RE.lastIndex = start;
+  const m = KV_VALUE_RE.exec(text);
+  if (!m) return null;
+  const vs = start + ("({[「".includes(text[start]) ? 1 : 0);
+  let ve = start + m[0].length;
+  const counts = {};
+  for (const c of "(){}[]「」") counts[c] = text.slice(vs, ve).split(c).length - 1;
+  while (ve > vs && KV_CLOSER[text[ve - 1]]) {
+    const closer = text[ve - 1];
+    if (counts[KV_CLOSER[closer]] >= counts[closer]) break;   // 收的是值裡開的括號
+    counts[closer]--; ve--;
+  }
+  if (cpLen(text.slice(vs, ve)) < KV_VALUE_MIN || KV_NAMEISH_RE.test(text.slice(vs, ve))) return null;
+  return [vs, ve];
+}
 const countOf = (text, v) => text.split(v).length - 1;
 
 /* 第 2–7 條,加上 known 給了時的第 1 條。回遮過的字,或整則排除時只回 EXCLUDED */
@@ -99,11 +122,10 @@ function redact(text, known) {
     KV_NAME_PART_RE.lastIndex = 0;
     while ((m = KV_NAME_PART_RE.exec(text)) !== null) {
       const end = m.index + m[0].length;
-      let v = null;
-      if (KV_NAME_RE.test(m[0])) { KV_VALUE_RE.lastIndex = end; v = KV_VALUE_RE.exec(text); }
+      const v = KV_NAME_RE.test(m[0]) ? kvValue(text, end) : null;
       if (!v) { out += text.slice(pos, end); pos = end; continue; }
       masks++;
-      out += text.slice(pos, end) + MASK; pos = end + v[0].length;
+      out += text.slice(pos, v[0]) + MASK; pos = v[1];
       KV_NAME_PART_RE.lastIndex = pos;
     }
     text = out + text.slice(pos);

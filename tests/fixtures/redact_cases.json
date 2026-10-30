@@ -173,6 +173,66 @@
    "out": "log: password: ⟦R⟧"
   },
   {
+   "rule": 4,
+   "name": "空值的名字不吞下一行(YAML)",
+   "in": "okx:\n  api_key:\n  passphrase: Hunter2pass",
+   "out": "okx:\n  api_key:\n  passphrase: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "空值的名字不吞下一行",
+   "in": "password:\nsecret: Hunter2pass",
+   "out": "password:\nsecret: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "只有空白的值不吞下一行",
+   "in": "api_key: \nsecret: Hunter2pass",
+   "out": "api_key: \nsecret: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "大括號包著的值",
+   "in": "secret={Hunter2pass}",
+   "out": "secret={⟦R⟧}"
+  },
+  {
+   "rule": 4,
+   "name": "方括號包著的值",
+   "in": "secret=[Hunter2pass]",
+   "out": "secret=[⟦R⟧]"
+  },
+  {
+   "rule": 4,
+   "name": "小括號包著的值",
+   "in": "password: (Hunter2pass)",
+   "out": "password: (⟦R⟧)"
+  },
+  {
+   "rule": 4,
+   "name": "值裡有成對的括號",
+   "in": "passphrase=Hunt(er)2pass",
+   "out": "passphrase=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "值裡有單獨的收尾括號",
+   "in": "secret: ab)Hunter2pass",
+   "out": "secret: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "全形冒號",
+   "in": "password：Hunter2pass",
+   "out": "password：⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "中文鍵名",
+   "in": "密碼：Hunter2pass",
+   "out": "密碼：⟦R⟧"
+  },
+  {
    "rule": 5,
    "name": "sk-ant- 金鑰",
    "in": "我的 key 是 sk-ant-api03-AbCdEfGhIjKlMnOpQrSt",
@@ -315,6 +375,18 @@
    "name": "camelCase 路徑的網址不遮",
    "in": "看 https://github.com/johnDoe/repoName1/blob/main/strategyRunnerV2Final.py",
    "out": "看 https://github.com/johnDoe/repoName1/blob/main/strategyRunnerV2Final.py"
+  },
+  {
+   "rule": 6,
+   "name": "GitHub commit 網址只遮 40 碼 hash",
+   "in": "看 https://github.com/Blave-TW/blave-agent/commit/3f9a1c0e7b2d4a6f8e1c3b5a7d9f0e2c11223344",
+   "out": "看 https://github.com/Blave-TW/blave-agent/commit/⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "縮寫進 camelCase 的路徑不遮",
+   "in": "存在 ~/Blave/workspace/strategies/fetcher/src/getHTTPData2.py",
+   "out": "存在 ~/Blave/workspace/strategies/fetcher/src/getHTTPData2.py"
   },
   {
    "rule": 7,

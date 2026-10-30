@@ -68,5 +68,38 @@ ok("N2 含 / 的 base64 金鑰整串遮", R.redact("key q8Zt/Kp2+Lm9Wx4Rb7Vn1Yc3
 ok("6 讀不到 .env(非字串)回空清單", R.envSecretValues(null).length === 0);
 ok("6 已知值一併遮、不進輸出", R.redact("key 是 Ab12Cd34Ef56 跟 9876543", vals) === "key 是 ⟦R⟧ 跟 ⟦R⟧");
 
+// 7. 差分語料:api tests/check_redact_differential.py 的生成語料(固定種子)現場跑一次 api 的 redact,每一則電腦版要逐字同一個輸出。
+//    語料裡上千把生成的假金鑰,不進版控;要 api checkout(BLAVE_API_DIR 或 ../api)與 python3,找不到就 SKIP。
+{ const apiDir = process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api");
+  const diff = path.join(apiDir, "tests", "check_redact_differential.py");
+  if (!fs.existsSync(diff)) console.log("SKIP  7 差分語料(需要 ../api 或 BLAVE_API_DIR,且有 tests/check_redact_differential.py)");
+  else {
+    // 只取語料那一段來跑;desktop_portfolio 會 import Flask,這裡只抄它的四個 regex 定義(同 api redact 用的那四個物件)
+    const py = String.raw`
+import json, os, re, sys, types, random, string
+api = sys.argv[1]
+src = open(os.path.join(api, "openclaw", "desktop_portfolio.py"), encoding="utf-8").read()
+dp = types.ModuleType("openclaw.desktop_portfolio")
+for n in ("_HOME_RE", "_URL_QUERY_RE", "_PATH_QUERY_RE", "_LONG_TOKEN_RE"):
+    exec([l for l in src.split(chr(10)) if l.startswith(n + " = ")][0], {"re": re}, dp.__dict__)
+pk = types.ModuleType("openclaw"); pk.__path__ = [os.path.join(api, "openclaw")]
+sys.modules["openclaw"] = pk; sys.modules["openclaw.desktop_portfolio"] = dp
+from openclaw import redact as rd
+d = open(os.path.join(api, "tests", "check_redact_differential.py"), encoding="utf-8").read()
+code = d[d.index("SECRETS = ("):d.index('print(f"語料')]
+ns = {"json": json, "random": random, "string": string}
+exec(code, ns)
+json.dump([[t, rd.redact(t)] for (t, _k, _s) in ns["corpus"]], sys.stdout, ensure_ascii=False)
+`;
+    const r = require("child_process").spawnSync(process.env.PYTHON || "python3", ["-I", "-c", py, apiDir], { encoding: "utf8", maxBuffer: 64 << 20 });
+    let cases = null; try { cases = JSON.parse(r.stdout); } catch (_) { cases = null; }
+    if (!cases) ok("7 差分語料:api 的生成器跑得起來", false, (r.stderr || "").slice(-400));
+    else {
+      const bad = cases.filter(([t, want]) => R.redact(t) !== want);
+      ok(`7 差分語料 ${cases.length} 則:電腦版輸出與 api 逐字相同`, cases.length >= 2000 && bad.length === 0, bad.slice(0, 3).map(([t, want]) => ({ in: t, want, got: R.redact(t) })));
+    }
+  }
+}
+
 console.log(red ? `\n${red} FAIL` : "\nall pass");
 process.exit(red ? 1 : 0);

@@ -1,10 +1,5 @@
 # 遮蔽規則的共用 fixture(spec mobile-agent-chat-mvp §4.3;與 api tests/fixtures/redact_cases.json 逐字相同):
 # 裡面全是測試遮蔽用的假金鑰,不是真的憑證。fingerprint 帶行號,fixture 一改就要重取:
 #   gitleaks detect --no-git --source tests/fixtures/redact_cases.json --report-format json --report-path <scratchpad>/gl.json
-tests/fixtures/redact_cases.json:gcp-api-key:202
-tests/fixtures/redact_cases.json:generic-api-key:100
-tests/fixtures/redact_cases.json:generic-api-key:136
-tests/fixtures/redact_cases.json:generic-api-key:148
-tests/fixtures/redact_cases.json:generic-api-key:154
-tests/fixtures/redact_cases.json:github-pat:190
-tests/fixtures/redact_cases.json:private-key:28
+tests/fixtures/redact_cases.json:gcp-api-key:262
+tests/fixtures/redact_cases.json:github-pat:250
