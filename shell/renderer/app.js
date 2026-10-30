@@ -5035,15 +5035,25 @@ document.addEventListener("keydown", (e) => {
   sel.selectAllChildren(region);
 });
 
+// 泡泡是最上層的暫態層:window capture 比 escTop、versions.js 的 capture、各選單自己的 Esc 都先跑,收掉看得見的泡泡就不往下傳
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229 && tipEsc()) { e.preventDefault(); e.stopPropagation(); }
+}, true);
+
 /* 泡泡由 CSS 的 :hover / :focus-visible + .tip 帶出來的那幾種(.mp-tip、.tr-tipb、.rules-tipb、瀏覽器的 .ibtn):Esc 要收得掉(canon › Tooltip),
    但 CSS 狀態收不掉——給觸發點掛 data-tip-off(CSS 帶 :not([data-tip-off])),滑出或失焦再拿掉 */
-document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
+// 回傳這一下有沒有收掉一個看得見的泡泡:有的話 Esc 只收泡泡、不往下關框(escTop 先問這裡,一次只關一層)
+function tipEsc() {
+  let shut = false;
   for (const x of [document.activeElement, ...document.querySelectorAll(":hover")]) {
-    const btn = x && x.nextElementSibling && x.nextElementSibling.classList.contains("tip") ? x : null;
-    if (!btn || btn.hasAttribute("data-tip-off")) continue;
-    btn.setAttribute("data-tip-off", "");
-    const on = () => { btn.removeAttribute("data-tip-off"); btn.removeEventListener("blur", on); btn.removeEventListener("mouseleave", on); };
-    btn.addEventListener("blur", on); btn.addEventListener("mouseleave", on);
+    // 設定頁的開關與〔複製〕跟泡泡不相鄰(泡泡在 label 裡),靠 aria-describedby 認
+    const desc = x && x.getAttribute && x.getAttribute("aria-describedby"), dt = desc && document.getElementById(desc);
+    const tip = x && x.nextElementSibling && x.nextElementSibling.classList.contains("tip") ? x.nextElementSibling : dt && dt.classList.contains("tip") ? dt : null;
+    if (!tip || x.hasAttribute("data-tip-off")) continue;
+    if (getComputedStyle(tip).display !== "none") shut = true;
+    x.setAttribute("data-tip-off", "");
+    const on = () => { x.removeAttribute("data-tip-off"); x.removeEventListener("blur", on); x.removeEventListener("mouseleave", on); };
+    x.addEventListener("blur", on); x.addEventListener("mouseleave", on);
   }
-});
+  return shut;
+}

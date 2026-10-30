@@ -189,12 +189,12 @@ function brStat(b, withSegs) {
    滑過才出(這裡);離開、按下去、Esc、視窗退到背景都收(同 report-robust.js 那顆單例的事件組)。鍵盤聚焦走 CSS 的
    :focus-visible + .tip(同 .mp-tip),視窗退到背景 :focus 就不成立、自然收。停用的鈕收不到滑鼠事件,不出 */
 let brTipOn = null;
-function brTipHide() { if (brTipOn) { brTipOn.classList.remove("is-on"); brTipOn = null; } }
+function brTipHide() { if (!brTipOn) return false; brTipOn.classList.remove("is-on"); brTipOn = null; return true; }
 function brTipAttach(btn, tip) {
   btn.addEventListener("mouseenter", () => { brTipHide(); tip.classList.add("is-on"); brTipOn = tip; });
   ["mouseleave", "pointerdown"].forEach((ev) => btn.addEventListener(ev, brTipHide));
 }
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") brTipHide(); });
+window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229 && brTipHide()) { e.preventDefault(); e.stopPropagation(); } }, true);   // 同 report-robust.js:先收泡泡、不往下傳
 if (window.blave.onWindowActive) window.blave.onWindowActive((on) => { if (!on) brTipHide(); });
 
 /* 真的讀到內容的頁(進圖示疊、算「已讀」):讀過、不是搜尋結果頁、不是只停在中繼頁 */
