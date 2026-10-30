@@ -98,6 +98,10 @@ const msg = (sid, id, content) => ({ type: "user_message", message_id: id, sessi
     const cs = m.chunks();
     ok("2 一批兩段、帶 message_id;別條電腦前的回合不轉", cs.length === 2 && cs.every((c) => c.message_id === "msg00000001" && c._sid === "desktop-abcd1234"));
     ok("2 字串過遮蔽:帳號 token、app_secret、.env 值都不出門", !JSON.stringify(cs).includes(TOKEN) && !JSON.stringify(cs).includes(SECRET) && !JSON.stringify(cs).includes("envSecretVal99"), cs);
+    m.r.onTurn("desktop-abcd1234", "turn-event", { type: "export", target: "pine", strategy: "btc_trend", content: "SECRET_STRATEGY_BODY = 42" });
+    await wait(RL.BATCH_MS + 120);
+    const xp = m.chunks().find((c) => c.type === "export");
+    ok("2 轉出卡:策略程式全文不出門,只送 target／strategy", xp && xp.strategy === "btc_trend" && !JSON.stringify(m.of(RL.EP.report)).includes("SECRET_STRATEGY_BODY"), xp);
     m.calls.length = 0;
     m.r.onTurn("desktop-abcd1234", "turn-event", { type: "done", awaiting: false }); await wait(10);
     ok("2 done 立刻送(不等 300 毫秒)", m.chunks().some((c) => c.type === "done"));

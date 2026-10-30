@@ -252,8 +252,10 @@ function createRelay(opts) {
   function onTurn(sid, ch, payload) {
     const a = active.get(sid);
     if (ch === "turn-event" && a && payload && typeof payload === "object") {
-      if (payload.type === "queued" || payload.type === "started") return;   // 雲端名額的排隊:手機那一輪不會走到
-      const c = scrubDeep({ ...payload, session_id: sid, message_id: a.message_id }, known());
+      if (payload.type === "queued" || payload.type === "started") return;   // 雲端名額的排隊／畫面用的開跑通知:不是手機要的
+      // 轉出卡帶的是策略程式全文:策略程式不出這台電腦(§4.1),手機只畫一行「到電腦上看」
+      const src = payload.type === "export" ? { type: "export", target: payload.target, strategy: payload.strategy } : payload;
+      const c = scrubDeep({ ...src, session_id: sid, message_id: a.message_id }, known());
       if (payload.type === "done" || payload.type === "error") a.ended = true;
       enqueueChunk(sid, c, payload.type === "done" || payload.type === "error");
       return;

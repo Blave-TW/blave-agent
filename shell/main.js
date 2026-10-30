@@ -608,9 +608,10 @@ function relayKnown() {
   if (Date.now() - _relayEnv.at > 5000) {
     let txt = null; try { txt = fs.readFileSync(path.join(WS, ".env"), "utf8"); } catch (_) { txt = null; }
     _relayEnv = { at: Date.now(), vals: require("./redact").envSecretValues(txt) };
+    let llm = null; try { const k = loadLlmKey(); llm = k && typeof k.key === "string" ? k.key : null; } catch (_) { llm = null; }
+    if (llm) _relayEnv.vals.push(llm);
   }
-  let llm = null; try { const k = loadLlmKey(); llm = k && typeof k.key === "string" ? k.key : null; } catch (_) { llm = null; }
-  return llm ? [..._relayEnv.vals, llm] : _relayEnv.vals;
+  return _relayEnv.vals;
 }
 /* Blave 餘額(balance.js):電腦版自己的端點,帶帳號 token + app_secret;只回數字給自家畫面,憑證不出主行程。 */
 let _balance = null;
@@ -3512,7 +3513,7 @@ async function startTurn(payload, origin) {
   turns.set(sid, rec);
   // 手機來的對話:畫面開成背景分頁(加在最後、不切過去,spec 技術方案 §1.5);事件照 sid 畫進去
   // started:這一輪不是畫面送出的,畫面要從這裡才知道那個分頁在回覆中;echo = 手機送的那句,歷史畫完後接在後面(帶「來自手機」)
-  if (rec.origin === "mobile") { sendTurn(sid, "tab-open", { origin: "mobile", focus: false, echo: typeof payload.message === "string" ? payload.message : "" }); sendTurn(sid, "turn-event", { type: "started" }); }
+  if (rec.origin === "mobile") sendTurn(sid, "tab-open", { origin: "mobile", focus: false, echo: typeof payload.message === "string" ? payload.message : "" });
   if (rec.cloud) { try { cloudHost().start(); } catch (_) { /* 起不來:名額照讀不到算 */ } }
   // 最低版本閘:只擋 Blave AI;連自己 CLI 的人照常聊
   try {
@@ -3531,6 +3532,8 @@ async function startTurn(payload, origin) {
     sendTurn(sid, "turn-event", { type: "queued" });
     return { queued: true };
   }
+  // 手機那一輪不是畫面送出的:畫面要從這裡才知道那個分頁在回覆中(過了版本閘才送,擋下的那條畫面不會卡在回覆中)
+  if (rec.origin === "mobile") sendTurn(sid, "turn-event", { type: "started" });
   turnLaunch(rec, payload);
   return { started: true };
 }
