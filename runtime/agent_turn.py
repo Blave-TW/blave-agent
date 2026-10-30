@@ -4389,7 +4389,7 @@ DATA_ACCESS_WHY = {
     "no_card": "the user is signed in; there is no card on file (a card starts the 14-day trial)",
     "no_balance": "the user is signed in; the balance does not cover this hour's data fee",
     # 方案制(api MONTHLY_BILLING_FROM 之後):沒有按小時買資料,資料只在雲端方案／API 方案裡
-    "no_plan": "the user is signed in; the account has no plan that includes Blave data (a Blave Agent cloud plan or an API plan)",
+    "no_plan": "the user is signed in; the account has no plan that includes Blave data",
     "plan_failed": "the user is signed in; the account's plan payment failed, so data is paused until it is paid",
     "unknown": "the user is signed in; the account status could not be read this turn",
 }
@@ -4627,8 +4627,11 @@ def data_access_rule():
             "could not be charged, or (plan billing) the account has no plan that includes data. "
             "The body's message and `next_steps` say which and name the ways out (topping up, a "
             "cloud plan, an API plan); a `retry_after`, when present, is a ceiling rather than a "
-            "wait. Convey why the data stopped and the ways out the body names; never state a "
-            "rate, currency or deadline the body did not give you. Do not work around the block.\n"
+            "wait. Convey that the data stopped and that it needs a plan; do not mention an API plan "
+            "even though the body names one. The exception is a user asking what it takes to call "
+            "the Blave API from their own code with a key they created themselves — answer that "
+            "from references/billing.md. Never state a rate, currency or deadline the body did not "
+            "give you. Do not work around the block.\n"
             "- `ERR005` (`Invalid API key`) — this key was deleted or revoked. The way back is "
             "signing in to Blave again in the app; do not go looking for another key.\n"
             "- `KEY_SCOPE` — the action is outside this key's scope. This desktop key is "
@@ -4642,7 +4645,8 @@ def data_access_rule():
         # 也寫成成品英文散文,模型會照抄——逐輪語言錨(_lang_directive,貼在 prompt 最尾端)只有一行,
         # 打不過「就放在眼前、剛好就是這一則要回的內容」的現成句子(2026-09-23:中文問籌碼集中度,整則回英文)。
         # 所以下面只講**必須成立什麼**,不給任何可抄的成品句;用戶看得到的每一句都由模型自己用該輪語言寫。
-        why = DATA_ACCESS_WHY.get(os.environ.get("BLAVE_DATA_ACCESS_WHY"))
+        why_key = os.environ.get("BLAVE_DATA_ACCESS_WHY")
+        why = DATA_ACCESS_WHY.get(why_key)
         body = (
             "FACTS AND CONSTRAINTS FOR YOU — not wording for the user. Every sentence the user "
             "reads you write yourself, in the language the per-turn language directive names. "
@@ -4666,10 +4670,11 @@ def data_access_rule():
             "Do not decide from these facts alone that something is unavailable: when the user asks "
             "for a dataset, make the call — it stops at once if it needs Blave data.\n"
             "Only when a `lib/data.py` call in this turn actually stopped with `DataAccessError`, "
-            "your reply must: name which data is "
-            "missing; give the conditions under which it becomes available (signed in, plus the card "
-            "trial, a cloud plan or an API plan — or, where the account is still billed by the hour, a "
-            "balance that covers the hourly data fee); carry "
+            "your reply must: name which data is missing; "
+            + ("say in one sentence that it needs signing in to Blave first; "
+               if why_key == "signed_out" else "say in one sentence that it needs a plan; ")
+            + "not list conditions, and not mention an API plan, the card trial or hourly billing "
+            "(the facts above are for you, not for the reply); carry "
             "no directions, next steps or prices; not push; and then answer "
             "whatever part public data does allow. Say it once per conversation — if asked again "
             "later, do not repeat the unavailability, just answer what you can.\n"
