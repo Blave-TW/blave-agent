@@ -2,7 +2,7 @@
 // window.blave 換成假的(不起主行程、不碰 workspace、不連網),每一個框都用三種焦點狀態按一次真的 Esc(sendInputEvent):
 //   焦點在框裡 / 焦點移到 body / 用滑鼠點框裡的字(不可聚焦的地方)——後兩種是 Wei 09-23 實機按 Esc 關不掉的情形
 // 另外驗一次只關一層:設定開著、確認框疊在上面,Esc 只關確認框。
-// 泡泡是最上層:五套泡泡各疊在三種上層上,第一下 Esc 只收泡泡、第二下才關上層。
+// 泡泡是最上層:六套泡泡各疊在三種上層上,第一下 Esc 只收泡泡、第二下才關上層。
 // 跑法:node tests/check_shell_esc.js(找不到 shell/node_modules 的 Electron 就 SKIP)
 const path = require("path"), fs = require("fs");
 const SHELL = path.join(__dirname, "..", "shell");
@@ -97,7 +97,7 @@ app.whenReady().then(async () => {
   const c1 = await js(`({ mp: !$("mp-panel").hidden, list: !$("cs-list").hidden })`); await esc();
   const c2 = await js(`({ mp: !$("mp-panel").hidden, list: !$("cs-list").hidden })`);
   ok("模型選單 + 對話清單都開著:第一下只關模型選單,第二下才收清單", !c1.mp && c1.list && !c2.mp && !c2.list);
-  // 泡泡是最上層的暫態層(五套泡泡 × 三種上層:escTop 管的設定框、trade.js 自己接 Esc 的 ps-scrim、versions.js capture 層的比較框):
+  // 泡泡是最上層的暫態層(六套泡泡 × 三種上層:escTop 管的設定框、trade.js 自己接 Esc 的 ps-scrim、versions.js capture 層的比較框):
   // 泡泡開著時第一下 Esc 只收泡泡、上層還在;第二下才關上層
   const ROB_SCAN = { row_param: "A", col_param: "B", row_vals: [10, 20, 30], col_vals: [0.5, 0.7, 0.9], grid: [[3.0, 0.2, 0.1], [0.3, 1.4, 1.5], [null, 1.5, 1.6]], window: 1, fee: 0.0005, start: "2025-01-01", end: "2025-06-01", generated_at: 100 };
   const WF = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "wf_sample.json"), "utf8"));
@@ -111,6 +111,8 @@ app.whenReady().then(async () => {
     "參數掃描 .rob-tip": { show: () => `(window.BlaveReport.renderRobust(${box}, { stats: { symbol: "BTCUSDT", interval: "1h", start: "2025-01-01", end: "2025-06-01", "fee [%]": 0.05, "Generated At": 50 }, scan: ${JSON.stringify(ROB_SCAN)}, code: "", name: "s1" }, { t }), ${focusCell("#__tipbox .rob-tbl td")})`, on: isOn("rob-tip") },
     "前進測試 .wf-tip": { show: () => `(window.BlaveReport.renderWf(${box}, { stats: { symbol: "BTCUSDT", interval: "1d", start: "2023-01-01", end: "2024-11-30", "Generated At": 50 }, wf: ${JSON.stringify(WF)}, code: "ENTRY_TH = 0.002\\nEXIT_TH = -0.002\\n", name: "s1" }, { t, busy: false, turn: 1, scope: "local", gate: true }), ${focusCell("#__tipbox .wf-grid td[tabindex='0']")})`, on: isOn("wf-tip") },
     "成交紀錄 .hist-tip": { show: () => `(() => { const b = trHistTipBtn("未確認", "說明", "hist:x"); ${box}.append(b); b.dispatchEvent(new MouseEvent("mouseenter")); })()`, on: isOn("hist-tip") },
+    // 分頁 tooltip(chattabs.js):滑鼠停在分頁上帶出,焦點不在分頁列
+    "對話分頁 #tabs-tip": { show: () => `(() => { const p = $("tabs-tip"); delete p.dataset.off; p.textContent = "分頁"; p.hidden = false; })()`, on: `!$("tabs-tip").hidden`, gone: `tabsTipOff()` },
     "內建瀏覽器 .bv-addr .tip": { show: () => `(() => { const h = ${box}, b = document.createElement("button"), p = document.createElement("span"); p.className = "tip"; p.id = "__brt"; p.textContent = "說明"; h.append(b, p); brTipAttach(b, p); b.dispatchEvent(new MouseEvent("mouseenter")); })()`, on: isOn("__brt") },
   };
   const LAYERS = [

@@ -440,8 +440,12 @@ $("cs-tabs").addEventListener("keydown", (e) => {
   else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tabs[i].click(); }
   else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); const T = CS.tabs.get(tabs[i].dataset.sid); if (T) tabsClose(T); }
 });
-// Esc 收 tooltip:滑鼠滑過(焦點不在分頁列)時也收得掉(WCAG 1.4.13);不攔 Esc,別的層照收
-document.addEventListener("keydown", (e) => { if (e.key !== "Escape") return; const tip = $("tabs-tip"); if (tip && !tip.hidden) { tip.hidden = true; tip.dataset.off = "1"; } });
+// Esc 收 tooltip:滑鼠滑過(焦點不在分頁列)時也收得掉(WCAG 1.4.13);同 app.js tipEsc:window capture 先收、收掉才不往下傳(escTop 不再關一層),沒顯示不攔
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.isComposing || e.keyCode === 229) return;
+  const tip = $("tabs-tip"); if (!tip || tip.hidden) return;
+  tip.hidden = true; tip.dataset.off = "1"; e.preventDefault(); e.stopPropagation();
+}, true);
 $("cs-more").addEventListener("click", () => { if ($("cs-menu").hidden) tabsMenuOpen(); else tabsMenuClose(); });
 $("cs-menu").addEventListener("keydown", (e) => {
   const items = [...$("cs-menu").querySelectorAll(".mi")], i = items.indexOf(document.activeElement);
