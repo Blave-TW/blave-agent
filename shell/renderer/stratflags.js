@@ -333,8 +333,9 @@ function sfPopClose(restoreFocus) {
 }
 // 外點 / 捲動 / 改窗即收——fixed 定位不跟捲動,留著會漂在錯的位置
 document.addEventListener("pointerdown", (e) => {
-  if (!sfPop || sfPop.hidden || sfPop.contains(e.target)) return;
-  const onBtn = e.target.closest && e.target.closest(".strat-flagbtn");
+  const path = e.composedPath();   // 「移到資料夾」那段每次開啟清空重建:用派送當下的路徑判斷,不靠 contains / closest
+  if (!sfPop || sfPop.hidden || path.indexOf(sfPop) >= 0) return;
+  const onBtn = path.find((n) => n.classList && n.classList.contains("strat-flagbtn"));
   SF.popJustClosed = onBtn && onBtn === SF.popReturn ? onBtn : null;
   sfPopClose(false);
 });

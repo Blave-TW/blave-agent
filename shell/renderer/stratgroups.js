@@ -480,13 +480,15 @@ function sgMoveRow(sc, name, gid) {
 }
 
 // 外點 / 捲動 / 改窗即收(fixed 定位不跟捲動)
+// 判斷落點用 composedPath:事件路徑在派送當下就定了,節點之後被清空重建、脫離 DOM 也照樣比得到(closest / contains 會失效)
 document.addEventListener("pointerdown", (e) => {
-  if (sgMenu && !sgMenu.hidden && !sgMenu.contains(e.target)) {
-    const c = SG.menuCtx, on = e.target.closest && e.target.closest(".sg-more");
-    SG.menuJustClosed = c && on === c.anchor ? on : null;
+  const path = e.composedPath(), within = (n) => !!n && path.indexOf(n) >= 0;
+  if (sgMenu && !sgMenu.hidden && !within(sgMenu)) {
+    const c = SG.menuCtx;
+    SG.menuJustClosed = c && within(c.anchor) ? c.anchor : null;
     sgMenuClose(false);
   }
-  if (sgPick && !sgPick.hidden && !sgPick.contains(e.target) && !(SG.pickCtx && SG.pickCtx.anchor.contains(e.target))) { sgPickClose(false); sgEditLeft(e.target); }
+  if (sgPick && !sgPick.hidden && !within(sgPick) && !(SG.pickCtx && within(SG.pickCtx.anchor))) { sgPickClose(false); sgEditLeft(e.target); }
 });
 // 選擇器是從編輯列開的、人直接點到 / Tab 到別處:名稱框早就失焦(進選擇器那次不算),這一下才是真的離開,照失焦送出
 function sgEditLeft(to) { if (SG.edit && !(to && SG.edit.node.contains(to))) sgEditEnd(true); }

@@ -1380,7 +1380,8 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 .sg-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; height: 44px; margin-top: 10px; padding-left: var(--space-12); background: var(--bg-body); }
 .sg-head.is-first { margin-top: 0; }
 .sg-head[hidden] { display: none; }
-.sg-head:focus-within, .sg-head.menu-open { z-index: 2; }   /* 釘頂疊放時 Tab 到被蓋住的那顆:浮到最上面,仍低於拖拉中的列 */
+.sg-head:focus-within, .sg-head.menu-open { z-index: 2; }
+.sg-head.sg-drop { z-index: 5; }   /* 當落點的那個組標題浮在被拖的列(3)之上,灰填與組名才不被蓋住(同 web) */   /* 釘頂疊放時 Tab 到被蓋住的那顆:浮到最上面,仍低於拖拉中的列 */
 .sg-tog { position: relative; flex: 1; min-width: 0; height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 var(--space-12); font-size: 12px; color: var(--ink-3); text-align: left; }
 .sg-tog::before { content: ""; position: absolute; inset: 6px 0; z-index: -1; border-radius: var(--radius-md); }
 .sg-head:is(:hover, .menu-open, .sg-drop) .sg-tog::before { background: var(--surface-card); }   /* 由 .sg-head 層驅動:滑到 ⋯ 上不熄;當落點時同一個灰階,不畫插入線 */
