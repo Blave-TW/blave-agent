@@ -135,7 +135,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
   if (!fs.existsSync(apiPy)) console.log("SKIP  api 白名單比對(需要 monorepo 版面:../api/openclaw/desktop_telemetry.py)");
   else { const m = /"feature_used": \{"props": \{"name": \(([\s\S]*?)\)\}, "once": False\}/.exec(fs.readFileSync(apiPy, "utf8"));
-    const apiNames = m ? [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1]) : null;
+    const apiNames = m ? [...m[1].matchAll(/"([a-z0-9_]+)"/g)].map((x) => x[1]) : null;
     t("api 端 feature_used.name 白名單 = 外殼這份(順序也同)", !!apiNames && JSON.stringify(apiNames) === JSON.stringify(FEATURES)); }
   // renderer 的送出點:掃 trackFeature(…) 的引數——字面、三元的兩個字面、或 XXX_FEATURE[…] 那張表的值;每個名字都要在表上,
   // 而且表上每個名字都要有送出點(library.js 走自己的 libTrack("…") 包裝,一樣掃)——名字登記了卻沒人送,報表上那一欄永遠是 0
