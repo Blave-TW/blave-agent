@@ -633,7 +633,7 @@ _SPOT_FIX = ("The backtest clamps it to flat, same as live, but scans and walk-f
 # first day — it raises BatchIncomplete — so a batch strategy whose top-level START
 # is earlier (or can't be read) is "can't tell", see _TW_CDN_BATCH below.
 _DESKTOP_PUBLIC_DATA = frozenset({
-    "fetch_kline", "fetch_kline_batch", "fetch_bingx_kline", "fetch_usstock_price",
+    "fetch_kline", "fetch_kline_batch", "fetch_bingx_kline", "fetch_usstock_price", "price_at",
     "fetch_fear_greed", "fetch_binance_ticker_24h",
     "fetch_tw_announcements_public", "fetch_tw_breadth_public", "fetch_twfutures_institutional_public",
     "fetch_txf_daily_public", "fetch_twmarket_index_public", "fetch_twmarket_institutional_public",
