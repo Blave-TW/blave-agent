@@ -4519,6 +4519,16 @@ def web_tools_off(web, browser_mounted):
     return list(WEB_TOOLS) if web else (["WebFetch"] if browser_mounted else [])
 
 
+def chat_tools(web, browser_mounted):
+    """聊天回合的內建工具白名單(options.tools)。引擎預設會把每個內建工具的 schema 都放進 prompt,
+    CronList、Workflow、NotebookEdit 這類 agent 從沒用過的(電腦版開發版實測首次呼叫 43,523 → 34,002 token),
+    而且引擎升版新增的工具會自己長進來。MCP 工具(內建瀏覽器、blave)不受 --tools 影響。
+    ToolSearch 不能拿掉:內建瀏覽器的工具是延遲載入的,要靠它叫出來。TaskOutput 留著:前景指令逾時被
+    CLI 轉到背景後,要靠它等輸出。上網工具照 web_tools_off——雲端回合的報告搜尋要用。"""
+    off = web_tools_off(web, browser_mounted)
+    return ALLOWED_TOOLS + [t for t in WEB_TOOLS if t not in off] + ["TaskOutput", "ToolSearch"]
+
+
 _NO_OTHER_ROUTE = ("the engine's own web search and web fetch, `curl`, `wget`, a script or a library call to a web page. "
                    "`lib/data.py`, exchange and broker APIs and order placement are data, not browsing: they work as usual")
 
@@ -4917,8 +4927,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # 自己 spawn 了 explore 子代理)。Subagents interleave a second stream
         # into the same sink and wreck the「最後一段無工具文字=回覆」判定
         # (正式回覆被子代理尾隨的 tool chunk 收回成旁白,子代理的英文報告
-        # 反而變成回覆),所以用 disallowed_tools 硬禁。`tools=` 才是內建工具清單本身(SDK 轉成 --tools;
-        # 排程回合用它,見 _arm_scheduled);聊天回合不設,維持引擎預設。
+        # 反而變成回覆),所以用 disallowed_tools 硬禁。`tools=` 才是內建工具清單本身(SDK 轉成 --tools),
+        # 聊天回合的見 chat_tools、排程回合的見 _arm_scheduled。
         allowed_tools=ALLOWED_TOOLS,
         # 電腦版上網只有內建瀏覽器一條路:引擎自己的 WebSearch / WebFetch 都關(開著時走 browser_search / browser_open,
         # 關著或掛不上就是不上網)。雲端與舊外殼見 web_tools_off
@@ -4959,6 +4969,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # 電腦版的 effort 選單。沒帶就連屬性都不碰(SDK 預設);設在建構之後,理由同下面的
         # extra_args:沒有這個欄位的 SDK build 不能因為一個 kwarg 整輪 TypeError。
         options.effort = effort
+    if not use_codex:
+        options.tools = chat_tools(web, browser_mounted)
     if sysprompt_path:
         # Set after construction for the same reason as include_partial_messages
         # below: an SDK build whose options lack extra_args must not kill every turn.

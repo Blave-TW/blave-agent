@@ -4,6 +4,8 @@ The single answer sheet for 「這樣會不會扣錢」/「扣什麼錢」questi
 from the platform code, not remembered — sources are named per section. If a question is not
 covered here, say you are not sure and point the user to the usage page; never invent a number.
 
+Gist: chat on Blave's models costs tokens; a cloud server includes Blave data and is billed hourly until the account switches to a plan (monthly or annual, data also in the desktop app) — check which one the account is on (*Two billing schemes*, below); letting code run costs nothing extra. Itemised: `/agent/<lang>/usage`.
+
 Sources (api repo): `account/credit.py` (`PRICING`, `LLM_PRICING`, `WEB_SEARCH_PRICING_TWD`,
 `deduct_credit`, `deduct_blave_api_credit`, `deduct_server_credit`), `openclaw/lightsail.py`
 (`SERVER_TIERS`, `WINDOWS_SERVER_TIERS`), `openclaw/proxy.py` (`_deepseek_peak_multiplier`,
