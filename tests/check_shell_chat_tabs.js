@@ -212,7 +212,7 @@ ok("共用畫面背景期間不畫:捲動、讀屏、送出鈕、托盤;輸入�
   ok("歷史搜尋格的焦點是灰階框(不吃系統強調色)", css.includes(".cs-search:focus { outline: none; border-color: var(--ink); }"));
   ok("歷史列:等你回覆／沒做完／做完還沒看接「· 時間」(mono)", /if \(st\.kind !== "run" && st\.kind !== "queued"\) \{ item\.classList\.add\("is-attn"\); const at = document\.createElement\("span"\); at\.className = "mono"; at\.textContent = csTime\(m\.last\); meta\.append\(" · ", at\); \}/.test(app));
   ok("分頁名稱(讀屏)不帶會凍住的時長;tooltip 每秒跟著跳、Esc 隨時收得掉、離分頁 6px;× 熱區 28×44", /const word = st === "run" \? t\("tabs\.st\.running"\) : tabsStateWord\(T, st\);/.test(ct) && /tabsTipTick\(\);\n\}, 1000\);/.test(ct)
-    && /document\.addEventListener\("keydown", \(e\) => \{ if \(e\.key !== "Escape"\) return; const tip = \$\("tabs-tip"\);/.test(ct) && css.includes(".tabs-tip { top: 44px;") && /\.cs-tabs \{[^}]*height: 44px;[^}]*align-items: center;/.test(css) && css.includes("inset: -12px -4px;"));
+    && /window\.addEventListener\("keydown", \(e\) => \{\n  if \(e\.key !== "Escape" \|\| e\.isComposing \|\| e\.keyCode === 229\) return;\n  const tip = \$\("tabs-tip"\); if \(!tip \|\| tip\.hidden\) return;\n  tip\.hidden = true; tip\.dataset\.off = "1"; e\.preventDefault\(\); e\.stopPropagation\(\);\n\}, true\);/.test(ct) && css.includes(".tabs-tip { top: 44px;") && /\.cs-tabs \{[^}]*height: 44px;[^}]*align-items: center;/.test(css) && css.includes("inset: -12px -4px;"));
 }
 // 程式稽核 s2 P3
 ok("+N 選單開著:每秒只換時長字,不重建(焦點不掉);整列重建時照 sid 把焦點還回分頁或選單列", /if \(!\$\("cs-menu"\)\.hidden\) tabsMenuTick\(\);/.test(ct) && /function tabsMenuTick\(\) \{/.test(ct)
@@ -220,5 +220,23 @@ ok("+N 選單開著:每秒只換時長字,不重建(焦點不掉);整列重建�
 ok("結果卡:那一輪的分頁還開著就到它的容器裡找落點(背景分頁沒有回覆文字的那一輪也出卡)", /const T = typeof CS !== "undefined" && rt\.sid \? CS\.tabs\.get\(rt\.sid\) : null;\n  if \(T && T\.el\) return withTab\(T, \(\) => resHostIn\(rt\)\);/.test(read("results.js")));
 ok("送出第一句就存分頁記憶", /csRemember\(\); if \(CS\.loaded\) CS\.loaded\.title = csTitle; tabsSave\(\); \}/.test(app));
 ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \(!\(T && T\.queued\)\) trackFeature\("chat_stop"\);/.test(app) && !/trackFeature\("queue_cancel"\)/.test(fs.readdirSync(R).filter((n) => n.endsWith(".js")).map(read).join("\n")));
+// 整合稽核 P3:分頁 tooltip 開著按 Esc 只收 tooltip,不讓 app.js escTop(document 冒泡)再關一層;沒開不攔。
+// 把 chattabs.js 那一支監聽原樣拿出來,掛到假的 window／document,照真的順序派送(window capture → document → window 冒泡,stopPropagation 就停)
+{ const m = ct.match(/\/\/ Esc 收 tooltip[^\n]*\n([\s\S]*?)\n\$\("cs-more"\)/);
+  const run = (shown) => {
+    const L = [], reg = (node) => (type, fn, cap) => L.push({ node, type, fn, cap: cap === true || !!(cap && cap.capture) });
+    const tip = { hidden: !shown, dataset: {} }; let escTop = 0;
+    L.push({ node: "document", type: "keydown", cap: false, fn: (e) => { if (e.key === "Escape") { escTop++; e.preventDefault(); } } });
+    new Function("window", "document", "$", m ? m[1] : "")({ addEventListener: reg("window") }, { addEventListener: reg("document") }, (id) => (id === "tabs-tip" ? tip : null));
+    let stop = false; const e = { key: "Escape", keyCode: 27, isComposing: false, preventDefault() {}, stopPropagation() { stop = true; } };
+    for (const [node, cap] of [["window", true], ["document", true], ["document", false], ["window", false]]) {
+      for (const x of L) if (!stop && x.node === node && x.cap === cap && x.type === "keydown") x.fn(e);
+      if (stop) break;
+    }
+    return { tipHidden: tip.hidden, escTop };
+  };
+  const a = m && run(true), b = m && run(false);
+  ok("分頁 tooltip 開著:Esc 只收 tooltip、escTop 收不到這一下;沒開時 Esc 照給 escTop", !!m && a.tipHidden && a.escTop === 0 && b.escTop === 1, { a, b });
+}
 console.log(red ? `\n${red} 紅` : "\nALL PASS");
 process.exit(red ? 1 : 0);
