@@ -186,7 +186,7 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     m.busy.delete("desktop-p0000001"); m.calls.length = 0;
     m.r.onTurn("desktop-p0000001", "turn-end", {}); await wait(60);
     const firstStart = m.calls.findIndex((c) => c[0] === RL.EP.report && c[1].chunks.some((x) => x.type === "started"));
-    ok("4 排隊叫出的那句先回報 started(單獨一筆)、api 回 cancel 就不跑;接著下一句", firstStart >= 0 && m.calls[firstStart][1].chunks.length === 1 && m.started.length === 1 && m.started[0][0].message === "hi" && m.calls.filter((c) => c[0] === RL.EP.report && c[1].chunks.some((x) => x.type === "started" && x.message_id === "msg000000p2")).length === 1, m.started);
+    ok("4 排隊叫出的那句先回報 started(單獨一筆)、api 回 cancel 就不跑(也沒有去停一輪沒開跑的);接著下一句", m.stopped.length === 0 && firstStart >= 0 && m.calls[firstStart][1].chunks.length === 1 && m.started.length === 1 && m.started[0][0].message === "hi" && m.calls.filter((c) => c[0] === RL.EP.report && c[1].chunks.some((x) => x.type === "started" && x.message_id === "msg000000p2")).length === 1, m.started);
     delete m.resp[RL.EP.report];
     await m.end(); }
   { // 401／409:停掉手機的回合、清空排隊
@@ -197,6 +197,22 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     m.r.onTurn("desktop-z0000001", "turn-event", { type: "text", text: "x" }); await wait(RL.BATCH_MS + 120);
     ok("4 report 回 409 RELAY_NOT_ENABLED:手機那一輪停、排隊清空", m.stopped.includes("desktop-z0000001") && !(m.r._internals.queue.get("desktop-z0000002") || []).length);
     delete m.resp[RL.EP.report];
+    await m.end(); }
+  { // 401:同樣停掉手機的回合、清空排隊
+    const m = rig({ busy: ["desktop-y0000002"], sessions: { "desktop-y0000001": { last: 1, rows: [row(1, "user", "x")] }, "desktop-y0000002": { last: 1, rows: [row(1, "user", "x")] } } });
+    await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.feed([msg("desktop-y0000001", "msg000000y1"), msg("desktop-y0000002", "msg000000y2")]); await wait(30);
+    m.resp[RL.EP.report] = { status: 401, body: {} };
+    m.r.onTurn("desktop-y0000001", "turn-event", { type: "text", text: "x" }); await wait(RL.BATCH_MS + 120);
+    ok("4 report 回 401:手機那一輪停、排隊清空", m.stopped.includes("desktop-y0000001") && !(m.r._internals.queue.get("desktop-y0000002") || []).length && m.r.state().mobileTurns === 0);
+    delete m.resp[RL.EP.report];
+    await m.end(); }
+  { // poll 連續回 not_enabled、enable 卻回 200:補打一次,第二次就停(不在 30 秒內空轉)
+    const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.polls.push({ status: 200, body: { enabled: false, reason: "not_enabled", messages: [], controls: [] } }, { status: 200, body: { enabled: false, reason: "not_enabled", messages: [], controls: [] } });
+    const p0 = m.of(RL.EP.poll).length, en0 = m.of(RL.EP.enable).length;
+    m.feed([], [], { enabled: false, reason: "not_enabled" }); await wait(80);
+    ok("7 not_enabled 一直回來:enable 只補打一次、輪詢停下", m.of(RL.EP.enable).length === en0 + 1 && m.of(RL.EP.poll).length - p0 <= 2, [m.of(RL.EP.poll).length - p0, m.of(RL.EP.enable).length - en0]);
     await m.end(); }
   { // ack 沒回應:一句都不跑
     const m = rig({ sessions: { "desktop-t0000001": { last: 1, rows: [row(1, "user", "x")] } }, resp: { [RL.EP.ack]: { status: 0, body: null } } });

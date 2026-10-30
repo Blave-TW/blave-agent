@@ -273,9 +273,12 @@ function createRelay(opts) {
     await flush();
     const r = await call(EP.report, { chunks: [{ type: "started", session_id: sid, message_id: mid }] });
     if (r.status !== 200 || !r.body) return false;
-    reportAnswer(r.body);
     const res = Array.isArray(r.body.results) ? r.body.results[0] : null;
-    return !!res && res.status === "ok" && !(Array.isArray(r.body.cancel) && r.body.cancel.includes(mid));
+    const go = !!res && res.status === "ok" && !(Array.isArray(r.body.cancel) && r.body.cancel.includes(mid));
+    // 這一句還沒開跑:先從 active 拿掉,回應裡對它的 cancel 才不會去停一輪不存在的回合
+    if (!go && active.get(sid) && active.get(sid).message_id === mid) active.delete(sid);
+    reportAnswer(r.body);
+    return go;
   }
   async function launch(sid, mid, content, fromQueue) {
     let idBefore = 0; try { idBefore = opts.sessions.maxId(sid) || 0; } catch (_) { idBefore = 0; }
@@ -411,7 +414,8 @@ function createRelay(opts) {
         if (b && b.enabled === false) {
           for (const c of Array.isArray(b.controls) ? b.controls : []) control(c);   // 停止與撤回照收
           if (b.reason === "off") { setFlag(false); break; }
-          if (b.reason === "not_enabled" && (await reenable())) continue;
+          // 這一次真的補打了 enable 而且成功才再輪一次;30 秒內打過(拿到的是上一次的結果)就停,不空轉
+          if (b.reason === "not_enabled" && clock() - reenableAt >= REENABLE_GAP_MS && (await reenable())) continue;
           break;   // 打不開或認不得的 reason:停輪詢,等下一輪 tick 重新判斷(不空轉)
         }
         if (b) {
@@ -555,6 +559,7 @@ function createRelay(opts) {
     for (const [sid, q] of queue) for (const x of q) enqueueChunk({ type: "message_failed", session_id: sid, message_id: x.message_id, code: NOT_RUN }, false);
     queue.clear();
     for (const sid of active.keys()) stopActive(sid);
+    active.clear();   // 停下來的那幾輪之後的輸出不再轉、不再補回報(401／409 時本來也送不到)
     mobileActiveSync();
   }
   async function retry() { if (!live()) return false; return syncAll(); }
