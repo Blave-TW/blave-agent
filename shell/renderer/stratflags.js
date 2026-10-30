@@ -56,6 +56,7 @@ function sfReady() {
     SF.flags = p.stratFlags && typeof p.stratFlags === "object" && !Array.isArray(p.stratFlags) ? p.stratFlags : {};
     if (p.stratGroups && Array.isArray(p.stratGroups.folders)) SF.groups = p.stratGroups;
     if (p.stratGroupsCollapsed && typeof p.stratGroupsCollapsed === "object") SF.coll = { local: p.stratGroupsCollapsed.local || [], cloud: p.stratGroupsCollapsed.cloud || [] };
+    if (typeof ENV !== "undefined" && ENV.sig) ENV.sig.side = null;   // 雲端清單不等偏好就先畫過:收合狀態到了要重建一次(sig 不含收合)
   }, () => {});
   return SF.ready;
 }

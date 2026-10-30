@@ -1373,6 +1373,7 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 /* ── 側欄策略資料夾(spec strategy-sidebar-folders §9、§11;renderer/stratgroups.js)──
    組標題 .sg-head 與列是 .strat-list 的兄弟節點(絕不包容器);列高 44 = 熱區,hover 填色與字的視覺高 32(上下各留 6)。
    圖示左緣對齊列文字 x=24,不縮排;組距 16 = margin-top 10 + 填色上方留白 6;sticky 釘頂、底鋪 --bg-body,z-index 低於拖拉中的列(3) */
+.strat-add[hidden] { display: none; }   /* .strat-add 是 flex,蓋過 UA 的 [hidden];≤7 支且沒資料夾時新增資料夾鈕要真的不見(§4) */
 .strat-head .sg-add:not([hidden]) + .strat-add { margin-left: var(--space-2); }
 .strat-add:disabled { color: var(--ink-disabled); background: none; cursor: not-allowed; }   /* canon › Disabled:無 hover */
 .sg-limit { padding: 0 var(--space-4) var(--space-8); font-size: 12px; color: var(--ink-3); }

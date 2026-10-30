@@ -80,7 +80,7 @@ const block = (s, head, end) => { const i = s.indexOf(head); if (i < 0) throw ne
   ok("③ 資料夾名一律 textContent,沒有 innerHTML;不碰下單設定(amounts / weights / exchanges)", !/innerHTML/.test(sg) && !/\.(amounts|weights|exchanges)\b|config\b/.test(sg));
   ok("③ index.html:stratgroups.js 緊接在 stratflags.js 之後", /<script src="stratflags\.js"><\/script>\n<script src="stratgroups\.js"><\/script>/.test(html));
   ok("③ CSS:組標題 sticky 44 高、z-index 低於拖拉中的列(3);釘頂疊放時 focus-within 浮上來;emoji 走 --font-emoji;選中格 1px --active-line",
-    /\.sg-head \{ position: sticky; top: 0; z-index: 1;[^}]*height: 44px;/.test(css) && /\.sg-head:focus-within, \.sg-head\.menu-open \{ z-index: 2; \}/.test(css) && /\.strat-wrap\.dragging \{ z-index: 3;/.test(css)
+    /\.strat-add\[hidden\] \{ display: none; \}/.test(css) && /\.sg-head \{ position: sticky; top: 0; z-index: 1;[^}]*height: 44px;/.test(css) && /\.sg-head:focus-within, \.sg-head\.menu-open \{ z-index: 2; \}/.test(css) && /\.strat-wrap\.dragging \{ z-index: 3;/.test(css)
     && /\.sg-ic\.is-emoji \{ font: 14px\/16px var\(--font-emoji\); \}/.test(css) && /\.sg-cell\.is-on \{ box-shadow: inset 0 0 0 1px var\(--active-line\); \}/.test(css) && /\.strat-list\.has-groups > \.strat-wrap \{ scroll-margin-top: 44px; \}/.test(css));
 }
 console.log(red ? `\n${red} 紅` : "\n全綠");
