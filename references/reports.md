@@ -1481,6 +1481,9 @@ a hand-written morning report alike.
 
 ## 8. Scheduled reports — a job directory, not a cron line
 
+- **Restate the schedule you parsed (cadence, time, weekday/date, timezone) before you start;** the cron is the user's own wall-clock time, never converted.
+- **A recurring report is a job directory registered with `lib.report.register_schedule`, never a crontab / schtasks line** (layout, list/remove, the web's 「請修改定期報告「…」（id：…）」 edit flow — finish it this turn, consented scheduled agent runs: all below). One sample first; signal-only; changing a job on your own initiative waits for the user's yes. Never a Telegram message about a stored report.
+
 A recurring report is **one directory plus one registration file**. You write the script and
 the registration; the runtime owns the schedule (it reads the registration and fires the script
 itself — nothing is ever installed in crontab or a scheduled task), records every run and
@@ -1541,7 +1544,7 @@ convenience):
 - `schedule.cron` is standard 5-field cron — no `@daily`, no seconds field, no month/weekday
   names. The web never displays the cron; it displays `schedule.human` and the next run time
   the runtime computes from the cron, which is how a mis-parse becomes visible — so restate
-  the schedule when you register it (AGENTS.md).
+  the schedule when you register it (top of this section).
 - **Time zone: write the user's wall-clock time, unconverted.** 台北 08:30 is `30 8 * * *`,
   台北週一 05:00 is `0 5 * * 1` — nothing else. The zone the runtime reads that cron in is
   `schedule.tz`, which `register_schedule` fills from the machine's own setting
