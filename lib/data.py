@@ -1514,7 +1514,16 @@ def fetch_holder_concentration(symbol, interval, start, end, headers):
 def fetch_funding_rate(symbol, interval, start, end, headers, exchange='binance'):
     """資金費率 Funding Rate. Returns DataFrame with 'alpha' column (alpha = funding rate × 100).
     exchange: 'binance' (default) / 'okx' / 'bingx' / 'bybit' — the perp whose funding is read;
-    close price is always the Binance perp."""
+    close price is always the Binance perp.
+
+    'alpha' is the PREDICTED (live-estimate) rate, never a settled one: the current-period rate
+    sampled every 5 min (Binance: premiumIndex.lastFundingRate, which moves until settlement),
+    so the latest row is the estimate for the coming settlement. Exception: Bybit before
+    2026-09-20 is backfilled settled rates, forward-filled. Calling premiumIndex directly gives
+    the same estimate; a settled rate comes only from GET /fapi/v1/fundingRate.
+    A reply quoting a rate says which it is (「本期即時預估 x%」 / 「上一期已結算 x%」) and gives
+    settlement times in the user's time zone — 8h contracts: 台北 08:00 / 16:00 / 00:00 (= 00/08/16
+    UTC); 4h/1h contracts per fundingIntervalHours in /fapi/v1/fundingInfo. Details: references/lib.md."""
     params = {'symbol': symbol, 'period': interval}
     # default omitted so the cache dir of every existing Binance fetch stays valid
     if exchange != 'binance':
