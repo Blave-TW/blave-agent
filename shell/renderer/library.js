@@ -93,18 +93,13 @@ function libVisible(list, mkt) {
   const inMkt = (Array.isArray(list) ? list : []).filter((s) => s && (mkt === "all" || libMarket(s) === mkt));
   return inMkt.sort((a, b) => (Number(!!(b.is_official || b.verified)) - Number(!!(a.is_official || a.verified))) || libCompare(a, b));
 }
-// 關卡數值的字(抄 web library_rules.rate / fillP):費率 0.0005 → "0.05%"(最少 2 位、尾零去掉);p < 0.001 整段換成「p < 0.001」
+// 關卡數值的字(抄 web library_rules.rate):費率 0.0005 → "0.05%"(最少 2 位、尾零去掉);p 的字是 libP(純邏輯區塊外面)
 function libRate(v) {
   if (typeof v !== "number" || !isFinite(v)) return "—";
   let s = (v * 100).toFixed(4).replace(/0+$/, "");
   if (/\.\d$/.test(s)) s += "0";
   if (/\.$/.test(s)) s += "00";
   return s + "%";
-}
-function libP(tpl, p) {
-  if (typeof p !== "number" || !isFinite(p)) return "—";
-  if (p < 0.001) return tpl.replace(/=\s*\{p\}/, "< 0.001").replace("{p}", "< 0.001");
-  return tpl.replace("{p}", p.toFixed(4));
 }
 function libGateFails(gc) { return gc ? ["fee", "mcpt", "robust"].filter((k) => gc[k] === "fail").length : 0; }
 /* CTA 態(spec-0.1.13 §1.3 + 0.1.6 §4.4,由上到下取第一個成立的;進行中提到最前——那支的回合就是它的進度)。c = { running, env, signedIn, dataAccess, why, cloud: "live"|"stale"|"stopped"|null,
@@ -234,6 +229,11 @@ function libNoteBuild(root, mk) {
   return out;
 }
 /* ── 純邏輯到此 ── */
+// p 的規則只有一份,在 strategy_versions.js fillP(那支在 library.js 之後載入,呼叫時才讀);門檻跟 api 的 mcpt_alpha 走
+function libP(tpl, p, alpha) {
+  if (typeof p !== "number" || !isFinite(p)) return "—";
+  return window.blaveVersions.fillP(tpl, p, alpha);
+}
 
 const LIB = { bags: { local: libNewBag(), cloud: libNewBag() }, data: null, loading: false, skel: false, failed: false, stale: false, seq: 0,
   pending: null, noNew: null, buying: null, installed: {}, chart: null, paintedEnv: null, reports: new Map(),   // reports: id → Promise<report|null>(詳情的 400 點曲線 + 回測期間)
@@ -706,7 +706,7 @@ function libPaintDetail(s) {
     else if (!s.is_official && libGateFails(gc) > 0) { const p = libEl("p", "lib-p"); p.appendChild(libRich("lib.gates.failed", { k: libMono(String(libGateFails(gc))) })); c2.appendChild(p); }
     if (gc) {
       const g = r.gates || {}, fee = g.fee || {}, rob = g.robust || {};
-      const vals = { fee: [t("lib.gate.feeAssumed", { v: libRate(fee.rate) }), t("lib.gate.feeActual", { v: libRate(fee.actual) })], mcpt: gc.mcpt === "na" ? [] : [libP(t("lib.gate.p"), g.mcpt_p)],
+      const vals = { fee: [t("lib.gate.feeAssumed", { v: libRate(fee.rate) }), t("lib.gate.feeActual", { v: libRate(fee.actual) })], mcpt: gc.mcpt === "na" ? [] : [libP(t("lib.gate.p"), g.mcpt_p, g.mcpt_alpha)],
         robust: [typeof rob.ratio === "number" && isFinite(rob.ratio) ? t("lib.gate.robustVal", { ratio: String(Math.round(rob.ratio * 100)) }) : "—"] };
       const ul = libEl("ul", "gates");
       [["fee", "lib.gate1", "lib.gate1d"], ["mcpt", "lib.gate2", "lib.gate2d"], ["robust", "lib.gate3", "lib.gate3d"]].forEach(([key, n, d]) => {

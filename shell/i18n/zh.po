@@ -624,10 +624,13 @@ msgid "bt.mcpt"
 msgstr "MCPT p 值"
 
 msgid "bt.mcptTipSig"
-msgstr "隨機打亂 {n} 次，只有 {pct} 的結果比它好；低於 0.05 是慣用門檻。"
+msgstr "隨機打亂 {n} 次，只有 {k} 次比它好。p 低於 0.05 是慣用門檻。"
 
 msgid "bt.mcptTipNs"
-msgstr "隨機打亂 {n} 次，有 {pct} 的結果比它好——沒過 0.05 的慣用門檻，這組結果分不出是實力還是運氣。"
+msgstr "隨機打亂 {n} 次，有 {k} 次比它好。p 沒低於 0.05，分不出是實力還是運氣。"
+
+msgid "bt.mcptTipZero"
+msgstr "隨機打亂 {n} 次，沒有一次比它好。p 低於 0.05 是慣用門檻。"
 
 msgid "bt.equity"
 msgstr "權益"
@@ -6308,10 +6311,10 @@ msgid "ver.readErr"
 msgstr "讀不到這一版。"
 
 msgid "ver.mcptTipSigNoN"
-msgstr "隨機打亂之後，只有 {pct} 的結果比它好；低於 0.05 是慣用門檻。"
+msgstr "p 低於 0.05 是慣用門檻。"
 
 msgid "ver.mcptTipNsNoN"
-msgstr "隨機打亂之後，有 {pct} 的結果比它好——沒過 0.05 的慣用門檻，這組結果分不出是實力還是運氣。"
+msgstr "p 沒低於 0.05，分不出是實力還是運氣。"
 
 msgid "ver.cmpTitle"
 msgstr "比較版本"

@@ -616,10 +616,13 @@ msgid "bt.mcpt"
 msgstr "MCPT p-value"
 
 msgid "bt.mcptTipSig"
-msgstr "Shuffled {n} times; only {pct} of the shuffles beat it. Below 0.05 is the usual bar."
+msgstr "Of {n} shuffles, only {k} beat it. A p below 0.05 is the usual bar."
 
 msgid "bt.mcptTipNs"
-msgstr "Shuffled {n} times; {pct} of the shuffles beat it — above the usual 0.05 bar, so this result can't be told apart from luck."
+msgstr "Of {n} shuffles, {k} beat it. p isn't below 0.05, so it can't be told from luck."
+
+msgid "bt.mcptTipZero"
+msgstr "Of {n} shuffles, none beat it. A p below 0.05 is the usual bar."
 
 msgid "bt.equity"
 msgstr "Equity"
@@ -6294,10 +6297,10 @@ msgid "ver.readErr"
 msgstr "Couldn’t load this version."
 
 msgid "ver.mcptTipSigNoN"
-msgstr "After random shuffling, only {pct} of the results beat it; below 0.05 is the usual bar."
+msgstr "A p below 0.05 is the usual bar."
 
 msgid "ver.mcptTipNsNoN"
-msgstr "After random shuffling, {pct} of the results beat it — above the usual 0.05 bar, so this result can’t be told apart from luck."
+msgstr "p isn't below 0.05, so it can't be told from luck."
 
 msgid "ver.cmpTitle"
 msgstr "Compare versions"

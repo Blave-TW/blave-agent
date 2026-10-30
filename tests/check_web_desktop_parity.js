@@ -357,4 +357,30 @@ for (const lang of ["zh", "en"]) {
     const bad = dF && wF ? CASES.filter(([, rep]) => call(dF, rep) !== call(wF, rep)).map(([n, rep]) => n + ":電腦版 " + call(dF, rep) + " / 網頁 " + call(wF, rep)) : ["切不出函式" + err];
     ok("策略庫基準畫不畫、代號寫什麼兩邊同一個答案(" + CASES.length + " 組)", !dParts.includes(null) && bad.length === 0, bad.join(";"));
   } }
+// MCPT p 值(spec pvalue-unit-2026-10-30 §4):回測分頁那一列的 tooltip(講次數、門檻寫小數)、分佈圖標題、列名兩邊逐字同一份;
+// 格式規則只有一份(strategy_versions.js fmt / fillP / mcptBeat),兩邊那支各自跑 §4.2 同一組測資。_zero / _non 是這次新增——網頁還沒有 = web 那顆還沒上線,SKIP 講原因
+{ const PAIRS = { "bt.mcptTipSig": "workspace_bt_mcpt_tip_sig", "bt.mcptTipNs": "workspace_bt_mcpt_tip_ns", "bt.mcptDistTitle": "workspace_bt_mcpt_dist_title", "bt.mcpt": "workspace_bt_mcpt" },
+    NEW = { "bt.mcptTipZero": "workspace_bt_mcpt_tip_zero", "ver.mcptTipSigNoN": "workspace_bt_mcpt_tip_sig_non", "ver.mcptTipNsNoN": "workspace_bt_mcpt_tip_ns_non" },
+    TIPS = ["bt.mcptTipSig", "bt.mcptTipNs", "bt.mcptTipZero", "ver.mcptTipSigNoN", "ver.mcptTipNsNoN"];
+  for (const lang of ["zh", "en"]) {
+    const w = poRaw(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po")), d = poRaw(path.join(__dirname, "..", "shell", "i18n", lang + ".po"));
+    const off = Object.keys(PAIRS).filter((k) => !d[k] || w[PAIRS[k]] !== d[k]);
+    ok("MCPT:tooltip 兩句、分佈圖標題、列名兩邊同一份(" + lang + ")", off.length === 0, off.map((k) => k + ": " + d[k] + " vs " + w[PAIRS[k]]).join(";"));
+    for (const k of Object.keys(NEW)) {
+      if (!d[k]) ok("MCPT:電腦版有 " + k + "(" + lang + ")", false);
+      else if (!(NEW[k] in w)) console.log("SKIP  MCPT " + NEW[k] + " 兩邊同一份(" + lang + ";網頁 messages.po 還沒有這個 msgid:web 那顆還沒上線)");
+      else ok("MCPT:" + k + " = " + NEW[k] + "(" + lang + ")", w[NEW[k]] === d[k], d[k] + " vs " + w[NEW[k]]);
+    }
+    // 擋回頭路:p 換成百分比、跟同句的小數門檻對不起來,就是這次要修的病
+    const pctBack = TIPS.map((k) => ["電腦版 " + k, d[k]]).concat(TIPS.map((k) => ["網頁 " + (PAIRS[k] || NEW[k]), w[PAIRS[k] || NEW[k]]])).filter(([, v]) => typeof v === "string" && /\{pct\}|%/.test(v));
+    ok("MCPT:兩邊 tooltip 都不含 {pct} 也不含 %(" + lang + ")", pctBack.length === 0, pctBack.map(([n, v]) => n + ": " + v).join(";"));
+  }
+  const load = (f) => { if (!fs.existsSync(f)) return null; const g = {}; new Function("window", fs.readFileSync(f, "utf8")).call(g, g); return g.blaveVersions || null; };
+  const ROWS = [[0, "<0.001", "p < 0.001", 0], [0.0004, "<0.001", "p < 0.001", 1], [0.0005, "<0.001", "p < 0.001", 1], [0.0012, "0.001", "p = 0.001", 2],
+    [0.0495, "0.0495", "p = 0.0495", 99], [0.05, "0.050", "p = 0.050", 100], [0.106, "0.106", "p = 0.106", 212], [null, "—", "p = {p}", null]];
+  for (const [side, f] of [["電腦版", path.join(__dirname, "..", "shell", "renderer", "strategy_versions.js")], ["網頁", path.join(webDir, "app", "static", "js", "agent", "strategy_versions.js")]]) {
+    const V = load(f), bad = !V || typeof V.fillP !== "function" || typeof V.mcptBeat !== "function" ? ["沒有 fmt / fillP / mcptBeat"]
+      : ROWS.filter(([p, a, b, k]) => V.fmt("mcpt_p", p) !== a || V.fillP("p = {p}", p) !== b || V.mcptBeat(p, 2000) !== k).map((r) => JSON.stringify(r)).concat(V.mcptBeat(0.016, 20000) === null ? [] : ["n=20000 應不講次數"]);
+    ok("MCPT p 值共用測資(§4.2,9 組)在" + side + "那支全對", bad.length === 0, bad.join(";"));
+  } }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);
