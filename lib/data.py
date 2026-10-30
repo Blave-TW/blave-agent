@@ -1990,11 +1990,12 @@ def fetch_cme_cot(contract, start, end, headers):
 # ── Taiwan stock data ─────────────────────────────────────────────────────────
 
 # ── Daily bars straight from the exchanges (free, no key) ─────────────────────
-# 資料來源:臺灣證券交易所、證券櫃檯買賣中心(政府資料開放授權)
+# 資料來源:臺灣證券交易所、證券櫃檯買賣中心
 # The daily bar travels source → this machine only, never through a Blave server: Blave
 # ships the code (as the twstock package does), the user fetches public data for their own
-# use. Both sites' terms exempt their open-data sets and ask that the source be named —
-# _TW_PUBLIC_SOURCE_ZH is the line a report must carry. One request answers one stock-
+# use. Both sites' terms ask that the source be named — _TW_PUBLIC_SOURCE_ZH is the line a
+# report must carry; it claims no licence (the history is not in the open-data sets, only the
+# latest day is). One request answers one stock-
 # month, which is the monthly cache's own unit; neither site documents a rate limit, so
 # everything here (FinMind included) goes through one shared 1 request/s throttle.
 _TWSE_STOCK_DAY      = 'https://www.twse.com.tw/exchangeReport/STOCK_DAY'
@@ -2012,8 +2013,8 @@ _TPEX_ETF_SPLIT      = 'https://www.tpex.org.tw/www/zh-tw/bulletin/etfSplitRslt'
 _TPEX_ETF_REV_SPLIT  = 'https://www.tpex.org.tw/www/zh-tw/bulletin/etfRvsRslt'
 _FINMIND_DATA        = 'https://api.finmindtrade.com/api/v4/data'
 _TWSE_STOCK_DAY_FROM = '2010-01'      # STOCK_DAY: 「查詢日期小於99年1月4日」 before this
-_TW_PUBLIC_SOURCE_ZH = '資料來源:臺灣證券交易所、證券櫃檯買賣中心(政府資料開放授權)'
-_TW_PUBLIC_SOURCE_EN = 'Source: Taiwan Stock Exchange, Taipei Exchange (Open Government Data License)'
+_TW_PUBLIC_SOURCE_ZH = '資料來源:臺灣證券交易所、證券櫃檯買賣中心'
+_TW_PUBLIC_SOURCE_EN = 'Source: Taiwan Stock Exchange, Taipei Exchange'
 _TW_PUBLIC_HEADERS   = {'User-Agent': 'Mozilla/5.0 (compatible; blave-agent; +https://blave.org)'}
 _TW_PUBLIC_LIMITER   = _RateLimiter(1, 1.0)
 # twse.com.tw on its own, slower bucket: it blocks an IP at roughly one request a second (no
@@ -2432,8 +2433,8 @@ def _fetch_twstock_daily_free(stock_id, start, end, adjust=False):
 # at download.blave.org — five cold stocks cost five GETs instead of ~200 throttled exchange
 # requests each. Files carry the exchanges' raw OHLCV plus their own (前收盤, 參考價) events
 # (除權息, 減資, 變更面額, ETF 分割); adjustment is _tw_forward_adjust, as on the exchange path.
-# Attribution is unchanged: the data is the exchanges', released under the Open Government
-# Data License, so anything citing it carries _TW_PUBLIC_SOURCE_ZH / _EN.
+# Attribution is unchanged: the data is the exchanges', so anything citing it carries
+# _TW_PUBLIC_SOURCE_ZH / _EN.
 _TW_CDN_BASE        = os.environ.get('BLAVE_TWSTOCK_CDN_BASE', 'https://download.blave.org/data/twstock/daily/v1/')
 _TW_CDN_SCHEMA      = 'twstock-daily-v1'
 _TW_CDN_FIRST_DAY   = '2010-01-04'
@@ -2452,8 +2453,9 @@ def _tw_cdn_dir():
     return _CACHE_DIR / 'twstock_cdn'
 
 
-def _tw_cdn_get(key, etag=None):
-    """GET one CDN file → (body or None when 304, etag). Raises TwCdnUnavailable."""
+def _tw_cdn_get(key, etag=None, base=None):
+    """GET one CDN file (under `base`, default the 台股 CDN) → (body or None when 304, etag).
+    Raises TwCdnUnavailable."""
     global _TW_CDN_SESSION
     if _TW_CDN_SESSION is None:
         _TW_CDN_SESSION = requests.Session()
@@ -2462,7 +2464,7 @@ def _tw_cdn_get(key, etag=None):
         headers['If-None-Match'] = etag
     for attempt in range(2):
         try:
-            r = _TW_CDN_SESSION.get(_TW_CDN_BASE + key, headers=headers, timeout=30)
+            r = _TW_CDN_SESSION.get((base or _TW_CDN_BASE) + key, headers=headers, timeout=30)
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             if attempt:
                 raise TwCdnUnavailable(f'{key}: {type(e).__name__}') from e
@@ -2501,11 +2503,12 @@ def _tw_cdn_meta(path):
         return {}
 
 
-def _tw_cdn_expected_asof(now=None):
-    """The latest weekday whose CDN publication time has passed — what a fresh manifest's
-    `asof` should be unless that day was a holiday."""
+def _tw_cdn_expected_asof(now=None, published=None):
+    """The latest weekday whose CDN publication time (`published`, default the 台股 CDN's) has
+    passed — what a fresh manifest's `asof` should be unless that day was a holiday."""
     now = now or datetime.now(_TPE)
-    d = now.date() if (now.hour, now.minute) >= _TW_CDN_PUBLISHED else now.date() - timedelta(days=1)
+    hm = published or _TW_CDN_PUBLISHED
+    d = now.date() if (now.hour, now.minute) >= hm else now.date() - timedelta(days=1)
     while d.weekday() >= 5:
         d -= timedelta(days=1)
     return d.strftime('%Y-%m-%d')
@@ -2520,29 +2523,45 @@ def _tw_official_expected_day(now=None):
     return d.strftime('%Y-%m-%d')
 
 
-def _tw_cdn_manifest():
-    """The CDN manifest, cached; re-asked (conditional GET) only while its `asof` is behind
-    the expected day, at most every _TW_CDN_RECHECK_S. Raises TwCdnUnavailable when there is
-    none or Blave switched the CDN off (`enabled: false` sends every desktop back to the
-    exchange path within the hour — a fresh manifest is still re-asked hourly)."""
-    path = _tw_cdn_dir() / 'manifest.json'
+class _CdnSpec:
+    """One Blave CDN data set: where it is cached, how a file is fetched, what its manifest must
+    carry, when a day is published. Callables, read at call time, so a test that replaces
+    _tw_cdn_get / _tw_cdn_dir reaches every helper."""
+
+    def __init__(self, cache_dir, get, schema, keys, expected_asof):
+        self.cache_dir, self.get, self.schema = cache_dir, get, schema
+        self.keys, self.expected_asof = keys, expected_asof
+
+
+_TW_CDN_SPEC = _CdnSpec(lambda: _tw_cdn_dir(), lambda key, etag=None: _tw_cdn_get(key, etag),
+                        _TW_CDN_SCHEMA, ('asof', 'stocks', 'years', 'files'),
+                        lambda: _tw_cdn_expected_asof())
+
+
+def _tw_cdn_manifest(spec=None):
+    """The CDN manifest (`spec`, default the 台股 CDN), cached; re-asked (conditional GET) only
+    while its `asof` is behind the expected day, at most every _TW_CDN_RECHECK_S. Raises
+    TwCdnUnavailable when there is none or Blave switched the CDN off (`enabled: false` sends
+    every desktop back to the exchange path within the hour — a fresh manifest is still
+    re-asked hourly)."""
+    spec = spec or _TW_CDN_SPEC
+    path = spec.cache_dir() / 'manifest.json'
     meta = _tw_cdn_meta(path)
     try:
         cached = json.loads(_read_text(path))
     except Exception:
         cached = None
     age = time.time() - meta.get('checked_at', 0)
-    stale = (cached is None or cached.get('asof', '') < _tw_cdn_expected_asof())
+    stale = (cached is None or cached.get('asof', '') < spec.expected_asof())
     if (stale and age > _TW_CDN_RECHECK_S) or age > 3600:
         try:
-            body, etag = _tw_cdn_get('manifest.json', meta.get('etag') if cached else None)
+            body, etag = spec.get('manifest.json', meta.get('etag') if cached else None)
             if body is not None:
                 try:
                     fresh = json.loads(body)
                 except ValueError as e:
                     raise TwCdnUnavailable(f'manifest is not JSON ({e})') from e
-                if fresh.get('schema') != _TW_CDN_SCHEMA or not all(
-                        k in fresh for k in ('asof', 'stocks', 'years', 'files')):
+                if fresh.get('schema') != spec.schema or not all(k in fresh for k in spec.keys):
                     raise TwCdnUnavailable(f"manifest schema {fresh.get('schema')!r} or keys not understood")
                 cached = fresh
                 _tw_cdn_write(path, body, {'etag': etag, 'checked_at': time.time()})
@@ -2692,22 +2711,23 @@ def _fetch_twstock_daily_cdn(stock_id, start, end, adjust=False):
     return df
 
 
-def _tw_cdn_hashed(key, manifest, covered_from=None):
+def _tw_cdn_hashed(key, manifest, covered_from=None, spec=None):
     """A whole-market file (year/<YYYY>.parquet, recent.parquet, events.parquet) checked by the
     sha256 the manifest names for it: downloaded until the bytes match (an edge copy from
     before the publication does not), then served from the cache. covered_from (the open
     year): a cached copy whose own last day reaches it is kept even if the year has grown
     since — recent.parquet carries those days, so a whole-market user does not re-download
     the open year every day."""
+    spec = spec or _TW_CDN_SPEC
     want = manifest['files'].get(key)
     if want is None:
         raise TwCdnUnavailable(f'{key} is not in the manifest')
-    path = _tw_cdn_dir() / key
+    path = spec.cache_dir() / key
     meta = _tw_cdn_meta(path)
     if path.exists() and covered_from and meta.get('last', '') >= covered_from:
         return path
     if not path.exists() or meta.get('sha256') != want:
-        body, etag = _tw_cdn_get(key, meta.get('etag') if path.exists() else None)
+        body, etag = spec.get(key, meta.get('etag') if path.exists() else None)
         if body is not None:
             table = _tw_cdn_parquet(key, body)
             got = hashlib.sha256(body).hexdigest()
@@ -5697,11 +5717,13 @@ _TWSE_BFI82U     = 'https://www.twse.com.tw/fund/BFI82U'
 _TWSE_MI_MARGN   = 'https://www.twse.com.tw/exchangeReport/MI_MARGN'
 _TAIFEX_FUT_INST = 'https://www.taifex.com.tw/cht/3/futContractsDateDown'
 # Not "開放授權": BFI82U (三大法人) is not in the TWSE open-data set, so the line names the site
-# the four series are read from and claims no licence.
+# the four series are read from and claims no licence. TAIFEX the same: its open-data set is the
+# latest day only, so _TAIFEX_SOURCE_ZH names the exchange and nothing else. The open-data
+# line (_TWSE_OPENDATA_SOURCE_ZH) is for what is read from openapi.twse.com.tw alone.
 _TWSE_SOURCE_ZH   = '資料來源:臺灣證券交易所網站'
 _TWSE_SOURCE_EN   = 'Source: Taiwan Stock Exchange website'
-_TAIFEX_SOURCE_ZH = '資料來源:臺灣期貨交易所(政府資料開放授權)'
-_TAIFEX_SOURCE_EN = 'Source: Taiwan Futures Exchange (Open Government Data License)'
+_TAIFEX_SOURCE_ZH = '資料來源:臺灣期貨交易所'
+_TAIFEX_SOURCE_EN = 'Source: Taiwan Futures Exchange'
 # zh attribution line → its en twin, for a report published with lang="en".
 _TWSE_OPENDATA_SOURCE_ZH = '資料來源:臺灣證券交易所(政府資料開放授權)'
 _TWSE_OPENDATA_SOURCE_EN = 'Source: Taiwan Stock Exchange (Open Government Data License)'
@@ -6024,13 +6046,89 @@ def _taifex_txf_daily_raw(s, e):
     return _taifex_near_month_bars(rows, col)
 
 
+# ── TXF and 股票期貨 daily bars from the Blave CDN (desktop) ─────────────────────
+# TAIFEX's own futDataDown numbers, fetched once a day by Blave for every contract and
+# published at download.blave.org: txf.parquet is the series _taifex_near_month_bars builds
+# (the server runs the same function), year/<YYYY>.parquet + recent.parquet are the 股票期貨
+# rows in the Blave API's columns. A cold 1998 → today TXF backtest is two GETs instead of ~340
+# throttled TAIFEX requests. Same numbers, same attribution (_TAIFEX_SOURCE_ZH). Desktop only;
+# a CDN that cannot serve (unreachable, enabled:false, id not on it) falls back to TAIFEX.
+_TWFUT_CDN_BASE      = os.environ.get('BLAVE_TWFUTURES_CDN_BASE', 'https://download.blave.org/data/twfutures/daily/v1/')
+_TWFUT_CDN_SCHEMA    = 'twfutures-daily-v1'
+_TWFUT_CDN_PUBLISHED = (15, 35)    # Taipei: the job runs 15:20, after TAIFEX's day-session rows
+_TAIFEX_DAY_ROWS_OUT = (14, 50)    # TAIFEX futDataDown carries the day's 一般 rows by then
+_TWFUT_SF_COLS = ['date', 'futures_id', 'contract_date', 'open', 'max', 'min', 'close', 'spread',
+                  'spread_per', 'volume', 'settlement_price', 'open_interest', 'trading_session']
+_TWFUT_SF_FROM = '2010-01-25'      # first 股票期貨 trading day
+
+
+def _twfut_cdn_dir():
+    return _CACHE_DIR / 'twfutures_cdn'
+
+
+def _twfut_cdn_get(key, etag=None):
+    return _tw_cdn_get(key, etag, _TWFUT_CDN_BASE)
+
+
+_TWFUT_CDN_SPEC = _CdnSpec(lambda: _twfut_cdn_dir(), lambda key, etag=None: _twfut_cdn_get(key, etag),
+                           _TWFUT_CDN_SCHEMA, ('asof', 'txf', 'stock_futures', 'years', 'files'),
+                           lambda: _tw_cdn_expected_asof(published=_TWFUT_CDN_PUBLISHED))
+
+
+def _taifex_expected_day(now=None):
+    """The latest weekday whose TAIFEX day-session rows are out (holidays not known here)."""
+    now = now or datetime.now(_TPE)
+    d = now.date() if (now.hour, now.minute) >= _TAIFEX_DAY_ROWS_OUT else now.date() - timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d.strftime('%Y-%m-%d')
+
+
+def _txf_daily_taifex(start, end):
+    return _extend_cache_monthly('twfutures_public_1d', {'symbol': 'TXF'}, _taifex_txf_daily_raw,
+                                 start, end, month_by_month=True)
+
+
+def _txf_daily_cdn(start, end):
+    """What _txf_daily_taifex returns for [start, end] (naive UTC, Taipei midnight − 8 h, sliced
+    the same way), from the CDN's txf.parquet; days after the CDN's asof that TAIFEX already
+    has come from TAIFEX (its monthly cache, one request). Raises TwCdnUnavailable."""
+    manifest = _tw_cdn_manifest(_TWFUT_CDN_SPEC)
+    try:
+        raw = _read_parquet(_tw_cdn_hashed('txf.parquet', manifest, spec=_TWFUT_CDN_SPEC))
+    except TwCdnUnavailable:
+        raise
+    except Exception as e:
+        raise TwCdnUnavailable(f'txf.parquet: unreadable cached file ({type(e).__name__})') from e
+    idx = pd.DatetimeIndex(pd.to_datetime(raw['date']), name='time') - pd.Timedelta(hours=8)
+    df = pd.DataFrame({'Open': raw['open'].values, 'High': raw['high'].values, 'Low': raw['low'].values,
+                       'Close': raw['close'].values, 'Volume': raw['volume'].values}, index=idx).astype(float)
+    # an edge copy older than the manifest: its own last day is what we have
+    asof = min(manifest['asof'], (df.index.max() + pd.Timedelta(hours=8)).strftime('%Y-%m-%d')) \
+        if not df.empty else manifest['asof']
+    end_str = end or datetime.utcnow().strftime('%Y-%m-%d')
+    if end_str > asof and _taifex_expected_day() > asof:
+        try:
+            # from `asof`, not the day after: a cache window [d, …) in naive UTC starts with d+1's bar
+            extra = _txf_daily_taifex(asof, end)
+            if not extra.empty:
+                extra = extra[extra.index > pd.Timestamp(asof) - pd.Timedelta(hours=8)]
+                df = pd.concat([df, extra[_TW_DAILY_COLS].astype(float)])
+        except (TwPublicUnavailable, requests.exceptions.RequestException) as e:
+            print(f"  ⚠️  TXF daily bars: days after the CDN's {asof} not available from TAIFEX "
+                  f"({type(e).__name__}: {str(e)[:120]}) — serving through {asof}")
+    end_ts = pd.Timestamp(end_str) + pd.Timedelta(days=1)
+    return df[(df.index >= pd.Timestamp(start)) & (df.index < end_ts)]
+
+
 def fetch_txf_daily_public(start, end=None, symbol='TXF'):
     """fetch_twfutures_ohlcv('TXF', '1d') from TAIFEX futDataDown — the same frame (Open/High/
     Low/Close/Volume in contracts, Asia/Taipei midnight index), no Blave key. Desktop only
-    (tw_market_public_allowed); attrs['source'] = 'TAIFEX'. One request per month through the
-    monthly cache (cache/twfutures_public_1d_TXF/: a past month is fetched once and kept, the
-    current month is re-asked from its last bar), so a cold 1998→today backfill is ~340
-    requests at one per second. History from 1998-07-21; an earlier start is clamped.
+    (tw_market_public_allowed); attrs['source'] = 'TAIFEX'. From the Blave CDN (the same TAIFEX
+    bars, cache/twfutures_cdn/); when the CDN cannot serve, one TAIFEX request per month through
+    the monthly cache (cache/twfutures_public_1d_TXF/: a past month is fetched once and kept,
+    the current month is re-asked from its last bar) — ~340 requests at one per second for a
+    cold 1998→today. History from 1998-07-21; an earlier start is clamped.
     symbol 'MXF' / 'TMF': the same TX bars, from that contract's own listing day on."""
     _tw_market_public_gate()
     listed = _TAIFEX_INDEX_FUT_LISTED.get(symbol)
@@ -6040,8 +6138,12 @@ def fetch_txf_daily_public(start, end=None, symbol='TXF'):
     if end is not None and end < start:
         df = pd.DataFrame(columns=_TW_DAILY_COLS, dtype=float)
     else:
-        df = _extend_cache_monthly('twfutures_public_1d', {'symbol': 'TXF'}, _taifex_txf_daily_raw,
-                                   start, end, month_by_month=True)
+        try:
+            df = _txf_daily_cdn(start, end)
+        except Exception as e:
+            print(f"  ⚠️  {symbol} daily bars: Blave CDN unavailable ({type(e).__name__}: {str(e)[:120]}) "
+                  f"— fetching from TAIFEX, one request per uncached month (~8 min from 1998)")
+            df = _txf_daily_taifex(start, end)
     df = _sanity_check_ohlc(df, 'TXF 1d taifex')
     if not df.empty:
         df = df.copy()
@@ -6183,7 +6285,12 @@ def fetch_stock_futures_batch_daily(futures_ids, start, end, headers):
     open, max, min, close, spread, spread_per, volume, settlement_price,
     open_interest, trading_session. futures_ids must be valid stock futures
     ids (股票期貨, e.g. 'CDF') — arbitrary ids are rejected (400).
+
+    Desktop without Blave data access this turn: the same rows from TAIFEX instead
+    (_stock_futures_batch_free), each frame's attrs['source'] = 'TAIFEX'.
     """
+    if tw_market_public_allowed() and _no_data_access(headers):
+        return _stock_futures_batch_free(futures_ids, start, end)
     end_str = end or datetime.utcnow().strftime('%Y-%m-%d')
     cache_dir = _CACHE_DIR / 'twfutures_stockfut'
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -6216,6 +6323,128 @@ def fetch_stock_futures_batch_daily(futures_ids, start, end, headers):
     with ThreadPoolExecutor(max_workers=4) as pool:
         list(pool.map(_fetch_chunk, chunks))
 
+    return results
+
+
+def _taifex_num0(value, as_int=False):
+    """A futDataDown cell as the Blave API's 股票期貨 rows carry it: '-' / blank → 0, '%' stripped."""
+    v = str(value or '').strip().replace(',', '').replace('%', '')
+    try:
+        x = float(v) if v not in ('', '-') else 0.0
+    except ValueError:
+        x = 0.0
+    return int(x) if as_int else x
+
+
+def _stock_futures_frame(rows):
+    """Rows in _TWFUT_SF_COLS order → the frame pd.DataFrame(<Blave API rows>) gives: date
+    'YYYY-MM-DD', prices float, volume / open_interest int, sorted by date, month, session."""
+    df = pd.DataFrame(rows, columns=_TWFUT_SF_COLS)
+    df = df.astype({c: float for c in ('open', 'max', 'min', 'close', 'spread', 'spread_per', 'settlement_price')})
+    df = df.astype({'volume': 'int64', 'open_interest': 'int64'})
+    return df.sort_values(['date', 'contract_date', 'trading_session'], kind='stable').reset_index(drop=True)
+
+
+def _taifex_stock_futures_rows(rows, col):
+    session_of = {'一般': 'position', '盤後': 'after_market'}
+    out = []
+    for x in rows:
+        cd, session = x[col['到期月份(週別)']].strip(), session_of.get(x[col['交易時段']].strip())
+        if '/' in cd or session is None:
+            continue    # calendar spreads are not on the CDN either
+        out.append((x[col['交易日期']].strip().replace('/', '-'), x[col['契約']].strip(), cd,
+                    *(_taifex_num0(x[col[k]]) for k in ('開盤價', '最高價', '最低價', '收盤價', '漲跌價', '漲跌%')),
+                    _taifex_num0(x[col['成交量']], True), _taifex_num0(x[col['結算價']]),
+                    _taifex_num0(x[col['未沖銷契約數']], True), session))
+    return out
+
+
+def _stock_futures_taifex(fid, start, end):
+    """One 股票期貨's rows straight from TAIFEX futDataDown, one request per month, cached per
+    contract-month under cache/twfutures_sf_taifex/<id>/ (a month written after it ended is
+    kept; the current one is re-asked). Not the monthly bar cache: a day has many rows here."""
+    today = datetime.now(_TPE).date()
+    end_str = end or today.strftime('%Y-%m-%d')
+    cache_dir = _CACHE_DIR / 'twfutures_sf_taifex' / fid
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    frames = []
+    for ym in _iter_months(max(start, _TWFUT_SF_FROM[:8] + '01'), end_str):
+        path = cache_dir / f'{ym}.parquet'
+        first = _date(int(ym[:4]), int(ym[5:7]), 1)
+        if first > today:
+            break
+        if path.exists() and not _written_before_month_end(path, ym):
+            frames.append(_read_parquet(path))
+            continue
+        last = min((pd.Timestamp(first) + pd.offsets.MonthEnd(0)).date(), today)
+        rows, col = _taifex_fut_daily_window(fid, first, last)
+        df = _stock_futures_frame(_taifex_stock_futures_rows(rows, col))
+        _atomic_to_parquet(df, path)
+        frames.append(df)
+    df = _stock_futures_frame(pd.concat(frames, ignore_index=True).values.tolist()) if frames \
+        else _stock_futures_frame([])
+    return df[(df['date'] >= start) & (df['date'] <= end_str)].reset_index(drop=True)
+
+
+def _stock_futures_cdn(ids, start, end, manifest):
+    """{id: rows} for the ids on the CDN, from its year files + recent.parquet (each checked
+    against the manifest's sha256)."""
+    end_str = end or datetime.now(_TPE).strftime('%Y-%m-%d')
+    last = min(end_str, manifest['asof'])
+    known = [f for f in ids if f in manifest['stock_futures']]
+    if not known or last < start:
+        return {f: _stock_futures_frame([]) for f in known}
+    frames = []
+    for y in sorted(manifest['years']):
+        if not (start[:4] <= y <= last[:4]):
+            continue
+        info = manifest['years'][y]
+        path = _tw_cdn_hashed(f'year/{y}.parquet', manifest,
+                              None if info.get('immutable') else manifest.get('recent_from'), spec=_TWFUT_CDN_SPEC)
+        frames.append(_read_table(path, filters=[('futures_id', 'in', known)]).to_pandas())
+    recent = _tw_cdn_hashed('recent.parquet', manifest, spec=_TWFUT_CDN_SPEC)
+    frames.append(_read_table(recent, filters=[('futures_id', 'in', known)]).to_pandas())
+    rows = pd.concat(frames, ignore_index=True)
+    rows['date'] = pd.to_datetime(rows['date']).dt.strftime('%Y-%m-%d')
+    rows = rows.drop_duplicates(['date', 'futures_id', 'contract_date', 'trading_session'], keep='last')
+    rows = rows[(rows['date'] >= start) & (rows['date'] <= end_str)]
+    by_id = {f: g for f, g in rows.groupby('futures_id')}
+    return {f: _stock_futures_frame(by_id[f][_TWFUT_SF_COLS].values.tolist()) if f in by_id
+            else _stock_futures_frame([]) for f in known}
+
+
+def _stock_futures_batch_free(futures_ids, start, end):
+    """fetch_stock_futures_batch_daily without Blave data (desktop only): the Blave CDN, else
+    TAIFEX per contract and month. Same columns and dtypes as the Blave API's rows; calendar
+    spreads (contract_date with '/') are not included. An id the CDN does not list is not a
+    股票期貨 TAIFEX knows: dropped with a printed line, as the Blave API refuses it. A day the
+    CDN has not published yet (TAIFEX ~14:50, CDN 15:35) is not in the frame;
+    attrs['asof'] names the last day it holds."""
+    _tw_market_public_gate()
+    results, manifest = {}, None
+    try:
+        manifest = _tw_cdn_manifest(_TWFUT_CDN_SPEC)
+        cdn = _stock_futures_cdn(futures_ids, start, end, manifest)
+    except Exception as e:
+        print(f"  ⚠️  股票期貨 daily rows: Blave CDN unavailable ({type(e).__name__}: {str(e)[:120]}) "
+              f"— fetching from TAIFEX, one request per contract-month")
+        cdn = None
+    for fid in futures_ids:
+        if cdn is not None:
+            if fid not in cdn:
+                print(f"  [fetch_stock_futures_batch_daily] {fid}: not a 股票期貨 on the Blave CDN — skipped")
+                continue
+            df = cdn[fid]
+            df.attrs['asof'] = manifest['asof']
+            df.attrs['via'] = 'Blave CDN'
+        else:
+            try:
+                df = _stock_futures_taifex(fid, start, end)
+            except (TwPublicUnavailable, requests.exceptions.RequestException) as e:
+                print(f"  [fetch_stock_futures_batch_daily] {fid}: TAIFEX failed ({type(e).__name__}: {str(e)[:120]}) — skipped")
+                continue
+        df.attrs['source'] = 'TAIFEX'
+        results[fid] = df
     return results
 
 
