@@ -615,6 +615,18 @@ const venvDir = (r) => path.join(r.base, "venv");
     ok("lockKey:SDK 或清單任一個換了就不一樣", E.lockKey(SDK, MAIN_DEPS) !== E.lockKey(SDK2, MAIN_DEPS) && E.lockKey(SDK, MAIN_DEPS) !== E.lockKey(SDK, [bump(MAIN_DEPS[0]), ...MAIN_DEPS.slice(1)]) && E.lockKey(SDK, MAIN_DEPS) === E.lockKey(SDK, [...MAIN_DEPS]));
     ok("接線:main.js 只在 WORKSPACE_LOCK_FOR 對得上時才帶鎖,對不上帶空的", /lock: WORKSPACE_LOCK_FOR === require\("\.\/enginesetup"\)\.lockKey\(SDK_PINS, WORKSPACE_DEPS\) \? WORKSPACE_LOCK : \[\],/.test(MAIN_SRC)); }
 
+  // ── certifi 直接釘(eMudhra 中繼 CA 外洩,GHSA-6q48-6c7w-9gw2 要 ≥ 2026.10.19):只放鎖裡的話既有 venv 永遠不升 ──
+  { const cp = MAIN_DEPS.filter((p) => nn(p) === "certifi"), ver = cp.length === 1 ? cp[0].split("==")[1].split(".").map(Number) : [];
+    const ge = (a, b) => { for (let i = 0; i < b.length; i++) { if ((a[i] || 0) !== b[i]) return (a[i] || 0) > b[i]; } return true; };
+    ok("WORKSPACE_DEPS 恰有一個 certifi==,版本 ≥ 2026.10.19(逐段比數字,不比字串)", cp.length === 1 && ver.length === 3 && ver.every(Number.isInteger) && ge(ver, [2026, 10, 19]), cp);
+    ok("版本比較本身:2026.9.30 < 2026.10.19 ≤ 2026.10.23(字串比會把 9 排在 10 後面)", !ge([2026, 9, 30], [2026, 10, 19]) && ge([2026, 10, 23], [2026, 10, 19]) && ge([2026, 10, 19], [2026, 10, 19]));
+    ok("certifi 在核心那組(不是選用的、裝不起來要擋)", DEPS.includes(cp[0]));
+    const oldCore = DEPS.filter((p) => p !== cp[0]).join("\n");
+    ok("既有 venv(記號檔是沒有 certifi 的舊清單)→ depsTodo 只回 certifi 那一個", E.depsTodo(DEPS, oldCore, null).join() === cp[0], E.depsTodo(DEPS, oldCore, null));
+    const old = rig({ deps: DEPS.filter((p) => p !== cp[0]) }); await old.S.ensure();
+    const up = rig({ base: old.base, deps: DEPS }); await up.S.ensure();
+    ok("既有 venv 升上來:只多一條 pip、只裝 certifi(核心其他套件不重裝),核心記號檔變成新清單", batches(up).join("|") === cp[0] && fs.readFileSync(path.join(venvDir(up), ".blave-deps-1"), "utf8") === DEPS.join("\n"), batches(up)); }
+
   // ── 舊 pip(21.2.4 實測)不認 --progress-bar=raw:解析參數就 exit 2、沒裝東西 → 拿掉旗標重跑同一條,之後每條都不帶 ──
   { const OLD = "Usage:\n  python -m pip install [options] <requirement specifier> ...\n\noption --progress-bar: invalid choice: 'raw' (choose from 'off', 'on', 'ascii', 'pretty', 'emoji')\n";
     const k = rig({ behave: (bin, args) => (args.includes("--progress-bar=raw") ? { code: 2, err: OLD } : { code: 0 }) });
