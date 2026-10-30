@@ -1,5 +1,15 @@
 # 遮蔽規則的共用 fixture(spec mobile-agent-chat-mvp §4.3;與 api tests/fixtures/redact_cases.json 逐字相同):
-# 裡面全是測試遮蔽用的假金鑰,不是真的憑證。fingerprint 帶行號,fixture 一改就要重取:
-#   gitleaks detect --no-git --source tests/fixtures/redact_cases.json --report-format json --report-path <scratchpad>/gl.json
-tests/fixtures/redact_cases.json:gcp-api-key:262
+# 裡面全是測試遮蔽用的假金鑰,不是真的憑證。fingerprint 帶行號,fixture 一改就要重取(gitleaks 會自動讀這個檔,重取時要關掉):
+#   gitleaks detect --no-git --gitleaks-ignore-path /dev/null --source tests/fixtures/redact_cases.json --report-format json --report-path <scratchpad>/n.json
+# 不帶 commit 的那幾行在 --no-git、pre-commit(--staged)、git 歷史掃描都認;歷史上行號不同的版本另外帶 commit 前綴:
+#   gitleaks git --log-opts="<這條分支的起點>..HEAD" --report-format json --report-path <scratchpad>/g.json .
+tests/fixtures/redact_cases.json:private-key:28
+tests/fixtures/redact_cases.json:generic-api-key:100
+tests/fixtures/redact_cases.json:generic-api-key:136
+tests/fixtures/redact_cases.json:generic-api-key:148
+tests/fixtures/redact_cases.json:generic-api-key:154
 tests/fixtures/redact_cases.json:github-pat:250
+tests/fixtures/redact_cases.json:gcp-api-key:262
+# 6a05fd00(55 則那版)
+6a05fd00de9a50bdc1106c202786679ea329d0d1:tests/fixtures/redact_cases.json:github-pat:190
+6a05fd00de9a50bdc1106c202786679ea329d0d1:tests/fixtures/redact_cases.json:gcp-api-key:202
