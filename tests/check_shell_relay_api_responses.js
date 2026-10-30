@@ -137,6 +137,23 @@ const CASES = [
   })(),
   async (m) => { m.feed([msg(S, "msgresp00023", "下單")]); await wait(1200); },
   (m) => m.started.length === 0 && sent(m, "start_aborted").some((c) => c.message_id === "msgresp00023")],
+  ["switch_off_first_started", "稽核第四輪 P3:第一次 started 就被總開關擋下(403)→ start_aborted＋message_failed not_run 都送(api 沒記到開跑,認 message_failed)", {
+    script: (ep, b) => (ep === RL.EP.report && b.chunks.some((c) => c.type === "started") ? { status: 403, body: { error_code: "APP_CHAT_OFF" } } : undefined) },
+  async (m) => { m.feed([msg(S, "msgresp00024", "下單")]); await settle(); },
+  (m) => m.started.length === 0 && sent(m, "start_aborted").some((c) => c.message_id === "msgresp00024")
+    && sent(m, "message_failed").some((c) => c.message_id === "msgresp00024" && c.code === "not_run")],
+  ["started_after_same_session_done", "稽核第四輪 P1:上一輪的 done 連兩次 502(認領前那次 flush 也送不到)、同一條排著的下一句被叫出 → 先把 done 送到,started 才送", (() => {
+    let k = 0;
+    return { script: (ep, b) => (ep === RL.EP.report && b.chunks.some((c) => c.type === "done") && k++ < 2 ? { status: 502, body: null } : undefined) };
+  })(),
+  async (m) => { m.feed([msg(S, "msgresp00025", "第一句")]); await wait(40); m.feed([msg(S, "msgresp00026", "第二句:下單")]); await wait(40);
+    m.endTurn(S); await wait(1000); },
+  (m) => {
+    const at = (f) => m.log.findIndex((x) => x.body && x.body.chunks && f(x));
+    const doneOk = at((x) => x.body.chunks.some((c) => c.type === "done") && x.response.status === 200);
+    const st2 = at((x) => x.body.chunks.some((c) => c.type === "started" && c.message_id === "msgresp00026"));
+    return m.started.join() === "第一句,第二句:下單" && doneOk >= 0 && st2 > doneOk;
+  }],
   ["withdraw_running", "撤回已經開跑的那句:不停,withdraw_result running", {},
   async (m) => { m.feed([msg(S, "msgresp00014", "跑")]); await wait(40); m.feed([], [{ type: "withdraw", session_id: S, message_id: "msgresp00014" }]); await settle(); },
   (m) => m.stopped.length === 0 && sent(m, "withdraw_result").some((c) => c.result === "running")],

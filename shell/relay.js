@@ -42,6 +42,8 @@ const POLL_HOLD_MS = 25000, POLL_TIMEOUT_MS = 40000, REQUEST_TIMEOUT_MS = 10000,
 const FLAG_TICK_MS = 2 * 60 * 1000;
 const BATCH_MS = 300;
 const REPORT_MAX_CHUNKS = 50, REPORT_MAX_BYTES = 1536 * 1024;   // api REPORT_CHUNKS_MAX = 50、body 上限 2 MB(留給憑證與 JSON 外殼)
+// 手機那一輪跑著、沒有輸出時(一個工具跑很久)的存活訊號:api 在線時 TURN_MAX_S 沒聽到任何東西就當收尾丟了
+const PING_MS = 60000;
 const CLAIM_RETRY_MS = 500, CLAIM_DEADLINE_MS = 15000;   // started 沒回應:重送到 15 秒,之後 start_aborted
 const BACKOFF_MIN_MS = 2000, BACKOFF_MAX_MS = 60000, REENABLE_GAP_MS = 30000;
 const SYNC_DAYS = 30, SYNC_MAX_SESSIONS = 200, SYNC_PER_SESSION = 500;
@@ -93,7 +95,7 @@ function createRelay(opts) {
   const queue = new Map();   // sid → [{ message_id, content }]:同一條在跑時排在後面
   const active = new Map();  // sid → { message_id, ended, idBefore }:正在跑的手機那一輪
   let pending = [];          // 待送的 chunk(每段帶 session_id),照收到的順序
-  let batchTimer = null, reporting = null, retryTimer = null, flushBackoff = BACKOFF_MIN_MS;
+  let batchTimer = null, reporting = null, retryTimer = null, flushBackoff = BACKOFF_MIN_MS, pingTimer = null;
   const tombstones = new Set();
   const sync = { running: false, done: 0, total: 0, error: false, lastIds: null, again: new Set() };
 
@@ -137,7 +139,14 @@ function createRelay(opts) {
   function changed() { try { if (opts.onChange) opts.onChange(state()); } catch (_) { /* 畫面壞掉不擋 */ } }
   function setFlag(v) { if (flag === v) return; flag = v; if (!v) stopPoll(); changed(); }
   const live = () => flag && load().on && !load().pendingDisable && !!creds() && !stopped;
-  function mobileActiveSync() { try { if (opts.onMobileActive) opts.onMobileActive(active.size > 0 || [...queue.values()].some((q) => q.length)); } catch (_) { /* 防睡壞掉不擋 */ } }
+  function mobileActiveSync() { pingSync(); try { if (opts.onMobileActive) opts.onMobileActive(active.size > 0 || [...queue.values()].some((q) => q.length)); } catch (_) { /* 防睡壞掉不擋 */ } }
+  function pingSync() {
+    const need = !stopped && [...active.values()].some((a) => !a.claiming);
+    if (need && !pingTimer) {
+      pingTimer = setInterval(() => { if (!live()) return; for (const [sid, a] of active) if (!a.claiming && !a.ended) enqueueChunk({ type: "ping", session_id: sid, message_id: a.message_id }, false); }, opts.pingMs || PING_MS);
+      if (pingTimer.unref) pingTimer.unref();
+    } else if (!need && pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+  }
   const track = (n) => { try { if (opts.track) opts.track(n); } catch (_) { /* 追蹤不擋 */ } };
   /* api 那邊這台沒記成開著(換了 token、伺服器清過)而本機開著:補打 enable,30 秒內只打一次 */
   function reenable() {
@@ -279,8 +288,18 @@ function createRelay(opts) {
   async function claimStart(sid, mid) {
     const until = clock() + (opts.claimDeadlineMs || CLAIM_DEADLINE_MS);
     let gap = CLAIM_RETRY_MS;
-    await flush();
     for (;;) {
+      // started 不准超車同一條還沒送到的 chunk(上一輪的 done 斷線退回 pending):先到的 started 會讓 api 把那條換成這句,
+      // 上一輪的 done 之後只會被丟掉、它的字併進這一輪。不併進 flush 的佇列:這裡要拿這一筆自己的結果,也不能等 flush 最長
+      // 60 秒的退避;代價是認領那 15 秒內 flush 照認領的間隔重送
+      await flush();
+      while (reporting) await reporting.catch(() => {});   // flush 的 then 鏈會在別人接手的那一批還在路上時就先回來
+      if (pending.some((c) => c.session_id === sid)) {
+        if (stopped) return "cancel";
+        if (clock() + gap > until) return "lost";
+        await pause(gap); gap = Math.min(gap * 2, 4000);
+        continue;
+      }
       const r = await call(EP.report, { chunks: [{ type: "started", session_id: sid, message_id: mid }] });
       if (r.status === 200 && r.body) {
         const res = Array.isArray(r.body.results) ? r.body.results[0] : null;
@@ -312,16 +331,17 @@ function createRelay(opts) {
     const mine = active.get(sid) === rec;
     if (claim !== "ok" || !mine || rec.abort || !live()) {
       if (mine) active.delete(sid);
-      // 告訴 api 這句沒跑:記成開跑了(ok)→ start_aborted;拒收(rejected)→ message_failed;不知道有沒有記到(lost)→ 兩個都送,
-      // api 照它手上的狀態認其中一個。cancel 的那句 api 自己判過了
+      // 告訴 api 這句沒跑:記成開跑了(ok)→ start_aborted;拒收(rejected)→ message_failed;不知道有沒有記到(lost、off:
+      // 第一次 started 就被總開關擋下時根本沒記到)→ 兩個都送,api 照它手上的狀態認其中一個。cancel 的那句 api 自己判過了
       if (claim === "ok" || claim === "lost" || claim === "off") startAborted(sid, mid);
-      if (claim === "rejected" || claim === "lost") msgFailed(sid, mid, NOT_RUN);
+      if (claim === "rejected" || claim === "lost" || claim === "off") msgFailed(sid, mid, NOT_RUN);
       if (rec.abort) enqueueChunk({ type: "cancelled", session_id: sid, message_ids: [mid] }, true);
       if (rec.abort === "withdraw") withdrawResult(sid, mid, "withdrawn");
       mobileActiveSync(); pump(sid);
       return;
     }
     rec.claiming = false;
+    pingSync();
     let r = null;
     try { r = await opts.startTurn({ sessionId: sid, message: content, ...(opts.turnArgs ? opts.turnArgs() : {}) }, "mobile"); }
     catch (_) { r = { failed: true }; }
@@ -385,7 +405,9 @@ function createRelay(opts) {
   }
   /* 手機那一輪回覆裡的圖(lib notify 送到本機接收端的那一份);舊對話的圖不傳 */
   function image(sid, mime, b64, caption) {
-    if (!active.has(sid) || !live() || typeof b64 !== "string") return Promise.resolve(false);
+    const a = active.get(sid);
+    // 認領中:這條上跑的是電腦前那個人的回合(同 onTurn)
+    if (!a || a.claiming || !live() || typeof b64 !== "string") return Promise.resolve(false);
     const cap = typeof caption === "string" && caption.trim() ? redact(caption.slice(0, 500), known()) : "";
     return call(EP.image, { session_id: sid, mime, b64, ...(cap && cap !== "⟦R:msg⟧" ? { caption: cap } : {}) }).then((r) => r.status === 200);
   }

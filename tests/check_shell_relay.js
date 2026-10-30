@@ -53,7 +53,7 @@ function rig(o = {}) {
     },
     turnArgs: () => ({ model: "m1" }), known: () => ["envSecretVal99"],
     origins: { add: (sid, rows) => { origins[sid] = (origins[sid] || []).concat(rows); }, get: (sid) => new Map((origins[sid] || []).map((x) => [x.id, x.mid])) },
-    track: (n) => tracked.push(n), now: o.now,
+    track: (n) => tracked.push(n), now: o.now, pingMs: o.pingMs,
   });
   return { r, dir, stateDir, calls, polls, started, stopped, removed, tracked, origins, busy, sessions, resp,
     feed: (msgs, controls, extra) => { const v = { status: 200, body: Object.assign({ enabled: true, messages: msgs || [], controls: controls || [], server_time: 1 }, extra || {}) }; if (pollWaiter) { const w = pollWaiter; pollWaiter = null; w(v); } else polls.push(v); },
@@ -365,6 +365,14 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     await m.r.image("desktop-i0000001", "image/png", "AAAA", "說明 " + TOKEN);
     const im = m.of(RL.EP.image)[0];
     ok("8 圖:手機那一輪送 /relay/image(session_id、mime、b64),說明過遮蔽", im && im.session_id === "desktop-i0000001" && im.mime === "image/png" && im.b64 === "AAAA" && !im.caption.includes(TOKEN), im);
+    m.r.onTurn("desktop-i0000001", "turn-end", { code: 0 }); m.busy.delete("desktop-i0000001"); await wait(30);
+    let release; const gate = new Promise((res) => { release = res; });
+    m.resp[RL.EP.report] = (b) => (b.chunks.some((c) => c.type === "started") ? gate.then(() => ({ status: 200, body: { results: [{ status: "ok" }], interrupt: [], cancel: [] } }))
+      : { status: 200, body: { results: b.chunks.map(() => ({ status: "ok" })), interrupt: [], cancel: [] } });
+    m.feed([msg("desktop-i0000001", "msg0000001i")]); await wait(30);
+    const n0 = m.of(RL.EP.image).length;
+    ok("8 圖:認領中(started 還在路上)不送——那條上跑的是電腦前那個人的回合", m.r.claiming("desktop-i0000001") && (await m.r.image("desktop-i0000001", "image/png", "AAAA", "x")) === false && m.of(RL.EP.image).length === n0);
+    release(); await wait(30); delete m.resp[RL.EP.report];
     const ph = await m.r.phones();
     ok("8 手機清單:只回篩過的欄位、壞 device_id 丟掉", ph.ok && ph.phones.length === 1 && !("extra" in ph.phones[0]) && ph.phones[0].granted === false && ph.phones[0].label === "iPhone 15");
     await m.r.grant("devA0000001", true);
@@ -374,6 +382,15 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     ok("8 撤銷:送 device_id＋lang、成功記 phone_revoke", rv.ok && m.of(RL.EP.revoke)[0].lang === "en" && m.tracked.includes("phone_revoke"));
     const ac = await m.r.actions("devA0000001");
     ok("8 最近操作:時間、操作、裝置、IP", ac.ok && ac.actions[0].action === "send" && ac.actions[0].ip === "1.2.3.4");
+    await m.end(); }
+  { const m = rig({ pingMs: 60, sessions: { "desktop-p0000001": { last: 1, rows: [row(1, "user", "x")] } } });
+    await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.feed([msg("desktop-p0000001", "msg0000000p")]); await wait(600);
+    const pings = m.chunks().filter((c) => c.type === "ping");
+    ok("8 手機那一輪跑著沒有輸出:定時送 ping(帶那一句)", pings.length >= 2 && pings.every((c) => c.session_id === "desktop-p0000001" && c.message_id === "msg0000000p"), pings);
+    m.busy.delete("desktop-p0000001"); m.r.onTurn("desktop-p0000001", "turn-event", { type: "done" }); m.r.onTurn("desktop-p0000001", "turn-end", { code: 0 }); await wait(50);
+    const n = m.chunks().filter((c) => c.type === "ping").length; await wait(600);
+    ok("8 那一輪結束:不再送 ping", m.chunks().filter((c) => c.type === "ping").length === n);
     await m.end(); }
 
   // ── 9 ──
