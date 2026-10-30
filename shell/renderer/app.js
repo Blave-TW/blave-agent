@@ -3844,7 +3844,7 @@ let faultShown = false;
 function srSay(text) { if (tabBg()) return; $("sr-live").textContent = ""; requestAnimationFrame(() => { $("sr-live").textContent = text; }); }
 
 /* ── 回合失敗卡(設計師 M1)───────────────────────────
-   照雲端工作頁的 .chat-notice.is-fault:13px、ink-2、一條 8×2 的紅記號,不加容器、圖示、紅字。
+   照雲端工作頁的 .chat-notice.is-fault:13px、ink-2、一條 8×2 的紅記號,不加容器、圖示、紅字;只有鈕、沒有句子那態(act-only)不放記號。
    **一張卡、一顆鈕,跨狀態沿用同一個節點**(只換字、class 與 handler):登入的進度 / 成功 / 失敗
    不再往下追加灰字,鍵盤焦點也不會因為節點被換掉而掉回 body。
    等待中不放 spinner:等的是用戶在瀏覽器裡的動作,不是系統在忙;這段最長五分鐘。 */
