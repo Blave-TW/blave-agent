@@ -26,13 +26,12 @@ const sgStore = () => (typeof ENV !== "undefined" && ENV.cur === "cloud" ? SF_CL
 const sgOn = (sc, list) => sc.groups().folders.length > 0 && list.length > 0;
 function sgEl(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
 function sgBtn(cls, label) { const b = sgEl("button", cls); b.type = "button"; if (label) b.setAttribute("aria-label", label); return b; }
-// lucide folder / folder-plus / inbox / ellipsis / chevron-down(寫死的常數)
+// lucide folder / folder-plus / inbox / ellipsis(寫死的常數);chevron 是 Accordion 的純 CSS(.sg-chev)
 const SG_ICONS = {
   folder: ["M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"],
   "folder-plus": ["M12 10v6", "M9 13h6", "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"],
   inbox: ["M22 12h-6l-2 3h-4l-2-3H2", "M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"],
   ellipsis: ["M12 12h.01", "M19 12h.01", "M5 12h.01"],
-  chevron: ["m6 9 6 6 6-6"],
 };
 function sgSvg(name, cls) {
   const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg");
@@ -96,7 +95,8 @@ function sgHeadEl(g, sc, shut, first) {
   const ic = sgEl("span", "sg-ic"); ic.setAttribute("aria-hidden", "true");   // emoji 是裝飾,念出來只多一段雜音(§13)
   if (uncat) ic.appendChild(sgSvg("inbox")); else sgIconInto(ic, g.emoji);
   const live = sgEl("span", "sg-live"); live.hidden = true; live.setAttribute("aria-hidden", "true");
-  tog.append(ic, sgEl("span", "sg-name", label), sgEl("span", "sg-n"), live, sgSvg("chevron", "ic sg-chev"));
+  const chev = sgEl("span", "sg-chev"); chev.setAttribute("aria-hidden", "true");
+  tog.append(ic, sgEl("span", "sg-name", label), sgEl("span", "sg-n"), live, chev);
   tog.addEventListener("click", () => { if (!SF.justDragged) sgToggle(sc, head, true); });
   head.appendChild(tog);
   if (!uncat) {   // 未分類是系統組:不能改名、刪除、換序
@@ -166,11 +166,13 @@ function sgHeadPaint() {
     lim = sgEl("p", "sg-limit"); lim.id = "sg-limit"; lim.setAttribute("role", "status");
     $("strat-head").after(lim);
   }
-  add.setAttribute("aria-label", t("sg.add")); add.title = t("sg.add");
-  add.hidden = !(n > 0 || list.length >= SG_MIN_LIST);
-  add.disabled = n >= SG_MAX;   // 真 disabled:不進 Tab 序,達上限的話寫在下面看得見的訊息槽
+  // 每次 envPaint 都會進來:值有變才寫,role=status 的節點被重寫一次有些讀屏就重念一次
+  const set = (el, k, v) => { if (el[k] !== v) el[k] = v; };
+  if (add.getAttribute("aria-label") !== t("sg.add")) { add.setAttribute("aria-label", t("sg.add")); add.title = t("sg.add"); }
+  set(add, "hidden", !(n > 0 || list.length >= SG_MIN_LIST));
+  set(add, "disabled", n >= SG_MAX);   // 真 disabled:不進 Tab 序,達上限的話寫在下面看得見的訊息槽
   const full = !add.hidden && add.disabled && !$("strat-head").hidden;
-  lim.hidden = !full; lim.textContent = full ? t("sg.max") : "";
+  set(lim, "hidden", !full); set(lim, "textContent", full ? t("sg.max") : "");
 }
 // 「建市場資料夾」:沒有資料夾、≥8 支、已知市場 ≥2 種才出,不符就不出現(不留停用鈕)。本機的市場要等常駐程式回報,所以狀態每輪回來也重判
 function sgAutoPlan(sc, list) {
@@ -378,7 +380,7 @@ function sgPickFolder(sc, gid) {
     sgSetFolders(sc, sc.groups().folders.map((x) => (x.id === gid ? { id: x.id, name: x.name, emoji: v } : x)));
     sgRelayout(sc);
     trackFeature("sfolder_emoji");
-  }, () => { const b = sgHeadTog(sc, gid); if (b) b.focus(); });
+  }, () => { const h = sc.box().querySelector(':scope > .sg-head[data-gid="' + gid + '"] .sg-more'); if (h) h.focus(); });   // 還給開它的那一顆(⋯),同 web
 }
 
 /* ── emoji 選擇器(§10):Dropdown Panel,6 欄 32×32、分類小標常駐不分頁,內容高上限 320 內捲。

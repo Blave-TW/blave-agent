@@ -3714,7 +3714,7 @@ msgid "sg.delTitle"
 msgstr "Delete “{name}”?"
 
 msgid "sg.delBody"
-msgstr "The {n} strategies inside move to Uncategorized."
+msgstr "Its strategies ({n}) move to Uncategorized."
 
 msgid "sg.delOk"
 msgstr "Delete"
@@ -3723,10 +3723,10 @@ msgid "sg.moved"
 msgstr "Moved to {name}"
 
 msgid "sg.headAria"
-msgstr "{name}, {n} strategies"
+msgstr "{name}, strategies: {n}"
 
 msgid "sg.headLive"
-msgstr ", {m} live"
+msgstr ", live: {m}"
 
 msgid "sg.more"
 msgstr "{name} options"

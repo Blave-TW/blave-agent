@@ -42,7 +42,7 @@ const block = (s, head, end) => { const i = s.indexOf(head); if (i < 0) throw ne
   ok("② 用到的 sg.* / 市場組名字串兩語都齊(" + all.length + " 個)", all.length > 25 && all.every((k) => S.S.zh[k] && S.S.en[k]), all.filter((k) => !S.S.zh[k] || !S.S.en[k]).join());
   ok("② 字照 spec §14", S.S.zh["sg.add"] === "新增資料夾" && S.S.zh["sg.uncat"] === "未分類" && S.S.zh["sg.auto"] === "建市場資料夾" && S.S.zh["sg.max"] === "最多 20 個資料夾"
     && S.S.zh["sg.delTitle"] === "刪除「{name}」？" && S.S.zh["sg.delBody"] === "裡面 {n} 支移到未分類。" && S.S.zh["sg.moved"] === "已移到{name}" && S.S.zh["sg.headAria"] === "{name}，{n} 支"
-    && S.S.zh["sg.headLive"] === "，{m} 支上線中" && S.S.zh["sg.more"] === "{name}選項" && S.S.zh["sg.moveTo"] === "移到{name}" && S.S.zh["sg.moveOut"] === "移出資料夾"
+    && S.S.zh["sg.headLive"] === "，{m} 支上線中" && S.S.en["sg.headAria"] === "{name}, strategies: {n}" && S.S.en["sg.headLive"] === ", live: {m}" && S.S.en["sg.delBody"] === "Its strategies ({n}) move to Uncategorized." && S.S.zh["sg.more"] === "{name}選項" && S.S.zh["sg.moveTo"] === "移到{name}" && S.S.zh["sg.moveOut"] === "移出資料夾"
     && S.S.zh["sg.mkt.global"] === "國際期貨" && S.S.zh["sg.mkt.mixed"] === "混合");
   ok("② 市場組名(zh 同網頁 workspace_sg_mkt_*:加密、台指期、個股期貨、台股、美股、國際期貨、混合)、每語 ≤20 碼點(建好就是資料夾名,api 收的上限)",
     mkts.map((k) => S.S.zh[k]).join() === "加密,台指期,個股期貨,台股,美股,國際期貨,混合" && mkts.every((k) => ["zh", "en"].every((l) => [...S.S[l][k]].length <= 20)), mkts.map((k) => S.S.en[k]).join());
@@ -81,7 +81,10 @@ const block = (s, head, end) => { const i = s.indexOf(head); if (i < 0) throw ne
   ok("③ index.html:stratgroups.js 緊接在 stratflags.js 之後", /<script src="stratflags\.js"><\/script>\n<script src="stratgroups\.js"><\/script>/.test(html));
   ok("③ CSS:組標題 sticky 44 高、z-index 低於拖拉中的列(3);釘頂疊放時 focus-within 浮上來;emoji 走 --font-emoji;選中格 1px --active-line",
     /\.strat-add\[hidden\] \{ display: none; \}/.test(css) && /\.sg-head\.sg-drop \{ z-index: 5; \}/.test(css) && /e\.composedPath\(\)/.test(sg) && /\.sg-head \{ position: sticky; top: 0; z-index: 1;[^}]*height: 44px;/.test(css) && /\.sg-head:focus-within, \.sg-head\.menu-open \{ z-index: 2; \}/.test(css) && /\.strat-wrap\.dragging \{ z-index: 3;/.test(css)
-    && /\.sg-ic\.is-emoji \{ font: 14px\/16px var\(--font-emoji\); \}/.test(css) && /\.sg-cell\.is-on \{ box-shadow: inset 0 0 0 1px var\(--active-line\); \}/.test(css) && /\.strat-list\.has-groups > \.strat-wrap \{ scroll-margin-top: 44px; \}/.test(css));
+    && /\.sg-ic\.is-emoji \{ font: 14px\/16px var\(--font-emoji\); \}/.test(css) && /\.sg-cell\[aria-checked="true"\] \{ border-color: var\(--active-line\); \}/.test(css)
+    && /html\[data-platform="win32"\] \.flag-pop\.sg-pick \{ width: calc\(224px \+ var\(--scrollbar-w\)\); \}/.test(css)
+    && /\.sg-tog\[aria-expanded="true"\] > \.sg-chev \{ transform: translateY\(1px\) rotate\(-135deg\); \}/.test(css) && /\.sg-chev \{[^}]*rotate\(45deg\)/.test(css) && !/sgSvg\("chevron"/.test(sg)
+    && /\.sg-tog:focus-visible, \.sg-auto:focus-visible \{ outline-offset: -2px; \}/.test(css) && /body\.is-dragging \.sg-head \.sg-more \{ opacity: 0;/.test(css) && /\.strat-list\.has-groups > \.strat-wrap \{ scroll-margin-top: 44px; \}/.test(css));
 }
 console.log(red ? `\n${red} 紅` : "\n全綠");
 process.exit(red ? 1 : 0);
