@@ -2864,6 +2864,23 @@ function paintAi(el, raw, live) {
   el._cards = r.cards;
   el.textContent = "";
   mdPaint(el, r.blocks);
+  chatUrls(el);
+}
+/* 聊天裡的連結(spec chat-long-url-2026-10-30):title 一律換成解碼後的完整網址;連結字就是網址本身才縮短(md.js urlLabel)。
+   描述字像網址、網域卻跟 href 不同時,改顯示 href 算出來的字(防釣魚);沒有斜線的 AGENTS.md、v0.1.37 是檔名與版號,不算像網址。
+   比對前兩邊都過 new URL:吸收結尾斜線、大小寫、CJK 轉碼的差異(網頁 marked 會 encodeURI href)。縮過的掛 data-url-short,複製時換回 href */
+const urlHost = (s) => { try { return new URL(/^https?:\/\//i.test(s) ? s : "https://" + s).hostname.replace(/^www\./, ""); } catch (_) { return null; } };
+function chatUrls(el) {
+  el.querySelectorAll("a[href]").forEach((a) => {
+    const href = a.getAttribute("href"), text = a.textContent.trim();
+    a.title = urlTitle(href);
+    let bare = false;
+    try { bare = new URL(text).href === new URL(href).href; } catch (_) { bare = false; }   // 字不是網址
+    if (!bare && !(URL_LIKE.test(text) && urlHost(text) !== urlHost(href))) return;
+    const label = urlLabel(href);
+    if (!label || label === text) return;
+    a.textContent = label; a.dataset.urlShort = "";
+  });
 }
 /* 回合結束系統通知的摘錄(spec agent-reply-notifications-0130 §3.3;網頁工作頁有同一支、同一組測資):原文 → 前 60 字純文字,有截斷接「…」。
    剝完是空的回 "",空摘錄的字由主行程依型別補。純函式(tests/check_shell_reply_snippet.js) */
@@ -2936,6 +2953,29 @@ const chatLink = (e) => {
 };
 // Cmd/Ctrl+click 是帶 metaKey/ctrlKey 的 click,同一條;中鍵是 auxclick,不攔會走 window.open → 白名單
 ["click", "auxclick"].forEach((ev) => $("chat-scroll").addEventListener(ev, chatLink));
+/* 選取複製碰到縮過的連結:text/plain 與 text/html 裡那條換成完整網址(spec chat-long-url §3)。只選到一部分也整條換:
+   在複本範圍上擴到整個連結,不動用戶的反白(按 Cmd+C 時反白不跳)。沒碰到縮過的連結就完全不攔。
+   純文字走離屏 div 的 innerText:detached fragment 的 textContent 會吃掉段落之間的換行 */
+function chatCopy(e) {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount || !e.clipboardData) return;
+  const r = sel.getRangeAt(0).cloneRange();
+  const short = (n) => { const x = n && (n.nodeType === 1 ? n : n.parentElement); return x ? x.closest("a[data-url-short]") : null; };
+  const a0 = short(r.startContainer), a1 = short(r.endContainer);
+  if (a0) r.setStartBefore(a0);
+  if (a1) r.setEndAfter(a1);
+  const frag = r.cloneContents(), hits = frag.querySelectorAll("a[data-url-short]");
+  if (!hits.length) return;
+  hits.forEach((a) => { a.textContent = a.getAttribute("href"); });
+  const box = document.createElement("div");
+  box.style.cssText = "position:fixed;left:-99999px;top:0;white-space:pre-wrap";
+  box.appendChild(frag); document.body.appendChild(box);
+  const text = box.innerText, html = box.innerHTML;
+  box.remove();
+  e.clipboardData.setData("text/plain", text); e.clipboardData.setData("text/html", html);
+  e.preventDefault();
+}
+$("chat-scroll").addEventListener("copy", chatCopy);
 
 /* 圖片放大(lightbox):點圖開、點任何地方 / Esc / ✕ 關。焦點關掉後回到原本那張圖。 */
 let lbOpener = null;
