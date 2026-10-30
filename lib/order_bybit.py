@@ -233,10 +233,21 @@ def _request(env, method, path, params=None, body=None, retries=3):
     except _SendUnknown as e:
         cid = b.get("orderLinkId")
         guard.audit("order_unknown", error=str(e), client_order_id=cid, **fields)
-        raise OrderNotConfirmed(
+        # one read-only look by orderLinkId: an order that landed goes on to the confirm poll
+        # instead of a park; one not visible yet is parked — never sent again either way
+        try:
+            row = _find_order_row(env, "linear", {"orderLinkId": cid}, b.get("symbol")) if cid else None
+        except Exception:
+            row = None
+        if row and row.get("orderId"):
+            guard.audit("order_ok", order_id=str(row["orderId"]), found_by="orderLinkId", **fields)
+            return {"orderId": row["orderId"], "orderLinkId": cid}
+        err = OrderNotConfirmed(
             f"bybit order {cid} sent, no answer ({e}) — it may have filled; check the position, "
             f"do not resubmit", venue="bybit", venue_symbol=b.get("symbol"),
-            client_order_id=cid) from e
+            client_order_id=cid)
+        err.audited = True
+        raise err from e
     except Exception as e:
         guard.audit("order_error", error=str(e), **fields)
         raise
@@ -338,9 +349,12 @@ def _send(env, method, path, params=None, body=None, retries=3, no_resend=False)
             # landed — raising would report a failure for an order that exists
             # (and may already have filled). Resolve it back to its orderId.
             found = _lookup_by_link_id(env, (body or {}).get("category", "linear"),
-                                       link_id)
+                                       link_id, (body or {}).get("symbol"))
             if found:
                 return found
+            if no_resend:
+                # an order with this id exists and could not be read back: unknown, not 拒單
+                raise _SendUnknown("retCode=110072 after a resend, lookup by orderLinkId failed")
         msg = str(payload_json.get("retMsg") or "")
         # 10004's message echoes the signed origin_string, which CONTAINS THE
         # API KEY — it reaches logs and the web connect-failure page.
@@ -363,13 +377,14 @@ def _send(env, method, path, params=None, body=None, retries=3, no_resend=False)
     raise last_err
 
 
-def _lookup_by_link_id(env, category, link_id):
+def _lookup_by_link_id(env, category, link_id, symbol=None):
     """Resolve an orderLinkId back to its order row (open first, then history).
     Used only to recover from a retried POST that turned out to have landed."""
     for path in ("/v5/order/realtime", "/v5/order/history"):
         try:
             rows = _send(env, "GET", path,
-                         {"category": category, "orderLinkId": link_id},
+                         {"category": category, **({"symbol": symbol} if symbol else {}),
+                          "orderLinkId": link_id},
                          retries=1).get("list") or []
         except Exception:
             continue
@@ -523,9 +538,12 @@ def _confirm(env, symbol, order_id, category="linear", timeout=20):
     deadline = time.time() + timeout
     delay = 0.4
     last = None
+    venue_sym = None
     while time.time() < deadline:
         try:
-            row = _find_order_row(env, category, {"orderId": order_id})
+            if venue_sym is None:
+                venue_sym = _linear(env, symbol) if category == "linear" else symbol
+            row = _find_order_row(env, category, {"orderId": order_id}, venue_sym)
         except Exception as e:
             # the id came from the placement answer: a read timeout, a 5xx or a 10016 leave
             # its fate unknown, not rejected
@@ -544,13 +562,16 @@ def _confirm(env, symbol, order_id, category="linear", timeout=20):
         venue="bybit" if category == "linear" else None, venue_symbol=symbol, order_id=order_id)
 
 
-def _find_order_row(env, category, ident):
+def _find_order_row(env, category, ident, venue_symbol=None):
     """The order row for {'orderId': …} or {'orderLinkId': …}: /v5/order/realtime first
     (by id it also returns the account's last 500 closed orders — openOnly is ignored),
     then /v5/order/history (after a Bybit restart closed orders are only there; cancelled /
-    rejected kept 24 h, filled 7 days). None when neither lists it; a failed read raises."""
+    rejected kept 24 h, filled 7 days). venue_symbol is Bybit's name: linear queries name
+    one of symbol / baseCoin / settleCoin, and orderId > orderLinkId > symbol, so it cannot
+    pick another order. None when neither lists it; a failed read raises."""
+    sym = {"symbol": venue_symbol} if venue_symbol else {}
     for path in ("/v5/order/realtime", "/v5/order/history"):
-        rows = _request(env, "GET", path, {"category": category, **ident}).get("list") or []
+        rows = _request(env, "GET", path, {"category": category, **sym, **ident}).get("list") or []
         if rows:
             return rows[0]
     return None
@@ -622,6 +643,10 @@ def _market_and_confirm(env, symbol, body, client_order_id):
     except OrderNotConfirmed as e:
         e.venue_symbol = symbol
         e.client_order_id = e.client_order_id or body["orderLinkId"]
+        if not getattr(e, "audited", False):  # the POST path audits its own
+            guard.audit("order_unknown", error=str(e), symbol=body.get("symbol"),
+                        order_id=str(e.order_id or ""), client_order_id=e.client_order_id,
+                        intent="reduce" if body.get("reduceOnly") else "entry")
         raise
 
 
@@ -824,7 +849,7 @@ def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, park
         return None
     ident = {"orderId": str(order_id)} if order_id else {"orderLinkId": str(client_order_id)}
     try:
-        row = _find_order_row(env, "linear", ident)
+        row = _find_order_row(env, "linear", ident, _linear(env, symbol))
     except Exception:
         return None
     if row is None:

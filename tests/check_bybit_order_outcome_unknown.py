@@ -139,6 +139,20 @@ def unknown_ok(e, order_id=None, symbol="BTCUSDT"):
             and (order_id is None or str(e.order_id) == order_id))
 
 
+def lookups_only():
+    """Every GET after the lost POST is the read-only look by orderLinkId, with the symbol."""
+    qs = [{k: v[0] for k, v in parse_qs(urlparse(u).query).items()} for u in CALLS["GET"]]
+    return len(qs) <= 2 and all(q.get("orderLinkId") == "rc1" and q.get("symbol") == "BTCUSDT"
+                                and "orderId" not in q for q in qs)
+
+
+def audit_events():
+    try:
+        return [json.loads(x) for x in open(bb.guard.AUDIT_PATH)]
+    except OSError:
+        return []
+
+
 # ── the order POST ───────────────────────────────────────────────────────────
 for label, post_answer in (
         ("a read timeout", requests.exceptions.ReadTimeout("read timed out")),
@@ -152,18 +166,18 @@ for label, post_answer in (
         ("10016 Server error", bybit(code=10016, msg="Server error")),
         ("retCode 0 without an orderId", bybit({"orderLinkId": "rc1"})),
 ):
-    wire([post_answer, ACCEPTED], [FILLED])
+    wire([post_answer, ACCEPTED], [EMPTY])
     try:
         place()
         check(False, f"POST {label}: must not return a fill")
     except bb.OrderNotConfirmed as e:
-        check(len(CALLS["POST"]) == 1 and not CALLS["GET"] and unknown_ok(e) and e.order_id is None,
-              f"POST {label}: sent once, parkable unknown outcome with the orderLinkId "
-              f"({len(CALLS['POST'])} sends, venue_symbol {e.venue_symbol!r})")
+        check(len(CALLS["POST"]) == 1 and lookups_only() and unknown_ok(e) and e.order_id is None,
+              f"POST {label}: sent once, not found by orderLinkId, parkable unknown outcome "
+              f"({len(CALLS['POST'])} sends, {CALLS['GET']}, venue_symbol {e.venue_symbol!r})")
     except Exception as e:
         check(False, f"POST {label}: raised {type(e).__name__}: {e} (reads as 拒單)")
 
-wire([requests.exceptions.ReadTimeout("t")], [FILLED])
+wire([requests.exceptions.ReadTimeout("t")], [EMPTY])
 try:
     place("AMDUSDT")
     check(False, "stock perp POST read timeout: must raise")
@@ -171,7 +185,7 @@ except bb.OrderNotConfirmed as e:
     check(CALLS["POST"][0]["symbol"] == "AMDSTOCKUSDT" and unknown_ok(e, symbol="AMDUSDT"),
           f"stock perp: Bybit's name on the wire, the canonical symbol on the park ({e.venue_symbol})")
 
-wire([requests.exceptions.ReadTimeout("t")], [FILLED])
+wire([requests.exceptions.ReadTimeout("t")], [EMPTY])
 try:
     bb.place_market_order(ENV, "BTCUSDT", "long", 0.01)
     check(False, "no caller id, POST read timeout: must not return a fill")
@@ -180,6 +194,47 @@ except bb.OrderNotConfirmed as e:
     check(e.parkable() and sent_id and e.client_order_id == sent_id and len(sent_id) <= 36
           and sent_id.replace("-", "").replace("_", "").isalnum(),
           f"no caller id: the lib sends its own orderLinkId, so the unknown is still parkable ({sent_id})")
+
+# the lost answer, but the order is already readable by orderLinkId: confirmed, not parked
+wire([requests.exceptions.ReadTimeout("t"), ACCEPTED], [FILLED])
+r = place()
+check(r["executed_qty"] == 0.01 and r["order_id"] == "77" and len(CALLS["POST"]) == 1,
+      f"POST read timeout, found by orderLinkId: confirmed and returned, sent once ({r})")
+wire([requests.exceptions.ReadTimeout("t"), ACCEPTED], [requests.exceptions.ReadTimeout("t")])
+try:
+    place()
+    check(False, "POST and the lookup both time out: must raise")
+except bb.OrderNotConfirmed as e:
+    check(len(CALLS["POST"]) == 1 and unknown_ok(e), "POST and the lookup both time out: parked, sent once")
+
+# 110072 after a resend of a POST that never left (connect timeout): the order exists under our
+# id; a lookup that fails is an unknown outcome, never 拒單
+wire([requests.exceptions.ConnectTimeout("connect timed out"), bybit(code=110072, msg="OrderLinkedID is duplicate")],
+     [requests.exceptions.ReadTimeout("t")])
+try:
+    place()
+    check(False, "110072, lookup failing: must raise")
+except bb.OrderNotConfirmed as e:
+    check(len(CALLS["POST"]) == 2 and unknown_ok(e), f"110072 and the lookup fails: parkable unknown, not BybitError ({e})")
+except bb.BybitError as e:
+    check(False, f"110072 and the lookup fails: read as 拒單 ({e})")
+wire([requests.exceptions.ConnectTimeout("connect timed out"), bybit(code=110072, msg="OrderLinkedID is duplicate")],
+     [FILLED])
+r = place()
+check(r["executed_qty"] == 0.01 and len(CALLS["POST"]) == 2, "110072, found by orderLinkId: confirmed")
+
+# audit: every unknown outcome leaves an order_unknown line (POST, code 0 without an id, poll)
+for label, posts, gets in (("code 0 without an orderId", [bybit({"orderLinkId": "rc1"})], [EMPTY]),
+                           ("poll timeout", [ACCEPTED], [EMPTY]),
+                           ("POST read timeout", [requests.exceptions.ReadTimeout("t")], [EMPTY])):
+    n0 = len(audit_events())
+    wire(posts, gets)
+    try:
+        place()
+    except bb.OrderNotConfirmed:
+        pass
+    new = [x["event"] for x in audit_events()[n0:]]
+    check(new.count("order_unknown") == 1, f"audit {label}: one order_unknown line ({new})")
 
 wire([requests.exceptions.ConnectTimeout("connect timed out"), ACCEPTED], [FILLED])
 r = place()
@@ -268,7 +323,7 @@ except bb.BybitError as e:
     check(not portfolio._outcome_unknown(e), "cancelled with nothing filled: BybitError (a known no-fill)")
 
 # open_position is a linear market order too: never resent, parked under the canonical symbol
-wire([requests.exceptions.ReadTimeout("t"), ACCEPTED], [FILLED])
+wire([requests.exceptions.ReadTimeout("t"), ACCEPTED], [EMPTY])
 try:
     bb.open_position(ENV, "BTCUSDT", "long", 0.01, sl_price=60000, client_order_id="rc1")
     check(False, "open_position POST unknown must raise")
@@ -297,7 +352,8 @@ def routed(realtime=EMPTY, history=EMPTY, executions=EMPTY):
 
 wire([ACCEPTED], routed(realtime=FILLED))
 got = query()
-check(got == (0.01, 67000.0) and CALLS["q"][0] == ("/v5/order/realtime", {"category": "linear", "orderLinkId": "rc1"}),
+check(got == (0.01, 67000.0) and CALLS["q"][0] == ("/v5/order/realtime", {"category": "linear", "symbol": "BTCUSDT",
+                                                                          "orderLinkId": "rc1"}),
       f"parked by orderLinkId, filled: looked up by orderLinkId ({got}, {CALLS['q']})")
 wire([ACCEPTED], routed(realtime=FILLED))
 got = query(order_id="77")
@@ -315,7 +371,8 @@ check(query() == (0.004, 67010.0), "terminal after a partial fill → the partia
 ex = rows({"orderId": "77", "orderLinkId": "rc1", "execQty": "0.006", "execPrice": "67000", "execType": "Trade"},
           {"orderId": "77", "orderLinkId": "rc1", "execQty": "0.004", "execPrice": "67100", "execType": "Trade"},
           {"orderId": "55", "orderLinkId": "other", "execQty": "1", "execPrice": "1", "execType": "Trade"},
-          {"orderId": "", "orderLinkId": "", "execQty": "0.01", "execPrice": "2", "execType": "Funding"})
+          {"orderId": "", "orderLinkId": "", "execQty": "0.01", "execPrice": "2", "execType": "Funding"},
+          {"orderId": "77", "orderLinkId": "rc1", "execQty": "0.5", "execPrice": "3", "execType": "Funding"})
 wire([ACCEPTED], routed(executions=ex))
 parked = clock["t"] - 600
 got = query(parked_at=parked)
@@ -333,7 +390,8 @@ check(got is not None and abs(got[0] - 0.01) < 1e-12 and eq[0].get("orderId") ==
 for label, routes in (
         ("listed nowhere, no executions", routed()),
         ("no executions of ours (other id, funding)", routed(executions=rows(ex._body["result"]["list"][2],
-                                                                           ex._body["result"]["list"][3]))),
+                                                                           ex._body["result"]["list"][3],
+                                                                           ex._body["result"]["list"][4]))),
         ("a read timeout", lambda p, q: requests.exceptions.ReadTimeout("t")),
         ("HTTP 502", lambda p, q: Resp(502, None, "Bad Gateway")),
         ("10016 on the order read", lambda p, q: bybit(code=10016, msg="Server error")),
