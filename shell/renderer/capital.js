@@ -446,8 +446,11 @@ function capHandoffBody() {
 function capFoot(view) {
   const go = $("cx-go"), cancel = $("cx-cancel"), foot = go.parentNode, where = $("cx-where");
   let msg = $("cap-foot-msg");
+  if (view === "c-form" && !CAP.kc) { if (!msg) { msg = trEl("span", "foot-msg"); msg.id = "cap-foot-msg"; foot.insertBefore(msg, foot.firstChild); } msg.textContent = t("cap.beforeC"); }
+  else if (msg) msg.remove();
+  const flow = view !== "c-form" && view !== "c-win" && view !== "c-handoff";
+  where.hidden = view === "c-win"; where.textContent = view === "c-win" ? "" : t("tr.cloud.footWhere", { where: t("env.cloud"), money: envMoneyText("real"), venue: t("cap.venue") });
   if (CAP.kc) {   // 驗證碼那一步:取消退回原本那一步,主鈕「確認」
-    if (msg) msg.remove();
     cancel.hidden = false; cancel.textContent = t("del.cancel"); go.hidden = false;
     if (go.textContent.trim() !== t("cx.kc.ok") || !!go.querySelector(".spin16") !== CAP.busy) {
       go.textContent = "";
@@ -457,10 +460,6 @@ function capFoot(view) {
     go.classList.toggle("is-busy", CAP.busy);
     return capSyncGo(view);
   }
-  if (view === "c-form") { if (!msg) { msg = trEl("span", "foot-msg"); msg.id = "cap-foot-msg"; foot.insertBefore(msg, foot.firstChild); } msg.textContent = t("cap.beforeC"); }
-  else if (msg) msg.remove();
-  const flow = view !== "c-form" && view !== "c-win" && view !== "c-handoff";
-  where.hidden = view === "c-win"; where.textContent = view === "c-win" ? "" : t("tr.cloud.footWhere", { where: t("env.cloud"), money: envMoneyText("real"), venue: t("cap.venue") });
   cancel.hidden = view === "c-done" || view === "c-done-ts";
   cancel.textContent = flow || view === "c-handoff" ? t("set.close") : t("del.cancel");
   const done = view === "c-done" || view === "c-done-ts", label = view === "c-form" ? (CAP.busy ? t("cx.connecting") : t("cap.go")) : done ? t("cap.finish") : view === "c-handoff" ? t("cap.ho.go") : null;
@@ -477,7 +476,8 @@ function capFoot(view) {
 function capSyncGo(view) {
   const v = view || CAP.view, go = $("cx-go"), down = capDown();
   let off = down || CAP.busy;
-  if (CAP.kc) { go.setAttribute("aria-disabled", off || !kcReady(CAP.kc) ? "true" : "false"); return; }
+  go.classList.toggle("is-lock", false);
+  if (CAP.kc) return kcGo(go, CAP.kc, off);
   if (v === "c-form") off = off || !CAP.id.trim() || !CAP.pw;
   if (v === "c-handoff") off = off || (typeof running !== "undefined" && running);
   go.setAttribute("aria-disabled", off ? "true" : "false");

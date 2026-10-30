@@ -5439,6 +5439,7 @@ function cxModalClose(connected) {
   const sc = $("cx-scrim"); if (sc.hidden) return;
   sc.classList.remove("open"); sc.hidden = true; $("view-ws").inert = false;
   cxForget(); $("cx-body").textContent = ""; cxBag().sig.cxm = null;   // 欄位連同 DOM 一起丟:關掉的框裡不留金鑰
+  $("cx-go").classList.remove("is-lock");   // 驗證碼那一步的灰鈕不帶到下一次開框(群益本機、統一那兩條不管這個 class)
   const o = cxOpener; cxOpener = null;
   // 連上之後 onboard(連同那顆鈕)會整個換成分頁:焦點退到側欄的入口,不能掉到 BODY
   if (!connected && o && o.isConnected) o.focus(); else $("tr-nav").focus();
@@ -5552,6 +5553,8 @@ function kcStatusText(v) {
 }
 const kcSay = (v) => [kcStatusText(v), v.err ? t(KC_TEXT[v.err]) : "", v.until ? t("cx.kc.until", { t: trStamp(v.until) }) : ""].filter(Boolean).join(" ");
 const kcReady = (kc) => !!kc && !kc.view.dead && /^\d{6}$/.test(kc.code);
+// 主鈕能不能按;.btn-fill 的 aria-disabled 本身不變灰,這一步碼沒滿／沒有碼可輸時靠 .is-lock 灰掉(送的時候是圓環,不灰)
+function kcGo(go, kc, off) { go.setAttribute("aria-disabled", off || !kcReady(kc) ? "true" : "false"); go.classList.toggle("is-lock", !!kc && !kcReady(kc)); }
 // 埋點 key_verify(canon product-telemetry):step 只有 shown / ok / locked,不帶碼
 function kcTrack(step) { try { window.blave.trackEvent("key_verify", { step }); } catch (_) { } }
 /* 送完之後驗證碼那一步的下一個狀態:關卡回應 → 這一步(碼清空);其他 = 退回原本的流程(null)。
@@ -5692,7 +5695,7 @@ function cxModalPaint() {
     if (L.cx.busy) { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); go.append(sp, " "); }
     go.append(goLabel);
   }
-  go.setAttribute("aria-disabled", off ? "true" : "false"); go.classList.toggle("is-busy", !!L.cx.busy);
+  go.setAttribute("aria-disabled", off ? "true" : "false"); go.classList.toggle("is-busy", !!L.cx.busy); go.classList.toggle("is-lock", !!kc && !kcReady(kc));
   box.setAttribute("aria-busy", L.cx.busy ? "true" : "false");
   // 雲端的五處差異之 1、4:標題列灰底 +「雲端」記號;鈕正上方講目的地
   $("cx-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
@@ -5704,7 +5707,7 @@ function cxModalPaint() {
   const hadId = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
   if (kc) {
-    box.appendChild(kcStep(kc, L.cx.busy, cxConnect, () => go.setAttribute("aria-disabled", L.cx.busy || down || !kcReady(CXF.kc) ? "true" : "false")));
+    box.appendChild(kcStep(kc, L.cx.busy, cxConnect, () => kcGo(go, CXF.kc, L.cx.busy || down)));
     if (down) { const p = trEl("p", "plan-err"), m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); p.append(m, trEl("span", "", t("side.stopped"))); box.appendChild(p); }
     const back = hadId && $(hadId); if (back && !back.disabled) back.focus();
     return;
