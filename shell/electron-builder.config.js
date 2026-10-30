@@ -142,7 +142,9 @@ module.exports = {
     enableEmbeddedAsarIntegrityValidation: true,
     enableCookieEncryption: true,
   } : undefined,
-  dmg: { sign: !!IDENTITY },
+  // ULFO = lzfse,macOS 10.11 起支援(minimumSystemVersion 13.0),比預設的 UDZO(zlib)小
+  // 不設 compression: "maximum":NSIS 的 7z 本來就是 -mx=9、差量更新還會強制 normal,只剩 mac zip 小 0.6MB 卻多 10 分鐘打包
+  dmg: { sign: !!IDENTITY, format: "ULFO" },
   // electron-builder 只公證 .app;.dmg 本身也要送 + staple,下載的人離線也驗得過。
   afterAllArtifactBuild: "tools/notarize-dmg.js",
 };
