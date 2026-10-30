@@ -244,11 +244,12 @@ for (const lang of ["zh", "en"]) {
 { const SETTINGS_PAIRS = { "set.cat.display": "workspace_set_cat_display", "set.cat.rules": "workspace_set_cat_rules", "set.cat.connect": "workspace_set_cat_connect",
     "set.theme": "workspace_set_theme", "set.lang": "workspace_set_lang", "set.ccy": "workspace_set_base_ccy", "set.rn": "workspace_rn_notify", "set.rs": "workspace_rn_sound",
     "rlang.label": "workspace_reply_lang", "rules.head": "workspace_rules_head", "rules.add": "workspace_rules_add",
-    "rules.emptyLead": "workspace_rules_empty_lead", "rules.emptyHow": "workspace_rules_empty_how" };
+    "rules.emptyLead": "workspace_rules_empty_lead" };
   for (const lang of ["zh", "en"]) {
     const d = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), w = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
     const bad = Object.entries(SETTINGS_PAIRS).filter(([dk, wk]) => !d[dk] || d[dk] !== w[wk]);
     ok("設定 modal 分類名與一般／Agent／連結裡的字兩邊逐字一致(" + lang + "," + Object.keys(SETTINGS_PAIRS).length + " 組)", bad.length === 0, bad.map(([dk, wk]) => dk + "「" + d[dk] + "」 vs " + wk + "「" + w[wk] + "」").join(";"));
+    ok("規則空狀態的「在對話裡說…」兩邊都刪了(rules.emptyHow / workspace_rules_empty_how," + lang + ")", !("rules.emptyHow" in d) && !("workspace_rules_empty_how" in w));
   }
   const html = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8");
   const catsOf = (src, id) => { const a = src.indexOf('id="' + id + '"'), b = src.indexOf("</nav>", a); return a < 0 || b < 0 ? [] : [...src.slice(a, b).matchAll(/<button[^>]*\bdata-set-cat="([a-z]+)"/g)].map((m) => m[1]); };
