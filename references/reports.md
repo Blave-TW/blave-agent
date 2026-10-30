@@ -480,6 +480,11 @@ a follow-up on an answer or report you already gave (「那 ETH 呢」, 「第�
 row — the condition never occurs in the data, so the agent swapped in a top-10% threshold and
 answered in chat. That is the right call: the question changed.
 
+**An event study takes each event's price with `lib.data.price_at(df, t, interval)`** — kline rows
+are labelled by open time, so `asof(t)` / `.loc[t]` start every window one bar late
+(`references/lib.md` › `fetch_kline`). An answer that stays in chat reads its direction by §7b B4's
+last paragraph, the same as a report.
+
 ### Research scripts — kept in `tmp/research/`, rerun for the report
 
 A research question that passed the data check is already a report (above); this flow is for an
@@ -1410,7 +1415,10 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
     was not run.
 
   When a check does not support the claim, report it as it came out and weaken the lead
-  and the title to match (A1, A4). Never swap in a check that passes. *Why:* a claim that holds on
+  and the title to match (A1, A4). Never swap in a check that passes. When the average cannot be
+  told from the baseline (from zero when there is none) — it does not stand clear of the random
+  dates, the halves disagree, or its standard error spans zero — the title, the summary and the chat reply say there is no clear direction
+  (「看不出方向」), with the figure and the sample size; never 「偏弱」 / 「偏強」. *Why:* a claim that holds on
   one window only is the most common way a research report is wrong, and this is the
   section that catches it.
 - **B5. What would break this: the last sentence of the 「總結」** (`risk`; `publish` appends it to

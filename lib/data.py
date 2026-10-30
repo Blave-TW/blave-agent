@@ -1139,6 +1139,38 @@ def fetch_kline(symbol, interval, start, end, headers, max_retries=6):
     return _drop_forming_bar(_sanity_check_ohlc(df, f'{symbol} {interval} kline'), interval)
 
 
+def price_at(df, t, interval):
+    """Close of the last bar already closed at time t — the price an event at t sees.
+
+    Bars are labelled by their open time (crypto klines: UTC, 24/7), so the bar labelled t
+    closes at t + interval and `close.asof(t)` / `.loc[t]` return a price from after the
+    event. This returns the Close of the last row with label + interval <= t, or NaN when
+    that bar is missing (no row closing in (t - interval, t]) — never an older price.
+
+    df: a frame with a `Close` column (fetch_kline / fetch_kline_batch) or a close Series,
+    sorted tz-naive UTC index. t: a timestamp; naive is read as UTC. interval: the bars'
+    interval ('1h', '15min', '1d'). Not for series labelled by date (Taiwan daily bars).
+
+    Taiwan intraday (fetch_twstock_ohlcv / fetch_twfutures_ohlcv under 1d): the index is
+    naive UTC; pass a tz-aware t (Asia/Taipei) — a naive Taipei string is read as UTC and is
+    off by 8h. Events outside the session return NaN. TAIFEX 1m bars are labelled by their
+    close minute, so there the result is one minute older than needed, never later.
+    """
+    close = df['Close'] if isinstance(df, pd.DataFrame) else df
+    if not close.index.is_monotonic_increasing:
+        raise ValueError("price_at needs a sorted index (df.sort_index())")
+    td = pd.Timedelta(interval)
+    t = pd.Timestamp(t)
+    if close.index.tz is None:
+        t = t.tz_convert('UTC').tz_localize(None) if t.tz is not None else t
+    elif t.tz is None:
+        t = t.tz_localize('UTC')
+    pos = close.index.searchsorted(t - td, side='right') - 1
+    if pos < 0 or close.index[pos] + td <= t - td:
+        return np.nan
+    return float(close.iloc[pos])
+
+
 def fetch_kline_batch(symbols, interval, start, end, headers):
     """Batch fetch OHLCV kline for many symbols via /kline/batch (chunk_size=20).
     Returns dict {symbol: DataFrame(Open, High, Low, Close, Volume)} — keys are
@@ -1482,7 +1514,16 @@ def fetch_holder_concentration(symbol, interval, start, end, headers):
 def fetch_funding_rate(symbol, interval, start, end, headers, exchange='binance'):
     """資金費率 Funding Rate. Returns DataFrame with 'alpha' column (alpha = funding rate × 100).
     exchange: 'binance' (default) / 'okx' / 'bingx' / 'bybit' — the perp whose funding is read;
-    close price is always the Binance perp."""
+    close price is always the Binance perp.
+
+    'alpha' is the PREDICTED (live-estimate) rate, never a settled one: the current-period rate
+    sampled every 5 min (Binance: premiumIndex.lastFundingRate, which moves until settlement),
+    so the latest row is the estimate for the coming settlement. Exception: Bybit before
+    2026-09-20 is backfilled settled rates, forward-filled. Calling premiumIndex directly gives
+    the same estimate; a settled rate comes only from GET /fapi/v1/fundingRate.
+    A reply quoting a rate says which it is (「本期即時預估 x%」 / 「上一期已結算 x%」) and gives
+    settlement times in the user's time zone — 8h contracts: 台北 08:00 / 16:00 / 00:00 (= 00/08/16
+    UTC); 4h/1h contracts per fundingIntervalHours in /fapi/v1/fundingInfo. Details: references/lib.md."""
     params = {'symbol': symbol, 'period': interval}
     # default omitted so the cache dir of every existing Binance fetch stays valid
     if exchange != 'binance':
