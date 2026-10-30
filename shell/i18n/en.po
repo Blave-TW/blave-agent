@@ -3113,6 +3113,9 @@ msgstr "How the local AI is signed in, e.g. subscription or API key; no account 
 msgid "priv.collect.10"
 msgstr "Which kind of sign-in failure, and whether the AI counted as signed in"
 
+msgid "priv.collect.11"
+msgstr "Whether the key-change code box appeared, passed or locked, never the code"
+
 msgid "priv.never.h"
 msgstr "Not in usage data"
 
@@ -9422,4 +9425,38 @@ msgstr "Queued messages won’t be sent."
 
 msgid "tm.quitQueuedTitle"
 msgstr "Messages are still queued"
+
+# Key-change code gate (api key_change_gate: a phone paired in the last 24 hours). {time} = when the gate lifts
+msgid "cx.kc.label"
+msgstr "Email code"
+
+msgid "cx.kc.hint"
+msgstr "A phone was paired in the last 24 hours, so key changes need a code."
+
+msgid "cx.kc.sent"
+msgstr "We sent a code to your account email. Enter the 6 digits, then press again."
+
+msgid "cx.kc.expiredSent"
+msgstr "That code expired. A new one is in your account email."
+
+msgid "cx.kc.cooldown"
+msgstr "A code was just sent. Check your account email."
+
+msgid "cx.kc.limited"
+msgstr "Too many codes sent today. From {time}, no code is needed."
+
+msgid "cx.kc.sendFail"
+msgstr "The code couldn't be sent, and the key wasn't saved. Press again soon."
+
+msgid "cx.kc.noEmail"
+msgstr "Your account has no email for a code. From {time}, no code is needed."
+
+msgid "cx.kc.invalid"
+msgstr "That code is wrong. Enter it again."
+
+msgid "cx.kc.locked"
+msgstr "Too many wrong codes today. From {time}, no code is needed."
+
+msgid "cx.kc.format"
+msgstr "Enter the 6-digit code."
 

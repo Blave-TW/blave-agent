@@ -3731,7 +3731,9 @@ app.whenReady().then(() => {
     const CC = require("./cloudcmd");
     const built = CC.connectSecrets(a, require("./binance_link").keyShapeOk, Date.now() / 1000);
     if (built.error) return { ok: false, code: built.error, detail: {} };
-    const r = await cloudCmd().send("credentials", {}, built.secrets);
+    // 改金鑰驗證碼(api key_change_gate):帶碼重送也走這裡,不沿用上一趟的 request_id(send 自己鑄新的)
+    const code = a && typeof a.keyChangeCode === "string" && CC.KEY_CHANGE_CODE_RE.test(a.keyChangeCode) ? a.keyChangeCode : null;
+    const r = await cloudCmd().send("credentials", {}, built.secrets, { keyChangeCode: code, lang: a && a.lang });
     const out = CC.interpretConnect(r, built.secrets);
     if (out.ok) { cloudHost().start(); cloudHost().refresh(true).catch(() => {}); }
     return out;
@@ -3773,14 +3775,14 @@ app.whenReady().then(() => {
   /* 雲端主機的群益開通(cloud_capital.js;畫面 renderer/capital.js)。pfx 與匯出密碼只在這個行程裡封裝,renderer 只拿得到檔名與代號;
      指令只收固定那幾步。送完不管結果都要一份新狀態:長步驟的結果在主機回報的 capital_connect 裡,不在回條裡 */
   const capital = () => _capital || (_capital = require("./cloud_capital").createCapital({
-    send: (cmd, args, secrets) => cloudCmd().send(cmd, args, secrets),
+    send: (cmd, args, secrets, o) => cloudCmd().send(cmd, args, secrets, o),
     pick: async () => { const w = BrowserWindow.getAllWindows()[0]; const r = await dialog.showOpenDialog(w, { properties: ["openFile"], filters: [{ name: "PFX", extensions: ["pfx", "p12"] }] }); return r.canceled ? null : r.filePaths[0]; },
     stat: (p) => fs.statSync(p), readFile: (p) => fs.readFileSync(p), basename: (p) => path.basename(p),
     after: () => { cloudHost().start(); cloudHost().refresh(true).catch(() => {}); },
   }));
   const capDenied = { code: "NOT_ALLOWED" };
   handle("capital-pick", () => capital().pickPfx(), capDenied);
-  handle("capital-creds", (_e, a) => capital().saveCreds({ id: a && a.id, pw: a && a.pw }), capDenied);
+  handle("capital-creds", (_e, a) => capital().saveCreds({ id: a && a.id, pw: a && a.pw, keyChangeCode: a && typeof a.keyChangeCode === "string" ? a.keyChangeCode : null, lang: a && a.lang }), capDenied);
   handle("capital-step", (_e, name) => capital().step(String(name || "")), capDenied);
   handle("capital-upload", (_e, pw) => capital().upload(pw), capDenied);
   handle("capital-unbind", () => capital().unbind(), capDenied);

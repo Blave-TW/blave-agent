@@ -63,6 +63,8 @@ function interpret(r) {
     return { code: m ? m[1] : "REJECTED" };
   }
   if (r && r.error === "UNKNOWN_COMMAND") return { code: "NOT_CAPABLE" };
+  // 改金鑰驗證碼關卡(cloudcmd.keyGate):代號原樣、明細給畫面講(同一般連接框)
+  if (r && r.gate) return { code: r.error, detail: r.gate };
   if (r && r.kind === "unknown") return { code: "SENT" };
   return { code: "UNDELIVERED", error: (r && r.error) || "OFFLINE", kind: (r && r.kind) || "undelivered", machineState: (r && r.machineState) || null };
 }
@@ -82,7 +84,7 @@ function createCapital(opts) {
   let picked = null;   // { buf, name }:只在這裡,不往外交
   const after = () => { try { if (opts.after) opts.after(); } catch (_) { /* 狀態刷新失敗不影響回傳 */ } };
   const forget = () => { if (picked && picked.buf) picked.buf.fill(0); picked = null; };
-  const send = async (cmd, args, secrets) => { let r = null; try { r = await opts.send(cmd, args, secrets || null); } catch (_) { /* 當沒送到 */ } after(); return r; };
+  const send = async (cmd, args, secrets, sendOpts) => { let r = null; try { r = await opts.send(cmd, args, secrets || null, sendOpts); } catch (_) { /* 當沒送到 */ } after(); return r; };
 
   async function pickPfx() {
     let p = null; try { p = await opts.pick(); } catch (_) { return { code: "PICK_FAILED" }; }
@@ -98,10 +100,11 @@ function createCapital(opts) {
     return { code: "OK", name, size };
   }
 
+  /* a.keyChangeCode / a.lang:改金鑰驗證碼(cloudcmd 只收 6 碼、zh / en);每次叫都是新的 request_id */
   async function saveCreds(a) {
     const built = credSecrets(a);
     if (built.error) return { code: built.error };
-    const r = await send("credentials", { venue: "capital" }, built.secrets);
+    const r = await send("credentials", { venue: "capital" }, built.secrets, { keyChangeCode: a.keyChangeCode, lang: a.lang });
     built.secrets.capital_password = ""; built.secrets = null;
     const out = interpret(r);
     // credentials 在主機上是同步寫檔:回條沒到就是不知道寫了沒(畫面講「沒回應」,不當成功)

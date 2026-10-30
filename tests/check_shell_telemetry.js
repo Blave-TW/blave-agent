@@ -1,4 +1,4 @@
-// shell/telemetry.js:三十個事件、屬性只有列舉、關掉就一則都不送、送不出去不炸。0.1.9 的九個「卡在哪一步」事件見檔尾那一段。
+// shell/telemetry.js:三十一個事件、屬性只有列舉、關掉就一則都不送、送不出去不炸。0.1.9 的九個「卡在哪一步」事件見檔尾那一段。
 // 跑法:node tests/check_shell_telemetry.js
 const fs = require("fs"), os = require("os"), path = require("path");
 const { createTelemetry, EVENTS, FROM_RENDERER } = require("../shell/telemetry.js");
@@ -28,7 +28,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   await tick();
   t("…送出去的 props 只剩列舉那一格", JSON.stringify(sent[0].props) === '{"kind":"claude"}' && !JSON.stringify(sent[0]).includes("alpha"));
   t("first_backtest_done 只送一次(跨重開)", tm.track("first_backtest_done") === true && tm.track("first_backtest_done") === false && (await tick(), mk(dir).tm.track("first_backtest_done")) === false);
-  t("二十六個事件(0.1.9 +9 卡在哪一步、+heartbeat;0.1.10 更新提示只加 feature_used 的 name、不開新事件型別;0.1.12 +engine_setup / engine_opt_fail;0.1.13 +lib_pick / idea_sent;0.1.15 +detect_fail;0.1.18 +strat_created / strat_backtested / strat_deployed;0.1.28 +device_type;0.1.30 +reply_notif;0.1.35 +auth_fail / cli_auth)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 30 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
+  t("二十六個事件(0.1.9 +9 卡在哪一步、+heartbeat;0.1.10 更新提示只加 feature_used 的 name、不開新事件型別;0.1.12 +engine_setup / engine_opt_fail;0.1.13 +lib_pick / idea_sent;0.1.15 +detect_fail;0.1.18 +strat_created / strat_backtested / strat_deployed;0.1.28 +device_type;0.1.30 +reply_notif;0.1.35 +auth_fail / cli_auth;0.1.37 +key_verify)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 31 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
 
   let tok = mk(dir, { getToken: () => "acct-abc" }); tok.tm.track("login_done"); await tick();
   t("有 token 才帶 token(放 body)", tok.sent[0].token === "acct-abc" && sent.every((b) => !("token" in b)));
@@ -297,7 +297,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       && Object.keys(EVENTS).every((ev) => ev.length <= 19));   // 舊的 first_backtest_done 19 字,新名字一律 ≤16
     const tmSrc9 = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8");
     t("first_reply_done 每安裝一次(ONCE);其餘八個每日一次(DAILY,api 的每小時熔斷算的是 POST 數)", /const ONCE = \[[^\]]*"first_reply_done"/.test(tmSrc9) && Object.keys(NEW).filter((e) => e !== "first_reply_done").every((e) => new RegExp('const DAILY = \\[[^\\]]*"' + e + '"').test(tmSrc9)));
-    t("畫面只准送這幾個(FROM_RENDERER;0.1.13 +lib_pick / idea_sent、0.1.15 +detect_fail、0.1.35 +auth_fail / cli_auth 接在最後);里程碑與主行程自己判的兩個不在名單上", JSON.stringify(FROM_RENDERER) === JSON.stringify(["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth"])
+    t("畫面只准送這幾個(FROM_RENDERER;0.1.13 +lib_pick / idea_sent、0.1.15 +detect_fail、0.1.35 +auth_fail / cli_auth、0.1.37 +key_verify 接在最後);里程碑與主行程自己判的兩個不在名單上", JSON.stringify(FROM_RENDERER) === JSON.stringify(["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify"])
       && ["app_first_open", "app_open", "login_done", "first_backtest_done", "trade_started", "cloud_started", "feature_used", "plan_start_res", "update_failed", "heartbeat"].every((e) => !FROM_RENDERER.includes(e)));
     const x = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")));
     t("每個事件的每個值都送得出去;表外的值 / 缺屬性 / 塞內容都不送", Object.keys(NEW).every((ev) => NEW[ev][1].every((v) => x.tm.track(ev, { [NEW[ev][0]]: v, msg: "SECRET" }) === true || ev === "first_reply_done"))
@@ -454,6 +454,22 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     if (!fs.existsSync(apiPy30)) console.log("SKIP  api 端 reply_notif 比對(需要 monorepo 版面)");
     else { const got = {}; for (const m of fs.readFileSync(apiPy30, "utf8").matchAll(/"([a-z_]+)": \{"props": \{"([a-z_]+)": \(([^()]*)\)\}, "once": (True|False)\}/g)) got[m[1]] = { key: m[2], vals: [...m[3].matchAll(/"([^"]+)"/g)].map((v) => v[1]), once: m[4] === "True" };
       t("api desktop_telemetry.EVENTS 的 reply_notif = 外殼這份(act 七個值逐序、不是 once)——api 還沒上就紅,出貨順序 api 先", !!got.reply_notif && got.reply_notif.key === "act" && JSON.stringify(got.reply_notif.vals) === JSON.stringify(ACT) && got.reply_notif.once === false); } }
+
+  // ── 0.1.37 key_verify:改金鑰驗證碼,畫面送(trade.js kcTrack)、每日一列、step 只有三個值、不帶碼 ──
+  { const tmSrc37 = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8"), tr37 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
+    const STEP = ["shown", "ok", "locked"];
+    t("key_verify:一個屬性 step、三個值逐序、DAILY、不是 once、畫面送得了",
+      JSON.stringify(EVENTS.key_verify) === JSON.stringify({ step: STEP }) && /const DAILY = \[[^\]]*"key_verify"/.test(tmSrc37) && !/const ONCE = \[[^\]]*"key_verify"/.test(tmSrc37) && FROM_RENDERER.includes("key_verify"));
+    const sends = [...tr37.matchAll(/kcTrack\("([a-z]+)"\)/g)].map((m) => m[1]);
+    t("trade.js 送出點:kcTrack 只送 shown / ok / locked,而且只經 trackEvent(\"key_verify\", { step })",
+      JSON.stringify([...new Set(sends)].sort()) === JSON.stringify(["locked", "ok", "shown"]) && /function kcTrack\(step\) \{ try \{ window\.blave\.trackEvent\("key_verify", \{ step \}\); \}/.test(tr37));
+    const x = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")));
+    t("每個值都送得出去;表外的值(例如碼)與缺屬性不送", STEP.every((v) => x.tm.track("key_verify", { step: v }) === true) && x.tm.track("key_verify", { step: "123456" }) === false && x.tm.track("key_verify") === false); await tick();
+    t("…出門的 props 只有 step", x.sent.filter((b) => b.event === "key_verify").every((b) => JSON.stringify(Object.keys(b.props)) === '["step"]'));
+    const apiPy37 = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
+    if (!fs.existsSync(apiPy37)) console.log("SKIP  api 端 key_verify 比對(需要 monorepo 版面)");
+    else { const got = {}; for (const m of fs.readFileSync(apiPy37, "utf8").matchAll(/"([a-z_]+)": \{"props": \{"([a-z_]+)": \(([^()]*)\)\}, "once": (True|False)\}/g)) got[m[1]] = { key: m[2], vals: [...m[3].matchAll(/"([^"]+)"/g)].map((v) => v[1]), once: m[4] === "True" };
+      t("api desktop_telemetry.EVENTS 的 key_verify = 外殼這份——api 還沒上就紅,出貨順序 api 先", !!got.key_verify && got.key_verify.key === "step" && JSON.stringify(got.key_verify.vals) === JSON.stringify(STEP) && got.key_verify.once === false); } }
 
   // ── 0.1.12 引擎安裝(shell/enginesetup.js,主行程送):一個 prop、值是列舉、16 字以內、每日去重、畫面送不了 ──
   { const ENG = { engine_setup: ["result", ["first_done", "first_net", "first_other", "first_timeout", "upd_done", "upd_net", "upd_other", "upd_timeout"]],

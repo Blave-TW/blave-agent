@@ -49,11 +49,23 @@ const KIND = {
   RATE_LIMITED: "undelivered", OFFLINE: "undelivered", INVALID_CREDENTIALS: "undelivered",
   APP_SECRET_REQUIRED: "undelivered", BAD_RESPONSE: "undelivered", BAD_ARGS: "undelivered",
   NO_LOGIN: "undelivered",
+  // 改金鑰驗證碼關卡(api app_auth.key_change_gate):api 在佔 request_id 之前就擋,確定沒排進去
+  KEY_CHANGE_VERIFY: "undelivered", KEY_CHANGE_CODE_INVALID: "undelivered", KEY_CHANGE_CODE_EXPIRED: "undelivered",
+  VERIFY_LOCKED: "undelivered", KEY_CHANGE_CHECK_UNAVAILABLE: "undelivered",
   UNKNOWN_RESULT: "unknown",
   // `ACCOUNT_CHANGED` 刻意不在表裡:它的桶要看丟在哪一段(見 dropped()),查表會查到錯的那個
 };
 
-/* 指令那一段的回應 → { code, id?, duplicate?, machineState? }(純函式)。
+const KEY_GATE_403 = ["KEY_CHANGE_VERIFY", "KEY_CHANGE_CODE_INVALID", "KEY_CHANGE_CODE_EXPIRED"];
+const KEY_GATE_REASONS = ["cooldown", "limited", "send_failed"];
+const KEY_CHANGE_CODE_RE = /^\d{6}$/;
+// 關卡的明細:until 是這道關自己消失的時間(配對滿 24 小時),sent / reason 只有 KEY_CHANGE_VERIFY 帶
+function keyGate(b) {
+  const until = typeof b.until === "string" && !isNaN(Date.parse(b.until)) ? b.until : null;
+  return { until, sent: b.sent === true, reason: KEY_GATE_REASONS.indexOf(b.reason) >= 0 ? b.reason : null };
+}
+
+/* 指令那一段的回應 → { code, id?, duplicate?, machineState?, gate? }(純函式)。
    回傳裡不放 api 的 `error` 明細:那是給開發看的英文短句,畫面照代號給話。 */
 function interpret(res) {
   if (!res || !res.status) return { code: "OFFLINE" };
@@ -61,10 +73,13 @@ function interpret(res) {
   if (s === 401) return { code: b.error_code === "APP_SECRET_REQUIRED" ? "APP_SECRET_REQUIRED" : "INVALID_CREDENTIALS" };
   // 409 = 主機沒在跑(這個 app 不送 update,api 那兩個 update 專用的 409 碰不到)
   if (s === 409) return { code: "MACHINE_NOT_RUNNING", machineState: MACHINE_STATES.indexOf(b.machine_state) >= 0 ? b.machine_state : null };
+  if (s === 403 && KEY_GATE_403.indexOf(b.error_code) >= 0) return { code: b.error_code, gate: keyGate(b) };
+  if (s === 429 && b.error_code === "VERIFY_LOCKED") return { code: "VERIFY_LOCKED", gate: keyGate(b) };
   if (s === 429) return { code: "RATE_LIMITED" };
   if (s === 413) return { code: "BODY_TOO_LARGE" };
   if (s === 400) return { code: BAD_REQUEST_CODES.indexOf(b.error_code) >= 0 ? b.error_code : "BAD_COMMAND" };
   if (s === 503 && b.error_code === "AUDIT_UNAVAILABLE") return { code: "AUDIT_UNAVAILABLE" };
+  if (s === 503 && b.error_code === "KEY_CHANGE_CHECK_UNAVAILABLE") return { code: "KEY_CHANGE_CHECK_UNAVAILABLE" };
   if (s >= 500) return { code: "OFFLINE" };
   if (s === 200 && b.status === "queued" && typeof b.id === "string" && REQUEST_ID_RE.test(b.id))
     return { code: "QUEUED", id: b.id, duplicate: b.duplicate === true };
@@ -105,8 +120,10 @@ function createCloudCmd(opts) {
        args    — 形狀見契約 §2(api 端 `_cloud_command_args` 再驗一次);沒有就給 {}
        secrets — **只有 cmd === "credentials" 會被放進 body 的頂層 `secrets`**;別的指令帶了一律丟掉
                  (api 對非 credentials 帶 secrets 是 400,而呼叫端傳錯不該讓金鑰白跑一趟網路)
-       opts    — { requestId, ackWindowMs }:requestId 重試時把上一趟回傳的那顆原樣傳回來(冪等);
-                 ackWindowMs 給 ack 晚到的指令(manage_optimize 跑完腳本才 ack),沒給就是 ACK_WINDOW_MS
+       opts    — { requestId, ackWindowMs, keyChangeCode, lang }:requestId 重試時把上一趟回傳的那顆原樣傳回來(冪等);
+                 ackWindowMs 給 ack 晚到的指令(manage_optimize 跑完腳本才 ack),沒給就是 ACK_WINDOW_MS;
+                 keyChangeCode / lang 只隨 credentials(改金鑰驗證碼、驗證信的語言)。帶碼重送要**換一顆** requestId:
+                 關卡擋下時 api 沒佔那顆,但碼對了之後才是真正的那一次送出
      回 { ok:true, result, requestId, id, duplicate } 或 { ok:false, error, kind, requestId, id?, machineState? }。永遠不拋。 */
   async function send(cmd, args, secrets, sendOpts) {
     const requestId = (sendOpts && sendOpts.requestId) || crypto.randomBytes(16).toString("hex");
@@ -122,6 +139,8 @@ function createCloudCmd(opts) {
     const body = { token, app_secret: c.appSecret, request_id: requestId, cmd,
       args: args && typeof args === "object" ? args : {} };
     if (cmd === "credentials" && secrets && typeof secrets === "object") body.secrets = secrets;
+    if (cmd === "credentials" && sendOpts && KEY_CHANGE_CODE_RE.test(String(sendOpts.keyChangeCode || ""))) body.key_change_code = sendOpts.keyChangeCode;
+    if (cmd === "credentials" && sendOpts && ["zh", "en"].indexOf(sendOpts.lang) >= 0) body.lang = sendOpts.lang;
     // 排在前一個 POST 後面(檔頭)。排隊的時候登出 / 換人了 = 不打上線,確定沒送出
     const turn = chain.then(async () => {
       if (mine !== gen) return { skipped: true };
@@ -137,8 +156,11 @@ function createCloudCmd(opts) {
     // 走到這裡的一定是請求已經打上線的——api 已經回了 queued 卻說「沒送到」,用戶會去重按一次全部平倉
     const r = interpret(res);
     if (!ours(mine, me)) return dropped(r.code === "QUEUED" || r.code === "UNKNOWN_RESULT");
-    if (r.code !== "QUEUED")
-      return { ok: false, error: r.code, kind: KIND[r.code] || "undelivered", requestId, machineState: r.machineState || null };
+    if (r.code !== "QUEUED") {
+      const out = { ok: false, error: r.code, kind: KIND[r.code] || "undelivered", requestId, machineState: r.machineState || null };
+      if (r.gate) out.gate = r.gate;
+      return out;
+    }
 
     // 排進去了:從這裡開始,任何問不到都是「結果不明」,不是「沒送到」
     const id = r.id, duplicate = r.duplicate;
@@ -223,8 +245,10 @@ const CONNECT_CODES = ["TRADING_DISABLED", "INCOMPLETE_PAIR", "IP_OR_KEY", "BAD_
 /* cloudCmd.send("credentials") 的回傳 → { ok, code, detail }(純函式;detail 裡沒有金鑰——這個回傳本來就不含)。
      ok      → OK | NO_IP_RESTRICT(沒設白名單,不擋);detail = { spot, futures }。舊 runtime 回字串 "credentials=N" 也算 OK(Wei:這版不管)
      rejected→ 表上的代號;RATE_LIMITED 依說明字串再分 RATE_BANNED(418)/ RATE_BACKOFF(冷卻中、這次沒去問);其餘 REJECTED + 原文前 200 字
+     改金鑰關卡 → KEY_CHANGE_VERIFY / KEY_CHANGE_CODE_INVALID / KEY_CHANGE_CODE_EXPIRED / VERIFY_LOCKED,detail = { until, sent, reason }
      其他    → UNDELIVERED / CMD_UNKNOWN,detail 帶 error / kind / machineState(畫面走 trSendError 那組雲端句) */
 function interpretConnect(r, secrets) {
+  if (r && r.gate) return { ok: false, code: r.error, detail: r.gate };
   if (r && r.ok) {
     const b = r.result && typeof r.result === "object" ? r.result.binance : null;
     if (b && typeof b === "object") return { ok: true, code: b.code === "NO_IP_RESTRICT" ? "NO_IP_RESTRICT" : "OK", detail: { spot: b.spot === false ? false : true, futures: b.futures === false ? false : true } };
@@ -278,4 +302,4 @@ function interpretVenueBind(r, secrets) {
   return { ok: false, code: "SEND_FAILED", detail: { error: shown } };
 }
 
-module.exports = { interpretVenueBind, createCloudCmd, interpret, interpretAck, KIND, CLOUD_ONLY_COMMANDS, cloudArgsOk, connectSecrets, CONNECT_VENUES, BITGET_VERIFIED_MODES, venueOpen, venueEnvNames, interpretConnect, CONNECT_CODES, ENDPOINT, ACK_ENDPOINT, REQUEST_ID_RE, ACK_FIRST_MS, ACK_FACTOR, ACK_MAX_MS, ACK_WINDOW_MS };
+module.exports = { KEY_CHANGE_CODE_RE, interpretVenueBind, createCloudCmd, interpret, interpretAck, KIND, CLOUD_ONLY_COMMANDS, cloudArgsOk, connectSecrets, CONNECT_VENUES, BITGET_VERIFIED_MODES, venueOpen, venueEnvNames, interpretConnect, CONNECT_CODES, ENDPOINT, ACK_ENDPOINT, REQUEST_ID_RE, ACK_FIRST_MS, ACK_FACTOR, ACK_MAX_MS, ACK_WINDOW_MS };

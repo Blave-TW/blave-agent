@@ -20,7 +20,7 @@ const CAP_PROBE_ERR = { cert_old: "cap.err.certOld", cert_unusable: "cap.err.cer
   timeout: "cap.err.timeout", vehicle_failed: "cap.err.vehicle", api_version: "cap.err.apiVersion", no_credentials: "cap.err.noCreds" };
 
 const capBlank = () => ({ credsUpd: undefined, base: null, phase: "form", id: "", pw: "", ppw: "", file: null, fileErr: null, route: null, sent: null, busy: false, msg: null, notCapable: false,
-  setupSent: false, finishSent: false, signOpened: false, signChecked: false, unlockUsed: false, recheck: false, storeOpen: false, seen: {}, sig: null });
+  setupSent: false, finishSent: false, signOpened: false, signChecked: false, unlockUsed: false, recheck: false, storeOpen: false, seen: {}, sig: null, kc: null });
 let CAP = capBlank();
 
 /* ── 純邏輯(tests/check_shell_capital_view.js 從原文切出來跑;這一段不准碰 DOM)── */
@@ -137,13 +137,25 @@ function capBurst() { ENV.burst = trBurstBump(ENV.burst, Date.now(), TR_BURST_MS
 async function capSaveCreds(then) {
   if (CAP.busy || capDown()) return;
   const before = capCC(), upd = before ? before.updated_at || 0 : null;
+  // 改金鑰驗證碼(同連接框,trade.js kcNext):每次送都是新的 request_id;碼過期 = 不帶碼再送一次,讓 api 寄新的一組
+  if (CAP.kc && !/^\d{6}$/.test(CAP.kc.code)) { CAP.msg = { code: "KC_FORMAT", detail: {} }; capPaint(); srSay(t("cx.kc.format")); kcFocus(); return false; }
   CAP.busy = true; CAP.msg = null; capPaint();
-  let r = null; try { r = await window.blave.capitalCreds(CAP.id, CAP.pw); } catch (_) { }
+  const send = (code) => window.blave.capitalCreds(CAP.id, CAP.pw, { keyChangeCode: code || undefined, lang: LANG });
+  let r = null, expired = false;
+  try {
+    r = await send(CAP.kc && CAP.kc.code);
+    if (r && r.code === "KEY_CHANGE_CODE_EXPIRED") { expired = true; r = await send(null); }
+  } catch (_) { }
   CAP.busy = false;
   if (!r || r.code !== "OK") {
-    CAP.msg = r && r.code === "NOT_CAPABLE" ? { code: "UNDELIVERED", error: "UNKNOWN_COMMAND" } : r || { code: "UNDELIVERED" };
-    capPaint(); return false;
+    CAP.msg = r && r.code === "NOT_CAPABLE" ? { code: "UNDELIVERED", error: "UNKNOWN_COMMAND" } : r ? Object.assign({}, r, { expired }) : { code: "UNDELIVERED" };
+    CAP.kc = kcNext(CAP.kc, CAP.msg.code);
+    capPaint();
+    const said = cxKcText(CAP.msg); if (said) srSay(said);
+    if (CAP.kc) kcFocus();
+    return false;
   }
+  kcNext(CAP.kc, "OK"); CAP.kc = null;
   CAP.id = ""; CAP.pw = ""; CAP.recheck = false; CAP.unlockUsed = false; CAP.credsUpd = upd; CAP.finishSent = false;
   capTrack("form");
   if (then) await then();
@@ -280,6 +292,7 @@ function capMsgText(m) {
   if (c === "BAD_FORMAT") return t("cap.err.idFormat");
   if (c === "KEY_TIMEOUT" || c === "KEY_EXPIRED" || c === "KEY_INVALID") return t("cap.pfx.errKey");
   if (c === "CRYPTO_MISSING") return t("cap.err.notReady");
+  const kc = cxKcText(m); if (kc) return kc;
   if (c === "UNDELIVERED") return trSendError({ error: m.error, kind: m.kind || "undelivered", machineState: m.machineState }, "connect", "cloud") || t("side.stopped");
   return t("cap.err.generic");
 }
@@ -368,7 +381,8 @@ function capRows(view, cc) {
     const ready = CAP.id.trim() && CAP.pw && !off;
     const go = capBtn("btn-fill", t("cap.recheck"), () => capSaveCreds(() => capStep("probe")), "cap-recheck", !ready); go.dataset.need = "id,pw";
     rows.push(capRow("bad", t("cap.s.pw"), "", capFrag(noCreds ? capDo(t("cap.err.noCreds")) : null, capField("cap-id", t("cap.id"), "id", { plain: true, ro: CAP.busy }),
-      capField("cap-pw", t("cap.pw"), "pw", { ro: CAP.busy, err: pwErr, enter: () => { if (CAP.id.trim() && CAP.pw) capSaveCreds(() => capStep("probe")); } }), capActs(go), capStore(cc))));   // 揭露句在鈕之後:不把欄位和它的鈕拆開
+      capField("cap-pw", t("cap.pw"), "pw", { ro: CAP.busy, err: pwErr, enter: () => { if (CAP.id.trim() && CAP.pw) capSaveCreds(() => capStep("probe")); } }),
+      CAP.kc ? kcField(CAP.kc, CAP.busy, () => { if (CAP.id.trim() && CAP.pw) capSaveCreds(() => capStep("probe")); }) : null, capActs(go), capStore(cc))));   // 揭露句在鈕之後:不把欄位和它的鈕拆開
   } else if (view === "c-pw-locked") {
     rows.push(capRow("bad", t("cap.s.pw"), "", capFrag(capDo(t("cap.err.pwLocked")), capDo(t("cap.c.unlockDo"), true), capActs(capBtn("btn-fill", t("cap.unlocked"), () => capStep("unlock"), "cap-unlock", off)))));
   } else if (view === "c-probe" && probeRow === "pw") rows.push(runRow(t("cap.s.pw"), t("cap.s.probe")));
@@ -485,7 +499,7 @@ function capPaint() {
   $("cx-title").textContent = view === "c-form" || view === "c-win" ? t("cx.title") : t("cap.title");
   capFoot(view);
   box.setAttribute("aria-busy", CAP.busy || view === "c-finish" || view === "c-probe" || view === "c-importing" ? "true" : "false");
-  const sig = LANG + "|" + JSON.stringify([view, cc, CAP.route, CAP.busy, CAP.msg, CAP.file, CAP.fileErr, CAP.signOpened, CAP.unlockUsed, CAP.verifyDl, CAP.verifyChecked, down,
+  const sig = LANG + "|" + JSON.stringify([view, cc, CAP.route, CAP.busy, CAP.msg, !!CAP.kc, CAP.file, CAP.fileErr, CAP.signOpened, CAP.unlockUsed, CAP.verifyDl, CAP.verifyChecked, down,
     CAP.sent && Date.now() - CAP.sent.at >= CAP_NO_MOVE_MS, false]);
   if (CAP.sig === sig && box.firstChild) return;
   CAP.sig = sig;
@@ -498,6 +512,7 @@ function capPaint() {
       box.appendChild(trEl("p", "cx-manual-note", t("cap.meta")));
       box.appendChild(capField("cap-id", t("cap.id"), "id", { plain: true, ro: CAP.busy, enter: capPrimary }));
       box.appendChild(capField("cap-pw", t("cap.pw"), "pw", { ro: CAP.busy, enter: capPrimary }));
+      if (CAP.kc) box.appendChild(kcField(CAP.kc, CAP.busy, capPrimary));
       const st = capStore(cc); if (st) box.appendChild(st);
     }
   } else if (view === "c-handoff") box.appendChild(capHandoffBody());
@@ -505,7 +520,7 @@ function capPaint() {
   else box.appendChild(capRows(view, cc));
   const slot = trEl("div", ""); slot.setAttribute("role", "status"); box.appendChild(slot);
   const m = down ? t("side.stopped") : capMsgText(CAP.msg);
-  if (m) slot.appendChild(capErr(m, !down && CAP.msg && CAP.msg.code === "BUSY"));
+  if (m) slot.appendChild(capErr(m, !down && CAP.msg && (CAP.msg.code === "BUSY" || kcCalm(CAP.msg))));
   capSyncGo(view);
   const back = hadId && $(hadId);
   if (back && !back.disabled) back.focus();

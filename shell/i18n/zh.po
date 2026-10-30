@@ -3124,6 +3124,10 @@ msgstr "本機 AI 的登入方式，例如訂閱或 API 金鑰；不含帳號與
 msgid "priv.collect.10"
 msgstr "登入失敗的類別，以及當下是否判定為已登入"
 
+# 0.1.37 改金鑰驗證碼(key_verify);面板排在 priv.collect.10 之後
+msgid "priv.collect.11"
+msgstr "改金鑰時驗證碼框的出現、通過與鎖住；不含驗證碼"
+
 msgid "priv.never.h"
 msgstr "使用資料不收"
 
@@ -9450,4 +9454,38 @@ msgstr "排隊中的 {n} 句不會送出。"
 
 msgid "tm.quitQueuedTitle"
 msgstr "還有訊息在排隊"
+
+# 改金鑰驗證碼(api key_change_gate:帳號 24 小時內配對過新手機,任何來源改交易所金鑰都要 email 驗證碼)。{time} = 這道關消失的時間
+msgid "cx.kc.label"
+msgstr "Email 驗證碼"
+
+msgid "cx.kc.hint"
+msgstr "24 小時內配對過新手機，改金鑰要先驗證。"
+
+msgid "cx.kc.sent"
+msgstr "驗證碼已寄到帳號 email。輸入 6 位數後再按一次。"
+
+msgid "cx.kc.expiredSent"
+msgstr "驗證碼過期了，新的一組已寄到帳號 email。"
+
+msgid "cx.kc.cooldown"
+msgstr "剛寄過驗證碼，請查收帳號 email。"
+
+msgid "cx.kc.limited"
+msgstr "今天寄太多次驗證碼了。{time} 後改金鑰就不用驗證。"
+
+msgid "cx.kc.sendFail"
+msgstr "驗證碼寄送失敗，金鑰沒有儲存。請稍後再按一次。"
+
+msgid "cx.kc.noEmail"
+msgstr "帳號沒有 email，收不到驗證碼。{time} 後就能直接改。"
+
+msgid "cx.kc.invalid"
+msgstr "驗證碼不對，請重新輸入。"
+
+msgid "cx.kc.locked"
+msgstr "驗證碼錯太多次，今天不能再試。{time} 後就不用驗證。"
+
+msgid "cx.kc.format"
+msgstr "請輸入 6 位數驗證碼。"
 
