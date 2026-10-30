@@ -59,6 +59,7 @@ if (!process.versions.electron) {
   const block = src.slice(a, b);
   ok("① 純邏輯區塊不碰 DOM / i18n", !/\bdocument\b|\$\(|window\.|\bt\(/.test(block.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
   const P = {}; vm.createContext(P); vm.runInContext(block.replace(/^const /gm, "var "), P);
+  vm.runInContext(fs.readFileSync(path.join(R, "strategy_versions.js"), "utf8") + "\nvar window = this;\n" + cutFn(src, "libP"), P);   // libP 在純邏輯區塊外面(要讀 window.blaveVersions)
   // 市場選單(同網頁 library_rules.market;web tests/check_library_market.js 同一組):market 欄位優先,舊 api 退回 category
   ok("① 市場:market 欄位優先於 category;四個值各自成立", P.libMarket({ market: "txf", category: "TW Stock" }) === "txf" && P.libMarket({ market: "usstock", category: "Crypto" }) === "usstock"
     && ["crypto", "txf", "twstock", "usstock"].every((m) => P.libMarket({ market: m }) === m) && JSON.stringify([...P.LIB_MARKETS]) === '["crypto","txf","twstock","usstock"]');
@@ -96,8 +97,8 @@ if (!process.versions.electron) {
     ok("① 市場選單支數:清單沒到全空;全部 8 / 加密 7 / 台指期 0 / 台股 1 / 美股 0(0 也印);選中那項 checked、觸發器寫它的字;bag 是舊值 tw → 回全部", pre === "||||" && cnt === "8|7|0|1|0" && chk === "false,false,true,false,false" && v1 === "L:txf"
       && C.bag.mkt === "all" && dom["lib-mkt-v"].textContent === "L:all", JSON.stringify({ pre, cnt, chk, v1, after: C.bag.mkt }));
   }
-  ok("① 關卡數值的字:費率 0.0005 → 0.05%、0.001 → 0.10%、0.00125 → 0.125%、壞值 —;p 照範本四位小數、< 0.001 整段換成 p < 0.001、壞值 —;fail 計數", P.libRate(0.0005) === "0.05%" && P.libRate(0.001) === "0.10%" && P.libRate(0.00125) === "0.125%" && P.libRate(0) === "0.00%" && P.libRate(null) === "—" && P.libRate("x") === "—"
-    && P.libP("p = {p}", 0.0012) === "p = 0.0012" && P.libP("p = {p}", 0.0004) === "p < 0.001" && P.libP("p = {p}", null) === "—" && P.libGateFails({ mcpt: "fail", robust: "pass", fee: "fail" }) === 2 && P.libGateFails({ mcpt: "na", robust: "pass", fee: "pass" }) === 0 && P.libGateFails(null) === 0);
+  ok("① 關卡數值的字:費率 0.0005 → 0.05%、0.001 → 0.10%、0.00125 → 0.125%、壞值 —;p 照範本三位小數(共用 strategy_versions.js fillP)、< 0.001 整段換成 p < 0.001、門檻邊界 0.0495 寫四位、門檻跟 api 的 mcpt_alpha 走、壞值 —;fail 計數", P.libRate(0.0005) === "0.05%" && P.libRate(0.001) === "0.10%" && P.libRate(0.00125) === "0.125%" && P.libRate(0) === "0.00%" && P.libRate(null) === "—" && P.libRate("x") === "—"
+    && P.libP("p = {p}", 0.0012) === "p = 0.001" && P.libP("p = {p}", 0.0495) === "p = 0.0495" && P.libP("p = {p}", 0.0495, 0.1) === "p = 0.050" && P.libP("p = {p}", 0.0995, 0.1) === "p = 0.0995" && P.libP("p = {p}", 0.0004) === "p < 0.001" && P.libP("p = {p}", null) === "—" && P.libGateFails({ mcpt: "fail", robust: "pass", fee: "fail" }) === 2 && P.libGateFails({ mcpt: "na", robust: "pass", fee: "pass" }) === 0 && P.libGateFails(null) === 0);
   ok("① 樣本年數一位小數;沒有區間 → null;上架天數", P.libYears(LIST[0]) === 6.5 && P.libYears(LIST[1]) === 12.4 && P.libYears(LIST[3]) === null && P.libListedDays(LIST[0], Date.parse("2026-09-25T00:00:00Z")) === 107 && P.libListedDays({}, 0) === null);
   const C = (s, c) => P.libCta(s, Object.assign({ running: false, env: "local", signedIn: true, dataAccess: "included", cloud: null, pending: null, noNew: null, buying: null, installedName: null }, c));
   const free = LIST[0], paid = LIST[6], owned = LIST[7];

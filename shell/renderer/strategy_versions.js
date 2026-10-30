@@ -69,13 +69,38 @@
     return v > 0 ? "+" : v < 0 ? MINUS : "";
   }
 
-  // 單一指標的顯示值。null / 非有限 → DASH。
-  function fmt(key, v) {
+  // MCPT p 值(canon Numbers › p 值):3 位小數。排列次數有限,0.000 是假象,0.0005 印成 0.001 會把 p 放大兩倍,
+  // 所以 p < 0.001 一律 <0.001。取 3 位會進位到門檻、原值卻沒到(0.0495 → 0.050 卻判過關)時改寫 4 位。
+  // alpha = 判過關用的門檻(策略庫以 api 的 mcpt_alpha 為準),預設 0.05。
+  var MCPT_ALPHA = 0.05;
+  function pText(n, alpha) {
+    var a = num(alpha) === null ? MCPT_ALPHA : alpha;
+    if (n < 0.001) return "<0.001";
+    return n < a && Number(n.toFixed(3)) >= a ? n.toFixed(4) : n.toFixed(3);
+  }
+
+  // 「p = {p}」範本:p < 0.001 時 = 換成 <(不寫「p = <0.001」);缺值原樣回傳,由呼叫端決定要不要畫。
+  function fillP(tpl, p, alpha) {
+    var n = num(p);
+    if (n === null) return tpl;
+    if (n < 0.001) return tpl.replace(/=\s*\{p\}/, "< 0.001").replace("{p}", "< 0.001");
+    return tpl.replace("{p}", pText(n, alpha));
+  }
+
+  // 打亂結果裡比策略好的次數。stats.json 的 p 存 4 位,n ≤ 10,000 時 round(p × n) 恰好是真實次數;
+  // n 更大會差 1,不顯示比顯示錯的好 → null。
+  function mcptBeat(p, n) {
+    var x = num(p);
+    if (x === null || typeof n !== "number" || n % 1 !== 0 || n < 1 || n > 10000) return null;
+    return Math.round(x * n);
+  }
+
+  // 單一指標的顯示值。null / 非有限 → DASH。alpha 只有 mcpt_p 用。
+  function fmt(key, v, alpha) {
     var spec = SPEC[key];
     var n = num(v);
     if (!spec || n === null) return DASH;
-    // MCPT 的排列次數有限,p 不會真的是 0:四捨五入成 0.000 是假象,不到半個最小刻度就寫 <0.001
-    if (key === "mcpt_p" && n < 0.0005) return "<0.001";
+    if (key === "mcpt_p") return pText(n, alpha);
     var r = Number(n.toFixed(spec.dp)); // 先取整再判號:−0.004 寫 0.00,不寫 −0.00
     return (spec.signed ? signStr(r) : r < 0 ? MINUS : "") + Math.abs(r).toFixed(spec.dp) + spec.unit;
   }
@@ -177,6 +202,9 @@
     canCompare: canCompare,
     nextN: nextN,
     fmt: fmt,
+    fillP: fillP,
+    mcptBeat: mcptBeat,
+    MCPT_ALPHA: MCPT_ALPHA,
     delta: delta,
     windowsDiffer: windowsDiffer,
     windowNote: windowNote,

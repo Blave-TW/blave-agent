@@ -137,6 +137,10 @@ check(len(_gate) == 1 and "1000" in _gate[0], f"整條路徑也印上架提示(l
 check(not any("reduced" in m for m in cap.msgs), f"沒降 n 就不該有降 n 的 warning → {cap.msgs}")
 # stdout 才是 agent 真的會讀到的通道:既有那行形狀不准動,提示另起一行
 check("  MCPT p-value: " in _so and "(n=300," in _so, f"既有那行 stdout 形狀原封不動 → {[l for l in _so.splitlines() if 'MCPT p-value' in l]}")
+_pl = [l for l in _so.splitlines() if "MCPT p-value" in l]
+_k = round(st["MCPT p-value"] * 300)
+check(len(_pl) == 1 and f"(n=300, {_k} beat it, p " in _pl[0] and ("p < 0.05: significant edge)" in _pl[0] or "p >= 0.05: no significant edge)" in _pl[0]) and "%" not in _pl[0],
+      f"後綴講次數＋小數門檻、不寫 95% → {_pl}")
 _solines = [l for l in _so.splitlines() if "listing minimum" in l]
 check(len(_solines) == 1 and "n=300" in _solines[0] and "MCPT_N" in _solines[0] and "1000" in _solines[0],
       f"低於門檻 → stdout 必須多出獨立一行,含 n、門檻與動作 → {_solines}")
