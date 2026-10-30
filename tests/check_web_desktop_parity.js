@@ -357,4 +357,28 @@ for (const lang of ["zh", "en"]) {
     const bad = dF && wF ? CASES.filter(([, rep]) => call(dF, rep) !== call(wF, rep)).map(([n, rep]) => n + ":電腦版 " + call(dF, rep) + " / 網頁 " + call(wF, rep)) : ["切不出函式" + err];
     ok("策略庫基準畫不畫、代號寫什麼兩邊同一個答案(" + CASES.length + " 組)", !dParts.includes(null) && bad.length === 0, bad.join(";"));
   } }
+// 聊天長網址縮短(spec designer/chat-long-url-2026-10-30 §6):18 條測資逐項相同、上限與兩條 regex 逐值相同
+//   電腦版:tests/check_shell_url_label.js 的 CASES、renderer/md.js 的 URL_LABEL_MAX / URL_WIDE / URL_UNSAFE
+//   網頁:tests/url_label_vectors.json 的 url_label([輸入, 期望] 或 {in, expect})、app/static/js/agent/url_label.js
+{ const vecPath = path.join(webDir, "tests", "url_label_vectors.json"), ulPath = path.join(webDir, "app", "static", "js", "agent", "url_label.js");
+  const casesDef = (fs.readFileSync(path.join(__dirname, "check_shell_url_label.js"), "utf8").match(/^const CASES = \[[\s\S]*?^\];$/m) || [""])[0];
+  const cases = casesDef ? new Function(casesDef + "\nreturn CASES;")() : [];
+  let vec = [];
+  try { vec = fs.existsSync(vecPath) ? JSON.parse(fs.readFileSync(vecPath, "utf8")).url_label || [] : []; } catch (e) { console.log("FAIL  " + vecPath + " 不是合法 JSON:" + e.message); red++; }
+  const norm = (a) => JSON.stringify(a.map((c) => (Array.isArray(c) ? [c[0], c[1]] : [c.in, c.expect])));
+  ok("長網址測資:電腦版 CASES 與網頁 url_label 逐項相同(18 條)", cases.length === 18 && norm(cases) === norm(vec), fs.existsSync(vecPath) ? cases.length + " vs " + vec.length : "找不到 " + vecPath);
+  const mdSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "md.js"), "utf8"), ul = fs.existsSync(ulPath) ? fs.readFileSync(ulPath, "utf8") : "";
+  // regex 比「吃哪些字」不比原文:寫字或寫 \u 跳脫都行;逐一跑過全部碼位,原文看起來一樣、被 NFC 換掉的字(U+F900 → U+8C48)也抓得到
+  const cv = (src, n) => { const m = src.match(new RegExp("^\\s*(?:const|var|let) " + n + " = (.+);$", "m")); try { return m ? new Function("return " + m[1])() : null; } catch (_) { return null; } };
+  const diffAt = (x, y) => { for (let c = 0; c <= 0x10FFFF; c++) { const ch = c >= 0xD800 && c <= 0xDFFF ? String.fromCharCode(c) : String.fromCodePoint(c); if (x.test(ch) !== y.test(ch)) return "U+" + c.toString(16).toUpperCase(); } return null; };
+  const why = [];
+  const dMax = cv(mdSrc, "URL_LABEL_MAX"), wMax = cv(ul, "URL_LABEL_MAX");
+  if (dMax !== 40 || dMax !== wMax) why.push("URL_LABEL_MAX: " + dMax + " vs " + wMax);
+  for (const n of ["URL_WIDE", "URL_UNSAFE"]) {
+    const x = cv(mdSrc, n), y = cv(ul, n);
+    if (!(x instanceof RegExp) || !(y instanceof RegExp)) { why.push(n + " 切不出來"); continue; }
+    const at = x.flags !== y.flags ? "flags " + x.flags + " vs " + y.flags : diffAt(x, y);
+    if (at) why.push(n + " 在 " + at + " 不同");
+  }
+  ok("長網址上限 URL_LABEL_MAX 與 URL_WIDE / URL_UNSAFE 兩邊同一份(regex 逐碼位比)", why.length === 0, ul ? why.join(";") : "找不到 " + ulPath); }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

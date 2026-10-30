@@ -1,7 +1,7 @@
 // Blave 電腦版 — Electron 主行程(v1 骨架)
 // 只做三件事:開視窗、偵測本機 agent(IPC)、記住使用者的連結選擇。
 // 引擎 spawn 在第 4 步接,不在這裡。
-const { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, Notification, dialog, nativeImage, powerSaveBlocker, nativeTheme } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, safeStorage, Tray, Menu, Notification, dialog, nativeImage, powerSaveBlocker, nativeTheme, clipboard } = require("electron");
 const http = require("http");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
@@ -3410,6 +3410,11 @@ function createWindow() {
     },
   });
   guardNavigation(win);
+  // 右鍵只有連結上那一格「複製連結」(spec chat-long-url §2):聊天把長網址縮短顯示,完整網址要拿得到。其他位置右鍵照舊什麼都不跳
+  win.webContents.on("context-menu", (_e, p) => {
+    if (!/^https?:\/\//i.test((p && p.linkURL) || "")) return;
+    Menu.buildFromTemplate([{ label: tmLabels.menuCopyLink || MENU_EN.menuCopyLink, click: () => clipboard.writeText(p.linkURL) }]).popup({ window: win });
+  });
   win.on("enter-full-screen", appMenuSync); win.on("leave-full-screen", appMenuSync);   // 全螢幕那一格的字跟著換
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
 }
@@ -3870,7 +3875,7 @@ const MENU_EN = { menuAbout: "About Blave", menuServices: "Services", menuHide: 
   menuCopy: "Copy", menuPaste: "Paste", menuPasteStyle: "Paste and Match Style", menuDelete: "Delete", menuSelectAll: "Select All",
   menuView: "View", menuLocal: "This Computer", menuCloud: "Cloud", menuActualSize: "Actual Size", menuZoomIn: "Zoom In", menuZoomOut: "Zoom Out",
   menuFullEnter: "Enter Full Screen", menuFullExit: "Exit Full Screen", menuWindow: "Window", menuMinimize: "Minimize", menuZoom: "Zoom",
-  menuFront: "Bring All to Front", menuHelp: "Help", menuSite: "Blave Website" };
+  menuFront: "Bring All to Front", menuHelp: "Help", menuSite: "Blave Website", menuCopyLink: "Copy Link" };
 // draftOk = 這一次離開已經問過「還沒儲存，要離開嗎」(或沒有草稿);結束被取消、改成收起來、或開了新視窗就收回。
 // draftNote = 有草稿、但後面那道框(下單中 / 回合中 / 統一有部位)本來就會問:草稿那句併進那個框,不連跳兩個
 let draftOk = false, draftNote = false;

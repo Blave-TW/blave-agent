@@ -2956,6 +2956,10 @@ msgstr "雲端："
 msgid "menu.site"
 msgstr "Blave 官網"
 
+# 右鍵點在連結上的唯一一格(聊天裡縮短顯示的網址要拿得到完整版;spec chat-long-url-2026-10-30 §2)
+msgid "menu.copyLink"
+msgstr "複製連結"
+
 msgid "menu.view"
 msgstr "顯示"
 

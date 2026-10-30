@@ -191,6 +191,41 @@ function mdPaintInl(host, parts) {
   });
 }
 
+/* ── 聊天裡的長網址(spec chat-long-url-2026-10-30;網頁 url_label.js 同一份常數與測資,check_web_desktop_parity.js 比對)──
+   只給 app.js 的 chatUrls 用:報告(rptMarkdown)靠連結的原字拆回純文字,不能在 mdPaintInl 這一層改。
+   網域從解析結果拿、永遠完整在最前,省略只發生在網域之後,縮完不會像別的網域。
+   路徑段解不開(非 UTF-8)、或解完含控制／bidi／空白／斜線近似字的,維持編碼:bidi override 會把 report＋U+202E＋fdp.exe 顯示成 reportexe.pdf */
+const URL_LABEL_MAX = 40;
+// 範圍寫成 \u 跳脫:直接寫字的話,編輯器做 NFC 時會把相容字 U+F900 換成 U+8C48,範圍整個跑掉
+const URL_WIDE = /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]|[\uD800-\uDBFF][\uDC00-\uDFFF]/;
+const URL_UNSAFE = /[\s\p{C}\/?#\\\u2044\u2215\u29F8\uFF0F]/u;
+const urlW = (s) => { let n = 0; for (const c of s) n += URL_WIDE.test(c) ? 2 : 1; return n; };
+const urlCut = (s, max) => { let o = "", w = 0; for (const c of s) { const cw = URL_WIDE.test(c) ? 2 : 1; if (w + cw > max) break; o += c; w += cw; } return o.replace(/[\/\-_.~]+$/, ""); };
+function urlSeg(s) { let d; try { d = decodeURIComponent(s); } catch (_) { return s; } return URL_UNSAFE.test(d) ? s : d; }
+function urlLabel(href) {
+  let u; try { u = new URL(href); } catch (_) { return null; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  const head = (u.protocol === "http:" ? "http://" : "") + u.hostname.replace(/^www\./, "") + (u.port ? ":" + u.port : "");
+  const segs = u.pathname.split("/").filter(Boolean).map(urlSeg);
+  const q = u.search.length > 1 ? "?…" : "", max = URL_LABEL_MAX - urlW(q);
+  const full = segs.length ? head + "/" + segs.join("/") : head;
+  if (urlW(full) <= max) return full + q;
+  if (urlW(head) + 2 >= max) return (segs.length ? head + "/…" : head) + q;
+  for (const pre of segs.length > 2 ? [head + "/" + segs[0] + "/…/", head + "/…/"] : [head + "/…/"]) {
+    let tail = "";
+    for (let i = segs.length - 1; i >= (pre === head + "/…/" ? 0 : 1); i--) { const t = segs[i] + (tail ? "/" + tail : ""); if (urlW(pre + t) > max) break; tail = t; }
+    if (tail) return pre + tail + q;
+  }
+  const room = max - urlW(head) - 4;
+  if (room < 4) return head + "/…" + q;   // 不出現「…/…」
+  return head + "/…/" + urlCut(segs[segs.length - 1], room) + "…" + q;
+}
+/* hover 看的完整網址:帳密不顯示(title 裡的網域就是真的網域),路徑用同一套安全解碼,query 與 fragment 原樣 */
+function urlTitle(href) {
+  let u; try { u = new URL(href); } catch (_) { return href; }
+  return u.protocol + "//" + u.host + u.pathname.split("/").map(urlSeg).join("/") + u.search + u.hash;
+}
+
 /* ── 報告的 text block(reports.js 的閱讀頁與 report-print.js 的列印頁共用)── */
 const RPT_FN_RE = /\[\^([A-Za-z0-9_-]{1,32})\]/g;   // 契約 §4 的尾註引用(同 report-blocks.js 的 FN_REF)
 /* text block 的 markdown → DOM(渲染器的 makeCtx.markdown):接上面的 mdBlocks / mdPaint(一個節點一個節點組,不經 HTML)。
