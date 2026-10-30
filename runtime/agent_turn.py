@@ -5401,6 +5401,11 @@ def main():
         _apply_scheduled_limits()
         # 每次都是新的一輪:上一次的排程逐字稿不當上下文(越積越長、越來越貴)
         ss.clear_session(args.session_id)
+    # Who sent this turn (web_bridge / the desktop shell set it; spec mobile-agent-chat-mvp §2.8).
+    # Log only — prompt, rules and tools are the same whoever sent it.
+    origin = os.environ.get("BLAVE_TURN_ORIGIN")
+    if origin in ("web", "app"):
+        print(f"[agent_turn] turn origin={origin}", file=sys.stderr)
     if args.delivery == "web":
         sink = WebSink(args.report_url, report_token, args.session_id)
     elif args.delivery == "report":
