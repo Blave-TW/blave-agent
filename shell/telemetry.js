@@ -262,7 +262,7 @@ const EVENTS = {
     "tab_new", "tab_close", "tab_close_busy", "tab_switch", "tab_overflow", "hist_open", "hist_search", "hist_resume",
     "chat_par2", "chat_par4", "chat_par8", "chat_queued", "queue_cancel", "br_wait", "br_busy", "tab_remote",
     // 0.1.37 手機 App 跟這台電腦對話(spec mobile-agent-chat-mvp §7;主行程 relay.js 送):phone_chat_on／off = 確認框按〔開啟〕／關掉;
-    // phone_pair = 配對完成、phone_revoke = 在這台撤銷一支手機(這版還沒有送出點:等 api 的裝置清單端點);phone_turn = 手機那一輪真的開跑;
+    // phone_pair = 這台出的碼配對完成(出碼後清單多一支)、phone_revoke = 在這台撤銷一支手機;phone_turn = 手機那一輪真的開跑;
     // phone_turn_q = 同一條在跑、排在後面;phone_turn_stop = 電腦前的人停掉手機那一輪;phone_sync_ok／fail = 開啟後第一次上傳完成／失敗要按重試
     "phone_chat_on", "phone_chat_off", "phone_pair", "phone_revoke", "phone_turn", "phone_turn_q", "phone_turn_stop", "phone_sync_ok", "phone_sync_fail"] },
 };

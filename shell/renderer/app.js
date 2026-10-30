@@ -725,8 +725,66 @@ function mvBlock(mk) {
 }
 /* 設定 › 隱私「允許手機對話」(主行程 relay.js;spec mobile-agent-chat-mvp §2.6、§4.2)。總開關不開時整區不出(PH.visible)。
    從關打開每次都先跳確認框,按〔開啟〕才交給主行程;關掉也先問(手機那一輪會停、伺服器那份會刪)。PH = 主行程 relayStateOut,null = 讀不到 = 不出 */
-let PH = null, PH_BUSY = false, PH_ERR = "";
-async function phLoad() { try { PH = await window.blave.relayState(); } catch (_) { PH = null; } return PH; }
+let PH = null, PH_BUSY = false, PH_ERR = "", PH_PHONES = null, PH_CODE = null, PH_ACTS = null;
+async function phLoad() {
+  try { PH = await window.blave.relayState(); } catch (_) { PH = null; }
+  if (phShown() && PH.signedIn) { try { PH_PHONES = await window.blave.relayPhones(); } catch (_) { PH_PHONES = null; } }
+  return PH;
+}
+/* 授權手機清單(spec §2.6):帳號下每一支手機、這台有沒有勾;最近操作只列送到這台的。字是佔位,版面待設計師 */
+const phDate = (iso) => { const d = iso ? new Date(iso) : null; return d && !isNaN(d) ? d.toLocaleDateString() : "—"; };
+async function phPhonesReload() { try { PH_PHONES = await window.blave.relayPhones(); } catch (_) { PH_PHONES = null; } privPaint(); }
+async function phPair() {
+  if (PH_BUSY) return;
+  PH_BUSY = true; PH_ERR = "";
+  try { const r = await window.blave.relayPairCode(); if (r && r.ok) PH_CODE = { code: r.code, until: Date.now() + r.expires_in * 1000 }; else PH_ERR = t("ph.pairFail"); }
+  catch (_) { PH_ERR = t("ph.pairFail"); } finally { PH_BUSY = false; }
+  privPaint();
+}
+async function phGrant(p, on) {
+  try { const r = await window.blave.relayGrant(p.device_id, on); if (!r || !r.ok) PH_ERR = t("ph.err"); } catch (_) { PH_ERR = t("ph.err"); }
+  await phPhonesReload();
+}
+function phRevoke(p, opener) {
+  confirmBox({ title: t("ph.revoke.title"), lines: [t("ph.revoke.body")], ok: t("ph.revoke.ok"), opener, onOk: async () => {
+    try { const r = await window.blave.relayRevoke(p.device_id); if (!r || !r.ok) PH_ERR = t("ph.err"); } catch (_) { PH_ERR = t("ph.err"); }
+    await phPhonesReload();
+  } });
+}
+async function phActs(p) {
+  if (PH_ACTS && PH_ACTS.id === p.device_id) { PH_ACTS = null; privPaint(); return; }
+  let r = null; try { r = await window.blave.relayActions(p.device_id); } catch (_) { r = null; }
+  PH_ACTS = { id: p.device_id, rows: r && r.ok ? r.actions : null }; privPaint();
+}
+function phPhonesBlock(mk) {
+  const box = mk("div", "ph-phones");
+  const head = mk("p", "priv-lead"), pair = mk("button", "btn-quiet", t("ph.pair")); pair.type = "button"; pair.id = "ph-pair"; pair.addEventListener("click", phPair);
+  head.append(pair); box.append(head);
+  if (PH_CODE && PH_CODE.until > Date.now()) box.append(mk("p", "priv-lead", t("ph.pairCode", { code: PH_CODE.code.slice(0, 4) + "-" + PH_CODE.code.slice(4) })));
+  const list = PH_PHONES && PH_PHONES.ok ? PH_PHONES.phones : null;
+  if (!list) { if (PH_PHONES) box.append(mk("p", "priv-lead", t("ph.phonesFail"))); return box; }
+  if (!list.length) { box.append(mk("p", "priv-lead", t("ph.noPhones"))); return box; }
+  const ul = mk("ul", "ph-list");
+  list.forEach((p) => {
+    const li = mk("li", "ph-row"), id = "ph-g-" + p.device_id;
+    const cb = mk("input"); cb.type = "checkbox"; cb.id = id; cb.checked = p.granted; cb.addEventListener("change", () => phGrant(p, cb.checked));
+    const lb = mk("label", "", p.label || t(p.platform === "android" ? "ph.android" : "ph.iphone")); lb.htmlFor = id;
+    li.append(cb, lb, mk("span", "ph-meta", t("ph.meta", { paired: phDate(p.created_at), used: phDate(p.last_used_at) })));
+    const acts = mk("button", "btn-quiet", t("ph.acts")); acts.type = "button"; acts.setAttribute("aria-expanded", PH_ACTS && PH_ACTS.id === p.device_id ? "true" : "false"); acts.addEventListener("click", () => phActs(p));
+    li.append(acts);
+    if (p.granted) { const rv = mk("button", "btn-quiet", t("ph.revoke")); rv.type = "button"; rv.addEventListener("click", (e) => phRevoke(p, e.currentTarget)); li.append(rv); }
+    if (PH_ACTS && PH_ACTS.id === p.device_id) {
+      const al = mk("ul", "ph-acts");
+      if (!PH_ACTS.rows) al.append(mk("li", "", t("ph.phonesFail")));
+      else if (!PH_ACTS.rows.length) al.append(mk("li", "", t("ph.noActs")));
+      else PH_ACTS.rows.forEach((a) => al.append(mk("li", "", [a.ts ? new Date(a.ts).toLocaleString() : "—", a.action, a.ip].filter(Boolean).join(" · "))));
+      li.append(al);
+    }
+    ul.append(li);
+  });
+  box.append(ul);
+  return box;
+}
 const phShown = () => !!(PH && PH.visible === true);
 async function phSet(on) {
   if (PH_BUSY) return;
@@ -770,9 +828,10 @@ function phBlock(mk) {
     wrap.append(lead); return wrap;
   }
   if (PH_ERR) wrap.append(mk("p", "priv-lead", PH_ERR));
-  if (!on) { if (PH.pending) wrap.append(mk("p", "priv-lead", t("ph.pending"))); return wrap; }
+  if (!on) { if (PH.pending) wrap.append(mk("p", "priv-lead", t("ph.pending"))); wrap.append(phPhonesBlock(mk)); return wrap; }
   wrap.append(mk("p", "priv-lead", t("ph.lead")));
   const line = phSyncLine(mk); if (line) wrap.append(line);
+  wrap.append(phPhonesBlock(mk));
   return wrap;
 }
 if (typeof window.blave.onRelayState === "function") window.blave.onRelayState((st) => {

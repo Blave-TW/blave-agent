@@ -586,7 +586,7 @@ function relay() {
     startTurn: (payload, origin) => startTurn(payload, origin), stopTurn: (sid) => stopTurn(sid, "phone"), turnBusy: (sid) => turns.has(sid),
     isRestarting: () => !!restarting,
     sessions: { list: listSessions, rowsAfter: sessionRowsAfter, maxId: sessionMaxId, exists: sessionExists, remove: deleteSessionLocal },
-    turnArgs: relayTurnArgs, known: relayKnown, origins: { add: chatOriginAdd, has: chatOriginHas },
+    turnArgs: relayTurnArgs, known: relayKnown, origins: { add: chatOriginAdd, get: chatOriginMids },
     track: (name) => tm().track("feature_used", { name }),
     onChange: (st) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("relay-state", relayStateOut(st)); },
     onMobileActive: (on) => { if (relayPhoneOn && !on) relayPhoneEndAt = Date.now(); relayPhoneOn = on; startStep("awake", awakeSync); },
@@ -1786,7 +1786,7 @@ function loadSession(id) {
   if (!okSessionId(id)) return [];
   const db = sessionDb(true); if (!db) return [];
   try {
-    const mob = new Set(chatOriginLoad(id));
+    const mob = chatOriginMids(id);
     return db.prepare("SELECT id, role, content, created_at FROM turns WHERE session_id = ? ORDER BY id").all(id)
       .map((r) => ({ role: r.role, content: r.content, ts: r.created_at, ...(mob.has(r.id) ? { origin: "mobile" } : {}) }));
   } catch (_) { return []; } finally { db.close(); }
@@ -1807,19 +1807,25 @@ function sessionMaxId(id) {
   try { const r = db.prepare("SELECT MAX(id) AS m FROM turns WHERE session_id = ?").get(id); return (r && r.m) || 0; } catch (_) { return 0; } finally { db.close(); }
 }
 const sessionExists = (id) => sessionMaxId(id) > 0;
-/* 哪幾句是手機送的(對話裡「來自手機」標籤;上傳時 origin = app):state/chat-origin/<sid>.json 記 session.db 的 turn id。
-   刪對話一起刪 */
+/* 哪幾句是手機送的(對話裡「來自手機」標籤;上傳時 origin = app):state/chat-origin/<sid>.json,刪對話一起刪。
+   檔案 { mobile: { <turn id>: <relay 的 message_id> } }:上傳時那句帶 message_id(api 用它取代自己 fold 的暫存歷史) */
 const ORIGIN_DIR = path.join(BASE, "state", "chat-origin");
-function chatOriginLoad(id) {
-  if (!okSessionId(id)) return [];
-  try { const o = JSON.parse(fs.readFileSync(path.join(ORIGIN_DIR, id + ".json"), "utf8")); return Array.isArray(o.mobile) ? o.mobile.filter(Number.isInteger) : []; } catch (_) { return []; }
+function chatOriginMids(id) {
+  const m = new Map();
+  if (!okSessionId(id)) return m;
+  try {
+    const o = JSON.parse(fs.readFileSync(path.join(ORIGIN_DIR, id + ".json"), "utf8"));
+    if (o && o.mobile && typeof o.mobile === "object" && !Array.isArray(o.mobile)) for (const [k, v] of Object.entries(o.mobile)) if (/^\d+$/.test(k) && typeof v === "string") m.set(Number(k), v);
+  } catch (_) { /* 沒檔 = 沒有手機送的 */ }
+  return m;
 }
-function chatOriginAdd(id, ids) {
-  if (!okSessionId(id) || !Array.isArray(ids)) return false;
-  const all = [...new Set([...chatOriginLoad(id), ...ids.filter(Number.isInteger)])].slice(-2000);
-  try { fs.mkdirSync(ORIGIN_DIR, { recursive: true }); fs.writeFileSync(path.join(ORIGIN_DIR, id + ".json"), JSON.stringify({ mobile: all }), { mode: 0o600 }); return true; } catch (_) { return false; }
+function chatOriginAdd(id, rows) {
+  if (!okSessionId(id) || !Array.isArray(rows)) return false;
+  const m = chatOriginMids(id);
+  for (const r of rows) if (r && Number.isInteger(r.id) && typeof r.mid === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(r.mid)) m.set(r.id, r.mid);
+  const keep = [...m.entries()].slice(-2000);
+  try { fs.mkdirSync(ORIGIN_DIR, { recursive: true }); fs.writeFileSync(path.join(ORIGIN_DIR, id + ".json"), JSON.stringify({ mobile: Object.fromEntries(keep) }), { mode: 0o600 }); return true; } catch (_) { return false; }
 }
-const chatOriginHas = (id, turnId) => chatOriginLoad(id).includes(turnId);
 /* 畫面刪的:刪成功就讓 relay 記一筆待送(手機那邊也刪);手機要刪的走 deleteSessionLocal,不再回送一次 */
 function deleteSession(id) {
   const ok = deleteSessionLocal(id);
@@ -1960,6 +1966,8 @@ function startImageServer() {
         if (imgWin && !imgWin.isDestroyed())
           imgWin.webContents.send("turn-event", { type: "image", session_id: j.session_id,
             src: `data:${j.mime};base64,${j.b64}`, caption });
+        // 手機那一輪的圖也送一份給手機(relay.js 只在那條正在跑手機的回合時送)
+        if (typeof _relay !== "undefined" && _relay) _relay.image(j.session_id, j.mime, j.b64, caption).catch(() => {});
         end(200);
       } catch (_) { end(400); }
     });
@@ -4000,6 +4008,12 @@ app.whenReady().then(() => {
   // 打開前畫面已經跳過確認框(§4.2);這裡只收布林
   handle("relay-set", async (_e, on) => (typeof on === "boolean" ? { ...(await relay().setOn(on)), state: relayStateOut(relay().state()) } : { ok: false }), { ok: false });
   handle("relay-retry", async () => { await relay().retry(); return relayStateOut(relay().state()); }, null);
+  // 設定區:配對碼、授權手機清單、勾選、撤銷、最近操作。回的是 relay.js 篩過的欄位,沒有憑證
+  handle("relay-pair-code", () => relay().pairCode(), { ok: false });
+  handle("relay-phones", () => relay().phones(), { ok: false });
+  handle("relay-grant", (_e, id, on) => relay().grant(typeof id === "string" ? id : "", on === true), { ok: false });
+  handle("relay-revoke", (_e, id) => relay().revoke(typeof id === "string" ? id : "", uiLang === "en" ? "en" : "zh"), { ok: false });
+  handle("relay-actions", (_e, id) => relay().actions(typeof id === "string" ? id : null), { ok: false });
   // 自帶 API 金鑰:只有 set(驗過才存)/ test(重驗已存的那把)/ remove,加一支不帶值的取消。**沒有任何一支把金鑰交回畫面**
   const llmDenied = { ok: false, code: "NOT_ALLOWED", status: 0 };
   handle("apikey-set", (_e, a) => llmKeySet(a && typeof a === "object" ? { preset: a.preset, key: a.key, connect: a.connect === true } : null), llmDenied);

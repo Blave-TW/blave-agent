@@ -171,8 +171,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   const LEGACY = ["library_comm", "browser_source", "tv_read", "tv_fix", "tv_fail_compile", "lock_switch"];   // lock_switch:0.1.37 起切換／新對話不再上鎖,舊外殼還在送
   // 先佔名字、送出點還沒併進來的(report_pdf = 報告「存成 PDF」):送出點一進來這條就紅,提醒把它從這裡拿掉
   // contract_switch:0.1.24 只顯示生效合約、不做換合約的下拉(策略組合頁還沒有);下拉進來時從這裡拿掉
-  // phone_pair／phone_revoke(0.1.37 手機對話):電腦版的裝置清單與撤銷要等 api 的端點,先佔名字
-  const RESERVED = ["report_pdf", "phone_pair", "phone_revoke"];   // contract_switch 0.1.24 有送出點了(策略組合的合約下拉)
+  const RESERVED = ["report_pdf"];   // contract_switch 0.1.24 有送出點了(策略組合的合約下拉)
   // 0.1.12 起無送出點:市場檢查出貨前整個拿掉,名字已在 api 白名單、兩端逐字比對,留著不動;不准再有送出點
   // browser_hb_head:0.1.20 A 案把標題列的交還鈕搬進請求卡(browser_hb_card),0.1.19 以前的外殼還在送;等它們退場再三處一起拿
   const DROPPED = ["pick_gate_lock", "browser_hb_head", "trade_lev_ack"];   // trade_lev_ack:0.1.24 拿掉 ≥10 倍勾選(Wei 10-13),舊外殼還在送
