@@ -4901,6 +4901,14 @@ msgstr "This strategy can't be downloaded without signing in anymore. It may hav
 msgid "lib.dl.rateLimited"
 msgstr "Too many downloads right now. Please try again later."
 
+# api 403 AGENT_TOO_OLD(spec strategy-min-lib-gate-2026-10-29):隨包的 lib 也不夠新 → 更新電腦版
+msgid "lib.dl.agentOld"
+msgstr "This strategy needs a newer Agent. Update the app, then press again."
+
+# 同上,但隨包的已經夠新、只是 workspace 沒同步成:重開才會再同步,叫人更新沒用
+msgid "lib.dl.agentOldReopen"
+msgstr "This strategy needs a newer Agent. Reopen the app, then press again."
+
 msgid "lib.gate.login"
 msgstr "Sign in"
 

@@ -267,13 +267,14 @@ if (!process.versions.electron) {
     fs.mkdirSync(WSd); fs.mkdirSync(outside);
     const refs = path.join(WSd, "references"), mkt = path.join(refs, "marketplace.md");
     fs.mkdirSync(refs); fs.writeFileSync(mkt, "# Strategy Library API\n\n## Desktop-downloaded picks\n\n…");
-    const D = { require, Buffer, WS: WSd, API_BASE: "https://api.test", calls: [], next: null, token: "t", key: { api_key: "k1", secret_key: "s1" } };
+    const REPOd = path.join(base, "repo");
+    const D = { require, Buffer, WS: WSd, REPO: REPOd, API_BASE: "https://api.test", calls: [], next: null, token: "t", key: { api_key: "k1", secret_key: "s1" } };
     vm.createContext(D);
-    vm.runInContext("var fs = require('fs'), path = require('path'), crypto = require('crypto'), wsfile = require(" + JSON.stringify(path.join(__dirname, "..", "shell", "wsfile.js")) + ");\n" + ["LIB_CODE_MAX", "LIB_CONTRACT_ANCHOR"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n")
+    vm.runInContext("var fs = require('fs'), path = require('path'), crypto = require('crypto'), wsfile = require(" + JSON.stringify(path.join(__dirname, "..", "shell", "wsfile.js")) + ");\n" + ["LIB_CODE_MAX", "LIB_CONTRACT_ANCHOR", "readVersion", "LIB_VER_RE"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n")
       + "\n" + cutFn(mainSrc, "libContractReady")
       + "\nvar libCache = null, tmOn = true, live = true;\nfunction telemetryLive() { return live; }\nfunction tm() { return { isEnabled: () => tmOn, installId: () => '3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77' }; }\nfunction loadToken() { return token; }\nfunction loadDataKey() { return key; }\nasync function getJSON(url, headers) { calls.push([url, headers]); const n = Array.isArray(next) ? next.shift() : next; if (n === 'throw') throw new Error('net'); return n; }\n"
       + cutFn(mainSrc, "libAnonOk") + "\n"
-      + cutFn(mainSrc, "libWriteWs") + "\nasync " + cutFn(mainSrc, "libraryDownload"), D);
+      + cutFn(mainSrc, "libWriteWs") + "\n" + cutFn(mainSrc, "libVerHeader") + "\n" + cutFn(mainSrc, "libTooOldKind") + "\nasync " + cutFn(mainSrc, "libraryDownload"), D);
     const dl = async (id, resp) => { D.next = resp; return D.libraryDownload(id); };
     const file = path.join(WSd, "tmp", "library_102.py"), sec = path.join(WSd, "tmp", "library_102.security.json"), J = (x) => JSON.stringify(x);
     const r1 = await dl(102, { status: 200, body: { code: "print(1)\n" } });
@@ -343,6 +344,21 @@ if (!process.versions.electron) {
     A.revoked = J(await dl(102, [{ status: 403, body: { error_code: "ERR005" } }, { status: 200, body: { code: "anon = 3\n" } }])); A.revokedUrls = D.calls.slice(c0).map((c) => c[0]).join(); A.revokedHdr = J(D.calls.slice(c0).map((c) => c[1]));
     c0 = D.calls.length; A.revokedReq = (await dl(88, [{ status: 401, body: {} }])).kind; A.revokedReqCalls = D.calls.length - c0;
     c0 = D.calls.length; A.withKey = J(await dl(102, { status: 200, body: { code: "k = 1\n" } })); A.withKeyUrls = D.calls.slice(c0).map((c) => c[0]).join();
+    // 最低 Agent 版本(spec strategy-min-lib-gate-2026-10-29):workspace VERSION 進 header,兩條都帶;形狀怪就不帶;
+    // 403 AGENT_TOO_OLD → 隨包的不夠新 agentOld、隨包的夠新(workspace 沒同步成)agentOldReopen;不動上一份檔
+    const V = {}, wsVer = path.join(WSd, "VERSION");
+    fs.writeFileSync(wsVer, "2026-10-28-l\n"); fs.mkdirSync(REPOd);
+    c0 = D.calls.length; await dl(102, { status: 200, body: { code: "v = 1\n" } }); V.keyHdr = J(D.calls[c0][1]);
+    vm.runInContext(keepCache, D); D.token = null; c0 = D.calls.length; await dl(102, { status: 200, body: { code: "v = 2\n" } }); V.anonHdr = J(D.calls[c0][1]); D.token = "t";
+    fs.writeFileSync(wsVer, "2026-10-28-l; rm -rf /\n"); c0 = D.calls.length; await dl(102, { status: 200, body: { code: "v = 2\n" } }); V.badHdr = J(D.calls[c0][1]);
+    fs.rmSync(wsVer); c0 = D.calls.length; await dl(102, { status: 200, body: { code: "v = 2\n" } }); V.noHdr = J(D.calls[c0][1]);
+    const TOO_OLD = { status: 403, body: { error_code: "AGENT_TOO_OLD", min_agent_version: "2026-10-28-l", agent_version: null, update: "desktop" } };
+    V.old = [(await dl(102, TOO_OLD)).kind];
+    fs.writeFileSync(path.join(REPOd, "VERSION"), "2026-10-28-k\n"); V.old.push((await dl(102, TOO_OLD)).kind);
+    fs.writeFileSync(path.join(REPOd, "VERSION"), "2026-10-28-l\n"); V.old.push((await dl(102, TOO_OLD)).kind);
+    V.old.push((await dl(102, { status: 403, body: { error_code: "AGENT_TOO_OLD" } })).kind);
+    vm.runInContext(keepCache, D); D.token = null; V.old.push((await dl(102, TOO_OLD)).kind); D.token = "t";
+    V.kept = fs.readFileSync(file, "utf8");
     vm.runInContext("libCache = null;", D);
     // 預先放一個指向 workspace 外的同名 symlink:寫入要換掉 symlink 本身,外面那個檔不能被改
     const victim = path.join(outside, "victim.txt"); fs.writeFileSync(victim, "keep");
@@ -373,6 +389,11 @@ if (!process.versions.electron) {
     ok("② 開發版 / e2e(非打包、沒設 BLAVE_TELEMETRY=1)不帶 install_id,匿名照樣下載(不灌正式安裝數)", A.dev === '{"ok":true}' && A.devCall === J([[anonURL(102), {}]]), J([A.dev, A.devCall]));
     ok("② install_id 的閘跟 tm 的 post 同一支 telemetryLive(打包版或 BLAVE_TELEMETRY=1)", /^const telemetryLive = \(\) => app\.isPackaged \|\| process\.env\.BLAVE_TELEMETRY === "1";$/m.test(mainSrc)
       && /post: \(u, b\) => \(telemetryLive\(\) \? postJSON\(u, b\) : Promise\.resolve\(\)\)/.test(mainSrc));
+    ok("② 最低 Agent 版本:workspace VERSION 帶成 X-Blave-Agent-Version(/code 與 /public_code 都帶);讀不到或形狀怪就不帶",
+      V.keyHdr === J({ "api-key": "k1", "secret-key": "s1", "X-Blave-Agent-Version": "2026-10-28-l" }) && V.anonHdr === J({ "X-Install-Id": "3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77", "X-Blave-Agent-Version": "2026-10-28-l" })
+      && V.badHdr === J({ "api-key": "k1", "secret-key": "s1" }) && V.noHdr === J({ "api-key": "k1", "secret-key": "s1" }), J(V));
+    ok("② 403 AGENT_TOO_OLD:隨包沒有 VERSION / 比最低版本舊 → agentOld;隨包夠新 → agentOldReopen;body 沒帶最低版本 → agentOld;匿名那條同;不動上一份檔",
+      V.old.join() === "agentOld,agentOld,agentOldReopen,agentOld,agentOldReopen" && V.kept === "v = 2\n", J(V));
     ok("② 有能用的 key:只打 /code,不碰匿名那條", A.withKey === '{"ok":true}' && A.withKeyUrls === "https://api.test/openclaw/marketplace/strategies/102/code", A.withKeyUrls);
     ok("② 代下載:workspace 還沒有新契約(錨點不在 / 檔不在)→ { ok: true, legacy: true }、不送請求、不動 tmp", legacy.a === '{"ok":true,"legacy":true}' && legacy.b === legacy.a && legacy.c === '{"ok":false,"kind":"fail"}' && legacy.d === '{"ok":false,"kind":"signin"}' && legacy.noReq && legacy.kept === "x = 3\n", J(legacy));
     ok("② 代下載:同名檔是指向 workspace 外的 symlink → 換掉 symlink 本身,外面的檔不變", a4.r === '{"ok":true}' && a4.victim === "keep" && !a4.isLink && a4.body === "z = 4\n", J(a4));
@@ -542,12 +563,12 @@ if (!process.versions.electron) {
 
   // ── ⑥ 本機「用這支」的流程(spec-0.1.13 §4;不起 Electron:libAsk / libSend / libTurnEnd 切出來,四周全是替身)──
   ASYNC.push((async () => {
-    const F = { STR: STR.zh, calls: { dl: [], sent: [], track: [], inval: 0, box: [], opts: [], events: [], inst: [] }, dlNext: null, subOk: true, env: "local", settle: false };
+    const F = { STR: STR.zh, calls: { dl: [], sent: [], track: [], inval: 0, box: [], opts: [], events: [], inst: [], blocked: [] }, dlNext: null, subOk: true, env: "local", settle: false };
     vm.createContext(F);
     vm.runInContext(block.replace(/^const /gm, "var ") + `
       var LIB = { pending: null, noNew: null, dlFail: null, data: { dataAccess: "billed" }, installed: {} }, running = false, csTitle = "", RP = { list: [{ name: "old", mtime: 1 }] }, paneSt = { chat: { off: false } };
       var t = (k, p) => STR[k].replace(/[{]([a-z]+)[}]/g, (m, n) => (p && n in p ? p[n] : m)), libEnv = () => env, ctaState = "free", libCtaOf = () => ({ state: ctaState }), libWhere = () => STR["lib.where." + (env === "cloud" ? "cloud" : "local")], envCanSwitch = () => true, paneToggle = () => {}, csStartNew = () => {}, libSync = () => {}, libCtaMain = () => null, libCloudList = () => [];
-      var libTrack = (n) => calls.track.push(n), libBlocked = () => {}, libInvalidate = () => { calls.inval++; LIB.dlFail = null; }, $ = () => ({ title: "", textContent: "" });
+      var libTrack = (n) => calls.track.push(n), libBlocked = (w) => calls.blocked.push(w), libInvalidate = () => { calls.inval++; LIB.dlFail = null; }, $ = () => ({ title: "", textContent: "" });
       var confirmBox = (o) => calls.box.push(o), submitMessage = async (m, o) => { calls.sent.push(m); calls.opts.push(o); return subOk; }, csSendAway = (m, o) => submitMessage(m, o);
       var sessionId = "desktop-lib1", CS = { away: { sid: "desktop-lib1", seq: 1 } };   // 單分頁:送出那一條 = 結束那一條
       var chatViewing = () => ({ env: env === "cloud" ? "cloud" : "local", strategy: "seen" });
@@ -577,7 +598,15 @@ if (!process.versions.electron) {
     }
     ok("⑥ 下載失敗:blocked / gone / anonGone / fail(認不得的 kind、null、IPC 丟例外都算 fail);不送訊息、pending 清掉;gone 與 anonGone 重拉清單、dlFail 留著", fails.join() === "72/blocked//0/0,72/gone//0/1,72/anonGone//0/1,72/signin//0/0,72/rateLimited//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0", fails.join());
     ok("⑥ 下載失敗不送 lib_pick / library_use", F.calls.events.length === 0 && !F.calls.track.slice(1).includes("library_use"), JSON.stringify([F.calls.events, F.calls.track]));
-    ok("⑥ 下載沒成的那句:kind → 字串 key,六種都有 zh / en,認不得的當 fail;anonGone 只講登入、不提卡", ["blocked", "gone", "anonGone", "signin", "rateLimited", "unsent", "fail"].every((k) => P.libDlKey(k) === "lib.dl." + k && STR.zh["lib.dl." + k] && STR.en["lib.dl." + k]) && !/卡|card/i.test(STR.zh["lib.dl.anonGone"] + STR.en["lib.dl.anonGone"]) && P.libDlKey("weird") === "lib.dl.fail" && P.libDlKey(undefined) === "lib.dl.fail");
+    const blocked0 = F.calls.blocked.length, olds = [];
+    for (const kind of ["agentOld", "agentOldReopen"]) {
+      F.LIB.pending = null; F.calls.sent.length = 0;
+      F.libSend(s72); await tick(); F.dlNext.res({ ok: false, kind }); await tick(); await tick();
+      olds.push([F.LIB.dlFail && F.LIB.dlFail.kind, F.LIB.pending, F.calls.sent.length].join("/"));
+    }
+    ok("⑥ 這台 lib 太舊(agentOld / agentOldReopen):記 dlFail、不送訊息;各送一次 lib_blocked why=agent_old;其他失敗不送",
+      olds.join() === "agentOld//0,agentOldReopen//0" && blocked0 === 0 && F.calls.blocked.join() === "agent_old,agent_old", JSON.stringify([olds, F.calls.blocked]));
+    ok("⑥ 下載沒成的那句:kind → 字串 key,六種都有 zh / en,認不得的當 fail;anonGone 只講登入、不提卡", ["blocked", "gone", "anonGone", "signin", "rateLimited", "unsent", "agentOld", "agentOldReopen", "fail"].every((k) => P.libDlKey(k) === "lib.dl." + k && STR.zh["lib.dl." + k] && STR.en["lib.dl." + k]) && !/卡|card/i.test(STR.zh["lib.dl.anonGone"] + STR.en["lib.dl.anonGone"]) && P.libDlKey("weird") === "lib.dl.fail" && P.libDlKey(undefined) === "lib.dl.fail");
     F.libSend(s72); await tick();
     ok("⑥ 再按一次:那句錯誤清掉", F.LIB.dlFail === null && F.LIB.pending && F.LIB.pending.stage === "dl"); F.dlNext.res({ ok: true }); await tick(); await tick();
     // C. 下載好了但訊息送不出去(下載中用戶自己先送了一句,回合在跑):pending 清掉,而且講出來

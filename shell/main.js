@@ -2584,6 +2584,14 @@ function libAnonOk(id) {
   const s = libCache && Array.isArray(libCache.strategies) ? libCache.strategies.find((x) => x.id === id) : null;
   return !!s && s.is_official === true && s.price === 0 && s.blave_data === "none";
 }
+/* 最低 Agent 版本(spec strategy-min-lib-gate-2026-10-29):api 交付碼前比這台 workspace 的 VERSION,兩條都帶;讀不到就不帶,api 當成舊外殼擋。
+   403 AGENT_TOO_OLD:隨包的也不夠新 → 要更新 app;隨包的夠新 → workspace 沒同步成(syncOfficialOnUpdate 備份失敗會停在舊 lib),重開才會再同步 */
+const LIB_VER_RE = /^[0-9A-Za-z._-]{1,40}$/;
+function libVerHeader() { const v = readVersion(WS); return LIB_VER_RE.test(v) ? { "X-Blave-Agent-Version": v } : {}; }
+function libTooOldKind(b) {
+  const need = b && typeof b.min_agent_version === "string" ? b.min_agent_version : "", bundled = readVersion(REPO);
+  return need && bundled && bundled >= need ? "agentOldReopen" : "agentOld";
+}
 async function libraryDownload(strategyId) {
   if (!Number.isInteger(strategyId) || strategyId <= 0) return { ok: false, kind: "fail" };
   const key = loadToken() ? loadDataKey() : null;
@@ -2595,11 +2603,12 @@ async function libraryDownload(strategyId) {
     // 開發版 / e2e 同 tm 的 post 那道閘:不帶,不然每跑一次就灌一個正式的安裝數(install_id 存在 userData,BLAVE_HOME 搬不動它;換新的要換 userData)
     let h = {};
     try { if (telemetryLive() && tm().isEnabled()) h = { "X-Install-Id": tm().installId() }; } catch (_) { h = {}; }
+    h = Object.assign(h, libVerHeader());
     try { return await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/public_code`, h); } catch (_) { return { status: 0, body: null }; }
   };
   let r = null, viaAnon = false;
   if (key) {
-    try { r = await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/code`, { "api-key": key.api_key, "secret-key": key.secret_key }); }
+    try { r = await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/code`, Object.assign({ "api-key": key.api_key, "secret-key": key.secret_key }, libVerHeader())); }
     catch (_) { return { ok: false, kind: "fail" }; }
     const kb = r.body && typeof r.body === "object" ? r.body : {};
     if (r.status === 401 || (r.status === 403 && kb.error_code === "ERR005")) { r = await anon(); viaAnon = true; }   // key 被撤(別台登出 / 撤銷):能匿名的照樣裝
@@ -2609,6 +2618,7 @@ async function libraryDownload(strategyId) {
   if (!r) return { ok: false, kind: "signin" };
   const b = r.body && typeof r.body === "object" ? r.body : {};
   if (r.status === 403 && b.security && b.security.blocked === true) return { ok: false, kind: "blocked" };
+  if (r.status === 403 && b.error_code === "AGENT_TOO_OLD") return { ok: false, kind: libTooOldKind(b) };
   if (r.status === 404) {   // 匿名那條的 404 也可能是清單快取過時(改成要資料 / 要登入了),不能說它下架
     libCache = null;   // 畫面接著重拉清單:快取得先作廢,不然 5 分鐘內拿回同一份舊清單、再按又是同一個錯
     return { ok: false, kind: viaAnon ? "anonGone" : "gone" };

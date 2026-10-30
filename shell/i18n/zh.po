@@ -4914,6 +4914,14 @@ msgstr "這支現在不能免登入下載，可能已經下架，或改成要登
 msgid "lib.dl.rateLimited"
 msgstr "下載次數太多，請稍後再試。"
 
+# api 403 AGENT_TOO_OLD(spec strategy-min-lib-gate-2026-10-29):隨包的 lib 也不夠新 → 更新電腦版
+msgid "lib.dl.agentOld"
+msgstr "這支策略要新版 Agent。更新電腦版後再按一次。"
+
+# 同上,但隨包的已經夠新、只是 workspace 沒同步成:重開才會再同步,叫人更新沒用
+msgid "lib.dl.agentOldReopen"
+msgstr "這支策略要新版 Agent。重新開啟電腦版後再按一次。"
+
 msgid "lib.gate.login"
 msgstr "登入"
 
