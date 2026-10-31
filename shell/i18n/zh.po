@@ -10121,4 +10121,4 @@ msgid "sp.unsaved"
 msgstr "策略組合有沒存的改動"
 
 msgid "tr.pick.twdVenue"
-msgstr "台幣標的的策略不能配到{venue}"
+msgstr "台幣標的不能配到 {venue}"

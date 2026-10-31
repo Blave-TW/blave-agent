@@ -6559,6 +6559,6 @@ const STRINGS = {
     "sp.noAcct": "還沒連接帳戶",
     "sp.connecting": "連接中…",
     "sp.unsaved": "策略組合有沒存的改動",
-    "tr.pick.twdVenue": "台幣標的的策略不能配到{venue}",
+    "tr.pick.twdVenue": "台幣標的不能配到 {venue}",
   },
 };

@@ -3917,7 +3917,8 @@ function trCfOpen(o) {
   // 這支的標的這一輪全被對帳器先不動(等新成員的第一個訊號、或等新訊號):存了不會平倉,不標
   hold0 = (() => { if (!mayFire) return null; const r0 = trReport() || {}, ct = Object.assign({}, trContracts(), ctAll || {});
     const h = trCfHolds(r0, stored, sending, ct, trCfStates(r0, stored, sending, ct)); return { keys: Object.keys(h.wait).concat(h.gate), ct, r0 }; })();
-  stratRows = removed.concat(joined.filter((n) => !(Number(sending[n]) > 0)), swappedNs.filter((n) => removed.indexOf(n) < 0));
+  // 輸入格那一支金額還是 0(剛打開、還沒打字):不出「名字 0 加入」那一列——框標題與頁首已經講過是哪一支
+  stratRows = removed.concat(joined.filter((n) => !(Number(sending[n]) > 0) && !(inp && n === inp.name)), swappedNs.filter((n) => removed.indexOf(n) < 0));
   if (stratRows.length) {
     const dl = trEl("dl", "cf-rows cf-amt cf-strat");
     stratRows.filter((n, i, a) => a.indexOf(n) === i).forEach((n) => {
@@ -4012,8 +4013,10 @@ function trCfOpen(o) {
       return legs.length > 0 && legs.every((k) => { const px = m.st.px[trCanonSym(k)]; return px > 0 && Math.floor(v * Number(w[k]) / px) < 1; }); })();
     if (refEl) {
       refEl.textContent = ""; const x0 = oneLeg ? m.rows[0] : null, spIn = inp.kind === "lots" ? trRowTxfNew(inp.name) : null, vIn = ivVal();
-      if (spIn && vIn > 0) refEl.textContent = lotsRef(spIn, vIn, null).textContent;
-      else if (x0 && !x0.lots && x0.qty && x0.qty.n > 0) refEl.textContent = x0.qty.text + " " + t(x0.qty.unit);
+      // 台指期沒有報價就不出(只剩商品名的那一行用戶看了不知道要做什麼);數字一律 mono,同框裡的下單列
+      const mIn = spIn && vIn > 0 ? trTxfRefMoney(spIn, vIn, trTxfPrice()) : null;
+      if (mIn != null) cxMonoNums(refEl, t("tr.txfConfirmRef", { prod: t(spIn.prod), amt: trFmt(Math.round(mIn)) }));
+      else if (!spIn && x0 && !x0.lots && x0.qty && x0.qty.n > 0) cxMonoNums(refEl, x0.qty.text + " " + t(x0.qty.unit));
       refEl.hidden = !refEl.textContent;
     }
     const sub = trEl("p", "cf-sub");

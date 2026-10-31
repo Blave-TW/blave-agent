@@ -543,16 +543,18 @@ for (const lang of ["zh", "en"]) {
     const ONLY_DESK = { setupWait: "豁免 3:開通中,網頁的群益與統一都給〔繼續〕(網頁的開通清單兩家都在框裡);電腦版群益本機入口 CAPL_LOCAL_ON 關著、沒有那份清單,只留狀態詞" };
     const ONLY_WEB = {};
     // 態一樣但有一格刻意不同(附原因)
-    const CELL_EXEMPT = {};
+    const CELL_EXEMPT = { "fail.note": "fail 的原因句兩邊各用自己自動下單頁那一句、出口不同:電腦版「串接失敗，下單程式沒在跑。到「設定」處理。」(帳戶與金鑰在自動下單 › 設定分頁),網頁「串接失敗，到策略組合處理」(網頁的帳戶在策略組合頁);開頭的「串接失敗」另外逐字比" };
     const dk = Object.keys(D), wk = Object.keys(W);
     ok("策略頁頭:態的集合兩邊一樣(只有一邊有的都在豁免表)", dk.filter((k) => !(k in W) && !ONLY_DESK[k]).length === 0 && wk.filter((k) => !(k in D) && !ONLY_WEB[k]).length === 0,
       "只在電腦版:" + dk.filter((k) => !(k in W) && !ONLY_DESK[k]).join(",") + " 只在網頁:" + wk.filter((k) => !(k in D) && !ONLY_WEB[k]).join(","));
     Object.keys(ONLY_DESK).forEach((k) => ok("策略頁頭豁免還成立:" + k + " 只在電腦版", (k in D) && !(k in W), ONLY_DESK[k]));
     // 動態槽:電腦版 "$base" ＝ 網頁 "base";"$go"(#tr-go 同一個鈕字)＝ 網頁 pfStart;"$off"(選擇策略框那一列的原因)＝ 網頁 "lock";
+    // fail 態的原因句 "$fail" ＝ 網頁 "fail"(各自自動下單頁那一句,開頭「串接失敗」逐字比,出口見 CELL_EXEMPT);
     // start 態的原因句 "$go"(帳本上還有 Blave 部位時的 tr.startOnBook)＝ 網頁 "onBook"(pfStartOnBook),兩句逐字比
     const btnText = (d, w) => d.key === "$base" ? (w === "base" && dT("sp.btn") === wT("pfNav") && dT("po.add") === wT("poAdd"))
       : d.key === "$go" ? (w === "pfStart" && dT("tr.start") === wT("pfStart")) : !!dT(d.key) && dT(d.key) === wT(w);
-    const noteOk = (d, w) => d === "$off" ? w === "lock" : d === "$go" ? w === "onBook" && !!dT("tr.startOnBook") && dT("tr.startOnBook") === wT("pfStartOnBook") : !!d && !!w && dT(d) === wT(w);
+    const noteOk = (d, w) => d === "$fail" ? w === "fail" && !!dT("cx.failShort") && dT("cx.failShort") === wT("pfConnectFailedShort") && dT("cx.failStopped").indexOf(dT("cx.failShort")) === 0 && dT("cx.failStopped") === wT("pfConnectFailedShort") + "，" + wT("pfVenueGoFix")
+      : d === "$off" ? w === "lock" : d === "$go" ? w === "onBook" && !!dT("tr.startOnBook") && dT("tr.startOnBook") === wT("pfStartOnBook") : !!d && !!w && dT(d) === wT(w);
     const bad = [];
     dk.filter((k) => k in W).forEach((k) => {
       const d = D[k], w = W[k], db = d.btn;
@@ -573,8 +575,10 @@ for (const lang of ["zh", "en"]) {
     ok("策略頁頭:記號同一句(電腦版 po.live、網頁 poLive)", !!dT("po.live") && dT("po.live") === wT("poLive"), dT("po.live") + " vs " + wT("poLive"));
     // 判準層的豁免(表上看不到,驗兩邊的原文還是那樣)
     const spv = (() => { const i = hoSrc.length ? fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "portfolio.js"), "utf8") : ""; const a = i.indexOf("function spView("); return a < 0 ? "" : i.slice(a, i.indexOf("\nfunction ", a + 1)); })();
-    ok("策略頁頭豁免 1 還成立:綁了但讀帳失敗,網頁落「讀不到」(pfVenueIds 有、pfExecState 說 noaccount);電腦版的帳戶判準是 trHasAccount(綁定就算,讀帳失敗照常往下判 → 已連接・尚未啟動)",
-      /if \(pfVenueIds\(\)\.length > 0 && pfExecState\(\) === "noaccount"\) return "unread";/.test(web) && /hasAcct = trHasAccount\(r\)/.test(spv));
+    ok("策略頁頭豁免 1 還成立:串接失敗兩邊都落 fail,但判準不同——網頁是 pfKeyRejected 或「綁著、pfExecState 說 noaccount」(下單程式在不在跑都算);電腦版是 trFailStopped(讀帳失敗或金鑰被拒,而且下單程式沒在跑)。下單程式還在跑時電腦版留在原本那一態(在跑照出記號),說明行改講「串接失敗」＋到自動下單頁,不擋鈕——對帳器還在下單時把頁首換成停用的鈕,等於藏起它在跑",
+      /if \(pfKeyRejected\(\)\) return "fail";/.test(web) && /if \(pfVenueIds\(\)\.length > 0 && pfExecState\(\) === "noaccount"\) return "fail";/.test(web) && /const failStop = hasAcct && trFailStopped\(state, r\);/.test(spv) && /hasAcct && !failStop && \["start", "acct", "off", "running"\]/.test(spv));
+    ok("策略頁頭豁免還成立:fail.note 兩邊出口不同(電腦版到「設定」、網頁到策略組合),開頭「串接失敗」同字", D.fail && D.fail.note === "$fail" && W.fail && W.fail.note === "fail" && dT("cx.failShort") === wT("pfConnectFailedShort")
+      && dT("cx.failStopped") !== wT("pfConnectFailedShort") + "，" + wT("pfVenueGoFix"), CELL_EXEMPT["fail.note"]);
     ok("策略頁頭豁免 2 還成立:網頁的連接中多認「串接中且沒卡住」(真實交易所要 agent 現場建 order_／account_,常超過 3 分鐘);電腦版只認自己的旗標",
       /return pfWaitingVenues\(\)\.some\(function \(id\) \{ return !pfWaitStuck\(id, now\); \}\);/.test(web) && /connecting: spCxOn\(S, now\)/.test(spv));
     ok("策略頁頭豁免 4 還成立:網頁沒有雲朵 icon 鈕(單主機,沒有送上雲端);電腦版那顆不在 SP_HEAD 裡、埋點 sp_cloud_icon 只有電腦版送",

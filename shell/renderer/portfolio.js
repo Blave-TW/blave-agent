@@ -239,20 +239,33 @@ function spView(cloud) {
       || S.save === "saving" || (cloud && S.save === "sent") || (cloud && envCloudKind(S.st) === "stopped") || gv.locked || ids.length > 1;
     const row = configured ? null : trPickRows(Array.isArray(S.list) ? S.list : [], trNames(), !!r && r.can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), {}, trTwdVenueLock()).find((y) => y.name === name);
     const setup = state === "setup", routeDirty = hasAcct && !setup && ids.length === 1 && trRouteDirty(r);
+    /* 串接失敗、下單程式沒在跑(trFailStopped:讀帳失敗或金鑰被拒,同自動下單頁那一句的判準):fail 態,主鈕停用、說明行講自動下單頁那句,
+       「設定」做成連結(到自動下單 › 設定分頁)。金鑰被拒排在鎖住／沒配之前(同 web:不會自己過去,先處理);讀帳失敗排在連接中之後 */
+    const failStop = hasAcct && trFailStopped(state, r);
     const usable = state === "unknown" ? !!(S.st && S.st.alive) : cloud ? envCloudKind(S.st) === "running" : trChannelUp(S.st);
     const v = spHead({ noBt: !d.stats, typeB: typeof xpIsTypeB === "function" && xpIsTypeB(d), market, unread, locked: !!(row && row.locked), configured,
       setup, presContinue: setup && S.env === "local" && (ids[0] === "president" || CAPL_LOCAL_ON), connecting: spCxOn(S, now), hasAcct, routeDirty,
+      failKey: failStop && trKeyBad(S.env), failRead: failStop, failNote: failStop ? { key: "cx.failStopped", go: "set" } : null,
       unsaved: routeDirty && trUnsaved(), zvOff: !!gv.zv.off, firing: trCfFiring(S.st, S.pending) && hasAcct, goKey: gv.key, goOff: !usable,
       offNote: gv.zv.off ? spOffNote(S, name, r || {}) : null, goNote: !gv.zv.off && gv.zv.reason ? { key: gv.zv.reason, vars: gv.zv.book ? { n: trBookQty(gv.zv.book) } : null } : null });
-    if (v.st === "route" && S.spErr) v.note = { text: S.spErr };   // 〔儲存〕直送失敗:沒有框可重開,原因換在這一行
+    if (v.st === "route" && S.spErr) v.note = { text: S.spErr, err: true };   // 〔儲存〕直送失敗:沒有框可重開,原因換在這一行(錯誤色,同框裡那句)
+    /* 串接失敗但下單程式還在跑(不是 fail 態:記號照出、鈕照給):說明行講串接失敗那個詞(IP 換了會帶新 IP),帶一顆到自動下單頁的文字鈕(設計稽核 §6) */
+    if (hasAcct && !failStop && ["start", "acct", "off", "running"].indexOf(v.st) >= 0 && (trFailedIds(r).length > 0 || trKeyBad(S.env)))
+      v.note = { text: cxFailWord(S.env), go: "tr" };
     return Object.assign(v, { name, env: S.env, market, paper: v.mark ? trCfPaperOnly() : null });
   });
 }
 // 說明下一行(#rp-ho-note,同送上雲端回報那一格):整句原因;句子裡的「策略組合」做成文字鈕(同自動下單頁的原因行)
 function spPaintNote(note) {
   const n = $("rp-ho-note"); if (!n) return;
-  n.textContent = ""; n.hidden = !note; if (!note) return;
-  const text = note.text != null ? note.text : t(note.key, note.vars || undefined), word = t("po.nav"), at = note.text != null ? -1 : text.toLowerCase().indexOf(word.toLowerCase());
+  n.textContent = ""; n.hidden = !note; n.classList.remove("err"); if (!note) return;
+  n.classList.toggle("err", !!note.err);
+  // 句子裡的「策略組合」做成連結;sp.unsaved 不做(旁邊就是〔到策略組合〕,同一個地方不給兩個入口)
+  const text = note.text != null ? note.text : t(note.key, note.vars || undefined), word = t("po.nav"), at = note.text != null || note.key === "sp.unsaved" ? -1 : text.toLowerCase().indexOf(word.toLowerCase());
+  // fail 態:句子裡的「設定」做成連結,到自動下單 › 設定分頁(帳戶與金鑰在那裡)
+  if (note.go === "set") { const w = t("tr.tab.set"), i = text.indexOf(w);
+    if (i >= 0) { const g = trEl("button", "btn-quiet", w); g.type = "button"; g.addEventListener("click", () => trOpen("set")); n.append(text.slice(0, i), g, text.slice(i + w.length)); return; } }
+  if (note.go === "tr") { const g = trEl("button", "btn-quiet", t("tr.nav")); g.type = "button"; g.addEventListener("click", () => trOpen()); n.append(text + " ", g); return; }
   if (at < 0) { n.textContent = text; return; }
   const a = trEl("button", "btn-quiet", text.slice(at, at + word.length)); a.type = "button"; a.addEventListener("click", () => poOpen("cfg", true));
   n.append(text.slice(0, at), a, text.slice(at + word.length));
@@ -349,6 +362,9 @@ function spGoCheck(S) {
   if (S !== TR_BAGS[ENV.cur] || $("rp").hidden || !$("del-scrim").hidden || !$("cx-scrim").hidden) return;
   const v = spView(S.env === "cloud"); if (!v || v.name !== g.name) return;
   if (v.st === "running") { S.spGo = null; return; }
+  // 暫停中(HALT)不自動開:暫停是用戶自己的決定,不替他再問一次要不要恢復;〔啟動下單〕就在原位(設計稽核 sp-autotrade §4-2,Wei 照建議)。
+  // 首綁不會觸發 HALT(runtime 只有換綁才 trip_halt),正常的模擬首綁照開
+  if (trWith(S, () => trExecState(S.st)) === "halted") { S.spGo = null; return; }
   if (v.st !== "start" || !v.btn || v.btn.off || v.btn.key !== "tr.start") return;
   S.spGo = null;
   if (trWith(S, () => trGoClick($("rp-go"))) === "start") trackFeature("sp_start_opened");

@@ -848,3 +848,4 @@ html.ws-sc .side-gate { display: none; }
 .del-body.lines p.cf-in-ref { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .del-body.lines p.cf-in-err { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.5; color: var(--color-redText); }
 .cf-in-ref[hidden], .cf-in-err[hidden] { display: none; }
+.cf-in-ref .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }   /* 確認框在 .app 外面,吃不到 .app .mono */

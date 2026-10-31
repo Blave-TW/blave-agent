@@ -32,6 +32,12 @@ if (!process.versions.electron) {
   row("讀不到:加密鈕字基本字「自動下單」、真 disabled、沒有原因句", { unread: true }, "unread", { key: "sp.btn", kind: "fill", act: null, off: true }, { note: null, word: null });
   row("讀不到:台股基本字「加到策略組合」", { unread: true, market: "tw" }, "unread", { key: "po.add", kind: "fill", act: null, off: true });
   row("讀不到優先於鎖住", { unread: true, locked: true, configured: false }, "unread", { key: "sp.btn", kind: "fill", act: null, off: true });
+  const FN = { key: "cx.failStopped", go: "set" };
+  row("金鑰被拒、下單程式沒在跑(fail):基本字停用 + 自動下單頁那一句原因;排在鎖住、沒配之前", { failKey: true, failRead: true, failNote: FN, configured: false, locked: true }, "fail", { key: "sp.btn", kind: "fill", act: null, off: true }, { note: FN });
+  row("讀帳失敗、下單程式沒在跑(fail):已配才判,排在連接中之後、沒帳戶之前", { failRead: true, failNote: FN, routeDirty: true }, "fail", { key: "sp.btn", kind: "fill", act: null, off: true }, { note: FN });
+  row("讀帳失敗但沒配:照沒配(fail 只擋金鑰被拒那種)", { failRead: true, failNote: FN, configured: false }, "add", { key: "sp.btn", kind: "fill", act: "amt" });
+  row("優先序:讀不到 > fail", { unread: true, failKey: true, failRead: true }, "unread", { key: "sp.btn", kind: "fill", act: null, off: true });
+  row("優先序:連接中 > 讀帳失敗", { connecting: true, failRead: true }, "connecting", { key: "sp.connecting", kind: "fill", act: null, off: true });
   row("鎖住(沒配):主鈕照畫,按了到選擇策略框", { locked: true, configured: false }, "locked", { key: "sp.btn", kind: "fill", act: "pick" });
   row("鎖住但已在組合(!inCur 豁免由 trPickRows 管;已配不算鎖)→ 照已配往下判", { locked: true }, "start", { key: "tr.start", kind: "fill", act: "go" });
   row("回測完沒配(加密):〔自動下單〕填色 → 開金額框", { configured: false, hasAcct: false }, "add", { key: "sp.btn", kind: "fill", act: "amt" });
@@ -132,7 +138,7 @@ const rep = (o) => {
 
 app.whenReady().then(async () => {
   if (app.dock) app.dock.hide();
-  setTimeout(() => { console.log("FAIL  ③ 逾時(180 秒內沒跑完)"); app.exit(1); }, 180000).unref();
+  setTimeout(() => { console.log("FAIL  ③ 逾時(300 秒內沒跑完)"); app.exit(1); }, 300000).unref();
   const pre = path.join(app.getPath("userData"), "stub.js"); fs.writeFileSync(pre, STUB);
   const w = new BrowserWindow({ width: 1280, height: 820, show: false, webPreferences: { offscreen: true, preload: pre, contextIsolation: false, sandbox: false } });
   await w.loadFile(path.join(SHELL, "renderer", "index.html"));
@@ -194,6 +200,7 @@ app.whenReady().then(async () => {
   h = await st("btc", rep({ venue: "binance", amounts: { btc: 500 }, exchanges: {}, halt: true }));
   ok("③ 優先序:HALT＋路由空 → 沒路由那列(〔儲存〕),不是 HALT 的〔啟動下單〕", h.st === "route" && h.go === tx["tr.save"], J(h));
   h = await st("btc", rep({ venue: "binance", amounts: { btc: 500 }, exchanges: {} }), `TR_BAGS.local.edits = { btc: 900 }`);
+  ok("③ …sp.unsaved 那句是純文字(旁邊已有〔到策略組合〕,不給第二個入口)", (await js(`$("rp-ho-note").querySelectorAll("button").length`)) === 0);
   ok("③ 有帳戶、沒路由、策略組合有沒存的金額:sp.unsaved + 描邊〔到策略組合〕", h.st === "unsaved" && h.go === tx["po.addGo"] && h.note === tx["sp.unsaved"], J(h));
   h = await st("btc", rep({ venue: "binance", amounts: { btc: 500 }, exchanges: {} }), `TR_BAGS.local.picked = new Set(["btc", "eth"])`);
   ok("③ …勾了 eth 沒填金額(picker 草稿):一樣出〔到策略組合〕不出〔儲存〕", h.st === "unsaved", J(h));
@@ -224,14 +231,33 @@ app.whenReady().then(async () => {
   h = await st("btc", rep({}), `TR_BAGS.local.spCx = { name: "btc", at: Date.now() }`);
   ok("③ 連接中:主鈕「連接中…」真 disabled、旁邊不放字", (await js(`(TR_BAGS.local.st.report.config.amounts = { btc: 500 }, hoPaint(), 0)`)) === 0 && (h = await head()) && h.st === "connecting" && h.go === tx["sp.connecting"] && h.dis === true && !h.word, J(h));
 
+  // ── 綁了但讀帳失敗、金鑰被拒:說明行要有原因(設計稽核 §6)
+  const failAcct = { read_at: now, venues: { binance: { ok: false, error: "get_equity: 401 invalid api key" } } };
+  h = await st("btc", rep({ venue: "binance", amounts: { btc: 1000 }, extra: { account: failAcct } }));
+  ok("③ 綁了但讀帳失敗、下單程式沒在跑(fail):〔自動下單〕停用、說明下一行「串接失敗，下單程式沒在跑。到「設定」處理。」(同自動下單頁那句)", h.st === "fail" && h.go === tx["sp.btn"] && h.dis === true
+    && h.note === (await T("cx.failStopped")), J(h));
+  ok("③ …句子裡的「設定」是連結", (await js(`[...$("rp-ho-note").querySelectorAll("button")].map((b) => b.textContent).join()`)) === (await T("tr.tab.set")));
+  await run(`const q = $("rp-ho-note").querySelector("button"); if (q) q.click()`); await wait(400);
+  ok("③ …按了到自動下單 › 設定分頁", (await js(`TR.open && TR.view === "tr" && TR.tab === "set" && !$("tr").hidden`)) === true, J(await js(`({ open: TR.open, view: TR.view, tab: TR.tab })`)));
+  h = await st("btc", rep({ venue: "binance", amounts: { btc: 1000 }, running: true, extra: { account: failAcct } }));
+  ok("③ 讀帳失敗、下單程式還在跑:記號照出,說明行是「串接失敗」", h.st === "running" && !!h.mark && !!h.note && h.note.startsWith(await T("cx.failShort")), J(h));
+  ok("③ …那一句帶一顆到自動下單頁的文字鈕", (await js(`[...$("rp-ho-note").querySelectorAll("button")].map((b) => b.textContent).join()`)) === (await T("tr.nav")));
+  await run(`const q = $("rp-ho-note").querySelector("button"); if (q) q.click()`); await wait(400);
+  ok("③ …按了到自動下單頁", (await js(`TR.open && TR.view === "tr" && !$("tr").hidden`)) === true);
+  h = await st("eth", rep({ venue: "binance", amounts: { btc: 1000 } }), `CXF.bn = { verdict: { reason: "KEY_REJECTED" } }`);
+  ok("③ 金鑰被拒(Binance 重查不過)、這一支還沒配:一樣是 fail,不給〔自動下單〕開框", h.st === "fail" && h.dis === true && h.note === (await T("cx.failStopped")), J(h));
+  await run(`CXF.bn = null`);
+
   // ── 金額框:加密不在跑(儲存金額)、模擬在跑(儲存並下單)、台指期口數
   h = await st("btc", rep({ pv: { btc: { symbol: "BTCUSDT", position: 1, close: 50000, bar_at: now - 3600, latest: true } } }));
   await run(`$("rp-go").click()`); await wait(400);
   let b = await box();
+  ok("③ 金額框剛打開、輸入格空著:表下沒有「名字 0 加入」那一列(設計稽核 §1 可刪 1)", (await js(`document.querySelectorAll("#del-body .cf-strat .cf-row").length`)) === 0 && !b.body.includes(await T("tr.cfTagAdd")), J(b));
   ok("③ 金額框(加密、沒在跑):標題「儲存金額」、主鈕「儲存」停用(空白)、焦點在輸入格、框腳「到策略組合」、沒記號;記 sp_auto_open",
     b.open && b.title === tx["tr.cf.title"] && b.ok === tx["tr.save"] && b.dis && b.focus === "cf-in" && b.link === tx["po.addGo"] && !b.mark && (await js("window.__feats")).includes("sp_auto_open"), J(b));
   await type("1000"); b = await box();
   ok("③ …打 1,000:主鈕可按、輸入格下面寫換算量 0.02 BTC", !b.dis && /0\.02/.test(await js(`$("cf-body") ? "" : (document.querySelector(".cf-in-ref") || {}).textContent || ""`)), J(b));
+  ok("③ …換算量的數字是 mono(同框裡的下單列、同 web)", (await js(`(() => { const m = document.querySelector(".cf-in-ref .mono"); return !!m && m.textContent === "0.02" && /mono/i.test(getComputedStyle(m).fontFamily); })()`)) === true);
   await run(`$("del-cancel").click()`); await wait(100);
   h = await st("btc", rep({ venue: "paper", amounts: { eth: 300 }, running: true, pv: { btc: { symbol: "BTCUSDT", position: 1, close: 50000, bar_at: now - 3600, latest: true } } }));
   await run(`$("rp-go").click()`); await wait(400); await type("1000"); await wait(100); b = await box();
@@ -243,6 +269,11 @@ app.whenReady().then(async () => {
   await run(`$("rp-go").click()`); await wait(400); b = await box();
   const lab = await js(`(document.querySelector(".cf-in-fld .fld-l") || {}).textContent`);
   ok("③ 金額框(台指期):輸入格標籤「口數」、單位「口」", b.open && lab === (await T("tr.lotsAria")), J({ b, lab }));
+  await type("2");
+  ok("③ …沒有報價:不出只剩商品名的換算行", (await js(`(() => { const r = document.querySelector(".cf-in-ref"); return !!r && r.hidden && r.textContent === ""; })()`)) === true);
+  await run(`TR_TXF.price = 23000`); await type("3");
+  ok("③ …有報價:換算行「微台 ≈ 690,000 TWD」(數字 mono)", (await js(`(() => { const r = document.querySelector(".cf-in-ref"); return !r.hidden && /690,000/.test(r.textContent) && !!r.querySelector(".mono"); })()`)) === true);
+  await run(`TR_TXF.price = null`);
   await run(`$("del-cancel").click()`); await wait(100);
 
   // ── 存了接連接框 → 連接中 → 模擬:自動開啟動框(替身)
@@ -262,11 +293,20 @@ app.whenReady().then(async () => {
   ok("③ 模擬接上(報告有帳戶、路由齊):自動開啟動框——走 trGoClick 的守門,替身 trAskStart 收到;記 sp_start_opened;沒有真的送 resume",
     J(await js("window.__spy")) === J(["start"]) && (await js("window.__feats")).includes("sp_start_opened") && !(await sentCmds()).some((c) => /^resume|restart_reconciler/.test(c)), J({ spy: await js("window.__spy"), cmds: await sentCmds() }));
 
-  // 模擬接上、但報告還帶著 HALT(例:先前解綁留下的):整台沒在跑 → 同樣自動開啟動框(啟動框裡是 resume,用戶自己按);刻意的,不是漏判
+  // 模擬接上、但報告帶著 HALT:不自動開(暫停是用戶自己的決定;設計稽核 §4-2,Wei 照建議)。首綁沒有 HALT 的照開(上一條、下一條)
   h = await st("btc", rep({ amounts: { btc: 1000 } }), `TR_BAGS.local.spCx = { name: "btc", at: Date.now() }`);
   await run(`window.__st.report = Object.assign(window.__st.report, { venues: { paper: ${J(V)} }, config: { amounts: { btc: 1000 }, exchanges: { btc: "paper" } }, halt: { halted: true, source: "desktop", holds_all: false } })`);
   await poll(); await poll();
-  ok("③ 模擬接上＋HALT 還在:照樣自動開啟動框(替身 trAskStart 收到一次),不送 resume", J(await js("window.__spy")) === J(["start"]) && !(await sentCmds()).some((c) => /^resume|restart_reconciler/.test(c)), J(await js("window.__spy")));
+  h = await head();
+  ok("③ 模擬接上＋HALT 還在:不自動開啟動框(替身沒被叫),頁首停在〔啟動下單〕、旗標收掉", J(await js("window.__spy")) === "[]" && h.st === "start" && h.go === tx["tr.start"] && (await js("TR_BAGS.local.spGo")) === null && (await js("TR_BAGS.local.spCx")) === null, J({ spy: await js("window.__spy"), h }));
+  h = await st("btc", rep({ amounts: { btc: 1000 } }), `TR_BAGS.local.spCx = { name: "btc", at: Date.now() }`);
+  await run(`window.__st.report = Object.assign(window.__st.report, { venues: { paper: ${J(V)} }, config: { amounts: { btc: 1000 }, exchanges: { btc: "paper" } } })`);
+  await poll(); await poll();
+  ok("③ 對照:同一條路、首綁沒有 HALT → 照樣自動開啟動框(替身 trAskStart 收到一次)", J(await js("window.__spy")) === J(["start"]), J(await js("window.__spy")));
+  h = await st("eth", rep({ venue: "paper", amounts: { btc: 500 }, halt: true, pv: { eth: { symbol: "ETHUSDT", position: 1, close: 3000, bar_at: now - 3600, latest: true } } }));
+  await run(`window.__send = async (cmd, args) => { if (cmd === "amounts") { window.__st.report.config.amounts = Object.assign({}, args.amounts); window.__st.report.config.exchanges = Object.fromEntries(Object.keys(args.amounts).map((n) => [n, "paper"])); } return { ok: true }; }`);
+  await run(`$("rp-go").click()`); await wait(400); await type("300"); await run(`$("del-ok").click()`); await wait(800); await poll(); await poll();
+  ok("③ 已綁模擬、暫停中、從策略頁存一支新的:存完不自動開啟動框", (await js(`window.__calls.some((c) => c[0] === "tradeSend" && c[1][0] === "amounts")`)) && J(await js("window.__spy")) === "[]" && (await head()).st === "start", J({ spy: await js("window.__spy"), h: await head() }));
 
   // ── 真錢:連接中 → 接上 → 停在〔啟動下單〕,不自動開;按了才走 trGoClick(替身)
   h = await st("btc", rep({ amounts: { btc: 1000 } }));
@@ -289,6 +329,10 @@ app.whenReady().then(async () => {
   h = await st("btc", rep({ venue: "binance", amounts: { btc: 1000 }, exchanges: {} }), `window.__send = async () => ({ ok: false, error: "ValueError: MARKET_VENUE: x" })`);
   await run(`$("rp-go").click()`); await wait(500); h = await head();
   ok("③ …直送失敗:原因換在說明下一行(沒有框可重開)= 那次存檔的錯誤句", h.st === "route" && !!h.note && h.note !== tx["tr.routeSave"] && h.note === (await js("TR_BAGS.local.saveErr")), J(h));
+  ok("③ …那句用錯誤色(同框裡的 cf-block)", (await js(`(() => { const x = document.createElement("span"); x.style.color = "var(--color-redText)"; document.body.appendChild(x); const want = getComputedStyle(x).color; x.remove();
+    return $("rp-ho-note").classList.contains("err") && getComputedStyle($("rp-ho-note")).color === want; })()`)) === true);
+  h = await st("btc", rep({ venue: "binance", amounts: { btc: 1000 } }));
+  ok("③ 對照:一般原因句不是錯誤色", (await js(`$("rp-ho-note").classList.contains("err")`)) === false);
 
   // ── 失敗重開同一個框
   h = await st("btc", rep({ venue: "binance", amounts: { eth: 300 }, pv: { btc: { symbol: "BTCUSDT", position: 1, close: 50000, bar_at: now - 3600, latest: true } } }), `window.__send = async () => ({ ok: false, error: "ValueError: TYPE_B: x" })`);

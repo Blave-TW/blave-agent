@@ -687,7 +687,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 /* 雲端停機 / 讀不到時的那一句(hoNote)。不共用 .rp-desc:那一行是單行截斷,裡面的文字鈕會被切掉 */
 /* 說明下一行:雲端停機那兩句(hoNote)與策略頁頭的整句原因(spPaintNote)。要被讀到的那一階,--ink-2 */
 .rp-ho-note { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
-.rp-ho-note .btn-quiet { font-size: inherit; }   /* 句尾的文字鈕跟著那句話的字級(同 .tr-ro-note) */
+.rp-ho-note .btn-quiet { font-size: inherit; }
+.rp-ho-note.err { color: var(--color-redText); }   /* 直送失敗那句:同框裡 cf-block 的錯誤色 */   /* 句尾的文字鈕跟著那句話的字級(同 .tr-ro-note) */
 /* 第一行固定 32 高(= 動作鈕的高度),策略名在列內垂直置中(canon › 策略版本第 1 條):跟主鈕、狀態詞、雲朵鈕同一條中線 */
 .rp-name { margin: 0; font-size: 17px; font-weight: 600; line-height: 32px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 底線分頁(canon › 底線分頁):目前項 = ink + 2px 底線,其餘 ink-3;不用橘 */

@@ -42,6 +42,7 @@ const SP_HEAD = {
   none: { btn: null },
   us: { btn: null, word: "tr.mkt.noAuto" },
   unread: { btn: { key: "$base", kind: "fill", act: null, off: true } },
+  fail: { btn: { key: "$base", kind: "fill", act: null, off: true }, note: "$fail" },
   locked: { btn: { key: "$base", kind: "fill", act: "pick" } },
   add: { btn: { key: "$base", kind: "fill", act: "amt" } },
   setup: { btn: { key: "cap.continue", kind: "fill", act: "pres" }, word: "cap.pending" },
@@ -56,19 +57,19 @@ const SP_HEAD = {
   acct: { btn: { key: "tr.acct.btn", kind: "fill", act: "go" } },
   start: { btn: { key: "$go", kind: "fill", act: "go" }, note: "$go" },
 };
-/* §4 的優先序(同時命中取前者):沒回測／Type B → 美股 → 讀不到 → 鎖住 → 沒配(含統一開通中沒配)→ 統一開通中已配 → 連接中 →
+/* §4 的優先序(同時命中取前者):沒回測／Type B → 美股 → 讀不到 → 金鑰被拒(fail)→ 鎖住 → 沒配(含統一開通中沒配)→ 統一開通中已配 → 連接中 → 讀帳失敗(fail)→
    沒接帳戶 → 有帳戶沒路由 → 綁的那家下不了 → 在跑 → 已連接・尚未啟動／暫停中。重綁後 halted＋路由空落「沒路由」(HALT 那列要路由齊);
    setup＋路由空落統一那列(〔繼續〕才是出口)。x 全是算好的值(portfolio.js spCtx),這裡不碰 DOM、不讀全域 */
 function spHead(x) {
-  const st = x.noBt || x.typeB ? "none" : x.market === "us" ? "us" : x.unread ? "unread" : x.locked && !x.configured ? "locked"
-    : !x.configured ? "add" : x.setup ? (x.presContinue ? "setup" : "setupWait") : x.connecting ? "connecting"
+  const st = x.noBt || x.typeB ? "none" : x.market === "us" ? "us" : x.unread ? "unread" : x.failKey ? "fail" : x.locked && !x.configured ? "locked"
+    : !x.configured ? "add" : x.setup ? (x.presContinue ? "setup" : "setupWait") : x.connecting ? "connecting" : x.failRead ? "fail"
     : !x.hasAcct ? (x.market === "tw" ? "twNoAcct" : "noAcct") : x.routeDirty ? (x.unsaved ? "unsaved" : "route")
     : x.zvOff ? "off" : x.firing ? "running" : x.goKey === "tr.acct.btn" ? "acct" : "start";
   const d = SP_HEAD[st], b = d.btn ? Object.assign({}, d.btn) : null;
   if (b && b.key === "$base") b.key = x.market === "tw" ? "po.add" : "sp.btn";
   if (b && b.key === "$go") b.key = x.goKey || "tr.start";
   if (b && (st === "start" || st === "acct") && x.goOff) b.off = true;   // 指令通道不通(同 #tr-go 的 usable)
-  const note = d.note === "$off" ? x.offNote || null : d.note === "$go" ? x.goNote || null : d.note ? { key: d.note } : null;
+  const note = d.note === "$fail" ? x.failNote || null : d.note === "$off" ? x.offNote || null : d.note === "$go" ? x.goNote || null : d.note ? { key: d.note } : null;
   return { st, btn: b, word: d.word || null, note, mark: !!d.mark };
 }
 /* ── 純邏輯到此 ── */
