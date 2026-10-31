@@ -681,7 +681,8 @@ var UP = null;   // var:applyStatic 可能在這一行之前就被叫到(let 的
    app 裡不做首次告知(Wei);關掉之後清單留著——看得到自己關掉的是什麼。全段不寫「匿名」:登入後安裝編號會跟帳號對上。
    開關的真值在主行程(telemetry.js 的狀態檔);這裡每次打開這一類就重讀,切換後以主行程回的為準。 */
 let PRIV = null;   // null = 還沒讀到(開關先鎖著,免得先畫成開、再跳成關)
-const PRIV_COLLECT = ["priv.collect.1", "priv.collect.5", "priv.collect.6", "priv.collect.9", "priv.collect.10", "priv.collect.11", "priv.collect.2", "priv.collect.3", "priv.collect.4", "priv.collect.8", "priv.collect.7"];
+// 會收:組 → 組內幾句(0.1.39 設計稽核 §C)。key = priv.c.<組>.h 與 priv.c.<組>.<n>;組數與句數改了,tests/check_shell_settings.js 逐字對
+const PRIV_COLLECT = [["step", 4], ["strat", 5], ["feat", 6], ["stuck", 7], ["auth", 5], ["meta", 5], ["lib", 3], ["acct", 2]].map(([g, n]) => ["priv.c." + g + ".h", Array.from({ length: n }, (_, i) => "priv.c." + g + "." + (i + 1))]);
 /* 功能被使用(canon .claude/docs/product-telemetry.md):只交一個白名單裡的名字給主行程,不帶內容、不計次(api 每安裝每 name 每日一列)。
    送出點放在「功能被使用」那一層(分頁切換、主要動作的 handler),不放 render;名字的字面在 tests/check_shell_telemetry.js 對兩端白名單掃 */
 function trackFeature(name) { try { window.blave.trackFeature(name); } catch (_) { } }   // 追蹤永遠不擋功能
@@ -767,10 +768,14 @@ function privPaint() {
   const off = PRIV === false;
   if (!off) box.append(mk("p", "priv-lead", t("priv.lead")));
   const two = mk("div", "priv-two");
-  [[t("priv.never.h"), PRIV_NEVER], [off ? t("priv.collect.hOff") : t("priv.collect.h"), PRIV_COLLECT]].forEach(([head, keys]) => {
-    const col = mk("div"), ul = mk("ul"); col.append(mk("h6", "", head));
-    keys.forEach((k) => ul.append(mk("li", "", t(k)))); col.append(ul); two.append(col);
-  });
+  { const col = mk("div"), ul = mk("ul"); col.append(mk("h6", "", t("priv.never.h")));
+    PRIV_NEVER.forEach((k) => ul.append(mk("li", "", t(k)))); col.append(ul); two.append(col); }
+  { const col = mk("div"); col.append(mk("h6", "", off ? t("priv.collect.hOff") : t("priv.collect.h")));
+    PRIV_COLLECT.forEach(([gh, keys]) => {
+      const g = mk("div", "priv-g"), ul = mk("ul"); g.append(mk("p", "priv-gh", t(gh)));
+      keys.forEach((k) => ul.append(mk("li", "", t(k)))); g.append(ul); col.append(g);
+    });
+    two.append(col); }
   box.append(two, mk("p", "priv-fine", off ? t("priv.kept") : t("priv.fine")));
   /* 隱私權政策的入口(法遵稽核):政策 §9.1 叫人到這一頁關遙測(安裝識別碼在 設定 › 一般 › 關於),這一頁要能連回那份政策 */
   const legal = mk("p", "set-legal"), pl = mk("button", "btn-quiet", t("legal.privacy")); pl.type = "button"; pl.id = "priv-legal";

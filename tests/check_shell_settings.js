@@ -567,7 +567,17 @@ ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效
   ok("S2 內建瀏覽器是 Agent 那一頁的最後一組:rulesPaint 在常駐規則之後給一格 .br-set;那一格不畫線、只隔組間距 32", /rulesPaintList\(grp\);\n[^\n]*\n  if \(typeof brSetPaint === "function"\) \{ const br = rsEl\("div", "br-set"\); br\.id = "rules-br"; box\.append\(br\); brSetPaint\(br\); \}/.test(rulesFn)
     && /\.br-set \{ margin-top: var\(--space-32\); \}/.test(fs.readFileSync(path.join(R, "browser.css"), "utf8")) && !/\.br-set[^{]*\{[^}]*border/.test(fs.readFileSync(path.join(R, "browser.css"), "utf8")));
 }
-ok("隱私:會收 11 條(功能那條緊接在里程碑後、0.1.9「卡在哪一步」再接在功能後、0.1.35 登入方式與登入失敗接在「卡在哪一步」後、0.1.37 改金鑰驗證碼接在登入失敗後、0.1.13 免登入下載的安裝識別碼接在安裝識別碼後、0.1.10 帳號狀態一併回報的那條排最後;關掉時仍送「已關閉」寫在關閉態那行 priv.kept)、不收 6 條(含「事件紀錄不含 IP 位址」原話);關掉後清單留著、標題與尾句換掉、不畫說明行", /PRIV_COLLECT = \["priv\.collect\.1", "priv\.collect\.5", "priv\.collect\.6", "priv\.collect\.9", "priv\.collect\.10", "priv\.collect\.11", "priv\.collect\.2", "priv\.collect\.3", "priv\.collect\.4", "priv\.collect\.8", "priv\.collect\.7"\]/.test(src)
+// 會收的組(0.1.39):PRIV_COLLECT 從原文 eval 出來,組 id、句數、順序逐一對;舊的 priv.collect.<n> 一條都不能留
+const PRIV_COLLECT_V = eval(src.match(/const PRIV_COLLECT = [^\n]*;/)[0].replace(/^const PRIV_COLLECT = /, "(").replace(/;$/, ")"));
+const POS = (L, k) => { const m = PO[L].match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\nmsgstr "([^"]*)"')); return m ? m[1] : null; };
+const PRIV_SHAPE = [["step", 4], ["strat", 5], ["feat", 6], ["stuck", 7], ["auth", 5], ["meta", 5], ["lib", 3], ["acct", 2]];
+const PRIV_GROUPS_OK = JSON.stringify(PRIV_COLLECT_V) === JSON.stringify(PRIV_SHAPE.map(([g, n]) => ["priv.c." + g + ".h", Array.from({ length: n }, (_, i) => "priv.c." + g + "." + (i + 1))]))
+  && PRIV_COLLECT_V.every(([h, ks]) => [h, ...ks].every((k) => POS(0, k) && POS(1, k)))
+  && PO.every((x) => !/msgid "priv\.collect\.\d+"/.test(x)) && !/priv\.collect\.\d/.test(src)
+  && /if \(!off\) box\.append\(mk\("p", "priv-lead", t\("priv\.lead"\)\)\);/.test(src) && PO.every((x) => !/msgid "(priv|mv|br\.set)\.leadOff"/.test(x)) && /PRIV_NEVER = \[("priv\.never\.[1-6]",? ?){6}\]/.test(src)
+  && /msgid "priv\.never\.6"\nmsgstr "事件紀錄不含 IP 位址"/.test(PO[0]) && /msgid "priv\.never\.6"\nmsgstr "Event records contain no IP address"/.test(PO[1])
+  && /off \? t\("priv\.collect\.hOff"\) : t\("priv\.collect\.h"\)/.test(src) && /off \? t\("priv\.kept"\) : t\("priv\.fine"\)/.test(src);
+ok("隱私:會收分 8 組(0.1.39 設計稽核 §C,Wei 核准):組的順序照原本 11 條的順序拆;關掉時仍送「已關閉」寫在關閉態那行 priv.kept)、不收 6 條(含「事件紀錄不含 IP 位址」原話);關掉後清單留著、標題與尾句換掉、不畫說明行", PRIV_GROUPS_OK
   && /if \(!off\) box\.append\(mk\("p", "priv-lead", t\("priv\.lead"\)\)\);/.test(src) && PO.every((x) => !/msgid "(priv|mv|br\.set)\.leadOff"/.test(x)) && /PRIV_NEVER = \[("priv\.never\.[1-6]",? ?){6}\]/.test(src)
   && /msgid "priv\.never\.6"\nmsgstr "事件紀錄不含 IP 位址"/.test(PO[0]) && /msgid "priv\.never\.6"\nmsgstr "Event records contain no IP address"/.test(PO[1])
   && /off \? t\("priv\.collect\.hOff"\) : t\("priv\.collect\.h"\)/.test(src) && /off \? t\("priv\.kept"\) : t\("priv\.fine"\)/.test(src));
@@ -596,6 +606,11 @@ ok("隱私:會收 11 條(功能那條緊接在里程碑後、0.1.9「卡在哪�
   var PRIV = true, privToggle = () => {}, srSay = () => {};
   eval(fnSrc("privPaint"));
   LANG = "zh"; privPaint();
+  { const all = []; const walk = (n) => { if (!n || !n.children) return; n.children.forEach((c) => { if (c && typeof c === "object") { all.push(c); walk(c); } }); }; walk($("set-priv"));
+    const gs = all.filter((n) => n._cls === "priv-g"), heads = gs.map((g) => g.children[0]);
+    ok("隱私:privPaint 把會收畫成 8 組,每組一個 .priv-gh 小標(不是 li,不吃短劃)接一份 ul;組內句數照 PRIV_COLLECT", gs.length === 8
+      && heads.every((h, i) => h._cls === "priv-gh" && h.textContent === PRIV_COLLECT[i][0]) && gs.every((g, i) => g.children[1].children.length === PRIV_COLLECT[i][1].length)
+      && /\.priv-g \+ \.priv-g \{ margin-top: var\(--space-8\); \}/.test(css) && /\.priv-gh \{[^}]*font-weight: 400;[^}]*color: var\(--ink\);/.test(css)); }
   // privPaint 用 document.createElement 組節點,不經過 $():從 #set-priv 的子樹把那顆鈕找出來
   const findBtn = () => { const out = []; const walk = (n) => { if (!n || !n.children) return; n.children.forEach((c) => { if (c && typeof c === "object") { if (c.onclick && c.textContent === "legal.privacy") out.push(c); walk(c); } }); }; walk($("set-priv")); return out[0]; };
   const pl = findBtn();
@@ -623,24 +638,33 @@ ok("隱私:會收 11 條(功能那條緊接在里程碑後、0.1.9「卡在哪�
       !!m && lic.includes("\n   " + m[0] + "\n") && !/\[yyyy\]|\[name of copyright owner\]/.test(lic)); }
   window.blave.openExternal = realOpen; LANG = "zh"; }
 // 事件數跟告知綁在一起:加事件而沒補「會收」那幾條,這裡就紅(canon product-telemetry 出貨清單第 5 條)
-ok("隱私:會收那一條寫到作業系統與版本、系統語言、電腦類型(spec-0.1.13 #12:Windows 也看得到這一條,不寫 macOS;0.1.28 的 device_type 是這一條的「電腦類型」);三十一個事件逐項對得上契約的白名單(0.1.35 的 cli_auth / auth_fail 各一條:priv.collect.9 登入方式、priv.collect.10 登入失敗;0.1.37 的 key_verify 是 priv.collect.11:驗證碼框出現／通過／鎖住、不含碼;feature_used 是「用了哪些功能」那一條:名稱、每日一次、不含內容;0.1.9 的九個與 0.1.12 的引擎安裝兩個是「卡在哪一步」那一條:只記類別;heartbeat 是里程碑那一條的「app 開著的每一天」;0.1.13 的 lib_pick / idea_sent 在功能那一條講到:用策略庫的策略記要不要 Blave 資料、送出找點子記哪個入口;0.1.15 的 detect_fail 是「卡在哪一步」那條的「連不上 AI 的原因類別」;0.1.18 的 strat_* 三個在「做到哪一步」那條:每支策略的三步只記型別與市場類別)", /app 版本、作業系統與版本、系統語言、電腦類型（筆電或桌機）/.test(PO[0]) && /The app version, operating system and version, system language, and computer type \(laptop or desktop\)/.test(PO[1]) && Object.keys(require("../shell/telemetry.js").EVENTS).length === 31
-  && /msgid "priv\.collect\.11"\nmsgstr "改金鑰時驗證碼框的出現、通過與鎖住；不含驗證碼"/.test(PO[0]) && /msgid "priv\.collect\.11"\nmsgstr "Whether the key-change code box appeared, passed or locked, never the code"/.test(PO[1])
-  && /msgid "priv\.collect\.9"\nmsgstr "本機 AI 的登入方式，例如訂閱或 API 金鑰；不含帳號與金鑰"/.test(PO[0]) && /msgid "priv\.collect\.10"\nmsgstr "登入失敗的類別，以及當下是否判定為已登入"/.test(PO[0])
-  && /msgid "priv\.collect\.9"\nmsgstr "How the local AI is signed in, e\.g\. subscription or API key; no account or key data"/.test(PO[1]) && /msgid "priv\.collect\.10"\nmsgstr "Which kind of sign-in failure, and whether the AI counted as signed in"/.test(PO[1]) && /首次開啟、每日開啟、app 開著的每一天（含本機自動下單有沒有在跑）、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行/.test(PO[0])
-  && /each day the app stays open \(and whether local auto-trading is running\)/.test(PO[1])
-  && /、上雲端運行；每支策略新建、第一次回測、第一次配了金額時，記它的型別（A／B／C）與市場類別（例如加密貨幣、台指期），不記策略名稱或標的；同一支策略的三步記同一組代碼；代碼只有這台電腦算得出，Blave 推不回策略名稱"/.test(PO[0])
-  && /, ran in the cloud; when each strategy is created, first backtested and first given an amount, its type \(A\/B\/C\) and market category \(such as crypto or Taiwan index futures\), never its name or symbol; a strategy's three steps share one code; only this computer can compute it, and Blave can't turn it back into the name"/.test(PO[1])
-  && /msgid "priv\.collect\.5"\nmsgstr "用了哪些功能：分頁與按鈕的名稱，每天每項記一次，不含裡面的內容；從策略庫用一支策略時，記它要不要 Blave 資料；送出找點子時，記是從哪個入口送出；回覆好了的系統通知有沒有跳出、有沒有被點開，不含對話標題與內容"/.test(PO[0]) && /msgid "priv\.collect\.5"\nmsgstr "Which features you used: tab and button names, once per item per day, without their content; when you use a library strategy, whether it needs Blave data; when you send an idea request, which entry point it came from; whether a reply notification was shown or clicked, never the chat title or text"/.test(PO[1])
-  && (() => { const ev = require("../shell/telemetry.js").EVENTS, c5 = (L) => (PO[L].match(/msgid "priv\.collect\.5"\nmsgstr "([^"]*)"/) || [])[1] || "";   // 兩個新事件真的有被講到:事件還在白名單上,面板就要有對應那半句
-    return !!ev.lib_pick && !!ev.idea_sent && /要不要 Blave 資料/.test(c5(0)) && /哪個入口/.test(c5(0)) && /whether it needs Blave data/.test(c5(1)) && /which entry point/.test(c5(1)); })()
-  && /msgid "priv\.collect\.6"\nmsgstr "卡在哪一步：回合失敗、連不上 AI、策略庫用不了的原因類別，綁卡／儲值提示有沒有出現與按下、回來後能不能用，啟動雲端方案的結果，更新卡在哪一步，第一次收到 AI 回覆，第一次安裝或更新後補裝（引擎與策略套件）有沒有裝好、沒裝好是哪一類原因；只記類別，不含內容"/.test(PO[0])
-  && /msgid "priv\.collect\.6"\nmsgstr "Where things got stuck: the category of a failed turn, a failed AI connection or a blocked library strategy, whether a card or top-up prompt appeared and was clicked and whether your account was ready when you came back, the result of starting a cloud plan, which update step failed, your first AI reply, and whether the first-run or post-update setup of this computer \(engine and strategy packages\) finished and, if not, the category of the reason — categories only, never the content"/.test(PO[1]));
+// 會收的字逐字(法遵:原本 11 條的事實一條都沒刪,只拆句分組)。canon 字數算法(漢字一字、英數詞一字、標點不算),每句 ≤25
+const PRIV_ZH = {
+  step: ["做到哪一步", "首次開啟、每日開啟、登入", "app 開著的每一天，含本機自動下單有沒有在跑", "完成連結，記哪一種 AI", "第一次回測、啟動下單（模擬或真錢）、上雲端運行"],
+  strat: ["每支策略", "新建、第一次回測、第一次配了金額時各記一次", "只記型別（A／B／C）與市場類別，例如加密貨幣、台指期", "不記策略名稱或標的", "三步記同一組代碼，代碼只有這台電腦算得出", "Blave 推不回策略名稱"],
+  feat: ["用了哪些功能", "分頁與按鈕的名稱，每天每項記一次", "不含分頁與按鈕裡的內容", "從策略庫用一支策略時，記它要不要 Blave 資料", "送出找點子時，記從哪個入口送出", "回覆好了的系統通知：有沒有跳出、有沒有被點開", "不含對話標題與內容"],
+  stuck: ["卡在哪一步", "回合失敗、連不上 AI、策略庫用不了的原因類別", "綁卡／儲值提示有沒有出現與按下、回來後能不能用", "啟動雲端方案的結果、更新卡在哪一步", "第一次收到 AI 回覆", "第一次安裝或更新後補裝引擎與策略套件，有沒有裝好", "沒裝好是哪一類原因", "只記類別，不含內容"],
+  auth: ["登入與金鑰", "本機 AI 的登入方式，例如訂閱或 API 金鑰", "不含帳號與金鑰", "登入失敗的類別，以及當下是否判定為已登入", "改金鑰時驗證碼框的出現、通過與鎖住", "不含驗證碼"],
+  meta: ["每筆紀錄都帶", "發生的時間", "app 版本、作業系統與版本、系統語言", "電腦類型：筆電或桌機", "安裝識別碼：這份安裝隨機產生的編號", "登入後，安裝識別碼會跟你的帳號對上"],
+  lib: ["策略庫下載", "沒登入或登入失效時，從策略庫下載免登入策略", "記策略庫編號與安裝識別碼，用來算安裝人數", "之後登入就會跟你的帳號對上"],
+  acct: ["帳號上", "登入後，帳號會記下連的是哪種 AI", "也記這台電腦有沒有跑過回測，保留 90 天"],
+};
+const privKeys = (g) => ["priv.c." + g + ".h", ...PRIV_ZH[g].slice(1).map((_, i) => "priv.c." + g + "." + (i + 1))];
+const zhCount = (x) => { const CJK = /[\p{Script=Han}]/gu; return (x.match(CJK) || []).length + (x.replace(CJK, " ").match(/[\p{L}\p{N}_]+(?:[.,]\p{N}+)*/gu) || []).length; };
+ok("隱私 0.1.39:會收八組的 zh 逐字、每句 ≤25 字(canon 算法);組標題與句子 en 都有", Object.keys(PRIV_ZH).every((g) => privKeys(g).every((k, i) => POS(0, k) === PRIV_ZH[g][i] && zhCount(PRIV_ZH[g][i]) <= 25 && !!POS(1, k))));
+// 事件數跟告知綁在一起:加事件而沒補「會收」那幾組,這裡就紅(canon product-telemetry 出貨清單第 5 條)
+ok("隱私:三十一個事件逐項對得上契約的白名單(heartbeat=做到哪一步「app 開著的每一天」;strat_* 三個=每支策略,只記型別與市場類別;feature_used=用了哪些功能,名稱、每日一次、不含內容;lib_pick / idea_sent=用了哪些功能的策略庫與找點子;reply_notif=系統通知;0.1.9 九個、0.1.12 引擎安裝兩個、0.1.15 detect_fail=卡在哪一步,只記類別;cli_auth / auth_fail / key_verify=登入與金鑰;device_type=每筆紀錄都帶的電腦類型,spec-0.1.13 #12:寫作業系統與版本,不寫 macOS)",
+  Object.keys(require("../shell/telemetry.js").EVENTS).length === 31
+  && (() => { const ev = require("../shell/telemetry.js").EVENTS; return ["heartbeat", "strat_created", "strat_backtested", "strat_deployed", "feature_used", "lib_pick", "idea_sent", "reply_notif", "detect_fail", "engine_setup", "engine_opt_fail", "cli_auth", "auth_fail", "key_verify", "device_type"].every((e) => !!ev[e]); })()
+  && /^App version, operating system and version, system language$/.test(POS(1, "priv.c.meta.2")) && /^Computer type: laptop or desktop$/.test(POS(1, "priv.c.meta.3"))
+  && /whether local auto-trading runs/.test(POS(1, "priv.c.step.2")) && /type \(A\/B\/C\) and market category/.test(POS(1, "priv.c.strat.2")) && /^Never its name or symbol$/.test(POS(1, "priv.c.strat.3"))
+  && /whether it needs Blave data/.test(POS(1, "priv.c.feat.3")) && /which entry point/.test(POS(1, "priv.c.feat.4")) && /^Never the chat title or text$/.test(POS(1, "priv.c.feat.6"))
+  && /^Categories only, never the content$/.test(POS(1, "priv.c.stuck.7")) && /^Never the code$/.test(POS(1, "priv.c.auth.5")) && /kept 90 days/.test(POS(1, "priv.c.acct.2"))
+  && /signed out or your sign-in expired/.test(POS(1, "priv.c.lib.1")) && /to count installs/.test(POS(1, "priv.c.lib.2")));
 ok("acct.sub 開通試用那句兼講期限(Wei 核准 0.1.10):zh / en 逐字", /msgid "acct\.sub"\nmsgstr "首次綁卡，\{t\} 天內有 \{q\} TWD 的 AI 額度，電腦版也拿得到 Blave 的資料。"/.test(PO[0])
   && /msgid "acct\.sub"\nmsgstr "A first-time card gets \{q\} TWD of AI credit and Blave data in the desktop app, both for \{t\} days\."/.test(PO[1]));
 // 例外只有報告分享的掛名二選一(shr.anon):那是公開頁上作者欄真的不出名字,不是在講追蹤資料匿名
-ok("隱私 0.1.13(Wei 核准草稿 §B):priv.collect.8 講免登入下載記哪一支 + 安裝識別碼、登入後對上帳號;priv.never.2 收窄成「你自己的策略」", /msgid "priv\.collect\.8"\nmsgstr "沒登入或登入失效時從策略庫下載免登入策略：哪一支（策略庫編號）和安裝識別碼，用來算安裝人數；之後登入就會跟你的帳號對上"/.test(PO[0])
-  && /msgid "priv\.collect\.8"\nmsgstr "When you download a no-sign-in library strategy: which one \(its library number\) and the installation ID, to count installs; once you sign in, it is linked to your Blave account"/.test(PO[1])
-  && /msgid "priv\.never\.2"\nmsgstr "你自己的策略：程式碼與名稱"/.test(PO[0]) && /msgid "priv\.never\.2"\nmsgstr "Your own strategies' code and names"/.test(PO[1]));
+ok("隱私 0.1.13(Wei 核准草稿 §B):priv.never.2 收窄成「你自己的策略」(免登入下載那條 0.1.39 起在「策略庫下載」組,逐字見上)", /msgid "priv\.never\.2"\nmsgstr "你自己的策略：程式碼與名稱"/.test(PO[0]) && /msgid "priv\.never\.2"\nmsgstr "Your own strategies' code and names"/.test(PO[1]));
 ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選項 shr.anon 除外);首次告知的 priv.notice* 沒有建", PO.every((x) => !/匿名|anonym/i.test(x.replace(/^#.*$/gm, "").replace(/msgid "shr\.anon"\nmsgstr "[^"]*"/, ""))) && PO.every((x) => !/priv\.notice/.test(x)) && !/telemetryNoticed/.test(src));
 // 設定 › 資料與雲端方案 › 主機運行中那格:主鈕是「切到雲端」(關設定 + 走切換器同一個守門入口),不再外開網頁(Wei:不用前往工作頁了)
 {
