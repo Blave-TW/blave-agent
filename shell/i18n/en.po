@@ -9967,7 +9967,7 @@ msgid "ph.group"
 msgstr "Phones allowed on this computer"
 
 msgid "ph.pair"
-msgstr "Pair a phone"
+msgstr "Pair a Phone"
 
 msgid "ph.pairHow"
 msgstr "Scan it in the app's Agent tab, or enter the code."
@@ -9979,7 +9979,7 @@ msgid "ph.pairExpired"
 msgstr "This code has expired."
 
 msgid "ph.pairAgain"
-msgstr "Get a new code"
+msgstr "Get a New Code"
 
 msgid "ph.pairFail"
 msgstr "Couldn't get a pairing code. Try again."
@@ -9997,10 +9997,10 @@ msgid "ph.metaNever"
 msgstr "Paired {paired} · Not used yet"
 
 msgid "ph.acts"
-msgstr "Recent activity"
+msgstr "Recent Activity"
 
 msgid "ph.actsMore"
-msgstr "Show all"
+msgstr "Show All"
 
 msgid "ph.actsFail"
 msgstr "Couldn't load activity."
