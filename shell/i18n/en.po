@@ -142,6 +142,10 @@ msgstr "Attachments are limited to 15 MB in total. Some weren't added."
 msgid "ws.sugSay"
 msgstr "Suggestion: {s}"
 
+# 托盤句子鈕的可及名稱(renderer/suggest.js;滑鼠、觸控點了就原句送出)。{s} = agent 寫的那一句
+msgid "ws.sugSend"
+msgstr "Send: {s}"
+
 # 建議下一步托盤右邊 × 的可及名稱:作廢這句,不算沒用
 msgid "ws.sugDismiss"
 msgstr "Dismiss suggestion"
@@ -1843,7 +1847,7 @@ msgstr "Suggest a next step"
 
 # 上面那個開關的說明泡泡(滑鼠停在字上或鍵盤 focus 開關時出;≤40 字)
 msgid "set.sug.tip"
-msgstr "After each reply, adds one next step for you to fill in and send."
+msgstr "After each reply, adds one next step. Click it to send."
 
 msgid "set.rn"
 msgstr "Notify me when a reply is done"

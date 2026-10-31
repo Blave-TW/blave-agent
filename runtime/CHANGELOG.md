@@ -8,6 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **建議下一步那句的說明改成「點了就原句送出」(`agent_turn._SUGGEST_RULE`;designer suggest-direct-send-2026-10-31,desktop 0.1.39 托盤點了直接送)**:原本寫「會填進用戶的輸入框、由用戶自己送出」,改成「用戶點了就原句送出，所以要能直接照做」;里程碑、長度、禁語不動。web 跟進前仍是填入,新規則配填入的外殼不會壞,出貨順序不卡。測試 `tests/check_suggest_rule_026.py`(改一條)。
 ## 1.1.149 — 2026-10-31(desktop 0.1.37)
 
 - **電腦版沒 Blave 資料時,回覆只講缺哪份資料＋一句「要有方案」(沒登入時改成「要先登入 Blave」)(`agent_turn.data_access_rule`、`DATA_ACCESS_WHY["no_plan"]`;Wei 回饋:條件清單太複雜、不要提 API)**:access=0 那段不再要模型列條件(試用／雲端方案或主機／API 方案／按小時餘額),明講不提 API 方案、試用與按小時計費,也不報價、不給步驟(卡片處理);事實段照舊完整給模型判斷。`no_plan` 的事實句拿掉「(雲端方案或 API 方案)」。access=1 的 `ERR007` 改成講資料停了、要有方案,body 列的 API 方案不轉述;例外是用戶問自己寫程式、用自己建的 key 打 Blave API,照 `references/billing.md` 回答。測試 `tests/check_data_access_lang.py`(改一條、新增六條)。

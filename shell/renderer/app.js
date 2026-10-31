@@ -4997,6 +4997,7 @@ function turnEndPost(r, pre, d) {
     const files = tabBg() ? CS.loaded.composer.files : attachedFiles;
     const attBack = !lastUserAttachments.length || !files.length || files === lastUserAttachments;
     if (attBack && !turnGotReply && !turnHadTool && turnBubble && turnBubble.parentNode) turnBubble.remove();
+    if (typeof sugUndo === "function") sugUndo(lastUserText, !turnGotReply && !turnHadTool);   // 點托盤直接送出的那句被撤回(renderer/suggest.js)
     stopRestore(lastUserText, lastUserAttachments);
   }
   // 碰過雲端的回合:雲端那支的報告背景重抓(rpCloudSelect force = 先畫手上那份、抓到不同才換)——不然雲端掃完 scan 永遠不會出現在分頁上
