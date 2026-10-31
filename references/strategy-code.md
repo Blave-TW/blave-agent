@@ -809,7 +809,7 @@ The runner builds this automatically — only needed when calling lib functions 
 
 ## Telegram Pairing Check
 
-Pairing limits Telegram notifications and nothing else. Run this only when what the user asked for is a Telegram message (a digest, an alert, a test send) — never before a backtest, a scan, an analysis or a data question, and never as a session-start step:
+Pairing limits Telegram notifications and nothing else. Run this only when the run sends Telegram — never block a backtest, a scan, an analysis or a data question on it, and never run it as a session-start step:
 
 ```python
 import json, os, platform
