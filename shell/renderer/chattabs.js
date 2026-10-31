@@ -293,7 +293,7 @@ function tabsPaintIn(bar) {
   const curSid = CS.cur && CS.cur.sid, F = CS.freeze;
   if (F && F.shown.includes(curSid)) {   // 剛用滑鼠關掉一個:其餘照原寬,滑鼠離開分頁列才重排(下一顆 × 停在游標底下)
     const shown = F.shown.filter((s) => order.includes(s));
-    for (const sid of shown) { const r = F.w.get(sid), el = tabsTabEl(CS.tabs.get(sid)); el.style.flex = "none"; el.style.width = r.w + "px"; if (r.narrow && sid !== curSid) el.classList.add("narrow"); bar.appendChild(el); }
+    for (const sid of shown) { const r = F.w.get(sid), el = tabsTabEl(CS.tabs.get(sid)); el.style.flex = "none"; el.style.width = r.w + "px"; if (sid !== curSid) { if (r.nox) el.classList.add("nox"); if (r.narrow) el.classList.add("narrow"); } bar.appendChild(el); }
     tabsMorePaint(order.filter((s) => !shown.includes(s)));
     return;
   }
@@ -309,13 +309,13 @@ function tabsPaintIn(bar) {
   bar.textContent = "";
   for (const sid of L.shown) { const i = order.indexOf(sid), el = els[i]; el.style.flex = ""; el.style.minWidth = mins[i] + "px"; el.dataset.nat = nat[i]; bar.appendChild(el); }
   tabsMorePaint(L.hidden);
-  // 沒選中、又被縮到 88 以下的讓出 × 格(滑過也不出 ×);本來就短的(新對話)照常留
-  for (const el of [...bar.children]) { if (el.getAttribute("aria-selected") === "true") continue; const w = el.getBoundingClientRect().width; if (w < TABS_NARROW && w < Number(el.dataset.nat) - 1) el.classList.add("narrow"); }
+  // 沒選中、寬不到 88 的不出 ×(spec §13.4):× 32 會吃掉大半個分頁,點中間就關掉了;關它用中鍵或鍵盤。被縮過的另加 narrow(標題不畫「…」、尾端淡出)
+  for (const el of [...bar.children]) { if (el.getAttribute("aria-selected") === "true") continue; const w = el.getBoundingClientRect().width; if (w < TABS_NARROW) { el.classList.add("nox"); if (w < Number(el.dataset.nat) - 1) el.classList.add("narrow"); } }
 }
 // 用滑鼠關分頁前記下列上每格的寬(spec §13.6);鍵盤關不凍
 function tabsFreeze() {
   const w = new Map();
-  for (const el of $("cs-tabs").querySelectorAll(".tab")) w.set(el.dataset.sid, { w: el.getBoundingClientRect().width, narrow: el.classList.contains("narrow") });
+  for (const el of $("cs-tabs").querySelectorAll(".tab")) w.set(el.dataset.sid, { w: el.getBoundingClientRect().width, nox: el.classList.contains("nox"), narrow: el.classList.contains("narrow") });
   CS.freeze = { w, shown: [...w.keys()] };
 }
 function tabsTabEl(T) {

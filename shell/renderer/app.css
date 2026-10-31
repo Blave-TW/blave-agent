@@ -1330,7 +1330,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cs-tabs .tab[aria-selected="true"] { background-color: var(--surface-card); color: var(--ink); font-weight: 600;
   border-radius: var(--radius-sm) / calc(var(--radius-sm) + var(--tabs-reach)); }
 .cs-tabs .tab.attn { color: var(--ink); font-weight: 600; }
-.cs-tabs .tab.narrow .tab-x { display: none; }
+.cs-tabs .tab.nox .tab-x { display: none; }
 /* 分隔線:只在兩個相鄰的沒選中分頁之間,高 16、置中在本體(absolute 從 padding box 算,不含透明框) */
 .cs-tabs .tab:not([aria-selected="true"]):has(+ .tab:not([aria-selected="true"]))::after {
   content: ""; position: absolute; right: 0; top: calc((100% - 16px) / 2); height: 16px; width: 1px; background: var(--border-hairline); }
@@ -1358,7 +1358,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .tab-x { position: absolute; z-index: 1; right: 0; top: 0; bottom: 0; width: 32px; display: flex; align-items: center; justify-content: center;
   color: var(--ink-3); cursor: pointer; visibility: hidden; }
 /* × 出現時標題尾端淡出(同 Chrome),不切出半個字:標題框右緣離分頁右緣 12、× 左緣離 32,所以在 100% − 20px 前 12px 淡完 */
-.cs-tabs .tab:not(.narrow):is(:hover, :focus-visible) .tab-t { text-overflow: clip;   /* 淡出取代刪節號,同最窄那條 */
+.cs-tabs .tab:not(.nox):is(:hover, :focus-visible) .tab-t { text-overflow: clip;   /* 淡出取代刪節號,同最窄那條 */
   -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent calc(100% - 20px));
           mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent calc(100% - 20px)); }
 /* 縮到最窄的分頁放不下「…」(會剩「新.」):不用刪節號,尾端 8px 淡出 */

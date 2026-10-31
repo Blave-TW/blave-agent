@@ -285,7 +285,7 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
   ok("13.6 選中的落在後面:列上前 3 個＋它,它在列尾", !!lay && back.shown.join() === "0,1,2,7", back);
   ok("13.6 量自然寬:最窄 = min(自然寬, 選中 112／有手機記號 82(mchat-phone-surfaces §1 V1)／其他 60)寫在 min-width;+N 比 44 寬就照實寬重算", /const mins = nat\.map\(\(n, i\) => Math\.min\(n, order\[i\] === curSid \? TABS_MIN_SEL : tabsPhone\(CS\.tabs\.get\(order\[i\]\)\) \? TABS_MIN_PHONE : TABS_MIN\)\);/.test(ct)
     && /el\.style\.minWidth = mins\[i\] \+ "px";/.test(ct) && /const mw = \$\("cs-more"\)\.offsetWidth; if \(mw > 44\) L = tabsLayout\(avail, order, curSid, mins, mw\);/.test(ct) && !/128|\/ 90\)/.test(ct.slice(ct.indexOf("function tabsLayout"), ct.indexOf("function tabsPaint("))));
-  ok("13.4 沒選中又被縮到 88 以下才讓出 × 格(本來就短的照留)", /if \(w < TABS_NARROW && w < Number\(el\.dataset\.nat\) - 1\) el\.classList\.add\("narrow"\);/.test(ct) && css.includes(".cs-tabs .tab.narrow .tab-x { display: none; }"));
+  ok("13.4 沒選中、寬不到 88 就不出 ×(本來就短的也一樣);被縮過的另加 narrow(淡出)", /if \(w < TABS_NARROW\) \{ el\.classList\.add\("nox"\); if \(w < Number\(el\.dataset\.nat\) - 1\) el\.classList\.add\("narrow"\); \}/.test(ct) && css.includes(".cs-tabs .tab.nox .tab-x { display: none; }") && !css.includes(".tab.narrow .tab-x"));
   ok("13.6 凍寬只走滑鼠(× 與中鍵);鍵盤 Delete／⌘W 不凍;離開分頁列、拉寬欄、開新分頁放掉", (ct.match(/tabsFreeze\(\); tabsClose\(T\);/g) || []).length === 2 && !/tabsFreeze\(\)[^\n]*Delete|Delete[^\n]*tabsFreeze/.test(ct)
     && /\$\("cs-tabs"\)\.addEventListener\("mouseleave", \(\) => \{ if \(CS\.freeze\) \{ CS\.freeze = null; tabsPaint\(\); \} \}\);/.test(ct) && /CS\.barW = w; CS\.freeze = null; tabsPaint\(\);/.test(ct) && /function tabsAdd\(T\) \{ CS\.freeze = null;/.test(ct));
   // 高度只看三個變數(設計師還可能再調):列 52 = 拖曳 + 透明上框 + 本體;其他高度全由它們推,分頁區塊裡不准再寫死
@@ -296,7 +296,7 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
     && !/tabs-top|tabs-pad-b|tabs-drag|padding-top: calc/.test(blk) && !/(?<![-\w])height: (46|44|36)px|\btop: (6|13|16)px|inset: -12px/.test(blk)
     && /const TABS_MIN = 60, TABS_MIN_SEL = 112, TABS_MIN_PHONE = 82, TABS_NARROW = 88, TABS_GAP = 2;/.test(ct));
   ok("× 不佔位、不墊底色:絕對定位在本體尾端(z 1,焦點環 z 2 在它上面);滑過或焦點時標題尾端淡出到 × 左緣;最窄的分頁不畫「…」改淡出 8;熱區 ::after 上下伸進透明框(32×44)", /\.tab-x \{ position: absolute; z-index: 1; right: 0; top: 0; bottom: 0; width: 32px;[^}]*visibility: hidden; \}/.test(blk) && !/\.tab-x \{[^}]*background/.test(blk) && !/tabs-bg/.test(css + trcss)
-    && /\.cs-tabs \.tab:not\(\.narrow\):is\(:hover, :focus-visible\) \.tab-t \{ text-overflow: clip;[^\n]*\n  -webkit-mask-image: linear-gradient\(90deg, #000 calc\(100% - 32px\), transparent calc\(100% - 20px\)\);/.test(blk)
+    && /\.cs-tabs \.tab:not\(\.nox\):is\(:hover, :focus-visible\) \.tab-t \{ text-overflow: clip;[^\n]*\n  -webkit-mask-image: linear-gradient\(90deg, #000 calc\(100% - 32px\), transparent calc\(100% - 20px\)\);/.test(blk)
     && blk.includes(".cs-tabs .tab.narrow .tab-t { text-overflow: clip;\n  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 8px), transparent);") && /\.cs-tabs \.tab:focus-visible::before \{ content: ""; position: absolute; z-index: 2;/.test(blk)
     && !/padding-right: 32px|el\.style\.width = ws\[i\]/.test(blk + ct) && blk.includes(".tab-x::after { content: \"\"; position: absolute; left: 0; right: 0; top: calc(0px - var(--tabs-reach)); bottom: calc(0px - var(--tabs-reach)); }")
     && blk.includes(".cs-tabs .tab:hover .tab-x, .cs-tabs .tab:focus-visible .tab-x { visibility: visible; }") && !/\.tab-x \{[^}]*flex: none/.test(blk));

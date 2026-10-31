@@ -55,7 +55,7 @@ app.whenReady().then(async () => {
   await js(`window.geo = () => {
     const head = document.getElementById("cs-head").getBoundingClientRect(), R = (el) => { const r = el.getBoundingClientRect(); return { x: r.left - head.left, y: r.top - head.top, w: r.width, h: r.height, cx: r.left + r.width / 2 }; };
     const tabs = [...document.querySelectorAll("#cs-tabs .tab")];
-    return { head: { w: head.width, h: head.height, top: head.top, left: head.left }, tabs: tabs.map((el) => ({ sid: el.dataset.sid, sel: el.getAttribute("aria-selected") === "true", narrow: el.classList.contains("narrow"), ...R(el),
+    return { head: { w: head.width, h: head.height, top: head.top, left: head.left }, tabs: tabs.map((el) => ({ sid: el.dataset.sid, sel: el.getAttribute("aria-selected") === "true", nox: el.classList.contains("nox"), narrow: el.classList.contains("narrow"), ...R(el),
       bt: parseFloat(getComputedStyle(el).borderTopWidth), bb: parseFloat(getComputedStyle(el).borderBottomWidth), ch: el.clientHeight, xr: R(el.querySelector(".tab-x")), xv: el.querySelector(".tab-xv") ? getComputedStyle(el.querySelector(".tab-xv")).visibility : "(沒有 .tab-xv)", xd: getComputedStyle(el.querySelector(".tab-x")).display })),
       more: document.getElementById("cs-more").hidden ? null : R(document.getElementById("cs-more")), toggle: R(document.getElementById("cs-toggle")), plus: R(document.getElementById("cs-new")), order: CS.order.slice() };
   }; 1;`);
@@ -150,8 +150,16 @@ app.whenReady().then(async () => {
     const nr = await js(`(() => { const t = document.querySelector("#cs-tabs .tab.narrow .tab-t"), ts = t && getComputedStyle(t); return t ? { to: ts.textOverflow, mask: ts.webkitMaskImage || ts.maskImage } : null; })()`);
     ok("最窄的分頁不畫「…」(放不下會剩「新.」):text-overflow clip、尾端 8px 淡出", !!nr && nr.to === "clip" && /linear-gradient\(90deg, rgb\(0, 0, 0\) calc\(100% - 8px\), (transparent|rgba\(0, 0, 0, 0\))\)/.test(nr.mask), nr);
     ok("452 五個長標題:沒選中的被縮到 88 以下 → 讓出 × 格;選中那格照留", g.tabs.slice(1).every((t) => t.w < 88 && t.narrow && t.xd === "none") && !g.tabs[0].narrow && g.tabs[0].xd !== "none", g.tabs.map((t) => [t.w, t.narrow, t.xd]));
-    const g2 = await setup(720, LONG.slice(0, 2).concat(["新對話"]), 0);
-    ok("本來就短的(新對話)不算窄,× 格照留", !g2.tabs[2].narrow && g2.tabs[2].xd !== "none", g2.tabs.map((t) => [t.w, t.narrow])); }
+    const g2 = await setup(720, LONG.slice(0, 2).concat(["新對話"]), 0), n2 = g2.tabs[2];
+    ok("沒選中、寬不到 88 的「新對話」(沒被縮過):不出 ×(× 不佔版面也不接點擊),標題照常(不淡出)", n2.w < 88 && n2.nox && !n2.narrow && n2.xd === "none", g2.tabs.map((t) => [t.w, t.nox, t.narrow, t.xd]));
+    const cx = g2.head.left + n2.x + n2.w / 2, cy = g2.head.top + 26;
+    await mouse("mouseMove", cx, cy);
+    const hv = await js(`(() => { const el = document.querySelectorAll("#cs-tabs .tab")[2], e = document.elementFromPoint(${Math.round(cx)}, ${Math.round(cy)}); return { hit: e ? (e.closest(".tab-x") ? "x" : e.closest(".tab") === el ? "tab" : "other") : null, xd: getComputedStyle(el.querySelector(".tab-x")).display }; })()`);
+    ok("…滑過它的正中間:點到的是分頁本體、× 不出現", hv.hit === "tab" && hv.xd === "none", hv);
+    await mouse("mouseDown", cx, cy); await mouse("mouseUp", cx, cy);
+    const after = await js(`({ n: CS.order.length, cur: CS.cur && CS.cur.sid })`);
+    ok("…點它的正中間是切換過去,不會關掉", after.n === 3 && after.cur === n2.sid, { after, want: n2.sid });
+    await mouse("mouseMove", 5, 700); }
 
   // ── 焦點環四邊都在(稽核 A1):鍵盤焦點在沒選中、選中、被縮窄的分頁上,截圖量環四邊中點都是 --focus-ring 的色(× 出現也不蓋掉)
   // 不顯示的視窗收不到真的鍵盤焦點(document 沒有焦點):用 DevTools 協定把 :focus-visible 強制掛上去,畫的是同一套 CSS
