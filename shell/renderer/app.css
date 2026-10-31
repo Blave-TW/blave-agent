@@ -1242,7 +1242,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cs-hint:hover { background: var(--surface-row-hover); color: var(--ink); }
 .cs-tabs { flex: 1; min-width: 0; height: 44px; display: flex; align-items: center; gap: var(--space-2); overflow: hidden; }   /* 44 高:× 的熱區往上下擴到 44 不被 overflow 裁掉;分頁本身 32 */
 .cs-tabs .tab { flex: 0 1 168px; min-width: 88px; height: 32px; display: flex; align-items: center; gap: var(--space-6);
-  padding: 0 var(--space-8); border-radius: var(--radius-sm); color: var(--ink-2); font-size: 13px; font-weight: 400; position: relative; cursor: default;
+  padding: 0 var(--space-8); border-radius: var(--radius-sm); color: var(--ink-2); font-size: 13px; font-weight: 400; position: relative; cursor: pointer;
   transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
 /* 分頁與 × 是 div／span,吃不到上面 button 那條 no-drag:蓋在 52px 拖曳條上會被當成拖視窗(打包版點不動)。分頁之間的空白照舊拖得動 */
 .cs-tabs .tab, .cs-tabs .tab-x, .cs-tabs .tab-x::before, .cs-menu { -webkit-app-region: no-drag; }
@@ -1262,7 +1262,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .tab-ticks[data-k="0"] i:nth-child(1), .tab-ticks[data-k="1"] i:nth-child(2), .tab-ticks[data-k="2"] i:nth-child(3) { opacity: 1; }   /* 第幾格亮由 chattabs.js 每秒換 */
 /* 排隊中:收據的 8×2 短劃,不動 */
 .tab-dash { display: block; width: 8px; height: 2px; background: var(--ink-3); }
-.tab-x { flex: none; width: 20px; height: 20px; border-radius: var(--radius-micro); display: none; align-items: center; justify-content: center; color: var(--ink-3); }
+.tab-x { flex: none; cursor: pointer; width: 20px; height: 20px; border-radius: var(--radius-micro); display: none; align-items: center; justify-content: center; color: var(--ink-3); }
 .tab-x .ic { width: 12px; height: 12px; }
 .tab-x::before { content: ""; position: absolute; inset: -12px -4px; }   /* 視覺 20、熱區 28×44(分頁列 44 高,不被裁) */
 .tab-x:hover { color: var(--ink); background: var(--surface-muted); }
