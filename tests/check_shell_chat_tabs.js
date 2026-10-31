@@ -211,8 +211,8 @@ ok("共用畫面背景期間不畫:捲動、讀屏、送出鈕、托盤;輸入�
   ok("+N:有一條真的在跑才放 tick,全是排隊放短劃", /sts\.includes\("run"\) \? tabsLead\("run"\) : run \? tabsLead\("queued"\) : null/.test(ct));
   ok("歷史搜尋格的焦點是灰階框(不吃系統強調色)", css.includes(".cs-search:focus { outline: none; border-color: var(--ink); }"));
   ok("歷史列:等你回覆／沒做完／做完還沒看接「· 時間」(mono)", /if \(st\.kind !== "run" && st\.kind !== "queued"\) \{ item\.classList\.add\("is-attn"\); const at = document\.createElement\("span"\); at\.className = "mono"; at\.textContent = csTime\(m\.last\); meta\.append\(" · ", at\); \}/.test(app));
-  ok("分頁名稱(讀屏)不帶會凍住的時長;tooltip 每秒跟著跳、Esc 隨時收得掉、離分頁 6px;× 熱區 28×44", /const word = st === "run" \? t\("tabs\.st\.running"\) : tabsStateWord\(T, st\);/.test(ct) && /tabsTipTick\(\);\n\}, 1000\);/.test(ct)
-    && /window\.addEventListener\("keydown", \(e\) => \{\n  if \(e\.key !== "Escape" \|\| e\.isComposing \|\| e\.keyCode === 229\) return;\n  const tip = \$\("tabs-tip"\); if \(!tip \|\| tip\.hidden\) return;\n  tip\.hidden = true; tip\.dataset\.off = "1"; e\.preventDefault\(\); e\.stopPropagation\(\);\n\}, true\);/.test(ct) && css.includes(".tabs-tip { top: 48px;") && /\.cs-tabs \{[^}]*height: 44px;[^}]*align-items: center;/.test(css) && css.includes("inset: -12px -4px;"));
+  ok("分頁名稱(讀屏)不帶會凍住的時長;tooltip 每秒跟著跳、Esc 隨時收得掉、在列(52)下方 6px", /const word = st === "run" \? t\("tabs\.st\.running"\) : tabsStateWord\(T, st\);/.test(ct) && /tabsTipTick\(\);\n\}, 1000\);/.test(ct)
+    && /window\.addEventListener\("keydown", \(e\) => \{\n  if \(e\.key !== "Escape" \|\| e\.isComposing \|\| e\.keyCode === 229\) return;\n  const tip = \$\("tabs-tip"\); if \(!tip \|\| tip\.hidden\) return;\n  tip\.hidden = true; tip\.dataset\.off = "1"; e\.preventDefault\(\); e\.stopPropagation\(\);\n\}, true\);/.test(ct) && css.includes(".tabs-tip { top: 58px;"));
 }
 // 程式稽核 s2 P3
 ok("+N 選單開著:每秒只換時長字,不重建(焦點不掉);整列重建時照 sid 把焦點還回分頁或選單列", /if \(!\$\("cs-menu"\)\.hidden\) tabsMenuTick\(\);/.test(ct) && /function tabsMenuTick\(\) \{/.test(ct)
@@ -260,7 +260,36 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
   const bad = clickable.filter((c) => !NATIVE.has(c.tag) && !covered(c.cls));
   ok("列舉到分頁列的可點元素(分頁、×、☰ 提示、+N、新對話都在)", ["tab", "tab-x", "cs-hint", "cs-more", "cs-btn"].every((c) => clickable.some((x) => x.cls === c)), clickable);
   ok("分頁列裡不是 button/textarea/input/a 的可點元素都帶 no-drag(不然打包版點不動)", bad.length === 0, bad);
-  ok("分頁與 × 的熱區(::before)帶 no-drag;+N 選單整塊也是", covered("tab") && covered("tab-x") && noDrag.includes(".tab-x::before") && covered("cs-menu"));
+  ok("分頁與 × 的熱區(× 往上伸進透明上框的 ::after)帶 no-drag;+N 選單整塊也是", covered("tab") && covered("tab-x") && noDrag.includes(".tab-x::after") && covered("cs-menu"));
+}
+// ── 分頁列版面(spec §13 v5b-height;幾何本身在 check_shell_tabs_strip.js 開窗量)──
+{ const css = read("app.css"), trcss = read("trade.css");
+  // 13.6 收進 +N:把 chattabs.js 的 tabsLayout 原文切出來跑。標題都長時(自然寬 180)avail = 欄寬 − 左框 1 − ☰ 44 − ＋ 44
+  const m = ct.match(/\nconst TABS_MIN = [^\n]*\n(function tabsLayout\([\s\S]*?\n\})/), c = ct.match(/\nconst TABS_MIN = [^\n]*/);
+  const lay = m && new Function(c[0] + "\n" + m[1] + "\nreturn { tabsLayout, TABS_MIN, TABS_MIN_SEL };")();
+  const run = (cw, nats, sel) => { const order = nats.map((_, i) => "s" + i); const mins = nats.map((n, i) => Math.min(n, i === sel ? lay.TABS_MIN_SEL : lay.TABS_MIN));
+    const L = lay.tabsLayout(cw - 1 - 88, order, "s" + sel, mins, 44); return { shown: L.shown.map((s) => +s.slice(1)), hidden: L.hidden.length }; };
+  const long = (n) => Array(n).fill(180);
+  const cap = lay && [[720, 9, 8], [452, 5, 4], [336, 3, 2]].map(([cw, all, more]) => [cw, run(cw, long(all), 0), run(cw, long(all + 1), 0), all, more]);
+  ok("13.6 容量(長標題):720 放 9／10 個時 8＋N;452 放 5／4＋N;336 放 3／2＋N", !!lay && cap.every(([, a, b, all, more]) => a.shown.length === all && !a.hidden && b.shown.length === more && b.hidden === all + 1 - more), cap);
+  ok("13.6 短標題放更多:452 六個自然寬 50 全放;選中最窄是 112 不是 60(六個長標題 452 放不下)", !!lay && run(452, Array(6).fill(50), 0).shown.length === 6 && run(452, long(6), 0).hidden > 0);
+  const back = lay && run(452, long(8), 7);
+  ok("13.6 選中的落在後面:列上前 3 個＋它,它在列尾", !!lay && back.shown.join() === "0,1,2,7", back);
+  ok("13.6 量自然寬:最窄 = min(自然寬, 選中 112／其他 60)寫在 min-width;+N 比 44 寬就照實寬重算", /const mins = nat\.map\(\(n, i\) => Math\.min\(n, order\[i\] === curSid \? TABS_MIN_SEL : TABS_MIN\)\);/.test(ct)
+    && /el\.style\.minWidth = mins\[i\] \+ "px";/.test(ct) && /const mw = \$\("cs-more"\)\.offsetWidth; if \(mw > 44\) L = tabsLayout\(avail, order, curSid, mins, mw\);/.test(ct) && !/128|\/ 90\)/.test(ct.slice(ct.indexOf("function tabsLayout"), ct.indexOf("function tabsPaint("))));
+  ok("13.4 沒選中又被縮到 88 以下才讓出 × 格(本來就短的照留)", /if \(w < TABS_NARROW && w < Number\(el\.dataset\.nat\) - 1\) el\.classList\.add\("narrow"\);/.test(ct) && css.includes(".cs-tabs .tab.narrow .tab-x { display: none; }"));
+  ok("13.6 凍寬只走滑鼠(× 與中鍵);鍵盤 Delete／⌘W 不凍;離開分頁列、拉寬欄、開新分頁放掉", (ct.match(/tabsFreeze\(\); tabsClose\(T\);/g) || []).length === 2 && !/tabsFreeze\(\)[^\n]*Delete|Delete[^\n]*tabsFreeze/.test(ct)
+    && /\$\("cs-tabs"\)\.addEventListener\("mouseleave", \(\) => \{ if \(CS\.freeze\) \{ CS\.freeze = null; tabsPaint\(\); \} \}\);/.test(ct) && /CS\.barW = w; CS\.freeze = null; tabsPaint\(\);/.test(ct) && /function tabsAdd\(T\) \{ CS\.freeze = null;/.test(ct));
+  // 高度只看三個變數(設計師還可能再調):列 52 = 拖曳 + 透明上框 + 本體;其他高度全由它們推,分頁區塊裡不准再寫死
+  const blk = css.slice(css.indexOf("/* ── 對話分頁列"), css.indexOf(".tabs-tip { top:"));
+  ok("高度三變數:--tabs-drag 8、--tabs-reach 8、本體 = 52 − 兩者;分頁、×、分隔線、☰／＋ 中線都由它們推", /--tabs-drag: 8px; --tabs-reach: 8px; --tabs-body: calc\(52px - var\(--tabs-drag\) - var\(--tabs-reach\)\);/.test(blk)
+    && /\.cs-tabs \{[^}]*padding-top: var\(--tabs-drag\);/.test(blk) && /border-top: var\(--tabs-reach\) solid transparent; background-clip: padding-box;/.test(blk)
+    && /\.tab-x::after \{[^}]*top: calc\(0px - var\(--tabs-reach\)\);/.test(blk) && /top: calc\(\(var\(--tabs-body\) - 20px\) \/ 2\); height: 20px;/.test(blk)
+    && /padding-top: calc\(52px - var\(--tabs-body\)\);/.test(blk) && /top: calc\(52px - var\(--tabs-body\) \/ 2 - 14px\); height: 28px;/.test(blk) && !/(?<![-\w])height: (46|44|36)px|\btop: (6|13|16)px|inset: -12px/.test(blk));
+  ok("選中:卡面色、外緣垂直半徑多一個 reach(透明上框裡的填色才是正圓 8);沒選中沒有底線、沒有捲動浮線", /border-radius: var\(--radius-sm\) var\(--radius-sm\) 0 0 \/ calc\(var\(--radius-sm\) \+ var\(--tabs-reach\)\) calc\(var\(--radius-sm\) \+ var\(--tabs-reach\)\) 0 0;/.test(blk)
+    && !/is-scrolled|box-shadow: 0 1px 0/.test(css.slice(css.indexOf(".chat-head {"), css.indexOf(".tabs-tip { top:"))) && !/chatEdge|is-scrolled/.test(app));
+  ok("列底同中欄頂帶:本機 bg-body、雲端 surface-muted;雲端滑過墊 bg-body;本機收合邊條也畫 52 頂段", /\.chat-head \{[^}]*background: var\(--bg-body\);/.test(css) && trcss.includes('html[data-env="cloud"] .chat-head { background: var(--surface-muted); }')
+    && /html\[data-env="cloud"\] \.cs-more:hover::before, html\[data-env="cloud"\] \.cs-more\.on::before \{ background: var\(--bg-body\); \}/.test(trcss) && trcss.includes("html.ws-cc .chat-strip { background: linear-gradient(var(--bg-body) 52px, var(--surface-card) 52px); }"));
 }
 // ── 主行程直接送 turn-event 的(不經 sendTurn 補 sid)都要自己帶 sid:不帶會落到眼前那條(tabsOf(undefined) = CS.cur),背景分頁的圖當下不出 ──
 { const main = fs.readFileSync(path.join(R, "..", "main.js"), "utf8");

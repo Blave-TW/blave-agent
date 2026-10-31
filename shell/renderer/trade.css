@@ -75,7 +75,11 @@ html[data-env="cloud"] .pane-main > .tb {
 html[data-env="cloud"].ws-sc .pane-main > .tb { padding-left: calc(var(--space-48) + 1px); }
 html[data-env="cloud"] .tb-txt { color: var(--ink-2); }   /* --ink-3 壓在灰底上只有 3.6:1 */
 html[data-env="cloud"] .chat-head { background: var(--surface-muted); }
+html.ws-cc .chat-strip { background: linear-gradient(var(--bg-body) 52px, var(--surface-card) 52px); }   /* 收合邊條頂段 = 分頁列底色 */
 html[data-env="cloud"].ws-cc .chat-strip { background: linear-gradient(var(--surface-muted) 52px, var(--surface-card) 52px); }
+/* 分頁列的滑過底跟雲端列同色,改墊 bg-body(同 canon segment「軌道墊在同色底上」) */
+html[data-env="cloud"] .chat-head:has(#cs-tabs) .cs-btn:hover:not(:disabled):not([aria-disabled="true"])::before,
+html[data-env="cloud"] .cs-hint:hover::before, html[data-env="cloud"] .cs-more:hover::before, html[data-env="cloud"] .cs-more.on::before { background: var(--bg-body); }
 /* 切視角:側欄與中欄內容淡入,無位移、無滑動 */
 .env-fade > :not(.tb) { animation: envFade var(--motion-fast) var(--ease-standard); }
 @keyframes envFade { from { opacity: 0; } to { opacity: 1; } }

@@ -2773,14 +2773,6 @@ function csFilter() {
     box.appendChild(csRow(m));
   });
 }
-/* 捲到頭底下才浮一條線(靜止沒有線):清單那一層也會捲,兩層都掛,以現在看得見的那一層為準 */
-function chatEdge() {
-  if (tabBg()) return;
-  const list = $("cs-list"), box = list.hidden ? $("chat-scroll") : list;
-  $("cs-head").classList.toggle("is-scrolled", box.scrollTop > 0);
-}
-$("chat-scroll").addEventListener("scroll", chatEdge);
-$("cs-list").addEventListener("scroll", chatEdge);
 function csShowList(on) {
   const w = $("cs-why"); if (w) { w.hidden = true; w.textContent = ""; delete w.dataset.busy; }   // 原因句講的是清單或標題列上剛按的那一下:換層就收
   $("cs-list").hidden = !on;
@@ -2790,7 +2782,6 @@ function csShowList(on) {
   // 被清單蓋住的聊天本體退出 Tab 順序與輔具樹
   $("chat-scroll").inert = on; document.querySelector(".chat-input-wrap").inert = on;
   if (on) { $("cs-search").value = ""; csSearched = false; csRenderList(); requestAnimationFrame(() => { if (!$("cs-list").hidden) $("cs-search").focus(); }); }
-  chatEdge();
 }
 $("cs-toggle").addEventListener("click", () => { const open = $("cs-list").hidden; csShowList(open); if (open) trackFeature("hist_open"); });
 $("cs-new").addEventListener("click", csNewClick);
@@ -2825,7 +2816,6 @@ function scrollChat(force) {
   if (force === true) chatStick = true;
   if (tabBg()) return;   // 背景分頁的事件:捲動容器是眼前那條的
   if (chatStick) { const box = $("chat-scroll"); box.scrollTop = box.scrollHeight; chatTop = box.scrollTop; }
-  chatEdge();
 }
 
 /* ── agent 回覆的顯示 ─────────────────────────────────

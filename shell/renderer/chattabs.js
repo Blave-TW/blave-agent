@@ -6,7 +6,7 @@
    哪些全域是每輪狀態:TAB_KEYS 這張表(tests/check_shell_chat_tabs.js 列舉 app.js 與每輪模組的頂層狀態,每個都要在這裡或 GLOBAL_OK)。
    在 app.js、suggest.js 之後載入。 */
 let tabsK = 0;   // 分頁列 tick 現在亮第幾格(每秒進一格;建 tick 時就帶上,重畫不閃)
-const CS = { away: { sid: null, seq: 0 }, tabs: new Map(), order: [], cur: null, loaded: null, bg: false, closed: [], main: new Map(), bootDone: false };
+const CS = { away: { sid: null, seq: 0 }, tabs: new Map(), order: [], cur: null, loaded: null, bg: false, closed: [], main: new Map(), bootDone: false, freeze: null, barW: 0 };
 
 // [名字, 讀, 寫, 新分頁的初值]——初值是工廠,物件每個分頁各一份
 const TAB_KEYS = [
@@ -257,16 +257,15 @@ function tabsLead(st) {
   if (tabsNeedsYou(st)) { const s = document.createElement("span"); s.className = "tab-lead"; const d = document.createElement("span"); d.className = "tab-dot"; d.setAttribute("aria-hidden", "true"); s.appendChild(d); return s; }
   return null;
 }
-// 寬度上放得下幾個(spec §2:選中最窄 128、其他最窄 88、分頁間 2;+N 約 48)。選中的一定在列上:落在後面就跟列上最後一個換位
-function tabsLayout(width, order, curSid) {
-  const avail = width;
-  let fit = 1 + Math.floor((avail - 128) / 90);
-  if (order.length <= Math.max(1, fit)) return { shown: order.slice(), hidden: [] };
-  fit = Math.max(1, 1 + Math.floor((avail - 52 - 128) / 90));
-  const ai = order.indexOf(curSid);
-  let shown = order.slice(0, fit), hidden = order.slice(fit);
-  if (ai >= fit) { shown = order.slice(0, fit - 1).concat([order[ai]]); hidden = order.filter((s, i) => i >= fit - 1 && i !== ai); }
-  return { shown, hidden };
+// 列上放哪幾個(spec §13.6):mins[i] = min(自然寬, 選中 112／其他 60)。最窄加總放得下就全放(flex 自己縮);
+// 放不下就讓出 +N 的寬,先放選中的,再照順序加到下一格放不下為止——選中的落在後面時就排在列尾
+const TABS_MIN = 60, TABS_MIN_SEL = 112, TABS_NARROW = 88;
+function tabsLayout(avail, order, curSid, mins, moreW) {
+  if (mins.reduce((a, b) => a + b, 0) <= avail) return { shown: order.slice(), hidden: [] };
+  const ci = Math.max(0, order.indexOf(curSid)), keep = new Set([ci]), room = avail - moreW;
+  let acc = mins[ci];
+  for (let i = 0; i < order.length; i++) { if (i === ci) continue; if (acc + mins[i] > room) break; keep.add(i); acc += mins[i]; }
+  return { shown: order.filter((_, i) => keep.has(i)), hidden: order.filter((_, i) => !keep.has(i)) };
 }
 function tabsPaint() {
   const bar = $("cs-tabs"); if (!bar) return;
@@ -284,13 +283,35 @@ function tabsPaintIn(bar) {
   const lone = order.length === 1 && CS.cur && order[0] === CS.cur.sid && !csTitle && !running;
   bar.textContent = "";
   $("cs-more").hidden = true;
-  if (!lone) {
-    const w = bar.clientWidth || 300;
-    const L = tabsLayout(w, order, CS.cur && CS.cur.sid);
-    L.shown.forEach((sid) => bar.appendChild(tabsTabEl(CS.tabs.get(sid))));
-    tabsMorePaint(L.hidden);
+  tabsHint();   // 提示先畫:它吃掉的寬要算進 avail
+  if (lone) return;
+  const curSid = CS.cur && CS.cur.sid, F = CS.freeze;
+  if (F && F.shown.includes(curSid)) {   // 剛用滑鼠關掉一個:其餘照原寬,滑鼠離開分頁列才重排(下一顆 × 停在游標底下)
+    const shown = F.shown.filter((s) => order.includes(s));
+    for (const sid of shown) { const r = F.w.get(sid), el = tabsTabEl(CS.tabs.get(sid)); el.style.flex = "none"; el.style.width = r.w + "px"; if (r.narrow && sid !== curSid) el.classList.add("narrow"); bar.appendChild(el); }
+    tabsMorePaint(order.filter((s) => !shown.includes(s)));
+    return;
   }
-  tabsHint();
+  CS.freeze = null;
+  // 自然寬:整排先以內容寬(上限 180)量一次
+  const els = order.map((sid) => tabsTabEl(CS.tabs.get(sid)));
+  els.forEach((el) => { el.style.flex = "none"; bar.appendChild(el); });
+  const nat = els.map((el) => Math.ceil(el.getBoundingClientRect().width));
+  const mins = nat.map((n, i) => Math.min(n, order[i] === curSid ? TABS_MIN_SEL : TABS_MIN));
+  const avail = bar.clientWidth || 300;
+  let L = tabsLayout(avail, order, curSid, mins, 44);
+  if (L.hidden.length) { tabsMorePaint(L.hidden); const mw = $("cs-more").offsetWidth; if (mw > 44) L = tabsLayout(avail, order, curSid, mins, mw); }
+  bar.textContent = "";
+  for (const sid of L.shown) { const i = order.indexOf(sid), el = els[i]; el.style.flex = ""; el.style.minWidth = mins[i] + "px"; el.dataset.nat = nat[i]; bar.appendChild(el); }
+  tabsMorePaint(L.hidden);
+  // 沒選中、又被縮到 88 以下的讓出 × 格(滑過也不出 ×);本來就短的(新對話)照常留
+  for (const el of [...bar.children]) { if (el.getAttribute("aria-selected") === "true") continue; const w = el.getBoundingClientRect().width; if (w < TABS_NARROW && w < Number(el.dataset.nat) - 1) el.classList.add("narrow"); }
+}
+// 用滑鼠關分頁前記下列上每格的寬(spec §13.6);鍵盤關不凍
+function tabsFreeze() {
+  const w = new Map();
+  for (const el of $("cs-tabs").querySelectorAll(".tab")) w.set(el.dataset.sid, { w: el.getBoundingClientRect().width, narrow: el.classList.contains("narrow") });
+  CS.freeze = { w, shown: [...w.keys()] };
 }
 function tabsTabEl(T) {
   const sel = T === CS.cur, st = tabsStateOf(T);
@@ -300,11 +321,11 @@ function tabsTabEl(T) {
   const ti = document.createElement("span"); ti.className = "tab-t"; ti.textContent = tabsTitle(T); el.appendChild(ti);
   const word = st === "run" ? t("tabs.st.running") : tabsStateWord(T, st);   // 分頁名稱不帶時長:讀屏念的是畫的那一刻,數字會凍住
   if (word) { const sr = document.createElement("span"); sr.className = "sr-only"; sr.textContent = "，" + word; el.appendChild(sr); }
-  const x = document.createElement("span"); x.className = "tab-x"; x.setAttribute("aria-hidden", "true"); x.tabIndex = -1; x.innerHTML = TAB_X;
-  x.addEventListener("click", (e) => { e.stopPropagation(); tabsClose(T); });
+  const x = document.createElement("span"); x.className = "tab-x"; x.setAttribute("aria-hidden", "true"); x.tabIndex = -1; x.innerHTML = '<span class="tab-xv">' + TAB_X + "</span>";
+  x.addEventListener("click", (e) => { e.stopPropagation(); tabsFreeze(); tabsClose(T); });
   el.appendChild(x);
   el.addEventListener("click", () => { if (T !== CS.cur) { tabShow(T); trackFeature("tab_switch"); } if (!$("cs-list").hidden) csShowList(false); });
-  el.addEventListener("auxclick", (e) => { if (e.button === 1) { e.preventDefault(); tabsClose(T); } });
+  el.addEventListener("auxclick", (e) => { if (e.button === 1) { e.preventDefault(); tabsFreeze(); tabsClose(T); } });
   el.addEventListener("mouseenter", () => tabsTip(el, T)); el.addEventListener("mouseleave", tabsTipOff);
   el.addEventListener("focus", () => tabsTip(el, T)); el.addEventListener("blur", tabsTipOff);
   return el;
@@ -369,7 +390,7 @@ function tabsHint() {
   h.hidden = !h.textContent;
 }
 
-function tabsAdd(T) { T.closed = false; if (!CS.order.includes(T.sid)) CS.order.push(T.sid); tabsSave(); tabsPaint(); }
+function tabsAdd(T) { CS.freeze = null; T.closed = false; if (!CS.order.includes(T.sid)) CS.order.push(T.sid); tabsSave(); tabsPaint(); }
 function tabsDestroy(T) {
   T.dead = true; T.el.remove(); CS.tabs.delete(T.sid);
   if (T.st && T.st.SUG && T.st.SUG.timer) clearTimeout(T.st.SUG.timer);
@@ -436,7 +457,12 @@ document.addEventListener("keydown", (e) => {
 $("cs-tabs").addEventListener("keydown", (e) => {
   const tabs = [...$("cs-tabs").querySelectorAll('[role="tab"]')], i = tabs.indexOf(document.activeElement);
   if (i < 0) return;
-  if (e.key === "ArrowRight" || e.key === "ArrowLeft") { e.preventDefault(); const n = tabs[(i + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length]; tabs.forEach((x) => { x.tabIndex = -1; }); n.tabIndex = 0; n.focus(); }
+  if (e.key === "ArrowRight" && i === tabs.length - 1 && !$("cs-more").hidden) { e.preventDefault(); $("cs-more").focus(); }   // 走到列尾:焦點落到 +N(spec §13.7)
+  else if (e.key === "ArrowRight" || e.key === "ArrowLeft" || e.key === "Home" || e.key === "End") {
+    e.preventDefault();
+    const n = e.key === "Home" ? tabs[0] : e.key === "End" ? tabs[tabs.length - 1] : tabs[(i + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
+    tabs.forEach((x) => { x.tabIndex = -1; }); n.tabIndex = 0; n.focus();
+  }
   else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tabs[i].click(); }
   else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); const T = CS.tabs.get(tabs[i].dataset.sid); if (T) tabsClose(T); }
 });
@@ -447,6 +473,7 @@ window.addEventListener("keydown", (e) => {
   tip.hidden = true; tip.dataset.off = "1"; e.preventDefault(); e.stopPropagation();
 }, true);
 $("cs-more").addEventListener("click", () => { if ($("cs-menu").hidden) tabsMenuOpen(); else tabsMenuClose(); });
+$("cs-more").addEventListener("keydown", (e) => { if (e.key !== "ArrowLeft") return; const tabs = $("cs-tabs").querySelectorAll('[role="tab"]'); if (tabs.length) { e.preventDefault(); tabs[tabs.length - 1].focus(); } });
 $("cs-menu").addEventListener("keydown", (e) => {
   const items = [...$("cs-menu").querySelectorAll(".mi")], i = items.indexOf(document.activeElement);
   if (e.key === "Escape") { e.preventDefault(); tabsMenuClose(); $("cs-more").focus(); }
@@ -457,7 +484,9 @@ $("cs-hint").addEventListener("click", () => { csShowList(true); trackFeature("h
 if (typeof window.blave.onTabNew === "function") window.blave.onTabNew(() => csNewClick());
 if (typeof window.blave.onTabClose === "function") window.blave.onTabClose(() => tabsCloseCur());
 if (typeof window.blave.onTabOpen === "function") window.blave.onTabOpen((o) => { if (o && typeof o.sid === "string") { csOpen(o.sid, { focus: o.focus !== false }); if (o.origin === "mobile") trackFeature("tab_remote"); } });
-new ResizeObserver(() => tabsPaint()).observe($("cs-tabs"));
+// 拉寬拉窄即時重算(凍住的寬也放掉);寬沒變的通知(重畫本身)不理
+new ResizeObserver(() => { const w = $("cs-tabs").clientWidth; if (w === CS.barW) return; CS.barW = w; CS.freeze = null; tabsPaint(); }).observe($("cs-tabs"));
+$("cs-tabs").addEventListener("mouseleave", () => { if (CS.freeze) { CS.freeze = null; tabsPaint(); } });
 // 回覆中的時長每秒進一格(tooltip、+N 選單裡的字);只在有回合時跑
 setInterval(() => {
   if (!csAnyTurn()) return;
