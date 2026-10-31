@@ -95,6 +95,17 @@ def _relay_mode():
 # Restrict to what a headless trading agent actually needs — the SDK's full
 # default toolset burned 22k+ tokens on a single trivial turn in testing.
 ALLOWED_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
+# Windows without Git for Windows has no Bash tool: the CLI gives PowerShell instead (with Git Bash
+# present PowerShell stays off and the CLI drops the name from --tools). Every shell guard matches
+# both — a guard on Bash alone is skipped by every PowerShell command (win-e2e-0.1.39 F2).
+SHELL_TOOLS = ("Bash", "PowerShell")
+SHELL_TOOL_MATCHER = "|".join(SHELL_TOOLS)
+
+
+def _win32():
+    return sys.platform == "win32"
+
+
 # Edit(path) deny rules — hold in bypassPermissions and cover Write/NotebookEdit (SDK
 # docs › permissions). They stop the agent's edit tools; Bash writes are not guaranteed to be
 # caught (2026-09-22 on 29026 the resident agent's workspace update replaced these files through
@@ -956,7 +967,7 @@ def _lang_hooks(options, reminder):
 
 # 電腦版的 agent 不碰作業系統的排程器(e2e 0.1.8 #64 #75):macOS 對 `crontab <檔>` 跳系統框
 # 「想要管理你的電腦」,指令掛在框上等人按(實測 4 分 33 秒),agent 接著叫用戶去開完整磁碟取用權限。
-# 只認「指令位置」上的那三個名字——`grep crontab references/deployment.md` 是在讀文件,不擋。指令位置 =
+# 只認「指令位置」上的 _SCHED_NAMES——`grep crontab references/deployment.md` 是在讀文件,不擋。指令位置 =
 #   開頭,或接在 ; & | ( ) ` $( 引號 換行、find 的 -exec / -ok 之後(`)`:case 的分支 `x) crontab`、函式本體 `f() { crontab`);
 #   前面可以有 shell 關鍵字(if then else elif do while until ! { function NAME)、帶著自己選項的前綴指令(sudo -u root、env -i、
 #   command -p、time -p、nice -n 10、timeout 10、xargs -I{}、watch -n 2、script -q FILE、arch -arm64 …)、環境變數指派、路徑。
@@ -964,6 +975,8 @@ def _lang_hooks(options, reminder):
 # 已知擋不到、也不打算追的:把字拆開再拼回去(cron""tab、續行符號、$X -l、eval)、直譯器的 -c 字串或 heredoc 裡用字串拼接、alias / 複製 / symlink 成別的名字、
 # agent 自己寫進檔案的腳本(規則層在 AGENTS.md 與 references/deployment.md)。直接餵給直譯器的 heredoc 腳本擋得到(sched_verdict)。
 _TOK = r"""[^\s;&|()<>`"']+"""
+# The PowerShell tool's own scheduler cmdlets name no executable (Register-ScheduledTask …), so they are listed too.
+_SCHED_NAMES = r"crontab|launchctl|schtasks|(?:Register|Set|Unregister|Enable|Disable|Start)-Scheduled(?:Task|Job)"
 
 
 def _prefix_re(names, value_opts=""):
@@ -983,7 +996,7 @@ _CMD_PREFIX = "(?:(?:" + "|".join([
 ]) + r")\s+)*"
 _SCHED_CMD_RE = re.compile(
     r"""(?:^|[;&|()`\n"']|\$\(|\s-(?:exec|execdir|ok|okdir)\s)\s*""" + _CMD_PREFIX
-    + r"(?:[^\s;&|()`\"']*[/\\])?(?:crontab|launchctl|schtasks)(?:\.exe)?(?=$|[\s;&|)<>])", re.I)
+    + r"(?:[^\s;&|()`\"']*[/\\])?(?:" + _SCHED_NAMES + r")(?:\.exe)?(?=$|[\s;&|)<>])", re.I)
 _CMD_PREFIX_RE = re.compile(r"\s*" + _CMD_PREFIX, re.I)
 # 引號裡的字只是這些指令的參數(要印的字、要找的字),不會被執行:`echo "crontab -l 可以列出排程"`、`grep 'crontab -l' x.md`
 _TEXT_CMDS = frozenset(("echo", "printf", "grep", "egrep", "fgrep", "rg", "cat", "sed", "awk", "man", "git"))
@@ -992,7 +1005,7 @@ _TEXT_CMDS = frozenset(("echo", "printf", "grep", "egrep", "fgrep", "rg", "cat",
 # 一行指令**整行**就是一個 `ssh <選項> <user>@<host> <遠端指令>`(可以帶一段 heredoc 當它的輸入)才算遠端——
 # 行上有管線、轉向、; && || & 、括號、$( ) 或反引號(那些是這台電腦的 shell 在跑),目的地是 localhost / 127.* /
 # 這台電腦的主機名,選項裡帶 ProxyCommand / LocalCommand 之類會在本機執行的東西,都不算。認不出來的一律當本機。
-_SCHED_ANY_RE = re.compile(r"crontab|launchctl|schtasks", re.I)   # 出現就算(只用在 ssh 與餵給直譯器的腳本,不用在一般指令)
+_SCHED_ANY_RE = re.compile(_SCHED_NAMES, re.I)   # 出現就算(只用在 ssh 與餵給直譯器的腳本,不用在一般指令)
 _SSH_FLAGS_ARG = frozenset("BbcDEeFIiJLlmOoPpQRSWw")    # 後面帶值的旗標(man ssh)
 _SSH_FLAGS = frozenset("46AaCfGgKkMNnqsTtVvXxYy")
 # 帶值的旗標裡改得了「連到哪裡、在本機跑什麼」的:-F 設定檔(可以放 HostName / ProxyCommand / LocalCommand)、-J 跳板、-I PKCS#11 程式庫
@@ -1239,7 +1252,7 @@ SCHED_DENY_REASON_FORM = (
 
 
 def _sched_guard_hooks(options):
-    """PreToolUse:Bash 指令要叫系統排程器就拒絕,理由回給模型(它不會掛在系統框上,也知道接下來怎麼講)。"""
+    """PreToolUse:Bash／PowerShell 指令要叫系統排程器就拒絕,理由回給模型(它不會掛在系統框上,也知道接下來怎麼講)。"""
     async def guard(input_data, _tool_use_id, _context):
         cmd = ((input_data or {}).get("tool_input") or {}).get("command")
         verdict = sched_verdict(cmd) if isinstance(cmd, str) else None
@@ -1249,7 +1262,7 @@ def _sched_guard_hooks(options):
                                        "permissionDecisionReason": SCHED_DENY_REASON_FORM if verdict == "form"
                                        else SCHED_DENY_REASON}}
 
-    return _add_hook(options, "PreToolUse", "Bash", guard)
+    return _add_hook(options, "PreToolUse", SHELL_TOOL_MATCHER, guard)
 
 
 # 回合結束時引擎追蹤的程序(前景、逾時被轉背景、run_in_background)全部被殺,沒有東西會再叫醒 agent。
@@ -1274,7 +1287,7 @@ _DETACHED_RE = re.compile(r"^\s*(?:\w+=\S*\s+)*(?:nohup|setsid)\b[^\n]*(?<![&>|]
 _POLL_HINT = (
     "To wait for something already running, poll in the foreground with ONE command that waits and exits by "
     "itself: `python3 -c \"import time; time.sleep(150); print(''.join(open('tmp/<job>.log', encoding='utf-8', "
-    "errors='replace').readlines()[-3:]))\"` with the Bash tool's `timeout` 180000, repeated until the final line "
+    "errors='replace').readlines()[-3:]))\"` with the shell tool's `timeout` 180000, repeated until the final line "
     "appears. A leading `sleep N` of 25 s or more is refused by the engine; Monitor, ScheduleWakeup, cron tools and "
     "run_in_background are refused here. Steps: references/deployment.md › Long jobs."
 )
@@ -1289,7 +1302,7 @@ def bg_guard_check(tool_input, need_ms):
             "Refused by the Blave runtime — run_in_background is not available here. When this turn ends the "
             "engine closes and kills every process it is tracking, a backgrounded one included, and nothing "
             "calls you again: its completion notice reaches no one and no later report from you is possible. "
-            "Run the command in the foreground with the Bash tool's `timeout` (up to " + str(need_ms) + "; the "
+            "Run the command in the foreground with the shell tool's `timeout` (up to " + str(need_ms) + "; the "
             "call returns as soon as the command ends). " + _POLL_HINT)
     cmd = tool_input.get("command")
     if not isinstance(cmd, str) or not _BACKTEST_LAUNCH_RE.search(cmd) or _DETACHED_RE.search(cmd):
@@ -1311,7 +1324,7 @@ def bg_guard_check(tool_input, need_ms):
         "Refused by the Blave runtime — this starts a backtest / scan, and with `timeout` "
         + (str(timeout) if timeout else "unset (default 120000)") + " the engine moves it to the background "
         "when that runs out; the background run is killed when this turn ends and its result is lost. Issue the "
-        "same command again in the foreground with the Bash tool's `timeout` set to " + str(need_ms) + " (what "
+        "same command again in the foreground with the shell tool's `timeout` set to " + str(need_ms) + " (what "
         "this turn has left — the call returns as soon as the run ends, so a short run costs nothing extra). If "
         "the run is not going to finish within that, do not start it this way: follow references/deployment.md "
         "› When the job does not finish in the turn. " + _POLL_HINT)
@@ -1367,6 +1380,8 @@ _REDIRECT_INTO_RE = re.compile(r">>?\s*['\"]?[^\s;&|'\"]*(?:" + _NAMES_ALT + r")
 _WRITE_MARK_RE = re.compile(
     r"\btee\b|\bsed\b[^|;&]*\s-[a-zA-Z]*i|\bperl\b[^|;&]*\s-[a-zA-Z]*i|\b(?:cp|mv|rm|ln|install|truncate|patch|dd)\b"
     r"|\b(?:copy|move|del|erase|ren|rename|xcopy|robocopy)\b|(?:Set|Add|Clear)-Content|Out-File|(?:Remove|Move|Copy|Rename|New)-Item"
+    # PowerShell's short aliases of those cmdlets (ri, mi, cpi, rni, ni, sc, ac, clc) and .NET file writes
+    r"|\b(?:ri|mi|cpi|rni|ni|sc|ac|clc)\b|::(?:WriteAll|AppendAll|Delete|Move|Copy|Replace|Create)\w*\("
     # open(…) with a write mode: strings, one level of parens (os.path.join(…)) and bare args up to a quoted mode
     # that starts w/a/x or r…+ and is closed by its quote ('w', 'rb+', mode='wb'); a path's own letters never count
     # as the mode (`open('lib/capital_vault.py')`, `open('AGENTS.md')` are reads — the quote after the mode is what
@@ -1405,7 +1420,7 @@ def mirror_bash_denied(cmd):
 
 
 def _secret_code_bash_guard_hooks(options):
-    """PreToolUse:Bash,任何回合:改／搬／刪拿得到券商密碼的程式檔、或寫資金鏡像 amounts.ui.json 的指令拒絕。"""
+    """PreToolUse:Bash／PowerShell,任何回合:改／搬／刪拿得到券商密碼的程式檔、或寫資金鏡像 amounts.ui.json 的指令拒絕。"""
     async def guard(input_data, _tool_use_id, _context):
         cmd = ((input_data or {}).get("tool_input") or {}).get("command")
         if not isinstance(cmd, str):
@@ -1417,11 +1432,11 @@ def _secret_code_bash_guard_hooks(options):
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                        "permissionDecisionReason": reason}}
 
-    return _add_hook(options, "PreToolUse", "Bash", guard)
+    return _add_hook(options, "PreToolUse", SHELL_TOOL_MATCHER, guard)
 
 
 def _cred_bash_guard_hooks(options):
-    """PreToolUse:Bash,任何回合:讀／抄／改 credentials 底下券商密鑰檔的指令拒絕。"""
+    """PreToolUse:Bash／PowerShell,任何回合:讀／抄／改 credentials 底下券商密鑰檔的指令拒絕。"""
     async def guard(input_data, _tool_use_id, _context):
         cmd = ((input_data or {}).get("tool_input") or {}).get("command")
         if not isinstance(cmd, str) or not cred_bash_denied(cmd):
@@ -1429,11 +1444,11 @@ def _cred_bash_guard_hooks(options):
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                        "permissionDecisionReason": CRED_BASH_DENY_REASON}}
 
-    return _add_hook(options, "PreToolUse", "Bash", guard)
+    return _add_hook(options, "PreToolUse", SHELL_TOOL_MATCHER, guard)
 
 
 def _bg_guard_hooks(options):
-    """PreToolUse:Bash,任何回合:run_in_background 拒絕;timeout 不足的回測啟動,引擎夠新且 need_ms 夠大就把 timeout
+    """PreToolUse:Bash／PowerShell,任何回合:run_in_background 拒絕;timeout 不足的回測啟動,引擎夠新且 need_ms 夠大就把 timeout
     改寫成 need_ms 放行(updatedInput 取代整個 input,所以帶著原欄位),否則拒絕——理由都回給模型。"""
     t0 = time.monotonic()   # 掛載在回合開頭(run_turn 的 t_start 前幾行)
 
@@ -1458,7 +1473,7 @@ def _bg_guard_hooks(options):
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                        "permissionDecisionReason": reason}}
 
-    return _add_hook(options, "PreToolUse", "Bash", guard)
+    return _add_hook(options, "PreToolUse", SHELL_TOOL_MATCHER, guard)
 
 
 def _mount_turn_hooks(options, sink, lang_msg=None, reply_lang=None):
@@ -2447,7 +2462,7 @@ def _tool_where(name, params):
     串起的本機前置步驟都染成雲端。rsync 兩端都可以是本機,參數有 `[user@]host:path` 才算。"""
     if isinstance(name, str) and name.startswith("mcp__blave__"):
         return "cloud"
-    if name == "Bash" and isinstance(params, dict) and isinstance(params.get("command"), str):
+    if name in SHELL_TOOLS and isinstance(params, dict) and isinstance(params.get("command"), str):
         for seg in _SEGMENT_SPLIT_RE.split(params["command"]):
             cmd, args = _segment_head(seg)
             if cmd in _REMOTE_CMDS or (
@@ -2469,7 +2484,7 @@ def _tool_summary(name, params, workspace=None):
         path = params.get("file_path")
         if isinstance(path, str) and path:
             out = _workspace_relative(path, workspace)
-    elif name == "Bash":
+    elif name in SHELL_TOOLS:
         out = _bash_summary(params.get("command"), workspace)
     elif name in ("Grep", "Glob"):
         pattern = params.get("pattern")
@@ -2629,7 +2644,7 @@ class ToolPrep:
     呼叫 publish() 的 heredoc,那時工具還沒開始跑;不分類的話狀態列兩分鐘都是「正在思考」。
     Bash／Write／Edit 開頭先送 code_prep(「正在寫程式」);之後每 256 字元或 0.5 秒判一次,命中更具體的 kind
     (Bash 用 §C 內容掃描、Write／Edit 看路徑)就再送一次。只往更具體升級,不回退。"""
-    CODE_TOOLS = ("Bash", "Write", "Edit", "MultiEdit")
+    CODE_TOOLS = SHELL_TOOLS + ("Write", "Edit", "MultiEdit")
     STEP_CHARS, STEP_S = 256, 0.5
 
     def __init__(self, name, sink):
@@ -2692,7 +2707,7 @@ def _partial_json_str(buf, key):
 
 def partial_tool_kind(name, buf, trading=None):
     """(kind, obj) 或 (None, "")——串流到一半的參數,只認命中得到的具體列,認不出就不改。"""
-    if name == "Bash":
+    if name in SHELL_TOOLS:
         # 跟完成後同一套分類(純讀檔的指令頭優先:`cat lib/report_templates.py` 是在找檔案,不是在組報告)
         kind, obj = _bash_kind(_partial_json_str(buf, "command"), WORKSPACE, trading if trading is not None else set())
         return (kind, obj) if kind != "unknown" else (None, "")
@@ -3127,7 +3142,7 @@ def _tool_kind(name, params, workspace=None, trading=None):
         if m:
             return "strategy_write", _kind_obj(m.group(1)), ""
         return "file_write", _kind_obj(os.path.basename(rel)), ""
-    if name == "Bash":
+    if name in SHELL_TOOLS:
         if trading is None:
             trading = _trading_names(workspace)
         kind, obj = _bash_kind(params.get("command"), workspace, trading)
@@ -3148,7 +3163,7 @@ def _touched_strategies(name, params):
         return set()
     if name in ("Write", "Edit"):
         text = params.get("file_path")
-    elif name == "Bash":
+    elif name in SHELL_TOOLS:
         text = params.get("command")
     else:
         return set()
@@ -3327,7 +3342,7 @@ class WebSink:
         if self._trading is None:
             self._trading = _trading_names(WORKSPACE)
         kind, kind_obj, kind_tab = _tool_kind(name, params, trading=self._trading)
-        if name == "Bash":
+        if name in SHELL_TOOLS:
             self._last_bash = (kind, kind_obj)
         elif name == "TaskOutput":
             kind, kind_obj = self._last_bash or ("unknown", "")
@@ -4526,7 +4541,8 @@ def chat_tools(web, browser_mounted):
     ToolSearch 不能拿掉:內建瀏覽器的工具是延遲載入的,要靠它叫出來。TaskOutput 留著:前景指令逾時被
     CLI 轉到背景後,要靠它等輸出。上網工具照 web_tools_off——雲端回合的報告搜尋要用。"""
     off = web_tools_off(web, browser_mounted)
-    return ALLOWED_TOOLS + [t for t in WEB_TOOLS if t not in off] + ["TaskOutput", "ToolSearch"]
+    return (ALLOWED_TOOLS + (["PowerShell"] if _win32() else []) + [t for t in WEB_TOOLS if t not in off]
+            + ["TaskOutput", "ToolSearch"])
 
 
 _NO_OTHER_ROUTE = ("the engine's own web search and web fetch, `curl`, `wget`, a script or a library call to a web page. "

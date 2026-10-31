@@ -262,7 +262,7 @@ class _Options:
 o = _Options()
 t("② 掛得上", at._sched_guard_hooks(o) is True)
 pre = (o.hooks or {}).get("PreToolUse") or []
-t("② PreToolUse、只對 Bash", len(pre) == 1 and pre[0]["matcher"] == "Bash", o.hooks)
+t("② PreToolUse、只對 Bash／PowerShell", len(pre) == 1 and pre[0]["matcher"] == at.SHELL_TOOL_MATCHER, o.hooks)
 guard = pre[0]["hooks"][0]
 
 

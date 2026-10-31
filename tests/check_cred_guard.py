@@ -98,7 +98,7 @@ t("② 掛得上", at._cred_bash_guard_hooks(o) is True)
 h = o.hooks["PreToolUse"][0]
 run = lambda cmd: asyncio.run(h["hooks"][0]({"tool_name": "Bash", "tool_input": {"command": cmd}}, "t1", None))  # noqa: E731
 hs = run(BLOCK[0]).get("hookSpecificOutput") or {}
-t("② deny + 理由(不換方法重試、改看 lib 的狀態)", h["matcher"] == "Bash" and hs.get("permissionDecision") == "deny"
+t("② deny + 理由(不換方法重試、改看 lib 的狀態)", h["matcher"] == at.SHELL_TOOL_MATCHER and hs.get("permissionDecision") == "deny"
   and hs.get("permissionDecisionReason") == at.CRED_BASH_DENY_REASON and "Do not retry" in at.CRED_BASH_DENY_REASON, hs)
 t("② 放行回空;沒有 command 也回空", run(ALLOW[0]) == {} and asyncio.run(h["hooks"][0]({"tool_input": {}}, "t", None)) == {})
 

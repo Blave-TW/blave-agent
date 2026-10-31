@@ -111,7 +111,7 @@ def run(inp):
 
 
 hs = run({"command": LAUNCH[0], "timeout": 600000}).get("hookSpecificOutput") or {}
-t("④ deny + reason", o.hooks["PreToolUse"][0]["matcher"] == "Bash" and hs.get("permissionDecision") == "deny"
+t("④ deny + reason", o.hooks["PreToolUse"][0]["matcher"] == at.SHELL_TOOL_MATCHER and hs.get("permissionDecision") == "deny"
   and "references/deployment.md" in hs.get("permissionDecisionReason", ""), hs)
 t("④ allowed → {}", run({"command": LAUNCH[0], "timeout": CAP}) == {} and run({}) == {})
 o.env = {**o.env, "BASH_MAX_TIMEOUT_MS": "900000"}   # resume: a new dict, lower ceiling
@@ -191,7 +191,7 @@ at._ENGINE["cli_version"] = "2.1.281"
 o2 = _Options(env={"BASH_MAX_TIMEOUT_MS": str(CAP)})
 at._mount_turn_hooks(o2, object())
 t("⑥ deny-all gate mounts", at._sched_tool_gate_hooks(o2, at.scheduled_allowed(None)) is True)
-pre = [h for m in o2.hooks["PreToolUse"] if m["matcher"] in ("Bash", None) for h in m["hooks"]]
+pre = [h for m in o2.hooks["PreToolUse"] if m["matcher"] in (at.SHELL_TOOL_MATCHER, None) for h in m["hooks"]]
 mounted = {h.__qualname__.split(".")[0] for h in pre}
 t("⑥ scheduled turn has the Bash guard and the deny-all gate", {"_bg_guard_hooks", "_sched_tool_gate_hooks"} <= mounted,
   o2.hooks)

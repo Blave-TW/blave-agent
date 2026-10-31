@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.151 — 2026-11-01(desktop 版號待定)
+
+- **沒裝 Git 的 Windows 上 Claude／Blave AI 引擎拿回 shell(`agent_turn.chat_tools`、`SHELL_TOOLS`／`SHELL_TOOL_MATCHER`;win-e2e-0.1.39 F2,P1,0.1.38 起)**:1.1.149 的聊天回合白名單只有 Bash;沒有 Git for Windows 時 CLI 不給 Bash、改給 PowerShell,白名單又沒有 PowerShell,整輪沒有任何 shell、回測跑不了。win32 的白名單加上 `PowerShell`(其他平台不加);有 Git Bash 的機器(雲端 Windows 機隊:`install_windows.ps1` 裝 git、snapshot 驗 Git Bash)CLI 不開 PowerShell 工具,`--tools` 裡的名字被 CLI 靜默略過(隨包 2.1.281 實測 init 的 tools 只剩 Bash、Read),行為不變。四道 PreToolUse 守門(`_bg_guard_hooks`、`_cred_bash_guard_hooks`、`_secret_code_bash_guard_hooks`、電腦版的 `_sched_guard_hooks`)matcher 從 `Bash` 改成 `Bash|PowerShell`,否則 PowerShell 指令全部繞過。指令解析補 PowerShell 寫法:排程器守門認 `Register-／Set-／Unregister-／Enable-／Disable-／Start-ScheduledTask`(與 `-ScheduledJob`);改寫券商密碼程式檔的守門認 `ri`、`sc`、`ni` 等短別名與 `[IO.File]::WriteAllText` 這類 .NET 寫檔。背景回測守門的理由句「Bash tool's `timeout`」改成「shell tool's」。回合狀態列分類、碰過的策略、TaskOutput 沿用上一個 shell 指令的分類,PowerShell 比照 Bash。測試 `tests/check_powershell_tool.py`(新;白名單 win32／非 win32、原始碼與實際掛載兩層列舉「掛在 Bash 上的 hook 都涵蓋 PowerShell」、各守門的 PowerShell 寫法;拿掉修正會紅)、`check_cred_guard`／`check_bg_backtest_guard`／`check_desktop_sched_guard` 的 matcher 斷言改認 `SHELL_TOOL_MATCHER`。真機未驗:要在 desktop-win-test-6(沒裝 Git)重跑 F2 那一句。
+
 ## 1.1.150 — 2026-10-31(desktop 0.1.39)
 
 - **建議下一步那句的說明改成「點了就原句送出」(`agent_turn._SUGGEST_RULE`;designer suggest-direct-send-2026-10-31,desktop 0.1.39 托盤點了直接送)**:原本寫「會填進用戶的輸入框、由用戶自己送出」,改成「用戶點了就原句送出，所以要能直接照做」;里程碑、長度、禁語不動。web 跟進前仍是填入,新規則配填入的外殼不會壞,出貨順序不卡。測試 `tests/check_suggest_rule_026.py`(改一條)。

@@ -110,10 +110,10 @@ if hooks:
           and "before your next tool call" in ctx["additionalContext"] and "full-width" in ctx["additionalContext"], ctx)
 check("the per-message pin is still the last line of the prompt", s["prompt"].rstrip().endswith("[用中文回覆這則訊息,<suggest> 建議句也用中文]"), s["prompt"][-80:])
 pre = (s.get("hooks") or {}).get("PreToolUse") or []
-check("desktop: PreToolUse hooks on Bash — background guard, credentials guard, then the OS scheduler (cases: tests/check_bg_backtest_guard.py, tests/check_cred_guard.py, tests/check_desktop_sched_guard.py)",
+check("desktop: PreToolUse hooks on Bash／PowerShell — background guard, credentials guard, then the OS scheduler (cases: tests/check_bg_backtest_guard.py, tests/check_cred_guard.py, tests/check_desktop_sched_guard.py)",
       [h["hooks"][0].__qualname__ for h in pre] == ["_bg_guard_hooks.<locals>.guard", "_cred_bash_guard_hooks.<locals>.guard",
                                                      "_secret_code_bash_guard_hooks.<locals>.guard", "_sched_guard_hooks.<locals>.guard"]
-      and all(h["matcher"] == "Bash" for h in pre)
+      and all(h["matcher"] == at.SHELL_TOOL_MATCHER for h in pre)
       and asyncio.run(pre[3]["hooks"][0]({"tool_input": {"command": "crontab -l"}}, "t1", None))["hookSpecificOutput"]["permissionDecision"] == "deny", s.get("hooks"))
 
 s = turn("find me two bitcoin news items today and list the sources")
