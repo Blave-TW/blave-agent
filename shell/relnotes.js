@@ -13,12 +13,14 @@ function clip(s, lang) {
   const w = s.split(/\s+/);
   return w.length > EN_WORDS ? w.slice(0, EN_WORDS).join(" ") + "…" : s;
 }
-/* body:Release 說明原文。版面(app-release.md):zh 段、一行 `---`、en 段。沒有 `---` 就分不出語言 → 兩邊都空 */
+/* body:Release 說明原文。版面(app-release.md):zh 段、一條分隔線、en 段。分隔線收 Markdown 的三種寫法(`---`、`***`、`* * *`、`___`…):
+   0.1.38 的說明用 `* * *`,只認 `---` 時兩邊都空、更新框中間整塊空白。沒有分隔線就分不出語言 → 兩邊都空 */
+const HR_RE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
 function parseNotes(body) {
   const out = { zh: [], en: [] };
   if (typeof body !== "string") return out;
   const lines = body.replace(/\r\n?/g, "\n").split("\n");
-  const cut = lines.findIndex((l) => l.trim() === "---");
+  const cut = lines.findIndex((l) => HR_RE.test(l));
   if (cut < 0) return out;
   const pick = (part, lang) => part.filter((l) => l.startsWith("- ")).slice(0, MAX_ITEMS)
     .map((l) => clip(l.slice(2).replace(STRIP_RE, "").replace(/\s+/g, " ").trim(), lang)).filter(Boolean);

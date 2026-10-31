@@ -43,6 +43,9 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     t("§4.3 一般標點(— … ’ “ ”)照留,只去看不見的字", punct.zh[0] === "修正——不再「卡住」…" && punct.en[0] === "Don\u2019t \u201cstall\u201d \u2014 ever\u2026", punct);
     const long = parseNotes("- " + "字".repeat(41) + "\n- " + "字".repeat(40) + "\n---\n- " + Array(26).fill("w").join(" ") + "\n- " + Array(25).fill("w").join(" "));
     t("§4.3 zh 每條截 40 字、en 截 25 words,超過加「…」;剛好不加", long.zh[0] === "字".repeat(40) + "…" && long.zh[1] === "字".repeat(40) && long.en[0] === Array(25).fill("w").join(" ") + "…" && long.en[1] === Array(25).fill("w").join(" "), long);
+    const b38 = parseNotes("- 可以同時開好幾條對話分頁，各自在背景跑\n\n下載：Mac 用 `.dmg`。\n\n* * *\n\n- Run several chats at once in tabs\n\nDownload: `.dmg` for Mac.");
+    t("§4.3 0.1.38 真 body 的分隔線是 `* * *`:照樣分出 zh／en(只認 --- 時兩邊都空、更新框中間整塊空白)", JSON.stringify(b38) === JSON.stringify({ zh: ["可以同時開好幾條對話分頁，各自在背景跑"], en: ["Run several chats at once in tabs"] }), b38);
+    t("§4.3 *** 與 ___ 也是分隔線;-- 不是", parseNotes("- a\n***\n- b").en[0] === "b" && parseNotes("- a\n___\n- b").en[0] === "b" && parseNotes("- a\n--\n- b").en.length === 0);
     t("§4.3 「-」後沒空白、縮排的不算條列", JSON.stringify(parseNotes("-a\n  - b\n- c\n---\n- d").zh) === '["c"]'); }
   { const reqs = [];
     // 假 https.get:回 { statusCode, chunks } 或不回(逾時)
@@ -268,18 +271,23 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     let done = []; unsaved = true;
     R.upModal("plain", { v: "0.1.36" }, null, (ok) => done.push(ok));
     let b = boxes[0];
-    t("§4.1:標題 up.md.title{v}、主鈕 up.md.go、有草稿加 tm.unsavedNote;說明槽先藏著", b.title === 'up.md.title{"v":"0.1.36"}' && b.ok === "up.md.go" && JSON.stringify(b.lines) === '["tm.unsavedNote"]' && b.extra.hidden === true);
+    t("§4.1:標題 up.md.title{v}、主鈕 up.md.go、有草稿加 tm.unsavedNote;說明槽先藏著", b.title === 'up.md.title{"v":"0.1.36"}' && b.ok === "up.md.go" && JSON.stringify(b.lines) === '["up.md.lede","tm.unsavedNote"]' && b.extra.hidden === true);
     okClick();
     t("§4.1 按〔重新啟動〕→ done(true) 一次、不記取消", JSON.stringify(done) === "[true]" && tracked.length === 0);
     done = []; boxes.length = 0; unsaved = false;
     notes = { v: "0.1.36", zh: ["新\u202e<img src=x onerror=alert(1)>", "二", "三", "四"], en: ["One", "Two"] };
     R.upModal("plain", { v: "0.1.36" }, null, (ok) => done.push(ok)); await sleep(5);
     b = boxes[0]; const ul = b.extra.children[0];
-    t("§4.1 說明拿到再補上:最多 3 條、只用 textContent(標籤原樣當字)、放到內文最上面;沒草稿就沒有草稿那句", b.lines.length === 0 && b.extra.hidden === false && ul && ul.className === "up-notes" && ul.children.length === 3
+    t("§4.1 說明拿到再補上:最多 3 條、只用 textContent(標籤原樣當字)、放到內文最上面;沒草稿就沒有草稿那句", JSON.stringify(b.lines) === '["up.md.lede"]' && b.extra.hidden === false && ul && ul.className === "up-notes" && ul.children.length === 3
       && ul.children[0].textContent === "新\u202e<img src=x onerror=alert(1)>" && env.$("del-body").firstChild === b.extra && !/innerHTML|upRich|\bt\(/.test(cut(app, "async function upNotesFill(")));
     env.delClose();
     t("§4.1 Esc／✕／取消／框外 → upd_cf_cancel 一次、done(false)", JSON.stringify(done) === "[false]" && tracked.join() === "upd_cf_cancel");
     done = []; boxes.length = 0; tracked.length = 0; LANGV = "en";
+    R.upModal("plain", { v: "0.1.36" }, null, (ok) => done.push(ok)); await sleep(5);
+    done = []; boxes.length = 0; tracked.length = 0; notes = null; R.upBoxClose();
+    R.upModal("plain", { v: "0.1.38" }, null, (ok) => done.push(ok)); await sleep(5);
+    t("§4.1 說明拿不到(null)、沒草稿:本體不是空的(up.md.lede 那句在),說明槽藏著", JSON.stringify(boxes[0].lines) === '["up.md.lede"]' && boxes[0].extra.hidden === true, boxes[0].lines);
+    R.upBoxClose(); done = []; boxes.length = 0; tracked.length = 0; notes = { v: "0.1.36", zh: ["一"], en: ["One", "Two"] };
     R.upModal("plain", { v: "0.1.36" }, null, (ok) => done.push(ok)); await sleep(5);
     t("§4.1 en 介面取 en 那段", boxes[0].extra.children[0].children.map((x) => x.textContent).join() === "One,Two");
     R.upBoxClose();
