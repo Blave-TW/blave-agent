@@ -4,7 +4,9 @@
 //   電腦版:shell/renderer/trade.js 的 CX_VENUES[].ccy + TR_VENUE_CCY_OTHER
 //   網頁:web/app/main/templates/agent/workspace.html 的 CX_VENUES[].ccy
 // 網頁那棵用 BLAVE_WEB_DIR 指定(預設 monorepo 的 ../web);找不到就 fail,不 SKIP——不比對等於沒有這支測試。
-// 跑法:BLAVE_WEB_DIR=/path/to/web node tests/check_web_desktop_parity.js
+// 側欄策略資料夾(spec strategy-sidebar-folders §10、§17)另比 api:72 個 emoji 清單與上限以 api openclaw/agent_strategies.py 為唯一來源,
+// api 那棵用 BLAVE_API_DIR 指定(預設 monorepo 的 ../api),同樣找不到就 fail。
+// 跑法:BLAVE_WEB_DIR=/path/to/web BLAVE_API_DIR=/path/to/api node tests/check_web_desktop_parity.js
 const fs = require("fs"), path = require("path");
 let red = 0; const ok = (n, c, why) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || !why ? "" : "  " + why)); if (!c) red++; };
 const webDir = process.env.BLAVE_WEB_DIR || path.join(__dirname, "..", "..", "web");
@@ -384,6 +386,64 @@ for (const lang of ["zh", "en"]) {
     const bad = dF && wF ? CASES.filter(([, rep]) => call(dF, rep) !== call(wF, rep)).map(([n, rep]) => n + ":電腦版 " + call(dF, rep) + " / 網頁 " + call(wF, rep)) : ["切不出函式" + err];
     ok("策略庫基準畫不畫、代號寫什麼兩邊同一個答案(" + CASES.length + " 組)", !dParts.includes(null) && bad.length === 0, bad.join(";"));
   } }
+// ── 側欄策略資料夾(spec strategy-sidebar-folders §10 信任邊界:清單的每一份副本——api、main.js、renderer、web——同一份,改動同 commit)──
+{
+  const apiDir = process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), apiPy = path.join(apiDir, "openclaw", "agent_strategies.py");
+  const R = path.join(__dirname, "..", "shell", "renderer"), rd = (f) => fs.readFileSync(f, "utf8");
+  const sgMain = rd(path.join(__dirname, "..", "shell", "main.js")), sgR = rd(path.join(R, "stratgroups.js")), sfR = rd(path.join(R, "stratflags.js")), cloudJs = rd(path.join(__dirname, "..", "shell", "cloud.js"));
+  // 括號裡的字串常值接起來(Python 的隱式串接、JS 的 + 串接都吃)
+  const strBlock = (src, head) => { const i = src.indexOf(head); if (i < 0) return null; const j = src.indexOf(")", i + head.length); return [...src.slice(i + head.length, j).matchAll(/"([^"]*)"/g)].map((m) => m[1]).join(""); };
+  const EMO_SPEC = "⭐🔥💡🎯🧪🚀💎🏆📌🔖📦🧩📈📉📊💹💰💵💴💶💷🏦🌐🌏⏰⏳🔁🔄🔀🔍🧭🔭🌊🎲🧠🔬🐂🐻🐳🦈🦅🦊🦉🐢🐇🐝🐙🦄🌱🌲🌵🍀🌸🌙⛅🌈🌋🌞☔🍁⚓🔑🔧🔨🧰🧲📚📝📎🎁🎨🎈";
+  if (!fs.existsSync(apiPy)) ok("資料夾:找得到 api 那棵(" + apiPy + ";設 BLAVE_API_DIR)", false);
+  else {
+    const api = rd(apiPy), aE = strBlock(api, "_STRAT_GROUP_EMOJI = (");
+    const dE = strBlock(sgMain, "const SG_EMOJI = ("), rE = strBlock(sgR, "const SG_EMOJI = (");
+    ok("資料夾 emoji:api _STRAT_GROUP_EMOJI 是 72 個單一碼點、順序同 spec §10", !!aE && aE === EMO_SPEC && [...aE].length === 72, aE);
+    ok("資料夾 emoji:main.js SG_EMOJI 與 api 逐字同一份(含順序)", dE === aE, dE);
+    ok("資料夾 emoji:renderer stratgroups.js SG_EMOJI 與 api 逐字同一份(含順序)", rE === aE, rE);
+    const num = (src, re) => { const m = re.exec(src); return m ? Number(m[1]) : null; };
+    const aLim = [num(api, /^_STRAT_GROUP_FOLDERS_MAX = (\d+)/m), num(api, /^_STRAT_GROUP_NAME_MAX_LEN = (\d+)/m), num(api, /^_STRAT_ORDER_MAX = (\d+)/m)];
+    const dLim = [num(sgMain, /SG_FOLDERS_MAX = (\d+)/), num(sgMain, /SG_NAME_MAX = (\d+)/), num(sgMain, /^const STRAT_PREFS_MAX = (\d+)/m)];
+    const rLim = [num(sgR, /SG_MAX = (\d+)/), num(sgR, /SG_NAME_MAX = (\d+)/), 200];
+    ok("資料夾上限:資料夾 20、名稱 20 個碼點、map 200 三份同值(api / main.js / renderer)", JSON.stringify(aLim) === "[20,20,200]" && JSON.stringify(dLim) === JSON.stringify(aLim) && JSON.stringify(rLim) === JSON.stringify(aLim), JSON.stringify([aLim, dLim, rLim]));
+    const aId = (/^_STRAT_GROUP_ID_RE = re\.compile\(r"([^"]+)"\)/m.exec(api) || [])[1], dId = (/SG_ID_RE = \/\^([^$]+)\$\//.exec(sgMain) || [])[1], cId = (/PREF_GROUP_ID_RE = \/\^([^$]+)\$\//.exec(cloudJs) || [])[1];
+    ok("資料夾 id 形狀:api / main.js / cloud.js 同一條(f + 6–12 個 [0-9a-z])", aId === "f[0-9a-z]{6,12}" && dId === aId && cId === aId, JSON.stringify([aId, dId, cId]));
+  }
+  // 市場對應(§10 建市場資料夾):market → 預填 emoji
+  const MKT = { crypto: "💎", tw_index_futures: "📈", tw_stock_futures: "📊", tw_stock: "🏦", us_stock: "💵", global_futures: "🌐", mixed: "🧩" };
+  const dM = {}; { const m = /const SG_MARKETS = \{([\s\S]*?)\};/.exec(sgR); if (m) for (const x of m[1].matchAll(/(\w+): \["[^"]+", "([^"]+)"\]/g)) dM[x[1]] = x[2]; }
+  ok("資料夾:電腦版建市場資料夾的對應照 spec §10(七個市場與預填 emoji)", sorted(dM) === sorted(MKT), sorted(dM));
+  // 網頁的純函式層(參照面):app/static/js/agent/strat_folders.js(node 可 require),共用測資 tests/strat_folders_vectors.json 也在網頁那棵
+  const wMod = path.join(webDir, "app", "static", "js", "agent", "strat_folders.js"), wVec = path.join(webDir, "tests", "strat_folders_vectors.json");
+  const W = fs.existsSync(wMod) ? require(wMod) : null;
+  ok("資料夾:找得到網頁的 strat_folders.js 與共用測資 strat_folders_vectors.json", !!W && fs.existsSync(wVec), wMod);
+  if (W) {
+    ok("資料夾 emoji:網頁 strat_folders.js SG_EMOJI 與 api / 電腦版逐字同一份", W.SG_EMOJI === EMO_SPEC, W.SG_EMOJI);
+    const wM = Object.fromEntries(Object.entries(W.MARKETS || {}).map(([k, v]) => [k, v[1]]));
+    ok("資料夾:建市場資料夾的市場與預填 emoji 兩邊同一份", sorted(wM) === sorted(dM), sorted(wM) + " vs " + sorted(dM));
+    ok("資料夾上限:網頁資料夾 20、名稱 20、map 200、id 形狀同電腦版", W.FOLDERS_MAX === 20 && W.NAME_MAX === 20 && W.MAP_MAX === 200 && String(W.ID_RE) === "/^f[0-9a-z]{6,12}$/", JSON.stringify([W.FOLDERS_MAX, W.NAME_MAX, W.MAP_MAX, String(W.ID_RE)]));
+  }
+  // 同一份測資跑兩邊的 sgBuild(want = 每組 [資料夾 id 或 null(未分類), 名字…])
+  if (fs.existsSync(wVec)) {
+    const VEC = JSON.parse(rd(wVec)).build;
+    const i = sfR.indexOf("function sgBuild("); let d = 0, k = sfR.indexOf("{", i); for (; i >= 0 && k < sfR.length; k++) { if (sfR[k] === "{") d++; else if (sfR[k] === "}" && --d === 0) break; }
+    const dBuild = i >= 0 ? new Function(sfR.slice(i, k + 1) + "\nreturn sgBuild;")() : null;
+    const dOut = (c) => dBuild(c.list.map((name) => ({ name })), c.groups).map((g) => [g.id === "_u" ? null : g.id, ...g.items.map((x) => x.name)]);
+    const wOut = (c) => W.sgBuild(c.list.map((name) => ({ name })), c.groups).map((g) => [g.id, ...g.names]);
+    const dBad = !dBuild ? ["切不出 sgBuild"] : VEC.filter((c) => JSON.stringify(dOut(c)) !== JSON.stringify(c.want)).map((c) => c.case + ":" + JSON.stringify(dOut(c)));
+    const wBad = !W ? ["沒有網頁模組"] : VEC.filter((c) => JSON.stringify(wOut(c)) !== JSON.stringify(c.want)).map((c) => c.case);
+    ok("資料夾 sgBuild:電腦版 stratflags.js 跑共用測資(" + VEC.length + " 組:未分類、失效 id、失效策略名、空資料夾)", VEC.length >= 4 && dBad.length === 0, dBad.join(";"));
+    ok("資料夾 sgBuild:網頁跑同一份共用測資", wBad.length === 0, wBad.join(";"));
+  }
+  const fontOf = (src) => { const m = /--font-emoji: ([^;]+);/.exec(src); return m ? m[1] : null; };
+  const wCss = path.join(webDir, "app", "static", "css", "main.css"), dFont = fontOf(rd(path.join(R, "tokens.css"))), wFont = fs.existsSync(wCss) ? fontOf(rd(wCss)) : null;
+  ok("--font-emoji:電腦版 tokens.css 照 spec 字串", dFont === '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif', dFont);
+  ok("--font-emoji:網頁 main.css 與電腦版同字串", !!wFont && wFont === dFont, wFont);
+  const wPo = path.join(webDir, "app", "translations", "zh", "LC_MESSAGES", "messages.po"), dPo = poMap(path.join(__dirname, "..", "shell", "i18n", "zh.po"));
+  const wStr = fs.existsSync(wPo) ? new Set([...rd(wPo).matchAll(/^msgstr ("(?:[^"\\]|\\.)*")$/gm)].map((m) => JSON.parse(m[1]))) : new Set();
+  const missing = Object.keys(dPo).filter((k) => /^sg\./.test(k)).filter((k) => !wStr.has(dPo[k])).map((k) => k + "=" + dPo[k]);
+  ok("資料夾文案:電腦版 sg.* 的 zh 字(含 72 個 emoji 名)網頁 zh .po 都有同一句", missing.length === 0, missing.slice(0, 12).join(";") + (missing.length > 12 ? " …共 " + missing.length + " 句" : ""));
+}
 // 聊天長網址縮短(spec designer/chat-long-url-2026-10-30 §6):18 條測資逐項相同、上限與兩條 regex 逐值相同
 //   電腦版:tests/check_shell_url_label.js 的 CASES、renderer/md.js 的 URL_LABEL_MAX / URL_WIDE / URL_UNSAFE / URL_LIKE
 //   網頁:tests/url_label_vectors.json 的 url_label([輸入, 期望] 或 {in, expect})、app/static/js/agent/url_label.js

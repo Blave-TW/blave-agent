@@ -6191,6 +6191,8 @@ function envPaintLocalDots() {
   const st = TR_BAGS.local.st, now = Date.now();
   const L = TR_BAGS.local, up = envDotsUp("local", st);
   $("strat-list").querySelectorAll(".strat-row").forEach((b) => { const nm = b.querySelector(".strat-name"); if (nm) envDotInto(nm, up && envRunDot(b.dataset.name, st, now, L.just)); });
+  // 資料夾組尾的綠點與可及名稱跟著列上的點;「建市場資料夾」要等常駐程式回報市場,狀態每輪回來重判(renderer/stratgroups.js)
+  if (typeof sgHeadsSync === "function") { sgHeadsSync($("strat-list")); sgAutoSync($("strat-list"), SF_LOCAL); }
 }
 function envPaint() {
   const cloud = ENV.cur === "cloud", C = TR_BAGS.cloud, kind = envCloudKind(C.st);
@@ -6214,6 +6216,7 @@ function envPaint() {
   const phKey = cloud ? "chat.ph.cloud" : "ws.placeholder";
   if (ENV.sig.ph !== phKey) { ENV.sig.ph = phKey; $("ta").dataset.i18nPh = phKey; $("ta").placeholder = t(phKey); }
   if (cloud) envPaintSide(kind, C.st);
+  if (typeof sgHeadPaint === "function") sgHeadPaint();   // 新增資料夾鈕與上限訊息依目前視角(#strat-head 兩個視角共用)
   const cur = cells[ENV.cur];
   // 視窗標題:{money} 槽放的是交易所名 / 「模擬」(Wei 0.0.6);是空的就連同前面的「 · 」一起省略
   const money = envVenueText(cur.money, cur.venue);
@@ -6326,7 +6329,7 @@ async function cdelRun(x, opener) {
     if (typeof sfCloudForget === "function") sfCloudForget(name);   // 側欄順序 / 旗標裡的這個名字順手清掉(stratflags.js)
     if (typeof sugCollapse === "function") sugCollapse();   // 灰字建議可能正指著這支(句子沒帶策略名可比對):刪了就作廢,同換對話
     const wasHere = !!document.activeElement && !!document.activeElement.closest && !!document.activeElement.closest('.strat-wrap[data-name="' + name + '"]');
-    const rows = [...$("strat-list-cloud").querySelectorAll(".strat-wrap")], at = rows.findIndex((w) => w.dataset.name === name);
+    const rows = [...$("strat-list-cloud").querySelectorAll(":scope > .strat-wrap:not([hidden])")], at = rows.findIndex((w) => w.dataset.name === name);
     const next = at >= 0 ? rows[at + 1] || rows[at - 1] : null;
     if (typeof RPC !== "undefined" && RPC.name === name && typeof rpCloudSelect === "function") rpCloudSelect(null);
     ENV.sig.side = null; trPaint();
@@ -6371,17 +6374,18 @@ function envPaintSide(kind, st) {
   const canDel = kind === "running";
   // 側欄**不放任何 handoff 提示**(Wei 看實機後拍板):等著送上來的那條回頭路住在中欄的「準備好了」卡(規格 §2)
   const sel = typeof RPC !== "undefined" ? RPC.name : null, dotsUp = envDotsUp("cloud", st);
-  const sig = LANG + "|" + JSON.stringify([kind, ho, canDel, sel, [...CDEL.busy.keys()], prefs.flags, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st), dotsUp && envRunDot(x.name, st, Date.now(), TR_BAGS.cloud.just)])]);
+  const sig = LANG + "|" + JSON.stringify([kind, ho, canDel, sel, [...CDEL.busy.keys()], prefs.flags, prefs.groups, list.map((x) => [x.name, x.displayName, envStratWord(x.name, st), dotsUp && envRunDot(x.name, st, Date.now(), TR_BAGS.cloud.just)])]);
   if (ENV.sig.side === sig) return;
   if (typeof sfCloudHold === "function" && sfCloudHold(() => { ENV.sig.side = null; trPaint(); })) return;   // 拖拉中不重建,拖完補畫
   ENV.sig.side = sig;
   // 點一支 → 中欄畫雲端那一份的報告(app.js 的 rpCloudSelect;資料走主行程的 cloudStrategy)。鈕不能包鈕,刪除鈕放在同一個 wrap 裡(同本機清單)
   const box = $("strat-list-cloud");
   // 拖完 / Alt+↑/↓ / 掛旗標後,順序與旗標進了 sig,下一輪輪詢會整個重建:焦點在清單裡就記住是哪一列的哪顆鈕,建完接回去(不掉到 BODY)
-  const ae = document.activeElement, aw = ae && box.contains(ae) ? ae.closest(".strat-wrap") : null;
+  const ae = document.activeElement, aw = ae && box.contains(ae) ? ae.closest(".strat-wrap") : null, ah = ae && box.contains(ae) ? ae.closest(".sg-head") : null;
   const keep = aw ? { name: aw.dataset.name, cls: ae.classList.contains("strat-flagbtn") ? ".strat-flagbtn" : ".strat-row" } : null;
+  const keepHead = ah ? { gid: ah.dataset.gid, cls: ae.classList.contains("sg-more") ? ".sg-more" : ".sg-tog" } : null;   // 組標題也接回(資料夾改了進 sig、會整個重建)
   box.textContent = ""; box.removeAttribute("role");
-  if (!list.length) { box.appendChild(trEl("p", "pf-state", ho ? t("ho.emptyHint") : t("side.cloud.emptyCut1"))); return; }
+  if (!list.length) { box.appendChild(trEl("p", "pf-state", ho ? t("ho.emptyHint") : t("side.cloud.emptyCut1"))); if (typeof sgLayout === "function") sgLayout(box, SF_CLOUD, []); return; }
   list.forEach((x) => {
     const wrap = trEl("div", "strat-wrap cs-row"), row = trEl("button", "strat-row"); row.type = "button"; row.dataset.name = x.name; wrap.dataset.name = x.name;
     if (x.name === sel) row.setAttribute("aria-current", "true");
@@ -6405,7 +6409,9 @@ function envPaintSide(kind, st) {
     }
     box.appendChild(wrap);
   });
+  if (typeof sgLayout === "function") sgLayout(box, SF_CLOUD, list);   // 資料夾:列照組重排、插組標題、組尾綠點(列上的點已畫好)
   if (keep) { const w = [...box.querySelectorAll(":scope > .strat-wrap")].find((r) => r.dataset.name === keep.name), b = w && w.querySelector(keep.cls); if (b) b.focus(); }   // 名字不一定是合法 selector:逐列比
+  if (keepHead) { const h = box.querySelector(':scope > .sg-head[data-gid="' + keepHead.gid + '"]'), b = h && h.querySelector(keepHead.cls); if (b) b.focus(); }
 }
 /* 開通頁(規格 §3;Wei 選定 A 案):電腦版把人帶進雲端方案的主要入口。主鈕**直接開已上線的那一套**——登入走 planLogin、
    啟動走 planAsk(花錢的確認框 cf.*,一步不少)、綁卡外開瀏覽器;這裡不另寫一條開通流程。價格數字來自方案頁同一個來源

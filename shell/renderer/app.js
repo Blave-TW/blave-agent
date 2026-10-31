@@ -1904,9 +1904,11 @@ function stratDelBody(code, id) {
 /* 這一列要沒了(刪掉／資料夾不在):重讀清單,回同一位置的列——原本在它下面那列,沒有就上一列,清單空了 = 新增鈕(同雲端 cdelRun)。
    列是重建的,焦點不接住就掉到 BODY */
 async function stratRefreshAt(name) {
-  const at = Math.max(0, RP.list.findIndex((y) => y.name === name));
+  // 照畫面上看得見的列找位置:有資料夾時顯示順序 ≠ RP.list,收合組的列是 hidden、焦點給它會掉到 body
+  const vis = () => [...$("strat-list").querySelectorAll(".strat-wrap")].filter((w) => !w.hidden);
+  const at = Math.max(0, vis().findIndex((w) => w.dataset.name === name));
   await stratRefresh(false);
-  const rows = $("strat-list").querySelectorAll(".strat-row");
+  const rows = vis().map((w) => w.querySelectorAll(".strat-row")[0]).filter(Boolean);
   return rows[Math.min(at, rows.length - 1)] || $("strat-add");
 }
 // 回合中主行程不給刪(硬鎖,Wei 10-17):✕ 照畫、aria-disabled,點了不刪也不講原因(Wei 10-24)。列多半是回合開始前畫的,鎖要跟著 running 走(本機、雲端兩個清單都掃)
@@ -1917,7 +1919,7 @@ async function stratRefresh(turnEnd) {
   RP.list = await window.blave.listStrategies();
   if (typeof sfApplyOrder === "function") RP.list = sfApplyOrder(RP.list, SF.order);   // 用戶拖過的順序先、其餘照主行程的「最近動過在上」
   const box = $("strat-list");
-  box.querySelectorAll(".strat-wrap").forEach((n) => n.remove());
+  box.querySelectorAll(".strat-wrap").forEach((n) => n.remove());   // 組標題與建市場鈕由 sgLayout 自己清
   $("strat-empty").hidden = RP.list.length > 0;
   RP.list.forEach((x) => {
     const b = document.createElement("button");
@@ -1934,7 +1936,7 @@ async function stratRefresh(turnEnd) {
     });
     // 列尾是刪除鈕,不是 Sharpe(Wei):數字在報告裡就有,清單上要的是能整理。
     // 按鈕不能包按鈕,所以外面多一層 wrap,刪除鈕絕對定位在列尾(同對話清單)。
-    const wrap = document.createElement("div"); wrap.className = "strat-wrap cs-row";
+    const wrap = document.createElement("div"); wrap.className = "strat-wrap cs-row"; wrap.dataset.name = x.name;
     const del = armedDelete(wrap, t(window.blave.platform === "win32" ? "strat.del.win" : "strat.del"), async () => {
       const r = await window.blave.deleteStrategy(x.name);
       if (r === true) { if (typeof sfForget === "function") sfForget(x.name); if (typeof sugCollapse === "function") sugCollapse(); (await stratRefreshAt(x.name)).focus(); return; }
@@ -1951,6 +1953,7 @@ async function stratRefresh(turnEnd) {
     wrap.append(del);
     box.appendChild(wrap);
   });
+  if (typeof sgLayout === "function") sgLayout(box, SF_LOCAL, RP.list);   // 資料夾:列照組重排、插組標題、收合的列 hidden(renderer/stratgroups.js)
   if (typeof envPaintLocalDots === "function") envPaintLocalDots();   // 列是重建的:呼吸點不等下一輪輪詢
   if (typeof libStratChanged === "function") libStratChanged();      // 策略庫列上的「已安裝」跟著本機清單走(renderer/library.js)
   RP.loaded = true; if (typeof wcSync === "function") wcSync();      // 歡迎頁等第一次清單讀完才出現,卡扣掉已裝的(renderer/welcome.js)
@@ -1966,6 +1969,7 @@ async function stratRefresh(turnEnd) {
 }
 
 async function stratSelect(name, force) {
+  if (name && typeof sgReveal === "function") sgReveal("local", name);   // 所在資料夾收合就展開、捲到看得見;在提早 return 之前,同一支收合後再按結果卡也會展開
   if (name === RP.name && !force) return;
   if (name) trLeave();   // 中欄一次只有一個視圖:選了策略就離開自動下單頁(trade.js)
   if (name && typeof libLeave === "function") libLeave("local");   // 策略庫也收(renderer/library.js)
@@ -2089,6 +2093,7 @@ function rpCloudPaint() {
   if (!$("rp").hidden && ENV.cur === "cloud") { rpPaintHead(RPC); rpBodyPaint(RPC); }
 }
 async function rpCloudSelect(name, force) {
+  if (name && typeof sgReveal === "function") sgReveal("cloud", name);
   if (name === RPC.name && !force) return;
   const seq = ++rpcSeq;
   RPC.name = name; RPC.drawn = {}; rpcOwed = false;
@@ -4948,6 +4953,7 @@ function turnEndPre(r) {
   // 這一輪有真的回覆、沒有分類過的錯誤 → 那個 model 是能用的
   if (r.code === 0 && turnGotReply && !faultShown && turnModel) mpMarkWorks(turnModel);
   const rt = typeof resTurnClose === "function" ? resTurnClose() : null;   // 這一輪的結果卡(results.js):策略清單與報告都重讀完、回覆定稿之後才出
+  if (typeof sgEditCommit === "function") sgEditCommit();   // 資料夾編輯列開著:先照失焦送出,不然它擋住下面的 stratRefresh(true) 與結果卡
   stratRefresh(true).catch(() => {}).then(tabBound(() => { if (typeof libTurnEnd === "function") libTurnEnd(); const rx = typeof rptTurnEnd === "function" ? rptTurnEnd(rt) : null; if (rt) resTurnParts(rt, rx); }));   // 策略庫的「用這支」:清單重讀完才知道有沒有多一支;重讀失敗也要收掉 pending
   // 連的是 Codex 但這台電腦上找不到它了:主行程刻意讓這一輪失敗(不會偷偷改跑 Claude)。講人話,不要丟代碼給用戶看
   const exitLine = r.code !== 0 && !stopped

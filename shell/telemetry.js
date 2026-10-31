@@ -265,6 +265,9 @@ const EVENTS = {
     "chat_par2", "chat_par4", "chat_par8", "chat_queued", "queue_cancel", "br_wait", "br_busy", "tab_remote",
     // 0.1.37 設定 › 連結 QR 底下的商店名稱(renderer/app.js mvQr):按了、開系統瀏覽器之前送。掃 QR 在手機上發生、這裡看不到
     "app_link_ios", "app_link_android",
+    // 0.1.38 側欄策略資料夾(renderer/stratgroups.js、stratflags.js):操作成功才送,不帶資料夾名、策略名或哪個 emoji;
+    // spec 原名 strat_folder_* 超過 prop VARCHAR(16),縮成 sfolder_*。api 白名單同順序,接在 0.1.37 的 app_link_android 之後
+    "sfolder_create", "sfolder_auto", "sfolder_rename", "sfolder_emoji", "sfolder_reorder", "sfolder_delete", "sfolder_toggle", "sfolder_move",
     // 0.1.39 建議下一步點了直接送(同 api,api 先上):點托盤直接送出的那輪,還沒回覆、沒工具收據就被停止(renderer/suggest.js sugUndo)
     "suggest_undo"] },
 };

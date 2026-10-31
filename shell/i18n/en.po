@@ -3776,6 +3776,325 @@ msgstr "Purple"
 msgid "side.moved"
 msgstr "Moved to position {n}"
 
+# 側欄策略資料夾(spec strategy-sidebar-folders §14);emoji 名稱 key 是碼點,選擇器每格的 aria-label 與 title
+msgid "sg.add"
+msgstr "New folder"
+
+msgid "sg.newName"
+msgstr "New folder"
+
+msgid "sg.uncat"
+msgstr "Uncategorized"
+
+msgid "sg.auto"
+msgstr "Group by market"
+
+msgid "sg.max"
+msgstr "Up to 20 folders"
+
+msgid "sg.rename"
+msgstr "Rename"
+
+msgid "sg.emoji"
+msgstr "Change icon"
+
+msgid "sg.up"
+msgstr "Move up"
+
+msgid "sg.down"
+msgstr "Move down"
+
+msgid "sg.del"
+msgstr "Delete folder"
+
+msgid "sg.emojiNone"
+msgstr "Remove icon"
+
+msgid "sg.cat.common"
+msgstr "Common"
+
+msgid "sg.cat.market"
+msgstr "Markets"
+
+msgid "sg.cat.strategy"
+msgstr "Strategy"
+
+msgid "sg.cat.animal"
+msgstr "Animals"
+
+msgid "sg.cat.nature"
+msgstr "Nature"
+
+msgid "sg.cat.object"
+msgstr "Objects"
+
+msgid "sg.delTitle"
+msgstr "Delete “{name}”?"
+
+msgid "sg.delBody"
+msgstr "Its strategies ({n}) move to Uncategorized."
+
+msgid "sg.delOk"
+msgstr "Delete"
+
+msgid "sg.moved"
+msgstr "Moved to {name}"
+
+msgid "sg.headAria"
+msgstr "{name}, strategies: {n}"
+
+msgid "sg.headLive"
+msgstr ", live: {m}"
+
+msgid "sg.more"
+msgstr "{name} options"
+
+msgid "sg.nameAria"
+msgstr "Folder name"
+
+msgid "sg.moveTo"
+msgstr "Move to {name}"
+
+msgid "sg.moveOut"
+msgstr "Remove from folder"
+
+msgid "sg.mkt.crypto"
+msgstr "Crypto"
+
+msgid "sg.mkt.txf"
+msgstr "TAIEX Futures"
+
+msgid "sg.mkt.tw"
+msgstr "TW Stocks"
+
+msgid "sg.mkt.us"
+msgstr "US Stocks"
+
+msgid "sg.mkt.stockFut"
+msgstr "Stock Futures"
+
+msgid "sg.mkt.global"
+msgstr "Global Futures"
+
+msgid "sg.mkt.mixed"
+msgstr "Mixed"
+
+msgid "sg.e.2B50"
+msgstr "Star"
+
+msgid "sg.e.1F525"
+msgstr "Fire"
+
+msgid "sg.e.1F4A1"
+msgstr "Light bulb"
+
+msgid "sg.e.1F3AF"
+msgstr "Bullseye"
+
+msgid "sg.e.1F9EA"
+msgstr "Test tube"
+
+msgid "sg.e.1F680"
+msgstr "Rocket"
+
+msgid "sg.e.1F48E"
+msgstr "Gem"
+
+msgid "sg.e.1F3C6"
+msgstr "Trophy"
+
+msgid "sg.e.1F4CC"
+msgstr "Pushpin"
+
+msgid "sg.e.1F516"
+msgstr "Bookmark"
+
+msgid "sg.e.1F4E6"
+msgstr "Package"
+
+msgid "sg.e.1F9E9"
+msgstr "Puzzle piece"
+
+msgid "sg.e.1F4C8"
+msgstr "Chart going up"
+
+msgid "sg.e.1F4C9"
+msgstr "Chart going down"
+
+msgid "sg.e.1F4CA"
+msgstr "Bar chart"
+
+msgid "sg.e.1F4B9"
+msgstr "Chart with yen"
+
+msgid "sg.e.1F4B0"
+msgstr "Money bag"
+
+msgid "sg.e.1F4B5"
+msgstr "Dollar banknote"
+
+msgid "sg.e.1F4B4"
+msgstr "Yen banknote"
+
+msgid "sg.e.1F4B6"
+msgstr "Euro banknote"
+
+msgid "sg.e.1F4B7"
+msgstr "Pound banknote"
+
+msgid "sg.e.1F3E6"
+msgstr "Bank"
+
+msgid "sg.e.1F310"
+msgstr "Globe with meridians"
+
+msgid "sg.e.1F30F"
+msgstr "Globe showing Asia"
+
+msgid "sg.e.23F0"
+msgstr "Alarm clock"
+
+msgid "sg.e.23F3"
+msgstr "Hourglass"
+
+msgid "sg.e.1F501"
+msgstr "Repeat"
+
+msgid "sg.e.1F504"
+msgstr "Refresh"
+
+msgid "sg.e.1F500"
+msgstr "Shuffle"
+
+msgid "sg.e.1F50D"
+msgstr "Magnifying glass"
+
+msgid "sg.e.1F9ED"
+msgstr "Compass"
+
+msgid "sg.e.1F52D"
+msgstr "Telescope"
+
+msgid "sg.e.1F30A"
+msgstr "Wave"
+
+msgid "sg.e.1F3B2"
+msgstr "Die"
+
+msgid "sg.e.1F9E0"
+msgstr "Brain"
+
+msgid "sg.e.1F52C"
+msgstr "Microscope"
+
+msgid "sg.e.1F402"
+msgstr "Ox"
+
+msgid "sg.e.1F43B"
+msgstr "Bear"
+
+msgid "sg.e.1F433"
+msgstr "Whale"
+
+msgid "sg.e.1F988"
+msgstr "Shark"
+
+msgid "sg.e.1F985"
+msgstr "Eagle"
+
+msgid "sg.e.1F98A"
+msgstr "Fox"
+
+msgid "sg.e.1F989"
+msgstr "Owl"
+
+msgid "sg.e.1F422"
+msgstr "Turtle"
+
+msgid "sg.e.1F407"
+msgstr "Rabbit"
+
+msgid "sg.e.1F41D"
+msgstr "Bee"
+
+msgid "sg.e.1F419"
+msgstr "Octopus"
+
+msgid "sg.e.1F984"
+msgstr "Unicorn"
+
+msgid "sg.e.1F331"
+msgstr "Seedling"
+
+msgid "sg.e.1F332"
+msgstr "Evergreen tree"
+
+msgid "sg.e.1F335"
+msgstr "Cactus"
+
+msgid "sg.e.1F340"
+msgstr "Four leaf clover"
+
+msgid "sg.e.1F338"
+msgstr "Cherry blossom"
+
+msgid "sg.e.1F319"
+msgstr "Crescent moon"
+
+msgid "sg.e.26C5"
+msgstr "Sun behind cloud"
+
+msgid "sg.e.1F308"
+msgstr "Rainbow"
+
+msgid "sg.e.1F30B"
+msgstr "Volcano"
+
+msgid "sg.e.1F31E"
+msgstr "Sun with face"
+
+msgid "sg.e.2614"
+msgstr "Umbrella"
+
+msgid "sg.e.1F341"
+msgstr "Maple leaf"
+
+msgid "sg.e.2693"
+msgstr "Anchor"
+
+msgid "sg.e.1F511"
+msgstr "Key"
+
+msgid "sg.e.1F527"
+msgstr "Wrench"
+
+msgid "sg.e.1F528"
+msgstr "Hammer"
+
+msgid "sg.e.1F9F0"
+msgstr "Toolbox"
+
+msgid "sg.e.1F9F2"
+msgstr "Magnet"
+
+msgid "sg.e.1F4DA"
+msgstr "Books"
+
+msgid "sg.e.1F4DD"
+msgstr "Memo"
+
+msgid "sg.e.1F4CE"
+msgstr "Paperclip"
+
+msgid "sg.e.1F381"
+msgstr "Gift"
+
+msgid "sg.e.1F3A8"
+msgstr "Palette"
+
+msgid "sg.e.1F388"
+msgstr "Balloon"
+
 msgid "rp.noBt"
 msgstr "This strategy has no backtest results yet, so only the code is shown. To see the numbers, ask the agent on the right to run a backtest."
 
