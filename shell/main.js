@@ -594,7 +594,7 @@ function relay() {
   return _relay;
 }
 // 給畫面的只有開關、同步進度與數字,沒有憑證、沒有對話內容
-const relayStateOut = (st) => ({ visible: st.visible, on: st.on, pending: st.pending, signedIn: st.signedIn, sync: st.sync, mobileTurns: st.mobileTurns, queued: st.queued });
+const relayStateOut = (st) => ({ visible: st.visible, on: st.on, pending: st.pending, signedIn: st.signedIn, sync: st.sync, mobileTurns: st.mobileTurns, queued: st.queued, phoneSids: st.phoneSids, pairSeq: st.pairSeq });
 /* 手機那一輪用電腦當下存的引擎與型號(手機 MVP 不給選):照設定頁選擇器存的那一組;沒有就交給 turnModelArgs 的預設 */
 function relayTurnArgs() {
   const kind = (loadConnection() || {}).kind, slot = (loadModelPrefs() || {})[kind] || {};
@@ -4171,7 +4171,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   unsavedTitle: "Leave without saving?", unsavedBody: "Your Portfolio changes will be lost.", unsavedGo: "Leave",
   unsavedNote: "Unsaved Portfolio changes will be lost.",
   hidden: WIN ? "Blave is still running in the system tray." : "Blave is still running in the menu bar.",
-  phoneHiddenTitle: "Phone chat is on", phoneHidden: WIN ? "Blave stays in the system tray so your phone can reach it. Quit from the tray icon." : "Blave stays in the menu bar so your phone can reach it. Quit from the menu bar or the Dock.",
+  phoneHiddenTitle: "Phone chat is on", phoneHidden: WIN ? "Blave is still open, so your phone can reach it. To quit, use the system tray icon." : "Blave is still open, so your phone can reach it. To quit, use the menu bar or the Dock.",
   updateReady: "Restart to finish updating", restarting: "Restarting…",
   ev_halt: "Trading was paused automatically", ev_halt_n: "No orders at all — exits and stops won’t run. Open Blave to check.",
   ev_order_error: "Order failed", ev_order_error_n: "The exchange rejected an order. Open Blave to check.",

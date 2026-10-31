@@ -167,6 +167,12 @@ for (const lang of ["zh", "en"]) {
   ok(`交易歷史成交狀態 ${lang} 兩邊逐字一致(${Object.keys(FILL_PAIRS).length} 句)`, bad.length === 0,
     bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
+// 手機對話(mchat-phone-surfaces-2026-10-31 §5):手機送的那句下面的「來自手機」,電腦版 addHistoryYou 與網頁工作頁同一句
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  ok(`「來自手機」${lang} 兩邊逐字一致(chat.fromPhone ↔ workspace_cs_from_phone)`, typeof dp["chat.fromPhone"] === "string" && dp["chat.fromPhone"] === wp.workspace_cs_from_phone,
+    "chat.fromPhone「" + dp["chat.fromPhone"] + "」 vs workspace_cs_from_phone「" + wp.workspace_cs_from_phone + "」");
+}
 // 對話分頁(0.1.37;技術方案 §1.4、§4):對著雲端主機、名額滿了的排隊行與〔取消排隊〕,電腦版 chattabs.js tabsQueued 與網頁 csShowQueued 同一句;
 // 歷史清單的狀態字(回覆中／排隊中／做完，還沒看)與分組(今天／昨天／更早)也跟網頁 workspace_cs_* 同一組
 const TAB_PAIRS = { "tabs.queue": "workspace_cs_queue_line", "tabs.queueCancel": "workspace_cs_cancel_queued", "tabs.queueCancelTitle": "workspace_cs_cancel_queued_title", "tabs.st.queued": "workspace_cs_queued",

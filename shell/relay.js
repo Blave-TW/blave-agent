@@ -140,7 +140,8 @@ function createRelay(opts) {
   function changed() { try { if (opts.onChange) opts.onChange(state()); } catch (_) { /* 畫面壞掉不擋 */ } }
   function setFlag(v) { if (flag === v) return; flag = v; if (!v) stopPoll(); changed(); }
   const live = () => flag && load().on && !load().pendingDisable && !!creds() && !stopped;
-  function mobileActiveSync() { pingSync(); try { if (opts.onMobileActive) opts.onMobileActive(active.size > 0 || [...queue.values()].some((q) => q.length)); } catch (_) { /* 防睡壞掉不擋 */ } }
+  // 也通知畫面:分頁上的手機記號跟著每條對話的手機回合數(state().phoneSids)
+  function mobileActiveSync() { pingSync(); try { if (opts.onMobileActive) opts.onMobileActive(active.size > 0 || [...queue.values()].some((q) => q.length)); } catch (_) { /* 防睡壞掉不擋 */ } changed(); }
   function pingSync() {
     const need = !stopped && [...active.values()].some((a) => !a.claiming);
     if (need && !pingTimer) {
@@ -697,7 +698,7 @@ function createRelay(opts) {
   // api 的回應只在 relay.js 裡讀;回給畫面的一律另外組白名單欄位
 const okBody = (r) => (r.status === 200 && r.body ? { ok: true, ...r.body } : { ok: false, code: /^[A-Z_]{2,40}$/.test((r.body && r.body.error_code) || "") ? r.body.error_code : r.status ? "FAILED" : "OFFLINE" });
   /* 出碼之後 10 分鐘內每 5 秒看一次清單,多出一支就是配對完成(埋點 phone_pair;api 不推通知過來) */
-  let pairWatch = null;
+  let pairWatch = null, pairSeq = 0;   // pairSeq:配對成功一次加一,畫面靠它收起配對面板
   async function pairCode() {
     const before = await phones();
     const r = okBody(await call(EP.pairCode));
@@ -707,7 +708,7 @@ const okBody = (r) => (r.status === 200 && r.body ? { ok: true, ...r.body } : { 
     pairWatch = setInterval(async () => {
       if (clock() > until || stopped) { clearInterval(pairWatch); pairWatch = null; return; }
       const now = await phones();
-      if (now.ok && now.phones.some((p) => !had.has(p.device_id))) { clearInterval(pairWatch); pairWatch = null; track("phone_pair"); changed(); }
+      if (now.ok && now.phones.some((p) => !had.has(p.device_id))) { clearInterval(pairWatch); pairWatch = null; pairSeq++; track("phone_pair"); changed(); }
     }, 5000);
     if (pairWatch.unref) pairWatch.unref();
     return { ok: true, code: r.code, expires_in: Number(r.expires_in) || 600 };
@@ -741,7 +742,14 @@ const okBody = (r) => (r.status === 200 && r.body ? { ok: true, ...r.body } : { 
     const s = load();
     return { visible: flag, on: s.on, pending: s.pendingDisable, signedIn: !!creds(),
       sync: { running: sync.running, done: sync.done, total: sync.total, error: sync.error, synced: s.synced },
-      mobileTurns: active.size, queued: [...queue.values()].reduce((n, q) => n + q.length, 0) };
+      mobileTurns: active.size, queued: [...queue.values()].reduce((n, q) => n + q.length, 0), phoneSids: phoneSids(), pairSeq };
+  }
+  // 每條對話有幾句手機的話在跑或排隊(sid → 數);只有 sid 與數字,沒有內容
+  function phoneSids() {
+    const out = {};
+    for (const sid of active.keys()) out[sid] = 1;
+    for (const [sid, q] of queue) if (q.length) out[sid] = (out[sid] || 0) + q.length;
+    return out;
   }
   return { start, tick, setOn, retry, signOut, quit, onTurn, image, sessionDeleted, state, pairCode, phones, grant, revoke, actions,
     isOn: () => load().on, isVisible: () => flag, mobileLive: () => active.size > 0,

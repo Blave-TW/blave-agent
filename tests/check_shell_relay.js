@@ -23,7 +23,7 @@ const keepAlive = setInterval(() => {}, 1000);
 
 function rig(o = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "relay-")), stateDir = path.join(dir, "state");
-  const calls = [], polls = [], started = [], stopped = [], removed = [], tracked = [], origins = {};
+  const calls = [], polls = [], started = [], stopped = [], removed = [], tracked = [], changes = [], origins = {};
   let flag = o.flag !== false, serverOn = o.serverOn !== false, restarting = false;
   const busy = new Set(o.busy || []);
   const resp = Object.assign({}, o.resp || {});
@@ -53,9 +53,9 @@ function rig(o = {}) {
     },
     turnArgs: () => ({ model: "m1" }), known: () => ["envSecretVal99"],
     origins: { add: (sid, rows) => { origins[sid] = (origins[sid] || []).concat(rows); }, get: (sid) => new Map((origins[sid] || []).map((x) => [x.id, x.mid])) },
-    track: (n) => tracked.push(n), now: o.now, pingMs: o.pingMs, claimDeadlineMs: o.claimDeadlineMs,
+    track: (n) => tracked.push(n), onChange: (st) => changes.push(st), now: o.now, pingMs: o.pingMs, claimDeadlineMs: o.claimDeadlineMs,
   });
-  return { r, dir, stateDir, calls, polls, started, stopped, removed, tracked, origins, busy, sessions, resp,
+  return { r, changes, dir, stateDir, calls, polls, started, stopped, removed, tracked, origins, busy, sessions, resp,
     feed: (msgs, controls, extra) => { const v = { status: 200, body: Object.assign({ enabled: true, messages: msgs || [], controls: controls || [], server_time: 1 }, extra || {}) }; if (pollWaiter) { const w = pollWaiter; pollWaiter = null; w(v); } else polls.push(v); },
     setFlag: (v) => { flag = v; }, setServerOn: (v) => { serverOn = v; }, setRestarting: (v) => { restarting = v; },
     of: (ep) => calls.filter((c) => c[0] === ep).map((c) => c[1]),
@@ -134,7 +134,9 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     m.feed([msg("desktop-q0000001", "msg0000000a"), msg("desktop-q0000001", "msg0000000b"), msg("desktop-q0000001", "msg0000000c")]); await wait(30);
     const q = m.chunks().filter((c) => c.type === "queued").map((c) => c.message_id);
     ok("3 同一條在跑(電腦前的人):三句都排隊、回 queued、記 phone_turn_q、不開跑", q.join() === "msg0000000a,msg0000000b,msg0000000c" && m.started.length === 0 && m.tracked.filter((x) => x === "phone_turn_q").length === 3);
+    const sids3 = JSON.stringify(m.r.state().phoneSids), seen3 = m.changes.length;
     m.feed([], [{ type: "withdraw", session_id: "desktop-q0000001", message_id: "msg0000000b" }]); await wait(30);
+    ok("3 分頁上的手機記號:state().phoneSids 是每條對話手機那幾句(排隊三句 → 3,撤回一句 → 2),只有 sid 與數字;排隊變了就通知畫面(onChange)", sids3 === '{"desktop-q0000001":3}' && JSON.stringify(m.r.state().phoneSids) === '{"desktop-q0000001":2}' && seen3 > 0 && m.changes.length > seen3);
     ok("3 撤回排隊中的那句:回 cancelled{message_ids}", m.chunks().some((c) => c.type === "cancelled" && JSON.stringify(c.message_ids) === '["msg0000000b"]'));
     m.resp[RL.EP.report] = { status: 200, body: { results: [], interrupt: [], cancel: ["msg0000000c"] } };
     m.r.onTurn("desktop-q0000001", "turn-event", { type: "text", text: "電腦前的人那一輪" });   // 不是手機的那輪:不轉
