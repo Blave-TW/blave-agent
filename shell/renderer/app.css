@@ -1236,14 +1236,16 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
   font-size: 13px; font-weight: 600; color: var(--ink);
 }
 /* ── 對話分頁列(spec chat-tabs-2026-10-29 §2;mockup chat-tabs-unread-v2 品牌橘那一節)──
-   [☰ 28][提示][分頁…][+N ▾][＋ 28],列高 44、左右內距 8、列內間距 4、分頁之間 2 */
-.chat-head:has(#cs-tabs) { height: 44px; padding: 0 var(--space-8); position: relative; }
+   [☰ 28][提示][分頁…][+N ▾][＋ 28],列高 52(對齊中欄 .tb)、左右內距 8、列內間距 4、分頁之間 2 */
+.chat-head:has(#cs-tabs) { height: 52px; padding: 0 var(--space-8); position: relative; }
 .cs-hint { flex: none; height: 28px; padding: 0 var(--space-6); border-radius: var(--radius-sm); font-size: 12px; color: var(--ink-2); white-space: nowrap; }
 .cs-hint:hover { background: var(--surface-row-hover); color: var(--ink); }
 .cs-tabs { flex: 1; min-width: 0; height: 44px; display: flex; align-items: center; gap: var(--space-2); overflow: hidden; }   /* 44 高:× 的熱區往上下擴到 44 不被 overflow 裁掉;分頁本身 32 */
 .cs-tabs .tab { flex: 0 1 168px; min-width: 88px; height: 32px; display: flex; align-items: center; gap: var(--space-6);
   padding: 0 var(--space-8); border-radius: var(--radius-sm); color: var(--ink-2); font-size: 13px; font-weight: 400; position: relative; cursor: default;
   transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+/* 分頁與 × 是 div／span,吃不到上面 button 那條 no-drag:蓋在 52px 拖曳條上會被當成拖視窗(打包版點不動)。分頁之間的空白照舊拖得動 */
+.cs-tabs .tab, .cs-tabs .tab-x, .cs-tabs .tab-x::before, .cs-menu { -webkit-app-region: no-drag; }
 .cs-tabs .tab:hover { background: var(--surface-row-hover); color: var(--ink); }
 .cs-tabs .tab[aria-selected="true"] { background: var(--surface-muted); color: var(--ink); font-weight: 600; min-width: 128px; padding-right: var(--space-4); }
 .cs-tabs .tab.attn { color: var(--ink); font-weight: 600; }
@@ -1275,7 +1277,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cs-more.attn { color: var(--ink); font-weight: 600; }
 .cs-more .tab-lead { width: auto; }
 /* +N 選單:Dropdown menu recipe(Panel surface-card、shadow md、radius lg、內距 6;觸發器下方 8、右邊夾回 8);Items 6px 10px、radius xs */
-.cs-menu { position: absolute; z-index: 9; top: 44px; right: 8px; width: 280px; max-width: calc(100% - 16px); max-height: 284px; overflow-y: auto;
+.cs-menu { position: absolute; z-index: 9; top: 48px; right: 8px; width: 280px; max-width: calc(100% - 16px); max-height: 284px; overflow-y: auto;
   padding: 6px; border-radius: var(--radius-lg); background: var(--surface-card); box-shadow: var(--shadow-md); }
 .cs-menu .mi { display: flex; align-items: center; gap: var(--space-6); width: 100%; min-height: 36px; padding: 6px 10px; border-radius: var(--radius-xs); font-size: 13px; color: var(--ink-2); text-align: left; }
 .cs-menu .mi:hover { background: var(--surface-muted); color: var(--ink); }
@@ -1285,7 +1287,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cs-menu .mi.attn .mi-t { color: var(--ink); font-weight: 600; }
 .cs-menu .mi-s.s-strong { color: var(--ink); font-weight: 600; }
 .cs-menu .mi-s.s-soft { color: var(--ink-2); }
-.tabs-tip { top: 44px; bottom: auto; left: 8px; display: block; pointer-events: none; }
+.tabs-tip { top: 48px; bottom: auto; left: 8px; display: block; pointer-events: none; }
 .tabs-tip[hidden] { display: none; }
 .tabs-tip b { display: block; color: var(--ink); font-weight: 600; }
 /* 每條對話的容器(全放在 #chat-scroll 裡,同時只顯示一個) */

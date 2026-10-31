@@ -212,7 +212,7 @@ ok("共用畫面背景期間不畫:捲動、讀屏、送出鈕、托盤;輸入�
   ok("歷史搜尋格的焦點是灰階框(不吃系統強調色)", css.includes(".cs-search:focus { outline: none; border-color: var(--ink); }"));
   ok("歷史列:等你回覆／沒做完／做完還沒看接「· 時間」(mono)", /if \(st\.kind !== "run" && st\.kind !== "queued"\) \{ item\.classList\.add\("is-attn"\); const at = document\.createElement\("span"\); at\.className = "mono"; at\.textContent = csTime\(m\.last\); meta\.append\(" · ", at\); \}/.test(app));
   ok("分頁名稱(讀屏)不帶會凍住的時長;tooltip 每秒跟著跳、Esc 隨時收得掉、離分頁 6px;× 熱區 28×44", /const word = st === "run" \? t\("tabs\.st\.running"\) : tabsStateWord\(T, st\);/.test(ct) && /tabsTipTick\(\);\n\}, 1000\);/.test(ct)
-    && /window\.addEventListener\("keydown", \(e\) => \{\n  if \(e\.key !== "Escape" \|\| e\.isComposing \|\| e\.keyCode === 229\) return;\n  const tip = \$\("tabs-tip"\); if \(!tip \|\| tip\.hidden\) return;\n  tip\.hidden = true; tip\.dataset\.off = "1"; e\.preventDefault\(\); e\.stopPropagation\(\);\n\}, true\);/.test(ct) && css.includes(".tabs-tip { top: 44px;") && /\.cs-tabs \{[^}]*height: 44px;[^}]*align-items: center;/.test(css) && css.includes("inset: -12px -4px;"));
+    && /window\.addEventListener\("keydown", \(e\) => \{\n  if \(e\.key !== "Escape" \|\| e\.isComposing \|\| e\.keyCode === 229\) return;\n  const tip = \$\("tabs-tip"\); if \(!tip \|\| tip\.hidden\) return;\n  tip\.hidden = true; tip\.dataset\.off = "1"; e\.preventDefault\(\); e\.stopPropagation\(\);\n\}, true\);/.test(ct) && css.includes(".tabs-tip { top: 48px;") && /\.cs-tabs \{[^}]*height: 44px;[^}]*align-items: center;/.test(css) && css.includes("inset: -12px -4px;"));
 }
 // 程式稽核 s2 P3
 ok("+N 選單開著:每秒只換時長字,不重建(焦點不掉);整列重建時照 sid 把焦點還回分頁或選單列", /if \(!\$\("cs-menu"\)\.hidden\) tabsMenuTick\(\);/.test(ct) && /function tabsMenuTick\(\) \{/.test(ct)
@@ -237,6 +237,30 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
   };
   const a = m && run(true), b = m && run(false);
   ok("分頁 tooltip 開著:Esc 只收 tooltip、escTop 收不到這一下;沒開時 Esc 照給 escTop", !!m && a.tipHidden && a.escTop === 0 && b.escTop === 1, { a, b });
+}
+// ── 分頁列蓋在 52px 拖曳條(.ws-bar,drag)底下:只有 button/textarea/input/a 有全域 no-drag,其他可點的元素自己要帶,
+//    否則打包版點下去變成拖視窗(開發版看不出來;開窗段測不到 drag region,只能靜態查)。
+//    列舉:#cs-head 裡的靜態元素 + chattabs.js 每個函式裡 createElement 出來、掛了 click／auxclick／mousedown 的元素
+{ const css = read("app.css"), html = read("index.html"), js = ["chattabs.js", "app.js"].map(read).join("\n");
+  const NATIVE = new Set(["button", "textarea", "input", "a"]);
+  const noDrag = [];
+  for (const m of css.matchAll(/([^{}]+)\{[^}]*-webkit-app-region: no-drag/g)) for (const sel of m[1].replace(/\/\*[\s\S]*?\*\//g, "").split(",")) noDrag.push(sel.trim().split(/\s+/).pop());
+  const covered = (cls) => noDrag.includes("." + cls);
+  const clickable = [];
+  const head = html.slice(html.indexOf('<div class="chat-head" id="cs-head">'), html.indexOf('id="tabs-tip"'));
+  for (const m of head.matchAll(/<(\w+) class="([^"]+)"(?: id="([\w-]+)")?/g)) {
+    const [, tag, cls, id] = m;
+    if (id && new RegExp('\\$\\("' + id + '"\\)\\.addEventListener\\("(click|auxclick|mousedown)"').test(js)) clickable.push({ where: "index.html#" + id, tag, cls: cls.split(" ")[0] });
+  }
+  for (const fn of ct.split(/\nfunction /)) {
+    const made = {};
+    for (const m of fn.matchAll(/(?:const|let) (\w+) = document\.createElement\("(\w+)"\); \1\.className = "([\w-]+)/g)) made[m[1]] = { tag: m[2], cls: m[3] };
+    for (const m of fn.matchAll(/\b(\w+)\.addEventListener\("(click|auxclick|mousedown)"/g)) if (made[m[1]]) clickable.push({ where: "chattabs.js " + fn.slice(0, fn.indexOf("(")), ...made[m[1]] });
+  }
+  const bad = clickable.filter((c) => !NATIVE.has(c.tag) && !covered(c.cls));
+  ok("列舉到分頁列的可點元素(分頁、×、☰ 提示、+N、新對話都在)", ["tab", "tab-x", "cs-hint", "cs-more", "cs-btn"].every((c) => clickable.some((x) => x.cls === c)), clickable);
+  ok("分頁列裡不是 button/textarea/input/a 的可點元素都帶 no-drag(不然打包版點不動)", bad.length === 0, bad);
+  ok("分頁與 × 的熱區(::before)帶 no-drag;+N 選單整塊也是", covered("tab") && covered("tab-x") && noDrag.includes(".tab-x::before") && covered("cs-menu"));
 }
 console.log(red ? `\n${red} 紅` : "\nALL PASS");
 process.exit(red ? 1 : 0);
