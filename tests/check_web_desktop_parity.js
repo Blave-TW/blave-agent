@@ -543,15 +543,16 @@ for (const lang of ["zh", "en"]) {
     const ONLY_DESK = { setupWait: "豁免 3:開通中,網頁的群益與統一都給〔繼續〕(網頁的開通清單兩家都在框裡);電腦版群益本機入口 CAPL_LOCAL_ON 關著、沒有那份清單,只留狀態詞" };
     const ONLY_WEB = {};
     // 態一樣但有一格刻意不同(附原因)
-    const CELL_EXEMPT = { "start.note": "豁免 6(待網頁補):帳本上還有 Blave 部位時電腦版頁首出 tr.startOnBook 那句(鈕照可按),網頁頁首 start 態目前不出原因句——網頁 pfStartOnBook 已有判準,補上就拿掉這一條" };
+    const CELL_EXEMPT = {};
     const dk = Object.keys(D), wk = Object.keys(W);
     ok("策略頁頭:態的集合兩邊一樣(只有一邊有的都在豁免表)", dk.filter((k) => !(k in W) && !ONLY_DESK[k]).length === 0 && wk.filter((k) => !(k in D) && !ONLY_WEB[k]).length === 0,
       "只在電腦版:" + dk.filter((k) => !(k in W) && !ONLY_DESK[k]).join(",") + " 只在網頁:" + wk.filter((k) => !(k in D) && !ONLY_WEB[k]).join(","));
     Object.keys(ONLY_DESK).forEach((k) => ok("策略頁頭豁免還成立:" + k + " 只在電腦版", (k in D) && !(k in W), ONLY_DESK[k]));
-    // 動態槽:電腦版 "$base" ＝ 網頁 "base";"$go"(#tr-go 同一個鈕字)＝ 網頁 pfStart;"$off"(選擇策略框那一列的原因)＝ 網頁 "lock"
+    // 動態槽:電腦版 "$base" ＝ 網頁 "base";"$go"(#tr-go 同一個鈕字)＝ 網頁 pfStart;"$off"(選擇策略框那一列的原因)＝ 網頁 "lock";
+    // start 態的原因句 "$go"(帳本上還有 Blave 部位時的 tr.startOnBook)＝ 網頁 "onBook"(pfStartOnBook),兩句逐字比
     const btnText = (d, w) => d.key === "$base" ? (w === "base" && dT("sp.btn") === wT("pfNav") && dT("po.add") === wT("poAdd"))
       : d.key === "$go" ? (w === "pfStart" && dT("tr.start") === wT("pfStart")) : !!dT(d.key) && dT(d.key) === wT(w);
-    const noteOk = (d, w) => d === "$off" ? w === "lock" : d === "$go" ? !w : !!d && !!w && dT(d) === wT(w);
+    const noteOk = (d, w) => d === "$off" ? w === "lock" : d === "$go" ? w === "onBook" && !!dT("tr.startOnBook") && dT("tr.startOnBook") === wT("pfStartOnBook") : !!d && !!w && dT(d) === wT(w);
     const bad = [];
     dk.filter((k) => k in W).forEach((k) => {
       const d = D[k], w = W[k], db = d.btn;
@@ -567,7 +568,8 @@ for (const lang of ["zh", "en"]) {
       Object.keys(cells).forEach((c) => { if (!cells[c] && !CELL_EXEMPT[k + "." + c]) bad.push(k + "." + c + " 電腦版 " + JSON.stringify(d) + " 網頁 " + JSON.stringify(w)); });
     });
     ok("策略頁頭:每一態的主鈕(有無／填色描邊／停用／動作)、記號、狀態詞、原因句兩邊同一份(zh 原文逐字)", bad.length === 0, bad.join(";"));
-    ok("策略頁頭豁免還成立:start.note 只有電腦版有", D.start && D.start.note === "$go" && W.start && !W.start.note, CELL_EXEMPT["start.note"]);
+    ok("策略頁頭:start 態帳本上還有部位的原因句兩邊同一句(電腦版 tr.startOnBook、網頁 pfStartOnBook,zh 逐字)", D.start && D.start.note === "$go" && W.start && W.start.note === "onBook"
+      && !!dT("tr.startOnBook") && dT("tr.startOnBook") === wT("pfStartOnBook"), dT("tr.startOnBook") + " vs " + wT("pfStartOnBook"));
     ok("策略頁頭:記號同一句(電腦版 po.live、網頁 poLive)", !!dT("po.live") && dT("po.live") === wT("poLive"), dT("po.live") + " vs " + wT("poLive"));
     // 判準層的豁免(表上看不到,驗兩邊的原文還是那樣)
     const spv = (() => { const i = hoSrc.length ? fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "portfolio.js"), "utf8") : ""; const a = i.indexOf("function spView("); return a < 0 ? "" : i.slice(a, i.indexOf("\nfunction ", a + 1)); })();
