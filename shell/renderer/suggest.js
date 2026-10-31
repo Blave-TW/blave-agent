@@ -44,7 +44,8 @@ function sugTurnEnd(ok) {
   SUG.timer = setTimeout(tabBound(() => {
     SUG.timer = null;
     if (running) return;   // 停一拍之間又送出了一句:這句已經過期
-    Object.assign(SUG, { text: p.text, kind: p.kind, shownOnce: false, used: false, gone: false, files: attachedFiles.length, filledText: null });
+    const files = typeof tabBg === "function" && tabBg() ? CS.loaded.composer.files : attachedFiles;   // 背景分頁:輸入框的附件是眼前那條的,它自己的在 composer
+    Object.assign(SUG, { text: p.text, kind: p.kind, shownOnce: false, used: false, gone: false, files: files.length, filledText: null });
     sugPaint();
   }), motionBaseMs());
 }
@@ -60,11 +61,13 @@ function sugPaint() {
   SUG.files = attachedFiles.length;
   const show = sugPresent(), tray = $("sug-tray");
   if (show) { $("sug-tray-t").textContent = SUG.text; $("sug-tray-btn").title = SUG.text; }
-  if (tray.hidden !== show) return;
-  // 托盤長高 36:訊息區原本在底部就捲回底部,不然回答尾段會被壓住(§1.4)
-  const box = $("chat-scroll"), atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 4;
-  tray.hidden = !show;
-  if (atEnd) scrollChat(true);   // 走 app.js 的捲到底:chatStick／chatTop 跟著同步
+  if (tray.hidden === show) {
+    // 托盤長高 36:訊息區原本在底部就捲回底部,不然回答尾段會被壓住(§1.4)
+    const box = $("chat-scroll"), atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 4;
+    tray.hidden = !show;
+    if (atEnd) scrollChat(true);   // 走 app.js 的捲到底:chatStick／chatTop 跟著同步
+  }
+  // 托盤本來就開著也要記:切到另一條有建議的分頁,那一句是第一次出現(不記的話 suggest_shown 漏、之後也不算沒用)
   if (!show || SUG.shownOnce) return;
   SUG.shownOnce = true;
   trackFeature("suggest_shown");

@@ -262,5 +262,10 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
   ok("分頁列裡不是 button/textarea/input/a 的可點元素都帶 no-drag(不然打包版點不動)", bad.length === 0, bad);
   ok("分頁與 × 的熱區(::before)帶 no-drag;+N 選單整塊也是", covered("tab") && covered("tab-x") && noDrag.includes(".tab-x::before") && covered("cs-menu"));
 }
+// ── 主行程直接送 turn-event 的(不經 sendTurn 補 sid)都要自己帶 sid:不帶會落到眼前那條(tabsOf(undefined) = CS.cur),背景分頁的圖當下不出 ──
+{ const main = fs.readFileSync(path.join(R, "..", "main.js"), "utf8");
+  const direct = [...main.matchAll(/\.send\("turn-event", \{([^\n]*)/g)].map((m) => m[1]);
+  ok("main.js 直接送的 turn-event(" + direct.length + " 處)都帶 sid", direct.length >= 1 && direct.every((l) => /\bsid: /.test(l)), direct);
+  ok("…聊天圖那一則 sid 就是它的 session_id", /type: "image", session_id: j\.session_id, sid: j\.session_id,/.test(main)); }
 console.log(red ? `\n${red} 紅` : "\nALL PASS");
 process.exit(red ? 1 : 0);

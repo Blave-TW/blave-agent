@@ -1894,7 +1894,7 @@ function startImageServer() {
         const caption = typeof j.caption === "string" ? j.caption.slice(0, 500) : "";
         fs.appendFileSync(path.join(dir, "index.jsonl"), JSON.stringify({ ts, file, mime: j.mime, caption }) + "\n");
         if (imgWin && !imgWin.isDestroyed())
-          imgWin.webContents.send("turn-event", { type: "image", session_id: j.session_id,
+          imgWin.webContents.send("turn-event", { type: "image", session_id: j.session_id, sid: j.session_id,   // sid:分頁路由用(chattabs tabsOnEvent);不帶會落到眼前那條、被 session_id 檢查丟掉,背景分頁當下不出圖
             src: `data:${j.mime};base64,${j.b64}`, caption });
         end(200);
       } catch (_) { end(400); }
