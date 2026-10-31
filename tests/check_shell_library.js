@@ -710,6 +710,9 @@ app.whenReady().then(async () => {
   const js = (s) => w.webContents.executeJavaScript(s, true);
   const T = (k, v) => js(`t(${JSON.stringify(k)}, ${JSON.stringify(v || {})})`);
   const Q = (s) => js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; return (${s}); })()`);
+  // 對話分頁(0.1.37):真 app 進工作頁時 csInit 接回分頁、CS.loaded 才有值;這支直接開策略庫、不走 enterWorkspace,開機段自己接
+  { const boot = await js(`(async () => { const was = { csReady, tabs: CS.tabs.size }; if (!CS.loaded) await csInit(); return { was, loaded: !!CS.loaded, tabs: CS.tabs.size }; })()`);
+    ok("④ 開機:分頁接回(CS.loaded 有值、一條分頁)", boot.loaded && boot.tabs === 1, JSON.stringify(boot)); }
 
   // 開
   let r = await js(`(async () => { await libOpen(); await new Promise((r) => setTimeout(r, 80)); const q = (x) => [...document.querySelectorAll(x)];
@@ -827,8 +830,8 @@ app.whenReady().then(async () => {
       down: q("#lib-det .gates .gv.down").map((x) => x.textContent).join("|"), downColor: getComputedStyle(q("#lib-det .gates .gv.down")[0]).color, redText: getComputedStyle(document.documentElement).getPropertyValue("--color-redText").trim(), gxColor: getComputedStyle(q("#lib-det .gates .gx")[0]).color, cta: q("#lib-cta .btn-fill")[0].textContent, note: q("#lib-cta .note")[0].textContent };
     document.getElementById("lib-back").click(); q('#lib-rows .lib-row[data-id="101"]')[0].click(); return { a, focus8, b }; })()`);   // 後面的閘門態測試接著看 #101 的詳情
   ok("④ #8(沒 gate_checks):沒有「未驗證」badge、只有價格、關卡卡只有一句 lib.gates.community、不列三道、CTA 仍「購買並使用 1,200 TWD」;返回焦點回那一列", r.a.tags === "1,200TWD" && r.a.card === (await T("lib.gates.title")) && r.a.p === (await T("lib.gates.community")) && r.a.lis === 0 && r.a.cta === (await T("lib.buy", { price: "1,200 TWD" })) && r.focus8 === "8", JSON.stringify(r));
-  ok("④ #12(兩道 fail):關卡卡第一段「2 道關卡未通過…」(句首不帶「未驗證：」)(2 進 .mono、在 ul 之前),兩道「未通過」紅字 + 數值(假設 0.03% / 交易所 0.04%、p = 0.1200、鄰域 82%);CTA「購買並使用 800 TWD」、鈕下沒有說明句", r.b.tags === "800TWD" && !/^未驗證/.test(r.b.p) && r.b.p === (await T("lib.gates.failed", { k: 2 })) && r.b.k === "2" && r.b.first === "lib-p"
-    && r.b.gates === "誠實回測=未通過[假設 0.03%;交易所 0.04%]|統計顯著=未通過[p = 0.1200]|參數穩健=通過[鄰域保留 82%]" && r.b.down === "未通過|未通過" && r.b.downColor !== r.b.gxColor && r.b.cta === (await T("lib.buy", { price: "800 TWD" })) && r.b.note === "", JSON.stringify(r));
+  ok("④ #12(兩道 fail):關卡卡第一段「2 道關卡未通過…」(句首不帶「未驗證：」)(2 進 .mono、在 ul 之前),兩道「未通過」紅字 + 數值(假設 0.03% / 交易所 0.04%、p = 0.120、鄰域 82%);CTA「購買並使用 800 TWD」、鈕下沒有說明句", r.b.tags === "800TWD" && !/^未驗證/.test(r.b.p) && r.b.p === (await T("lib.gates.failed", { k: 2 })) && r.b.k === "2" && r.b.first === "lib-p"
+    && r.b.gates === "誠實回測=未通過[假設 0.03%;交易所 0.04%]|統計顯著=未通過[p = 0.120]|參數穩健=通過[鄰域保留 82%]" && r.b.down === "未通過|未通過" && r.b.downColor !== r.b.gxColor && r.b.cta === (await T("lib.buy", { price: "800 TWD" })) && r.b.note === "", JSON.stringify(r));
   // 閘門態
   const cta = () => js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; const b = q("#lib-cta .btn-fill")[0], qb = q("#lib-cta .btn-quiet"); return { btn: b ? b.textContent : null, dis: b ? b.disabled : null, quiet: qb.map((x) => x.textContent).join("|"), note: q("#lib-cta .note")[0].textContent, up: q("#lib-cta .note")[0].classList.contains("up"), err: q("#lib-cta .err").map((x) => x.textContent).join() }; })()`);
   await js(`hasToken = false; libSync();`); r = await cta();
@@ -878,10 +881,11 @@ app.whenReady().then(async () => {
   a = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; ENV.cur = "cloud"; libAsk({ id: 101, title: "BTC 通道動能共振" }); const o = { lines: q("#del-body p").map((p) => p.textContent), notes: q("#del-body .cf-note").length, where: document.getElementById("del-where").hidden ? null : document.getElementById("del-where").textContent, env: !document.getElementById("del-env").hidden }; document.getElementById("del-cancel").click(); ENV.cur = "local"; await new Promise((r) => setTimeout(r, 40)); return o; })()`);
   ok("④ 雲端視角的下載確認框:內文兩段(l1 不帶目的地、雲端不出 billed)、lib.cf.cloudNote 在腳的 .del-where(不在內文 .cf-note)、「雲端」記號", a.lines.length === 2 && a.lines[0] === (await T("lib.cf.l1")) && a.notes === 0 && a.where === (await T("lib.cf.cloudNote")) && a.env, JSON.stringify(a));
   await js(`LIB.data.dataAccess = "included"; running = true; libSync();`); r = await cta();
-  { const n0 = await js(`(() => { const n = document.getElementById("lib-cta-note"), b = document.querySelector("#lib-cta .btn-fill"); return { hidden: n.hidden, role: n.getAttribute("role"), aria: b.getAttribute("aria-disabled"), title: b.title }; })()`);
-    const told = await js(`(async () => { const b = document.querySelector("#lib-cta .btn-fill"); b.focus(); b.click(); await new Promise((r) => setTimeout(r, 40)); libSync(); return { note: document.getElementById("lib-cta-note").textContent, fix: (document.querySelector("#lib-cta-note button.busy-fix") || {}).textContent, focus: document.activeElement === document.querySelector("#lib-cta .btn-fill"), box: !document.getElementById("del-scrim").hidden }; })()`);
-    ok("④ 回合中(點了才講):主鈕 aria-disabled + title、不是原生 disabled;那一格空著但不 hidden、role=status;點了才寫 turn.busy＋〔停止〕(不在輸入框旁)、不開確認框、忙碌中重畫還在",
-      r.btn === (await T("lib.use")) && r.dis === false && r.note === "" && n0.hidden === false && n0.role === "status" && n0.aria === "true" && n0.title === (await T("turn.busy")) && told.note === (await T("turn.busy")) + " " + (await T("busy.fix.stop")) && told.fix === (await T("busy.fix.stop")) && !told.box, JSON.stringify([r, n0, told])); }
+  { const n0 = await js(`(() => { const n = document.getElementById("lib-cta-note"), b = document.querySelector("#lib-cta .btn-fill"); return { aria: b.getAttribute("aria-disabled"), title: b.title }; })()`);
+    const told = await js(`(async () => { const b = document.querySelector("#lib-cta .btn-fill"); b.click(); await new Promise((r) => setTimeout(r, 40)); const o = { box: !document.getElementById("del-scrim").hidden, okTxt: document.getElementById("del-ok").textContent, note: document.getElementById("lib-cta-note").textContent, sent: window.__lib.sent.length };
+      document.getElementById("del-cancel").click(); await new Promise((r) => setTimeout(r, 40)); return Object.assign(o, { closed: document.getElementById("del-scrim").hidden }); })()`);
+    ok("④ 回合中不擋〔用這支〕(對話分頁:另開分頁送,csSendAway):主鈕照常「用這支」、沒有 aria-disabled／title、鈕下沒有 turn.busy;點了照常開確認框、取消不送",
+      r.btn === (await T("lib.use")) && r.dis === false && r.note === "" && n0.aria === null && n0.title === "" && told.box && told.okTxt === (await T("lib.cf.ok")) && told.note === "" && told.sent === 0 && told.closed, JSON.stringify([r, n0, told])); }
   // 用這支
   r = await js(`(async () => { running = false; libSync(); const q = (x) => [...document.querySelectorAll(x)]; q("#lib-cta .btn-fill")[0].click();
     const open = !document.getElementById("del-scrim").hidden, title = document.getElementById("del-title").textContent, full = document.getElementById("del-title").title, lines = q("#del-body p").map((p) => p.textContent), okTxt = document.getElementById("del-ok").textContent, env = document.getElementById("del-env").hidden, focus = document.activeElement && document.activeElement.id;
