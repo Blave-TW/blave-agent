@@ -1012,6 +1012,9 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .priv-two li { position: relative; padding-left: var(--space-12); font-size: 12px; line-height: 1.7; color: var(--ink-2); }
 .priv-two li + li { margin-top: var(--space-2); }
 .priv-two li::before { content: ""; position: absolute; left: 0; top: 10px; width: 6px; height: 1px; background: var(--ink-3); }
+/* 會收分組:組標題 12/400 --ink(跟 --ink-2 的項目靠色分開,不加字重),組內行距 2、組間 8 */
+.priv-g + .priv-g { margin-top: var(--space-8); }
+.priv-gh { margin: 0 0 var(--space-2); font-size: 12px; font-weight: 400; line-height: 1.7; color: var(--ink); }
 /* 法遵入口(服務條款 / 隱私權政策):安靜文字鈕自己一行,跟上面那一段拉開一個群組間距 */
 .set-legal { margin: var(--space-16) 0 0; font-size: 12px; color: var(--ink-3); }   /* 字級 / 色給兩份之間的「·」 */
 .priv-fine { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); max-width: 60ch; }

@@ -3104,43 +3104,142 @@ msgstr "會收"
 msgid "priv.collect.hOff"
 msgstr "開啟時會收"
 
-# 0.1.18 策略三步(strat_created / strat_backtested / strat_deployed)補在這一條:只記型別與市場類別
-msgid "priv.collect.1"
-msgstr "做到哪一步：首次開啟、每日開啟、app 開著的每一天（含本機自動下單有沒有在跑）、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行；每支策略新建、第一次回測、第一次配了金額時，記它的型別（A／B／C）與市場類別（例如加密貨幣、台指期），不記策略名稱或標的；同一支策略的三步記同一組代碼；代碼只有這台電腦算得出，Blave 推不回策略名稱"
+# 0.1.39 會收改成八組(設計師 v039-tabs-strip-audit §C,Wei 核准):組標題 priv.c.<組>.h,組內 priv.c.<組>.<n>;
+# 原本 11 條的事實逐條拆進來,一條都沒刪。加事件時補在對應那組
+msgid "priv.c.step.h"
+msgstr "做到哪一步"
 
-msgid "priv.collect.5"
-msgstr "用了哪些功能：分頁與按鈕的名稱，每天每項記一次，不含裡面的內容；從策略庫用一支策略時，記它要不要 Blave 資料；送出找點子時，記是從哪個入口送出；回覆好了的系統通知有沒有跳出、有沒有被點開，不含對話標題與內容"
+msgid "priv.c.step.1"
+msgstr "首次開啟、每日開啟、登入"
 
-msgid "priv.collect.2"
-msgstr "發生的時間"
+msgid "priv.c.step.2"
+msgstr "app 開著的每一天，含本機自動下單有沒有在跑"
 
-msgid "priv.collect.3"
-msgstr "app 版本、作業系統與版本、系統語言、電腦類型（筆電或桌機）"
+msgid "priv.c.step.3"
+msgstr "完成連結，記哪一種 AI"
 
-msgid "priv.collect.4"
-msgstr "安裝識別碼（這份安裝隨機產生的編號）；登入後會跟你的帳號對上"
+msgid "priv.c.step.4"
+msgstr "第一次回測、啟動下單（模擬或真錢）、上雲端運行"
 
-# 0.1.12 加了引擎安裝的結果(engine_setup / engine_opt_fail):補在這一條(設計稽核 0.1.12 複驗定稿)
-msgid "priv.collect.6"
-msgstr "卡在哪一步：回合失敗、連不上 AI、策略庫用不了的原因類別，綁卡／儲值提示有沒有出現與按下、回來後能不能用，啟動雲端方案的結果，更新卡在哪一步，第一次收到 AI 回覆，第一次安裝或更新後補裝（引擎與策略套件）有沒有裝好、沒裝好是哪一類原因；只記類別，不含內容"
+msgid "priv.c.strat.h"
+msgstr "每支策略"
 
-msgid "priv.collect.7"
-msgstr "登入後，帳號也會記下：連的是哪種 AI、這台電腦有沒有跑過回測（保留 90 天）"
+msgid "priv.c.strat.1"
+msgstr "新建、第一次回測、第一次配了金額時各記一次"
 
-# 0.1.13 策略庫免登入下載(/public_code)帶安裝識別碼算安裝人數;面板排在 priv.collect.4 之後
-msgid "priv.collect.8"
-msgstr "沒登入或登入失效時從策略庫下載免登入策略：哪一支（策略庫編號）和安裝識別碼，用來算安裝人數；之後登入就會跟你的帳號對上"
+msgid "priv.c.strat.2"
+msgstr "只記型別（A／B／C）與市場類別，例如加密貨幣、台指期"
 
-# 0.1.35 本機 AI 登入方式(cli_auth)與登入失敗(auth_fail);面板排在 priv.collect.6 之後
-msgid "priv.collect.9"
-msgstr "本機 AI 的登入方式，例如訂閱或 API 金鑰；不含帳號與金鑰"
+msgid "priv.c.strat.3"
+msgstr "不記策略名稱或標的"
 
-msgid "priv.collect.10"
+msgid "priv.c.strat.4"
+msgstr "三步記同一組代碼，代碼只有這台電腦算得出"
+
+msgid "priv.c.strat.5"
+msgstr "Blave 推不回策略名稱"
+
+msgid "priv.c.feat.h"
+msgstr "用了哪些功能"
+
+msgid "priv.c.feat.1"
+msgstr "分頁與按鈕的名稱，每天每項記一次"
+
+msgid "priv.c.feat.2"
+msgstr "不含分頁與按鈕裡的內容"
+
+msgid "priv.c.feat.3"
+msgstr "從策略庫用一支策略時，記它要不要 Blave 資料"
+
+msgid "priv.c.feat.4"
+msgstr "送出找點子時，記從哪個入口送出"
+
+msgid "priv.c.feat.5"
+msgstr "回覆好了的系統通知：有沒有跳出、有沒有被點開"
+
+msgid "priv.c.feat.6"
+msgstr "不含對話標題與內容"
+
+msgid "priv.c.stuck.h"
+msgstr "卡在哪一步"
+
+msgid "priv.c.stuck.1"
+msgstr "回合失敗、連不上 AI、策略庫用不了的原因類別"
+
+msgid "priv.c.stuck.2"
+msgstr "綁卡／儲值提示有沒有出現與按下、回來後能不能用"
+
+msgid "priv.c.stuck.3"
+msgstr "啟動雲端方案的結果、更新卡在哪一步"
+
+msgid "priv.c.stuck.4"
+msgstr "第一次收到 AI 回覆"
+
+msgid "priv.c.stuck.5"
+msgstr "第一次安裝或更新後補裝引擎與策略套件，有沒有裝好"
+
+msgid "priv.c.stuck.6"
+msgstr "沒裝好是哪一類原因"
+
+msgid "priv.c.stuck.7"
+msgstr "只記類別，不含內容"
+
+msgid "priv.c.auth.h"
+msgstr "登入與金鑰"
+
+msgid "priv.c.auth.1"
+msgstr "本機 AI 的登入方式，例如訂閱或 API 金鑰"
+
+msgid "priv.c.auth.2"
+msgstr "不含帳號與金鑰"
+
+msgid "priv.c.auth.3"
 msgstr "登入失敗的類別，以及當下是否判定為已登入"
 
-# 0.1.37 改金鑰驗證碼(key_verify);面板排在 priv.collect.10 之後
-msgid "priv.collect.11"
-msgstr "改金鑰時驗證碼框的出現、通過與鎖住；不含驗證碼"
+msgid "priv.c.auth.4"
+msgstr "改金鑰時驗證碼框的出現、通過與鎖住"
+
+msgid "priv.c.auth.5"
+msgstr "不含驗證碼"
+
+msgid "priv.c.meta.h"
+msgstr "每筆紀錄都帶"
+
+msgid "priv.c.meta.1"
+msgstr "發生的時間"
+
+msgid "priv.c.meta.2"
+msgstr "app 版本、作業系統與版本、系統語言"
+
+msgid "priv.c.meta.3"
+msgstr "電腦類型：筆電或桌機"
+
+msgid "priv.c.meta.4"
+msgstr "安裝識別碼：這份安裝隨機產生的編號"
+
+msgid "priv.c.meta.5"
+msgstr "登入後，安裝識別碼會跟你的帳號對上"
+
+msgid "priv.c.lib.h"
+msgstr "策略庫下載"
+
+msgid "priv.c.lib.1"
+msgstr "沒登入或登入失效時，從策略庫下載免登入策略"
+
+msgid "priv.c.lib.2"
+msgstr "記策略庫編號與安裝識別碼，用來算安裝人數"
+
+msgid "priv.c.lib.3"
+msgstr "之後登入就會跟你的帳號對上"
+
+msgid "priv.c.acct.h"
+msgstr "帳號上"
+
+msgid "priv.c.acct.1"
+msgstr "登入後，帳號會記下連的是哪種 AI"
+
+msgid "priv.c.acct.2"
+msgstr "也記這台電腦有沒有跑過回測，保留 90 天"
 
 msgid "priv.never.h"
 msgstr "使用資料不收"

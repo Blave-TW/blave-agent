@@ -3093,42 +3093,142 @@ msgstr "Collected"
 msgid "priv.collect.hOff"
 msgstr "Collected when on"
 
-msgid "priv.collect.5"
-msgstr "Which features you used: tab and button names, once per item per day, without their content; when you use a library strategy, whether it needs Blave data; when you send an idea request, which entry point it came from; whether a reply notification was shown or clicked, never the chat title or text"
+# 0.1.39 會收改成八組(設計師 v039-tabs-strip-audit §C,Wei 核准):組標題 priv.c.<組>.h,組內 priv.c.<組>.<n>;
+# 原本 11 條的事實逐條拆進來,一條都沒刪。加事件時補在對應那組
+msgid "priv.c.step.h"
+msgstr "How far you got"
 
-# 0.1.18 策略三步(strat_created / strat_backtested / strat_deployed)補在這一條:只記型別與市場類別
-msgid "priv.collect.1"
-msgstr "Which step you reached: first open, daily open, each day the app stays open (and whether local auto-trading is running), connected an AI (which kind), signed in, first backtest, trading started (paper or real), ran in the cloud; when each strategy is created, first backtested and first given an amount, its type (A/B/C) and market category (such as crypto or Taiwan index futures), never its name or symbol; a strategy's three steps share one code; only this computer can compute it, and Blave can't turn it back into the name"
+msgid "priv.c.step.1"
+msgstr "First open, daily open, signing in"
 
-msgid "priv.collect.2"
+msgid "priv.c.step.2"
+msgstr "Each day the app is open, and whether local auto-trading runs"
+
+msgid "priv.c.step.3"
+msgstr "Connecting an AI, and which kind"
+
+msgid "priv.c.step.4"
+msgstr "First backtest, trading started (paper or real), running in the cloud"
+
+msgid "priv.c.strat.h"
+msgstr "Each strategy"
+
+msgid "priv.c.strat.1"
+msgstr "Once each when created, first backtested, first given an amount"
+
+msgid "priv.c.strat.2"
+msgstr "Only its type (A/B/C) and market category, e.g. crypto or Taiwan index futures"
+
+msgid "priv.c.strat.3"
+msgstr "Never its name or symbol"
+
+msgid "priv.c.strat.4"
+msgstr "The three steps share one code only this computer can compute"
+
+msgid "priv.c.strat.5"
+msgstr "Blave can't turn it back into the name"
+
+msgid "priv.c.feat.h"
+msgstr "Which features you used"
+
+msgid "priv.c.feat.1"
+msgstr "Tab and button names, once per item per day"
+
+msgid "priv.c.feat.2"
+msgstr "Never what's inside them"
+
+msgid "priv.c.feat.3"
+msgstr "Using a library strategy: whether it needs Blave data"
+
+msgid "priv.c.feat.4"
+msgstr "Sending an idea request: which entry point it came from"
+
+msgid "priv.c.feat.5"
+msgstr "Reply notifications: whether shown, whether clicked"
+
+msgid "priv.c.feat.6"
+msgstr "Never the chat title or text"
+
+msgid "priv.c.stuck.h"
+msgstr "Where things got stuck"
+
+msgid "priv.c.stuck.1"
+msgstr "Why a turn, AI connection or library strategy failed"
+
+msgid "priv.c.stuck.2"
+msgstr "Card or top-up prompt shown, clicked, account ready on return"
+
+msgid "priv.c.stuck.3"
+msgstr "Result of starting a cloud plan; which update step failed"
+
+msgid "priv.c.stuck.4"
+msgstr "Your first AI reply"
+
+msgid "priv.c.stuck.5"
+msgstr "Whether first-run or post-update setup of the engine and strategy packages finished"
+
+msgid "priv.c.stuck.6"
+msgstr "If not, which kind of reason"
+
+msgid "priv.c.stuck.7"
+msgstr "Categories only, never the content"
+
+msgid "priv.c.auth.h"
+msgstr "Sign-in and keys"
+
+msgid "priv.c.auth.1"
+msgstr "How the local AI signs in, e.g. subscription or API key"
+
+msgid "priv.c.auth.2"
+msgstr "No account or key data"
+
+msgid "priv.c.auth.3"
+msgstr "Kind of sign-in failure, and whether the AI counted as signed in"
+
+msgid "priv.c.auth.4"
+msgstr "Key-change code box: shown, passed, locked"
+
+msgid "priv.c.auth.5"
+msgstr "Never the code"
+
+msgid "priv.c.meta.h"
+msgstr "On every record"
+
+msgid "priv.c.meta.1"
 msgstr "When it happened"
 
-msgid "priv.collect.3"
-msgstr "The app version, operating system and version, system language, and computer type (laptop or desktop)"
+msgid "priv.c.meta.2"
+msgstr "App version, operating system and version, system language"
 
-msgid "priv.collect.4"
-msgstr "An installation ID (a random ID for this install); after you sign in it is linked to your Blave account"
+msgid "priv.c.meta.3"
+msgstr "Computer type: laptop or desktop"
 
-# 0.1.12 加了引擎安裝的結果(engine_setup / engine_opt_fail):補在這一條(設計稽核 0.1.12 複驗定稿)
-msgid "priv.collect.6"
-msgstr "Where things got stuck: the category of a failed turn, a failed AI connection or a blocked library strategy, whether a card or top-up prompt appeared and was clicked and whether your account was ready when you came back, the result of starting a cloud plan, which update step failed, your first AI reply, and whether the first-run or post-update setup of this computer (engine and strategy packages) finished and, if not, the category of the reason — categories only, never the content"
+msgid "priv.c.meta.4"
+msgstr "Installation ID: a random ID for this install"
 
-msgid "priv.collect.7"
-msgstr "Once you sign in, your account also records which AI you’re connected to and whether this computer has run a backtest (kept 90 days)"
+msgid "priv.c.meta.5"
+msgstr "Once you sign in, it is linked to your Blave account"
 
-# 0.1.13 策略庫免登入下載(/public_code)帶安裝識別碼算安裝人數;面板排在 priv.collect.4 之後
-msgid "priv.collect.8"
-msgstr "When you download a no-sign-in library strategy: which one (its library number) and the installation ID, to count installs; once you sign in, it is linked to your Blave account"
+msgid "priv.c.lib.h"
+msgstr "Library downloads"
 
-# 0.1.35 本機 AI 登入方式(cli_auth)與登入失敗(auth_fail);面板排在 priv.collect.6 之後
-msgid "priv.collect.9"
-msgstr "How the local AI is signed in, e.g. subscription or API key; no account or key data"
+msgid "priv.c.lib.1"
+msgstr "Downloading a no-sign-in library strategy while signed out or your sign-in expired"
 
-msgid "priv.collect.10"
-msgstr "Which kind of sign-in failure, and whether the AI counted as signed in"
+msgid "priv.c.lib.2"
+msgstr "Its library number and the installation ID, to count installs"
 
-msgid "priv.collect.11"
-msgstr "Whether the key-change code box appeared, passed or locked, never the code"
+msgid "priv.c.lib.3"
+msgstr "Once you sign in, it is linked to your Blave account"
+
+msgid "priv.c.acct.h"
+msgstr "On your account"
+
+msgid "priv.c.acct.1"
+msgstr "Once you sign in, which AI you’re connected to"
+
+msgid "priv.c.acct.2"
+msgstr "And whether this computer has run a backtest, kept 90 days"
 
 msgid "priv.never.h"
 msgstr "Not in usage data"
