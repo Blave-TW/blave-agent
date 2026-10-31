@@ -292,8 +292,19 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
   ok("× 不佔位:絕對定位蓋在本體尾端、墊那格的底、滑過或焦點才出;熱區 ::after 上下伸進透明框(32×44)", /\.tab-x \{ position: absolute; right: 0; top: 0; bottom: 0; width: 32px;[^}]*background: var\(--tabs-bg\); border-radius: 0 var\(--radius-sm\) var\(--radius-sm\) 0;[^}]*visibility: hidden; \}/.test(blk)
     && blk.includes('.cs-tabs .tab[aria-selected="true"] .tab-x { background: var(--surface-card); }') && blk.includes(".tab-x::after { content: \"\"; position: absolute; left: 0; right: 0; top: calc(0px - var(--tabs-reach)); bottom: calc(0px - var(--tabs-reach)); }")
     && blk.includes(".cs-tabs .tab:hover .tab-x, .cs-tabs .tab:focus-visible .tab-x { visibility: visible; }") && !/\.tab-x \{[^}]*flex: none/.test(blk));
-  ok("溢出可見範圍的熱區都帶 no-drag:分頁(透明框在元素內)、× 的 ::after、切換鈕格的 ::before(共用配方)", blk.includes(".cs-tabs .tab, .cs-tabs .tab-x, .cs-tabs .tab-x::after, .cs-menu { -webkit-app-region: no-drag; }")
-    && /> button::before \{[^}]*-webkit-app-region: no-drag;/.test(css));
+  // 列舉:分頁列區塊與切換鈕(共用 segment 配方)裡每個往外伸的 ::before／::after(top／bottom／inset 為負、calc(0px - …)、min(0px, …)),
+  //       自己都要在 no-drag 清單裡(偽元素不繼承 app-region;伸出元素外的那段蓋在拖曳條上就點不動)。加一個往外伸卻沒帶的就紅
+  { const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, "");
+    const seg = (css.match(/:is\(\.cn-lang[^{]*\) > button::before \{[^}]*\}/) || [""])[0];
+    const nd = new Set(); for (const m of strip(css + trcss).matchAll(/([^{}]+)\{[^}]*-webkit-app-region: no-drag/g)) for (const x of m[1].split(",")) nd.add(x.trim());
+    const last = (x) => x.trim().split(/\s+/).pop(), ndLast = new Set([...nd].map(last));
+    const out = []; for (const m of strip(blk).matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      if (!/(?:^|;)\s*(?:top|bottom|inset): (?:-|calc\(0px - |min\(0px)/.test(m[2])) continue;
+      for (const x of m[1].split(",").map((y) => y.trim())) if (/::(before|after)$/.test(x)) out.push(x);
+    }
+    if (/(?:top|bottom): min\(0px/.test(seg)) out.push("segment > button::before");
+    const bare = out.filter((x) => x === "segment > button::before" ? !/-webkit-app-region: no-drag/.test(seg) : !ndLast.has(last(x)));
+    ok("往外伸的熱區偽元素(" + out.length + " 個)都帶 no-drag", out.length >= 2 && bare.length === 0, { out, bare }); }
   ok("焦點環 ::before:2px --focus-ring 畫在本體內、四角 --radius-sm,只在 focus-visible", /\.cs-tabs \.tab:focus-visible::before \{ content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px var\(--focus-ring\); border-radius: var\(--radius-sm\); pointer-events: none; \}/.test(blk)
     && /\.cs-tabs \.tab:focus-visible \{ outline: none; \}/.test(blk) && !/\.tab:hover::before/.test(blk));
   ok("選中:本體填對話底色、四角正圓 --radius-sm(外緣垂直半徑多 reach)、600;不往下接對話;沒有捲動浮線", blk.includes('.cs-tabs .tab[aria-selected="true"] { background-color: var(--surface-card); color: var(--ink); font-weight: 600;\n  border-radius: var(--radius-sm) / calc(var(--radius-sm) + var(--tabs-reach)); }')
