@@ -37,8 +37,8 @@ function hoFreeName(id, taken) {
 /* 策略頁頭的動作槽(spec strategy-page-autotrade §4):「狀態 → 鈕態」常數表,web 工作頁照同一張表做(cross-surface-parity 規則三)。
    btn = 主鈕 { key, kind: 填色 fill／描邊 out, act, off: 真 disabled }:key "$base" = 看市場(加密、台指期「自動下單」,台股「加到策略組合」),
    "$go" = 自動下單頁 #tr-go 同一個鈕字(trGoView:啟動下單／確認帳戶…);word = 鈕旁 ≤6 字的狀態詞;note = 說明下一行的整句原因;
-   mark = 只放「自動下單中・模擬／真錢」記號。act:amt 開金額框、pick 到選擇策略框、cx 開連接框、go 走 trGoClick、route 〔儲存〕直送、po 到策略組合、pres 統一的〔繼續〕 */
-const SP_STATES = {
+   mark = 只放「自動下單中・模擬／真錢」記號。態的名字與 web 工作頁 workspace.html 的 SP_HEAD 同一份(tests/check_web_desktop_parity.js 逐態比對)。act:amt 開金額框、pick 到選擇策略框、cx 開連接框、go 走 trGoClick、route 〔儲存〕直送、po 到策略組合、pres 統一的〔繼續〕 */
+const SP_HEAD = {
   none: { btn: null },
   us: { btn: null, word: "tr.mkt.noAuto" },
   unread: { btn: { key: "$base", kind: "fill", act: null, off: true } },
@@ -47,13 +47,14 @@ const SP_STATES = {
   setup: { btn: { key: "cap.continue", kind: "fill", act: "pres" }, word: "cap.pending" },
   setupWait: { btn: null, word: "cap.pending" },
   connecting: { btn: { key: "sp.connecting", kind: "fill", act: null, off: true } },
-  noacct: { btn: { key: "sp.cx", kind: "fill", act: "cx" }, word: "sp.noAcct" },
-  twAdded: { btn: { key: "po.addGo", kind: "out", act: "po" } },
+  noAcct: { btn: { key: "sp.cx", kind: "fill", act: "cx" }, word: "sp.noAcct" },
+  twNoAcct: { btn: { key: "po.addGo", kind: "out", act: "po" } },
   unsaved: { btn: { key: "po.addGo", kind: "out", act: "po" }, note: "sp.unsaved" },
   route: { btn: { key: "tr.save", kind: "fill", act: "route" }, note: "tr.routeSave" },
   off: { btn: { key: "$go", kind: "fill", act: null, off: true }, note: "$off" },
-  live: { btn: null, mark: true },
-  ready: { btn: { key: "$go", kind: "fill", act: "go" }, note: "$go" },
+  running: { btn: null, mark: true },
+  acct: { btn: { key: "tr.acct.btn", kind: "fill", act: "go" } },
+  start: { btn: { key: "$go", kind: "fill", act: "go" }, note: "$go" },
 };
 /* §4 的優先序(同時命中取前者):沒回測／Type B → 美股 → 讀不到 → 鎖住 → 沒配(含統一開通中沒配)→ 統一開通中已配 → 連接中 →
    沒接帳戶 → 有帳戶沒路由 → 綁的那家下不了 → 在跑 → 已連接・尚未啟動／暫停中。重綁後 halted＋路由空落「沒路由」(HALT 那列要路由齊);
@@ -61,12 +62,12 @@ const SP_STATES = {
 function spHead(x) {
   const st = x.noBt || x.typeB ? "none" : x.market === "us" ? "us" : x.unread ? "unread" : x.locked && !x.configured ? "locked"
     : !x.configured ? "add" : x.setup ? (x.presContinue ? "setup" : "setupWait") : x.connecting ? "connecting"
-    : !x.hasAcct ? (x.market === "tw" ? "twAdded" : "noacct") : x.routeDirty ? (x.unsaved ? "unsaved" : "route")
-    : x.zvOff ? "off" : x.firing ? "live" : "ready";
-  const d = SP_STATES[st], b = d.btn ? Object.assign({}, d.btn) : null;
+    : !x.hasAcct ? (x.market === "tw" ? "twNoAcct" : "noAcct") : x.routeDirty ? (x.unsaved ? "unsaved" : "route")
+    : x.zvOff ? "off" : x.firing ? "running" : x.goKey === "tr.acct.btn" ? "acct" : "start";
+  const d = SP_HEAD[st], b = d.btn ? Object.assign({}, d.btn) : null;
   if (b && b.key === "$base") b.key = x.market === "tw" ? "po.add" : "sp.btn";
   if (b && b.key === "$go") b.key = x.goKey || "tr.start";
-  if (b && st === "ready" && x.goOff) b.off = true;   // 指令通道不通(同 #tr-go 的 usable)
+  if (b && (st === "start" || st === "acct") && x.goOff) b.off = true;   // 指令通道不通(同 #tr-go 的 usable)
   const note = d.note === "$off" ? x.offNote || null : d.note === "$go" ? x.goNote || null : d.note ? { key: d.note } : null;
   return { st, btn: b, word: d.word || null, note, mark: !!d.mark };
 }

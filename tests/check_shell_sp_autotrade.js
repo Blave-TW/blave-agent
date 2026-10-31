@@ -1,5 +1,5 @@
 // 策略頁頭〔自動下單〕單鈕(spec strategy-page-autotrade-2026-10-31 §4、§5、§13–15;視覺 prototype-v8)。
-//   ① 純邏輯(不開窗):handoff.js 的 SP_STATES／spHead 原文切出來跑——§4 每一態一列,優先序衝突(HALT＋沒路由、setup＋沒路由、
+//   ① 純邏輯(不開窗):handoff.js 的 SP_HEAD／spHead 原文切出來跑——§4 每一態一列,優先序衝突(HALT＋沒路由、setup＋沒路由、
 //      連接中＋另一支沒配、讀不到＋鎖住…)各一列;表上每一態都被列舉到(新增一態沒有測試就紅)
 //   ② 接線(不開窗):五道守門在 trGoClick、#tr-go 與策略頁同一支;onConnected 只在 cxModalClose 設、capHandoff 不設;
 //      「連接中」不掛 TRP.timer;埋點五個都有送出點
@@ -33,7 +33,7 @@ if (!process.versions.electron) {
   row("讀不到:台股基本字「加到策略組合」", { unread: true, market: "tw" }, "unread", { key: "po.add", kind: "fill", act: null, off: true });
   row("讀不到優先於鎖住", { unread: true, locked: true, configured: false }, "unread", { key: "sp.btn", kind: "fill", act: null, off: true });
   row("鎖住(沒配):主鈕照畫,按了到選擇策略框", { locked: true, configured: false }, "locked", { key: "sp.btn", kind: "fill", act: "pick" });
-  row("鎖住但已在組合(!inCur 豁免由 trPickRows 管;已配不算鎖)→ 照已配往下判", { locked: true }, "ready", { key: "tr.start", kind: "fill", act: "go" });
+  row("鎖住但已在組合(!inCur 豁免由 trPickRows 管;已配不算鎖)→ 照已配往下判", { locked: true }, "start", { key: "tr.start", kind: "fill", act: "go" });
   row("回測完沒配(加密):〔自動下單〕填色 → 開金額框", { configured: false, hasAcct: false }, "add", { key: "sp.btn", kind: "fill", act: "amt" });
   row("回測完沒配(台股):〔加到策略組合〕填色 → 開金額框", { configured: false, market: "tw", hasAcct: false }, "add", { key: "po.add", kind: "fill", act: "amt" });
   row("連接中、另一支沒配:照沒配(存了不接連接框由 spAfterSave 管)", { configured: false, connecting: true, hasAcct: false }, "add", { key: "sp.btn", kind: "fill", act: "amt" });
@@ -43,20 +43,20 @@ if (!process.versions.electron) {
   row("群益本機開通中、已配:只有「開通中」,沒有〔繼續〕", { setup: true, presContinue: false }, "setupWait", null, { word: "cap.pending" });
   row("setup＋路由空:落統一那列,不是〔儲存〕", { setup: true, presContinue: true, routeDirty: true }, "setup", { key: "cap.continue", kind: "fill", act: "pres" });
   row("連接中:主鈕字「連接中…」、真 disabled、旁邊不放字", { connecting: true, hasAcct: false }, "connecting", { key: "sp.connecting", kind: "fill", act: null, off: true }, { word: null, note: null });
-  row("已配、沒接帳戶:「還沒連接帳戶」+〔連接帳戶〕", { hasAcct: false }, "noacct", { key: "sp.cx", kind: "fill", act: "cx" }, { word: "sp.noAcct" });
-  row("台股已配、沒帳戶:描邊〔到策略組合〕、不出連接框", { hasAcct: false, market: "tw" }, "twAdded", { key: "po.addGo", kind: "out", act: "po" });
+  row("已配、沒接帳戶:「還沒連接帳戶」+〔連接帳戶〕", { hasAcct: false }, "noAcct", { key: "sp.cx", kind: "fill", act: "cx" }, { word: "sp.noAcct" });
+  row("台股已配、沒帳戶:描邊〔到策略組合〕、不出連接框", { hasAcct: false, market: "tw" }, "twNoAcct", { key: "po.addGo", kind: "out", act: "po" });
   row("有帳戶、沒路由:原因句 tr.routeSave + 〔儲存〕", { routeDirty: true }, "route", { key: "tr.save", kind: "fill", act: "route" }, { note: { key: "tr.routeSave" } });
   row("有帳戶、沒路由、策略組合有沒存的改動:sp.unsaved + 描邊〔到策略組合〕", { routeDirty: true, unsaved: true }, "unsaved", { key: "po.addGo", kind: "out", act: "po" }, { note: { key: "sp.unsaved" } });
   row("HALT＋路由空:落沒路由,不是 HALT 那列(HALT 那列要路由齊)", { routeDirty: true, zvOff: true, goKey: "tr.start" }, "route", { key: "tr.save", kind: "fill", act: "route" });
   row("在跑＋路由空:落沒路由", { routeDirty: true, firing: true }, "route", { key: "tr.save", kind: "fill", act: "route" });
   row("綁的那家下不了:〔啟動下單〕真 disabled + 這一支在選擇策略框那一列的原因(§15-1)", { zvOff: true, offNote: { key: "tr.pick.txf", vars: { venue: "統一期貨" } } }, "off",
     { key: "tr.start", kind: "fill", act: null, off: true }, { note: { key: "tr.pick.txf", vars: { venue: "統一期貨" } } });
-  row("在跑、這支有金額:只留記號,不畫主鈕(§13-6)", { firing: true }, "live", null, { mark: true });
-  row("已連接・尚未啟動:〔啟動下單〕(走 trGoClick)", {}, "ready", { key: "tr.start", kind: "fill", act: "go" }, { note: null });
-  row("換金鑰後(book_hold):鈕字「確認帳戶」", { goKey: "tr.acct.btn" }, "ready", { key: "tr.acct.btn", kind: "fill", act: "go" });
-  row("帳本上還有部位(tr.startOnBook):原因句照畫、鈕照可按", { goNote: { key: "tr.startOnBook", vars: { n: "3 口" } } }, "ready", { key: "tr.start", kind: "fill", act: "go" }, { note: { key: "tr.startOnBook", vars: { n: "3 口" } } });
-  row("指令通道不通:〔啟動下單〕停用", { goOff: true }, "ready", { key: "tr.start", kind: "fill", act: "go", off: true });
-  ok("① SP_STATES 每一態都有測試列(新增一態沒有測試就紅)", !!ctx.SP_STATES && Object.keys(ctx.SP_STATES).every((k) => seen.has(k)), J([...Object.keys(ctx.SP_STATES || {})].filter((k) => !seen.has(k))));
+  row("在跑、這支有金額:只留記號,不畫主鈕(§13-6)", { firing: true }, "running", null, { mark: true });
+  row("已連接・尚未啟動:〔啟動下單〕(走 trGoClick)", {}, "start", { key: "tr.start", kind: "fill", act: "go" }, { note: null });
+  row("換金鑰後(book_hold):鈕字「確認帳戶」(acct 態,同 web)", { goKey: "tr.acct.btn" }, "acct", { key: "tr.acct.btn", kind: "fill", act: "go" });
+  row("帳本上還有部位(tr.startOnBook):原因句照畫、鈕照可按", { goNote: { key: "tr.startOnBook", vars: { n: "3 口" } } }, "start", { key: "tr.start", kind: "fill", act: "go" }, { note: { key: "tr.startOnBook", vars: { n: "3 口" } } });
+  row("指令通道不通:〔啟動下單〕停用", { goOff: true }, "start", { key: "tr.start", kind: "fill", act: "go", off: true });
+  ok("① SP_HEAD 每一態都有測試列(新增一態沒有測試就紅)", !!ctx.SP_HEAD && Object.keys(ctx.SP_HEAD).every((k) => seen.has(k)), J([...Object.keys(ctx.SP_HEAD || {})].filter((k) => !seen.has(k))));
 
   // ── ② 接線
   const goClick = fnOf(tr, "trGoClick");
@@ -186,9 +186,9 @@ app.whenReady().then(async () => {
   h = await st("txf", rep({ venue: "binance", amounts: { btc: 500 } }));
   ok("③ 鎖住(台指期＋綁加密所也算台幣標的)", h.st === "locked", J(h));
   h = await st("btc", rep({ amounts: { btc: 500 } }));
-  ok("③ 已配、沒接帳戶:「還沒連接帳戶」+〔連接帳戶〕", h.st === "noacct" && h.word === tx["sp.noAcct"] && h.go === tx["sp.cx"] && h.kind === "btn-fill", J(h));
+  ok("③ 已配、沒接帳戶:「還沒連接帳戶」+〔連接帳戶〕", h.st === "noAcct" && h.word === tx["sp.noAcct"] && h.go === tx["sp.cx"] && h.kind === "btn-fill", J(h));
   h = await st("tw", rep({ amounts: { tw: 100000 } }));
-  ok("③ 台股已配、沒帳戶:描邊〔到策略組合〕", h.st === "twAdded" && h.go === tx["po.addGo"] && h.kind === "btn-out", J(h));
+  ok("③ 台股已配、沒帳戶:描邊〔到策略組合〕", h.st === "twNoAcct" && h.go === tx["po.addGo"] && h.kind === "btn-out", J(h));
   h = await st("btc", rep({ venue: "binance", amounts: { btc: 500 }, exchanges: {} }));
   ok("③ 有帳戶、沒路由:說明下一行 tr.routeSave + 〔儲存〕", h.st === "route" && h.go === tx["tr.save"] && h.note === tx["tr.routeSave"], J(h));
   h = await st("btc", rep({ venue: "binance", amounts: { btc: 500 }, exchanges: {}, halt: true }));
@@ -206,19 +206,19 @@ app.whenReady().then(async () => {
   ok("③ 綁的那家下不了(加密策略、綁統一):〔啟動下單〕真 disabled + 那一列的原因「統一期貨只能下台指期」", h.st === "off" && h.go === tx["tr.start"] && h.dis === true
     && h.note === (await T("tr.pick.txf", { venue: await T("pres.venue") })), J(h));
   h = await st("btc", rep({ venue: "paper", amounts: { btc: 500 } }));
-  ok("③ 已連接・尚未啟動:〔啟動下單〕填色可按,沒有原因句", h.st === "ready" && h.go === tx["tr.start"] && !h.dis && h.note === null, J(h));
+  ok("③ 已連接・尚未啟動:〔啟動下單〕填色可按,沒有原因句", h.st === "start" && h.go === tx["tr.start"] && !h.dis && h.note === null, J(h));
   await run(`$("rp-go").click()`); await wait(200);
   ok("③ …按〔啟動下單〕走 trGoClick → 替身 trAskStart(沒有真的開啟動框);記 sp_start_opened", J(await js("window.__spy")) === J(["start"]) && !(await box()).open && (await js("window.__feats")).includes("sp_start_opened"), J(await js("window.__spy")));
   h = await st("btc", rep({ venue: "okx", amounts: { btc: 500 }, halt: true, bookHold: true }));
-  ok("③ 換金鑰後(book_hold):鈕字「確認帳戶」", h.st === "ready" && h.go === tx["tr.acct.btn"] && !h.dis, J(h));
+  ok("③ 換金鑰後(book_hold):鈕字「確認帳戶」", h.st === "acct" && h.go === tx["tr.acct.btn"] && !h.dis, J(h));
   await run(`$("rp-go").click()`); await wait(200);
   ok("③ …按了走 trGoClick → 替身 trAskAccount,不開啟動框", J(await js("window.__spy")) === J(["acct"]), J(await js("window.__spy")));
   h = await st("btc", rep({ venue: "binance", amounts: { btc: 500 }, halt: true }));
-  ok("③ 暫停中(HALT、路由齊):同「已連接・尚未啟動」〔啟動下單〕", h.st === "ready" && h.go === tx["tr.start"], J(h));
+  ok("③ 暫停中(HALT、路由齊):同「已連接・尚未啟動」〔啟動下單〕", h.st === "start" && h.go === tx["tr.start"], J(h));
   h = await st("btc", rep({ venue: "paper", amounts: { btc: 500 }, running: true }));
-  ok("③ 在跑、這支有金額:只有記號「自動下單中・模擬」,沒有主鈕", h.st === "live" && h.go === null && h.mark === (await T("po.live", { mode: tx["tr.mode.paper"] })) && /paper/.test(h.markKind), J(h));
+  ok("③ 在跑、這支有金額:只有記號「自動下單中・模擬」,沒有主鈕", h.st === "running" && h.go === null && h.mark === (await T("po.live", { mode: tx["tr.mode.paper"] })) && /paper/.test(h.markKind), J(h));
   h = await st("btc", rep({ venue: "binance", amounts: { btc: 500 }, running: true }));
-  ok("③ 在跑(真錢):記號「自動下單中・真錢」", h.st === "live" && h.mark === (await T("po.live", { mode: tx["tr.mode.real"] })) && /real/.test(h.markKind), J(h));
+  ok("③ 在跑(真錢):記號「自動下單中・真錢」", h.st === "running" && h.mark === (await T("po.live", { mode: tx["tr.mode.real"] })) && /real/.test(h.markKind), J(h));
   h = await st("eth", rep({ venue: "binance", amounts: { btc: 500 }, running: true }));
   ok("③ 在跑、這支沒金額:〔自動下單〕", h.st === "add" && h.go === tx["sp.btn"], J(h));
   h = await st("btc", rep({}), `TR_BAGS.local.spCx = { name: "btc", at: Date.now() }`);
@@ -275,13 +275,13 @@ app.whenReady().then(async () => {
   await run(`cxModalClose(true); trGoClick = window.__spyGo`); await wait(50);
   await run(`window.__st.report = Object.assign(window.__st.report, { venues: { binance: ${J(V)} }, config: { amounts: { btc: 1000 }, exchanges: { btc: "binance" } }, account: { read_at: ${now}, venues: { binance: { ok: true, equity: 10000, currency: "USDT", positions: {} } } } })`);
   await poll(); await poll(); h = await head();
-  ok("③ 真錢接上:頁頭停在〔啟動下單〕,不自動開啟動框(trGoClick 替身沒被叫)", h.st === "ready" && h.go === tx["tr.start"] && J(await js("window.__spy")) === "[]", J({ h, spy: await js("window.__spy") }));
+  ok("③ 真錢接上:頁頭停在〔啟動下單〕,不自動開啟動框(trGoClick 替身沒被叫)", h.st === "start" && h.go === tx["tr.start"] && J(await js("window.__spy")) === "[]", J({ h, spy: await js("window.__spy") }));
   await run(`$("rp-go").click()`); await wait(150);
   ok("③ …按〔啟動下單〕:走 trGoClick(替身收到一次)", J(await js("window.__spy")) === J(["go"]));
 
   // ── 超時兩種
   h = await st("btc", rep({ amounts: { btc: 1000 } }), `TR_BAGS.local.spCx = { name: "btc", at: Date.now() - 200000 }`);
-  ok("③ 超時、venue 沒進報告:落「還沒連接帳戶」", h.st === "noacct" && (await js("TR_BAGS.local.spCx")) === null, J(h));
+  ok("③ 超時、venue 沒進報告:落「還沒連接帳戶」", h.st === "noAcct" && (await js("TR_BAGS.local.spCx")) === null, J(h));
   h = await st("btc", rep({ venue: "binance", amounts: { btc: 1000 }, exchanges: {} }), `TR_BAGS.local.spCx = { name: "btc", at: Date.now() - 200000 }`);
   ok("③ 超時、venue 在、路由空:落「有帳戶、沒路由」", h.st === "route", J(h));
   await run(`$("rp-go").click()`); await wait(500);
@@ -317,12 +317,12 @@ app.whenReady().then(async () => {
   // ── 關框／capHandoff 清旗標
   h = await st("btc", rep({ amounts: { btc: 1 } }));
   await run(`$("rp-go").click()`); await wait(200); await run(`cxDismiss()`); await wait(100);
-  ok("③ 連接框沒接就關(cxDismiss):不進連接中,回「還沒連接帳戶」", (await js("TR_BAGS.local.spCx")) === null && (await head()).st === "noacct");
+  ok("③ 連接框沒接就關(cxDismiss):不進連接中,回「還沒連接帳戶」", (await js("TR_BAGS.local.spCx")) === null && (await head()).st === "noAcct");
   await run(`TR_BAGS.local.spCx = { name: "btc", at: Date.now() }; cxModalOpen(null)`); await wait(150);
   const opened = (await head()).cx; await run(`cxDismiss()`); await wait(100);
   ok("③ 連接中時別處開的連接框沒接就關(cxModalClose(false)):連同旗標一起收掉", opened && (await js("TR_BAGS.local.spCx")) === null);
   await run(`$("rp-go").click()`); await wait(200); await run(`cxModalClose("handoff")`); await wait(100);
-  ok("③ capHandoff 那種關法(交給 agent、什麼都沒綁):不進連接中", (await js("TR_BAGS.local.spCx")) === null && (await head()).st === "noacct");
+  ok("③ capHandoff 那種關法(交給 agent、什麼都沒綁):不進連接中", (await js("TR_BAGS.local.spCx")) === null && (await head()).st === "noAcct");
 
   // ── 台股:不出連接框;綁模擬在跑存台股是儲存並下單型
   h = await st("tw", rep({ pv: { tw: { symbol: "2330", position: 1, close: 1000, bar_at: now - 86400, bar_date: "2026-10-30", latest: true, daily_tw: true, market: "spot" } } }));
@@ -355,7 +355,7 @@ app.whenReady().then(async () => {
   const cview = async () => js(`(() => { ENV.cur = "cloud"; const C = TR_BAGS.cloud; C.list = [{ name: "btc", displayName: "BTC", hasBacktest: true, symbol: "BTCUSDT", srcMarket: "crypto", universe: [] }]; C.listLoaded = true;
     RPC.name = "btc"; RPC.data = { name: "btc", stats: { symbol: "BTCUSDT" }, code: "x" }; const v = spView(true); ENV.cur = "local"; return v; })()`);
   let cv = await cview();
-  ok("③ 雲端視角、已配、沒接帳戶:「還沒連接帳戶」+〔連接帳戶〕", cv && cv.st === "noacct" && cv.btn.key === "sp.cx", J(cv));
+  ok("③ 雲端視角、已配、沒接帳戶:「還沒連接帳戶」+〔連接帳戶〕", cv && cv.st === "noAcct" && cv.btn.key === "sp.cx", J(cv));
   await run(`TR_BAGS.cloud.st = ${cloudSt({ btc: 500 }, "binance")}; TR_BAGS.cloud.save = "sent"`);
   cv = await cview();
   ok("③ 雲端視角、存完等回報(save === sent):讀不到、真 disabled", cv && cv.st === "unread" && cv.btn.off === true, J(cv));

@@ -197,7 +197,7 @@ async function poOpen(tab, focus) {
   if (focus) $("po-h").focus();
   trPollSoon(0);
 }
-/* ── 策略頁頭的動作槽(spec strategy-page-autotrade-2026-10-31;handoff.js hoPaint 畫,狀態表 SP_STATES／spHead 在 handoff.js 的純邏輯段)──
+/* ── 策略頁頭的動作槽(spec strategy-page-autotrade-2026-10-31;handoff.js hoPaint 畫,狀態表 SP_HEAD／spHead 在 handoff.js 的純邏輯段)──
    一律以正在看的那一支判,不看 main_market。兩個視角同一套:這台電腦讀 RP + 本機那一袋,雲端讀 RPC + 雲端那一袋。
    寫入只有一條路(金額框 trCfOpen → amounts);連接框、啟動框都是現成的,這裡只決定什麼時候開 */
 /* 這支的市場(鈕字與走法):crypto 加密(含 NVDAUSDT 那種股票永續)／txf 台指期(含個股期貨)／tw 台股／us 美股純代號。
@@ -348,8 +348,8 @@ function spGoCheck(S) {
   if (Date.now() - g.at >= TR_CX_SAVED_MS) { S.spGo = null; return; }
   if (S !== TR_BAGS[ENV.cur] || $("rp").hidden || !$("del-scrim").hidden || !$("cx-scrim").hidden) return;
   const v = spView(S.env === "cloud"); if (!v || v.name !== g.name) return;
-  if (v.st === "live") { S.spGo = null; return; }
-  if (v.st !== "ready" || !v.btn || v.btn.off || v.btn.key !== "tr.start") return;
+  if (v.st === "running") { S.spGo = null; return; }
+  if (v.st !== "start" || !v.btn || v.btn.off || v.btn.key !== "tr.start") return;
   S.spGo = null;
   if (trWith(S, () => trGoClick($("rp-go"))) === "start") trackFeature("sp_start_opened");
 }
