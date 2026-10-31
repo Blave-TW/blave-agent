@@ -1238,10 +1238,9 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
    [☰ 44][提示][分頁…][+N][＋ 44],列高 52(對齊中欄 .tb)。整條頂列一條中線 y=26(紅綠燈、切換鈕、分頁、☰、＋ 都在上面)。
    分頁浮在頂列上:看得到的本體 --tabs-body 高、置中;上下各 --tabs-reach 的透明框把熱區補到 44,其外(列最上、最下 4)是拖曳區 */
 .chat-head:has(#cs-tabs) {
-  --tabs-body: 28px; --tabs-reach: 8px; --tabs-bg: var(--bg-body);
+  --tabs-body: 28px; --tabs-reach: 8px;
   padding: 0; gap: 0; align-items: stretch; position: relative;
 }
-html[data-env="cloud"] .chat-head:has(#cs-tabs) { --tabs-bg: var(--surface-muted); }
 /* ☰、＋、提示、+N:熱區撐滿 52;看得到的 28 高底(::before)置中在 26 */
 .chat-head:has(#cs-tabs) .cs-btn, .cs-hint, .cs-more {
   height: auto; position: relative; isolation: isolate; background: none; border-radius: 0;
@@ -1294,10 +1293,11 @@ html[data-env="cloud"] .chat-head:has(#cs-tabs) { --tabs-bg: var(--surface-muted
 .tab-ticks[data-k="0"] i:nth-child(1), .tab-ticks[data-k="1"] i:nth-child(2), .tab-ticks[data-k="2"] i:nth-child(3) { opacity: 1; }   /* 第幾格亮由 chattabs.js 每秒換 */
 /* 排隊中:收據的 8×2 短劃,不動 */
 .tab-dash { display: block; width: 8px; height: 2px; background: var(--ink-3); }
-/* ×:不佔位,滑過或焦點時墊著那格的底蓋在本體尾端(寬度不跳);熱區 ::after 上下伸進透明框,32×44 */
+/* ×:不佔位,滑過或焦點時出在本體尾端;熱區 ::after 上下伸進透明框,32×44。
+   分頁寬由 chattabs.js 排完就釘住,所以滑過時右內距撐到 × 的寬,標題那段自己讓出來、「…」落在 × 前面,總寬不變 */
 .tab-x { position: absolute; right: 0; top: 0; bottom: 0; width: 32px; display: flex; align-items: center; justify-content: center;
-  background: var(--tabs-bg); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; color: var(--ink-3); cursor: pointer; visibility: hidden; }
-.cs-tabs .tab[aria-selected="true"] .tab-x { background: var(--surface-card); }
+  color: var(--ink-3); cursor: pointer; visibility: hidden; }
+.cs-tabs .tab:not(.narrow):hover, .cs-tabs .tab:not(.narrow):focus-visible { padding-right: 32px; }
 .tab-x::after { content: ""; position: absolute; left: 0; right: 0; top: calc(0px - var(--tabs-reach)); bottom: calc(0px - var(--tabs-reach)); }
 .tab-xv { width: 16px; height: 16px; border-radius: var(--radius-micro); display: flex; align-items: center; justify-content: center; }
 .tab-xv .ic { width: 10px; height: 10px; stroke-width: 2.25; }

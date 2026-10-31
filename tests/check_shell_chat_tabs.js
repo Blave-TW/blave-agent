@@ -289,8 +289,8 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
     && /top: calc\(\(100% - 16px\) \/ 2\); height: 16px;/.test(blk) && /top: calc\(50% - 14px\); height: 28px;/.test(blk)
     && !/tabs-top|tabs-pad-b|tabs-drag|padding-top: calc/.test(blk) && !/(?<![-\w])height: (46|44|36)px|\btop: (6|13|16)px|inset: -12px/.test(blk)
     && /const TABS_MIN = 60, TABS_MIN_SEL = 112, TABS_NARROW = 88, TABS_GAP = 2;/.test(ct));
-  ok("× 不佔位:絕對定位蓋在本體尾端、墊那格的底、滑過或焦點才出;熱區 ::after 上下伸進透明框(32×44)", /\.tab-x \{ position: absolute; right: 0; top: 0; bottom: 0; width: 32px;[^}]*background: var\(--tabs-bg\); border-radius: 0 var\(--radius-sm\) var\(--radius-sm\) 0;[^}]*visibility: hidden; \}/.test(blk)
-    && blk.includes('.cs-tabs .tab[aria-selected="true"] .tab-x { background: var(--surface-card); }') && blk.includes(".tab-x::after { content: \"\"; position: absolute; left: 0; right: 0; top: calc(0px - var(--tabs-reach)); bottom: calc(0px - var(--tabs-reach)); }")
+  ok("× 不佔位:絕對定位在本體尾端、不墊底色;滑過或焦點時右內距撐到 32(標題讓位)、寬度由 chattabs.js 釘住;熱區 ::after 上下伸進透明框(32×44)", /\.tab-x \{ position: absolute; right: 0; top: 0; bottom: 0; width: 32px;[^}]*visibility: hidden; \}/.test(blk) && !/\.tab-x \{[^}]*background/.test(blk) && !/tabs-bg/.test(css + trcss)
+    && blk.includes(".cs-tabs .tab:not(.narrow):hover, .cs-tabs .tab:not(.narrow):focus-visible { padding-right: 32px; }") && /\[\.\.\.bar\.children\]\.forEach\(\(el, i\) => \{ el\.style\.flex = "none"; el\.style\.width = ws\[i\] \+ "px"; \}\);/.test(ct) && blk.includes(".tab-x::after { content: \"\"; position: absolute; left: 0; right: 0; top: calc(0px - var(--tabs-reach)); bottom: calc(0px - var(--tabs-reach)); }")
     && blk.includes(".cs-tabs .tab:hover .tab-x, .cs-tabs .tab:focus-visible .tab-x { visibility: visible; }") && !/\.tab-x \{[^}]*flex: none/.test(blk));
   // 列舉:分頁列區塊與切換鈕(共用 segment 配方)裡每個往外伸的 ::before／::after(top／bottom／inset 為負、calc(0px - …)、min(0px, …)),
   //       自己都要在 no-drag 清單裡(偽元素不繼承 app-region;伸出元素外的那段蓋在拖曳條上就點不動)。加一個往外伸卻沒帶的就紅

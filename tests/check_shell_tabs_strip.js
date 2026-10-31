@@ -110,11 +110,16 @@ app.whenReady().then(async () => {
     const before = t1.w;
     const g2 = await js("geo()");
     ok("滑過沒選中的分頁:× 畫出來、寬度不變;其他格不畫", g2.tabs[1].xv === "visible" && g2.tabs[1].w === before && g2.tabs[0].xv === "hidden" && g2.tabs[2].xv === "hidden", g2.tabs.map((t) => [t.xv, t.w]));
-    const xbg = await js(`(() => { const x = document.querySelectorAll("#cs-tabs .tab-x"); return { off: getComputedStyle(x[1]).backgroundColor, sel: getComputedStyle(x[0]).backgroundColor, row: getComputedStyle(document.getElementById("cs-head")).backgroundColor, card: getComputedStyle(document.querySelector(".pane-chat")).backgroundColor }; })()`);
-    ok("× 墊著那格的底:沒選中 = 列底、選中 = 卡面", xbg.off === xbg.row && xbg.sel === xbg.card, xbg);
+    // 滑過時標題讓出 × 的位置:標題的可見框右緣不越過 ×、× 不墊底色硬蓋;被截的話截在標題框自己身上(overflow hidden + ellipsis = 「…」在 × 前面)
+    const room = (k) => js(`(() => { const tab = document.querySelectorAll("#cs-tabs .tab")[${k}], t = tab.querySelector(".tab-t"), x = tab.querySelector(".tab-x"), ts = getComputedStyle(t), tr = t.getBoundingClientRect(), xr = x.getBoundingClientRect();
+      return { tRight: +tr.right.toFixed(2), xLeft: +xr.left.toFixed(2), cut: t.scrollWidth > t.clientWidth + 1, ell: ts.textOverflow === "ellipsis" && ts.overflow === "hidden" && ts.whiteSpace === "nowrap", xBg: getComputedStyle(x).backgroundColor, xv: getComputedStyle(x).visibility, w: tab.getBoundingClientRect().width }; })()`);
+    const r1 = await room(1);
+    ok("滑過沒選中的:標題可見框不跟 × 重疊、截了就有「…」、× 不墊底色;總寬不變", r1.xv === "visible" && r1.tRight <= r1.xLeft + 0.5 && r1.cut && r1.ell && r1.xBg === "rgba(0, 0, 0, 0)" && r1.w === before, r1);
     await mouse("mouseMove", g.head.left + t0.x + 20, g.head.top + 34);
     const g3 = await js("geo()");
     ok("滑過選中那格:它的 × 才畫", g3.tabs[0].xv === "visible" && g3.tabs[1].xv === "hidden", g3.tabs.map((t) => t.xv));
+    const r0 = await room(0);
+    ok("滑過選中那格:標題一樣讓出 ×、「…」在 × 前面,總寬不變", r0.tRight <= r0.xLeft + 0.5 && r0.cut && r0.ell && r0.xBg === "rgba(0, 0, 0, 0)" && r0.w === t0.w, r0);
     await mouse("mouseMove", 5, 700);
     const sty = await js(`(() => { const el = document.querySelector('#cs-tabs .tab[aria-selected="true"]'), cs = getComputedStyle(el), off = document.querySelector('#cs-tabs .tab:not([aria-selected="true"])');
       return { r: cs.borderTopLeftRadius, rr: cs.borderTopRightRadius, bl: cs.borderBottomLeftRadius, br: cs.borderBottomRightRadius, clip: cs.backgroundClip, bg: cs.backgroundColor, card: getComputedStyle(document.querySelector(".pane-chat")).backgroundColor, offBg: getComputedStyle(off).backgroundColor, sep: getComputedStyle(off, "::after").height, sepBg: getComputedStyle(off, "::after").backgroundColor, selSep: getComputedStyle(el, "::after").content,
