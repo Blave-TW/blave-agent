@@ -767,7 +767,7 @@ function privPaint() {
   const off = PRIV === false;
   if (!off) box.append(mk("p", "priv-lead", t("priv.lead")));
   const two = mk("div", "priv-two");
-  [[off ? t("priv.collect.hOff") : t("priv.collect.h"), PRIV_COLLECT], [t("priv.never.h"), PRIV_NEVER]].forEach(([head, keys]) => {
+  [[t("priv.never.h"), PRIV_NEVER], [off ? t("priv.collect.hOff") : t("priv.collect.h"), PRIV_COLLECT]].forEach(([head, keys]) => {
     const col = mk("div"), ul = mk("ul"); col.append(mk("h6", "", head));
     keys.forEach((k) => ul.append(mk("li", "", t(k)))); col.append(ul); two.append(col);
   });
