@@ -60,6 +60,9 @@ ok("6 鍵名不像、值像金鑰的也收", vals.includes("Zx9Qw8Er7Ty6Ui5Op4As
 ok("6 *_DEMO、短值、註解、一般設定值、策略名不收", !["1", "okx_demo_flag", "short", "commented", "verbose", "binance_funding_rate_strategy_v2_xxxxxx"].some((v) => vals.includes(v)), vals);
 ok("N1 不是關鍵字的名=值後面還有一對 key=value:後面那對照遮", R.redact("url=http://x?api_key=abcd1234efgh&a=1").indexOf("abcd1234efgh") < 0);
 ok("N2 含 / 的 base64 金鑰整串遮", R.redact("key q8Zt/Kp2+Lm9Wx4Rb7Vn1Yc3Hd6Jf0Gs/Ae5UoIi") === "key ⟦R⟧", R.redact("key q8Zt/Kp2+Lm9Wx4Rb7Vn1Yc3Hd6Jf0Gs/Ae5UoIi"));
+// api 的名字段與關鍵字都是 (?i):K(U+212A)、ſ 會摺成 k、s,JS 要 i 加 u 才摺;少一個,名字在這兩個字斷開、值就漏遮。want = api 48377c65 跑同一串的輸出
+for (const [t, want] of [["\u212Aey=Ab12Cd34Ef56 ok", "\u212Aey=⟦R⟧ ok"], ["\u017Fecret=q1w2e3r4 ok", "\u017Fecret=⟦R⟧ ok"], ["api_\u212Aey: Zq81mmwx", "api_\u212Aey: ⟦R⟧"]])   // gitleaks:allow (fake)
+  ok(`N3 名字含 K／ſ 照 api 的 (?i) 遮:${JSON.stringify(t)}`, R.redact(t) === want, R.redact(t));
 { const cfg = R.envSecretValues(["BINANCE_ACCOUNT_TYPE=futures", "OKX_ACCOUNT_MODE=isolated", "BYBIT_ACCOUNT=unified", "PAPER_TOKEN_MODE=paper",
     "GATE_ACCOUNT=Futures", "BITGET_ACCOUNT=futures1", "X_KEY=testnet"].join("\n"));
   ok("6 鍵名像秘密、值是常見設定字(futures、isolated、unified…):不收,這個字不會從每則對話被抹掉", !["futures", "isolated", "unified", "paper", "testnet"].some((v) => cfg.includes(v)), cfg);
@@ -78,7 +81,7 @@ ok("6 已知值一併遮、不進輸出", R.redact("key 是 Ab12Cd34Ef56 跟 987
   else {
     // 只取語料那一段來跑;desktop_portfolio 會 import Flask,這裡只抄它的四個 regex 定義(同 api redact 用的那四個物件)
     const py = String.raw`
-import json, os, re, sys, types, random, string
+import base64, json, os, re, sys, types, random, string
 api = sys.argv[1]
 src = open(os.path.join(api, "openclaw", "desktop_portfolio.py"), encoding="utf-8").read()
 dp = types.ModuleType("openclaw.desktop_portfolio")
@@ -89,7 +92,7 @@ sys.modules["openclaw"] = pk; sys.modules["openclaw.desktop_portfolio"] = dp
 from openclaw import redact as rd
 d = open(os.path.join(api, "tests", "check_redact_differential.py"), encoding="utf-8").read()
 code = d[d.index("SECRETS = ("):d.index('print(f"語料')]
-ns = {"json": json, "random": random, "string": string}
+ns = {"base64": base64, "json": json, "random": random, "string": string}
 exec(code, ns)
 json.dump([[t, rd.redact(t)] for (t, _k, _s) in ns["corpus"]], sys.stdout, ensure_ascii=False)
 `;

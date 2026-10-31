@@ -26,14 +26,14 @@ const WORD_SPLIT_RE = new RegExp("[" + WS + "\"',\\[\\]{}\\-_]+", "u");   // JSO
 /* 名=值(api 34ed3832 的寫法):只掃「名字段」,名字含關鍵字才吃它後面的值;不含就只前進到分隔符後——
    值裡面可能還有下一對 key=value。名字段的 lookbehind 只讓比對從一串名字字元的開頭起跑,整段線性。
    分隔符兩邊只認同一行的空白(空的 api_key: 不會把下一行的 passphrase: 當成值);全形冒號、中文關鍵字也算 */
-const KV_NAME_PART_RE = new RegExp("(?<![A-Za-z0-9_.\\-\\u4e00-\\u9fff])[A-Za-z0-9_.\\-\\u4e00-\\u9fff]+[\"']?[ \\t\\u3000]*[:=：][ \\t\\u3000]*[\"']?", "gu");
+const KV_NAME_PART_RE = new RegExp("(?<![A-Za-z0-9_.\\-\\u4e00-\\u9fff])[A-Za-z0-9_.\\-\\u4e00-\\u9fff]+[\"']?[ \\t\\u3000]*[:=：][ \\t\\u3000]*[\"']?", "giu");
 // 值前面可以有一個開括號;值裡的括號算值,結尾多出來、沒在值裡開過的收尾括號留給外面(cfg:{secret:x} 的 } 不算值)
 const KV_VALUE_RE = new RegExp("[({\\[「]?[^" + WS + "\"'`,;&]+", "yu");
 const KV_NAMEISH_RE = /^[A-Za-z0-9_.\-]+[:=：]$/;   // 吃到的「值」其實是下一對的名字
 const KV_VALUE_MIN = 6;
 const KV_CLOSER = { ")": "(", "}": "{", "]": "[", "」": "「" };
 const BEARER_RE = new RegExp("(?<![A-Za-z0-9_])(bearer[" + WS + "]+)([A-Za-z0-9._~+/\\-]{16,}=*)", "giu");   // Authorization 標頭:只遮 token
-const KV_NAME_RE = /key|secret|token|passphrase|password|passwd|pwd|private|密碼|密码|金鑰|金钥|私鑰|私钥|密鑰|密钥|口令/i;
+const KV_NAME_RE = /key|secret|token|passphrase|password|passwd|pwd|private|密碼|密码|金鑰|金钥|私鑰|私钥|密鑰|密钥|口令/iu;   // i 加 u 才跟 api 的 (?i) 一樣把 K(U+212A)、ſ 摺成 k、s;名字段那條同理
 const PREFIX_RE = new RegExp(
   "(?<![A-Za-z0-9_\\-.])eyJ[A-Za-z0-9_\\-]+\\.eyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+"
   + "|(?<![A-Za-z0-9_])(?:"
