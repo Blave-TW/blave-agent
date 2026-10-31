@@ -59,8 +59,18 @@ async function detect() {
   detectAt = Date.now();
   detectingRows();
   setHint(null);
-  lastDetect = await window.blave.detectAgents();
-  if (typeof akSetInfo === "function") akSetInfo(lastDetect.apikey);   // 存了哪一家 + 上架清單(主行程從不給金鑰值)
+  let d = null;
+  try { d = await window.blave.detectAgents(); } catch (_) { d = null; }
+  if (d) {
+    lastDetect = d;
+    if (typeof akSetInfo === "function") akSetInfo(lastDetect.apikey);   // 存了哪一家 + 上架清單(主行程從不給金鑰值)
+  } else {
+    // IPC 本身 reject(主行程的總上限之外):照主行程超時那份形狀畫「沒有回應」,不然列永遠是「偵測中…」、鈕全鎖。
+    // apikey 照上一次知道的帶著:paintRows 靠它算 localReady,缺了會把存了金鑰的人畫成沒有本機可用
+    const hung = { installed: true, loggedIn: false, path: null, authOutside: false };
+    lastDetect = { claude: { ...hung, why: "claude_timeout", authMethod: null, email: null, how: null }, codex: { ...hung, why: "codex_timeout", via: null },
+      apikey: (typeof AK === "object" && AK.info) || null };
+  }
   paintRows(lastDetect);
   // 連結畫面上本機兩個都不能用:是狀態不是失敗,但「沒連上任何 AI 的安裝」只有這裡答得出為什麼
   if (!$("view-connect").hidden && !localReady) trackEvent("connect_failed", { kind: "no_local" });
@@ -201,11 +211,17 @@ async function localLogin(kind, b) {
     const box = host();
     if (box) box.querySelectorAll("button").forEach((x) => { if (x !== b) x.disabled = true; });
   }
-  const r = await agentLoginRun(kind, () => {
-    if (inLai) { LAI.msg[kind] = "opened"; laiPaint(); return srSay(t("row.opened")); }
-    if (!inRow) return setHint({ text: t("login.opened", { name }) });
-    ROWMSG[kind] = "opened"; paintRows(lastDetect); srSay(t("row.opened"));
-  });
+  let r;
+  try {
+    r = await agentLoginRun(kind, () => {
+      if (inLai) { LAI.msg[kind] = "opened"; laiPaint(); return srSay(t("row.opened")); }
+      if (!inRow) return setHint({ text: t("login.opened", { name }) });
+      ROWMSG[kind] = "opened"; paintRows(lastDetect); srSay(t("row.opened"));
+    });
+  } catch (_) {
+    // 主行程 agentLogin 遇例外是 rethrow:當成沒登入成功,照常走下面的收尾(detect() 重畫三個表面、鈕放開)
+    r = { ok: false, cancelled: false, busy: false, cantRun: false };
+  }
   loginPending = null;
   if (!r.ok && !r.cancelled && !r.busy) trackEvent("connect_failed", { kind: kind === "codex" ? "codex_login" : "claude_login" });
   if (inRow) ROWMSG[kind] = null;
@@ -3932,7 +3948,9 @@ function localLoginFlow(card, kind) {
     // 「已在瀏覽器開啟」同連結畫面:登入行程 spawn 起來活過 1 秒才講(agentLoginRun);在那之前原句不動、鈕先換成取消
     const cancel = () => window.blave.cancelAgentLogin();
     card.set({ text: t("fault.localAuth", { name }), label: t("login.cancel"), out: true, on: cancel });
-    const r = await agentLoginRun(kind, () => card.set({ calm: true, text: t("login.opened", { name }), label: t("login.cancel"), out: true, on: cancel }));
+    let r;
+    try { r = await agentLoginRun(kind, () => card.set({ calm: true, text: t("login.opened", { name }), label: t("login.cancel"), out: true, on: cancel })); }
+    catch (_) { r = { ok: false, cancelled: false, busy: false, cantRun: false }; }   // 同 localLogin:例外不能讓鈕永遠是「取消等待」
     loginPending = null;
     if (!r.ok && !r.cancelled && !r.busy) trackEvent("connect_failed", { kind: kind === "codex" ? "codex_login" : "claude_login" });
     if (r.ok) { trackFeature(kind === "codex" ? "codex_login_ok" : "claude_login_ok"); me.done(); }

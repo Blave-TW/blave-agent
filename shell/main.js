@@ -242,7 +242,7 @@ async function claudePath(envPath, seen) {
 /* 這一輪要跑的 codex 執行檔。**只解路徑**,不跑 `login status`——每一則訊息都要用,detectAgents() 一次要開到四個子行程;
    連 Claude 的人一次都不必開(SDK 自己找 claude)。來源仍然是當下的偵測,不是連結紀錄裡那個 agent 寫得到的字(稽核 R4)。 */
 async function codexBinNow() { return codexPath(await loginShellPath()); }
-async function detectAgents() {
+async function detectAgentsRaw() {
   const envPath = await loginShellPath();
   const out = {
     claude: { installed: false, loggedIn: false, authMethod: null, email: null, path: null, why: null, authOutside: false, how: null },
@@ -313,6 +313,23 @@ async function detectAgents() {
   out.claude.why = detectWhy("claude", rec.claude); out.codex.why = detectWhy("codex", rec.codex);
   detectLogWrite(path.join(BASE, "state", "detect.log"), { ts: new Date().toISOString(), os: process.platform, ...rec });
   return out;
+}
+/* 整次偵測的上限(spec codex-detect-gaps §3.4):裡面每一步都有上限,但任何一處 reject 畫面就永遠停在「偵測中…」、
+   登入鈕全部鎖死(uid 33959)。最壞路徑是 Windows codex 那條:which + Store PowerShell + 登入檢查,cantRun 後退路再走一輪,兩倍再留 10 秒。
+   超時或 reject 回完整形狀、兩條都是 installed:true + *_timeout:畫面畫「沒有回應」(不是「未偵測到」),跟 detectWhy 的 _timeout 同一個意思。
+   內層超時後還會跑完、再寫一行 detect.log、更新 BAD_BIN／storeCodex,接受 */
+const DETECT_TOTAL_MS = 2 * (5000 + 15000 + LOGIN_CHECK_MS) + 10000;
+async function detectAgents(ms = DETECT_TOTAL_MS) {
+  let timer = null, err = null, out = null;
+  try { out = await Promise.race([detectAgentsRaw(), new Promise((r) => { timer = setTimeout(r, ms, null); })]); }
+  catch (e) { err = e; }
+  clearTimeout(timer);
+  if (out) return out;
+  detectLogWrite(path.join(BASE, "state", "detect.log"), { ts: new Date().toISOString(), os: process.platform, hung: true, err: err ? String((err && (err.code || err.name)) || "Error") : "deadline" });
+  return {
+    claude: { installed: true, loggedIn: false, authMethod: null, email: null, path: null, why: "claude_timeout", authOutside: false, how: null },
+    codex: { installed: true, loggedIn: false, path: null, why: "codex_timeout", via: null, authOutside: false },
+  };
 }
 
 /* 本機 agent 的登入不是我們的 OAuth:帳號是用戶跟 Anthropic / OpenAI 之間的事,憑證在 CLI
