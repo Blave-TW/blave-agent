@@ -159,6 +159,18 @@ app.whenReady().then(async () => {
     await mouse("mouseDown", cx, cy); await mouse("mouseUp", cx, cy);
     const after = await js(`({ n: CS.order.length, cur: CS.cur && CS.cur.sid })`);
     ok("…點它的正中間是切換過去,不會關掉", after.n === 3 && after.cur === n2.sid, { after, want: n2.sid });
+    await mouse("mouseMove", 5, 700);
+    // 選中那格標題短也最窄 112:× 32 只佔尾端,標題區與分頁中間點下去都停在原地
+    const g3 = await setup(720, ["新對話"].concat(LONG.slice(0, 2)), 0), s3 = g3.tabs[0];
+    ok("選中的「新對話」(自然寬 60)寬度 ≥ 112", s3.sel && s3.w >= 111.5, g3.tabs.map((t) => [t.sel, t.w]));
+    for (const [nm, fx] of [["標題區", "title"], ["分頁正中間", "mid"]]) {
+      const pt = await js(`(() => { const el = document.querySelectorAll("#cs-tabs .tab")[0], r = (fx => fx === "title" ? el.querySelector(".tab-t") : el)("${fx}").getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()`);
+      await mouse("mouseMove", pt[0], pt[1]);
+      const hit = await js(`(() => { const e = document.elementFromPoint(${pt[0]}, ${pt[1]}); return e ? (e.closest(".tab-x") ? "x" : e.closest(".tab") ? "tab" : "other") : null; })()`);
+      await mouse("mouseDown", pt[0], pt[1]); await mouse("mouseUp", pt[0], pt[1]);
+      const st = await js(`({ n: CS.order.length, cur: CS.cur && CS.cur.sid })`);
+      ok("選中的「新對話」點" + nm + ":點到分頁本體、停在原地不關", hit === "tab" && st.n === 3 && st.cur === s3.sid, { hit, st, want: s3.sid });
+    }
     await mouse("mouseMove", 5, 700); }
 
   // ── 焦點環四邊都在(稽核 A1):鍵盤焦點在沒選中、選中、被縮窄的分頁上,截圖量環四邊中點都是 --focus-ring 的色(× 出現也不蓋掉)

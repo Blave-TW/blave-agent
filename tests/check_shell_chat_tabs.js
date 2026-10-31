@@ -273,17 +273,17 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
   // 13.6 收進 +N:把 chattabs.js 的 tabsLayout 原文切出來跑。標題都長時(自然寬 180)avail = 欄寬 − 左框 1 − ☰ 44 − ＋ 44
   const m = ct.match(/\nconst TABS_MIN = [^\n]*\n(function tabsLayout\([\s\S]*?\n\})/), c = ct.match(/\nconst TABS_MIN = [^\n]*/);
   const lay = m && new Function(c[0] + "\n" + m[1] + "\nreturn { tabsLayout, TABS_MIN, TABS_MIN_SEL };")();
-  const run = (cw, nats, sel) => { const order = nats.map((_, i) => "s" + i); const mins = nats.map((n, i) => Math.min(n, i === sel ? lay.TABS_MIN_SEL : lay.TABS_MIN));
+  const run = (cw, nats, sel) => { const order = nats.map((_, i) => "s" + i); const mins = nats.map((n, i) => (i === sel ? lay.TABS_MIN_SEL : Math.min(n, lay.TABS_MIN)));
     const L = lay.tabsLayout(cw - 1 - 88, order, "s" + sel, mins, 44); return { shown: L.shown.map((s) => +s.slice(1)), hidden: L.hidden.length }; };
   const long = (n) => Array(n).fill(180);
   const cap = lay && [[720, 9, 8], [452, 5, 4], [336, 3, 2]].map(([cw, all, more]) => [cw, run(cw, long(all), 0), run(cw, long(all + 1), 0), all, more]);
   ok("13.6 容量(長標題):720 放 9／10 個時 8＋N;452 放 5／4＋N;336 放 3／2＋N", !!lay && cap.every(([, a, b, all, more]) => a.shown.length === all && !a.hidden && b.shown.length === more && b.hidden === all + 1 - more), cap);
-  ok("13.6 短標題放更多:452 六個自然寬 50 全放;選中最窄是 112 不是 60(六個長標題 452 放不下)", !!lay && run(452, Array(6).fill(50), 0).shown.length === 6 && run(452, long(6), 0).hidden > 0);
+  ok("13.6 短標題放更多:452 六個自然寬 40 全放;選中最窄是 112 不是 60(六個長標題 452 放不下;選中那格自然寬 40 也算 112,七個就放不下)", !!lay && run(452, Array(6).fill(40), 0).shown.length === 6 && run(452, long(6), 0).hidden > 0 && run(452, Array(7).fill(40), 0).hidden > 0);
   ok("13.6 分頁之間的 2 也算進去:最窄加總剛好等於 avail 時(沒算間距)放不下", !!lay && lay.tabsLayout(112 + 60 * 4, ["a", "b", "c", "d", "e"], "a", [112, 60, 60, 60, 60], 44).hidden.length > 0
     && lay.tabsLayout(112 + 60 * 4 + 8, ["a", "b", "c", "d", "e"], "a", [112, 60, 60, 60, 60], 44).hidden.length === 0);
   const back = lay && run(452, long(8), 7);
   ok("13.6 選中的落在後面:列上前 3 個＋它,它在列尾", !!lay && back.shown.join() === "0,1,2,7", back);
-  ok("13.6 量自然寬:最窄 = min(自然寬, 選中 112／有手機記號 82(mchat-phone-surfaces §1 V1)／其他 60)寫在 min-width;+N 比 44 寬就照實寬重算", /const mins = nat\.map\(\(n, i\) => Math\.min\(n, order\[i\] === curSid \? TABS_MIN_SEL : tabsPhone\(CS\.tabs\.get\(order\[i\]\)\) \? TABS_MIN_PHONE : TABS_MIN\)\);/.test(ct)
+  ok("13.6 量自然寬:選中一律最窄 112(標題短也一樣);其他 min(自然寬, 有手機記號 82(mchat-phone-surfaces §1 V1)／其他 60),寫在 min-width;+N 比 44 寬就照實寬重算", /const mins = nat\.map\(\(n, i\) => \(order\[i\] === curSid \? TABS_MIN_SEL : Math\.min\(n, tabsPhone\(CS\.tabs\.get\(order\[i\]\)\) \? TABS_MIN_PHONE : TABS_MIN\)\)\);/.test(ct)
     && /el\.style\.minWidth = mins\[i\] \+ "px";/.test(ct) && /const mw = \$\("cs-more"\)\.offsetWidth; if \(mw > 44\) L = tabsLayout\(avail, order, curSid, mins, mw\);/.test(ct) && !/128|\/ 90\)/.test(ct.slice(ct.indexOf("function tabsLayout"), ct.indexOf("function tabsPaint("))));
   ok("13.4 沒選中、寬不到 88 就不出 ×(本來就短的也一樣);被縮過的另加 narrow(淡出)", /if \(w < TABS_NARROW\) \{ el\.classList\.add\("nox"\); if \(w < Number\(el\.dataset\.nat\) - 1\) el\.classList\.add\("narrow"\); \}/.test(ct) && css.includes(".cs-tabs .tab.nox .tab-x { display: none; }") && !css.includes(".tab.narrow .tab-x"));
   ok("13.6 凍寬只走滑鼠(× 與中鍵);鍵盤 Delete／⌘W 不凍;離開分頁列、拉寬欄、開新分頁放掉", (ct.match(/tabsFreeze\(\); tabsClose\(T\);/g) || []).length === 2 && !/tabsFreeze\(\)[^\n]*Delete|Delete[^\n]*tabsFreeze/.test(ct)

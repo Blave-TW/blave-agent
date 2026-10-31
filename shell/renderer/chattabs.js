@@ -291,7 +291,7 @@ function tabsPaintIn(bar) {
   tabsHint();   // 提示先畫:它吃掉的寬要算進 avail
   if (lone) return;
   const curSid = CS.cur && CS.cur.sid, F = CS.freeze;
-  if (F && F.shown.includes(curSid)) {   // 剛用滑鼠關掉一個:其餘照原寬,滑鼠離開分頁列才重排(下一顆 × 停在游標底下)
+  if (F && F.shown.includes(curSid) && F.w.get(curSid).w >= TABS_MIN_SEL) {   // 接手選中的那格不到 112 就不凍,照規則重排   // 剛用滑鼠關掉一個:其餘照原寬,滑鼠離開分頁列才重排(下一顆 × 停在游標底下)
     const shown = F.shown.filter((s) => order.includes(s));
     for (const sid of shown) { const r = F.w.get(sid), el = tabsTabEl(CS.tabs.get(sid)); el.style.flex = "none"; el.style.width = r.w + "px"; if (sid !== curSid) { if (r.nox) el.classList.add("nox"); if (r.narrow) el.classList.add("narrow"); } bar.appendChild(el); }
     tabsMorePaint(order.filter((s) => !shown.includes(s)));
@@ -302,7 +302,7 @@ function tabsPaintIn(bar) {
   const els = order.map((sid) => tabsTabEl(CS.tabs.get(sid)));
   els.forEach((el) => { el.style.flex = "none"; bar.appendChild(el); });
   const nat = els.map((el) => Math.ceil(el.getBoundingClientRect().width));
-  const mins = nat.map((n, i) => Math.min(n, order[i] === curSid ? TABS_MIN_SEL : tabsPhone(CS.tabs.get(order[i])) ? TABS_MIN_PHONE : TABS_MIN));
+  const mins = nat.map((n, i) => (order[i] === curSid ? TABS_MIN_SEL : Math.min(n, tabsPhone(CS.tabs.get(order[i])) ? TABS_MIN_PHONE : TABS_MIN)));   // 選中那格標題短也撐到 112:× 32 才不會蓋掉大半個分頁
   const avail = bar.clientWidth || 300;
   let L = tabsLayout(avail, order, curSid, mins, 44);
   if (L.hidden.length) { tabsMorePaint(L.hidden); const mw = $("cs-more").offsetWidth; if (mw > 44) L = tabsLayout(avail, order, curSid, mins, mw); }
