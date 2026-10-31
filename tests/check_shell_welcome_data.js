@@ -442,10 +442,11 @@ app.whenReady().then(async () => {
       $("del-cancel").click(); await new Promise((res) => setTimeout(res, 50)); r.closed = $("del-scrim").hidden; r.back = document.activeElement === a; r.tf = window.__tf.slice(); r.lib = $("lib").hidden; return r; })()`);
     ok("③ 點「安裝並回測 →」→ 現行確認框(標題 lib.cf.title、焦點預設取消);取消 → 框收、焦點回這顆 CTA、什麼都沒送、仍在歡迎頁",
       cf.open && cf.title === Z["lib.cf.title"].replace("{title}", WC_LIST[0].title) && cf.focus && cf.closed && cf.back && cf.tf.length === 0 && cf.lib, JSON.stringify(cf));
-    const dis = await js(`(() => { running = true; wcBusySync(); const b = [...$("wc-cards").querySelectorAll(".ln-arrow")]; const r = { dis: b.every((x) => x.getAttribute("aria-disabled") === "true"), cur: getComputedStyle(b[0]).cursor };
-      b[0].click(); r.told = $("ta-wait").textContent === t("turn.busy") && $("del-scrim").hidden;
-      running = false; wcBusySync(); r.back = b.every((x) => !x.hasAttribute("aria-disabled")); taWaitShow(false); return r; })()`);
-    ok("③ 回合進行中 CTA 是鎖(aria-disabled、cursor not-allowed);點了不開確認框、輸入框上方講原因;回合結束解除", dis.dis && dis.cur === "not-allowed" && dis.told && dis.back, JSON.stringify(dis)); }
+    // 0.1.37 對話分頁(a8fa4d8e):回合中不再鎖卡的 CTA,確認後另開一條分頁送(只剩代下載中 LIB.pending 會擋)
+    const dis = await js(`(async () => { running = true; wcBusySync(); const b = [...$("wc-cards").querySelectorAll(".ln-arrow")]; const r = { dis: b.some((x) => x.hasAttribute("aria-disabled")), cur: getComputedStyle(b[0]).cursor };
+      b[0].click(); await new Promise((res) => setTimeout(res, 50)); r.open = !$("del-scrim").hidden; r.told = $("ta-wait").textContent === t("turn.busy");
+      $("del-cancel").click(); await new Promise((res) => setTimeout(res, 50)); r.closed = $("del-scrim").hidden; running = false; wcBusySync(); r.back = b.every((x) => !x.hasAttribute("aria-disabled")); return r; })()`);
+    ok("③ 回合進行中 CTA 不鎖(對話分頁):沒有 aria-disabled、cursor pointer;點了照常開確認框、不講 turn.busy;取消收框", !dis.dis && dis.cur === "pointer" && dis.open && !dis.told && dis.closed && dis.back, JSON.stringify(dis)); }
   { // hover:底換 --surface-muted、小字從 --ink-3 換 --ink-2(ink-3 壓在 hover 底上不到 4.5:1)、› 換色
     const tgt = `$("wl-body").querySelectorAll(".wl-col")[1].querySelector(".wd-row")`, look = () => js(`(() => { const b = ${tgt}; return { on: b.matches(":hover"), mt: getComputedStyle(b.querySelector(".wd-mt")).color, bg: getComputedStyle(b).backgroundColor, go: getComputedStyle(b, "::after").color }; })()`);
     const pt = await js(`(() => { const b = ${tgt}; b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);

@@ -143,7 +143,12 @@ app.whenReady().then(async () => {
   await js(`(async () => { running = false; document.getElementById("strat-add").click(); await new Promise((r) => setTimeout(r, 100)); const f = document.getElementById("ns-modal"); f.elements.name.value = "x"; f.dispatchEvent(new Event("input", { bubbles: true })); })()`); await wait(60);
   b = await box(); const enabled = !b.dis;
   await js(`running = true; nsSync();`); b = await box();
-  ok("③ 回合中:送出 disabled + 腳放 turn.busy;回合結束 → 回復", enabled && b.dis && b.msg === (await T("turn.busy")) && (await js(`(running = false, nsSync(), !document.getElementById("ns-submit").disabled && document.getElementById("ns-msg").textContent === "")`)), JSON.stringify(b));
+  // 0.1.37 對話分頁(a8fa4d8e):回合中不再擋,送出另開一條分頁(csSendAway)
+  const sent0 = await js(`window.__ns.sent.length`), tabs0 = await js(`CS.tabs.size`);
+  r = await js(`(async () => { document.getElementById("ns-submit").click(); await new Promise((r) => setTimeout(r, 200)); const p = window.__ns.sent[window.__ns.sent.length - 1];
+    return { sent: window.__ns.sent.length, last: p && p.message, tabs: CS.tabs.size, sidNew: !!(p && CS.loaded && p.sessionId === CS.loaded.sid), open: !document.getElementById("ns-scrim").hidden }; })()`);
+  ok("③ 回合中不擋(對話分頁):送出鈕照常可按、腳沒有 turn.busy;按下 → 另開一條分頁送出預覽那句、關框", enabled && !b.dis && b.msg === "" && r.sent === sent0 + 1 && r.last === "幫我建立策略「x」。" && r.tabs === tabs0 + 1 && r.sidNew && !r.open, JSON.stringify([b, r, { sent0, tabs0 }]));
+  await js(`(async () => { running = false; nsSync(); document.getElementById("strat-add").click(); await new Promise((r) => setTimeout(r, 100)); const f = document.getElementById("ns-modal"); f.elements.name.value = "x"; f.dispatchEvent(new Event("input", { bubbles: true })); })()`); await wait(60);
   // Esc 關框、焦點回 ＋;取消也一樣
   await js(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));`); b = await box();
   ok("③ Esc → 關框、焦點回 ＋、欄位留著(下次開還在)", !b.open && b.focus === "strat-add" && b.vals === "x||||", JSON.stringify(b));

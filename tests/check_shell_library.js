@@ -710,9 +710,9 @@ app.whenReady().then(async () => {
   const js = (s) => w.webContents.executeJavaScript(s, true);
   const T = (k, v) => js(`t(${JSON.stringify(k)}, ${JSON.stringify(v || {})})`);
   const Q = (s) => js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; return (${s}); })()`);
-  // 對話分頁(0.1.37):真 app 進工作頁時 csInit 接回分頁、CS.loaded 才有值;這支直接開策略庫、不走 enterWorkspace,開機段自己接
-  { const boot = await js(`(async () => { const was = { csReady, tabs: CS.tabs.size }; if (!CS.loaded) await csInit(); return { was, loaded: !!CS.loaded, tabs: CS.tabs.size }; })()`);
-    ok("④ 開機:分頁接回(CS.loaded 有值、一條分頁)", boot.loaded && boot.tabs === 1, JSON.stringify(boot)); }
+  // 對話分頁(0.1.37):loadConnection 有值 → boot 進工作頁、csInit 接回分頁;後面「用這支」送出要有 CS.loaded
+  { const boot = await js(`({ loaded: !!CS.loaded, tabs: CS.tabs.size, booted: CS_BOOTED })`);
+    ok("④ 開機:分頁接回(CS.loaded 有值、一條分頁)", boot.loaded && boot.tabs === 1 && boot.booted, JSON.stringify(boot)); }
 
   // 開
   let r = await js(`(async () => { await libOpen(); await new Promise((r) => setTimeout(r, 80)); const q = (x) => [...document.querySelectorAll(x)];

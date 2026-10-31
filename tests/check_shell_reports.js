@@ -364,15 +364,14 @@ app.whenReady().then(async () => {
     // 還原成這段之前的樣子(後面的步驟接著用 new1 / new2 那份清單)
     await js(`(async () => { await rptOpen(); document.getElementById("rpt-back").click(); window.__r.list = window.__r.keepList; await rptLoad("local", true); rptBag("local").reading = window.__r.keepReading; })()`); await wait(150); }
   // 回合中(spec-0.1.12-library-notes §1,點了才講):鈕 aria-disabled + title、訊息槽空;點了才寫 turn.busy、不開框;回合結束那句收掉、鈕回可按
+  // 0.1.37 對話分頁(a8fa4d8e):回合中不再擋「新增報告」,送出另開一條分頁(csSendAway)
   await js(`running = true; rptSync();`); v = await view();
   const busyA = await js(`(() => { const b = document.getElementById("rpt-ask"); return { aria: b.getAttribute("aria-disabled"), title: b.title, dis: b.disabled }; })()`);
-  const busyQuiet = !v.askDis && v.msg === "" && (await js(`document.getElementById("rpt-msg").getAttribute("role") === "status"`)) && busyA.aria === "true" && busyA.title === (await T("turn.busy"));
   await js(`document.getElementById("rpt-ask").click();`); await wait(80);
-  const vTold = await view(), told = vTold.msg === (await T("turn.busy")) && (await js(`document.getElementById("rpn-scrim").hidden && document.getElementById("rpt-ask").getAttribute("aria-describedby") === "rpt-msg" && document.getElementById("rpt-msg").getAttribute("role") === "status"`));
-  await js(`rptSync();`); const keep = (await view()).msg === (await T("turn.busy"));
-  await js(`running = false; rptSync();`); const vEnd = await view();
-  const ended = !vEnd.askDis && vEnd.msg === null && (await js(`!document.getElementById("rpt-ask").hasAttribute("aria-disabled") && !document.getElementById("rpt-ask").title`));
-  ok("④ 回合中:「新增報告」aria-disabled + title、不常駐那句;點了才出 turn.busy(不開框、role=status)、忙碌中重畫還在;結束收掉、鈕回可按", busyQuiet && told && keep && ended, JSON.stringify([v, busyA, vTold, vEnd]));
+  const vTold = await view(), opened = await js(`!document.getElementById("rpn-scrim").hidden`);
+  await js(`rptNewClose(); running = false; rptSync();`); await wait(60); const vEnd = await view();
+  ok("④ 回合中不擋(對話分頁):「新增報告」沒有 aria-disabled／title、不出 turn.busy;點了照常開新增報告框;回合結束不變", !v.askDis && v.msg === null && busyA.aria === null && !busyA.title && !busyA.dis
+    && opened && vTold.msg === null && !vEnd.askDis && vEnd.msg === null, JSON.stringify([v, busyA, vTold, opened, vEnd]));
   // 兩袋:本機在讀 new1;切到雲端(停機)→ 雲端清單照 api 順序、鈕 disabled + ho.gate.stopped;切回本機仍在讀 new1
   await js(`document.querySelector('#rpt-rows .rpt-row[data-id="new1"]').click();`); await wait(450);
   await js(`window.__r.cloudList = { code: "OK", reports: [{ id: "c-old", title: "雲端舊", type: "morning", created_at: 1, stored_at: 9 }, { id: "c-new", title: "雲端新", type: "research", created_at: 5, stored_at: 8 }] };

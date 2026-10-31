@@ -394,7 +394,11 @@ function enterWorkspace(kind, info) {
   mpInit(kind);
   stratRefresh(false);
   if (typeof wcArm === "function") wcArm();   // 歡迎頁的 3 秒保底從這裡起算(renderer/welcome.js)
-  if (!csReady) { csReady = true; csInit().catch(() => {}).then(() => { CS_BOOTED = true; upSayLines(TR_BAGS.cloud.st); }); }
+  if (!csReady) {
+    csReady = true;
+    const boot = csInit().catch(() => {}).then(() => { CS_BOOTED = true; upSayLines(TR_BAGS.cloud.st); });
+    if (typeof CS !== "undefined") CS.boot = boot;   // 分頁接回之前就送出的那句等它(submitMessage),不然沒有 CS.loaded 可落
+  }
   acctPrecheck();   // 換 agent 不換對話:只在第一次進工作頁接回
   trInit();         // 自動下單(trade.js):開始輪詢本機交易狀態;重複呼叫只會起一次
   if (typeof engSync === "function") engSync();   // 開 app 就在背景裝引擎:這一頁進來時可能已經裝到一半(engine.js)
@@ -3591,6 +3595,9 @@ async function sendDraft() {
 /* 真的送出一句話。回傳這一輪有沒有跑起來(「再送一次」要知道)。不碰輸入框的字;這一句帶的檔送出去了就把 chip 清掉。 */
 async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / 拉回」確認框送的那句才有(handoff.js);重送(lastUserText)不帶
   rsArm();   // 每個送出入口都經過這裡:回覆音的 AudioContext 先建好
+  // 剛進工作頁、tabsRestore 還在讀分頁記憶:等它接回再送,這句才落在接回的那條分頁(沒有 CS.loaded 會在 tabsTrackParallel 炸成「引擎準備失敗」)。
+  // csSendAway 的呼叫端裡會同步讀 CS.away 的(策略庫、報告、掃描、雲端更新)在分頁接回前沒有畫面可按,這裡不替它們回填
+  if (typeof CS !== "undefined" && CS.boot && !CS.loaded && !CS_BOOTED) return CS.boot.then(() => submitMessage(msg, opts));
   // opts.attachments:這一句帶的清單 [{ file, name, from }](sendDraft,以及重送 / 安裝失敗後重試帶的同一份)。
   // 「再送一次」連檔一起重送(resendLast)——跟雲端不同:雲端的重送鈕出現時檔已經落在機器上,這裡 started 回來時主行程還沒落地,
   // 失敗的那一輪(Codex 不見、金鑰不見、形狀不對)可能根本沒存到檔;只重送句子的話檔就無聲不見,純附件那句更是無從重送
@@ -4750,6 +4757,7 @@ async function acctPrecheck() {
   if (typeof wdPaint === "function") wdPaint();   // 能跑的人不會走到下面的 acctPaint,歡迎頁的清單在這裡換版
   if (cur !== "blave") return;                // 預檢卡講的是「Blave AI 能不能跑」,自帶 CLI 的人用不到
   if (!acct || acct.can_run) return;
+  if (typeof CS !== "undefined" && CS.boot && !CS_BOOTED) { await CS.boot; if (acctCard || cur !== "blave" || !acct || acct.can_run) return; }   // 卡要畫進接回的那條分頁,不是裸的 #chat-scroll
   acctCard = faultCard();
   acctPaint();
   acctShown(acctCard, "pre", acct);
@@ -5160,6 +5168,8 @@ function applyStatic() {
   themeLoad(); themeShown();
   hoInit();                        // 「送上雲端 / 拉回」的功能開關(renderer/handoff.js;預設關 = 兩顆鈕都不畫)
   pubLoad().then(() => { acctPaintAcct(); cnFreePaint(); });   // 連結畫面尾註那句要的天數、綁卡前額度的數字;拿不到就不出
+  // 進工作頁會用到排在 app.js 後面的腳本(chattabs.js 的 csInit／chatEl 等):前面幾個 await 若在 parser 跑完前就回來,先等 DOMContentLoaded
+  if (document.readyState === "loading") await new Promise((r) => document.addEventListener("DOMContentLoaded", r, { once: true }));
   const prev = await window.blave.loadConnection();
   // kind 說「用 Blave AI」但 token 不在(被撤銷後清掉、Keychain 讀不到、換了
   // 電腦),進工作頁會在左下角寫「已連結:Blave AI」,實際上引擎沒有 token 就走
