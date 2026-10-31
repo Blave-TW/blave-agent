@@ -107,6 +107,9 @@ check("runtime/SDK_VERSION is x.y.z", re.fullmatch(r"\d+\.\d+\.\d+", pin) is not
 main_js = open(os.path.join(ROOT, "shell", "main.js"), encoding="utf-8").read()
 check("desktop AGENT_SDK == SDK_VERSION",
       f'const AGENT_SDK = "claude-agent-sdk=={pin}";' in main_js)
+codex_pin = open(os.path.join(RUNTIME, "CODEX_VERSION")).read().strip()
+check("runtime/CODEX_VERSION is x.y.z", re.fullmatch(r"\d+\.\d+\.\d+", codex_pin) is not None, codex_pin)
+check("desktop CODEX_PIN == CODEX_VERSION", f'const CODEX_PIN = "{codex_pin}";' in main_js)
 jobs = json.load(open(os.path.join(RUNTIME, "jobs.json")))
 check("jobs.json: Linux sdk timer enabled, service not",
       jobs["linux_units"].get("blave-agent-sdk.timer") == {"enable": True}

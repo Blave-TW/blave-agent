@@ -203,6 +203,10 @@ contextBridge.exposeInMainWorld("blave", {
   // 安裝進度(renderer/engine.js):主行程那一份快照,拉一次 + 之後每次變動推過來
   engineState: () => ipcRenderer.invoke("engine-state"),
   onEngineState: (fn) => ipcRenderer.on("engine-state", (_e, s) => fn(s)),
+  // Codex 引擎隨包(main.js codexPkg):按〔連結〕／〔再試一次〕(reinstall = 隨包那顆跑不起來時重抓);進度拉一次 + 之後推過來
+  codexPkgEnsure: (o) => ipcRenderer.invoke("codex-pkg-ensure", o && o.reinstall === true ? { reinstall: true } : null),
+  codexPkgState: () => ipcRenderer.invoke("codex-pkg-state"),
+  onCodexPkgState: (fn) => ipcRenderer.on("codex-pkg-state", (_e, s) => fn(s)),
   onTurnEvent: (fn) => ipcRenderer.on("turn-event", (_e, c) => fn(c)),
   onTurnEnd: (fn) => ipcRenderer.on("turn-end", (_e, r) => fn(r)),
   onWindowActive: (fn) => ipcRenderer.on("window-active", (_e, on) => fn(on === true)),

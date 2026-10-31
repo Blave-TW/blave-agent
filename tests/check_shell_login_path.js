@@ -118,8 +118,9 @@ var BAD_BIN = { codex: null, claude: null };
 t("storeCodexPath:PowerShell 走 System32 的絕對路徑、-NoProfile -NonInteractive、cwd 釘 System32、有逾時;查的是 OpenAI.Codex 這一個名字、不帶 -AllUsers",
   /run\(path\.win32\.join\(sys32, "WindowsPowerShell", "v1\.0", "powershell\.exe"\), \["-NoProfile", "-NonInteractive", "-Command", CODEX_STORE_PS\], envPath, 15000, sys32\)/.test(sp[0])
   && /const sys32 = path\.win32\.join\(process\.env\.SystemRoot \|\| "C:\\\\Windows", "System32"\)/.test(sp[0]) && /"Get-AppxPackage -Name OpenAI\.Codex \| /.test(sq[0]) && !/AllUsers/i.test(sq[0]));
-t("detectAgents(用戶按重新偵測)叫 codexPath 帶 fresh=true;codexBinNow(每一則訊息)不帶、走快取", /probe\("codex", \(seen\) => codexPath\(envPath, seen, true\), \["login", "status"\], \["login", "status"\]\)/.test(src)
-  && /async function codexBinNow\(\) \{ return codexPath\(await loginShellPath\(\)\); \}/.test(src));
+t("detectAgents(用戶按重新偵測)先問隨包那顆(偵測一律重試它)、再叫 codexPath 帶 fresh=true;codexBinNow(每一則訊息)先問隨包(跳過 BAD_BIN)、codexPath 不帶 fresh、走快取",
+  /probe\("codex", \(seen\) => codexBundled\(!seen\) \|\| codexPath\(envPath, seen, true\), \["login", "status"\], \["login", "status"\]\)/.test(src)
+  && /async function codexBinNow\(\) \{ return codexBundled\(true\) \|\| codexPath\(await loginShellPath\(\)\); \}/.test(src));
 var storeFlow = (async () => {
   // storeCodexPath + codexPath 原文配假的 which / run / fs:PATH 有就不問 Store;沒有才問;問到的記住,檔不在了才重問
   const calls = [], disk = new Set([STORE_EXE]), st = { which: null, out: FAM + "|26.1007.2314.0|" + STORE_DIR + "\r\n", code: 0 };
@@ -222,12 +223,12 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
   { const da = src.match(/^async function detectAgentsRaw\(\) \{[\s\S]*?\n\}/m), dw = src.match(/^function detectWhy\(kind, r\) \{[\s\S]*?\n\}/m);
     if (!da || !dw) t("找得到 detectAgentsRaw / detectWhy", false);
     else { const runs = [], logged = [];
-      const mkDetect = new Function("loginShellPath", "claudePath", "codexPath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process",
+      const mkDetect = new Function("loginShellPath", "claudePath", "codexPath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexBundled",
         crS[0] + "\nconst BAD_BIN = {};\n" + dw[0] + "\n" + da[0] + "\nreturn detectAgentsRaw;");
       const slow = (v) => new Promise((r) => setTimeout(() => r(v), 300));
       const detect = mkDetect(async () => "/usr/bin", async () => "/opt/claude", async () => "/opt/codex",
         (bin, args, envPath, ms, cwd, env) => { if (!env) runs.push([bin, ms, Date.now()]); return slow(bin.endsWith("claude") ? { code: 0, stdout: '{"loggedIn":true}', timedOut: false, ms: 300 } : { code: null, stdout: "", timedOut: true, ms: 300 }); },
-        binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" });
+        binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" }, () => null);
       const t0 = Date.now(), d = await detect(), took = Date.now() - t0;
       t("detectAgents:claude 與 codex 的登入檢查同時開跑(兩條各 300ms,整次 < 500ms;依序會 ≥ 600)、各帶 20 秒上限", took < 500 && runs.length === 2 && Math.abs(runs[0][2] - runs[1][2]) < 100 && runs.every((r) => r[1] === 20000), { took, runs });
       t("…結果照舊組回去:claude 登入、codex 逾時 → why=codex_timeout;紀錄一行", d.claude.loggedIn === true && d.claude.why === null && d.codex.installed && d.codex.loggedIn === false && d.codex.why === "codex_timeout"
@@ -240,13 +241,43 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
   // claude auth status 跑不起來(退出碼非 0、沒有輸出)不是「回的不是 JSON」:只有退出碼 0 才記 json=false
   { const da = src.match(/^async function detectAgentsRaw\(\) \{[\s\S]*?\n\}/m), dw = src.match(/^function detectWhy\(kind, r\) \{[\s\S]*?\n\}/m);
     if (!da || !dw) { t("找得到 detectAgentsRaw / detectWhy", false); process.exit(1); }
-    const mk = new Function("loginShellPath", "claudePath", "codexPath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", crS[0] + "\nconst BAD_BIN = {};\n" + dw[0] + "\n" + da[0] + "\nreturn detectAgentsRaw;");
+    const mk = new Function("loginShellPath", "claudePath", "codexPath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexBundled", crS[0] + "\nconst BAD_BIN = {};\n" + dw[0] + "\n" + da[0] + "\nreturn detectAgentsRaw;");
     const once = async (claudeRes) => { const logged = [];
-      const d = await mk(async () => "/usr/bin", async () => "/opt/claude", async () => null, async () => ({ timedOut: false, ms: 1, ...claudeRes }), binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" })();
+      const d = await mk(async () => "/usr/bin", async () => "/opt/claude", async () => null, async () => ({ timedOut: false, ms: 1, ...claudeRes }), binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" }, () => null)();
       return { why: d.claude.why, json: logged[0].claude.json }; };
     const dead = await once({ code: 1, stdout: "" }), old = await once({ code: 0, stdout: "usage: claude" }), sig = await once({ code: "ENOENT", stdout: "" });
     t("detectAgents:claude 退出碼非 0、stdout 空 → claude_nonzero,不記 json=false;開不起來(ENOENT)→ claude_cantrun(不是沒登入)", dead.why === "claude_nonzero" && dead.json === undefined && sig.why === "claude_cantrun" && sig.json === undefined, { dead, sig });
     t("detectAgents:claude 退出碼 0 但回的不是 JSON(舊版)→ 仍是 claude_badjson", old.why === "claude_badjson" && old.json === false, old); }
+  // ── Codex 引擎隨包(codex-bundled-engine §4.2):隨包優先、cantRun 跳過、身分判 pkg、via 三值 ──
+  { const da = src.match(/^async function detectAgentsRaw\(\) \{[\s\S]*?\n\}/m), dw = src.match(/^function detectWhy\(kind, r\) \{[\s\S]*?\n\}/m);
+    const cb = src.match(/^function codexBundled\(skipBad\) \{[\s\S]*?\n\}/m), cbn = src.match(/^async function codexBinNow\(\) \{.*\}$/m);
+    if (!da || !dw || !cb || !cbn) { t("找得到 detectAgentsRaw／codexBundled／codexBinNow", false); process.exit(1); }
+    const PKG_BIN = "/Users/u/Blave/codex/0.166.0/bin/codex", CASK = "/opt/homebrew/Caskroom/codex/0.166.0/bin/codex";
+    const mkAll = (o) => { const calls = [], logged = [];
+      const api = new Function("loginShellPath", "claudePath", "codexPath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexpkg", "CODEX_PIN", "TRIPLE", "WIN", "fs",
+        crS[0] + "\nconst BAD_BIN = { codex: null, claude: null };\n" + dw[0] + "\n" + cb[0] + "\n" + cbn[0] + "\n" + da[0] + "\nreturn { detectAgentsRaw, codexBinNow, codexBundled, BAD_BIN };")(
+        async () => "/usr/bin", async () => null, async (ep, seen) => { calls.push(seen === undefined ? "codexPath(msg)" : seen ? "codexPath(seen)" : "codexPath(null)"); return o.chain; },
+        async (bin, args) => ({ code: o.codes[bin] !== undefined ? o.codes[bin] : 0, stdout: "", timedOut: false, ms: 1 }), binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" },
+        { installed: (base, pin, triple, win, fsx) => { calls.push("installed:" + [base, pin, triple, win, fsx === "FS"].join(",")); return o.pkg ? { path: o.pkg, version: pin, pinned: true } : null; } }, "0.166.0", "aarch64-apple-darwin", false, "FS");
+      api.calls = calls; api.logged = logged; return api; };
+    let m = mkAll({ pkg: PKG_BIN, chain: "/usr/local/bin/codex", codes: {} }), d = await m.detectAgentsRaw();
+    t("隨包那顆在:偵測用它、via=pkg、detect.log bin=pkg;偵測鏈(codexPath)一次都沒問;codexpkg.installed 帶 BASE／CODEX_PIN／TRIPLE／WIN／fs",
+      d.codex.path === PKG_BIN && d.codex.via === "pkg" && d.codex.loggedIn && m.logged[0].codex.bin === "pkg" && !m.calls.some((c) => c.startsWith("codexPath")) && m.calls.includes("installed:/b,0.166.0,aarch64-apple-darwin,false,true"), { d: d.codex, calls: m.calls });
+    t("…codexBinNow(每一則訊息)也拿隨包那顆、不問偵測鏈", (await m.codexBinNow()) === PKG_BIN && !m.calls.some((c) => c.startsWith("codexPath")));
+    m = mkAll({ pkg: PKG_BIN, chain: "/usr/local/bin/codex", codes: { [PKG_BIN]: 127 } }); d = await m.detectAgentsRaw();
+    t("隨包那顆跑不起來(127):BAD_BIN 記它、find(null) 跳過它走偵測鏈 → PATH 那顆、via=cli、alt=posix", m.BAD_BIN.codex === PKG_BIN && d.codex.path === "/usr/local/bin/codex" && d.codex.via === "cli"
+      && m.calls.includes("codexPath(null)") && m.logged[0].codex.alt === "posix", { d: d.codex, calls: m.calls, bad: m.BAD_BIN });
+    m.calls.length = 0;
+    t("…之後每一則訊息 codexBinNow 跳過隨包那顆、走偵測鏈", (await m.codexBinNow()) === "/usr/local/bin/codex" && m.calls.includes("codexPath(msg)"));
+    t("…codexBundled(false)(偵測、身分比對)不跳過;codexBundled(true)跳過", m.codexBundled(false) === PKG_BIN && m.codexBundled(true) === null);
+    m.calls.length = 0; m.BAD_BIN.codex = PKG_BIN;
+    const fresh = mkAll({ pkg: PKG_BIN, chain: null, codes: { [PKG_BIN]: 127 } }); fresh.BAD_BIN.codex = PKG_BIN; d = await fresh.detectAgentsRaw();
+    t("…下一次偵測照樣重試隨包那顆(find(seen) 不跳);還是 127、鏈上也沒有 → cantrun、via=pkg(畫面給〔再試一次〕重抓)", fresh.calls[0].startsWith("installed:") && d.codex.why === "codex_cantrun" && d.codex.via === "pkg" && d.codex.path === PKG_BIN, d.codex);
+    m = mkAll({ pkg: null, chain: CASK, codes: {} }); d = await m.detectAgentsRaw();
+    t("沒有隨包、偵測鏈找到 Homebrew Caskroom 那顆(佈局跟我們一模一樣)→ 用身分判:bin=posix、via=cli,不是 pkg", d.codex.path === CASK && m.logged[0].codex.bin === "posix" && d.codex.via === "cli", { d: d.codex, rec: m.logged[0].codex });
+    m = mkAll({ pkg: null, chain: "/Applications/ChatGPT.app/Contents/Resources/codex", codes: {} }); d = await m.detectAgentsRaw();
+    t("via 三值:ChatGPT.app 那顆 → app", d.codex.via === "app");
+    t("binKind 不加 pkg 那條(路徑樣式分不出 Caskroom)", binKind(PKG_BIN) === "posix" && binKind(CASK) === "posix" && binKind("C:\\Users\\u\\Blave\\codex\\0.166.0\\bin\\codex.exe") === "exe"); }
   // ── 整次偵測的上限(codex-detect-gaps §3.4 D):任何一處 reject 或卡住,畫面都要拿到一份完整形狀、不再停在「偵測中…」 ──
   { const wrap = src.match(/^async function detectAgents\(ms = DETECT_TOTAL_MS\) \{[\s\S]*?\n\}/m), tot = src.match(/^const DETECT_TOTAL_MS = .*$/m);
     const outSrc = src.slice(at("async function detectAgentsRaw() {"), src.indexOf("const rec = {", at("async function detectAgentsRaw() {")));

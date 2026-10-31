@@ -31,10 +31,10 @@ const PIECES = [constOf(src, "cmdWrap"), constOf(src, "WIN_ENV_DROP"), fnOf(src,
 function mkMain(envPath, chatgpt, bundled) {
   const logged = [];
   const api = new Function("execFile", "spawn", "fs", "path", "process", "loginShellPath", "CODEX_IN_CHATGPT", "bundledClaude", "BASE", "WIN", "detectLogWrite",
-    "winRealExe", "storeCodexPath", "winOnPath", "pickWinBin", "cliAuthHow",
+    "winRealExe", "storeCodexPath", "winOnPath", "pickWinBin", "cliAuthHow", "codexBundled",
     PIECES + "\nreturn { detectAgents, agentLogin, cancelAgentLogin, codexPath, claudePath, BAD_BIN };")(
     require("child_process").execFile, require("child_process").spawn, fs, path, process, async () => envPath, chatgpt, () => bundled, "/b", false, (f, e) => logged.push(e),
-    (b) => b, async () => null, (s) => s, () => null, require(path.join(SHELL, "telemetry.js")).cliAuthHow);
+    (b) => b, async () => null, (s) => s, () => null, require(path.join(SHELL, "telemetry.js")).cliAuthHow, () => null);
   api.logged = logged; return api;
 }
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-codex-login-"));
@@ -160,6 +160,8 @@ exit 2
      function laiOn() { return false; }   // 額度用完卡片開的 modal(check_shell_local_ai_card.js 驗)
      ${fnOf(app, "focusRedetect")}
      ${constOf(app, "whyState")}
+     const PKG = { snap: null, redetect: false };   // Codex 引擎隨包的快照還沒拉到:Codex 那一列照舊畫
+     ${fnOf(app, "codexPkgRow")}
      ${fnOf(app, "mdlNeedsRedetect")}
      ${fnOf(app, "row")}
      ${fnOf(app, "btn")}
@@ -191,6 +193,8 @@ exit 2
   t("…失敗 · CLI 版:「登入沒有完成。或在終端機執行 codex login。」(句號後不多一個空格)、鈕「再試一次」", rows()[1] === "codex|||登入沒有完成。或在終端機執行 codex login。|再試一次", rows());
   R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero", via: "app" })); R.paintRows(R.get("lastDetect"));
   t("…失敗 · ChatGPT app 版:退路是在 app 裡登入,不給 codex login", rows()[1] === "codex|||登入沒有完成。或在 ChatGPT app 登入後回到這裡。|再試一次", rows());
+  R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero", via: "pkg" })); R.paintRows(R.get("lastDetect"));
+  t("…失敗 · 隨包那顆(via=pkg):不在 PATH 上、也不一定有 ChatGPT app → 只講〔登入〕會開瀏覽器", rows()[1] === "codex|||登入沒有完成。按〔登入〕會開瀏覽器完成登入。|再試一次", rows());
   LANG = "en"; R.sync(); R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero", via: "cli" })); R.paintRows(R.get("lastDetect"));
   t("…en:兩句中間有一個空格", rows()[1] === "codex|||Sign-in didn’t finish. Or run codex login in a terminal.|Try Again", rows());
   R.ROWMSG.claude = "failed"; R.set("lastDetect", D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: true })); R.paintRows(R.get("lastDetect"));

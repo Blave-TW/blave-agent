@@ -64,5 +64,40 @@ const whyState = eval("(" + app.match(/^const whyState = (.*);$/m)[1] + ")");
     const last = sets[sets.length - 1];
     ok("localLoginFlow:例外不往外丟、loginPending 清掉、卡片回「登入沒有完成」+〔再試一次〕", !threw && ctx.loginPending === null && last.label === "login.retry" && last.text === "login.failed", { threw, last });
   }
+  // ── Codex 引擎隨包裝好的那一刻(spec codex-bundled-engine §4.3):正在偵測／等登入時記 PKG.redetect,paintRows 收尾時補偵測 ──
+  { const ctx = { PKG: { snap: null, redetect: false }, loginPending: null, MDL: { busy: false }, lastDetect: { claude: {}, codex: { installed: false } }, calls: [] };
+    Object.assign(ctx, { detect: () => ctx.calls.push("detect"), paintRows: () => ctx.calls.push("paint") });
+    const onState = new Function("ctx", `with (ctx) { ${fn("codexPkgOnState")}\nreturn codexPkgOnState; }`)(ctx);
+    const DL = { phase: "download", bytes: 1, total: 2, fail: null }, DONE = { phase: "idle", fail: null }, FAIL = { phase: "idle", fail: { kind: "net" } };
+    onState(DL); onState(DONE);
+    ok("下載完成(非 idle → idle、沒有 fail)而且閒著 → 直接 detect()", ctx.calls.join() === "paint,detect" && ctx.PKG.redetect === false, ctx.calls);
+    ctx.calls.length = 0; ctx.MDL.busy = true; onState(DL); onState(DONE);
+    ok("…完成那一刻正在偵測(MDL.busy)→ 不疊一次偵測、記 PKG.redetect;進度也不重畫(偵測中的列不蓋掉)", ctx.calls.length === 0 && ctx.PKG.redetect === true, ctx.calls);
+    ctx.MDL.busy = false; ctx.PKG.redetect = false; ctx.loginPending = "claude"; onState(DL); onState(DONE);
+    ok("…完成那一刻在等登入 → 記 PKG.redetect", ctx.PKG.redetect === true && !ctx.calls.includes("detect"));
+    ctx.loginPending = null; ctx.PKG.redetect = false; ctx.calls.length = 0; onState(DL); onState(FAIL);
+    ok("下載失敗(idle + fail)→ 不偵測,重畫列(寫原因、給〔再試一次〕)", ctx.calls.join() === "paint,paint" && !ctx.PKG.redetect, ctx.calls);
+    ctx.calls.length = 0; ctx.PKG.snap = null; onState(undefined);
+    ok("拉到的快照是 undefined(舊主行程／測試替身)→ snap 為 null、不偵測", ctx.PKG.snap === null && !ctx.calls.includes("detect")); }
+  { // paintRows 真的跑一次:尾端把 PKG.redetect 消化成一次 detect();等登入中不消化
+    const el = () => { const n = { children: [], innerHTML: "", appendChild: (c) => { n.children.push(c); return c; }, querySelectorAll: () => [] }; return n; };
+    const rowsEl = el(), calls = [];
+    const ctx = { PKG: { snap: null, redetect: true }, loginPending: null, MDL: { busy: true }, ROWMSG: { claude: null, codex: null }, cur: null, localReady: false,
+      $: () => rowsEl, row: (o) => o, btn: () => ({}), t: (k) => k, paintBlaveBtn: () => {}, mdlPaint: () => calls.push("mdlPaint"), detect: () => calls.push("detect"),
+      rowMsg: () => "", rowVars: () => ({}), connect: () => {}, localLogin: () => {}, codexPkgGo: () => {}, window: { blave: {} }, whyState };
+    const paint = new Function("ctx", `with (ctx) { ${fn("codexPkgRow")}\n${fn("paintRows")}\nreturn paintRows; }`)(ctx);
+    const D0 = { claude: { installed: false }, codex: { installed: false } };
+    ctx.loginPending = "claude"; paint(D0);
+    ok("paintRows:等登入中 → PKG.redetect 留著、不偵測", ctx.PKG.redetect === true && !calls.includes("detect"), calls);
+    ctx.loginPending = null; calls.length = 0; paint(D0);
+    ok("paintRows:收尾(MDL.busy = false、mdlPaint 之後)把 PKG.redetect 消化成一次 detect()", ctx.PKG.redetect === false && calls.join() === "mdlPaint,detect" && ctx.MDL.busy === false, calls);
+    calls.length = 0; paint(D0);
+    ok("…消化過就不再偵測", !calls.includes("detect"));
+    ctx.PKG.snap = { phase: "idle", fail: null, size: 203 }; paint(D0);
+    const cx = rowsEl.children.filter((r) => r.kind === "codex").pop();
+    ok("paintRows:Codex 沒偵測到、有快照 → 那一列是下載列(說明 cn.pkgSize、有鈕),不是「未偵測到」", cx && cx.sub === "cn.pkgSize" && !!cx.action && cx.st === null, cx); }
+  // ── 回合缺執行檔的兩碼都算 engine_missing(turn_failed 白名單不動)──
+  { const tr = new Function(fn("turnReasonOf") + "\nreturn turnReasonOf;")();
+    ok("turnReasonOf:AGENT_BIN_MISSING 與 AGENT_BIN_DOWNLOADING 都是 engine_missing;沒有就照 fail", tr("x AGENT_BIN_MISSING", "auth") === "engine_missing" && tr("Error: AGENT_BIN_DOWNLOADING", "auth") === "engine_missing" && tr("", "auth") === "auth" && tr(undefined, null) === "other"); }
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

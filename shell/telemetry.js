@@ -48,9 +48,10 @@ const EVENTS = {
   // 每日在線心跳:app 一直開著不重開的人沒有 app_open,靠它量到。事件本身就是「這台在線」;live = 本機對帳器在跑(含模擬)
   heartbeat: { live: ["on", "off"] },
   // 引擎安裝(0.1.12;shell/enginesetup.js,主行程送):一輪真的有東西要裝的安裝跑完的結果(first / upd × done / net / other / timeout;
-  // 只修 venv 連結的不送),以及選用的那組(美股資料)沒裝好(前綴是組別)。分兩個事件:同一輪會同時有 first_done 與美股失敗
+  // 只修 venv 連結的不送),以及選用的那組(美股資料)沒裝好(前綴是組別)。分兩個事件:同一輪會同時有 first_done 與美股失敗。
+  // 0.1.39 起 Codex 引擎隨包(shell/codexpkg.js)沒裝好也記在這(codex_ 前綴;我們自己收掉的不送),成功記 feature_used codex_pkg_done
   engine_setup: { result: ["first_done", "first_net", "first_other", "first_timeout", "upd_done", "upd_net", "upd_other", "upd_timeout"] },
-  engine_opt_fail: { result: ["us_net", "us_other", "us_timeout"] },
+  engine_opt_fail: { result: ["us_net", "us_other", "us_timeout", "codex_net", "codex_disk", "codex_checksum", "codex_other"] },
   // 策略庫轉換(0.1.13;spec-0.1.13-library-conversion §8,renderer 送):本機「用這支」回合跑起來時那支的資料需求(未標 = unknown;雲端不送)、
   // 找點子框送出成功時從哪個入口來。匿名使用不加屬性:看 user_id 有無、同一 install_id 之後有沒有 login_done
   lib_pick: { data: ["none", "required", "unknown"] },
@@ -264,7 +265,9 @@ const EVENTS = {
     "tab_new", "tab_close", "tab_close_busy", "tab_switch", "tab_overflow", "hist_open", "hist_search", "hist_resume",
     "chat_par2", "chat_par4", "chat_par8", "chat_queued", "queue_cancel", "br_wait", "br_busy", "tab_remote",
     // 0.1.37 設定 › 連結 QR 底下的商店名稱(renderer/app.js mvQr):按了、開系統瀏覽器之前送。掃 QR 在手機上發生、這裡看不到
-    "app_link_ios", "app_link_android"] },
+    "app_link_ios", "app_link_android",
+    // 0.1.39 Codex 引擎隨包(主行程 shell/codexpkg.js 送):套件下載、校驗、解壓、驗過、上架都成功。api 白名單同順序,api 先上
+    "codex_pkg_done"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other
