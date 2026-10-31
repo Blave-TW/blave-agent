@@ -78,6 +78,24 @@ check("normal、沒送、怪值都不帶", all(flags(m) == [] for m in ("normal"
 src = open(os.path.join(ROOT, "runtime", "web_bridge.py"), encoding="utf-8").read()
 check("_worker 把 entry 的 suggest_mode 交給 run_agent_turn", 'suggest_mode=entry.get("suggest_mode")' in src)
 
+# 澄清表單的能力旗標(spec agent-clarify-form §1.3):context.clarify_form 只認 True 本身,其他值當沒送
+check("context.clarify_form: true → entry True", ingest("m3", {"clarify_form": True}).get("clarify_form") is True)
+check("缺／false／怪值 → entry False",
+      all(ingest(f"m4{i}", ctx).get("clarify_form") is False
+          for i, ctx in enumerate(({}, {"clarify_form": False}, {"clarify_form": "true"}, {"clarify_form": 1}))))
+cf = {}
+try:
+    for val in (True, False, None, "true", 1):
+        wb.subprocess.Popen = lambda cmd, *a, _v=val, **kw: (cf.__setitem__(repr(_v), cmd), FakeProc())[1]
+        wb.run_agent_turn("s1", "hi", clarify_form=val)
+finally:
+    wb.subprocess.Popen = real
+check("True → argv 帶 --clarify-form(在 -- 之前)",
+      "--clarify-form" in cf["True"] and cf["True"].index("--clarify-form") < cf["True"].index("--"), cf["True"])
+check("False／None／怪值不帶 --clarify-form",
+      all("--clarify-form" not in cf[k] for k in ("False", "None", "'true'", "1")), cf)
+check("_worker 把 entry 的 clarify_form 交給 run_agent_turn", 'clarify_form=entry.get("clarify_form")' in src)
+
 shutil.rmtree(_tmp, ignore_errors=True)
 if failures:
     sys.exit(f"{len(failures)} failed")
