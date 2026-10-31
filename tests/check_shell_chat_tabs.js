@@ -288,6 +288,7 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
     && /padding-top: calc\(52px - var\(--tabs-body\)\);/.test(blk) && /top: calc\(52px - var\(--tabs-body\) \/ 2 - 14px\); height: 28px;/.test(blk) && !/(?<![-\w])height: (46|44|36)px|\btop: (6|13|16)px|inset: -12px/.test(blk));
   ok("選中:卡面色、外緣垂直半徑多一個 reach(透明上框裡的填色才是正圓 8);沒選中沒有底線、沒有捲動浮線", /border-radius: var\(--radius-sm\) var\(--radius-sm\) 0 0 \/ calc\(var\(--radius-sm\) \+ var\(--tabs-reach\)\) calc\(var\(--radius-sm\) \+ var\(--tabs-reach\)\) 0 0;/.test(blk)
     && !/is-scrolled|box-shadow: 0 1px 0/.test(css.slice(css.indexOf(".chat-head {"), css.indexOf(".tabs-tip { top:"))) && !/chatEdge|is-scrolled/.test(app));
+  ok("減少動態:☰／＋／提示／+N 搬到 ::before 的底色過渡也關掉(全域 * 管不到偽元素)", /@media \(prefers-reduced-motion: reduce\) \{[^}]*\}\n  \.chat-head:has\(#cs-tabs\) \.cs-btn::before, \.cs-hint::before, \.cs-more::before \{ transition: none; \}/.test(css));
   ok("列底同中欄頂帶:本機 bg-body、雲端 surface-muted;雲端滑過墊 bg-body;本機收合邊條也畫 52 頂段", /\.chat-head \{[^}]*background: var\(--bg-body\);/.test(css) && trcss.includes('html[data-env="cloud"] .chat-head { background: var(--surface-muted); }')
     && /html\[data-env="cloud"\] \.cs-more:hover::before, html\[data-env="cloud"\] \.cs-more\.on::before \{ background: var\(--bg-body\); \}/.test(trcss) && trcss.includes("html.ws-cc .chat-strip { background: linear-gradient(var(--bg-body) 52px, var(--surface-card) 52px); }"));
 }

@@ -1399,6 +1399,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 #ws-up-why { text-align: right; margin-bottom: var(--space-6); }
 @media (prefers-reduced-motion: reduce) {
   .cs-btn, .cs-newrow, .cs-item, .cs-del { transition: none; }
+  .chat-head:has(#cs-tabs) .cs-btn::before, .cs-hint::before, .cs-more::before { transition: none; }   /* 全域 * 那條管不到 ::before */
 }
 
 /* ── 策略列的列尾雙鈕 + 旗標 + 拖拉(spec desktop-strat-flags;視覺照雲端工作頁 workspace.css 同一套)──
