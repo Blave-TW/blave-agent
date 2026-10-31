@@ -74,6 +74,16 @@ bad = [c for c in DENY if not at.secret_code_bash_denied(c)]
 t("② 寫入／搬／刪／換掉這幾支 → deny", not bad, bad)
 bad = [c for c in ALLOW if at.secret_code_bash_denied(c)]
 t("② 讀、照常執行、改別的檔 → 放行", not bad, bad)
+# grep 的旗標組與兩個字母的搜尋字是讀(稽核 v039-win-shell-fix P1-1:PowerShell 短別名曾以裸字比對,這些全被擋)
+GREP_READS = [
+    "grep -ni login lib/capital_vault.py", "grep -ri vault lib/president_vault.py", "grep -rni password lib/order_capital.py",
+    "grep -ac x lib/account_capital.py", "grep -n sc lib/capital_worker.py", "grep -c ni manager/reconciler.py",
+    "grep -E 'ri|mi' manager/flatten.py", "grep -w cpi lib/winreplace.py", "rg -ni login lib/president_worker.py",
+    "grep -ni btc manager/amounts.ui.json", "grep -c ac manager/amounts.ui.json",
+]
+for ps in (False, True):
+    bad = [c for c in GREP_READS if at.secret_code_bash_denied(c, ps) or at.mirror_bash_denied(c, ps)]
+    t(f"② grep 讀這幾支(含 -ni／-ri／-rni／-ac、兩個字母的搜尋字)→ 放行({'PowerShell' if ps else 'Bash'})", not bad, bad)
 KNOWN_GAPS = ["f=lib/president_vault; echo x > $f.py", "python -c \"open('lib/president_'+'vault.py','w')\""]
 t("② KNOWN_GAPS:執行時組出來的路徑擋不到(釘住現況)", not any(at.secret_code_bash_denied(c) for c in KNOWN_GAPS))
 

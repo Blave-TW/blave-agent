@@ -5,8 +5,13 @@
   ② every hook whose matcher covers Bash covers PowerShell too — enumerated twice: every _add_hook call in
      agent_turn.py's source, and every matcher actually mounted on a desktop and a cloud turn (≥ 4 shell guards)
   ③ each shell guard denies the PowerShell form of what it denies in Bash, and lets reads through
+     (backtick escapes removed first; aliases like `ri` only where a PowerShell command starts — as bare words they
+     are grep flags); copy / archive verbs on credentials/, .NET and download writes, `-EncodedCommand`; quoted
+     interpreter paths and the py launcher for the backtest-timeout guard; Write-Output / Select-String text passes
+  ③b the Bash tool keeps 82f71b37's decision on a fixed set of everyday commands (one intended change, listed)
   ④ the status-line / touched-strategy classifiers read a PowerShell command like a Bash one
-KNOWN_GAPS pins what still passes: `Start-Process` detaching a backtest is not recognised as detached.
+  ⑤ git_bash_path finds Git Bash the way the bundled CLI does (the CLAUDE_CODE_USE_POWERSHELL_TOOL pin)
+KNOWN_GAPS pins what still passes (Start-Process detach, Start-Job, names assembled at run time, folder globs).
 
 Run: cd blave-agent && .venv/bin/python tests/check_powershell_tool.py
 """
@@ -114,45 +119,126 @@ t("② the shell matcher does not swallow other tools", not any(covers(at.SHELL_
 
 # ── ③ the guards read PowerShell commands ──
 guards = {fn.__qualname__.split(".")[0]: fn for _, m, fn in local if m is not None and covers(m, "PowerShell")}
+at._ENGINE["cli_version"] = "2.1.281"
 
 
-def decide(guard, tool_input):
-    out = asyncio.run(guards[guard]({"tool_name": "PowerShell", "tool_input": tool_input}, "t", None))
-    return (out.get("hookSpecificOutput") or {}).get("permissionDecision")
+def decide(guard, tool_input, tool="PowerShell"):
+    if isinstance(tool_input, str):
+        tool_input = {"command": tool_input, "timeout": 120000}
+    out = asyncio.run(guards[guard]({"tool_name": tool, "tool_input": tool_input}, "t", None))
+    hs = out.get("hookSpecificOutput") or {}
+    return (hs.get("permissionDecision") or "-") + (":rewrite" if "updatedInput" in hs else "")
 
 
+CRED, SECRET, SCHED, BG = "_cred_bash_guard_hooks", "_secret_code_bash_guard_hooks", "_sched_guard_hooks", "_bg_guard_hooks"
 DENY = {
-    "_cred_bash_guard_hooks": [r"Get-Content ..\credentials\capital_vault.json", r"type ..\credentials\*",
-                               r"Copy-Item ..\credentials\president.pfx tmp\x.pfx"],
-    "_secret_code_bash_guard_hooks": [r"Set-Content lib\capital_vault.py 'x'", r"Remove-Item lib\order_capital.py",
-                                      r"'x' | Out-File lib\capital_worker.py", r"ri lib\capital_vault.py",
-                                      r"sc lib\president_vault.py 'x'",
-                                      r"[IO.File]::WriteAllText('lib\capital_vault.py', 'x')",
-                                      r"Set-Content manager\amounts.ui.json '{}'"],
-    "_sched_guard_hooks": ["schtasks /create /tn x /tr y /sc daily", r"C:\Windows\System32\schtasks.exe /query",
-                           "Register-ScheduledTask -TaskName x -Action $a -Trigger $t",
-                           "$a = New-ScheduledTaskAction -Execute python; Register-ScheduledTask x -Action $a",
-                           "Unregister-ScheduledTask -TaskName x -Confirm:$false"],
+    CRED: [r"Get-Content ..\credentials\capital_vault.json", r"type ..\credentials\*", r"type ..\credentials\[c]apital_vault.jso[n]",
+           r"Copy-Item ..\credentials\president.pfx tmp\x.pfx", r"type ..\CREDEN~1\capital_vault.json", r"type ..\credentials\CAPITA~1.JSO", r"Get-Content ..\CREDEN~1\PRESID~1.PFX", r"Get-Content ..\CREDEN~1\*",
+           # P2-4: the folder after a copy / archive verb
+           r"Copy-Item -Recurse ..\credentials tmp\c", r"Compress-Archive -Path ..\credentials -DestinationPath tmp\c.zip",
+           r"robocopy ..\credentials tmp\c /E", r"xcopy ..\credentials tmp\c /E /I", "tar -czf tmp/c.tgz ../credentials",
+           r"cpi -Recurse ..\CREDEN~1 tmp\c", r"Copy-Item ..\credentials\rdp_password.txt tmp\x.txt"],
+    SECRET: [r"Set-Content lib\capital_vault.py 'x'", r"Remove-Item lib\order_capital.py", r"'x' | Out-File lib\capital_worker.py",
+             r"ri lib\capital_vault.py", r"sc lib\president_vault.py 'x'", r"$x = ni lib\order_president.py",
+             r"Get-Date; rni lib\account_capital.py x.py", r"& mi lib\capital_vault.py tmp\x.py",
+             r"[IO.File]::WriteAllText('lib\capital_vault.py', 'x')", r"Set-Content manager\amounts.ui.json '{}'",
+             # P2-3: opening for write, writer objects, instance methods, -Path: forms, downloads
+             r"[IO.File]::Open('lib\capital_vault.py', 'Create')", r"[IO.File]::OpenWrite('lib\capital_vault.py')",
+             r"[IO.File]::Create('lib\capital_vault.py')", r"$w = New-Object IO.StreamWriter 'lib\capital_vault.py'",
+             r"$w = New-Object -TypeName System.IO.FileStream lib\capital_vault.py, Create",
+             r"[IO.StreamWriter]::new('lib\capital_vault.py')", r"(Get-Item lib\capital_vault.py).Delete()",
+             r"(Get-Item tmp\x.py).CopyTo('lib\capital_vault.py', $true)", r"Set-Content -Path:capital_vault.py x",
+             r"Set-Content -LiteralPath lib\capital_vault.py -Value x", r"Invoke-WebRequest https://x/y -OutFile lib\capital_vault.py",
+             r"iwr https://x/y -OutFile manager\amounts.ui.json", r"curl.exe -sSLo lib\capital_vault.py https://x/y",
+             # P3: backtick escapes, an encoded command
+             r"R`emove-Item lib\capital_vault.py", "Set-`Content lib\\capital_vault.py x",
+             "powershell -enc SQBFAFgA", "pwsh.exe -NoProfile -EncodedCommand SQBF", "powershell.exe -e SQBF", "powershell -ec SQBF"],
+    SCHED: ["schtasks /create /tn x /tr y /sc daily", r"C:\Windows\System32\schtasks.exe /query",
+            "Register-ScheduledTask -TaskName x -Action $a -Trigger $t",
+            "$a = New-ScheduledTaskAction -Execute python; Register-ScheduledTask x -Action $a",
+            "Unregister-ScheduledTask -TaskName x -Confirm:$false",
+            # P2-1: a captured result, the call operator on a quoted name, Start-Process / cmd /c / powershell in between
+            "$t = Register-ScheduledTask -TaskName x -Action $a", '& "schtasks.exe" /create /tn x',
+            r"& 'C:\Windows\System32\schtasks.exe' /query", 'Start-Process schtasks -ArgumentList "/create /tn x"',
+            'Start-Process -FilePath "schtasks.exe" -ArgumentList x -Verb RunAs', "saps schtasks /create",
+            "cmd /c schtasks /create /tn x", 'cmd.exe /d /c "schtasks /create"', "powershell -Command Register-ScheduledTask x",
+            "pwsh -NoProfile -c Register-ScheduledTask x",
+            # P3: backtick escape
+            "R`egister-ScheduledTask x", "sch`tasks /create /tn x"],
 }
 ALLOW = {
-    "_cred_bash_guard_hooks": [r"Get-Content ..\credentials\rdp_password.txt", r"python lib\president_worker.py --once"],
-    "_secret_code_bash_guard_hooks": [r"Get-Content lib\capital_vault.py", r"python lib\capital_vault.py",
-                                      r"python strategies\x\strategy.py > tmp\x.log 2>&1"],
-    "_sched_guard_hooks": [r"Get-Content references\deployment.md | Select-String schtasks", "python lib/data.py"],
+    CRED: [r"Get-Content ..\credentials\rdp_password.txt", "cat ~/credentials/README", r"python lib\president_worker.py --once", r"Get-ChildItem ..\credentials",
+           r"Test-Path ..\credentials\capital_probe.json"],
+    SECRET: [r"Get-Content lib\capital_vault.py", r"python lib\capital_vault.py", r"python strategies\x\strategy.py > tmp\x.log 2>&1",
+             # reads with flags, two-letter search terms (P1-1)
+             r"Select-String -Path lib\capital_vault.py -Pattern 'ni'", r"Get-Content lib\capital_vault.py | Select-String -Pattern sc",
+             r"Get-Content -TotalCount 40 lib\order_capital.py", r"Get-Content lib\capital_worker.py -Tail 20",
+             r"Select-String -SimpleMatch -Pattern ac manager\amounts.ui.json", r"grep -ni login lib\capital_vault.py",
+             r"grep -rni password lib\president_vault.py", r"Get-Content manager\amounts.ui.json | ConvertFrom-Json",
+             r"[IO.File]::Open('lib\capital_vault.py', 'Open', 'Read')", r"[IO.File]::ReadAllText('lib\capital_vault.py')",
+             "powershell -ExecutionPolicy Bypass -File tmp\\x.ps1", "pwsh -Command Get-Date",
+             r"Invoke-WebRequest https://x/y -OutFile tmp\y.json"],
+    SCHED: [r"Get-Content references\deployment.md | Select-String schtasks", "python lib/data.py",
+            'Write-Output "schtasks /create is how it is done"', "Select-String -Pattern 'Register-ScheduledTask' references\\deployment.md",
+            "echo 'crontab'", "python x.py 'crontab'"],
 }
 for g, cmds in DENY.items():
-    bad = [c for c in cmds if decide(g, {"command": c}) != "deny"]
+    bad = [c for c in cmds if decide(g, c) != "deny"]
     t(f"③ {g}: PowerShell forms denied", not bad, bad)
 for g, cmds in ALLOW.items():
-    bad = [c for c in cmds if decide(g, {"command": c}) is not None]
+    bad = [c for c in cmds if decide(g, c) != "-"]
     t(f"③ {g}: PowerShell reads / runs pass", not bad, bad)
-at._ENGINE["cli_version"] = "2.1.281"
 t("③ _bg_guard_hooks: run_in_background on PowerShell denied",
-  decide("_bg_guard_hooks", {"command": r"python strategies\x\strategy.py", "run_in_background": True}) == "deny")
-out = asyncio.run(guards["_bg_guard_hooks"]({"tool_name": "PowerShell", "tool_input": {
-    "command": r"& .\venv\Scripts\python.exe strategies\x\strategy.py", "timeout": 120000}}, "t", None))
-t("③ _bg_guard_hooks: a short-timeout PowerShell backtest gets its timeout rewritten",
-  (out.get("hookSpecificOutput") or {}).get("updatedInput", {}).get("timeout", 0) > 120000, out)
+  decide(BG, {"command": r"python strategies\x\strategy.py", "run_in_background": True}) == "deny")
+for c in (r"& .\venv\Scripts\python.exe strategies\x\strategy.py",
+          # P2-2: a quoted interpreter path (a user name with a space), the py launcher
+          r'& "C:\Users\a b\Blave\venv\Scripts\python.exe" strategies\x\strategy.py',
+          r"& 'C:\Users\a b\Blave\venv\Scripts\python.exe' -u strategies\x\strategy.py",
+          r"py -3 strategies\x\strategy.py", r"py strategies\x\strategy.py", r"py.exe -3.12 strategies\x\strategy.py"):
+    t(f"③ _bg_guard_hooks: short-timeout backtest launch rewritten: {c}", decide(BG, c) == "allow:rewrite", decide(BG, c))
+for c in ("cp a.py strategies/x/strategy.py", "cat x.py strategies/x/strategy.py", "copy.py strategies/x/strategy.py"):
+    t(f"③ _bg_guard_hooks: not a launch: {c}", decide(BG, c, "Bash") == "-", decide(BG, c, "Bash"))
+t("③ PowerShell short aliases count only for the PowerShell tool", decide(SECRET, r"ri lib/capital_vault.py", "Bash") == "-")
+t("③ an encoded PowerShell command is refused from Bash too", decide(SECRET, "powershell.exe -enc SQBF", "Bash") == "deny")
+
+# ── ③b Bash outside Windows: the same decision as 82f71b37 for everyday commands ──
+# Expected values were read off 82f71b37 (scratch parity run); the one intended change is listed in BASH_CHANGED.
+BASH_SAME = {
+    ".venv/bin/python strategies/btc/strategy.py": {BG: "allow:rewrite"},
+    "cat ../credentials/capital_vault.json": {CRED: "deny"},
+    "cp lib/capital_vault.py tmp/": {SECRET: "deny"}, "cp tmp/a.json manager/amounts.ui.json": {SECRET: "deny"},
+    "cp tmp/x.py lib/capital_vault.py": {SECRET: "deny"}, "crontab -l": {SCHED: "deny"},
+    "echo '{}' > manager/amounts.ui.json": {SECRET: "deny"}, "echo x > lib/capital_vault.py": {SECRET: "deny"},
+    "launchctl list": {SCHED: "deny"}, "ls ../credentials/*": {CRED: "deny"}, "mv lib/order_capital.py tmp/": {SECRET: "deny"},
+    "python3 -c \"open('lib/capital_vault.py','w').write('x')\"": {SECRET: "deny"},
+    "python3 -m lib.param_scan strategies/btc": {BG: "allow:rewrite"}, "python3 strategies/btc/strategy.py": {BG: "allow:rewrite"},
+    "rm lib/president_worker.py": {SECRET: "deny"}, "sed -i '' 's/a/b/' lib/capital_vault.py": {SECRET: "deny"},
+}
+for c in ("cat lib/capital_vault.py", 'grep -n "def " lib/capital_vault.py', "grep -ni login lib/capital_vault.py",
+          "grep -ri vault lib/", 'grep -rni "password" lib/president_vault.py', "grep -ac x lib/order_capital.py",
+          "grep -n sc lib/capital_worker.py", "grep -c ni manager/reconciler.py", 'grep -E "ri|mi" manager/flatten.py',
+          "rg -ni login lib/capital_vault.py", "head -50 lib/order_president.py", "sed -n 1,80p lib/account_capital.py",
+          "python3 lib/capital_vault.py --check", 'python3 -c "import lib.capital_vault as v; print(v.__doc__)"',
+          "python3 -c \"print(open('lib/capital_vault.py').read()[:200])\"", "wc -l lib/*.py", "ls -la lib/",
+          "git diff lib/capital_vault.py", "git log -3 -- lib/capital_vault.py", "git status", "cat manager/amounts.ui.json",
+          "grep -ni btc manager/amounts.ui.json", "python3 -c \"import json; print(json.load(open('manager/amounts.ui.json')))\"",
+          "jq . manager/amounts.ui.json", "nohup python3 strategies/btc/scan.py > tmp/btc_scan.log 2>&1 &",
+          "python3 -c \"import time; time.sleep(150); print(open('tmp/x.log').read()[-300:])\"",
+          "cp a.py strategies/btc/strategy.py", "cat strategies/btc/strategy.py", "ls ../credentials",
+          "cat ../credentials/rdp_password.txt", "python3 lib/president_worker.py --once", "grep crontab references/deployment.md",
+          'echo "crontab -l lists jobs"', "ssh blaveagent@1.2.3.4 'crontab -l'", "curl -s https://api.blave.org/kline -o tmp/k.json",
+          "curl -sSLo tmp/x.py https://example.com/x.py", "wget -q https://example.com/data.csv -O tmp/data.csv",
+          "tar czf tmp/backup.tgz strategies", "zip -r tmp/s.zip strategies", "rsync -a strategies/ tmp/s/", "python3 lib/data.py",
+          "pip list", 'find . -name "*.py" -newer VERSION'):
+    BASH_SAME[c] = {}
+BASH_CHANGED = {"cp ../credentials/rdp_password.txt tmp/": {CRED: "deny"}}   # P2-4: anything copied out of credentials/
+for table, label in ((BASH_SAME, "same as 82f71b37"), (BASH_CHANGED, "intended change")):
+    bad = {}
+    for c, want in table.items():
+        got = {g: d for g in (BG, CRED, SCHED, SECRET) if (d := decide(g, c, "Bash")) != "-"}
+        if got != want:
+            bad[c] = got
+    t(f"③b Bash, everyday commands: {label} ({len(table)})", not bad, bad)
 
 # ── ④ classifiers ──
 ps = {"command": r"python strategies\btc_cross\strategy.py"}
@@ -162,10 +248,48 @@ t("④ _touched_strategies: PowerShell counts like Bash", at._touched_strategies
   == at._touched_strategies("Bash", ps) == {"btc_cross"})
 t("④ ToolPrep streams PowerShell as code", "PowerShell" in at.ToolPrep.CODE_TOOLS)
 
+# ── ⑤ where the CLI finds Git Bash (P2-5; the turn_env pin itself: tests/check_sched_bash_guard.py ⑤) ──
+has = lambda *paths: (lambda p: p in paths)  # noqa: E731
+GB = r"C:\Program Files\Git\bin\bash.exe"
+t("⑤ Program Files Git Bash", at.git_bash_path({}, has(GB), cwd=r"C:\w") == GB)
+t("⑤ Program Files (x86) Git Bash", at.git_bash_path({}, has(r"C:\Program Files (x86)\Git\bin\bash.exe"), cwd="C:\\")
+  == r"C:\Program Files (x86)\Git\bin\bash.exe")
+t("⑤ CLAUDE_CODE_GIT_BASH_PATH naming an existing bash wins",
+  at.git_bash_path({"CLAUDE_CODE_GIT_BASH_PATH": r"E:\x\bash.exe"}, has(r"E:\x\bash.exe", GB), cwd="C:\\") == r"E:\x\bash.exe")
+t("⑤ CLAUDE_CODE_GIT_BASH_PATH naming something else is skipped",
+  at.git_bash_path({"CLAUDE_CODE_GIT_BASH_PATH": r"E:\x\zsh.exe"}, has(r"E:\x\zsh.exe"), cwd="C:\\") is None)
+t("⑤ git on PATH → ..\\..\\bin\\bash.exe joined onto git.exe (the CLI's join)",
+  at.git_bash_path({"PATH": r"C:\w;D:\Git\cmd"}, has(r"D:\Git\cmd\git.exe", r"D:\Git\bin\bash.exe"), cwd=r"C:\w")
+  == r"D:\Git\bin\bash.exe")
+t("⑤ the first git on PATH decides; its bash missing → none",
+  at.git_bash_path({"PATH": r"D:\Git\cmd;E:\Git\cmd"}, has(r"D:\Git\cmd\git.exe", r"E:\Git\cmd\git.exe", r"E:\Git\bin\bash.exe"),
+                   cwd="C:\\") is None)
+t("⑤ a git in the cwd or on a UNC path is skipped",
+  at.git_bash_path({"PATH": r"C:\w;\\srv\Git\cmd"}, has(r"C:\w\git.exe", r"C:\bin\bash.exe", r"\\srv\Git\cmd\git.exe",
+                                                       r"\\srv\Git\bin\bash.exe"), cwd=r"C:\w") is None)
+t("⑤ nothing → none", at.git_bash_path({"PATH": r"C:\Windows\System32"}, has(), cwd="C:\\") is None)
+t("⑤ the pin: Git Bash → 0, none → 1",
+  at.powershell_tool_env({}, has(GB), cwd="C:\\") == "0" and at.powershell_tool_env({}, has(), cwd="C:\\") == "1")
+
 # ── KNOWN_GAPS (pinned so a fix shows up here) ──
-KNOWN_GAPS = [r"Start-Process python -ArgumentList 'strategies\x\strategy.py'"]
-for c in KNOWN_GAPS:
-    t(f"KNOWN_GAP still not read as detached: {c}", not at._DETACHED_RE.search(c))
+KNOWN_GAPS = {
+    "Start-Process detaching a backtest is not read as detached":
+        lambda: not at._DETACHED_RE.search(r"Start-Process python -ArgumentList 'strategies\x\strategy.py'"),
+    "Start-Job launching a backtest is read as a foreground launch (timeout rewritten), not refused; the job dies with the turn":
+        lambda: decide(BG, r"Start-Job { python strategies\x\strategy.py }") == "allow:rewrite",
+    "a name assembled at run time is not caught (secret code)":
+        lambda: decide(SECRET, r"Set-Content ('lib\capital_' + 'vault.py') x") == "-",
+    "a name assembled at run time is not caught (scheduler)":
+        lambda: decide(SCHED, r"& ('Register-' + 'ScheduledTask') x") == "-",
+    "a name assembled at run time is not caught (credentials)":
+        lambda: decide(CRED, r"Get-Content ('..\cred' + 'entials\capital_' + 'vault.json')") == "-",
+    "a folder glob instead of the name (creden*) is not a credentials path":
+        lambda: decide(CRED, r"Copy-Item -Recurse ..\creden* tmp\c") == "-",
+    "a whole base folder copied without naming credentials/ is not caught":
+        lambda: decide(CRED, r"Compress-Archive -Path $env:USERPROFILE\Blave -DestinationPath tmp\all.zip") == "-",
+}
+for name, still in KNOWN_GAPS.items():
+    t(f"KNOWN_GAP still open: {name}", still())
 
 if fails:
     sys.exit(f"{len(fails)} failed: {fails}")

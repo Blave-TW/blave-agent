@@ -20,6 +20,7 @@ import http.client
 import ipaddress
 import json
 import os
+import ntpath
 import platform
 import re
 import shlex
@@ -104,6 +105,55 @@ SHELL_TOOL_MATCHER = "|".join(SHELL_TOOLS)
 
 def _win32():
     return sys.platform == "win32"
+
+
+def _ps_unescape(cmd):
+    """PowerShell's backtick escape (R`egister-ScheduledTask, a `-newline continuation) removed before matching."""
+    return re.sub(r"`(.)", r"\1", re.sub(r"`\r?\n", " ", cmd))
+
+
+def _shell_input(input_data):
+    """(tool_input, command as the guards match it, is_powershell) of a shell tool call; command None = none."""
+    data = input_data or {}
+    tool_input = data.get("tool_input") or {}
+    cmd = tool_input.get("command")
+    ps = data.get("tool_name") == "PowerShell"
+    if not isinstance(cmd, str):
+        return tool_input, None, ps
+    return tool_input, (_ps_unescape(cmd) if ps else cmd), ps
+
+
+_GIT_BASH_FIXED = (r"C:\Program Files\Git\bin\bash.exe", r"C:\Program Files (x86)\Git\bin\bash.exe")
+
+
+def git_bash_path(env, exists=os.path.exists, cwd=None):
+    """Where the bundled CLI finds Git Bash on Windows (claude 2.1.281: CLAUDE_CODE_GIT_BASH_PATH when it names an
+    existing bash/sh, then the two Program Files paths, then the first `where git` hit outside the cwd and not UNC,
+    `..\\..\\bin\\bash.exe` from it). None = that CLI has no Bash tool. Pure in env / exists for the tests."""
+    own = env.get("CLAUDE_CODE_GIT_BASH_PATH")
+    if own and ntpath.basename(own).lower() in ("bash.exe", "sh.exe", "bash", "sh") and exists(own):
+        return own
+    for p in _GIT_BASH_FIXED:
+        if exists(p):
+            return p
+    here = ntpath.normcase(ntpath.normpath(cwd if cwd is not None else os.getcwd()))
+    exts = [e for e in (env.get("PATHEXT") or ".COM;.EXE;.BAT;.CMD").split(";") if e]
+    for d in (env.get("PATH") or env.get("Path") or "").split(";"):
+        d = d.strip().strip('"')
+        if not d or d.startswith("\\\\") or ntpath.normcase(ntpath.normpath(d)) == here:
+            continue
+        for e in exts:
+            git = ntpath.join(d, "git" + e.lower())
+            if exists(git):
+                bash = ntpath.normpath(ntpath.join(git, "..", "..", "bin", "bash.exe"))   # the CLI joins onto git.exe itself
+                return bash if exists(bash) else None
+    return None
+
+
+def powershell_tool_env(env, exists=os.path.exists, cwd=None):
+    """CLAUDE_CODE_USE_POWERSHELL_TOOL for a Windows turn, pinned instead of left to the CLI's remote flag:
+    Git Bash there → "0" (Bash only, as the cloud fleet has always run); none → "1" (PowerShell is the shell)."""
+    return "0" if git_bash_path(env, exists, cwd) else "1"
 
 
 # Edit(path) deny rules — hold in bypassPermissions and cover Write/NotebookEdit (SDK
@@ -977,6 +1027,12 @@ def _lang_hooks(options, reminder):
 _TOK = r"""[^\s;&|()<>`"']+"""
 # The PowerShell tool's own scheduler cmdlets name no executable (Register-ScheduledTask …), so they are listed too.
 _SCHED_NAMES = r"crontab|launchctl|schtasks|(?:Register|Set|Unregister|Enable|Disable|Start)-Scheduled(?:Task|Job)"
+# Windows hands a command on through Start-Process, cmd /c and powershell / pwsh; `& "x.exe"` calls a quoted name.
+_WIN_PREFIX = [
+    r"(?:Start-Process|saps)(?:\s+-(?:Verb|WindowStyle|WorkingDirectory)\s+\S+|\s+-\S+)*",
+    r"cmd(?:\.exe)?(?:\s+/[A-Za-z](?::\S+)?)*",
+    r"(?:powershell|pwsh)(?:\.exe)?(?:\s+-\S+)*",
+]
 
 
 def _prefix_re(names, value_opts=""):
@@ -993,13 +1049,15 @@ _CMD_PREFIX = "(?:(?:" + "|".join([
     _prefix_re("timeout", "sk") + r"\s+" + _TOK,
     _prefix_re("watch", "n"), _prefix_re("script", "tT") + r"\s+" + _TOK, r"arch(?:\s+(?:-arch\s+" + _TOK + "|-" + _TOK + "))*",
     r"[A-Za-z_][A-Za-z0-9_]*=\S*",
-]) + r")\s+)*"
+] + _WIN_PREFIX) + r")\s+)*"
 _SCHED_CMD_RE = re.compile(
-    r"""(?:^|[;&|()`\n"']|\$\(|\s-(?:exec|execdir|ok|okdir)\s)\s*""" + _CMD_PREFIX
-    + r"(?:[^\s;&|()`\"']*[/\\])?(?:" + _SCHED_NAMES + r")(?:\.exe)?(?=$|[\s;&|)<>])", re.I)
+    r"""(?:^|[;&|()`\n"']|\$\(|\s-(?:exec|execdir|ok|okdir)\s|\$[\w:]+\s*=)\s*""" + _CMD_PREFIX
+    + r"(?P<q>[\"'])?(?:[^\s;&|()`\"']*[/\\])?(?:" + _SCHED_NAMES + r")(?:\.exe)?"
+    + r"(?(q)(?=$|[\s;&|)<>]|(?P=q))|(?=$|[\s;&|)<>]))", re.I)
 _CMD_PREFIX_RE = re.compile(r"\s*" + _CMD_PREFIX, re.I)
 # 引號裡的字只是這些指令的參數(要印的字、要找的字),不會被執行:`echo "crontab -l 可以列出排程"`、`grep 'crontab -l' x.md`
-_TEXT_CMDS = frozenset(("echo", "printf", "grep", "egrep", "fgrep", "rg", "cat", "sed", "awk", "man", "git"))
+_TEXT_CMDS = frozenset(("echo", "printf", "grep", "egrep", "fgrep", "rg", "cat", "sed", "awk", "man", "git",
+                        "write-output", "write-host", "select-string", "sls"))
 # 在這台電腦上不碰排程器;用戶自己的雲端主機可以(Wei 2026-09-28:先確認、只裝被要求的那一條,規則在
 # references/cloud-handoff.md)。所以守門要分得出「在這台電腦上執行」與「經 SSH 在雲端主機上執行」。判別從嚴:
 # 一行指令**整行**就是一個 `ssh <選項> <user>@<host> <遠端指令>`(可以帶一段 heredoc 當它的輸入)才算遠端——
@@ -1082,7 +1140,7 @@ def _sched_in_command(text):
             quoted = text[i:j + 1]
             if owner is None:   # 這個指令的第一個引號才算一次
                 owner = (_CMD_PREFIX_RE.sub("", "".join(out[seg:]), count=1).split() or [""])[0]
-            if os.path.basename(owner) in _TEXT_CMDS and not (c == '"' and re.search(r"`|\$\(", quoted)):
+            if os.path.basename(owner).lower() in _TEXT_CMDS and not (c == '"' and re.search(r"`|\$\(", quoted)):
                 quoted = c + " " * (len(quoted) - 2) + c
             out.append(quoted); i = j + 1
             continue
@@ -1254,8 +1312,8 @@ SCHED_DENY_REASON_FORM = (
 def _sched_guard_hooks(options):
     """PreToolUse:Bash／PowerShell 指令要叫系統排程器就拒絕,理由回給模型(它不會掛在系統框上,也知道接下來怎麼講)。"""
     async def guard(input_data, _tool_use_id, _context):
-        cmd = ((input_data or {}).get("tool_input") or {}).get("command")
-        verdict = sched_verdict(cmd) if isinstance(cmd, str) else None
+        _, cmd, _ps = _shell_input(input_data)
+        verdict = sched_verdict(cmd) if cmd is not None else None
         if not verdict:
             return {}
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
@@ -1276,7 +1334,8 @@ def _sched_guard_hooks(options):
 # 放行的脫離寫法只有 nohup / setsid 開頭、結尾單一 `&`(3b:這一輪自己輪詢到完成);`& wait`、引號裡的 & 都不算。
 # 只認直接寫在指令裡的啟動;agent 自己寫的包裝腳本、cd 進策略目錄再跑 strategy.py 擋不到。
 _BACKTEST_LAUNCH_RE = re.compile(
-    r"\bpython[\w.]*(?:\.exe)?\s+(?:-[XW]\s*\S+\s+|-(?!c\b)[A-Za-z]+\s+)*[^\s;&|<>]*\bstrategies[/\\][^\s;&|<>]+\.py\b"
+    r"(?:\bpython[\w.]*|(?:^|(?<=[\s;&|(\"'=/\\]))py)(?:\.exe)?[\"']?\s+(?:-[XW]\s*\S+\s+|-(?!c\b)[A-Za-z]+\s+|-[0-9][\w.-]*\s+)*"
+    r"[^\s;&|<>]*\bstrategies[/\\][^\s;&|<>]+\.py\b"
     r"|-m\s+lib\.(?:runner|param_scan|walk_forward|validation)\b"
     r"|\bfrom\s+lib\.(?:runner|param_scan|walk_forward|validation)\s+import\b"
     r"|\bimport\s+lib\.(?:runner|param_scan|walk_forward|validation)\b"
@@ -1355,7 +1414,10 @@ def cli_supports_updated_input(version):
 CRED_BASH_DENY_RE = re.compile(
     r"\b(?:capital|president)_vault\.json\b|\b(?:capital|president)_pfx_key\b|\bpresident\.pfx\b"
     r"|\bcapital_stage\b|\bpresident_logs\b"
-    r"|credentials[\\/]+[^\s;&|'\"`<>]*(?:[*?]|\.pfx\b)",
+    r"|(?:credentials|creden~\d)[\\/]+[^\s;&|'\"`<>]*(?:[*?\[]|~\d|\.pfx\b)"
+    # the folder (or anything in it) after a copy / move / archive verb: `Copy-Item -Recurse ..\credentials x`, tar, zip
+    r"|\b(?:cp|copy|copy-item|cpi|xcopy|robocopy|rsync|scp|ditto|mv|move|move-item|mi|tar|zip|7z|7za|compress-archive)\b"
+    r"[^|;&\n]*?(?:^|[\s\\/'\"=(:,])(?:credentials|creden~\d)(?=$|[\s\\/'\"*?\[),;])",
     re.IGNORECASE)
 CRED_BASH_DENY_REASON = (
     "Refused by the Blave runtime — the broker vaults, certificates, upload keys and the 統一 SDK logs "
@@ -1373,15 +1435,18 @@ def cred_bash_denied(cmd):
 # Reading them (cat, grep, python -c "import ...") and running them stay allowed. A speed bump
 # like the credentials guard: a path assembled at run time is not caught.
 _SECRET_CODE_NAME_RE = re.compile(
-    r"(?:^|[\\/\s'\"`=(])(?:" + "|".join(re.escape(os.path.basename(f)[:-3]) for f in SECRET_CODE_FILES)
+    r"(?:^|[\\/\s'\"`=(:,])(?:" + "|".join(re.escape(os.path.basename(f)[:-3]) for f in SECRET_CODE_FILES)
     + r")\.py\b", re.IGNORECASE)
 _NAMES_ALT = "|".join(re.escape(os.path.basename(f)[:-3]) for f in SECRET_CODE_FILES)
 _REDIRECT_INTO_RE = re.compile(r">>?\s*['\"]?[^\s;&|'\"]*(?:" + _NAMES_ALT + r")\.py\b", re.IGNORECASE)
 _WRITE_MARK_RE = re.compile(
     r"\btee\b|\bsed\b[^|;&]*\s-[a-zA-Z]*i|\bperl\b[^|;&]*\s-[a-zA-Z]*i|\b(?:cp|mv|rm|ln|install|truncate|patch|dd)\b"
     r"|\b(?:copy|move|del|erase|ren|rename|xcopy|robocopy)\b|(?:Set|Add|Clear)-Content|Out-File|(?:Remove|Move|Copy|Rename|New)-Item"
-    # PowerShell's short aliases of those cmdlets (ri, mi, cpi, rni, ni, sc, ac, clc) and .NET file writes
-    r"|\b(?:ri|mi|cpi|rni|ni|sc|ac|clc)\b|::(?:WriteAll|AppendAll|Delete|Move|Copy|Replace|Create)\w*\("
+    # .NET file writes (static and instance) and downloads saved to a file
+    r"|::(?:WriteAll\w*|AppendAll\w*|AppendText|Delete|Move|Copy|Replace|Create\w*|OpenWrite)\s*\("
+    r"|::Open\s*\([^)]*(?:Create|Append|Truncate|Write)|IO\.(?:StreamWriter|FileStream|BinaryWriter)\]?::new"
+    r"|New-Object\s+(?:-TypeName\s+)?(?:System\.)?IO\.(?:StreamWriter|FileStream|BinaryWriter)|(?-i:\.(?:Delete|MoveTo|CopyTo)\()"
+    r"|-OutFile\b|Start-BitsTransfer|\bwget\b|\bcurl(?:\.exe)?\b[^|;&\n]*?\s(?:-[a-zA-Z]*[oO]\b|--output\b|--remote-name\b)"
     # open(…) with a write mode: strings, one level of parens (os.path.join(…)) and bare args up to a quoted mode
     # that starts w/a/x or r…+ and is closed by its quote ('w', 'rb+', mode='wb'); a path's own letters never count
     # as the mode (`open('lib/capital_vault.py')`, `open('AGENTS.md')` are reads — the quote after the mode is what
@@ -1398,10 +1463,19 @@ SECRET_CODE_DENY_REASON = (
 )
 
 
-def secret_code_bash_denied(cmd):
+# PowerShell's short aliases of the write cmdlets, only where a command starts and only for the PowerShell tool:
+# as bare words they are grep flags (`grep -ni`) and two-letter search terms.
+_PS_ALIAS_WRITE_RE = re.compile(r"(?:^|[;&|({}\n]|\$\(|=)\s*(?:&\s*)?(?:ri|mi|cpi|rni|ni|sc|ac|clc)(?=\s|$)", re.I)
+
+
+def _writes(cmd, powershell):
+    return bool(_WRITE_MARK_RE.search(cmd) or (powershell and _PS_ALIAS_WRITE_RE.search(cmd)))
+
+
+def secret_code_bash_denied(cmd, powershell=False):
     cmd = cmd or ""
     # a redirect counts only INTO one of them (`... > tmp/log 2>&1` while running one is fine)
-    return bool(_REDIRECT_INTO_RE.search(cmd) or (_SECRET_CODE_NAME_RE.search(cmd) and _WRITE_MARK_RE.search(cmd)))
+    return bool(_REDIRECT_INTO_RE.search(cmd) or (_SECRET_CODE_NAME_RE.search(cmd) and _writes(cmd, powershell)))
 
 
 # manager/amounts.ui.json (see PROTECTED_EDIT_RULES): same shape as the secret-code guard, any turn.
@@ -1414,19 +1488,35 @@ MIRROR_DENY_REASON = (
 )
 
 
-def mirror_bash_denied(cmd):
+def mirror_bash_denied(cmd, powershell=False):
     cmd = cmd or ""
-    return bool(_MIRROR_REDIRECT_RE.search(cmd) or (_MIRROR_NAME_RE.search(cmd) and _WRITE_MARK_RE.search(cmd)))
+    return bool(_MIRROR_REDIRECT_RE.search(cmd) or (_MIRROR_NAME_RE.search(cmd) and _writes(cmd, powershell)))
+
+
+# powershell / pwsh -EncodedCommand (any prefix PowerShell accepts: -e, -ec, -enc …): the command the guards would
+# match is base64, so it is refused outright, from either shell tool.
+_ENCODED_RE = re.compile(
+    r"(?:^|[\s;&|(\"'=/\\])(?:powershell|pwsh)(?:\.exe)?[\"']?\s(?:[^|;&\n]*?\s)?[-/](?:ec|"
+    + "|".join("encodedcommand"[:i] for i in range(14, 0, -1)) + r")(?=\s|:|$)", re.I)
+ENCODED_DENY_REASON = (
+    "Refused by the Blave runtime — an encoded PowerShell command (-EncodedCommand / -enc / -e) hides what it runs, "
+    "so it is never run from the agent. Write the command out in plain text. Do not retry it another way."
+)
+
+
+def encoded_command_denied(cmd):
+    return bool(_ENCODED_RE.search(cmd or ""))
 
 
 def _secret_code_bash_guard_hooks(options):
     """PreToolUse:Bash／PowerShell,任何回合:改／搬／刪拿得到券商密碼的程式檔、或寫資金鏡像 amounts.ui.json 的指令拒絕。"""
     async def guard(input_data, _tool_use_id, _context):
-        cmd = ((input_data or {}).get("tool_input") or {}).get("command")
-        if not isinstance(cmd, str):
+        _, cmd, ps = _shell_input(input_data)
+        if cmd is None:
             return {}
-        reason = (MIRROR_DENY_REASON if mirror_bash_denied(cmd)
-                  else SECRET_CODE_DENY_REASON if secret_code_bash_denied(cmd) else None)
+        reason = (ENCODED_DENY_REASON if encoded_command_denied(cmd)
+                  else MIRROR_DENY_REASON if mirror_bash_denied(cmd, ps)
+                  else SECRET_CODE_DENY_REASON if secret_code_bash_denied(cmd, ps) else None)
         if not reason:
             return {}
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
@@ -1438,8 +1528,8 @@ def _secret_code_bash_guard_hooks(options):
 def _cred_bash_guard_hooks(options):
     """PreToolUse:Bash／PowerShell,任何回合:讀／抄／改 credentials 底下券商密鑰檔的指令拒絕。"""
     async def guard(input_data, _tool_use_id, _context):
-        cmd = ((input_data or {}).get("tool_input") or {}).get("command")
-        if not isinstance(cmd, str) or not cred_bash_denied(cmd):
+        _, cmd, _ps = _shell_input(input_data)
+        if cmd is None or not cred_bash_denied(cmd):
             return {}
         return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                        "permissionDecisionReason": CRED_BASH_DENY_REASON}}
@@ -1460,8 +1550,8 @@ def _bg_guard_hooks(options):
             cap_ms = 1800000
         left_ms = int((_BRIDGE_KILL_SEC - _RESUME_TAIL_MARGIN_SEC - (time.monotonic() - t0)) * 1000)
         need_ms = max(0, min(cap_ms, left_ms))
-        tool_input = (input_data or {}).get("tool_input") or {}
-        kind, reason = bg_guard_check(tool_input, need_ms)
+        tool_input, cmd, _ps = _shell_input(input_data)
+        kind, reason = bg_guard_check({**tool_input, "command": cmd} if cmd is not None else tool_input, need_ms)
         if not kind:
             return {}
         if kind == "timeout" and need_ms >= _BG_REWRITE_MIN_MS \
@@ -4913,6 +5003,9 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # inside claude 2.1.239.
         "DISABLE_AUTOUPDATER": "1",
     })
+    if _win32():
+        # The CLI's own default turns PowerShell on or off by a remote flag when Git Bash is there (win-e2e-0.1.39 F2)
+        turn_env["CLAUDE_CODE_USE_POWERSHELL_TOOL"] = powershell_tool_env({**os.environ, **turn_env}, cwd=WORKSPACE)
     if model:
         # lib.report.scheduled_cost 依這一輪的模型估價(登記排程時講給用戶聽)
         turn_env["BLAVE_TURN_MODEL"] = model

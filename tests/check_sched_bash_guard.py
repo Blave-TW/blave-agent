@@ -9,6 +9,7 @@
   ③ hook 掛不上(HookMatcher 不在、_add_hook 回 False)、SDK 沒有 tools= / in-process MCP、job 不是模板 → 不起回合、寫 fault;
   ④ --scheduled --engine=codex → 不起回合、寫 fault;
   ⑤ 聊天回合(雲端)不受影響:tools= 是聊天回合那份(有 Bash),沒有 blave_report、不隔離設定;
+     win32 的回合把 CLAUDE_CODE_USE_POWERSHELL_TOOL 釘死(有 Git Bash = 0、沒有 = 1),其他平台不設;
   ⑥ 電腦版的設定隔離跟排程回合是同一支 _isolate_settings。
 
 跑法:cd blave-agent && .venv/bin/python tests/check_sched_bash_guard.py
@@ -269,6 +270,24 @@ t("⑤ chat tools=: ToolSearch (deferred browser tools) and TaskOutput always; w
   and not {"CronList", "NotebookEdit", "Skill", "Workflow", "Task", "Agent"} & set(sum(_ct.values(), [])), _ct)
 t("⑤ cloud chat turn: no deny-all gate",
   c is not None and not any(m["matcher"] is None for m in (c.hooks or {}).get("PreToolUse") or []))
+t("⑤ not win32: CLAUDE_CODE_USE_POWERSHELL_TOOL is left alone",
+  c is not None and "CLAUDE_CODE_USE_POWERSHELL_TOOL" not in (c.env or {}), (c.env or {}).get("CLAUDE_CODE_USE_POWERSHELL_TOOL"))
+# win32 (P2-5 of the v039-win-shell-fix audit): pinned from where the CLI would find Git Bash, never left to its remote flag
+_real_win32, _real_gbp = at._win32, at.git_bash_path
+at._win32 = lambda: True
+try:
+    for gbp, want in ((r"C:\Program Files\Git\bin\bash.exe", "0"), (None, "1")):
+        _cwd = []
+        at.git_bash_path = lambda env, exists=None, cwd=None, _r=gbp, _c=_cwd: (_c.append(cwd), _r)[1]
+        seen.clear()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            asyncio.run(at.run_turn("chat-w", "hi", "deepseek/deepseek-v4-pro", at.WebSink(None, None, "chat-w")))
+        cw = (seen.get("calls") or [None])[0]
+        t(f"⑤ win32, Git Bash {'found' if gbp else 'absent'}: CLAUDE_CODE_USE_POWERSHELL_TOOL = {want}",
+          cw is not None and (cw.env or {}).get("CLAUDE_CODE_USE_POWERSHELL_TOOL") == want, cw and cw.env)
+        t("⑤ …judged from the turn's cwd (the workspace — the CLI skips a git found there)", _cwd == [at.WORKSPACE], _cwd)
+finally:
+    at._win32, at.git_bash_path = _real_win32, _real_gbp
 at.SCHEDULED_TURN = True
 
 # ⑥ 電腦版與排程同一支隔離
