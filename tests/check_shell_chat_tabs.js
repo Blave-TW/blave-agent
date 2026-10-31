@@ -211,14 +211,20 @@ ok("共用畫面背景期間不畫:捲動、讀屏、送出鈕、托盤;輸入�
   ok("+N:有一條真的在跑才放 tick,全是排隊放短劃", /sts\.includes\("run"\) \? tabsLead\("run"\) : run \? tabsLead\("queued"\) : null/.test(ct));
   ok("歷史搜尋格的焦點是灰階框(不吃系統強調色)", css.includes(".cs-search:focus { outline: none; border-color: var(--ink); }"));
   ok("歷史列:等你回覆／沒做完／做完還沒看接「· 時間」(mono)", /if \(st\.kind !== "run" && st\.kind !== "queued"\) \{ item\.classList\.add\("is-attn"\); const at = document\.createElement\("span"\); at\.className = "mono"; at\.textContent = csTime\(m\.last\); meta\.append\(" · ", at\); \}/.test(app));
-  ok("分頁名稱(讀屏)不帶會凍住的時長;tooltip 每秒跟著跳、Esc 隨時收得掉、在列(52)下方 6px", /const word = st === "run" \? t\("tabs\.st\.running"\) : tabsStateWord\(T, st\);/.test(ct) && /tabsTipTick\(\);\n\}, 1000\);/.test(ct)
-    && /window\.addEventListener\("keydown", \(e\) => \{\n  if \(e\.key !== "Escape" \|\| e\.isComposing \|\| e\.keyCode === 229\) return;\n  const tip = \$\("tabs-tip"\); if \(!tip \|\| tip\.hidden\) return;\n  tip\.hidden = true; tip\.dataset\.off = "1"; e\.preventDefault\(\); e\.stopPropagation\(\);\n\}, true\);/.test(ct) && css.includes(".tabs-tip { top: 58px;"));
+  ok("分頁名稱(讀屏)不帶會凍住的時長;tooltip 每秒跟著跳、Esc 隨時收得掉;tooltip 在分頁本體下方 6、+N 選單在灰底下方 8", /const word = st === "run" \? t\("tabs\.st\.running"\) : tabsStateWord\(T, st\);/.test(ct) && /tabsTipTick\(\);\n\}, 1000\);/.test(ct)
+    && /window\.addEventListener\("keydown", \(e\) => \{\n  if \(e\.key !== "Escape" \|\| e\.isComposing \|\| e\.keyCode === 229\) return;\n  const tip = \$\("tabs-tip"\); if \(!tip \|\| tip\.hidden\) return;\n  tip\.hidden = true; tip\.dataset\.off = "1"; e\.preventDefault\(\); e\.stopPropagation\(\);\n\}, true\);/.test(ct) && css.includes(".tabs-tip { top: 46px;") && css.includes(".cs-menu { position: absolute; z-index: 9; top: 48px;"));
 }
 // 程式稽核 s2 P3
 ok("+N 選單開著:每秒只換時長字,不重建(焦點不掉);整列重建時照 sid 把焦點還回分頁或選單列", /if \(!\$\("cs-menu"\)\.hidden\) tabsMenuTick\(\);/.test(ct) && /function tabsMenuTick\(\) \{/.test(ct)
   && /it\.dataset\.sid = sid;/.test(ct) && /function tabsPaint\(\) \{[\s\S]{0,900}try \{ tabsPaintIn\(bar\); \}\n  finally \{\n    if \(fSid\)/.test(ct));
 ok("結果卡:那一輪的分頁還開著就到它的容器裡找落點(背景分頁沒有回覆文字的那一輪也出卡)", /const T = typeof CS !== "undefined" && rt\.sid \? CS\.tabs\.get\(rt\.sid\) : null;\n  if \(T && T\.el\) return withTab\(T, \(\) => resHostIn\(rt\)\);/.test(read("results.js")));
-ok("送出第一句就存分頁記憶", /csRemember\(\); if \(CS\.loaded\) CS\.loaded\.title = csTitle; tabsSave\(\); \}/.test(app));
+ok("送出第一句就存分頁記憶,並重畫分頁(分頁上的標題是建元素時寫的,不重畫就停在「新對話」)", /csRemember\(\); if \(CS\.loaded\) CS\.loaded\.title = csTitle; tabsSave\(\); tabsPaint\(\); \}/.test(app));
+// 分頁上的標題是建元素時寫進去的:每一處改標題(csTitle／T.title)的函式都要自己重畫分頁,或只是存取同步。列舉,多一處沒歸類就紅
+{ const SITES = { csPaintHistory: "畫回舊對話:同函式尾 tabsPaint()", submitMessage: "第一句:同一行 tabsPaint()", tabSave: "存回分頁自己那份,不改畫面", tabMake: "建新分頁的初值", "(top)": "TAB_KEYS 的寫入器(切分頁整組換,隨後 tabShow 重畫)" };
+  const fnOf = (src, idx) => { const m = [...src.slice(0, idx).matchAll(/^(?:async )?function (\w+)\(/gm)].pop(); return m ? m[1] : "(top)"; };
+  const hits = []; for (const [f, src] of [["app.js", app], ["chattabs.js", ct]]) { const ss = strip(src); for (const m of ss.matchAll(/(?:^|[^\w.])(?<!let )(csTitle|T\.title|CS\.loaded\.title|T\.st\.csTitle) = (?!=)/gm)) hits.push(f + ":" + fnOf(ss, m.index)); }
+  const bad = hits.filter((h) => !(h.split(":")[1] in SITES)), unused = Object.keys(SITES).filter((k) => !hits.some((h) => h.endsWith(":" + k)));
+  ok("改標題的每一處(" + hits.length + ")都歸類;畫回舊對話那支尾端重畫", hits.length >= 4 && !bad.length && !unused.length && /T\.title = csTitle; csRenderHead\(\); scrollChat\(true\);\n  if \(typeof tabsPaint === "function"\) tabsPaint\(\);/.test(app), { hits, bad, unused }); }
 ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \(!\(T && T\.queued\)\) trackFeature\("chat_stop"\);/.test(app) && !/trackFeature\("queue_cancel"\)/.test(fs.readdirSync(R).filter((n) => n.endsWith(".js")).map(read).join("\n")));
 // 整合稽核 P3:分頁 tooltip 開著按 Esc 只收 tooltip,不讓 app.js escTop(document 冒泡)再關一層;沒開不攔。
 // 把 chattabs.js 那一支監聽原樣拿出來,掛到假的 window／document,照真的順序派送(window capture → document → window 冒泡,stopPropagation 就停)
@@ -289,8 +295,10 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
     && /top: calc\(\(100% - 16px\) \/ 2\); height: 16px;/.test(blk) && /top: calc\(50% - 14px\); height: 28px;/.test(blk)
     && !/tabs-top|tabs-pad-b|tabs-drag|padding-top: calc/.test(blk) && !/(?<![-\w])height: (46|44|36)px|\btop: (6|13|16)px|inset: -12px/.test(blk)
     && /const TABS_MIN = 60, TABS_MIN_SEL = 112, TABS_NARROW = 88, TABS_GAP = 2;/.test(ct));
-  ok("× 不佔位:絕對定位在本體尾端、不墊底色;滑過或焦點時右內距撐到 32(標題讓位)、寬度由 chattabs.js 釘住;熱區 ::after 上下伸進透明框(32×44)", /\.tab-x \{ position: absolute; right: 0; top: 0; bottom: 0; width: 32px;[^}]*visibility: hidden; \}/.test(blk) && !/\.tab-x \{[^}]*background/.test(blk) && !/tabs-bg/.test(css + trcss)
-    && blk.includes(".cs-tabs .tab:not(.narrow):hover, .cs-tabs .tab:not(.narrow):focus-visible { padding-right: 32px; }") && /\[\.\.\.bar\.children\]\.forEach\(\(el, i\) => \{ el\.style\.flex = "none"; el\.style\.width = ws\[i\] \+ "px"; \}\);/.test(ct) && blk.includes(".tab-x::after { content: \"\"; position: absolute; left: 0; right: 0; top: calc(0px - var(--tabs-reach)); bottom: calc(0px - var(--tabs-reach)); }")
+  ok("× 不佔位、不墊底色:絕對定位在本體尾端(z 1,焦點環 z 2 在它上面);滑過或焦點時標題尾端淡出到 × 左緣;最窄的分頁不畫「…」改淡出 8;熱區 ::after 上下伸進透明框(32×44)", /\.tab-x \{ position: absolute; z-index: 1; right: 0; top: 0; bottom: 0; width: 32px;[^}]*visibility: hidden; \}/.test(blk) && !/\.tab-x \{[^}]*background/.test(blk) && !/tabs-bg/.test(css + trcss)
+    && blk.includes(".cs-tabs .tab:not(.narrow):is(:hover, :focus-visible) .tab-t {\n  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent calc(100% - 20px));")
+    && blk.includes(".cs-tabs .tab.narrow .tab-t { text-overflow: clip;\n  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 8px), transparent);") && /\.cs-tabs \.tab:focus-visible::before \{ content: ""; position: absolute; z-index: 2;/.test(blk)
+    && !/padding-right: 32px|el\.style\.width = ws\[i\]/.test(blk + ct) && blk.includes(".tab-x::after { content: \"\"; position: absolute; left: 0; right: 0; top: calc(0px - var(--tabs-reach)); bottom: calc(0px - var(--tabs-reach)); }")
     && blk.includes(".cs-tabs .tab:hover .tab-x, .cs-tabs .tab:focus-visible .tab-x { visibility: visible; }") && !/\.tab-x \{[^}]*flex: none/.test(blk));
   // 列舉:分頁列區塊與切換鈕(共用 segment 配方)裡每個往外伸的 ::before／::after(top／bottom／inset 為負、calc(0px - …)、min(0px, …)),
   //       自己都要在 no-drag 清單裡(偽元素不繼承 app-region;伸出元素外的那段蓋在拖曳條上就點不動)。加一個往外伸卻沒帶的就紅
@@ -305,7 +313,7 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
     if (/(?:top|bottom): min\(0px/.test(seg)) out.push("segment > button::before");
     const bare = out.filter((x) => x === "segment > button::before" ? !/-webkit-app-region: no-drag/.test(seg) : !ndLast.has(last(x)));
     ok("往外伸的熱區偽元素(" + out.length + " 個)都帶 no-drag", out.length >= 2 && bare.length === 0, { out, bare }); }
-  ok("焦點環 ::before:2px --focus-ring 畫在本體內、四角 --radius-sm,只在 focus-visible", /\.cs-tabs \.tab:focus-visible::before \{ content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px var\(--focus-ring\); border-radius: var\(--radius-sm\); pointer-events: none; \}/.test(blk)
+  ok("焦點環 ::before:2px --focus-ring 畫在本體內、四角 --radius-sm,只在 focus-visible", /\.cs-tabs \.tab:focus-visible::before \{ content: ""; position: absolute; z-index: 2; inset: 0; box-shadow: inset 0 0 0 2px var\(--focus-ring\); border-radius: var\(--radius-sm\); pointer-events: none; \}/.test(blk)
     && /\.cs-tabs \.tab:focus-visible \{ outline: none; \}/.test(blk) && !/\.tab:hover::before/.test(blk));
   ok("選中:本體填對話底色、四角正圓 --radius-sm(外緣垂直半徑多 reach)、600;不往下接對話;沒有捲動浮線", blk.includes('.cs-tabs .tab[aria-selected="true"] { background-color: var(--surface-card); color: var(--ink); font-weight: 600;\n  border-radius: var(--radius-sm) / calc(var(--radius-sm) + var(--tabs-reach)); }')
     && !/is-scrolled|box-shadow: 0 1px 0/.test(css.slice(css.indexOf(".chat-head {"), css.indexOf(".tabs-tip { top:"))) && !/chatEdge|is-scrolled/.test(app));

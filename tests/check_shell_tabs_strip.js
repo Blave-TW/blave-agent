@@ -110,16 +110,20 @@ app.whenReady().then(async () => {
     const before = t1.w;
     const g2 = await js("geo()");
     ok("滑過沒選中的分頁:× 畫出來、寬度不變;其他格不畫", g2.tabs[1].xv === "visible" && g2.tabs[1].w === before && g2.tabs[0].xv === "hidden" && g2.tabs[2].xv === "hidden", g2.tabs.map((t) => [t.xv, t.w]));
-    // 滑過時標題讓出 × 的位置:標題的可見框右緣不越過 ×、× 不墊底色硬蓋;被截的話截在標題框自己身上(overflow hidden + ellipsis = 「…」在 × 前面)
+    // 滑過時標題尾端淡出(mask):完全透明的那一點正好落在 × 左緣,× 不墊底色硬蓋;寬度不變
     const room = (k) => js(`(() => { const tab = document.querySelectorAll("#cs-tabs .tab")[${k}], t = tab.querySelector(".tab-t"), x = tab.querySelector(".tab-x"), ts = getComputedStyle(t), tr = t.getBoundingClientRect(), xr = x.getBoundingClientRect();
-      return { tRight: +tr.right.toFixed(2), xLeft: +xr.left.toFixed(2), cut: t.scrollWidth > t.clientWidth + 1, ell: ts.textOverflow === "ellipsis" && ts.overflow === "hidden" && ts.whiteSpace === "nowrap", xBg: getComputedStyle(x).backgroundColor, xv: getComputedStyle(x).visibility, w: tab.getBoundingClientRect().width }; })()`);
+      const mk = ts.webkitMaskImage || ts.maskImage, stops = mk.split("100% - ").slice(1).map((v) => parseFloat(v));
+      return { fadeEnd: +(tr.right - (stops[1] || 0)).toFixed(2), fadeStart: +(tr.right - (stops[0] || 0)).toFixed(2), xLeft: +xr.left.toFixed(2), mask: mk, xBg: getComputedStyle(x).backgroundColor, xv: getComputedStyle(x).visibility, w: tab.getBoundingClientRect().width }; })()`);
     const r1 = await room(1);
-    ok("滑過沒選中的:標題可見框不跟 × 重疊、截了就有「…」、× 不墊底色;總寬不變", r1.xv === "visible" && r1.tRight <= r1.xLeft + 0.5 && r1.cut && r1.ell && r1.xBg === "rgba(0, 0, 0, 0)" && r1.w === before, r1);
+    ok("滑過沒選中的:標題尾端淡出、全透明正好在 × 左緣(不切出半個字)、× 不墊底色;總寬不變", r1.xv === "visible" && /linear-gradient/.test(r1.mask) && Math.abs(r1.fadeEnd - r1.xLeft) < 0.6 && Math.abs(r1.fadeStart - (r1.fadeEnd - 12)) < 0.01 && r1.xBg === "rgba(0, 0, 0, 0)" && r1.w === before, r1);
     await mouse("mouseMove", g.head.left + t0.x + 20, g.head.top + 34);
     const g3 = await js("geo()");
     ok("滑過選中那格:它的 × 才畫", g3.tabs[0].xv === "visible" && g3.tabs[1].xv === "hidden", g3.tabs.map((t) => t.xv));
     const r0 = await room(0);
-    ok("滑過選中那格:標題一樣讓出 ×、「…」在 × 前面,總寬不變", r0.tRight <= r0.xLeft + 0.5 && r0.cut && r0.ell && r0.xBg === "rgba(0, 0, 0, 0)" && r0.w === t0.w, r0);
+    ok("滑過選中那格:標題一樣淡出到 × 左緣,總寬不變", /linear-gradient/.test(r0.mask) && Math.abs(r0.fadeEnd - r0.xLeft) < 0.6 && r0.xBg === "rgba(0, 0, 0, 0)" && r0.w === t0.w, r0);
+    await mouse("mouseMove", 5, 700);
+    const r2 = await room(1);
+    ok("沒滑過時標題不淡出", r2.mask === "none" && r2.xv === "hidden", r2);
     await mouse("mouseMove", 5, 700);
     const sty = await js(`(() => { const el = document.querySelector('#cs-tabs .tab[aria-selected="true"]'), cs = getComputedStyle(el), off = document.querySelector('#cs-tabs .tab:not([aria-selected="true"])');
       return { r: cs.borderTopLeftRadius, rr: cs.borderTopRightRadius, bl: cs.borderBottomLeftRadius, br: cs.borderBottomRightRadius, clip: cs.backgroundClip, bg: cs.backgroundColor, card: getComputedStyle(document.querySelector(".pane-chat")).backgroundColor, offBg: getComputedStyle(off).backgroundColor, sep: getComputedStyle(off, "::after").height, sepBg: getComputedStyle(off, "::after").backgroundColor, selSep: getComputedStyle(el, "::after").content,
@@ -142,10 +146,44 @@ app.whenReady().then(async () => {
 
   // ── 窄分頁讓出 × 格:沒選中又被縮到 88 以下
   { const g = await setup(452, LONG.slice(0, 5), 0);
+    const nr = await js(`(() => { const t = document.querySelector("#cs-tabs .tab.narrow .tab-t"), ts = t && getComputedStyle(t); return t ? { to: ts.textOverflow, mask: ts.webkitMaskImage || ts.maskImage } : null; })()`);
+    ok("最窄的分頁不畫「…」(放不下會剩「新.」):text-overflow clip、尾端 8px 淡出", !!nr && nr.to === "clip" && /linear-gradient\(90deg, rgb\(0, 0, 0\) calc\(100% - 8px\), (transparent|rgba\(0, 0, 0, 0\))\)/.test(nr.mask), nr);
     ok("452 五個長標題:沒選中的被縮到 88 以下 → 讓出 × 格;選中那格照留", g.tabs.slice(1).every((t) => t.w < 88 && t.narrow && t.xd === "none") && !g.tabs[0].narrow && g.tabs[0].xd !== "none", g.tabs.map((t) => [t.w, t.narrow, t.xd]));
     const g2 = await setup(720, LONG.slice(0, 2).concat(["新對話"]), 0);
     ok("本來就短的(新對話)不算窄,× 格照留", !g2.tabs[2].narrow && g2.tabs[2].xd !== "none", g2.tabs.map((t) => [t.w, t.narrow])); }
 
+  // ── 焦點環四邊都在(稽核 A1):鍵盤焦點在沒選中、選中、被縮窄的分頁上,截圖量環四邊中點都是 --focus-ring 的色(× 出現也不蓋掉)
+  // 不顯示的視窗收不到真的鍵盤焦點(document 沒有焦點):用 DevTools 協定把 :focus-visible 強制掛上去,畫的是同一套 CSS
+  { const dbg = w.webContents.debugger; dbg.attach("1.3"); await dbg.sendCommand("DOM.enable"); await dbg.sendCommand("CSS.enable");
+    let forced = null;
+    const force = async (k) => { if (forced) await dbg.sendCommand("CSS.forcePseudoState", { nodeId: forced, forcedPseudoClasses: [] });
+      const doc = await dbg.sendCommand("DOM.getDocument", { depth: -1 }), all = await dbg.sendCommand("DOM.querySelectorAll", { nodeId: doc.root.nodeId, selector: "#cs-tabs .tab" });
+      forced = all.nodeIds[k]; await dbg.sendCommand("CSS.forcePseudoState", { nodeId: forced, forcedPseudoClasses: ["focus", "focus-visible"] }); };
+    const kb = async () => { await mouse("mouseMove", 5, 700); forced = null; };
+    const ring = async (k) => {
+      await force(k);
+      const box = await js(`(() => { const el = document.querySelectorAll("#cs-tabs .tab")[${k}]; const r = el.getBoundingClientRect(), b = parseFloat(getComputedStyle(el).borderTopWidth);
+        const probe = document.createElement("i"); probe.style.color = "var(--focus-ring)"; document.body.appendChild(probe); const rgb = getComputedStyle(probe).color; probe.remove();
+        return { x: r.left, y: r.top + b, w: r.width, h: r.height - 2 * b, fv: getComputedStyle(el, "::before").boxShadow.includes("inset"), xd: getComputedStyle(el.querySelector(".tab-x")).display + "/" + getComputedStyle(el.querySelector(".tab-x")).visibility, narrow: el.classList.contains("narrow"), sel: el.getAttribute("aria-selected"), rgb }; })()`);
+      await wait(150);
+      const X = Math.floor(box.x), Y = Math.floor(box.y), W = Math.ceil(box.x + box.w) - X, H = Math.ceil(box.y + box.h) - Y, R0 = box.x + box.w - X, L0 = box.x - X;
+      const img = await w.webContents.capturePage({ x: X, y: Y, width: W, height: H }), sz = img.getSize(), bmp = img.toBitmap(), sc = sz.width / W;
+      const px = (x, y) => { const o = (Math.round(y * sc) * sz.width + Math.round(x * sc)) * 4; return [bmp[o + 2], bmp[o + 1], bmp[o]]; };   // BGRA
+      const want = box.rgb.match(/\d+/g).slice(0, 3).map(Number), near = (p) => p.every((v, i) => Math.abs(v - want[i]) <= 40);
+      const mid = Math.floor(H / 2), cx = Math.floor(W / 2);
+      return { k, sel: box.sel, narrow: box.narrow, fv: box.fv, xd: box.xd, left: near(px(L0 + 1, mid)), right: near(px(R0 - 1, mid)), top: near(px(cx, 1)), bottom: near(px(cx, H - 2)), rightPx: px(R0 - 1, mid), want };
+    };
+    const rs = [];
+    await setup(720, LONG.slice(0, 4), 1); await kb();
+    for (const k of [0, 1]) rs.push(await ring(k));
+    await setup(452, LONG.slice(0, 5), 1); await kb();
+    rs.push(await ring(0));
+    ok("鍵盤焦點:選中、沒選中、被縮窄的分頁,焦點環四邊都在(× 出現時右邊也在)", rs.every((r) => r.fv && r.xd === (r.narrow ? "none/visible" : "flex/visible") && r.left && r.right && r.top && r.bottom)
+      && rs.some((r) => r.narrow) && rs.some((r) => r.sel === "true") && rs.some((r) => !r.narrow && r.sel === "false"), rs);
+    if (forced) await dbg.sendCommand("CSS.forcePseudoState", { nodeId: forced, forcedPseudoClasses: [] }); dbg.detach();
+    const pos = await js(`(() => { const el = document.querySelectorAll("#cs-tabs .tab")[0], tip = document.getElementById("tabs-tip"); delete tip.dataset.off; tabsTip(el, CS.tabs.get(el.dataset.sid)); const m = document.getElementById("cs-menu");
+      const h = document.getElementById("cs-head").getBoundingClientRect(), out = { tipTop: tip.hidden ? null : parseFloat(getComputedStyle(tip).top), menuTop: parseFloat(getComputedStyle(m).top) }; tabsTipOff(); return out; })()`);
+    ok("tooltip 在分頁本體(y 40)下方 6 → 46;+N 選單在灰底(y 40)下方 8 → 48", pos.menuTop === 48 && pos.tipTop === 46, pos); }
   // ── 用滑鼠關分頁:寬度凍住,下一顆 × 停在游標底下;離開分頁列才重排
   { const g = await setup(720, LONG.slice(0, 4), 0), t1 = g.tabs[1];
     const px = g.head.left + t1.x + t1.w - 16, py = g.head.top + 34;

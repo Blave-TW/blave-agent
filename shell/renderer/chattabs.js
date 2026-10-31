@@ -306,9 +306,6 @@ function tabsPaintIn(bar) {
   tabsMorePaint(L.hidden);
   // 沒選中、又被縮到 88 以下的讓出 × 格(滑過也不出 ×);本來就短的(新對話)照常留
   for (const el of [...bar.children]) { if (el.getAttribute("aria-selected") === "true") continue; const w = el.getBoundingClientRect().width; if (w < TABS_NARROW && w < Number(el.dataset.nat) - 1) el.classList.add("narrow"); }
-  // 排完就釘住每格的寬:滑過時右內距撐到 × 的寬也不推動別格(標題自己讓出位置、截尾的「…」在 × 前面);拉寬拉窄由 ResizeObserver 重排
-  const ws = [...bar.children].map((el) => el.getBoundingClientRect().width);
-  [...bar.children].forEach((el, i) => { el.style.flex = "none"; el.style.width = ws[i] + "px"; });
 }
 // 用滑鼠關分頁前記下列上每格的寬(spec §13.6);鍵盤關不凍
 function tabsFreeze() {

@@ -3613,7 +3613,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (typeof engAfter === "function") engAfter(bubble);   // 安裝中送出:進度卡移到這句底下
   if (typeof rptTurnStart === "function") rptTurnStart(viewing);   // 這一輪寫出的報告,回合結束出結果卡(reports.js)
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
-  if (!csTitle) { csTitle = msg || attachments[0].name; csRenderHead(); csRemember(); if (CS.loaded) CS.loaded.title = csTitle; tabsSave(); }   // 分頁記憶:送出第一句就記(馬上結束 app 重開也還在)   // 純附件開頭的對話:清單上用檔名當標題(純文字,不放圖示)
+  if (!csTitle) { csTitle = msg || attachments[0].name; csRenderHead(); csRemember(); if (CS.loaded) CS.loaded.title = csTitle; tabsSave(); tabsPaint(); }   // 分頁記憶:送出第一句就記(馬上結束 app 重開也還在)   // 純附件開頭的對話:清單上用檔名當標題(純文字,不放圖示)
   liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = []; turnAiBubbles = []; turnFaultEl = null;
   const unlock = () => { if (typeof sugUnsend === "function") sugUnsend(); running = false; turnStopping = false; turnUiSync(); };
   // 送出那一刻的分頁:下面每一個 await 之後都換回它再動(用戶可能在等引擎、讀附件、等主行程回覆的時候切到別的分頁)
