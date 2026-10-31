@@ -100,7 +100,11 @@ app.whenReady().then(async () => {
     const hitAt = (hx, hy) => js(`(() => { const h = document.getElementById("cs-head").getBoundingClientRect(), x = document.querySelectorAll("#cs-tabs .tab-x")[1].getBoundingClientRect(), t = document.querySelectorAll("#cs-tabs .tab")[1].getBoundingClientRect();
       const at = (px, py) => { const e = document.elementFromPoint(px, py); return e ? (e.closest(".tab-x") ? "x" : e.closest(".tab") ? "tab" : e.id || e.className) : null; };
       return { xTop: at(x.left + 16, h.top + 5), xBot: at(x.left + 16, h.top + 47), xL: at(x.left + 1, h.top + 30), tabTop: at(t.left + 20, h.top + 5), tabBot: at(t.left + 20, h.top + 47), drag: at(t.left + 20, h.top + 3), dragB: at(t.left + 20, h.top + 49), tglTop: at(document.getElementById("cs-toggle").getBoundingClientRect().left + 22, h.top + 1) }; })()`);
+    const room = (k) => js(`(() => { const tab = document.querySelectorAll("#cs-tabs .tab")[${k}], t = tab.querySelector(".tab-t"), x = tab.querySelector(".tab-x"), ts = getComputedStyle(t), tr = t.getBoundingClientRect(), xr = x.getBoundingClientRect();
+      const mk = ts.webkitMaskImage || ts.maskImage, stops = mk.split("100% - ").slice(1).map((v) => parseFloat(v));
+      return { fadeEnd: +(tr.right - (stops[1] || 0)).toFixed(2), fadeStart: +(tr.right - (stops[0] || 0)).toFixed(2), xLeft: +xr.left.toFixed(2), mask: mk, to: ts.textOverflow, xBg: getComputedStyle(x).backgroundColor, xv: getComputedStyle(x).visibility, w: tab.getBoundingClientRect().width }; })()`);
     const hit0 = await hitAt();
+    const rPre = await room(1);
     ok("沒滑過時 × 不接點擊(點分頁尾端就是選它)", hit0.xTop === "tab" && hit0.xBot === "tab", hit0);
     await mouse("mouseMove", g.head.left + t1.x + 20, g.head.top + 34);
     const hit = await hitAt();
@@ -111,11 +115,8 @@ app.whenReady().then(async () => {
     const g2 = await js("geo()");
     ok("滑過沒選中的分頁:× 畫出來、寬度不變;其他格不畫", g2.tabs[1].xv === "visible" && g2.tabs[1].w === before && g2.tabs[0].xv === "hidden" && g2.tabs[2].xv === "hidden", g2.tabs.map((t) => [t.xv, t.w]));
     // 滑過時標題尾端淡出(mask):完全透明的那一點正好落在 × 左緣,× 不墊底色硬蓋;寬度不變
-    const room = (k) => js(`(() => { const tab = document.querySelectorAll("#cs-tabs .tab")[${k}], t = tab.querySelector(".tab-t"), x = tab.querySelector(".tab-x"), ts = getComputedStyle(t), tr = t.getBoundingClientRect(), xr = x.getBoundingClientRect();
-      const mk = ts.webkitMaskImage || ts.maskImage, stops = mk.split("100% - ").slice(1).map((v) => parseFloat(v));
-      return { fadeEnd: +(tr.right - (stops[1] || 0)).toFixed(2), fadeStart: +(tr.right - (stops[0] || 0)).toFixed(2), xLeft: +xr.left.toFixed(2), mask: mk, xBg: getComputedStyle(x).backgroundColor, xv: getComputedStyle(x).visibility, w: tab.getBoundingClientRect().width }; })()`);
     const r1 = await room(1);
-    ok("滑過沒選中的:標題尾端淡出、全透明正好在 × 左緣(不切出半個字)、× 不墊底色;總寬不變", r1.xv === "visible" && /linear-gradient/.test(r1.mask) && Math.abs(r1.fadeEnd - r1.xLeft) < 0.6 && Math.abs(r1.fadeStart - (r1.fadeEnd - 12)) < 0.01 && r1.xBg === "rgba(0, 0, 0, 0)" && r1.w === before, r1);
+    ok("滑過沒選中的:滑過前不淡出 → 滑過時標題尾端淡出、刪節號換成 clip、全透明正好在 × 左緣(不切出半個字)、× 不墊底色;總寬不變", rPre.mask === "none" && rPre.to === "ellipsis" && r1.to === "clip" && r1.xv === "visible" && /linear-gradient/.test(r1.mask) && Math.abs(r1.fadeEnd - r1.xLeft) < 0.6 && Math.abs(r1.fadeStart - (r1.fadeEnd - 12)) < 0.01 && r1.xBg === "rgba(0, 0, 0, 0)" && r1.w === before, r1);
     await mouse("mouseMove", g.head.left + t0.x + 20, g.head.top + 34);
     const g3 = await js("geo()");
     ok("滑過選中那格:它的 × 才畫", g3.tabs[0].xv === "visible" && g3.tabs[1].xv === "hidden", g3.tabs.map((t) => t.xv));
@@ -123,7 +124,7 @@ app.whenReady().then(async () => {
     ok("滑過選中那格:標題一樣淡出到 × 左緣,總寬不變", /linear-gradient/.test(r0.mask) && Math.abs(r0.fadeEnd - r0.xLeft) < 0.6 && r0.xBg === "rgba(0, 0, 0, 0)" && r0.w === t0.w, r0);
     await mouse("mouseMove", 5, 700);
     const r2 = await room(1);
-    ok("沒滑過時標題不淡出", r2.mask === "none" && r2.xv === "hidden", r2);
+    ok("滑走之後:淡出與 clip 都收回、× 不畫", r2.mask === "none" && r2.to === "ellipsis" && r2.xv === "hidden" && r1.mask !== "none", { r1, r2 });
     await mouse("mouseMove", 5, 700);
     const sty = await js(`(() => { const el = document.querySelector('#cs-tabs .tab[aria-selected="true"]'), cs = getComputedStyle(el), off = document.querySelector('#cs-tabs .tab:not([aria-selected="true"])');
       return { r: cs.borderTopLeftRadius, rr: cs.borderTopRightRadius, bl: cs.borderBottomLeftRadius, br: cs.borderBottomRightRadius, clip: cs.backgroundClip, bg: cs.backgroundColor, card: getComputedStyle(document.querySelector(".pane-chat")).backgroundColor, offBg: getComputedStyle(off).backgroundColor, sep: getComputedStyle(off, "::after").height, sepBg: getComputedStyle(off, "::after").backgroundColor, selSep: getComputedStyle(el, "::after").content,

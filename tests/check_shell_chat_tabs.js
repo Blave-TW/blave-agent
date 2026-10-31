@@ -296,7 +296,7 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
     && !/tabs-top|tabs-pad-b|tabs-drag|padding-top: calc/.test(blk) && !/(?<![-\w])height: (46|44|36)px|\btop: (6|13|16)px|inset: -12px/.test(blk)
     && /const TABS_MIN = 60, TABS_MIN_SEL = 112, TABS_NARROW = 88, TABS_GAP = 2;/.test(ct));
   ok("× 不佔位、不墊底色:絕對定位在本體尾端(z 1,焦點環 z 2 在它上面);滑過或焦點時標題尾端淡出到 × 左緣;最窄的分頁不畫「…」改淡出 8;熱區 ::after 上下伸進透明框(32×44)", /\.tab-x \{ position: absolute; z-index: 1; right: 0; top: 0; bottom: 0; width: 32px;[^}]*visibility: hidden; \}/.test(blk) && !/\.tab-x \{[^}]*background/.test(blk) && !/tabs-bg/.test(css + trcss)
-    && blk.includes(".cs-tabs .tab:not(.narrow):is(:hover, :focus-visible) .tab-t {\n  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent calc(100% - 20px));")
+    && /\.cs-tabs \.tab:not\(\.narrow\):is\(:hover, :focus-visible\) \.tab-t \{ text-overflow: clip;[^\n]*\n  -webkit-mask-image: linear-gradient\(90deg, #000 calc\(100% - 32px\), transparent calc\(100% - 20px\)\);/.test(blk)
     && blk.includes(".cs-tabs .tab.narrow .tab-t { text-overflow: clip;\n  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 8px), transparent);") && /\.cs-tabs \.tab:focus-visible::before \{ content: ""; position: absolute; z-index: 2;/.test(blk)
     && !/padding-right: 32px|el\.style\.width = ws\[i\]/.test(blk + ct) && blk.includes(".tab-x::after { content: \"\"; position: absolute; left: 0; right: 0; top: calc(0px - var(--tabs-reach)); bottom: calc(0px - var(--tabs-reach)); }")
     && blk.includes(".cs-tabs .tab:hover .tab-x, .cs-tabs .tab:focus-visible .tab-x { visibility: visible; }") && !/\.tab-x \{[^}]*flex: none/.test(blk));
