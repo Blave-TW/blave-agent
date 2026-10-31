@@ -259,6 +259,13 @@ app.whenReady().then(async () => {
   ok("③ …打 1,000:主鈕可按、輸入格下面寫換算量 0.02 BTC", !b.dis && /0\.02/.test(await js(`$("cf-body") ? "" : (document.querySelector(".cf-in-ref") || {}).textContent || ""`)), J(b));
   ok("③ …換算量的數字是 mono(同框裡的下單列、同 web)", (await js(`(() => { const m = document.querySelector(".cf-in-ref .mono"); return !!m && m.textContent === "0.02" && /mono/i.test(getComputedStyle(m).fontFamily); })()`)) === true);
   await run(`$("del-cancel").click()`); await wait(100);
+  for (const [pos, what] of [[-1, "空單"], [0, "空手"]]) {
+    h = await st("btc", rep({ pv: { btc: { symbol: "BTCUSDT", position: pos, close: 50000, bar_at: now - 3600, latest: true } } }));
+    await run(`$("rp-go").click()`); await wait(400); await type("1000"); await wait(100);
+    const ref = await js(`(() => { const r = document.querySelector(".cf-in-ref"); return r && !r.hidden ? r.textContent : null; })()`);
+    ok("③ 訊號是" + what + "(單腳加密、沒在跑):換算量照出 0.02(輸入的金額 ÷ 價,不看訊號方向;0.1.39 開發版實跑 SOL 空單沒出)", !!ref && /^0\.02 /.test(ref), J(ref));
+    await run(`$("del-cancel").click()`); await wait(100);
+  }
   h = await st("btc", rep({ venue: "paper", amounts: { eth: 300 }, running: true, pv: { btc: { symbol: "BTCUSDT", position: 1, close: 50000, bar_at: now - 3600, latest: true } } }));
   await run(`$("rp-go").click()`); await wait(400); await type("1000"); await wait(100); b = await box();
   ok("③ 金額框(模擬在跑):標題與主鈕「儲存並下單」、記號「模擬」", b.title === tx["tr.cf.titleFire"] && b.ok === tx["tr.cf.titleFire"] && b.mark === tx["tr.mode.paper"], J(b));
@@ -283,7 +290,9 @@ app.whenReady().then(async () => {
   h = await head();
   ok("③ 沒帳戶、存成功:接著開連接框;記 sp_amt_saved、sp_cx_opened;只送 amounts {btc: 1000}", h.cx && (await js("window.__feats")).includes("sp_amt_saved") && (await js("window.__feats")).includes("sp_cx_opened")
     && J(await js(`window.__calls.filter((c) => c[0] === "tradeSend" && c[1][0] === "amounts").map((c) => c[1][1].amounts)`)) === J([{ btc: 1000 }]), J(h));
-  await run(`cxModalClose(true)`); await wait(100); await run("hoPaint()"); h = await head();
+  const sameTick = await js(`(() => { cxModalClose(true); const g = $("rp-go"); return { go: g && g.textContent, dis: g && g.disabled }; })()`);
+  ok("③ 連接框送出那一下(同一個 tick,不等 trPoll):頁首主鈕已經是停用的「連接中…」", sameTick.go === tx["sp.connecting"] && sameTick.dis === true, J(sameTick));
+  await wait(100); h = await head();
   const burst = await js(`ENV.burst && ENV.burst.until > Date.now()`);
   ok("③ 連接框送出(cxModalClose(true)):頁頭「連接中…」停用、爆發輪詢開著", h.st === "connecting" && h.go === tx["sp.connecting"] && h.dis === true && burst, J({ h, burst }));
   await run(`trPollSoon(60000)`);
@@ -318,6 +327,17 @@ app.whenReady().then(async () => {
   ok("③ 真錢接上:頁頭停在〔啟動下單〕,不自動開啟動框(trGoClick 替身沒被叫)", h.st === "start" && h.go === tx["tr.start"] && J(await js("window.__spy")) === "[]", J({ h, spy: await js("window.__spy") }));
   await run(`$("rp-go").click()`); await wait(150);
   ok("③ …按〔啟動下單〕:走 trGoClick(替身收到一次)", J(await js("window.__spy")) === J(["go"]));
+
+  // ── 重綁:報告一帶出 venue 就離開連接中(路由空 → 直接落「有帳戶、沒路由」,不乾等 180 秒;spec §2-2,0.1.39 開發版實跑)
+  h = await st("btc", rep({ amounts: { btc: 1000 } }), `TR_BAGS.local.spCx = { name: "btc", at: Date.now() }`);
+  ok("③ 重綁送出後:連接中", h.st === "connecting", J(h));
+  await run(`window.__st.report = Object.assign(window.__st.report, { venues: { binance: ${J(V)} }, config: { amounts: { btc: 1000 }, exchanges: {} }, account: { read_at: ${now}, venues: { binance: { ok: true, equity: 10000, currency: "USDT", positions: {} } } } })`);
+  await poll(); h = await head();
+  ok("③ 重綁:報告帶出 venue、路由空 → 下一輪就離開連接中、落「有帳戶、沒路由」(旗標收掉,不等 180 秒)", h.st === "route" && (await js("TR_BAGS.local.spCx")) === null && J(await js("window.__spy")) === "[]", J(h));
+  h = await st("btc", rep({ amounts: { btc: 1000 } }), `TR_BAGS.local.spCx = { name: "btc", at: Date.now() }; trGoClick = window.__spyGo`);
+  await run(`window.__st.report = Object.assign(window.__st.report, { venues: { binance: ${J(V)} }, config: { amounts: { btc: 1000 }, exchanges: { btc: "binance" } }, account: { read_at: ${now}, venues: { binance: { ok: true, equity: 10000, currency: "USDT", positions: {} } } } })`);
+  await poll(); h = await head();
+  ok("③ 首綁真錢(同一份報告就帶出路由):照樣走到已連接〔啟動下單〕、不自動開", h.st === "start" && (await js("TR_BAGS.local.spCx")) === null && J(await js("window.__spy")) === "[]", J(h));
 
   // ── 超時兩種
   h = await st("btc", rep({ amounts: { btc: 1000 } }), `TR_BAGS.local.spCx = { name: "btc", at: Date.now() - 200000 }`);

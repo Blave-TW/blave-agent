@@ -4016,7 +4016,13 @@ function trCfOpen(o) {
       // 台指期沒有報價就不出(只剩商品名的那一行用戶看了不知道要做什麼);數字一律 mono,同框裡的下單列
       const mIn = spIn && vIn > 0 ? trTxfRefMoney(spIn, vIn, trTxfPrice()) : null;
       if (mIn != null) cxMonoNums(refEl, t("tr.txfConfirmRef", { prod: t(spIn.prod), amt: trFmt(Math.round(mIn)) }));
-      else if (!spIn && x0 && !x0.lots && x0.qty && x0.qty.n > 0) cxMonoNums(refEl, x0.qty.text + " " + t(x0.qty.unit));
+      else if (!spIn && oneLeg && vIn > 0) {
+        /* 單腳不送單:換算的是「輸入的金額 ÷ 這一支標的的價」,不看訊號方向——訊號是空單或空手時表上沒有正的那一列,
+           以前拿表上第一列算,空單策略(SOLUSDT 0 → -712)就整行不見(0.1.39 開發版實跑) */
+        const ks = trCfSymsOf(inp.name, m.st.states[inp.name], ctAfter), k0 = ks && ks.length === 1 ? ks[0] : null, c0 = k0 ? trCanonSym(k0.replace(/@spot$/i, "")) : null;
+        const px0 = c0 ? m.st.px[c0] || m.st.pvPx[c0] || trMarks(r)[c0] || null : null, q0 = k0 ? trCfQty(k0, vIn, px0, trUsPerp(r, k0, [inp.name])) : null;
+        if (q0 && q0.n > 0) cxMonoNums(refEl, q0.text + " " + t(q0.unit));
+      }
       refEl.hidden = !refEl.textContent;
     }
     const sub = trEl("p", "cf-sub");
@@ -5603,6 +5609,8 @@ function cxModalClose(connected) {
   const o = cxOpener; cxOpener = null;
   const cb = CXW.cb; CXW.cb = null;
   if (connected === true && cb) cb(); else if (!connected && TR_BAGS[CXF.env]) TR_BAGS[CXF.env].spCx = null;
+  // 策略頁頭當場換成停用的「連接中…」(或收掉):不等下一輪 trPoll——中間那 1 秒多鈕還能再按(0.1.39 開發版實跑)
+  if ((connected === true && cb) || !connected) { if (typeof hoPaint === "function" && !$("rp").hidden) hoPaint(); }
   // 連上之後 onboard(連同那顆鈕)會整個換成分頁:焦點退到側欄的入口,不能掉到 BODY。策略頁頭那顆會變成停用的「連接中…」:焦點給策略名
   if (!connected && o && o.isConnected) o.focus();
   else if (o && o.id === "rp-go" && $("rp-name").offsetParent) $("rp-name").focus();

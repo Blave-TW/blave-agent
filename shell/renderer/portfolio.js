@@ -343,14 +343,16 @@ async function spRoute(S, b) {
   trCfOpen({ names: trNamesOf(null), stored: trBase(), opener: b, from: "sp",
     onFail: (e) => { S.spErr = e || t("tr.cmdFailed"); if (typeof hoPaint === "function") hoPaint(); }, onSaved: () => { S.spErr = null; } });
 }
-/* 每一輪輪詢(trade.js trPoll,兩袋各跑一次、借 trWith):「連接中」等到了沒——等的是報告裡有帳戶、路由齊了(trUnrouted 空),不是 ack;
-   超時就收掉,頁頭照那一刻的報告落「還沒連接帳戶」或「有帳戶、沒路由」。等到了而且是模擬、沒在跑:排一個「開啟動框」 */
+/* 每一輪輪詢(trade.js trPoll,兩袋各跑一次、借 trWith):「連接中」等到了沒——等的是報告裡出現了帳戶(venue),不是 ack。
+   venue 一出現就收掉連接中:路由齊了 = 已連接;路由空的(重綁,10-14 拍板不補路由)直接落「有帳戶、沒路由」,不必乾等 180 秒上限
+   (spec §2-2 照 0.1.39 開發版實跑改;首綁的 _route_first_bind 跟 bind 在同一份報告就帶出路由,首綁不受影響)。
+   超時就收掉,頁頭照那一刻的報告落「還沒連接帳戶」。接上、路由齊、而且是模擬沒在跑:排一個「開啟動框」 */
 function spCxCheck() {
   const S = TR, now = Date.now(), w = S.spCx;
   if (w) {
     const r = trReport();
     if (!spCxOn(S, now)) S.spCx = null;
-    else if (r && trHasAccount(r) && trUnrouted(r).length === 0) { S.spCx = null; if (trCfPaperOnly() && !trCfFiring(S.st, S.pending)) S.spGo = { name: w.name, at: now }; }
+    else if (r && trHasAccount(r)) { S.spCx = null; if (trUnrouted(r).length === 0 && trCfPaperOnly() && !trCfFiring(S.st, S.pending)) S.spGo = { name: w.name, at: now }; }
   }
   spGoCheck(S);
 }
