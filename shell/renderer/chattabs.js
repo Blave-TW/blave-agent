@@ -257,14 +257,14 @@ function tabsLead(st) {
   if (tabsNeedsYou(st)) { const s = document.createElement("span"); s.className = "tab-lead"; const d = document.createElement("span"); d.className = "tab-dot"; d.setAttribute("aria-hidden", "true"); s.appendChild(d); return s; }
   return null;
 }
-// 列上放哪幾個(spec §13.6):mins[i] = min(自然寬, 選中 112／其他 60)。最窄加總放得下就全放(flex 自己縮);
+// 列上放哪幾個(spec §13.6):mins[i] = min(自然寬, 選中 112／其他 60),分頁之間 TABS_GAP(= .cs-tabs gap)。最窄加總放得下就全放(flex 自己縮);
 // 放不下就讓出 +N 的寬,先放選中的,再照順序加到下一格放不下為止——選中的落在後面時就排在列尾
-const TABS_MIN = 60, TABS_MIN_SEL = 112, TABS_NARROW = 88;
+const TABS_MIN = 60, TABS_MIN_SEL = 112, TABS_NARROW = 88, TABS_GAP = 2;
 function tabsLayout(avail, order, curSid, mins, moreW) {
-  if (mins.reduce((a, b) => a + b, 0) <= avail) return { shown: order.slice(), hidden: [] };
+  if (mins.reduce((a, b) => a + b, 0) + TABS_GAP * (order.length - 1) <= avail) return { shown: order.slice(), hidden: [] };
   const ci = Math.max(0, order.indexOf(curSid)), keep = new Set([ci]), room = avail - moreW;
   let acc = mins[ci];
-  for (let i = 0; i < order.length; i++) { if (i === ci) continue; if (acc + mins[i] > room) break; keep.add(i); acc += mins[i]; }
+  for (let i = 0; i < order.length; i++) { if (i === ci) continue; if (acc + TABS_GAP + mins[i] > room) break; keep.add(i); acc += TABS_GAP + mins[i]; }
   return { shown: order.filter((_, i) => keep.has(i)), hidden: order.filter((_, i) => !keep.has(i)) };
 }
 function tabsPaint() {
@@ -358,7 +358,6 @@ function tabsMorePaint(hidden) {
   // 有一條真的在跑就放 tick(「有東西在跑」);全是排隊才放短劃
   const lead = nd ? tabsLead("unseen") : sts.includes("run") ? tabsLead("run") : run ? tabsLead("queued") : null; if (lead) b.appendChild(lead);
   b.appendChild(document.createTextNode("+" + hidden.length));
-  const chev = document.createElement("span"); chev.className = "cv7"; chev.setAttribute("aria-hidden", "true"); b.appendChild(chev);
   const parts = ["+" + hidden.length]; if (nd) parts.push(t("tabs.more.attn", { n: nd })); if (run) parts.push(t("tabs.more.run", { n: run }));
   b.setAttribute("aria-label", parts.join("，"));
   b._hidden = hidden;

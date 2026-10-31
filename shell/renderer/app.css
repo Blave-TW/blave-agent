@@ -48,6 +48,7 @@
 :is(.cn-lang, .set-seg, .lib-seg, .mp-rail, .rob-seg, .pres-seg, .envsw, .mg-size-seg, .ov-modes, .ov-ranges) > button::before {
   content: ""; position: absolute; left: 0; right: 0;
   top: min(0px, calc((100% - 44px) / 2)); bottom: min(0px, calc((100% - 44px) / 2));
+  -webkit-app-region: no-drag;   /* 溢出軌外的那段坐在拖曳條上時(頂列的 .envsw)也要點得到;不在拖曳條上的沒有作用 */
 }
 :is(.cn-lang, .set-seg, .lib-seg, .mp-rail, .rob-seg, .pres-seg, .envsw, .mg-size-seg, .ov-modes, .ov-ranges) > button:is([aria-pressed="true"], [aria-checked="true"]) {
   background: var(--surface-segment-on); border-color: var(--border-frame); color: var(--ink); font-weight: 600;
@@ -1233,20 +1234,21 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 13px; font-weight: 600; color: var(--ink);
 }
-/* ── 對話分頁列(spec chat-tabs-2026-10-29 §13 v5b-height)──
-   [☰ 44][提示][分頁…][+N][＋ 44],列高 52(對齊中欄 .tb)。高度只改這三個變數:
-   最上 --tabs-drag 留給拖視窗;分頁元素從那裡開始,上方 --tabs-reach 透明(屬熱區、no-drag),其下才是看得到的本體 */
+/* ── 對話分頁列(spec chat-tabs-2026-10-29 §13.13 v5d-28)──
+   [☰ 44][提示][分頁…][+N][＋ 44],列高 52(對齊中欄 .tb)。整條頂列一條中線 y=26(紅綠燈、切換鈕、分頁、☰、＋ 都在上面)。
+   分頁浮在頂列上:看得到的本體 --tabs-body 高、置中;上下各 --tabs-reach 的透明框把熱區補到 44,其外(列最上、最下 4)是拖曳區 */
 .chat-head:has(#cs-tabs) {
-  --tabs-drag: 8px; --tabs-reach: 8px; --tabs-body: calc(52px - var(--tabs-drag) - var(--tabs-reach));
+  --tabs-body: 28px; --tabs-reach: 8px; --tabs-bg: var(--bg-body);
   padding: 0; gap: 0; align-items: stretch; position: relative;
 }
-/* ☰、＋、提示、+N:熱區撐滿 52;看得到的 28 高底(::before)跟分頁本體同一條中線 */
+html[data-env="cloud"] .chat-head:has(#cs-tabs) { --tabs-bg: var(--surface-muted); }
+/* ☰、＋、提示、+N:熱區撐滿 52;看得到的 28 高底(::before)置中在 26 */
 .chat-head:has(#cs-tabs) .cs-btn, .cs-hint, .cs-more {
-  height: auto; padding-top: calc(52px - var(--tabs-body)); position: relative; isolation: isolate; background: none; border-radius: 0;
+  height: auto; position: relative; isolation: isolate; background: none; border-radius: 0;
 }
 .chat-head:has(#cs-tabs) .cs-btn { width: 44px; }
 .chat-head:has(#cs-tabs) .cs-btn::before, .cs-hint::before, .cs-more::before {
-  content: ""; position: absolute; z-index: -1; left: var(--space-8); right: var(--space-8); top: calc(52px - var(--tabs-body) / 2 - 14px); height: 28px;
+  content: ""; position: absolute; z-index: -1; left: var(--space-8); right: var(--space-8); top: calc(50% - 14px); height: 28px;
   border-radius: var(--radius-sm); transition: background var(--motion-fast) var(--ease-standard);
 }
 .chat-head:has(#cs-tabs) .cs-btn:hover:not(:disabled) { background: none; }
@@ -1254,27 +1256,28 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cs-hint { flex: none; display: flex; align-items: center; padding-left: var(--space-12); padding-right: var(--space-12); font-size: 12px; color: var(--ink-2); white-space: nowrap; }
 .cs-hint::before { left: var(--space-6); right: var(--space-6); }
 .cs-hint:hover { color: var(--ink); }
-.cs-tabs { flex: 1; min-width: 0; display: flex; align-items: stretch; padding-top: var(--tabs-drag); overflow: hidden; }
+.cs-tabs { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-2); overflow: hidden; }
 /* 寬度跟著標題(basis = 內容寬,上限 180);最窄由 chattabs.js 照 §13.6 寫在 min-width 上 */
 .cs-tabs .tab { flex: 0 1 auto; max-width: 180px; min-width: 0; display: flex; align-items: center; gap: var(--space-6);
-  padding: 0 0 0 var(--space-12); border-top: var(--tabs-reach) solid transparent; background-clip: padding-box;
+  height: calc(var(--tabs-body) + 2 * var(--tabs-reach)); padding: 0 var(--space-12);
+  border: solid transparent; border-width: var(--tabs-reach) 0; background-clip: padding-box; border-radius: 0;
   color: var(--ink-2); font-size: 12px; font-weight: 400; white-space: nowrap; position: relative; cursor: pointer;
   transition: color var(--motion-fast) var(--ease-standard); }
 /* 分頁與 × 是 div／span,吃不到 button 那條 no-drag:蓋在 52px 拖曳條上會被當成拖視窗(打包版點不動)。最後一個分頁之後的空白照舊拖得動 */
 .cs-tabs .tab, .cs-tabs .tab-x, .cs-tabs .tab-x::after, .cs-menu { -webkit-app-region: no-drag; }
 .cs-tabs .tab:hover { color: var(--ink); }
-/* 外緣垂直半徑多一個 --tabs-reach:透明上框裡面那塊填色才是正圓 --radius-sm(只寫 --radius-sm 會是直角) */
+/* 選中:本體填對話區的底色(全列只有它有底)、600。透明框的外緣垂直半徑多一個 reach,填色才是正圓 --radius-sm */
 .cs-tabs .tab[aria-selected="true"] { background-color: var(--surface-card); color: var(--ink); font-weight: 600;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0 / calc(var(--radius-sm) + var(--tabs-reach)) calc(var(--radius-sm) + var(--tabs-reach)) 0 0; }
+  border-radius: var(--radius-sm) / calc(var(--radius-sm) + var(--tabs-reach)); }
 .cs-tabs .tab.attn { color: var(--ink); font-weight: 600; }
-.cs-tabs .tab.narrow { padding-right: var(--space-8); }
 .cs-tabs .tab.narrow .tab-x { display: none; }
-/* 分隔線:只在兩個相鄰的沒選中分頁之間,高 20、在本體裡置中 */
+/* 分隔線:只在兩個相鄰的沒選中分頁之間,高 16、置中在本體(absolute 從 padding box 算,不含透明框) */
 .cs-tabs .tab:not([aria-selected="true"]):has(+ .tab:not([aria-selected="true"]))::after {
-  content: ""; position: absolute; right: 0; top: calc((var(--tabs-body) - 20px) / 2); height: 20px; width: 1px; background: var(--border-hairline); }
-/* 焦點環畫在看得到的本體上(元素還含透明上框);absolute 的 inset 從 padding box 算,正好不含上框 */
+  content: ""; position: absolute; right: 0; top: calc((100% - 16px) / 2); height: 16px; width: 1px; background: var(--border-hairline); }
+/* 焦點環畫在分頁內(等效 outline-offset -2):列 overflow:hidden 會裁掉往外的環,全域 :focus-visible 的圓角也會蓋掉選中那格的上兩角圓;
+   環本身照全域(2px --focus-ring、只在 focus-visible),只是改用 ::before 畫 */
 .cs-tabs .tab:focus-visible { outline: none; }
-.cs-tabs .tab:focus-visible::before { content: ""; position: absolute; inset: 0; border: 2px solid var(--focus-ring); border-radius: var(--radius-sm) var(--radius-sm) 0 0; pointer-events: none; }
+.cs-tabs .tab:focus-visible::before { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px var(--focus-ring); border-radius: var(--radius-sm); pointer-events: none; }
 .cs-menu .mi:focus-visible { outline-offset: -2px; }
 /* ☰、＋、提示、+N 的熱區比看得到的 28 大:環畫在 28 那塊上 */
 .chat-head:has(#cs-tabs) .cs-btn:focus-visible, .cs-hint:focus-visible, .cs-more:focus-visible { outline: none; }
@@ -1291,12 +1294,14 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .tab-ticks[data-k="0"] i:nth-child(1), .tab-ticks[data-k="1"] i:nth-child(2), .tab-ticks[data-k="2"] i:nth-child(3) { opacity: 1; }   /* 第幾格亮由 chattabs.js 每秒換 */
 /* 排隊中:收據的 8×2 短劃,不動 */
 .tab-dash { display: block; width: 8px; height: 2px; background: var(--ink-3); }
-/* ×:每格都留 32 寬的位置(寬度不跳),滑過或焦點才畫;熱區往上伸進透明上框,32×(reach+body) */
-.tab-x { flex: none; align-self: stretch; width: 32px; display: flex; align-items: center; justify-content: center; color: var(--ink-3); position: relative; cursor: pointer; }
-.tab-x::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; top: calc(0px - var(--tabs-reach)); }
-.tab-xv { width: 16px; height: 16px; border-radius: var(--radius-micro); display: flex; align-items: center; justify-content: center; visibility: hidden; }
+/* ×:不佔位,滑過或焦點時墊著那格的底蓋在本體尾端(寬度不跳);熱區 ::after 上下伸進透明框,32×44 */
+.tab-x { position: absolute; right: 0; top: 0; bottom: 0; width: 32px; display: flex; align-items: center; justify-content: center;
+  background: var(--tabs-bg); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; color: var(--ink-3); cursor: pointer; visibility: hidden; }
+.cs-tabs .tab[aria-selected="true"] .tab-x { background: var(--surface-card); }
+.tab-x::after { content: ""; position: absolute; left: 0; right: 0; top: calc(0px - var(--tabs-reach)); bottom: calc(0px - var(--tabs-reach)); }
+.tab-xv { width: 16px; height: 16px; border-radius: var(--radius-micro); display: flex; align-items: center; justify-content: center; }
 .tab-xv .ic { width: 10px; height: 10px; stroke-width: 2.25; }
-.cs-tabs .tab:hover .tab-xv, .cs-tabs .tab:focus-visible .tab-xv { visibility: visible; }
+.cs-tabs .tab:hover .tab-x, .cs-tabs .tab:focus-visible .tab-x { visibility: visible; }
 .tab-x:hover .tab-xv { color: var(--ink); background: var(--surface-muted); }
 .cs-more { flex: none; min-width: 44px; padding-left: var(--space-12); padding-right: var(--space-12); display: flex; align-items: center; justify-content: center; gap: var(--space-6);
   font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }

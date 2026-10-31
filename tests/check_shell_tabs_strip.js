@@ -1,4 +1,4 @@
-// 電腦版對話分頁列的版面(spec chat-tabs-2026-10-29 §13 v5b-height):真的 index.html、假的 window.blave,不顯示的視窗裡量幾何。
+// 電腦版對話分頁列的版面(spec chat-tabs-2026-10-29 §13.13 v5d-28):真的 index.html、假的 window.blave,不顯示的視窗裡量幾何。
 //   容量:長標題 720 放 9 個、10 個時 8＋「+N」;452 放 5、6 個時 4＋「+N」;336 放 3、4 個時 2＋「+N」;短標題放得更多;選中的落在後面排在列尾
 //   熱區:分頁元素 44 高(上 8 透明)、看得到的本體 36 貼列下緣;× 32×44,滑過或焦點才畫,寬度不跳;☰／＋ 44×52;列最上 8 不是分頁
 //   選中:填卡面色、上兩角看得到的是正圓 8;沒選中的被縮到 88 以下讓出 × 格;用滑鼠關分頁凍住寬度,滑鼠離開分頁列才重排
@@ -28,8 +28,9 @@ window.blave = new Proxy(__fixed, { get: (o, k) => (k in o ? o[k] : typeof k !==
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 setTimeout(() => { console.log("FAIL  逾時(60 秒)"); process.exit(1); }, 60000).unref();
 process.on("unhandledRejection", (e) => { console.log("FAIL  頁面裡丟錯:" + (e && e.message)); process.exit(1); });
-const LONG = ["SOL 突破策略掃參數再看一次", "ETH 資金費率套利回測結果", "台指期夜盤當沖回測比較", "幫我看 BTC 清算地圖哪裡密", "0050 定期定額比較三種做法",
-  "把 RSI 策略轉成 Pine 腳本", "群益帳戶連線測試與下單", "美股財報前後波動研究", "OKX 網格策略上線前檢查", "台股創新高加營收篩選"];
+// 自然寬都超過上限 180(12＋標題＋12):標題至少 13 個字寬
+const LONG = ["SOL 突破策略掃參數再看一次全部", "ETH 資金費率套利回測結果比較", "台指期夜盤當沖回測比較三種", "幫我看 BTC 清算地圖哪裡最密", "0050 定期定額比較三種做法",
+  "把 RSI 策略轉成 Pine 腳本再回測", "群益帳戶連線測試與下單流程", "美股財報前後波動研究整理", "OKX 網格策略上線前檢查清單", "台股創新高加營收篩選條件"];
 
 app.whenReady().then(async () => {
   const preload = path.join(app.getPath("userData"), "stub.js"); fs.writeFileSync(preload, STUB);
@@ -55,7 +56,7 @@ app.whenReady().then(async () => {
     const head = document.getElementById("cs-head").getBoundingClientRect(), R = (el) => { const r = el.getBoundingClientRect(); return { x: r.left - head.left, y: r.top - head.top, w: r.width, h: r.height, cx: r.left + r.width / 2 }; };
     const tabs = [...document.querySelectorAll("#cs-tabs .tab")];
     return { head: { w: head.width, h: head.height, top: head.top, left: head.left }, tabs: tabs.map((el) => ({ sid: el.dataset.sid, sel: el.getAttribute("aria-selected") === "true", narrow: el.classList.contains("narrow"), ...R(el),
-      bt: parseFloat(getComputedStyle(el).borderTopWidth), xr: R(el.querySelector(".tab-x")), xv: el.querySelector(".tab-xv") ? getComputedStyle(el.querySelector(".tab-xv")).visibility : "(沒有 .tab-xv)", xd: getComputedStyle(el.querySelector(".tab-x")).display })),
+      bt: parseFloat(getComputedStyle(el).borderTopWidth), bb: parseFloat(getComputedStyle(el).borderBottomWidth), ch: el.clientHeight, xr: R(el.querySelector(".tab-x")), xv: el.querySelector(".tab-xv") ? getComputedStyle(el.querySelector(".tab-xv")).visibility : "(沒有 .tab-xv)", xd: getComputedStyle(el.querySelector(".tab-x")).display })),
       more: document.getElementById("cs-more").hidden ? null : R(document.getElementById("cs-more")), toggle: R(document.getElementById("cs-toggle")), plus: R(document.getElementById("cs-new")), order: CS.order.slice() };
   }; 1;`);
   const st = await js(`({ ws: !document.getElementById("view-ws").hidden, n: CS.tabs.size })`);
@@ -82,27 +83,57 @@ app.whenReady().then(async () => {
 
   // ── 熱區與本體
   { const g = await setup(452, LONG.slice(0, 3), 0), t0 = g.tabs[0], t1 = g.tabs[1];
-    ok("列高 52;分頁元素 y=8、44 高,上框 8 透明 → 看得到的本體 36 貼列下緣", g.head.h === 52 && g.tabs.every((t) => t.y === 8 && t.h === 44 && t.bt === 8), g.tabs.map((t) => [t.y, t.h, t.bt]));
-    ok("× 格 32 寬、每格都留(沒選中的也在,平常不畫)", g.tabs.every((t) => t.xr.w === 32 && t.xr.h === 36 && t.xd !== "none") && g.tabs.every((t) => t.xv === "hidden"), g.tabs.map((t) => [t.xr, t.xd, t.xv]));
+    ok("列高 52;分頁元素 y=4–48(44 高 = 熱區),上下各 8 透明框 → 看得到的本體 28 在 y=12–40", g.head.h === 52 && g.tabs.every((t) => t.y === 4 && t.h === 44 && t.bt === 8 && t.bb === 8 && t.ch === 28), g.tabs.map((t) => [t.y, t.h, t.bt, t.bb, t.ch]));
+    // 頂列共同中線 y=26(§13.13.8):量 (top+bottom)/2,從視窗上緣算
+    const mid = await js(`(() => { const c = (el) => { const r = el.getBoundingClientRect(); return +((r.top + r.bottom) / 2).toFixed(2); }, q = (s) => document.querySelector(s);
+      const sep = q('#cs-tabs .tab:not([aria-selected="true"]):has(+ .tab:not([aria-selected="true"]))'), sr = sep.getBoundingClientRect(), sc = getComputedStyle(sep, "::after");
+      return { head: q("#cs-head").getBoundingClientRect().top, title: [...document.querySelectorAll("#cs-tabs .tab-t")].map(c), lead: [...document.querySelectorAll("#cs-tabs .tab-lead")].map(c), x: [...document.querySelectorAll("#cs-tabs .tab-xv")].map(c),
+        toggle: c(q("#cs-toggle svg")), plus: c(q("#cs-new svg")), envsw: c(q(".envsw")), sep: +(sr.top + parseFloat(getComputedStyle(sep).borderTopWidth) + parseFloat(sc.top) + parseFloat(sc.height) / 2).toFixed(2) }; })()`);
+    const all = [...mid.title, ...mid.lead, ...mid.x, mid.toggle, mid.plus, mid.envsw, mid.sep];
+    ok("頂列共同中線 26 ± 0.5:分頁字、狀態格、×、分隔線、☰、＋、本機／雲端切換鈕", mid.head === 0 && all.length >= 9 && all.every((v) => Math.abs(v - 26) <= 0.5), mid);
+    ok("× 32×28 蓋在本體尾端(y=12–40、右緣貼分頁右緣),平常不畫", g.tabs.every((t) => t.xr.w === 32 && t.xr.h === 28 && t.xr.y === 12 && Math.abs(t.xr.x + 32 - (t.x + t.w)) < 0.6 && t.xd !== "none" && t.xv === "hidden"), g.tabs.map((t) => [t.xr, t.x, t.w, t.xv]));
+    { const n = await setup(720, ["新對話"].concat(LONG.slice(0, 1)), 1), w0 = n.tabs[0];
+      const tw = await js(`document.querySelector("#cs-tabs .tab-t").getBoundingClientRect().width`);
+      ok("自然寬 = 左 12 + 標題 + 右 12(不再加 × 的 32)", Math.abs(w0.w - (tw + 24)) < 1, { w: w0.w, title: tw }); }
+    await setup(452, LONG.slice(0, 3), 0);
     ok("☰、＋ 熱區 44×52", g.toggle.w === 44 && g.toggle.h === 52 && g.plus.w === 44 && g.plus.h === 52, [g.toggle, g.plus]);
-    const hit = await js(`(() => { const h = document.getElementById("cs-head").getBoundingClientRect(), x = document.querySelectorAll("#cs-tabs .tab-x")[1].getBoundingClientRect(), t = document.querySelectorAll("#cs-tabs .tab")[1].getBoundingClientRect();
+    const hitAt = (hx, hy) => js(`(() => { const h = document.getElementById("cs-head").getBoundingClientRect(), x = document.querySelectorAll("#cs-tabs .tab-x")[1].getBoundingClientRect(), t = document.querySelectorAll("#cs-tabs .tab")[1].getBoundingClientRect();
       const at = (px, py) => { const e = document.elementFromPoint(px, py); return e ? (e.closest(".tab-x") ? "x" : e.closest(".tab") ? "tab" : e.id || e.className) : null; };
-      return { xTop: at(x.left + 16, h.top + 9), xBot: at(x.left + 16, h.top + 51), xL: at(x.left + 1, h.top + 30), tabTop: at(t.left + 20, h.top + 9), drag: at(t.left + 20, h.top + 4), tglTop: at(document.getElementById("cs-toggle").getBoundingClientRect().left + 22, h.top + 1) }; })()`);
-    ok("× 熱區伸進透明那 8(y=9 也是 ×)、到列底;分頁上方那 8 也是分頁;列最上 8 不是分頁(拖曳區)", hit.xTop === "x" && hit.xBot === "x" && hit.xL === "x" && hit.tabTop === "tab" && hit.drag === "cs-tabs", hit);
+      return { xTop: at(x.left + 16, h.top + 5), xBot: at(x.left + 16, h.top + 47), xL: at(x.left + 1, h.top + 30), tabTop: at(t.left + 20, h.top + 5), tabBot: at(t.left + 20, h.top + 47), drag: at(t.left + 20, h.top + 3), dragB: at(t.left + 20, h.top + 49), tglTop: at(document.getElementById("cs-toggle").getBoundingClientRect().left + 22, h.top + 1) }; })()`);
+    const hit0 = await hitAt();
+    ok("沒滑過時 × 不接點擊(點分頁尾端就是選它)", hit0.xTop === "tab" && hit0.xBot === "tab", hit0);
+    await mouse("mouseMove", g.head.left + t1.x + 20, g.head.top + 34);
+    const hit = await hitAt();
+    ok("滑過時 × 熱區 32×44(y=4–48);分頁熱區也是 y=4–48;列最上、最下 4 不是分頁(拖曳區)", hit.xTop === "x" && hit.xBot === "x" && hit.xL === "x" && hit.tabTop === "tab" && hit.tabBot === "tab" && hit.drag === "cs-tabs" && hit.dragB === "cs-tabs", hit);
     ok("☰ 熱區撐滿 52(貼頂邊那一點也是它)", hit.tglTop === "cs-toggle", hit);
     // 滑過才畫 ×,寬度不跳
     const before = t1.w;
-    await mouse("mouseMove", g.head.left + t1.x + 20, g.head.top + 34);
     const g2 = await js("geo()");
     ok("滑過沒選中的分頁:× 畫出來、寬度不變;其他格不畫", g2.tabs[1].xv === "visible" && g2.tabs[1].w === before && g2.tabs[0].xv === "hidden" && g2.tabs[2].xv === "hidden", g2.tabs.map((t) => [t.xv, t.w]));
+    const xbg = await js(`(() => { const x = document.querySelectorAll("#cs-tabs .tab-x"); return { off: getComputedStyle(x[1]).backgroundColor, sel: getComputedStyle(x[0]).backgroundColor, row: getComputedStyle(document.getElementById("cs-head")).backgroundColor, card: getComputedStyle(document.querySelector(".pane-chat")).backgroundColor }; })()`);
+    ok("× 墊著那格的底:沒選中 = 列底、選中 = 卡面", xbg.off === xbg.row && xbg.sel === xbg.card, xbg);
     await mouse("mouseMove", g.head.left + t0.x + 20, g.head.top + 34);
     const g3 = await js("geo()");
     ok("滑過選中那格:它的 × 才畫", g3.tabs[0].xv === "visible" && g3.tabs[1].xv === "hidden", g3.tabs.map((t) => t.xv));
     await mouse("mouseMove", 5, 700);
     const sty = await js(`(() => { const el = document.querySelector('#cs-tabs .tab[aria-selected="true"]'), cs = getComputedStyle(el), off = document.querySelector('#cs-tabs .tab:not([aria-selected="true"])');
-      return { r: cs.borderTopLeftRadius, rr: cs.borderTopRightRadius, clip: cs.backgroundClip, bg: cs.backgroundColor, card: getComputedStyle(document.querySelector(".pane-chat")).backgroundColor, offBg: getComputedStyle(off).backgroundColor, sep: getComputedStyle(off, "::after").height, selSep: getComputedStyle(el, "::after").content }; })()`);
-    ok("選中:填卡面色(= 聊天欄底)、只填看得到的本體、上兩角外緣 8/16 → 本體是正圓 8;沒選中透明", sty.bg === sty.card && sty.clip === "padding-box" && sty.r === "8px 16px" && sty.rr === "8px 16px" && sty.offBg === "rgba(0, 0, 0, 0)", sty);
-    ok("分隔線只在兩個沒選中的之間,20 高;選中那格不畫", sty.sep === "20px" && sty.selSep === "none", sty); }
+      return { r: cs.borderTopLeftRadius, rr: cs.borderTopRightRadius, bl: cs.borderBottomLeftRadius, br: cs.borderBottomRightRadius, clip: cs.backgroundClip, bg: cs.backgroundColor, card: getComputedStyle(document.querySelector(".pane-chat")).backgroundColor, offBg: getComputedStyle(off).backgroundColor, sep: getComputedStyle(off, "::after").height, sepBg: getComputedStyle(off, "::after").backgroundColor, selSep: getComputedStyle(el, "::after").content,
+        more: !!document.querySelector("#cs-more .cv7") }; })()`);
+    ok("選中:本體填對話區底色(= 聊天欄底)、只填本體、四角外緣 8/16 → 本體是正圓 8;沒選中透明", sty.bg === sty.card && sty.clip === "padding-box" && [sty.r, sty.rr, sty.bl, sty.br].every((v) => v === "8px 16px") && sty.offBg === "rgba(0, 0, 0, 0)", sty);
+    ok("分隔線只在兩個沒選中的之間,16 高;選中那格不畫", sty.sep === "16px" && sty.selSep === "none", sty);
+    const cl = await js(`(async () => { const body = getComputedStyle(document.getElementById("cs-head")).backgroundColor; document.documentElement.dataset.env = "cloud"; await new Promise((r) => setTimeout(r, 400));
+      const off = document.querySelector('#cs-tabs .tab:not([aria-selected="true"])'); const r = { local: body, row: getComputedStyle(document.getElementById("cs-head")).backgroundColor, sep: getComputedStyle(off, "::after").backgroundColor };
+      document.documentElement.dataset.env = "local"; await new Promise((res) => setTimeout(res, 400)); return r; })()`);
+    ok("雲端視角:分隔線改用 bg-body(hairline 跟灰列底同值會消失)", cl.sep === cl.local && cl.sep !== cl.row, cl);
+    // +N 只寫「+N」,不畫 ▾
+    const gm = await setup(452, LONG.slice(0, 7), 0);
+    const mo = await js(`({ chev: !!document.querySelector("#cs-more .cv7, #cs-more [class*=chev]"), text: document.getElementById("cs-more").textContent })`);
+    ok("+N 不畫 ▾", !!gm.more && !mo.chev && mo.text === "+3", mo); }
+  // ── 本機／雲端切換鈕:格 36×24、軌 76×28(跟分頁、☰、＋ 同高)、圖示 14、熱區 36×44
+  { const e = await js(`(() => { const sw = document.querySelector(".envsw"), b = sw.querySelector("button"), r = (el) => { const x = el.getBoundingClientRect(); return [x.width, x.height]; }, bc = getComputedStyle(b, "::before");
+      const R = b.getBoundingClientRect(), cx = R.left + R.width / 2, cy = (R.top + R.bottom) / 2, on = (y) => { const el = document.elementFromPoint(cx, y); return !!el && b.contains(el); };
+      return { rail: r(sw), btn: r(b), ic: r(b.querySelector(".envsw-ic")), hit: [cy, on(cy - 22) && on(cy + 21), !on(cy - 23) && !on(cy + 22)] }; })()`);   // 熱區 y=4–48(整數像素:4 與 47 在內、3 與 48 在外)
+    ok("切換鈕:格 36×24、軌 76×28、圖示 14、熱區 36×44", e.btn.join() === "36,24" && e.rail.join() === "76,28" && e.ic.join() === "14,14" && e.hit.join() === "26,true,true", e); }
 
   // ── 窄分頁讓出 × 格:沒選中又被縮到 88 以下
   { const g = await setup(452, LONG.slice(0, 5), 0);

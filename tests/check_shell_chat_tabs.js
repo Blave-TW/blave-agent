@@ -273,6 +273,8 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
   const cap = lay && [[720, 9, 8], [452, 5, 4], [336, 3, 2]].map(([cw, all, more]) => [cw, run(cw, long(all), 0), run(cw, long(all + 1), 0), all, more]);
   ok("13.6 容量(長標題):720 放 9／10 個時 8＋N;452 放 5／4＋N;336 放 3／2＋N", !!lay && cap.every(([, a, b, all, more]) => a.shown.length === all && !a.hidden && b.shown.length === more && b.hidden === all + 1 - more), cap);
   ok("13.6 短標題放更多:452 六個自然寬 50 全放;選中最窄是 112 不是 60(六個長標題 452 放不下)", !!lay && run(452, Array(6).fill(50), 0).shown.length === 6 && run(452, long(6), 0).hidden > 0);
+  ok("13.6 分頁之間的 2 也算進去:最窄加總剛好等於 avail 時(沒算間距)放不下", !!lay && lay.tabsLayout(112 + 60 * 4, ["a", "b", "c", "d", "e"], "a", [112, 60, 60, 60, 60], 44).hidden.length > 0
+    && lay.tabsLayout(112 + 60 * 4 + 8, ["a", "b", "c", "d", "e"], "a", [112, 60, 60, 60, 60], 44).hidden.length === 0);
   const back = lay && run(452, long(8), 7);
   ok("13.6 選中的落在後面:列上前 3 個＋它,它在列尾", !!lay && back.shown.join() === "0,1,2,7", back);
   ok("13.6 量自然寬:最窄 = min(自然寬, 選中 112／其他 60)寫在 min-width;+N 比 44 寬就照實寬重算", /const mins = nat\.map\(\(n, i\) => Math\.min\(n, order\[i\] === curSid \? TABS_MIN_SEL : TABS_MIN\)\);/.test(ct)
@@ -282,15 +284,28 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
     && /\$\("cs-tabs"\)\.addEventListener\("mouseleave", \(\) => \{ if \(CS\.freeze\) \{ CS\.freeze = null; tabsPaint\(\); \} \}\);/.test(ct) && /CS\.barW = w; CS\.freeze = null; tabsPaint\(\);/.test(ct) && /function tabsAdd\(T\) \{ CS\.freeze = null;/.test(ct));
   // 高度只看三個變數(設計師還可能再調):列 52 = 拖曳 + 透明上框 + 本體;其他高度全由它們推,分頁區塊裡不准再寫死
   const blk = css.slice(css.indexOf("/* ── 對話分頁列"), css.indexOf(".tabs-tip { top:"));
-  ok("高度三變數:--tabs-drag 8、--tabs-reach 8、本體 = 52 − 兩者;分頁、×、分隔線、☰／＋ 中線都由它們推", /--tabs-drag: 8px; --tabs-reach: 8px; --tabs-body: calc\(52px - var\(--tabs-drag\) - var\(--tabs-reach\)\);/.test(blk)
-    && /\.cs-tabs \{[^}]*padding-top: var\(--tabs-drag\);/.test(blk) && /border-top: var\(--tabs-reach\) solid transparent; background-clip: padding-box;/.test(blk)
-    && /\.tab-x::after \{[^}]*top: calc\(0px - var\(--tabs-reach\)\);/.test(blk) && /top: calc\(\(var\(--tabs-body\) - 20px\) \/ 2\); height: 20px;/.test(blk)
-    && /padding-top: calc\(52px - var\(--tabs-body\)\);/.test(blk) && /top: calc\(52px - var\(--tabs-body\) \/ 2 - 14px\); height: 28px;/.test(blk) && !/(?<![-\w])height: (46|44|36)px|\btop: (6|13|16)px|inset: -12px/.test(blk));
-  ok("選中:卡面色、外緣垂直半徑多一個 reach(透明上框裡的填色才是正圓 8);沒選中沒有底線、沒有捲動浮線", /border-radius: var\(--radius-sm\) var\(--radius-sm\) 0 0 \/ calc\(var\(--radius-sm\) \+ var\(--tabs-reach\)\) calc\(var\(--radius-sm\) \+ var\(--tabs-reach\)\) 0 0;/.test(blk)
+  ok("高度兩變數:本體 --tabs-body 28、熱區補 --tabs-reach 8(上下透明框);分頁置中在列裡;分隔線 16 置中;☰／＋／+N 置中", /--tabs-body: 28px; --tabs-reach: 8px;/.test(blk)
+    && /\.cs-tabs \{[^}]*align-items: center; gap: var\(--space-2\);/.test(blk) && /height: calc\(var\(--tabs-body\) \+ 2 \* var\(--tabs-reach\)\); padding: 0 var\(--space-12\);\s*border: solid transparent; border-width: var\(--tabs-reach\) 0; background-clip: padding-box;/.test(blk)
+    && /top: calc\(\(100% - 16px\) \/ 2\); height: 16px;/.test(blk) && /top: calc\(50% - 14px\); height: 28px;/.test(blk)
+    && !/tabs-top|tabs-pad-b|tabs-drag|padding-top: calc/.test(blk) && !/(?<![-\w])height: (46|44|36)px|\btop: (6|13|16)px|inset: -12px/.test(blk)
+    && /const TABS_MIN = 60, TABS_MIN_SEL = 112, TABS_NARROW = 88, TABS_GAP = 2;/.test(ct));
+  ok("× 不佔位:絕對定位蓋在本體尾端、墊那格的底、滑過或焦點才出;熱區 ::after 上下伸進透明框(32×44)", /\.tab-x \{ position: absolute; right: 0; top: 0; bottom: 0; width: 32px;[^}]*background: var\(--tabs-bg\); border-radius: 0 var\(--radius-sm\) var\(--radius-sm\) 0;[^}]*visibility: hidden; \}/.test(blk)
+    && blk.includes('.cs-tabs .tab[aria-selected="true"] .tab-x { background: var(--surface-card); }') && blk.includes(".tab-x::after { content: \"\"; position: absolute; left: 0; right: 0; top: calc(0px - var(--tabs-reach)); bottom: calc(0px - var(--tabs-reach)); }")
+    && blk.includes(".cs-tabs .tab:hover .tab-x, .cs-tabs .tab:focus-visible .tab-x { visibility: visible; }") && !/\.tab-x \{[^}]*flex: none/.test(blk));
+  ok("溢出可見範圍的熱區都帶 no-drag:分頁(透明框在元素內)、× 的 ::after、切換鈕格的 ::before(共用配方)", blk.includes(".cs-tabs .tab, .cs-tabs .tab-x, .cs-tabs .tab-x::after, .cs-menu { -webkit-app-region: no-drag; }")
+    && /> button::before \{[^}]*-webkit-app-region: no-drag;/.test(css));
+  ok("焦點環 ::before:2px --focus-ring 畫在本體內、四角 --radius-sm,只在 focus-visible", /\.cs-tabs \.tab:focus-visible::before \{ content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px var\(--focus-ring\); border-radius: var\(--radius-sm\); pointer-events: none; \}/.test(blk)
+    && /\.cs-tabs \.tab:focus-visible \{ outline: none; \}/.test(blk) && !/\.tab:hover::before/.test(blk));
+  ok("選中:本體填對話底色、四角正圓 --radius-sm(外緣垂直半徑多 reach)、600;不往下接對話;沒有捲動浮線", blk.includes('.cs-tabs .tab[aria-selected="true"] { background-color: var(--surface-card); color: var(--ink); font-weight: 600;\n  border-radius: var(--radius-sm) / calc(var(--radius-sm) + var(--tabs-reach)); }')
     && !/is-scrolled|box-shadow: 0 1px 0/.test(css.slice(css.indexOf(".chat-head {"), css.indexOf(".tabs-tip { top:"))) && !/chatEdge|is-scrolled/.test(app));
+  ok("+N 不畫 ▾(aria-haspopup／expanded 給讀屏)", !/cv7/.test(ct.slice(ct.indexOf("function tabsMorePaint"), ct.indexOf("function tabsMenuPaint"))) && /aria-haspopup="menu"/.test(read("index.html")));
+  ok("雲端:分隔線改墊 bg-body", trcss.includes('html[data-env="cloud"] .cs-tabs .tab:not([aria-selected="true"]):has(+ .tab:not([aria-selected="true"]))::after { background: var(--bg-body); }'));
+  ok("切換鈕:格 36×24(軌 28,跟分頁同高)、圖示 14、記號 3／5、出事短劃 5;熱區溢出段在共用配方帶 no-drag", /\.envsw button \{[^}]*width: 36px; height: 24px;/.test(trcss) && /\.envsw-ic \{ flex: none; width: 14px; height: 14px;/.test(trcss)
+    && /\.envsw \.run-dot, \.envsw \.dot \{ position: absolute; top: 3px; right: 5px;/.test(trcss) && trcss.includes(".envsw .dot.bad { top: 5px; }")
+    && /> button::before \{\s*content: ""; position: absolute; left: 0; right: 0;\s*top: min\(0px, calc\(\(100% - 44px\) \/ 2\)\); bottom: min\(0px, calc\(\(100% - 44px\) \/ 2\)\);\s*-webkit-app-region: no-drag;/.test(css));
   ok("減少動態:☰／＋／提示／+N 搬到 ::before 的底色過渡也關掉(全域 * 管不到偽元素)", /@media \(prefers-reduced-motion: reduce\) \{[^}]*\}\n  \.chat-head:has\(#cs-tabs\) \.cs-btn::before, \.cs-hint::before, \.cs-more::before \{ transition: none; \}/.test(css));
   ok("列底同中欄頂帶:本機 bg-body、雲端 surface-muted;雲端滑過墊 bg-body;本機收合邊條也畫 52 頂段", /\.chat-head \{[^}]*background: var\(--bg-body\);/.test(css) && trcss.includes('html[data-env="cloud"] .chat-head { background: var(--surface-muted); }')
-    && /html\[data-env="cloud"\] \.cs-more:hover::before, html\[data-env="cloud"\] \.cs-more\.on::before \{ background: var\(--bg-body\); \}/.test(trcss) && trcss.includes("html.ws-cc .chat-strip { background: linear-gradient(var(--bg-body) 52px, var(--surface-card) 52px); }"));
+    && /html\[data-env="cloud"\] \.cs-more:hover::before, html\[data-env="cloud"\] \.cs-more\.on::before,/.test(trcss) && trcss.includes("html.ws-cc .chat-strip { background: linear-gradient(var(--bg-body) 52px, var(--surface-card) 52px); }"));
 }
 // ── 主行程直接送 turn-event 的(不經 sendTurn 補 sid)都要自己帶 sid:不帶會落到眼前那條(tabsOf(undefined) = CS.cur),背景分頁的圖當下不出 ──
 { const main = fs.readFileSync(path.join(R, "..", "main.js"), "utf8");
