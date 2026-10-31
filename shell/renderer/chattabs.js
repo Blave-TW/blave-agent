@@ -4,7 +4,7 @@
    背景分頁的事件經 withTab(T, fn) 同步地把 T 換進來跑、跑完換回(fn 不准 await:換回之後才跑的延後 callback 要用 tabBound 捕 T)。
    共用的畫面(送出鈕、輸入框、策略刪除鎖、更新入口…)只畫眼前分頁:背景期間 CS.bg 為真,換回後 turnUiSync() 照眼前分頁重畫一次。
    哪些全域是每輪狀態:TAB_KEYS 這張表(tests/check_shell_chat_tabs.js 列舉 app.js 與每輪模組的頂層狀態,每個都要在這裡或 GLOBAL_OK)。
-   在 app.js、suggest.js 之後載入。 */
+   在 app.js、suggest.js、form.js 之後載入。 */
 let tabsK = 0;   // 分頁列 tick 現在亮第幾格(每秒進一格;建 tick 時就帶上,重畫不閃)
 const CS = { away: { sid: null, seq: 0 }, tabs: new Map(), order: [], cur: null, loaded: null, bg: false, closed: [], main: new Map(), bootDone: false, freeze: null, barW: 0 };
 
@@ -52,6 +52,7 @@ const TAB_KEYS = [
   ["turnSeqMine", () => turnSeqMine, (v) => { turnSeqMine = v; }, () => 0],
   ["UPD.turnCloud", () => UPD.turnCloud, (v) => { UPD.turnCloud = v; }, () => false],
   ["SUG", () => SUG, (v) => { SUG = v; }, () => ({ pending: null, timer: null, text: null, kind: null, shownOnce: false, used: false, gone: false, files: 0, filledText: null, inflight: null, direct: false, shownAt: 0, undoable: null })],
+  ["FORM", () => FORM, (v) => { FORM = v; }, () => ({ pending: null, live: null, filled: null, shown: false, inflight: null })],
   ["XP.pending", () => XP.pending, (v) => { XP.pending = v; }, () => []],
   ["RES.turn", () => RES.turn, (v) => { RES.turn = v; }, () => null],
   ["RPT.turnAt", () => RPT.turnAt, (v) => { RPT.turnAt = v; }, () => null],

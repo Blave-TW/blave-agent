@@ -10127,3 +10127,83 @@ msgstr "Unsaved portfolio changes"
 
 msgid "tr.pick.twdVenue"
 msgstr "TWD strategies can't trade on {venue}"
+
+# 聊天裡的澄清表單(0.1.41;spec agent-clarify-form-2026-10-31 §6,renderer/form.js):台指期回測缺兩個以上設定時,回覆底下的四題單選。
+# 題名是欄位 label(名詞,不寫指示);網頁同一句的 msgid 是 workspace_ 加這個 key 把 . 換成 _(tests/check_web_desktop_parity.js 逐字比)
+msgid "form.txf_backtest.q.prod"
+msgstr "Contract"
+
+msgid "form.txf_backtest.q.tf"
+msgstr "Bar interval"
+
+msgid "form.txf_backtest.q.per"
+msgstr "Backtest period"
+
+msgid "form.txf_backtest.q.st"
+msgstr "Strategy type"
+
+msgid "form.txf_backtest.prod.txf"
+msgstr "TXF (full)"
+
+msgid "form.txf_backtest.prod.mxf"
+msgstr "MXF (mini)"
+
+msgid "form.txf_backtest.prod.tmf"
+msgstr "TMF (micro)"
+
+msgid "form.txf_backtest.tf.d"
+msgstr "Daily"
+
+msgid "form.txf_backtest.tf.m1"
+msgstr "1-min"
+
+msgid "form.txf_backtest.tf.m5"
+msgstr "5-min"
+
+msgid "form.txf_backtest.tf.m15"
+msgstr "15-min"
+
+# {year} 是這個商品的起始年(runtime 依這台有沒有 Blave 資料算好帶來,換商品時跟著換)
+msgid "form.txf_backtest.per.all"
+msgstr "All available data (from {year})"
+
+msgid "form.txf_backtest.per.y3"
+msgstr "Last 3 years"
+
+msgid "form.txf_backtest.per.y1"
+msgstr "Last 1 year"
+
+msgid "form.txf_backtest.st.ma"
+msgstr "MA crossover"
+
+msgid "form.txf_backtest.st.ch"
+msgstr "Channel breakout"
+
+msgid "form.txf_backtest.st.other"
+msgstr "Other, I'll describe"
+
+# 只在這台電腦拿不到 Blave 資料時畫在 K 線週期那題底下,三個分 K 的 aria-describedby 指它;口徑同 data.noPlan(登入 vs 方案兩分法)
+msgid "form.note.nodata"
+msgstr "Intraday bars need Blave data; this account can't get it right now"
+
+msgid "form.note.nodata_signed_out"
+msgstr "Intraday bars need Blave data; sign in to Blave first"
+
+msgid "form.use"
+msgstr "Use these settings"
+
+msgid "form.self"
+msgstr "I'll type it"
+
+# 表單畫出來那一刻讀屏念一次(只在眼前分頁)
+msgid "form.say"
+msgstr "A few settings to pick; the form is under the reply"
+
+# 按「用這些設定」組進輸入框、不送。{code} 是 TXF／MXF／TMF;{tf}／{st}／{per} 直接代入上面的選項字。
+# en 由 formSentence 把代入字首字母轉小寫(第一個字全大寫的 MA、1-min 不轉),{st} 前補 a／an(MA 開頭用 an)
+msgid "form.txf_backtest.sentence"
+msgstr "Backtest {st} strategy on TAIFEX {code} {tf} bars, using {per}"
+
+# 策略類型選「其他」時用這句,游標停在句尾讓用戶接著打
+msgid "form.txf_backtest.sentence_other"
+msgstr "Backtest a strategy on TAIFEX {code} {tf} bars, using {per}; the strategy is:"

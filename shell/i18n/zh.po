@@ -10155,3 +10155,83 @@ msgstr "策略組合有沒存的改動"
 
 msgid "tr.pick.twdVenue"
 msgstr "台幣標的不能配到 {venue}"
+
+# 聊天裡的澄清表單(0.1.41;spec agent-clarify-form-2026-10-31 §6,renderer/form.js):台指期回測缺兩個以上設定時,回覆底下的四題單選。
+# 題名是欄位 label(名詞,不寫指示);網頁同一句的 msgid 是 workspace_ 加這個 key 把 . 換成 _(tests/check_web_desktop_parity.js 逐字比)
+msgid "form.txf_backtest.q.prod"
+msgstr "交易商品"
+
+msgid "form.txf_backtest.q.tf"
+msgstr "K 線週期"
+
+msgid "form.txf_backtest.q.per"
+msgstr "回測期間"
+
+msgid "form.txf_backtest.q.st"
+msgstr "策略類型"
+
+msgid "form.txf_backtest.prod.txf"
+msgstr "大台 TXF"
+
+msgid "form.txf_backtest.prod.mxf"
+msgstr "小台 MXF"
+
+msgid "form.txf_backtest.prod.tmf"
+msgstr "微台 TMF"
+
+msgid "form.txf_backtest.tf.d"
+msgstr "日 K"
+
+msgid "form.txf_backtest.tf.m1"
+msgstr "1 分 K"
+
+msgid "form.txf_backtest.tf.m5"
+msgstr "5 分 K"
+
+msgid "form.txf_backtest.tf.m15"
+msgstr "15 分 K"
+
+# {year} 是這個商品的起始年(runtime 依這台有沒有 Blave 資料算好帶來,換商品時跟著換)
+msgid "form.txf_backtest.per.all"
+msgstr "全部可用資料（{year} 起）"
+
+msgid "form.txf_backtest.per.y3"
+msgstr "近 3 年"
+
+msgid "form.txf_backtest.per.y1"
+msgstr "近 1 年"
+
+msgid "form.txf_backtest.st.ma"
+msgstr "均線交叉"
+
+msgid "form.txf_backtest.st.ch"
+msgstr "通道突破"
+
+msgid "form.txf_backtest.st.other"
+msgstr "其他，自己描述"
+
+# 只在這台電腦拿不到 Blave 資料時畫在 K 線週期那題底下,三個分 K 的 aria-describedby 指它;口徑同 data.noPlan(登入 vs 方案兩分法)
+msgid "form.note.nodata"
+msgstr "分 K 要 Blave 資料，這個帳號目前拿不到"
+
+msgid "form.note.nodata_signed_out"
+msgstr "分 K 要 Blave 資料，要先登入"
+
+msgid "form.use"
+msgstr "用這些設定"
+
+msgid "form.self"
+msgstr "我自己打"
+
+# 表單畫出來那一刻讀屏念一次(只在眼前分頁)
+msgid "form.say"
+msgstr "有幾個設定要選，表單在回覆下面"
+
+# 按「用這些設定」組進輸入框、不送。{code} 是 TXF／MXF／TMF;{tf}／{st}／{per} 直接代入上面的選項字。
+# en 由 formSentence 把代入字首字母轉小寫(第一個字全大寫的 MA、1-min 不轉),{st} 前補 a／an(MA 開頭用 an)
+msgid "form.txf_backtest.sentence"
+msgstr "幫我做台指期 {code} {tf} 的{st}策略回測，用{per}"
+
+# 策略類型選「其他」時用這句,游標停在句尾讓用戶接著打
+msgid "form.txf_backtest.sentence_other"
+msgstr "幫我做台指期 {code} {tf} 的策略回測，用{per}，策略是："

@@ -98,11 +98,12 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     m.r.onTurn("desktop-abcd1234", "turn-event", { type: "text", text: "token=" + TOKEN + " 跟 envSecretVal99 跟 " + SECRET });
     m.r.onTurn("desktop-abcd1234", "turn-event", { type: "text", text: "第二段" });
     m.r.onTurn("desktop-abcd1234", "turn-event", { type: "strategies", items: [] });
+    m.r.onTurn("desktop-abcd1234", "turn-event", { type: "form", id: "txf_backtest", questions: [] });   // api relay.TURN_TYPES 沒有 form:手機那邊沒有表單可畫
     m.r.onTurn("desktop-zzzz9999", "turn-event", { type: "text", text: "別條電腦前的回合" });
     ok("2 300 毫秒內不送", m.chunks().length === 0);
     await wait(RL.BATCH_MS + 120);
     const cs = m.chunks();
-    ok("2 一批送兩段;每段帶 session_id 與那一輪的 message_id;strategies 與別條電腦前的回合不轉", cs.length === 2 && cs.every((c) => c.session_id === "desktop-abcd1234" && c.message_id === "msg00000001") && m.of(RL.EP.report).length === 1, cs);
+    ok("2 一批送兩段;每段帶 session_id 與那一輪的 message_id;strategies、form 與別條電腦前的回合不轉", cs.length === 2 && cs.every((c) => c.session_id === "desktop-abcd1234" && c.message_id === "msg00000001") && m.of(RL.EP.report).length === 1, cs);
     ok("2 字串過遮蔽:帳號 token、app_secret、.env 值都不出門", !JSON.stringify(cs).includes(TOKEN) && !JSON.stringify(cs).includes(SECRET) && !JSON.stringify(cs).includes("envSecretVal99"), cs);
     m.r.onTurn("desktop-abcd1234", "turn-event", { type: "export", target: "pine", strategy: "btc_trend", content: "SECRET_STRATEGY_BODY = 42" });
     await wait(RL.BATCH_MS + 120);

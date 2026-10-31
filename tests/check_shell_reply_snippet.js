@@ -7,7 +7,7 @@ const app = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c ? "" : "  " + JSON.stringify(d))); if (!c) red++; };
 const fn = (src, name) => { const i = src.indexOf("function " + name + "("); if (i < 0) throw new Error("找不到 " + name); let d = 0; for (let k = src.indexOf("{", src.indexOf(")", i)); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(i, k + 1); } throw new Error("切不出 " + name); };
 const line = (name) => { const m = app.match(new RegExp("^const " + name + " = .*;$", "m")); if (!m) throw new Error("找不到 " + name); return m[0]; };
-const replySnippet = new Function([line("CARD_TAG"), line("SUG_BLOCK"), line("SUG_OPEN_TAIL"), line("AWAIT_TAG"), line("RS_MAX"), fn(app, "replySnippet"), "return replySnippet;"].join("\n"))();
+const replySnippet = new Function([line("CARD_TAG"), line("SUG_BLOCK"), line("SUG_OPEN_TAIL"), line("AWAIT_TAG"), line("FORM_TAG"), line("RS_MAX"), fn(app, "replySnippet"), "return replySnippet;"].join("\n"))();
 
 const Z = "回".repeat(70);
 const CASES = [

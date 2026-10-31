@@ -229,9 +229,9 @@ for (const lang of ["zh", "en"]) {
   ok("回覆摘錄測資:電腦版 CASES 與網頁 snippet_desktop 逐項相同", cases.length > 20 && norm(cases) === norm(vec), cases.length + " vs " + vec.length);
   const rc = fs.existsSync(rcPath) ? fs.readFileSync(rcPath, "utf8") : "";
   // 電腦版 CARD_TAG 多包一層捕獲組(卡片名另有用途),網頁沒有:比對前拆掉後面不接量詞的捕獲組——比的是「吃掉哪些字」
-  const re = (src, kw, name) => { const m = src.match(new RegExp("^\\s*" + kw + " " + name + " = (/.*/[a-z]*);$", "m")); return m ? m[1].replace(/(^|[^\\])\(([^()?][^()]*)\)(?![*+?{])/g, "$1$2") : null; };
-  const tags = ["CARD_TAG", "SUG_BLOCK", "SUG_OPEN_TAIL", "AWAIT_TAG"], off = tags.filter((n) => !re(appSrc, "const", n) || re(appSrc, "const", n) !== re(rc, "var", n));
-  ok("回覆摘錄的四條標記 regex 兩邊同一份", off.length === 0, off.map((n) => n + ": " + re(appSrc, "const", n) + " vs " + re(rc, "var", n)).join(";"));
+  const re = (src, kw, name) => { const m = src.match(new RegExp("^\\s*" + kw + " " + name + " = (/.*/[a-z]*);\\s*(?://.*)?$", "m")); return m ? m[1].replace(/(^|[^\\])\(([^()?][^()]*)\)(?![*+?{])/g, "$1$2") : null; };
+  const tags = ["CARD_TAG", "SUG_BLOCK", "SUG_OPEN_TAIL", "AWAIT_TAG", "FORM_TAG"], off = tags.filter((n) => !re(appSrc, "const", n) || re(appSrc, "const", n) !== re(rc, "var", n));
+  ok("回覆摘錄的五條標記 regex 兩邊同一份(FORM_TAG 是 0.1.41 澄清表單)", off.length === 0, off.map((n) => n + ": " + re(appSrc, "const", n) + " vs " + re(rc, "var", n)).join(";"));
   // 回覆音 04 Rise(canon › Sound):兩音表、主增益、2 秒窗,兩邊逐值一致。網頁 var、電腦版 const,各自 eval 成值再比
   const num = (src, kw, n) => { const m = src.match(new RegExp("^\\s*" + kw + " " + n + " = ([\\s\\S]*?);", "m")); try { return m ? JSON.stringify(new Function("return " + m[1])()) : null; } catch (_) { return null; } };
   const rise = ["RISE", "RISE_GAIN", "SOUND_GAP_MS"].filter((n) => num(appSrc, "const", n) === null || num(appSrc, "const", n) !== num(rc, "var", n));
@@ -273,6 +273,20 @@ for (const lang of ["zh", "en"]) {
   const val = (src, n) => { const m = src.match(new RegExp("^\\s*const " + n + " = (.+?);\\s*(//.*)?$", "m")); return m ? m[1].replace(/'/g, '"').replace(/\s+/g, "") : null; };
   const bad = SUG_CONSTS.filter((n) => val(sugSrc, n) === null || val(sugSrc, n) !== val(web, n));
   ok("建議下一步五個常數兩邊同一份(" + SUG_CONSTS.join(", ") + ")", bad.length === 0, bad.map((n) => n + ": " + val(sugSrc, n) + " vs " + val(web, n)).join(";")); }
+// 聊天裡的澄清表單(spec agent-clarify-form-2026-10-31 §2.4、§6、§7.4):FORM_IDS／FORM_MAX_* 四個常數兩邊同名同值(比原文,同上),
+// form.* 字串 zh / en 逐字一致(網頁 msgid = "workspace_" + 電腦版 key 把 . 換成 _,同 workspace_sug_live 那組的慣例)。
+// form.note.* 只在電腦版:資料那一句只在這台拿不到 Blave 資料時出,雲端一定有資料、網頁永遠不畫(spec §3)
+{ const FORM_CONSTS = ["FORM_IDS", "FORM_MAX_QUESTIONS", "FORM_MAX_OPTIONS", "FORM_MAX_SENTENCE_CHARS"];
+  const fp = path.join(__dirname, "..", "shell", "renderer", "form.js"), formSrc = fs.existsSync(fp) ? fs.readFileSync(fp, "utf8") : "";
+  const val = (src, n) => { const m = src.match(new RegExp("^\\s*const " + n + " = (.+?);\\s*(//.*)?$", "m")); return m ? m[1].replace(/'/g, '"').replace(/\s+/g, "") : null; };
+  const bad = FORM_CONSTS.filter((n) => val(formSrc, n) === null || val(formSrc, n) !== val(web, n));
+  ok("澄清表單四個常數兩邊同一份(" + FORM_CONSTS.join(", ") + ")", bad.length === 0, bad.map((n) => n + ": " + val(formSrc, n) + " vs " + val(web, n)).join(";"));
+  for (const lang of ["zh", "en"]) {
+    const w = poRaw(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po")), d = poRaw(path.join(__dirname, "..", "shell", "i18n", lang + ".po"));
+    const keys = Object.keys(d).filter((k) => k.startsWith("form.") && !k.startsWith("form.note.")), wk = (k) => "workspace_" + k.replace(/\./g, "_");
+    const off = keys.filter((k) => w[wk(k)] !== d[k]);
+    ok("澄清表單 form.* 字串兩邊逐字一致(" + lang + "," + keys.length + " 句;form.note.* 只在電腦版)", keys.length === 22 && off.length === 0, off.map((k) => k + "「" + d[k] + "」 vs " + wk(k) + "「" + w[wk(k)] + "」").join(";"));
+  } }
 // 設定 modal 方案 B(spec settings-modal-b-2026-10-24 §4.2):web 的「一般／Agent／連結」三類是電腦版的子集合——分類名與這三類裡的字 zh / en 逐字一致,
 // web #set_cats 的分類順序是電腦版 #set-cats 順序的子序列(相對順序相同)
 { const SETTINGS_PAIRS = { "set.cat.display": "workspace_set_cat_display", "set.cat.rules": "workspace_set_cat_rules", "set.cat.connect": "workspace_set_cat_connect",
