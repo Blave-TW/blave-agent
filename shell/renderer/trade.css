@@ -838,3 +838,14 @@ html.ws-sc .side-gate { display: none; }
 .mg-wait .btn-quiet { font-size: inherit; }
 /* 投入資金空著時優化表上方那一句(設計最後一輪:上 8、下 16) */
 .pf-note.mg-need-fund { display: block; margin: var(--space-8) 0 var(--space-16); }
+/* 策略頁頭金額框的輸入格(trCfField):標籤 → 格子＋單位(＋合約下拉)→ 換算量或錯字;表與表下照舊 */
+.cf-extra { display: contents; }
+.cf-in-fld .fld-l { display: block; margin-bottom: var(--space-6); font-size: 12px; color: var(--ink-3); }
+.cf-in-row { display: flex; align-items: center; gap: var(--space-8); }
+.cf-in-row .amt-in { width: 160px; height: 32px; font-size: 14px; }
+.cf-in-unit { font-size: 13px; color: var(--ink-2); }
+.cf-in-row .set-selw { flex: none; margin-left: 0; }
+.del-body.lines p.cf-in-ref { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.del-body.lines p.cf-in-err { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.5; color: var(--color-redText); }
+.cf-in-ref[hidden], .cf-in-err[hidden] { display: none; }
+.cf-in-ref .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }   /* 確認框在 .app 外面,吃不到 .app .mono */

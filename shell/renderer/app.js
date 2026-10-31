@@ -2917,7 +2917,9 @@ function cfSupersede() {
   // 舊框的收尾出錯不擋新框
   try { c.onCancel(); } catch (_) { return; }
 }
-function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel }) {
+/* focus = 開框後焦點給哪個 id(預設取消;有輸入格的存金額框給輸入格並全選,canon › 確認 modal 的輸入格變體)。
+   link = { label, onClick }:框腳最左邊的文字鈕(策略頁金額框的「到策略組合」);按了先關框(算取消)再做 */
+function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel, focus, link }) {
   cfSupersede();
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   $("del-title").textContent = title;
@@ -2961,16 +2963,19 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
   $("del-mark").className = "mode " + (markKind || "paper");
   $("del-mark").hidden = !mark; $("del-mark").textContent = mark || "";
   $("del-alt").hidden = !alt; $("del-alt").textContent = alt ? alt.label : "";
+  $("del-link").hidden = !link; $("del-link").textContent = link ? link.label : "";
   $("del-alt").classList.toggle("cf-alt-danger", !!(alt && alt.danger));
   $("del-modal").classList.toggle("has-alt", !!alt);
   $("del-modal").classList.toggle("has-choices", !!choices);
-  delCtx = { custom: true, onOk: choices ? (pre ? pre.onOk : null) : onOk, onAlt: alt && alt.onOk, opener, onCancel };
+  delCtx = { custom: true, onOk: choices ? (pre ? pre.onOk : null) : onOk, onAlt: alt && alt.onOk, onLink: link && link.onClick, opener, onCancel };
   $("view-ws").inert = true; $("set-scrim").inert = true; $("lai-scrim").inert = true;   // 疊在「用你自己的 AI」上面時(回合中按〔使用〕):底下那層也鎖
   // single:只有一顆鈕(「知道了」那種:沒有要取消的事)。焦點給它;Esc / 框外 / ✕ 照舊關
   $("del-cancel").hidden = !!single;
   const sc = $("del-scrim"); sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));
-  if (single) $("del-ok").focus(); else $("del-cancel").focus();
+  const fx = focus && $(focus);
+  if (fx) { fx.focus(); if (typeof fx.select === "function") fx.select(); }
+  else if (single) $("del-ok").focus(); else $("del-cancel").focus();
 }
 function delClose(deleted) {
   const sc = $("del-scrim"); if (sc.hidden || sc.dataset.lock) return;   // lock:策略庫購買扣款在路上(library.js libPurchase),Esc / ✕ / 框外都不關
@@ -2980,7 +2985,7 @@ function delClose(deleted) {
   const c = delCtx; delCtx = null;
   if (c && c.onCancel && !c.acted) c.onCancel();   // 取消 / ✕ / Esc / 框外 / 被程式收掉都算沒按主鈕
   // 下一個用這個框的人(刪對話)不該看到上一個的第二顆鈕、也不該看到上一個的「雲端」記號
-  $("del-alt").hidden = true; $("del-mark").hidden = true; $("del-modal").classList.remove("has-alt", "has-choices"); $("del-ok").disabled = false; $("del-ok").removeAttribute("aria-describedby");
+  $("del-alt").hidden = true; $("del-link").hidden = true; $("del-mark").hidden = true; $("del-modal").classList.remove("has-alt", "has-choices"); $("del-ok").disabled = false; $("del-ok").removeAttribute("aria-describedby");
   $("del-env").hidden = true; $("del-where").hidden = true; $("del-modal").querySelector(".modal-head").classList.remove("cloud"); $("del-cancel").hidden = false; $("del-cancel").textContent = t("del.cancel");
   if (deleted) $("cs-search").focus();
   else if (c && c.opener && c.opener.isConnected) c.opener.focus();
@@ -2990,6 +2995,7 @@ $("del-close").addEventListener("click", () => delClose(false));
 $("del-scrim").addEventListener("mousedown", (e) => { if (e.target === $("del-scrim")) delClose(false); });
 $("del-scrim").addEventListener("keydown", (e) => trapTab(e, $("del-modal")));
 $("del-alt").addEventListener("click", () => { const go = delCtx && delCtx.onAlt; if (delCtx) delCtx.acted = true; delClose(false); if (go) go(); });
+$("del-link").addEventListener("click", () => { const go = delCtx && delCtx.onLink; delClose(false); if (go) go(); });
 $("del-ok").addEventListener("click", async () => {
   if (delCtx && delCtx.custom) { const go = delCtx.onOk; if (!go) return; delCtx.acted = true; delClose(false); go(); return; }   // 沒選選項(choices):鈕本來就停用,這裡再守一次
   const m = delCtx && delCtx.m; if (!m) return;
@@ -5458,7 +5464,7 @@ function tipEsc() {
     const desc = x && x.getAttribute && x.getAttribute("aria-describedby"), dt = desc && document.getElementById(desc);
     const tip = x && x.nextElementSibling && x.nextElementSibling.classList.contains("tip") ? x.nextElementSibling : dt && dt.classList.contains("tip") ? dt : null;
     if (!tip || x.hasAttribute("data-tip-off")) continue;
-    if (getComputedStyle(tip).display !== "none") shut = true;
+    const cs = getComputedStyle(tip); if (cs.display !== "none" && cs.visibility !== "hidden") shut = true;   // 延遲出現的那種(.rp-icw)藏著時是 visibility:hidden
     x.setAttribute("data-tip-off", "");
     const on = () => { x.removeAttribute("data-tip-off"); x.removeEventListener("blur", on); x.removeEventListener("mouseleave", on); };
     x.addEventListener("blur", on); x.addEventListener("mouseleave", on);

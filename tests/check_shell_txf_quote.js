@@ -91,7 +91,7 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
     vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n"
       + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel",
         "trStratName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum",
-        "trTotalText", "trPaintPosCell", "trAmountTable", "trTwNamesWant", "trTwName", "trTwNameEl", "trGoStartKey", "trTradableFunded", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trTwClosedKeys", "trCfTick", "trCfMD", "trPvRequest", "trLivePositions", "trBook", "trGateSide", "trTradesSym", "trVenueKind", "poPartStates", "trTwBroker", "trTxfPrice"].map((n) => cutF(src, n)).join("\n"), ctx);
+        "trTotalText", "trPaintPosCell", "trAmountTable", "trTwNamesWant", "trTwName", "trTwNameEl", "trGoStartKey", "trTradableFunded", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trCfOpen", "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trTwClosedKeys", "trCfTick", "trCfMD", "trPvRequest", "trLivePositions", "trBook", "trGateSide", "trTradesSym", "trVenueKind", "poPartStates", "trTwBroker", "trTxfPrice"].map((n) => cutF(src, n)).join("\n"), ctx);
     const V = { credentials: true, pair: true, order: true, account: true };
     const paint = (price, unit = "TWD", eq = 2000000, mixed = false) => {
       vm.runInContext("TR_TXF.price = " + J(price) + "; UNIT = " + J(unit) + "; EQ = " + J(eq), ctx);
@@ -157,7 +157,7 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
         && tw3.kids[1].title === "tr.typecMembersFlat " + J({ list: ["2330", "2454", "2317", "2308", "2881"].join("ak.sep") }) && tw4.kids[1].textContent === "2330" + "ak.sep" + "2454" && tw3.kids[3].textContent === "—", J([tw3.kids[1], tw4.kids[1]])); }
     // 確認框(spec-0.1.13 #1 的大口數提醒已隨安全檢查拿掉,Wei 10-13;0.1.27 起只列會變的,canon 確認 modal):txf 存著 2 口、訊號 0.5
     const confirm = (price, lots, eq, unit = "TWD") => { paint(price, unit, eq); ctx.TR.edits = { txf: lots }; ctx.BOX = null;
-      vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);
+      vm.runInContext("TR = this.TR; trCfOpen({ names: trNames(), stored: trBase(), opener: null })", ctx);
       const box = ctx.BOX, all = box ? flat(box.extra) : [];
       return { box, all, rowCls: all.filter((n) => /cf-row/.test(n.className)).map((n) => n.className) }; };
     { const big = confirm(20000, 6, 2000000), fb = confirm(null, 50, 2000000), one = confirm(20000, 4, 100000);
@@ -170,11 +170,11 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       { const same = confirm(20000, 3, 2000000);
         ok("#4 口數改了、取整後目標沒變(2 → 3 口 × 0.5 = 1.5 → 2 口;原本 1 口):目標表列 1 → 2", same.all.some((n) => n.tag === "dd" && /^1→2/.test(n.textContent)), J(same.all.filter((n) => n.tag === "dd").map((n) => n.textContent))); }
       { paint(20000, "TWD", 2000000); ctx.TR.st.report.states.txf.position = 0; ctx.TR.edits = { txf: 5 }; ctx.BOX = null;
-        vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);
+        vm.runInContext("TR = this.TR; trCfOpen({ names: trNames(), stored: trBase(), opener: null })", ctx);
         const all = flat(ctx.BOX.extra), sub = all.find((n) => n.className === "cf-sub");
         ok("訊號 0、金額改了(目標沒有一檔變):框照開,表改列金額「2 → 5」+ 名目,不是空框", !!sub && /^tr\.cf\.capAmountsOne/.test(sub.textContent) && all.some((n) => n.tag === "dd" && /^2→5tr\.txfConfirmRef/.test(n.textContent)), J(all.filter((n) => n.tag === "dd").map((n) => n.textContent))); }
       { const zero = (rec) => { paint(20000, "TWD", 2000000); if (rec) ctx.TR.st.report.reconciler = { alive: true }; ctx.TR.edits = { txf: 0 }; ctx.BOX = null;
-          vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);
+          vm.runInContext("TR = this.TR; trCfOpen({ names: trNames(), stored: trBase(), opener: null })", ctx);
           const all = flat(ctx.BOX.extra);
           return { title: ctx.BOX.title, ok: ctx.BOX.ok, mark: ctx.BOX.mark, dds: all.filter((n) => n.tag === "dd").map((n) => n.textContent), zeroed: all.some((n) => n.className === "cf-zeroed"),
             notes: all.filter((n) => n.className === "cf-note").map((n) => n.textContent), firstPending: vm.runInContext("trFirstReadPending(trReport())", ctx) }; };
@@ -197,7 +197,7 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       ctx.TR = { env: "local", list: [{ name: "btc", displayName: "BTC", hasBacktest: true }], listLoaded: true, picked: null, sent: null, save: null, edits: { btc: amt }, bad: {}, sig: {}, reqIds: {},
         st: { alive: true, report: { venues: { [venue]: { credentials: true, pair: true, order: true, account: true } }, config: { amounts: { btc: 100 } }, states: { btc: { symbol: "BTCUSDT", market: "swap", position: 1 } } } } };
       return flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx)); };
-    const box = (venue, amt) => { levT(venue, amt); ctx.BOX = null; ctx.DELOK.attrs = {}; vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx); return ctx.BOX; };
+    const box = (venue, amt) => { levT(venue, amt); ctx.BOX = null; ctx.DELOK.attrs = {}; vm.runInContext("TR = this.TR; trCfOpen({ names: trNames(), stored: trBase(), opener: null })", ctx); return ctx.BOX; };
     { const t12 = levT("okx", 120000), b12 = box("okx", 120000), bp = box("paper", 120000);
       ok("12 倍真錢:金額表沒有 .pf-lev 提醒、合計後面照寫 12.00×;確認框沒有勾選列、儲存不停用、沒有 aria-describedby",
         !t12.some((n) => /pf-lev/.test(n.className || "")) && t12.find((n) => n.className === "pf-total").textContent === 'tr.total120,000USDT'
@@ -222,7 +222,7 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
           picked: o.keep ? null : new Set(["btc", "eth", "ada"].concat(o.tw ? ["tw"] : [])), edits: o.keep ? {} : Object.assign({ eth: 800, ada: 0 }, o.tw ? { tw: 400000 } : {}), pending: o.pending || null,
           st: { alive: true, report: Object.assign({ venues: { okx: V }, config: { amounts }, quote_ccy: { tw: "TWD" }, last_reconcile: { ts: new Date().toISOString().slice(0, 19), actual: { SOLUSDT: { side: "long", size: 200 } }, target: {}, gates: {} },
             states: { btc: st4("BTCUSDT"), eth: st4("ETHUSDT"), ada: st4("ADAUSDT"), sol: st4("SOLUSDT"), tw: { weights: { 2330: 1 }, market: "spot" } } }, rep) } };
-        ctx.BOX = null; vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);
+        ctx.BOX = null; vm.runInContext("TR = this.TR; trCfOpen({ names: trNames(), stored: trBase(), opener: null })", ctx);
         const rows = ctx.BOX ? flat(ctx.BOX.extra).filter((n) => n.tag === "div" && /^cf-row\b/.test(n.className)) : [];
         return rows.map((r) => [r.kids[0].textContent, r.kids[1].textContent]); };
       const plain = cf({}), byN = (rs, n) => rs.find((r) => r[0] === n) || [];
@@ -269,12 +269,12 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       const nothing = { box: !!ctx.BOX, direct: ctx.DIRECT };
       ctx.DIRECT = 0; ctx.TR = { env: "cloud", list: [{ name: "btc", displayName: "BTC", hasBacktest: true }], listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, raw: {}, sig: {}, reqIds: {}, pending: null,
         st: { alive: true, cloud: {}, report: { venues: {}, config: { amounts: { btc: -5 } }, states: { btc: st4("BTCUSDT") } } } };
-      ctx.BOX = null; vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);
+      ctx.BOX = null; vm.runInContext("TR = this.TR; trCfOpen({ names: trNames(), stored: trBase(), opener: null })", ctx);
       const blockedNoVenue = { box: !!ctx.BOX, direct: ctx.DIRECT, block: !!ctx.BOX && flat(ctx.BOX.extra).some((n) => n.className === "cf-block") };
       ok("沒連交易所也開框(儲存金額);什麼都沒變直接存;沒綁但存不進去(壞值)開框講原因、不送",
         noVenue.box && noVenue.direct === 0 && noVenue.title === "tr.cf.title" && !nothing.box && nothing.direct === 1 && blockedNoVenue.box && blockedNoVenue.direct === 0 && blockedNoVenue.block, J([noVenue, nothing, blockedNoVenue]));
       ok("trMayFire 與 trExecState 同一套狀態:running / unconfirmed / 單純 HALT / 剛按啟動;框的判準 trCfFiring = trMayFire 去掉暫停中(剛按啟動除外:HALT 馬上要解除)", ["running", "unconfirmed"].every((s) => /s === "running" \|\| s === "unconfirmed"/.test(cutF(src, "trMayFire")))
-        && /trStartPending\(pending\)/.test(cutF(src, "trMayFire")) && /trMayFire\(S\.st, S\.pending\)/.test(cutF(src, "trSaveAmounts")) && /return trMayFire\(st, pending\) && \(trExecState\(st\) !== "halted" \|\| trStartPending\(pending\)\);/.test(cutF(src, "trCfFiring")));
+        && /trStartPending\(pending\)/.test(cutF(src, "trMayFire")) && /trMayFire\(S\.st, S\.pending\)/.test(cutF(src, "trCfOpen")) && /return trMayFire\(st, pending\) && \(trExecState\(st\) !== "halted" \|\| trStartPending\(pending\)\);/.test(cutF(src, "trCfFiring")));
       /* 兩區(USDT 四列 + 台股 Type C 一列 TWD):表頭寫兩個單位、每列數字後面帶自己的單位;不再有區小計與合計 */
       const two = cf({}, { tw: true }), sub = (flat(ctx.BOX.extra).find((n) => n.className === "cf-sub") || {}).textContent;
       ok("兩區:表頭「目標有變的 N 檔(USDT、TWD)」;每列帶自己的單位(單位看撐這檔的策略,不被別支的 TWD 帶走);沒有區標題列與合計", /^tr\.cf\.capChanges \{"n":"\d","ccy":"(USDT、TWD|TWD、USDT)"\}$/.test(sub || "")
@@ -303,7 +303,7 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
       c.inp.value = "1,200"; c.inp.on.input(); c.inp.on.blur(); const d = mk();
       ok("B7 改成合法值、離開欄位 → 原字清掉,重畫顯示正規化後的值", d.inp.value === "1,200" && !ctx.TR.bad.btc && !("btc" in ctx.TR.raw)); }
     ctx.PAPERV = false;
-    { paint(20000, null, 2000000, true); ctx.TR.edits = { txf: 4, btc: 600 }; ctx.BOX = null; vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);
+    { paint(20000, null, 2000000, true); ctx.TR.edits = { txf: 4, btc: 600 }; ctx.BOX = null; vm.runInContext("TR = this.TR; trCfOpen({ names: trNames(), stored: trBase(), opener: null })", ctx);
       const all = flat(ctx.BOX.extra), sub = (all.find((n) => n.className === "cf-sub") || {}).textContent || "";
       ok("#3 帳戶幣未知 + 一般列:表頭寫兩個單位(口、USDT),口數列寫口數＋商品名、一般列數字後面帶 USDT;tr.ccyUnknown 退場", /"ccy":"(tr\.lotsUnit、USDT|USDT、tr\.lotsUnit)"/.test(sub)
         && !all.some((n) => n.className === "cf-note" && n.textContent === "tr.ccyUnknown")

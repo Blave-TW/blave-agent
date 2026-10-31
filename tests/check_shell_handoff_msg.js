@@ -101,7 +101,7 @@ t("目的地占用:清單(送上雲端 = 雲端索引,拉回 = 本機清單)或�
   t("功能關著 → 卡不出", run({ on: false, pending: { id: "btc_rsi" } }, { name: "btc_rsi" })[0] === null); }
 t("意圖只在記憶體:不寫 localStorage / sessionStorage(重開 app 一律回這台電腦)", !/Storage/.test(src));
 t("切完才記下要送哪一支(envSwitch 會清 pending,先記會被洗掉);記的是 hoPaint 給的那一支(B.name);切不成就不記", /if \(envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \};/.test(src)
-  && /b\.addEventListener\("click", \(\) => hoAsk\(dir, id, b\)\);/.test(src));
+  && /b\.dataset\.id = B\.name;/.test(src) && /hoAsk\(b\.dataset\.dir, b\.dataset\.id, b\); \}\);/.test(src));
 t("框真的開得起來就清掉(按確認送出也走這條);handoff.js 裡清的地方只有 hoAsk 與 hoStay", /if \(dir === "up"\) \{ HO\.pending = null; hoNote\(null\); \}/.test(src)
   && (src.match(/HO\.pending = (null|\{)/g) || []).length === 3 && src.indexOf('if (dir === "up") { HO.pending = null;') < src.indexOf("confirmBox({"));
 // 承重牆①(設計 eval:四條清除條件都要):人自己切視角(切換器 / ⌘1⌘2 / 選單)也要清——沒有 TTL,少了這條殘留無上限。

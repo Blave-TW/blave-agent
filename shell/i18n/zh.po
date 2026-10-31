@@ -10104,3 +10104,21 @@ msgstr "Blave 還開著，手機照樣連得到。要結束請從選單列或 Do
 
 msgid "tm.phoneHiddenWin"
 msgstr "Blave 還開著，手機照樣連得到。要結束請從系統匣圖示。"
+
+msgid "sp.btn"
+msgstr "自動下單"
+
+msgid "sp.cx"
+msgstr "連接帳戶"
+
+msgid "sp.noAcct"
+msgstr "還沒連接帳戶"
+
+msgid "sp.connecting"
+msgstr "連接中…"
+
+msgid "sp.unsaved"
+msgstr "策略組合有沒存的改動"
+
+msgid "tr.pick.twdVenue"
+msgstr "台幣標的不能配到 {venue}"

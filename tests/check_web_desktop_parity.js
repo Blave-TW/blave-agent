@@ -525,4 +525,65 @@ for (const lang of ["zh", "en"]) {
     ok("改金鑰驗證碼:kc_* 與 cx.kc.* 14 句兩邊同一份(" + lang + ")", off.length === 0, off.map((k) => k + ": " + w["kc_" + k] + " vs " + d["cx.kc." + k]).join(";"));
     if (lang === "zh") ok("改金鑰驗證碼:寄不出那句是換步驟後的定稿(zh)", d["cx.kc.failed"] === "驗證碼沒寄出去，金鑰沒有儲存，請稍後再試。", d["cx.kc.failed"]);
   } }
+
+/* 策略頁頭「狀態 → 鈕態」表(spec strategy-page-autotrade §4;cross-surface-parity 規則三):
+   電腦版 shell/renderer/handoff.js 的 SP_HEAD 與網頁 workspace.html 的 SP_HEAD 逐態比——態的名字、有沒有主鈕、填色／描邊、停用、
+   有沒有動作、記號,以及鈕字／狀態詞／原因句的 zh 原文(電腦版走 shell/i18n,網頁走 I18N 名 → msgid → messages.po)。
+   動態那幾格(看市場的基本字、#tr-go 同一個鈕字、這一支在選擇策略框那一列的原因)照槽位比,不比字。
+   兩邊對不上又是刻意的,寫進 SP_EXEMPT、附一句原因,而且每一條都驗它還成立(過時的豁免也紅) */
+{ const hoSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "handoff.js"), "utf8");
+  const lit = (src, where) => { const m = /const SP_HEAD = (\{[\s\S]*?\n\s*\});/.exec(src); if (!m) return null; try { return (0, eval)("(" + m[1] + ")"); } catch (e) { console.log("FAIL  " + where + " 的 SP_HEAD 讀不出來:" + e.message); red++; return null; } };
+  const D = lit(hoSrc, "電腦版 handoff.js"), W = lit(web, "網頁 workspace.html");
+  ok("策略頁頭:兩邊都有 SP_HEAD 鈕態表", !!D && !!W);
+  if (D && W) {
+    const dzh = poMap(path.join(__dirname, "..", "shell", "i18n", "zh.po")), wzh = poMap(path.join(webDir, "app", "translations", "zh", "LC_MESSAGES", "messages.po"));
+    const wid = {}; for (const m of web.matchAll(/^\s+(\w+): (?:\{\{ _\('([^']+)'\) \| tojson \}\}|"\{\{ _\('([^']+)'\) \}\}"),?$/gm)) wid[m[1]] = m[2] || m[3];
+    const dT = (k) => dzh[k], wT = (n) => wzh[wid[n]];
+    // 只有一邊有的態(附原因);其餘的態兩邊要一一對上
+    const ONLY_DESK = { setupWait: "豁免 3:開通中,網頁的群益與統一都給〔繼續〕(網頁的開通清單兩家都在框裡);電腦版群益本機入口 CAPL_LOCAL_ON 關著、沒有那份清單,只留狀態詞" };
+    const ONLY_WEB = {};
+    // 態一樣但有一格刻意不同(附原因)
+    const CELL_EXEMPT = { "fail.note": "fail 的原因句兩邊各用自己自動下單頁那一句、出口不同:電腦版「串接失敗，下單程式沒在跑。到「設定」處理。」(帳戶與金鑰在自動下單 › 設定分頁),網頁「串接失敗，到策略組合處理」(網頁的帳戶在策略組合頁);開頭的「串接失敗」另外逐字比" };
+    const dk = Object.keys(D), wk = Object.keys(W);
+    ok("策略頁頭:態的集合兩邊一樣(只有一邊有的都在豁免表)", dk.filter((k) => !(k in W) && !ONLY_DESK[k]).length === 0 && wk.filter((k) => !(k in D) && !ONLY_WEB[k]).length === 0,
+      "只在電腦版:" + dk.filter((k) => !(k in W) && !ONLY_DESK[k]).join(",") + " 只在網頁:" + wk.filter((k) => !(k in D) && !ONLY_WEB[k]).join(","));
+    Object.keys(ONLY_DESK).forEach((k) => ok("策略頁頭豁免還成立:" + k + " 只在電腦版", (k in D) && !(k in W), ONLY_DESK[k]));
+    // 動態槽:電腦版 "$base" ＝ 網頁 "base";"$go"(#tr-go 同一個鈕字)＝ 網頁 pfStart;"$off"(選擇策略框那一列的原因)＝ 網頁 "lock";
+    // fail 態的原因句 "$fail" ＝ 網頁 "fail"(各自自動下單頁那一句,開頭「串接失敗」逐字比,出口見 CELL_EXEMPT);
+    // start 態的原因句 "$go"(帳本上還有 Blave 部位時的 tr.startOnBook)＝ 網頁 "onBook"(pfStartOnBook),兩句逐字比
+    const btnText = (d, w) => d.key === "$base" ? (w === "base" && dT("sp.btn") === wT("pfNav") && dT("po.add") === wT("poAdd"))
+      : d.key === "$go" ? (w === "pfStart" && dT("tr.start") === wT("pfStart")) : !!dT(d.key) && dT(d.key) === wT(w);
+    const noteOk = (d, w) => d === "$fail" ? w === "fail" && !!dT("cx.failShort") && dT("cx.failShort") === wT("pfConnectFailedShort") && dT("cx.failStopped").indexOf(dT("cx.failShort")) === 0 && dT("cx.failStopped") === wT("pfConnectFailedShort") + "，" + wT("pfVenueGoFix")
+      : d === "$off" ? w === "lock" : d === "$go" ? w === "onBook" && !!dT("tr.startOnBook") && dT("tr.startOnBook") === wT("pfStartOnBook") : !!d && !!w && dT(d) === wT(w);
+    const bad = [];
+    dk.filter((k) => k in W).forEach((k) => {
+      const d = D[k], w = W[k], db = d.btn;
+      const cells = {
+        btn: !!db === !!w.btn && (!db || btnText(db, w.btn)),
+        out: !db || (db.kind === "out") === !!w.out,
+        off: !db || !!db.off === !!w.off,
+        act: !db || (!!db.act) === (!!w.act),
+        mark: !!d.mark === !!w.mark,
+        word: !d.word === !w.word && (!d.word || dT(d.word) === wT(w.word)),
+        note: (!d.note && !w.note) || noteOk(d.note, w.note),
+      };
+      Object.keys(cells).forEach((c) => { if (!cells[c] && !CELL_EXEMPT[k + "." + c]) bad.push(k + "." + c + " 電腦版 " + JSON.stringify(d) + " 網頁 " + JSON.stringify(w)); });
+    });
+    ok("策略頁頭:每一態的主鈕(有無／填色描邊／停用／動作)、記號、狀態詞、原因句兩邊同一份(zh 原文逐字)", bad.length === 0, bad.join(";"));
+    ok("策略頁頭:start 態帳本上還有部位的原因句兩邊同一句(電腦版 tr.startOnBook、網頁 pfStartOnBook,zh 逐字)", D.start && D.start.note === "$go" && W.start && W.start.note === "onBook"
+      && !!dT("tr.startOnBook") && dT("tr.startOnBook") === wT("pfStartOnBook"), dT("tr.startOnBook") + " vs " + wT("pfStartOnBook"));
+    ok("策略頁頭:記號同一句(電腦版 po.live、網頁 poLive)", !!dT("po.live") && dT("po.live") === wT("poLive"), dT("po.live") + " vs " + wT("poLive"));
+    // 判準層的豁免(表上看不到,驗兩邊的原文還是那樣)
+    const spv = (() => { const i = hoSrc.length ? fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "portfolio.js"), "utf8") : ""; const a = i.indexOf("function spView("); return a < 0 ? "" : i.slice(a, i.indexOf("\nfunction ", a + 1)); })();
+    ok("策略頁頭豁免 1 還成立:串接失敗兩邊都落 fail,但判準不同——網頁是 pfKeyRejected 或「綁著、pfExecState 說 noaccount」(下單程式在不在跑都算);電腦版是 trFailStopped(讀帳失敗或金鑰被拒,而且下單程式沒在跑)。下單程式還在跑時電腦版留在原本那一態(在跑照出記號),說明行改講「串接失敗」＋到自動下單頁,不擋鈕——對帳器還在下單時把頁首換成停用的鈕,等於藏起它在跑",
+      /if \(pfKeyRejected\(\)\) return "fail";/.test(web) && /if \(pfVenueIds\(\)\.length > 0 && pfExecState\(\) === "noaccount"\) return "fail";/.test(web) && /const failStop = hasAcct && trFailStopped\(state, r\);/.test(spv) && /hasAcct && !failStop && \["start", "acct", "off", "running"\]/.test(spv));
+    ok("策略頁頭豁免還成立:fail.note 兩邊出口不同(電腦版到「設定」、網頁到策略組合),開頭「串接失敗」同字", D.fail && D.fail.note === "$fail" && W.fail && W.fail.note === "fail" && dT("cx.failShort") === wT("pfConnectFailedShort")
+      && dT("cx.failStopped") !== wT("pfConnectFailedShort") + "，" + wT("pfVenueGoFix"), CELL_EXEMPT["fail.note"]);
+    ok("策略頁頭豁免 2 還成立:網頁的連接中多認「串接中且沒卡住」(真實交易所要 agent 現場建 order_／account_,常超過 3 分鐘);電腦版只認自己的旗標",
+      /return pfWaitingVenues\(\)\.some\(function \(id\) \{ return !pfWaitStuck\(id, now\); \}\);/.test(web) && /connecting: spCxOn\(S, now\)/.test(spv));
+    ok("策略頁頭豁免 4 還成立:網頁沒有雲朵 icon 鈕(單主機,沒有送上雲端);電腦版那顆不在 SP_HEAD 裡、埋點 sp_cloud_icon 只有電腦版送",
+      !/sp_cloud_icon/.test(web) && /trackFeature\("sp_cloud_icon"\)/.test(hoSrc) && !/sp_cloud_icon/.test(JSON.stringify(D)));
+    ok("策略頁頭豁免 5 還成立:存金額的事件網頁是 trade_amounts_saved 帶 source,電腦版是 portfolio_save／sp_amt_saved 不帶屬性(埋點事件名與屬性不比,規則三)",
+      /gaEvent\("trade_amounts_saved", \{ source: /.test(web));
+  } }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

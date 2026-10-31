@@ -34,6 +34,44 @@ function hoFreeName(id, taken) {
   for (let k = 2; k < 10000; k++) { const sfx = "_" + k, n = id.slice(0, 64 - sfx.length) + sfx; if (!taken(n)) return n; }
   return null;
 }
+/* 策略頁頭的動作槽(spec strategy-page-autotrade §4):「狀態 → 鈕態」常數表,web 工作頁照同一張表做(cross-surface-parity 規則三)。
+   btn = 主鈕 { key, kind: 填色 fill／描邊 out, act, off: 真 disabled }:key "$base" = 看市場(加密、台指期「自動下單」,台股「加到策略組合」),
+   "$go" = 自動下單頁 #tr-go 同一個鈕字(trGoView:啟動下單／確認帳戶…);word = 鈕旁 ≤6 字的狀態詞;note = 說明下一行的整句原因;
+   mark = 只放「自動下單中・模擬／真錢」記號。態的名字與 web 工作頁 workspace.html 的 SP_HEAD 同一份(tests/check_web_desktop_parity.js 逐態比對)。act:amt 開金額框、pick 到選擇策略框、cx 開連接框、go 走 trGoClick、route 〔儲存〕直送、po 到策略組合、pres 統一的〔繼續〕 */
+const SP_HEAD = {
+  none: { btn: null },
+  us: { btn: null, word: "tr.mkt.noAuto" },
+  unread: { btn: { key: "$base", kind: "fill", act: null, off: true } },
+  fail: { btn: { key: "$base", kind: "fill", act: null, off: true }, note: "$fail" },
+  locked: { btn: { key: "$base", kind: "fill", act: "pick" } },
+  add: { btn: { key: "$base", kind: "fill", act: "amt" } },
+  setup: { btn: { key: "cap.continue", kind: "fill", act: "pres" }, word: "cap.pending" },
+  setupWait: { btn: null, word: "cap.pending" },
+  connecting: { btn: { key: "sp.connecting", kind: "fill", act: null, off: true } },
+  noAcct: { btn: { key: "sp.cx", kind: "fill", act: "cx" }, word: "sp.noAcct" },
+  twNoAcct: { btn: { key: "po.addGo", kind: "out", act: "po" } },
+  unsaved: { btn: { key: "po.addGo", kind: "out", act: "po" }, note: "sp.unsaved" },
+  route: { btn: { key: "tr.save", kind: "fill", act: "route" }, note: "tr.routeSave" },
+  off: { btn: { key: "$go", kind: "fill", act: null, off: true }, note: "$off" },
+  running: { btn: null, mark: true },
+  acct: { btn: { key: "tr.acct.btn", kind: "fill", act: "go" } },
+  start: { btn: { key: "$go", kind: "fill", act: "go" }, note: "$go" },
+};
+/* §4 的優先序(同時命中取前者):沒回測／Type B → 美股 → 讀不到 → 金鑰被拒(fail)→ 鎖住 → 沒配(含統一開通中沒配)→ 統一開通中已配 → 連接中 → 讀帳失敗(fail)→
+   沒接帳戶 → 有帳戶沒路由 → 綁的那家下不了 → 在跑 → 已連接・尚未啟動／暫停中。重綁後 halted＋路由空落「沒路由」(HALT 那列要路由齊);
+   setup＋路由空落統一那列(〔繼續〕才是出口)。x 全是算好的值(portfolio.js spCtx),這裡不碰 DOM、不讀全域 */
+function spHead(x) {
+  const st = x.noBt || x.typeB ? "none" : x.market === "us" ? "us" : x.unread ? "unread" : x.failKey ? "fail" : x.locked && !x.configured ? "locked"
+    : !x.configured ? "add" : x.setup ? (x.presContinue ? "setup" : "setupWait") : x.connecting ? "connecting" : x.failRead ? "fail"
+    : !x.hasAcct ? (x.market === "tw" ? "twNoAcct" : "noAcct") : x.routeDirty ? (x.unsaved ? "unsaved" : "route")
+    : x.zvOff ? "off" : x.firing ? "running" : x.goKey === "tr.acct.btn" ? "acct" : "start";
+  const d = SP_HEAD[st], b = d.btn ? Object.assign({}, d.btn) : null;
+  if (b && b.key === "$base") b.key = x.market === "tw" ? "po.add" : "sp.btn";
+  if (b && b.key === "$go") b.key = x.goKey || "tr.start";
+  if (b && (st === "start" || st === "acct") && x.goOff) b.off = true;   // 指令通道不通(同 #tr-go 的 usable)
+  const note = d.note === "$fail" ? x.failNote || null : d.note === "$off" ? x.offNote || null : d.note === "$go" ? x.goNote || null : d.note ? { key: d.note } : null;
+  return { st, btn: b, word: d.word || null, note, mark: !!d.mark };
+}
 /* ── 純邏輯到此 ── */
 
 /* Type B(警示、選股、網格…)沒有回測:搬過去之後是「確認它跑得起來」(會下單的不試跑、只檢查),確認框與送出去的那句都不提回測(e2e 0.1.8:框寫「重跑一次回測」、
@@ -72,21 +110,35 @@ function hoPaint() {
   const cloud = ENV.cur === "cloud";
   const B = cloud ? RPC : RP, dir = cloud ? "down" : "up";
   const show = HO.on && !!B.name && HO_ID_RE.test(B.name) && hoHasCode(B.data) && (!cloud || hoCloudLive());
-  // 「加到策略組合」(renderer/portfolio.js poAddBtn)跟這顆同一排、不受 cloudHandoff 旗標管
-  const po = typeof poAddBtn === "function" ? poAddBtn(cloud) : null;
+  // 策略頁頭的主鈕／狀態詞／記號(renderer/portfolio.js spView,spec strategy-page-autotrade §4)跟這顆同一排、不受 cloudHandoff 旗標管
+  const sv = typeof spView === "function" ? spView(cloud) : null;
   // 時光機裡、還原後重跑中不畫:作用在現在那份檔,不是正在看的那一版 / 還沒跑完的那一版(renderer/versions.js)
   const verHide = typeof verHidesAct === "function" && verHidesAct();
-  act.hidden = !(show || po) || verHide; act.textContent = "";
-  if (act.hidden) return;
+  const has = show || !!(sv && (sv.btn || sv.word || sv.mark));
+  // 重畫時焦點留在原來那顆(同一個 id 就地換字);那顆不在了交給策略名,不掉到 BODY。#rp-go／#rp-ho 節點沿用:確認框關掉要還焦點給它
+  const had = act.contains(document.activeElement) ? document.activeElement.id : null, ho0 = $("rp-ho");
+  const keep = { go: $("rp-go"), ho: ho0 && ho0.dataset.dir === dir ? ho0 : null };   // 換了視角(雲朵 icon ↔「拉回」文字鈕)就重建,不沿用另一種的節點
+  act.hidden = !has || verHide; act.textContent = "";
+  if (typeof spPaintNote === "function") spPaintNote(act.hidden ? null : sv && sv.note);
+  if (act.hidden) { if (had) $("rp-name").focus(); return; }
+  if (sv && typeof spPaintAct === "function") spPaintAct(act, sv, keep.go);
   if (show) {
-    const b = document.createElement("button"); b.type = "button"; b.className = "btn-out has-ic"; b.id = "rp-ho"; b.dataset.dir = dir;
-    const l = document.createElement("span"); l.textContent = cloud ? t("ho.down.btn") : t("ho.up.btn"); b.append(hoIcon(dir), l);
-    if (cloud) { const full = t("ho.down.aria") + (LANG === "zh" ? "：" : ": ") + B.name; b.title = full; b.setAttribute("aria-label", full); }
-    const id = B.name;
-    b.addEventListener("click", () => hoAsk(dir, id, b));
-    act.appendChild(b); hoBusy();
+    // 這台電腦這邊是無底的雲朵 icon 鈕(spec §4 icon 鈕:只有「送上雲端」一態),tooltip 跟 aria-label 同字;雲端那邊的「拉回這台電腦」維持文字鈕
+    const b = keep.ho || document.createElement("button"); b.type = "button"; b.id = "rp-ho"; b.dataset.dir = dir; b.dataset.id = B.name; b.textContent = "";
+    if (!keep.ho) b.addEventListener("click", () => { if (b.dataset.dir === "up") trackFeature("sp_cloud_icon"); hoAsk(b.dataset.dir, b.dataset.id, b); });
+    if (cloud) {
+      b.className = "btn-out has-ic"; const l = document.createElement("span"); l.textContent = t("ho.down.btn"); b.append(hoIcon(dir), l);
+      const full = t("ho.down.aria") + (LANG === "zh" ? "：" : ": ") + B.name; b.title = full; b.setAttribute("aria-label", full); b.removeAttribute("aria-describedby");
+      act.appendChild(b);
+    } else {
+      b.className = "rp-ic"; b.title = ""; b.setAttribute("aria-label", t("ho.up.btn")); b.setAttribute("aria-describedby", "rp-ho-tip"); b.appendChild(hoIcon(dir));
+      const w = document.createElement("span"); w.className = "rp-icw";
+      const tip = document.createElement("span"); tip.className = "tip"; tip.id = "rp-ho-tip"; tip.setAttribute("role", "tooltip"); tip.textContent = t("ho.up.btn");
+      w.append(b, tip); act.appendChild(w);
+    }
+    hoBusy();
   }
-  if (po) act.appendChild(po);
+  if (had) { const n = $(had); if (n && act.contains(n) && !n.disabled) n.focus(); else $("rp-name").focus(); }
 }
 
 /* 還在等著送上雲端的那一支(雲端中欄的「準備好了」卡與它的 gate 都要它)。回 id 或 null。

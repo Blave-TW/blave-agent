@@ -148,7 +148,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
   vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
     "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTwLotsText", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
     "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
-    "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trAwaitKeys", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trWaitStranded", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
+    "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trCfOpen", "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trAwaitKeys", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trWaitStranded", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
   const V = { credentials: true, pair: true, order: true, account: true };
   const bag = (venues, extra) => ({ env: "local", listLoaded: true, picked: null, sent: null, save: null, edits: { btc: 600 }, bad: {}, raw: {}, sig: {}, ct: { edits: {}, basis: {}, sent: null }, just: null,
     list: [{ name: "btc", displayName: "BTC", hasBacktest: true, symbol: "BTCUSDT" }, { name: "tw", displayName: "TW", hasBacktest: true, symbol: "2330" }],
@@ -157,7 +157,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
       account: { read_at: Math.floor(Date.now() / 1000), venues: Object.keys(venues).length ? { binance: { ok: true, equity: 10000, currency: "USDT", positions: { BTCUSDT: { side: "long", size: 400, entry_price: 60000, unrealized_pnl: 12.5, margin: 40 } } } } : {} } }, extra || {}) } });
   ctx.TR = bag({}); ctx.BOX = null; ctx.DIRECT = 0;
   const amt = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx));
-  vm.runInContext("trSaveAmounts(trNames(), trBase(), null)", ctx);
+  vm.runInContext("trCfOpen({ names: trNames(), stored: trBase(), opener: null })", ctx);
   // 0.1.27 Wei:存了有東西會變就一律出框(推翻 10-13「沒連交易所不跳框」);沒在下單 → 「儲存金額」
   ok("#15 沒連交易所:配置分頁畫金額表(有輸入框);按儲存開「儲存金額」框、沒有記號", amt.some((n) => /amt-in/.test(n.className)) && !!ctx.BOX && ctx.BOX.title === "tr.cf.title" && !ctx.BOX.mark && ctx.DIRECT === 0, J({ box: !!ctx.BOX, direct: ctx.DIRECT }));
   const sig0 = flat(vm.runInContext("poSigTable(TR.st.report, TR.st.report.config.amounts, TR.st.report.states, 'cfg')", ctx));
@@ -211,7 +211,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     ctx.TR = keepTR;
   }
   ctx.TR = bag({ binance: V }); ctx.BOX = null; ctx.DIRECT = 0;
-  vm.runInContext("TR = this.TR; trSaveAmounts(trNames(), trBase(), null)", ctx);
+  vm.runInContext("TR = this.TR; trCfOpen({ names: trNames(), stored: trBase(), opener: null })", ctx);
   ok("#15 連上交易所、下單程式沒在跑:按下去不會送單 → 「儲存金額」", !!ctx.BOX && ctx.BOX.title === "tr.cf.title" && ctx.DIRECT === 0, J(ctx.BOX && ctx.BOX.title));
   // A 案(autotrade-bridge-mockup):自動下單 › 部位 = 唯讀配置對照帳上,同一個列函式 poSigTable(…, "trade")
   const sig = flat(vm.runInContext("poSigTable(TR.st.report, TR.st.report.config.amounts, TR.st.report.states, 'trade')", ctx));
@@ -293,7 +293,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     ctx.TR.edits = { tw: 0 }; ctx.BOX = null; const keepEx = vm.runInContext("trExecState", ctx);
     // 台股開盤中(不照牆上時鐘):休市時那一列標「休市中，開盤後下單」,見 check_shell_a1_save F15
     ctx.__keepTw = vm.runInContext("trTwSessionOpen", ctx);
-    try { vm.runInContext('trExecState = () => "running"; trTwSessionOpen = () => true; trSaveAmounts(trNames(), trBase(), null)', ctx); } finally { ctx.__keep = keepEx; vm.runInContext("trExecState = __keep; trTwSessionOpen = __keepTw;", ctx); }
+    try { vm.runInContext('trExecState = () => "running"; trTwSessionOpen = () => true; trCfOpen({ names: trNames(), stored: trBase(), opener: null })', ctx); } finally { ctx.__keep = keepEx; vm.runInContext("trExecState = __keep; trTwSessionOpen = __keepTw;", ctx); }
     // 0.1.27 存金額框改列下一輪要送的單(A1):帳本那 2330@spot 要對得上,列「賣出 2330」整筆,取代「平倉」標記
     const cfRows = ctx.BOX && ctx.BOX.extra ? flat(ctx.BOX.extra).filter((n) => /^cf-row( |$)/.test(n.className)).map((n) => n.textContent) : [];
     ok("P2-1 (b) 帳本有 2330@spot、金額改 0:trStratHeld 是 true,存金額框列賣出 2330 帳上那 100,000", sh === true && J(cfRows) === J(["tr.cf.sell2330100,000 TWD"]), J([sh, cfRows]));
@@ -637,9 +637,9 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     && (ctx.trReport = () => ({ can_paper_twstock: false }), !run('trTradesSym("paper", "2330")') && run('trPaperTw("tsmc")'))
     && (ctx.trReport = () => null, run('trPaperTw("tsmc")'))); }
 ok("① 台指期報價兩個視角都問(統一、模擬交易在這台電腦也下台指期)", /if \(txf\) trTxfWant\(\);/.test(src) && !/if \(txf && cloud\) trTxfWant/.test(src));
-ok("③ 套用金額走同一道:trSaveAmounts 擋模擬交易台股往上加(cf-block、okDisabled),配置分頁的輸入格也是 trPaperTw",
-  /const paperTw = Object\.keys\(sending\)\.filter\(\(n\) => trPaperTw\(n\) && \(Number\(sending\[n\]\) \|\| 0\) > old\(n\)\);/.test(src) && /const blocked = badStored\.length > 0 \|\| paperTw\.length > 0;/.test(src) && /const twdRow = trPaperTw\(n\);/.test(src)
-  && /mgApply[\s\S]*trSaveAmounts\(trNames\(\), trBase\(\), opener, \{ source: "optimize"/.test(psrc));
+ok("③ 套用金額走同一道:trCfOpen 擋模擬交易台股往上加(cf-block、okDisabled),配置分頁的輸入格也是 trPaperTw",
+  /const paperTw = Object\.keys\(sending\)\.filter\(\(n\) => trPaperTw\(n\) && \(Number\(sending\[n\]\) \|\| 0\) > old\(n\)\);/.test(src) && /\n  blocked = badStored\.length > 0 \|\| paperTw\.length > 0;/.test(src) && /const twdRow = trPaperTw\(n\);/.test(src)
+  && /mgApply[\s\S]*trCfOpen\(\{ names: trNames\(\), stored: trBase\(\), opener, source: "optimize"/.test(psrc));
 { const ctx = vm.createContext({ t: (k) => k }); vm.runInContext(cutF(src, "trCloseTag"), ctx);
   ok("確認框「平倉」:帳上沒有這支的部位(trStratHeld false)不標;讀不到(null)照舊標;兩個確認框都帶",
     vm.runInContext("trCloseTag(5, 0, true, false)", ctx) === null && vm.runInContext("trCloseTag(5, 0, true, null)", ctx) === "tr.cfTagClose" && vm.runInContext("trCloseTag(5, 0, true, true)", ctx) === "tr.cfTagClose"

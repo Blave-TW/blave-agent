@@ -1,9 +1,12 @@
 // 「加到策略組合」＋存金額確認框(spec tw-holdings-a1-save-preview §1-3、§2.2、§5、§7;canon design-system › 確認 modal)。
-// 從 trade.js／portfolio.js 原文切出真的 trSaveAmounts／trCfRows／poAdd 跑在假 DOM 上,主機那一端是記錄 tradeSend 的假 api。不起 Electron。
+// 從 trade.js／portfolio.js 原文切出真的 trCfOpen／trCfRows／poAdd 跑在假 DOM 上,主機那一端是記錄 tradeSend 的假 api。不起 Electron。
 //   ① 出框判準與框的兩種樣子:會送單(在跑)×不送單 × 有無同檔重疊 × 預覽到／沒到;暫停中一律「儲存金額」;什麼都沒變才直接存
 //   ② F3 既有分支各一條:模擬交易台股往上加擋、雲端 hidden／badStored、換合約列(合約平倉標＋名目＋兩步存)、口數留空、匯率舊、暫停句、移出列
 //   ③ §5 邊界:CODE_CHANGED、BUSY、逾時、signals_frozen、舊主機、只改金額、移出
 //   ④ A1 鈕:沒回測不出、不在組合填色、在組合描邊;按了只建草稿、不寫設定,沒有最新預覽才送 stats_refresh;草稿存成功記 po_add_saved
+//   ⑤ 策略頁頭的輸入格框(trCfOpen o.input,spec strategy-page-autotrade §5):只送「已存 + 這一支」、別支的草稿不跟著送也不被清;
+//      主鈕停用四條件;失敗重開同一個框、原因在框底;Enter 只在不送單那一型;「有帳戶、沒路由」的〔儲存〕直送整份已存的、不清草稿
+//      (A1 鈕本身 0.1.39 起由頁頭主鈕取代,鈕態在 check_shell_sp_autotrade.js)
 // 跑法:node tests/check_shell_a1_save.js
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const R = path.join(__dirname, "..", "shell", "renderer");
@@ -23,20 +26,20 @@ const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k
 
 const sends = [], feats = [];
 let GEN = 0;
-const DOM = { "del-title": node("h6"), "del-ok": node("button"), "del-mark": node("span"), "del-scrim": node("div"), "po-cfg": { querySelectorAll: () => [] }, "po-h": node("h5"), "rp": node("div") };
+const DOM = { "del-title": node("h6"), "del-ok": node("button"), "del-mark": node("span"), "del-scrim": node("div"), "cx-scrim": Object.assign(node("div"), { hidden: true }), "po-cfg": { querySelectorAll: () => [] }, "po-h": node("h5"), "rp": node("div") };
 const ctx = vm.createContext({ document: { createElement: node, createElementNS: (_ns, tag) => node(tag), createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, Promise, isFinite, console, setTimeout, clearTimeout,
   $: (id) => DOM[id] || { focus() {}, hidden: false }, t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", BINANCE: "binance", CX_VENUES: { binance: { label: "Binance" } },
   srSay() {}, trackFeature(n) { feats.push(n); }, trPollSoon() {}, envPaintLocalDots() {}, ENV: { sig: {}, cur: "local" }, psClose() {}, psRefocus() {}, mgSetMembers() {}, poPaintCfg() {},
   confirmBox(o) { ctx.BOX = o; ctx.delCtx = { box: o }; DOM["del-scrim"].hidden = false; }, trCloudBox: (o) => o, TR_STALE_MS: 600000, ENV_JUST_MS: 300000, delCtx: null });
-vm.runInContext("function trUnit() { return 'USDT'; } function trCcy() { return 'USDT'; } function trEquity() { return 10000; }", ctx);
+vm.runInContext("function trUnit() { return 'USDT'; } function trCcy() { return 'USDT'; } function trEquity() { return 10000; } function trSendError(res) { return 'rejected:' + (res && res.error); } function trKindOf() { return 'rejected'; }", ctx);
 const pure = block("/* ── 純邏輯(", "/* ── 純邏輯到此") + block("/* ── 視角純邏輯(", "/* ── 視角純邏輯到此");
 const consts = (src.match(/^const TR_CF = [^\n]*\n/m) || [""])[0].replace(/^const /, "var ");
 vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "var trTipSeq = 0, psMode = 'amounts', psToAmt = false;\n" + ["trEl", "trFmt", "trFmt2", "trFmtPrice", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
   "trListNames", "trDisplay", "trPickOff", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trTwNamesWant", "trTwName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty",
   "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
-  "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trLivePositions", "trBook", "poPartStates", "trTxfPrice", "trGateSide", "trTradesSym", "trSentBeforeOf", "trWith", "trIsPaper", "trCfPaperOnly",
-  "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfFlat", "trCfLongOnly", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trManualPart", "trPosDetail", "trTwClosedKeys"].map((n) => cutF(n)).join("\n")
-  + "\n" + ["poAddBtn", "poAdd"].map((n) => cutF(n, psrc)).join("\n"), ctx);
+  "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trCfOpen", "trLivePositions", "trBook", "poPartStates", "trTxfPrice", "trGateSide", "trTradesSym", "trSentBeforeOf", "trWith", "trIsPaper", "trCfPaperOnly",
+  "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfFlat", "trCfLongOnly", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trCtErrKey", "trManualPart", "trPosDetail", "trTwClosedKeys"].map((n) => cutF(n)).join("\n")
+  + "\n" + cutF("trCfField") + "\n" + ["poAdd"].map((n) => cutF(n, psrc)).join("\n"), ctx);
 
 // 台股時段照牆上時鐘會讓結果隨星期幾變:預設開盤,休市那組(F15)自己切 TW_OPEN = false
 vm.runInContext("var TW_OPEN = true, trTwSessionOpenReal = trTwSessionOpen; trTwSessionOpen = function (ms, day) { return TW_OPEN; };", ctx);
@@ -71,7 +74,7 @@ function bag(o) {
 const tick = async () => { for (let i = 0; i < 6; i++) await new Promise((r) => setImmediate(r)); };
 // 開框;回 { title, ok, mark, okDisabled, rows: [文字…], notes: [{cls,text}], direct }
 function open(S) {
-  vm.runInContext("trSaveAmounts(trNames(), trBase(), null)", ctx);
+  vm.runInContext("trCfOpen({ names: trNames(), stored: trBase(), opener: null })", ctx);
   const b = ctx.BOX; if (!b) return { direct: true };
   const all = flat(b.extra), rows = all.filter((n) => /^cf-row( |$)/.test(n.className)).map((n) => n.textContent);
   const f = { title: b.title, ok: b.ok, mark: b.mark, okDisabled: !!b.okDisabled, rows, cap: (all.find((n) => n.className === "cf-sub") || {}).textContent || "", wait: all.some((n) => n.className === "cf-wait"),
@@ -480,25 +483,14 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     vm.runInContext(cutF("trUniverse"), ctx); const u = vm.runInContext("trUniverse(" + J(fx.code) + ")", ctx);
     ok("UNIVERSE:註解裡的代號或 ] 不多算、不截斷,引號裡的 # 照收(同 lib)", J(u) === J(fx.universe), J(u)); }
   ok("R3 原 → 新列的 held 只看帳上(這家下不下得了由 covered 在列單時判)", /held: !!o\.mine\[sym\], kept: /.test(cutF("trCfRows")) && !/held: o\.covered/.test(cutF("trCfRows")));
-  ok("死碼:trCfStates 裡沒有 keyOf、框狀態沒有 changed", !/keyOf/.test(cutF("trCfStates")) && !/changed: false/.test(cutF("trSaveAmounts")));
+  ok("死碼:trCfStates 裡沒有 keyOf、框狀態沒有 changed", !/keyOf/.test(cutF("trCfStates")) && !/changed: false/.test(cutF("trCfOpen")));
 
   // ── 單位換算
   { const q = (s, m, p) => vm.runInContext(`trCfQty(${J(s)}, ${m}, ${p})`, ctx);
     ok("數量:台股不足 1 股捨去;加密 4 位有效;沒價格回 null(不湊數)", q("2330@spot", 1999, 1000).n === 1 && q("2330", 999, 1000).n === 0 && q("BTCUSDT", 123.4, 50000).text === "0.002468" && q("BTCUSDT", 5, null) === null,
       J([q("2330@spot", 1999, 1000), q("BTCUSDT", 123.4, 50000)])); }
 
-  // ── ④ A1 鈕
-  { const S = bag({ edits: {} }); ctx.RP = { name: "n5", data: { code: "x", stats: {} } }; ctx.RPC = ctx.RP;
-    let b = vm.runInContext("poAddBtn(false)", ctx);
-    ok("④ 回測過、不在組合:填色「加到策略組合」", !!b && b.className === "btn-fill" && b.text === "po.add" && b.id === "rp-po", J(b && { c: b.className, t: b.text }));
-    ctx.RP = { name: "tw", data: { code: "x", stats: {} } }; b = vm.runInContext("poAddBtn(false)", ctx);
-    ok("④ 已在組合:描邊「到策略組合」", !!b && b.className === "btn-out" && b.text === "po.addGo");
-    S.listLoaded = false; ctx.RP = { name: "n5", data: { code: "x", stats: {} } };
-    ok("④ 策略清單還沒載入(沒開過策略組合)也照出:看這一頁讀到的 stats", !!vm.runInContext("poAddBtn(false)", ctx)); S.listLoaded = true;
-    ctx.RP = { name: "nobt", data: { code: "x" } };
-    ok("④ 沒回測過(NO_STATS):鈕不出現", vm.runInContext("poAddBtn(false)", ctx) === null);
-    ctx.xpIsTypeB = () => true; ctx.RP = { name: "n5", data: { code: "x", stats: {} } };
-    ok("④ Type B:鈕不出現", vm.runInContext("poAddBtn(false)", ctx) === null); delete ctx.xpIsTypeB; }
+  // ── ④ A1 鈕(按了只建草稿;0.1.39 起是金額框腳的「到策略組合」)
   { const S = bag({ edits: {}, noPv: true }); ctx.poOpen = async () => { S.view = "po"; };
     await vm.runInContext("poAdd(TR, 'n5', false)", ctx); await tick();
     ok("④ 按 A1:草稿勾進(picked 多 n5)、金額格空著、不送 amounts;沒有預覽 → 只對這支送 stats_refresh;記 po_add",
@@ -514,6 +506,54 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
   { const S = bag({ edits: {} }); ctx.poOpen = async () => { S.view = "po"; };
     await vm.runInContext("poAdd(TR, 'tw', true)", ctx);
     ok("④ 描邊那顆:只跳過去(不改草稿),記 po_add_go", S.picked === null && feats.includes("po_add_go"), J(feats)); }
+
+  // ── ⑤ 策略頁頭的輸入格框(trCfOpen o.input)
+  { // 開框:回 { box, inp(輸入格節點), type(v) 打字 }
+    const openIn = (name, o) => {
+      vm.runInContext("trCfOpen(" + J(Object.assign({ from: "sp", input: Object.assign({ name, initial: "", kind: "amount" }, (o && o.input) || {}) }, o && o.extra)) .replace(/\}$/, ", stored: trBase(), opener: null })"), ctx);
+      const b = ctx.BOX; if (!b) return null;
+      const inp = flat(b.extra).find((n) => n.id === "cf-in");
+      return { box: b, inp, type: (v) => { inp.value = v; inp.on.input(); }, rows: () => flat(b.extra).filter((n) => /^cf-row( |$)/.test(n.className)).map((n) => n.textContent),
+        notes: () => flat(b.extra).filter((n) => /^cf-(note|block)$/.test(n.className)).map((n) => n.className + ":" + n.textContent), ok: () => DOM["del-ok"].disabled };
+    };
+    // 策略組合頁同時有別支的草稿:btc 改成 900 還沒存、picker 新勾了 tw2(金額 0)、換合約草稿一筆
+    const S = bag({ edits: { btc: 900 }, picked: ["btc", "tw", "tw2"], list: [{ name: "tw2", displayName: "TW2", hasBacktest: true, symbol: "2603", market: "spot", twd: true, twdAll: true }] });
+    S.ct.edits = { other: "MXF" };
+    const f = openIn("n5", { input: { tw: true }, extra: { track: "sp_amt_saved" } });
+    ok("⑤ 有輸入格:焦點給輸入格(focus=cf-in),框照開(不直存),一開主鈕停用(空白)", !!f && f.box.focus === "cf-in" && !!f.inp && f.box.okDisabled === true, J(f && { focus: f.box.focus, dis: f.box.okDisabled }));
+    f.type("0"); const off0 = f.ok(); f.type("abc"); const offBad = f.ok(); f.type("500"); const offTiny = f.ok();
+    ok("⑤ 主鈕停用:0、看不懂的字、台股每一腳都換算不到 1 股(500 ÷ 2 腳 → 2330 250／1000、2454 250／1300 都 0 股)", off0 && offBad && offTiny, J({ off0, offBad, offTiny }));
+    f.type("200,000");
+    ok("⑤ 打字即時重算:200,000 → 兩腳都買得到,主鈕可按;表列 2330／2454(只有這一支的變動)", f.ok() === false && f.rows().some((x) => /^2330/.test(x)) && f.rows().some((x) => /^2454/.test(x)) && !f.rows().some((x) => /BTC/.test(x)), J({ dis: f.ok(), rows: f.rows() }));
+    DOM["del-scrim"].hidden = true; await f.box.onOk(); await tick();
+    const sent = sends.filter((x) => x.cmd === "amounts").map((x) => x.args.amounts);
+    ok("⑤ 送出的是「已存的整份 + 這一支」:btc 照存的 500(不是草稿 900)、tw2 沒跟著送、n5 200,000", J(sent) === J([{ btc: 500, tw: 100000, n5: 200000 }]), J(sent));
+    ok("⑤ 存成功只清這一支:btc 草稿 900、picker 勾選、別支換合約草稿都還在;記 sp_amt_saved 不記 po_add_saved",
+      S.edits.btc === 900 && S.picked && S.picked.has("tw2") && S.ct.edits.other === "MXF" && !("n5" in S.edits) && feats.includes("sp_amt_saved") && !feats.includes("po_add_saved") && feats.includes("portfolio_save"), J({ e: S.edits, p: S.picked && [...S.picked], ct: S.ct.edits, feats })); }
+  { const S = bag({});
+    S.api.tradeSend = async (cmd, args) => { sends.push({ cmd, args }); return cmd === "amounts" ? { ok: false, error: "ValueError: MARKET_VENUE: 「btc2」是台股策略,binance 是加密貨幣交易所、下不了" } : { ok: true }; };
+    vm.runInContext("trCfOpen({ from: 'sp', input: { name: 'btc', initial: '500', kind: 'amount', oneLeg: true }, stored: trBase(), opener: null, track: 'sp_amt_saved' })", ctx);
+    const b0 = ctx.BOX, inp0 = flat(b0.extra).find((n) => n.id === "cf-in"); inp0.value = "800"; inp0.on.input();
+    DOM["del-scrim"].hidden = true; await b0.onOk(); await tick();
+    const b1 = ctx.BOX, inp1 = b1 && flat(b1.extra).find((n) => n.id === "cf-in"), blocks = b1 ? flat(b1.extra).filter((n) => n.className === "cf-block").map((n) => n.textContent) : [];
+    ok("⑤ 從策略頁存失敗:同一個框重開(新的那一個)、輸入值留著 800、原因在框底 cf-block;S.save／S.saveErr 照寫", b1 && b1 !== b0 && inp1 && inp1.value === "800" && blocks.length === 1 && blocks[0] === S.saveErr && S.save === "failed" && !feats.includes("sp_amt_saved"),
+      J({ same: b1 === b0, v: inp1 && inp1.value, blocks, save: S.save, err: S.saveErr })); }
+  { bag({ firing: true }); vm.runInContext("trCfOpen({ from: 'sp', input: { name: 'btc', initial: '', kind: 'amount', oneLeg: true }, stored: trBase(), opener: null })", ctx);
+    const b = ctx.BOX, inp = flat(b.extra).find((n) => n.id === "cf-in"); inp.value = "1000"; inp.on.input();
+    let clicked = 0; DOM["del-ok"].click = () => { clicked++; }; DOM["del-ok"].disabled = false;
+    inp.on.keydown({ key: "Enter", preventDefault() {} });
+    ok("⑤ 在跑(儲存並下單型):Enter 不送", b.title === "tr.cf.titleFire" && clicked === 0, J({ t: b.title, clicked }));
+    bag({}); vm.runInContext("trCfOpen({ from: 'sp', input: { name: 'btc', initial: '', kind: 'amount', oneLeg: true }, stored: trBase(), opener: null })", ctx);
+    const b2 = ctx.BOX, inp2 = flat(b2.extra).find((n) => n.id === "cf-in"); inp2.value = "1000"; inp2.on.input();
+    inp2.on.keydown({ key: "Enter", preventDefault() {} });
+    ok("⑤ 不送單(儲存金額型)、主鈕可按:Enter = 按主鈕;單腳不出「原 → 新」表", b2.title === "tr.cf.title" && clicked === 1 && flat(b2.extra).filter((n) => /^cf-row( |$)/.test(n.className)).length === 0, J({ t: b2.title, clicked }));
+    delete DOM["del-ok"].click; }
+  { const S = bag({ edits: {}, picked: ["btc", "tw", "tw2"], list: [{ name: "tw2", displayName: "TW2", hasBacktest: true, symbol: "2603", market: "spot", twd: true, twdAll: true }] });
+    // 沒有 picker 草稿的那一種(前置已保證:策略頁那一態有草稿時不出〔儲存〕):直送整份已存的
+    S.picked = null; S.ct.edits = { other: "MXF" };
+    vm.runInContext("trCfOpen({ names: trNamesOf(null), stored: trBase(), opener: null, from: 'sp' })", ctx); await tick();
+    ok("⑤ 「有帳戶、沒路由」的〔儲存〕:沒變動沒 notes → 不開框直送,payload = 整份已存的;成功後換合約草稿不動", ctx.BOX === null && J(sends.filter((x) => x.cmd === "amounts").map((x) => x.args.amounts)) === J([{ btc: 500, tw: 100000 }]) && S.ct.edits.other === "MXF",
+      J({ box: !!ctx.BOX, sends, ct: S.ct.edits })); }
 
   // 0.1.28 排練:剛加入的策略訊號空手 → 框不能只剩標題與兩顆鈕(s9_save_dialog);「才會進場」只在真的會進場時講(稽核 usfix2 P2-1)
   { const flat0 = (extra) => pvA("ETHUSDT", Object.assign({ position: 0, close: 3000 }, extra || {}));
