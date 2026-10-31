@@ -22,11 +22,14 @@ if (!w) { console.log("FAIL  找不到 winPath"); process.exit(1); }
 eval(w[0]);
 t("win32:用 ; 接", mergePath(["C:\\a"], ["C:\\b"], ";") === "C:\\a;C:\\b");
 const E = { PATH: "C:\\WINDOWS\\system32;C:\\Users\\u\\.local\\bin", USERPROFILE: "C:\\Users\\u", APPDATA: "C:\\Users\\u\\AppData\\Roaming", LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local", ProgramFiles: "C:\\Program Files" };
-t("win32:process.env 的 PATH 在前、已知位置補在後(Claude 原生安裝器、npm 全域、WinGet Links、Git for Windows 兩種裝法)",
-  winPath(E) === "C:\\WINDOWS\\system32;C:\\Users\\u\\.local\\bin;C:\\Users\\u\\AppData\\Roaming\\npm;C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Links;C:\\Users\\u\\AppData\\Local\\Programs\\Git\\cmd;C:\\Program Files\\Git\\cmd");
+t("win32:process.env 的 PATH 在前、已知位置補在後(Claude 原生安裝器、npm 全域、WinGet Links、Codex 官方安裝器、Git for Windows 兩種裝法)",
+  winPath(E) === "C:\\WINDOWS\\system32;C:\\Users\\u\\.local\\bin;C:\\Users\\u\\AppData\\Roaming\\npm;C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Links;C:\\Users\\u\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin;C:\\Users\\u\\AppData\\Local\\Programs\\Git\\cmd;C:\\Program Files\\Git\\cmd");
 t("win32:WinGet 的捷徑資料夾在 known 裡(winget install Anthropic.ClaudeCode 裝完、Blave 沒重開也找得到);缺 LOCALAPPDATA 就不補",
   winPath({ PATH: "C:\\x", LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" }).split(";").includes("C:\\Users\\u\\AppData\\Local\\Microsoft\\WinGet\\Links")
   && !winPath({ PATH: "C:\\x", USERPROFILE: "C:\\Users\\u" }).includes("WinGet"));
+t("win32:Codex 官方 PowerShell 安裝器的 bin 資料夾在 known 裡(irm chatgpt.com/codex/install.ps1 | iex 裝完、Blave 沒重開也找得到);缺 LOCALAPPDATA 就不補",
+  winPath({ PATH: "C:\\x", LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" }).split(";").includes("C:\\Users\\u\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin")
+  && !winPath({ PATH: "C:\\x", USERPROFILE: "C:\\Users\\u" }).includes("OpenAI"));
 t("win32:環境變數叫 Path(Windows 常見的大小寫)也吃", winPath({ Path: "C:\\x", USERPROFILE: "C:\\Users\\u" }).startsWith("C:\\x;C:\\Users\\u\\.local\\bin"));
 t("win32:缺的環境變數那一項不補(不留相對路徑)", winPath({ PATH: "C:\\x" }) === "C:\\x" && winPath({ PATH: "C:\\x", APPDATA: "C:\\r" }) === "C:\\x;C:\\r\\npm");
 t("win32:PATH 空的也只剩已知位置、沒有空段", winPath({ USERPROFILE: "C:\\Users\\u" }) === "C:\\Users\\u\\.local\\bin");

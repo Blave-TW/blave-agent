@@ -40,13 +40,16 @@ const mergePath = (got, known, sep = path.delimiter) => got.concat(known.filter(
 /* Windows(純函式;tests/check_shell_login_path.js):GUI app 直接繼承登錄檔的使用者 PATH,不必開登入 shell。
    補的是已知安裝位置:Claude Code 原生安裝器(~\.local\bin)、npm 全域(%APPDATA%\npm,codex.cmd 在這)、WinGet 的捷徑資料夾
    (winget install Anthropic.ClaudeCode 把 claude.exe 連到這、再寫進使用者 PATH——Blave 開著時裝的,行程的 PATH 快照裡沒有)、
-   Git for Windows 的兩種裝法(Claude Code 的 Bash 工具靠它)。環境變數缺的那項會是相對路徑,不補。 */
+   Codex 官方 PowerShell 安裝器(chatgpt.com/codex/install.ps1)的可見 bin 資料夾(%LOCALAPPDATA%\Programs\OpenAI\Codex\bin,
+   同樣只寫進使用者 PATH、Blave 開著時裝的拿不到)、Git for Windows 的兩種裝法(Claude Code 的 Bash 工具靠它)。
+   環境變數缺的那項會是相對路徑,不補。 */
 function winPath(env) {
   const got = String(env.PATH || env.Path || "").split(";").map((s) => s.trim());
   const known = [
     path.win32.join(env.USERPROFILE || "", ".local", "bin"),
     path.win32.join(env.APPDATA || "", "npm"),
     path.win32.join(env.LOCALAPPDATA || "", "Microsoft", "WinGet", "Links"),
+    path.win32.join(env.LOCALAPPDATA || "", "Programs", "OpenAI", "Codex", "bin"),
     path.win32.join(env.LOCALAPPDATA || "", "Programs", "Git", "cmd"),
     path.win32.join(env.ProgramFiles || "", "Git", "cmd"),
   ].filter((d) => path.win32.isAbsolute(d));
