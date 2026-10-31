@@ -167,7 +167,10 @@ DENY = {
             "R`egister-ScheduledTask x", "sch`tasks /create /tn x"],
 }
 ALLOW = {
-    CRED: [r"Get-Content ..\credentials\rdp_password.txt", "cat ~/credentials/README", r"python lib\president_worker.py --once", r"Get-ChildItem ..\credentials",
+    CRED: [r"Get-Content ..\credentials\rdp_password.txt",
+           # the bare English word after a copy verb is not a credentials path (P2-4 narrowed)
+           'git commit -m "move credentials check"', "rsync -a --exclude credentials ./ blaveagent@1.2.3.4:/opt/x/",
+           'cp README.md tmp/credentials-notes.md', r"Copy-Item tmp\x.txt ..\credentials\notes.txt", "cat ~/credentials/README", r"python lib\president_worker.py --once", r"Get-ChildItem ..\credentials",
            r"Test-Path ..\credentials\capital_probe.json"],
     SECRET: [r"Get-Content lib\capital_vault.py", r"python lib\capital_vault.py", r"python strategies\x\strategy.py > tmp\x.log 2>&1",
              # reads with flags, two-letter search terms (P1-1)
@@ -268,8 +271,16 @@ t("⑤ a git in the cwd or on a UNC path is skipped",
   at.git_bash_path({"PATH": r"C:\w;\\srv\Git\cmd"}, has(r"C:\w\git.exe", r"C:\bin\bash.exe", r"\\srv\Git\cmd\git.exe",
                                                        r"\\srv\Git\bin\bash.exe"), cwd=r"C:\w") is None)
 t("⑤ nothing → none", at.git_bash_path({"PATH": r"C:\Windows\System32"}, has(), cwd="C:\\") is None)
-t("⑤ the pin: Git Bash → 0, none → 1",
-  at.powershell_tool_env({}, has(GB), cwd="C:\\") == "0" and at.powershell_tool_env({}, has(), cwd="C:\\") == "1")
+t("⑤ the pin: no Git Bash → 1", at.powershell_tool_env({}, has(), cwd="C:\\") == "1")
+t("⑤ the pin: Git Bash → not set (never 0: if the CLI disagreed it would have no shell at all)",
+  at.powershell_tool_env({}, has(GB), cwd="C:\\") is None)
+
+
+def _boom(_p):
+    raise OSError("unreadable")
+
+
+t("⑤ the pin: cannot tell → not set", at.powershell_tool_env({}, _boom, cwd="C:\\") is None)
 
 # ── KNOWN_GAPS (pinned so a fix shows up here) ──
 KNOWN_GAPS = {

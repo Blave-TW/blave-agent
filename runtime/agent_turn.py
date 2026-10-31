@@ -151,9 +151,14 @@ def git_bash_path(env, exists=os.path.exists, cwd=None):
 
 
 def powershell_tool_env(env, exists=os.path.exists, cwd=None):
-    """CLAUDE_CODE_USE_POWERSHELL_TOOL for a Windows turn, pinned instead of left to the CLI's remote flag:
-    Git Bash there → "0" (Bash only, as the cloud fleet has always run); none → "1" (PowerShell is the shell)."""
-    return "0" if git_bash_path(env, exists, cwd) else "1"
+    """CLAUDE_CODE_USE_POWERSHELL_TOOL for a Windows turn: "1" only when Git Bash is surely absent (PowerShell is then
+    the only shell); otherwise None = not set, the CLI keeps its own default. Never "0": if we saw Git Bash and the
+    CLI did not, "0" would leave it no shell and every turn would exit 1 (shell_tool_missing). Should the CLI's
+    remote flag turn PowerShell on beside Bash, every shell guard covers both."""
+    try:
+        return None if git_bash_path(env, exists, cwd) else "1"
+    except Exception:
+        return None
 
 
 # Edit(path) deny rules — hold in bypassPermissions and cover Write/NotebookEdit (SDK
@@ -1415,10 +1420,7 @@ CRED_BASH_DENY_RE = re.compile(
     r"\b(?:capital|president)_vault\.json\b|\b(?:capital|president)_pfx_key\b|\bpresident\.pfx\b"
     r"|\bcapital_stage\b|\bpresident_logs\b"
     r"|(?:credentials|creden~\d)[\\/]+[^\s;&|'\"`<>]*(?:[*?\[]|~\d|\.pfx\b)"
-    # the folder (or anything in it) after a copy / move / archive verb: `Copy-Item -Recurse ..\credentials x`, tar, zip
-    r"|\b(?:cp|copy|copy-item|cpi|xcopy|robocopy|rsync|scp|ditto|mv|move|move-item|mi|tar|zip|7z|7za|compress-archive)\b"
-    r"[^|;&\n]*?(?:^|[\s\\/'\"=(:,])(?:credentials|creden~\d)(?=$|[\s\\/'\"*?\[),;])",
-    re.IGNORECASE)
+    , re.IGNORECASE)
 CRED_BASH_DENY_REASON = (
     "Refused by the Blave runtime — the broker vaults, certificates, upload keys and the 統一 SDK logs "
     "under credentials/ are never read, copied or edited from the agent (they hold trading passwords, "
@@ -1427,8 +1429,40 @@ CRED_BASH_DENY_REASON = (
 )
 
 
+# The folder, or anything in it, as a SOURCE of a copy / move / archive (`Copy-Item -Recurse ..\credentials x`,
+# `tar czf x.tgz ../credentials`). Only a path shape counts (a / or \ next to the name): the bare word is English
+# (`git commit -m "move credentials check"`, `rsync --exclude credentials`).
+_COPY_VERBS = frozenset(("cp", "copy", "copy-item", "cpi", "xcopy", "robocopy", "rsync", "scp", "ditto", "mv", "move",
+                         "move-item", "mi", "tar", "zip", "7z", "7za", "compress-archive"))
+_ARCHIVE_VERBS = frozenset(("tar", "zip", "7z", "7za"))
+_CRED_PATH_RE = re.compile(r"(?:^|[\\/])(?:credentials|creden~\d)(?:[\\/]|$)", re.IGNORECASE)
+_TOKEN_RE = re.compile(r"\"[^\"]*\"|'[^']*'|[^\s\"']+")
+
+
+def _copied_from_credentials(cmd):
+    for seg in re.split(r"[;&|\n]", cmd):
+        toks = [x.strip("\"'") for x in _TOKEN_RE.findall(seg)]
+        at = next((i for i, x in enumerate(toks) if ntpath.basename(x).lower().removesuffix(".exe") in _COPY_VERBS), None)
+        if at is None:
+            continue
+        verb, args = ntpath.basename(toks[at]).lower().removesuffix(".exe"), toks[at + 1:]
+        dest = None
+        for i, x in enumerate(args):
+            if x.lower() in ("-destination", "-destinationpath", "-dest") and i + 1 < len(args):
+                dest = i + 1
+        if dest is None and verb not in _ARCHIVE_VERBS and verb != "compress-archive":
+            flag = (lambda x: x.startswith("/")) if verb in ("robocopy", "xcopy") else (lambda x: x.startswith("-"))
+            pos = [i for i, x in enumerate(args) if not flag(x)]
+            if pos:
+                dest = pos[1] if verb == "robocopy" and len(pos) > 1 else pos[-1]
+        if any(i != dest and ("/" in x or "\\" in x) and _CRED_PATH_RE.search(x) for i, x in enumerate(args)):
+            return True
+    return False
+
+
 def cred_bash_denied(cmd):
-    return bool(CRED_BASH_DENY_RE.search(cmd or ""))
+    cmd = cmd or ""
+    return bool(CRED_BASH_DENY_RE.search(cmd) or _copied_from_credentials(cmd))
 
 
 # Bash that names one of SECRET_CODE_FILES and writes, moves, deletes or replaces something.
@@ -5004,8 +5038,10 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         "DISABLE_AUTOUPDATER": "1",
     })
     if _win32():
-        # The CLI's own default turns PowerShell on or off by a remote flag when Git Bash is there (win-e2e-0.1.39 F2)
-        turn_env["CLAUDE_CODE_USE_POWERSHELL_TOOL"] = powershell_tool_env({**os.environ, **turn_env}, cwd=WORKSPACE)
+        # No Git Bash: PowerShell on for sure, not left to the CLI's remote flag (win-e2e-0.1.39 F2)
+        _ps_tool = powershell_tool_env({**os.environ, **turn_env}, cwd=WORKSPACE)
+        if _ps_tool:
+            turn_env["CLAUDE_CODE_USE_POWERSHELL_TOOL"] = _ps_tool
     if model:
         # lib.report.scheduled_cost 依這一輪的模型估價(登記排程時講給用戶聽)
         turn_env["BLAVE_TURN_MODEL"] = model
