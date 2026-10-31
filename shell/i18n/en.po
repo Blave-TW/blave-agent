@@ -2297,9 +2297,6 @@ msgstr "Disconnect"
 msgid "tr.unbinding"
 msgstr "Disconnecting…"
 
-msgid "tr.unbindDescPaper"
-msgstr "Unbind to connect a real exchange instead."
-
 msgid "tr.unbindWarn"
 msgstr "This computer’s login details are removed; the order engine can’t trade with them. Your portfolio and amounts are kept; save once after reconnecting."
 
@@ -2328,11 +2325,11 @@ msgid "tr.ov.rangeAll"
 msgstr "All"
 
 msgid "tr.ov.empty"
-msgstr "No equity snapshots yet. Once an exchange is connected, one is recorded each hour while Blave is open."
+msgstr "No account value history yet. Once an exchange is connected, it's recorded every hour while the app is open."
 
 # 雲端視角的權益空狀態(trade.js trPaintOver);本機那句要 Blave 開著,雲端是主機自己記
 msgid "tr.ov.emptyCloud"
-msgstr "No equity snapshots yet. Once an exchange is connected, the machine records one each hour."
+msgstr "No account value history yet. Once an exchange is connected, the host records it every hour."
 
 # 只有一筆、畫不出線(trade.js trPaintOver);本機／雲端各一句,後半同 empty／emptyCloud
 msgid "tr.ov.emptyBaseline"
@@ -2667,6 +2664,10 @@ msgstr "Strategy crashed"
 
 msgid "tr.ov.evStrategyFailedNote"
 msgstr "the schedule keeps firing, but this run produced no signal"
+
+# strategy_failed 的錯誤是 DataAccessError(外殼沒給 Blave 資料 key)時的說明,取代上一句(trade.js trStrategyFailedNoteKey)
+msgid "tr.ov.evStrategyFailedNoData"
+msgstr "no Blave data access, so this run was skipped. Add a card to resume"
 
 msgid "tr.ov.evUnreach"
 msgstr "Can’t read the cloud’s event log right now; this will retry shortly. It does not mean nothing happened."

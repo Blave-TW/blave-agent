@@ -4698,8 +4698,6 @@ function trPaintSet() {
     else box.appendChild(errLine(ae.stage === "—" ? ae.msg.slice(0, 200) : t("cx.fail", { stage: ae.stage, msg: ae.msg.slice(0, 200) })));
   }
   if (TR.cx.err) box.appendChild(errLine(TR.cx.err));
-  // 解除綁定的後果只在確認框講(同畫面不講兩次,雲端視角也一樣);模擬帳戶那句是模擬→真實唯一的路標,確認框沒講,照留
-  if (id === PAPER) box.appendChild(trEl("div", "pf-foot", t("tr.unbindDescPaper")));
   trExecSection(box, r, id);
   const back = hadFocus && $(hadFocus); if (back && !back.disabled) back.focus(); else if (hadFocus) $("tr-tab-set").focus();
 }
@@ -5180,6 +5178,11 @@ const trEvNum = (x) => (typeof x === "number" && isFinite(x) ? String(Math.round
 /* 機器／平台事件 → [標題, 後果註解, 級別, 註解的 tooltip, 代號, 代號後的補充]。標題是字串,或 [key, vars](值要包 .mono 的句子,trEvBody 拼)。白名單:不認得的型別回 null 不畫。desktop_action(用戶自己按的指令回音)
    整類不畫(Wei 10-20,designer events-list-audit-2026-10-20);bar_stale 帶 computed=true 時訊號已準時算出,不畫 */
 const TR_BROKER_KEY = { capital: "tr.ov.brokerCapital", president: "tr.ov.brokerPresident" };
+/* strategy_failed 的 error 是 manager/alert_failure 收的輸出尾段(500 字);lib.data 的 DataAccessError = 外殼這輪沒給 Blave 資料 key。
+   事件沒帶原因(signed_out／no_card…只寫進 perf_refresh.json),外殼手上的 data_access 是「現在」不是出事當下,所以只分這一種 */
+function trStrategyFailedNoteKey(d) {
+  return /\bDataAccessError\b/.test(d && typeof d.error === "string" ? d.error : "") ? "tr.ov.evStrategyFailedNoData" : "tr.ov.evStrategyFailedNote";
+}
 function trEventText(type, d) {
   const v = { venue: trVenueLabel(String(d.venue || ""), true), minutes: d.minutes };
   const lv = trEvLevel(type, d), str = (x) => (typeof x === "string" ? x : "");
@@ -5217,7 +5220,7 @@ function trEventText(type, d) {
   if (type === "execution_stuck") return d.kind === "abandoned" ? out(t("tr.ov.evExecAbandoned"), t("tr.ov.evExecAbandonedNote"))
     : out(t(d.kind === "overdue" ? "tr.ov.evExecOverdue" : "tr.ov.evExecStuck"), t("tr.ov.evExecStuckNote"));
   if (type === "scheduler_error") return out(t("tr.ov.evSchedErr"), t("tr.ov.evSchedErrNote"));
-  if (type === "strategy_failed") return out(t("tr.ov.evStrategyFailed"), t("tr.ov.evStrategyFailedNote"));
+  if (type === "strategy_failed") return out(t("tr.ov.evStrategyFailed"), t(trStrategyFailedNoteKey(d)));
   // 主機重開、對帳那支程式停著:標題已暫停,說明講「什麼單都不下」——跟 HALT 那列(平倉停損照常)並排時要分得出來;顏色跟 trigger
   if (type === "machine_restart_stopped") return out(t("tr.ov.evRestartStopped"), t("tr.ov.evRestartStoppedNote"));
   if (type === "machine_restart_stop_failed") return out(t("tr.ov.evRestartStopFailed"), t("tr.ov.evRestartStopFailedNote"));

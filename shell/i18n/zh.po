@@ -2308,9 +2308,6 @@ msgstr "解除綁定"
 msgid "tr.unbinding"
 msgstr "解除中…"
 
-msgid "tr.unbindDescPaper"
-msgstr "解除後可以改綁真實交易所。"
-
 msgid "tr.unbindWarn"
 msgstr "登入資料會從這台電腦移除，下單機不能再用它交易。策略組合和金額保留，重綁後存一次即可。"
 
@@ -2339,11 +2336,11 @@ msgid "tr.ov.rangeAll"
 msgstr "全部"
 
 msgid "tr.ov.empty"
-msgstr "還沒有權益快照。連上交易所後，Blave 開著時每個整點記一筆。"
+msgstr "還沒有帳戶淨值紀錄。連上交易所後，每整點記一次，電腦版要開著。"
 
 # 雲端視角的權益空狀態(trade.js trPaintOver);本機那句要 Blave 開著,雲端是主機自己記
 msgid "tr.ov.emptyCloud"
-msgstr "還沒有權益快照。連上交易所後，主機每個整點記一筆。"
+msgstr "還沒有帳戶淨值紀錄。連上交易所後，主機每整點記一次。"
 
 # 只有一筆、畫不出線(trade.js trPaintOver);本機／雲端各一句,後半同 empty／emptyCloud
 msgid "tr.ov.emptyBaseline"
@@ -2678,6 +2675,10 @@ msgstr "策略執行失敗"
 
 msgid "tr.ov.evStrategyFailedNote"
 msgstr "排程還是照跑，但這一輪沒有產生訊號"
+
+# strategy_failed 的錯誤是 DataAccessError(外殼沒給 Blave 資料 key)時的說明,取代上一句(trade.js trStrategyFailedNoteKey)
+msgid "tr.ov.evStrategyFailedNoData"
+msgstr "沒有 Blave 資料權限，這一輪沒跑。綁卡後恢復。"
 
 msgid "tr.ov.evUnreach"
 msgstr "現在讀不到雲端的事件紀錄，稍後會再試；這不代表這段期間沒有發生事情。"
