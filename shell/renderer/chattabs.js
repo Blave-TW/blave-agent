@@ -51,7 +51,7 @@ const TAB_KEYS = [
   ["turnFaultEl", () => turnFaultEl, (v) => { turnFaultEl = v; }, () => null],
   ["turnSeqMine", () => turnSeqMine, (v) => { turnSeqMine = v; }, () => 0],
   ["UPD.turnCloud", () => UPD.turnCloud, (v) => { UPD.turnCloud = v; }, () => false],
-  ["SUG", () => SUG, (v) => { SUG = v; }, () => ({ pending: null, timer: null, text: null, kind: null, shownOnce: false, used: false, gone: false, files: 0, filledText: null, inflight: null })],
+  ["SUG", () => SUG, (v) => { SUG = v; }, () => ({ pending: null, timer: null, text: null, kind: null, shownOnce: false, used: false, gone: false, files: 0, filledText: null, inflight: null, direct: false, shownAt: 0, undoable: null })],
   ["XP.pending", () => XP.pending, (v) => { XP.pending = v; }, () => []],
   ["RES.turn", () => RES.turn, (v) => { RES.turn = v; }, () => null],
   ["RPT.turnAt", () => RPT.turnAt, (v) => { RPT.turnAt = v; }, () => null],
