@@ -234,7 +234,8 @@ function sgEditOpen(sc, mode, gid) {
   ib.addEventListener("click", () => sgPickOpen(ib, SG.edit.emoji, (v) => { if (!SG.edit) return; SG.edit.emoji = v; sgIconInto(SG.edit.ic, v); }, () => { if (SG.edit) SG.edit.input.focus(); }));
   input.addEventListener("input", () => { if (sgCodepoints(input.value) > SG_NAME_MAX) input.value = [...input.value].slice(0, SG_NAME_MAX).join(""); });
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); sgEditEnd(true); }
+    if (e.isComposing || e.keyCode === 229) return;   // 輸入法組字中:Enter 是選字、Esc 是取消選字,不是送出或取消改名
+    if (e.key === "Enter") { e.preventDefault(); sgEditEnd(true); }
     else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); sgEditEnd(false); }
   });
   input.addEventListener("blur", (e) => {

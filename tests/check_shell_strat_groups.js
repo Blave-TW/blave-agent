@@ -65,6 +65,16 @@ const block = (s, head, end) => { const i = s.indexOf(head); if (i < 0) throw ne
   ok("③ 編輯列:圖示鈕 mousedown 擋預設(不讓名稱框失焦送出);焦點進選擇器的那次失焦不算送出;Esc / 空字串 = 取消",
     /ib\.addEventListener\("mousedown", \(e\) => e\.preventDefault\(\)\);/.test(sg) && /if \(sgPick && !sgPick\.hidden && \(!to \|\| sgPick\.contains\(to\)\)\) return;/.test(sg)
     && /if \(commit && name\.trim\(\) && sgCodepoints\(name\) <= SG_NAME_MAX\)/.test(sg) && /else if \(e\.key === "Escape"\) \{ e\.preventDefault\(\); e\.stopPropagation\(\); sgEditEnd\(false\); \}/.test(sg));
+  {
+    const i = sg.indexOf('input.addEventListener("keydown", '), j = sg.indexOf("\n  });", i);
+    const calls = [], c = { sgEditEnd: (x) => calls.push(x) };
+    vm.runInNewContext("this.h = " + sg.slice(i + 'input.addEventListener("keydown", '.length, j + 4).replace(/\);$/, ""), c);
+    const ev = (key, isComposing, keyCode) => ({ key, isComposing, keyCode, preventDefault() {}, stopPropagation() {} });
+    const run = (e) => { calls.length = 0; c.h(e); return calls.join(); };
+    ok("③ 編輯列:輸入法組字中(isComposing 或 keyCode 229)的 Esc / Enter 不取消、不送出;沒在組字才照常",
+      i >= 0 && run(ev("Escape", true, 27)) === "" && run(ev("Escape", false, 229)) === "" && run(ev("Enter", true, 13)) === "" && run(ev("Enter", false, 229)) === ""
+      && run(ev("Escape", false, 27)) === "false" && run(ev("Enter", false, 13)) === "true", String(i));
+  }
   ok("③ 組標題 class 是 sg-head(不叫 strat-row / strat-wrap / strat-item / cs-row,不被 refreshRunDots、選中態、stratDelSync 掃到);切換鈕與 ⋯ 是兄弟(鈕不包鈕)",
     /sgEl\("div", "sg-head"/.test(sg) && !/sg-head[^"\n]*(strat-row|strat-wrap|strat-item|cs-row)/.test(sg) && /head\.appendChild\(tog\);/.test(sg) && /head\.appendChild\(more\);/.test(sg));
   ok("③ 本機清除段連組標題與建市場鈕一起清;焦點找下一列略過 hidden(stratRefreshAt、雲端刪除後的 next)",
