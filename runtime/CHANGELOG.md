@@ -8,6 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.150 — 2026-10-31(desktop 0.1.39)
+
+- **建議下一步那句的說明改成「點了就原句送出」(`agent_turn._SUGGEST_RULE`;designer suggest-direct-send-2026-10-31,desktop 0.1.39 托盤點了直接送)**:原本寫「會填進用戶的輸入框、由用戶自己送出」,改成「用戶點了就原句送出，所以要能直接照做」;里程碑、長度、禁語不動。web 跟進前仍是填入,新規則配填入的外殼不會壞,出貨順序不卡。測試 `tests/check_suggest_rule_026.py`(改一條)。
+- **回合來源 `origin`(spec mobile-agent-chat-mvp §2.8;手機 App 跟 agent 對話 MVP)**:`web_bridge` 讀 inbox 訊息的 `context.origin`(api 由伺服器寫),只認 `web`／`app`,其他值或缺值當 `web`(`turn_origin`);存進佇列 entry,`_dispatch` 用排在最前那句的來源 `turn_slots.acquire(sid, origin)`(不再寫死 `"web"`),spawn 時以環境變數 `BLAVE_TURN_ORIGIN` 交給 `agent_turn`——**不加 argv 旗標**(電腦版包舊 runtime 時新旗標會讓 argparse exit 2)。`agent_turn` 只把來源寫進回合 log(`[agent_turn] turn origin=…`),提示詞、規則、工具一律不變;電腦版外殼對手機來的回合設 `BLAVE_TURN_ORIGIN=app`(desktop 0.1.38;Wei 拍板中轉改排 0.1.38)。`command_listener._cmd_halt` 的 `"web"` 不動。舊 api 不送 origin = 照舊當 web。測試 `tests/check_web_bridge_turn_origin.py`(新)。
+
 ## 1.1.149 — 2026-10-31(desktop 0.1.37)
 
 - **電腦版沒 Blave 資料時,回覆只講缺哪份資料＋一句「要有方案」(沒登入時改成「要先登入 Blave」)(`agent_turn.data_access_rule`、`DATA_ACCESS_WHY["no_plan"]`;Wei 回饋:條件清單太複雜、不要提 API)**:access=0 那段不再要模型列條件(試用／雲端方案或主機／API 方案／按小時餘額),明講不提 API 方案、試用與按小時計費,也不報價、不給步驟(卡片處理);事實段照舊完整給模型判斷。`no_plan` 的事實句拿掉「(雲端方案或 API 方案)」。access=1 的 `ERR007` 改成講資料停了、要有方案,body 列的 API 方案不轉述;例外是用戶問自己寫程式、用自己建的 key 打 Blave API,照 `references/billing.md` 回答。測試 `tests/check_data_access_lang.py`(改一條、新增六條)。

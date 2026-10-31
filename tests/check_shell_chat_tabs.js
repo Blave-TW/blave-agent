@@ -29,7 +29,7 @@ const GLOBAL_OK = {
   thinkFoldSeq: "aria-controls 流水號", stepCharW: "量字寬的快取", loginPending: "本機 AI 登入中", acct: "帳號狀態", acctAt: "同上", acctRetry: "同上", balLast: "餘額",
   balSeq: "同上", acctGone: "去瀏覽器綁卡", acctPending: "帳號重查", acctSettled: "同上", taKeyed: "輸入框打過字(帳號卡)", planSlowSaid: "方案開通", planBusyPlan: "同上",
   planErr: "同上", planBusy: "同上", planSince: "同上", planTimer: "同上", planWas: "同上", planDoneSaid: "同上", planDonePending: "方案開好了那句:等眼前分頁閒著才講",
-  pub: "公開資訊", pubAt: "同上", planLoginBusy: "方案登入", planLastView: "同上", planLoginOut: "同上",
+  pub: "公開資訊", pubAt: "同上", PH: "手機對話設定(主行程 relay.js 的狀態)", PH_BUSY: "同上", PH_ERR: "同上", PH_PHONES: "同上(授權手機清單)", PH_CODE: "同上(配對碼)", PH_ACTS: "同上(最近操作)", PH_MSG: "同上(手機那一組的訊息槽)", PH_QUIET: "同上(同步數字變時不念)", PH_EXP: "同上(配對碼到期的計時)", planLoginBusy: "方案登入", planLastView: "同上", planLoginOut: "同上",
 };
 const unclassified = lets.filter((n) => !tabKeys.includes(n) && !(n in GLOBAL_OK));
 ok("app.js 每一個頂層 let 都歸類:每個分頁一份(TAB_KEYS)或全 app 一份(GLOBAL_OK)", unclassified.length === 0, unclassified);
@@ -48,7 +48,7 @@ const MOD_GLOBAL = {
   "busy.js": { BUSY_PENDING: "原因句的一次性提示" }, "capital.js": { CAP: "群益交接頁" }, "capital_local.js": { CAPL: "群益本機", caplTimer: "同上" },
   "chattabs.js": { tabsK: "分頁列 tick 第幾格(全列一起)", tabsSaid: "讀屏播報合併" }, "i18n.js": { LANG: "語言" },
   "portfolio.js": { PO_ADD_SIG: "策略組合", ctMenu: "同上", ctOpen: "同上", mgmPend: "同上", mgmOpener: "同上", mgsDraft: "同上", mgsOpener: "同上" },
-  "president.js": { PRES: "統一期貨", presTimer: "同上", PRES_FIRST_ARMED: "同上" }, "report-sharelist.js": { SHL_IO: "分享清單" }, "stratflags.js": { sfPop: "彈出層" },
+  "president.js": { PRES: "統一期貨", presTimer: "同上", PRES_FIRST_ARMED: "同上" }, "report-sharelist.js": { SHL_IO: "分享清單" }, "stratflags.js": { sfPop: "彈出層" }, "stratgroups.js": { sgMenu: "資料夾 ⋯ 選單,一次一個", sgPick: "emoji 選擇器,一次一個" },
   "suggest.js": { SUG: "TAB_KEYS 整個換(托盤跟著分頁)" },
   "trade.js": { TR_AS_SAVED: "自動下單頁", TR: "同上", trTipSeq: "同上", trHistTipEl: "同上", trHistTipAt: "同上", trHistTipOpened: "同上", trHistTipQuiet: "同上", trCvHide: "同上", trCvEscN: "同上", cxOpener: "同上", psOpener: "同上", psMode: "同上", psToAmt: "同上", psLoading: "同上", ENV_COMPOSING: "輸入法" },
   "versions.js": { vcSeq: "版本頁", vcSide: "同上" },
@@ -211,14 +211,20 @@ ok("共用畫面背景期間不畫:捲動、讀屏、送出鈕、托盤;輸入�
   ok("+N:有一條真的在跑才放 tick,全是排隊放短劃", /sts\.includes\("run"\) \? tabsLead\("run"\) : run \? tabsLead\("queued"\) : null/.test(ct));
   ok("歷史搜尋格的焦點是灰階框(不吃系統強調色)", css.includes(".cs-search:focus { outline: none; border-color: var(--ink); }"));
   ok("歷史列:等你回覆／沒做完／做完還沒看接「· 時間」(mono)", /if \(st\.kind !== "run" && st\.kind !== "queued"\) \{ item\.classList\.add\("is-attn"\); const at = document\.createElement\("span"\); at\.className = "mono"; at\.textContent = csTime\(m\.last\); meta\.append\(" · ", at\); \}/.test(app));
-  ok("分頁名稱(讀屏)不帶會凍住的時長;tooltip 每秒跟著跳、Esc 隨時收得掉、離分頁 6px;× 熱區 28×44", /const word = st === "run" \? t\("tabs\.st\.running"\) : tabsStateWord\(T, st\);/.test(ct) && /tabsTipTick\(\);\n\}, 1000\);/.test(ct)
-    && /window\.addEventListener\("keydown", \(e\) => \{\n  if \(e\.key !== "Escape" \|\| e\.isComposing \|\| e\.keyCode === 229\) return;\n  const tip = \$\("tabs-tip"\); if \(!tip \|\| tip\.hidden\) return;\n  tip\.hidden = true; tip\.dataset\.off = "1"; e\.preventDefault\(\); e\.stopPropagation\(\);\n\}, true\);/.test(ct) && css.includes(".tabs-tip { top: 48px;") && /\.cs-tabs \{[^}]*height: 44px;[^}]*align-items: center;/.test(css) && css.includes("inset: -12px -4px;"));
+  ok("分頁名稱(讀屏)不帶會凍住的時長;tooltip 每秒跟著跳、Esc 隨時收得掉;tooltip 在分頁本體下方 6、+N 選單在灰底下方 8", /const word = st === "run" \? t\("tabs\.st\.running"\) : tabsStateWord\(T, st\);/.test(ct) && /tabsTipTick\(\);\n\}, 1000\);/.test(ct)
+    && /window\.addEventListener\("keydown", \(e\) => \{\n  if \(e\.key !== "Escape" \|\| e\.isComposing \|\| e\.keyCode === 229\) return;\n  const tip = \$\("tabs-tip"\); if \(!tip \|\| tip\.hidden\) return;\n  tip\.hidden = true; tip\.dataset\.off = "1"; e\.preventDefault\(\); e\.stopPropagation\(\);\n\}, true\);/.test(ct) && css.includes(".tabs-tip { top: 46px;") && css.includes(".cs-menu { position: absolute; z-index: 9; top: 48px;"));
 }
 // 程式稽核 s2 P3
 ok("+N 選單開著:每秒只換時長字,不重建(焦點不掉);整列重建時照 sid 把焦點還回分頁或選單列", /if \(!\$\("cs-menu"\)\.hidden\) tabsMenuTick\(\);/.test(ct) && /function tabsMenuTick\(\) \{/.test(ct)
   && /it\.dataset\.sid = sid;/.test(ct) && /function tabsPaint\(\) \{[\s\S]{0,900}try \{ tabsPaintIn\(bar\); \}\n  finally \{\n    if \(fSid\)/.test(ct));
 ok("結果卡:那一輪的分頁還開著就到它的容器裡找落點(背景分頁沒有回覆文字的那一輪也出卡)", /const T = typeof CS !== "undefined" && rt\.sid \? CS\.tabs\.get\(rt\.sid\) : null;\n  if \(T && T\.el\) return withTab\(T, \(\) => resHostIn\(rt\)\);/.test(read("results.js")));
-ok("送出第一句就存分頁記憶", /csRemember\(\); if \(CS\.loaded\) CS\.loaded\.title = csTitle; tabsSave\(\); \}/.test(app));
+ok("送出第一句就存分頁記憶,並重畫分頁(分頁上的標題是建元素時寫的,不重畫就停在「新對話」)", /csRemember\(\); if \(CS\.loaded\) CS\.loaded\.title = csTitle; tabsSave\(\); tabsPaint\(\); \}/.test(app));
+// 分頁上的標題是建元素時寫進去的:每一處改標題(csTitle／T.title)的函式都要自己重畫分頁,或只是存取同步。列舉,多一處沒歸類就紅
+{ const SITES = { csPaintHistory: "畫回舊對話:同函式尾 tabsPaint()", submitMessage: "第一句:同一行 tabsPaint()", tabSave: "存回分頁自己那份,不改畫面", tabMake: "建新分頁的初值", "(top)": "TAB_KEYS 的寫入器(切分頁整組換,隨後 tabShow 重畫)" };
+  const fnOf = (src, idx) => { const m = [...src.slice(0, idx).matchAll(/^(?:async )?function (\w+)\(/gm)].pop(); return m ? m[1] : "(top)"; };
+  const hits = []; for (const [f, src] of [["app.js", app], ["chattabs.js", ct]]) { const ss = strip(src); for (const m of ss.matchAll(/(?:^|[^\w.])(?<!let )(csTitle|T\.title|CS\.loaded\.title|T\.st\.csTitle) = (?!=)/gm)) hits.push(f + ":" + fnOf(ss, m.index)); }
+  const bad = hits.filter((h) => !(h.split(":")[1] in SITES)), unused = Object.keys(SITES).filter((k) => !hits.some((h) => h.endsWith(":" + k)));
+  ok("改標題的每一處(" + hits.length + ")都歸類;畫回舊對話那支尾端重畫", hits.length >= 4 && !bad.length && !unused.length && /T\.title = csTitle; csRenderHead\(\); scrollChat\(true\);\n  if \(typeof tabsPaint === "function"\) tabsPaint\(\);/.test(app), { hits, bad, unused }); }
 ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \(!\(T && T\.queued\)\) trackFeature\("chat_stop"\);/.test(app) && !/trackFeature\("queue_cancel"\)/.test(fs.readdirSync(R).filter((n) => n.endsWith(".js")).map(read).join("\n")));
 // 整合稽核 P3:分頁 tooltip 開著按 Esc 只收 tooltip,不讓 app.js escTop(document 冒泡)再關一層;沒開不攔。
 // 把 chattabs.js 那一支監聽原樣拿出來,掛到假的 window／document,照真的順序派送(window capture → document → window 冒泡,stopPropagation 就停)
@@ -260,7 +266,65 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
   const bad = clickable.filter((c) => !NATIVE.has(c.tag) && !covered(c.cls));
   ok("列舉到分頁列的可點元素(分頁、×、☰ 提示、+N、新對話都在)", ["tab", "tab-x", "cs-hint", "cs-more", "cs-btn"].every((c) => clickable.some((x) => x.cls === c)), clickable);
   ok("分頁列裡不是 button/textarea/input/a 的可點元素都帶 no-drag(不然打包版點不動)", bad.length === 0, bad);
-  ok("分頁與 × 的熱區(::before)帶 no-drag;+N 選單整塊也是", covered("tab") && covered("tab-x") && noDrag.includes(".tab-x::before") && covered("cs-menu"));
+  ok("分頁與 × 的熱區(× 往上伸進透明上框的 ::after)帶 no-drag;+N 選單整塊也是", covered("tab") && covered("tab-x") && noDrag.includes(".tab-x::after") && covered("cs-menu"));
+}
+// ── 分頁列版面(spec §13 v5b-height;幾何本身在 check_shell_tabs_strip.js 開窗量)──
+{ const css = read("app.css"), trcss = read("trade.css");
+  // 13.6 收進 +N:把 chattabs.js 的 tabsLayout 原文切出來跑。標題都長時(自然寬 180)avail = 欄寬 − 左框 1 − ☰ 44 − ＋ 44
+  const m = ct.match(/\nconst TABS_MIN = [^\n]*\n(function tabsLayout\([\s\S]*?\n\})/), c = ct.match(/\nconst TABS_MIN = [^\n]*/);
+  const lay = m && new Function(c[0] + "\n" + m[1] + "\nreturn { tabsLayout, TABS_MIN, TABS_MIN_SEL };")();
+  const run = (cw, nats, sel) => { const order = nats.map((_, i) => "s" + i); const mins = nats.map((n, i) => (i === sel ? lay.TABS_MIN_SEL : Math.min(n, lay.TABS_MIN)));
+    const L = lay.tabsLayout(cw - 1 - 88, order, "s" + sel, mins, 44); return { shown: L.shown.map((s) => +s.slice(1)), hidden: L.hidden.length }; };
+  const long = (n) => Array(n).fill(180);
+  const cap = lay && [[720, 9, 8], [452, 5, 4], [336, 3, 2]].map(([cw, all, more]) => [cw, run(cw, long(all), 0), run(cw, long(all + 1), 0), all, more]);
+  ok("13.6 容量(長標題):720 放 9／10 個時 8＋N;452 放 5／4＋N;336 放 3／2＋N", !!lay && cap.every(([, a, b, all, more]) => a.shown.length === all && !a.hidden && b.shown.length === more && b.hidden === all + 1 - more), cap);
+  ok("13.6 短標題放更多:452 六個自然寬 40 全放;選中最窄是 112 不是 60(六個長標題 452 放不下;選中那格自然寬 40 也算 112,七個就放不下)", !!lay && run(452, Array(6).fill(40), 0).shown.length === 6 && run(452, long(6), 0).hidden > 0 && run(452, Array(7).fill(40), 0).hidden > 0);
+  ok("13.6 分頁之間的 2 也算進去:最窄加總剛好等於 avail 時(沒算間距)放不下", !!lay && lay.tabsLayout(112 + 60 * 4, ["a", "b", "c", "d", "e"], "a", [112, 60, 60, 60, 60], 44).hidden.length > 0
+    && lay.tabsLayout(112 + 60 * 4 + 8, ["a", "b", "c", "d", "e"], "a", [112, 60, 60, 60, 60], 44).hidden.length === 0);
+  const back = lay && run(452, long(8), 7);
+  ok("13.6 選中的落在後面:列上前 3 個＋它,它在列尾", !!lay && back.shown.join() === "0,1,2,7", back);
+  ok("13.6 量自然寬:選中一律最窄 112(標題短也一樣);其他 min(自然寬, 有手機記號 82(mchat-phone-surfaces §1 V1)／其他 60),寫在 min-width;+N 比 44 寬就照實寬重算", /const mins = nat\.map\(\(n, i\) => \(order\[i\] === curSid \? TABS_MIN_SEL : Math\.min\(n, tabsPhone\(CS\.tabs\.get\(order\[i\]\)\) \? TABS_MIN_PHONE : TABS_MIN\)\)\);/.test(ct)
+    && /el\.style\.minWidth = mins\[i\] \+ "px";/.test(ct) && /const mw = \$\("cs-more"\)\.offsetWidth; if \(mw > 44\) L = tabsLayout\(avail, order, curSid, mins, mw\);/.test(ct) && !/128|\/ 90\)/.test(ct.slice(ct.indexOf("function tabsLayout"), ct.indexOf("function tabsPaint("))));
+  ok("13.4 沒選中、寬不到 88 就不出 ×(本來就短的也一樣);被縮過的另加 narrow(淡出)", /if \(w < TABS_NARROW\) \{ el\.classList\.add\("nox"\); if \(w < Number\(el\.dataset\.nat\) - 1\) el\.classList\.add\("narrow"\); \}/.test(ct) && css.includes(".cs-tabs .tab.nox .tab-x { display: none; }") && !css.includes(".tab.narrow .tab-x"));
+  ok("13.6 凍寬只走滑鼠(× 與中鍵);鍵盤 Delete／⌘W 不凍;離開分頁列、拉寬欄、開新分頁放掉", (ct.match(/tabsFreeze\(\); tabsClose\(T\);/g) || []).length === 2 && !/tabsFreeze\(\)[^\n]*Delete|Delete[^\n]*tabsFreeze/.test(ct)
+    && /\$\("cs-tabs"\)\.addEventListener\("mouseleave", \(\) => \{ if \(CS\.freeze\) \{ CS\.freeze = null; tabsPaint\(\); \} \}\);/.test(ct) && /CS\.barW = w; CS\.freeze = null; tabsPaint\(\);/.test(ct) && /function tabsAdd\(T\) \{ CS\.freeze = null;/.test(ct));
+  // 高度只看三個變數(設計師還可能再調):列 52 = 拖曳 + 透明上框 + 本體;其他高度全由它們推,分頁區塊裡不准再寫死
+  const blk = css.slice(css.indexOf("/* ── 對話分頁列"), css.indexOf(".tabs-tip { top:"));
+  ok("高度兩變數:本體 --tabs-body 28、熱區補 --tabs-reach 8(上下透明框);分頁置中在列裡;分隔線 16 置中;☰／＋／+N 置中", /--tabs-body: 28px; --tabs-reach: 8px;/.test(blk)
+    && /\.cs-tabs \{[^}]*align-items: center; gap: var\(--space-2\);/.test(blk) && /height: calc\(var\(--tabs-body\) \+ 2 \* var\(--tabs-reach\)\); padding: 0 var\(--space-12\);\s*border: solid transparent; border-width: var\(--tabs-reach\) 0; background-clip: padding-box;/.test(blk)
+    && /top: calc\(\(100% - 16px\) \/ 2\); height: 16px;/.test(blk) && /top: calc\(50% - 14px\); height: 28px;/.test(blk)
+    && !/tabs-top|tabs-pad-b|tabs-drag|padding-top: calc/.test(blk) && !/(?<![-\w])height: (46|44|36)px|\btop: (6|13|16)px|inset: -12px/.test(blk)
+    && /const TABS_MIN = 60, TABS_MIN_SEL = 112, TABS_MIN_PHONE = 82, TABS_NARROW = 88, TABS_GAP = 2;/.test(ct));
+  ok("× 不佔位、不墊底色:絕對定位在本體尾端(z 1,焦點環 z 2 在它上面);滑過或焦點時標題尾端淡出到 × 左緣;最窄的分頁不畫「…」改淡出 8;熱區 ::after 上下伸進透明框(32×44)", /\.tab-x \{ position: absolute; z-index: 1; right: 0; top: 0; bottom: 0; width: 32px;[^}]*visibility: hidden; \}/.test(blk) && !/\.tab-x \{[^}]*background/.test(blk) && !/tabs-bg/.test(css + trcss)
+    && /\.cs-tabs \.tab:not\(\.nox\):is\(:hover, :focus-visible\) \.tab-t \{ text-overflow: clip;[^\n]*\n  -webkit-mask-image: linear-gradient\(90deg, #000 calc\(100% - 32px\), transparent calc\(100% - 20px\)\);/.test(blk)
+    && blk.includes(".cs-tabs .tab.narrow .tab-t { text-overflow: clip;\n  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 8px), transparent);") && /\.cs-tabs \.tab:focus-visible::before \{ content: ""; position: absolute; z-index: 2;/.test(blk)
+    && !/padding-right: 32px|el\.style\.width = ws\[i\]/.test(blk + ct) && blk.includes(".tab-x::after { content: \"\"; position: absolute; left: 0; right: 0; top: calc(0px - var(--tabs-reach)); bottom: calc(0px - var(--tabs-reach)); }")
+    && blk.includes(".cs-tabs .tab:hover .tab-x, .cs-tabs .tab:focus-visible .tab-x { visibility: visible; }") && !/\.tab-x \{[^}]*flex: none/.test(blk));
+  // 列舉:分頁列區塊與切換鈕(共用 segment 配方)裡每個往外伸的 ::before／::after(top／bottom／inset 為負、calc(0px - …)、min(0px, …)),
+  //       自己都要在 no-drag 清單裡(偽元素不繼承 app-region;伸出元素外的那段蓋在拖曳條上就點不動)。加一個往外伸卻沒帶的就紅
+  { const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, "");
+    const seg = (css.match(/:is\(\.cn-lang[^{]*\) > button::before \{[^}]*\}/) || [""])[0];
+    const nd = new Set(); for (const m of strip(css + trcss).matchAll(/([^{}]+)\{[^}]*-webkit-app-region: no-drag/g)) for (const x of m[1].split(",")) nd.add(x.trim());
+    const last = (x) => x.trim().split(/\s+/).pop(), ndLast = new Set([...nd].map(last));
+    const out = []; for (const m of strip(blk).matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      if (!/(?:^|;)\s*(?:top|bottom|inset): (?:-|calc\(0px - |min\(0px)/.test(m[2])) continue;
+      for (const x of m[1].split(",").map((y) => y.trim())) if (/::(before|after)$/.test(x)) out.push(x);
+    }
+    if (/(?:top|bottom): min\(0px/.test(seg)) out.push("segment > button::before");
+    const bare = out.filter((x) => x === "segment > button::before" ? !/-webkit-app-region: no-drag/.test(seg) : !ndLast.has(last(x)));
+    ok("往外伸的熱區偽元素(" + out.length + " 個)都帶 no-drag", out.length >= 2 && bare.length === 0, { out, bare }); }
+  ok("焦點環 ::before:2px --focus-ring 畫在本體內、四角 --radius-sm,只在 focus-visible", /\.cs-tabs \.tab:focus-visible::before \{ content: ""; position: absolute; z-index: 2; inset: 0; box-shadow: inset 0 0 0 2px var\(--focus-ring\); border-radius: var\(--radius-sm\); pointer-events: none; \}/.test(blk)
+    && /\.cs-tabs \.tab:focus-visible \{ outline: none; \}/.test(blk) && !/\.tab:hover::before/.test(blk));
+  ok("選中:本體填對話底色、四角正圓 --radius-sm(外緣垂直半徑多 reach)、600;不往下接對話;沒有捲動浮線", blk.includes('.cs-tabs .tab[aria-selected="true"] { background-color: var(--surface-card); color: var(--ink); font-weight: 600;\n  border-radius: var(--radius-sm) / calc(var(--radius-sm) + var(--tabs-reach)); }')
+    && !/is-scrolled|box-shadow: 0 1px 0/.test(css.slice(css.indexOf(".chat-head {"), css.indexOf(".tabs-tip { top:"))) && !/chatEdge|is-scrolled/.test(app));
+  ok("+N 不畫 ▾(aria-haspopup／expanded 給讀屏)", !/cv7/.test(ct.slice(ct.indexOf("function tabsMorePaint"), ct.indexOf("function tabsMenuPaint"))) && /aria-haspopup="menu"/.test(read("index.html")));
+  ok("雲端:分隔線改墊 bg-body", trcss.includes('html[data-env="cloud"] .cs-tabs .tab:not([aria-selected="true"]):has(+ .tab:not([aria-selected="true"]))::after { background: var(--bg-body); }'));
+  ok("切換鈕:格 36×24(軌 28,跟分頁同高)、圖示 14、記號 3／5、出事短劃 5;熱區溢出段在共用配方帶 no-drag", /\.envsw button \{[^}]*width: 36px; height: 24px;/.test(trcss) && /\.envsw-ic \{ flex: none; width: 14px; height: 14px;/.test(trcss)
+    && /\.envsw \.run-dot, \.envsw \.dot \{ position: absolute; top: 3px; right: 5px;/.test(trcss) && trcss.includes(".envsw .dot.bad { top: 5px; }")
+    && /> button::before \{\s*content: ""; position: absolute; left: 0; right: 0;\s*top: min\(0px, calc\(\(100% - 44px\) \/ 2\)\); bottom: min\(0px, calc\(\(100% - 44px\) \/ 2\)\);\s*-webkit-app-region: no-drag;/.test(css));
+  ok("減少動態:☰／＋／提示／+N 搬到 ::before 的底色過渡也關掉(全域 * 管不到偽元素)", /@media \(prefers-reduced-motion: reduce\) \{[^}]*\}\n  \.chat-head:has\(#cs-tabs\) \.cs-btn::before, \.cs-hint::before, \.cs-more::before \{ transition: none; \}/.test(css));
+  ok("列底同中欄頂帶:本機 bg-body、雲端 surface-muted;雲端滑過墊 bg-body;本機收合邊條也畫 52 頂段", /\.chat-head \{[^}]*background: var\(--bg-body\);/.test(css) && trcss.includes('html[data-env="cloud"] .chat-head { background: var(--surface-muted); }')
+    && /html\[data-env="cloud"\] \.cs-more:hover::before, html\[data-env="cloud"\] \.cs-more\.on::before,/.test(trcss) && trcss.includes("html.ws-cc .chat-strip { background: linear-gradient(var(--bg-body) 52px, var(--surface-card) 52px); }"));
 }
 // ── 主行程直接送 turn-event 的(不經 sendTurn 補 sid)都要自己帶 sid:不帶會落到眼前那條(tabsOf(undefined) = CS.cur),背景分頁的圖當下不出 ──
 { const main = fs.readFileSync(path.join(R, "..", "main.js"), "utf8");

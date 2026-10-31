@@ -142,6 +142,10 @@ msgstr "Attachments are limited to 15 MB in total. Some weren't added."
 msgid "ws.sugSay"
 msgstr "Suggestion: {s}"
 
+# 托盤句子鈕的可及名稱(renderer/suggest.js;滑鼠、觸控點了就原句送出)。{s} = agent 寫的那一句
+msgid "ws.sugSend"
+msgstr "Send: {s}"
+
 # 建議下一步托盤右邊 × 的可及名稱:作廢這句,不算沒用
 msgid "ws.sugDismiss"
 msgstr "Dismiss suggestion"
@@ -1876,7 +1880,7 @@ msgstr "Suggest a next step"
 
 # 上面那個開關的說明泡泡(滑鼠停在字上或鍵盤 focus 開關時出;≤40 字)
 msgid "set.sug.tip"
-msgstr "After each reply, adds one next step for you to fill in and send."
+msgstr "After each reply, adds one next step. Click it to send."
 
 msgid "set.rn"
 msgstr "Notify me when a reply is done"
@@ -3126,42 +3130,142 @@ msgstr "Collected"
 msgid "priv.collect.hOff"
 msgstr "Collected when on"
 
-msgid "priv.collect.5"
-msgstr "Which features you used: tab and button names, once per item per day, without their content; when you use a library strategy, whether it needs Blave data; when you send an idea request, which entry point it came from; whether a reply notification was shown or clicked, never the chat title or text"
+# 0.1.39 會收改成八組(設計師 v039-tabs-strip-audit §C,Wei 核准):組標題 priv.c.<組>.h,組內 priv.c.<組>.<n>;
+# 原本 11 條的事實逐條拆進來,一條都沒刪。加事件時補在對應那組
+msgid "priv.c.step.h"
+msgstr "How far you got"
 
-# 0.1.18 策略三步(strat_created / strat_backtested / strat_deployed)補在這一條:只記型別與市場類別
-msgid "priv.collect.1"
-msgstr "Which step you reached: first open, daily open, each day the app stays open (and whether local auto-trading is running), connected an AI (which kind), signed in, first backtest, trading started (paper or real), ran in the cloud; when each strategy is created, first backtested and first given an amount, its type (A/B/C) and market category (such as crypto or Taiwan index futures), never its name or symbol; a strategy's three steps share one code; only this computer can compute it, and Blave can't turn it back into the name"
+msgid "priv.c.step.1"
+msgstr "First open, daily open, signing in"
 
-msgid "priv.collect.2"
+msgid "priv.c.step.2"
+msgstr "Each day the app is open, and whether local auto-trading runs"
+
+msgid "priv.c.step.3"
+msgstr "Connecting an AI, and which kind"
+
+msgid "priv.c.step.4"
+msgstr "First backtest, trading started (paper or real), running in the cloud"
+
+msgid "priv.c.strat.h"
+msgstr "Each strategy"
+
+msgid "priv.c.strat.1"
+msgstr "Once each when created, first backtested, first given an amount"
+
+msgid "priv.c.strat.2"
+msgstr "Only its type (A/B/C) and market category, e.g. crypto or Taiwan index futures"
+
+msgid "priv.c.strat.3"
+msgstr "Never its name or symbol"
+
+msgid "priv.c.strat.4"
+msgstr "The three steps share one code only this computer can compute"
+
+msgid "priv.c.strat.5"
+msgstr "Blave can't turn it back into the name"
+
+msgid "priv.c.feat.h"
+msgstr "Which features you used"
+
+msgid "priv.c.feat.1"
+msgstr "Tab and button names, once per item per day"
+
+msgid "priv.c.feat.2"
+msgstr "Never what's inside them"
+
+msgid "priv.c.feat.3"
+msgstr "Using a library strategy: whether it needs Blave data"
+
+msgid "priv.c.feat.4"
+msgstr "Sending an idea request: which entry point it came from"
+
+msgid "priv.c.feat.5"
+msgstr "Reply notifications: whether shown, whether clicked"
+
+msgid "priv.c.feat.6"
+msgstr "Never the chat title or text"
+
+msgid "priv.c.stuck.h"
+msgstr "Where things got stuck"
+
+msgid "priv.c.stuck.1"
+msgstr "Why a turn, AI connection or library strategy failed"
+
+msgid "priv.c.stuck.2"
+msgstr "Card or top-up prompt shown, clicked, account ready on return"
+
+msgid "priv.c.stuck.3"
+msgstr "Result of starting a cloud plan; which update step failed"
+
+msgid "priv.c.stuck.4"
+msgstr "Your first AI reply"
+
+msgid "priv.c.stuck.5"
+msgstr "Whether first-run or post-update setup of the engine and strategy packages finished"
+
+msgid "priv.c.stuck.6"
+msgstr "If not, which kind of reason"
+
+msgid "priv.c.stuck.7"
+msgstr "Categories only, never the content"
+
+msgid "priv.c.auth.h"
+msgstr "Sign-in and keys"
+
+msgid "priv.c.auth.1"
+msgstr "How the local AI signs in, e.g. subscription or API key"
+
+msgid "priv.c.auth.2"
+msgstr "No account or key data"
+
+msgid "priv.c.auth.3"
+msgstr "Kind of sign-in failure, and whether the AI counted as signed in"
+
+msgid "priv.c.auth.4"
+msgstr "Key-change code box: shown, passed, locked"
+
+msgid "priv.c.auth.5"
+msgstr "Never the code"
+
+msgid "priv.c.meta.h"
+msgstr "On every record"
+
+msgid "priv.c.meta.1"
 msgstr "When it happened"
 
-msgid "priv.collect.3"
-msgstr "The app version, operating system and version, system language, and computer type (laptop or desktop)"
+msgid "priv.c.meta.2"
+msgstr "App version, operating system and version, system language"
 
-msgid "priv.collect.4"
-msgstr "An installation ID (a random ID for this install); after you sign in it is linked to your Blave account"
+msgid "priv.c.meta.3"
+msgstr "Computer type: laptop or desktop"
 
-# 0.1.12 加了引擎安裝的結果(engine_setup / engine_opt_fail):補在這一條(設計稽核 0.1.12 複驗定稿)
-msgid "priv.collect.6"
-msgstr "Where things got stuck: the category of a failed turn, a failed AI connection or a blocked library strategy, whether a card or top-up prompt appeared and was clicked and whether your account was ready when you came back, the result of starting a cloud plan, which update step failed, your first AI reply, and whether the first-run or post-update setup of this computer (engine and strategy packages) finished and, if not, the category of the reason — categories only, never the content"
+msgid "priv.c.meta.4"
+msgstr "Installation ID: a random ID for this install"
 
-msgid "priv.collect.7"
-msgstr "Once you sign in, your account also records which AI you’re connected to and whether this computer has run a backtest (kept 90 days)"
+msgid "priv.c.meta.5"
+msgstr "Once you sign in, it is linked to your Blave account"
 
-# 0.1.13 策略庫免登入下載(/public_code)帶安裝識別碼算安裝人數;面板排在 priv.collect.4 之後
-msgid "priv.collect.8"
-msgstr "When you download a no-sign-in library strategy: which one (its library number) and the installation ID, to count installs; once you sign in, it is linked to your Blave account"
+msgid "priv.c.lib.h"
+msgstr "Library downloads"
 
-# 0.1.35 本機 AI 登入方式(cli_auth)與登入失敗(auth_fail);面板排在 priv.collect.6 之後
-msgid "priv.collect.9"
-msgstr "How the local AI is signed in, e.g. subscription or API key; no account or key data"
+msgid "priv.c.lib.1"
+msgstr "Downloading a no-sign-in library strategy while signed out or your sign-in expired"
 
-msgid "priv.collect.10"
-msgstr "Which kind of sign-in failure, and whether the AI counted as signed in"
+msgid "priv.c.lib.2"
+msgstr "Its library number and the installation ID, to count installs"
 
-msgid "priv.collect.11"
-msgstr "Whether the key-change code box appeared, passed or locked, never the code"
+msgid "priv.c.lib.3"
+msgstr "Once you sign in, it is linked to your Blave account"
+
+msgid "priv.c.acct.h"
+msgstr "On your account"
+
+msgid "priv.c.acct.1"
+msgstr "Once you sign in, which AI you’re connected to"
+
+msgid "priv.c.acct.2"
+msgstr "And whether this computer has run a backtest, kept 90 days"
 
 msgid "priv.never.h"
 msgstr "Not in usage data"
@@ -3705,6 +3809,325 @@ msgstr "Purple"
 msgid "side.moved"
 msgstr "Moved to position {n}"
 
+# 側欄策略資料夾(spec strategy-sidebar-folders §14);emoji 名稱 key 是碼點,選擇器每格的 aria-label 與 title
+msgid "sg.add"
+msgstr "New folder"
+
+msgid "sg.newName"
+msgstr "New folder"
+
+msgid "sg.uncat"
+msgstr "Uncategorized"
+
+msgid "sg.auto"
+msgstr "Group by market"
+
+msgid "sg.max"
+msgstr "Up to 20 folders"
+
+msgid "sg.rename"
+msgstr "Rename"
+
+msgid "sg.emoji"
+msgstr "Change icon"
+
+msgid "sg.up"
+msgstr "Move up"
+
+msgid "sg.down"
+msgstr "Move down"
+
+msgid "sg.del"
+msgstr "Delete folder"
+
+msgid "sg.emojiNone"
+msgstr "Remove icon"
+
+msgid "sg.cat.common"
+msgstr "Common"
+
+msgid "sg.cat.market"
+msgstr "Markets"
+
+msgid "sg.cat.strategy"
+msgstr "Strategy"
+
+msgid "sg.cat.animal"
+msgstr "Animals"
+
+msgid "sg.cat.nature"
+msgstr "Nature"
+
+msgid "sg.cat.object"
+msgstr "Objects"
+
+msgid "sg.delTitle"
+msgstr "Delete “{name}”?"
+
+msgid "sg.delBody"
+msgstr "Its strategies ({n}) move to Uncategorized."
+
+msgid "sg.delOk"
+msgstr "Delete"
+
+msgid "sg.moved"
+msgstr "Moved to {name}"
+
+msgid "sg.headAria"
+msgstr "{name}, strategies: {n}"
+
+msgid "sg.headLive"
+msgstr ", live: {m}"
+
+msgid "sg.more"
+msgstr "{name} options"
+
+msgid "sg.nameAria"
+msgstr "Folder name"
+
+msgid "sg.moveTo"
+msgstr "Move to {name}"
+
+msgid "sg.moveOut"
+msgstr "Remove from folder"
+
+msgid "sg.mkt.crypto"
+msgstr "Crypto"
+
+msgid "sg.mkt.txf"
+msgstr "TAIEX Futures"
+
+msgid "sg.mkt.tw"
+msgstr "TW Stocks"
+
+msgid "sg.mkt.us"
+msgstr "US Stocks"
+
+msgid "sg.mkt.stockFut"
+msgstr "Stock Futures"
+
+msgid "sg.mkt.global"
+msgstr "Global Futures"
+
+msgid "sg.mkt.mixed"
+msgstr "Mixed"
+
+msgid "sg.e.2B50"
+msgstr "Star"
+
+msgid "sg.e.1F525"
+msgstr "Fire"
+
+msgid "sg.e.1F4A1"
+msgstr "Light bulb"
+
+msgid "sg.e.1F3AF"
+msgstr "Bullseye"
+
+msgid "sg.e.1F9EA"
+msgstr "Test tube"
+
+msgid "sg.e.1F680"
+msgstr "Rocket"
+
+msgid "sg.e.1F48E"
+msgstr "Gem"
+
+msgid "sg.e.1F3C6"
+msgstr "Trophy"
+
+msgid "sg.e.1F4CC"
+msgstr "Pushpin"
+
+msgid "sg.e.1F516"
+msgstr "Bookmark"
+
+msgid "sg.e.1F4E6"
+msgstr "Package"
+
+msgid "sg.e.1F9E9"
+msgstr "Puzzle piece"
+
+msgid "sg.e.1F4C8"
+msgstr "Chart going up"
+
+msgid "sg.e.1F4C9"
+msgstr "Chart going down"
+
+msgid "sg.e.1F4CA"
+msgstr "Bar chart"
+
+msgid "sg.e.1F4B9"
+msgstr "Chart with yen"
+
+msgid "sg.e.1F4B0"
+msgstr "Money bag"
+
+msgid "sg.e.1F4B5"
+msgstr "Dollar banknote"
+
+msgid "sg.e.1F4B4"
+msgstr "Yen banknote"
+
+msgid "sg.e.1F4B6"
+msgstr "Euro banknote"
+
+msgid "sg.e.1F4B7"
+msgstr "Pound banknote"
+
+msgid "sg.e.1F3E6"
+msgstr "Bank"
+
+msgid "sg.e.1F310"
+msgstr "Globe with meridians"
+
+msgid "sg.e.1F30F"
+msgstr "Globe showing Asia"
+
+msgid "sg.e.23F0"
+msgstr "Alarm clock"
+
+msgid "sg.e.23F3"
+msgstr "Hourglass"
+
+msgid "sg.e.1F501"
+msgstr "Repeat"
+
+msgid "sg.e.1F504"
+msgstr "Refresh"
+
+msgid "sg.e.1F500"
+msgstr "Shuffle"
+
+msgid "sg.e.1F50D"
+msgstr "Magnifying glass"
+
+msgid "sg.e.1F9ED"
+msgstr "Compass"
+
+msgid "sg.e.1F52D"
+msgstr "Telescope"
+
+msgid "sg.e.1F30A"
+msgstr "Wave"
+
+msgid "sg.e.1F3B2"
+msgstr "Die"
+
+msgid "sg.e.1F9E0"
+msgstr "Brain"
+
+msgid "sg.e.1F52C"
+msgstr "Microscope"
+
+msgid "sg.e.1F402"
+msgstr "Ox"
+
+msgid "sg.e.1F43B"
+msgstr "Bear"
+
+msgid "sg.e.1F433"
+msgstr "Whale"
+
+msgid "sg.e.1F988"
+msgstr "Shark"
+
+msgid "sg.e.1F985"
+msgstr "Eagle"
+
+msgid "sg.e.1F98A"
+msgstr "Fox"
+
+msgid "sg.e.1F989"
+msgstr "Owl"
+
+msgid "sg.e.1F422"
+msgstr "Turtle"
+
+msgid "sg.e.1F407"
+msgstr "Rabbit"
+
+msgid "sg.e.1F41D"
+msgstr "Bee"
+
+msgid "sg.e.1F419"
+msgstr "Octopus"
+
+msgid "sg.e.1F984"
+msgstr "Unicorn"
+
+msgid "sg.e.1F331"
+msgstr "Seedling"
+
+msgid "sg.e.1F332"
+msgstr "Evergreen tree"
+
+msgid "sg.e.1F335"
+msgstr "Cactus"
+
+msgid "sg.e.1F340"
+msgstr "Four leaf clover"
+
+msgid "sg.e.1F338"
+msgstr "Cherry blossom"
+
+msgid "sg.e.1F319"
+msgstr "Crescent moon"
+
+msgid "sg.e.26C5"
+msgstr "Sun behind cloud"
+
+msgid "sg.e.1F308"
+msgstr "Rainbow"
+
+msgid "sg.e.1F30B"
+msgstr "Volcano"
+
+msgid "sg.e.1F31E"
+msgstr "Sun with face"
+
+msgid "sg.e.2614"
+msgstr "Umbrella"
+
+msgid "sg.e.1F341"
+msgstr "Maple leaf"
+
+msgid "sg.e.2693"
+msgstr "Anchor"
+
+msgid "sg.e.1F511"
+msgstr "Key"
+
+msgid "sg.e.1F527"
+msgstr "Wrench"
+
+msgid "sg.e.1F528"
+msgstr "Hammer"
+
+msgid "sg.e.1F9F0"
+msgstr "Toolbox"
+
+msgid "sg.e.1F9F2"
+msgstr "Magnet"
+
+msgid "sg.e.1F4DA"
+msgstr "Books"
+
+msgid "sg.e.1F4DD"
+msgstr "Memo"
+
+msgid "sg.e.1F4CE"
+msgstr "Paperclip"
+
+msgid "sg.e.1F381"
+msgstr "Gift"
+
+msgid "sg.e.1F3A8"
+msgstr "Palette"
+
+msgid "sg.e.1F388"
+msgstr "Balloon"
+
 msgid "rp.noBt"
 msgstr "This strategy has no backtest results yet, so only the code is shown. To see the numbers, ask the agent on the right to run a backtest."
 
@@ -4167,6 +4590,10 @@ msgstr "Update · Restart"
 # 更新 modal 一般(沒在下單)的標題;{v} = 已暫存的新版號(canon 具名例外:只這個標題可以寫版號)
 msgid "up.md.title"
 msgstr "Update to {v}"
+
+# 更新 modal 一般(沒在下單):本體那句。回合在跑時開不了這個框、重開前會先收掉引擎;分頁記憶在 ui-prefs,重開後接回
+msgid "up.md.lede"
+msgstr "Blave closes and reopens on its own. Your chats stay."
 
 # 更新 modal 的主鈕(一般與下單中都是這句)
 msgid "up.md.go"
@@ -9510,3 +9937,193 @@ msgstr "Too many wrong tries. No more tries today."
 msgid "cx.kc.until"
 msgstr "After {t}, key changes won't need a code."
 
+# 0.1.38 手機 App 跟這台電腦對話(spec mobile-agent-chat-mvp;設計 desktop-phone-chat-settings-2026-10-30、mchat-phone-surfaces-2026-10-31)
+
+msgid "chat.fromPhone"
+msgstr "From phone"
+
+msgid "ph.switch"
+msgstr "Allow phone chat"
+
+msgid "ph.tip"
+msgstr "Works only while Blave is open and this computer is awake."
+
+msgid "ph.cf.title"
+msgstr "Allow phone chat?"
+
+msgid "ph.cf.1"
+msgstr "Messages from your phone run on this computer. The agent can do anything it can here, including placing orders."
+
+msgid "ph.cf.2"
+msgstr "Chats from the last 30 days are uploaded so your phone can show them. Keys and folder paths are masked first."
+
+msgid "ph.cf.3"
+msgstr "Attachments, images and strategy code stay here. Turning this off deletes the copy on Blave."
+
+msgid "ph.cf.ok"
+msgstr "Turn on"
+
+msgid "ph.off.title"
+msgstr "Turn off phone chat?"
+
+msgid "ph.off.live"
+msgstr "The reply your phone started will stop."
+
+msgid "ph.off.del"
+msgstr "Chats on Blave are deleted. Chats on this computer stay."
+
+msgid "ph.off.ok"
+msgstr "Turn off"
+
+msgid "ph.syncing"
+msgstr "Synced {n} of {m} chats"
+
+msgid "ph.syncFail"
+msgstr "Sync stopped at {n} of {m} chats."
+
+msgid "ph.syncFail0"
+msgstr "Chats didn't finish syncing."
+
+msgid "ph.retry"
+msgstr "Retry"
+
+msgid "ph.syncedSay"
+msgstr "Chats from the last 30 days are synced"
+
+msgid "ph.pending"
+msgstr "The chats on Blave aren't deleted yet. They will be once you're back online."
+
+msgid "ph.err"
+msgstr "Couldn't turn it on. Check your connection and try again."
+
+msgid "ph.group"
+msgstr "Phones allowed on this computer"
+
+msgid "ph.pair"
+msgstr "Pair a Phone"
+
+msgid "ph.pairHow"
+msgstr "Scan it in the app's Agent tab, or enter the code."
+
+msgid "ph.pairUntil"
+msgstr "Valid until {hm}"
+
+msgid "ph.pairExpired"
+msgstr "This code has expired."
+
+msgid "ph.pairAgain"
+msgstr "Get a New Code"
+
+msgid "ph.pairFail"
+msgstr "Couldn't get a pairing code. Try again."
+
+msgid "ph.pairMax"
+msgstr "You have 5 phones. Revoke one to pair another."
+
+msgid "ph.pairedSay"
+msgstr "Paired {name}"
+
+msgid "ph.meta"
+msgstr "Paired {paired} · Last used {used}"
+
+msgid "ph.metaNever"
+msgstr "Paired {paired} · Not used yet"
+
+msgid "ph.acts"
+msgstr "Recent Activity"
+
+msgid "ph.actsMore"
+msgstr "Show All"
+
+msgid "ph.actsFail"
+msgstr "Couldn't load activity."
+
+msgid "ph.revoke"
+msgstr "Revoke"
+
+msgid "ph.iphone"
+msgstr "iPhone"
+
+msgid "ph.android"
+msgstr "Android phone"
+
+msgid "ph.errRow"
+msgstr "Couldn't save that. Check your connection and try again."
+
+msgid "ph.phonesFail"
+msgstr "Couldn't load your phones."
+
+msgid "ph.revokedSay"
+msgstr "Revoked {name}"
+
+msgid "ph.revoke.title"
+msgstr "Revoke {name}?"
+
+msgid "ph.revoke.body"
+msgstr "This phone can no longer chat with the agent. Pair it again to use it."
+
+msgid "ph.revoke.stop"
+msgstr "If a reply it started is still running, it stops."
+
+msgid "ph.revoke.ok"
+msgstr "Revoke"
+
+msgid "ph.act.send"
+msgstr "Sent a message"
+
+msgid "ph.act.stop"
+msgstr "Stopped a reply"
+
+msgid "ph.act.withdraw"
+msgstr "Withdrew a message"
+
+msgid "ph.act.session_new"
+msgstr "New chat"
+
+msgid "ph.act.session_rename"
+msgstr "Renamed a chat"
+
+msgid "ph.act.session_delete"
+msgstr "Deleted a chat"
+
+msgid "ph.act.pair"
+msgstr "Paired"
+
+msgid "ph.act.auth"
+msgstr "Verified"
+
+msgid "ph.act.revoke"
+msgstr "Revoked"
+
+msgid "ph.act.grant"
+msgstr "Allowed on this computer"
+
+msgid "ph.act.ungrant"
+msgstr "Stopped on this computer"
+
+msgid "tm.phoneHiddenTitle"
+msgstr "Phone chat is on"
+
+msgid "tm.phoneHidden"
+msgstr "Blave is still open, so your phone can reach it. To quit, use the menu bar or the Dock."
+
+msgid "tm.phoneHiddenWin"
+msgstr "Blave is still open, so your phone can reach it. To quit, use the system tray icon."
+
+msgid "sp.btn"
+msgstr "Auto-trade"
+
+msgid "sp.cx"
+msgstr "Connect account"
+
+msgid "sp.noAcct"
+msgstr "No account linked"
+
+msgid "sp.connecting"
+msgstr "Connecting…"
+
+msgid "sp.unsaved"
+msgstr "Unsaved portfolio changes"
+
+msgid "tr.pick.twdVenue"
+msgstr "TWD strategies can't trade on {venue}"

@@ -79,7 +79,7 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
   { // 列舉每一個 loadLlmKey() 呼叫點所在的函式:明文金鑰只該出現在這幾處;其中交給畫面的兩支(llmKeyInfo / apikeyModels)根本不碰 .key
     const owners = [...main.matchAll(/(function )?loadLlmKey\(\)/g)].filter((m) => !m[1]).map((m) => { const f = [...main.slice(0, m.index).matchAll(/(?:async )?function (\w+)\(/g)].pop(); return f ? f[1] : "?"; });
     const body = (n) => cut(main, "function " + n + "(", "\n}\n");
-    t("loadLlmKey 的呼叫點只有 saveConnection / llmKeyInfo / llmKeyTest / apikeyModels / runTurn / createWindow(load-connection 只看解不解得開)", JSON.stringify(owners.sort()) === JSON.stringify(["apikeyModels", "createWindow", "llmKeyInfo", "llmKeyTest", "runTurn", "saveConnection"]) || (console.log("      呼叫點:", owners.join()), false));
+    t("loadLlmKey 的呼叫點只有 saveConnection / llmKeyInfo / llmKeyTest / apikeyModels / runTurn / createWindow(load-connection 只看解不解得開)/ relayKnown(手機對話上傳前的第 1 條遮蔽:金鑰只拿來在主行程比對)", JSON.stringify(owners.sort()) === JSON.stringify(["apikeyModels", "createWindow", "llmKeyInfo", "llmKeyTest", "relayKnown", "runTurn", "saveConnection"]) || (console.log("      呼叫點:", owners.join()), false));
     t("交給畫面的 llmKeyInfo / apikeyModels 不碰 .key", !/\.key\b/.test(body("llmKeyInfo")) && !/\bk\.key\b/.test(body("apikeyModels"))); }
   { const keep = fs.readFileSync(file); fs.writeFileSync(file, "ENCgarbage");
     t("金鑰檔在但解不開(被換掉、換了機器)→ loadLlmKey 回 null", api.loadLlmKey() === null); fs.writeFileSync(file, keep); }

@@ -210,7 +210,7 @@ async function capUpload() {
 async function capHandoff(which) {
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);
   const ok = await csSendAway(t(which === "rdp" ? "cap.ho.promptRdp" : which === "verify" ? "cap.ho.promptVerify" : which === "read" ? "cap.ho.promptRead" : "cap.ho.prompt"), { viewing: { env: "cloud" } });
-  if (ok) { capTrack("rdp"); cxModalClose(true); }
+  if (ok) { capTrack("rdp"); cxModalClose("handoff"); }   // 什麼都沒綁:策略頁不進「連接中」
 }
 function capSign() { window.blave.openExternal(CAP_SIGN_URL); CAP.signOpened = true; capTrack("sign"); capPaint(); }
 

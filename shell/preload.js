@@ -33,7 +33,7 @@ contextBridge.exposeInMainWorld("blave", {
   introCheck: () => ipcRenderer.invoke("intro-check"),
   introSeen: () => ipcRenderer.invoke("intro-seen"),
   stratPrefs: () => ipcRenderer.invoke("strat-prefs"),
-  stratPrefsSet: (p) => ipcRenderer.invoke("strat-prefs-set", { stratOrder: p && p.stratOrder, stratFlags: p && p.stratFlags }),
+  stratPrefsSet: (p) => ipcRenderer.invoke("strat-prefs-set", { stratOrder: p && p.stratOrder, stratFlags: p && p.stratFlags, stratGroups: p && p.stratGroups, stratGroupsCollapsed: p && p.stratGroupsCollapsed }),
   // 雲端那一袋的部位大小(renderer/portfolio.js):存 ui-prefs.json、主行程綁這次登入;換人讀回 null
   mgSizingCloud: () => ipcRenderer.invoke("mg-sizing-cloud"),
   mgSizingCloudSet: (v) => ipcRenderer.invoke("mg-sizing-cloud-set", v),
@@ -60,7 +60,7 @@ contextBridge.exposeInMainWorld("blave", {
   cloudStatus: () => ipcRenderer.invoke("cloud-status"),
   cloudRefresh: () => ipcRenderer.invoke("cloud-refresh"),
   cloudSetCcy: (code) => ipcRenderer.invoke("cloud-set-ccy", code),   // 設定 › 顯示幣別:寫帳號的 base_currency 偏好
-  cloudStratPrefsSet: (p) => ipcRenderer.invoke("cloud-strat-prefs", { strat_order: p && p.strat_order, strat_flags: p && p.strat_flags, epoch: p && p.epoch }),   // 雲端 tab 側欄的順序 / 旗標
+  cloudStratPrefsSet: (p) => ipcRenderer.invoke("cloud-strat-prefs", { strat_order: p && p.strat_order, strat_flags: p && p.strat_flags, strat_groups: p && p.strat_groups, epoch: p && p.epoch }),   // 雲端 tab 側欄的順序 / 旗標 / 資料夾
   onCloudState: (fn) => ipcRenderer.on("cloud-state", (_e, s) => fn(s)),
   cloudEvents: (q) => ipcRenderer.invoke("cloud-events", q),
   cloudOverview: (q) => ipcRenderer.invoke("cloud-overview", q),
@@ -189,6 +189,16 @@ contextBridge.exposeInMainWorld("blave", {
   signOutBlave: () => ipcRenderer.invoke("sign-out-blave"),
   mobileViewState: () => ipcRenderer.invoke("mobile-view-state"),
   mobileViewSet: (on) => ipcRenderer.invoke("mobile-view-set", on === true),
+  // 手機 App 跟這台電腦對話(relay.js):只有開關、同步進度與數字,沒有憑證與對話內容
+  relayState: () => ipcRenderer.invoke("relay-state"),
+  relaySet: (on) => ipcRenderer.invoke("relay-set", on === true),
+  relayRetry: () => ipcRenderer.invoke("relay-retry"),
+  relayPairCode: () => ipcRenderer.invoke("relay-pair-code"),
+  relayPhones: () => ipcRenderer.invoke("relay-phones"),
+  relayGrant: (id, on) => ipcRenderer.invoke("relay-grant", String(id || ""), on === true),
+  relayRevoke: (id) => ipcRenderer.invoke("relay-revoke", String(id || "")),
+  relayActions: (id) => ipcRenderer.invoke("relay-actions", id == null ? null : String(id)),
+  onRelayState: (fn) => ipcRenderer.on("relay-state", (_e, st) => fn(st && typeof st === "object" ? st : null)),
   ensureEngine: () => ipcRenderer.invoke("ensure-engine"),
   sendMessage: (payload) => ipcRenderer.invoke("send-message", payload),
   stopTurn: (sid) => ipcRenderer.invoke("stop-turn", typeof sid === "string" ? sid : null),   // true = 停止旗標寫下了;結果照樣等 turn-end。沒帶 sid = 只有一條在跑時停它
@@ -198,7 +208,7 @@ contextBridge.exposeInMainWorld("blave", {
   tabsPrefsSet: (p) => ipcRenderer.invoke("tabs-prefs-set", p && typeof p === "object" ? { tabs: Array.isArray(p.tabs) ? p.tabs.filter((x) => typeof x === "string") : [], sel: typeof p.sel === "string" ? p.sel : null } : null),
   onTabNew: (fn) => ipcRenderer.on("tab-new", () => fn()),
   onTabClose: (fn) => ipcRenderer.on("tab-close", () => fn()),
-  onTabOpen: (fn) => ipcRenderer.on("tab-open", (_e, o) => fn(o && typeof o === "object" ? { sid: typeof o.sid === "string" ? o.sid : "", origin: o.origin === "mobile" ? "mobile" : "desktop", focus: o.focus !== false } : null)),
+  onTabOpen: (fn) => ipcRenderer.on("tab-open", (_e, o) => fn(o && typeof o === "object" ? { sid: typeof o.sid === "string" ? o.sid : "", origin: o.origin === "mobile" ? "mobile" : "desktop", focus: o.focus !== false, echo: typeof o.echo === "string" ? o.echo : "" } : null)),
   windowClose: () => ipcRenderer.send("window-close"),
   // 安裝進度(renderer/engine.js):主行程那一份快照,拉一次 + 之後每次變動推過來
   engineState: () => ipcRenderer.invoke("engine-state"),

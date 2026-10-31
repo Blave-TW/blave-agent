@@ -1,0 +1,2944 @@
+{
+  "spec": "mobile-agent-chat-mvp §1.3",
+  "source": "blave-agent shell/relay.js via tests/check_shell_relay_api_responses.js",
+  "note": "api 回應 → 外殼反應。requests = 照回應回到外殼的先後(實際發生的順序)記的請求(token、app_secret、device 拿掉)與 api 那次的回應;poll 只記回應;shell = 外殼叫了哪些 startTurn(訊息)／stopTurn(對話)",
+  "cases": [
+    {
+      "name": "ack_rejected",
+      "desc": "ack 回 rejected:那句不跑、不回 started",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00001",
+                  "session_id": "desktop-mresp0001",
+                  "content": "下單",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00001"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [],
+              "rejected": [
+                "msgresp00001"
+              ]
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "sweep_between_ack_and_started",
+      "desc": "ack 之後、started 之前 api 已 sweep 判沒跑:started 回 cancel → 不跑、不回 start_aborted",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00002",
+                  "session_id": "desktop-mresp0001",
+                  "content": "看一下",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00002"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00002"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00002"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "cancel",
+                  "message_id": "msgresp00002"
+                }
+              ],
+              "interrupt": [],
+              "cancel": [
+                "msgresp00002"
+              ]
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "report_interrupt",
+      "desc": "跑中,report 回 interrupt:停那一條",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00003",
+                  "session_id": "desktop-mresp0001",
+                  "content": "掃參數",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00003"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00003"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00003"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "text",
+                "text": "跑",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00003"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [
+                "desktop-mresp0001"
+              ],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [
+          "掃參數"
+        ],
+        "stopTurn": [
+          "desktop-mresp0001"
+        ]
+      }
+    },
+    {
+      "name": "report_cancel_and_interrupt",
+      "desc": "report 回 cancel(那句)＋interrupt(同一條):只停一次",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00004",
+                  "session_id": "desktop-mresp0001",
+                  "content": "跑",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00004"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00004"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00004"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "text",
+                "text": "跑",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00004"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [
+                "desktop-mresp0001"
+              ],
+              "cancel": [
+                "msgresp00004"
+              ]
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [
+          "跑"
+        ],
+        "stopTurn": [
+          "desktop-mresp0001"
+        ]
+      }
+    },
+    {
+      "name": "report_401",
+      "desc": "跑中、後面排著,report 回 401:跑中的停、排隊的清掉",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00005",
+                  "session_id": "desktop-mresp0001",
+                  "content": "第一句",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00005"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00005"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00005"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00006",
+                  "session_id": "desktop-mresp0001",
+                  "content": "第二句",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00006"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00006"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "queued",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00006"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "text",
+                "text": "x",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00005"
+              }
+            ]
+          },
+          "response": {
+            "status": 401,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "message_failed",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00006",
+                "code": "not_run"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [
+          "第一句"
+        ],
+        "stopTurn": [
+          "desktop-mresp0001"
+        ]
+      }
+    },
+    {
+      "name": "poll_409",
+      "desc": "poll 回 409 RELAY_NOT_ENABLED:補打 enable 再輪",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 409,
+            "body": {
+              "error_code": "RELAY_NOT_ENABLED"
+            }
+          }
+        },
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "poll_403_with_controls",
+      "desc": "poll 回 403 APP_CHAT_OFF 帶 controls:停止照做、relay 停、畫面藏起來",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00007",
+                  "session_id": "desktop-mresp0001",
+                  "content": "第一句",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00007"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00007"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00007"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "APP_CHAT_OFF",
+              "controls": [
+                {
+                  "type": "interrupt",
+                  "session_id": "desktop-mresp0001"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [
+          "第一句"
+        ],
+        "stopTurn": [
+          "desktop-mresp0001"
+        ]
+      }
+    },
+    {
+      "name": "ack_lost",
+      "desc": "ack 回應遺失:那句不跑、回 message_failed not_run",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00008",
+                  "session_id": "desktop-mresp0001",
+                  "content": "下單",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00008"
+            ]
+          },
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "message_failed",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00008",
+                "code": "not_run"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "ack_partial",
+      "desc": "ack 回應只提到其中一句:沒提到的那句回 message_failed not_run",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00009",
+                  "session_id": "desktop-mresp0001",
+                  "content": "a",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                },
+                {
+                  "message_id": "msgresp00010",
+                  "session_id": "desktop-mresp0002",
+                  "content": "b",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00009",
+              "msgresp00010"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00009"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "message_failed",
+                "session_id": "desktop-mresp0002",
+                "message_id": "msgresp00010",
+                "code": "not_run"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00009"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [
+          "a"
+        ],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "A_stop_with_queue",
+      "desc": "探針 A:手機那輪在跑、同一條後面排著;手機按停止 → 停那輪、排著的回 cancelled,不會自己開跑",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00011",
+                  "session_id": "desktop-mresp0001",
+                  "content": "第一句",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00011"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00011"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00011"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00012",
+                  "session_id": "desktop-mresp0001",
+                  "content": "第二句:下單",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00012"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00012"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "queued",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00012"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [],
+              "controls": [
+                {
+                  "type": "interrupt",
+                  "session_id": "desktop-mresp0001"
+                }
+              ],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "cancelled",
+                "session_id": "desktop-mresp0001",
+                "message_ids": [
+                  "msgresp00012"
+                ]
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "done",
+                "awaiting": false,
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00011"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [
+          "第一句"
+        ],
+        "stopTurn": [
+          "desktop-mresp0001"
+        ]
+      }
+    },
+    {
+      "name": "B_withdraw_during_started",
+      "desc": "探針 B:排隊叫出、started 還在路上時撤回 → 不跑;start_aborted、cancelled、withdraw_result withdrawn",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00013",
+                  "session_id": "desktop-mresp0001",
+                  "content": "排隊那句",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00013"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00013"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "queued",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00013"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [],
+              "controls": [
+                {
+                  "type": "withdraw",
+                  "session_id": "desktop-mresp0001",
+                  "message_id": "msgresp00013"
+                }
+              ],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00013"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "start_aborted",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00013"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "cancelled",
+                "session_id": "desktop-mresp0001",
+                "message_ids": [
+                  "msgresp00013"
+                ]
+              },
+              {
+                "type": "withdraw_result",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00013",
+                "result": "withdrawn"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                },
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "B2_interrupt_during_started",
+      "desc": "started 還在路上時手機按停止 → 不跑;start_aborted、cancelled,沒有 withdraw_result(沒人撤回)",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00018",
+                  "session_id": "desktop-mresp0001",
+                  "content": "掃參數",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00018"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00018"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [],
+              "controls": [
+                {
+                  "type": "interrupt",
+                  "session_id": "desktop-mresp0001"
+                }
+              ],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00018"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "start_aborted",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00018"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "cancelled",
+                "session_id": "desktop-mresp0001",
+                "message_ids": [
+                  "msgresp00018"
+                ]
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "started_502_then_ok",
+      "desc": "started 回 502(部署中)→ 重送,第二次 ok 才開跑",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00019",
+                  "session_id": "desktop-mresp0001",
+                  "content": "看一下",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00019"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00019"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00019"
+              }
+            ]
+          },
+          "response": {
+            "status": 502,
+            "body": null
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00019"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [
+          "看一下"
+        ],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "started_400",
+      "desc": "started 回 400(api 拒收)→ 不跑、回 message_failed not_run",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00020",
+                  "session_id": "desktop-mresp0001",
+                  "content": "看一下",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00020"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00020"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00020"
+              }
+            ]
+          },
+          "response": {
+            "status": 400,
+            "body": {
+              "error_code": "BAD_REQUEST"
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "message_failed",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00020",
+                "code": "not_run"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "desktop_turn_during_claim",
+      "desc": "稽核 P2-1:認領途中電腦前的人那輪的事件與 turn-end 都不轉給手機、不收掉認領中那筆;認領回來時那條在忙 → start_aborted",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00021",
+                  "session_id": "desktop-mresp0001",
+                  "content": "手機:下單",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00021"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00021"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00021"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "start_aborted",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00021"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "done_502_retry",
+      "desc": "稽核 P2-2:done 遇 502 → 放回去重送,不丟",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00022",
+                  "session_id": "desktop-mresp0001",
+                  "content": "看一下",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00022"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00022"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00022"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "done",
+                "awaiting": false,
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00022"
+              }
+            ]
+          },
+          "response": {
+            "status": 502,
+            "body": null
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "done",
+                "awaiting": false,
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00022"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [
+          "看一下"
+        ],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "switch_off_during_claim_retry",
+      "desc": "稽核 P3-2:started 第一次回應掉了、重送時總開關關(403)→ 補 start_aborted",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00023",
+                  "session_id": "desktop-mresp0001",
+                  "content": "下單",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00023"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00023"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00023"
+              }
+            ]
+          },
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00023"
+              }
+            ]
+          },
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "APP_CHAT_OFF"
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "start_aborted",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00023"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "message_failed",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00023",
+                "code": "not_run"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": [
+          "desktop-mresp0001"
+        ]
+      }
+    },
+    {
+      "name": "switch_off_first_started",
+      "desc": "稽核第四輪 P3:第一次 started 就被總開關擋下(403)→ start_aborted＋message_failed not_run 都送(api 沒記到開跑,認 message_failed)",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00024",
+                  "session_id": "desktop-mresp0001",
+                  "content": "下單",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00024"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00024"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00024"
+              }
+            ]
+          },
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "APP_CHAT_OFF"
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "start_aborted",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00024"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "message_failed",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00024",
+                "code": "not_run"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": [
+          "desktop-mresp0001"
+        ]
+      }
+    },
+    {
+      "name": "started_after_same_session_done",
+      "desc": "稽核第四輪 P1:上一輪的 done 連兩次 502(認領前那次 flush 也送不到)、同一條排著的下一句被叫出 → 先把 done 送到,started 才送",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00025",
+                  "session_id": "desktop-mresp0001",
+                  "content": "第一句",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00025"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00025"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00025"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00026",
+                  "session_id": "desktop-mresp0001",
+                  "content": "第二句:下單",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00026"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00026"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "queued",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00026"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "done",
+                "awaiting": false,
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00025"
+              }
+            ]
+          },
+          "response": {
+            "status": 502,
+            "body": null
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "done",
+                "awaiting": false,
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00025"
+              }
+            ]
+          },
+          "response": {
+            "status": 502,
+            "body": null
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "done",
+                "awaiting": false,
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00025"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00026"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [
+          "第一句",
+          "第二句:下單"
+        ],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "withdraw_running",
+      "desc": "撤回已經開跑的那句:不停,withdraw_result running",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00014",
+                  "session_id": "desktop-mresp0001",
+                  "content": "跑",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00014"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00014"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00014"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [],
+              "controls": [
+                {
+                  "type": "withdraw",
+                  "session_id": "desktop-mresp0001",
+                  "message_id": "msgresp00014"
+                }
+              ],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "withdraw_result",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00014",
+                "result": "running"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [
+          "跑"
+        ],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "C_kill_switch",
+      "desc": "探針 C:總開關關(report 回 403 APP_CHAT_OFF)時跑中、後面排著 → 跑中的停、排著的回 message_failed not_run,那輪結束後不開下一句",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00015",
+                  "session_id": "desktop-mresp0001",
+                  "content": "第一句",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00015"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00015"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00015"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00016",
+                  "session_id": "desktop-mresp0001",
+                  "content": "第二句",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00016"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00016"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "queued",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00016"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "text",
+                "text": "x",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00015"
+              }
+            ]
+          },
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "APP_CHAT_OFF"
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "message_failed",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00016",
+                "code": "not_run"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [
+          "第一句"
+        ],
+        "stopTurn": [
+          "desktop-mresp0001"
+        ]
+      }
+    },
+    {
+      "name": "D_started_lost",
+      "desc": "探針 D:started 一直沒回應 → 重送到期限 → start_aborted＋message_failed not_run(不知道 api 有沒有記到開跑,api 認其中一個),不跑",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "messages": [
+                {
+                  "message_id": "msgresp00017",
+                  "session_id": "desktop-mresp0001",
+                  "content": "下單",
+                  "timestamp": 1,
+                  "origin": "app",
+                  "device_label": "iPhone 15"
+                }
+              ],
+              "controls": [],
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "ack",
+          "body": {
+            "message_ids": [
+              "msgresp00017"
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "acked": [
+                "msgresp00017"
+              ],
+              "rejected": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00017"
+              }
+            ]
+          },
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00017"
+              }
+            ]
+          },
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "start_aborted",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00017"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "report",
+          "body": {
+            "chunks": [
+              {
+                "type": "message_failed",
+                "session_id": "desktop-mresp0001",
+                "message_id": "msgresp00017",
+                "code": "not_run"
+              }
+            ]
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "results": [
+                {
+                  "status": "ok"
+                }
+              ],
+              "interrupt": [],
+              "cancel": []
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    }
+  ]
+}

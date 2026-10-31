@@ -4,7 +4,9 @@
 //   電腦版:shell/renderer/trade.js 的 CX_VENUES[].ccy + TR_VENUE_CCY_OTHER
 //   網頁:web/app/main/templates/agent/workspace.html 的 CX_VENUES[].ccy
 // 網頁那棵用 BLAVE_WEB_DIR 指定(預設 monorepo 的 ../web);找不到就 fail,不 SKIP——不比對等於沒有這支測試。
-// 跑法:BLAVE_WEB_DIR=/path/to/web node tests/check_web_desktop_parity.js
+// 側欄策略資料夾(spec strategy-sidebar-folders §10、§17)另比 api:72 個 emoji 清單與上限以 api openclaw/agent_strategies.py 為唯一來源,
+// api 那棵用 BLAVE_API_DIR 指定(預設 monorepo 的 ../api),同樣找不到就 fail。
+// 跑法:BLAVE_WEB_DIR=/path/to/web BLAVE_API_DIR=/path/to/api node tests/check_web_desktop_parity.js
 const fs = require("fs"), path = require("path");
 let red = 0; const ok = (n, c, why) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || !why ? "" : "  " + why)); if (!c) red++; };
 const webDir = process.env.BLAVE_WEB_DIR || path.join(__dirname, "..", "..", "web");
@@ -166,6 +168,12 @@ for (const lang of ["zh", "en"]) {
   const bad = Object.entries(FILL_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== wp[w]);
   ok(`交易歷史成交狀態 ${lang} 兩邊逐字一致(${Object.keys(FILL_PAIRS).length} 句)`, bad.length === 0,
     bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
+// 手機對話(mchat-phone-surfaces-2026-10-31 §5):手機送的那句下面的「來自手機」,電腦版 addHistoryYou 與網頁工作頁同一句
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  ok(`「來自手機」${lang} 兩邊逐字一致(chat.fromPhone ↔ workspace_cs_from_phone)`, typeof dp["chat.fromPhone"] === "string" && dp["chat.fromPhone"] === wp.workspace_cs_from_phone,
+    "chat.fromPhone「" + dp["chat.fromPhone"] + "」 vs workspace_cs_from_phone「" + wp.workspace_cs_from_phone + "」");
 }
 // 對話分頁(0.1.37;技術方案 §1.4、§4):對著雲端主機、名額滿了的排隊行與〔取消排隊〕,電腦版 chattabs.js tabsQueued 與網頁 csShowQueued 同一句;
 // 歷史清單的狀態字(回覆中／排隊中／做完，還沒看)與分組(今天／昨天／更早)也跟網頁 workspace_cs_* 同一組
@@ -384,6 +392,64 @@ for (const lang of ["zh", "en"]) {
     const bad = dF && wF ? CASES.filter(([, rep]) => call(dF, rep) !== call(wF, rep)).map(([n, rep]) => n + ":電腦版 " + call(dF, rep) + " / 網頁 " + call(wF, rep)) : ["切不出函式" + err];
     ok("策略庫基準畫不畫、代號寫什麼兩邊同一個答案(" + CASES.length + " 組)", !dParts.includes(null) && bad.length === 0, bad.join(";"));
   } }
+// ── 側欄策略資料夾(spec strategy-sidebar-folders §10 信任邊界:清單的每一份副本——api、main.js、renderer、web——同一份,改動同 commit)──
+{
+  const apiDir = process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), apiPy = path.join(apiDir, "openclaw", "agent_strategies.py");
+  const R = path.join(__dirname, "..", "shell", "renderer"), rd = (f) => fs.readFileSync(f, "utf8");
+  const sgMain = rd(path.join(__dirname, "..", "shell", "main.js")), sgR = rd(path.join(R, "stratgroups.js")), sfR = rd(path.join(R, "stratflags.js")), cloudJs = rd(path.join(__dirname, "..", "shell", "cloud.js"));
+  // 括號裡的字串常值接起來(Python 的隱式串接、JS 的 + 串接都吃)
+  const strBlock = (src, head) => { const i = src.indexOf(head); if (i < 0) return null; const j = src.indexOf(")", i + head.length); return [...src.slice(i + head.length, j).matchAll(/"([^"]*)"/g)].map((m) => m[1]).join(""); };
+  const EMO_SPEC = "⭐🔥💡🎯🧪🚀💎🏆📌🔖📦🧩📈📉📊💹💰💵💴💶💷🏦🌐🌏⏰⏳🔁🔄🔀🔍🧭🔭🌊🎲🧠🔬🐂🐻🐳🦈🦅🦊🦉🐢🐇🐝🐙🦄🌱🌲🌵🍀🌸🌙⛅🌈🌋🌞☔🍁⚓🔑🔧🔨🧰🧲📚📝📎🎁🎨🎈";
+  if (!fs.existsSync(apiPy)) ok("資料夾:找得到 api 那棵(" + apiPy + ";設 BLAVE_API_DIR)", false);
+  else {
+    const api = rd(apiPy), aE = strBlock(api, "_STRAT_GROUP_EMOJI = (");
+    const dE = strBlock(sgMain, "const SG_EMOJI = ("), rE = strBlock(sgR, "const SG_EMOJI = (");
+    ok("資料夾 emoji:api _STRAT_GROUP_EMOJI 是 72 個單一碼點、順序同 spec §10", !!aE && aE === EMO_SPEC && [...aE].length === 72, aE);
+    ok("資料夾 emoji:main.js SG_EMOJI 與 api 逐字同一份(含順序)", dE === aE, dE);
+    ok("資料夾 emoji:renderer stratgroups.js SG_EMOJI 與 api 逐字同一份(含順序)", rE === aE, rE);
+    const num = (src, re) => { const m = re.exec(src); return m ? Number(m[1]) : null; };
+    const aLim = [num(api, /^_STRAT_GROUP_FOLDERS_MAX = (\d+)/m), num(api, /^_STRAT_GROUP_NAME_MAX_LEN = (\d+)/m), num(api, /^_STRAT_ORDER_MAX = (\d+)/m)];
+    const dLim = [num(sgMain, /SG_FOLDERS_MAX = (\d+)/), num(sgMain, /SG_NAME_MAX = (\d+)/), num(sgMain, /^const STRAT_PREFS_MAX = (\d+)/m)];
+    const rLim = [num(sgR, /SG_MAX = (\d+)/), num(sgR, /SG_NAME_MAX = (\d+)/), 200];
+    ok("資料夾上限:資料夾 20、名稱 20 個碼點、map 200 三份同值(api / main.js / renderer)", JSON.stringify(aLim) === "[20,20,200]" && JSON.stringify(dLim) === JSON.stringify(aLim) && JSON.stringify(rLim) === JSON.stringify(aLim), JSON.stringify([aLim, dLim, rLim]));
+    const aId = (/^_STRAT_GROUP_ID_RE = re\.compile\(r"([^"]+)"\)/m.exec(api) || [])[1], dId = (/SG_ID_RE = \/\^([^$]+)\$\//.exec(sgMain) || [])[1], cId = (/PREF_GROUP_ID_RE = \/\^([^$]+)\$\//.exec(cloudJs) || [])[1];
+    ok("資料夾 id 形狀:api / main.js / cloud.js 同一條(f + 6–12 個 [0-9a-z])", aId === "f[0-9a-z]{6,12}" && dId === aId && cId === aId, JSON.stringify([aId, dId, cId]));
+  }
+  // 市場對應(§10 建市場資料夾):market → 預填 emoji
+  const MKT = { crypto: "💎", tw_index_futures: "📈", tw_stock_futures: "📊", tw_stock: "🏦", us_stock: "💵", global_futures: "🌐", mixed: "🧩" };
+  const dM = {}; { const m = /const SG_MARKETS = \{([\s\S]*?)\};/.exec(sgR); if (m) for (const x of m[1].matchAll(/(\w+): \["[^"]+", "([^"]+)"\]/g)) dM[x[1]] = x[2]; }
+  ok("資料夾:電腦版建市場資料夾的對應照 spec §10(七個市場與預填 emoji)", sorted(dM) === sorted(MKT), sorted(dM));
+  // 網頁的純函式層(參照面):app/static/js/agent/strat_folders.js(node 可 require),共用測資 tests/strat_folders_vectors.json 也在網頁那棵
+  const wMod = path.join(webDir, "app", "static", "js", "agent", "strat_folders.js"), wVec = path.join(webDir, "tests", "strat_folders_vectors.json");
+  const W = fs.existsSync(wMod) ? require(wMod) : null;
+  ok("資料夾:找得到網頁的 strat_folders.js 與共用測資 strat_folders_vectors.json", !!W && fs.existsSync(wVec), wMod);
+  if (W) {
+    ok("資料夾 emoji:網頁 strat_folders.js SG_EMOJI 與 api / 電腦版逐字同一份", W.SG_EMOJI === EMO_SPEC, W.SG_EMOJI);
+    const wM = Object.fromEntries(Object.entries(W.MARKETS || {}).map(([k, v]) => [k, v[1]]));
+    ok("資料夾:建市場資料夾的市場與預填 emoji 兩邊同一份", sorted(wM) === sorted(dM), sorted(wM) + " vs " + sorted(dM));
+    ok("資料夾上限:網頁資料夾 20、名稱 20、map 200、id 形狀同電腦版", W.FOLDERS_MAX === 20 && W.NAME_MAX === 20 && W.MAP_MAX === 200 && String(W.ID_RE) === "/^f[0-9a-z]{6,12}$/", JSON.stringify([W.FOLDERS_MAX, W.NAME_MAX, W.MAP_MAX, String(W.ID_RE)]));
+  }
+  // 同一份測資跑兩邊的 sgBuild(want = 每組 [資料夾 id 或 null(未分類), 名字…])
+  if (fs.existsSync(wVec)) {
+    const VEC = JSON.parse(rd(wVec)).build;
+    const i = sfR.indexOf("function sgBuild("); let d = 0, k = sfR.indexOf("{", i); for (; i >= 0 && k < sfR.length; k++) { if (sfR[k] === "{") d++; else if (sfR[k] === "}" && --d === 0) break; }
+    const dBuild = i >= 0 ? new Function(sfR.slice(i, k + 1) + "\nreturn sgBuild;")() : null;
+    const dOut = (c) => dBuild(c.list.map((name) => ({ name })), c.groups).map((g) => [g.id === "_u" ? null : g.id, ...g.items.map((x) => x.name)]);
+    const wOut = (c) => W.sgBuild(c.list.map((name) => ({ name })), c.groups).map((g) => [g.id, ...g.names]);
+    const dBad = !dBuild ? ["切不出 sgBuild"] : VEC.filter((c) => JSON.stringify(dOut(c)) !== JSON.stringify(c.want)).map((c) => c.case + ":" + JSON.stringify(dOut(c)));
+    const wBad = !W ? ["沒有網頁模組"] : VEC.filter((c) => JSON.stringify(wOut(c)) !== JSON.stringify(c.want)).map((c) => c.case);
+    ok("資料夾 sgBuild:電腦版 stratflags.js 跑共用測資(" + VEC.length + " 組:未分類、失效 id、失效策略名、空資料夾)", VEC.length >= 4 && dBad.length === 0, dBad.join(";"));
+    ok("資料夾 sgBuild:網頁跑同一份共用測資", wBad.length === 0, wBad.join(";"));
+  }
+  const fontOf = (src) => { const m = /--font-emoji: ([^;]+);/.exec(src); return m ? m[1] : null; };
+  const wCss = path.join(webDir, "app", "static", "css", "main.css"), dFont = fontOf(rd(path.join(R, "tokens.css"))), wFont = fs.existsSync(wCss) ? fontOf(rd(wCss)) : null;
+  ok("--font-emoji:電腦版 tokens.css 照 spec 字串", dFont === '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif', dFont);
+  ok("--font-emoji:網頁 main.css 與電腦版同字串", !!wFont && wFont === dFont, wFont);
+  const wPo = path.join(webDir, "app", "translations", "zh", "LC_MESSAGES", "messages.po"), dPo = poMap(path.join(__dirname, "..", "shell", "i18n", "zh.po"));
+  const wStr = fs.existsSync(wPo) ? new Set([...rd(wPo).matchAll(/^msgstr ("(?:[^"\\]|\\.)*")$/gm)].map((m) => JSON.parse(m[1]))) : new Set();
+  const missing = Object.keys(dPo).filter((k) => /^sg\./.test(k)).filter((k) => !wStr.has(dPo[k])).map((k) => k + "=" + dPo[k]);
+  ok("資料夾文案:電腦版 sg.* 的 zh 字(含 72 個 emoji 名)網頁 zh .po 都有同一句", missing.length === 0, missing.slice(0, 12).join(";") + (missing.length > 12 ? " …共 " + missing.length + " 句" : ""));
+}
 // 聊天長網址縮短(spec designer/chat-long-url-2026-10-30 §6):18 條測資逐項相同、上限與兩條 regex 逐值相同
 //   電腦版:tests/check_shell_url_label.js 的 CASES、renderer/md.js 的 URL_LABEL_MAX / URL_WIDE / URL_UNSAFE / URL_LIKE
 //   網頁:tests/url_label_vectors.json 的 url_label([輸入, 期望] 或 {in, expect})、app/static/js/agent/url_label.js
@@ -458,5 +524,66 @@ for (const lang of ["zh", "en"]) {
     const off = KC.filter((k) => !w["kc_" + k] || w["kc_" + k] !== d["cx.kc." + k]);
     ok("改金鑰驗證碼:kc_* 與 cx.kc.* 14 句兩邊同一份(" + lang + ")", off.length === 0, off.map((k) => k + ": " + w["kc_" + k] + " vs " + d["cx.kc." + k]).join(";"));
     if (lang === "zh") ok("改金鑰驗證碼:寄不出那句是換步驟後的定稿(zh)", d["cx.kc.failed"] === "驗證碼沒寄出去，金鑰沒有儲存，請稍後再試。", d["cx.kc.failed"]);
+  } }
+
+/* 策略頁頭「狀態 → 鈕態」表(spec strategy-page-autotrade §4;cross-surface-parity 規則三):
+   電腦版 shell/renderer/handoff.js 的 SP_HEAD 與網頁 workspace.html 的 SP_HEAD 逐態比——態的名字、有沒有主鈕、填色／描邊、停用、
+   有沒有動作、記號,以及鈕字／狀態詞／原因句的 zh 原文(電腦版走 shell/i18n,網頁走 I18N 名 → msgid → messages.po)。
+   動態那幾格(看市場的基本字、#tr-go 同一個鈕字、這一支在選擇策略框那一列的原因)照槽位比,不比字。
+   兩邊對不上又是刻意的,寫進 SP_EXEMPT、附一句原因,而且每一條都驗它還成立(過時的豁免也紅) */
+{ const hoSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "handoff.js"), "utf8");
+  const lit = (src, where) => { const m = /const SP_HEAD = (\{[\s\S]*?\n\s*\});/.exec(src); if (!m) return null; try { return (0, eval)("(" + m[1] + ")"); } catch (e) { console.log("FAIL  " + where + " 的 SP_HEAD 讀不出來:" + e.message); red++; return null; } };
+  const D = lit(hoSrc, "電腦版 handoff.js"), W = lit(web, "網頁 workspace.html");
+  ok("策略頁頭:兩邊都有 SP_HEAD 鈕態表", !!D && !!W);
+  if (D && W) {
+    const dzh = poMap(path.join(__dirname, "..", "shell", "i18n", "zh.po")), wzh = poMap(path.join(webDir, "app", "translations", "zh", "LC_MESSAGES", "messages.po"));
+    const wid = {}; for (const m of web.matchAll(/^\s+(\w+): (?:\{\{ _\('([^']+)'\) \| tojson \}\}|"\{\{ _\('([^']+)'\) \}\}"),?$/gm)) wid[m[1]] = m[2] || m[3];
+    const dT = (k) => dzh[k], wT = (n) => wzh[wid[n]];
+    // 只有一邊有的態(附原因);其餘的態兩邊要一一對上
+    const ONLY_DESK = { setupWait: "豁免 3:開通中,網頁的群益與統一都給〔繼續〕(網頁的開通清單兩家都在框裡);電腦版群益本機入口 CAPL_LOCAL_ON 關著、沒有那份清單,只留狀態詞" };
+    const ONLY_WEB = {};
+    // 態一樣但有一格刻意不同(附原因)
+    const CELL_EXEMPT = { "fail.note": "fail 的原因句兩邊各用自己自動下單頁那一句、出口不同:電腦版「串接失敗，下單程式沒在跑。到「設定」處理。」(帳戶與金鑰在自動下單 › 設定分頁),網頁「串接失敗，到策略組合處理」(網頁的帳戶在策略組合頁);開頭的「串接失敗」另外逐字比" };
+    const dk = Object.keys(D), wk = Object.keys(W);
+    ok("策略頁頭:態的集合兩邊一樣(只有一邊有的都在豁免表)", dk.filter((k) => !(k in W) && !ONLY_DESK[k]).length === 0 && wk.filter((k) => !(k in D) && !ONLY_WEB[k]).length === 0,
+      "只在電腦版:" + dk.filter((k) => !(k in W) && !ONLY_DESK[k]).join(",") + " 只在網頁:" + wk.filter((k) => !(k in D) && !ONLY_WEB[k]).join(","));
+    Object.keys(ONLY_DESK).forEach((k) => ok("策略頁頭豁免還成立:" + k + " 只在電腦版", (k in D) && !(k in W), ONLY_DESK[k]));
+    // 動態槽:電腦版 "$base" ＝ 網頁 "base";"$go"(#tr-go 同一個鈕字)＝ 網頁 pfStart;"$off"(選擇策略框那一列的原因)＝ 網頁 "lock";
+    // fail 態的原因句 "$fail" ＝ 網頁 "fail"(各自自動下單頁那一句,開頭「串接失敗」逐字比,出口見 CELL_EXEMPT);
+    // start 態的原因句 "$go"(帳本上還有 Blave 部位時的 tr.startOnBook)＝ 網頁 "onBook"(pfStartOnBook),兩句逐字比
+    const btnText = (d, w) => d.key === "$base" ? (w === "base" && dT("sp.btn") === wT("pfNav") && dT("po.add") === wT("poAdd"))
+      : d.key === "$go" ? (w === "pfStart" && dT("tr.start") === wT("pfStart")) : !!dT(d.key) && dT(d.key) === wT(w);
+    const noteOk = (d, w) => d === "$fail" ? w === "fail" && !!dT("cx.failShort") && dT("cx.failShort") === wT("pfConnectFailedShort") && dT("cx.failStopped").indexOf(dT("cx.failShort")) === 0 && dT("cx.failStopped") === wT("pfConnectFailedShort") + "，" + wT("pfVenueGoFix")
+      : d === "$off" ? w === "lock" : d === "$go" ? w === "onBook" && !!dT("tr.startOnBook") && dT("tr.startOnBook") === wT("pfStartOnBook") : !!d && !!w && dT(d) === wT(w);
+    const bad = [];
+    dk.filter((k) => k in W).forEach((k) => {
+      const d = D[k], w = W[k], db = d.btn;
+      const cells = {
+        btn: !!db === !!w.btn && (!db || btnText(db, w.btn)),
+        out: !db || (db.kind === "out") === !!w.out,
+        off: !db || !!db.off === !!w.off,
+        act: !db || (!!db.act) === (!!w.act),
+        mark: !!d.mark === !!w.mark,
+        word: !d.word === !w.word && (!d.word || dT(d.word) === wT(w.word)),
+        note: (!d.note && !w.note) || noteOk(d.note, w.note),
+      };
+      Object.keys(cells).forEach((c) => { if (!cells[c] && !CELL_EXEMPT[k + "." + c]) bad.push(k + "." + c + " 電腦版 " + JSON.stringify(d) + " 網頁 " + JSON.stringify(w)); });
+    });
+    ok("策略頁頭:每一態的主鈕(有無／填色描邊／停用／動作)、記號、狀態詞、原因句兩邊同一份(zh 原文逐字)", bad.length === 0, bad.join(";"));
+    ok("策略頁頭:start 態帳本上還有部位的原因句兩邊同一句(電腦版 tr.startOnBook、網頁 pfStartOnBook,zh 逐字)", D.start && D.start.note === "$go" && W.start && W.start.note === "onBook"
+      && !!dT("tr.startOnBook") && dT("tr.startOnBook") === wT("pfStartOnBook"), dT("tr.startOnBook") + " vs " + wT("pfStartOnBook"));
+    ok("策略頁頭:記號同一句(電腦版 po.live、網頁 poLive)", !!dT("po.live") && dT("po.live") === wT("poLive"), dT("po.live") + " vs " + wT("poLive"));
+    // 判準層的豁免(表上看不到,驗兩邊的原文還是那樣)
+    const spv = (() => { const i = hoSrc.length ? fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "portfolio.js"), "utf8") : ""; const a = i.indexOf("function spView("); return a < 0 ? "" : i.slice(a, i.indexOf("\nfunction ", a + 1)); })();
+    ok("策略頁頭豁免 1 還成立:串接失敗兩邊都落 fail,但判準不同——網頁是 pfKeyRejected 或「綁著、pfExecState 說 noaccount」(下單程式在不在跑都算);電腦版是 trFailStopped(讀帳失敗或金鑰被拒,而且下單程式沒在跑)。下單程式還在跑時電腦版留在原本那一態(在跑照出記號),說明行改講「串接失敗」＋到自動下單頁,不擋鈕——對帳器還在下單時把頁首換成停用的鈕,等於藏起它在跑",
+      /if \(pfKeyRejected\(\)\) return "fail";/.test(web) && /if \(pfVenueIds\(\)\.length > 0 && pfExecState\(\) === "noaccount"\) return "fail";/.test(web) && /const failStop = hasAcct && trFailStopped\(state, r\);/.test(spv) && /hasAcct && !failStop && \["start", "acct", "off", "running"\]/.test(spv));
+    ok("策略頁頭豁免還成立:fail.note 兩邊出口不同(電腦版到「設定」、網頁到策略組合),開頭「串接失敗」同字", D.fail && D.fail.note === "$fail" && W.fail && W.fail.note === "fail" && dT("cx.failShort") === wT("pfConnectFailedShort")
+      && dT("cx.failStopped") !== wT("pfConnectFailedShort") + "，" + wT("pfVenueGoFix"), CELL_EXEMPT["fail.note"]);
+    ok("策略頁頭豁免 2 還成立:網頁的連接中多認「串接中且沒卡住」(真實交易所要 agent 現場建 order_／account_,常超過 3 分鐘);電腦版只認自己的旗標",
+      /return pfWaitingVenues\(\)\.some\(function \(id\) \{ return !pfWaitStuck\(id, now\); \}\);/.test(web) && /connecting: spCxOn\(S, now\)/.test(spv));
+    ok("策略頁頭豁免 4 還成立:網頁沒有雲朵 icon 鈕(單主機,沒有送上雲端);電腦版那顆不在 SP_HEAD 裡、埋點 sp_cloud_icon 只有電腦版送",
+      !/sp_cloud_icon/.test(web) && /trackFeature\("sp_cloud_icon"\)/.test(hoSrc) && !/sp_cloud_icon/.test(JSON.stringify(D)));
+    ok("策略頁頭豁免 5 還成立:存金額的事件網頁是 trade_amounts_saved 帶 source,電腦版是 portfolio_save／sp_amt_saved 不帶屬性(埋點事件名與屬性不比,規則三)",
+      /gaEvent\("trade_amounts_saved", \{ source: /.test(web));
   } }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

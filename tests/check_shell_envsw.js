@@ -124,9 +124,9 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     ok("雲端落點:從沒下過單 → 歡迎頁;在下單／重開沒停住／對帳器停了／已暫停／剛按啟動／帳上有部位／對帳器跑過／有下單紀錄 → 自動下單頁;還沒讀到先開自動下單頁、讀到從沒下過單改歡迎頁(已選策略不動);只判一次",
       r.join("|") === "welcome|tr|tr|tr|welcome|tr|tr|tr|tr,welcome|tr,tr|tr,tr|welcome,welcome", r.join("|")); }
   // cxRetest:本機那半直送(雲端那半走 trSend);cdelRun:雲端刪除,request_id 以名字為單位沿用(CDEL.ids),審過
-  // psApply 不在這裡:0.1.26 起 picker 的勾選是草稿,儲存才走 trSaveAmounts 送出;trExecSend:下單方式(0.1.26)
+  // psApply 不在這裡:0.1.26 起 picker 的勾選是草稿,儲存才走 trCfOpen 送出;trExecSend:下單方式(0.1.26)
   // trPvRequest:存金額框請機器重算草稿的預覽(stats_refresh,0.1.27;同 perf.js 不帶 request_id,重送 = 機器回 BUSY)
-  const entries = ["trSend", "trSaveAmounts", "trPvRequest", "trExecSend", "trUnbind", "cxRetest", "cdelRun"];
+  const entries = ["trSend", "trCfOpen", "trPvRequest", "trExecSend", "trUnbind", "cxRetest", "cdelRun"];
   const users = code.split(/\n(?:async )?function /).filter((b) => /S\.api\.tradeSend\(/.test(b)).map((b) => b.slice(0, b.indexOf("(")));
   ok("用 S.api 送指令的函式就是這幾個(多一個就要有人看過它的 request_id 有沒有沿用):" + users.join(), users.length === entries.length && users.every((n) => entries.indexOf(n) >= 0));
   // 會改變執行狀態的那三個指令一律經過 trSend(冪等:重試沿用同一顆 request_id);直接叫 S.api.tradeSend 會繞過它
@@ -302,10 +302,11 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     && trStartPending({ want: "running" }) === true && trStartPending({ want: "halted" }) === false && trStartPending(null) === false);
   // 三個入口(鈕的可按性、click、真的送出去那一層)只認同一條規則:哪一個漏掉,停止鈕就會在某條路上被鎖住
   ok("鈕 / click / trRun 三處都走 trBtnLocked(鈕與 click 的那一側由 trStopSideNow 判),沒有人再直接用 TR.pending 或 S.pending 擋",
-    /const locked = ask \? pendingAcct : trBtnLocked\(TR\.pending, trStopSideNow\(state, TR\.pending\) \|\| trRestartUnconfirmed\(trReport\(\)\)\) \|\| trStartPending\(TR\.pending\) \|\| flying;/.test(fn("trPaintHead"))
-    && /aria-disabled", locked \? "true" : "false"/.test(fn("trPaintHead"))
-    && /const stopSide = trStopSideNow\(envHeadState\(TR\.st, Date\.now\(\)\), TR\.pending\) \|\| trRestartUnconfirmed\(trReport\(\)\);[^\n]*\n\s*if \(trBtnLocked\(TR\.pending, stopSide\)\) return;/.test(fn("trPaintHead"))
-    && /if \(trStartPending\(TR\.pending\) \|\| trHaltInFlight\(TR\.pending, Date\.now\(\)\)\) return;/.test(fn("trPaintHead"))
+    /const locked = ask \? pendingAcct : trBtnLocked\(pending, trStopSideNow\(state, pending\) \|\| trRestartUnconfirmed\(r\)\) \|\| trStartPending\(pending\) \|\| flying;/.test(fn("trGoView"))
+    && /const gv = trGoView\(state, trReport\(\), TR\.pending, Date\.now\(\)\)/.test(fn("trPaintHead")) && /flying = gv\.flying, locked = gv\.locked;/.test(fn("trPaintHead"))
+    && /aria-disabled", locked \? "true" : "false"/.test(fn("trPaintHead")) && /b\.addEventListener\("click", \(\) => trGoClick\(b\)\);/.test(fn("trPaintHead"))
+    && /const stopSide = trStopSideNow\(envHeadState\(TR\.st, Date\.now\(\)\), TR\.pending\) \|\| trRestartUnconfirmed\(trReport\(\)\);[^\n]*\n\s*if \(trBtnLocked\(TR\.pending, stopSide\)\) return null;/.test(fn("trGoClick"))
+    && /if \(trStartPending\(TR\.pending\) \|\| trHaltInFlight\(TR\.pending, Date\.now\(\)\)\) return null;/.test(fn("trGoClick"))
     && /for \(const step of steps\) \{ if \(S\.pending !== mine\) break;/.test(fn("trRun"))
     && /if \(trBtnLocked\(S\.pending, want === "halted"\)\) return;/.test(fn("trRun"))
     && !/if \(TR\.pending\) return;|if \(S\.pending\) return;/.test(fn("trPaintHead") + fn("trRun")));
@@ -316,7 +317,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // 寫進雲端的確認框要標明目的地(規格 §5:刻意講三次);本機不給那兩個參數,框逐位元組不變
   { const app2 = fs.readFileSync(path.join(R, "app.js"), "utf8"), html2 = fs.readFileSync(path.join(R, "index.html"), "utf8");
     ok("confirmBox 有 env / footWhere / lead 三個選用參數,DOM 兩個槽在,關框時一起收掉",
-      /function confirmBox\(\{ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel \}\)/.test(app2)
+      /function confirmBox\(\{ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel, focus, link \}\)/.test(app2)
       && /<span class="envm" id="del-env" hidden><\/span>/.test(html2) && /<span class="del-where" id="del-where" hidden><\/span>/.test(html2)
       && /\$\("del-env"\)\.hidden = true; \$\("del-where"\)\.hidden = true; \$\("del-modal"\)\.querySelector\("\.modal-head"\)\.classList\.remove\("cloud"\); \$\("del-cancel"\)\.hidden = false;/.test(app2.slice(app2.indexOf("function delClose"))));
     ok("雲端的框:灰標題列 + 「雲端」記號 + 錢記號 + 鈕上方的目的地那一行;暫停與啟動都經過同一支",
@@ -378,7 +379,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   const cellSrc = fn("envPaintCell");
   ok("A 格內不再放錢記號與狀態詞(只 append 圖示與一個記號);詞進 title 與 aria-label", (cellSrc.match(/b\.appendChild\(/g) || []).length === 2 && !/"mode |"w"|"w /.test(cellSrc) && /b\.title = tip \+/.test(cellSrc) && /setAttribute\("aria-label", tip\)/.test(cellSrc) && /aria-keyshortcuts/.test(cellSrc));
   const css = fs.readFileSync(path.join(R, "trade.css"), "utf8");
-  ok("A 選中格不反白(不用 --control-fill)、格寬固定 40", !/\.envsw[^{]*\{[^}]*--control-fill/.test(css) && /\.envsw button \{[^}]*width: 40px/.test(css) && /\.envsw button\[aria-pressed="true"\] \{[^}]*--surface-segment-on/.test(css));
+  ok("A 選中格不反白(不用 --control-fill)、格寬固定 36(chat-tabs §13.13.2)", !/\.envsw[^{]*\{[^}]*--control-fill/.test(css) && /\.envsw button \{[^}]*width: 36px/.test(css) && /\.envsw button\[aria-pressed="true"\] \{[^}]*--surface-segment-on/.test(css));
   { const appCss = fs.readFileSync(path.join(R, "app.css"), "utf8");
     ok("雲端沒主機:兩份 .strat-list 都藏起來時「設定」仍釘底(.ws-foot 自己 margin-top:auto,不靠清單的 flex:1 撐)", /\.ws-foot \{[^}]*margin-top: auto;/.test(appCss)
       && /\$\("strat-list"\)\.hidden = cloud; \$\("strat-list-cloud"\)\.hidden = !cloud \|\| gate;/.test(fn("envPaint"))); }
@@ -454,7 +455,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     ok("規格刪掉的 key 兩語都刪了;錯誤句保留「通常是」不寫成斷言", !/"cx\.(perm|whitelist|ip\.local|ip\.localNoIp|ip\.copy)"/.test(S) && /"cx\.chk\.trading": "[^"]*通常是/.test(S) && /"cx\.chk\.trading": "[^"]*Usually/.test(S));
     ok("複製元件:icon 鈕有可及名稱、成功才換勾並在 status 槽講「已複製」2 秒;「IP 換了」句子不再夾 {ip}", /b\.setAttribute\("aria-label", t\("cx\.ip\.copyThis"\)\)/.test(src) && /said\.setAttribute\("role", "status"\)/.test(src)
       && /await navigator\.clipboard\.writeText\(ip\); \} catch \(_\) \{ return; \}\s*b\.classList\.add\("is-done"\); said\.textContent = t\("cx\.ip\.copied"\);\s*setTimeout\([^\n]*2000\)/.test(src) && !/"cx\.re\.ipChanged": "[^"]*\{ip\}/.test(S) && /t\("cx\.re\.ipChanged"\)\s*:/.test(src)); }
-  const afterAwait = ["trPoll", "trOpen", "trRun", "trSend", "trSaveAmounts", "trUnbind", "trLoadCurve", "cxConnect", "cxRetest"].map((n) => { const b = fn(n), i = b.indexOf("await "); return [n, i < 0 ? "" : b.slice(i).replace(/TR === S|TR_BAGS|TR_[A-Z_]+/g, "")]; });
+  const afterAwait = ["trPoll", "trOpen", "trRun", "trSend", "trCfOpen", "trUnbind", "trLoadCurve", "cxConnect", "cxRetest"].map((n) => { const b = fn(n), i = b.indexOf("await "); return [n, i < 0 ? "" : b.slice(i).replace(/TR === S|TR_BAGS|TR_[A-Z_]+/g, "")]; });
   const leaks = afterAwait.filter((x) => /\bTR\b/.test(x[1])).map((x) => x[0]);
   ok("N8 跨 await 的流程在第一個 await 之後不碰裸的 TR(只准 TR === S 與 TR_BAGS):" + (leaks.join() || "無"), afterAwait.every((x) => x[1].length > 0) && leaks.length === 0);
   ok("N3/N4/N7 寫法:設定開著不搬焦點、切視角前放掉輸入框焦點、排下一輪在 finally", /if \(!\$\("set-scrim"\)\.hidden\) \{[^}]*\}\s*else if \(via === "link"\)/.test(fn("envSwitch")) && /\.blur\(\)/.test(fn("envSwitch")) && /finally \{[\s\S]*TRP\.timer = setTimeout\(trPoll/.test(fn("trPoll")));

@@ -1,5 +1,5 @@
 // 選擇策略框的勾選是草稿(0.1.26 Wei):按「確定」不寫 amounts,按「儲存」才連金額一起寫;還原丟掉草稿;移除成員也要儲存才生效。
-// 從 trade.js 原文切出真的 psApply / trAmountTable / trSaveAmounts / poSigTable 跑在假 DOM 上,主機那一端是記錄 tradeSend 的假 api。不起 Electron。
+// 從 trade.js 原文切出真的 psApply / trAmountTable / trCfOpen / poSigTable 跑在假 DOM 上,主機那一端是記錄 tradeSend 的假 api。不起 Electron。
 // 跑法:node tests/check_shell_pick_draft.js
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const R = path.join(__dirname, "..", "shell", "renderer");
@@ -33,8 +33,8 @@ vm.runInContext("var delCtx = null;\n" + (src.match(/^const TR_CF = [^\n]*\n/m) 
 vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0, psMode = 'amounts', psToAmt = false;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
   "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
   "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
-  "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trSaveAmounts", "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trAwaitKeys", "poPartStates", "poSigTable", "trPosDetail", "trManualPart",
-  "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trGateSide", "trTradesSym", "trAppRestartQuiet", "trAmountsEdited", "trSentBeforeOf", "psApply", "trCtReported", "trSentCheck", "trWith", "trUnsavedAny"].map(cutF).join("\n"), ctx);
+  "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trCfOpen", "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trAwaitKeys", "poPartStates", "poSigTable", "trPosDetail", "trManualPart",
+  "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trGateSide", "trTradesSym", "trAppRestartQuiet", "trAmountsEdited", "trSentBeforeOf", "psApply", "trCtReported", "trSentCheck", "trWith", "trUnsavedAny", "trUnsaved"].map(cutF).join("\n"), ctx);
 
 // 這台電腦、沒連交易所(儲存不開確認框,直接送);已存:a 有錢、z 金額 0。new1 是回測過、還沒進組合的
 const report = () => ({ venues: {}, config: { amounts: { a: 500, z: 0 } }, scheduled: ["a", "z"], quote_ccy: { a: "USDT", z: "USDT", new1: "USDT" },

@@ -3,7 +3,8 @@
 //   2. 只取第一句(舊 runtime 給 3 句);kind 沒帶時照句首判
 //   3. 托盤(spec suggest-tray-2026-10-26):回合結束停一拍才畫,輸入框空、沒附件、不在組字中才畫;第一次畫出來才記 suggest_shown、念一次;
 //      出現／收起時訊息區原本在底部就捲回底部;打字、組字、加附件就收掉,刪回空白不回來
-//   4. 點托盤 / 空輸入框按 → 填入(帶修飾鍵不攔)、Tab 不攔;Esc 與 × 作廢不記
+//   4. 按托盤鈕(滑鼠／觸控／鍵盤)= 原句直接送出(走 sendDraft、長出來 --motion-base 內不算);空輸入框按 → 只填(帶修飾鍵不攔);
+//      Enter、Tab 不攔;Esc 與 × 作廢不記;直接送出那輪沒回覆就被停止 → suggest_undo(0.1.39)
 //   5. 送出結算:跑起來才算 sent / sent_ed / missed;連續 5 次沒用 → 減少狀態(只剩導航句),填入一次就恢復;失敗不算
 //   6. 設定開關:關掉不畫、送 off;打開歸零
 // 跑法:node tests/check_shell_suggest.js
@@ -52,16 +53,22 @@ const LS = new Map();
 const ctx = { $: (id) => W[id], sessionId: "desktop-aaaa", running: false, composing: false, attachedFiles: [], tracked: [], said: [],
   trackFeature: (n) => ctx.tracked.push(n), scrollChat: (force) => { if (force === true) W["chat-scroll"].scrollTop = W["chat-scroll"].scrollHeight; }, srSay: (s) => ctx.said.push(s), autosize: () => {}, motionBaseMs: () => 0,
   escTop: () => ctx.topLayer || null, t: (k, v) => k + (v ? ":" + v.s : ""),
-  lsGet: (k) => (LS.has(k) ? LS.get(k) : null), lsSet: (k, v) => LS.set(k, String(v)), setTimeout, clearTimeout, tabBound: (f) => f, tabBg: () => false };
+  lsGet: (k) => (LS.has(k) ? LS.get(k) : null), lsSet: (k, v) => LS.set(k, String(v)), setTimeout, clearTimeout, tabBound: (f) => f, tabBg: () => false,
+  clock: 1000, sent: [], sendOk: true };
+ctx.performance = { now: () => ctx.clock };
+// app.js sendDraft → submitMessage 的順序:快照 → 清空 → 作廢 → 跑起來才結算;沒送出去 → sugUnsend、字由 stopRestore 放回輸入框
+ctx.sendDraft = () => { const msg = W.ta.value.trim(); if (!msg || ctx.running) return; ctx.sugSnap(msg); W.ta.value = ""; ctx.sugCollapse(); ctx.sent.push(msg);
+  if (ctx.sendOk) ctx.sugSettle(msg); else { ctx.sugUnsend(); W.ta.value = msg; } };
 new Function("ctx", "with (ctx) { " + sugSrc.replace(/^(?:const|let) SUG = /m, "var SUG = ") +
-  "\n Object.assign(ctx, { sugPick, sugKindOf, sugChunk, sugTurnEnd, sugCollapse, sugPaint, sugSnap, sugSettle, sugUnsend, sugMode, SUG }); }")(ctx);
+  "\n Object.assign(ctx, { sugPick, sugKindOf, sugChunk, sugTurnEnd, sugCollapse, sugPaint, sugSnap, sugSettle, sugUnsend, sugUndo, sugMode, SUG }); }")(ctx);
 const wait = () => new Promise((r) => setTimeout(r, 20));
 const shown = () => !W["sug-tray"].hidden;
 const key = (k, extra = {}) => { const e = Object.assign({ key: k, keyCode: 0, isComposing: false, defaultPrevented: false, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false,
   prevented: false, preventDefault() { e.prevented = true; } }, extra); W.ta.fire("keydown", e); return e; };
 const typeIn = (v) => { W.ta.value = v; W.ta.fire("input", {}); };
 const arm = async (text = "回測 BTC 均線", kind) => { ctx.sugCollapse(); ctx.sugChunk({ items: [text], kind }); ctx.sugTurnEnd(true); await wait(); };
-const reset = () => { ctx.sugCollapse(); focused = null; LS.clear(); ctx.tracked = []; ctx.said = []; W.ta.value = ""; ctx.attachedFiles = []; ctx.composing = false; ctx.running = false; ctx.topLayer = null; delete ctx.BR; };
+const reset = () => { ctx.sugCollapse(); focused = null; LS.clear(); ctx.tracked = []; ctx.said = []; ctx.sent = []; ctx.sendOk = true; ctx.motionBaseMs = () => 0; W.ta.value = ""; ctx.attachedFiles = []; ctx.composing = false; ctx.running = false; ctx.topLayer = null; delete ctx.BR; };
+const tap = (detail = 1) => W["sug-tray-btn"].fire("click", { detail });
 // 送一句(sendDraft → submitMessage 的順序):快照 → 清空 → 作廢 → 跑起來才結算
 const send = (msg, started = true) => { ctx.sugSnap(msg); W.ta.value = ""; ctx.sugCollapse(); if (started) ctx.sugSettle(msg); else ctx.sugUnsend(); };
 
@@ -85,6 +92,7 @@ const send = (msg, started = true) => { ctx.sugSnap(msg); W.ta.value = ""; ctx.s
   const html = fs.readFileSync(path.join(R, "index.html"), "utf8");
   const htmlKeys = [...html.matchAll(/data-i18n(?:-aria)?="((?:set|ws)\.sug[^"]*)"/g)].map((m) => m[1]);
   const all = keys.concat(htmlKeys), miss = all.filter((k) => (STR.match(new RegExp('"' + k.replace(/\./g, "\\.") + '":', "g")) || []).length !== 2);
+  ok("設定說明句:點了就送出(zh／en)", STR.includes('"set.sug.tip": "回答完附一句下一步，點了就送出。"') && STR.includes('"set.sug.tip": "After each reply, adds one next step. Click it to send."') && STR.includes('"ws.sugSend": "送出：{s}"') && STR.includes('"ws.sugSend": "Send: {s}"'));
   ok("suggest.js / 設定開關用到的 key 在 en、zh 兩張表都有(" + all.join(", ") + ")", all.length >= 4 && all.includes("ws.sugDismiss") && miss.length === 0, miss);
 }
 
@@ -103,9 +111,10 @@ const send = (msg, started = true) => { ctx.sugSnap(msg); W.ta.value = ""; ctx.s
   ok("帶修飾鍵的 → 不攔", !e.prevented && W.ta.value === "");
   e = key("ArrowRight", { isComposing: true }); key("ArrowRight", { keyCode: 229 });
   ok("組字中按 →:交給輸入法,不填入、不記", !e.prevented && W.ta.value === "" && ctx.tracked.length === 1);
-  W["sug-tray-btn"].fire("click", {});
-  ok("點托盤:填入原句、焦點進輸入框、游標在句尾、記 suggest_filled、托盤收起、不送", W.ta.value === "掃 A 的參數找穩定區" && !shown() && focused === "ta"
-    && JSON.stringify(ctx.tracked) === '["suggest_shown","suggest_filled"]' && JSON.stringify(W.ta.sel) === JSON.stringify([W.ta.value.length, W.ta.value.length]));
+  ok("托盤鈕的可及名稱 = 送出：{句子}", W["sug-tray-btn"].attrs["aria-label"] === "ws.sugSend:掃 A 的參數找穩定區");
+  key("ArrowRight");
+  ok("空輸入框按 →:只填原句、焦點進輸入框、游標在句尾、記 suggest_filled、托盤收起、不送", W.ta.value === "掃 A 的參數找穩定區" && !shown() && focused === "ta"
+    && ctx.sent.length === 0 && JSON.stringify(ctx.tracked) === '["suggest_shown","suggest_filled"]' && JSON.stringify(W.ta.sel) === JSON.stringify([W.ta.value.length, W.ta.value.length]));
   ok("沒有 ws_sug_tab 計數了", !LS.has("ws_sug_tab"));
   typeIn("");
   ok("填入後把字刪光:這句用過了,不再出現", !shown());
@@ -128,6 +137,44 @@ const send = (msg, started = true) => { ctx.sugSnap(msg); W.ta.value = ""; ctx.s
   ok("× 作廢後送出:不算沒用", (LS.get("ws_sug_miss") || "0") === "0");
   W["sug-tray-btn"].fire("click", {});
   ok("托盤收起後(作廢)的殘留 click 不填入", W.ta.value === "" && !ctx.tracked.includes("suggest_filled"));
+
+  // ── 0.1.39 點了直接送出(designer suggest-direct-send-2026-10-31) ──
+  reset(); LS.set("ws_sug_miss", "3"); await arm("回測 BTC 均線"); tap();
+  ok("滑鼠／觸控點托盤:原句經 sendDraft 送出、輸入框清空、托盤收起", JSON.stringify(ctx.sent) === '["回測 BTC 均線"]' && W.ta.value === "" && !shown());
+  ok("…記 suggest_sent、不記 suggest_filled、不算沒用、沒用計數歸零", JSON.stringify(ctx.tracked) === '["suggest_shown","suggest_sent"]' && LS.get("ws_sug_miss") === "0");
+  ctx.sugUndo("回測 BTC 均線", true);
+  ok("直接送出那輪還沒回覆、沒工具收據就被停止:記 suggest_undo", ctx.tracked[ctx.tracked.length - 1] === "suggest_undo");
+  ctx.sugUndo("回測 BTC 均線", true);
+  ok("…只記一次", ctx.tracked.filter((x) => x === "suggest_undo").length === 1);
+  reset(); await arm("回測 BTC 均線"); tap(); ctx.sugUndo("回測 BTC 均線", false);
+  ok("已經有回覆或工具收據才停止:不算撤回", !ctx.tracked.includes("suggest_undo"));
+  reset(); await arm("回測 BTC 均線"); tap(); ctx.sugTurnEnd(true); ctx.sugUndo("回測 BTC 均線", true);
+  ok("那輪正常結束後:撤回的記號清掉", !ctx.tracked.includes("suggest_undo"));
+  reset(); await arm("回測 BTC 均線"); key("ArrowRight"); ctx.sendDraft(); ctx.sugUndo("回測 BTC 均線", true);
+  ok("→ 填入後送出的那句被停止:不是點托盤送的,不記 suggest_undo", ctx.tracked.includes("suggest_sent") && !ctx.tracked.includes("suggest_undo"));
+  reset(); await arm("回測 BTC 均線"); ctx.sendOk = false; tap();
+  ok("點托盤但送不出去(busy／版本閘…):句子留在輸入框、不記 sent", W.ta.value === "回測 BTC 均線" && !ctx.tracked.includes("suggest_sent") && (LS.get("ws_sug_miss") || "0") === "0");
+  ctx.sugUndo("回測 BTC 均線", true);
+  ok("…沒送出去的不算撤回", !ctx.tracked.includes("suggest_undo"));
+  ctx.sendOk = true; ctx.sendDraft();
+  ok("…原句再送:填入狀態還在,記 suggest_sent", ctx.tracked[ctx.tracked.length - 1] === "suggest_sent");
+  reset(); await arm("回測 BTC 均線"); ctx.motionBaseMs = () => 180; tap();
+  ok("托盤長出來 --motion-base 內的點擊不算:不送、不填、托盤還在", ctx.sent.length === 0 && W.ta.value === "" && shown() && ctx.tracked.length === 1);
+  ctx.clock += 179; tap();
+  ok("…179ms 還不算", ctx.sent.length === 0 && shown());
+  ctx.clock += 1; tap();
+  ok("…滿 --motion-base 才送出", JSON.stringify(ctx.sent) === '["回測 BTC 均線"]');
+  reset(); await arm("回測 BTC 均線"); tap(0);
+  ok("鍵盤在托盤鈕上按 Enter／空白鍵(click detail 0):跟點擊一樣直接送出、記 suggest_sent、不記 suggest_filled", JSON.stringify(ctx.sent) === '["回測 BTC 均線"]' && W.ta.value === ""
+    && JSON.stringify(ctx.tracked) === '["suggest_shown","suggest_sent"]');
+  reset(); await arm("回測 BTC 均線"); ctx.motionBaseMs = () => 180; tap(0);
+  ok("鍵盤啟動也受防呆:長出來 --motion-base 內不送、不填", ctx.sent.length === 0 && W.ta.value === "" && shown());
+  reset(); await arm("回測 BTC 均線"); ctx.clock += 500; ctx.sugCollapse(); await arm("掃 A 的參數找穩定區"); ctx.motionBaseMs = () => 180; tap();
+  ok("防呆從每次長出來那一刻重算(上一句長出很久了也一樣)", ctx.sent.length === 0 && shown());
+  ctx.motionBaseMs = () => 0;
+  reset(); await arm(); let ee = key("Enter");
+  ok("輸入框是空的按 Enter:不送建議、不填", !ee.prevented && ctx.sent.length === 0 && W.ta.value === "" && shown());
+  ok("點托盤送進眼前分頁:sugSend 只呼叫 sendDraft,不走 csSendAway／submitMessage", /function sugSend\(\) \{[^}]*\n  sendDraft\(\);\n\}/.test(sugSrc) && !/csSendAway|submitMessage\(/.test(sugSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")));
 
   // 釘底(§1.4):在底部 → 出現後捲回底部(托盤長高 36);往上捲過 → 不動
   reset(); W["chat-scroll"].scrollTop = 600; await arm();
@@ -239,9 +286,11 @@ const send = (msg, started = true) => { ctx.sugSnap(msg); W.ta.value = ""; ctx.s
   ok("送出帶 suggestMode", /const payload = inT\(\(\) => \(\{ sessionId, suggestMode: typeof sugMode === "function" \? sugMode\(\) : "normal", message: msg,/.test(sub) && /await window\.blave\.sendMessage\(payload\);/.test(sub));
   ok("setAttachments 之後重畫托盤", /box\.hidden = !attachedFiles\.length;\n\s*if \(typeof sugPaint === "function"\) sugPaint\(\);/.test(app));
   { const ct = fs.readFileSync(path.join(R, "chattabs.js"), "utf8");
+    ok("新分頁的 SUG 帶 0.1.39 的 direct／shownAt／undoable", /files: 0, filledText: null, inflight: null, direct: false, shownAt: 0, undoable: null \}\)\]/.test(ct));
     ok("托盤跟著分頁走(0.1.37):換分頁不作廢(SUG 在每個分頁各一份),關分頁才作廢;csClearChat 不碰它", /\["SUG", \(\) => SUG, \(v\) => \{ SUG = v; \}/.test(ct) && /function tabsClose\([\s\S]*?sugCollapse\(\)[\s\S]*?\n\}/.test(ct) && !/sugCollapse/.test(app.slice(app.indexOf("function csClearChat("), app.indexOf("function csStartNew(")))); }
   ok("turn-event:suggestions → sugChunk", /c\.type === "suggestions"\) \{\n\s*if \(typeof sugChunk === "function"\) sugChunk\(c\);/.test(app));
   const end = cut(app, "function turnEndPre(r) {", "\n});\n");
+  ok("turn-end 停止那一支:句子放回輸入框之前,用「這輪沒回覆、沒工具收據」判撤回", /if \(stopped && lastUserTyped\) \{[\s\S]*?if \(typeof sugUndo === "function"\) sugUndo\(lastUserText, !turnGotReply && !turnHadTool\);[^\n]*\n\s*stopRestore\(lastUserText, lastUserAttachments\);/.test(end));
   ok("turn-end 收尾才畫,出錯與停止都不畫", /sugTurnEnd\(!stopped && !faulted\);/.test(end) && end.indexOf("sugTurnEnd(") > end.indexOf("xpTurnEnd()"));
   ok("collectDraft 不認 suggestions(不會被升成回覆)", !/suggestions/.test(cut(app, "function collectDraft(", "function draftShow(")));
   ok("index.html:舊建議列與灰字拿掉;托盤是 .chat-input 第一個子元素(句子鈕 + ×),在 textarea 之前、.ci-bar 之前",

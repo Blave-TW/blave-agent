@@ -149,6 +149,10 @@ msgstr "附件合計上限 15MB，有檔案沒加入。"
 msgid "ws.sugSay"
 msgstr "建議：{s}"
 
+# 托盤句子鈕的可及名稱(renderer/suggest.js;滑鼠、觸控點了就原句送出)。{s} = agent 寫的那一句
+msgid "ws.sugSend"
+msgstr "送出：{s}"
+
 # 建議下一步托盤右邊 × 的可及名稱:作廢這句,不算沒用
 msgid "ws.sugDismiss"
 msgstr "關掉建議"
@@ -1885,7 +1889,7 @@ msgstr "建議下一步"
 
 # 上面那個開關的說明泡泡(滑鼠停在字上或鍵盤 focus 開關時出;≤40 字)
 msgid "set.sug.tip"
-msgstr "回答完附一句下一步，填入後由你送出。"
+msgstr "回答完附一句下一步，點了就送出。"
 
 msgid "set.rn"
 msgstr "回覆好了通知我"
@@ -3137,43 +3141,142 @@ msgstr "會收"
 msgid "priv.collect.hOff"
 msgstr "開啟時會收"
 
-# 0.1.18 策略三步(strat_created / strat_backtested / strat_deployed)補在這一條:只記型別與市場類別
-msgid "priv.collect.1"
-msgstr "做到哪一步：首次開啟、每日開啟、app 開著的每一天（含本機自動下單有沒有在跑）、完成連結（哪一種 AI）、登入、第一次回測、啟動下單（模擬或真錢）、上雲端運行；每支策略新建、第一次回測、第一次配了金額時，記它的型別（A／B／C）與市場類別（例如加密貨幣、台指期），不記策略名稱或標的；同一支策略的三步記同一組代碼；代碼只有這台電腦算得出，Blave 推不回策略名稱"
+# 0.1.39 會收改成八組(設計師 v039-tabs-strip-audit §C,Wei 核准):組標題 priv.c.<組>.h,組內 priv.c.<組>.<n>;
+# 原本 11 條的事實逐條拆進來,一條都沒刪。加事件時補在對應那組
+msgid "priv.c.step.h"
+msgstr "做到哪一步"
 
-msgid "priv.collect.5"
-msgstr "用了哪些功能：分頁與按鈕的名稱，每天每項記一次，不含裡面的內容；從策略庫用一支策略時，記它要不要 Blave 資料；送出找點子時，記是從哪個入口送出；回覆好了的系統通知有沒有跳出、有沒有被點開，不含對話標題與內容"
+msgid "priv.c.step.1"
+msgstr "首次開啟、每日開啟、登入"
 
-msgid "priv.collect.2"
-msgstr "發生的時間"
+msgid "priv.c.step.2"
+msgstr "app 開著的每一天，含本機自動下單有沒有在跑"
 
-msgid "priv.collect.3"
-msgstr "app 版本、作業系統與版本、系統語言、電腦類型（筆電或桌機）"
+msgid "priv.c.step.3"
+msgstr "完成連結，記哪一種 AI"
 
-msgid "priv.collect.4"
-msgstr "安裝識別碼（這份安裝隨機產生的編號）；登入後會跟你的帳號對上"
+msgid "priv.c.step.4"
+msgstr "第一次回測、啟動下單（模擬或真錢）、上雲端運行"
 
-# 0.1.12 加了引擎安裝的結果(engine_setup / engine_opt_fail):補在這一條(設計稽核 0.1.12 複驗定稿)
-msgid "priv.collect.6"
-msgstr "卡在哪一步：回合失敗、連不上 AI、策略庫用不了的原因類別，綁卡／儲值提示有沒有出現與按下、回來後能不能用，啟動雲端方案的結果，更新卡在哪一步，第一次收到 AI 回覆，第一次安裝或更新後補裝（引擎與策略套件）有沒有裝好、沒裝好是哪一類原因；只記類別，不含內容"
+msgid "priv.c.strat.h"
+msgstr "每支策略"
 
-msgid "priv.collect.7"
-msgstr "登入後，帳號也會記下：連的是哪種 AI、這台電腦有沒有跑過回測（保留 90 天）"
+msgid "priv.c.strat.1"
+msgstr "新建、第一次回測、第一次配了金額時各記一次"
 
-# 0.1.13 策略庫免登入下載(/public_code)帶安裝識別碼算安裝人數;面板排在 priv.collect.4 之後
-msgid "priv.collect.8"
-msgstr "沒登入或登入失效時從策略庫下載免登入策略：哪一支（策略庫編號）和安裝識別碼，用來算安裝人數；之後登入就會跟你的帳號對上"
+msgid "priv.c.strat.2"
+msgstr "只記型別（A／B／C）與市場類別，例如加密貨幣、台指期"
 
-# 0.1.35 本機 AI 登入方式(cli_auth)與登入失敗(auth_fail);面板排在 priv.collect.6 之後
-msgid "priv.collect.9"
-msgstr "本機 AI 的登入方式，例如訂閱或 API 金鑰；不含帳號與金鑰"
+msgid "priv.c.strat.3"
+msgstr "不記策略名稱或標的"
 
-msgid "priv.collect.10"
+msgid "priv.c.strat.4"
+msgstr "三步記同一組代碼，代碼只有這台電腦算得出"
+
+msgid "priv.c.strat.5"
+msgstr "Blave 推不回策略名稱"
+
+msgid "priv.c.feat.h"
+msgstr "用了哪些功能"
+
+msgid "priv.c.feat.1"
+msgstr "分頁與按鈕的名稱，每天每項記一次"
+
+msgid "priv.c.feat.2"
+msgstr "不含分頁與按鈕裡的內容"
+
+msgid "priv.c.feat.3"
+msgstr "從策略庫用一支策略時，記它要不要 Blave 資料"
+
+msgid "priv.c.feat.4"
+msgstr "送出找點子時，記從哪個入口送出"
+
+msgid "priv.c.feat.5"
+msgstr "回覆好了的系統通知：有沒有跳出、有沒有被點開"
+
+msgid "priv.c.feat.6"
+msgstr "不含對話標題與內容"
+
+msgid "priv.c.stuck.h"
+msgstr "卡在哪一步"
+
+msgid "priv.c.stuck.1"
+msgstr "回合失敗、連不上 AI、策略庫用不了的原因類別"
+
+msgid "priv.c.stuck.2"
+msgstr "綁卡／儲值提示有沒有出現與按下、回來後能不能用"
+
+msgid "priv.c.stuck.3"
+msgstr "啟動雲端方案的結果、更新卡在哪一步"
+
+msgid "priv.c.stuck.4"
+msgstr "第一次收到 AI 回覆"
+
+msgid "priv.c.stuck.5"
+msgstr "第一次安裝或更新後補裝引擎與策略套件，有沒有裝好"
+
+msgid "priv.c.stuck.6"
+msgstr "沒裝好是哪一類原因"
+
+msgid "priv.c.stuck.7"
+msgstr "只記類別，不含內容"
+
+msgid "priv.c.auth.h"
+msgstr "登入與金鑰"
+
+msgid "priv.c.auth.1"
+msgstr "本機 AI 的登入方式，例如訂閱或 API 金鑰"
+
+msgid "priv.c.auth.2"
+msgstr "不含帳號與金鑰"
+
+msgid "priv.c.auth.3"
 msgstr "登入失敗的類別，以及當下是否判定為已登入"
 
-# 0.1.37 改金鑰驗證碼(key_verify);面板排在 priv.collect.10 之後
-msgid "priv.collect.11"
-msgstr "改金鑰時驗證碼框的出現、通過與鎖住；不含驗證碼"
+msgid "priv.c.auth.4"
+msgstr "改金鑰時驗證碼框的出現、通過與鎖住"
+
+msgid "priv.c.auth.5"
+msgstr "不含驗證碼"
+
+msgid "priv.c.meta.h"
+msgstr "每筆紀錄都帶"
+
+msgid "priv.c.meta.1"
+msgstr "發生的時間"
+
+msgid "priv.c.meta.2"
+msgstr "app 版本、作業系統與版本、系統語言"
+
+msgid "priv.c.meta.3"
+msgstr "電腦類型：筆電或桌機"
+
+msgid "priv.c.meta.4"
+msgstr "安裝識別碼：這份安裝隨機產生的編號"
+
+msgid "priv.c.meta.5"
+msgstr "登入後，安裝識別碼會跟你的帳號對上"
+
+msgid "priv.c.lib.h"
+msgstr "策略庫下載"
+
+msgid "priv.c.lib.1"
+msgstr "沒登入或登入失效時，從策略庫下載免登入策略"
+
+msgid "priv.c.lib.2"
+msgstr "記策略庫編號與安裝識別碼，用來算安裝人數"
+
+msgid "priv.c.lib.3"
+msgstr "之後登入就會跟你的帳號對上"
+
+msgid "priv.c.acct.h"
+msgstr "帳號上"
+
+msgid "priv.c.acct.1"
+msgstr "登入後，帳號會記下連的是哪種 AI"
+
+msgid "priv.c.acct.2"
+msgstr "也記這台電腦有沒有跑過回測，保留 90 天"
 
 msgid "priv.never.h"
 msgstr "使用資料不收"
@@ -3718,6 +3821,325 @@ msgstr "紫"
 msgid "side.moved"
 msgstr "已移到第 {n} 位"
 
+# 側欄策略資料夾(spec strategy-sidebar-folders §14);emoji 名稱 key 是碼點,選擇器每格的 aria-label 與 title
+msgid "sg.add"
+msgstr "新增資料夾"
+
+msgid "sg.newName"
+msgstr "新資料夾"
+
+msgid "sg.uncat"
+msgstr "未分類"
+
+msgid "sg.auto"
+msgstr "建市場資料夾"
+
+msgid "sg.max"
+msgstr "最多 20 個資料夾"
+
+msgid "sg.rename"
+msgstr "改名"
+
+msgid "sg.emoji"
+msgstr "換圖示"
+
+msgid "sg.up"
+msgstr "上移"
+
+msgid "sg.down"
+msgstr "下移"
+
+msgid "sg.del"
+msgstr "刪除資料夾"
+
+msgid "sg.emojiNone"
+msgstr "移除圖示"
+
+msgid "sg.cat.common"
+msgstr "常用"
+
+msgid "sg.cat.market"
+msgstr "市場"
+
+msgid "sg.cat.strategy"
+msgstr "策略"
+
+msgid "sg.cat.animal"
+msgstr "動物"
+
+msgid "sg.cat.nature"
+msgstr "自然"
+
+msgid "sg.cat.object"
+msgstr "物品"
+
+msgid "sg.delTitle"
+msgstr "刪除「{name}」？"
+
+msgid "sg.delBody"
+msgstr "裡面 {n} 支移到未分類。"
+
+msgid "sg.delOk"
+msgstr "刪除"
+
+msgid "sg.moved"
+msgstr "已移到{name}"
+
+msgid "sg.headAria"
+msgstr "{name}，{n} 支"
+
+msgid "sg.headLive"
+msgstr "，{m} 支上線中"
+
+msgid "sg.more"
+msgstr "{name}選項"
+
+msgid "sg.nameAria"
+msgstr "資料夾名稱"
+
+msgid "sg.moveTo"
+msgstr "移到{name}"
+
+msgid "sg.moveOut"
+msgstr "移出資料夾"
+
+msgid "sg.mkt.crypto"
+msgstr "加密"
+
+msgid "sg.mkt.txf"
+msgstr "台指期"
+
+msgid "sg.mkt.tw"
+msgstr "台股"
+
+msgid "sg.mkt.us"
+msgstr "美股"
+
+msgid "sg.mkt.stockFut"
+msgstr "個股期貨"
+
+msgid "sg.mkt.global"
+msgstr "國際期貨"
+
+msgid "sg.mkt.mixed"
+msgstr "混合"
+
+msgid "sg.e.2B50"
+msgstr "星星"
+
+msgid "sg.e.1F525"
+msgstr "火"
+
+msgid "sg.e.1F4A1"
+msgstr "燈泡"
+
+msgid "sg.e.1F3AF"
+msgstr "靶心"
+
+msgid "sg.e.1F9EA"
+msgstr "試管"
+
+msgid "sg.e.1F680"
+msgstr "火箭"
+
+msgid "sg.e.1F48E"
+msgstr "鑽石"
+
+msgid "sg.e.1F3C6"
+msgstr "獎盃"
+
+msgid "sg.e.1F4CC"
+msgstr "圖釘"
+
+msgid "sg.e.1F516"
+msgstr "書籤"
+
+msgid "sg.e.1F4E6"
+msgstr "箱子"
+
+msgid "sg.e.1F9E9"
+msgstr "拼圖"
+
+msgid "sg.e.1F4C8"
+msgstr "上升圖"
+
+msgid "sg.e.1F4C9"
+msgstr "下降圖"
+
+msgid "sg.e.1F4CA"
+msgstr "長條圖"
+
+msgid "sg.e.1F4B9"
+msgstr "圖表日圓"
+
+msgid "sg.e.1F4B0"
+msgstr "錢袋"
+
+msgid "sg.e.1F4B5"
+msgstr "美元鈔"
+
+msgid "sg.e.1F4B4"
+msgstr "日圓鈔"
+
+msgid "sg.e.1F4B6"
+msgstr "歐元鈔"
+
+msgid "sg.e.1F4B7"
+msgstr "英鎊鈔"
+
+msgid "sg.e.1F3E6"
+msgstr "銀行"
+
+msgid "sg.e.1F310"
+msgstr "網路地球"
+
+msgid "sg.e.1F30F"
+msgstr "亞洲地球"
+
+msgid "sg.e.23F0"
+msgstr "鬧鐘"
+
+msgid "sg.e.23F3"
+msgstr "沙漏"
+
+msgid "sg.e.1F501"
+msgstr "循環"
+
+msgid "sg.e.1F504"
+msgstr "更新"
+
+msgid "sg.e.1F500"
+msgstr "交叉"
+
+msgid "sg.e.1F50D"
+msgstr "放大鏡"
+
+msgid "sg.e.1F9ED"
+msgstr "指南針"
+
+msgid "sg.e.1F52D"
+msgstr "望遠鏡"
+
+msgid "sg.e.1F30A"
+msgstr "海浪"
+
+msgid "sg.e.1F3B2"
+msgstr "骰子"
+
+msgid "sg.e.1F9E0"
+msgstr "大腦"
+
+msgid "sg.e.1F52C"
+msgstr "顯微鏡"
+
+msgid "sg.e.1F402"
+msgstr "公牛"
+
+msgid "sg.e.1F43B"
+msgstr "熊"
+
+msgid "sg.e.1F433"
+msgstr "鯨魚"
+
+msgid "sg.e.1F988"
+msgstr "鯊魚"
+
+msgid "sg.e.1F985"
+msgstr "老鷹"
+
+msgid "sg.e.1F98A"
+msgstr "狐狸"
+
+msgid "sg.e.1F989"
+msgstr "貓頭鷹"
+
+msgid "sg.e.1F422"
+msgstr "烏龜"
+
+msgid "sg.e.1F407"
+msgstr "兔子"
+
+msgid "sg.e.1F41D"
+msgstr "蜜蜂"
+
+msgid "sg.e.1F419"
+msgstr "章魚"
+
+msgid "sg.e.1F984"
+msgstr "獨角獸"
+
+msgid "sg.e.1F331"
+msgstr "幼苗"
+
+msgid "sg.e.1F332"
+msgstr "樹"
+
+msgid "sg.e.1F335"
+msgstr "仙人掌"
+
+msgid "sg.e.1F340"
+msgstr "幸運草"
+
+msgid "sg.e.1F338"
+msgstr "櫻花"
+
+msgid "sg.e.1F319"
+msgstr "月亮"
+
+msgid "sg.e.26C5"
+msgstr "晴時多雲"
+
+msgid "sg.e.1F308"
+msgstr "彩虹"
+
+msgid "sg.e.1F30B"
+msgstr "火山"
+
+msgid "sg.e.1F31E"
+msgstr "太陽"
+
+msgid "sg.e.2614"
+msgstr "雨傘"
+
+msgid "sg.e.1F341"
+msgstr "楓葉"
+
+msgid "sg.e.2693"
+msgstr "錨"
+
+msgid "sg.e.1F511"
+msgstr "鑰匙"
+
+msgid "sg.e.1F527"
+msgstr "扳手"
+
+msgid "sg.e.1F528"
+msgstr "鎚子"
+
+msgid "sg.e.1F9F0"
+msgstr "工具箱"
+
+msgid "sg.e.1F9F2"
+msgstr "磁鐵"
+
+msgid "sg.e.1F4DA"
+msgstr "書"
+
+msgid "sg.e.1F4DD"
+msgstr "筆記"
+
+msgid "sg.e.1F4CE"
+msgstr "迴紋針"
+
+msgid "sg.e.1F381"
+msgstr "禮物"
+
+msgid "sg.e.1F3A8"
+msgstr "調色盤"
+
+msgid "sg.e.1F388"
+msgstr "氣球"
+
 msgid "rp.noBt"
 msgstr "這一支還沒有回測結果，所以只看得到程式碼。要看數字，可以請右邊的 agent 跑一次回測。"
 
@@ -4180,6 +4602,10 @@ msgstr "有新版 · 重新啟動"
 # 更新 modal 一般(沒在下單)的標題;{v} = 已暫存的新版號(canon 具名例外:只這個標題可以寫版號)
 msgid "up.md.title"
 msgstr "更新到 {v}"
+
+# 更新 modal 一般(沒在下單):本體那句。回合在跑時開不了這個框、重開前會先收掉引擎;分頁記憶在 ui-prefs,重開後接回
+msgid "up.md.lede"
+msgstr "Blave 會關掉再自動打開，對話都還在。"
 
 # 更新 modal 的主鈕(一般與下單中都是這句)
 msgid "up.md.go"
@@ -9539,3 +9965,193 @@ msgstr "錯太多次，今天不能再試。"
 msgid "cx.kc.until"
 msgstr "{t} 之後改金鑰就不用驗證。"
 
+# 0.1.38 手機 App 跟這台電腦對話(spec mobile-agent-chat-mvp;設計 desktop-phone-chat-settings-2026-10-30、mchat-phone-surfaces-2026-10-31)
+
+msgid "chat.fromPhone"
+msgstr "來自手機"
+
+msgid "ph.switch"
+msgstr "允許手機對話"
+
+msgid "ph.tip"
+msgstr "Blave 開著、電腦醒著，手機才送得到。"
+
+msgid "ph.cf.title"
+msgstr "允許手機對話？"
+
+msgid "ph.cf.1"
+msgstr "手機送的話會在這台電腦上執行。agent 能做的跟你在電腦前一樣，包括下單。"
+
+msgid "ph.cf.2"
+msgstr "近 30 天的對話會上傳，手機才看得到。金鑰與資料夾路徑會先遮掉。"
+
+msgid "ph.cf.3"
+msgstr "附件、圖片和策略程式不上傳。關掉就刪除伺服器上那份。"
+
+msgid "ph.cf.ok"
+msgstr "開啟"
+
+msgid "ph.off.title"
+msgstr "關閉手機對話？"
+
+msgid "ph.off.live"
+msgstr "手機送來、正在跑的回覆會停下。"
+
+msgid "ph.off.del"
+msgstr "伺服器上的對話會刪除，這台電腦上的不受影響。"
+
+msgid "ph.off.ok"
+msgstr "關閉"
+
+msgid "ph.syncing"
+msgstr "已同步 {n}／{m} 條對話"
+
+msgid "ph.syncFail"
+msgstr "同步停在 {n}／{m} 條。"
+
+msgid "ph.syncFail0"
+msgstr "對話沒有同步完成。"
+
+msgid "ph.retry"
+msgstr "重試"
+
+msgid "ph.syncedSay"
+msgstr "近 30 天的對話已同步"
+
+msgid "ph.pending"
+msgstr "伺服器上的對話還沒刪掉，連上網路後會自動刪。"
+
+msgid "ph.err"
+msgstr "沒有開成，請檢查網路後再試。"
+
+msgid "ph.group"
+msgstr "允許連這台的手機"
+
+msgid "ph.pair"
+msgstr "配對手機"
+
+msgid "ph.pairHow"
+msgstr "用 App 的 Agent 分頁掃描，或輸入這組碼。"
+
+msgid "ph.pairUntil"
+msgstr "{hm} 前有效"
+
+msgid "ph.pairExpired"
+msgstr "配對碼過期了。"
+
+msgid "ph.pairAgain"
+msgstr "重新產生"
+
+msgid "ph.pairFail"
+msgstr "沒拿到配對碼，請再試一次。"
+
+msgid "ph.pairMax"
+msgstr "已有 5 支手機，先撤銷一支才能再配對。"
+
+msgid "ph.pairedSay"
+msgstr "已配對 {name}"
+
+msgid "ph.meta"
+msgstr "配對 {paired} · 最近使用 {used}"
+
+msgid "ph.metaNever"
+msgstr "配對 {paired} · 還沒用過"
+
+msgid "ph.acts"
+msgstr "最近操作"
+
+msgid "ph.actsMore"
+msgstr "顯示全部"
+
+msgid "ph.actsFail"
+msgstr "讀不到紀錄。"
+
+msgid "ph.revoke"
+msgstr "撤銷"
+
+msgid "ph.iphone"
+msgstr "iPhone"
+
+msgid "ph.android"
+msgstr "Android 手機"
+
+msgid "ph.errRow"
+msgstr "沒有改成，請檢查網路後再試。"
+
+msgid "ph.phonesFail"
+msgstr "讀不到手機清單。"
+
+msgid "ph.revokedSay"
+msgstr "已撤銷 {name}"
+
+msgid "ph.revoke.title"
+msgstr "撤銷 {name}？"
+
+msgid "ph.revoke.body"
+msgstr "這支手機不能再跟 agent 對話，要再用得重新配對。"
+
+msgid "ph.revoke.stop"
+msgstr "它送來的回覆如果還在跑，會停下。"
+
+msgid "ph.revoke.ok"
+msgstr "撤銷"
+
+msgid "ph.act.send"
+msgstr "送出訊息"
+
+msgid "ph.act.stop"
+msgstr "停止回覆"
+
+msgid "ph.act.withdraw"
+msgstr "撤回訊息"
+
+msgid "ph.act.session_new"
+msgstr "開新對話"
+
+msgid "ph.act.session_rename"
+msgstr "改對話名稱"
+
+msgid "ph.act.session_delete"
+msgstr "刪除對話"
+
+msgid "ph.act.pair"
+msgstr "配對"
+
+msgid "ph.act.auth"
+msgstr "驗證身分"
+
+msgid "ph.act.revoke"
+msgstr "撤銷"
+
+msgid "ph.act.grant"
+msgstr "允許連這台"
+
+msgid "ph.act.ungrant"
+msgstr "停止連這台"
+
+msgid "tm.phoneHiddenTitle"
+msgstr "手機對話開著"
+
+msgid "tm.phoneHidden"
+msgstr "Blave 還開著，手機照樣連得到。要結束請從選單列或 Dock。"
+
+msgid "tm.phoneHiddenWin"
+msgstr "Blave 還開著，手機照樣連得到。要結束請從系統匣圖示。"
+
+msgid "sp.btn"
+msgstr "自動下單"
+
+msgid "sp.cx"
+msgstr "連接帳戶"
+
+msgid "sp.noAcct"
+msgstr "還沒連接帳戶"
+
+msgid "sp.connecting"
+msgstr "連接中…"
+
+msgid "sp.unsaved"
+msgstr "策略組合有沒存的改動"
+
+msgid "tr.pick.twdVenue"
+msgstr "台幣標的不能配到 {venue}"

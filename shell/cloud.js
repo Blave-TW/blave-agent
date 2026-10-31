@@ -52,6 +52,32 @@ const MACHINE_STATES = ["none", "starting", "running", "stopped"];
 const prefOrder = (v) => (Array.isArray(v) ? v.filter((n) => typeof n === "string" && n).slice(0, 200) : []);
 const prefFlags = (v) => (v && typeof v === "object" && !Array.isArray(v)
   ? Object.fromEntries(Object.entries(v).filter(([, x]) => Number.isInteger(x) && x >= 1 && x <= 6).slice(0, 200)) : {});
+/* 側欄策略資料夾 strat_groups(spec strategy-sidebar-folders §3、§10):權威是 api,這裡只驗形狀——emoji 是 null 或 ≤8 個 UTF-16 單位,
+   不比對 72 個的清單(api 放寬清單時舊版照收、原樣送回,不改壞別人的資料)。api 還沒回這個 key = 空結構 */
+const PREF_GROUP_ID_RE = /^f[0-9a-z]{6,12}$/;
+const prefEmoji = (e) => (typeof e === "string" && e && e.length <= 8 ? e : null);
+function prefGroups(v) {
+  const out = { v: 1, folders: [], map: {} };
+  if (!v || typeof v !== "object" || Array.isArray(v)) return out;
+  const ids = new Set();
+  for (const f of Array.isArray(v.folders) ? v.folders : []) {
+    if (out.folders.length >= 20) break;
+    if (!f || typeof f !== "object" || typeof f.id !== "string" || !PREF_GROUP_ID_RE.test(f.id) || ids.has(f.id)) continue;
+    if (typeof f.name !== "string" || !f.name.trim() || [...f.name].length > 20) continue;
+    ids.add(f.id); out.folders.push({ id: f.id, name: f.name, emoji: prefEmoji(f.emoji) });
+  }
+  const m = v.map && typeof v.map === "object" && !Array.isArray(v.map) ? v.map : {};
+  for (const [k, id] of Object.entries(m).filter(([k, id]) => k && k.length <= 200 && typeof id === "string" && ids.has(id)).slice(0, 200)) out.map[k] = id;
+  return out;
+}
+// 寫回前的形狀檢查(sendStratPrefs):不清洗、只判送不送——送出的值必須跟 renderer 手上那份一模一樣
+function groupsShapeOk(g) {
+  if (!g || typeof g !== "object" || Array.isArray(g) || (g.v !== undefined && g.v !== 1)) return false;
+  if (!Array.isArray(g.folders) || g.folders.length > 20) return false;
+  if (!g.folders.every((f) => f && typeof f === "object" && typeof f.id === "string" && typeof f.name === "string" && (f.emoji === null || prefEmoji(f.emoji) === f.emoji))) return false;
+  const m = g.map;
+  return !!m && typeof m === "object" && !Array.isArray(m) && Object.keys(m).length <= 200 && Object.entries(m).every(([k, id]) => k && k.length <= 200 && typeof id === "string");
+}
 
 function interpret(res) {
   if (!res || !res.status) return { code: "OFFLINE" };
@@ -95,6 +121,7 @@ function interpret(res) {
     // 側欄偏好(web 工作頁設的順序與旗標,agent_user_prefs 同一份):api 還沒回這兩個 key 時 = 空,行為零變化。寫回走 setStratPrefs
     strat_order: prefOrder(b.strat_order),
     strat_flags: prefFlags(b.strat_flags),
+    strat_groups: prefGroups(b.strat_groups),
     // 那台主機同時能跑幾輪(api turn_limits,同雲端 web_bridge 的名額):電腦版對著雲端的回合照它排隊。舊 api 沒帶 = null,main.js 當 1
     max_turns: maxTurnsOf(b.turn_limits),
   };
@@ -285,7 +312,7 @@ function createCloudHost(opts) {
   const setT = opts.setTimer || ((fn, ms) => { const t = setTimeout(fn, ms); if (t.unref) t.unref(); return t; });
   const clearT = opts.clearTimer || clearTimeout;
   const EMPTY = () => ({ code: "NO_LOGIN" });
-  let snap = EMPTY(), owner = null, gen = 0, stratPrefsOff = null, fetchedAt = 0, lastOkAt = 0, lastTryAt = 0, timer = null, foreground = true, running = false, inflight = null, lastKey = "";
+  let snap = EMPTY(), owner = null, gen = 0, stratPrefsOff = null, groupsPrefsOff = null, fetchedAt = 0, lastOkAt = 0, lastTryAt = 0, timer = null, foreground = true, running = false, inflight = null, lastKey = "";
   let epoch = 0;   // 換人 / 登出一次 +1:畫面拿它判斷「手上那些雲端的在途狀態是不是上一個人的」
   let evInflight = null, evLastTryAt = 0;   // 事件那一支自己的節流(它不共用上面那組:兩支走不同的速率桶)
   /* 總覽那兩支(權益曲線、組合績效)共用的讀法,各自一份在途 / 節流狀態。
@@ -344,27 +371,40 @@ function createCloudHost(opts) {
     const f = p && p.strat_flags;
     if (f && typeof f === "object" && !Array.isArray(f) && Object.keys(f).length <= 200
       && Object.entries(f).every(([k, v]) => k && k.length <= 200 && Number.isInteger(v) && v >= 1 && v <= 6)) body.strat_flags = f;
+    if (p && groupsShapeOk(p.strat_groups)) body.strat_groups = p.strat_groups;
     if (!Object.keys(body).length) return { ok: false, code: "BAD" };
     let c = null; try { c = opts.getCreds(); } catch (_) { /* Keychain 讀不到:當成沒登入 */ }
     const tok = c && c.token ? c.token : null;
     if (!tok || !c.appSecret) return { ok: false, code: "NO_LOGIN" };
     if (p.epoch !== epoch || (owner !== null && owner !== whoOf(c))) return { ok: false, code: "NO_LOGIN" };
     if (stratPrefsOff === whoOf(c)) return { ok: false, code: "UNSUPPORTED" };
+    // 這個帳號的 api 還不收資料夾:只拿掉 groups,順序與旗標照寫;資料夾留在畫面的記憶體到換帳號
+    if (groupsPrefsOff === whoOf(c)) { delete body.strat_groups; if (!Object.keys(body).length) return { ok: false, code: "UNSUPPORTED" }; }
     let res = null;
     try { res = await opts.post(opts.apiBase + PREFS_ENDPOINT, { token: tok, app_secret: c.appSecret, ...body }); } catch (_) { /* 連不上 */ }
     let cur = null; try { cur = opts.getCreds(); } catch (_) { /* 讀不到 = 沒登入 */ }
     if (whoOf(cur) !== whoOf(c)) return { ok: false, code: "NO_LOGIN" };
-    if (res && res.status === 400 && res.body && res.body.error_code === "BAD_CURRENCY") { stratPrefsOff = whoOf(c); return { ok: false, code: "UNSUPPORTED" }; }
-    if (!res || res.status !== 200) return { ok: false, code: res && res.status === 429 ? "RATE_LIMITED" : "FAIL" };
+    /* 舊 api 兩種反應(spec §3 舊 api):只帶 groups → 400 BAD_CURRENCY(它看不到任何認得的欄);帶了順序或旗標 → 200、靜默丟掉 groups、回應沒有 strat_groups。
+       兩種都只關資料夾寫回、不必重送。順序或旗標也被 BAD_CURRENCY 擋 = 更舊、連那兩欄都不收的 api,照舊整個關掉 */
+    if (res && res.status === 400 && res.body && res.body.error_code === "BAD_CURRENCY") {
+      if ("strat_groups" in body) groupsPrefsOff = whoOf(c);
+      if (body.strat_order || body.strat_flags) stratPrefsOff = whoOf(c);
+      return { ok: false, code: "UNSUPPORTED" };
+    }
+    // 其餘 4xx(壞結構 BAD_STRAT_GROUPS 之類)是內容被拒,補送同一包也一樣:REJECTED 不補;429 與 5xx / 連不上才補(同網頁寫回)
+    if (!res || res.status !== 200) return { ok: false, code: res && res.status === 429 ? "RATE_LIMITED" : res && res.status >= 400 && res.status < 500 ? "REJECTED" : "FAIL" };
     const got = res.body && typeof res.body === "object" ? res.body : {};
+    const groupsOff = "strat_groups" in body && !("strat_groups" in got);
+    if (groupsOff) groupsPrefsOff = whoOf(c);
     gen++;   // 在途的狀態請求帶的是寫之前的偏好:回來時對不上世代、整份丟掉
     if (snap && snap.code === "OK") {
       snap = { ...snap };
       if (body.strat_order) snap.strat_order = prefOrder(Array.isArray(got.strat_order) ? got.strat_order : body.strat_order);
       if (body.strat_flags) snap.strat_flags = prefFlags(got.strat_flags && typeof got.strat_flags === "object" ? got.strat_flags : body.strat_flags);
+      if (body.strat_groups && !groupsOff) snap.strat_groups = prefGroups(got.strat_groups);
       emit();
     }
-    return { ok: true, code: "OK" };
+    return groupsOff ? { ok: true, code: "OK", groupsOff: true } : { ok: true, code: "OK" };
   }
 
   const summaryKey = (s) => [s.code, s.transient, s.machine && s.machine.state, s.alive, s.stale,
@@ -372,12 +412,12 @@ function createCloudHost(opts) {
     // 版本也要推:看這台電腦時畫面 60 秒才問一次,「關於」那一行要跟上主機回報的版本
     s.config_version, s.latest_config_version, s.config_supports_wf, s.config_supports_exec_test, s.can_exec_test,
     // 側欄偏好改了(在網頁拖過 / 掛了旗標)也要推,不然要等別的欄位變
-    JSON.stringify(s.strat_order || null), JSON.stringify(s.strat_flags || null),
+    JSON.stringify(s.strat_order || null), JSON.stringify(s.strat_flags || null), JSON.stringify(s.strat_groups || null),
     // 顯示幣別換了(這裡或網頁設定改了偏好)要推:合計、投入資金幣別、總權益跟著換
     s.currency, JSON.stringify(s.base_currency_options || null)].join("|");
   const publicSnapshot = () => ({ ...snap, fetched_at: fetchedAt, last_ok_at: lastOkAt, epoch });
   function emit() { const key = summaryKey(snap); if (key === lastKey) return; lastKey = key; if (opts.onChange) try { opts.onChange(publicSnapshot()); } catch (_) { /* 畫面壞掉不影響輪詢 */ } }
-  function drop(next) { gen++; epoch++; stratPrefsOff = null; owner = null; snap = next || EMPTY(); fetchedAt = now(); lastOkAt = 0; emit(); }
+  function drop(next) { gen++; epoch++; stratPrefsOff = null; groupsPrefsOff = null; owner = null; snap = next || EMPTY(); fetchedAt = now(); lastOkAt = 0; emit(); }
 
   async function refresh(force) {
     // 在途時又被要求「現在就要」(登入成功那一刻):等在途那份回來;它若因為換了人被丟掉(owner 被清空),馬上替現在這個人再打一次
@@ -540,7 +580,8 @@ function createCloudHost(opts) {
        epoch 對不上(renderer 的值是上一個人的)、或鑰匙圈已換人但信封還沒換(輪詢還沒 drop)→ NO_LOGIN,不把 A 的順序寫進 B。
        成功:作廢在途的狀態請求(它帶的是舊偏好)、把 api 回的清過值補進 snapshot 並推一次,畫面不必等下一輪輪詢。
        舊 api(還沒部署收這兩欄的版本)只收 base_currency,回 400 BAD_CURRENCY:記住、這個帳號之後不再送
-       (舊 api 的這支跟 /cloud/command 共用限速桶,不白燒;新 api 已分開)。回 { ok, code: "OK" | "BAD" | "NO_LOGIN" | "UNSUPPORTED" | "RATE_LIMITED" | "FAIL" } */
+       (舊 api 的這支跟 /cloud/command 共用限速桶,不白燒;新 api 已分開)。資料夾 strat_groups 另有一套舊 api 判斷(見 sendStratPrefs)。
+       回 { ok, code: "OK" | "BAD" | "NO_LOGIN" | "UNSUPPORTED" | "RATE_LIMITED" | "REJECTED" | "FAIL", groupsOff? }——groupsOff = 寫入成功但 api 丟掉了資料夾,不可標資料夾已同步 */
     setStratPrefs(p) {
       const run = prefsChain.then(() => sendStratPrefs(p));
       prefsChain = run.catch(() => {});

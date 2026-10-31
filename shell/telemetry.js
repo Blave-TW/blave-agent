@@ -266,6 +266,18 @@ const EVENTS = {
     "chat_par2", "chat_par4", "chat_par8", "chat_queued", "queue_cancel", "br_wait", "br_busy", "tab_remote",
     // 0.1.37 設定 › 連結 QR 底下的商店名稱(renderer/app.js mvQr):按了、開系統瀏覽器之前送。掃 QR 在手機上發生、這裡看不到
     "app_link_ios", "app_link_android",
+    // 0.1.38 側欄策略資料夾(renderer/stratgroups.js、stratflags.js):操作成功才送,不帶資料夾名、策略名或哪個 emoji;
+    // spec 原名 strat_folder_* 超過 prop VARCHAR(16),縮成 sfolder_*。api 白名單同順序,接在 0.1.37 的 app_link_android 之後
+    "sfolder_create", "sfolder_auto", "sfolder_rename", "sfolder_emoji", "sfolder_reorder", "sfolder_delete", "sfolder_toggle", "sfolder_move",
+    // 0.1.39 手機 App 跟這台電腦對話(spec mobile-agent-chat-mvp §7;主行程 relay.js 送):phone_chat_on／off = 確認框按〔開啟〕／關掉;
+    // phone_pair = 這台出的碼配對完成(出碼後清單多一支)、phone_revoke = 在這台撤銷一支手機;phone_turn = 手機那一輪真的開跑;
+    // phone_turn_q = 同一條在跑、排在後面;phone_turn_stop = 電腦前的人停掉手機那一輪;phone_sync_ok／fail = 開啟後第一次上傳完成／失敗要按重試
+    "phone_chat_on", "phone_chat_off", "phone_pair", "phone_revoke", "phone_turn", "phone_turn_q", "phone_turn_stop", "phone_sync_ok", "phone_sync_fail",
+    // 0.1.39 建議下一步點了直接送(同 api,api 先上):點托盤直接送出的那輪,還沒回覆、沒工具收據就被停止(renderer/suggest.js sugUndo)
+    "suggest_undo",
+    // 0.1.39 策略頁頭〔自動下單〕(spec strategy-page-autotrade §6,同 api 順序,api 先上;renderer/portfolio.js、handoff.js):
+    // 按主鈕開了金額框／金額框存成功／從策略頁開連接框／從策略頁開啟動框／按雲朵 icon 鈕
+    "sp_auto_open", "sp_amt_saved", "sp_cx_opened", "sp_start_opened", "sp_cloud_icon",
     // 0.1.39 Codex 引擎隨包(主行程 shell/codexpkg.js 送):套件下載、校驗、解壓、驗過、上架都成功。api 白名單同順序,api 先上
     "codex_pkg_done"] },
 };

@@ -44,12 +44,21 @@ app.whenReady().then(async () => {
     return { sent: window.__b.sent.length, errs: ${errs}, running, done: window.__done === undefined ? "pending" : window.__done }; })()`);
   ok("分頁接回之前:還沒送、沒有錯誤行／失敗卡、沒先翻成回合中", r.sent === 0 && r.errs.length === 0 && r.running === false && r.done === "pending", r);
 
+  // 第一句還停在 CS.boot(running 還是 false)時再打一句按 Enter:同回合中按 Enter,字留在輸入框、講原因。修之前輸入框被清、接回後這句撞 running 不見
+  r = await js(`(async () => { const ta = document.getElementById("ta"); ta.value = "緊接著的第二句";
+    ta.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true }));
+    await new Promise((res) => setTimeout(res, 50));
+    return { ta: ta.value, sent: window.__b.sent.length, wait: document.getElementById("ta-wait").textContent }; })()`);
+  ok("接回之前連按第二次 Enter:第二句留在輸入框、出「回覆完才能送出」那行、什麼都還沒送", r.ta === "緊接著的第二句" && r.sent === 0 && r.wait.length > 0, r);
+
   r = await js(`(async () => { if (window.__b.release) window.__b.release(); await new Promise((res) => setTimeout(res, 300));
     const msgs = !CS.loaded ? [] : [...CS.loaded.el.querySelectorAll(".msg")].map((e) => e.className + ":" + e.textContent);
     const stray = [...document.getElementById("chat-scroll").children].filter((e) => e.classList.contains("msg")).length;
     return { tabs: CS.tabs.size, booted: CS_BOOTED, sent: window.__b.sent.map((p) => [p.message, p.sessionId === (CS.loaded && CS.loaded.sid)]), done: window.__done, msgs, stray, errs: ${errs} }; })()`);
   ok("接回之後:送出一次、逐字、帶接回那條分頁的 sessionId;submitMessage 回 true", r.booted && r.tabs === 1 && r.sent.length === 1 && r.sent[0][0] === "開機就送的這一句" && r.sent[0][1] === true && r.done === true, r);
   ok("泡泡在接回那條分頁的容器裡(不是裸的 #chat-scroll)、仍然沒有錯誤行／失敗卡", r.msgs.some((m) => /開機就送的這一句/.test(m)) && r.stray === 0 && r.errs.length === 0, r);
+  r = await js(`({ ta: document.getElementById("ta").value, running, parked: CS.bootSend === true })`);
+  ok("接回之後:第二句仍在輸入框(第一句跑著,同回合中按 Enter 的規矩)、不再停在 boot", r.ta === "緊接著的第二句" && r.running === true && r.parked === false, r);
 
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   app.exit(red ? 1 : 0);

@@ -40,7 +40,7 @@ else {
 }
 
 ok("接線:歷史的 assistant 走 addHistoryAi(user 走 addHistoryYou:拆掉附件那行再 addMsg)",
-  /x\.turn\.role === "user" \? addHistoryYou\(x\.turn\.content\) : addHistoryAi\(x\.turn\.content\)/.test(src));
+  /x\.turn\.role === "user" \? addHistoryYou\(x\.turn\.content, x\.turn\.origin\) : addHistoryAi\(x\.turn\.content\)/.test(src));
 const hist = cut("function addHistoryAi(", "async function csOpen(");
 ok("收據畫在回覆上面(進了 DOM 才截受詞)、只剩收據時不畫空泡泡", /fitSteps\(chatEl\(\)\.appendChild\(receiptFold\(r\.steps\)\)\);[^\n]*\n\s*if \(!r\.steps \|\| r\.text\.trim\(\)\) addMsg\("ai", r\.text\);/.test(hist));
 const fold = cut("function receiptFold(", "function addHistoryAi(");

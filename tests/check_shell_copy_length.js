@@ -24,7 +24,7 @@ const CANON = ".claude/docs/design-system.md › Copy & content rules";
 // 豁免:這些句子的長度由內容義務決定,砍字就是少講該講的事
 const EXEMPT = [
   [/^pdf\.disc/, "匯出 PDF 的法遵免責聲明,措辭照法遵定稿,不為字數改"],
-  [/^priv\.collect\./, "隱私設定逐項揭露蒐集了什麼,刪字等於少揭露"],
+  [/^priv\.(collect|c)\./, "隱私設定逐項揭露蒐集了什麼,刪字等於少揭露"],
   [/^(pv\.[df]|cf\.m)\./, "付款牆與方案確認框的扣款條件(金額、何時扣、不退款),誠實句要講全"],
   [/(^|\.)msg(?!\w*(Label|Title)$)/, "送給 agent 的提示詞(*.msg*,不含畫面上的 Label/Title),讀者是模型不是用戶"],
   [/^cap\.ho\.prompt|^tr\.err\.askPrompt/, "送給 agent 的提示詞(群益開通交接、下單失敗請 agent 查)"],

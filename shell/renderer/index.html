@@ -718,6 +718,8 @@
     <div class="modal-foot">
       <!-- 鈕正上方那一行:整行,所以排在 flex 的最前面 -->
       <span class="del-where" id="del-where" hidden></span>
+      <!-- 框腳最左邊的文字鈕(confirmBox 的 link;策略頁金額框的「到策略組合」) -->
+      <button type="button" class="btn-quiet del-link" id="del-link" hidden></button>
       <button type="button" class="btn-out" id="del-cancel" data-i18n="del.cancel"></button>
       <button type="button" class="btn-out" id="del-alt" hidden></button>
       <button type="button" class="btn-fill" id="del-ok" data-i18n="del.ok"></button>
@@ -871,6 +873,7 @@
 </div>
 
 <script src="../node_modules/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+<script src="../node_modules/qrcode-generator/dist/qrcode.js"></script>
 <script src="strings.js"></script>
 <script src="i18n.js"></script>
 <script src="results.js"></script>
@@ -907,6 +910,7 @@
 <script src="pine-install.js"></script>
 <script src="engine.js"></script>
 <script src="stratflags.js"></script>
+<script src="stratgroups.js"></script>
 <script src="welcome.js"></script>
 <script src="intro.js"></script>
 <script src="chattabs.js"></script>

@@ -67,7 +67,7 @@ for (const lang of ["zh", "en"]) {
 }
 
 // ── 停機的原因:雲端下單頁(主鈕、那段話)跟方案頁用同一支 planStopKind(扣款失敗 / 取消到期 / 自己停 / 切換前低餘額),不各判一套 ──
-{ const verdict = cut(trade, "trPaintVerdict"), goBtn = trade.slice(trade.indexOf('b.id = "tr-go";'), trade.indexOf('act.appendChild(b);', trade.indexOf('b.id = "tr-go";')));
+{ const verdict = cut(trade, "trPaintVerdict"), goBtn = cut(trade, "trGoClick");   // #tr-go 的 click 抽成 trGoClick(策略頁〔啟動下單〕共用)
   ok("雲端停機:主鈕與那段話都照 planStopKind 分流;取消到期講刪機日(tr.cloud.stoppedEnded)、不講照常續約",
     /const k = planStopKind\(\); if \(k === "fail"\) planRepay\(\); else if \(k === "hourly"\) bindGo\("topup_cloud"\); else planWebGo\(\);/.test(goBtn)
     && /planStopKind\(\)/.test(verdict) && /k === "ended" \? gu\("tr\.cloud\.stoppedEnded"\)/.test(verdict) && /k === "self" \? t\("tr\.cloud\.stoppedPlanOk"\)/.test(verdict)

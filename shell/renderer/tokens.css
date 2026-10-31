@@ -24,6 +24,8 @@
      漢字寫明正黑體 UI,英文 UI 下的漢字才不會看系統地區落到雅黑／SimSun)在後;不存在的名字各平台自動跳過 */
   --font-sans: -apple-system, BlinkMacSystemFont, "PingFang TC", "Segoe UI Variable Text", "Segoe UI", "Microsoft JhengHei UI", system-ui, sans-serif;
   --font-mono: "Roboto Mono", "SF Mono", Menlo, Consolas, monospace;
+  /* 只給策略資料夾的 emoji(canon › Copy › Emoji 具名例外);字串同 web main.css */
+  --font-emoji: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
   /* brand */
   --color-primary: #ff9960;
   --color-primaryDark: #f3915a;   /* 只給 primary 實心鈕的 hover(電腦版只有更新膠囊) */
@@ -121,6 +123,7 @@
   --surface-segment-on: var(--color-pureWhite);  /* segment 選中格(canon 語意角色變數) */
   --border-hairline: var(--color-greyLight);
   --border-frame: var(--color-greyLight);
+  --active-line: var(--color-black);   /* 選取外框與底線(canon 語意角色;同 web main.css) */
   --ink: var(--color-black);
   --ink-2: var(--color-greyDark);
   --ink-3: var(--color-greyMedium);
@@ -182,6 +185,7 @@
   --surface-segment-on: var(--color-greyDark);   /* control-on 的 darkBorder 跟 --surface-muted 同色,當 segment 選中格分不出來 */
   --border-hairline: var(--color-darkBorder);
   --border-frame: var(--color-greyDark);
+  --active-line: var(--color-darkText);
   --ink: var(--color-darkText);
   --ink-2: var(--color-greyLightMedium);
   --ink-3: var(--color-greyMedium);

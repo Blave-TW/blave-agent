@@ -1,0 +1,277 @@
+{
+  "spec": "mobile-agent-chat-mvp §1.3",
+  "source": "blave-agent shell/relay.js via tests/check_shell_relay_replay.js",
+  "note": "每個情境:外殼依序送出的 ack / report 請求 body(token、app_secret、device 已拿掉)。改 relay.js 的回報行為要重產並同步 api 那份",
+  "scenarios": [
+    {
+      "name": "direct_start",
+      "desc": "那條沒在跑:ack → started → 回合輸出 → done",
+      "requests": [
+        {
+          "endpoint": "/oauth/desktop/relay/ack",
+          "body": {
+            "message_ids": [
+              "msgreplay0001"
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mreplay0001",
+                "message_id": "msgreplay0001"
+              }
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "text",
+                "text": "BTC 現在",
+                "session_id": "desktop-mreplay0001",
+                "message_id": "msgreplay0001"
+              },
+              {
+                "type": "tool",
+                "tool": "Bash",
+                "status": "running",
+                "where": "local",
+                "session_id": "desktop-mreplay0001",
+                "message_id": "msgreplay0001"
+              }
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "done",
+                "awaiting": false,
+                "session_id": "desktop-mreplay0001",
+                "message_id": "msgreplay0001"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "error_after_start",
+      "desc": "開跑之後出錯:回合的 error chunk(不是 message_failed)",
+      "requests": [
+        {
+          "endpoint": "/oauth/desktop/relay/ack",
+          "body": {
+            "message_ids": [
+              "msgreplay0002"
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mreplay0001",
+                "message_id": "msgreplay0002"
+              }
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "error",
+                "message": "boom",
+                "session_id": "desktop-mreplay0001",
+                "message_id": "msgreplay0002"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "stop",
+      "desc": "手機按停止:controls interrupt → 外殼停那一輪 → runtime 照「已停止」收尾送 done",
+      "requests": [
+        {
+          "endpoint": "/oauth/desktop/relay/ack",
+          "body": {
+            "message_ids": [
+              "msgreplay0003"
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mreplay0001",
+                "message_id": "msgreplay0003"
+              }
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "done",
+                "awaiting": false,
+                "interrupted": true,
+                "session_id": "desktop-mreplay0001",
+                "message_id": "msgreplay0003"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "withdraw_queued",
+      "desc": "同一條在跑(電腦前的人):排隊回 queued → 手機撤回 → cancelled＋withdraw_result withdrawn",
+      "requests": [
+        {
+          "endpoint": "/oauth/desktop/relay/ack",
+          "body": {
+            "message_ids": [
+              "msgreplay0004"
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "queued",
+                "session_id": "desktop-busy0001",
+                "message_id": "msgreplay0004"
+              }
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "cancelled",
+                "session_id": "desktop-busy0001",
+                "message_ids": [
+                  "msgreplay0004"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "withdraw_result",
+                "session_id": "desktop-busy0001",
+                "message_id": "msgreplay0004",
+                "result": "withdrawn"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "queued_then_started",
+      "desc": "排在電腦前的人那一輪後面:queued → 那輪結束 → 單獨回報 started、回 ok 才開跑 → done",
+      "requests": [
+        {
+          "endpoint": "/oauth/desktop/relay/ack",
+          "body": {
+            "message_ids": [
+              "msgreplay0005"
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "queued",
+                "session_id": "desktop-busy0001",
+                "message_id": "msgreplay0005"
+              }
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-busy0001",
+                "message_id": "msgreplay0005"
+              }
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "done",
+                "awaiting": false,
+                "session_id": "desktop-busy0001",
+                "message_id": "msgreplay0005"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "no_ack",
+      "desc": "送出當下 ack 沒回應(60 秒內沒 ack):外殼不跑、不回 started,回 message_failed not_run",
+      "requests": [
+        {
+          "endpoint": "/oauth/desktop/relay/ack",
+          "body": {
+            "message_ids": [
+              "msgreplay0006"
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "message_failed",
+                "session_id": "desktop-mreplay0001",
+                "message_id": "msgreplay0006",
+                "code": "not_run"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
