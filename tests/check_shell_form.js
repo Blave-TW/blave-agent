@@ -224,7 +224,7 @@ ok("form.js 不讀「有沒有回合」(回合結束在 turnEndPost 裡同步跑
     "form.txf_backtest.q.prod": ["交易商品", "Contract"], "form.txf_backtest.q.tf": ["K 線週期", "Bar interval"], "form.txf_backtest.q.per": ["回測期間", "Backtest period"], "form.txf_backtest.q.st": ["策略類型", "Strategy type"],
     "form.txf_backtest.prod.txf": ["大台 TXF", "TXF (full)"], "form.txf_backtest.prod.mxf": ["小台 MXF", "MXF (mini)"], "form.txf_backtest.prod.tmf": ["微台 TMF", "TMF (micro)"],
     "form.txf_backtest.tf.d": ["日 K", "Daily"], "form.txf_backtest.tf.m1": ["1 分 K", "1-min"], "form.txf_backtest.tf.m5": ["5 分 K", "5-min"], "form.txf_backtest.tf.m15": ["15 分 K", "15-min"],
-    "form.txf_backtest.per.all": ["全部可用資料（{year} 起）", "All available data (from {year})"], "form.txf_backtest.per.y3": ["近 3 年", "Last 3 years"], "form.txf_backtest.per.y1": ["近 1 年", "Last 1 year"],
+    "form.txf_backtest.per.all": ["全部可用資料（{year} 起）", "All available data (from {year})"], "form.txf_backtest.per.y3": ["近 3 年", "Last 3 years"], "form.txf_backtest.per.y1": ["近 1 年", "Past year"],
     "form.txf_backtest.st.ma": ["均線交叉", "MA crossover"], "form.txf_backtest.st.ch": ["通道突破", "Channel breakout"], "form.txf_backtest.st.other": ["其他，自己描述", "Other, I'll describe"],
     "form.note.nodata": ["分 K 要 Blave 資料，這個帳號目前拿不到", "Intraday bars need Blave data; this account can't get it right now"], "form.note.nodata_signed_out": ["分 K 要 Blave 資料，要先登入", "Intraday bars need Blave data; sign in to Blave first"],
     "form.use": ["用這些設定", "Use these settings"], "form.self": ["我自己打", "I'll type it"], "form.say": ["有幾個設定要選，表單在回覆下面", "A few settings to pick; the form is under the reply"],
@@ -238,7 +238,7 @@ ok("form.js 不讀「有沒有回合」(回合結束在 turnEndPost 裡同步跑
 { const tok = read("tokens.css"), root = tok.slice(0, tok.indexOf('[data-theme="dark"] {')), dark = tok.slice(tok.indexOf('[data-theme="dark"] {'));
   ok("tokens.css light:卡殼 bg-body 無框;radio off 欄位底＋greyLight 框、on 填 control-fill＋白點", /--cf-bg: var\(--bg-body\); --cf-border: transparent;/.test(root) && /--check-bg: var\(--surface-field\);/.test(root) && /--check-border: var\(--color-greyLight\);/.test(root)
     && /--check-on-bg: var\(--control-fill\);/.test(root) && root.includes("--check-on-radio: url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%23ffffff'/%3e%3c/svg%3e\");"));
-  ok("tokens.css dark:卡殼 outlined(Wei 拍 A);radio off 框維持現值 greyDark(B 不採),off 底透明、點是 darkBody", /--cf-bg: transparent; --cf-border: var\(--border-frame\);/.test(dark) && /--check-bg: transparent;/.test(dark) && /--check-border: var\(--color-greyDark\);/.test(dark) && !/--check-border: var\(--color-greyMedium\)/.test(tok)
+  ok("tokens.css dark:卡殼 outlined(Wei 拍 A);checkbox／radio off 框 greyMedium(Wei 拍 B),off 底透明、點是 darkBody", /--cf-bg: transparent; --cf-border: var\(--border-frame\);/.test(dark) && /--check-bg: transparent;/.test(dark) && /--check-border: var\(--color-greyMedium\);/.test(dark) && !/--check-border: var\(--color-greyDark\)/.test(tok)
     && /--check-on-bg: var\(--control-fill\);/.test(dark) && dark.includes("--check-on-radio: url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%230f161a'/%3e%3c/svg%3e\");")); }
 { const css = formCss.replace(/\/\*[\s\S]*?\*\//g, "");
   const hovers = [...css.matchAll(/:hover/g)].length, inHover = (css.match(/@media \(hover: hover\) \{[\s\S]*?\n\}/g) || []).join("").split(":hover").length - 1;
@@ -246,8 +246,16 @@ ok("form.js 不讀「有沒有回合」(回合結束在 turnEndPost 裡同步跑
   ok("form.css:殼(內距 12−1、md 角、--cf-bg／--cf-border)、選項橫排 flex-wrap 欄距 16 每列 44、radio 18 走 --check-*", /\.msg\.ai \.cform \{[^}]*padding: calc\(var\(--space-12\) - 1px\);[^}]*border-radius: var\(--radius-md\);[^}]*background: var\(--cf-bg\);[^}]*border: 1px solid var\(--cf-border\);/.test(css)
     && /\.cform-opts \{[^}]*flex-wrap: wrap;[^}]*column-gap: var\(--space-16\);/.test(css) && /\.cform-opt \{[^}]*min-height: 44px;/.test(css) && /\.cform-opt input \{[^}]*width: 18px; height: 18px;[^}]*border-radius: var\(--radius-pill\);[^}]*var\(--check-bg\)[^}]*border: 1px solid var\(--check-border\);/.test(css)
     && /\.cform-opt input:checked \{[^}]*background-color: var\(--check-on-bg\);[^}]*border-color: var\(--check-on-bg\);[^}]*background-image: var\(--check-on-radio\);/.test(css) && /\.cform-opt input:focus-visible \{ outline: 2px solid var\(--focus-ring\); outline-offset: 2px; \}/.test(css));
+  ok("form.css:題與題之間 24(設計稽核:組內列距約 26,組間要比它大)", /\.cform fieldset \+ fieldset \{ margin-top: var\(--space-24\); \}/.test(css));
   ok("form.css:「我自己打」熱區照 .busy-fix 補到 44(全域 .btn-quiet::before 只有 -6／-4)", /\.cform-self::before \{ inset: auto; left: 50%; top: 50%; width: max\(44px, calc\(100% \+ 8px\)\); height: 44px; transform: translate\(-50%, -50%\); \}/.test(css));
   ok("form.css:新寫的 :hover 都包在 @media (hover: hover)", !!css && hovers === inHover, { hovers, inHover }); }
+// 全 app 的 checkbox／radio(appearance: none 的 18px 控件)off 框都讀 --check-border:dark 值換 greyMedium(Wei 拍 B)一處改全站。列舉,多一顆沒跟就紅
+{ const hits = [];
+  for (const f of fs.readdirSync(R).filter((n) => n.endsWith(".css")).sort()) {
+    const css = read(f).replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const m of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) if (/appearance: none/.test(m[2]) && /width: 18px; height: 18px/.test(m[2])) hits.push({ f, sel: m[1].trim(), ok: /border: 1px solid var\(--check-border\)/.test(m[2]) });
+  }
+  ok("checkbox／radio off 框都讀 --check-border(" + hits.map((h) => h.sel).join("、") + ")", hits.length >= 4 && hits.every((h) => h.ok) && ["cform-opt input", "cf-opt input", "shr-rad input", "ps-cb"].every((x) => hits.some((h) => h.sel.endsWith(x))), hits.filter((h) => !h.ok)); }
 // 手機中轉:api relay.py 的 TURN_TYPES 沒有 form,外殼送給手機時跳過(relay.js 的 TURN_TYPES 同一份)
 { const RL = require(path.join(SHELL, "relay.js"));
   const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "relay.py");

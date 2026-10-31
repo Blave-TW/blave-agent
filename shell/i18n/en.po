@@ -10171,7 +10171,7 @@ msgid "form.txf_backtest.per.y3"
 msgstr "Last 3 years"
 
 msgid "form.txf_backtest.per.y1"
-msgstr "Last 1 year"
+msgstr "Past year"
 
 msgid "form.txf_backtest.st.ma"
 msgstr "MA crossover"

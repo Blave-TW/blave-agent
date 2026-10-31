@@ -149,7 +149,8 @@
   --check-indicator: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10l3 3l6-6'/%3e%3c/svg%3e");
   --check-indicator-disabled: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M6 10l3 3l6-6'/%3e%3c/svg%3e");
 
-  /* radio(canon › Checkbox / Radio;名字與值同 web main.css):off = 欄位底＋greyLight 框,on = control-fill 填色＋白點 */
+  /* checkbox／radio(canon › Checkbox / Radio;名字與值同 web main.css):off = 欄位底＋greyLight 框,on = control-fill 填色＋白點。
+     全 app 的 checkbox／radio off 框都讀 --check-border(form.css、app.css .cf-opt、report-share.css .shr-rad、trade.css .ps-cb) */
   --check-bg: var(--surface-field);
   --check-border: var(--color-greyLight);
   --check-on-bg: var(--control-fill);
@@ -216,10 +217,10 @@
   --shadow-overlay: 0 8px 24px rgba(0,0,0,.5);
   --scrim: rgba(0,0,0,.6);   /* canon dark 是 rgba(5,9,11,.5);這版只上淺色,深色維持原值(待 Wei 拍板) */
 
-  /* radio 的 dark:別名要在這裡重宣告(var() 在宣告那一層就解掉)。off 底透明(canon --surface-field dark = transparent)、
-     框維持 greyDark(Wei 沒採 greyMedium 那條提案)、點是 darkBody(#0f161a,同 web main.css) */
+  /* checkbox／radio 的 dark:別名要在這裡重宣告(var() 在宣告那一層就解掉)。off 底透明(canon --surface-field dark = transparent)、
+     框 greyMedium(Wei 拍 B:greyDark 對 darkCard 只有 2.50:1,過不了 1.4.11 的 3:1;greyMedium 約 4.8:1)、點是 darkBody(#0f161a,同 web main.css) */
   --check-bg: transparent;
-  --check-border: var(--color-greyDark);
+  --check-border: var(--color-greyMedium);
   --check-on-bg: var(--control-fill);
   --check-on-radio: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%230f161a'/%3e%3c/svg%3e");
 

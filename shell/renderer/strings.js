@@ -3306,7 +3306,7 @@ const STRINGS = {
     "form.txf_backtest.tf.m15": "15-min",
     "form.txf_backtest.per.all": "All available data (from {year})",
     "form.txf_backtest.per.y3": "Last 3 years",
-    "form.txf_backtest.per.y1": "Last 1 year",
+    "form.txf_backtest.per.y1": "Past year",
     "form.txf_backtest.st.ma": "MA crossover",
     "form.txf_backtest.st.ch": "Channel breakout",
     "form.txf_backtest.st.other": "Other, I'll describe",

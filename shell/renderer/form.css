@@ -9,7 +9,7 @@
   animation: res-in var(--motion-base) var(--ease-standard) backwards;
 }
 .cform fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
-.cform fieldset + fieldset { margin-top: var(--space-16); }
+.cform fieldset + fieldset { margin-top: var(--space-24); }   /* 組間 24:選項一折行,組內列距約 26,16 時組間只多 3px、看不出折下來那列屬於哪一題(設計稽核) */
 .cform legend { padding: 0; font-size: 12px; font-weight: 600; line-height: 18px; color: var(--ink-2); }
 .cform-opts { display: flex; flex-wrap: wrap; column-gap: var(--space-16); row-gap: 0; }
 .cform-opt { display: flex; align-items: center; gap: var(--space-8); min-height: 44px; cursor: pointer; color: var(--ink); font-size: 13px; line-height: 1.4; }
