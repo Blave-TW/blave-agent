@@ -14,10 +14,10 @@ const cut = (src, head) => { const i = src.indexOf(head); if (i < 0) throw new E
 const WIRE = cut(mainSrc, "function quitOnSignals(");
 
 if (process.versions.electron) {
-  // ② 的子行程:沒有視窗。argv 最後一個是 "wired" | "bare"
+  // ② 的子行程:沒有視窗。argv 帶 "wired" | "bare"
   const { app } = require("electron");
   app.setPath("userData", fs.mkdtempSync(path.join(require("os").tmpdir(), "blave-quit-")));  // 不落到預設的 Electron userData
-  const wired = process.argv[process.argv.length - 1] === "wired";
+  const wired = process.argv.includes("wired");  // 不看最後一個:Electron 啟動器可能在後面補旗標(測試用的 --use-mock-keychain 包裝就是)
   let asked = 0, allow = false;
   app.on("window-all-closed", () => {});
   app.on("before-quit", (e) => { asked++; process.stdout.write("ASK " + asked + "\n"); if (!allow) e.preventDefault(); });
