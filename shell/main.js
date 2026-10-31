@@ -1208,7 +1208,7 @@ function codexPkg() {
   if (!_codexPkg) _codexPkg = codexpkg.createCodexPkg({
     fs, spawn, fetchBuffer: require("./fetchbuf").fetchBuffer, fetchToFile: require("./fetchbuf").fetchToFile,
     base: BASE, pin: CODEX_PIN, triple: TRIPLE, win: WIN, platform: process.platform, env: process.env,
-    unsupported: codexpkg.unsupported(process.platform, process.arch, process.env, fs), versionMs: LOGIN_CHECK_MS,
+    unsupported: codexpkg.unsupported(process.platform, process.arch, process.env, fs),
     log: (m) => console.error(m), track: (ev, props) => tm().track(ev, props),
     onChange: (s) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("codex-pkg-state", s); },
   });
@@ -3828,7 +3828,8 @@ app.whenReady().then(() => {
   handle("ensure-engine", () => ensureEngineShared().then((r) => { tradeStartIfReady(); return r; }));
   handle("engine-state", () => engineSetup().snapshot());
   // Codex 引擎隨包:連結畫面／設定 › 模型接入／額度用完 modal 的〔連結〕〔再試一次〕;進度另由 codex-pkg-state 推
-  handle("codex-pkg-ensure", (_e, opts) => codexPkg().ensure({ reinstall: !!(opts && opts.reinstall === true) }));
+  // reinstall 會先刪掉釘版那一包:有回合在跑就當一般 ensure(畫面那一列可能是舊的偵測結果,回合其實正握著它)
+  handle("codex-pkg-ensure", (_e, opts) => codexPkg().ensure({ reinstall: !!(opts && opts.reinstall === true) && liveTurnCount() === 0 }));
   handle("codex-pkg-state", () => codexPkg().snapshot());
   // app.getLocale() 是**系統**語系(macOS 偏好設定),不吃 LANG 環境變數。
   // BLAVE_LANG 是覆蓋用的:開發要看英文版、或用戶的系統是中文但想用英文介面。

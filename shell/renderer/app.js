@@ -114,7 +114,11 @@ function codexPkgOnState(snap) {
     if (loginPending || MDL.busy) PKG.redetect = true; else detect();
     return;
   }
-  if (lastDetect && !MDL.busy) paintRows(lastDetect);   // 進度條:主行程已節流(250 ms)
+  if (!lastDetect || MDL.busy) return;
+  // 進度一直推(主行程節流 250 ms):整份列重建會把鍵盤焦點清掉,記下焦點在哪一列的鈕、畫完還回去
+  const box = $("agent-rows"), a = document.activeElement, fk = box && a && box.contains(a) ? (a.closest("[data-kind]") || {}).dataset : null;
+  paintRows(lastDetect);
+  if (fk && fk.kind) { const b = box.querySelector('[data-kind="' + fk.kind + '"] button'); if (b && !b.disabled) b.focus(); }
 }
 window.blave.onCodexPkgState(codexPkgOnState);
 Promise.resolve().then(() => window.blave.codexPkgState()).then(codexPkgOnState, () => {});

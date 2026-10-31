@@ -1024,7 +1024,7 @@ msgid "cn.retry"
 msgstr "再試一次"
 
 msgid "row.orBrowser"
-msgstr "按〔登入〕會開瀏覽器完成登入。"
+msgstr "會開瀏覽器完成登入。"
 
 # 偵測說沒登入、但 CLI 帶整份環境與用戶設定檔時說已登入(main.js authOutside):金鑰在環境變數、settings.json 或 apiKeyHelper,agent 回合讀不到
 msgid "row.keyOff"

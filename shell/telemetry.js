@@ -51,7 +51,7 @@ const EVENTS = {
   // 只修 venv 連結的不送),以及選用的那組(美股資料)沒裝好(前綴是組別)。分兩個事件:同一輪會同時有 first_done 與美股失敗。
   // 0.1.39 起 Codex 引擎隨包(shell/codexpkg.js)沒裝好也記在這(codex_ 前綴;我們自己收掉的不送),成功記 feature_used codex_pkg_done
   engine_setup: { result: ["first_done", "first_net", "first_other", "first_timeout", "upd_done", "upd_net", "upd_other", "upd_timeout"] },
-  engine_opt_fail: { result: ["us_net", "us_other", "us_timeout", "codex_net", "codex_disk", "codex_checksum", "codex_other"] },
+  engine_opt_fail: { result: ["us_net", "us_other", "us_timeout", "codex_net", "codex_disk", "codex_checksum", "codex_other", "codex_http"] },
   // 策略庫轉換(0.1.13;spec-0.1.13-library-conversion §8,renderer 送):本機「用這支」回合跑起來時那支的資料需求(未標 = unknown;雲端不送)、
   // 找點子框送出成功時從哪個入口來。匿名使用不加屬性:看 user_id 有無、同一 install_id 之後有沒有 login_done
   lib_pick: { data: ["none", "required", "unknown"] },
