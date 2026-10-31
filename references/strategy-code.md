@@ -809,7 +809,7 @@ The runner builds this automatically — only needed when calling lib functions 
 
 ## Telegram Pairing Check
 
-Run this at session start, before any strategy run or notification:
+Pairing limits Telegram notifications and nothing else. Run this only when what the user asked for is a Telegram message (a digest, an alert, a test send) — never before a backtest, a scan, an analysis or a data question, and never as a session-start step:
 
 ```python
 import json, os, platform
@@ -835,7 +835,7 @@ paired = (
 )
 ```
 
-If `paired` is False: tell the user "Telegram is not paired yet. Please complete the pairing flow via the bot." Do not proceed until pairing is confirmed.
+If `paired` is False: the send cannot reach anyone (`make_sender()` is log-only on an unpaired machine), so do not report it as sent — tell the user once "Telegram is not paired yet, so nothing was sent there. Complete the pairing flow via the bot to get these messages." Everything else in the request — the backtest, the report, the strategy itself — goes ahead as usual.
 
 ---
 
