@@ -273,7 +273,10 @@ const EVENTS = {
     // phone_turn_q = 同一條在跑、排在後面;phone_turn_stop = 電腦前的人停掉手機那一輪;phone_sync_ok／fail = 開啟後第一次上傳完成／失敗要按重試
     "phone_chat_on", "phone_chat_off", "phone_pair", "phone_revoke", "phone_turn", "phone_turn_q", "phone_turn_stop", "phone_sync_ok", "phone_sync_fail",
     // 0.1.39 建議下一步點了直接送(同 api,api 先上):點托盤直接送出的那輪,還沒回覆、沒工具收據就被停止(renderer/suggest.js sugUndo)
-    "suggest_undo"] },
+    "suggest_undo",
+    // 0.1.39 策略頁頭〔自動下單〕(spec strategy-page-autotrade §6,同 api 順序,api 先上;renderer/portfolio.js、handoff.js):
+    // 按主鈕開了金額框／金額框存成功／從策略頁開連接框／從策略頁開啟動框／按雲朵 icon 鈕
+    "sp_auto_open", "sp_amt_saved", "sp_cx_opened", "sp_start_opened", "sp_cloud_icon"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

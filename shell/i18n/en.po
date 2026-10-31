@@ -10076,3 +10076,21 @@ msgstr "Blave is still open, so your phone can reach it. To quit, use the menu b
 
 msgid "tm.phoneHiddenWin"
 msgstr "Blave is still open, so your phone can reach it. To quit, use the system tray icon."
+
+msgid "sp.btn"
+msgstr "Auto-trade"
+
+msgid "sp.cx"
+msgstr "Connect account"
+
+msgid "sp.noAcct"
+msgstr "No account linked"
+
+msgid "sp.connecting"
+msgstr "Connecting…"
+
+msgid "sp.unsaved"
+msgstr "Unsaved portfolio changes"
+
+msgid "tr.pick.twdVenue"
+msgstr "TWD strategies can't trade on {venue}"

@@ -2,7 +2,7 @@
    與優化(這支檔:自己的策略清單、方法、跑優化、權重分配、部位大小、套用金額、移動窗格回測)。也放兩頁共用的台指期合約下拉與霧化空狀態。
    跟自動下單頁同一袋狀態(trade.js 的 TR / TR_BAGS):TR.view === "po" 時這一頁看得見,輪詢照 trPaint 走。
    優化的三個指令(manage_optimize / manage_backtest / manage_cancel)兩個視角都送:這台電腦走 daemon、雲端走 api 的指令佇列。
-   用到 trade.js 的 $ / t / TR / TR_BAGS / ENV / trEl / trSec / trTipLabel / trHead / trFmt / trReport / trZone* / trCt* / trSaveAmounts…、
+   用到 trade.js 的 $ / t / TR / TR_BAGS / ENV / trEl / trSec / trTipLabel / trHead / trFmt / trReport / trZone* / trCt* / trCfOpen…、
    app.js 的 trackFeature / srSay / autosize / paneSt / paneToggle、stratflags.js 的 sfApplyOrder / SF——都在呼叫時才取。 */
 
 /* ── 純邏輯(tests/check_shell_portfolio.js 從原文切出來跑;這一段不准碰 DOM)────────────── */
@@ -197,27 +197,173 @@ async function poOpen(tab, focus) {
   if (focus) $("po-h").focus();
   trPollSoon(0);
 }
-/* 策略頁首「加到策略組合」(spec tw-holdings-a1 §1-1、F1;handoff.js hoPaint 畫在「送上雲端」右邊):回測過的 Type A／C 才有(同選擇策略的清單)。
-   已在組合裡(已存或草稿)換描邊「到策略組合」,只是跳過去。兩個視角一樣 */
-function poAddBtn(cloud) {
+/* ── 策略頁頭的動作槽(spec strategy-page-autotrade-2026-10-31;handoff.js hoPaint 畫,狀態表 SP_STATES／spHead 在 handoff.js 的純邏輯段)──
+   一律以正在看的那一支判,不看 main_market。兩個視角同一套:這台電腦讀 RP + 本機那一袋,雲端讀 RPC + 雲端那一袋。
+   寫入只有一條路(金額框 trCfOpen → amounts);連接框、啟動框都是現成的,這裡只決定什麼時候開 */
+/* 這支的市場(鈕字與走法):crypto 加密(含 NVDAUSDT 那種股票永續)／txf 台指期(含個股期貨)／tw 台股／us 美股純代號。
+   先看策略本身的市場(本機 strategy_kinds、雲端清單 srcMarket),讀不到才看標的。不用 x.twd(混了加密也 true)、不用 trPaperTw(那是鎖) */
+function spMarket(r, name, d) {
+  const m = trSrcMarket(r, name), x = (Array.isArray(TR.list) ? TR.list : []).find((y) => y.name === name) || {};
+  const sym = String(x.symbol || (d && d.symbol) || "").trim().toUpperCase();
+  if (m === "us_stock") return trUsNoAuto(r, sym, [name]) ? "us" : "crypto";
+  if (m === "tw_stock") return "tw";
+  if (m === "tw_index_futures" || m === "tw_stock_futures") return "txf";
+  if (m) return "crypto";
+  if (trTxfSpec(sym)) return "txf";
+  if (sym) return TR_TWD_RE.test(sym) ? "tw" : "crypto";
+  return trAllTwd(x.universe && x.universe.length ? x.universe : trUniverse(d && d.code)) ? "tw" : "crypto";
+}
+/* 「連接中」:連接框按下送出(cxModalClose(true))那一刻開始等,旗標自己帶 at——不掛計時器(trPollSoon 會清掉 TRP.timer),
+   每一輪輪詢拿 TR_CX_SAVED_MS 判,超時靠時間戳自然失效 */
+function spCxOn(S, now) { const w = S.spCx; return !!w && typeof w.at === "number" && now - w.at < TR_CX_SAVED_MS; }
+// 綁的那家下不了(spec §15-1):原因用這一支在選擇策略框那一列會出的那句;這一支本身不鎖(別支的問題、綁兩家)才退回通用那句
+function spOffNote(S, name, r) {
+  const rows = trPickRows(Array.isArray(S.list) ? S.list : [], [], r.can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), {}, trTwdVenueLock());
+  const n = (rows.find((y) => y.name === name) || {}).note;
+  if (n === "txf") return { key: "tr.pick.txf", vars: { venue: trTwVenueName(trVenueId()) } };
+  if (n === "twdVenue") return { key: "tr.pick.twdVenue", vars: { venue: trVenueLabel(trVenueId(), true) } };
+  if (n === "twd") return { key: "tr.pick.twd" };
+  if (n === "typeC") return { key: S.env === "cloud" ? "tr.typeCHost" : "tr.typeC" };
+  return { key: "tr.startOffNoAmt" };
+}
+/* 這一刻頁頭該是哪一態:收集 spHead 要的值(都在 trWith 裡讀那一袋)。回 spHead 的結果 + { name, env, market, paper };沒有策略頁可畫回 null */
+function spView(cloud) {
   const S = TR_BAGS[cloud ? "cloud" : "local"], B = cloud ? RPC : RP;
-  // 回測過 = 這一頁讀到 stats(策略清單只在開過策略組合／自動下單後才載入,不能靠它判;同 rpTab)
-  if (!B || !B.name || !B.data || B.data.pending || !B.data.stats || (typeof xpIsTypeB === "function" && xpIsTypeB(B.data))) return null;
-  const name = B.name, inPo = trWith(S, () => trNames().indexOf(name) >= 0);
-  const b = document.createElement("button"); b.type = "button"; b.id = "rp-po"; b.className = inPo ? "btn-out" : "btn-fill";
-  b.textContent = t(inPo ? "po.addGo" : "po.add");
-  b.addEventListener("click", () => poAdd(S, name, inPo));
-  return b;
+  if (!B || !B.name || !B.data || B.data.pending) return null;
+  return trWith(S, () => {
+    const name = B.name, d = B.data, r = trReport(), now = Date.now(), state = envHeadState(S.st, now);
+    const market = spMarket(r, name, d), base = trBase(), configured = !!base && Number(base[name]) > 0;
+    const ids = trVenueIds(r), hasAcct = trHasAccount(r), gv = trGoView(state, r, S.pending, now);
+    // 讀不到:不知道現況、設定讀不到、存檔在途、雲端存完等回報、雲端停機、啟動／暫停在途與過場鎖、綁兩家(UI 綁不到,runtime 存了路由也是空的)
+    const unread = state === "loading" || state === "unknown" || (cloud && !(S.st && S.st.alive)) || trCfgUnread(r) || trStored() === null
+      || S.save === "saving" || (cloud && S.save === "sent") || (cloud && envCloudKind(S.st) === "stopped") || gv.locked || ids.length > 1;
+    const row = configured ? null : trPickRows(Array.isArray(S.list) ? S.list : [], trNames(), !!r && r.can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), {}, trTwdVenueLock()).find((y) => y.name === name);
+    const setup = state === "setup", routeDirty = hasAcct && !setup && ids.length === 1 && trRouteDirty(r);
+    const usable = state === "unknown" ? !!(S.st && S.st.alive) : cloud ? envCloudKind(S.st) === "running" : trChannelUp(S.st);
+    const v = spHead({ noBt: !d.stats, typeB: typeof xpIsTypeB === "function" && xpIsTypeB(d), market, unread, locked: !!(row && row.locked), configured,
+      setup, presContinue: setup && S.env === "local" && (ids[0] === "president" || CAPL_LOCAL_ON), connecting: spCxOn(S, now), hasAcct, routeDirty,
+      unsaved: routeDirty && trUnsaved(), zvOff: !!gv.zv.off, firing: trCfFiring(S.st, S.pending) && hasAcct, goKey: gv.key, goOff: !usable,
+      offNote: gv.zv.off ? spOffNote(S, name, r || {}) : null, goNote: !gv.zv.off && gv.zv.reason ? { key: gv.zv.reason, vars: gv.zv.book ? { n: trBookQty(gv.zv.book) } : null } : null });
+    if (v.st === "route" && S.spErr) v.note = { text: S.spErr };   // 〔儲存〕直送失敗:沒有框可重開,原因換在這一行
+    return Object.assign(v, { name, env: S.env, market, paper: v.mark ? trCfPaperOnly() : null });
+  });
+}
+// 說明下一行(#rp-ho-note,同送上雲端回報那一格):整句原因;句子裡的「策略組合」做成文字鈕(同自動下單頁的原因行)
+function spPaintNote(note) {
+  const n = $("rp-ho-note"); if (!n) return;
+  n.textContent = ""; n.hidden = !note; if (!note) return;
+  const text = note.text != null ? note.text : t(note.key, note.vars || undefined), word = t("po.nav"), at = note.text != null ? -1 : text.toLowerCase().indexOf(word.toLowerCase());
+  if (at < 0) { n.textContent = text; return; }
+  const a = trEl("button", "btn-quiet", text.slice(at, at + word.length)); a.type = "button"; a.addEventListener("click", () => poOpen("cfg", true));
+  n.append(text.slice(0, at), a, text.slice(at + word.length));
+}
+// 狀態詞／記號／主鈕。主鈕節點沿用(keep):確認框、連接框關掉要把焦點還給它
+function spPaintAct(act, v, keep) {
+  if (v.word) act.appendChild(trEl("span", "rp-status", t(v.word)));
+  if (v.mark) act.appendChild(trEl("span", "mode " + (v.paper ? "paper" : "real"), t("po.live", { mode: t(v.paper ? "tr.mode.paper" : "tr.mode.real") })));
+  if (!v.btn) return;
+  const b = keep || trEl("button", "");
+  if (!keep) { b.type = "button"; b.id = "rp-go"; b.addEventListener("click", () => spGo(b)); }
+  b.className = v.btn.kind === "out" ? "btn-out" : "btn-fill"; b.textContent = t(v.btn.key); b.disabled = !!v.btn.off;
+  b.dataset.act = v.btn.act || ""; b.dataset.name = v.name;
+  act.appendChild(b);
+}
+// 按主鈕:按下去那一刻再判一次(輪詢可能剛換了態),照新的那一態做
+async function spGo(b) {
+  const S = TR_BAGS[ENV.cur]; if (S !== TR || b.disabled) return;
+  const v = spView(ENV.cur === "cloud"); if (!v || !v.btn || v.btn.off || v.name !== b.dataset.name) return;
+  const act = v.btn.act;
+  if (act === "amt") return spAmt(S, v, b);
+  if (act === "pick") return trZGo("pick", b);   // 鎖住:不開金額框,到選擇策略框,原因在那一列(同 poAdd)
+  if (act === "cx") return spCxOpen(S, b, v.name);
+  if (act === "go") { if (trGoClick(b) === "start") trackFeature("sp_start_opened"); return; }
+  if (act === "route") return spRoute(S, b);
+  if (act === "po") return poOpen("cfg", true);
+  if (act === "pres") return cxModalOpen(b, trVenueIds(trReport())[0]);   // 同 #tr-pres-continue
+}
+/* 〔自動下單〕／〔加到策略組合〕:開有輸入格的金額框(trCfOpen o.input)。清單先重讀(剛裝好的那支才找得到;鎖不鎖、標的與幣別都看它),
+   讀完再判一次鎖。框腳「到策略組合」= 關框、把已填的金額帶成草稿(poAdd);台股沒有這顆 */
+async function spAmt(S, v, b) {
+  if (S.env === "local") { try { await trLoadStrategies(S); S.listLoaded = true; } catch (_) { } }
+  if (S !== TR_BAGS[ENV.cur] || S !== TR) return;
+  const now = spView(S.env === "cloud"); if (!now || now.name !== v.name) return;
+  if (now.st === "locked") return trZGo("pick", b);
+  if (now.st !== "add") return;
+  const name = v.name, tw = v.market === "tw", base = trBase() || {}, x = TR.list.find((y) => y.name === name) || {};
+  trCfOpen({ stored: base, opener: b, from: "sp", track: tw ? "po_add_saved" : "sp_amt_saved",
+    input: { name, initial: Number(base[name]) > 0 ? trFmt(Number(base[name])) : "", kind: trRowTxfNew(name) ? "lots" : "amount", oneLeg: !tw && !x.portfolio, tw },
+    toPo: tw ? null : (amt) => spToPo(S, name, amt), onSaved: () => spAfterSave(S, name, v.market) });
+  if (TR_CF.cur && TR_CF.cur.ctx === delCtx && !$("del-scrim").hidden) trackFeature(tw ? "po_add" : "sp_auto_open");
+}
+async function spToPo(S, name, amt) {
+  if (S !== TR_BAGS[ENV.cur]) return;
+  if (amt != null && amt > 0) { S.edits[name] = amt; if (S.raw) delete S.raw[name]; }
+  await poAdd(S, name, false);
+}
+/* 存成功之後(spec §2、§4):統一開通中 → 自動下單頁(主鈕是「繼續」);沒綁帳戶 → 台股到策略組合看目標持股、其他接連接框
+   (那一刻重讀 venue;連接中不再開一個要他再填一次金鑰);綁模擬、沒在跑 → 路由齊了就開啟動框;真錢停在〔啟動下單〕由用戶按 */
+function spAfterSave(S, name, market) {
+  if (S !== TR_BAGS[ENV.cur]) return;
+  trWith(S, () => {
+    const r = trReport(), now = Date.now();
+    if (envHeadState(S.st, now) === "setup") { trOpen(); return; }
+    if (!trVenueIds(r).length) {
+      if (market === "tw") { poOpen("cfg"); return; }
+      if (!spCxOn(S, now)) spCxOpen(S, $("rp-go"), name);
+      return;
+    }
+    if (trCfPaperOnly() && !trCfFiring(S.st, S.pending)) { S.spGo = { name, at: now }; spGoCheck(S); }
+  });
+}
+// 接連接框:只有這一刻沒綁任何帳戶才開(這條路不換綁,spec §7-1)。連接框送出那一下開始「連接中」,爆發輪詢縮短等待
+function spCxOpen(S, b, name) {
+  if (S !== TR_BAGS[ENV.cur] || trWith(S, () => trVenueIds(trReport()).length > 0)) return;
+  cxModalOpen(b, undefined, () => { S.spCx = { name, at: Date.now() }; ENV.burst = trBurstBump(ENV.burst, Date.now(), TR_BURST_MS, TR_BURST_MAX_MS); });
+  if (!$("cx-scrim").hidden) trackFeature("sp_cx_opened");
+}
+/* 「有帳戶、沒路由」的〔儲存〕:同策略組合儲存列 routeDirty 那條出口。清單先載入(trCfOpen 的第一道是靜默早退);
+   策略組合有任何沒存的草稿時這一態根本不出這顆(spView → sp.unsaved)。沒變動、沒 notes 就直送,有 notes 照開框;payload 是整份已存的 */
+async function spRoute(S, b) {
+  if (S.env === "local") { try { await trLoadStrategies(S); S.listLoaded = true; } catch (_) { } }
+  if (S !== TR_BAGS[ENV.cur] || S !== TR || trUnsaved()) { if (typeof hoPaint === "function") hoPaint(); return; }
+  S.spErr = null;
+  trCfOpen({ names: trNamesOf(null), stored: trBase(), opener: b, from: "sp",
+    onFail: (e) => { S.spErr = e || t("tr.cmdFailed"); if (typeof hoPaint === "function") hoPaint(); }, onSaved: () => { S.spErr = null; } });
+}
+/* 每一輪輪詢(trade.js trPoll,兩袋各跑一次、借 trWith):「連接中」等到了沒——等的是報告裡有帳戶、路由齊了(trUnrouted 空),不是 ack;
+   超時就收掉,頁頭照那一刻的報告落「還沒連接帳戶」或「有帳戶、沒路由」。等到了而且是模擬、沒在跑:排一個「開啟動框」 */
+function spCxCheck() {
+  const S = TR, now = Date.now(), w = S.spCx;
+  if (w) {
+    const r = trReport();
+    if (!spCxOn(S, now)) S.spCx = null;
+    else if (r && trHasAccount(r) && trUnrouted(r).length === 0) { S.spCx = null; if (trCfPaperOnly() && !trCfFiring(S.st, S.pending)) S.spGo = { name: w.name, at: now }; }
+  }
+  spGoCheck(S);
+}
+/* 排著的「開啟動框」:人還在那一支的策略頁、沒有別的框開著、頁頭真的是〔啟動下單〕(路由齊、這家下得了)才開,走 trGoClick 同一套守門;
+   在跑了就不開(記號出來就好);等不到(同連接中的上限)就放掉 */
+function spGoCheck(S) {
+  const g = S.spGo; if (!g) return;
+  if (Date.now() - g.at >= TR_CX_SAVED_MS) { S.spGo = null; return; }
+  if (S !== TR_BAGS[ENV.cur] || $("rp").hidden || !$("del-scrim").hidden || !$("cx-scrim").hidden) return;
+  const v = spView(S.env === "cloud"); if (!v || v.name !== g.name) return;
+  if (v.st === "live") { S.spGo = null; return; }
+  if (v.st !== "ready" || !v.btn || v.btn.off || v.btn.key !== "tr.start") return;
+  S.spGo = null;
+  if (trWith(S, () => trGoClick($("rp-go"))) === "start") trackFeature("sp_start_opened");
 }
 /* 按「加到策略組合」:只建草稿(同選擇策略框按確定,psApply)——這支勾進表、金額空著、游標在金額格,**不送任何指令寫設定**;
    不存就離開 = 組合沒變。唯一副作用:這支沒有最新那一根的預覽就請機器背景重算(stats_refresh,F2;同碼不定版),儲存框要它換算股數。
-   選擇策略框會鎖住的(模擬交易的台股、只下台指期的券商、機器 lib 太舊的投資組合)不偷渡:跳過去打開選擇策略框,原因在那一列 */
-// 策略頁開著時,鈕的樣子跟著清單載入／存進組合換(trPoll 每輪叫;只有變了才重畫頁首那一排)
+   選擇策略框會鎖住的(模擬交易的台股、只下台指期的券商、機器 lib 太舊的投資組合)不偷渡:跳過去打開選擇策略框,原因在那一列。
+   0.1.39 起頁頭的主鈕改開金額框(spAmt),這支留給金額框腳的「到策略組合」 */
+// 策略頁開著時,頁頭跟著輪詢的狀態換(trPoll 每輪叫;只有 spView 的結果變了才重畫頁首那一排)。這台電腦的清單沒載入過就先讀一次(鎖不鎖看它)
 let PO_ADD_SIG = null;
 function poAddSync() {
   if ($("rp").hidden) { PO_ADD_SIG = null; return; }
   const cloud = ENV.cur === "cloud", S = TR_BAGS[cloud ? "cloud" : "local"], B = cloud ? RPC : RP;
-  const sig = JSON.stringify([cloud, B && B.name, S.listLoaded, B && B.name ? trWith(S, () => trNames().indexOf(B.name) >= 0) : null]);
+  if (!cloud && !S.listLoaded && !S.spListing) { S.spListing = true; trLoadStrategies(S).then(() => { S.listLoaded = true; }, () => {}).finally(() => { S.spListing = false; }); }
+  const sig = JSON.stringify([cloud, LANG, B && B.name, spView(cloud)]);
   if (sig === PO_ADD_SIG) return;
   const first = PO_ADD_SIG === null; PO_ADD_SIG = sig;
   if (!first && typeof hoPaint === "function") hoPaint();
@@ -232,7 +378,7 @@ async function poAdd(S, name, inPo) {
   if (!inPo) trWith(S, () => {
     if (trPickOff()) return;
     const r = trReport() || {}, names = trNames();
-    const row = trPickRows(S.list, names, r.can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), {}).find((y) => y.name === name);
+    const row = trPickRows(S.list, names, r.can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), {}, trTwdVenueLock()).find((y) => y.name === name);
     if (!row || row.locked) { locked = true; return; }
     const sel = new Set(names); sel.add(name);
     S.picked = trSetEq(sel, trNamesOf(null)) ? null : sel;
@@ -282,10 +428,10 @@ function poWire() {
 // trade.js trPaint 在 TR.view === "po" 時叫:分頁列等報告到了才出(載入態沒有分頁可看);兩個分頁各自畫
 function poPaint() {
   if (!PO.wired) { PO.wired = true; poWire(); }
-  // 頁首常駐「自動下單中・模擬／真錢」:存金額會送單的時候(同存金額框的判準 trCfFiring;spec F4)
+  // 頁首常駐「自動下單中・模擬／真錢」:存金額會送單的時候(同存金額框的判準 trCfFiring;spec F4)。只綁模擬才寫模擬(trCfPaperOnly,同策略頁頭的記號)
   const lv = $("po-live"), fire = trCfFiring(TR.st, TR.pending) && trHasAccount(trReport());
   lv.hidden = !fire;
-  if (fire) { const paper = trIsPaper(); lv.className = "mode " + (paper ? "paper" : "real"); lv.textContent = t("po.live", { mode: t(paper ? "tr.mode.paper" : "tr.mode.real") }); }
+  if (fire) { const paper = trCfPaperOnly(); lv.className = "mode " + (paper ? "paper" : "real"); lv.textContent = t("po.live", { mode: t(paper ? "tr.mode.paper" : "tr.mode.real") }); }
   if (!TR.poTab) TR.poTab = "cfg";
   const loaded = !!trReport() && TR.listLoaded;
   $("po-tabs").hidden = !loaded;
@@ -897,7 +1043,7 @@ function mgFxWhy() {
   if (trFxView().expired) return "mg.applyWhyFxOld";   // 上次存下的匯率超過 30 天:不再拿來換算
   return !c || c.code === "NO_LOGIN" || c.code === "REVOKED" || c.code === "NO_APP_SECRET" ? "mg.applyWhyLogin" : "mg.applyWhyFx";
 }
-// 套用金額:建議寫進配置分頁的未儲存值,走同一個確認框與 amounts(trSaveAmounts);取消就把未儲存值還原
+// 套用金額:建議寫進配置分頁的未儲存值,走同一個確認框與 amounts(trCfOpen);取消就把未儲存值還原
 function mgApply(opener) {
   const S = TR, G = mgBag(S);
   if (!mgProposal() || (S.save && S.save !== "failed") || trCfgUnread(trReport()) || !mgSameAsAmounts()) return;
@@ -916,7 +1062,7 @@ function mgApply(opener) {
   /* 本金沒填(null)時預設 = 已存金額的合計;套用後合計變成「本金 × 槓桿」,下一次的預設就跟著縮(槓桿 < 1 時 280k → 134k,第三台實測)。
      存成功就把這次用的本金(連同當下方法的目標)記進部位大小設定(同 mgSave),之後就是它,重複套用、重跑優化都不漂移 */
   const fundUsed = mpsFundOf(G.sizing), ccyUsed = mpsCcy(), prop = mpsProp(), mUsed = mpsMethodOf(G.sizing, mpsSeriesOf(prop)), tgUsed = mpsTargetOf(G.sizing, mUsed, prop);
-  trSaveAmounts(trNames(), trBase(), opener, { source: "optimize",
+  trCfOpen({ names: trNames(), stored: trBase(), opener, source: "optimize",
     onCancel: () => { S.edits = before; S.ct.edits = beforeCt; S.ct.basis = beforeBasis; S.sig.cfg = null; },
     // 存成功就回配置分頁,剛改的金額格閃一下;優化自己換的合約交回配置(存著的就是它了)
     onSaved: (sending, was) => { Object.keys(sending).forEach((n) => { if (sending[n] !== (was[n] || 0)) S.flash[n] = Date.now(); }); G.ctEdits = {}; mgPinUsed(S, G, ccyUsed, fundUsed, mUsed, tgUsed); if (TR === S && S.view === "po") poSetTab("cfg"); } });

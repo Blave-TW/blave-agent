@@ -142,7 +142,7 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
     const L = { env: "local", list: o.list, listLoaded: true, meta: new Map(), st: null, view: "tr",
       api: { listStrategies: async () => { log.push("list"); if (o.onList) o.onList(L); if (o.listFail) throw new Error("x"); return o.fresh; }, loadStrategy: async () => ({ stats: { symbol: "BTCUSDT" }, code: "" }) } };
     const C = { TR: L, TR_BAGS: { local: L, cloud: {} }, ENV: { cur: "local" }, $: (id) => els[id] || null, t: (k) => k, requestAnimationFrame: (f) => f(),
-      PAPER: "paper", trackFeature: (n) => log.push("track:" + n), trPickOff: () => !L.listLoaded, trNames: () => [], trReport: () => ({}), trVenueId: () => null, trPaperTwOk: () => true, trTwBroker: () => false,
+      PAPER: "paper", trackFeature: (n) => log.push("track:" + n), trPickOff: () => !L.listLoaded, trNames: () => [], trReport: () => ({}), trVenueId: () => null, trPaperTwOk: () => true, trTwBroker: () => false, trTwdVenueLock: () => null,
       trPickPrefs: () => ({ order: [], flags: {} }), envDotsUp: () => false, envRunDot: () => false, trUniverse: () => [], trIsTwd: () => false, trAllTwd: () => false,
       trEl: (tag, cls, txt) => ({ tag, cls, txt, kids: [], dataset: {}, setAttribute() {}, appendChild(x) { this.kids.push(x); return x; }, append() {} }),
       psRow: (r) => ({ row: r.name }), mgMembers: () => [], psOpener: null, psMode: "", Map, Set, JSON, Object, Number, Promise, Error,
@@ -185,7 +185,7 @@ function rest() {
     const els = { "cx-scrim": el(), "view-ws": el(), "cx-body": el(), "cx-close": el(), "cx-mode-paper": el(), "cx-mode-real": el() };
     const C = { ENV: { cur: "local" }, TR: { env: "local" }, TR_BAGS: { local: { sig: {} }, cloud: {} }, PAPER: "paper", CAPITAL: "capital",
       CXF: { env: "local", mode: "paper", venue: "paper" }, cxVenuesFor: () => ["binance", "okx"], cxForget() {}, cxBag: () => C.TR_BAGS.local, trVenueIds: () => (bound ? [bound] : []), trSetupOnly: () => false, envCloudKind: () => "running",
-      trackFeature: (n) => log.push(n), $: (id) => els[id] || null, requestAnimationFrame: (f) => f(), cxModalPaint() {}, capResume() {}, cxOpener: null };
+      trackFeature: (n) => log.push(n), $: (id) => els[id] || null, requestAnimationFrame: (f) => f(), cxModalPaint() {}, capResume() {}, cxOpener: null, CXW: { cb: null } };
     vm.createContext(C); vm.runInContext(cutFn(trade, "cxModalOpen").replace("function cxModalOpen", "var cxModalOpen = function"), C);
     C.cxModalOpen(null, venue); return { venue: C.CXF.venue, mode: C.CXF.mode, bound: C.CXF.bound, log: log.join() }; };
   const a = open(), b = open("paper"), d = open("president");
