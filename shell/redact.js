@@ -3,16 +3,18 @@
  * 規則與順序逐條照 api openclaw/redact.py;兩邊跑同一份 tests/fixtures/redact_cases.json(逐字比對兩份檔,
  * tests/check_shell_redact.js)。改一條規則就兩邊與 fixture 一起改。
  * 第 1 條(已知的值)只有這裡有:值由呼叫端交進來,只在記憶體比對,不寫檔、不 log、不回傳。
- * 第 6 條的四個 regex 直接用 mobileview.js 那組物件(與 api desktop_portfolio 逐字比對過),本體不動。
+ * 第 6 條的 HOME_RE、LONG_TOKEN_RE 直接用 mobileview.js 那組物件(與 api desktop_portfolio 逐字比對過),本體不動;
+ * 網址／路徑 query 跟 api 一樣改寫成 querySub(那兩條 regex 是平方級)。
  * 盡力遮,不保證認得出每一種秘密。
  */
 const fs = require("fs");
 const path = require("path");
-const { HOME_RE, URL_QUERY_RE, PATH_QUERY_RE, LONG_TOKEN_RE } = require("./mobileview");
+const { HOME_RE, LONG_TOKEN_RE } = require("./mobileview");
 
 const MASK = "⟦R⟧";
 const EXCLUDED = "⟦R:msg⟧";
 const MAX_MASKS = 5;
+const INPUT_MAX = 64 * 1024;   // 碼位數,= api INPUT_MAX
 const MNEMONIC_MIN_WORDS = 12;
 const LONG_TOKEN_MIN = 32;   // = LONG_TOKEN_RE 的 {32,}
 
@@ -23,19 +25,29 @@ const NUMBERING_RE = /^[0-9]+[.)]?$/;
 const LEADING_NUMBER_RE = /^[0-9]+[.)]/;   // 「1.abandon」(編號黏在字前面)拿掉編號
 const WORD_EDGE = ".,;:!?\"'()[]{}";
 const WORD_SPLIT_RE = new RegExp("[" + WS + "\"',\\[\\]{}\\-_]+", "u");   // JSON 陣列、- 或 _ 串起來的助記詞一樣切得開
-/* 名=值(api 34ed3832 的寫法):只掃「名字段」,名字含關鍵字才吃它後面的值;不含就只前進到分隔符後——
-   值裡面可能還有下一對 key=value。名字段的 lookbehind 只讓比對從一串名字字元的開頭起跑,整段線性。
-   分隔符兩邊只認同一行的空白(空的 api_key: 不會把下一行的 passphrase: 當成值);全形冒號、中文關鍵字也算 */
-const KV_NAME_PART_RE = new RegExp("(?<![A-Za-z0-9_.\\-\\u4e00-\\u9fff])[A-Za-z0-9_.\\-\\u4e00-\\u9fff]+[\"']?[ \\t\\u3000]*[:=：][ \\t\\u3000]*[\"']?", "giu");
-// 值前面可以有一個開括號;值裡的括號算值,結尾多出來、沒在值裡開過的收尾括號留給外面(cfg:{secret:x} 的 } 不算值)
-const KV_VALUE_RE = new RegExp("[({\\[「]?[^" + WS + "\"'`,;&]+", "yu");
-const KV_NAMEISH_RE = /^[A-Za-z0-9_.\-]+[:=：]$/;   // 吃到的「值」其實是下一對的名字
-const KV_VALUE_MIN = 6;
-const KV_CLOSER = { ")": "(", "}": "{", "]": "[", "」": "「" };
-const BEARER_RE = new RegExp("(?<![A-Za-z0-9_])(bearer[" + WS + "]+)([A-Za-z0-9._~+/\\-]{16,}=*)", "giu");   // Authorization 標頭:只遮 token
-const KV_NAME_RE = /key|secret|token|passphrase|password|passwd|pwd|private|密碼|密码|金鑰|金钥|私鑰|私钥|密鑰|密钥|口令/iu;   // i 加 u 才跟 api 的 (?i) 一樣把 K(U+212A)、ſ 摺成 k、s;名字段那條同理
+/* 第 4 條(名=值)遮兩組區間的聯集(= api _rule4_spans,48377c65):
+   - refSpans:ed1b840c 那版的區間,線性算法(一串名字字元含關鍵字,接 ["']?\s*[:=]\s*["']?,再接 6 個以上
+     [^\s"'`,;&])。它遮過的永遠照遮,另一組怎麼改都不會讓它漏;
+   - newSpans:這版加的,只會多遮:全形 ：＝、中文關鍵字;值在下一行時掃描會進到那個值裡——它可能自己就是
+     name:(空的 api_key: 下一行是 passphrase: x),那它的值也遮。同一行不會:password=Monkey2024: please 是一個值。
+   重疊或相鄰的區間併成一個遮罩,只算一次 MAX_MASKS。
+   名字照 api 的 (?i):[A-Za-z] 也吃 İ ı ſ K(U+0130、U+0131、U+017F、U+212A)。i 加 u 只摺得到 ſ 和 K,
+   İ ı 寫進字元類;關鍵字比對前把 İ ı 換成 i(關鍵字裡只有 private 帶 i) */
+const NAME_CH = "A-Za-z0-9_.\\-\\u0130\\u0131";
+const NAME_RUN_RE = new RegExp("(?<![" + NAME_CH + "])[" + NAME_CH + "]+", "giu");
+const REF_KW_RE = /key|secret|token|passphrase|password|passwd|pwd|private/iu;
+const REF_TAIL_RE = new RegExp("[\"']?[" + WS + "]*[:=][" + WS + "]*[\"']?([^" + WS + "\"'`,;&]{6,})", "yu");
+const KV_NAME_PART_RE = new RegExp("(?<![" + NAME_CH + "\\u4e00-\\u9fff])[" + NAME_CH + "\\u4e00-\\u9fff]+[\"']?[" + WS + "]*[:=：＝]([" + WS + "]*)[\"']?", "giu");
+const KV_TOKEN_RE = new RegExp("[^" + WS + "\"'`,;&]{6,}", "yu");
+const KV_NAME_RE = /key|secret|token|passphrase|password|passwd|pwd|private|密碼|密码|金鑰|金钥|私鑰|私钥|密鑰|密钥|口令/iu;
+const DOTLESS_RE = /[\u0130\u0131]/gu;
+const hasKw = (re, s) => re.test(s.replace(DOTLESS_RE, "i"));
+// Authorization 標頭:只遮 token。api 這條也是 (?i),İ ı 一樣寫進字元類
+const BEARER_RE = new RegExp("(?<![A-Za-z0-9_\\u0130\\u0131])(bearer[" + WS + "]+)([A-Za-z0-9._~+/\\-\\u0130\\u0131]{16,}=*)", "giu");
 const PREFIX_RE = new RegExp(
-  "(?<![A-Za-z0-9_\\-.])eyJ[A-Za-z0-9_\\-]+\\.eyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+"
+  // Telegram bot token 自己一條 lookbehind:它常常緊接在 API 網址的 "bot" 後面
+  "(?<![0-9])[0-9]{8,10}:AA[A-Za-z0-9_\\-]{30,}|"
+  + "(?<![A-Za-z0-9_\\-.])eyJ[A-Za-z0-9_\\-]+\\.eyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+"
   + "|(?<![A-Za-z0-9_])(?:"
   + "sk-[A-Za-z0-9_\\-]{16,}"
   + "|(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])"
@@ -79,37 +91,94 @@ function longTokenIsSecret(tok) {
 }
 
 /* 像路徑字的一段:小寫起頭的 camelCase(可夾縮寫,getHTTPData2)／帶數字、大寫起頭的字、縮寫接小寫(HTTPserver)、
-   全大寫帶數字、7–40 碼小寫 hex(短 commit)、純數字,用 _ . - 串起來。= api _PATH_SEGMENT_RE(34ed3832)逐字同一條:
+   全大寫帶數字、7–40 碼小寫 hex(短 commit)、數字接單位(4h、15m)或數字大寫數字(2026Q4),用 _ . - 串起來。
+   = api _PATH_SEGMENT_RE(48377c65)逐字同一條:
    每一段連續的小寫／數字／大寫都吃到底(lookahead),一個單元用 (?=(…))\1 原子化,只能停在 _ . - 或段尾——不回溯 */
 const L = "[a-z]+(?![a-z])", D = "[0-9]+(?![0-9])";
 const CAMEL = "(?:[A-Z]" + L + "|[A-Z]{2,}(?=[A-Z][a-z])|[A-Z]?" + D + ")*";
 const UNIT = "(?=((?:" + L + CAMEL + "[A-Z]?|[A-Z]" + L + CAMEL + "|[A-Z]{2,}(?![A-Z])(?:" + L + ")?"
-  + "|[A-Z]+(?![A-Z])(?:" + D + ")?|[0-9a-f]{7,40}|" + D + ")(?=[_.\\-]|$)))\\1";
+  + "|[A-Z]+(?![A-Z])(?:" + D + ")?|[0-9a-f]{7,40}|" + D + "(?:" + L + "|[A-Z]+(?![A-Z])(?:" + D + ")?)?"
+  + ")(?=[_.\\-]|$)))\\1";
 const WORDISH_RE = new RegExp("^" + UNIT + "(?:[_.\\-]" + UNIT.replace("\\1", "\\2") + ")*$");
 const wordish = (seg) => WORDISH_RE.test(seg);
+const EXT_RE = /\.[A-Za-z0-9]/y;
 const cpLen = (s) => Array.from(s).length;
-/* 關鍵字名字後面那個值的 [起, 迄),沒有就 null(= api _kv_value) */
-function kvValue(text, start) {
-  KV_VALUE_RE.lastIndex = start;
-  const m = KV_VALUE_RE.exec(text);
-  if (!m) return null;
-  const vs = start + ("({[「".includes(text[start]) ? 1 : 0);
-  let ve = start + m[0].length;
-  const counts = {};
-  for (const c of "(){}[]「」") counts[c] = text.slice(vs, ve).split(c).length - 1;
-  while (ve > vs && KV_CLOSER[text[ve - 1]]) {
-    const closer = text[ve - 1];
-    if (counts[KV_CLOSER[closer]] >= counts[closer]) break;   // 收的是值裡開的括號
-    counts[closer]--; ve--;
+function refSpans(text) {
+  const spans = [];
+  let cursor = 0, run;
+  NAME_RUN_RE.lastIndex = 0;
+  while ((run = NAME_RUN_RE.exec(text)) !== null) {
+    if (run.index < cursor || !hasKw(REF_KW_RE, run[0])) continue;
+    REF_TAIL_RE.lastIndex = run.index + run[0].length;
+    const tail = REF_TAIL_RE.exec(text);
+    if (tail) {
+      cursor = tail.index + tail[0].length;
+      spans.push([cursor - tail[1].length, cursor]);
+    }
   }
-  if (cpLen(text.slice(vs, ve)) < KV_VALUE_MIN || KV_NAMEISH_RE.test(text.slice(vs, ve))) return null;
-  return [vs, ve];
+  return spans;
+}
+function newSpans(text) {
+  const spans = [];
+  let pos = 0, m;
+  for (;;) {
+    KV_NAME_PART_RE.lastIndex = pos;
+    if ((m = KV_NAME_PART_RE.exec(text)) === null) return spans;
+    pos = m.index + m[0].length;
+    if (!hasKw(KV_NAME_RE, m[0])) continue;
+    KV_TOKEN_RE.lastIndex = pos;
+    const v = KV_TOKEN_RE.exec(text);
+    if (!v) continue;
+    spans.push([pos, pos + v[0].length]);
+    if (!m[1].includes("\n")) pos += v[0].length;
+  }
+}
+/* 第 4 條 → [text, masks]。兩組區間常常找到同一個值:標記字元再讀回標記段,線性地併起來 */
+function maskKv(text) {
+  const marked = new Uint8Array(text.length);
+  for (const [s, e] of refSpans(text).concat(newSpans(text))) marked.fill(1, s, e);
+  let out = "", pos = 0, masks = 0;
+  for (let i = 0; i < text.length;) {
+    if (!marked[i]) { i++; continue; }
+    let j = i;
+    while (j < text.length && marked[j]) j++;
+    out += text.slice(pos, i) + MASK;
+    pos = i = j;
+    masks++;
+  }
+  return [out + text.slice(pos), masks];
 }
 const countOf = (text, v) => text.split(v).length - 1;
+
+/* 第 6 條的網址／路徑 query(= api _query_sub):結果同 URL_QUERY_RE 再 PATH_QUERY_RE 兩次 replace,但線性。
+   一段 query 不會跨空白或引號,所以每個 "?" 只在它那一串裡看一次:前一個 "?" 之後有沒有路徑起點 "/" */
+const RUN_RE = new RegExp("[^" + WS + "\"']+", "gu");
+const WS_CH_RE = new RegExp("^[" + WS + "\"'(=:]$", "u");
+const pathStart = (text, i) => text[i] === "/" && (i === 0 || WS_CH_RE.test(text[i - 1]));
+function querySub(text) {
+  if (!text.includes("?")) return text;
+  let out = "", pos = 0, run, nq = text.indexOf("?");
+  const nextQ = (from) => { if (nq !== -1 && nq < from) nq = text.indexOf("?", from); return nq; };   // 起點只往前,整段只掃一次
+  RUN_RE.lastIndex = 0;
+  while ((run = RUN_RE.exec(text)) !== null) {
+    let seg = run.index;
+    const end = seg + run[0].length;
+    let q = nextQ(seg);
+    while (q !== -1 && q < end) {
+      let hit = false;
+      for (let i = seg; i < q && !hit; i++) hit = pathStart(text, i);
+      if (hit) { out += text.slice(pos, q) + "?…"; pos = end; break; }
+      seg = q + 1;
+      q = nextQ(seg);
+    }
+  }
+  return out + text.slice(pos);
+}
 
 /* 第 2–7 條,加上 known 給了時的第 1 條。回遮過的字,或整則排除時只回 EXCLUDED */
 function redact(text, known) {
   if (typeof text !== "string" || !text) return "";
+  if (text.length > INPUT_MAX) text = Array.from(text).slice(0, INPUT_MAX).join("");   // 只看(也只回)前 INPUT_MAX 個字
   if (PRIVATE_KEY_RE.test(text) || hasMnemonic(text)) return EXCLUDED;
   let masks = 0;
   const vals = [...new Set((known || []).filter((v) => typeof v === "string" && v))].sort((a, b) => cpLen(b) - cpLen(a));
@@ -118,26 +187,20 @@ function redact(text, known) {
     if (n) { masks += n; text = text.split(v).join(MASK); }
   }
   {
-    let out = "", pos = 0, m;
-    KV_NAME_PART_RE.lastIndex = 0;
-    while ((m = KV_NAME_PART_RE.exec(text)) !== null) {
-      const end = m.index + m[0].length;
-      const v = KV_NAME_RE.test(m[0]) ? kvValue(text, end) : null;
-      if (!v) { out += text.slice(pos, end); pos = end; continue; }
-      masks++;
-      out += text.slice(pos, v[0]) + MASK; pos = v[1];
-      KV_NAME_PART_RE.lastIndex = pos;
-    }
-    text = out + text.slice(pos);
+    const [t, n] = maskKv(text);
+    text = t; masks += n;
   }
   text = text.replace(BEARER_RE, (m, head) => { masks++; return head + MASK; });
   text = text.replace(PREFIX_RE, () => { masks++; return MASK; });
-  text = text.replace(HOME_RE, "~").replace(URL_QUERY_RE, "$1?…").replace(PATH_QUERY_RE, "$1$2?…");
-  // 這組字元類含 "/":每一段都像路徑字(策略名、網址的一段)才按 "/" 切開各自判斷;不然整串當一顆判斷——
-  // base64 金鑰本身就可能帶 "/"(api 複稽核 N2)。regex 本體不動
-  text = text.replace(LONG_TOKEN_RE, (m) => {
+  text = querySub(text.replace(HOME_RE, "~"));
+  // 這組字元類含 "/":整串像路徑才按 "/" 切開各自判斷——每一段都像路徑字,而且串裡有 _ 或 -、或緊接在 . : ~ 後面
+  // (github.com/…、~/…)、或後面跟著副檔名。base64 也帶 "/"、每段也可能像 camelCase,但這三樣都沒有;不然整串當一顆判斷。
+  // regex 本體不動
+  text = text.replace(LONG_TOKEN_RE, (m, at, str) => {
     const parts = m.split("/");
-    if (parts.length === 1 || !parts.every((seg) => !seg || wordish(seg))) {
+    EXT_RE.lastIndex = at + m.length;
+    const pathlike = m.includes("_") || m.includes("-") || (at > 0 && ".:~".includes(str[at - 1])) || EXT_RE.test(str);
+    if (!(pathlike && parts.every((seg) => !seg || wordish(seg)))) {
       if (!longTokenIsSecret(m)) return m;
       masks++;
       return MASK;
@@ -177,4 +240,5 @@ function envSecretValues(envText) {
   return out;
 }
 
-module.exports = { redact, envSecretValues, wordish, MASK, EXCLUDED, MAX_MASKS, WORDS_PATH, LONG_TOKEN_MIN };
+// _rule4 只給測試:聯集裡一組漏了另一組常常補得上,要各自驗
+module.exports = { redact, envSecretValues, wordish, MASK, EXCLUDED, MAX_MASKS, WORDS_PATH, LONG_TOKEN_MIN, _rule4: { refSpans, newSpans } };

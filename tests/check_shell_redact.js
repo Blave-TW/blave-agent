@@ -1,9 +1,9 @@
 // 對話上傳前的遮蔽(shell/redact.js,spec mobile-agent-chat-mvp §4.3)。
 //   1. 共用 fixture 每一則逐字等於 out(api openclaw/redact.py 跑同一份)
 //   2. 兩份 fixture 逐字相同(要 monorepo 版面 ../api,或 BLAVE_API_DIR;找不到 SKIP)
-//   3. 第 6 條用的是 mobileview.js 那組 regex 物件本身
+//   3. 第 6 條的 HOME_RE、LONG_TOKEN_RE 用的是 mobileview.js 那組 regex 物件本身
 //   4. BIP-39 字表 2048 字、等於上游那份
-//   5. 20 萬字的長串每一種都 < 1 秒(名=值那條是線性寫法)
+//   5. 6 萬字的長串每一種都 < 1 秒(名=值、網址 query 都是線性寫法;超過 INPUT_MAX 的只看前 64K 字)
 //   6. .env 取值:像秘密的鍵與像金鑰的值才收,*_DEMO 與短值不收
 // 跑法:node tests/check_shell_redact.js
 const fs = require("fs"), path = require("path"), crypto = require("crypto");
@@ -29,8 +29,8 @@ if (!fs.existsSync(apiFix)) console.log("SKIP  2 fixture 兩端逐字比對(需�
 else ok("2 fixture 與 api 那份逐字相同", fs.readFileSync(apiFix).equals(fs.readFileSync(FIX)), apiFix);
 
 const rsrc = fs.readFileSync(path.join(SHELL, "redact.js"), "utf8");
-ok("3 第 6 條 import mobileview 那四個 regex(不另寫一份)", /require\("\.\/mobileview"\)/.test(rsrc)
-  && ["HOME_RE", "URL_QUERY_RE", "PATH_QUERY_RE", "LONG_TOKEN_RE"].every((n) => MV[n] instanceof RegExp && !new RegExp("const " + n + " =").test(rsrc)));
+ok("3 第 6 條 import mobileview 的 HOME_RE、LONG_TOKEN_RE(不另寫一份)", /require\("\.\/mobileview"\)/.test(rsrc)
+  && ["HOME_RE", "LONG_TOKEN_RE"].every((n) => MV[n] instanceof RegExp && !new RegExp("const " + n + " =").test(rsrc)));
 { // 換掉 mobileview 那組的行為,redact 跟著變 = 用的是同一個物件
   const out = R.redact("在 /Users/wei/x 裡");
   ok("3 使用者資料夾照 mobileview 的 HOME_RE 遮", out === "在 ~/x 裡", out);
@@ -40,11 +40,13 @@ const lines = fs.readFileSync(R.WORDS_PATH, "utf8").split("\n").filter((l) => l 
 ok("4 BIP-39 2048 字", lines.length === 2048, lines.length);
 ok("4 等於上游 english.txt", crypto.createHash("sha256").update(lines.join("\n") + "\n").digest("hex") === "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda");
 
-const N = 200000;
-for (const [name, text] of [["全 a", "a".repeat(N)], ["純 hex", "0123456789abcdef".repeat(N / 16)], ["eyJ 重複", "eyJ".repeat(66667)],
+const N = 60000;   // 要小於 INPUT_MAX(64K):超過的部分會先切掉,結尾的 ? 或 = 就測不到
+for (const [name, text] of [["全 a", "a".repeat(N)], ["純 hex", "0123456789abcdef".repeat(N / 16)], ["eyJ 重複", "eyJ".repeat(N / 3)],
   ["eyJ 加點重複", "eyJa.".repeat(N / 5)], ["鍵名＝值重複", "key=".repeat(N / 4)], ["一長串名字字元接 =", "a".repeat(N) + "=x"],
   ["名字字元夾冒號", "a_key:".repeat(N / 6)], ["助記詞字重複", "abandon ".repeat(N / 8)], ["斜線", "/".repeat(N)], ["使用者資料夾重複", "/Users/".repeat(N / 7)],
-  ["路徑字判斷:a 接一串數字再接 =", "a" + "1".repeat(N) + "="], ["路徑字判斷:x/a 接一串數字再接 =(api 那條指數級的輸入)", "x/a" + "1".repeat(N) + "="], ["路徑字判斷:camelCase 重複接 +", "aB1".repeat(N / 3) + "+"], ["名字段重複不含關鍵字", "note=".repeat(N / 5)]]) {
+  ["路徑字判斷:a 接一串數字再接 =", "a" + "1".repeat(N) + "="], ["路徑字判斷:x/a 接一串數字再接 =(api 那條指數級的輸入)", "x/a" + "1".repeat(N) + "="], ["路徑字判斷:camelCase 重複接 +", "aB1".repeat(N / 3) + "+"], ["名字段重複不含關鍵字", "note=".repeat(N / 5)],
+  ["網址 query:http:// 重複(api 那兩條 regex 6 秒的輸入)", "http://".repeat(N / 7) + "?"], ["網址 query:=/ 重複", "=/".repeat(N / 2) + "?"], ["一堆短串最後才有 ?", "a ".repeat(N / 2) + "?"],
+  ["名字含關鍵字接一長串空白", "key" + " ".repeat(N) + "="]]) {
   const t0 = process.hrtime.bigint(); R.redact(text, ["Xy7Qw2Lp9Zr4"]); const ms = Number(process.hrtime.bigint() - t0) / 1e6;
   ok(`5 ${name} ${text.length} 字 < 1 秒`, ms < 1000, ms);
 }
@@ -63,6 +65,13 @@ ok("N2 含 / 的 base64 金鑰整串遮", R.redact("key q8Zt/Kp2+Lm9Wx4Rb7Vn1Yc3
 // api 的名字段與關鍵字都是 (?i):K(U+212A)、ſ 會摺成 k、s,JS 要 i 加 u 才摺;少一個,名字在這兩個字斷開、值就漏遮。want = api 48377c65 跑同一串的輸出
 for (const [t, want] of [["\u212Aey=Ab12Cd34Ef56 ok", "\u212Aey=⟦R⟧ ok"], ["\u017Fecret=q1w2e3r4 ok", "\u017Fecret=⟦R⟧ ok"], ["api_\u212Aey: Zq81mmwx", "api_\u212Aey: ⟦R⟧"]])   // gitleaks:allow (fake)
   ok(`N3 名字含 K／ſ 照 api 的 (?i) 遮:${JSON.stringify(t)}`, R.redact(t) === want, R.redact(t));
+// 第 4 條是兩組區間的聯集,一組漏了另一組會補上;兩組各自也要認得這些名字(少一個旗標就紅)
+for (const [t, span] of [["\u212Aey=Ab12Cd34Ef56 ok", [4, 16]], ["\u017Fecret=q1w2e3r4 ok", [7, 15]], ["api_\u212Aey: Zq81mmwx", [9, 17]],   // gitleaks:allow (fake)
+  ["pr\u0130vate=Ab12Cd34Ef56", [8, 20]], ["pr\u0131vate=Ab12Cd34Ef56", [8, 20]], ["\u0131api_key=abcdef12", [9, 17]]])   // gitleaks:allow (fake)
+  for (const k of ["refSpans", "newSpans"]) ok(`N3 ${k} 自己也遮:${JSON.stringify(t)}`, JSON.stringify(R._rule4[k](t)) === JSON.stringify([span]), R._rule4[k](t));
+// İ ı:api 的 (?i) 也把它們摺成 i,JS 旗標摺不到,shell 寫進名字段字元類、比關鍵字前換成 i。want 同上是 api 跑出來的
+for (const [t, want] of [["pr\u0130vate=Ab12Cd34Ef56", "pr\u0130vate=⟦R⟧"], ["pr\u0131vate=Ab12Cd34Ef56", "pr\u0131vate=⟦R⟧"], ["\u0131api_key=abcdef12", "\u0131api_key=⟦R⟧"]])   // gitleaks:allow (fake)
+  ok(`N4 名字含 İ／ı 照 api 遮:${JSON.stringify(t)}`, R.redact(t) === want, R.redact(t));
 { const cfg = R.envSecretValues(["BINANCE_ACCOUNT_TYPE=futures", "OKX_ACCOUNT_MODE=isolated", "BYBIT_ACCOUNT=unified", "PAPER_TOKEN_MODE=paper",
     "GATE_ACCOUNT=Futures", "BITGET_ACCOUNT=futures1", "X_KEY=testnet"].join("\n"));
   ok("6 鍵名像秘密、值是常見設定字(futures、isolated、unified…):不收,這個字不會從每則對話被抹掉", !["futures", "isolated", "unified", "paper", "testnet"].some((v) => cfg.includes(v)), cfg);
