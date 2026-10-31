@@ -3,7 +3,7 @@
 //   2. 只取第一句(舊 runtime 給 3 句);kind 沒帶時照句首判
 //   3. 托盤(spec suggest-tray-2026-10-26):回合結束停一拍才畫,輸入框空、沒附件、不在組字中才畫;第一次畫出來才記 suggest_shown、念一次;
 //      出現／收起時訊息區原本在底部就捲回底部;打字、組字、加附件就收掉,刪回空白不回來
-//   4. 滑鼠／觸控點托盤 = 原句直接送出(走 sendDraft、長出來 --motion-base 內不算);鍵盤按托盤鈕、空輸入框按 → 只填(帶修飾鍵不攔);
+//   4. 按托盤鈕(滑鼠／觸控／鍵盤)= 原句直接送出(走 sendDraft、長出來 --motion-base 內不算);空輸入框按 → 只填(帶修飾鍵不攔);
 //      Enter、Tab 不攔;Esc 與 × 作廢不記;直接送出那輪沒回覆就被停止 → suggest_undo(0.1.39)
 //   5. 送出結算:跑起來才算 sent / sent_ed / missed;連續 5 次沒用 → 減少狀態(只剩導航句),填入一次就恢復;失敗不算
 //   6. 設定開關:關掉不畫、送 off;打開歸零
@@ -112,8 +112,8 @@ const send = (msg, started = true) => { ctx.sugSnap(msg); W.ta.value = ""; ctx.s
   e = key("ArrowRight", { isComposing: true }); key("ArrowRight", { keyCode: 229 });
   ok("組字中按 →:交給輸入法,不填入、不記", !e.prevented && W.ta.value === "" && ctx.tracked.length === 1);
   ok("托盤鈕的可及名稱 = 送出：{句子}", W["sug-tray-btn"].attrs["aria-label"] === "ws.sugSend:掃 A 的參數找穩定區");
-  tap(0);
-  ok("鍵盤在托盤鈕上按 Enter／空白鍵(click detail 0):只填原句、焦點進輸入框、游標在句尾、記 suggest_filled、托盤收起、不送", W.ta.value === "掃 A 的參數找穩定區" && !shown() && focused === "ta"
+  key("ArrowRight");
+  ok("空輸入框按 →:只填原句、焦點進輸入框、游標在句尾、記 suggest_filled、托盤收起、不送", W.ta.value === "掃 A 的參數找穩定區" && !shown() && focused === "ta"
     && ctx.sent.length === 0 && JSON.stringify(ctx.tracked) === '["suggest_shown","suggest_filled"]' && JSON.stringify(W.ta.sel) === JSON.stringify([W.ta.value.length, W.ta.value.length]));
   ok("沒有 ws_sug_tab 計數了", !LS.has("ws_sug_tab"));
   typeIn("");
@@ -164,8 +164,11 @@ const send = (msg, started = true) => { ctx.sugSnap(msg); W.ta.value = ""; ctx.s
   ok("…179ms 還不算", ctx.sent.length === 0 && shown());
   ctx.clock += 1; tap();
   ok("…滿 --motion-base 才送出", JSON.stringify(ctx.sent) === '["回測 BTC 均線"]');
+  reset(); await arm("回測 BTC 均線"); tap(0);
+  ok("鍵盤在托盤鈕上按 Enter／空白鍵(click detail 0):跟點擊一樣直接送出、記 suggest_sent、不記 suggest_filled", JSON.stringify(ctx.sent) === '["回測 BTC 均線"]' && W.ta.value === ""
+    && JSON.stringify(ctx.tracked) === '["suggest_shown","suggest_sent"]');
   reset(); await arm("回測 BTC 均線"); ctx.motionBaseMs = () => 180; tap(0);
-  ok("鍵盤按托盤鈕不受防呆(刻意的動作):照填入", W.ta.value === "回測 BTC 均線" && ctx.sent.length === 0);
+  ok("鍵盤啟動也受防呆:長出來 --motion-base 內不送、不填", ctx.sent.length === 0 && W.ta.value === "" && shown());
   reset(); await arm("回測 BTC 均線"); ctx.clock += 500; ctx.sugCollapse(); await arm("掃 A 的參數找穩定區"); ctx.motionBaseMs = () => 180; tap();
   ok("防呆從每次長出來那一刻重算(上一句長出很久了也一樣)", ctx.sent.length === 0 && shown());
   ctx.motionBaseMs = () => 0;

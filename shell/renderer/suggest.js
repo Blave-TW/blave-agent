@@ -1,6 +1,6 @@
 /* 建議下一步 v2(spec suggest-next-step-v2 §0、§1;容器換成輸入框托盤,spec suggest-tray-2026-10-26):
-   滑鼠或觸控點托盤 = 原句直接送出(當成用戶打的,按停止放回輸入框;designer suggest-direct-send-2026-10-31);
-   空輸入框按 →、鍵盤在托盤鈕上按 Enter／空白鍵 = 只填不送;輸入框的 Enter 不送建議;Tab 不攔。一打字、組字或加附件,這句就收掉、刪回空白也不回來。
+   按托盤鈕(滑鼠、觸控、鍵盤 Enter／空白鍵)= 原句直接送出(當成用戶打的,按停止放回輸入框;designer suggest-direct-send-2026-10-31);
+   空輸入框按 → = 只填不送;輸入框裡的 Enter 不送建議;Tab 不攔。一打字、組字或加附件,這句就收掉、刪回空白也不回來。
    在 app.js 之後載入(用它的 $、sessionId、running、composing、attachedFiles、autosize、scrollChat、srSay、trackFeature、motionBaseMs、escTop、lsGet、lsSet、sendDraft)。
    runtime 回合收尾把 <suggest> 剝成 {type:"suggestions", items, kind};這裡先收著,回合結束(沒出錯、沒被停)停一拍才畫。
    句子只在記憶體:重開 app、換對話都不留——同雲端(逐字稿裡沒有這段)。開關與沒用計數在 localStorage,各台電腦各自計。 */
@@ -112,11 +112,9 @@ $("ta").addEventListener("keydown", (e) => {
 $("ta").addEventListener("input", () => { if ($("ta").value !== "") sugGone(); else sugPaint(); });
 $("ta").addEventListener("compositionstart", sugGone);
 $("ta").addEventListener("compositionend", sugPaint);
-// Shift+Tab 到句子鈕再按 Enter／空白鍵也是 click
-// detail 0 = 鍵盤按出來的 click:只填不送(Enter 永遠不送建議);滑鼠、觸控才直接送,長出來 --motion-base 內的不算
-$("sug-tray-btn").addEventListener("click", (e) => {
+// Shift+Tab 到句子鈕再按 Enter／空白鍵也是 click,同樣直接送;長出來 --motion-base 內的不算
+$("sug-tray-btn").addEventListener("click", () => {
   if (!sugPresent()) return;
-  if (e.detail === 0) { sugFill(); return; }
   if (performance.now() - SUG.shownAt < motionBaseMs()) return;
   sugSend();
 });
