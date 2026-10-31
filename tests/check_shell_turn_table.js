@@ -27,12 +27,13 @@ const ANY = [   // 機器層級:任何一條在跑都算
   ["搬到應用程式", /if \(tradeMaybeLive\(\) \|\| anyTurn\(\) \|\| _engineRun/],
   ["選單列「結束」的「…」", /const trayQuitLabel = \(maybe\) => \(maybe \|\| anyTurn\(\) \?/],
   ["選單列更新那一行停用", /busy: !!\(anyTurn\(\) \|\| restarting\)/],
-  ["關視窗只收起來", /const trading = tradeMaybeLive\(\), turn = anyTurn\(\);/],
+  ["關視窗只收起來", /const trading = tradeMaybeLive\(\), turn = anyTurn\(\), phone = /],
   ["結束前草稿那道併框(含排隊)", /const more = !!tradeMaybeLive\(\) \|\| anyTurnOrQueued\(\) \|\| twLots\(\)\.held;/],
   ["結束前的回合確認框(含排隊)", /if \(!quitting && !quitConfirmed && anyTurnOrQueued\(\)\) \{/],
 ];
 const ONE = [   // 那一條自己
-  ["deleteSession", /if \(!okSessionId\(id\) \|\| turns\.has\(id\)\) return false;/],
+  ["deleteSession", /if \(!okSessionId\(id\) \|\| turns\.has\(id\) \|\| \(typeof _relay !== "undefined" && _relay && _relay\.isMobile\(id\)\)\) return false;/],
+  ["手機那一句:同一條在跑就排在後面(relay.js 自己排)", /turnBusy: \(sid\) => turns\.has\(sid\),/],
   ["startTurn 同一條序列", /if \(restarting \|\| turns\.has\(sid\)\) return \{ busy: true \};/],
 ];
 const lines = main.replace(/\/\*[\s\S]*?\*\//g, "").split("\n").filter((l) => /anyTurn\(\)|anyTurnOrQueued\(\)|turns\.has\(/.test(l) && !/^\s*(\/\/|\/\*|\*)/.test(l));
@@ -41,7 +42,7 @@ ok("每一處 anyTurn() / anyTurnOrQueued() / turns.has( 都在清單上(新加�
 const missing = ANY.concat(ONE).filter(([, re]) => !lines.some((l) => re.test(l))).map(([n]) => n);
 ok("清單上每一處都還在(" + (ANY.length + ONE.length) + " 處)", missing.length === 0, missing);
 ok("tick 輪替不再看回合(回合手上只有帳號轉送口的 token)", /const tick = \(\) => \{ rotator\(\)\.ensure\(ROTATE_MIN_LEFT_MS\)\.catch\(\(\) => \{\}\); \};/.test(main));
-ok("send-message 只收自家頁面,其餘全交給 startTurn", /ipcMain\.handle\("send-message", async \(e, payload\) => \{\n    if \(!fromOurPage\(e\)\) return \{ busy: true \};[^\n]*\n    return startTurn\(payload, "desktop"\);\n  \}\);/.test(main));
+ok("send-message 只收自家頁面、手機那句認領中的那條回 busy,其餘全交給 startTurn", /ipcMain\.handle\("send-message", async \(e, payload\) => \{\n    if \(!fromOurPage\(e\)\) return \{ busy: true \};[^\n]*\n[^\n]*\n    if \(typeof _relay !== "undefined" && _relay && payload && _relay\.claiming\(payload\.sessionId\)\) return \{ busy: true \};\n    return startTurn\(payload, "desktop"\);\n  \}\);/.test(main));
 ok("turns-state 走 handle(只收自家頁面),preload 有 turnsState", /handle\("turns-state", \(\) => turnsState\(\), \[\]\);/.test(main) && /turnsState: \(\) => ipcRenderer\.invoke\("turns-state"\)/.test(fs.readFileSync(path.join(SH, "preload.js"), "utf8")));
 ok("回合子行程降一級優先序,spawn 之後、調不了照跑", /rec\.child = child; rec\.phase = "running";\n  turnNice\(child\);/.test(main) && /os\.setPriority\(child\.pid, os\.constants\.priority\.PRIORITY_BELOW_NORMAL\)/.test(main));
 ok("turn-event / turn-end 一律經 sendTurn 補 sid;runTurn 裡沒有直接 webContents.send", !/win\.webContents\.send\("turn-/.test(cut("async function runTurn(", "function turnWin()")) && /sendTurn\(sessionId, "turn-event", c\);/.test(main));

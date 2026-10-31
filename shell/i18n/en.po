@@ -9904,3 +9904,175 @@ msgstr "Too many wrong tries. No more tries today."
 msgid "cx.kc.until"
 msgstr "After {t}, key changes won't need a code."
 
+# 0.1.38 手機 App 跟這台電腦對話(spec mobile-agent-chat-mvp;設計 desktop-phone-chat-settings-2026-10-30、mchat-phone-surfaces-2026-10-31)
+
+msgid "chat.fromPhone"
+msgstr "From phone"
+
+msgid "ph.switch"
+msgstr "Allow phone chat"
+
+msgid "ph.tip"
+msgstr "Works only while Blave is open and this computer is awake."
+
+msgid "ph.cf.title"
+msgstr "Allow phone chat?"
+
+msgid "ph.cf.1"
+msgstr "Messages from your phone run on this computer. The agent can do anything it can here, including placing orders."
+
+msgid "ph.cf.2"
+msgstr "Chats from the last 30 days are uploaded so your phone can show them. Keys and folder paths are masked first."
+
+msgid "ph.cf.3"
+msgstr "Attachments, images and strategy code stay here. Turning this off deletes the copy on Blave."
+
+msgid "ph.cf.ok"
+msgstr "Turn on"
+
+msgid "ph.off.title"
+msgstr "Turn off phone chat?"
+
+msgid "ph.off.live"
+msgstr "The reply your phone started will stop."
+
+msgid "ph.off.del"
+msgstr "Chats on Blave are deleted. Chats on this computer stay."
+
+msgid "ph.off.ok"
+msgstr "Turn off"
+
+msgid "ph.syncing"
+msgstr "Synced {n} of {m} chats"
+
+msgid "ph.syncFail"
+msgstr "Sync stopped at {n} of {m} chats."
+
+msgid "ph.syncFail0"
+msgstr "Chats didn't finish syncing."
+
+msgid "ph.retry"
+msgstr "Retry"
+
+msgid "ph.syncedSay"
+msgstr "Chats from the last 30 days are synced"
+
+msgid "ph.pending"
+msgstr "The chats on Blave aren't deleted yet. They will be once you're back online."
+
+msgid "ph.err"
+msgstr "Couldn't turn it on. Check your connection and try again."
+
+msgid "ph.group"
+msgstr "Phones allowed on this computer"
+
+msgid "ph.pair"
+msgstr "Pair a phone"
+
+msgid "ph.pairHow"
+msgstr "Scan it in the app's Agent tab, or enter the code."
+
+msgid "ph.pairUntil"
+msgstr "Valid until {hm}"
+
+msgid "ph.pairExpired"
+msgstr "This code has expired."
+
+msgid "ph.pairAgain"
+msgstr "Get a new code"
+
+msgid "ph.pairFail"
+msgstr "Couldn't get a pairing code. Try again."
+
+msgid "ph.pairMax"
+msgstr "You have 5 phones. Revoke one to pair another."
+
+msgid "ph.pairedSay"
+msgstr "Paired {name}"
+
+msgid "ph.meta"
+msgstr "Paired {paired} · Last used {used}"
+
+msgid "ph.metaNever"
+msgstr "Paired {paired} · Not used yet"
+
+msgid "ph.acts"
+msgstr "Recent activity"
+
+msgid "ph.actsMore"
+msgstr "Show all"
+
+msgid "ph.actsFail"
+msgstr "Couldn't load activity."
+
+msgid "ph.revoke"
+msgstr "Revoke"
+
+msgid "ph.iphone"
+msgstr "iPhone"
+
+msgid "ph.android"
+msgstr "Android phone"
+
+msgid "ph.errRow"
+msgstr "Couldn't save that. Check your connection and try again."
+
+msgid "ph.phonesFail"
+msgstr "Couldn't load your phones."
+
+msgid "ph.revokedSay"
+msgstr "Revoked {name}"
+
+msgid "ph.revoke.title"
+msgstr "Revoke {name}?"
+
+msgid "ph.revoke.body"
+msgstr "This phone can no longer chat with the agent. Pair it again to use it."
+
+msgid "ph.revoke.stop"
+msgstr "If a reply it started is still running, it stops."
+
+msgid "ph.revoke.ok"
+msgstr "Revoke"
+
+msgid "ph.act.send"
+msgstr "Sent a message"
+
+msgid "ph.act.stop"
+msgstr "Stopped a reply"
+
+msgid "ph.act.withdraw"
+msgstr "Withdrew a message"
+
+msgid "ph.act.session_new"
+msgstr "New chat"
+
+msgid "ph.act.session_rename"
+msgstr "Renamed a chat"
+
+msgid "ph.act.session_delete"
+msgstr "Deleted a chat"
+
+msgid "ph.act.pair"
+msgstr "Paired"
+
+msgid "ph.act.auth"
+msgstr "Verified"
+
+msgid "ph.act.revoke"
+msgstr "Revoked"
+
+msgid "ph.act.grant"
+msgstr "Allowed on this computer"
+
+msgid "ph.act.ungrant"
+msgstr "Stopped on this computer"
+
+msgid "tm.phoneHiddenTitle"
+msgstr "Phone chat is on"
+
+msgid "tm.phoneHidden"
+msgstr "Blave is still open, so your phone can reach it. To quit, use the menu bar or the Dock."
+
+msgid "tm.phoneHiddenWin"
+msgstr "Blave is still open, so your phone can reach it. To quit, use the system tray icon."

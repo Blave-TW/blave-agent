@@ -358,7 +358,7 @@ ok("分類順序(0.1.32 方案 B):一般 → 模型接入 → Agent → 資料�
 { const mk = (k) => { const n = el(); n.dataset.setCat = k; return n; }, ids = ["display", "model", "rules", "src", "connect", "plan", "priv"], cats = ids.map(mk), panes = ids.map(mk); let painted = 0; const tracked = [], did = [];
   const env = { $: (id) => (id === "set-cats" ? { querySelectorAll: () => cats } : id === "set-modal" ? { querySelectorAll: () => panes } : $(id)),
     mdlPaint() {}, srcLoad() {}, srcClear() {}, rulesOpen() {}, rulesClear() {}, privLoad() {}, aboutIdLoad() {}, shlOpen() { did.push("shlOpen"); }, planPaint() { painted++; }, trackFeature: (n) => tracked.push(n),
-    acctCheck() {}, balLoad() {}, pubLoad: () => Promise.resolve(), hasToken: true, connectPaint() { did.push("connectPaint"); }, mvLoad: () => Promise.resolve(null), connectCatSync() {}, shlReveal() { did.push("reveal"); }, SHL_SCROLL: false };
+    acctCheck() {}, balLoad() {}, pubLoad: () => Promise.resolve(), hasToken: true, connectPaint() { did.push("connectPaint"); }, mvLoad: () => Promise.resolve(null), phLoad: () => Promise.resolve(null), connectCatSync() {}, shlReveal() { did.push("reveal"); }, SHL_SCROLL: false };
   const run = new Function("env", "with (env) { " + fnSrc("setCat") + "; return setCat; }")(env);
   const open = (k) => { painted = 0; tracked.length = 0; did.length = 0; run(k); return { cur: cats.filter((c) => c.attrs["aria-current"] === "true").map((c) => c.dataset.setCat).join(), shown: panes.filter((p) => !p.hidden).map((p) => p.dataset.setCat).join(), painted, tracked: tracked.join(), did: did.join() }; };
   const a = open("acct"), b = open("plan"), c = open("shares");
@@ -370,13 +370,14 @@ ok("分類順序(0.1.32 方案 B):一般 → 模型接入 → Agent → 資料�
   ok("外殼裡開這一頁的呼叫點都用 plan(保險那一行只是防漏);沒有人再找 data-set-cat=\"shares\" 那顆鈕", !/setCat\("acct"\)|data-set-cat="acct"/.test(callers + html) && /if \(cat === "acct"\) cat = "plan";/.test(fnSrc("setCat"))
     && /if \(cat === "shares"\) \{ cat = "plan"; SHL_SCROLL = true; \}/.test(fnSrc("setCat")) && !/data-set-cat="shares"/.test(callers + html)); }
 { // 「連結」那一顆:跟著平台旗標(發佈層級)出不出,開框之前就定好;平台關掉時正開著那一頁就退回一般
-  ok("setOpen 一開頭先讀 MV、定好「連結」出不出,才把框打開", /async function setOpen\(\) \{\n  await mvLoad\(\); connectCatSync\(\);/.test(src));
+  ok("setOpen 一開頭先讀 MV 與手機對話的狀態、定好「連結」出不出,才把框打開", /async function setOpen\(\) \{\n  await Promise\.all\(\[mvLoad\(\), phStateLoad\(\)\]\); connectCatSync\(\);/.test(src));
   const btn = el(); btn.dataset.setCat = "connect"; let back = null;
-  const sync = new Function("document", "mvShown", "setCat", fnSrc("connectCatSync") + "; return connectCatSync;");
+  const sync = new Function("document", "mvShown", "phShown", "setCat", fnSrc("connectCatSync") + "; return connectCatSync;");
   const q = { querySelector: (s) => (s === '.set-cat[data-set-cat="connect"]' ? btn : null) };
-  sync(q, () => true, (k) => { back = k; })(); const on = btn.hidden;
-  btn.setAttribute("aria-current", "true"); sync(q, () => false, (k) => { back = k; })();
-  ok("connectCatSync:平台開放 → 出;沒開放 → 藏,正停在那一頁就切回一般", on === false && btn.hidden === true && back === "display"); }
+  sync(q, () => true, () => false, (k) => { back = k; })(); const on = btn.hidden;
+  sync(q, () => false, () => true, (k) => { back = k; })(); const onPh = btn.hidden;
+  btn.setAttribute("aria-current", "true"); sync(q, () => false, () => false, (k) => { back = k; })();
+  ok("connectCatSync:手機查看或手機對話任一個平台開放 → 出(只開手機對話也出);兩個都沒開放 → 藏,正停在那一頁就切回一般", on === false && onPh === false && btn.hidden === true && back === "display"); }
 const PO2 = ["zh", "en"].map((l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8"));
 { // 設定 modal 方案 B 的定稿字串(spec settings-modal-b-2026-10-24 S3 / S10 / S11 / S14 / S17 / S18;S10 另由 check_web_desktop_parity.js 跟 web 逐字比)
   const want = { "set.cat.rules": ["Agent", "Agent"], "set.cat.connect": ["連結", "Connections"], "set.cat.shares": ["公開連結", "Public links"],
@@ -561,7 +562,9 @@ ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效
     && /lbl = brEl\("label", "sw-l"\); lbl\.htmlFor = "br-sw";/.test(brFn) && /lbl\.append\(name, tip\); row\.append\(lbl\);/.test(brFn)
     && ![fnSrc("mvBlock"), fnSrc("privPaint"), brFn].some((f) => /"span", "sw-l"|aria-label(?!ledby)/.test(f))
     && /box\.append\(row, clr\);/.test(brFn) && /legal\.append\(pl\); box\.append\(legal\);/.test(fnSrc("privPaint")));
-  ok("S2 隱私頁只剩使用資料:privPaint 不再畫手機查看、不再叫內建瀏覽器;手機查看由 connectPaint 畫在 #set-connect、開關切完重畫的是它", !/mvBlock|brPrivPaint|brSetPaint/.test(fnSrc("privPaint")) && !/brPrivPaint/.test(src + br + rules)
+  ok("S2 隱私頁只剩使用資料:privPaint 不再畫手機查看與手機對話、不再叫內建瀏覽器;手機查看、手機對話都由 connectPaint 畫在 #set-connect(手機查看在上);連結那一類只要其中一個旗標開著就出", !/mvBlock|phBlock|brPrivPaint|brSetPaint/.test(fnSrc("privPaint"))
+    && /const mv = mvBlock\(mk\); if \(mv\) box\.append\(mv\);\n  const ph = phBlock\(mk\); if \(ph\) box\.append\(ph\);/.test(fnSrc("connectPaint")) && /b\.hidden = !mvShown\(\) && !phShown\(\);/.test(fnSrc("connectCatSync"))
+    && /await Promise\.all\(\[mvLoad\(\), phStateLoad\(\)\]\); connectCatSync\(\);/.test(src) && /Promise\.all\(\[mvLoad\(\), phLoad\(\)\]\)/.test(fnSrc("setCat")) && !/phLoad|phBlock/.test(fnSrc("setCat").split("\n").filter((l) => /cat === "priv"/.test(l)).join("")) && !/brPrivPaint/.test(src + br + rules)
     && /const box = \$\("set-connect"\)/.test(fnSrc("connectPaint")) && /const mv = mvBlock\(mk\); if \(mv\) box\.append\(mv\);/.test(fnSrc("connectPaint")) && /connectPaint\(\); const sw = \$\("mv-sw"\)/.test(fnSrc("mvToggle"))
     && /go\.addEventListener\("click", \(\) => setCat\("plan"\)\)/.test(fnSrc("mvBlock")));
   ok("S2 內建瀏覽器是 Agent 那一頁的最後一組:rulesPaint 在常駐規則之後給一格 .br-set;那一格不畫線、只隔組間距 32", /rulesPaintList\(grp\);\n[^\n]*\n  if \(typeof brSetPaint === "function"\) \{ const br = rsEl\("div", "br-set"\); br\.id = "rules-br"; box\.append\(br\); brSetPaint\(br\); \}/.test(rulesFn)

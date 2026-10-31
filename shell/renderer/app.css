@@ -1017,6 +1017,42 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .priv-gh { margin: 0 0 var(--space-2); font-size: 12px; font-weight: 400; line-height: 1.7; color: var(--ink); }
 /* 法遵入口(服務條款 / 隱私權政策):安靜文字鈕自己一行,跟上面那一段拉開一個群組間距 */
 .set-legal { margin: var(--space-16) 0 0; font-size: 12px; color: var(--ink-3); }   /* 字級 / 色給兩份之間的「·」 */
+/* 「來自手機」:泡泡正下方、靠右,離泡泡 4;圖示跟分頁上的手機記號同一顆(desktop-phone-chat-settings §2) */
+.msg.you.from-phone { flex-direction: column; align-items: flex-end; }
+.msg.you .msg-from { display: flex; align-items: center; gap: var(--space-6); margin-top: var(--space-4); font-size: 12px; line-height: 1.4; color: var(--ink-3); }
+.msg-from .ic, .tab-ph .ic { width: 16px; height: 16px; stroke-width: 1.75; }
+/* 分頁上的手機記號:tick／短劃那格後面的第二個固定格,沒有手機回合時不留 */
+.tab-ph { flex: none; display: flex; width: 16px; height: 16px; color: var(--ink-3); }
+/* 設定 › 連結「允許手機對話」:跟手機查看那組空 32、不畫線;全組沒有分隔線 */
+.ph { margin-top: var(--space-32); }
+.ph:first-child { margin-top: 0; }
+.ph .sw-l { position: relative; }
+.ph-top:has(.sw:focus-visible:not([data-tip-off])) .tip { display: block; }
+.ph-status, .ph-msg { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); }
+.ph-status .btn-quiet, .ph-msg .btn-quiet, .ph-how .btn-quiet, .ph-acts-msg .btn-quiet { font-size: inherit; }
+.ph-grp { margin-top: var(--space-24); }
+.ph-gh { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-12); }
+.ph-gh .lbl { font-size: 12px; color: var(--ink-3); }
+.ph-pair { display: flex; align-items: center; gap: var(--space-16); margin-top: var(--space-12); }
+.ph-pair .qr-plate { padding: var(--space-6); }   /* 圖 116 + 6 = 128,跟商店 QR 的板同尺寸 */
+.ph-pair .qr-plate img { image-rendering: pixelated; }
+.ph-code { font-family: var(--font-mono); font-size: 20px; font-weight: 600; letter-spacing: .08em; line-height: 1.3; color: var(--ink); }
+.ph-how { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); text-wrap: pretty; }
+.ph-how .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.ph-list { list-style: none; margin: var(--space-8) 0 0; padding: 0; }
+.ph-row + .ph-row { margin-top: var(--space-12); }
+.ph-name { font-weight: 400; }   /* 主開關的 label 是 600,手機名 400:靠字重分層 */
+.ph-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-4) var(--space-12); margin-top: var(--space-2); font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.ph-meta .m { margin-inline-end: auto; }
+.ph-meta .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.ph-meta .btn-quiet { font-size: inherit; display: inline-flex; align-items: center; gap: var(--space-6); }
+.ph-meta [aria-expanded="true"] > .cv7 { transform: translateY(2px) rotate(-135deg); }
+/* 最近操作:三欄 grid(時間｜操作｜IP),不要項目符號、不要線;先 10 筆,〔顯示全部〕原地展開到 50 */
+.ph-acts { display: grid; grid-template-columns: max-content 1fr max-content; column-gap: var(--space-16); row-gap: var(--space-2); margin: var(--space-8) 0 0; padding: 0; list-style: none; font-size: 12px; line-height: 1.6; color: var(--ink-2); }
+.ph-acts li { display: contents; }
+.ph-acts .t, .ph-acts .ip { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink-3); }
+.ph-acts-msg { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.ph-acts-more { margin-top: var(--space-6); font-size: 12px; }
 .priv-fine { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); max-width: 60ch; }
 @media (prefers-reduced-motion: reduce) { .sw, .sw::after { transition: none; } }
 /* 關於:標題下面一行「Blave {app} · 雲端主機 {ws} · 已是最新版」+ 右邊一個文字連結(mockup-desktop-update-flow-v4 §2)。

@@ -29,7 +29,7 @@ const GLOBAL_OK = {
   thinkFoldSeq: "aria-controls 流水號", stepCharW: "量字寬的快取", loginPending: "本機 AI 登入中", acct: "帳號狀態", acctAt: "同上", acctRetry: "同上", balLast: "餘額",
   balSeq: "同上", acctGone: "去瀏覽器綁卡", acctPending: "帳號重查", acctSettled: "同上", taKeyed: "輸入框打過字(帳號卡)", planSlowSaid: "方案開通", planBusyPlan: "同上",
   planErr: "同上", planBusy: "同上", planSince: "同上", planTimer: "同上", planWas: "同上", planDoneSaid: "同上", planDonePending: "方案開好了那句:等眼前分頁閒著才講",
-  pub: "公開資訊", pubAt: "同上", planLoginBusy: "方案登入", planLastView: "同上", planLoginOut: "同上",
+  pub: "公開資訊", pubAt: "同上", PH: "手機對話設定(主行程 relay.js 的狀態)", PH_BUSY: "同上", PH_ERR: "同上", PH_PHONES: "同上(授權手機清單)", PH_CODE: "同上(配對碼)", PH_ACTS: "同上(最近操作)", PH_MSG: "同上(手機那一組的訊息槽)", PH_QUIET: "同上(同步數字變時不念)", PH_EXP: "同上(配對碼到期的計時)", planLoginBusy: "方案登入", planLastView: "同上", planLoginOut: "同上",
 };
 const unclassified = lets.filter((n) => !tabKeys.includes(n) && !(n in GLOBAL_OK));
 ok("app.js 每一個頂層 let 都歸類:每個分頁一份(TAB_KEYS)或全 app 一份(GLOBAL_OK)", unclassified.length === 0, unclassified);
@@ -283,7 +283,7 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
     && lay.tabsLayout(112 + 60 * 4 + 8, ["a", "b", "c", "d", "e"], "a", [112, 60, 60, 60, 60], 44).hidden.length === 0);
   const back = lay && run(452, long(8), 7);
   ok("13.6 選中的落在後面:列上前 3 個＋它,它在列尾", !!lay && back.shown.join() === "0,1,2,7", back);
-  ok("13.6 量自然寬:最窄 = min(自然寬, 選中 112／其他 60)寫在 min-width;+N 比 44 寬就照實寬重算", /const mins = nat\.map\(\(n, i\) => Math\.min\(n, order\[i\] === curSid \? TABS_MIN_SEL : TABS_MIN\)\);/.test(ct)
+  ok("13.6 量自然寬:最窄 = min(自然寬, 選中 112／有手機記號 82(mchat-phone-surfaces §1 V1)／其他 60)寫在 min-width;+N 比 44 寬就照實寬重算", /const mins = nat\.map\(\(n, i\) => Math\.min\(n, order\[i\] === curSid \? TABS_MIN_SEL : tabsPhone\(CS\.tabs\.get\(order\[i\]\)\) \? TABS_MIN_PHONE : TABS_MIN\)\);/.test(ct)
     && /el\.style\.minWidth = mins\[i\] \+ "px";/.test(ct) && /const mw = \$\("cs-more"\)\.offsetWidth; if \(mw > 44\) L = tabsLayout\(avail, order, curSid, mins, mw\);/.test(ct) && !/128|\/ 90\)/.test(ct.slice(ct.indexOf("function tabsLayout"), ct.indexOf("function tabsPaint("))));
   ok("13.4 沒選中又被縮到 88 以下才讓出 × 格(本來就短的照留)", /if \(w < TABS_NARROW && w < Number\(el\.dataset\.nat\) - 1\) el\.classList\.add\("narrow"\);/.test(ct) && css.includes(".cs-tabs .tab.narrow .tab-x { display: none; }"));
   ok("13.6 凍寬只走滑鼠(× 與中鍵);鍵盤 Delete／⌘W 不凍;離開分頁列、拉寬欄、開新分頁放掉", (ct.match(/tabsFreeze\(\); tabsClose\(T\);/g) || []).length === 2 && !/tabsFreeze\(\)[^\n]*Delete|Delete[^\n]*tabsFreeze/.test(ct)
@@ -294,7 +294,7 @@ ok("queue_cancel 只由主行程記一次;排隊中按停止畫面不記", /if \
     && /\.cs-tabs \{[^}]*align-items: center; gap: var\(--space-2\);/.test(blk) && /height: calc\(var\(--tabs-body\) \+ 2 \* var\(--tabs-reach\)\); padding: 0 var\(--space-12\);\s*border: solid transparent; border-width: var\(--tabs-reach\) 0; background-clip: padding-box;/.test(blk)
     && /top: calc\(\(100% - 16px\) \/ 2\); height: 16px;/.test(blk) && /top: calc\(50% - 14px\); height: 28px;/.test(blk)
     && !/tabs-top|tabs-pad-b|tabs-drag|padding-top: calc/.test(blk) && !/(?<![-\w])height: (46|44|36)px|\btop: (6|13|16)px|inset: -12px/.test(blk)
-    && /const TABS_MIN = 60, TABS_MIN_SEL = 112, TABS_NARROW = 88, TABS_GAP = 2;/.test(ct));
+    && /const TABS_MIN = 60, TABS_MIN_SEL = 112, TABS_MIN_PHONE = 82, TABS_NARROW = 88, TABS_GAP = 2;/.test(ct));
   ok("× 不佔位、不墊底色:絕對定位在本體尾端(z 1,焦點環 z 2 在它上面);滑過或焦點時標題尾端淡出到 × 左緣;最窄的分頁不畫「…」改淡出 8;熱區 ::after 上下伸進透明框(32×44)", /\.tab-x \{ position: absolute; z-index: 1; right: 0; top: 0; bottom: 0; width: 32px;[^}]*visibility: hidden; \}/.test(blk) && !/\.tab-x \{[^}]*background/.test(blk) && !/tabs-bg/.test(css + trcss)
     && /\.cs-tabs \.tab:not\(\.narrow\):is\(:hover, :focus-visible\) \.tab-t \{ text-overflow: clip;[^\n]*\n  -webkit-mask-image: linear-gradient\(90deg, #000 calc\(100% - 32px\), transparent calc\(100% - 20px\)\);/.test(blk)
     && blk.includes(".cs-tabs .tab.narrow .tab-t { text-overflow: clip;\n  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 8px), transparent);") && /\.cs-tabs \.tab:focus-visible::before \{ content: ""; position: absolute; z-index: 2;/.test(blk)

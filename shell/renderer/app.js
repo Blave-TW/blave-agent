@@ -548,14 +548,14 @@ function setCat(cat) {
   if (cat === "display" && typeof awakeLoad === "function") { themeLoad(); awakeLoad(); rnLoad(); }   // 設定 › 一般的外觀與防睡開關
   if (cat === "display" && typeof ccyPaint === "function") ccyPaint();   // 設定 › 顯示幣別(帳號偏好)
   if (cat === "priv") privLoad();
-  if (cat === "connect") { connectPaint(); mvLoad().then(() => { connectCatSync(); if (!$("set-connect").hidden) connectPaint(); }); }
+  if (cat === "connect") { connectPaint(); Promise.all([mvLoad(), phLoad()]).then(() => { connectCatSync(); if (!$("set-connect").hidden) connectPaint(); }); }
   if (cat === "plan" && typeof mvLoad === "function") mvLoad();   // 登出確認框要知道手機查看開著沒
   if (cat === "plan") shlOpen();   // 公開連結區段(renderer/report-sharelist.js):每次切到這一類重抓
   if (cat === "plan") { planPaint(); trackFeature("settings_plan"); if (hasToken) { acctCheck(); balLoad(); } else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
   if (cat === "plan" && SHL_SCROLL) { SHL_SCROLL = false; shlReveal(); }
 }
 async function setOpen() {
-  await mvLoad(); connectCatSync();   // 「連結」那一顆出不出要在框打開之前定好,不在眼前長出來(主行程同步回,讀不到 = 不出)
+  await Promise.all([mvLoad(), phStateLoad()]); connectCatSync();   // 「連結」那一顆出不出要在框打開之前定好,不在眼前長出來(主行程同步回,讀不到 = 不出)
   if (typeof upRefresh === "function") upRefresh();   // 下載完當下在下單、之後暫停了:主行程不會再推事件,打開設定時自己重讀(稽核 M3)
   $("set-lang").value = LANG;
   setCat("display");
@@ -729,6 +729,234 @@ function mvBlock(mk) {
   if (on) wrap.append(mvQr(mk));
   return wrap;
 }
+/* 設定 › 連結「允許手機對話」(主行程 relay.js;spec mobile-agent-chat-mvp §2.6、§4.2;畫面 desktop-phone-chat-settings-2026-10-30 §3–§10、
+   mchat-phone-surfaces-2026-10-31 §3)。總開關不開時整組不出(PH.visible)。打開、關掉都先問;開著才有「允許連這台的手機」那一組。
+   PH = 主行程 relayStateOut,null = 讀不到 = 不出。兩個容器各一個訊息槽:開關下面的 #ph-status,手機那一組的 #ph-msg */
+// lucide smartphone(線寬由 CSS 給 1.75):分頁上的手機記號、+N 選單列、「來自手機」標籤共用這一顆
+const PHONE_IC = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/></svg>';
+let PH = null, PH_BUSY = false, PH_ERR = "", PH_PHONES = null, PH_CODE = null, PH_ACTS = null, PH_MSG = "", PH_QUIET = false, PH_EXP = null;
+async function phStateLoad() { try { PH = await window.blave.relayState(); } catch (_) { PH = null; } return PH; }
+async function phLoad() {
+  await phStateLoad();
+  if (phShown() && PH.signedIn && PH.on) { try { PH_PHONES = await window.blave.relayPhones(); } catch (_) { PH_PHONES = { ok: false }; } }
+  return PH;
+}
+const phShown = () => !!(PH && PH.visible === true);
+const PH_ACT = { send: "ph.act.send", stop: "ph.act.stop", withdraw: "ph.act.withdraw", session_new: "ph.act.session_new", session_rename: "ph.act.session_rename", session_delete: "ph.act.session_delete", pair: "ph.act.pair", auth: "ph.act.auth", revoke: "ph.act.revoke", grant: "ph.act.grant", ungrant: "ph.act.ungrant" };   // api app_action 的操作種類 → 字
+// canon › Numbers:MM/DD HH:mm(24 小時),不是今年的加年份;toLocaleString 會跟著系統語言換格式
+function phDate(iso, nowMs) {
+  const d = iso ? new Date(iso) : null; if (!d || isNaN(d)) return "—";
+  const p = (n) => (n < 10 ? "0" + n : String(n)), md = p(d.getMonth() + 1) + "/" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+  return d.getFullYear() === new Date(nowMs == null ? Date.now() : nowMs).getFullYear() ? md : d.getFullYear() + "/" + md;
+}
+const phName = (p) => p.label || t(p.platform === "android" ? "ph.android" : "ph.iphone");
+// 「配對 {paired} · 最近使用 {used}」這類句子:佔位換成 mono 的值,其餘照字
+function phFill(el, s, vals) {
+  s.split(/(\{[a-z]+\})/).forEach((part) => {
+    const k = /^\{([a-z]+)\}$/.exec(part);
+    if (k && k[1] in vals) { const m = document.createElement("span"); m.className = "mono"; m.textContent = vals[k[1]]; el.append(m); } else if (part) el.append(part);
+  });
+  return el;
+}
+function phRepaint() { if ($("set-connect") && !$("set-connect").hidden) connectPaint(); }
+async function phPhonesReload() { try { PH_PHONES = await window.blave.relayPhones(); } catch (_) { PH_PHONES = { ok: false }; } phRepaint(); }
+/* 配對碼:QR 在畫面本機產生(qrcode-generator,不打外部 API),內容 BLAVE-PAIR:{8 碼},四個表面共用這個格式。
+   版本 1 是 21 格,加四周 4 格 quiet zone;每格 8px 產生、顯示一半(Retina 上邊緣不糊) */
+function phQr(code) {
+  const q = qrcode(0, "M"); q.addData("BLAVE-PAIR:" + code, "Alphanumeric"); q.make();
+  return { src: q.createDataURL(8, 32), size: (q.getModuleCount() + 8) * 4 };
+}
+async function phPair() {
+  if (PH_BUSY) return;
+  PH_BUSY = true; PH_MSG = "";
+  try { const r = await window.blave.relayPairCode(); if (r && r.ok) PH_CODE = { code: r.code, until: Date.now() + r.expires_in * 1000 }; else PH_MSG = "ph.pairFail"; }
+  catch (_) { PH_MSG = "ph.pairFail"; } finally { PH_BUSY = false; }
+  clearTimeout(PH_EXP);
+  if (PH_CODE) PH_EXP = setTimeout(phRepaint, Math.max(0, PH_CODE.until - Date.now()) + 50);   // 到期換成「過期了。〔重新產生〕」,不自動再要一組(每小時 10 次)
+  phRepaint();
+}
+function phPairClick(e) {
+  const list = PH_PHONES && PH_PHONES.ok ? PH_PHONES.phones : null;
+  if (e.currentTarget.getAttribute("aria-disabled") === "true") { PH_MSG = "ph.pairMax"; phRepaint(); return; }
+  if (PH_CODE) { PH_CODE = null; clearTimeout(PH_EXP); phRepaint(); return; }   // 再按一次收起
+  if (list) phPair();
+}
+async function phGrant(p, on) {
+  PH_MSG = "";
+  try { const r = await window.blave.relayGrant(p.device_id, on); if (!r || !r.ok) PH_MSG = "ph.errRow"; } catch (_) { PH_MSG = "ph.errRow"; }
+  await phPhonesReload();
+}
+function phRevoke(p, opener) {
+  const name = phName(p);
+  confirmBox({ title: t("ph.revoke.title", { name }), lines: [t("ph.revoke.body"), t("ph.revoke.stop")], ok: t("ph.revoke.ok"), opener, onOk: async () => {
+    PH_MSG = "";
+    let ok = false; try { const r = await window.blave.relayRevoke(p.device_id); ok = !!(r && r.ok); } catch (_) { ok = false; }
+    if (!ok) { PH_MSG = "ph.errRow"; phRepaint(); return; }
+    const before = PH_PHONES && PH_PHONES.ok ? PH_PHONES.phones : [], i = before.findIndex((x) => x.device_id === p.device_id);
+    if (PH_ACTS && PH_ACTS.id === p.device_id) PH_ACTS = null;
+    await phPhonesReload();
+    srSay(t("ph.revokedSay", { name }));
+    const next = (PH_PHONES && PH_PHONES.ok ? PH_PHONES.phones : []).find((x, j) => j >= i && x.device_id !== p.device_id);
+    const f = (next && $("ph-g-" + next.device_id)) || $("ph-pair"); if (f) f.focus();
+  } });
+}
+async function phActsLoad(id) {
+  let r = null; try { r = await window.blave.relayActions(id); } catch (_) { r = null; }
+  if (!PH_ACTS || PH_ACTS.id !== id) return;
+  PH_ACTS.rows = r && r.ok ? r.actions : null; phRepaint();
+}
+function phActs(p) {
+  if (PH_ACTS && PH_ACTS.id === p.device_id) { PH_ACTS = null; phRepaint(); return; }   // 同一時間只展開一支
+  PH_ACTS = { id: p.device_id, rows: undefined, all: false }; phRepaint();
+  phActsLoad(p.device_id);
+}
+// 「讀不到…。〔重試〕」這類句子:句子後面接一顆文字鈕
+function phRetryInto(el, text, onRetry, id, label) {
+  const b = document.createElement("button"); b.className = "btn-quiet"; b.type = "button"; b.textContent = t(label || "ph.retry"); if (id) b.id = id;
+  b.addEventListener("click", onRetry); el.append(text + " ", b); return el;
+}
+function phActsBox(mk, id) {
+  const rows = PH_ACTS.rows, box = mk("div", "ph-acts-box"); box.id = id;
+  if (rows === undefined) return box;
+  if (rows === null) { box.append(phRetryInto(mk("p", "ph-acts-msg"), t("ph.actsFail"), () => phActsLoad(PH_ACTS.id), "ph-acts-retry")); return box; }
+  if (!rows.length) { box.append(mk("p", "ph-acts-msg", "—")); return box; }
+  const ul = mk("ul", "ph-acts");
+  rows.slice(0, PH_ACTS.all ? 50 : 10).forEach((a) => {
+    const li = mk("li");
+    li.append(mk("span", "t", phDate(a.ts)), mk("span", "", PH_ACT[a.action] ? t(PH_ACT[a.action]) : a.action), mk("span", "ip", a.ip || "—"));
+    ul.append(li);
+  });
+  box.append(ul);
+  if (!PH_ACTS.all && rows.length > 10) {
+    const more = mk("button", "btn-quiet ph-acts-more", t("ph.actsMore")); more.type = "button";
+    more.addEventListener("click", () => { const id0 = PH_ACTS.id; PH_ACTS.all = true; phRepaint(); const b = $("ph-acts-" + id0); if (b) b.focus(); });   // 原地展開到 50 筆;鈕消失後焦點回〔最近操作〕
+    box.append(more);
+  }
+  return box;
+}
+function phRow(mk, p) {
+  const li = mk("li", "ph-row"), nid = "ph-n-" + p.device_id, aid = "ph-a-" + p.device_id, open = !!(PH_ACTS && PH_ACTS.id === p.device_id);
+  // 開關＝只管這台、馬上可以再開(立刻生效 → Switch);〔撤銷〕＝整支從帳號拿掉,兩種列都有
+  const row = mk("div", "sw-row"), n = mk("span", "sw-l ph-name", phName(p)); n.id = nid;
+  const sw = mk("button", "sw" + (p.granted ? "" : " off")); sw.type = "button"; sw.id = "ph-g-" + p.device_id;
+  sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", p.granted ? "true" : "false"); sw.setAttribute("aria-labelledby", nid);
+  sw.addEventListener("click", () => phGrant(p, !p.granted));
+  row.append(n, sw); li.append(row);
+  const meta = mk("div", "ph-meta"), paired = phDate(p.created_at);
+  meta.append(p.last_used_at ? phFill(mk("span", "m"), t("ph.meta"), { paired, used: phDate(p.last_used_at) }) : phFill(mk("span", "m"), t("ph.metaNever"), { paired }));
+  const acts = mk("button", "btn-quiet", t("ph.acts")); acts.type = "button"; acts.id = "ph-acts-" + p.device_id;
+  acts.setAttribute("aria-expanded", open ? "true" : "false"); acts.setAttribute("aria-controls", aid);
+  const cv = mk("span", "cv7"); cv.setAttribute("aria-hidden", "true"); acts.append(cv);
+  acts.addEventListener("click", () => phActs(p));
+  const rv = mk("button", "btn-quiet", t("ph.revoke")); rv.type = "button"; rv.addEventListener("click", (e) => phRevoke(p, e.currentTarget));
+  meta.append(acts, rv); li.append(meta);
+  if (open) li.append(phActsBox(mk, aid));
+  return li;
+}
+function phPairPanel(mk) {
+  const box = mk("div", "ph-pair"); box.id = "ph-panel";
+  if (PH_CODE.until <= Date.now()) {
+    box.append(phRetryInto(mk("p", "ph-how"), t("ph.pairExpired"), () => { PH_CODE = null; phPair(); }, "ph-again", "ph.pairAgain"));
+    return box;
+  }
+  const q = phQr(PH_CODE.code), plate = mk("div", "qr-plate"), img = mk("img"); img.src = q.src; img.alt = ""; img.width = img.height = q.size;   // alt="":旁邊就是同一組碼的文字
+  plate.append(img);
+  const txt = mk("div", "ph-pair-t"), d = new Date(PH_CODE.until), p2 = (n) => (n < 10 ? "0" + n : String(n));
+  const how = mk("p", "ph-how", t("ph.pairHow")); how.append(mk("br")); phFill(how, t("ph.pairUntil"), { hm: p2(d.getHours()) + ":" + p2(d.getMinutes()) });
+  txt.append(mk("div", "ph-code", PH_CODE.code.slice(0, 4) + "-" + PH_CODE.code.slice(4)), how);
+  box.append(plate, txt);
+  return box;
+}
+function phGroup(mk) {
+  const g = mk("div", "ph-grp"); g.setAttribute("role", "group"); g.setAttribute("aria-labelledby", "ph-gl");
+  const list = PH_PHONES && PH_PHONES.ok ? PH_PHONES.phones : null, full = !!(list && PH_PHONES.max && list.length >= PH_PHONES.max);
+  const head = mk("div", "ph-gh"), lbl = mk("span", "lbl", t("ph.group")); lbl.id = "ph-gl";
+  const pair = mk("button", "btn-quiet", t("ph.pair")); pair.type = "button"; pair.id = "ph-pair"; pair.setAttribute("aria-expanded", PH_CODE ? "true" : "false");
+  if (PH_CODE) pair.setAttribute("aria-controls", "ph-panel");
+  if (full) { pair.setAttribute("aria-disabled", "true"); pair.setAttribute("aria-describedby", "ph-msg"); }   // canon 具名例外:上限型選取用 aria-disabled,按了講為什麼
+  pair.addEventListener("click", phPairClick);
+  head.append(lbl, pair); g.append(head);
+  const msg = mk("p", "ph-msg"); msg.id = "ph-msg"; msg.setAttribute("role", "status");
+  if (PH_PHONES && !PH_PHONES.ok) phRetryInto(msg, t("ph.phonesFail"), phPhonesReload, "ph-list-retry");
+  else if (PH_MSG) msg.textContent = t(PH_MSG);
+  msg.hidden = !msg.textContent;
+  g.append(msg);
+  if (PH_CODE) g.append(phPairPanel(mk));
+  if (list && list.length) { const ul = mk("ul", "ph-list"); list.forEach((p) => ul.append(phRow(mk, p))); g.append(ul); }
+  return g;
+}
+// 開關下面那一個槽,同一時間一句:開啟失敗 ＞ 待刪 ＞ 同步失敗 ＞ 同步中 ＞ 空。同步數字變的那幾次不念(PH_QUIET),開始、完成、失敗才念
+function phStatus(mk) {
+  const p = mk("p", "ph-status"); p.id = "ph-status"; p.setAttribute("role", "status");
+  const s = PH.sync || {};
+  if (PH_ERR) p.textContent = PH_ERR;
+  else if (PH.pending) p.textContent = t("ph.pending");
+  else if (PH.on && s.error) phRetryInto(p, s.total ? t("ph.syncFail", { n: s.done || 0, m: s.total }) : t("ph.syncFail0"), phRetry, "ph-retry");
+  else if (PH.on && s.running && s.total) { p.textContent = t("ph.syncing", { n: s.done || 0, m: s.total }); if (PH_QUIET) p.setAttribute("aria-live", "off"); }
+  p.hidden = !p.textContent;
+  return p;
+}
+const phLive = () => (PH.mobileTurns || 0) + (PH.queued || 0) > 0;
+async function phSet(on) {
+  if (PH_BUSY) return;
+  PH_BUSY = true; PH_ERR = "";
+  let ok = false;
+  try { const r = await window.blave.relaySet(on); if (r && r.state) PH = r.state; ok = !!(r && r.ok); if (!ok) PH_ERR = t(r && r.code === "SIGNED_OUT" ? "mv.leadOut" : "ph.err"); }
+  catch (_) { PH_ERR = t("ph.err"); } finally { PH_BUSY = false; }
+  if (!on) { PH_CODE = null; PH_ACTS = null; PH_MSG = ""; clearTimeout(PH_EXP); }
+  if (ok && on) {
+    // 下一步一定是配對:帳號還沒有手機就直接要碼、打開面板;已經有(例如在網頁配過)就不自動開
+    await phPhonesReload();
+    if (PH_PHONES && PH_PHONES.ok && !PH_PHONES.phones.length) await phPair();
+  } else phRepaint();
+  const sw = $("ph-sw"); if (sw) sw.focus();
+}
+function phToggle(e) {
+  if (!phShown() || !PH.signedIn || PH_BUSY) return;
+  const opener = e && e.currentTarget;
+  if (!PH.on) {
+    // 三段一般內文,第一段當 lede(主墨):下單、上傳、刪除三件事只在這裡講一次
+    const lead = document.createElement("p"); lead.className = "cf-lede"; lead.textContent = t("ph.cf.1");
+    confirmBox({ title: t("ph.cf.title"), lead, lines: [t("ph.cf.2"), t("ph.cf.3")], ok: t("ph.cf.ok"), opener, onOk: () => phSet(true) });
+    return;
+  }
+  confirmBox({ title: t("ph.off.title"), lines: phLive() ? [t("ph.off.live"), t("ph.off.del")] : [t("ph.off.del")], ok: t("ph.off.ok"), opener, onOk: () => phSet(false) });
+}
+async function phRetry() { if (PH_BUSY) return; PH_BUSY = true; try { PH = (await window.blave.relayRetry()) || PH; } catch (_) { /* noop */ } finally { PH_BUSY = false; } phRepaint(); }
+function phBlock(mk) {
+  if (!phShown()) return null;
+  const wrap = mk("div", "ph"), row = mk("div", "sw-row ph-top"), lbl = mk("label", "sw-l"); lbl.htmlFor = "ph-sw";
+  const tl = mk("span", "set-tipl", t("ph.switch")); tl.id = "ph-l";
+  const tip = mk("span", "tip", t("ph.tip")); tip.id = "ph-tip"; tip.setAttribute("role", "tooltip");   // 限制條件放 tooltip,不跟著開關狀態換字
+  lbl.append(tl, tip); row.append(lbl);
+  const out = !PH.signedIn, on = !out && PH.on === true;
+  const sw = mk("button", "sw" + (on ? "" : " off")); sw.type = "button"; sw.id = "ph-sw";
+  sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", on ? "true" : "false"); sw.setAttribute("aria-labelledby", "ph-l"); sw.setAttribute("aria-describedby", "ph-tip");
+  sw.disabled = out; sw.addEventListener("click", phToggle);
+  row.append(sw); wrap.append(row);
+  if (out) {
+    const lead = mk("p", "priv-lead", t("mv.leadOut")), go = mk("button", "btn-quiet", t("mv.goLogin")); go.type = "button"; go.addEventListener("click", () => setCat("plan")); lead.append(go);
+    wrap.append(lead); return wrap;
+  }
+  wrap.append(phStatus(mk));
+  if (on) wrap.append(phGroup(mk));   // 主開關關著時整組不出
+  return wrap;
+}
+if (typeof window.blave.onRelayState === "function") window.blave.onRelayState((st) => {
+  if (!st) return;
+  const was = PH; PH = st;
+  if (JSON.stringify((was && was.phoneSids) || {}) !== JSON.stringify(st.phoneSids || {}) && typeof tabsPaint === "function") tabsPaint();
+  const ws = (was && was.sync) || {}, s = st.sync || {};
+  PH_QUIET = !!(ws.running && s.running);
+  if (ws.running && !s.running && !s.error && s.synced) srSay(t("ph.syncedSay"));   // 同步完成:槽變空,只念一次
+  if (was && st.pairSeq !== was.pairSeq && PH_CODE) {   // 配對成功:面板收起、清單重畫、念「已配對 {機型}」,焦點留在〔配對手機〕
+    const had = new Set(PH_PHONES && PH_PHONES.ok ? PH_PHONES.phones.map((p) => p.device_id) : []);
+    PH_CODE = null; clearTimeout(PH_EXP);
+    phPhonesReload().then(() => { const n = PH_PHONES && PH_PHONES.ok ? PH_PHONES.phones.find((p) => !had.has(p.device_id)) : null; if (n) srSay(t("ph.pairedSay", { name: phName(n) })); });
+    return;
+  }
+  if (!was || JSON.stringify(was) !== JSON.stringify(st)) phRepaint();
+});
 /* 開著之後的下一步是拿手機開 App:兩個商店 QR(圖是 web footer 那兩張,靜態檔、不在 runtime 產生)。
    圖是透明底黑碼,暗色也固定白底才掃得到;商店名稱是給不能掃的人的替代路徑,所以圖 alt="" */
 const MV_APP_IOS = "https://apps.apple.com/tw/app/blave/id6747014559";
@@ -787,16 +1015,17 @@ function privPaint() {
 /* 設定 › 連結(手機 App 查看)。分類鈕跟著平台旗標出不出:旗標是發佈層級的,同一版本裡固定,不隨用戶狀態增減(canon › modal 內分類欄) */
 function connectCatSync() {
   const b = document.querySelector('.set-cat[data-set-cat="connect"]'); if (!b) return;
-  b.hidden = !mvShown();
+  b.hidden = !mvShown() && !phShown();   // 手機查看與手機對話各有自己的旗標,有一個開就要這一類
   if (b.hidden && b.getAttribute("aria-current") === "true") setCat("display");
 }
 function connectPaint() {
   const box = $("set-connect"); if (!box) return;
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
-  const had = box.contains(document.activeElement);
+  const had = box.contains(document.activeElement), fid = had && document.activeElement.id;   // 整塊重畫:焦點照 id 還回去(開關、配對、各列的鈕都有 id)
   box.textContent = "";
   const mv = mvBlock(mk); if (mv) box.append(mv);
-  if (had) { const sw = $("mv-sw"); if (sw) sw.focus(); }
+  const ph = phBlock(mk); if (ph) box.append(ph);   // 手機查看在上、手機對話在下;組間 32 不畫線
+  if (had) { const f = (fid && $(fid)) || $("ph-sw") || $("mv-sw"); if (f) f.focus(); }
   setFocusGuard();
 }
 /* 「一般」頁最下面的「關於」一行 + 聊天輸入列右上那一格 + 選單列那一行(proposal-desktop-update-flow-v4 §2–§4)。
@@ -2526,7 +2755,12 @@ function receiptFold(steps) {
   return el;
 }
 /* 舊回合的使用者那句:尾端給引擎的附件行拆掉、畫回「迴紋針 + 檔名」(同送出當下) */
-function addHistoryYou(content) { const a = splitAttachNote(content); return addMsg("you", a.text, a.attachments); }
+function addHistoryYou(content, origin) {
+  const a = splitAttachNote(content), el = addMsg("you", a.text, a.attachments);
+  // 「來自手機」:泡泡正下方靠右(.msg.you 改直排),圖示跟分頁上的手機記號同一顆;可見字接在泡泡後面念,圖示不念
+  if (origin === "mobile") { el.classList.add("from-phone"); const f = document.createElement("span"); f.className = "msg-from"; f.innerHTML = PHONE_IC; f.append(t("chat.fromPhone")); el.appendChild(f); }
+  return el;
+}
 function addHistoryAi(content) {
   const r = splitReceipt(content);
   if (r.steps && r.steps.length) fitSteps(chatEl().appendChild(receiptFold(r.steps)));   // 進了 DOM 才量得到欄寬
@@ -2580,7 +2814,7 @@ function csPaintHistory(T, turns, imgs, brs, xps, ress) {
   turns.map((x) => ({ ts: x.ts, turn: x })).concat(imgs.map((x) => ({ ts: x.ts, img: x })), brs, xps, ress)
     .sort((a, b) => a.ts - b.ts)
     .reduce(histFixOrder, [])
-    .forEach((x) => (x.xp ? xpRestore(x.xp) : x.res ? resRestore(x.res) : x.br ? brRestore(x.br) : x.img ? addImage(x.img.src, x.img.caption) : x.turn.role === "user" ? addHistoryYou(x.turn.content) : addHistoryAi(x.turn.content)));
+    .forEach((x) => (x.xp ? xpRestore(x.xp) : x.res ? resRestore(x.res) : x.br ? brRestore(x.br) : x.img ? addImage(x.img.src, x.img.caption) : x.turn.role === "user" ? addHistoryYou(x.turn.content, x.turn.origin) : addHistoryAi(x.turn.content)));
   live.forEach((n) => chatEl().appendChild(n));
   if (typeof engReattach === "function") engReattach();   // 舊回合畫回去之後,安裝進度卡移到最下面(csClearChat 補回來時在最上面)
   T.title = csTitle; csRenderHead(); scrollChat(true);

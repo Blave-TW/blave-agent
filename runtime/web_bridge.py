@@ -297,9 +297,19 @@ def save_attachment(attachment):
         return None
 
 
+# Who sent the turn (spec mobile-agent-chat-mvp §2.8): the api writes context.origin itself
+# ("web" from the work page, "app" from the phone). Anything else — an old api that sends
+# nothing, a value we do not know — counts as web.
+TURN_ORIGINS = ("web", "app")
+
+
+def turn_origin(value):
+    return value if value in TURN_ORIGINS else "web"
+
+
 def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
                    attachment_names=None, viewing_view=None,
-                   ui_lang=None, stop_file=None, suggest_mode=None):
+                   ui_lang=None, stop_file=None, suggest_mode=None, origin="web"):
     """Spawn one agent_turn.py and wait for it. The turn's slot is kept fresh by the
     keep_fresh thread (every slot in _running), not by this loop."""
     # 有任一張圖的輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
@@ -328,7 +338,12 @@ def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
     # is taken as the positional arg, not parsed as a flag (which would silently
     # print help + exit 0 and the user would get nothing back).
     cmd += ["--", session_id, message]
-    proc = subprocess.Popen(cmd, env={**os.environ, turn_stop.ENV: stop_file} if stop_file else None)
+    # origin goes by env, not argv: the desktop ships its own runtime, and a new flag would make an
+    # older agent_turn's argparse exit 2. agent_turn only logs it.
+    env = {**os.environ, "BLAVE_TURN_ORIGIN": turn_origin(origin)}
+    if stop_file:
+        env[turn_stop.ENV] = stop_file
+    proc = subprocess.Popen(cmd, env=env)
     deadline = time.time() + TURN_TIMEOUT
     next_ping = time.time() + PING_INTERVAL
     while proc.poll() is None:
@@ -586,6 +601,7 @@ def _ingest(m):
         "viewing_view": ctx.get("viewing_view"),
         "ui_lang": ctx.get("ui_lang"),
         "suggest_mode": ctx.get("suggest_mode"),
+        "origin": turn_origin(ctx.get("origin")),
         "ts": m.get("timestamp") or int(time.time() * 1000),
     }
     behind = None
@@ -658,7 +674,8 @@ def _worker(session_id, entry, slot):
                        attachment_names=_entry_attachment_names(entry),
                        viewing_view=entry.get("viewing_view"),
                        ui_lang=entry.get("ui_lang"), stop_file=stop_file,
-                       suggest_mode=entry.get("suggest_mode"))
+                       suggest_mode=entry.get("suggest_mode"),
+                       origin=turn_origin(entry.get("origin")))
     except Exception as e:
         print(f"[web_bridge] turn {session_id} crashed before/at spawn: {e}", file=sys.stderr)
         report_turn_aborted(session_id)
@@ -706,7 +723,7 @@ def _dispatch():
         pending = sorted((s for s, q in _queues.items() if q and s not in _running),
                          key=lambda s: _queues[s][0].get("ts") or 0)
         for sid in pending:
-            slot = turn_slots.acquire(sid, "web")
+            slot = turn_slots.acquire(sid, turn_origin(_queues[sid][0].get("origin")))
             if slot is None:
                 break
             entry = _queues[sid].pop(0)

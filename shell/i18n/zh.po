@@ -9932,3 +9932,175 @@ msgstr "錯太多次，今天不能再試。"
 msgid "cx.kc.until"
 msgstr "{t} 之後改金鑰就不用驗證。"
 
+# 0.1.38 手機 App 跟這台電腦對話(spec mobile-agent-chat-mvp;設計 desktop-phone-chat-settings-2026-10-30、mchat-phone-surfaces-2026-10-31)
+
+msgid "chat.fromPhone"
+msgstr "來自手機"
+
+msgid "ph.switch"
+msgstr "允許手機對話"
+
+msgid "ph.tip"
+msgstr "Blave 開著、電腦醒著，手機才送得到。"
+
+msgid "ph.cf.title"
+msgstr "允許手機對話？"
+
+msgid "ph.cf.1"
+msgstr "手機送的話會在這台電腦上執行。agent 能做的跟你在電腦前一樣，包括下單。"
+
+msgid "ph.cf.2"
+msgstr "近 30 天的對話會上傳，手機才看得到。金鑰與資料夾路徑會先遮掉。"
+
+msgid "ph.cf.3"
+msgstr "附件、圖片和策略程式不上傳。關掉就刪除伺服器上那份。"
+
+msgid "ph.cf.ok"
+msgstr "開啟"
+
+msgid "ph.off.title"
+msgstr "關閉手機對話？"
+
+msgid "ph.off.live"
+msgstr "手機送來、正在跑的回覆會停下。"
+
+msgid "ph.off.del"
+msgstr "伺服器上的對話會刪除，這台電腦上的不受影響。"
+
+msgid "ph.off.ok"
+msgstr "關閉"
+
+msgid "ph.syncing"
+msgstr "已同步 {n}／{m} 條對話"
+
+msgid "ph.syncFail"
+msgstr "同步停在 {n}／{m} 條。"
+
+msgid "ph.syncFail0"
+msgstr "對話沒有同步完成。"
+
+msgid "ph.retry"
+msgstr "重試"
+
+msgid "ph.syncedSay"
+msgstr "近 30 天的對話已同步"
+
+msgid "ph.pending"
+msgstr "伺服器上的對話還沒刪掉，連上網路後會自動刪。"
+
+msgid "ph.err"
+msgstr "沒有開成，請檢查網路後再試。"
+
+msgid "ph.group"
+msgstr "允許連這台的手機"
+
+msgid "ph.pair"
+msgstr "配對手機"
+
+msgid "ph.pairHow"
+msgstr "用 App 的 Agent 分頁掃描，或輸入這組碼。"
+
+msgid "ph.pairUntil"
+msgstr "{hm} 前有效"
+
+msgid "ph.pairExpired"
+msgstr "配對碼過期了。"
+
+msgid "ph.pairAgain"
+msgstr "重新產生"
+
+msgid "ph.pairFail"
+msgstr "沒拿到配對碼，請再試一次。"
+
+msgid "ph.pairMax"
+msgstr "已有 5 支手機，先撤銷一支才能再配對。"
+
+msgid "ph.pairedSay"
+msgstr "已配對 {name}"
+
+msgid "ph.meta"
+msgstr "配對 {paired} · 最近使用 {used}"
+
+msgid "ph.metaNever"
+msgstr "配對 {paired} · 還沒用過"
+
+msgid "ph.acts"
+msgstr "最近操作"
+
+msgid "ph.actsMore"
+msgstr "顯示全部"
+
+msgid "ph.actsFail"
+msgstr "讀不到紀錄。"
+
+msgid "ph.revoke"
+msgstr "撤銷"
+
+msgid "ph.iphone"
+msgstr "iPhone"
+
+msgid "ph.android"
+msgstr "Android 手機"
+
+msgid "ph.errRow"
+msgstr "沒有改成，請檢查網路後再試。"
+
+msgid "ph.phonesFail"
+msgstr "讀不到手機清單。"
+
+msgid "ph.revokedSay"
+msgstr "已撤銷 {name}"
+
+msgid "ph.revoke.title"
+msgstr "撤銷 {name}？"
+
+msgid "ph.revoke.body"
+msgstr "這支手機不能再跟 agent 對話，要再用得重新配對。"
+
+msgid "ph.revoke.stop"
+msgstr "它送來的回覆如果還在跑，會停下。"
+
+msgid "ph.revoke.ok"
+msgstr "撤銷"
+
+msgid "ph.act.send"
+msgstr "送出訊息"
+
+msgid "ph.act.stop"
+msgstr "停止回覆"
+
+msgid "ph.act.withdraw"
+msgstr "撤回訊息"
+
+msgid "ph.act.session_new"
+msgstr "開新對話"
+
+msgid "ph.act.session_rename"
+msgstr "改對話名稱"
+
+msgid "ph.act.session_delete"
+msgstr "刪除對話"
+
+msgid "ph.act.pair"
+msgstr "配對"
+
+msgid "ph.act.auth"
+msgstr "驗證身分"
+
+msgid "ph.act.revoke"
+msgstr "撤銷"
+
+msgid "ph.act.grant"
+msgstr "允許連這台"
+
+msgid "ph.act.ungrant"
+msgstr "停止連這台"
+
+msgid "tm.phoneHiddenTitle"
+msgstr "手機對話開著"
+
+msgid "tm.phoneHidden"
+msgstr "Blave 還開著，手機照樣連得到。要結束請從選單列或 Dock。"
+
+msgid "tm.phoneHiddenWin"
+msgstr "Blave 還開著，手機照樣連得到。要結束請從系統匣圖示。"

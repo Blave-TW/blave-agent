@@ -1,0 +1,31 @@
+# 遮蔽規則的共用 fixture(spec mobile-agent-chat-mvp §4.3;與 api tests/fixtures/redact_cases.json 逐字相同):
+# 裡面全是測試遮蔽用的假金鑰,不是真的憑證。fingerprint 帶行號,fixture 一改就要重取(gitleaks 會自動讀這個檔,重取時要關掉):
+#   gitleaks detect --no-git --gitleaks-ignore-path /dev/null --source tests/fixtures/redact_cases.json --report-format json --report-path <scratchpad>/n.json
+# 不帶 commit 的那幾行在 --no-git、pre-commit(--staged)、git 歷史掃描都認;歷史上行號不同的版本另外帶 commit 前綴:
+#   gitleaks git --log-opts="<這條分支的起點>..HEAD" --report-format json --report-path <scratchpad>/g.json .
+tests/fixtures/redact_cases.json:private-key:38
+tests/fixtures/redact_cases.json:generic-api-key:122
+tests/fixtures/redact_cases.json:generic-api-key:158
+tests/fixtures/redact_cases.json:generic-api-key:170
+tests/fixtures/redact_cases.json:generic-api-key:176
+tests/fixtures/redact_cases.json:generic-api-key:260
+tests/fixtures/redact_cases.json:generic-api-key:272
+tests/fixtures/redact_cases.json:generic-api-key:284
+tests/fixtures/redact_cases.json:github-pat:470
+tests/fixtures/redact_cases.json:gcp-api-key:482
+# bcd7fadf(67 則那版)
+bcd7fadf67408f7b171d9fafc124a1ad8906f128:tests/fixtures/redact_cases.json:private-key:28
+bcd7fadf67408f7b171d9fafc124a1ad8906f128:tests/fixtures/redact_cases.json:generic-api-key:100
+bcd7fadf67408f7b171d9fafc124a1ad8906f128:tests/fixtures/redact_cases.json:generic-api-key:136
+bcd7fadf67408f7b171d9fafc124a1ad8906f128:tests/fixtures/redact_cases.json:generic-api-key:148
+bcd7fadf67408f7b171d9fafc124a1ad8906f128:tests/fixtures/redact_cases.json:generic-api-key:154
+bcd7fadf67408f7b171d9fafc124a1ad8906f128:tests/fixtures/redact_cases.json:github-pat:250
+bcd7fadf67408f7b171d9fafc124a1ad8906f128:tests/fixtures/redact_cases.json:gcp-api-key:262
+# 6a05fd00(55 則那版)
+6a05fd00de9a50bdc1106c202786679ea329d0d1:tests/fixtures/redact_cases.json:private-key:28
+6a05fd00de9a50bdc1106c202786679ea329d0d1:tests/fixtures/redact_cases.json:generic-api-key:100
+6a05fd00de9a50bdc1106c202786679ea329d0d1:tests/fixtures/redact_cases.json:generic-api-key:136
+6a05fd00de9a50bdc1106c202786679ea329d0d1:tests/fixtures/redact_cases.json:generic-api-key:148
+6a05fd00de9a50bdc1106c202786679ea329d0d1:tests/fixtures/redact_cases.json:generic-api-key:154
+6a05fd00de9a50bdc1106c202786679ea329d0d1:tests/fixtures/redact_cases.json:github-pat:190
+6a05fd00de9a50bdc1106c202786679ea329d0d1:tests/fixtures/redact_cases.json:gcp-api-key:202

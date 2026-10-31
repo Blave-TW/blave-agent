@@ -1,0 +1,756 @@
+{
+ "spec": "mobile-agent-chat-mvp §4.3",
+ "mask": "⟦R⟧",
+ "excluded": "⟦R:msg⟧",
+ "note": "rule 0 是不屬於任何一條的邊界；有 known 的是第 1 條，那些值只有電腦版有（api 測試照樣帶進去跑）",
+ "cases": [
+  {
+   "rule": 1,
+   "name": "已知值逐字遮(電腦版才有)",
+   "in": "金鑰是 Xy7Qw2Lp9Zr4 請收好",
+   "out": "金鑰是 ⟦R⟧ 請收好",
+   "known": [
+    "Xy7Qw2Lp9Zr4"
+   ]
+  },
+  {
+   "rule": 1,
+   "name": "不是已知值的字不動",
+   "in": "BINANCE_DEMO=1 照舊",
+   "out": "BINANCE_DEMO=1 照舊",
+   "known": [
+    "Xy7Qw2Lp9Zr4"
+   ]
+  },
+  {
+   "rule": 1,
+   "name": "已知值互相包含時長的先遮",
+   "in": "k abc12345xyz",
+   "out": "k ⟦R⟧",
+   "known": [
+    "abc12345",
+    "abc12345xyz"
+   ]
+  },
+  {
+   "rule": 2,
+   "name": "私鑰區塊整則排除",
+   "in": "給你\n-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 2,
+   "name": "只有開頭那行也排除",
+   "in": "-----BEGIN OPENSSH PRIVATE KEY----- 後面斷了",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 2,
+   "name": "公鑰不算",
+   "in": "-----BEGIN PUBLIC KEY-----\nabc\n-----END PUBLIC KEY-----",
+   "out": "-----BEGIN PUBLIC KEY-----\nabc\n-----END PUBLIC KEY-----"
+  },
+  {
+   "rule": 2,
+   "name": "PGP 私鑰區塊(… KEY BLOCK)",
+   "in": "-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQOYBF\n-----END PGP PRIVATE KEY BLOCK-----",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 3,
+   "name": "12 個助記詞整則排除",
+   "in": "我的助記詞 abandon ability able about above absent absorb abstract absurd abuse access accident",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 3,
+   "name": "編號隔開的助記詞也排除",
+   "in": "1. abandon 2. ability 3. able 4. about 5. above 6. absent 7. absorb 8. abstract 9. absurd 10. abuse 11. access 12. accident",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 3,
+   "name": "11 個不算",
+   "in": "abandon ability able about above absent absorb abstract absurd abuse access",
+   "out": "abandon ability able about above absent absorb abstract absurd abuse access"
+  },
+  {
+   "rule": 3,
+   "name": "一般英文句子不算",
+   "in": "I want to buy more BTC when the price drops below the moving average",
+   "out": "I want to buy more BTC when the price drops below the moving average"
+  },
+  {
+   "rule": 3,
+   "name": "JSON 陣列的助記詞",
+   "in": "[\"abandon\",\"ability\",\"able\",\"about\",\"above\",\"absent\",\"absorb\",\"abstract\",\"absurd\",\"abuse\",\"access\",\"accident\"]",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 3,
+   "name": "用 - 串起來的助記詞",
+   "in": "abandon-ability-able-about-above-absent-absorb-abstract-absurd-abuse-access-accident",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 3,
+   "name": "用 _ 串起來的助記詞",
+   "in": "abandon_ability_able_about_above_absent_absorb_abstract_absurd_abuse_access_accident",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 3,
+   "name": "編號黏在字前面(1.abandon)",
+   "in": "1.abandon 2.ability 3.able 4.about 5.above 6.absent 7.absorb 8.abstract 9.absurd 10.abuse 11.access 12.accident",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 3,
+   "name": "1) 編號的助記詞",
+   "in": "1) abandon 2) ability 3) able 4) about 5) above 6) absent 7) absorb 8) abstract 9) absurd 10) abuse 11) access 12) accident",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 3,
+   "name": "每個字後面有句點的助記詞",
+   "in": "abandon. ability. able. about. above. absent. absorb. abstract. absurd. abuse. access. accident.",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 4,
+   "name": "名=值：遮值留鍵名",
+   "in": "api_key=abcd1234efgh",
+   "out": "api_key=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "JSON 形狀",
+   "in": "\"secret\": \"s3cr3tValue\"",
+   "out": "\"secret\": \"⟦R⟧\""
+  },
+  {
+   "rule": 4,
+   "name": "冒號加空白",
+   "in": "PASSWORD: hunter2hunter2 記得換",
+   "out": "PASSWORD: ⟦R⟧ 記得換"
+  },
+  {
+   "rule": 4,
+   "name": "值不到 6 字不遮",
+   "in": "token: abc12",
+   "out": "token: abc12"
+  },
+  {
+   "rule": 4,
+   "name": "鍵名沒有關鍵字不遮",
+   "in": "max_drawdown=0.25 stop_loss=0.05",
+   "out": "max_drawdown=0.25 stop_loss=0.05"
+  },
+  {
+   "rule": 4,
+   "name": "YAML 巢狀：上一層的名字不吞掉下一行",
+   "in": "okx:\n  passphrase: Hunter2pass",
+   "out": "okx:\n  passphrase: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "YAML 巢狀兩把",
+   "in": "okx:\n  api_key: abcd1234efgh\n  secret: zyxw9876vuts",
+   "out": "okx:\n  api_key: ⟦R⟧\n  secret: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "錯誤訊息裡的環境變數",
+   "in": "Error: OKX_PASSPHRASE=Hunter2pass",
+   "out": "Error: OKX_PASSPHRASE=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "env: 前綴",
+   "in": "env: BINANCE_SECRET=abcd1234efgh",
+   "out": "env: BINANCE_SECRET=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "名=名=值",
+   "in": "params=apiKey=abcd1234efgh",
+   "out": "params=apiKey=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "大括號裡的鍵值(照參照版，收尾括號一起遮)",
+   "in": "cfg:{secret:abcd1234efgh}",
+   "out": "cfg:{secret:⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "前一對沒有關鍵字",
+   "in": "a=b:password=Hunter2pass",
+   "out": "a=b:password=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "log: 前綴",
+   "in": "log: password: Hunter2pass",
+   "out": "log: password: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "空值下一行是帶關鍵字的名字:那個名字照參照版遮，它的值也遮(YAML)",
+   "in": "okx:\n  api_key:\n  passphrase: Hunter2pass",
+   "out": "okx:\n  api_key:\n  ⟦R⟧ ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "空值下一行是帶關鍵字的名字:名字與值都遮",
+   "in": "password:\nsecret: Hunter2pass",
+   "out": "password:\n⟦R⟧ ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "只有空白的值、下一行是帶關鍵字的名字:名字與值都遮",
+   "in": "api_key: \nsecret: Hunter2pass",
+   "out": "api_key: \n⟦R⟧ ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "大括號包著的值(照參照版連括號一起遮)",
+   "in": "secret={Hunter2pass}",
+   "out": "secret=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "方括號包著的值(照參照版連括號一起遮)",
+   "in": "secret=[Hunter2pass]",
+   "out": "secret=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "小括號包著的值(照參照版連括號一起遮)",
+   "in": "password: (Hunter2pass)",
+   "out": "password: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "值裡有成對的括號",
+   "in": "passphrase=Hunt(er)2pass",
+   "out": "passphrase=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "值裡有單獨的收尾括號",
+   "in": "secret: ab)Hunter2pass",
+   "out": "secret: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "全形冒號",
+   "in": "password：Hunter2pass",
+   "out": "password：⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "中文鍵名",
+   "in": "密碼：Hunter2pass",
+   "out": "密碼：⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "base64 單個 = 結尾",
+   "in": "secret: dGVzdHNlY3JldDE=",
+   "out": "secret: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "JSON 裡 base64 單個 = 結尾",
+   "in": "{\"secret\": \"dGVzdHNlY3JldDE=\"}",
+   "out": "{\"secret\": \"⟦R⟧\"}"
+  },
+  {
+   "rule": 4,
+   "name": ".env 裡 base64 單個 = 結尾",
+   "in": "SECRET_KEY=aGVsbG8xMjM0NQ=",
+   "out": "SECRET_KEY=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "值以 : 結尾",
+   "in": "password: Hunter2pass:",
+   "out": "password: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "值含 -._ 並以 = 結尾",
+   "in": "token=ab-cd.ef_12=",
+   "out": "token=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "28 字 base64",
+   "in": "OKX_PASSPHRASE: kkW88xFEY01oIdeFB7fIKEnAKb4=",
+   "out": "OKX_PASSPHRASE: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "值在下一行",
+   "in": "password:\nHunter2pass",
+   "out": "password:\n⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "值在下一行(=)",
+   "in": "api_key=\nabcd1234efgh",
+   "out": "api_key=\n⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "值像帶關鍵字的名字、但後面沒有值 → 照遮",
+   "in": "password: apikey9:",
+   "out": "password: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "值結尾是值裡自己開的括號",
+   "in": "secret=Hunter(2pass)",
+   "out": "secret=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "剛好 6 字",
+   "in": "pwd=Abc12x",
+   "out": "pwd=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "括號包著 5 字(連括號滿 6 字，照參照版連括號遮)",
+   "in": "secret=(abcde)",
+   "out": "secret=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "值後面直接接中文(照參照版連中文一起遮)",
+   "in": "密碼：Hunter2pass，記得換",
+   "out": "密碼：⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "中文說明照參照版當成值遮(誤遮可接受)",
+   "in": "口令：請到設定頁重新輸入",
+   "out": "口令：⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "整段中文設定說明(6 字以上的說明照參照版遮)",
+   "in": "API 金鑰：到交易所後台建立\n金鑰名稱：填 Blave 就好\n金鑰權限：只勾讀取與交易\n密碼：就是你設的那組\n私鑰：這邊用不到\n口令：記得另外存好",
+   "out": "API 金鑰：⟦R⟧\n金鑰名稱：填 Blave 就好\n金鑰權限：⟦R⟧\n密碼：⟦R⟧\n私鑰：這邊用不到\n口令：⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "值像沒有關鍵字的名字 → 照遮(不跳過)",
+   "in": "password: Hunter2pass:\nnext_line_here",
+   "out": "password: ⟦R⟧\nnext_line_here"
+  },
+  {
+   "rule": 4,
+   "name": "值以 = 結尾、含關鍵字字樣 → 照遮(base64 不當名字)",
+   "in": "password: aKey9Q=\nHunter2pass",
+   "out": "password: ⟦R⟧\nHunter2pass"
+  },
+  {
+   "rule": 4,
+   "name": "下一行是全形冒號的名字",
+   "in": "api_key:\nsecret：Hunter2pass",
+   "out": "api_key:\n⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "值以中文開頭",
+   "in": "password: 中文Hunter2pass",
+   "out": "password: ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "值以全形括號包著",
+   "in": "password=＜Hunter2pass＞",
+   "out": "password=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "值中間有全形冒號",
+   "in": "token=abc：Hunter2pass",
+   "out": "token=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "全形等號",
+   "in": "API_KEY ＝ Hunter2pass",
+   "out": "API_KEY ＝ ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "全形等號(無空白)",
+   "in": "secret＝Hunter2pass",
+   "out": "secret＝⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "同一行、值以 : 結尾且含 key 字樣(不當名字跳過)",
+   "in": "password=Monkey2024: please",
+   "out": "password=⟦R⟧ please"
+  },
+  {
+   "rule": 4,
+   "name": "同一行、值含 token 字樣以 : 結尾",
+   "in": "secret: Hockey_token: x1y2z3w",
+   "out": "secret: ⟦R⟧ x1y2z3w"
+  },
+  {
+   "rule": 4,
+   "name": "值後接 & 就停",
+   "in": "secret=Hunter2pass&next=1",
+   "out": "secret=⟦R⟧&next=1"
+  },
+  {
+   "rule": 4,
+   "name": "下一行名字帶 .",
+   "in": "api_key:\n  okx.secret: Hunter2pass",
+   "out": "api_key:\n  ⟦R⟧ ⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "private 加全形冒號",
+   "in": "private：Hunter2pass",
+   "out": "private：⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "四個英文關鍵字加全形冒號之一",
+   "in": "key：Aa11bb22 secret：Bb22cc33 token：Cc33dd44 passphrase：Dd44ee55",
+   "out": "key：⟦R⟧ secret：⟦R⟧ token：⟦R⟧ passphrase：⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "四個英文關鍵字加全形冒號之二",
+   "in": "password：Ee55ff66 passwd：Ff66gg77 pwd：Gg77hh88 private：Hh88ii99",
+   "out": "password：⟦R⟧ passwd：⟦R⟧ pwd：⟦R⟧ private：⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "第 4 條遮超過 5 處整則排除",
+   "in": "a_key=Aa11bb22 b_key=Bb22cc33 c_key=Cc33dd44 d_key=Dd44ee55 e_key=Ee55ff66 f_key=Ff66gg77",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 4,
+   "name": "名字用 Kelvin K(IGNORECASE 折疊)",
+   "in": "Key=Hunter2pass",
+   "out": "Key=⟦R⟧"
+  },
+  {
+   "rule": 4,
+   "name": "名字用長 s ſ(IGNORECASE 折疊)",
+   "in": "ſecret: Hunter2pass",
+   "out": "ſecret: ⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "sk-ant- 金鑰",
+   "in": "我的 key 是 sk-ant-api03-AbCdEfGhIjKlMnOpQrSt",
+   "out": "我的 key 是 ⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "AWS AKIA",
+   "in": "AKIAIOSFODNN7EXAMPLE 外洩了",
+   "out": "⟦R⟧ 外洩了"
+  },
+  {
+   "rule": 5,
+   "name": "GitHub ghp_",
+   "in": "ghp_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8",
+   "out": "⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "Slack xoxb-",
+   "in": "xoxb-123456789012-abcdefABCDEF",
+   "out": "⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "Google AIza",
+   "in": "AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q",
+   "out": "⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "JWT 三段",
+   "in": "token 是 eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl",
+   "out": "token 是 ⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "UUID",
+   "in": "帳號 550e8400-e29b-41d4-a716-446655440000",
+   "out": "帳號 ⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "sk-learn 不算",
+   "in": "sk-learn 很好用",
+   "out": "sk-learn 很好用"
+  },
+  {
+   "rule": 5,
+   "name": "Authorization: Bearer",
+   "in": "Authorization: Bearer abcdefghijklmnop1234",
+   "out": "Authorization: Bearer ⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "AIza 金鑰(不靠長串規則)",
+   "in": "AIzaSyAbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfG",
+   "out": "⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "Bearer 16 字",
+   "in": "Authorization: Bearer abcdefghijklmnop",
+   "out": "Authorization: Bearer ⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "Telegram bot token",
+   "in": "bot 123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw",
+   "out": "bot ⟦R⟧"
+  },
+  {
+   "rule": 5,
+   "name": "Telegram bot token 在 API 網址裡(bot 後面)",
+   "in": "https://api.telegram.org/bot6753339740:AAbGSMywcTTPnFeqUiDEyp_gtFCRqn_Nrbp/sendMessage",
+   "out": "https://api.telegram.org/bot⟦R⟧/sendMessage"
+  },
+  {
+   "rule": 6,
+   "name": "使用者資料夾換成 ~",
+   "in": "檔案在 /Users/wei/Blave/workspace/x.py",
+   "out": "檔案在 ~/Blave/workspace/x.py"
+  },
+  {
+   "rule": 6,
+   "name": "Windows 使用者資料夾",
+   "in": "C:\\Users\\wei\\Blave\\x.py",
+   "out": "~\\Blave\\x.py"
+  },
+  {
+   "rule": 6,
+   "name": "網址 query 換成 ?…",
+   "in": "打 https://api.binance.com/fapi/v1/order?symbol=BTCUSDT&signature=abc 失敗",
+   "out": "打 https://api.binance.com/fapi/v1/order?… 失敗"
+  },
+  {
+   "rule": 6,
+   "name": "沒有 scheme 的路徑 query",
+   "in": "with url: /fapi/v1/order?symbol=BTCUSDT&signature=abc",
+   "out": "with url: /fapi/v1/order?…"
+  },
+  {
+   "rule": 6,
+   "name": "32 碼 hex 地址遮",
+   "in": "地址 3f9a1c0e7b2d4a6f8e1c3b5a7d9f0e2c",
+   "out": "地址 ⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "大小寫數字齊全的長亂碼遮",
+   "in": "nonce Zx9Qw8Er7Ty6Ui5Op4As3Df2Gh1Jk0Lm",
+   "out": "nonce ⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "策略名不遮",
+   "in": "策略 binance_funding_rate_strategy_v2 上線了",
+   "out": "策略 binance_funding_rate_strategy_v2 上線了"
+  },
+  {
+   "rule": 6,
+   "name": "全小寫長字不遮",
+   "in": "abcdefghijklmnopqrstuvwxyzabcdefghij",
+   "out": "abcdefghijklmnopqrstuvwxyzabcdefghij"
+  },
+  {
+   "rule": 6,
+   "name": "0x 開頭的 64 碼 hex 遮",
+   "in": "私鑰 0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318",
+   "out": "私鑰 ⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "GitHub 網址不遮(用 / 切段各自判斷)",
+   "in": "看 https://github.com/Blave-TW/blave-agent/blob/main/lib/strategy_runner_v2.py",
+   "out": "看 https://github.com/Blave-TW/blave-agent/blob/main/lib/strategy_runner_v2.py"
+  },
+  {
+   "rule": 6,
+   "name": "策略路徑不遮",
+   "in": "結果在 ~/Blave/workspace/strategies/btc_funding_rate_v2/backtest/report_2026.json",
+   "out": "結果在 ~/Blave/workspace/strategies/btc_funding_rate_v2/backtest/report_2026.json"
+  },
+  {
+   "rule": 6,
+   "name": "含 / 的 base64 金鑰(AWS secret)",
+   "in": "aws wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+   "out": "aws ⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "含 / 的 base64 金鑰(88 字)",
+   "in": "kraken kQH5HW/8p1uGOVjbgWA7FunAmGO8lsSUXNsu3eow76sz84Q18fWxnyRzBHCd3pd5nE9qa99HAZtuZuj6F1huXg==",
+   "out": "kraken ⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "含 + 與 / 的 base64",
+   "in": "key 3n+7Q2xk/9Lm4Pz8Rt1Vw6Yb0Ac5De2Fg7Hj/Kl9Mn3",
+   "out": "key ⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "camelCase 路徑的網址不遮",
+   "in": "看 https://github.com/johnDoe/repoName1/blob/main/strategyRunnerV2Final.py",
+   "out": "看 https://github.com/johnDoe/repoName1/blob/main/strategyRunnerV2Final.py"
+  },
+  {
+   "rule": 6,
+   "name": "GitHub commit 網址只遮 40 碼 hash",
+   "in": "看 https://github.com/Blave-TW/blave-agent/commit/3f9a1c0e7b2d4a6f8e1c3b5a7d9f0e2c11223344",
+   "out": "看 https://github.com/Blave-TW/blave-agent/commit/⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "縮寫進 camelCase 的路徑不遮",
+   "in": "存在 ~/Blave/workspace/strategies/fetcher/src/getHTTPData2.py",
+   "out": "存在 ~/Blave/workspace/strategies/fetcher/src/getHTTPData2.py"
+  },
+  {
+   "rule": 6,
+   "name": "縮寫開頭的路徑段不遮",
+   "in": "~/Blave/workspace/strategies/HTTPserver/v2Final/runner3.py",
+   "out": "~/Blave/workspace/strategies/HTTPserver/v2Final/runner3.py"
+  },
+  {
+   "rule": 6,
+   "name": "路徑裡剛好 32 字、大小寫數字齊全的一段遮",
+   "in": "~/a/abcDefGhiJklMnoPqrStuVwxYz123456/x",
+   "out": "~/a/⟦R⟧/x"
+  },
+  {
+   "rule": 6,
+   "name": "路徑裡 31 字的一段不遮",
+   "in": "~/a/abcDefGhiJklMnoPqrStuVwxYz12345/x",
+   "out": "~/a/abcDefGhiJklMnoPqrStuVwxYz12345/x"
+  },
+  {
+   "rule": 6,
+   "name": "全大寫＋數字的長串不遮(spec 字面)",
+   "in": "ID ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD",
+   "out": "ID ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCD"
+  },
+  {
+   "rule": 6,
+   "name": "只有大小寫沒有數字的長串不遮",
+   "in": "AbcdefghIjklmnopQrstuvwxYzabcdefGhij",
+   "out": "AbcdefghIjklmnopQrstuvwxYzabcdefGhij"
+  },
+  {
+   "rule": 6,
+   "name": "路徑裡超過 5 段長亂碼整則排除",
+   "in": "~/x/abcDefGhiJklMnoPqrStuVwxYz123456/abcDefGhiJklMnoPqrStuVwxYz123457/abcDefGhiJklMnoPqrStuVwxYz123458/abcDefGhiJklMnoPqrStuVwxYz123459/abcDefGhiJklMnoPqrStuVwxYz123450/abcDefGhiJklMnoPqrStuVwxYz123451/run_v2.py",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 6,
+   "name": "含 / 的 base64、每段像 camelCase",
+   "in": "key aBcDeFgH12/IjKlMnOp34/QrStUvWx56/YzAbCdEf78",
+   "out": "key ⟦R⟧"
+  },
+  {
+   "rule": 6,
+   "name": "策略路徑帶 4h",
+   "in": "~/Blave/workspace/strategies/eth_breakout_4h/main.py",
+   "out": "~/Blave/workspace/strategies/eth_breakout_4h/main.py"
+  },
+  {
+   "rule": 6,
+   "name": "策略路徑帶 15m 與 v12",
+   "in": "strategies/sol_mean_reversion_15m_long_only_v12/README.md",
+   "out": "strategies/sol_mean_reversion_15m_long_only_v12/README.md"
+  },
+  {
+   "rule": 6,
+   "name": "camelCase 網址(github.com 後面)",
+   "in": "https://github.com/johnDoe/repoName1/blob/main/strategyRunnerV2Final.py",
+   "out": "https://github.com/johnDoe/repoName1/blob/main/strategyRunnerV2Final.py"
+  },
+  {
+   "rule": 6,
+   "name": "路徑只靠 _ 判斷",
+   "in": "strategies/btc_1h_v2/BacktestReport2026Final",
+   "out": "strategies/btc_1h_v2/BacktestReport2026Final"
+  },
+  {
+   "rule": 6,
+   "name": "路徑只靠 - 判斷",
+   "in": "repos/blave-agent/StrategyRunner2026Final",
+   "out": "repos/blave-agent/StrategyRunner2026Final"
+  },
+  {
+   "rule": 6,
+   "name": "路徑只靠副檔名判斷",
+   "in": "workspace/strategies/BacktestRunner2026/main.py",
+   "out": "workspace/strategies/BacktestRunner2026/main.py"
+  },
+  {
+   "rule": 6,
+   "name": "路徑只靠前一字是 . 判斷",
+   "in": "github.com/johnDoe/repoName1/blob/main/strategyRunnerV2Final",
+   "out": "github.com/johnDoe/repoName1/blob/main/strategyRunnerV2Final"
+  },
+  {
+   "rule": 6,
+   "name": "開頭就是含 / 的 base64、整則以 . 結尾",
+   "in": "aBcDeFgH12/IjKlMnOp34/QrStUvWx56/YzAbCdEf78 is the key.",
+   "out": "⟦R⟧ is the key."
+  },
+  {
+   "rule": 6,
+   "name": "路徑裡有不像字的一段 → 整串判斷",
+   "in": "~/Blave/workspace/strategies_v2/aB3dE5gH7jK9mN1p/run",
+   "out": "~⟦R⟧"
+  },
+  {
+   "rule": 7,
+   "name": "遮 5 處照傳",
+   "in": "550e8400-e29b-41d4-a716-446655440000 550e8400-e29b-41d4-a716-446655440001 550e8400-e29b-41d4-a716-446655440002 550e8400-e29b-41d4-a716-446655440003 550e8400-e29b-41d4-a716-446655440004",
+   "out": "⟦R⟧ ⟦R⟧ ⟦R⟧ ⟦R⟧ ⟦R⟧"
+  },
+  {
+   "rule": 7,
+   "name": "遮超過 5 處整則排除",
+   "in": "550e8400-e29b-41d4-a716-446655440000 550e8400-e29b-41d4-a716-446655440001 550e8400-e29b-41d4-a716-446655440002 550e8400-e29b-41d4-a716-446655440003 550e8400-e29b-41d4-a716-446655440004 550e8400-e29b-41d4-a716-446655440005",
+   "out": "⟦R:msg⟧"
+  },
+  {
+   "rule": 0,
+   "name": "空字串",
+   "in": "",
+   "out": ""
+  },
+  {
+   "rule": 0,
+   "name": "沒東西要遮",
+   "in": "回測完成：年化 38.2%，最大回撤 12%",
+   "out": "回測完成：年化 38.2%，最大回撤 12%"
+  }
+ ]
+}
