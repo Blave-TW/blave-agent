@@ -1139,7 +1139,9 @@ function upModal(kind, data, opener, done, id) {
   } else {
     title = t("up.md.title", { v: typeof d.v === "string" ? d.v : "" });
     extra = document.createElement("div"); extra.className = "up-notes-slot"; extra.hidden = true;
-    if (typeof trUnsavedAny === "function" && trUnsavedAny()) lines = [t("tm.unsavedNote")];
+    // 說明拿不到(測試軌沒有 GitHub Release、離線)也不能只剩標題和兩顆鈕
+    lines = [t("up.md.lede")];
+    if (typeof trUnsavedAny === "function" && trUnsavedAny()) lines.push(t("tm.unsavedNote"));
   }
   confirmBox({ title, lines, extra, mark, markKind, ok: t("up.md.go"), opener: opener || null, onOk: () => once(true), onCancel: box.onCancel });
   if (kind === "plain") upNotesFill(extra, box);
@@ -3573,7 +3575,10 @@ function stopRestore(text, attachments) {   // attachments:那一句帶的整份
   if (text) ta.value = ta.value.trim() ? text + "\n" + ta.value : text;
   autosize(); ta.focus();
 }
+const bootSendParked = () => typeof CS !== "undefined" && CS.bootSend === true;
 async function sendDraft() {
+  // 前一句還停在 CS.boot 等分頁接回(還沒設 running):同回合中按 Enter,字留在輸入框。不然接回後這句在 submitMessage 撞 running、無聲不見
+  if (bootSendParked() && ($("ta").value.trim() || attachedFiles.length)) { busySendTell(); return; }
   const msg = $("ta").value.trim();
   const attachments = attachedFiles;   // 純附件(沒打字)也可以送,同雲端
   if ((!msg && !attachments.length) || running) return;
@@ -3587,7 +3592,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   rsArm();   // 每個送出入口都經過這裡:回覆音的 AudioContext 先建好
   // 剛進工作頁、tabsRestore 還在讀分頁記憶:等它接回再送,這句才落在接回的那條分頁(沒有 CS.loaded 會在 tabsTrackParallel 炸成「引擎準備失敗」)。
   // csSendAway 的呼叫端裡會同步讀 CS.away 的(策略庫、報告、掃描、雲端更新)在分頁接回前沒有畫面可按,這裡不替它們回填
-  if (typeof CS !== "undefined" && CS.boot && !CS.loaded && !CS_BOOTED) return CS.boot.then(() => submitMessage(msg, opts));
+  if (typeof CS !== "undefined" && CS.boot && !CS.loaded && !CS_BOOTED) { CS.bootSend = true; return CS.boot.then(() => { CS.bootSend = false; return submitMessage(msg, opts); }); }
   // opts.attachments:這一句帶的清單 [{ file, name, from }](sendDraft,以及重送 / 安裝失敗後重試帶的同一份)。
   // 「再送一次」連檔一起重送(resendLast)——跟雲端不同:雲端的重送鈕出現時檔已經落在機器上,這裡 started 回來時主行程還沒落地,
   // 失敗的那一輪(Codex 不見、金鑰不見、形狀不對)可能根本沒存到檔;只重送句子的話檔就無聲不見,純附件那句更是無從重送

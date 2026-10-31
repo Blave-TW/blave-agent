@@ -105,7 +105,7 @@ function tabShow(T) {
     old.composer = { text: $("ta").value, files: attachedFiles };
     old.scrollTop = $("chat-scroll").scrollTop;
     old.el.hidden = true;
-  }
+  } else if (!T.composer.text && !T.composer.files.length) T.composer = { text: $("ta").value, files: attachedFiles };   // 接回第一條分頁之前就打的字(開機空窗)歸它,不被空草稿蓋掉
   CS.cur = T; tabLoad(T); CS.bg = false;
   T.el.hidden = false;
   const was = T.unread; T.unread = null;   // 打開就清掉「要你回來看」(canon › 對話狀態字)

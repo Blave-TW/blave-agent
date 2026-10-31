@@ -4135,6 +4135,10 @@ msgstr "Update · Restart"
 msgid "up.md.title"
 msgstr "Update to {v}"
 
+# 更新 modal 一般(沒在下單):本體那句。回合在跑時開不了這個框、重開前會先收掉引擎;分頁記憶在 ui-prefs,重開後接回
+msgid "up.md.lede"
+msgstr "Blave closes and reopens on its own. Your chats stay."
+
 # 更新 modal 的主鈕(一般與下單中都是這句)
 msgid "up.md.go"
 msgstr "Restart"
