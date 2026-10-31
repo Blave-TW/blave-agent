@@ -138,7 +138,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     const apiNames = m ? [...m[1].matchAll(/"([a-z0-9_]+)"/g)].map((x) => x[1]) : null;
     t("api 端 feature_used.name 白名單 = 外殼這份(順序也同)", !!apiNames && JSON.stringify(apiNames) === JSON.stringify(FEATURES)); }
   // engine_opt_fail 的 codex_*(0.1.39 Codex 引擎隨包):codexpkg.js 送 codex_<kind>,kind 只會是白名單上那四種(跟 api 的逐字比對在下面引擎事件那段)
-  { const R0 = EVENTS.engine_opt_fail.result, cpk = fs.readFileSync(path.join(R, "..", "codexpkg.js"), "utf8"), kinds = [...cpk.matchAll(/new PkgError\("([a-z]+)"/g)].map((m) => m[1]);
+  { const R0 = EVENTS.engine_opt_fail.result, cpk = fs.readFileSync(path.join(R, "..", "codexpkg.js"), "utf8"), kinds = [...cpk.matchAll(/pkgErr\("([a-z]+)"/g)].map((m) => m[1]);
     t("engine_opt_fail:codexpkg.js 送 codex_<kind>,丟出的每一種 kind 都在白名單(" + [...new Set(kinds)].join("／") + ")",
       /track\("engine_opt_fail", \{ result: "codex_" \+ kind \}\)/.test(cpk) && kinds.length > 0 && kinds.every((k) => R0.includes("codex_" + k))); }
   // renderer 的送出點:掃 trackFeature(…) 的引數——字面、三元的兩個字面、或 XXX_FEATURE[…] 那張表的值;每個名字都要在表上,
