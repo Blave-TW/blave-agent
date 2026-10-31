@@ -194,7 +194,7 @@ exit 2
   R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero", via: "app" })); R.paintRows(R.get("lastDetect"));
   t("…失敗 · ChatGPT app 版:退路是在 app 裡登入,不給 codex login", rows()[1] === "codex|||登入沒有完成。或在 ChatGPT app 登入後回到這裡。|再試一次", rows());
   R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero", via: "pkg" })); R.paintRows(R.get("lastDetect"));
-  t("…失敗 · 隨包那顆(via=pkg):不在 PATH 上、也不一定有 ChatGPT app → 只講〔登入〕會開瀏覽器", rows()[1] === "codex|||登入沒有完成。按〔登入〕會開瀏覽器完成登入。|再試一次", rows());
+  t("…失敗 · 隨包那顆(via=pkg):不在 PATH 上、也不一定有 ChatGPT app → 只講會開瀏覽器(不點名鈕:三個表面那時的鈕都是〔再試一次〕)", rows()[1] === "codex|||登入沒有完成。會開瀏覽器完成登入。|再試一次", rows());
   LANG = "en"; R.sync(); R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero", via: "cli" })); R.paintRows(R.get("lastDetect"));
   t("…en:兩句中間有一個空格", rows()[1] === "codex|||Sign-in didn’t finish. Or run codex login in a terminal.|Try Again", rows());
   R.ROWMSG.claude = "failed"; R.set("lastDetect", D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: true })); R.paintRows(R.get("lastDetect"));

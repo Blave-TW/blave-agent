@@ -32,7 +32,8 @@ function memFs(win) {
     files, dirs, log, hooks: {},
     existsSync: (p) => files.has(p) || dirs.has(p),
     readFileSync: (p) => { if (!files.has(p)) throw err("ENOENT"); return files.get(p); },
-    writeFileSync: (p, d) => { mkdirp(parent(p)); files.set(p, String(d)); },
+    writeFileSync: (p, d, opt) => { const wx = opt && opt.flag === "wx"; if (wx) log.push("wx " + p); if (wx && fx.hooks.wx) fx.hooks.wx(p);
+      if (wx && files.has(p)) throw err("EEXIST"); mkdirp(parent(p)); files.set(p, String(d)); },
     unlinkSync: (p) => { if (!files.delete(p)) throw err("ENOENT"); },
     mkdirSync: (p) => { mkdirp(p); },
     readdirSync: (p) => { if (!dirs.has(p)) throw err("ENOENT"); const out = new Set(); for (const x of [...files.keys(), ...dirs]) if (parent(x) === p && x !== p) out.add(P.basename(x)); return [...out]; },
@@ -78,18 +79,19 @@ function rig(o = {}) {
   const fx = o.fx || memFs(false), calls = [], tracked = [], snaps = [], sleeps = [];
   const sums = o.sums !== undefined ? o.sums : `${PKG_SHA}  codex-package-${T}.tar.gz\n`;
   const P = path.posix;
-  const spawn = (bin, args) => {
-    calls.push([bin, ...args].join(" "));
-    const c = new EventEmitter(); c.stdout = new EventEmitter(); c.kill = () => { c.killed = true; setImmediate(() => c.emit("close", null)); };
+  const spawn = (bin, args, sopt) => {
+    calls.push([bin, ...args].join(" ") + (sopt && sopt.cwd ? " @" + sopt.cwd : ""));
+    const c = new EventEmitter(); c.stdout = new EventEmitter(); c.stderr = new EventEmitter(); c.kill = () => { c.killed = true; setImmediate(() => c.emit("close", null)); };
     if (o.spawnThrow) throw Object.assign(new Error("x"), { code: "ENOENT" });
     setImmediate(() => {
       if (bin === "/usr/bin/tar") {
         if (o.tarHang) return;
-        if (o.tarCode) { c.emit("close", o.tarCode); return; }
-        const staging = args[3];
+        if (o.tarCode) { if (o.tarErr) c.stderr.emit("data", o.tarErr); c.emit("close", o.tarCode); return; }
+        const staging = sopt.cwd;
         if (!o.tarNoLayout) putPkg(fx, staging, o.layoutVer || "0.166.0");
         c.emit("close", 0); return;
       }
+      if (args[0] === "--version" && (o.versionHang && o.versionHang())) return;   // 防毒還在掃:不回,等 spawnWait 的上限殺掉
       if (args[0] === "--version") { c.stdout.emit("data", o.versionOut !== undefined ? o.versionOut : "codex-cli 0.166.0\n"); c.emit("close", o.versionCode || 0); return; }
       c.emit("close", 9);
     });
@@ -106,7 +108,7 @@ function rig(o = {}) {
       return { sha256: o.badSha ? "0".repeat(64) : PKG_SHA, bytes: PKG_BYTES.length, totalMs: opts.totalMs(null) };
     },
     now: () => (o.clock ? o.clock.t : 0), sleep: async (ms) => { sleeps.push(ms); if (o.clock) o.clock.t += ms; if (o.onSleep) o.onSleep(); },
-    alive: o.alive || (() => false), lockWaitMs: o.lockWaitMs, versionMs: 20000,
+    alive: o.alive || (() => false), procStart: o.procStart || (async () => null), lockWaitMs: o.lockWaitMs, versionMs: o.versionMs,
     log: () => {}, track: (ev, p) => tracked.push(ev + ":" + (p.name || p.result)), onChange: (s) => snaps.push(s),
   });
   return { fx, S, calls, tracked, snaps, sleeps };
@@ -118,7 +120,8 @@ const stagingLeft = (fx) => [...fx.dirs, ...fx.files.keys()].some((k) => k.inclu
     const order = r.calls.map((c) => c.split(" ")[0]);
     t("ensure 成功:校驗檔 → 套件 → tar → --version,回 {ok, path}", out.ok === true && out.path === "/b/codex/0.166.0/bin/codex" && JSON.stringify(order) === '["fetchBuffer","fetchToFile","/usr/bin/tar","/b/codex/.staging-0.166.0/bin/codex"]', { out, calls: r.calls });
     t("…校驗檔上限 64 KB、套件上限 400 MB、閒置 120 秒,兩條都鎖 github.com／githubusercontent.com", r.calls[0].endsWith("max=65536 host=github.com,githubusercontent.com") && r.calls[1].endsWith("max=419430400 idle=120000 host=github.com,githubusercontent.com"), r.calls.slice(0, 2));
-    t("…tar 是 -xzf <staging>/pkg.tar.gz -C <staging>(沒有 -P)", r.calls[2] === "/usr/bin/tar -xzf /b/codex/.staging-0.166.0/pkg.tar.gz -C /b/codex/.staging-0.166.0" && !/ -P\b/.test(r.calls[2]));
+    t("…tar 在 staging 裡跑、只帶相對路徑 -xzf pkg.tar.gz -C .(Windows 使用者名稱含非 ASCII 時不進 argv;沒有 -P)", r.calls[2] === "/usr/bin/tar -xzf pkg.tar.gz -C . @/b/codex/.staging-0.166.0" && !/ -P\b/.test(r.calls[2]), r.calls[2]);
+    t("…鎖用 wx 建檔(互斥)", r.fx.log.includes("wx /b/codex/.lock"), r.fx.log.filter((l) => l.startsWith("wx")));
     t("…上架:先刪舊的釘版資料夾再 rename staging → pkgDir;舊版 0.165.0 沒刪(交 sweep)", r.fx.log.includes("rm /b/codex/0.166.0") && r.fx.log.includes("rename /b/codex/.staging-0.166.0 -> /b/codex/0.166.0")
       && r.fx.log.indexOf("rm /b/codex/0.166.0") < r.fx.log.indexOf("rename /b/codex/.staging-0.166.0 -> /b/codex/0.166.0") && r.fx.existsSync("/b/codex/0.165.0/bin/codex") && !r.fx.log.some((l) => l === "rm /b/codex/0.165.0"), r.fx.log);
     t("…先清殘留的 .staging-*(已持鎖);tarball 解完就刪;鎖放掉", r.fx.log.includes("rm /b/codex/.staging-0.160.0") && !r.fx.existsSync("/b/codex/0.166.0/pkg.tar.gz") && !r.fx.existsSync("/b/codex/.lock"), r.fx.log);
@@ -133,13 +136,30 @@ const stagingLeft = (fx) => [...fx.dirs, ...fx.files.keys()].some((k) => k.inclu
       && r.tracked.join() === "engine_opt_fail:codex_" + kind && !r.fx.existsSync("/b/codex/.lock"), { out, snap: r.S.snapshot(), tracked: r.tracked });
     return r;
   };
-  await failCase("校驗檔抓不到(HTTP_404)", { sumsErr: new Error("HTTP_404") }, "net");
+  await failCase("校驗檔 404(CODEX_VERSION 指到不存在的版本)→ 不算網路", { sumsErr: new Error("HTTP_404") }, "http");
+  await failCase("套件 403", { dlErr: new Error("HTTP_403") }, "http");
+  await failCase("校驗檔 503(GitHub 暫時掛了)", { sumsErr: new Error("HTTP_503") }, "net");
   await failCase("套件下載斷線", { dlErr: Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }) }, "net");
   await failCase("sha256 對不上", { badSha: true }, "checksum");
   await failCase("校驗檔沒有這個平台那一行", { sums: `${PKG_SHA}  codex-package-x86_64-apple-darwin.tar.gz\n` }, "checksum");
-  await failCase("tar 非 0", { tarCode: 1 }, "other");
+  await failCase("tar 非 0", { tarCode: 1, tarErr: "tar: Error opening archive: Unrecognized archive format\n" }, "other");
+  await failCase("tar 非 0、stderr 說磁碟滿了", { tarCode: 1, tarErr: "tar: bin/codex: Write failed: No space left on device\n" }, "disk");
   await failCase("解出來的佈局不對", { tarNoLayout: true }, "other");
   await failCase("--version 非 0", { versionCode: 1 }, "other");
+  { // P2-1:--version 逾時(Windows Defender 第一次掃新 codex.exe)跟答錯分開
+    let hang = true; const r = rig({ versionMs: 30, versionHang: () => hang }), out = await r.S.ensure();
+    t("--version 逾時 → other、失敗寫進快照,但解好的 staging 留著(帶 .extracted 記號、tarball 已刪)", out.ok === false && out.kind === "other" && r.S.snapshot().fail.kind === "other"
+      && r.fx.existsSync("/b/codex/.staging-0.166.0/bin/codex") && r.fx.existsSync("/b/codex/.staging-0.166.0/.extracted") && !r.fx.existsSync("/b/codex/.staging-0.166.0/pkg.tar.gz"), { out, files: [...r.fx.files.keys()] });
+    hang = false; const n0 = r.calls.length, again = await r.S.ensure(), more = r.calls.slice(n0);
+    t("…〔再試一次〕不重新下載(沒有 fetchBuffer／fetchToFile／tar),只再跑一次 --version 就上架;記號沒帶進 pkgDir", again.ok === true && more.length === 1 && /--version/.test(more[0]) && !r.fx.existsSync("/b/codex/0.166.0/.extracted") && !r.fx.existsSync("/b/codex/.staging-0.166.0"), { again, more });
+    const r2 = rig({ versionMs: 30, versionHang: () => true }); await r2.S.ensure();
+    const gone = C.sweep("/b", ["0.166.0"], { fs: r2.fx, win: false, alive: () => false });
+    t("…開 app 的 sweep 不刪這包等再驗的 staging", gone.length === 0 && r2.fx.existsSync("/b/codex/.staging-0.166.0/.extracted"), gone);
+    const r3 = rig({ versionOut: "codex-cli 0.165.0" }); await r3.S.ensure();
+    t("…版號不對 → staging 整包刪掉(下次重抓)", !stagingLeft(r3.fx)); }
+  { const fx = memFs(false); const r = rig({ fx, versionMs: 30, versionHang: () => true }); await r.S.ensure();
+    const r2 = rig({ fx }), out = await r2.S.ensure({ reinstall: true });
+    t("…reinstall 不吃留下來的 staging,照樣重抓", out.ok === true && r2.calls.some((c) => c.startsWith("fetchToFile"))); }
   await failCase("--version 輸出沒有版號", { versionOut: "codex-cli 0.165.0" }, "other");
   await failCase("下載寫檔 ENOSPC", { dlErr: Object.assign(new Error("no space"), { code: "ENOSPC" }) }, "disk");
   { const fx = memFs(false); fx.hooks.statfs = () => ({ bavail: 1000, bsize: 4096 });
@@ -170,6 +190,19 @@ const stagingLeft = (fx) => [...fx.dirs, ...fx.files.keys()].some((k) => k.inclu
   { const fx = memFs(false); fx.writeFileSync("/b/codex/.lock", JSON.stringify({ pid: 424242, at: 0 }));
     const r = rig({ fx, alive: () => false }), out = await r.S.ensure();
     t("鎖的 pid 死了:刪鎖、接手裝好", out.ok === true, out); }
+  { // 互斥:兩份 app 同時通過 waitPidLock,晚一步的 wx 撞到 EEXIST → 回去等,不跟對方一起寫 staging
+    const fx = memFs(false), clock = { t: 0 }; let first = true, holderAlive = true;
+    fx.hooks.wx = (p) => { if (first) { first = false; fx.files.set(p, JSON.stringify({ pid: 555, at: 0 })); } };
+    const r = rig({ fx, clock, alive: (pid) => pid === 555 && holderAlive, onSleep: () => { if (clock.t >= 3000) holderAlive = false; } }), out = await r.S.ensure();
+    t("鎖 wx 搶輸(EEXIST)→ 等對方結束再搶;只有搶到之後才下載", out.ok === true && r.fx.log.filter((l) => l === "wx /b/codex/.lock").length === 2 && r.sleeps.length >= 3
+      && r.calls[0].startsWith("fetchBuffer"), { out, wx: r.fx.log.filter((l) => l.startsWith("wx")), sleeps: r.sleeps.length }); }
+  { // 當掉留下的鎖、pid 被別的程式重用:啟動時間晚於鎖檔 → 接手,不等 3 分鐘
+    const fx = memFs(false), clock = { t: 100000 }; fx.writeFileSync("/b/codex/.lock", JSON.stringify({ pid: 424242, at: 1000 }));
+    const r = rig({ fx, clock, alive: () => true, procStart: async () => 50000, lockWaitMs: 5000 }), out = await r.S.ensure();
+    t("pid 被重用(行程啟動 50000 晚於鎖 1000)→ 立刻接手裝好、沒有等", out.ok === true && r.sleeps.filter((x) => x === 1000).length === 0, { out, sleeps: r.sleeps });
+    const fy = memFs(false), c2 = { t: 100000 }; fy.writeFileSync("/b/codex/.lock", JSON.stringify({ pid: 424242, at: 1000 }));
+    const r2 = rig({ fx: fy, clock: c2, alive: () => true, procStart: async () => 900, lockWaitMs: 5000 }), out2 = await r2.S.ensure();
+    t("…啟動時間早於鎖(真的是持鎖那支)→ 照樣等滿回 other", out2.ok === false && out2.kind === "other" && r2.calls.length === 0); }
   { const fx = memFs(false); putPkg(fx, "/b/codex/0.166.0", "0.166.0", { target: "x86_64-apple-darwin" });
     const r = rig({ fx }), out = await r.S.ensure();
     t("釘版資料夾在但 pkgOk 不過(半包／平台不對)→ 重抓,上架前先刪掉它", out.ok === true && r.fx.log.includes("rm /b/codex/0.166.0") && JSON.parse(r.fx.readFileSync("/b/codex/0.166.0/codex-package.json")).target === T); }
@@ -205,7 +238,13 @@ const stagingLeft = (fx) => [...fx.dirs, ...fx.files.keys()].some((k) => k.inclu
     const w3 = await waitPidLock(fx, "/l", { alive: () => true });
     t("waitPidLock:沒有鎖檔 → {timedOut:false, held:false},立刻回", w3.timedOut === false && w3.held === false);
     fx.writeFileSync("/l", JSON.stringify({ pid: process.pid })); const w4 = await waitPidLock(fx, "/l", { alive: () => true });
-    t("waitPidLock:鎖是自己這個行程的(上次當掉留下)→ 不等、刪鎖", w4.timedOut === false && !fx.existsSync("/l")); }
+    t("waitPidLock:鎖是自己這個行程的(上次當掉留下)→ 不等、刪鎖", w4.timedOut === false && !fx.existsSync("/l"));
+    fx.writeFileSync("/l", JSON.stringify({ pid: 777, at: 5000 })); const c5 = { t: 0 };
+    const w5 = await waitPidLock(fx, "/l", { now: () => c5.t, sleep: async (ms) => { c5.t += ms; }, alive: () => true, waitMs: 3000, procStart: async () => 9000 });
+    t("waitPidLock:給了 procStart、持鎖 pid 的啟動時間晚於鎖檔 at(pid 被重用)→ 不等、刪鎖", w5.timedOut === false && !fx.existsSync("/l") && c5.t === 0, { w5, t: c5.t });
+    fx.writeFileSync("/l", JSON.stringify({ pid: 777, at: 5000 }));
+    const w6 = await waitPidLock(fx, "/l", { now: () => c5.t, sleep: async (ms) => { c5.t += ms; }, alive: () => true, waitMs: 3000 });
+    t("waitPidLock:沒給 procStart(引擎安裝)→ 行為不變,照樣等滿", w6.timedOut === true && fx.existsSync("/l")); }
 
   // ── fetchToFile(fetchbuf.js):換掉 https.get,假 res 是真的 Readable ──
   { const https = require("https"), os = require("os"), fs = require("fs"), realGet = https.get;
@@ -250,6 +289,8 @@ const stagingLeft = (fx) => [...fx.dirs, ...fx.files.keys()].some((k) => k.inclu
   // ── ensure 的總上限算式:Content-Length(沒有就 PKG_MB)/ 40 KB/s × 1.2 ──
   { let tot = null; const r = rig({ dlHook: (o) => { tot = [o.totalMs(null), o.totalMs(203e6)]; } }); await r.S.ensure();
     t("ensure:總上限 = 大小 / 40 KB/s × 1.2(Mac arm64 沒有 Content-Length → 166 MB ≈ 83 分鐘;203 MB ≈ 101 分鐘)", tot && tot[0] === 4980000 && tot[1] === 6090000, tot); }
+  { let tot = null; const r = rig({ dlHook: (o) => { tot = o.totalMs(10e9); } }); await r.S.ensure();
+    t("ensure:Content-Length 以 400 MB 封頂(回 10 GB 也只給 400 MB 的時間,約 3.5 小時)", tot === Math.ceil(419430400 / 40000 * 1.2 * 1000), tot); }
   // ── 接線(main.js／preload.js／renderer):原文檢查 ──
   { const fs = require("fs"), SH = path.join(__dirname, "..", "shell");
     const main = fs.readFileSync(path.join(SH, "main.js"), "utf8"), pre = fs.readFileSync(path.join(SH, "preload.js"), "utf8"), app = fs.readFileSync(path.join(SH, "renderer", "app.js"), "utf8");
@@ -262,11 +303,11 @@ const stagingLeft = (fx) => [...fx.dirs, ...fx.files.keys()].some((k) => k.inclu
     t("開 app:codexKick 只在拿到單一實例鎖時跑(第二份 app 不起下載、不刪版本);沒有在跑的回合才 sweep;連的是 Codex 才背景 ensure",
       /if \(app\.hasSingleInstanceLock\(\)\) startStep\("codex engine", codexKick\);/.test(main) && /function codexKick\(\) \{\n\s*if \(liveTurnCount\(\) > 0\) return;/.test(main)
       && /codexpkg\.sweep\(BASE, cur \? \[CODEX_PIN, cur\.version\] : \[CODEX_PIN\]/.test(main) && /if \(\(loadConnection\(\) \|\| \{\}\)\.kind === "codex"\) codexPkg\(\)\.ensure\(\)/.test(main));
-    t("IPC:codex-pkg-ensure／codex-pkg-state 走 handle()(fromOurPage 閘門);reinstall 只認 === true;進度推 codex-pkg-state 給自家頁面",
-      /handle\("codex-pkg-ensure", \(_e, opts\) => codexPkg\(\)\.ensure\(\{ reinstall: !!\(opts && opts\.reinstall === true\) \}\)\);/.test(main) && /handle\("codex-pkg-state", \(\) => codexPkg\(\)\.snapshot\(\)\);/.test(main)
+    t("IPC:codex-pkg-ensure／codex-pkg-state 走 handle()(fromOurPage 閘門);reinstall 只認 === true、而且沒有回合在跑才算;進度推 codex-pkg-state 給自家頁面",
+      /handle\("codex-pkg-ensure", \(_e, opts\) => codexPkg\(\)\.ensure\(\{ reinstall: !!\(opts && opts\.reinstall === true\) && liveTurnCount\(\) === 0 \}\)\);/.test(main) && /handle\("codex-pkg-state", \(\) => codexPkg\(\)\.snapshot\(\)\);/.test(main)
       && /isOurPageUrl\(w\.webContents\.getURL\(\)\)\) w\.webContents\.send\("codex-pkg-state", s\)/.test(main) && !/ipcMain\.handle\("codex-pkg/.test(main));
-    t("main.js 的 codexPkg:--version 上限用 LOGIN_CHECK_MS(20 秒)、unsupported 開 app 算一次、PKG_MB 不解構進 main.js(那邊已有引擎的 PKG_MB)",
-      /versionMs: LOGIN_CHECK_MS/.test(main) && /unsupported: codexpkg\.unsupported\(process\.platform, process\.arch, process\.env, fs\)/.test(main) && (main.match(/^const PKG_MB = /gm) || []).length === 1 && !/PKG_MB \} = /.test(main));
+    t("--version 上限 90 秒(codexpkg VERIFY_MS;main.js 不再傳 20 秒的 LOGIN_CHECK_MS 進來)、unsupported 開 app 算一次、PKG_MB 不解構進 main.js",
+      /^const VERIFY_MS = 90000;$/m.test(fs.readFileSync(path.join(SH, "codexpkg.js"), "utf8")) && /o\.versionMs \|\| VERIFY_MS/.test(fs.readFileSync(path.join(SH, "codexpkg.js"), "utf8")) && !/versionMs:/.test(main) && /unsupported: codexpkg\.unsupported\(process\.platform, process\.arch, process\.env, fs\)/.test(main) && (main.match(/^const PKG_MB = /gm) || []).length === 1 && !/PKG_MB \} = /.test(main));
     t("preload:codexPkgEnsure(只轉 reinstall:true)/ codexPkgState / onCodexPkgState", /codexPkgEnsure: \(o\) => ipcRenderer\.invoke\("codex-pkg-ensure", o && o\.reinstall === true \? \{ reinstall: true \} : null\),/.test(pre)
       && /codexPkgState: \(\) => ipcRenderer\.invoke\("codex-pkg-state"\),/.test(pre) && /onCodexPkgState: \(fn\) => ipcRenderer\.on\("codex-pkg-state", \(_e, s\) => fn\(s\)\),/.test(pre));
     t("renderer:先掛 onCodexPkgState 再拉一次快照(同 engine.js)", app.indexOf("window.blave.onCodexPkgState(codexPkgOnState);") > 0 && app.indexOf("window.blave.onCodexPkgState(codexPkgOnState);") < app.indexOf("window.blave.codexPkgState()"));

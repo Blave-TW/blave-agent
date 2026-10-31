@@ -65,8 +65,12 @@ const whyState = eval("(" + app.match(/^const whyState = (.*);$/m)[1] + ")");
     ok("localLoginFlow:例外不往外丟、loginPending 清掉、卡片回「登入沒有完成」+〔再試一次〕", !threw && ctx.loginPending === null && last.label === "login.retry" && last.text === "login.failed", { threw, last });
   }
   // ── Codex 引擎隨包裝好的那一刻(spec codex-bundled-engine §4.3):正在偵測／等登入時記 PKG.redetect,paintRows 收尾時補偵測 ──
-  { const ctx = { PKG: { snap: null, redetect: false }, loginPending: null, MDL: { busy: false }, lastDetect: { claude: {}, codex: { installed: false } }, calls: [] };
-    Object.assign(ctx, { detect: () => ctx.calls.push("detect"), paintRows: () => ctx.calls.push("paint") });
+  { // 假 DOM:#agent-rows 裡兩列各一顆鈕;paintRows 會整份重建(舊鈕換成新鈕),看焦點有沒有還回同一列
+    const mkBtn = (kind) => ({ kind, disabled: false, focus() { doc.activeElement = this; }, closest: () => ({ dataset: { kind } }) });
+    const box = { btns: [mkBtn("claude"), mkBtn("codex")], contains(x) { return this.btns.includes(x); }, querySelector(q) { const k = (q.match(/data-kind="([^"]+)"/) || [])[1]; return this.btns.find((b) => b.kind === k) || null; } };
+    const doc = { activeElement: null };
+    const ctx = { PKG: { snap: null, redetect: false }, loginPending: null, MDL: { busy: false }, lastDetect: { claude: {}, codex: { installed: false } }, calls: [], document: doc, $: () => box };
+    Object.assign(ctx, { detect: () => ctx.calls.push("detect"), paintRows: () => { ctx.calls.push("paint"); box.btns = [mkBtn("claude"), mkBtn("codex")]; doc.activeElement = null; } });
     const onState = new Function("ctx", `with (ctx) { ${fn("codexPkgOnState")}\nreturn codexPkgOnState; }`)(ctx);
     const DL = { phase: "download", bytes: 1, total: 2, fail: null }, DONE = { phase: "idle", fail: null }, FAIL = { phase: "idle", fail: { kind: "net" } };
     onState(DL); onState(DONE);
@@ -77,6 +81,10 @@ const whyState = eval("(" + app.match(/^const whyState = (.*);$/m)[1] + ")");
     ok("…完成那一刻在等登入 → 記 PKG.redetect", ctx.PKG.redetect === true && !ctx.calls.includes("detect"));
     ctx.loginPending = null; ctx.PKG.redetect = false; ctx.calls.length = 0; onState(DL); onState(FAIL);
     ok("下載失敗(idle + fail)→ 不偵測,重畫列(寫原因、給〔再試一次〕)", ctx.calls.join() === "paint,paint" && !ctx.PKG.redetect, ctx.calls);
+    ctx.calls.length = 0; box.btns[0].focus(); onState({ phase: "download", bytes: 5, total: 9, fail: null });
+    ok("下載中重畫列(每 250 ms):焦點原本在 Claude 那列的鈕 → 畫完還在 Claude 那列(新的那顆鈕)", ctx.calls.join() === "paint" && doc.activeElement === box.btns[0] && doc.activeElement.kind === "claude", { calls: ctx.calls, focus: doc.activeElement && doc.activeElement.kind });
+    doc.activeElement = null; onState({ phase: "download", bytes: 6, total: 9, fail: null });
+    ok("…焦點不在列上 → 不搶焦點", doc.activeElement === null);
     ctx.calls.length = 0; ctx.PKG.snap = null; onState(undefined);
     ok("拉到的快照是 undefined(舊主行程／測試替身)→ snap 為 null、不偵測", ctx.PKG.snap === null && !ctx.calls.includes("detect")); }
   { // paintRows 真的跑一次:尾端把 PKG.redetect 消化成一次 detect();等登入中不消化

@@ -433,7 +433,7 @@ ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」
   ok("可以下載 → 〔連結〕(cn.connect)、說明「會下載 Codex 引擎(約 {size} MB)」", sh(cx({ phase: "idle", fail: null, size: 203 })) === 'codex|-|cn.pkgSize|{"size":"203"}|cn.connect||pkg|', sh(cx({ phase: "idle", fail: null, size: 203 })));
   ok("下載中 → 狀態「下載 Codex 引擎 {a} / {b} MB」(同 eng.bytes 一位小數)、沒有鈕;解壓／驗證 → 「正在安裝」", sh(cx({ phase: "download", bytes: 5.25e6, total: 166e6, fail: null })) === 'codex|cn.pkgDl{"a":"5.3","b":"166.0"}|-|-|null||pkg|'
     && sh(cx({ phase: "extract", fail: null })) === "codex|cn.pkgInstall|-|-|null||pkg|" && sh(cx({ phase: "verify", fail: null })) === "codex|cn.pkgInstall|-|-|null||pkg|", [sh(cx({ phase: "download", bytes: 5.25e6, total: 166e6, fail: null })), sh(cx({ phase: "extract", fail: null }))]);
-  ok("失敗 → 原因一句 +〔再試一次〕:net 下載不了、disk 磁碟不夠、checksum／other 安裝失敗", ["net:cn.pkgNet", "disk:cn.pkgDisk", "checksum:cn.pkgFail", "other:cn.pkgFail"].every((kd) => { const [k, d] = kd.split(":"); return sh(cx({ phase: "idle", fail: { kind: k } })) === "codex|-|" + d + "|-|cn.retry||pkg|"; }));
+  ok("失敗 → 原因一句 +〔再試一次〕:net 下載不了、disk 磁碟不夠、checksum／other 安裝失敗", ["net:cn.pkgNet", "disk:cn.pkgDisk", "checksum:cn.pkgFail", "other:cn.pkgFail", "http:cn.pkgFail"].every((kd) => { const [k, d] = kd.split(":"); return sh(cx({ phase: "idle", fail: { kind: k } })) === "codex|-|" + d + "|-|cn.retry||pkg|"; }));
   const BAD = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: false, why: "codex_cantrun", via: "pkg" } };
   ok("隨包那顆跑不起來(via=pkg 的 cantrun)→〔再試一次〕重抓(reinstall),不是「重新安裝 Codex」;沒有快照時照舊", sh(cx({ phase: "idle", fail: null }, BAD)) === "codex|-|cn.pkgBad|-|cn.retry||pkg|re"
     && mdlOptions(BAD, "claude", true)[2].desc === "row.reinstall", sh(cx({ phase: "idle", fail: null }, BAD)));

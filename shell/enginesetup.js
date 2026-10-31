@@ -121,14 +121,16 @@ function procStartOf(pid) {
 
 /* pid 鎖(引擎安裝的 pip、shell/codexpkg.js 的 Codex 套件共用):鎖檔 {pid, at} 裡的 pid 還活著就等,最多 waitMs。
    不殺它:pid 可能已經被別的程式重用,殺錯比多等幾分鐘糟。持鎖的死了(或是我們自己)才刪鎖;等滿不刪、回 timedOut,
-   要不要接手由呼叫端決定。held = 鎖檔讀得出來。EPERM 算活著(別的使用者的行程) */
+   要不要接手由呼叫端決定。held = 鎖檔讀得出來。EPERM 算活著(別的使用者的行程)。o.procStart 有給才比啟動時間(codexpkg 給;引擎安裝不給,行為不變) */
 const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return !!(e && e.code === "EPERM"); } };
 async function waitPidLock(fs, file, o) {
   let lk = null; try { lk = JSON.parse(fs.readFileSync(file, "utf8")); } catch (_) { return { timedOut: false, held: false }; }
   const now = o.now || Date.now, alive = o.alive || pidAlive, sleep = o.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
   const until = now() + (o.waitMs || 180000);
   let said = false;
-  while (lk && Number.isInteger(lk.pid) && lk.pid !== process.pid && alive(lk.pid)) {
+  // o.procStart(pid) → 行程啟動時間(ms;查不到 null):有給、鎖檔有 at、而且那個 pid 是在鎖寫下之後才啟動的 = pid 被重用,原本持鎖的早死了
+  const reused = async () => { if (!o.procStart || !Number.isFinite(lk.at)) return false; const t = await o.procStart(lk.pid); return t != null && t > lk.at + 3000; };
+  while (lk && Number.isInteger(lk.pid) && lk.pid !== process.pid && alive(lk.pid) && !(await reused())) {
     if (now() >= until) return { timedOut: true, held: true };
     if (!said && o.log) { said = true; o.log(lk.pid); }
     await sleep(1000);

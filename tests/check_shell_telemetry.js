@@ -484,7 +484,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   // ── 0.1.12 引擎安裝(shell/enginesetup.js,主行程送):一個 prop、值是列舉、16 字以內、每日去重、畫面送不了 ──
   { const ENG = { engine_setup: ["result", ["first_done", "first_net", "first_other", "first_timeout", "upd_done", "upd_net", "upd_other", "upd_timeout"]],
       // 0.1.39 Codex 引擎隨包(shell/codexpkg.js)的 codex_* 接在 us_* 後面
-      engine_opt_fail: ["result", ["us_net", "us_other", "us_timeout", "codex_net", "codex_disk", "codex_checksum", "codex_other"]] };
+      engine_opt_fail: ["result", ["us_net", "us_other", "us_timeout", "codex_net", "codex_disk", "codex_checksum", "codex_other", "codex_http"]] };
     const tmSrc12 = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8");
     t("engine_setup / engine_opt_fail:一個屬性 result、值逐字照設計稽核定稿、名字與值都在 16 字以內", Object.keys(ENG).every((ev) => EVENTS[ev] && JSON.stringify(Object.keys(EVENTS[ev])) === '["result"]' && JSON.stringify(EVENTS[ev].result) === JSON.stringify(ENG[ev][1]) && ev.length <= 16 && ENG[ev][1].every((v) => v.length <= 16)));
     t("…每日去重(DAILY)、不是 once、畫面送不了(不在 FROM_RENDERER)", Object.keys(ENG).every((ev) => new RegExp('const DAILY = \\[[^\\]]*"' + ev + '"').test(tmSrc12) && !new RegExp('const ONCE = \\[[^\\]]*"' + ev + '"').test(tmSrc12) && !FROM_RENDERER.includes(ev)));
