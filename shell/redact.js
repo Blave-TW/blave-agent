@@ -4,6 +4,9 @@
  * tests/check_shell_redact.js)。改一條規則就兩邊與 fixture 一起改。
  * 第 1 條(已知的值)只有這裡有:值由呼叫端交進來,只在記憶體比對,不寫檔、不 log、不回傳。
  * 第 6 條的 HOME_RE、LONG_TOKEN_RE 直接用 mobileview.js 那組物件(與 api desktop_portfolio 逐字比對過),本體不動;
+ * 這是跟 api 唯一已知的差異:HOME_RE 是 gi、沒有 u,Users 或磁碟代號裡的 ſ / K(U+212A)/ İ / ı,
+ * 以及使用者名稱旁的 \x1c–\x1f、\x85、U+FEFF,兩邊遮法不同;少遮的那側由 api 收到後自己再跑一次 2–7 條補上
+ * (/relay/sync、串流文字欄位、推播),其他欄位只有這一道。共用 fixture 沒有這類案例。
  * 網址／路徑 query 跟 api 一樣改寫成 querySub(那兩條 regex 是平方級)。
  * 盡力遮,不保證認得出每一種秘密。
  */
