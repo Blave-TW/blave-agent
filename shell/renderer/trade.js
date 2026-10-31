@@ -1800,7 +1800,7 @@ function trPushLabels() {
   window.blave.tradeLabels({ running: t("tr.autoOn"), paperVenue: t("cx.paperShort"), pause: t("tm.pause"), open: t("tm.open"), quit: t("tm.quit"),
     notifTitle: t("tm.notifTitle"), notifBody: t("tm.notifBody"), pauseFail: t("tm.pauseFail"), pauseUnknown: t("tr.cmdUnknown"), quitTitle: t("tm.quitTitle"), quitBody: t("tm.quitBody"),
     quitGo: t("tm.quitGo"), quitStay: t("tm.quitStay"), ok: t("tm.ok"), hidden: t(window.blave.platform === "win32" ? "tm.hiddenWin" : "tm.hidden"), updateReady: t("tm.updateReady"), restarting: t("tm.restarting"),
-    quitTurnTitle: t("tm.quitTurnTitle"), quitTurnBody: t("tm.quitTurnBody"),   // 結束攔截:本機 agent 回合還在跑
+    quitTurnTitle: t("tm.quitTurnTitle"), quitTurnBody: t("tm.quitTurnBody"), quitTurnBodyN: t("tm.quitTurnBodyN", { n: "{n}" }), quitQueuedN: t("tm.quitQueuedN", { n: "{n}" }), quitQueuedTitle: t("tm.quitQueuedTitle"),   // 結束攔截:本機 agent 回合還在跑(兩條以上主行程填數字)
     unsavedTitle: t("tm.unsavedTitle"), unsavedBody: t("tm.unsavedBody"), unsavedGo: t("tm.unsavedGo"), unsavedNote: t("tm.unsavedNote"),   // 結束 / 關窗攔截:策略組合有還沒儲存的變更
     presQuitTitle: t("pres.quit.title"), presQuitBody: t("pres.quit.body", { lots: "{lots}" }), caplQuitBody: t("capl.quit.body", { lots: "{lots}" }), presQuitUnknown: t("pres.quit.unknown"), caplQuitUnknown: t("capl.quit.unknown"),   // 結束攔截:統一還有部位(主行程填口數)
     moveTitle: t("tm.move.title"), moveBody: t("tm.move.body"), moveGo: t("tm.move.go"), moveNo: t("tm.move.no"),   // 搬到「應用程式」那一問
@@ -1833,9 +1833,9 @@ function trPushLabels() {
     ...Object.fromEntries(TR_MENU_KEYS.map((k) => ["menu" + k.charAt(5).toUpperCase() + k.slice(6), t(k)])) });
 }
 // app 選單每一格的字(主行程 main.js appMenuTemplate 的 MENU_EN;字串表 menu.x → tm 的鍵 menuX)
-const TR_MENU_KEYS = ["menu.about", "menu.services", "menu.hide", "menu.hideOthers", "menu.showAll", "menu.quit", "menu.file", "menu.close", "menu.edit",
+const TR_MENU_KEYS = ["menu.about", "menu.services", "menu.hide", "menu.hideOthers", "menu.showAll", "menu.quit", "menu.file", "menu.newTab", "menu.closeTab", "menu.close", "menu.edit",
   "menu.undo", "menu.redo", "menu.cut", "menu.copy", "menu.paste", "menu.pasteStyle", "menu.delete", "menu.selectAll", "menu.view", "menu.local", "menu.cloud",
-  "menu.actualSize", "menu.zoomIn", "menu.zoomOut", "menu.fullEnter", "menu.fullExit", "menu.window", "menu.minimize", "menu.zoom", "menu.front", "menu.help", "menu.site"];
+  "menu.actualSize", "menu.zoomIn", "menu.zoomOut", "menu.fullEnter", "menu.fullExit", "menu.window", "menu.minimize", "menu.zoom", "menu.front", "menu.help", "menu.site", "menu.copyLink"];
 function trWire() {
   $("tr-tabs").addEventListener("click", (e) => { const b = e.target.closest(".main-tab"); if (b) trSetTab(b.dataset.tab); });
   $("tr-tabs").addEventListener("keydown", (e) => {
@@ -4515,7 +4515,7 @@ function trHistTipBox() {
   trHistTipEl.setAttribute("role", "tooltip");
   trHistTipEl.setAttribute("aria-hidden", "true");
   document.body.appendChild(trHistTipEl);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") trHistTipHide(); });
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229 && trHistTipHide()) { e.preventDefault(); e.stopPropagation(); } }, true);   // 同 report-robust.js:先收泡泡、不往下傳
   const gone = () => { if (trHistTipAt && !trHistTipAt.getClientRects().length) trHistTipHide(); };
   document.addEventListener("pointermove", gone);
   document.addEventListener("keyup", gone);
@@ -4534,10 +4534,12 @@ function trHistTipShow(anchor, text) {
   tip.setAttribute("aria-hidden", "false");
 }
 function trHistTipHide() {
-  if (!trHistTipEl) return;
+  if (!trHistTipEl) return false;
+  const shown = trHistTipEl.classList.contains("is-on");
   trHistTipAt = null;
   trHistTipEl.classList.remove("is-on");
   trHistTipEl.setAttribute("aria-hidden", "true");
+  return shown;
 }
 function trHistTipBtn(text, tip, fk) {
   const b = trEl("button", "tr-tipb px", text);
@@ -4696,8 +4698,6 @@ function trPaintSet() {
     else box.appendChild(errLine(ae.stage === "—" ? ae.msg.slice(0, 200) : t("cx.fail", { stage: ae.stage, msg: ae.msg.slice(0, 200) })));
   }
   if (TR.cx.err) box.appendChild(errLine(TR.cx.err));
-  // 解除綁定的後果只在確認框講(同畫面不講兩次,雲端視角也一樣);模擬帳戶那句是模擬→真實唯一的路標,確認框沒講,照留
-  if (id === PAPER) box.appendChild(trEl("div", "pf-foot", t("tr.unbindDescPaper")));
   trExecSection(box, r, id);
   const back = hadFocus && $(hadFocus); if (back && !back.disabled) back.focus(); else if (hadFocus) $("tr-tab-set").focus();
 }
@@ -5034,8 +5034,16 @@ function trOvCurve(z) {
   if (typeof window !== "undefined" && window.addEventListener) window.addEventListener("blave:theme", onTheme);
   /* hover(設計師 spec-desktop-ov-curve-hover-2026-09-25,照網頁 ovHover):重畫底圖再疊垂直指示線 + 線上圓點;小卡跟著點水平走、
      垂直釘在圖框頂(不跟 y 走才不抖),只落在繪圖區 [padL, W−padR](不進右軸欄、chips 在框外碰不到),右邊放不下翻左、都放不下貼 padL */
+  trCvEscWire();
+  // Esc 收掉之後游標還在圖上也不再出現,離開 canvas 才恢復(同 tipEsc 的 data-tip-off):不然手一抖下一個 mousemove 就把卡叫回來
+  let quiet = false;
+  const hide = () => {
+    if (!canvas.isConnected || tip.hidden) return false;   // 圖被換掉:舊閉包不吃這一下 Esc
+    tip.hidden = true; trDrawCurve(canvas, series, isPnl); quiet = true;
+    return true;
+  };
   canvas.addEventListener("mousemove", (e) => {
-    if (!TR.ov.geo) return;   // 還沒畫過(requestAnimationFrame 之前)
+    if (quiet || !TR.ov.geo) return;   // 還沒畫過(requestAnimationFrame 之前)
     trDrawCurve(canvas, series, isPnl);   // 先重畫(清掉上一條線、幾何跟著目前尺寸)再讀 geo:canvas 剛被拉寬時第一個 mousemove 才不會畫錯位
     const g = TR.ov.geo, x = e.offsetX; let bi = -1, bd = Infinity;
     series.forEach((p, i) => { const d = Math.abs(g.xAt(p.t) - x); if (d < bd) { bd = d; bi = i; } });
@@ -5056,9 +5064,17 @@ function trOvCurve(z) {
     const tw = tip.offsetWidth;
     let left = px + 16; if (left + tw > right) left = px - 16 - tw; if (left < g.padL) left = g.padL;
     tip.style.left = left + "px";
+    trCvHide = hide;
   });
-  canvas.addEventListener("mouseleave", () => { tip.hidden = true; trDrawCurve(canvas, series, isPnl); });
+  canvas.addEventListener("mouseleave", () => { tip.hidden = true; trDrawCurve(canvas, series, isPnl); quiet = false; if (trCvHide === hide) trCvHide = null; });
   return frag;
+}
+// 曲線讀數卡的 Esc:模組層只掛一支(曲線每次重畫都重建,掛在 trOvCurve 裡會一次漏一支)。trCvHide = 目前顯示中那張圖的收法
+let trCvHide = null, trCvEscN = 0;
+function trCvEscWire() {
+  if (trCvEscN) return;
+  trCvEscN++;
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229 && trCvHide && trCvHide()) { e.preventDefault(); e.stopPropagation(); } }, true);   // 同 trHistTipBox:先收讀數卡、不往下傳
 }
 // 重畫之後把焦點放回同一顆鈕(整段是重建的,不放回去焦點會掉到 BODY)
 function trRefocus(groupCls, label) {
@@ -5161,6 +5177,12 @@ function trEvNote(key, vars) {
 const trEvNum = (x) => (typeof x === "number" && isFinite(x) ? String(Math.round(x * 100) / 100) : null);
 /* 機器／平台事件 → [標題, 後果註解, 級別, 註解的 tooltip, 代號, 代號後的補充]。標題是字串,或 [key, vars](值要包 .mono 的句子,trEvBody 拼)。白名單:不認得的型別回 null 不畫。desktop_action(用戶自己按的指令回音)
    整類不畫(Wei 10-20,designer events-list-audit-2026-10-20);bar_stale 帶 computed=true 時訊號已準時算出,不畫 */
+const TR_BROKER_KEY = { capital: "tr.ov.brokerCapital", president: "tr.ov.brokerPresident" };
+/* strategy_failed 的 error 是 manager/alert_failure 收的輸出尾段(500 字);lib.data 的 DataAccessError = 外殼這輪沒給 Blave 資料 key。
+   事件沒帶原因(signed_out／no_card…只寫進 perf_refresh.json),外殼手上的 data_access 是「現在」不是出事當下,所以只分這一種 */
+function trStrategyFailedNoteKey(d) {
+  return /\bDataAccessError\b/.test(d && typeof d.error === "string" ? d.error : "") ? "tr.ov.evStrategyFailedNoData" : "tr.ov.evStrategyFailedNote";
+}
 function trEventText(type, d) {
   const v = { venue: trVenueLabel(String(d.venue || ""), true), minutes: d.minutes };
   const lv = trEvLevel(type, d), str = (x) => (typeof x === "string" ? x : "");
@@ -5198,13 +5220,19 @@ function trEventText(type, d) {
   if (type === "execution_stuck") return d.kind === "abandoned" ? out(t("tr.ov.evExecAbandoned"), t("tr.ov.evExecAbandonedNote"))
     : out(t(d.kind === "overdue" ? "tr.ov.evExecOverdue" : "tr.ov.evExecStuck"), t("tr.ov.evExecStuckNote"));
   if (type === "scheduler_error") return out(t("tr.ov.evSchedErr"), t("tr.ov.evSchedErrNote"));
-  if (type === "strategy_failed") return out(t("tr.ov.evStrategyFailed"), t("tr.ov.evStrategyFailedNote"));
+  if (type === "strategy_failed") return out(t("tr.ov.evStrategyFailed"), t(trStrategyFailedNoteKey(d)));
   // 主機重開、對帳那支程式停著:標題已暫停,說明講「什麼單都不下」——跟 HALT 那列(平倉停損照常)並排時要分得出來;顏色跟 trigger
   if (type === "machine_restart_stopped") return out(t("tr.ov.evRestartStopped"), t("tr.ov.evRestartStoppedNote"));
   if (type === "machine_restart_stop_failed") return out(t("tr.ov.evRestartStopFailed"), t("tr.ov.evRestartStopFailedNote"));
-  // 群益部位要人手動平:symbols 是逗號分隔的帳本 key,讀不到快照時是空字串 → 只講那一句、不帶標的
+  // 全部平倉跳過這家、部位還開著:symbols 是逗號分隔的帳本 key,讀不到快照時是空字串 → 只講那一句、不帶標的。
+  // reason snapshot_lag(群益、統一):部位快照還沒跟上剛送的單,一分鐘後再按就平得掉——講「沒替哪家平倉」(券商名照固定對照表,
+  // 不讀 payload 原文;同 api notify.py _VENUE_NAMES 的短名)。其他(群益的執行身分登不進 API)沿用原句
   if (type === "manual_close_required") {
     const syms = String(d.symbols || "").split(",").map((x) => x.trim()).filter(Boolean).join(", ");
+    if (d.reason === "snapshot_lag") {
+      const broker = t(Object.prototype.hasOwnProperty.call(TR_BROKER_KEY, d.exchange) ? TR_BROKER_KEY[d.exchange] : "tr.ov.brokerOther");
+      return out(t("tr.ov.evManualCloseLag", { broker }), null, null, syms);   // 整句同 api(TG／信件同一句),不拆說明
+    }
     return out(t("tr.ov.evManualClose"), t("tr.ov.evManualCloseNote"), null, syms);
   }
   if (type === "downtime_paused") return out(t("tr.ov.evHaltAuto"), t("tr.ov.evDowntimeNote"));   // 不是 HALT:連平倉都凍結,不能用 evHaltNote 那句
@@ -5407,11 +5435,11 @@ function trEvListFocus(box) {
 let cxOpener = null;
 /* 表單自己的狀態(不放進袋子的 sig:金鑰不該變成一個到處被複製的字串)。ip:undefined = 還沒查 / null = 查不到 / 字串 = IPv4。
    bn = 主行程 binance_link 的 state(重查結果),設定分頁的帳戶那一列用。 */
-const CXF = { env: "local", mode: "paper", venue: PAPER, apiKey: "", secret: "", passphrase: "", ip: undefined, ipBusy: false, res: null, lockUntil: 0, lockTimer: null, bn: null, storeOpen: false, paperOpen: false, bound: false };
+const CXF = { env: "local", mode: "paper", venue: PAPER, apiKey: "", secret: "", passphrase: "", ip: undefined, ipBusy: false, res: null, lockUntil: 0, lockTimer: null, bn: null, storeOpen: false, paperOpen: false, bound: false, kc: null };
 const cxBag = () => TR_BAGS[CXF.env === "cloud" ? "cloud" : "local"];
 // 雲端主機現在的對外 IP(cloud.js 只在 running 時交出來;停機的主機沒有固定 IP)
 function cxCloudIp() { const c = TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud; const ip = c && c.machine && c.machine.public_ip; return typeof ip === "string" && ip ? ip : null; }
-function cxForget() { CXF.apiKey = ""; CXF.secret = ""; CXF.passphrase = ""; CXF.res = null; if (typeof capForget === "function") capForget(); if (typeof presForget === "function") presForget(); if (typeof caplForget === "function") caplForget(); }
+function cxForget() { CXF.apiKey = ""; CXF.secret = ""; CXF.passphrase = ""; CXF.res = null; CXF.kc = null; if (typeof capForget === "function") capForget(); if (typeof presForget === "function") presForget(); if (typeof caplForget === "function") caplForget(); }
 /* 兩個視角共用這個框(spec-desktop-cloud-s5 §2:只差五處)。雲端只在主機 running 時開得起來。 */
 /* venue:設定分頁群益「繼續」直接帶進群益那條(只有雲端);統一「繼續」只有這台電腦。
    沒指定 venue 一律預選模擬交易(spec agent-onboarding-e-f §7-4) */
@@ -5439,6 +5467,7 @@ function cxModalClose(connected) {
   const sc = $("cx-scrim"); if (sc.hidden) return;
   sc.classList.remove("open"); sc.hidden = true; $("view-ws").inert = false;
   cxForget(); $("cx-body").textContent = ""; cxBag().sig.cxm = null;   // 欄位連同 DOM 一起丟:關掉的框裡不留金鑰
+  $("cx-go").classList.remove("is-lock");   // 驗證碼那一步的灰鈕不帶到下一次開框(群益本機、統一那兩條不管這個 class)
   const o = cxOpener; cxOpener = null;
   // 連上之後 onboard(連同那顆鈕)會整個換成分頁:焦點退到側欄的入口,不能掉到 BODY
   if (!connected && o && o.isConnected) o.focus(); else $("tr-nav").focus();
@@ -5525,6 +5554,76 @@ function cxChkTextCloud(r) {
     : c === "UNDELIVERED" ? (trSendError({ error: d.error, kind: d.kind || "undelivered", machineState: d.machineState }, "connect", "cloud") || t("side.stopped"))
     : t("cx.chk.unknown");
 }
+/* 改金鑰驗證碼(api key_change_gate:帳號 24 小時內配對過新手機)。關卡擋下時連接框換成驗證碼那一步,雲端連接與雲端群益共用;
+   狀態與字串照網頁 js/key_verify.js 的 view／statusText。until = 這道關自己消失的時間,不是鎖的時間 */
+const KC_GATE = { KEY_CHANGE_VERIFY: 1, KEY_CHANGE_CODE_INVALID: 1, VERIFY_LOCKED: 1 };
+const KC_REASON = { cooldown: "cooldown", limited: "limited", send_failed: "failed" };
+const KC_TEXT = { sent: "cx.kc.sent", resent: "cx.kc.resent", cooldown: "cx.kc.cooldown", limited: "cx.kc.limited", failed: "cx.kc.failed", noemail: "cx.kc.noemail", invalid: "cx.kc.invalid", locked: "cx.kc.locked" };
+// 關卡回應 → 這一步的畫面。prev = 上一個畫面:碼錯時寄送狀態那句沿用。dead = 沒有碼可輸(鎖住、沒有 email)。
+// 紅字只有碼錯與鎖住;過期不是用戶的錯:重寄成功是 resent 一句,重寄沒成功(冷卻、達上限)才在狀態句前講過期
+function kcView(r, prev) {
+  const c = r && r.code, d = (r && r.detail) || {};
+  if (c === "VERIFY_LOCKED") return { status: null, err: "locked", until: d.until || null, dead: true, expired: false };
+  if (c === "KEY_CHANGE_CODE_INVALID") return { status: prev ? prev.status : "sent", err: "invalid", until: prev ? prev.until : null, dead: false, expired: prev ? prev.expired : false };
+  const status = d.sent ? (r.expired ? "resent" : "sent") : KC_REASON[d.reason] || (d.reason ? "failed" : "noemail");
+  // 過期後重寄撞到上限:手上沒有能用的碼,比照沒有 email(停用輸入、焦點給取消)
+  const expired = !!r.expired && (status === "cooldown" || status === "limited");
+  return { status, err: null, until: !d.sent && d.reason !== "cooldown" ? d.until || null : null, dead: status === "noemail" || (expired && status === "limited"), expired };
+}
+// 寄送狀態那一句:CJK 句號結尾直接接,其他語言隔一格(同網頁 statusText)
+function kcStatusText(v) {
+  if (!v.status) return "";
+  const s = t(KC_TEXT[v.status]);
+  if (!v.expired) return s;
+  const e = t("cx.kc.expired");
+  if (v.dead) return e;   // 過期＋達上限:只講過期,時間句另起一行
+  return e + (/[。！？]$/.test(e) ? "" : " ") + s;
+}
+const kcSay = (v) => [kcStatusText(v), v.err ? t(KC_TEXT[v.err]) : "", v.until ? t("cx.kc.until", { t: trStamp(v.until) }) : ""].filter(Boolean).join(" ");
+const kcReady = (kc) => !!kc && !kc.view.dead && /^\d{6}$/.test(kc.code);
+// 主鈕能不能按;.btn-fill 的 aria-disabled 本身不變灰,這一步碼沒滿／沒有碼可輸時靠 .is-lock 灰掉(送的時候是圓環,不灰)
+function kcGo(go, kc, off) { go.setAttribute("aria-disabled", off || !kcReady(kc) ? "true" : "false"); go.classList.toggle("is-lock", !!kc && !kcReady(kc)); }
+// 埋點 key_verify(canon product-telemetry):step 只有 shown / ok / locked,不帶碼
+function kcTrack(step) { try { window.blave.trackEvent("key_verify", { step }); } catch (_) { } }
+/* 送完之後驗證碼那一步的下一個狀態:關卡回應 → 這一步(碼清空);其他 = 退回原本的流程(null)。
+   碼帶著送、回的不是關卡也不是沒送到 = 過了關卡(碼一次性,已經用掉)→ ok */
+function kcNext(kc, r) {
+  const c = r && r.code;
+  if (c === "VERIFY_LOCKED") kcTrack("locked");
+  else if (KC_GATE[c]) { if (!kc) kcTrack("shown"); }
+  else { if (kc && c !== "UNDELIVERED" && c !== "UNKNOWN") kcTrack("ok"); return null; }
+  return { code: "", view: kcView(r, kc && kc.view) };
+}
+/* 驗證碼那一步的內容(框標題與主鈕由呼叫端換):原因、寄送狀態、欄位、紅字、時間句。碼只在 holder.code(CXF.kc / CAP.kc),
+   退回表單、框關掉、通過就丟。sync = 打字時只改主鈕能不能按,不重畫 */
+function kcStep(holder, busy, ok, sync) {
+  const v = holder.view, w = trEl("div", "cx-kc-step");
+  w.appendChild(trEl("p", "cx-manual-note", t("cx.kc.why")));
+  const st = kcStatusText(v); if (st) w.appendChild(trEl("p", "cx-manual-note", st));
+  const l = trEl("label", "fld"); l.appendChild(trEl("span", "fld-l", t("cx.kc.label")));
+  const i = trEl("input", "f-input"); i.id = "cx-kc"; i.type = "text"; i.inputMode = "numeric"; i.autocomplete = "one-time-code"; i.maxLength = 6; i.spellcheck = false;
+  i.value = holder.code; i.readOnly = !!busy; i.disabled = v.dead;
+  i.addEventListener("input", () => { holder.code = i.value.replace(/\D/g, "").slice(0, 6); if (i.value !== holder.code) i.value = holder.code; sync(); });
+  i.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); if (kcReady(holder) && !busy) ok(); } });
+  l.appendChild(i); w.appendChild(l);
+  if (v.err) { const p = trEl("p", "plan-err"), m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); p.append(m, trEl("span", "", t(KC_TEXT[v.err]))); w.appendChild(p); }
+  if (v.until) {   // 時間整段一個 mono(canon:時間戳用等寬)
+    const p = trEl("p", "cx-hint");
+    t("cx.kc.until").split("{t}").forEach((part, k) => { if (k) p.appendChild(trEl("span", "mono", trStamp(v.until))); if (part) p.append(part); });
+    w.appendChild(p);
+  }
+  return w;
+}
+// 這一步開著時焦點去哪:沒有碼可輸 → 取消;其他 → 欄位
+function kcFocus(kc) { const f = kc && kc.view.dead ? $("cx-cancel") : $("cx-kc"); if (f) f.focus(); }
+// 取消／✕／Esc:驗證碼那一步開著 → 退回表單(用戶剛填的金鑰還在),焦點回送出鈕;沒開 → 關框
+function cxDismiss() {
+  if (CXF.env === "cloud" && CXF.venue === CAPITAL && typeof CAP !== "undefined" && CAP.kc) return capKcBack();
+  if (!CXF.kc) return cxModalClose(false);
+  CXF.kc = null; CXF.res = null; cxBag().sig.cxm = null; cxModalPaint();
+  const go = $("cx-go");
+  if (!go.hidden) go.focus(); else { const f = $("cx-modal").querySelector("#cx-body input:not([disabled]), #cx-body select:not([disabled]), #cx-body button:not([disabled])"); if (f) f.focus(); }
+}
 // 灰記號(不是錯):限速兩種輕的
 const cxCalm = (r) => !!r && (r.code === "RATE_LIMITED" || r.code === "RATE_BACKOFF");
 /* 框頂:模擬交易／真實帳戶兩個大選項(預設模擬;canon Radio,沿用確認框的 .cf-opt),選真實帳戶才出交易所選單。
@@ -5609,19 +5708,22 @@ function cxModalPaint() {
   const L = cxBag(), box = $("cx-body"), go = $("cx-go"), cloud = CXF.env === "cloud";
   // 雲端:框開著時主機停了 → 框不自己關(可能正在貼金鑰),主鈕鎖住、結果那一格講原因;限速不做 app 端計時鎖(主機自己在冷卻)
   const down = cloud && envCloudKind(TR_BAGS.cloud.st) !== "running";
-  const venue = CXF.venue, locked = !cloud && Date.now() < CXF.lockUntil, off = L.cx.busy || (venue === BINANCE && locked) || down;
+  const venue = CXF.venue, locked = !cloud && Date.now() < CXF.lockUntil, kc = cloud ? CXF.kc : null;
+  const off = L.cx.busy || (venue === BINANCE && locked) || down || (!!kc && !kcReady(kc));
   const cip = cloud ? cxCloudIp() : null;
-  const sig = LANG + "|" + JSON.stringify([CXF.env, CXF.mode, CXF.bound, venue, L.cx, cloud ? cip : CXF.ip === undefined ? "?" : CXF.ip, CXF.ipBusy, CXF.res && [CXF.res.code, CXF.res.detail], locked, down]);
+  const sig = LANG + "|" + JSON.stringify([CXF.env, CXF.mode, CXF.bound, venue, L.cx, cloud ? cip : CXF.ip === undefined ? "?" : CXF.ip, CXF.ipBusy, CXF.res && [CXF.res.code, CXF.res.detail, CXF.res.expired], kc && kc.view, locked, down]);
   // 等的時候圓環在字前(同 app.js 更新鈕);只在字換了才重組——輪詢重畫不能重啟圓環的動畫
   // 已綁定的真實帳戶:主鈕跟入口同一個字「換金鑰」(一次只綁一家,「連接交易所」會被讀成再接一家);已綁模擬沒有主鈕
-  const goLabel = L.cx.busy ? t("cx.connecting") : venue === PAPER ? t("cx.goPaper") : CXF.bound ? t("cx.changeKey") : t("cx.connect");
+  // 驗證碼那一步:主鈕就是這一步的動作「確認」,送的時候圓環在字前
+  const goLabel = kc ? t("cx.kc.ok") : L.cx.busy ? t("cx.connecting") : venue === PAPER ? t("cx.goPaper") : CXF.bound ? t("cx.changeKey") : t("cx.connect");
   go.hidden = CXF.bound && venue === PAPER;
+  $("cx-title").textContent = kc ? t("cx.kc.title") : t("cx.title");   // 框的名稱(aria-labelledby)跟著這一步換
   if (go.textContent.trim() !== goLabel || !!go.querySelector(".spin16") !== !!L.cx.busy) {
     go.textContent = "";
     if (L.cx.busy) { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); go.append(sp, " "); }
     go.append(goLabel);
   }
-  go.setAttribute("aria-disabled", off ? "true" : "false"); go.classList.toggle("is-busy", !!L.cx.busy);
+  go.setAttribute("aria-disabled", off ? "true" : "false"); go.classList.toggle("is-busy", !!L.cx.busy); go.classList.toggle("is-lock", !!kc && !kcReady(kc));
   box.setAttribute("aria-busy", L.cx.busy ? "true" : "false");
   // 雲端的五處差異之 1、4:標題列灰底 +「雲端」記號;鈕正上方講目的地
   $("cx-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
@@ -5632,6 +5734,12 @@ function cxModalPaint() {
   L.sig.cxm = sig;
   const hadId = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
+  if (kc) {
+    box.appendChild(kcStep(kc, L.cx.busy, cxConnect, () => kcGo(go, CXF.kc, L.cx.busy || down)));
+    if (down) { const p = trEl("p", "plan-err"), m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); p.append(m, trEl("span", "", t("side.stopped"))); box.appendChild(p); }
+    const back = hadId && $(hadId); if (back && !back.disabled) back.focus();
+    return;
+  }
   box.appendChild(cxVenueField(L));
   if (venue === PAPER) box.appendChild(cxPaperNote());
   else {
@@ -5684,10 +5792,10 @@ function cxModalPaint() {
   const back = hadId && $(hadId); if (back && !back.disabled) back.focus(); else if (hadId) ($("cx-venue") || $("cx-mode-" + CXF.mode)).focus();
 }
 function cxWire() {
-  $("cx-cancel").addEventListener("click", () => cxModalClose(false));
-  $("cx-close").addEventListener("click", () => cxModalClose(false));
+  $("cx-cancel").addEventListener("click", cxDismiss);
+  $("cx-close").addEventListener("click", cxDismiss);
   $("cx-go").addEventListener("click", cxConnect);
-  $("cx-scrim").addEventListener("mousedown", (e) => { if (e.target === $("cx-scrim")) cxModalClose(false); });
+  $("cx-scrim").addEventListener("mousedown", (e) => { if (e.target === $("cx-scrim")) { e.preventDefault(); cxDismiss(); } });   // 驗證碼那一步點框外 = 退回表單(金鑰留著),同取消;擋掉預設才不會把剛給的焦點落回 body
   $("cx-scrim").addEventListener("keydown", (e) => trapTab(e, $("cx-modal")));   // Esc 在 app.js 的 escTop(document 層)
   // 重查結果:開場拿一次,之後主行程有變就推過來(設定分頁帳戶那一列)
   const onBn = (st) => { CXF.bn = st && typeof st === "object" ? st : null; trRepaint(); };   // 標題列、切換器那格、設定分頁帳戶列都看它
@@ -5735,13 +5843,23 @@ async function cxConnectBinance() {
 async function cxConnectCloud() {
   const C = TR_BAGS.cloud;
   if (envCloudKind(C.st) !== "running") { cxModalPaint(); return; }
+  const kc0 = CXF.kc;
+  if (kc0 && !kcReady(kc0)) return;   // 碼沒滿 6 位(或沒有碼可輸):主鈕停用,Enter 也不能用空欄位重送金鑰
   C.cx = { busy: true, err: null, retest: false }; CXF.res = null; cxModalPaint();
   const venue = CXF.venue;
-  let r = null;
-  try { r = await window.blave.cloudConnect(venue === PAPER ? { venue: "paper" } : { venue, apiKey: CXF.apiKey, secret: CXF.secret, passphrase: CXF.passphrase }); } catch (_) { }
+  // 每一趟主行程都鑄新的 request_id(關卡擋下時 api 沒佔那顆);碼過期 = 不帶碼再送一次,讓 api 寄新的一組
+  const go = (code) => window.blave.cloudConnect(Object.assign(venue === PAPER ? { venue: "paper" } : { venue, apiKey: CXF.apiKey, secret: CXF.secret, passphrase: CXF.passphrase }, { keyChangeCode: code || undefined, lang: LANG }));
+  let r = null, expired = false;
+  try {
+    r = await go(kc0 && kc0.code);
+    if (r && r.code === "KEY_CHANGE_CODE_EXPIRED") { expired = true; r = await go(null); }
+  } catch (_) { }
   C.cx.busy = false;
   if ($("cx-scrim").hidden || CXF.env !== "cloud") { cxForget(); return; }   // 等的時候用戶關了框:結果不上畫面(寫進去的話下一份報告會帶出已連接)
+  // 送碼途中退回了表單:沒過的結果不上畫面;過了照走(金鑰已經存了)
+  if (kc0 && CXF.kc !== kc0 && !(r && r.ok)) { C.sig.cxm = null; cxModalPaint(); return; }
   if (r && r.ok) {
+    kcNext(kc0, { code: "OK" });
     cxForget();
     trackFeature(venue === PAPER ? "cx_paper_ok" : "cx_real_ok");
     C.cxSaved = { venue, code: r.code, detail: r.detail || {}, at: Date.now() };
@@ -5751,8 +5869,10 @@ async function cxConnectCloud() {
     C.sig = {}; cxModalClose(true); trPaint(); trPollSoon(1500);
     return;
   }
-  CXF.res = r && typeof r.code === "string" ? r : { code: "UNKNOWN", detail: {} };
+  CXF.res = r && typeof r.code === "string" ? Object.assign({}, r, { expired }) : { code: "UNKNOWN", detail: {} };
   if (CXF.res.code === "BAD_SECRET") CXF.secret = "";
+  CXF.kc = kcNext(kc0, CXF.res);
+  if (CXF.kc) { CXF.res = null; srSay(kcSay(CXF.kc.view)); C.sig.cxm = null; cxModalPaint(); kcFocus(CXF.kc); return; }
   srSay(cxChkText(CXF.res));
   C.sig.cxm = null; cxModalPaint();
   const c = CXF.res.code, f = c === "BAD_SECRET" ? $("cx-secret") : c === "IP_OR_KEY" || c === "BAD_KEY_FORMAT" ? $("cx-api") : $("cx-go");
@@ -5943,16 +6063,17 @@ function psApply() {
 }
 
 /* ── 視角:「這台電腦｜雲端」切換器、頂列灰底、雲端側欄、雲端空態(spec-desktop-local-and-cloud §1–§4.1)────────
-   除了切換器、⌘1/⌘2 與畫面上的文字鈕,沒有任何東西會自己切視角;重開 app 一律回到這台電腦(雲端可能是真錢,開場不該落在那裡)。
+   除了切換器、⌘⇧1/⌘⇧2 與畫面上的文字鈕,沒有任何東西會自己切視角;重開 app 一律回到這台電腦(雲端可能是真錢,開場不該落在那裡)。
    雲端來的字串(策略名)一律 textContent。 */
 function envWire() {
-  // 切視角的三個入口(切換器、⌘1/⌘2、app 選單「顯示」)都走 envSwitchGuarded:守門規則只有一份
+  // 切視角的三個入口(切換器、⌘⇧1/⌘⇧2、app 選單「顯示」)都走 envSwitchGuarded:守門規則只有一份
   $("envsw").addEventListener("click", (e) => { const b = e.target.closest("button[data-env]"); if (b) envSwitchGuarded(b.dataset.env); });
-  // ⌘1 / ⌘2:輸入框有焦點時也生效;確認框、圖片放大開著時不生效(先讓人處理眼前那個框),設定開著可以
+  // ⌘⇧1 / ⌘⇧2(⌘1–9 留給對話分頁):輸入框有焦點時也生效;確認框、圖片放大開著時不生效(先讓人處理眼前那個框),設定開著可以。
+  // 看 e.code 不看 e.key:按著 ⇧ 時 e.key 是「!」「@」(依鍵盤配置而變)
   document.addEventListener("keydown", (e) => {
     if (e.isComposing || e.keyCode === 229) return;   // 輸入法組字中:不搶(搬焦點會把組到一半的字提交或丟掉)
-    if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || (e.key !== "1" && e.key !== "2")) return;
-    if (envSwitchGuarded(e.key === "1" ? "local" : "cloud")) e.preventDefault();
+    if (!e.metaKey || e.ctrlKey || e.altKey || !e.shiftKey || (e.code !== "Digit1" && e.code !== "Digit2")) return;
+    if (envSwitchGuarded(e.code === "Digit1" ? "local" : "cloud")) e.preventDefault();
   });
   if (typeof window.blave.onEnvSwitch === "function") window.blave.onEnvSwitch((env) => { envSwitchGuarded(env); });
   // 主行程說雲端那邊變了(另一邊出事、登入登出):下一輪就去拿新的那一份
@@ -5961,7 +6082,7 @@ function envWire() {
 }
 /* 現在能不能切視角:還沒進工作頁不行;確認框、連接交易所的框、圖片放大開著不行(先讓人處理眼前那個框)。
    設定開著可以(envSwitch 自己不搬焦點)。回 true = 有切(或本來就在那一邊)。 */
-// 組字中不切:app 選單有了 ⌘1/⌘2 之後 macOS 先讓選單吃鍵,keydown 上的 isComposing 守門看不到那一次——
+// 組字中不切:app 選單有了 ⌘⇧1/⌘⇧2 之後 macOS 先讓選單吃鍵,keydown 上的 isComposing 守門看不到那一次——
 // 所以改成自己記「現在有沒有在組字」,三個入口(點、鍵、選單)都看它。切過去會搬焦點,組到一半的字會丟
 let ENV_COMPOSING = false;
 document.addEventListener("compositionstart", () => { ENV_COMPOSING = true; }, true);
@@ -5984,7 +6105,7 @@ function envSwitch(env, via) {
   // 報告頁首那句「送不上去」講的是按下去那一刻的事:離開又回來時它會讀起來像現況,離開就收掉
   if (env === "local" && typeof hoNote === "function") hoNote(null);
   // 順序(spec §1.4):關確認框(等同取消,焦點不回 opener)→ 存這一邊 → 換 → 畫 → 標題 → 播報
-  // 關確認框這一行**目前走不到**:確認框開著時 ⌘1/⌘2 不生效、#view-ws 是 inert(切換器點不到)。留著當保險——
+  // 關確認框這一行**目前走不到**:確認框開著時 ⌘⇧1/⌘⇧2 不生效、#view-ws 是 inert(切換器點不到)。留著當保險——
   // 批次 ② 選單列的「顯示」兩項進來之後,才有確認框開著也能切視角的入口。
   if (!$("del-scrim").hidden) { if (delCtx) delCtx.opener = null; delClose(false); }
   const from = TR_BAGS[ENV.cur], list = $(ENV.cur === "cloud" ? "strat-list-cloud" : "strat-list");
@@ -6148,8 +6269,8 @@ function envPaintCell(env, c) {
   const money = w.money ? envMoneyText(c.money) : "", state = w.state ? t(w.state) : "";
   const where = envName(env), tip = money && state ? t("env.tip", { where, money, state }) : money || state ? t("env.tip1", { where, x: money || state }) : where;
   // 快捷鍵由程式接、不進譯文;只接在 title。讀屏會把符號唸出來,所以 aria-label 不接,改用 aria-keyshortcuts
-  b.title = tip + "  " + (env === "cloud" ? "\u23182" : "\u23181");
-  b.setAttribute("aria-label", tip); b.setAttribute("aria-keyshortcuts", env === "cloud" ? "Meta+2" : "Meta+1");
+  b.title = tip + "  " + (env === "cloud" ? "\u21e7\u23182" : "\u21e7\u23181");
+  b.setAttribute("aria-label", tip); b.setAttribute("aria-keyshortcuts", env === "cloud" ? "Meta+Shift+2" : "Meta+Shift+1");
   // 狀態詞變了播報一次(例:「雲端：已自動暫停」);第一次畫不算變化
   const word = c.word ? t(c.word) : "";
   if (!first && word && ENV.said[env] !== word) srSay(t("env.cellAria1", { where: envName(env), x: word }));

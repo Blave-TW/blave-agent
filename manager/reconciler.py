@@ -1836,6 +1836,10 @@ def _hold_singleton():
 
 
 if __name__ == '__main__':
+    # resident, never part of an agent turn (a tmux / nohup start from inside one hands these over):
+    # lib/guard must not hold the turn order lock for this process's whole life
+    os.environ.pop("BLAVE_TURN_INTERRUPT_FILE", None)
+    os.environ.pop("BLAVE_TURN_PID", None)
     _singleton_fd = _hold_singleton()
     if _singleton_fd is None:
         logging.warning(f"[reconciler] another reconciler holds {SINGLETON_PATH} — "

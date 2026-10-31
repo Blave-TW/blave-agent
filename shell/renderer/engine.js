@@ -101,7 +101,7 @@ function engPaint() {
     else if (s.phase === "done" && s.warn) engWarn(s);   // 裝的時候沒在看這一頁(還在選 AI):美股那組沒裝好照樣講一次
     return;
   }
-  const box = $("chat-scroll");
+  const box = chatEl();
   if (!ENG.card || !ENG.card.isConnected) { ENG.card = engBuild(); box.appendChild(ENG.card); busyPin(); scrollChat(); }
   engFill(ENG.card, v);
   if (v.say && v.say !== ENG.said) { ENG.said = v.say; srSay(v.say); }
@@ -112,7 +112,7 @@ function engPaint() {
 function engDone(s) {
   const card = ENG.card; ENG.card = null; ENG.said = "";
   const line = document.createElement("div"); line.className = "msg sys"; line.textContent = engReadyText(s, ENG_TR);
-  const swap = () => { if (card.isConnected) card.replaceWith(line); else { $("chat-scroll").appendChild(line); busyPin(); } srSay(line.textContent); scrollChat(); if (s.warn) engWarn(s); };
+  const swap = () => { if (card.isConnected) card.replaceWith(line); else { chatEl().appendChild(line); busyPin(); } srSay(line.textContent); scrollChat(); if (s.warn) engWarn(s); };
   if (reducedMotion() || !card.isConnected) { swap(); return; }
   card.classList.add("is-leaving");
   setTimeout(swap, motionBaseMs() + 30);

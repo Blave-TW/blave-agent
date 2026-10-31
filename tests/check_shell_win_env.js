@@ -93,10 +93,10 @@ t("agent 回合的 spawn 用 childEnv(env)、windowsHide", /\], \{ env: childEnv
   const a = src.indexOf("const env = {", src.indexOf("async function runTurn(")), b = src.indexOf("\n  };", a);
   // dataAccessEnv 用原文那支(它只吃 dataAccessWhy 一個外部名字)
   const dataAccessEnv = new Function("dataAccessWhy", src.slice(src.indexOf("function dataAccessEnv("), src.indexOf("\n}\n", src.indexOf("function dataAccessEnv(")) + 2) + "\n return dataAccessEnv;")(() => "unknown");
-  const turn = new Function("path", "os", "process", "BASE", "WS", "VENV_PY", "VENV_BIN", "PY_ENV", "envPath", "acct", "useCodex", "mcpFile", "mcpMount", "dataAccess", "dataAccessEnv", "signedIn", "imgPort", "imgToken", "sessionId", "turnStopFile", "brMount", "brState", "TURN_NOTES", "note", "llmEnv", "relay",
-    src.slice(a, b + 4) + "\n return env;")(path, os, { env: { USER: "u", LOGNAME: "u", TMPDIR: "/t", LANG: "zh_TW.UTF-8" } }, "/Users/u/Blave", "/Users/u/Blave/workspace", "/Users/u/Blave/venv/bin/python", "bin", {}, "/opt/homebrew/bin:/usr/bin", null, false, null, null, "ours", dataAccessEnv, true, 0, "", "s1", null, null, "off", ["report_once"], null, llmEnv, null);
-  t("agent 回合(darwin)的白名單 key 逐一相同:PATH HOME BLAVE_PYTHON USER LOGNAME TMPDIR BLAVE_AGENT_BASE BLAVE_AGENT_WORKSPACE BLAVE_AGENT_HOME BLAVE_AGENT_STATE BLAVE_AGENT_DB BLAVE_KLINE_SOURCE BLAVE_DATA_ACCESS BLAVE_BROWSER LANG",
-    Object.keys(turn).join() === "PATH,HOME,BLAVE_PYTHON,USER,LOGNAME,TMPDIR,BLAVE_AGENT_BASE,BLAVE_AGENT_WORKSPACE,BLAVE_AGENT_HOME,BLAVE_AGENT_STATE,BLAVE_AGENT_DB,BLAVE_KLINE_SOURCE,BLAVE_DATA_ACCESS,BLAVE_BROWSER,LANG"
+  const turn = new Function("path", "os", "process", "BASE", "WS", "VENV_PY", "VENV_BIN", "PY_ENV", "envPath", "acct", "useCodex", "mcpFile", "mcpMount", "dataAccess", "dataAccessEnv", "signedIn", "imgPort", "imgToken", "sessionId", "rec", "brMount", "brState", "TURN_NOTES", "note", "llmEnv", "relay",
+    src.slice(a, b + 4) + "\n return env;")(path, os, { env: { USER: "u", LOGNAME: "u", TMPDIR: "/t", LANG: "zh_TW.UTF-8" } }, "/Users/u/Blave", "/Users/u/Blave/workspace", "/Users/u/Blave/venv/bin/python", "bin", {}, "/opt/homebrew/bin:/usr/bin", null, false, null, null, "ours", dataAccessEnv, true, 0, "", "s1", { stopFile: "/Users/u/Blave/state/turn_stop/ab" }, null, "off", ["report_once"], null, llmEnv, null);
+  t("agent 回合(darwin)的白名單 key 逐一相同:PATH HOME BLAVE_PYTHON USER LOGNAME TMPDIR BLAVE_AGENT_BASE BLAVE_AGENT_WORKSPACE BLAVE_AGENT_HOME BLAVE_AGENT_STATE BLAVE_AGENT_DB BLAVE_TURN_INTERRUPT_FILE BLAVE_KLINE_SOURCE BLAVE_DATA_ACCESS BLAVE_BROWSER LANG",
+    Object.keys(turn).join() === "PATH,HOME,BLAVE_PYTHON,USER,LOGNAME,TMPDIR,BLAVE_AGENT_BASE,BLAVE_AGENT_WORKSPACE,BLAVE_AGENT_HOME,BLAVE_AGENT_STATE,BLAVE_AGENT_DB,BLAVE_TURN_INTERRUPT_FILE,BLAVE_KLINE_SOURCE,BLAVE_DATA_ACCESS,BLAVE_BROWSER,LANG"
     && turn.BLAVE_BROWSER === "off" && /const brState = brMount && mcpFile \? "on" : brWanted \? "unavailable" : "off";/.test(src)
     && turn.PATH === "/Users/u/Blave/venv/bin:/opt/homebrew/bin:/usr/bin" && turn.BLAVE_DATA_ACCESS === "1");
   t("agent 回合的物件本身沒有 ...process.env(白名單的本意)", !/\.\.\.process\.env/.test(src.slice(a, b)));
@@ -113,5 +113,24 @@ t("agent 回合的 spawn 用 childEnv(env)、windowsHide", /\], \{ env: childEnv
   t("寬度走 token(--scrollbar-w 在 tokens.css)、thumb 用 --border-frame、軌透明、沒寫死 hex", /--scrollbar-w: 8px;/.test(tokens) && /::-webkit-scrollbar,[^{]*\{ width: var\(--scrollbar-w\); height: var\(--scrollbar-w\); \}/.test(css) && /::-webkit-scrollbar-thumb \{ background: var\(--border-frame\)/.test(css) && /::-webkit-scrollbar-track[^{]*\{ background: transparent; \}/.test(css) && !sbRules.some((l) => /#[0-9a-f]{3,8}\b/i.test(l)));
   t("側欄策略清單與對話清單 overflow-x: hidden(刪除鈕熱區伸出列外那 4px 不再撐出橫向捲軸)", /\.strat-list \{ flex: 1; overflow-y: auto; overflow-x: hidden; \}/.test(css) && /\.chat-list \{\n  position: absolute; inset: 0; z-index: 5; overflow-y: auto; overflow-x: hidden;/.test(css));
   t("撐寬的元凶還在原位(.cs-del::before right:-10px width:44px;熱區規格不改,只裁)", /\.cs-del::before \{[^}]*right: -10px; width: 44px; \}/.test(css));
+}
+{
+  // macOS 的 urllib 改信 venv 裡 certifi 那份(SSL_CERT_FILE):有檔才設、找得到非 3.12 的開發版 venv、Windows 不設;
+  // 常駐程式與 agent 回合都是 ...PY_ENV,白名單因此多一條 SSL_CERT_FILE
+  const body = cut("function venvCaFile()", "\n\n/* 子行程");
+  const pyEnvOf = ({ win = false, packaged = false, files = {} }) => {
+    const ffs = { readdirSync: (d) => { if (!files[d]) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); return files[d]; }, existsSync: (f) => !!files[f] };
+    return new Function("fs", "path", "BASE", "WIN", "app", body + "\n return PY_ENV;")(ffs, path.posix, "/Users/u/Blave", win, { isPackaged: packaged });
+  };
+  const L = "/Users/u/Blave/venv/lib", CA12 = L + "/python3.12/site-packages/certifi/cacert.pem", CA14 = L + "/python3.14/site-packages/certifi/cacert.pem";
+  const pk = pyEnvOf({ packaged: true, files: { [L]: ["python3.12"], [CA12]: 1 } });
+  t("PY_ENV(打包版、venv 有 certifi):SSL_CERT_FILE = venv 那份 cacert.pem,PYTHONPYCACHEPREFIX 照舊", pk.SSL_CERT_FILE === CA12 && pk.PYTHONPYCACHEPREFIX === "/Users/u/Blave/state/pycache");
+  t("PY_ENV(開發版、venv 是 python3.14):照樣找到", pyEnvOf({ files: { [L]: [".DS_Store", "python3.14"], [CA14]: 1 } }).SSL_CERT_FILE === CA14);
+  t("PY_ENV:還沒有 venv / venv 裡沒有 certifi → 不設", !("SSL_CERT_FILE" in pyEnvOf({})) && !("SSL_CERT_FILE" in pyEnvOf({ files: { [L]: ["python3.12"] } })));
+  t("PY_ENV(Windows):不設(OpenSSL 用系統憑證庫)", !("SSL_CERT_FILE" in pyEnvOf({ win: true, packaged: true, files: { [L]: ["python3.12"], [CA12]: 1 } })));
+  const m = /env: childEnv\((\{ PATH: path\.join\(BASE, "venv", VENV_BIN\)[\s\S]*?\.\.\.PY_ENV \})\)/.exec(src);
+  const d = new Function("path", "os", "process", "BASE", "VENV_BIN", "PY_ENV", "return " + m[1])(path, os, { env: { PATH: "/usr/bin:/bin", USER: "u", LANG: "en", TMPDIR: "/t" } }, "/Users/u/Blave", "bin", { SSL_CERT_FILE: CA12 });
+  t("常駐程式(darwin)的白名單:PY_ENV 帶 SSL_CERT_FILE 時多這一條、其餘不變",
+    Object.keys(d).join() === "PATH,HOME,USER,LANG,TMPDIR,BLAVE_KLINE_SOURCE,BLAVE_AGENT_HOME,BLAVE_AGENT_STATE,SSL_CERT_FILE" && d.SSL_CERT_FILE === CA12);
 }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

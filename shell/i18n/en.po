@@ -616,10 +616,13 @@ msgid "bt.mcpt"
 msgstr "MCPT p-value"
 
 msgid "bt.mcptTipSig"
-msgstr "Shuffled {n} times; only {pct} of the shuffles beat it. Below 0.05 is the usual bar."
+msgstr "Of {n} shuffles, only {k} beat it. A p below 0.05 is the usual bar."
 
 msgid "bt.mcptTipNs"
-msgstr "Shuffled {n} times; {pct} of the shuffles beat it — above the usual 0.05 bar, so this result can't be told apart from luck."
+msgstr "Of {n} shuffles, {k} beat it. p isn't below 0.05, so it can't be told from luck."
+
+msgid "bt.mcptTipZero"
+msgstr "Of {n} shuffles, none beat it. A p below 0.05 is the usual bar."
 
 msgid "bt.equity"
 msgstr "Equity"
@@ -1881,7 +1884,7 @@ msgid "set.awake.lead"
 msgstr "Only blocks idle sleep (the screen still turns off). A closed lid, a dead battery or manual sleep still stops auto-trading."
 
 msgid "set.awake.leadWin"
-msgstr "Only blocks idle sleep (the screen still turns off); a laptop must stay plugged in. A closed lid, a dead battery or manual sleep still stops auto-trading."
+msgstr "Only blocks idle sleep (the screen still turns off); keep a laptop plugged in. A closed lid, dead battery or manual sleep stops auto-trading."
 
 msgid "set.awake.leadOff"
 msgstr "Auto-trading stops while the computer sleeps."
@@ -2294,9 +2297,6 @@ msgstr "Disconnect"
 msgid "tr.unbinding"
 msgstr "Disconnecting…"
 
-msgid "tr.unbindDescPaper"
-msgstr "Unbind to connect a real exchange instead."
-
 msgid "tr.unbindWarn"
 msgstr "This computer’s login details are removed; the order engine can’t trade with them. Your portfolio and amounts are kept; save once after reconnecting."
 
@@ -2325,18 +2325,18 @@ msgid "tr.ov.rangeAll"
 msgstr "All"
 
 msgid "tr.ov.empty"
-msgstr "No equity snapshots yet. Once an exchange is connected, one is recorded each hour while Blave is open."
+msgstr "No account equity records yet. Once an exchange is connected, a reading is taken every hour, on the hour, while the app is open."
 
 # 雲端視角的權益空狀態(trade.js trPaintOver);本機那句要 Blave 開著,雲端是主機自己記
 msgid "tr.ov.emptyCloud"
-msgstr "No equity snapshots yet. Once an exchange is connected, the machine records one each hour."
+msgstr "No account equity records yet. Once an exchange is connected, the server takes a reading every hour, on the hour."
 
 # 只有一筆、畫不出線(trade.js trPaintOver);本機／雲端各一句,後半同 empty／emptyCloud
 msgid "tr.ov.emptyBaseline"
-msgstr "The curve needs two records. One is recorded each hour while Blave is open."
+msgstr "The curve needs two records. A reading is taken every hour, on the hour, while the app is open."
 
 msgid "tr.ov.emptyBaselineCloud"
-msgstr "The curve needs two records. The machine records one each hour."
+msgstr "The curve needs two records. The server takes a reading every hour, on the hour."
 
 msgid "tr.ov.basisNote"
 msgstr "Earlier points count only the trading wallet; later ones the whole account. The two parts aren’t joined."
@@ -2665,6 +2665,10 @@ msgstr "Strategy crashed"
 msgid "tr.ov.evStrategyFailedNote"
 msgstr "the schedule keeps firing, but this run produced no signal"
 
+# strategy_failed 的錯誤是 DataAccessError(外殼沒給 Blave 資料 key)時的說明,取代上一句(trade.js trStrategyFailedNoteKey)
+msgid "tr.ov.evStrategyFailedNoData"
+msgstr "no Blave data access, so this run was skipped"
+
 msgid "tr.ov.evUnreach"
 msgstr "Can’t read the cloud’s event log right now; this will retry shortly. It does not mean nothing happened."
 
@@ -2945,6 +2949,10 @@ msgstr "Cloud: "
 msgid "menu.site"
 msgstr "Blave Website"
 
+# 右鍵點在連結上的唯一一格(聊天裡縮短顯示的網址要拿得到完整版;spec chat-long-url-2026-10-30 §2)
+msgid "menu.copyLink"
+msgstr "Copy Link"
+
 msgid "menu.view"
 msgstr "View"
 
@@ -3058,6 +3066,12 @@ msgstr "Uploads strategies, positions and equity every 2 minutes, visible only t
 msgid "mv.leadNoName"
 msgstr "Uploads strategies, positions and equity every 2 minutes, visible only to your account. Turning it off deletes this computer’s data on Blave."
 
+msgid "mv.appIos"
+msgstr "App Store"
+
+msgid "mv.appAndroid"
+msgstr "Google Play"
+
 msgid "mv.leadPending"
 msgstr "Off, but this computer’s data on Blave hasn’t been deleted yet. It’s deleted automatically once you’re back online."
 
@@ -3112,6 +3126,9 @@ msgstr "How the local AI is signed in, e.g. subscription or API key; no account 
 
 msgid "priv.collect.10"
 msgstr "Which kind of sign-in failure, and whether the AI counted as signed in"
+
+msgid "priv.collect.11"
+msgstr "Whether the key-change code box appeared, passed or locked, never the code"
 
 msgid "priv.never.h"
 msgstr "Not in usage data"
@@ -3392,9 +3409,6 @@ msgstr "Got It"
 
 msgid "src.empty1"
 msgstr "No data sources with your own key yet."
-
-msgid "src.empty2"
-msgstr "Don’t paste keys into the chat."
 
 msgid "src.rowLocal.one"
 msgstr "{n} field · used by: {names}"
@@ -4067,6 +4081,20 @@ msgstr "Capital positions still open"
 msgid "tr.ov.evManualCloseNote"
 msgstr "close them in Capital’s trading software"
 
+# 全部平倉跳過這家是因為部位快照還沒跟上剛送出的單(manual_close_required reason snapshot_lag;群益、統一都會發;
+# 字同 api openclaw/notify.py _MANUAL_CLOSE_SNAPSHOT_LAG(券商名同 _VENUE_NAMES 短名),web workspace_ov_ev_manual_close_lag;整句一則,不拆說明,與 api 逐字同);{broker} 照下面對照表
+msgid "tr.ov.evManualCloseLag"
+msgstr "Not closed on {broker}: position data lags the last order. In a minute, press “Pause and close positions” again, or close at your broker."
+
+msgid "tr.ov.brokerCapital"
+msgstr "Capital"
+
+msgid "tr.ov.brokerPresident"
+msgstr "President"
+
+msgid "tr.ov.brokerOther"
+msgstr "your broker"
+
 msgid "up.c.msg"
 msgstr "Update the cloud machine to the latest version"
 
@@ -4080,7 +4108,11 @@ msgid "tm.quitTurnTitle"
 msgstr "The agent is still replying"
 
 msgid "tm.quitTurnBody"
-msgstr "Quitting Blave now cuts off this turn, including any cloud update in progress. It’s safer to wait until it finishes."
+msgstr "Quitting stops this reply, including any cloud update in progress."
+
+# 結束攔截:兩條以上回合在跑(對話分頁並行;主行程填 {n})
+msgid "tm.quitTurnBodyN"
+msgstr "Quitting stops {n} replies, including any cloud update in progress."
 
 # 結束 / 關窗攔截:策略組合有還沒儲存的勾選或金額(草稿不另外存)
 msgid "tm.unsavedTitle"
@@ -5201,6 +5233,14 @@ msgstr "This strategy can't be downloaded without signing in anymore. It may hav
 # 429(匿名下載每 IP 每小時 30 次):講「稍後」,不講「再試一次」(稽核 0.1.13 UI S5)
 msgid "lib.dl.rateLimited"
 msgstr "Too many downloads right now. Please try again later."
+
+# api 403 AGENT_TOO_OLD(spec strategy-min-lib-gate-2026-10-29):隨包的 lib 也不夠新 → 更新電腦版
+msgid "lib.dl.agentOld"
+msgstr "This strategy needs a newer Agent. Update the app, then press again."
+
+# 同上,但隨包的已經夠新、只是 workspace 沒同步成:重開才會再同步,叫人更新沒用
+msgid "lib.dl.agentOldReopen"
+msgstr "This strategy needs a newer Agent. Reopen the app, then press again."
 
 msgid "lib.gate.login"
 msgstr "Sign in"
@@ -6613,10 +6653,10 @@ msgid "ver.readErr"
 msgstr "Couldn’t load this version."
 
 msgid "ver.mcptTipSigNoN"
-msgstr "After random shuffling, only {pct} of the results beat it; below 0.05 is the usual bar."
+msgstr "A p below 0.05 is the usual bar."
 
 msgid "ver.mcptTipNsNoN"
-msgstr "After random shuffling, {pct} of the results beat it — above the usual 0.05 bar, so this result can’t be told apart from luck."
+msgstr "p isn't below 0.05, so it can't be told from luck."
 
 msgid "ver.cmpTitle"
 msgstr "Compare versions"
@@ -6966,9 +7006,6 @@ msgstr "For example: every strategy needs a stop loss, 2% below the entry price 
 
 msgid "rules.emptyLead"
 msgstr "No rules yet."
-
-msgid "rules.emptyHow"
-msgstr "Saying “always set a stop loss” in the chat also adds a rule."
 
 msgid "rules.full"
 msgstr "10 rules is the limit. Delete one to add another — nothing gets dropped for you."
@@ -9034,12 +9071,6 @@ msgstr "The agent is replying and may be editing this strategy. Restore after it
 msgid "busy.chatDel"
 msgstr "This conversation is still replying. Stop it before deleting."
 
-msgid "busy.switch"
-msgstr "Wait for this reply to finish before switching conversations."
-
-msgid "busy.new"
-msgstr "Wait for this reply to finish before starting a new conversation."
-
 msgid "busy.cloudUpd"
 msgstr "Wait for this reply to finish before sending the update."
 
@@ -9646,3 +9677,122 @@ msgstr "Outcome unknown — it may have filled; don't place it again yourself. N
 # 追蹤不了而整台暫停、HALT reason 讀不到標的時的狀態句(大寫開頭;同網頁 workspace_pf_halt_unconfirmed_nosym)
 msgid "tr.haltUnconfirmedNosym"
 msgstr "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
+
+# 對話分頁(0.1.37;spec chat-tabs-2026-10-29 §2–§4;排隊行與狀態字同 web workspace_cs_*,tests/check_web_desktop_parity.js 比對;tabs.brWait 待設計師過字)
+msgid "tabs.list"
+msgstr "Conversations"
+
+msgid "tabs.search"
+msgstr "Search conversation titles"
+
+msgid "tabs.queue"
+msgstr "Queued: the maximum number of replies are already running. This one starts when a slot frees up."
+
+msgid "tabs.queueCancel"
+msgstr "Cancel queued message"
+
+# 排隊中的送出鍵 title(同 web workspace_cs_cancel_queued_title)
+msgid "tabs.queueCancelTitle"
+msgstr "Cancel and move the message back to the input"
+
+msgid "tabs.brWait"
+msgstr "Waiting for another chat to finish with the browser"
+
+msgid "tabs.st.run"
+msgstr "Replying · {d}"
+
+msgid "tabs.st.running"
+msgstr "Replying"
+
+msgid "tabs.st.wait"
+msgstr "Waiting for you"
+
+msgid "tabs.st.fail"
+msgstr "Didn’t finish"
+
+msgid "tabs.st.unseen"
+msgstr "Done, not viewed"
+
+msgid "tabs.st.queued"
+msgstr "Queued"
+
+msgid "tabs.hint.run"
+msgstr "{n} replying"
+
+msgid "tabs.hint.queued"
+msgstr "{n} queued"
+
+msgid "tabs.more.attn"
+msgstr "{n} need you"
+
+msgid "tabs.more.run"
+msgstr "{n} replying"
+
+msgid "tabs.many"
+msgstr "{n} conversations need you"
+
+msgid "tabs.group.today"
+msgstr "Today"
+
+msgid "tabs.group.yesterday"
+msgstr "Yesterday"
+
+msgid "tabs.group.earlier"
+msgstr "Earlier"
+
+# 對話分頁:app 選單「檔案」的新對話(同 ＋ 的名字)／關閉分頁(⌘T／⌘W);結束框排隊那句(主行程填 {n})與只有排隊時的標題
+msgid "menu.newTab"
+msgstr "New Chat"
+
+msgid "menu.closeTab"
+msgstr "Close Tab"
+
+msgid "tm.quitQueuedN"
+msgstr "Queued messages won’t be sent."
+
+msgid "tm.quitQueuedTitle"
+msgstr "Messages are still queued"
+
+# Key-change code gate (api key_change_gate: a phone paired in the last 24 hours). Same strings as web kc_* (parity test compares); {t} = when the gate lifts
+msgid "cx.kc.title"
+msgstr "Enter verification code"
+
+msgid "cx.kc.why"
+msgstr "A new phone was just paired with this account, so key changes need a code."
+
+msgid "cx.kc.label"
+msgstr "Verification code"
+
+msgid "cx.kc.ok"
+msgstr "Confirm"
+
+msgid "cx.kc.sent"
+msgstr "We sent a code to your account email."
+
+msgid "cx.kc.resent"
+msgstr "That code expired. A new one is in your account email."
+
+msgid "cx.kc.cooldown"
+msgstr "A code was just sent. Check your inbox."
+
+msgid "cx.kc.limited"
+msgstr "Send limit reached. Use the latest code you received."
+
+msgid "cx.kc.failed"
+msgstr "The code couldn't be sent, so the key wasn't saved. Try again later."
+
+msgid "cx.kc.noemail"
+msgstr "This account has no email, so it can't get a code."
+
+msgid "cx.kc.invalid"
+msgstr "Wrong code. Enter it again."
+
+msgid "cx.kc.expired"
+msgstr "That code expired."
+
+msgid "cx.kc.locked"
+msgstr "Too many wrong tries. No more tries today."
+
+msgid "cx.kc.until"
+msgstr "After {t}, key changes won't need a code."
+

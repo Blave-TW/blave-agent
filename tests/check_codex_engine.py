@@ -318,7 +318,7 @@ os.environ.pop("BLAVE_PYTHON", None)
 assert at.python_rule() == ""
 run_local_turn()
 run_local_turn(engine="codex", codex_bin="/x/codex")
-assert sysprompts[-1] == "# rules\n" + at.model_catalog_rule("s1") + at.preferences_rule() \
+assert sysprompts[-1] == "# rules\n" + at.model_catalog_rule("s1") + at.parallel_rule(at.LocalSink("s1")) + at.preferences_rule() \
     + at.reply_lang_rule("hello") + at.LOCAL_FORMATTING_RULE, "沒設 BLAVE_PYTHON 時 system prompt 必須與原本逐字相同"
 assert "Python 直譯器" not in seen["prompt"]
 
@@ -664,7 +664,7 @@ assert all(flag in argv for flag in MCP_FLAGS), argv
 assert "blv_" not in "\n".join(argv), "碼絕不進 argv"
 assert env.get("BLAVE_MCP_TOKEN") == CODE and env.get("BLAVE_MCP_URL") == MCP_URL
 stdin = open(os.path.join(fake_out, "stdin")).read()
-assert at.mcp_rule(True).strip() in stdin, "掛了就要帶圍籬規則(沒圍籬的 Codex 不能上雲端機)"
+assert at.mcp_rule(True, "s1").strip() in stdin, "掛了就要帶圍籬規則(沒圍籬的 Codex 不能上雲端機)"
 run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG, viewing_env="cloud")
 assert at._viewing_env_segment(True) in open(os.path.join(fake_out, "stdin")).read(), "雲端視角提示段跟著真的掛上"
 
@@ -699,7 +699,7 @@ run_local_turn(engine="codex", codex_bin=new_codex, mcp_config=MCP_CFG, viewing_
 argv, env = spawned()
 stdin = open(os.path.join(fake_out, "stdin")).read()
 assert all(flag in argv for flag in MCP_FLAGS) and env.get("BLAVE_MCP_TOKEN") == CODE, argv
-assert at.mcp_rule(True).strip() in stdin and at._viewing_env_segment(True) in stdin, "cloud_mcp 為 True"
+assert at.mcp_rule(True, "s1").strip() in stdin and at._viewing_env_segment(True) in stdin, "cloud_mcp 為 True"
 assert "本輪沒掛上" not in stdin
 os.remove(home_codex_cfg)
 assert at.mcp_blocked_rule(None) == "" and at._codex_prompt("p", at.LocalSink("s1"), True, mcp_blocked={

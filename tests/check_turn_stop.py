@@ -1032,8 +1032,9 @@ while _todo:
                 _spawns.setdefault(_m, []).append(f"{_o}.{_a}:{_n.lineno}")
 _counts = {m: len(v) for m, v in _spawns.items() if v}
 check("agent_turn's in-process modules spawn only the engine and its probes (codex_engine 3, turn_stop 1: ps, "
-      "agent_turn 1: the scheduled report tools)",
-      _counts == {"agent_turn": 1, "codex_engine": 3, "turn_stop": 1} and "agent_turn" in _seen and "turn_stop" in _seen,
+      "agent_turn 2: the scheduled report tools, and macOS `ps -o lstart` for its own start stamp in BLAVE_TURN_PID "
+      "— a probe at startup, before any engine)",
+      _counts == {"agent_turn": 2, "codex_engine": 3, "turn_stop": 1} and "agent_turn" in _seen and "turn_stop" in _seen,
       {m: v for m, v in _spawns.items() if v})
 
 print("\n" + ("ALL PASS" if not fails else f"{len(fails)} FAILED: {fails}"))

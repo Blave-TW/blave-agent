@@ -314,7 +314,7 @@ exit 2
     RSTATE.next = null; R.LOCAL_FAULTS.length = 0; }
 
   // 回合結束的登入失效判斷:跑不起來 / 沒有回應不出登入卡
-  t("回合結束:loggedOut 排除 whyState(跑不起來、沒有回應)", /loggedOut = !!\(d\[cur\] && d\[cur\]\.installed && !d\[cur\]\.loggedIn && !whyState\(d\[cur\]\)\);/.test(app));
+  t("回合結束:loggedOut 排除 whyState(跑不起來、沒有回應)", /loggedOut = !!\(d && d\[cur\] && d\[cur\]\.installed && !d\[cur\]\.loggedIn && !whyState\(d\[cur\]\)\);/.test(app));
   t("連結畫面登入成功直接連上(方案 B):localLogin 在列裡成功 → connect(額度用完卡片開的 modal 那一列同一條)", /if \(\(inRow \|\| inLai\) && r\.ok && x\.installed && x\.loggedIn\) \{\n[^\n]*\n    return connect\(kind, x\);/.test(app));
   t("設定 › 模型接入保留〔登入〕(mdlOptions 仍用 cn.signIn)", /"cn\.signIn" : null\) : curKind === kind/.test(app));
 

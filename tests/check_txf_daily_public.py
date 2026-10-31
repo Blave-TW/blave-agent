@@ -1,7 +1,8 @@
 """Minimal check: the key-free TXF daily bars in lib.data — TAIFEX futDataDown (one CSV per
 month, per contract and session) stitched into the near-month series fetch_twfutures_ohlcv
 ('TXF', '1d') serves. No network: the exchange session replays answers recorded on 2026-10-06
-(tests/fixtures/taifex_fut_daily/); the clock is frozen at 2026-10-06 15:00 Taipei.
+(tests/fixtures/taifex_fut_daily/); the clock is frozen at 2026-10-06 15:00 Taipei. The Blave
+futures CDN is stubbed down everywhere (the TAIFEX path is what is checked) except one section.
 
   - gate: without BLAVE_AGENT_LOCAL=1 nothing is requested; the Blave path answers as before
   - parse: 1998-07 (listing month, day session only), a start before listing is clamped
@@ -20,10 +21,14 @@ month, per contract and session) stitched into the near-month series fetch_twfut
     in front of the recorded Blave ones, attrs['source'] = 'TAIFEX/Blave'; 20 trading days
     each side of the seam with no repeated and no missing day against TAIFEX's own calendar;
     TAIFEX down → the Blave series alone plus a warning; a cloud machine never asks TAIFEX
+  - CDN up: the same frame from txf.parquet, TAIFEX never asked; a cloud machine asks neither
   - MXF / TMF: the TAIFEX bars start on that contract's listing day (2001-04-09 / 2024-07-29)
 
 Run: cd blave-agent && MPLBACKEND=Agg .venv/bin/python tests/check_txf_daily_public.py
 """
+import hashlib
+import io
+import json
 import os
 import sys
 import tempfile
@@ -112,10 +117,26 @@ class NoWait:
         pass
 
 
-def fresh(**kw):
+class Cdn:
+    """The Blave futures CDN: down unless given files (key → bytes)."""
+
+    def __init__(self, files=None):
+        self.files, self.calls = files, []
+
+    def get(self, key, etag=None):
+        self.calls.append(key)
+        if self.files is None:
+            raise D.TwCdnUnavailable(f"{key}: ConnectionError")
+        return self.files[key], "e"
+
+
+def fresh(cdn_files=None, **kw):
     D._CACHE_DIR = Path(tempfile.mkdtemp(prefix="txfpub-"))
     D._TW_PUBLIC_SESSION = Session(**kw)
     D._TW_PUBLIC_LIMITER = NoWait()
+    global cdn
+    cdn = Cdn(cdn_files)
+    D._twfut_cdn_get = cdn.get
     return D._TW_PUBLIC_SESSION
 
 
@@ -154,7 +175,8 @@ try:
     D.fetch_twfutures_ohlcv("TXF", "1d", "2026-09-01", "2026-09-30", {})
     check(False, "cloud + no access → DataAccessError")
 except D.DataAccessError:
-    check(not s.posts and not blave_calls, "cloud machine + no access: DataAccessError as before, no TAIFEX request")
+    check(not s.posts and not blave_calls and not cdn.calls,
+          "cloud machine + no access: DataAccessError as before, no TAIFEX or CDN request")
 os.environ["BLAVE_AGENT_LOCAL"] = "1"
 
 # ── parse: listing month ──
@@ -309,6 +331,29 @@ os.environ.pop("BLAVE_AGENT_LOCAL", None)
 df = D.fetch_twfutures_ohlcv("TXF", "1d", "2010-12-01", "2011-02-15", KEY)
 check(not s.posts and df.index[0] == SEAM and "source" not in df.attrs, "cloud machine: Blave alone from 2011-01-03, no TAIFEX request")
 os.environ["BLAVE_AGENT_LOCAL"] = "1"
+
+# ── CDN up: the same frame from the CDN, TAIFEX never asked ──
+s = fresh()
+want = D.fetch_txf_daily_public("2026-09-01", None)
+bars = D._taifex_txf_daily_raw("2026-09-01", "2026-10-06")
+txf = pd.DataFrame({"date": (bars.index + pd.Timedelta(hours=8)).date, "open": bars["Open"].values,
+                    "high": bars["High"].values, "low": bars["Low"].values, "close": bars["Close"].values,
+                    "volume": bars["Volume"].values})
+buf = io.BytesIO()
+txf.to_parquet(buf, index=False)
+body = buf.getvalue()
+manifest = {"schema": "twfutures-daily-v1", "asof": "2026-10-06", "enabled": True, "txf": ["2026-09-01", "2026-10-06"],
+            "stock_futures": {}, "years": {}, "files": {"txf.parquet": hashlib.sha256(body).hexdigest()}}
+s = fresh(cdn_files={"manifest.json": json.dumps(manifest).encode(), "txf.parquet": body})
+got = D.fetch_txf_daily_public("2026-09-01", None)
+check(got.equals(want) and got.attrs["source"] == "TAIFEX" and not s.posts and "txf.parquet" in cdn.calls,
+      f"CDN up: the TAIFEX-path frame from txf.parquet, zero TAIFEX requests ({len(got)} bars)")
+os.environ["BLAVE_DATA_ACCESS"] = "0"
+blave_calls.clear()
+got = D.fetch_twfutures_ohlcv("TXF", "1d", "2026-09-01", "2026-09-30", {})
+os.environ.pop("BLAVE_DATA_ACCESS", None)
+check(bar(got, "2026-09-02")[0] == 47201.0 and not s.posts and not blave_calls,
+      "CDN up, desktop + no access: fetch_twfutures_ohlcv('TXF', '1d') from the CDN, zero TAIFEX requests")
 
 # ── MXF / TMF: TAIFEX bars only from the contract's own listing day ──
 s = fresh()

@@ -129,7 +129,7 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
     await hit(); await hit();
     t("上限到:cap 事件在 429 回到 CLI 之前就發了", order.join() === "200,cap,429");
     relay.stop(); m.close(); }
-  t("main.js 把 cap 轉成 turn-event llm_cap(不靠比對 429 的字)", /ev\.type === "cap"[^\n]*webContents\.send\("turn-event", \{ type: "llm_cap" \}\)/.test(main));
+  t("main.js 把 cap 轉成 turn-event llm_cap(不靠比對 429 的字)", /ev\.type === "cap"\) sendTurn\(sessionId, "turn-event", \{ type: "llm_cap" \}\)/.test(main));
   t("畫面:llm_cap 記進 turnCap、每一輪送出時歸零", /c\.type === "llm_cap"\) \{\s*turnCap = true;/.test(app) && /turnFaulted = false; turnCap = false;/.test(app));
 
   // ── ⑥ 回合失敗分類(renderer/apikey.js akFault / akErrText) ──

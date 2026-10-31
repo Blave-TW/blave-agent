@@ -200,7 +200,7 @@ function verBusyNote(el) {
 }
 // 回合進行中:「還原成這一版」「再跑一次」是 aria-disabled(同頁首 #rp-ho:鍵盤停得上去、讀屏唸得到原因)。app.js 在上鎖 / 解鎖的同一處叫它
 function verBusy() {
-  const busy = typeof running !== "undefined" && running === true;
+  const busy = csAnyTurn();   // 機器層級:還原／再跑一次會改策略檔,任何分頁有回合都擋(spec chat-tabs §3)
   if (!busy) {
     const nb = $("ver-rerun-busy"); if (nb) nb.hidden = true;
     const S = VS[verSideOf(rpBag())];
@@ -400,7 +400,7 @@ async function verLoad(side, n) {
    不經 agent、不展開聊天欄。這台電腦的 lib 跟 app 同包,不出更新框(真的舊了由 ack 的 UPDATE_REQUIRED 接住) */
 function verSend(msg) {
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著就先展開:過程在那裡
-  return submitMessage(msg);
+  return csSendAway(msg);
 }
 function verBoxCtx(side, B) {
   const cloud = side === "cloud", display = VER.safeName(B.data.displayName) || B.name;   // 規則只有一份,在 strategy_versions.js(稽核 S4)
@@ -439,7 +439,7 @@ function verNeedUpdate(side, B, n, opener) {
 }
 function verRestoreAsk() {
   const B = rpBag(), side = verSideOf(B), S = VS[side];
-  if (!S.data || S.open === null || running) return;
+  if (!S.data || S.open === null || csAnyTurn()) return;
   const n = S.open, cur = S.data.current;
   S.err = null; verPaintErr(S);
   const amt = verAmount(side, B);
@@ -455,7 +455,7 @@ function verRestoreAsk() {
 // 雲端主機的 lib 太舊 → 同還原那一條出更新框、不送(主機換回舊 lib 時,留著的 rerun.json 還會畫出這顆鈕)
 function verRetry() {
   const B = rpBag(), side = verSideOf(B), S = VS[side], pd = S.data && S.open === null && VER ? VER.pending(S.data) : null;
-  if (!pd || pd.status !== "failed" || running) return false;
+  if (!pd || pd.status !== "failed" || csAnyTurn()) return false;
   S.rerr = null;
   if (side === "cloud" && !VER.canRestoreInPlace(S.data)) { verPaintRerun(S, pd); verNeedUpdate(side, B, pd.n, $("ver-retry")); return false; }
   const raw = B.data && B.data.versions, rr = raw && raw.rerun;

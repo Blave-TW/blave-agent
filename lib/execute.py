@@ -151,6 +151,8 @@ def run_twap(
     Impact analysis: use load_twap_log(twap_key) to read slices + summaries,
     then compare slippage_bps across runs with different duration_min / n_slices.
     """
+    from lib import guard
+    guard.hold_turn_money()   # an agent turn's TWAP: wait for another turn's orders before the first slice (no-op elsewhere)
     log_path = f"manager/twap/{twap_key}.jsonl"
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
 

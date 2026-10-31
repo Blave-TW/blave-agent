@@ -8,7 +8,7 @@ workspace 外面時整個不碰。
 
 跑法:cd blave-agent && python3 tests/check_cloud_handoff_cleanup.py
 """
-import asyncio, contextlib, io, json, os, sys, tempfile, types
+import asyncio, contextlib, io, json, os, sys, tempfile, time, types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "runtime"))
@@ -53,10 +53,10 @@ def t(name, ok):
 HANDOFF = os.path.join(WS, "tmp", "cloud-handoff")
 
 
-def plant():
-    os.makedirs(HANDOFF, exist_ok=True)
-    for f in ("id_ed25519", "id_ed25519-cert.pub"):
-        with open(os.path.join(HANDOFF, f), "w") as fh:
+def plant(sub="s1"):
+    os.makedirs(os.path.join(HANDOFF, sub), exist_ok=True)
+    for f in ("id", "id-cert.pub"):
+        with open(os.path.join(HANDOFF, sub, f), "w") as fh:
             fh.write("fake")
 
 
@@ -67,7 +67,9 @@ with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
     asyncio.run(at.run_turn("s1", "幫我更新雲端主機", "sonnet", at.LocalSink("s1")))
 chunks = [json.loads(line[len("@@BLAVE@@"):]) for line in out.getvalue().splitlines() if line.startswith("@@BLAVE@@")]
 t("這一回合真的是 max_turns 出錯收場", any(c.get("type") == "error" and c.get("code") == at.FAULT_MAX_TURNS for c in chunks))
-t("max_turns 收場之後 tmp/cloud-handoff/(金鑰與憑證)不在了", not os.path.lexists(HANDOFF))
+t("max_turns 收場之後這一輪的 tmp/cloud-handoff/s1/(金鑰與憑證)不在了", not os.path.lexists(os.path.join(HANDOFF, "s1")))
+import shutil  # noqa: E402
+shutil.rmtree(HANDOFF)
 t("tmp/ 本身留著(只清那一個資料夾)", os.path.isdir(os.path.join(WS, "tmp")))
 
 # ② 不存在:不出錯
@@ -90,6 +92,38 @@ os.makedirs(os.path.join(outside, "cloud-handoff"))
 os.symlink(outside, os.path.join(WS, "tmp"))
 at._remove_cloud_handoff_dir(WS)
 t("tmp 指到 workspace 外面:外面的 cloud-handoff 不碰", os.path.isdir(os.path.join(outside, "cloud-handoff")))
+
+# ⑥ 多條對話並行(0.1.37):只清這一輪自己的子資料夾;別條的、根目錄的(agent 漏帶 handoff_dir 時 api 退路放的,可能別條正在用)一個都不碰
+os.unlink(os.path.join(WS, "tmp"))
+os.makedirs(os.path.join(WS, "tmp"))
+for sid in ("desktop-aaaa1111", "desktop-bbbb2222"):
+    plant(sid)
+with open(os.path.join(HANDOFF, "id"), "w") as fh:
+    fh.write("root")
+at._remove_cloud_handoff_dir(WS, "desktop-aaaa1111")
+t("並行:這一輪(A)的子資料夾清掉", not os.path.lexists(os.path.join(HANDOFF, "desktop-aaaa1111")))
+t("並行:別條(B)的子資料夾與金鑰原封不動", os.path.isfile(os.path.join(HANDOFF, "desktop-bbbb2222", "id")))
+t("並行:帶 session_id 時沒過期的根目錄檔不碰(稽核 s1 P2-1)", os.path.isfile(os.path.join(HANDOFF, "id")))
+at._remove_cloud_handoff_dir(WS)
+t("沒帶 session_id:沒過期的根目錄檔不動、資料夾不動", os.path.isfile(os.path.join(HANDOFF, "id")) and os.path.isdir(os.path.join(HANDOFF, "desktop-bbbb2222")))
+old = time.time() - at.HANDOFF_ROOT_STALE_S - 5
+os.utime(os.path.join(HANDOFF, "id"), (old, old))
+at._remove_cloud_handoff_dir(WS)
+t("沒帶 session_id:超過憑證效期的根目錄殘檔才清", not os.path.lexists(os.path.join(HANDOFF, "id")) and os.path.isdir(os.path.join(HANDOFF, "desktop-bbbb2222")))
+with open(os.path.join(HANDOFF, "id"), "w") as fh:
+    fh.write("root")
+os.utime(os.path.join(HANDOFF, "id"), (old, old))
+plant("desktop-aaaa1111")
+at._remove_cloud_handoff_dir(WS, "desktop-aaaa1111")
+t("帶 session_id(run_turn 唯一的呼叫法)也清超過效期的根目錄殘檔;別條的子資料夾照留(稽核 s2 P3-6)",
+  not os.path.lexists(os.path.join(HANDOFF, "id")) and not os.path.lexists(os.path.join(HANDOFF, "desktop-aaaa1111"))
+  and os.path.isfile(os.path.join(HANDOFF, "desktop-bbbb2222", "id")))
+t("子資料夾名就是對話 id;怪字退回固定字(會被貼進命令列)",
+  at.handoff_folder("desktop-ab12cd34") == "desktop-ab12cd34" and at.handoff_folder("../x") == "turn" and at.handoff_folder(None) == "turn" and at.handoff_folder("d" * 65) == "turn" and at.handoff_folder("d" * 64) == "d" * 64)
+rule = at.mcp_rule(True, "desktop-ab12cd34")
+t("mcp_rule 寫明這一輪的資料夾、get_ssh_access 帶 handoff_dir、別碰別條的",
+  "`tmp/cloud-handoff/desktop-ab12cd34/`" in rule and "`handoff_dir` = `desktop-ab12cd34`" in rule and "never touch those" in rule)
+t("run_turn 收尾只清這一輪的(帶 session_id)", "_remove_cloud_handoff_dir(session_id=session_id)" in open(os.path.join(ROOT, "runtime", "agent_turn.py"), encoding="utf-8").read())
 
 # ⑤ 雲端視角(掛上 MCP)那一段:cloud-handoff.md 不要一次 cat;不綁引擎(Codex 沒有 Read 工具)
 seg = at._viewing_env_segment(True)

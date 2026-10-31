@@ -6,6 +6,10 @@
 # references/deployment.md. The script itself locates the workspace from its own path,
 # so only the caller's cd needs the resolved value.)
 
+# A resident process is never part of an agent turn: drop the turn's variables a tmux / nohup start from
+# inside a turn would hand it, or lib/guard would hold the turn order lock for its whole life (and refuse
+# its own orders while another turn holds it).
+unset BLAVE_TURN_INTERRUPT_FILE BLAVE_TURN_PID
 WORKSPACE="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$WORKSPACE"
 

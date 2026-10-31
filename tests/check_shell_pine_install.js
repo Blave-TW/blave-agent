@@ -330,8 +330,8 @@ async function main() {
     const zh = shape(paint("code", nf, "zh")), en = shape(paint("code", nf, "en"));
     ok("找不到編輯器:訊息自己一行、兩顆出口鈕在下面一行,裝在動作列後面的容器裡——動作列裡什麼都不插", zh.after && zh.inRow === 0 && zh.kids === "p.xp-st err | div.xp-acts[2]", zh);
     ok("zh 與 en 同一個排法(同一個狀態不再兩種樣子);重畫不會疊出第二個容器", JSON.stringify(zh) === JSON.stringify(en) && zh.boxes === 1, [zh, en]);
-    ok("有未存變更 / 沒送成 / 正在回覆(灰字):句子一樣自己一行", ["unsaved", "fail"].every((tv) => /^p\.xp-st err( \||$)/.test(shape(paint("code", { tv, tab: "t1", errors: [] }, "zh")).kids))
-      && /^p\.xp-st( \||$)/.test(shape(paint("code", { tv: "idle", soft: "busy" }, "zh", true)).kids) && shape(paint("code", { tv: "idle", soft: "busy" }, "zh", true)).inRow === 0);
+    ok("有未存變更 / 沒送成(灰字):句子一樣自己一行;0.1.37 起回合中也按得了(另開分頁送),不再有「正在回覆」那句", ["unsaved", "fail"].every((tv) => /^p\.xp-st err( \||$)/.test(shape(paint("code", { tv, tab: "t1", errors: [] }, "zh")).kids))
+      && shape(paint("code", { tv: "idle", soft: "busy" }, "zh", true)).boxes === 0);
     ok("送出中的狀態句也自己一行;沒有東西要講(idle)就不起容器", shape(paint("code", { tv: "sending", step: 1 }, "en")).kids.startsWith("p.xp-st") && shape(paint("code", { tv: "idle" }, "zh")).boxes === 0);
     const card = paint("card", nf, "zh"), cs = shape(card);
     ok("對話裡的卡不變:訊息在動作列上面、鈕在動作列裡,不起 .xv-msg", cs.boxes === 0 && cs.inRow === 2 && card.host.kids[card.host.kids.indexOf(card.row) - 1].has("xp-msg"), cs);
@@ -352,7 +352,7 @@ async function main() {
   ok("未存變更的卡:只有「再試一次」", /if \(s\.tv === "unsaved"\) return ask\(t\("tv\.unsaved\.h"\), t\("tv\.unsaved\.p"\), e \? \[\["tv\.retry", "btn-out", \(\) => tvSend\(e\.ctx\)\]\] : null\);/.test(src));
   ok("只有用戶真的按才動(isTrusted);中欄只在按了送進那一次自己打開", /if \(ev\.isTrusted\) tvPrimary\(e, btn\)/.test(src) && /Number\(ev\.step\) === 1 && TV\.armed && ev\.id\) \{ TV\.armed = false; brExpand/.test(src));
   ok("過期檔 / 舊卡按送進:先開確認框", /if \(\(c\.stale \|\| c\.old\) && c\.at\) \{[^}]*confirmBox\(\{ title: t\("tv\.cf\.stale\.h"\)/.test(src));
-  ok("回合進行中:請 agent 貼不搶(送進不開回合,不受限)", (src.match(/if \(running === true\) \{/g) || []).length === 1 && !/async function tvSend\(c\) \{[^}]*running/.test(src));
+  ok("回合進行中:請 agent 貼另開分頁送(csSendAway,不擋);送進不開回合,不受限", !/\brunning\b/.test(src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "")) && /if \(await csSendAway\(msg\)\) trackFeature\("tv_agent_paste"\);/.test(src));
   ok("IPC:renderer 只給 ref——不給內容、不給路徑、不給網址", /pineInstall: \(ref\) => ipcRenderer\.invoke\("pine-install", ref \? \{ session: ref\.session, id: ref\.id, strategy: ref\.strategy \} : null\)/.test(pre)
     && /handle\("pine-install", \(_e, ref\) => \{ const job = pineJob\(/.test(mainSrc) && !/pineInstall\([^)]*(content|url|path)/.test(src));
   ok("主行程自己取檔:卡 → exportById 的快照、程式碼分頁 → workspace 那一份(檔名取 exportRef);只收 pine", /const r = exportById\(ref\.session, ref\.id\); if \(!r \|\| r\.target !== "pine"\) return null;/.test(mainSrc) && /const rec = exportRef\(name, "pine"\);/.test(mainSrc) && /if \(!stratNames\(\)\.includes\(name\)\) return null;/.test(mainSrc));

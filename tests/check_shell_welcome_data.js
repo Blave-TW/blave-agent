@@ -96,7 +96,7 @@ if (!process.versions.electron) {
     && (html.slice(html.indexOf('id="wl-seg"'), html.indexOf("</span>", html.indexOf('id="wl-seg"'))).match(/data-mk="(crypto|tw|txf)" aria-pressed="(true|false)" data-i18n="wd\.mk\.\1"/g) || []).length === 3
     && /data-mk="crypto" aria-pressed="true"/.test(html) && /<div class="wl-body" id="wl-body"><\/div>\s*<div class="wl-foot"><button class="btn-quiet" id="wl-all" type="button" data-i18n="wd\.all"><\/button><p class="wl-state" id="wl-state" aria-live="polite"><\/p><\/div>/.test(html)
     && html.split('id="wl-state"').length === 2);
-  ok("② 載入順序:welcome.css 有載;welcome.js 在 app.js 之後(用 app.js 的 $ / t / acct / planVars / autosize / trackFeature;放最後,只有 0.1.33 第一次對話 intro.js(用 welcome.js 的 stFill / runningNow)排在它後面;不插進 app.js → suggest.js 之間)", /<link rel="stylesheet" href="welcome\.css">/.test(html) && html.indexOf('src="welcome.js"') > html.indexOf('src="app.js"') && (html.match(/<script src="[^"]+"><\/script>/g) || []).slice(-2).join() === '<script src="welcome.js"></script>,<script src="intro.js"></script>');
+  ok("② 載入順序:welcome.css 有載;welcome.js 在 app.js 之後(用 app.js 的 $ / t / acct / planVars / autosize / trackFeature;放最後,只有 0.1.33 第一次對話 intro.js(用 welcome.js 的 stFill / runningNow)排在它後面;不插進 app.js → suggest.js 之間)", /<link rel="stylesheet" href="welcome\.css">/.test(html) && html.indexOf('src="welcome.js"') > html.indexOf('src="app.js"') && (html.match(/<script src="[^"]+"><\/script>/g) || []).slice(-3).join() === '<script src="welcome.js"></script>,<script src="intro.js"></script>,<script src="chattabs.js"></script>');   // 0.1.37 對話分頁核心(chattabs.js)排最後:要用前面每一支的全域
   ok("② app.js 四個重畫入口:acctPaint(帳號狀態變)、acctPrecheck(能跑的人不走 acctPaint)、applyStatic 最後(換語言)、acctSignOut(登出)",
     /wdPaint\(\)/.test(cutFn(appSrc, "acctPaint")) && /acctSet\(await window\.blave\.accountStatus\(\)\); acctAt = Date\.now\(\);\n[^\n]*\n\s*if \(typeof wdPaint === "function"\) wdPaint\(\);/.test(appSrc)
     && /\[data-i18n-aria\]"\)\.forEach[^\n]*\n\s*if \(typeof wdPaint === "function"\) wdPaint\(\);[^\n]*\n\}/.test(appSrc) && /hasToken = false; acct = null; balLast = null; planErr = null; planBusy = false;\n\s*if \(typeof wdPaint === "function"\) wdPaint\(\);/.test(appSrc));
@@ -143,9 +143,9 @@ if (!process.versions.electron) {
       const into = C.document.createElement("span"); C.wdNote(k, v, into);
       if (click) { const b = into.kids.find((x) => typeof x !== "string"); C.went = null; if (b && b.click) b.click(); return C.went; }
       return into.kids.map((x) => (typeof x === "string" ? x : x.textContent)).join("|"); };
-    ok("② 右欄那句(zh)兩態:方案制 →「登入並綁卡，免費試用 14 天 Blave 資料」/「綁卡，免費試用 14 天」(欄名已寫 Blave 資料,paywall-redesign §2.2);切換前 →「送 14 天」照舊;沒天數兩態都不帶數字、是一顆鈕",
-      note("zh", true, "out", { t: "14" }) === "登入並綁卡，免費試用 14 天 Blave 資料" && note("zh", false, "out", { t: "14" }) === "登入並綁卡，送 14 天 Blave 資料"
-      && note("zh", true, "none", { t: "14" }) === "綁卡，免費試用 14 天" && note("zh", true, "none", { t: "7" }) === "綁卡，免費試用 7 天" && note("zh", false, "none", { t: "14" }) === "綁卡，送 14 天 Blave 資料"
+    ok("② 右欄那句(zh)兩態:方案制 →「登入並綁卡免費試用 14 天 Blave 資料」/「綁卡免費試用 14 天」(欄名已寫 Blave 資料,paywall-redesign §2.2);切換前 →「送 14 天」照舊;沒天數兩態都不帶數字、是一顆鈕",
+      note("zh", true, "out", { t: "14" }) === "登入並綁卡免費試用 14 天 Blave 資料" && note("zh", false, "out", { t: "14" }) === "登入並綁卡，送 14 天 Blave 資料"
+      && note("zh", true, "none", { t: "14" }) === "綁卡免費試用 14 天" && note("zh", true, "none", { t: "7" }) === "綁卡免費試用 7 天" && note("zh", false, "none", { t: "14" }) === "綁卡，送 14 天 Blave 資料"
       && note("zh", true, "out", { t: "" }) === "登入並綁卡後就能用" && note("zh", false, "none", { t: "" }) === "綁卡後就能用", [note("zh", true, "out", { t: "14" }), note("zh", true, "none", { t: "14" })].join(" / "));
     ok("② 右欄那句(en)兩態:方案制 free trial(連字號 U+2011,同 pv.h.offer.m);切換前 days free", note("en", true, "out", { t: "14" }) === "Sign in and add a card for a 14\u2011day free trial of Blave data"
       && note("en", true, "none", { t: "14" }) === "Add a card for a 14\u2011day free trial" && note("en", false, "out", { t: "14" }) === "Sign in and add a card: 14 days of Blave data free", note("en", true, "out", { t: "14" }));
@@ -287,7 +287,7 @@ if (!process.versions.electron) {
     ok("② tag 用既有的 wd.mk.*(en 台股改 TW Stocks);輸入框提示改成講想法的短句(spec §9:聊天欄最窄 336 也放得下)",
       STR.en["wd.mk.tw"] === "TW Stocks" && STR.zh["wd.mk.tw"] === "台股" && STR.zh["ws.placeholder"] === "說一個交易想法…" && STR.en["ws.placeholder"] === "Describe a trading idea…");
     ok("② ①策略卡的 CTA(spec §3.1):先擋回合中與代下載中(busySendTell)、狀態不是 free 只開詳情、free 才 libAsk(from welcome);名字按鈕記 wcard_open／wcard_open_cloud 再開詳情(libOpen silent);鎖由 wcBusySync 就地換(busyLock、正在裝的那支換 lib.pending)",
-      /if \(runningNow\(\) \|\| LIB\.pending\) \{ busySendTell\(\); return; \}\n\s*if \(libCtaOf\(s\)\.state !== "free"\) \{ wcDetail\(s\); return; \}\n\s*libAsk\(s, a, \{ from: "welcome" \}\);/.test(cutFn(src, "wcUse"))
+      /if \(LIB\.pending\) \{ busySendTell\(\); return; \}[^\n]*\n\s*if \(libCtaOf\(s\)\.state !== "free"\) \{ wcDetail\(s\); return; \}\n\s*libAsk\(s, a, \{ from: "welcome" \}\);/.test(cutFn(src, "wcUse"))
       && /trackFeature\(onbEnv\(\) === "cloud" \? "wcard_open_cloud" : "wcard_open"\); wcDetail\(s\);/.test(cutFn(src, "wcCard")) && /await libOpen\(\{ silent: true \}\); libShowDetail\(s\.id\);/.test(cutFn(src, "wcDetail"))
       && /busyLock\(a, busy\);/.test(cutFn(src, "wcBusySync")) && /t\(mine \? "lib\.pending" : "lib\.use"\)/.test(cutFn(src, "wcBusySync")));
     // wcPaint 原文接假 DOM:骨架、收起、雲端停了收起、指紋沒變不碰 DOM
@@ -304,8 +304,8 @@ if (!process.versions.electron) {
         a1.kids === "SK,SK,SK" && !a1.hidden && a2.hidden && a3.kids === "C1*,C2" && !a3.hidden && a4.hidden && a5.kids === "SK,SK,SK" && a6.kids === "C1*,C2" && a7.hidden && a7.kids === "" && a8.hidden && a9.kids === "C1*,C2"
         && [a1, a3, a7].every((x) => x.again), JSON.stringify({ a1, a2, a3, a4, a5, a6, a7, a8, a9 })); }
     ok("② app.js 接線:stratRefresh 畫完清單設 RP.loaded 再叫 wcSync(不閃:#wc / #wf 在那之前一直 hidden,由 onbPaint 決定出哪一個);送出／unlock／回合結束三排都叫 wcBusySync(回合鎖);回合結束的 then 不再叫 stTurnEnd;enterWorkspace 叫 wcArm(3 秒保底從進工作頁起算,稽核 B1);wcSync 第一次顯示整頁後 wcLoad + wcPaint(新安裝 LIB.data 是 null,靠這裡第一次抓);acctCheck 第一次收尾設 acctSettled",
-      /RP\.loaded = true; if \(typeof wcSync === "function"\) wcSync\(\);/.test(cutFn(appSrc, "stratRefresh")) && (appSrc.match(/if \(typeof nsSync === "function"\) nsSync\(\); if \(typeof wcBusySync === "function"\) wcBusySync\(\);/g) || []).length === 3
-      && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc) && !/stTurnEnd|stSync/.test(appSrc)
+      /RP\.loaded = true; if \(typeof wcSync === "function"\) wcSync\(\);/.test(cutFn(appSrc, "stratRefresh")) && /if \(typeof nsSync === "function"\) nsSync\(\); if \(typeof wcBusySync === "function"\) wcBusySync\(\);/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8"))
+      && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(tabBound\(\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc) && !/stTurnEnd|stSync/.test(appSrc)
       && /stratRefresh\(false\);\n\s*if \(typeof wcArm === "function"\) wcArm\(\);/.test(cutFn(appSrc, "enterWorkspace")) && !/\nsetTimeout\(/.test(src) && /WC\.armed = true; setTimeout\(\(\) => \{ if \(!WC\.shown\) wcSync\(\); \}, 3000\);/.test(cutFn(src, "wcArm"))
       && /function wcSync\(\) \{\n  if \(!WC\.shown\) WC\.shown = true;\n  onbPaint\(\);\n  wcLoad\(\); wcPaint\(\);[^\n]*\n\}/.test(src)
       && /\.finally\(\(\) => \{ acctPending--; acctSettled = true; \}\)/.test(cutFn(appSrc, "acctCheck")) && /acctSettled = true; if \(acct\) planWatch\(acct\);/.test(cutFn(appSrc, "acctPrecheck")));

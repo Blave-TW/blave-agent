@@ -8,6 +8,7 @@
 //      e. 一頁都還沒好 → 照舊等、照舊回 still_waiting
 // 跑法:node tests/check_shell_browser_early_ready.js(② 要 BLAVE_TEST_WINDOW=1)
 const path = require("path"), fs = require("fs"), os = require("os");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell");
 const GATE = require("./_electron_gate");
 let red = 0, last = null; const t = (n, ok, d) => { console.log((ok ? "PASS  " : "FAIL  ") + n + (ok ? "" : "  " + JSON.stringify(d === undefined ? last : d).slice(0, 700))); if (!ok) red++; };
@@ -63,7 +64,7 @@ if (!process.versions.electron) {
     const sent = []; const realSend = win.webContents.send.bind(win.webContents);
     win.webContents.send = (ch, ev) => { if (ch === "browser-event") sent.push(ev); return realSend(ch, ev); };
     const B = require(path.join(SHELL, "browser")).createBrowser({ electron, stateDir: path.join(tmp, "snaps"), reportsDir: path.join(tmp, "reports"), getWin: () => win, uiLang: () => "en", track: () => {}, version: "test", reducedMotion: () => true, userPresent: () => true });
-    await B.beginTurn(win, "desktop-earlytest1");
+    await BT.begin(B, win, "desktop-earlytest1");
     const call = (n, a) => B._call(n, a || {}, { live: () => true });
     const timed = async (n, a) => { const t0 = Date.now(); const r = J(await call(n, a)); return { r, ms: Date.now() - t0 }; };
 
@@ -93,7 +94,7 @@ if (!process.versions.electron) {
     o = J(await call("browser_open", { url: "http://e1.test/never" }));
     w = await timed("browser_wait", { tab: o.tab, timeout_s: 3 });
     t("e 一頁都還沒好:照舊等到期限、回 still_waiting", w.r.ok === false && w.r.error === "still_waiting" && w.ms >= 2500, w);
-    B.endTurn();
+    BT.end(B);
     hung.forEach((r) => { try { r.destroy(); } catch (_) { /* 已斷 */ } });
     srv.close(); try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* userData 還鎖著 */ }
     console.log(red ? `\n${red} FAILED` : "\nALL PASS(②)");

@@ -154,16 +154,24 @@ function resFmt() {
 // submitMessage:記下回合開始與本機策略快照(當下重讀一次,不拿上一輪結束時的清單——那之後 live tick / 刪除都可能動過)
 function resTurnStart(viewing, noBt) {
   const rt = { sid: sessionId, at: Date.now(), ts: 0, env: viewing && viewing.env === "cloud" ? "cloud" : "local", snap: null, cloudSnap: resCloudSnap(), noBt: noBt === true,
-    items: [], host: null, anchor: null, cloud: false, ready: null, go: null };
+    items: [], host: null, anchor: null, cloud: false, ready: null, go: null, touched: new Set(), overlap: false };
   rt.ready = new Promise((r) => { rt.go = r; });
   rt.snapP = window.blave.listStrategies().then((l) => { rt.snap = resSnapOf(l); }, () => { rt.snap = resSnapOf(RP.list); });
   RES.turn = rt;
 }
+/* 這一輪的 tool chunk 碰過哪幾支(摘要／受詞裡的 strategies/<name>/)。多條對話同時跑時,回合結束的清單差異會包含別條做的事:
+   那時只認這一輪自己碰過的(spec 技術方案 §1.2 結果卡會認錯輪);只有這一條在跑時照舊看整份差異(工具摘要不一定帶路徑) */
+const RES_STRAT_PATH = /strategies\/([A-Za-z0-9_-]{1,64})\//g;
+function resTurnTool(c) {
+  const rt = RES.turn; if (!rt || !c || c.type !== "tool") return;
+  for (const s of [c.summary, c.kind_obj]) if (typeof s === "string") for (const m of s.matchAll(RES_STRAT_PATH)) rt.touched.add(m[1]);
+}
+function resTurnOverlap() { const rt = RES.turn; if (rt) rt.overlap = true; }
 function resTurnClose() { const rt = RES.turn; RES.turn = null; if (rt) rt.ts = Date.now() / 1000; return rt; }
 // onTurnEnd 最後一步(回覆定稿、轉出卡都掛好之後):卡掛在哪一則由這一刻決定
 function resTurnEnd(rt, cloudTouched) {
   if (!rt) return;
-  rt.host = resHostNow(); rt.anchor = $("chat-scroll").lastElementChild; rt.cloud = !!cloudTouched;
+  rt.host = resHostNow(); rt.anchor = chatEl().lastElementChild; rt.cloud = !!cloudTouched;
   rt.go();
 }
 // stratRefresh + rptTurnEnd 回來之後:兩份產出到齊、回覆也定稿了才一次出(同 turnCards:回合結束才出卡,不插在串流中間)
@@ -171,6 +179,7 @@ async function resTurnParts(rt, reportsP) {
   if (!rt) return;
   await rt.snapP;
   let items = resStratItems(rt.snap, RP.list), reps = [];
+  if (rt.overlap) items = items.filter((it) => rt.touched.has(it.ref));
   try { reps = (await reportsP) || []; } catch (_) { reps = []; }
   items = items.concat(reps);
   await rt.ready;
@@ -190,7 +199,7 @@ async function resScanFacts(it) {
 // 同 export.js xpHost;沒有就回 null,真的要出卡才起一則
 function resHostNow() {
   let host = null;
-  for (let n = $("chat-scroll").lastElementChild; n && !n.classList.contains("you"); n = n.previousElementSibling)
+  for (let n = chatEl().lastElementChild; n && !n.classList.contains("you"); n = n.previousElementSibling)
     if (n.classList.contains("msg") && n.classList.contains("ai")) host = n;
   return host;
 }
@@ -210,8 +219,14 @@ function resSlotPut(host, node) {
 }
 function resHostFor(rt) {
   if (rt.host && rt.host.isConnected) return rt.host;
+  // 對話分頁:那一輪的分頁還開著就到它的容器裡找(背景分頁做完、沒有回覆文字的那一輪也出卡);關掉收掉了才放棄
+  const T = typeof CS !== "undefined" && rt.sid ? CS.tabs.get(rt.sid) : null;
+  if (T && T.el) return withTab(T, () => resHostIn(rt));
   if (rt.sid !== sessionId) return null;
-  const again = [...$("chat-scroll").querySelectorAll(".msg.ai")].find((n) => n.dataset.resTs === String(rt.ts));   // 切走又切回來(csOpen 重畫過)
+  return resHostIn(rt);
+}
+function resHostIn(rt) {
+  const again = [...chatEl().querySelectorAll(".msg.ai")].find((n) => n.dataset.resTs === String(rt.ts));   // 切走又切回來(csOpen 重畫過)
   if (again) return again;
   if (rt.host || !rt.anchor || !rt.anchor.isConnected) return null;   // 原本那則被重畫掉了:不猜位置,紀錄已存,下次打開就在
   // 這一輪沒有回覆文字(出錯、被停止)但有產出:自己起一個 .msg.ai,接在回合結束時的最後一個東西後面

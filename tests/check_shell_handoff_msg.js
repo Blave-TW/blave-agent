@@ -72,15 +72,15 @@ t("頁首那顆先問 HO.on:關著就不畫;拉回還要雲端看得到現況", 
 // Wei 09-22:上傳 / 拉回只要有程式碼就出鈕(不要求回測過——搬過去之後 agent 會在那邊重跑一次)
 { eval(src.slice(src.indexOf("function hoHasCode("), src.indexOf("\n", src.indexOf("function hoHasCode("))));
   t("有程式碼就出鈕:沒有 stats 也算;空白程式碼 / 沒資料不算", hoHasCode({ code: "x = 1", stats: null }) === true && hoHasCode({ code: "  \n" }) === false && hoHasCode(null) === false && hoHasCode({ stats: {} }) === false); }
-t("hoAsk 的順序(規格 §2):回合進行中 → 不動作;別的框開著 / 選字中 → 不動作;雲端沒在運行 → 切過去不開框", (() => {
+t("hoAsk 的順序(規格 §2;0.1.37 起回合中不再擋,另開分頁送):別的框開著 / 選字中 → 不動作;雲端沒在運行 → 切過去不開框", (() => {
   const i = src.indexOf("function hoAsk("), body = src.slice(i, src.indexOf("\n}", i)).replace(/\/\/.*$/gm, "");
   const o = (re) => body.search(re);
-  return o(/running/) > 0 && o(/envCanSwitch\(\)/) > o(/running/) && o(/envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \};/) > o(/envCanSwitch\(\)/) && o(/confirmBox\(\{/) > o(/envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \};/); })());
+  return o(/typeof running/) < 0 && o(/envCanSwitch\(\)/) > 0 && o(/envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \};/) > o(/envCanSwitch\(\)/) && o(/confirmBox\(\{/) > o(/envSwitchGuarded\("cloud"\)\) HO\.pending = \{ id \};/); })());
 t("雲端沒在運行的六種都走同一條(envCloudKind 不是 running,或逾 1 小時沒同步)", /function hoCloudLive\(\) \{ const st = TR_BAGS\.cloud\.st; return envCloudKind\(st\) === "running" && envHeadState\(st, Date\.now\(\)\) !== "unknown"; \}/.test(src));
-t("按確認 = 直接送一句話(帶 handoff 方向標記給主行程記事件):不碰輸入框的草稿(#ta 一個字都沒動到),聊天欄收著先展開", /submitMessage\(msg, \{ handoff: dir, noBacktest: tb === "B" \}\)/.test(src) && !/\$\("ta"\)/.test(src) && /if \(paneSt\.chat\.off\) paneToggle\("chat", false\);/.test(src));
+t("按確認 = 直接送一句話(帶 handoff 方向標記給主行程記事件):不碰輸入框的草稿(#ta 一個字都沒動到),聊天欄收著先展開", /csSendAway\(msg, \{ handoff: dir, noBacktest: tb === "B" \}\)/.test(src) && !/\$\("ta"\)/.test(src) && /if \(paneSt\.chat\.off\) paneToggle\("chat", false\);/.test(src));
 t("確認框不放 prompt 全文:訊息是在 onOk 裡才組的,extra 裡只有那幾句 ho.*", !/ho\.msg\./.test(src.slice(src.indexOf("const extra = document.createDocumentFragment()"), src.indexOf("onOk:"))) && /const msg = hoMsg\(dir, id, hoTpl\(tb\), to\); if \(!msg\) return;/.test(src));
 t("agent 正在回覆:兩顆鈕是 aria-disabled(鍵盤停得上去、讀屏唸得到原因),不是原生 disabled", /b\.setAttribute\("aria-disabled", "true"\)/.test(src) && /b\.title = t\("turn\.busy"\)/.test(src) && !/\.disabled = true/.test(src));
-t("上鎖 / 解鎖的同一處叫 hoBusy(三個出口都有)", (appSrc.match(/hoBusy\(\)/g) || []).length === 3);
+t("上鎖 / 解鎖的同一處叫 hoBusy(turnUiSync 裡;app.js 三個出口都叫 turnUiSync)", /hoBusy\(\);/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")) && (appSrc.match(/turnUiSync\(\)/g) || []).length >= 3);
 t("畫面只走 textContent / DOM,沒有 innerHTML", !/innerHTML/.test(src));
 
 // 目的地有沒有同名:拉回看本機清單(完整),送上雲端看雲端回報的索引——那份索引不保證涵蓋全部,所以找不到時不說「不會覆蓋」
@@ -203,7 +203,7 @@ t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down �
       t: (k, v) => k + (v ? JSON.stringify(v) : ""), confirmBox: (o) => boxes.push(o), $: () => ({}), document: { createElement: el, createDocumentFragment: el },
       envCloudList: () => cloudList, RP: { list: localList, data: dir === "up" && code ? { code } : null }, RPC: { data: dir === "down" && code ? { code } : null }, LANG: "zh",
       hoTpl: (k) => (k === "B" ? TPLB : TPL), HO_NOTE: { "": ["ho.note.up", "ho.note.down"], B: ["ho.noteB.up", "ho.noteB.down"] }, paneSt: { chat: {} },
-      submitMessage: (m, o) => { sent.push(m); opts.push(o); return Promise.resolve(false); }, trackFeature: () => {} };
+      submitMessage: (m, o) => { sent.push(m); opts.push(o); return Promise.resolve(false); }, csSendAway: (m, o) => { sent.push(m); opts.push(o); return Promise.resolve(false); }, trackFeature: () => {} };
     vm.createContext(c);
     vm.runInContext(["hoMsg", "hoMovesRow", "hoFreeName", "hoKind", "hoAsk"].map((n) => cut(src, n)).join("\n") + cut(trSrc, "cdelInUse")
       + xpSrc.slice(xpSrc.indexOf("function xpIsTypeB("), xpSrc.indexOf("\n", xpSrc.indexOf("function xpIsTypeB("))), c);

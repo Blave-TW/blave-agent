@@ -2731,12 +2731,16 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
             mcpt_fields = _auto_mcpt(config, close_v, pos, df.index, fee, n_trades)
             if mcpt_fields:
                 stats.update(mcpt_fields)
-                print(f"  MCPT p-value: {mcpt_fields[MCPT_KEYS[0]]:.4f}  "
-                      f"(n={mcpt_fields[MCPT_KEYS[1]]}, "
-                      f"{'significant edge' if mcpt_fields[MCPT_KEYS[0]] < 0.05 else 'no significant edge'} at 95%)")
-                if mcpt_fields[MCPT_KEYS[1]] < MCPT_N_MIN:
-                    # Its own line, never folded into the one above: that f-string's shape is
-                    # parsed downstream, an extra line is not. _mcpt_n_effective says the same
+                p_v, n_v = mcpt_fields[MCPT_KEYS[0]], mcpt_fields[MCPT_KEYS[1]]
+                # The count is what the agent relays in plain words; p is stored at 4 places, so
+                # round(p × n) is the exact count only up to n = 10,000 — past that it is left out
+                # (same rule as the app's tooltip, strategy_versions.js mcptBeat).
+                beat = f"{round(p_v * n_v)} beat it, " if 1 <= n_v <= 10000 else ""
+                print(f"  MCPT p-value: {p_v:.4f}  (n={n_v}, {beat}"
+                      f"{'p < 0.05: significant edge' if p_v < 0.05 else 'p >= 0.05: no significant edge'})")
+                if n_v < MCPT_N_MIN:
+                    # Its own line, never folded into the one above: the agent reads that line's
+                    # `MCPT p-value: … (n=…` head, an extra line is not. _mcpt_n_effective says the same
                     # thing to strategy.log, which the agent does not read on a normal run, and
                     # a listing gate the author only meets at submission time is the gap this
                     # whole branch exists to close — so it has to reach the one channel that

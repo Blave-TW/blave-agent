@@ -115,12 +115,13 @@ function world(o) {
     ok("按出口:記 awake_cloud_go、框關、切到 cloud、沒送任何指令", w.env.tracked.join() === "awake_cloud_go" && !w.open() && w.env.switched.join() === "cloud" && w.sent.length === 0, { t: w.env.tracked, s: w.env.switched }); }
   { const w = world({ money: "paper", awake: true, platform: "win32" }), lis = w.body.all().filter((n) => n.tag === "li");
     ok("本機 · Windows:框真的依平台換成 1aWin / 2pa", lis.map((n) => n.textContent).slice(0, 2).join() === "tr.means.1aWin,tr.means.2pa"); }
-  // 設定 › 一般的說明句(app.js awakePaint)依平台切換:Mac 用共用句、Windows 開著時用接電源限定那句
-  { const paint = (platform, on) => { const els = {}, el = () => ({ cls: new Set(), attrs: {}, classList: { toggle() {} }, setAttribute() {}, textContent: "" });
+  // 設定 › 一般(app.js awakePaint):泡泡依平台、不隨開關換;底下那句只在關著時出,講停單的後果
+  { const paint = (platform, on) => { const els = {}, el = () => ({ cls: new Set(), attrs: {}, classList: { toggle() {} }, setAttribute() {}, textContent: "", hidden: false });
       const $$ = (id) => els[id] || (els[id] = el());
-      new Function("$", "t", "window", "AWAKE", fn(app, "awakePaint") + "; awakePaint();")($$, (k) => k, { blave: { platform } }, on); return els["set-awake-lead"].textContent; };
-    ok("設定頁 · Mac 開著:set.awake.lead;關著:set.awake.leadOff", paint("darwin", true) === "set.awake.lead" && paint("darwin", false) === "set.awake.leadOff");
-    ok("設定頁 · Windows 開著:set.awake.leadWin;關著:set.awake.leadOffWin", paint("win32", true) === "set.awake.leadWin" && paint("win32", false) === "set.awake.leadOffWin"); }
+      new Function("$", "t", "window", "AWAKE", fn(app, "awakePaint") + "; awakePaint();")($$, (k) => k, { blave: { platform } }, on);
+      const l = els["set-awake-lead"]; return els["set-awake-tip"].textContent + "|" + (l.hidden ? "-" : l.textContent); };
+    ok("設定頁 · Mac:泡泡兩態都是 set.awake.lead;開著底下那句藏起來,關著出 set.awake.leadOff", paint("darwin", true) === "set.awake.lead|-" && paint("darwin", false) === "set.awake.lead|set.awake.leadOff");
+    ok("設定頁 · Windows:泡泡兩態都是 set.awake.leadWin;關著出 set.awake.leadOffWin", paint("win32", true) === "set.awake.leadWin|-" && paint("win32", false) === "set.awake.leadWin|set.awake.leadOffWin"); }
   { const w = world({ money: "paper", awake: false }), lis = w.body.all().filter((n) => n.tag === "li");
     ok("防睡關著:框用舊版 1 / 2p,出口照樣在", lis.map((n) => n.textContent).slice(0, 2).join() === "tr.means.1,tr.means.2p" && lis[lis.length - 1].textContent === "tr.means.cloud tr.means.cloudGo"); }
   { const w = world({ money: "real", env: "cloud", awake: true }), lis = w.body.all().filter((n) => n.tag === "li");

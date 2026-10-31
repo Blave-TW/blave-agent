@@ -7,6 +7,7 @@
 // 頁面由這支測試自己的本機代理供應(同 check_shell_browser_capture.js:CONNECT 轉進本機 TLS,自簽憑證只在測試的 partition 上信任)。
 // 不碰剪貼簿、不搶焦點。跑法:node tests/check_shell_capture_lazy_image.js(BLAVE_TEST_WINDOW=1 才起 Electron;沒有 openssl 就 SKIP)
 const path = require("path"), fs = require("fs"), os = require("os"), zlib = require("zlib");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell");
 const GATE = require("./_electron_gate");
 if (!process.versions.electron) {
@@ -73,7 +74,7 @@ app.whenReady().then(async () => {
   ses.setCertificateVerifyProc((rq, cb) => cb(rq.hostname === "lazy.test" ? 0 : -2));
   const reportsDir = path.join(tmp, "reports");
   const B = require(path.join(SHELL, "browser")).createBrowser({ electron, stateDir: path.join(tmp, "snaps"), reportsDir, getWin: () => win, uiLang: () => "en", track: () => {}, version: "test", reducedMotion: () => false });
-  await B.beginTurn(win, "desktop-lazy1");
+  await BT.begin(B, win, "desktop-lazy1");
   const call = (n, a) => B._call(n, a || {}, { live: () => true });
   let r = J(await call("browser_open", { url: "https://lazy.test/charts" }));
   const tab = r.tab; await call("browser_wait", { tab });
@@ -104,7 +105,7 @@ app.whenReady().then(async () => {
   r = J(await call("browser_capture", { tab, ref: after("Empty chart", /"Empty chart" \[@e\d+\]/), report: "lazy" }));
   t("整張同一個顏色(什麼都還沒畫)→ incomplete,沒有多寫檔", !r.ok && r.reason === "incomplete" && files().length === n1 + 2);
   for (const res of open) { try { res.destroy(); } catch (_) { /* 已關 */ } }
-  B.endTurn();
+  BT.end(B);
   srv.close(); tls.close(); try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* Windows:userData 還鎖著 */ }
   console.log(red ? `\n${red} FAILED` : "\nALL PASS");
   app.exit(red ? 1 : 0);

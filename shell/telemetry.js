@@ -44,7 +44,7 @@ const EVENTS = {
   plan_start_res: { result: ["ok", "no_card", "no_credit", "error", "confirm"] },
   update_failed: { stage: ["check", "download", "staging", "install", "other"] },
   // no_plan / plan_failed:方案制(api 切換之後)沒有含資料的方案、方案扣款失敗
-  lib_blocked: { why: ["signed_out", "no_card", "no_balance", "unknown", "cloud_off", "ai_no_card", "ai_no_credit", "no_plan", "plan_failed"] },
+  lib_blocked: { why: ["signed_out", "no_card", "no_balance", "unknown", "cloud_off", "ai_no_card", "ai_no_credit", "no_plan", "plan_failed", "agent_old"] },
   // 每日在線心跳:app 一直開著不重開的人沒有 app_open,靠它量到。事件本身就是「這台在線」;live = 本機對帳器在跑(含模擬)
   heartbeat: { live: ["on", "off"] },
   // 引擎安裝(0.1.12;shell/enginesetup.js,主行程送):一輪真的有東西要裝的安裝跑完的結果(first / upd × done / net / other / timeout;
@@ -74,6 +74,8 @@ const EVENTS = {
     "c_403_in", "c_403_out", "c_403_no", "c_403_unk", "c_probe_out", "c_probe_no", "x_probe_out", "x_probe_no"] },
   // Claude 的登入方式(主行程 saveConnection／開 app、renderer 回合後問 CLI 時送):值由 cliAuthHow 從 authMethod 換來
   cli_auth: { how: ["claude_ai", "api_key", "api_key_helper", "oauth_token", "third_party", "none", "other"] },
+  // 改金鑰驗證碼(0.1.37;renderer 送,trade.js kcNext):驗證碼那一格出現、碼過了關卡、錯太多次被鎖。不帶碼、不分交易所
+  key_verify: { step: ["shown", "ok", "locked"] },
   // 用了哪個功能:名字是白名單(canon .claude/docs/product-telemetry.md 的登記表;api 端 desktop_telemetry.EVENTS 同一份),
   // api 每安裝每 name 每 UTC 日去重——回答「誰、哪天、用過哪些功能」,不做逐點擊計數。library_* 的送出點在 renderer/library.js(libTrack),
   // reports_* 在 renderer/reports.js、strategy_new 在 renderer/newstrategy.js(都經 libTrack)。
@@ -257,8 +259,14 @@ const EVENTS = {
     "upd_pill_shown", "upd_go_pill", "upd_cf_cancel", "upd_sched_on", "upd_sched_off", "upd_sched_run",
     // 0.1.36 登入額度用完卡片的〔改用 Claude Code 或 Codex〕(renderer/app.js):按了開連結本機 AI 的 modal、從那個 modal 換成功
     "acct_local_open", "acct_local_use",
+    // 0.1.37 對話分頁與並行回合(同 api openclaw/desktop_telemetry.py 那 16 個、同順序;api 先上):分頁與歷史八個(renderer,下一段)、
+    // 同時在跑的回合數當天第一次到 2／4／8、雲端名額滿進排隊／取消排隊、內建瀏覽器租約要等／等到逾時(main.js)、手機來的對話開成分頁(通道上線才送)
+    "tab_new", "tab_close", "tab_close_busy", "tab_switch", "tab_overflow", "hist_open", "hist_search", "hist_resume",
+    "chat_par2", "chat_par4", "chat_par8", "chat_queued", "queue_cancel", "br_wait", "br_busy", "tab_remote",
+    // 0.1.37 設定 › 連結 QR 底下的商店名稱(renderer/app.js mvQr):按了、開系統瀏覽器之前送。掃 QR 在手機上發生、這裡看不到
+    "app_link_ios", "app_link_android",
     // 0.1.38 側欄策略資料夾(renderer/stratgroups.js、stratflags.js):操作成功才送,不帶資料夾名、策略名或哪個 emoji;
-    // spec 原名 strat_folder_* 超過 prop VARCHAR(16),縮成 sfolder_*。api 白名單接在 0.1.37 的 app_link_android 之後,整合 0.1.37 時這段跟著搬到那後面
+    // spec 原名 strat_folder_* 超過 prop VARCHAR(16),縮成 sfolder_*。api 白名單同順序,接在 0.1.37 的 app_link_android 之後
     "sfolder_create", "sfolder_auto", "sfolder_rename", "sfolder_emoji", "sfolder_reorder", "sfolder_delete", "sfolder_toggle", "sfolder_move"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
@@ -270,7 +278,7 @@ const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   //
 // 放主行程而不是畫面:被攻破的 renderer 對 track-feature 灌合法名字也只會出門 20 次,搶不到 api 那顆全域熔斷
 const DAILY = ["feature_used", "acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed",
   "plan_start_res", "update_failed", "lib_blocked", "heartbeat", "engine_setup", "engine_opt_fail", "lib_pick", "idea_sent", "detect_fail",
-  "device_type", "reply_notif", "auth_fail", "cli_auth"];
+  "device_type", "reply_notif", "auth_fail", "cli_auth", "key_verify"];
 // 每日一則、不分屬性值:心跳一天只要一列(live 記當天第一次送出那一刻的),下單中途開關不多送
 const DAILY_ONE = ["heartbeat"];
 const HEARTBEAT_MS = 10 * 60 * 1000;   // 啟動後 10 分鐘起每 10 分鐘看一次;當天送過就不出門(啟動當天另有 app_open)
@@ -288,7 +296,7 @@ const SID_ON = ["strat_created", "strat_backtested", "strat_deployed"];
 const SID_RE = /^[0-9a-f]{16}$/;
 const SID_KEY_RE = /^[0-9a-f]{64}$/;
 // 畫面(track-event)只准送這幾個;里程碑(app_first_open、login_done…)與主行程自己判的(plan_start_res、update_failed)不收
-const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth"];
+const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify"];
 const DAY_RE = /^[0-9]{8}$/;
 const DEFAULT_ON = true;   // Wei 2026-09-21:預設開、照實告知、可關
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

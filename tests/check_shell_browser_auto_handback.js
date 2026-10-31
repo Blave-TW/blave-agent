@@ -5,6 +5,7 @@
 //      焦點在密碼欄(含 shadow root 裡的)那一頁不交還
 // 跑法:node tests/check_shell_browser_auto_handback.js(② 要 BLAVE_TEST_WINDOW=1)
 const path = require("path"), fs = require("fs"), os = require("os"), { EventEmitter } = require("events");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell"), B = path.join(SHELL, "browser");
 const GATE = require("./_electron_gate");
 let red = 0, last = null; const t = (n, ok, d) => { console.log((ok ? "PASS  " : "FAIL  ") + n + (ok ? "" : "  " + JSON.stringify(d === undefined ? last : d).slice(0, 700))); if (!ok) red++; };
@@ -52,7 +53,8 @@ if (!process.versions.electron) (async () => {
   const SID = "desktop-autohb1", OTHER = "desktop-autohb2";
   const Br = require(path.join(B, "index.js")).createBrowser({ electron: fakeE, stateDir: path.join(tmp, "snaps"), reportsDir: path.join(tmp, "reports"), getWin: () => win, uiLang: () => "en", track: () => {}, version: "test", reducedMotion: () => true, userPresent: () => true });
   const call = (n, a) => Br._call(n, a || {}, { live: () => true });
-  const turn = async (sid, opts) => { Br.endTurn(); const at = sent.length; await Br.beginTurn(win, sid || SID, opts === undefined ? SENT : opts); return sent.slice(at); };
+  // 0.1.37 起交還在這一輪拿到瀏覽器租約那一刻做(第一次呼叫瀏覽器工具時):beginTurn 之後先拿租約,再看事件
+  const turn = async (sid, opts) => { BT.end(Br); const at = sent.length; const m = await BT.begin(Br, win, sid || SID, opts === undefined ? SENT : opts); if (m) await Br._acquire(m.key, {}); return sent.slice(at); };
   const backs = (evs, x) => evs.filter((e) => e.type === "handback" && e.id === x.tab.id);
   const row = async (x) => J(await call("browser_tabs")).tabs.find((r) => r.tab === x.alias);
   let host = 0;
@@ -73,7 +75,7 @@ if (!process.versions.electron) (async () => {
   const MAIL = "https://mail.google.com/mail/u/0/", SORRY = "https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3Dx";
 
   // ---- 1. 交還:agent 開的、用戶接手中的分頁,用戶送出訊息的新回合一開始就還回來
-  await Br.beginTurn(win, SID, SENT);
+  await BT.begin(Br, win, SID, SENT);
   const a = await open();
   J(await call("browser_read", { tab: a.alias }));
   Br.takeover(a.tab.id); a.wc._body = "second";   // 用戶接手、點開了別的區塊
@@ -81,7 +83,7 @@ if (!process.versions.electron) (async () => {
   let evs = await turn();
   const hb = backs(evs, a);
   t("交還:新回合開始時發既有的 handback 事件、帶 auto: true、帶這個對話的 session_id,而且只發一次", hb.length === 1 && hb[0].auto === true && hb[0].session_id === SID && a.tab.userControl === false, evs);
-  t("交還:在任何工具呼叫之前就發了(beginTurn 回來時已經交還)", evs.every((e) => e.type !== "block_open"));
+  t("交還:在任何工具動作之前就發了(拿到租約那一刻已經交還)", evs.every((e) => e.type !== "block_open"));
   let r = J(await call("browser_read", { tab: a.alias }));
   t("交還之後:同一個代號讀得到用戶改過之後的內容", r.ok === true && r.tab === a.alias && r.untrusted_content.includes("second"), r);
   t("交還之後:browser_tabs 不再標 user_control,帶網址與標題", (await row(a)).status === "ready" && last.tabs.find((x) => x.tab === a.alias).url === a.url);
@@ -98,7 +100,7 @@ if (!process.versions.electron) (async () => {
 
   // ---- 2b. 驗證頁:永不自動交還
   const v1 = await open(), v2 = await open();
-  Br.endTurn();
+  BT.end(Br);
   v1.tab.verify = "google"; Br.takeover(v1.tab.id);      // 搜尋時認出來的驗證頁,用戶在回合之間點了它
   v2.wc._go(SORRY); Br.takeover(v2.tab.id);             // 當下網址就是驗證頁
   evs = await turn();
@@ -189,6 +191,17 @@ if (!process.versions.electron) (async () => {
   Br.handback(s.tab.id); s.page.entered.length = 0;
   for (const tool of ["browser_read", "browser_snapshot", "browser_screenshot"]) { r = J(await call(tool, { tab: s.alias })); t("交還不會繞過網址政策:" + tool + " → blocked_policy,沒進頁面", r.ok === false && r.error === "blocked_policy" && s.page.entered.length === 0 && !JSON.stringify(r).includes(SECRET), r); }
   s.wc._go(s.url);
+
+  // ---- 2d. 送出之後、agent 第一次用瀏覽器之前他又碰了那一頁:不交還(對照點是送出當下,設計稽核 P2-7)
+  { const d = await open(); Br.takeover(d.tab.id); BT.end(Br);
+    const at = sent.length, m = await Br.beginTurn(win, SID, SENT);
+    d.wc.emit("input-event", {}, { type: "mouseDown" });   // 送出後、拿租約前:他在那一頁點了一下
+    await Br._acquire(m.key, {});
+    const e1 = sent.slice(at);
+    t("不交還:送出之後他又碰過那一頁(拿到租約前)→ 還是「你在操作」", d.tab.userControl === true && backs(e1, d).length === 0, e1);
+    const e2 = await turn();
+    t("對照:下一輪送出後沒再碰 → 交還", backs(e2, d).length === 1 && d.tab.userControl === false, e2);
+    Br._tabs.close(d.tab.id); }
 
   // ---- 3. 交還之後的守門一條都不少
   Br.takeover(s.tab.id); evs = await turn();
@@ -320,19 +333,19 @@ if (!process.versions.electron) (async () => {
   evs = await turn();
   r = J(await call("browser_click", { tab: k.alias, ref: "@e1" }));
   t("下一輪:交還,同一個動作照常做得了", backs(evs, k).length === 1 && r.ok === true && k.page.clicks === 1, r);
-  Br.endTurn();
+  BT.end(Br);
 
   // ---- 原文鎖
   const idx = fs.readFileSync(path.join(B, "index.js"), "utf8"), main = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
-  t("掛點:beginTurn 裡、tabs.newTurn 之後;要 userSent 而且不是 noUser", /tabs\.newTurn\(sessionId\);\n[^\n]*\n\s*if \(opts && opts\.userSent === true && !cur\.noUser\) await autoHandback\(cur\);/.test(idx));
-  t("只看這個對話 agent 指得到的分頁(tabs.reachable),而且只認 by === \"agent\";問焦點前後比一次用戶輸入的時間戳", /for \(const t of tabs\.reachable\(\)\) \{\n\s*if \(t\.by !== "agent" \|\| !t\.userControl\) continue;\n[^\n]*\n\s*const touched = v\.userInputs \|\| 0;\n\s*if \(!\(await handable\(t\)\)\) continue;\n[^\n]*\n\s*if \(cur === c && t\.userControl && \(v\.userInputs \|\| 0\) === touched\) handback\(t\.id, true\);/.test(idx));
+  t("掛點:拿到瀏覽器租約那一刻(activate)、tabs.newTurn 之後;要 userSent 而且不是 noUser;beginTurn 只記下 userSent", /tabs\.newTurn\(p\.sessionId\);[\s\S]{0,400}curReady = \(p\.userSent && !c\.noUser \? autoHandback\(c, p\.inputs\) : Promise\.resolve\(\)\)/.test(idx) && /userSent: !!\(opts && opts\.userSent === true\)/.test(idx));
+  t("只看這個對話 agent 指得到的分頁(tabs.reachable),而且只認 by === \"agent\";問焦點前後比一次用戶輸入的時間戳", /for \(const t of tabs\.reachable\(\)\) \{\n\s*if \(t\.by !== "agent" \|\| !t\.userControl\) continue;\n[^\n]*\n\s*const touched = v\.userInputs \|\| 0;\n\s*if \(since && since\.has\(t\.id\) && since\.get\(t\.id\) !== touched\) continue;\n\s*if \(!\(await handable\(t\)\)\) continue;\n[^\n]*\n\s*if \(cur === c && t\.userControl && \(v\.userInputs \|\| 0\) === touched\) handback\(t\.id, true\);/.test(idx));
   t("handable 是 fail-closed:問不到、null、看不進去(iframe / opaque)、敏感欄位都回 false", (() => { const h = idx.slice(idx.indexOf("async function handable("), idx.indexOf("async function autoHandback(")); return /catch \(_\) \{ return false; \}/.test(h) && /if \(!f \|\| !f\.desc \|\| !f\.desc\.tag\) return false;/.test(h) && /f\.desc\.tag === "iframe" \|\| f\.desc\.opaque \|\| gate\.sensitiveField\(f\.desc\)\) return false;/.test(h); })());
-  t("main.js:只有 send-message(用戶送出)會起回合,而且標了 userSent", (main.match(/\brunTurn\(/g) || []).length === 2 && /ipcMain\.handle\("send-message"[\s\S]{0,2500}runTurn\(win, payload\)/.test(main)
-    && /beginTurn\(win, sessionId, \{ userSent: true, noUser: !!viewing && viewing\.env === "cloud" \}\)/.test(main));
+  t("main.js:回合只從 startTurn → turnLaunch 起;只有這台電腦送出的(origin desktop)標 userSent,手機來的不標", (main.match(/\brunTurn\(/g) || []).length === 2 && /function turnLaunch\(rec, payload\) \{[\s\S]{0,600}runTurn\(rec, payload\)/.test(main)
+    && /return startTurn\(payload, "desktop"\);/.test(main) && /beginTurn\(win, sessionId, \{ userSent: rec\.origin === "desktop", noUser: !!viewing && viewing\.env === "cloud" \}\)/.test(main));
   // 稽核 P2-13:userSent 現在對每一個回合都是 true(打字的、畫面代組的固定句都是這台電腦的人按的)。它分辨的是「有沒有人在這台電腦按送出」,
   // 不是「打字 vs 固定句」;帶 false 的呼叫端(排程 / 雲端發起 / 自動回合)還不存在——這一條釘住:呼叫端只有一個,而且旁邊寫明了誰該帶 false
   t("main.js:beginTurn 只有一個呼叫端,旁邊寫明 userSent 代表什麼、哪種回合要帶 false", (main.match(/browser\(\)\.beginTurn\(/g) || []).length === 1
-    && /\/\/ userSent = 這一輪是人在這台電腦上按出來的[\s\S]{0,600}要帶 false 的是「沒有人在這台電腦按送出」的回合:\n\s*\/\/ 排程回合、雲端主機那邊發起的回合、任何自動回合[\s\S]{0,300}\n\s*try \{ brMount = await browser\(\)\.beginTurn\(/.test(main));
+    && /\/\/ userSent = 這一輪是人在這台電腦上按出來的[\s\S]{0,600}要帶 false 的是「沒有人在這台電腦按送出」的回合:\n\s*\/\/ 排程回合、雲端主機那邊發起的回合、手機來的回合[\s\S]{0,300}\n\s*try \{ brMount = await browser\(\)\.beginTurn\(/.test(main));
   { const head = (s) => String(s).slice(0, String(s).indexOf('"use strict";'));
     const was = require("child_process").spawnSync("git", ["show", "8bb6aaa:shell/browser/verify.js"], { cwd: path.join(__dirname, "..") }).stdout;
     t("verify.js 檔頭(紅線)沒動", !!was && head(was).length > 200 && head(was) === head(fs.readFileSync(path.join(B, "verify.js"), "utf8"))); }
@@ -388,9 +401,9 @@ else {
     const SID = "desktop-autohbe1";
     const call = (n, a) => Br._call(n, a || {}, { live: () => true });
     const wcOf = (frag) => electron.webContents.getAllWebContents().find((w) => w.getURL().includes(frag));
-    const turn = async () => { Br.endTurn(); const at = sent.length; await Br.beginTurn(win, SID, SENT); return sent.slice(at); };
+    const turn = async () => { BT.end(Br); const at = sent.length; await BT.begin(Br, win, SID, SENT); return sent.slice(at); };
     const openWait = async (url) => { const o = J(await call("browser_open", { url })); await call("browser_wait", { tab: o.tab }); return { alias: o.tab, tab: Br._tabs.byAlias(o.tab), wc: wcOf(url.replace("http://", "")) }; };
-    await Br.beginTurn(win, SID, SENT);
+    await BT.begin(Br, win, SID, SENT);
 
     // a. 用戶接手、點開「Source code」那個分頁 → 新回合 agent 讀到他改過之後的內容
     const p = await openWait("http://hb1.test/tabs");
@@ -502,7 +515,7 @@ else {
     Br.userDone(d.tab.id, "skip");
 
     t("整段沒有任何請求出到本機替身以外(https 一律被拒)", hits.every((h) => /^(GET|POST) hb\d\.test\//.test(h)), hits);
-    Br.endTurn();
+    BT.end(Br);
     srv.close(); try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* userData 還鎖著 */ }
     console.log(red ? `\n${red} FAILED` : "\nALL PASS(②)");
     app.exit(red ? 1 : 0);

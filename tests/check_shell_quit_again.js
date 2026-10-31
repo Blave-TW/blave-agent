@@ -40,7 +40,7 @@ if (process.versions.electron) {
   const bq = cut(mainSrc, 'app.on("before-quit", (e) =>');
   const thens = bq.match(/\.then\(\(r\) => \{[^\n]*/g) || [];
   t("按了取消:quitAsking 還原、quitConfirmed 不設(下一次結束照樣會問);對話框自己出錯也還原;兩種都收回 draftOk(下次結束再問草稿那一道)", thens.length === 2 && thens.every((x) => /^\.then\(\(r\) => \{ quitAsking = false; if \(r\.response === sg\.goIndex\) \{ quitConfirmed = true;/.test(x) && / \} else \{ draftOk = false; draftNote = false; \} \}, \(\) => \{ quitAsking = false; draftOk = false; draftNote = false; \}\);$/.test(x)), thens);
-  t("攔截的條件只看「現在」:正在下單(tradeMaybeLive)或回合在跑,沒有「問過一次就不再問」的旗標", /const live = !quitting && !quitConfirmed && tradeMaybeLive\(\);/.test(bq) && /if \(!quitting && !quitConfirmed && \(activeTurn \|\| turnStarting\)\) \{/.test(bq) && !/asked|askedOnce|quitAsked/.test(bq));
+  t("攔截的條件只看「現在」:正在下單(tradeMaybeLive)或回合在跑,沒有「問過一次就不再問」的旗標", /const live = !quitting && !quitConfirmed && tradeMaybeLive\(\);/.test(bq) && /if \(!quitting && !quitConfirmed && anyTurnOrQueued\(\)\) \{/.test(bq) && !/asked|askedOnce|quitAsked/.test(bq));
 
   // ---- ②
   const done = () => { console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0); };

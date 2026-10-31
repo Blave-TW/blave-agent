@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld("blave", {
   replyNotifySet: (on) => ipcRenderer.invoke("reply-notify-set", on === true),
   replySoundSet: (on) => ipcRenderer.invoke("reply-sound-set", on === true),
   replyNotifyOs: () => ipcRenderer.invoke("reply-notify-os"),
-  replyCue: (kind, snippet) => ipcRenderer.send("reply-cue", { kind: String(kind), snippet: typeof snippet === "string" ? snippet : "" }),
+  replyCue: (kind, snippet, sid) => ipcRenderer.send("reply-cue", { kind: String(kind), snippet: typeof snippet === "string" ? snippet : "", ...(typeof sid === "string" && sid ? { sid } : {}) }),
   theme: () => ipcRenderer.invoke("theme"),
   themeSet: (v) => ipcRenderer.invoke("theme-set", typeof v === "string" ? v : ""),
   welcomePrefs: () => ipcRenderer.invoke("welcome-prefs"),
@@ -83,10 +83,10 @@ contextBridge.exposeInMainWorld("blave", {
   // 雲端寫入:只有指令名與參數過得來(金鑰不走這支,主行程也拒收);requestId = 重試時沿用上一趟那顆
   cloudSend: (cmd, args, requestId) => ipcRenderer.invoke("cloud-send", cmd, args, requestId),
   // 雲端連交易所:金鑰只走這一支(cloud-send 拒收 credentials);回應只有 { ok, code, detail },沒有金鑰值
-  cloudConnect: (a) => ipcRenderer.invoke("cloud-connect", { venue: a && a.venue, apiKey: a && a.apiKey, secret: a && a.secret, passphrase: a && a.passphrase }),
+  cloudConnect: (a) => ipcRenderer.invoke("cloud-connect", { venue: a && a.venue, apiKey: a && a.apiKey, secret: a && a.secret, passphrase: a && a.passphrase, keyChangeCode: a && a.keyChangeCode, lang: a && a.lang }),
   // 雲端群益開通(cloud_capital.js):憑證檔由主行程開對話框讀進記憶體,這裡只拿得到檔名與代號
   capitalPick: () => ipcRenderer.invoke("capital-pick"),
-  capitalCreds: (id, pw) => ipcRenderer.invoke("capital-creds", { id, pw }),
+  capitalCreds: (id, pw, o) => ipcRenderer.invoke("capital-creds", { id, pw, keyChangeCode: o && o.keyChangeCode, lang: o && o.lang }),
   capitalStep: (name) => ipcRenderer.invoke("capital-step", name),
   capitalUpload: (pw) => ipcRenderer.invoke("capital-upload", pw),
   capitalUnbind: () => ipcRenderer.invoke("capital-unbind"),
@@ -191,7 +191,15 @@ contextBridge.exposeInMainWorld("blave", {
   mobileViewSet: (on) => ipcRenderer.invoke("mobile-view-set", on === true),
   ensureEngine: () => ipcRenderer.invoke("ensure-engine"),
   sendMessage: (payload) => ipcRenderer.invoke("send-message", payload),
-  stopTurn: () => ipcRenderer.invoke("stop-turn"),   // true = 停止旗標寫下了;結果照樣等 turn-end
+  stopTurn: (sid) => ipcRenderer.invoke("stop-turn", typeof sid === "string" ? sid : null),   // true = 停止旗標寫下了;結果照樣等 turn-end。沒帶 sid = 只有一條在跑時停它
+  turnsState: () => ipcRenderer.invoke("turns-state"),   // [{ sid, phase, origin }]:畫面重載時補回哪幾條在跑
+  // 對話分頁(renderer/chattabs.js):開著哪些／順序／選中存 ui-prefs;⌘T／⌘W 由選單送來;手機來的對話開成背景分頁;最後一個分頁關掉時請主行程關窗
+  tabsPrefs: () => ipcRenderer.invoke("tabs-prefs"),
+  tabsPrefsSet: (p) => ipcRenderer.invoke("tabs-prefs-set", p && typeof p === "object" ? { tabs: Array.isArray(p.tabs) ? p.tabs.filter((x) => typeof x === "string") : [], sel: typeof p.sel === "string" ? p.sel : null } : null),
+  onTabNew: (fn) => ipcRenderer.on("tab-new", () => fn()),
+  onTabClose: (fn) => ipcRenderer.on("tab-close", () => fn()),
+  onTabOpen: (fn) => ipcRenderer.on("tab-open", (_e, o) => fn(o && typeof o === "object" ? { sid: typeof o.sid === "string" ? o.sid : "", origin: o.origin === "mobile" ? "mobile" : "desktop", focus: o.focus !== false } : null)),
+  windowClose: () => ipcRenderer.send("window-close"),
   // 安裝進度(renderer/engine.js):主行程那一份快照,拉一次 + 之後每次變動推過來
   engineState: () => ipcRenderer.invoke("engine-state"),
   onEngineState: (fn) => ipcRenderer.on("engine-state", (_e, s) => fn(s)),

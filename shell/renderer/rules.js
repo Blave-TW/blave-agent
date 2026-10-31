@@ -247,7 +247,7 @@ function rulesPaintList(grp) {
   if (RS.note === "rules") grp.append(rsEl("p", "cn-hint up rules-note", t("rules.agentChanged")));
   if (empty) {
     const e = rsEl("div", "src-empty rules-empty");
-    e.append(rsEl("p", null, t("rules.emptyLead")), rsEl("p", null, t("rules.emptyHow")), rsBtn("btn-fill", t("rules.add"), rulesAddRow));
+    e.append(rsEl("p", null, t("rules.emptyLead")), rsBtn("btn-fill", t("rules.add"), rulesAddRow));
     grp.append(e); return;
   }
   const list = rsEl("ul", "rules-list"); list.setAttribute("aria-label", t("rules.aria"));

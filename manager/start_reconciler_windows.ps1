@@ -14,6 +14,9 @@
 #   nssm start blaveclaw-reconciler
 # (%BLAVE_AGENT_HOME% defaults to C:\openclaw if unset — see references/deployment.md)
 
+# A resident process is never part of an agent turn: drop the turn's variables (see start_reconciler.sh)
+Remove-Item Env:BLAVE_TURN_INTERRUPT_FILE -ErrorAction SilentlyContinue
+Remove-Item Env:BLAVE_TURN_PID -ErrorAction SilentlyContinue
 $Workspace = Split-Path -Parent $PSScriptRoot
 Set-Location $Workspace
 

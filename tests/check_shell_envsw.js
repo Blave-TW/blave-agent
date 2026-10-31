@@ -414,7 +414,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
 
   // ── 稽核 N8:兩袋不串(原文列舉;這些東西不起 DOM 測不到行為,只守住寫法)──
   const kd = code.slice(code.indexOf('document.addEventListener("keydown"', code.indexOf("function envWire(")), code.indexOf("onCloudState", code.indexOf("function envWire(")));
-  // 切視角的入口列舉:切換器的 click、⌘1/⌘2、app 選單的 IPC——全部走 envSwitchGuarded;守門規則只有 envCanSwitch 一份
+  // 切視角的入口列舉:切換器的 click、⌘⇧1/⌘⇧2、app 選單的 IPC——全部走 envSwitchGuarded;守門規則只有 envCanSwitch 一份
   const wire = fn("envWire"), direct = (code.match(/[^\w]envSwitch\(/g) || []).length;
   ok("N8 守門只有一份:確認框 / 連接交易所的框 / 圖片放大開著、還沒進工作頁都不切;組字中不生效", ["view-ws", "del-scrim", "cx-scrim", "lb-scrim"].every((id) => fn("envCanSwitch").includes(id)) && /!envCanSwitch\(\)\) return false;/.test(fn("envSwitchGuarded")) && /isComposing/.test(kd));
   ok("三個入口都走 envSwitchGuarded(click / keydown / onEnvSwitch),envWire 裡沒有人直接叫 envSwitch", (wire.match(/envSwitchGuarded\(/g) || []).length === 3 && !/[^\w]envSwitch\(/.test(wire) && /onEnvSwitch\(\(env\) => \{ envSwitchGuarded\(env\); \}\)/.test(wire));
@@ -516,7 +516,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     // ③ 系統行:只在對話有內容時插;切到哪一邊都插當前方向那條;連續切(上一條仍是最後一則)只留最新一條。真的把 chatSwitched 跑起來
     { const kids = [], box = { get children() { return kids; }, appendChild(el) { kids.push(el); el.parentNode = box; }, get lastElementChild() { return kids[kids.length - 1]; } };
       const doc = { createElement: () => ({ dataset: {}, remove() { const i = kids.indexOf(this); if (i >= 0) kids.splice(i, 1); this.parentNode = null; } }) };
-      const ctx = { $: () => box, document: doc, t: (k) => k, busyPin: () => {}, scrollChat: () => {}, swLine: null, swHeld: null, running: false };
+      const ctx = { $: () => box, chatEl: () => box, document: doc, t: (k) => k, busyPin: () => {}, scrollChat: () => {}, swLine: null, swHeld: null, running: false };
       const held = (s) => s.replace(/swLine/g, "ctx.swLine").replace(/swHeld/g, "ctx.swHeld").replace(/\brunning\b/g, "ctx.running");
       const [run, flush] = new Function("ctx", "with (ctx) { " + held(appFn("chatSwitched")) + held(appFn("chatSwitchFlush")) + " return [chatSwitched, chatSwitchFlush]; }")(ctx);
       const sys = () => kids.filter((k) => k.className === "sysline").map((k) => k.dataset.i18n);
@@ -537,7 +537,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       ok("③ 記著的那一筆沒等到回合結束(起不來的回合)、人又切回去:併成一次、不留到下一輪才冒出來", kids.length === 10 && ctx.swHeld === null);
       flush(); ok("③ 沒有記著的東西時 flush 不動", kids.length === 10); }
     ok("③ envSwitch 記下切之前那一邊、切完叫 chatSwitched;換對話時 swLine 歸零", /const prev = ENV\.cur;/.test(fn("envSwitch")) && /chatSwitched\(prev, env\);/.test(fn("envSwitch")) && /liveBubble = null; busy = null; swLine = null; swHeld = null;/.test(app)
-      && /if \(rt\) resTurnEnd\(rt, cloudTurn\);[^\n]*\n\s*chatSwitchFlush\(\);[^\n]*\n\}\);/.test(app));
+      && /if \(rt\) resTurnEnd\(rt, cloudTurn\);[^\n]*\n\s*chatSwitchFlush\(\);[^\n]*\n\s*return \{ faulted, stopped \};\n\}/.test(app));
     // 雲端中欄畫雲端那支的報告:#rp 共用、資料分兩袋;雲端列是鈕;「送上雲端」在雲端不畫;送出當下 viewing 指的是雲端那一份
     ok("雲端報告:envShowMain 雲端分支依 RPC 掀 #rp、收 #tr(沒主機可看時全收);雲端那一袋沒開(open false)出歡迎頁 #main-empty(0.1.30);這台電腦那一半一個字沒變",
       /const gate = !\$\("cv-empty"\)\.hidden, rp = !gate && typeof RPC !== "undefined" && !!\(RPC\.name && RPC\.data\);/.test(fn("envShowMain")) && /\$\("rp"\)\.hidden = !rp; \$\("main-empty"\)\.hidden = gate \|\| rp \|\| open; \$\("tr"\)\.hidden = gate \|\| rp \|\| !open \|\| po; \$\("po"\)\.hidden = gate \|\| rp \|\| !open \|\| !po;/.test(fn("envShowMain"))

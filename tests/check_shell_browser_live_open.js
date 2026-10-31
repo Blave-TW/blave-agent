@@ -5,6 +5,7 @@
 //   2. 畫面接線:brExpand 拿到 live:false 先 showLive 重開;開不了才退回快照
 // 跑法:node tests/check_shell_browser_live_open.js(找不到 Electron 只跑 2)
 const path = require("path"), fs = require("fs"), os = require("os");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell");
 const GATE = require("./_electron_gate");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c ? "" : "  " + JSON.stringify(d))); if (!c) red++; };
@@ -49,7 +50,7 @@ app.whenReady().then(async () => {
   const realSend = win.webContents.send.bind(win.webContents);
   win.webContents.send = (ch, ev) => { if (ch === "browser-event") sent.push(ev); return realSend(ch, ev); };
   const B = require(path.join(SHELL, "browser")).createBrowser({ electron, stateDir: path.join(tmp, "snaps"), getWin: () => win, uiLang: () => "en", track: () => {}, version: "test" });
-  await B.beginTurn(win, "desktop-liveopen");
+  await BT.begin(B, win, "desktop-liveopen");
   const ctx = { live: () => true };
   const call = async (n, a) => JSON.parse((await B._call(n, a || {}, ctx)).content[0].text);
 
@@ -77,7 +78,7 @@ app.whenReady().then(async () => {
   for (const t of B._tabs.all()) B._tabs.close(t.id);
   for (let i = 0; i < 100 && others().length; i++) await new Promise((res) => setTimeout(res, 50));
   ok("收尾:分頁的 webContents 都關掉了", others().length === 0, others().map((w) => w.getURL()));
-  B.endTurn();
+  BT.end(B);
   srv.close(); srv.closeAllConnections();   // 代理的 keep-alive 連線不等它自己斷
   console.log(red ? `\n${red} FAILED` : "\nALL PASS");
   app.exit(red ? 1 : 0);

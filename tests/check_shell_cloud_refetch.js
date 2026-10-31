@@ -25,7 +25,7 @@ const tick = () => new Promise((r) => setImmediate(r));
   const turnEnd = app.match(/^ {2}if \(cloudTurn && RPC\.name\) rpCloudSelect\(RPC\.name, true\);\n {2}else if \(rpcOwed && RPC\.name\) rpCloudRefetch\(RPC\.name\);[^\n]*$/m);
   ok("onTurnEnd:碰過雲端 → 照舊立即重抓;沒碰雲端但回合中欠著 → 補抓", !!turnEnd);
   vm.runInContext([head, cut(trade, "envCloudList"), cut(app, "rpCloudSelect"), cut(app, "rpCloudWatch"), cut(app, "rpCloudShownSig"), cut(app, "rpCloudRefetch"),
-    "var running = false, rpWaitShownAt = 0; function rpWaitHold() { return 0; } function rpCloudPaint() { paints++; } function trPaint() {}",
+    "var running = false, rpWaitShownAt = 0; function csAnyTurn() { return running === true; } function rpWaitHold() { return 0; } function rpCloudPaint() { paints++; } function trPaint() {}",
     "function rpPending(name, state) { return { name, pending: state }; }",
     "function turnEnd(cloudTurn) {\n" + (turnEnd ? turnEnd[0] : "") + "\n}"].join("\n"), ctx);
   const list = (sig) => { ctx.TR_BAGS.cloud.st.cloud.strategies[0].sig = sig; return vm.runInContext("envCloudList(TR_BAGS.cloud.st)", ctx); };

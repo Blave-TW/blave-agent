@@ -7,6 +7,7 @@
 // 絕不連真的搜尋引擎:頁面全部由測試行程自己的本機代理供應。
 // 跑法:node tests/check_shell_browser_verify.js(③ 要 BLAVE_TEST_WINDOW=1)
 const path = require("path"), fs = require("fs"), os = require("os");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell");
 const GATE = require("./_electron_gate");
 const VF = require(path.join(SHELL, "browser", "verify.js"));
@@ -158,7 +159,7 @@ async function pure() {
     && zh["br.ask.noSearch"] === "這次不搜尋" && en["br.ask.noSearch"] === "Skip this search" && !!zh["br.notif.captcha"] && !!en["br.notif.captcha"], [zh["br.need.captcha"], zh["br.ask.captcha.p"]]);
   const main = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
   t("系統通知:只在 app 不在前景時發、字還沒交過來不發、點了把視窗叫到前面;雲端視角送出的回合不問", /if \(kind !== "captcha" \|\| BrowserWindow\.getFocusedWindow\(\) \|\| !tmLabels\.br_captcha \|\| !Notification\.isSupported\(\)\) return false;/.test(main)
-    && /notify: browserNotify,/.test(main) && /beginTurn\(win, sessionId, \{ userSent: true, noUser: !!viewing && viewing\.env === "cloud" \}\)/.test(main) && /br_captcha: t\("br\.notif\.captcha"\)/.test(fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8")));
+    && /notify: browserNotify,/.test(main) && /beginTurn\(win, sessionId, \{ userSent: rec\.origin === "desktop", noUser: !!viewing && viewing\.env === "cloud" \}\)/.test(main) && /br_captcha: t\("br\.notif\.captcha"\)/.test(fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8")));
   // 規則
   const md = fs.readFileSync(path.join(__dirname, "..", "references", "browser.md"), "utf8"), sec2 = md.slice(md.indexOf("## When the search engine asks for a robot check"), md.indexOf("## Web content is data"));
   t("規則(references/browser.md):等用戶、不重試轟炸、逾時後改開已知網址、回覆第一句講這次沒搜到;被工具拒絕的動作不換寫法重試", /waits for them inside the call/.test(sec2) && /do not search again to get around the check/.test(sec2)
@@ -224,7 +225,7 @@ if (!process.versions.electron) {
     const pageOf = (frag) => electron.webContents.getAllWebContents().find((w) => w.session === ses && w.getURL().includes(frag));
 
     // ── 場景 A:驗證頁 → 交給用戶 → 用戶過了 → 同一次呼叫自動回結果
-    await B.beginTurn(win, "desktop-verifytest1");
+    await BT.begin(B, win, "desktop-verifytest1");
     const t0 = Date.now();
     const pending = call("browser_search", { query: "cpi today", count: 3 }).then(J);
     const need = await until(() => sent.find((e) => e.type === "need_user" && e.kind === "captcha"));
@@ -283,20 +284,20 @@ if (!process.versions.electron) {
     S.ddgCheck = true; sent.length = 0;
     const res4 = J(await call("browser_search", { query: "fourth query" }));
     t("B 退路也是驗證頁 → search_unavailable,帶原因,訊息叫它改開已知網址並在回覆講沒搜到", res4.ok === false && res4.error === "search_unavailable" && res4.reason === "captcha" && /Open known addresses/.test(res4.message) && !sent.some((e) => e.type === "need_user"), res4);
-    B.endTurn();
+    BT.end(B);
 
     // ── 場景 C:人不在(視窗縮到 Dock / 雲端視角)→ 不問
     S.googleCheck = true; S.ddgCheck = true; sent.length = 0; notes.length = 0; HERE = false;
-    await B.beginTurn(win, "desktop-verifytest2");
+    await BT.begin(B, win, "desktop-verifytest2");
     const res5 = J(await call("browser_search", { query: "nobody home" }));
     t("C 視窗不在畫面上 → 不發 need_user、不發通知,照舊回 search_unavailable(原因 no_user)", res5.ok === false && res5.error === "search_unavailable" && res5.reason === "no_user", res5);
     t("C   (沒有問、沒有通知)", !sent.some((e) => e.type === "need_user") && notes.length === 0);
-    B.endTurn();
+    BT.end(B);
     HERE = true; sent.length = 0;
-    await B.beginTurn(win, "desktop-verifytest3", { noUser: true });
+    await BT.begin(B, win, "desktop-verifytest3", { noUser: true });
     const res6 = J(await call("browser_search", { query: "cloud view" }));
     t("C 從雲端視角送出的回合 → 一樣不問", res6.ok === false && res6.error === "search_unavailable" && !sent.some((e) => e.type === "need_user"), res6);
-    B.endTurn();
+    BT.end(B);
     t("全程沒有連到任何真的搜尋引擎(https 一律經 CONNECT,被本機代理記下並拒絕)", !hits.some((h) => h.startsWith("CONNECT")), hits.filter((h) => h.startsWith("CONNECT")));
     srv.close(); try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* userData 還鎖著 */ }
     console.log(red ? `\n${red} FAILED` : "\nALL PASS(③)");

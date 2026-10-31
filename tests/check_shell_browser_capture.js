@@ -5,6 +5,7 @@
 // 另跑 policy.citable / gate.captureFit 的列舉。
 // 跑法:node tests/check_shell_browser_capture.js(找不到 shell/node_modules 的 Electron 或 openssl 就 SKIP)
 const path = require("path"), fs = require("fs"), os = require("os");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell");
 const GATE = require("./_electron_gate");
 if (!process.versions.electron) {
@@ -82,7 +83,7 @@ app.whenReady().then(async () => {
   const realSend = win.webContents.send.bind(win.webContents);
   win.webContents.send = (ch, ev) => { if (ch === "browser-event") sent.push(ev); return realSend(ch, ev); };
   const B = require(path.join(SHELL, "browser")).createBrowser({ electron, stateDir: path.join(tmp, "snaps"), reportsDir, getWin: () => win, uiLang: () => "en", track: () => {}, version: "test", reducedMotion: () => false });
-  await B.beginTurn(win, "desktop-capture1");
+  await BT.begin(B, win, "desktop-capture1");
   const ctx = { live: () => true };
   const call = (n, a) => B._call(n, a || {}, ctx);
 
@@ -177,7 +178,7 @@ app.whenReady().then(async () => {
   const names = require(path.join(SHELL, "browser", "tools")).TOOLS.map((x) => x.name);
   t("工具清單有 browser_capture,必填 tab/ref/report", names.includes("browser_capture") && require(path.join(SHELL, "browser", "tools")).TOOLS.find((x) => x.name === "browser_capture").inputSchema.required.join() === "tab,ref,report");
 
-  B.endTurn();
+  BT.end(B);
   srv.close(); tls.close(); try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* Windows:userData 還鎖著 */ }
   console.log(red ? `\n${red} FAILED` : "\nALL PASS");
   app.exit(red ? 1 : 0);

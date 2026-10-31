@@ -4,6 +4,7 @@
 //   3. 同一格讀過又導覽到別頁:前面讀過的頁補成摘要列的一列(有快照),不會因為拿掉來源卡就看不到
 //   4. 重開 app:歷史對話只重建摘要列,計數與補列同上
 // 跑法:node tests/check_shell_browser_no_source_cards.js
+const TABS_STUB = require("./_tabs_stub").SRC;
 const fs = require("fs"), path = require("path");
 const RD = path.join(__dirname, "..", "shell", "renderer");
 const src = fs.readFileSync(path.join(RD, "browser.js"), "utf8"), css = fs.readFileSync(path.join(RD, "browser.css"), "utf8");
@@ -26,7 +27,7 @@ function load(history) {
     $: () => ({ appendChild: (el) => scroll.push(el) }),
     window: { blave: { browserHistory: async () => history || [] } },
   };
-  const body = src.match(/function brTab\(id\) \{.*\}\n/)[0] + src.match(/const brIsRead = .*;/)[0] + "\n"
+  const body = TABS_STUB + src.match(/function brTab\(id\) \{.*\}\n/)[0] + src.match(/const brIsRead = .*;/)[0] + "\n"
     + ["brTakeSources", "brPaintSum", "brHistoryItems", "brRestore"].map(fnCut).join("\n")
     + "; return { brTakeSources, brPaintSum, brHistoryItems, brRestore };";
   return Object.assign(new Function(...Object.keys(env), body)(...Object.values(env)), { BR: env.BR, scroll, finished });

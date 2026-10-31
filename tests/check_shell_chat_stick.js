@@ -5,6 +5,7 @@
 //   4. 程式捲到底的 scroll 事件晚到、那時內容又長高了:不算用戶往上捲
 //   5. 往上捲一點點也放開(稽核 M1):同一個 frame「chunk 捲到底＋用戶上捲」、觸控板每次只捲幾 px、滾輪往上;開較短的舊對話後內容晚長高不誤放開
 // 純 node:切 app.js 原文跑在假 DOM、假時鐘上(不起 Electron)。跑法:node tests/check_shell_chat_stick.js
+const TABS_STUB = require("./_tabs_stub").SRC;
 const fs = require("fs"), path = require("path");
 const src = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
 const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); if (i < 0 || j < 0) throw new Error("找不到標記:" + a); return src.slice(i, j); };
@@ -54,7 +55,7 @@ const ctx = {
 const body = cut("function scrollChat", "/* ── agent 回覆的顯示") + cut("let busy = null;", "/* 停止(照雲端工作頁") + cut("function faultCard()", "/* 「再送一次」");
 // 舊程式沒有黏底那段(只有一行 scrollChat):照樣切得出來跑,這條測試對舊程式要紅
 const stickSrc = src.indexOf("let chatStick") >= 0 ? cut("const CHAT_STICK_PX", "function scrollChat") : "";
-const M = new Function(...Object.keys(ctx), stickSrc + body +
+const M = new Function(...Object.keys(ctx), TABS_STUB + stickSrc + body +
   "; return { scrollChat, faultCard, busyStart, busyStep, busyStepDone, busyReason, get busy() { return busy; } };")(...Object.values(ctx));
 const at = (ms) => { env.now = ms; const due = env.timers.filter((x) => x.at <= ms); env.timers = env.timers.filter((x) => x.at > ms); due.forEach((x) => x.f()); box.flush(); };
 const grow = (px) => { box.scrollHeight += px; };
@@ -162,7 +163,7 @@ ok("…之後恢復跟著捲", box.scrollTop === bottom(), [box.scrollTop, botto
 ok("錯誤通知(turn.error 那句、回合結束補出的錯誤與結束碼)走強制捲",
   /else \{ addMsg\("sys", line\); scrollChat\(true\); \}/.test(src) && /if \(exitLine\) addMsg\("sys", exitLine\); if \(pendingErr\.length \|\| exitLine\) scrollChat\(true\);/.test(src));
 
-// 只有鈕、沒有句子的卡(資料卡試用態,paywall-redesign-2026-10-21 §2.2):第二顆可以是文字鈕、記號對鈕中線(act-only)、讀屏念鈕字;給了句子就照舊
+// 只有鈕、沒有句子的卡(資料卡試用態,paywall-redesign-2026-10-21 §2.2):第二顆可以是文字鈕、不放記號(act-only)、讀屏念鈕字;給了句子就照舊
 { const card = M.faultCard(), el = card.el; said.length = 0;
   card.set({ calm: true, text: "", label: "lib.gate.trial", on: () => {}, second: { label: "data.seePlan", quiet: true, on: () => {} } });
   const [text] = el.children[1].children;
@@ -172,6 +173,6 @@ ok("錯誤通知(turn.error 那句、回合結束補出的錯誤與結束碼)走
   card.set({ text: "data.noPlan", label: "data.seePlan", on: () => {}, second: { label: "pv.apiPlan", on: () => {} } });
   ok("同一張卡換回有句子的那態:act-only 拿掉、句子露出、第二顆回到 .btn-out(沒給 quiet)", !el.classList.contains("act-only") && text.hidden === false && card.b2.className === "btn-out" && said[said.length - 1] === "data.noPlan", { cls: el.className, b2: card.b2.className });
   const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8");
-  ok("act-only 的樣式:記號 margin-top 15px(32 高的鈕中線)、鈕列不留上距、文字鈕拉開 space-16", /\.msg\.fault\.act-only \.fault-mark \{ margin-top: 15px; \}/.test(css) && /\.msg\.fault\.act-only \.fault-act \{ margin-top: 0; column-gap: var\(--space-16\); \}/.test(css)); }
+  ok("act-only 的樣式:不放記號、鈕列不留上距、文字鈕拉開 space-16", /\.msg\.fault\.act-only \.fault-mark \{ display: none; \}/.test(css) && /\.msg\.fault\.act-only \.fault-act \{ margin-top: 0; column-gap: var\(--space-16\); \}/.test(css)); }
 
 process.exit(red ? 1 : 0);

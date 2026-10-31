@@ -278,8 +278,99 @@ const ackCalls = (w) => w.posts.filter((p) => p.u.indexOf("/ack") >= 0).length;
   { const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
     const h = (mainSrc.match(/\n  handle\("cloud-connect"[\s\S]*?\n  \}, cxDenied\);/) || [""])[0];
     t("main.js:cloud-connect 走 handle()(只收自家頁面)、送的是 credentials + connectSecrets 的 secrets、每次新的 request_id(不帶第四個參數)、不跑本機 Binance 檢查",
-      h.length > 100 && /cloudCmd\(\)\.send\("credentials", \{\}, built\.secrets\);/.test(h) && !/binanceLink|binance_check|requestId/.test(h.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, ""))
-      && /cloudConnect: \(a\) => ipcRenderer\.invoke\("cloud-connect", \{ venue: a && a\.venue, apiKey: a && a\.apiKey, secret: a && a\.secret, passphrase: a && a\.passphrase \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8"))); }
+      h.length > 100 && /cloudCmd\(\)\.send\("credentials", \{\}, built\.secrets, \{ keyChangeCode: code, lang: a && a\.lang \}\);/.test(h) && !/binanceLink|binance_check|requestId/.test(h.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, ""))
+      && /cloudConnect: \(a\) => ipcRenderer\.invoke\("cloud-connect", \{ venue: a && a\.venue, apiKey: a && a\.apiKey, secret: a && a\.secret, passphrase: a && a\.passphrase, keyChangeCode: a && a\.keyChangeCode, lang: a && a\.lang \}\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8"))); }
+
+  // ── 改金鑰驗證碼關卡(api app_auth.key_change_gate):403 / 429 的代號與明細、帶碼重送換一顆 request_id ──
+  { const UNTIL = "2026-10-31T08:00:00+00:00";
+    const v = M.interpret({ status: 403, body: { error_code: "KEY_CHANGE_VERIFY", until: UNTIL, retry_after: 100, sent: false, reason: "cooldown" } });
+    const lk = M.interpret({ status: 429, body: { error_code: "VERIFY_LOCKED", until: UNTIL } });
+    t("關卡:403 三個代號原樣、429 VERIFY_LOCKED 不當一般限速;明細只收 until / sent / 認得的 reason",
+      v.code === "KEY_CHANGE_VERIFY" && v.gate.until === UNTIL && v.gate.sent === false && v.gate.reason === "cooldown"
+      && ["KEY_CHANGE_CODE_INVALID", "KEY_CHANGE_CODE_EXPIRED"].every((c) => M.interpret({ status: 403, body: { error_code: c, until: UNTIL } }).code === c)
+      && lk.code === "VERIFY_LOCKED" && lk.gate.until === UNTIL && M.interpret({ status: 429, body: {} }).code === "RATE_LIMITED"
+      && M.interpret({ status: 403, body: { error_code: "KEY_CHANGE_VERIFY", until: "nope", reason: "x " + SKEY } }).gate.until === null
+      && M.interpret({ status: 403, body: { error_code: "KEY_CHANGE_VERIFY", reason: "weird" } }).gate.reason === null
+      && M.interpret({ status: 403, body: { error_code: "OTHER" } }).code === "BAD_RESPONSE");
+    t("關卡的代號都是 undelivered(api 在佔 request_id 之前就擋)",
+      ["KEY_CHANGE_VERIFY", "KEY_CHANGE_CODE_INVALID", "KEY_CHANGE_CODE_EXPIRED", "VERIFY_LOCKED", "KEY_CHANGE_CHECK_UNAVAILABLE"].every((c) => M.KIND[c] === "undelivered"));
+    let n = 0;
+    const w = world({ cmdRes: () => (++n === 1 ? { status: 403, body: { error_code: "KEY_CHANGE_VERIFY", until: UNTIL, sent: true } } : queued()),
+      ackRes: ackDone({ cmd: "credentials", result: { credentials: 2, binance: null } }) });
+    const sec = { BINANCE_API_KEY: KEY, BINANCE_SECRET_KEY: SKEY };
+    const r1 = await w.cmd.send("credentials", {}, sec, { lang: "zh" });
+    const r2 = await w.cmd.send("credentials", {}, sec, { keyChangeCode: "123456", lang: "zh" });
+    const b1 = w.posts[0].b, b2 = w.posts[1].b;
+    t("關卡:第一趟沒帶碼、回 gate 明細;帶碼重送 body 多 key_change_code、request_id 換一顆;lang 只收 zh / en",
+      !r1.ok && r1.error === "KEY_CHANGE_VERIFY" && r1.kind === "undelivered" && r1.gate.sent === true
+      && !("key_change_code" in b1) && b1.lang === "zh" && b2.key_change_code === "123456" && b2.request_id !== b1.request_id && r2.ok
+      && M.interpretConnect(r1, sec).code === "KEY_CHANGE_VERIFY" && M.interpretConnect(r1, sec).detail.until === UNTIL);
+    const w2 = world({ ackRes: ackDone() });
+    await w2.cmd.send("halt", {}, null, { keyChangeCode: "123456", lang: "zh" });
+    await w2.cmd.send("credentials", {}, sec, { keyChangeCode: "12345x", lang: "fr" });
+    t("關卡:碼與 lang 只隨 credentials;形狀不對的碼、不認得的語言不送",
+      !("key_change_code" in w2.posts[0].b) && !("lang" in w2.posts[0].b)
+      && !("key_change_code" in w2.posts[2].b) && !("lang" in w2.posts[2].b));
+    const CCap = require("../shell/cloud_capital.js");
+    const cap = CCap.createCapital({ send: async () => r1 });
+    const sc = await cap.saveCreds({ id: "A123456789", pw: "pw1234" });
+    t("雲端群益:關卡代號原樣、明細同連接框(畫面走同一套輸碼流程)", sc.code === "KEY_CHANGE_VERIFY" && sc.detail.until === UNTIL && sc.detail.sent === true);
+    let seen = null; const cap2 = CCap.createCapital({ send: async (c, a, sx, o) => { seen = o; return r1; } });
+    await cap2.saveCreds({ id: "A123456789", pw: "pw1234", keyChangeCode: "654321", lang: "en" });
+    const mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+    t("雲端群益:碼與語言交給 cloudCmd.send 的第四個參數(cloudcmd 再驗形狀、鑄新的 request_id)", seen && seen.keyChangeCode === "654321" && seen.lang === "en"
+      && /send: \(cmd, args, secrets, o\) => cloudCmd\(\)\.send\(cmd, args, secrets, o\)/.test(mainSrc2)); }
+
+  // ── 畫面:驗證碼那一步的狀態機(trade.js kcView／kcNext／kcStatusText,連接框與雲端群益共用)與雲端群益送出流程(capital.js capSaveCreds)──
+  { const rd = (f) => fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", f), "utf8");
+    const fn = (src, name) => { const i = src.indexOf((src.indexOf("async function " + name + "(") >= 0 ? "async " : "") + "function " + name + "("); return src.slice(i, src.indexOf("\n}", i) + 2); };
+    const cst = (src, name) => { const m = new RegExp("^const " + name + " = [^\\n]*;$", "m").exec(src); return m ? m[0] : ""; };
+    const T = { "cx.kc.expired": "驗證碼過期了。", "cx.kc.cooldown": "剛寄過驗證碼，請先收信。", "cx.kc.sent": "已寄。", "cx.kc.limited": "達上限。" };
+    const tr = rd("trade.js");
+    const ev = [];
+    const K = new Function("ev", "T", "const t = (k) => T[k] || k; const trStamp = (x) => x; const kcTrack = (step) => ev.push(step);\n"
+      + ["KC_GATE", "KC_REASON", "KC_TEXT", "kcReady"].map((n) => cst(tr, n)).join("\n") + "\n" + ["kcView", "kcStatusText", "kcNext"].map((n) => fn(tr, n)).join("\n")
+      + "\nreturn { kcView, kcStatusText, kcNext, kcReady };")(ev, T);
+    const V = (code, detail, expired) => K.kcView({ code, detail: detail || {}, expired });
+    const sent = V("KEY_CHANGE_VERIFY", { sent: true }), inv = K.kcView({ code: "KEY_CHANGE_CODE_INVALID" }, V("KEY_CHANGE_VERIFY", { sent: false, reason: "limited", until: "U" }));
+    const lock = V("VERIFY_LOCKED", { until: "U" }), noMail = V("KEY_CHANGE_VERIFY", { sent: false, until: "U" });
+    const failExp = V("KEY_CHANGE_VERIFY", { sent: false, reason: "send_failed", until: "U" }, true), coolExp = V("KEY_CHANGE_VERIFY", { sent: false, reason: "cooldown", until: "U" }, true);
+    const limExp = V("KEY_CHANGE_VERIFY", { sent: false, reason: "limited", until: "U" }, true), resent = V("KEY_CHANGE_VERIFY", { sent: true }, true);
+    t("kcView:寄出可輸、碼錯沿用上一句與時間句、鎖住與沒有 email 停用輸入且帶時間句、紅字只有碼錯與鎖住",
+      sent.status === "sent" && !sent.err && !sent.dead && !sent.until && inv.status === "limited" && inv.err === "invalid" && inv.until === "U"
+      && lock.dead && lock.err === "locked" && lock.until === "U" && !lock.status && noMail.status === "noemail" && noMail.dead && noMail.until === "U" && !noMail.err
+      && [V("KEY_CHANGE_VERIFY", { sent: false, reason: "limited" }), V("KEY_CHANGE_VERIFY", { sent: false, reason: "send_failed" }), noMail, coolExp, resent].every((v) => !v.err));
+    t("kcView／kcStatusText:過期重寄成功只講 resent;冷卻接在過期後;寄不出不接過期;過期＋達上限停用輸入、只講過期＋時間句",
+      resent.status === "resent" && !resent.expired && K.kcStatusText(coolExp) === "驗證碼過期了。剛寄過驗證碼，請先收信。" && !coolExp.dead && !coolExp.until
+      && !failExp.expired && K.kcStatusText(failExp) === "cx.kc.failed" && failExp.until === "U"
+      && limExp.dead && K.kcStatusText(limExp) === "驗證碼過期了。" && limExp.until === "U" && K.kcStatusText(lock) === "");
+    let kc = K.kcNext(null, { code: "KEY_CHANGE_VERIFY", detail: { sent: true } }); const shown = !!kc && kc.code === "" && ev.join() === "shown";
+    kc.code = "111111"; kc = K.kcNext(kc, { code: "KEY_CHANGE_CODE_INVALID" });
+    const und = K.kcNext({ code: "123456", view: sent }, { code: "UNDELIVERED" }), passed = K.kcNext({ code: "123456", view: sent }, { code: "REJECTED" }), none = K.kcNext(null, { code: "OK" });
+    const locked = K.kcNext({ code: "", view: sent }, { code: "VERIFY_LOCKED", detail: {} });
+    t("kcNext:要碼出現(shown 一次)、錯碼清空不重送 shown、鎖住留在這一步(dead,送 locked)、其他退回表單;沒送到不算 ok、過了關卡送 ok、沒在驗證的成功不送",
+      shown && kc.code === "" && kc.view.err === "invalid" && und === null && passed === null && none === null && locked && locked.view.dead && ev.join() === "shown,ok,locked");
+    t("kcReady:滿 6 位數字、不在死路才能按", K.kcReady({ code: "123456", view: sent }) && !K.kcReady({ code: "12345", view: sent }) && !K.kcReady({ code: "123456", view: lock }) && !K.kcReady(null));
+    // capSaveCreds:錯碼留在這一步重輸、過期不帶碼再送一次、每趟都經主行程(主行程鑄新的 request_id)、通過送 ok、then 記在這一步給「確認」用
+    const q = [], calls = [], said = []; let CAP = { kc: { code: "", view: sent }, id: "A123456789", pw: "pw", busy: false, msg: null };
+    const window = { blave: { capitalCreds: async (id, pw, o) => { calls.push(o.keyChangeCode || null); return q.shift(); } } };   // eslint-disable-line no-unused-vars
+    const capDown = () => false, capCC = () => null, capPaint = () => {}, kcFocus = () => {}, capTrack = () => {}, srSay = (x) => said.push(x), kcSay = (v) => v.status || v.err;   // eslint-disable-line no-unused-vars
+    const LANG = "zh", kcNext = K.kcNext, kcReady = K.kcReady;   // eslint-disable-line no-unused-vars
+    const capSaveCreds = eval("(" + fn(rd("capital.js"), "capSaveCreds") + ")");
+    ev.length = 0;
+    CAP.kc.code = "12"; const r0 = await capSaveCreds();
+    const then = async () => {};
+    q.push({ code: "KEY_CHANGE_CODE_INVALID", detail: {} }); CAP.kc.code = "111111"; await capSaveCreds(then);
+    const afterInvalid = CAP.kc && CAP.kc.code === "" && CAP.kc.view.err === "invalid" && CAP.kc.then === then && CAP.msg === null;
+    q.push({ code: "KEY_CHANGE_CODE_EXPIRED", detail: {} }, { code: "KEY_CHANGE_VERIFY", detail: { sent: true } }); CAP.kc.code = "222222"; await capSaveCreds(then);
+    const afterExpired = !!CAP.kc && CAP.kc.view.status === "resent";
+    q.push({ code: "OK" }); CAP.kc.code = "333333"; const ok = await capSaveCreds(then);
+    t("capSaveCreds:碼沒滿 6 位不送、錯碼留在這一步、過期自動不帶碼再送、通過收起並送 ok",
+      r0 === false && CAP.kc === null && ok === true && afterInvalid && afterExpired && JSON.stringify(calls) === JSON.stringify(["111111", "222222", null, "333333"]) && ev.join() === "ok");
+    // 送碼途中按了取消(CAP.kc 被清掉):沒過的結果不上畫面、不重開這一步
+    CAP.kc = { code: "444444", view: sent }; q.push({ code: "KEY_CHANGE_CODE_INVALID", detail: {} });
+    const pend = capSaveCreds(then); CAP.kc = null; await pend;
+    t("capSaveCreds:送碼途中退回表單,關卡回應不重開這一步", CAP.kc === null && CAP.msg === null); }
 
   // ── 原文:不 require electron、不 log、不落地 ──
   const src = fs.readFileSync(path.join(__dirname, "..", "shell", "cloudcmd.js"), "utf8");

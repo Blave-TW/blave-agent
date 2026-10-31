@@ -137,7 +137,7 @@ async function syncCase(reply, patch) {
   for (const n of ["intro_shown", "intro_send"]) ok("埋點 " + n + " 是字面送出點", src.includes('trackFeature("' + n + '")'));
   ok("埋點 intro_type / intro_close 是字面送出點", src.includes('trackFeature(how === "type" ? "intro_type" : "intro_close")'));
   const vm = require("vm"), S = (() => { const sb = {}; vm.runInNewContext(read(path.join(R, "strings.js")) + "\nthis.S = STRINGS;", sb); return sb.S; })();
-  ok("送出句是 intro.msg(文案長度豁免的形狀),鈕字另一個 key", src.includes('submitMessage(t("intro.msg"))') && /data-i18n="intro\.ask"/.test(html) && S.zh["intro.msg"] !== S.zh["intro.ask"]);
+  ok("送出句是 intro.msg(文案長度豁免的形狀),鈕字另一個 key", src.includes('csSendAway(t("intro.msg"))') && /data-i18n="intro\.ask"/.test(html) && S.zh["intro.msg"] !== S.zh["intro.ask"]);
 
   // ⑥ 示範影片
   const MEDIA = ["hero_demo_md.mp4", "hero_demo_zh_md.mp4", "hero_demo_poster.jpg", "hero_demo_zh_poster.jpg"];

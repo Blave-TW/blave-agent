@@ -5,6 +5,7 @@
 // IdP 帳戶面(mail.google.com 等)agent 導覽由 policy.agent() 擋(B-P1-1),OAuth 子視窗與用戶不受影響。
 // 跑法:node tests/check_shell_browser_oauth_popup.js(找不到 Electron 只跑靜態+stub 段)
 const path = require("path"), fs = require("fs"), os = require("os");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell");
 const GATE = require("./_electron_gate");
 let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c ? "" : "  " + JSON.stringify(d))); if (!c) red++; };
@@ -116,7 +117,7 @@ app.whenReady().then(async () => {
   ses.setCertificateVerifyProc((_req2, cb) => cb(0));   // 只在測試裡:放行自簽
   await ses.setProxy({ proxyRules: "http=127.0.0.1:" + srv.address().port, proxyBypassRules: "<-loopback>" });
   const B = require(path.join(SHELL, "browser")).createBrowser({ electron, stateDir: path.join(tmp, "snaps"), getWin: () => win, uiLang: () => "en", track: () => {}, version: "test" });
-  await B.beginTurn(win, "desktop-oauth");
+  await BT.begin(B, win, "desktop-oauth");
   const ctx = { live: () => true };
   const call = async (n, a) => JSON.parse((await B._call(n, a || {}, ctx)).content[0].text);
 

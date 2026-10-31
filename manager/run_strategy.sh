@@ -11,6 +11,10 @@
 # so only the cron entry's cd needs the resolved value.)
 set -uo pipefail
 
+# A resident process is never part of an agent turn: drop the turn's variables a tmux / nohup start from
+# inside a turn would hand it, or lib/guard would hold the turn order lock for its whole life (and refuse
+# its own orders while another turn holds it).
+unset BLAVE_TURN_INTERRUPT_FILE BLAVE_TURN_PID
 STRATEGY_NAME="${1:?usage: run_strategy.sh <strategy_name>}"
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 

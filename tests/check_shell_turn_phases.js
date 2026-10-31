@@ -6,6 +6,7 @@
 //   4. 回放:預設攤開;被截過(「…另有 N 步」)只畫階段;沒東西可攤就不給 ⌄
 //   5. 受詞截頭保尾(fitStepObj);role=status 只包 head;CSS 沒有內捲
 // 純 node:切 app.js 原文跑在假 DOM、假時鐘上(不起 Electron)。跑法:node tests/check_shell_turn_phases.js
+const TABS_STUB = require("./_tabs_stub").SRC;
 const fs = require("fs"), path = require("path");
 const R = path.join(__dirname, "..", "shell", "renderer");
 const src = fs.readFileSync(path.join(R, "app.js"), "utf8"), css = fs.readFileSync(path.join(R, "app.css"), "utf8");
@@ -52,7 +53,7 @@ const ctx = {
   stepWhere: (c) => (c && String(c.tool || "").indexOf("mcp__blave__") === 0 ? "cloud" : "local"),
 };
 const body = cut("let busy = null;", "/* 停止(照雲端工作頁") + cut("function receiptFold(", "/* 舊回合的使用者那句");
-const M = new Function(...Object.keys(ctx), body + "; return { busyStart, busyStep, busyStepDone, busyReason, busyEnd, receiptFold, faultTail, fitStepObj, phaseIdxOf, ACT_HOLD_MS, get busy() { return busy; } };")(...Object.values(ctx));
+const M = new Function(...Object.keys(ctx), TABS_STUB + body + "; return { busyStart, busyStep, busyStepDone, busyReason, busyEnd, receiptFold, faultTail, fitStepObj, phaseIdxOf, ACT_HOLD_MS, get busy() { return busy; } };")(...Object.values(ctx));
 const at = (ms) => { env.now = ms; const due = env.timers.filter((x) => x.at <= ms); env.timers = env.timers.filter((x) => x.at > ms); due.forEach((x) => x.f()); };
 const subs = (el) => el.querySelectorAll(".think-sub");
 const rowText = (li) => [li.querySelector(".think-step-verb").textContent, (li.querySelector(".think-step-obj") || { textContent: "" }).textContent];

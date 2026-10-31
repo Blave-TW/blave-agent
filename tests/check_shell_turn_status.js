@@ -25,6 +25,7 @@ const STRINGS = { en: {} };
 for (const m of cut(strings, "\n  en: {", "\n  zh: {").matchAll(/"((?:act|step)\.[a-z_]+)": "([^"]*)"/g)) STRINGS.en[m[1]] = m[2];
 const t = (k, v) => (STRINGS.en[k] || k).replace(/\{(\w+)\}/g, (m, n) => (v && v[n] != null ? v[n] : m));
 const M = new Function("t", "STRINGS", "env", `
+  const tabBound = (f) => f;   // 對話分頁:單分頁
   const Date = { now: () => env.now };
   const setTimeout = (f, ms) => { env.timers.push({ at: env.now + ms, f }); return env.timers.length; };
   const clearTimeout = () => { env.timers.length = 0; };
@@ -131,7 +132,7 @@ ok("版面:摘要 inline-flex、受詞可截、字級 12", /\.think-sum \{ displ
 // ── 展開的步驟清單與狀態列的樣子(Wei 0928 第 2b 點)──
 { const stepSrc = cut(src, "function busyStep(", "/* 當下動作(spec-turn-phases-one-layer"), doneSrc = cut(src, "function busyStepDone(", "/* 當下動作(spec-turn-phases-one-layer");
   ok("逐步清單拿掉(spec-turn-phases-one-layer §4):不再建 .think-steps、沒有逐步秒數與自動捲動;步驟留在記憶體(recs / stepRows)", !/think-steps|stepsEl|busyStepTick|scrollTop = ul\.scrollHeight/.test(src)
-    && /busy\.recs\.push\(rec\);/.test(stepSrc) && /if \(c\.id\) busy\.stepRows\[c\.id\] = rec;/.test(stepSrc) && /phasesSync\(busy\); actApply\(\); \}, 1000\);/.test(src));
+    && /busy\.recs\.push\(rec\);/.test(stepSrc) && /if \(c\.id\) busy\.stepRows\[c\.id\] = rec;/.test(stepSrc) && /phasesSync\(busy\); actApply\(\); \}\), 1000\);/.test(src));
   ok("做完只補那一步的耗時 / 錯誤態;出錯的那一步在最後幾步裡換成失敗的說法(#165:不留「正在抓資料」;也不用完成式——英文過去式配失敗的步驟會被讀成做成了)", /rec\.error = !!c\.error;\s*rec\.ms = Number\(c\.ms\) \|\| 0;/.test(doneSrc)
     && /stepLabel\(r\.c, true, !!r\.error\)/.test(cut(src, "function faultPaint(", "/* 受詞截頭保尾")));
   const ZH_ALL = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "; return STRINGS;")().zh;
@@ -197,7 +198,7 @@ ok("進行中的卡沒有開合:不放 chevron、卡頭不掛 click、沒有 b.o
 ok("摘要列的 chevron 是 CSS 那一顆(.cv7:7px 盒、1.6px),不是 14px 圖示;整列(40 高)都是熱區", /const chev = brEl\("span", "cv7"\); chev\.setAttribute\("aria-hidden", "true"\);/.test(cut(brSrc, "function brPaintSum(", "function brObserve("))
   && !/brIcon\("chev"\)|chev: '<svg/.test(brSrc) && /\.cv7 \{\s*flex: none; display: inline-block; width: 7px; height: 7px;\s*border-right: 1\.6px solid currentColor; border-bottom: 1\.6px solid currentColor;/.test(css)
   && /\.bblk\.sum summary \.cv7 \{ margin-left: auto;/.test(brCss) && /\.bblk\.sum summary \{[^}]*min-height: 40px/.test(brCss));
-ok("重開 app 畫回的歷史走同一條:brRestore → brFinish → 摘要列(沒有另一套畫法)", /brTakeSources\(b, r\.tabs, srcs\);\n\s*\$\("chat-scroll"\)\.appendChild\(b\.el\);\n\s*brFinish\(b\);/.test(brSrc)
+ok("重開 app 畫回的歷史走同一條:brRestore → brFinish → 摘要列(沒有另一套畫法)", /brTakeSources\(b, r\.tabs, srcs\);\n\s*chatEl\(\)\.appendChild\(b\.el\);\n\s*brFinish\(b\);/.test(brSrc)
   && /b\.el\.replaceWith\(d\); b\.el = d; b\.sum = s; brPaintHead\(b\);/.test(cut(brSrc, "function brFinish(", "function brPaintSum(")));
 // 「看網頁」(Wei 0928 第 1 點 A 案):安靜鈕——圖示＋字、無底線;視覺高 28、熱區 32(上下各外擴 2),卡高不變
 { const rule = (brCss.match(/\.br-open \{[^}]*\}/) || [""])[0];
@@ -248,7 +249,7 @@ ok("中欄即時頁:背景分頁固定 1280×800、bounds() 不再改 parkSize;�
     /fold\.append\(phases, reason\);/.test(startSrc) && /live\.appendChild\(head\);\s*el\.append\(live, wrap\);/.test(startSrc) && /phases\.className = "think-phases"; phases\.hidden = true;/.test(startSrc) && !/aria-hidden", "true"\); phases/.test(startSrc + foldSrc)
     && /wrap\.id = "think-fold-" \+ \(\+\+thinkFoldSeq\); head\.setAttribute\("aria-controls", wrap\.id\);/.test(startSrc) && /wrap\.id = "think-fold-" \+ \(\+\+thinkFoldSeq\); head\.setAttribute\("aria-controls", wrap\.id\);/.test(foldSrc) && /phaseSteps: \[\], phaseEnd: 0/.test(startSrc)
     && /busy\.phaseSteps\.push\(\{ kind: k\.kind, obj: k\.obj \|\| actTabHost\(k\.tab\), start: Date\.now\(\) \}\)/.test(stepSrc) && pushAt > 0 && !/summary/.test(stepSrc.slice(pushAt, pushAt + 100))
-    && /phasesPaint\(b\.phasesEl, rows, Date\.now\(\), !b\.phaseEnd\);/.test(tickSrc) && /phasesSync\(busy\); actApply\(\); \}, 1000\);/.test(src) && /b\.phaseEnd = Date\.now\(\); const rows = phasesSync\(b\);/.test(endSrc)
+    && /phasesPaint\(b\.phasesEl, rows, Date\.now\(\), !b\.phaseEnd\);/.test(tickSrc) && /phasesSync\(busy\); actApply\(\); \}\), 1000\);/.test(src) && /b\.phaseEnd = Date\.now\(\); const rows = phasesSync\(b\);/.test(endSrc)
     && /kind: actKindOf\(\{ tool: st\.tool \}\)\.kind/.test(foldSrc) && /phasesFrom\(recs\.map\(\(r\) => \(\{ kind: r\.kind, obj: "", start: null \}\)\), null\)/.test(foldSrc) && /fold\.append\(phases\); wrap\.appendChild\(fold\); el\.append\(head, wrap\);/.test(foldSrc));
   ok("畫列:記號沿用 .think-step-mark、動詞 phase.*(data-i18n 給切語言掃)、受詞 mono(搜尋字除外)、時長 fmtDur、進行中那列 is-run;不埋點",
     /mark\.className = "think-step-mark"/.test(paintSrc) && /const key = "phase\." \+ r\.phase; verb\.dataset\.i18n = key; verb\.textContent = t\(key\);/.test(paintSrc) && /r\.kind === "search" \? "" : " mono"/.test(paintSrc)

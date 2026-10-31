@@ -345,12 +345,12 @@ if (!process.versions.electron) {
     && /id="rp-wf" role="tabpanel" hidden/.test(html) && /report-wf\.css/.test(html) && /<script src="report-robust\.js"><\/script>\s*<script src="report-wf\.js"><\/script>/.test(html));
   ok("③ rpShowTab 把 wf 交給 renderWf(t / busy / turn / scope / gate / onRun / onUpdate / buildMeta 從外面交進去);三處回合開始 / 結束都叫 rpWfSync;雲端狀態輪詢也叫(閘門翻面)",
     /R\.renderWf\(\$\("rp-wf"\), rpWfData\(B\.data, B\.name\), rpWfOpts\(\)\)/.test(app) && /function rpWfData\(data, name\) \{ return \{ stats: data\.stats, wf: data\.wf \|\| null, code: data\.code, name \}; \}/.test(app)
-    && /return \{ t, busy: running, turn: turnSeq, scope: cloud \? "cloud" : "local", gate, onRun: rpWfAsk, busyFix: \(el\) => busyFixLink\(el, "stop"\), onUpdate: rpWfUpdate, buildMeta: R\.buildMeta,\s*resync: rpWfSync, refocus: rpWfRefocus, refetch: rpWfRefetch \};/.test(app)
-    && /window\.BlaveReport\.wfTurnEnded\(turnSeq, faulted \|\| stopped, \{ refetch: rpWfRefetch \}\);\n  upTurnEnded\(faulted\);\n  running = false;[^\n]*rpWfSync\(\);/.test(app)
+    && /return \{ t, busy: csAnyTurn\(\), turn: turnSeq, scope: cloud \? "cloud" : "local", gate, onRun: rpWfAsk, busyFix: \(el\) => busyFixLink\(el, "stop"\), onUpdate: rpWfUpdate, buildMeta: R\.buildMeta,\s*resync: rpWfSync, refocus: rpWfRefocus, refetch: rpWfRefetch \};/.test(app)
+    && /window\.BlaveReport\.wfTurnEnded\(turnSeqMine, faulted \|\| stopped, \{ refetch: rpWfRefetch \}\);\n  upTurnEnded\(faulted\);\n  running = false;[^\n]*turnUiSync\(\);/.test(app)
     && /const gate = !cloud \? true : typeof c\.config_supports_wf === "boolean" \? c\.config_supports_wf : null;/.test(app)
-    && (app.match(/rpRobSync\(\); rpWfSync\(\);/g) || []).length === 3 && /if \(typeof rpWfSync === "function"\) rpWfSync\(\);/.test(tr));
+    && /rpRobSync\(\); rpWfSync\(\);/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")) && /if \(typeof rpWfSync === "function"\) rpWfSync\(\);/.test(tr));
   ok("③ 送出:確認框 → 先 begin()(暖機那段也算已送出,稽核 P2-1)→ 固定訊息(msgRun,name 傳資料夾名)→ 成功才記 wf_requested、回合序號;不覆寫 viewing",
-    /onOk: \(\) => \{ if \(typeof begin === "function"\) begin\(\); rpWfAuto\.delete\(name\); submitMessage\(t\("wf\.msgRun", \{ name, lookback: String\(lookback\), step: String\(step\) \}\)\)\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? turnSeq : false\); \}\); \}/.test(app)
+    /onOk: \(\) => \{ if \(typeof begin === "function"\) begin\(\); rpWfAuto\.delete\(name\); const p = csSendAway\(t\("wf\.msgRun", \{ name, lookback: String\(lookback\), step: String\(step\) \}\)\), at = CS\.away; p\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? at\.seq : false\); \}\); \}/.test(app)
     && !/viewing/.test(app.slice(app.indexOf("function rpWfAsk"), app.indexOf("function rpWfUpdate"))) && /lines: \(behindMaybe \? \[t\("wf\.needUpdate"\)\] : \[\]\)\.concat\(\[t\("wf\.emptyBoundary"\), t\("wf\.confirmBody"\)\]\)/.test(app));
   ok("③ 還原凍結:時光機 / 重跑中 wf 分頁跟進出場、參數掃描一起 disabled、面板一起收", /b\.disabled = b\.dataset\.tab === "tr" \|\| b\.dataset\.tab === "rob" \|\| b\.dataset\.tab === "wf" \|\|/.test(ver) && /for \(const k of \["bt", "tr", "rob", "wf", "xt", "code"\]\) \$\("rp-" \+ k\)\.hidden = true;/.test(ver));
 
@@ -415,7 +415,7 @@ if (!process.versions.electron) {
     { // 複驗 R-P2-1:第一段抓滿 8 次 → 重新送出 → 回合中一次都沒切視窗、沒點分頁(兩段之間沒有任何 awaiting=false 的呼叫)→ 第二段照樣抓
       const ask = app.slice(app.indexOf("function rpWfAsk("), app.indexOf("\n}\n", app.indexOf("function rpWfAsk(")) + 2);
       c = mk(); Object.assign(c, { confirmBox: (o) => o.onOk(), rpBag: () => c.RPC, rpWfCloud: () => ({ config_supports_wf: true }), upNow: () => ({}), UPD: {}, turnSeq: 5, t: (k) => k, trackFeature: () => {},
-        submitMessage: () => ({ then: (f) => f(true) }), Promise: function (fn) { fn(() => {}); } });
+        submitMessage: () => ({ then: (f) => f(true) }), csSendAway: () => { c.CS.away = { sid: "desktop-wf1", seq: c.turnSeq }; return { then: (f) => f(true) }; }, CS: { away: { sid: null, seq: 0 } }, Promise: function (fn) { fn(() => {}); } });
       vm.runInContext(ask + "\nthis.ask = rpWfAsk;", c);
       for (let k = 0; k < 40; k++) c.f(k * 700 * 1000);
       const first = c.fetched.length; c.f(60 * 60 * 1000); const capped = c.fetched.length === first;
@@ -457,8 +457,8 @@ if (!process.versions.electron) {
     ok("③ B5 接線:只換顯示——addMsg 的用戶泡泡、對話標題(含 tooltip)、清單列都走 fixedLabel;送出的仍是原句(msgRun 不動);listSessions 不截 120(摘要之後才截)",
       /const lab = fixedLabel\(text\);\n    b\.className = "bubble"; b\.textContent = lab \|\| text;[^\n]*\n    if \(lab\) b\._fixed = text;/.test(app) && /function youRelang\(\) \{[^\n]*b\.textContent = fixedLabel\(b\._fixed\) \|\| b\._fixed;/.test(app) && /const shown = csTitle \? fixedLabel\(csTitle, "title"\) \|\| csTitle : "";[^\n]*\n  \$\("cs-title"\)\.textContent = shown \|\| t\("cs\.new"\);\n  \$\("cs-title"\)\.title = shown;/.test(app)
       && /const fixedTitle = m\.title \? fixedLabel\(m\.title, "title"\) : null;\n  name\.textContent = fixedTitle \|\| \(m\.title \|\| ""\)\.slice\(0, 120\) \|\| t\("cs\.new"\);/.test(app)
-      && /title: String\(r\.title \|\| ""\)\.slice\(0, 4000\)/.test(fn("listSessions")) && /submitMessage\(t\("wf\.msgRun", \{ name, lookback: String\(lookback\), step: String\(step\) \}\)\)/.test(app)
-      && (app.match(/fixedLabel\(/g) || []).length === 5);   // 第五處是 youRelang(切語言時重組泡泡的摘要)
+      && /title: String\(r\.title \|\| ""\)\.slice\(0, 4000\)/.test(fn("listSessions")) && /csSendAway\(t\("wf\.msgRun", \{ name, lookback: String\(lookback\), step: String\(step\) \}\)\)/.test(app)
+      && (app.match(/fixedLabel\(/g) || []).length === 6);   // 第五處是 youRelang(切語言時重組泡泡的摘要);第六處是歷史搜尋 csFilter(比對的是畫面上的標題)
     const B5 = { zh: { "wf.msgRunLabel": "對 {name} 做樣本外驗證（訓練窗 {lookback} 天、測試窗 {step} 天）", "wf.msgRunTitle": "{name} · 樣本外驗證", "rob.msgScanLabel": "掃描 {name} 的參數", "rob.msgScanTitle": "{name} · 參數掃描" },
       en: { "wf.msgRunLabel": "Run out-of-sample validation on {name} (train {lookback} days, test {step} days)", "wf.msgRunTitle": "{name} · Out-of-Sample", "rob.msgScanLabel": "Scan the parameters of {name}", "rob.msgScanTitle": "{name} · Parameter Scan" } };
     { const long = "超長策略名稱".repeat(20) + "尾", tt = at("zh", T("zh", "wf.msgRun", { name: "long_x", lookback: "365", step: "30" }).replace("long_x", "long_x"), "title");

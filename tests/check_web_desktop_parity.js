@@ -105,6 +105,17 @@ for (const lang of ["zh", "en"]) {
   const diff = Object.entries(EV_PAIRS).filter(([d, w]) => !dp["tr.ov." + d] || dp["tr.ov." + d] !== wp["workspace_ov_ev_" + w]).map(([d]) => d);
   ok(`事件文案 ${lang} 兩邊逐字一致(${Object.keys(EV_PAIRS).length} 句)`, diff.length === 0, diff.join(", "));
 }
+// 全部平倉快照落後(manual_close_required reason snapshot_lag;api 1aed82a8 起群益、統一都走這個型別):整句與券商短名兩邊逐字同。
+// 網頁這幾個 key 還沒上(同步改中):網頁沒有就只記一筆 NOTE,有了就必須逐字一致
+const LAG_PAIRS = { "tr.ov.evManualCloseLag": "workspace_ov_ev_manual_close_lag", "tr.ov.brokerCapital": "workspace_ov_broker_capital",
+  "tr.ov.brokerPresident": "workspace_ov_broker_president", "tr.ov.brokerOther": "workspace_ov_broker_other" };
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const absent = Object.values(LAG_PAIRS).filter((w) => typeof wp[w] !== "string");
+  if (absent.length) console.log(`NOTE  全部平倉快照落後 ${lang}:網頁還沒有 ${absent.join(", ")}(同步改中;上了之後這裡會逐字比)`);
+  const bad = Object.entries(LAG_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || (typeof wp[w] === "string" && dp[d].replace("{broker}", "%(broker)s") !== wp[w] && dp[d] !== wp[w]));
+  ok(`全部平倉快照落後 ${lang}:電腦版有這幾句,網頁有的那幾句逐字一致(${Object.keys(LAG_PAIRS).length} 句)`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
 // Bitget 換帳戶類型:對不上的暫停句與清單(halt.mismatch)、事件列兩型(venue_mode_switched／venue_stops_missing)——zh / en 逐字一致,
 // 任一邊找不到這個 key 也算紅(稽核 v033-integ 第二輪 R2-P3-3)
 const BITGET_PAIRS = {
@@ -158,6 +169,21 @@ for (const lang of ["zh", "en"]) {
   ok(`交易歷史成交狀態 ${lang} 兩邊逐字一致(${Object.keys(FILL_PAIRS).length} 句)`, bad.length === 0,
     bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
+// 對話分頁(0.1.37;技術方案 §1.4、§4):對著雲端主機、名額滿了的排隊行與〔取消排隊〕,電腦版 chattabs.js tabsQueued 與網頁 csShowQueued 同一句;
+// 歷史清單的狀態字(回覆中／排隊中／做完，還沒看)與分組(今天／昨天／更早)也跟網頁 workspace_cs_* 同一組
+const TAB_PAIRS = { "tabs.queue": "workspace_cs_queue_line", "tabs.queueCancel": "workspace_cs_cancel_queued", "tabs.queueCancelTitle": "workspace_cs_cancel_queued_title", "tabs.st.queued": "workspace_cs_queued",
+  "tabs.st.unseen": "workspace_cs_unread", "tabs.group.today": "workspace_cs_today", "tabs.group.yesterday": "workspace_cs_yesterday", "tabs.group.earlier": "workspace_cs_earlier",
+  "tabs.search": "workspace_cs_search_ph" };
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const bad = Object.entries(TAB_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== wp[w]);
+  ok(`對話分頁的排隊行與狀態字 ${lang} 兩邊逐字一致(${Object.keys(TAB_PAIRS).length} 句)`, bad.length === 0,
+    bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
+{ const ctS = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8"), appS = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8");
+  ok("排隊行同 web csShowQueued:一行 tabs.queue、行內不放鈕;取消靠送出鍵(排隊時 aria-label tabs.queueCancel、title tabs.queueCancelTitle,同 web sendBtnSync)",
+    /q\.textContent = t\("tabs\.queue"\);/.test(ctS) && !/tabs\.queueCancel/.test(ctS.slice(ctS.indexOf("function tabsQueued("), ctS.indexOf("function tabsTrackParallel(")))
+    && /b\.dataset\.i18nAria = queued \? "tabs\.queueCancel" : running \? "ws\.stop" : "ws\.send";/.test(appS) && /if \(queued\) b\.title = t\("tabs\.queueCancelTitle"\); else b\.removeAttribute\("title"\);/.test(appS)); }
 // 事件型別集合(cross-surface-parity 規則三:列舉,不只靠上面手寫的配對表):電腦版 trEventText ∪ trOvEvents 認得的型別,
 // 跟網頁 ovEventRow 認得的同一組。order_error / order_unconfirmed 在電腦版從 order_errors[] 那列畫(trOvEvents 讀 e.kind),
 // 不走 `type ===`;只在電腦版的三個是這台電腦自己的指令回音與舊型別(halt_close／resume_wait 是本機指令、downtime_paused 已被
@@ -246,11 +272,12 @@ for (const lang of ["zh", "en"]) {
 { const SETTINGS_PAIRS = { "set.cat.display": "workspace_set_cat_display", "set.cat.rules": "workspace_set_cat_rules", "set.cat.connect": "workspace_set_cat_connect",
     "set.theme": "workspace_set_theme", "set.lang": "workspace_set_lang", "set.ccy": "workspace_set_base_ccy", "set.rn": "workspace_rn_notify", "set.rs": "workspace_rn_sound",
     "rlang.label": "workspace_reply_lang", "rules.head": "workspace_rules_head", "rules.add": "workspace_rules_add",
-    "rules.emptyLead": "workspace_rules_empty_lead", "rules.emptyHow": "workspace_rules_empty_how" };
+    "rules.emptyLead": "workspace_rules_empty_lead" };
   for (const lang of ["zh", "en"]) {
     const d = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), w = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
     const bad = Object.entries(SETTINGS_PAIRS).filter(([dk, wk]) => !d[dk] || d[dk] !== w[wk]);
     ok("設定 modal 分類名與一般／Agent／連結裡的字兩邊逐字一致(" + lang + "," + Object.keys(SETTINGS_PAIRS).length + " 組)", bad.length === 0, bad.map(([dk, wk]) => dk + "「" + d[dk] + "」 vs " + wk + "「" + w[wk] + "」").join(";"));
+    ok("規則空狀態的「在對話裡說…」兩邊都刪了(rules.emptyHow / workspace_rules_empty_how," + lang + ")", !("rules.emptyHow" in d) && !("workspace_rules_empty_how" in w));
   }
   const html = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8");
   const catsOf = (src, id) => { const a = src.indexOf('id="' + id + '"'), b = src.indexOf("</nav>", a); return a < 0 || b < 0 ? [] : [...src.slice(a, b).matchAll(/<button[^>]*\bdata-set-cat="([a-z]+)"/g)].map((m) => m[1]); };
@@ -417,4 +444,79 @@ for (const lang of ["zh", "en"]) {
   const missing = Object.keys(dPo).filter((k) => /^sg\./.test(k)).filter((k) => !wStr.has(dPo[k])).map((k) => k + "=" + dPo[k]);
   ok("資料夾文案:電腦版 sg.* 的 zh 字(含 72 個 emoji 名)網頁 zh .po 都有同一句", missing.length === 0, missing.slice(0, 12).join(";") + (missing.length > 12 ? " …共 " + missing.length + " 句" : ""));
 }
+// 聊天長網址縮短(spec designer/chat-long-url-2026-10-30 §6):18 條測資逐項相同、上限與兩條 regex 逐值相同
+//   電腦版:tests/check_shell_url_label.js 的 CASES、renderer/md.js 的 URL_LABEL_MAX / URL_WIDE / URL_UNSAFE / URL_LIKE
+//   網頁:tests/url_label_vectors.json 的 url_label([輸入, 期望] 或 {in, expect})、app/static/js/agent/url_label.js
+{ const vecPath = path.join(webDir, "tests", "url_label_vectors.json"), ulPath = path.join(webDir, "app", "static", "js", "agent", "url_label.js");
+  const casesDef = (fs.readFileSync(path.join(__dirname, "check_shell_url_label.js"), "utf8").match(/^const CASES = \[[\s\S]*?^\];$/m) || [""])[0];
+  const cases = casesDef ? new Function(casesDef + "\nreturn CASES;")() : [];
+  let vec = [];
+  try { vec = fs.existsSync(vecPath) ? JSON.parse(fs.readFileSync(vecPath, "utf8")).url_label || [] : []; } catch (e) { console.log("FAIL  " + vecPath + " 不是合法 JSON:" + e.message); red++; }
+  const norm = (a) => JSON.stringify(a.map((c) => (Array.isArray(c) ? [c[0], c[1]] : [c.in, c.expect])));
+  ok("長網址測資:電腦版 CASES 與網頁 url_label 逐項相同(18 條)", cases.length === 18 && norm(cases) === norm(vec), fs.existsSync(vecPath) ? cases.length + " vs " + vec.length : "找不到 " + vecPath);
+  const mdSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "md.js"), "utf8"), ul = fs.existsSync(ulPath) ? fs.readFileSync(ulPath, "utf8") : "";
+  // regex 比「吃哪些字」不比原文:寫字或寫 \u 跳脫都行;逐一跑過全部碼位,原文看起來一樣、被 NFC 換掉的字(U+F900 → U+8C48)也抓得到
+  const cv = (src, n) => { const m = src.match(new RegExp("^\\s*(?:const|var|let) " + n + " = (.+);$", "m")); try { return m ? new Function("return " + m[1])() : null; } catch (_) { return null; } };
+  const diffAt = (x, y) => { for (let c = 0; c <= 0x10FFFF; c++) { const ch = c >= 0xD800 && c <= 0xDFFF ? String.fromCharCode(c) : String.fromCodePoint(c); if (x.test(ch) !== y.test(ch)) return "U+" + c.toString(16).toUpperCase(); } return null; };
+  const why = [];
+  const dMax = cv(mdSrc, "URL_LABEL_MAX"), wMax = cv(ul, "URL_LABEL_MAX");
+  if (dMax !== 40 || dMax !== wMax) why.push("URL_LABEL_MAX: " + dMax + " vs " + wMax);
+  for (const n of ["URL_WIDE", "URL_UNSAFE"]) {
+    const x = cv(mdSrc, n), y = cv(ul, n);
+    if (!(x instanceof RegExp) || !(y instanceof RegExp)) { why.push(n + " 切不出來"); continue; }
+    const at = x.flags !== y.flags ? "flags " + x.flags + " vs " + y.flags : diffAt(x, y);
+    if (at) why.push(n + " 在 " + at + " 不同");
+  }
+  // URL_LIKE 不是單一字元集合,逐碼位比不出差異(單一字元兩邊都不配):比 source 與 flags,再跑一組探針字串
+  const dl = cv(mdSrc, "URL_LIKE"), wl = cv(ul, "URL_LIKE");
+  if (!(dl instanceof RegExp) || !(wl instanceof RegExp)) why.push("URL_LIKE 切不出來");
+  else {
+    if (dl.source !== wl.source || dl.flags !== wl.flags) why.push("URL_LIKE: " + dl + " vs " + wl);
+    const PROBE = ["https://x.com", "http://a", "www.blave.org", "WWW.x", "github.com/x", "my_host.example.com/p", "a-b.c/d", "AGENTS.md", "v0.1.37", "blave.org", "官網", "x.y", "ftp://a.b/c", " https://x"];
+    const off = PROBE.filter((x) => dl.test(x) !== wl.test(x));
+    if (off.length) why.push("URL_LIKE 判斷不同:" + off.join("、"));
+  }
+  ok("長網址上限 URL_LABEL_MAX、URL_WIDE / URL_UNSAFE(逐碼位比)與 URL_LIKE(原文＋flags＋探針)兩邊同一份", why.length === 0, ul ? why.join(";") : "找不到 " + ulPath); }
+// MCPT p 值(spec pvalue-unit-2026-10-30 §4):回測分頁那一列的 tooltip(講次數、門檻寫小數)、分佈圖標題、列名兩邊逐字同一份;
+// 格式規則只有一份(strategy_versions.js fmt / fillP / mcptBeat),兩邊那支各自跑 §4.2 同一組測資。_zero / _non 是這次新增——網頁還沒有 = web 那顆還沒上線,SKIP 講原因
+{ const PAIRS = { "bt.mcptTipSig": "workspace_bt_mcpt_tip_sig", "bt.mcptTipNs": "workspace_bt_mcpt_tip_ns", "bt.mcptDistTitle": "workspace_bt_mcpt_dist_title", "bt.mcpt": "workspace_bt_mcpt" },
+    NEW = { "bt.mcptTipZero": "workspace_bt_mcpt_tip_zero", "ver.mcptTipSigNoN": "workspace_bt_mcpt_tip_sig_non", "ver.mcptTipNsNoN": "workspace_bt_mcpt_tip_ns_non" },
+    TIPS = ["bt.mcptTipSig", "bt.mcptTipNs", "bt.mcptTipZero", "ver.mcptTipSigNoN", "ver.mcptTipNsNoN"];
+  for (const lang of ["zh", "en"]) {
+    const w = poRaw(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po")), d = poRaw(path.join(__dirname, "..", "shell", "i18n", lang + ".po"));
+    const off = Object.keys(PAIRS).filter((k) => !d[k] || w[PAIRS[k]] !== d[k]);
+    ok("MCPT:tooltip 兩句、分佈圖標題、列名兩邊同一份(" + lang + ")", off.length === 0, off.map((k) => k + ": " + d[k] + " vs " + w[PAIRS[k]]).join(";"));
+    for (const k of Object.keys(NEW)) {
+      if (!d[k]) ok("MCPT:電腦版有 " + k + "(" + lang + ")", false);
+      else if (!(NEW[k] in w)) console.log("SKIP  MCPT " + NEW[k] + " 兩邊同一份(" + lang + ";網頁 messages.po 還沒有這個 msgid:web 那顆還沒上線)");
+      else ok("MCPT:" + k + " = " + NEW[k] + "(" + lang + ")", w[NEW[k]] === d[k], d[k] + " vs " + w[NEW[k]]);
+    }
+    // 擋回頭路:p 換成百分比、跟同句的小數門檻對不起來,就是這次要修的病
+    const pctBack = TIPS.map((k) => ["電腦版 " + k, d[k]]).concat(TIPS.map((k) => ["網頁 " + (PAIRS[k] || NEW[k]), w[PAIRS[k] || NEW[k]]])).filter(([, v]) => typeof v === "string" && /\{pct\}|%/.test(v));
+    ok("MCPT:兩邊 tooltip 都不含 {pct} 也不含 %(" + lang + ")", pctBack.length === 0, pctBack.map(([n, v]) => n + ": " + v).join(";"));
+  }
+  const load = (f) => { if (!fs.existsSync(f)) return null; const g = {}; new Function("window", fs.readFileSync(f, "utf8")).call(g, g); return g.blaveVersions || null; };
+  const ROWS = [[0, "<0.001", "p < 0.001", 0], [0.0004, "<0.001", "p < 0.001", 1], [0.0005, "<0.001", "p < 0.001", 1], [0.0012, "0.001", "p = 0.001", 2],
+    [0.0495, "0.0495", "p = 0.0495", 99], [0.05, "0.050", "p = 0.050", 100], [0.106, "0.106", "p = 0.106", 212], [null, "—", "p = {p}", null]];
+  for (const [side, f] of [["電腦版", path.join(__dirname, "..", "shell", "renderer", "strategy_versions.js")], ["網頁", path.join(webDir, "app", "static", "js", "agent", "strategy_versions.js")]]) {
+    const V = load(f), bad = !V || typeof V.fillP !== "function" || typeof V.mcptBeat !== "function" ? ["沒有 fmt / fillP / mcptBeat"]
+      : ROWS.filter(([p, a, b, k]) => V.fmt("mcpt_p", p) !== a || V.fillP("p = {p}", p) !== b || V.mcptBeat(p, 2000) !== k).map((r) => JSON.stringify(r)).concat(V.mcptBeat(0.016, 20000) === null ? [] : ["n=20000 應不講次數"]);
+    ok("MCPT p 值共用測資(§4.2,9 組)在" + side + "那支全對", bad.length === 0, bad.join(";"));
+  } }
+// 改金鑰驗證碼(表面表 keyverify-surfaces-2026-10-30 §2、§3;網頁 js/key_verify.js + kc_*、電腦版 trade.js kcView + cx.kc.*):
+// api 關卡代號對到哪一句兩邊同一份(sent:false 的 reason 對照),14 句 zh／en 逐字一致;寄不出那句鎖在換步驟後的定稿(沒有鈕可以「再按」)
+{ const kvPath = path.join(webDir, "app", "static", "js", "key_verify.js");
+  const kv = fs.existsSync(kvPath) ? fs.readFileSync(kvPath, "utf8") : "";
+  const obj = (src, re) => { const m = re.exec(src), o = {}; if (m) for (const x of m[1].matchAll(/(\w+): "(\w+)"/g)) o[x[1]] = x[2]; return o; };
+  const wr = obj(kv, /var REASON = \{([^}]*)\}/), dr = obj(desk, /const KC_REASON = \{([^}]*)\}/);
+  ok("改金鑰驗證碼:sent:false 的 reason → 句子兩邊同一份對照(冷卻／達上限／寄不出;沒有 reason = 沒有 email)", Object.keys(dr).length === 3 && sorted(dr) === sorted(wr), sorted(dr) + " vs " + sorted(wr));
+  ok("改金鑰驗證碼:沒有 reason 的 sent:false 兩邊都是 noemail、其他不認得的 reason 都是 failed",
+    /REASON\[st\.reason\] \|\| \(st\.reason \? "failed" : "noemail"\)/.test(kv) && /KC_REASON\[d\.reason\] \|\| \(d\.reason \? "failed" : "noemail"\)/.test(desk));
+  const KC = ["title", "why", "label", "ok", "sent", "resent", "cooldown", "limited", "failed", "noemail", "invalid", "expired", "locked", "until"];
+  for (const lang of ["zh", "en"]) {
+    const w = poRaw(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po")), d = poRaw(path.join(__dirname, "..", "shell", "i18n", lang + ".po"));
+    const off = KC.filter((k) => !w["kc_" + k] || w["kc_" + k] !== d["cx.kc." + k]);
+    ok("改金鑰驗證碼:kc_* 與 cx.kc.* 14 句兩邊同一份(" + lang + ")", off.length === 0, off.map((k) => k + ": " + w["kc_" + k] + " vs " + d["cx.kc." + k]).join(";"));
+    if (lang === "zh") ok("改金鑰驗證碼:寄不出那句是換步驟後的定稿(zh)", d["cx.kc.failed"] === "驗證碼沒寄出去，金鑰沒有儲存，請稍後再試。", d["cx.kc.failed"]);
+  } }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

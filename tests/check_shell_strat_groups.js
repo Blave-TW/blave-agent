@@ -58,7 +58,7 @@ const block = (s, head, end) => { const i = s.indexOf(head); if (i < 0) throw ne
   ok("③ 選中先 sgReveal,排在「同一支提早 return」之前(stratSelect / rpCloudSelect)",
     /async function stratSelect\(name, force\) \{\n\s*if \(name && typeof sgReveal === "function"\) sgReveal\("local", name\);[^\n]*\n\s*if \(name === RP\.name && !force\) return;/.test(app)
     && /async function rpCloudSelect\(name, force\) \{\n\s*if \(name && typeof sgReveal === "function"\) sgReveal\("cloud", name\);\n\s*if \(name === RPC\.name && !force\) return;/.test(app));
-  ok("③ 回合結束:緊接在 stratRefresh(true) 之前送出編輯列(否則 sgEditing 擋住它與後面的結果卡)", /\n\s*if \(typeof sgEditCommit === "function"\) sgEditCommit\(\);[^\n]*\n\s*stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(app));
+  ok("③ 回合結束:緊接在 stratRefresh(true) 之前送出編輯列(否則 sgEditing 擋住它與後面的結果卡)", /\n\s*if \(typeof sgEditCommit === "function"\) sgEditCommit\(\);[^\n]*\n\s*stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\((?:tabBound\()?\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(app));
   ok("③ 編輯列開著:本機 sfBeforeRebuild 與雲端 sfCloudHold 都等;結束時 sgEditEnd 先寫、再重排、最後 sfFlushWaiters",
     /SF\.dragActive \|\| sgEditing\(\) \? new Promise/.test(cutFn(sf, "sfBeforeRebuild")) && /if \(SF\.dragActive \|\| sgEditing\(\)\) \{/.test(cutFn(sf, "sfCloudHold"))
     && (() => { const e = cutFn(sg, "sgEditEnd"); return e.indexOf("sgSetFolders") < e.indexOf("SG.editing = false") && e.indexOf("SG.editing = false") < e.indexOf("sgRelayout(sc)") && e.lastIndexOf("sfFlushWaiters()") > e.indexOf("sgRelayout(sc)"); })());

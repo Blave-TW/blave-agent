@@ -16,7 +16,7 @@ if (!process.versions.electron) {
   ok("① 這顆鈕沒有 title;說明是 DOM 裡的 role=tooltip、鈕用 aria-describedby 指到它、字還是 br.openSystem.tip", !/ext\.title/.test(br)
     && /const extTip = brEl\("span", "tip", t\("br\.openSystem\.tip"\)\); extTip\.id = "bv-ext-tip"; extTip\.setAttribute\("role", "tooltip"\); ext\.setAttribute\("aria-describedby", extTip\.id\);/.test(br) && /brTipAttach\(ext, extTip\);/.test(br));
   ok("① 泡泡的開關:滑入出;mouseleave / pointerdown / Esc / 視窗退到背景收", /btn\.addEventListener\("mouseenter", \(\) => \{ brTipHide\(\); tip\.classList\.add\("is-on"\); brTipOn = tip; \}\);/.test(br)
-    && /\["mouseleave", "pointerdown"\]\.forEach\(\(ev\) => btn\.addEventListener\(ev, brTipHide\)\);/.test(br) && /if \(e\.key === "Escape"\) brTipHide\(\);/.test(br) && /window\.blave\.onWindowActive\(\(on\) => \{ if \(!on\) brTipHide\(\); \}\);/.test(br));
+    && /\["mouseleave", "pointerdown"\]\.forEach\(\(ev\) => btn\.addEventListener\(ev, brTipHide\)\);/.test(br) && /window\.addEventListener\("keydown", \(e\) => \{ if \(e\.key === "Escape" && !e\.isComposing && e\.keyCode !== 229 && brTipHide\(\)\) \{ e\.preventDefault\(\); e\.stopPropagation\(\); \} \}, true\);/.test(br) && /window\.blave\.onWindowActive\(\(on\) => \{ if \(!on\) brTipHide\(\); \}\);/.test(br));
   // 鍵盤聚焦走 CSS(同 .mp-tip:focus-visible + .tip):不顯示的視窗裡 document 沒有焦點、focus 事件不會發,這一段只能靜態驗
   ok("① 泡泡樣式:app.css .tip 材質,掛在網址列下方靠右;鍵盤 focus-visible 由 CSS 出", /\.bv-addr \{ position: relative; \}/.test(css) && /\.bv-addr \.tip \{ left: auto; right: 0; top: calc\(100% \+ 6px\); bottom: auto; \}/.test(css) && /\.bv-addr \.tip\.is-on, \.bv-addr \.ibtn:focus-visible:not\(\[data-tip-off\]\) \+ \.tip \{ display: block; \}/.test(css));
   ok("① 第十九批的通用 title 收放拿掉了(不改寫整頁的 title、不留 data-title-held)", !/titleHold|titleBack|data-title-held|titleHeld/.test(appjs) && !/querySelectorAll\("\[title\]"\)/.test(appjs));
@@ -29,23 +29,26 @@ if (!process.versions.electron) {
     .flatMap((m) => m[0].slice(0, -1).split(",")).filter((sel) => /:(hover|focus-visible)[^+]*\+ \.tip\b/.test(sel)).map((sel) => f + ": " + sel.trim()));
   const bare = cssAll.filter((sel) => !/:(hover|focus-visible):not\(\[data-tip-off\]\) \+ \.tip/.test(sel));
   ok("① CSS 帶出的泡泡(" + cssAll.length + " 條)都帶 :not([data-tip-off])", cssAll.length >= 5 && bare.length === 0, bare.join(" | "));
-  const escSrc = (appjs.match(/\ndocument\.addEventListener\("keydown", \(e\) => \{\n  if \(e\.key !== "Escape"\) return;[\s\S]*?\n\}\);\n/) || [""])[0];
+  // 0.1.37 起是 tipEsc():window capture 先問(看得見的泡泡先收、不往下傳),回傳有沒有收掉看得見的
+  const escSrc = (appjs.match(/\nfunction tipEsc\(\) \{\n[\s\S]*?\n\}\n/) || [""])[0];
   const esc = (() => {
     if (!escSrc) return "找不到 app.js 的 Esc 段";
     const mk = (tipNext) => { const at = new Set(), ls = {}; return { at, ls, nextElementSibling: tipNext ? { classList: { contains: (c) => c === "tip" } } : null,
       hasAttribute: (k) => at.has(k), setAttribute: (k) => at.add(k), removeAttribute: (k) => at.delete(k),
       addEventListener: (ev, fn) => { (ls[ev] = ls[ev] || []).push(fn); }, removeEventListener: (ev, fn) => { ls[ev] = (ls[ev] || []).filter((x) => x !== fn); } }; };
     const focusBtn = mk(true), hoverBtn = mk(true), plain = mk(false); let handler = null;
-    const doc = { activeElement: focusBtn, querySelectorAll: () => [plain, hoverBtn], addEventListener: (ev, fn) => { if (ev === "keydown") handler = fn; } };
-    new Function("document", escSrc)(doc);
-    handler({ key: "a" });
-    if (focusBtn.at.size || hoverBtn.at.size) return "別的鍵也掛了旗標";
-    handler({ key: "Escape" });
+    const doc = { activeElement: focusBtn, querySelectorAll: () => [plain, hoverBtn] };
+    let disp = "block";
+    handler = new Function("document", "getComputedStyle", escSrc + "; return tipEsc;")(doc, () => ({ display: disp }));
+    if (!/\nwindow\.addEventListener\("keydown", \(e\) => \{\n  if \(e\.key === "Escape" && !e\.isComposing && e\.keyCode !== 229 && tipEsc\(\)\) \{ e\.preventDefault\(\); e\.stopPropagation\(\); \}\n\}, true\);/.test(appjs)) return "沒有 window capture 先問 tipEsc(或別的鍵也會問)";
+    if (handler() !== true) return "泡泡看得見時沒回 true(框會跟著被關)";
     if (!focusBtn.at.has("data-tip-off") || !hoverBtn.at.has("data-tip-off") || plain.at.size) return "Esc 沒掛上(或掛到不是觸發點的元素)";
     focusBtn.ls.blur.forEach((fn) => fn()); hoverBtn.ls.mouseleave.forEach((fn) => fn());
     if (focusBtn.at.size || hoverBtn.at.size) return "失焦 / 滑出沒拿掉";
     if ((focusBtn.ls.blur || []).length || (hoverBtn.ls.mouseleave || []).length) return "監聽沒收掉";
-    doc.activeElement = null; doc.querySelectorAll = () => []; handler({ key: "Escape" });
+    disp = "none"; if (handler() !== false) return "泡泡沒顯示時回了 true(Esc 會被吃掉、框關不了)";
+    focusBtn.ls.blur.forEach((fn) => fn()); hoverBtn.ls.mouseleave.forEach((fn) => fn());
+    doc.activeElement = null; doc.querySelectorAll = () => []; if (handler() !== false) return "沒有焦點時回了 true";
     return "ok";
   })();
   ok("① Esc:焦點上 / 滑過的觸發點掛 data-tip-off(不是觸發點的不掛),失焦 / 滑出拿掉;沒有焦點也不丟", esc === "ok", esc);

@@ -74,7 +74,7 @@ function libIdeaOn(c) {
   return c.env === "local" && c.browserOn === true && engineOk;
 }
 // 代下載沒成的那句:主行程判的 kind(+ 畫面自己的 unsent)→ 字串 key;認不得的一律當 fail
-function libDlKey(kind) { return ["blocked", "gone", "anonGone", "signin", "rateLimited", "unsent"].includes(kind) ? "lib.dl." + kind : "lib.dl.fail"; }
+function libDlKey(kind) { return ["blocked", "gone", "anonGone", "signin", "rateLimited", "unsent", "agentOld", "agentOldReopen"].includes(kind) ? "lib.dl." + kind : "lib.dl.fail"; }
 // 確認框與購買框的資料費那一行(§4.1):本機、按小時計費、而且這支不是只用公開資料。兩個框共用這一支,條件不會漂
 function libFeeLine(env, dataAccess, needs) { return env !== "cloud" && dataAccess === "billed" && needs !== "none"; }
 // 推薦排序(同公開頁 library_rules.recoSort):已驗證 → 樣本長 → 新;刻意不看報酬 / Sharpe(最漂亮的回測多半最過擬合)
@@ -93,18 +93,13 @@ function libVisible(list, mkt) {
   const inMkt = (Array.isArray(list) ? list : []).filter((s) => s && (mkt === "all" || libMarket(s) === mkt));
   return inMkt.sort((a, b) => (Number(!!(b.is_official || b.verified)) - Number(!!(a.is_official || a.verified))) || libCompare(a, b));
 }
-// 關卡數值的字(抄 web library_rules.rate / fillP):費率 0.0005 → "0.05%"(最少 2 位、尾零去掉);p < 0.001 整段換成「p < 0.001」
+// 關卡數值的字(抄 web library_rules.rate):費率 0.0005 → "0.05%"(最少 2 位、尾零去掉);p 的字是 libP(純邏輯區塊外面)
 function libRate(v) {
   if (typeof v !== "number" || !isFinite(v)) return "—";
   let s = (v * 100).toFixed(4).replace(/0+$/, "");
   if (/\.\d$/.test(s)) s += "0";
   if (/\.$/.test(s)) s += "00";
   return s + "%";
-}
-function libP(tpl, p) {
-  if (typeof p !== "number" || !isFinite(p)) return "—";
-  if (p < 0.001) return tpl.replace(/=\s*\{p\}/, "< 0.001").replace("{p}", "< 0.001");
-  return tpl.replace("{p}", p.toFixed(4));
 }
 function libGateFails(gc) { return gc ? ["fee", "mcpt", "robust"].filter((k) => gc[k] === "fail").length : 0; }
 /* CTA 態(spec-0.1.13 §1.3 + 0.1.6 §4.4,由上到下取第一個成立的;進行中提到最前——那支的回合就是它的進度)。c = { running, env, signedIn, dataAccess, why, cloud: "live"|"stale"|"stopped"|null,
@@ -234,6 +229,11 @@ function libNoteBuild(root, mk) {
   return out;
 }
 /* ── 純邏輯到此 ── */
+// p 的規則只有一份,在 strategy_versions.js fillP(那支在 library.js 之後載入,呼叫時才讀);門檻跟 api 的 mcpt_alpha 走
+function libP(tpl, p, alpha) {
+  if (typeof p !== "number" || !isFinite(p)) return "—";
+  return window.blaveVersions.fillP(tpl, p, alpha);
+}
 
 const LIB = { bags: { local: libNewBag(), cloud: libNewBag() }, data: null, loading: false, skel: false, failed: false, stale: false, seq: 0,
   pending: null, noNew: null, buying: null, installed: {}, chart: null, paintedEnv: null, reports: new Map(),   // reports: id → Promise<report|null>(詳情的 400 點曲線 + 回測期間)
@@ -329,7 +329,7 @@ function libCtx() {
 function libCtaOf(s) {
   const c = libCtx();
   return libCta(s, Object.assign(c, {
-    running: typeof running !== "undefined" && running === true, cloud: c.env === "cloud" ? libCloud() : null,
+    running: false, cloud: c.env === "cloud" ? libCloud() : null,   // 回合中不再擋〔使用〕:另開分頁送(csSendAway);進度看 LIB.pending
     pending: LIB.pending ? LIB.pending.id : null, noNew: LIB.noNew, buying: LIB.buying,
     installedName: libInstalledOf(s, c.env),
   }));
@@ -421,6 +421,7 @@ function libRefresh() { if (!$("lib").hidden) libLoad(false); }
 function libTurnEnd() {
   const p = LIB.pending;
   if (!p || p.stage === "dl") return;   // 還在代下載:結束的是用戶另外送的那一輪,不是這支的
+  if (p.sid && p.sid !== sessionId) return;   // 結束的是別條(對話分頁並行):這支那一輪還在跑
   LIB.pending = null;
   if (p.env === "local") {
     // 新出現、或同名但 mtime 變了(「再下載一份」是整份覆蓋同名那支)都算成功;對照表已記的名字優先認它
@@ -441,7 +442,7 @@ function libInstalledSet(id, name) {
 }
 // 回合開始 / 結束(running 變了)、購買中、對照表變了:詳情的 CTA 就地重畫;清單的 tag 在 libStratChanged
 function libSync() {
-  if (!(typeof running !== "undefined" && running === true)) LIB.busyTold = null;   // 清在這裡、不在 libPaintCta:忙碌中也會重畫,會把剛講的那句抹掉
+  if (!csAnyTurn()) LIB.busyTold = null;   // 清在這裡、不在 libPaintCta:忙碌中也會重畫,會把剛講的那句抹掉
   if (typeof wcBusySync === "function") wcBusySync();   // 歡迎頁卡的回合鎖與代下載鎖:用戶在歡迎頁時策略庫是藏著的,要在下一行之前
   if ($("lib").hidden) return;
   const B = libBag(), s = B.detail ? libFind(B.detail) : null;
@@ -625,7 +626,7 @@ const LIB_GRP_KEYS = { no_card: ["lib.grp.card", "lib.grp.gate.noCard"], no_bala
 const libPlanMo = () => typeof planMo === "function" && planMo();
 /* 付不出資料費的出口(§3.2):no_card 有試用 → 「綁卡,送 {t} 天資料」/ 沒試用或 t 空 → 「前往綁卡」/ no_balance → 「儲值」/ unknown → 描邊「帳號與方案」
    (查不到狀態時不擺一顆要錢的主鈕;鈕字用 pv.e.btn——「開這一頁的鈕」的字,跟資料卡那顆共用)。這幾顆開 設定 › 帳號與方案。
-   方案制的 no_card(有試用資格又沒卡)→「綁卡，免費試用 {t} 天」直接開瀏覽器綁卡頁(bindGo),收費講在那一頁。試用天數來自 planVars().t(api 的 trial.days),不寫死 */
+   方案制的 no_card(有試用資格又沒卡)→「綁卡免費試用 {t} 天」直接開瀏覽器綁卡頁(bindGo),收費講在那一頁。試用天數來自 planVars().t(api 的 trial.days),不寫死 */
 function libGateBtn(why) {
   // 方案制:沒有方案 →「看方案」開設定 › 帳號與方案(那一頁有開通鈕與 API 方案);扣款失敗 →「重新付款」外開網站方案頁
   if (why === "no_plan") { const b = libEl("button", "btn-fill", t("data.seePlan")); b.type = "button"; b.addEventListener("click", () => { libTrack("plan_lib"); planOpen(); }); return b; }
@@ -706,7 +707,7 @@ function libPaintDetail(s) {
     else if (!s.is_official && libGateFails(gc) > 0) { const p = libEl("p", "lib-p"); p.appendChild(libRich("lib.gates.failed", { k: libMono(String(libGateFails(gc))) })); c2.appendChild(p); }
     if (gc) {
       const g = r.gates || {}, fee = g.fee || {}, rob = g.robust || {};
-      const vals = { fee: [t("lib.gate.feeAssumed", { v: libRate(fee.rate) }), t("lib.gate.feeActual", { v: libRate(fee.actual) })], mcpt: gc.mcpt === "na" ? [] : [libP(t("lib.gate.p"), g.mcpt_p)],
+      const vals = { fee: [t("lib.gate.feeAssumed", { v: libRate(fee.rate) }), t("lib.gate.feeActual", { v: libRate(fee.actual) })], mcpt: gc.mcpt === "na" ? [] : [libP(t("lib.gate.p"), g.mcpt_p, g.mcpt_alpha)],
         robust: [typeof rob.ratio === "number" && isFinite(rob.ratio) ? t("lib.gate.robustVal", { ratio: String(Math.round(rob.ratio * 100)) }) : "—"] };
       const ul = libEl("ul", "gates");
       [["fee", "lib.gate1", "lib.gate1d"], ["mcpt", "lib.gate2", "lib.gate2d"], ["robust", "lib.gate3", "lib.gate3d"]].forEach(([key, n, d]) => {
@@ -890,7 +891,6 @@ async function libNoteLoad(s, id) {
 /* o.from === "welcome"(歡迎頁①的卡):確定後先切到這支的詳情再送。下載失敗、沒送出、沒新策略只畫在詳情的 #lib-cta,
    從歡迎頁直送的話錯誤畫進藏著的面板(稽核 M1)。焦點由 delClose 先還給卡的 CTA,libShowDetail 再交給詳情的返回鈕 */
 function libAsk(s, opener, o) {
-  if (typeof running !== "undefined" && running) return;
   if (LIB.pending) return;   // 代下載那一兩秒 running 還是 false:切到另一支再按不能起第二個下載
   if (typeof envCanSwitch === "function" && !envCanSwitch()) return;   // 別的框開著 / 選字中
   const cloud = libEnv() === "cloud", fee = libFeeLine(libEnv(), LIB.data ? LIB.data.dataAccess : null, libNeeds(s));
@@ -924,7 +924,8 @@ async function libSend(s, o) {
     try { r = await window.blave.libraryDownload(s.id); } catch (_) { r = null; }
     if (!r || r.ok !== true) {
       LIB.pending = null;
-      const kind = r && ["blocked", "gone", "anonGone", "signin", "rateLimited"].includes(r.kind) ? r.kind : "fail";
+      const kind = r && ["blocked", "gone", "anonGone", "signin", "rateLimited", "agentOld", "agentOldReopen"].includes(r.kind) ? r.kind : "fail";
+      if (kind === "agentOld" || kind === "agentOldReopen") libBlocked("agent_old");   // 想用但這台 lib 太舊(api 交付碼前擋下)
       if (kind === "gone" || kind === "anonGone") libInvalidate();   // 下架了(或匿名那條已不給):清單重拉(先清再記,libInvalidate 會把 dlFail 清掉)
       LIB.dlFail = { id: s.id, kind };
       libSync(); const b = libCtaMain(); if (b) b.focus();
@@ -936,10 +937,11 @@ async function libSend(s, o) {
     }
     LIB.pending.stage = "turn"; libSync();
   }
-  if (csTitle) csStartNew();
-  submitMessage(send, opts).then((ok) => {
+  const sent = csSendAway(send, opts), at = CS.away;
+  if (LIB.pending) LIB.pending.sid = at.sid;   // 代下載那段的 pending(stage turn)也只認這一條
+  sent.then((ok) => {
     if (ok) {
-      LIB.pending = { id: s.id, env, before }; LIB.noNew = null; libTrack("library_use");
+      LIB.pending = { id: s.id, env, before, sid: at.sid }; LIB.noNew = null; libTrack("library_use");
       if (o && o.from === "welcome") libTrack(local ? "wcard_use" : "wcard_use_cloud");
       // 這支的資料需求(§8):只在本機送——雲端沒有資料牆,這個屬性在那邊沒有意義
       if (local) { try { window.blave.trackEvent("lib_pick", { data: libPickData(s) }); } catch (_) { } }

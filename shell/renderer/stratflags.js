@@ -278,7 +278,7 @@ function sfPopBuild() {
   const dm = sep(), moves = document.createElement("div"); dm.dataset.mv = "1"; moves.className = "sg-moves"; moves.dataset.mv = "1";
   sfPop.append(d1, rm, dm, moves, d2, del);   // 鍵盤排序提示那行 Wei 10-12 拿掉(Alt+↑/↓ 仍可用,只是不印)
   sfPop.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { e.stopPropagation(); sfPopClose(true); return; }   // 不給 app.js 的 escTop:一次只關一層
+    if (e.key === "Escape") { if (e.isComposing || e.keyCode === 229) return; e.preventDefault(); e.stopPropagation(); sfPopClose(true); return; }   // 不給 app.js 的 escTop:一次只關一層
     if (["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].indexOf(e.key) < 0) return;
     e.preventDefault();
     const items = [...sfPop.querySelectorAll("button")].filter((b) => !b.hidden);

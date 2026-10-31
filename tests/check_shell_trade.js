@@ -563,14 +563,10 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   // Wei 0.0.6:「重新測試」只在讀帳失敗 / 金鑰重查出事(紅記號)時畫;已連接(綠點)與串接中都沒有——模擬與真實交易所同一條
   const b1 = bad((c) => c.r.retest || !c.r.unbind);
   ok("帳戶列:已連接時沒有「重新測試」(模擬 / 真實交易所都沒有);兩者都有「解除綁定」(本機 / 雲端 × zh / en)" + (b1.length ? " ✗ " + b1 : ""), b1.length === 0);
-  // 解除綁定的後果只在確認框講(本機、雲端都一樣,tr.unbindDesc / tr.cloud.unbindDesc 退役);只有模擬帳戶留「可以改綁真實交易所」
-  const want = (c) => c.venue === "paper" ? "tr.unbindDescPaper" : null;
-  const b2 = bad((c) => (want(c) ? !c.r.T(want(c)) || c.r.foots[0] !== c.r.T(want(c)) : c.r.foots.length !== 0));
-  ok("帳戶列說明:模擬帳戶(本機/雲端)是「解除後可以改綁真實交易所」;真實交易所(本機/雲端)沒有說明行、tr.unbindDesc / tr.cloud.unbindDesc 退役" + (b2.length ? " ✗ " + b2 : ""), b2.length === 0
-    && !/tr\.(cloud\.)?unbindDesc"/.test(src) && !vm.runInContext("['tr.unbindDesc', 'tr.cloud.unbindDesc'].some((k) => k in STRINGS.zh || k in STRINGS.en)", ctx)
-    && cases.find((c) => c.lang === "zh" && c.venue === "paper").r.foots[0] === "解除後可以改綁真實交易所。"
-    && cases.find((c) => c.lang === "en" && c.venue === "paper").r.foots[0] === "Unbind to connect a real exchange instead."
-    && cases.filter((c) => c.venue === "paper").every((c) => !/金鑰|keys/.test(c.r.foots[0])));
+  // 解除綁定的後果只在確認框講(本機、雲端都一樣);tr.unbindDesc / tr.cloud.unbindDesc / tr.unbindDescPaper 退役(0.1.37 模擬帳戶那句也拿掉)
+  const b2 = bad((c) => c.r.foots.length !== 0);
+  ok("帳戶列說明:模擬帳戶與真實交易所(本機/雲端 × zh/en)都沒有說明行;三個 unbindDesc key 退役" + (b2.length ? " ✗ " + b2 : ""), b2.length === 0
+    && !/tr\.(cloud\.)?unbindDesc(Paper)?"/.test(src) && !vm.runInContext("['tr.unbindDesc', 'tr.cloud.unbindDesc', 'tr.unbindDescPaper'].some((k) => k in STRINGS.zh || k in STRINGS.en)", ctx));
   // 稽核 L1 + Wei 0.0.6:讀帳失敗(串接失敗)時才有「重新測試」;已連接、串接中都沒有——模擬與真實交易所同一條
   const pf = ["local", "cloud"].flatMap((env) => ["paper", "binance"].map((v) => paint(v, env, "zh", false, false)));
   ok("讀帳失敗:本機 / 雲端 × 模擬 / Binance 都有「重新測試」;已連接沒有;串接中(還沒讀過)也沒有", pf.every((r) => r.retest)
@@ -1064,6 +1060,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("S4 machine_restart_stop_failed 事件:同網頁那一列(可能沒停住;先暫停、再更新)", J(trEventText("machine_restart_stop_failed", {}).slice(0, 2)) === J(["tr.ov.evRestartStopFailed", "tr.ov.evRestartStopFailedNote"]));
     ok("machine_restart_stopped 事件:標題已暫停、說明講平倉停損也不會執行", J(trEventText("machine_restart_stopped", {}).slice(0, 2)) === J(["tr.ov.evRestartStopped", "tr.ov.evRestartStoppedNote"]));
     ok("desktop_action 不畫", trEventText("desktop_action", { action: "update" }) === null);
+    ok("strategy_failed:error 含 DataAccessError(含模組前綴)→ 沒有資料權限那句;其他錯誤、沒有 error、非字串 → 原句",
+      trEventText("strategy_failed", { error: "Traceback ...\nlib.data.DataAccessError: Blave data is not reachable" })[1] === "tr.ov.evStrategyFailedNoData"
+      && trEventText("strategy_failed", { error: "fetch_data() raised while checking freshness: x\nDataAccessError: y" })[1] === "tr.ov.evStrategyFailedNoData"
+      && trEventText("strategy_failed", { error: "KeyError: 'close'" })[1] === "tr.ov.evStrategyFailedNote"
+      && trEventText("strategy_failed", { error: "MyDataAccessErrorish" })[1] === "tr.ov.evStrategyFailedNote"
+      && trEventText("strategy_failed", {})[1] === "tr.ov.evStrategyFailedNote" && trEventText("strategy_failed", { error: 42 })[1] === "tr.ov.evStrategyFailedNote");
     ok("venue_mode_switched(Bitget 換帳戶類型、倉位全對上):P3 一般字、照 mode 選句、沒有註解;別家不畫",
       J(trEventText("venue_mode_switched", { venue: "bitget", mode: "uta" }).slice(0, 3)) === J(["tr.ov.evBitgetUta", null, 3])
       && trEventText("venue_mode_switched", { venue: "bitget", mode: "classic" })[0] === "tr.ov.evBitgetClassic"
@@ -1089,7 +1091,22 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && S4.includes('these positions have no stop-loss:"')
         && /if \(code\) body\.append\(typeof head === "string" && \/：\$\/\.test\(head\) \? "" : " ", trEl\("span", "mono", code\)\);/.test(src)); }
     const mc = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF, TXF", reason: "x" }), mc0 = trEventText("manual_close_required", { symbols: "" });
-    ok("manual_close_required:帶標的時接在後面;symbols 空字串只講那一句;註解同網頁", mc[0] === "tr.ov.evManualClose" && mc[4] === "TMF, TXF" && mc[1] === "tr.ov.evManualCloseNote" && mc0[0] === "tr.ov.evManualClose" && !mc0[4]); }
+    ok("manual_close_required:帶標的時接在後面;symbols 空字串只講那一句;註解同網頁", mc[0] === "tr.ov.evManualClose" && mc[4] === "TMF, TXF" && mc[1] === "tr.ov.evManualCloseNote" && mc0[0] === "tr.ov.evManualClose" && !mc0[4]);
+    // snapshot_lag(api cf3ce179 起群益、統一都分流成 manual_close_required):講「沒替哪家平倉」,不再說群益;券商名照對照表
+    const lagC = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF", reason: "snapshot_lag" }),
+      lagP = trEventText("manual_close_required", { exchange: "president", symbols: "", reason: "snapshot_lag" }),
+      lagX = trEventText("manual_close_required", { exchange: "constructor", reason: "snapshot_lag" }), idC = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF", reason: "identity" });
+    const SZ = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "; return STRINGS;")();
+    ok("manual_close_required snapshot_lag:整句「沒替{券商}平倉：…」(不拆說明);群益／統一照對照表,表外(含 constructor 這種原型名)= 這家券商;身分問題沿用原句",
+      lagC[0] === 'tr.ov.evManualCloseLag{"broker":"tr.ov.brokerCapital"}' && lagC[1] === null && lagC[4] === "TMF"
+      && lagP[0] === 'tr.ov.evManualCloseLag{"broker":"tr.ov.brokerPresident"}' && !lagP[4] && lagX[0] === 'tr.ov.evManualCloseLag{"broker":"tr.ov.brokerOther"}'
+      && idC[0] === "tr.ov.evManualClose" && idC[1] === "tr.ov.evManualCloseNote"
+      && /const TR_BROKER_KEY = \{ capital: "tr\.ov\.brokerCapital", president: "tr\.ov\.brokerPresident" \};/.test(src) 
+      && /Object\.prototype\.hasOwnProperty\.call\(TR_BROKER_KEY, d\.exchange\) \? TR_BROKER_KEY\[d\.exchange\] : "tr\.ov\.brokerOther"/.test(src));
+    ok("…整句與 api notify.py _MANUAL_CLOSE_SNAPSHOT_LAG 逐字同(去掉 🚨、{broker_zh} → {broker});券商短名同 _VENUE_NAMES",
+      SZ.zh["tr.ov.evManualCloseLag"] === "沒替{broker}平倉：部位資料還沒跟上剛送的單。一分鐘後再按「暫停並關閉部位」，或到券商平倉。"
+      && SZ.en["tr.ov.evManualCloseLag"] === "Not closed on {broker}: position data lags the last order. In a minute, press “Pause and close positions” again, or close at your broker." && !("tr.ov.evManualCloseLagNote" in SZ.zh)
+      && SZ.zh["tr.ov.brokerCapital"] === "群益" && SZ.zh["tr.ov.brokerPresident"] === "統一" && SZ.en["tr.ov.brokerCapital"] === "Capital" && SZ.en["tr.ov.brokerPresident"] === "President" && SZ.zh["tr.ov.brokerOther"] === "這家券商" && SZ.en["tr.ov.brokerOther"] === "your broker"); }
   { // 設計稽核可後修 §3-1:雲端的投資組合策略那句講真話;L3:框開著時變成讀不到設定 → 送出前再擋一次;L2:=absent 講明
     ok("order-copy #12 沒撥過款的投資組合策略:金額表那一列講「要先更新」(雲端 tr.typeCHost、本機 tr.typeC),tr.cloud.typeC 退役", /if \(locked\) first\.appendChild\(trEl\("span", "pf-note", cloud \? t\("tr\.typeCHost"\) : t\("tr\.typeC"\)\)\);/.test(src) && !/tr\.cloud\.typeC/.test(src));
     const save = src.slice(src.indexOf("function trSaveAmounts("), src.indexOf("\nfunction ", src.indexOf("function trSaveAmounts(") + 1));
@@ -1810,7 +1827,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const box = node("div");
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag"), createTextNode: (s) => s }, requestAnimationFrame: () => 0, Date, Math, JSON, Array, Object, Number, String, isFinite, console,
-      $: (id) => (id === "tr-over" ? box : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "en", CX_VENUES: {}, PAPER: "paper", BINANCE: "binance", trShould: () => true, trOvEvents: () => node("div"), trEvListFocus: () => {}, trDrawCurve: () => {}, trZDraft: () => false });
+      $: (id) => (id === "tr-over" ? box : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "en", CX_VENUES: {}, PAPER: "paper", BINANCE: "binance", trShould: () => true, trOvEvents: () => node("div"), trEvListFocus: () => {}, trDrawCurve: () => {}, trCvEscWire: () => {}, trZDraft: () => false });
     vm.runInContext((pure + envb).replace(/^const /gm, "var ") + "\n" + consts + "\n" + fns + "\nvar trTipSeq = 0;", ctx);
     // 有一支策略設了金額:這一段測的是一般總覽;還沒選策略／金額全 0 的總覽另在 check_shell_autotrade_empty.js
     const REPORT = { venues: { binance: { credentials: true, pair: true, order: true, account: true } }, account: { venues: { binance: { ok: true, equity: 1234.5, currency: "USDT" } } }, config: { amounts: { s1: 100 } } };
@@ -2353,7 +2370,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       setAttribute(k, v) { this.attrs[k] = v; }, on: {}, addEventListener(e, f) { this.on = Object.assign({}, this.on, { [e]: f }); }, get textContent() { return this.text + this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }, set textContent(v) { this.text = v; this.kids = []; } });
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const hist = node("div");
-    const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag"), body: node("body"), addEventListener() {} }, window: {}, Date, Math, JSON, Array, Object, Number, String, isFinite, console,
+    const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag"), body: node("body"), addEventListener() {} }, window: { addEventListener() {} }, Date, Math, JSON, Array, Object, Number, String, isFinite, console,
       $: (id) => (id === "tr-hist" ? hist : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "zh", CX_VENUES: {}, PAPER: "paper", trShould: () => true, trUnit: () => "TWD", trSetTab: (tab, focus) => { ctx.tabbed = [tab, focus]; } });
     vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "\n" + src.slice(src.indexOf("const TR_EV_P1 = ["), src.indexOf("function trOvEvents(")).replace(/^const /gm, "var ")
       + src.match(/^let trHistTipEl = [^\n]*/m)[0].replace(/^let /, "var ") + "\n"
@@ -2491,23 +2508,25 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         setAttribute(k, v) { this.attrs[k] = v; }, appendChild(c) { this.kids.push(c); return c; }, addEventListener(e, f) { this.on[e] = f; },
         getBoundingClientRect: () => rect, offsetHeight: 47, getClientRects: () => [1], set textContent(v) { this.text = v; }, get textContent() { return this.text; } }; return n; };
       let rect = { left: 900, top: 32, bottom: 50 }, winOn = null;
-      const docOn = {}, body = mk("body"), clock = { t: 1000 };
+      const docOn = {}, winKey = [], body = mk("body"), clock = { t: 1000 };
       const c2 = vm.createContext({ document: { createElement: mk, body, addEventListener: (e, f, cap) => { docOn[e] = [f, cap]; } },
-        window: { innerWidth: 1024, innerHeight: 680, blave: { onWindowActive: (f) => { winOn = f; } } }, Date: { now: () => clock.t }, Math });
+        window: { innerWidth: 1024, innerHeight: 680, blave: { onWindowActive: (f) => { winOn = f; } }, addEventListener: (e, f, cap) => { if (e === "keydown") winKey.push(f, cap); } }, Date: { now: () => clock.t }, Math });
+      const escKey = () => { const ev = { key: "Escape", pd: 0, sp: 0, preventDefault() { this.pd++; }, stopPropagation() { this.sp++; } }; winKey[0](ev); return ev; };
       vm.runInContext(src.match(/^let trHistTipEl = [^\n]*/m)[0].replace(/^let /, "var ") + "\n" + ["trEl", "trHistTipBox", "trHistTipShow", "trHistTipHide", "trHistTipBtn"].map(cutF).join("\n"), c2);
       const b = vm.runInContext("trHistTipBtn('未確認成交', '說明', 'hist:x')", c2), tip = () => body.kids[0], on = () => !!tip() && tip().classList.contains("is-on");
       const early = body.kids.length === 1 && tip().id === "hist-tip" && !on();
       b.on.focus(); const shown = on() && tip().text === "說明" && tip().attrs.role === "tooltip" && tip().style.left === "752px" && tip().style.top === "56px";
       b.on.click(); const keptOnTap = on();
       clock.t += 1000; b.on.click(); const toggledOff = !on();
-      b.on.mouseenter(); docOn.keydown[0]({ key: "Escape" }); const escOff = !on();
+      b.on.mouseenter(); const e1 = escKey(), escOff = !on() && e1.pd === 1 && e1.sp === 1 && winKey[1] === true;
+      const e2 = escKey(), escPass = e2.pd === 0 && e2.sp === 0;   // 泡泡已收:這一下照常往下傳(關框)
       b.on.focus(); b.on.blur(); const blurOff = !on();
       rect = { left: 10, top: 642, bottom: 660 }; b.on.focus(); const above = on() && tip().style.top === "589px";
       docOn.scroll[0](); const scrollOff = !on() && docOn.scroll[1] === true;
       b.on.focus(); winOn(false); const winOff = !on();
-      ok("說明氣泡:按鈕一建就先建好氣泡(讀屏);focus 開(限制在視窗內、掛 body、role=tooltip);觸控那一下 click 不收、再點一次收;Esc、blur、捲動(capture)、視窗失焦收;下方放不下改放上方;只建一顆",
-        early && shown && keptOnTap && toggledOff && escOff && blurOff && above && scrollOff && winOff && body.kids.length === 1 && tip().attrs["aria-hidden"] === "true",
-        J([early, shown, keptOnTap, toggledOff, escOff, blurOff, above, tip().style.top, scrollOff, winOff, body.kids.length])); }
+      ok("說明氣泡:按鈕一建就先建好氣泡(讀屏);focus 開(限制在視窗內、掛 body、role=tooltip);觸控那一下 click 不收、再點一次收;Esc(window capture;收掉看得見的才擋住不往下傳)、blur、捲動(capture)、視窗失焦收;下方放不下改放上方;只建一顆",
+        early && shown && keptOnTap && toggledOff && escOff && escPass && blurOff && above && scrollOff && winOff && body.kids.length === 1 && tip().attrs["aria-hidden"] === "true",
+        J([early, shown, keptOnTap, toggledOff, escOff, escPass, blurOff, above, tip().style.top, scrollOff, winOff, body.kids.length])); }
     { const css = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
       const narrow = css.slice(css.indexOf("@container (max-width: 520px)"));
       ok("交易歷史欄位對齊(設計複驗):.pf-log 是 grid 六欄、.pf-log-row 是 subgrid 跨滿、口數不靠 margin-left:auto;窄欄(@container 520)同一區塊改五欄",

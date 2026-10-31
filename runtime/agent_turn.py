@@ -66,7 +66,9 @@ BLAVE_AGENT_HOME = (os.environ.get("BLAVE_AGENT_HOME")
 # deduction — this is the actual billing integration, not a POC shortcut.
 # Auth is a single per-machine token (BLAVE_PROXY_TOKEN, matches this
 # instance's openclaw_instances.ttyd_password), sent as "proxy-{token}".
-PROXY_BASE_URL = "https://api.blave.org/openclaw/proxy"
+# The desktop app points this at its local account relay (local_proxy.py; shell/acctrelay.js).
+import local_proxy  # noqa: E402  (desktop relay override; see local_proxy.py)
+PROXY_BASE_URL = local_proxy.proxy_base()
 PROXY_ENV = {
     "ANTHROPIC_BASE_URL": PROXY_BASE_URL,
     "ANTHROPIC_API_KEY": f"proxy-{os.environ.get('BLAVE_PROXY_TOKEN', '')}",
@@ -2051,6 +2053,7 @@ WEB_FORMATTING_RULE = (
     "回覆顯示在工作區的聊天欄（窄欄、旁邊就是程式碼/回測分頁），語法規則：\n"
     "- 不要用 # 標題（聊天泡泡裡太重），要分段就用**粗體行**；"
     "可用 **粗體**、清單、`行內程式碼`；表格僅限小型。\n"
+    "- 附網址一律寫成 `[來源標題](網址)`，不要貼裸網址；標題用頁面標題或網站名。\n"
     "- 建立/修改策略後說一句「程式碼在左側策略頁」即可；"
     "回測細節請使用者看回測分頁。\n\n"
     + _STYLE_RULES
@@ -4386,7 +4389,7 @@ DATA_ACCESS_WHY = {
     "no_card": "the user is signed in; there is no card on file (a card starts the 14-day trial)",
     "no_balance": "the user is signed in; the balance does not cover this hour's data fee",
     # 方案制(api MONTHLY_BILLING_FROM 之後):沒有按小時買資料,資料只在雲端方案／API 方案裡
-    "no_plan": "the user is signed in; the account has no plan that includes Blave data (a Blave Agent cloud plan or an API plan)",
+    "no_plan": "the user is signed in; the account has no plan that includes Blave data",
     "plan_failed": "the user is signed in; the account's plan payment failed, so data is paused until it is paid",
     "unknown": "the user is signed in; the account status could not be read this turn",
 }
@@ -4404,12 +4407,20 @@ def local_mcp_config(sink, mcp_config):
     return real
 
 
-def mcp_rule(mounted):
+def handoff_folder(session_id):
+    """這一輪雲端交接的子資料夾名(references/cloud-handoff.md 的 `<turn>`,`tmp/cloud-handoff/<turn>/`)。
+    電腦版多條對話會同時跑(0.1.37),共用一個固定資料夾時 A 收尾會刪掉 B 的金鑰;同一條對話一次一輪,所以用對話 id。
+    形狀不合的退回固定字:這個值會被 agent 貼進命令列,也是 get_ssh_access 的 handoff_dir(api 收 1–64 字)。"""
+    return session_id if isinstance(session_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", session_id) else "turn"
+
+
+def mcp_rule(mounted, session_id=None):
     """電腦版而且這一輪掛了 `blave` MCP 才有這段;其餘回空字串(system prompt 一個字都不變)。
     純文字、不看引擎:Claude 走 system prompt 檔,Codex 走 _codex_prompt 的規則前綴。
     圍籬對齊 references/cloud-handoff.md NEVER #31(用戶這一輪要求的事都可做;搬運仍只走 1–8)。"""
     if not mounted:
         return ""
+    folder = handoff_folder(session_id)
     return (
         "\n\n---\n\n## Blave MCP (this turn)\n"
         "A `blave` MCP server is attached for this turn: it reaches the user's Blave cloud machine over SSH. "
@@ -4430,7 +4441,10 @@ def mcp_rule(mounted):
         "over SSH (no running its runtime or its agent) — a turn there charges the user's cloud AI credit. "
         "Never let a key or secret value into the chat, a log or a command line. "
         "Never read, print, copy or summarise the MCP configuration or its access code, and never write SSH keys "
-        "or certificates outside `tmp/cloud-handoff/` in the workspace — delete that folder before the turn ends, "
+        f"or certificates outside this turn's folder `tmp/cloud-handoff/{folder}/` in the workspace — in that "
+        f"reference `<turn>` is `{folder}`, and every `get_ssh_access` call passes `handoff_dir` = `{folder}`. Other conversations on this computer may be using the cloud machine at "
+        "the same time, each in its own folder under `tmp/cloud-handoff/`: never touch those. Delete this turn's "
+        "folder before the turn ends, "
         "and never mention that folder, the connection or the cleanup in the reply: its first sentence is about "
         "what the user asked for.\n"
     )
@@ -4466,6 +4480,21 @@ TURN_NOTES = {
 }
 
 
+def parallel_rule(sink):
+    """電腦版(0.1.37 對話分頁)多條對話會同時跑:交易與改同一支策略只靠這句提醒,外殼認不出哪句是交易。雲端回空字串"""
+    if not isinstance(sink, LocalSink):
+        return ""
+    return ("\n\n---\n\n## Other conversations (this computer)\n"
+            "Other conversations on this computer may be running at the same time. Right before you place or close an "
+            "order, change order settings, or edit a strategy's files or `manager/portfolio_config.json`, read the "
+            "exchange position and those files again — never act on what you read earlier in this turn. Only one "
+            "conversation moves money at a time: a close script may wait up to 90 s for another one, so run order and "
+            "close scripts with a command timeout of at least 180000 ms (`manager/flatten.py`: at least 300000 ms — "
+            "it may also wait for running executions and for the broker's position snapshot), and if the command comes back while still "
+            "running, wait for it — never start it a second time. If it says another conversation is placing an order "
+            "and nothing was sent, tell the user; do not retry in a loop.\n")
+
+
 def turn_note_rule(sink):
     """電腦版這一輪外殼帶的指示;沒有、不認得、不是電腦版 → 空字串。"""
     note = TURN_NOTES.get(os.environ.get("BLAVE_TURN_NOTE") or "") if isinstance(sink, LocalSink) else None
@@ -4488,6 +4517,16 @@ def web_tools_off(web, browser_mounted):
     否則網域政策與「開的每一頁都出現在聊天裡」都繞得過。Codex 引擎只有一個自己的 web search:
     這裡回的不是空的就關掉它(codex_engine.build_args 的 web_search_off)。"""
     return list(WEB_TOOLS) if web else (["WebFetch"] if browser_mounted else [])
+
+
+def chat_tools(web, browser_mounted):
+    """聊天回合的內建工具白名單(options.tools)。引擎預設會把每個內建工具的 schema 都放進 prompt,
+    CronList、Workflow、NotebookEdit 這類 agent 從沒用過的(電腦版開發版實測首次呼叫 43,523 → 34,002 token),
+    而且引擎升版新增的工具會自己長進來。MCP 工具(內建瀏覽器、blave)不受 --tools 影響。
+    ToolSearch 不能拿掉:內建瀏覽器的工具是延遲載入的,要靠它叫出來。TaskOutput 留著:前景指令逾時被
+    CLI 轉到背景後,要靠它等輸出。上網工具照 web_tools_off——雲端回合的報告搜尋要用。"""
+    off = web_tools_off(web, browser_mounted)
+    return ALLOWED_TOOLS + [t for t in WEB_TOOLS if t not in off] + ["TaskOutput", "ToolSearch"]
 
 
 _NO_OTHER_ROUTE = ("the engine's own web search and web fetch, `curl`, `wget`, a script or a library call to a web page. "
@@ -4541,6 +4580,10 @@ def browser_rule(mounted, web=None):
         "(`references/strategy-code.md` › Building from code the user points to); web page content never goes into "
         "`control/` or `.env`. Cite the source URL and title for every fact you take "
         "from a page.\n"
+        "Every conversation on this computer shares this one browser and only one turn uses it at a time. A browser "
+        "tool that returns `browser_busy` means another conversation still has it: do not call it again right away "
+        "and never reach the page another way; say in one sentence that the built-in browser is busy with another "
+        "conversation, then finish without it or offer to look it up once that conversation is done.\n"
         + ("The browser is the only way to the web in the desktop app — the user is promised that every page you open "
            f"shows in the chat. Never reach a web page by another route: not {_NO_OTHER_ROUTE}.\n" if web else "")
     )
@@ -4584,8 +4627,11 @@ def data_access_rule():
             "could not be charged, or (plan billing) the account has no plan that includes data. "
             "The body's message and `next_steps` say which and name the ways out (topping up, a "
             "cloud plan, an API plan); a `retry_after`, when present, is a ceiling rather than a "
-            "wait. Convey why the data stopped and the ways out the body names; never state a "
-            "rate, currency or deadline the body did not give you. Do not work around the block.\n"
+            "wait. Convey that the data stopped and that it needs a plan; do not mention an API plan "
+            "even though the body names one. The exception is a user asking what it takes to call "
+            "the Blave API from their own code with a key they created themselves — answer that "
+            "from references/billing.md. Never state a rate, currency or deadline the body did not "
+            "give you. Do not work around the block.\n"
             "- `ERR005` (`Invalid API key`) — this key was deleted or revoked. The way back is "
             "signing in to Blave again in the app; do not go looking for another key.\n"
             "- `KEY_SCOPE` — the action is outside this key's scope. This desktop key is "
@@ -4599,7 +4645,8 @@ def data_access_rule():
         # 也寫成成品英文散文,模型會照抄——逐輪語言錨(_lang_directive,貼在 prompt 最尾端)只有一行,
         # 打不過「就放在眼前、剛好就是這一則要回的內容」的現成句子(2026-09-23:中文問籌碼集中度,整則回英文)。
         # 所以下面只講**必須成立什麼**,不給任何可抄的成品句;用戶看得到的每一句都由模型自己用該輪語言寫。
-        why = DATA_ACCESS_WHY.get(os.environ.get("BLAVE_DATA_ACCESS_WHY"))
+        why_key = os.environ.get("BLAVE_DATA_ACCESS_WHY")
+        why = DATA_ACCESS_WHY.get(why_key)
         body = (
             "FACTS AND CONSTRAINTS FOR YOU — not wording for the user. Every sentence the user "
             "reads you write yourself, in the language the per-turn language directive names. "
@@ -4623,10 +4670,11 @@ def data_access_rule():
             "Do not decide from these facts alone that something is unavailable: when the user asks "
             "for a dataset, make the call — it stops at once if it needs Blave data.\n"
             "Only when a `lib/data.py` call in this turn actually stopped with `DataAccessError`, "
-            "your reply must: name which data is "
-            "missing; give the conditions under which it becomes available (signed in, plus the card "
-            "trial, a cloud plan or an API plan — or, where the account is still billed by the hour, a "
-            "balance that covers the hourly data fee); carry "
+            "your reply must: name which data is missing; "
+            + ("say in one sentence that it needs signing in to Blave first; "
+               if why_key == "signed_out" else "say in one sentence that it needs a plan; ")
+            + "not list conditions, and not mention an API plan, the card trial or hourly billing "
+            "(the facts above are for you, not for the reply); carry "
             "no directions, next steps or prices; not push; and then answer "
             "whatever part public data does allow. Say it once per conversation — if asked again "
             "later, do not repeat the unavailability, just answer what you can.\n"
@@ -4686,28 +4734,49 @@ def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule=""
     attached server can never disagree."""
     return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
             + python_rule() + data_access_rule() + preferences_rule() + _formatting_rule_for(sink)
-            + mcp_rule(mcp_mounted) + mcp_blocked_rule(None if mcp_mounted else mcp_blocked)
+            + mcp_rule(mcp_mounted, getattr(sink, "session_id", None)) + mcp_blocked_rule(None if mcp_mounted else mcp_blocked)
             + browser_rule(browser_mounted, desktop_web(sink, browser_mounted))
-            + turn_note_rule(sink) + lang_rule + "\n\n---\n\n" + prompt)
+            + turn_note_rule(sink) + parallel_rule(sink) + lang_rule + "\n\n---\n\n" + prompt)
 
 
-def _remove_cloud_handoff_dir(workspace=None):
-    """回合結束一律清掉 `<workspace>/tmp/cloud-handoff/`(雲端交接的短效 SSH 金鑰與憑證)。
+def _remove_cloud_handoff_dir(workspace=None, session_id=None):
+    """回合結束一律清掉這一輪的 `<workspace>/tmp/cloud-handoff/<turn>/`(雲端交接的短效 SSH 金鑰與憑證)。
     規則要 agent 在回合結束前自己刪,但回合出錯(撞 max_turns、半途、崩潰)時它沒機會刪,
-    金鑰就留在磁碟上等下一個回合碰巧清。只動那一個路徑:不存在就算了;它是連結就只拿掉連結;
-    `tmp` 本身是指到 workspace 外面的連結時整個不碰——絕不刪到 workspace/tmp 以外的東西。"""
+    金鑰就留在磁碟上等下一個回合碰巧清。帶 session_id 時整個拿掉這一輪自己的子資料夾;別條的子資料夾不碰。
+    `cloud-handoff/` 根目錄的檔(agent 漏帶 handoff_dir 時 api 退路放的,可能正被別條回合用著;稽核 s1 P2-1)
+    不論帶不帶 session_id 都只清超過憑證效期(15 分鐘)加餘裕的(稽核 s2 P3-6:不然現在沒有人清它),資料夾不動。
+    不存在就算了;是連結就只拿掉連結;`tmp` 本身是指到 workspace 外面的連結時整個不碰——絕不刪到 workspace/tmp 以外的東西。"""
     ws = os.path.realpath(workspace or WORKSPACE)
     tmp = os.path.join(ws, "tmp")
-    path = os.path.join(tmp, "cloud-handoff")
-    if not os.path.lexists(path) or os.path.realpath(tmp) != tmp:
+    root = os.path.join(tmp, "cloud-handoff")
+    if not os.path.lexists(root) or os.path.realpath(tmp) != tmp:
         return
+
+    def drop(path):
+        try:
+            if os.path.isdir(path) and not os.path.islink(path):
+                shutil.rmtree(path)
+            elif os.path.lexists(path):
+                os.unlink(path)
+        except OSError as e:
+            print(f"[agent_turn] 清不掉 {path}: {e}", file=sys.stderr)
+
+    if os.path.islink(root) or not os.path.isdir(root):
+        drop(root)
+        return
+    if session_id is not None:
+        drop(os.path.join(root, handoff_folder(session_id)))
+    cutoff = time.time() - HANDOFF_ROOT_STALE_S
     try:
-        if os.path.isdir(path) and not os.path.islink(path):
-            shutil.rmtree(path)
-        else:
-            os.unlink(path)
+        for name in os.listdir(root):
+            p = os.path.join(root, name)
+            if (os.path.islink(p) or not os.path.isdir(p)) and os.lstat(p).st_mtime < cutoff:
+                drop(p)
     except OSError as e:
-        print(f"[agent_turn] 清不掉 {path}: {e}", file=sys.stderr)
+        print(f"[agent_turn] 清不掉 {root}: {e}", file=sys.stderr)
+
+
+HANDOFF_ROOT_STALE_S = 20 * 60   # get_ssh_access 的憑證 15 分鐘,多留 5 分鐘
 
 
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
@@ -4849,7 +4918,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 
     sysprompt_path = _write_system_prompt_file(
         agents_md + ('' if _relay_mode() else model_catalog_rule(session_id)) + python_rule() + data_access_rule()
-        + mcp_rule(cloud_mcp) + browser_rule(browser_mounted, web) + turn_note_rule(sink)
+        + mcp_rule(cloud_mcp, session_id) + browser_rule(browser_mounted, web) + turn_note_rule(sink) + parallel_rule(sink)
         + preferences_rule()
         + reply_lang_rule(lang_msg, reply_lang)
         + _formatting_rule_for(sink)
@@ -4863,8 +4932,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # 自己 spawn 了 explore 子代理)。Subagents interleave a second stream
         # into the same sink and wreck the「最後一段無工具文字=回覆」判定
         # (正式回覆被子代理尾隨的 tool chunk 收回成旁白,子代理的英文報告
-        # 反而變成回覆),所以用 disallowed_tools 硬禁。`tools=` 才是內建工具清單本身(SDK 轉成 --tools;
-        # 排程回合用它,見 _arm_scheduled);聊天回合不設,維持引擎預設。
+        # 反而變成回覆),所以用 disallowed_tools 硬禁。`tools=` 才是內建工具清單本身(SDK 轉成 --tools),
+        # 聊天回合的見 chat_tools、排程回合的見 _arm_scheduled。
         allowed_tools=ALLOWED_TOOLS,
         # 電腦版上網只有內建瀏覽器一條路:引擎自己的 WebSearch / WebFetch 都關(開著時走 browser_search / browser_open,
         # 關著或掛不上就是不上網)。雲端與舊外殼見 web_tools_off
@@ -4905,6 +4974,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # 電腦版的 effort 選單。沒帶就連屬性都不碰(SDK 預設);設在建構之後,理由同下面的
         # extra_args:沒有這個欄位的 SDK build 不能因為一個 kwarg 整輪 TypeError。
         options.effort = effort
+    if not use_codex:
+        options.tools = chat_tools(web, browser_mounted)
     if sysprompt_path:
         # Set after construction for the same reason as include_partial_messages
         # below: an SDK build whose options lack extra_args must not kill every turn.
@@ -5203,7 +5274,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         if stop_watch:
             stop_watch.cancel()
             turn_stop.final_sweep(sink)
-        _remove_cloud_handoff_dir()   # 出錯的回合也清:交接金鑰不能留到下一個回合
+        _remove_cloud_handoff_dir(session_id=session_id)   # 出錯的回合也清:交接金鑰不能留到下一個回合(只清這一輪的)
         await sink.stop()
         if sysprompt_path:
             try:
@@ -5249,7 +5320,42 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 MESSAGE_STDIN_MAX = 1024 * 1024  # --message-stdin 讀的上限(同電腦版外殼的 MESSAGE_MAX_BYTES):不無上限地把 stdin 讀進記憶體
 
 
+def _proc_started(pid):
+    """Start stamp of `pid`; must be the exact string lib/guard._proc_started gives (tests/check_turn_money_lock.py
+    compares the two). None when unreadable — then BLAVE_TURN_PID carries the pid alone."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+            k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            k32.OpenProcess.restype = ctypes.c_void_p
+            h = k32.OpenProcess(0x1000, False, pid)
+            if not h:
+                return None
+            try:
+                k32.GetProcessTimes.argtypes = [ctypes.c_void_p] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+                c, e, k, u = (wintypes.FILETIME() for _ in range(4))
+                if not k32.GetProcessTimes(ctypes.c_void_p(h), ctypes.byref(c), ctypes.byref(e), ctypes.byref(k), ctypes.byref(u)):
+                    return None
+                return str((c.dwHighDateTime << 32) | c.dwLowDateTime)
+            finally:
+                k32.CloseHandle(ctypes.c_void_p(h))
+        if sys.platform.startswith("linux"):
+            with open(f"/proc/{pid}/stat") as f:
+                return f.read().rsplit(")", 1)[1].split()[19]
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=5,
+                             env={**os.environ, "LC_ALL": "C", "TZ": "UTC0"}).stdout   # lstart prints LOCAL time: pin locale and zone, or a turn script with another TZ reads a different stamp
+        return " ".join(out.split()) or None
+    except Exception:
+        return None
+
+
 def main():
+    # lib/guard's turn order lock: a process this turn starts and leaves running (nohup / tmux) checks this pid
+    # and stops counting as part of the turn once this process is gone
+    if os.environ.get(turn_stop.ENV):
+        stamp = _proc_started(os.getpid())   # pid + start stamp: a reused pid is not this turn
+        os.environ["BLAVE_TURN_PID"] = f"{os.getpid()}:{stamp}" if stamp else str(os.getpid())
     parser = argparse.ArgumentParser()
     parser.add_argument("session_id")
     # 電腦版用 --message-stdin 把訊息從 stdin 送進來(argv 同機的人 `ps` 看得到,而聊天貼 key 是支援的流程);

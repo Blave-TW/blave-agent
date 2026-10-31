@@ -189,12 +189,12 @@ function brStat(b, withSegs) {
    滑過才出(這裡);離開、按下去、Esc、視窗退到背景都收(同 report-robust.js 那顆單例的事件組)。鍵盤聚焦走 CSS 的
    :focus-visible + .tip(同 .mp-tip),視窗退到背景 :focus 就不成立、自然收。停用的鈕收不到滑鼠事件,不出 */
 let brTipOn = null;
-function brTipHide() { if (brTipOn) { brTipOn.classList.remove("is-on"); brTipOn = null; } }
+function brTipHide() { if (!brTipOn) return false; brTipOn.classList.remove("is-on"); brTipOn = null; return true; }
 function brTipAttach(btn, tip) {
   btn.addEventListener("mouseenter", () => { brTipHide(); tip.classList.add("is-on"); brTipOn = tip; });
   ["mouseleave", "pointerdown"].forEach((ev) => btn.addEventListener(ev, brTipHide));
 }
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") brTipHide(); });
+window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229 && brTipHide()) { e.preventDefault(); e.stopPropagation(); } }, true);   // 同 report-robust.js:先收泡泡、不往下傳
 if (window.blave.onWindowActive) window.blave.onWindowActive((on) => { if (!on) brTipHide(); });
 
 /* 真的讀到內容的頁(進圖示疊、算「已讀」):讀過、不是搜尋結果頁、不是只停在中繼頁 */
@@ -292,7 +292,7 @@ function brVerifyRow(id, on) {
   x.verify = false;
   BR.blocks.forEach((b) => { const i = b.ids.indexOf(id); if (i < 0 || b.sum) return; b.ids.splice(i, 1); b.wall.querySelectorAll(".pt").forEach((el) => { if (el.dataset.id === id) el.remove(); }); brPaintHead(b); });
 }
-function brAppend(el) { $("chat-scroll").appendChild(el); if (typeof busyPin === "function") busyPin(); scrollChat(); }
+function brAppend(el) { chatEl().appendChild(el); if (typeof busyPin === "function") busyPin(); scrollChat(); }
 function brAddRow(b, id) {
   if (b.ids.includes(id)) return;
   b.ids.push(id);
@@ -704,6 +704,7 @@ function brPaintTabStrip(bw) {
 // ── 事件 ─────────────────────────────────────────────────────
 function brOnEvent(ev) {
   if (!ev || typeof ev !== "object") return;
+  // 每條對話的瀏覽卡畫在自己的分頁裡(chattabs.js 換進那個分頁之後才叫到這裡);沒開著的對話不畫,展開層與分頁狀態照舊是全 app 一份
   if (ev.session_id && typeof sessionId !== "undefined" && ev.session_id !== sessionId) return;
   const id = typeof ev.id === "string" ? ev.id : null;
   const x = id ? brTab(id) : null;
@@ -766,7 +767,7 @@ function brOnEvent(ev) {
   }
   if (id) brPaint(id);
 }
-window.blave.onBrowserEvent(brOnEvent);
+window.blave.onBrowserEvent((ev) => { const T = ev && ev.session_id && typeof CS !== "undefined" ? CS.tabs.get(ev.session_id) : null; if (T) withTab(T, () => brOnEvent(ev)); else brOnEvent(ev); });
 
 // ── 舊對話:照時間把每一輪的摘要列插回逐字稿(app.js csOpen 用) ──
 async function brHistoryItems(sid) {
@@ -795,7 +796,7 @@ function brRestore(item) {
   const srcs = Array.isArray(r.sources) ? r.sources : [];
   srcs.forEach((s) => s && brNoteFav(s.url, s.fav, s.plate));
   brTakeSources(b, r.tabs, srcs);
-  $("chat-scroll").appendChild(b.el);
+  chatEl().appendChild(b.el);
   brFinish(b);
 }
 /* 換對話 / 新對話:區塊跟著聊天欄一起清掉;展開在中欄的收回 */
@@ -806,13 +807,17 @@ function brRepaint() { BR.sig = null; BR.blocks.forEach((b) => { brPaintHead(b);
 async function brSetPaint(box) {
   let p = null; try { p = await window.blave.browserPrefs(); } catch (_) { return; }
   if (!box.isConnected || box.querySelector("#br-sw")) return;
-  const row = brEl("div", "sw-row"), lbl = brEl("label", "sw-l", t("br.set.switch")); lbl.htmlFor = "br-sw"; row.append(lbl);
+  // 說明句走泡泡(同 設定 › 一般 的提示音):開關兩態都看得到,內容只講開著時的邊界
+  const row = brEl("div", "sw-row"), lbl = brEl("label", "sw-l"); lbl.htmlFor = "br-sw";
+  const name = brEl("span", "set-tipl", t("br.set.switch")); name.id = "br-set-l";
+  const tip = brEl("span", "tip", t("br.set.lead")); tip.id = "br-set-tip"; tip.setAttribute("role", "tooltip");
+  lbl.append(name, tip); row.append(lbl);
   const sw = brEl("button", "sw" + (p && p.enabled ? "" : " off")); sw.type = "button"; sw.id = "br-sw";
   sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", p && p.enabled ? "true" : "false");
-  const lead = brEl("p", "priv-lead", t("br.set.lead")); lead.hidden = !(p && p.enabled);   // 只在開著時講(同「傳送使用資料」那顆的做法)
-  sw.addEventListener("click", async () => { const on = sw.getAttribute("aria-checked") !== "true"; const r = await window.blave.browserPrefsSet({ enabled: on }); const v = !!(r && r.enabled); sw.classList.toggle("off", !v); sw.setAttribute("aria-checked", v ? "true" : "false"); lead.hidden = !v; if (typeof tvPrefs === "function") tvPrefs(); if (typeof libIdeaSync === "function") libIdeaSync(); });
+  sw.setAttribute("aria-labelledby", "br-set-l"); sw.setAttribute("aria-describedby", "br-set-tip");
+  sw.addEventListener("click", async () => { const on = sw.getAttribute("aria-checked") !== "true"; const r = await window.blave.browserPrefsSet({ enabled: on }); const v = !!(r && r.enabled); sw.classList.toggle("off", !v); sw.setAttribute("aria-checked", v ? "true" : "false"); if (typeof tvPrefs === "function") tvPrefs(); if (typeof libIdeaSync === "function") libIdeaSync(); });
   row.append(sw);
   const clr = brEl("button", "btn-quiet", t("br.set.clear")); clr.type = "button";
   clr.addEventListener("click", async () => { const ok = await window.blave.browserClear(); if (ok) BR_FAVS.clear(); clr.textContent = t(ok ? "br.set.cleared" : "br.set.busy"); srSay(clr.textContent); setTimeout(() => { if (clr.isConnected) clr.textContent = t("br.set.clear"); }, 2500); });
-  box.append(row, lead, clr);
+  box.append(row, clr);
 }

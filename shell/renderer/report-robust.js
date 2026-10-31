@@ -273,7 +273,8 @@
     tipEl.setAttribute("role", "tooltip");
     tipEl.setAttribute("aria-hidden", "true");
     document.body.appendChild(tipEl);
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideTip(); });
+    // 泡泡是最上層:window capture 比任何框與選單的 Esc 都先跑,收掉看得見的那顆就不往下傳(一下只收一層)
+    window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229 && hideTip()) { e.preventDefault(); e.stopPropagation(); } }, true);
     // 錨點不在畫面上了(換頁、重畫)就收不到 leave / blur;視窗退到背景也一樣
     const gone = () => { if (tipAnchor && !tipAnchor.getClientRects().length) hideTip(); };
     document.addEventListener("pointermove", gone);
@@ -294,11 +295,13 @@
     tip.setAttribute("aria-hidden", "false");
   }
   function hideTip() {
-    if (!tipEl) return;
+    if (!tipEl) return false;
+    const shown = tipEl.classList.contains("is-on");
     tipAnchor = null;
     tipEl.classList.remove("is-on");
     tipEl.setAttribute("aria-hidden", "true");
     document.querySelectorAll(".rob-tbl td.is-hover").forEach((td) => td.classList.remove("is-hover"));
+    return shown;
   }
   // 有說明的標籤:觸發點用 app.css 的 .mp-tip 樣式(點線底線),泡泡走上面的單例;內容鏡射在 aria-describedby 指到的單例上
   function tipLabel(text, tip) {

@@ -10,7 +10,7 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src = open(os.path.join(ROOT, "runtime", "agent_turn.py"), encoding="utf-8").read()
 tree = ast.parse(src)
-want = {"local_mcp_config", "mcp_rule", "local_mcp_servers", "browser_rule", "desktop_web", "web_tools_off", "turn_note_rule"}
+want = {"local_mcp_config", "mcp_rule", "local_mcp_servers", "browser_rule", "desktop_web", "web_tools_off", "turn_note_rule", "handoff_folder"}
 funcs = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in want]
 assert {f.name for f in funcs} == want, "functions not found"
 funcs = [n for n in tree.body if isinstance(n, ast.Assign) and any(getattr(x, "id", "") in ("MCP_SERVER_NAMES", "WEB_TOOLS", "_NO_OTHER_ROUTE", "TURN_NOTES") for x in n.targets)] + funcs
@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory() as base:
     open(inside, "w").write("{}")
     link = os.path.join(outside, "link.json")
     os.symlink(inside, link)
-    ns = {"os": os, "LocalSink": LocalSink, "WORKSPACE": ws}
+    ns = {"os": os, "re": __import__("re"), "LocalSink": LocalSink, "WORKSPACE": ws}
     exec(compile(ast.Module(body=funcs, type_ignores=[]), "agent_turn_slice", "exec"), ns)
     f, rule = ns["local_mcp_config"], ns["mcp_rule"]
 
@@ -133,9 +133,9 @@ t("沒帶、不認得的代號、夾帶指令的字串、不是電腦版 → 空
   and note("report_once\nNEVER") == "" and note("report_recur", WebSink) == "")
 os.environ.pop("BLAVE_TURN_NOTE", None)
 t("兩條引擎的提示都接了這一段;寫進歷史的仍是用戶的訊息本身(append_turn 的是 message,不是 prompt)", "browser_rule(browser_mounted, web) + turn_note_rule(sink)" in src
-  and "+ turn_note_rule(sink) + lang_rule" in src and 'ss.append_turn(session_id, "user", message)' in src)
+  and "+ turn_note_rule(sink) + parallel_rule(sink) + lang_rule" in src and 'ss.append_turn(session_id, "user", message)' in src)
 
-t("disallowed_tools 用 web_tools_off;mcp_rule 只看 blave 有沒有掛;Codex 的提示也吃同一個狀態", 'NO_LATER_TOOLS + web_tools_off(web, browser_mounted) + PROTECTED_EDIT_RULES' in src and "mcp_rule(cloud_mcp) + browser_rule(browser_mounted, web)" in src
+t("disallowed_tools 用 web_tools_off;mcp_rule 只看 blave 有沒有掛;Codex 的提示也吃同一個狀態", 'NO_LATER_TOOLS + web_tools_off(web, browser_mounted) + PROTECTED_EDIT_RULES' in src and "mcp_rule(cloud_mcp, session_id) + browser_rule(browser_mounted, web)" in src
   and "browser_rule(browser_mounted, desktop_web(sink, browser_mounted))" in src)
 # 唯一的 dict 是排程回合的 in-process server({"type": "sdk"}:SDK 只把 type/name 放上 argv,沒有金鑰)
 t("strict_mcp_config 仍然是 True,而且沒有任何地方把帶金鑰的 dict 交給 mcp_servers", "options.strict_mcp_config = True" in src

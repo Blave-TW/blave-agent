@@ -82,7 +82,7 @@ function createUpdater(opts) {
   /* electron-updater 在 doDownloadUpdate 下載完(含差量組裝)、改名進快取之前叫 this.verifySignature(暫存檔):回字串 = 刪檔、
      發 ERR_UPDATER_INVALID_SIGNATURE。公開的 verifyUpdateCodeSignature 只在 app-update.yml 有 publisherName 時才會被叫到,
      未簽章包沒有,所以掛在這一層;原本那支(Authenticode)最後照叫,SignPath 接上後兩道都在。
-     electron-updater 釘死 6.8.9,tests/check_shell_updatesig.js 會核對這個呼叫點還在。 */
+     electron-updater 釘死 6.8.12,tests/check_shell_updatesig.js 會核對這個呼叫點還在。 */
   function requireSignature(keys) {
     let pending = null;
     const authenticode = au.verifySignature;

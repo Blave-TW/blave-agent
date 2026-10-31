@@ -7,6 +7,7 @@
 //   3. 畫面:確認卡的標題 / 說明 / 「仍要開啟」;列訊息槽「要你確認」
 // 跑法:node tests/check_shell_browser_exfil.js(找不到 Electron 只跑 1、3)
 const path = require("path"), fs = require("fs"), os = require("os");
+const BT = require("./_browser_turn");
 const SHELL = path.join(__dirname, "..", "shell");
 const GATE = require("./_electron_gate");
 const policy = require(path.join(SHELL, "browser", "policy.js"));
@@ -73,7 +74,7 @@ app.whenReady().then(async () => {
   const realSend = win.webContents.send.bind(win.webContents);
   win.webContents.send = (ch, ev) => { if (ch === "browser-event") sent.push(ev); return realSend(ch, ev); };
   const B = require(path.join(SHELL, "browser")).createBrowser({ electron, stateDir: path.join(tmp, "snaps"), getWin: () => win, uiLang: () => "en", track: () => {}, version: "test" });
-  await B.beginTurn(win, "desktop-exfil");
+  await BT.begin(B, win, "desktop-exfil");
   const ctx = { live: () => true };
   const call = async (n, a) => JSON.parse((await B._call(n, a || {}, ctx)).content[0].text);
 

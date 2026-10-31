@@ -54,7 +54,7 @@ function hoCloudLive() { const st = TR_BAGS.cloud.st; return envCloudKind(st) ==
 
 /* agent 正在回覆時頁首那顆是 aria-disabled(不是原生 disabled:鍵盤停得上去、讀屏唸得到原因)。app.js 在上鎖 / 解鎖的同一處叫它 */
 function hoBusy() {
-  const busy = typeof running !== "undefined" && running === true;
+  const busy = false;   // 0.1.37 起送上雲端／拉回是從別處送一句話,眼前這條在跑就另開分頁送(csSendAway);頁首那顆不再因回合上鎖
   document.querySelectorAll("#rp-ho").forEach((b) => {
     if (busy) { b.setAttribute("aria-disabled", "true"); b.dataset.title = b.dataset.title || b.title || ""; b.title = t("turn.busy"); }
     else { b.removeAttribute("aria-disabled"); if (b.dataset.title !== undefined) { b.title = b.dataset.title; delete b.dataset.title; } }
@@ -128,7 +128,6 @@ function hoNote(key) {
 
 function hoAsk(dir, id, opener) {
   if (!HO.on || !HO_ID_RE.test(id)) return;
-  if (typeof running !== "undefined" && running) { busyTell($("rp-ho-note"), "sendAway"); return; }   // 鈕是 aria-disabled:點了在頁首那一行講原因
   if (!envCanSwitch()) return;                                           // IME 選字中、別的框開著
   // 雲端沒在運行(沒登入、沒綁卡、沒主機、啟動中):切過去,那一頁自己會講。
   // 記下要送哪一支:那一頁通完(登入 / 啟動好)之後,雲端中欄會留一格「準備好了」卡,主鈕把人送回來按這顆鈕。
@@ -175,7 +174,7 @@ function hoAsk(dir, id, opener) {
     onOk: () => {
       const msg = hoMsg(dir, id, hoTpl(tb), to); if (!msg) return;
       if (paneSt.chat.off) paneToggle("chat", false);                   // 聊天欄收著就先展開:過程在那裡回報
-      submitMessage(msg, { handoff: dir, noBacktest: tb === "B" })      // 不碰 #ta:輸入框裡的草稿原封不動;標記給主行程記「上雲端運行」那則事件(只有 up 算);noBacktest:雲端結果卡寫「沒有回測」
+      csSendAway(msg, { handoff: dir, noBacktest: tb === "B" })      // 不碰 #ta:輸入框裡的草稿原封不動;標記給主行程記「上雲端運行」那則事件(只有 up 算);noBacktest:雲端結果卡寫「沒有回測」
         .then((ok) => { if (ok) trackFeature(dir === "up" ? "handoff_cloud" : "handoff_pull"); });   // 跑起來才算用過(busy / 被最低版本擋下不算),同 rpRobAsk
     },
   });
