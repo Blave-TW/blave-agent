@@ -18,8 +18,10 @@ Bybit facts, all measured live on a UTA account 2026-09-09:
 - post-only that would cross is ACCEPTED then auto-cancelled with
   rejectReason EC_PostOnlyWillTakeLiquidity (OKX-style, not an error code).
 - orderLinkId dedup is PERMANENT, not just the unfilled window: resending a
-  FILLED id returns retCode 110072. Unlike Binance/OKX, a blind resubmit cannot
-  double the position.
+  FILLED id returns retCode 110072. The official docs only say the id "should be
+  unique", so a linear market order POST that may have reached Bybit is still
+  never sent again: it raises OrderNotConfirmed, which lib/unconfirmed parks and
+  resolve_unknown_order looks up by orderLinkId.
 - Hedge mode HARD-REJECTS an order with no positionIdx (retCode 10001).
 - Spot lives inside the UNIFIED wallet (no separate spot account), spot buy fees
   are charged in the BASE coin, and both spot sides gate on minOrderAmt (value).
@@ -56,6 +58,9 @@ DEMO_HOST = "https://api-demo.bybit.com"
 RECV_WINDOW = "5000"  # Bybit's documented default; a late request retries once (_sync_time)
 BROKER_REFERER = "Ue001036"  # broker attribution — MANDATORY on every request
 TIMESTAMP_ERROR = 10002  # timestamp outside [server − recv_window, server + 1000)
+# A linear market order POST answered with one of these may have executed (Bybit v5 error
+# codes: 10000 "Server Timeout", 10016 "Server error" / "Service is restarting")
+SEND_UNKNOWN_CODES = {10000, 10016}
 _time_offset = {"ms": 0}  # Bybit's clock − ours, set by _sync_time
 
 _RULES_CACHE = {}
@@ -129,9 +134,30 @@ _REJECT_CODES = {"110126": _STOCK_AGREEMENT,
                  "110017": reject_token.REDUCE_ONLY_REJECTED}
 
 
-class OrderNotConfirmed(Exception):
-    """Placed but not terminal within the timeout — it may still fill.
-    Re-query; NEVER blindly resubmit."""
+try:
+    from lib.unconfirmed import OrderOutcomeUnknown as _OutcomeUnknown
+except ImportError:  # half-updated workspace: not parkable, reported as an order failure
+    class _OutcomeUnknown(Exception):
+        def __init__(self, msg, venue=None, venue_symbol=None, order_id=None, client_order_id=None):
+            super().__init__(msg)
+            self.venue, self.venue_symbol, self.order_id = venue, venue_symbol, order_id
+            self.client_order_id = client_order_id
+
+        def parkable(self):
+            return False
+
+
+class OrderNotConfirmed(_OutcomeUnknown):
+    """An order Bybit took, or may have taken, whose outcome is not known: no usable
+    answer to the POST, or no terminal state read before the confirm timeout. It may
+    have filled — query it, never resubmit. A linear market order carries venue /
+    venue_symbol (canonical) / order_id or orderLinkId so lib/portfolio can park it;
+    a spot order carries no venue (not parkable: a spot market order HALTs)."""
+
+
+class _SendUnknown(Exception):
+    """A linear market order POST whose outcome is unknown; _request turns it into
+    OrderNotConfirmed carrying the orderLinkId."""
 
 
 class ProtectionFailed(Exception):
@@ -198,8 +224,30 @@ def _request(env, method, path, params=None, body=None, retries=3):
             f"close only). Only the user may clear the halt (guard.clear_halt)."
         )
     guard.audit("order_attempt", **fields)
+    b = body or {}
+    # linear market orders only: limit and spot POSTs keep the resend-with-orderLinkId transport
+    placing = (path == "/v5/order/create" and b.get("category") == "linear"
+               and b.get("orderType") == "Market")
     try:
-        data = _send(env, method, path, params, body, retries)
+        data = _send(env, method, path, params, body, retries, no_resend=placing)
+    except _SendUnknown as e:
+        cid = b.get("orderLinkId")
+        guard.audit("order_unknown", error=str(e), client_order_id=cid, **fields)
+        # one read-only look by orderLinkId: an order that landed goes on to the confirm poll
+        # instead of a park; one not visible yet is parked — never sent again either way
+        try:
+            row = _find_order_row(env, "linear", {"orderLinkId": cid}, b.get("symbol")) if cid else None
+        except Exception:
+            row = None
+        if row and row.get("orderId"):
+            guard.audit("order_ok", order_id=str(row["orderId"]), found_by="orderLinkId", **fields)
+            return {"orderId": row["orderId"], "orderLinkId": cid}
+        err = OrderNotConfirmed(
+            f"bybit order {cid} sent, no answer ({e}) — it may have filled; check the position, "
+            f"do not resubmit", venue="bybit", venue_symbol=b.get("symbol"),
+            client_order_id=cid)
+        err.audited = True
+        raise err from e
     except Exception as e:
         guard.audit("order_error", error=str(e), **fields)
         raise
@@ -207,7 +255,26 @@ def _request(env, method, path, params=None, body=None, retries=3):
     return data
 
 
-def _send(env, method, path, params=None, body=None, retries=3):
+def _never_sent(e):
+    """A requests ConnectionError raised before any byte went out: the socket could not be
+    opened (refused, unreachable, DNS — urllib3 NewConnectionError / NameResolutionError,
+    wrapped in MaxRetryError). A TLS handshake timeout surfaces as ReadTimeout and cannot be
+    told apart from a lost answer, so it stays unknown."""
+    try:
+        from urllib3.exceptions import NewConnectionError
+    except ImportError:
+        return False
+    inner = e.args[0] if e.args else None
+    return isinstance(getattr(inner, "reason", None), NewConnectionError) \
+        or isinstance(inner, NewConnectionError)
+
+
+def _send(env, method, path, params=None, body=None, retries=3, no_resend=False):
+    """no_resend (linear market order POSTs): once the request may have reached Bybit it is
+    never sent again — a dropped connection, a read timeout, a body cut mid-transfer, a 5xx,
+    a 2xx that is not JSON or a SEND_UNKNOWN_CODES answer raises _SendUnknown. Only a connect
+    timeout or a socket that never opened (refused, DNS), 10002 (refused at authentication,
+    re-signed) and 10006 (rate limited) go out again — none of them can have executed."""
     api_key, secret = _creds(env)
     import hashlib
     import hmac
@@ -237,11 +304,17 @@ def _send(env, method, path, params=None, body=None, retries=3):
         try:
             r = requests.request(method.upper(), url, headers=headers,
                                  data=data, timeout=15)
+        except (requests.exceptions.InvalidURL, requests.exceptions.MissingSchema,
+                requests.exceptions.InvalidSchema, requests.exceptions.InvalidHeader):
+            raise  # refused before anything was sent
         except requests.exceptions.ConnectionError as e:
-            # A POST whose response died may still have landed. Bybit's
-            # orderLinkId dedup is permanent (110072 even after fill), so a
-            # retry here CANNOT double the position — unlike Gate.io, POSTs
-            # carrying an orderLinkId are safe to retry.
+            if no_resend and not isinstance(e, requests.exceptions.ConnectTimeout) \
+                    and not _never_sent(e):
+                raise _SendUnknown(f"{type(e).__name__}: {str(e)[:120]}") from e
+            # A limit / spot POST whose response died may still have landed.
+            # Bybit's orderLinkId dedup is permanent (110072 even after fill,
+            # measured), so a resend carrying the same orderLinkId is answered
+            # 110072 and resolved below rather than placed twice.
             if method.upper() == "POST" and not (body or {}).get("orderLinkId"):
                 raise
             last_err = e
@@ -249,11 +322,26 @@ def _send(env, method, path, params=None, body=None, retries=3):
                 raise
             time.sleep(1 + attempt)
             continue
+        except requests.exceptions.RequestException as e:
+            # ReadTimeout / ChunkedEncodingError / ContentDecodingError are not
+            # ConnectionError subclasses
+            if no_resend:
+                raise _SendUnknown(f"{type(e).__name__}: {str(e)[:120]}") from e
+            raise
+        if no_resend and r.status_code >= 500:
+            raise _SendUnknown(f"HTTP {r.status_code}: {r.text[:120]}")
         r.raise_for_status()
-        payload_json = r.json()
+        try:
+            payload_json = r.json()
+        except ValueError:
+            if no_resend:
+                raise _SendUnknown(f"HTTP {r.status_code} non-JSON ({r.text[:80]})")
+            raise
         code = payload_json.get("retCode")
         if code == 0:
             return payload_json.get("result") or {}
+        if no_resend and code in SEND_UNKNOWN_CODES:
+            raise _SendUnknown(f"retCode={code}: {payload_json.get('retMsg')}")
         link_id = (body or {}).get("orderLinkId")
         if code == 110072 and attempt > 0 and link_id:
             # We only got here by retrying a POST whose connection died. A
@@ -261,9 +349,12 @@ def _send(env, method, path, params=None, body=None, retries=3):
             # landed — raising would report a failure for an order that exists
             # (and may already have filled). Resolve it back to its orderId.
             found = _lookup_by_link_id(env, (body or {}).get("category", "linear"),
-                                       link_id)
+                                       link_id, (body or {}).get("symbol"))
             if found:
                 return found
+            if no_resend:
+                # an order with this id exists and could not be read back: unknown, not 拒單
+                raise _SendUnknown("retCode=110072 after a resend, lookup by orderLinkId failed")
         msg = str(payload_json.get("retMsg") or "")
         # 10004's message echoes the signed origin_string, which CONTAINS THE
         # API KEY — it reaches logs and the web connect-failure page.
@@ -286,13 +377,14 @@ def _send(env, method, path, params=None, body=None, retries=3):
     raise last_err
 
 
-def _lookup_by_link_id(env, category, link_id):
+def _lookup_by_link_id(env, category, link_id, symbol=None):
     """Resolve an orderLinkId back to its order row (open first, then history).
     Used only to recover from a retried POST that turned out to have landed."""
     for path in ("/v5/order/realtime", "/v5/order/history"):
         try:
             rows = _send(env, "GET", path,
-                         {"category": category, "orderLinkId": link_id},
+                         {"category": category, **({"symbol": symbol} if symbol else {}),
+                          "orderLinkId": link_id},
                          retries=1).get("list") or []
         except Exception:
             continue
@@ -445,22 +537,44 @@ def _confirm(env, symbol, order_id, category="linear", timeout=20):
     (cumExecQty / avgPrice / cumExecFee) is the answer, not any single fill."""
     deadline = time.time() + timeout
     delay = 0.4
+    last = None
+    venue_sym = None
     while time.time() < deadline:
-        rows = (_request(env, "GET", "/v5/order/realtime",
-                         {"category": category, "orderId": order_id}).get("list") or [])
-        if not rows:
-            rows = (_request(env, "GET", "/v5/order/history",
-                             {"category": category, "orderId": order_id}).get("list") or [])
-        if rows:
-            row = rows[0]
+        try:
+            if venue_sym is None:
+                venue_sym = _linear(env, symbol) if category == "linear" else symbol
+            row = _find_order_row(env, category, {"orderId": order_id}, venue_sym)
+        except Exception as e:
+            # the id came from the placement answer: a read timeout, a 5xx or a 10016 leave
+            # its fate unknown, not rejected
+            last = f"{type(e).__name__}: {str(e)[:80]}"
+            row = None
+        if row:
             status = str(row.get("orderStatus") or "").lower()
             if status in _FILLED or status in _GONE:
                 return row
+            last = status
         time.sleep(delay)
         delay = min(delay * 1.6, 2.0)  # back off — bursts return retCode 10006
     raise OrderNotConfirmed(
-        f"bybit {symbol} order {order_id} not terminal in {timeout}s — re-query, "
-        f"do NOT resubmit (orderLinkId dedup is permanent, a resend returns 110072)")
+        f"bybit {symbol} order {order_id} not terminal in {timeout}s ({last or 'not found'}) — "
+        f"it may have filled; check the position, do not resubmit",
+        venue="bybit" if category == "linear" else None, venue_symbol=symbol, order_id=order_id)
+
+
+def _find_order_row(env, category, ident, venue_symbol=None):
+    """The order row for {'orderId': …} or {'orderLinkId': …}: /v5/order/realtime first
+    (by id it also returns the account's last 500 closed orders — openOnly is ignored),
+    then /v5/order/history (after a Bybit restart closed orders are only there; cancelled /
+    rejected kept 24 h, filled 7 days). venue_symbol is Bybit's name: linear queries name
+    one of symbol / baseCoin / settleCoin, and orderId > orderLinkId > symbol, so it cannot
+    pick another order. None when neither lists it; a failed read raises."""
+    sym = {"symbol": venue_symbol} if venue_symbol else {}
+    for path in ("/v5/order/realtime", "/v5/order/history"):
+        rows = _request(env, "GET", path, {"category": category, **sym, **ident}).get("list") or []
+        if rows:
+            return rows[0]
+    return None
 
 
 def _fills(row):
@@ -501,16 +615,39 @@ def place_market_order(env: dict, symbol: str, direction: str, qty: float,
     }
     if reduce_only:
         body["reduceOnly"] = True
-    if client_order_id:
-        body["orderLinkId"] = client_order_id
-    res = _request(env, "POST", "/v5/order/create", body=body)
-    row = _confirm(env, symbol, res["orderId"])
+    row = _market_and_confirm(env, symbol, body, client_order_id)
     status = str(row.get("orderStatus") or "").lower()
     if status in _GONE and float(row.get("cumExecQty") or 0) == 0:
         raise BybitError(
             f"bybit {symbol} market order {status}: "
             f"{row.get('rejectReason') or row.get('cancelType') or 'no reason given'}")
     return _fills(row)
+
+
+def _market_and_confirm(env, symbol, body, client_order_id):
+    """POST a linear market order and poll it to a terminal row. Always carries an
+    orderLinkId: an order whose answer is lost is looked up by it (without one it could
+    not be parked = HALT). OrderNotConfirmed leaves with the strategy's canonical symbol —
+    the park is queried with it — not Bybit's AMDSTOCKUSDT."""
+    # ≤36 chars of letters / digits / - / _ (Place Order, orderLinkId)
+    body["orderLinkId"] = client_order_id or f"bl{int(time.time() * 1000):x}{os.urandom(3).hex()}"
+    try:
+        res = _request(env, "POST", "/v5/order/create", body=body)
+        if not res.get("orderId"):
+            # retCode 0 = Bybit took it; only the id is missing from the answer
+            raise OrderNotConfirmed(
+                f"bybit order {body['orderLinkId']} accepted without an orderId ({res}) — it may "
+                f"have filled; check the position, do not resubmit", venue="bybit",
+                client_order_id=body["orderLinkId"])
+        return _confirm(env, symbol, res["orderId"])
+    except OrderNotConfirmed as e:
+        e.venue_symbol = symbol
+        e.client_order_id = e.client_order_id or body["orderLinkId"]
+        if not getattr(e, "audited", False):  # the POST path audits its own
+            guard.audit("order_unknown", error=str(e), symbol=body.get("symbol"),
+                        order_id=str(e.order_id or ""), client_order_id=e.client_order_id,
+                        intent="reduce" if body.get("reduceOnly") else "entry")
+        raise
 
 
 def close_position_partial(env: dict, symbol: str, direction: str, qty: float,
@@ -573,10 +710,7 @@ def open_position(env: dict, symbol: str, direction: str, qty: float,
         body["stopLoss"] = _floor_str(sl_price, tick)
     if tp_price is not None:
         body["takeProfit"] = _floor_str(tp_price, tick)
-    if client_order_id:
-        body["orderLinkId"] = client_order_id
-    res = _request(env, "POST", "/v5/order/create", body=body)
-    row = _confirm(env, symbol, res["orderId"])
+    row = _market_and_confirm(env, symbol, body, client_order_id)
     if str(row.get("orderStatus") or "").lower() not in _FILLED:
         raise BybitError(f"bybit {symbol} entry not filled: "
                          f"{row.get('rejectReason') or row.get('orderStatus')}")
@@ -692,6 +826,62 @@ def get_order(env: dict, symbol: str, order_id: str) -> dict:
         "executed_qty": float(row.get("cumExecQty") or 0),
         "avg_price": float(avg) if avg not in (None, "") else 0.0,
     }
+
+
+# fills are searched from PARK_TRADE_LOOKBACK_S before the park to PARK_TRADE_LOOKAHEAD_S after
+# it. Demo 2026-10-30: when orderId/orderLinkId is given, execution/list ignores startTime/endTime,
+# so the id does the filtering and the window only bounds the id-less case (100 rows per page)
+PARK_TRADE_LOOKBACK_S = 300
+PARK_TRADE_LOOKAHEAD_S = 600
+
+
+def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, parked_at=None,
+                          now=None):
+    """A parked linear market order's outcome (lib/unconfirmed): (executed_qty, avg_price) in
+    BASE units once it is terminal — qty 0 = it ended without a fill — None while unknown.
+    Read-only: the order row by orderId, or by orderLinkId when only ours is known
+    (realtime, then history); when neither lists it, the executions around the park
+    (/v5/execution/list, filtered by that id) — any → those, at their VWAP. An order neither
+    finds stays unknown however long ago it was parked: what Bybit answers for an
+    orderLinkId that never arrived is unmeasured, and releasing an order that did fill is
+    the duplicate this exists to prevent (the way out is unconfirmed.resolve)."""
+    if not order_id and not client_order_id:
+        return None
+    ident = {"orderId": str(order_id)} if order_id else {"orderLinkId": str(client_order_id)}
+    try:
+        row = _find_order_row(env, "linear", ident, _linear(env, symbol))
+    except Exception:
+        return None
+    if row is None:
+        return _executions_of(env, symbol, ident, parked_at)
+    status = str(row.get("orderStatus") or "").lower()
+    if status not in _FILLED and status not in _GONE:
+        return None
+    qty = float(row.get("cumExecQty") or 0)
+    avg = row.get("avgPrice")
+    price = float(avg) if avg not in (None, "") else 0.0
+    return (qty, price) if qty <= 0 or price > 0 else None
+
+
+def _executions_of(env, symbol, ident, parked_at):
+    if not parked_at:
+        return None
+    try:
+        start = int((float(parked_at) - PARK_TRADE_LOOKBACK_S) * 1000) + int(_time_offset["ms"])
+        end = int((float(parked_at) + PARK_TRADE_LOOKAHEAD_S) * 1000) + int(_time_offset["ms"])
+        rows = _request(env, "GET", "/v5/execution/list",
+                        {"category": "linear", "symbol": _linear(env, symbol), **ident,
+                         "startTime": start, "endTime": end, "limit": 100}).get("list") or []
+    except Exception:
+        return None
+    key, want = next(iter(ident.items()))
+    mine = [x for x in rows if str(x.get(key) or "") == want
+            and str(x.get("execType") or "Trade") != "Funding"]
+    qty = sum(abs(float(x.get("execQty") or 0)) for x in mine)
+    if qty <= 0:
+        return None
+    px = sum(abs(float(x.get("execQty") or 0)) * float(x.get("execPrice") or 0) for x in mine) / qty
+    return (qty, px) if px > 0 else None
 
 
 def cancel_order(env: dict, symbol: str, order_id: str = None,

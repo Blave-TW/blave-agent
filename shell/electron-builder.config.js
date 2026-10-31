@@ -56,7 +56,19 @@ const SHIP = [
 ];
 const tracked = execFileSync("git", ["-C", REPO, "ls-files", "-z", "--", ...SHIP], { maxBuffer: 1 << 24 })
   .toString().split("\0").filter((f) => f && fs.existsSync(path.join(REPO, f)));
-const PY_FILTER = ["**/*", "!**/__pycache__{,/**}"];
+// .pdb 是 Windows 除錯符號(python-win-x64 150MB 裡佔 82MB):Python 當掉時的堆疊我們本來就不收
+// lib/libpython*.dylib(mac 每顆 18MB):直譯器靜態連結,lib-dynload 的 .so 也沒有一個連它(otool -L 逐一查過)。
+// include/ 留著:agent 幫用戶 pip install 要編 C 擴充時用得到。Windows 的 python312.dll 是直譯器本身,這條碰不到它
+// 用不到的標準庫與 Tk(matplotlib 固定 Agg):_tkinter 跟 tcl/tk 一起拿,不然留下指向已刪 dylib 的連結。ensurepip 不能拿(建 venv 要用)。
+// 路徑一律從 Python 根目錄錨定,不用 **/:mac 在 lib/、lib/python3.12/,Windows 在 Lib/、DLLs/、tcl/;
+// lib/thread*、tk* 若不錨定會吃掉 threading.py、token.py
+const STDLIB = ["idlelib{,/**}", "tkinter{,/**}", "turtledemo{,/**}", "turtle.py", "lib2to3{,/**}", "pydoc_data{,/**}"];
+const NO_TK = [
+  ...STDLIB.flatMap((p) => [`!lib/python3.12/${p}`, `!Lib/${p}`]),
+  "!lib/python3.12/lib-dynload/_tkinter.*", "!lib/tcl9*{,/**}", "!lib/tk9.0{,/**}", "!lib/itcl[0-9]*{,/**}", "!lib/thread[0-9]*{,/**}", "!lib/libtcl*",
+  "!DLLs/_tkinter.*", "!DLLs/tcl86t.dll", "!DLLs/tk86t.dll", "!tcl{,/**}",
+];
+const PY_FILTER = ["**/*", "!**/__pycache__{,/**}", "!**/*.pdb", "!lib/libpython*.dylib", ...NO_TK];
 
 module.exports = {
   appId: "org.blave.desktop",
@@ -130,7 +142,9 @@ module.exports = {
     enableEmbeddedAsarIntegrityValidation: true,
     enableCookieEncryption: true,
   } : undefined,
-  dmg: { sign: !!IDENTITY },
+  // ULFO = lzfse,macOS 10.11 起支援(minimumSystemVersion 13.0),比預設的 UDZO(zlib)小
+  // 不設 compression: "maximum":NSIS 的 7z 本來就是 -mx=9、差量更新還會強制 normal,只剩 mac zip 小 0.6MB 卻多 10 分鐘打包
+  dmg: { sign: !!IDENTITY, format: "ULFO" },
   // electron-builder 只公證 .app;.dmg 本身也要送 + staple,下載的人離線也驗得過。
   afterAllArtifactBuild: "tools/notarize-dmg.js",
 };

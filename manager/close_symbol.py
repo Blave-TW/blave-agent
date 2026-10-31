@@ -6,8 +6,10 @@
 
 For "close that one coin" requests. manager/flatten.py is the whole-account
 panic button and trips the global HALT; this touches nothing but the named
-symbol and never trips HALT (every other strategy keeps trading). Under HALT
-it still closes: an explicit close takes the guard's close pass (reduces only).
+symbol and never trips HALT (every other strategy keeps trading) — except a
+close of unknown outcome on the generic key that cannot be parked (no id to
+look it up by, or the park file cannot be written — lib/portfolio.park_or_halt). Under HALT it still closes: an explicit close
+takes the guard's close pass (reduces only).
 
 Keys: the .env NAMES are passed explicitly and only those are used. Every
 other credential and demo flag of the venue is removed from the env the libs
@@ -476,6 +478,61 @@ def _cancel(order, env, sym, regular, algo):
     return False
 
 
+def _outcome_unknown(ctx, e, cid):
+    """The close's lib/unconfirmed.OrderOutcomeUnknown — an older lib's plain OrderNotConfirmed
+    rebuilt as one with this close's ids — or None."""
+    try:
+        from lib import unconfirmed
+    except ImportError:
+        return None
+    if isinstance(e, unconfirmed.OrderOutcomeUnknown):
+        return e
+    wrap = getattr(unconfirmed, "as_outcome_unknown", None)
+    return wrap(e, ctx.venue, ctx.sym, cid) if wrap else None
+
+
+def _book_share(ctx, sym, side, size):
+    """(book cost of what this close may have taken, cap kwargs for park_or_halt): the bot's
+    own row on that side; no row = (0, cap 0) — the account row was the user's. A row with no
+    quantity caps in cost (book_cap_cost). Raises when the book cannot be read."""
+    import lib.portfolio as pf
+    book = pf.ledger_positions(ctx.venue) if hasattr(pf, "book_ready") else pf.ledger_positions()
+    row = book.get(sym) or {}
+    if row.get("side") != side:
+        return 0.0, {"book_cap": 0.0}
+    qty = None if row.get("legacy") else float(row.get("qty") or 0)
+    cost = abs(float(row.get("size") or 0))
+    if not qty:
+        return cost, {"book_cap_cost": cost}
+    return cost * min(1.0, float(size) / qty), {"book_cap": qty}
+
+
+def _park_close(ctx, sym, side, size, u):
+    """Park a close of unknown outcome on the generic key (lib/portfolio.park_or_halt). The book
+    unreadable, or a lib/portfolio that cannot cap the booking: HALT instead — a park without
+    the book's share would book the user's part of the fill as the bot's."""
+    import inspect
+    import lib.portfolio as pf
+    try:
+        cost, cap = _book_share(ctx, sym, side, size)
+        params = inspect.signature(pf.park_or_halt).parameters
+        if not all(k in params for k in cap):
+            raise RuntimeError("lib/portfolio predates capped parks")
+    except Exception as err:
+        logging.error(f"close_symbol {sym}: not parked ({type(err).__name__}: {err}) — HALT")
+        from lib import guard
+        tag = getattr(pf, "UNPARKED_TAG", "[order_unconfirmed_unparked]")
+        try:
+            guard.trip_halt(f"{tag} {sym}: a close's outcome is unknown and Blave cannot track it "
+                            f"— check the position, tell the agent what filled"[:200], "close_symbol",
+                            unconfirmed={"symbol": sym, "park_id": None})
+        except Exception as e:  # the in-memory flag is set first (lib/guard)
+            logging.error(f"close_symbol {sym}: HALT for the unparked close did not persist: {e}")
+        return "halted"
+    return pf.park_or_halt(sym, ctx.venue, u, (-1.0 if side == "long" else 1.0) * cost, True,
+                           sign=-1 if side == "long" else 1, **cap)
+
+
 def run_close(ctx, dry_run=False):
     from lib.portfolio import _append_reconciler_log, _record_order_error, zero_ledger_symbols
 
@@ -523,7 +580,7 @@ def run_close(ctx, dry_run=False):
               f"closing the pre-cancel size reduce-only")
         target, ok = before, False
     size = float(target[0]["size"]) if target else 0.0
-    closed = False
+    closed = unknown = False
     if not target:
         print(f"{side} {sym} is already gone after the cancel (a trigger fired?) — no close sent")
     else:
@@ -541,9 +598,28 @@ def run_close(ctx, dry_run=False):
                 result = order.close_position_partial(env, sym, side, size, client_order_id=cid)
                 closed = True
             except Exception as e:
-                print(f"close failed: {type(e).__name__}: {e}")
-                print(unprotected)
-                _record_order_error(sym, ctx.venue, f"close_symbol: {e}")
+                u = _outcome_unknown(ctx, e, cid)
+                if u is None:
+                    print(f"close failed: {type(e).__name__}: {e}")
+                    print(unprotected)
+                    _record_order_error(sym, ctx.venue, f"close_symbol: {e}")
+                elif ctx.generic:
+                    # the account the book tracks: parked like any other close of unknown outcome
+                    # (lib/portfolio.park_or_halt), booked once the venue answers — at most the
+                    # book's own share (the close took the whole account row), held back at its cost
+                    logging.warning(f"close_symbol {sym}: outcome unknown: {e}")
+                    got = _park_close(ctx, sym, side, size, u)
+                    print(f"close outcome unknown — it may have filled; {got}. Check the "
+                          f"{side} {sym} position on the exchange; do not close it again by hand")
+                    unknown = True
+                else:
+                    # a named key's account is not the book's: nothing would ever look it up
+                    logging.warning(f"close_symbol {sym}: outcome unknown: {e}")
+                    print(f"close outcome unknown — it may have filled. Check the {side} "
+                          f"{sym} position on the exchange; do not close it again by hand")
+                    _record_order_error(sym, ctx.venue, "平倉結果不明，可能已成交。"
+                                                        "先到交易所核對部位，不要再平。")
+                    unknown = True
                 result, ok = None, False
             if closed and result is False:
                 # the lib sent nothing (nothing closable on that leg, or below the minimum):
@@ -602,12 +678,13 @@ def run_close(ctx, dry_run=False):
         rows, regular, algo = read_state(ctx, "after")
     except Exception as e:
         print(f"read after the close failed ({type(e).__name__}: {e}) — result unverified")
-        if not closed:
+        if not closed and not unknown:
             print(unprotected)
         return FAILED
     if [p for p in rows if p.get("side") == side] and (closed or not ok):
         print(f"WARNING: {side} {sym} still open")
-        print(unprotected)
+        if not unknown:  # "close it now" next to a close that may have filled = a double close
+            print(unprotected)
         ok = False
     if regular or algo:
         print(f"WARNING: {sym} still has open orders")

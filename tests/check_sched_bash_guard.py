@@ -8,7 +8,7 @@
      WebFetch 只放 https + 公網主機;
   ③ hook 掛不上(HookMatcher 不在、_add_hook 回 False)、SDK 沒有 tools= / in-process MCP、job 不是模板 → 不起回合、寫 fault;
   ④ --scheduled --engine=codex → 不起回合、寫 fault;
-  ⑤ 聊天回合(雲端)不受影響:沒有 tools=、沒有 blave_report、不隔離設定;
+  ⑤ 聊天回合(雲端)不受影響:tools= 是聊天回合那份(有 Bash),沒有 blave_report、不隔離設定;
   ⑥ 電腦版的設定隔離跟排程回合是同一支 _isolate_settings。
 
 跑法:cd blave-agent && .venv/bin/python tests/check_sched_bash_guard.py
@@ -258,9 +258,15 @@ seen.clear()
 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
     asyncio.run(at.run_turn("chat-x", "hi", "deepseek/deepseek-v4-pro", at.WebSink(None, None, "chat-x")))
 c = (seen.get("calls") or [None])[0]
-t("⑤ cloud chat turn: no tools=, no report server, settings not isolated, Bash allowed",
-  c is not None and c.tools is None and not c.mcp_servers and c.setting_sources is None and "Bash" in c.allowed_tools
+t("⑤ cloud chat turn: the chat tools= list (not the scheduled one), no report server, settings not isolated, Bash allowed",
+  c is not None and c.tools == at.chat_tools(None, False) and "Bash" in c.tools and not c.mcp_servers and c.setting_sources is None and "Bash" in c.allowed_tools
   and "Bash" not in c.disallowed_tools, c)
+_ct = {k: at.chat_tools(*k) for k in ((None, False), (None, True), ("on", True), ("off", False))}
+t("⑤ chat tools=: ToolSearch (deferred browser tools) and TaskOutput always; web tools only where web_tools_off leaves them",
+  all("ToolSearch" in v and "TaskOutput" in v and "Bash" in v for v in _ct.values())
+  and {"WebSearch", "WebFetch"} <= set(_ct[(None, False)]) and "WebFetch" not in _ct[(None, True)]
+  and "WebSearch" in _ct[(None, True)] and not {"WebSearch", "WebFetch"} & set(_ct[("on", True)] + _ct[("off", False)])
+  and not {"CronList", "NotebookEdit", "Skill", "Workflow", "Task", "Agent"} & set(sum(_ct.values(), [])), _ct)
 t("⑤ cloud chat turn: no deny-all gate",
   c is not None and not any(m["matcher"] is None for m in (c.hooks or {}).get("PreToolUse") or []))
 at.SCHEDULED_TURN = True

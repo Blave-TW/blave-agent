@@ -302,7 +302,7 @@ _park_retry = []
 
 
 def park_or_halt(symbol, exchange, error, signed_diff, reduce_only, asset_spec=None,
-                 contributors=None, sign=None):
+                 contributors=None, sign=None, limit=False, book_cap=None, book_cap_cost=None):
     """An order whose outcome is unknown (lib/unconfirmed.OrderOutcomeUnknown). Never reported
     as a rejection — that would let the next round send it again.
     - It carries the ids to look it up: parked; its symbol takes no entries until it is known.
@@ -319,6 +319,12 @@ def park_or_halt(symbol, exchange, error, signed_diff, reduce_only, asset_spec=N
     kw = {'netted_room': getattr(error, 'netted_room', 0.0),
           'netted_exit': getattr(error, 'netted_exit', False), 'manual': manual,
           'venue': exchange, 'sign': sign}
+    if limit:
+        kw['limit'] = True
+    if book_cap is not None:
+        kw['book_cap'] = book_cap
+    if book_cap_cost is not None:
+        kw['book_cap_cost'] = book_cap_cost
     try:
         pid = _unconfirmed.park(*args, **kw)
     except Exception as e:
@@ -469,6 +475,14 @@ def book_unconfirmed(key, entry, qty, price, source, pid=None):
     netted part (lib/venue_wiring._netted_room / _netted_exit). A park id the book
     already has is not booked twice (a crash between booking and the release)."""
     pid = pid or _unconfirmed.park_id(entry)
+    # a close of the whole account position: past the bot's own share it was the user's
+    cap = entry.get('book_cap')
+    if cap is None and entry.get('book_cap_cost') is not None and price > 0:
+        cap = float(entry['book_cap_cost']) / price
+    if cap is not None and qty > float(cap):
+        qty = float(f"{float(cap):.12g}")
+        if qty <= 0:
+            return
     if pid in _booked_park_ids():
         logging.info(f"[reconcile] parked {key} {pid} already in the book — not booked again")
         return
@@ -491,7 +505,7 @@ def book_unconfirmed(key, entry, qty, price, source, pid=None):
                 executed_qty=qty, avg_price=price, source=source)
 
 
-def _settle_parked(query=None, now=None):
+def _settle_parked(query=None, now=None, cancel=None):
     """Query every parked order first thing in a round (before the book is read, so a
     fill booked here is in this round's diff). Returns {key: parked reduce cost} for the
     keys still held (that cost is what a parked close may already have taken off the
@@ -510,12 +524,20 @@ def _settle_parked(query=None, now=None):
         return {k: float('inf') for k in waiting}
     if query is None:
         from lib.venue_wiring import query_parked_order as query
+    if cancel is None:
+        try:
+            from lib.venue_wiring import cancel_parked_order as cancel
+        except ImportError:  # half-updated workspace
+            cancel = lambda entry: False  # noqa: E731
     now = time.time() if now is None else now
     held = {k: float('inf') for k in waiting}
     for pid, entry in rows.items():
         key = entry.get('key') if isinstance(entry, dict) else None
         try:
             res = None if entry.get('manual') else query(entry)
+            if res is None and entry.get('limit') and not entry.get('manual') and cancel(entry):
+                # a limit that may still rest (chase post): pulled, then read to its end
+                res = query(entry)
             if res is not None:
                 qty, price = res
 

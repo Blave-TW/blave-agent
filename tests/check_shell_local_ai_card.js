@@ -129,7 +129,7 @@ if (!process.versions.electron) (async () => {
     ok("接線:mdlPaint 第一行畫 modal(detect／偵測中／paintRows／setHint 都經過它)", /^function mdlPaint\(\) \{\n  laiPaint\(\);/m.test(app));
     ok("接線:localLogin 的第三個表面(modal 列):先判 #lai-rows,成功一樣直接 connect、字寫在列上", /const inLai = !!b\.closest\("#lai-rows"\), inRow = !inLai && !b\.closest\("\.cn-opts"\);/.test(app) && /if \(\(inRow \|\| inLai\) && r\.ok && x\.installed && x\.loggedIn\) \{\n    if \(inLai && !laiOn\(\)\) LAI\.late = kind;[^\n]*\n    return connect\(kind, x\);/.test(app) && /if \(inLai\) \{ LAI\.msg\[kind\] = "failed"; laiPaint\(\);/.test(app));
     ok("接線:enterWorkspace 換好後先給 laiDone 收框與放焦點,沒開才給輸入框", /  if \(laiDone\(kind\)\) return;[^\n]*\n  \$\("ta"\)\.focus\(\);\n\}/.test(fn("enterWorkspace")));
-    ok("接線:Esc 由 escTop 關(跟其他同層的框並列,排在連接交易所之後);切視角守門算它", /\(\) => cxModalClose\(false\) : !\$\("lai-scrim"\)\.hidden \? laiClose :/.test(fn("escTop")) && /\$\("lai-scrim"\)\.hidden/.test(trade));
+    ok("接線:Esc 由 escTop 關(跟其他同層的框並列,排在連接交易所之後);切視角守門算它", /\? cxDismiss : !\$\("lai-scrim"\)\.hidden \? laiClose :/.test(fn("escTop")) && /\$\("lai-scrim"\)\.hidden/.test(trade));
     ok("接線:回前景重偵測把這個 modal 算進去(裝完回來不用按重新偵測)", /\|\| onModel \|\| laiOn\(\)\)/.test(fn("focusRedetect")));
     ok("接線:開框送 acct_local_open、換成功送 acct_local_use;不送 acct_card_click、不設 acctGone", /trackFeature\("acct_local_open"\)/.test(fn("laiOpen")) && /trackFeature\("acct_local_use"\)/.test(fn("laiDone")) && !/acctClicked|acctGone/.test(fn("laiOpen") + fn("laiDone") + fn("laiAct")));
     ok("接線:✕／Esc 關掉時正在等瀏覽器就一起取消、焦點回卡上的〔改用 Claude Code 或 Codex〕", /if \(loginPending && loginPending === LAI\.login\) window\.blave\.cancelAgentLogin\(\);/.test(fn("laiClose")) && /c\.b2\.focus\(\)/.test(fn("laiClose")));

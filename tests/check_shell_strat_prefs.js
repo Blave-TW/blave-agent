@@ -95,7 +95,7 @@ try {
     && /trackFeature\("strat_flag_set"\);/.test(cutFn(sfSrc, "sfSetFlag")) && /trackFeature\("strat_reorder"\);/.test(cutFn(sfSrc, "sfMoved"))
     && (() => { const { EVENTS } = require(path.join(SHELL, "telemetry.js")); const n = EVENTS.feature_used.name; return n.slice(n.indexOf("strat_flag_set"), n.indexOf("contract_switch") + 1).join() === "strat_flag_set,strat_reorder,browser_hb_card,perf_update,pres_have_cert,contract_switch" && n.every((x) => x.length <= 16); })());
   ok("④ 面板:role=menu、色塊 menuitemradio、Esc 不冒泡到 escTop、外點 / resize / 捲動即收、右鍵的刪除那條走 ✕ 的武裝(回合中不給)",
-    /sfPop\.setAttribute\("role", "menu"\)/.test(sfSrc) && /c\.setAttribute\("role", "menuitemradio"\)/.test(sfSrc) && /if \(e\.key === "Escape"\) \{ e\.stopPropagation\(\); sfPopClose\(true\); return; \}/.test(sfSrc)
+    /sfPop\.setAttribute\("role", "menu"\)/.test(sfSrc) && /c\.setAttribute\("role", "menuitemradio"\)/.test(sfSrc) && /if \(e\.key === "Escape"\) \{ if \(e\.isComposing \|\| e\.keyCode === 229\) return; e\.preventDefault\(\); e\.stopPropagation\(\); sfPopClose\(true\); return; \}/.test(sfSrc)
     && /window\.addEventListener\("resize", \(\) => sfPopClose\(false\)\);/.test(sfSrc) && /\$\("strat-list"\)\.addEventListener\("scroll", \(\) => sfPopClose\(false\)\);/.test(sfSrc)
     && /showDel = !!ctx && !!del && !del\.disabled/.test(sfSrc) && /if \(!x\.classList\.contains\("is-armed"\)\) x\.click\(\);/.test(sfSrc) && !/innerHTML/.test(sfSrc));
   { const strings = read(path.join(R, "strings.js")), sb = {}; vm.runInNewContext(strings + "\nthis.S = STRINGS;", sb);

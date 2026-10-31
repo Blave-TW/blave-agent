@@ -61,7 +61,7 @@ for need, label in [
     (r"an API plan", "什麼條件才有(API 方案)"),
     (r"\(plan billing\) not available\s+until a cloud plan or an API plan is started", "方案制:沒有方案就沒有資料(沒有按小時買)"),
     (r"charged per clock hour of use", "沒有主機也拿得到:按有用到的整點小時收(沒有主機也能買資料)"),
-    (r"balance that covers the hourly data fee", "條件裡有「餘額付得起這一小時」,不只試用與主機"),
+    (r"needs a balance that covers that hour", "事實裡有「餘額付得起這一小時」,不只試用與主機"),
     (r"name which data is missing", "要講缺哪一項"),
     (r"no directions, next steps or prices", "不給指路 / 不報價"),
     (r"once per conversation", "一次對話只講一次(marker)"),
@@ -101,6 +101,16 @@ for why, need in [("signed_out", "the user is not signed in to Blave in this app
     if why != "signed_out":
         t(f"WHY={why}:事實句說「登入著」,沒有任何「sign in」條件句", "the user is signed in;" in f
           and not re.search(r"\bsign(ing)? in\b|not signed in", f))
+# 回覆那句只講「要有方案」(Wei 10-30:不列條件清單、不提 API 方案);事實段照舊完整,給模型判斷用
+_reply = lambda b: b[b.index("your reply must:"):b.index("Say it once per conversation")]
+for why in (None, "no_plan", "no_balance", "signed_out"):
+    b, _ = facts(why)
+    r = _reply(b)
+    t(f"WHY={why}:回覆只要一句「要有方案」/「先登入」,不列條件、不提 API 方案／試用／按小時",
+      ("needs signing in to Blave first" in r if why == "signed_out" else "needs a plan" in r)
+      and ("needs a plan" not in r if why == "signed_out" else "signing in" not in r)
+      and "not list conditions" in r and "not mention an API plan, the card trial or hourly billing" in r
+      and "give the conditions" not in b and not re.search(r"a cloud plan or an API plan\)", r))
 for why in (None, "bogus"):
     b, f = facts(why)
     t(f"WHY={'未帶(舊外殼)' if why is None else '認不得'}:Facts 原文不變、沒有那條規則", f == FACTS_PLAIN and RULE not in b)
@@ -122,7 +132,9 @@ for need, label in [
     (r"`KEY_SCOPE`", "越權"),
     (r"per clock hour", "按小時、不是按次"),
     (r"can therefore cost the user money", "成功的呼叫也會花到錢"),
-    (r"never state a rate, currency or deadline the body did not", "不准自己編費率／期限"),
+    (r"[Nn]ever state a rate, currency or deadline the body did not", "不准自己編費率／期限"),
+    (r"Convey that the data stopped and that it needs a plan; do not mention an API plan", "ERR007:只講要有方案,不提 API 方案"),
+    (r"own code with a key they created themselves.*references/billing\.md", "例外:自己寫程式用自己的 key,照 billing.md"),
     (r"not wording for the user", "一樣不給可抄的成品句"),
     (r"fetch_kline", "公開 K 線照舊"),
 ]:

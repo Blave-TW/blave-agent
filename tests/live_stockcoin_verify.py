@@ -618,7 +618,9 @@ def probe_all(env, order, acct, requests, say, legs, one, out_path, symbols=froz
                     res["result"] = "api_closed"
                 else:
                     res["result"] = "error"
-                if isinstance(e, order.OrderNotConfirmed):
+                if isinstance(e, order.OrderNotConfirmed) and getattr(e, "last_status", None):
+                    # read, just not terminal in time: the leg check below settles it. Not read
+                    # at all (query side down) or no answer to the POST: stop, never the next contract
                     time.sleep(3)
                 elif res["result"] != "api_closed" and _is_global(e, order):
                     stop = e

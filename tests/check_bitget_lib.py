@@ -578,8 +578,9 @@ del CALLS[:]
 try:
     order.place_market_order(ENV, "NVDAUSDT", "long", 0.03)
     check(False, "an unfindable dropped POST raises")
-except requests.exceptions.ConnectionError:
-    check(sum(c["method"] == "POST" for c in CALLS) == 1, "a dropped POST that cannot be found raises, one POST")
+except order.OrderNotConfirmed as e:
+    check(sum(c["method"] == "POST" for c in CALLS) == 1 and e.parkable() and e.venue_symbol == "NVDAUSDT",
+          "a dropped POST that cannot be found: one POST, a parkable OrderNotConfirmed (not 拒單)")
 
 
 def cancelled_partial(p):

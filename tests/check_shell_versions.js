@@ -298,8 +298,17 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       menuItems(old.E["ver-menu"])[1].click();
       ok("時光機:橫幅帶年份與時間;觸發器只有 MM/DD(設計稽核 ⑤)", old.E["ver-trig-l"].textContent === "12/18" && old.E["ver-banner-t"].all((k) => k.className === "mono" && k.tagName === "span")[0].textContent === (Y - 1) + "/12/18 09:40");
       const pOf = (row) => row.all((k) => k.className === "v mono")[2].textContent;
-      ok("p 值:< 0.0005 寫 <0.001(含 0);其餘照舊三位", pOf(rows[0]) === "<0.001" && pOf(rows[1]) === "<0.001" && pOf(rows[2]) === "0.030"
-        && g.blaveVersions.fmt("mcpt_p", 0.0005) === "0.001" && g.blaveVersions.fmt("mcpt_p", 0.106) === "0.106" && g.blaveVersions.fmt("mcpt_p", null) === "—" && g.blaveVersions.fmt("ret", 0.0001) === "0.00%");
+      ok("p 值:< 0.001 寫 <0.001(含 0、0.0005);其餘照舊三位", pOf(rows[0]) === "<0.001" && pOf(rows[1]) === "<0.001" && pOf(rows[2]) === "0.030"
+        && g.blaveVersions.fmt("mcpt_p", 0.0005) === "<0.001" && g.blaveVersions.fmt("mcpt_p", 0.106) === "0.106" && g.blaveVersions.fmt("mcpt_p", null) === "—" && g.blaveVersions.fmt("ret", 0.0001) === "0.00%");
+      {
+        // spec pvalue-unit §4.2 共用測資(網頁 check_web_desktop_parity 與 web 自己的測試跑同一組)
+        const V = g.blaveVersions, rows42 = [[0, "<0.001", "p < 0.001", 0], [0.0004, "<0.001", "p < 0.001", 1], [0.0005, "<0.001", "p < 0.001", 1], [0.0012, "0.001", "p = 0.001", 2],
+          [0.0495, "0.0495", "p = 0.0495", 99], [0.05, "0.050", "p = 0.050", 100], [0.106, "0.106", "p = 0.106", 212], [null, "—", "p = {p}", null]];
+        const bad = rows42.filter(([p, f, fp, k]) => V.fmt("mcpt_p", p) !== f || V.fillP("p = {p}", p) !== fp || V.mcptBeat(p, 2000) !== k);
+        ok("p 值共用規則(§4.2):fmt / fillP / mcptBeat 逐列;n > 10,000、非整數、缺 n → 不講次數;門檻邊界跟傳進來的 alpha 走", bad.length === 0
+          && V.mcptBeat(0.016, 20000) === null && V.mcptBeat(0.016, 10000) === 160 && V.mcptBeat(0.016, null) === null && V.mcptBeat(0.016, 1.5) === null && V.mcptBeat(0.016, 0) === null
+          && V.fmt("mcpt_p", 0.0995, 0.1) === "0.0995" && V.fmt("mcpt_p", 0.0495, 0.1) === "0.050" && V.fillP("p = {p}", 0.0995, 0.1) === "p = 0.0995" && V.MCPT_ALPHA === 0.05, JSON.stringify(bad));
+      }
       ok("先取到兩位再判正負(網頁 1e70bdf1):四捨五入成 0 的不帶 − / +,差取整成 0 也不上色", g.blaveVersions.fmt("sharpe", -0.004) === "0.00" && g.blaveVersions.fmt("sharpe", -0.006) === "\u22120.01"
         && g.blaveVersions.fmt("ret", -0.004) === "0.00%" && JSON.stringify(g.blaveVersions.delta("sharpe", 1.001, 1.003)) === JSON.stringify({ text: "0.00", tone: "" }));
       ok("摘要「初版」照畫(UI 不過濾;規則在 references/strategy-code.md 叫 agent 別寫)", rows[1].all((k) => k.className === "vmi-note")[0].textContent === "初版"

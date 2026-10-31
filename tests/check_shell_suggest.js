@@ -214,6 +214,21 @@ const send = (msg, started = true) => { ctx.sugSnap(msg); W.ta.value = ""; ctx.s
   ok("重新打開:記 suggest_on、計數歸零、開關畫成開", ctx.tracked[ctx.tracked.length - 1] === "suggest_on" && LS.get("ws_sug_miss") === "0"
     && W["set-sug-sw"].attrs["aria-checked"] === "true" && ctx.sugMode() === "normal");
 
+  // ── 分頁(0.1.38):托盤開著時換進另一條的 SUG(tabShow 的 tabLoad 換整份,這裡就地換內容代替) ──
+  reset(); await arm("A 的那一句");
+  const shownA = ctx.tracked.filter((n) => n === "suggest_shown").length;
+  Object.assign(ctx.SUG, { text: "B 的那一句", kind: "step", shownOnce: false, used: false, gone: false, files: 0, filledText: null });
+  ctx.said = []; ctx.sugPaint();
+  ok("托盤本來就開著、換成另一條的建議:字換掉,那一句照記 suggest_shown、照念,之後沒用照算", shown() && W["sug-tray-t"].textContent === "B 的那一句" && shownA === 1
+    && ctx.tracked.filter((n) => n === "suggest_shown").length === 2 && ctx.said.length === 1 && ctx.SUG.shownOnce === true, { tracked: ctx.tracked, said: ctx.said });
+  typeIn("自己打的一句"); send("自己打的一句");
+  ok("…切過去那條沒用建議、自己打字送出:算一次沒用", ctx.tracked.includes("suggest_missed") && LS.get("ws_sug_miss") === "1", { tracked: ctx.tracked, miss: LS.get("ws_sug_miss") });
+  // 背景分頁的回合收尾:附件數要記它自己那份(composer.files),不是眼前那條的 attachedFiles
+  reset(); ctx.attachedFiles = []; ctx.CS = { loaded: { composer: { files: [{ name: "a.png" }, { name: "b.csv" }] } } }; ctx.tabBg = () => true;
+  ctx.sugChunk({ items: ["背景那條的建議"] }); ctx.sugTurnEnd(true); await wait();
+  ok("背景分頁收尾:SUG.files 記它自己的附件數(2),不是眼前那條的(0);托盤不畫", ctx.SUG.text === "背景那條的建議" && ctx.SUG.files === 2 && !shown(), { files: ctx.SUG.files });
+  ctx.tabBg = () => false; delete ctx.CS; reset();
+
   // ── 接線(原文) ──
   const sub = cut(app, "async function submitMessage(msg, opts)", "\n/* ── A′ 的標示");
   const sd = cut(app, "async function sendDraft()", "/* 真的送出一句話。");

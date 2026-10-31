@@ -34,7 +34,12 @@ StockCoin facts:
   leg, SELL_OPEN / BUY_CLOSE = short leg), so a reduce can never open the
   opposite leg.
 - market order = orderType LIMIT + priceType MARKET + price "0".
-- clientOrderId is mandatory; a reused one answers -1141 DUPLICATED_ORDER.
+- clientOrderId is mandatory; a reused one answers -1141 DUPLICATED_ORDER
+  (whether that holds after the order is filled is not measured, so nothing
+  relies on it). A market order POST that may have reached StockCoin is never
+  sent again: it is looked up once by clientOrderId, else raises
+  OrderNotConfirmed, which lib/unconfirmed parks and resolve_unknown_order
+  looks up.
 - signature = HMAC-SHA256 over the alphabetically sorted query string followed
   directly (no separator) by the sorted form body; POST bodies are form-data.
   Measured: a wrong secret answers -1022, a wrong key -1002.
@@ -68,6 +73,7 @@ from decimal import ROUND_DOWN, ROUND_HALF_UP, ROUND_UP, Decimal
 from urllib.parse import urlencode
 
 import requests
+from urllib3.exceptions import NewConnectionError
 
 from lib import guard
 from lib.account_stockcoin import multiplier
@@ -94,6 +100,13 @@ RULES_TTL_S = 3600
 TIMESTAMP_ERROR = "-1021"
 RATE_LIMITED = "-1003"
 DUPLICATED_ORDER = "-1141"
+# A market order POST answered with one of these may have executed. Venue doc §6.1:
+# -1006 UNEXPECTED_RESP "后端返回异常响应", -1007 TIMEOUT "请求超时", -1000 UNKNOWN,
+# -1001 DISCONNECTED — the same codes and names as Binance's, where they are "execution
+# status unknown" (lib/order_binance SEND_UNKNOWN_CODES). A false unknown only parks the order until it is looked up or the user
+# resolves it; a false rejection sends it again.
+SEND_UNKNOWN_CODES = {"-1000", "-1001", "-1006", "-1007"}
+NO_SUCH_ORDER = "-2013"
 # cancel of an order that is gone (filled / cancelled) or never existed. -1150
 # CANCEL_ORDER_FAILED is not in it: the order may still rest, so the caller
 # re-reads it (cancel_accepted) instead of treating it as dead
@@ -123,6 +136,12 @@ class StockcoinError(Exception):
         self.http_status = http_status
 
 
+class MultiplierMismatch(StockcoinError):
+    """An order reply's contractMultiplier is not the one this lib sized with — every
+    further order on the symbol would be wrong-sized. In the confirm poll it becomes an
+    OrderNotConfirmed that cannot be parked (the order was accepted): HALT, never resent."""
+
+
 # lib/reject_token kinds, from the venue doc §6.3 plus two codes the doc does
 # not list, both measured live: -1157 on every refused contract of the probe,
 # -1131 "Balance insufficient" on an order sized past the margin (T11). -1149
@@ -133,9 +152,30 @@ _REJECT_CODES = {"-1136": reject_token.BELOW_MIN_SIZE, "-1200": reject_token.BEL
                  "-1131": reject_token.INSUFFICIENT_MARGIN}
 
 
-class OrderNotConfirmed(Exception):
-    """Placed but not terminal within the timeout — it may still fill.
-    Re-query by client_order_id; NEVER blindly resubmit."""
+try:
+    from lib.unconfirmed import OrderOutcomeUnknown as _OutcomeUnknown
+except ImportError:  # half-updated workspace: not parkable, reported as an order failure
+    class _OutcomeUnknown(Exception):
+        def __init__(self, msg, venue=None, venue_symbol=None, order_id=None, client_order_id=None):
+            super().__init__(msg)
+            self.venue, self.venue_symbol, self.order_id = venue, venue_symbol, order_id
+            self.client_order_id = client_order_id
+
+        def parkable(self):
+            return False
+
+
+class OrderNotConfirmed(_OutcomeUnknown):
+    """An order StockCoin took, or may have taken, whose outcome is not known: the POST
+    got no usable answer and its clientOrderId could not be found right away, or no
+    terminal state was read before the confirm timeout. It may have filled — query it,
+    never resubmit. Raised by market orders only, carrying venue / venue_symbol (canonical)
+    / order_id or client_order_id so lib/portfolio can park it; a limit or STOP POST with no
+    answer still raises its own error after the clientOrderId lookup."""
+
+
+class _SendUnknown(Exception):
+    """A market order POST whose outcome is unknown; _request turns it into OrderNotConfirmed."""
 
 
 def _creds(env):
@@ -209,6 +249,13 @@ _AUDIT_KEYS = ("symbol", "side", "orderType", "priceType", "quantity", "price",
                "triggerPrice", "timeInForce", "clientOrderId")
 
 
+def _market_order(method, path, params):
+    p = params or {}
+    return (method.upper() == "POST" and path == ORDER_PATH
+            and str(p.get("orderType") or "").upper() == "LIMIT"
+            and str(p.get("priceType") or "").upper() == "MARKET")
+
+
 def _request(method, path, env, params=None, retries=3):
     """Signed request with the guard gate + audit on order-mutating calls."""
     intent = _order_intent(method, path, params)
@@ -227,8 +274,16 @@ def _request(method, path, env, params=None, retries=3):
             f"(guard.clear_halt)."
         )
     guard.audit("order_attempt", **fields)
+    market = _market_order(method, path, params)
     try:
-        data = _send(method, path, env, params, retries)
+        data = _send(method, path, env, params, retries, no_resend=market)
+    except _SendUnknown as e:
+        cid = (params or {}).get("clientOrderId")
+        guard.audit("order_unknown", error=str(e), client_order_id=cid, **fields)
+        raise OrderNotConfirmed(
+            f"stockcoin order {cid} sent, no answer ({e}) and not found by its clientOrderId yet — "
+            f"it may have filled; check the position, do not resubmit", venue="stockcoin",
+            venue_symbol=canonical_symbol((params or {}).get("symbol")), client_order_id=cid) from e
     except Exception as e:
         guard.audit("order_error", error=str(e), **fields)
         raise
@@ -254,12 +309,43 @@ def _error_of(r):
     return None
 
 
-def _send(method, path, env, params=None, retries=3):
+def _never_sent(e):
+    """No byte reached StockCoin: a connect timeout, or a socket that never opened (refused,
+    DNS — urllib3 NewConnectionError / NameResolutionError inside MaxRetryError.reason). A TLS
+    or read timeout cannot be told apart from a lost answer, so it does not count."""
+    if isinstance(e, requests.exceptions.ConnectTimeout):
+        return True
+    if not isinstance(e, requests.exceptions.ConnectionError):
+        return False
+    inner = e.args[0] if e.args else None
+    return isinstance(getattr(inner, "reason", inner), NewConnectionError)
+
+
+def _send(method, path, env, params=None, retries=3, no_resend=False):
+    """no_resend (market order POSTs): once the request may have reached StockCoin it is
+    never sent again. A dropped connection, a read timeout, a body cut mid-transfer, a 5xx,
+    a 408, a 2xx that is not JSON, -1141 or a SEND_UNKNOWN_CODES answer is looked up once by its
+    clientOrderId; found → that order, else _SendUnknown (the query side may lag the
+    engine — lib/unconfirmed keeps looking). Only a request that never left (_never_sent),
+    -1021 (refused at authentication, re-signed) and -1003 / 429 (rate limited) go out again.
+    Other order POSTs (limit, STOP) are looked up the same way and raise their own error."""
     api_key, secret = _creds(env)
     method = method.upper()
     params = dict(params or {})
     last_err = None
     resynced = False
+    order_post = method == "POST" and path == ORDER_PATH
+
+    def landed_or(err):
+        found = _lookup_cid(env, params) if order_post else None
+        if found:
+            return found
+        if no_resend:
+            raise _SendUnknown(str(err)[:200]) from (err if isinstance(err, BaseException) else None)
+        if isinstance(err, BaseException):
+            raise err
+        raise StockcoinError(str(err))
+
     for attempt in range(retries):
         if method == "POST":
             query, body = {"timestamp": _now_ms()}, params
@@ -272,14 +358,14 @@ def _send(method, path, env, params=None, retries=3):
         url = f"{LIVE_HOST}{PREFIX}{path}?{qs}"
         try:
             r = requests.request(method, url, headers=headers, data=bs or None, timeout=15)
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-            # a POST whose reply died may have landed: never resend it — find
-            # it by its clientOrderId instead (the reconciler re-reads
-            # positions next round if even that cannot tell)
-            if method == "POST":
-                found = _lookup_cid(env, params) if path == ORDER_PATH else None
-                if found:
-                    return found
+        except (requests.exceptions.InvalidURL, requests.exceptions.MissingSchema,
+                requests.exceptions.InvalidSchema, requests.exceptions.InvalidHeader):
+            raise  # refused before anything was sent
+        except requests.exceptions.RequestException as e:
+            if method == "POST" and not _never_sent(e):
+                return landed_or(e)
+            if not (_never_sent(e) or isinstance(e, (requests.exceptions.ConnectionError,
+                                                     requests.exceptions.Timeout))):
                 raise
             last_err = e
             if attempt == retries - 1:
@@ -293,6 +379,8 @@ def _send(method, path, env, params=None, retries=3):
             try:
                 return r.json()
             except ValueError:
+                if no_resend:
+                    return landed_or(f"HTTP {r.status_code} non-JSON ({r.text[:80]})")
                 raise StockcoinError(f"stockcoin {path}: non-JSON reply ({r.text[:120]})",
                                      http_status=r.status_code)
         code, msg = str(err[0]), err[1]
@@ -312,16 +400,18 @@ def _send(method, path, env, params=None, retries=3):
             _sync_time(env)
             last_err = e
             continue
-        retryable = code == RATE_LIMITED or (method != "POST" and r.status_code >= 500)
+        # a 429 is a rate limit only when it says so (-1003) or carries no venue code; a 429
+        # carrying another code (-1007…) is classified by that code
+        retryable = (code == RATE_LIMITED or (r.status_code == 429 and code == "429")
+                     or (method != "POST" and r.status_code >= 500))
         if retryable and attempt < retries - 1:
             time.sleep(1 + attempt * 2)
             last_err = e
             continue
-        if path == ORDER_PATH and method == "POST" and (code == DUPLICATED_ORDER or r.status_code >= 500):
-            # 5xx: the order may have landed anyway — find it by its id, never resend
-            found = _lookup_cid(env, params)
-            if found:
-                return found
+        # 408: the gateway gave up waiting on the backend, which may still have taken it
+        if order_post and (r.status_code >= 500 or code == DUPLICATED_ORDER
+                           or (no_resend and (code in SEND_UNKNOWN_CODES or r.status_code == 408))):
+            return landed_or(e)
         raise e
     raise last_err
 
@@ -486,7 +576,7 @@ def _norm(symbol, o, mult):
         status = "open"
     reply_mult = o.get("contractMultiplier")
     if reply_mult not in (None, "") and Decimal(str(reply_mult)) != mult:
-        raise StockcoinError(
+        raise MultiplierMismatch(
             f"stockcoin {symbol}: order {o.get('orderId')} reports contractMultiplier "
             f"{reply_mult}, this lib sized with {mult} — fix "
             f"account_stockcoin.MULTIPLIERS before any further order")
@@ -523,11 +613,9 @@ def _commission(env, vsym, order_id, since_ms, attempts=3):
     return None
 
 
-def get_order(env, symbol, order_id=None, client_order_id=None):
-    """One order, normalized: {'order_id','status' (open|filled|canceled),
-    'avg_price','executed_qty','orig_qty'} with quantities in BASE units."""
-    vsym = venue_symbol(symbol)
-    q = {"symbol": vsym}
+def _read_order(env, symbol, order_id=None, client_order_id=None):
+    """(normalized order, raw row) — a read only, no stop cancelling."""
+    q = {"symbol": venue_symbol(symbol)}
     if order_id:
         q["orderId"] = order_id
     elif client_order_id:
@@ -535,8 +623,14 @@ def get_order(env, symbol, order_id=None, client_order_id=None):
     else:
         raise ValueError("get_order needs order_id or client_order_id")
     mult = Decimal(str(get_contract_rules(env, symbol)["contract_value"]))
-    raw = _request("GET", "/futures/order", env, q)
-    o = _norm(symbol, raw, mult)
+    raw = _request("GET", ORDER_PATH, env, q)
+    return _norm(symbol, raw, mult), raw
+
+
+def get_order(env, symbol, order_id=None, client_order_id=None):
+    """One order, normalized: {'order_id','status' (open|filled|canceled),
+    'avg_price','executed_qty','orig_qty'} with quantities in BASE units."""
+    o, raw = _read_order(env, symbol, order_id, client_order_id)
     side = str((raw or {}).get("side") or "").upper()
     if side.endswith("_CLOSE") and o["status"] != "open" and o["executed_qty"] > 0:
         res = _stops_after_close(env, symbol, o["order_id"], "long" if side == "SELL_CLOSE" else "short")
@@ -665,15 +759,36 @@ def _confirm(env, symbol, order_id, timeout=20):
     deadline = time.time() + timeout
     delay = 0.4
     o = None
+    last_err = None
     while time.time() < deadline:
-        o = get_order(env, symbol, order_id)
+        try:
+            o = get_order(env, symbol, order_id)
+        except MultiplierMismatch as e:
+            # StockCoin took the order (it may have filled) with another multiplier than the
+            # book's: booking it would be wrong-sized and a rejection would send it again
+            # next round — not parkable, so lib/portfolio parks it as manual and HALTs
+            raise OrderNotConfirmed(
+                f"{e} — order {order_id} was accepted and may have filled; check the position "
+                f"on StockCoin, do not resubmit", order_id=str(order_id)) from e
+        except Exception as e:
+            # the id came from the placement answer: a read timeout, a 5xx or -2013 (the
+            # query side not caught up yet) leave the order's fate unknown, not rejected
+            last_err = e
+            time.sleep(delay)
+            delay = min(delay * 1.6, 2.0)
+            continue
         if o["status"] != "open":
             return o
         time.sleep(delay)
         delay = min(delay * 1.6, 2.0)
-    raise OrderNotConfirmed(
-        f"stockcoin {symbol} order {order_id} still {o and o['raw_status']} after {timeout}s "
-        f"— re-query by client_order_id, do NOT resubmit")
+    state = (f"still {o['raw_status']}" if o else
+             f"not queryable ({type(last_err).__name__}: {str(last_err)[:80]})")
+    err = OrderNotConfirmed(
+        f"stockcoin {symbol} order {order_id} accepted but {state} after {timeout}s — it may "
+        f"have filled; check the position, do not resubmit",
+        venue="stockcoin", venue_symbol=symbol, order_id=str(order_id))
+    err.last_status = o["raw_status"] if o else None  # None: never read (query side down)
+    raise err
 
 
 def place_market_order(env, symbol, direction, qty, client_order_id=None,
@@ -704,11 +819,21 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
         "clientOrderId": _cid(client_order_id),
     }
     started = _now_ms() - 5000
-    placed = _request("POST", "/futures/order", env, params)
-    oid = (placed or {}).get("orderId")
-    if not oid:
-        raise StockcoinError(f"stockcoin {vsym}: order reply has no orderId ({str(placed)[:160]})")
-    o = _confirm(env, symbol, oid)
+    try:
+        placed = _request("POST", "/futures/order", env, params)
+        oid = placed.get("orderId") if isinstance(placed, dict) else None
+        if not oid:
+            # a success answer: the order may be in, only its id is missing
+            raise OrderNotConfirmed(
+                f"stockcoin {vsym}: order {params['clientOrderId']} accepted without an orderId "
+                f"({str(placed)[:160]}) — it may have filled; check the position, do not resubmit",
+                venue="stockcoin", client_order_id=params["clientOrderId"])
+        o = _confirm(env, canonical_symbol(vsym), oid)
+    except OrderNotConfirmed as e:
+        # canonical, so the park is queried through this lib's own get_order
+        e.venue_symbol = canonical_symbol(vsym)
+        e.client_order_id = e.client_order_id or params["clientOrderId"]
+        raise
     if o["status"] != "filled":
         raise StockcoinError(f"stockcoin {vsym} market order {oid} ended {o['raw_status']} "
                              f"with nothing filled")
@@ -721,6 +846,71 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
     if o.get("stops_cancel") is not None:
         out["stops_cancel"] = o["stops_cancel"]
     return out
+
+
+# a parked order whose query answers -2013 is searched in order history / fills from
+# PARK_LOOKBACK_S before the park to PARK_LOOKAHEAD_S after it — a market order ends before it
+# is parked, so the window is fixed and never grows with the park's age
+PARK_LOOKBACK_S = 300
+PARK_LOOKAHEAD_S = 600
+
+
+def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, parked_at=None,
+                          now=None):
+    """A parked market order's outcome (lib/unconfirmed): (executed_qty, avg_price) in BASE
+    units once it is terminal — qty 0 = it ended without a fill — None while unknown.
+    Read-only: Query Order by orderId, else by clientOrderId (venue doc §4.4 takes either);
+    a closing order read here does not cancel the leg's stops (sweep_orphan_stops does, each
+    round). -2013 NO_SUCH_ORDER also means "fully filled or cancelled" (doc §6.3), so it is
+    never read as "never arrived": the order history around the park is searched for the
+    order (§4.7 rows carry orderId and clientOrderId), then, with an orderId, its fills
+    (§4.8 rows carry orderId only). An order none of them shows stays unknown — releasing one
+    that did fill sends it again (the way out is unconfirmed.resolve)."""
+    try:
+        o, _ = _read_order(env, symbol, order_id, client_order_id)
+    except StockcoinError as e:
+        if e.code != NO_SUCH_ORDER:
+            return None
+        return _parked_from_history(env, symbol, order_id, client_order_id, parked_at)
+    except Exception:
+        return None
+    return _outcome(o)
+
+
+def _outcome(o):
+    if o["status"] == "open":
+        return None
+    qty, price = o["executed_qty"], o["avg_price"]
+    return (qty, price) if qty <= 0 or price > 0 else None
+
+
+def _parked_from_history(env, symbol, order_id, client_order_id, parked_at):
+    if not parked_at:
+        return None
+    try:
+        vsym = venue_symbol(symbol)
+        mult = Decimal(str(get_contract_rules(env, symbol)["contract_value"]))
+        offset = int(_time_offset["ms"])
+        window = {"symbol": vsym, "limit": 500,
+                  "startTime": int((float(parked_at) - PARK_LOOKBACK_S) * 1000) + offset,
+                  "endTime": int((float(parked_at) + PARK_LOOKAHEAD_S) * 1000) + offset}
+        rows = _request("GET", "/futures/orders/history", env, window) or []
+        for row in rows:
+            if (order_id and str(row.get("orderId") or "") == str(order_id)) or \
+                    (client_order_id and str(row.get("clientOrderId") or "") == str(client_order_id)):
+                return _outcome(_norm(symbol, row, mult))
+        if not order_id:
+            return None
+        fills = [t for t in _request("GET", "/futures/trades", env, window) or []
+                 if str(t.get("orderId") or "") == str(order_id)]
+    except Exception:
+        return None
+    contracts = sum(abs(Decimal(str(t.get("quantity") or 0))) for t in fills)
+    if contracts <= 0:
+        return None
+    px = sum(abs(Decimal(str(t.get("quantity") or 0))) * Decimal(str(t.get("price") or 0))
+             for t in fills) / contracts
+    return (float(contracts * mult), float(px)) if px > 0 else None
 
 
 def close_position_partial(env, symbol, direction, qty, client_order_id=None):

@@ -140,7 +140,8 @@ app.whenReady().then(async () => {
   await run(`window.__over.cloudConnect = async (a) => ({ ok: true, code: "OK", detail: {} })`);
   await js(`$("cx-go").click()`); await wait(300);
   const sent = await js(`window.__calls.filter((c) => c[0] === "cloudConnect").map((c) => c[1][0])`);
-  ok("③ 雲端送出的形狀:{ venue: okx, apiKey, secret, passphrase }", sent.length === 1 && J(sent[0]) === J({ venue: "okx", apiKey: "not-a-real-key-okx", secret: "not-a-real-secret-okx", passphrase: "not a real passphrase" }));
+  const lang = await js(`LANG`);
+  ok("③ 雲端送出的形狀:{ venue: okx, apiKey, secret, passphrase, lang }(第一趟不帶 keyChangeCode)", sent.length === 1 && !("keyChangeCode" in sent[0] && sent[0].keyChangeCode !== undefined) && J(sent[0]) === J({ venue: "okx", apiKey: "not-a-real-key-okx", secret: "not-a-real-secret-okx", passphrase: "not a real passphrase", lang }) && (lang === "zh" || lang === "en"));
   ok("③ 送出成功:框關掉、畫面這邊的金鑰清空(CXF 與 DOM 都沒有)", await js(`$("cx-scrim").hidden && CXF.apiKey === "" && CXF.secret === "" && CXF.passphrase === "" && !document.querySelector("#cx-body input")`));
 
   // 雲端被拒 = 主機拒絕這個指令(設計稽核 005 第 2 條):講主機、帶 detail.error;不是「OKX 沒有接受這把金鑰：—」

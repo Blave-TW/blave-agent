@@ -44,7 +44,7 @@ const EVENTS = {
   plan_start_res: { result: ["ok", "no_card", "no_credit", "error", "confirm"] },
   update_failed: { stage: ["check", "download", "staging", "install", "other"] },
   // no_plan / plan_failed:方案制(api 切換之後)沒有含資料的方案、方案扣款失敗
-  lib_blocked: { why: ["signed_out", "no_card", "no_balance", "unknown", "cloud_off", "ai_no_card", "ai_no_credit", "no_plan", "plan_failed"] },
+  lib_blocked: { why: ["signed_out", "no_card", "no_balance", "unknown", "cloud_off", "ai_no_card", "ai_no_credit", "no_plan", "plan_failed", "agent_old"] },
   // 每日在線心跳:app 一直開著不重開的人沒有 app_open,靠它量到。事件本身就是「這台在線」;live = 本機對帳器在跑(含模擬)
   heartbeat: { live: ["on", "off"] },
   // 引擎安裝(0.1.12;shell/enginesetup.js,主行程送):一輪真的有東西要裝的安裝跑完的結果(first / upd × done / net / other / timeout;
@@ -74,6 +74,8 @@ const EVENTS = {
     "c_403_in", "c_403_out", "c_403_no", "c_403_unk", "c_probe_out", "c_probe_no", "x_probe_out", "x_probe_no"] },
   // Claude 的登入方式(主行程 saveConnection／開 app、renderer 回合後問 CLI 時送):值由 cliAuthHow 從 authMethod 換來
   cli_auth: { how: ["claude_ai", "api_key", "api_key_helper", "oauth_token", "third_party", "none", "other"] },
+  // 改金鑰驗證碼(0.1.37;renderer 送,trade.js kcNext):驗證碼那一格出現、碼過了關卡、錯太多次被鎖。不帶碼、不分交易所
+  key_verify: { step: ["shown", "ok", "locked"] },
   // 用了哪個功能:名字是白名單(canon .claude/docs/product-telemetry.md 的登記表;api 端 desktop_telemetry.EVENTS 同一份),
   // api 每安裝每 name 每 UTC 日去重——回答「誰、哪天、用過哪些功能」,不做逐點擊計數。library_* 的送出點在 renderer/library.js(libTrack),
   // reports_* 在 renderer/reports.js、strategy_new 在 renderer/newstrategy.js(都經 libTrack)。
@@ -261,6 +263,8 @@ const EVENTS = {
     // 同時在跑的回合數當天第一次到 2／4／8、雲端名額滿進排隊／取消排隊、內建瀏覽器租約要等／等到逾時(main.js)、手機來的對話開成分頁(通道上線才送)
     "tab_new", "tab_close", "tab_close_busy", "tab_switch", "tab_overflow", "hist_open", "hist_search", "hist_resume",
     "chat_par2", "chat_par4", "chat_par8", "chat_queued", "queue_cancel", "br_wait", "br_busy", "tab_remote",
+    // 0.1.37 設定 › 連結 QR 底下的商店名稱(renderer/app.js mvQr):按了、開系統瀏覽器之前送。掃 QR 在手機上發生、這裡看不到
+    "app_link_ios", "app_link_android",
     // 0.1.38 手機 App 跟這台電腦對話(spec mobile-agent-chat-mvp §7;主行程 relay.js 送):phone_chat_on／off = 確認框按〔開啟〕／關掉;
     // phone_pair = 這台出的碼配對完成(出碼後清單多一支)、phone_revoke = 在這台撤銷一支手機;phone_turn = 手機那一輪真的開跑;
     // phone_turn_q = 同一條在跑、排在後面;phone_turn_stop = 電腦前的人停掉手機那一輪;phone_sync_ok／fail = 開啟後第一次上傳完成／失敗要按重試
@@ -275,7 +279,7 @@ const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   //
 // 放主行程而不是畫面:被攻破的 renderer 對 track-feature 灌合法名字也只會出門 20 次,搶不到 api 那顆全域熔斷
 const DAILY = ["feature_used", "acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed",
   "plan_start_res", "update_failed", "lib_blocked", "heartbeat", "engine_setup", "engine_opt_fail", "lib_pick", "idea_sent", "detect_fail",
-  "device_type", "reply_notif", "auth_fail", "cli_auth"];
+  "device_type", "reply_notif", "auth_fail", "cli_auth", "key_verify"];
 // 每日一則、不分屬性值:心跳一天只要一列(live 記當天第一次送出那一刻的),下單中途開關不多送
 const DAILY_ONE = ["heartbeat"];
 const HEARTBEAT_MS = 10 * 60 * 1000;   // 啟動後 10 分鐘起每 10 分鐘看一次;當天送過就不出門(啟動當天另有 app_open)
@@ -293,7 +297,7 @@ const SID_ON = ["strat_created", "strat_backtested", "strat_deployed"];
 const SID_RE = /^[0-9a-f]{16}$/;
 const SID_KEY_RE = /^[0-9a-f]{64}$/;
 // 畫面(track-event)只准送這幾個;里程碑(app_first_open、login_done…)與主行程自己判的(plan_start_res、update_failed)不收
-const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth"];
+const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify"];
 const DAY_RE = /^[0-9]{8}$/;
 const DEFAULT_ON = true;   // Wei 2026-09-21:預設開、照實告知、可關
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

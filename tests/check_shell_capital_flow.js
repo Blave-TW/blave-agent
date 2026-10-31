@@ -66,7 +66,7 @@ app.whenReady().then(async () => {
   // ③ 過渡期:帳密存成功、setup 回 NOT_CAPABLE
   await run(`window.__over.capitalCreds = async () => ({ code: "OK" }); window.__over.capitalStep = async () => ({ code: "NOT_CAPABLE" });`);
   await js(`$("cx-go").click()`); await wait(150);
-  ok("② 先存帳密(ID 與密碼原樣交主行程)再送 setup", J(await calls("capitalCreds")) === J([["A123456789", "tr-secret-pw"]]) && J(await calls("capitalStep")) === J([["setup"]]));
+  ok("② 先存帳密(ID 與密碼原樣交主行程、第三個參數只帶 lang、第一趟沒有 keyChangeCode)再送 setup", J(await calls("capitalCreds")) === J([["A123456789", "tr-secret-pw", { lang: await js(`LANG`) }]]) && J(await calls("capitalStep")) === J([["setup"]]));
   ok("② 送出後 DOM 與畫面狀態裡都沒有交易密碼", !(await js(`document.body.innerHTML.includes("tr-secret-pw") || [...document.querySelectorAll("input")].some((i) => i.value === "tr-secret-pw") || CAP.pw === "tr-secret-pw"`)));
   ok("③ 主機不認得 capital_* → 交給 agent 那一態(三步 + 主鈕)", (await view()) === "c-handoff" && (await js(`$("cx-go").textContent.trim()`)) === (await t("cap.ho.go")));
   await run(`window.__sent = null; window.submitMessage = async (m, o) => { window.__sent = [m, o]; return true; };`);
@@ -119,7 +119,7 @@ app.whenReady().then(async () => {
   ok("⑦ vault:true → 重填時有「帳密存在哪?」,展開是 Wei 拍板那句", (await js(`!!$("cap-store-q")`)) && (await js(`$("cap-store").textContent`)) === (await t("cap.storeCloud")));
   await run(`window.__calls = []; window.__over.capitalCreds = async () => ({ code: "OK" });`);
   await fill({ "cap-id": "A123456789", "cap-pw": "new-pw" }); await click("cap-recheck"); await wait(80);
-  ok("⑥ 重填 → 先存帳密再確認一次(probe)", J(await calls("capitalCreds")) === J([["A123456789", "new-pw"]]) && J(await calls("capitalStep")) === J([["probe"]]));
+  ok("⑥ 重填 → 先存帳密再確認一次(probe)", J(await calls("capitalCreds")) === J([["A123456789", "new-pw", { lang: await js(`LANG`) }]]) && J(await calls("capitalStep")) === J([["probe"]]));
 
   for (const vault of [false, null]) {   // 帳密還在 .env(舊 workspace / 寫不進獨立檔):那一句不能講
     await open({ platform: "Windows", venues: VEN, capital_connect: cc({ vault, cert: { status: "ok", at: S - 9 }, probe: { status: "failed", at: S, state: "pw_wrong", code: 300 } }) }, "capital");

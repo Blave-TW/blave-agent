@@ -624,10 +624,13 @@ msgid "bt.mcpt"
 msgstr "MCPT p 值"
 
 msgid "bt.mcptTipSig"
-msgstr "隨機打亂 {n} 次，只有 {pct} 的結果比它好；低於 0.05 是慣用門檻。"
+msgstr "隨機打亂 {n} 次，只有 {k} 次比它好。p 低於 0.05 是慣用門檻。"
 
 msgid "bt.mcptTipNs"
-msgstr "隨機打亂 {n} 次，有 {pct} 的結果比它好——沒過 0.05 的慣用門檻，這組結果分不出是實力還是運氣。"
+msgstr "隨機打亂 {n} 次，有 {k} 次比它好。p 沒低於 0.05，分不出是實力還是運氣。"
+
+msgid "bt.mcptTipZero"
+msgstr "隨機打亂 {n} 次，沒有一次比它好。p 低於 0.05 是慣用門檻。"
 
 msgid "bt.equity"
 msgstr "權益"
@@ -1359,16 +1362,16 @@ msgid "pv.signin"
 msgstr "登入 Blave"
 
 msgid "pv.e.out"
-msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡，免費試用 {t} 天；AI 照用你的 {name}。"
+msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡免費試用 {t} 天；AI 照用你的 {name}。"
 
 msgid "pv.e.outNoNum"
-msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡，免費試用一段時間；AI 照用你的 {name}。"
+msgstr "這台還拿不到 Blave 的資料。登入 Blave 後首次綁卡免費試用一段時間；AI 照用你的 {name}。"
 
 msgid "pv.e.card"
-msgstr "這台還拿不到 Blave 的資料。首次綁卡，免費試用 {t} 天。"
+msgstr "這台還拿不到 Blave 的資料。首次綁卡免費試用 {t} 天。"
 
 msgid "pv.e.card.cli"
-msgstr "這台還拿不到 Blave 的資料。首次綁卡，免費試用 {t} 天；AI 照用你的 {name}。"
+msgstr "這台還拿不到 Blave 的資料。首次綁卡免費試用 {t} 天；AI 照用你的 {name}。"
 
 msgid "pv.e.noTrial"
 msgstr "這台還拿不到 Blave 的資料：它在 Blave Agent 雲端方案裡。"
@@ -2305,9 +2308,6 @@ msgstr "解除綁定"
 msgid "tr.unbinding"
 msgstr "解除中…"
 
-msgid "tr.unbindDescPaper"
-msgstr "解除後可以改綁真實交易所。"
-
 msgid "tr.unbindWarn"
 msgstr "登入資料會從這台電腦移除，下單機不能再用它交易。策略組合和金額保留，重綁後存一次即可。"
 
@@ -2336,18 +2336,18 @@ msgid "tr.ov.rangeAll"
 msgstr "全部"
 
 msgid "tr.ov.empty"
-msgstr "還沒有權益快照。連上交易所後，Blave 開著時每個整點記一筆。"
+msgstr "還沒有帳戶淨值紀錄。連上交易所後，每整點記一次，電腦版要開著。"
 
 # 雲端視角的權益空狀態(trade.js trPaintOver);本機那句要 Blave 開著,雲端是主機自己記
 msgid "tr.ov.emptyCloud"
-msgstr "還沒有權益快照。連上交易所後，主機每個整點記一筆。"
+msgstr "還沒有帳戶淨值紀錄。連上交易所後，主機每整點記一次。"
 
 # 只有一筆、畫不出線(trade.js trPaintOver);本機／雲端各一句,後半同 empty／emptyCloud
 msgid "tr.ov.emptyBaseline"
-msgstr "紀錄還不夠畫曲線，要兩筆。Blave 開著時每個整點記一筆。"
+msgstr "紀錄還不夠畫曲線，要兩筆。每整點記一次，電腦版要開著。"
 
 msgid "tr.ov.emptyBaselineCloud"
-msgstr "紀錄還不夠畫曲線，要兩筆。主機每個整點記一筆。"
+msgstr "紀錄還不夠畫曲線，要兩筆。主機每整點記一次。"
 
 msgid "tr.ov.basisNote"
 msgstr "這之前的點只算下單錢包，之後是全帳戶合計；兩段不相連。"
@@ -2676,6 +2676,10 @@ msgstr "策略執行失敗"
 msgid "tr.ov.evStrategyFailedNote"
 msgstr "排程還是照跑，但這一輪沒有產生訊號"
 
+# strategy_failed 的錯誤是 DataAccessError(外殼沒給 Blave 資料 key)時的說明,取代上一句(trade.js trStrategyFailedNoteKey)
+msgid "tr.ov.evStrategyFailedNoData"
+msgstr "沒有 Blave 資料權限，這一輪沒跑"
+
 msgid "tr.ov.evUnreach"
 msgstr "現在讀不到雲端的事件紀錄，稍後會再試；這不代表這段期間沒有發生事情。"
 
@@ -2956,6 +2960,10 @@ msgstr "雲端："
 msgid "menu.site"
 msgstr "Blave 官網"
 
+# 右鍵點在連結上的唯一一格(聊天裡縮短顯示的網址要拿得到完整版;spec chat-long-url-2026-10-30 §2)
+msgid "menu.copyLink"
+msgstr "複製連結"
+
 msgid "menu.view"
 msgstr "顯示"
 
@@ -3069,6 +3077,12 @@ msgstr "每 2 分鐘上傳策略、部位與權益，只有你看得到。手機
 msgid "mv.leadNoName"
 msgstr "每 2 分鐘上傳策略、部位與權益，只有你的帳號看得到。關掉會刪掉平台上這台的資料。"
 
+msgid "mv.appIos"
+msgstr "App Store"
+
+msgid "mv.appAndroid"
+msgstr "Google Play"
+
 msgid "mv.leadPending"
 msgstr "已關閉，但平台上這台的資料還沒刪成；連上網路後會自動再刪。"
 
@@ -3123,6 +3137,10 @@ msgstr "本機 AI 的登入方式，例如訂閱或 API 金鑰；不含帳號與
 
 msgid "priv.collect.10"
 msgstr "登入失敗的類別，以及當下是否判定為已登入"
+
+# 0.1.37 改金鑰驗證碼(key_verify);面板排在 priv.collect.10 之後
+msgid "priv.collect.11"
+msgstr "改金鑰時驗證碼框的出現、通過與鎖住；不含驗證碼"
 
 msgid "priv.never.h"
 msgstr "使用資料不收"
@@ -3403,9 +3421,6 @@ msgstr "知道了"
 
 msgid "src.empty1"
 msgstr "還沒有自帶金鑰的資料來源。"
-
-msgid "src.empty2"
-msgstr "金鑰不要貼在對話裡。"
 
 msgid "src.rowLocal.one"
 msgstr "{n} 個欄位 · 用到它的策略：{names}"
@@ -4914,6 +4929,14 @@ msgstr "這支現在不能免登入下載，可能已經下架，或改成要登
 msgid "lib.dl.rateLimited"
 msgstr "下載次數太多，請稍後再試。"
 
+# api 403 AGENT_TOO_OLD(spec strategy-min-lib-gate-2026-10-29):隨包的 lib 也不夠新 → 更新電腦版
+msgid "lib.dl.agentOld"
+msgstr "這支策略要新版 Agent。更新電腦版後再按一次。"
+
+# 同上,但隨包的已經夠新、只是 workspace 沒同步成:重開才會再同步,叫人更新沒用
+msgid "lib.dl.agentOldReopen"
+msgstr "這支策略要新版 Agent。重新開啟電腦版後再按一次。"
+
 msgid "lib.gate.login"
 msgstr "登入"
 
@@ -5423,7 +5446,7 @@ msgstr "綁卡，送 {t} 天資料"
 
 # 方案制(planMo)、有試用資格又沒卡的那一組:填色鈕,直接開瀏覽器綁卡頁;聊天資料卡同一顆(spec paywall-redesign-2026-10-21 §2.2)
 msgid "lib.gate.trial"
-msgstr "綁卡，免費試用 {t} 天"
+msgstr "綁卡免費試用 {t} 天"
 
 msgid "lib.gate.topup"
 msgstr "儲值"
@@ -6326,10 +6349,10 @@ msgid "ver.readErr"
 msgstr "讀不到這一版。"
 
 msgid "ver.mcptTipSigNoN"
-msgstr "隨機打亂之後，只有 {pct} 的結果比它好；低於 0.05 是慣用門檻。"
+msgstr "p 低於 0.05 是慣用門檻。"
 
 msgid "ver.mcptTipNsNoN"
-msgstr "隨機打亂之後，有 {pct} 的結果比它好——沒過 0.05 的慣用門檻，這組結果分不出是實力還是運氣。"
+msgstr "p 沒低於 0.05，分不出是實力還是運氣。"
 
 msgid "ver.cmpTitle"
 msgstr "比較版本"
@@ -6680,9 +6703,6 @@ msgstr "例如：每個策略都要設停損，預設用進場價的 2%。"
 msgid "rules.emptyLead"
 msgstr "還沒有任何規則。"
 
-msgid "rules.emptyHow"
-msgstr "在對話裡說「以後都要設停損」，也會記成一條規則。"
-
 msgid "rules.full"
 msgstr "已經 10 條，是上限。要新增請先刪掉一條——不會自動丟掉舊的。"
 
@@ -6899,11 +6919,11 @@ msgstr "綁卡後就能用"
 
 # 方案制(planMo):試用結束會自動開始扣方案費,不是「送」——沒登入那句換 .m,同 pv.h.offer.m(沒卡那句是 wd.note.trial)
 msgid "wd.note.out.m"
-msgstr "登入並綁卡，免費試用 {t} 天 Blave 資料"
+msgstr "登入並綁卡免費試用 {t} 天 Blave 資料"
 
 # 方案制、有試用資格又沒卡:欄名已經寫了「Blave 資料」,鈕字不再重複;按下直接開瀏覽器綁卡頁
 msgid "wd.note.trial"
-msgstr "綁卡，免費試用 {t} 天"
+msgstr "綁卡免費試用 {t} 天"
 
 msgid "wd.note.billed"
 msgstr "有用到的那個小時收 {r} TWD，同一小時只收一次"
@@ -7577,10 +7597,10 @@ msgstr "AI 照用你現在的設定。試用結束自動扣第一期方案費，
 
 # 標題只講試用(會自動轉付費,所以不用「送」;「送」只給真的是禮物的 AI 額度那條)
 msgid "pv.h.offer.m"
-msgstr "首次綁卡，免費試用 {t} 天"
+msgstr "首次綁卡免費試用 {t} 天"
 
 msgid "pv.h.offerNoNum.m"
-msgstr "首次綁卡，免費試用一段時間"
+msgstr "首次綁卡免費試用一段時間"
 
 # 「自動」不能拿掉,否則會被讀成可選訂閱;扣第一期／取消就不扣留給綁卡那一步的 pv.f.offer.m
 msgid "pv.f.out.m"
@@ -9443,3 +9463,197 @@ msgstr "排隊中的 {n} 句不會送出。"
 msgid "tm.quitQueuedTitle"
 msgstr "還有訊息在排隊"
 
+# 改金鑰驗證碼(api key_change_gate:帳號 24 小時內配對過新手機,改交易所金鑰要 email 驗證碼)。字串同網頁 kc_*(parity 測試逐字比);{t} = 這道關消失的時間
+msgid "cx.kc.title"
+msgstr "輸入驗證碼"
+
+msgid "cx.kc.why"
+msgstr "這個帳號剛配對新手機，改金鑰要先驗證。"
+
+msgid "cx.kc.label"
+msgstr "驗證碼"
+
+msgid "cx.kc.ok"
+msgstr "確認"
+
+msgid "cx.kc.sent"
+msgstr "驗證碼已寄到帳號 email。"
+
+msgid "cx.kc.resent"
+msgstr "驗證碼過期了，新的一組已寄到帳號 email。"
+
+msgid "cx.kc.cooldown"
+msgstr "剛寄過驗證碼，請先收信。"
+
+msgid "cx.kc.limited"
+msgstr "寄送次數已達上限，請用最近收到的驗證碼。"
+
+msgid "cx.kc.failed"
+msgstr "驗證碼沒寄出去，金鑰沒有儲存，請稍後再試。"
+
+msgid "cx.kc.noemail"
+msgstr "帳號沒有設定 email，收不到驗證碼。"
+
+msgid "cx.kc.invalid"
+msgstr "驗證碼不對，請再輸入一次。"
+
+msgid "cx.kc.expired"
+msgstr "驗證碼過期了。"
+
+msgid "cx.kc.locked"
+msgstr "錯太多次，今天不能再試。"
+
+msgid "cx.kc.until"
+msgstr "{t} 之後改金鑰就不用驗證。"
+
+# 0.1.38 手機 App 跟這台電腦對話(spec mobile-agent-chat-mvp;設計 desktop-phone-chat-settings-2026-10-30、mchat-phone-surfaces-2026-10-31)
+
+msgid "tm.phoneHiddenTitle"
+msgstr "手機對話開著"
+
+msgid "tm.phoneHidden"
+msgstr "Blave 留在選單列，手機才連得到。要結束請從選單列或 Dock。"
+
+msgid "tm.phoneHiddenWin"
+msgstr "Blave 留在系統匣，手機才連得到。要結束請從系統匣圖示。"
+
+msgid "ph.switch"
+msgstr "允許手機對話"
+
+msgid "ph.cf.title"
+msgstr "允許手機對話？"
+
+msgid "ph.cf.1"
+msgstr "手機送的話會在這台電腦上跑。"
+
+msgid "ph.cf.2"
+msgstr "agent 能做的事跟你在電腦前一樣，包括下單。"
+
+msgid "ph.cf.3"
+msgstr "近 30 天的對話會上傳，手機才看得到。"
+
+msgid "ph.cf.4"
+msgstr "金鑰、資料夾路徑會先遮掉再上傳。"
+
+msgid "ph.cf.5"
+msgstr "附件、圖片、策略程式不上傳。"
+
+msgid "ph.cf.6"
+msgstr "關掉這個開關，伺服器上那份就刪除。"
+
+msgid "ph.cf.ok"
+msgstr "開啟"
+
+msgid "ph.off.title"
+msgstr "關閉手機對話？"
+
+msgid "ph.off.live"
+msgstr "手機那邊正在跑的回覆會停下。"
+
+msgid "ph.off.del"
+msgstr "伺服器上的對話會刪除。"
+
+msgid "ph.off.ok"
+msgstr "關閉"
+
+msgid "ph.lead"
+msgstr "手機送的話會在這台電腦上跑。電腦睡著或闔上時收不到。"
+
+msgid "ph.pending"
+msgstr "已關閉，但伺服器上的對話還沒刪成。連上網路後會自動再刪。"
+
+msgid "ph.err"
+msgstr "沒有開成。請檢查網路後再試。"
+
+msgid "ph.syncFail"
+msgstr "對話沒有同步完成。"
+
+msgid "ph.retry"
+msgstr "重試"
+
+msgid "ph.syncing"
+msgstr "已同步 {n}／{m} 條"
+
+msgid "ph.synced"
+msgstr "近 30 天的對話已同步。"
+
+msgid "chat.fromPhone"
+msgstr "來自手機"
+
+msgid "ph.pair"
+msgstr "配對手機"
+
+msgid "ph.pairCode"
+msgstr "配對碼 {code}，10 分鐘內在 App 輸入。"
+
+msgid "ph.pairFail"
+msgstr "沒拿到配對碼，請再試一次。"
+
+msgid "ph.phonesFail"
+msgstr "讀不到手機清單。"
+
+msgid "ph.noPhones"
+msgstr "還沒有配對的手機。"
+
+msgid "ph.iphone"
+msgstr "iPhone"
+
+msgid "ph.android"
+msgstr "Android 手機"
+
+msgid "ph.meta"
+msgstr "配對於 {paired} · 最近使用 {used}"
+
+msgid "ph.acts"
+msgstr "最近操作"
+
+msgid "ph.noActs"
+msgstr "還沒有送到這台電腦的操作。"
+
+msgid "ph.revoke"
+msgstr "撤銷"
+
+msgid "ph.revoke.title"
+msgstr "撤銷這支手機？"
+
+msgid "ph.revoke.body"
+msgstr "撤銷後它連不到 Blave，要用得重新配對。"
+
+msgid "ph.revoke.ok"
+msgstr "撤銷"
+
+msgid "ph.act.send"
+msgstr "送出訊息"
+
+msgid "ph.act.stop"
+msgstr "停止回覆"
+
+msgid "ph.act.withdraw"
+msgstr "撤回訊息"
+
+msgid "ph.act.session_new"
+msgstr "開新對話"
+
+msgid "ph.act.session_rename"
+msgstr "改對話名稱"
+
+msgid "ph.act.session_delete"
+msgstr "刪除對話"
+
+msgid "ph.act.pair"
+msgstr "配對"
+
+msgid "ph.act.auth"
+msgstr "驗證"
+
+msgid "ph.act.revoke"
+msgstr "撤銷"
+
+msgid "ph.act.grant"
+msgstr "允許用這台電腦"
+
+msgid "ph.act.ungrant"
+msgstr "不再允許用這台電腦"
+
+msgid "tabs.phone"
+msgstr "手機"

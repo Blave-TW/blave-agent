@@ -19,9 +19,13 @@ layer caused naked positions, duplicate orders, and TP-reported-as-SL bugs):
    entry order itself (single atomic request — the naked window between entry
    and protective orders does not exist). Standalone protective orders are
    verified to exist on the exchange before returning.
-4. IDEMPOTENT. Pass `client_order_id` (unique per intent, alphanumeric only,
-   e.g. "mystrat20260709120500") — resubmitting the same id is rejected by the
-   exchange (error 101481) instead of opening a second position.
+4. NEVER SENT TWICE. An order POST that may have reached BingX (a dropped
+   connection, a read timeout, a 5xx, 100500…) is not resent — not to the
+   fallback domain, not under the same id — and raises OrderNotConfirmed
+   carrying the client order id; the order is then looked up by that id
+   (resolve_unknown_order, lib/unconfirmed). BingX refuses a reused id with
+   101481, but whether that holds after the order is filled is unverified, so
+   nothing here relies on it: only a query settles what happened.
 5. HALTABLE + AUDITED. Every order-mutating request passes through lib/guard:
    if state/HALT exists, every order raises guard.Halted BEFORE any network
    call (cancels still pass; closes only inside the user's explicit close),
@@ -30,8 +34,8 @@ layer caused naked positions, duplicate orders, and TP-reported-as-SL bugs):
 
 Verified against ccxt's production parser + BingX official docs + two
 fleet-debugged implementations. Known quirks handled here so callers never
-meet them: response nested under data.order; clientOrderID (request) vs
-clientOrderId (query response); fills under data.fill_orders with startTs/
+meet them: response nested under data.order; the swap client id is clientOrderId
+on every request (place, cancel, query) and answers spell it either way; fills under data.fill_orders with startTs/
 endTs and ISO-string filledTime; position mode as string "true"/"false";
 orderId as huge integer (kept as str); commission returned negative.
 """
@@ -42,6 +46,8 @@ import json
 import os
 import time
 from decimal import Decimal, ROUND_DOWN
+
+import logging
 
 import requests
 
@@ -66,6 +72,12 @@ LIVE_FALLBACK = "https://open-api.bingx.pro"
 DEMO_URL = "https://open-api-vst.bingx.com"  # VST paper trading, swap only
 
 RETRYABLE_CODES = {100410, 100500}  # 100410 = rate limited (no Retry-After; backoff), 100500 = internal
+# An order POST answered with one of these may have executed, so it is not resent
+# (_send no_resend) — official error-code reference: 100500 "System busy", 109500
+# "Internal server error", 110500 "Order system busy", 109701 "Network request exception";
+# 101481 / 109201 (client id already used / submitted twice) mean an order under this id
+# exists. HTTP 5xx too (504: "further confirmation required").
+SEND_UNKNOWN_CODES = {100500, 109500, 110500, 109701, 101481, 109201}
 RECV_WINDOW = "5000"
 
 # Limit-layer error codes, from the official error-code reference
@@ -95,9 +107,29 @@ class BingXError(Exception):
         super().__init__(reject_token.tag(kind, f"BingX error {code}: {msg or '(empty msg)'} | {path}"))
 
 
-class OrderNotConfirmed(Exception):
-    """Order was accepted but did not reach a terminal state within timeout.
-    The order may still fill — query it again before assuming anything."""
+class _SendUnknown(Exception):
+    """An order POST whose outcome is unknown (see SEND_UNKNOWN_CODES); _request turns
+    it into OrderNotConfirmed carrying the client order id."""
+
+
+try:
+    from lib.unconfirmed import OrderOutcomeUnknown as _OutcomeUnknown
+except ImportError:  # half-updated workspace: not parkable, reported as an order failure
+    class _OutcomeUnknown(Exception):
+        def __init__(self, msg, venue=None, venue_symbol=None, order_id=None, client_order_id=None):
+            super().__init__(msg)
+            self.venue, self.venue_symbol, self.order_id = venue, venue_symbol, order_id
+            self.client_order_id = client_order_id
+
+        def parkable(self):
+            return False
+
+
+class OrderNotConfirmed(_OutcomeUnknown):
+    """The order may have been accepted and its outcome is not known: the POST got no
+    usable answer, or it did not reach a terminal state within timeout. It MAY HAVE
+    FILLED — query it, never resubmit. Swap orders carry venue / venue_symbol and
+    order_id or client_order_id so lib/portfolio.reconcile can park it."""
 
 
 class ProtectionFailed(Exception):
@@ -131,6 +163,20 @@ def _sync_time(env):
         pass
 
 
+def _never_sent(e):
+    """A requests ConnectionError raised before any byte went out: the socket could not be
+    opened (refused, unreachable, DNS — urllib3 NewConnectionError / NameResolutionError,
+    wrapped in MaxRetryError). A TLS handshake timeout surfaces as ReadTimeout and cannot be
+    told apart from a lost answer, so it stays unknown."""
+    try:
+        from urllib3.exceptions import NewConnectionError
+    except ImportError:
+        return False
+    inner = e.args[0] if e.args else None
+    return isinstance(getattr(inner, "reason", None), NewConnectionError) \
+        or isinstance(inner, NewConnectionError)
+
+
 def _sign(secret_key, params):
     params = dict(params)
     params["timestamp"] = str(int(time.time() * 1000) + _time_offset["ms"])
@@ -156,7 +202,7 @@ _PROTECTIVE_TYPES = {"STOP_MARKET", "TAKE_PROFIT_MARKET", "STOP", "TAKE_PROFIT"}
 # Params worth keeping in the audit line (no secrets live in params — the
 # signature and timestamp are added later, inside _sign's own copy).
 _AUDIT_PARAM_KEYS = ("symbol", "side", "positionSide", "type", "quantity",
-                     "quoteOrderQty", "price", "stopPrice", "clientOrderID",
+                     "quoteOrderQty", "price", "stopPrice", "clientOrderId",
                      "newClientOrderId", "reduceOnly", "closePosition",
                      "leverage", "orderId")
 
@@ -213,8 +259,17 @@ def _request(method, path, env, params=None, signed=True, retries=3):
         )
 
     guard.audit("order_attempt", **fields)
+    # swap only: spot order POSTs keep the old transport (second batch)
+    placing = (method, path) == ("POST", "/openApi/swap/v2/trade/order")
     try:
-        data = _send(method, path, env, params, signed, retries)
+        data = _send(method, path, env, params, signed, retries, no_resend=placing)
+    except _SendUnknown as e:
+        cid = (params or {}).get("clientOrderId")
+        guard.audit("order_unknown", error=str(e), client_order_id=cid, **fields)
+        raise OrderNotConfirmed(
+            f"order {cid + ' ' if cid else ''}sent, no answer ({e}) — it may have filled; check the "
+            f"position, do not resubmit", venue="bingx", venue_symbol=(params or {}).get("symbol"),
+            client_order_id=cid) from e
     except Exception as e:
         guard.audit("order_error", error=str(e), **fields)
         raise
@@ -223,7 +278,13 @@ def _request(method, path, env, params=None, signed=True, retries=3):
     return data
 
 
-def _send(method, path, env, params=None, signed=True, retries=3):
+def _send(method, path, env, params=None, signed=True, retries=3, no_resend=False):
+    """no_resend (swap order POSTs): once the request may have reached BingX it is never
+    sent again — not to the fallback domain, not on a later attempt. A dropped connection,
+    a read timeout, a body cut mid-transfer, a 5xx, a 2xx that is not JSON or a
+    SEND_UNKNOWN_CODES answer raises _SendUnknown. Only a connect timeout or a socket that
+    never opened (refused, DNS — nothing sent: the fallback domain is tried), 100410 (rate limited) and 100421 (refused at
+    authentication, re-signed) go out again — none of them can have executed."""
     api_key = env.get("BINGX_API_KEY")
     secret_key = env.get("BINGX_SECRET_KEY")
     if signed and (not api_key or not secret_key):
@@ -237,12 +298,12 @@ def _send(method, path, env, params=None, signed=True, retries=3):
     resynced = False
     for attempt in range(retries):
         for base in _bases(env):
+            if signed:
+                qs = _sign(secret_key, params or {})
+            else:
+                qs = "&".join(f"{k}={v}" for k, v in (params or {}).items())
+            url = f"{base}{path}" + (f"?{qs}" if method != "POST" and qs else "")
             try:
-                if signed:
-                    qs = _sign(secret_key, params or {})
-                else:
-                    qs = "&".join(f"{k}={v}" for k, v in (params or {}).items())
-                url = f"{base}{path}" + (f"?{qs}" if method != "POST" and qs else "")
                 if method == "POST":
                     r = requests.post(
                         url, data=qs,
@@ -251,26 +312,53 @@ def _send(method, path, env, params=None, signed=True, retries=3):
                     )
                 else:
                     r = requests.request(method, url, headers=headers, timeout=10)
-                data = r.json()
-                code = data.get("code")
-                if code == 0:
-                    return data.get("data")
-                if code in RETRYABLE_CODES and attempt < retries - 1:
-                    last_err = BingXError(code, data.get("msg"), path)
-                    time.sleep(1 + attempt)
-                    break  # retry outer loop from primary base
-                if code == TIMESTAMP_ERROR and signed and not resynced and attempt < retries - 1:
-                    # refused at authentication — resending cannot double anything
-                    resynced = True
-                    _sync_time(env)
-                    last_err = BingXError(code, data.get("msg"), path)
-                    break
-                raise BingXError(code, data.get("msg"), path)
+            except requests.exceptions.ConnectTimeout as e:
+                last_err = e  # no connection was made: nothing reached BingX
+                continue  # next base
+            except (requests.exceptions.InvalidURL, requests.exceptions.MissingSchema,
+                    requests.exceptions.InvalidSchema, requests.exceptions.InvalidHeader):
+                raise  # refused before anything was sent
             except requests.exceptions.ConnectionError as e:
+                # a reset after the request went out may follow an order BingX took; a socket
+                # that never opened (refused, DNS) did not send anything
+                if no_resend and not _never_sent(e):
+                    raise _SendUnknown(f"{type(e).__name__}: {str(e)[:120]}") from e
                 last_err = e
                 continue  # next base
+            except requests.exceptions.RequestException as e:
+                # ReadTimeout (a TLS handshake timeout too) / ChunkedEncodingError /
+                # ContentDecodingError are not ConnectionError subclasses
+                if no_resend:
+                    raise _SendUnknown(f"{type(e).__name__}: {str(e)[:120]}") from e
+                raise
+            if no_resend and r.status_code >= 500:
+                raise _SendUnknown(f"HTTP {r.status_code}: {r.text[:120]}")
+            try:
+                data = r.json()
+            except ValueError:
+                if no_resend and 200 <= r.status_code < 300:
+                    raise _SendUnknown(f"HTTP {r.status_code} non-JSON ({r.text[:80]})")
+                if no_resend:
+                    raise BingXError(r.status_code, f"non-JSON response ({r.text[:120]})", path)
+                raise
+            code = data.get("code")
+            if code == 0:
+                return data.get("data")
+            if no_resend and code in SEND_UNKNOWN_CODES:
+                raise _SendUnknown(f"{code}: {data.get('msg')}")
+            if code in RETRYABLE_CODES and attempt < retries - 1:
+                last_err = BingXError(code, data.get("msg"), path)
+                time.sleep(1 + attempt)
+                break  # retry outer loop from primary base
+            if code == TIMESTAMP_ERROR and signed and not resynced and attempt < retries - 1:
+                # refused at authentication — resending cannot double anything
+                resynced = True
+                _sync_time(env)
+                last_err = BingXError(code, data.get("msg"), path)
+                break
+            raise BingXError(code, data.get("msg"), path)
         else:
-            # every base raised ConnectionError
+            # every base failed to connect
             if attempt == retries - 1:
                 raise last_err
             time.sleep(1 + attempt)
@@ -411,6 +499,8 @@ def _unwrap_order(data):
     """BingX nests the order object: {data: {order: {...}}}. orderId is a huge
     integer — return it as str and never let callers do float math on it."""
     order = (data or {}).get("order", data) or {}
+    if not order.get("orderId") and order.get("orderID"):
+        order["orderId"] = order["orderID"]  # the place answer also carries it as a string
     if "orderId" in order:
         order["orderId"] = str(order["orderId"])
     return order
@@ -476,13 +566,17 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
     confirmed order dict from `confirm_order` — exchange-reported avg_price /
     executed_qty / commission, not intent.
 
-    client_order_id: pass a unique-per-intent id ("mystrat20260709120500") so
-    an accidental resubmit is rejected (error 101481) instead of doubling the
-    position. ALPHANUMERIC ONLY, 1-40 chars, lowercased by BingX. Note the
-    request param spelling is clientOrderID (official docs mix both spellings;
-    capital ID is what ccxt ships in production), while query RESPONSES come
-    back as clientOrderId."""
+    client_order_id: a unique-per-intent id ("mystrat20260709120500"; one is
+    generated when omitted) — what an order whose answer was lost is looked up by
+    (OrderNotConfirmed). It is not a resubmit guard: whether BingX refuses a reused
+    id (101481) after the order filled is unverified. ALPHANUMERIC ONLY, 1-40
+    chars, lowercased by BingX. Sent as clientOrderId (lowercase d) — the spelling of
+    BingX's official swap api-reference (Place / Cancel / Query Order) and of ccxt's
+    bingx.py (exchangeClientOrderId = 'clientOrderId' for swap; only spot uses
+    newClientOrderId); clientOrderID appears only in BingX's error-code text. Not
+    verified live."""
     guard.arm_restore(symbol, direction, qty, reduce_only)  # HALT's one netted-restore pass
+    asked = symbol
     symbol = _swap_symbol(env, symbol)
     mode = get_position_mode(env)
     if reduce_only:
@@ -498,14 +592,34 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
     }
     if reduce_only and mode == "oneway":
         params["reduceOnly"] = "true"  # hedge mode expresses this via positionSide
-    if client_order_id:
-        params["clientOrderID"] = client_order_id  # capital ID on requests
+    # without an id an order whose answer was lost could not be looked up again (= HALT)
+    params["clientOrderId"] = client_order_id or f"bx{int(time.time() * 1000):x}{os.urandom(3).hex()}"
     _attach_protection(params, sl_price, tp_price)
 
-    placed = _unwrap_order(_request("POST", "/openApi/swap/v2/trade/order", env, params))
-    if not placed.get("orderId"):
-        raise BingXError("N/A", f"order response missing orderId: {placed}", "trade/order")
-    return confirm_order(env, symbol, placed["orderId"], timeout=confirm_timeout)
+    try:
+        placed = _unwrap_order(_request("POST", "/openApi/swap/v2/trade/order", env, params))
+        echo = placed.get("clientOrderId") or placed.get("clientOrderID")
+        if echo and str(echo).lower() != params["clientOrderId"].lower():
+            logging.warning(f"[order_bingx] order answer carries client id {echo!r}, sent "
+                            f"{params['clientOrderId']!r} — a lost answer could not be found by it")
+        if not placed.get("orderId"):
+            # code 0 = BingX took it; only the id is missing from the answer
+            raise OrderNotConfirmed(
+                f"order {params['clientOrderId']} accepted without an orderId ({placed}) — "
+                f"it may have filled; check the position, do not resubmit",
+                venue="bingx", client_order_id=params["clientOrderId"])
+        return confirm_order(env, symbol, placed["orderId"], timeout=confirm_timeout)
+    except OrderNotConfirmed as e:
+        # the strategy's own symbol, not BingX's BTC-USDT / NCSK… (the park is queried with it);
+        # close_position / open_position hand over the venue's name
+        e.venue_symbol = asked
+        if "-" in asked:
+            try:
+                e.venue_symbol = _canonical_symbol(env, asked) or asked
+            except Exception:
+                pass
+        e.client_order_id = e.client_order_id or params["clientOrderId"]
+        raise
 
 
 def place_limit_order(env, symbol, direction, qty, price, client_order_id=None,
@@ -547,7 +661,7 @@ def place_limit_order(env, symbol, direction, qty, price, client_order_id=None,
     if reduce_only and mode == "oneway":
         params["reduceOnly"] = "true"
     if client_order_id:
-        params["clientOrderID"] = client_order_id
+        params["clientOrderId"] = client_order_id
     try:
         order = _unwrap_order(_request("POST", "/openApi/swap/v2/trade/order", env, params))
     except BingXError as e:
@@ -560,13 +674,17 @@ def place_limit_order(env, symbol, direction, qty, price, client_order_id=None,
     return order
 
 
-def get_order(env, symbol, order_id):
-    """Order details by orderId. Normalized: status, avg_price, executed_qty,
-    orig_qty, commission (abs — BingX returns it negative), client_order_id,
-    plus the raw dict under 'raw'."""
+def get_order(env, symbol, order_id=None, client_order_id=None):
+    """Order details by orderId, or by our client id (Query Order takes either and
+    "can retrieve orders in any status (including filled or cancelled)" — official
+    api-reference). Normalized: status, avg_price, executed_qty, orig_qty, commission
+    (abs — BingX returns it negative), client_order_id, plus the raw dict under 'raw'."""
+    if not order_id and not client_order_id:
+        raise ValueError("get_order needs order_id or client_order_id")
     symbol = _swap_symbol(env, symbol)
-    data = _request("GET", "/openApi/swap/v2/trade/order", env,
-                    {"symbol": symbol, "orderId": str(order_id)})
+    # the query spells it clientOrderId (lowercase d), unlike the order POST
+    ident = {"orderId": str(order_id)} if order_id else {"clientOrderId": str(client_order_id)}
+    data = _request("GET", "/openApi/swap/v2/trade/order", env, {"symbol": symbol, **ident})
     o = _unwrap_order(data)
     if "status" not in o:
         raise BingXError("N/A", f"order query missing status: {o}", "trade/order")
@@ -577,7 +695,6 @@ def get_order(env, symbol, order_id):
         "executed_qty": float(o.get("executedQty") or 0),
         "orig_qty": float(o.get("origQty") or 0),
         "commission": abs(float(o.get("commission") or 0)),
-        # response uses lowercase-d clientOrderId (request uses clientOrderID)
         "client_order_id": o.get("clientOrderId") or o.get("clientOrderID") or "",
         "raw": o,
     }
@@ -591,21 +708,91 @@ TERMINAL_STATUSES = {"FILLED", "CANCELED", "CANCELLED", "FAILED", "EXPIRED"}
 
 def confirm_order(env, symbol, order_id, timeout=15):
     """Poll until the order reaches a terminal state. Returns get_order()'s
-    normalized dict. Raises BingXError if the exchange reports CANCELED/FAILED,
-    OrderNotConfirmed if still pending after timeout — in that case the order
-    MAY STILL FILL; do not blindly resubmit (use client_order_id anyway)."""
+    normalized dict once it is FILLED, or terminal after a partial fill (the
+    caller books what filled). Raises BingXError if it ended with nothing filled,
+    OrderNotConfirmed if no terminal state was read before timeout — the order
+    MAY STILL FILL; re-query, do not resubmit."""
     deadline = time.time() + timeout
     order = None
+    last_err = None
     while time.time() < deadline:
-        order = get_order(env, symbol, order_id)
+        try:
+            order = get_order(env, symbol, order_id)
+        except Exception as e:
+            # the id came from the placement answer: a read timeout, a 5xx, 100500 or
+            # 109421 (the query side not caught up yet) leave its fate unknown, not rejected
+            last_err = e
+            time.sleep(1)
+            continue
         if order["status"] == "FILLED":
             return order
         if order["status"] in TERMINAL_STATUSES:
+            if order["executed_qty"] > 0:
+                return order
             raise BingXError("N/A", f"order {order_id} ended {order['status']}", "confirm")
         time.sleep(1)
+    if order is None:
+        raise OrderNotConfirmed(
+            f"order {order_id} accepted but not queryable ({type(last_err).__name__}: "
+            f"{str(last_err)[:80]}) for {timeout}s — it may have filled; check the position, "
+            f"do not resubmit", venue="bingx", venue_symbol=symbol, order_id=order_id)
     raise OrderNotConfirmed(
-        f"order {order_id} still {order['status'] if order else 'UNKNOWN'} after {timeout}s"
-    )
+        f"order {order_id} still {order['status']} after {timeout}s",
+        venue="bingx", venue_symbol=symbol, order_id=order_id)
+
+
+# fills are searched from PARK_TRADE_LOOKBACK_S before the park to PARK_TRADE_LOOKAHEAD_S after
+# it — a market order fills before it is parked, so the window is fixed, never grows with the
+# park's age (allFillOrders documents no row cap, so a growing window could be cut short)
+PARK_TRADE_LOOKBACK_S = 300
+PARK_TRADE_LOOKAHEAD_S = 600
+
+
+def resolve_unknown_order(env, symbol, order_id=None, client_order_id=None, parked_at=None,
+                          now=None):
+    """A parked order's outcome (lib/unconfirmed): (executed_qty, avg_price) once it is
+    terminal — qty 0 = it ended without a fill — None while unknown. Read-only: Query
+    Order by orderId, or by our client id when only that is known; when the query cannot
+    find it (109421 — "may have been filled, cancelled, or the order ID is incorrect"), the
+    fills since the park (allFillOrders) matched on that orderId / client id: any → those,
+    at their VWAP. An order neither finds stays unknown however long ago it was parked:
+    what BingX answers for an id that never arrived is unmeasured, and releasing an order
+    that did fill is the duplicate this exists to prevent (the way out is
+    unconfirmed.resolve)."""
+    try:
+        order = get_order(env, symbol, order_id=order_id, client_order_id=client_order_id)
+    except BingXError as e:
+        if not _is_order_gone(e, SWAP_ORDER_GONE_CODES):
+            return None
+        return _fills_of(env, symbol, order_id, client_order_id, parked_at, now)
+    except Exception:
+        return None
+    if order["status"] not in TERMINAL_STATUSES:
+        return None
+    qty, price = order["executed_qty"], order["avg_price"]
+    return (qty, price) if qty <= 0 or price > 0 else None
+
+
+def _fills_of(env, symbol, order_id, client_order_id, parked_at, now):
+    """allFillOrders rows carry orderId, not our client id (official api-reference), so a
+    client-id-only park is matched only if a row happens to carry it."""
+    if not parked_at:
+        return None
+    try:
+        start = int((float(parked_at) - PARK_TRADE_LOOKBACK_S) * 1000) + int(_time_offset["ms"])
+        end = int((float(parked_at) + PARK_TRADE_LOOKAHEAD_S) * 1000) + int(_time_offset["ms"])
+        rows = get_fills(env, symbol, start, end, order_id=order_id) or []
+    except Exception:
+        return None
+    want_oid = str(order_id) if order_id else None
+    want_cid = str(client_order_id).lower() if client_order_id else None
+    mine = [f for f in rows if (want_oid and str(f.get("orderId") or "") == want_oid)
+            or (want_cid and str(f.get("clientOrderId") or f.get("clientOrderID") or "").lower() == want_cid)]
+    qty = sum(abs(float(f.get("volume") or f.get("qty") or 0)) for f in mine)
+    if qty <= 0:
+        return None
+    px = sum(abs(float(f.get("volume") or f.get("qty") or 0)) * float(f.get("price") or 0) for f in mine) / qty
+    return (qty, px) if px > 0 else None
 
 
 def get_open_orders(env, symbol=None):
@@ -636,7 +823,7 @@ def get_bbo(env, symbol):
 
 
 def cancel_order(env, symbol, order_id=None, client_order_id=None):
-    """Cancel one order by orderId or clientOrderID. Returns the canceled
+    """Cancel one order by orderId or clientOrderId. Returns the canceled
     order's raw dict (with order_id). Idempotent-safe: an order that is
     already filled / cancelled / unknown (109421, legacy 80016/80017) returns
     {'status': 'already_gone', ...} instead of raising — the caller always
@@ -646,7 +833,7 @@ def cancel_order(env, symbol, order_id=None, client_order_id=None):
     if order_id:
         params["orderId"] = str(order_id)
     elif client_order_id:
-        params["clientOrderID"] = client_order_id
+        params["clientOrderId"] = client_order_id
     else:
         raise ValueError("order_id or client_order_id required")
     try:
@@ -722,6 +909,14 @@ def place_protective_orders(env, symbol, direction, qty=None, sl_price=None,
         raise ProtectionFailed(
             guard.protection_halted_text(symbol, direction, wanted, placed, False) + f" {e}"
         ) from e
+    except OrderNotConfirmed as e:
+        # the SL/TP POST got no usable answer: it may or may not be on the book — placing it
+        # again blind could stack a second one
+        raise ProtectionFailed(
+            f"{symbol} {direction}: a protective order may NOT be placed (no answer from BingX "
+            f"after {list(placed)} succeeded) — it may also be on the book already: read "
+            f"get_open_orders before re-placing, and tell the user the position may be naked: {e}"
+        ) from e
     except Exception as e:
         raise ProtectionFailed(
             f"{symbol} {direction} position may be NAKED — placing protective orders "
@@ -790,17 +985,21 @@ def close_position(env, symbol, direction, qty, client_order_id=None):
 
 # ── fills ────────────────────────────────────────────────────────────────────
 
-def get_fills(env, symbol, start_ms, end_ms):
-    """Fill records for a time range (≤30 days back). Quirks handled: params
+def get_fills(env, symbol, start_ms, end_ms, order_id=None):
+    """Fill records for a time range (≤30 days back), only one order's when order_id is
+    given (the endpoint's own orderId filter). Quirks handled: params
     are startTs/endTs (NOT startTime/endTime), response key is data.fill_orders
     (snake_case), filledTime is an ISO-8601 STRING (not ms). tradingUnit=COIN
     is sent so `volume` is already coin quantity (CONT would mean contracts)."""
-    data = _request("GET", "/openApi/swap/v2/trade/allFillOrders", env, {
+    params = {
         "symbol": _swap_symbol(env, symbol),
         "startTs": str(int(start_ms)),
         "endTs": str(int(end_ms)),
         "tradingUnit": "COIN",
-    }) or {}
+    }
+    if order_id:
+        params["orderId"] = str(order_id)
+    data = _request("GET", "/openApi/swap/v2/trade/allFillOrders", env, params) or {}
     fills = data.get("fill_orders") if isinstance(data, dict) else data
     if fills is None:
         raise BingXError("N/A", f"allFillOrders missing fill_orders key: {list(data)}",
@@ -861,7 +1060,7 @@ def close_position_partial(env, symbol, direction, qty, client_order_id=None):
 # Same guard/audit discipline as the swap layer; BingX spot quirks (verified
 # against ccxt's production bingx parser): symbols are DASHED (BTC-USDT, same
 # as swap); the client-id param is newClientOrderId (the swap layer's is
-# clientOrderID — different casing AND name); market BUYs size in QUOTE
+# clientOrderId — a different name); market BUYs size in QUOTE
 # currency via quoteOrderQty; spot rules come from the public
 # /openApi/spot/v1/common/symbols where stepSize/tickSize are SIZES
 # (0.0001), unlike swap's digit counts; placement may return status PENDING
@@ -981,7 +1180,7 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
     rules = get_spot_rules(env, sym)
     params = {"symbol": sym, "side": side.upper(), "type": "MARKET"}
     if client_order_id:
-        params["newClientOrderId"] = client_order_id  # spot param name (swap uses clientOrderID)
+        params["newClientOrderId"] = client_order_id  # spot param name (swap uses clientOrderId)
     if side == "buy":
         if quote_qty is None:
             raise ValueError("spot buys are sized in quote currency — pass quote_qty")
@@ -1069,7 +1268,7 @@ def place_spot_limit_order(env, symbol, side, base_qty, price, client_order_id=N
         "timeInForce": "PostOnly" if post_only else "GTC",
     }
     if client_order_id:
-        params["newClientOrderId"] = client_order_id  # spot param name (swap uses clientOrderID)
+        params["newClientOrderId"] = client_order_id  # spot param name (swap uses clientOrderId)
     try:
         data = _request("POST", "/openApi/spot/v1/trade/order", env, params)
     except BingXError as e:

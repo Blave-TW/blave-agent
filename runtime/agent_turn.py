@@ -2053,6 +2053,7 @@ WEB_FORMATTING_RULE = (
     "回覆顯示在工作區的聊天欄（窄欄、旁邊就是程式碼/回測分頁），語法規則：\n"
     "- 不要用 # 標題（聊天泡泡裡太重），要分段就用**粗體行**；"
     "可用 **粗體**、清單、`行內程式碼`；表格僅限小型。\n"
+    "- 附網址一律寫成 `[來源標題](網址)`，不要貼裸網址；標題用頁面標題或網站名。\n"
     "- 建立/修改策略後說一句「程式碼在左側策略頁」即可；"
     "回測細節請使用者看回測分頁。\n\n"
     + _STYLE_RULES
@@ -4388,7 +4389,7 @@ DATA_ACCESS_WHY = {
     "no_card": "the user is signed in; there is no card on file (a card starts the 14-day trial)",
     "no_balance": "the user is signed in; the balance does not cover this hour's data fee",
     # 方案制(api MONTHLY_BILLING_FROM 之後):沒有按小時買資料,資料只在雲端方案／API 方案裡
-    "no_plan": "the user is signed in; the account has no plan that includes Blave data (a Blave Agent cloud plan or an API plan)",
+    "no_plan": "the user is signed in; the account has no plan that includes Blave data",
     "plan_failed": "the user is signed in; the account's plan payment failed, so data is paused until it is paid",
     "unknown": "the user is signed in; the account status could not be read this turn",
 }
@@ -4518,6 +4519,16 @@ def web_tools_off(web, browser_mounted):
     return list(WEB_TOOLS) if web else (["WebFetch"] if browser_mounted else [])
 
 
+def chat_tools(web, browser_mounted):
+    """聊天回合的內建工具白名單(options.tools)。引擎預設會把每個內建工具的 schema 都放進 prompt,
+    CronList、Workflow、NotebookEdit 這類 agent 從沒用過的(電腦版開發版實測首次呼叫 43,523 → 34,002 token),
+    而且引擎升版新增的工具會自己長進來。MCP 工具(內建瀏覽器、blave)不受 --tools 影響。
+    ToolSearch 不能拿掉:內建瀏覽器的工具是延遲載入的,要靠它叫出來。TaskOutput 留著:前景指令逾時被
+    CLI 轉到背景後,要靠它等輸出。上網工具照 web_tools_off——雲端回合的報告搜尋要用。"""
+    off = web_tools_off(web, browser_mounted)
+    return ALLOWED_TOOLS + [t for t in WEB_TOOLS if t not in off] + ["TaskOutput", "ToolSearch"]
+
+
 _NO_OTHER_ROUTE = ("the engine's own web search and web fetch, `curl`, `wget`, a script or a library call to a web page. "
                    "`lib/data.py`, exchange and broker APIs and order placement are data, not browsing: they work as usual")
 
@@ -4616,8 +4627,11 @@ def data_access_rule():
             "could not be charged, or (plan billing) the account has no plan that includes data. "
             "The body's message and `next_steps` say which and name the ways out (topping up, a "
             "cloud plan, an API plan); a `retry_after`, when present, is a ceiling rather than a "
-            "wait. Convey why the data stopped and the ways out the body names; never state a "
-            "rate, currency or deadline the body did not give you. Do not work around the block.\n"
+            "wait. Convey that the data stopped and that it needs a plan; do not mention an API plan "
+            "even though the body names one. The exception is a user asking what it takes to call "
+            "the Blave API from their own code with a key they created themselves — answer that "
+            "from references/billing.md. Never state a rate, currency or deadline the body did not "
+            "give you. Do not work around the block.\n"
             "- `ERR005` (`Invalid API key`) — this key was deleted or revoked. The way back is "
             "signing in to Blave again in the app; do not go looking for another key.\n"
             "- `KEY_SCOPE` — the action is outside this key's scope. This desktop key is "
@@ -4631,7 +4645,8 @@ def data_access_rule():
         # 也寫成成品英文散文,模型會照抄——逐輪語言錨(_lang_directive,貼在 prompt 最尾端)只有一行,
         # 打不過「就放在眼前、剛好就是這一則要回的內容」的現成句子(2026-09-23:中文問籌碼集中度,整則回英文)。
         # 所以下面只講**必須成立什麼**,不給任何可抄的成品句;用戶看得到的每一句都由模型自己用該輪語言寫。
-        why = DATA_ACCESS_WHY.get(os.environ.get("BLAVE_DATA_ACCESS_WHY"))
+        why_key = os.environ.get("BLAVE_DATA_ACCESS_WHY")
+        why = DATA_ACCESS_WHY.get(why_key)
         body = (
             "FACTS AND CONSTRAINTS FOR YOU — not wording for the user. Every sentence the user "
             "reads you write yourself, in the language the per-turn language directive names. "
@@ -4655,10 +4670,11 @@ def data_access_rule():
             "Do not decide from these facts alone that something is unavailable: when the user asks "
             "for a dataset, make the call — it stops at once if it needs Blave data.\n"
             "Only when a `lib/data.py` call in this turn actually stopped with `DataAccessError`, "
-            "your reply must: name which data is "
-            "missing; give the conditions under which it becomes available (signed in, plus the card "
-            "trial, a cloud plan or an API plan — or, where the account is still billed by the hour, a "
-            "balance that covers the hourly data fee); carry "
+            "your reply must: name which data is missing; "
+            + ("say in one sentence that it needs signing in to Blave first; "
+               if why_key == "signed_out" else "say in one sentence that it needs a plan; ")
+            + "not list conditions, and not mention an API plan, the card trial or hourly billing "
+            "(the facts above are for you, not for the reply); carry "
             "no directions, next steps or prices; not push; and then answer "
             "whatever part public data does allow. Say it once per conversation — if asked again "
             "later, do not repeat the unavailability, just answer what you can.\n"
@@ -4916,8 +4932,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # 自己 spawn 了 explore 子代理)。Subagents interleave a second stream
         # into the same sink and wreck the「最後一段無工具文字=回覆」判定
         # (正式回覆被子代理尾隨的 tool chunk 收回成旁白,子代理的英文報告
-        # 反而變成回覆),所以用 disallowed_tools 硬禁。`tools=` 才是內建工具清單本身(SDK 轉成 --tools;
-        # 排程回合用它,見 _arm_scheduled);聊天回合不設,維持引擎預設。
+        # 反而變成回覆),所以用 disallowed_tools 硬禁。`tools=` 才是內建工具清單本身(SDK 轉成 --tools),
+        # 聊天回合的見 chat_tools、排程回合的見 _arm_scheduled。
         allowed_tools=ALLOWED_TOOLS,
         # 電腦版上網只有內建瀏覽器一條路:引擎自己的 WebSearch / WebFetch 都關(開著時走 browser_search / browser_open,
         # 關著或掛不上就是不上網)。雲端與舊外殼見 web_tools_off
@@ -4958,6 +4974,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # 電腦版的 effort 選單。沒帶就連屬性都不碰(SDK 預設);設在建構之後,理由同下面的
         # extra_args:沒有這個欄位的 SDK build 不能因為一個 kwarg 整輪 TypeError。
         options.effort = effort
+    if not use_codex:
+        options.tools = chat_tools(web, browser_mounted)
     if sysprompt_path:
         # Set after construction for the same reason as include_partial_messages
         # below: an SDK build whose options lack extra_args must not kill every turn.

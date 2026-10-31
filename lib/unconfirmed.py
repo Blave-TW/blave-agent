@@ -66,6 +66,20 @@ class OrderOutcomeUnknown(Exception):
         return bool(self.venue and self.venue_symbol and (self.order_id or self.client_order_id))
 
 
+def as_outcome_unknown(error, venue, venue_symbol, client_order_id):
+    """An order lib's OrderNotConfirmed that predates the base class (a plain Exception): the
+    same order outcome unknown, rebuilt as an OrderOutcomeUnknown carrying the caller's own ids.
+    Only that class name, and only from the order call itself — it is raised after the POST
+    by construction. A raw requests / JSON error is not wrapped: the lib reads rules, positions
+    and prices before sending, and from outside a timeout there cannot be told from one after.
+    None = not that case."""
+    if isinstance(error, OrderOutcomeUnknown) or type(error).__name__ != "OrderNotConfirmed":
+        return None
+    return OrderOutcomeUnknown(str(error), venue=venue, venue_symbol=venue_symbol,
+                               order_id=getattr(error, "order_id", None),
+                               client_order_id=client_order_id)
+
+
 class ParkUnreadable(RuntimeError):
     """The park file exists but cannot be read (or its lock is held past LOCK_TIMEOUT_S):
     which orders are parked is unknown, so nothing is sent this round (fail-closed)."""
@@ -176,10 +190,14 @@ def held_keys(rows):
 
 
 def park(key, err, signed_diff, reduce_only, asset_spec=None, contributors=None, now=None,
-         netted_room=0.0, netted_exit=False, manual=False, venue=None, sign=None):
+         netted_room=0.0, netted_exit=False, manual=False, venue=None, sign=None, limit=False,
+         book_cap=None, book_cap_cost=None):
     """Raises OSError when the file cannot be written — the caller HALTs then. manual=True: an
     order Blave cannot look up (no ids, or a venue / order type without a lookup): parked all the
-    same so its symbol stays held after 啟動下單 and resolve() can book it, but never queried."""
+    same so its symbol stays held after 啟動下單 and resolve() can book it, but never queried.
+    limit=True: a limit order that may still rest — cancelled each round it reads unfinished.
+    book_cap: the most of its fill the book may take (a close of a whole account position);
+    book_cap_cost the same in book cost, for a book row with no quantity (converted at the fill)."""
     pid = (f"manual:{key}:{int((time.time() if now is None else now) * 1000)}" if manual
            else park_id(err))
     with _locked():
@@ -197,6 +215,9 @@ def park(key, err, signed_diff, reduce_only, asset_spec=None, contributors=None,
             "parked_at": time.time() if now is None else now,
             "at": datetime.utcnow().isoformat(), "reads": 0, "reminded_at": None,
             "error": str(err)[:200], "manual": bool(manual),
+            **({"limit": True} if limit else {}),
+            **({"book_cap": float(book_cap)} if book_cap is not None else {}),
+            **({"book_cap_cost": float(book_cap_cost)} if book_cap_cost is not None else {}),
         }
         _write(rows)
     return pid

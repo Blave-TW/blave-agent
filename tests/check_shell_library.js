@@ -59,6 +59,7 @@ if (!process.versions.electron) {
   const block = src.slice(a, b);
   ok("① 純邏輯區塊不碰 DOM / i18n", !/\bdocument\b|\$\(|window\.|\bt\(/.test(block.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
   const P = {}; vm.createContext(P); vm.runInContext(block.replace(/^const /gm, "var "), P);
+  vm.runInContext(fs.readFileSync(path.join(R, "strategy_versions.js"), "utf8") + "\nvar window = this;\n" + cutFn(src, "libP"), P);   // libP 在純邏輯區塊外面(要讀 window.blaveVersions)
   // 市場選單(同網頁 library_rules.market;web tests/check_library_market.js 同一組):market 欄位優先,舊 api 退回 category
   ok("① 市場:market 欄位優先於 category;四個值各自成立", P.libMarket({ market: "txf", category: "TW Stock" }) === "txf" && P.libMarket({ market: "usstock", category: "Crypto" }) === "usstock"
     && ["crypto", "txf", "twstock", "usstock"].every((m) => P.libMarket({ market: m }) === m) && JSON.stringify([...P.LIB_MARKETS]) === '["crypto","txf","twstock","usstock"]');
@@ -96,8 +97,8 @@ if (!process.versions.electron) {
     ok("① 市場選單支數:清單沒到全空;全部 8 / 加密 7 / 台指期 0 / 台股 1 / 美股 0(0 也印);選中那項 checked、觸發器寫它的字;bag 是舊值 tw → 回全部", pre === "||||" && cnt === "8|7|0|1|0" && chk === "false,false,true,false,false" && v1 === "L:txf"
       && C.bag.mkt === "all" && dom["lib-mkt-v"].textContent === "L:all", JSON.stringify({ pre, cnt, chk, v1, after: C.bag.mkt }));
   }
-  ok("① 關卡數值的字:費率 0.0005 → 0.05%、0.001 → 0.10%、0.00125 → 0.125%、壞值 —;p 照範本四位小數、< 0.001 整段換成 p < 0.001、壞值 —;fail 計數", P.libRate(0.0005) === "0.05%" && P.libRate(0.001) === "0.10%" && P.libRate(0.00125) === "0.125%" && P.libRate(0) === "0.00%" && P.libRate(null) === "—" && P.libRate("x") === "—"
-    && P.libP("p = {p}", 0.0012) === "p = 0.0012" && P.libP("p = {p}", 0.0004) === "p < 0.001" && P.libP("p = {p}", null) === "—" && P.libGateFails({ mcpt: "fail", robust: "pass", fee: "fail" }) === 2 && P.libGateFails({ mcpt: "na", robust: "pass", fee: "pass" }) === 0 && P.libGateFails(null) === 0);
+  ok("① 關卡數值的字:費率 0.0005 → 0.05%、0.001 → 0.10%、0.00125 → 0.125%、壞值 —;p 照範本三位小數(共用 strategy_versions.js fillP)、< 0.001 整段換成 p < 0.001、門檻邊界 0.0495 寫四位、門檻跟 api 的 mcpt_alpha 走、壞值 —;fail 計數", P.libRate(0.0005) === "0.05%" && P.libRate(0.001) === "0.10%" && P.libRate(0.00125) === "0.125%" && P.libRate(0) === "0.00%" && P.libRate(null) === "—" && P.libRate("x") === "—"
+    && P.libP("p = {p}", 0.0012) === "p = 0.001" && P.libP("p = {p}", 0.0495) === "p = 0.0495" && P.libP("p = {p}", 0.0495, 0.1) === "p = 0.050" && P.libP("p = {p}", 0.0995, 0.1) === "p = 0.0995" && P.libP("p = {p}", 0.0004) === "p < 0.001" && P.libP("p = {p}", null) === "—" && P.libGateFails({ mcpt: "fail", robust: "pass", fee: "fail" }) === 2 && P.libGateFails({ mcpt: "na", robust: "pass", fee: "pass" }) === 0 && P.libGateFails(null) === 0);
   ok("① 樣本年數一位小數;沒有區間 → null;上架天數", P.libYears(LIST[0]) === 6.5 && P.libYears(LIST[1]) === 12.4 && P.libYears(LIST[3]) === null && P.libListedDays(LIST[0], Date.parse("2026-09-25T00:00:00Z")) === 107 && P.libListedDays({}, 0) === null);
   const C = (s, c) => P.libCta(s, Object.assign({ running: false, env: "local", signedIn: true, dataAccess: "included", cloud: null, pending: null, noNew: null, buying: null, installedName: null }, c));
   const free = LIST[0], paid = LIST[6], owned = LIST[7];
@@ -267,13 +268,14 @@ if (!process.versions.electron) {
     fs.mkdirSync(WSd); fs.mkdirSync(outside);
     const refs = path.join(WSd, "references"), mkt = path.join(refs, "marketplace.md");
     fs.mkdirSync(refs); fs.writeFileSync(mkt, "# Strategy Library API\n\n## Desktop-downloaded picks\n\n…");
-    const D = { require, Buffer, WS: WSd, API_BASE: "https://api.test", calls: [], next: null, token: "t", key: { api_key: "k1", secret_key: "s1" } };
+    const REPOd = path.join(base, "repo");
+    const D = { require, Buffer, WS: WSd, REPO: REPOd, API_BASE: "https://api.test", calls: [], next: null, token: "t", key: { api_key: "k1", secret_key: "s1" } };
     vm.createContext(D);
-    vm.runInContext("var fs = require('fs'), path = require('path'), crypto = require('crypto'), wsfile = require(" + JSON.stringify(path.join(__dirname, "..", "shell", "wsfile.js")) + ");\n" + ["LIB_CODE_MAX", "LIB_CONTRACT_ANCHOR"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n")
+    vm.runInContext("var fs = require('fs'), path = require('path'), crypto = require('crypto'), wsfile = require(" + JSON.stringify(path.join(__dirname, "..", "shell", "wsfile.js")) + ");\n" + ["LIB_CODE_MAX", "LIB_CONTRACT_ANCHOR", "readVersion", "LIB_VER_RE"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n")
       + "\n" + cutFn(mainSrc, "libContractReady")
       + "\nvar libCache = null, tmOn = true, live = true;\nfunction telemetryLive() { return live; }\nfunction tm() { return { isEnabled: () => tmOn, installId: () => '3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77' }; }\nfunction loadToken() { return token; }\nfunction loadDataKey() { return key; }\nasync function getJSON(url, headers) { calls.push([url, headers]); const n = Array.isArray(next) ? next.shift() : next; if (n === 'throw') throw new Error('net'); return n; }\n"
       + cutFn(mainSrc, "libAnonOk") + "\n"
-      + cutFn(mainSrc, "libWriteWs") + "\nasync " + cutFn(mainSrc, "libraryDownload"), D);
+      + cutFn(mainSrc, "libWriteWs") + "\n" + cutFn(mainSrc, "libVerHeader") + "\n" + cutFn(mainSrc, "libTooOldKind") + "\nasync " + cutFn(mainSrc, "libraryDownload"), D);
     const dl = async (id, resp) => { D.next = resp; return D.libraryDownload(id); };
     const file = path.join(WSd, "tmp", "library_102.py"), sec = path.join(WSd, "tmp", "library_102.security.json"), J = (x) => JSON.stringify(x);
     const r1 = await dl(102, { status: 200, body: { code: "print(1)\n" } });
@@ -343,6 +345,21 @@ if (!process.versions.electron) {
     A.revoked = J(await dl(102, [{ status: 403, body: { error_code: "ERR005" } }, { status: 200, body: { code: "anon = 3\n" } }])); A.revokedUrls = D.calls.slice(c0).map((c) => c[0]).join(); A.revokedHdr = J(D.calls.slice(c0).map((c) => c[1]));
     c0 = D.calls.length; A.revokedReq = (await dl(88, [{ status: 401, body: {} }])).kind; A.revokedReqCalls = D.calls.length - c0;
     c0 = D.calls.length; A.withKey = J(await dl(102, { status: 200, body: { code: "k = 1\n" } })); A.withKeyUrls = D.calls.slice(c0).map((c) => c[0]).join();
+    // 最低 Agent 版本(spec strategy-min-lib-gate-2026-10-29):workspace VERSION 進 header,兩條都帶;形狀怪就不帶;
+    // 403 AGENT_TOO_OLD → 隨包的不夠新 agentOld、隨包的夠新(workspace 沒同步成)agentOldReopen;不動上一份檔
+    const V = {}, wsVer = path.join(WSd, "VERSION");
+    fs.writeFileSync(wsVer, "2026-10-28-l\n"); fs.mkdirSync(REPOd);
+    c0 = D.calls.length; await dl(102, { status: 200, body: { code: "v = 1\n" } }); V.keyHdr = J(D.calls[c0][1]);
+    vm.runInContext(keepCache, D); D.token = null; c0 = D.calls.length; await dl(102, { status: 200, body: { code: "v = 2\n" } }); V.anonHdr = J(D.calls[c0][1]); D.token = "t";
+    fs.writeFileSync(wsVer, "2026-10-28-l; rm -rf /\n"); c0 = D.calls.length; await dl(102, { status: 200, body: { code: "v = 2\n" } }); V.badHdr = J(D.calls[c0][1]);
+    fs.rmSync(wsVer); c0 = D.calls.length; await dl(102, { status: 200, body: { code: "v = 2\n" } }); V.noHdr = J(D.calls[c0][1]);
+    const TOO_OLD = { status: 403, body: { error_code: "AGENT_TOO_OLD", min_agent_version: "2026-10-28-l", agent_version: null, update: "desktop" } };
+    V.old = [(await dl(102, TOO_OLD)).kind];
+    fs.writeFileSync(path.join(REPOd, "VERSION"), "2026-10-28-k\n"); V.old.push((await dl(102, TOO_OLD)).kind);
+    fs.writeFileSync(path.join(REPOd, "VERSION"), "2026-10-28-l\n"); V.old.push((await dl(102, TOO_OLD)).kind);
+    V.old.push((await dl(102, { status: 403, body: { error_code: "AGENT_TOO_OLD" } })).kind);
+    vm.runInContext(keepCache, D); D.token = null; V.old.push((await dl(102, TOO_OLD)).kind); D.token = "t";
+    V.kept = fs.readFileSync(file, "utf8");
     vm.runInContext("libCache = null;", D);
     // 預先放一個指向 workspace 外的同名 symlink:寫入要換掉 symlink 本身,外面那個檔不能被改
     const victim = path.join(outside, "victim.txt"); fs.writeFileSync(victim, "keep");
@@ -373,6 +390,11 @@ if (!process.versions.electron) {
     ok("② 開發版 / e2e(非打包、沒設 BLAVE_TELEMETRY=1)不帶 install_id,匿名照樣下載(不灌正式安裝數)", A.dev === '{"ok":true}' && A.devCall === J([[anonURL(102), {}]]), J([A.dev, A.devCall]));
     ok("② install_id 的閘跟 tm 的 post 同一支 telemetryLive(打包版或 BLAVE_TELEMETRY=1)", /^const telemetryLive = \(\) => app\.isPackaged \|\| process\.env\.BLAVE_TELEMETRY === "1";$/m.test(mainSrc)
       && /post: \(u, b\) => \(telemetryLive\(\) \? postJSON\(u, b\) : Promise\.resolve\(\)\)/.test(mainSrc));
+    ok("② 最低 Agent 版本:workspace VERSION 帶成 X-Blave-Agent-Version(/code 與 /public_code 都帶);讀不到或形狀怪就不帶",
+      V.keyHdr === J({ "api-key": "k1", "secret-key": "s1", "X-Blave-Agent-Version": "2026-10-28-l" }) && V.anonHdr === J({ "X-Install-Id": "3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77", "X-Blave-Agent-Version": "2026-10-28-l" })
+      && V.badHdr === J({ "api-key": "k1", "secret-key": "s1" }) && V.noHdr === J({ "api-key": "k1", "secret-key": "s1" }), J(V));
+    ok("② 403 AGENT_TOO_OLD:隨包沒有 VERSION / 比最低版本舊 → agentOld;隨包夠新 → agentOldReopen;body 沒帶最低版本 → agentOld;匿名那條同;不動上一份檔",
+      V.old.join() === "agentOld,agentOld,agentOldReopen,agentOld,agentOldReopen" && V.kept === "v = 2\n", J(V));
     ok("② 有能用的 key:只打 /code,不碰匿名那條", A.withKey === '{"ok":true}' && A.withKeyUrls === "https://api.test/openclaw/marketplace/strategies/102/code", A.withKeyUrls);
     ok("② 代下載:workspace 還沒有新契約(錨點不在 / 檔不在)→ { ok: true, legacy: true }、不送請求、不動 tmp", legacy.a === '{"ok":true,"legacy":true}' && legacy.b === legacy.a && legacy.c === '{"ok":false,"kind":"fail"}' && legacy.d === '{"ok":false,"kind":"signin"}' && legacy.noReq && legacy.kept === "x = 3\n", J(legacy));
     ok("② 代下載:同名檔是指向 workspace 外的 symlink → 換掉 symlink 本身,外面的檔不變", a4.r === '{"ok":true}' && a4.victim === "keep" && !a4.isLink && a4.body === "z = 4\n", J(a4));
@@ -476,9 +498,9 @@ if (!process.versions.electron) {
   ok("③ 社群段拆了(0.1.6 §2):index.html / library.js / library.css 沒有 lib-comm、字串表沒有 lib.comm.*;清單頂端的 #lib-gate 拿掉(spec-0.1.13 §2.2:閘門卡搬進第二組),兩組的殼 #lib-grps 在 #lib-rows 之前;退役的 lib.gate.noCard / noBalance / unknown 兩語都刪了", !/lib-comm/.test(html) && !/lib-comm|\.comm\b|library_comm/.test(src) && !/lib-comm/.test(read(path.join(R, "library.css")))
     && ["lib.comm.title", "lib.comm.sub", "lib.gate.noData", "lib.gate.noCard", "lib.gate.noBalance", "lib.gate.unknown"].every((k) => !(k in STR.zh) && !(k in STR.en)) && !/lib\.gate\.(noCard|noBalance|unknown)"/.test(src)
     && !/id="lib-gate"/.test(html) && !/\$\("lib-gate"\)/.test(src) && html.indexOf('id="lib-grps"') > html.indexOf('id="lib-body"') && html.indexOf('id="lib-grps"') < html.indexOf('id="lib-rows"'));
-  ok("③ 閘門鈕的綁卡那句兩版:切換前 lib.gate.bindCard「送 {t} 天」開設定;方案制的 no_card(有試用資格又沒卡)lib.gate.trial「綁卡，免費試用 {t} 天」直開綁卡頁(bindGo bind_lib;en 連字號 U+2011);天數拿不到兩版都退回 plan.addCard;舊的 lib.gate.bindCard.m 兩語都刪了(paywall-redesign-2026-10-21 §2.2)",
+  ok("③ 閘門鈕的綁卡那句兩版:切換前 lib.gate.bindCard「送 {t} 天」開設定;方案制的 no_card(有試用資格又沒卡)lib.gate.trial「綁卡免費試用 {t} 天」直開綁卡頁(bindGo bind_lib;en 連字號 U+2011);天數拿不到兩版都退回 plan.addCard;舊的 lib.gate.bindCard.m 兩語都刪了(paywall-redesign-2026-10-21 §2.2)",
     /t\("lib\.gate\.bindCard", \{ t: tDays \}\)/.test(src) && /if \(why === "no_card" && libPlanMo\(\)\) \{\n\s*const b = libEl\("button", "btn-fill", trial && tDays \? t\("lib\.gate\.trial", \{ t: tDays \}\) : t\("plan\.addCard"\)\); b\.type = "button";\n\s*b\.addEventListener\("click", \(\) => bindGo\("bind_lib"\)\);/.test(src)
-    && STR.zh["lib.gate.trial"] === "綁卡，免費試用 {t} 天" && STR.en["lib.gate.trial"] === "Add a Card for a {t}\u2011Day Free Trial"
+    && STR.zh["lib.gate.trial"] === "綁卡免費試用 {t} 天" && STR.en["lib.gate.trial"] === "Add a Card for a {t}\u2011Day Free Trial"
     && ["lib.gate.bindCard", "lib.gate.trial"].every((k) => /\{t\}/.test(STR.zh[k]) && /\{t\}/.test(STR.en[k])) && !("lib.gate.bindCard.m" in STR.zh) && !("lib.gate.bindCard.m" in STR.en) && !/lib\.gate\.bindCard\.m/.test(src));
   ok("③ 方案制 no_card 的第二組:組名 lib.grp.data「要 Blave 資料」、不放句子、試用鈕右邊一顆 .btn-quiet「看方案」(data.seePlan,記 plan_lib、開設定);切換前與其他原因照舊「句子 + 鈕」",
     /const trialGate = g === "no_card" && libPlanMo\(\);\n\s*const g2 = grp\("lib-grp-later", t\(trialGate \? "lib\.grp\.data" : LIB_GRP_KEYS\[g\]\[0\]\)/.test(src)
@@ -542,12 +564,12 @@ if (!process.versions.electron) {
 
   // ── ⑥ 本機「用這支」的流程(spec-0.1.13 §4;不起 Electron:libAsk / libSend / libTurnEnd 切出來,四周全是替身)──
   ASYNC.push((async () => {
-    const F = { STR: STR.zh, calls: { dl: [], sent: [], track: [], inval: 0, box: [], opts: [], events: [], inst: [] }, dlNext: null, subOk: true, env: "local", settle: false };
+    const F = { STR: STR.zh, calls: { dl: [], sent: [], track: [], inval: 0, box: [], opts: [], events: [], inst: [], blocked: [] }, dlNext: null, subOk: true, env: "local", settle: false };
     vm.createContext(F);
     vm.runInContext(block.replace(/^const /gm, "var ") + `
       var LIB = { pending: null, noNew: null, dlFail: null, data: { dataAccess: "billed" }, installed: {} }, running = false, csTitle = "", RP = { list: [{ name: "old", mtime: 1 }] }, paneSt = { chat: { off: false } };
       var t = (k, p) => STR[k].replace(/[{]([a-z]+)[}]/g, (m, n) => (p && n in p ? p[n] : m)), libEnv = () => env, ctaState = "free", libCtaOf = () => ({ state: ctaState }), libWhere = () => STR["lib.where." + (env === "cloud" ? "cloud" : "local")], envCanSwitch = () => true, paneToggle = () => {}, csStartNew = () => {}, libSync = () => {}, libCtaMain = () => null, libCloudList = () => [];
-      var libTrack = (n) => calls.track.push(n), libBlocked = () => {}, libInvalidate = () => { calls.inval++; LIB.dlFail = null; }, $ = () => ({ title: "", textContent: "" });
+      var libTrack = (n) => calls.track.push(n), libBlocked = (w) => calls.blocked.push(w), libInvalidate = () => { calls.inval++; LIB.dlFail = null; }, $ = () => ({ title: "", textContent: "" });
       var confirmBox = (o) => calls.box.push(o), submitMessage = async (m, o) => { calls.sent.push(m); calls.opts.push(o); return subOk; }, csSendAway = (m, o) => submitMessage(m, o);
       var sessionId = "desktop-lib1", CS = { away: { sid: "desktop-lib1", seq: 1 } };   // 單分頁:送出那一條 = 結束那一條
       var chatViewing = () => ({ env: env === "cloud" ? "cloud" : "local", strategy: "seen" });
@@ -577,7 +599,15 @@ if (!process.versions.electron) {
     }
     ok("⑥ 下載失敗:blocked / gone / anonGone / fail(認不得的 kind、null、IPC 丟例外都算 fail);不送訊息、pending 清掉;gone 與 anonGone 重拉清單、dlFail 留著", fails.join() === "72/blocked//0/0,72/gone//0/1,72/anonGone//0/1,72/signin//0/0,72/rateLimited//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0,72/fail//0/0", fails.join());
     ok("⑥ 下載失敗不送 lib_pick / library_use", F.calls.events.length === 0 && !F.calls.track.slice(1).includes("library_use"), JSON.stringify([F.calls.events, F.calls.track]));
-    ok("⑥ 下載沒成的那句:kind → 字串 key,六種都有 zh / en,認不得的當 fail;anonGone 只講登入、不提卡", ["blocked", "gone", "anonGone", "signin", "rateLimited", "unsent", "fail"].every((k) => P.libDlKey(k) === "lib.dl." + k && STR.zh["lib.dl." + k] && STR.en["lib.dl." + k]) && !/卡|card/i.test(STR.zh["lib.dl.anonGone"] + STR.en["lib.dl.anonGone"]) && P.libDlKey("weird") === "lib.dl.fail" && P.libDlKey(undefined) === "lib.dl.fail");
+    const blocked0 = F.calls.blocked.length, olds = [];
+    for (const kind of ["agentOld", "agentOldReopen"]) {
+      F.LIB.pending = null; F.calls.sent.length = 0;
+      F.libSend(s72); await tick(); F.dlNext.res({ ok: false, kind }); await tick(); await tick();
+      olds.push([F.LIB.dlFail && F.LIB.dlFail.kind, F.LIB.pending, F.calls.sent.length].join("/"));
+    }
+    ok("⑥ 這台 lib 太舊(agentOld / agentOldReopen):記 dlFail、不送訊息;各送一次 lib_blocked why=agent_old;其他失敗不送",
+      olds.join() === "agentOld//0,agentOldReopen//0" && blocked0 === 0 && F.calls.blocked.join() === "agent_old,agent_old", JSON.stringify([olds, F.calls.blocked]));
+    ok("⑥ 下載沒成的那句:kind → 字串 key,六種都有 zh / en,認不得的當 fail;anonGone 只講登入、不提卡", ["blocked", "gone", "anonGone", "signin", "rateLimited", "unsent", "agentOld", "agentOldReopen", "fail"].every((k) => P.libDlKey(k) === "lib.dl." + k && STR.zh["lib.dl." + k] && STR.en["lib.dl." + k]) && !/卡|card/i.test(STR.zh["lib.dl.anonGone"] + STR.en["lib.dl.anonGone"]) && P.libDlKey("weird") === "lib.dl.fail" && P.libDlKey(undefined) === "lib.dl.fail");
     F.libSend(s72); await tick();
     ok("⑥ 再按一次:那句錯誤清掉", F.LIB.dlFail === null && F.LIB.pending && F.LIB.pending.stage === "dl"); F.dlNext.res({ ok: true }); await tick(); await tick();
     // C. 下載好了但訊息送不出去(下載中用戶自己先送了一句,回合在跑):pending 清掉,而且講出來
@@ -680,6 +710,9 @@ app.whenReady().then(async () => {
   const js = (s) => w.webContents.executeJavaScript(s, true);
   const T = (k, v) => js(`t(${JSON.stringify(k)}, ${JSON.stringify(v || {})})`);
   const Q = (s) => js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; return (${s}); })()`);
+  // 對話分頁(0.1.37):loadConnection 有值 → boot 進工作頁、csInit 接回分頁;後面「用這支」送出要有 CS.loaded
+  { const boot = await js(`({ loaded: !!CS.loaded, tabs: CS.tabs.size, booted: CS_BOOTED })`);
+    ok("④ 開機:分頁接回(CS.loaded 有值、一條分頁)", boot.loaded && boot.tabs === 1 && boot.booted, JSON.stringify(boot)); }
 
   // 開
   let r = await js(`(async () => { await libOpen(); await new Promise((r) => setTimeout(r, 80)); const q = (x) => [...document.querySelectorAll(x)];
@@ -797,8 +830,8 @@ app.whenReady().then(async () => {
       down: q("#lib-det .gates .gv.down").map((x) => x.textContent).join("|"), downColor: getComputedStyle(q("#lib-det .gates .gv.down")[0]).color, redText: getComputedStyle(document.documentElement).getPropertyValue("--color-redText").trim(), gxColor: getComputedStyle(q("#lib-det .gates .gx")[0]).color, cta: q("#lib-cta .btn-fill")[0].textContent, note: q("#lib-cta .note")[0].textContent };
     document.getElementById("lib-back").click(); q('#lib-rows .lib-row[data-id="101"]')[0].click(); return { a, focus8, b }; })()`);   // 後面的閘門態測試接著看 #101 的詳情
   ok("④ #8(沒 gate_checks):沒有「未驗證」badge、只有價格、關卡卡只有一句 lib.gates.community、不列三道、CTA 仍「購買並使用 1,200 TWD」;返回焦點回那一列", r.a.tags === "1,200TWD" && r.a.card === (await T("lib.gates.title")) && r.a.p === (await T("lib.gates.community")) && r.a.lis === 0 && r.a.cta === (await T("lib.buy", { price: "1,200 TWD" })) && r.focus8 === "8", JSON.stringify(r));
-  ok("④ #12(兩道 fail):關卡卡第一段「2 道關卡未通過…」(句首不帶「未驗證：」)(2 進 .mono、在 ul 之前),兩道「未通過」紅字 + 數值(假設 0.03% / 交易所 0.04%、p = 0.1200、鄰域 82%);CTA「購買並使用 800 TWD」、鈕下沒有說明句", r.b.tags === "800TWD" && !/^未驗證/.test(r.b.p) && r.b.p === (await T("lib.gates.failed", { k: 2 })) && r.b.k === "2" && r.b.first === "lib-p"
-    && r.b.gates === "誠實回測=未通過[假設 0.03%;交易所 0.04%]|統計顯著=未通過[p = 0.1200]|參數穩健=通過[鄰域保留 82%]" && r.b.down === "未通過|未通過" && r.b.downColor !== r.b.gxColor && r.b.cta === (await T("lib.buy", { price: "800 TWD" })) && r.b.note === "", JSON.stringify(r));
+  ok("④ #12(兩道 fail):關卡卡第一段「2 道關卡未通過…」(句首不帶「未驗證：」)(2 進 .mono、在 ul 之前),兩道「未通過」紅字 + 數值(假設 0.03% / 交易所 0.04%、p = 0.120、鄰域 82%);CTA「購買並使用 800 TWD」、鈕下沒有說明句", r.b.tags === "800TWD" && !/^未驗證/.test(r.b.p) && r.b.p === (await T("lib.gates.failed", { k: 2 })) && r.b.k === "2" && r.b.first === "lib-p"
+    && r.b.gates === "誠實回測=未通過[假設 0.03%;交易所 0.04%]|統計顯著=未通過[p = 0.120]|參數穩健=通過[鄰域保留 82%]" && r.b.down === "未通過|未通過" && r.b.downColor !== r.b.gxColor && r.b.cta === (await T("lib.buy", { price: "800 TWD" })) && r.b.note === "", JSON.stringify(r));
   // 閘門態
   const cta = () => js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; const b = q("#lib-cta .btn-fill")[0], qb = q("#lib-cta .btn-quiet"); return { btn: b ? b.textContent : null, dis: b ? b.disabled : null, quiet: qb.map((x) => x.textContent).join("|"), note: q("#lib-cta .note")[0].textContent, up: q("#lib-cta .note")[0].classList.contains("up"), err: q("#lib-cta .err").map((x) => x.textContent).join() }; })()`);
   await js(`hasToken = false; libSync();`); r = await cta();
@@ -848,10 +881,11 @@ app.whenReady().then(async () => {
   a = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; ENV.cur = "cloud"; libAsk({ id: 101, title: "BTC 通道動能共振" }); const o = { lines: q("#del-body p").map((p) => p.textContent), notes: q("#del-body .cf-note").length, where: document.getElementById("del-where").hidden ? null : document.getElementById("del-where").textContent, env: !document.getElementById("del-env").hidden }; document.getElementById("del-cancel").click(); ENV.cur = "local"; await new Promise((r) => setTimeout(r, 40)); return o; })()`);
   ok("④ 雲端視角的下載確認框:內文兩段(l1 不帶目的地、雲端不出 billed)、lib.cf.cloudNote 在腳的 .del-where(不在內文 .cf-note)、「雲端」記號", a.lines.length === 2 && a.lines[0] === (await T("lib.cf.l1")) && a.notes === 0 && a.where === (await T("lib.cf.cloudNote")) && a.env, JSON.stringify(a));
   await js(`LIB.data.dataAccess = "included"; running = true; libSync();`); r = await cta();
-  { const n0 = await js(`(() => { const n = document.getElementById("lib-cta-note"), b = document.querySelector("#lib-cta .btn-fill"); return { hidden: n.hidden, role: n.getAttribute("role"), aria: b.getAttribute("aria-disabled"), title: b.title }; })()`);
-    const told = await js(`(async () => { const b = document.querySelector("#lib-cta .btn-fill"); b.focus(); b.click(); await new Promise((r) => setTimeout(r, 40)); libSync(); return { note: document.getElementById("lib-cta-note").textContent, fix: (document.querySelector("#lib-cta-note button.busy-fix") || {}).textContent, focus: document.activeElement === document.querySelector("#lib-cta .btn-fill"), box: !document.getElementById("del-scrim").hidden }; })()`);
-    ok("④ 回合中(點了才講):主鈕 aria-disabled + title、不是原生 disabled;那一格空著但不 hidden、role=status;點了才寫 turn.busy＋〔停止〕(不在輸入框旁)、不開確認框、忙碌中重畫還在",
-      r.btn === (await T("lib.use")) && r.dis === false && r.note === "" && n0.hidden === false && n0.role === "status" && n0.aria === "true" && n0.title === (await T("turn.busy")) && told.note === (await T("turn.busy")) + " " + (await T("busy.fix.stop")) && told.fix === (await T("busy.fix.stop")) && !told.box, JSON.stringify([r, n0, told])); }
+  { const n0 = await js(`(() => { const n = document.getElementById("lib-cta-note"), b = document.querySelector("#lib-cta .btn-fill"); return { aria: b.getAttribute("aria-disabled"), title: b.title }; })()`);
+    const told = await js(`(async () => { const b = document.querySelector("#lib-cta .btn-fill"); b.click(); await new Promise((r) => setTimeout(r, 40)); const o = { box: !document.getElementById("del-scrim").hidden, okTxt: document.getElementById("del-ok").textContent, note: document.getElementById("lib-cta-note").textContent, sent: window.__lib.sent.length };
+      document.getElementById("del-cancel").click(); await new Promise((r) => setTimeout(r, 40)); return Object.assign(o, { closed: document.getElementById("del-scrim").hidden }); })()`);
+    ok("④ 回合中不擋〔用這支〕(對話分頁:另開分頁送,csSendAway):主鈕照常「用這支」、沒有 aria-disabled／title、鈕下沒有 turn.busy;點了照常開確認框、取消不送",
+      r.btn === (await T("lib.use")) && r.dis === false && r.note === "" && n0.aria === null && n0.title === "" && told.box && told.okTxt === (await T("lib.cf.ok")) && told.note === "" && told.sent === 0 && told.closed, JSON.stringify([r, n0, told])); }
   // 用這支
   r = await js(`(async () => { running = false; libSync(); const q = (x) => [...document.querySelectorAll(x)]; q("#lib-cta .btn-fill")[0].click();
     const open = !document.getElementById("del-scrim").hidden, title = document.getElementById("del-title").textContent, full = document.getElementById("del-title").title, lines = q("#del-body p").map((p) => p.textContent), okTxt = document.getElementById("del-ok").textContent, env = document.getElementById("del-env").hidden, focus = document.activeElement && document.activeElement.id;

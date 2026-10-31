@@ -1,6 +1,6 @@
 {
   "name": "blave-desktop",
-  "version": "0.1.36",
+  "version": "0.1.38",
   "private": true,
   "description": "Blave 電腦版外殼(v1:連結畫面 → 空三欄 → 第一句話)",
   "license": "Apache-2.0",
@@ -17,11 +17,11 @@
     "release": "npm run fetch-python && BLAVE_RELEASE=1 electron-builder --config electron-builder.config.js --mac --publish never"
   },
   "devDependencies": {
-    "electron": "44.4.3",
-    "electron-builder": "26.16.1"
+    "electron": "44.10.0",
+    "electron-builder": "26.18.1"
   },
   "dependencies": {
-    "electron-updater": "6.8.9",
+    "electron-updater": "6.8.12",
     "lightweight-charts": "5.2.1"
   },
   "author": "Blave"

@@ -243,9 +243,12 @@ session; the daily bar of settlement day is the expiring month's. Settlement is 
 Wednesday, or the next trading day when that Wednesday is closed. No price adjustment.
 
 `fetch_twfutures_ohlcv('TXF' | 'MXF' | 'TMF', '1d', start, end, headers)` on the desktop app
-(`BLAVE_AGENT_LOCAL=1`) reaches back to **1998-07-21** with TAIFEX's own daily bars
-(`fetch_txf_daily_public(start, end)` — 期貨每日交易行情 `futDataDown`, cp950 CSV, one request per
-month, cached per month under `cache/twfutures_public_1d_TXF/`; a cold 1998→today backfill is
+(`BLAVE_AGENT_LOCAL=1`) reaches back to **1998-07-21** with TAIFEX's own daily bars, no Blave data
+needed (`fetch_txf_daily_public(start, end)` — 期貨每日交易行情 `futDataDown`). They come from the
+Blave CDN (the same TAIFEX bars, published daily ~15:35 Taipei; a cold 1998→today fetch takes
+seconds, cached under `cache/twfutures_cdn/`); the days TAIFEX has published since (from ~14:50)
+come from TAIFEX. When the CDN cannot serve, a printed ⚠️ line says so and the bars come from
+TAIFEX one request per month (`cache/twfutures_public_1d_TXF/`; a cold 1998→today backfill is
 ~340 requests at one per second, ~8 minutes, resumable):
 - **No Blave data access this turn:** the whole frame is TAIFEX — `df.attrs['source']` = `TAIFEX`.
 - **With Blave data:** the Blave series is unchanged (from 2011-01-03, the same bars a cloud
@@ -264,8 +267,7 @@ for intraday schemas and for `'1d'` on a cloud machine. A later `START` is a cho
 with its reason; never write 「資料從 2011 年起」 for desktop TXF / MXF daily bars.
 
 **Whenever `attrs['source']` names `TAIFEX`, any report or reply citing the bars carries
-`資料來源:臺灣期貨交易所(政府資料開放授權)`** (en: `Source: Taiwan Futures Exchange (Open
-Government Data License)`).
+`資料來源:臺灣期貨交易所`** (en: `Source: Taiwan Futures Exchange`).
 
 TAIFEX stitching: per trading date the lowest listed outright month with a day-session row
 (weeklies and calendar spreads ignored) — the same settlement-day rule as above; the 盤後 row
@@ -295,7 +297,8 @@ batch = fetch_stock_futures_batch_daily(['CDF', 'DHF'], "2025-01-01", "2025-05-3
 ```
 
 **Notes:**
-- `fetch_twfutures_daily(futures_id, ...)` (the generic function documented above) also works for any individual stock futures id — `fetch_stock_futures_batch_daily` is just the parallel/batch form (max 250 ids per call), matching `fetch_twstock_batch` for stocks.
+- **No Blave data needed on the desktop app** (`BLAVE_AGENT_LOCAL=1`): with no Blave data access this turn, `fetch_stock_futures_batch_daily` returns the same columns and dtypes from TAIFEX's own daily quotes (Blave CDN, published daily ~15:35 Taipei; TAIFEX directly, one request per contract-month, when the CDN cannot serve — a printed ⚠️ line says so). Every frame's `attrs['source']` is `TAIFEX` — cite it with the TAIFEX attribution line in *TXF daily bars back to 1998*. A `-` cell in TAIFEX's file is `0` here, as in the Blave rows: filter `volume > 0` before using a price, and expect `max` / `min` of `0` on a session that traded at one price (`open` == `close`). Differences from the Blave rows: no calendar-spread rows (`contract_date` with `/`), a contract-month that traded only through spread legs has `open` / `close` `0` here (the Blave rows put the settlement price there), and a day appears once the CDN has published it (`attrs['asof']`). History from 2010-01-25; delisted 股票期貨 ids are there too. With Blave data, and on a cloud machine, it is the Blave endpoint as before.
+- `fetch_twfutures_daily(futures_id, ...)` (the generic function documented above) also works for any individual stock futures id, with Blave data only — `fetch_stock_futures_batch_daily` is the parallel/batch form (max 250 ids per call), matching `fetch_twstock_batch` for stocks, and the one to use without Blave data.
 - **Daily OHLCV covers all 231 symbols.** Intraday/minute bars (`fetch_twfutures_ohlcv(symbol, schema, ...)`) do NOT — that same function also accepts individual stock futures ids as `symbol`, but only `TXF` plus whichever ones currently have backfilled minute-line data (a dynamically-growing subset, nowhere near all 231). Passing an unsupported symbol gets a 400.
 - **Check `fetch_stock_futures_ohlcv_symbols(hdrs)` first** to get the current list of symbols supported by `fetch_twfutures_ohlcv` — no need to trial-and-error against the 400:
 ```python

@@ -394,7 +394,11 @@ function enterWorkspace(kind, info) {
   mpInit(kind);
   stratRefresh(false);
   if (typeof wcArm === "function") wcArm();   // 歡迎頁的 3 秒保底從這裡起算(renderer/welcome.js)
-  if (!csReady) { csReady = true; csInit().catch(() => {}).then(() => { CS_BOOTED = true; upSayLines(TR_BAGS.cloud.st); }); }
+  if (!csReady) {
+    csReady = true;
+    const boot = csInit().catch(() => {}).then(() => { CS_BOOTED = true; upSayLines(TR_BAGS.cloud.st); });
+    if (typeof CS !== "undefined") CS.boot = boot;   // 分頁接回之前就送出的那句等它(submitMessage),不然沒有 CS.loaded 可落
+  }
   acctPrecheck();   // 換 agent 不換對話:只在第一次進工作頁接回
   trInit();         // 自動下單(trade.js):開始輪詢本機交易狀態;重複呼叫只會起一次
   if (typeof engSync === "function") engSync();   // 開 app 就在背景裝引擎:這一頁進來時可能已經裝到一半(engine.js)
@@ -677,7 +681,7 @@ var UP = null;   // var:applyStatic 可能在這一行之前就被叫到(let 的
    app 裡不做首次告知(Wei);關掉之後清單留著——看得到自己關掉的是什麼。全段不寫「匿名」:登入後安裝編號會跟帳號對上。
    開關的真值在主行程(telemetry.js 的狀態檔);這裡每次打開這一類就重讀,切換後以主行程回的為準。 */
 let PRIV = null;   // null = 還沒讀到(開關先鎖著,免得先畫成開、再跳成關)
-const PRIV_COLLECT = ["priv.collect.1", "priv.collect.5", "priv.collect.6", "priv.collect.9", "priv.collect.10", "priv.collect.2", "priv.collect.3", "priv.collect.4", "priv.collect.8", "priv.collect.7"];
+const PRIV_COLLECT = ["priv.collect.1", "priv.collect.5", "priv.collect.6", "priv.collect.9", "priv.collect.10", "priv.collect.11", "priv.collect.2", "priv.collect.3", "priv.collect.4", "priv.collect.8", "priv.collect.7"];
 /* 功能被使用(canon .claude/docs/product-telemetry.md):只交一個白名單裡的名字給主行程,不帶內容、不計次(api 每安裝每 name 每日一列)。
    送出點放在「功能被使用」那一層(分頁切換、主要動作的 handler),不放 render;名字的字面在 tests/check_shell_telemetry.js 對兩端白名單掃 */
 function trackFeature(name) { try { window.blave.trackFeature(name); } catch (_) { } }   // 追蹤永遠不擋功能
@@ -721,6 +725,7 @@ function mvBlock(mk) {
     lead.append(a || ""); lead.append(mk("span", "dn", MV.name)); lead.append(b || "");
   } else lead.textContent = t("mv.leadNoName");
   wrap.append(lead);
+  if (on) wrap.append(mvQr(mk));
   return wrap;
 }
 /* 設定 › 隱私「允許手機對話」(主行程 relay.js;spec mobile-agent-chat-mvp §2.6、§4.2)。總開關不開時整區不出(PH.visible)。
@@ -840,6 +845,22 @@ if (typeof window.blave.onRelayState === "function") window.blave.onRelayState((
   const was = PH; PH = st;
   if ($("set-priv") && !$("set-priv").hidden && (!was || JSON.stringify(was) !== JSON.stringify(st))) privPaint();
 });
+/* 開著之後的下一步是拿手機開 App:兩個商店 QR(圖是 web footer 那兩張,靜態檔、不在 runtime 產生)。
+   圖是透明底黑碼,暗色也固定白底才掃得到;商店名稱是給不能掃的人的替代路徑,所以圖 alt="" */
+const MV_APP_IOS = "https://apps.apple.com/tw/app/blave/id6747014559";
+const MV_APP_ANDROID = "https://play.google.com/store/apps/details?id=org.wuchi.blave.android";
+function mvQr(mk) {
+  const box = mk("div", "mv-qr");
+  for (const ios of [true, false]) {
+    const fig = mk("figure"), plate = mk("div", "qr-plate"), img = mk("img");
+    img.src = ios ? "img/qr_ios.png" : "img/qr_android.png"; img.alt = ""; img.width = img.height = 112;
+    plate.append(img);
+    const go = mk("button", "btn-quiet", t(ios ? "mv.appIos" : "mv.appAndroid")); go.type = "button";
+    go.addEventListener("click", () => { trackFeature(ios ? "app_link_ios" : "app_link_android"); window.blave.openExternal(ios ? MV_APP_IOS : MV_APP_ANDROID); });
+    fig.append(plate, go); box.append(fig);
+  }
+  return box;
+}
 // 連點:前一次還沒回來就不再送(不用 disabled:按鈕一停用焦點就掉到 body)
 let PRIV_BUSY = false;
 async function privToggle() {
@@ -863,7 +884,7 @@ function privPaint() {
   const off = PRIV === false;
   if (!off) box.append(mk("p", "priv-lead", t("priv.lead")));
   const two = mk("div", "priv-two");
-  [[off ? t("priv.collect.hOff") : t("priv.collect.h"), PRIV_COLLECT], [t("priv.never.h"), PRIV_NEVER]].forEach(([head, keys]) => {
+  [[t("priv.never.h"), PRIV_NEVER], [off ? t("priv.collect.hOff") : t("priv.collect.h"), PRIV_COLLECT]].forEach(([head, keys]) => {
     const col = mk("div"), ul = mk("ul"); col.append(mk("h6", "", head));
     keys.forEach((k) => ul.append(mk("li", "", t(k)))); col.append(ul); two.append(col);
   });
@@ -1353,7 +1374,7 @@ var INSTALL_ID = null, INSTALL_ID_T = 0;   // var:同 UP,這一行還沒跑到�
 async function aboutIdLoad() {
   try { const id = await window.blave.telemetryInstallId(); INSTALL_ID = typeof id === "string" && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(id) ? id : null; } catch (_) { INSTALL_ID = null; }
   $("set-idv").textContent = INSTALL_ID || "";
-  $("set-id").hidden = $("set-id-note").hidden = !INSTALL_ID;
+  $("set-id").hidden = !INSTALL_ID;
 }
 $("set-id-copy").addEventListener("click", async () => {
   if (!INSTALL_ID) return;
@@ -1367,16 +1388,19 @@ async function awakeLoad() { try { AWAKE = (await window.blave.keepAwake()) !== 
 function awakePaint() {
   const sw = $("set-awake-sw"); if (!sw) return;
   sw.classList.toggle("off", !AWAKE); sw.setAttribute("aria-checked", AWAKE ? "true" : "false");
-  // Windows 開著時限定接電源(Modern Standby 用電池時系統仍會收回);關掉時多講一句:統一期貨有部位那條不看這個開關(Wei 10-07 的規則照擋)
-  const win = window.blave.platform === "win32";
-  $("set-awake-lead").textContent = t(AWAKE ? (win ? "set.awake.leadWin" : "set.awake.lead") : win ? "set.awake.leadOffWin" : "set.awake.leadOff");
+  // 泡泡只講開著時會怎樣、不隨開關換(Switch recipe);Windows 限定接電源(Modern Standby 用電池時系統仍會收回)。
+  // 關掉的後果是停單、跟錢有關,留在看得到的那句;Windows 多講統一期貨有部位那條不看這個開關(Wei 10-07 的規則照擋)
+  const win = window.blave.platform === "win32", lead = $("set-awake-lead");
+  $("set-awake-tip").textContent = t(win ? "set.awake.leadWin" : "set.awake.lead");
+  lead.hidden = AWAKE;
+  lead.textContent = AWAKE ? "" : t(win ? "set.awake.leadOffWin" : "set.awake.leadOff");
 }
 $("set-awake-sw").addEventListener("click", async () => {
   let r = null;
   try { r = await window.blave.keepAwakeSet(!AWAKE); } catch (_) { r = null; }
   if (typeof r !== "boolean") return;   // 沒切成:畫面維持原狀
   if (AWAKE && !r) trackFeature("awake_off");
-  AWAKE = r; awakePaint(); srSay($("set-awake-lead").textContent);
+  AWAKE = r; awakePaint(); srSay($(AWAKE ? "set-awake-tip" : "set-awake-lead").textContent);
 });
 /* 設定 › 一般:回覆好了通知我(主行程 ui-prefs replyNotify,缺 = 開)與提示音(replySound,缺 = 開,兩個各管各的)。
    osOff = 這次啟動後系統通知收到過 failed、之後還沒有一則成功出現 */
@@ -1905,7 +1929,7 @@ document.addEventListener("mousedown", (e) => { if (!$("mp").contains(e.target))
 /* Esc 關最上面那一層,焦點在哪都一樣:點了框裡的字、從對話清單的 ✕ 開、視窗切回來,焦點會落在 body,
    掛在各框 scrim 上的 keydown 收不到(Wei 09-23 實機)。一次只關一層;由上往下照 DOM 疊的順序 */
 function escTop() {
-  return !$("del-scrim").hidden ? () => delClose(false) : !$("rpn-scrim").hidden ? rptNewClose : !$("ns-scrim").hidden ? nsClose : !$("idea-scrim").hidden ? ideaClose : !$("cx-scrim").hidden ? () => cxModalClose(false) : !$("lai-scrim").hidden ? laiClose : !$("shr-scrim").hidden ? shrClose
+  return !$("del-scrim").hidden ? () => delClose(false) : !$("rpn-scrim").hidden ? rptNewClose : !$("ns-scrim").hidden ? nsClose : !$("idea-scrim").hidden ? ideaClose : !$("cx-scrim").hidden ? cxDismiss : !$("lai-scrim").hidden ? laiClose : !$("shr-scrim").hidden ? shrClose
     : !$("lb-scrim").hidden ? lbClose : !$("set-scrim").hidden ? (rulesEscFn() || setClose) : !$("intro-scrim").hidden ? () => introClose("close") : !$("mp-panel").hidden ? () => mpClose(true)
     : !$("cs-list").hidden ? () => { csShowList(false); $("cs-toggle").focus(); } : null;
 }
@@ -2871,14 +2895,6 @@ function csFilter() {
     box.appendChild(csRow(m));
   });
 }
-/* 捲到頭底下才浮一條線(靜止沒有線):清單那一層也會捲,兩層都掛,以現在看得見的那一層為準 */
-function chatEdge() {
-  if (tabBg()) return;
-  const list = $("cs-list"), box = list.hidden ? $("chat-scroll") : list;
-  $("cs-head").classList.toggle("is-scrolled", box.scrollTop > 0);
-}
-$("chat-scroll").addEventListener("scroll", chatEdge);
-$("cs-list").addEventListener("scroll", chatEdge);
 function csShowList(on) {
   const w = $("cs-why"); if (w) { w.hidden = true; w.textContent = ""; delete w.dataset.busy; }   // 原因句講的是清單或標題列上剛按的那一下:換層就收
   $("cs-list").hidden = !on;
@@ -2888,7 +2904,6 @@ function csShowList(on) {
   // 被清單蓋住的聊天本體退出 Tab 順序與輔具樹
   $("chat-scroll").inert = on; document.querySelector(".chat-input-wrap").inert = on;
   if (on) { $("cs-search").value = ""; csSearched = false; csRenderList(); requestAnimationFrame(() => { if (!$("cs-list").hidden) $("cs-search").focus(); }); }
-  chatEdge();
 }
 $("cs-toggle").addEventListener("click", () => { const open = $("cs-list").hidden; csShowList(open); if (open) trackFeature("hist_open"); });
 $("cs-new").addEventListener("click", csNewClick);
@@ -2923,7 +2938,6 @@ function scrollChat(force) {
   if (force === true) chatStick = true;
   if (tabBg()) return;   // 背景分頁的事件:捲動容器是眼前那條的
   if (chatStick) { const box = $("chat-scroll"); box.scrollTop = box.scrollHeight; chatTop = box.scrollTop; }
-  chatEdge();
 }
 
 /* ── agent 回覆的顯示 ─────────────────────────────────
@@ -2965,6 +2979,23 @@ function paintAi(el, raw, live) {
   el._cards = r.cards;
   el.textContent = "";
   mdPaint(el, r.blocks);
+  chatUrls(el);
+}
+/* 聊天裡的連結(spec chat-long-url-2026-10-30):title 一律換成解碼後的完整網址;連結字就是網址本身才縮短(md.js urlLabel)。
+   描述字像網址、網域卻跟 href 不同時,改顯示 href 算出來的字(防釣魚);沒有斜線的 AGENTS.md、v0.1.37 是檔名與版號,不算像網址。
+   比對前兩邊都過 new URL:吸收結尾斜線、大小寫、CJK 轉碼的差異(網頁 marked 會 encodeURI href)。縮過的掛 data-url-short,複製時換回 href */
+const urlHost = (s) => { try { return new URL(/^https?:\/\//i.test(s) ? s : "https://" + s).hostname.replace(/^www\./, ""); } catch (_) { return null; } };
+function chatUrls(el) {
+  el.querySelectorAll("a[href]").forEach((a) => {
+    const href = a.getAttribute("href"), text = a.textContent.trim();
+    a.title = urlTitle(href);
+    let bare = false;
+    try { bare = new URL(text).href === new URL(href).href; } catch (_) { bare = false; }   // 字不是網址
+    if (!bare && !(URL_LIKE.test(text) && urlHost(text) !== urlHost(href))) return;
+    const label = urlLabel(href);
+    if (!label || label === text) return;
+    a.textContent = label; a.dataset.urlShort = "";
+  });
 }
 /* 回合結束系統通知的摘錄(spec agent-reply-notifications-0130 §3.3;網頁工作頁有同一支、同一組測資):原文 → 前 60 字純文字,有截斷接「…」。
    剝完是空的回 "",空摘錄的字由主行程依型別補。純函式(tests/check_shell_reply_snippet.js) */
@@ -3037,6 +3068,29 @@ const chatLink = (e) => {
 };
 // Cmd/Ctrl+click 是帶 metaKey/ctrlKey 的 click,同一條;中鍵是 auxclick,不攔會走 window.open → 白名單
 ["click", "auxclick"].forEach((ev) => $("chat-scroll").addEventListener(ev, chatLink));
+/* 選取複製碰到縮過的連結:text/plain 與 text/html 裡那條換成完整網址(spec chat-long-url §3)。只選到一部分也整條換:
+   在複本範圍上擴到整個連結,不動用戶的反白(按 Cmd+C 時反白不跳)。沒碰到縮過的連結就完全不攔。
+   純文字走離屏 div 的 innerText:detached fragment 的 textContent 會吃掉段落之間的換行 */
+function chatCopy(e) {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount || !e.clipboardData) return;
+  const r = sel.getRangeAt(0).cloneRange();
+  const short = (n) => { const x = n && (n.nodeType === 1 ? n : n.parentElement); return x ? x.closest("a[data-url-short]") : null; };
+  const a0 = short(r.startContainer), a1 = short(r.endContainer);
+  if (a0) r.setStartBefore(a0);
+  if (a1) r.setEndAfter(a1);
+  const frag = r.cloneContents(), hits = frag.querySelectorAll("a[data-url-short]");
+  if (!hits.length) return;
+  hits.forEach((a) => { a.textContent = a.getAttribute("href"); });
+  const box = document.createElement("div");
+  box.style.cssText = "position:fixed;left:-99999px;top:0;white-space:pre-wrap";
+  box.appendChild(frag); document.body.appendChild(box);
+  const text = box.innerText, html = box.innerHTML;
+  box.remove();
+  e.clipboardData.setData("text/plain", text); e.clipboardData.setData("text/html", html);
+  e.preventDefault();
+}
+$("chat-scroll").addEventListener("copy", chatCopy);
 
 /* 圖片放大(lightbox):點圖開、點任何地方 / Esc / ✕ 關。焦點關掉後回到原本那張圖。 */
 let lbOpener = null;
@@ -3653,6 +3707,9 @@ async function sendDraft() {
 /* 真的送出一句話。回傳這一輪有沒有跑起來(「再送一次」要知道)。不碰輸入框的字;這一句帶的檔送出去了就把 chip 清掉。 */
 async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / 拉回」確認框送的那句才有(handoff.js);重送(lastUserText)不帶
   rsArm();   // 每個送出入口都經過這裡:回覆音的 AudioContext 先建好
+  // 剛進工作頁、tabsRestore 還在讀分頁記憶:等它接回再送,這句才落在接回的那條分頁(沒有 CS.loaded 會在 tabsTrackParallel 炸成「引擎準備失敗」)。
+  // csSendAway 的呼叫端裡會同步讀 CS.away 的(策略庫、報告、掃描、雲端更新)在分頁接回前沒有畫面可按,這裡不替它們回填
+  if (typeof CS !== "undefined" && CS.boot && !CS.loaded && !CS_BOOTED) return CS.boot.then(() => submitMessage(msg, opts));
   // opts.attachments:這一句帶的清單 [{ file, name, from }](sendDraft,以及重送 / 安裝失敗後重試帶的同一份)。
   // 「再送一次」連檔一起重送(resendLast)——跟雲端不同:雲端的重送鈕出現時檔已經落在機器上,這裡 started 回來時主行程還沒落地,
   // 失敗的那一輪(Codex 不見、金鑰不見、形狀不對)可能根本沒存到檔;只重送句子的話檔就無聲不見,純附件那句更是無從重送
@@ -3906,7 +3963,7 @@ let faultShown = false;
 function srSay(text) { if (tabBg()) return; $("sr-live").textContent = ""; requestAnimationFrame(() => { $("sr-live").textContent = text; }); }
 
 /* ── 回合失敗卡(設計師 M1)───────────────────────────
-   照雲端工作頁的 .chat-notice.is-fault:13px、ink-2、一條 8×2 的紅記號,不加容器、圖示、紅字。
+   照雲端工作頁的 .chat-notice.is-fault:13px、ink-2、一條 8×2 的紅記號,不加容器、圖示、紅字;只有鈕、沒有句子那態(act-only)不放記號。
    **一張卡、一顆鈕,跨狀態沿用同一個節點**(只換字、class 與 handler):登入的進度 / 成功 / 失敗
    不再往下追加灰字,鍵盤焦點也不會因為節點被換掉而掉回 body。
    等待中不放 spinner:等的是用戶在瀏覽器裡的動作,不是系統在忙;這段最長五分鐘。 */
@@ -3934,7 +3991,7 @@ function faultCard() {
       const key = JSON.stringify([!!s.calm, s.text, s.label || null, !!s.disabled, s.second ? s.second.label : null, s.third ? s.third.label : null, s.sub ? (typeof s.sub === "string" ? s.sub : s.sub.textContent) : null]);
       const changed = key !== shown; shown = key;
       el.classList.toggle("is-calm", !!s.calm);
-      // 只有鈕、沒有句子(資料卡的試用態:agent 那一輪已經講了拿不到什麼):記號改對鈕的中線,讀屏念鈕字
+      // 只有鈕、沒有句子(資料卡的試用態:agent 那一輪已經講了拿不到什麼):不放記號,讀屏念鈕字
       el.classList.toggle("act-only", !s.text);
       el.classList.toggle("two-quiet", !!(s.second && s.second.quiet && s.third));   // 同一列兩顆文字鈕:拉開一階,兩條底線才不會黏成一條
       text.textContent = s.text || ""; text.hidden = !s.text;
@@ -4812,6 +4869,7 @@ async function acctPrecheck() {
   if (typeof wdPaint === "function") wdPaint();   // 能跑的人不會走到下面的 acctPaint,歡迎頁的清單在這裡換版
   if (cur !== "blave") return;                // 預檢卡講的是「Blave AI 能不能跑」,自帶 CLI 的人用不到
   if (!acct || acct.can_run) return;
+  if (typeof CS !== "undefined" && CS.boot && !CS_BOOTED) { await CS.boot; if (acctCard || cur !== "blave" || !acct || acct.can_run) return; }   // 卡要畫進接回的那條分頁,不是裸的 #chat-scroll
   acctCard = faultCard();
   acctPaint();
   acctShown(acctCard, "pre", acct);
@@ -5222,6 +5280,8 @@ function applyStatic() {
   themeLoad(); themeShown();
   hoInit();                        // 「送上雲端 / 拉回」的功能開關(renderer/handoff.js;預設關 = 兩顆鈕都不畫)
   pubLoad().then(() => { acctPaintAcct(); cnFreePaint(); });   // 連結畫面尾註那句要的天數、綁卡前額度的數字;拿不到就不出
+  // 進工作頁會用到排在 app.js 後面的腳本(chattabs.js 的 csInit／chatEl 等):前面幾個 await 若在 parser 跑完前就回來,先等 DOMContentLoaded
+  if (document.readyState === "loading") await new Promise((r) => document.addEventListener("DOMContentLoaded", r, { once: true }));
   const prev = await window.blave.loadConnection();
   // kind 說「用 Blave AI」但 token 不在(被撤銷後清掉、Keychain 讀不到、換了
   // 電腦),進工作頁會在左下角寫「已連結:Blave AI」,實際上引擎沒有 token 就走
@@ -5254,15 +5314,25 @@ document.addEventListener("keydown", (e) => {
   sel.selectAllChildren(region);
 });
 
+// 泡泡是最上層的暫態層:window capture 比 escTop、versions.js 的 capture、各選單自己的 Esc 都先跑,收掉看得見的泡泡就不往下傳
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229 && tipEsc()) { e.preventDefault(); e.stopPropagation(); }
+}, true);
+
 /* 泡泡由 CSS 的 :hover / :focus-visible + .tip 帶出來的那幾種(.mp-tip、.tr-tipb、.rules-tipb、瀏覽器的 .ibtn):Esc 要收得掉(canon › Tooltip),
    但 CSS 狀態收不掉——給觸發點掛 data-tip-off(CSS 帶 :not([data-tip-off])),滑出或失焦再拿掉 */
-document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
+// 回傳這一下有沒有收掉一個看得見的泡泡:有的話 Esc 只收泡泡、不往下關框(上面那個 window capture 監聽先呼叫它、收掉就 stopPropagation,escTop 收不到這一下;一次只關一層)
+function tipEsc() {
+  let shut = false;
   for (const x of [document.activeElement, ...document.querySelectorAll(":hover")]) {
-    const btn = x && x.nextElementSibling && x.nextElementSibling.classList.contains("tip") ? x : null;
-    if (!btn || btn.hasAttribute("data-tip-off")) continue;
-    btn.setAttribute("data-tip-off", "");
-    const on = () => { btn.removeAttribute("data-tip-off"); btn.removeEventListener("blur", on); btn.removeEventListener("mouseleave", on); };
-    btn.addEventListener("blur", on); btn.addEventListener("mouseleave", on);
+    // 設定頁的開關與〔複製〕跟泡泡不相鄰(泡泡在 label 裡),靠 aria-describedby 認
+    const desc = x && x.getAttribute && x.getAttribute("aria-describedby"), dt = desc && document.getElementById(desc);
+    const tip = x && x.nextElementSibling && x.nextElementSibling.classList.contains("tip") ? x.nextElementSibling : dt && dt.classList.contains("tip") ? dt : null;
+    if (!tip || x.hasAttribute("data-tip-off")) continue;
+    if (getComputedStyle(tip).display !== "none") shut = true;
+    x.setAttribute("data-tip-off", "");
+    const on = () => { x.removeAttribute("data-tip-off"); x.removeEventListener("blur", on); x.removeEventListener("mouseleave", on); };
+    x.addEventListener("blur", on); x.addEventListener("mouseleave", on);
   }
-});
+  return shut;
+}

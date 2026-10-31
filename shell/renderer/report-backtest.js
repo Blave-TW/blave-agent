@@ -356,13 +356,15 @@
      * 沒過門檻不上紅:紅只留給虧損,「分不出實力或運氣」不是虧。 */
     const mcpt = readMcpt(stats);
     if (mcpt) {
-      const sig = mcpt.p < 0.05;
+      const VER = window.blaveVersions, sig = mcpt.p < VER.MCPT_ALPHA;
+      // 白話講次數不講百分比:同一句裡的門檻是小數,p 換成 % 讀者對不起來。次數算不準(缺 n、n > 10,000)就不講次數
+      const k = VER.mcptBeat(mcpt.p, mcpt.n);
       groups[1][1].push([t("bt.mcpt"), {
-        text: mcpt.p.toFixed(3),
+        text: VER.fmt("mcpt_p", mcpt.p),
         tone: sig ? "pos" : "",
         sig: sig,
-        tip: mcpt.n === null ? t(sig ? "ver.mcptTipSigNoN" : "ver.mcptTipNsNoN", { pct: (mcpt.p * 100).toFixed(1) + "%" })
-          : t(sig ? "bt.mcptTipSig" : "bt.mcptTipNs", { n: String(mcpt.n), pct: (mcpt.p * 100).toFixed(1) + "%" }),
+        tip: k === null ? t(sig ? "ver.mcptTipSigNoN" : "ver.mcptTipNsNoN")
+          : t(k === 0 ? "bt.mcptTipZero" : sig ? "bt.mcptTipSig" : "bt.mcptTipNs", { n: mcpt.n.toLocaleString("en-US"), k: String(k) }),
       }]);
     }
 
@@ -794,7 +796,10 @@
     if (!dist || !m || m.n === null) return null;
     const wrap = el("div", "bt-block");
     const head = el("div", "bt-label bt-label-prose");
-    fillMono(head, t("bt.mcptDistTitle"), { n: m.n.toLocaleString("en-US"), p: m.p.toFixed(3) });
+    // p < 0.001 寫「p < 0.001」不寫「p = <0.001」;數字仍包在 .mono 裡
+    const tiny = m.p < 0.001, VER = window.blaveVersions;
+    fillMono(head, tiny ? t("bt.mcptDistTitle").replace(/=\s*\{p\}/, "< {p}") : t("bt.mcptDistTitle"),
+             { n: m.n.toLocaleString("en-US"), p: tiny ? "0.001" : VER.fmt("mcpt_p", m.p) });
     wrap.appendChild(head);
     const frame = el("div", "bt-frame");
     const canvas = el("canvas", "bt-canvas bt-canvas-mcpt");

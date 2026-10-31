@@ -2,6 +2,7 @@
 // window.blave 換成假的(不起主行程、不碰 workspace、不連網),每一個框都用三種焦點狀態按一次真的 Esc(sendInputEvent):
 //   焦點在框裡 / 焦點移到 body / 用滑鼠點框裡的字(不可聚焦的地方)——後兩種是 Wei 09-23 實機按 Esc 關不掉的情形
 // 另外驗一次只關一層:設定開著、確認框疊在上面,Esc 只關確認框。
+// 泡泡是最上層:六套泡泡各疊在三種上層上,第一下 Esc 只收泡泡、第二下才關上層。
 // 跑法:node tests/check_shell_esc.js(找不到 shell/node_modules 的 Electron 就 SKIP)
 const path = require("path"), fs = require("fs");
 const SHELL = path.join(__dirname, "..", "shell");
@@ -21,8 +22,9 @@ const STUB = `window.blave = new Proxy({}, { get: (_, k) => typeof k !== "string
   : k.startsWith("on") ? () => {} : k === "tradeLabels" ? () => {}
   : async () => ({ getLocale: "zh-TW", loadConnection: { kind: "claude" }, detectAgents: { claude: { installed: true, loggedIn: true }, codex: { installed: false } },
       listStrategies: [], listSessions: [], loadSession: [], loadSessionImages: [], updateState: { phase: "idle", current: "0.0.0" } })[k] });`;
-let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
+let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (!c && d ? "  " + d : "")); if (!c) red++; };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+setTimeout(() => { console.log("FAIL  逾時(180 秒)"); process.exit(1); }, 180000).unref();
 
 // 每一個框:怎麼開、開著的判準、框裡一段不可聚焦的字(拿來點)
 const MODALS = [
@@ -95,6 +97,121 @@ app.whenReady().then(async () => {
   const c1 = await js(`({ mp: !$("mp-panel").hidden, list: !$("cs-list").hidden })`); await esc();
   const c2 = await js(`({ mp: !$("mp-panel").hidden, list: !$("cs-list").hidden })`);
   ok("模型選單 + 對話清單都開著:第一下只關模型選單,第二下才收清單", !c1.mp && c1.list && !c2.mp && !c2.list);
+  // 泡泡是最上層的暫態層(六套泡泡 × 三種上層:escTop 管的設定框、trade.js 自己接 Esc 的 ps-scrim、versions.js capture 層的比較框):
+  // 泡泡開著時第一下 Esc 只收泡泡、上層還在;第二下才關上層
+  const ROB_SCAN = { row_param: "A", col_param: "B", row_vals: [10, 20, 30], col_vals: [0.5, 0.7, 0.9], grid: [[3.0, 0.2, 0.1], [0.3, 1.4, 1.5], [null, 1.5, 1.6]], window: 1, fee: 0.0005, start: "2025-01-01", end: "2025-06-01", generated_at: 100 };
+  const WF = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "wf_sample.json"), "utf8"));
+  const box = `(() => { let b = document.getElementById("__tipbox"); if (b) b.remove(); b = document.createElement("div"); b.id = "__tipbox"; b.style.width = "760px"; document.body.appendChild(b); return b; })()`;
+  const focusCell = (sel) => `(() => { const td = document.querySelector(${JSON.stringify(sel)}); td.focus(); td.dispatchEvent(new FocusEvent("focusin", { bubbles: true })); })()`;
+  const isOn = (id) => `(!!document.getElementById(${JSON.stringify(id)}) && document.getElementById(${JSON.stringify(id)}).classList.contains("is-on"))`;
+  const TIPS = {
+    ".tip(CSS 帶出,滑過)": { inModal: true, show: (host) => `(() => { const h = document.querySelector(${JSON.stringify(host)}); const b = document.createElement("button"); b.type = "button"; b.className = "mp-tip"; b.id = "__mt"; b.textContent = "說明字";
+        const p = document.createElement("span"); p.className = "tip"; p.id = "__mtp"; p.textContent = "泡泡"; h.prepend(b, p); const r = b.getBoundingClientRect(); return { x: Math.round(r.left + 4), y: Math.round(r.top + r.height / 2) }; })()`,
+      on: `(!!document.getElementById("__mtp") && getComputedStyle(document.getElementById("__mtp")).display !== "none")`, gone: `["__mt", "__mtp"].forEach((i) => { const n = document.getElementById(i); if (n) n.remove(); })` },
+    "參數掃描 .rob-tip": { show: () => `(window.BlaveReport.renderRobust(${box}, { stats: { symbol: "BTCUSDT", interval: "1h", start: "2025-01-01", end: "2025-06-01", "fee [%]": 0.05, "Generated At": 50 }, scan: ${JSON.stringify(ROB_SCAN)}, code: "", name: "s1" }, { t }), ${focusCell("#__tipbox .rob-tbl td")})`, on: isOn("rob-tip") },
+    "前進測試 .wf-tip": { show: () => `(window.BlaveReport.renderWf(${box}, { stats: { symbol: "BTCUSDT", interval: "1d", start: "2023-01-01", end: "2024-11-30", "Generated At": 50 }, wf: ${JSON.stringify(WF)}, code: "ENTRY_TH = 0.002\\nEXIT_TH = -0.002\\n", name: "s1" }, { t, busy: false, turn: 1, scope: "local", gate: true }), ${focusCell("#__tipbox .wf-grid td[tabindex='0']")})`, on: isOn("wf-tip") },
+    "成交紀錄 .hist-tip": { show: () => `(() => { const b = trHistTipBtn("未確認", "說明", "hist:x"); ${box}.append(b); b.dispatchEvent(new MouseEvent("mouseenter")); })()`, on: isOn("hist-tip") },
+    // 分頁 tooltip(chattabs.js):滑鼠停在分頁上帶出,焦點不在分頁列
+    "對話分頁 #tabs-tip": { show: () => `(() => { const p = $("tabs-tip"); delete p.dataset.off; p.textContent = "分頁"; p.hidden = false; })()`, on: `!$("tabs-tip").hidden`, gone: `tabsTipOff()` },
+    "內建瀏覽器 .bv-addr .tip": { show: () => `(() => { const h = ${box}, b = document.createElement("button"), p = document.createElement("span"); p.className = "tip"; p.id = "__brt"; p.textContent = "說明"; h.append(b, p); brTipAttach(b, p); b.dispatchEvent(new MouseEvent("mouseenter")); })()`, on: isOn("__brt") },
+  };
+  const LAYERS = [
+    { name: "設定(escTop)", host: "#set-modal", open: `(running = false, setOpen())`, isOpen: `!$("set-scrim").hidden`, close: `setClose()` },
+    { name: "選策略框 ps-scrim(trade.js 自己接 Esc)", host: "#ps-modal", open: `(TRP.started || trInit(), $("ps-scrim").hidden = false, $("ps-scrim").classList.add("open"), $("ps-cancel").focus())`, isOpen: `!$("ps-scrim").hidden`, close: `psClose()` },
+    { name: "比較版本(versions.js capture)", host: "#vc-modal", open: MODALS.find((m) => m.name === "比較版本").open, isOpen: `!$("vc-scrim").hidden`, close: `vcClose()` },
+  ];
+  for (const L of LAYERS) for (const [tn, T] of Object.entries(TIPS)) {
+    await js(L.open); await wait(250);
+    const pt = await js(T.show(L.host)); await wait(80);
+    if (T.inModal) { w.webContents.sendInputEvent({ type: "mouseMove", x: pt.x, y: pt.y }); await wait(120); }
+    const s0 = await js(`({ tip: ${T.on}, open: ${L.isOpen} })`);
+    await esc();
+    const s1 = await js(`({ tip: ${T.on}, open: ${L.isOpen} })`);
+    await esc();
+    const s2 = await js(`({ open: ${L.isOpen} })`);
+    ok(`${L.name} + ${tn}:泡泡開著第一下 Esc 只收泡泡、框還在;第二下才關框`, s0.tip && s0.open && !s1.tip && s1.open && !s2.open, JSON.stringify([s0, s1, s2]));
+    if (s2.open) await js(`try { ${L.close} } catch (_) {}`);
+    if (T.gone) await js(T.gone);
+    await js(`(() => { const b = document.getElementById("__tipbox"); if (b) b.remove(); })()`);
+    if (T.inModal) { w.webContents.sendInputEvent({ type: "mouseMove", x: 1, y: 1 }); await wait(60); }
+  }
+  // 旗標顏色選擇器(stratflags.js sfPop):色格的色名泡泡是色格的子元素、屬於選單這一層——Esc 一下連泡泡一起收、焦點回旗標鈕、底層不動。
+  // 面板外面另一顆泡泡(.mp-tip)照全站規則先收;組字中的 Esc 不關。底層用模型選單(escTop 裡沒有遮罩的一層)
+  const mv = async (x, y) => { w.webContents.sendInputEvent({ type: "mouseMove", x, y }); await wait(120); };
+  const sfRow = `(() => { let h = document.getElementById("__sfbox"); if (h) h.remove(); h = document.createElement("div"); h.id = "__sfbox"; h.style.cssText = "position:fixed;left:400px;top:300px;width:260px";
+    const wrap = document.createElement("div"); wrap.className = "strat-wrap"; const btn = document.createElement("button"); btn.type = "button"; btn.className = "strat-row";
+    const nm = document.createElement("span"); nm.className = "strat-name"; nm.textContent = "s1"; btn.appendChild(nm); wrap.appendChild(btn); h.appendChild(wrap); document.body.appendChild(h);
+    sfRowActions(wrap, btn, { name: "s1", displayName: "s1" }, SF_LOCAL); return wrap.querySelector(".strat-flagbtn").getClientRects().length; })()`;
+  const sfOpenM = `(() => { const wrap = document.querySelector("#__sfbox .strat-wrap"); sfPopOpen(wrap, wrap.querySelector(".strat-flagbtn"), { name: "s1" }, false, SF_LOCAL); })()`;
+  const sfSt = `({ pop: !!sfPop && !sfPop.hidden, fb: document.activeElement === document.querySelector("#__sfbox .strat-flagbtn"), mp: !$("mp-panel").hidden,
+    cellTip: !!sfPop && [...sfPop.querySelectorAll(".swcell .tip")].some((x) => getComputedStyle(x).display === "block") })`;
+  const cellAt = `(() => { const r = sfPop.querySelector(".swcell").getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`;
+  const sfReset = async () => { await js(`(sfPopClose(false), mpClose(false))`); await mv(1, 1); };
+  ok("旗標選擇器前置:旗標鈕有版面(可聚焦)", (await js(sfRow)) > 0);
+  { await js(`mpOpen(false)`); await wait(100); await js(sfOpenM); await wait(150);
+    const c = await js(cellAt); await mv(c.x, c.y);
+    const a0 = await js(sfSt); await esc(); const a1 = await js(sfSt);
+    ok("旗標選擇器 A(滑鼠停在色格、泡泡顯示):Esc 一下面板連泡泡收、焦點回旗標鈕、模型選單還在", a0.pop && a0.cellTip && a0.mp && !a1.pop && a1.fb && a1.mp, JSON.stringify([a0, a1]));
+    await sfReset(); }
+  { await js(`mpOpen(false)`); await wait(100);
+    // 不顯示的視窗頁面沒有焦點,:focus-visible 不會成立:用 CDP 的 focus emulation 讓 CSS 帶得出色格泡泡(只開這一格)
+    w.webContents.debugger.attach("1.3"); await w.webContents.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true });
+    await js(`document.querySelector("#__sfbox .strat-flagbtn").focus()`);
+    w.webContents.sendInputEvent({ type: "keyDown", keyCode: "Return" }); w.webContents.sendInputEvent({ type: "char", keyCode: "Return" }); w.webContents.sendInputEvent({ type: "keyUp", keyCode: "Return" }); await wait(200);
+    const b0 = await js(`({ ...${sfSt}, inCell: !!document.activeElement && document.activeElement.classList.contains("swcell") })`);
+    await esc(); const b1 = await js(sfSt);
+    ok("旗標選擇器 B(鍵盤 Enter 開、焦點在色格、泡泡顯示):Esc 一下面板收、焦點回旗標鈕、模型選單還在", b0.pop && b0.inCell && b0.cellTip && b0.mp && !b1.pop && b1.fb && b1.mp, JSON.stringify([b0, b1]));
+    await w.webContents.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: false }); w.webContents.debugger.detach();
+    await sfReset(); }
+  { await js(sfOpenM); await wait(150);
+    const pt = await js(`(() => { let h = document.getElementById("__sftip"); if (h) h.remove(); h = document.createElement("div"); h.id = "__sftip"; h.style.cssText = "position:fixed;left:40px;top:600px";
+      const b = document.createElement("button"); b.type = "button"; b.className = "mp-tip"; b.textContent = "說明字"; const p = document.createElement("span"); p.className = "tip"; p.id = "__sftp"; p.textContent = "泡泡";
+      h.append(b, p); document.body.appendChild(h); const r = b.getBoundingClientRect(); return { x: Math.round(r.left + 4), y: Math.round(r.top + r.height / 2) }; })()`);
+    await mv(pt.x, pt.y);
+    const tipOn = `getComputedStyle(document.getElementById("__sftp")).display !== "none"`;
+    const c0 = await js(`({ ...${sfSt}, tip: ${tipOn} })`); await esc();
+    const c1 = await js(`({ ...${sfSt}, tip: ${tipOn} })`); await esc();
+    const c2 = await js(sfSt);
+    ok("旗標選擇器 C(面板開著、滑鼠停在面板外的 .mp-tip):第一下只收那顆泡泡、面板還在;第二下面板關、焦點回旗標鈕", c0.pop && c0.tip && !c1.tip && c1.pop && !c2.pop && c2.fb, JSON.stringify([c0, c1, c2]));
+    await js(`document.getElementById("__sftip").remove()`); await sfReset(); }
+  { await js(sfOpenM); await wait(150);
+    const d = await js(`(() => { const a = document.activeElement, e = new KeyboardEvent("keydown", { key: "Escape", keyCode: 229, bubbles: true, cancelable: true }); a.dispatchEvent(e);
+      return { inCell: a.classList.contains("swcell"), code: e.keyCode, pop: !sfPop.hidden }; })()`);
+    ok("旗標選擇器 D:焦點在色格上、組字中的 Esc(keyCode 229)不關面板", d.inCell && d.code === 229 && d.pop, JSON.stringify(d));
+    await sfReset(); await js(`document.getElementById("__sfbox").remove()`); }
+
+  // 總覽曲線讀數卡 .cv-tip(trade.js trOvCurve):顯示時 Esc 收卡、底層不動;游標離開 canvas 前不再出現;沒顯示時不攔;window 監聽只掛一支
+  const now = Math.floor(Date.now() / 1000);
+  const CURVE = Array.from({ length: 20 }, (_, i) => ({ ts: now - (20 - i) * 3600, equity: 1000 + i * 7 + (i % 3) * 4 }));
+  const cvBuild = `(() => { TRP.started || trInit(); TR.ov.mode = "equity"; TR.ov.days = 90; TR.ov.at = Date.now(); TR.ov.curveErr = null; TR.ov.curve = { curve: ${JSON.stringify(CURVE)} };
+    let h = document.getElementById("__cvbox"); if (h) h.remove(); h = document.createElement("div"); h.id = "__cvbox"; h.style.cssText = "position:fixed;left:100px;top:100px;width:720px";
+    document.body.appendChild(h); h.appendChild(trOvCurve(false)); const c = h.querySelector("canvas.ov-canvas"); if (!c.clientHeight) c.style.height = "220px";
+    return true; })()`;
+  const cvCanvas = `(() => { const c = document.querySelector("#__cvbox canvas.ov-canvas"); const r = c.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), right: Math.round(r.right), bottom: Math.round(r.bottom), w: r.width, h: r.height }; })()`;
+  const cvSt = `({ tip: !document.querySelector("#__cvbox .cv-tip").hidden, mp: !$("mp-panel").hidden })`;
+  await js(cvBuild); await wait(200);
+  const cr = await js(cvCanvas);
+  ok("讀數卡前置:曲線畫得出來(canvas 有尺寸、TR.ov.geo 已設)", cr.w > 0 && cr.h > 0 && (await js(`!!TR.ov.geo`)), JSON.stringify(cr));
+  await mv(1, 1); await mv(cr.x, cr.y);
+  const v0 = await js(cvSt);
+  ok("讀數卡:游標移到曲線中間 → 出現", v0.tip, JSON.stringify(v0));
+  await js(`mpOpen(false)`); await wait(100);
+  const v1 = await js(cvSt); await esc(); const v2 = await js(cvSt);
+  ok("讀數卡顯示時 Esc:卡收掉、模型選單還在", v1.tip && v1.mp && !v2.tip && v2.mp, JSON.stringify([v1, v2]));
+  await mv(cr.x + 30, cr.y + 5); await mv(cr.x + 60, cr.y);
+  ok("…游標還在同一張圖上移動:卡不再出現", !(await js(cvSt)).tip);
+  await mv(cr.right + 40, cr.bottom + 40); await mv(cr.x, cr.y);
+  ok("…移出 canvas 再移進來:卡出現", (await js(cvSt)).tip);
+  await mv(cr.right + 40, cr.bottom + 40);
+  const v3 = await js(cvSt); await esc(); const v4 = await js(cvSt);
+  ok("讀數卡沒在顯示時 Esc 不攔:模型選單照關", !v3.tip && v3.mp && !v4.mp, JSON.stringify([v3, v4]));
+  await js(`(() => { const h = document.getElementById("__cvbox"); for (let i = 0; i < 3; i++) { h.textContent = ""; h.appendChild(trOvCurve(false)); } })()`);
+  ok("曲線重畫三次之後,讀數卡的 window 監聽只掛過一次", (await js(`typeof trCvEscN === "number" ? trCvEscN : -1`)) === 1);
+  await js(`document.getElementById("__cvbox").remove()`); await mv(1, 1);
+
+  // 沒有泡泡時 Esc 照常一下關框(不被白白吃掉一下)
+  await js(`(running = false, setOpen())`); await wait(250); await esc();
+  ok("沒有泡泡:Esc 一下就關設定", await js(`$("set-scrim").hidden`));
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   app.exit(red ? 1 : 0);
 });

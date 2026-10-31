@@ -89,7 +89,7 @@ async function run({ cur = "claude", turnFail = null, turnFailSrc = null, errTai
     && /if \(pre\.probe\) \{ try \{ d = await window\.blave\.detectAgents\(\); \} catch \(_\) \{ d = null; \} \}/.test(fs.readFileSync(path.join(SHELL, "renderer", "chattabs.js"), "utf8"))
     && /\n\s*if \(loggedOut\) turnFailSrc = "probe";\n/.test(app));
   t("auth_fail、cli_auth 在 FROM_RENDERER、每日去重", FROM_RENDERER.includes("auth_fail") && FROM_RENDERER.includes("cli_auth")
-    && /const DAILY = \[[^\]]*"auth_fail", "cli_auth"\]/.test(fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8")));
+    && /const DAILY = \[[^\]]*"auth_fail", "cli_auth"[,\]]/.test(fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8")));
   t("登入成功:連結畫面在 await detect() 之後、偵測確實已登入才記;聊天卡照 r.ok", /await detect\(\);\n\s*const x = \(lastDetect && lastDetect\[kind\]\) \|\| \{\};\n\s*if \(r\.ok && x\.loggedIn\) trackFeature\(kind === "codex" \? "codex_login_ok" : "claude_login_ok"\);/.test(app)
     && /if \(r\.ok\) \{ trackFeature\(kind === "codex" \? "codex_login_ok" : "claude_login_ok"\); me\.done\(\); \}/.test(app));
 
