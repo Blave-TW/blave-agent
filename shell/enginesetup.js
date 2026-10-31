@@ -119,6 +119,24 @@ function procStartOf(pid) {
   });
 }
 
+/* pid 鎖(引擎安裝的 pip、shell/codexpkg.js 的 Codex 套件共用):鎖檔 {pid, at} 裡的 pid 還活著就等,最多 waitMs。
+   不殺它:pid 可能已經被別的程式重用,殺錯比多等幾分鐘糟。持鎖的死了(或是我們自己)才刪鎖;等滿不刪、回 timedOut,
+   要不要接手由呼叫端決定。held = 鎖檔讀得出來。EPERM 算活著(別的使用者的行程) */
+const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return !!(e && e.code === "EPERM"); } };
+async function waitPidLock(fs, file, o) {
+  let lk = null; try { lk = JSON.parse(fs.readFileSync(file, "utf8")); } catch (_) { return { timedOut: false, held: false }; }
+  const now = o.now || Date.now, alive = o.alive || pidAlive, sleep = o.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const until = now() + (o.waitMs || 180000);
+  let said = false;
+  while (lk && Number.isInteger(lk.pid) && lk.pid !== process.pid && alive(lk.pid)) {
+    if (now() >= until) return { timedOut: true, held: true };
+    if (!said && o.log) { said = true; o.log(lk.pid); }
+    await sleep(1000);
+  }
+  try { fs.unlinkSync(file); } catch (_) { /* 已經沒了 */ }
+  return { timedOut: false, held: true };
+}
+
 const STEP_ORDER = ["ws", "engine", "pkgs"];
 function createEngineSetup(o) {
   const { fs, path, spawn } = o;
@@ -149,18 +167,12 @@ function createEngineSetup(o) {
      下次開 app 時看鎖檔,那支 pip 還活著就先等它結束,不讓兩支 pip 同時寫同一個 venv(也擋開發版與打包版共用 ~/Blave 時同時裝) */
   let child = null, childDone = null;
   const lockFile = path.join(venvDir, ".blave-install.lock");
-  const alive = o.alive || ((pid) => { try { process.kill(pid, 0); return true; } catch (e) { return !!(e && e.code === "EPERM"); } });
+  const alive = o.alive || pidAlive;
   const sleep = o.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
+  // 等到它結束或等滿就往下走(等滿也接手:pip 自己會處理半裝的 venv)
   async function waitLock() {
-    let lk = null; try { lk = JSON.parse(fs.readFileSync(lockFile, "utf8")); } catch (_) { return; }
-    const until = now() + (o.lockWaitMs || 180000);
-    let said = false;
-    // 不殺它:鎖檔裡的 pid 可能已經被別的程式重用(當掉之後很久才開 app),殺錯行程比多等幾分鐘糟。等到它結束或等滿就往下走
-    while (lk && Number.isInteger(lk.pid) && lk.pid !== process.pid && alive(lk.pid) && now() < until) {
-      if (!said) { said = true; o.log(`[engine] another installer (pid ${lk.pid}) is still writing the venv; waiting for it`); }
-      await sleep(1000);
-    }
-    try { fs.unlinkSync(lockFile); } catch (_) { /* 已經沒了 */ }
+    const w = await waitPidLock(fs, lockFile, { now, sleep, alive, waitMs: o.lockWaitMs || 180000, log: (pid) => o.log(`[engine] another installer (pid ${pid}) is still writing the venv; waiting for it`) });
+    if (w.held) { try { fs.unlinkSync(lockFile); } catch (_) { /* 已經沒了 */ } }
   }
   /* 背景編譯的鎖(稽核 enginefast P2-1):app 當掉 / 被強制結束時留下的孤兒 compileall,在這次啟動第一次要起 pip 之前處理——
      不然它還在讀 site-packages,新的 pip 同時在寫,讀到寫一半的 .py 會留下帶著完整檔 mtime 的壞 .pyc。
@@ -493,4 +505,4 @@ function createEngineSetup(o) {
   return { ensure, snapshot, abort, busy, compiling };
 }
 
-module.exports = { createEngineSetup, procStartOf, pipLine, pipCurName, pipWheel, pipError, failKind, depsTodo, depGroups, lockKey, PIP_INSTALL };
+module.exports = { createEngineSetup, waitPidLock, pidAlive, procStartOf, pipLine, pipCurName, pipWheel, pipError, failKind, depsTodo, depGroups, lockKey, PIP_INSTALL };

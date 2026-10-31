@@ -378,6 +378,9 @@ msgstr "Engine exited with code {code}"
 msgid "AGENT_BIN_MISSING"
 msgstr "Not sent: your AI command-line tool can’t be found. Re-detect it in Connect, or connect another."
 
+msgid "AGENT_BIN_DOWNLOADING"
+msgstr "Not sent: the Codex engine is still downloading. Send again when it’s done."
+
 msgid "turn.error"
 msgstr "Something went wrong: {msg}"
 
@@ -985,6 +988,36 @@ msgstr "Or sign in through the ChatGPT app, then come back."
 # 「無法啟動」那一列名字底下(連結畫面、設定 › 模型接入):回前景會自動重新偵測,所以寫 come back(同 row.orApp,不帶 here)
 msgid "row.reinstall"
 msgstr "Reinstall {name}, then come back."
+
+msgid "cn.pkgSize"
+msgstr "Downloads the Codex engine (about {size} MB)"
+
+msgid "cn.pkgDl"
+msgstr "Downloading Codex engine {a} / {b} MB"
+
+msgid "cn.pkgInstall"
+msgstr "Installing"
+
+msgid "cn.pkgTar"
+msgstr "This Windows version is too old. Update Windows or install Codex yourself"
+
+msgid "cn.pkgNet"
+msgstr "Couldn’t download. Check your connection and try again"
+
+msgid "cn.pkgDisk"
+msgstr "Not enough disk space. About 1.5 GB is needed"
+
+msgid "cn.pkgFail"
+msgstr "Install failed. Try again"
+
+msgid "cn.pkgBad"
+msgstr "The Codex engine won’t start. Try again to download it fresh"
+
+msgid "cn.retry"
+msgstr "Try Again"
+
+msgid "row.orBrowser"
+msgstr "Sign In opens your browser to finish signing in."
 
 # 偵測說沒登入、但 CLI 帶整份環境與用戶設定檔時說已登入(main.js authOutside):金鑰在環境變數、settings.json 或 apiKeyHelper,agent 回合讀不到
 msgid "row.keyOff"

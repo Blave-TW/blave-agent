@@ -40,13 +40,16 @@ const mergePath = (got, known, sep = path.delimiter) => got.concat(known.filter(
 /* Windows(純函式;tests/check_shell_login_path.js):GUI app 直接繼承登錄檔的使用者 PATH,不必開登入 shell。
    補的是已知安裝位置:Claude Code 原生安裝器(~\.local\bin)、npm 全域(%APPDATA%\npm,codex.cmd 在這)、WinGet 的捷徑資料夾
    (winget install Anthropic.ClaudeCode 把 claude.exe 連到這、再寫進使用者 PATH——Blave 開著時裝的,行程的 PATH 快照裡沒有)、
-   Git for Windows 的兩種裝法(Claude Code 的 Bash 工具靠它)。環境變數缺的那項會是相對路徑,不補。 */
+   Codex 官方 PowerShell 安裝器(chatgpt.com/codex/install.ps1)的可見 bin 資料夾(%LOCALAPPDATA%\Programs\OpenAI\Codex\bin,
+   同樣只寫進使用者 PATH、Blave 開著時裝的拿不到)、Git for Windows 的兩種裝法(Claude Code 的 Bash 工具靠它)。
+   環境變數缺的那項會是相對路徑,不補。 */
 function winPath(env) {
   const got = String(env.PATH || env.Path || "").split(";").map((s) => s.trim());
   const known = [
     path.win32.join(env.USERPROFILE || "", ".local", "bin"),
     path.win32.join(env.APPDATA || "", "npm"),
     path.win32.join(env.LOCALAPPDATA || "", "Microsoft", "WinGet", "Links"),
+    path.win32.join(env.LOCALAPPDATA || "", "Programs", "OpenAI", "Codex", "bin"),
     path.win32.join(env.LOCALAPPDATA || "", "Programs", "Git", "cmd"),
     path.win32.join(env.ProgramFiles || "", "Git", "cmd"),
   ].filter((d) => path.win32.isAbsolute(d));
@@ -159,7 +162,8 @@ function detectLogWrite(f, entry) {
 
 // 偵測結果契約(renderer 據此畫各列):
 // { claude: {installed, loggedIn, authMethod, email, path, why, how}, codex: {installed, loggedIn, path, why, via} }
-// why = detectWhy,能用時 null;how = cliAuthHow(authMethod)(telemetry.js),JSON 讀不出來是 null;via = codex 是哪種裝法("app" = ChatGPT.app / Store 版內附那顆,"cli" = 其他),失敗時給哪一種退路看它
+// why = detectWhy,能用時 null;how = cliAuthHow(authMethod)(telemetry.js),JSON 讀不出來是 null;via = codex 是哪種裝法("pkg" = 隨包那顆,
+// "app" = ChatGPT.app / Store 版內附那顆,"cli" = 其他;整次偵測超時是 null),失敗時給哪一種退路看它
 const CODEX_IN_CHATGPT = "/Applications/ChatGPT.app/Contents/Resources/codex";
 /* Windows 的 codex.cmd 要解到真的 codex.exe:runtime/codex_engine.py 用 create_subprocess_exec 起它,吃不了 .cmd。
    npm 的 bin/codex.js(0.156.1)找的是 <平台套件>/vendor/<triple>/bin/codex.exe,退路是 @openai/codex 自己的 vendor/;
@@ -236,10 +240,16 @@ async function claudePath(envPath, seen) {
   if (seen) seen.found = binKind(found);
   return (found && (seen || found !== BAD_BIN.claude) ? found : null) || bundledClaude(BASE, WIN);
 }
+/* 隨包那顆 codex(shell/codexpkg.js):釘版 → 已裝好的最高版(升版抓新版期間不斷線)。對話、偵測、〔登入〕都先問它,沒有才走上面的偵測鏈。
+   skipBad = 上一次偵測判它跑不起來(BAD_BIN):每一則訊息跳過它、走偵測鏈;偵測本身(不帶 skipBad)一律重試它 */
+function codexBundled(skipBad) {
+  const b = codexpkg.installed(BASE, CODEX_PIN, TRIPLE, WIN, fs);
+  return b && !(skipBad && BAD_BIN.codex === b.path) ? b.path : null;
+}
 /* 這一輪要跑的 codex 執行檔。**只解路徑**,不跑 `login status`——每一則訊息都要用,detectAgents() 一次要開到四個子行程;
    連 Claude 的人一次都不必開(SDK 自己找 claude)。來源仍然是當下的偵測,不是連結紀錄裡那個 agent 寫得到的字(稽核 R4)。 */
-async function codexBinNow() { return codexPath(await loginShellPath()); }
-async function detectAgents() {
+async function codexBinNow() { return codexBundled(true) || codexPath(await loginShellPath()); }
+async function detectAgentsRaw() {
   const envPath = await loginShellPath();
   const out = {
     claude: { installed: false, loggedIn: false, authMethod: null, email: null, path: null, why: null, authOutside: false, how: null },
@@ -295,12 +305,13 @@ async function detectAgents() {
     // 0.155.0-alpha:`login status`、`exec --json` 都在)。只查 PATH 的話,一大群
     // 「有 Codex」的人會看到「未偵測到」。Windows 的對應是 Store 版 Codex 桌面版(storeCodexPath)。
     // 官方契約:`codex login status` 登入=0、未登入=1(原始碼 cli/src/login.rs:443)
-    const { bin: codexBin, r, raw } = await probe("codex", (seen) => codexPath(envPath, seen, true), ["login", "status"], ["login", "status"]);
-    rec.codex.bin = binKind(codexBin);
+    const { bin: codexBin, r, raw } = await probe("codex", (seen) => codexBundled(!seen) || codexPath(envPath, seen, true), ["login", "status"], ["login", "status"]);
+    // 隨包那顆用身分認,不看路徑樣式:Homebrew cask 的 Caskroom/codex/<版>/bin/codex 跟我們的佈局一模一樣
+    rec.codex.bin = codexBin && codexBin === codexBundled(false) ? "pkg" : binKind(codexBin);
     if (!codexBin) return;
     out.codex.installed = true;
     out.codex.path = codexBin;
-    out.codex.via = rec.codex.bin === "chatgpt" || rec.codex.bin === "store" ? "app" : "cli";
+    out.codex.via = rec.codex.bin === "pkg" ? "pkg" : rec.codex.bin === "chatgpt" || rec.codex.bin === "store" ? "app" : "cli";
     Object.assign(rec.codex, runRec(r));
     out.codex.loggedIn = r.code === 0;
     if (!out.codex.loggedIn && !cantRun(r) && !r.timedOut) out.codex.authOutside = await outside(raw, (x) => x.code === 0);
@@ -310,6 +321,23 @@ async function detectAgents() {
   out.claude.why = detectWhy("claude", rec.claude); out.codex.why = detectWhy("codex", rec.codex);
   detectLogWrite(path.join(BASE, "state", "detect.log"), { ts: new Date().toISOString(), os: process.platform, ...rec });
   return out;
+}
+/* 整次偵測的上限(spec codex-detect-gaps §3.4):裡面每一步都有上限,但任何一處 reject 畫面就永遠停在「偵測中…」、
+   登入鈕全部鎖死(uid 33959)。最壞路徑是 Windows codex 那條:which + Store PowerShell + 登入檢查,cantRun 後退路再走一輪,兩倍再留 10 秒。
+   超時或 reject 回完整形狀、兩條都是 installed:true + *_timeout:畫面畫「沒有回應」(不是「未偵測到」),跟 detectWhy 的 _timeout 同一個意思。
+   內層超時後還會跑完、再寫一行 detect.log、更新 BAD_BIN／storeCodex,接受 */
+const DETECT_TOTAL_MS = 2 * (5000 + 15000 + LOGIN_CHECK_MS) + 10000;
+async function detectAgents(ms = DETECT_TOTAL_MS) {
+  let timer = null, err = null, out = null;
+  try { out = await Promise.race([detectAgentsRaw(), new Promise((r) => { timer = setTimeout(r, ms, null); })]); }
+  catch (e) { err = e; }
+  clearTimeout(timer);
+  if (out) return out;
+  detectLogWrite(path.join(BASE, "state", "detect.log"), { ts: new Date().toISOString(), os: process.platform, hung: true, err: err ? String((err && (err.code || err.name)) || "Error") : "deadline" });
+  return {
+    claude: { installed: true, loggedIn: false, authMethod: null, email: null, path: null, why: "claude_timeout", authOutside: false, how: null },
+    codex: { installed: true, loggedIn: false, path: null, why: "codex_timeout", via: null, authOutside: false },
+  };
 }
 
 /* 本機 agent 的登入不是我們的 OAuth:帳號是用戶跟 Anthropic / OpenAI 之間的事,憑證在 CLI
@@ -1170,6 +1198,30 @@ function syncOfficialOnUpdate() {
 }
 
 const AGENT_SDK = "claude-agent-sdk==0.2.159";
+// Codex 引擎隨包的釘版:runtime/CODEX_VERSION 是唯一來源(tests/check_shell_build_config.js、check_sdk_pin.py 釘住兩邊一樣)。
+// 升版 = 改那個檔 + 這裡 + 電腦版發版;用戶端下次用到 Codex 時抓新版,抓好前走已有的舊版,舊版下次開 app 才刪
+const CODEX_PIN = "0.166.0";
+const codexpkg = require("./codexpkg");
+const TRIPLE = codexpkg.tripleOf(process.platform, process.arch);
+let _codexPkg = null;
+function codexPkg() {
+  if (!_codexPkg) _codexPkg = codexpkg.createCodexPkg({
+    fs, spawn, fetchBuffer: require("./fetchbuf").fetchBuffer, fetchToFile: require("./fetchbuf").fetchToFile,
+    base: BASE, pin: CODEX_PIN, triple: TRIPLE, win: WIN, platform: process.platform, env: process.env,
+    unsupported: codexpkg.unsupported(process.platform, process.arch, process.env, fs), versionMs: LOGIN_CHECK_MS,
+    log: (m) => console.error(m), track: (ev, props) => tm().track(ev, props),
+    onChange: (s) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("codex-pkg-state", s); },
+  });
+  return _codexPkg;
+}
+/* 開 app:刪舊版(現在在用的那一版留著),連的是 Codex 就在背景補抓。不等它、失敗只留 log(列上有重試;送訊息時走偵測鏈或講正在下載)。
+   只在開 app 這一刻刪:之後可能有回合正握著舊版 */
+function codexKick() {
+  if (liveTurnCount() > 0) return;
+  const cur = codexpkg.installed(BASE, CODEX_PIN, TRIPLE, WIN, fs);
+  codexpkg.sweep(BASE, cur ? [CODEX_PIN, cur.version] : [CODEX_PIN], { fs, win: WIN, log: (m) => console.error(m) });
+  if ((loadConnection() || {}).kind === "codex") codexPkg().ensure().then((r) => { if (!r.ok && !r.aborted) console.error("[codexpkg] background download failed: " + r.kind); });
+}
 // cryptography 跟 SDK 一起釘:SDK → mcp → pyjwt[crypto] 拉進它,50.x 起 macOS 只出 arm64 wheel,Intel(含被 Rosetta
 // 跑成 x64)會退到從原始碼編(要 Rust,用戶機沒有)——0.0.6 通用版在 Intel 就死在這裡。48.0.1 是最後一版 universal2 wheel,
 // 兩種架構釘同一版。記號檔比的是整串,所以既有 venv 在下一則訊息(ensure-engine 每次送訊息前都跑)會重跑一次
@@ -3416,6 +3468,8 @@ async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEf
   // 偵測不到就**整輪失敗**,絕不退回去跑 Claude(稽核 ①):用戶連的是 Codex,靜默換一家供應商 = 換一條帳、換一個模型,
   // 而畫面上的連線狀態還寫著 Codex。畫面會請他重新偵測 / 重連。
   const codexBin = conn.kind === "codex" ? await codexBinNow() : null;
+  // 隨包那顆還在抓、偵測鏈上也沒有:講「正在下載」,不叫他去重新偵測
+  if (conn.kind === "codex" && !codexBin && _codexPkg && _codexPkg.busy()) throw new Error("AGENT_BIN_DOWNLOADING");
   if (conn.kind === "codex" && !codexBin) throw new Error("AGENT_BIN_MISSING");
   const useCodex = !!codexBin;
   const llmKey = conn.kind === "apikey" ? loadLlmKey() : null;
@@ -3773,6 +3827,9 @@ app.whenReady().then(() => {
   // 引擎裝好(或本來就在)之後才起本機常駐程式
   handle("ensure-engine", () => ensureEngineShared().then((r) => { tradeStartIfReady(); return r; }));
   handle("engine-state", () => engineSetup().snapshot());
+  // Codex 引擎隨包:連結畫面／設定 › 模型接入／額度用完 modal 的〔連結〕〔再試一次〕;進度另由 codex-pkg-state 推
+  handle("codex-pkg-ensure", (_e, opts) => codexPkg().ensure({ reinstall: !!(opts && opts.reinstall === true) }));
+  handle("codex-pkg-state", () => codexPkg().snapshot());
   // app.getLocale() 是**系統**語系(macOS 偏好設定),不吃 LANG 環境變數。
   // BLAVE_LANG 是覆蓋用的:開發要看英文版、或用戶的系統是中文但想用英文介面。
   handle("get-locale", () => process.env.BLAVE_LANG || app.getLocale());
@@ -4133,6 +4190,7 @@ app.whenReady().then(() => {
   if (app.hasSingleInstanceLock()) startStep("workspace sync", syncOfficialOnUpdate);
   startStep("trade host", tradeStartIfReady);   // 引擎早就裝好的人:一開 app 就有狀態可看(對帳器仍要他自己按啟動)
   if (app.hasSingleInstanceLock()) startStep("engine", engineKick);   // 要裝的在背景裝;已經裝好的幾毫秒就結束。第二份 app 不碰 venv
+  if (app.hasSingleInstanceLock()) startStep("codex engine", codexKick);   // 同上:第二份 app(開發版與打包版共用 ~/Blave)不起下載、不刪版本
   // 視窗回前景 = 用戶可能剛在瀏覽器綁完卡、開完主機:「含不含資料」的答案作廢,下一輪重查
   // (不在這裡打 api——跟 LLM 共用每分鐘 30 次的桶,而且畫面那邊有卡片時本來就會重查)
   // 畫面自己的 blur 分不出「焦點進了內建瀏覽器那一頁」跟「整個視窗退到背景」,所以由這裡講
@@ -4923,8 +4981,8 @@ app.on("before-quit", (e) => {
       .then((r) => { quitAsking = false; if (r.response === sg.goIndex) { quitConfirmed = true; app.quit(); } else { draftOk = false; draftNote = false; } }, () => { quitAsking = false; draftOk = false; draftNote = false; });
     return;
   }
-  // 常駐程式在跑、或背景安裝的 pip / 背景編 .pyc 還在跑:先收掉再結束(pip 不收會變孤兒,下次開 app 跟新的那支一起寫 venv)
-  const daemon = !!(_tradeHost && _tradeHost.isRunning()), installing = !!(_engineSetup && (_engineSetup.busy() || _engineSetup.compiling()));
+  // 常駐程式在跑、或背景安裝的 pip / 背景編 .pyc / Codex 引擎套件下載還在跑:先收掉再結束(pip 不收會變孤兒,下次開 app 跟新的那支一起寫 venv)
+  const daemon = !!(_tradeHost && _tradeHost.isRunning()), installing = !!(_engineSetup && (_engineSetup.busy() || _engineSetup.compiling())) || !!(_codexPkg && _codexPkg.busy());
   /* token 輪替在途:伺服器那邊可能已經換了、回應還沒回來——這時結束,新值就丟了,檔裡那顆只再活 10 分鐘(寬限),
      超過才重開就被登出(Mac e2e 10-14 查登入失效)。等它落地再走,最多 5 秒 */
   const rotating = typeof _rot !== "undefined" && !!(_rot && _rot.state().inflight);
@@ -4934,5 +4992,5 @@ app.on("before-quit", (e) => {
   const relayQuit = !quitting && typeof _relay !== "undefined" && !!_relay && _relay.isOn();
   if (quitting || (!daemon && !installing && !rotating && !closingMv && !relayQuit)) return;
   e.preventDefault(); quitting = true;
-  Promise.all([closingMv ? _mv.closing().catch(() => false) : null, relayQuit ? _relay.quit().catch(() => false) : null, daemon ? _tradeHost.stop() : null, engineAbort(), rotating ? Promise.race([_rot.settle(), new Promise((r) => setTimeout(r, 5000))]) : null]).finally(() => app.quit());
+  Promise.all([closingMv ? _mv.closing().catch(() => false) : null, relayQuit ? _relay.quit().catch(() => false) : null, daemon ? _tradeHost.stop() : null, engineAbort(), _codexPkg ? _codexPkg.abort().catch(() => false) : null, rotating ? Promise.race([_rot.settle(), new Promise((r) => setTimeout(r, 5000))]) : null]).finally(() => app.quit());
 });

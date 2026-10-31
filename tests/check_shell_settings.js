@@ -414,12 +414,34 @@ let M = mdlOptions(D, "claude", true);
 ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」;用中的那一列沒有動作(列尾「使用中」);裝了沒登入的列只有〔登入〕,不再並排「尚未登入」", M.length === 3 && shape(M[0]) === "blave|false||cn.use" && shape(M[1]) === "claude|true||null" && shape(M[2]) === "codex|false||cn.signIn");
 { // 列尾只放一樣:有鈕(或「使用中」)的列沒有狀態字——列舉 引擎 × token × 等待 × 偵測結果,不是抽樣
   const DS = [null, D, { claude: { installed: false }, codex: { installed: true, loggedIn: true } }, { claude: { installed: true, loggedIn: false }, codex: { installed: false } },
-    { claude: { installed: true, loggedIn: false, why: "claude_timeout" }, codex: { installed: true, loggedIn: false, why: "codex_cantrun" } }];
+    { claude: { installed: true, loggedIn: false, why: "claude_timeout" }, codex: { installed: true, loggedIn: false, why: "codex_cantrun" } },
+    { claude: { installed: false }, codex: { installed: true, loggedIn: false, why: "codex_cantrun", via: "pkg" } }];
+  // Codex 引擎隨包的快照(第 6 參數):缺席、還沒拉到、arch／tar 不支援、可以下載、下載中、解壓中、失敗
+  const PKGS = [undefined, null, { phase: "idle", unsupported: "arch", fail: null }, { phase: "idle", unsupported: "tar", fail: null }, { phase: "idle", fail: null, size: 166 },
+    { phase: "download", bytes: 5e6, total: 166e6, fail: null }, { phase: "extract", fail: null }, { phase: "idle", fail: { kind: "net" } }];
   const AKS = [null, { saved: null, presets: [{ id: "x", name: "X" }] }, { saved: "x", presets: [{ id: "x", name: "X" }] }];
   const bad = []; let n = 0;
   DS.forEach((d) => [null, "blave", "claude", "codex", "apikey"].forEach((c) => [true, false].forEach((tok) => [null, { oauth: true }, { login: "claude" }, { login: "codex" }].forEach((p) => AKS.forEach((ak) =>
-    mdlOptions(d, c, tok, p, ak).forEach((o) => { n++; if (o.st && (o.act || o.isCur)) bad.push(shape(o)); if (o.kind === "blave" && o.st) bad.push("blave:" + shape(o)); if (o.st && !["cn.detecting", "st.notFound", "st.cantRun", "st.noResp"].includes(o.st.key)) bad.push("key:" + shape(o)); }))))));
-  ok("列尾只放一樣:有鈕或「使用中」的列 st = null;Blave 那一列永遠沒有狀態字;剩下的狀態字只有「偵測中…」「未偵測到」「無法啟動」「沒有回應」(" + n + " 列)", n > 1000 && bad.length === 0); }
+    PKGS.forEach((pk) => mdlOptions(d, c, tok, p, ak, pk).forEach((o) => { n++; if (o.st && (o.act || o.isCur)) bad.push(shape(o)); if (o.kind === "blave" && o.st) bad.push("blave:" + shape(o)); if (o.st && !["cn.detecting", "st.notFound", "st.cantRun", "st.noResp", "cn.pkgDl", "cn.pkgInstall"].includes(o.st.key)) bad.push("key:" + shape(o)); })))))));
+  ok("列尾只放一樣:有鈕或「使用中」的列 st = null;Blave 那一列永遠沒有狀態字;剩下的狀態字只有「偵測中…」「未偵測到」「無法啟動」「沒有回應」與 Codex 引擎的「下載…」「正在安裝」(" + n + " 列,含隨包快照 " + PKGS.length + " 態)", n > 8000 && bad.length === 0, bad.slice(0, 5)); }
+{ // Codex 引擎隨包(spec codex-bundled-engine §4.3):沒偵測到 codex 時 Codex 那一列改畫下載狀態;第 6 參數缺席 = 以前的行為
+  const NONE = { claude: { installed: true, loggedIn: true }, codex: { installed: false } };
+  const cx = (pk, d) => mdlOptions(d || NONE, "claude", true, null, null, pk)[2];
+  const sh = (o) => [o.kind, o.st ? o.st.key + (o.st.vars ? JSON.stringify(o.st.vars) : "") : "-", o.desc || "-", o.descVars ? JSON.stringify(o.descVars) : "-", String(o.act), o.off ? "off" : "", o.pkg ? "pkg" : "", o.reinstall ? "re" : ""].join("|");
+  ok("pkg 缺席／null(還沒拉到)/ arch 不支援 → 照舊「未偵測到」、沒有鈕", [undefined, null, { phase: "idle", unsupported: "arch", fail: null }].every((pk) => sh(cx(pk)) === "codex|st.notFound|-|-|null|||"), [undefined, null].map((pk) => sh(cx(pk))));
+  ok("Windows 太舊(tar)→ 沒有鈕、說明 cn.pkgTar、列灰", sh(cx({ phase: "idle", unsupported: "tar", fail: null })) === "codex|-|cn.pkgTar|-|null|off|pkg|", sh(cx({ phase: "idle", unsupported: "tar", fail: null })));
+  ok("可以下載 → 〔連結〕(cn.connect)、說明「會下載 Codex 引擎(約 {size} MB)」", sh(cx({ phase: "idle", fail: null, size: 203 })) === 'codex|-|cn.pkgSize|{"size":"203"}|cn.connect||pkg|', sh(cx({ phase: "idle", fail: null, size: 203 })));
+  ok("下載中 → 狀態「下載 Codex 引擎 {a} / {b} MB」(同 eng.bytes 一位小數)、沒有鈕;解壓／驗證 → 「正在安裝」", sh(cx({ phase: "download", bytes: 5.25e6, total: 166e6, fail: null })) === 'codex|cn.pkgDl{"a":"5.3","b":"166.0"}|-|-|null||pkg|'
+    && sh(cx({ phase: "extract", fail: null })) === "codex|cn.pkgInstall|-|-|null||pkg|" && sh(cx({ phase: "verify", fail: null })) === "codex|cn.pkgInstall|-|-|null||pkg|", [sh(cx({ phase: "download", bytes: 5.25e6, total: 166e6, fail: null })), sh(cx({ phase: "extract", fail: null }))]);
+  ok("失敗 → 原因一句 +〔再試一次〕:net 下載不了、disk 磁碟不夠、checksum／other 安裝失敗", ["net:cn.pkgNet", "disk:cn.pkgDisk", "checksum:cn.pkgFail", "other:cn.pkgFail"].every((kd) => { const [k, d] = kd.split(":"); return sh(cx({ phase: "idle", fail: { kind: k } })) === "codex|-|" + d + "|-|cn.retry||pkg|"; }));
+  const BAD = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: false, why: "codex_cantrun", via: "pkg" } };
+  ok("隨包那顆跑不起來(via=pkg 的 cantrun)→〔再試一次〕重抓(reinstall),不是「重新安裝 Codex」;沒有快照時照舊", sh(cx({ phase: "idle", fail: null }, BAD)) === "codex|-|cn.pkgBad|-|cn.retry||pkg|re"
+    && mdlOptions(BAD, "claude", true)[2].desc === "row.reinstall", sh(cx({ phase: "idle", fail: null }, BAD)));
+  ok("偵測到 codex(PATH／ChatGPT app／隨包那顆能跑)→ 快照不接手;偵測中照舊「偵測中…」", sh(cx({ phase: "idle", fail: null }, { codex: { installed: true, loggedIn: true } })).startsWith("codex|-|-|-|cn.use")
+    && sh(cx({ phase: "download", bytes: 1, total: 2, fail: null }, { codex: { installed: true, loggedIn: false } })) === "codex|-|-|-|cn.signIn|||" && mdlOptions(null, "claude", true, null, null, { phase: "idle", fail: null })[2].st.key === "cn.detecting");
+  ok("mdlAct:下載列(o.pkg)走 codexPkgGo(reinstall),不走 connect／localLogin", /if \(o\.pkg\) return codexPkgGo\(o\.reinstall\);/.test(fnSrc("mdlAct")) && fnSrc("mdlAct").indexOf("o.pkg") < fnSrc("mdlAct").indexOf("return connect("));
+  ok("mdlPaint:傳 PKG.snap 當第 6 參數;說明與狀態字帶 vars", /mdlOptions\(MDL\.busy \? null : lastDetect, cur, hasToken, pend, typeof AK === "object" \? AK\.info : null, PKG\.snap\)/.test(fnSrc("mdlPaint"))
+    && /o\.descVars \? t\(o\.desc, o\.descVars\)/.test(fnSrc("mdlPaint")) && /t\(o\.st\.key, o\.st\.vars\)/.test(fnSrc("mdlPaint"))); }
 { // 跑不起來 / 沒有回應(稽核 P2-4):比照連結畫面,那一列寫狀態、灰掉、不給〔登入〕;一般沒登入照舊〔登入〕
   const W = { claude: { installed: true, loggedIn: false, why: "claude_timeout" }, codex: { installed: true, loggedIn: false, why: "codex_cantrun" } };
   const A = mdlOptions(W, "blave", true), B = mdlOptions(D, "claude", true), C = mdlOptions(W, "blave", true, { login: "codex" });
@@ -436,7 +458,7 @@ ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」
     && KX[1].desc === null && KX[2].desc === null && mdlOptions(null, "claude", true)[1].desc === null, [KO[1], KO[2], KX[1], KX[2]].map((o) => o.desc));
   ok("…畫面:off 的列加 class off、名字灰(同 .cn-row.off)", /el\("div", "cn-opt" \+ \(o\.isCur \? " is-cur" : ""\) \+ \(o\.off \? " off" : ""\)\)/.test(src) && /\.cn-opt\.off \.n\{color:var\(--ink-3\)\}/.test(css)); }
 ok("「切換」「連結」同一個動作同一個字:三列都用 cn.use,設定頁不再出現 cn.blave.switch / cn.connect / st.signedIn", mdlOptions(D, "codex", true)[1].act === "cn.use" && mdlOptions(D, "codex", true)[0].act === "cn.use"
-  && !/cn\.blave\.switch|cn\.connect|st\.signedIn/.test(mdl + fnSrc("mdlPaint")));
+  && !/cn\.blave\.switch|cn\.connect|st\.signedIn/.test(mdl.replace(fnSrc("codexPkgRow"), "") + fnSrc("mdlPaint")));   // codexPkgRow 的〔連結〕是 Codex 引擎下載鈕(三個表面同一個字),不是「改用這個」
 ok("沒登入 Blave、現在用的是本機 agent:那一列是「登入並切換」(不是「登入 Blave」)", mdlOptions(D, "claude", false)[0].act === "cn.blave.signinSwitch" && mdlOptions(D, null, false)[0].act === "cn.blave.btn" && mdlOptions(D, "claude", false)[0].st === null && mdlOptions(D, null, false)[0].st === null);
 M = mdlOptions({ claude: { installed: false }, codex: { installed: false } }, "blave", true);
 ok("用的是 Blave AI:那一列 is-cur、沒有動作、不講狀態;沒裝的兩列「未偵測到」、沒有鈕", shape(M[0]) === "blave|true||null" && shape(M[1]) === "claude|false|st.notFound|null" && shape(M[2]) === "codex|false|st.notFound|null");
@@ -448,7 +470,7 @@ ok("偵測中:兩列只換狀態字、不給動作(列數不變);Blave 那一列
 ok("「重新偵測」只在本機有一個不能用時出:兩個都就緒不出、還沒偵測過不出", !mdlNeedsRedetect({ claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: true } })
   && mdlNeedsRedetect(D) && mdlNeedsRedetect({ claude: { installed: true, loggedIn: true }, codex: { installed: false } }) && !mdlNeedsRedetect(null));
 { // mdlPaint 真的畫一次(假 DOM):全部就緒 → 只有「使用」「使用」「使用中」;一個沒登入 → 那一列講、本機那組底下出「重新偵測」(安靜文字鈕,不在組標題)
-  var MDL = MDL || { busy: false }, lastDetect = null, loginPending = null, detect = () => {}, mdlAct = () => {}, laiPaint = () => {}, planVars = () => ({ q: "100" }); hasToken = true;
+  var MDL = MDL || { busy: false }, PKG = { snap: null, redetect: false }, lastDetect = null, loginPending = null, detect = () => {}, mdlAct = () => {}, laiPaint = () => {}, planVars = () => ({ q: "100" }); hasToken = true;
   eval(fnSrc("mdlPaint"));
   const walk = (n, out = []) => { (n.children || []).forEach((c) => { if (c && typeof c === "object") { out.push(c); walk(c, out); } }); return out; };
   const texts = () => walk($("set-model")).map((n) => [n._cls, n.textContent]);

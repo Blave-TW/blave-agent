@@ -48,7 +48,7 @@ if (!process.versions.electron) (async () => {
 
   // ② modal 列的狀態:真的跑 laiRows(底下是設定 › 模型接入那份 mdlOptions)
   {
-    const R = new Function(`${line(/^const whyState = .*$/m)}\n${fn("mdlOptions")}\n${fn("laiRows")}\nreturn laiRows;`)();
+    const R = new Function(`${line(/^const whyState = .*$/m)}\n${fn("codexPkgRow")}\n${fn("mdlOptions")}\n${fn("laiRows")}\nreturn laiRows;`)();
     const sh = (rows) => rows.map((r) => [r.kind, r.act || "-", r.st || "-", r.sub || "-", r.off ? "off" : "", r.fill ? "fill" : ""].join(":")).join(" / ");
     const D = (c, x) => ({ claude: c, codex: x, apikey: { saved: "openrouter" } });
     const IN = { installed: true, loggedIn: true }, OUT = { installed: true, loggedIn: false }, NONE = { installed: false };
@@ -70,6 +70,15 @@ if (!process.versions.electron) (async () => {
     ok("② 跑不起來／沒回應:名字灰、狀態字、沒有鈕;跑不起來另寫 row.reinstall", sh(r) === "claude:-:st.cantRun:row.reinstall:off: / codex:-:st.noResp:-:off:", sh(r));
     r = R(D(IN, NONE), "claude", null, {});
     ok("② 已經在用的那一列:沒有鈕、記成 isCur(畫「目前使用」)", r[0].act === null && r[0].isCur === true);
+    // Codex 引擎隨包(spec codex-bundled-engine §4.3):沒偵測到 codex 但可以下載的那一列不被〔怎麼安裝〕蓋掉、名字不灰;沒有快照時照舊
+    r = R(D(IN, NONE), "blave", null, {}, { phase: "idle", fail: null, size: 166 });
+    ok("② Codex 下載列:〔連結〕(cn.connect)+ 說明 cn.pkgSize(帶 size)、不變〔怎麼安裝〕、名字不灰", sh(r) === "claude:cn.use:-:-::fill / codex:cn.connect:-:cn.pkgSize::" && r[1].pkg && r[1].subVars && r[1].subVars.size === "166", sh(r));
+    r = R(D(IN, NONE), "blave", null, {}, { phase: "download", bytes: 1e6, total: 166e6, fail: null });
+    ok("② Codex 下載中:狀態字 cn.pkgDl(帶 a／b)、沒有鈕", sh(r) === "claude:cn.use:-:-::fill / codex:-:cn.pkgDl:-::" && r[1].stVars.a === "1.0", sh(r));
+    r = R(D(IN, NONE), "blave", null, {}, { phase: "idle", unsupported: "arch", fail: null });
+    ok("② 不支援的平台(arch)→ 照舊〔怎麼安裝〕", sh(r) === "claude:cn.use:-:-::fill / codex:lai.install:-:-:off:", sh(r));
+    ok("② laiAct:下載列走 codexPkgGo;laiPaint 把 PKG.snap 傳給 laiRows、說明與狀態字帶 vars", /if \(r\.pkg\) return codexPkgGo\(r\.reinstall\);/.test(fn("laiAct"))
+      && /laiRows\(MDL\.busy \? null : lastDetect, cur, loginPending, LAI\.msg, PKG\.snap\)/.test(fn("laiPaint")) && /t\(r\.sub, r\.subVars \|\| rowVars\(r\.kind, r\.name\)\)/.test(fn("laiPaint")) && /t\(r\.st, r\.stVars\)/.test(fn("laiPaint")));
     const lp = fn("laiPaint");
     ok("② laiPaint:等登入中只有〔取消等待〕能按;腳只在有一列不能用時出(mdlNeedsRedetect)、偵測中或等待中鎖住;〔怎麼安裝〕是文字鈕",
       /if \(b && waiting && r\.act !== "login\.cancel"\) b\.disabled = true;/.test(lp) && /\$\("lai-foot"\)\.hidden = !mdlNeedsRedetect\(lastDetect\);/.test(lp) && /\$\("lai-redetect"\)\.disabled = MDL\.busy \|\| waiting;/.test(lp) && /r\.act === "lai\.install" \? "btn-quiet"/.test(lp));
