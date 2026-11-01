@@ -38,7 +38,7 @@ vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "var trTipSe
   "trListNames", "trDisplay", "trPickOff", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trTwNamesWant", "trTwName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty",
   "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
   "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trCfOpen", "trLivePositions", "trBook", "poPartStates", "trTxfPrice", "trGateSide", "trTradesSym", "trSentBeforeOf", "trWith", "trIsPaper", "trCfPaperOnly",
-  "trCfStates", "trCfHolds", "trMarks", "trCfQty", "trCfFlat", "trCfLongOnly", "trCfRows", "trCfTick", "trPvRequest", "trCtErrKey", "trManualPart", "trPosDetail", "trTwClosedKeys"].map((n) => cutF(n)).join("\n")
+  "trCfBookBad", "trCfStates", "trCfHolds", "trMarks", "trCfQty", "trCfFlat", "trCfLongOnly", "trCfRows", "trCfTick", "trPvRequest", "trCtErrKey", "trManualPart", "trPosDetail", "trTwClosedKeys"].map((n) => cutF(n)).join("\n")
   + "\n" + cutF("trCfField") + "\n" + ["poAdd"].map((n) => cutF(n, psrc)).join("\n"), ctx);
 
 // 台股時段照牆上時鐘會讓結果隨星期幾變:預設開盤,休市那組(F15)自己切 TW_OPEN = false
@@ -596,6 +596,35 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     bag({ firing: true, picked: ["btc", "tw", "n5"], edits: { btc: 1000, n5: 200000 }, noPv: true, paper: true }); f = open();
     ok("下一輪那句:有單、另一支草稿算不出 → 出", f.rows.length >= 1 && f.notes.includes("cf-note:tr.cf.nextRound"), J(f));
     ok("表頭:沒有時間字眼;F15 全部休市也是「預估」那組 key", /tr\.cf\.capOrders/.test(cutF("trCfOpen")) && !/asofBar|asofClose|trCfAsof|trCfMD/.test(src)); }
+  // 稽核 v041-web-saveframe B2:第一次讀帳前,金額沒變但存檔會改路由或合約——列不出單也要「儲存並下單」+ 記號(canon ❌ 會送單卻寫儲存)
+  { const first = (o) => { const S = bag(Object.assign({ firing: true, edits: {} }, o)); const r = S.st.report; r.last_reconcile = null; r.account = { read_at: now, venues: {} }; return S; };
+    let S = first({}); S.st.report.config.exchanges = { btc: "", tw: "" }; let f = open();
+    ok("B2 第一次讀帳前、金額沒變、路由 \"\" 存了變 binance:「儲存並下單」+ 真錢、下一輪那句", f.title === "tr.cf.titleFire" && f.ok === "tr.cf.titleFire" && f.mark === "tr.mode.real" && f.notes.includes("cf-note:tr.cf.nextRound"), J(f));
+    S = first({}); S.st.report.config.exchanges = { btc: "binance", tw: "binance" }; f = open();
+    ok("B2 …路由沒變、金額沒變:直接存(什麼都沒變)", f.direct === true, J(f));
+    S = first({}); f = open();
+    ok("B2 …舊報告沒有 exchanges:判不出,不算路由會變", f.direct === true, J(f));
+    S = bag({ firing: true, edits: {}, picked: ["btc", "tw", "fx"], list: [{ name: "fx", displayName: "FX", hasBacktest: true, symbol: "TXF", market: "swap", twd: true, twdAll: true }], amounts: { fx: 2 }, states: { fx: { symbol: "TXF", position: 1 } }, paper: false,
+      rep: { venues: { paper: V }, config: { amounts: { btc: 500, tw: 100000, fx: 2 }, contracts: { fx: "TXF" }, exchanges: { btc: "paper", tw: "paper", fx: "paper" } }, can_switch_contract: true, last_reconcile: null, account: { read_at: now, venues: {} } } });
+    S.ct.edits.fx = "MXF"; S.edits.fx = 8; f = open();
+    ok("B2 …第一次讀帳前換合約(金額跟著換算):「儲存並下單」+ 記號", f.title === "tr.cf.titleFire" && f.mark === "tr.mode.paper", J(f));
+    const T0 = bag({ firing: true, edits: {}, picked: ["btc", "tw", "fx"], list: [{ name: "fx", displayName: "FX", hasBacktest: true, symbol: "TXF", market: "swap", twd: true, twdAll: true }], amounts: { fx: 8 }, states: { fx: { symbol: "TXF", position: 1 } },
+      rep: { venues: { paper: V }, config: { amounts: { btc: 500, tw: 100000, fx: 8 }, contracts: { fx: "TXF" }, exchanges: { btc: "paper", tw: "paper", fx: "paper" } }, can_switch_contract: true, last_reconcile: null, account: { read_at: now, venues: {} } } });
+    T0.ct.edits.fx = "MXF"; T0.ct.basis = {}; T0.edits.fx = 8; f = open();
+    ok("B2 …換合約、口數沒變(金額數字一樣):也是「儲存並下單」+ 記號", f.title === "tr.cf.titleFire" && f.mark === "tr.mode.paper", J(f)); }
+  // 稽核 v041-web-saveframe B1:讀帳失敗、沒有帳本:帳上是空的不能拿來減,不列單,不把整份目標列成買進
+  { const bad = (o, rep) => { const S = bag(Object.assign({ firing: true, edits: { btc: 2000 } }, o)); const r = S.st.report; r.account.venues.binance = { ok: false, error: "boom" }; Object.assign(r, rep || {}); return S; };
+    const OLDTS = new Date((now - 900) * 1000).toISOString().slice(0, 19);
+    bad({}, { last_reconcile: null }); let f = open();
+    ok("B1 沒有快照、讀帳失敗:沒有買賣列、改列「原 → 新」、框底只有下一輪那句、「儲存並下單」", f.title === "tr.cf.titleFire" && !f.rows.some((x) => /tr\.cf\.(buy|sell)/.test(x)) && f.rows.some((x) => /BTCUSDT500→2,000/.test(x)) && J(f.notes) === J(["cf-note:tr.cf.nextRound"]), J(f));
+    bad({}, { last_reconcile: { ts: OLDTS, actual: {}, target: {}, gates: {} } }); f = open();
+    ok("B1 舊快照、沒有帳本:一樣不列單", !f.rows.some((x) => /tr\.cf\.(buy|sell)/.test(x)) && J(f.notes) === J(["cf-note:tr.cf.nextRound"]), J(f));
+    bad({}, { self_ledger: false, last_reconcile: { ts: OLDTS, actual: {}, target: {}, gates: {}, ledger: { BTCUSDT: { side: "long", size: 500 } } } }); f = open();
+    ok("B1 self_ledger 關著、快照有帳本(對帳器比真實帳戶):一樣不列單", !f.rows.some((x) => /tr\.cf\.(buy|sell)/.test(x)), J(f));
+    bad({}, { self_ledger: true, last_reconcile: { ts: OLDTS, actual: {}, target: {}, gates: {}, ledger: { BTCUSDT: { side: "long", size: 500 } } } }); f = open();
+    ok("B1 對照:讀帳失敗但有帳本:照帳本列單(買 1,500 那段)", f.rows.some((x) => /^tr\.cf\.buyBTCUSDT/.test(x)) && f.cap.startsWith("tr.cf.capOrders"), J(f));
+    bad({}, { last_reconcile: { ts: new Date((now + 60) * 1000).toISOString().slice(0, 19), actual: { BTCUSDT: { side: "long", size: 500 } }, target: {}, gates: {} } }); f = open();
+    ok("B1 對照:快照比讀帳新:照快照的帳列單", f.rows.some((x) => /^tr\.cf\.buyBTCUSDT/.test(x)), J(f)); }
   // 設計稽核 B2:判不出部位時補一句;確定有標平倉、確定沒有什麼都不出;trStratHeld 單標的讀帳正常回 true(實測,不是一律 null)
   { const PC2 = { name: "pc", displayName: "PC", hasBacktest: true, symbol: null, portfolio: true, market: "swap", universe: ["ETHUSDT"] };
     const MAYBE = "cf-note:tr.cf.closeMaybe", held = () => vm.runInContext("trAsSaved(() => trStratHeld('btc'))", ctx);
@@ -696,6 +725,7 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
       ["稽核 S4:綁了沒有 lib 的交易所＋模擬(清單兩家都有)→ runtime 不繼承", { env: ["kucoin", "paper"], manifest: ["kucoin", "paper"], libs: { paper: ["order", "account"] }, firing: true,
         before: { amounts: { btc: 500 }, exchanges: { btc: "" } }, send: { btc: 500 }, strategies: { btc: BTC } }],
       ["投資組合(Type C,台股一多一空)、綁模擬帳戶、沒路由、在跑:空頭壓 0", { ...P, firing: true, before: { amounts: { pc: 1000000 }, exchanges: { pc: "" } }, send: { pc: 1000000 }, strategies: { pc: PC } }],
+      // 反例:讀得到帳時路由變動不進標題(模擬台股空單補路由,放寬會誤寫「儲存並下單」;同網頁 moved 只在讀不到帳時算)
       ["單一標的台股做空、綁模擬帳戶、沒路由、在跑:現股不放空、不下單", { ...P, firing: true, before: { amounts: { tws: 100000 }, exchanges: { tws: "" } }, send: { tws: 100000 }, strategies: { tws: TWS } }],
       ["舊 runtime(報告沒有 save_routing):退回自己推,單一模擬帳戶照樣對", { ...P, firing: true, oldRuntime: true, before: { amounts: both, exchanges: blank2 }, send: both, strategies: { btc: BTC, tw: TW } }],
     ];

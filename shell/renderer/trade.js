@@ -3860,6 +3860,14 @@ function trCfRows(o) {
   rows.sort((a, b) => ((b.was ? 1 : 0) - (a.was ? 1 : 0)) || (a.sym < b.sym ? -1 : a.sym > b.sym ? 1 : 0));
   return { kind: "changes", rows, st, held };
 }
+/* 讀帳失敗時帳上的數字不能拿來減:trLivePositions 跳過 ok === false 的交易所,算出來是空的,整份目標會被列成買進(同網頁 pfCfBookBad)。
+   對帳器用帳本在比(self_ledger 且快照有 ledger)或快照比讀帳新時,trBook 走的不是這份,數字是對的 */
+function trCfBookBad(r) {
+  if (!trVenueIds(r).some((id) => { const e = trLiveEntry(r, id); return !!e && e.ok === false; })) return false;
+  const last = r.last_reconcile || null, led = last && last.ledger && typeof last.ledger === "object";
+  if (r.self_ledger === true && led) return false;
+  return !(last && (trMs(last.ts) || 0) > (trMs(r.account && r.account.read_at) || 0));
+}
 // 開著的存金額框(trCfTick 看它要不要翻面)
 const TR_CF = { cur: null };
 /* 策略頁金額框的輸入格(trCfOpen 的 o.input):加密「金額」＋幣別、台股「金額」TWD、台指期「口數」(機器能換合約才出合約下拉)。
@@ -4000,19 +4008,25 @@ function trCfOpen(o) {
     const args = { r, stored, sending, contractsBefore: ctBefore, contractsAfter: ctAfter,
       mine: bk ? bk.mine : {}, gates: (last || {}).gates || {}, covered: (sym, names) => !recon || trSavedKinds(names, r).some((k) => trTradesSym(k, sym)),
       lot: (sym) => trIsLot(last, sym) || !!trTxfSpec(trCapitalCanon(sym.replace(/@spot$/, ""))) };
-    // 第一次讀帳還沒回來:帳上是空的不能拿來減,不列單、列目標「原 → 新」
-    const firstRead = firing && recon && trFirstReadPending(r);
+    // 第一次讀帳還沒回來、或讀帳失敗:帳上是空的不能拿來減,不列單、列目標「原 → 新」,表下講下一輪照最新訊號算
+    const firstRead = firing && recon && (trFirstReadPending(r) || trCfBookBad(r));
     let m = firing && recon && !firstRead ? trCfRows(Object.assign({ firing: true }, args)) : null;
     const orders = !!m && m.rows.length > 0, held = (m && m.held) || { wait: [], names: [], gate: [] };
     if (!orders) m = trCfRows(Object.assign({ firing: false }, args));
-    // 會送就寫「下單」(canon):在跑、有帳戶、金額有變的那支這家下得了,就是「儲存並下單」,這一刻列不出單也照寫
-    const fire = orders || Object.keys(sending).concat(Object.keys(stored)).some((n) => relevant(n) && trCfWillOrder(n, m.st.states[n] || (r.states || {})[n], ctAfter));
+    /* 存檔後會變的:金額;帳算不出單的時候(firstRead)再加金額沒變但路由、合約會變的(有金額才算),帳讀得到時列單那條已經算準。
+       路由 "" 或沒有紀錄時對帳器不交易它,存了才開始;舊報告沒有 exchanges 判不出,不算。合約照框裡選的(ctView) */
+    const ex = r.config && typeof r.config.exchanges === "object" ? r.config.exchanges : null;
+    const moves = (n) => { if (relevant(n)) return true; if (!firstRead || !(n in stored) || !(Number(sending[n]) > 0)) return false;
+      const to = ex ? trSavedRoute(n, r) : "", c0 = trCtStored(n);
+      return (!!to && to !== (typeof ex[n] === "string" ? ex[n] : "")) || (!!c0 && trCt(n) !== c0); };
+    // 會送就寫「下單」(canon):在跑、有帳戶、存檔後會變的那支這家下得了,就是「儲存並下單」,這一刻列不出單也照寫
+    const fire = orders || Object.keys(sending).concat(Object.keys(stored)).some((n) => moves(n) && trCfWillOrder(n, m.st.states[n] || (r.states || {})[n], ctAfter));
     if (tick && fire === cf.firing) return;
     const amtOnly = Object.keys(sending).filter((n) => (n in stored) && Number(sending[n]) !== old(n));
     // 對帳器先不動的那句只講算得出的:等的那支沒有訊號、沒有預覽時整句不出(不留半句)
     const known = (ns) => ns.every((n) => m.st.missing.indexOf(n) < 0);
     const hw = held.wait.length && known(held.names) ? held.wait : [], hg = held.gate;
-    const nextOn = fire && (!orders || m.st.missing.some(relevant) || m.st.old.some(relevant));
+    const nextOn = fire && (!orders || m.st.missing.some(moves) || m.st.old.some(moves));
     // 移出或歸 0、判不出帳上有沒有部位、也沒列成賣單:標籤不能講(空手的人會看到假話),用一句講會發生什麼
     const sold = (n) => { const ks = trCfSymsOf(n, (r.states || {})[n], ctAfter); return orders && !!ks && ks.length > 0 && ks.every((k) => m.rows.some((x) => x.sym === k && x.side === "sell")); };
     const closeMaybe = fire && Object.keys(stored).some((n) => old(n) > 0 && !(Number(sending[n]) > 0) && trStratHeld(n) === null && !keepsPos(n) && !sold(n));
