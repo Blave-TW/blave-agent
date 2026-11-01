@@ -8,7 +8,6 @@
 /* ── 純邏輯(tests/check_shell_portfolio.js 從原文切出來跑;這一段不准碰 DOM)────────────── */
 const MG_EQUAL = "equal", MG_SLOPE = "slope", MG_SHARPE = "sharpe";
 const MG_LOOKBACK_DEFAULT = 365;      // = manager.py LOOKBACK
-const MG_TARGET_VOL_DEFAULT = 0.3;    // = manager.py TARGET_VOL
 const MG_RANDOM_N = 1000;             // = management_backtest.py --random-n 預設,不傳
 const MG_REFRESH_BATCH = 50;          // = stats_refresh 一次最多幾支(runtime STATS_REFRESH_MAX_NAMES)
 const MG_REFRESH_MAX_MS = 20 * 60000; // 跑優化前更新績效最多等多久(沒上線的成員是整支重跑回測,一支最多 15 分鐘);逾時用現有數字跑
@@ -18,6 +17,7 @@ const MPS_METHODS = ["vol", "mdd", "lev"];
 const MPS_MDD_WARN = 30;              // 預覽的最大回撤超過這個 % 字變紅
 const MPS_SOLVE_LEV_MAX = 100;        // 目標回撤反推槓桿的上限
 const MG_LOTS_OVER_WARN = 0.05;       // 台指期進位讓整份組合比計畫總部位多出超過這個比例,優化表下才講(Wei 10-16)
+const MG_ALLOC_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MG_SHORT_RE = /insufficient history:\s*(\d+)\s*days?\s*<=\s*lookback\s*(\d+)/i;
 // PARAMS 值型別照 contract(int/float/bool/str);lookback / target_vol 合法範圍同 listener
 function mgParamOk(v) { return (typeof v === "number" && isFinite(v)) || typeof v === "boolean" || (typeof v === "string" && v.length <= 200); }
@@ -26,16 +26,33 @@ function mgParamInRange(k, v) {
   if (k === "target_vol") return v >= 0.01 && v <= 5;
   return true;
 }
-// 一個方法的參數就是它自己宣告的 PARAMS(target_vol 永遠排除:那是呼叫端的旗標);現值優先保留(兩邊都宣告的 key 沿用)
-function mgDefaultParams(method) {
+// 一個方法的參數就是它自己宣告的 PARAMS(target_vol 永遠排除:那是呼叫端的旗標)。宣告值只用來認 key 與型別,不當值:沒有值的格是 null,要用戶填(Wei 11-01)
+function mgDeclaredParams(method) {
   const p = {}, src = method && method.params && typeof method.params === "object" ? method.params : {};
   Object.keys(src).forEach((k) => { if (k !== "target_vol" && mgParamOk(src[k])) p[k] = src[k]; });
   return p;
 }
 function mgFitParams(method, cur) {
-  const c = cur && typeof cur === "object" ? cur : {}, p = mgDefaultParams(method);
-  Object.keys(p).forEach((k) => { if (k in c && typeof c[k] === typeof p[k] && mgParamOk(c[k]) && mgParamInRange(k, c[k])) p[k] = c[k]; });
+  const c = cur && typeof cur === "object" ? cur : {}, d = mgDeclaredParams(method), p = {};
+  Object.keys(d).forEach((k) => { p[k] = k in c && typeof c[k] === typeof d[k] && mgParamOk(c[k]) && mgParamInRange(k, c[k]) ? c[k] : null; });
   return p;
+}
+// 存檔 {alloc, params: {方法名: {key: 值}}}:每個方法各記各的,換走再換回來還是用戶填的。形狀不對 = null
+function mgOptClean(v) {
+  if (!v || typeof v !== "object" || typeof v.alloc !== "string" || !MG_ALLOC_RE.test(v.alloc)) return null;
+  const params = {}, src = v.params && typeof v.params === "object" ? v.params : {};
+  Object.keys(src).slice(0, 64).forEach((a) => {
+    if (!MG_ALLOC_RE.test(a) || !src[a] || typeof src[a] !== "object") return;
+    const o = {}; Object.keys(src[a]).slice(0, 32).forEach((k) => { if (mgParamOk(src[a][k])) o[k] = src[a][k]; }); params[a] = o;
+  });
+  return { alloc: v.alloc, params };
+}
+/* 第一次進來主機現有的方法(不算代選):回測 job、提案、config;config 沒寫 allocator 但已上線 = 舊 manager 套的 slope(同 manager.py default_allocator)。都沒有 = null */
+function mgHostAlloc(src, cfg) {
+  if (src) return mgNormAlloc(src.allocator);
+  const c = cfg && typeof cfg === "object" ? cfg : {};
+  if (typeof c.allocator === "string" && c.allocator) return c.allocator;
+  return c.weights && typeof c.weights === "object" && Object.keys(c.weights).length ? MG_SLOPE : null;
 }
 // 舊腳本(與舊 proposal/config)寫的 allocator=null 指的是當年唯一的內建方法 slope
 function mgNormAlloc(v) { return typeof v === "string" && v ? v : MG_SLOPE; }
@@ -63,9 +80,10 @@ function mgWeightPct(w) {
   const p = w * 100;
   return Math.abs(p - Math.round(p)) < 0.05 ? String(Math.round(p)) : p.toFixed(1);
 }
-// fundCcy = 本金填下去時的幣別:之後成員換區(投入資金幣別跟著換)要換算,不能把同一個數字直接當新幣別讀。null = 舊存檔,照當下幣別讀
+/* 部位大小只放用戶填的值(Wei 11-01):沒填就是 null(method 也是),不用算出來的數字代填;填過之後成員、報告、幣別怎麼變都原樣。
+   fundCcy = 本金填下去時的幣別,之後一律照這個幣別顯示,算各區金額才換匯。null = 舊存檔,第一次畫出來時定成當下幣別(mgPaint) */
 function mpsSizingClean(v) {
-  const out = { fund: null, fundCcy: null, method: "vol", target: { vol: null, mdd: null, lev: null } };
+  const out = { fund: null, fundCcy: null, method: null, target: { vol: null, mdd: null, lev: null } };
   if (!v || typeof v !== "object") return out;
   const pos = (x) => (typeof x === "number" && isFinite(x) && x > 0 ? x : null);
   out.fund = pos(v.fund);
@@ -73,20 +91,6 @@ function mpsSizingClean(v) {
   if (MPS_METHODS.indexOf(v.method) >= 0) out.method = v.method;
   const tg = v.target && typeof v.target === "object" ? v.target : {};
   MPS_METHODS.forEach((m) => { out.target[m] = pos(tg[m]); });
-  return out;
-}
-// 存著的本金換成 ccy:同幣別原值;換不出來(缺匯率)= null,不把數字原封當新幣別。只換顯示、不改存檔,換回原幣別就是原值
-function mpsFundAs(s, ccy, conv) {
-  if (s.fund === null) return null;
-  if (!s.fundCcy || s.fundCcy === ccy) return s.fund;
-  const v = conv(s.fund, s.fundCcy, ccy); return v === null ? null : Math.round(v);
-}
-/* 用戶確認過的值(按部位大小的「確定」、或套用金額成功)釘成明確值:本金帶幣別、方法 m 的目標。
-   沒釘的 null 會跟著下一份優化結果(歷史波動、1× 回撤)與已存合計走,跑完優化就變了(Wei 10-16)。已有明確值的不蓋 */
-function mpsSizingPin(s, ccy, fund, m, target) {
-  const out = mpsSizingClean(s);
-  if (out.fund === null && fund > 0) { out.fund = fund; out.fundCcy = ccy || null; } else if (out.fund !== null && !out.fundCcy && ccy) out.fundCcy = ccy;
-  if (MPS_METHODS.indexOf(m) >= 0 && out.target[m] === null && target > 0) out.target[m] = target;
   return out;
 }
 // proposal.port_returns.r:按目前權重的組合日報酬(小數、沒乘槓桿);不完整 = null(最大回撤算不出來)
@@ -118,24 +122,23 @@ function mpsHistVolOf(prop) {
   const p = prop || {}, v = typeof p.ann_vol_pct === "number" ? p.ann_vol_pct : typeof p.ann_volatility_pct === "number" ? p.ann_volatility_pct : null;
   return typeof v === "number" && isFinite(v) && v > 0 ? v : null;
 }
-/* 部位大小的隱含槓桿(同網頁 mpsLevOf):目標波動 = 目標 ÷ 歷史波動;最大回撤 = 反推;固定槓桿 = 本身。
-   target null = 預設(目標波動 = 歷史波動、回撤 = 1× 時的回撤、槓桿 = 1)。選不了最大回撤(沒序列)時退回目標波動 */
-function mpsMethodOf(s, series) { return s.method === "mdd" && !series ? "vol" : s.method; }
-function mpsTargetOf(s, m, prop) {
-  if (s.target[m] !== null) return s.target[m];
-  if (m === "vol") return mpsHistVolOf(prop);
-  if (m === "lev") return 1;
-  const r = mpsSeriesOf(prop); return r ? Math.round(mpsMddAt(1, r) * 10) / 10 || null : null;
-}
+// 部位大小的隱含槓桿:目標波動 = 目標 ÷ 歷史波動;最大回撤 = 反推;固定槓桿 = 本身。沒選方法、沒填目標、選的方法算不出來都是 null,不換別的方法代算
 function mpsLevFor(s, prop) {
-  const series = mpsSeriesOf(prop), m = mpsMethodOf(s, series), tg = mpsTargetOf(s, m, prop);
+  const m = s.method, tg = m ? s.target[m] : null;
   if (tg === null) return null;
   if (m === "lev") return tg;
   if (m === "vol") { const h = mpsHistVolOf(prop); return h === null ? null : tg / h; }
-  return mpsSolveLev(tg, series);
+  return mpsSolveLev(tg, mpsSeriesOf(prop));
+}
+// 部位大小算不出金額時缺什麼 → 字串 key;算得出來 = null。noSeriesKey = 最大回撤沒序列時的原因句(依主機新舊,由呼叫端判)
+function mpsSizeGap(s, prop, noSeriesKey) {
+  const m = s.method, tg = m ? s.target[m] : null;
+  if (m === null || tg === null) return s.fund === null ? "mg.needSize" : m === null ? "mg.needMethod" : "mg.needTarget";
+  if (mpsLevFor(s, prop) === null) return m !== "mdd" ? "mg.sizeNoHist" : mpsSeriesOf(prop) ? "mg.sizeNoSolve" : noSeriesKey;
+  return s.fund === null ? "mg.needFund" : null;
 }
 /* 部位大小設定鈕的摘要(同網頁:「投入金額 · 方法」,三種方法同一個格式,鈕上不寫槓桿倍數):
-   fund 帶千分位與幣別;目標去掉多餘的 0(30% / 12.5% / 1.5×)。fund 或目標算不出來那一段寫「—」 */
+   fund 帶千分位與幣別;目標去掉多餘的 0(30% / 12.5% / 1.5×)。沒填的那段是 null,鈕上寫「未設定」 */
 function mpsChipParts(fund, ccy, m, target) {
   const f = typeof fund === "number" && isFinite(fund) ? Math.round(fund).toLocaleString("en-US") : null;
   const v = typeof target === "number" && isFinite(target) ? (m === "lev" ? String(Math.round(target * 100) / 100) + "×" : String(Math.round(target * 10) / 10) + "%") : null;
@@ -471,12 +474,13 @@ function poFog(kind) {
   if (kind === "opt") fog.classList.add("mg-fog");
   if (kind === "connect") under.appendChild(poFogOver()); else if (pos) under.appendChild(poFogPos()); else if (kind === "opt") under.appendChild(poFogOpt()); else under.appendChild(poFogCfg());
   const card = trEl("div", "fog-card");
-  const msg = card.appendChild(trEl("p", "", kind === "opt" ? t("mg.fogOpt", { n: mgMembers().length }) : t(kind === "pick" ? "po.fogPick" : kind === "pos-pick" ? "tr.fogPosPick" : kind === "pos-new" ? "tr.fogPosNew" : kind === "pos-draft" ? "tr.startOffDraft" : TR.env === "cloud" ? "tr.cloud.fogConnect" : "tr.fogConnect")));
+  const optNeeds = kind === "opt" ? mgOptBlockReason() : null;
+  const msg = card.appendChild(trEl("p", "", kind === "opt" ? optNeeds || t("mg.fogOpt", { n: mgMembers().length }) : t(kind === "pick" ? "po.fogPick" : kind === "pos-pick" ? "tr.fogPosPick" : kind === "pos-new" ? "tr.fogPosNew" : kind === "pos-draft" ? "tr.startOffDraft" : TR.env === "cloud" ? "tr.cloud.fogConnect" : "tr.fogConnect")));
   if (pos) msg.id = "tr-pos-fog-msg";
   const b = trEl("button", "btn-fill", t(kind === "opt" ? "mg.optRun" : kind === "pick" || kind === "pos-pick" ? "tr.pick" : kind === "pos-new" ? "ns.chip" : kind === "pos-draft" ? "po.goAmounts" : "cx.title")); b.type = "button";
   if (kind === "pick") { b.id = "tr-pick"; b.dataset.fk = "pick"; b.disabled = trPickOff(); b.addEventListener("click", () => psOpen(b)); }
   // 部位霧只在選擇策略框開得了時才出(trZNow 的 wait 含 trPickOff),停用在這裡只是保險,不會有停用而沒有原因的卡
-  else if (kind === "opt") { b.id = "mg-fog-opt"; b.dataset.fk = "mg-fog-opt"; b.addEventListener("click", mgRunOptimize); }
+  else if (kind === "opt") { b.id = "mg-fog-opt"; b.dataset.fk = "mg-fog-opt"; b.disabled = !!optNeeds; b.addEventListener("click", mgRunOptimize); }
   else if (kind === "pos-pick") { b.id = "tr-pos-pick"; b.dataset.fk = "pos-pick"; b.disabled = trPickOff(); b.addEventListener("click", () => { trackFeature("trade_fog_pick"); trZGo("pick", b); }); }
   else if (kind === "pos-new") { b.id = "tr-pos-new"; b.dataset.fk = "pos-new"; b.addEventListener("click", () => { trackFeature("trade_fog_new"); trZGo("noStrat", b); }); }
   else if (kind === "pos-draft") { b.id = "tr-pos-draft"; b.dataset.fk = "pos-draft"; b.addEventListener("click", () => { trackFeature("trade_fog_pick"); trZGo("draft", b); }); }
@@ -643,44 +647,67 @@ function ctMenuClose(refocus) {
 }
 
 /* ── 優化分頁 ─────────────────────────────────────────────
-   一袋一份(TR.mg):成員清單、方法與參數、部位大小設定、在途旗標。成員清單與部位大小:這台電腦存 localStorage
-   (重開還在、不寫機器設定、對帳器碰不到)。雲端那一袋的成員清單不落地(同 app.js 雲端袋的規則);部位大小是用戶設的偏好,
-   重開要還在(Wei 10-16):存 ui-prefs.json、綁這次登入(主行程比對 who,換人讀不到上一個人的) */
-const MG_SEL_KEY = "ws_mg_members", MG_SIZE_KEY = "ws_mg_sizing";
+   一袋一份(TR.mg):成員清單、方法與參數、部位大小設定、在途旗標。成員清單、方法與參數、部位大小都是用戶設的,填過就一直用(Wei 11-01):
+   這台電腦存 localStorage(重開還在、不寫機器設定、對帳器碰不到);雲端那一袋存 ui-prefs.json、綁這次登入(主行程比對 who,換人讀不到上一個人的)。
+   G.prefs:loading = 還沒讀回、failed = 讀不到。這兩種時候不畫分頁內容、不存任何東西——讀不到不等於沒填過,不能讓人對著空白蓋掉 */
+const MG_SEL_KEY = "ws_mg_members", MG_SIZE_KEY = "ws_mg_sizing", MG_OPT_KEY = "ws_mg_opt";
 function mgBag(S) {
   const B = S || TR;
   if (!B.mg) {
-    let sel = null, sizing = mpsSizingClean(null);
-    if (B.env === "local") {
-      try { const v = JSON.parse(localStorage.getItem(MG_SEL_KEY) || "null"); if (Array.isArray(v)) sel = v.filter((n) => typeof n === "string" && n); } catch (_) { sel = null; }   // 讀不到就照配置那組
-      try { sizing = mpsSizingClean(JSON.parse(localStorage.getItem(MG_SIZE_KEY) || "null")); } catch (_) { sizing = mpsSizingClean(null); }
-    }
     B.mg = { inited: false, alloc: null, params: null, err: null, shortDays: null, shortDismissed: false, optBusy: false,
-      btSending: false, btSentAt: 0, btBaseJob: null, sel, dropped: null, sizing, sizingSet: false, ctEdits: {}, chartSig: null, refreshing: { opt: false, bt: false }, wait: { opt: null, bt: null } };
-    if (B.env === "cloud") mgSizingCloudLoad(B);
+      btSending: false, btSentAt: 0, btBaseJob: null, sel: null, dropped: null, sizing: mpsSizingClean(null), sizingSet: false, optSaved: null, optSet: false, selSet: false, prefs: "loading", ctEdits: {}, chartSig: null, refreshing: { opt: false, bt: false }, wait: { opt: null, bt: null } };
+    mgPrefsLoad(B);
   }
   return B.mg;
 }
-// 讀回來之前用戶已經在這一袋設過(sizingSet)就不蓋;換人(trCloudOwnerCheck 清掉 C.mg)後回來的那份丟掉
+function mgPrefsLoad(B) {
+  if (B.env === "cloud") { mgSizingCloudLoad(B); return; }
+  const G = B.mg;
+  try {
+    const v = JSON.parse(localStorage.getItem(MG_SEL_KEY) || "null");
+    if (Array.isArray(v)) G.sel = v.filter((n) => typeof n === "string" && n);
+    G.sizing = mpsSizingClean(JSON.parse(localStorage.getItem(MG_SIZE_KEY) || "null"));
+    G.optSaved = mgOptClean(JSON.parse(localStorage.getItem(MG_OPT_KEY) || "null"));
+    G.prefs = "ok";
+  } catch (_) { G.prefs = "failed"; }
+}
+// 用戶已經在這一袋動過的不蓋(xxxSet);換人(trCloudOwnerCheck 清掉 C.mg)後回來的那份丟掉
 function mgSizingCloudLoad(B) {
   const G = B.mg, api = typeof window !== "undefined" && window.blave && window.blave.mgSizingCloud;
-  if (!api) return;
-  Promise.resolve().then(() => api()).then((v) => {
-    if (B.mg !== G || G.sizingSet || !v) return;
-    G.sizing = mpsSizingClean(v);
+  if (!api) { G.prefs = "ok"; return; }
+  G.prefs = "loading";
+  const done = (r) => {
+    if (B.mg !== G) return;
+    if (r && r.ok) {
+      if (!G.sizingSet) G.sizing = mpsSizingClean(r.v);
+      const o = r.opt && typeof r.opt === "object" ? r.opt : {};
+      if (!G.selSet && Array.isArray(o.sel)) G.sel = o.sel.filter((n) => typeof n === "string" && n);
+      if (!G.optSet) G.optSaved = mgOptClean(o);
+      G.prefs = "ok";
+    } else G.prefs = "failed";
     if (TR === B) { B.sig.opt = null; mgPaint(); }
-  }, () => {});
+  };
+  Promise.resolve().then(() => api()).then(done, () => done(null));
+}
+// 用戶確認過的方法與參數:按確定、或拿它跑優化／回測。主機推出來、用戶沒碰過的不存
+function mgOptPin(S, G) {
+  if (!G.alloc) return;
+  G.optSaved = mgOptClean({ alloc: G.alloc, params: Object.assign({}, G.optSaved && G.optSaved.params, { [G.alloc]: G.params }) });
+  G.optSet = true; mgSave(S, MG_OPT_KEY, G.optSaved);
 }
 function mgSave(S, key, v) {
-  if ((S || TR).env !== "local") {
-    if (key === MG_SIZE_KEY && typeof window !== "undefined" && window.blave && window.blave.mgSizingCloudSet) window.blave.mgSizingCloudSet(v).catch(() => {});
+  const B = S || TR, api = typeof window !== "undefined" && window.blave;
+  if (B.mg && B.mg.prefs !== "ok") return;
+  if (B.env !== "local") {
+    if (key === MG_SIZE_KEY) { if (api && api.mgSizingCloudSet) api.mgSizingCloudSet(v).catch(() => {}); }
+    else if (api && api.mgOptCloudSet) api.mgOptCloudSet(Object.assign({ sel: B.mg.sel }, B.mg.optSaved)).catch(() => {});
     return;
   }
   try { localStorage.setItem(key, JSON.stringify(v)); } catch (_) { return; }   // 存不了就只記在這一頁
 }
 function mgManager() { const m = (trReport() || {}).manager; return m && typeof m === "object" ? m : null; }
-// 機器 workspace 落後、跑不動策略管理(can_manage false;舊 runtime 連 manager 區塊都沒有)
-function mgBlocked() { const m = mgManager(); return !m || m.can_manage === false; }
+// 機器 workspace 落後、跑不動策略管理(can_manage false;舊 runtime 連 manager 區塊都沒有)。沒回報內建方法的舊 runtime 要 target_vol 才跑,那格不是用戶填的,一樣先更新
+function mgBlocked() { const m = mgManager(); return !m || m.can_manage === false || !mgReportedBuiltins(); }
 function mgStrategies() { const m = mgManager(); return (m && Array.isArray(m.strategies) ? m.strategies : []).filter((s) => s && typeof s.name === "string" && s.name); }
 function mgAllocators() { const m = mgManager(); return (m && Array.isArray(m.allocators) ? m.allocators : []).filter((a) => a && typeof a.name === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(a.name)); }
 // 舊世界唯一的內建是 slope(吃 --lookback):機器沒回報內建方法時替它宣告那一格
@@ -690,7 +717,6 @@ function mgReportedBuiltins() {
 }
 function mgBuiltins() { return mgReportedBuiltins() || [{ name: MG_SLOPE, params: { lookback: MG_LOOKBACK_DEFAULT } }]; }
 function mgMethod(name) { return mgBuiltins().find((b) => b.name === name) || mgAllocators().find((a) => a.name === name) || null; }
-function mgDefaultAlloc() { const list = mgBuiltins(), m = mgManager(), d = m && typeof m.default_method === "string" ? m.default_method : null; return list.some((b) => b.name === d) ? d : list[0].name; }
 function mgWireAlloc(name) { return name === MG_SLOPE && !mgReportedBuiltins() ? null : name; }   // 腳本還沒更新時,內建只能用「省略旗標」表達
 function mgAllocLabel(name) {
   if (name === MG_EQUAL) return t("mg.equal");
@@ -698,30 +724,37 @@ function mgAllocLabel(name) {
   if (name === MG_SHARPE) return t("mg.sharpe");
   const a = mgMethod(name); return a && typeof a.display_name === "string" && a.display_name ? a.display_name : name;
 }
-// 第一份帶 manager 的報告進來時定方法與參數的初值:機器上留檔的回測 job > 提案 > 現行 config > 預設
+/* 方法與參數的初值:用戶存過的 > 機器上留檔的回測 job > 提案 > 現行 config > 空。空著沒有代選,跑優化停用(mgOptBlockReason)。
+   之後機器上換了別的方法,這裡不跟著換:權重表照 mgPropOtherAlloc 講「是別的方法算的」 */
 function mgInit(G) {
   const m = mgManager(), cfg = (trReport() || {}).config || {}, job = m.backtest_job && typeof m.backtest_job === "object" ? m.backtest_job : null;
   const src = job && (job.status === "running" || job.status === "done") ? job : m.proposal && typeof m.proposal === "object" ? m.proposal : null;
   G.inited = true;
-  G.alloc = src ? mgNormAlloc(src.allocator) : "allocator" in cfg ? mgNormAlloc(cfg.allocator) : mgDefaultAlloc();
-  G.params = mgDefaultParams(mgMethod(G.alloc));
-  const sp = src && src.params && typeof src.params === "object" ? src.params : null;
-  if (sp) Object.keys(G.params).forEach((k) => { if (k in sp && typeof sp[k] === typeof G.params[k] && mgParamOk(sp[k]) && mgParamInRange(k, sp[k])) G.params[k] = sp[k]; });
+  const saved = G.optSaved;
+  G.alloc = saved ? saved.alloc : mgHostAlloc(src, cfg);
+  const cur = saved ? saved.params[saved.alloc] : src && src.params, a = mgMethod(G.alloc);
+  G.params = a ? mgFitParams(a, cur) : Object.assign({}, cur);   // 方法這一輪還沒回報:先留原值,回來時 mgPrune 才對形狀
 }
-function mgPrune(G) { if (!mgMethod(G.alloc)) G.alloc = mgDefaultAlloc(); G.params = mgFitParams(mgMethod(G.alloc), G.params); }
+// 方法不在了(自訂方法被刪、報告這一輪沒帶到):不換,跑優化停用並講原因;回來了還是用戶選的
+function mgPrune(G) { const a = mgMethod(G.alloc); if (a) G.params = mgFitParams(a, G.params); }
+// 跑優化與跑回測共同的前提:用戶還沒選方法、選的方法不在了、參數有空格 → 原因句;沒問題 = null
+function mgOptBlockReason() {
+  const G = mgBag();
+  if (!G.alloc) return t("mg.needAlloc");
+  if (!mgMethod(G.alloc)) return t("mg.allocGone", { method: mgAllocLabel(G.alloc) });
+  return Object.keys(G.params || {}).some((k) => G.params[k] === null) ? t("mg.needParams", { method: mgAllocLabel(G.alloc) }) : null;
+}
 // 成員 = 優化分頁自己的清單(Wei 10-13:跟配置分頁不互相牽動);第一次進來照配置已存的那一組定下來
 function mgMembers() {
   const G = mgBag();
-  if (G.sel === null) { const st = trStored(); if (st && !trCfgUnread(trReport())) { G.sel = Object.keys(st); mgSave(TR, MG_SEL_KEY, G.sel); } }
-  // 已經不存在的策略(刪掉、換了 workspace、localStorage 留下的)剔掉:不然「策略 N 檔」算到幽靈、跑優化回 member has no backtest stats(Windows e2e 10-14)
+  if (G.sel === null && G.prefs === "ok") { const st = trStored(); if (st && !trCfgUnread(trReport())) { G.sel = Object.keys(st); mgSave(TR, MG_SEL_KEY, G.sel); } }
+  // 已經不存在的策略不算進來:不然「策略 N 檔」算到幽靈、跑優化回 member has no backtest stats(Windows e2e 10-14)。只濾畫面,存檔不動:清單一時少一支不會讓用戶勾的那組永久變小
   const all = (G.sel || Object.keys(trStored() || {})).slice().sort();
   if (!TR.listLoaded || !Array.isArray(TR.list)) return all;
-  const live = all.filter((n) => TR.list.some((x) => x.name === n));
-  if (G.sel && live.length !== G.sel.length) { G.sel = live.slice(); mgSave(TR, MG_SEL_KEY, G.sel); }
-  return live;
+  return all.filter((n) => TR.list.some((x) => x.name === n));
 }
 function mgSetMembers(S, names) {
-  const G = mgBag(S); G.sel = names.slice(); mgSave(S, MG_SEL_KEY, G.sel);
+  const G = mgBag(S); G.sel = names.slice(); G.selSet = true; mgSave(S, MG_SEL_KEY, G.sel);
   // 勾掉全部 = 回到還沒跑過優化的那一屏:那一刻機器上的提案與回測記下簽名,勾回同一組時不沿用,跑成功才解除
   const m = mgManager();
   if (m && !names.length) G.dropped = { prop: mgSig(m.proposal), job: mgSig(mgJobAny()) };
@@ -732,16 +765,7 @@ function mgSig(o) { return o && typeof o === "object" ? JSON.stringify(o) : null
 function mgNotDropped(kind, o) { const G = mgBag(); return !(G.dropped && G.dropped[kind] !== null && G.dropped[kind] === mgSig(o)); }
 // 套用金額只在兩邊的策略是同一組時可以按:建議只算優化清單裡的,集合不同時套用會漏改或多改
 function mgSameAsAmounts() { const a = mgMembers(), b = trNames().slice().sort(); return a.length === b.length && a.every((n, i) => n === b[i]); }
-function mgArgs() {
-  const G = mgBag(), params = Object.assign({}, G.params);
-  // 舊 runtime(1.1.46 以前)硬性要求 params 同時有 lookback 與 target_vol:只在這條相容分支背後默默補(同網頁 mgArgs)
-  if (!mgReportedBuiltins()) {
-    if (typeof params.lookback !== "number") params.lookback = MG_LOOKBACK_DEFAULT;
-    const pct = ((trReport() || {}).config || {}).target_vol_pct;
-    params.target_vol = typeof pct === "number" && mgParamInRange("target_vol", pct / 100) ? pct / 100 : MG_TARGET_VOL_DEFAULT;
-  }
-  return { members: mgMembers(), allocator: mgWireAlloc(G.alloc), params };
-}
+function mgArgs() { const G = mgBag(); return { members: mgMembers(), allocator: mgWireAlloc(G.alloc), params: Object.assign({}, G.params) }; }
 function mgProposal() { const m = mgManager(), G = mgBag(); return m && mgSameSel(m.proposal, mgMembers(), G.alloc, G.params) && mgNotDropped("prop", m.proposal) ? m.proposal : null; }
 function mgJobAny() { const m = mgManager(); return m && m.backtest_job && typeof m.backtest_job === "object" ? m.backtest_job : null; }
 function mgJob() { const j = mgJobAny(), G = mgBag(); return j && mgSameSel(j, mgMembers(), G.alloc, G.params) && mgNotDropped("job", j) ? j : null; }
@@ -772,7 +796,7 @@ function mgBtBlockReason() {
   const sh = mgShort();
   if (sh) return t("mg.shortTip", { n: sh.n, l: sh.l });
   const n = mgMembers().length;
-  return !n ? t("mg.stratEmpty") : n === 1 ? t("mg.singleTip") : null;
+  return !n ? t("mg.stratEmpty") : n === 1 ? t("mg.singleTip") : mgOptBlockReason();
 }
 // 機器裁定資料不足 → 轉成警示條(N 給「改跑」);只在警示條真的畫得出來時才吞掉錯誤(exit 3 永遠至少看得到一行)
 function mgShortFromError(G, e) { const d = mgShortDaysOf(e); if (d === null) return false; G.shortDays = d; G.shortDismissed = false; return !!mgShort(); }
@@ -796,42 +820,37 @@ function mpsCcy() {
   return zs[0] === TR_ZONE_LOTS ? TR_TXF_CCY : zs[0];
 }
 function mpsConv(v, from, to) { if (v === 0 || from === to) return v; const fx = trFxView().fx, a = trFxRate(fx, from), b = trFxRate(fx, to); return a === null || b === null ? null : (v / a) * b; }
-// 投入資金預設 = 目前金額的合計(口數折名目台幣、混幣經匯率折顯示幣別),換成投入資金的幣別;換算不出來才留空
-function mpsFundDefault() {
-  const tt = trZoneSum((trCtPend() ? trBase() : trStored()) || {}, null, trRowMoneyStored).total;   // 待對上時口數配 ct.sent 的那一份(同 trPlanTotal,稽核 P1-2)
-  const v = tt.v === null || !(tt.v > 0) || !tt.ccy ? null : mpsConv(tt.v, tt.ccy, mpsCcy());
-  return v === null ? null : Math.round(v);
-}
-function mpsFundOf(s) { return s.fund !== null ? mpsFundAs(s, mpsCcy(), mpsConv) : mpsFundDefault(); }
-// 本金填過、只是換幣別缺匯率:mpsFundOf 同樣回 null,但不能當「沒填」叫人去重填
-function mpsFundFxMissing(s) { return s.fund !== null && mpsFundAs(s, mpsCcy(), mpsConv) === null; }
+function mpsFundOf(s) { return s.fund; }
+// 投入資金的幣別:填過就是填的那個幣別,沒填才看成員
+function mpsFundCcy(s) { return s.fund !== null && s.fundCcy ? s.fundCcy : mpsCcy(); }
 function mpsLev(s) { return mpsLevFor(s, mpsProp()); }
 function mgCt(n) { const s = trCtStored(n), G = mgBag(); return s && G.ctEdits[n] ? G.ctEdits[n] : s; }
 function mgSpec(n) { const c = mgCt(n); return c ? TR_TXF_SPECS[c] : trRowTxf(n); }
 // 一次算完整張表:每列金額 = 投入資金 × 隱含槓桿 × 權重;台指期列折口數(現價 × 每點價值,half-up 同對帳器)
 function mpsRows() {
-  const G = mgBag(), amount = mpsFundOf(G.sizing), lev = mpsLev(G.sizing), eff = amount !== null && lev !== null ? amount * lev : null, ccyF = mpsCcy();
+  const G = mgBag(), amount = mpsFundOf(G.sizing), lev = mpsLev(G.sizing), eff = amount !== null && lev !== null ? amount * lev : null, ccyF = mpsFundCcy(G.sizing);
   const order = typeof sfApplyOrder === "function" ? sfApplyOrder(TR.list, trPickPrefs(TR, typeof SF !== "undefined" ? SF : null).order).map((x) => x.name) : [];
   const rank = (n) => { const i = order.indexOf(n); return i < 0 ? 1e9 : i; };
   const rows = mpsMembers().slice().sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : 1)).map((n) => {
     const w = mpsWeight(n), money = eff === null ? null : eff * w, spec = trCtStored(n) ? mgSpec(n) : null, px = spec ? trTxfPrice() : null;
     const perLot = spec && px ? px * spec.cv : null, unit = spec ? null : trZoneOf(n);
     const r = { name: n, w, spec, money, perLot, unit, native: spec || money === null ? null : money === 0 ? 0 : unit && unit !== TR_ZONE_UNKNOWN ? mpsConv(money, ccyF, unit) : null, moneyTwd: null, lots: null, fxMissing: false };
+    if (!spec && money !== null && r.native === null && unit && unit !== TR_ZONE_UNKNOWN) r.fxMissing = true;
     if (spec && money !== null) {
       if (money === 0) r.lots = 0;
       else if (perLot) { r.moneyTwd = mpsConv(money, ccyF, TR_TXF_CCY); if (r.moneyTwd === null) r.fxMissing = true; else r.lots = trRoundLots(r.moneyTwd / perLot); }
     }
     return r;
   });
-  return { amount, lev, eff, rows, fundFx: mpsFundFxMissing(G.sizing) };
+  return { amount, lev, eff, rows, ccy: ccyF, gap: mpsSizeGap(G.sizing, mpsProp(), mpsNoSeriesKey()) };
 }
 // canonical 同金額表:台指期 = 整數口數、其他 = 這一列自己計價的金額(取整)
 function mpsAmountsPayload(d) { const out = {}; d.rows.forEach((r) => { out[r.name] = r.spec ? (r.lots || 0) : Math.round(r.native || 0); }); return out; }
 // 預覽三格:槓桿、年化波動、最大回撤、總部位,扣掉方法本身那一項(沒序列再扣回撤),取前三
 function mpsPreview(s) {
-  const prop = mpsProp(), series = mpsSeriesOf(prop), m = mpsMethodOf(s, series), L = mpsLevFor(s, prop), h = mpsHistVolOf(prop), fund = mpsFundOf(s);
+  const prop = mpsProp(), series = mpsSeriesOf(prop), m = s.method, L = mpsLevFor(s, prop), h = mpsHistVolOf(prop), fund = mpsFundOf(s);
   const cells = { lev: { v: L === null ? null : L.toFixed(2) + "×" }, vol: { v: L === null || h === null ? null : (h * L).toFixed(1) + "%" }, mdd: { v: null, warn: false },
-    amt: { v: L === null || fund === null ? null : trFmt(Math.round(fund * L)), unit: mpsCcy() } };
+    amt: { v: L === null || fund === null ? null : trFmt(Math.round(fund * L)), unit: mpsFundCcy(s) } };
   if (L !== null && series) { const d = mpsMddAt(L, series); cells.mdd = { v: "−" + d.toFixed(1) + "%", warn: d > MPS_MDD_WARN }; }
   return ["lev", "vol", "mdd", "amt"].filter((k) => k !== m && !(k === "mdd" && !series)).slice(0, 3).map((k) => Object.assign({ k, warn: false }, cells[k]));
 }
@@ -845,9 +864,15 @@ function mgPaint() {
     return;
   }
   if (box.dataset.fog === "1") { delete box.dataset.fog; S.sig.opt = null; }
+  if (G.prefs !== "ok") {   // 讀回來之前不畫、不定初值;讀不到照實講,不畫成沒填過
+    const sg = "prefs:" + G.prefs + LANG; if (S.sig.opt === sg) return;
+    S.sig.opt = sg; box.textContent = ""; if (G.prefs === "failed") box.appendChild(mgPrefsBox());
+    return;
+  }
   mgBtSendingSync(G);
-  if (m) { if (!G.inited) mgInit(G); mgPrune(G); }
+  if (m) { if (!G.inited || G.alloc === null) mgInit(G); mgPrune(G); }
   if (mgBlocked()) G.err = null;
+  mgFundCcyFreeze(S, G);
   const sigM = m && m.backtest ? Object.assign({}, m, { backtest: Object.assign({}, m.backtest, { weights_history: m.backtest.weights_history ? Object.keys(m.backtest.weights_history).sort() : null }) }) : m;
   const sig = JSON.stringify([LANG, S.env, sigM, (trReport() || {}).config || null, mgMembers(), G.alloc, G.params, G.err, G.shortDays, G.shortDismissed, G.optBusy, G.btSending, !!G.btWaiting, G.refreshing.opt, G.refreshing.bt, G.wait.opt && G.wait.opt.left, G.wait.bt && G.wait.bt.left,
     G.sizing, G.ctEdits, trTxfPrice(), trFxView(), trNames(), S.save, TR.list.map((x) => [x.name, x.displayName]), trCfgUnread(trReport()), (trReport() || {}).can_switch_contract]);
@@ -865,6 +890,22 @@ function mgPaint() {
   mgPrimary(box, G);
   trPosFocusBack(box, keep, $("po-h"));
   mgDrawChart();
+}
+// 讀不到上次的設定:重試;確定讀不回來(檔壞了)才由用戶自己選重填
+function mgPrefsBox() {
+  const box = trEl("div", "mg-warn"), acts = trEl("div", "mg-warn-acts"), S = TR, G = mgBag(S);
+  const say = box.appendChild(trEl("p", "", t("mg.prefsFail"))); say.setAttribute("role", "status");
+  const go = trEl("button", "btn-out", t("mg.prefsRetry")); go.type = "button"; go.dataset.fk = "mg-prefs-retry";
+  go.addEventListener("click", () => { trackFeature("mg_prefs_retry"); G.prefs = "loading"; mgPrefsLoad(S); S.sig.opt = null; mgPaint(); });
+  const no = trEl("button", "btn-quiet", t("mg.prefsReset")); no.type = "button"; no.dataset.fk = "mg-prefs-reset";
+  no.addEventListener("click", () => { trackFeature("mg_prefs_reset"); G.prefs = "ok"; S.sig.opt = null; mgPaint(); });
+  acts.append(go, no); box.appendChild(acts);
+  return box;
+}
+// 舊存檔的本金沒記幣別:第一次有提案時定成當下幣別,之後成員變動不會把同一個數字改讀成別的幣別
+function mgFundCcyFreeze(S, G) {
+  if (G.sizing.fund === null || G.sizing.fundCcy || !mpsProp()) return;
+  G.sizing = Object.assign({}, G.sizing, { fundCcy: mpsCcy() }); mgSave(S, MG_SIZE_KEY, G.sizing);
 }
 /* 一個視窗只有一顆實心鈕(canon › Hierarchy):有新權重可以套用時下一步是「套用金額」,「跑優化」退成框線;
    套用停用(跟目前金額全等、缺報價…)、還沒有建議、優化正在跑(新權重還在算,手上那份是舊的)或機器版本落後時,下一步不是套用。
@@ -900,14 +941,15 @@ function mgToolbar(outdated, fog) {
   bs.disabled = !TR.listLoaded;
   bs.addEventListener("click", () => psOpen(bs, "mg"));
   const bm = trEl("button", "tb-fld"); bm.type = "button"; bm.dataset.mgOpen = "method"; bm.dataset.fk = "mg-method"; bm.title = t("mg.tbMethodTip");
-  bm.append(trEl("span", "", t("mg.tbMethod")), trEl("span", "v", outdated || !G.alloc ? "—" : mgAllocLabel(G.alloc)));
+  bm.append(trEl("span", "", t("mg.tbMethod")), trEl("span", "v", outdated ? "—" : G.alloc ? mgAllocLabel(G.alloc) : t("sz.unset")));
   bm.disabled = outdated || !G.params;
   bm.addEventListener("click", () => mgMethodOpen(bm));
   set.append(bs, bm); tb.appendChild(set);
   const acts = trEl("div", "tb-actions"), opt = trEl("button", "btn-fill tb-run"); opt.type = "button"; opt.dataset.fk = "mg-opt";
-  opt.title = t("mg.optTip");
+  const needs = outdated ? null : mgOptBlockReason();
+  opt.title = needs || t("mg.optTip");
   if (G.optBusy) { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); opt.append(sp, t("mg.optRunning")); } else opt.textContent = t("mg.optRun");
-  opt.disabled = outdated || G.optBusy || !mgMembers().length;
+  opt.disabled = outdated || !!needs || G.optBusy || !mgMembers().length;
   opt.addEventListener("click", mgRunOptimize);
   opt.hidden = !!fog;   // 霧上的 CTA 就是這顆;右對齊的一組,藏左邊這顆「跑回測」不會位移
   const bt = trEl("button", "btn-out tb-run2", t("mg.btRun")); bt.type = "button"; bt.dataset.fk = "mg-bt";
@@ -916,6 +958,7 @@ function mgToolbar(outdated, fog) {
   bt.title = reason || t("mg.btTip");
   bt.addEventListener("click", mgRunBacktest);
   acts.append(opt, bt); tb.appendChild(acts);
+  if (needs && !fog) tb.appendChild(trEl("p", "pf-note mg-need-fund", needs));   // 霧上的卡片自己講
   // 等更新績效時(Wei 10-14,同網頁):鈕下方一行講在等哪一支,後面「先用目前數字跑」;不等的時候這一行不出現
   ["opt", "bt"].forEach((w) => { const W = G.wait[w]; if (!W || !W.left.length) return;
     const line = trEl("div", "mg-wait"), n = W.left.length;
@@ -969,11 +1012,11 @@ function mgPropOtherAlloc() {
 }
 function mgSizeChip() {
   const G = mgBag(), b = trEl("button", "tb-fld mg-size-btn"); b.type = "button"; b.dataset.fk = "mg-size"; b.setAttribute("aria-haspopup", "dialog"); b.title = t("sz.title");
-  // 摘要「投入金額 · 方法 目標」(同網頁;槓桿倍數只在框裡的預覽)
-  const prop = mpsProp(), series = mpsSeriesOf(prop), m = mpsMethodOf(G.sizing, series), p = mpsChipParts(mpsFundOf(G.sizing), mpsCcy(), m, mpsTargetOf(G.sizing, m, prop));
+  // 摘要「投入金額 · 方法 目標」(槓桿倍數只在框裡的預覽);沒填的段寫「未設定」,不出算出來的數字
+  const z = G.sizing, m = z.method, p = mpsChipParts(mpsFundOf(z), mpsFundCcy(z), m, m ? z.target[m] : null);
   if (p.fund) { b.appendChild(trEl("span", "v mono", p.fund)); if (p.ccy) b.appendChild(trEl("span", "ccy", p.ccy)); b.appendChild(trEl("span", "dot", "·")); }
-  b.appendChild(trEl("span", "", t({ vol: "sz.m.vol", mdd: "sz.m.mdd", lev: "sz.m.lev" }[m])));
-  if (p.target) b.appendChild(trEl("span", "v mono", p.target));
+  if (m) b.appendChild(trEl("span", "", t({ vol: "sz.m.vol", mdd: "sz.m.mdd", lev: "sz.m.lev" }[m]))); else if (!p.fund) b.appendChild(trEl("span", "", t("sz.title")));
+  if (p.target) b.appendChild(trEl("span", "v mono", p.target)); else b.appendChild(trEl("span", "", t("sz.unset")));
   b.addEventListener("click", () => mgSizeOpen(b));
   return b;
 }
@@ -986,9 +1029,6 @@ function mgSuggestTable(wrap, ap, other) {
   const hasLots = zones.indexOf(TR_ZONE_LOTS) >= 0, tbl = trEl("table", "pf-tbl zoned mg-tbl");
   // 換算方式只寫這一處(金額欄頭的 title)
   tbl.appendChild(trHead([[t("tr.col.strategy"), ""], [t("mg.colWeight"), "n"], [t("tr.col.amount"), "n", hu, t("mg.propTip") + (multi ? t("mg.propTipConv") : "") + (hasLots ? t("mg.propTipLots") : "")]]));
-  // 投入資金空著(沒填、預設 = 目前金額合計也是 0):整欄都會是「—」,表上方先講要去哪裡填(設計最終稽核)
-  if (mpsFundOf(mgBag().sizing) === null && !d.fundFx) { const mk = mpsMethodOf(mgBag().sizing, mpsSeriesOf(mpsProp()));   // 句子點名工具列那顆鈕現在的方法名(按它開部位大小)
-    wrap.appendChild(trEl("p", "pf-note mg-need-fund", t("mg.needFund", { method: t({ vol: "sz.m.vol", mdd: "sz.m.mdd", lev: "sz.m.lev" }[mk] || "sz.m.vol") }))); }
   const next = {}; let quoteMissing = false, changed = false, underTwd = 0;
   d.rows.forEach((r) => {
     next[r.name] = r.spec ? (r.money === null ? null : r.lots) : r.native === null ? null : Math.round(r.native);
@@ -1014,7 +1054,7 @@ function mgSuggestTable(wrap, ap, other) {
         trackFeature("contract_switch"); TR.sig.opt = null; mgPaint(); ctFocus("opt", n);
       }, (root) => { if (r.money === null) return null; if (r.money === 0) return 0; const px = trTxfPrice(); return r.moneyTwd != null && px ? trRoundLots(r.moneyTwd / (px * TR_TXF_SPECS[root].cv)) : null; }));
       const nx = next[n], cell = trEl("td", "n");
-      if (nx === null) { cell.textContent = "—"; if (r.spec && r.fxMissing) cell.appendChild(trEl("span", "pf-note", t("mg.noFx"))); }
+      if (nx === null) cell.textContent = "—";
       // 權重換成台指期不到一口(取整成 0):列上直接講,表底講少投多少(同網頁)
       else if (r.spec && nx === 0 && r.moneyTwd > 0) { cell.textContent = t("mg.lotsUnder"); underTwd += r.moneyTwd; }
       else if (r.spec) { cell.textContent = trLotsFmt(nx, false); const m = nx ? trTxfRefMoney(r.spec, nx, trTxfPrice()) : null; if (m != null) cell.title = t("tr.lotsNotionalTip", { amt: trFmt(Math.round(m)) }); }
@@ -1031,9 +1071,9 @@ function mgSuggestTable(wrap, ap, other) {
   const tc = trEl("td", "n", tot ? trTotalText(tot) : "—"); if (tot && !multi && tot.ccy && hu === t("tr.lotsUnit")) tc.appendChild(trEl("span", "ccy", tot.ccy));
   rT.append(l, tc); tbT.appendChild(rT); tbl.appendChild(tbT);
   wrap.appendChild(tbl);
-  if (underTwd > 0) { const conv = mpsConv(underTwd, TR_TXF_CCY, mpsCcy()), amt = conv === null ? trFmt(Math.round(underTwd)) + " " + TR_TXF_CCY : trFmt(Math.round(conv)) + " " + mpsCcy();
+  if (underTwd > 0) { const conv = mpsConv(underTwd, TR_TXF_CCY, d.ccy), amt = conv === null ? trFmt(Math.round(underTwd)) + " " + TR_TXF_CCY : trFmt(Math.round(conv)) + " " + d.ccy;
     wrap.appendChild(trEl("p", "pf-note", t("mg.lotsUnderFoot", { amt }))); }
-  const over = mgLotsOver(d.rows, d.eff, (v) => mpsConv(v, TR_TXF_CCY, mpsCcy()));
+  const over = mgLotsOver(d.rows, d.eff, (v) => mpsConv(v, TR_TXF_CCY, d.ccy));
   over.forEach((o) => wrap.appendChild(trEl("p", "pf-note", over.length === 1 ? t("mg.lotsOverFoot", { lots: o.lots, pct: o.pct }) : t("mg.lotsOverFootN", { name: trDisplay(o.name), lots: o.lots, pct: o.pct }))));
   if (d.rows.some((r) => r.spec)) trTxfWant();
   // 套用:算不出來、算出來跟目前全等、儲存生命週期中、讀不到設定、兩邊策略不是同一組都停用
@@ -1048,8 +1088,7 @@ function mgSuggestTable(wrap, ap, other) {
 function mgApplyWhy(d, quoteMissing, changed) {
   if (!mgSameAsAmounts()) return "mg.applyDiffSet";
   if (quoteMissing) return d.rows.some((r) => r.fxMissing) ? mgFxWhy() : "mg.applyWhyQuote";
-  if (d.fundFx) return mgFxWhy();
-  if (d.eff === null) return "mg.applyWhySize";
+  if (d.eff === null) return d.gap || "mg.needSize";
   if (TR.save && TR.save !== "failed") return "tr.saving";
   if (trCfgUnread(trReport()) || trStored() === null) return TR.env === "cloud" ? "tr.cloud.cfgUnread" : "tr.cfgUnreadLocal";
   if (!TR.listLoaded || (TR.env === "cloud" && !(TR.st && TR.st.alive))) return "mg.applyWhyWait";
@@ -1077,18 +1116,10 @@ function mgApply(opener) {
     delete S.ct.basis[n];
   });
   trackFeature("mg_apply");
-  /* 本金沒填(null)時預設 = 已存金額的合計;套用後合計變成「本金 × 槓桿」,下一次的預設就跟著縮(槓桿 < 1 時 280k → 134k,第三台實測)。
-     存成功就把這次用的本金(連同當下方法的目標)記進部位大小設定(同 mgSave),之後就是它,重複套用、重跑優化都不漂移 */
-  const fundUsed = mpsFundOf(G.sizing), ccyUsed = mpsCcy(), prop = mpsProp(), mUsed = mpsMethodOf(G.sizing, mpsSeriesOf(prop)), tgUsed = mpsTargetOf(G.sizing, mUsed, prop);
   trCfOpen({ names: trNames(), stored: trBase(), opener, source: "optimize",
     onCancel: () => { S.edits = before; S.ct.edits = beforeCt; S.ct.basis = beforeBasis; S.sig.cfg = null; },
     // 存成功就回配置分頁,剛改的金額格閃一下;優化自己換的合約交回配置(存著的就是它了)
-    onSaved: (sending, was) => { Object.keys(sending).forEach((n) => { if (sending[n] !== (was[n] || 0)) S.flash[n] = Date.now(); }); G.ctEdits = {}; mgPinUsed(S, G, ccyUsed, fundUsed, mUsed, tgUsed); if (TR === S && S.view === "po") poSetTab("cfg"); } });
-}
-function mgPinUsed(S, G, ccy, fund, m, target) {
-  const next = mpsSizingPin(G.sizing, ccy, fund, m, target);
-  if (JSON.stringify(next) === JSON.stringify(mpsSizingClean(G.sizing))) return;
-  G.sizing = next; G.sizingSet = true; mgSave(S, MG_SIZE_KEY, G.sizing);
+    onSaved: (sending, was) => { Object.keys(sending).forEach((n) => { if (sending[n] !== (was[n] || 0)) S.flash[n] = Date.now(); }); G.ctEdits = {}; if (TR === S && S.view === "po") poSetTab("cfg"); } });
 }
 // 移動窗格回測:跑中 / 結果 / 失敗;沒跑過、沒在跑、也沒錯:整段不出現(Wei 10-13)
 function mgBacktestSec() {
@@ -1285,7 +1316,8 @@ function mgRunNow(w) {
 }
 function mgRunOptimize() {
   const S = TR, G = mgBag(S);
-  if (G.optBusy || mgBlocked() || !mgMembers().length) return;
+  if (G.optBusy || mgBlocked() || !mgMembers().length || mgOptBlockReason()) return;
+  mgOptPin(S, G);
   G.optBusy = true; G.err = null; mgPaint();   // 更新績效的等待期間鈕就維持送出中(inline 環),不另外加字
   mgRefreshThen(S, () => mgSendOptimize(S), null, "opt");
 }
@@ -1305,6 +1337,7 @@ async function mgSendOptimize(S) {
 function mgRunBacktest() {
   const S = TR, G = mgBag(S);
   if (G.btSending || mgRunning() || mgBlocked() || mgBtBlockReason()) return;
+  mgOptPin(S, G);
   G.btSending = true; G.btSentAt = 0; G.btBaseJob = mgJobKey(mgJobAny()); G.err = null;
   /* 每按一次換一個號碼(同網頁 042538da):取消等待中的那一次也換號——舊的那一輪等完看到號碼不是自己的就不送。
      只用一個布林會錯兩種:取消後馬上重按(重設成 false,舊那一輪也送出);已送出、ack 還沒回時按取消(誤當成還在等、不送 manage_cancel) */
@@ -1357,8 +1390,8 @@ function mgWire() {
   });
   $("mgm-sel").addEventListener("change", () => {
     const G = mgBag(), alloc = $("mgm-sel").value;
-    // 切回生效中的方法帶回它現在的參數;換到別的方法用它宣告的那組,兩邊都宣告的 key 沿用用戶調過的值
-    mgmPend = { alloc, params: alloc === G.alloc ? Object.assign({}, G.params) : mgFitParams(mgMethod(alloc), mgmPend.params) };
+    // 切回生效中的方法帶回它現在的參數;換到別的方法帶回用戶給那個方法填過的值,沒填過的格留空,兩邊都有的 key 沿用用戶調過的值
+    mgmPend = { G, alloc, params: alloc === G.alloc ? Object.assign({}, G.params) : mgFitParams(mgMethod(alloc), Object.assign({}, mgmPend.params, G.optSaved && G.optSaved.params[alloc])) };
     mgMethodFields();
   });
   $("mgm-ask").addEventListener("click", () => { mgMethodClose(); poAskAgent(t("mg.askAgentMsg")); });   // 內建之外的方法跟 agent 討論:丟進輸入框、不送出
@@ -1367,80 +1400,82 @@ function mgScrimOpen(id, focusEl) { $("view-ws").inert = true; const sc = $(id);
 function mgScrimClose(id, opener) { const sc = $(id); if (sc.hidden) return; sc.classList.remove("open"); sc.hidden = true; $("view-ws").inert = false; if (opener && opener.isConnected) opener.focus(); else { const b = $("po-opt").querySelector('[data-fk="mg-method"]'); if (b) b.focus(); else $("po-h").focus(); } }
 function mgMethodOpen(opener) {
   const G = mgBag(); if (!G.params || !$("mgm-scrim").hidden) return;
-  mgmOpener = opener; mgmPend = { alloc: G.alloc, params: Object.assign({}, G.params) };
+  mgmOpener = opener; mgmPend = mgMethod(G.alloc) ? { G, alloc: G.alloc, params: Object.assign({}, G.params) } : { G, alloc: "", params: {} };
   const sel = $("mgm-sel"); sel.textContent = "";
+  if (!mgmPend.alloc) { const o = trEl("option", "", "—"); o.value = ""; o.disabled = true; o.hidden = true; sel.appendChild(o); }   // 沒選過或選的方法不在了:下拉不代選
   const g1 = document.createElement("optgroup"); g1.label = t("mg.groupBuiltin");
   mgBuiltins().forEach((b) => { const o = trEl("option", "", mgAllocLabel(b.name)); o.value = b.name; g1.appendChild(o); });
   sel.appendChild(g1);
   const cs = mgAllocators();
   if (cs.length) { const g2 = document.createElement("optgroup"); g2.label = t("mg.groupCustom"); cs.forEach((a) => { const o = trEl("option", "", mgAllocLabel(a.name)); o.value = a.name; g2.appendChild(o); }); sel.appendChild(g2); }
-  sel.value = G.alloc; mgMethodFields();
+  sel.value = mgmPend.alloc; mgMethodFields();
   mgScrimOpen("mgm-scrim", sel);
 }
 function mgMethodClose(focusEl) { mgScrimClose("mgm-scrim", focusEl || mgmOpener); mgmOpener = null; }
 function mgMethodFields() {
   const alloc = mgmPend.alloc, a = mgMethod(alloc);
   $("mgm-desc").textContent = alloc === MG_EQUAL ? t("mg.equalDesc") : alloc === MG_SLOPE ? t("mg.slopeDesc") : alloc === MG_SHARPE ? t("mg.sharpeDesc") : a && typeof a.description === "string" ? a.description : "";
-  const box = $("mgm-fields"); box.textContent = ""; $("mgm-err").hidden = true;
+  const box = $("mgm-fields"); box.textContent = ""; $("mgm-err").hidden = true; $("mgm-ok").disabled = !alloc;
+  const decl = mgDeclaredParams(a);
   const keys = Object.keys(mgmPend.params); $("mgm-params").hidden = !keys.length;   // 方法沒宣告參數(等權)整格不出現
   keys.forEach((k, i) => {
     // 內建參數有介面字;自訂方法的參數名照程式裡的寫(mono)
     const v = mgmPend.params[k], row = trEl("div", "mg-pfld"), lab = k === "lookback" ? trEl("label", "", t("mg.paramLookback")) : trEl("label", "mono", k); lab.htmlFor = "mgm-p-" + i; row.appendChild(lab);
     let inp;
-    if (typeof v === "boolean") { inp = trEl("select", "mg-sel"); ["true", "false"].forEach((x) => { const o = trEl("option", "", x); o.value = x; inp.appendChild(o); }); inp.value = String(v); }
-    else { inp = trEl("input", "amt-in"); inp.type = "text"; if (typeof v === "number") inp.inputMode = "decimal"; inp.value = String(v); inp.spellcheck = false; }
+    if (typeof decl[k] === "boolean") { inp = trEl("select", "mg-sel"); (v === null ? ["", "true", "false"] : ["true", "false"]).forEach((x) => { const o = trEl("option", "", x || "—"); o.value = x; inp.appendChild(o); }); inp.value = v === null ? "" : String(v); }
+    else { inp = trEl("input", "amt-in"); inp.type = "text"; if (typeof decl[k] === "number") inp.inputMode = "decimal"; inp.value = v === null ? "" : String(v); inp.spellcheck = false; inp.required = true; }
     inp.id = "mgm-p-" + i; inp.dataset.key = k; row.appendChild(inp);
     row.appendChild(trEl("span", "u", k === "lookback" ? t("mg.unitDays") : ""));
     box.appendChild(row);
   });
 }
 function mgMethodOk() {
-  const G = mgBag(), out = Object.assign({}, mgmPend.params);
+  const G = mgBag(); if (mgmPend.G !== G) { mgMethodClose(); return; }   // 開著框時換了帳號:這份草稿是上一個人的
+  const out = Object.assign({}, mgmPend.params), decl = mgDeclaredParams(mgMethod(mgmPend.alloc));
   for (const f of $("mgm-fields").querySelectorAll("[data-key]")) {
-    const k = f.dataset.key, cur = mgmPend.params[k], raw = String(f.value).trim();
+    const k = f.dataset.key, cur = decl[k], raw = String(f.value).trim(), err = (key, o) => { $("mgm-err").textContent = t(key, o); $("mgm-err").hidden = false; };
+    if (raw === "" && cur !== "") return k === "lookback" ? err("mg.lookbackRange") : err("mg.paramInvalid", { k });
     if (typeof cur === "boolean") out[k] = raw === "true";
     else if (typeof cur === "number") {
       const num = Number(raw);
-      if (raw === "" || !isFinite(num)) { $("mgm-err").textContent = t("mg.paramInvalid", { k }); $("mgm-err").hidden = false; return; }
-      if (k === "lookback" && !mgParamInRange(k, num)) { $("mgm-err").textContent = t("mg.lookbackRange"); $("mgm-err").hidden = false; return; }
+      if (!isFinite(num)) return err("mg.paramInvalid", { k });
+      if (k === "lookback" && !mgParamInRange(k, num)) return err("mg.lookbackRange");
       out[k] = num;
     } else out[k] = raw.slice(0, 200);
   }
   const changed = mgmPend.alloc !== G.alloc || Object.keys(out).some((k) => out[k] !== G.params[k]) || Object.keys(G.params).length !== Object.keys(out).length;
   if (changed) { G.alloc = mgmPend.alloc; G.params = out; G.shortDismissed = false; G.err = null; }
+  mgOptPin(TR, G);
   mgMethodClose(); TR.sig.opt = null; mgPaint();
   const b = $("po-opt").querySelector('[data-fk="mg-method"]'); if (b) b.focus();
 }
 function mgSizeOpen(opener) {
   const G = mgBag(); if (!mpsProp() || !$("mgs-scrim").hidden) return;
   mgsOpener = opener;
-  const s = G.sizing, fund = mpsFundOf(s), prop = mpsProp(), series = mpsSeriesOf(prop);
-  mgsDraft = { method: mpsMethodOf(s, series), methodDirty: false, fund: fund === null ? "" : String(fund), fund0: fund, fundDirty: false, t: {}, t0: {}, dirty: {}, oldMsg: false };
-  MPS_METHODS.forEach((m) => { const v = mpsTargetOf(s, m, prop); mgsDraft.t0[m] = v; mgsDraft.t[m] = v === null ? "" : m === "vol" ? v.toFixed(1) : m === "lev" ? v.toFixed(2) : String(Math.round(v * 10) / 10); mgsDraft.dirty[m] = false; });
+  const s = G.sizing;
+  mgsDraft = { G, method: s.method, methodDirty: false, fund: s.fund === null ? "" : String(s.fund), fundCcy: mpsFundCcy(s), fundCcys: [...new Set([mpsFundCcy(s), mpsCcy()])], ccyDirty: false, fundDirty: false, t: {}, dirty: {}, oldMsg: false };
+  MPS_METHODS.forEach((m) => { const v = s.target[m]; mgsDraft.t[m] = v === null ? "" : m === "vol" ? v.toFixed(1) : m === "lev" ? v.toFixed(2) : String(Math.round(v * 10) / 10); mgsDraft.dirty[m] = false; });
   mgSizeRender();
-  mgScrimOpen("mgs-scrim", $("mgs-body").querySelector('.mg-size-seg [aria-checked="true"]'));
+  mgScrimOpen("mgs-scrim", $("mgs-body").querySelector('.mg-size-seg [aria-checked="true"]:not(:disabled)') || $("mgs-fund"));
   trackFeature("mg_sizing_open");
 }
 function mgSizeClose(focusEl) { mgScrimClose("mgs-scrim", focusEl || mgsOpener); mgsOpener = null; }
 function mgSizeNum(s, unitRe) { const x = String(s == null ? "" : s).trim().replace(unitRe, "").replace(/,/g, "").trim(); if (!/^(\d+\.?\d*|\.\d+)$/.test(x)) return null; const v = parseFloat(x); return isFinite(v) && v > 0 ? v : null; }
-/* 草稿 → {sizing, bad}:動過但看不懂 = bad(確定停用);清空 = 回預設(跟著優化結果走)。
-   沒動過的格:已有明確值的照舊;還是預設(null)的本金與所選方法的目標,把開框時那個值釘下來——按確定就是認了畫面上的值(Wei 10-16)。
-   釘未取整的原值(t0),不釘框裡 toFixed 過的字:歷史波動 10.63% 釘成 10.6 會讓槓桿變 0.997、按確定整張表就動一下。
-   方法只在點過分段時才寫:最大回撤暫時不能用時畫面退回目標波動,沒點就按確定不准把存著的最大回撤改掉 */
+/* 草稿 → {sizing, bad}:動過但看不懂 = bad(確定停用);清空 = 回到沒填。只寫用戶動過的格,沒動的照存檔(雲端讀回來的值也不被草稿蓋掉)。
+   本金跟著框裡看到的單位存;幣別只有用戶在單位下拉選了才換,數字不換算 */
 function mgSizeParse(d) {
-  const out = mpsSizingClean(mgBag().sizing), ccy = mpsCcy(); let bad = false;
+  const out = mpsSizingClean(mgBag().sizing); let bad = false;
   if (d.methodDirty) out.method = d.method;
   if (d.fundDirty) {
     if (String(d.fund).trim() === "") { out.fund = null; out.fundCcy = null; }
-    else if ((out.fund = mgSizeNum(d.fund, /\s*[A-Za-z]+$/)) === null) bad = true; else out.fundCcy = ccy;
-  }
+    else if ((out.fund = mgSizeNum(d.fund, /\s*[A-Za-z]+$/)) === null) bad = true; else out.fundCcy = d.fundCcy || mpsCcy();
+  } else if (d.ccyDirty && out.fund !== null) out.fundCcy = d.fundCcy;
   MPS_METHODS.forEach((m) => { if (!d.dirty[m]) return; if (String(d.t[m]).trim() === "") out.target[m] = null; else if ((out.target[m] = mgSizeNum(d.t[m], /\s*[%×xX]$/)) === null && m === d.method) bad = true; });
-  if (bad) return { sizing: out, bad };
-  return { sizing: mpsSizingPin(out, ccy, d.fundDirty ? 0 : d.fund0, d.method, d.dirty[d.method] ? 0 : d.t0[d.method]), bad };
+  return { sizing: out, bad };
 }
 function mgSizeField(id, label, value, unit, mode, onInput) {
   const f = trEl("div", "mg-fld"), l = trEl("label", "mg-fld-l", label); l.htmlFor = id; f.appendChild(l);
-  const w = trEl("span", "mg-unitw"), inp = trEl("input", "amt-in"); inp.type = "text"; inp.id = id; inp.inputMode = mode; inp.autocomplete = "off"; inp.value = value;
+  const w = trEl("span", "mg-unitw"), inp = trEl("input", "amt-in"); inp.type = "text"; inp.id = id; inp.inputMode = mode; inp.autocomplete = "off"; inp.required = true; inp.value = value;
   inp.addEventListener("input", () => onInput(inp.value)); w.appendChild(inp);
   if (unit) w.appendChild(trEl("span", "u", unit));
   f.appendChild(w); return f;
@@ -1466,16 +1501,24 @@ function mpsNoReturnsKey() {
   if (TR.env !== "cloud") return "sz.staleMdd";
   return mpsCvBefore(((TR.st && TR.st.cloud) || {}).config_version, MPS_RETURNS_CV) ? "sz.oldMdd" : "sz.staleMdd";
 }
+// 最大回撤用不了的原因:欄位在但是 null = 共同資料太短;欄位不在 = 這份提案比主機的版本舊
+function mpsNoSeriesKey() { const p = mpsProp(); return p && "port_returns" in p ? "sz.shortMdd" : mpsNoReturnsKey(); }
 function mgSizeRender() {
   const d = mgsDraft, body = $("mgs-body"), pv = trEl("div", "mg-size-pv"), series = mpsSeriesOf(mpsProp());
   body.textContent = "";
-  const fundF = mgSizeField("mgs-fund", t("mg.fund"), d.fund, mpsCcy(), "numeric", (v) => { d.fund = v; d.fundDirty = true; mgSizePreview(pv); });
-  fundF.querySelector("label").title = t("mg.fundTip");
+  const fundF = mgSizeField("mgs-fund", t("mg.fund"), d.fund, d.fundCcy, "numeric", (v) => { d.fund = v; d.fundDirty = true; mgSizePreview(pv); });
+  if (d.fundCcys.length > 1) {   // 存的幣別跟現在成員的不同才有得選:選了只換單位,數字不換算。同幣別維持純字
+    const sw = trEl("span", "set-selw cf-in-ct"), sel = trEl("select", "set-sel"); sel.setAttribute("aria-label", t("mg.fund"));
+    d.fundCcys.forEach((c) => { const o = trEl("option", "", c); o.value = c; sel.appendChild(o); });
+    sel.value = d.fundCcy;
+    sel.addEventListener("change", () => { d.fundCcy = sel.value; d.ccyDirty = true; mgSizePreview(pv); });
+    sw.appendChild(sel); const u = fundF.querySelector(".u"); u.parentNode.replaceChild(sw, u);
+  }
   body.appendChild(fundF);
   const mf = trEl("div", "mg-fld"); mf.appendChild(trEl("span", "mg-fld-l", t("mg.tbMethod")));
   const seg = trEl("div", "mg-size-seg"); seg.setAttribute("role", "radiogroup"); seg.setAttribute("aria-label", t("mg.tbMethod"));
   // 原因點名是最大回撤不能用(設計最終稽核:原本只講「主機版本較舊」,看不出被擋的是哪個)
-  const old = trEl("p", "ps-hint mg-size-old", mpsProp() && "port_returns" in mpsProp() ? t("sz.shortMdd") : t(mpsNoReturnsKey())); old.hidden = !d.oldMsg;
+  const old = trEl("p", "ps-hint mg-size-old", t(mpsNoSeriesKey())); old.hidden = !d.oldMsg;
   MPS_METHODS.forEach((m) => {
     const b = trEl("button", "", t({ vol: "sz.m.vol", mdd: "sz.m.mdd", lev: "sz.m.lev" }[m])); b.type = "button"; b.setAttribute("role", "radio");
     b.setAttribute("aria-checked", m === d.method ? "true" : "false"); b.dataset.m = m;
@@ -1487,12 +1530,13 @@ function mgSizeRender() {
   if (!series) old.hidden = false;   // 最大回撤不能選:原因常駐(不是點了才出現)
   mf.append(seg, old); body.appendChild(mf);
   const m = d.method;
-  body.appendChild(mgSizeField("mgs-t", t({ vol: "sz.t.vol", mdd: "sz.t.mdd", lev: "sz.lev" }[m]), d.t[m], m === "lev" ? "×" : "%", "decimal", (v) => { d.t[m] = v; d.dirty[m] = true; mgSizePreview(pv); }));
+  if (m) body.appendChild(mgSizeField("mgs-t", t({ vol: "sz.t.vol", mdd: "sz.t.mdd", lev: "sz.lev" }[m]), d.t[m], m === "lev" ? "×" : "%", "decimal", (v) => { d.t[m] = v; d.dirty[m] = true; mgSizePreview(pv); }));
   body.appendChild(pv); mgSizePreview(pv);
 }
 function mgSizeOk() {
+  const G = mgBag(); if (mgsDraft.G !== G) { mgSizeClose(); return; }   // 開著框時換了帳號:這份草稿是上一個人的
   const r = mgSizeParse(mgsDraft); if (r.bad) return;
-  const G = mgBag(); G.sizing = r.sizing; G.sizingSet = true; mgSave(TR, MG_SIZE_KEY, G.sizing);
+  G.sizing = r.sizing; G.sizingSet = true; mgSave(TR, MG_SIZE_KEY, G.sizing);
   trackFeature("mg_sizing_set");
   mgSizeClose(); TR.sig.opt = null; mgPaint();
   const chip = $("po-opt").querySelector(".mg-size-btn"); if (chip) chip.focus();   // 重建後原本那顆不在了

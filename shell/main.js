@@ -2898,21 +2898,43 @@ function stratPrefsSet(patch) {
   return stratPrefsGet();
 }
 /* 雲端那一袋的部位大小(renderer/portfolio.js mgSizingCloudLoad):同一個 ui-prefs.json,綁這次登入的 who——
-   換帳號 / 重新登入讀不到上一份(回 null = 照預設)。形狀在這裡清洗才落地,renderer 讀回來再洗一次 */
+   換帳號 / 重新登入讀不到上一份(回 null = 沒填過)。形狀在這裡清洗才落地,renderer 讀回來再洗一次 */
 function mgSizingClean(v) {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
   const pos = (x) => (typeof x === "number" && isFinite(x) && x > 0 ? x : null), tg = v.target && typeof v.target === "object" ? v.target : {};
   return { fund: pos(v.fund), fundCcy: typeof v.fundCcy === "string" && /^[A-Z]{2,8}$/.test(v.fundCcy) ? v.fundCcy : null,
-    method: ["vol", "mdd", "lev"].indexOf(v.method) >= 0 ? v.method : "vol", target: { vol: pos(tg.vol), mdd: pos(tg.mdd), lev: pos(tg.lev) } };
+    method: ["vol", "mdd", "lev"].indexOf(v.method) >= 0 ? v.method : null, target: { vol: pos(tg.vol), mdd: pos(tg.mdd), lev: pos(tg.lev) } };
 }
+/* 同一條路的優化設定:勾的成員、方法、各方法的參數。形狀同 renderer mgOptClean,再加 sel */
+function mgOptCloudClean(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const name = /^[A-Za-z0-9_-]{1,64}$/, ok = (x) => (typeof x === "number" && isFinite(x)) || typeof x === "boolean" || (typeof x === "string" && x.length <= 200);
+  const out = { sel: Array.isArray(v.sel) ? v.sel.filter((n) => typeof n === "string" && n && n.length <= 64).slice(0, 500) : null, alloc: typeof v.alloc === "string" && name.test(v.alloc) ? v.alloc : null, params: {} };
+  const src = v.params && typeof v.params === "object" ? v.params : {};
+  Object.keys(src).slice(0, 64).forEach((a) => {
+    if (!name.test(a) || !src[a] || typeof src[a] !== "object") return;
+    const o = {}; Object.keys(src[a]).slice(0, 32).forEach((k) => { if (ok(src[a][k])) o[k] = src[a][k]; }); out.params[a] = o;
+  });
+  return out;
+}
+/* {ok:false} = 讀不到(沒登入、檔壞了、沒權限),不等於沒存過:renderer 不能當沒填過讓人蓋掉。檔不存在 = 全新安裝,ok、全空 */
 function mgSizingCloudGet() {
-  const who = currentWho(); if (!who) return null;
-  try { const o = JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")).mgSizingCloud; return o && o.who === who ? mgSizingClean(o.v) : null; } catch (_) { return null; }
+  const who = currentWho(); if (!who) return { ok: false };
+  let o = {};
+  try { o = JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")); } catch (e) { if (e.code !== "ENOENT") return { ok: false }; }
+  if (!o || typeof o !== "object") return { ok: false };
+  const mine = (x) => (x && x.who === who ? x.v : null);
+  return { ok: true, v: mgSizingClean(mine(o.mgSizingCloud)), opt: mgOptCloudClean(mine(o.mgOptCloud)) };
 }
 function mgSizingCloudSet(v) {
   const who = currentWho(), c = mgSizingClean(v);
   if (!who || !c) return false;
   try { uiPrefsPatch({ mgSizingCloud: { who, v: c } }); return true; } catch (_) { return false; }   // 寫不進去:這一次的設定只在畫面上
+}
+function mgOptCloudSet(v) {
+  const who = currentWho(), c = mgOptCloudClean(v);
+  if (!who || !c) return false;
+  try { uiPrefsPatch({ mgOptCloud: { who, v: c } }); return true; } catch (_) { return false; }
 }
 
 async function blaveModels() {
@@ -4135,7 +4157,8 @@ app.whenReady().then(() => {
   handle("intro-seen", () => introSeenSet(), false);
   handle("strat-prefs", () => stratPrefsGet(), stratPrefsClean(null));
   handle("strat-prefs-set", (_e, patch) => stratPrefsSet(patch), stratPrefsClean(null));
-  handle("mg-sizing-cloud", () => mgSizingCloudGet(), null);
+  handle("mg-sizing-cloud", () => mgSizingCloudGet(), { ok: false });
+  handle("mg-opt-cloud-set", (_e, v) => mgOptCloudSet(v), false);
   handle("mg-sizing-cloud-set", (_e, v) => mgSizingCloudSet(v), false);
   handle("library-download", (_e, id) => libraryDownload(id), { ok: false, kind: "fail" });
   // 本機報告(renderer/reports.js):讀 <WS>/reports 的信封 / 本體 + sidecar 圖(data URI);renderer 不碰 fs

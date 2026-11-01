@@ -8677,9 +8677,6 @@ msgstr "每檔策略同樣份額，不擬合。"
 msgid "mg.fund"
 msgstr "投入資金"
 
-msgid "mg.fundTip"
-msgstr "預設是配置分頁的合計"
-
 # 移動窗格回測三格數字底下各自的「贏過 X%」氣泡;後面接 mg.beatsNote(期間注記)
 msgid "mg.beatsTip.ret"
 msgstr "總報酬高於同期 1,000 組隨機權重投組中這個比例。參考值，換一段期間會明顯不同。"
@@ -8719,9 +8716,6 @@ msgstr "管理方法"
 
 msgid "mg.moreMethods"
 msgstr "其他方法？"
-
-msgid "mg.noFx"
-msgstr "缺 TWD 匯率，口數換算不出來"
 
 msgid "mg.optDoneToast"
 msgstr "優化完成，權重分配在「優化」分頁。"
@@ -9006,16 +9000,13 @@ msgid "pv.h.revoked"
 msgstr "請重新登入"
 
 msgid "mg.applyWhyLogin"
-msgstr "需要登入 Blave 才拿得到台幣匯率，台指期口數換算不出來"
+msgstr "登入 Blave 才拿得到匯率"
 
 msgid "mg.applyWhyFx"
-msgstr "缺台幣匯率，台指期口數換算不出來"
+msgstr "缺匯率，金額換算不出來"
 
 msgid "mg.applyWhyQuote"
 msgstr "還沒拿到台指期報價，口數換算不出來"
-
-msgid "mg.applyWhySize"
-msgstr "先設定投入資金與目標"
 
 msgid "mg.applyWhySame"
 msgstr "建議金額跟目前一樣"
@@ -9187,7 +9178,7 @@ msgid "tr.fxOld"
 msgstr "台幣換算用的是 {d} 的匯率（≈），登入後會更新。"
 
 msgid "mg.applyWhyFxOld"
-msgstr "上次存下的台幣匯率已超過 30 天，登入 Blave 後才換算得出台指期口數"
+msgstr "上次存的匯率已超過 30 天，登入 Blave 更新"
 
 msgid "mg.lotsUnder"
 msgstr "0 口（不足一口）"
@@ -9216,13 +9207,49 @@ msgid "sz.oldMdd"
 msgstr "雲端主機版本較舊，不能用最大回撤；到設定 › 一般〔更新雲端主機〕後重跑一次優化"
 
 msgid "sz.staleMdd"
-msgstr "這份結果是更新前算的，重跑一次優化就能用最大回撤"
+msgstr "重跑一次優化才能用最大回撤"
 
 msgid "sz.shortMdd"
 msgstr "共同資料不到 90 天，不能用最大回撤"
 
 msgid "mg.needFund"
-msgstr "先按「{method}」填投入資金，建議金額才算得出來。"
+msgstr "先填投入資金"
+
+msgid "mg.needSize"
+msgstr "先填部位大小"
+
+msgid "mg.needMethod"
+msgstr "先選部位大小的方法"
+
+msgid "mg.needTarget"
+msgstr "先填部位大小的目標"
+
+msgid "mg.sizeNoHist"
+msgstr "這份結果算不出目標波動，換一個方法"
+
+msgid "mg.sizeNoSolve"
+msgstr "這個回撤目標算不出槓桿，改一個目標"
+
+msgid "sz.unset"
+msgstr "未設定"
+
+msgid "mg.needAlloc"
+msgstr "先按〔方法〕選分配方法"
+
+msgid "mg.allocGone"
+msgstr "「{method}」已不在這台主機，先按〔方法〕重選"
+
+msgid "mg.needParams"
+msgstr "先按〔方法〕填「{method}」的參數"
+
+msgid "mg.prefsFail"
+msgstr "讀不到上次存的組合設定"
+
+msgid "mg.prefsRetry"
+msgstr "重試"
+
+msgid "mg.prefsReset"
+msgstr "重新填"
 
 msgid "tr.cloud.notApplied"
 msgstr "主機還沒套用剛存的金額，畫面先顯示主機上的值；套用後會自動更新。"

@@ -35,11 +35,11 @@ ok("用的是上次存下的匯率時,優化表下講是哪一天的(≈);字串
   ctx.TR_BAGS.cloud.st.cloud.code = "REVOKED"; const revFx = why(fxRow, true, true);
   ctx.TR_BAGS.cloud.st.cloud.code = "OK";
   ok("套用金額停用一定有原因:缺匯率 + 登入失效 → 叫人登入;登入正常缺匯率 → 缺台幣匯率;匯率有缺報價 → 等報價;沒有投入資金 → 先設定;跟目前一樣 → 一樣;兩邊策略不同組 → 原句",
-    revFx === "mg.applyWhyLogin" && okFx === "mg.applyWhyFx" && why(quoteRow, true, true) === "mg.applyWhyQuote" && why({ rows: [], eff: null }, false, true) === "mg.applyWhySize"
+    revFx === "mg.applyWhyLogin" && okFx === "mg.applyWhyFx" && why(quoteRow, true, true) === "mg.applyWhyQuote" && why({ rows: [], eff: null, gap: "mg.needTarget" }, false, true) === "mg.needTarget"
     && why({ rows: [], eff: 100 }, false, false) === "mg.applyWhySame" && (ctx.mgSameAsAmounts = () => false, why(fxRow, true, true)) === "mg.applyDiffSet", J([revFx, okFx]));
   ok("原因寫在鈕旁那一格(每次停用條件重算時一起寫);字串兩語",
     /if \(whyEl\) whyEl\.textContent = other \? t\("mg\.propOtherAlloc", \{ method: mgAllocLabel\(other\) \}\) : ap\.disabled \? t\(mgApplyWhy\(d, quoteMissing, changed\)\) : "";/.test(pf)
-    && S.includes('"mg.applyWhyLogin": "需要登入 Blave 才拿得到台幣匯率，台指期口數換算不出來"') && /"mg\.applyWhyLogin": "Sign in to Blave/.test(S)); }
+    && S.includes('"mg.applyWhyLogin": "登入 Blave 才拿得到匯率"') && /"mg\.applyWhyLogin": "Sign in to Blave/.test(S)); }
 
 // ② 登入狀態單一來源
 ok("主行程 authState:沒 token → out;帳號那一支 401／403(輪替救不回)或雲端 REVOKED／NO_APP_SECRET → revoked;任何 200、存了新 token → in;auth-state IPC",
@@ -108,8 +108,8 @@ ok("每一處同一句:conn.expired(帳號頁、公開連結、分享)= 「登�
   const masked = ["/private/var/folders/x/y.json", "/Library/Application Support/x", "~/Blave/workspace/a.py", "C:\\Users\\wei\\Blave\\x.json", "'/opt/blave/x'", "\"C:\\cleanwin\\y\""]
     .map((p) => vm.runInContext("trRejectText(" + JSON.stringify("ValueError: cannot read " + p + " now") + ")", ctx));
   ok("路徑全遮:/private/var、/Library、~/、C:\\Users\\…、引號包住的(單、雙引號)都換成「…」", masked.every((x) => !/private|Library|~\/|Users|opt\/blave|cleanwin/.test(x) && /…/.test(x)), J(masked)); }
-ok("優化分頁:已經不存在的成員剔掉(存回 localStorage);一支有回測的策略都沒有 → 霧化 + 選擇策略;member has no backtest stats → mg.errNoStats",
-  /const live = all\.filter\(\(n\) => TR\.list\.some\(\(x\) => x\.name === n\)\);/.test(pf) && /if \(TR\.listLoaded && !TR\.list\.some\(\(x\) => x\.hasBacktest\)\) \{\n    if \(box\.dataset\.fog !== "1"\) \{ box\.textContent = ""; box\.appendChild\(poFog\("pick"\)\);/.test(pf)
+ok("優化分頁:已經不存在的成員不算進來(只濾畫面,用戶勾的存檔不動);一支有回測的策略都沒有 → 霧化 + 選擇策略;member has no backtest stats → mg.errNoStats",
+  /return all\.filter\(\(n\) => TR\.list\.some\(\(x\) => x\.name === n\)\);/.test(pf) && /if \(TR\.listLoaded && !TR\.list\.some\(\(x\) => x\.hasBacktest\)\) \{\n    if \(box\.dataset\.fog !== "1"\) \{ box\.textContent = ""; box\.appendChild\(poFog\("pick"\)\);/.test(pf)
   && (pf.match(/\/no backtest stats\/i\.test\(e\) \? t\("mg\.errNoStats"\)/g) || []).length === 2);
 // runtime SAVE_FAILED、英文「and {n} more」、第一次真錢啟動的說明只在啟動 ack 成功才記成看過
 { const pres = read(path.join(R, "president.js"));
