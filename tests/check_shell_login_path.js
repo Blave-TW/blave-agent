@@ -153,6 +153,14 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
     && /seen\.where = r\.code === 0 \? winOnPath\(r\.stdout, envPath\)\.split\(\/\\r\?\\n\/\)\.filter\(Boolean\)\.map\(binKind\)/.test(w) && /seen\.found = binKind\(found\)/.test(w)); }
 (async () => {
   await claudeFlow;
+  // spawn 對 EPERM 這類錯誤是同步 throw(uid 33959):登入 shell 開不起來也要拿到已知位置,不能 reject
+  { const ls = src.match(/^function loginShellPath\(\) \{[\s\S]*?\n\}/m);
+    const f = new Function("execFile", "path", "os", "process", "mergePath", "winPath", "let resolvedPath = null;\n" + ls[0] + "\nreturn loginShellPath;")(
+      () => { throw Object.assign(new Error("spawn EPERM"), { code: "EPERM" }); }, path, os, { platform: "darwin", env: {} }, mergePath, () => "");
+    const p = await f().catch((e) => "REJECT " + e.code);
+    t("loginShellPath:execFile 同步 throw → 不 reject,回已知位置", /\/opt\/homebrew\/bin/.test(p) && !/^REJECT/.test(p), p);
+    const rr = await run("/x/codex", [], "/usr/bin", 1000).then((r) => r, (e) => "REJECT " + e.code);
+    t("run:正常路徑不受 try 影響(找不到檔仍是 ENOENT)", rr.code === "ENOENT", rr); }
   const slow = await run(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], process.env.PATH, 150);
   t("run:逾時 → timedOut=true、ms ≥ 上限(以前只看得到 code,分不出逾時)", slow.timedOut === true && slow.ms >= 150 && slow.ms < 4000, slow);
   const bad = await run(process.execPath, ["-e", "process.exit(3)"], process.env.PATH, 5000);

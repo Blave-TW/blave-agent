@@ -28,13 +28,14 @@ const PIECES = [constOf(src, "cmdWrap"), constOf(src, "WIN_ENV_DROP"), fnOf(src,
   fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "claudePath"), fnOf(src, "codexBundled"), fnOf(src, "detectAgentsRaw"), constOf(src, "DETECT_TOTAL_MS"), fnOf(src, "detectAgents"),
   "let loginChild = null;", fnOf(src, "agentLogin"), fnOf(src, "cancelAgentLogin")].join("\n");
 // pkgBin = 隨包那顆(假的 codexpkg.installed 回它,codexBundled 跑原文);bundled = SDK 隨包的 claude
-function mkMain(envPath, pkgBin, bundled) {
+// o.execFile／o.spawn／o.installed 換掉真的那支(同步 throw 的案例)
+function mkMain(envPath, pkgBin, bundled, o = {}) {
   const logged = [];
   const api = new Function("execFile", "spawn", "fs", "path", "process", "loginShellPath", "bundledClaude", "BASE", "WIN", "detectLogWrite",
     "winOnPath", "pickWinBin", "cliAuthHow", "codexpkg", "CODEX_PIN", "TRIPLE",
     PIECES + "\nreturn { detectAgents, agentLogin, cancelAgentLogin, claudePath, codexBundled, BAD_BIN };")(
-    require("child_process").execFile, require("child_process").spawn, fs, path, process, async () => envPath, () => bundled, "/b", false, (f, e) => logged.push(e),
-    (s) => s, () => null, require(path.join(SHELL, "telemetry.js")).cliAuthHow, { installed: () => (pkgBin ? { path: pkgBin } : null) }, "0.0.0", "x");
+    o.execFile || require("child_process").execFile, o.spawn || require("child_process").spawn, fs, path, process, async () => envPath, () => bundled, "/b", false, (f, e) => logged.push(e),
+    (s) => s, () => null, require(path.join(SHELL, "telemetry.js")).cliAuthHow, { installed: o.installed || (() => (pkgBin ? { path: pkgBin } : null)) }, "0.0.0", "x");
   api.logged = logged; return api;
 }
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-codex-login-"));
@@ -72,6 +73,21 @@ exit 2
       const d = binDir("benoent"), p = script(path.join(d, "codex"), "#!/nonexistent/interp\n");
       const m2 = mkMain(PATH_OF(d), p, null), r2 = await m2.detectAgents(), l = await m2.agentLogin("codex");
       t("檔在、開不起來(ENOENT)→ why=codex_cantrun;登入回 code=ENOENT、cantRun=true", r2.codex.why === "codex_cantrun" && l.code === "ENOENT" && l.cantRun === true && l.ok === false, { why: r2.codex.why, l }); }
+    // 3b. spawn 同步 throw(uid 33959 的 detect.log:hung:true、err:EPERM):Node 只有五種錯誤走 error 事件,EPERM 是 throw。
+    //     以前整次偵測 reject → 兩列都 *_timeout「沒有回應」。現在只有那一條壞,另一條照常
+    { const EPERM = () => { throw Object.assign(new Error("spawn EPERM"), { code: "EPERM" }); }, real = require("child_process").execFile;
+      const THROW_ON = (p) => (...a) => (a[0] === p ? EPERM() : real(...a));
+      const d = binDir("beperm"), good = path.join(d, "codex"), okClaude = script(path.join(d, "claude"), "#!/bin/sh\necho '{\"loggedIn\":true,\"authMethod\":\"claude.ai\"}'\n");
+      script(good, CODEX_OK);
+      const a = mkMain(PATH_OF(d), good, null, { execFile: THROW_ON(good) }), ra = await a.detectAgents();
+      t("Codex 那顆 spawn 同步 throw EPERM:Claude 照常已登入;Codex why=codex_cantrun、不是 timeout;沒寫 hung;BAD_BIN.codex 記它",
+        ra.claude.loggedIn === true && ra.claude.why === null && ra.codex.installed && ra.codex.why === "codex_cantrun" && !a.logged.some((e) => e.hung) && a.logged[0].codex.code === "EPERM" && a.BAD_BIN.codex === good, { ra, log: a.logged });
+      const b = mkMain(PATH_OF(d), good, null, { execFile: THROW_ON(okClaude) }), rb = await b.detectAgents();
+      t("Claude 那顆 spawn 同步 throw EPERM:Codex 照常(沒登入 → codex_nonzero);Claude why=claude_cantrun;沒寫 hung", rb.codex.why === "codex_nonzero" && rb.claude.why === "claude_cantrun" && !b.logged.some((e) => e.hung), { rb, log: b.logged });
+      const c = mkMain(PATH_OF(d), good, null, { spawn: EPERM }), lc = await c.agentLogin("codex"), lc2 = await c.agentLogin("codex");
+      t("登入的 spawn 同步 throw:回 code=EPERM、cantRun=true;loginChild 放掉,下一次不是 busy", lc.code === "EPERM" && lc.cantRun === true && lc.ok === false && lc.cancelled === false && lc2.busy !== true, { lc, lc2 });
+      const e = mkMain(PATH_OF(d), good, null, { installed: () => { throw Object.assign(new Error("x /Users/u"), { code: "EIO" }); } }), re = await e.detectAgents();
+      t("一條在 find 就 reject:只影響自己(codex_none、rec.err 記碼不記訊息),Claude 照常,沒寫 hung", re.claude.loggedIn === true && re.codex.why === "codex_none" && e.logged[0].codex.err === "EIO" && !e.logged.some((x) => x.hung) && !JSON.stringify(e.logged).includes("/Users/u"), { re, log: e.logged }); }
     // 4. 逾時:login status 不回(上限在這支測試裡縮成 2 秒)
     { const d = binDir("bslow"), p = script(path.join(d, "codex"), "#!/bin/sh\nexec sleep 8\n");
       const t0 = Date.now(), r = await mkMain(PATH_OF(d), p, null).detectAgents();

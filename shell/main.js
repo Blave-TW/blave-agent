@@ -58,7 +58,7 @@ function loginShellPath() {
     if (resolvedPath) return resolve(resolvedPath);
     if (process.platform === "win32") { resolvedPath = winPath(process.env); return resolve(resolvedPath); }
     const sh = process.env.SHELL || "/bin/zsh";
-    execFile(sh, ["-lc", "echo -n $PATH"], { timeout: 8000 }, (err, stdout) => {
+    const done = (err, stdout) => {
       const known = [
         path.join(os.homedir(), ".local/bin"),
         "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin",
@@ -69,7 +69,8 @@ function loginShellPath() {
       const got = !err && stdout.trim() ? stdout.trim().split(":") : [];
       resolvedPath = mergePath(got, known);
       resolve(resolvedPath);
-    });
+    };
+    try { execFile(sh, ["-lc", "echo -n $PATH"], { timeout: 8000 }, done); } catch (e) { done(e, ""); }
   });
 }
 
@@ -80,12 +81,15 @@ const cmdWrap = (bin) => (process.platform === "win32" && /\.(cmd|bat)$/i.test(b
 function run(cmd, args, envPath, timeout = 10000, cwd = undefined, env = undefined) {
   const w = cmdWrap(cmd), t0 = Date.now();
   return new Promise((resolve) => {
-    execFile(w.file, args, { timeout, cwd, shell: w.shell, windowsHide: true, env: env || probeEnv(envPath) },
-      (err, stdout, stderr) => resolve({
-        code: err ? (err.code === undefined ? -1 : err.code) : 0,
-        stdout: String(stdout || ""), stderr: String(stderr || ""),
-        timedOut: !!(err && err.killed), ms: Date.now() - t0,
-      }));
+    const done = (err, stdout, stderr) => resolve({
+      code: err ? (err.code === undefined ? -1 : err.code) : 0,
+      stdout: String(stdout || ""), stderr: String(stderr || ""),
+      timedOut: !!(err && err.killed), ms: Date.now() - t0,
+    });
+    // Node 的 spawn 只有 EACCES／EAGAIN／EMFILE／ENFILE／ENOENT 走 error 事件,其他(EPERM…)同步 throw。
+    // 不接住就變 reject,整次偵測倒掉、兩列都「沒有回應」(uid 33959 的 detect.log:hung、EPERM)
+    try { execFile(w.file, args, { timeout, cwd, shell: w.shell, windowsHide: true, env: env || probeEnv(envPath) }, done); }
+    catch (e) { done(e); }
   });
 }
 
@@ -131,9 +135,9 @@ function binKind(p) {
   return /^(?:[a-z]:)?\\/i.test(p) ? "shim" : "posix";
 }
 const runRec = (r) => ({ code: r.code, timedOut: r.timedOut, ms: r.ms });
-// 找得到檔、但跑不起來:126 不能執行、127 包裝腳本裡找不到真的那顆(cmux 開發版 PATH 上的 codex 就是這樣)、ENOENT/EACCES 開不了。
+// 找得到檔、但跑不起來:126 不能執行、127 包裝腳本裡找不到真的那顆(cmux 開發版 PATH 上的 codex 就是這樣)、ENOENT/EACCES/EPERM 開不了。
 // 這不是「沒登入」:叫用戶去登入只會再撞一次。純函式
-const cantRun = (r) => !!r && (r.code === 126 || r.code === 127 || r.code === "ENOENT" || r.code === "EACCES");
+const cantRun = (r) => !!r && (r.code === 126 || r.code === 127 || r.code === "ENOENT" || r.code === "EACCES" || r.code === "EPERM");
 /* 這個 CLI 為什麼不能用(detect_fail 埋點的值;能用回 null)。純函式。
    none = 沒找到檔(claude 是 PATH 與隨包那顆都沒有;codex 是隨包還沒抓);timeout = 登入檢查逾時;
    cantrun = 找到了、跑不起來(cantRun,退路那顆也不行);badjson = `claude auth status` 回的不是 JSON(舊版);
@@ -197,6 +201,8 @@ async function detectAgentsRaw() {
     codex: { installed: false, loggedIn: false, path: null, why: null, via: null, authOutside: false },
   };
   const rec = { claude: {}, codex: {} };
+  // 一條出事只影響自己那一列(rec.err = 錯誤碼,不記訊息);detectAgents 的整體 catch 是最後防線
+  const isolate = (kind, job) => job().catch((e) => { rec[kind].err = String((e && (e.code || e.name)) || "Error"); if (!rec[kind].bin) rec[kind].bin = "none"; });
   /* 解路徑 + 跑登入檢查。那顆跑不起來(cantRun)就記進 BAD_BIN、再解一次——這次 find 會跳過它:claude 拿 SDK 隨包那顆,
      codex 只有一顆、回 null 就不試第二次。退路也跑不起來才算 cantrun。rec.alt = 試過的退路檔種 */
   const probe = async (kind, find, args, rawArgs) => {
@@ -221,7 +227,7 @@ async function detectAgentsRaw() {
      ~/.claude/settings.json 或 apiKeyHelper,agent 回合看不到;那一列多一句講出路。只回布林,不碰 stdout 的其他欄位 */
   const outside = async (raw, ok) => { const x = raw && await raw; return !!x && !cantRun(x) && !x.timedOut && ok(x); };
   // 兩條同時跑:各自最多 LOGIN_CHECK_MS,整次偵測最多也就這麼久(依序跑最壞要兩倍,畫面那邊沒有自己的逾時)
-  await Promise.all([(async () => {
+  await Promise.all([isolate("claude", async () => {
     // --setting-sources= 要在子指令前面(放後面是 unknown option):agent 回合的 SDK 帶的就是它,用戶設定檔一個都不讀
     const { bin: claudeBin, r, raw } = await probe("claude", (seen) => claudePath(envPath, seen), ["--setting-sources=", "auth", "status"], ["auth", "status"]);
     rec.claude.bin = binKind(claudeBin);
@@ -240,7 +246,7 @@ async function detectAgentsRaw() {
     if (!out.claude.loggedIn && !cantRun(r) && !r.timedOut) {
       out.claude.authOutside = await outside(raw, (x) => { try { return JSON.parse(x.stdout).loggedIn === true; } catch (_) { return false; } });
     }
-  })(), (async () => {
+  }), isolate("codex", async () => {
     // 只有隨包那顆(codexpkg.js);官方契約:`codex login status` 登入=0、未登入=1(原始碼 cli/src/login.rs:443)
     const { bin: codexBin, r, raw } = await probe("codex", (seen) => codexBundled(!seen), ["login", "status"], ["login", "status"]);
     rec.codex.bin = codexBin ? "pkg" : "none";
@@ -251,7 +257,7 @@ async function detectAgentsRaw() {
     Object.assign(rec.codex, runRec(r));
     out.codex.loggedIn = r.code === 0;
     if (!out.codex.loggedIn && !cantRun(r) && !r.timedOut) out.codex.authOutside = await outside(raw, (x) => x.code === 0);
-  })()]);
+  })]);
   rec.claude.loggedIn = out.claude.loggedIn; rec.codex.loggedIn = out.codex.loggedIn;
   rec.claude.outside = out.claude.authOutside; rec.codex.outside = out.codex.authOutside;
   out.claude.why = detectWhy("claude", rec.claude); out.codex.why = detectWhy("codex", rec.codex);
@@ -296,8 +302,15 @@ async function agentLogin(kind, onSpawn) {
   if (!bin) { loginChild = null; return { ok: false }; }
   return new Promise((resolve) => {
     const w = cmdWrap(bin);
-    const child = spawn(w.file, kind === "claude" ? ["auth", "login"] : ["login"],
-      { env: probeEnv(envPath), stdio: "ignore", shell: w.shell, windowsHide: true });
+    let child;
+    try {
+      child = spawn(w.file, kind === "claude" ? ["auth", "login"] : ["login"],
+        { env: probeEnv(envPath), stdio: "ignore", shell: w.shell, windowsHide: true });
+    } catch (e) {   // 同步 throw(見 run):loginChild 要放掉,不然之後每次登入都回 busy
+      const code = (e && e.code) || "ERROR";
+      loginChild = null;
+      return resolve({ ok: false, cancelled: false, code, cantRun: cantRun({ code }) });
+    }
     loginChild = child;
     // 畫面的「已在瀏覽器開啟」1 秒從這裡起算,偵測那一兩秒不算(稽核 P2-2)
     if (onSpawn) onSpawn();
@@ -1668,13 +1681,15 @@ function compareVersions(name, a, b) {
   const meta = (blob, n) => { const o = {}; VERSION_META_KEYS.forEach((k) => { o[k] = blob[k] === undefined ? null : blob[k]; }); o.n = n; return o; };
   const py = fs.existsSync(VENV_PY) ? VENV_PY : basePython();
   return new Promise((resolve) => {
-    const cp = execFile(py, ["-I", "-c", VERSION_DIFF_PY], { timeout: 15000, maxBuffer: 16 * 1024 * 1024, windowsHide: true, env: { ...process.env, ...PY_ENV } }, (err, stdout) => {
-      let d = null;
-      try { d = err ? null : JSON.parse(String(stdout)); } catch (_) { d = null; }
-      resolve(d && Array.isArray(d.hunks) ? { code: "OK", data: { strategy: name, a: meta(A.blob, a), b: meta(B.blob, b), hunks: d.hunks, truncated: d.truncated === true } } : { code: "ERROR" });
-    });
-    cp.stdin.on("error", () => {});
-    cp.stdin.end(JSON.stringify({ a: A.blob.code, b: B.blob.code }));
+    try {
+      const cp = execFile(py, ["-I", "-c", VERSION_DIFF_PY], { timeout: 15000, maxBuffer: 16 * 1024 * 1024, windowsHide: true, env: { ...process.env, ...PY_ENV } }, (err, stdout) => {
+        let d = null;
+        try { d = err ? null : JSON.parse(String(stdout)); } catch (_) { d = null; }
+        resolve(d && Array.isArray(d.hunks) ? { code: "OK", data: { strategy: name, a: meta(A.blob, a), b: meta(B.blob, b), hunks: d.hunks, truncated: d.truncated === true } } : { code: "ERROR" });
+      });
+      cp.stdin.on("error", () => {});
+      cp.stdin.end(JSON.stringify({ a: A.blob.code, b: B.blob.code }));
+    } catch (_) { resolve({ code: "ERROR" }); }
   });
 }
 /* 這支策略用到哪些自帶資料來源(`DATA_<來源>_<欄位>`)。掃的是資料夾內**所有 .py**,對齊 references/cloud-handoff.md §5 的

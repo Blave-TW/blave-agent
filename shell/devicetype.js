@@ -50,8 +50,10 @@ function detectDeviceType(deps = {}) {
   const platform = deps.platform || process.platform;
   const timeoutMs = deps.timeoutMs || TIMEOUT_MS;
   const run = deps.run || ((file, args) => new Promise((resolve) => {
-    require("child_process").execFile(file, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 64 * 1024 },
-      (err, stdout) => resolve({ ok: !err, stdout: String(stdout || "") }));
+    try {
+      require("child_process").execFile(file, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 64 * 1024 },
+        (err, stdout) => resolve({ ok: !err, stdout: String(stdout || "") }));
+    } catch (_) { resolve({ ok: false, stdout: "" }); }
   }));
   const fsp = require("fs").promises;
   const readdir = deps.readdir || ((d) => fsp.readdir(d));
