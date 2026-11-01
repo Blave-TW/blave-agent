@@ -38,10 +38,9 @@ if (HEADLESS && app.dock) app.dock.hide();
 let resolvedPath = null;
 const mergePath = (got, known, sep = path.delimiter) => got.concat(known.filter((d) => got.indexOf(d) < 0)).filter(Boolean).join(sep);
 /* Windows(純函式;tests/check_shell_login_path.js):GUI app 直接繼承登錄檔的使用者 PATH,不必開登入 shell。
-   補的是已知安裝位置:Claude Code 原生安裝器(~\.local\bin)、npm 全域(%APPDATA%\npm,codex.cmd 在這)、WinGet 的捷徑資料夾
+   補的是已知安裝位置:Claude Code 原生安裝器(~\.local\bin)、npm 全域(%APPDATA%\npm)、WinGet 的捷徑資料夾
    (winget install Anthropic.ClaudeCode 把 claude.exe 連到這、再寫進使用者 PATH——Blave 開著時裝的,行程的 PATH 快照裡沒有)、
-   Codex 官方 PowerShell 安裝器(chatgpt.com/codex/install.ps1)的可見 bin 資料夾(%LOCALAPPDATA%\Programs\OpenAI\Codex\bin,
-   同樣只寫進使用者 PATH、Blave 開著時裝的拿不到)、Git for Windows 的兩種裝法(Claude Code 的 Bash 工具靠它)。
+   Git for Windows 的兩種裝法(Claude Code 的 Bash 工具靠它)。
    環境變數缺的那項會是相對路徑,不補。 */
 function winPath(env) {
   const got = String(env.PATH || env.Path || "").split(";").map((s) => s.trim());
@@ -49,7 +48,6 @@ function winPath(env) {
     path.win32.join(env.USERPROFILE || "", ".local", "bin"),
     path.win32.join(env.APPDATA || "", "npm"),
     path.win32.join(env.LOCALAPPDATA || "", "Microsoft", "WinGet", "Links"),
-    path.win32.join(env.LOCALAPPDATA || "", "Programs", "OpenAI", "Codex", "bin"),
     path.win32.join(env.LOCALAPPDATA || "", "Programs", "Git", "cmd"),
     path.win32.join(env.ProgramFiles || "", "Git", "cmd"),
   ].filter((d) => path.win32.isAbsolute(d));
@@ -60,7 +58,7 @@ function loginShellPath() {
     if (resolvedPath) return resolve(resolvedPath);
     if (process.platform === "win32") { resolvedPath = winPath(process.env); return resolve(resolvedPath); }
     const sh = process.env.SHELL || "/bin/zsh";
-    execFile(sh, ["-lc", "echo -n $PATH"], { timeout: 8000 }, (err, stdout) => {
+    const done = (err, stdout) => {
       const known = [
         path.join(os.homedir(), ".local/bin"),
         "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin",
@@ -71,7 +69,8 @@ function loginShellPath() {
       const got = !err && stdout.trim() ? stdout.trim().split(":") : [];
       resolvedPath = mergePath(got, known);
       resolve(resolvedPath);
-    });
+    };
+    try { execFile(sh, ["-lc", "echo -n $PATH"], { timeout: 8000 }, done); } catch (e) { done(e, ""); }
   });
 }
 
@@ -82,12 +81,17 @@ const cmdWrap = (bin) => (process.platform === "win32" && /\.(cmd|bat)$/i.test(b
 function run(cmd, args, envPath, timeout = 10000, cwd = undefined, env = undefined) {
   const w = cmdWrap(cmd), t0 = Date.now();
   return new Promise((resolve) => {
-    execFile(w.file, args, { timeout, cwd, shell: w.shell, windowsHide: true, env: env || probeEnv(envPath) },
-      (err, stdout, stderr) => resolve({
-        code: err ? (err.code === undefined ? -1 : err.code) : 0,
-        stdout: String(stdout || ""), stderr: String(stderr || ""),
-        timedOut: !!(err && err.killed), ms: Date.now() - t0,
-      }));
+    const done = (err, stdout, stderr) => resolve({
+      code: err ? (err.code === undefined ? -1 : err.code) : 0,
+      stdout: String(stdout || ""), stderr: String(stderr || ""),
+      timedOut: !!(err && err.killed), ms: Date.now() - t0,
+      // 只留動作名:非同步那支的 syscall 是「spawn <路徑>」,路徑不進 detect.log
+      ...(err && err.syscall ? { syscall: String(err.syscall).split(" ")[0] } : {}),
+    });
+    // Node 的 spawn 只有 EACCES／EAGAIN／EMFILE／ENFILE／ENOENT 走 error 事件,其他(EPERM…)同步 throw。
+    // 不接住就變 reject,整次偵測倒掉、兩列都「沒有回應」(uid 33959 的 detect.log:hung、EPERM)
+    try { execFile(w.file, args, { timeout, cwd, shell: w.shell, windowsHide: true, env: env || probeEnv(envPath) }, done); }
+    catch (e) { done(e); }
   });
 }
 
@@ -110,7 +114,7 @@ async function which(name, envPath, seen) {
   if (process.platform === "win32") {
     const sys32 = path.win32.join(process.env.SystemRoot || "C:\\Windows", "System32");
     const r = await run(path.win32.join(sys32, "where.exe"), [name], envPath, 5000, sys32);
-    if (seen) { seen.where = r.code === 0 ? winOnPath(r.stdout, envPath).split(/\r?\n/).filter(Boolean).map(binKind) : []; if (r.timedOut) seen.whereTimedOut = true; }
+    if (seen) { seen.where = r.code === 0 ? winOnPath(r.stdout, envPath).split(/\r?\n/).filter(Boolean).map(binKind) : []; if (r.timedOut) seen.whereTimedOut = true; if (r.code !== 0 && r.code !== 1) seen.whereCode = r.code; }   // 1 = 沒裝;其他(EPERM…)不記就跟沒裝長一樣
     return r.code === 0 ? pickWinBin(winOnPath(r.stdout, envPath)) : null;
   }
   const r = await run("/usr/bin/env", ["sh", "-c", `command -v ${name}`], envPath, 5000);
@@ -126,26 +130,25 @@ const LOGIN_CHECK_MS = 20000;
 // 檔種(純函式;tests/check_shell_login_path.js)
 function binKind(p) {
   if (!p) return "none";
-  if (/\/ChatGPT\.app\/Contents\/Resources\/codex$/.test(p)) return "chatgpt";
-  if (/\\WindowsApps\\OpenAI\.Codex_[^\\]+\\app\\resources\\codex\.exe$/i.test(p)) return "store";
   if (/[\\/]claude_agent_sdk[\\/]_bundled[\\/]claude(?:\.exe)?$/i.test(p)) return "bundled";
   if (/\.exe$/i.test(p)) return "exe";
   if (/\.(cmd|bat)$/i.test(p)) return "cmd";
   if (/\.ps1$/i.test(p)) return "ps1";
   return /^(?:[a-z]:)?\\/i.test(p) ? "shim" : "posix";
 }
-const runRec = (r) => ({ code: r.code, timedOut: r.timedOut, ms: r.ms });
-// 找得到檔、但跑不起來:126 不能執行、127 包裝腳本裡找不到真的那顆(cmux 開發版 PATH 上的 codex 就是這樣)、ENOENT/EACCES 開不了。
+const runRec = (r) => ({ code: r.code, timedOut: r.timedOut, ms: r.ms, ...(r.syscall ? { syscall: r.syscall } : {}) });
+// 找得到檔、但跑不起來:126 不能執行、127 包裝腳本裡找不到真的那顆(cmux 開發版 PATH 上的 codex 就是這樣)、ENOENT/EACCES/EPERM/UNKNOWN 開不了
+// (Windows 拒絕存取是 EPERM、非 PE 檔是 UNKNOWN,win-test-6 實測)。逾時後殺不掉會回 code EPERM + timedOut,那是逾時,排除。
 // 這不是「沒登入」:叫用戶去登入只會再撞一次。純函式
-const cantRun = (r) => !!r && (r.code === 126 || r.code === 127 || r.code === "ENOENT" || r.code === "EACCES");
+const cantRun = (r) => !!r && !r.timedOut && (r.code === 126 || r.code === 127 || r.code === "ENOENT" || r.code === "EACCES" || r.code === "EPERM" || r.code === "UNKNOWN");
 /* 這個 CLI 為什麼不能用(detect_fail 埋點的值;能用回 null)。純函式。
-   none = 沒找到檔(claude 是 PATH 與隨包那顆都沒有);shim = Windows 上 PATH 裡只有 npm 的包裝檔、解不到 codex.exe;timeout = 登入檢查逾時;
+   none = 沒找到檔(claude 是 PATH 與隨包那顆都沒有;codex 是隨包還沒抓);timeout = 登入檢查逾時;
    cantrun = 找到了、跑不起來(cantRun,退路那顆也不行);badjson = `claude auth status` 回的不是 JSON(舊版);
    nonzero = CLI 有回答、答案是沒登入(codex 非 0;claude 的 loggedIn=false)。
    cantrun 不在埋點白名單裡(api 先收才能送),畫面送 detect_fail 時記成 nonzero(renderer detect()) */
 function detectWhy(kind, r) {
   if (r.loggedIn) return null;
-  if (r.bin === "none") return kind === "codex" && (r.where || []).some((k) => k === "cmd" || k === "shim") ? "codex_shim" : kind + "_none";
+  if (r.bin === "none") return kind + "_none";
   if (r.timedOut) return kind + "_timeout";
   if (cantRun(r)) return kind + "_cantrun";
   if (kind === "claude" && r.json === false) return "claude_badjson";
@@ -162,66 +165,10 @@ function detectLogWrite(f, entry) {
 
 // 偵測結果契約(renderer 據此畫各列):
 // { claude: {installed, loggedIn, authMethod, email, path, why, how}, codex: {installed, loggedIn, path, why, via} }
-// why = detectWhy,能用時 null;how = cliAuthHow(authMethod)(telemetry.js),JSON 讀不出來是 null;via = codex 是哪種裝法("pkg" = 隨包那顆,
-// "app" = ChatGPT.app / Store 版內附那顆,"cli" = 其他;整次偵測超時是 null),失敗時給哪一種退路看它
-const CODEX_IN_CHATGPT = "/Applications/ChatGPT.app/Contents/Resources/codex";
-/* Windows 的 codex.cmd 要解到真的 codex.exe:runtime/codex_engine.py 用 create_subprocess_exec 起它,吃不了 .cmd。
-   npm 的 bin/codex.js(0.156.1)找的是 <平台套件>/vendor/<triple>/bin/codex.exe,退路是 @openai/codex 自己的 vendor/;
-   npm 11 + 0.160.0 實測平台套件改成巢狀裝在 @openai/codex/node_modules 底下。全都相對於 .cmd 所在的全域 node_modules。
-   解不到就當沒裝(留一行 log),不把 .cmd 交給 runtime 去炸。純函式。 */
-const CODEX_WIN_EXE = (arch) => {
-  const triple = arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc", plat = `codex-win32-${arch === "arm64" ? "arm64" : "x64"}`;
-  const tail = ["vendor", triple, "bin", "codex.exe"];
-  return [["@openai", plat], ["@openai", "codex"], ["@openai", "codex", "node_modules", "@openai", plat]].map((pkg) => path.win32.join("node_modules", ...pkg, ...tail));
-};
-function winRealExe(bin, arch, exists = fs.existsSync) {
-  if (!bin || !/\.(cmd|bat)$/i.test(bin)) return bin;
-  const dir = path.win32.dirname(bin);
-  return CODEX_WIN_EXE(arch).map((rel) => path.win32.join(dir, rel)).find((p) => exists(p)) || null;
-}
-/* Windows 的 Codex 桌面版(Microsoft Store)自己帶一顆 codex.exe,不在 PATH 上:%LOCALAPPDATA%\Microsoft\WindowsApps 的別名資料夾裡
-   沒有 codex.exe(用戶機實測 OpenAI.Codex 26.1007:`--version`、`login status` 從 app 外面直接跑都回 0)。安裝資料夾名帶版號,
-   app 一更新就換,只能問系統;上一層 WindowsApps 一般使用者列不了目錄,不 readdir。
-   釘發行者:PackageFamilyName 尾巴是發行者憑證的雜湊,側載一個同名套件拿不到同一個值。 */
-const CODEX_STORE_FAMILY = "OpenAI.Codex_2p2nqsd0c76g0";
-const CODEX_STORE_PS = "Get-AppxPackage -Name OpenAI.Codex | ForEach-Object { $_.PackageFamilyName + '|' + $_.Version + '|' + $_.InstallLocation }";
-// 上面那行的輸出(一個套件一行「family|版號|安裝資料夾」)→ 版號最高那個的 codex.exe;沒有可信的一行就 null。純函式
-function pickStoreCodex(stdout) {
-  const ver = (v) => v.split(".").map(Number);
-  const newer = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0); return false; };
-  let best = null;
-  for (const line of String(stdout || "").split(/\r?\n/)) {
-    const [family, version, dir, ...rest] = line.trim().split("|");
-    if (family !== CODEX_STORE_FAMILY || rest.length || !/^\d+(\.\d+)*$/.test(version || "")) continue;
-    if (!dir || !path.win32.isAbsolute(dir) || !/\\WindowsApps\\OpenAI\.Codex_[^\\]+$/i.test(dir)) continue;
-    if (!best || newer(ver(version), best.v)) best = { v: ver(version), dir };
-  }
-  return best ? path.win32.join(best.dir, "app", "resources", "codex.exe") : null;
-}
-// codexBinNow() 每一則訊息都會走到這裡:記住上次解到的路徑,檔還在就不再起 PowerShell;app 更新換了資料夾(檔不在了)才重查。
-// fresh = 用戶按重新偵測,一律重查
-let storeCodex = null;
-async function storeCodexPath(envPath, fresh) {
-  if (!fresh && storeCodex && fs.existsSync(storeCodex)) return storeCodex;
-  const sys32 = path.win32.join(process.env.SystemRoot || "C:\\Windows", "System32");
-  const r = await run(path.win32.join(sys32, "WindowsPowerShell", "v1.0", "powershell.exe"), ["-NoProfile", "-NonInteractive", "-Command", CODEX_STORE_PS], envPath, 15000, sys32);
-  const exe = r.code === 0 ? pickStoreCodex(r.stdout) : null;
-  storeCodex = exe && fs.existsSync(exe) ? exe : null;
-  return storeCodex;
-}
-// 上一次偵測時 PATH 上跑不起來的那顆(cantRun):不帶 seen 的呼叫(codexBinNow、偵測裡找退路那一次)跳過它、直接拿退路那顆。
-// 偵測本身(帶 seen)一律重試 PATH 那顆,試完才改這個值——偵測途中每一則訊息仍拿得到上一次的判斷
+// why = detectWhy,能用時 null;how = cliAuthHow(authMethod)(telemetry.js),JSON 讀不出來是 null;via = "pkg"(隨包那顆)| null(還沒抓、整次偵測超時)
+// 上一次偵測時跑不起來的那顆(cantRun;claude 是 PATH 上那顆、codex 是隨包那顆):不帶 seen 的呼叫跳過它——claude 拿退路那顆,
+// codex 沒有第二顆,回合閘講 AGENT_BIN_BROKEN。偵測本身(帶 seen)一律重試,試完才改這個值——偵測途中每一則訊息仍拿得到上一次的判斷
 const BAD_BIN = { codex: null, claude: null };
-async function codexPath(envPath, seen, fresh) {
-  const found = await which("codex", envPath, seen);
-  if (seen) seen.found = binKind(found);
-  if (process.platform === "win32") {
-    const exe = winRealExe(found, process.arch);
-    if (found && !exe) console.error("[detect] codex is a .cmd shim with no codex.exe next to it: " + found);
-    return (exe && (seen || exe !== BAD_BIN.codex) ? exe : null) || storeCodexPath(envPath, fresh);
-  }
-  return (found && (seen || found !== BAD_BIN.codex) ? found : null) || (fs.existsSync(CODEX_IN_CHATGPT) ? CODEX_IN_CHATGPT : null);
-}
 /* Claude 的對話不是用戶機上的 claude 跑的:claude-agent-sdk 的 wheel 隨包一顆 Claude CLI,SDK 的 _find_cli() 第一個就拿它
    (_internal/transport/subprocess_cli.py 的 _find_bundled_cli);用戶自己裝的 claude 只拿來跑 `auth status` / `auth login`。
    PATH 上找不到(nvm / fnm 的 npm 全域寫在 .zshrc、~/.npm-global/bin、舊版 ~/.claude/local、Blave 開著才裝的)就退到隨包那顆:
@@ -234,21 +181,33 @@ function bundledClaude(base, win, fsx = fs) {
   catch (_) { return null; }
   return libs.map((l) => path.join(l, "site-packages", "claude_agent_sdk", "_bundled", win ? "claude.exe" : "claude")).find((p) => fsx.existsSync(p)) || null;
 }
-// PATH 優先、隨包是退路(同 codexPath 的 ChatGPT / Store 退路);seen.found 記的是 PATH 上找到的檔種
+// PATH 優先、隨包是退路;seen.found 記的是 PATH 上找到的檔種
 async function claudePath(envPath, seen) {
   const found = await which("claude", envPath, seen);
   if (seen) seen.found = binKind(found);
   return (found && (seen || found !== BAD_BIN.claude) ? found : null) || bundledClaude(BASE, WIN);
 }
-/* 隨包那顆 codex(shell/codexpkg.js):釘版 → 已裝好的最高版(升版抓新版期間不斷線)。對話、偵測、〔登入〕都先問它,沒有才走上面的偵測鏈。
-   skipBad = 上一次偵測判它跑不起來(BAD_BIN):每一則訊息跳過它、走偵測鏈;偵測本身(不帶 skipBad)一律重試它 */
+/* Codex 的執行檔只有隨包那一顆(shell/codexpkg.js):釘版 → 已裝好的最高版(升版抓新版期間不斷線)。
+   對話、偵測、〔登入〕、存連結全走這裡;用戶自己裝的 codex 不看。
+   skipBad = 上一次偵測判它跑不起來(BAD_BIN):每一則訊息跳過它、回合閘講 AGENT_BIN_BROKEN;偵測本身(不帶 skipBad)一律重試它 */
 function codexBundled(skipBad) {
   const b = codexpkg.installed(BASE, CODEX_PIN, TRIPLE, WIN, fs);
   return b && !(skipBad && BAD_BIN.codex === b.path) ? b.path : null;
 }
+/* Codex 的登入看憑證檔在不在:login status 也只查本機、不驗 token,而它在某些機器會卡住。只 stat,絕不開檔。
+   auth.json 是 file 模式、secrets/codex_auth.age 是 Windows keyring 後端;Mac keyring 模式沒有檔,所以沒檔不算沒登入,要往下跑 login status。
+   只看 ~/.codex:回合與 login status 的環境都拔掉 CODEX_HOME(probeEnv、回合 env),這裡要跟它們看同一個地方。
+   執行檔不能執行也回 false,但 X_OK 在 Windows 只查存在:所以這次開 app 這一顆要先跑起來過一次 login status(codexRan)才信憑證檔,
+   不然被拒絕執行的隨包會畫成已登入、回合閘的 AGENT_BIN_BROKEN 走不到。純函式(fsx 可換) */
+const codexHome = () => path.join(os.homedir(), ".codex");
+let codexRan = null;
+function codexCredOk(bin, home, fsx = fs) {
+  try { fsx.accessSync(bin, fsx.constants.X_OK); } catch (_) { return false; }
+  return [["auth.json"], ["secrets", "codex_auth.age"]].some((p) => { try { return fsx.statSync(path.join(home, ...p)).isFile(); } catch (_) { return false; } });
+}
 /* 這一輪要跑的 codex 執行檔。**只解路徑**,不跑 `login status`——每一則訊息都要用,detectAgents() 一次要開到四個子行程;
-   連 Claude 的人一次都不必開(SDK 自己找 claude)。來源仍然是當下的偵測,不是連結紀錄裡那個 agent 寫得到的字(稽核 R4)。 */
-async function codexBinNow() { return codexBundled(true) || codexPath(await loginShellPath()); }
+   連 Claude 的人一次都不必開(SDK 自己找 claude)。來源是隨包資料夾,不是連結紀錄裡那個 agent 寫得到的字(稽核 R4)。 */
+async function codexBinNow() { return codexBundled(true); }
 async function detectAgentsRaw() {
   const envPath = await loginShellPath();
   const out = {
@@ -256,8 +215,10 @@ async function detectAgentsRaw() {
     codex: { installed: false, loggedIn: false, path: null, why: null, via: null, authOutside: false },
   };
   const rec = { claude: {}, codex: {} };
-  /* 解路徑 + 跑登入檢查。PATH 上那顆跑不起來(cantRun)就記進 BAD_BIN、再解一次——這次 find 會跳過它、拿退路那顆
-     (ChatGPT.app / Store 版內附的 codex、SDK 隨包的 claude);退路也跑不起來才算 cantrun。rec.alt = 試過的退路檔種 */
+  // 一條出事只影響自己那一列(rec.err = 錯誤碼,不記訊息);detectAgents 的整體 catch 是最後防線
+  const isolate = (kind, job) => job().catch((e) => { rec[kind].err = String((e && (e.code || e.name)) || "Error"); if (e && e.syscall) rec[kind].syscall = String(e.syscall).split(" ")[0]; if (!rec[kind].bin) rec[kind].bin = "none"; });
+  /* 解路徑 + 跑登入檢查。那顆跑不起來(cantRun)就記進 BAD_BIN、再解一次——這次 find 會跳過它:claude 拿 SDK 隨包那顆,
+     codex 只有一顆、回 null 就不試第二次。退路也跑不起來才算 cantrun。rec.alt = 試過的退路檔種 */
   const probe = async (kind, find, args, rawArgs) => {
     let bin = await find(rec[kind]);
     if (!bin) { BAD_BIN[kind] = null; return { bin: null, r: null }; }
@@ -280,7 +241,7 @@ async function detectAgentsRaw() {
      ~/.claude/settings.json 或 apiKeyHelper,agent 回合看不到;那一列多一句講出路。只回布林,不碰 stdout 的其他欄位 */
   const outside = async (raw, ok) => { const x = raw && await raw; return !!x && !cantRun(x) && !x.timedOut && ok(x); };
   // 兩條同時跑:各自最多 LOGIN_CHECK_MS,整次偵測最多也就這麼久(依序跑最壞要兩倍,畫面那邊沒有自己的逾時)
-  await Promise.all([(async () => {
+  await Promise.all([isolate("claude", async () => {
     // --setting-sources= 要在子指令前面(放後面是 unknown option):agent 回合的 SDK 帶的就是它,用戶設定檔一個都不讀
     const { bin: claudeBin, r, raw } = await probe("claude", (seen) => claudePath(envPath, seen), ["--setting-sources=", "auth", "status"], ["auth", "status"]);
     rec.claude.bin = binKind(claudeBin);
@@ -299,23 +260,27 @@ async function detectAgentsRaw() {
     if (!out.claude.loggedIn && !cantRun(r) && !r.timedOut) {
       out.claude.authOutside = await outside(raw, (x) => { try { return JSON.parse(x.stdout).loggedIn === true; } catch (_) { return false; } });
     }
-  })(), (async () => {
-    // Codex 有兩種裝法:獨立 CLI(在 PATH 上),或跟著 ChatGPT 桌面版來的——後者的
-    // CLI 藏在 app bundle 裡、不在 PATH 上,但就是同一顆完整的 codex(實測
-    // 0.155.0-alpha:`login status`、`exec --json` 都在)。只查 PATH 的話,一大群
-    // 「有 Codex」的人會看到「未偵測到」。Windows 的對應是 Store 版 Codex 桌面版(storeCodexPath)。
+  }), isolate("codex", async () => {
+    // 只有隨包那顆(codexpkg.js)。上次判它跑不起來(BAD_BIN)就不走捷徑,讓 probe 重試
+    const known = codexBundled(true);
+    if (known && known === codexRan && codexCredOk(known, codexHome())) {
+      BAD_BIN.codex = null;
+      rec.codex.bin = "pkg"; rec.codex.cred = true;
+      out.codex.installed = true; out.codex.path = known; out.codex.via = "pkg"; out.codex.loggedIn = true;
+      return;
+    }
     // 官方契約:`codex login status` 登入=0、未登入=1(原始碼 cli/src/login.rs:443)
-    const { bin: codexBin, r, raw } = await probe("codex", (seen) => codexBundled(!seen) || codexPath(envPath, seen, true), ["login", "status"], ["login", "status"]);
-    // 隨包那顆用身分認,不看路徑樣式:Homebrew cask 的 Caskroom/codex/<版>/bin/codex 跟我們的佈局一模一樣
-    rec.codex.bin = codexBin && codexBin === codexBundled(false) ? "pkg" : binKind(codexBin);
+    const { bin: codexBin, r, raw } = await probe("codex", (seen) => codexBundled(!seen), ["login", "status"], ["login", "status"]);
+    rec.codex.bin = codexBin ? "pkg" : "none";
     if (!codexBin) return;
     out.codex.installed = true;
     out.codex.path = codexBin;
-    out.codex.via = rec.codex.bin === "pkg" ? "pkg" : rec.codex.bin === "chatgpt" || rec.codex.bin === "store" ? "app" : "cli";
+    out.codex.via = "pkg";
+    if (!cantRun(r)) codexRan = codexBin;
     Object.assign(rec.codex, runRec(r));
     out.codex.loggedIn = r.code === 0;
     if (!out.codex.loggedIn && !cantRun(r) && !r.timedOut) out.codex.authOutside = await outside(raw, (x) => x.code === 0);
-  })()]);
+  })]);
   rec.claude.loggedIn = out.claude.loggedIn; rec.codex.loggedIn = out.codex.loggedIn;
   rec.claude.outside = out.claude.authOutside; rec.codex.outside = out.codex.authOutside;
   out.claude.why = detectWhy("claude", rec.claude); out.codex.why = detectWhy("codex", rec.codex);
@@ -323,17 +288,17 @@ async function detectAgentsRaw() {
   return out;
 }
 /* 整次偵測的上限(spec codex-detect-gaps §3.4):裡面每一步都有上限,但任何一處 reject 畫面就永遠停在「偵測中…」、
-   登入鈕全部鎖死(uid 33959)。最壞路徑是 Windows codex 那條:which + Store PowerShell + 登入檢查,cantRun 後退路再走一輪,兩倍再留 10 秒。
+   登入鈕全部鎖死(uid 33959)。最壞路徑是 claude 那條:which + 登入檢查,cantRun 後退路再走一輪,兩倍再留 10 秒(含第一次偵測 loginShellPath 的 8 秒)。
    超時或 reject 回完整形狀、兩條都是 installed:true + *_timeout:畫面畫「沒有回應」(不是「未偵測到」),跟 detectWhy 的 _timeout 同一個意思。
-   內層超時後還會跑完、再寫一行 detect.log、更新 BAD_BIN／storeCodex,接受 */
-const DETECT_TOTAL_MS = 2 * (5000 + 15000 + LOGIN_CHECK_MS) + 10000;
+   內層超時後還會跑完、再寫一行 detect.log、更新 BAD_BIN,接受 */
+const DETECT_TOTAL_MS = 2 * (5000 + LOGIN_CHECK_MS) + 10000;
 async function detectAgents(ms = DETECT_TOTAL_MS) {
   let timer = null, err = null, out = null;
   try { out = await Promise.race([detectAgentsRaw(), new Promise((r) => { timer = setTimeout(r, ms, null); })]); }
   catch (e) { err = e; }
   clearTimeout(timer);
   if (out) return out;
-  detectLogWrite(path.join(BASE, "state", "detect.log"), { ts: new Date().toISOString(), os: process.platform, hung: true, err: err ? String((err && (err.code || err.name)) || "Error") : "deadline" });
+  detectLogWrite(path.join(BASE, "state", "detect.log"), { ts: new Date().toISOString(), os: process.platform, hung: true, err: err ? String((err && (err.code || err.name)) || "Error") : "deadline", ...(err && err.syscall ? { syscall: String(err.syscall).split(" ")[0] } : {}) });
   return {
     claude: { installed: true, loggedIn: false, authMethod: null, email: null, path: null, why: "claude_timeout", authOutside: false, how: null },
     codex: { installed: true, loggedIn: false, path: null, why: "codex_timeout", via: null, authOutside: false },
@@ -360,8 +325,15 @@ async function agentLogin(kind, onSpawn) {
   if (!bin) { loginChild = null; return { ok: false }; }
   return new Promise((resolve) => {
     const w = cmdWrap(bin);
-    const child = spawn(w.file, kind === "claude" ? ["auth", "login"] : ["login"],
-      { env: probeEnv(envPath), stdio: "ignore", shell: w.shell, windowsHide: true });
+    let child;
+    try {
+      child = spawn(w.file, kind === "claude" ? ["auth", "login"] : ["login"],
+        { env: probeEnv(envPath), stdio: "ignore", shell: w.shell, windowsHide: true });
+    } catch (e) {   // 同步 throw(見 run):loginChild 要放掉,不然之後每次登入都回 busy
+      const code = (e && e.code) || "ERROR";
+      loginChild = null;
+      return resolve({ ok: false, cancelled: false, code, cantRun: cantRun({ code }) });
+    }
     loginChild = child;
     // 畫面的「已在瀏覽器開啟」1 秒從這裡起算,偵測那一兩秒不算(稽核 P2-2)
     if (onSpawn) onSpawn();
@@ -1214,7 +1186,7 @@ function codexPkg() {
   });
   return _codexPkg;
 }
-/* 開 app:刪舊版(現在在用的那一版留著),連的是 Codex 就在背景補抓。不等它、失敗只留 log(列上有重試;送訊息時走偵測鏈或講正在下載)。
+/* 開 app:刪舊版(現在在用的那一版留著),連的是 Codex 就在背景補抓。不等它、失敗只留 log(列上有重試;送訊息時講正在下載或請他到連結畫面)。
    只在開 app 這一刻刪:之後可能有回合正握著舊版 */
 function codexKick() {
   if (liveTurnCount() > 0) return;
@@ -1732,13 +1704,15 @@ function compareVersions(name, a, b) {
   const meta = (blob, n) => { const o = {}; VERSION_META_KEYS.forEach((k) => { o[k] = blob[k] === undefined ? null : blob[k]; }); o.n = n; return o; };
   const py = fs.existsSync(VENV_PY) ? VENV_PY : basePython();
   return new Promise((resolve) => {
-    const cp = execFile(py, ["-I", "-c", VERSION_DIFF_PY], { timeout: 15000, maxBuffer: 16 * 1024 * 1024, windowsHide: true, env: { ...process.env, ...PY_ENV } }, (err, stdout) => {
-      let d = null;
-      try { d = err ? null : JSON.parse(String(stdout)); } catch (_) { d = null; }
-      resolve(d && Array.isArray(d.hunks) ? { code: "OK", data: { strategy: name, a: meta(A.blob, a), b: meta(B.blob, b), hunks: d.hunks, truncated: d.truncated === true } } : { code: "ERROR" });
-    });
-    cp.stdin.on("error", () => {});
-    cp.stdin.end(JSON.stringify({ a: A.blob.code, b: B.blob.code }));
+    try {
+      const cp = execFile(py, ["-I", "-c", VERSION_DIFF_PY], { timeout: 15000, maxBuffer: 16 * 1024 * 1024, windowsHide: true, env: { ...process.env, ...PY_ENV } }, (err, stdout) => {
+        let d = null;
+        try { d = err ? null : JSON.parse(String(stdout)); } catch (_) { d = null; }
+        resolve(d && Array.isArray(d.hunks) ? { code: "OK", data: { strategy: name, a: meta(A.blob, a), b: meta(B.blob, b), hunks: d.hunks, truncated: d.truncated === true } } : { code: "ERROR" });
+      });
+      cp.stdin.on("error", () => {});
+      cp.stdin.end(JSON.stringify({ a: A.blob.code, b: B.blob.code }));
+    } catch (_) { resolve({ code: "ERROR" }); }
   });
 }
 /* 這支策略用到哪些自帶資料來源(`DATA_<來源>_<欄位>`)。掃的是資料夾內**所有 .py**,對齊 references/cloud-handoff.md §5 的
@@ -3464,12 +3438,13 @@ async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEf
   // 用戶連的是哪一個,引擎就跑哪一個。原本這裡完全不看 kind,一律 spawn Claude
   // 那條路——選了 Codex 的人第一句話就失敗(引擎去找 `claude`)。
   const conn = loadConnection() || {};
-  // codex 的執行檔一律用**當下偵測到的**,不用連結紀錄裡那個路徑:舊版明文檔遷移過來的 path 是 agent 寫得到的字(稽核 R4)。
-  // 偵測不到就**整輪失敗**,絕不退回去跑 Claude(稽核 ①):用戶連的是 Codex,靜默換一家供應商 = 換一條帳、換一個模型,
+  // codex 的執行檔一律用**隨包那顆**,不用連結紀錄裡那個路徑:舊版明文檔遷移過來的 path 是 agent 寫得到的字(稽核 R4)。
+  // 沒有就**整輪失敗**,絕不退回去跑 Claude(稽核 ①):用戶連的是 Codex,靜默換一家供應商 = 換一條帳、換一個模型,
   // 而畫面上的連線狀態還寫著 Codex。畫面會請他重新偵測 / 重連。
   const codexBin = conn.kind === "codex" ? await codexBinNow() : null;
-  // 隨包那顆還在抓、偵測鏈上也沒有:講「正在下載」,不叫他去重新偵測
+  // 三個碼:DOWNLOADING = 抓的中途(含〔再試一次〕重抓);BROKEN = 隨包那顆上次偵測跑不起來(列上有〔再試一次〕);MISSING = 還沒抓、也沒在抓
   if (conn.kind === "codex" && !codexBin && _codexPkg && _codexPkg.busy()) throw new Error("AGENT_BIN_DOWNLOADING");
+  if (conn.kind === "codex" && !codexBin && BAD_BIN.codex) throw new Error("AGENT_BIN_BROKEN");
   if (conn.kind === "codex" && !codexBin) throw new Error("AGENT_BIN_MISSING");
   const useCodex = !!codexBin;
   const llmKey = conn.kind === "apikey" ? loadLlmKey() : null;

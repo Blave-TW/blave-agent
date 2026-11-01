@@ -171,6 +171,26 @@ def fake_codex(events, captured):
     return _run
 
 
+# 0.166.0 no-credentials run, captured verbatim (ids shortened): the first error event names the
+# cause, then Codex retries ~15 s. run() must stop there.
+NO_CREDS = "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: wss://api.openai.com/v1/responses, cf-ray: x-TPE"
+tr = codex_engine.CodexTranslator(types.SimpleNamespace())
+tr.feed({"type": "error", "message": "Reconnecting... 2/5 (" + NO_CREDS + ")"})
+assert tr.no_credentials and not tr.failure, "first 401 error event flags no_credentials"
+tr = codex_engine.CodexTranslator(types.SimpleNamespace())
+tr.feed({"type": "error", "message": "Reconnecting... 2/5 (plan type is required for chatgpt authentication)"})
+assert tr.no_credentials, "auth.json holding `{}` (captured from 0.166.0) counts too"
+tr = codex_engine.CodexTranslator(types.SimpleNamespace())
+tr.feed({"type": "error", "message": "Reconnecting... 1/5 (unexpected status 401 Unauthorized: token expired)"})
+tr.feed({"type": "error", "message": "Reconnecting... 2/5 (stream disconnected before completion)"})
+assert not tr.no_credentials, "a 401 Codex may refresh by itself does not stop the turn"
+assert codex_engine.CodexTurnFailed("x", 401).needs_login and not codex_engine.CodexTurnFailed("x", 503).needs_login
+assert at._fault_code(codex_engine.CodexTurnFailed("x", 401), 0) == at.FAULT_NEEDS_LOGIN
+assert at._fault_code(codex_engine.CodexTurnFailed("x", 401), 2) == at.FAULT_PARTIAL, "tools ran: the receipt matters more"
+for surface in ("web", "tg"):
+    assert at.FAULT_NEEDS_LOGIN in at.FAULT_TEXT[surface] and at.FAULT_NEEDS_LOGIN in at.FAULT_TEXT_CN[surface]
+
+
 real_run = codex_engine.run
 seen = {}
 codex_engine.run = fake_codex(FIXTURE, seen)
@@ -766,5 +786,23 @@ _mcp_item = {"type": "mcp_tool_call", "server": "blave", "tool": "get_ssh_access
 assert codex_engine.CodexTranslator._tool_calls(_mcp_item) == [("mcp__blave__get_ssh_access", {})]
 assert at._tool_where("mcp__blave__get_ssh_access", {}) == "cloud"
 shutil.rmtree(mcp_cfg_dir)
+
+# End to end: a binary that keeps retrying 401 like the real one. run() kills it at the first event.
+if os.name != "nt":
+    import time
+    retry = os.path.join(_tmp, "codex-401")
+    with open(retry, "w") as f:
+        f.write("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"codex-cli 0.166.0\"; exit 0; fi\n"
+                "if [ \"$1\" = \"features\" ]; then exit 0; fi\ncat > /dev/null\n"
+                "echo '{\"type\":\"turn.started\"}'\n"
+                "echo '{\"type\":\"error\",\"message\":\"Reconnecting... 2/5 (%s)\"}'\nexec sleep 30\n" % NO_CREDS)
+    os.chmod(retry, 0o755)
+    t0 = time.monotonic()
+    try:
+        asyncio.run(real_run(retry, "hi", _tmp, dict(os.environ), types.SimpleNamespace()))
+        raise SystemExit("FAIL  run() should raise on no credentials")
+    except codex_engine.CodexTurnFailed as e:
+        assert e.needs_login and e.api_error_status == 401, e
+    assert time.monotonic() - t0 < 10, "run() must not wait for the retries"
 
 print("OK check_codex_engine")

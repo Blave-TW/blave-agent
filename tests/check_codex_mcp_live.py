@@ -14,8 +14,8 @@ api/mcp_byoa/server.py (no tool annotations). No OpenAI login, no network beyond
      completes, and every request carries exactly one Authorization: the desktop's code. Control:
      without our bearer_token_env_var the user's code is what arrives, so the override is real.
 
-Skips (exit 0, prints SKIP) when no codex binary is found: every `codex` on PATH, then the one inside
-ChatGPT.app, the first whose `--version` says codex-cli. CODEX_BIN names one outright.
+Skips (exit 0, prints SKIP) when the bundled engine isn't there: <BASE>/codex/<runtime/CODEX_VERSION>/bin/codex,
+BASE = $BLAVE_HOME or ~/Blave, the only binary the desktop app runs. CODEX_BIN names one outright.
 Run: cd blave-agent && python3 tests/check_codex_mcp_live.py
 """
 import json
@@ -35,8 +35,7 @@ APPROVE = 'mcp_servers.blave.default_tools_approval_mode="approve"'
 
 
 def is_codex(path):
-    """A `codex` on PATH can be a wrapper that is not Codex (cmux puts a shim there that
-    exits 'codex not found' when no real one is behind it): only `codex-cli …` counts."""
+    """Only a binary whose `--version` says `codex-cli …` counts."""
     try:
         out = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=15).stdout
     except (OSError, subprocess.SubprocessError):
@@ -50,11 +49,12 @@ if os.environ.get("CODEX_BIN"):
         print("FAIL  CODEX_BIN=%s is not a codex binary (`--version` must print codex-cli …)" % codex)
         sys.exit(1)
 else:
-    on_path = [shutil.which("codex", path=d) for d in os.environ.get("PATH", "").split(os.pathsep) if d]
-    tried = [p for p in on_path if p] + ["/Applications/ChatGPT.app/Contents/Resources/codex"]
-    codex = next((p for p in tried if is_codex(p)), None)
-    if not codex:
-        print("SKIP  no codex binary (set CODEX_BIN); tried: " + ", ".join(tried))
+    with open(os.path.join(ROOT, "runtime", "CODEX_VERSION")) as f:
+        pin = f.read().strip()
+    base = os.environ.get("BLAVE_HOME") or os.path.join(os.path.expanduser("~"), "Blave")
+    codex = os.path.join(base, "codex", pin, "bin", "codex.exe" if os.name == "nt" else "codex")
+    if not is_codex(codex):
+        print("SKIP  no bundled codex (set CODEX_BIN); tried: " + codex)
         sys.exit(0)
 
 calls = []            # MCP methods the fake server received

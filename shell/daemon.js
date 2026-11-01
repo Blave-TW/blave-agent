@@ -182,11 +182,19 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
     fs.mkdirSync(inDir, { recursive: true }); fs.mkdirSync(ackDir, { recursive: true });
     startedAt = Date.now();
     // Windows:venv 的 python.exe 是 venvlauncher,真的直譯器是它的子行程——工作管理員看到兩支 local_daemon.py 是一支 daemon,不是兩支
-    const c = spawnFn(python, [script, "--secret-stdin"], {
-      cwd: workspace, stdio: ["pipe", "ignore", "pipe"], windowsHide: true,
-      // BLAVE_AGENT_LOCAL 是 daemon 的啟動閘門,必須由這裡帶;其餘是呼叫端給的最小環境(不含任何 Blave 憑證)
-      env: { ...env, BLAVE_AGENT_LOCAL: "1", BLAVE_AGENT_BASE: base, BLAVE_AGENT_WORKSPACE: workspace },
-    });
+    let c;
+    try {
+      c = spawnFn(python, [script, "--secret-stdin"], {
+        cwd: workspace, stdio: ["pipe", "ignore", "pipe"], windowsHide: true,
+        // BLAVE_AGENT_LOCAL 是 daemon 的啟動閘門,必須由這裡帶;其餘是呼叫端給的最小環境(不含任何 Blave 憑證)
+        env: { ...env, BLAVE_AGENT_LOCAL: "1", BLAVE_AGENT_BASE: base, BLAVE_AGENT_WORKSPACE: workspace },
+      });
+    } catch (err) {   // EPERM 這類是同步 throw:start() 會從計時器重入,不接就是主行程未捕捉例外
+      lastExit = { code: null, sig: null, at: Date.now(), error: String((err && err.code) || err) };
+      log(`local daemon failed to start: ${lastExit.error}`);
+      secret = null;
+      return false;
+    }
     child = c;
     if (!eqTimer) { eqTimer = setInterval(eqTick, 60000); if (eqTimer.unref) eqTimer.unref(); }
     const first = setTimeout(eqTick, 20000); if (first.unref) first.unref();   // 開 app 後的第一筆,不必等到下一分鐘

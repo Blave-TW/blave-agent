@@ -4352,13 +4352,15 @@ def _write_system_prompt_file(text):
 
 
 # ── 回合炸掉時的兜底訊息 ──────────────────────────────────────────────────────
-# 四個 code 是與前端的契約(web 拿它挑 i18n 字串;未知值或缺欄位就退回既有的
+# code 是與前端的契約(web 拿它挑 i18n 字串;未知值或缺欄位就退回既有的
 # 「顯示 message」路徑,舊機器不會壞)。文案定稿在
 # .claude/output/designer/mockup-chat-turn-error.html #spec §1a/§1b。
 FAULT_NOT_STARTED_UPSTREAM = "not_started_upstream"
 FAULT_NOT_STARTED = "not_started"
 FAULT_PARTIAL = "partial"
 FAULT_MAX_TURNS = "max_turns"
+# 第五個:Codex 回 401。電腦版畫登入卡(renderer turnEventIn),不顯示下面的字;其他面不會碰到
+FAULT_NEEDS_LOGIN = "needs_login"
 
 # 只有 5xx / 429 算「上游擋掉」。零工具的回合還涵蓋 sink 少方法的 AttributeError、
 # 起 CLI 子行程失敗、proxy 回 402/403(試用額度)——那些情況說「模型服務沒有回應」
@@ -4388,6 +4390,10 @@ FAULT_TEXT = {
             "這一輪步驟超過上限，停在半路。上面已經執行的步驟都生效了，把要求拆小一點再問一次。",
             "This turn hit the step limit and stopped partway. The steps above took effect — ask again in a smaller step.",
         ),
+        FAULT_NEEDS_LOGIN: (
+            "Codex 沒有登入，你剛才那句沒有被執行。機器上什麼都沒動。",
+            "Codex isn't signed in, so your last message did not run. Nothing on the machine changed.",
+        ),
     },
     "tg": {
         FAULT_NOT_STARTED_UPSTREAM: (
@@ -4406,6 +4412,10 @@ FAULT_TEXT = {
             "這一輪步驟超過上限，停在半路，前面做的都生效了。\n把要求拆小一點再傳一次。",
             "This turn hit the step limit and stopped partway; everything before that took effect.\nAsk again in a smaller step.",
         ),
+        FAULT_NEEDS_LOGIN: (
+            "Codex 沒有登入，你剛才那句沒有被執行，機器上什麼都沒動。",
+            "Codex isn't signed in, so your last message did not run. Nothing on the machine changed.",
+        ),
     },
 }
 
@@ -4416,12 +4426,14 @@ FAULT_TEXT_CN = {
         FAULT_NOT_STARTED: "这一轮没有跑起来，你刚才那句没有被执行。机器上什么都没动。",
         FAULT_PARTIAL: "这一轮中途断了，你刚才的要求可能只做完一部分。上面是断掉前已经执行的步骤。",
         FAULT_MAX_TURNS: "这一轮步骤超过上限，停在半路。上面已经执行的步骤都生效了，把要求拆小一点再问一次。",
+        FAULT_NEEDS_LOGIN: "Codex 没有登录，你刚才那句没有被执行。机器上什么都没动。",
     },
     "tg": {
         FAULT_NOT_STARTED_UPSTREAM: "模型服务没有响应，你刚才那句没有被执行，机器上什么都没动。\n把同一句再传一次就好。",
         FAULT_NOT_STARTED: "这一轮没有跑起来，你刚才那句没有被执行，机器上什么都没动。\n把同一句再传一次就好。",
         FAULT_PARTIAL: "这一轮中途断了，你刚才的要求可能只做完一部分。\n传「看一下机器现在的实际状态，只讲你能确认完成的」，我核对后回报。",
         FAULT_MAX_TURNS: "这一轮步骤超过上限，停在半路，前面做的都生效了。\n把要求拆小一点再传一次。",
+        FAULT_NEEDS_LOGIN: "Codex 没有登录，你刚才那句没有被执行，机器上什么都没动。",
     },
 }
 
@@ -4447,6 +4459,8 @@ def _fault_code(exc, tool_calls, result_info=None):
         return FAULT_MAX_TURNS
     if tool_calls > 0:
         return FAULT_PARTIAL
+    if getattr(exc, "needs_login", False):
+        return FAULT_NEEDS_LOGIN
     status = getattr(exc, "api_error_status", None)
     if not isinstance(status, int):
         status = info.get("api_error_status")

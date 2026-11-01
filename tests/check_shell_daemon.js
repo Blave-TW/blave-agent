@@ -85,6 +85,10 @@ const host = createDaemonHost({ python: PY, script: path.join(ROOT, "runtime", "
     const mainSrc = fs.readFileSync(path.join(ROOT, "shell", "main.js"), "utf8"), q = mainSrc.slice(mainSrc.indexOf('app.on("before-quit"'));
     t("事件:只有「自動下單還在執行」那個確認框按了結束才記(agent 回合那個框不記)", (q.match(/_tradeHost\.noteQuit\(\)/g) || []).length === 1
       && q.indexOf("_tradeHost.noteQuit()") > q.indexOf("tmLabels.quitTitle") && q.indexOf("_tradeHost.noteQuit()") < q.indexOf("tmLabels.quitTurnTitle")); }
+  // spawn 同步 throw(EPERM 不走 error 事件;start() 會從計時器重入,不接就是主行程未捕捉例外)
+  { const eperm = createDaemonHost({ python: PY, script: "x.py", base: BASE, workspace: WS, env: {}, spawnFn: () => { throw Object.assign(new Error("spawn EPERM"), { code: "EPERM" }); } });
+    let ok = true, r; try { r = eperm.start(); } catch (_) { ok = false; }
+    t("spawn 同步 throw EPERM:start() 不丟、回 false、isRunning=false、lastExit 記 EPERM", ok && r === false && !eperm.isRunning() && eperm.status().lastExit.error === "EPERM"); }
   // spawn 失敗(python 不在):不能是未捕捉例外,isRunning 要回 false,stop() 要馬上回來(稽核 B1)
   const bad = createDaemonHost({ python: path.join(BASE, "no-such-python"), script: "x.py", base: BASE, workspace: WS, env: {} });
   bad.start(); await sleep(300);

@@ -167,7 +167,7 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
 
   // ── 設定 › 模型接入的列(mdlOptions 純邏輯) ──
   { const mdl = cut(app, "const MDL = {", "/* ── 設定 › 模型接入 的純邏輯到此");
-    const mdlOptions = new Function(mdl.replace(/^const /gm, "var ") + "; return mdlOptions;")();
+    const mdlOptions = new Function("var authUnknown = () => false;\n" + mdl.replace(/^const /gm, "var ") + "; return mdlOptions;")();
     const D = { claude: { installed: true, loggedIn: true }, codex: { installed: false } }, PR = [{ id: "deepseek", name: "DeepSeek", keysUrl: "https://x" }];
     const none = mdlOptions(D, "claude", true, null, { saved: null, presets: PR })[3];
     t("沒存:第四列「API 金鑰」+ 供應商清單 + 「設定」", none.kind === "apikey" && none.nameKey === "ak.row" && none.names.join() === "DeepSeek" && none.act === "ak.setup" && !none.isCur && !none.edit);

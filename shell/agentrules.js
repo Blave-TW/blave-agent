@@ -53,16 +53,18 @@ json.dump({"rules": rules, "lang": lang, "custom": custom, "langReadable": reada
 const UNREADABLE = () => ({ rules: null, replyLang: { lang: "", custom: "" }, langReadable: false });
 function readLocal({ python, runtimeDir, workspace, env, timeout = 15000 }) {
   return new Promise((resolve) => {
-    execFile(python, ["-I", "-B", "-c", READ_PY, runtimeDir], { timeout, windowsHide: true, maxBuffer: 1 << 20,
-      env: { ...env, BLAVE_AGENT_WORKSPACE: workspace } }, (err, stdout) => {
-      let d = null;
-      try { d = err ? null : JSON.parse(String(stdout)); } catch (_) { d = null; }
-      if (!d || typeof d !== "object") return resolve(UNREADABLE());
-      const rules = Array.isArray(d.rules) && d.rules.every((r) => typeof r === "string") ? d.rules : null;
-      const lang = REPLY_LANGS.indexOf(d.lang) >= 0 ? d.lang : "";
-      const custom = !lang && typeof d.custom === "string" && Array.from(d.custom).length <= REPLY_LANG_CUSTOM_MAX ? d.custom : "";
-      resolve({ rules, replyLang: { lang, custom }, langReadable: d.langReadable === true });
-    });
+    try {
+      execFile(python, ["-I", "-B", "-c", READ_PY, runtimeDir], { timeout, windowsHide: true, maxBuffer: 1 << 20,
+        env: { ...env, BLAVE_AGENT_WORKSPACE: workspace } }, (err, stdout) => {
+        let d = null;
+        try { d = err ? null : JSON.parse(String(stdout)); } catch (_) { d = null; }
+        if (!d || typeof d !== "object") return resolve(UNREADABLE());
+        const rules = Array.isArray(d.rules) && d.rules.every((r) => typeof r === "string") ? d.rules : null;
+        const lang = REPLY_LANGS.indexOf(d.lang) >= 0 ? d.lang : "";
+        const custom = !lang && typeof d.custom === "string" && Array.from(d.custom).length <= REPLY_LANG_CUSTOM_MAX ? d.custom : "";
+        resolve({ rules, replyLang: { lang, custom }, langReadable: d.langReadable === true });
+      });
+    } catch (_) { resolve(UNREADABLE()); }
   });
 }
 

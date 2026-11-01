@@ -82,6 +82,7 @@ class CodexTurnFailed(RuntimeError):
     def __init__(self, message, api_error_status=None):
         super().__init__(message)
         self.api_error_status = api_error_status
+        self.needs_login = api_error_status == 401
 
 
 @functools.lru_cache(maxsize=None)
@@ -512,6 +513,17 @@ _UPSTREAM_MARKERS = (
 )
 
 
+# No credentials at all: codex 0.166.0 prints this on the first `error` event, then keeps
+# retrying for ~15 s over WebSocket and HTTPS before turn.failed (captured from a real run,
+# openai/codex#30514). Only this wording stops the turn early: other 401s may be a token Codex
+# is about to refresh itself, and those still end in turn.failed with status 401.
+# An auth.json Codex can read but holds no ChatGPT plan (`{}`) retries the same way with its
+# own wording, captured from 0.166.0. A token that expired or was revoked is not listed: its
+# wording is unverified, so it stays on the neutral fault.
+_NO_CREDENTIALS = ("401 Unauthorized: Missing bearer or basic authentication",
+                   "plan type is required for chatgpt authentication")
+
+
 def _upstream_status(message):
     """The HTTP status agent_turn._fault_code should classify on, or None. Status-less
     upstream failures report 503 so they read as "the model service did not answer";
@@ -537,6 +549,7 @@ class CodexTranslator:
         self.completed = False
         self.failure = None      # turn.failed message — terminal
         self.last_error = None   # latest `error` event — terminal only if the turn dies
+        self.no_credentials = False  # stop now: every retry will get the same 401
         self._open = {}          # item id -> tool-use ids announced and not yet closed
         self._after_message = False
 
@@ -551,6 +564,7 @@ class CodexTranslator:
             self.failure = (event.get("error") or {}).get("message") or "turn failed"
         elif kind == "error":
             self.last_error = event.get("message") or ""
+            self.no_credentials = any(mark in self.last_error for mark in _NO_CREDENTIALS)
             print(f"[codex] error event: {self.last_error}", file=sys.stderr)
         elif kind in ("item.started", "item.completed"):
             self._item(event.get("item") or {}, done=kind == "item.completed")
@@ -668,6 +682,8 @@ async def run(codex_bin, prompt, cwd, env, sink, on_tool_start=None, on_tool_don
                     continue  # turn_stop decides when Codex dies (a money script may write into its pipes): keep draining
                 break
             translator.feed(event)
+            if translator.no_credentials:
+                raise CodexTurnFailed(translator.last_error, 401)
         if getattr(sink, "interrupted", False):
             return translator
         code = await proc.wait()

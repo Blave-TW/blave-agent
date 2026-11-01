@@ -376,10 +376,13 @@ msgid "turn.exit"
 msgstr "Engine exited with code {code}"
 
 msgid "AGENT_BIN_MISSING"
-msgstr "Not sent: your AI command-line tool can’t be found. Re-detect it in Connect, or connect another."
+msgstr "The Codex engine isn’t downloaded yet. Open Connect and press Connect"
 
 msgid "AGENT_BIN_DOWNLOADING"
 msgstr "Not sent: the Codex engine is still downloading. Send again when it’s done."
+
+msgid "AGENT_BIN_BROKEN"
+msgstr "The Codex engine won’t start. Open Connect and press Try Again"
 
 msgid "turn.error"
 msgstr "Something went wrong: {msg}"
@@ -982,10 +985,7 @@ msgstr "Sign-in didn’t finish."
 msgid "row.orCmd"
 msgstr "Or run {cmd} in a terminal."
 
-msgid "row.orApp"
-msgstr "Or sign in through the ChatGPT app, then come back."
-
-# 「無法啟動」那一列名字底下(連結畫面、設定 › 模型接入):回前景會自動重新偵測,所以寫 come back(同 row.orApp,不帶 here)
+# 「無法啟動」那一列名字底下(連結畫面、設定 › 模型接入):回前景會自動重新偵測,所以寫 come back(不帶 here)
 msgid "row.reinstall"
 msgstr "Reinstall {name}, then come back."
 
@@ -999,7 +999,7 @@ msgid "cn.pkgInstall"
 msgstr "Installing"
 
 msgid "cn.pkgTar"
-msgstr "This Windows version is too old. Update Windows or install Codex yourself"
+msgstr "This Windows version is too old for the Codex engine. Update Windows"
 
 msgid "cn.pkgNet"
 msgstr "Couldn’t download. Check your connection and try again"
@@ -1018,6 +1018,13 @@ msgstr "Try Again"
 
 msgid "row.orBrowser"
 msgstr "This opens your browser to finish signing in."
+
+msgid "cn.pkgArch"
+msgstr "This computer’s architecture isn’t supported by the Codex engine"
+
+# 登入檢查逾時(main.js *_timeout 且有 path):可以連,真正結果等第一則訊息。待設計師稽核
+msgid "row.authUnknown"
+msgstr "Couldn’t check sign-in. Your first message will confirm it"
 
 # 偵測說沒登入、但 CLI 帶整份環境與用戶設定檔時說已登入(main.js authOutside):金鑰在環境變數、settings.json 或 apiKeyHelper,agent 回合讀不到
 msgid "row.keyOff"
