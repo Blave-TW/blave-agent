@@ -172,6 +172,7 @@ exit 2
      function laiOn() { return false; }   // 額度用完卡片開的 modal(check_shell_local_ai_card.js 驗)
      ${fnOf(app, "focusRedetect")}
      ${constOf(app, "whyState")}
+     ${constOf(app, "authUnknown")}
      const PKG = { snap: null, redetect: false };   // Codex 引擎隨包的快照還沒拉到:Codex 那一列照舊畫
      ${fnOf(app, "codexPkgRow")}
      ${fnOf(app, "mdlNeedsRedetect")}
@@ -200,7 +201,9 @@ exit 2
   R.set("lastDetect", D({ loggedIn: false, why: "claude_cantrun" }, { loggedIn: true })); R.paintRows(R.get("lastDetect"));
   t("…Claude 跑不起來照舊:名字底下一句「重新安裝 Claude Code 後回到這裡。」", rows()[0] === "claude|off|無法啟動|重新安裝 Claude Code 後回到這裡。|", rows());
   R.set("lastDetect", D({ loggedIn: true, why: null }, { loggedIn: false, why: "codex_timeout" })); R.paintRows(R.get("lastDetect"));
-  t("…逾時 → 「沒有回應」、沒有鈕;已登入 → 「已登入」+〔連結〕", JSON.stringify(rows()) === JSON.stringify(["claude||已登入||連結", "codex|off|沒有回應||"]), rows());
+  t("…整次偵測超時(沒有 path)→ 「沒有回應」、沒有鈕;已登入 → 「已登入」+〔連結〕", JSON.stringify(rows()) === JSON.stringify(["claude||已登入||連結", "codex|off|沒有回應||"]), rows());
+  R.set("lastDetect", D({ loggedIn: false, why: "claude_timeout", path: "/x/claude" }, { loggedIn: false, why: "codex_timeout", path: "/x/codex" })); R.paintRows(R.get("lastDetect"));
+  t("…登入檢查逾時(有 path)→ 不擋路:一句「查不到登入狀態」+〔連結〕,Claude、Codex 同一種", JSON.stringify(rows()) === JSON.stringify(["claude|||查不到登入狀態，第一則訊息會確認|連結", "codex|||查不到登入狀態，第一則訊息會確認|連結"]), rows());
   R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero" })); R.set("loginPending", "codex"); R.ROWMSG.codex = "opened"; R.paintRows(R.get("lastDetect"));
   t("…等瀏覽器:那一列名字底下「已在瀏覽器開啟登入頁」、鈕是「取消等待」", JSON.stringify(rows()) === JSON.stringify(["claude|off|未偵測到||", "codex|||已在瀏覽器開啟登入頁|取消等待"]), rows());
   R.set("loginPending", null); R.ROWMSG.codex = "failed"; R.paintRows(R.get("lastDetect"));

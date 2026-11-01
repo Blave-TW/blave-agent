@@ -7,6 +7,7 @@ let red = 0; const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n
 const cut = (a, b) => { const i = app.indexOf(a), j = app.indexOf(b, i); if (i < 0 || j < 0) { console.log("FAIL  app.js 裡找不到標記:" + (i < 0 ? a : b)); process.exit(1); } return app.slice(i, j); };
 const fn = (name) => { const i = app.indexOf("function " + name + "("); if (i < 0) { console.log("FAIL  找不到 " + name); process.exit(1); } let d = 0; for (let k = app.indexOf("{", app.indexOf(")", i)); k < app.length; k++) { if (app[k] === "{") d++; else if (app[k] === "}" && --d === 0) return app.slice(i, k + 1); } throw new Error("切不出 " + name); };
 const whyState = eval("(" + app.match(/^const whyState = (.*);$/m)[1] + ")");
+const authUnknown = eval("(" + app.match(/^const authUnknown = (.*);$/m)[1] + ")");
 
 (async () => {
   // ── detect():detectAgents reject → 不丟、paintRows 拿到「沒有回應」的完整形狀、akSetInfo 沒被叫 ──
@@ -101,7 +102,7 @@ const whyState = eval("(" + app.match(/^const whyState = (.*);$/m)[1] + ")");
     const rowsEl = el(), calls = [];
     const ctx = { PKG: { snap: null, redetect: true }, loginPending: null, MDL: { busy: true }, ROWMSG: { claude: null, codex: null }, cur: null, localReady: false,
       $: () => rowsEl, row: (o) => o, btn: () => ({}), t: (k) => k, paintBlaveBtn: () => {}, mdlPaint: () => calls.push("mdlPaint"), detect: () => calls.push("detect"),
-      rowMsg: () => "", rowVars: () => ({}), connect: () => {}, localLogin: () => {}, codexPkgGo: () => {}, window: { blave: {} }, whyState };
+      rowMsg: () => "", rowVars: () => ({}), connect: () => {}, localLogin: () => {}, codexPkgGo: () => {}, window: { blave: {} }, whyState, authUnknown };
     const paint = new Function("ctx", `with (ctx) { ${fn("codexPkgRow")}\n${fn("paintRows")}\nreturn paintRows; }`)(ctx);
     const D0 = { claude: { installed: false }, codex: { installed: false } };
     ctx.loginPending = "claude"; paint(D0);

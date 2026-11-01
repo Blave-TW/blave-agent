@@ -48,7 +48,7 @@ if (!process.versions.electron) (async () => {
 
   // ② modal 列的狀態:真的跑 laiRows(底下是設定 › 模型接入那份 mdlOptions)
   {
-    const R = new Function(`${line(/^const whyState = .*$/m)}\n${fn("codexPkgRow")}\n${fn("mdlOptions")}\n${fn("laiRows")}\nreturn laiRows;`)();
+    const R = new Function(`${line(/^const whyState = .*$/m)}\n${line(/^const authUnknown = .*$/m)}\n${fn("codexPkgRow")}\n${fn("mdlOptions")}\n${fn("laiRows")}\nreturn laiRows;`)();
     const sh = (rows) => rows.map((r) => [r.kind, r.act || "-", r.st || "-", r.sub || "-", r.off ? "off" : "", r.fill ? "fill" : ""].join(":")).join(" / ");
     const D = (c, x) => ({ claude: c, codex: x, apikey: { saved: "openrouter" } });
     const IN = { installed: true, loggedIn: true }, OUT = { installed: true, loggedIn: false }, NONE = { installed: false };
@@ -68,6 +68,9 @@ if (!process.versions.electron) (async () => {
     ok("② 等瀏覽器、還沒過 1 秒:只換成〔取消等待〕,不先講已開啟", sh(r).startsWith("claude:login.cancel:-:-::"), sh(r));
     r = R(D(OUT, NONE), "blave", null, { claude: "failed" });
     ok("② 登入沒完成:〔再試一次〕+ row.failed(畫的時候接 cmdLine)", sh(r) === "claude:login.retry:-:row.failed:: / codex:-:st.notFound:-:off:", sh(r));
+    r = R(D({ installed: true, loggedIn: false, why: "claude_cantrun" }, { installed: true, loggedIn: false, why: "codex_timeout" }), "blave", null, {});
+    r = R(D({ installed: true, loggedIn: false, why: "claude_timeout", path: "/c" }, { installed: true, loggedIn: false, why: "codex_timeout", path: "/x" }), "blave", null, {});
+    ok("② 查不出登入狀態:兩列〔使用〕+ row.authUnknown、不灰", sh(r) === "claude:cn.use:-:row.authUnknown:: / codex:cn.use:-:row.authUnknown::", sh(r));
     r = R(D({ installed: true, loggedIn: false, why: "claude_cantrun" }, { installed: true, loggedIn: false, why: "codex_timeout" }), "blave", null, {});
     ok("② 跑不起來／沒回應:名字灰、狀態字、沒有鈕;跑不起來另寫 row.reinstall", sh(r) === "claude:-:st.cantRun:row.reinstall:off: / codex:-:st.noResp:-:off:", sh(r));
     r = R(D(IN, NONE), "claude", null, {});

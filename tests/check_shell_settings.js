@@ -396,6 +396,7 @@ const mdl = (() => { const a = src.indexOf("const MDL = {"), b = src.indexOf("/*
 if (/\bdocument\b|\$\(|window\./.test(mdl.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""))) throw new Error("模型接入的純邏輯碰了 DOM");
 eval(mdl.replace(/^const /gm, "var "));
 var whyState = eval("(" + src.match(/^const whyState = (.*);$/m)[1] + ")");   // 同連結畫面那一支(原文)
+var authUnknown = eval("(" + src.match(/^const authUnknown = (.*);$/m)[1] + ")");
 const D = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: false } };
 const shape = (o) => [o.kind, o.isCur, o.st && o.st.key, String(o.act)].join("|");
 let M = mdlOptions(D, "claude", true);
@@ -443,6 +444,10 @@ ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」
     && mdlOptions({ claude: { installed: true, loggedIn: false, why: "claude_cantrun" }, codex: { installed: false } }, "blave", true)[1].desc === "row.reinstall", sh(cx(null, BAD)));
   { const SLOW = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: false, why: "codex_timeout", via: "pkg" } };
     ok("隨包那顆沒回應 → 快照不接手:「沒有回應」、沒有鈕(重抓解決不了逾時)", sh(cx({ phase: "idle", fail: null }, SLOW)) === "codex|st.noResp|-|-|null|off||", sh(cx({ phase: "idle", fail: null }, SLOW))); }
+  { const UNK = { claude: { installed: true, loggedIn: false, why: "claude_timeout", path: "/x/claude" }, codex: { installed: true, loggedIn: false, why: "codex_timeout", via: "pkg", path: "/x/codex" } };
+    ok("查不出登入狀態(逾時、有 path):兩列都能用:〔使用〕+ row.authUnknown,不灰;用中的那一列沒有鈕;等登入中照舊取消", ["claude", "codex"].every((k, i) => { const o = mdlOptions(UNK, "blave", true, null, null, { phase: "idle", fail: null })[i + 1]; return o.act === "cn.use" && o.desc === "row.authUnknown" && !o.off && !o.st; })
+      && mdlOptions(UNK, "codex", true, null, null, { phase: "idle", fail: null })[2].isCur === true && mdlOptions(UNK, "codex", true, null, null, { phase: "idle", fail: null })[2].act === null
+      && mdlOptions(UNK, "blave", true, { login: "codex" }, null, { phase: "idle", fail: null })[2].act === "login.cancel"); }
   ok("隨包那顆能跑 → 快照不接手;偵測中照舊「偵測中…」", sh(cx({ phase: "idle", fail: null }, { codex: { installed: true, loggedIn: true } })).startsWith("codex|-|-|-|cn.use")
     && sh(cx({ phase: "download", bytes: 1, total: 2, fail: null }, { codex: { installed: true, loggedIn: false } })) === "codex|-|-|-|cn.signIn|||" && mdlOptions(null, "claude", true, null, null, { phase: "idle", fail: null })[2].st.key === "cn.detecting");
   ok("mdlAct:下載列(o.pkg)走 codexPkgGo(reinstall),不走 connect／localLogin", /if \(o\.pkg\) return codexPkgGo\(o\.reinstall\);/.test(fnSrc("mdlAct")) && fnSrc("mdlAct").indexOf("o.pkg") < fnSrc("mdlAct").indexOf("return connect("));
@@ -511,7 +516,7 @@ ok("「重新偵測」只在本機有一個不能用時出:兩個都就緒不出
   ok("本機登入等待中:那一列只有「取消等待」;每一列的列尾都只有一樣", waitLogin[2].tail.join() === "pf-act:login.cancel" && waitLogin.every((r) => r.tail.length === 1));
   hasToken = true; cur = null; lastDetect = null;
   // 連結畫面(另一份 DOM:row / paintRows):同一條規則——有〔登入〕鈕的列不並排「尚未登入」;沒鈕可按的(偵測中… / 未偵測到)照講
-  var localReady = false, paintBlaveBtn = () => {}, connect = () => {}, localLogin = () => {}, whyState = () => null, ROWMSG = {}, rowMsg = () => "", btn = (cls, text) => { const b = el(); b.className = cls; b.textContent = text; return b; };
+  var localReady = false, paintBlaveBtn = () => {}, connect = () => {}, localLogin = () => {}, whyState = () => null, authUnknown = () => false, ROWMSG = {}, rowMsg = () => "", btn = (cls, text) => { const b = el(); b.className = cls; b.textContent = text; return b; };
   eval(fnSrc("row")); eval(fnSrc("paintRows")); eval(fnSrc("detectingRows"));
   const cnRows = (fn) => { delete dom["agent-rows"]; fn(); return $("agent-rows").children.map((r) => [r.dataset.kind, (r.innerHTML.match(/class="cn-st[^"]*">([^<]*)/) || [, ""])[1], r.children.map((c) => c._cls + ":" + c.textContent).join("+")].join("|")).join(" "); };
   ok("連結畫面:裝了沒登入的列只有〔連結〕(方案 B;沒有 .cn-st);沒裝的「未偵測到」、偵測中的「偵測中…」照講、沒有鈕",

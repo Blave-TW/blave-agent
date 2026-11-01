@@ -125,6 +125,8 @@ window.blave.onCodexPkgState(codexPkgOnState);
 Promise.resolve().then(() => window.blave.codexPkgState()).then(codexPkgOnState, () => {});
 // 不能用的原因(main.js detectWhy):跑不起來、沒有回應各是一種狀態,不是「沒登入」——按「連結」只會再撞一次,所以那一列不給鈕
 const whyState = (x) => /_cantrun$/.test((x && x.why) || "") ? "st.cantRun" : /_timeout$/.test((x && x.why) || "") ? "st.noResp" : null;
+// 登入狀態查不出來(登入檢查逾時):不是沒登入,也不擋路,真正的答案等第一則訊息。整次偵測超時沒有 path,連不上,仍是「沒有回應」
+const authUnknown = (x) => !!x && !!x.installed && !x.loggedIn && !!x.path && /_timeout$/.test(x.why || "");
 function paintRows(d) {
   const rows = $("agent-rows"); rows.innerHTML = "";
   // 存過一把驗過的金鑰也算「現在就走得通」(mockup A1′):Blave 那顆退成描邊
@@ -144,6 +146,9 @@ function paintRows(d) {
     } else if (x.installed && x.loggedIn) {
       ROWMSG[kind] = null;
       rows.appendChild(row({ name, kind, st: t("st.signedIn"), stClass: "on", cur: cur === kind,
+        action: cur === kind ? null : btn(localBtnCls(), t("cn.connect"), () => connect(kind, x)) }));
+    } else if (authUnknown(x)) {
+      rows.appendChild(row({ name, kind, sub: t("row.authUnknown"), cur: cur === kind,
         action: cur === kind ? null : btn(localBtnCls(), t("cn.connect"), () => connect(kind, x)) }));
     } else if (x.installed && whyState(x)) {
       // 跑不起來:剛才指他去跑的就是這一顆,「怎麼修」要寫在列上;沒有回應是暫態,重新偵測就是下一步
@@ -372,6 +377,8 @@ function mdlOptions(d, curKind, tok, pend, ak, pkg) {
       out.push({ kind, name, desc: pk.desc ? pk.desc.key : null, descVars: pk.desc ? pk.desc.vars : undefined, st: pk.st, act: pk.act, pkg: true, reinstall: !!pk.reinstall, busy: pk.busy, isCur: false, off: pk.off });
       return;
     }
+    // 查不出登入狀態:可以用,跟就緒那一列同一個動作,結果等第一則訊息(authUnknown)
+    if (d !== null && authUnknown(x) && p.login !== kind) { out.push({ kind, name, desc: "row.authUnknown", st: null, act: curKind === kind ? null : "cn.use", isCur: curKind === kind, off: false }); return; }
     // 跑不起來 / 沒有回應:同連結畫面,是狀態不是「沒登入」——列變灰、不給〔登入〕(按了只會再撞一次)
     const why = d !== null && x.installed && !ready ? whyState(x) : null;
     // 同連結畫面那一列:跑不起來寫怎麼修;金鑰設在 agent 回合讀不到的地方(authOutside)講出路
