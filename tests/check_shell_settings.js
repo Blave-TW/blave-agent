@@ -62,11 +62,16 @@ eval(["upCheck", "upCloudRefresh", "upCloudUpdate", "upCloudSend", "upInstall"].
 // 0.1.36 側欄更新膠囊(spec desktop-update-pill §3):真的那幾支;更新 modal 本體(upModal)用假的記下參數,行為在 check_shell_update_pill.js
 var UP_PILL_DAY_KEY = "ws_upd_pill_day", UP_BOX = null, UP_AUTO = true; const modals = [];
 const upModal = (kind, data, opener, done) => { modals.push({ kind, data, done }); };
-eval(["upPillPlan", "upPillNow", "upPillPaint", "upPillFit", "upPillClick", "upRestartAsk", "upSchedPaint"].map(fnSrc).join("\n"));
+eval(["upPillPlan", "upPillNow", "upPillLabel", "upPillPaint", "upPillFit", "upPillClick", "upRestartAsk", "upSchedPaint"].map(fnSrc).join("\n"));
 eval(src.match(/^function upRefresh\(\) \{[^\n]*\}$/m)[0]);
 eval([/^\$\("up-pill"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("up-rail"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-up-btn"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-upc-btn"\)\.addEventListener\("click", [^\n]*$/m].map((re) => src.match(re)[0]).join("\n"));   // 入口的接線
 const stepWhere = (c) => (c && c.where) || "local";
-const C = { current: "0.0.7", version: "0.0.8" };
+const C = { current: "0.0.7", version: "0.0.8" }, UPV = 'up.pillV{"v":"0.0.8"}';
+// 膠囊字(Wei 11-01 推翻 10-28「不寫版號」):有暫存好的版號 → 帶版號;拿不到或不像版號 → 不帶、不留空冒號
+{ const L = (v, ask, kind) => upPillLabel({ kind: kind || "ready", ask: !!ask }, v, t);
+  ok("膠囊:有版號寫「重新啟動更新：{v}」,下單中接「…」;重新啟動中照舊", L("0.1.41") === 'up.pillV{"v":"0.1.41"}' && L("0.1.41", true) === 'up.pillV{"v":"0.1.41"}…' && L("0.1.41", false, "restarting") === "up.restarting");
+  ok("膠囊:沒有版號(null、空字串、非字串、怪字)退回「重新啟動更新」", [null, undefined, "", 41, "  ", "<b>", "v"].every((v) => L(v) === "up.pill") && L(null, true) === "up.pill…");
+  ok("膠囊字串:zh／en 有版號那句與退回那句都對,沒有空冒號", STR.zh["up.pillV"] === "重新啟動更新：{v}" && STR.en["up.pillV"] === "Restart to update: {v}" && STR.zh["up.pill"] === "重新啟動更新" && STR.en["up.pill"] === "Restart to update"); }
 // alive = cloud.js status() 的「主機在跑而且回報夠新」;過期那條路在 check_shell_cloud_update.js
 const cloud = (o, kind) => ({ kind: kind || "running", alive: true, cloud: { config_version: "2026-09-24-b", latest_config_version: "2026-09-24-b", ...((o && o.cloud) || {}) }, report: (o && o.report) || {} });
 const plan = (up, st, x) => upPlan({ up, cloud: st && st.cloud, kind: st ? envCloudKind(st) : "loading", localTurn: false, mem: {}, now: 0, cloudStale: !!(st && trRestartUnconfirmed(st.report)), wu: st ? upWu(st.report) : null, ...(x || {}) });
@@ -132,9 +137,9 @@ ok("DOM:關於兩行(0.1.15):第一行電腦版 + 檢查更新,底下是排程�
   && (() => { const span = html.slice(html.indexOf('id="ws-update"'), html.indexOf("</button>", html.indexOf('id="ws-update"'))); return !/data-i18n/.test(span) && /<span><\/span>/.test(span); })());
 // ── 聊天輸入列右上那一格只剩 (c) 更新中…;本機等重開的提示搬到側欄膠囊(0.1.36 spec desktop-update-pill §3.2:同一件事只講一處)──
 p = paint({ ...C, phase: "ready" }, cloud());
-ok("(b) ready 而且沒在下單:那一格不出;側欄膠囊出「有新版 · 重新啟動」、細軌圓鈕 aria-label 同一句,可點", p.slot === null && p.pill === "up.pill" && p.pillKind === "ready" && !p.pillDis && p.pillAria === null && p.rail === "up.pill" && p.railAria === null);
+ok("(b) ready 而且沒在下單:那一格不出;側欄膠囊出「重新啟動更新：0.0.8」(暫存好那一版)、細軌圓鈕 aria-label 同一句,可點", p.slot === null && p.pill === UPV && p.pillKind === "ready" && !p.pillDis && p.pillAria === null && p.rail === UPV && p.railAria === null);
 p = paint({ ...C, phase: "blocked" }, cloud());
-ok("(b) 下單中(blocked):那一格不出;膠囊字尾接「…」(按了主行程開 §4.2),可點", p.slot === null && p.pill === "up.pill…" && p.pillKind === "trading" && !p.pillDis && p.rail === "up.pill…");
+ok("(b) 下單中(blocked):那一格不出;膠囊字尾接「…」(按了主行程開 §4.2),可點", p.slot === null && p.pill === UPV + "…" && p.pillKind === "trading" && !p.pillDis && p.rail === UPV + "…");
 { const pb = plan({ ...C, phase: "blocked" }, cloud()), pr = plan({ ...C, phase: "ready" }, cloud()), pt = plan({ ...C, phase: "blocked" }, cloud(), { localTurn: true }), pe = plan({ ...C, phase: "error", error: "INSTALL_FAILED" }, cloud());
   ok("upPlan(關於列與那一格的決策,沒改):blocked → slot restart、ask:true;ready → ask:false;回合中 disabled;error → 沒有 slot;blocked 的關於列 link 是 restart、狀態字 up.row.ready",
     pb.slot.kind === "restart" && pb.slot.ask === true && pr.slot.ask === false && pt.slot.disabled === true && pe.slot === null
@@ -149,7 +154,7 @@ ok("(b) 下單中(blocked):那一格不出;膠囊字尾接「…」(按了主行
 p = paint(idle, applying);
 ok("(c) 雲端換檔中:同一格不可點的「更新中…」(aria-disabled,不是 disabled;is-status;沒有時鐘、沒有百分比)", p.slot === "up.applying" && p.slotKind === "applying" && p.slotAria === "true" && !p.slotDis && p.status && !/\d/.test(p.slot));
 p = paint({ ...C, phase: "ready" }, applying);
-ok("(c) 雲端換檔中時那一格是更新中;關於第一行與膠囊照舊給重新啟動(只管電腦版)", p.slot === "up.applying" && p.link === "up.restart" && !p.dis && p.pill === "up.pill");
+ok("(c) 雲端換檔中時那一格是更新中;關於第一行與膠囊照舊給重新啟動(只管電腦版)", p.slot === "up.applying" && p.link === "up.restart" && !p.dis && p.pill === UPV);
 p = paint(idle, cloud());
 ok("(a) 兩邊都最新:那一格與膠囊什麼都不出", p.slot === null && p.pill === null && p.rail === null);
 ok("(a) 背景下載 / 暫存中 / 檢查中 / 出錯 / 沒有更新來源:那一格與膠囊也不出", ["downloading", "staging", "checking", "error", "off", "idle"].every((ph) => { const x = paint({ ...C, phase: ph }, cloud()); return x.slot === null && x.pill === null; }));
@@ -182,7 +187,7 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
     ok("主行程那邊拋例外(IPC reject):upInstall 不冒 unhandled rejection、當成沒裝成重讀狀態(稽核 P2-3)", !threw && reads === 1); }
   running = true; p = paint({ ...C, phase: "ready" }, cloud()); calls.length = 0; told.length = 0; modals.length = 0; featured.length = 0; await $("up-pill").onclick(); await $("up-rail").onclick(); await $("set-up-btn").onclick();
   ok("(b) 這台電腦有回合在跑:膠囊、細軌圓鈕與關於的連結都是鎖(aria-disabled、不是原生 disabled)、title busy.update;按了不裝、不開框、不記 upd_go_pill,原因寫進各自的槽",
-    p.pill === "up.pill" && !p.pillDis && p.pillAria === "true" && p.pillTitle === "busy.update" && p.railAria === "true" && p.link === "up.restart" && !p.dis && p.aria === "true" && p.title === "busy.update" && calls.length === 0 && modals.length === 0
+    p.pill === UPV && !p.pillDis && p.pillAria === "true" && p.pillTitle === "busy.update" && p.railAria === "true" && p.link === "up.restart" && !p.dis && p.aria === "true" && p.title === "busy.update" && calls.length === 0 && modals.length === 0
     && !featured.includes("upd_go_pill") && JSON.stringify(told) === '[["up-pill-why","update"],["up-pill-why","update"],["set-up-why","update"]]');
   running = false;
   document.activeElement = $("ws-update"); paint(idle, cloud());

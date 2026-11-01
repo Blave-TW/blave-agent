@@ -153,6 +153,22 @@ app.whenReady().then(async () => {
     applyLangChoice("en"); const en = [...$("cs-tabs").querySelectorAll(".tab-t")].map((x) => x.textContent);
     applyLangChoice("zh"); const zh = [...$("cs-tabs").querySelectorAll(".tab-t")].map((x) => x.textContent);
     return { reuse, n0, two: second !== first, en, zh }; })()`);
+  // ⑫ 更新膠囊「重新啟動更新：{v}」(Wei 11-01):側欄預設 236 與最窄 180、zh／en、下單中多一個「…」,字都完整(span 不溢出),記下有沒有拿掉圖示
+  w.setContentSize(1440, 760); await nap(400);
+  const pills = [], UP0 = await X(`JSON.stringify(UP)`);
+  for (const lang of ["zh", "en"]) for (const sw of [236, 180]) for (const ph of ["ready", "blocked"]) {
+    await X(`setLang(${JSON.stringify(lang)}); paneSt.side.off = false; paneSt.side.w = paneSt.side.want = ${sw}; panesRender(false); UP = { phase: ${JSON.stringify(ph)}, version: "0.1.41", current: "0.1.40" }; upPillPaint();`); await nap(450);
+    pills.push(await X(`(() => { upPillFit(); const tx = $("up-pill-t"), pl = $("up-pill");
+      return { lang: ${JSON.stringify(lang)}, sw: ${sw}, ph: ${JSON.stringify(ph)}, text: tx.textContent, sw0: tx.scrollWidth, cw: tx.clientWidth, pill: Math.round(pl.getBoundingClientRect().width),
+        foot: Math.round(document.querySelector(".ws-foot").getBoundingClientRect().width), noIc: pl.classList.contains("no-ic") }; })()`)); }
+  await X(`setLang("zh"); UP = ${UP0}; upPillPaint(); paneSt.side.w = paneSt.side.want = PANES.side.def; panesRender(false);`);
+  w.setContentSize(1024, 760); await nap(300);
+  console.log("      膠囊量測:" + JSON.stringify(pills));
+  const at = (sw) => pills.filter((x) => x.sw === sw);
+  ok(`⑫ 膠囊帶版號:預設側欄 236、zh／en、下單中,字都完整不被切、版號在字裡`, at(236).length === 4 && at(236).every((x) => x.sw0 <= x.cw && x.text.includes("0.1.41")), JSON.stringify(at(236)));
+  // 最窄 180 放不下(拿掉圖示後只剩 121,zh 要 126／137、en 151／161):照 Wei 的規矩不縮字級,回報待決定;這裡只印出來,不算綠也不算紅
+  const cut180 = at(180).filter((x) => x.sw0 > x.cw);
+  console.log((cut180.length ? "TODO  " : "PASS  ") + "⑫ 最窄側欄 180:" + (cut180.length ? "放不下、待決定 " : "都放得下 ") + JSON.stringify(at(180).map((x) => [x.lang, x.ph, x.sw0, x.cw])));
   ok(`⑪ 別的分頁空著又閒著:＋ 切過去、不疊空分頁;換語言分頁名跟著換:${JSON.stringify(tb)}`, tb.two && tb.reuse && tb.en.includes("New chat") && !tb.en.includes("新對話") && tb.zh.includes("新對話"));
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   app.exit(red ? 1 : 0);

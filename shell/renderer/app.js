@@ -1479,10 +1479,16 @@ async function upAskPull() {
 /* 膠囊與細軌圓鈕:同一份 plan 畫兩顆(.ws-foot 在細軌時整塊藏起來)。側欄窄到放不下:拿掉圖示,不折行 */
 var UP_PILL_DAY_KEY = "ws_upd_pill_day";   // var:upPaint 可能在這一行之前被叫到
 function upPillNow() { return upPillPlan({ up: UP, localTurn: upLocalTurn() }); }
+/* 膠囊的字:「重新啟動更新：{v}」,v = updater 暫存好、等著裝的那一版(UP.version)。拿不到或形狀不像版號就退回不帶版號那句,不出空冒號 */
+function upPillLabel(p, v, tt) {
+  if (p.kind === "restarting") return tt("up.restarting");
+  const ok = typeof v === "string" && /^\d+(\.\d+){1,3}([-+][0-9A-Za-z.-]{1,20})?$/.test(v);
+  return (ok ? tt("up.pillV", { v }) : tt("up.pill")) + (p.ask ? "…" : "");
+}
 function upPillPaint() {
   const p = upPillNow(), wrap = $("up-pill-wrap"), pill = $("up-pill"), dot = $("up-rail");
   if (!wrap || !pill || !dot) return;
-  const label = p.kind === "restarting" ? t("up.restarting") : t("up.pill") + (p.ask ? "…" : "");
+  const label = upPillLabel(p, UP && UP.version, t);
   wrap.hidden = !p.show; dot.hidden = !p.show;
   $("up-pill-t").textContent = p.show ? label : "";
   dot.setAttribute("aria-label", p.show ? label : "");

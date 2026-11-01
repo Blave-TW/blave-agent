@@ -4597,7 +4597,10 @@ msgstr "重新啟動中…"
 
 # 側欄左下的更新膠囊(新版已暫存好;spec desktop-update-pill §3)。不寫版號;下單中字尾接「…」。細軌圓鈕的 aria-label 也是這句
 msgid "up.pill"
-msgstr "有新版 · 重新啟動"
+msgstr "重新啟動更新"
+
+msgid "up.pillV"
+msgstr "重新啟動更新：{v}"
 
 # 更新 modal 一般(沒在下單)的標題;{v} = 已暫存的新版號(canon 具名例外:只這個標題可以寫版號)
 msgid "up.md.title"
