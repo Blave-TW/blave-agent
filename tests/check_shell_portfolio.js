@@ -40,6 +40,7 @@ ok("報酬／Max DD 的百分比先取到兩位再判正負與上色:±0.004 寫
   && /mgPctText\(man\["total_return_%"\]\), dd = mgPctText\(man\["max_drawdown_%"\]\)/.test(psrc));
 ok("內建方法「最佳化 Sharpe」有自己的介面字(不吃機器 display_name)", /name === MG_SHARPE\) return t\("mg\.sharpe"\)/.test(psrc) && /MG_SHARPE \? t\("mg\.sharpeDesc"\)/.test(psrc));
 { const prop = { members: ["b", "a"], allocator: null, params: { lookback: 180 } };
+  ok("回看還沒填(null)時,同成員同方法的提案仍算這一組:權重是主機的現值,照畫;跑優化另外擋", F.mgSameSel({ members: ["a"], allocator: "slope", params: { lookback: 365 } }, ["a"], "slope", { lookback: null }));
   ok("選擇比對:成員順序不管、舊腳本的 allocator null = slope、走查窗雙方都釘住才比", F.mgSameSel(prop, ["a", "b"], "slope", { lookback: 180 }) && !F.mgSameSel(prop, ["a"], "slope", { lookback: 180 })
     && !F.mgSameSel(prop, ["a", "b"], "equal", {}) && !F.mgSameSel(prop, ["a", "b"], "slope", { lookback: 90 }) && F.mgSameSel({ members: ["a", "b"], allocator: "equal", lookback: 0 }, ["a", "b"], "equal", {})); }
 ok("資料不足:從回測 log 尾抓歷史天數(不 anchor 行首);認不得 null", F.mgShortDaysOf("Traceback…\nValueError: insufficient history: 120 days <= lookback 365") === 120 && F.mgShortDaysOf("boom") === null);

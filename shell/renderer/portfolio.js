@@ -1056,7 +1056,7 @@ function mgSuggestTable(wrap, ap, other) {
         trackFeature("contract_switch"); TR.sig.opt = null; mgPaint(); ctFocus("opt", n);
       }, (root) => { if (r.money === null) return null; if (r.money === 0) return 0; const px = trTxfPrice(); return r.moneyTwd != null && px ? trRoundLots(r.moneyTwd / (px * TR_TXF_SPECS[root].cv)) : null; }));
       const nx = next[n], cell = trEl("td", "n");
-      if (nx === null) { cell.textContent = "—"; if (r.fxMissing) cell.appendChild(trEl("span", "pf-note", t("mg.noFx"))); }
+      if (nx === null) { cell.textContent = "—"; if (r.spec && r.fxMissing) cell.appendChild(trEl("span", "pf-note", t("mg.noFx"))); }
       // 權重換成台指期不到一口(取整成 0):列上直接講,表底講少投多少(同網頁)
       else if (r.spec && nx === 0 && r.moneyTwd > 0) { cell.textContent = t("mg.lotsUnder"); underTwd += r.moneyTwd; }
       else if (r.spec) { cell.textContent = trLotsFmt(nx, false); const m = nx ? trTxfRefMoney(r.spec, nx, trTxfPrice()) : null; if (m != null) cell.title = t("tr.lotsNotionalTip", { amt: trFmt(Math.round(m)) }); }
