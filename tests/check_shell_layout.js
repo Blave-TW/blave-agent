@@ -169,6 +169,16 @@ app.whenReady().then(async () => {
   // 最窄 180 放不下(拿掉圖示後只剩 121,zh 要 126／137、en 151／161):照 Wei 的規矩不縮字級,回報待決定;這裡只印出來,不算綠也不算紅
   const cut180 = at(180).filter((x) => x.sw0 > x.cw);
   console.log((cut180.length ? "TODO  " : "PASS  ") + "⑫ 最窄側欄 180:" + (cut180.length ? "放不下、待決定 " : "都放得下 ") + JSON.stringify(at(180).map((x) => [x.lang, x.ph, x.sw0, x.cw])));
+  // ⑬ 投資組合列的標的格寫股票名字:欄窄時只在名字之間換行,不把一個名字拆兩半,也不把表撐開
+  const nm = await X(`(() => { const host = document.createElement("div"); host.style.cssText = "position:fixed;left:0;top:0;width:420px;background:#fff;z-index:99";
+    const names = ["元大台灣高股息優質低波動基金", "聯電", "國泰台灣領袖五十正二基金甲"], out = [];
+    for (const sep of [", ", "、"]) { host.innerHTML = '<table class="pf-tbl" style="width:100%"><tr><td class="key">策略</td><td class="sname c-sym"></td><td class="n">100,000</td></tr></table>';
+      document.body.appendChild(host); const c = host.querySelector(".c-sym"); c.textContent = names.join(sep) + " 等 6 檔";
+      const tn = c.firstChild, lines = []; let top = null, cur = ""; const rg = document.createRange();
+      for (let i = 0; i < tn.length; i++) { rg.setStart(tn, i); rg.setEnd(tn, i + 1); const b = rg.getClientRects()[0]; if (!b) continue; if (top != null && b.top > top + 2) { lines.push(cur); cur = ""; } top = b.top; cur += tn.data[i]; } lines.push(cur);
+      out.push({ lines, over: host.scrollWidth - host.clientWidth }); host.remove(); }
+    return { out, names }; })()`);
+  ok(`⑬ 標的格窄欄:名字不被拆成兩半、表沒有撐開:${JSON.stringify(nm.out)}`, nm.out.every((o) => o.lines.length > 1 && o.over <= 0 && nm.names.every((n) => o.lines.some((l) => l.includes(n)))));
   ok(`⑪ 別的分頁空著又閒著:＋ 切過去、不疊空分頁;換語言分頁名跟著換:${JSON.stringify(tb)}`, tb.two && tb.reuse && tb.en.includes("New chat") && !tb.en.includes("新對話") && tb.zh.includes("新對話"));
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   app.exit(red ? 1 : 0);

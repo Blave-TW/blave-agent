@@ -3,7 +3,7 @@
 // 本機快取一天(userData/tw_names.json):清單一天變一次,而且只是顯示用——問不到就用上一份,沒有就只顯示代號。
 const fs = require("fs"), path = require("path");
 
-const TTL_MS = 24 * 3600 * 1000, RETRY_MS = 10 * 60 * 1000;
+const TTL_MS = 24 * 3600 * 1000, RETRY_MS = 60 * 1000;
 const ID_RE = /^[0-9]{4,6}[A-Z]?$/, NAME_MAX = 40;   // 代號同畫面 TR_TWSTOCK_RE(去掉 .TW / .TWO);名字只是顯示用,超長的不收
 const FILE = "tw_names.json";
 
@@ -28,7 +28,7 @@ function createTwNames({ dir, get, apiBase, now }) {
   const save = (j) => {
     try { const tmp = file + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(j)); fs.renameSync(tmp, file); } catch (_) { /* 存不進去:這次照用記憶體那份 */ }
   };
-  /* 回 { 代號: 名字 };拿不到回上一份,連上一份都沒有回 {}(畫面只顯示代號)。失敗後 10 分鐘內不再問 */
+  /* 回 { 代號: 名字 };拿不到回上一份,連上一份都沒有回 {}(畫面只顯示代號)。失敗後 1 分鐘內不再問 */
   function names() {
     if (!mem) mem = load();
     const t = clock();

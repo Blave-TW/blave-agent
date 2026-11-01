@@ -1,5 +1,5 @@
 // 台股代號後面的名字(0.1.25;1438 三地開發):總訊號部位表(配置與自動下單 › 部位)與「N 支策略」拆解句。
-//   1. shell/twnames.js:公開台股清單 → { 代號: 名字 }、本機快取一天、問不到用上一份、失敗 10 分鐘內不再問
+//   1. shell/twnames.js:公開台股清單 → { 代號: 名字 }、本機快取一天、問不到用上一份、失敗 1 分鐘內不再問
 //   2. renderer/trade.js:只有台股代號補名字(加密、台指期不動)、拿到表才重畫、名字截尾全名在 title
 // 跑法:node tests/check_shell_tw_names.js
 const fs = require("fs"), os = require("os"), path = require("path"), vm = require("vm");
@@ -69,6 +69,30 @@ const LIST = { data: [{ stock_id: "1438", name: "三地開發" }, { stock_id: "0
     t("自動下單 › 交易歷史:代號後面補名字、在市場小標之前(台指期那條走 trTxfSymInto 不補)", /ss\.textContent = sym\.replace\(\/@spot\$\/, ""\); const tw = trTwNameEl\(sym\); if \(tw\) ss\.appendChild\(tw\); \}\n\s*ss\.appendChild\(trEl\("span", "mkt-tag"/.test(trSrc));
     { const ev = cut(trSrc, "trOvEvents");
       t("總覽的拒單事件:認得的原因整句帶「代號 名字」;認不得的原文在代號後面補名字(截尾、title)", /trOrderErrText\(twn \? sym \+ " " \+ twn : sym, raw\)/.test(ev) && /body\.append\(" ", trEl\("span", "mono", sym\)\); if \(tw\) body\.appendChild\(tw\);/.test(ev)); }
+    // 策略組合 › 金額表投資組合列:有名字寫名字、沒有退回代號;名字表第一次沒拿到,輪詢要補問(表的簽章沒變不會再走 trTwName,代號會一直留著)
+    { const ctx = { tf: (k, v) => (k === "ak.sep" ? ", " : k === "tr.typecSymsMore" ? v.list + " and " + v.k + " more" : k + (v ? JSON.stringify(v) : "")) };
+      vm.runInNewContext(cut(trSrc, "trShortSym") + "\n" + cut(trSrc, "trTypeCLabel"), ctx);
+      const N = { "2330": "台積電", "2303": "聯電", "2454": "聯發科" }, keys = ["2330", "2303", "2454", "2317", "2412"], nameOf = (k) => N[k] || "";
+      const L = (nf) => vm.runInNewContext("(k, nf, tf) => trTypeCLabel({ n: 0, keys: k }, tf, nf, null)", ctx)(keys, nf, ctx.tf);
+      t("投資組合列:有名字 → 「台積電, 聯電, 聯發科 and 2 more」", L(nameOf).text === "台積電, 聯電, 聯發科 and 2 more", L(nameOf).text);
+      t("投資組合列:名字表還沒到 → 退回代號「2330, 2303, 2454 and 2 more」", L(() => "").text === "2330, 2303, 2454 and 2 more", L(() => "").text);
+      t("投資組合列:部分查不到 → 那幾檔退回代號", L((k) => (k === "2303" ? "" : N[k] || "")).text === "台積電, 2303, 聯發科 and 2 more");
+      const P = { dataset: {}, title: "", textContent: "2330", classList: { removed: [], remove(c) { this.removed.push(c); } } };
+      const ms = { TR_TWSTOCK_RE: /^\d{4,6}[A-Z]?(?:\.TWO?)?$/, t: ctx.tf };
+      vm.runInNewContext(cut(trSrc, "trShortSym") + cut(trSrc, "trTypeCLabel") + cut(trSrc, "trTwMetaFill"), ms);
+      ms.trTwName = nameOf; ms.trTwMetaFill(P, "2330");
+      t("回測頁首標的:一檔「2330 台積電」、名字不進等寬", P.textContent === "2330 台積電" && P.classList.removed.includes("mono"), P.textContent);
+      const Q = { dataset: {}, title: "", textContent: "BTCUSDT", classList: { remove() {} } }; ms.trTwMetaFill(Q, "BTCUSDT"); ms.trTwName = () => ""; const W = { dataset: {}, title: "", textContent: "2330", classList: { remove() {} } }; ms.trTwMetaFill(W, "2330");
+      t("回測頁首標的:加密不動、沒有名字留代號", Q.textContent === "BTCUSDT" && W.textContent === "2330");
+      // 真跑 trTwNamesWant:第一次回空表,下一輪輪詢補問就拿到
+      let asks = 0, paints = 0, clock = 1000000; const later = (f) => { const x = {}; return x; };
+      const box = { Date: { now: () => clock }, TR_TWN: { names: null, busy: false, at: 0, v: 0, wanted: true }, TR_TWN_RETRY_MS: 60000, trPaint: () => { paints++; }, trTwMetaFill: () => {}, document: { querySelectorAll: () => [] }, window: { blave: { twNames: async () => (++asks === 1 ? {} : { "2330": "台積電" }) } }, Promise, Object };
+      vm.runInNewContext(cut(trSrc, "trTwNamesWant"), box);
+      box.trTwNamesWant(); await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+      const a0 = box.TR_TWN.names; box.TR_TWN.at = clock; clock += 59000; box.trTwNamesWant(); const held = asks; clock += 2000; box.trTwNamesWant(); await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+      t("名字表第一次空:一分鐘內不再問、過了再問,拿到就重畫", a0 === null && held === 1 && asks === 2 && box.TR_TWN.names && box.TR_TWN.names["2330"] === "台積電" && paints === 1, { asks, paints });
+      t("輪詢補問:trPoll 看 TR_TWN.wanted 叫 trTwNamesWant(不靠表重畫)", /if \(TR_TWN\.wanted\) trTwNamesWant\(\);/.test(trSrc.slice(trSrc.indexOf("async function trPoll"))));
+      t("標的格 CSS:投資組合列可換行、只在名字之間換、窄欄那份同規則", /\.pf-tbl td\.sname\.c-sym \{ white-space: normal; word-break: keep-all; overflow-wrap: break-word;/.test(css) && /\.sub-sym \{[^}]*word-break: keep-all;/.test(css)); }
   } finally { fs.rmSync(TMP, { recursive: true, force: true }); }
   console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })();

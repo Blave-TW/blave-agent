@@ -465,10 +465,12 @@ html.ws-sc .side-gate { display: none; }
 .ev-row .dim { color: var(--ink-3); }
 
 /* ---- 中欄可窄到 288(視窗 1024):同一張表收欄,不改骨架。<520 標的併到策略名下 ---- */
-.sub-sym { display: none; font-size: 11px; color: var(--ink-3); }
+.sub-sym { display: none; font-size: 11px; color: var(--ink-3); word-break: keep-all; overflow-wrap: break-word; }
 .unit-note { display: none; }
 /* 1264 寬開著聊天欄、Windows 的捲軸佔 17px 時,金額表的最小寬(五欄表頭不折行)比中欄多幾 px,冒出橫向捲軸(第三台實測):
    中欄 ≤ 600 時表頭可以折行(「目標部位」「Target position」折兩行),省下的寬度讓表收得進去 */
+/* 投資組合的標的格寫股票名字(比代號長):一律可換行、不撐開表;只在名字之間換,不把一個名字拆成兩半 */
+.pf-tbl td.sname.c-sym { white-space: normal; word-break: keep-all; overflow-wrap: break-word; text-wrap: pretty; }
 /* 投資組合多空並列＋「等 N 檔」排一行時,金額表最小寬 zh 563／en 632,預設視窗 1280 的中欄就放不下:≤700 先拆兩行、標的格可換行 */
 @container (max-width: 700px) {
   .pf-tbl td.pos .pos-main.split { display: inline-grid; justify-items: end; }

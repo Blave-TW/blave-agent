@@ -629,7 +629,7 @@ function trEffSym(n, sym, contracts) {
 /* 台指期報價(主行程 txfQuote,5 分鐘快取):沒問到 = null。trTxfWant 在背景補問,回來的值靠金額表簽章含報價、下一輪輪詢重畫 */
 const TR_TXF = { price: null, at: 0, busy: false }, TR_TXF_MS = 300000, TR_TXF_RETRY_MS = 60000;
 // 台股代號 → 名字的表(trTwNamesWant 填;v = 拿到第幾次,進重畫簽章)
-const TR_TWN = { names: null, busy: false, at: 0, v: 0 }, TR_TWN_RETRY_MS = 600000;
+const TR_TWN = { names: null, busy: false, at: 0, v: 0, wanted: false }, TR_TWN_RETRY_MS = 60000;
 function trTxfPrice() { return TR_TXF.price; }
 // 口數 → 參考金額(TWD;同網頁 txfRefMoney):0 口 = 0;沒有報價 = null,呼叫端畫「—」,不拿口數硬乘出一個像金額的數
 function trTxfRefMoney(spec, lots, price) { if (!(lots > 0)) return 0; return typeof price === "number" && price > 0 ? lots * spec.cv * price : null; }
@@ -1917,6 +1917,7 @@ async function trPoll() {
     trPaint();
     envPaintLocalDots();
     trCfTick();   // 存金額的框開著:會不會送單翻面了就換標題
+    if (TR_TWN.wanted) trTwNamesWant();   // 名字表上次沒拿到:表的簽章沒變就不會再走 trTwName,輪詢這裡補問
     if (typeof poAddSync === "function") poAddSync();   // 策略頁首「加到策略組合」↔「到策略組合」
     if (typeof onbPaint === "function") onbPaint();   // 歡迎頁的步驟③跟著狀態檔(renderer/welcome.js;自己有指紋)
     if (typeof upPaint === "function") upPaint();   // 設定 › 關於 的雲端那一行與聊天的更新入口:讀的是這一份雲端狀態
@@ -3239,15 +3240,24 @@ function trTwNamesWant(now) {
   if (TR_TWN.names || TR_TWN.busy || t0 - TR_TWN.at < TR_TWN_RETRY_MS) return false;
   if (typeof window === "undefined" || !window.blave || typeof window.blave.twNames !== "function") return false;
   TR_TWN.busy = true;
-  Promise.resolve(window.blave.twNames()).then((m) => { if (m && typeof m === "object" && Object.keys(m).length) { TR_TWN.names = m; TR_TWN.v++; trPaint(); } })
+  Promise.resolve(window.blave.twNames()).then((m) => { if (m && typeof m === "object" && Object.keys(m).length) { TR_TWN.names = m; TR_TWN.v++; trPaint(); document.querySelectorAll(".bt-sym[data-syms]").forEach((el) => trTwMetaFill(el, el.dataset.syms)); } })
     .catch(() => {}).finally(() => { TR_TWN.busy = false; TR_TWN.at = Date.now(); });
   return true;
+}
+/* 回測頁首那格標的(report-backtest buildMeta):全是台股才換。一檔「2330 台積電」,多檔同投資組合列的寫法(前三檔名字＋等 N 檔);沒有名字就留代號 */
+function trTwMetaFill(el, raw) {
+  el.dataset.syms = raw;
+  const keys = String(raw).split(/[\s,;|/]+/).filter(Boolean);
+  if (!keys.length || !keys.every((k) => TR_TWSTOCK_RE.test(k.toUpperCase())) || !keys.some((k) => trTwName(k))) return;
+  const L = trTypeCLabel({ n: 0, keys }, t, trTwName, null);
+  el.textContent = keys.length === 1 ? keys[0] + " " + trTwName(keys[0]) : L.text;
+  el.classList.remove("mono"); if (keys.length > 1) el.title = L.tip;   // 名字是漢字,不進等寬
 }
 /* 列的 key(1438@spot / 2330.TW)→ 名字;不是台股、或還沒拿到表 → ""。台指期(TXF…)不是數字代號,不會進來 */
 function trTwName(sym) {
   const s = String(sym || "").trim().replace(/@spot$/i, "").toUpperCase();
   if (!TR_TWSTOCK_RE.test(s)) return "";
-  trTwNamesWant();
+  TR_TWN.wanted = true; trTwNamesWant();
   return (TR_TWN.names && TR_TWN.names[s.replace(/\.TWO?$/, "")]) || "";
 }
 /* 券商台股列(沒綁交易所、照著去券商下單):整股單＋零股單 →「2 張 340 股」;不足一張「340 股」;剛好整張「2 張」;不足一股「0 股」 */
