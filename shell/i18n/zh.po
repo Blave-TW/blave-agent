@@ -2856,7 +2856,7 @@ msgid "env.open.lead"
 msgstr "含 Blave 行情與籌碼資料。"
 
 msgid "env.open.more"
-msgstr "其他方案與月價 →"
+msgstr "其他方案與月價"
 
 msgid "env.open.spec"
 msgstr "{label} · {vcpu} vCPU · {ram} GB"
@@ -2886,7 +2886,7 @@ msgid "env.open.included"
 msgstr "API 方案含資料，不含主機。"
 
 msgid "env.open.trial"
-msgstr "開機不另收。到期自動扣第一期 {p} TWD，期間取消不扣。"
+msgstr "到期自動扣第一期 {p} TWD，期間取消不扣。"
 
 msgid "env.open.trialOff"
 msgstr "開機不另收。"
@@ -2913,7 +2913,7 @@ msgid "wc.goTrade"
 msgstr "到自動下單"
 
 msgid "onb.wait"
-msgstr "還沒讀到下單狀態。可以先從左邊的策略組合進去。"
+msgstr "還沒讀到下單狀態，讀到就能加到策略組合。"
 
 msgid "side.cloud.emptyReady"
 msgstr "主機已經開好了。策略送上來之後，會列在這裡。"

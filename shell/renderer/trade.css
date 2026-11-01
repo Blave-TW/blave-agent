@@ -108,10 +108,10 @@ html[data-env="cloud"] .cs-tabs .tab:not([aria-selected="true"]):has(+ .tab:not(
 .cv-card { margin-top: var(--space-24); padding: var(--space-24); background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
 .cv-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-16); }
 .cv-spec { font-size: 13px; color: var(--ink-2); }
+/* 價格和連結同一塊:放不下一起折,連結永遠貼著它說明的價格 */
+.cv-prw { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; }
 .cv-pr { font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink); white-space: nowrap; }
 .cv-pr.is-tag { font-size: 13px; font-weight: 500; }
-.cv-more { margin-top: var(--space-4); text-align: right; }
-.cv-more .btn-quiet { font-size: 13px; color: var(--link-quiet); white-space: nowrap; }
 .cv-note, .cv-slot { margin: var(--space-16) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); text-wrap: pretty; }
 .cv-note + .cv-slot, .cv-note + .plan-err { margin-top: var(--space-4); }
 .cv-card .plan-err { margin: var(--space-16) 0 0; font-size: 13px; color: var(--color-redText); }
@@ -135,7 +135,6 @@ html[data-env="cloud"] .cs-tabs .tab:not([aria-selected="true"]):has(+ .tab:not(
 @container (max-width: 519px) {
   .cv-ce h3 { font-size: 26px; }
   .cv-card { padding: var(--space-16); }
-  .cv-more { text-align: left; }
 }
 .side-gate { margin: var(--space-12) 0 0; }
 .side-gate[hidden] { display: none; }
