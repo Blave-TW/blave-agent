@@ -91,7 +91,8 @@ const save = async (f) => { ctx.BOX = null; btn(f, "save").on.click(); if (ctx.B
     pick(["a", "z", "new1"]); S.edits.new1 = 300;
     btn(table(), "revert").on.click();
     const f = table();
-    ok("③ 還原:新勾的那列消失、什麼都沒送、儲存列收起", S.picked === null && vm.runInContext("trNames()", ctx).indexOf("new1") < 0 && sends.length === 0 && bar(f).hidden === true && dot(S, "new1") === false, J({ picked: S.picked, sends })); }
+    // 這組沒綁交易所:儲存列的位置換成「還沒連接交易所」,沒有儲存與還原鈕
+    ok("③ 還原:新勾的那列消失、什麼都沒送、儲存鈕收起", S.picked === null && vm.runInContext("trNames()", ctx).indexOf("new1") < 0 && sends.length === 0 && !/tr\.save|tr\.revert/.test(bar(f).textContent) && dot(S, "new1") === false, J({ picked: S.picked, sends, bar: bar(f).textContent })); }
 
   // ④ 移除成員也要儲存才生效(金額 0 的也一樣)
   { const S = fresh();
