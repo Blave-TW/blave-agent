@@ -483,7 +483,28 @@ if (!process.versions.electron) {
       && /if \(typeof libIdeaSync === "function"\) libIdeaSync\(\);/.test(cutFn(appSrc, "enterWorkspace")) && /if \(typeof libIdeaPaint === "function"\) libIdeaPaint\(\);/.test(cutFn(appSrc, "acctPaint"))
       && /tvPrefs\(\); if \(typeof libIdeaSync === "function"\) libIdeaSync\(\); \}\);/.test(brSrc) && (src.match(/libIdeaNow\(\)/g) || []).length === 5 && !/libIdeaOn\(/.test(src.slice(src.indexOf("/* ── 純邏輯到此")).replace(/return libIdeaOn\(\{/, "")));
     ok("③ 頁首說明句(§2.7):找點子開著才接 idea.descLead + 文字鈕 + 句號,文字鈕與句號同一個 .nw;拿掉「官方策略免費…」", /const nw = libEl\("span", "nw"\);\s*nw\.append\(libIdeaBtn\("btn-quiet", "idea\.link", "lib_head"\), LANG === "zh" \? "\\u3002" : "\."\);/.test(cutFn(src, "libPaintDesc"))
-      && STR.zh["lib.desc"] === "已驗證優先，再看樣本期長短。" && STR.en["lib.desc"] === "Verified first, then longest backtest.");
+      && STR.zh["lib.desc"] === "報酬皆為回測，已驗證的排前面。" && STR.en["lib.desc"] === "Returns are backtested. Verified first.");
+    {   // canon brand.md「數字必須真實或標注」:標注在頁首(卡上的字搬上去),所以真的把列與頁首畫出來,兩語、找點子開關都驗
+      class N {
+        constructor() { this.k = []; this.t = ""; this.dataset = {}; }
+        set textContent(v) { this.k = []; this.t = String(v); }
+        get textContent() { return this.t + this.k.map((x) => (typeof x === "string" ? x : x.textContent)).join(""); }
+        append(...a) { this.k.push(...a); } appendChild(x) { this.k.push(x); return x; } setAttribute() { } addEventListener() { }
+      }
+      const head = new N(), sb = { Node: N, document: { createElement: () => new N(), createDocumentFragment: () => new N() }, LIB: {}, $: () => head, LANG: "zh", IDEA: false,
+        libIdeaNow: () => sb.IDEA, libIdeaBtn: () => "link", libTags: () => [], libYears: () => 6.5, libPct: () => "+24.61%", libSymbolNodes: () => [], libMono: (x) => x, libShowDetail() { } };
+      sb.t = (k) => STR[sb.LANG][k];
+      vm.runInNewContext(["libEl", "libRich", "libJoin", "libRow", "libPaintDesc"].map((f) => cutFn(src, f)).join("\n"), sb);
+      const seen = ["zh", "en"].flatMap((lang) => [false, true].map((idea) => {
+        sb.LANG = lang; sb.IDEA = idea; sb.libPaintDesc();
+        return { lang, idea, card: sb.libRow({ id: 1, title: "x", is_official: true, report: { annual_return: 24.61 } }).textContent, head: head.textContent };
+      }));
+      ok("③ 回測標注:卡上只寫年化報酬、不含 backtest / 回測;頁首說明句(找點子開關都一樣)含回測標注", seen.every((x) => !/backtest|回測/i.test(x.card) && x.card.includes(STR[x.lang]["lib.annLabel"]) && /backtest|回測/i.test(x.head)), JSON.stringify(seen));
+      const libPaintSrc = cutFn(src, "libPaint");
+      ok("③ 回測標注每個清單狀態都看得到:#lib-desc 在 #lib-head-list 裡、捲動區 #lib-body 外;只有進詳情才收(詳情有 lib.kv.bt 回測欄頭);列表分支一律先畫頁首再畫清單,篩選 / 空 / 載入失敗都走這裡",
+        html.indexOf('id="lib-head-list"') < html.indexOf('id="lib-desc"') && html.indexOf('id="lib-desc"') < html.indexOf('id="lib-body"') && /\$\("lib-head-list"\)\.hidden = !!det;/.test(libPaintSrc)
+        && /\blibPaintDesc\(\); libPaintList\(\);/.test(libPaintSrc) && /colA\.append\(libEl\("div", "gh", t\("lib\.kv\.bt"\)\)/.test(src) && /回測/.test(STR.zh["lib.kv.bt"]) && /backtest/i.test(STR.en["lib.kv.bt"]));
+    }
     ok("③ 找點子開關切換時重畫清單:焦點在列上 → 回同一列;在被拿掉的文字鈕上 → 交給 #lib-h(不掉到 body)", /if \(r\) r\.focus\(\); else if \(inList && !a\.isConnected\) \$\("lib-h"\)\.focus\(\);/.test(cutFn(src, "libPaintListKeep")) && /libPaintDesc\(\); libPaintList\(\);/.test(cutFn(src, "libPaintListKeep")));
   ok("③ 市場空(§2.5):找點子開著 → 只有一行字(頁首已有連結,稽核 W4;idea.btn 兩語刪掉),否則描邊「新增策略」開 nsOpen;第一組空 → lib.grp.empty + 文字鈕(lib_empty)",
       /if \(!libIdeaNow\(\)\) \{ const b = libEl\("button", "btn-out", t\("ns\.chip"\)\);/.test(cutFn(src, "libPaintList")) && !/idea\.btn/.test(src) && !("idea.btn" in STR.zh) && !("idea.btn" in STR.en) && /t\("ns\.chip"\)\); b\.type = "button"; b\.addEventListener\("click", \(\) => \{ if \(typeof nsOpen === "function"\) nsOpen\(b\); \}\);/.test(cutFn(src, "libPaintList"))
