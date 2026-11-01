@@ -213,12 +213,10 @@ eapp.whenReady().then(async () => {
   ok("⑥ A 預檢卡:三顆照順序(實心綁卡、文字鈕本機、文字鈕加密);兩顆文字鈕同列 column-gap 16、行距 8", pc && JSON.stringify(pc.btns) === JSON.stringify(["btn-fill:前往綁卡", "btn-quiet:改用 Claude Code 或 Codex", "btn-quiet:用加密貨幣轉帳儲值"]) && pc.gap === "16px" && pc.rowGap === "8px", pc);
   await js(`document.querySelector("#chat-scroll .msg.fault .fault-act button:nth-child(2)").click()`); await wait(400);
   let m = await modal();
-  ok("⑥ A 開 modal:標題「用你自己的 AI」、第一行誠實句;兩列(Claude Code〔使用〕實心、Codex 沒裝〔怎麼安裝〕);有一列不能用 → 腳有〔重新偵測〕",
-    m.open && m.title === "用你自己的 AI" && m.lede === "走你自己的帳號，Blave 不收 AI 費用。" && JSON.stringify(m.rows) === JSON.stringify(["claude||Claude Code|||btn-fill:使用", "codex|off|Codex|||btn-quiet:怎麼安裝"]) && m.foot, m);
+  ok("⑥ A 開 modal:標題「用你自己的 AI」、第一行誠實句;兩列(Claude Code〔使用〕實心、Codex 快照還沒到:未偵測到、沒有鈕);有一列不能用 → 腳有〔重新偵測〕",
+    m.open && m.title === "用你自己的 AI" && m.lede === "走你自己的帳號，Blave 不收 AI 費用。" && JSON.stringify(m.rows) === JSON.stringify(["claude||Claude Code|||btn-fill:使用", "codex|off|Codex||未偵測到|"]) && m.foot, m);
   ok("⑥ A 埋點:開框記 acct_local_open;沒有 acct_card_click", await js(`window.__log.includes("f:acct_local_open")`));
   ok("⑥ A 焦點進 modal(第一顆能按的鈕)", m.active === "使用", m.active);
-  await js(`$("lai-rows").querySelector('[data-kind="codex"] button').click()`); await wait(100);
-  ok("⑥ A〔怎麼安裝〕外開 Codex 官方頁、modal 留著", (await js(`window.__log.includes("o:https://developers.openai.com/codex/cli")`)) && (await modal()).open);
   await js(`$("lai-rows").querySelector('[data-kind="claude"] button').click()`); await wait(500);
   m = await modal(); const pc2 = await card(`document.querySelector("#chat-scroll .msg.fault")`);
   ok("⑥ A〔使用〕→ 換成 Claude Code、modal 關掉、記 acct_local_use", !m.open && (await js(`cur === "claude" && window.__log.includes("save:claude") && window.__log.includes("f:acct_local_use")`)), m);
@@ -259,9 +257,11 @@ eapp.whenReady().then(async () => {
   ok("⑥ C 等瀏覽器時按 ✕:一起取消等待、modal 關掉、卡不變", !(await modal()).open && (await js(`window.__log.includes("cancel") && cur === "blave"`)) && (await card(`[...document.querySelectorAll("#chat-scroll .msg.fault")].pop()`)).btns.length === 3);
 
   // E. 回合進行中按〔使用〕:「先停下」確認框疊在這個框上面,Esc 先關確認框,框還在、工作頁仍鎖著
-  await js(`window.__S.detectAgents = { claude: { installed: true, loggedIn: true, path: "/x/claude" }, codex: { installed: false } }; detectAt = 0; [...document.querySelectorAll("#chat-scroll .msg.fault")].pop().querySelector(".fault-act button:nth-child(2)").click()`); await wait(500);
-  const hit = await js(`(() => { const r = $("lai-rows").querySelector('[data-kind="codex"] button'), b = r.getBoundingClientRect(), pb = getComputedStyle(r, "::before"); return { h: b.height, top: parseFloat(pb.top), bottom: parseFloat(pb.bottom) }; })()`);
+  await js(`window.__S.detectAgents = { claude: { installed: false }, codex: { installed: true, loggedIn: true, path: "/x/codex" } }; detectAt = 0; [...document.querySelectorAll("#chat-scroll .msg.fault")].pop().querySelector(".fault-act button:nth-child(2)").click()`); await wait(400);
+  const hit = await js(`(() => { const r = $("lai-rows").querySelector('[data-kind="claude"] button'), b = r.getBoundingClientRect(), pb = getComputedStyle(r, "::before"); return { h: b.height, top: parseFloat(pb.top), bottom: parseFloat(pb.bottom) }; })()`);
   ok("⑥ E〔怎麼安裝〕熱區補到整列 44 高(視覺不動)", Math.abs(hit.h - hit.top - hit.bottom - 44) < 0.5, hit);
+  await js(`laiClose()`); await wait(200);
+  await js(`window.__S.detectAgents = { claude: { installed: true, loggedIn: true, path: "/x/claude" }, codex: { installed: false } }; detectAt = 0; [...document.querySelectorAll("#chat-scroll .msg.fault")].pop().querySelector(".fault-act button:nth-child(2)").click()`); await wait(500);
   await js(`running = true; $("lai-rows").querySelector('[data-kind="claude"] button').click()`); await wait(400);
   const top = await js(`(() => { const m = $("del-modal").getBoundingClientRect(), e = document.elementFromPoint(m.left + m.width / 2, m.top + m.height / 2);
     return { del: !$("del-scrim").hidden, lai: !$("lai-scrim").hidden, onTop: !!e && $("del-modal").contains(e), laiInert: $("lai-scrim").inert, title: $("del-title").textContent }; })()`);
