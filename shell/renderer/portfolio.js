@@ -894,7 +894,7 @@ function mgPaint() {
 // 讀不到上次的設定:重試;確定讀不回來(檔壞了)才由用戶自己選重填
 function mgPrefsBox() {
   const box = trEl("div", "mg-warn"), acts = trEl("div", "mg-warn-acts"), S = TR, G = mgBag(S);
-  box.appendChild(trEl("p", "", t("mg.prefsFail")));
+  const say = box.appendChild(trEl("p", "", t("mg.prefsFail"))); say.setAttribute("role", "status");
   const go = trEl("button", "btn-out", t("mg.prefsRetry")); go.type = "button"; go.dataset.fk = "mg-prefs-retry";
   go.addEventListener("click", () => { G.prefs = "loading"; mgPrefsLoad(S); S.sig.opt = null; mgPaint(); });
   const no = trEl("button", "btn-quiet", t("mg.prefsReset")); no.type = "button"; no.dataset.fk = "mg-prefs-reset";
@@ -941,7 +941,7 @@ function mgToolbar(outdated, fog) {
   bs.disabled = !TR.listLoaded;
   bs.addEventListener("click", () => psOpen(bs, "mg"));
   const bm = trEl("button", "tb-fld"); bm.type = "button"; bm.dataset.mgOpen = "method"; bm.dataset.fk = "mg-method"; bm.title = t("mg.tbMethodTip");
-  bm.append(trEl("span", "", t("mg.tbMethod")), trEl("span", "v", outdated || !G.alloc ? "—" : mgAllocLabel(G.alloc)));
+  bm.append(trEl("span", "", t("mg.tbMethod")), trEl("span", "v", outdated ? "—" : G.alloc ? mgAllocLabel(G.alloc) : t("sz.unset")));
   bm.disabled = outdated || !G.params;
   bm.addEventListener("click", () => mgMethodOpen(bm));
   set.append(bs, bm); tb.appendChild(set);
@@ -1029,8 +1029,6 @@ function mgSuggestTable(wrap, ap, other) {
   const hasLots = zones.indexOf(TR_ZONE_LOTS) >= 0, tbl = trEl("table", "pf-tbl zoned mg-tbl");
   // 換算方式只寫這一處(金額欄頭的 title)
   tbl.appendChild(trHead([[t("tr.col.strategy"), ""], [t("mg.colWeight"), "n"], [t("tr.col.amount"), "n", hu, t("mg.propTip") + (multi ? t("mg.propTipConv") : "") + (hasLots ? t("mg.propTipLots") : "")]]));
-  // 還有沒填的:整欄都會是「—」,表上方先講要填什麼(設計最終稽核)
-  if (d.gap && /^mg\.need/.test(d.gap)) wrap.appendChild(trEl("p", "pf-note mg-need-fund", t(d.gap)));
   const next = {}; let quoteMissing = false, changed = false, underTwd = 0;
   d.rows.forEach((r) => {
     next[r.name] = r.spec ? (r.money === null ? null : r.lots) : r.native === null ? null : Math.round(r.native);
@@ -1056,7 +1054,7 @@ function mgSuggestTable(wrap, ap, other) {
         trackFeature("contract_switch"); TR.sig.opt = null; mgPaint(); ctFocus("opt", n);
       }, (root) => { if (r.money === null) return null; if (r.money === 0) return 0; const px = trTxfPrice(); return r.moneyTwd != null && px ? trRoundLots(r.moneyTwd / (px * TR_TXF_SPECS[root].cv)) : null; }));
       const nx = next[n], cell = trEl("td", "n");
-      if (nx === null) { cell.textContent = "—"; if (r.spec && r.fxMissing) cell.appendChild(trEl("span", "pf-note", t("mg.noFx"))); }
+      if (nx === null) cell.textContent = "—";
       // 權重換成台指期不到一口(取整成 0):列上直接講,表底講少投多少(同網頁)
       else if (r.spec && nx === 0 && r.moneyTwd > 0) { cell.textContent = t("mg.lotsUnder"); underTwd += r.moneyTwd; }
       else if (r.spec) { cell.textContent = trLotsFmt(nx, false); const m = nx ? trTxfRefMoney(r.spec, nx, trTxfPrice()) : null; if (m != null) cell.title = t("tr.lotsNotionalTip", { amt: trFmt(Math.round(m)) }); }
@@ -1090,7 +1088,7 @@ function mgSuggestTable(wrap, ap, other) {
 function mgApplyWhy(d, quoteMissing, changed) {
   if (!mgSameAsAmounts()) return "mg.applyDiffSet";
   if (quoteMissing) return d.rows.some((r) => r.fxMissing) ? mgFxWhy() : "mg.applyWhyQuote";
-  if (d.eff === null) return !d.gap || /^mg\.need/.test(d.gap) ? "mg.applyWhySize" : d.gap;
+  if (d.eff === null) return d.gap || "mg.needSize";
   if (TR.save && TR.save !== "failed") return "tr.saving";
   if (trCfgUnread(trReport()) || trStored() === null) return TR.env === "cloud" ? "tr.cloud.cfgUnread" : "tr.cfgUnreadLocal";
   if (!TR.listLoaded || (TR.env === "cloud" && !(TR.st && TR.st.alive))) return "mg.applyWhyWait";
@@ -1455,7 +1453,7 @@ function mgSizeOpen(opener) {
   const G = mgBag(); if (!mpsProp() || !$("mgs-scrim").hidden) return;
   mgsOpener = opener;
   const s = G.sizing;
-  mgsDraft = { G, method: s.method, methodDirty: false, fund: s.fund === null ? "" : String(s.fund), fundCcy: mpsFundCcy(s), fundDirty: false, t: {}, dirty: {}, oldMsg: false };
+  mgsDraft = { G, method: s.method, methodDirty: false, fund: s.fund === null ? "" : String(s.fund), fundCcy: mpsFundCcy(s), fundCcys: [...new Set([mpsFundCcy(s), mpsCcy()])], ccyDirty: false, fundDirty: false, t: {}, dirty: {}, oldMsg: false };
   MPS_METHODS.forEach((m) => { const v = s.target[m]; mgsDraft.t[m] = v === null ? "" : m === "vol" ? v.toFixed(1) : m === "lev" ? v.toFixed(2) : String(Math.round(v * 10) / 10); mgsDraft.dirty[m] = false; });
   mgSizeRender();
   mgScrimOpen("mgs-scrim", $("mgs-body").querySelector('.mg-size-seg [aria-checked="true"]:not(:disabled)') || $("mgs-fund"));
@@ -1464,14 +1462,14 @@ function mgSizeOpen(opener) {
 function mgSizeClose(focusEl) { mgScrimClose("mgs-scrim", focusEl || mgsOpener); mgsOpener = null; }
 function mgSizeNum(s, unitRe) { const x = String(s == null ? "" : s).trim().replace(unitRe, "").replace(/,/g, "").trim(); if (!/^(\d+\.?\d*|\.\d+)$/.test(x)) return null; const v = parseFloat(x); return isFinite(v) && v > 0 ? v : null; }
 /* 草稿 → {sizing, bad}:動過但看不懂 = bad(確定停用);清空 = 回到沒填。只寫用戶動過的格,沒動的照存檔(雲端讀回來的值也不被草稿蓋掉)。
-   本金跟著框裡看到的單位存:清空過才換成現在成員的幣別 */
+   本金跟著框裡看到的單位存;幣別只有用戶在單位下拉選了才換,數字不換算 */
 function mgSizeParse(d) {
   const out = mpsSizingClean(mgBag().sizing); let bad = false;
   if (d.methodDirty) out.method = d.method;
   if (d.fundDirty) {
     if (String(d.fund).trim() === "") { out.fund = null; out.fundCcy = null; }
     else if ((out.fund = mgSizeNum(d.fund, /\s*[A-Za-z]+$/)) === null) bad = true; else out.fundCcy = d.fundCcy || mpsCcy();
-  }
+  } else if (d.ccyDirty && out.fund !== null) out.fundCcy = d.fundCcy;
   MPS_METHODS.forEach((m) => { if (!d.dirty[m]) return; if (String(d.t[m]).trim() === "") out.target[m] = null; else if ((out.target[m] = mgSizeNum(d.t[m], /\s*[%×xX]$/)) === null && m === d.method) bad = true; });
   return { sizing: out, bad };
 }
@@ -1508,11 +1506,14 @@ function mpsNoSeriesKey() { const p = mpsProp(); return p && "port_returns" in p
 function mgSizeRender() {
   const d = mgsDraft, body = $("mgs-body"), pv = trEl("div", "mg-size-pv"), series = mpsSeriesOf(mpsProp());
   body.textContent = "";
-  const fundF = mgSizeField("mgs-fund", t("mg.fund"), d.fund, d.fundCcy, "numeric", (v) => {
-    d.fund = v; d.fundDirty = true;
-    if (String(v).trim() === "") { d.fundCcy = mpsCcy(); fundF.querySelector(".u").textContent = d.fundCcy; }   // 清空才換幣別:這是唯一會動到幣別的操作
-    mgSizePreview(pv);
-  });
+  const fundF = mgSizeField("mgs-fund", t("mg.fund"), d.fund, d.fundCcy, "numeric", (v) => { d.fund = v; d.fundDirty = true; mgSizePreview(pv); });
+  if (d.fundCcys.length > 1) {   // 存的幣別跟現在成員的不同才有得選:選了只換單位,數字不換算。同幣別維持純字
+    const sw = trEl("span", "set-selw cf-in-ct"), sel = trEl("select", "set-sel"); sel.setAttribute("aria-label", t("mg.fund"));
+    d.fundCcys.forEach((c) => { const o = trEl("option", "", c); o.value = c; sel.appendChild(o); });
+    sel.value = d.fundCcy;
+    sel.addEventListener("change", () => { d.fundCcy = sel.value; d.ccyDirty = true; mgSizePreview(pv); });
+    sw.appendChild(sel); const u = fundF.querySelector(".u"); u.parentNode.replaceChild(sw, u);
+  }
   body.appendChild(fundF);
   const mf = trEl("div", "mg-fld"); mf.appendChild(trEl("span", "mg-fld-l", t("mg.tbMethod")));
   const seg = trEl("div", "mg-size-seg"); seg.setAttribute("role", "radiogroup"); seg.setAttribute("aria-label", t("mg.tbMethod"));

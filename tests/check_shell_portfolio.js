@@ -535,7 +535,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
   ctx.TR = { env: "local", sig: {}, edits: {}, ct: { edits: {}, basis: {} } };
   const call = (s) => vm.runInContext(s, ctx), P1 = { members: ["a", "b"], weights: { a: 0.75, b: 0.25 }, ann_vol_pct: 20, port_returns: { r: [0.01, -0.02, 0.015, -0.01] } };
   const chip = () => call("mgSizeChip()").text.replace(/\s+/g, " ").trim(), apply = () => { const n = cfOpens.length; call("mgApply({})"); return cfOpens.length - n; };
-  const draft = (s) => ({ G: G0(), method: s.method, methodDirty: false, fund: s.fund === null ? "" : String(s.fund), fundCcy: call("mpsFundCcy")(s), fundDirty: false, t: { vol: "", mdd: "", lev: "" }, dirty: { vol: false, mdd: false, lev: false } });
+  const draft = (s) => ({ G: G0(), ccyDirty: false, method: s.method, methodDirty: false, fund: s.fund === null ? "" : String(s.fund), fundCcy: call("mpsFundCcy")(s), fundDirty: false, t: { vol: "", mdd: "", lev: "" }, dirty: { vol: false, mdd: false, lev: false } });
   prop = P1;
   { const d = call("mpsRows()");
     ok("沒填過:鈕上不出任何數字、方法名也不出,表每列 null;已存 400,000、歷史波動 20% 都不會變成預設;〔套用〕不開確認框、沒有寫進主機的金額", /^sz\.title sz\.unset$/.test(chip()) && !/\d/.test(chip()) && d.amount === null && d.lev === null && d.eff === null && d.rows.every((r) => r.money === null && r.native === null) && apply() === 0 && d.gap === "mg.needSize", J([chip(), d]));
@@ -569,14 +569,16 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
   { prop = P1; ccy = "USDT"; G0().sizing = F.mpsSizingClean(filled); const n = saves.length, opened = apply(), o = cfOpens[cfOpens.length - 1]; o.onSaved({}, {});
     ok("套用成功:部位大小設定一個字都不動,也不多存", opened === 1 && J(G0().sizing) === fp && saves.length === n, J(G0().sizing)); }
   { ccy = "TWD"; const d = Object.assign(draft(G0().sizing), { fund: "12,000", fundDirty: true }), r = call("mgSizeParse")(d);
-    const d2 = Object.assign(draft(G0().sizing), { fund: "90000", fundDirty: true, fundCcy: "TWD" }), r2 = call("mgSizeParse")(d2), d3 = Object.assign(draft(G0().sizing), { fund: "", fundDirty: true }), r3 = call("mgSizeParse")(d3);
+    const d2 = Object.assign(draft(G0().sizing), { fundCcy: "TWD", ccyDirty: true }), r2 = call("mgSizeParse")(d2), d3 = Object.assign(draft(G0().sizing), { fund: "", fundDirty: true }), r3 = call("mgSizeParse")(d3);
+    const d6 = Object.assign(draft(G0().sizing), { fund: "90000", fundDirty: true, fundCcy: "TWD", ccyDirty: true }), r6 = call("mgSizeParse")(d6), d7 = Object.assign(draft(G0().sizing), { fund: "", fundDirty: true, fundCcy: "TWD", ccyDirty: true }), r7 = call("mgSizeParse")(d7);
     const d4 = Object.assign(draft(G0().sizing), { method: "lev", methodDirty: true }), r4 = call("mgSizeParse")(d4), d5 = draft(G0().sizing); d5.t.vol = ""; d5.dirty.vol = true; const r5 = call("mgSizeParse")(d5); ccy = "USDT";
-    ok("手動改才變:改數字幣別照框裡的單位(USDT);清空後(單位換成現在的幣別)再填才換幣別;清空 = 回到沒填;換方法只換方法;清空目標 = null",
-      r.sizing.fund === 12000 && r.sizing.fundCcy === "USDT" && r2.sizing.fund === 90000 && r2.sizing.fundCcy === "TWD" && r3.sizing.fund === null && r3.sizing.fundCcy === null && r4.sizing.method === "lev" && r4.sizing.target.vol === 26.4 && r5.sizing.target.vol === null && r5.sizing.fund === 11000,
-      J([r, r2, r3, r4, r5])); }
+    ok("手動改才變:打字蓋過去幣別照框裡的單位(USDT),不跟成員;單位下拉選了才換幣別,數字不換算;兩個一起改照選的;清空 = 回到沒填;換方法只換方法;清空目標 = null",
+      r.sizing.fund === 12000 && r.sizing.fundCcy === "USDT" && r2.sizing.fund === 11000 && r2.sizing.fundCcy === "TWD" && r6.sizing.fund === 90000 && r6.sizing.fundCcy === "TWD" && r3.sizing.fund === null && r3.sizing.fundCcy === null && r7.sizing.fund === null && r7.sizing.fundCcy === null && r4.sizing.method === "lev" && r4.sizing.target.vol === 26.4 && r5.sizing.target.vol === null && r5.sizing.fund === 11000,
+      J([r, r2, r3, r4, r5, r6, r7])); }
+  { ok("單位:存的幣別跟成員不同才變小下拉(同 cf-in-ct 那組),同幣別純字;清空不再換幣別;只有兩個選項", /fundCcys: \[\.\.\.new Set\(\[mpsFundCcy\(s\), mpsCcy\(\)\]\)\]/.test(cutF(psrc, "mgSizeOpen")) && /if \(d\.fundCcys\.length > 1\)/.test(cutF(psrc, "mgSizeRender")) && /trEl\("span", "set-selw cf-in-ct"\)/.test(cutF(psrc, "mgSizeRender")) && !/d\.fundCcy = mpsCcy\(\)/.test(cutF(psrc, "mgSizeRender")) && /d\.ccyDirty = true/.test(cutF(psrc, "mgSizeRender"))); }
   { ccy = "TWD"; prop = P1; G0().sizing = F.mpsSizingClean({ fund: 5000, method: "vol", target: { vol: 20 } }); const n = saves.length; call("mgFundCcyFreeze(TR, mgBag())"); const a = G0().sizing.fundCcy; ccy = "USDT"; const s = call("mpsFundCcy")(G0().sizing);
     ok("舊存檔沒幣別:第一次畫出來定成當下幣別並存檔,之後成員換區不跟著換", a === "TWD" && s === "TWD" && saves.length === n + 1, J(G0().sizing)); }
-  ok("預覽與框的單位都走本金自己的幣別;框裡清空才換幣別;舊的預設本金、代填目標、退回方法全拿掉", /unit: mpsFundCcy\(s\)/.test(cutF(psrc, "mpsPreview")) && /fundCcy: mpsFundCcy\(s\)/.test(cutF(psrc, "mgSizeOpen")) && /d\.fundCcy = mpsCcy\(\)/.test(cutF(psrc, "mgSizeRender")) && !/mpsMethodOf|mpsTargetOf|mpsFundDefault|mpsFundAs|mpsFundFxMissing/.test(psrc));
+  ok("預覽與框的單位都走本金自己的幣別;舊的預設本金、代填目標、退回方法全拿掉", /unit: mpsFundCcy\(s\)/.test(cutF(psrc, "mpsPreview")) && /fundCcy: mpsFundCcy\(s\)/.test(cutF(psrc, "mgSizeOpen")) && !/mpsMethodOf|mpsTargetOf|mpsFundDefault|mpsFundAs|mpsFundFxMissing/.test(psrc));
 }
 // 缺匯率走 mgFxWhy;沒填與算不出來各走自己的原因
 { let expired = false, cloud = { code: "OK" };
@@ -584,7 +586,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
   vm.runInContext(["mgFxWhy", "mgApplyWhy"].map((n) => cutF(psrc, n)).join("\n"), ctx);
   const why = vm.runInContext("mgApplyWhy", ctx), fxd = { eff: 1, rows: [{ fxMissing: true }], gap: null }, w = [why(fxd, true, true)]; cloud = null; w.push(why(fxd, true, true)); expired = true; w.push(why(fxd, true, true)); expired = false; cloud = { code: "OK" };
   w.push(why({ eff: null, rows: [], gap: "mg.needFund" }, false, true), why({ eff: null, rows: [], gap: "sz.shortMdd" }, false, true));
-  ok("套用停用原因:缺匯率照既有三句(登入正常／沒登入／匯率過期);沒填講先設定;最大回撤沒序列講原因", J(w) === J(["mg.applyWhyFx", "mg.applyWhyLogin", "mg.applyWhyFxOld", "mg.applyWhySize", "sz.shortMdd"]), J(w)); }
+  ok("套用停用原因只講實際缺的那格:缺匯率三句(登入正常／沒登入／匯率過期);缺投入資金就講投入資金;最大回撤沒序列講原因", J(w) === J(["mg.applyWhyFx", "mg.applyWhyLogin", "mg.applyWhyFxOld", "mg.needFund", "sz.shortMdd"]), J(w)); }
 // 雲端:部位大小寫進主行程(ui-prefs.json),重開後新的一袋非同步讀回;讀回前用戶已經設過就不蓋;換人(C.mg 清掉)回來的那份丟掉
 { const cloudSet = []; const r1 = { sizing: F.mpsSizingClean({ fund: 86372, fundCcy: "USDT", method: "vol", target: { vol: 10.6 } }) }, store = {};
   const ctx = vm.createContext({ console, JSON, Promise, MG_SIZE_KEY: "ws_mg_sizing", MG_SEL_KEY: "ws_mg_members", MG_OPT_KEY: "ws_mg_opt", localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
@@ -682,7 +684,7 @@ const mgOptTest = (async () => {
   { report = { manager: M({ builtin_methods: null, default_method: null }), config: { allocator: "slope", target_vol_pct: 40 } }; const G = bag(); call("mgInit(mgBag())"); G.params = { lookback: 90 }; ctx.ran = 0; const was = call("mgBlocked()"); call("mgRunOptimize()"); call("mgRunBacktest()"); const args = call("mgArgs()");
     ok("舊 runtime(沒回報內建方法):走先更新,跑優化與回測都不送;mgArgs 不偷補 target_vol 也不補 lookback", was === true && ctx.ran === 0 && !("target_vol" in args.params) && J(args.params) === J({ lookback: 90 }) && !/MG_TARGET_VOL_DEFAULT|target_vol_pct/.test(psrc), J(args)); }
   ok("畫面接線:讀不到時 mgPaint 只畫讀不到那一框(有重試、重新填),不定初值;工具列與霧上的〔跑優化〕都停用並講原因;部位大小框開著換人不寫",
-    cutF(psrc, "mgPaint").indexOf('if (G.prefs !== "ok")') < cutF(psrc, "mgPaint").indexOf("mgInit(G)") && /box\.appendChild\(mgPrefsBox\(\)\)/.test(cutF(psrc, "mgPaint")) && /t\("mg\.prefsRetry"\)/.test(cutF(psrc, "mgPrefsBox")) && /t\("mg\.prefsReset"\)/.test(cutF(psrc, "mgPrefsBox"))
+    cutF(psrc, "mgPaint").indexOf('if (G.prefs !== "ok")') < cutF(psrc, "mgPaint").indexOf("mgInit(G)") && /box\.appendChild\(mgPrefsBox\(\)\)/.test(cutF(psrc, "mgPaint")) && /t\("mg\.prefsRetry"\)/.test(cutF(psrc, "mgPrefsBox")) && /t\("mg\.prefsReset"\)/.test(cutF(psrc, "mgPrefsBox")) && /say\.setAttribute\("role", "status"\)/.test(cutF(psrc, "mgPrefsBox")) && /G\.alloc \? mgAllocLabel\(G\.alloc\) : t\("sz\.unset"\)/.test(cutF(psrc, "mgToolbar"))
     && /opt\.disabled = outdated \|\| !!needs/.test(cutF(psrc, "mgToolbar")) && /tb\.appendChild\(trEl\("p", "pf-note mg-need-fund", needs\)\)/.test(cutF(psrc, "mgToolbar")) && /b\.disabled = !!optNeeds;/.test(cutF(psrc, "poFog")) && /mgsDraft\.G !== G/.test(cutF(psrc, "mgSizeOk")));
 })();
 // 主行程:雲端部位大小存 ui-prefs.json、綁 who(換人 / 重新登入讀不到上一份)、清洗後才落地、不動其他鍵
@@ -1055,18 +1057,18 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
 // 設計最終稽核三條小建議:登入失效卡不重講三次;最大回撤停用的原因點名最大回撤;投入資金空著時表上方先講要去哪裡填
 { const app = fs.readFileSync(path.join(R, "app.js"), "utf8"), S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
   ok("登入失效那張卡:帳號列寫「登入已失效」一次;卡片標題「請重新登入」、不再加說明句", /revoked:  \{ h: "pv\.h\.revoked", lead: "", acts:/.test(app) && S.includes('"pv.h.revoked": "請重新登入"') && S.includes('"acct.revoked": "登入已失效"'));
-  ok("最大回撤不能選:原因點名最大回撤(雲端主機版本較舊／更新前算的／共同資料不到 90 天)", /"port_returns" in p \? "sz\.shortMdd" : mpsNoReturnsKey\(\)/.test(psrc) && /t\(mpsNoSeriesKey\(\)\)/.test(cutF(psrc, "mgSizeRender")) && S.includes('"sz.oldMdd": "雲端主機版本較舊，不能用最大回撤；到設定 › 一般〔更新雲端主機〕後重跑一次優化"') && S.includes('"sz.staleMdd": "這份結果是更新前算的，重跑一次優化就能用最大回撤"') && S.includes('"sz.staleMdd": "This result was computed before the update. Rerun the optimization to use max drawdown"') && S.includes('"sz.shortMdd": "共同資料不到 90 天，不能用最大回撤"'));
+  ok("最大回撤不能選:原因點名最大回撤(雲端主機版本較舊／更新前算的／共同資料不到 90 天)", /"port_returns" in p \? "sz\.shortMdd" : mpsNoReturnsKey\(\)/.test(psrc) && /t\(mpsNoSeriesKey\(\)\)/.test(cutF(psrc, "mgSizeRender")) && S.includes('"sz.oldMdd": "雲端主機版本較舊，不能用最大回撤；到設定 › 一般〔更新雲端主機〕後重跑一次優化"') && S.includes('"sz.staleMdd": "重跑一次優化才能用最大回撤"') && S.includes('"sz.staleMdd": "Rerun the optimization to use max drawdown"') && S.includes('"sz.shortMdd": "共同資料不到 90 天，不能用最大回撤"'));
 { const ctx = vm.createContext({}); vm.runInContext(["mpsCvKey", "mpsCvBefore", "mpsNoReturnsKey"].map((n) => cutF(psrc, n)).join("\n") + "\nvar MPS_RETURNS_CV = " + J(/const MPS_RETURNS_CV = "([^"]+)"/.exec(psrc)[1]) + "; var TR = null;", ctx);
   const K = (env, cv) => { ctx.TR = { env, st: { cloud: cv === undefined ? undefined : { config_version: cv } } }; return vm.runInContext("mpsNoReturnsKey()", ctx); };
   ok("提案沒 port_returns 的原因分兩句:雲端 workspace 早於 2026-10-13-l(或讀不到版號)= 主機舊要先更新;已夠新 = 更新前算的、重跑就好;本機一律後者",
     K("cloud", "2026-10-13-k") === "sz.oldMdd" && K("cloud", "2026-10-12-z") === "sz.oldMdd" && K("cloud", null) === "sz.oldMdd" && K("cloud", undefined) === "sz.oldMdd"
     && K("cloud", "2026-10-13-l") === "sz.staleMdd" && K("cloud", "2026-10-13-aa") === "sz.staleMdd" && K("cloud", "2026-10-15-d") === "sz.staleMdd"
     && K("local", "2026-10-01") === "sz.staleMdd" && K("local", undefined) === "sz.staleMdd"
-    && /"sz\.staleMdd": "這份結果是更新前算的/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "zh.po"), "utf8").replace(/msgid "sz\.staleMdd"\nmsgstr /, '"sz.staleMdd": ')), K("cloud", "2026-10-13-k")); }
+    && /"sz\.staleMdd": "重跑一次優化才能用最大回撤/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "zh.po"), "utf8").replace(/msgid "sz\.staleMdd"\nmsgstr /, '"sz.staleMdd": ')), K("cloud", "2026-10-13-k")); }
 
-  ok("部位大小還沒填:優化表上方講缺什麼;間距上 8、下 16",
-    /wrap\.appendChild\(trEl\("p", "pf-note mg-need-fund", t\(d\.gap\)\)\)/.test(psrc)
-    && S.includes('"mg.needFund": "先填投入資金，建議金額才算得出來。"') && /\.pf-note\.mg-need-fund \{ display: block; margin: var\(--space-8\) 0 var\(--space-16\); \}/.test(fs.readFileSync(path.join(R, "trade.css"), "utf8"))); }
+  ok("部位大小還沒填:原因只有〔套用金額〕旁一句,表上不再講一次;字已定稿;工具列那句間距上 8、下 16",
+    !/mg-need-fund/.test(cutF(psrc, "mgSuggestTable")) && !/mg\.noFx/.test(psrc)
+    && S.includes('"mg.needFund": "先填投入資金"') && !/"mg\.applyWhySize"|"mg\.noFx"/.test(S) && !/"mg\.applyWhy(Fx|Login|FxOld)": "[^"]*(台指期|TAIEX)/.test(S) && /"mg\.prefsReset": "Start Over"/.test(S) && /\.pf-note\.mg-need-fund \{ display: block; margin: var\(--space-8\) 0 var\(--space-16\); color: var\(--ink-2\); \}/.test(fs.readFileSync(path.join(R, "trade.css"), "utf8"))); }
 // Wei 回報:沒有可選的策略時霧上的 CTA 是「Ask the agent」→ 兩種霧都是「選擇策略」、開同一個選擇框;框裡一支都沒有時出路寫在框內(tr.pick.empty,同網頁 pfPickEmpty)
 { const El = class { constructor(tag, cls, text) { this.tag = tag; this.className = cls || ""; this.textContent = text || ""; this.kids = []; this.dataset = {}; this.on = {}; }
     setAttribute() {} appendChild(c) { this.kids.push(c); return c; } append(...c) { this.kids.push(...c); } addEventListener(e, f) { this.on[e] = f; } };

@@ -35,11 +35,11 @@ ok("用的是上次存下的匯率時,優化表下講是哪一天的(≈);字串
   ctx.TR_BAGS.cloud.st.cloud.code = "REVOKED"; const revFx = why(fxRow, true, true);
   ctx.TR_BAGS.cloud.st.cloud.code = "OK";
   ok("套用金額停用一定有原因:缺匯率 + 登入失效 → 叫人登入;登入正常缺匯率 → 缺台幣匯率;匯率有缺報價 → 等報價;沒有投入資金 → 先設定;跟目前一樣 → 一樣;兩邊策略不同組 → 原句",
-    revFx === "mg.applyWhyLogin" && okFx === "mg.applyWhyFx" && why(quoteRow, true, true) === "mg.applyWhyQuote" && why({ rows: [], eff: null }, false, true) === "mg.applyWhySize"
+    revFx === "mg.applyWhyLogin" && okFx === "mg.applyWhyFx" && why(quoteRow, true, true) === "mg.applyWhyQuote" && why({ rows: [], eff: null, gap: "mg.needTarget" }, false, true) === "mg.needTarget"
     && why({ rows: [], eff: 100 }, false, false) === "mg.applyWhySame" && (ctx.mgSameAsAmounts = () => false, why(fxRow, true, true)) === "mg.applyDiffSet", J([revFx, okFx]));
   ok("原因寫在鈕旁那一格(每次停用條件重算時一起寫);字串兩語",
     /if \(whyEl\) whyEl\.textContent = other \? t\("mg\.propOtherAlloc", \{ method: mgAllocLabel\(other\) \}\) : ap\.disabled \? t\(mgApplyWhy\(d, quoteMissing, changed\)\) : "";/.test(pf)
-    && S.includes('"mg.applyWhyLogin": "需要登入 Blave 才拿得到台幣匯率，台指期口數換算不出來"') && /"mg\.applyWhyLogin": "Sign in to Blave/.test(S)); }
+    && S.includes('"mg.applyWhyLogin": "登入 Blave 才拿得到台幣匯率"') && /"mg\.applyWhyLogin": "Sign in to Blave/.test(S)); }
 
 // ② 登入狀態單一來源
 ok("主行程 authState:沒 token → out;帳號那一支 401／403(輪替救不回)或雲端 REVOKED／NO_APP_SECRET → revoked;任何 200、存了新 token → in;auth-state IPC",

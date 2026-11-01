@@ -8646,9 +8646,6 @@ msgstr "Method"
 msgid "mg.moreMethods"
 msgstr "Other methods?"
 
-msgid "mg.noFx"
-msgstr "TWD FX rate unavailable — lots can't be converted."
-
 msgid "mg.optDoneToast"
 msgstr "Optimization done — see Weight Allocation on the Optimize tab."
 
@@ -8932,16 +8929,13 @@ msgid "pv.h.revoked"
 msgstr "Please sign in again"
 
 msgid "mg.applyWhyLogin"
-msgstr "Sign in to Blave to get the TWD rate; TAIEX futures lots can’t be converted without it"
+msgstr "Sign in to Blave to get the TWD rate"
 
 msgid "mg.applyWhyFx"
-msgstr "No TWD rate, so TAIEX futures lots can’t be converted"
+msgstr "No TWD rate, so amounts can’t be converted"
 
 msgid "mg.applyWhyQuote"
 msgstr "No TAIEX futures quote yet, so lots can’t be converted"
-
-msgid "mg.applyWhySize"
-msgstr "Set the capital and target first"
 
 msgid "mg.applyWhySame"
 msgstr "Suggested amounts match the current ones"
@@ -9107,7 +9101,7 @@ msgid "tr.fxOld"
 msgstr "TWD conversions use the {d} rate (≈); signing in updates it."
 
 msgid "mg.applyWhyFxOld"
-msgstr "The saved TWD rate is over 30 days old; sign in to Blave to convert TAIEX futures lots"
+msgstr "The saved TWD rate is over 30 days old; sign in to Blave to update it"
 
 msgid "mg.lotsUnder"
 msgstr "0 lots (under 1 lot)"
@@ -9134,25 +9128,25 @@ msgid "sz.oldMdd"
 msgstr "Cloud machine version is out of date, so max drawdown isn’t available. Press Update cloud machine in Settings › General, then rerun the optimization"
 
 msgid "sz.staleMdd"
-msgstr "This result was computed before the update. Rerun the optimization to use max drawdown"
+msgstr "Rerun the optimization to use max drawdown"
 
 msgid "sz.shortMdd"
 msgstr "Under 90 days of shared data, so max drawdown isn’t available"
 
 msgid "mg.needFund"
-msgstr "Enter the capital first; then the suggested amounts can be worked out."
+msgstr "Enter the capital first"
 
 msgid "mg.needSize"
-msgstr "Set the position size first; then the suggested amounts can be worked out."
+msgstr "Set the position size first"
 
 msgid "mg.needMethod"
-msgstr "Pick a position size method first; then the suggested amounts can be worked out."
+msgstr "Pick a position size method first"
 
 msgid "mg.needTarget"
-msgstr "Enter the position size target first; then the suggested amounts can be worked out."
+msgstr "Enter the position size target first"
 
 msgid "mg.sizeNoHist"
-msgstr "This result has no historical volatility, so target volatility can’t be worked out"
+msgstr "This result can’t work out target volatility; change the method"
 
 msgid "mg.sizeNoSolve"
 msgstr "This drawdown target can’t be turned into a leverage; change the target"
@@ -9176,7 +9170,7 @@ msgid "mg.prefsRetry"
 msgstr "Retry"
 
 msgid "mg.prefsReset"
-msgstr "Fill in again"
+msgstr "Start Over"
 
 msgid "tr.cloud.notApplied"
 msgstr "The machine hasn’t applied the amounts you just saved yet, so this shows what’s on the machine; it updates once applied."
