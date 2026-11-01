@@ -77,7 +77,24 @@ function engView(s, now, tr, held) {
 function engReadyText(s, tr) { return tr.t("eng.ready", { t: tr.dur((s.acc + (s.tEnd - s.t0)) / 1000) }); }
 /* ── 純邏輯到此 ── */
 
-const ENG = { snap: null, card: null, timer: null, said: "", held: null, warned: false, key: "" };
+const ENG = { snap: null, card: null, timer: null, said: "", held: null, warned: false, key: "", sys: [] };
+/* 裝完之後留下的東西(「準備好了」那一行、美股那組沒裝好的卡):屬於裝完那一刻正在看的那一格分頁,只一份。
+   ENG.sys = [{ el, owner }]:owner 是那個分頁;還沒接回分頁(CS.loaded 是 null,chatEl() 會回所有分頁共用的 #chat-scroll)時先不掛、owner null,
+   engReattach 交給第一個接上的分頁。被 csClearChat 清掉的照 owner 補回去,別的分頁一律不動 */
+function engOwnerOf(el) { if (typeof CS === "undefined") return null; for (const T of CS.tabs.values()) if (T.el.contains(el)) return T; return CS.loaded || null; }
+function engKeep(el) {
+  const inTab = el.isConnected && el.parentNode !== $("chat-scroll");
+  if (!inTab) el.remove();
+  ENG.sys.push({ el, owner: inTab ? engOwnerOf(el) : null });
+}
+function engSysSync() {
+  if (typeof CS === "undefined" || !CS.loaded) return;
+  ENG.sys.forEach((x) => {
+    if (x.owner && (x.owner.dead || !CS.tabs.has(x.owner.sid))) return;
+    if (!x.owner) x.owner = CS.loaded;
+    if (x.owner === CS.loaded && !x.el.isConnected) { chatEl().appendChild(x.el); if (typeof busyPin === "function") busyPin(); }
+  });
+}
 const ENG_TR = { t: (k, v) => t(k, v), dur: (sec) => fmtDur(sec) };
 
 /* 同一步裡的變動(名字、MB)不當場重畫,等每秒那一次:名字與 MB 從同一份快照取,解析那幾秒名字也不會閃。
@@ -112,7 +129,10 @@ function engPaint() {
 function engDone(s) {
   const card = ENG.card; ENG.card = null; ENG.said = "";
   const line = document.createElement("div"); line.className = "msg sys"; line.textContent = engReadyText(s, ENG_TR);
-  const swap = () => { if (card.isConnected) card.replaceWith(line); else { chatEl().appendChild(line); busyPin(); } srSay(line.textContent); scrollChat(); if (s.warn) engWarn(s); };
+  const swap = () => {
+    if (card.isConnected && card.parentNode !== $("chat-scroll")) card.replaceWith(line); else { card.remove(); if (CS.loaded) { chatEl().appendChild(line); busyPin(); } }
+    engKeep(line); srSay(line.textContent); scrollChat(); if (s.warn) engWarn(s);
+  };
   if (reducedMotion() || !card.isConnected) { swap(); return; }
   card.classList.add("is-leaving");
   setTimeout(swap, motionBaseMs() + 30);
@@ -130,11 +150,11 @@ function engWarn(s) {
     sub.append(sm, pre);
   }
   // 灰記號(is-calm):引擎好了、那句也送出了、沒有鈕可按,紅色會讓人以為剛才那句沒成功(設計稽核 0.1.12 F5)
-  faultCard().set({ calm: true, text: t("eng.optFail"), sub });
+  const c = faultCard(); c.set({ calm: true, text: t("eng.optFail"), sub }); engKeep(c.el);
 }
 /* 換對話 / 開新對話會清掉聊天欄:安裝是整台電腦的事,卡要跟著回來(fail 狀態沒有每秒重畫,不補就連重試鈕一起不見)。
    卡放到這一條對話的最下面;等著重試的那句不跟著搬(engRetry 換了對話就丟掉) */
-function engReattach() { if (ENG.card) ENG.card.remove(); engPaint(); }
+function engReattach() { if (ENG.card) ENG.card.remove(); engPaint(); engSysSync(); }
 /* 用戶在安裝中送出一句:卡移到那句底下(B 的順序:泡泡 → 卡) */
 function engAfter(bubble) { if (ENG.card && ENG.card.isConnected && bubble && bubble.isConnected) { bubble.after(ENG.card); busyPin(); scrollChat(); } }
 
