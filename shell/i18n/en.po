@@ -1127,6 +1127,12 @@ msgstr "{h} TWD an hour from your balance (30-day month)"
 msgid "plan.trialFree"
 msgstr "No machine fee until {d}. After that, the price above applies."
 
+msgid "plan.trialFree.m"
+msgstr "Trial runs until {d}, then the first period {p} TWD is charged. Cancel before then and nothing is charged."
+
+msgid "plan.trialFree.mNoCharge"
+msgstr "Trial runs until {d}."
+
 msgid "plan.start"
 msgstr "Start Plan"
 

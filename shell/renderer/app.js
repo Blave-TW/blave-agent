@@ -4385,6 +4385,21 @@ function planMo() {
    那段時間是真話);舊 api(沒有 data_access)→ `.old`(那時沒有主機的人真的拿不到資料)。還沒登入(acct 為 null)講本名:
    .old 的「資料要啟動雲端方案才有」在 data_access 上線後已是假話,未登入的人沒有舊 api 可退。切換前兩版逐字同 origin/main */
 const pvK = (k) => (planMo() ? k + ".m" : !acct || typeof acct.data_access === "string" ? k : k + ".old");
+/* 綁卡那一格的扣款句:設定 › 方案頁與雲端開通頁共用,方案制／切換前／舊 api 的選字只有 pvK 這一處。
+   數字拿不到就不出(t 會把空值接成「扣第一期  TWD」) */
+function pvCardFoot(pv, v) {
+  if (pv === "noTrial") return v.b ? t("pv.f.noTrial", v) : "";
+  const k = pvK("pv.f.offer");
+  return v.v && v.t && (k === "pv.f.offer" || v.p) ? t(k, v) : "";
+}
+/* 雲端開通頁「可以啟動」那一格的試用句。切換前這一頁畫價格,照舊「之後照上面的價格」;方案制這一頁不畫價格(印了會被讀成按下去要付),
+   講到期扣多少。下一期金額 v.x(已排月↔年、內部帳號都算進去),沒有就退 Starter 月價 v.p;到期不會扣、或扣不到的人只講日期 */
+function planTrialLine(v) {
+  if (!v.d) return "";
+  if (!planMo()) return t("plan.trialFree", v);
+  const pl = (acct && acct.plan) || {}, off = planTrialCx(v) || pl.no_auto_payment || pl.next_charge_source === "free" || pl.next_charge_source === "none", amt = v.x || v.p;
+  return !off && amt ? t("plan.trialFree.m", { d: v.d, p: amt }) : t("plan.trialFree.mNoCharge", { d: v.d });
+}
 // 拿到資料之後那張卡的話:切換前按小時付的那條要講「會收錢」(剛因為沒錢被擋過,不能只說「可以用了」);免費那條照舊
 function dataReadyText(s) {
   if (dataAccessOf(s) !== "billed") return t("data.ready");
@@ -4848,8 +4863,8 @@ function planPaint() {
     // 登入已失效(token 被撤／過期):不是網路問題,也不是「已登入」——同一句 + 登入鈕
     // 帳號列已經寫「登入已失效」:卡片標題只講要做什麼、不再加說明句(設計最終稽核:同一畫面別講三次)
     revoked:  { h: "pv.h.revoked", lead: "", acts: [planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin) : btn("btn-fill", t("pv.signin"), planLogin)] },
-    offer:    { h: offerH, lead: mo ? "" : offerLead(), list: mo ? offerList() : null, rule: t(pvK("pv.f.offer"), v), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
-    noTrial:  { h: pvK("pv.h.billed") === "pv.h.billed" ? "pv.h.billed" : "pv.h.plan", lead: t(pvK("pv.d.noTrial"), v), rule: t("pv.f.noTrial", v), wait: t(pvK("pv.w.noTrial")), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
+    offer:    { h: offerH, lead: mo ? "" : offerLead(), list: mo ? offerList() : null, rule: pvCardFoot("offer", v), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
+    noTrial:  { h: pvK("pv.h.billed") === "pv.h.billed" ? "pv.h.billed" : "pv.h.plan", lead: t(pvK("pv.d.noTrial"), v), rule: pvCardFoot("noTrial", v), wait: t(pvK("pv.w.noTrial")), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
     /* 試用中:取消／恢復試用在網站用量頁(電腦版沒有寫入端點,外開)。已取消(api trial_cancel_at_end):狀態講哪天結束;
        方案制講到期不收第一期,切換前講到期不轉成方案、之後照目前的計費——兩種時期各自是真話 */
     trial:    trialCx ? { st: ["on", t("pv.st.trialCancelled", v)], h: "pv.h.ready", lead: trialLead(), rule: t(mo ? "pv.f.trialCancelled.m" : "pv.f.trialCancelled", v),

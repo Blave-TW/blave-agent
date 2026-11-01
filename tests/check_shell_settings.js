@@ -66,6 +66,23 @@ eval(["upPillPlan", "upPillNow", "upPillLabel", "upPillPaint", "upPillFit", "upP
 eval(src.match(/^function upRefresh\(\) \{[^\n]*\}$/m)[0]);
 eval([/^\$\("up-pill"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("up-rail"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-up-btn"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-upc-btn"\)\.addEventListener\("click", [^\n]*$/m].map((re) => src.match(re)[0]).join("\n"));   // 入口的接線
 const stepWhere = (c) => (c && c.where) || "local";
+// 綁卡那格的扣款句(設定與雲端開通頁共用 pvCardFoot):真跑 planMo／pvK／trial 那幾支,字用真的 strings,方案制不能出舊制的按小時句
+{ const src2 = fs.readFileSync(path.join(R, "trade.js"), "utf8");
+  const one = (n) => src.match(new RegExp("^(?:const|function) " + n + "\\b[^\\n]*$", "m"))[0];
+  const run = new Function("STR", "lang", "acctIn", "pubIn", `const t = (k, v) => { let s = STR[lang][k] || k; if (v) for (const x in v) s = s.split("{" + x + "}").join(v[x]); return s; };
+    let acct = acctIn, pub = pubIn;\n${fnSrc("planMo")}\n${one("pvK")}\n${one("planTrialOn")}\n${one("planTrialCx")}\n${fnSrc("pvCardFoot")}\n${fnSrc("planTrialLine")}\nreturn { pvCardFoot, planTrialLine };`);
+  const MO = { plan: { tier: "linux_starter" }, data_access: "included" }, V = { v: "10", t: 14, p: "1,440", b: "300", d: "11/15", n: 14, x: "" }, OLD = /整點小時|per clock hour|照上面的價格|price above/;
+  for (const lang of ["zh", "en"]) { const A = run(STR, lang, MO, null), offer = A.pvCardFoot("offer", V), no = A.pvCardFoot("noTrial", V), tr = A.planTrialLine(V);
+    ok(lang + " 方案制綁卡:走 pv.f.offer.m,不出按小時舊制句", offer === STR[lang]["pv.f.offer.m"].replace("{v}", "10").replace("{t}", 14).replace("{p}", "1,440") && !OLD.test(offer), offer);
+    ok(lang + " 方案制沒有試用資格:noTrial 也沒有舊制句", !!no && !OLD.test(no), no);
+    ok(lang + " 方案制試用句:講到期扣多少,不寫「上面的價格」", tr.includes("1,440") && tr.includes("11/15") && !OLD.test(tr), tr); }
+  const Z = (acct, v) => run(STR, "zh", acct, null);
+  ok("方案制試用句:下一期金額優先 v.x", Z(MO).planTrialLine({ ...V, x: "14,400" }).includes("14,400") && !Z(MO).planTrialLine({ ...V, x: "14,400" }).includes("1,440 "));
+  ok("方案制試用句:已取消、自動扣款沒開、內部帳號、扣不到都只講日期,不說會扣", [{ trial_cancel_at_end: true }, { plan: { tier: "x", no_auto_payment: "auto_topup_off" } }, { plan: { tier: "x", next_charge_source: "free" } }, { plan: { tier: "x", next_charge_source: "none" } }].every((a) => run(STR, "zh", { ...MO, ...a }, null).planTrialLine(V) === "試用到 11/15。"));
+  ok("方案制數字拿不到:扣款句不出(不留「扣第一期  TWD」);試用句退回只講日期", Z(MO).pvCardFoot("offer", { ...V, p: "" }) === "" && Z(MO).pvCardFoot("noTrial", { ...V, b: "" }) === "" && Z(MO).planTrialLine({ ...V, p: "" }) === "試用到 11/15。");
+  const pre = run(STR, "zh", { data_access: "none" }, null);
+  ok("切換前照舊:綁卡按小時那句、試用句「之後照上面的價格」", pre.pvCardFoot("offer", V).includes("整點小時") && pre.planTrialLine(V).includes("上面的價格"));
+  ok("trade.js 雲端開通頁不再自己選字:走 pvCardFoot／planTrialLine", /pvCardFoot\(planView\(\), v\)/.test(src2) && /planTrialLine\(v\)/.test(src2) && !/t\("pv\.f\.offer"|t\("pv\.f\.noTrial"|t\("plan\.trialFree"/.test(src2)); }
 const C = { current: "0.0.7", version: "0.0.8" }, UPV = 'up.pillV{"v":"0.0.8"}';
 // 膠囊字(Wei 11-01 推翻 10-28「不寫版號」):有暫存好的版號 → 帶版號;拿不到或不像版號 → 不帶、不留空冒號
 { const L = (v, ask, kind) => upPillLabel({ kind: kind || "ready", ask: !!ask }, v, t);
@@ -707,7 +724,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   let acct = { plan: { state: "running" } }, acctPending = 0, planBusy = false, planBusyPlan = false, planSince = 0, planSlowSaid = false, planErr = null, planLastView = null;
   const PLAN_SLOW_MS = 1e9, srSay = () => {}, planAsk = () => {}, planLogin = () => {}, acctCheck = () => {}, acctUrl = () => "acct", planWebUrl = () => "https://blave.org/agent/zh", apiPlanUrl = () => "https://blave.org/landing/zh/pricing", planState = () => (acct && acct.plan && acct.plan.state) || "none";   // 同 app.js(未登入 acct 為 null 也會走到展開區)
   let PV_P = "", PV_R = "", PV_N = 0, PV_H = "", PV_PR = null, PV_U = "", PV_GU = "", PV_X = "", PV_PD = "", PV_T = "", PV_Q = "", PV_D = "", PV_TIER = "", PV_A = "", PV_TOP = "", PV_YD = "", pub = null;
-  const planVars = () => ({ p: PV_P, h: PV_H, m: "", a: PV_A, b: "", v: "", t: PV_T, q: PV_Q, top: PV_TOP, d: PV_D, n: PV_N, name: "Claude Code", r: PV_R, pr: PV_PR, yr: null, y: "", k: "", yd: PV_YD, g: "", c: "", x: PV_X, u: PV_U, gu: PV_GU, pd: PV_PD, tier: PV_TIER });
+  const planVars = () => ({ p: PV_P, h: PV_H, m: "", a: PV_A, b: "300", v: "10", t: PV_T, q: PV_Q, top: PV_TOP, d: PV_D, n: PV_N, name: "Claude Code", r: PV_R, pr: PV_PR, yr: null, y: "", k: "", yd: PV_YD, g: "", c: "", x: PV_X, u: PV_U, gu: PV_GU, pd: PV_PD, tier: PV_TIER });
   eval(fnSrc("dataAccessOf")); for (const n of ["acctNoCard", "acctOffer"]) { const m = src.match(new RegExp("^const " + n + " = [^\\n]*$", "m")); if (m) eval(m[0].replace(/^const /, "var ")); } eval(fnSrc("planMo")); eval(src.match(/^const planPriceOk = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planFailing = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planPaidAhead = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planEnded = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planTierLabel = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(fnSrc("planStopKind"));
   eval(src.match(/^const planTrialOn = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const planTrialCx = [^\n]*$/m)[0].replace(/^const /, "var "));
   eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var ")); const usageUrl = () => "usage", planWebGo = () => { seen.push("ext:" + planPayUrl()); };
@@ -716,7 +733,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   const envPlanChanged = undefined;
   hasToken = true; cur = "claude";
   let balLast = null; eval(fnSrc("balNum")); eval(fnSrc("balNow"));   // 餘額由 balLoad 讀進 balLast(主行程的端點);這裡直接給值
-  eval(fnSrc("planView")); eval(src.match(/^function planToCloud\(\).*$/m)[0]); eval(fnSrc("planPaint")); eval(src.match(/^function bindGo\(.*$/m)[0]);
+  eval(fnSrc("pvCardFoot")); eval(fnSrc("planView")); eval(src.match(/^function planToCloud\(\).*$/m)[0]); eval(fnSrc("planPaint")); eval(src.match(/^function bindGo\(.*$/m)[0]);
   // 最上面一組(.plan-id):帳號列 → 訊息格 → 餘額列;餘額列是這一組的第三個子節點
   const balRow = () => dom["set-plan-main"].children[0].children[0].children[2];
   { planPaint(); const row = balRow(), val = row.children[1];
@@ -858,6 +875,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     ok("…沒有主機時價:billed 不出底列", bRule({ data_access: "billed", data_hourly: 2 }) === "");
     // Delta 3 #2:新句子(資料按小時計費)只在 api 帶著 data_access 時講;舊 api 用 .old 那一版(那時資料真的只在方案裡)
     const lead = (a) => paintOf(a).lead, texts = (a) => paintOf(a).texts;
+    PV_T = "14";
     ok("Delta 3 #2:offer / noTrial 在新 api 用新句、在舊 api(沒有 data_access)用 .old;noTrial 標題也跟著",
       /pv\.f\.offer\{/.test(texts({ data_access: "none", reason: "NO_CARD", trial_eligible: true })) && /pv\.f\.offer\.old/.test(texts({ data_included: false, reason: "NO_CARD", trial_eligible: true }))
       && /^pv\.d\.noTrial\{/.test(lead({ data_access: "none", reason: "NO_CARD", trial_eligible: false })) && /^pv\.d\.noTrial\.old/.test(lead({ data_included: false, reason: "NO_CARD", trial_eligible: false }))
@@ -913,6 +931,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
       /pv\.h\.plan\.m/.test(np.texts) && !/pv\.h\.plan\|/.test(np.texts)
       && (() => { const r = paintOf({ ...MO, plan: { state: "running", tier: "linux_starter" } }); return !/NoServer/.test(r.texts); })(), np.texts);
     PV_T = "14"; PV_Q = "100";
+    PV_T = "14";
     { const of = paintOf({ ...MO, data_access: "plan_required", reason: "NO_CARD", trial_eligible: true }), ul = walk(dom["set-plan-main"]).find((n) => n.className === "plan-scroll").children.find((n) => n.className === "plan-list");
       ok("方案制綁卡那格(offer)跟未登入同組(D 版):標題 pv.h.offer.m、三條列式、沒有說明句(不會未登入講「免費試用」、登入後講「送」);底列照現行 pv.f.offer.m(驗證金、扣款與取消在這裡講);鈕〔前往綁卡〕",
         /pv\.h\.offer\.m\{/.test(of.texts) && of.lead === "" && !!ul && ul.children.map((n) => n.textContent).join("|").replace(/\{.*$/, "") === "pv.offer.li.data|pv.offer.li.server|pv.offer.li.ai"

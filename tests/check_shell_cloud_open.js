@@ -29,10 +29,13 @@ function paint(lang, kind, token, pv, mo) {
   const E = { "cv-desc": new El("p"), "cv-body": new El("div"), "cv-h": new El("h3") };
   const tbl = STR[lang], t = (k, vars) => { let s = tbl[k] != null ? tbl[k] : k; if (vars) for (const x in vars) s = s.split("{" + x + "}").join(vars[x]); return s; };
   const env = { document: { createElement: (tag) => new El(tag), activeElement: null }, $: (id) => E[id], t, LANG: lang, hasToken: token, acct: token ? {} : null, acctPending: false, pub: {},
-    planView: () => pv, planVars: () => (mo ? { p: "1,440", h: "", pr: 1440, yr: 14400, y: "14,400", k: "10", yd: "365", d: pv === "trial" ? "10/10" : null } : { p: "1,440", h: "2", d: pv === "trial" ? "10/10" : null }), ENV: { sig: {}, askedAt: Date.now() }, planSince: 0, PLAN_SLOW_MS: 1e9, planErr: null,
+    planView: () => pv, planVars: () => (mo ? { p: "1,440", h: "", pr: 1440, yr: 14400, y: "14,400", k: "10", yd: "365", v: "10", t: 14, b: "300", d: pv === "trial" ? "10/10" : null } : { p: "1,440", h: "2", v: "10", t: 14, b: "300", d: pv === "trial" ? "10/10" : null }), ENV: { sig: {}, askedAt: Date.now() }, planSince: 0, PLAN_SLOW_MS: 1e9, planErr: null,
     planLoginBusy: false, cur: "claude", window: { blave: {} }, trEl: (tag, cls, text) => { const n = new El(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; },
     planOpen() {}, planLogin() {}, planRelogin() {}, planAsk() {}, acctUrl: () => "u", acctCheck() {}, pubLoad: async () => {}, envPlanChanged() {}, trPollSoon() {}, hoBack() {}, hoStay() {},
     planMo: () => !!mo, cloudWebGo() {}, planFailing: () => false, planPayUrl: () => "u", planRepay() {}, planPriceOk: (v) => (mo ? !!v.pr : !!(v.p && v.h)), planPriceEl: new Function("t", cut(app, "planPriceEl") + "\nreturn planPriceEl;")(t) };
+  env.pvK = (k) => (mo ? k + ".m" : k); env.planTrialCx = () => false;
+  const lines = new Function("t", "pvK", "planMo", "planTrialCx", "acct", cut(app, "pvCardFoot") + "\n" + cut(app, "planTrialLine") + "\nreturn { pvCardFoot, planTrialLine };")(t, env.pvK, env.planMo, env.planTrialCx, env.acct);
+  Object.assign(env, lines);
   new Function(...Object.keys(env), paintSrc)(...Object.values(env))(kind, null);
   const page = E["cv-body"].kids[0];
   return { page, parts: page.kids.map((k) => (k.tagName + (k.className ? "." + k.className.split(" ")[0] : ""))), text: page.textContent };
@@ -78,6 +81,12 @@ ok("env.open.1–3 從兩份 .po 與 strings.js 刪掉;env.open.lead 兩語都�
 ok("trade.js 不再讀 env.open.1–3、plan.rule;trade.css 的 .cv-list / .cv-rule 一起拿掉,.cv-lead = 13 / 1.7 / --ink-2、上距 16",
   !/env\.open\.[123]|"plan\.rule"|cv-list|cv-rule/.test(trade) && !/\.cv-list|\.cv-rule/.test(css) && /\.cv-lead \{ margin: var\(--space-16\) 0 0; font-size: 13px; line-height: 1\.7; color: var\(--ink-2\); \}/.test(css));
 ok("plan.hour:en 改成「{h} TWD an hour from your balance (30-day month)」(精簡稽核 A11),zh 不動(開通頁與設定頁共用)", STR.en["plan.hour"] === "{h} TWD an hour from your balance (30-day month)" && STR.zh["plan.hour"] === "以 30 天計 ＝ 每個整點從餘額扣 {h} TWD");
+// 講錯錢的 bug:方案制下綁卡態與試用態不能畫舊制句(開通頁走 pvCardFoot／planTrialLine,跟設定頁同一個選字)
+for (const lang of ["zh", "en"]) { const OLD = /整點小時|per clock hour|照上面的價格|price above/;
+  const o = paint(lang, "none", true, "offer", true).text, n = paint(lang, "none", true, "noTrial", true).text, tr = paint(lang, "none", true, "trial", true).text, pre = paint(lang, "none", true, "offer", false).text;
+  ok(lang + " 方案制綁卡態:開通頁寫 pv.f.offer.m(1,440),沒有舊制句;noTrial 也沒有", o.includes(STR[lang]["pv.f.offer.m"].split("{")[0]) && o.includes("1,440") && !OLD.test(o) && !OLD.test(n), o);
+  ok(lang + " 方案制試用態:講到期扣第一期,不寫「上面的價格」", tr.includes("1,440") && tr.includes("10/10") && !OLD.test(tr), tr);
+  ok(lang + " 對照:切換前綁卡態照舊按小時那句", /整點小時|per clock hour/.test(pre), pre); }
 ok("plan.rule / plan.rule.running 隨設定頁展開區一起退役:兩語都沒有、app.js 不再讀;同一條規則在確認框 cf.body3 與底列 pv.f.*", ["zh", "en"].every((l) => !("plan.rule" in STR[l]) && !("plan.rule.running" in STR[l]) && typeof STR[l]["cf.body3"] === "string") && !/"plan\.rule(\.running)?"/.test(app));
 for (const lang of ["zh", "en"]) {
   const boxes = [], tbl = STR[lang], t = (k, vars) => { let s = tbl[k]; if (vars) for (const x in vars) s = s.split("{" + x + "}").join(vars[x]); return s; };

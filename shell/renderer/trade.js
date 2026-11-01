@@ -6580,8 +6580,8 @@ function envPaintEmpty(kind, pid) {
   if (err) { const e = trEl("p", "plan-err" + (err.calm ? " is-calm" : "")); e.setAttribute("role", "status"); const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, trEl("span", "", t(err.key))); page.appendChild(e); }
   else if (slow) { const e = trEl("p", "plan-err is-calm"); const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, trEl("span", "", t("plan.err.slow"))); page.appendChild(e); }
   else if (view === "relogin") page.appendChild(trEl("p", "cv-above up", t("env.empty.relogin")));
-  else if (view === "card") page.appendChild(trEl("p", "cv-above", planView() === "noTrial" ? t("pv.f.noTrial", v) : t("pv.f.offer", v)));
-  else if (view === "start" && v.d) page.appendChild(trEl("p", "cv-above up", t("plan.trialFree", v)));
+  else if (view === "card") { const foot = pvCardFoot(planView(), v); if (foot) page.appendChild(trEl("p", "cv-above", foot)); }
+  else if (view === "start" && v.d) page.appendChild(trEl("p", "cv-above up", planTrialLine(v)));
   const act = trEl("div", "cv-act"), more = () => btn("btn-quiet", t("env.open.more"), () => planOpen(), "more");
   const after = () => { ENV.sig.empty = null; ENV.cloudDirty = true; trPollSoon(0); };
   let main = null, side = null;

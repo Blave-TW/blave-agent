@@ -1135,6 +1135,12 @@ msgstr "以 30 天計 ＝ 每個整點從餘額扣 {h} TWD"
 msgid "plan.trialFree"
 msgstr "{d}前免主機費，之後照上面的價格。"
 
+msgid "plan.trialFree.m"
+msgstr "試用到 {d}，到期扣第一期 {p} TWD。到期前取消就不扣。"
+
+msgid "plan.trialFree.mNoCharge"
+msgstr "試用到 {d}。"
+
 msgid "plan.start"
 msgstr "啟動方案"
 
