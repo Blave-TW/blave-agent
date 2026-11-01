@@ -1022,9 +1022,9 @@ msgstr "This opens your browser to finish signing in."
 msgid "cn.pkgArch"
 msgstr "This computer’s architecture isn’t supported by the Codex engine"
 
-# 登入檢查逾時(main.js *_timeout 且有 path):可以連,真正結果等第一則訊息。待設計師稽核
+# 登入檢查逾時(main.js *_timeout 且有 path):可以連,真正結果等送出訊息
 msgid "row.authUnknown"
-msgstr "Couldn’t check sign-in. Your first message will confirm it"
+msgstr "Couldn’t check sign-in. Send a message to find out"
 
 # 偵測說沒登入、但 CLI 帶整份環境與用戶設定檔時說已登入(main.js authOutside):金鑰在環境變數、settings.json 或 apiKeyHelper,agent 回合讀不到
 msgid "row.keyOff"

@@ -90,7 +90,8 @@ function focusRedetect() {
   if (PKG.snap && PKG.snap.phase !== "idle") return false;   // Codex 引擎下載中:裝好那一刻自己會重偵測
 
   const onModel = !$("set-scrim").hidden && !$("set-model").hidden;
-  const onRows = mdlNeedsRedetect(lastDetect) && (!$("view-connect").hidden || onModel || laiOn());   // 額度用完卡片開的 modal:裝完回來不用按重新偵測
+  // 不確定的列不算:自動重跑會讓用戶正要按的鈕消失 20 秒,手動〔重新偵測〕留著
+  const onRows = ["claude", "codex"].some((k) => { const x = (lastDetect && lastDetect[k]) || {}; return !!lastDetect && !(x.installed && x.loggedIn) && !authUnknown(x); }) && (!$("view-connect").hidden || onModel || laiOn());   // 額度用完卡片開的 modal:裝完回來不用按重新偵測
   if (!onRows && !localFaultsLive().length) return false;
   Promise.resolve(detect()).then(localFaultsRecheck); return true;
 }
@@ -127,11 +128,21 @@ Promise.resolve().then(() => window.blave.codexPkgState()).then(codexPkgOnState,
 const whyState = (x) => /_cantrun$/.test((x && x.why) || "") ? "st.cantRun" : /_timeout$/.test((x && x.why) || "") ? "st.noResp" : null;
 // 登入狀態查不出來(登入檢查逾時):不是沒登入,也不擋路,真正的答案等第一則訊息。整次偵測超時沒有 path,連不上,仍是「沒有回應」
 const authUnknown = (x) => !!x && !!x.installed && !x.loggedIn && !!x.path && /_timeout$/.test(x.why || "");
-// 查不出登入狀態的那一列:saveConnection 會再偵測一次,最壞 20 秒,鈕先鎖住講「偵測中…」。沒換過去(存不了、回合中取消)就還原
-function connectWait(kind, x, b) {
-  const label = b.textContent;
-  b.disabled = true; b.textContent = t("cn.detecting");
-  return Promise.resolve(connect(kind, x)).finally(() => { b.disabled = false; b.textContent = label; });
+/* 換引擎途中(saveConnection 可能要再偵測)三個表面的鈕全鎖,按的那一列鈕內轉圈、字不換。狀態在 MDL 不在節點:下載進度每 250 ms 重畫,
+   寫在節點上會被吃掉;只鎖一顆的話,按別的鈕換了引擎,等這邊回來又靜默換回去。data-cn-lock 存原字,還原用 */
+function connectLock(kind) {
+  MDL.connecting = kind;
+  if (kind) return connectLockPaint();
+  document.querySelectorAll("[data-cn-lock]").forEach((b) => { b.textContent = b.dataset.cnLock; delete b.dataset.cnLock; b.disabled = false; });
+}
+function connectLockPaint() {
+  [$("view-connect"), $("set-model"), $("lai-rows")].forEach((box) => {
+    const a = document.activeElement;
+    box.querySelectorAll("button:not(:disabled)").forEach((b) => { b.dataset.cnLock = b.textContent; b.disabled = true; });
+    const on = box.querySelector('[data-kind="' + MDL.connecting + '"] button[data-cn-lock]');
+    if (on && !on.querySelector(".spin16")) { const sp = document.createElement("span"); sp.className = "spin16"; on.prepend(sp, " "); }
+    if (a && a.disabled && box.contains(a)) { box.tabIndex = -1; box.focus(); }   // 焦點掉到 body 的話 Esc 關不掉設定
+  });
 }
 function paintRows(d) {
   const rows = $("agent-rows"); rows.innerHTML = "";
@@ -154,8 +165,8 @@ function paintRows(d) {
       rows.appendChild(row({ name, kind, st: t("st.signedIn"), stClass: "on", cur: cur === kind,
         action: cur === kind ? null : btn(localBtnCls(), t("cn.connect"), () => connect(kind, x)) }));
     } else if (authUnknown(x)) {
-      rows.appendChild(row({ name, kind, sub: t("row.authUnknown"), cur: cur === kind,
-        action: cur === kind ? null : btn(localBtnCls(), t("cn.connect"), (e) => connectWait(kind, x, e.currentTarget)) }));
+      rows.appendChild(row({ name, kind, sub: cur === kind ? null : t("row.authUnknown"), cur: cur === kind,
+        action: cur === kind ? null : btn(localBtnCls(), t("cn.connect"), () => connect(kind, x)) }));
     } else if (x.installed && whyState(x)) {
       // 跑不起來:剛才指他去跑的就是這一顆,「怎麼修」要寫在列上;沒有回應是暫態,重新偵測就是下一步
       rows.appendChild(row({ name, kind, st: t(whyState(x)), stClass: "", sub: kind === "claude" && whyState(x) === "st.cantRun" ? t("row.reinstall", { name }) : null }));
@@ -172,6 +183,7 @@ function paintRows(d) {
   // 等登入中:只有「取消等待」那一顆能按
   if (loginPending) rows.querySelectorAll("button").forEach((x) => { if (!x.closest('[data-kind="' + loginPending + '"]')) x.disabled = true; });
   MDL.busy = false; mdlPaint();
+  if (MDL.connecting) connectLockPaint();
   // Codex 引擎在偵測途中或登入途中裝好了:那一次的結果是裝好之前的,補偵測一次
   if (PKG.redetect && !loginPending) { PKG.redetect = false; detect(); }
 }
@@ -297,7 +309,11 @@ function connect(kind, info) {
 // 真的換:回合中由 busyCut 停好那條之後才叫,不再過守門(過守門會在停不下來時自己又跳一次確認框)
 async function connectNow(kind, info) {
   // 主行程用它當下偵測到的路徑存;偵測不到了(CLI 剛被移掉)回 false:留在連結頁重新偵測,不進一個送不出訊息的工作頁
-  if ((await window.blave.saveConnection({ kind, path: info.path, email: info.email || null })) === false) {
+  connectLock(kind);
+  let saved = false;
+  try { saved = await window.blave.saveConnection({ kind, path: info.path, email: info.email || null }); }
+  finally { connectLock(null); }
+  if (saved === false) {
     if (kind === "apikey") { detect(); return; }   // 金鑰檔不見了:重偵測,那一列會變回「設定」
     trackEvent("connect_failed", { kind: kind === "codex" ? "codex_gone" : "claude_gone" });
     detect(); return;
@@ -384,7 +400,7 @@ function mdlOptions(d, curKind, tok, pend, ak, pkg) {
       return;
     }
     // 查不出登入狀態:可以用,跟就緒那一列同一個動作,結果等第一則訊息(authUnknown)
-    if (d !== null && authUnknown(x) && p.login !== kind) { out.push({ kind, name, desc: "row.authUnknown", st: null, act: curKind === kind ? null : "cn.use", isCur: curKind === kind, off: false }); return; }
+    if (d !== null && authUnknown(x) && p.login !== kind) { out.push({ kind, name, desc: curKind === kind ? null : "row.authUnknown", st: null, act: curKind === kind ? null : "cn.use", isCur: curKind === kind, off: false }); return; }
     // 跑不起來 / 沒有回應:同連結畫面,是狀態不是「沒登入」——列變灰、不給〔登入〕(按了只會再撞一次)
     const why = d !== null && x.installed && !ready ? whyState(x) : null;
     // 同連結畫面那一列:跑不起來寫怎麼修;金鑰設在 agent 回合讀不到的地方(authOutside)講出路
@@ -415,9 +431,7 @@ function mdlAct(o, b) {
   if (o.kind === "apikey") return o.act === "ak.setup" ? akOpen("set") : connect("apikey", {});
   if (o.act === "cn.signIn") return localLogin(o.kind, b);
   if (o.pkg) return codexPkgGo(o.reinstall);
-  const x = (lastDetect && lastDetect[o.kind]) || {};
-  if (authUnknown(x)) return connectWait(o.kind, x, b);
-  return connect(o.kind, x);
+  return connect(o.kind, (lastDetect && lastDetect[o.kind]) || {});
 }
 function mdlPaint() {
   laiPaint();   // 額度用完卡片開的 modal 吃同一份偵測與等待狀態(沒開就直接 return)
@@ -466,6 +480,7 @@ function mdlPaint() {
   if (HINT) { const p = el("p", "cn-hint"); hintFill(p); box.appendChild(p); }
   // 重畫前焦點在這一頁:還給同一列的鈕(沒有的話退到左側的分類鈕——掉到 BODY 的話 Esc 關不掉設定)
   if (focusKind) { const again = box.querySelector('[data-kind="' + focusKind.kind + '"] button'); if (again && !again.disabled) again.focus(); }
+  if (MDL.connecting) connectLockPaint();
   setFocusGuard();
 }
 
@@ -4515,9 +4530,7 @@ function laiAct(r, b) {
   if (r.act === "lai.install") return window.blave.openExternal(LAI_INSTALL[r.kind]);
   if (r.act === "cn.signIn" || r.act === "login.retry") return localLogin(r.kind, b);
   if (r.pkg) return codexPkgGo(r.reinstall);
-  const x = (lastDetect && lastDetect[r.kind]) || {};
-  if (authUnknown(x)) return connectWait(r.kind, x, b);
-  return connect(r.kind, x);
+  return connect(r.kind, (lastDetect && lastDetect[r.kind]) || {});
 }
 // 不送 acct_card_click、不設 acctGone:那條漏斗只算綁卡
 function laiOpen(card) {

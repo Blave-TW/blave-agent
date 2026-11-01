@@ -191,7 +191,7 @@ const STUB = `window.__log = []; window.__S = {
     : k === "openExternal" ? async (u) => { window.__log.push("o:" + u); return true; }
     : k === "cancelAgentLogin" ? async () => { window.__log.push("cancel"); if (window.__loginDone && !window.__noCancel) window.__loginDone({ ok: false, cancelled: true }); }
     : k === "agentLogin" ? (kind) => { window.__log.push("login:" + kind); setTimeout(() => window.__spawned && window.__spawned(), 10); return new Promise((res) => { window.__loginDone = res; }); }
-    : k === "saveConnection" ? async (c) => { window.__log.push("save:" + c.kind); return window.__S.saveConnection; }
+    : k === "saveConnection" ? async (c) => { window.__log.push("save:" + c.kind); if (window.__hold) await window.__hold; return window.__S.saveConnection; }
     : async () => window.__S[k] });`;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 eapp.whenReady().then(async () => {
@@ -295,6 +295,30 @@ eapp.whenReady().then(async () => {
   await js(`paintRows(lastDetect)`); await wait(200);
   ok("⑥ H 別處偵測中開框:先放 ✕,偵測完焦點移到第一顆能按的鈕", h1 && (await js(`document.activeElement === [...$("lai-rows").querySelectorAll("button")].find((x) => !x.disabled)`)), await js(`document.activeElement.id || document.activeElement.textContent`));
   await key("Escape");
+
+  // I. 不確定的列:〔使用〕等待中全部鈕鎖住(重畫也鎖)、那一列鈕內轉圈、字不換;換過去才放開
+  await js(`window.__S.detectAgents = { claude: { installed: true, loggedIn: false, why: "claude_timeout", path: "/x/claude" }, codex: { installed: true, loggedIn: false, why: "codex_timeout", path: "/x/codex" } }; enterWorkspace("blave", {})`); await wait(500);
+  await js(`detectAt = 0; addFault({ flow: "credit" })`); await wait(600);
+  await js(`[...document.querySelectorAll("#chat-scroll .msg.fault")].pop().querySelector(".fault-act button:nth-child(2)").click()`); await wait(500);
+  const unk = await modal();
+  ok("⑥ I 不確定:兩列都能按,說明是定稿句", unk.rows.every((r) => r.includes("查不到登入狀態，送出訊息就知道") && r.includes("使用")), unk.rows);
+  await js(`window.__hold = new Promise((r) => { window.__release = r; }); $("lai-rows").querySelector('[data-kind="claude"] button').click()`); await wait(200);
+  const lk = () => js(`(() => { const b = [...$("lai-rows").querySelectorAll("button")]; return { locked: b.every((x) => x.disabled), spin: !!$("lai-rows").querySelector('[data-kind="claude"] button .spin16'), other: !!$("lai-rows").querySelector('[data-kind="codex"] button .spin16'), txt: $("lai-rows").querySelector('[data-kind="claude"] button').textContent.trim(), blave: $("btn-blave").disabled, cur }; })()`);
+  const l1 = await lk();
+  ok("⑥ I 等待中:modal 的鈕全鎖、Blave 那顆也鎖、只有按的那列轉圈、鈕字不換、還沒換引擎", l1.locked && l1.spin && !l1.other && l1.txt === "使用" && l1.blave && l1.cur === "blave", l1);
+  await js(`mdlPaint()`); await wait(100);
+  const l2 = await lk();
+  ok("⑥ I 重畫(下載進度)不解鎖", l2.locked && l2.spin, l2);
+  await js(`window.__release(); window.__hold = null`); await wait(500);
+  ok("⑥ I 回來:換成 Claude Code、modal 關掉、沒有殘留的鎖", await js(`cur === "claude" && $("lai-scrim").hidden && !document.querySelector("[data-cn-lock]") && !$("btn-blave").disabled`), await js(`({ cur, lock: !!document.querySelector("[data-cn-lock]") })`));
+  // J. 不確定連上之後真的沒登入:Claude 那句走回覆文字、不靠回合結束的 probe(auth status 這時也卡);Codex 走 needs_login
+  await js(`turnFaulted = false; faultShown = false; draft = "Not logged in · Please run /login"; draftPromote()`); await wait(300);
+  const cc = await card(`[...document.querySelectorAll("#chat-scroll .msg.fault")].pop()`);
+  ok("⑥ J Claude 不確定、回覆是 Not logged in:登入卡,鈕是〔登入 Claude Code〕", cc && /登入/.test(cc.text) && cc.btns.some((x) => x.includes("登入 Claude Code")), cc);
+  await js(`cur = "codex"; turnFaulted = false; turnEventIn({ type: "error", code: "needs_login", message: "x" })`); await wait(300);
+  const cx = await card(`[...document.querySelectorAll("#chat-scroll .msg.fault")].pop()`);
+  ok("⑥ J Codex needs_login:登入卡,鈕是〔登入 Codex〕", cx && cx.btns.some((x) => x.includes("登入 Codex")), cx);
+  await js(`cur = "blave"; turnFaulted = false; enterWorkspace("blave", {}); window.__S.detectAgents = { claude: { installed: true, loggedIn: true, path: "/x/claude" }, codex: { installed: false } }`); await wait(500);
 
   // D. 英文:鈕字照 Title Case、modal 的〔怎麼安裝〕sentence case
   await js(`(async () => { setLang("en"); applyStatic(); acctAt = 0; await acctCheck(); })()`); await wait(400);

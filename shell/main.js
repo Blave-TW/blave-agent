@@ -201,6 +201,12 @@ function codexBundled(skipBad) {
    不然被拒絕執行的隨包會畫成已登入、回合閘的 AGENT_BIN_BROKEN 走不到。純函式(fsx 可換) */
 const codexHome = () => path.join(os.homedir(), ".codex");
 let codexRan = null;
+/* 上次偵測的結果。那一條登入檢查逾時(不確定)時,連結與登入都直接用它的路徑:再偵測多半又卡 20 秒,而路徑本來就是這邊自己偵測到的 */
+let lastDetected = null;
+function timedOutPath(kind) {
+  const x = lastDetected && lastDetected[kind];
+  return x && x.path && /_timeout$/.test(x.why || "") && fs.existsSync(x.path) ? x.path : null;
+}
 function codexCredOk(bin, home, fsx = fs) {
   try { fsx.accessSync(bin, fsx.constants.X_OK); } catch (_) { return false; }
   return [["auth.json"], ["secrets", "codex_auth.age"]].some((p) => { try { return fsx.statSync(path.join(home, ...p)).isFile(); } catch (_) { return false; } });
@@ -285,6 +291,7 @@ async function detectAgentsRaw() {
   rec.claude.outside = out.claude.authOutside; rec.codex.outside = out.codex.authOutside;
   out.claude.why = detectWhy("claude", rec.claude); out.codex.why = detectWhy("codex", rec.codex);
   detectLogWrite(path.join(BASE, "state", "detect.log"), { ts: new Date().toISOString(), os: process.platform, ...rec });
+  lastDetected = out;
   return out;
 }
 /* 整次偵測的上限(spec codex-detect-gaps §3.4):裡面每一步都有上限,但任何一處 reject 畫面就永遠停在「偵測中…」、
@@ -317,8 +324,11 @@ async function agentLogin(kind, onSpawn) {
   const slot = loginChild = { __cancelled: false };
   let bin, envPath;
   try {
-    const d = await detectAgents();
-    bin = kind === "claude" ? d.claude.path : kind === "codex" ? d.codex.path : null;
+    bin = timedOutPath(kind);
+    if (!bin) {
+      const d = await detectAgents();
+      bin = kind === "claude" ? d.claude.path : kind === "codex" ? d.codex.path : null;
+    }
     if (bin) envPath = await loginShellPath();
   } catch (e) { loginChild = null; throw e; }
   if (slot.__cancelled) { loginChild = null; return { ok: false, cancelled: true, code: null, cantRun: false }; }
@@ -371,7 +381,10 @@ async function saveConnection(choice) {
   const kind = choice && choice.kind;
   let agentPath = null;
   let d = null;
-  if (kind === "claude" || kind === "codex") { d = await detectAgents(); agentPath = (d[kind] || {}).path || null; if (!agentPath) return false; }
+  if (kind === "claude" || kind === "codex") {
+    agentPath = timedOutPath(kind);
+    if (!agentPath) { d = await detectAgents(); agentPath = (d[kind] || {}).path || null; if (!agentPath) return false; }
+  }
   if (kind === "apikey" && !loadLlmKey()) return false;   // 連得上的前提是這台電腦上有一把驗過的金鑰
   const saved = connStore().save({ kind, path: agentPath, email: choice && choice.email });
   if (!saved) return false;

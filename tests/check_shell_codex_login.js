@@ -25,7 +25,7 @@ t("字串:終端機那一句帶 {cmd} 佔位(兩語)", /\{cmd\}/.test(STR.zh["ro
 // ── 主行程:原文切出來,配假的 loginShellPath / BASE,子行程是真的 ──
 const POSIX = process.platform !== "win32";
 const PIECES = [constOf(src, "cmdWrap"), constOf(src, "WIN_ENV_DROP"), fnOf(src, "probeEnv"), fnOf(src, "run"), fnOf(src, "which"), "const LOGIN_CHECK_MS = 2000;", fnOf(src, "binKind"), constOf(src, "runRec"), constOf(src, "cantRun"),
-  fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "claudePath"), fnOf(src, "codexBundled"), constOf(src, "codexHome"), "let codexRan = null;", grab(src, /^function codexCredOk\(bin, home, fsx = fs\) \{[\s\S]*?\n\}/m, "codexCredOk"), fnOf(src, "detectAgentsRaw"), constOf(src, "DETECT_TOTAL_MS"), fnOf(src, "detectAgents"),
+  fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "claudePath"), fnOf(src, "codexBundled"), constOf(src, "codexHome"), "let codexRan = null, lastDetected = null;", fnOf(src, "timedOutPath"), grab(src, /^function codexCredOk\(bin, home, fsx = fs\) \{[\s\S]*?\n\}/m, "codexCredOk"), fnOf(src, "detectAgentsRaw"), constOf(src, "DETECT_TOTAL_MS"), fnOf(src, "detectAgents"),
   "let loginChild = null;", fnOf(src, "agentLogin"), fnOf(src, "cancelAgentLogin")].join("\n");
 // pkgBin = 隨包那顆(假的 codexpkg.installed 回它,codexBundled 跑原文);bundled = SDK 隨包的 claude
 // o.execFile／o.spawn／o.installed 換掉真的那支(同步 throw 的案例)
@@ -95,6 +95,10 @@ exit 2
       t("登入的 spawn 同步 throw:回 code=EPERM、cantRun=true;loginChild 放掉,下一次不是 busy", lc.code === "EPERM" && lc.cantRun === true && lc.ok === false && lc.cancelled === false && lc2.busy !== true, { lc, lc2 });
       const e = mkMain(PATH_OF(d), good, null, { installed: () => { throw Object.assign(new Error("x /Users/u"), { code: "EIO" }); } }), re = await e.detectAgents();
       t("一條在 find 就 reject:只影響自己(codex_none、rec.err 記碼不記訊息),Claude 照常,沒寫 hung", re.claude.loggedIn === true && re.codex.why === "codex_none" && e.logged[0].codex.err === "EIO" && !e.logged.some((x) => x.hung) && !JSON.stringify(e.logged).includes("/Users/u"), { re, log: e.logged }); }
+    // 3c. 不確定之後按〔連結〕／〔登入〕:路徑用上次偵測的,不再多等一輪(只在那一條逾時時)
+    { const d = binDir("bslow2"), p = script(path.join(d, "codex"), `#!/bin/sh\nif [ "$1" = "login" ] && [ "$2" = "status" ]; then exec sleep 8; fi\nif [ "$1" = "login" ]; then exit 0; fi\nexit 2\n`);
+      const m = mkMain(PATH_OF(d), p, null); await m.detectAgents(); const before = m.logged.length, t0 = Date.now(), l = await m.agentLogin("codex");
+      t("不確定之後按登入:不重跑偵測(detect.log 沒多一行)、直接 spawn", l.ok === true && m.logged.length === before && Date.now() - t0 < 1500, { l, n: m.logged.length }); }
     // 4. 逾時:login status 不回(上限在這支測試裡縮成 2 秒)
     { const d = binDir("bslow"), p = script(path.join(d, "codex"), "#!/bin/sh\nexec sleep 8\n");
       const t0 = Date.now(), r = await mkMain(PATH_OF(d), p, null).detectAgents();
@@ -203,7 +207,7 @@ exit 2
   R.set("lastDetect", D({ loggedIn: true, why: null }, { loggedIn: false, why: "codex_timeout" })); R.paintRows(R.get("lastDetect"));
   t("…整次偵測超時(沒有 path)→ 「沒有回應」、沒有鈕;已登入 → 「已登入」+〔連結〕", JSON.stringify(rows()) === JSON.stringify(["claude||已登入||連結", "codex|off|沒有回應||"]), rows());
   R.set("lastDetect", D({ loggedIn: false, why: "claude_timeout", path: "/x/claude" }, { loggedIn: false, why: "codex_timeout", path: "/x/codex" })); R.paintRows(R.get("lastDetect"));
-  t("…登入檢查逾時(有 path)→ 不擋路:一句「查不到登入狀態」+〔連結〕,Claude、Codex 同一種", JSON.stringify(rows()) === JSON.stringify(["claude|||查不到登入狀態，第一則訊息會確認|連結", "codex|||查不到登入狀態，第一則訊息會確認|連結"]), rows());
+  t("…登入檢查逾時(有 path)→ 不擋路:一句「查不到登入狀態」+〔連結〕,Claude、Codex 同一種", JSON.stringify(rows()) === JSON.stringify(["claude|||查不到登入狀態，送出訊息就知道|連結", "codex|||查不到登入狀態，送出訊息就知道|連結"]), rows());
   R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero" })); R.set("loginPending", "codex"); R.ROWMSG.codex = "opened"; R.paintRows(R.get("lastDetect"));
   t("…等瀏覽器:那一列名字底下「已在瀏覽器開啟登入頁」、鈕是「取消等待」", JSON.stringify(rows()) === JSON.stringify(["claude|off|未偵測到||", "codex|||已在瀏覽器開啟登入頁|取消等待"]), rows());
   R.set("loginPending", null); R.ROWMSG.codex = "failed"; R.paintRows(R.get("lastDetect"));
@@ -301,6 +305,9 @@ exit 2
     R.set("detectAt", 0); R.set("lastDetect", D({ loggedIn: true }, { loggedIn: true })); const f = R.focusRedetect();
     t("focusRedetect:第一次重偵測、15 秒內不再;等登入中不碰;連結畫面與模型接入都關著不碰;模型接入開著會;兩個都就緒不碰",
       a === true && b === false && c === false && d === false && e === true && f === false && R.get("detects") === 2, { a, b, c, d, e, f, n: R.get("detects") });
+    R.set("detectAt", 0); R.set("loginPending", null); $("view-connect").hidden = false; R.set("lastDetect", D({ loggedIn: true }, { loggedIn: false, why: "codex_timeout", path: "/x/codex" }));
+    const unk = R.focusRedetect(); R.set("lastDetect", D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: false, why: "codex_timeout", path: "/x/codex" })); const mix = R.focusRedetect();
+    t("focusRedetect:不確定的列不自動重偵測(鈕不消失);另一列真的沒登入照樣會", unk === false && mix === true, { unk, mix }); $("view-connect").hidden = true;
     t("…掛在 window 的 focus 上", /window\.addEventListener\("focus", focusRedetect\);/.test(app)); }
 
   // 工作頁的登入失效卡也回前景重新偵測(設計師 D1):卡上那句「回到這裡」才成立。lastDetect 可能還是回合開始前那份(說已登入),
