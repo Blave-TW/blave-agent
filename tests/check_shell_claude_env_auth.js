@@ -60,7 +60,7 @@ t("{acct}:Codex → ChatGPT、Claude Code → Claude", /const rowVars = \(kind, 
 // ── 真的子行程:假 claude / codex 只看環境變數、假 HOME 的記號檔與 --setting-sources= ──
 const POSIX = process.platform !== "win32";
 const PIECES = [constOf(src, "cmdWrap"), DROP, PE, RUN, fnOf(src, "which"), "const LOGIN_CHECK_MS = 3000;", fnOf(src, "binKind"), constOf(src, "runRec"), constOf(src, "cantRun"),
-  fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "codexPath"), fnOf(src, "claudePath"), DETECT, DETECT_TOTAL, DETECT_WRAP, "let loginChild = null;", LOGIN].join("\n");
+  fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "claudePath"), DETECT, DETECT_TOTAL, DETECT_WRAP, "let loginChild = null;", LOGIN].join("\n");
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-env-auth-"));
 const HOME = path.join(ROOT, "home"); fs.mkdirSync(path.join(HOME, ".claude"), { recursive: true });
 const BIN = path.join(ROOT, "bin"); fs.mkdirSync(BIN);
@@ -76,10 +76,10 @@ fs.writeFileSync(path.join(BIN, "codex"), `#!/bin/sh
 if [ "$1" = "login" ] && [ "$2" = "status" ]; then { [ -f "$HOME/signed" ] || [ -n "$CODEX_ACCESS_TOKEN" ] || [ -n "$OPENAI_FEDERATION_RULE_ID" ]; } && exit 0; exit 1; fi
 exit 2
 `, { mode: 0o755 });
-const mk = () => new Function("execFile", "spawn", "fs", "path", "process", "loginShellPath", "CODEX_IN_CHATGPT", "bundledClaude", "BASE", "WIN", "detectLogWrite",
-  "winRealExe", "storeCodexPath", "winOnPath", "pickWinBin", "codexBundled", PIECES + "\nreturn { detectAgents, agentLogin };")(
-  require("child_process").execFile, require("child_process").spawn, fs, path, process, async () => BIN + ":/usr/bin:/bin", path.join(ROOT, "nope"), () => null, "/b", false, () => {},
-  (b) => b, async () => null, (s) => s, () => null, () => null);
+const mk = () => new Function("execFile", "spawn", "fs", "path", "process", "loginShellPath", "bundledClaude", "BASE", "WIN", "detectLogWrite",
+  "winOnPath", "pickWinBin", "codexBundled", PIECES + "\nreturn { detectAgents, agentLogin };")(
+  require("child_process").execFile, require("child_process").spawn, fs, path, process, async () => BIN + ":/usr/bin:/bin", () => null, "/b", false, () => {},
+  (s) => s, () => null, () => path.join(BIN, "codex"));
 const VARS = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CODEX_ACCESS_TOKEN", "OPENAI_FEDERATION_RULE_ID", "OPENAI_API_KEY"];
 const saved = Object.fromEntries(["HOME", ...VARS].map((k) => [k, process.env[k]]));
 const setEnv = (o) => { for (const k of VARS) delete process.env[k]; Object.assign(process.env, o); };

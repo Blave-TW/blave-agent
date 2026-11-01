@@ -13,7 +13,7 @@ const whyState = eval("(" + app.match(/^const whyState = (.*);$/m)[1] + ")");
   const DETECT = cut("let lastDetect = null", "/* 從瀏覽器");
   const mk = (ipc, akInfo) => {
     const log = { paint: [], ak: 0, ev: [] };
-    const R = new Function("ctx", `with (ctx) { ${DETECT}\nreturn { detect, get: () => lastDetect }; }`)({
+    const R = new Function("ctx", `with (ctx) { ${DETECT}\nreturn { detect, get: () => lastDetect, PKG }; }`)({
       $: (id) => ({ hidden: id !== "view-connect" ? false : false }), localReady: false, AK: { info: akInfo }, detectingRows: () => {}, setHint: () => {},
       paintRows: (d) => log.paint.push(d), akSetInfo: () => { log.ak++; }, trackEvent: (e, p) => log.ev.push(e + ":" + JSON.stringify(p)), t: (k) => k, MDL: { busy: true },
       window: { blave: { detectAgents: ipc } } });
@@ -35,6 +35,15 @@ const whyState = eval("(" + app.match(/^const whyState = (.*);$/m)[1] + ")");
   const GOOD = { claude: { installed: true, loggedIn: true }, codex: { installed: false }, apikey: { saved: null } }, c = mk(async () => GOOD, AKI);
   await c.R.detect();
   ok("detectAgents 正常 → 原樣畫、akSetInfo 叫一次", c.log.paint.length === 1 && c.log.paint[0] === GOOD && c.log.ak === 1);
+  // detect_fail:隨包還沒抓是正常狀態,每個還沒連 Codex 的人開這個畫面都會有;機器不支援隨包的留在埋點裡;真的壞掉的照送
+  { const ev = async (codex, snap) => { const x = mk(async () => ({ claude: { installed: true, loggedIn: true }, codex, apikey: null }), AKI); x.R.PKG.snap = snap || null; await x.R.detect(); return x.log.ev.filter((e) => e.startsWith("detect_fail:")).join(); };
+    const NONE = { installed: false, why: "codex_none" }, SENT = 'detect_fail:{"why":"codex_none"}', NZ = 'detect_fail:{"why":"codex_nonzero"}';
+    const none = await ev(NONE, { phase: "idle", fail: null }), snapless = await ev(NONE), arch = await ev(NONE, { phase: "idle", unsupported: "arch" }), tar = await ev(NONE, { phase: "idle", unsupported: "tar" });
+    const slow = await ev({ installed: true, why: "codex_timeout" }), no = await ev({ installed: true, why: "codex_nonzero" }), bad = await ev({ installed: true, why: "codex_cantrun" });
+    const cl = mk(async () => ({ claude: { installed: false, why: "claude_none" }, codex: NONE, apikey: null }), AKI); await cl.R.detect();
+    ok("detect_fail:codex_none 只在 PKG.snap.unsupported 時送(arch／tar);一般機器與快照還沒到不送;codex_timeout／codex_nonzero／cantrun→nonzero 照送;claude_none 照送",
+      none === "" && snapless === "" && arch === SENT && tar === SENT && slow === 'detect_fail:{"why":"codex_timeout"}' && no === NZ && bad === NZ
+      && cl.log.ev.filter((e) => e.startsWith("detect_fail:")).join() === 'detect_fail:{"why":"claude_none"}', { none, snapless, arch, tar, slow, no, bad, cl: cl.log.ev }); }
   ok("catch 分支不另外重畫(paintRows 自己放開 MDL.busy 並 mdlPaint;不加 finally 連畫兩遍)", !/finally/.test(fn("detect")) && (fn("detect").match(/paintRows\(/g) || []).length === 1);
 
   // ── localLogin／localLoginFlow:agentLoginRun 丟例外 → 收尾照跑(detect 重畫、loginPending 清掉) ──
@@ -103,9 +112,18 @@ const whyState = eval("(" + app.match(/^const whyState = (.*);$/m)[1] + ")");
     ok("…消化過就不再偵測", !calls.includes("detect"));
     ctx.PKG.snap = { phase: "idle", fail: null, size: 203 }; paint(D0);
     const cx = rowsEl.children.filter((r) => r.kind === "codex").pop();
-    ok("paintRows:Codex 沒偵測到、有快照 → 那一列是下載列(說明 cn.pkgSize、有鈕),不是「未偵測到」", cx && cx.sub === "cn.pkgSize" && !!cx.action && cx.st === null, cx); }
+    ok("paintRows:Codex 沒偵測到、有快照 → 那一列是下載列(說明 cn.pkgSize、有鈕),不是「未偵測到」", cx && cx.sub === "cn.pkgSize" && !!cx.action && cx.st === null, cx);
+    ctx.PKG.snap = { phase: "idle", unsupported: "arch", fail: null }; paint(D0);
+    const ax = rowsEl.children.filter((r) => r.kind === "codex").pop();
+    ok("paintRows:架構不支援 → 說明 cn.pkgArch、沒有鈕、列灰,不是「未偵測到」", ax && ax.sub === "cn.pkgArch" && !ax.action && ax.st === null && ax.stClass === "", ax);
+    ctx.PKG.snap = { phase: "idle", fail: null, size: 203 }; paint({ claude: { installed: false }, codex: { installed: true, loggedIn: false, why: "codex_cantrun" } });
+    const bx = rowsEl.children.filter((r) => r.kind === "codex").pop();
+    ok("paintRows:裝好、跑不起來(不帶 via)→ cn.pkgBad +〔再試一次〕", bx && bx.sub === "cn.pkgBad" && !!bx.action, bx);
+    paint({ claude: { installed: false }, codex: { installed: true, loggedIn: false, why: "codex_timeout", via: "pkg" } });
+    const tx = rowsEl.children.filter((r) => r.kind === "codex").pop();
+    ok("paintRows:裝好、沒回應 → 「沒有回應」、沒有鈕", tx && tx.st === "st.noResp" && !tx.action, tx); }
   // ── 回合缺執行檔的兩碼都算 engine_missing(turn_failed 白名單不動)──
   { const tr = new Function(fn("turnReasonOf") + "\nreturn turnReasonOf;")();
-    ok("turnReasonOf:AGENT_BIN_MISSING 與 AGENT_BIN_DOWNLOADING 都是 engine_missing;沒有就照 fail", tr("x AGENT_BIN_MISSING", "auth") === "engine_missing" && tr("Error: AGENT_BIN_DOWNLOADING", "auth") === "engine_missing" && tr("", "auth") === "auth" && tr(undefined, null) === "other"); }
+    ok("turnReasonOf:AGENT_BIN_MISSING、AGENT_BIN_DOWNLOADING、AGENT_BIN_BROKEN 都是 engine_missing;沒有就照 fail", tr("x AGENT_BIN_MISSING", "auth") === "engine_missing" && tr("Error: AGENT_BIN_BROKEN", "auth") === "engine_missing" && tr("Error: AGENT_BIN_DOWNLOADING", "auth") === "engine_missing" && tr("", "auth") === "auth" && tr(undefined, null) === "other"); }
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

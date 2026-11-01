@@ -1,7 +1,7 @@
-// 連結畫面的 Codex / Claude 登入(0.1.32 方案 B):偵測分得出「跑不起來」「沒有回應」「沒登入」,PATH 上那顆跑不起來改試退路那顆
-// (ChatGPT.app 內附的 codex、SDK 隨包的 claude),登入回結束碼,「已在瀏覽器開啟」等 1 秒才講,沒登入那一列的鈕叫「連結」。
+// 連結畫面的 Codex / Claude 登入(0.1.32 方案 B):偵測分得出「跑不起來」「沒有回應」「沒登入」,claude 的 PATH 那顆跑不起來改試 SDK 隨包那顆,
+// Codex 只有隨包那一顆(0.1.41),登入回結束碼,「已在瀏覽器開啟」等 1 秒才講,沒登入那一列的鈕叫「連結」。
 // 起因:cmux 開發版 PATH 上的 codex 包裝腳本回 127,被當成沒登入、叫用戶去登入。
-// 主行程那半用 main.js 原文 + 真的子行程跑假的 bin(假 HOME、假 PATH、假 ChatGPT.app;不碰真的 codex / claude、不讀任何憑證檔)。
+// 主行程那半用 main.js 原文 + 真的子行程跑假的 bin(假 HOME、假 PATH、假的隨包 codex;不碰真的 codex / claude、不讀任何憑證檔)。
 // 跑法:node tests/check_shell_codex_login.js
 const fs = require("fs"), path = require("path"), os = require("os");
 const SHELL = path.join(__dirname, "..", "shell");
@@ -13,28 +13,28 @@ const fnOf = (s, name) => grab(s, new RegExp("^(?:async )?function " + name + "\
 const constOf = (s, name) => grab(s, new RegExp("^const " + name + " = .*$", "m"), name);
 
 // ── 字串:新狀態兩張表都有、文案照 mockup ──
-const KEYS = ["row.opened", "row.failed", "row.orCmd", "row.orApp", "row.reinstall", "st.cantRun", "st.noResp"];
+const KEYS = ["row.opened", "row.failed", "row.orCmd", "row.orBrowser", "row.reinstall", "st.cantRun", "st.noResp"];
 t("字串:七個新 key 在 en / zh 都有", KEYS.every((k) => STR.en[k] && STR.zh[k]));
 t("字串:zh「無法啟動」「沒有回應」「已在瀏覽器開啟登入頁」「登入沒有完成。」;「連結」沿用 cn.connect",
   STR.zh["st.cantRun"] === "無法啟動" && STR.zh["st.noResp"] === "沒有回應" && STR.zh["row.opened"] === "已在瀏覽器開啟登入頁" && STR.zh["row.failed"] === "登入沒有完成。" && STR.zh["cn.connect"] === "連結");
-// 回前景會自動重新偵測(focusRedetect),退路不必再叫他按「重新偵測」;字照 mockup-codex-login
-t("字串:ChatGPT app 那句退路 zh「或在 ChatGPT app 登入後回到這裡。」、en 照 mockup", STR.zh["row.orApp"] === "或在 ChatGPT app 登入後回到這裡。" && STR.en["row.orApp"] === "Or sign in through the ChatGPT app, then come back.", [STR.zh["row.orApp"], STR.en["row.orApp"]]);
+t("字串:ChatGPT app 那句退路兩語都刪了(row.orApp)", STR.en["row.orApp"] === undefined && STR.zh["row.orApp"] === undefined);
 // 「無法啟動」那一列的退路(設計師稽核 D3,Wei 拍板):重裝那一顆,回前景會自動重新偵測
-t("字串:「無法啟動」退路 zh「重新安裝 {name} 後回到這裡。」、en「Reinstall {name}, then come back.」(同 row.orApp 不帶 here)", STR.zh["row.reinstall"] === "重新安裝 {name} 後回到這裡。" && STR.en["row.reinstall"] === "Reinstall {name}, then come back.", [STR.zh["row.reinstall"], STR.en["row.reinstall"]]);
+t("字串:「無法啟動」退路 zh「重新安裝 {name} 後回到這裡。」、en「Reinstall {name}, then come back.」(不帶 here)", STR.zh["row.reinstall"] === "重新安裝 {name} 後回到這裡。" && STR.en["row.reinstall"] === "Reinstall {name}, then come back.", [STR.zh["row.reinstall"], STR.en["row.reinstall"]]);
 t("字串:終端機那一句帶 {cmd} 佔位(兩語)", /\{cmd\}/.test(STR.zh["row.orCmd"]) && /\{cmd\}/.test(STR.en["row.orCmd"]));
 
 // ── 主行程:原文切出來,配假的 loginShellPath / BASE,子行程是真的 ──
 const POSIX = process.platform !== "win32";
 const PIECES = [constOf(src, "cmdWrap"), constOf(src, "WIN_ENV_DROP"), fnOf(src, "probeEnv"), fnOf(src, "run"), fnOf(src, "which"), "const LOGIN_CHECK_MS = 2000;", fnOf(src, "binKind"), constOf(src, "runRec"), constOf(src, "cantRun"),
-  fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "codexPath"), fnOf(src, "claudePath"), fnOf(src, "detectAgentsRaw"), constOf(src, "DETECT_TOTAL_MS"), fnOf(src, "detectAgents"),
+  fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "claudePath"), fnOf(src, "codexBundled"), fnOf(src, "detectAgentsRaw"), constOf(src, "DETECT_TOTAL_MS"), fnOf(src, "detectAgents"),
   "let loginChild = null;", fnOf(src, "agentLogin"), fnOf(src, "cancelAgentLogin")].join("\n");
-function mkMain(envPath, chatgpt, bundled) {
+// pkgBin = 隨包那顆(假的 codexpkg.installed 回它,codexBundled 跑原文);bundled = SDK 隨包的 claude
+function mkMain(envPath, pkgBin, bundled) {
   const logged = [];
-  const api = new Function("execFile", "spawn", "fs", "path", "process", "loginShellPath", "CODEX_IN_CHATGPT", "bundledClaude", "BASE", "WIN", "detectLogWrite",
-    "winRealExe", "storeCodexPath", "winOnPath", "pickWinBin", "cliAuthHow", "codexBundled",
-    PIECES + "\nreturn { detectAgents, agentLogin, cancelAgentLogin, codexPath, claudePath, BAD_BIN };")(
-    require("child_process").execFile, require("child_process").spawn, fs, path, process, async () => envPath, chatgpt, () => bundled, "/b", false, (f, e) => logged.push(e),
-    (b) => b, async () => null, (s) => s, () => null, require(path.join(SHELL, "telemetry.js")).cliAuthHow, () => null);
+  const api = new Function("execFile", "spawn", "fs", "path", "process", "loginShellPath", "bundledClaude", "BASE", "WIN", "detectLogWrite",
+    "winOnPath", "pickWinBin", "cliAuthHow", "codexpkg", "CODEX_PIN", "TRIPLE",
+    PIECES + "\nreturn { detectAgents, agentLogin, cancelAgentLogin, claudePath, codexBundled, BAD_BIN };")(
+    require("child_process").execFile, require("child_process").spawn, fs, path, process, async () => envPath, () => bundled, "/b", false, (f, e) => logged.push(e),
+    (s) => s, () => null, require(path.join(SHELL, "telemetry.js")).cliAuthHow, { installed: () => (pkgBin ? { path: pkgBin } : null) }, "0.0.0", "x");
   api.logged = logged; return api;
 }
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-codex-login-"));
@@ -43,8 +43,6 @@ process.env.HOME = HOME;   // 假 bin 只看得到這個 HOME;本機真的 ~/.co
 const script = (p, body) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, body, { mode: 0o755 }); return p; };
 const binDir = (name) => { const d = path.join(ROOT, name); fs.mkdirSync(d, { recursive: true }); return d; };
 const PATH_OF = (d) => d + ":/usr/bin:/bin";
-const FAKE_APP = path.join(ROOT, "Applications", "ChatGPT.app", "Contents", "Resources", "codex");
-const MISSING_APP = path.join(ROOT, "nope", "ChatGPT.app", "Contents", "Resources", "codex");
 // 假 codex:`login status` 看假 HOME 裡的記號檔(不是真的憑證格式,只是「登入過」這件事);`login` 等一下、寫記號、回 0
 const CODEX_OK = `#!/bin/sh
 if [ "$1" = "login" ] && [ "$2" = "status" ]; then [ -f "$HOME/signed" ] && exit 0; exit 1; fi
@@ -55,41 +53,32 @@ exit 2
 (async () => {
   if (!POSIX) { console.log("SKIP  假 bin 是 sh 腳本,Windows 閘門只跑上面的字串檢查"); }
   else {
-    // 1. 127:PATH 上的 codex 是包裝腳本、裡面那顆不見了;沒有 ChatGPT.app
+    // 1. 127:隨包那顆跑不起來
     { const d = binDir("b127"); const p127 = script(path.join(d, "codex"), "#!/bin/sh\nexit 127\n");
-      const m = mkMain(PATH_OF(d), MISSING_APP, null), r = await m.detectAgents();
-      t("127、沒有退路 → installed、沒登入、why=codex_cantrun(不是 nonzero)、via=cli", r.codex.installed && !r.codex.loggedIn && r.codex.why === "codex_cantrun" && r.codex.via === "cli" && r.codex.path === p127, r.codex);
+      const m = mkMain(PATH_OF(binDir("empty")), p127, null), r = await m.detectAgents();
+      t("127 → installed、沒登入、why=codex_cantrun(不是 nonzero)、via=pkg、BAD_BIN.codex 記它", r.codex.installed && !r.codex.loggedIn && r.codex.why === "codex_cantrun" && r.codex.via === "pkg" && r.codex.path === p127 && m.BAD_BIN.codex === p127 && m.codexBundled(true) === null, r.codex);
       t("…detect.log 記的是 code=127、沒有路徑", m.logged[0].codex.code === 127 && !JSON.stringify(m.logged).includes(ROOT), m.logged[0].codex);
       const l = await m.agentLogin("codex");
       t("…替他按登入:回 code=127、cantRun=true、ok=false", l.ok === false && l.code === 127 && l.cantRun === true && l.cancelled === false, l); }
-    // 2. 127 + ChatGPT.app 內附那顆:改用它,而且之後每一則訊息(codexPath 不帶 seen)也拿它
-    { const d = binDir("b127app"); const p127 = script(path.join(d, "codex"), "#!/bin/sh\nexit 127\n");
-      script(FAKE_APP, "#!/bin/sh\n[ \"$1 $2\" = \"login status\" ] && exit 0\nexit 2\n");
-      const m = mkMain(PATH_OF(d), FAKE_APP, null), r = await m.detectAgents();
-      t("127、有 ChatGPT.app → 退到 app 內附那顆:已登入、path 是它、via=app、why=null", r.codex.installed && r.codex.loggedIn && r.codex.path === FAKE_APP && r.codex.via === "app" && r.codex.why === null, r.codex);
-      t("…記下 PATH 那顆跑不起來;codexBinNow 那條(codexPath 不帶 seen)跳過它、拿 app 那顆", m.BAD_BIN.codex === p127 && await m.codexPath(PATH_OF(d)) === FAKE_APP);
-      t("…detect.log:bin=chatgpt、alt=chatgpt、found=posix(PATH 上找到的檔種)", m.logged[0].codex.bin === "chatgpt" && m.logged[0].codex.alt === "chatgpt" && m.logged[0].codex.found === "posix", m.logged[0].codex);
-      fs.writeFileSync(p127, "#!/bin/sh\nsleep 1\nexit 127\n", { mode: 0o755 });
-      const again = m.detectAgents(); await new Promise((res) => setTimeout(res, 300));
-      const mid = await m.codexPath(PATH_OF(d)); await again;
-      t("…重新偵測途中(PATH 那顆還在試)每一則訊息仍拿 app 那顆,不會短暫退回壞掉的那顆", mid === FAKE_APP && m.BAD_BIN.codex === p127, mid);
-      fs.writeFileSync(p127, CODEX_OK, { mode: 0o755 });
-      const r2 = await m.detectAgents();
-      t("…PATH 那顆修好了:重新偵測重設 BAD_BIN、改回用 PATH 那顆", m.BAD_BIN.codex === null && r2.codex.path === p127 && r2.codex.via === "cli" && r2.codex.why === "codex_nonzero", r2.codex);
-      fs.rmSync(path.dirname(path.dirname(path.dirname(FAKE_APP))), { recursive: true, force: true }); }
-    // 3. 找不到檔:PATH 上沒有、ChatGPT.app 也沒有;另一種是檔在、shebang 指到不存在的直譯器(開不起來 = ENOENT)
-    { const m = mkMain(PATH_OF(binDir("empty")), MISSING_APP, null), r = await m.detectAgents();
+    // 2. 用戶自己的 codex 在 PATH 上,好好的:從此不看、不跑(uid 33959 那種卡在中間的路拿掉了)
+    { const d = binDir("bmine"); script(path.join(d, "codex"), `#!/bin/sh\n: > "$HOME/mine-ran"\nexit 0\n`);
+      const none = await mkMain(PATH_OF(d), null, null).detectAgents();
+      t("PATH 上有一顆能跑的 codex、隨包沒抓 → 還是 installed=false、why=codex_none,不看 PATH", !none.codex.installed && none.codex.why === "codex_none" && none.codex.via === null && !fs.existsSync(path.join(HOME, "mine-ran")), none.codex);
+      const pkg = script(path.join(ROOT, "pkg127", "codex"), "#!/bin/sh\nexit 127\n"), r = await mkMain(PATH_OF(d), pkg, null).detectAgents();
+      t("…隨包跑不起來也不退到 PATH 那顆:why=codex_cantrun、path 是隨包", r.codex.why === "codex_cantrun" && r.codex.path === pkg && !fs.existsSync(path.join(HOME, "mine-ran")), r.codex); }
+    // 3. 找不到檔:隨包沒抓;另一種是檔在、shebang 指到不存在的直譯器(開不起來 = ENOENT)
+    { const m = mkMain(PATH_OF(binDir("empty")), null, null), r = await m.detectAgents();
       t("找不到檔 → installed=false、why=codex_none", !r.codex.installed && r.codex.why === "codex_none" && r.codex.via === null, r.codex);
-      const d = binDir("benoent"); script(path.join(d, "codex"), "#!/nonexistent/interp\n");
-      const m2 = mkMain(PATH_OF(d), MISSING_APP, null), r2 = await m2.detectAgents(), l = await m2.agentLogin("codex");
+      const d = binDir("benoent"), p = script(path.join(d, "codex"), "#!/nonexistent/interp\n");
+      const m2 = mkMain(PATH_OF(d), p, null), r2 = await m2.detectAgents(), l = await m2.agentLogin("codex");
       t("檔在、開不起來(ENOENT)→ why=codex_cantrun;登入回 code=ENOENT、cantRun=true", r2.codex.why === "codex_cantrun" && l.code === "ENOENT" && l.cantRun === true && l.ok === false, { why: r2.codex.why, l }); }
     // 4. 逾時:login status 不回(上限在這支測試裡縮成 2 秒)
-    { const d = binDir("bslow"); script(path.join(d, "codex"), "#!/bin/sh\nexec sleep 8\n");
-      const t0 = Date.now(), r = await mkMain(PATH_OF(d), MISSING_APP, null).detectAgents();
+    { const d = binDir("bslow"), p = script(path.join(d, "codex"), "#!/bin/sh\nexec sleep 8\n");
+      const t0 = Date.now(), r = await mkMain(PATH_OF(d), p, null).detectAgents();
       t("逾時 → why=codex_timeout(畫面「沒有回應」),不會等滿 8 秒", r.codex.installed && !r.codex.loggedIn && r.codex.why === "codex_timeout" && Date.now() - t0 < 6000, r.codex); }
     // 5. 正常登入:沒登入 → 替他跑 `codex login`(活過 1 秒、回 0)→ 再偵測就是已登入
-    { const d = binDir("bok"); script(path.join(d, "codex"), CODEX_OK);
-      const m = mkMain(PATH_OF(d), MISSING_APP, null), r = await m.detectAgents();
+    { const d = binDir("bok"), p = script(path.join(d, "codex"), CODEX_OK);
+      const m = mkMain(PATH_OF(d), p, null), r = await m.detectAgents();
       t("正常、沒登入 → why=codex_nonzero(畫面〔連結〕)", r.codex.installed && !r.codex.loggedIn && r.codex.why === "codex_nonzero", r.codex);
       const l = await m.agentLogin("codex"), r2 = await m.detectAgents();
       t("…登入回 ok、code=0、cantRun=false;再偵測已登入", l.ok === true && l.code === 0 && l.cantRun === false && r2.codex.loggedIn === true && r2.codex.why === null, { l, c: r2.codex });
@@ -97,14 +86,14 @@ exit 2
       const p2 = m.agentLogin("codex"); await new Promise((res) => setTimeout(res, 200)); m.cancelAgentLogin(); const cx = await p2;
       t("…按「取消等待」→ cancelled=true、ok=false、不是 cantRun", cx.cancelled === true && cx.ok === false && cx.cantRun === false, cx); }
     // 7. 偵測途中按「取消等待」:spawn 之前也要算數(稽核 P2-3)——登入行程不起、回 cancelled;偵測中第二個登入回 busy
-    { const d = binDir("bcancel"); script(path.join(d, "codex"), `#!/bin/sh
+    { const d = binDir("bcancel"), p = script(path.join(d, "codex"), `#!/bin/sh
 if [ "$1" = "login" ] && [ "$2" = "status" ]; then sleep 1.5; exit 1; fi
 if [ "$1" = "login" ]; then : > "$HOME/login-ran"; exit 0; fi
 exit 2
 `);
-      const m = mkMain(PATH_OF(d), MISSING_APP, null);
-      const p = m.agentLogin("codex"); await new Promise((res) => setTimeout(res, 200));
-      const second = await m.agentLogin("codex"), cut = m.cancelAgentLogin(), r = await p;
+      const m = mkMain(PATH_OF(d), p, null);
+      const going = m.agentLogin("codex"); await new Promise((res) => setTimeout(res, 200));
+      const second = await m.agentLogin("codex"), cut = m.cancelAgentLogin(), r = await going;
       await new Promise((res) => setTimeout(res, 300));
       t("偵測中按取消 → cancelAgentLogin 回 true、結果 cancelled、登入行程沒起來;同時第二個登入回 busy",
         cut === true && r.cancelled === true && r.ok === false && r.cantRun === false && !fs.existsSync(path.join(HOME, "login-ran")) && second.busy === true, { cut, r, second, ran: fs.existsSync(path.join(HOME, "login-ran")) });
@@ -116,9 +105,9 @@ exit 2
     // 6. Claude 同一套:PATH 上的 claude 跑不起來 → 改用 SDK 隨包那顆
     { const d = binDir("bclaude"); script(path.join(d, "claude"), "#!/bin/sh\nexit 127\n");
       const bundled = script(path.join(ROOT, "venv", "claude_agent_sdk", "_bundled", "claude"), "#!/bin/sh\necho '{\"loggedIn\":true,\"authMethod\":\"x\"}'\n");
-      const m = mkMain(PATH_OF(d), MISSING_APP, bundled), r = await m.detectAgents();
+      const m = mkMain(PATH_OF(d), null, bundled), r = await m.detectAgents();
       t("claude 127 → 退到隨包那顆、已登入;表外的 authMethod → how other(cli_auth)", r.claude.loggedIn && r.claude.path === bundled && r.claude.why === null && m.BAD_BIN.claude === path.join(d, "claude") && r.claude.how === "other", r.claude);
-      const m2 = mkMain(PATH_OF(d), MISSING_APP, null), r2 = await m2.detectAgents();
+      const m2 = mkMain(PATH_OF(d), null, null), r2 = await m2.detectAgents();
       t("…沒有隨包那顆 → claude_cantrun;JSON 讀不出來 how 留 null(不送 cli_auth)", r2.claude.installed && r2.claude.why === "claude_cantrun" && r2.claude.how === null, r2.claude); }
   }
 
@@ -182,21 +171,19 @@ exit 2
     const b = r.children.find((c) => c.tag === "button");
     return [r.dataset.kind, r.className.includes("off") ? "off" : "", st, msg, b ? b.textContent + (b.disabled ? "(x)" : "") : ""].join("|");
   });
-  const D = (claude, codex) => ({ claude: { installed: true, ...claude }, codex: { installed: true, via: "cli", ...codex } });
+  const D = (claude, codex) => ({ claude: { installed: true, ...claude }, codex: { installed: true, via: "pkg", ...codex } });
   R.set("lastDetect", D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: false, why: "codex_cantrun" })); R.paintRows(R.get("lastDetect"));
-  t("連結畫面:沒登入 → 〔連結〕;127 → 「無法啟動」、列變灰、沒有鈕,名字底下一句「重新安裝 Codex 後回到這裡。」", JSON.stringify(rows()) === JSON.stringify(["claude|||" + "|連結", "codex|off|無法啟動|重新安裝 Codex 後回到這裡。|"]), rows());
+  t("連結畫面:沒登入 → 〔連結〕;127、快照還沒到 → 「無法啟動」、列變灰、沒有鈕,不叫他重新安裝 Codex(自己裝的不看)", JSON.stringify(rows()) === JSON.stringify(["claude|||" + "|連結", "codex|off|無法啟動||"]), rows());
+  R.set("lastDetect", D({ loggedIn: false, why: "claude_cantrun" }, { loggedIn: true })); R.paintRows(R.get("lastDetect"));
+  t("…Claude 跑不起來照舊:名字底下一句「重新安裝 Claude Code 後回到這裡。」", rows()[0] === "claude|off|無法啟動|重新安裝 Claude Code 後回到這裡。|", rows());
   R.set("lastDetect", D({ loggedIn: true, why: null }, { loggedIn: false, why: "codex_timeout" })); R.paintRows(R.get("lastDetect"));
   t("…逾時 → 「沒有回應」、沒有鈕;已登入 → 「已登入」+〔連結〕", JSON.stringify(rows()) === JSON.stringify(["claude||已登入||連結", "codex|off|沒有回應||"]), rows());
   R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero" })); R.set("loginPending", "codex"); R.ROWMSG.codex = "opened"; R.paintRows(R.get("lastDetect"));
   t("…等瀏覽器:那一列名字底下「已在瀏覽器開啟登入頁」、鈕是「取消等待」", JSON.stringify(rows()) === JSON.stringify(["claude|off|未偵測到||", "codex|||已在瀏覽器開啟登入頁|取消等待"]), rows());
   R.set("loginPending", null); R.ROWMSG.codex = "failed"; R.paintRows(R.get("lastDetect"));
-  t("…失敗 · CLI 版:「登入沒有完成。或在終端機執行 codex login。」(句號後不多一個空格)、鈕「再試一次」", rows()[1] === "codex|||登入沒有完成。或在終端機執行 codex login。|再試一次", rows());
-  R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero", via: "app" })); R.paintRows(R.get("lastDetect"));
-  t("…失敗 · ChatGPT app 版:退路是在 app 裡登入,不給 codex login", rows()[1] === "codex|||登入沒有完成。或在 ChatGPT app 登入後回到這裡。|再試一次", rows());
-  R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero", via: "pkg" })); R.paintRows(R.get("lastDetect"));
-  t("…失敗 · 隨包那顆(via=pkg):不在 PATH 上、也不一定有 ChatGPT app → 只講會開瀏覽器(不點名鈕:三個表面那時的鈕都是〔再試一次〕)", rows()[1] === "codex|||登入沒有完成。會開瀏覽器完成登入。|再試一次", rows());
-  LANG = "en"; R.sync(); R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero", via: "cli" })); R.paintRows(R.get("lastDetect"));
-  t("…en:兩句中間有一個空格", rows()[1] === "codex|||Sign-in didn’t finish. Or run codex login in a terminal.|Try Again", rows());
+  t("…失敗:Codex 不在 PATH 上(codex login 是死路)→ 只講會開瀏覽器(不點名鈕:三個表面那時的鈕都是〔再試一次〕)", rows()[1] === "codex|||登入沒有完成。會開瀏覽器完成登入。|再試一次", rows());
+  LANG = "en"; R.sync(); R.paintRows(R.get("lastDetect"));
+  t("…en:兩句中間有一個空格", rows()[1] === "codex|||Sign-in didn’t finish. This opens your browser to finish signing in.|Try Again", rows());
   R.ROWMSG.claude = "failed"; R.set("lastDetect", D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: true })); R.paintRows(R.get("lastDetect"));
   t("…Claude 失敗給 claude auth login;登入成功的那一列訊息清掉", rows()[0] === "claude|||Sign-in didn’t finish. Or run claude auth login in a terminal.|Try Again" && R.ROWMSG.codex === null, rows());
   LANG = "zh"; R.sync(); R.ROWMSG.claude = null;
@@ -211,8 +198,8 @@ exit 2
     const c = await go(inSet(), { ok: false, cancelled: false, code: 1, cantRun: false }), cHint = R.get("HINT");
     const e = await go(mkEl("button"), { ok: false, cancelled: false, code: "ENOENT", cantRun: true });
     t("localLogin:設定 › 模型接入 127 → 那一列改 why=codex_cantrun、讀屏念「無法啟動」、沒有「登入沒有完成」;一般失敗(1)照舊出失敗句",
-      a.why === "codex_cantrun" && aHint === null && aSaid.includes("無法啟動。重新安裝 Codex 後回到這裡。") && c.why === "codex_nonzero" && cHint && cHint.text === "Codex 登入沒有完成。" && cHint.cmd === "codex", { a, aHint, aSaid, c, cHint });
-    t("…連結畫面 ENOENT → 那一列「無法啟動」、沒有鈕、沒有失敗訊息", e.why === "codex_cantrun" && R.ROWMSG.codex === null && rows()[1] === "codex|off|無法啟動|重新安裝 Codex 後回到這裡。|", rows());
+      a.why === "codex_cantrun" && aHint === null && aSaid.includes("Codex 引擎無法啟動，再試一次會重新下載") && c.why === "codex_nonzero" && cHint && cHint.text === "Codex 登入沒有完成。" && cHint.cmd === "codex", { a, aHint, aSaid, c, cHint });
+    t("…連結畫面 ENOENT → 那一列「無法啟動」、沒有鈕、沒有失敗訊息", e.why === "codex_cantrun" && R.ROWMSG.codex === null && rows()[1] === "codex|off|無法啟動||", rows());
     // 那一列沒有鈕了,焦點不能掉到 body(設計師 D2):連結畫面給 .cn-head 的「重新偵測」(#btn-redetect),設定給本機那組底下的「重新偵測」
     const focused = []; $("btn-redetect").focus = () => focused.push("cn-head");
     await go(mkEl("button"), { ok: false, cancelled: false, code: 127, cantRun: true });
@@ -225,16 +212,15 @@ exit 2
 
   // 共用訊息格(三個表面同一支 hintFill):中文句尾全形標點後不補空格,英文補一個
   { const fill = (lang, h) => { LANG = lang; R.sync(); R.set("HINT", h); const n = mkEl("p"); R.hintFill(n); return n.textContent; };
-    R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero", via: "cli" }));
-    t("hintFill:zh「Codex 登入沒有完成。」接退路不多空格;en 補一個;沒有 cmd 不補;沒有訊息不畫",
-      fill("zh", { text: "Codex 登入沒有完成。", cmd: "codex" }) === "Codex 登入沒有完成。或在終端機執行 codex login。" && fill("en", { text: "Codex sign-in didn’t finish.", cmd: "codex" }) === "Codex sign-in didn’t finish. Or run codex login in a terminal."
-      && fill("en", { text: "x" }) === "x" && fill("zh", null) === "", [fill("zh", { text: "Codex 登入沒有完成。", cmd: "codex" }), fill("en", { text: "Codex sign-in didn’t finish.", cmd: "codex" })]);
+    t("hintFill:zh「Claude Code 登入沒有完成。」接退路不多空格;en 補一個;沒有 cmd 不補;沒有訊息不畫",
+      fill("zh", { text: "Claude Code 登入沒有完成。", cmd: "claude" }) === "Claude Code 登入沒有完成。或在終端機執行 claude auth login。" && fill("en", { text: "Claude Code sign-in didn’t finish.", cmd: "claude" }) === "Claude Code sign-in didn’t finish. Or run claude auth login in a terminal."
+      && fill("en", { text: "x" }) === "x" && fill("zh", null) === "", [fill("zh", { text: "Claude Code 登入沒有完成。", cmd: "claude" }), fill("en", { text: "Claude Code sign-in didn’t finish.", cmd: "claude" })]);
     // 設定 › 模型接入與工作頁失效卡的退路(cmdLine)跟連結畫面那一列(rowMsg)同一句(設計師 D1)
+    // via 不算數:隨包那顆是 pkg、整次偵測超時是 null,Codex 都不給 codex login 這條死路
     const line = (lang, via, kind) => { LANG = lang; R.sync(); R.set("lastDetect", D({}, { loggedIn: false, why: "codex_nonzero", via })); const n = mkEl("p"); n.append(R.cmdLine(kind)); return n.textContent; };
-    const same = ["zh", "en"].every((lang) => line(lang, "app", "codex") === STR[lang]["row.orApp"]
-      && line(lang, "cli", "codex") === STR[lang]["row.orCmd"].replace("{cmd}", "codex login")
-      && line(lang, "app", "claude") === STR[lang]["row.orCmd"].replace("{cmd}", "claude auth login"));
-    t("cmdLine:ChatGPT app 版 = row.orApp、CLI 版 = row.orCmd(兩語),跟連結畫面同一句", same, [line("zh", "app", "codex"), line("zh", "cli", "codex"), line("en", "app", "codex")]);
+    const same = ["zh", "en"].every((lang) => line(lang, "pkg", "codex") === STR[lang]["row.orBrowser"] && line(lang, null, "codex") === STR[lang]["row.orBrowser"]
+      && line(lang, "pkg", "claude") === STR[lang]["row.orCmd"].replace("{cmd}", "claude auth login"));
+    t("cmdLine:Codex(via=pkg、逾時的 null)= row.orBrowser、Claude = row.orCmd(兩語),跟連結畫面同一句", same, [line("zh", "pkg", "codex"), line("zh", null, "codex"), line("en", "pkg", "claude")]);
     t("…舊的 login.failedCodex / login.failedCmd 兩語都刪掉了", ["login.failedCodex", "login.failedCmd"].every((k) => STR.en[k] === undefined && STR.zh[k] === undefined));
     LANG = "zh"; R.sync();
     t("三處接字(setHint、模型接入、帳號訊息格)都走 hintFill,不再自己接空格",
@@ -257,7 +243,7 @@ exit 2
       lateSpawn127.opened === 0 && lateSpawn127.r.code === 127 && noSpawn.opened === 0, { lateSpawn127, noSpawn }); }
   if (POSIX) {
     // 主行程原文接畫面原文:偵測慢(login status 睡 1.5 秒),登入行程一起來就 127 → 不講;活 1.3 秒 → 講
-    const d = binDir("bslowdetect"), p = path.join(d, "codex"); const m = mkMain(PATH_OF(d), MISSING_APP, null);
+    const d = binDir("bslowdetect"), p = path.join(d, "codex"); const m = mkMain(PATH_OF(d), p, null);
     const body = (login) => `#!/bin/sh\nif [ "$1" = "login" ] && [ "$2" = "status" ]; then sleep 1.5; exit 1; fi\nif [ "$1" = "login" ]; then ${login}; fi\nexit 2\n`;
     script(p, body("exit 127")); const a = await mkRun((k, emit) => m.agentLogin(k, emit))("codex");
     script(p, body("sleep 1.3; exit 0")); const b = await mkRun((k, emit) => m.agentLogin(k, emit))("codex");

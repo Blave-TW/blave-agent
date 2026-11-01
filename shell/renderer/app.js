@@ -78,7 +78,8 @@ async function detect() {
   if (!$("view-connect").hidden && !localReady) trackEvent("connect_failed", { kind: "no_local" });
   // 同一個畫面:每個不能用的 CLI 各一則「為什麼」(值由主行程 detectWhy 判;外殼每日同值只送一次)
   // cantrun 還不在 api 的白名單(送了會整則被丟):先照 canon 舊語意記成 nonzero(「非 0 結束含執行失敗」),api 收了再拆
-  if (!$("view-connect").hidden) ["claude", "codex"].forEach((k) => { if (lastDetect[k] && lastDetect[k].why) trackEvent("detect_fail", { why: lastDetect[k].why.replace(/_cantrun$/, "_nonzero") }); });
+  // codex_none 是隨包還沒抓,正常狀態:每個還沒連 Codex 的人每次開這個畫面都會有,只留機器不支援隨包的那些
+  if (!$("view-connect").hidden) ["claude", "codex"].forEach((k) => { if (lastDetect[k] && lastDetect[k].why && (lastDetect[k].why !== "codex_none" || (PKG.snap && PKG.snap.unsupported))) trackEvent("detect_fail", { why: lastDetect[k].why.replace(/_cantrun$/, "_nonzero") }); });
 }
 /* 從瀏覽器、終端機或 ChatGPT app 登入完切回來,不必再按「重新偵測」。連結畫面或設定 › 模型接入開著、而且本機有一個
    不能用的時候;或工作頁有一張現在這條的登入失效卡(卡上的退路句寫「回到這裡」)。一次偵測要開到四個子行程,15 秒內不重來;
@@ -146,7 +147,7 @@ function paintRows(d) {
         action: cur === kind ? null : btn(localBtnCls(), t("cn.connect"), () => connect(kind, x)) }));
     } else if (x.installed && whyState(x)) {
       // 跑不起來:剛才指他去跑的就是這一顆,「怎麼修」要寫在列上;沒有回應是暫態,重新偵測就是下一步
-      rows.appendChild(row({ name, kind, st: t(whyState(x)), stClass: "", sub: whyState(x) === "st.cantRun" ? t("row.reinstall", { name }) : null }));
+      rows.appendChild(row({ name, kind, st: t(whyState(x)), stClass: "", sub: kind === "claude" && whyState(x) === "st.cantRun" ? t("row.reinstall", { name }) : null }));
     } else if (x.installed) {
       const waiting = loginPending === kind, msg = ROWMSG[kind];
       const label = waiting ? "login.cancel" : msg === "failed" ? "login.retry" : "cn.connect";
@@ -163,8 +164,8 @@ function paintRows(d) {
   // Codex 引擎在偵測途中或登入途中裝好了:那一次的結果是裝好之前的,補偵測一次
   if (PKG.redetect && !loginPending) { PKG.redetect = false; detect(); }
 }
-/* 連結畫面那一列名字底下的訊息(方案 B,原本在卡底的 #cn-hint):等瀏覽器 / 登入沒完成。失敗的退路看裝法——
-   CLI 版寫出終端機指令;ChatGPT app / Store 版內附的 codex 不在 PATH 上,`codex login` 對他們是死路,請他在 app 裡登入 */
+/* 連結畫面那一列名字底下的訊息(方案 B,原本在卡底的 #cn-hint):等瀏覽器 / 登入沒完成。失敗的退路看是哪一家——
+   claude 寫出終端機指令;Codex 只跑隨包那顆,不在 PATH 上,`codex login` 是死路,只講〔登入〕會開瀏覽器 */
 function rowMsg(kind, msg) {
   const f = document.createDocumentFragment();
   if (msg === "opened") { f.append(t("row.opened")); return f; }
@@ -177,10 +178,7 @@ const rowVars = (kind, name) => ({ name, acct: kind === "codex" ? "ChatGPT" : "C
 // 失敗的退路,三個表面(連結畫面那一列、設定 › 模型接入、工作頁失效卡)同一句;{cmd} 包成 <code>,用 DOM 組(不用 innerHTML)
 function cmdLine(kind) {
   const f = document.createDocumentFragment();
-  const via = kind === "codex" ? ((lastDetect && lastDetect.codex) || {}).via : "cli";
-  // 隨包那顆不在 PATH 上(codex login 是死路)、用戶也不一定有 ChatGPT app:只講〔登入〕會開瀏覽器
-  if (via === "pkg") { f.append(t("row.orBrowser")); return f; }
-  if (via !== "cli") { f.append(t("row.orApp")); return f; }
+  if (kind === "codex") { f.append(t("row.orBrowser")); return f; }
   const parts = t("row.orCmd", { cmd: "\u0000" }).split("\u0000");
   const c = document.createElement("code"); c.textContent = LOGIN_CMD[kind];
   f.append(parts[0] || "", c, parts[1] || ""); return f;
@@ -208,8 +206,8 @@ function hintFill(n) {
 /* 替用戶跑 CLI 的登入指令(開瀏覽器),跑完重新偵測。兩個入口:
    - 連結畫面那一列的〔連結〕(方案 B):等待與失敗句寫在那一列,登入成功直接連上、進工作頁;
    - 設定 › 模型接入的〔登入〕:照舊寫共用訊息格(setHint),成功停在那一頁。
-   失敗的退路(rowMsg / cmdLine):CLI 版寫出終端機指令;ChatGPT app 版請他在 app 裡登入。 */
-const LOGIN_CMD = { claude: "claude auth login", codex: "codex login" };
+   失敗的退路(rowMsg / cmdLine):claude 寫出終端機指令;Codex 只講〔登入〕會開瀏覽器。 */
+const LOGIN_CMD = { claude: "claude auth login" };
 // 「已在瀏覽器開啟」要等子行程活過 1 秒才講:跑不起來(127、ENOENT)的會在那之前就結束,不能說一件沒發生的事。
 // 1 秒從主行程 spawn 那一刻(agent-login-spawned)起算:spawn 前要先跑一兩秒偵測,從按下去算會提早講
 const LOGIN_OPENED_MS = 1000;
@@ -265,7 +263,7 @@ async function localLogin(kind, b) {
     return connect(kind, x);
   }
   // 登入指令本身跑不起來(127、126、ENOENT),偵測卻沒看出來(login status 跑得動):兩個表面都改畫「無法啟動」,不叫他重登
-  if (r.cantRun && x.installed && !x.loggedIn && !whyState(x)) { x.why = kind + "_cantrun"; paintRows(lastDetect); srSay(t("st.cantRun") + (LANG === "zh" ? "。" : ". ") + t("row.reinstall", { name })); }
+  if (r.cantRun && x.installed && !x.loggedIn && !whyState(x)) { x.why = kind + "_cantrun"; paintRows(lastDetect); srSay(kind === "claude" ? t("st.cantRun") + (LANG === "zh" ? "。" : ". ") + t("row.reinstall", { name }) : t("cn.pkgBad")); }
   if (!r.cancelled && !r.busy && !(x.installed && x.loggedIn) && !whyState(x)) {
     if (inLai) { LAI.msg[kind] = "failed"; laiPaint(); srSay(rowMsgText(kind, "failed")); }
     else if (!inRow) setHint({ text: t("login.failed", { name }), cmd: kind });
@@ -344,14 +342,15 @@ const MDL = { busy: false };
    所以只有沒鈕可按的列才有狀態字(偵測中… / 未偵測到)。
    「改成用這個」三列同一個字「使用」(cn.use)——Blave 走 blaveGo、本機走 connect,對用戶是同一個動作 */
 /* Codex 那一列改畫隨包下載的狀態(spec codex-bundled-engine §4.3;連結畫面、設定 › 模型接入、額度用完 modal 共用這一支)。
-   pkg = 主行程 codex-pkg-state 快照;回 null = 照舊畫。只在沒偵測到 codex(或隨包那顆跑不起來)時接手;st／desc = { key, vars } */
+   pkg = 主行程 codex-pkg-state 快照;回 null = 照舊畫。只在隨包那顆還沒裝好或跑不起來時接手;st／desc = { key, vars } */
 function codexPkgRow(pkg, x) {
   const c = x || {};
-  if (!pkg || pkg.unsupported === "arch") return null;
+  if (!pkg) return null;
+  if (pkg.unsupported === "arch") return { st: null, desc: { key: "cn.pkgArch" }, act: null, off: true, busy: false };
   const mb = (n) => (Math.max(0, Number(n) || 0) / 1e6).toFixed(1);
   const busy = pkg.phase && pkg.phase !== "idle" ? { st: pkg.phase === "download" ? { key: "cn.pkgDl", vars: { a: mb(pkg.bytes), b: mb(pkg.total) } } : { key: "cn.pkgInstall" }, desc: null, act: null, off: false, busy: true } : null;
-  // 隨包那顆跑不起來、偵測鏈上也沒有(via=pkg 的 cantrun):「重新安裝 Codex」對他做不到,給〔再試一次〕= 刪掉重抓
-  if (c.installed && c.via === "pkg" && /_cantrun$/.test(c.why || "")) return busy || { st: null, desc: { key: "cn.pkgBad" }, act: "cn.retry", reinstall: true, off: false, busy: false };
+  // 隨包那顆跑不起來:「重新安裝 Codex」對他做不到,給〔再試一次〕= 刪掉重抓
+  if (c.installed && /_cantrun$/.test(c.why || "")) return busy || { st: null, desc: { key: "cn.pkgBad" }, act: "cn.retry", reinstall: true, off: false, busy: false };
   if (c.installed) return null;
   if (pkg.unsupported === "tar") return { st: null, desc: { key: "cn.pkgTar" }, act: null, off: true, busy: false };
   if (busy) return busy;
@@ -376,7 +375,7 @@ function mdlOptions(d, curKind, tok, pend, ak, pkg) {
     // 跑不起來 / 沒有回應:同連結畫面,是狀態不是「沒登入」——列變灰、不給〔登入〕(按了只會再撞一次)
     const why = d !== null && x.installed && !ready ? whyState(x) : null;
     // 同連結畫面那一列:跑不起來寫怎麼修;金鑰設在 agent 回合讀不到的地方(authOutside)講出路
-    out.push({ kind, name, desc: why === "st.cantRun" ? "row.reinstall" : d !== null && x.installed && !ready && !why && x.authOutside ? "row.keyOff" : null,
+    out.push({ kind, name, desc: kind === "claude" && why === "st.cantRun" ? "row.reinstall" : d !== null && x.installed && !ready && !why && x.authOutside ? "row.keyOff" : null,
       // d 是 null = 還在偵測:狀態寫「偵測中…」、不給動作(列數不變,不 reflow)
       st: d === null ? { key: "cn.detecting" } : why ? { key: why } : x.installed ? null : { key: "st.notFound" },
       act: p.login === kind ? "login.cancel" : d === null || !ready ? (d !== null && x.installed && !why ? "cn.signIn" : null) : curKind === kind ? null : "cn.use",
@@ -4454,14 +4453,14 @@ async function acctCheck(o) {
    (使用／登入／怎麼安裝)。它是 localLogin 的第三個表面:等待與失敗的字寫在列上(LAI.msg),登入成功直接 connect。
    卡片換字在 acctLocalSwap(enterWorkspace → acctPrecheck,從設定 › 模型接入換過去也走這條);這裡只收框、記埋點、放焦點。
    用自己的 .scrim、不借 set-scrim:enterWorkspace 看到 set-scrim 開著會走「留在設定、重畫模型接入」那條 */
-const LAI_INSTALL = { claude: "https://code.claude.com/docs/en/setup", codex: "https://developers.openai.com/codex/cli" };
+const LAI_INSTALL = { claude: "https://code.claude.com/docs/en/setup" };
 // login = 這個框自己起的那次登入(關框只取消它);late = 登入成功前一刻框被關掉、仍要換過去的那一家;focus = 列上還沒有鈕、焦點先放 ✕
 const LAI = { card: null, turn: false, msg: { claude: null, codex: null }, login: null, late: null, focus: false };
 // 函式宣告不是 const:mdlPaint 在開機時就會叫到 laiPaint,那時這一段的 const 還沒初始化
 function laiOn() { const sc = $("lai-scrim"); return !!sc && !sc.hidden; }
 function laiSecond(card) { return { label: t("acct.useLocal"), quiet: true, on: () => laiOpen(card) }; }
 /* 純邏輯(tests/check_shell_local_ai_card.js 切出來跑):設定 › 模型接入那份列資料只取兩個 CLI;沒裝的補〔怎麼安裝〕,
-   等瀏覽器／登入沒完成的字照連結畫面那一列。〔使用〕只有一列能用時實心,兩列都能用時都描邊(連結畫面「兩顆本機鈕一律描邊」) */
+   等瀏覽器／登入沒完成的字照連結畫面那一列。Codex 自己裝的不看,不給〔怎麼安裝〕。〔使用〕只有一列能用時實心,兩列都能用時都描邊(連結畫面「兩顆本機鈕一律描邊」) */
 function laiRows(d, curKind, pendKind, msg, pkg) {
   const m = msg || {};
   const rows = mdlOptions(d, curKind, false, { login: pendKind }, null, pkg).filter((o) => o.kind === "claude" || o.kind === "codex").map((o) => {
@@ -4469,7 +4468,7 @@ function laiRows(d, curKind, pendKind, msg, pkg) {
     const r = { kind: o.kind, name: o.name, act: o.act, st: o.st ? o.st.key : null, stVars: o.st ? o.st.vars : undefined, sub: o.desc, subVars: o.descVars, isCur: o.isCur,
       off: o.off || d === null || (!x.installed && !o.pkg), fill: false, pkg: !!o.pkg, reinstall: !!o.reinstall };
     // Codex 的下載列(o.pkg)不換成〔怎麼安裝〕:按〔連結〕就是裝
-    if (d !== null && !x.installed && !o.pkg) { r.act = "lai.install"; r.st = null; }
+    if (d !== null && !x.installed && !o.pkg && o.kind === "claude") { r.act = "lai.install"; r.st = null; }
     else if (o.act === "login.cancel" && m[o.kind] === "opened") r.sub = "row.opened";
     else if (o.act === "cn.signIn" && m[o.kind] === "failed") { r.act = "login.retry"; r.sub = "row.failed"; }
     return r;
@@ -5152,7 +5151,7 @@ function authFailSrc(text) {
   const m = /^(?:Failed to authenticate\. )?API Error: (40[13])\b/.exec(text || "");
   return m ? m[1] : null;
 }
-function turnReasonOf(errTail, fail) { return /AGENT_BIN_(MISSING|DOWNLOADING)/.test(errTail || "") ? "engine_missing" : fail || "other"; }
+function turnReasonOf(errTail, fail) { return /AGENT_BIN_(MISSING|DOWNLOADING|BROKEN)/.test(errTail || "") ? "engine_missing" : fail || "other"; }
 function authFailWhy(kind, src, d) {
   if (!src || (kind !== "claude" && kind !== "codex")) return null;
   const x = d && d[kind];
@@ -5245,7 +5244,7 @@ let pendingErr = [];
 let turnAiBubbles = [], turnFaultEl = null;   // 這一輪的回覆泡泡、最後一張錯誤卡:回合結束的系統通知摘錄用
 /* 回合結束交給主行程判斷要不要發系統通知(spec agent-reply-notifications-0130 §4):kind = done|fail|stopped;「等你回覆」由主行程看 runtime 的 done 判。
    摘錄:回覆(還在畫面上的泡泡,依序接起來);沒做完又沒有回覆時用錯誤卡那一句(在地化的字,不是 errTail、不是錯誤代碼) */
-// binMissing = errTail 裡的 AGENT_BIN_MISSING／AGENT_BIN_DOWNLOADING(那一碼就是字串 key),沒有是 false
+// binMissing = errTail 裡的 AGENT_BIN_MISSING／AGENT_BIN_DOWNLOADING／AGENT_BIN_BROKEN(那一碼就是字串 key),沒有是 false
 function replyCueSend(kind, binMissing, keyMissing) {
   if (typeof window.blave.replyCue !== "function") return;
   const reply = turnAiBubbles.filter((b) => b.parentNode && b._raw).map((b) => b._raw).join("\n\n");
@@ -5270,9 +5269,9 @@ function turnEndPre(r) {
   const rt = typeof resTurnClose === "function" ? resTurnClose() : null;   // 這一輪的結果卡(results.js):策略清單與報告都重讀完、回覆定稿之後才出
   if (typeof sgEditCommit === "function") sgEditCommit();   // 資料夾編輯列開著:先照失焦送出,不然它擋住下面的 stratRefresh(true) 與結果卡
   stratRefresh(true).catch(() => {}).then(tabBound(() => { if (typeof libTurnEnd === "function") libTurnEnd(); const rx = typeof rptTurnEnd === "function" ? rptTurnEnd(rt) : null; if (rt) resTurnParts(rt, rx); }));   // 策略庫的「用這支」:清單重讀完才知道有沒有多一支;重讀失敗也要收掉 pending
-  // 連的是 Codex 但這台電腦上找不到它了:主行程刻意讓這一輪失敗(不會偷偷改跑 Claude)。講人話,不要丟代碼給用戶看
+  // 連的是 Codex 但隨包那顆不能用:主行程刻意讓這一輪失敗(不會偷偷改跑 Claude)。講人話,不要丟代碼給用戶看
   const exitLine = r.code !== 0 && !stopped
-    ? (/AGENT_BIN_DOWNLOADING/.test(r.errTail || "") ? t("AGENT_BIN_DOWNLOADING") : /AGENT_BIN_MISSING/.test(r.errTail || "") ? t("AGENT_BIN_MISSING") : /APIKEY_MISSING/.test(r.errTail || "") ? t("APIKEY_MISSING") : t("turn.exit", { code: r.code }) + (r.errTail ? ": " + r.errTail.slice(-300) : ""))
+    ? (/AGENT_BIN_BROKEN/.test(r.errTail || "") ? t("AGENT_BIN_BROKEN") : /AGENT_BIN_DOWNLOADING/.test(r.errTail || "") ? t("AGENT_BIN_DOWNLOADING") : /AGENT_BIN_MISSING/.test(r.errTail || "") ? t("AGENT_BIN_MISSING") : /APIKEY_MISSING/.test(r.errTail || "") ? t("APIKEY_MISSING") : t("turn.exit", { code: r.code }) + (r.errTail ? ": " + r.errTail.slice(-300) : ""))
     : null;
   // 不靠錯誤字串認登入失效(兩家 CLI 的措辭會變):本機 agent 這一輪出錯或沒有任何回覆時,直接問
   // CLI 現在是不是登入狀態。沒登入 → 只出登入卡,那串給工程師看的錯誤丟掉;有登入 → 才畫通用訊息。
@@ -5305,7 +5304,7 @@ function turnEndPost(r, pre, d) {
   else if (!stopped && cur === "apikey" && turnCap && !turnFaulted && typeof akFault === "function") { turnFaulted = true; addFault(akFault("API Error: 429", true)); }
   else { pendingErr.forEach((x) => addMsg("sys", x)); if (exitLine) addMsg("sys", exitLine); if (pendingErr.length || exitLine) scrollChat(true); }
   pendingErr = [];
-  replyCueSend(stopped ? "stopped" : faulted ? "fail" : "done", ((r.errTail || "").match(/AGENT_BIN_(MISSING|DOWNLOADING)/) || [])[0] || false, /APIKEY_MISSING/.test(r.errTail || ""));
+  replyCueSend(stopped ? "stopped" : faulted ? "fail" : "done", ((r.errTail || "").match(/AGENT_BIN_(MISSING|DOWNLOADING|BROKEN)/) || [])[0] || false, /APIKEY_MISSING/.test(r.errTail || ""));
   const cloudTurn = UPD.turnCloud;   // upTurnEnded 會把它歸零,先記下
   // 樣本外驗證:送出的那一回合結束了(失敗 / 被停止 → 雲端那支的「已送出」當場退回)。要在下面 running = false 那一行的 rpWfSync 之前
   if (window.BlaveReport && window.BlaveReport.wfTurnEnded) window.BlaveReport.wfTurnEnded(turnSeqMine, faulted || stopped, { refetch: rpWfRefetch });

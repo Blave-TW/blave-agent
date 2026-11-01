@@ -53,7 +53,9 @@ if (!process.versions.electron) (async () => {
     const D = (c, x) => ({ claude: c, codex: x, apikey: { saved: "openrouter" } });
     const IN = { installed: true, loggedIn: true }, OUT = { installed: true, loggedIn: false }, NONE = { installed: false };
     let r = R(D(IN, NONE), "blave", null, {});
-    ok("② 已登入〔使用〕(只有這列能用 → 實心)、沒裝〔怎麼安裝〕(名字灰、沒有狀態字);只有兩列(沒有 Blave、API 金鑰)", sh(r) === "claude:cn.use:-:-::fill / codex:lai.install:-:-:off:", sh(r));
+    ok("② 已登入〔使用〕(只有這列能用 → 實心);只有兩列(沒有 Blave、API 金鑰);codex 快照還沒到(pkg == null)不給〔怎麼安裝〕(自己裝的不看)", sh(r) === "claude:cn.use:-:-::fill / codex:-:st.notFound:-:off:", sh(r));
+    r = R(D(NONE, IN), "blave", null, {});
+    ok("② claude 沒裝:〔怎麼安裝〕(名字灰、沒有狀態字)", sh(r) === "claude:lai.install:-:-:off: / codex:cn.use:-:-::fill", sh(r));
     r = R(D(IN, IN), "blave", null, {});
     ok("② 兩列都能用:兩顆〔使用〕都描邊", sh(r) === "claude:cn.use:-:-:: / codex:cn.use:-:-::", sh(r));
     r = R(D(OUT, { installed: true, loggedIn: false, authOutside: true }), "blave", null, {});
@@ -65,7 +67,7 @@ if (!process.versions.electron) (async () => {
     r = R(D(OUT, OUT), "blave", "claude", {});
     ok("② 等瀏覽器、還沒過 1 秒:只換成〔取消等待〕,不先講已開啟", sh(r).startsWith("claude:login.cancel:-:-::"), sh(r));
     r = R(D(OUT, NONE), "blave", null, { claude: "failed" });
-    ok("② 登入沒完成:〔再試一次〕+ row.failed(畫的時候接 cmdLine)", sh(r) === "claude:login.retry:-:row.failed:: / codex:lai.install:-:-:off:", sh(r));
+    ok("② 登入沒完成:〔再試一次〕+ row.failed(畫的時候接 cmdLine)", sh(r) === "claude:login.retry:-:row.failed:: / codex:-:st.notFound:-:off:", sh(r));
     r = R(D({ installed: true, loggedIn: false, why: "claude_cantrun" }, { installed: true, loggedIn: false, why: "codex_timeout" }), "blave", null, {});
     ok("② 跑不起來／沒回應:名字灰、狀態字、沒有鈕;跑不起來另寫 row.reinstall", sh(r) === "claude:-:st.cantRun:row.reinstall:off: / codex:-:st.noResp:-:off:", sh(r));
     r = R(D(IN, NONE), "claude", null, {});
@@ -73,10 +75,12 @@ if (!process.versions.electron) (async () => {
     // Codex 引擎隨包(spec codex-bundled-engine §4.3):沒偵測到 codex 但可以下載的那一列不被〔怎麼安裝〕蓋掉、名字不灰;沒有快照時照舊
     r = R(D(IN, NONE), "blave", null, {}, { phase: "idle", fail: null, size: 166 });
     ok("② Codex 下載列:〔連結〕(cn.connect)+ 說明 cn.pkgSize(帶 size)、不變〔怎麼安裝〕、名字不灰", sh(r) === "claude:cn.use:-:-::fill / codex:cn.connect:-:cn.pkgSize::" && r[1].pkg && r[1].subVars && r[1].subVars.size === "166", sh(r));
+    r = R(D(IN, NONE), "blave", null, {}, { phase: "idle", unsupported: "arch", fail: null });
+    ok("② 架構不支援:沒有鈕、說明 cn.pkgArch、不變〔怎麼安裝〕(自己裝的也不看)", sh(r) === "claude:cn.use:-:-::fill / codex:-:-:cn.pkgArch:off:", sh(r));
+    r = R(D(IN, { installed: true, loggedIn: false, why: "codex_cantrun" }), "blave", null, {}, { phase: "idle", fail: null });
+    ok("② 隨包跑不起來(不帶 via):〔再試一次〕重抓 + cn.pkgBad", sh(r) === "claude:cn.use:-:-::fill / codex:cn.retry:-:cn.pkgBad::" && r[1].pkg && r[1].reinstall, sh(r));
     r = R(D(IN, NONE), "blave", null, {}, { phase: "download", bytes: 1e6, total: 166e6, fail: null });
     ok("② Codex 下載中:狀態字 cn.pkgDl(帶 a／b)、沒有鈕", sh(r) === "claude:cn.use:-:-::fill / codex:-:cn.pkgDl:-::" && r[1].stVars.a === "1.0", sh(r));
-    r = R(D(IN, NONE), "blave", null, {}, { phase: "idle", unsupported: "arch", fail: null });
-    ok("② 不支援的平台(arch)→ 照舊〔怎麼安裝〕", sh(r) === "claude:cn.use:-:-::fill / codex:lai.install:-:-:off:", sh(r));
     ok("② laiAct:下載列走 codexPkgGo;laiPaint 把 PKG.snap 傳給 laiRows、說明與狀態字帶 vars", /if \(r\.pkg\) return codexPkgGo\(r\.reinstall\);/.test(fn("laiAct"))
       && /laiRows\(MDL\.busy \? null : lastDetect, cur, loginPending, LAI\.msg, PKG\.snap\)/.test(fn("laiPaint")) && /t\(r\.sub, r\.subVars \|\| rowVars\(r\.kind, r\.name\)\)/.test(fn("laiPaint")) && /t\(r\.st, r\.stVars\)/.test(fn("laiPaint")));
     const lp = fn("laiPaint");
@@ -151,7 +155,7 @@ if (!process.versions.electron) (async () => {
     const cutMain = (name) => { const i = mainSrc.indexOf("function " + name + "("); let d = 0; for (let k = mainSrc.indexOf("{", i); k < mainSrc.length; k++) { if (mainSrc[k] === "{") d++; else if (mainSrc[k] === "}" && --d === 0) return mainSrc.slice(i, k + 1); } return ""; };
     const webUrl = new Function("return (" + cutMain("webUrl") + ")")();
     const urls = new Function(line(/^const LAI_INSTALL = .*$/m) + "; return LAI_INSTALL;")();
-    ok("安裝頁:官方兩頁、https;外開走 open-external(webUrl 放行原網址)", urls.claude === "https://code.claude.com/docs/en/setup" && urls.codex === "https://developers.openai.com/codex/cli" && webUrl(urls.claude) === urls.claude && webUrl(urls.codex) === urls.codex
+    ok("安裝頁:只剩 Claude 官方那頁、https(Codex 自己裝的不看);外開走 open-external(webUrl 放行原網址)", urls.claude === "https://code.claude.com/docs/en/setup" && urls.codex === undefined && webUrl(urls.claude) === urls.claude
       && /window\.blave\.openExternal\(LAI_INSTALL\[r\.kind\]\)/.test(fn("laiAct")) && /openExternal: \(url\) => ipcRenderer\.invoke\("open-external", url\)/.test(fs.readFileSync(path.join(SHELL, "preload.js"), "utf8")));
     const { en, zh } = new Function(fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "utf8") + "; return STRINGS;")();
     ok("字串:五條新字、產品名純文字;不寫免費／推薦", zh["acct.useLocal"] === "改用 Claude Code 或 Codex" && en["acct.useLocal"] === "Use Claude Code or Codex" && zh["lai.lede"] === "走你自己的帳號，Blave 不收 AI 費用。" && en["lai.lede"] === "Runs on your own account. No AI charges from Blave."

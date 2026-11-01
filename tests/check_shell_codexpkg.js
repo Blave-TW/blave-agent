@@ -295,8 +295,8 @@ const stagingLeft = (fx) => [...fx.dirs, ...fx.files.keys()].some((k) => k.inclu
   { const fs = require("fs"), SH = path.join(__dirname, "..", "shell");
     const main = fs.readFileSync(path.join(SH, "main.js"), "utf8"), pre = fs.readFileSync(path.join(SH, "preload.js"), "utf8"), app = fs.readFileSync(path.join(SH, "renderer", "app.js"), "utf8");
     const STR = eval(fs.readFileSync(path.join(SH, "renderer", "strings.js"), "utf8") + ";STRINGS");
-    t("回合:Codex 找不到而且隨包那顆正在抓 → AGENT_BIN_DOWNLOADING;否則照舊 AGENT_BIN_MISSING(兩條都在 useCodex 之前)",
-      /if \(conn\.kind === "codex" && !codexBin && _codexPkg && _codexPkg\.busy\(\)\) throw new Error\("AGENT_BIN_DOWNLOADING"\);\n\s*if \(conn\.kind === "codex" && !codexBin\) throw new Error\("AGENT_BIN_MISSING"\);/.test(main)
+    t("回合閘三碼:上次偵測判隨包跑不起來 → AGENT_BIN_BROKEN;正在抓 → AGENT_BIN_DOWNLOADING;否則 AGENT_BIN_MISSING(三條都在 useCodex 之前)",
+      /if \(conn\.kind === "codex" && !codexBin && BAD_BIN\.codex\) throw new Error\("AGENT_BIN_BROKEN"\);\n\s*if \(conn\.kind === "codex" && !codexBin && _codexPkg && _codexPkg\.busy\(\)\) throw new Error\("AGENT_BIN_DOWNLOADING"\);\n\s*if \(conn\.kind === "codex" && !codexBin\) throw new Error\("AGENT_BIN_MISSING"\);/.test(main)
       && main.indexOf('throw new Error("AGENT_BIN_DOWNLOADING")') < main.indexOf("const useCodex = !!codexBin;"));
     t("結束 app:installing 算上 codexpkg.busy();收工的 Promise.all 帶 codexpkg.abort()", /installing = !!\(_engineSetup && \(_engineSetup\.busy\(\) \|\| _engineSetup\.compiling\(\)\)\) \|\| !!\(_codexPkg && _codexPkg\.busy\(\)\);/.test(main)
       && /engineAbort\(\), _codexPkg \? _codexPkg\.abort\(\)\.catch\(\(\) => false\) : null,/.test(main));
@@ -311,11 +311,14 @@ const stagingLeft = (fx) => [...fx.dirs, ...fx.files.keys()].some((k) => k.inclu
     t("preload:codexPkgEnsure(只轉 reinstall:true)/ codexPkgState / onCodexPkgState", /codexPkgEnsure: \(o\) => ipcRenderer\.invoke\("codex-pkg-ensure", o && o\.reinstall === true \? \{ reinstall: true \} : null\),/.test(pre)
       && /codexPkgState: \(\) => ipcRenderer\.invoke\("codex-pkg-state"\),/.test(pre) && /onCodexPkgState: \(fn\) => ipcRenderer\.on\("codex-pkg-state", \(_e, s\) => fn\(s\)\),/.test(pre));
     t("renderer:先掛 onCodexPkgState 再拉一次快照(同 engine.js)", app.indexOf("window.blave.onCodexPkgState(codexPkgOnState);") > 0 && app.indexOf("window.blave.onCodexPkgState(codexPkgOnState);") < app.indexOf("window.blave.codexPkgState()"));
-    t("renderer:回合錯誤卡與系統通知摘錄都認得 AGENT_BIN_DOWNLOADING(字串 key 就是那一碼)", /\/AGENT_BIN_DOWNLOADING\/\.test\(r\.errTail \|\| ""\) \? t\("AGENT_BIN_DOWNLOADING"\)/.test(app)
-      && /\(\(r\.errTail \|\| ""\)\.match\(\/AGENT_BIN_\(MISSING\|DOWNLOADING\)\/\) \|\| \[\]\)\[0\] \|\| false/.test(app) && /binMissing \? t\(binMissing\)/.test(app));
+    t("renderer:回合錯誤卡與系統通知摘錄都認得 AGENT_BIN_DOWNLOADING／AGENT_BIN_BROKEN(字串 key 就是那一碼)", /\/AGENT_BIN_BROKEN\/\.test\(r\.errTail \|\| ""\) \? t\("AGENT_BIN_BROKEN"\)/.test(app) && /\/AGENT_BIN_DOWNLOADING\/\.test\(r\.errTail \|\| ""\) \? t\("AGENT_BIN_DOWNLOADING"\)/.test(app)
+      && /\(\(r\.errTail \|\| ""\)\.match\(\/AGENT_BIN_\(MISSING\|DOWNLOADING\|BROKEN\)\/\) \|\| \[\]\)\[0\] \|\| false/.test(app) && /binMissing \? t\(binMissing\)/.test(app));
     t("focusRedetect:Codex 引擎下載中不重偵測(裝好那一刻自己會)", /if \(PKG\.snap && PKG\.snap\.phase !== "idle"\) return false;/.test(app.slice(app.indexOf("function focusRedetect()"), app.indexOf("function focusRedetect()") + 600)));
-    const KEYS = ["cn.pkgSize", "cn.pkgDl", "cn.pkgInstall", "cn.pkgTar", "cn.pkgNet", "cn.pkgDisk", "cn.pkgFail", "cn.pkgBad", "cn.retry", "row.orBrowser", "AGENT_BIN_DOWNLOADING"];
+    const KEYS = ["cn.pkgSize", "cn.pkgDl", "cn.pkgInstall", "cn.pkgTar", "cn.pkgNet", "cn.pkgDisk", "cn.pkgFail", "cn.pkgBad", "cn.retry", "row.orBrowser", "AGENT_BIN_DOWNLOADING", "AGENT_BIN_BROKEN", "AGENT_BIN_MISSING", "cn.pkgArch"];
     t("字串:新 key 兩語都有;佔位 {size}／{a}／{b} 兩語一致", KEYS.every((k) => STR.zh[k] && STR.en[k]) && ["zh", "en"].every((l) => /\{size\}/.test(STR[l]["cn.pkgSize"]) && /\{a\}/.test(STR[l]["cn.pkgDl"]) && /\{b\}/.test(STR[l]["cn.pkgDl"])), KEYS.filter((k) => !STR.zh[k] || !STR.en[k]));
+    t("字串:回合兩句指到連結畫面的鈕;cn.pkgTar 不再叫人自行安裝(自己裝的不看)", STR.zh.AGENT_BIN_MISSING === "還沒下載 Codex 引擎，到連結畫面按〔連結〕" && STR.zh.AGENT_BIN_BROKEN === "Codex 引擎無法啟動，到連結畫面按〔再試一次〕"
+      && STR.zh[`cn.connect`] === "連結" && STR.zh["cn.retry"] === "再試一次" && STR.en["cn.connect"] === "Connect" && STR.en["cn.retry"] === "Try Again" && /press Connect$/.test(STR.en.AGENT_BIN_MISSING) && /press Try Again$/.test(STR.en.AGENT_BIN_BROKEN)
+      && !/自行安裝/.test(STR.zh["cn.pkgTar"]) && !/yourself/.test(STR.en["cn.pkgTar"]), [STR.zh.AGENT_BIN_MISSING, STR.en.AGENT_BIN_MISSING]);
     const cfg = fs.readFileSync(path.join(SH, "electron-builder.config.js"), "utf8");
     t("打包:codexpkg.js 在 files 裡(main.js require 它)", /files:\s*\[[^\]]*"codexpkg\.js"/.test(cfg)); }
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

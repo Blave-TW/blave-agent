@@ -415,7 +415,8 @@ ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」
 { // 列尾只放一樣:有鈕(或「使用中」)的列沒有狀態字——列舉 引擎 × token × 等待 × 偵測結果,不是抽樣
   const DS = [null, D, { claude: { installed: false }, codex: { installed: true, loggedIn: true } }, { claude: { installed: true, loggedIn: false }, codex: { installed: false } },
     { claude: { installed: true, loggedIn: false, why: "claude_timeout" }, codex: { installed: true, loggedIn: false, why: "codex_cantrun" } },
-    { claude: { installed: false }, codex: { installed: true, loggedIn: false, why: "codex_cantrun", via: "pkg" } }];
+    { claude: { installed: false }, codex: { installed: true, loggedIn: false, why: "codex_cantrun", via: "pkg" } },
+    { claude: { installed: false }, codex: { installed: true, loggedIn: false, why: "codex_timeout", via: "pkg" } }];
   // Codex 引擎隨包的快照(第 6 參數):缺席、還沒拉到、arch／tar 不支援、可以下載、下載中、解壓中、失敗
   const PKGS = [undefined, null, { phase: "idle", unsupported: "arch", fail: null }, { phase: "idle", unsupported: "tar", fail: null }, { phase: "idle", fail: null, size: 166 },
     { phase: "download", bytes: 5e6, total: 166e6, fail: null }, { phase: "extract", fail: null }, { phase: "idle", fail: { kind: "net" } }];
@@ -428,16 +429,21 @@ ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」
   const NONE = { claude: { installed: true, loggedIn: true }, codex: { installed: false } };
   const cx = (pk, d) => mdlOptions(d || NONE, "claude", true, null, null, pk)[2];
   const sh = (o) => [o.kind, o.st ? o.st.key + (o.st.vars ? JSON.stringify(o.st.vars) : "") : "-", o.desc || "-", o.descVars ? JSON.stringify(o.descVars) : "-", String(o.act), o.off ? "off" : "", o.pkg ? "pkg" : "", o.reinstall ? "re" : ""].join("|");
-  ok("pkg 缺席／null(還沒拉到)/ arch 不支援 → 照舊「未偵測到」、沒有鈕", [undefined, null, { phase: "idle", unsupported: "arch", fail: null }].every((pk) => sh(cx(pk)) === "codex|st.notFound|-|-|null|||"), [undefined, null].map((pk) => sh(cx(pk))));
+  ok("pkg 缺席／null(還沒拉到)→ 照舊「未偵測到」、沒有鈕", [undefined, null].every((pk) => sh(cx(pk)) === "codex|st.notFound|-|-|null|||"), [undefined, null].map((pk) => sh(cx(pk))));
+  ok("架構不支援(arch)→ 沒有鈕、說明 cn.pkgArch、列灰(那不是沒偵測到);字串兩語都有", sh(cx({ phase: "idle", unsupported: "arch", fail: null })) === "codex|-|cn.pkgArch|-|null|off|pkg|" && /msgid "cn\.pkgArch"\nmsgstr "這台電腦的架構不支援 Codex 引擎"\n/.test(PO2[0]) && /msgid "cn\.pkgArch"\n/.test(PO2[1]), sh(cx({ phase: "idle", unsupported: "arch", fail: null })));
   ok("Windows 太舊(tar)→ 沒有鈕、說明 cn.pkgTar、列灰", sh(cx({ phase: "idle", unsupported: "tar", fail: null })) === "codex|-|cn.pkgTar|-|null|off|pkg|", sh(cx({ phase: "idle", unsupported: "tar", fail: null })));
   ok("可以下載 → 〔連結〕(cn.connect)、說明「會下載 Codex 引擎(約 {size} MB)」", sh(cx({ phase: "idle", fail: null, size: 203 })) === 'codex|-|cn.pkgSize|{"size":"203"}|cn.connect||pkg|', sh(cx({ phase: "idle", fail: null, size: 203 })));
   ok("下載中 → 狀態「下載 Codex 引擎 {a} / {b} MB」(同 eng.bytes 一位小數)、沒有鈕;解壓／驗證 → 「正在安裝」", sh(cx({ phase: "download", bytes: 5.25e6, total: 166e6, fail: null })) === 'codex|cn.pkgDl{"a":"5.3","b":"166.0"}|-|-|null||pkg|'
     && sh(cx({ phase: "extract", fail: null })) === "codex|cn.pkgInstall|-|-|null||pkg|" && sh(cx({ phase: "verify", fail: null })) === "codex|cn.pkgInstall|-|-|null||pkg|", [sh(cx({ phase: "download", bytes: 5.25e6, total: 166e6, fail: null })), sh(cx({ phase: "extract", fail: null }))]);
   ok("失敗 → 原因一句 +〔再試一次〕:net 下載不了、disk 磁碟不夠、checksum／other 安裝失敗", ["net:cn.pkgNet", "disk:cn.pkgDisk", "checksum:cn.pkgFail", "other:cn.pkgFail", "http:cn.pkgFail"].every((kd) => { const [k, d] = kd.split(":"); return sh(cx({ phase: "idle", fail: { kind: k } })) === "codex|-|" + d + "|-|cn.retry||pkg|"; }));
-  const BAD = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: false, why: "codex_cantrun", via: "pkg" } };
-  ok("隨包那顆跑不起來(via=pkg 的 cantrun)→〔再試一次〕重抓(reinstall),不是「重新安裝 Codex」;沒有快照時照舊", sh(cx({ phase: "idle", fail: null }, BAD)) === "codex|-|cn.pkgBad|-|cn.retry||pkg|re"
-    && mdlOptions(BAD, "claude", true)[2].desc === "row.reinstall", sh(cx({ phase: "idle", fail: null }, BAD)));
-  ok("偵測到 codex(PATH／ChatGPT app／隨包那顆能跑)→ 快照不接手;偵測中照舊「偵測中…」", sh(cx({ phase: "idle", fail: null }, { codex: { installed: true, loggedIn: true } })).startsWith("codex|-|-|-|cn.use")
+  const BAD = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: false, why: "codex_cantrun" } };
+  ok("隨包那顆跑不起來(installed + cantrun,不看 via)→〔再試一次〕重抓(reinstall),不是「重新安裝 Codex」;沒有快照時只有狀態字", sh(cx({ phase: "idle", fail: null }, BAD)) === "codex|-|cn.pkgBad|-|cn.retry||pkg|re"
+    && mdlOptions(BAD, "claude", true)[2].st.key === "st.cantRun", sh(cx({ phase: "idle", fail: null }, BAD)));
+  ok("快照還沒到(pkg == null)的暫態:codex 跑不起來不給 row.reinstall(自己裝的不看);claude 照給", cx(null, BAD).desc === null && cx(undefined, BAD).desc === null
+    && mdlOptions({ claude: { installed: true, loggedIn: false, why: "claude_cantrun" }, codex: { installed: false } }, "blave", true)[1].desc === "row.reinstall", sh(cx(null, BAD)));
+  { const SLOW = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: false, why: "codex_timeout", via: "pkg" } };
+    ok("隨包那顆沒回應 → 快照不接手:「沒有回應」、沒有鈕(重抓解決不了逾時)", sh(cx({ phase: "idle", fail: null }, SLOW)) === "codex|st.noResp|-|-|null|off||", sh(cx({ phase: "idle", fail: null }, SLOW))); }
+  ok("隨包那顆能跑 → 快照不接手;偵測中照舊「偵測中…」", sh(cx({ phase: "idle", fail: null }, { codex: { installed: true, loggedIn: true } })).startsWith("codex|-|-|-|cn.use")
     && sh(cx({ phase: "download", bytes: 1, total: 2, fail: null }, { codex: { installed: true, loggedIn: false } })) === "codex|-|-|-|cn.signIn|||" && mdlOptions(null, "claude", true, null, null, { phase: "idle", fail: null })[2].st.key === "cn.detecting");
   ok("mdlAct:下載列(o.pkg)走 codexPkgGo(reinstall),不走 connect／localLogin", /if \(o\.pkg\) return codexPkgGo\(o\.reinstall\);/.test(fnSrc("mdlAct")) && fnSrc("mdlAct").indexOf("o.pkg") < fnSrc("mdlAct").indexOf("return connect("));
   ok("mdlPaint:傳 PKG.snap 當第 6 參數;說明與狀態字帶 vars", /mdlOptions\(MDL\.busy \? null : lastDetect, cur, hasToken, pend, typeof AK === "object" \? AK\.info : null, PKG\.snap\)/.test(fnSrc("mdlPaint"))
@@ -448,7 +454,7 @@ ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」
   ok("模型接入:127 →「無法啟動」、逾時 →「沒有回應」,兩列 off、沒有鈕;沒登入(nonzero)那一列仍是〔登入〕、不灰;等登入中照樣只有「取消等待」",
     shape(A[1]) === "claude|false|st.noResp|null" && shape(A[2]) === "codex|false|st.cantRun|null" && A[1].off && A[2].off
     && shape(B[2]) === "codex|false||cn.signIn" && !B[2].off && C[2].act === "login.cancel" && C[2].st === null, [A, B, C].map((m) => m.slice(1, 3).map(shape)));
-  ok("模型接入:「無法啟動」那一列說明是 row.reinstall(帶名字);「沒有回應」、一般沒登入不加", A[2].desc === "row.reinstall" && A[1].desc === null && B[2].desc === null
+  ok("模型接入:claude「無法啟動」那一列說明是 row.reinstall(帶名字),codex 不給(自己裝的不看);「沒有回應」、一般沒登入不加", mdlOptions({ claude: { installed: true, loggedIn: false, why: "claude_cantrun" }, codex: { installed: false } }, "blave", true)[1].desc === "row.reinstall" && A[2].desc === null && A[1].desc === null && B[2].desc === null
     && /tc\.appendChild\(el\("p", "m", [^\n]*t\(o\.desc, \/\^row\\\.\/\.test\(o\.desc\) \? rowVars\(o\.kind, o\.name\) : undefined\)\)\)/.test(src), [A[1].desc, A[2].desc, B[2].desc]);
   // 金鑰設在 agent 回合讀不到的地方(main.js authOutside):沒登入那一列多一句出路,鈕照舊〔登入〕;跑不起來、偵測中、已登入都不出
   const K = { claude: { installed: true, loggedIn: false, authOutside: true }, codex: { installed: true, loggedIn: false, authOutside: true } };

@@ -383,10 +383,13 @@ msgid "turn.exit"
 msgstr "引擎退出碼 {code}"
 
 msgid "AGENT_BIN_MISSING"
-msgstr "這一輪沒送出：找不到你連的 AI 指令列工具。到「連結」重新偵測，或改連別的。"
+msgstr "還沒下載 Codex 引擎，到連結畫面按〔連結〕"
 
 msgid "AGENT_BIN_DOWNLOADING"
 msgstr "這一輪沒送出：正在下載 Codex 引擎，好了再送一次。"
+
+msgid "AGENT_BIN_BROKEN"
+msgstr "Codex 引擎無法啟動，到連結畫面按〔再試一次〕"
 
 msgid "turn.error"
 msgstr "出錯了：{msg}"
@@ -990,9 +993,6 @@ msgstr "登入沒有完成。"
 msgid "row.orCmd"
 msgstr "或在終端機執行 {cmd}。"
 
-msgid "row.orApp"
-msgstr "或在 ChatGPT app 登入後回到這裡。"
-
 msgid "row.reinstall"
 msgstr "重新安裝 {name} 後回到這裡。"
 
@@ -1006,7 +1006,7 @@ msgid "cn.pkgInstall"
 msgstr "正在安裝"
 
 msgid "cn.pkgTar"
-msgstr "這台 Windows 版本太舊，請更新 Windows 或自行安裝 Codex"
+msgstr "這台 Windows 版本太舊，無法安裝 Codex 引擎，請更新 Windows"
 
 msgid "cn.pkgNet"
 msgstr "下載不了，檢查網路後再試"
@@ -1025,6 +1025,9 @@ msgstr "再試一次"
 
 msgid "row.orBrowser"
 msgstr "會開瀏覽器完成登入。"
+
+msgid "cn.pkgArch"
+msgstr "這台電腦的架構不支援 Codex 引擎"
 
 # 偵測說沒登入、但 CLI 帶整份環境與用戶設定檔時說已登入(main.js authOutside):金鑰在環境變數、settings.json 或 apiKeyHelper,agent 回合讀不到
 msgid "row.keyOff"
