@@ -1129,17 +1129,8 @@ msgstr "現在讀不到餘額"
 msgid "plan.month"
 msgstr "{p} TWD／月"
 
-msgid "plan.hour"
-msgstr "以 30 天計 ＝ 每個整點從餘額扣 {h} TWD"
-
 msgid "plan.trialFree"
 msgstr "{d}前免主機費，之後照上面的價格。"
-
-msgid "plan.trialFree.m"
-msgstr "試用到 {d}，到期自動扣第一期 {p} TWD。試用期間取消就不扣。"
-
-msgid "plan.trialFree.mNoCharge"
-msgstr "試用到 {d}。"
 
 msgid "plan.start"
 msgstr "啟動方案"
@@ -2849,9 +2840,6 @@ msgstr "Blave — {where}"
 msgid "tr.mode.real"
 msgstr "真錢"
 
-msgid "side.cloud.starting"
-msgstr "主機啟動中"
-
 msgid "side.cloud.emptyCut1"
 msgstr "雲端還沒有策略。"
 
@@ -2861,23 +2849,68 @@ msgstr "已暫停"
 msgid "env.empty.title"
 msgstr "雲端"
 
-msgid "env.empty.desc"
-msgstr "還沒有雲端主機"
-
 msgid "env.open.h"
-msgstr "把策略放上雲端，電腦關機也照跑"
+msgstr "關上電腦，策略照跑"
 
 msgid "env.open.lead"
-msgstr "一台 24 小時開著的主機，照排程跑策略、自動下單；含 Blave 的行情與籌碼資料。"
+msgstr "含 Blave 行情與籌碼資料。"
 
 msgid "env.open.more"
-msgstr "看完整方案內容"
+msgstr "其他方案與月價 →"
+
+msgid "env.open.spec"
+msgstr "{label} · {vcpu} vCPU · {ram} GB"
+
+msgid "env.open.price"
+msgstr "{p} TWD／{n} 天"
+
+msgid "env.open.tagTrial"
+msgstr "試用到 {d}"
+
+msgid "env.open.tagPlan"
+msgstr "方案有效到 {u}"
+
+msgid "env.open.pend"
+msgstr "{id} 等著上雲端。"
+
+msgid "env.open.trialOffer"
+msgstr "首次綁卡試用 {t} 天，期間取消不扣。"
+
+msgid "env.open.offer"
+msgstr "試用 {t} 天，期間取消不扣。到期自動扣第一期。"
+
+msgid "env.open.bind"
+msgstr "綁卡開始試用"
+
+msgid "env.open.included"
+msgstr "API 方案含資料，不含主機。"
+
+msgid "env.open.trial"
+msgstr "開機不另收。到期自動扣第一期 {p} TWD，期間取消不扣。"
+
+msgid "env.open.trialOff"
+msgstr "開機不另收。"
+
+msgid "env.open.planOn"
+msgstr "方案含一台同階主機，開機不另收。"
+
+msgid "env.open.failH"
+msgstr "扣款失敗"
+
+msgid "env.open.repay"
+msgstr "Blave 資料已暫停。每天重試，{gu}方案結束。"
+
+msgid "env.open.repayNoNum"
+msgstr "Blave 資料已暫停。每天重試扣款。"
+
+msgid "env.empty.unknown"
+msgstr "查不到這個帳號的狀態。"
 
 msgid "side.cloud.emptyReady"
 msgstr "主機已經開好了。策略送上來之後，會列在這裡。"
 
 msgid "env.empty.starting"
-msgstr "雲端主機啟動中，通常 1 分鐘左右。開好後這一頁會自己換成雲端的內容。"
+msgstr "雲端主機啟動中，通常 1 分鐘左右。"
 
 msgid "env.empty.relogin"
 msgstr "登入已失效，請重新登入。這台電腦上的對話與策略不受影響。"

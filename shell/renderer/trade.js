@@ -1529,6 +1529,23 @@ function envOpenView(kind, hasTok, pv) {
   if (pv === "planOn") return "web";
   return pv === "trial" || pv === "plan" || pv === "included" ? "start" : "unknown";
 }
+/* 開通頁卡裡每一格的內容(mockup-cloud-empty 方向 A)。err = 這一輪有錯誤句,訊息格讓給它、不再招攬。
+   招攬態(沒登入、綁卡、沒方案)才有「其他方案與月價」和含什麼那句;試用與方案有效右上換成日期,不擺價格;扣款失敗換標題。
+   價格一律講每幾天(pricing:方案價不是月換算);扣款失敗讀他那一階、那個週期的下一期,其餘是 Starter 開通價。切換前照舊「每月」 */
+function envOpenCard(view, pv, v, mo, err) {
+  const trial = view === "start" && pv === "trial", pitch = !err && (view === "out" || view === "card" || (view === "start" && !trial));
+  const amt = view === "repay" ? v.x || v.p : v.p, n = view === "repay" && v.cy === "annual" ? v.yd : v.pd;
+  const tag = trial && v.d ? t("env.open.tagTrial", v) : view === "web" && v.u ? t("env.open.tagPlan", v) : "";
+  const price = trial || view === "web" || !amt ? "" : !mo ? t("plan.month", v) : n ? t("env.open.price", { p: amt, n }) : "";
+  let msg = "";
+  if (view === "out") msg = mo && v.t ? t("env.open.trialOffer", v) : "";
+  else if (view === "card") msg = !mo || pv !== "offer" ? pvCardFoot(pv, v) : v.t ? t("env.open.offer", v) : "";
+  else if (trial) msg = planTrialLine(v);
+  else if (view === "start") msg = !mo ? "" : t(pv === "included" ? "env.open.included" : "pv.f.plan.m");
+  else if (view === "web") msg = t("env.open.planOn");
+  else if (view === "repay") msg = t(v.gu ? "env.open.repay" : "env.open.repayNoNum", v);
+  return { head: view === "repay" ? "env.open.failH" : "env.open.h", tag, price, more: pitch, note: pitch, msg };
+}
 /* 側欄策略列名字前的綠呼吸點——照網頁 stratRunState(Wei 10-14,web 9c1d768c):點 = 這支在配置裡、主機照 K 線週期在算它的訊號。
    ① 剛存進組合的 5 分鐘內先亮(排程 / 首跑 / 回報還在路上);剛移出的 5 分鐘內先熄(回報要下一輪才少掉這個名字)
    ② 在策略組合裡(amounts 有這個 key,金額 0 也算;Wei 10-14)且主機回報有排程(scheduled 讀不到 = 不擋,不把整台的點都熄掉)。不看訊號多久前更新:日線、4h 一天大半時間
@@ -6530,51 +6547,31 @@ function envPaintSide(kind, st) {
   if (keep) { const w = [...box.querySelectorAll(":scope > .strat-wrap")].find((r) => r.dataset.name === keep.name), b = w && w.querySelector(keep.cls); if (b) b.focus(); }   // 名字不一定是合法 selector:逐列比
   if (keepHead) { const h = box.querySelector(':scope > .sg-head[data-gid="' + keepHead.gid + '"]'), b = h && h.querySelector(keepHead.cls); if (b) b.focus(); }
 }
-/* 開通頁(規格 §3;Wei 選定 A 案):電腦版把人帶進雲端方案的主要入口。主鈕**直接開已上線的那一套**——登入走 planLogin、
-   啟動走 planAsk(花錢的確認框 cf.*,一步不少)、綁卡外開瀏覽器;這裡不另寫一條開通流程。價格數字來自方案頁同一個來源
-   (planVars:登入後 account_status、沒登入 public-pricing);拿不到 → 價格段不畫、啟動鈕 disabled,不寫死數字。 */
+/* 開通頁(mockup-cloud-empty 方向 A):電腦版把人帶進雲端方案的主要入口,跟 web 雲端主機頁同一張卡,整頁只有這張卡,換狀態只換卡裡一格;
+   狀態頁(啟動中、讀不到、重新登入這類)不留招攬字。主鈕**直接開已上線的那一套**——登入走 planLogin、綁卡外開瀏覽器、方案制的主機到網站開;
+   這裡不另寫一條開通流程。數字都來自 planVars／planSpec,拿不到就那一格不畫,不寫死。 */
 function envPaintEmpty(kind, pid) {
   // 「準備好了」那一態在 envOpenView 之外另判:它的條件是「還有一支等著送上雲端」,不是帳號狀態
   const ready = kind === "running" && !!pid;
-  const view = ready ? "ready" : envOpenView(kind, hasToken, planView()), v = planVars();
-  // 這一頁要的數字:登入了但帳號狀態還沒到 → 去查;沒登入 → 公開價目。查回來會經 envPlanChanged 重畫
+  const pv = planView(), view = ready ? "ready" : envOpenView(kind, hasToken, pv), v = planVars(), spec = planSpec();
+  // 這一頁要的數字:帳號狀態與公開價目(規格列與一期幾天登入後也讀這份)。查回來會重畫
   // 最多每 30 秒問一次:查不到(離線)時重畫又會走到這裡,不設間隔就是一個空轉的迴圈
-  if (((hasToken && !acct && !acctPending) || (!hasToken && !pub)) && Date.now() - (ENV.askedAt || 0) > 30000) {
+  if (((hasToken && !acct && !acctPending) || !pub) && Date.now() - (ENV.askedAt || 0) > 30000) {
     ENV.askedAt = Date.now();
-    if (hasToken) acctCheck(); else pubLoad().then(envPlanChanged);
+    if (hasToken && !acct) acctCheck();
+    if (!pub) pubLoad().then(envPlanChanged);
   }
   const slow = view === "starting" && planSince && Date.now() - planSince > PLAN_SLOW_MS;
   const err = view === "starting" || view === "loading" || view === "unreach" || view === "ready" ? null : planErr;
-  const sig = LANG + "|" + JSON.stringify([view, pid || null, v.p, v.h, v.y, planMo(), v.d, v.t, v.q, v.v, slow, err && err.key, planLoginBusy, cur]);
+  const sig = LANG + "|" + JSON.stringify([view, pid || null, pv, spec, v.p, v.h, v.y, v.x, v.cy, v.pd, v.yd, planMo(), v.d, v.u, v.gu, v.t, v.v, slow, err && err.key, planLoginBusy, cur]);
   if (ENV.sig.empty === sig) return;
   ENV.sig.empty = sig;
-  const desc = $("cv-desc"); desc.textContent = "";
-  if (view === "starting") { const d = trEl("i", "dot busy"); d.setAttribute("aria-hidden", "true"); desc.append(d, trEl("span", "txt", t("side.cloud.starting"))); }
-  // ready 這一態描述**留空**:env.empty.desc「還沒有雲端主機」在這裡是假話,而「運行中」那件事 h4 已經講了
-  else if (view !== "loading" && view !== "unreach" && view !== "ready") desc.textContent = t("env.empty.desc");
   const box = $("cv-body"), focusK = box.contains(document.activeElement) ? document.activeElement.dataset.k : null;
   box.textContent = "";
-  if (view === "loading") { box.appendChild(trEl("div", "pf-state", t("tr.loading"))); return; }
-  const page = trEl("div", "cv-open"); box.appendChild(page);
+  if (view === "loading") { const st = trEl("div", "cv-st is-flat"); st.appendChild(trEl("p", "", t("tr.loading"))); box.appendChild(st); return; }
   const btn = (cls, label, on, k) => { const b = trEl("button", cls, label); b.type = "button"; b.dataset.k = k; if (on) b.addEventListener("click", on); return b; };
-  if (view === "unreach") { page.appendChild(trEl("p", "cv-p", t("env.empty.unreach"))); return; }
-  // ready:行為同 starting——不畫 env.open.h 那三條賣點、不畫價格。它不是開通頁了,是一句交代
-  if (view === "ready") page.append(trEl("h4", "", t("ho.ready.h")), trEl("p", "cv-p", t("ho.ready.body", { id: pid })));
-  else if (view === "starting") page.appendChild(trEl("p", "cv-p", t("env.empty.starting")));
-  else {
-    page.append(trEl("h4", "", t("env.open.h")), trEl("p", "cv-lead", t("env.open.lead")));
-    // 扣款規則(存在就扣、停機照扣、刪除才停)不在這一頁:啟動確認框一定會經過、三句直接顯示,設定頁的底列(pv.f.*)也講(spec-0.1.10 §2.3)
-    // 方案制:電腦版只開方案、主機到網站開——這一頁不印開通價(印了會被讀成按下去要付這筆);切換前照舊
-    if (v.p && !planMo()) page.appendChild(planPriceEl(trEl, v));
-  }
-  // 鈕上方那一行:錯誤(方案頁同一組 plan.err.*)優先;否則這顆鈕會帶來的錢 / 好消息
-  if (err) { const e = trEl("p", "plan-err" + (err.calm ? " is-calm" : "")); e.setAttribute("role", "status"); const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, trEl("span", "", t(err.key))); page.appendChild(e); }
-  else if (slow) { const e = trEl("p", "plan-err is-calm"); const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, trEl("span", "", t("plan.err.slow"))); page.appendChild(e); }
-  else if (view === "relogin") page.appendChild(trEl("p", "cv-above up", t("env.empty.relogin")));
-  else if (view === "card") { const foot = pvCardFoot(planView(), v); if (foot) page.appendChild(trEl("p", "cv-above", foot)); }
-  else if (view === "start" && v.d) page.appendChild(trEl("p", "cv-above up", planTrialLine(v)));
-  const act = trEl("div", "cv-act"), more = () => btn("btn-quiet", t("env.open.more"), () => planOpen(), "more");
   const after = () => { ENV.sig.empty = null; ENV.cloudDirty = true; trPollSoon(0); };
+  const errEl = () => { const e = trEl("p", "plan-err" + (err.calm ? " is-calm" : "")); e.setAttribute("role", "status"); const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, trEl("span", "", t(err.key))); return e; };
   let main = null, side = null;
   if (err && err.key === "plan.err.relogin") main = btn("btn-fill", t("plan.relogin"), () => Promise.resolve(planRelogin()).then(after), "main");
   else if (err && (err.key === "plan.err.nocard" || err.key === "plan.err.nocard.m")) main = btn("btn-fill", t("plan.addCard"), () => bindGo("bind_cloud"), "main");
@@ -6585,15 +6582,37 @@ function envPaintEmpty(kind, pid) {
   else if (view === "ready") { main = btn("btn-fill", t("ho.back.btn"), () => hoBack(pid), "main"); side = btn("btn-quiet", t("ho.ready.stay"), () => { hoStay(); after(); }, "stay"); }
   else if (view === "out") { main = planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin, "main") : btn("btn-fill", t("cn.blave.btn"), () => Promise.resolve(planLogin()).then(after), "main"); side = trEl("span", "wait", planLoginBusy ? t("pv.w.waiting") : t("pv.w.out.cli")); }
   else if (view === "relogin") main = btn("btn-fill", t("plan.relogin"), () => Promise.resolve(planRelogin()).then(after), "main");
-  else if (view === "card") { main = btn("btn-fill", t("plan.addCard"), () => bindGo("bind_cloud"), "main"); side = more(); }
+  else if (view === "card") main = btn("btn-fill", t(planMo() && pv === "offer" ? "env.open.bind" : "plan.addCard"), () => bindGo("bind_cloud"), "main");
   // 方案制要雲端主機:到網站開(電腦版的開通只開方案、不建主機);切換前照舊在 app 內啟動
-  else if (view === "start" && planMo()) { main = btn("btn-fill", t("plan.cloudWeb"), cloudWebGo, "main"); side = more(); }
-  else if (view === "start") { main = btn("btn-fill", t("plan.start"), planAsk, "main"); main.disabled = !planPriceOk(v); side = more(); }
-  else if (view === "repay") { main = btn("btn-fill", t("plan.repay"), planRepay, "main"); side = more(); }
-  else if (view === "web") { main = btn("btn-fill", t("plan.cloudWeb"), cloudWebGo, "main"); side = more(); }
-  else if (view === "starting") { main = slow ? btn("btn-out", t("plan.recheck"), () => { planSince = Date.now(); acctCheck(); after(); }, "main") : btn("btn-fill", t("plan.starting"), null, "main"); main.disabled = !slow; }
-  else { main = btn("btn-out", t("plan.recheck"), () => { acctCheck(); if (typeof window.blave.cloudRefresh === "function") window.blave.cloudRefresh(); after(); }, "main"); side = more(); }
-  act.appendChild(main); if (side) act.appendChild(side); page.appendChild(act);
+  else if (view === "start" && planMo()) main = btn("btn-fill", t("plan.cloudWeb"), cloudWebGo, "main");
+  else if (view === "start") { main = btn("btn-fill", t("plan.start"), planAsk, "main"); main.disabled = !planPriceOk(v); }
+  else if (view === "repay") main = btn("btn-fill", t("plan.repay"), planRepay, "main");
+  else if (view === "web") main = btn("btn-fill", t("plan.cloudWeb"), cloudWebGo, "main");
+  else if (view === "starting") { if (slow) main = btn("btn-out", t("plan.recheck"), () => { planSince = Date.now(); acctCheck(); after(); }, "main"); }
+  else main = btn("btn-out", t("plan.recheck"), () => { trackFeature("cloud_recheck"); acctCheck(); if (typeof window.blave.cloudRefresh === "function") window.blave.cloudRefresh(); after(); }, "main");   // unknown／unreach
+  if (["starting", "unreach", "unknown", "relogin", "ready"].includes(view)) {
+    const st = trEl("div", "cv-st"); box.appendChild(st);
+    if (view === "ready") st.append(trEl("h4", "", t("ho.ready.h")), trEl("p", "", t("ho.ready.body", { id: pid })));
+    else if (view === "starting") { const p = trEl("p", "is-up"), d = trEl("i", "dot busy"); d.setAttribute("aria-hidden", "true"); p.append(d, trEl("span", "", t(slow ? "plan.err.slow" : "env.empty.starting"))); st.appendChild(p); }
+    else st.appendChild(err ? errEl() : trEl("p", "", t(view === "unreach" ? "env.empty.unreach" : view === "unknown" ? "env.empty.unknown" : "env.empty.relogin")));
+    if (main) { const act = trEl("div", "cv-act"); act.appendChild(main); if (side) act.appendChild(side); st.appendChild(act); }
+  } else {
+    const c = envOpenCard(view, pv, v, planMo(), err), page = trEl("div", "cv-ce"), card = trEl("div", "cv-card"); box.appendChild(page);
+    page.appendChild(trEl("h3", "", t(c.head)));
+    if (pid) page.appendChild(trEl("p", "cv-pend", t("env.open.pend", { id: pid })));
+    if (spec || c.tag || c.price) {
+      const top = trEl("div", "cv-top");
+      if (spec) top.appendChild(trEl("span", "cv-spec", t("env.open.spec", spec)));
+      if (c.tag || c.price) top.appendChild(trEl("span", "cv-pr" + (c.tag ? " is-tag" : ""), c.tag || c.price));
+      card.appendChild(top);
+    }
+    if (c.more) { const m = trEl("div", "cv-more"); m.appendChild(btn("btn-quiet", t("env.open.more"), cloudPricingGo, "more")); card.appendChild(m); }
+    if (c.note) card.appendChild(trEl("p", "cv-note", t("env.open.lead")));
+    if (err) card.appendChild(errEl()); else if (c.msg) card.appendChild(trEl("p", "cv-slot", c.msg));
+    const act = trEl("div", "cv-acts"); act.appendChild(main); card.appendChild(act);
+    if (side) { const f = trEl("p", "cv-foot"); f.appendChild(side); card.appendChild(f); }
+    page.appendChild(card);
+  }
   if (focusK) { const again = [...box.querySelectorAll("button")].find((b) => b.dataset.k === focusK); if (again && !again.disabled) again.focus(); else $("cv-h").focus(); }
 }
 // 帳號 / 方案狀態變了(app.js 的 planPaint、sidePaint 叫):人在雲端視角就重畫;剛按了啟動 → 請主行程馬上重問雲端,不等下一輪

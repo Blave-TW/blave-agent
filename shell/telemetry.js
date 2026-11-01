@@ -279,7 +279,9 @@ const EVENTS = {
     // 按主鈕開了金額框／金額框存成功／從策略頁開連接框／從策略頁開啟動框／按雲朵 icon 鈕
     "sp_auto_open", "sp_amt_saved", "sp_cx_opened", "sp_start_opened", "sp_cloud_icon",
     // 0.1.39 Codex 引擎隨包(主行程 shell/codexpkg.js 送):套件下載、校驗、解壓、驗過、上架都成功。api 白名單同順序,api 先上
-    "codex_pkg_done"] },
+    "codex_pkg_done",
+    // 雲端開通頁(0.1.41;renderer/app.js cloudPricingGo、trade.js envPaintEmpty):「其他方案與月價」外開定價頁、讀不到雲端／查不到帳號時的〔重新查看〕
+    "cloud_pricing", "cloud_recheck"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

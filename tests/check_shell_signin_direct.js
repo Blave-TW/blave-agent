@@ -17,7 +17,6 @@ const NOT_SIGNIN = {   // 檔 → 所在函式:登出之後切到這一類、查
   "app.js": ["acctSignOut", "setCat", "dataCardState", "planOpen", "mvBlock", "phBlock"],
   "library.js": ["libGateBtn", "libBuyBox", "libPaintList"],   // libPaintList:方案制試用閘門旁的「看方案」(paywall-redesign-2026-10-21)
   "welcome.js": ["wdNote"],
-  "trade.js": ["envPaintEmpty"],
 };
 const SIGNIN_KEYS = /"(cn\.blave\.btn|pv\.signin|shr\.gateGo|wd\.note\.out(NoNum|\.m)?)"/;
 const sites = [];

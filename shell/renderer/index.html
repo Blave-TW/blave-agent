@@ -172,8 +172,9 @@
       </div>
       <!-- 雲端視角、沒有主機可看(沒主機 / 未登入 / 啟動中 / 讀不到):內容由 trade.js 畫 -->
       <div class="trv" id="cv-empty" hidden>
-        <div class="main-head"><div class="txt"><h5 class="main-head-name" id="cv-h" tabindex="-1" data-i18n="env.empty.title"></h5><div class="main-head-desc" id="cv-desc"></div></div></div>
-        <div class="pf" id="cv-body"></div>
+        <!-- 整頁的標題在卡裡,這一顆給讀屏與切視角的焦點落點 -->
+        <h5 class="sr-only" id="cv-h" tabindex="-1" data-i18n="env.empty.title"></h5>
+        <div class="cv-body" id="cv-body"></div>
       </div>
       <!-- 策略報告(選了策略才出現;沒選時是下面的 welcome)。六個分頁:回測 / 進出場 / 參數掃描 /
            樣本外驗證 / 成交測試 / 程式碼。前五個各自一支檔(report-backtest.js / report-trades.js / report-robust.js / report-wf.js / report-xt.js),

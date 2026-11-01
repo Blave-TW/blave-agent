@@ -1125,9 +1125,6 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .plan-list{margin:0;padding:0;list-style:none}
 .plan-list li{position:relative;padding-left:var(--space-16);line-height:1.7;color:var(--ink)}
 .plan-list li::before{content:"";position:absolute;left:2px;top:11px;width:6px;height:1px;background:var(--ink-3)}
-.plan-price{display:flex;align-items:baseline;gap:var(--space-12);flex-wrap:wrap}
-.plan-price .m{font-family:var(--font-mono);font-size:15px;font-weight:600;color:var(--ink)}
-.plan-price .h{font-size:12px;color:var(--ink-3)}
 .plan-id .plan-fine{margin-top:calc(-1 * var(--space-4))}   /* 餘額列下的自動儲值短句:抵掉一半的欄距,貼著餘額列 */
 .plan-fine{margin:var(--space-6) 0 0;font-size:12px;line-height:1.6;color:var(--ink-3)}
 .plan-foot{margin-top:var(--space-16)}
