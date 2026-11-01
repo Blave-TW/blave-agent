@@ -132,7 +132,7 @@ html[data-env="cloud"] .cs-tabs .tab:not([aria-selected="true"]):has(+ .tab:not(
 .cv-act { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-16); margin-top: var(--space-16); }
 .cv-act .btn-fill, .cv-act .btn-out { height: 36px; }
 .cv-act .btn-quiet { font-size: 13px; color: var(--link-quiet); }
-@container (max-width: 520px) {
+@container (max-width: 519px) {
   .cv-ce h3 { font-size: 26px; }
   .cv-card { padding: var(--space-16); }
   .cv-more { text-align: left; }
