@@ -8623,9 +8623,6 @@ msgstr "每檔策略同樣份額，不擬合。"
 msgid "mg.fund"
 msgstr "投入資金"
 
-msgid "mg.fundTip"
-msgstr "預設是配置分頁的合計"
-
 # 移動窗格回測三格數字底下各自的「贏過 X%」氣泡;後面接 mg.beatsNote(期間注記)
 msgid "mg.beatsTip.ret"
 msgstr "總報酬高於同期 1,000 組隨機權重投組中這個比例。參考值，換一段期間會明顯不同。"
@@ -9162,7 +9159,25 @@ msgid "sz.shortMdd"
 msgstr "共同資料不到 90 天，不能用最大回撤"
 
 msgid "mg.needFund"
-msgstr "先按「{method}」填投入資金，建議金額才算得出來。"
+msgstr "先填投入資金，建議金額才算得出來。"
+
+msgid "mg.needSize"
+msgstr "先填部位大小，建議金額才算得出來。"
+
+msgid "mg.needMethod"
+msgstr "先選部位大小的方法，建議金額才算得出來。"
+
+msgid "mg.needTarget"
+msgstr "先填部位大小的目標，建議金額才算得出來。"
+
+msgid "mg.sizeNoHist"
+msgstr "這份結果沒有歷史波動，目標波動算不出來"
+
+msgid "mg.sizeNoSolve"
+msgstr "這個回撤目標算不出槓桿，改一個目標"
+
+msgid "sz.unset"
+msgstr "未設定"
 
 msgid "tr.cloud.notApplied"
 msgstr "主機還沒套用剛存的金額，畫面先顯示主機上的值；套用後會自動更新。"

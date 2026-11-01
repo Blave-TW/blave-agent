@@ -2902,7 +2902,7 @@ function mgSizingClean(v) {
   if (!v || typeof v !== "object" || Array.isArray(v)) return null;
   const pos = (x) => (typeof x === "number" && isFinite(x) && x > 0 ? x : null), tg = v.target && typeof v.target === "object" ? v.target : {};
   return { fund: pos(v.fund), fundCcy: typeof v.fundCcy === "string" && /^[A-Z]{2,8}$/.test(v.fundCcy) ? v.fundCcy : null,
-    method: ["vol", "mdd", "lev"].indexOf(v.method) >= 0 ? v.method : "vol", target: { vol: pos(tg.vol), mdd: pos(tg.mdd), lev: pos(tg.lev) } };
+    method: ["vol", "mdd", "lev"].indexOf(v.method) >= 0 ? v.method : null, target: { vol: pos(tg.vol), mdd: pos(tg.mdd), lev: pos(tg.lev) } };
 }
 function mgSizingCloudGet() {
   const who = currentWho(); if (!who) return null;

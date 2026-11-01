@@ -8607,9 +8607,6 @@ msgstr "Equal share per strategy; nothing is fitted."
 msgid "mg.fund"
 msgstr "Capital"
 
-msgid "mg.fundTip"
-msgstr "Defaults to the total on the Allocation tab"
-
 msgid "mg.beatsTip.ret"
 msgstr "Share of 1,000 random-weight portfolios over the same period with a lower total return. A reference figure that varies a lot with the period."
 
@@ -9143,7 +9140,25 @@ msgid "sz.shortMdd"
 msgstr "Under 90 days of shared data, so max drawdown isn’t available"
 
 msgid "mg.needFund"
-msgstr "Click “{method}” and enter the capital first; then the suggested amounts can be worked out."
+msgstr "Enter the capital first; then the suggested amounts can be worked out."
+
+msgid "mg.needSize"
+msgstr "Set the position size first; then the suggested amounts can be worked out."
+
+msgid "mg.needMethod"
+msgstr "Pick a position size method first; then the suggested amounts can be worked out."
+
+msgid "mg.needTarget"
+msgstr "Enter the position size target first; then the suggested amounts can be worked out."
+
+msgid "mg.sizeNoHist"
+msgstr "This result has no historical volatility, so target volatility can’t be worked out"
+
+msgid "mg.sizeNoSolve"
+msgstr "This drawdown target can’t be turned into a leverage; change the target"
+
+msgid "sz.unset"
+msgstr "Not set"
 
 msgid "tr.cloud.notApplied"
 msgstr "The machine hasn’t applied the amounts you just saved yet, so this shows what’s on the machine; it updates once applied."
