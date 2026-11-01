@@ -8946,10 +8946,10 @@ msgid "pv.h.revoked"
 msgstr "請重新登入"
 
 msgid "mg.applyWhyLogin"
-msgstr "登入 Blave 才拿得到台幣匯率"
+msgstr "登入 Blave 才拿得到匯率"
 
 msgid "mg.applyWhyFx"
-msgstr "缺台幣匯率，金額換算不出來"
+msgstr "缺匯率，金額換算不出來"
 
 msgid "mg.applyWhyQuote"
 msgstr "還沒拿到台指期報價，口數換算不出來"
@@ -9118,7 +9118,7 @@ msgid "tr.fxOld"
 msgstr "台幣換算用的是 {d} 的匯率（≈），登入後會更新。"
 
 msgid "mg.applyWhyFxOld"
-msgstr "上次存的台幣匯率已超過 30 天，登入 Blave 更新"
+msgstr "上次存的匯率已超過 30 天，登入 Blave 更新"
 
 msgid "mg.lotsUnder"
 msgstr "0 口（不足一口）"

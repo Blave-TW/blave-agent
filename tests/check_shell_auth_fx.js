@@ -39,7 +39,7 @@ ok("用的是上次存下的匯率時,優化表下講是哪一天的(≈);字串
     && why({ rows: [], eff: 100 }, false, false) === "mg.applyWhySame" && (ctx.mgSameAsAmounts = () => false, why(fxRow, true, true)) === "mg.applyDiffSet", J([revFx, okFx]));
   ok("原因寫在鈕旁那一格(每次停用條件重算時一起寫);字串兩語",
     /if \(whyEl\) whyEl\.textContent = other \? t\("mg\.propOtherAlloc", \{ method: mgAllocLabel\(other\) \}\) : ap\.disabled \? t\(mgApplyWhy\(d, quoteMissing, changed\)\) : "";/.test(pf)
-    && S.includes('"mg.applyWhyLogin": "登入 Blave 才拿得到台幣匯率"') && /"mg\.applyWhyLogin": "Sign in to Blave/.test(S)); }
+    && S.includes('"mg.applyWhyLogin": "登入 Blave 才拿得到匯率"') && /"mg\.applyWhyLogin": "Sign in to Blave/.test(S)); }
 
 // ② 登入狀態單一來源
 ok("主行程 authState:沒 token → out;帳號那一支 401／403(輪替救不回)或雲端 REVOKED／NO_APP_SECRET → revoked;任何 200、存了新 token → in;auth-state IPC",

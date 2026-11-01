@@ -8929,10 +8929,10 @@ msgid "pv.h.revoked"
 msgstr "Please sign in again"
 
 msgid "mg.applyWhyLogin"
-msgstr "Sign in to Blave to get the TWD rate"
+msgstr "Sign in to Blave to get the exchange rate"
 
 msgid "mg.applyWhyFx"
-msgstr "No TWD rate, so amounts can’t be converted"
+msgstr "No exchange rate, so amounts can’t be converted"
 
 msgid "mg.applyWhyQuote"
 msgstr "No TAIEX futures quote yet, so lots can’t be converted"
@@ -9101,7 +9101,7 @@ msgid "tr.fxOld"
 msgstr "TWD conversions use the {d} rate (≈); signing in updates it."
 
 msgid "mg.applyWhyFxOld"
-msgstr "The saved TWD rate is over 30 days old; sign in to Blave to update it"
+msgstr "The saved exchange rate is over 30 days old; sign in to Blave to update it"
 
 msgid "mg.lotsUnder"
 msgstr "0 lots (under 1 lot)"

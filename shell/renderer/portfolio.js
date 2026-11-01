@@ -896,9 +896,9 @@ function mgPrefsBox() {
   const box = trEl("div", "mg-warn"), acts = trEl("div", "mg-warn-acts"), S = TR, G = mgBag(S);
   const say = box.appendChild(trEl("p", "", t("mg.prefsFail"))); say.setAttribute("role", "status");
   const go = trEl("button", "btn-out", t("mg.prefsRetry")); go.type = "button"; go.dataset.fk = "mg-prefs-retry";
-  go.addEventListener("click", () => { G.prefs = "loading"; mgPrefsLoad(S); S.sig.opt = null; mgPaint(); });
+  go.addEventListener("click", () => { trackFeature("mg_prefs_retry"); G.prefs = "loading"; mgPrefsLoad(S); S.sig.opt = null; mgPaint(); });
   const no = trEl("button", "btn-quiet", t("mg.prefsReset")); no.type = "button"; no.dataset.fk = "mg-prefs-reset";
-  no.addEventListener("click", () => { G.prefs = "ok"; S.sig.opt = null; mgPaint(); });
+  no.addEventListener("click", () => { trackFeature("mg_prefs_reset"); G.prefs = "ok"; S.sig.opt = null; mgPaint(); });
   acts.append(go, no); box.appendChild(acts);
   return box;
 }
