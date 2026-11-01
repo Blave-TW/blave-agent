@@ -280,17 +280,17 @@ const EVENTS = {
     "sp_auto_open", "sp_amt_saved", "sp_cx_opened", "sp_start_opened", "sp_cloud_icon",
     // 0.1.39 Codex 引擎隨包(主行程 shell/codexpkg.js 送):套件下載、校驗、解壓、驗過、上架都成功。api 白名單同順序,api 先上
     "codex_pkg_done",
+    // 0.1.41 聊天裡的澄清表單(renderer/form.js;同 api 順序,api 先上):畫出來、按「用這些設定」、填入的句子原樣／改過送出且回合
+    // started／queued、按「我自己打」、畫過沒填自己打字送出。不帶選了哪個值
+    "clarify_shown", "clarify_filled", "clarify_sent", "clarify_sent_ed", "clarify_self", "clarify_missed",
+    // 策略頁「怎麼看」外連三個分頁、策略庫成功筆記外開(canon › 說明文章外連;app.js、library.js)。api 白名單同順序,api 先上
+    "rp_help_bt", "rp_help_rob", "rp_help_wf", "lib_note_web",
+    // 優化分頁讀不到上次的設定:按〔重試〕／〔重新填〕(同網頁;只記名字)
+    "mg_prefs_retry", "mg_prefs_reset",
     // 雲端開通頁(0.1.41;renderer/app.js cloudPricingGo、trade.js envPaintEmpty):「其他方案與月價」外開定價頁、讀不到雲端／查不到帳號時的〔重新查看〕
     "cloud_pricing", "cloud_recheck",
     // 雲端歡迎頁停機那一行的〔到自動下單〕(0.1.41;renderer/welcome.js wcAlert)
-    "wc_stopped_go",
-    // 優化分頁讀不到上次的設定:按〔重試〕／〔重新填〕(同網頁;只記名字)
-    "mg_prefs_retry", "mg_prefs_reset",
-    // 策略頁「怎麼看」外連三個分頁、策略庫成功筆記外開(canon › 說明文章外連;app.js、library.js)。api 白名單同順序,api 先上
-    "rp_help_bt", "rp_help_rob", "rp_help_wf", "lib_note_web",
-    // 0.1.41 聊天裡的澄清表單(renderer/form.js;同 api 順序,api 先上):畫出來、按「用這些設定」、填入的句子原樣／改過送出且回合
-    // started／queued、按「我自己打」、畫過沒填自己打字送出。不帶選了哪個值
-    "clarify_shown", "clarify_filled", "clarify_sent", "clarify_sent_ed", "clarify_self", "clarify_missed"] },
+    "wc_stopped_go"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other
