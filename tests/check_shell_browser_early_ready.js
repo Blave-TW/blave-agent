@@ -34,7 +34,7 @@ if (!process.versions.electron) {
   const bin = GATE.bin(SHELL, "②");
   if (!bin) { console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0); }
   const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit", env: { ...process.env, ELECTRON_ENABLE_LOGGING: "" } });
-  const code = (r.status == null ? 1 : r.status) || (red ? 1 : 0);
+  const code = (r.status == null ? 1 : r.status) || (red ? 1 : 0); if (r.signal) console.log("Electron 被訊號結束:" + r.signal);
   console.log(code ? "\nFAILED" : "\nALL PASS"); process.exit(code);
 } else {
   const electron = require("electron");
@@ -98,6 +98,9 @@ if (!process.versions.electron) {
     hung.forEach((r) => { try { r.destroy(); } catch (_) { /* 已斷 */ } });
     srv.close(); try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* userData 還鎖著 */ }
     console.log(red ? `\n${red} FAILED` : "\nALL PASS(②)");
+    // 斷線、代理都還在收尾就 app.exit,Chromium 偶爾在關機時 SIGTRAP(斷言全過、結束碼卻是 null):先關視窗等它收完
+    await ses.closeAllConnections().catch(() => {}); await ses.setProxy({ mode: "direct" }).catch(() => {});
+    win.destroy(); await new Promise((r) => setTimeout(r, 500));
     app.exit(red ? 1 : 0);
   }).catch((e) => { console.log("FAIL  " + (e && e.stack) + "\n      last: " + JSON.stringify(last).slice(0, 500)); app.exit(1); });
 }
