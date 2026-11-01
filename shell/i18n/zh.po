@@ -5080,7 +5080,7 @@ msgid "lib.nav"
 msgstr "策略庫"
 
 msgid "lib.desc"
-msgstr "已驗證優先，再看樣本期長短。"
+msgstr "報酬皆為回測，已驗證的排前面。"
 
 msgid "lib.mkt.aria"
 msgstr "市場"
@@ -5140,7 +5140,7 @@ msgid "lib.years"
 msgstr "樣本 {n} 年"
 
 msgid "lib.annLabel"
-msgstr "年化報酬・回測"
+msgstr "年化報酬"
 
 msgid "lib.installs"
 msgstr "{n} 人安裝"

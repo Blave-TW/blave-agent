@@ -5068,7 +5068,7 @@ msgid "lib.nav"
 msgstr "Strategy Library"
 
 msgid "lib.desc"
-msgstr "Verified first, then longest backtest."
+msgstr "Returns are backtested. Verified first."
 
 msgid "lib.mkt.aria"
 msgstr "Market"
@@ -5128,7 +5128,7 @@ msgid "lib.years"
 msgstr "{n}-yr sample"
 
 msgid "lib.annLabel"
-msgstr "Annual Return · backtest"
+msgstr "Annual Return"
 
 msgid "lib.installs"
 msgstr "{n} installs"
