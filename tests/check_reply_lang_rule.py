@@ -9,10 +9,12 @@ the reply's first sentence and list labels came back in English):
   3. Resolution matches the per-message pin: a Chinese question → Chinese; an English
      one → English; a reply-language setting wins over the message.
   4. The per-message pin at the very end of the prompt is still there.
+  5. The reminder after each tool result is written in Chinese when the reply is Chinese
+     (zh / cn each in their own script); other languages keep the English reminder.
 
 claude_agent_sdk is stubbed. Run: cd blave-agent && python3 tests/check_reply_lang_rule.py
 """
-import asyncio, atexit, contextlib, io, os, shutil, sys, tempfile, types
+import asyncio, atexit, contextlib, io, os, re, shutil, sys, tempfile, types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "runtime"))
@@ -106,8 +108,11 @@ if hooks:
     out = asyncio.run(hooks[0]["hooks"][0]({}, "t1", None))
     ctx = out["hookSpecificOutput"]
     check("…as additionalContext naming Chinese, the notes before the next tool, and full-width punctuation",
-          ctx["hookEventName"] == "PostToolUse" and "in Chinese" in ctx["additionalContext"]
-          and "before your next tool call" in ctx["additionalContext"] and "full-width" in ctx["additionalContext"], ctx)
+          ctx["hookEventName"] == "PostToolUse" and "都用中文" in ctx["additionalContext"]
+          and "下一個工具呼叫前" in ctx["additionalContext"] and "全形標點" in ctx["additionalContext"], ctx)
+    # 0.1.39 Mac e2e:三道語言指示都到了,Sonnet 5.5 的工具後旁白還是英文(約兩成);最靠近它的這句本身就是英文
+    check("…and written in Chinese itself: not one Latin letter next to the English tool output",
+          not re.search("[A-Za-z]", ctx["additionalContext"]), ctx)
 check("the per-message pin is still the last line of the prompt", s["prompt"].rstrip().endswith("[用中文回覆這則訊息,<suggest> 建議句也用中文]"), s["prompt"][-80:])
 pre = (s.get("hooks") or {}).get("PreToolUse") or []
 check("desktop: PreToolUse hooks on Bash／PowerShell — background guard, credentials guard, then the OS scheduler (cases: tests/check_bg_backtest_guard.py, tests/check_cred_guard.py, tests/check_desktop_sched_guard.py)",
@@ -131,7 +136,8 @@ for sid, first, short, want in (("s-yes-zh", ZH, "YES", "Chinese"), ("s-ok-zh", 
     ctx = asyncio.run(seen["hooks"]["PostToolUse"][0]["hooks"][0]({}, "t1", None))["hookSpecificOutput"]["additionalContext"]
     pin = seen["prompt"].rstrip().splitlines()[-1]
     check(f"「{short}」 after a {want} message keeps {want}: system rule, tool reminder and the pin",
-          f"Write everything the user sees in {want}" in seen["system"] and f"is in {want}" in ctx
+          f"Write everything the user sees in {want}" in seen["system"]
+          and (("都用中文" in ctx) if want == "Chinese" else ("is in English" in ctx))
           and (("用中文回覆" in pin) if want == "Chinese" else ("ENTIRELY in English" in pin)), (pin, ctx))
 check("a short reply with no earlier message is judged on its own, as before",
       at._lang_basis("YES", []) == "YES" and at._lang_basis("YES", [("assistant", "好的,已建好")]) == "YES")
@@ -145,6 +151,19 @@ check("the basis is the latest earlier USER message that shows a language",
 
 check("a reply-language setting wins over the message (English text, zh setting → 繁體中文)",
       "Traditional Chinese (繁體中文)" in at.reply_lang_rule("list the sources", "zh"))
+check("the tool reminder follows the setting: zh → 繁體, in Chinese, whatever the message",
+      "都用繁體中文" in at.lang_reminder("list the sources", "zh") and "不要用簡體字" in at.lang_reminder("list the sources", "zh")
+      and not re.search("[A-Za-z]", at.lang_reminder("list the sources", "zh")), at.lang_reminder("list the sources", "zh"))
+check("…cn → 简体, written in Simplified, whatever the message",
+      "都用简体中文" in at.lang_reminder("list the sources", "cn") and "不要用繁体字" in at.lang_reminder("list the sources", "cn")
+      and not re.search("[A-Za-z]", at.lang_reminder("list the sources", "cn"))
+      and not re.search("[繁體寫給戶語輸應標點數裡網]", at.lang_reminder("list the sources", "cn").replace("繁体", "")), at.lang_reminder("list the sources", "cn"))
+check("…a language that is not Chinese keeps the English reminder, word for word",
+      at.lang_reminder(ZH, "en") == "[Runtime reminder] Everything you write for the user from here on — including the short note "
+      "before your next tool call — is in English, whatever language this tool output is in.", at.lang_reminder(ZH, "en"))
+check("…so does a custom language, with no Chinese-only punctuation rule",
+      at.lang_reminder(ZH, "custom:Deutsch").startswith("[Runtime reminder]") and "Deutsch" in at.lang_reminder(ZH, "custom:Deutsch")
+      and "full-width" not in at.lang_reminder(ZH, "custom:Deutsch"), at.lang_reminder(ZH, "custom:Deutsch"))
 
 captured = {}
 

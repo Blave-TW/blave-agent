@@ -1063,15 +1063,29 @@ def reply_lang_rule(message, lang=None):
     )
 
 
+# 鍵同 _REPLY_LANG_PINS 的 zh／cn;None = 沒有語言設定,看用戶打的字判成中文
+_ZH_REMINDERS = {
+    "zh": "[執行提醒] 接下來寫給用戶看的每一句話，包括下一個工具呼叫前的短句，都用繁體中文，不要用簡體字；"
+          "工具輸出是哪種語言都一樣。中文用全形標點（，。：；？！（）「」），半形只留在數字、英文字、程式碼和網址裡。",
+    "cn": "[运行提醒] 接下来写给用户看的每一句话，包括下一个工具调用前的短句，都用简体中文，不要用繁体字；"
+          "工具输出是哪种语言都一样。中文用全角标点（，。：；？！（）「」），半角只留在数字、英文字、代码和网址里。",
+    None: "[執行提醒] 接下來寫給用戶看的每一句話，包括下一個工具呼叫前的短句，都用中文，繁體或简体跟用戶打的字一樣；"
+          "工具輸出是哪種語言都一樣。中文用全形標點（，。：；？！（）「」），半形只留在數字、英文字、程式碼和網址裡。",
+}
+
+
 def lang_reminder(message, lang=None):
     """每個工具結果後面附給模型的一句提醒(PostToolUse hook 的 additionalContext,見 _lang_hooks)。
     系統層規則與訊息尾端的錨都在對話最前面;深度研究讀進十幾頁英文之後,Sonnet 的旁白照樣變英文
     (「Good context. Let me check…」「Now let's write and publish the report」,2026-09-26 實測)。
-    這句跟著每個工具結果出現,永遠在最近的位置。"""
+    這句跟著每個工具結果出現,永遠在最近的位置。
+    中文回覆時這句本身寫中文(同 _REPLY_LANG_PINS 的 zh／cn):0.1.39 Mac e2e 三道指示都到了,工具後的旁白
+    還是約兩成英文、第一個工具前只有約 2%;工具輸出和 references 是英文,這句不該再多一段英文。"""
     target, zh = _reply_lang_target(message, lang)
+    if zh:
+        return _ZH_REMINDERS.get(lang, _ZH_REMINDERS[None])
     return (f"[Runtime reminder] Everything you write for the user from here on — including the short note "
-            f"before your next tool call — is in {target}, whatever language this tool output is in."
-            + (" " + _FULLWIDTH_RULE if zh else ""))
+            f"before your next tool call — is in {target}, whatever language this tool output is in.")
 
 
 _HOOK_MATCHER = getattr(sdk, "HookMatcher", None)
