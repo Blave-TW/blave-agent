@@ -712,6 +712,7 @@ function applyLangChoice(v) {
   syncLangControls();
   applyStatic();
   mpPaint(); csRenderHead(); if (!$("cs-list").hidden) csRenderList();
+  if (typeof tabsPaint === "function") tabsPaint();   // 分頁名是建元素時寫的:空白分頁的「新對話」要跟著換語言
   paintBlaveBtn();
   if (lastDetect) paintRows(lastDetect); else detectingRows();
   stratRefresh(false).then(() => { if (RP.name) stratSelect(RP.name, true); });
@@ -1478,10 +1479,16 @@ async function upAskPull() {
 /* 膠囊與細軌圓鈕:同一份 plan 畫兩顆(.ws-foot 在細軌時整塊藏起來)。側欄窄到放不下:拿掉圖示,不折行 */
 var UP_PILL_DAY_KEY = "ws_upd_pill_day";   // var:upPaint 可能在這一行之前被叫到
 function upPillNow() { return upPillPlan({ up: UP, localTurn: upLocalTurn() }); }
+/* 膠囊的字:「重新啟動更新：{v}」,v = updater 暫存好、等著裝的那一版(UP.version)。拿不到或形狀不像版號就退回不帶版號那句,不出空冒號 */
+function upPillLabel(p, v, tt, short) {
+  if (p.kind === "restarting") return tt("up.restarting");
+  const ok = typeof v === "string" && /^\d+(\.\d+){1,3}([-+][0-9A-Za-z.-]{1,20})?$/.test(v);
+  return (ok ? tt(short ? "up.pillS" : "up.pillV", { v }) : tt("up.pill")) + (p.ask ? "…" : "");
+}
 function upPillPaint() {
   const p = upPillNow(), wrap = $("up-pill-wrap"), pill = $("up-pill"), dot = $("up-rail");
   if (!wrap || !pill || !dot) return;
-  const label = p.kind === "restarting" ? t("up.restarting") : t("up.pill") + (p.ask ? "…" : "");
+  const label = upPillLabel(p, UP && UP.version, t);
   wrap.hidden = !p.show; dot.hidden = !p.show;
   $("up-pill-t").textContent = p.show ? label : "";
   dot.setAttribute("aria-label", p.show ? label : "");
@@ -1501,8 +1508,12 @@ function upPillPaint() {
 // 量字那一段(span 自己 overflow:hidden):整顆鈕的 scrollWidth 會算進熱區 ::before 伸出去的 4px,不能拿來判
 function upPillFit() {
   const pill = $("up-pill"), txt = $("up-pill-t"); if (!pill || !txt || pill.offsetParent === null) return;
+  // 三階:全句帶圖示 → 全句不帶圖示 → 短句不帶圖示。版號一律不截(切成 0.1.4 是錯的值);短句時全句放 title 與可及名稱
+  const p = upPillNow(), full = upPillLabel(p, UP && UP.version, t), busyTip = p.kind === "busy" ? t("busy.update") : "";
+  txt.textContent = full; pill.title = busyTip; pill.removeAttribute("aria-label");
   pill.classList.remove("no-ic");
   if (txt.scrollWidth > txt.clientWidth) pill.classList.add("no-ic");
+  if (txt.scrollWidth > txt.clientWidth) { const s = upPillLabel(p, UP && UP.version, t, true); if (s !== full) { txt.textContent = s; pill.title = busyTip || full; pill.setAttribute("aria-label", full); } }
 }
 function upPillClick(btn) {
   const p = upPillNow();
@@ -2718,7 +2729,7 @@ function csRemember() {
 }
 function csLock(on) { if (on) csShowList(false); }   // 送出那一刻收清單:看得到這一句的回覆;回合中要再打開照開
 const csWhy = () => busySlot("cs-why", $("cs-head"));
-function csNewClick() { const was = CS.cur; if (csStartNew() !== was) trackFeature("tab_new"); }   // 眼前那條空著又閒著:就用它,不疊空分頁、不記
+function csNewClick() { const n = CS.tabs.size; csStartNew(); if (CS.tabs.size > n) trackFeature("tab_new"); }   // 已經有空著又閒著的分頁:切過去用它,不疊空分頁、不記
 /* 只清眼前這個分頁的聊天內容(重畫舊對話之前);內建瀏覽器的分頁是全 app 一份,不清 */
 function csClearChat() {
   if (typeof BR !== "undefined") { BR.blocks = []; BR.cur = null; }
@@ -2731,6 +2742,9 @@ function csClearChat() {
 function csStartNew(o) {
   const C = CS.cur;
   if (C && !csTitle && !running && !(o && o.force)) { csShowList(false); if (!(o && o.quiet)) $("ta").focus(); return C; }
+  // 別的分頁還空著又閒著(0.1.39 Mac 實測:兩個「新對話」並排):切過去,不再開一個
+  const idle = !(o && o.force) && CS.order.map((s) => CS.tabs.get(s)).find((x) => x && x !== C && !x.closed && !x.dead && !x.title && !tabRun(x));
+  if (idle) { tabShow(idle); csShowList(false); if (!(o && o.quiet)) $("ta").focus(); return idle; }
   const T = tabMake(csNewId());
   tabsAdd(T); tabShow(T); csShowList(false);
   if (!(o && o.quiet)) $("ta").focus();
@@ -2827,7 +2841,7 @@ function receiptFold(steps) {
 function addHistoryYou(content, origin) {
   const a = splitAttachNote(content), el = addMsg("you", a.text, a.attachments);
   // 「來自手機」:泡泡正下方靠右(.msg.you 改直排),圖示跟分頁上的手機記號同一顆;可見字接在泡泡後面念,圖示不念
-  if (origin === "mobile") { el.classList.add("from-phone"); const f = document.createElement("span"); f.className = "msg-from"; f.innerHTML = PHONE_IC; f.append(t("chat.fromPhone")); el.appendChild(f); }
+  if (origin === "mobile") { el.classList.add("from-phone"); const f = document.createElement("span"); f.className = "msg-from"; f.innerHTML = PHONE_IC; const w = document.createElement("span"); w.dataset.i18n = "chat.fromPhone"; w.textContent = t("chat.fromPhone"); f.append(w); el.appendChild(f); }
   return el;
 }
 function addHistoryAi(content) {
@@ -3945,7 +3959,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   const fail = (e) => inT(() => {
     busyEnd();
     // 失敗卡而不是灰字:灰字排在「正在準備引擎…」下面,看起來像那一行還在跑(0.0.6 Intel 實測)
-    faultCard().set({ text: t("turn.engineFailed", { msg: (e && e.message) || e }) });
+    faultCard().set(sysLz(() => ({ text: t("turn.engineFailed", { msg: (e && e.message) || e }) })));
     unsend(); unlock(); return false;
   });
   try {
@@ -3967,7 +3981,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
       return inT(() => {
         if (es && typeof engOnState === "function") engOnState(es);
         if (es && es.phase === "fail" && es.show && typeof engHold === "function") { engHold(msg, opts, bubble); unlock(); return false; }
-        faultCard().set({ text: t("turn.engineFailed", { msg: (engErr && engErr.message) || engErr }) });
+        faultCard().set(sysLz(() => ({ text: t("turn.engineFailed", { msg: (engErr && engErr.message) || engErr }) })));
         unsend(); unlock(); return false;
       });
     }
@@ -3999,7 +4013,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
       if (r.queued) { tabsQueued(T, true); return true; }   // 排隊行＋〔取消排隊〕;輪到時主行程送 started 才亮指示器
       if (r.blocked === "UPDATE_REQUIRED") {
         // 不是「上一輪還在跑」:這個版本被停用了,要更新才能繼續。鈕帶去 設定 › 一般 最下面的「關於」(那裡有更新鈕)
-        faultCard().set({ text: t("minv.chat"), label: t("minv.btn"), out: true, on: () => setOpen().then(() => { setCat("display"); $("set-up-btn").hidden ? null : $("set-up-btn").focus(); }) });
+        faultCard().set(sysLz(() => ({ text: t("minv.chat"), label: t("minv.btn"), out: true, on: () => setOpen().then(() => { setCat("display"); $("set-up-btn").hidden ? null : $("set-up-btn").focus(); }) })));
         unsend(); unlock(); return false;
       }
       unsend(); addMsg("sys", t("turn.busy")).dataset.i18n = "turn.busy"; unlock(); return false;
@@ -4105,7 +4119,8 @@ function limitWhen(when, zone, now, lang, userZone) {
 const LIMIT_READONLY = ["silent", "search", "web_read", "web_read_many", "docs", "files", "file_read", "strategy_read", "data", "account", "status", "check", "validate"];
 const limitSwallow = (code, changed) => code === "not_started" || code === "not_started_upstream" || (code === "partial" && !changed);
 
-function classifyFault(text) {
+// o.again = 換語言重組字:只算字、不再碰模型選單;o.model = 當時那一輪的 model(turnModel 這時可能已是別輪)
+function classifyFault(text, o) {
   const lim = limitMatch(text, cur);
   if (lim) {
     const when = limitWhen(lim.when, lim.zone, Date.now(), LANG), name = cur === "codex" ? "Codex" : "Claude Code";
@@ -4118,17 +4133,17 @@ function classifyFault(text) {
     // 完整 id 才報錯(見 anthropics/claude-code#68121 的實際輸出),Blave 線還帶 `anthropic/` 前綴,兩個字串對
     // 不起來——拿它去標記會標到一個不存在的 id,選擇也不會換回預設。出事的一定是這一輪
     // 送出去的那個 model,所以用 turnModel;括號裡的字只在認不出來時拿來顯示。
-    const id = turnModel || nm[1];
+    const id = (o && o.model) || turnModel || nm[1];
     const bad = MP.models.find((m) => m.id === id);
     const name = bad ? bad.name : nm[1];
     // 綁卡前額度撞到鎖(api 404 MODEL_NEEDS_PAYMENT):不標「方案沒有」,改暫換、畫成鎖住。
     // 這裡是同步的、等不了 acctCheck:手上的 acct 還沒說鎖就照舊標記,回合結束那次重讀(dataTurnEnd → acctSet)會清掉
     if (MP.freeOnly && bad && bad.free_credit === false) {
-      if (mpFreeSync()) mpPaint();
+      if (!(o && o.again) && mpFreeSync()) mpPaint();
       const to = mpCur();
       if (to && to.id !== id) return { text: t("fault.freeLocked", { model: name, to: to.name }), label: t("acct.addCard"), act: () => bindGo("bind_model") };
     }
-    mpMarkUnavailable(id);
+    if (!(o && o.again)) mpMarkUnavailable(id);
     const back = mpCur();
     return {
       text: back && back.id !== id
@@ -4169,6 +4184,23 @@ function srSay(text) { if (tabBg()) return; $("sr-live").textContent = ""; reque
    **一張卡、一顆鈕,跨狀態沿用同一個節點**(只換字、class 與 handler):登入的進度 / 成功 / 失敗
    不再往下追加灰字,鍵盤焦點也不會因為節點被換掉而掉回 body。
    等待中不放 spinner:等的是用戶在瀏覽器裡的動作,不是系統在忙;這段最長五分鐘。 */
+/* Blave 自己畫、留在聊天欄的系統行與卡:el → 照現在的語言重畫的函式。applyStatic → sysRelang 逐一重畫(分頁藏著的也算);
+   agent 的回覆與用戶打的字不在這裡,維持原文。重畫時 SYS_QUIET:不念、不拉到底 */
+const SYS_RELANG = new WeakMap();
+let SYS_QUIET = false;
+function sysRelang() {
+  SYS_QUIET = true;
+  try {
+    const els = [...document.querySelectorAll("#chat-scroll .msg.sys, #chat-scroll .msg.fault")];
+    if (typeof ENG !== "undefined") ENG.sys.forEach((x) => { if (!x.el.isConnected) els.push(x.el); });   // 還沒交給分頁的那一行
+    els.forEach((el) => { const f = SYS_RELANG.get(el); if (f) f(); });
+    if (typeof ENG !== "undefined" && ENG.card) engPaint();   // 安裝進度卡:失敗態沒有每秒重畫
+  } finally { SYS_QUIET = false; }
+}
+// 卡的內容照 fn 算一次,並帶著 fn(不列舉):faultCard().set 收到就記下,換語言時重算
+function sysLz(fn) { const o = fn(); Object.defineProperty(o, "__mk", { value: fn }); return o; }
+// 系統行:fn 回傳那一行的字(每次換語言重算)
+function sysLine(fn) { const el = addMsg("sys", fn()); SYS_RELANG.set(el, () => { el.textContent = fn(); }); return el; }
 function faultCard() {
   const el = document.createElement("div"); el.className = "msg fault";
   const mark = document.createElement("span"); mark.className = "fault-mark"; mark.setAttribute("aria-hidden", "true");
@@ -4187,8 +4219,10 @@ function faultCard() {
   chatEl().appendChild(el); busyPin(); scrollChat();
   return {
     el, b1, b2,
-    // s = { calm, text, label, out, quiet, disabled, on, sub(Node|string|null), second:{label,on,quiet}|null, third:{label,on}|null(文字鈕) }
+    // s = { calm, text, label, out, quiet, disabled, on, sub(Node|string|null), second:{label,on,quiet}|null, third:{label,on}|null(文字鈕) },
+    // 用 sysLz(() => s) 包起來的才記進 SYS_RELANG,換語言時照現在的語言重畫
     set(s) {
+      if (s && s.__mk) SYS_RELANG.set(el, () => this.set(sysLz(s.__mk))); else SYS_RELANG.delete(el);
       // 回前景、每 5 秒重查會拿一模一樣的內容重畫(acctPaint):內容沒變就不再念、不再拉到底(同 dataCardSync 的 key;稽核 S1)
       const key = JSON.stringify([!!s.calm, s.text, s.label || null, !!s.disabled, s.second ? s.second.label : null, s.third ? s.third.label : null, s.sub ? (typeof s.sub === "string" ? s.sub : s.sub.textContent) : null]);
       const changed = key !== shown; shown = key;
@@ -4197,7 +4231,7 @@ function faultCard() {
       el.classList.toggle("act-only", !s.text);
       el.classList.toggle("two-quiet", !!(s.second && s.second.quiet && s.third));   // 同一列兩顆文字鈕:拉開一階,兩條底線才不會黏成一條
       text.textContent = s.text || ""; text.hidden = !s.text;
-      if (changed) srSay(s.text || [s.label, s.second && s.second.label].filter(Boolean).join(LANG === "zh" ? "，" : ", "));
+      if (changed && !SYS_QUIET) srSay(s.text || [s.label, s.second && s.second.label].filter(Boolean).join(LANG === "zh" ? "，" : ", "));
       b1.hidden = !s.label;                     // 沒有鈕的狀態(例如「可以開始了。」)
       b1.textContent = s.label || ""; b1.className = s.quiet ? "btn-quiet" : s.out ? "btn-out" : "btn-fill";
       b1.disabled = !!s.disabled; h1 = s.on || null;
@@ -4205,7 +4239,7 @@ function faultCard() {
       b3.hidden = !s.third; if (s.third) { b3.textContent = s.third.label; h3 = s.third.on; }
       sub.hidden = !s.sub; sub.textContent = "";
       if (s.sub) sub.append(s.sub);
-      if (changed) scrollChat(!s.calm);   // 出錯要讓人看到(同網頁):往上捲著也拉到底;calm 的(「可以開始了。」)照黏底規則
+      if (changed && !SYS_QUIET) scrollChat(!s.calm);   // 出錯要讓人看到(同網頁):往上捲著也拉到底;calm 的(「可以開始了。」)照黏底規則
     },
   };
 }
@@ -4215,11 +4249,13 @@ function faultCard() {
 let lastUserText = "", lastUserAttachments = [];   // 上一句的字與它帶的清單(各自記來源 file / paste;沒帶 = [])
 function canResend() { return !running && !!(lastUserText || lastUserAttachments.length); }   // 純附件那句(字是空的)也能重送
 function resendLast() { return canResend() ? submitMessage(lastUserText, { attachments: lastUserAttachments }) : Promise.resolve(false); }
+// okText:字或回傳字的函式(函式才跟著換語言,見 sysRelang)
 function resendState(card, okText) {
-  return { calm: true, text: okText, label: t("fault.resend"), on: async () => {
+  const ok = () => (typeof okText === "function" ? okText() : okText);
+  return { calm: true, text: ok(), label: t("fault.resend"), on: async () => {
     if (running) { busySendTell(); return; }   // 卡上的鈕回合中照畫:原因寫在輸入框上方那一行
     if (await resendLast()) {
-      card.set({ calm: true, text: okText, label: t("fault.resendDone"), disabled: true });
+      card.set(sysLz(() => ({ calm: true, text: ok(), label: t("fault.resendDone"), disabled: true })));
       $("ta").focus();
     }
   } };
@@ -4233,21 +4269,21 @@ function localLoginFlow(card, kind) {
   const name = kind === "codex" ? "Codex" : "Claude Code";
   const me = { card, kind, done: () => {
     const i = LOCAL_FAULTS.indexOf(me); if (i >= 0) LOCAL_FAULTS.splice(i, 1);
-    card.set(resendState(card, t("login.ok", { name })));
+    card.set(sysLz(() => (resendState(card, () => t("login.ok", { name })))));
   } };
   LOCAL_FAULTS.push(me);
-  const fault = (failed) => card.set({
+  const fault = (failed) => card.set(sysLz(() => ({
     text: failed ? t("login.failed", { name }) : t("fault.localAuth", { name }),
     label: failed ? t("login.retry") : t("fault.localAuthBtn", { name }),
-    sub: failed ? cmdLine(kind) : null, on: start });
+    sub: failed ? cmdLine(kind) : null, on: start })));
   async function start() {
     if (loginPending || oauthPending) return;
     loginPending = kind;
     // 「已在瀏覽器開啟」同連結畫面:登入行程 spawn 起來活過 1 秒才講(agentLoginRun);在那之前原句不動、鈕先換成取消
     const cancel = () => window.blave.cancelAgentLogin();
-    card.set({ text: t("fault.localAuth", { name }), label: t("login.cancel"), out: true, on: cancel });
+    card.set(sysLz(() => ({ text: t("fault.localAuth", { name }), label: t("login.cancel"), out: true, on: cancel })));
     let r;
-    try { r = await agentLoginRun(kind, () => card.set({ calm: true, text: t("login.opened", { name }), label: t("login.cancel"), out: true, on: cancel })); }
+    try { r = await agentLoginRun(kind, () => card.set(sysLz(() => ({ calm: true, text: t("login.opened", { name }), label: t("login.cancel"), out: true, on: cancel })))); }
     catch (_) { r = { ok: false, cancelled: false, busy: false, cantRun: false }; }   // 同 localLogin:例外不能讓鈕永遠是「取消等待」
     loginPending = null;
     if (!r.ok && !r.cancelled && !r.busy) trackEvent("connect_failed", { kind: kind === "codex" ? "codex_login" : "claude_login" });
@@ -4261,17 +4297,17 @@ function localLoginFlow(card, kind) {
    連線設定再重載——對話與策略畫面瞬間消失,而且用戶在瀏覽器按了取消的話,連原本的連線設定也沒了。
    token 是每一輪開子行程時才讀的,OAuth 成功就直接覆寫,不必重啟任何東西。 */
 function blaveLoginFlow(card) {
-  const fault = (subText) => card.set({ text: t("fault.authInvalid"), label: t("fault.authBtn"), sub: subText || null, on: start });
+  const fault = (subText) => card.set(sysLz(() => ({ text: t("fault.authInvalid"), label: t("fault.authBtn"), sub: subText || null, on: start })));
   async function start() {
     if (loginPending || oauthPending) return;
     oauthPending = true; waitChanged();
-    card.set({ calm: true, text: t("oauth.opened"), label: t("oauth.cancel"), out: true, on: () => window.blave.cancelOAuth() });
+    card.set(sysLz(() => ({ calm: true, text: t("oauth.opened"), label: t("oauth.cancel"), out: true, on: () => window.blave.cancelOAuth() })));
     trackFeature("login_click");
     try {
       await window.blave.startOAuth(LANG);
       oauthPending = false; waitChanged(); hasToken = true; acct = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate();
       mpInit("blave");                         // 失效期間型錄抓回來是空的
-      card.set(resendState(card, t("fault.authOk")));
+      card.set(sysLz(() => (resendState(card, () => t("fault.authOk")))));
       acctPrecheck();
     } catch (e) {
       oauthPending = false; waitChanged();
@@ -4326,6 +4362,8 @@ function planRepay() { trackFeature("plan_repay"); window.blave.openExternal(pla
 // 換卡、改階、恢復這些電腦版沒有入口的事:外開方案頁(不記 plan_repay——那顆只算「重新付款」)
 function planWebGo() { window.blave.openExternal(planPayUrl()); }
 // 方案制要雲端主機:電腦版只開方案,主機到網站開(Wei:方案 = 權限,不一定要主機)
+// 開通頁的「其他方案與月價」:外開定價頁;from=desktop 給定價頁事件分來源
+function cloudPricingGo() { trackFeature("cloud_pricing"); window.blave.openExternal("https://blave.org/landing/" + LANG + "/pricing?from=desktop"); }
 function cloudWebGo() { trackFeature("cloud_open_web"); window.blave.openExternal("https://blave.org/agent/" + LANG + "?from=desktop"); }
 function apiPlanGo() { trackFeature("api_plan_open"); window.blave.openExternal(apiPlanUrl()); }
 /* 預檢卡 / 402 卡以外的綁卡／儲值入口:按下先記哪個入口(feature_used bind_*／topup_*,canon product-telemetry),再外開。
@@ -4353,6 +4391,21 @@ function planMo() {
    那段時間是真話);舊 api(沒有 data_access)→ `.old`(那時沒有主機的人真的拿不到資料)。還沒登入(acct 為 null)講本名:
    .old 的「資料要啟動雲端方案才有」在 data_access 上線後已是假話,未登入的人沒有舊 api 可退。切換前兩版逐字同 origin/main */
 const pvK = (k) => (planMo() ? k + ".m" : !acct || typeof acct.data_access === "string" ? k : k + ".old");
+/* 綁卡那一格的扣款句:設定 › 方案頁與雲端開通頁共用,方案制／切換前／舊 api 的選字只有 pvK 這一處。
+   數字拿不到就不出(t 會把空值接成「扣第一期  TWD」) */
+function pvCardFoot(pv, v) {
+  if (pv === "noTrial") return v.b ? t("pv.f.noTrial", v) : "";
+  const k = pvK("pv.f.offer");
+  return v.v && v.t && (k === "pv.f.offer" || v.p) ? t(k, v) : "";
+}
+/* 雲端開通頁試用中那一格的訊息句,回答「現在開機要加錢嗎」。日期在卡右上。切換前照舊「之後照上面的價格」。
+   下一期金額 v.x(已排月↔年、內部帳號都算進去),沒有就退 Starter 月價 v.p;到期不會扣、或扣不到的人不講扣款 */
+function planTrialLine(v) {
+  if (!v.d) return "";
+  if (!planMo()) return t("plan.trialFree", v);
+  const pl = (acct && acct.plan) || {}, off = planTrialCx(v) || pl.no_auto_payment || pl.next_charge_source === "free" || pl.next_charge_source === "none", amt = v.x || v.p;
+  return !off && amt ? t("env.open.trial", { p: amt }) : t("env.open.trialOff");
+}
 // 拿到資料之後那張卡的話:切換前按小時付的那條要講「會收錢」(剛因為沒錢被擋過,不能只說「可以用了」);免費那條照舊
 function dataReadyText(s) {
   if (dataAccessOf(s) !== "billed") return t("data.ready");
@@ -4404,14 +4457,14 @@ function acctPaint() {
      額度用完那兩種(*_free)第二顆是〔改用 Claude Code 或 Codex〕;回合卡的〔再送一次〕讓位(還沒綁卡時按,只會再拿到一次 402) */
   if (acctCard && cur === "blave") {
     const free = !s.can_run && acctCardKind("pre", s) === "pre_free"; acctCard._free = free;
-    if (s.can_run) acctCard.set({ calm: true, text: t("acct.ready") });
-    else acctCard.set({ calm: true, text: free ? acctBuiltText(RP.list.length) + acctFreeUpText("pre") : t(s.reason === "NO_CREDIT" ? "acct.noCredit" : "acct.noCard"), sub: acctSub(s), ...acctAction(s, "pre"), second: free ? laiSecond(acctCard) : null, third: acctCrypto(s) });
+    if (s.can_run) acctCard.set(sysLz(() => ({ calm: true, text: t("acct.ready") })));
+    else acctCard.set(sysLz(() => ({ calm: true, text: free ? acctBuiltText(RP.list.length) + acctFreeUpText("pre") : t(s.reason === "NO_CREDIT" ? "acct.noCredit" : "acct.noCard"), sub: acctSub(s), ...acctAction(s, "pre"), second: free ? laiSecond(acctCard) : null, third: acctCrypto(s) })));
   }
   if (cur === "blave") creditCards.forEach((card) => {
     const free = !s.can_run && acctCardKind("turn", s) === "turn_free"; card._free = free;
-    if (s.can_run) card.set(resendState(card, t("acct.creditIn")));
-    else if (s.reason === "NO_CARD") card.set({ text: free ? acctFreeUpText("turn") : t("fault.needCard"), sub: acctSub(s), ...acctAction(s, "turn"), second: free ? laiSecond(card) : resendSecond(), third: acctCrypto(s) });
-    else card.set({ text: t("fault.noCredit"), ...acctAction(s, "turn"), second: resendSecond() });
+    if (s.can_run) card.set(sysLz(() => (resendState(card, () => t("acct.creditIn")))));
+    else if (s.reason === "NO_CARD") card.set(sysLz(() => ({ text: free ? acctFreeUpText("turn") : t("fault.needCard"), sub: acctSub(s), ...acctAction(s, "turn"), second: free ? laiSecond(card) : resendSecond(), third: acctCrypto(s) })));
+    else card.set(sysLz(() => ({ text: t("fault.noCredit"), ...acctAction(s, "turn"), second: resendSecond() })));
     if (!s.can_run) acctShown(card, "turn", s);
   });
   dataCardSync(s);
@@ -4439,7 +4492,7 @@ async function acctCheck(o) {
   acctPaint();
   if (!acct) planWatchIdle();               // 查不到、手上也沒有:方案頁這時才換成「查不到」那一格
   // 問不到、手上也沒有狀態:中性句不能一直掛著,退回「沒額度 → 儲值」那組(不猜沒卡)
-  if (!acct && cur === "blave") creditCards.forEach((card) => { card.set({ text: t("fault.noCredit"), ...acctAction(null, "turn"), second: resendSecond() }); acctShown(card, "turn", null); });
+  if (!acct && cur === "blave") creditCards.forEach((card) => { card.set(sysLz(() => ({ text: t("fault.noCredit"), ...acctAction(null, "turn"), second: resendSecond() }))); acctShown(card, "turn", null); });
   // 還是不能跑:再等 5 秒查一次,最多 3 次(藍新回呼到我們這邊有幾秒延遲)
   // 只在連的是 Blave AI、而且真的有卡片在等的時候重試:自帶 CLI 的登入者 can_run=false 是常態,
   // 照舊重試會把跟 LLM 共用的每分鐘 30 次的桶打滿
@@ -4552,10 +4605,10 @@ function acctLocalName(kind) {
 function acctLocalSwap(kind) {
   if (kind !== "claude" && kind !== "codex" && kind !== "apikey") return;
   const name = acctLocalName(kind);
-  if (acctCard && acctCard.el.isConnected) { acctCard.set({ calm: true, text: t("acct.localReady", { name }) }); acctCard = null; }
+  if (acctCard && acctCard.el.isConnected) { acctCard.set(sysLz(() => ({ calm: true, text: t("acct.localReady", { name }) }))); acctCard = null; }
   for (let i = creditCards.length - 1; i >= 0; i--) {
     const c = creditCards[i]; if (!c._free) continue;
-    if (c.el.isConnected) c.set(resendState(c, t("acct.localResend", { name })));
+    if (c.el.isConnected) c.set(sysLz(() => (resendState(c, () => t("acct.localResend", { name })))));
     creditCards.splice(i, 1);
   }
 }
@@ -4627,12 +4680,14 @@ async function dataTurnEnd() {
    按了〔再送一次〕才放手(那之後的事由下一輪自己講)。同一句不重設(role 會重唸) */
 function dataCardSync(s) {
   if (!dataCard) return;
-  const ready = hasData(s), st = ready ? resendState(dataCard, dataReadyText(s)) : dataCardState();
-  const key = JSON.stringify([st.text, st.sub || null, st.label || null]);
+  const ready = hasData(s), card = dataCard;
+  const mk = () => { const st = ready ? resendState(card, () => dataReadyText(s)) : dataCardState();
+    if (ready) { const go = st.on; st.on = async () => { if (running) { busySendTell(); return; } if (!canResend()) return; if (dataCard === card) dataCard = null; await go(); }; }
+    return st; };
+  const now = mk(), key = JSON.stringify([now.text, now.sub || null, now.label || null]);
   if (dataCard._key === key) return;
   dataCard._key = key;
-  if (ready) { const card = dataCard, go = st.on; st.on = async () => { if (running) { busySendTell(); return; } if (!canResend()) return; if (dataCard === card) dataCard = null; await go(); }; }
-  dataCard.set(st);
+  dataCard.set(sysLz(mk));
   // 沒登入那態的鈕可能在登入等待中才長出來(鈕字是取消等待):記原字,planLogin 收尾才換得回來(稽核 r2 S2)
   const b1 = dataCard.b1;
   if (b1) { if (!hasToken && !ready) b1.dataset.signin = t("pv.signin"); else delete b1.dataset.signin; }
@@ -4696,6 +4751,11 @@ function planVars() {
     u: pl.paid_until ? planDate(pl.paid_until) : "", gu: pl.grace_until ? planDate(pl.grace_until) : "",
     tier: planTierLabel(),
     name: cur === "codex" ? "Codex" : cur === "apikey" ? (MP.provider || t("ak.row")) : "Claude Code" };
+}
+/* 開通頁規格列:他那一階(沒有方案就是 Starter)在公開價目的那一筆;拿不到回 null,那一格不畫 */
+function planSpec() {
+  const tier = (acct && acct.plan && acct.plan.tier) || "linux_starter", x = ((pub && pub.tiers) || []).find((r) => r.tier === tier);
+  return x && x.vcpu && x.ram_gb ? { label: x.label, vcpu: x.vcpu, ram: x.ram_gb } : null;
 }
 // 啟動鈕按不按得下去:方案制只要有月價(時價是 null);切換前照舊要月價與時價都有(確認框兩個都講)
 const planPriceOk = (v) => (planMo() ? !!v.pr : !!(v.p && v.h));
@@ -4814,8 +4874,8 @@ function planPaint() {
     // 登入已失效(token 被撤／過期):不是網路問題,也不是「已登入」——同一句 + 登入鈕
     // 帳號列已經寫「登入已失效」:卡片標題只講要做什麼、不再加說明句(設計最終稽核:同一畫面別講三次)
     revoked:  { h: "pv.h.revoked", lead: "", acts: [planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin) : btn("btn-fill", t("pv.signin"), planLogin)] },
-    offer:    { h: offerH, lead: mo ? "" : offerLead(), list: mo ? offerList() : null, rule: t(pvK("pv.f.offer"), v), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
-    noTrial:  { h: pvK("pv.h.billed") === "pv.h.billed" ? "pv.h.billed" : "pv.h.plan", lead: t(pvK("pv.d.noTrial"), v), rule: t("pv.f.noTrial", v), wait: t(pvK("pv.w.noTrial")), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
+    offer:    { h: offerH, lead: mo ? "" : offerLead(), list: mo ? offerList() : null, rule: pvCardFoot("offer", v), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
+    noTrial:  { h: pvK("pv.h.billed") === "pv.h.billed" ? "pv.h.billed" : "pv.h.plan", lead: t(pvK("pv.d.noTrial"), v), rule: pvCardFoot("noTrial", v), wait: t(pvK("pv.w.noTrial")), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
     /* 試用中:取消／恢復試用在網站用量頁(電腦版沒有寫入端點,外開)。已取消(api trial_cancel_at_end):狀態講哪天結束;
        方案制講到期不收第一期,切換前講到期不轉成方案、之後照目前的計費——兩種時期各自是真話 */
     trial:    trialCx ? { st: ["on", t("pv.st.trialCancelled", v)], h: "pv.h.ready", lead: trialLead(), rule: t(mo ? "pv.f.trialCancelled.m" : "pv.f.trialCancelled", v),
@@ -4919,11 +4979,6 @@ async function planSignIn(b, inSettings) {
    (同 planPaint、trade.js 雲端開通頁的做法;稽核 S1)。原字記在 data-signin,planLogin 收尾換回來 */
 function signInLabel(b, label) { b.dataset.signin = label; b.textContent = planLoginBusy ? t("oauth.cancel") : label; return b; }
 /* 雲端開通頁(切換前)的價格那一行:月價 + 時價(那時真的是每小時從餘額扣) */
-function planPriceEl(el, v) {
-  const pr = el("div", "plan-price");
-  pr.append(el("span", "m", t("plan.month", v))); if (v.h) pr.append(el("span", "h", t("plan.hour", v)));
-  return pr;
-}
 /* 運行中／方案有效那格鈕上方那行(方案制),由上往下命中就停(spec desktop-trial-with-machine §5–6):扣款失敗 → 待開通 → 已取消 →
    到期日已過、第一期還沒扣到的空窗 → 試用但不會自動扣 → 下次扣不到 → 內部帳號 → 試用中 → 下次扣款。日期拿不到就整行不印,不猜日期。
    noServer = 名下沒主機(planOn):後果是資料停、方案結束,不是停機刪機。no_auto_payment / cancel_reason 是 api 同版才補的欄位,舊 api 沒有就跳過 */
@@ -5041,7 +5096,7 @@ function planWatch(s) {
   if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint();
   sidePaint();
 }
-function planSayDone() { planDonePending = false; const c = faultCard(); c.set({ calm: true, text: t("plan.done") }); }
+function planSayDone() { planDonePending = false; const c = faultCard(); c.set(sysLz(() => ({ calm: true, text: t("plan.done") }))); }
 /* 「設定」右邊那行安靜的字:只在試用最後 3 天 / 啟動中 / 已停機出現。不是通知(不推播、不打斷)。 */
 function planWatchIdle() { if (!$("set-scrim").hidden && !$("set-plan").hidden) planPaint(); sidePaint(); }
 /* 帳號那一列(登入狀態、登出、訊息格)現在是「帳號與方案」頁的一部分,由 planPaint 畫。登入狀態、等待中的旗標、共用訊息(HINT)、
@@ -5086,7 +5141,7 @@ function creditFlow(card) {
   // 手上有「不能跑」的狀態就直接畫;沒有就先畫中性句、鈕先鎖著,等 account_status 回來再換——
   // 對從沒綁過卡的人先說「餘額用完了」是錯話,而且讀屏會念兩次(設計師 L3)
   if (acct && !acct.can_run) acctPaint();
-  else card.set({ calm: true, text: t("fault.checking"), label: t("fault.noCreditBtn"), disabled: true });
+  else card.set(sysLz(() => ({ calm: true, text: t("fault.checking"), label: t("fault.noCreditBtn"), disabled: true })));
   // 先照手上(可能過期)的狀態畫,再去問一次最新的
   acctCheck();
 }
@@ -5099,14 +5154,15 @@ window.addEventListener("focus", () => {
   acctCheck();
 });
 
-function addFault(f) {
+// mk:重算 f 的函式(換語言時照現在的語言重組卡上的字);沒給就照 f 原樣
+function addFault(f, mk) {
   const card = faultCard();
   turnFaultEl = card.el;   // 回合沒做完時系統通知用這張卡的那一句(replyCueSend)
   if (f.flow === "local") return localLoginFlow(card, f.kind);
   if (f.flow === "blave") return blaveLoginFlow(card);
   if (f.flow === "credit") return creditFlow(card);
-  card.set({ text: f.text, label: f.label, on: f.act,
-             second: f.second ? f.second : f.resend ? { label: t("fault.resend"), on: () => { resendLast(); } } : null });
+  card.set(sysLz(() => { const g = (mk && mk()) || f; return { text: g.text, label: g.label, on: g.act,
+             second: g.second ? g.second : g.resend ? { label: t("fault.resend"), on: () => { resendLast(); } } : null }; }));
 }
 
 /* 回合進行中的文字先不進回覆區。串流當下還不知道這段後面有沒有工具呼叫:有的話它是過場旁白
@@ -5173,7 +5229,7 @@ function draftPromote() {
   if (!text.trim()) return;
   const f = classifyFault(text);
   const fail = turnFailOf(f, text); if (fail) { turnFail = fail; turnFailSrc = fail === "auth" ? authFailSrc(text) : null; }
-  if (f) { faultShown = true; turnFaulted = true; turnLimit = !!f.limit; addFault(f); liveBubble = null; return; }
+  if (f) { faultShown = true; turnFaulted = true; turnLimit = !!f.limit; { const model = turnModel; addFault(f, () => classifyFault(text, { again: true, model })); } liveBubble = null; return; }
   busyHide();   // 回覆定稿了:指示器收起(同以前「回覆在串流了,字本身就是還在跑」)
   if (!liveBubble) { liveBubble = addMsg("ai", ""); turnAiBubbles.push(liveBubble); }
   paintAi(liveBubble, (liveBubble._raw || "") + text); turnGotReply = true;
@@ -5226,10 +5282,10 @@ function turnEventIn(c) {
     if (typeof sugCollapse === "function") sugCollapse();
     if (faultShown && c.code === "not_started") { faultShown = false; return; }
     if (turnLimit && limitSwallow(c.code, turnChanged)) return;   // 用量到上限那張卡已經講完了
-    const line = t("turn.error", { msg: c.message || "" });
+    const msg = c.message || "", line = () => t("turn.error", { msg });
     // 本機 agent、這一輪還沒有任何回覆:先不畫,回合結束問過 CLI 的登入狀態再決定出哪一則
     // (設計師 M4)。先畫再換掉會閃,讀屏也已經念出去收不回來。
-    if (holdErrors()) pendingErr.push(line); else { addMsg("sys", line); scrollChat(true); }
+    if (holdErrors()) pendingErr.push(line); else { sysLine(line); scrollChat(true); }
   }
   scrollChat();
 }
@@ -5271,8 +5327,9 @@ function turnEndPre(r) {
   if (typeof sgEditCommit === "function") sgEditCommit();   // 資料夾編輯列開著:先照失焦送出,不然它擋住下面的 stratRefresh(true) 與結果卡
   stratRefresh(true).catch(() => {}).then(tabBound(() => { if (typeof libTurnEnd === "function") libTurnEnd(); const rx = typeof rptTurnEnd === "function" ? rptTurnEnd(rt) : null; if (rt) resTurnParts(rt, rx); }));   // 策略庫的「用這支」:清單重讀完才知道有沒有多一支;重讀失敗也要收掉 pending
   // 連的是 Codex 但這台電腦上找不到它了:主行程刻意讓這一輪失敗(不會偷偷改跑 Claude)。講人話,不要丟代碼給用戶看
-  const exitLine = r.code !== 0 && !stopped
-    ? (/AGENT_BIN_DOWNLOADING/.test(r.errTail || "") ? t("AGENT_BIN_DOWNLOADING") : /AGENT_BIN_MISSING/.test(r.errTail || "") ? t("AGENT_BIN_MISSING") : /APIKEY_MISSING/.test(r.errTail || "") ? t("APIKEY_MISSING") : t("turn.exit", { code: r.code }) + (r.errTail ? ": " + r.errTail.slice(-300) : ""))
+  const tail = r.errTail || "", code = r.code;
+  const exitLine = code !== 0 && !stopped
+    ? () => (/AGENT_BIN_DOWNLOADING/.test(tail) ? t("AGENT_BIN_DOWNLOADING") : /AGENT_BIN_MISSING/.test(tail) ? t("AGENT_BIN_MISSING") : /APIKEY_MISSING/.test(tail) ? t("APIKEY_MISSING") : t("turn.exit", { code }) + (tail ? ": " + tail.slice(-300) : ""))
     : null;
   // 不靠錯誤字串認登入失效(兩家 CLI 的措辭會變):本機 agent 這一輪出錯或沒有任何回覆時,直接問
   // CLI 現在是不是登入狀態。沒登入 → 只出登入卡,那串給工程師看的錯誤丟掉;有登入 → 才畫通用訊息。
@@ -5302,8 +5359,8 @@ function turnEndPost(r, pre, d) {
   if (planDonePending && planDonePending === sessionId) planSayDone();
   if (loggedOut) addFault(localAuthFault(cur));
   // 上限到了但引擎那句錯誤沒以回覆的形式出來(走 error chunk 或直接結束):照樣講「這一輪用量到上限」
-  else if (!stopped && cur === "apikey" && turnCap && !turnFaulted && typeof akFault === "function") { turnFaulted = true; addFault(akFault("API Error: 429", true)); }
-  else { pendingErr.forEach((x) => addMsg("sys", x)); if (exitLine) addMsg("sys", exitLine); if (pendingErr.length || exitLine) scrollChat(true); }
+  else if (!stopped && cur === "apikey" && turnCap && !turnFaulted && typeof akFault === "function") { turnFaulted = true; addFault(akFault("API Error: 429", true), () => akFault("API Error: 429", true)); }
+  else { pendingErr.forEach((x) => sysLine(x)); if (exitLine) sysLine(exitLine); if (pendingErr.length || exitLine) scrollChat(true); }
   pendingErr = [];
   replyCueSend(stopped ? "stopped" : faulted ? "fail" : "done", ((r.errTail || "").match(/AGENT_BIN_(MISSING|DOWNLOADING)/) || [])[0] || false, /APIKEY_MISSING/.test(r.errTail || ""));
   const cloudTurn = UPD.turnCloud;   // upTurnEnded 會把它歸零,先記下
@@ -5335,13 +5392,14 @@ function turnEndPost(r, pre, d) {
    側欄 236(180–400)、聊天 452(336–720)、中間保底 480 —— 上限是動態的。
    收合:hover 分隔線浮出把手點一下,或把欄拖過門檻(側欄 <110、聊天 <240);
    側欄收成 44px 細軌、聊天收成 24px 邊條。雙擊分隔線回預設。
-   這是每台電腦自己的偏好,放 localStorage;讀寫失敗就用預設。 */
+   這是每台電腦自己的偏好,放 localStorage;讀寫失敗就用預設。
+   want = 用戶自己拉的寬,w = 照視窗夾過、真的畫出來的寬:視窗縮小只夾 w,拉回來照 want 還原(0.1.39 Mac 實測縮到 1024 再拉回停在 364) */
 const PANES = {
   side: { div: "div-side", prop: "--side-w", cls: "ws-sc", def: 236, min: 180, max: 400, snap: 110, off: 44, dir: 1 },
   chat: { div: "div-chat", prop: "--chat-w", cls: "ws-cc", def: 452, min: 336, max: 720, snap: 240, off: 24, dir: -1 },
 };
 const MAIN_MIN = 480;
-const paneSt = { side: { w: PANES.side.def, off: false }, chat: { w: PANES.chat.def, off: false } };
+const paneSt = { side: { w: PANES.side.def, want: PANES.side.def, off: false }, chat: { w: PANES.chat.def, want: PANES.chat.def, off: false } };
 
 function paneEdge(key) { return paneSt[key].off ? PANES[key].off : paneSt[key].w; }
 function paneClamp(key, w) {
@@ -5363,7 +5421,7 @@ function panesRender(save) {
 }
 function paneToggle(key, off) {
   paneSt[key].off = off;
-  if (!off) paneSt[key].w = paneClamp(key, paneSt[key].w);
+  if (!off) paneSt[key].w = paneClamp(key, paneSt[key].want);
   panesRender(true);
 }
 function panesInit() {
@@ -5373,10 +5431,10 @@ function panesInit() {
       const s = saved[key];
       if (!s || typeof s !== "object") return;
       paneSt[key].off = !!s.off;
-      paneSt[key].w = Number(s.w) || PANES[key].def;
+      paneSt[key].want = Number(s.want) || Number(s.w) || PANES[key].def;
     });
   } catch (_) {}
-  Object.keys(PANES).forEach((key) => { paneSt[key].w = paneClamp(key, paneSt[key].w); });
+  Object.keys(PANES).forEach((key) => { paneSt[key].w = paneClamp(key, paneSt[key].want); });
   panesRender(false);
 
   let handleAt = 0;   // 連點把手不算分隔線雙擊
@@ -5402,6 +5460,7 @@ function panesInit() {
       st.off = raw < p.snap;
       // 拖過門檻收合時,寬度留在起手前那個值 —— 不然再展開只剩最小寬
       st.w = st.off ? (w0 > p.off ? w0 : st.w) : paneClamp(key, raw);
+      if (!st.off) st.want = st.w;
       panesRender(false);
     });
     const end = (e) => {
@@ -5422,7 +5481,7 @@ function panesInit() {
     d.addEventListener("pointercancel", end);
     d.addEventListener("dblclick", () => {
       if (Date.now() - handleAt < 500) return;
-      st.off = false; st.w = paneClamp(key, p.def);
+      st.off = false; st.want = p.def; st.w = paneClamp(key, p.def);
       panesRender(true);
     });
     d.addEventListener("keydown", (e) => {
@@ -5431,8 +5490,8 @@ function panesInit() {
       if (!step) return;
       e.preventDefault();
       const delta = step * p.dir;
-      if (st.off) { if (delta > 0) { st.w = p.min; paneToggle(key, false); } return; }
-      st.w = paneClamp(key, st.w + delta);
+      if (st.off) { if (delta > 0) { st.want = p.min; paneToggle(key, false); } return; }
+      st.w = st.want = paneClamp(key, st.w + delta);
       panesRender(true);
     });
   });
@@ -5440,7 +5499,7 @@ function panesInit() {
   $("chat-strip").addEventListener("click", () => paneToggle("chat", false));
   // 視窗縮小時重新夾一次,中間那欄才不會被擠到 480 以下
   window.addEventListener("resize", () => {
-    Object.keys(PANES).forEach((k) => { paneSt[k].w = paneClamp(k, paneSt[k].w); });
+    Object.keys(PANES).forEach((k) => { if (!paneSt[k].off) paneSt[k].w = paneClamp(k, paneSt[k].want); });
     panesRender(false);
   });
 }
@@ -5471,6 +5530,7 @@ function applyStatic() {
   if (typeof brRepaint === "function") brRepaint();     // 內建瀏覽器的區塊與展開層(renderer/browser.js)
   if ($("rp-nobt").classList.contains("is-miss")) rpNobtPaint(rpBag(), true);   // 缺金鑰那一格沒有 data-i18n(裡面有鈕),自己重畫
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  sysRelang();   // 聊天欄裡 Blave 自己畫的系統行與卡(安裝完成那一行、錯誤卡、登入卡…)
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
   document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
   if (typeof wdPaint === "function") wdPaint(); cnFreePaint();   // 歡迎頁的資料清單(renderer/welcome.js 用 t() 現組的列)與連結畫面的大標／副標;放最後:都在 data-i18n 寫回原句之後才畫

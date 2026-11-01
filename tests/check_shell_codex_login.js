@@ -152,7 +152,8 @@ exit 2
      let detectAt = 0;
      ${constOf(app, "ROWMSG")}
      ${constOf(app, "REDETECT_GAP_MS")}
-     const resendState = (card, okText) => ({ calm: true, text: okText, resend: true });
+     const resendState = (card, okText) => ({ calm: true, text: typeof okText === "function" ? okText() : okText, resend: true });
+     ${app.match(/^function sysLz\(fn\)[^\n]*$/m)[0]}
      ${constOf(app, "LOCAL_FAULTS")}
      ${fnOf(app, "localFaultsLive")}
      ${fnOf(app, "localFaultsRecheck")}
@@ -268,7 +269,7 @@ exit 2
       const blave = { onAgentLoginSpawned: (fn) => { listener = fn; }, cancelAgentLogin: () => {},
         agentLogin: async () => { if (spawnAt !== null) { await new Promise((r) => setTimeout(r, spawnAt)); listener(); } await new Promise((r) => setTimeout(r, endAt - (spawnAt || 0))); return res; } };
       const f = new Function("window", "t", "LOGIN_OPENED_MS", "cmdLine", "resendState", "trackEvent", "trackFeature",
-        "let loginPending = null, oauthPending = false, loginSpawned = null; const LOCAL_FAULTS = [];\n" + LISTEN + "\n" + fnOf(app, "agentLoginRun") + "\n" + fnOf(app, "localLoginFlow") + "\nreturn localLoginFlow;")(
+        "let loginPending = null, oauthPending = false, loginSpawned = null; const LOCAL_FAULTS = [];\n" + LISTEN + "\n" + fnOf(app, "agentLoginRun") + "\n" + app.match(/^function sysLz\(fn\)[^\n]*$/m)[0] + "\n" + fnOf(app, "localLoginFlow") + "\nreturn localLoginFlow;")(
         { blave }, (k, v) => tr(k, v), 1000, (k) => k, () => ({ text: "ok" }), () => {}, () => {});
       const card = { set: (st) => sets.push(st) };
       f(card, "codex"); sets[0].on();   // 卡先畫失效句,按〔登入〕

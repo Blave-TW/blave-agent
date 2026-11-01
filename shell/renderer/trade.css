@@ -99,25 +99,49 @@ html[data-env="cloud"] .cs-tabs .tab:not([aria-selected="true"]):has(+ .tab:not(
 /* 停在列上 / 聚焦 / 旗標面板開著時列尾多了旗標鈕與 ✕(155 寬的列名字只剩 22):狀態字讓位、只留狀態點;字留在讀屏名稱裡(同 .sr-only)。刪除中那列不收:「刪除中…」是它唯一的狀態說明 */
 .strat-wrap:not(.is-deleting):is(:hover, :has(:focus-visible), .flag-open) .strat-row .stx { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-/* ---- 雲端視角的開通頁(沒有主機可看;規格 §3 .cv-open)---- */
-.cv-open { max-width: 48ch; margin-top: var(--space-24); }
-.cv-open h4 { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink); text-wrap: balance; }
-.cv-lead { margin: var(--space-16) 0 0; font-size: 13px; line-height: 1.7; color: var(--ink-2); }
-.cv-open .plan-price { margin-top: var(--space-24); }
-.cv-p { margin: 0; font-size: 14px; line-height: 1.7; color: var(--ink-2); }
-.cv-above, .cv-open .plan-err { margin: var(--space-24) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
-.cv-above.up { color: var(--ink-2); }
-.cv-act { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-16); margin-top: var(--space-12); }
-.cv-act .btn-fill, .cv-act .btn-out { height: 32px; }
-.cv-act .wait { font-size: 12px; color: var(--ink-3); }
-.cv-act .btn-quiet { font-size: 12px; }
-#cv-desc .dot { display: inline-block; width: 7px; height: 7px; margin-right: var(--space-8); border-radius: var(--radius-pill); background: var(--ink-3); vertical-align: .09em; }
-#cv-desc .dot.busy { animation: trRunPulse calc(var(--motion-blink) * 1.2) ease-in-out infinite; }
+/* ---- 雲端視角的開通頁(沒有主機可看;mockup-cloud-empty 方向 A):一個標題、一張卡,光學置中(同歡迎頁 F)。.trv 是容器,窄欄看中欄寬 ---- */
+.cv-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; padding: var(--space-24); }
+.cv-ce, .cv-st { margin: auto; width: 100%; max-width: 400px; padding-bottom: var(--space-48); }
+.cv-ce h3 { margin: 0; font-size: 30px; font-weight: 500; line-height: 1.22; letter-spacing: -.01em; color: var(--ink); text-align: center; text-wrap: balance; }
+:lang(en) .cv-ce h3 { font-weight: 600; }
+.cv-pend { margin: var(--space-8) 0 0; font-size: 13px; color: var(--ink-2); text-align: center; }
+.cv-card { margin-top: var(--space-24); padding: var(--space-24); background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+.cv-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-16); }
+.cv-spec { font-size: 13px; color: var(--ink-2); }
+.cv-pr { font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink); white-space: nowrap; }
+.cv-pr.is-tag { font-size: 13px; font-weight: 500; }
+.cv-more { margin-top: var(--space-4); text-align: right; }
+.cv-more .btn-quiet { font-size: 13px; color: var(--link-quiet); white-space: nowrap; }
+.cv-note, .cv-slot { margin: var(--space-16) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); text-wrap: pretty; }
+.cv-note + .cv-slot, .cv-note + .plan-err { margin-top: var(--space-4); }
+.cv-card .plan-err { margin: var(--space-16) 0 0; font-size: 13px; color: var(--color-redText); }
+.cv-card .plan-err.is-calm { color: var(--ink-2); }
+[data-theme="dark"] .cv-card .plan-err:not(.is-calm) { color: var(--color-redBlack); }
+.cv-acts { margin-top: var(--space-16); }
+.cv-acts .btn-fill, .cv-acts .btn-out { width: 100%; height: 36px; }
+.cv-foot { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); text-align: center; }
+/* 狀態頁:一句話,同一條中線,不留招攬字 */
+.cv-st { text-align: center; }
+.cv-st h4 { margin: 0 0 var(--space-8); font-size: 20px; font-weight: 600; line-height: 1.4; color: var(--ink); }
+.cv-st p { margin: 0; font-size: 14px; line-height: 1.7; color: var(--ink-2); }
+.cv-st p.is-up { display: flex; justify-content: center; align-items: baseline; gap: var(--space-8); }
+.cv-st .plan-err { justify-content: center; text-align: left; }
+.cv-st.is-flat p { font-size: 13px; color: var(--ink-3); }
+.cv-st .dot { flex: none; display: inline-block; width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--ink-3); }
+.cv-st .dot.busy { animation: trRunPulse calc(var(--motion-blink) * 1.2) ease-in-out infinite; }
+.cv-act { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-16); margin-top: var(--space-16); }
+.cv-act .btn-fill, .cv-act .btn-out { height: 36px; }
+.cv-act .btn-quiet { font-size: 13px; color: var(--link-quiet); }
+@container (max-width: 519px) {
+  .cv-ce h3 { font-size: 26px; }
+  .cv-card { padding: var(--space-16); }
+  .cv-more { text-align: left; }
+}
 .side-gate { margin: var(--space-12) 0 0; }
 .side-gate[hidden] { display: none; }
 html.ws-sc .side-gate { display: none; }
-@media (prefers-reduced-motion: reduce) { #cv-desc .dot.busy { animation: none; } }
-/* 雲端連接之後「已存到、等回報」那一句(S5 §4.1):同 #cv-desc 的呼吸點 */
+@media (prefers-reduced-motion: reduce) { .cv-st .dot.busy { animation: none; } }
+/* 雲端連接之後「已存到、等回報」那一句(S5 §4.1):同開通頁的呼吸點 */
 .cx-saved { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
 .cx-wait { display: flex; align-items: center; gap: var(--space-8); margin-top: var(--space-4); }
 /* 圓環 spinner(canon › Components › Loader,最小 16/2):缺口 1/4、currentColor、1s linear。
@@ -145,7 +169,7 @@ html.ws-sc .side-gate { display: none; }
 /* 標頭三列(spec v2 §12-4 的 V2b):列 1 = 標題 | 動作槽,列 2 = 狀態句,列 3 = 原因行,兩句都跨滿寬。
    舊版是 flex + `.act { flex: none }`:1024 最小視窗、三欄全開時中欄只有 336,兩顆英文鈕吃掉固定寬度,
    文字欄只剩 60 px(約八個英文字母一行)→ 最長的狀態 36 行。`.txt` 走 display: contents,
-   讓標題、狀態句、原因行直接變成 grid item;`.act` 缺席時(#cv-empty 那個標頭)收掉第二欄與欄距 */
+   讓標題、狀態句、原因行直接變成 grid item;`.act` 缺席時收掉第二欄與欄距 */
 .main-head { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-16); align-items: start; padding: var(--space-16) var(--space-24) var(--space-12); }
 .main-head:not(:has(.act)) { grid-template-columns: minmax(0, 1fr); column-gap: 0; }
 .main-head > .txt { display: contents; }
@@ -465,10 +489,12 @@ html.ws-sc .side-gate { display: none; }
 .ev-row .dim { color: var(--ink-3); }
 
 /* ---- 中欄可窄到 288(視窗 1024):同一張表收欄,不改骨架。<520 標的併到策略名下 ---- */
-.sub-sym { display: none; font-size: 11px; color: var(--ink-3); }
+.sub-sym { display: none; font-size: 11px; color: var(--ink-3); word-break: keep-all; overflow-wrap: break-word; }
 .unit-note { display: none; }
 /* 1264 寬開著聊天欄、Windows 的捲軸佔 17px 時,金額表的最小寬(五欄表頭不折行)比中欄多幾 px,冒出橫向捲軸(第三台實測):
    中欄 ≤ 600 時表頭可以折行(「目標部位」「Target position」折兩行),省下的寬度讓表收得進去 */
+/* 投資組合的標的格寫股票名字(比代號長):一律可換行、不撐開表;只在名字之間換,不把一個名字拆成兩半 */
+.pf-tbl td.sname.c-sym { white-space: normal; word-break: keep-all; overflow-wrap: break-word; text-wrap: pretty; }
 /* 投資組合多空並列＋「等 N 檔」排一行時,金額表最小寬 zh 563／en 632,預設視窗 1280 的中欄就放不下:≤700 先拆兩行、標的格可換行 */
 @container (max-width: 700px) {
   .pf-tbl td.pos .pos-main.split { display: inline-grid; justify-items: end; }

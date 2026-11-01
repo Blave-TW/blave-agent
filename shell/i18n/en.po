@@ -1121,9 +1121,6 @@ msgstr "Balance unavailable right now"
 msgid "plan.month"
 msgstr "{p} TWD / month"
 
-msgid "plan.hour"
-msgstr "{h} TWD an hour from your balance (30-day month)"
-
 msgid "plan.trialFree"
 msgstr "No machine fee until {d}. After that, the price above applies."
 
@@ -2832,9 +2829,6 @@ msgstr "Blave — {where}"
 msgid "tr.mode.real"
 msgstr "Real money"
 
-msgid "side.cloud.starting"
-msgstr "Machine starting"
-
 msgid "side.cloud.emptyCut1"
 msgstr "No strategies in the cloud yet."
 
@@ -2844,23 +2838,77 @@ msgstr "Paused"
 msgid "env.empty.title"
 msgstr "Cloud"
 
-msgid "env.empty.desc"
-msgstr "No cloud machine yet"
-
 msgid "env.open.h"
-msgstr "Keep Your Strategies Running with This Computer Off"
+msgstr "Close the laptop, the strategy keeps running"
 
 msgid "env.open.lead"
-msgstr "A machine that stays on runs your strategies on schedule and places the orders, with Blave’s market and positioning data included."
+msgstr "Blave market and positioning data included."
 
 msgid "env.open.more"
-msgstr "See the Full Plan"
+msgstr "Other plans and prices →"
+
+msgid "env.open.spec"
+msgstr "{label} · {vcpu} vCPU · {ram} GB"
+
+msgid "env.open.price"
+msgstr "{p} TWD / {n} days"
+
+msgid "env.open.tagTrial"
+msgstr "Trial until {d}"
+
+msgid "env.open.tagPlan"
+msgstr "Plan active until {u}"
+
+msgid "env.open.pend"
+msgstr "{id} is waiting to go up."
+
+msgid "env.open.trialOffer"
+msgstr "Your first card gets a {t}‑day trial. Cancel during it and nothing is charged."
+
+msgid "env.open.offer"
+msgstr "{t}‑day trial, cancel during it and nothing is charged. The first period is charged when it ends."
+
+msgid "env.open.bind"
+msgstr "Add Card, Start Trial"
+
+msgid "env.open.included"
+msgstr "Your API plan includes data, not a machine."
+
+msgid "env.open.trial"
+msgstr "Starting a machine costs nothing extra. {p} TWD is charged when the trial ends, unless you cancel."
+
+msgid "env.open.trialOff"
+msgstr "Starting a machine costs nothing extra."
+
+msgid "env.open.planOn"
+msgstr "Your plan includes one machine of the same tier at no extra cost."
+
+msgid "env.open.failH"
+msgstr "Payment failed"
+
+msgid "env.open.repay"
+msgstr "Blave data is paused. Retried daily; the plan ends on {gu}."
+
+msgid "env.open.repayNoNum"
+msgstr "Blave data is paused. Payment is retried daily."
+
+msgid "env.empty.unknown"
+msgstr "Couldn’t check this account."
+
+msgid "wc.stopped"
+msgstr "Cloud machine stopped."
+
+msgid "wc.goTrade"
+msgstr "Go to Auto Trading"
+
+msgid "onb.wait"
+msgstr "Order status hasn’t loaded yet. You can open Portfolio from the sidebar instead."
 
 msgid "side.cloud.emptyReady"
 msgstr "Your machine is up. Strategies you send here will be listed."
 
 msgid "env.empty.starting"
-msgstr "The cloud machine is starting, usually about a minute. This page changes to the cloud’s content once it is up."
+msgstr "The cloud machine is starting, usually about a minute."
 
 msgid "env.empty.relogin"
 msgstr "Your Blave sign-in has expired. Please sign in again. Chats and strategies on this computer aren’t affected."
@@ -4585,7 +4633,13 @@ msgstr "Restarting…"
 
 # 側欄左下的更新膠囊(新版已暫存好;spec desktop-update-pill §3)。不寫版號;下單中字尾接「…」。細軌圓鈕的 aria-label 也是這句
 msgid "up.pill"
-msgstr "Update · Restart"
+msgstr "Restart to update"
+
+msgid "up.pillV"
+msgstr "Restart to update: {v}"
+
+msgid "up.pillS"
+msgstr "Update: {v}"
 
 # 更新 modal 一般(沒在下單)的標題;{v} = 已暫存的新版號(canon 具名例外:只這個標題可以寫版號)
 msgid "up.md.title"
@@ -8995,11 +9049,11 @@ msgid "tr.cf.titleFire"
 msgstr "Save and place orders"
 
 msgid "tr.cf.capOrders"
-msgstr "Orders for the next round ({n})"
+msgstr "Estimated orders for the next round ({n})"
 
 # 全部是台股、這一輪都留到開盤時的表頭;後面接 asof 那段
 msgid "tr.cf.capOrdersOpen"
-msgstr "Orders to send at the open ({n})"
+msgstr "Estimated orders at the open ({n})"
 
 msgid "tr.cf.capChanges"
 msgstr "{n} targets change ({ccy})"
@@ -9065,6 +9119,12 @@ msgstr "The part being replaced in {syms} stays as it is until the first signal 
 
 msgid "tr.cf.gated"
 msgstr "No orders this round for {syms}: waiting for a new signal."
+
+msgid "tr.cf.nextRound"
+msgstr "The next round places any orders based on the latest signal."
+
+msgid "tr.cf.closeMaybe"
+msgstr "Removed or zeroed strategies close any position they hold."
 
 msgid "po.unsaved"
 msgstr "Unsaved"

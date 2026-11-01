@@ -311,7 +311,7 @@ const stagingLeft = (fx) => [...fx.dirs, ...fx.files.keys()].some((k) => k.inclu
     t("preload:codexPkgEnsure(只轉 reinstall:true)/ codexPkgState / onCodexPkgState", /codexPkgEnsure: \(o\) => ipcRenderer\.invoke\("codex-pkg-ensure", o && o\.reinstall === true \? \{ reinstall: true \} : null\),/.test(pre)
       && /codexPkgState: \(\) => ipcRenderer\.invoke\("codex-pkg-state"\),/.test(pre) && /onCodexPkgState: \(fn\) => ipcRenderer\.on\("codex-pkg-state", \(_e, s\) => fn\(s\)\),/.test(pre));
     t("renderer:先掛 onCodexPkgState 再拉一次快照(同 engine.js)", app.indexOf("window.blave.onCodexPkgState(codexPkgOnState);") > 0 && app.indexOf("window.blave.onCodexPkgState(codexPkgOnState);") < app.indexOf("window.blave.codexPkgState()"));
-    t("renderer:回合錯誤卡與系統通知摘錄都認得 AGENT_BIN_DOWNLOADING(字串 key 就是那一碼)", /\/AGENT_BIN_DOWNLOADING\/\.test\(r\.errTail \|\| ""\) \? t\("AGENT_BIN_DOWNLOADING"\)/.test(app)
+    t("renderer:回合錯誤卡與系統通知摘錄都認得 AGENT_BIN_DOWNLOADING(字串 key 就是那一碼)", /\/AGENT_BIN_DOWNLOADING\/\.test\(tail\) \? t\("AGENT_BIN_DOWNLOADING"\)/.test(app)
       && /\(\(r\.errTail \|\| ""\)\.match\(\/AGENT_BIN_\(MISSING\|DOWNLOADING\)\/\) \|\| \[\]\)\[0\] \|\| false/.test(app) && /binMissing \? t\(binMissing\)/.test(app));
     t("focusRedetect:Codex 引擎下載中不重偵測(裝好那一刻自己會)", /if \(PKG\.snap && PKG\.snap\.phase !== "idle"\) return false;/.test(app.slice(app.indexOf("function focusRedetect()"), app.indexOf("function focusRedetect()") + 600)));
     const KEYS = ["cn.pkgSize", "cn.pkgDl", "cn.pkgInstall", "cn.pkgTar", "cn.pkgNet", "cn.pkgDisk", "cn.pkgFail", "cn.pkgBad", "cn.retry", "row.orBrowser", "AGENT_BIN_DOWNLOADING"];

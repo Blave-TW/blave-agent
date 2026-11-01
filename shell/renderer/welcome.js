@@ -2,7 +2,7 @@
    onboarding 期間(E,#wc):記號 → 步驟清單 ①找靈感 ②做策略並回測 ③加到策略組合,不分市場(0.1.29 Wei:拿掉市場題與④自動下單)。
    ①② 全新時同時展開;③ 輪到才露鈕;完成的一步收成一行(打勾＋名字,不帶 meta);①② 點了重新展開,③ 點了直接到策略組合頁。完成判定全從現有狀態推:
    ② = 那個視角的清單有一支回測過(本機 RP.list、雲端 TR_BAGS.cloud.list 的 hasBacktest)、③ = 那個視角存著的金額有一支 > 0(trStored,同 strat_deployed 的判準)。
-   做完③的當下原地一行「都設好了」(這次開著期間留著),之後就是完成後的首頁(F,#wf):淡化記號＋一列籤。
+   做完之後是完成後的首頁(F,#wf):淡化記號＋一列籤;剛做完③那次,籤上方多一行「都設好了」(這次開著期間留著),籤當場可按。
    「已進 F」兩個視角分開存主行程 ui-prefs(IPC welcome-prefs:done = 這台電腦、cloudDone = 雲端),不上傳。既有用戶第一次判斷就已經完成的直接進 F,不顯示「都設好了」、不送 onb_done——
    所以那一次判斷要等到狀態檔真的讀到(報告還沒來時③一律當沒輪到,不下結論)。
    ①放最多三張現成策略卡(spec desktop-welcome-library-first;挑法 library.js wcReco):名字開詳情、「安裝並回測 →」走策略庫同一個確認框,確定後切到詳情再送。
@@ -160,7 +160,7 @@ $("wl-fold").addEventListener("click", () => {
 
 /* ── 入門步驟(E)與完成後的首頁(F)── */
 // key:①策略卡的指紋;retried:清單讀不到只重試一次的語言;synced:對帳過的(帳號, 清單)資料權限組;tip:gloss 泡泡的 id 流水號
-const WC = { shown: false, armed: false, key: null, retried: null, synced: null, tip: 0 };
+const WC = { shown: false, armed: false, key: null, retried: null, synced: null, tip: 0, alert: null };
 // prefs:null = 還在讀(讀到之前不畫,不然已進 F 的人會先閃一下步驟清單)。base／fin／open 兩個視角各一份(ONB.v),畫面只有一份(key、amt 跟著現在的視角)
 const onbV = () => ({ base: null, fin: false, open: [false, false, false] });
 const ONB = { prefs: null, v: { local: onbV(), cloud: onbV() }, key: null, amt: false };
@@ -190,7 +190,8 @@ function onbData(env) {
   const funded = Object.keys(stored).some((n) => Number(stored[n]) > 0);
   // ③ 已經勾了沒存、或存了但金額全 0:下一步是填金額,不是再開一次框(借頁首 trZCase 的 draft／amt 兩個判斷;那支要綁好帳戶才回值,新手多半沒綁,不整支照搬)
   const amt = known && !funded && (Object.keys(stored).length > 0 || trWith(L, () => trZDraft()));
-  return { known, bt: (cloud ? (L && L.list) || [] : RP.list).some((x) => x.hasBacktest), funded, amt };
+  // wait:狀態問過了還是沒讀到。平常只閃一下,常駐程式起不來時會一直這樣,③ 沒有鈕,要講原因(開機第一輪還沒回來不算;雲端停機有自己那一行)
+  return { known, bt: (cloud ? (L && L.list) || [] : RP.list).some((x) => x.hasBacktest), funded, amt, wait: !!st && !known && !(cloud && envCloudKind(st) === "stopped") };
 }
 /* ── ①的策略卡(spec desktop-welcome-library-first §2–3)── */
 // 手上沒有、作廢了、換了語言才問(主行程有 5 分鐘快取)。不從 wcPaint 叫:libLoad 結束會叫 wcPaint,讀不到時會一直重打。
@@ -218,6 +219,7 @@ function wcPaint() {
   const env = onbEnv(), cloud = env === "cloud" ? libCloud() : null;
   // 雲端主機停了或沒跟上:歡迎頁照樣出(trade.js envPaint 的 gate 不擋 stopped／stale),這裡是唯一一道;原因句住在策略庫詳情
   const off = cloud !== null && cloud !== "live";
+  wcAlert(cloud);
   const picks = off || !LIB.data ? [] : wcReco(LIB.data.strategies, { env, signedIn: !!hasToken, dataAccess: LIB.data.dataAccess, wait: env !== "cloud" && wcAcctWait(), installed: (s) => wcInstalled(s, env) });
   const skel = !off && (picks === null || (!LIB.data && LIB.skel));
   const shown = skel ? [] : picks;
@@ -229,6 +231,23 @@ function wcPaint() {
     box.hidden = !skel && !shown.length;   // 讀不到、策略庫空、都裝過了:整塊不見,①只剩兩顆籤;不出錯誤字
   }
   wcBusySync();
+}
+/* 雲端停機／過時:E 的記號下、F 的籤上各一行,不然看起來正常,按下去才知道不能做。停機的恢復鈕住在自動下單頁,帶過去;過時通常自己會好,只講一句 */
+function wcAlert(cloud) {
+  const kind = cloud === "stopped" || cloud === "stale" ? cloud : "", key = LANG + kind;
+  if (WC.alert === key) return;
+  WC.alert = key;
+  [$("wc-alert"), $("wf-alert")].forEach((p) => {
+    p.textContent = ""; p.hidden = !kind; p.classList.toggle("calm", kind === "stale");
+    if (!kind) return;
+    const m = wdEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
+    p.append(m, wdEl("span", "", t(kind === "stopped" ? "wc.stopped" : "ho.gate.stale")));
+    if (kind !== "stopped") return;
+    const a = wdEl("button", "ln-arrow"), ar = wdEl("span", "ar", "→");
+    a.type = "button"; ar.setAttribute("aria-hidden", "true"); a.append(wdEl("span", "lbl", t("wc.goTrade")), ar);
+    a.addEventListener("click", () => { trackFeature("wc_stopped_go"); trOpen(); });
+    p.appendChild(a);
+  });
 }
 /* 骨架卡:拿一支樣板策略走 wcCard 原樣建 DOM(同字型、同 mono、同斷行),字換成透明的條。卡高跟著每個寬度級距自己算,
    meta 在窄欄折兩行時骨架也折兩行,讀到時版面不跳。樣板取最常見的形狀(永續合約 × 週期 × 多年樣本) */
@@ -343,12 +362,11 @@ function onbPaint() {
   const { d, S, ph } = onbEval(env);
   ONB.amt = d.amt;
   wcPaint();   // 放在指紋 return 之前:切視角、雲端轉 stale／stopped 都走這裡,卡要跟著換或收(自己有指紋)
-  const key = JSON.stringify([LANG, env, ph.view, S.steps, d.amt]);
+  const key = JSON.stringify([LANG, env, ph.view, S.steps, d.amt, d.wait]);
   if (key === ONB.key) return;
   ONB.key = key;
-  wf.hidden = ph.view !== "F"; wc.hidden = ph.view === "F";
+  wf.hidden = ph.view === "E"; wc.hidden = ph.view !== "E";
   $("onb-fin").hidden = ph.view !== "fin";
-  $("onb-steps").hidden = ph.view !== "E";
   if (ph.view !== "E") return;
   S.steps.forEach((s, i) => { onbHead(i, s); $("onb-b" + (i + 1)).hidden = !s.open; });
   // 雲端主機本來就含 Blave 資料(主機費含資料費):「免費 vs Blave 資料」那份清單在雲端會講錯事實,同網頁歡迎頁不出
@@ -356,6 +374,7 @@ function onbPaint() {
   fold.hidden = cloud;
   if (cloud) { $("wl").hidden = true; fold.setAttribute("aria-expanded", "false"); }
   $("onb-po").textContent = t(d.amt ? "po.goAmounts" : "tr.pick");
+  $("onb-wait").hidden = !(d.wait && d.bt);
 }
 $("onb-lib").addEventListener("click", () => libOpen());
 // ③ 到策略組合頁並打開選擇策略框,讓用戶自己勾(Wei 0.1.29:不替他挑一支);勾了沒存／存了 0 → 落在金額格

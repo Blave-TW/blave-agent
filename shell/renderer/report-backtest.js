@@ -272,7 +272,11 @@
     // 數值片段進 .mono;「手續費」這種要翻譯的字留在 sans——漢字不進 mono(canon › Type)
     const parts = [];
     const mono = (text, cls) => el("span", "mono" + (cls ? " " + cls : ""), text);
-    if (typeof stats.symbol === "string" && stats.symbol) parts.push([mono(stats.symbol, "bt-sym")]);
+    if (typeof stats.symbol === "string" && stats.symbol) {
+      const symEl = mono(stats.symbol, "bt-sym");
+      if (typeof trTwMetaFill === "function") trTwMetaFill(symEl, stats.symbol);   // 電腦版:台股寫名字;分享頁與 PDF 沒有名字表,留代號
+      parts.push([symEl]);
+    }
     if (typeof stats.interval === "string" && stats.interval) parts.push([mono(stats.interval)]);
     const start = typeof stats.start === "string" && stats.start ? stats.start : null;
     const end = typeof stats.end === "string" && stats.end ? stats.end : null;

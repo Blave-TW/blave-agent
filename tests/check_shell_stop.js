@@ -111,7 +111,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   ok("按鈕分流:回合中按 = 停止,閒著按 = 送出", /\$\("btn-send"\)\.addEventListener\("click", \(\) => \(running \? stopTurn\(\) : sendDraft\(\)\)\);/.test(appSrc));
   const endCut = cutFrom(appSrc, "function turnEndPre(r) {", "/* 側欄 / 聊天欄");
   ok("turn-end:停止不算失敗(不問登入、不攤收據、保險殺掉的結束碼不顯示)", /const stopped = turnStopped; turnStopped = false;/.test(endCut)
-    && /const exitLine = r\.code !== 0 && !stopped/.test(endCut) && /const probe = !stopped && \(cur === "claude"/.test(endCut) && /const faulted = !stopped && \(/.test(endCut));
+    && /const exitLine = code !== 0 && !stopped/.test(endCut) && /const probe = !stopped && \(cur === "claude"/.test(endCut) && /const faulted = !stopped && \(/.test(endCut));
   ok("turn-end:切回送出鈕、原句放回", /turnStopping = false; turnUiSync\(\);/.test(endCut) && /if \(stopped && lastUserTyped\) \{/.test(endCut) && /stopRestore\(lastUserText, lastUserAttachments\);/.test(endCut));
   // 只放回用戶自己打的:把 submitMessage 裡算來源的那一行切出來跑
   const typedLine = /addMsg\("you", msg, attachments\.map\(\(a\) => a\.name\)\); (lastUserTyped = [^;]+;) lastUserText = msg;/.exec(appSrc);

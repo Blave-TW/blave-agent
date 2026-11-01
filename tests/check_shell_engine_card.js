@@ -200,7 +200,7 @@ ok("③ C:工作頁一打開就跟主行程對一次快照(背景安裝可能早
   /engSync\(\)/.test(cut(appSrc, "function enterWorkspace(")) && /window\.blave\.engineState\(\)/.test(src) && /\nengSync\(\);\n/.test(src));
 ok("③ 舊的灰字進度不在了(onEngineProgress / addMsg(\"sys\", t(key)))", !/onEngineProgress/.test(appSrc + src) && !/addMsg\("sys", t\(key\)\)/.test(appSrc));
 ok("③ 安裝中送出:卡移到那句底下(泡泡 → 卡)", /engAfter\(bubble\)/.test(submit));
-ok("③ 失敗:泡泡留著(engHold)、不收回輸入框;卡上沒畫出來(只修 venv)才退回失敗卡", /engHold\(msg, opts, bubble\); unlock\(\); return false;/.test(submit) && /faultCard\(\)\.set\(\{ text: t\("turn\.engineFailed"/.test(submit));
+ok("③ 失敗:泡泡留著(engHold)、不收回輸入框;卡上沒畫出來(只修 venv)才退回失敗卡", /engHold\(msg, opts, bubble\); unlock\(\); return false;/.test(submit) && /faultCard\(\)\.set\(sysLz\(\(\) => \(\{ text: t\("turn\.engineFailed"/.test(submit));
 ok("③ 重試:同一個泡泡、同一句話再走一次 submitMessage(裝好就送出)", /submitMessage\(h\.msg, Object\.assign\(\{\}, h\.opts, \{ bubble: h\.bubble \}\)\)/.test(src) && /opts && opts\.bubble && opts\.bubble\.isConnected \? opts\.bubble : addMsg\("you", msg, attachments\.map\(\(a\) => a\.name\)\)/.test(submit));
 ok("③ 換送別句:等著的那句收掉(留著會像已經送出)", /engDropHeld\(\)/.test(submit));
 ok("③ 安裝中按停止:這句不送、放回輸入框、安裝照跑——停止那條路完全不碰卡", /if \(engineWait && engineAbort\)/.test(stop) && !/ENG\b|eng[A-Z]\w*\(/.test(stop) && /engineAbort = \(\) => \{ unlock\(\); unsend\(\); \};/.test(submit));
@@ -208,11 +208,11 @@ ok("③ 卡的去留只看快照:engPaint 只有在 done 才收(停止 / 失敗�
 { const w = cut(src, "function engWarn(");
   ok("③ 美股那組沒裝好(快照 done + warn):卡照樣收、換成完成那一行,再出一張失敗卡講美股功能暫時不能用(錯誤訊息可展開、沒有重試鈕)、一次啟動只講一次",
     /if \(s\.warn\) engWarn\(s\);/.test(cut(src, "function engDone(")) && /else if \(s\.phase === "done" && s\.warn\) engWarn\(s\);/.test(src)
-    && /faultCard\(\)\.set\(\{ calm: true, text: t\("eng\.optFail"\), sub \}\)/.test(w) && /if \(ENG\.warned \|\| !s\.warn\) return;\s*ENG\.warned = true;/.test(w) && !/label|retry/.test(w));
+    && /const c = faultCard\(\); c\.set\(sysLz\(\(\) => \(\{ calm: true, text: t\("eng\.optFail"\), sub: sub\(\) \}\)\)\); engKeep\(c\.el\);/.test(w) && /if \(ENG\.warned \|\| !s\.warn\) return;\s*ENG\.warned = true;/.test(w) && !/label|retry/.test(w));
   ok("③ 美股那組的字 zh / en 都有、不寫死套件名與版本", ["zh", "en"].every((lg) => ctx.STRINGS[lg]["eng.optFail"] && !/yfinance|==/.test(ctx.STRINGS[lg]["eng.optFail"]))); }
 ok("③ 換對話 / 開新對話清掉聊天欄後補回安裝卡(fail 沒有每秒重畫,不補就連重試鈕一起不見):csClearChat 最後、csOpen 畫完舊回合之後",
   /engReattach\(\);[^\n]*\n\}/.test(cut(appSrc, "function csClearChat(")) && /addHistoryAi\(x\.turn\.content\)\)\);\n\s*live\.forEach\(\(n\) => chatEl\(\)\.appendChild\(n\)\);\n\s*if \(typeof engReattach === "function"\) engReattach\(\);/.test(cut(appSrc, "function csPaintHistory("))
-  && /function engReattach\(\) \{ if \(ENG\.card\) ENG\.card\.remove\(\); engPaint\(\); \}/.test(src));
+  && /function engReattach\(\) \{ if \(ENG\.card\) ENG\.card\.remove\(\); engPaint\(\); engSysSync\(\); \}/.test(src));
 ok("③ index.html:engine.css 有載、engine.js 在 app.js 之後", /<link rel="stylesheet" href="engine\.css">/.test(html) && html.indexOf('src="engine.js"') > html.indexOf('src="app.js"'));
 ok("③ reduced-motion:app.css 那條 `* { animation:none !important }` 之外,這張卡的轉圈照轉", /@media \(prefers-reduced-motion: reduce\) \{ \.eng-card \.spin16 \{ animation: trSpin 1s linear infinite !important; \} \}/.test(css) && /\* \{ transition: none !important; animation: none !important; \}/.test(read(path.join(R, "app.css"))));
 ok("③ 顏色只用 token(不寫死 hex、不寫死毫秒)", !/#[0-9a-fA-F]{3,8}\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, "")) && !/\d+ms\b/.test(css));

@@ -151,7 +151,7 @@ for (const [ok, what] of [[/files:\s*\[[^\]]*"cloud\.js"/.test(cfg) && /files:\s
     [/sdkPins: SDK_PINS, deps: WORKSPACE_DEPS/.test(mainSrc) && /read\(sdkMark\) !== o\.sdkPins/.test(engSrc) && /fs\.writeFileSync\(sdkMark, o\.sdkPins\)/.test(engSrc), ".blave-sdk 記號檔比、寫整串 SDK_PINS"],
     [/o\.log\("\[engine\] pip install failed: "/.test(engSrc), "pip 失敗先把完整 stderr 留在主行程的 log,再丟修剪過的"],
     [!/"\/bin\/sh"/.test(mainSrc) && !/function sh\(/.test(mainSrc), "main.js 沒有 /bin/sh -c 的 sh() 了(Windows 沒有 /bin/sh)"],
-    [/faultCard\(\)\.set\(\{ text: t\("turn\.engineFailed"/.test(appSrc) && !/addMsg\("sys", t\("turn\.engineFailed"/.test(appSrc), "引擎準備失敗(卡上沒畫出來的那種)畫失敗卡(紅記號),不是灰字"],
+    [/faultCard\(\)\.set\(sysLz\(\(\) => \(\{ text: t\("turn\.engineFailed"/.test(appSrc) && !/addMsg\("sys", t\("turn\.engineFailed"/.test(appSrc), "引擎準備失敗(卡上沒畫出來的那種)畫失敗卡(紅記號),不是灰字"],
   ]) { console.log((ok ? "PASS  " : "FAIL  ") + what); if (!ok) red++; }
   process.exit(red ? 1 : 0);
 })();

@@ -14,7 +14,8 @@ const SG_EMOJI = (
 );
 const SG_EMOJI_LIST = [...SG_EMOJI], SG_EMOJI_SET = new Set(SG_EMOJI_LIST);
 const SG_CATS = ["sg.cat.common", "sg.cat.market", "sg.cat.strategy", "sg.cat.animal", "sg.cat.nature", "sg.cat.object"];
-const SG_MAX = 20, SG_NAME_MAX = 20, SG_MIN_LIST = 8, SG_COLS = 6;
+// SG_AUTO_MIN:「建市場資料夾」的支數門檻,同網頁 strat_folders.js 的 AUTO_MIN(新增資料夾鈕不看它)
+const SG_MAX = 20, SG_NAME_MAX = 20, SG_AUTO_MIN = 8, SG_COLS = 6;
 // 建市場資料夾(§10):market → [組名字串, 預填 emoji]。不在表上的市場(含空值)留在未分類。
 // 組名用自己的 sg.mkt.*(同網頁 workspace_sg_mkt_*):建好就成了用戶的資料夾名,受 20 碼點上限管,不跟策略庫的市場標籤綁在一起
 const SG_MARKETS = {
@@ -169,14 +170,15 @@ function sgHeadPaint() {
   // 每次 envPaint 都會進來:值有變才寫,role=status 的節點被重寫一次有些讀屏就重念一次
   const set = (el, k, v) => { if (el[k] !== v) el[k] = v; };
   if (add.getAttribute("aria-label") !== t("sg.add")) { add.setAttribute("aria-label", t("sg.add")); add.title = t("sg.add"); }
-  set(add, "hidden", !(n > 0 || list.length >= SG_MIN_LIST));
+  // 有 1 支策略就出(同網頁);0 支時就算還留著資料夾也不出
+  set(add, "hidden", !(list.length >= 1));
   set(add, "disabled", n >= SG_MAX);   // 真 disabled:不進 Tab 序,達上限的話寫在下面看得見的訊息槽
   const full = !add.hidden && add.disabled && !$("strat-head").hidden;
   set(lim, "hidden", !full); set(lim, "textContent", full ? t("sg.max") : "");
 }
 // 「建市場資料夾」:沒有資料夾、≥8 支、已知市場 ≥2 種才出,不符就不出現(不留停用鈕)。本機的市場要等常駐程式回報,所以狀態每輪回來也重判
 function sgAutoPlan(sc, list) {
-  if (sc.groups().folders.length || list.length < SG_MIN_LIST) return null;
+  if (sc.groups().folders.length || list.length < SG_AUTO_MIN) return null;
   const order = [], by = {};
   list.forEach((x) => { const m = sc.market(x); if (!SG_MARKETS[m]) return; if (!by[m]) { by[m] = []; order.push(m); } by[m].push(x.name); });
   return order.length >= 2 ? { order, by } : null;

@@ -64,6 +64,7 @@ const _Date = Date; global.Date = class extends _Date { static now() { return no
 global.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length; };
 var $ = () => ({ hidden: true }), t = (k) => k, srSay = (x) => sr.push(x), sidePaint = () => {}, planPaint = () => { painted++; }, acctCheck = () => { checks++; };
 var faultCard = () => ({ set: (s) => said.push(s.text) });
+eval(src.match(/^function sysLz\(fn\)[^\n]*$/m)[0]);
 eval(cut("function planWatch(s)", "/* 「設定」右邊那行安靜的字").replace(/^const /gm, "var "));
 const P = (state) => ({ plan: { state } });
 planWatch(P("starting")); planWatch(P("starting")); planWatch(P("starting"));

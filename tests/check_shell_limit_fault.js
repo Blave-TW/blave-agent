@@ -47,9 +47,9 @@ ok("只讀的步驟是一張表:搜尋、讀網頁、讀檔、抓資料、查帳
   && ["order", "file_write", "strategy_write", "schedule", "web_act", "backtest", "scan", "report", "install", "cloud", "live_tick", "unknown"].every((k) => !L.LIMIT_READONLY.includes(k)));
 
 // ---- 4. 接線與字串
-ok("classifyFault 先認用量上限;卡上的鈕開「設定 › 模型接入」", /function classifyFault\(text\) \{\n  const lim = limitMatch\(text, cur\);/.test(src) && /act: \(\) => setOpen\(\)\.then\(\(\) => setCat\("model"\)\) \};/.test(src)
+ok("classifyFault 先認用量上限;卡上的鈕開「設定 › 模型接入」", /function classifyFault\(text, o\) \{\n  const lim = limitMatch\(text, cur\);/.test(src) && /act: \(\) => setOpen\(\)\.then\(\(\) => setCat\("model"\)\) \};/.test(src)
   && /text: when \? t\("fault\.limit", \{ name, when \}\) : t\("fault\.limitNoTime", \{ name \}\)/.test(src));
-ok("畫了上限卡就記下(turnLimit);會改東西的步驟在工具開跑時記(turnChanged);回合開始兩個都歸零", /turnLimit = !!f\.limit; addFault\(f\);/.test(src)
+ok("畫了上限卡就記下(turnLimit);會改東西的步驟在工具開跑時記(turnChanged);回合開始兩個都歸零", /turnLimit = !!f\.limit; \{ const model = turnModel; addFault\(f, \(\) => classifyFault\(text, \{ again: true, model \}\)\); \}/.test(src)
   && /if \(c\.status !== "done" && LIMIT_READONLY\.indexOf\(actKindOf\(c\)\.kind\) < 0\) turnChanged = true;/.test(src) && /faultShown = false; turnLimit = false; turnChanged = false; pendingErr = \[\];/.test(src));
 ok("error chunk:上限卡之後的通用句照 limitSwallow 吞", /if \(turnLimit && limitSwallow\(c\.code, turnChanged\)\) return;/.test(src));
 const keys = ["fault.limit", "fault.limitNoTime", "fault.limitBtn"];

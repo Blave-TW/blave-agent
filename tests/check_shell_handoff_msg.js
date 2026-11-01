@@ -145,12 +145,11 @@ t("那一態側欄出 side.cloud.emptyReady,其餘狀態整句不出(emptyGate �
   /const sg = \$\("side-gate"\); sg\.hidden = !ready;/.test(trSrc)
   && /if \(ready && sg\.dataset\.i18n !== "side\.cloud\.emptyReady"\) \{ sg\.dataset\.i18n = "side\.cloud\.emptyReady"; sg\.textContent = t\("side\.cloud\.emptyReady"\); \}/.test(trSrc)
   && /"side\.cloud\.emptyReady":/.test(strings) && !/emptyGate/.test(trSrc + strings));
-t("那張卡:不畫三條賣點與價格、#cv-desc 留空、主鈕 data-k=\"main\"(登入回來焦點正好在它身上)、次鈕是［留在雲端］", (() => {
+t("那張卡:不畫賣點與價格、主鈕 data-k=\"main\"(登入回來焦點正好在它身上)、次鈕是［留在雲端］", (() => {
   const i = trSrc.indexOf("function envPaintEmpty("), ep = trSrc.slice(i, trSrc.indexOf("\n}\n", i));
-  return /const ready = kind === "running" && !!pid;/.test(ep) && /const view = ready \? "ready" : envOpenView\(/.test(ep)
-    && /view !== "loading" && view !== "unreach" && view !== "ready"\) desc\.textContent = t\("env\.empty\.desc"\)/.test(ep)
-    && /if \(view === "ready"\) page\.append\(trEl\("h4", "", t\("ho\.ready\.h"\)\), trEl\("p", "cv-p", t\("ho\.ready\.body", \{ id: pid \}\)\)\);/.test(ep)
-    && !/view === "ready"[^\n]*env\.open\.h/.test(ep)
+  return /const ready = kind === "running" && !!pid;/.test(ep) && /view = ready \? "ready" : envOpenView\(/.test(ep)
+    && /if \(view === "ready"\) st\.append\(trEl\("h4", "", t\("ho\.ready\.h"\)\), trEl\("p", "", t\("ho\.ready\.body", \{ id: pid \}\)\)\);/.test(ep)
+    && !/view === "ready"[^\n]*env\.open\.h/.test(ep) && /\["starting", "unreach", "unknown", "relogin", "ready"\]\.includes\(view\)/.test(ep)
     && /main = btn\("btn-fill", t\("ho\.back\.btn"\), \(\) => hoBack\(pid\), "main"\)/.test(ep)
     && /\|\| view === "ready" \? null : planErr/.test(ep) && /JSON\.stringify\(\[view, pid \|\| null,/.test(ep); })());
 /* 不可以繞回同一張卡:停機 / 「running 但讀不到」兩態**不切視角**、也不記 pending,在報告頁原地講一句。

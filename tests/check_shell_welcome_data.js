@@ -67,9 +67,9 @@ if (!process.versions.electron) {
   // ── ② 原文鎖 ──
   const chips = html.slice(html.indexOf('class="wc-chips"'), html.indexOf('id="wl-fold"'));
   const wcBox = html.slice(html.indexOf('id="main-empty"'), html.indexOf("</section>", html.indexOf('id="main-empty"')));
-  ok("② index.html(onboarding E/F):#main-empty 裡是 .wc-inner#wc(步驟清單,預設 hidden)與 .wc-fin#wf(完成後首頁,預設 hidden;class 不叫 .wf,樣本外驗證分頁的根也是 .wf);#wc 由上到下 記號 → ①(策略卡 #wc-cards、#chat-idea、#onb-lib)→ ②(#chat-ns、#wl-fold、#wl;0.1.34 起手句 #st-rows 退役)→ ③ → #onb-fin(0.1.29 拿掉市場題與④);#chat-lib、起手籤 #chat-eg、0.1.27 的三張卡 #wc-reco 退役",
+  ok("② index.html(onboarding E/F):#main-empty 裡是 .wc-inner#wc(步驟清單,預設 hidden)與 .wc-fin#wf(完成後首頁,預設 hidden;class 不叫 .wf,樣本外驗證分頁的根也是 .wf);#wc 由上到下 記號 → ①(策略卡 #wc-cards、#chat-idea、#onb-lib)→ ②(#chat-ns、#wl-fold、#wl;0.1.34 起手句 #st-rows 退役)→ ③(0.1.29 拿掉市場題與④),#onb-fin 在 #wf 裡籤的上方;#chat-lib、起手籤 #chat-eg、0.1.27 的三張卡 #wc-reco 退役",
     /<div class="wc-inner" id="wc" hidden>/.test(wcBox) && /<div class="wc-fin" id="wf" hidden>/.test(wcBox) && /<svg class="wc-fin-mark"/.test(wcBox) && /<div class="wc-fin-acts">/.test(wcBox) && wcBox.split('class="wc-inner"').length === 2 && !html.includes('id="chat-lib"') && !html.includes('id="chat-eg"') && !html.includes('id="wc-reco"') && !html.includes('id="st-rows"') && !/ws\.chatExample/.test(html + appSrc)
-    && ['class="wc-mark"', 'id="wc-cards"', 'id="chat-idea"', 'id="onb-lib"', 'id="chat-ns"', 'id="wl-fold"', 'id="wl"', 'id="onb-po"', 'id="onb-fin"', 'id="wf"'].every((x, i, a) => wcBox.includes(x) && (i === 0 || wcBox.indexOf(x) > wcBox.indexOf(a[i - 1]))));
+    && ['class="wc-mark"', 'id="wc-cards"', 'id="chat-idea"', 'id="onb-lib"', 'id="chat-ns"', 'id="wl-fold"', 'id="wl"', 'id="onb-po"', 'id="wf"', 'id="onb-fin"', 'id="wf-lib"'].every((x, i, a) => wcBox.includes(x) && (i === 0 || wcBox.indexOf(x) > wcBox.indexOf(a[i - 1]))));
   { // 樣本外驗證分頁的根是 <div class="bt wf">(report-wf.js):別的 css 寫 .wf / .wf-* 選擇器就會一起套上去(0.1.27 起歡迎頁 F 的 .wf 把整個分頁置中)。
     // 列舉 shell 底下每一支 css 的每一個選擇器;只有 report-wf.css 能用,app.css 那兩條共用清單(回合鎖灰鈕 .wf-go、原因行 .wf-cap)本來就是在指分頁裡的元素
     const ALLOW = { "app.css": [".wf-cap", ".wf-go"] }, bad = [];
@@ -293,7 +293,7 @@ if (!process.versions.electron) {
     // wcPaint 原文接假 DOM:骨架、收起、雲端停了收起、指紋沒變不碰 DOM
     { const mk = () => ({ hidden: true, kids: [], set textContent(v) { this.kids = []; this.cleared = (this.cleared || 0) + 1; }, appendChild(x) { this.kids.push(x); return x; }, querySelectorAll: () => [] });
       const run = (o) => { const box = mk(), C = Object.assign({ $: () => box, WC: { shown: true, key: null }, LANG: "zh", JSON, hasToken: false, acct: null, acctPending: 0, acctSettled: true,
-          LIB: { data: null, skel: false, pending: null }, onbEnv: () => "local", libCloud: () => "live", wcAcctWait: null, wcReco: (l, c) => (c.wait ? null : l), wcSkel: () => "SK", wcCard: (s, first) => "C" + s.id + (first ? "*" : ""), wcBusySync() {}, wcInstalled: () => false }, o);
+          LIB: { data: null, skel: false, pending: null }, onbEnv: () => "local", libCloud: () => "live", wcAcctWait: null, wcReco: (l, c) => (c.wait ? null : l), wcSkel: () => "SK", wcCard: (s, first) => "C" + s.id + (first ? "*" : ""), wcBusySync() {}, wcAlert() {}, wcInstalled: () => false }, o);
         vm.createContext(C); vm.runInContext("var wcAcctWait = " + /const wcAcctWait = ([^\n]*);/.exec(src)[1] + ";\n" + cutFn(src, "wcPaint"), C); C.wcPaint(); const first = box.kids.slice(), c1 = box.cleared; C.wcPaint();
         return { kids: first.join(), hidden: box.hidden, again: box.cleared === c1 }; };
       const L = (n) => ({ strategies: Array.from({ length: n }, (_, i) => ({ id: i + 1, title: "s" + i })), dataAccess: null });

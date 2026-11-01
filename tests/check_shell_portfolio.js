@@ -148,7 +148,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
   vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
     "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTwLotsText", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
     "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
-    "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trCfOpen", "trCfStates", "trCfHolds", "trCfAsof", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trCfMD", "trPvRequest", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trAwaitKeys", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trWaitStranded", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
+    "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trCfOpen", "trCfStates", "trCfHolds", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trPvRequest", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trAwaitKeys", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trWaitStranded", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
   const V = { credentials: true, pair: true, order: true, account: true };
   const bag = (venues, extra) => ({ env: "local", listLoaded: true, picked: null, sent: null, save: null, edits: { btc: 600 }, bad: {}, raw: {}, sig: {}, ct: { edits: {}, basis: {}, sent: null }, just: null,
     list: [{ name: "btc", displayName: "BTC", hasBacktest: true, symbol: "BTCUSDT" }, { name: "tw", displayName: "TW", hasBacktest: true, symbol: "2330" }],
@@ -641,9 +641,9 @@ ok("③ 套用金額走同一道:trCfOpen 擋模擬交易台股往上加(cf-bloc
   /const paperTw = Object\.keys\(sending\)\.filter\(\(n\) => trPaperTw\(n\) && \(Number\(sending\[n\]\) \|\| 0\) > old\(n\)\);/.test(src) && /\n  blocked = badStored\.length > 0 \|\| paperTw\.length > 0;/.test(src) && /const twdRow = trPaperTw\(n\);/.test(src)
   && /mgApply[\s\S]*trCfOpen\(\{ names: trNames\(\), stored: trBase\(\), opener, source: "optimize"/.test(psrc));
 { const ctx = vm.createContext({ t: (k) => k }); vm.runInContext(cutF(src, "trCloseTag"), ctx);
-  ok("確認框「平倉」:帳上沒有這支的部位(trStratHeld false)不標;讀不到(null)照舊標;兩個確認框都帶",
-    vm.runInContext("trCloseTag(5, 0, true, false)", ctx) === null && vm.runInContext("trCloseTag(5, 0, true, null)", ctx) === "tr.cfTagClose" && vm.runInContext("trCloseTag(5, 0, true, true)", ctx) === "tr.cfTagClose"
-    && /mayFire && was > 0 && trStratHeld\(n\) !== false/.test(src)); }
+  ok("確認框「平倉」:只有確定帳上有(trStratHeld true)才標;沒有(false)、讀不到(null)都不標(0.1.41);兩個確認框都帶",
+    vm.runInContext("trCloseTag(5, 0, true, false)", ctx) === null && vm.runInContext("trCloseTag(5, 0, true, null)", ctx) === null && vm.runInContext("trCloseTag(5, 0, true, true)", ctx) === "tr.cfTagClose"
+    && /mayFire && was > 0 && trStratHeld\(n\) === true/.test(src)); }
 ok("口數列與台股列(模擬交易的台股以台幣回報)的未實現／保證金寫台幣(帳戶幣不是台幣時),表底不把台幣跟帳戶幣加在一起;拒單接在細節行底下、靠左",
   /rowCcy = lot \|\| zoneOfSym\[sym\] === TR_TXF_CCY \? TR_TXF_CCY : unit, ccy = rowCcy !== unit \? rowCcy : null/.test(src) && /const oneCcy = detRows\.every/.test(src) && /tb\.appendChild\(row\); rowOf\[sym\] = row;   \/\/ 拒單接在細節行底下/.test(src)
   && /\.pf-tbl td\.note\.po-err \{ text-align: left; \}/.test(fs.readFileSync(path.join(R, "trade.css"), "utf8")));

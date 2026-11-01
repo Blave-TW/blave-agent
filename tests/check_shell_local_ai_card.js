@@ -19,10 +19,10 @@ if (!process.versions.electron) (async () => {
 
   // ① ④ 真的跑 acctPaint(cur 由外面給),鈕的 handler 換成記錄器
   const P = new Function("t", "acct", "acctCard", "creditCards", "cur", "log", `let acctGone = null, dataCardSync = () => {}, mpBillPaint = undefined, planWatch = () => {}, libIdeaPaint = undefined, wdPaint = undefined, $ = () => null;
-    const acctSub = () => null, resendSecond = () => ({ label: "fault.resend" }), resendState = (c, x) => ({ text: x, label: "fault.resend" }), acctShown = () => {}, acctBackTrack = () => {},
+    const acctSub = () => null, resendSecond = () => ({ label: "fault.resend" }), resendState = (c, x) => ({ text: typeof x === "function" ? x() : x, label: "fault.resend" }), acctShown = () => {}, acctBackTrack = () => {},
       acctCrypto = (s) => (s && s.reason === "NO_CARD" ? { label: "acct.cryptoTopup" } : null), acctFreeUpText = (w) => w + ".freeUp", acctBuiltText = () => "", RP = { list: [] },
       acctAction = (s) => ({ label: s && s.reason === "NO_CARD" ? "acct.addCard" : "fault.noCreditBtn", on: () => log.push("bind") }), laiOpen = (card) => log.push(card);
-    ${fn("acctCardKind")}\n${fn("laiSecond")}\n${fn("acctPaint")}\nacctPaint();`);
+    ${fn("acctCardKind")}\n${fn("laiSecond")}\n${fn("sysLz")}\n${fn("acctPaint")}\nacctPaint();`);
   const paint = (acct, cur) => { const pre = mk(), turn = mk(), log = []; P((k) => k, acct, pre, [turn], cur || "blave", log); return { pre, turn, log }; };
   const shape = (s) => s ? [s.label, s.second ? s.second.label + (s.second.quiet ? "(quiet)" : "") : "-", s.third ? s.third.label : "-"].join(" | ") : "none";
   const UP = { can_run: false, reason: "NO_CARD", free_ai_credit_used_up: true };
@@ -86,8 +86,8 @@ if (!process.versions.electron) (async () => {
 
   // ③ 換好以後卡片換字
   {
-    const S = new Function("t", "st", "acctCardIn", "creditCards", `let acctCard = acctCardIn; const resendState = (c, x) => ({ calm: true, text: x, label: "fault.resend" }), AK = { info: st.ak || null };
-      ${fn("acctLocalName")}\n${fn("acctLocalSwap")}\nacctLocalSwap(st.kind); return acctCard;`);
+    const S = new Function("t", "st", "acctCardIn", "creditCards", `let acctCard = acctCardIn; const resendState = (c, x) => ({ calm: true, text: typeof x === "function" ? x() : x, label: "fault.resend" }), AK = { info: st.ak || null };
+      ${fn("sysLz")}\n${fn("acctLocalName")}\n${fn("acctLocalSwap")}\nacctLocalSwap(st.kind); return acctCard;`);
     const tt = (k, v) => k + (v && v.name ? "{" + v.name + "}" : "");
     const pre = mk(), t1 = mk(), t2 = mk(), tGone = mk(false), tCard = mk(); t1._free = t2._free = tGone._free = true;
     const cards = [t1, tCard, t2, tGone];

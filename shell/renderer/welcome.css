@@ -33,12 +33,20 @@ button.onb-h:focus-visible { outline-offset: -2px; }
 .onb-opts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); }
 .onb-body .wc-cards + .onb-opts { margin-top: var(--space-12); }
 .onb-opts .wl-fold { margin: 0 0 0 var(--space-8); }
-.onb-fin { margin: var(--space-24) 0 0; display: flex; align-items: center; gap: var(--space-12); min-height: 36px; font-size: 14px; color: var(--ink-2); }
+.onb-wait { margin: var(--space-4) 0 0; padding-left: var(--space-32); font-size: 13px; line-height: 1.6; color: var(--ink-3); }
+.onb-fin { margin: 0; display: flex; align-items: center; gap: var(--space-12); min-height: 36px; font-size: 14px; color: var(--ink-2); }
 /* 完成後的首頁(F;§3.2,mockup f-watermark):中欄垂直、水平置中;記號實色 --color-watermark(canon Brand logo 誤用的具名例外,不用 opacity)。
    class 不能叫 .wf:樣本外驗證分頁的根是 <div class="bt wf">(report-wf.js),全域的 .wf 會把整個分頁置中 */
 .wc-fin { margin: auto; display: flex; flex-direction: column; align-items: center; gap: var(--space-24); padding-bottom: var(--space-48); }
 .wc-fin-mark { width: 104px; height: auto; flex: none; color: var(--color-watermark); }
+.fin-grp { display: flex; flex-direction: column; align-items: center; gap: var(--space-8); }
 .wc-fin-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-8); }
+/* 雲端停機／過時那一行(welcome.js wcAlert):紅短劃＋一句＋Arrow link;過時是灰短劃、沒有鈕 */
+.wc-alert { display: flex; align-items: center; gap: var(--space-8); margin: var(--space-16) 0 0; min-height: 32px; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+.fin-grp .wc-alert { margin: 0; }
+.wc-alert .fault-mark { margin-top: 0; }
+.wc-alert.calm .fault-mark { background: var(--ink-3); }
+.wc-alert .ln-arrow { margin-left: var(--space-8); }
 /* ①的策略卡(spec desktop-welcome-library-first §2.2;殼照 0.1.27 的 .wc-card:--surface-card、--radius-lg、無框無陰影、內距 12、卡距 8)。
    一張一列:名字區 | 三格數字 | CTA;排法看中欄寬(.main-empty 是容器):≥640 一行、420–639 名字一排＋數字與 CTA 一排、<420 三排且 CTA 靠左。
    一行排的門檻從 mockup 的 520 拉到 640:520–640 之間名字欄只剩不到 200,en 的長標題會折兩行,同一頁卡高不一、骨架對不上 */

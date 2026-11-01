@@ -31,11 +31,13 @@
 .sug-tray:has(.sug-tray-btn:hover) .sug-tray-x, .sug-tray:has(.sug-tray-btn:active) .sug-tray-x { color: var(--ink-2); }
 .sug-tray-x { flex: none; width: 36px; padding: 0; justify-content: center; color: var(--ink-3); font-size: 11px; line-height: 1; }
 .sug-tray-x:hover { color: var(--ink); }
+/* × 視覺 36,熱區 ::before 四邊各擴 4 到 44(canon Fitts) */
+.sug-tray-x { position: relative; }
+.sug-tray-x::before { content: ""; position: absolute; inset: -4px; }
 /* 焦點框畫在內側,不被外框切掉 */
 .sug-tray-btn:focus-visible, .sug-tray-x:focus-visible { outline-offset: -2px; border-radius: var(--radius-sm); }
 
 /* 設定 › 一般 › 建議下一步:字掛虛線底(canon Tooltip 觸發),泡泡用 app.css 的 .tip 材質 */
-.set-sug { margin-top: var(--space-8); }   /* 跟回覆通知、防睡同一組(app.css 「一般」三組) */
 .set-sug .sw-l { position: relative; }
 .set-sug-l { cursor: help; text-decoration: underline dotted var(--color-greyLightMedium); text-underline-offset: 3px; }
 [data-theme="dark"] .set-sug-l { text-decoration-color: var(--ink-3); }

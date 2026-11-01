@@ -2497,6 +2497,7 @@ async function publicPricing() {
   // free_ai_credit:綁卡前的 AI 額度(連結畫面換版與否看它;數字本身不上畫面);api 沒給或 0(停發)→ null,畫面維持原字
   return { trial: b.trial, free_ai_credit: n(b.free_ai_credit), starter_hourly: hr, starter_monthly: (st && n(st.monthly_twd)) || (hr ? Math.round(hr * 720) : null),
     starter_annual: st ? n(st.annual_twd) : null,
+    tiers: [...(Array.isArray(b.linux) ? b.linux : []), ...(Array.isArray(b.windows) ? b.windows : [])].filter(Boolean).map((x) => ({ tier: x.tier, label: x.label, vcpu: n(x.vcpu), ram_gb: n(x.ram_gb) })),
     plan: { monthly_billing_active: pl.monthly_billing_active === true, annual_pay_months: n(pl.annual_pay_months),
       annual_period_days: n(pl.annual_period_days), period_days: n(pl.period_days), grace_days: n(pl.grace_days) } };
 }

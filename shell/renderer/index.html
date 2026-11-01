@@ -172,8 +172,9 @@
       </div>
       <!-- 雲端視角、沒有主機可看(沒主機 / 未登入 / 啟動中 / 讀不到):內容由 trade.js 畫 -->
       <div class="trv" id="cv-empty" hidden>
-        <div class="main-head"><div class="txt"><h5 class="main-head-name" id="cv-h" tabindex="-1" data-i18n="env.empty.title"></h5><div class="main-head-desc" id="cv-desc"></div></div></div>
-        <div class="pf" id="cv-body"></div>
+        <!-- 整頁的標題在卡裡,這一顆給讀屏與切視角的焦點落點 -->
+        <h5 class="sr-only" id="cv-h" tabindex="-1" data-i18n="env.empty.title"></h5>
+        <div class="cv-body" id="cv-body"></div>
       </div>
       <!-- 策略報告(選了策略才出現;沒選時是下面的 welcome)。六個分頁:回測 / 進出場 / 參數掃描 /
            樣本外驗證 / 成交測試 / 程式碼。前五個各自一支檔(report-backtest.js / report-trades.js / report-robust.js / report-wf.js / report-xt.js),
@@ -313,6 +314,7 @@
           <svg class="wc-mark" viewBox="0 0 180 180" aria-hidden="true">
             <path d="M0 108.973 A90 90 0 0 1 76.668 108.182 A20 20 0 0 0 105 90 A45 45 0 0 1 180 56.459 L180 180 L0 180 Z" fill="currentColor" />
           </svg>
+          <p class="wc-alert" id="wc-alert" role="status" hidden></p>
           <ol class="onb-steps" id="onb-steps" data-i18n-aria="set.onb">
             <li class="onb-step" data-step="1">
               <div class="onb-hw" id="onb-h1"></div>
@@ -355,19 +357,24 @@
                   <button class="btn-fill" id="onb-po" type="button" data-i18n="tr.pick"></button>
                 </div>
               </div>
+              <p class="onb-wait" id="onb-wait" data-i18n="onb.wait" hidden></p>
             </li>
           </ol>
-          <p class="onb-fin" id="onb-fin" role="status" hidden><span class="num" aria-hidden="true">✓</span><span data-i18n="onb.fin"></span></p>
         </div>
         <!-- 完成後的首頁(F):實色 --color-watermark 的記號(canon 具名例外,不用 opacity)＋一列不分主次的籤;不帶市場 -->
         <div class="wc-fin" id="wf" hidden>
           <svg class="wc-fin-mark" viewBox="0 0 180 180" aria-hidden="true">
             <path d="M0 108.973 A90 90 0 0 1 76.668 108.182 A20 20 0 0 0 105 90 A45 45 0 0 1 180 56.459 L180 180 L0 180 Z" fill="currentColor" />
           </svg>
-          <div class="wc-fin-acts">
-            <button class="wc-chip" id="wf-idea" type="button" data-i18n="idea.chip" hidden></button>
-            <button class="wc-chip" id="wf-lib" type="button" data-i18n="lib.nav"></button>
-            <button class="wc-chip" id="wf-ns" type="button" data-i18n="ns.chip"></button>
+          <div class="fin-grp">
+            <p class="wc-alert" id="wf-alert" role="status" hidden></p>
+            <!-- 剛做完③:這次開著期間多這一行,籤當場可按 -->
+            <p class="onb-fin" id="onb-fin" role="status" hidden><span class="num" aria-hidden="true">✓</span><span data-i18n="onb.fin"></span></p>
+            <div class="wc-fin-acts">
+              <button class="wc-chip" id="wf-idea" type="button" data-i18n="idea.chip" hidden></button>
+              <button class="wc-chip" id="wf-lib" type="button" data-i18n="lib.nav"></button>
+              <button class="wc-chip" id="wf-ns" type="button" data-i18n="ns.chip"></button>
+            </div>
           </div>
         </div>
       </div>
