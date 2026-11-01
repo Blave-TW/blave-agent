@@ -129,6 +129,7 @@ function engPaint() {
 function engDone(s) {
   const card = ENG.card; ENG.card = null; ENG.said = "";
   const line = document.createElement("div"); line.className = "msg sys"; line.textContent = engReadyText(s, ENG_TR);
+  SYS_RELANG.set(line, () => { line.textContent = engReadyText(s, ENG_TR); });   // 換語言跟著換(app.js sysRelang)
   const swap = () => {
     if (card.isConnected && card.parentNode !== $("chat-scroll")) card.replaceWith(line); else { card.remove(); if (CS.loaded) { chatEl().appendChild(line); busyPin(); } }
     engKeep(line); srSay(line.textContent); scrollChat(); if (s.warn) engWarn(s);
@@ -142,15 +143,15 @@ function engDone(s) {
 function engWarn(s) {
   if (ENG.warned || !s.warn) return;
   ENG.warned = true;
-  let sub = null;
-  if (s.warn.msg) {
-    sub = document.createElement("details"); sub.className = "eng-err";
+  const msg = s.warn.msg, sub = () => {
+    if (!msg) return null;
+    const d = document.createElement("details"); d.className = "eng-err";
     const sm = document.createElement("summary"); sm.textContent = t("eng.details");
-    const pre = document.createElement("pre"); pre.textContent = s.warn.msg;
-    sub.append(sm, pre);
-  }
+    const pre = document.createElement("pre"); pre.textContent = msg;
+    d.append(sm, pre); return d;
+  };
   // 灰記號(is-calm):引擎好了、那句也送出了、沒有鈕可按,紅色會讓人以為剛才那句沒成功(設計稽核 0.1.12 F5)
-  const c = faultCard(); c.set({ calm: true, text: t("eng.optFail"), sub }); engKeep(c.el);
+  const c = faultCard(); c.set(sysLz(() => ({ calm: true, text: t("eng.optFail"), sub: sub() }))); engKeep(c.el);
 }
 /* 換對話 / 開新對話會清掉聊天欄:安裝是整台電腦的事,卡要跟著回來(fail 狀態沒有每秒重畫,不補就連重試鈕一起不見)。
    卡放到這一條對話的最下面;等著重試的那句不跟著搬(engRetry 換了對話就丟掉) */

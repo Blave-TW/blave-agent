@@ -59,7 +59,7 @@ const whyState = eval("(" + app.match(/^const whyState = (.*);$/m)[1] + ")");
     const ctx = { loginPending: null, oauthPending: false, LOCAL_FAULTS: [], t: (k) => k, trackEvent: () => {}, trackFeature: () => {}, cmdLine: () => "cmd", resendState: () => ({}),
       agentLoginRun: async () => { throw new Error("x"); }, window: { blave: { cancelAgentLogin: () => {} } } };
     const card = { set: (s) => sets.push(s) };
-    new Function("ctx", `with (ctx) { ${LF}\nlocalLoginFlow(ctx.card, "codex"); }`)(Object.assign(ctx, { card }));
+    new Function("ctx", `with (ctx) { ${fn("sysLz")}\n${LF}\nlocalLoginFlow(ctx.card, "codex"); }`)(Object.assign(ctx, { card }));
     let threw = false; try { await sets[0].on(); } catch (_) { threw = true; }
     const last = sets[sets.length - 1];
     ok("localLoginFlow:例外不往外丟、loginPending 清掉、卡片回「登入沒有完成」+〔再試一次〕", !threw && ctx.loginPending === null && last.label === "login.retry" && last.text === "login.failed", { threw, last });

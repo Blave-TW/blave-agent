@@ -13,7 +13,7 @@ const line = (re) => { const m = app.match(re); if (!m) throw new Error("找不�
 const log = [];
 const P = new Function("t", "acct", "acctCard", "creditCards", "LANG", "window", `let acctGone = null, dataCardSync = () => {}, mpBillPaint = undefined, planWatch = () => {}, libIdeaPaint = undefined, wdPaint = undefined, $ = () => null;
   const acctSub = () => null, resendSecond = () => ({ label: "fault.resend" }), resendState = (c, x) => ({ text: x }), acctShown = () => {}, acctBackTrack = () => {}, acctClicked = () => window.log.push("click"), acctFreeUpText = () => "", acctBuiltText = () => "", RP = { list: [] }, cur = "blave", laiSecond = () => ({ label: "acct.useLocal", quiet: true });
-  ${fn("trackFeature")}\n${line(/^const acctUrl = .*$/m)}\n${line(/^const cryptoTopupUrl = .*$/m)}\n${fn("acctCardKind")}\n${fn("acctAction")}\n${fn("acctCrypto")}\n${fn("acctPaint")}\nacctPaint();`);
+  ${fn("trackFeature")}\n${line(/^const acctUrl = .*$/m)}\n${line(/^const cryptoTopupUrl = .*$/m)}\n${fn("acctCardKind")}\n${fn("acctAction")}\n${fn("acctCrypto")}\n${fn("sysLz")}\n${fn("acctPaint")}\nacctPaint();`);
 const mk = () => { const c = {}; c.set = (s) => { c.last = s; }; return c; };
 const W = { log, blave: { trackFeature: (n) => log.push("t:" + n), openExternal: (u) => log.push("o:" + u) } };
 const run = (acct, lang) => { const pre = mk(), turn = mk(); P((k) => k, acct, pre, [turn], lang || "zh", W); return [pre.last, turn.last]; };

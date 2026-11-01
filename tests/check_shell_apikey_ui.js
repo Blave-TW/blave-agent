@@ -145,7 +145,7 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
   t("402 → 供應商餘額不足的一般卡(不是 Blave 的 creditFlow),第二顆鈕「切換 AI」", !f402.flow && f402.text.startsWith("ak.f.credit") && f402.second && f402.second.label === "fault.limitBtn");
   t("400 → 相容性句、鈕「選別的模型」;連不到 / 502 → 網路句", R.akFault("API Error: 400 x", false).label === "fault.noModelBtn" && R.akFault("API Error: Connection error.", false).text.startsWith("ak.f.net") && R.akFault("API Error: 502 x", false).text.startsWith("ak.f.net"));
   t("回覆裡提到 API Error(沒錨在開頭)不算", R.akFault("你的程式回 API Error: 401", false) === null && R.akFault("一般回覆", true) === null);
-  { const cf = cut(app, "function classifyFault(text)", "\nfunction localAuthFault");
+  { const cf = cut(app, "function classifyFault(text, o)", "\nfunction localAuthFault");
     const iAk = cf.indexOf('cur === "apikey"'), iLocal = cf.indexOf("/^Not logged in"), iCredit = cf.indexOf('return { flow: "credit" }'), iAuth = cf.indexOf("localAuthFault(cur)");
     t("classifyFault 的 apikey 分支排在 CLI 登入、Blave 402、localAuthFault 之前", iAk > 0 && iAk < iLocal && iAk < iCredit && iAk < iAuth); }
   t("驗證錯誤句:401 帶狀態碼、形狀不對另一句、402 / 429 / 網路 / 加密不可用各一句、取消與 BUSY 不出句", R.akErrText({ code: "KEY", status: 401 }, "DeepSeek") === 'ak.e.key{"p":"DeepSeek","s":"401"}' && R.akErrText({ code: "KEY", status: 0 }, "DeepSeek") === "ak.e.shape"

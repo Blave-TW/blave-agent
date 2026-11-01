@@ -51,6 +51,7 @@ const ctx = {
   requestAnimationFrame: () => {}, getComputedStyle: () => ({ getPropertyValue: () => "180ms" }), window: {},
   chatEdge: () => {}, TICK_WINDOW: 24, TICK_PITCH: 4, brNeedsUser: () => false, brHost: () => "", brReg: (h) => h,
   whereTag: () => new El("span"), stepWhere: () => "local", srSay: (x) => { said.push(x); }, LANG: "zh",
+  SYS_RELANG: new WeakMap(), SYS_QUIET: false,   // faultCard().set 記換語言重畫用的函式(app.js sysRelang)
 };
 const body = cut("function scrollChat", "/* ── agent 回覆的顯示") + cut("let busy = null;", "/* 停止(照雲端工作頁") + cut("function faultCard()", "/* 「再送一次」");
 // 舊程式沒有黏底那段(只有一行 scrollChat):照樣切得出來跑,這條測試對舊程式要紅
@@ -161,7 +162,7 @@ ok("…之後恢復跟著捲", box.scrollTop === bottom(), [box.scrollTop, botto
   card.set({ text: "fault.needCard", label: "acct.addCard" }); box.flush();
   ok("錯誤卡內容變了:拉到底", box.scrollTop === bottom(), [box.scrollTop, bottom()]); }
 ok("錯誤通知(turn.error 那句、回合結束補出的錯誤與結束碼)走強制捲",
-  /else \{ addMsg\("sys", line\); scrollChat\(true\); \}/.test(src) && /if \(exitLine\) addMsg\("sys", exitLine\); if \(pendingErr\.length \|\| exitLine\) scrollChat\(true\);/.test(src));
+  /else \{ sysLine\(line\); scrollChat\(true\); \}/.test(src) && /if \(exitLine\) sysLine\(exitLine\); if \(pendingErr\.length \|\| exitLine\) scrollChat\(true\);/.test(src));
 
 // 只有鈕、沒有句子的卡(資料卡試用態,paywall-redesign-2026-10-21 §2.2):第二顆可以是文字鈕、不放記號(act-only)、讀屏念鈕字;給了句子就照舊
 { const card = M.faultCard(), el = card.el; said.length = 0;
