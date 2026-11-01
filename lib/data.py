@@ -234,6 +234,33 @@ def _written_before_month_end(path, ym):
         return True
 
 
+# Blave's Taiwan series can lag the exchanges: the read that completes a month can run before
+# the api has that month's last days, and the file then looks complete for good. So such a month
+# only counts as final once it has been read this long after it ended. A lag beyond this bound
+# still freezes a hole. Exchange-direct monthly caches publish same-day and are not listed.
+_SETTLE_DAYS = 7
+_SETTLE_PREFIXES = ('twstock_minute_', 'twfutures3_', 'twfutures_bav')
+_SETTLE_HEAL_FROM = '2026-07'   # see the single-file layout below
+_SETTLED_META = {b'blave_month_settled': b'1'}
+
+
+def _settled_by(ym, now):
+    return now >= _month_end_utc(ym) + timedelta(days=_SETTLE_DAYS)
+
+
+def _month_unsettled(path, ym):
+    """True once for past month `path`: it is past _SETTLE_DAYS, and no read since then has
+    written the footer flag. A footer, not the mtime: the TTL check refreshes that every 24 h,
+    which would pass for this read. Months a file can hold a hole in only start after
+    _SETTLE_HEAL_FROM, as in the single-file layout; older ones stay as they are."""
+    if ym <= _SETTLE_HEAL_FROM or not _settled_by(ym, datetime.utcnow()):
+        return False
+    try:
+        return not (_read_schema(path).metadata or {}).get(b'blave_month_settled')
+    except Exception:
+        return True
+
+
 _HEAD_VERIFIED_META = {b'blave_head_verified': b'1'}
 _HEAD_TOLERANCE = timedelta(hours=1)
 
@@ -438,6 +465,7 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
     except Exception:
         head_check = False
     footer_meta = _HEAD_VERIFIED_META if head_check else None
+    settling = prefix.startswith(_SETTLE_PREFIXES)
 
     def _needs_fetch(ym):
         path = cache_dir / f'{ym}.parquet'
@@ -445,6 +473,8 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
             return True
         if _written_before_month_end(path, ym):
             return True   # cached mid-month, tail may be missing — complete it once
+        if settling and _month_unsettled(path, ym):
+            return True
         if head_check and _head_short_unverified(path, ym):
             return True   # cached from a clamped start, head may be missing — complete it once
         return (empty_marker_ttl_hours is not None
@@ -471,7 +501,8 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
                 if not existing.empty:
                     grp = existing if grp is None else pd.concat([existing, grp])
                     grp = grp[~grp.index.duplicated(keep='last')].sort_index()
-            _atomic_to_parquet(grp if grp is not None else pd.DataFrame(), path, footer_meta)
+            month_meta = {**(footer_meta or {}), **(_SETTLED_META if settling and _settled_by(ym, now) else {})}
+            _atomic_to_parquet(grp if grp is not None else pd.DataFrame(), path, month_meta)
 
     # One batched read for all past months instead of one read_parquet call per month
     # file — with hundreds of ids x ~140 month files each, the per-file open/parse
@@ -582,14 +613,15 @@ def _save_monthly(prefix, params, df):
 # range — fetch spans always fill the whole requested range, empty months
 # included, so no empty-month markers are needed) and when the tail was last
 # fetched (a month is complete iff it was fetched after it ended; the current
-# month is delta-updated on every call, exactly as before). Meta lives INSIDE
+# month is delta-updated on every call, exactly as before), plus `settled`: the
+# last month read _SETTLE_DAYS or more after it ended. Meta lives INSIDE
 # the parquet (schema metadata key b'blave_cache_meta'), so frame and coverage
 # are always written together in one atomic replace — no sidecar that could
 # describe somebody else's frame under concurrent writers.
 #
 # File: cache/{prefix}_{params}.parquet   all rows, tz-naive UTC index, sorted;
 #       footer meta {"from": "YYYY-MM", "to": "YYYY-MM",
-#                    "tail_fetched_at": "YYYY-MM-DDTHH:MM:SS"}
+#                    "tail_fetched_at": "YYYY-MM-DDTHH:MM:SS", "settled": "YYYY-MM"}
 # An existing monthly directory for the same (prefix, params) is consolidated
 # into the single file on first touch and removed — machines already in the
 # field migrate lazily, no manual step.
@@ -606,6 +638,8 @@ _SINGLE_FILE_PREFIXES = frozenset({
 })
 _META_TS_FMT = '%Y-%m-%dT%H:%M:%S'
 _META_KEY = b'blave_cache_meta'
+# A file from before `settled` existed may carry a hole at any month seam since this layout
+# shipped (2026-08-22): it re-reads from the month after _SETTLE_HEAL_FROM, once.
 
 
 def _single_path(prefix, params):
@@ -797,6 +831,20 @@ def _tail_needs_completion(meta, ym):
     return fetched < _month_end_utc(ym)
 
 
+def _seam_from(meta, current_ym):
+    """First day still to re-read because the months after meta['settled'] have ended (or are
+    ending) unsettled — None when no finished month in coverage is waiting. This, not the tail
+    delta, is what picks up last month's days the api had not published at the rollover."""
+    first = max(f"{_next_month(meta.get('settled', _SETTLE_HEAL_FROM))}-01", f"{meta['from']}-01")
+    return first if first < min(f"{_next_month(meta['to'])}-01", f'{current_ym}-01') else None
+
+
+def _settled_month(now, read_until):
+    """The last month settled by a read at `now` that reached `read_until` (exclusive)."""
+    settled = ((now - timedelta(days=_SETTLE_DAYS)).replace(day=1) - timedelta(days=1)).strftime('%Y-%m')
+    return min(settled, (datetime.strptime(read_until, '%Y-%m-%d') - timedelta(days=1)).strftime('%Y-%m'))
+
+
 def _merge_frames(a, b):
     parts = [x for x in (a, b) if x is not None and not x.empty]
     if not parts:
@@ -815,6 +863,8 @@ def _extend_cache_single(prefix, params, fetch_raw_fn, start, end):
                          last covered month is the current one or was fetched
                          before it ended; or [next_month(to)-01, upper) when
                          the request reaches past a complete `to`
+      - seam:            the window above reaches back to _seam_from while a
+                         finished month is unsettled (the first week of a month)
     upper = tomorrow when the request touches the current month, else the first
     day after the requested end month. Returns rows in [start, end]."""
     now        = datetime.utcnow()
@@ -851,7 +901,8 @@ def _extend_cache_single(prefix, params, fetch_raw_fn, start, end):
     if df is None:
         fetched = fetch_raw_fn(f'{req_from}-01', upper)
         df = _merge_frames(fetched, None)
-        meta = {'from': req_from, 'to': cap_to, 'tail_fetched_at': stamp}
+        meta = {'from': req_from, 'to': cap_to, 'tail_fetched_at': stamp,
+                'settled': _settled_month(now, upper)}
         # Merge rather than write: a concurrent migration may have landed a
         # wider file between our read and now (we'd be the rename-race loser).
         _merge_single(prefix, params, df, meta)
@@ -867,21 +918,23 @@ def _extend_cache_single(prefix, params, fetch_raw_fn, start, end):
             df = _merge_frames(early, df)
             meta['from'] = req_from
             changed = True
-        delta_start = None
-        if _tail_fresh(meta, _fresh_since(), cap_to):
-            pass   # fetched moments ago by the same tick (see _fresh_since)
-        elif meta['to'] >= current_ym or _tail_needs_completion(meta, meta['to']):
-            floor = f"{meta['to']}-01"
-            if not df.empty:
-                floor = max(floor, df.index[-1].strftime('%Y-%m-%d'))
-            delta_start = floor
-        elif req_to > meta['to']:
-            delta_start = f"{_next_month(meta['to'])}-01"
-        if delta_start is not None and delta_start < upper:
-            delta = fetch_raw_fn(delta_start, upper)
-            df = _merge_frames(df, delta)
-            meta['to'] = max(meta['to'], cap_to)
-            meta['tail_fetched_at'] = stamp
+        delta_start, seam = None, None
+        if not _tail_fresh(meta, _fresh_since(), cap_to):   # else: fetched moments ago by the same tick
+            seam = _seam_from(meta, current_ym)
+            if meta['to'] >= current_ym or _tail_needs_completion(meta, meta['to']):
+                floor = f"{meta['to']}-01"
+                if not df.empty:
+                    floor = max(floor, df.index[-1].strftime('%Y-%m-%d'))
+                delta_start = floor
+            elif req_to > meta['to']:
+                delta_start = f"{_next_month(meta['to'])}-01"
+        read_from = min(filter(None, (delta_start, seam)), default=None)
+        if read_from is not None and read_from < upper:
+            df = _merge_frames(df, fetch_raw_fn(read_from, upper))
+            if delta_start is not None and delta_start < upper:
+                meta['to'] = max(meta['to'], cap_to)
+                meta['tail_fetched_at'] = stamp
+            meta['settled'] = max(meta.get('settled', ''), _settled_month(now, upper))
             changed = True
     if changed:
         _write_single(prefix, params, df, meta)
@@ -905,7 +958,10 @@ def _merge_meta(old, new):
             tail = max(a['tail_fetched_at'], b['tail_fetched_at'])
         else:
             tail = b['tail_fetched_at']
-        return {'from': min(a['from'], b['from']), 'to': b['to'], 'tail_fetched_at': tail}
+        out = {'from': min(a['from'], b['from']), 'to': b['to'], 'tail_fetched_at': tail}
+        if 'settled' in a and 'settled' in b:   # absent = unknown: stays absent, heals on the next read
+            out['settled'] = min(a['settled'], b['settled'])
+        return out
     return dict(b)
 
 
@@ -936,7 +992,8 @@ def _save_single(prefix, params, df, start, end):
     end_str = end or now.strftime('%Y-%m-%d')
     reached = min(now, datetime.strptime(end_str, '%Y-%m-%d') + timedelta(days=1))
     meta = {'from': start[:7], 'to': min(end_str[:7], now.strftime('%Y-%m')),
-            'tail_fetched_at': reached.strftime(_META_TS_FMT)}
+            'tail_fetched_at': reached.strftime(_META_TS_FMT),
+            'settled': _settled_month(now, reached.strftime('%Y-%m-%d'))}
     _merge_single(prefix, params, df, meta)
 
 
@@ -4727,8 +4784,15 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
                       if not _tail_fresh(_read_single_meta(prefix, {'id': _id}), fresh, cap_to)]
         else:
             to_ask = to_extend
+        if single:
+            # every id's seam re-read has to fall inside the window, or it demotes to phase 2
+            metas = (_read_single_meta(prefix, {'id': _id}) for _id in to_ask)
+            upper = tomorrow if (end or tomorrow)[:7] >= current_ym else f'{_next_month(end[:7])}-01'
+            seams = [s for s in (_seam_from(m, current_ym) for m in metas if m) if s and s < upper]
+            prefetch_start = min([prefetch_start, *seams])
         bulk = None
-        if bulk_endpoint and len(to_ask) >= _BULK_MIN_IDS:
+        # /bulk only serves the 1st of this or last month: an older start (the one-off heal) is /batch
+        if bulk_endpoint and len(to_ask) >= _BULK_MIN_IDS and prefetch_start >= f'{prev_ym}-01':
             bulk = _fetch_twstock_bulk(bulk_endpoint, prefetch_start, tomorrow, headers)
         if bulk is None:
             prefetch_batch, prefetch_failed = _fetch_batch_range(to_ask, prefetch_start, tomorrow) \
