@@ -48,7 +48,23 @@ def _404(url):
     return requests.HTTPError(f"404 Client Error: NOT FOUND for url: {url}", response=resp)
 
 
-NOW = datetime.now(timezone.utc).replace(tzinfo=None)
+# Fixed on the second day of a month: the seed stops in last month and the two new days straddle
+# the rollover, the case that once lost a day for good. Sections 1-3 run on this clock.
+NOW = datetime(2026, 11, 2, 6, 0, 0)
+REAL_DATETIME = d.datetime
+
+
+class _Clock(datetime):
+    @classmethod
+    def utcnow(cls):
+        return NOW
+
+    @classmethod
+    def now(cls, tz=None):
+        return NOW if tz is None else NOW.replace(tzinfo=timezone.utc).astimezone(tz)
+
+
+d.datetime = _Clock
 DAYS = [dd for dd in pd.bdate_range(NOW - timedelta(days=75), NOW).strftime("%Y-%m-%d")]
 IDS = [str(1100 + i) for i in range(450)]          # ≥ _BULK_MIN_IDS
 UNLISTED = "2311"                                 # delisted: outside the bulk universe
@@ -158,11 +174,8 @@ same, why = _same_frames(old, new)
 check(same, f"returned frames identical, value for value ({why})")
 same, why = _same_frames(old_files, new_files)
 check(same, f"cache files identical, value for value ({why})")
-if DAYS[-2][:7] < NOW.strftime("%Y-%m"):  # lib gap, not a pass: a cache touched this month never completes last month's tail
-    print("SKIP  the revised row and the two new days: they fall in last month")
-else:
-    check(new["1105"]["Close"].iloc[-3] == old["1105"]["Close"].iloc[-3] and len(new["1105"]) == len(DAYS) - 5,
-          "the revised row and the two new days are in")
+check(new["1105"]["Close"].iloc[-3] == old["1105"]["Close"].iloc[-3] and len(new["1105"]) == len(DAYS) - 5,
+      "the revised row and the two new days are in")
 
 err, err_calls = _warm("error")
 same, _ = _same_frames(old, err)
@@ -199,7 +212,7 @@ check(all(k == "batch" for k, _ in small_calls) and len(small_calls) == 1,
 # 3. wait_for_bar's second fetch
 shutil.rmtree(d._CACHE_DIR, ignore_errors=True); shutil.copytree(SEED, d._CACHE_DIR)
 api.bulk_mode = "ok"
-check_started = datetime.now(timezone.utc).replace(tzinfo=None).strftime(d._META_TS_FMT)
+check_started = NOW.strftime(d._META_TS_FMT)
 first = d.fetch_twstock_price_adj_batch(ALL, START, None, {})
 api.calls.clear()
 os.environ["BLAVE_FETCH_FRESH_SINCE"] = check_started
@@ -207,7 +220,7 @@ second = d.fetch_twstock_price_adj_batch(ALL, START, None, {})
 os.environ.pop("BLAVE_FETCH_FRESH_SINCE")
 same, why = _same_frames(first, second)
 check(api.calls == [] and same, f"fresh-since: the run's fetch makes 0 requests, same frames ({api.calls[:3]}; {why})")
-os.environ["BLAVE_FETCH_FRESH_SINCE"] = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=1)).strftime(d._META_TS_FMT)
+os.environ["BLAVE_FETCH_FRESH_SINCE"] = (NOW + timedelta(minutes=1)).strftime(d._META_TS_FMT)
 d.fetch_twstock_price_adj_batch(ALL, START, None, {})
 os.environ.pop("BLAVE_FETCH_FRESH_SINCE")
 check(api.calls == [("bulk", "price_adj"), ("batch", "price_adj")], f"a cache older than fresh-since is asked again ({api.calls[:3]})")
@@ -274,6 +287,10 @@ finally:
 
 
 # ── 4. fundamentals ───────────────────────────────────────────────────────────
+d.datetime = REAL_DATETIME
+NOW = datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def _rev_rows(sid, months):
     return [{"date": m, "stock_id": sid, "country": "Taiwan", "create_time": f"{m[:8]}10",
              "revenue": (int(sid) * 1000 + i) * 1000, "revenue_month": int(m[5:7]),

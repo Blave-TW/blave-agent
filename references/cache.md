@@ -32,6 +32,7 @@ cache/
 Intraday / minute-frequency time series (kline, alpha indicators, TW futures, TW stock minute lines) use **monthly parquet files**:
 
 - **Past months** (`YYYY-MM < current month`): fetched once, stored immutably. Never re-fetched — except a month whose file was last written before that month ended (cached mid-month) gets one completing re-fetch, merged with what is cached.
+- **Blave Taiwan series**: a finished month is final only after a read at least 7 days after it ended, so days the api had not published at the rollover still land. Single-file daily caches re-read from last month's 1st on every call during that week (footer key `settled`); minute and TXF bid/ask monthly directories re-read the month once at that mark and flag it in the parquet footer. No need to clear anything: caches written before this rule fill their month-end gaps by themselves, back to 2026-08.
 - **Current month**: delta-updated on each call — loads cached file, fetches only new bars since the last cached bar, merges and saves.
 
 ### Why monthly
@@ -45,7 +46,7 @@ Intraday / minute-frequency time series (kline, alpha indicators, TW futures, TW
 
 ## Single file per id — daily 台股 / 台市 datasets
 
-Daily-frequency datasets (`twstock_price3` (Blave adjusted), `twstock_price_nonadj`, `twstock_inst`, `twstock_margin`, `twstock_shareholding`, `twstock_per`, `twstock_foreign_sh`, `twmarket_index`, `twmarket_turnover`, `twmarket_institutional`, `twmarket_margin` — the set is `_SINGLE_FILE_PREFIXES` in `lib/data.py`) keep **one parquet per (prefix, id)** whose parquet footer metadata (`blave_cache_meta`: `from` / `to` month covered, `tail_fetched_at`) carries the coverage — frame and meta are always written together in one atomic replace. Same contract as monthly (past data immutable, current month delta-updated, a month fetched before it ended is completed once), just stored in one file: a daily series is ~20 rows a month, so a 300-stock universe under the monthly layout was 41,400 tiny files — measured on a customer box, cold write ≈ 13 min and warm read 32 s vs 2.3 s / 1.1 s for 300 single files. An old monthly directory for the same id is consolidated into the single file on first touch and removed — existing machines migrate by themselves.
+Daily-frequency datasets (`twstock_price3` (Blave adjusted), `twstock_price_nonadj`, `twstock_inst`, `twstock_margin`, `twstock_shareholding`, `twstock_per`, `twstock_foreign_sh`, `twmarket_index`, `twmarket_turnover`, `twmarket_institutional`, `twmarket_margin` — the set is `_SINGLE_FILE_PREFIXES` in `lib/data.py`) keep **one parquet per (prefix, id)** whose parquet footer metadata (`blave_cache_meta`: `from` / `to` month covered, `tail_fetched_at`, `settled`) carries the coverage — frame and meta are always written together in one atomic replace. Same contract as monthly (past data immutable once settled, current month delta-updated, a month fetched before it ended is completed once), just stored in one file: a daily series is ~20 rows a month, so a 300-stock universe under the monthly layout was 41,400 tiny files — measured on a customer box, cold write ≈ 13 min and warm read 32 s vs 2.3 s / 1.1 s for 300 single files. An old monthly directory for the same id is consolidated into the single file on first touch and removed — existing machines migrate by themselves.
 
 ## Cache helpers (internal)
 
