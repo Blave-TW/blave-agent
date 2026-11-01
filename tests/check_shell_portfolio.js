@@ -643,6 +643,9 @@ const mgOptTest = (async () => {
   report = { manager: M({ allocators: [{ name: "mine", params: { a: 1, on: true } }] }), config: {} };
   store.ws_mg_opt = J({ alloc: "mine", params: { mine: { a: 2 } } }); G = init(report);
   ok("自訂方法多宣告一格:填過的留著,沒填過的 null,不用宣告值;不能跑", G.alloc === "mine" && G.params.a === 2 && G.params.on === null && call("mgOptBlockReason()") === 'mg.needParams{"method":"mine"}', J(G.params));
+  { const before = store.ws_mg_opt; call("mgmPend = { G: mgBag(), alloc: 'mine', params: { a: 2, on: null } }"); fields.length = 0; fields.push({ dataset: { key: "a" }, value: "" }, { dataset: { key: "on" }, value: "true" }); els["mgm-err"].hidden = true; call("mgMethodOk()"); const blankNum = els["mgm-err"].hidden === false && store.ws_mg_opt === before && G.params.on === null;
+    fields[0].value = "3"; fields[1].value = ""; els["mgm-err"].hidden = true; call("mgMethodOk()");
+    ok("自訂參數:數字格與布林格空著都不能確定,空字串不會變成 0 或 false", blankNum && els["mgm-err"].hidden === false && store.ws_mg_opt === before, store.ws_mg_opt); els["mgm-err"].hidden = true; }
   { store.ws_mg_opt = J({ alloc: "slope", params: { slope: { lookback: 90 }, sharpe: { lookback: 120 } } }); G = init({ manager: M(), config: {} }); ctx.ran = 0; call("mgRunOptimize()");
     const a = JSON.parse(store.ws_mg_opt); G.alloc = "equal"; G.params = {}; G.optBusy = false; call("mgRunBacktest()"); const b = JSON.parse(store.ws_mg_opt);
     ok("拿主機推的值跑優化／回測也算用戶確認:存下來;各方法填過的參數各自留著", ctx.ran === 2 && a.params.sharpe.lookback === 120 && b.alloc === "equal" && b.params.slope.lookback === 90 && J(b.params.equal) === "{}", J([a, b])); }

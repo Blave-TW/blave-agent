@@ -108,8 +108,8 @@ ok("每一處同一句:conn.expired(帳號頁、公開連結、分享)= 「登�
   const masked = ["/private/var/folders/x/y.json", "/Library/Application Support/x", "~/Blave/workspace/a.py", "C:\\Users\\wei\\Blave\\x.json", "'/opt/blave/x'", "\"C:\\cleanwin\\y\""]
     .map((p) => vm.runInContext("trRejectText(" + JSON.stringify("ValueError: cannot read " + p + " now") + ")", ctx));
   ok("路徑全遮:/private/var、/Library、~/、C:\\Users\\…、引號包住的(單、雙引號)都換成「…」", masked.every((x) => !/private|Library|~\/|Users|opt\/blave|cleanwin/.test(x) && /…/.test(x)), J(masked)); }
-ok("優化分頁:已經不存在的成員剔掉(存回 localStorage);一支有回測的策略都沒有 → 霧化 + 選擇策略;member has no backtest stats → mg.errNoStats",
-  /const live = all\.filter\(\(n\) => TR\.list\.some\(\(x\) => x\.name === n\)\);/.test(pf) && /if \(TR\.listLoaded && !TR\.list\.some\(\(x\) => x\.hasBacktest\)\) \{\n    if \(box\.dataset\.fog !== "1"\) \{ box\.textContent = ""; box\.appendChild\(poFog\("pick"\)\);/.test(pf)
+ok("優化分頁:已經不存在的成員不算進來(只濾畫面,用戶勾的存檔不動);一支有回測的策略都沒有 → 霧化 + 選擇策略;member has no backtest stats → mg.errNoStats",
+  /return all\.filter\(\(n\) => TR\.list\.some\(\(x\) => x\.name === n\)\);/.test(pf) && /if \(TR\.listLoaded && !TR\.list\.some\(\(x\) => x\.hasBacktest\)\) \{\n    if \(box\.dataset\.fog !== "1"\) \{ box\.textContent = ""; box\.appendChild\(poFog\("pick"\)\);/.test(pf)
   && (pf.match(/\/no backtest stats\/i\.test\(e\) \? t\("mg\.errNoStats"\)/g) || []).length === 2);
 // runtime SAVE_FAILED、英文「and {n} more」、第一次真錢啟動的說明只在啟動 ack 成功才記成看過
 { const pres = read(path.join(R, "president.js"));
