@@ -1029,9 +1029,9 @@ msgstr "會開瀏覽器完成登入。"
 msgid "cn.pkgArch"
 msgstr "這台電腦的架構不支援 Codex 引擎"
 
-# 登入檢查逾時(main.js *_timeout 且有 path):可以連,真正結果等第一則訊息。待設計師稽核
+# 登入檢查逾時(main.js *_timeout 且有 path):可以連,真正結果等送出訊息
 msgid "row.authUnknown"
-msgstr "查不到登入狀態，第一則訊息會確認"
+msgstr "查不到登入狀態，送出訊息就知道"
 
 # 偵測說沒登入、但 CLI 帶整份環境與用戶設定檔時說已登入(main.js authOutside):金鑰在環境變數、settings.json 或 apiKeyHelper,agent 回合讀不到
 msgid "row.keyOff"

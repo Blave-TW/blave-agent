@@ -60,7 +60,7 @@ t("{acct}:Codex → ChatGPT、Claude Code → Claude", /const rowVars = \(kind, 
 // ── 真的子行程:假 claude / codex 只看環境變數、假 HOME 的記號檔與 --setting-sources= ──
 const POSIX = process.platform !== "win32";
 const PIECES = [constOf(src, "cmdWrap"), DROP, PE, RUN, fnOf(src, "which"), "const LOGIN_CHECK_MS = 3000;", fnOf(src, "binKind"), constOf(src, "runRec"), constOf(src, "cantRun"),
-  fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "claudePath"), DETECT, DETECT_TOTAL, DETECT_WRAP, "let codexRan = null;", "let loginChild = null;", LOGIN].join("\n");
+  fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "claudePath"), DETECT, DETECT_TOTAL, DETECT_WRAP, "let codexRan = null, lastDetected = null;", fnOf(src, "timedOutPath"), "let loginChild = null;", LOGIN].join("\n");
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-env-auth-"));
 const HOME = path.join(ROOT, "home"); fs.mkdirSync(path.join(HOME, ".claude"), { recursive: true });
 const BIN = path.join(ROOT, "bin"); fs.mkdirSync(BIN);

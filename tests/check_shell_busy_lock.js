@@ -193,7 +193,7 @@ ok("③ 回合結束(busySync):所有原因句收掉,借用的原因行(#rp-ho-n
   calls.length = 0; timers.length = 0; env.running = true;
   const saved = [], ws = [];
   const C = new Function("S", "B", "saved", "ws", `const busyOn = B.busyOn, busyCut = B.busyCut, window = { blave: { saveConnection: async (c) => { saved.push(c.kind); return true; } } };
-    const detect = () => {}, trackEvent = () => {}, enterWorkspace = (k) => ws.push(k); let cur = null;
+    const detect = () => {}, trackEvent = () => {}, connectLock = () => {}, enterWorkspace = (k) => ws.push(k); let cur = null;
     ${fnSrc(appSrc, "connect")}\n${fnSrc(appSrc, "connectNow")}\nreturn { connect };`)(env, B, saved, ws);
   C.connect("codex", { path: "/x" });
   const boxes = () => calls.filter((x) => x && typeof x === "object");

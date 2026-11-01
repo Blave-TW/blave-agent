@@ -467,8 +467,8 @@ ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」
   { const SLOW = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: false, why: "codex_timeout", via: "pkg" } };
     ok("隨包那顆沒回應 → 快照不接手:「沒有回應」、沒有鈕(重抓解決不了逾時)", sh(cx({ phase: "idle", fail: null }, SLOW)) === "codex|st.noResp|-|-|null|off||", sh(cx({ phase: "idle", fail: null }, SLOW))); }
   { const UNK = { claude: { installed: true, loggedIn: false, why: "claude_timeout", path: "/x/claude" }, codex: { installed: true, loggedIn: false, why: "codex_timeout", via: "pkg", path: "/x/codex" } };
-    ok("查不出登入狀態(逾時、有 path):兩列都能用:〔使用〕+ row.authUnknown,不灰;用中的那一列沒有鈕;等登入中照舊取消", ["claude", "codex"].every((k, i) => { const o = mdlOptions(UNK, "blave", true, null, null, { phase: "idle", fail: null })[i + 1]; return o.act === "cn.use" && o.desc === "row.authUnknown" && !o.off && !o.st; })
-      && mdlOptions(UNK, "codex", true, null, null, { phase: "idle", fail: null })[2].isCur === true && mdlOptions(UNK, "codex", true, null, null, { phase: "idle", fail: null })[2].act === null
+    ok("查不出登入狀態(逾時、有 path):兩列都能用:〔使用〕+ row.authUnknown,不灰;用中的那一列沒有鈕也沒有說明句;等登入中照舊取消", ["claude", "codex"].every((k, i) => { const o = mdlOptions(UNK, "blave", true, null, null, { phase: "idle", fail: null })[i + 1]; return o.act === "cn.use" && o.desc === "row.authUnknown" && !o.off && !o.st; })
+      && mdlOptions(UNK, "codex", true, null, null, { phase: "idle", fail: null })[2].isCur === true && mdlOptions(UNK, "codex", true, null, null, { phase: "idle", fail: null })[2].act === null && mdlOptions(UNK, "codex", true, null, null, { phase: "idle", fail: null })[2].desc === null
       && mdlOptions(UNK, "blave", true, { login: "codex" }, null, { phase: "idle", fail: null })[2].act === "login.cancel"); }
   ok("隨包那顆能跑 → 快照不接手;偵測中照舊「偵測中…」", sh(cx({ phase: "idle", fail: null }, { codex: { installed: true, loggedIn: true } })).startsWith("codex|-|-|-|cn.use")
     && sh(cx({ phase: "download", bytes: 1, total: 2, fail: null }, { codex: { installed: true, loggedIn: false } })) === "codex|-|-|-|cn.signIn|||" && mdlOptions(null, "claude", true, null, null, { phase: "idle", fail: null })[2].st.key === "cn.detecting");

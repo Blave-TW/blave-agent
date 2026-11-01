@@ -175,7 +175,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
     if (!da || !dw) t("找得到 detectAgentsRaw / detectWhy", false);
     else { const runs = [], logged = [];
       const mkDetect = new Function("loginShellPath", "claudePath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexBundled", "codexCredOk", "codexHome",
-        crS[0] + "\nconst BAD_BIN = {}; let codexRan = null;\n" + dw[0] + "\n" + da[0] + "\nreturn detectAgentsRaw;");
+        crS[0] + "\nconst BAD_BIN = {}; let codexRan = null, lastDetected = null;\n" + dw[0] + "\n" + da[0] + "\nreturn detectAgentsRaw;");
       const slow = (v) => new Promise((r) => setTimeout(() => r(v), 300));
       const detect = mkDetect(async () => "/usr/bin", async () => "/opt/claude",
         (bin, args, envPath, ms, cwd, env) => { if (!env) runs.push([bin, ms, Date.now()]); return slow(bin.endsWith("claude") ? { code: 0, stdout: '{"loggedIn":true}', timedOut: false, ms: 300 } : { code: null, stdout: "", timedOut: true, ms: 300 }); },
@@ -192,7 +192,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
   // claude auth status 跑不起來(退出碼非 0、沒有輸出)不是「回的不是 JSON」:只有退出碼 0 才記 json=false
   { const da = src.match(/^async function detectAgentsRaw\(\) \{[\s\S]*?\n\}/m), dw = src.match(/^function detectWhy\(kind, r\) \{[\s\S]*?\n\}/m);
     if (!da || !dw) { t("找得到 detectAgentsRaw / detectWhy", false); process.exit(1); }
-    const mk = new Function("loginShellPath", "claudePath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexBundled", "codexCredOk", "codexHome", crS[0] + "\nconst BAD_BIN = {}; let codexRan = null;\n" + dw[0] + "\n" + da[0] + "\nreturn detectAgentsRaw;");
+    const mk = new Function("loginShellPath", "claudePath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexBundled", "codexCredOk", "codexHome", crS[0] + "\nconst BAD_BIN = {}; let codexRan = null, lastDetected = null;\n" + dw[0] + "\n" + da[0] + "\nreturn detectAgentsRaw;");
     const once = async (claudeRes) => { const logged = [];
       const d = await mk(async () => "/usr/bin", async () => "/opt/claude", async () => ({ timedOut: false, ms: 1, ...claudeRes }), binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" }, () => null, () => false, () => "/h")();
       return { why: d.claude.why, json: logged[0].claude.json }; };
@@ -206,7 +206,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
     const PKG_BIN = "/Users/u/Blave/codex/0.166.0/bin/codex";
     const mkAll = (o) => { const calls = [], ran = [], logged = [];
       const api = new Function("loginShellPath", "claudePath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexpkg", "CODEX_PIN", "TRIPLE", "WIN", "fs", "codexCredOk", "codexHome",
-        crS[0] + "\n" + bb[0] + "\nlet codexRan = null;\n" + dw[0] + "\n" + cb[0] + "\n" + cbn[0] + "\n" + da[0] + "\nreturn { detectAgentsRaw, codexBinNow, codexBundled, BAD_BIN };")(
+        crS[0] + "\n" + bb[0] + "\nlet codexRan = null, lastDetected = null;\n" + dw[0] + "\n" + cb[0] + "\n" + cbn[0] + "\n" + da[0] + "\nreturn { detectAgentsRaw, codexBinNow, codexBundled, BAD_BIN };")(
         async () => "/usr/bin", async () => null,
         async (bin, args) => { ran.push(bin); return { code: o.codes[bin] !== undefined ? o.codes[bin] : 0, stdout: "", timedOut: false, ms: 1 }; }, binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" },
         { installed: (base, pin, triple, win, fsx) => { calls.push([base, pin, triple, win, fsx === "FS"].join(",")); return o.pkg ? { path: o.pkg, version: pin, pinned: true } : null; } }, "0.166.0", "aarch64-apple-darwin", false, "FS", () => !!o.cred, () => "/h");
