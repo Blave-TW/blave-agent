@@ -5503,6 +5503,9 @@ msgstr "幫我下載已購買的策略「{title}」（#{id}），跑一次回測
 msgid "lib.msgLocal"
 msgstr "策略庫的「{title}」（#{id}）已經下載好了，幫我安裝並跑一次回測看看結果"
 
+msgid "lib.msgTitle"
+msgstr "{title} · 安裝並回測"
+
 msgid "lib.where.local"
 msgstr "這台電腦"
 

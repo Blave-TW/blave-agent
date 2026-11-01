@@ -801,7 +801,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("7-2 留空口數:trBlankLots 只挑口數列、raw 是空字串、不在改成 0 名單裡的", J(trBlankLots(["a", "b", "c", "d"], { a: "", b: "0", c: "", d: "" }, (n) => n !== "c", ["d"])) === J(["a"])
       && J(trBlankLots(["a"], null, () => true)) === "[]" && J(trBlankLots(["a"], { a: "" }, () => true)) === J(["a"]));
     ok("7-2 接線:離開欄位時口數格留空不變 0(raw 記成 \"\");確認框出 tr.saveBlankLots(cf-zeroed 那一句的位置)、改成 0 的排除;兩語都有",
-      /const blank = txf && !String\(inp\.value\)\.trim\(\);/.test(tp) && /if \(TR\.raw\) \{ if \(blank\) TR\.raw\[n\] = ""; else delete TR\.raw\[n\]; \}/.test(tp)
+      /const blank = \(txf \|\| !\(stored\[n\] > 0\)\) && !String\(inp\.value\)\.trim\(\);/.test(tp) && /if \(TR\.raw\) \{ if \(blank\) TR\.raw\[n\] = ""; else delete TR\.raw\[n\]; \}/.test(tp)
       && /blank = inp \? \[\] : trBlankLots\(Object\.keys\(sending\), TR\.raw, trRowTxfNew, zeroed\);/.test(fnOf("trCfOpen")) && /trEl\("p", "cf-zeroed", t\("tr\.saveBlankLots", \{ names: blank\.map\(trDisplay\)/.test(fnOf("trCfOpen"))
       && (() => { const ST = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "\nreturn STRINGS;")();
         return ST.zh["tr.saveBlankLots"] === "{names}：口數留空會存成 0，這支策略不會下單。" && /blank lot count is saved as 0/.test(ST.en["tr.saveBlankLots"] || ""); })());

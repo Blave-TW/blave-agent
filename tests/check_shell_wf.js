@@ -437,6 +437,12 @@ if (!process.versions.electron) {
     const T = (l, k, v) => { ctx.LANG = l; return vm.runInContext("t(" + JSON.stringify(k) + ", " + JSON.stringify(v) + ")", ctx); };
     const at = (l, text, which) => { ctx.LANG = l; return ctx.fl(text, which); };
     const V = { name: "btc_sma", lookback: "1095", step: "30" };
+    // 策略庫安裝句(設計全流程稽核 P2-6):分頁名與泡泡是「{名稱} · 安裝並回測」,不是一整句機器話;原文不動,zh／en 互認
+    for (const k of ["lib.msgLocal", "lib.msg", "lib.msgPaid"]) { const raw = T("en", k, { title: "BTC Band", id: 101 }), rawZ = T("zh", k, { title: "BTC Band", id: 101 });
+      ok("③ B5 " + k + ":對話名、泡泡都寫名稱 · 安裝並回測;換語言跟著換", at("zh", raw, "title") === "BTC Band · 安裝並回測" && at("en", rawZ, "title") === "BTC Band · Install and Backtest" && at("zh", rawZ) === "BTC Band · 安裝並回測"); }
+    ok("策略庫〔開啟策略〕:開完焦點落到策略標題,不掉到 BODY(設計全流程稽核 P2-4)", /t\("lib\.open"\), async \(\) => \{ await \(libEnv\(\) === "cloud" \? rpCloudSelect\(c\.name\) : stratSelect\(c\.name\)\); \$\("rp-name"\)\.focus\(\); \}/.test(read("renderer/library.js")) && /id="rp-name" tabindex="-1"/.test(read("renderer/index.html")));
+    { const E = vm.runInContext("STRINGS.en", ctx); ok("自動下單 en 寫法統一:導覽 Auto Trading、鈕 Auto-Trade、標記 Auto-trading;策略庫表頭 Title Case(P2-5)", E["tr.nav"] === "Auto Trading" && E["sp.btn"] === "Auto-Trade" && /^Auto-trading/.test(E["po.live"]) && E["lib.kv.total"] === "Total Return" && E["lib.kv.days"] === "Days Listed" && !/Auto trading ›/.test(JSON.stringify(E))); }
+    ok("③ B5 安裝句的編號不是數字:不算固定句(用戶自己打的)", at("zh", T("zh", "lib.msg", { title: "A", id: "x" }), "title") === null);
     const wzh = T("zh", "wf.msgRun", V), wen = T("en", "wf.msgRun", V), szh = T("zh", "rob.msgScan", { name: "tw_2330" }), sen = T("en", "rob.msgScan", { name: "tw_2330" });
     ok("③ B5 命中(zh):樣本外驗證的整句 → 泡泡「對 BTC 均線交叉 做樣本外驗證(訓練窗 1095 天、測試窗 30 天)」、標題「BTC 均線交叉 · 樣本外驗證」(名稱從策略清單查)",
       at("zh", wzh) === "對 BTC 均線交叉 做樣本外驗證（訓練窗 1095 天、測試窗 30 天）" && at("zh", wzh, "title") === "BTC 均線交叉 · 樣本外驗證");

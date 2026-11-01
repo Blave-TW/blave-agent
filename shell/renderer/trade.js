@@ -3528,7 +3528,8 @@ function trAmountTable(names, stored, states) {
       // 送出中:本機照舊 disabled;雲端用唯讀(ack 最長約 20 秒,disabled 會把焦點丟到 BODY)
       if (cloud) { inp.disabled = locked; inp.readOnly = TR.save === "saving"; } else inp.disabled = locked || TR.save === "saving";
       inp.setAttribute("aria-label", trDisplay(n) + " — " + (txf ? t("tr.lotsAria") : zoneOf[n] !== TR_ZONE_UNKNOWN ? t("tr.amountAria", { ccy: zoneOf[n] }) : t("tr.col.amount")));
-      inp.value = TR.raw && TR.raw[n] != null ? TR.raw[n] : trFmt(TR.edits[n] != null ? TR.edits[n] : stored[n] || 0);
+      // 沒有金額的列留空,不預填 0(同網頁):預填的 0 留在格子裡,滑鼠點中間再打 1000 會變 10,000
+      inp.value = TR.raw && TR.raw[n] != null ? TR.raw[n] : TR.edits[n] != null ? trFmt(TR.edits[n]) : stored[n] ? trFmt(stored[n]) : "";
       if (TR.flash && TR.flash[n]) { inp.classList.add("flash"); delete TR.flash[n]; }   // 從優化套用過來、這一格剛改過
       // 格子只放數字:單位在區標題(或只有一區時在欄頭),units spec §9.6
       wrap.append(inp);
@@ -3596,8 +3597,8 @@ function trAmountTable(names, stored, states) {
       const settle = () => { let why = (txf ? trLotsError(inp.value) : trAmountError(inp.value)) || (twdRow && parse(inp.value) > (stored[n] || 0) ? "twd" : null);
         // 沒動過的舊設定是小數口數(0.1.12 以前存的 2.5):點名是舊設定,不讓人以為是自己剛打錯(稽核建議 2)
         if (txf && why === "bad" && TR.edits[n] == null && !Number.isInteger(Number(stored[n] || 0)) && inp.value === trFmt(stored[n] || 0)) why = "oldLots";
-        // 口數格留空不換成「0」:留著空、記在 raw,確認框那一句才知道這一格是留空的(7-2);錢的格照舊正規化
-        const blank = txf && !String(inp.value).trim();
+        // 留空不換成 0,記在 raw:口數格確認框要點名(7-2);沒存過金額的錢格補 0 就是預填
+        const blank = (txf || !(stored[n] > 0)) && !String(inp.value).trim();
         markBad(why); if (!why) { inp.value = blank ? "" : trFmt(parse(inp.value)); if (TR.raw) { if (blank) TR.raw[n] = ""; else delete TR.raw[n]; } } if (svBtn && svBtn.isConnected) svBtn.disabled = anyBad() || stale || cfgBad; else paintBar(); };
       inp.addEventListener("blur", settle); settles.push(settle);
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); settle(); } });
@@ -3850,8 +3851,7 @@ function trCfRows(o) {
     const lot = o.lot(sym), was = before[sym] || 0, now = after[sym] || 0;
     const same = lot ? trRoundLots(was) === trRoundLots(now) : Math.round(was) === Math.round(now);
     if (same) return;
-    // kept:撐這列的策略原本就存著——現況 0 也畫「0 → 新值」(綁好之後原樣存、暫停中存,設計稽核 S3);新加的策略照舊只寫新值
-    const row = { sym, was: lot ? trRoundLots(was) || 0 : was, now: lot ? trRoundLots(now) || 0 : now, lots: lot, z: zoneOf(sym), by: by(sym), held: !!o.mine[sym], kept: by(sym).some((n) => n in o.stored) };
+    const row = { sym, was: lot ? trRoundLots(was) || 0 : was, now: lot ? trRoundLots(now) || 0 : now, lots: lot, z: zoneOf(sym), by: by(sym), held: !!o.mine[sym] };
     // 不會自動下單的美股列只寫金額:不換數量、也不算預覽撐的列(表頭不寫依哪一根),同網頁 pfUsNoAuto
     if (trUsNoAuto(o.r, sym, by(sym))) row.noAuto = true;
     else if (!lot) row.qty = now > 0 ? trCfQty(sym, now, priceOf(sym), trUsPerp(o.r, sym, by(sym))) : null;
@@ -4022,7 +4022,8 @@ function trCfOpen(o) {
     // 會送就寫「下單」(canon):在跑、有帳戶、存檔後會變的那支這家下得了,就是「儲存並下單」,這一刻列不出單也照寫
     const fire = orders || Object.keys(sending).concat(Object.keys(stored)).some((n) => moves(n) && trCfWillOrder(n, m.st.states[n] || (r.states || {})[n], ctAfter));
     if (tick && fire === cf.firing) return;
-    const amtOnly = Object.keys(sending).filter((n) => (n in stored) && Number(sending[n]) !== old(n));
+    // 含新加入的(old 是 0):第一次加進組合、訊號空手時,這張表是框裡唯一會變的東西
+    const amtOnly = Object.keys(sending).filter((n) => (Number(sending[n]) || 0) !== old(n));
     // 對帳器先不動的那句只講算得出的:等的那支沒有訊號、沒有預覽時整句不出(不留半句)
     const known = (ns) => ns.every((n) => m.st.missing.indexOf(n) < 0);
     const hw = held.wait.length && known(held.names) ? held.wait : [], hg = held.gate;
@@ -4076,7 +4077,7 @@ function trCfOpen(o) {
           if (mixed && x.venues && x.venues.length && x.venues.every((v) => v === PAPER)) dd.appendChild(trEl("span", "tag", t("cx.paperShort")));
         } else {
           const f = (v) => (x.lots ? trLotsFmt(v) : trFmt(Math.round(v)));
-          if (x.was || x.kept) arrow(dd, f(x.was));
+          arrow(dd, f(x.was));   // 原本是 0 也寫「0 → 新值」(canon)
           dd.append(trEl("span", "n", f(x.now)));
           // 平倉只標讀過帳、這家下得了、帳上真的有部位的;第一次讀帳前不知道,不標
           const close = trCloseTag(x.was, x.now, fire, recon && !firstRead ? x.held : null); if (close) dd.appendChild(trEl("span", "tag", close));
@@ -4089,7 +4090,7 @@ function trCfOpen(o) {
       });
       body.appendChild(dl);
     } else if (!oneLeg && amtOnly.length) {
-      // 金額改了、但這一刻沒有一個標的的目標跟著變(訊號 0、或改的那支算不出):表上改列金額的「原 → 新」,不出一個空框
+      // 金額改了、但這一刻沒有一個標的的目標跟著變(訊號 0、或改的那支算不出,含新加入的):表上改列金額的「原 → 新」,不出一個空框
       sub.textContent = t(amtOnly.length === 1 ? "tr.cf.capAmountsOne" : "tr.cf.capAmounts", { n: String(amtOnly.length) }); body.appendChild(sub);
       const dl = trEl("dl", "cf-rows cf-amt");
       amtOnly.forEach((n) => { const dd = document.createElement("dd"), sp = trRowTxfNew(n), now = Number(sending[n]) || 0;

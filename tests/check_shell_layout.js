@@ -182,6 +182,18 @@ app.whenReady().then(async () => {
       out.push({ lines, over: host.scrollWidth - host.clientWidth }); host.remove(); }
     return { out, names }; })()`);
   ok(`⑬ 標的格窄欄:名字不被拆成兩半、表沒有撐開:${JSON.stringify(nm.out)}`, nm.out.every((o) => o.lines.length > 1 && o.over <= 0 && nm.names.every((n) => o.lines.some((l) => l.includes(n)))));
+  // ⑮ 金額格實際輸入序列(設計全流程稽核 P1-2):新列格子空的;游標落在最前面(滑鼠點中間)打 1000 就是 1,000,不是 10,000;沒打就離開還是空的,不補 0
+  const seq = await X(`(async () => {
+    const fake = Object.assign({}, TR.st, { alive: true, report: { venues: {}, config: { amounts: { kept: 2000 } }, states: { kept: { symbol: "BTCUSDT", position: 1 } }, reconciler: { alive: false } } });
+    TR.st = fake; TR.list = [{ name: "fresh", displayName: "新策略", hasBacktest: true, symbol: "ETHUSDT", market: "swap", universe: [] }, { name: "kept", displayName: "已存", hasBacktest: true, symbol: "BTCUSDT", market: "swap", universe: [] }]; TR.listLoaded = true;
+    TR.picked = new Set(["fresh", "kept"]); TR.edits = {}; TR.raw = {}; TR.bad = {}; TR.view = "po"; TR.open = true; TR.poTab = "cfg"; $("po-view") && ($("po-view").hidden = false); TR.sig.cfg = null;
+    const box = $("po-cfg"), host = box.parentElement; let up = box; while (up && up !== document.body) { up.hidden = false; up = up.parentElement; } poPaintCfg();
+    const cell = (n) => box.querySelector('.amt-in[data-amt="' + n + '"]'), a = cell("fresh"), out = { start: a ? a.value : null, keptStart: cell("kept") ? cell("kept").value : null };
+    a.focus(); a.dispatchEvent(new FocusEvent("blur")); out.blurEmpty = a.value;
+    a.focus(); a.setSelectionRange(0, 0); document.execCommand("insertText", false, "1000"); out.typed = a.value; out.edit = TR.edits.fresh; a.dispatchEvent(new FocusEvent("blur")); out.after = a.value;
+    const k = cell("kept"); k.focus(); k.select(); document.execCommand("delete"); k.dispatchEvent(new FocusEvent("blur")); out.keptCleared = k.value;
+    TR.picked = null; TR.edits = {}; TR.raw = {}; TR.list = []; return out; })()`);
+  ok(`⑮ 新列格子空的、游標在最前面打 1000 是 1,000、沒打就離開不補 0;已存過金額清空照舊寫 0:${JSON.stringify(seq)}`, seq.start === "" && seq.keptStart === "2,000" && seq.blurEmpty === "" && seq.typed === "1000" && seq.edit === 1000 && seq.after === "1,000" && seq.keptCleared === "0");
   ok(`⑪ 別的分頁空著又閒著:＋ 切過去、不疊空分頁;換語言分頁名跟著換:${JSON.stringify(tb)}`, tb.two && tb.reuse && tb.en.includes("New chat") && !tb.en.includes("新對話") && tb.zh.includes("新對話"));
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   app.exit(red ? 1 : 0);

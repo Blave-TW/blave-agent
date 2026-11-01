@@ -2801,17 +2801,17 @@ function csStartNew(o) {
    比對:用模板字串本身組出前後錨定的 regex(不另抄一份模板),{name} = 最短的任意字串、{lookback}/{step} = 數字,整則吻合才算;
    zh / en 兩種模板都試(舊對話、送出後換了介面語言都認得),摘要照現在的語言。用戶自己逐字打出同一整句也會顯示摘要——
    那句要 agent 做的就是這件事,可以接受。fixedMatch 是純函式(tests/check_shell_wf.js 從原文切出來跑) */
-const FIXED_PROMPTS = [["wf.msgRun", "wf.msgRunLabel", "wf.msgRunTitle"], ["rob.msgScan", "rob.msgScanLabel", "rob.msgScanTitle"], ["rob.msgRescan", "rob.msgRescanLabel", "rob.msgScanTitle"], ["rob.msgRescan1", "rob.msgRescanLabel", "rob.msgScanTitle"]];
+const FIXED_PROMPTS = [["wf.msgRun", "wf.msgRunLabel", "wf.msgRunTitle"], ["rob.msgScan", "rob.msgScanLabel", "rob.msgScanTitle"], ["rob.msgRescan", "rob.msgRescanLabel", "rob.msgScanTitle"], ["rob.msgRescan1", "rob.msgRescanLabel", "rob.msgScanTitle"], ["lib.msgLocal", "lib.msgTitle", "lib.msgTitle"], ["lib.msg", "lib.msgTitle", "lib.msgTitle"], ["lib.msgPaid", "lib.msgTitle", "lib.msgTitle"]];   // 策略庫的安裝句:對話名與泡泡走「{名稱} · 安裝並回測」
 function fixedMatch(text, strings) {
   if (typeof text !== "string" || !text) return null;
   for (const [src, label, title] of FIXED_PROMPTS) for (const l of ["zh", "en"]) {
     const tpl = strings && strings[l] && strings[l][src];
     if (typeof tpl !== "string" || !tpl) continue;
     const keys = [];
-    // {lookback} / {step} = 數字;其餘({name}、重新掃描的期間 / 費率 / 兩軸)= 最短的任意字串
+    // {lookback} / {step} / {id} = 數字;其餘({name}、{title}、重新掃描的期間 / 費率 / 兩軸)= 最短的任意字串
     const body = tpl.split(/(\{\w+\})/).map((p) => {
       const m = /^\{(\w+)\}$/.exec(p);
-      if (m) { keys.push(m[1]); return m[1] === "lookback" || m[1] === "step" ? "(\\d+)" : "(.+?)"; }
+      if (m) { keys.push(m[1]); return m[1] === "lookback" || m[1] === "step" || m[1] === "id" ? "(\\d+)" : "(.+?)"; }
       return p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }).join("");
     const hit = new RegExp("^" + body + "$").exec(text);

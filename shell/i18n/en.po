@@ -1570,7 +1570,7 @@ msgid "tr.tbAria"
 msgstr "Auto trading: {state}"
 
 msgid "tr.nav"
-msgstr "Auto trading"
+msgstr "Auto Trading"
 
 msgid "tr.autoOn"
 msgstr "Auto-trading running"
@@ -1699,7 +1699,7 @@ msgid "tr.err.bitgetCopyKey"
 msgstr "{sym} not placed: this is a copy-trading or elite-trader account. Create a trading key from a regular account in API Management: Read and Trade, no Withdraw."
 
 msgid "tr.err.key"
-msgstr "{sym} not placed: the exchange rejected this key. Check the account in Auto trading › Settings; press Retest connection if it’s there."
+msgstr "{sym} not placed: the exchange rejected this key. Check the account in Auto Trading › Settings; press Retest connection if it’s there."
 
 msgid "tr.err.reduceOnly"
 msgstr "{sym} not placed: the exchange refused a reduce-only order; its position or orders differ from Blave’s record. Check the position there."
@@ -2730,7 +2730,7 @@ msgid "tm.notifTitle"
 msgstr "Trading paused"
 
 msgid "tm.notifBody"
-msgstr "No orders will be sent; existing positions are untouched. To resume, press Start trading on the Auto trading page in Blave."
+msgstr "No orders will be sent; existing positions are untouched. To resume, press Start trading on the Auto Trading page in Blave."
 
 msgid "tm.pauseFail"
 msgstr "The pause command didn’t go through, so it may still be trading. Open Blave and press Pause trading again."
@@ -3469,22 +3469,22 @@ msgid "tm.key.ipTitle"
 msgstr "{where}: public IP changed"
 
 msgid "tm.key.ipBody"
-msgstr "Update the Binance whitelist to {ip}, then press Retest connection in Auto trading › Settings. Orders can’t be placed until then."
+msgstr "Update the Binance whitelist to {ip}, then press Retest connection in Auto Trading › Settings. Orders can’t be placed until then."
 
 msgid "tm.key.rejTitle"
 msgstr "{where}: Binance rejected the key"
 
 msgid "tm.key.rejSameIpBody"
-msgstr "Check at Binance that the key still exists with the same permissions. If not, create one, then disconnect and reconnect in Auto trading › Settings."
+msgstr "Check at Binance that the key still exists with the same permissions. If not, create one, then disconnect and reconnect in Auto Trading › Settings."
 
 msgid "tm.key.rejUnknownBody"
-msgstr "Open Auto trading › Settings to check the IP and the key: the public IP may have changed, or the key may have been deleted. Orders can’t be placed until then."
+msgstr "Open Auto Trading › Settings to check the IP and the key: the public IP may have changed, or the key may have been deleted. Orders can’t be placed until then."
 
 msgid "tm.key.permTitle"
 msgstr "{where}: trading was turned off for the Binance key"
 
 msgid "tm.key.permBody"
-msgstr "Turn trading permission back on for this key at Binance, then press Retest connection in Auto trading › Settings. Orders can’t be placed until then."
+msgstr "Turn trading permission back on for this key at Binance, then press Retest connection in Auto Trading › Settings. Orders can’t be placed until then."
 
 msgid "tr.hostLock"
 msgstr "The previous order engine is still shutting down; retrying automatically ({n}/{max}). No orders go out meanwhile."
@@ -3675,10 +3675,10 @@ msgid "ho.rename.maybeUp"
 msgstr "If the cloud already has a strategy with this name, this copy is saved under a new name; the original stays as it is."
 
 msgid "ho.srcLive.up"
-msgstr "The one on this computer keeps trading. The cloud copy starts trading only after you give it an amount on the cloud’s Auto trading page."
+msgstr "The one on this computer keeps trading. The cloud copy starts trading only after you give it an amount on the cloud’s Auto Trading page."
 
 msgid "ho.srcLive.down"
-msgstr "The one in the cloud keeps trading. The copy here starts trading only after you give it an amount on this computer’s Auto trading page."
+msgstr "The one in the cloud keeps trading. The copy here starts trading only after you give it an amount on this computer’s Auto Trading page."
 
 msgid "ho.block.goCloud"
 msgstr "View in Cloud"
@@ -4355,7 +4355,7 @@ msgid "tr.ov.evRestartStoppedNote"
 msgstr "no orders are sent"
 
 msgid "tm.evRestartStoppedNote"
-msgstr "Nothing is managing your positions; exits and stops won’t run. Press Start trading in Auto trading to resume. Stop orders on the exchange still work."
+msgstr "Nothing is managing your positions; exits and stops won’t run. Press Start trading in Auto Trading to resume. Stop orders on the exchange still work."
 
 msgid "tr.cloud.cxSavedStale"
 msgstr "The key was sent, but the cloud machine hasn’t reported back. Connect again, or ask the agent in chat to check the machine."
@@ -5168,7 +5168,7 @@ msgid "lib.installed"
 msgstr "Installed"
 
 msgid "lib.kv.total"
-msgstr "Total return"
+msgstr "Total Return"
 
 msgid "lib.gate.feeAssumed"
 msgstr "Assumed {v}"
@@ -5246,7 +5246,7 @@ msgid "lib.kv.sample"
 msgstr "Sample"
 
 msgid "lib.kv.days"
-msgstr "Days listed"
+msgstr "Days Listed"
 
 msgid "lib.kv.installs"
 msgstr "Installs"
@@ -5489,6 +5489,9 @@ msgstr "Download my purchased strategy \"{title}\" (#{id}) and run a backtest"
 # 本機「用這支」:外殼已把程式碼放在 workspace/tmp/library_<id>.py;runtime 契約(references/marketplace.md › Desktop-downloaded picks)
 msgid "lib.msgLocal"
 msgstr "The library strategy \"{title}\" (#{id}) is downloaded. Install it and run a backtest to see the results."
+
+msgid "lib.msgTitle"
+msgstr "{title} · Install and Backtest"
 
 msgid "lib.where.local"
 msgstr "this computer"
@@ -8906,7 +8909,7 @@ msgid "po.goHalt"
 msgstr "Trading paused"
 
 msgid "po.goBtn"
-msgstr "Start in Auto trading"
+msgstr "Start in Auto Trading"
 
 msgid "tr.opt.catchWill"
 msgstr "Will {side} {sym} {n}"
@@ -10211,7 +10214,7 @@ msgid "tm.phoneHiddenWin"
 msgstr "Blave is still open, so your phone can reach it. To quit, use the system tray icon."
 
 msgid "sp.btn"
-msgstr "Auto-trade"
+msgstr "Auto-Trade"
 
 msgid "sp.cx"
 msgstr "Connect account"

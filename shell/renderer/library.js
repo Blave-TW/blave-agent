@@ -742,7 +742,7 @@ function libPaintCta(s) {
     case "pending": row.appendChild(dis(t("lib.pending"))); break;   // 鈕本身說了進行中,鈕下不再補「進度在右邊的對話」(Wei 10-17)
     case "buying": row.appendChild(dis(t("lib.buy.busy"))); break;
     case "installed":
-      row.append(btn("btn-fill", t("lib.open"), () => (libEnv() === "cloud" ? rpCloudSelect(c.name) : stratSelect(c.name))), btn("btn-quiet", t("lib.again"), (b) => libAsk(s, b)));
+      row.append(btn("btn-fill", t("lib.open"), async () => { await (libEnv() === "cloud" ? rpCloudSelect(c.name) : stratSelect(c.name)); $("rp-name").focus(); }), btn("btn-quiet", t("lib.again"), (b) => libAsk(s, b)));
       break;
     case "paid": row.appendChild(btn("btn-fill", buyLabel(), (b) => libBuyBox(s, "confirm", b, {}))); break;
     case "owned": row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b))); break;
