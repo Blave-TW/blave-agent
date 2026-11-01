@@ -5224,6 +5224,8 @@ function turnEventIn(c) {
     turnErrored = true;
     if (typeof sugCollapse === "function") sugCollapse();
     if (faultShown && c.code === "not_started") { faultShown = false; return; }
+    // Codex 回 401(runtime needs_login):直接登入卡。憑證檔在、token 失效時偵測看不出來,只有這裡知道
+    if (c.code === "needs_login" && !turnFaulted) { turnFaulted = true; turnFail = "auth"; addFault(localAuthFault("codex")); return; }
     if (turnLimit && limitSwallow(c.code, turnChanged)) return;   // 用量到上限那張卡已經講完了
     const line = t("turn.error", { msg: c.message || "" });
     // 本機 agent、這一輪還沒有任何回覆:先不畫,回合結束問過 CLI 的登入狀態再決定出哪一則
