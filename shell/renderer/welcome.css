@@ -44,6 +44,7 @@ button.onb-h:focus-visible { outline-offset: -2px; }
 /* 雲端停機／過時那一行(welcome.js wcAlert):紅短劃＋一句＋Arrow link;過時是灰短劃、沒有鈕 */
 .wc-alert { display: flex; align-items: center; gap: var(--space-8); margin: var(--space-16) 0 0; min-height: 32px; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
 .fin-grp .wc-alert { margin: 0; }
+.wc-alert .fault-mark { margin-top: 0; }
 .wc-alert.calm .fault-mark { background: var(--ink-3); }
 .wc-alert .ln-arrow { margin-left: var(--space-8); }
 /* ①的策略卡(spec desktop-welcome-library-first §2.2;殼照 0.1.27 的 .wc-card:--surface-card、--radius-lg、無框無陰影、內距 12、卡距 8)。

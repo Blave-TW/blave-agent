@@ -73,7 +73,7 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
 // 設計稽核 v030 S4:雲端主機本來就含資料,步驟②不出「可以回測的資料」(免費 vs Blave 兩欄會講錯事實);本機照舊、切回本機要再露出來
 { const run = (envs) => {
     const el = (id) => ({ id, hidden: false, textContent: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } });
-    const els = {}; ["wc", "wf", "onb-fin", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl", "onb-wait"].forEach((id) => { els[id] = el(id); });
+    const els = {}; ["wc", "wf", "onb-fin", "onb-steps", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl", "onb-wait"].forEach((id) => { els[id] = el(id); });
     const C = { $: (id) => els[id], t: (k) => k, LANG: "zh", JSON, WC: { shown: true }, ONB: { prefs: {}, key: null, amt: false }, onbHead() {}, wcPaint() {}, ENVNOW: "local",
       onbEnv: () => C.ENVNOW, onbEval: () => ({ d: { amt: false }, S: { steps: [{ open: true }, { open: true }, { open: false }] }, ph: { view: "E" } }) };
     vm.createContext(C); vm.runInContext(paint, C);
@@ -89,7 +89,7 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
   ok("② #onb-fin 住在 #wf 的 .fin-grp 裡、在三顆籤上方,#wc 裡沒有", wf.includes('id="onb-fin"') && !wc.includes('id="onb-fin"') && wf.indexOf('class="fin-grp"') < wf.indexOf('id="onb-fin"') && wf.indexOf('id="onb-fin"') < wf.indexOf('id="wf-idea"'));
   ok("② .fin-grp 行和籤一組(間距 8)、置中;.onb-fin 上距歸零", /\.fin-grp \{ display: flex; flex-direction: column; align-items: center; gap: var\(--space-8\); \}/.test(css) && /\.onb-fin \{ margin: 0;/.test(css));
   const mk = (id) => ({ id, hidden: true, textContent: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } });
-  const run = (view) => { const els = {}; ["wc", "wf", "onb-fin", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl", "onb-wait"].forEach((id) => { els[id] = mk(id); });
+  const run = (view) => { const els = {}; ["wc", "wf", "onb-fin", "onb-steps", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl", "onb-wait"].forEach((id) => { els[id] = mk(id); });
     const C = { $: (id) => els[id], t: (k) => k, LANG: "zh", JSON, WC: { shown: true }, ONB: { prefs: {}, key: null, amt: false }, onbHead() {}, wcPaint() {}, onbEnv: () => "local",
       onbEval: () => ({ d: { amt: false, bt: true, wait: view === "wait" }, S: { steps: [{ open: false }, { open: false }, { open: false }] }, ph: { view: view === "wait" ? "E" : view } }) };
     vm.createContext(C); vm.runInContext(cutFn(src, "onbPaint"), C); C.onbPaint(); return els; };
