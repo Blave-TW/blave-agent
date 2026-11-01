@@ -97,6 +97,40 @@ const authUnknown = eval("(" + app.match(/^const authUnknown = (.*);$/m)[1] + ")
     ok("…焦點不在列上 → 不搶焦點", doc.activeElement === null);
     ctx.calls.length = 0; ctx.PKG.snap = null; onState(undefined);
     ok("拉到的快照是 undefined(舊主行程／測試替身)→ snap 為 null、不偵測", ctx.PKG.snap === null && !ctx.calls.includes("detect")); }
+  { // 按〔連結〕抓完接登入:原文跑 codexPkgGo／codexPkgOnState／codexAutoLogin,detect 用假的(接原文那一行)
+    const mkA = (o = {}) => { const login = [], ensure = [], btnEl = { disabled: false };
+      const panes = { "agent-rows": { querySelector: () => (o.noBtn ? null : btnEl) }, "set-model": { hidden: false, querySelector: () => btnEl }, "lai-rows": { querySelector: () => btnEl }, "view-connect": { hidden: !!o.closed }, "set-scrim": { hidden: false } };
+      const ctx = { PKG: { snap: null, redetect: false, auto: null, done: false }, MDL: { busy: false }, loginPending: o.loginPending || null, oauthPending: false, lastDetect: null, whyState, laiOn: () => !o.closed,
+        $: (id) => panes[id], localLogin: (k, b) => login.push(k), paintRows: () => {}, document: { activeElement: null },
+        detect() { ctx.lastDetect = o.detected || { codex: { installed: true, loggedIn: false, why: "codex_nonzero" } }; if (ctx.PKG.auto) ctx.codexAutoLogin(); },
+        window: { blave: { codexPkgEnsure: (a) => { ensure.push(a); return o.ensure || Promise.resolve({ ok: true }); } } } };
+      const f = new Function("ctx", `with (ctx) { ${fn("codexPkgGo")}\n${fn("codexAutoLogin")}\n${fn("codexPkgOnState")}\nctx.codexAutoLogin = codexAutoLogin; return { go: codexPkgGo, on: codexPkgOnState }; }`)(ctx);
+      return { ctx, login, ensure, f }; };
+    const DL = { phase: "download", bytes: 1, total: 2, fail: null }, DONE = { phase: "idle", fail: null }, FAIL = { phase: "idle", fail: { kind: "net" } };
+    const run = async (o, from, end = DONE) => { const m = mkA(o); m.f.go(false, from); await Promise.resolve(); m.f.on(DL); m.f.on(end); await Promise.resolve(); return m; };
+    for (const box of ["agent-rows", "set-model", "lai-rows"]) { const m = await run({}, box); ok("按〔連結〕抓完、沒登入(" + box + ")→ 自動開登入,只一次", m.login.join() === "codex" && m.ctx.PKG.auto === null, m.login); }
+    let m = await run({}, null);
+    ok("背景補抓(沒有 from)→ 不接", m.login.length === 0, m.login);
+    m = await run({ detected: { codex: { installed: true, loggedIn: true } } }, "agent-rows");
+    ok("抓完已登入 → 不接", m.login.length === 0, m.login);
+    m = await run({ detected: { codex: { installed: true, loggedIn: false, why: "codex_timeout", path: "/x" } } }, "agent-rows");
+    ok("抓完查不出登入狀態 → 不接", m.login.length === 0, m.login);
+    m = await run({ detected: { codex: { installed: true, loggedIn: false, why: "codex_cantrun" } } }, "agent-rows");
+    ok("抓完跑不起來 → 不接", m.login.length === 0, m.login);
+    m = await run({}, "agent-rows", FAIL);
+    ok("下載失敗 → 不接,也不留著等下一次", m.login.length === 0 && m.ctx.PKG.auto === null, m.ctx.PKG);
+    m.f.on(DL); m.f.on(DONE);
+    ok("…之後別的下載完成也不接", m.login.length === 0, m.login);
+    m = mkA({ ensure: Promise.resolve({ ok: false }) }); m.f.go(false, "agent-rows"); await Promise.resolve(); await Promise.resolve();
+    ok("ensure 回 ok:false → 清掉", m.ctx.PKG.auto === null, m.ctx.PKG);
+    m = mkA({ ensure: Promise.reject(new Error("x")) }); m.f.go(false, "agent-rows"); await Promise.resolve(); await Promise.resolve();
+    ok("ensure reject → 清掉", m.ctx.PKG.auto === null, m.ctx.PKG);
+    m = await run({ closed: true }, "agent-rows");
+    ok("抓的途中離開那個表面 → 不接", m.login.length === 0, m.login);
+    m = await run({ loginPending: "claude" }, "agent-rows");
+    ok("別的登入等待中 → 不搶(補偵測排給 paintRows)", m.login.length === 0 && m.ctx.PKG.redetect === true, m.ctx.PKG);
+    m = mkA(); m.f.go(false, "agent-rows"); m.f.on(DL); m.ctx.lastDetect = { codex: { installed: false } }; m.ctx.PKG.done = true; m.ctx.codexAutoLogin();
+    ok("裝好之前開跑的偵測先回來(還沒裝)→ 不消耗這次機會", m.login.length === 0 && m.ctx.PKG.auto === "agent-rows", m.ctx.PKG); }
   { // paintRows 真的跑一次:尾端把 PKG.redetect 消化成一次 detect();等登入中不消化
     const el = () => { const n = { children: [], innerHTML: "", appendChild: (c) => { n.children.push(c); return c; }, querySelectorAll: () => [] }; return n; };
     const rowsEl = el(), calls = [];

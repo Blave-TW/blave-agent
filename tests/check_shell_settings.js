@@ -472,7 +472,7 @@ ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」
       && mdlOptions(UNK, "blave", true, { login: "codex" }, null, { phase: "idle", fail: null })[2].act === "login.cancel"); }
   ok("隨包那顆能跑 → 快照不接手;偵測中照舊「偵測中…」", sh(cx({ phase: "idle", fail: null }, { codex: { installed: true, loggedIn: true } })).startsWith("codex|-|-|-|cn.use")
     && sh(cx({ phase: "download", bytes: 1, total: 2, fail: null }, { codex: { installed: true, loggedIn: false } })) === "codex|-|-|-|cn.signIn|||" && mdlOptions(null, "claude", true, null, null, { phase: "idle", fail: null })[2].st.key === "cn.detecting");
-  ok("mdlAct:下載列(o.pkg)走 codexPkgGo(reinstall),不走 connect／localLogin", /if \(o\.pkg\) return codexPkgGo\(o\.reinstall\);/.test(fnSrc("mdlAct")) && fnSrc("mdlAct").indexOf("o.pkg") < fnSrc("mdlAct").indexOf("return connect("));
+  ok("mdlAct:下載列(o.pkg)走 codexPkgGo(reinstall),不走 connect／localLogin", /if \(o\.pkg\) return codexPkgGo\(o\.reinstall, o\.act === "cn\.connect" \? "set-model" : null\);/.test(fnSrc("mdlAct")) && fnSrc("mdlAct").indexOf("o.pkg") < fnSrc("mdlAct").indexOf("return connect("));
   ok("mdlPaint:傳 PKG.snap 當第 6 參數;說明與狀態字帶 vars", /mdlOptions\(MDL\.busy \? null : lastDetect, cur, hasToken, pend, typeof AK === "object" \? AK\.info : null, PKG\.snap\)/.test(fnSrc("mdlPaint"))
     && /o\.descVars \? t\(o\.desc, o\.descVars\)/.test(fnSrc("mdlPaint")) && /t\(o\.st\.key, o\.st\.vars\)/.test(fnSrc("mdlPaint"))); }
 { // 跑不起來 / 沒有回應(稽核 P2-4):比照連結畫面,那一列寫狀態、灰掉、不給〔登入〕;一般沒登入照舊〔登入〕
