@@ -146,7 +146,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
   t("detectAgents:每次寫一行紀錄到 BASE/state/detect.log;紀錄物件只經 runRec / binKind / loggedIn 填,沒有 path、email、stdout",
     /detectLogWrite\(path\.join\(BASE, "state", "detect\.log"\), \{ ts: new Date\(\)\.toISOString\(\), os: process\.platform, \.\.\.rec \}\)/.test(body)
     && !/rec\.\w+\.(path|email|stdout|stderr)\b/.test(body)
-    && [...body.matchAll(/rec\.\w+\.(\w+) = /g)].map((m) => m[1]).every((k) => ["bin", "json", "loggedIn", "alt", "outside"].includes(k))
+    && [...body.matchAll(/rec\.\w+\.(\w+) = /g)].map((m) => m[1]).every((k) => ["bin", "json", "loggedIn", "alt", "outside", "cred"].includes(k))
     && [...body.matchAll(/Object\.assign\(rec\.\w+, (\w+)\(/g)].every((m) => m[1] === "runRec")); }
 { const w = src.slice(src.indexOf("async function which(name, envPath, seen) {"), src.indexOf("async function codexBinNow()"));
   t("which / claudePath 往 seen 寫的只有 where(檔種清單)/ whereTimedOut / found(檔種)", [...w.matchAll(/seen\.(\w+) = /g)].map((m) => m[1]).every((k) => ["where", "whereTimedOut", "whereCode", "found"].includes(k))
@@ -174,12 +174,12 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
   { const da = src.match(/^async function detectAgentsRaw\(\) \{[\s\S]*?\n\}/m), dw = src.match(/^function detectWhy\(kind, r\) \{[\s\S]*?\n\}/m);
     if (!da || !dw) t("找得到 detectAgentsRaw / detectWhy", false);
     else { const runs = [], logged = [];
-      const mkDetect = new Function("loginShellPath", "claudePath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexBundled",
+      const mkDetect = new Function("loginShellPath", "claudePath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexBundled", "codexCredOk", "codexHome",
         crS[0] + "\nconst BAD_BIN = {};\n" + dw[0] + "\n" + da[0] + "\nreturn detectAgentsRaw;");
       const slow = (v) => new Promise((r) => setTimeout(() => r(v), 300));
       const detect = mkDetect(async () => "/usr/bin", async () => "/opt/claude",
         (bin, args, envPath, ms, cwd, env) => { if (!env) runs.push([bin, ms, Date.now()]); return slow(bin.endsWith("claude") ? { code: 0, stdout: '{"loggedIn":true}', timedOut: false, ms: 300 } : { code: null, stdout: "", timedOut: true, ms: 300 }); },
-        binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" }, () => "/opt/codex");
+        binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" }, () => "/opt/codex", () => false, () => "/h");
       const t0 = Date.now(), d = await detect(), took = Date.now() - t0;
       t("detectAgents:claude 與 codex 的登入檢查同時開跑(兩條各 300ms,整次 < 500ms;依序會 ≥ 600)、各帶 20 秒上限", took < 500 && runs.length === 2 && Math.abs(runs[0][2] - runs[1][2]) < 100 && runs.every((r) => r[1] === 20000), { took, runs });
       t("…結果照舊組回去:claude 登入、codex 逾時 → why=codex_timeout;紀錄一行", d.claude.loggedIn === true && d.claude.why === null && d.codex.installed && d.codex.loggedIn === false && d.codex.why === "codex_timeout"
@@ -192,9 +192,9 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
   // claude auth status 跑不起來(退出碼非 0、沒有輸出)不是「回的不是 JSON」:只有退出碼 0 才記 json=false
   { const da = src.match(/^async function detectAgentsRaw\(\) \{[\s\S]*?\n\}/m), dw = src.match(/^function detectWhy\(kind, r\) \{[\s\S]*?\n\}/m);
     if (!da || !dw) { t("找得到 detectAgentsRaw / detectWhy", false); process.exit(1); }
-    const mk = new Function("loginShellPath", "claudePath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexBundled", crS[0] + "\nconst BAD_BIN = {};\n" + dw[0] + "\n" + da[0] + "\nreturn detectAgentsRaw;");
+    const mk = new Function("loginShellPath", "claudePath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexBundled", "codexCredOk", "codexHome", crS[0] + "\nconst BAD_BIN = {};\n" + dw[0] + "\n" + da[0] + "\nreturn detectAgentsRaw;");
     const once = async (claudeRes) => { const logged = [];
-      const d = await mk(async () => "/usr/bin", async () => "/opt/claude", async () => ({ timedOut: false, ms: 1, ...claudeRes }), binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" }, () => null)();
+      const d = await mk(async () => "/usr/bin", async () => "/opt/claude", async () => ({ timedOut: false, ms: 1, ...claudeRes }), binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" }, () => null, () => false, () => "/h")();
       return { why: d.claude.why, json: logged[0].claude.json }; };
     const dead = await once({ code: 1, stdout: "" }), old = await once({ code: 0, stdout: "usage: claude" }), sig = await once({ code: "ENOENT", stdout: "" });
     t("detectAgents:claude 退出碼非 0、stdout 空 → claude_nonzero,不記 json=false;開不起來(ENOENT)→ claude_cantrun(不是沒登入)", dead.why === "claude_nonzero" && dead.json === undefined && sig.why === "claude_cantrun" && sig.json === undefined, { dead, sig });
@@ -205,11 +205,11 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
     if (!da || !dw || !cb || !cbn || !bb) { t("找得到 detectAgentsRaw／codexBundled／codexBinNow／BAD_BIN", false); process.exit(1); }
     const PKG_BIN = "/Users/u/Blave/codex/0.166.0/bin/codex";
     const mkAll = (o) => { const calls = [], ran = [], logged = [];
-      const api = new Function("loginShellPath", "claudePath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexpkg", "CODEX_PIN", "TRIPLE", "WIN", "fs",
+      const api = new Function("loginShellPath", "claudePath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexpkg", "CODEX_PIN", "TRIPLE", "WIN", "fs", "codexCredOk", "codexHome",
         crS[0] + "\n" + bb[0] + "\n" + dw[0] + "\n" + cb[0] + "\n" + cbn[0] + "\n" + da[0] + "\nreturn { detectAgentsRaw, codexBinNow, codexBundled, BAD_BIN };")(
         async () => "/usr/bin", async () => null,
         async (bin, args) => { ran.push(bin); return { code: o.codes[bin] !== undefined ? o.codes[bin] : 0, stdout: "", timedOut: false, ms: 1 }; }, binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" },
-        { installed: (base, pin, triple, win, fsx) => { calls.push([base, pin, triple, win, fsx === "FS"].join(",")); return o.pkg ? { path: o.pkg, version: pin, pinned: true } : null; } }, "0.166.0", "aarch64-apple-darwin", false, "FS");
+        { installed: (base, pin, triple, win, fsx) => { calls.push([base, pin, triple, win, fsx === "FS"].join(",")); return o.pkg ? { path: o.pkg, version: pin, pinned: true } : null; } }, "0.166.0", "aarch64-apple-darwin", false, "FS", () => !!o.cred, () => "/h");
       api.calls = calls; api.ran = ran; api.logged = logged; api.codes = o.codes; return api; };
     let m = mkAll({ pkg: PKG_BIN, codes: {} }), d = await m.detectAgentsRaw();
     t("隨包那顆在:偵測用它、via=pkg、detect.log bin=pkg;codexpkg.installed 帶 BASE／CODEX_PIN／TRIPLE／WIN／fs",
@@ -226,7 +226,30 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
     m = mkAll({ pkg: null, codes: {} }); d = await m.detectAgentsRaw();
     t("隨包還沒抓:installed=false、via=null、path=null、why=codex_none、bin=none,沒有任何 codex 子行程",
       !d.codex.installed && d.codex.via === null && d.codex.path === null && d.codex.why === "codex_none" && m.logged[0].codex.bin === "none" && !m.ran.length, { d: d.codex, ran: m.ran });
-    t("…codexBinNow 回 null(回合閘:抓的中途 DOWNLOADING、沒在抓 MISSING)", (await m.codexBinNow()) === null); }
+    t("…codexBinNow 回 null(回合閘:抓的中途 DOWNLOADING、沒在抓 MISSING)", (await m.codexBinNow()) === null);
+    m = mkAll({ pkg: PKG_BIN, codes: { [PKG_BIN]: 1 }, cred: true }); d = await m.detectAgentsRaw();
+    t("憑證檔在:已登入、why=null、via=pkg,完全不跑 CLI;detect.log cred=true、沒有 code", d.codex.loggedIn && d.codex.why === null && d.codex.via === "pkg" && d.codex.path === PKG_BIN && !m.ran.includes(PKG_BIN) && m.logged[0].codex.cred === true && !("code" in m.logged[0].codex), { d: d.codex, ran: m.ran, rec: m.logged[0].codex });
+    m = mkAll({ pkg: PKG_BIN, codes: { [PKG_BIN]: 1 } }); d = await m.detectAgentsRaw();
+    t("憑證檔不在:不判未登入,往下跑 login status(Mac keyring 模式沒有檔)", m.ran.includes(PKG_BIN) && d.codex.why === "codex_nonzero", { d: d.codex, ran: m.ran });
+    m = mkAll({ pkg: PKG_BIN, codes: { [PKG_BIN]: 127 }, cred: false }); await m.detectAgentsRaw(); m.ran.length = 0;
+    const was = m.BAD_BIN.codex; d = await (async () => { m.codes[PKG_BIN] = 127; return m.detectAgentsRaw(); })();
+    t("上次判跑不起來(BAD_BIN):不走憑證捷徑,照樣重試 CLI", was === PKG_BIN && m.ran.includes(PKG_BIN) && d.codex.why === "codex_cantrun", { was, d: d.codex }); }
+  // 憑證檔判斷:假 home,只 stat
+  { const cc = src.match(/^function codexCredOk\(bin, home, fsx = fs\) \{[\s\S]*?\n\}/m), hm = src.match(/^const codexHome = .*$/m);
+    if (!cc || !hm) { t("找得到 codexCredOk／codexHome", false); process.exit(1); }
+    const H = fs.mkdtempSync(path.join(os.tmpdir(), "blave-codexhome-")), BIN = path.join(H, "bin-codex"); fs.writeFileSync(BIN, "#!/bin/sh\n", { mode: 0o755 });
+    const opened = [], fsx = { constants: fs.constants, accessSync: fs.accessSync, statSync: fs.statSync, readFileSync: () => { opened.push("read"); throw new Error("read"); }, openSync: () => { opened.push("open"); throw new Error("open"); } };
+    const f = new Function("path", "fs", cc[0] + "\nreturn codexCredOk;")(path, fsx), ok = (home) => f(BIN, home, fsx);
+    t("codexCredOk:沒有檔 → false", ok(H) === false);
+    fs.writeFileSync(path.join(H, "auth.json"), "{}"); t("…auth.json 在 → true", ok(H) === true); fs.rmSync(path.join(H, "auth.json"));
+    fs.mkdirSync(path.join(H, "secrets")); fs.writeFileSync(path.join(H, "secrets", "codex_auth.age"), "x"); t("…secrets/codex_auth.age 在 → true", ok(H) === true);
+    fs.mkdirSync(path.join(H, "auth.json")); fs.rmSync(path.join(H, "secrets"), { recursive: true }); t("…auth.json 是資料夾 → false", ok(H) === false); fs.rmSync(path.join(H, "auth.json"), { recursive: true });
+    fs.writeFileSync(path.join(H, "auth.json"), "{}");
+    if (process.platform !== "win32") { fs.chmodSync(BIN, 0o000); t("…憑證在但執行檔不能執行 → false(交給 login status 判 cantrun)", ok(H) === false); fs.chmodSync(BIN, 0o755); }
+    t("…全程沒開檔:沒叫 read／open,原始碼只有 accessSync／statSync", opened.length === 0 && !/readFile|openSync|createReadStream/.test(cc[0]), opened);
+    const hf = (env) => new Function("process", "path", "os", hm[0] + "\nreturn codexHome();")({ env }, path, { homedir: () => "/u" });
+    t("codexHome:CODEX_HOME 優先,預設 ~/.codex", hf({ CODEX_HOME: "/c" }) === "/c" && hf({}) === path.join("/u", ".codex"));
+    fs.rmSync(H, { recursive: true, force: true }); }
   // ── 整次偵測的上限(codex-detect-gaps §3.4 D):任何一處 reject 或卡住,畫面都要拿到一份完整形狀、不再停在「偵測中…」 ──
   { const wrap = src.match(/^async function detectAgents\(ms = DETECT_TOTAL_MS\) \{[\s\S]*?\n\}/m), tot = src.match(/^const DETECT_TOTAL_MS = .*$/m);
     const outSrc = src.slice(at("async function detectAgentsRaw() {"), src.indexOf("const rec = {", at("async function detectAgentsRaw() {")));

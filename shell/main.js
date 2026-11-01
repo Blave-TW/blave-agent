@@ -194,6 +194,14 @@ function codexBundled(skipBad) {
   const b = codexpkg.installed(BASE, CODEX_PIN, TRIPLE, WIN, fs);
   return b && !(skipBad && BAD_BIN.codex === b.path) ? b.path : null;
 }
+/* Codex 的登入先看憑證檔在不在:login status 也只查本機、不驗 token,而它在某些機器會卡住。只 stat,絕不開檔。
+   auth.json 是 file 模式、secrets/codex_auth.age 是 Windows keyring 後端;Mac keyring 模式沒有檔,所以沒檔不算沒登入,要往下跑 login status。
+   執行檔不能執行也回 false:讓 login status 去判 cantrun,不然壞掉的那顆會畫成已登入。純函式(fsx 可換) */
+const codexHome = () => process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
+function codexCredOk(bin, home, fsx = fs) {
+  try { fsx.accessSync(bin, fsx.constants.X_OK); } catch (_) { return false; }
+  return [["auth.json"], ["secrets", "codex_auth.age"]].some((p) => { try { return fsx.statSync(path.join(home, ...p)).isFile(); } catch (_) { return false; } });
+}
 /* 這一輪要跑的 codex 執行檔。**只解路徑**,不跑 `login status`——每一則訊息都要用,detectAgents() 一次要開到四個子行程;
    連 Claude 的人一次都不必開(SDK 自己找 claude)。來源是隨包資料夾,不是連結紀錄裡那個 agent 寫得到的字(稽核 R4)。 */
 async function codexBinNow() { return codexBundled(true); }
@@ -250,7 +258,15 @@ async function detectAgentsRaw() {
       out.claude.authOutside = await outside(raw, (x) => { try { return JSON.parse(x.stdout).loggedIn === true; } catch (_) { return false; } });
     }
   }), isolate("codex", async () => {
-    // 只有隨包那顆(codexpkg.js);官方契約:`codex login status` 登入=0、未登入=1(原始碼 cli/src/login.rs:443)
+    // 只有隨包那顆(codexpkg.js)。上次判它跑不起來(BAD_BIN)就不走捷徑,讓 probe 重試
+    const known = codexBundled(true);
+    if (known && codexCredOk(known, codexHome())) {
+      BAD_BIN.codex = null;
+      rec.codex.bin = "pkg"; rec.codex.cred = true;
+      out.codex.installed = true; out.codex.path = known; out.codex.via = "pkg"; out.codex.loggedIn = true;
+      return;
+    }
+    // 官方契約:`codex login status` 登入=0、未登入=1(原始碼 cli/src/login.rs:443)
     const { bin: codexBin, r, raw } = await probe("codex", (seen) => codexBundled(!seen), ["login", "status"], ["login", "status"]);
     rec.codex.bin = codexBin ? "pkg" : "none";
     if (!codexBin) return;

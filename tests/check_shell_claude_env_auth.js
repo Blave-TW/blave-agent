@@ -77,9 +77,9 @@ if [ "$1" = "login" ] && [ "$2" = "status" ]; then { [ -f "$HOME/signed" ] || [ 
 exit 2
 `, { mode: 0o755 });
 const mk = () => new Function("execFile", "spawn", "fs", "path", "process", "loginShellPath", "bundledClaude", "BASE", "WIN", "detectLogWrite",
-  "winOnPath", "pickWinBin", "codexBundled", PIECES + "\nreturn { detectAgents, agentLogin };")(
+  "winOnPath", "pickWinBin", "codexBundled", "codexCredOk", "codexHome", PIECES + "\nreturn { detectAgents, agentLogin };")(
   require("child_process").execFile, require("child_process").spawn, fs, path, process, async () => BIN + ":/usr/bin:/bin", () => null, "/b", false, () => {},
-  (s) => s, () => null, () => path.join(BIN, "codex"));
+  (s) => s, () => null, () => path.join(BIN, "codex"), () => false, () => "/h");
 const VARS = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CODEX_ACCESS_TOKEN", "OPENAI_FEDERATION_RULE_ID", "OPENAI_API_KEY"];
 const saved = Object.fromEntries(["HOME", ...VARS].map((k) => [k, process.env[k]]));
 const setEnv = (o) => { for (const k of VARS) delete process.env[k]; Object.assign(process.env, o); };
