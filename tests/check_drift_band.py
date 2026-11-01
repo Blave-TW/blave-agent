@@ -226,6 +226,7 @@ def fake_retry_get(url, max_retries=6, **kw):
     raise requests.HTTPError("503", response=resp)
 
 
+real_retry_get = data._retry_get
 data._retry_get = fake_retry_get
 try:
     data.fetch_kline(SYM, "1d", "2026-08-01", "2026-09-01", {"api-key": "k"}, max_retries=2)
@@ -234,6 +235,7 @@ except RuntimeError:
     raised = True
 check(raised and retries and set(retries) == {2},
       f"...and fetch_kline hands it down to _retry_get unchanged ({retries})")
+data._retry_get = real_retry_get  # the paper rounds below price through the same module
 reset_sigma(RuntimeError("no bars"))
 legs, gate, err, _ = run(TARGET, TARGET * 1.04)
 run(TARGET, TARGET * 1.04)

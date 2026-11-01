@@ -374,9 +374,12 @@ df = run([10, 9, 8, 7, 6, 5, 4, 3], [2, 1])
 check(labels_of(df) == [3, 4, 5, 6, 7, 8, 9, 10] and source()["reason"] == "no_overlap",
       "5 snapshot starts after Blave's last bar (a minute missing in between) → Blave, reason no_overlap", source())
 days = 3 * 1440
-df = run([days + 2, days + 1, days], [6, 5, 4, 3, 2, 1])
-check(labels_of(df) == [days, days + 1, days + 2] and source()["reason"] == "no_overlap",
-      "5 ① bound 3 days after the backtest, the feed only 6 minutes deep → Blave alone, no_overlap (Blave's delta is what catches up)", source())
+if m - (days + 2) * 60 < first_of_month:  # the 1st–3rd: those bars are last month's, outside `start`
+    print("SKIP  5: bound 3 days back needs the month to be at least 3 days old")
+else:
+    df = run([days + 2, days + 1, days], [6, 5, 4, 3, 2, 1])
+    check(labels_of(df) == [days, days + 1, days + 2] and source()["reason"] == "no_overlap",
+          "5 ① bound 3 days after the backtest, the feed only 6 minutes deep → Blave alone, no_overlap (Blave's delta is what catches up)", source())
 df = run([10, 9, 7, 6, 4, 3], [6, 5, 4, 3, 2, 1])
 check(labels_of(df) == [1, 2, 3, 4, 5, 6, 7, 9, 10] and source()["source"] == "president" and source()["added"] == 3,
       "5 ② a hole inside Blave the feed covers (−5) is filled; one it does not (−8) stays as before", (labels_of(df), source()))

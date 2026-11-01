@@ -158,8 +158,11 @@ same, why = _same_frames(old, new)
 check(same, f"returned frames identical, value for value ({why})")
 same, why = _same_frames(old_files, new_files)
 check(same, f"cache files identical, value for value ({why})")
-check(new["1105"]["Close"].iloc[-3] == old["1105"]["Close"].iloc[-3] and len(new["1105"]) == len(DAYS) - 5,
-      "the revised row and the two new days are in")
+# The seed was cold-fetched this month, so the delta starts at this month: a new day still in last month
+# (the first days of a month) stays out. Otherwise both land.
+landed = sum(day[:7] == NOW.strftime("%Y-%m") for day in DAYS[-2:])
+check(new["1105"]["Close"].iloc[-3] == old["1105"]["Close"].iloc[-3] and len(new["1105"]) == len(DAYS) - 7 + landed,
+      "the revised row and the new days of this month are in")
 
 err, err_calls = _warm("error")
 same, _ = _same_frames(old, err)
