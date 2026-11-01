@@ -61,12 +61,12 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
     d({ a: 0 }, false) === true && d({}, true) === true && d({}, false) === false && d({ a: 0, b: 5 }, true) === false
     && (C.TR_BAGS = { local: { st: null } }, C.trStored = () => ({ a: 0 }), C.onbData().amt) === false);
   // 雲端那一份:清單讀 TR_BAGS.cloud.list;清單還沒載入(listLoaded)前不下結論(不然既有用戶會被當成還沒回測、之後假慶祝)
-  const dc = (list, loaded, stored) => { C.envCloudKind = () => "running"; C.TR_BAGS = { local: { st: null }, cloud: { st: { report: {} }, list, listLoaded: loaded } }; C.trStored = () => stored; C.trZDraft = () => false; return C.onbData("cloud"); };
+  const dc = (list, loaded, stored) => { C.libCloud = () => "live"; C.TR_BAGS = { local: { st: null }, cloud: { st: { report: {} }, list, listLoaded: loaded } }; C.trStored = () => stored; C.trZDraft = () => false; return C.onbData("cloud"); };
   const c1 = dc([{ name: "x", hasBacktest: true }], true, { x: 5 }), c2 = dc([{ name: "x", hasBacktest: true }], false, { x: 5 }), c3 = dc([{ name: "x", hasBacktest: false }], true, {});
   ok("② onbData(cloud):回測過看雲端清單(不看本機 RP.list)、金額看雲端那一袋;清單沒載入 → known false", c1.known && c1.bt && c1.funded && !c2.known && c3.known && !c3.bt && !c3.funded, JSON.stringify([c1, c2, c3]));
   const paint = cutFn(src, "onbPaint");
   ok("② onbPaint:鈕字照 amt 換(po.goAmounts／tr.pick),指紋帶 amt;click 把 ONB.amt 交給 poPick",
-    /\$\("onb-po"\)\.textContent = t\(d\.amt \? "po\.goAmounts" : "tr\.pick"\);/.test(paint) && /JSON\.stringify\(\[LANG, env, ph\.view, S\.steps, d\.amt, d\.wait\]\)/.test(paint) && /poPick\(ONB\.amt\)/.test(src));
+    /\$\("onb-po"\)\.textContent = t\(d\.amt \? "po\.goAmounts" : "tr\.pick"\);/.test(paint) && /JSON\.stringify\(\[LANG, env, ph\.view, S\.steps, d\.amt, why\]\)/.test(paint) && /poPick\(ONB\.amt\)/.test(src));
   // ①的策略卡(spec desktop-welcome-library-first §2.5):onbPaint 有三個提早 return,wcPaint 要在 onbEval 之後、指紋 return 之前,雲端轉 stale／stopped 才收得起來
   ok("② onbPaint:onbEval(env) 之後、if (key === ONB.key) return 之前叫 wcPaint",
     paint.indexOf("wcPaint();") > paint.indexOf("onbEval(env);") && paint.indexOf("wcPaint();") < paint.indexOf("if (key === ONB.key) return;") && paint.indexOf("onbEval(env);") > 0); }
@@ -74,7 +74,7 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
 { const run = (envs) => {
     const el = (id) => ({ id, hidden: false, textContent: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } });
     const els = {}; ["wc", "wf", "onb-fin", "onb-steps", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl", "onb-wait"].forEach((id) => { els[id] = el(id); });
-    const C = { $: (id) => els[id], t: (k) => k, LANG: "zh", JSON, WC: { shown: true }, ONB: { prefs: {}, key: null, amt: false }, onbHead() {}, wcPaint() {}, ENVNOW: "local",
+    const C = { $: (id) => els[id], t: (k) => k, LANG: "zh", JSON, ONB_WAIT_MS: 12000, WC: { shown: true }, ONB: { prefs: {}, key: null, amt: false, v: { local: {}, cloud: {} } }, onbHead() {}, wcPaint() {}, ENVNOW: "local",
       onbEnv: () => C.ENVNOW, onbEval: () => ({ d: { amt: false }, S: { steps: [{ open: true }, { open: true }, { open: false }] }, ph: { view: "E" } }) };
     vm.createContext(C); vm.runInContext(paint, C);
     return envs.map((e) => { C.ENVNOW = e; if (e === "local-open") { C.ENVNOW = "local"; els.wl.hidden = false; els["wl-fold"].attrs["aria-expanded"] = "true"; } C.onbPaint();
@@ -90,16 +90,16 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
   ok("② .fin-grp 行和籤一組(間距 8)、置中;.onb-fin 上距歸零", /\.fin-grp \{ display: flex; flex-direction: column; align-items: center; gap: var\(--space-8\); \}/.test(css) && /\.onb-fin \{ margin: 0;/.test(css));
   const mk = (id) => ({ id, hidden: true, textContent: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } });
   const run = (view) => { const els = {}; ["wc", "wf", "onb-fin", "onb-steps", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl", "onb-wait"].forEach((id) => { els[id] = mk(id); });
-    const C = { $: (id) => els[id], t: (k) => k, LANG: "zh", JSON, WC: { shown: true }, ONB: { prefs: {}, key: null, amt: false }, onbHead() {}, wcPaint() {}, onbEnv: () => "local",
-      onbEval: () => ({ d: { amt: false, bt: true, wait: view === "wait" }, S: { steps: [{ open: false }, { open: false }, { open: false }] }, ph: { view: view === "wait" ? "E" : view } }) };
+    const C = { $: (id) => els[id], t: (k) => k, LANG: "zh", JSON, Date, ONB_WAIT_MS: 12000, WC: { shown: true }, ONB: { prefs: {}, key: null, amt: false, v: { local: { waitAt: view === "wait" ? Date.now() - 13000 : 0 } } }, onbHead() {}, wcPaint() {}, onbEnv: () => "local",
+      onbEval: () => ({ d: { amt: false, bt: true, wait: view === "wait" || view === "waitNew" }, S: { steps: [{ open: false }, { open: false }, { open: false }] }, ph: { view: view === "wait" || view === "waitNew" ? "E" : view } }) };
     vm.createContext(C); vm.runInContext(cutFn(src, "onbPaint"), C); C.onbPaint(); return els; };
   const fin = run("fin"), F = run("F"), E = run("E");
   ok("② fin:#wf 開著、完成行露出,步驟頁收起——三顆籤當場可按(舊碼 #wf 藏著)", !fin.wf.hidden && !fin["onb-fin"].hidden && fin.wc.hidden);
   ok("② F:#wf 開著、沒有完成行;E:#wc 開著、#wf 收起", !F.wf.hidden && F["onb-fin"].hidden && F.wc.hidden && E.wf.hidden && !E.wc.hidden);
-  ok("② #10／#22:回測做完而狀態問過還沒讀到,③ 下面出原因句;其他情況不出", !run("wait")["onb-wait"].hidden && E["onb-wait"].hidden && /<p class="onb-wait" id="onb-wait" data-i18n="onb\.wait" hidden><\/p>/.test(html));
+  ok("② #10／#22:回測做完而狀態沒讀到撐過 ONB_WAIT_MS,③ 下面出原因句;剛沒讀到先不出(只差一輪輪詢不跳版面);其他情況不出", !run("wait")["onb-wait"].hidden && run("waitNew")["onb-wait"].hidden && E["onb-wait"].hidden && /const ONB_WAIT_MS = 12000;/.test(src) && /<p class="onb-wait" id="onb-wait" data-i18n="onb\.wait" hidden><\/p>/.test(html));
   const dd = (st, list) => { const C = { TR_BAGS: { local: { st } }, RP: { list }, trExecState: () => "idle", trWith: () => ({}), trStored: () => ({}), trZDraft: () => false }; vm.createContext(C); vm.runInContext(cutFn(src, "onbData"), C); return C.onbData("local"); };
   ok("② onbData.wait:問過了、沒有報告 → true;開機第一輪還沒回來(st null)不算;讀到了不算", dd({ report: null }, []).wait === true && dd(null, []).wait === false && dd({ report: {} }, []).wait === false
-    && (() => { const C = { TR_BAGS: { cloud: { st: { report: null }, list: [], listLoaded: true } }, RP: { list: [] }, envCloudKind: () => "stopped", trExecState: () => "idle" }; vm.createContext(C); vm.runInContext(cutFn(src, "onbData"), C); return C.onbData("cloud").wait === false; })());
+    && (() => { const C = { TR_BAGS: { cloud: { st: { report: null }, list: [], listLoaded: true } }, RP: { list: [] }, libCloud: () => "stopped", trExecState: () => "idle" }; vm.createContext(C); vm.runInContext(cutFn(src, "onbData"), C); const a = C.onbData("cloud").wait; C.libCloud = () => "stale"; const b = C.onbData("cloud").wait; C.libCloud = () => "live"; return a === false && b === false && C.onbData("cloud").wait === true; })());
   ok("② 完成事件只在 onbEval 送,onbPaint 不碰;同一次開著 V.fin 之後 onbPhase 不再給 event,onb_done 只送一次", !/onb_done/.test(cutFn(src, "onbPaint")) && (src.match(/trackFeature\("onb_done"\)/g) || []).length === 1 && JSON.parse(ph({ fin: true, base: false, complete: true })).event === false);
   const seen = [];
   const mkEl = (tag, cls, txt) => ({ tag, className: cls || "", kids: [], attrs: {}, text: txt == null ? "" : String(txt), on: {}, append(...x) { this.kids.push(...x); }, appendChild(x) { this.kids.push(x); return x; }, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener(k, f) { this.on[k] = f; } });
@@ -111,7 +111,7 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
   A["wf-alert"].kids.find((k) => k.className === "ln-arrow").on.click();
   ok("② 停機的箭頭開自動下單頁、記 wc_stopped_go", seen.join() === "wc_stopped_go,trOpen", seen.join());
   C2.wcAlert("stale");
-  ok("② #26 過時:灰記號、沿用 ho.gate.stale、沒有鈕", A["wc-alert"].calm === true && flat(A["wc-alert"]).includes("ho.gate.stale") && !A["wc-alert"].kids.some((k) => k.className === "ln-arrow"), flat(A["wc-alert"]));
+  ok("② #26 過時:灰記號、沿用 tr.cloud.unknown、沒有鈕", A["wc-alert"].calm === true && flat(A["wc-alert"]).includes("tr.cloud.unknown") && !A["wc-alert"].kids.some((k) => k.className === "ln-arrow"), flat(A["wc-alert"]));
   C2.wcAlert("live");
   ok("② 恢復(live)或本機(null):兩行都收掉", A["wc-alert"].hidden && A["wf-alert"].hidden);
   ok("② wcPaint 每輪都叫 wcAlert,在指紋 return 之前;E 的那行在記號與步驟之間、F 的在 .fin-grp 最上面", cutFn(src, "wcPaint").indexOf("wcAlert(cloud)") > 0 && cutFn(src, "wcPaint").indexOf("wcAlert(cloud)") < cutFn(src, "wcPaint").indexOf("key !== WC.key")

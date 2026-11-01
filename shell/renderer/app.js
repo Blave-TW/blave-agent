@@ -4418,13 +4418,13 @@ function pvCardFoot(pv, v) {
   const k = pvK("pv.f.offer");
   return v.v && v.t && (k === "pv.f.offer" || v.p) ? t(k, v) : "";
 }
-/* 雲端開通頁試用中那一格的訊息句,回答「現在開機要加錢嗎」。日期在卡右上。切換前照舊「之後照上面的價格」。
+/* 雲端開通頁試用中那一格的扣款句,日期在卡右上,「開機不另收」在上一行。切換前照舊「之後照上面的價格」。
    下一期金額 v.x(已排月↔年、內部帳號都算進去),沒有就退 Starter 月價 v.p;到期不會扣、或扣不到的人不講扣款 */
 function planTrialLine(v) {
   if (!v.d) return "";
   if (!planMo()) return t("plan.trialFree", v);
   const pl = (acct && acct.plan) || {}, off = planTrialCx(v) || pl.no_auto_payment || pl.next_charge_source === "free" || pl.next_charge_source === "none", amt = v.x || v.p;
-  return !off && amt ? t("env.open.trial", { p: amt }) : t("env.open.trialOff");
+  return !off && amt ? t("env.open.trial", { p: amt }) : "";
 }
 // 拿到資料之後那張卡的話:切換前按小時付的那條要講「會收錢」(剛因為沒錢被擋過,不能只說「可以用了」);免費那條照舊
 function dataReadyText(s) {
@@ -4772,9 +4772,10 @@ function planVars() {
     tier: planTierLabel(),
     name: cur === "codex" ? "Codex" : cur === "apikey" ? (MP.provider || t("ak.row")) : "Claude Code" };
 }
-/* 開通頁規格列:他那一階(沒有方案就是 Starter)在公開價目的那一筆;拿不到回 null,那一格不畫 */
-function planSpec() {
-  const tier = (acct && acct.plan && acct.plan.tier) || "linux_starter", x = ((pub && pub.tiers) || []).find((r) => r.tier === tier);
+/* 開通頁規格列在公開價目的那一筆;拿不到回 null,那一格不畫。own = 讀他自己那一階(扣款失敗、方案有效)。
+   其餘一律 Starter,跟旁邊的開通價同一階:方案結束列還在,他的 tier 可能是 Premium,配 Starter 價就對不上 */
+function planSpec(own) {
+  const tier = (own && acct && acct.plan && acct.plan.tier) || "linux_starter", x = ((pub && pub.tiers) || []).find((r) => r.tier === tier);
   return x && x.vcpu && x.ram_gb ? { label: x.label, vcpu: x.vcpu, ram: x.ram_gb } : null;
 }
 // 啟動鈕按不按得下去:方案制只要有月價(時價是 null);切換前照舊要月價與時價都有(確認框兩個都講)

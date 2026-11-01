@@ -35,7 +35,7 @@ function paint(lang, kind, token, pv, o) {
   const nums = o.pub === false ? { p: "", t: "", pd: "", yd: "", v: "" } : { p: "1,440", pd: "30", yd: "365", t: 14, v: "10" };
   const V = { h: mo ? "" : "2", pr: mo ? 1440 : null, b: "300", d: "", n: 0, u: "", gu: "", x: "", cy: "", q: "999", ...nums, ...(o.v || {}) };
   const env = { document: { createElement: (tag) => new El(tag), activeElement: null }, $: (id) => E[id], t, LANG: lang, hasToken: token, acct: ac, acctPending: false, pub: pb,
-    planView: () => pv, planVars: () => V, planSpec: () => (o.pub === false ? null : { label: "Starter", vcpu: 2, ram: 4 }), ENV: { sig: {}, askedAt: o.onAsk ? 0 : Date.now() }, planSince: o.slow ? 1 : 0, PLAN_SLOW_MS: o.slow ? 0 : 1e9, planErr: o.err || null,
+    planView: () => pv, planVars: () => V, planSpec: (own) => { if (o.onSpec) o.onSpec.push(!!own); return o.pub === false ? null : { label: "Starter", vcpu: 2, ram: 4 }; }, ENV: { sig: {}, askedAt: o.onAsk ? 0 : Date.now() }, planSince: o.slow ? 1 : 0, PLAN_SLOW_MS: o.slow ? 0 : 1e9, planErr: o.err || null,
     planLoginBusy: !!o.loginBusy, cur: "claude", window: { blave: { openExternal: (u) => seen().push("ext:" + u), cloudRefresh: () => seen().push("cloudRefresh") } }, trEl: (tag, cls, text) => { const n = new El(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; },
     planOpen() { seen().push("planOpen"); }, planLogin() {}, planRelogin() {}, planAsk() {}, acctUrl: () => "u", acctCheck() { seen().push("acctCheck"); }, pubLoad: async () => { if (o.onAsk) o.onAsk.push("pubLoad"); }, envPlanChanged() {}, trPollSoon() { seen().push("after"); }, hoBack() {}, hoStay() {},
     planMo: () => mo, planFailing: () => false, planRepay() {}, planPriceOk: (v) => (mo ? !!v.pr : !!(v.p && v.h)), bindGo: (n) => seen().push("bind:" + n), planWebGo() {}, trackFeature: (n) => seen().push("feature:" + n) };
@@ -61,40 +61,42 @@ const W = {
 const walk = (n, out = []) => { out.push(n); n.kids.forEach((k) => typeof k === "object" && walk(k, out)); return out; };
 const one = (r, cls) => walk(r.page).find((n) => (" " + n.className + " ").includes(" " + cls + " "));
 const mainBtn = (r) => walk(r.page).find((n) => n.dataset.k === "main");
-const noPitch = (r) => !one(r, "cv-card") && !r.text.includes("1,440") && !one(r, "cv-more");
+const noPitch = (r) => !one(r, "cv-card") && !r.text.includes("1,440") && !one(r, "ln-arrow");
 for (const lang of ["zh", "en"]) {
   const S = STR[lang], sub = (k, o) => { let s = S[k]; for (const x in o || {}) s = s.split("{" + x + "}").join(o[x]); return s; }, spec = "Starter · 2 vCPU · 4 GB";
   const out = paint(lang, "none", false, "out", { mo: true });
-  ok(lang + " out:一個標題、一張卡;標題同 web bc_intro_h1;規格列 → 價格 → 其他方案 → 含什麼 → 試用句 → 主鈕 → 鈕下一行;沒有「雲端」＋「還沒有雲端主機」那組頁首",
-    out.parts.join() === "h3,div.cv-card" && one(out, "cv-card").kids.map((k) => k.className).join() === "cv-top,cv-more,cv-note,cv-slot,cv-acts,cv-foot" && out.page.kids[0].textContent === W[lang].h, out.parts.join());
+  ok(lang + " out:一個標題、一張卡;標題同 web bc_intro_h1;規格列 → 價格與其他方案同一塊 → 含什麼 → 試用句 → 主鈕 → 鈕下一行;沒有「雲端」＋「還沒有雲端主機」那組頁首",
+    out.parts.join() === "h3,div.cv-card" && one(out, "cv-card").kids.map((k) => k.className).join() === "cv-top,cv-note,cv-slot,cv-acts,cv-foot" && one(out, "cv-prw").kids.map((k) => k.className).join() === "cv-pr,ln-arrow" && out.page.kids[0].textContent === W[lang].h, out.parts.join());
   ok(lang + " out:規格讀 planSpec、價格走 env.open.price(每 30 天,不是月換算)", one(out, "cv-spec").textContent === spec && one(out, "cv-pr").textContent === W[lang].price, one(out, "cv-pr") && one(out, "cv-pr").textContent);
   ok(lang + " out:含什麼 11 字那句、試用句帶天數、鈕字不帶金額;不預告登入送的額度", one(out, "cv-note").textContent === W[lang].note && one(out, "cv-slot").textContent === sub("env.open.trialOffer", { t: 14 })
     && mainBtn(out).textContent === S["cn.blave.btn"] && one(out, "cv-foot").textContent === W[lang].cli && !out.text.includes("30 " + (lang === "zh" ? "額度" : "credit")) && !/999/.test(out.text), out.text);
   const seen = [], more = walk(out.page).find((n) => n.dataset.k === "more"); more.click(seen);
-  ok(lang + " 其他方案與月價:外開定價頁、帶 from=desktop、記 cloud_pricing;不再開設定頁", seen.join() === "feature:cloud_pricing,ext:https://blave.org/landing/" + lang + "/pricing?from=desktop" && more.textContent === S["env.open.more"], seen.join());
+  ok(lang + " 其他方案與月價:外開定價頁、帶 from=desktop、記 cloud_pricing;不再開設定頁", seen.join() === "feature:cloud_pricing,ext:https://blave.org/landing/" + lang + "/pricing?from=desktop" && more.className === "ln-arrow" && more.kids[0].textContent === S["env.open.more"] && more.kids[1].attrs["aria-hidden"] === "true" && !/→/.test(S["env.open.more"]), seen.join());
   const bare = paint(lang, "none", false, "out", { mo: false, pub: false });
-  ok(lang + " 公開價目拿不到:規格列、價格、試用句整格不畫,不寫死、不露 {t}", !one(bare, "cv-top") && !one(bare, "cv-slot") && !/\{|undefined|TWD|vCPU/.test(bare.text), bare.text);
+  ok(lang + " 公開價目拿不到:規格列、價格、試用句整格不畫,不寫死、不露 {t}", !one(bare, "cv-spec") && !one(bare, "cv-pr") && !one(bare, "cv-slot") && !/\{|undefined|TWD|vCPU/.test(bare.text), bare.text);
   const wait = paint(lang, "none", false, "out", { mo: true, loginBusy: true });
   ok(lang + " 等瀏覽器授權:主鈕換描邊的取消、鈕下一行換等待句,卡不變", mainBtn(wait).className === "btn-out" && mainBtn(wait).textContent === S["oauth.cancel"] && one(wait, "cv-foot").textContent === S["pv.w.waiting"] && !!one(wait, "cv-pr"));
   const ho = paint(lang, "none", false, "out", { mo: true, pid: "策略甲" });
   ok(lang + " 從「送上雲端」進來:標題下多一行等著的那支", ho.parts.join() === "h3,p.cv-pend,div.cv-card" && ho.page.kids[1].textContent === sub("env.open.pend", { id: "策略甲" }), ho.parts.join());
   const card = paint(lang, "none", true, "offer", { mo: true }), s2 = []; mainBtn(card).click(s2);
   ok(lang + " 綁卡態:鈕字「綁卡開始試用」不帶金額、記 bind_cloud;金額在價格列,扣款句不重講,驗證金與自動儲值留在綁卡頁", mainBtn(card).textContent === S["env.open.bind"] && !/\d/.test(mainBtn(card).textContent) && s2.join() === "bind:bind_cloud"
-    && one(card, "cv-slot").textContent === sub("env.open.offer", { t: 14 }) && !one(card, "cv-slot").textContent.includes("1,440") && !card.text.includes(S["pv.f.offer.m"].slice(0, 6)) && one(card, "cv-pr").textContent === W[lang].price && !!one(card, "cv-more"), card.text);
+    && one(card, "cv-slot").textContent === sub("env.open.offer", { t: 14 }) && !one(card, "cv-slot").textContent.includes("1,440") && !card.text.includes(S["pv.f.offer.m"].slice(0, 6)) && one(card, "cv-pr").textContent === W[lang].price && !!one(card, "ln-arrow"), card.text);
   const plan = paint(lang, "none", true, "plan", { mo: true }), inc = paint(lang, "none", true, "included", { mo: true });
-  ok(lang + " 沒方案／API 方案戶:主鈕到網站開主機;訊息各一句;招攬態有其他方案與含什麼", mainBtn(plan).textContent === S["plan.cloudWeb"] && one(plan, "cv-slot").textContent === S["pv.f.plan.m"] && one(inc, "cv-slot").textContent === S["env.open.included"] && !!one(inc, "cv-more") && !!one(inc, "cv-note"), plan.text);
+  ok(lang + " 沒方案／API 方案戶:主鈕到網站開主機;訊息各一句;招攬態有其他方案與含什麼", mainBtn(plan).textContent === S["plan.cloudWeb"] && one(plan, "cv-slot").textContent === S["pv.f.plan.m"] && one(inc, "cv-slot").textContent === S["env.open.included"] && !!one(inc, "ln-arrow") && !!one(inc, "cv-note"), plan.text);
+  const due = paint(lang, "none", true, "included", { mo: true, acct: { plan: { tier: "linux_starter" } } });
+  ok(lang + " 到期等續扣(有方案列、落在 included):不出 API 方案那句", !one(due, "cv-slot") && !due.text.includes(S["env.open.included"]) && !!one(due, "cv-note"), due.text);
   const trial = paint(lang, "none", true, "trial", { mo: true, v: { d: "11/14", n: 13 } }), yr = paint(lang, "none", true, "trial", { mo: true, v: { d: "11/14", n: 13, x: "14,400" } });
-  ok(lang + " 試用中:右上換日期、不擺價格、沒有招攬;回答開機要不要加錢;金額跟著 plan(年繳 14,400)", one(trial, "cv-pr").textContent === sub("env.open.tagTrial", { d: "11/14" }) && one(trial, "cv-pr").className.includes("is-tag") && !one(trial, "cv-more") && !one(trial, "cv-note")
+  ok(lang + " 試用中:右上換日期、不擺價格、沒有招攬;回答開機要不要加錢;金額跟著 plan(年繳 14,400)", one(trial, "cv-pr").textContent === sub("env.open.tagTrial", { d: "11/14" }) && one(trial, "cv-pr").className.includes("is-tag") && !one(trial, "ln-arrow") && one(trial, "cv-note").textContent === S["env.open.trialOff"]
     && one(trial, "cv-slot").textContent === sub("env.open.trial", { p: "1,440" }) && one(yr, "cv-slot").textContent === sub("env.open.trial", { p: "14,400" }), trial.text);
   const off = paint(lang, "none", true, "trial", { mo: true, v: { d: "11/14", n: 13 }, acct: { plan: { tier: "linux_starter", next_charge_source: "none" } } });
-  ok(lang + " 試用中但到期不會扣:只講開機不另收,不講扣款", one(off, "cv-slot").textContent === S["env.open.trialOff"], off.text);
+  ok(lang + " 試用中但到期不會扣:只講開機不另收,不講扣款", one(off, "cv-note").textContent === S["env.open.trialOff"] && !one(off, "cv-slot"), off.text);
   const on = paint(lang, "none", true, "planOn", { mo: true, v: { u: "12/01" } });
-  ok(lang + " 方案有效、沒主機:右上日期、同階不另收、主鈕到網站開", one(on, "cv-pr").textContent === sub("env.open.tagPlan", { u: "12/01" }) && one(on, "cv-slot").textContent === S["env.open.planOn"] && mainBtn(on).textContent === S["plan.cloudWeb"] && !one(on, "cv-more"), on.text);
+  ok(lang + " 方案有效、沒主機:右上日期、同階不另收、主鈕到網站開", one(on, "cv-pr").textContent === sub("env.open.tagPlan", { u: "12/01" }) && one(on, "cv-slot").textContent === S["env.open.planOn"] && mainBtn(on).textContent === S["plan.cloudWeb"] && !one(on, "ln-arrow"), on.text);
   const rp = paint(lang, "none", true, "payFail", { mo: true, v: { gu: "12/08", x: "14,400", cy: "annual" } }), rp0 = paint(lang, "none", true, "payFail", { mo: true });
   ok(lang + " 扣款失敗:標題換掉、主鈕重新付款、補「資料已暫停」;金額與週期讀他那一期,不讀 Starter;日期拿不到退不帶日期那句", rp.page.kids[0].textContent === S["env.open.failH"] && mainBtn(rp).textContent === S["plan.repay"] && one(rp, "cv-pr").textContent === W[lang].yearly
-    && one(rp, "cv-slot").textContent === sub("env.open.repay", { gu: "12/08" }) && one(rp0, "cv-slot").textContent === S["env.open.repayNoNum"] && !one(rp, "cv-more"), rp.text);
+    && one(rp, "cv-slot").textContent === sub("env.open.repay", { gu: "12/08" }) && one(rp0, "cv-slot").textContent === S["env.open.repayNoNum"] && !one(rp, "ln-arrow"), rp.text);
   const er = paint(lang, "none", true, "plan", { mo: true, err: { key: "plan.err.charge" } });
-  ok(lang + " 操作失敗:訊息格讓給錯誤句、不招攬;主鈕換卡、鈕下一行留前往儲值", one(er, "plan-err").textContent === S["plan.err.charge"] && !one(er, "cv-slot") && !one(er, "cv-note") && !one(er, "cv-more") && mainBtn(er).textContent === S["plan.changeCard"] && one(er, "cv-foot").textContent === S["plan.addCredit"], er.text);
+  ok(lang + " 操作失敗:訊息格讓給錯誤句、不招攬;主鈕換卡、鈕下一行留前往儲值", one(er, "plan-err").textContent === S["plan.err.charge"] && !one(er, "cv-slot") && !one(er, "cv-note") && !one(er, "ln-arrow") && mainBtn(er).textContent === S["plan.changeCard"] && one(er, "cv-foot").textContent === S["plan.addCredit"], er.text);
   const rl = paint(lang, "none", true, "revoked", { mo: true });
   ok(lang + " 登入失效:狀態頁,一句＋重新登入,不留招攬字", noPitch(rl) && rl.text.includes(S["env.empty.relogin"]) && mainBtn(rl).textContent === S["plan.relogin"], rl.text);
   const go = paint(lang, "starting", true, "plan", { mo: true }), slow = paint(lang, "starting", true, "plan", { mo: true, slow: true });
@@ -122,11 +124,13 @@ for (const lang of ["zh", "en"]) {
   ok("已登入也問公開價目(規格列、一期幾天要它):!pub 就問,同一道 30 秒節流", asked.join() === "pubLoad", asked.join());
   const mainSrc = read(path.join(R, "..", "main.js"));
   ok("publicPricing 帶 tiers:階、名字、vCPU、RAM,linux 與 windows 都進", /tiers: \[\.\.\.\(Array\.isArray\(b\.linux\) \? b\.linux : \[\]\), \.\.\.\(Array\.isArray\(b\.windows\) \? b\.windows : \[\]\)\]/.test(mainSrc) && /tier: x\.tier, label: x\.label, vcpu: n\(x\.vcpu\), ram_gb: n\(x\.ram_gb\)/.test(mainSrc));
-  const spec = (ac, pb) => new Function("acct", "pub", cut(app, "planSpec") + "\nreturn planSpec();")(ac, pb), T = { tiers: [{ tier: "linux_starter", label: "Starter", vcpu: 2, ram_gb: 4 }, { tier: "linux_premium", label: "Premium", vcpu: 4, ram_gb: 16 }] };
-  ok("planSpec:沒方案讀 Starter、有方案讀他那一階;價目拿不到回 null", spec(null, T).label === "Starter" && spec({ plan: { tier: "linux_premium" } }, T).ram === 16 && spec(null, null) === null && spec({ plan: { tier: "x" } }, T) === null);
+  const spec = (ac, pb, own) => new Function("acct", "pub", "own", cut(app, "planSpec") + "\nreturn planSpec(own);")(ac, pb, own), T = { tiers: [{ tier: "linux_starter", label: "Starter", vcpu: 2, ram_gb: 4 }, { tier: "linux_premium", label: "Premium", vcpu: 4, ram_gb: 16 }] };
+  ok("planSpec:招攬態一律 Starter(方案已結束的 Premium 也是),跟開通價同一階;own 才讀他那一階;價目拿不到回 null", spec(null, T).label === "Starter" && spec({ plan: { tier: "linux_premium" } }, T).ram === 4 && spec({ plan: { tier: "linux_premium" } }, T, true).ram === 16 && spec(null, null) === null && spec({ plan: { tier: "x" } }, T, true) === null);
+  const sp = []; paint("zh", "none", true, "payFail", { mo: true, onSpec: sp }); paint("zh", "none", true, "planOn", { mo: true, onSpec: sp }); paint("zh", "none", true, "plan", { mo: true, onSpec: sp }); paint("zh", "none", true, "trial", { mo: true, v: { d: "1", n: 1 }, onSpec: sp }); paint("zh", "none", false, "out", { mo: true, onSpec: sp });
+  ok("envPaintEmpty:只有扣款失敗、方案有效讀自己那一階", sp.join() === "true,true,false,false,false", sp.join());
   const css2 = css, html = read(path.join(R, "index.html"));
-  ok("版面:標題 30、窄欄 26,主鈕 36;卡 400 寬光學置中;拿掉 .main-head 與 #cv-desc,#cv-h 留給讀屏與焦點", /\.cv-ce h3 \{ margin: 0; font-size: 30px;/.test(css2) && /@container \(max-width: 519px\) \{\s*\.cv-ce h3 \{ font-size: 26px; \}/.test(css2) && /\.cv-acts \.btn-fill, \.cv-acts \.btn-out \{ width: 100%; height: 36px; \}/.test(css2)
-    && /\.cv-ce, \.cv-st \{ margin: auto; width: 100%; max-width: 400px; padding-bottom: var\(--space-48\); \}/.test(css2) && !/cv-desc/.test(html + trade) && /<div class="trv" id="cv-empty" hidden>\s*<!--[^\n]*-->\s*<h5 class="sr-only" id="cv-h" tabindex="-1"/.test(html), html.slice(html.indexOf('id="cv-empty"'), html.indexOf('id="cv-empty"') + 200));
+  ok("版面:標題 30、窄欄 26,主鈕 36;卡 400 寬光學置中;拿掉 .main-head 與 #cv-desc,#cv-h 留給讀屏與焦點", /\.cv-ce h3 \{ margin: 0; font-size: 30px;/.test(css2) && /@container \(max-width: 519px\) \{\s*\.cv-ce h3 \{ font-size: 26px; \}/.test(css2) && /\.cv-prw \{ margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; \}/.test(css2) && !/\.cv-more/.test(css2) && /\.cv-acts \.btn-fill, \.cv-acts \.btn-out \{ width: 100%; height: 36px; \}/.test(css2)
+    && /\.cv-ce, \.cv-st \{ margin: auto; width: 100%; max-width: 400px; padding-bottom: var\(--space-48\); \}/.test(css2) && !/cv-desc/.test(html + trade) && /<div class="trv" id="cv-empty" hidden>\s*<!--[^\n]*-->\s*<h2 class="sr-only" id="cv-h" tabindex="-1"/.test(html), html.slice(html.indexOf('id="cv-empty"'), html.indexOf('id="cv-empty"') + 200));
   const sent = (s, lang) => s.split(lang === "zh" ? /[。！？]/ : /(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
   const cnt = (p, lang) => (lang === "zh" ? (p.replace(/\{[a-z]+\}/g, "字").replace(/[0-9A-Za-z][0-9A-Za-z,.\-]*/g, "字").match(/[一-鿿字]/g) || []).length : p.split(/\s+/).length);
   const NEWK = ["env.open.h", "env.open.lead", "env.open.pend", "env.open.trialOffer", "env.open.offer", "env.open.included", "env.open.trial", "env.open.trialOff", "env.open.planOn", "env.open.repay", "env.open.repayNoNum", "env.empty.starting", "env.empty.unknown", "wc.stopped", "onb.wait"];

@@ -165,6 +165,8 @@ const WC = { shown: false, armed: false, key: null, retried: null, synced: null,
 const onbV = () => ({ base: null, fin: false, open: [false, false, false] });
 const ONB = { prefs: null, v: { local: onbV(), cloud: onbV() }, key: null, amt: false };
 const ONB_FLAG = { local: "done", cloud: "cloudDone" };
+/* 原因句要沒讀到撐過這麼久才出。狀態檔在就是第一輪讀到,不會出;只差一輪時畫面要等下一輪輪詢(閒置 15 秒,實測整段亮 15 秒),不延遲就是白跳一次版面 */
+const ONB_WAIT_MS = 12000;
 const onbEnv = () => (typeof ENV !== "undefined" && ENV.cur === "cloud" ? "cloud" : "local");
 
 const ONB_STEP_KEYS = ["onb.s1", "onb.s2", "onb.s3"];   // 字逐字同網頁 workspace_onb_s1–s3(兩語)
@@ -190,8 +192,8 @@ function onbData(env) {
   const funded = Object.keys(stored).some((n) => Number(stored[n]) > 0);
   // ③ 已經勾了沒存、或存了但金額全 0:下一步是填金額,不是再開一次框(借頁首 trZCase 的 draft／amt 兩個判斷;那支要綁好帳戶才回值,新手多半沒綁,不整支照搬)
   const amt = known && !funded && (Object.keys(stored).length > 0 || trWith(L, () => trZDraft()));
-  // wait:狀態問過了還是沒讀到。平常只閃一下,常駐程式起不來時會一直這樣,③ 沒有鈕,要講原因(開機第一輪還沒回來不算;雲端停機有自己那一行)
-  return { known, bt: (cloud ? (L && L.list) || [] : RP.list).some((x) => x.hasBacktest), funded, amt, wait: !!st && !known && !(cloud && envCloudKind(st) === "stopped") };
+  // wait:狀態問過了還是沒讀到。平常只閃一下,常駐程式起不來時會一直這樣,③ 沒有鈕,要講原因(開機第一輪還沒回來不算;雲端停機、過時有自己那一行)
+  return { known, bt: (cloud ? (L && L.list) || [] : RP.list).some((x) => x.hasBacktest), funded, amt, wait: !!st && !known && !(cloud && libCloud() !== "live") };
 }
 /* ── ①的策略卡(spec desktop-welcome-library-first §2–3)── */
 // 手上沒有、作廢了、換了語言才問(主行程有 5 分鐘快取)。不從 wcPaint 叫:libLoad 結束會叫 wcPaint,讀不到時會一直重打。
@@ -241,7 +243,7 @@ function wcAlert(cloud) {
     p.textContent = ""; p.hidden = !kind; p.classList.toggle("calm", kind === "stale");
     if (!kind) return;
     const m = wdEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
-    p.append(m, wdEl("span", "", t(kind === "stopped" ? "wc.stopped" : "ho.gate.stale")));
+    p.append(m, wdEl("span", "", t(kind === "stopped" ? "wc.stopped" : "tr.cloud.unknown")));
     if (kind !== "stopped") return;
     const a = wdEl("button", "ln-arrow"), ar = wdEl("span", "ar", "→");
     a.type = "button"; ar.setAttribute("aria-hidden", "true"); a.append(wdEl("span", "lbl", t("wc.goTrade")), ar);
@@ -361,8 +363,11 @@ function onbPaint() {
   onbEval(env === "cloud" ? "local" : "cloud");
   const { d, S, ph } = onbEval(env);
   ONB.amt = d.amt;
+  const V = ONB.v[env];
+  if (!d.wait) V.waitAt = 0; else if (!V.waitAt) V.waitAt = Date.now();
+  const why = d.wait && d.bt && Date.now() - V.waitAt >= ONB_WAIT_MS;
   wcPaint();   // 放在指紋 return 之前:切視角、雲端轉 stale／stopped 都走這裡,卡要跟著換或收(自己有指紋)
-  const key = JSON.stringify([LANG, env, ph.view, S.steps, d.amt, d.wait]);
+  const key = JSON.stringify([LANG, env, ph.view, S.steps, d.amt, why]);
   if (key === ONB.key) return;
   ONB.key = key;
   wf.hidden = ph.view === "E"; wc.hidden = ph.view !== "E";
@@ -374,7 +379,7 @@ function onbPaint() {
   fold.hidden = cloud;
   if (cloud) { $("wl").hidden = true; fold.setAttribute("aria-expanded", "false"); }
   $("onb-po").textContent = t(d.amt ? "po.goAmounts" : "tr.pick");
-  $("onb-wait").hidden = !(d.wait && d.bt);
+  $("onb-wait").hidden = !why;
 }
 $("onb-lib").addEventListener("click", () => libOpen());
 // ③ 到策略組合頁並打開選擇策略框,讓用戶自己勾(Wei 0.1.29:不替他挑一支);勾了沒存／存了 0 → 落在金額格

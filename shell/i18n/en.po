@@ -2845,7 +2845,7 @@ msgid "env.open.lead"
 msgstr "Blave market and positioning data included."
 
 msgid "env.open.more"
-msgstr "Other plans and prices →"
+msgstr "Other Plans and Prices"
 
 msgid "env.open.spec"
 msgstr "{label} · {vcpu} vCPU · {ram} GB"
@@ -2866,7 +2866,7 @@ msgid "env.open.trialOffer"
 msgstr "Your first card gets a {t}‑day trial. Cancel during it and nothing is charged."
 
 msgid "env.open.offer"
-msgstr "{t}‑day trial, cancel during it and nothing is charged. The first period is charged when it ends."
+msgstr "{t}‑day trial, cancel during it and nothing is charged. The first period is charged automatically when it ends."
 
 msgid "env.open.bind"
 msgstr "Add Card, Start Trial"
@@ -2875,7 +2875,7 @@ msgid "env.open.included"
 msgstr "Your API plan includes data, not a machine."
 
 msgid "env.open.trial"
-msgstr "Starting a machine costs nothing extra. {p} TWD is charged when the trial ends, unless you cancel."
+msgstr "{p} TWD is charged automatically when the trial ends, unless you cancel."
 
 msgid "env.open.trialOff"
 msgstr "Starting a machine costs nothing extra."
@@ -2902,7 +2902,7 @@ msgid "wc.goTrade"
 msgstr "Go to Auto Trading"
 
 msgid "onb.wait"
-msgstr "Order status hasn’t loaded yet. You can open Portfolio from the sidebar instead."
+msgstr "Order status hasn’t loaded yet. You can add to Portfolio once it does."
 
 msgid "side.cloud.emptyReady"
 msgstr "Your machine is up. Strategies you send here will be listed."

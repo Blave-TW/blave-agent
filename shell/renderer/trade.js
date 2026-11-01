@@ -1541,10 +1541,11 @@ function envOpenCard(view, pv, v, mo, err) {
   if (view === "out") msg = mo && v.t ? t("env.open.trialOffer", v) : "";
   else if (view === "card") msg = !mo || pv !== "offer" ? pvCardFoot(pv, v) : v.t ? t("env.open.offer", v) : "";
   else if (trial) msg = planTrialLine(v);
-  else if (view === "start") msg = !mo ? "" : t(pv === "included" ? "env.open.included" : "pv.f.plan.m");
+  // included 只看資料權限:方案到期等續扣那幾小時,沒 API 方案的人也在這格。renderer 拿不到 API 方案旗標,有方案列就不講
+  else if (view === "start") msg = !mo ? "" : pv !== "included" ? t("pv.f.plan.m") : acct && acct.plan && acct.plan.tier ? "" : t("env.open.included");
   else if (view === "web") msg = t("env.open.planOn");
   else if (view === "repay") msg = t(v.gu ? "env.open.repay" : "env.open.repayNoNum", v);
-  return { head: view === "repay" ? "env.open.failH" : "env.open.h", tag, price, more: pitch, note: pitch, msg };
+  return { head: view === "repay" ? "env.open.failH" : "env.open.h", tag, price, more: pitch, note: pitch ? t("env.open.lead") : trial && mo ? t("env.open.trialOff") : "", msg };
 }
 /* 側欄策略列名字前的綠呼吸點——照網頁 stratRunState(Wei 10-14,web 9c1d768c):點 = 這支在配置裡、主機照 K 線週期在算它的訊號。
    ① 剛存進組合的 5 分鐘內先亮(排程 / 首跑 / 回報還在路上);剛移出的 5 分鐘內先熄(回報要下一輪才少掉這個名字)
@@ -6553,7 +6554,7 @@ function envPaintSide(kind, st) {
 function envPaintEmpty(kind, pid) {
   // 「準備好了」那一態在 envOpenView 之外另判:它的條件是「還有一支等著送上雲端」,不是帳號狀態
   const ready = kind === "running" && !!pid;
-  const pv = planView(), view = ready ? "ready" : envOpenView(kind, hasToken, pv), v = planVars(), spec = planSpec();
+  const pv = planView(), view = ready ? "ready" : envOpenView(kind, hasToken, pv), v = planVars(), spec = planSpec(view === "repay" || view === "web");
   // 這一頁要的數字:帳號狀態與公開價目(規格列與一期幾天登入後也讀這份)。查回來會重畫
   // 最多每 30 秒問一次:查不到(離線)時重畫又會走到這裡,不設間隔就是一個空轉的迴圈
   if (((hasToken && !acct && !acctPending) || !pub) && Date.now() - (ENV.askedAt || 0) > 30000) {
@@ -6600,14 +6601,15 @@ function envPaintEmpty(kind, pid) {
     const c = envOpenCard(view, pv, v, planMo(), err), page = trEl("div", "cv-ce"), card = trEl("div", "cv-card"); box.appendChild(page);
     page.appendChild(trEl("h3", "", t(c.head)));
     if (pid) page.appendChild(trEl("p", "cv-pend", t("env.open.pend", { id: pid })));
-    if (spec || c.tag || c.price) {
-      const top = trEl("div", "cv-top");
+    if (spec || c.tag || c.price || c.more) {
+      const top = trEl("div", "cv-top"), right = trEl("div", "cv-prw");
       if (spec) top.appendChild(trEl("span", "cv-spec", t("env.open.spec", spec)));
-      if (c.tag || c.price) top.appendChild(trEl("span", "cv-pr" + (c.tag ? " is-tag" : ""), c.tag || c.price));
+      if (c.tag || c.price) right.appendChild(trEl("span", "cv-pr" + (c.tag ? " is-tag" : ""), c.tag || c.price));
+      if (c.more) { const a = btn("ln-arrow", "", cloudPricingGo, "more"), ar = trEl("span", "ar", "→"); ar.setAttribute("aria-hidden", "true"); a.append(trEl("span", "lbl", t("env.open.more")), ar); right.appendChild(a); }
+      if (c.tag || c.price || c.more) top.appendChild(right);
       card.appendChild(top);
     }
-    if (c.more) { const m = trEl("div", "cv-more"); m.appendChild(btn("btn-quiet", t("env.open.more"), cloudPricingGo, "more")); card.appendChild(m); }
-    if (c.note) card.appendChild(trEl("p", "cv-note", t("env.open.lead")));
+    if (c.note) card.appendChild(trEl("p", "cv-note", c.note));
     if (err) card.appendChild(errEl()); else if (c.msg) card.appendChild(trEl("p", "cv-slot", c.msg));
     const act = trEl("div", "cv-acts"); act.appendChild(main); card.appendChild(act);
     if (side) { const f = trEl("p", "cv-foot"); f.appendChild(side); card.appendChild(f); }

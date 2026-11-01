@@ -78,8 +78,8 @@ const stepWhere = (c) => (c && c.where) || "local";
     ok(lang + " 方案制試用句:講到期扣多少,不寫「上面的價格」", tr.includes("1,440") && !OLD.test(tr), tr); }
   const Z = (acct, v) => run(STR, "zh", acct, null);
   ok("方案制試用句:下一期金額優先 v.x", Z(MO).planTrialLine({ ...V, x: "14,400" }).includes("14,400") && !Z(MO).planTrialLine({ ...V, x: "14,400" }).includes("1,440 "));
-  ok("方案制試用句:已取消、自動扣款沒開、內部帳號、扣不到都不說會扣", [{ trial_cancel_at_end: true }, { plan: { tier: "x", no_auto_payment: "auto_topup_off" } }, { plan: { tier: "x", next_charge_source: "free" } }, { plan: { tier: "x", next_charge_source: "none" } }].every((a) => run(STR, "zh", { ...MO, ...a }, null).planTrialLine(V) === "開機不另收。"));
-  ok("方案制數字拿不到:扣款句不出(不留「扣第一期  TWD」);試用句退回不講扣款", Z(MO).pvCardFoot("offer", { ...V, p: "" }) === "" && Z(MO).pvCardFoot("noTrial", { ...V, b: "" }) === "" && Z(MO).planTrialLine({ ...V, p: "" }) === "開機不另收。");
+  ok("方案制試用句:已取消、自動扣款沒開、內部帳號、扣不到都不說會扣", [{ trial_cancel_at_end: true }, { plan: { tier: "x", no_auto_payment: "auto_topup_off" } }, { plan: { tier: "x", next_charge_source: "free" } }, { plan: { tier: "x", next_charge_source: "none" } }].every((a) => run(STR, "zh", { ...MO, ...a }, null).planTrialLine(V) === ""));
+  ok("方案制數字拿不到:扣款句不出(不留「扣第一期  TWD」);試用句退回不講扣款", Z(MO).pvCardFoot("offer", { ...V, p: "" }) === "" && Z(MO).pvCardFoot("noTrial", { ...V, b: "" }) === "" && Z(MO).planTrialLine({ ...V, p: "" }) === "");
   const pre = run(STR, "zh", { data_access: "none" }, null);
   ok("切換前照舊:綁卡按小時那句、試用句「之後照上面的價格」", pre.pvCardFoot("offer", V).includes("整點小時") && pre.planTrialLine(V).includes("上面的價格"));
   ok("trade.js 雲端開通頁不再自己選字:走 pvCardFoot／planTrialLine", /pvCardFoot\(pv, v\)/.test(src2) && /planTrialLine\(v\)/.test(src2) && !/t\("pv\.f\.offer"|t\("pv\.f\.noTrial"|t\("plan\.trialFree"/.test(src2)); }
