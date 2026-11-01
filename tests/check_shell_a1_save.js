@@ -122,6 +122,14 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
     vm.runInContext("trCfTick()", ctx);
     const rows = flat(f.box.extra).filter((n) => /^cf-row( |$)/.test(n.className)).map((n) => n.textContent);
     ok("① …開著時報告帶來預覽(trCfTick):表不補畫(會不會送單沒翻面)", J(rows) === J(f.rows), J({ rows, before: f.rows })); }
+  // 開著時下單程式啟動了(會不會送單翻面):tick 要整個重畫,標題換「儲存並下單」+ 記號(表不補畫只限沒翻面)
+  { const S = bag(draft({ noPv: true })); const f = open(); DOM["del-scrim"].hidden = false;
+    vm.runInContext("delCtx = TR_CF.cur.ctx", ctx);
+    S.st.report.venues = { paper: V }; S.st.report.account = { read_at: now, venues: { paper: { ok: true, equity: 10000, currency: "USDT", positions: {} } } };
+    S.st.report.last_reconcile = { ts: new Date(now * 1000).toISOString().slice(0, 19), actual: {}, target: {}, gates: {} };
+    vm.runInContext("trCfTick()", ctx);
+    ok("① 開著時翻成會送單(trCfTick):標題、主鈕換「儲存並下單」、記號出現", f.title === "tr.cf.title" && DOM["del-title"].textContent === "tr.cf.titleFire" && DOM["del-ok"].textContent === "tr.cf.titleFire" && DOM["del-mark"].hidden === false,
+      J({ t: DOM["del-title"].textContent, ok: DOM["del-ok"].textContent, mk: DOM["del-mark"].hidden })); }
   { bag(draft({ firing: true, paper: true, noPv: true })); const f = open(); await tick();
     ok("① 在跑+預覽沒到:「儲存並下單」+ 模擬記號、主鈕一開就能按;框底只有下一輪那句,沒有半句",
       f.title === "tr.cf.titleFire" && f.ok === "tr.cf.titleFire" && f.mark === "tr.mode.paper" && !f.wait && !f.okDisabled && J(f.notes) === J(["cf-note:tr.cf.nextRound"])
