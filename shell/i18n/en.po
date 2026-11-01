@@ -9160,6 +9160,24 @@ msgstr "This drawdown target can’t be turned into a leverage; change the targe
 msgid "sz.unset"
 msgstr "Not set"
 
+msgid "mg.needAlloc"
+msgstr "Click Method and pick an allocation method first"
+
+msgid "mg.allocGone"
+msgstr "“{method}” is no longer on this machine; click Method to pick another"
+
+msgid "mg.needParams"
+msgstr "Click Method and fill in the parameters for “{method}” first"
+
+msgid "mg.prefsFail"
+msgstr "Couldn’t read your saved portfolio settings"
+
+msgid "mg.prefsRetry"
+msgstr "Retry"
+
+msgid "mg.prefsReset"
+msgstr "Fill in again"
+
 msgid "tr.cloud.notApplied"
 msgstr "The machine hasn’t applied the amounts you just saved yet, so this shows what’s on the machine; it updates once applied."
 

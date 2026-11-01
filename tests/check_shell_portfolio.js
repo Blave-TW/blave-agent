@@ -43,8 +43,8 @@ ok("內建方法「最佳化 Sharpe」有自己的介面字(不吃機器 display
   ok("選擇比對:成員順序不管、舊腳本的 allocator null = slope、走查窗雙方都釘住才比", F.mgSameSel(prop, ["a", "b"], "slope", { lookback: 180 }) && !F.mgSameSel(prop, ["a"], "slope", { lookback: 180 })
     && !F.mgSameSel(prop, ["a", "b"], "equal", {}) && !F.mgSameSel(prop, ["a", "b"], "slope", { lookback: 90 }) && F.mgSameSel({ members: ["a", "b"], allocator: "equal", lookback: 0 }, ["a", "b"], "equal", {})); }
 ok("資料不足:從回測 log 尾抓歷史天數(不 anchor 行首);認不得 null", F.mgShortDaysOf("Traceback…\nValueError: insufficient history: 120 days <= lookback 365") === 120 && F.mgShortDaysOf("boom") === null);
-ok("參數:只收方法宣告的 key、target_vol 永遠排除、現值在範圍內才沿用", J(F.mgFitParams({ params: { lookback: 365, target_vol: 0.3, x: true } }, { lookback: 90, x: false, zz: 1 })) === J({ lookback: 90, x: false })
-  && J(F.mgFitParams({ params: { lookback: 365 } }, { lookback: 5 })) === J({ lookback: 365 }));
+ok("參數:只收方法宣告的 key、target_vol 永遠排除、現值在範圍內才沿用;沒值或不合法 = null,宣告值不當值代填", J(F.mgFitParams({ params: { lookback: 365, target_vol: 0.3, x: true } }, { lookback: 90, x: false, zz: 1 })) === J({ lookback: 90, x: false })
+  && J(F.mgFitParams({ params: { lookback: 365 } }, { lookback: 5 })) === J({ lookback: null }) && J(F.mgFitParams({ params: { lookback: 365, s: "x" } }, null)) === J({ lookback: null, s: null }));
 ok("權重 %:整數就整數、非整數留 1 位;壞值 null", F.mgWeightPct(0.25) === "25" && F.mgWeightPct(0.1234) === "12.3" && F.mgWeightPct(NaN) === null);
 ok("部位大小設定清理:壞值回沒填(方法也是 null,不預選目標波動)", J(F.mpsSizingClean({ fund: -1, method: "x", target: { vol: 12, mdd: "a" } })) === J({ fund: null, fundCcy: null, method: null, target: { vol: 12, mdd: null, lev: null } })
   && F.mpsSizingClean({ fund: 5, fundCcy: "TWD" }).fundCcy === "TWD" && F.mpsSizingClean({ fund: 5, fundCcy: "twd" }).fundCcy === null && F.mpsSizingClean({ fundCcy: "TWD" }).fundCcy === null);
@@ -526,11 +526,11 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
   const zone = { a: "USDT", b: "USDT", tw: "TWD" }; const G0 = () => vm.runInContext("mgBag()", ctx);
   const el = (tag, cls, txt) => { const e = { tag, cls, kids: [], dataset: {}, type: "", title: "", disabled: false, parentNode: null, get text() { return (txt == null ? "" : String(txt)) + this.kids.map((k) => k.text).join(" "); },
     appendChild(k) { this.kids.push(k); return k; }, append(...k) { k.forEach((x) => this.kids.push(x)); }, setAttribute() {}, addEventListener() {} }; return e; };
-  const ctx = vm.createContext({ console, JSON, Promise, Math, Object, MG_SIZE_KEY: "ws_mg_sizing", MG_SEL_KEY: "ws_mg_members", localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); saves.push(k); } },
+  const ctx = vm.createContext({ console, JSON, Promise, Math, Object, MG_SIZE_KEY: "ws_mg_sizing", MG_SEL_KEY: "ws_mg_members", MG_OPT_KEY: "ws_mg_opt", localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); saves.push(k); } },
     t: (k, o) => k + (o ? J(o) : ""), trEl: (c, n, x) => el(c, n, x), mpsProp: () => prop, mpsCcy: () => ccy, mpsNoSeriesKey: () => "sz.shortMdd", mpsConv: (v, a, b) => (a === b ? v : fx[a] && fx[b] ? (v / fx[a]) * fx[b] : null),
     trZoneOf: (n) => zone[n], TR_ZONE_UNKNOWN: "?", TR_TXF_CCY: "TWD", trCtStored: () => null, trStored: () => stored, trBase: () => stored, trNames: () => Object.keys(prop.weights), trTxfPrice: () => null, trRoundLots: (x) => Math.round(x),
     mgSpec: () => null, mgCt: () => null, mgProposal: () => prop, mgSameAsAmounts: () => true, trCfgUnread: () => false, trReport: () => ({}), trackFeature: () => {}, trCfOpen: (o) => cfOpens.push(o), mgMethod: () => null, mgSizeOpen: () => {}, poSetTab: () => {}, mgPaint: () => {} });
-  vm.runInContext(pp.replace(/^const /gm, "var ") + "\n" + ["mgBag", "mgSizingCloudLoad", "mgSave", "mpsMembers", "mpsWeight", "mpsFundOf", "mpsFundCcy", "mpsLev", "mpsRows", "mpsAmountsPayload", "mgSizeChip", "mgApply", "mgSizeNum", "mgSizeParse", "mgFundCcyFreeze"].map((n) => cutF(psrc, n)).join("\n"), ctx);
+  vm.runInContext(pp.replace(/^const /gm, "var ") + "\n" + ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgSave", "mpsMembers", "mpsWeight", "mpsFundOf", "mpsFundCcy", "mpsLev", "mpsRows", "mpsAmountsPayload", "mgSizeChip", "mgApply", "mgSizeNum", "mgSizeParse", "mgFundCcyFreeze"].map((n) => cutF(psrc, n)).join("\n"), ctx);
   ctx.TR = { env: "local", sig: {}, edits: {}, ct: { edits: {}, basis: {} } };
   const call = (s) => vm.runInContext(s, ctx), P1 = { members: ["a", "b"], weights: { a: 0.75, b: 0.25 }, ann_vol_pct: 20, port_returns: { r: [0.01, -0.02, 0.015, -0.01] } };
   const chip = () => call("mgSizeChip()").text.replace(/\s+/g, " ").trim(), apply = () => { const n = cfOpens.length; call("mgApply({})"); return cfOpens.length - n; };
@@ -586,36 +586,116 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
   ok("套用停用原因:缺匯率照既有三句(登入正常／沒登入／匯率過期);沒填講先設定;最大回撤沒序列講原因", J(w) === J(["mg.applyWhyFx", "mg.applyWhyLogin", "mg.applyWhyFxOld", "mg.applyWhySize", "sz.shortMdd"]), J(w)); }
 // 雲端:部位大小寫進主行程(ui-prefs.json),重開後新的一袋非同步讀回;讀回前用戶已經設過就不蓋;換人(C.mg 清掉)回來的那份丟掉
 { const cloudSet = []; const r1 = { sizing: F.mpsSizingClean({ fund: 86372, fundCcy: "USDT", method: "vol", target: { vol: 10.6 } }) }, store = {};
-  const ctx = vm.createContext({ console, JSON, Promise, MG_SIZE_KEY: "ws_mg_sizing", MG_SEL_KEY: "ws_mg_members", localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
-    window: { blave: { mgSizingCloud: () => Promise.resolve(ctx.cloudFile), mgSizingCloudSet: (v) => { cloudSet.push(v); ctx.cloudFile = JSON.parse(JSON.stringify(v)); return Promise.resolve(true); } } }, mgPaint: () => { ctx.painted = (ctx.painted || 0) + 1; } });
-  vm.runInContext(pp.replace(/^const /gm, "var ") + "\n" + ["mgBag", "mgSizingCloudLoad", "mgSave"].map((n) => cutF(psrc, n)).join("\n"), ctx);
+  const ctx = vm.createContext({ console, JSON, Promise, MG_SIZE_KEY: "ws_mg_sizing", MG_SEL_KEY: "ws_mg_members", MG_OPT_KEY: "ws_mg_opt", localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
+    window: { blave: { mgSizingCloud: () => Promise.resolve({ ok: true, v: ctx.cloudFile, opt: null }), mgSizingCloudSet: (v) => { cloudSet.push(v); ctx.cloudFile = JSON.parse(JSON.stringify(v)); return Promise.resolve(true); } } }, mgPaint: () => { ctx.painted = (ctx.painted || 0) + 1; } });
+  vm.runInContext(pp.replace(/^const /gm, "var ") + "\n" + ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgSave"].map((n) => cutF(psrc, n)).join("\n"), ctx);
   const C = { env: "cloud", sig: {} }; ctx.C = C; ctx.TR = C; const Gc = vm.runInContext("mgBag(C)", ctx);
-  Gc.sizing = r1.sizing; vm.runInContext("mgSave", ctx)(C, "ws_mg_sizing", Gc.sizing);
   const cloudTest = (async () => {
     await new Promise((r) => setTimeout(r, 5));
+    Gc.sizing = r1.sizing; vm.runInContext("mgSave", ctx)(C, "ws_mg_sizing", Gc.sizing);
     const C2 = { env: "cloud", sig: {} }; ctx.C2 = C2; ctx.TR = C2; const before = J(vm.runInContext("mgBag(C2)", ctx).sizing);
     await new Promise((r) => setTimeout(r, 5));
     const after = C2.mg.sizing;
     const C3 = { env: "cloud", sig: {} }; ctx.C3 = C3; const G3 = vm.runInContext("mgBag(C3)", ctx); G3.sizingSet = true; G3.sizing = F.mpsSizingClean({ fund: 7 });
     const C4 = { env: "cloud", sig: {} }; ctx.C4 = C4; vm.runInContext("mgBag(C4)", ctx); C4.mg = null;
     await new Promise((r) => setTimeout(r, 5));
-    ok("重開(雲端):設定寫進主行程;新的一袋讀回同一份並重畫;讀回前已設過的不蓋;換人後回來的丟掉",
+    ok("重開(雲端):部位大小寫進主行程;新的一袋讀回同一份並重畫;讀回前已設過的不蓋;換人後回來的丟掉",
       cloudSet.length === 1 && before === J(F.mpsSizingClean(null)) && J(after) === J(r1.sizing) && ctx.painted >= 1 && G3.sizing.fund === 7 && C4.mg === null && !("ws_mg_sizing" in store && JSON.parse(store.ws_mg_sizing).fund === 7), J([cloudSet.length, before, after, ctx.painted, G3.sizing, C4.mg])); })();
   global.__sizingCloudTest = cloudTest; }
+// Wei 11-01:成員、方法、參數同一條規則:填過就一直用,主機換了不跟著換;沒有值不代選。跑真的 mgBag／mgInit／mgPrune／mgMembers／mgMethodOk／mgRunOptimize／mgRunBacktest
+const mgOptTest = (async () => {
+  const store = {}, sets = [], sizingSets = []; let cloudRead = () => ({ ok: true, v: null, opt: null }), report = { manager: {}, config: {} }, stored = { a: 1, b: 2 };
+  const fields = [], els = { "mgm-err": { hidden: true, textContent: "" }, "mgm-ok": { disabled: false }, "mgm-fields": { textContent: "", querySelectorAll: () => fields, appendChild() {} }, "po-opt": { querySelector: () => null }, "mgm-desc": {}, "mgm-params": {} };
+  const ctx = vm.createContext({ console, JSON, Promise, Object, MG_SIZE_KEY: "ws_mg_sizing", MG_SEL_KEY: "ws_mg_members", MG_OPT_KEY: "ws_mg_opt", TR_ZONE_UNKNOWN: "?", localStorage: { getItem: (k) => { if (ctx.lsBroken) throw new Error("x"); return k in store ? store[k] : null; }, setItem: (k, v) => { store[k] = String(v); } },
+    window: { blave: { mgSizingCloud: () => Promise.resolve().then(() => cloudRead()), mgSizingCloudSet: (v) => { sizingSets.push(v); return Promise.resolve(true); }, mgOptCloudSet: (v) => { sets.push(JSON.parse(J(v))); return Promise.resolve(true); } } },
+    t: (k, o) => k + (o ? J(o) : ""), $: (id) => els[id], trReport: () => report, trStored: () => stored, trCfgUnread: () => false, mgPaint: () => { ctx.painted = (ctx.painted || 0) + 1; }, mgMethodClose: () => {}, mgRefreshThen: (S, go) => { ctx.ran = (ctx.ran || 0) + 1; }, mgMethodFields: () => {}, mgShort: () => null, trackFeature: () => {}, mgJobKey: () => null, mgRunning: () => false, mgJobAny: () => null, mgSig: () => null });
+  const has = ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgOptPin", "mgSave", "mgManager", "mgBlocked", "mgReportedBuiltins", "mgBuiltins", "mgMethod", "mgAllocators", "mgAllocLabel", "mgInit", "mgPrune", "mgOptBlockReason", "mgMembers", "mgSetMembers", "mgProposal", "mgPropOtherAlloc", "mgOtherProp", "mgNotDropped", "mgMethodOk", "mgBtBlockReason", "mgRunOptimize", "mgRunBacktest"];
+  vm.runInContext(pp.replace(/^const /gm, "var ") + "\n" + has.map((n) => cutF(psrc, n)).join("\n"), ctx);
+  const call = (s) => vm.runInContext(s, ctx), wait = () => new Promise((r) => setTimeout(r, 5));
+  const M = (extra) => Object.assign({ can_manage: true, builtin_methods: [{ name: "equal", params: {} }, { name: "slope", params: { lookback: 365 } }, { name: "sharpe", params: { lookback: 365 } }], default_method: "equal", allocators: [], strategies: [] }, extra);
+  const bag = (env) => { ctx.TR = { env: env || "local", sig: {}, list: [{ name: "a" }, { name: "b" }, { name: "c" }], listLoaded: true, api: {} }; return call("mgBag()"); };
+  const init = (rep, env) => { report = rep; const G = bag(env); if (G.prefs === "ok") { call("mgInit(mgBag())"); call("mgPrune(mgBag())"); } return G; };
+  let G = init({ manager: M(), config: {} });
+  ok("全新、主機什麼都沒有:方法空著,不套 default_method;跑優化與回測都不送,講要選方法", G.alloc === null && call("mgOptBlockReason()") === "mg.needAlloc" && call("mgBtBlockReason()") === "mg.needAlloc" && (call("mgRunOptimize()"), call("mgRunBacktest()"), !ctx.ran) && !("ws_mg_opt" in store), J(G.alloc));
+  G = init({ manager: M(), config: { allocator: null, weights: {} } });
+  ok("config 有 allocator:null 但沒上線:仍空著,不當 slope", G.alloc === null);
+  G = init({ manager: M(), config: { weights: { a: 1 } } });
+  ok("已上線的舊 config 沒寫 allocator = slope(同 manager.py);宣告的 lookback 365 不代填,要用戶填", G.alloc === "slope" && G.params.lookback === null && call("mgOptBlockReason()") === 'mg.needParams{"method":"mg.slope"}', J([G.alloc, G.params]));
+  G = init({ manager: M({ proposal: { members: ["a", "b"], allocator: "sharpe", params: { lookback: 120 } }, backtest_job: { status: "done", members: ["a", "b"], allocator: "slope", params: { lookback: 90 } } }), config: { allocator: "equal" } });
+  const j = [G.alloc, G.params.lookback];
+  G = init({ manager: M({ proposal: { members: ["a", "b"], allocator: "sharpe", params: { lookback: 120 } } }), config: { allocator: "equal" } }); const p = [G.alloc, G.params.lookback];
+  G = init({ manager: M(), config: { allocator: "equal" } });
+  ok("主機現值:回測 job > 提案 > config;這些推出來的值帶參數,但用戶沒碰過就不存", J(j) === J(["slope", 90]) && J(p) === J(["sharpe", 120]) && G.alloc === "equal" && !("ws_mg_opt" in store), J([j, p, G.alloc]));
+  // 用戶在框裡選 slope、回看 90
+  ctx.mgmPendSet = { alloc: "slope", params: { lookback: null } }; call("mgmPend = { G: mgBag(), alloc: 'slope', params: { lookback: null } }");
+  fields.length = 0; fields.push({ dataset: { key: "lookback" }, value: "" }); call("mgMethodOk()");
+  const emptyStopped = els["mgm-err"].hidden === false && els["mgm-err"].textContent === "mg.lookbackRange" && !("ws_mg_opt" in store); els["mgm-err"].hidden = true;
+  fields[0].value = "90"; call("mgMethodOk()");
+  ok("方法框:回看空著不能確定;填了按確定存下方法與參數", emptyStopped && J(JSON.parse(store.ws_mg_opt)) === J({ alloc: "slope", params: { slope: { lookback: 90 } } }), store.ws_mg_opt);
+  const prop = { members: ["a", "b"], allocator: "sharpe", params: { lookback: 365 }, weights: { a: 0.5, b: 0.5 } };
+  store.ws_mg_members = J(["a", "b"]);
+  G = init({ manager: M({ proposal: prop, backtest_job: { status: "done", members: ["a", "b"], allocator: "sharpe", params: { lookback: 365 } } }), config: { allocator: "sharpe", amounts: {} } }); stored = { a: 1, b: 2 };
+  ok("重開、機器上的提案是別的方法算的:用戶選的 slope／90 不換;權重表照現有提示講 sharpe 算的;提案不算這組的", G.alloc === "slope" && G.params.lookback === 90 && call("mgPropOtherAlloc()") === "sharpe" && call("mgProposal()") === null, J([G.alloc, G.params]));
+  report = { manager: M({ builtin_methods: [{ name: "equal", params: {} }] }), config: {} }; call("mgPrune(mgBag())");
+  const gone = [G.alloc, G.params.lookback, call("mgOptBlockReason()"), call("mgBtBlockReason()")]; const n0 = ctx.ran || 0; call("mgRunOptimize()"); call("mgRunBacktest()");
+  report = { manager: M(), config: {} }; call("mgPrune(mgBag())");
+  ok("方法暫時不在(報告這一輪沒帶到／自訂方法被刪):不換方法、不清參數,跑優化與回測都不送並講原因;回來了還是原值", J(gone) === J(["slope", 90, 'mg.allocGone{"method":"mg.slope"}', 'mg.allocGone{"method":"mg.slope"}']) && (ctx.ran || 0) === n0 && G.alloc === "slope" && G.params.lookback === 90 && !/mgDefaultAlloc|default_method/.test(psrc), J(gone));
+  report = { manager: M({ allocators: [{ name: "mine", params: { a: 1, on: true } }] }), config: {} };
+  store.ws_mg_opt = J({ alloc: "mine", params: { mine: { a: 2 } } }); G = init(report);
+  ok("自訂方法多宣告一格:填過的留著,沒填過的 null,不用宣告值;不能跑", G.alloc === "mine" && G.params.a === 2 && G.params.on === null && call("mgOptBlockReason()") === 'mg.needParams{"method":"mine"}', J(G.params));
+  { store.ws_mg_opt = J({ alloc: "slope", params: { slope: { lookback: 90 }, sharpe: { lookback: 120 } } }); G = init({ manager: M(), config: {} }); ctx.ran = 0; call("mgRunOptimize()");
+    const a = JSON.parse(store.ws_mg_opt); G.alloc = "equal"; G.params = {}; G.optBusy = false; call("mgRunBacktest()"); const b = JSON.parse(store.ws_mg_opt);
+    ok("拿主機推的值跑優化／回測也算用戶確認:存下來;各方法填過的參數各自留著", ctx.ran === 2 && a.params.sharpe.lookback === 120 && b.alloc === "equal" && b.params.slope.lookback === 90 && J(b.params.equal) === "{}", J([a, b])); }
+  // 成員
+  delete store.ws_mg_members; stored = { a: 1, b: 2 }; G = bag(); const seeded = J(call("mgMembers()"));
+  ctx.mgSetMembersArg = ["a", "c"]; call("mgSetMembers(TR, ['a', 'c'])"); const picked = JSON.parse(store.ws_mg_members); stored = { b: 2 }; G = bag(); const again = J(call("mgMembers()"));
+  ctx.TR.list = [{ name: "a" }]; const shrunk = J(call("mgMembers()")); const kept = store.ws_mg_members;
+  ok("成員:第一次帶配置那組;勾過之後配置怎麼變都照勾的;清單一時少一支只影響畫面,存檔不變", seeded === J(["a", "b"]) && J(picked) === J(["a", "c"]) && again === J(["a", "c"]) && shrunk === J(["a"]) && kept === J(["a", "c"]), J([seeded, picked, again, shrunk, kept]));
+  // 雲端
+  sets.length = 0; cloudRead = () => ({ ok: true, v: { fund: 5, fundCcy: "USDT", method: "lev", target: { lev: 2 } }, opt: { sel: ["a", "c"], alloc: "slope", params: { slope: { lookback: 90 } } } });
+  G = bag("cloud"); const load0 = [G.prefs, J(call("mgMembers()")), G.sel]; call("mgSave(TR, MG_SEL_KEY, ['x'])"); call("mgSave(TR, MG_SIZE_KEY, {})");
+  await wait();
+  ok("雲端讀回前:成員不從配置填也不存,任何 mgSave 都不寫;讀回後成員、方法、參數、部位大小都是存的那份", J(load0) === J(["loading", J(["b"]), null]) && sets.length === 0 && sizingSets.length === 0 && G.prefs === "ok" && J(G.sel) === J(["a", "c"]) && G.optSaved.alloc === "slope" && G.sizing.fund === 5 && J(call("mgMembers()")) === J(["a", "c"]), J([load0, sets, G.sel]));
+  ctx.TR.list = [{ name: "a" }, { name: "b" }, { name: "c" }]; call("mgSetMembers(TR, ['a'])");
+  ok("雲端勾成員:整份寫回(sel 帶方法與參數),沒有另一條路", sets.length === 1 && J(sets[0]) === J({ sel: ["a"], alloc: "slope", params: { slope: { lookback: 90 } } }), J(sets));
+  cloudRead = () => ({ ok: true, v: { fund: 5, method: "lev" }, opt: { sel: ["z"], alloc: "sharpe", params: {} } }); G = bag("cloud"); G.sizingSet = true; G.selSet = true; G.optSet = true; G.sizing = F.mpsSizingClean({ fund: 7 }); G.sel = ["q"]; await wait();
+  ok("讀回前用戶已動過的不蓋", G.sizing.fund === 7 && J(G.sel) === J(["q"]) && G.optSaved === null);
+  cloudRead = () => ({ ok: true, v: null, opt: null }); G = bag("cloud"); await wait(); stored = { a: 1 };
+  ok("雲端第一次(真的沒存過):ok、照配置那組", G.prefs === "ok" && J(call("mgMembers()")) === J(["a"]));
+  // 讀不到
+  for (const [name, rd] of [["主行程回 ok:false", () => ({ ok: false })], ["IPC 拒絕(null)", () => null], ["IPC 丟例外", () => { throw new Error("x"); }]]) {
+    sets.length = 0; sizingSets.length = 0; cloudRead = rd; G = bag("cloud"); await wait();
+    const was = G.prefs; call("mgSave(TR, MG_SIZE_KEY, {})"); call("mgSave(TR, MG_OPT_KEY, {})"); const none = J(call("mgMembers()"));
+    ok("讀不到(" + name + "):標 failed 不當沒填過;不存任何東西;成員不從配置定下來", was === "failed" && sets.length === 0 && sizingSets.length === 0 && G.sel === null && none === J(["a"]), J([was, none])); }
+  cloudRead = () => ({ ok: true, v: { fund: 9, method: "lev", target: { lev: 1 } }, opt: null }); ctx.TR.mg.prefs = "loading"; call("mgPrefsLoad(TR)"); await wait();
+  ok("重試讀得到:回到存的那份", ctx.TR.mg.prefs === "ok" && ctx.TR.mg.sizing.fund === 9);
+  store.ws_mg_sizing = "{bad"; G = bag(); const lf = G.prefs; delete store.ws_mg_sizing;
+  ok("本機存檔壞掉同樣標 failed", lf === "failed");
+  { const C = { env: "cloud", sig: {} }; ctx.C = C; ctx.TR = C; cloudRead = () => ({ ok: true, v: { fund: 3, method: "lev" }, opt: null }); call("mgBag(C)"); const old = C.mg; C.mg = null; await wait();
+    ok("換人後才回來的那份丟掉", old.sizing.fund === null); }
+  { G = init({ manager: M(), config: { allocator: "equal" } }); call("mgmPend = { G: null, alloc: 'sharpe', params: {} }"); fields.length = 0; call("mgMethodOk()");
+    ok("開著方法框時換了帳號:草稿不寫進新的人", G.alloc === "equal" && !G.optSet); }
+  ok("畫面接線:讀不到時 mgPaint 只畫讀不到那一框(有重試、重新填),不定初值;工具列與霧上的〔跑優化〕都停用並講原因;部位大小框開著換人不寫",
+    cutF(psrc, "mgPaint").indexOf('if (G.prefs !== "ok")') < cutF(psrc, "mgPaint").indexOf("mgInit(G)") && /box\.appendChild\(mgPrefsBox\(\)\)/.test(cutF(psrc, "mgPaint")) && /t\("mg\.prefsRetry"\)/.test(cutF(psrc, "mgPrefsBox")) && /t\("mg\.prefsReset"\)/.test(cutF(psrc, "mgPrefsBox"))
+    && /opt\.disabled = outdated \|\| !!needs/.test(cutF(psrc, "mgToolbar")) && /tb\.appendChild\(trEl\("p", "pf-note mg-need-fund", needs\)\)/.test(cutF(psrc, "mgToolbar")) && /b\.disabled = !!optNeeds;/.test(cutF(psrc, "poFog")) && /mgsDraft\.G !== G/.test(cutF(psrc, "mgSizeOk")));
+})();
 // 主行程:雲端部位大小存 ui-prefs.json、綁 who(換人 / 重新登入讀不到上一份)、清洗後才落地、不動其他鍵
 { const os = require("os"), msrc = fs.readFileSync(path.join(R, "..", "main.js"), "utf8"), pre = fs.readFileSync(path.join(R, "..", "preload.js"), "utf8");
   const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "blave-mgs-")); let who = "A";
   const ctx = { fs, path, app: { getPath: () => TMP }, currentWho: () => who };
-  vm.runInNewContext([/^const uiPrefsPath = .*$/m.exec(msrc)[0], cutF(msrc, "uiPrefsPatch"), cutF(msrc, "mgSizingClean"), cutF(msrc, "mgSizingCloudGet"), cutF(msrc, "mgSizingCloudSet")].join("\n") + "\nthis.get = mgSizingCloudGet; this.set = mgSizingCloudSet;", ctx);
+  vm.runInNewContext([/^const uiPrefsPath = .*$/m.exec(msrc)[0], cutF(msrc, "uiPrefsPatch"), cutF(msrc, "mgSizingClean"), cutF(msrc, "mgOptCloudClean"), cutF(msrc, "mgSizingCloudGet"), cutF(msrc, "mgSizingCloudSet"), cutF(msrc, "mgOptCloudSet")].join("\n") + "\nthis.get = mgSizingCloudGet; this.set = mgSizingCloudSet; this.setOpt = mgOptCloudSet;", ctx);
   fs.writeFileSync(path.join(TMP, "ui-prefs.json"), JSON.stringify({ pdfDir: "/x", stratOrder: ["a"] }));
-  const a0 = ctx.get(), w = ctx.set({ fund: 86372, fundCcy: "USDT", method: "vol", target: { vol: 10.6, mdd: "x" }, evil: "<script>" }), back = ctx.get();
-  who = "B"; const asB = ctx.get(); who = null; const none = ctx.get(), wNone = ctx.set({ fund: 1 }); who = "A";
+  const a0 = ctx.get(), w = ctx.set({ fund: 86372, fundCcy: "USDT", method: "vol", target: { vol: 10.6, mdd: "x" }, evil: "<script>" }), wo = ctx.setOpt({ sel: ["a", 3], alloc: "slope", params: { slope: { lookback: 90, bad: null }, "../x": { a: 1 } }, evil: 1 }), back = ctx.get();
+  who = "B"; const asB = ctx.get(); who = null; const none = ctx.get(), wNone = ctx.set({ fund: 1 }), wNone2 = ctx.setOpt({ alloc: "x" }); who = "A";
   const file = JSON.parse(fs.readFileSync(path.join(TMP, "ui-prefs.json"), "utf8"));
-  ok("主行程:沒存過 = null;存了讀回(清洗、丟多餘鍵);換人 / 沒登入讀不到也不寫;pdfDir 與側欄偏好不動;IPC 只收自家頁面",
-    a0 === null && w === true && J(back) === J({ fund: 86372, fundCcy: "USDT", method: "vol", target: { vol: 10.6, mdd: null, lev: null } }) && asB === null && none === null && wNone === false
-    && file.pdfDir === "/x" && J(file.stratOrder) === J(["a"]) && file.mgSizingCloud.who === "A" && !fs.readdirSync(TMP).some((f) => /blave-tmp/.test(f))
-    && /handle\("mg-sizing-cloud", \(\) => mgSizingCloudGet\(\), null\);/.test(msrc) && /handle\("mg-sizing-cloud-set", \(_e, v\) => mgSizingCloudSet\(v\), false\);/.test(msrc)
-    && /mgSizingCloud: \(\) => ipcRenderer\.invoke\("mg-sizing-cloud"\)/.test(pre) && /mgSizingCloudSet: \(v\) => ipcRenderer\.invoke\("mg-sizing-cloud-set", v\)/.test(pre), J([a0, back, asB, file]));
+  const SZ = { fund: 86372, fundCcy: "USDT", method: "vol", target: { vol: 10.6, mdd: null, lev: null } }, OP = { sel: ["a"], alloc: "slope", params: { slope: { lookback: 90 } } };
+  ok("主行程:沒存過 = ok、全空;存了讀回(清洗、丟多餘鍵);換人 = ok、全空;沒登入 = 讀不到(不是沒填過)也不寫;pdfDir 與側欄偏好不動;IPC 只收自家頁面,被拒回 ok:false",
+    J(a0) === J({ ok: true, v: null, opt: null }) && w === true && wo === true && J(back) === J({ ok: true, v: SZ, opt: OP }) && J(asB) === J({ ok: true, v: null, opt: null }) && J(none) === J({ ok: false }) && wNone === false && wNone2 === false
+    && file.pdfDir === "/x" && J(file.stratOrder) === J(["a"]) && file.mgSizingCloud.who === "A" && file.mgOptCloud.who === "A" && !fs.readdirSync(TMP).some((f) => /blave-tmp/.test(f))
+    && /handle\("mg-sizing-cloud", \(\) => mgSizingCloudGet\(\), \{ ok: false \}\);/.test(msrc) && /handle\("mg-sizing-cloud-set", \(_e, v\) => mgSizingCloudSet\(v\), false\);/.test(msrc) && /handle\("mg-opt-cloud-set", \(_e, v\) => mgOptCloudSet\(v\), false\);/.test(msrc)
+    && /mgSizingCloud: \(\) => ipcRenderer\.invoke\("mg-sizing-cloud"\)/.test(pre) && /mgSizingCloudSet: \(v\) => ipcRenderer\.invoke\("mg-sizing-cloud-set", v\)/.test(pre) && /mgOptCloudSet: \(v\) => ipcRenderer\.invoke\("mg-opt-cloud-set", v\)/.test(pre), J([a0, back, asB, none, file]));
+  fs.writeFileSync(path.join(TMP, "ui-prefs.json"), "{壞掉"); const bad = ctx.get(); fs.rmSync(path.join(TMP, "ui-prefs.json")); const fresh = ctx.get();
+  ok("主行程:ui-prefs.json 壞掉 = 讀不到;檔不存在 = 全新安裝,ok、全空", J(bad) === J({ ok: false }) && J(fresh) === J({ ok: true, v: null, opt: null }), J([bad, fresh]));
   fs.rmSync(TMP, { recursive: true, force: true }); }
 // 第三台實測(cs-0124-w3)+ 設計稽核電腦版必改
 { const ctx = vm.createContext({ t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), TR: { list: [{ name: "txf", symbol: "TXF", twd: true }, { name: "tsmc", symbol: "2330", twd: true }, { name: "btc", symbol: "BTCUSDT" }] }, PAPER: "paper", TR_TWD_RE: /^(?:TXF|MXF|TMF|\d{4,6}[A-Z]?(?:\.TWO?)?)$/, CX_VENUES: { binance: {} } });
@@ -727,7 +807,7 @@ ok("P2-4 TXFR1 不認成口數列(同網頁 pfCtStored;runtime 沒覆寫時 TXFR
 const btCancelTest = (async () => {
   const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
     mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 15, slow: 15, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nfunction mgOptBlockReason() { return null; }\nMG_REFRESH_POLL_MS = { fast: 15, slow: 15, fastFor: 60000 };\n" + ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgOptPin", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
   let done = false;
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push(cmd); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
     loadStrategy: async () => ({ perf: done ? { at: 1 } : { at: 1, refresh: { status: "running" } } }) } };
@@ -746,7 +826,7 @@ const freshTest = (async () => {
     const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
       mgMembers: () => members, mgStrategies: () => Object.keys(ranAt).map((n) => ({ name: n, ran_at: ranAt[n] })), mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null,
       mgArgs: () => ({ members, allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 5, slow: 5, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nfunction mgOptBlockReason() { return null; }\nMG_REFRESH_POLL_MS = { fast: 5, slow: 5, fastFor: 60000 };\n" + ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgOptPin", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
     let loads = 0; const redone = new Set();
     ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push([cmd, a && a.names ? a.names.slice() : null]); if (cmd === "stats_refresh") a.names.forEach((n) => redone.add(n)); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
       tradeStatus: async () => ({}), loadStrategy: async (n) => { loads++; return redone.has(n) ? { perf: { at: NOW } } : n in perfAt ? { perf: { at: perfAt[n] } } : {}; } } };
@@ -764,7 +844,7 @@ const freshTest = (async () => {
 const pollTest = (async () => {
   const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
     mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 40, slow: 2000, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nfunction mgOptBlockReason() { return null; }\nMG_REFRESH_POLL_MS = { fast: 40, slow: 2000, fastFor: 60000 };\n" + ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgOptPin", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
   let refreshed = false, t0 = 0, tRun = 0;
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd) => { sent.push(cmd); if (cmd === "stats_refresh") { t0 = Date.now(); setTimeout(() => { refreshed = true; }, 10); return { ok: true, result: { started: ["a"], skipped: {} } }; } tRun = Date.now(); return { ok: true, result: {} }; },
     tradeStatus: async () => ({}), loadStrategy: async () => ({ perf: refreshed ? { at: Math.floor(Date.now() / 1000) } : { at: 1, refresh: { status: "running" } } }) } };
@@ -777,7 +857,7 @@ const orderTest = (async () => {
   const go = async ({ base, timeline, waitMs }) => {
     const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
       mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nfunction mgOptBlockReason() { return null; }\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgOptPin", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
     let t0 = 0, runAt = null;
     ctx.TR = { env: "cloud", mg: null, sig: {}, api: {
       tradeSend: async (cmd, a) => { sent.push(cmd); if (cmd === "stats_refresh") { t0 = Date.now(); return { ok: true, result: { started: a.names, skipped: {} } }; } runAt = Date.now() - t0; return { ok: true, result: {} }; },
@@ -805,7 +885,7 @@ const liteTest = (async () => {
   const go = async (lite, waitMs) => {
     const sent = [], full = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
       mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nfunction mgOptBlockReason() { return null; }\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgOptPin", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
     let t0 = 0, runAt = null;
     ctx.TR = { env: "cloud", mg: null, sig: {}, api: {
       tradeSend: async (cmd, a) => { sent.push(cmd); if (cmd === "stats_refresh") { t0 = Date.now(); return { ok: true, result: { started: a.names, skipped: {} } }; } runAt = Date.now() - t0; return { ok: true, result: {} }; },
@@ -828,7 +908,7 @@ const refreshEdgeTest = (async () => {
     const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date: FixedDate, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
       mgMembers: () => members, mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null,
       mgArgs: () => ({ members, allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 5, slow: 5, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nfunction mgOptBlockReason() { return null; }\nMG_REFRESH_POLL_MS = { fast: 5, slow: 5, fastFor: 60000 };\n" + ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgOptPin", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
     const T0 = Date.now(); let runAt = null; const asked = new Set();
     ctx.TR = { env: "cloud", mg: null, sig: {}, api: {
       tradeSend: async (cmd, a) => { sent.push([cmd, a && a.names ? a.names.length : null]); if (cmd !== "stats_refresh") { runAt = Date.now() - T0; return { ok: true, result: {} }; } a.names.forEach((n) => asked.add(n)); return ack(a.names); },
@@ -861,7 +941,7 @@ const refreshEdgeTest = (async () => {
 const cancelGenTest = (async () => {
   const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
     mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nfunction mgOptBlockReason() { return null; }\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgOptPin", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   let done = false, ackDelay = 0, runs = 0;
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: {
@@ -882,7 +962,7 @@ const cancelGenTest = (async () => {
 const runNowTest = (async () => {
   const mk = () => { const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature(n) { sent.push("feature:" + n); }, mgPaint() {}, trPollSoon() {},
       mgMembers: () => ["a", "b", "c"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a", "b", "c"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 2000, slow: 2000, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunNow", "mgRunOptimize", "mgSendOptimize", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+    vm.runInContext(pp.replace(/^const /gm, "var ") + "\nfunction mgOptBlockReason() { return null; }\nMG_REFRESH_POLL_MS = { fast: 2000, slow: 2000, fastFor: 60000 };\n" + ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgOptPin", "mgPerfAt", "mgRefreshThen", "mgRunNow", "mgRunOptimize", "mgSendOptimize", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
     ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push(cmd); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
       tradeStatus: async () => ({}), loadStrategy: async () => ({ perf: { at: 1, refresh: { status: "running" } } }) } };
     return { sent, ctx }; };
@@ -907,7 +987,7 @@ const runNowTest = (async () => {
 const refreshFlagTest = (async () => {
   const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
     mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
-  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgSizingCloudLoad", "mgPerfAt", "mgRefreshThen", "mgRunNow", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
+  vm.runInContext(pp.replace(/^const /gm, "var ") + "\nfunction mgOptBlockReason() { return null; }\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgOptPin", "mgPerfAt", "mgRefreshThen", "mgRunNow", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push(cmd); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
     tradeStatus: async () => ({}), loadStrategy: async () => { if (slow) await wait(80); return { perf: { at: 1, refresh: { status: "running" } } }; } } };
@@ -1020,7 +1100,7 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
     && on({ job: { status: "error" } }) === false && on({ short: { n: 10, l: 60 } }) === false && on({ short: { n: 10, l: 60 } }, { shortDismissed: true }) === true
     && on({}, { optBusy: true }) === false && on({}, { btSending: true }) === false && on({}, { wait: { opt: { left: ["a"] }, bt: null } }) === false && on({ blocked: true }) === false && on({}, { err: "x" }) === false);
   ok("…霧開著時工具列的「跑優化」藏起來、霧上 CTA 是 mg.optRun 接 mgRunOptimize;兩語都有 mg.fogOpt 帶 {n}、只有一句(canon 一句話＋一顆鈕,不講工具列已有的跑回測)",
-    /if \(fog\) box\.appendChild\(poFog\("opt"\)\);/.test(psrc) && /opt\.hidden = !!fog;/.test(psrc) && /kind === "opt"\) \{ b\.id = "mg-fog-opt"; b\.dataset\.fk = "mg-fog-opt"; b\.addEventListener\("click", mgRunOptimize\); \}/.test(psrc)
+    /if \(fog\) box\.appendChild\(poFog\("opt"\)\);/.test(psrc) && /opt\.hidden = !!fog;/.test(psrc) && /kind === "opt"\) \{ b\.id = "mg-fog-opt"; b\.dataset\.fk = "mg-fog-opt"; b\.disabled = !!optNeeds; b\.addEventListener\("click", mgRunOptimize\); \}/.test(psrc)
     && (() => { const raw = fs.readFileSync(path.join(R, "strings.js"), "utf8"), S2 = (0, eval)("(" + raw.slice(raw.indexOf("{", raw.indexOf("const STRINGS")), raw.lastIndexOf("}") + 1) + ")"); return /\{n\}/.test(S2.zh["mg.fogOpt"]) && /\{n\}/.test(S2.en["mg.fogOpt"]) && !/跑回測|。.+/.test(S2.zh["mg.fogOpt"]) && !/Backtest|\.\s\S/.test(S2.en["mg.fogOpt"]); })()); }
 // 回測「送出中」何時結束(同網頁 check_mg_bt_sending):認 job 的 started_at＋pid,不拿主機的 finished_at 比這台電腦的時鐘。
 // 主機快 300 秒＋畫面上有舊結果:舊 job 不能當成這次跑完;主機慢 60 秒＋短回測直接 done:當場結束,不卡 120 秒
@@ -1060,4 +1140,4 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
     && /function mpsProp\(\) \{ return mgProposal\(\) \|\| mgOtherProp\(\); \}/.test(psrc) && /mgProposal\(\) \|\| mgOtherProp\(\) \|\| mgBacktest\(\)/.test(cutF(psrc, "mgFogOn"))
     && /ap\.disabled = !!other \|\|/.test(cutF(psrc, "mgSuggestTable")) && /whyEl\.textContent = other \? t\("mg\.propOtherAlloc", \{ method: mgAllocLabel\(other\) \}\)/.test(cutF(psrc, "mgSuggestTable"))
     && /if \(!mgProposal\(\) \|\|/.test(cutF(psrc, "mgApply")) && !/mg-other-alloc/.test(psrc)); }
-Promise.all([btCancelTest, freshTest, pollTest, orderTest, liteTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });
+Promise.all([btCancelTest, freshTest, pollTest, orderTest, liteTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest, mgOptTest]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });

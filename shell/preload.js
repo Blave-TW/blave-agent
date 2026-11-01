@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld("blave", {
   // 雲端那一袋的部位大小(renderer/portfolio.js):存 ui-prefs.json、主行程綁這次登入;換人讀回 null
   mgSizingCloud: () => ipcRenderer.invoke("mg-sizing-cloud"),
   mgSizingCloudSet: (v) => ipcRenderer.invoke("mg-sizing-cloud-set", v),
+  mgOptCloudSet: (v) => ipcRenderer.invoke("mg-opt-cloud-set", v),
   loadStrategy: (name) => ipcRenderer.invoke("load-strategy", name),
   // 轉出檔「下載…」:主行程讀檔 + 開存檔框。ref = { session, id }(對話裡那張卡的快照)或 { strategy, target }(程式碼分頁);不過內容、不過路徑
   saveExport: (ref) => ipcRenderer.invoke("save-export", ref ? { session: ref.session, id: ref.id, strategy: ref.strategy, target: ref.target } : null),
