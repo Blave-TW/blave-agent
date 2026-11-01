@@ -74,9 +74,10 @@ t("#36 下載檔用 mv 不用 cp;流程結束 tmp/ 不留下載檔",
 # 10-04 Windows 測試機:Codex 看到 #101 檔頭「RSI + Bollinger Bands」與 rsi_bb_reversal,判定跟「BTC 通道動能共振」不符而拒裝
 names = [l for l in mk.splitlines() if l.startswith("**Listing name vs code.**")]
 desktop = section(mk, "## Desktop-downloaded picks")
-t("#101 名稱不符:DISPLAY_NAME/SYMBOL/INTERVAL/方向一致就照裝、檔頭與 STRATEGY_NAME 不同不停、回覆提一句;標的/週期/方向不符照樣問",
-  len(names) == 1 and "`DISPLAY_NAME`, `SYMBOL`, `INTERVAL` and long/short side match" in names[0]
-  and "is not a reason to stop" in names[0] and "one sentence in the reply" in names[0]
+t("#101 名稱不符:SYMBOL/INTERVAL/方向一致就照裝、檔頭／STRATEGY_NAME／DISPLAY_NAME(含換語言)不同不停也不改名、回覆提一句;標的/週期/方向不符照樣問",
+  len(names) == 1 and "`SYMBOL`, `INTERVAL` and long/short side match" in names[0]
+  and "a name in another language or worded differently from the pick title is not a mismatch, and you do not rename it" in names[0]
+  and "`STRATEGY_NAME` or `DISPLAY_NAME` is not a reason to stop" in names[0] and "one sentence in the reply" in names[0]
   and "does not match, stop before moving it into `strategies/` (step 7) and ask the user" in names[0])
 t("#101 名稱不符:電腦版下載那一節明確套用這條", "*Listing name vs code* above applies." in desktop)
 

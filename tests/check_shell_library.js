@@ -271,7 +271,7 @@ if (!process.versions.electron) {
     vm.createContext(D);
     vm.runInContext("var fs = require('fs'), path = require('path'), crypto = require('crypto'), wsfile = require(" + JSON.stringify(path.join(__dirname, "..", "shell", "wsfile.js")) + ");\n" + ["LIB_CODE_MAX", "LIB_CONTRACT_ANCHOR", "readVersion", "LIB_VER_RE"].map((n) => mainSrc.match(new RegExp("^const " + n + " = [^\\n]*$", "m"))[0].replace(/^const /, "var ")).join("\n")
       + "\n" + cutFn(mainSrc, "libContractReady")
-      + "\nvar libCache = null, tmOn = true, live = true;\nfunction telemetryLive() { return live; }\nfunction tm() { return { isEnabled: () => tmOn, installId: () => '3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77' }; }\nfunction loadToken() { return token; }\nfunction loadDataKey() { return key; }\nasync function getJSON(url, headers) { calls.push([url, headers]); const n = Array.isArray(next) ? next.shift() : next; if (n === 'throw') throw new Error('net'); return n; }\n"
+      + "\nvar libCache = null, tmOn = true, live = true, uiNow = 'en';\nfunction siteLang() { return uiNow; }\nfunction telemetryLive() { return live; }\nfunction tm() { return { isEnabled: () => tmOn, installId: () => '3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77' }; }\nfunction loadToken() { return token; }\nfunction loadDataKey() { return key; }\nasync function getJSON(url, headers) { calls.push([url, headers]); const n = Array.isArray(next) ? next.shift() : next; if (n === 'throw') throw new Error('net'); return n; }\n"
       + cutFn(mainSrc, "libAnonOk") + "\n"
       + cutFn(mainSrc, "libWriteWs") + "\n" + cutFn(mainSrc, "libVerHeader") + "\n" + cutFn(mainSrc, "libTooOldKind") + "\nasync " + cutFn(mainSrc, "libraryDownload"), D);
     const dl = async (id, resp) => { D.next = resp; return D.libraryDownload(id); };
@@ -313,7 +313,7 @@ if (!process.versions.electron) {
       { id: 102, is_official: true, price: 0, blave_data: "none" }, { id: 88, is_official: true, price: 0, blave_data: "required" },
       { id: 125, is_official: true, price: 0, blave_data: null }, { id: 124, is_official: false, price: 0, blave_data: "none" },
       { id: 500, is_official: true, price: 99, blave_data: "none" } ] };`, D);
-    const anonURL = (id) => "https://api.test/openclaw/marketplace/strategies/" + id + "/public_code";
+    const anonURL = (id) => "https://api.test/openclaw/marketplace/strategies/" + id + "/public_code?lang=en";
     const A = {};
     D.token = null; let c0 = D.calls.length;
     A.ok = J(await dl(102, { status: 200, body: { code: "anon = 1\n" } })); A.okCall = J(D.calls.slice(c0)); A.okBody = fs.readFileSync(file, "utf8");
@@ -343,6 +343,9 @@ if (!process.versions.electron) {
     A.revoked = J(await dl(102, [{ status: 403, body: { error_code: "ERR005" } }, { status: 200, body: { code: "anon = 3\n" } }])); A.revokedUrls = D.calls.slice(c0).map((c) => c[0]).join(); A.revokedHdr = J(D.calls.slice(c0).map((c) => c[1]));
     c0 = D.calls.length; A.revokedReq = (await dl(88, [{ status: 401, body: {} }])).kind; A.revokedReqCalls = D.calls.length - c0;
     c0 = D.calls.length; A.withKey = J(await dl(102, { status: 200, body: { code: "k = 1\n" } })); A.withKeyUrls = D.calls.slice(c0).map((c) => c[0]).join();
+    vm.runInContext("uiNow = 'zh';", D); c0 = D.calls.length; await dl(102, { status: 200, body: { code: "k = 1\n" } }); A.zhUrl = D.calls[c0][0];
+    vm.runInContext(keepCache, D); D.token = null; c0 = D.calls.length; await dl(102, { status: 200, body: { code: "k = 1\n" } }); A.zhAnonUrl = D.calls[c0][0]; D.token = "t";
+    vm.runInContext("libCache = cache0; uiNow = 'en';", D);
     // 最低 Agent 版本(spec strategy-min-lib-gate-2026-10-29):workspace VERSION 進 header,兩條都帶;形狀怪就不帶;
     // 403 AGENT_TOO_OLD → 隨包的不夠新 agentOld、隨包的夠新(workspace 沒同步成)agentOldReopen;不動上一份檔
     const V = {}, wsVer = path.join(WSd, "VERSION");
@@ -369,7 +372,7 @@ if (!process.versions.electron) {
     const r5 = await dl(102, { status: 200, body: { code: "w = 5\n" } });
     const a5 = { r: J(r5), wrote: fs.readdirSync(outside).join() };
     fs.rmSync(base, { recursive: true, force: true });
-    ok("② 代下載:用桌面 key 打 /code、寫 workspace/tmp/library_<id>.py(0600、不留暫存檔)、回 { ok: true }", a1.r === '{"ok":true}' && a1.body === "print(1)\n" && a1.mode === 0o600 && a1.url === "https://api.test/openclaw/marketplace/strategies/102/code"
+    ok("② 代下載:用桌面 key 打 /code、寫 workspace/tmp/library_<id>.py(0600、不留暫存檔)、回 { ok: true }", a1.r === '{"ok":true}' && a1.body === "print(1)\n" && a1.mode === 0o600 && a1.url === "https://api.test/openclaw/marketplace/strategies/102/code?lang=en"
       && a1.hdr === '{"api-key":"k1","secret-key":"s1"}' && a1.stray === "library_102.py", J(a1));
     ok("② 代下載:回應帶 security → 另存 .security.json;下一次沒帶 → 刪掉舊的那份;碼寫不進去 → fail 且不留掃描結果", a2.r === '{"ok":true}' && a2.sec === 1 && a2.body === "x = 2\n" && a3.r === '{"ok":true}' && a3.secGone
       && a3b.r === '{"ok":false,"kind":"fail"}' && a3b.sec === false, J([a2, a3, a3b]));
@@ -383,7 +386,7 @@ if (!process.versions.electron) {
     ok("② 429(兩條都算)→ rateLimited(講「稍後」,不講「再試一次」;稽核 0.1.13 UI S5)", A.rl.join() === "rateLimited,rateLimited" && /稍後/.test(STR.zh["lib.dl.rateLimited"]) && /later/.test(STR.en["lib.dl.rateLimited"]) && !/再試一次/.test(STR.zh["lib.dl.rateLimited"]), A.rl.join());
     ok("② 匿名下載:伺服器不給(404)→ anonGone(下架或已不符合免登入,分不出來;spec-0.1.13-smallfixes #10),key 被撤改走匿名的 404 也是;/code 的 404 照舊 gone;429 rateLimited;503 / 打不到 fail", A.srv.join() === "anonGone,rateLimited,fail,fail" && A.revoked404 === "anonGone" && kinds[1] === "gone", J([A.srv, A.revoked404, kinds[1]]));
     ok("② 匿名下載:登入了但沒 key → 走匿名;key 被撤(ERR005)→ 改走匿名;被撤 × 要資料 → signin(不試匿名)", A.noKey === '{"ok":true}' && A.noKeyUrl === anonURL(102)
-      && A.revoked === '{"ok":true}' && A.revokedUrls === "https://api.test/openclaw/marketplace/strategies/102/code," + anonURL(102) && A.revokedReq === "signin" && A.revokedReqCalls === 1, J(A));
+      && A.revoked === '{"ok":true}' && A.revokedUrls === "https://api.test/openclaw/marketplace/strategies/102/code?lang=en," + anonURL(102) && A.revokedReq === "signin" && A.revokedReqCalls === 1, J(A));
     ok("② key 被撤改走匿名:第一個請求帶那把 key,第二個(匿名)只帶 install_id、被撤的 key 不跟著送", A.revokedHdr === J([{ "api-key": "k1", "secret-key": "s1" }, { "X-Install-Id": "3f2a9c1e-7b04-4d6e-9e21-5c0b8d4f1a77" }]), A.revokedHdr);
     ok("② 開發版 / e2e(非打包、沒設 BLAVE_TELEMETRY=1)不帶 install_id,匿名照樣下載(不灌正式安裝數)", A.dev === '{"ok":true}' && A.devCall === J([[anonURL(102), {}]]), J([A.dev, A.devCall]));
     ok("② install_id 的閘跟 tm 的 post 同一支 telemetryLive(打包版或 BLAVE_TELEMETRY=1)", /^const telemetryLive = \(\) => app\.isPackaged \|\| process\.env\.BLAVE_TELEMETRY === "1";$/m.test(mainSrc)
@@ -393,7 +396,9 @@ if (!process.versions.electron) {
       && V.badHdr === J({ "api-key": "k1", "secret-key": "s1" }) && V.noHdr === J({ "api-key": "k1", "secret-key": "s1" }), J(V));
     ok("② 403 AGENT_TOO_OLD:隨包沒有 VERSION / 比最低版本舊 → agentOld;隨包夠新 → agentOldReopen;body 沒帶最低版本 → agentOld;匿名那條同;不動上一份檔",
       V.old.join() === "agentOld,agentOld,agentOldReopen,agentOld,agentOldReopen" && V.kept === "v = 2\n", J(V));
-    ok("② 有能用的 key:只打 /code,不碰匿名那條", A.withKey === '{"ok":true}' && A.withKeyUrls === "https://api.test/openclaw/marketplace/strategies/102/code", A.withKeyUrls);
+    ok("② 兩條都帶介面語言 ?lang=(api 照它換掉碼裡的 DISPLAY_NAME / DESCRIPTION);語言取自主行程真的 siteLang(這裡是替身)", A.zhUrl === "https://api.test/openclaw/marketplace/strategies/102/code?lang=zh"
+      && A.zhAnonUrl === "https://api.test/openclaw/marketplace/strategies/102/public_code?lang=zh" && /^const siteLang = /m.test(mainSrc), J([A.zhUrl, A.zhAnonUrl]));
+    ok("② 有能用的 key:只打 /code,不碰匿名那條", A.withKey === '{"ok":true}' && A.withKeyUrls === "https://api.test/openclaw/marketplace/strategies/102/code?lang=en", A.withKeyUrls);
     ok("② 代下載:workspace 還沒有新契約(錨點不在 / 檔不在)→ { ok: true, legacy: true }、不送請求、不動 tmp", legacy.a === '{"ok":true,"legacy":true}' && legacy.b === legacy.a && legacy.c === '{"ok":false,"kind":"fail"}' && legacy.d === '{"ok":false,"kind":"signin"}' && legacy.noReq && legacy.kept === "x = 3\n", J(legacy));
     ok("② 代下載:同名檔是指向 workspace 外的 symlink → 換掉 symlink 本身,外面的檔不變", a4.r === '{"ok":true}' && a4.victim === "keep" && !a4.isLink && a4.body === "z = 4\n", J(a4));
     ok("② 代下載:tmp 是指向 workspace 外的 symlink → fail、外面什麼都沒寫", a5.r === '{"ok":false,"kind":"fail"}' && a5.wrote === "victim.txt", J(a5));
