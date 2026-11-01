@@ -1,28 +1,24 @@
 /* 策略轉出(renderer/export.js;spec-desktop-strategy-export-0.1.8)。不新增 token、不新增元件類型:
-   觸發器 = Outlined control + canon chevron(同 web .xp-chip)、選單 = Dropdown menu(Terminal metrics)、
+   觸發器 = Dropdown menu › 安靜觸發器(chevron 共用 .mp-chev;同 web .xp-chip)、選單 = Dropdown menu(Terminal metrics)、
    轉出卡 = web .xp 同一組色階(bg-body 落在聊天欄的 surface-card 上,無框無陰影)、檔案切換 = 策略庫 .lib-seg。 */
 
 /* ── 分頁列右端的觸發器 ── */
-.xp-dd { position: relative; margin-left: auto; display: inline-flex; align-self: center; }
+.xp-dd { position: relative; margin-left: auto; margin-right: calc(-1 * var(--space-8)); display: inline-flex; align-self: center; }   /* -8:字對齊內容欄右緣(同分頁文字) */
 .xp-dd[hidden] { display: none; }
 .xp-chip {
-  position: relative; display: inline-flex; align-items: center; height: 30px; padding: 0 var(--space-12);
-  border: 1px solid var(--border-frame); border-radius: var(--radius-xs); color: var(--ink-2); font-size: 12px; white-space: nowrap;
+  position: relative; display: inline-flex; align-items: center; gap: var(--space-6); height: 32px; padding: 0 var(--space-8);
+  border-radius: var(--radius-xs); color: var(--ink-2); font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap;
   transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
-.xp-chip::before { content: ""; position: absolute; inset: -8px -1px; }   /* 30 → 44 熱區:pseudo 錨在 padding box(扣掉 1px 邊框剩 28),所以是 -8 */
-.xp-chip:hover { background: var(--surface-muted); color: var(--ink); }
-.xp-chip[aria-disabled="true"] { color: var(--ink-3); cursor: not-allowed; }
-.xp-chip[aria-disabled="true"]:hover { background: transparent; }
-/* canon 的 CSS chevron:開啟翻上,開 / 關各自 translateY 補墨跡重心 */
-.xp-cv {
-  flex: none; width: 7px; height: 7px; margin-left: var(--space-8);
-  border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
-  transform: translateY(-2px) rotate(45deg); transition: transform var(--motion-fast) var(--ease-standard);
-}
-.xp-dd.is-open .xp-cv { transform: translateY(1px) rotate(-135deg); }
+.xp-chip::before { content: ""; position: absolute; inset: -6px 0; }   /* 32 → 44 熱區,只往上下擴:左邊是分頁的熱區 */
+.xp-chip:hover, .xp-dd.is-open .xp-chip { background: var(--surface-muted); color: var(--ink); }
+.xp-chip[aria-disabled="true"] { color: var(--ink-disabled); cursor: not-allowed; }
+.xp-chip[aria-disabled="true"]:hover { background: transparent; color: var(--ink-disabled); }
+.xp-chip .mp-chev { margin-left: 0; }
+.xp-chip[aria-disabled="true"] .mp-chev { border-color: var(--ink-disabled); }
+.xp-dd.is-open .mp-chev { transform: rotate(-135deg); margin-bottom: -2px; }
 .xp-menu {
-  position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; min-width: 264px; padding: var(--space-6);
+  position: absolute; top: calc(100% + 8px); right: var(--space-8); z-index: 30; min-width: 264px; padding: var(--space-6);
   background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-md);
 }
 .xp-menu[hidden] { display: none; }

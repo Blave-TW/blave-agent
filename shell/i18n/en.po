@@ -4200,6 +4200,15 @@ msgstr "Missing the {a} and {b} keys, so this strategy can’t run."
 msgid "rp.missKeyB.many"
 msgstr "Missing keys for {a}, {b} and {k} more, so this strategy can’t run."
 
+msgid "rp.btnUpdate"
+msgstr "Update now"
+
+msgid "rp.help"
+msgstr "How to read"
+
+msgid "rp.help.aria"
+msgstr "How to read (opens in browser)"
+
 msgid "rp.missKey.go"
 msgstr "Open Data Sources"
 
@@ -5199,11 +5208,8 @@ msgstr "Success Note"
 msgid "lib.note.fallback"
 msgstr "Read the Note"
 
-msgid "lib.note.back"
-msgstr "Back to Strategy"
-
-msgid "lib.note.err"
-msgstr "Couldn't load this note."
+msgid "lib.note.aria"
+msgstr "Success Note {t} (opens in browser)"
 
 msgid "lib.empty"
 msgstr "The library is empty right now."

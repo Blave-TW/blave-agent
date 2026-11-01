@@ -39,6 +39,13 @@
   color: var(--ink-disabled);
 }
 
+/* 「怎麼看」(canon › 說明文章外連;app.js rpHelpLink):meta 最後一組,不是鈕、不加框。熱區靠 ::before,不撐高列 */
+.rp-help { position: relative; display: inline-flex; align-items: center; gap: var(--space-6); color: var(--ink-3); text-decoration: none; transition: color var(--motion-fast) var(--ease-standard); }
+.rp-help::before { content: ""; position: absolute; inset: -6px -4px; }
+.rp-help .ic { width: 16px; height: 16px; display: block; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.rp-help:hover { color: var(--ink); }
+.rp-help:hover .lt { text-decoration: underline; text-underline-offset: 3px; }
+
 /* ---- 1b. 更新績效(renderer/perf.js 掛進 .bt-meta 列尾;spec stats-manual-refresh §10)----
    .upd 不是 .mgrp:靠右、前面不畫點;更新中是圓環(Loader inline 階 16/2,currentColor = ink-3)+ 三個字。
    失敗那一行緊跟在 meta 下面(8),三組條列照舊離它 16 */

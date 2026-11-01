@@ -243,9 +243,9 @@ ok("字:「上一輪還在跑」這類工程用語不再出現在任何 zh 字�
     && [".busy-why", ".xp-note", ".rp-ho-note", ".rob-cap", ".wf-cap", "#lib-cta-note", "#ver-banner-err", "#ver-rerun-busy"].every((x) => lst.indexOf(x) >= 0), JSON.stringify(lst)); }
 { const css = read(path.join(R, "app.css")), rob = read(path.join(R, "report-robust.js"));
   const grey = css.match(/\.btn-fill:disabled, [^{]*\{([^}]*)\}/), na = css.match(/\n(\.lib-cta \.btn-fill\[aria-disabled="true"\][^{]*)\{([^}]*)\}/);
-  ok("稽核 0127b1 P1-3:回合中鎖住的「開始掃描／開始驗證」照 Disabled ①——跟填色鈕停用同一組灰、游標 not-allowed;掃描只在被鎖(不是已送出)時掛 .is-lock",
-    !!grey && /\.btn-fill\.is-lock/.test(grey[0]) && /\.wf-go\[aria-disabled="true"\]/.test(grey[0]) && !!na && /\.wf-go\[aria-disabled="true"\]/.test(na[1]) && /\.btn-fill\.is-lock/.test(na[1]) && /cursor: not-allowed/.test(na[2])
-    && /st\.btn\.classList\.toggle\("is-lock", !!opts\.busy && !on\)/.test(rob)
+  ok("稽核 0127b1 P1-3:回合中鎖住的驗證鈕照 Disabled ①——描邊與文字鈕都有 is-lock／aria-disabled 的灰與 not-allowed;掃描、樣本外都走 .is-lock,只在被鎖(不是已送出)時掛",
+    !!grey && /\.btn-fill\.is-lock/.test(grey[0]) && !!na && /\.btn-out\.is-lock/.test(na[1]) && /cursor: not-allowed/.test(na[2]) && /\.btn-out:disabled,[^{]*\.btn-out\.is-lock/.test(css) && /\.btn-quiet\[aria-disabled="true"\]/.test(css) && !/\.wf-go\[aria-disabled/.test(css)
+    && /\(v\.lock \? " is-lock" : ""\)/.test(rob) && /btn\.classList\.toggle\("is-lock", busyNow\)/.test(read(path.join(R, "report-wf.js")))
     && /#rp-ho\[aria-disabled="true"\] \{[^}]*cursor: not-allowed/.test(css)); }
 (async () => {
   for (let n = 0; n < pend.length; n++) await pend[n];   // 巢狀的 await_ 會在跑的時候再推進來

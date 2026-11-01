@@ -40,7 +40,7 @@ const document = { createElement: (t) => new Node(t), createDocumentFragment: ()
 const window = {};
 const sb = { window, document, Node, console };
 vm.createContext(sb);
-for (const f of ["report-backtest.js", "report-xt.js"]) vm.runInContext(R("renderer/" + f), sb);
+for (const f of ["report-backtest.js", "report-robust.js", "report-xt.js"]) vm.runInContext(R("renderer/" + f), sb);
 window.renderReportLevels = (sp) => { const n = new Node("div"); n.className = "levels"; n.spec = sp; return n; };
 const X = window.BlaveReport._xt;
 
@@ -134,11 +134,11 @@ const old = run(null, { old: true });
 ok("② 時光機看舊版本(#1):只有一句 vpanel-note「舊版本沒存這一頁的數字。」、不給鈕(rerun 不被叫)", old.cls("vpanel-note").length === 1 && old.text === "舊版本沒存這一頁的數字。" && old.slots.length === 0 && old.nodes.every((n) => n.tag !== "button"));
 const beh = run({ ...STATS }, { behind: true, onUpdate: () => { beh.updated = true; } });
 const go = beh.nodes.find((n) => n.tag === "button"), bcell = beh.cls("rob-empty")[0].kids[0];
-ok("② 主機落後、空狀態(#3):.rob-empty 裡那一格 = 先更新那句(lead,在鈕上)＋〔去更新〕(onUpdate),不給開始測試", beh.cls("rob-empty").length === 1 && bcell.kids[0].textContent === "先更新主機程式，才能跑成交測試。"
+ok("② 主機落後、空狀態(#3):.rob-empty 裡那一格 = 先更新那句(lead,在鈕上)＋〔立即更新〕(onUpdate),不給開始測試", beh.cls("rob-empty").length === 1 && bcell.kids[0].textContent === "先更新主機程式，才能跑成交測試。"
   && bcell.kids[1] === go && beh.slots.length === 0 && !!go && (go.on.click(), beh.updated === true));
 const behRes = run(fresh, { behind: true });
 const rcell = behRes.cls("rob-top")[0].kids[1], rlines = behRes.cls("xt-lines")[0];
-ok("② 主機落後而且有結果:頂列那一格只換成〔去更新〕(格裡只有鈕,meta 不被推);句子在頂列後面那一列(灰記號 .upd-fail.is-calm,同 web);結論卡與兩段照畫",
+ok("② 主機落後而且有結果:頂列那一格只換成〔立即更新〕(格裡只有鈕,meta 不被推);句子在頂列後面那一列(灰記號 .upd-fail.is-calm,同 web);結論卡與兩段照畫",
   rcell.has("xt-upd") && rcell.kids.length === 1 && rcell.kids[0].tag === "button" && behRes.box.kids[0].kids[1] === rlines && rlines.id === "xt-lines"
   && rlines.kids.some((n) => n.has && n.has("upd-fail") && n.has("is-calm") && n.textContent === "先更新主機程式，才能跑成交測試。") && behRes.cls("xt-sec").length === 2 && behRes.slots.length === 0);
 { const line = run(fresh, { rerun: (kind) => { const n = new Node("div"); n.className = "SLOT"; n.dataset.xtUpd = "1"; const b = new Node("button"); const l = new Node("p"); l.className = "upd-fail"; l.dataset.xtLine = "1"; l._t = "沒測成功"; n.append(b, l); return n; } });

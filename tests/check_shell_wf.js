@@ -189,7 +189,7 @@ if (!process.versions.electron) {
     const flat = (n) => [n].concat(...(n.childNodes || []).map(flat));
     function node(tag) {
       const n = { tagName: tag.toUpperCase(), nodeType: 1, childNodes: [], parentNode: null, attrs: {}, style: { setProperty() {} }, dataset: {}, className: "",
-        get classList() { const c = () => n.className.split(/\s+/).filter(Boolean); return { add: (x) => { if (!c().includes(x)) n.className = c().concat(x).join(" "); }, remove: (x) => { n.className = c().filter((y) => y !== x).join(" "); }, contains: (x) => c().includes(x) }; },
+        get classList() { const c = () => n.className.split(/\s+/).filter(Boolean); return { toggle: (x, on) => { n.className = c().filter((k) => k !== x).concat(on ? [x] : []).join(" "); }, add: (x) => { if (!c().includes(x)) n.className = c().concat(x).join(" "); }, remove: (x) => { n.className = c().filter((y) => y !== x).join(" "); }, contains: (x) => c().includes(x) }; },
         setAttribute(k, v) { n.attrs[k] = String(v); }, getAttribute(k) { return k in n.attrs ? n.attrs[k] : null; }, removeAttribute(k) { delete n.attrs[k]; }, addEventListener() {},
         appendChild(ch) { if (ch.nodeType === 11) { ch.childNodes.splice(0).forEach((x) => n.appendChild(x)); return ch; } ch.parentNode = n; n.childNodes.push(ch); return ch; },
         append(...xs) { xs.forEach((x) => n.appendChild(typeof x === "string" ? DOC.createTextNode(x) : x)); }, remove() {}, contains(x) { return flat(n).includes(x); },
@@ -345,7 +345,7 @@ if (!process.versions.electron) {
     && /id="rp-wf" role="tabpanel" hidden/.test(html) && /report-wf\.css/.test(html) && /<script src="report-robust\.js"><\/script>\s*<script src="report-wf\.js"><\/script>/.test(html));
   ok("③ rpShowTab 把 wf 交給 renderWf(t / busy / turn / scope / gate / onRun / onUpdate / buildMeta 從外面交進去);三處回合開始 / 結束都叫 rpWfSync;雲端狀態輪詢也叫(閘門翻面)",
     /R\.renderWf\(\$\("rp-wf"\), rpWfData\(B\.data, B\.name\), rpWfOpts\(\)\)/.test(app) && /function rpWfData\(data, name\) \{ return \{ stats: data\.stats, wf: data\.wf \|\| null, code: data\.code, name \}; \}/.test(app)
-    && /return \{ t, busy: csAnyTurn\(\), turn: turnSeq, scope: cloud \? "cloud" : "local", gate, onRun: rpWfAsk, busyFix: \(el\) => busyFixLink\(el, "stop"\), onUpdate: rpWfUpdate, buildMeta: R\.buildMeta,\s*resync: rpWfSync, refocus: rpWfRefocus, refetch: rpWfRefetch \};/.test(app)
+    && /return \{ t, busy: csAnyTurn\(\), turn: turnSeq, scope: cloud \? "cloud" : "local", gate, onRun: rpWfAsk, busyFix: \(el\) => busyFixLink\(el, "stop"\), onUpdate: rpWfUpdate, buildMeta: R\.buildMeta, help: \(\) => rpHelpLink\("wf"\),\s*resync: rpWfSync, refocus: rpWfRefocus, refetch: rpWfRefetch \};/.test(app)
     && /window\.BlaveReport\.wfTurnEnded\(turnSeqMine, faulted \|\| stopped, \{ refetch: rpWfRefetch \}\);\n  upTurnEnded\(faulted\);\n  running = false;[^\n]*turnUiSync\(\);/.test(app)
     && /const gate = !cloud \? true : typeof c\.config_supports_wf === "boolean" \? c\.config_supports_wf : null;/.test(app)
     && /rpRobSync\(\); rpWfSync\(\);/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")) && /if \(typeof rpWfSync === "function"\) rpWfSync\(\);/.test(tr));
@@ -360,7 +360,7 @@ if (!process.versions.electron) {
     ok("③ R2 回合中是 aria-disabled(焦點留得住,busy-lock spec §8);其他原因原生停用前先把焦點交給分頁鈕(樣本外驗證 setDis);送不出去時焦點落在 body 也交回;app.js 兩支 refocus",
       /if \(busyNow\) \{ btn\.disabled = false; btn\.setAttribute\("aria-disabled", "true"\); return; \}\n\s*btn\.removeAttribute\("aria-disabled"\);\n\s*if \(v && !btn\.disabled && document\.activeElement === btn && typeof opts\.refocus === "function"\) opts\.refocus\(\);\n\s*btn\.disabled = v;/.test(wfjs)
       && !/[^.]btn\.disabled = (locked|true)/.test(wfjs.slice(wfjs.indexOf("function recalc"), wfjs.indexOf("function setBusy")))
-      && /if \(opts\.busy\) st\.btn\.setAttribute\("aria-disabled", "true"\); else st\.btn\.removeAttribute\("aria-disabled"\);/.test(robjs)
+      && /if \(v\.lock\) st\.btn\.setAttribute\("aria-disabled", "true"\); else st\.btn\.removeAttribute\("aria-disabled"\);/.test(robjs)
       && (wfjs.match(/if \(document\.activeElement === document\.body && typeof opts\.refocus === "function"\) opts\.refocus\(\);/g) || []).length === 1
       && (robjs.match(/if \(document\.activeElement === document\.body && typeof opts\.refocus === "function"\) opts\.refocus\(\);/g) || []).length === 1
       && /function rpRobRefocus\(\) \{ const b = \$\("rp-tabs-scroll"\)\.querySelector\('\.rp-tab\[data-tab="rob"\]'\); if \(b && !b\.disabled\) b\.focus\(\); \}/.test(app)); }
@@ -568,7 +568,7 @@ app.whenReady().then(async () => {
   r = await js(`(() => { const i = [...window.__box.querySelectorAll(".wf-empty input")]; i[0].value = "30"; i[1].value = "0"; i[1].value = ""; i[0].dispatchEvent(new Event("input")); return ${EMPTY}; })()`);
   ok("② 測試窗清空:鈕停用", r.dis);
   r = await js(`(() => { window.__render(${D(null)}, false, null, "cloud", false); return ${EMPTY}; })()`);
-  ok("② 雲端主機落後(gate false):一句「先更新主機程式」+ 去更新,不建旋鈕", r.knobs.length === 0 && r.lead === (await tf("wf.behind")) && r.btn === (await tf("minv.btn")) && !r.dis);
+  ok("② 雲端主機落後(gate false):一句「先更新主機程式」+ 立即更新,不建旋鈕", r.knobs.length === 0 && r.lead === (await tf("wf.behind")) && r.btn === (await tf("rp.btnUpdate")) && !r.dis);
   r = await js(`(() => { window.__box.querySelector(".wf-empty .wf-go").click(); return window.__upd; })()`);
   ok("② 落後態按鈕 → onUpdate(去設定 › 更新),不送驗證", r === 1 && (await js(`window.__calls.length`)) === 0);
   r = await js(`(() => { window.__render(${D(null)}, false, null, "cloud", null); return ${EMPTY}; })()`);
@@ -602,7 +602,7 @@ app.whenReady().then(async () => {
   r = await js(`(() => { window.__render(${D(SAMPLE)}, true, 9); window.__sync(false, 9); return ${PAGE}; })()`);
   ok("② 回合結束還沒等到新結果:舊結果回來、鈕解鎖", r.card && !r.spin && !r.btnDis && r.runs === 11);
   r = await js(`(() => { window.__render(${D(SAMPLE)}, false, null, "local", true); window.__sync(false, null, "local", false); return ${PAGE}; })()`);
-  ok("② 閘門翻成 false:整片重畫,重跑列多一行「先更新主機程式」、鈕換成去更新(同 web:「共 N 輪」那行留著)", r.behind === (await tf("wf.behind")) && r.btn === (await tf("minv.btn")) && !r.btnDis);
+  ok("② 閘門翻成 false:整片重畫,重跑列多一行「先更新主機程式」、鈕換成立即更新(同 web:「共 N 輪」那行留著)", r.behind === (await tf("wf.behind")) && r.btn === (await tf("rp.btnUpdate")) && !r.btnDis);
 
   r = await js(`(() => { window.__render(${D({ ...SAMPLE, row_param: "<img src=x onerror=1>" })}, false); return { img: window.__box.querySelectorAll("img").length, corner: window.__box.querySelector(".wf-grid th.corner").textContent }; })()`);
   ok("② 參數名是 agent / 雲端來的字串:只進 textContent,不變成元素", r.img === 0 && r.corner.includes("<img src=x onerror=1>"));

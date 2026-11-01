@@ -285,7 +285,9 @@ const EVENTS = {
     // 雲端歡迎頁停機那一行的〔到自動下單〕(0.1.41;renderer/welcome.js wcAlert)
     "wc_stopped_go",
     // 優化分頁讀不到上次的設定:按〔重試〕／〔重新填〕(同網頁;只記名字)
-    "mg_prefs_retry", "mg_prefs_reset"] },
+    "mg_prefs_retry", "mg_prefs_reset",
+    // 策略頁「怎麼看」外連三個分頁、策略庫成功筆記外開(canon › 說明文章外連;app.js、library.js)。api 白名單同順序,api 先上
+    "rp_help_bt", "rp_help_rob", "rp_help_wf", "lib_note_web"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

@@ -177,7 +177,6 @@ contextBridge.exposeInMainWorld("blave", {
   // 策略庫(renderer/library.js):清單由主行程打 api(畫面的 CSP 不外連);購買帶登入憑證、只在主行程;已安裝對照表存 userData
   libraryList: (lang, force) => ipcRenderer.invoke("library-list", lang, force),
   libraryReport: (id, lang) => ipcRenderer.invoke("library-report", id, lang),
-  libraryNote: (id) => ipcRenderer.invoke("library-note", id),
   libraryPurchase: (id, confirmTopup) => ipcRenderer.invoke("library-purchase", id, confirmTopup),
   libraryInstalled: (patch) => ipcRenderer.invoke("library-installed", patch),
   libraryDownload: (id) => ipcRenderer.invoke("library-download", id),

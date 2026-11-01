@@ -2666,30 +2666,6 @@ async function libraryReport(id, langRaw) {
   libReportCache.set(ck, { at: Date.now(), report });
   return report;
 }
-/* 策略詳情的成功筆記(spec-0.1.12-library-notes §2.2):GET /studio/success_notes/read_note?note_id=——每打一次 api 就記一筆閱讀,
-   所以匿名打(不帶桌面資料 key、主行程的 https 本來就沒有 cookie)、成功快取 30 分鐘、失敗不記。匿名回 201、帶 cookie 回 200,兩個都算。
-   付費筆記回 success:false + 空 content:當讀不到。回給畫面只留四欄;內文是外部 HTML,畫面那一側再過白名單重建(libNoteBuild)。 */
-const LIB_NOTE_HTML_MAX = 50000, LIB_NOTE_TTL_MS = 30 * 60 * 1000;
-function libNoteSanitize(body, id) {
-  const n = body && typeof body === "object" && body.success === true && body.note && typeof body.note === "object" ? body.note : null;
-  if (!n || typeof n.content !== "string" || !n.content.trim()) return null;
-  const t = Date.parse(typeof n.created_at === "string" ? n.created_at : "");
-  return { id, title: typeof n.title === "string" ? n.title.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, LIB_TITLE_MAX) : "",
-    html: n.content.slice(0, LIB_NOTE_HTML_MAX), date: isFinite(t) ? new Date(t).toISOString().slice(0, 10) : null };   // api 的 GMT 是資料庫的裸時間:取 UTC 年月日,不轉本地時區
-}
-const libNoteCache = new Map();   // id → { at, note }
-async function libraryNote(id) {
-  if (!Number.isInteger(id) || id <= 0) return null;
-  const hit = libNoteCache.get(id);
-  if (hit && Date.now() - hit.at < LIB_NOTE_TTL_MS) return hit.note;
-  let r = null;
-  try { r = await getJSON(`${API_BASE}/studio/success_notes/read_note?note_id=${id}`, {}); } catch (_) { return null; }
-  if (r.status !== 200 && r.status !== 201) return null;
-  const note = libNoteSanitize(r.body, id);
-  if (!note) return null;
-  libNoteCache.set(id, { at: Date.now(), note });
-  return note;
-}
 /* 購買付費策略:POST /oauth/desktop/marketplace/purchase,帶帳號 token + app_secret(同 planStart:會動餘額與信用卡,
    帳號 token 單獨不准)。回 { status, body }:body 只留畫面分支要的幾欄;打不到 → { status: 0, body: null }。 */
 function libPurchaseBody(b) {
@@ -4138,7 +4114,6 @@ app.whenReady().then(() => {
   // 策略庫(renderer/library.js):清單與已安裝表只收自家頁面;購買會動到餘額與信用卡,拒絕時回「打不到」的形狀
   handle("library-list", (_e, lang, force) => libraryList(lang, force === true), null);
   handle("library-report", (_e, id, lang) => libraryReport(id, lang), null);
-  handle("library-note", (_e, id) => libraryNote(id), null);
   ipcMain.handle("library-purchase", (e, id, confirmTopup) => (fromOurPage(e) ? libraryPurchase(id, confirmTopup) : { status: 0, body: null }));
   handle("library-installed", (_e, patch) => libraryInstalled(patch), {});
   // 側欄偏好(renderer/stratflags.js):順序與旗標只收自家頁面;拒絕時回空的 = 照預設序、沒旗標

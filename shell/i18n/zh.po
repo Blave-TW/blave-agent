@@ -4212,6 +4212,15 @@ msgstr "缺 {a}、{b} 的金鑰，這支跑不起來。"
 msgid "rp.missKeyB.many"
 msgstr "缺 {a}、{b} 等 {n} 個來源的金鑰，這支跑不起來。"
 
+msgid "rp.btnUpdate"
+msgstr "立即更新"
+
+msgid "rp.help"
+msgstr "怎麼看"
+
+msgid "rp.help.aria"
+msgstr "怎麼看（在瀏覽器開啟）"
+
 msgid "rp.missKey.go"
 msgstr "去資料來源"
 
@@ -5205,18 +5214,15 @@ msgstr "讀不到策略庫。"
 msgid "lib.retry"
 msgstr "重試"
 
-# 策略詳情的成功筆記(spec-0.1.12-library-notes §2.6):入口卡第一行與閱讀頁小標 / 清單沒帶標題時入口卡第二行 / 閱讀頁頁尾 / 讀不到
+# 策略詳情的成功筆記入口卡:第一行 / 清單沒帶標題時的第二行 / 可及名稱
 msgid "lib.note.k"
 msgstr "成功筆記"
 
 msgid "lib.note.fallback"
 msgstr "讀這篇筆記"
 
-msgid "lib.note.back"
-msgstr "回到策略"
-
-msgid "lib.note.err"
-msgstr "讀不到這篇筆記。"
+msgid "lib.note.aria"
+msgstr "成功筆記 {t}（在瀏覽器開啟）"
 
 msgid "lib.empty"
 msgstr "策略庫目前沒有策略。"

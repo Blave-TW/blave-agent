@@ -102,7 +102,7 @@ function xpDom() {
   const dd = xpMk("span", "xp-dd"); dd.id = "xp-dd"; dd.hidden = true;
   const b = xpMk("button", "xp-chip"); b.type = "button"; b.id = "xp-btn";
   b.setAttribute("aria-haspopup", "menu"); b.setAttribute("aria-expanded", "false"); b.setAttribute("aria-controls", "xp-menu");
-  const cv = xpMk("span", "xp-cv"); cv.setAttribute("aria-hidden", "true");
+  const cv = xpMk("span", "mp-chev"); cv.setAttribute("aria-hidden", "true");
   b.append(xpMk("span", "xp-chip-l"), cv);
   const m = xpMk("div", "xp-menu"); m.id = "xp-menu"; m.setAttribute("role", "menu"); m.hidden = true;
   dd.append(b, m); $("rp-tabs").appendChild(dd);
