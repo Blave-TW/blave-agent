@@ -175,7 +175,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
     if (!da || !dw) t("找得到 detectAgentsRaw / detectWhy", false);
     else { const runs = [], logged = [];
       const mkDetect = new Function("loginShellPath", "claudePath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexBundled", "codexCredOk", "codexHome",
-        crS[0] + "\nconst BAD_BIN = {};\n" + dw[0] + "\n" + da[0] + "\nreturn detectAgentsRaw;");
+        crS[0] + "\nconst BAD_BIN = {}; let codexRan = null;\n" + dw[0] + "\n" + da[0] + "\nreturn detectAgentsRaw;");
       const slow = (v) => new Promise((r) => setTimeout(() => r(v), 300));
       const detect = mkDetect(async () => "/usr/bin", async () => "/opt/claude",
         (bin, args, envPath, ms, cwd, env) => { if (!env) runs.push([bin, ms, Date.now()]); return slow(bin.endsWith("claude") ? { code: 0, stdout: '{"loggedIn":true}', timedOut: false, ms: 300 } : { code: null, stdout: "", timedOut: true, ms: 300 }); },
@@ -192,7 +192,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
   // claude auth status 跑不起來(退出碼非 0、沒有輸出)不是「回的不是 JSON」:只有退出碼 0 才記 json=false
   { const da = src.match(/^async function detectAgentsRaw\(\) \{[\s\S]*?\n\}/m), dw = src.match(/^function detectWhy\(kind, r\) \{[\s\S]*?\n\}/m);
     if (!da || !dw) { t("找得到 detectAgentsRaw / detectWhy", false); process.exit(1); }
-    const mk = new Function("loginShellPath", "claudePath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexBundled", "codexCredOk", "codexHome", crS[0] + "\nconst BAD_BIN = {};\n" + dw[0] + "\n" + da[0] + "\nreturn detectAgentsRaw;");
+    const mk = new Function("loginShellPath", "claudePath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexBundled", "codexCredOk", "codexHome", crS[0] + "\nconst BAD_BIN = {}; let codexRan = null;\n" + dw[0] + "\n" + da[0] + "\nreturn detectAgentsRaw;");
     const once = async (claudeRes) => { const logged = [];
       const d = await mk(async () => "/usr/bin", async () => "/opt/claude", async () => ({ timedOut: false, ms: 1, ...claudeRes }), binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" }, () => null, () => false, () => "/h")();
       return { why: d.claude.why, json: logged[0].claude.json }; };
@@ -206,7 +206,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
     const PKG_BIN = "/Users/u/Blave/codex/0.166.0/bin/codex";
     const mkAll = (o) => { const calls = [], ran = [], logged = [];
       const api = new Function("loginShellPath", "claudePath", "run", "binKind", "runRec", "detectLogWrite", "BASE", "path", "LOGIN_CHECK_MS", "process", "codexpkg", "CODEX_PIN", "TRIPLE", "WIN", "fs", "codexCredOk", "codexHome",
-        crS[0] + "\n" + bb[0] + "\n" + dw[0] + "\n" + cb[0] + "\n" + cbn[0] + "\n" + da[0] + "\nreturn { detectAgentsRaw, codexBinNow, codexBundled, BAD_BIN };")(
+        crS[0] + "\n" + bb[0] + "\nlet codexRan = null;\n" + dw[0] + "\n" + cb[0] + "\n" + cbn[0] + "\n" + da[0] + "\nreturn { detectAgentsRaw, codexBinNow, codexBundled, BAD_BIN };")(
         async () => "/usr/bin", async () => null,
         async (bin, args) => { ran.push(bin); return { code: o.codes[bin] !== undefined ? o.codes[bin] : 0, stdout: "", timedOut: false, ms: 1 }; }, binKind, runRec, (f, e) => logged.push(e), "/b", path, 20000, { platform: "darwin" },
         { installed: (base, pin, triple, win, fsx) => { calls.push([base, pin, triple, win, fsx === "FS"].join(",")); return o.pkg ? { path: o.pkg, version: pin, pinned: true } : null; } }, "0.166.0", "aarch64-apple-darwin", false, "FS", () => !!o.cred, () => "/h");
@@ -227,8 +227,12 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
     t("隨包還沒抓:installed=false、via=null、path=null、why=codex_none、bin=none,沒有任何 codex 子行程",
       !d.codex.installed && d.codex.via === null && d.codex.path === null && d.codex.why === "codex_none" && m.logged[0].codex.bin === "none" && !m.ran.length, { d: d.codex, ran: m.ran });
     t("…codexBinNow 回 null(回合閘:抓的中途 DOWNLOADING、沒在抓 MISSING)", (await m.codexBinNow()) === null);
-    m = mkAll({ pkg: PKG_BIN, codes: { [PKG_BIN]: 1 }, cred: true }); d = await m.detectAgentsRaw();
-    t("憑證檔在:已登入、why=null、via=pkg,完全不跑 CLI;detect.log cred=true、沒有 code", d.codex.loggedIn && d.codex.why === null && d.codex.via === "pkg" && d.codex.path === PKG_BIN && !m.ran.includes(PKG_BIN) && m.logged[0].codex.cred === true && !("code" in m.logged[0].codex), { d: d.codex, ran: m.ran, rec: m.logged[0].codex });
+    m = mkAll({ pkg: PKG_BIN, codes: { [PKG_BIN]: 0 }, cred: true }); d = await m.detectAgentsRaw();
+    t("憑證檔在、這次開 app 第一次偵測:照樣跑 login status(Windows 的 X_OK 只查存在,要真的跑起來過)", m.ran.includes(PKG_BIN) && d.codex.loggedIn && !m.logged[0].codex.cred, { ran: m.ran, rec: m.logged[0].codex });
+    m.ran.length = 0; d = await m.detectAgentsRaw();
+    t("…跑起來過之後才信憑證檔:已登入、why=null、via=pkg,完全不跑 CLI;detect.log cred=true、沒有 code", d.codex.loggedIn && d.codex.why === null && d.codex.via === "pkg" && d.codex.path === PKG_BIN && !m.ran.includes(PKG_BIN) && m.logged[1].codex.cred === true && !("code" in m.logged[1].codex), { d: d.codex, ran: m.ran, rec: m.logged[1].codex });
+    m = mkAll({ pkg: PKG_BIN, codes: { [PKG_BIN]: "EPERM" }, cred: true }); d = await m.detectAgentsRaw(); const d2 = await m.detectAgentsRaw();
+    t("憑證檔在、隨包被拒絕執行(EPERM):兩次偵測都是 codex_cantrun,不會畫成已登入;每一則訊息回 null(回合閘 BROKEN)", d.codex.why === "codex_cantrun" && d2.codex.why === "codex_cantrun" && !d2.codex.loggedIn && (await m.codexBinNow()) === null, { d: d.codex, d2: d2.codex });
     m = mkAll({ pkg: PKG_BIN, codes: { [PKG_BIN]: 1 } }); d = await m.detectAgentsRaw();
     t("憑證檔不在:不判未登入,往下跑 login status(Mac keyring 模式沒有檔)", m.ran.includes(PKG_BIN) && d.codex.why === "codex_nonzero", { d: d.codex, ran: m.ran });
     m = mkAll({ pkg: PKG_BIN, codes: { [PKG_BIN]: 127 }, cred: false }); await m.detectAgentsRaw(); m.ran.length = 0;
@@ -248,7 +252,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
     if (process.platform !== "win32") { fs.chmodSync(BIN, 0o000); t("…憑證在但執行檔不能執行 → false(交給 login status 判 cantrun)", ok(H) === false); fs.chmodSync(BIN, 0o755); }
     t("…全程沒開檔:沒叫 read／open,原始碼只有 accessSync／statSync", opened.length === 0 && !/readFile|openSync|createReadStream/.test(cc[0]), opened);
     const hf = (env) => new Function("process", "path", "os", hm[0] + "\nreturn codexHome();")({ env }, path, { homedir: () => "/u" });
-    t("codexHome:CODEX_HOME 優先,預設 ~/.codex", hf({ CODEX_HOME: "/c" }) === "/c" && hf({}) === path.join("/u", ".codex"));
+    t("codexHome:只看 ~/.codex,CODEX_HOME 不算(回合與 login status 的環境都拔掉它)", hf({ CODEX_HOME: "/c" }) === path.join("/u", ".codex") && hf({}) === path.join("/u", ".codex"));
     fs.rmSync(H, { recursive: true, force: true }); }
   // ── 整次偵測的上限(codex-detect-gaps §3.4 D):任何一處 reject 或卡住,畫面都要拿到一份完整形狀、不再停在「偵測中…」 ──
   { const wrap = src.match(/^async function detectAgents\(ms = DETECT_TOTAL_MS\) \{[\s\S]*?\n\}/m), tot = src.match(/^const DETECT_TOTAL_MS = .*$/m);

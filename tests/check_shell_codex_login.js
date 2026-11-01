@@ -25,7 +25,7 @@ t("字串:終端機那一句帶 {cmd} 佔位(兩語)", /\{cmd\}/.test(STR.zh["ro
 // ── 主行程:原文切出來,配假的 loginShellPath / BASE,子行程是真的 ──
 const POSIX = process.platform !== "win32";
 const PIECES = [constOf(src, "cmdWrap"), constOf(src, "WIN_ENV_DROP"), fnOf(src, "probeEnv"), fnOf(src, "run"), fnOf(src, "which"), "const LOGIN_CHECK_MS = 2000;", fnOf(src, "binKind"), constOf(src, "runRec"), constOf(src, "cantRun"),
-  fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "claudePath"), fnOf(src, "codexBundled"), constOf(src, "codexHome"), grab(src, /^function codexCredOk\(bin, home, fsx = fs\) \{[\s\S]*?\n\}/m, "codexCredOk"), fnOf(src, "detectAgentsRaw"), constOf(src, "DETECT_TOTAL_MS"), fnOf(src, "detectAgents"),
+  fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "claudePath"), fnOf(src, "codexBundled"), constOf(src, "codexHome"), "let codexRan = null;", grab(src, /^function codexCredOk\(bin, home, fsx = fs\) \{[\s\S]*?\n\}/m, "codexCredOk"), fnOf(src, "detectAgentsRaw"), constOf(src, "DETECT_TOTAL_MS"), fnOf(src, "detectAgents"),
   "let loginChild = null;", fnOf(src, "agentLogin"), fnOf(src, "cancelAgentLogin")].join("\n");
 // pkgBin = 隨包那顆(假的 codexpkg.installed 回它,codexBundled 跑原文);bundled = SDK 隨包的 claude
 // o.execFile／o.spawn／o.installed 換掉真的那支(同步 throw 的案例)

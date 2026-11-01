@@ -8,7 +8,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
-- **Codex 沒憑證時不再空等(`codex_engine.run`、`agent_turn._fault_code`、新 code `needs_login`;openai/codex#30514)**:`codex exec` 沒憑證會重試 401 約 15 秒(0.166.0 實測)才 turn.failed。串流第一則 `error` 認出 `401 Unauthorized: Missing bearer or basic authentication` 就收掉子行程;任何 401 都回 `needs_login`,電腦版畫登入卡。其他措辭的 401 不提早收(可能是 Codex 自己會刷新的 token)。
+- **Codex 沒憑證時不再空等(`codex_engine.run`、`agent_turn._fault_code`、新 code `needs_login`;openai/codex#30514)**:`codex exec` 沒憑證會重試 401 約 15 秒(0.166.0 實測)才 turn.failed。串流第一則 `error` 認出 `401 Unauthorized: Missing bearer or basic authentication` 就收掉子行程;任何 401 都回 `needs_login`,電腦版畫登入卡。`auth.json` 內容不全(`{}`)的 `plan type is required for chatgpt authentication` 同樣算。其他措辭的 401 不提早收(可能是 Codex 自己會刷新的 token)。
 
 ## 1.1.151 — 2026-11-01(desktop 0.1.40)
 

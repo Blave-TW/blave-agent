@@ -127,6 +127,12 @@ Promise.resolve().then(() => window.blave.codexPkgState()).then(codexPkgOnState,
 const whyState = (x) => /_cantrun$/.test((x && x.why) || "") ? "st.cantRun" : /_timeout$/.test((x && x.why) || "") ? "st.noResp" : null;
 // 登入狀態查不出來(登入檢查逾時):不是沒登入,也不擋路,真正的答案等第一則訊息。整次偵測超時沒有 path,連不上,仍是「沒有回應」
 const authUnknown = (x) => !!x && !!x.installed && !x.loggedIn && !!x.path && /_timeout$/.test(x.why || "");
+// 查不出登入狀態的那一列:saveConnection 會再偵測一次,最壞 20 秒,鈕先鎖住講「偵測中…」。沒換過去(存不了、回合中取消)就還原
+function connectWait(kind, x, b) {
+  const label = b.textContent;
+  b.disabled = true; b.textContent = t("cn.detecting");
+  return Promise.resolve(connect(kind, x)).finally(() => { b.disabled = false; b.textContent = label; });
+}
 function paintRows(d) {
   const rows = $("agent-rows"); rows.innerHTML = "";
   // 存過一把驗過的金鑰也算「現在就走得通」(mockup A1′):Blave 那顆退成描邊
@@ -149,7 +155,7 @@ function paintRows(d) {
         action: cur === kind ? null : btn(localBtnCls(), t("cn.connect"), () => connect(kind, x)) }));
     } else if (authUnknown(x)) {
       rows.appendChild(row({ name, kind, sub: t("row.authUnknown"), cur: cur === kind,
-        action: cur === kind ? null : btn(localBtnCls(), t("cn.connect"), () => connect(kind, x)) }));
+        action: cur === kind ? null : btn(localBtnCls(), t("cn.connect"), (e) => connectWait(kind, x, e.currentTarget)) }));
     } else if (x.installed && whyState(x)) {
       // 跑不起來:剛才指他去跑的就是這一顆,「怎麼修」要寫在列上;沒有回應是暫態,重新偵測就是下一步
       rows.appendChild(row({ name, kind, st: t(whyState(x)), stClass: "", sub: kind === "claude" && whyState(x) === "st.cantRun" ? t("row.reinstall", { name }) : null }));
@@ -409,7 +415,9 @@ function mdlAct(o, b) {
   if (o.kind === "apikey") return o.act === "ak.setup" ? akOpen("set") : connect("apikey", {});
   if (o.act === "cn.signIn") return localLogin(o.kind, b);
   if (o.pkg) return codexPkgGo(o.reinstall);
-  return connect(o.kind, (lastDetect && lastDetect[o.kind]) || {});
+  const x = (lastDetect && lastDetect[o.kind]) || {};
+  if (authUnknown(x)) return connectWait(o.kind, x, b);
+  return connect(o.kind, x);
 }
 function mdlPaint() {
   laiPaint();   // 額度用完卡片開的 modal 吃同一份偵測與等待狀態(沒開就直接 return)
@@ -4507,7 +4515,9 @@ function laiAct(r, b) {
   if (r.act === "lai.install") return window.blave.openExternal(LAI_INSTALL[r.kind]);
   if (r.act === "cn.signIn" || r.act === "login.retry") return localLogin(r.kind, b);
   if (r.pkg) return codexPkgGo(r.reinstall);
-  return connect(r.kind, (lastDetect && lastDetect[r.kind]) || {});
+  const x = (lastDetect && lastDetect[r.kind]) || {};
+  if (authUnknown(x)) return connectWait(r.kind, x, b);
+  return connect(r.kind, x);
 }
 // 不送 acct_card_click、不設 acctGone:那條漏斗只算綁卡
 function laiOpen(card) {

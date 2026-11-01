@@ -295,8 +295,8 @@ const stagingLeft = (fx) => [...fx.dirs, ...fx.files.keys()].some((k) => k.inclu
   { const fs = require("fs"), SH = path.join(__dirname, "..", "shell");
     const main = fs.readFileSync(path.join(SH, "main.js"), "utf8"), pre = fs.readFileSync(path.join(SH, "preload.js"), "utf8"), app = fs.readFileSync(path.join(SH, "renderer", "app.js"), "utf8");
     const STR = eval(fs.readFileSync(path.join(SH, "renderer", "strings.js"), "utf8") + ";STRINGS");
-    t("回合閘三碼:上次偵測判隨包跑不起來 → AGENT_BIN_BROKEN;正在抓 → AGENT_BIN_DOWNLOADING;否則 AGENT_BIN_MISSING(三條都在 useCodex 之前)",
-      /if \(conn\.kind === "codex" && !codexBin && BAD_BIN\.codex\) throw new Error\("AGENT_BIN_BROKEN"\);\n\s*if \(conn\.kind === "codex" && !codexBin && _codexPkg && _codexPkg\.busy\(\)\) throw new Error\("AGENT_BIN_DOWNLOADING"\);\n\s*if \(conn\.kind === "codex" && !codexBin\) throw new Error\("AGENT_BIN_MISSING"\);/.test(main)
+    t("回合閘三碼:正在抓 → AGENT_BIN_DOWNLOADING(重抓途中 BAD_BIN 還在,要排前面);上次偵測判隨包跑不起來 → AGENT_BIN_BROKEN;否則 AGENT_BIN_MISSING(三條都在 useCodex 之前)",
+      /if \(conn\.kind === "codex" && !codexBin && _codexPkg && _codexPkg\.busy\(\)\) throw new Error\("AGENT_BIN_DOWNLOADING"\);\n\s*if \(conn\.kind === "codex" && !codexBin && BAD_BIN\.codex\) throw new Error\("AGENT_BIN_BROKEN"\);\n\s*if \(conn\.kind === "codex" && !codexBin\) throw new Error\("AGENT_BIN_MISSING"\);/.test(main)
       && main.indexOf('throw new Error("AGENT_BIN_DOWNLOADING")') < main.indexOf("const useCodex = !!codexBin;"));
     t("結束 app:installing 算上 codexpkg.busy();收工的 Promise.all 帶 codexpkg.abort()", /installing = !!\(_engineSetup && \(_engineSetup\.busy\(\) \|\| _engineSetup\.compiling\(\)\)\) \|\| !!\(_codexPkg && _codexPkg\.busy\(\)\);/.test(main)
       && /engineAbort\(\), _codexPkg \? _codexPkg\.abort\(\)\.catch\(\(\) => false\) : null,/.test(main));

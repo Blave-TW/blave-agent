@@ -178,6 +178,9 @@ tr = codex_engine.CodexTranslator(types.SimpleNamespace())
 tr.feed({"type": "error", "message": "Reconnecting... 2/5 (" + NO_CREDS + ")"})
 assert tr.no_credentials and not tr.failure, "first 401 error event flags no_credentials"
 tr = codex_engine.CodexTranslator(types.SimpleNamespace())
+tr.feed({"type": "error", "message": "Reconnecting... 2/5 (plan type is required for chatgpt authentication)"})
+assert tr.no_credentials, "auth.json holding `{}` (captured from 0.166.0) counts too"
+tr = codex_engine.CodexTranslator(types.SimpleNamespace())
 tr.feed({"type": "error", "message": "Reconnecting... 1/5 (unexpected status 401 Unauthorized: token expired)"})
 tr.feed({"type": "error", "message": "Reconnecting... 2/5 (stream disconnected before completion)"})
 assert not tr.no_credentials, "a 401 Codex may refresh by itself does not stop the turn"

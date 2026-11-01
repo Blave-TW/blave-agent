@@ -126,6 +126,10 @@ const authUnknown = eval("(" + app.match(/^const authUnknown = (.*);$/m)[1] + ")
   // ── 回合缺執行檔的兩碼都算 engine_missing(turn_failed 白名單不動)──
   { const tr = new Function(fn("turnReasonOf") + "\nreturn turnReasonOf;")();
     ok("turnReasonOf:AGENT_BIN_MISSING、AGENT_BIN_DOWNLOADING、AGENT_BIN_BROKEN 都是 engine_missing;沒有就照 fail", tr("x AGENT_BIN_MISSING", "auth") === "engine_missing" && tr("Error: AGENT_BIN_BROKEN", "auth") === "engine_missing" && tr("Error: AGENT_BIN_DOWNLOADING", "auth") === "engine_missing" && tr("", "auth") === "auth" && tr(undefined, null) === "other"); }
+  { let done, seen = null; const b = { disabled: false, textContent: "連結" };
+    const cw = new Function("connect", "t", fn("connectWait") + "\nreturn connectWait;")(() => { seen = [b.disabled, b.textContent]; return new Promise((r) => { done = r; }); }, (k) => k);
+    const p = cw("codex", {}, b); const during = [b.disabled, b.textContent]; done(); await p;
+    ok("connectWait:按下去當場鎖鈕、字換 cn.detecting;connect 回來(沒換過去)還原", seen[0] === true && seen[1] === "cn.detecting" && during[0] === true && b.disabled === false && b.textContent === "連結", { seen, during, b }); }
   { const src = fn("turnEventIn");
     ok("error chunk code=needs_login:直接畫 Codex 登入卡、turn_failed 記 auth、不再等回合結束(排在 pendingErr 之前)", /if \(c\.code === "needs_login" && !turnFaulted\) \{ turnFaulted = true; turnFail = "auth"; addFault\(localAuthFault\("codex"\)\); return; \}/.test(src) && src.indexOf("needs_login") < src.indexOf("pendingErr.push")); }
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

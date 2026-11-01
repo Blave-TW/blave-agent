@@ -194,10 +194,13 @@ function codexBundled(skipBad) {
   const b = codexpkg.installed(BASE, CODEX_PIN, TRIPLE, WIN, fs);
   return b && !(skipBad && BAD_BIN.codex === b.path) ? b.path : null;
 }
-/* Codex 的登入先看憑證檔在不在:login status 也只查本機、不驗 token,而它在某些機器會卡住。只 stat,絕不開檔。
+/* Codex 的登入看憑證檔在不在:login status 也只查本機、不驗 token,而它在某些機器會卡住。只 stat,絕不開檔。
    auth.json 是 file 模式、secrets/codex_auth.age 是 Windows keyring 後端;Mac keyring 模式沒有檔,所以沒檔不算沒登入,要往下跑 login status。
-   執行檔不能執行也回 false:讓 login status 去判 cantrun,不然壞掉的那顆會畫成已登入。純函式(fsx 可換) */
-const codexHome = () => process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
+   只看 ~/.codex:回合與 login status 的環境都拔掉 CODEX_HOME(probeEnv、回合 env),這裡要跟它們看同一個地方。
+   執行檔不能執行也回 false,但 X_OK 在 Windows 只查存在:所以這次開 app 這一顆要先跑起來過一次 login status(codexRan)才信憑證檔,
+   不然被拒絕執行的隨包會畫成已登入、回合閘的 AGENT_BIN_BROKEN 走不到。純函式(fsx 可換) */
+const codexHome = () => path.join(os.homedir(), ".codex");
+let codexRan = null;
 function codexCredOk(bin, home, fsx = fs) {
   try { fsx.accessSync(bin, fsx.constants.X_OK); } catch (_) { return false; }
   return [["auth.json"], ["secrets", "codex_auth.age"]].some((p) => { try { return fsx.statSync(path.join(home, ...p)).isFile(); } catch (_) { return false; } });
@@ -260,7 +263,7 @@ async function detectAgentsRaw() {
   }), isolate("codex", async () => {
     // 只有隨包那顆(codexpkg.js)。上次判它跑不起來(BAD_BIN)就不走捷徑,讓 probe 重試
     const known = codexBundled(true);
-    if (known && codexCredOk(known, codexHome())) {
+    if (known && known === codexRan && codexCredOk(known, codexHome())) {
       BAD_BIN.codex = null;
       rec.codex.bin = "pkg"; rec.codex.cred = true;
       out.codex.installed = true; out.codex.path = known; out.codex.via = "pkg"; out.codex.loggedIn = true;
@@ -273,6 +276,7 @@ async function detectAgentsRaw() {
     out.codex.installed = true;
     out.codex.path = codexBin;
     out.codex.via = "pkg";
+    if (!cantRun(r)) codexRan = codexBin;
     Object.assign(rec.codex, runRec(r));
     out.codex.loggedIn = r.code === 0;
     if (!out.codex.loggedIn && !cantRun(r) && !r.timedOut) out.codex.authOutside = await outside(raw, (x) => x.code === 0);
@@ -3438,9 +3442,9 @@ async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEf
   // 沒有就**整輪失敗**,絕不退回去跑 Claude(稽核 ①):用戶連的是 Codex,靜默換一家供應商 = 換一條帳、換一個模型,
   // 而畫面上的連線狀態還寫著 Codex。畫面會請他重新偵測 / 重連。
   const codexBin = conn.kind === "codex" ? await codexBinNow() : null;
-  // 三個碼:BROKEN = 隨包那顆上次偵測跑不起來(列上有〔再試一次〕);DOWNLOADING = 抓的中途;MISSING = 還沒抓、也沒在抓
-  if (conn.kind === "codex" && !codexBin && BAD_BIN.codex) throw new Error("AGENT_BIN_BROKEN");
+  // 三個碼:DOWNLOADING = 抓的中途(含〔再試一次〕重抓);BROKEN = 隨包那顆上次偵測跑不起來(列上有〔再試一次〕);MISSING = 還沒抓、也沒在抓
   if (conn.kind === "codex" && !codexBin && _codexPkg && _codexPkg.busy()) throw new Error("AGENT_BIN_DOWNLOADING");
+  if (conn.kind === "codex" && !codexBin && BAD_BIN.codex) throw new Error("AGENT_BIN_BROKEN");
   if (conn.kind === "codex" && !codexBin) throw new Error("AGENT_BIN_MISSING");
   const useCodex = !!codexBin;
   const llmKey = conn.kind === "apikey" ? loadLlmKey() : null;
