@@ -149,7 +149,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
     && [...body.matchAll(/rec\.\w+\.(\w+) = /g)].map((m) => m[1]).every((k) => ["bin", "json", "loggedIn", "alt", "outside"].includes(k))
     && [...body.matchAll(/Object\.assign\(rec\.\w+, (\w+)\(/g)].every((m) => m[1] === "runRec")); }
 { const w = src.slice(src.indexOf("async function which(name, envPath, seen) {"), src.indexOf("async function codexBinNow()"));
-  t("which / claudePath 往 seen 寫的只有 where(檔種清單)/ whereTimedOut / found(檔種)", [...w.matchAll(/seen\.(\w+) = /g)].map((m) => m[1]).every((k) => ["where", "whereTimedOut", "found"].includes(k))
+  t("which / claudePath 往 seen 寫的只有 where(檔種清單)/ whereTimedOut / found(檔種)", [...w.matchAll(/seen\.(\w+) = /g)].map((m) => m[1]).every((k) => ["where", "whereTimedOut", "whereCode", "found"].includes(k))
     && /seen\.where = r\.code === 0 \? winOnPath\(r\.stdout, envPath\)\.split\(\/\\r\?\\n\/\)\.filter\(Boolean\)\.map\(binKind\)/.test(w) && /seen\.found = binKind\(found\)/.test(w)); }
 (async () => {
   await claudeFlow;
@@ -160,7 +160,8 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
     const p = await f().catch((e) => "REJECT " + e.code);
     t("loginShellPath:execFile 同步 throw → 不 reject,回已知位置", /\/opt\/homebrew\/bin/.test(p) && !/^REJECT/.test(p), p);
     const rr = await run("/x/codex", [], "/usr/bin", 1000).then((r) => r, (e) => "REJECT " + e.code);
-    t("run:正常路徑不受 try 影響(找不到檔仍是 ENOENT)", rr.code === "ENOENT", rr); }
+    t("run:正常路徑不受 try 影響(找不到檔仍是 ENOENT)、syscall 只留動作名,路徑不進紀錄", rr.code === "ENOENT" && rr.syscall === "spawn" && JSON.stringify(runRec(rr)).indexOf("/x/codex") < 0, rr);
+    t("cantRun:EPERM 算跑不起來;逾時後殺不掉的 EPERM + timedOut 不算", cantRun({ code: "EPERM", timedOut: false }) && cantRun({ code: "EPERM" }) && !cantRun({ code: "EPERM", timedOut: true }) && !cantRun({ code: 1 })); }
   const slow = await run(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], process.env.PATH, 150);
   t("run:逾時 → timedOut=true、ms ≥ 上限(以前只看得到 code,分不出逾時)", slow.timedOut === true && slow.ms >= 150 && slow.ms < 4000, slow);
   const bad = await run(process.execPath, ["-e", "process.exit(3)"], process.env.PATH, 5000);

@@ -85,6 +85,8 @@ function run(cmd, args, envPath, timeout = 10000, cwd = undefined, env = undefin
       code: err ? (err.code === undefined ? -1 : err.code) : 0,
       stdout: String(stdout || ""), stderr: String(stderr || ""),
       timedOut: !!(err && err.killed), ms: Date.now() - t0,
+      // 只留動作名:非同步那支的 syscall 是「spawn <路徑>」,路徑不進 detect.log
+      ...(err && err.syscall ? { syscall: String(err.syscall).split(" ")[0] } : {}),
     });
     // Node 的 spawn 只有 EACCES／EAGAIN／EMFILE／ENFILE／ENOENT 走 error 事件,其他(EPERM…)同步 throw。
     // 不接住就變 reject,整次偵測倒掉、兩列都「沒有回應」(uid 33959 的 detect.log:hung、EPERM)
@@ -112,7 +114,7 @@ async function which(name, envPath, seen) {
   if (process.platform === "win32") {
     const sys32 = path.win32.join(process.env.SystemRoot || "C:\\Windows", "System32");
     const r = await run(path.win32.join(sys32, "where.exe"), [name], envPath, 5000, sys32);
-    if (seen) { seen.where = r.code === 0 ? winOnPath(r.stdout, envPath).split(/\r?\n/).filter(Boolean).map(binKind) : []; if (r.timedOut) seen.whereTimedOut = true; }
+    if (seen) { seen.where = r.code === 0 ? winOnPath(r.stdout, envPath).split(/\r?\n/).filter(Boolean).map(binKind) : []; if (r.timedOut) seen.whereTimedOut = true; if (r.code !== 0 && r.code !== 1) seen.whereCode = r.code; }   // 1 = 沒裝;其他(EPERM…)不記就跟沒裝長一樣
     return r.code === 0 ? pickWinBin(winOnPath(r.stdout, envPath)) : null;
   }
   const r = await run("/usr/bin/env", ["sh", "-c", `command -v ${name}`], envPath, 5000);
@@ -134,10 +136,11 @@ function binKind(p) {
   if (/\.ps1$/i.test(p)) return "ps1";
   return /^(?:[a-z]:)?\\/i.test(p) ? "shim" : "posix";
 }
-const runRec = (r) => ({ code: r.code, timedOut: r.timedOut, ms: r.ms });
-// 找得到檔、但跑不起來:126 不能執行、127 包裝腳本裡找不到真的那顆(cmux 開發版 PATH 上的 codex 就是這樣)、ENOENT/EACCES/EPERM 開不了。
+const runRec = (r) => ({ code: r.code, timedOut: r.timedOut, ms: r.ms, ...(r.syscall ? { syscall: r.syscall } : {}) });
+// 找得到檔、但跑不起來:126 不能執行、127 包裝腳本裡找不到真的那顆(cmux 開發版 PATH 上的 codex 就是這樣)、ENOENT/EACCES/EPERM 開不了
+// (Windows 拒絕存取是 EPERM)。逾時後殺不掉會回 code EPERM + timedOut,那是逾時,排除。
 // 這不是「沒登入」:叫用戶去登入只會再撞一次。純函式
-const cantRun = (r) => !!r && (r.code === 126 || r.code === 127 || r.code === "ENOENT" || r.code === "EACCES" || r.code === "EPERM");
+const cantRun = (r) => !!r && !r.timedOut && (r.code === 126 || r.code === 127 || r.code === "ENOENT" || r.code === "EACCES" || r.code === "EPERM");
 /* 這個 CLI 為什麼不能用(detect_fail 埋點的值;能用回 null)。純函式。
    none = 沒找到檔(claude 是 PATH 與隨包那顆都沒有;codex 是隨包還沒抓);timeout = 登入檢查逾時;
    cantrun = 找到了、跑不起來(cantRun,退路那顆也不行);badjson = `claude auth status` 回的不是 JSON(舊版);
@@ -202,7 +205,7 @@ async function detectAgentsRaw() {
   };
   const rec = { claude: {}, codex: {} };
   // 一條出事只影響自己那一列(rec.err = 錯誤碼,不記訊息);detectAgents 的整體 catch 是最後防線
-  const isolate = (kind, job) => job().catch((e) => { rec[kind].err = String((e && (e.code || e.name)) || "Error"); if (!rec[kind].bin) rec[kind].bin = "none"; });
+  const isolate = (kind, job) => job().catch((e) => { rec[kind].err = String((e && (e.code || e.name)) || "Error"); if (e && e.syscall) rec[kind].syscall = String(e.syscall).split(" ")[0]; if (!rec[kind].bin) rec[kind].bin = "none"; });
   /* 解路徑 + 跑登入檢查。那顆跑不起來(cantRun)就記進 BAD_BIN、再解一次——這次 find 會跳過它:claude 拿 SDK 隨包那顆,
      codex 只有一顆、回 null 就不試第二次。退路也跑不起來才算 cantrun。rec.alt = 試過的退路檔種 */
   const probe = async (kind, find, args, rawArgs) => {
@@ -275,7 +278,7 @@ async function detectAgents(ms = DETECT_TOTAL_MS) {
   catch (e) { err = e; }
   clearTimeout(timer);
   if (out) return out;
-  detectLogWrite(path.join(BASE, "state", "detect.log"), { ts: new Date().toISOString(), os: process.platform, hung: true, err: err ? String((err && (err.code || err.name)) || "Error") : "deadline" });
+  detectLogWrite(path.join(BASE, "state", "detect.log"), { ts: new Date().toISOString(), os: process.platform, hung: true, err: err ? String((err && (err.code || err.name)) || "Error") : "deadline", ...(err && err.syscall ? { syscall: String(err.syscall).split(" ")[0] } : {}) });
   return {
     claude: { installed: true, loggedIn: false, authMethod: null, email: null, path: null, why: "claude_timeout", authOutside: false, how: null },
     codex: { installed: true, loggedIn: false, path: null, why: "codex_timeout", via: null, authOutside: false },
