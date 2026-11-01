@@ -137,10 +137,10 @@ function binKind(p) {
   return /^(?:[a-z]:)?\\/i.test(p) ? "shim" : "posix";
 }
 const runRec = (r) => ({ code: r.code, timedOut: r.timedOut, ms: r.ms, ...(r.syscall ? { syscall: r.syscall } : {}) });
-// 找得到檔、但跑不起來:126 不能執行、127 包裝腳本裡找不到真的那顆(cmux 開發版 PATH 上的 codex 就是這樣)、ENOENT/EACCES/EPERM 開不了
-// (Windows 拒絕存取是 EPERM)。逾時後殺不掉會回 code EPERM + timedOut,那是逾時,排除。
+// 找得到檔、但跑不起來:126 不能執行、127 包裝腳本裡找不到真的那顆(cmux 開發版 PATH 上的 codex 就是這樣)、ENOENT/EACCES/EPERM/UNKNOWN 開不了
+// (Windows 拒絕存取是 EPERM、非 PE 檔是 UNKNOWN,win-test-6 實測)。逾時後殺不掉會回 code EPERM + timedOut,那是逾時,排除。
 // 這不是「沒登入」:叫用戶去登入只會再撞一次。純函式
-const cantRun = (r) => !!r && !r.timedOut && (r.code === 126 || r.code === 127 || r.code === "ENOENT" || r.code === "EACCES" || r.code === "EPERM");
+const cantRun = (r) => !!r && !r.timedOut && (r.code === 126 || r.code === 127 || r.code === "ENOENT" || r.code === "EACCES" || r.code === "EPERM" || r.code === "UNKNOWN");
 /* 這個 CLI 為什麼不能用(detect_fail 埋點的值;能用回 null)。純函式。
    none = 沒找到檔(claude 是 PATH 與隨包那顆都沒有;codex 是隨包還沒抓);timeout = 登入檢查逾時;
    cantrun = 找到了、跑不起來(cantRun,退路那顆也不行);badjson = `claude auth status` 回的不是 JSON(舊版);

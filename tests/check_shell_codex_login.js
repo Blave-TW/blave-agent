@@ -84,6 +84,13 @@ exit 2
         ra.claude.loggedIn === true && ra.claude.why === null && ra.codex.installed && ra.codex.why === "codex_cantrun" && !a.logged.some((e) => e.hung) && a.logged[0].codex.code === "EPERM" && a.BAD_BIN.codex === good, { ra, log: a.logged });
       const b = mkMain(PATH_OF(d), good, null, { execFile: THROW_ON(okClaude) }), rb = await b.detectAgents();
       t("Claude 那顆 spawn 同步 throw EPERM:Codex 照常(沒登入 → codex_nonzero);Claude why=claude_cantrun;沒寫 hung", rb.codex.why === "codex_nonzero" && rb.claude.why === "claude_cantrun" && !b.logged.some((e) => e.hung), { rb, log: b.logged });
+      // win-test-6 實測:非 PE 檔是 code=UNKNOWN 的同步 throw;沒帶 code 的也不能倒。Claude 踩雷、Codex 正常(33959 的形狀)
+      const orphans = []; const onU = (e) => orphans.push(String(e && e.code)); process.on("unhandledRejection", onU);
+      for (const code of ["UNKNOWN", undefined]) {
+        const m = mkMain(PATH_OF(d), good, null, { execFile: (...a) => { if (a[0] === okClaude) throw Object.assign(new Error("spawn"), code ? { code } : {}); return real(...a); } }), rx = await m.detectAgents();
+        t("Claude 那顆同步 throw(code=" + code + "):Codex 照常、沒寫 hung;Claude " + (code ? "claude_cantrun" : "不是 timeout"), rx.codex.why === "codex_nonzero" && !m.logged.some((e) => e.hung) && !/timeout/.test(rx.claude.why) && (!code || rx.claude.why === "claude_cantrun"), rx); }
+      await new Promise((res) => setTimeout(res, 50)); process.removeListener("unhandledRejection", onU);
+      t("…rawP(對照組)沒有 unhandled rejection", orphans.length === 0, orphans);
       const c = mkMain(PATH_OF(d), good, null, { spawn: EPERM }), lc = await c.agentLogin("codex"), lc2 = await c.agentLogin("codex");
       t("登入的 spawn 同步 throw:回 code=EPERM、cantRun=true;loginChild 放掉,下一次不是 busy", lc.code === "EPERM" && lc.cantRun === true && lc.ok === false && lc.cancelled === false && lc2.busy !== true, { lc, lc2 });
       const e = mkMain(PATH_OF(d), good, null, { installed: () => { throw Object.assign(new Error("x /Users/u"), { code: "EIO" }); } }), re = await e.detectAgents();
