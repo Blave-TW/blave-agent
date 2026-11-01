@@ -3332,7 +3332,7 @@ msgid "cx.ip.loading"
 msgstr "Looking up…"
 
 msgid "cx.ip.fail"
-msgstr "You may not be signed in to Blave, or this network is IPv6-only. The whitelist needs this computer’s public IPv4."
+msgstr "The connection may have failed, or this network is IPv6-only. The whitelist needs this computer’s public IPv4."
 
 msgid "cx.ip.noneLong"
 msgstr "Couldn’t find this computer’s public IP"
