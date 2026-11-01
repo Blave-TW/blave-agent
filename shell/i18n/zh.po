@@ -9083,6 +9083,9 @@ msgstr "{syms} 被換掉的那段先不動，等 {names} 算出第一個訊號�
 msgid "tr.cf.gated"
 msgstr "{syms} 這一輪不會動，等新訊號才動。"
 
+msgid "tr.cf.nextRound"
+msgstr "下一輪照最新訊號算，有單就送。"
+
 msgid "po.unsaved"
 msgstr "未儲存"
 

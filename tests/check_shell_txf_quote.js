@@ -182,9 +182,10 @@ process.on("exit", (c) => { if (!done && c === 0) { console.log("FAIL  測試沒
         ok("#4 口數列改成 0:沒在下單 →「儲存金額」列 1 → 0、不標平倉;改成 0 那句(cf-zeroed)不出",
           z0.title === "tr.cf.title" && z0.dds.some((x) => x === "1→0tr.txfProd.txf") && !z0.zeroed && !z0.notes.length, J(z0));
         // 稽核 v027-a1 B1:群益在下單、第一次讀帳還沒回來——按下去下一輪就平倉,框不能寫「儲存金額」
-        ok("#4 口數列改成 0、在下單但第一次讀帳還沒回來:標題與主鈕「儲存並下單」+ 記號;列目標 1 → 0 標平倉;表下一句帳上還沒讀到",
-          z1.firstPending === true && z1.title === "tr.cf.titleFire" && z1.ok === "tr.cf.titleFire" && !!z1.mark && z1.dds.some((x) => x === "1→0tr.cfTagClosetr.txfProd.txf")
-          && J(z1.notes) === J(["tr.cf.firstRead"]) && !z1.zeroed, J(z1)); } }
+        // 0.1.41:帳上還沒讀到就不標平倉(不知道帳上有沒有),表下只有下一輪照最新訊號算那句
+        ok("#4 口數列改成 0、在下單但第一次讀帳還沒回來:標題與主鈕「儲存並下單」+ 記號;列目標 1 → 0、不標平倉;表下一句下一輪照最新訊號算",
+          z1.firstPending === true && z1.title === "tr.cf.titleFire" && z1.ok === "tr.cf.titleFire" && !!z1.mark && z1.dds.some((x) => x === "1→0tr.txfProd.txf")
+          && J(z1.notes) === J(["tr.cf.nextRound"]) && !z1.zeroed, J(z1)); } }
     { vm.runInContext("TR_TXF.price = null; UNIT = null; EQ = 5000", ctx);
       ctx.TR = { env: "local", list: [{ name: "btc", displayName: "BTC", hasBacktest: true }], listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, sig: {},
         st: { alive: true, report: { venues: { myex: { credentials: true, pair: true, order: true, account: true } }, config: { amounts: { btc: 500 } }, states: { btc: { symbol: "BTCUSDT", position: 1 } } } } };

@@ -9066,6 +9066,9 @@ msgstr "The part being replaced in {syms} stays as it is until the first signal 
 msgid "tr.cf.gated"
 msgstr "No orders this round for {syms}: waiting for a new signal."
 
+msgid "tr.cf.nextRound"
+msgstr "Next round uses the latest signal and sends any orders."
+
 msgid "po.unsaved"
 msgstr "Unsaved"
 
