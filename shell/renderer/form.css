@@ -1,0 +1,27 @@
+/* 聊天裡的澄清表單(renderer/form.js;spec agent-clarify-form-2026-10-31 §2.2,mockup 畫面 1 的 .cf)。
+   class 用 cform-:確認框已經用掉 .cf-opts／.cf-opt／.cf-note(app.css),同名會吃到它的格線與底色。
+   殼 = 聊天結果卡(results.css .res)同一組:bg-body 落在聊天欄的 surface-card 上、md 角、內距 12、離本文 12;
+   dark 改 outlined(底透明、1px --border-frame,Wei 拍 A)——1px 框在 light 是透明的,算在內距裡,內容離外緣仍 12。
+   題 = fieldset＋legend;選項 = canon Checkbox / Radio(18px 圓、--check-*),整列 label 可點、每列 44 熱區、橫排放不下自己折。 */
+.msg.ai .cform {
+  margin: var(--space-12) 0 0; padding: calc(var(--space-12) - 1px); border-radius: var(--radius-md);
+  background: var(--cf-bg); border: 1px solid var(--cf-border);
+  animation: res-in var(--motion-base) var(--ease-standard) backwards;
+}
+.cform fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.cform fieldset + fieldset { margin-top: var(--space-24); }   /* 組間 24:選項一折行,組內列距約 26,16 時組間只多 3px、看不出折下來那列屬於哪一題(設計稽核) */
+.cform legend { padding: 0; font-size: 12px; font-weight: 600; line-height: 18px; color: var(--ink-2); }
+.cform-opts { display: flex; flex-wrap: wrap; column-gap: var(--space-16); row-gap: 0; }
+.cform-opt { display: flex; align-items: center; gap: var(--space-8); min-height: 44px; cursor: pointer; color: var(--ink); font-size: 13px; line-height: 1.4; }
+.cform-opt input {
+  appearance: none; -webkit-appearance: none; flex: none; width: 18px; height: 18px; margin: 0; border-radius: var(--radius-pill);
+  background: var(--check-bg) center / contain no-repeat; border: 1px solid var(--check-border); cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+}
+.cform-opt input:checked { background-color: var(--check-on-bg); border-color: var(--check-on-bg); background-image: var(--check-on-radio); }
+.cform-opt input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }   /* 全域 :focus-visible 只管 button／a／[tabindex] */
+/* 一個事實講一次:三個分 K 共用一句,放在週期那題底下。要讀到才做得了決定,用 ink-2 不用 ink-3 */
+.cform-note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+.cform-acts { display: flex; align-items: center; gap: var(--space-16); margin-top: var(--space-16); }
+/* 「我自己打」熱區補到 44(全域 .btn-quiet::before 的 -6／-4 只有約 30 高),視覺不動;同 .busy-fix::before */
+.cform-self::before { inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, -50%); }

@@ -309,7 +309,7 @@ def turn_origin(value):
 
 def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
                    attachment_names=None, viewing_view=None,
-                   ui_lang=None, stop_file=None, suggest_mode=None, origin="web"):
+                   ui_lang=None, stop_file=None, suggest_mode=None, origin="web", clarify_form=False):
     """Spawn one agent_turn.py and wait for it. The turn's slot is kept fresh by the
     keep_fresh thread (every slot in _running), not by this loop."""
     # 有任一張圖的輪由 resolve() 覆寫成 Claude(DeepSeek 相容端點不支援 image block)
@@ -334,6 +334,9 @@ def run_agent_turn(session_id, message, viewing_strategy=None, viewing_tab=None,
     # 工作頁這一輪畫不畫建議;normal 與怪值都不帶(= runtime 預設),argparse 的 choices 才不會整輪 exit 2
     if suggest_mode in ("reduced", "off"):
         cmd.append(f"--suggest-mode={suggest_mode}")
+    # 頁面畫得出澄清表單;只認 True 本身(context 是瀏覽器給的)
+    if clarify_form is True:
+        cmd.append("--clarify-form")
     # `--` terminates options so a message starting with '-' (or literally '--help')
     # is taken as the positional arg, not parsed as a flag (which would silently
     # print help + exit 0 and the user would get nothing back).
@@ -601,6 +604,7 @@ def _ingest(m):
         "viewing_view": ctx.get("viewing_view"),
         "ui_lang": ctx.get("ui_lang"),
         "suggest_mode": ctx.get("suggest_mode"),
+        "clarify_form": ctx.get("clarify_form") is True,
         "origin": turn_origin(ctx.get("origin")),
         "ts": m.get("timestamp") or int(time.time() * 1000),
     }
@@ -675,6 +679,7 @@ def _worker(session_id, entry, slot):
                        viewing_view=entry.get("viewing_view"),
                        ui_lang=entry.get("ui_lang"), stop_file=stop_file,
                        suggest_mode=entry.get("suggest_mode"),
+                       clarify_form=entry.get("clarify_form"),
                        origin=turn_origin(entry.get("origin")))
     except Exception as e:
         print(f"[web_bridge] turn {session_id} crashed before/at spawn: {e}", file=sys.stderr)

@@ -26,9 +26,13 @@ def ok(name, cond, detail=""):
         fails.append(name)
 
 
-MARK = "<await"
+MARKS = ("<await", "<form")  # 澄清表單標記同一套列舉(tests/check_clarify_form.py 管 chunk 內容)
 BODY = "我需要你先選一個：\n1. 4h 均線交叉\n2. 1h RSI\n"
-REPLY = BODY + "<await/>\n<suggest>\n掃一下參數\n</suggest>"
+REPLY = BODY + '<form id="txf_backtest" prod="mxf"/>\n<await/>\n<suggest>\n掃一下參數\n</suggest>'
+
+
+def has_mark(s):
+    return any(m in (s or "") for m in MARKS)
 
 # ── 1. extract_await ──
 for name, raw, want_text, want_flag in [
@@ -123,24 +127,29 @@ for cls_name in sorted(mod_sinks):
     covered.add(cls_name)
     # 串流途中(web 的 text delta、TG 的 update 編輯)標記會短暫露出,跟 <suggest> 一樣,定稿時換掉:
     # web 靠 text_replace、TG 靠 finish 再編輯一次。這裡只看定稿後的輸出。
-    leaked = [e for e in emitted if MARK in (e[1] if isinstance(e[1], str) else str(e[1]))
+    leaked = [e for e in emitted if has_mark(e[1] if isinstance(e[1], str) else str(e[1]))
               and not (isinstance(e[1], dict) and e[1].get("type") == "text") and e[0] != "tg_update"]
-    ok(f"{cls_name}: finalize 回傳值(進 session 存檔／stdout)沒有標記", MARK not in (reply or ""), reply)
+    ok(f"{cls_name}: finalize 回傳值(進 session 存檔／stdout)沒有標記", not has_mark(reply), reply)
     ok(f"{cls_name}: 定稿送出去的泡泡／chunk／stdout 沒有標記", not leaked, leaked[:2])
     if cls is at.TelegramSink:
         fin = [e[1] for e in emitted if e[0] == "tg_finish"]
-        ok(f"{cls_name}: 最後編輯進泡泡的那份(finish)是乾淨的", fin and all(MARK not in t for t in fin), fin)
+        ok(f"{cls_name}: 最後編輯進泡泡的那份(finish)是乾淨的", fin and all(not has_mark(t) for t in fin), fin)
     if isinstance(sink, at.WebSink):
         done = [c for c in chunks if c.get("type") == "done"]
         if cls is at.ReportSink:
             ok(f"{cls_name}: 無人值守回合不送 chunk", not chunks and not done)
         else:
             rep = [c for c in chunks if c.get("type") == "text_replace"]
-            ok(f"{cls_name}: 串流出去的那段被 text_replace 換成乾淨版", rep and MARK not in rep[-1]["text"], rep)
+            ok(f"{cls_name}: 串流出去的那段被 text_replace 換成乾淨版", rep and not has_mark(rep[-1]["text"]), rep)
             ok(f"{cls_name}: done 帶 awaiting=True 與 kinds 計數", done and done[-1].get("awaiting") is True
                and isinstance(done[-1].get("kinds"), dict), done)
             sug = [c for c in chunks if c.get("type") == "suggestions"]
             ok(f"{cls_name}: 建議列照常剝出", sug and sug[-1]["items"] == ["掃一下參數"], sug)
+            order = [c.get("type") for c in chunks if c.get("type") != "text"]
+            ok(f"{cls_name}: chunk 順序 text_replace → form → suggestions → done",
+               order == ["text_replace", "form", "suggestions", "done"], order)
+    if cls is at.TelegramSink:
+        ok(f"{cls_name}: 不送 form chunk(TG 沒有卡)", not any(c.get("type") == "form" for c in chunks), chunks)
 ok("列舉完整:每個 sink 類別都被餵過", covered == mod_sinks, mod_sinks - covered)
 
 # ── 4. done 契約:沒標記 → awaiting False;被 Stop 截斷 → False;kinds 是這一輪的分類計數 ──
@@ -163,7 +172,8 @@ s.on_text(REPLY)
 s.interrupted = True
 s.finalize()
 done = [c for c in chunks if c.get("type") == "done"][-1]
-ok("被 Stop 截斷:標記照剝、awaiting False", done.get("awaiting") is False and MARK not in s.full_text, done)
+ok("被 Stop 截斷:標記照剝、awaiting False、不送 form", done.get("awaiting") is False and not has_mark(s.full_text)
+   and not any(c.get("type") == "form" for c in chunks), done)
 
 chunks.clear()
 s = at.WebSink("http://x/report", "t", "s4")

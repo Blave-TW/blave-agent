@@ -287,7 +287,10 @@ const EVENTS = {
     // 優化分頁讀不到上次的設定:按〔重試〕／〔重新填〕(同網頁;只記名字)
     "mg_prefs_retry", "mg_prefs_reset",
     // 策略頁「怎麼看」外連三個分頁、策略庫成功筆記外開(canon › 說明文章外連;app.js、library.js)。api 白名單同順序,api 先上
-    "rp_help_bt", "rp_help_rob", "rp_help_wf", "lib_note_web"] },
+    "rp_help_bt", "rp_help_rob", "rp_help_wf", "lib_note_web",
+    // 0.1.41 聊天裡的澄清表單(renderer/form.js;同 api 順序,api 先上):畫出來、按「用這些設定」、填入的句子原樣／改過送出且回合
+    // started／queued、按「我自己打」、畫過沒填自己打字送出。不帶選了哪個值
+    "clarify_shown", "clarify_filled", "clarify_sent", "clarify_sent_ed", "clarify_self", "clarify_missed"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

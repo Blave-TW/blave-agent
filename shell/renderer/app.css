@@ -1210,7 +1210,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cf-opt:has(input:checked) { border-color: var(--border-frame); }
 .cf-opt input {
   grid-row: 1 / 4; margin: 1px 0 0; width: 18px; height: 18px; appearance: none; -webkit-appearance: none;
-  border-radius: var(--radius-pill); border: 1px solid var(--border-frame); background: transparent; position: relative; cursor: pointer;
+  border-radius: var(--radius-pill); border: 1px solid var(--check-border); background: transparent; position: relative; cursor: pointer;
 }
 .cf-opt input:checked { background: var(--control-fill); border-color: var(--control-fill); }
 .cf-opt input:checked::after { content: ""; position: absolute; inset: 5px; border-radius: var(--radius-pill); background: var(--control-fill-text); }

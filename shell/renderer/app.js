@@ -3182,7 +3182,11 @@ const SUG_OPEN_TAIL = /[ \t]*<suggest>(?:(?!<\/suggest>)[\s\S])*$/;
 /* 「等你回覆」標記 <await/>(references/turn-events.md,三種寫法):runtime finalize 剝掉、done 帶 awaiting(主行程存);
    串流中的 delta 與沒走到 finalize 的回合在這裡再剝一次,半截的(`<awa`)比照 `<sug` 先藏 */
 const AWAIT_TAG = /[ \t]*<await\s*\/?>(?:<\/await>)?[ \t]*/g;
-const LIVE_TAIL_TAGS = ["<suggest>", "<await/>", "<await />", "</await>"];
+const LIVE_TAIL_TAGS = ["<suggest>", "<await/>", "<await />", "</await>", "<form"];
+/* 澄清表單標記 <form id="…" …/>(renderer/form.js):runtime finalize 剝掉、另送 form chunk。開、關、成對、隔行都吃(同 runtime _FORM_STRIP_RE 的 </?);
+   串流中帶屬性的長半截(`<form id="txf_backtest" prod="m`)超過 LIVE_TAIL_TAGS 那條的前綴判斷,另用 FORM_OPEN_TAIL 藏 */
+const FORM_TAG = /[ \t]*<\/?form\b[^<>]*>[ \t]*/g;
+const FORM_OPEN_TAIL = /[ \t]*<form\b[^<>]*$/;
 /* 純函式(tests/check_shell_paint.js 直接測它):原文 → { cards, blocks }。``` 圍欄裡的東西一個字都不動——
    `f(**a, **b)`、`2**3` 被當成粗體吃掉星號的話,用戶照畫面抄策略碼會抄錯。`live` = 還在串流:尾端半截的標記
    先藏起來;回合結束後用 live=false 重畫一次,真的以 `<` 結尾的回覆才不會被永久吃掉。 */
@@ -3191,7 +3195,9 @@ function aiParts(raw, live) {
   let text = String(raw).replace(CARD_TAG, (_m, name) => { cards.push(name); return ""; });
   if (text.indexOf("<suggest>") >= 0) text = text.replace(SUG_BLOCK, "").replace(SUG_OPEN_TAIL, "").replace(/\s+$/, "");
   if (text.indexOf("<await") >= 0) text = text.replace(AWAIT_TAG, "").replace(/\s+$/, "");
+  if (text.indexOf("<form") >= 0 || text.indexOf("</form") >= 0) text = text.replace(FORM_TAG, "").replace(/\s+$/, "");
   if (live) {
+    text = text.replace(FORM_OPEN_TAIL, "");
     const lt = text.lastIndexOf("<"), tail = lt >= 0 ? text.slice(lt) : "";
     // <suggest> / <await/> 還沒湊齊(`<sug`、`<awa`)也先藏:湊齊後才剝得到,中間那一兩拍會閃出字面
     if (lt >= 0 && tail.length <= 40 && !tail.includes(">") && ("<blave-card:".startsWith(tail.slice(0, 12)) || LIVE_TAIL_TAGS.some((x) => x.startsWith(tail)))) text = text.slice(0, lt);
@@ -3227,7 +3233,7 @@ function chatUrls(el) {
    剝完是空的回 "",空摘錄的字由主行程依型別補。純函式(tests/check_shell_reply_snippet.js) */
 const RS_MAX = 60;
 function replySnippet(raw) {
-  let s = String(raw == null ? "" : raw).replace(/\r\n?/g, "\n").replace(CARD_TAG, "").replace(SUG_BLOCK, " ").replace(SUG_OPEN_TAIL, "").replace(AWAIT_TAG, " ");
+  let s = String(raw == null ? "" : raw).replace(/\r\n?/g, "\n").replace(CARD_TAG, "").replace(SUG_BLOCK, " ").replace(SUG_OPEN_TAIL, "").replace(AWAIT_TAG, " ").replace(FORM_TAG, " ");
   const keep = [];
   let fence = null;
   for (const line of s.split("\n")) {
@@ -3928,7 +3934,7 @@ async function sendDraft() {
   const msg = $("ta").value.trim();
   const attachments = attachedFiles;   // 純附件(沒打字)也可以送,同雲端
   if ((!msg && !attachments.length) || running) return;
-  if (typeof sugSnap === "function") sugSnap(msg);   // 清空之前先記這句用沒用建議(renderer/suggest.js;跑起來才結算)
+  if (typeof sugSnap === "function") sugSnap(msg); if (typeof formSnap === "function") formSnap(msg);   // 清空之前先記這句用沒用建議、澄清表單(renderer/suggest.js、form.js;跑起來才結算)
   $("ta").value = ""; autosize();
   // chip 由 submitMessage 在送出去的那一刻清(安裝失敗後按「重試」送出的也走那裡);沒送出去的路(busy / 版本閘 / 引擎起不來)把句子還原到輸入框、檔也留著,不靜默消失
   await submitMessage(msg, { typed: true, attachments });
@@ -3966,7 +3972,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   if (typeof resTurnStart === "function") resTurnStart(viewing, !!(opts && opts.noBacktest === true));   // 這一輪動過的策略:回合開始的快照(results.js)
   if (!csTitle) { csTitle = msg || attachments[0].name; csRenderHead(); csRemember(); if (CS.loaded) CS.loaded.title = csTitle; tabsSave(); tabsPaint(); }   // 分頁記憶:送出第一句就記(馬上結束 app 重開也還在)   // 純附件開頭的對話:清單上用檔名當標題(純文字,不放圖示)
   liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = []; turnAiBubbles = []; turnFaultEl = null;
-  const unlock = () => { if (typeof sugUnsend === "function") sugUnsend(); running = false; turnStopping = false; turnUiSync(); };
+  const unlock = () => { if (typeof sugUnsend === "function") sugUnsend(); running = false; turnStopping = false; turnUiSync(); if (typeof formUnsend === "function") formUnsend(); };
   // 送出那一刻的分頁:下面每一個 await 之後都換回它再動(用戶可能在等引擎、讀附件、等主行程回覆的時候切到別的分頁)
   const T = CS.loaded, inT = (fn) => withTab(T, fn);
   const fail = (e) => inT(() => {
@@ -4018,6 +4024,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
     const r = await window.blave.sendMessage(payload);
     return inT(() => {
       // main.js 的回覆:started / queued(對著雲端主機、那台的名額滿了)/ busy,以及最低版本閘擋下的 blocked(沒有 spawn、沒有花 AI)
+      if ((r.started || r.queued) && typeof formSettle === "function") formSettle(msg);   // 澄清表單:真的送出去才整張收掉,送不出去留著(renderer/form.js)
       if ((r.started || r.queued) && typeof sugSettle === "function") sugSettle(msg);   // 用了建議 / 沒用建議,回合真的送出去才算(renderer/suggest.js)
       // 送出去了才清 chip(還掛著同一個檔才清:送出途中換掛的不動)。放在這裡不放 sendDraft:安裝失敗後按「重試」送出的那句不經 sendDraft,chip 留著的話下一句會再帶一次同一個檔
       if ((r.started || r.queued) && attachments.length) { if (T === CS.cur && attachedFiles === attachments) setAttachments([]); else if (T.composer.files === attachments) T.composer.files = []; }
@@ -5284,6 +5291,8 @@ function turnEventIn(c) {
     if (typeof xpChunk === "function") xpChunk(c);   // 轉出檔:先收著,回合結束掛到回覆下面(renderer/export.js)
   } else if (c.type === "suggestions") {
     if (typeof sugChunk === "function") sugChunk(c);   // 建議下一步:先收著,回合結束才長出(renderer/suggest.js)
+  } else if (c.type === "form") {
+    if (typeof formChunk === "function") formChunk(c);   // 澄清表單:先收著,回合結束才畫(renderer/form.js)
   } else if (c.type === "tool_prep") {
     actToolPrep(c);
   } else if (c.type === "thinking") {
@@ -5396,6 +5405,7 @@ function turnEndPost(r, pre, d) {
   else if (rpcOwed && RPC.name) rpCloudRefetch(RPC.name);   // 回合中輪詢看到開著那支變了(例如網頁發起的雲端回合):這時才補
   mpTurnEnd();
   if (typeof sugTurnEnd === "function") sugTurnEnd(!stopped && !faulted);   // 建議灰字停一拍才畫,出錯與停止都不畫(renderer/suggest.js)
+  if (typeof formTurnEnd === "function") formTurnEnd(!stopped && !faulted);   // 澄清表單畫在這一輪最後一則回覆下面,出錯與停止都不畫(renderer/form.js)
   if (rt) resTurnEnd(rt, cloudTurn);   // 最後一步:回覆泡泡已定稿(paintAi 會清空泡泡)、轉出卡已掛,結果卡才決定掛在哪一則
   chatSwitchFlush();   // 回合中切過視角:那一行排在這一輪之後(結果卡的落點已經在上一行定了)
   return { faulted, stopped };
@@ -5541,6 +5551,7 @@ function applyStatic() {
   if (typeof rptRepaint === "function") rptRepaint();   // 報告清單 / 閱讀頁 / 新增報告框(renderer/reports.js)
   if (typeof nsRepaint === "function") nsRepaint();     // 新增策略框的預覽句與閘門句(renderer/newstrategy.js)
   if (typeof brRepaint === "function") brRepaint();     // 內建瀏覽器的區塊與展開層(renderer/browser.js)
+  if (typeof formRepaint === "function") formRepaint(); // 聊天裡的澄清表單:帶年份的那一格沒掛 data-i18n(renderer/form.js)
   if ($("rp-nobt").classList.contains("is-miss")) rpNobtPaint(rpBag(), true);   // 缺金鑰那一格沒有 data-i18n(裡面有鈕),自己重畫
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   sysRelang();   // 聊天欄裡 Blave 自己畫的系統行與卡(安裝完成那一行、錯誤卡、登入卡…)

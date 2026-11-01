@@ -39,7 +39,7 @@
 .shr-al { flex: none; font-size: 13px; color: var(--ink-3); }
 .shr-radios { display: flex; flex-wrap: wrap; gap: var(--space-4) var(--space-24); }
 .shr-rad { display: flex; align-items: center; gap: var(--space-8); min-height: 32px; font-size: 13px; font-weight: 400; color: var(--ink); cursor: pointer; }
-.shr-rad input { flex: none; width: 18px; height: 18px; margin: 0; appearance: none; -webkit-appearance: none; border-radius: var(--radius-pill); border: 1px solid var(--border-frame); background: transparent; cursor: pointer; position: relative; }
+.shr-rad input { flex: none; width: 18px; height: 18px; margin: 0; appearance: none; -webkit-appearance: none; border-radius: var(--radius-pill); border: 1px solid var(--check-border); background: transparent; cursor: pointer; position: relative; }
 .shr-rad input:checked { background: var(--control-fill); border-color: var(--control-fill); }
 .shr-rad input:checked::after { content: ""; position: absolute; inset: 5px; border-radius: var(--radius-pill); background: var(--control-fill-text); }
 .shr-rad input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
