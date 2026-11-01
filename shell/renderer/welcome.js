@@ -2,8 +2,8 @@
    onboarding 期間(E,#wc):記號 → 步驟清單 ①找靈感 ②做策略並回測 ③加到策略組合,不分市場(0.1.29 Wei:拿掉市場題與④自動下單)。
    ①② 全新時同時展開;③ 輪到才露鈕;完成的一步收成一行(打勾＋名字,不帶 meta);①② 點了重新展開,③ 點了直接到策略組合頁。完成判定全從現有狀態推:
    ② = 那個視角的清單有一支回測過(本機 RP.list、雲端 TR_BAGS.cloud.list 的 hasBacktest)、③ = 那個視角存著的金額有一支 > 0(trStored,同 strat_deployed 的判準)。
-   做完之後是完成後的首頁(F,#wf):淡化記號＋一列籤;剛做完③那次,籤上方多一行「都設好了」(這次開著期間留著),籤當場可按。
-   「已進 F」兩個視角分開存主行程 ui-prefs(IPC welcome-prefs:done = 這台電腦、cloudDone = 雲端),不上傳。既有用戶第一次判斷就已經完成的直接進 F,不顯示「都設好了」、不送 onb_done——
+   做完之後是完成後的首頁(F,#wf):淡化記號＋一列籤;做完③當下就換成 F,籤當場可按。
+   「已進 F」兩個視角分開存主行程 ui-prefs(IPC welcome-prefs:done = 這台電腦、cloudDone = 雲端),不上傳。既有用戶第一次判斷就已經完成的直接進 F,不送 onb_done——
    所以那一次判斷要等到狀態檔真的讀到(報告還沒來時③一律當沒輪到,不下結論)。
    ①放最多三張現成策略卡(spec desktop-welcome-library-first;挑法 library.js wcReco):名字開詳情、「安裝並回測 →」走策略庫同一個確認框,確定後切到詳情再送。
    0.1.26 的起手句 0.1.34 退役;stFill 留著給 intro.js(第一次對話 modal)用。
@@ -57,13 +57,12 @@ function onbSteps(o) {
   });
   return { steps, complete: !!o.known && done.every(Boolean) };
 }
-/* E／F 切換。o = { flag(已進 F), complete, base(第一次讀到狀態檔那一刻完成了沒;null = 還沒讀到), fin(這次開著時已經顯示過「都設好了」) }。
-   回 { view: E | fin | F, setFlag, event }:當下完成才慶祝、才送 onb_done;上線那天就已經完成的直接進 F */
+/* E／F 切換。o = { flag(已進 F), complete, base(第一次讀到狀態檔那一刻完成了沒;null = 還沒讀到) }。
+   回 { view: E | F, setFlag, event }:當下完成才送 onb_done;上線那天就已經完成的不送。旗標一寫下一輪就走 flag,事件只送一次 */
 function onbPhase(o) {
-  if (o.fin) return { view: "fin", setFlag: false, event: false };
   if (o.flag) return { view: "F", setFlag: false, event: false };
   if (o.base === null || o.base === undefined || !o.complete) return { view: "E", setFlag: false, event: false };
-  return o.base === false ? { view: "fin", setFlag: true, event: true } : { view: "F", setFlag: true, event: false };
+  return { view: "F", setFlag: true, event: o.base === false };
 }
 /* ── 純邏輯到此 ── */
 
@@ -162,7 +161,7 @@ $("wl-fold").addEventListener("click", () => {
 // key:①策略卡的指紋;retried:清單讀不到只重試一次的語言;synced:對帳過的(帳號, 清單)資料權限組;tip:gloss 泡泡的 id 流水號
 const WC = { shown: false, armed: false, key: null, retried: null, synced: null, tip: 0, alert: null };
 // prefs:null = 還在讀(讀到之前不畫,不然已進 F 的人會先閃一下步驟清單)。base／fin／open 兩個視角各一份(ONB.v),畫面只有一份(key、amt 跟著現在的視角)
-const onbV = () => ({ base: null, fin: false, open: [false, false, false] });
+const onbV = () => ({ base: null, open: [false, false, false] });
 const ONB = { prefs: null, v: { local: onbV(), cloud: onbV() }, key: null, amt: false };
 const ONB_FLAG = { local: "done", cloud: "cloudDone" };
 /* 原因句要沒讀到撐過這麼久才出。狀態檔在就是第一輪讀到,不會出;只差一輪時畫面要等下一輪輪詢(閒置 15 秒,實測整段亮 15 秒),不延遲就是白跳一次版面 */
@@ -349,9 +348,8 @@ function onbToggle(i) {
 function onbEval(env) {
   const V = ONB.v[env], f = ONB_FLAG[env], d = onbData(env), S = onbSteps({ bt: d.bt, funded: d.funded, known: d.known, open: V.open });
   if (d.known && V.base === null) V.base = S.complete;
-  const ph = onbPhase({ flag: ONB.prefs[f], complete: S.complete, base: V.base, fin: V.fin });
+  const ph = onbPhase({ flag: ONB.prefs[f], complete: S.complete, base: V.base });
   if (ph.setFlag) { ONB.prefs[f] = true; onbSave({ [f]: true }); }
-  if (ph.view === "fin") V.fin = true;
   if (ph.event && env === "local") trackFeature("onb_done");
   if (ph.event && env === "cloud" && onbEnv() === "cloud") trackFeature("onb_done_cloud");
   return { d, S, ph };
@@ -371,7 +369,6 @@ function onbPaint() {
   if (key === ONB.key) return;
   ONB.key = key;
   wf.hidden = ph.view === "E"; wc.hidden = ph.view !== "E";
-  $("onb-fin").hidden = ph.view !== "fin";
   if (ph.view !== "E") return;
   S.steps.forEach((s, i) => { onbHead(i, s); $("onb-b" + (i + 1)).hidden = !s.open; });
   // 雲端主機本來就含 Blave 資料(主機費含資料費):「免費 vs Blave 資料」那份清單在雲端會講錯事實,同網頁歡迎頁不出

@@ -1,6 +1,6 @@
 // 歡迎頁入門步驟(spec .claude/output/specs/agent-onboarding-e-f-spec-2026-10-19.md;shell/renderer/welcome.js + trade.js 連接框)。
 //   ① 純邏輯(從原文切出來跑):onbSteps 步驟狀態機(0.1.29 起不分市場、三步:①②同時、③輪到才露、狀態檔沒讀到不下結論)、
-//      onbPhase E／fin／F 切換(當下完成才慶祝與送 onb_done,上線那天就已經完成的直接進 F);fin 是 F 多一行,不是另一頁
+//      onbPhase E／F 切換(當下完成就換成 F、送 onb_done,上線那天就已經完成的不送);沒有「都設好了」那一行
 //   ② 歡迎頁③〔加到策略組合〕(poPick)與選擇策略框 psOpen 原文接假 DOM 跑:到策略組合頁、開框、不替用戶勾;框開之前重讀這台電腦的清單
 //      (0.1.28 Wei 實機:剛裝好的策略不在框裡)
 //   ③ 連接框 cxModalOpen 原文接假 DOM 跑:預設模擬、統一照舊、每次打開記 cx_open
@@ -24,14 +24,14 @@ ok("① 點完成那一行重新展開:只有 done 的那一步跟著 open[i],cu
   states(st({ bt: true, open: [false, true, true] })) === "done,done+,cur+", states(st({ bt: true, open: [false, true, true] })));
 ok("① 狀態檔還沒讀到(known false):③ 一律沒輪到、不算完成——就算其實已經存了金額", states(st({ bt: true, funded: true, known: false })) === "done,done,todo"
   && !st({ bt: true, funded: true, known: false }).complete);
-const ph = (o) => JSON.stringify(P.onbPhase(Object.assign({ flag: false, complete: false, base: null, fin: false }, o)));
+const ph = (o) => JSON.stringify(P.onbPhase(Object.assign({ flag: false, complete: false, base: null }, o)));
 const V = (view, setFlag, event) => JSON.stringify({ view, setFlag, event });
-ok("① E／F:狀態檔還沒讀到 → E;讀到時還沒完成 → E;之後當下做完 → 「都設好了」、存旗標、送 onb_done",
-  ph({}) === V("E", false, false) && ph({ base: false }) === V("E", false, false) && ph({ base: false, complete: true }) === V("fin", true, true));
+ok("① E／F:狀態檔還沒讀到 → E;讀到時還沒完成 → E;之後當下做完 → 直接 F、存旗標、送 onb_done",
+  ph({}) === V("E", false, false) && ph({ base: false }) === V("E", false, false) && ph({ base: false, complete: true }) === V("F", true, true));
 ok("① 上線那天就已經完成(第一次讀到狀態檔就完成)→ 直接 F、存旗標、不慶祝、不送 onb_done", ph({ base: true, complete: true }) === V("F", true, false));
-ok("① 已進 F 的旗標在 → 一律 F(之後停掉下單、刪了策略也不退回 E);這次開著時顯示過「都設好了」→ 留著;設定〔重看〕0.1.30 拿掉(Wei),沒有 replay 分支",
+ok("① 已進 F 的旗標在 → 一律 F(之後停掉下單、刪了策略也不退回 E);設定〔重看〕0.1.30 拿掉(Wei),沒有 replay 分支",
   ph({ flag: true }) === V("F", false, false) && ph({ flag: true, complete: false, base: false }) === V("F", false, false)
-  && ph({ fin: true, flag: true }) === V("fin", false, false) && !/replay/.test(cutFn(src, "onbPhase")));
+  && !/replay/.test(cutFn(src, "onbPhase")));
 { const html = read(path.join(R, "index.html")), app = read(path.join(R, "app.js"));
   ok("① 設定 › 一般「入門步驟〔重看〕」整列拿掉:#set-onb、app.js 點擊處理、onbReplay、onb_replay 送出點、set.onb.replay 字串都不在",
     !/id="set-onb"|set\.onb\.replay/.test(html) && !/set-onb|onbReplay|onb_replay/.test(app) && !/onbReplay|ONB\.replay|onb_replay/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""))
@@ -73,7 +73,7 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
 // 設計稽核 v030 S4:雲端主機本來就含資料,步驟②不出「可以回測的資料」(免費 vs Blave 兩欄會講錯事實);本機照舊、切回本機要再露出來
 { const run = (envs) => {
     const el = (id) => ({ id, hidden: false, textContent: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } });
-    const els = {}; ["wc", "wf", "onb-fin", "onb-steps", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl", "onb-wait"].forEach((id) => { els[id] = el(id); });
+    const els = {}; ["wc", "wf", "onb-steps", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl", "onb-wait"].forEach((id) => { els[id] = el(id); });
     const C = { $: (id) => els[id], t: (k) => k, LANG: "zh", JSON, ONB_WAIT_MS: 12000, WC: { shown: true }, ONB: { prefs: {}, key: null, amt: false, v: { local: {}, cloud: {} } }, onbHead() {}, wcPaint() {}, ENVNOW: "local",
       onbEnv: () => C.ENVNOW, onbEval: () => ({ d: { amt: false }, S: { steps: [{ open: true }, { open: true }, { open: false }] }, ph: { view: "E" } }) };
     vm.createContext(C); vm.runInContext(paint, C);
@@ -86,21 +86,27 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
 // ── ② 方案 A(mockup-welcome-fin-2026-11-01):完成行進 F,#12／#23 不再是死路;#25／#26 講出來;#10／#22 ③ 沒鈕時講原因 ──
 { const html = read(path.join(R, "index.html")), css = read(path.join(R, "welcome.css"));
   const wf = html.slice(html.indexOf('id="wf"'), html.indexOf("</section>", html.indexOf('id="wf"'))), wc = html.slice(html.indexOf('id="wc"'), html.indexOf('id="wf"'));
-  ok("② #onb-fin 住在 #wf 的 .fin-grp 裡、在三顆籤上方,#wc 裡沒有", wf.includes('id="onb-fin"') && !wc.includes('id="onb-fin"') && wf.indexOf('class="fin-grp"') < wf.indexOf('id="onb-fin"') && wf.indexOf('id="onb-fin"') < wf.indexOf('id="wf-idea"'));
-  ok("② .fin-grp 行和籤一組(間距 8)、置中;.onb-fin 上距歸零", /\.fin-grp \{ display: flex; flex-direction: column; align-items: center; gap: var\(--space-8\); \}/.test(css) && /\.onb-fin \{ margin: 0;/.test(css));
+  const S0 = new Function(read(path.join(R, "strings.js")) + "\nreturn STRINGS;")();
+  ok("② 「都設好了」那一行整個拿掉(Wei):畫面節點、畫面碼、樣式、兩語字串、V.fin 都沒有", !html.includes("onb-fin") && !/onb-fin|V\.fin|"fin"/.test(src) && !/onb-fin/.test(css) && !("onb.fin" in S0.zh) && !("onb.fin" in S0.en));
+  ok("② .fin-grp 留給籤與 #wf-alert(間距 8)、置中", /\.fin-grp \{ display: flex; flex-direction: column; align-items: center; gap: var\(--space-8\); \}/.test(css) && wf.indexOf('class="fin-grp"') < wf.indexOf('id="wf-idea"'));
   const mk = (id) => ({ id, hidden: true, textContent: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } });
-  const run = (view) => { const els = {}; ["wc", "wf", "onb-fin", "onb-steps", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl", "onb-wait"].forEach((id) => { els[id] = mk(id); });
+  const run = (view) => { const els = {}; ["wc", "wf", "onb-steps", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl", "onb-wait"].forEach((id) => { els[id] = mk(id); });
     const C = { $: (id) => els[id], t: (k) => k, LANG: "zh", JSON, Date, ONB_WAIT_MS: 12000, WC: { shown: true }, ONB: { prefs: {}, key: null, amt: false, v: { local: { waitAt: view === "wait" ? Date.now() - 13000 : 0 } } }, onbHead() {}, wcPaint() {}, onbEnv: () => "local",
       onbEval: () => ({ d: { amt: false, bt: true, wait: view === "wait" || view === "waitNew" }, S: { steps: [{ open: false }, { open: false }, { open: false }] }, ph: { view: view === "wait" || view === "waitNew" ? "E" : view } }) };
     vm.createContext(C); vm.runInContext(cutFn(src, "onbPaint"), C); C.onbPaint(); return els; };
-  const fin = run("fin"), F = run("F"), E = run("E");
-  ok("② fin:#wf 開著、完成行露出,步驟頁收起——三顆籤當場可按(舊碼 #wf 藏著)", !fin.wf.hidden && !fin["onb-fin"].hidden && fin.wc.hidden);
-  ok("② F:#wf 開著、沒有完成行;E:#wc 開著、#wf 收起", !F.wf.hidden && F["onb-fin"].hidden && F.wc.hidden && E.wf.hidden && !E.wc.hidden);
+  const F = run("F"), E = run("E");
+  ok("② F:#wf 開著、步驟頁收起,三顆籤當場可按;E:#wc 開著、#wf 收起", !F.wf.hidden && F.wc.hidden && E.wf.hidden && !E.wc.hidden);
   ok("② #10／#22:回測做完而狀態沒讀到撐過 ONB_WAIT_MS,③ 下面出原因句;剛沒讀到先不出(只差一輪輪詢不跳版面);其他情況不出", !run("wait")["onb-wait"].hidden && run("waitNew")["onb-wait"].hidden && E["onb-wait"].hidden && /const ONB_WAIT_MS = 12000;/.test(src) && /<p class="onb-wait" id="onb-wait" data-i18n="onb\.wait" hidden><\/p>/.test(html));
   const dd = (st, list) => { const C = { TR_BAGS: { local: { st } }, RP: { list }, trExecState: () => "idle", trWith: () => ({}), trStored: () => ({}), trZDraft: () => false }; vm.createContext(C); vm.runInContext(cutFn(src, "onbData"), C); return C.onbData("local"); };
   ok("② onbData.wait:問過了、沒有報告 → true;開機第一輪還沒回來(st null)不算;讀到了不算", dd({ report: null }, []).wait === true && dd(null, []).wait === false && dd({ report: {} }, []).wait === false
     && (() => { const C = { TR_BAGS: { cloud: { st: { report: null }, list: [], listLoaded: true } }, RP: { list: [] }, libCloud: () => "stopped", trExecState: () => "idle" }; vm.createContext(C); vm.runInContext(cutFn(src, "onbData"), C); const a = C.onbData("cloud").wait; C.libCloud = () => "stale"; const b = C.onbData("cloud").wait; C.libCloud = () => "live"; return a === false && b === false && C.onbData("cloud").wait === true; })());
-  ok("② 完成事件只在 onbEval 送,onbPaint 不碰;同一次開著 V.fin 之後 onbPhase 不再給 event,onb_done 只送一次", !/onb_done/.test(cutFn(src, "onbPaint")) && (src.match(/trackFeature\("onb_done"\)/g) || []).length === 1 && JSON.parse(ph({ fin: true, base: false, complete: true })).event === false);
+    /* 真跑 onbEval 兩輪(本機、雲端各一):第一輪完成送事件、存旗標;第二輪走 flag,不再送 */
+  { for (const env of ["local", "cloud"]) { const sent = [], saved = [], F0 = { local: "done", cloud: "cloudDone" };
+      const C = { ONB: { prefs: { done: false, cloudDone: false }, v: { local: { base: false, open: [] }, cloud: { base: false, open: [] } } }, ONB_FLAG: F0, onbData: () => ({ bt: true, funded: true, known: true }), onbSave: (o) => saved.push(o), trackFeature: (n) => sent.push(n), onbEnv: () => env };
+      vm.createContext(C); vm.runInContext(["onbSteps", "onbPhase", "onbEval"].map((n) => cutFn(src, n)).join("\n"), C);
+      const a = C.onbEval(env), b = C.onbEval(env);
+      ok("② " + env + ":完成當下 view F、事件只送一次、旗標存一次", a.ph.view === "F" && b.ph.view === "F" && sent.length === 1 && sent[0] === (env === "local" ? "onb_done" : "onb_done_cloud") && saved.length === 1, JSON.stringify({ sent, saved })); } }
+  ok("② 完成事件只在 onbEval 送,onbPaint 不碰", !/onb_done/.test(cutFn(src, "onbPaint")) && (src.match(/trackFeature\("onb_done"\)/g) || []).length === 1);
   const seen = [];
   const mkEl = (tag, cls, txt) => ({ tag, className: cls || "", kids: [], attrs: {}, text: txt == null ? "" : String(txt), on: {}, append(...x) { this.kids.push(...x); }, appendChild(x) { this.kids.push(x); return x; }, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener(k, f) { this.on[k] = f; } });
   const box = (id) => { const b = mkEl("p", "wc-alert"); b.id = id; b.hidden = true; Object.defineProperty(b, "textContent", { set() { b.kids = []; } }); b.classList = { toggle(c, on) { b.calm = !!on; } }; return b; }, A = { "wc-alert": box("wc-alert"), "wf-alert": box("wf-alert") };
@@ -115,7 +121,7 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
   C2.wcAlert("live");
   ok("② 恢復(live)或本機(null):兩行都收掉", A["wc-alert"].hidden && A["wf-alert"].hidden);
   ok("② wcPaint 每輪都叫 wcAlert,在指紋 return 之前;E 的那行在記號與步驟之間、F 的在 .fin-grp 最上面", cutFn(src, "wcPaint").indexOf("wcAlert(cloud)") > 0 && cutFn(src, "wcPaint").indexOf("wcAlert(cloud)") < cutFn(src, "wcPaint").indexOf("key !== WC.key")
-    && wc.indexOf('class="wc-mark"') < wc.indexOf('id="wc-alert"') && wc.indexOf('id="wc-alert"') < wc.indexOf('id="onb-steps"') && wf.indexOf('id="wf-alert"') < wf.indexOf('id="onb-fin"')); }
+    && wc.indexOf('class="wc-mark"') < wc.indexOf('id="wc-alert"') && wc.indexOf('id="wc-alert"') < wc.indexOf('id="onb-steps"') && wf.indexOf('id="wf-alert"') < wf.indexOf('id="wf-idea"')); }
 // ── ② ①的策略卡(spec desktop-welcome-library-first §2.2):wcCard 原文接假 DOM 跑 ──
 { const css = read(path.join(R, "welcome.css")), lib = read(path.join(R, "library.js"));
   const mkEl = (tag, cls, txt) => ({ tag, className: cls || "", textContent: txt == null ? "" : String(txt), kids: [], attrs: {}, dataset: {}, on: {}, id: "",

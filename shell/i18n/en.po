@@ -9362,9 +9362,6 @@ msgid "onb.doneSr"
 msgstr "{step}, done"
 
 # Shown in place the moment the last step is done (stays while the app is open)
-msgid "onb.fin"
-msgstr "You're All Set"
-
 # Accessible name of the welcome steps list (index.html #onb-steps)
 msgid "set.onb"
 msgstr "Getting started"

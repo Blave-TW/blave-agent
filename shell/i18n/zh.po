@@ -9381,9 +9381,6 @@ msgid "onb.doneSr"
 msgstr "{step}，已完成"
 
 # 做完最後一步的當下,原地一行(這次開著期間留著)
-msgid "onb.fin"
-msgstr "都設好了"
-
 # 歡迎頁步驟清單的讀屏名(index.html #onb-steps)
 msgid "set.onb"
 msgstr "入門步驟"
