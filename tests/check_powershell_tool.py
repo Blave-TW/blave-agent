@@ -2,6 +2,7 @@
 (win-e2e-0.1.39 F2 — 1.1.149's chat_tools whitelist left PowerShell out, so those machines had no shell at all).
 
   ① chat_tools: PowerShell on win32 (next to Bash), never elsewhere; the scheduled turn still blocks it
+  ①b allowed_tools() (--allowedTools) follows the same win32 rule, and the chat turn passes it (win-e2e-0.1.40)
   ② every hook whose matcher covers Bash covers PowerShell too — enumerated twice: every _add_hook call in
      agent_turn.py's source, and every matcher actually mounted on a desktop and a cloud turn (≥ 4 shell guards)
   ③ each shell guard denies the PowerShell form of what it denies in Bash, and lets reads through
@@ -65,6 +66,28 @@ for on in (True, False):
     else:
         t("① not win32: no chat tools= list has PowerShell", all("PowerShell" not in v for v in lists.values()), lists)
 t("① the scheduled turn still blocks PowerShell", "PowerShell" in at.SCHED_BLOCKED_TOOLS)
+
+# ── ①b allowed_tools= (--allowedTools, auto-approve): same win32 rule as tools= (win-e2e-0.1.40: claude.exe had no
+#    PowerShell there, it ran only because the turn was bypassPermissions) ──
+_auto = getattr(at, "allowed_tools", None)
+for on in (True, False):
+    with _Win32(on):
+        got = _auto() if callable(_auto) else None
+        tools = at.chat_tools(None, False)
+    if on:
+        t("①b win32: allowed_tools() has every shell tool, each one the hook matcher covers",
+          got is not None and all(s in got for s in at.SHELL_TOOLS)
+          and all(covers(at.SHELL_TOOL_MATCHER, s) for s in got if s in at.SHELL_TOOLS), got)
+    else:
+        t("①b not win32: allowed_tools() has no PowerShell", got is not None and "PowerShell" not in got, got)
+    t("①b %s: every shell tool in tools= is auto-approved" % ("win32" if on else "not win32"),
+      got is not None and all(s in got for s in tools if s in at.SHELL_TOOLS), (tools, got))
+_kw = [k.value for n in ast.walk(ast.parse(open(os.path.join(ROOT, "runtime", "agent_turn.py"), encoding="utf-8").read()))
+       if isinstance(n, ast.Call) and getattr(n.func, "attr", None) == "ClaudeAgentOptions"
+       for k in n.keywords if k.arg == "allowed_tools"]
+t("①b the chat turn's ClaudeAgentOptions passes allowed_tools=allowed_tools()",
+  len(_kw) == 1 and isinstance(_kw[0], ast.Call) and getattr(_kw[0].func, "id", None) == "allowed_tools",
+  [ast.dump(k) for k in _kw])
 
 # ── ② enumerate: every hook that sees Bash sees PowerShell ──
 src_path = os.path.join(ROOT, "runtime", "agent_turn.py")

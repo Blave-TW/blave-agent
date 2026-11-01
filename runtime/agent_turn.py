@@ -107,6 +107,11 @@ def _win32():
     return sys.platform == "win32"
 
 
+def allowed_tools():
+    """ALLOWED_TOOLS for this platform: PowerShell on win32, the same rule as chat_tools (win-e2e-0.1.40)."""
+    return ALLOWED_TOOLS + (["PowerShell"] if _win32() else [])
+
+
 def _ps_unescape(cmd):
     """PowerShell's backtick escape (R`egister-ScheduledTask, a `-newline continuation) removed before matching."""
     return re.sub(r"`(.)", r"\1", re.sub(r"`\r?\n", " ", cmd))
@@ -4757,7 +4762,7 @@ def chat_tools(web, browser_mounted):
     ToolSearch 不能拿掉:內建瀏覽器的工具是延遲載入的,要靠它叫出來。TaskOutput 留著:前景指令逾時被
     CLI 轉到背景後,要靠它等輸出。上網工具照 web_tools_off——雲端回合的報告搜尋要用。"""
     off = web_tools_off(web, browser_mounted)
-    return (ALLOWED_TOOLS + (["PowerShell"] if _win32() else []) + [t for t in WEB_TOOLS if t not in off]
+    return (allowed_tools() + [t for t in WEB_TOOLS if t not in off]
             + ["TaskOutput", "ToolSearch"])
 
 
@@ -5172,7 +5177,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
         # (正式回覆被子代理尾隨的 tool chunk 收回成旁白,子代理的英文報告
         # 反而變成回覆),所以用 disallowed_tools 硬禁。`tools=` 才是內建工具清單本身(SDK 轉成 --tools),
         # 聊天回合的見 chat_tools、排程回合的見 _arm_scheduled。
-        allowed_tools=ALLOWED_TOOLS,
+        allowed_tools=allowed_tools(),
         # 電腦版上網只有內建瀏覽器一條路:引擎自己的 WebSearch / WebFetch 都關(開著時走 browser_search / browser_open,
         # 關著或掛不上就是不上網)。雲端與舊外殼見 web_tools_off
         disallowed_tools=["Task", "Agent"] + NO_LATER_TOOLS + web_tools_off(web, browser_mounted) + PROTECTED_EDIT_RULES,
