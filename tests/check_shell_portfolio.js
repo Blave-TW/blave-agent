@@ -566,6 +566,12 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
   { prop = Object.assign({}, P1, { ann_vol_pct: null }); G0().sizing = F.mpsSizingClean(filled); const a = call("mpsRows()").gap;
     prop = P1; G0().sizing = F.mpsSizingClean({ fund: 1, fundCcy: "USDT", method: "mdd", target: { mdd: 9999 } }); const b = call("mpsRows()").gap;
     ok("目標波動缺歷史波動、回撤目標反推不出來:各講各的原因", a === "mg.sizeNoHist" && b === "mg.sizeNoSolve", J([a, b])); }
+  // 真錢防線:匯率失效時非台指期列 native 是 null,鈕還開著就按下去,不能送成 0(同 web mgApplySuggest,不只靠按鈕 disabled)
+  { prop = P1; ccy = "USDT"; G0().sizing = F.mpsSizingClean(filled);
+    vm.runInContext("var __mr = mpsRows; mpsRows = function () { var d = __mr(); d.rows.forEach(function (r) { if (!r.spec) r.native = null; }); return d; };", ctx);
+    const rows = call("mpsRows()").rows, n = apply();
+    vm.runInContext("mpsRows = __mr;", ctx);
+    ok("套用金額:非台指期列 native 是 null → 不開確認框、不寫金額(web 同一道防線)", rows.some((r) => !r.spec) && n === 0, { n, rows: rows.length }); }
   { prop = P1; ccy = "USDT"; G0().sizing = F.mpsSizingClean(filled); const n = saves.length, opened = apply(), o = cfOpens[cfOpens.length - 1]; o.onSaved({}, {});
     ok("套用成功:部位大小設定一個字都不動,也不多存", opened === 1 && J(G0().sizing) === fp && saves.length === n, J(G0().sizing)); }
   { ccy = "TWD"; const d = Object.assign(draft(G0().sizing), { fund: "12,000", fundDirty: true }), r = call("mgSizeParse")(d);

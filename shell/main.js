@@ -3564,8 +3564,9 @@ async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEf
     ...(useCodex ? ["--engine", "codex", "--codex-bin", codexBin] : []),
     ...viewingArgs(viewing),
     ...suggestArgs(suggestMode),
-    // 澄清表單(renderer/form.js)無條件帶:電腦版 spawn 的永遠是包裡那份 runtime,沒有版本錯配(tests/check_shell_viewing.js 釘著 runtime 認得)
-    "--clarify-form",
+    // 澄清表單(renderer/form.js):電腦版 spawn 的永遠是包裡那份 runtime,沒有版本錯配(tests/check_shell_viewing.js 釘著 runtime 認得)。
+    // 手機來的回合不帶:手機畫不出表單,模型寫了 <form> 用戶只會等不到問題
+    ...(rec.origin === "mobile" ? [] : ["--clarify-form"]),
     // argv 上只有設定檔的**路徑**(碼在檔案裡,0600、workspace 以外、這一輪結束就刪);runtime 只在電腦版(LocalSink)認這個旗標
     ...(mcpFile ? ["--mcp-config=" + mcpFile] : []),
     ...(mcpServers.length ? ["--mcp-servers=" + mcpServers.join(",")] : []),

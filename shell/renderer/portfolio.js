@@ -1105,7 +1105,7 @@ function mgApply(opener) {
   const S = TR, G = mgBag(S);
   if (!mgProposal() || (S.save && S.save !== "failed") || trCfgUnread(trReport()) || !mgSameAsAmounts()) return;
   const d = mpsRows();
-  if (d.eff === null || d.rows.some((r) => r.spec && r.lots === null)) return;   // 缺報價時台期列 lots 是 null,不能把「未知」送成 0
+  if (d.eff === null || d.rows.some((r) => (r.spec ? r.lots === null : r.native === null))) return;   // 缺報價時台期列 lots、匯率失效時其他列 native 是 null,不能把「未知」送成 0;防線不只靠按鈕 disabled
   const payload = mpsAmountsPayload(d), names = Object.keys(payload);
   if (!names.length) return;   // 零成員的 payload 是 {} = 清空整個組合,不送
   const stored = trStored() || {}, before = Object.assign({}, S.edits), beforeCt = Object.assign({}, S.ct.edits), beforeBasis = Object.assign({}, S.ct.basis);
