@@ -327,17 +327,21 @@
   justify-content: center;
   gap: var(--space-8);
 }
-/* 結果頁頂端重跑列:兩個旋鈕 + 共 N 輪 + 重新驗證靠右,無卡底、無 label */
+/* 結果頁頂端重跑列(canon › 驗證分頁重跑鈕):左欄兩個旋鈕 + 共 N 輪自己換行,右欄鈕固定在右上,落後句與原因句跨兩欄;無卡底、無 label */
 .wf-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-8) var(--space-16);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-16);
+  row-gap: var(--space-8);
+  align-items: start;
 }
+.wf-lhs { grid-area: 1 / 1; min-width: 0; min-height: 32px; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8) var(--space-16); }
 .wf-bar .wf-est { margin: 0; }
-.wf-bar .wf-go { margin-left: auto; }
-.wf-bar .wf-cap { flex: 1 1 100%; }
-/* 空狀態:一句 + 旋鈕組 + 填色動作,無插圖。旋鈕組不另包排版,子元素直接吃 .wf-empty 的 gap */
+.wf-bar > .wf-go { grid-area: 1 / 2; }
+.wf-go.btn-quiet { height: 32px; }
+.wf-go.btn-quiet::before { inset: -6px -8px; }
+.wf-bar > .wf-est, .wf-bar > .wf-cap { grid-column: 1 / -1; }
+/* 空狀態:一句 + 旋鈕組 + 描邊動作,無插圖。旋鈕組不另包排版,子元素直接吃 .wf-empty 的 gap */
 .wf-empty {
   display: flex;
   flex-direction: column;

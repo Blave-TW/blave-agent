@@ -196,38 +196,6 @@ function wcReco(list, c) {
 // 卡的第一格(canon › Beginner strategy card › 指標列):回測樣本未滿 1 年講總報酬,否則年化
 function wcFirstKv(s) { const y = libSampleYears(s); return y !== null && y < 1 ? "total" : "ann"; }
 function libNoteTitle(s, lang) { const m = s && s.success_note_titles; const v = m && typeof m === "object" ? m[lang] : null; return typeof v === "string" && v.trim() ? v.trim() : null; }
-/* 筆記內文白名單重建(§2.4)。root = 解析好的惰性文件 body;mk(tag, cls) 造一個沒有屬性的空元素。只用 mk + 附加字串重建,
-   來源的屬性一個都不搬(事件屬性、href、style 從構造上就進不來)。a 拆成純文字:筆記裡的連結都導去網頁版,電腦版不導流。
-   第一個 <hr>(不論在第幾層)之後是寫給網頁訪客的導流段,整段不畫。 */
-const LIB_NT_TAGS = { P: "p", H3: "h3", UL: "ul", OL: "ol", LI: "li", STRONG: "strong", B: "strong", EM: "em", BR: "br", TABLE: "table", TR: "tr", TH: "th", TD: "td", BLOCKQUOTE: "div" };
-const LIB_NT_DROP = /^(IMG|PICTURE|SOURCE|VIDEO|AUDIO|SCRIPT|STYLE|LINK|META|IFRAME|FRAME|FRAMESET|OBJECT|EMBED|SVG|MATH|CANVAS|NOSCRIPT|TEMPLATE|FORM|INPUT|BUTTON|SELECT|TEXTAREA|HEAD|TITLE)$/;
-const LIB_NT_NO_TEXT = { table: 1, tr: 1, ul: 1, ol: 1 };   // 這幾種容器裡的裸字只會是排版空白
-function libNoteBuild(root, mk) {
-  const out = mk("div", "nt-body");
-  let cut = false;
-  const walk = (src, dst, dtag) => {
-    for (const n of Array.from((src && src.childNodes) || [])) {
-      if (cut) return;
-      if (n.nodeType === 3) {
-        const s = String(n.nodeValue == null ? "" : n.nodeValue);
-        if (dtag === "body") { if (s.trim()) { const p = mk("p"); p.append(s.trim()); dst.append(p); } }
-        else if (s.trim() || !LIB_NT_NO_TEXT[dtag]) dst.append(s);
-        continue;
-      }
-      if (n.nodeType !== 1) continue;
-      const tag = String(n.nodeName || "").toUpperCase();
-      if (tag === "HR") { cut = true; return; }
-      if (LIB_NT_DROP.test(tag)) continue;
-      const to = Object.prototype.hasOwnProperty.call(LIB_NT_TAGS, tag) ? LIB_NT_TAGS[tag] : null;
-      if (!to) { walk(n, dst, dtag); continue; }   // a / thead / tbody / 未知容器:拆掉留內容
-      const m = tag === "BLOCKQUOTE" ? mk("div", "nt-lead") : mk(to);
-      walk(n, m, to);
-      if (to === "table") { const w = mk("div", "nt-tw"); w.append(m); dst.append(w); } else dst.append(m);
-    }
-  };
-  walk(root, out, "body");
-  return out;
-}
 /* ── 純邏輯到此 ── */
 // p 的規則只有一份,在 strategy_versions.js fillP(那支在 library.js 之後載入,呼叫時才讀);門檻跟 api 的 mcpt_alpha 走
 function libP(tpl, p, alpha) {
@@ -239,10 +207,10 @@ const LIB = { bags: { local: libNewBag(), cloud: libNewBag() }, data: null, load
   pending: null, noNew: null, buying: null, installed: {}, chart: null, paintedEnv: null, reports: new Map(),   // reports: id → Promise<report|null>(詳情的 400 點曲線 + 回測期間)
   dlFail: null,   // 本機代下載沒成:{ id, kind: blocked | gone | signin | fail | unsent }(§4.2);再按一次、離開詳情、libInvalidate 清掉
   cloudInstalled: {}, cloudWait: null, cloudNames: null,   // 雲端視角的「已安裝」(只在這次 app 開著的期間;見 libCloudChanged)
-  busyTold: null, noteSeq: 0,   // busyTold:回合中點過哪一支的停用主鈕(那句「上一輪還在跑。」要留著,回合結束 libSync 清掉);noteSeq:筆記載入的世代
+  busyTold: null,   // 回合中點過哪一支的停用主鈕(那句「上一輪還在跑。」要留著,回合結束 libSync 清掉)
   brOn: false, ideaShown: null };   // brOn:內建瀏覽器開關的快取;ideaShown:清單上次畫的找點子入口是開是關
 const LIB_CLOUD_WAIT_MS = 3 * 60 * 1000;   // 回合結束後等雲端清單跟上的上限(主機的回報器有延遲);過了就不再認新出現的那支是這次下載的
-function libNewBag() { return { open: false, detail: null, note: null, mkt: "all", scroll: 0, detScroll: 0, row: null }; }   // note = 開著的筆記 id(第三層;null = 沒開)
+function libNewBag() { return { open: false, detail: null, mkt: "all", scroll: 0, row: null }; }
 const libEnv = () => (typeof ENV !== "undefined" && ENV.cur === "cloud" ? "cloud" : "local");
 const libBag = (env) => LIB.bags[(env || libEnv()) === "cloud" ? "cloud" : "local"];
 const libWhere = () => t(libEnv() === "cloud" ? "lib.where.cloud" : "lib.where.local");
@@ -457,14 +425,9 @@ function libPaint() {
   const B = libBag(); LIB.paintedEnv = libEnv();
   if (B.detail && LIB.data && !libFind(B.detail)) B.detail = null;   // 那支不在清單裡了(下架):回清單
   const det = B.detail ? libFind(B.detail) : null;
-  if (det && B.note !== null) B.note = libNoteId(det, LANG);   // 換語言:跟著換成那一語言的筆記,沒有就退回詳情
-  const reading = !!det && B.note !== null;
   $("lib-head-list").hidden = !!det; $("lib-back").hidden = !det;
-  // 筆記層的返回鈕寫策略名(一眼知道回到哪);全文放 title(單行截斷)
-  $("lib-back-l").hidden = reading; $("lib-back-s").hidden = !reading; $("lib-back-s").textContent = reading ? det.title : "";
-  if (reading) $("lib-back").title = det.title; else $("lib-back").removeAttribute("title");
   libMktClose(!det && $("lib-mkt-menu").contains(document.activeElement));   // 選單開著時清單重畫(清單到了、換語言):焦點在面板裡就還給觸發鈕,不掉到 body
-  if (det) { $("lib-rows").textContent = ""; $("lib-grps").textContent = ""; $("lib-state").hidden = true; if (reading) libPaintNote(det); else libPaintDetail(det); }
+  if (det) { $("lib-rows").textContent = ""; $("lib-grps").textContent = ""; $("lib-state").hidden = true; libPaintDetail(det); }
   else { libChartDrop(); $("lib-det").hidden = true; $("lib-det").textContent = ""; libPaintDesc(); libPaintList(); $("lib-body").scrollTop = B.scroll || 0; }
 }
 // 市場選單:選中的那項、觸發器上的值、每一項的支數(0 也印、照樣可選;網頁同一套)。清單還沒到就都不印;清單每重畫一次就跟著重算
@@ -653,14 +616,13 @@ function libNoDataText(s, why) {
   return libJoin(t(libNeeds(s) === "required" ? "lib.need.data" : "lib.need.unknown"), why === "no_balance" ? t("lib.why.noBalance") : why === "no_plan" ? t("lib.why.noPlan") : why === "plan_failed" ? t("lib.why.planFailed") : why === "unknown" ? t("lib.why.unknown") : "");
 }
 function libShowDetail(id) {
-  const B = libBag(); B.row = id; B.detail = id; B.note = null;
+  const B = libBag(); B.row = id; B.detail = id;
   libPaint(); $("lib-body").scrollTop = 0;
   const s = libFind(id); if (s) libBlocked(libBlockedWhy(libCtaOf(s)));
   $("lib-back").focus();
 }
 function libBack() {
   const B = libBag();
-  if (B.note !== null) { libNoteBack(); return; }
   B.detail = null; LIB.noNew = null; LIB.dlFail = null;
   libPaint();
   const r = $("lib-body").querySelector('.lib-row[data-id="' + B.row + '"]');   // 主段或(展開著的)社群段
@@ -806,85 +768,24 @@ function libBusyTell(s) {
   if (b) b.setAttribute("aria-describedby", "lib-cta-note");
 }
 
-/* ── 成功筆記(spec-0.1.12-library-notes §2.3–2.5):詳情的入口卡 → 中欄第三層閱讀頁 ── */
-function libChevron() {
-  const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg"), p = document.createElementNS(NS, "path");
-  svg.setAttribute("class", "ic"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true"); p.setAttribute("d", "m9 18 6-6-6-6");
-  svg.appendChild(p);
+/* ── 成功筆記(canon › 說明文章外連):詳情的入口卡,用瀏覽器開網站那一頁。只能連免費筆記(付費的在網站上會跳解鎖牆);清單沒帶 price,外殼判斷不了,靠上架時把關 ── */
+function libExtIcon() {   // Lucide arrow-up-right
+  const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "ic"); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
+  ["M7 7h10v10", "M7 17 17 7"].forEach((d) => { const p = document.createElementNS(NS, "path"); p.setAttribute("d", d); svg.appendChild(p); });
   return svg;
 }
 function libNoteLink(s) {
-  const b = libEl("button", "lib-noteln"); b.type = "button"; b.id = "lib-noteln";
+  const title = libNoteTitle(s, LANG) || t("lib.note.fallback");   // 清單沒帶標題(舊 api)就寫固定字,入口照出
+  const a = libEl("a", "lib-noteln"); a.id = "lib-noteln";
+  a.href = "https://blave.org/studio/" + LANG + "/success_note/read/" + libNoteId(s, LANG) + "?src=desktop_note";
+  a.setAttribute("aria-label", t("lib.note.aria", { t: title }));
   const l = libEl("span", "l"), go = libEl("span", "go");
-  l.append(libEl("span", "k", t("lib.note.k")), libEl("span", "t", libNoteTitle(s, LANG) || t("lib.note.fallback")));   // 清單沒帶標題(舊 api)就寫固定字,入口照出
-  go.appendChild(libChevron());
-  b.append(l, go);
-  b.addEventListener("click", () => libNoteOpen(s));
-  return b;
-}
-function libNoteOpen(s) {
-  const B = libBag(), id = libNoteId(s, LANG);
-  if (!id) return;
-  B.detScroll = $("lib-body").scrollTop; B.note = id;
-  libPaint(); $("lib-body").scrollTop = 0;
-  const h = $("lib-nt-title"); if (h) h.focus();
-}
-// 回到詳情(頂部返回、頁尾「回到策略」同一條):捲回進來前的位置、焦點還給入口卡
-function libNoteBack() {
-  const B = libBag(); B.note = null; LIB.noteSeq++;
-  libPaint(); $("lib-body").scrollTop = B.detScroll || 0;
-  const b = $("lib-noteln"); if (b) b.focus(); else $("lib-back").focus();
-}
-function libPaintNote(s) {
-  libChartDrop();
-  const det = $("lib-det"); det.hidden = false; det.textContent = "";
-  const nt = libEl("article", "nt"); nt.setAttribute("aria-labelledby", "lib-nt-title");
-  const h = libEl("h5", "nt-title", libNoteTitle(s, LANG)); h.id = "lib-nt-title"; h.tabIndex = -1;
-  const meta = libEl("div", "nt-meta"), body = libEl("div", "nt-slot");
-  nt.append(libEl("div", "nt-k", t("lib.note.k")), h, meta, body);
-  det.appendChild(nt);
-  libNoteLoad(s, libBag().note);
-}
-// canon Loader:200ms 內回來不畫 skeleton;畫了至少留 300ms。標題已知就先畫標題,不知道時標題位置也是一條 skeleton
-async function libNoteLoad(s, id) {
-  const seq = ++LIB.noteSeq, here = () => LIB.noteSeq === seq && !$("lib").hidden && libBag().note === id && !!$("lib-nt-title");
-  let shownAt = 0;
-  const timer = setTimeout(() => {
-    if (!here()) return;
-    shownAt = Date.now();
-    const h = $("lib-nt-title"), slot = $("lib-det").querySelector(".nt-slot");
-    if (!h.textContent) { h.textContent = ""; const k = libEl("span", "sk nt-sk-h"); k.setAttribute("aria-hidden", "true"); h.appendChild(k); }
-    const sk = libEl("div", "nt-body nt-sk"); sk.setAttribute("aria-hidden", "true");
-    [[82, "h"], 0, [96], [88], [92], [70], 0, [90], [84], [60]].forEach((x) => { if (!x) { sk.appendChild(libEl("div", "nt-sk-gap")); return; } const b = libEl("div", "sk" + (x[1] ? " nt-sk-h" : "")); b.style.width = x[0] + "%"; sk.appendChild(b); });
-    slot.textContent = ""; slot.appendChild(sk);
-  }, 200);
-  let n = null;
-  try { n = await window.blave.libraryNote(id); } catch (_) { n = null; }
-  clearTimeout(timer);
-  if (!here()) return;
-  if (shownAt) {
-    const hold = typeof rpWaitHold === "function" ? rpWaitHold(shownAt, Date.now()) : 0;
-    if (hold) { await new Promise((res) => setTimeout(res, hold)); if (!here()) return; }
-  }
-  const h = $("lib-nt-title"), slot = $("lib-det").querySelector(".nt-slot"), meta = $("lib-det").querySelector(".nt-meta");
-  slot.textContent = "";
-  const ok = n && typeof n === "object" && typeof n.html === "string" && n.html;
-  if (!ok) {
-    if (h.querySelector(".sk")) h.textContent = libNoteTitle(s, LANG) || "";
-    const st = libEl("p", "lib-state"); st.setAttribute("role", "status");
-    const b = libEl("button", "btn-out", t("lib.retry")); b.type = "button";
-    b.addEventListener("click", () => { h.focus(); slot.textContent = ""; libNoteLoad(s, id); });   // 先把焦點交給標題再清:不然被拿掉的這顆鈕會把焦點丟到 BODY
-    st.append(t("lib.note.err"), document.createElement("br"), b); slot.appendChild(st);
-    return;
-  }
-  h.textContent = (typeof n.title === "string" && n.title) || libNoteTitle(s, LANG) || "";
-  meta.textContent = ""; if (typeof n.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(n.date)) meta.appendChild(libMono(n.date));
-  // DOMParser 的 text/html 文件是惰性的(不跑 script、不載資源);再由 libNoteBuild 只用白名單標籤、零屬性重建
-  slot.appendChild(libNoteBuild(new DOMParser().parseFromString(n.html, "text/html").body, (tag, cls) => libEl(tag, cls)));
-  const foot = libEl("div", "nt-foot"), back = libEl("button", "btn-out", t("lib.note.back")); back.type = "button";
-  back.addEventListener("click", libNoteBack);
-  foot.appendChild(back); slot.appendChild(foot);
-  libTrack("library_note");
+  l.append(libEl("span", "k", t("lib.note.k")), libEl("span", "t", title));
+  go.appendChild(libExtIcon());
+  a.append(l, go);
+  a.addEventListener("click", (e) => { e.preventDefault(); window.blave.openExternal(a.href); libTrack("lib_note_web"); });
+  return a;
 }
 
 /* ── 用這支(規格 §4.1):確認框 → 送一句固定訊息 ── */

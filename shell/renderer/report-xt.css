@@ -167,11 +167,11 @@
   gap: var(--space-8);
 }
 .rob-top > .xt-upd {
-  margin-left: auto;
+  grid-column: 2;
   align-items: flex-end;
   text-align: right;
 }
-.xt-upd > .btn-fill,
+.xt-upd > .btn-quiet,
 .xt-upd > .btn-out {
   display: inline-flex;
   align-items: center;

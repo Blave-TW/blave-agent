@@ -337,6 +337,8 @@
       g.appendChild(el("span", "", opts.t("rob.metaScan")));
       meta.appendChild(fillMono(g, opts.t("rob.cells"), { n: String(sc.rows.length) }));
     } else group(opts.t("rob.metaScan"), sc.rows.length + "×" + sc.cols.length);
+    const help = typeof opts.help === "function" ? opts.help() : null;   // 「怎麼看」排在這一頁自己加的組之後,meta 最後一組
+    if (help) meta.appendChild(help);
     return meta;
   }
 
@@ -587,6 +589,27 @@
    * 而且就是送出的那一回合、而且掃描結果 / 程式碼 / 明確回測沒變——三者缺一就回原本的鈕:新結果到了 sig 變;
    * 掃描回合結束沒產出、之後任何無關回合開始時 turn 對不上;scope 讓本機 / 雲端的同名策略不互相污染 */
   const sent = new Map();
+  /* 三個驗證分頁的鈕態(canon › 驗證分頁重跑鈕):參數掃描、樣本外驗證、成交測試共用這一份;web workspace.html 同名常數,check_web_desktop_parity.js 逐列比。
+   * kind:out = 描邊、quiet = 文字鈕;實心留給頁首主鈕,這裡沒有。disabled:true = 真 disabled、"aria" = 回合中的鎖(鈕型與鈕字照底下那一態);
+   * labelKey 是槽位,各分頁的字串 key 不同(start／rerun／sent／update) */
+  const VAL_BTN = {
+    behind: { kind: "out", disabled: false, labelKey: "update" },
+    sent: { kind: "out", disabled: true, labelKey: "sent" },
+    busy: { kind: null, disabled: "aria", labelKey: null },
+    empty: { kind: "out", disabled: false, labelKey: "start" },
+    stale: { kind: "out", disabled: false, labelKey: "rerun" },
+    fresh: { kind: "quiet", disabled: false, labelKey: "rerun" },
+  };
+  const VAL_BTN_ORDER = ["behind", "sent", "busy", "empty", "stale", "fresh"];
+  const VAL_BTN_CLS = { out: "btn-out", quiet: "btn-quiet" };
+  // flags = { behind, sent, busy, empty, stale }:照優先序取第一個成立的態;都不成立就是 fresh。busy 的鈕型與鈕字取底下那一態
+  function valBtn(flags) {
+    const f = flags || {}, on = (k) => k === "fresh" || !!f[k];
+    const state = VAL_BTN_ORDER.find(on), row = VAL_BTN[state];
+    const base = row.kind ? row : VAL_BTN[VAL_BTN_ORDER.slice(VAL_BTN_ORDER.indexOf(state) + 1).find(on)];
+    return { state, cls: VAL_BTN_CLS[base.kind], kind: base.kind, labelKey: base.labelKey, disabled: row.disabled === true, lock: row.disabled === "aria" };
+  }
+
   const shown = new WeakMap();   // container → 這一次畫的那一份(robSync 就地改鈕或整片重畫、onScan 回來時對一下容器沒換成別支)
   const sentKey = (opts, name) => (opts.scope || "") + ":" + name;
   // pending = 確認框按下、submitMessage 還沒回來(暖機):那段 running 已是 true,認它才不會顯示「agent 正在回覆上一則訊息」(稽核 P2-1)
@@ -606,11 +629,13 @@
 
   // 就地把鈕與那一行說明對到現在的回合狀態;不重建節點(焦點留在鈕上)。結果頁的「已送出」由整片重畫處理,這裡不換字
   function syncBtn(st, opts) {
-    const on = isSent(st, opts);
-    // 回合中是鎖(busy-lock spec §8):aria-disabled,焦點留得住;原因句常駐在鈕下＋〔停止〕
-    if (opts.busy) st.btn.setAttribute("aria-disabled", "true"); else st.btn.removeAttribute("aria-disabled");
-    st.btn.classList.toggle("is-lock", !!opts.busy && !on);   // 被鎖才變灰;「已送出」轉圈那一態不灰(app.css)
-    if (st.kind === "empty") st.btn.textContent = opts.t(on ? "rob.btnSent" : "rob.btnScan");
+    const on = isSent(st, opts), v = valBtn({ sent: on, busy: !!opts.busy, empty: st.kind === "empty", stale: st.stale });
+    st.btn.className = v.cls + (st.kind === "result" ? " rob-go" : "") + (v.lock ? " is-lock" : "");
+    // 回合中是鎖(busy-lock spec §8):aria-disabled,焦點留得住;原因句常駐在鈕下＋〔停止〕。已送出是真 disabled:拿著焦點的鈕要停用,先交給分頁鈕
+    if (v.lock) st.btn.setAttribute("aria-disabled", "true"); else st.btn.removeAttribute("aria-disabled");
+    if (v.disabled && !st.btn.disabled && document.activeElement === st.btn && typeof opts.refocus === "function") opts.refocus();
+    st.btn.disabled = v.disabled;
+    if (st.kind === "empty") { if (on) busyLabel(st.btn, opts.t("rob.btnSent")); else st.btn.textContent = opts.t("rob.btnScan"); }
     const wantCap = !!opts.busy && !on;   // 回合進行中 submit 會直接回 false,按了沒反應像壞掉:鎖鈕 + 一行說明
     if (wantCap && !st.cap) {
       st.cap = el("p", "rob-cap"); st.cap.setAttribute("role", "status"); robCapFill(st.cap, opts); st.box.appendChild(st.cap);
@@ -645,7 +670,7 @@
   function renderEmpty(el0, data, sig, opts) {
     const box = el("div", "rob-empty");
     box.appendChild(el("p", "rob-empty-txt", opts.t("rob.empty")));
-    const btn = el("button", "btn-fill");
+    const btn = el("button", "btn-out");
     btn.type = "button";
     box.appendChild(btn);
     const st = { kind: "empty", name: data.name, data, sig, box, btn, cap: null };
@@ -656,16 +681,16 @@
     el0.appendChild(box);
   }
   /* 結果頁頂列:meta(掃描自己的條件)+「重新掃描」(位置同樣本外驗證的「重新驗證」,右上)。
-   * 新鮮 = 描邊鈕(焦點留給結論卡);過時 = 填色鈕;已送出 = 填色、停用、鈕裡轉圈 */
+   * 鈕型照 VAL_BTN(syncBtn 套);已送出時鈕裡轉圈 */
   function buildTop(container, data, stats, sc, opts, snt) {
     const top = el("div", "rob-top");
     try { top.appendChild(buildMeta(stats, sc, opts)); } catch (e) { console.warn("[robust]", e); }
-    const btn = el("button", (snt || sc.stale ? "btn-fill" : "btn-out") + " rob-go");
+    const btn = el("button", "rob-go");
     btn.type = "button";
     if (snt) busyLabel(btn, opts.t("rob.btnSent"));
     else btn.textContent = opts.t("rob.btnRescan");
     top.appendChild(btn);
-    const st = { kind: "result", name: data.name, data, sig: sentSig(data), box: top, btn, cap: null, sent: snt };
+    const st = { kind: "result", name: data.name, data, sig: sentSig(data), box: top, btn, cap: null, sent: snt, stale: !!sc.stale };
     wireBtn(container, st, scanInfo(stats, sc), opts);
     shown.set(container, st);
     syncBtn(st, opts);
@@ -725,5 +750,5 @@
   };
   // 純計算函式掛出來給核對腳本用(tests/check_shell_robust.js);畫面不靠這個
   // report-wf.js(樣本外驗證)的軸、常數讀法、數字格式也從這裡拿(同一套,不另抄)
-  window.BlaveReport._rob = { sanitizeScan, staleParts, staleTpl, scanChanges, feeTxt, gridInfo, scanInfo, ROB_END_GRACE_DAYS, robWhere, constFromCode, locate, nbrMean, argmax, decimals, sentSig, pv, f2, numList, ROB_MAX_DIM };
+  window.BlaveReport._rob = { sanitizeScan, staleParts, staleTpl, scanChanges, feeTxt, gridInfo, scanInfo, ROB_END_GRACE_DAYS, robWhere, constFromCode, locate, nbrMean, argmax, decimals, sentSig, pv, f2, numList, ROB_MAX_DIM, valBtn };
 })();

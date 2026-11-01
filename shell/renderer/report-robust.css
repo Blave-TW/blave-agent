@@ -250,20 +250,23 @@
 .rob-tip .mono { color: var(--ink); }
 .rob-tip .tl { color: var(--ink-3); }
 
-/* ---- 結果頁頂列:meta(掃描自己的條件)+「重新掃描」靠右(同樣本外驗證的重跑列 .wf-bar)。
-   新鮮是描邊鈕、過時是填色鈕,兩者盒模型一樣(app.css),切換時版面不跳 ---- */
+/* ---- 結果頁頂列(參數掃描、成交測試;canon › 驗證分頁重跑鈕):左欄 meta 自己換行,右欄鈕固定在右上,原因句跨兩欄。
+   第一列 32 高:文字鈕與描邊互換時下面不跳。文字鈕的熱區 32 + 6×2 = 44、左右外擴 8 ---- */
 .bt > .rob-top + * { margin-top: var(--space-16); }
 .rob-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-8) var(--space-16);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-16);
+  row-gap: var(--space-8);
+  align-items: start;
 }
-.rob-top > .bt-meta { flex: 1 1 auto; min-width: 0; }
-.rob-top .rob-go { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-8); white-space: nowrap; }
-.rob-top .rob-cap { flex: 1 1 100%; text-align: right; }
+.rob-top > .bt-meta { grid-column: 1; min-width: 0; min-height: 32px; align-content: center; }
+.rob-top .rob-go { grid-column: 2; display: inline-flex; align-items: center; gap: var(--space-8); white-space: nowrap; }
+.rob-top .rob-cap { grid-column: 1 / -1; text-align: right; }
+.rob-go.btn-quiet, .xt-upd > .btn-quiet { height: 32px; }
+.rob-go.btn-quiet::before, .xt-upd > .btn-quiet::before { inset: -6px -8px; }
 
-/* ---- 空狀態:一句 + 一顆填色鈕,回合進行中鈕停用 + 一行說明 ---- */
+/* ---- 空狀態:一句 + 一顆描邊鈕,回合進行中鈕停用 + 一行說明 ---- */
 .rob-empty {
   display: flex;
   flex-direction: column;
@@ -280,6 +283,7 @@
   line-height: 1.5;
   color: var(--ink-3);
 }
+.rob-empty > .btn-out { display: inline-flex; align-items: center; gap: var(--space-8); }
 .rob-cap {
   margin: 0;
   font-size: 12px;

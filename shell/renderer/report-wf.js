@@ -681,7 +681,8 @@
   function buildKnobs(container, data, stats, w, opts, rerun) {
     const t = opts.t, total = wfTotalDays(stats, w), snt = isSent(data, opts), rec = sent.get(sentKey(opts, data.name));
     const init = snt ? rec : w ? { lookback: w.lookback, step: w.step } : wfPreset(total);
-    const box = el("div", rerun ? "wf-bar" : "wf-kbox"), knobs = el("div", "wf-knobs");
+    // 重跑列是兩欄:左欄旋鈕組＋共 N 輪自己換行,鈕固定在右上。空狀態的 .wf-kbox 是 display:contents,不包
+    const box = el("div", rerun ? "wf-bar" : "wf-kbox"), knobs = el("div", "wf-knobs"), lhs = rerun ? el("div", "wf-lhs") : box;
     // label 前的色塊當圖例:灰 = 訓練窗、橘 = 測試窗(同時間軸與樣本外曲線)
     function knob(label, glyph, val) {
       const k = el("label", "wf-knob"), pre = el("span", "pre"), g = el("span", "wf-glyph " + glyph);
@@ -694,19 +695,20 @@
       return inp;
     }
     const iLb = knob(t("wf.knobLookback"), "s0", init.lookback), iSt = knob(t("wf.knobStep"), "s1", init.step);
-    box.appendChild(knobs);
+    lhs.appendChild(knobs);
+    if (rerun) box.appendChild(lhs);
     const tl = rerun ? null : el("div", "wf-tl");
     if (tl) { tl.setAttribute("role", "img"); box.appendChild(tl); }
     const est = el("p", "wf-est");
-    box.appendChild(est);
+    lhs.appendChild(est);
     const behind = opts.gate === false;
-    const btn = el("button", "btn-fill wf-go", rerun ? t("wf.btnRerun") : t("wf.btnRun"));
+    const btn = el("button", rob().valBtn({ behind, sent: snt, empty: !rerun, stale: !!(w && w.stale) }).cls + " wf-go", rerun ? t("wf.btnRerun") : t("wf.btnRun"));
     btn.type = "button";
     let busyCap = null, busyNow = false, inited = false;
     if (behind) {
-      // 只剩重跑區會走到這裡(空狀態的落後態不建旋鈕):一行說明 + 鈕換成去更新
+      // 只剩重跑區會走到這裡(空狀態的落後態不建旋鈕):一行說明 + 鈕換成立即更新
       box.appendChild(el("p", "wf-est is-bad", t("wf.behind")));
-      btn.textContent = t("minv.btn");
+      btn.textContent = t("rp.btnUpdate");
     } else if (snt) {
       btn.disabled = true;
       busyLabel(btn, t("wf.btnSent"));
@@ -762,6 +764,7 @@
       if (inited && next === busyNow) return;   // 雲端輪詢每 15 秒叫一次:狀態沒變就不重算(時間軸五列不必重建)
       inited = true;
       busyNow = next;
+      btn.classList.toggle("is-lock", busyNow);
       if (busyNow && !busyCap) { busyCap = el("p", "wf-cap"); busyCap.setAttribute("role", "status"); capFill(); box.appendChild(busyCap); }
       else if (!busyNow && busyCap) { busyCap.remove(); busyCap = null; }
       recalc();
@@ -799,12 +802,12 @@
     return { box, btn, setBusy, setWait };
   }
 
-  // 空狀態:落後的機器 = 一句話 + 去更新,旋鈕與估算對它全是死的 UI;能跑的機器 = 兩個旋鈕 + 迷你時間軸 + 共 N 輪 + 開始驗證
+  // 空狀態:落後的機器 = 一句話 + 立即更新,旋鈕與估算對它全是死的 UI;能跑的機器 = 兩個旋鈕 + 迷你時間軸 + 共 N 輪 + 開始驗證
   function buildEmpty(container, data, stats, opts) {
     const box = el("div", "wf-empty");
     if (opts.gate === false) {
       box.appendChild(el("p", "lead", opts.t("wf.behind")));
-      const go = el("button", "btn-fill wf-go", opts.t("minv.btn"));
+      const go = el("button", rob().valBtn({ behind: true }).cls + " wf-go", opts.t("rp.btnUpdate"));
       go.type = "button";
       go.addEventListener("click", () => { if (typeof opts.onUpdate === "function") opts.onUpdate(go); });
       box.appendChild(go);
@@ -853,7 +856,11 @@
     const root = el("div", "bt wf");
     let meta = null;
     try { meta = typeof opts.buildMeta === "function" ? opts.buildMeta(stats) : null; } catch (e) { console.warn("[wf]", e); }
-    if (meta) root.appendChild(meta);
+    if (meta) {
+      const help = typeof opts.help === "function" ? opts.help() : null;
+      if (help) meta.appendChild(help);
+      root.appendChild(meta);
+    }
     // meta 只留資料:這次用的窗長與輪數由下一行的旋鈕(預填這次的值)兼任
     const k = buildKnobs(container, data, stats, w, opts, true);
     st.knobs = k;

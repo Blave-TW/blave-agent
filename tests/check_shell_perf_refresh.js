@@ -104,6 +104,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   const doc = { createElement: (tag) => new El(tag), get activeElement() { return FOC.at; } };
   // 成交測試「算出來了沒」用的清洗與過時判準只有一份(report-xt.js 的純邏輯,perf.js 經 window.BlaveReport._xt 讀)
   const XT_WIN = {}; new Function("window", "document", read(path.join(R, "report-xt.js")))(XT_WIN, doc);
+  new Function("window", "document", read(path.join(R, "report-robust.js")))(XT_WIN, doc);   // 鈕態表 VAL_BTN 在這支
   const XT_GRID = (s0) => ({ lag: Object.fromEntries(["0", "1", "2", "3", "5", "10"].map((k) => [k, [s0, 10, -10]])), close_fill: [s0, 10, -10],
     cost: Object.fromEntries(["free", "0.01", "0.02", "0.05", "0.1", "0.2", "0.5"].map((k) => [k, [s0, 10, -10]])), fee_per_side_pct: 0.05, position_changes: 40 });
   const names = ["pfEl", "pfNowWhy", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfFailLine", "perfXtInfo", "perfXtFresh", "perfXtSlot", "perfXtNote", "perfXtSync", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
@@ -337,7 +338,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
 
   // ── ⑤ 接線 ──
   const html = read(path.join(R, "index.html")), css = read(path.join(R, "report-backtest.css"));
-  ok("app.js:rpShowTab 畫完回測分頁就叫 perfPaint(B)", /R\.renderBacktest\(\$\("rp-bt"\), B\.data\.stats\);\n\s*if \(tab === "bt" && typeof perfPaint === "function"\) perfPaint\(B\);/.test(fnSrc(appSrc, "rpShowTab")));
+  ok("app.js:rpShowTab 畫完回測分頁就叫 perfPaint(B)", /R\.renderBacktest\(\$\("rp-bt"\), B\.data\.stats, \{ help: \(\) => rpHelpLink\("bt"\) \}\);\n\s*if \(tab === "bt" && typeof perfPaint === "function"\) perfPaint\(B\);/.test(fnSrc(appSrc, "rpShowTab")));
   ok("app.js:三處上鎖 / 解鎖都在 verBusy 旁邊叫 perfBusy", /if \(typeof verBusy === "function"\) verBusy\(\); if \(typeof perfBusy === "function"\) perfBusy\(\);/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")));
   ok("index.html:perf.js 在 versions.js 之後(用它的 verAmount / verPendingOf / VS / RERUN_WHY)、app.js 之後、export.js 之後(xpIsTypeB)", html.indexOf('src="perf.js"') > html.indexOf('src="versions.js"') && html.indexOf('src="versions.js"') > html.indexOf('src="app.js"') && html.indexOf('src="perf.js"') > html.indexOf('src="export.js"'));
   ok("CSS:.upd 靠右(margin-left: auto)、更新中 .busy、aria-disabled 的鈕走灰階退場、失敗行緊跟 meta(8)而三組條列仍離 16",
@@ -358,9 +359,9 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
 
   // 成交測試的〔開始測試〕／〔重新測試〕那一格(perfXtSlot;report-xt.js 經 opts.rerun 拿;spec lag-test-tab §3.5):同一個動作、同一份疊層,只多帶 exec_test
   { const x = rig("zh"), s = x.F.perfXtSlot(x.B, "empty"), b = s.kids[0];
-    ok("成交測試:空狀態那格 = 〔開始測試〕(填色、data-perf-btn),title = 績效會一起更新那句,沒有下一行", b.textContent === "開始測試" && b.has("btn-fill") && b.dataset.perfBtn === "1" && s.dataset.xtUpd === "1" && s.kids.length === 1
+    ok("成交測試:空狀態那格 = 〔開始測試〕(描邊、data-perf-btn),title = 績效會一起更新那句,沒有下一行", b.textContent === "開始測試" && b.has("btn-out") && b.dataset.perfBtn === "1" && s.dataset.xtUpd === "1" && s.kids.length === 1
       && b.title === "用最新資料重跑回測，績效會一起更新。");
-    ok("成交測試:頂列那格新鮮 = 〔重新測試〕描邊、過時 = 填色", (() => { const f = x.F.perfXtSlot(x.B, "fresh").kids[0], st = x.F.perfXtSlot(x.B, "stale").kids[0]; return f.textContent === "重新測試" && f.has("btn-out") && st.textContent === "重新測試" && st.has("btn-fill"); })());
+    ok("成交測試:頂列那格新鮮 = 〔重新測試〕文字鈕、過時 = 描邊", (() => { const f = x.F.perfXtSlot(x.B, "fresh").kids[0], st = x.F.perfXtSlot(x.B, "stale").kids[0]; return f.textContent === "重新測試" && f.has("btn-quiet") && st.textContent === "重新測試" && st.has("btn-out"); })());
     b.click(); await flush();
     const run = x.F.perfXtSlot(x.B, "empty").kids[0];
     ok("成交測試(本機):按下送 stats_refresh {names:[momo], exec_test:true}(不開確認框);當下就是「測試中」(停用 + 圓環)", JSON.stringify(x.sent) === '[["stats_refresh",{"names":["momo"],"exec_test":true}]]' && run.disabled === true && run.textContent === "測試中" && x.tracked.length === 0

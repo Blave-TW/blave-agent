@@ -141,7 +141,7 @@ function perfXtFresh(B) {
   const x = X.xtSanitize(bt.exec_test);
   return !!x && !X.xtStale(x, bt["Sharpe Ratio"]);
 }
-/* 〔開始測試〕(kind empty,空狀態那顆)／〔重新測試〕(fresh 描邊、stale 填色,頂列右側)那一格:同〔更新績效〕一個動作、同一份疊層與輪詢,
+/* 〔開始測試〕(kind empty,空狀態那顆)／〔重新測試〕(鈕型照 VAL_BTN,頂列右側)那一格:同〔更新績效〕一個動作、同一份疊層與輪詢,
    不開對話回合、沒有確認框、不花額度。跑的期間停用 + 圓環:這頁按的「測試中」、別處按的「更新中」;BUSY 那次鈕下多一行「跑完再按一次」;
    這頁按的那次失敗 = 鈕照出(就是重試)、下一行「沒測成功」、原因在 title */
 function perfXtSlot(B, kind) {
@@ -150,7 +150,8 @@ function perfXtSlot(B, kind) {
   const st = info.st, box = pfEl("div", "xt-upd");
   box.dataset.xtUpd = "1"; box.dataset.xtKind = kind || "empty";
   box.dataset.xtSig = [box.dataset.xtKind, st.kind, info.mine, st.err || "", st.why || ""].join(":");
-  const btn = pfEl("button", kind === "fresh" ? "btn-out" : "btn-fill"); btn.type = "button"; btn.dataset.perfBtn = "1"; btn.dataset.xtBtn = "1";
+  const view = window.BlaveReport._rob.valBtn({ sent: st.kind === "running", empty: box.dataset.xtKind === "empty", stale: box.dataset.xtKind === "stale" });   // 回合中的鎖由 perfBusy 套
+  const btn = pfEl("button", view.cls); btn.type = "button"; btn.dataset.perfBtn = "1"; btn.dataset.xtBtn = "1";
   const tip = t("xt.btnTip"); btn.title = tip; btn.dataset.tip = tip;   // 回合中 perfBusy 會暫時換成原因,所以另存一份
   if (st.kind === "running") {
     // 跑的期間鈕停用:焦點交給這一格(role=status、tabindex -1,同 web 的狀態節點),不帶回分頁列
@@ -203,9 +204,9 @@ function perfXtSync(B) {
 function perfBusy() {
   const xt = $("rp-xt");   // 成交測試那顆(perfXtSlot)同一套,原因句用它自己那句
   [$("perf-btn")].concat(xt ? [...xt.querySelectorAll("[data-perf-btn]")] : []).forEach((b) => {
-    if (!b) return;
+    if (!b || (b.dataset.xtBtn && b.disabled)) return;   // 成交測試跑的期間是 sent,優先於鎖
     const lock = csAnyTurn();   // 機器層級:任何分頁有回合(同 busy.js)
-    // 成交測試那顆是 .btn-fill／.btn-out:灰階靠 .is-lock(同參數掃描;aria-disabled 本身在這兩種鈕上不變灰)
+    // 成交測試那顆:灰階靠 .is-lock(同參數掃描)
     if (b.dataset.xtBtn) b.className = b.className.replace(/\s*\bis-lock\b/g, "") + (lock ? " is-lock" : "");
     if (lock) { b.setAttribute("aria-disabled", "true"); b.title = t(b.dataset.xtBtn ? "xt.busyTurn" : "busy.perf"); return; }
     b.removeAttribute("aria-disabled");

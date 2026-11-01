@@ -2484,7 +2484,7 @@ function rpShowTab(tab) {
   if (!has || B.drawn[tab]) return;
   B.drawn[tab] = true;
   const R = window.BlaveReport || {};
-  if (tab === "bt" && R.renderBacktest) R.renderBacktest($("rp-bt"), B.data.stats);
+  if (tab === "bt" && R.renderBacktest) R.renderBacktest($("rp-bt"), B.data.stats, { help: () => rpHelpLink("bt") });
   if (tab === "bt" && typeof perfPaint === "function") perfPaint(B);   // 上線中策略的「更新績效」掛在 meta 列尾(renderer/perf.js)
   if (tab === "tr" && R.renderTrades) R.renderTrades($("rp-tr"), B.data.stats, { chart: rpChartSource(B) });
   // 參數掃描(report-robust.js 不碰桌面版全域:i18n、掃描鈕的送出、回合狀態、meta 那一行都從這裡交進去)
@@ -2531,7 +2531,20 @@ function rpNobtPaint(B, has) {
 // 交給 report-robust.js 的環境:回合狀態(busy + 序號)與這一袋是哪一邊(scope:本機 / 雲端同名策略的「已送出」不互相污染)
 function rpRobOpts() {
   const R = window.BlaveReport || {};
-  return { t, busy: csAnyTurn(), turn: turnSeq, scope: rpBag() === RPC ? "cloud" : "local", onScan: rpRobAsk, busyFix: (el) => busyFixLink(el, "stop"), buildMeta: R.buildMeta, resync: rpRobSync, refocus: rpRobRefocus };
+  return { t, busy: csAnyTurn(), turn: turnSeq, scope: rpBag() === RPC ? "cloud" : "local", onScan: rpRobAsk, busyFix: (el) => busyFixLink(el, "stop"), buildMeta: R.buildMeta, help: () => rpHelpLink("rob"), resync: rpRobSync, refocus: rpRobRefocus };
+}
+/* 分頁 meta 行尾的「怎麼看」(canon › 說明文章外連):一頁一篇,沒有文章的分頁不在表上、不畫。web workspace.html 同名常數,check_web_desktop_parity.js 比 */
+const RP_HELP_SLUG = { bt: "backtest_metrics", rob: "avoid_overfitting", wf: "walk_forward" };
+const RP_HELP_FEATURE = { bt: "rp_help_bt", rob: "rp_help_rob", wf: "rp_help_wf" };
+function rpHelpLink(tab) {
+  const slug = RP_HELP_SLUG[tab];
+  if (!slug) return null;
+  const g = libEl("span", "mgrp"), link = libEl("a", "rp-help");
+  link.href = docsUrl(slug) + "?src=desktop_learn"; link.setAttribute("aria-label", t("rp.help.aria"));
+  link.append(libEl("span", "lt", t("rp.help")), libExtIcon());
+  link.addEventListener("click", (e) => { e.preventDefault(); window.blave.openExternal(link.href); trackFeature(RP_HELP_FEATURE[tab]); });
+  g.appendChild(link);
+  return g;
 }
 // 「去資料來源」:開設定 › 資料來源;清單畫好後焦點交給第一列缺金鑰列的「新增」(srcPaintList 消費 SRC.focusMiss)
 function rpGoDataSrc() { trackFeature("missing_key_go"); setOpen().then(() => { if ($("set-scrim").hidden) return; SRC.focusMiss = true; setCat("src"); }); }
@@ -2570,7 +2583,7 @@ function rpWfCloud() { const st = TR_BAGS.cloud.st; return (st && st.cloud) || {
 function rpWfOpts() {
   const R = window.BlaveReport || {}, cloud = rpBag() === RPC, c = cloud ? rpWfCloud() : null;
   const gate = !cloud ? true : typeof c.config_supports_wf === "boolean" ? c.config_supports_wf : null;
-  return { t, busy: csAnyTurn(), turn: turnSeq, scope: cloud ? "cloud" : "local", gate, onRun: rpWfAsk, busyFix: (el) => busyFixLink(el, "stop"), onUpdate: rpWfUpdate, buildMeta: R.buildMeta,
+  return { t, busy: csAnyTurn(), turn: turnSeq, scope: cloud ? "cloud" : "local", gate, onRun: rpWfAsk, busyFix: (el) => busyFixLink(el, "stop"), onUpdate: rpWfUpdate, buildMeta: R.buildMeta, help: () => rpHelpLink("wf"),
     resync: rpWfSync, refocus: rpWfRefocus, refetch: rpWfRefetch };
 }
 /* 雲端結果比回合晚到:留著「已送出」的期間 report-wf.js 每 30 秒叫一次(失敗退回後也補抓一次),name = 送出的那一支(複驗 P2-R2)。

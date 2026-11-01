@@ -1,14 +1,14 @@
 /* window.BlaveReport.renderXt(el, { stats, name, market }, opts)
  * — 報告頁「成交測試」分頁(雲端工作頁 data-tab="xt" 那一段的移植,spec .claude/output/specs/lag-test-tab-2026-10-26.md §0、§3.5)。
  *
- * 按了才算(10-27):沒測過是空狀態一顆〔開始測試〕,有結果時 meta 列右側〔重新測試〕(新鮮描邊、過時填色,同參數掃描)。
+ * 按了才算(10-27):沒測過是空狀態一顆〔開始測試〕,有結果時 meta 列右側〔重新測試〕(鈕型照 report-robust.js 的 VAL_BTN,同參數掃描)。
  * 鈕送的是機器指令 stats_refresh {names:[name], exec_test:true}——不開對話回合、沒有確認框;鈕、疊層、失敗行由 perf.js 經 opts.rerun 交進來,
  * 跟回測數據分頁的〔更新績效〕共用同一份 perf 狀態。判讀句只陳述數字:門檻只決定挑哪幾個數字講,不產生任何結論字。
  * 純邏輯那一段(含兩層畫面狀態 xtPageOf / xtCellOf)跟 web 逐字同一份(tests/check_web_desktop_parity.js 切兩邊比)。
  *
  * 這支**不依賴桌面版的全域**,環境全在 opts:`t` = i18n;`buildMeta(o)` = 回測那一行 meta(只交標的 / 週期 / 期間,全頁叫交易成本、
  * 費率由成本段標題列講);`old` = 時光機看舊版本(版本不存 exec_test:只一句 vpanel-note、不給鈕);`behind` = 主機的 lib 確定不算 exec_test
- * (鈕那一格換成〔去更新〕+ 一句先更新,`onUpdate(btn)`;結果照畫);`ui()` = 這支的 perf 狀態 { perf: idle|running|failed, mine: 這頁按的那次 run|busy|fail|null }(perf.js perfXtInfo);
+ * (鈕那一格換成〔立即更新〕+ 一句先更新,`onUpdate(btn)`;結果照畫);`ui()` = 這支的 perf 狀態 { perf: idle|running|failed, mine: 這頁按的那次 run|busy|fail|null }(perf.js perfXtInfo);
  * `turn` = agent 回合中;`rerun(kind)` = 鈕那一格,kind = empty|fresh|stale(回 null = 這支不能更新績效,不出鈕);
  * `onMetric()` = 表頭換了指標(值有變才叫;埋點在 app.js,這支不碰 telemetry)。
  *
@@ -240,10 +240,10 @@
     return fillTpl(t("xt.verdict"), { lag: lag, cost: cost });
   }
 
-  // 主機太舊(第二層 #3):那一格換成〔去更新〕＋一句;空狀態時這句當 lead 放在鈕上面(同樣本外驗證空狀態落後態),結果頁放鈕下
+  // 主機太舊(第二層 #3):那一格換成〔立即更新〕＋一句;空狀態時這句當 lead 放在鈕上面(同樣本外驗證空狀態落後態),結果頁放鈕下
   function xtBehindCell(opts, lead) {
     const box = el("div", "xt-upd");
-    const go = el("button", "btn-fill", opts.t("minv.btn"));
+    const go = el("button", R()._rob.valBtn({ behind: true }).cls, opts.t("rp.btnUpdate"));
     go.type = "button";
     go.addEventListener("click", () => { if (typeof opts.onUpdate === "function") opts.onUpdate(go); });
     let line;
