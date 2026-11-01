@@ -11,6 +11,7 @@
 //   ⑥ S7/S15 分類欄:目前項底色 = --surface-muted、hover 用的 --surface-row-hover 跟它不同(亮暗都量);視覺高 34、熱區上下各補 5 到 44
 //   ⑦ S8 「一般」三組:組內 8、組間 32;「關於」緊接防睡那組、隔 32(不釘底)
 //   ⑧ S9 每一類第一行字到內容區頂端 16–23(資料來源空清單時以前是 40)
+//   ⑨ 0.1.39 驗收熱區(☰、迴紋針、送出、托盤 ×)⑩ 聊天欄寬度縮放後還原 ⑪ ＋ 不疊空分頁、換語言分頁名跟著換
 // 跑法:node tests/check_shell_layout.js(找不到 shell/node_modules 的 Electron 就 SKIP)
 const path = require("path"), fs = require("fs");
 const SHELL = path.join(__dirname, "..", "shell");
@@ -125,7 +126,34 @@ app.whenReady().then(async () => {
   }
   // 量的是第一個文字節點的行框頂(含行高的上半),比字形頂多 1–2px:一般那一類的第一列是 34 高的下拉列、字置中,量到 25
   ok(`⑧ S9 每一類第一行字到內容區頂端都在 16–25(資料來源以前多 24):${JSON.stringify(tops)}`, Object.values(tops).every((v) => v !== null && v >= 16 && v <= 25));
-  await X(`setClose()`);
+  await X(`setClose()`); await nap(300);
+  // ⑨ 0.1.39 驗收的熱區(canon Fitts 44,視覺不變):從鈕中心往四個方向掃 elementFromPoint,量自己吃得到的範圍
+  const HIT = `window.__hit = (el) => { const b = el.getBoundingClientRect(), cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+    const own = (x, y) => { const t = document.elementFromPoint(x, y); return !!t && (t === el || el.contains(t)); };
+    let l = cx, r = cx, u = cy, d = cy; while (own(l - 1, cy) && l > 0) l--; while (own(r + 1, cy) && r < innerWidth) r++; while (own(cx, u - 1) && u > 0) u--; while (own(cx, d + 1) && d < innerHeight) d++;
+    return { vw: Math.round(b.width), vh: Math.round(b.height), w: r - l + 1, h: d - u + 1 }; };`;
+  const hits = await X(`(() => { ${HIT} const tr = $("sug-tray-x").parentElement, was = tr.hidden; tr.hidden = false;
+    const o = {}; for (const id of ["cs-toggle", "attach-btn", "btn-send", "sug-tray-x"]) o[id] = __hit($(id));
+    const ta = $("ta").getBoundingClientRect(); o.taBottom = document.elementFromPoint(ta.x + 20, ta.bottom - 1) === $("ta"); tr.hidden = was; return o; })()`);
+  ok(`⑨ ☰ 熱區 44×52(不被聊天欄分隔線蓋掉):${JSON.stringify(hits["cs-toggle"])}`, hits["cs-toggle"].w >= 44 && hits["cs-toggle"].h >= 52);
+  ok(`⑨ 迴紋針、送出視覺 32、熱區 ≥44×44;× 視覺 36、熱區 ≥44;輸入格最底那條線還是輸入格的:${JSON.stringify(hits)}`,
+    ["attach-btn", "btn-send"].every((k) => hits[k].vw === 32 && hits[k].vh === 32 && hits[k].w >= 44 && hits[k].h >= 44) && hits["sug-tray-x"].vw === 36 && hits["sug-tray-x"].w >= 44 && hits["sug-tray-x"].h >= 44 && hits.taBottom);
+  // ⑩ 聊天欄寬度:視窗縮小只夾畫出來的寬,拉回來還原成用戶拉的寬(0.1.39 Mac 實測縮到 1024 再拉回停在 364)
+  w.setContentSize(1440, 760); await nap(500);
+  const w0 = await X(`paneSt.chat.w`);
+  w.setContentSize(1024, 760); await nap(500);
+  const w1 = await X(`paneSt.chat.w`);
+  w.setContentSize(1440, 760); await nap(500);
+  const w2 = await X(`paneSt.chat.w`);
+  ok(`⑩ 聊天欄 1440 → 1024 → 1440:${w0} → ${w1} → ${w2}(縮小時夾、拉回還原)`, w0 === 452 && w1 < 452 && w2 === 452);
+  w.setContentSize(1024, 760); await nap(300);
+  // ⑪ 已經有空白又閒著的分頁時按 ＋:切過去用它,不再開一個(0.1.39 Mac 實測兩個「新對話」並排);換語言時分頁名跟著換
+  const tb = await X(`(() => { const first = CS.cur; csStartNew({ force: true, quiet: true }); const second = CS.cur; csTitle = "測試問題"; tabsPaint();
+    const n0 = CS.tabs.size; csNewClick(); const reuse = CS.cur === first && CS.tabs.size === n0;
+    applyLangChoice("en"); const en = [...$("cs-tabs").querySelectorAll(".tab-t")].map((x) => x.textContent);
+    applyLangChoice("zh"); const zh = [...$("cs-tabs").querySelectorAll(".tab-t")].map((x) => x.textContent);
+    return { reuse, n0, two: second !== first, en, zh }; })()`);
+  ok(`⑪ 別的分頁空著又閒著:＋ 切過去、不疊空分頁;換語言分頁名跟著換:${JSON.stringify(tb)}`, tb.two && tb.reuse && tb.en.includes("New chat") && !tb.en.includes("新對話") && tb.zh.includes("新對話"));
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   app.exit(red ? 1 : 0);
 });

@@ -712,6 +712,7 @@ function applyLangChoice(v) {
   syncLangControls();
   applyStatic();
   mpPaint(); csRenderHead(); if (!$("cs-list").hidden) csRenderList();
+  if (typeof tabsPaint === "function") tabsPaint();   // 分頁名是建元素時寫的:空白分頁的「新對話」要跟著換語言
   paintBlaveBtn();
   if (lastDetect) paintRows(lastDetect); else detectingRows();
   stratRefresh(false).then(() => { if (RP.name) stratSelect(RP.name, true); });
@@ -2718,7 +2719,7 @@ function csRemember() {
 }
 function csLock(on) { if (on) csShowList(false); }   // 送出那一刻收清單:看得到這一句的回覆;回合中要再打開照開
 const csWhy = () => busySlot("cs-why", $("cs-head"));
-function csNewClick() { const was = CS.cur; if (csStartNew() !== was) trackFeature("tab_new"); }   // 眼前那條空著又閒著:就用它,不疊空分頁、不記
+function csNewClick() { const n = CS.tabs.size; csStartNew(); if (CS.tabs.size > n) trackFeature("tab_new"); }   // 已經有空著又閒著的分頁:切過去用它,不疊空分頁、不記
 /* 只清眼前這個分頁的聊天內容(重畫舊對話之前);內建瀏覽器的分頁是全 app 一份,不清 */
 function csClearChat() {
   if (typeof BR !== "undefined") { BR.blocks = []; BR.cur = null; }
@@ -2731,6 +2732,9 @@ function csClearChat() {
 function csStartNew(o) {
   const C = CS.cur;
   if (C && !csTitle && !running && !(o && o.force)) { csShowList(false); if (!(o && o.quiet)) $("ta").focus(); return C; }
+  // 別的分頁還空著又閒著(0.1.39 Mac 實測:兩個「新對話」並排):切過去,不再開一個
+  const idle = !(o && o.force) && CS.order.map((s) => CS.tabs.get(s)).find((x) => x && x !== C && !x.closed && !x.dead && !x.title && !tabRun(x));
+  if (idle) { tabShow(idle); csShowList(false); if (!(o && o.quiet)) $("ta").focus(); return idle; }
   const T = tabMake(csNewId());
   tabsAdd(T); tabShow(T); csShowList(false);
   if (!(o && o.quiet)) $("ta").focus();
@@ -5335,13 +5339,14 @@ function turnEndPost(r, pre, d) {
    側欄 236(180–400)、聊天 452(336–720)、中間保底 480 —— 上限是動態的。
    收合:hover 分隔線浮出把手點一下,或把欄拖過門檻(側欄 <110、聊天 <240);
    側欄收成 44px 細軌、聊天收成 24px 邊條。雙擊分隔線回預設。
-   這是每台電腦自己的偏好,放 localStorage;讀寫失敗就用預設。 */
+   這是每台電腦自己的偏好,放 localStorage;讀寫失敗就用預設。
+   want = 用戶自己拉的寬,w = 照視窗夾過、真的畫出來的寬:視窗縮小只夾 w,拉回來照 want 還原(0.1.39 Mac 實測縮到 1024 再拉回停在 364) */
 const PANES = {
   side: { div: "div-side", prop: "--side-w", cls: "ws-sc", def: 236, min: 180, max: 400, snap: 110, off: 44, dir: 1 },
   chat: { div: "div-chat", prop: "--chat-w", cls: "ws-cc", def: 452, min: 336, max: 720, snap: 240, off: 24, dir: -1 },
 };
 const MAIN_MIN = 480;
-const paneSt = { side: { w: PANES.side.def, off: false }, chat: { w: PANES.chat.def, off: false } };
+const paneSt = { side: { w: PANES.side.def, want: PANES.side.def, off: false }, chat: { w: PANES.chat.def, want: PANES.chat.def, off: false } };
 
 function paneEdge(key) { return paneSt[key].off ? PANES[key].off : paneSt[key].w; }
 function paneClamp(key, w) {
@@ -5363,7 +5368,7 @@ function panesRender(save) {
 }
 function paneToggle(key, off) {
   paneSt[key].off = off;
-  if (!off) paneSt[key].w = paneClamp(key, paneSt[key].w);
+  if (!off) paneSt[key].w = paneClamp(key, paneSt[key].want);
   panesRender(true);
 }
 function panesInit() {
@@ -5373,10 +5378,10 @@ function panesInit() {
       const s = saved[key];
       if (!s || typeof s !== "object") return;
       paneSt[key].off = !!s.off;
-      paneSt[key].w = Number(s.w) || PANES[key].def;
+      paneSt[key].want = Number(s.want) || Number(s.w) || PANES[key].def;
     });
   } catch (_) {}
-  Object.keys(PANES).forEach((key) => { paneSt[key].w = paneClamp(key, paneSt[key].w); });
+  Object.keys(PANES).forEach((key) => { paneSt[key].w = paneClamp(key, paneSt[key].want); });
   panesRender(false);
 
   let handleAt = 0;   // 連點把手不算分隔線雙擊
@@ -5402,6 +5407,7 @@ function panesInit() {
       st.off = raw < p.snap;
       // 拖過門檻收合時,寬度留在起手前那個值 —— 不然再展開只剩最小寬
       st.w = st.off ? (w0 > p.off ? w0 : st.w) : paneClamp(key, raw);
+      if (!st.off) st.want = st.w;
       panesRender(false);
     });
     const end = (e) => {
@@ -5422,7 +5428,7 @@ function panesInit() {
     d.addEventListener("pointercancel", end);
     d.addEventListener("dblclick", () => {
       if (Date.now() - handleAt < 500) return;
-      st.off = false; st.w = paneClamp(key, p.def);
+      st.off = false; st.want = p.def; st.w = paneClamp(key, p.def);
       panesRender(true);
     });
     d.addEventListener("keydown", (e) => {
@@ -5431,8 +5437,8 @@ function panesInit() {
       if (!step) return;
       e.preventDefault();
       const delta = step * p.dir;
-      if (st.off) { if (delta > 0) { st.w = p.min; paneToggle(key, false); } return; }
-      st.w = paneClamp(key, st.w + delta);
+      if (st.off) { if (delta > 0) { st.want = p.min; paneToggle(key, false); } return; }
+      st.w = st.want = paneClamp(key, st.w + delta);
       panesRender(true);
     });
   });
@@ -5440,7 +5446,7 @@ function panesInit() {
   $("chat-strip").addEventListener("click", () => paneToggle("chat", false));
   // 視窗縮小時重新夾一次,中間那欄才不會被擠到 480 以下
   window.addEventListener("resize", () => {
-    Object.keys(PANES).forEach((k) => { paneSt[k].w = paneClamp(k, paneSt[k].w); });
+    Object.keys(PANES).forEach((k) => { if (!paneSt[k].off) paneSt[k].w = paneClamp(k, paneSt[k].want); });
     panesRender(false);
   });
 }

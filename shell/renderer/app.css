@@ -515,6 +515,11 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   border-radius: var(--radius-sm); color: var(--ink-2);
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
 .btn-attach:hover { background: var(--surface-muted); color: var(--ink); }
+/* 輸入框工具列三顆的熱區補到 44(canon Fitts,視覺 32 不變):透明 ::before 往上只擴 4(再上去是輸入格),往下擴到輸入框內緣;
+   迴紋針與送出左右各 6,型號鈕左右不擴(跟迴紋針只隔 8) */
+.btn-attach, .btn-send, .mp-trigger { position: relative; }
+.btn-attach::before, .btn-send::before { content: ""; position: absolute; inset: -4px -6px -8px; }
+.mp-trigger::before { content: ""; position: absolute; inset: -4px 0 -8px; }
 .attach-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); margin-bottom: var(--space-8); font-size: 12px; line-height: 1.5; }
 .attach-chip { display: flex; align-items: center; gap: var(--space-4); min-width: 0; max-width: 100%;
   padding: var(--space-4) var(--space-4) var(--space-4) var(--space-8); border: 1px solid var(--border-hairline); border-radius: var(--radius-sm);
@@ -1307,6 +1312,8 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
   height: auto; position: relative; isolation: isolate; background: none; border-radius: 0;
 }
 .chat-head:has(#cs-tabs) .cs-btn { width: 44px; }
+/* 聊天欄的拖拉分隔線(.pane-div,左右各外擴 4)會蓋掉 ☰ 左緣 3px:頂列這一格 ☰ 在上面 */
+.chat-head:has(#cs-tabs) #cs-toggle { z-index: 26; }
 .chat-head:has(#cs-tabs) .cs-btn::before, .cs-hint::before, .cs-more::before {
   content: ""; position: absolute; z-index: -1; left: var(--space-8); right: var(--space-8); top: calc(50% - 14px); height: 28px;
   border-radius: var(--radius-sm); transition: background var(--motion-fast) var(--ease-standard);
@@ -1745,5 +1752,8 @@ html[data-platform="win32"] .mode, html[data-platform="win32"] .envm, html[data-
 /* 側欄「策略」標題旁的 ＋(照 web .strat-add,值換語意角色):28×28、hover 灰填 */
 .strat-add { margin-left: auto; flex: none; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); color: var(--ink-3); transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
 .strat-add:hover { background: var(--surface-muted); color: var(--ink); }
+/* 熱區高補到 44(視覺 28 不變);寬度兩顆只隔 2,補不了,留給設計決定 */
+.strat-head .strat-add { position: relative; }
+.strat-head .strat-add::before { content: ""; position: absolute; inset: -8px 0; }
 .strat-add .ic { stroke-width: 1.75; }
 @media (prefers-reduced-motion: reduce) { .strat-add { transition: none; } }
