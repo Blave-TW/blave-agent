@@ -26,9 +26,10 @@ function world(init) {
   t("IPv6 → 不採用(Binance 白名單只收 IPv4)", BL.pickIp({ status: 200, body: { ip: "2001:db8::1", family: 6 } }) === null);
   t("family 說 4 但字串不是 IPv4、或 family 缺席 → 不採用", BL.pickIp({ status: 200, body: { ip: "2001:db8::1", family: 4 } }) === null && BL.pickIp({ status: 200, body: { ip: "203.0.113.7" } }) === null
     && BL.pickIp({ status: 200, body: { ip: "999.1.1.1", family: 4 } }) === null && BL.pickIp({ status: 200, body: { ip: "1.2.3.4<script>", family: 4 } }) === null);
-  t("401 / 503 / 連不上 / 沒登入(null) → null,不丟例外", BL.pickIp({ status: 401, body: {} }) === null && BL.pickIp({ status: 503, body: { error_code: "IP_UNAVAILABLE" } }) === null && BL.pickIp(null) === null);
+  t("401 / 503 / 連不上 / 空回應(null) → null,不丟例外", BL.pickIp({ status: 401, body: {} }) === null && BL.pickIp({ status: 503, body: { error_code: "IP_UNAVAILABLE" } }) === null && BL.pickIp(null) === null);
   { const w = world({ ipRes: { status: 200, body: { ip: "2001:db8::1", family: 6 } } }); t("link.ip():只有 IPv6 → null", (await w.link.ip()) === null);
-    w.ipRes = "throw"; t("link.ip():連不上 → null", (await w.link.ip()) === null); }
+    w.ipRes = "throw"; t("link.ip():連不上 → null", (await w.link.ip()) === null);
+    w.ipRes = { status: 401, body: { error: "unauthorized", error_code: "INVALID_CREDENTIALS" } }; t("link.ip():舊版 api 沒 token 回 401 → null(畫面照查不到)", (await w.link.ip()) === null); }
 
   // ── 連接:查過才存 ──
   { const w = world({ http: perm({ enableWithdrawals: true }) }); const r = await w.link.connect(K, S);
@@ -140,7 +141,16 @@ function world(init) {
     && /writeLocal: \(cmd, args\) => \(RULES_CMDS\.has\(cmd\) \? tradeHost\(\)\.send\(cmd, args, \{ trusted: true \}\) :/.test(mainSrc)
     && /const RULES_CMDS = new Set\(\["preferences_set", "reply_lang_set"\]\);/.test(mainSrc)
     && /const out = tradeHost\(\)\.send\(cmd, args && typeof args === "object" \? args : \{\}\);/.test(mainSrc));
-  t("main.js:my_ip 強制走 IPv4", /my_ip`, \{ token: tok \}, \{ family: 4 \}\)/.test(mainSrc));
+  { const src = /myIp: (\(\) => [^\n]*),\n/.exec(mainSrc)[1], posted = [];
+    const fakePost = (url, body, extra) => { posted.push({ url, body, extra }); return Promise.resolve({ status: 200, body: { ip: "203.0.113.7", family: 4 } }); };
+    const myIp = (tok) => new Function("loadToken", "postJSON", "API_BASE", `return ${src}`)(() => tok, fakePost, "https://api.test")();
+    const res = await myIp(null);
+    t("main.js:沒登入 Blave 也打 my_ip,不帶 token 欄位,強制走 IPv4", posted.length === 1 && posted[0].url === "https://api.test/oauth/desktop/my_ip" && JSON.stringify(posted[0].body) === "{}" && posted[0].extra.family === 4 && BL.pickIp(res) === "203.0.113.7");
+    await myIp("acct-revoked");
+    t("main.js:Keychain 留著 token(可能已失效)也不帶,免得 401 被說成連線問題", posted.length === 2 && JSON.stringify(posted[1].body) === "{}" && posted[1].extra.family === 4); }
+  { const STR = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "\nreturn STRINGS;")(), zh = STR.zh["cx.ip.fail"], en = STR.en["cx.ip.fail"];
+    t("查不到 IP 的說明不再提登入,留 IPv6 與連線兩個原因", !/登入/.test(zh) && !/sign/i.test(en) && /IPv6/.test(zh) && /IPv6/.test(en) && /連線/.test(zh) && /connection/i.test(en));
+    t("查不到 IP 的說明每句 ≤25 字", zh.split(/[。！？]/).every((s) => s.length <= 25)); }
   t("main.js:通知真的交給系統才回 true;字沒到 / 不支援 → false;重查的通知全是 P2,不亮 Dock 紅點", /isSupported\(\)\) return false;/.test(mainSrc) && !/v\.level === "P1"/.test(mainSrc) && /n\.show\(\);\n[^\n]*\n  return true;/.test(mainSrc));
   // 列舉:VERDICT_LEVEL 的每個 reason 都對得到一組字(標題 + 內文)、字的 key 在 tmLabels 預設表上、renderer 交字那段也交了——
   // 對不到的 reason binanceNotify 回 false,binance_link 會每 5 分鐘重試到永遠

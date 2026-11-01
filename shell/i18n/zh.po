@@ -3391,7 +3391,7 @@ msgid "cx.ip.loading"
 msgstr "查詢中…"
 
 msgid "cx.ip.fail"
-msgstr "可能是還沒登入 Blave，或這個網路只有 IPv6。白名單要填這台電腦的對外 IPv4。"
+msgstr "可能是連線失敗，或這個網路只有 IPv6。白名單要填這台電腦的對外 IPv4。"
 
 msgid "cx.ip.noneLong"
 msgstr "查不到這台電腦的對外 IP"

@@ -3235,7 +3235,7 @@ function engineKick() {
   ensureEngineShared().then(() => tradeStartIfReady(), (e) => console.error("[engine] background setup failed: " + ((e && e.message) || e)));
 }
 /* Binance 真錢連接(binance_link.js)。金鑰只從 renderer 的表單經過這裡一次:查過權限 → 用 trusted 的路交給 daemon 寫進 workspace 的 .env。
-   這裡不 log 金鑰、不另存;落地的 state 檔只有檢查結果與當時的對外 IP。my_ip 要帳號 token(沒登入 Blave 的人查不到 IP,表單照樣能用)。 */
+   這裡不 log 金鑰、不另存;落地的 state 檔只有檢查結果與當時的對外 IP。my_ip 不帶 token:回應與身分無關,帶了失效的 token 反而 401、查不到 IP。舊版 api 沒 token 回 401,照查不到處理。 */
 let _binanceLink = null, binanceStarted = false;
 const binanceStatePath = () => path.join(app.getPath("userData"), "binance-link.json");
 // 真實交易所的金鑰只從這裡進 daemon(trusted:daemon.js TRUSTED_SETS 一家一組);renderer 的 trade-send 只收模擬交易
@@ -3244,7 +3244,7 @@ function binanceLink() {
   if (!_binanceLink) {
     _binanceLink = require("./binance_link").createBinanceLink({
       http: (u, h) => getJSON(u, h),
-      myIp: () => { const tok = loadToken(); if (!tok) return Promise.resolve(null); return postJSON(`${API_BASE}/oauth/desktop/my_ip`, { token: tok }, { family: 4 }); },
+      myIp: () => postJSON(`${API_BASE}/oauth/desktop/my_ip`, {}, { family: 4 }),
       send: sendTrustedCreds,
       readEnv: () => { try { return fs.readFileSync(path.join(WS, ".env"), "utf8"); } catch (_) { return null; } },
       loadState: () => JSON.parse(fs.readFileSync(binanceStatePath(), "utf8")),

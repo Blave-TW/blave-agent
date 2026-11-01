@@ -47,7 +47,7 @@ const pub = (r) => (r ? { ok: !!r.ok, code: String(r.code), detail: { ipRestrict
 
 /* opts:{
      http(url, headers) → Promise<{status, body}>      打 Binance(binance_check.check 用)
-     myIp() → Promise<{status, body}> | 丟例外           打自家 api 的 my_ip(呼叫端負責強制 IPv4 與帶 token)
+     myIp() → Promise<{status, body}> | 丟例外           打自家 api 的 my_ip(呼叫端負責強制 IPv4;不帶 token)
      send(env) → Promise<{ok, error?}>                   把 env 經 trusted 的路交給 daemon 寫進 .env
      readEnv() → string | null                           讀 workspace 的 .env(重查用)
      loadState() → object | null, saveState(obj)         上一次有結論的結果+當時的 IP(不含金鑰)
@@ -77,7 +77,7 @@ function createBinanceLink(opts) {
     if (opts.onChange) try { opts.onChange(state()); } catch (_) { /* 畫面壞掉不影響重查 */ } }
   const state = () => { const s = load(); return { last: s.last, verdict: s.verdict, checkedAt: s.checkedAt, lockUntil }; };
 
-  async function ip() { let res = null; try { res = await opts.myIp(); } catch (_) { /* 連不上 / 沒登入 */ } return pickIp(res); }
+  async function ip() { let res = null; try { res = await opts.myIp(); } catch (_) { /* 連不上 */ } return pickIp(res); }
 
   /* 連接:先查權限,過了才交給 daemon 存。回 { ok, code, detail, lockMs? };ok:false 一律沒有儲存。 */
   async function connect(apiKey, secret) {
