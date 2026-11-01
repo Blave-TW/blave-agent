@@ -1136,7 +1136,7 @@ msgid "plan.trialFree"
 msgstr "{d}前免主機費，之後照上面的價格。"
 
 msgid "plan.trialFree.m"
-msgstr "試用到 {d}，到期扣第一期 {p} TWD。到期前取消就不扣。"
+msgstr "試用到 {d}，到期自動扣第一期 {p} TWD。試用期間取消就不扣。"
 
 msgid "plan.trialFree.mNoCharge"
 msgstr "試用到 {d}。"
@@ -4607,6 +4607,9 @@ msgstr "重新啟動更新"
 
 msgid "up.pillV"
 msgstr "重新啟動更新：{v}"
+
+msgid "up.pillS"
+msgstr "更新：{v}"
 
 # 更新 modal 一般(沒在下單)的標題;{v} = 已暫存的新版號(canon 具名例外:只這個標題可以寫版號)
 msgid "up.md.title"
@@ -9021,11 +9024,11 @@ msgid "tr.cf.titleFire"
 msgstr "儲存並下單"
 
 msgid "tr.cf.capOrders"
-msgstr "下一輪要送的單（{n} 筆）"
+msgstr "預估下一輪的單（{n} 筆）"
 
 # 全部是台股、這一輪都留到開盤時的表頭;後面接 asof 那段
 msgid "tr.cf.capOrdersOpen"
-msgstr "開盤後要送的單（{n} 筆）"
+msgstr "預估開盤後的單（{n} 筆）"
 
 msgid "tr.cf.capChanges"
 msgstr "目標有變的 {n} 檔（{ccy}）"
@@ -9094,6 +9097,9 @@ msgstr "{syms} 這一輪不會動，等新訊號才動。"
 
 msgid "tr.cf.nextRound"
 msgstr "下一輪照最新訊號算，有單就送。"
+
+msgid "tr.cf.closeMaybe"
+msgstr "移出或歸 0 的策略，帳上有部位就會平倉。"
 
 msgid "po.unsaved"
 msgstr "未儲存"

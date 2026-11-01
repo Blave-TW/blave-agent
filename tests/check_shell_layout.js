@@ -117,7 +117,7 @@ app.whenReady().then(async () => {
     const sc = document.querySelector(".set-content").getBoundingClientRect();
     return { inRows: rows.slice(1).map((x, i) => Math.round(x.top - rows[i].bottom)), toRn: Math.round(r(".set-rn").top - rows[rows.length - 1].bottom), rnRs: Math.round(r(".set-rs").top - r(".set-rn").bottom), rsSug: Math.round(r(".set-sug").top - r(".set-rs").bottom), sugAwake: Math.round(r(".set-awake").top - r(".set-sug").bottom),
       awakeAbout: Math.round(r("#set-up").top - r(".set-awake").bottom), aboutGap: Math.round(sc.bottom - r("#set-up").bottom) }; })()`);
-  ok(`⑦ S8 一般:組內 8(${gap.inRows.join("/")}、${gap.rnRs}、${gap.rsSug}、${gap.sugAwake})、組間 32(→回覆通知 ${gap.toRn}、→關於 ${gap.awakeAbout});關於不釘底`, gap.inRows.every((g) => g === 8) && gap.rnRs === 8 && gap.rsSug === 8 && gap.sugAwake === 8 && gap.toRn === 32 && gap.awakeAbout === 32, JSON.stringify(gap));
+  ok(`⑦ S8 一般:組內 8(${gap.inRows.join("/")}、防睡 ${gap.sugAwake});開關列撐到 44、彼此不留空(${gap.rnRs}、${gap.rsSug},設計稽核 B4);組間 32(→回覆通知 ${gap.toRn}、→關於 ${gap.awakeAbout});關於不釘底`, gap.inRows.every((g) => g === 8) && gap.rnRs === 0 && gap.rsSug === 0 && gap.sugAwake === 8 && gap.toRn === 32 && gap.awakeAbout === 32, JSON.stringify(gap));
   const tops = {};
   for (const cat of ["display", "model", "src", "plan", "priv"]) {
     await X(`setCat(${JSON.stringify(cat)})`); await nap(350);
@@ -159,16 +159,19 @@ app.whenReady().then(async () => {
   for (const lang of ["zh", "en"]) for (const sw of [236, 180]) for (const ph of ["ready", "blocked"]) {
     await X(`setLang(${JSON.stringify(lang)}); paneSt.side.off = false; paneSt.side.w = paneSt.side.want = ${sw}; panesRender(false); UP = { phase: ${JSON.stringify(ph)}, version: "0.1.41", current: "0.1.40" }; upPillPaint();`); await nap(450);
     pills.push(await X(`(() => { upPillFit(); const tx = $("up-pill-t"), pl = $("up-pill");
-      return { lang: ${JSON.stringify(lang)}, sw: ${sw}, ph: ${JSON.stringify(ph)}, text: tx.textContent, sw0: tx.scrollWidth, cw: tx.clientWidth, pill: Math.round(pl.getBoundingClientRect().width),
+      return { lang: ${JSON.stringify(lang)}, sw: ${sw}, ph: ${JSON.stringify(ph)}, text: tx.textContent, sw0: tx.scrollWidth, cw: tx.clientWidth, pill: Math.round(pl.getBoundingClientRect().width), title: pl.title, aria: pl.getAttribute("aria-label"),
         foot: Math.round(document.querySelector(".ws-foot").getBoundingClientRect().width), noIc: pl.classList.contains("no-ic") }; })()`)); }
   await X(`setLang("zh"); UP = ${UP0}; upPillPaint(); paneSt.side.w = paneSt.side.want = PANES.side.def; panesRender(false);`);
   w.setContentSize(1024, 760); await nap(300);
   console.log("      膠囊量測:" + JSON.stringify(pills));
   const at = (sw) => pills.filter((x) => x.sw === sw);
-  ok(`⑫ 膠囊帶版號:預設側欄 236、zh／en、下單中,字都完整不被切、版號在字裡`, at(236).length === 4 && at(236).every((x) => x.sw0 <= x.cw && x.text.includes("0.1.41")), JSON.stringify(at(236)));
-  // 最窄 180 放不下(拿掉圖示後只剩 121,zh 要 126／137、en 151／161):照 Wei 的規矩不縮字級,回報待決定;這裡只印出來,不算綠也不算紅
-  const cut180 = at(180).filter((x) => x.sw0 > x.cw);
-  console.log((cut180.length ? "TODO  " : "PASS  ") + "⑫ 最窄側欄 180:" + (cut180.length ? "放不下、待決定 " : "都放得下 ") + JSON.stringify(at(180).map((x) => [x.lang, x.ph, x.sw0, x.cw])));
+  ok(`⑫ 膠囊預設側欄 236:全句、zh／en、下單中,字完整、版號完整`, at(236).length === 4 && at(236).every((x) => x.sw0 <= x.cw && x.text.includes("0.1.41") && /重新啟動更新|Restart to update/.test(x.text)), JSON.stringify(at(236)));
+  ok(`⑫ 最窄側欄 180:換短句「更新：0.1.41」、版號不被切、全句在 title 與可及名稱`, at(180).length === 4 && at(180).every((x) => x.sw0 <= x.cw && /^(更新：|Update: )0\.1\.41…?$/.test(x.text) && /重新啟動更新|Restart to update/.test(x.title) && x.aria === x.title), JSON.stringify(at(180)));
+  // ⑭ 設計稽核 B4 的熱區(視覺不變):側欄 ＋／資料夾鈕 44×44 不重疊、提示音開關 44×44、「開啟系統設定」80×45
+  const hot = await X(`(async () => { ${HIT} const o = {}, add = $("strat-add"), sg = $("sg-add"); $("strat-head").hidden = false; sg.hidden = false; o.add = __hit(add); o.sg = __hit(sg);
+    await setOpen(); setCat("display"); await new Promise((r) => setTimeout(r, 400)); o.sw = __hit($("set-rs-sw")); const os = $("set-rn-os"), was = os.hidden; os.hidden = false; await new Promise((r) => setTimeout(r, 100)); o.go = __hit($("set-rn-os-go")); o.sug = __hit(document.querySelector(".set-sug .sw") || $("set-rs-sw")); os.hidden = was; setClose(); return o; })()`);
+  ok(`⑭ 側欄 ＋、資料夾鈕視覺 28、熱區 ≥44×44:${JSON.stringify([hot.add, hot.sg])}`, [hot.add, hot.sg].every((x) => x.vw === 28 && x.vh === 28 && x.w >= 44 && x.h >= 44));
+  ok(`⑭ 提示音開關熱區 ≥44×44、下一顆也是;「開啟系統設定」熱區 ≥44 高:${JSON.stringify([hot.sw, hot.sug, hot.go])}`, hot.sw.w >= 44 && hot.sw.h >= 44 && hot.sug.h >= 44 && hot.go.h >= 44 && hot.go.w >= 80);
   // ⑬ 投資組合列的標的格寫股票名字:欄窄時只在名字之間換行,不把一個名字拆兩半,也不把表撐開
   const nm = await X(`(() => { const host = document.createElement("div"); host.style.cssText = "position:fixed;left:0;top:0;width:420px;background:#fff;z-index:99";
     const names = ["元大台灣高股息優質低波動基金", "聯電", "國泰台灣領袖五十正二基金甲"], out = [];

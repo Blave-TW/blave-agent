@@ -1128,7 +1128,7 @@ msgid "plan.trialFree"
 msgstr "No machine fee until {d}. After that, the price above applies."
 
 msgid "plan.trialFree.m"
-msgstr "Trial runs until {d}, then the first period {p} TWD is charged. Cancel before then and nothing is charged."
+msgstr "Trial runs until {d}. The first period, {p} TWD, is then charged automatically. Cancel during the trial and nothing is charged."
 
 msgid "plan.trialFree.mNoCharge"
 msgstr "Trial runs until {d}."
@@ -4595,6 +4595,9 @@ msgstr "Restart to update"
 
 msgid "up.pillV"
 msgstr "Restart to update: {v}"
+
+msgid "up.pillS"
+msgstr "Update: {v}"
 
 # 更新 modal 一般(沒在下單)的標題;{v} = 已暫存的新版號(canon 具名例外:只這個標題可以寫版號)
 msgid "up.md.title"
@@ -9004,11 +9007,11 @@ msgid "tr.cf.titleFire"
 msgstr "Save and place orders"
 
 msgid "tr.cf.capOrders"
-msgstr "Orders for the next round ({n})"
+msgstr "Estimated orders for the next round ({n})"
 
 # 全部是台股、這一輪都留到開盤時的表頭;後面接 asof 那段
 msgid "tr.cf.capOrdersOpen"
-msgstr "Orders to send at the open ({n})"
+msgstr "Estimated orders at the open ({n})"
 
 msgid "tr.cf.capChanges"
 msgstr "{n} targets change ({ccy})"
@@ -9076,7 +9079,10 @@ msgid "tr.cf.gated"
 msgstr "No orders this round for {syms}: waiting for a new signal."
 
 msgid "tr.cf.nextRound"
-msgstr "Next round uses the latest signal and sends any orders."
+msgstr "The next round places any orders based on the latest signal."
+
+msgid "tr.cf.closeMaybe"
+msgstr "Removed or zeroed strategies close any position they hold."
 
 msgid "po.unsaved"
 msgstr "Unsaved"

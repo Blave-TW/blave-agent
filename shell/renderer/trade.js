@@ -3606,8 +3606,8 @@ function trCloseTag(old, now, running, held) { return running && old > 0 && !(no
 function trStratHeld(n) {
   const r = trReport() || {}, st = r.states || {}, s = st[n];
   const x = TR.list.find((y) => y.name === n);
-  if (!trHasAccount(r) || trFirstReadPending(r) || !s || !s.symbol || s.weights || (x && x.portfolio === true)) return null;   // 投資組合一律當讀不到帳,照舊標
-  /* 只有**確定**帳上沒有才回 false(同網頁 pfStratHeld 00825f03)。判不出來一律 null(照舊標):任一家讀帳失敗、讀數過期(超過 6 分鐘)、
+  if (!trHasAccount(r) || trFirstReadPending(r) || !s || !s.symbol || s.weights || (x && x.portfolio === true)) return null;   // 投資組合一律當讀不到帳
+  /* 只有**確定**帳上沒有才回 false(同網頁 pfStratHeld 00825f03)。判不出來一律 null(不標,框上 tr.cf.closeMaybe 講):任一家讀帳失敗、讀數過期(超過 6 分鐘)、
      同標的另有策略(淨部位 0 可能是多空互抵)、台指期家族裡別的合約還有部位(剛換合約,平的是它)、換合約還沒存 */
   if (trVenueIds(r).some((id) => { const e = trLiveEntry(r, id); return !!e && e.ok === false; })) return null;
   const at = r.account ? trMs(r.account.read_at) : null; if (at != null && Date.now() - at > 6 * 60 * 1000) return null;
@@ -3658,10 +3658,10 @@ function trCtCloseTag(n, sending, stored) {
   const bk = trBook(r, trClientTargets(stored, poPartStates(stored, st), trContracts()));
   return bk.mine[from] ? t("ct.tagClose", { prod: t(TR_TXF_SPECS[from].prod) }) : null;
 }
-/* 框用的訊號。stored = 已存;sending = 要存的。回 { states, px: {標的: 收盤價}, pv: {用預覽的策略: { at, date, dailyClose }}, missing: [算不出的策略] }。
+/* 框用的訊號。stored = 已存;sending = 要存的。回 { states, px: {標的: 收盤價}, missing: [算不出的策略], old: [用到的預覽不是最新那根的] }。
    草稿(不在 stored)一律用預覽:它手上的 state.json 是以前上線時留下的,排程現在沒在算它 */
 function trCfStates(r, stored, sending, contracts) {
-  const live = (r && r.states) || {}, states = {}, px = {}, pvPx = {}, pvs = {}, missing = [];
+  const live = (r && r.states) || {}, states = {}, px = {}, pvPx = {}, missing = [], old = [];
   Object.keys(sending).concat(Object.keys(stored)).forEach((n) => {
     if (n in states || missing.indexOf(n) >= 0) return;
     const s = live[n], hasLive = !!s && (!!s.symbol || (!!s.weights && typeof s.weights === "object")), draft = !(n in stored);
@@ -3675,7 +3675,7 @@ function trCfStates(r, stored, sending, contracts) {
     }
     const pv = trPvOf(r, n);
     if (!pv) { missing.push(n); return; }
-    states[n] = pv; pvs[n] = { at: pv.bar_at, date: pv.bar_date, dailyClose: pv.daily_close };
+    states[n] = pv; if (!pv.latest) old.push(n);
     if (pv.weights) Object.keys(pv.closes || {}).forEach((k) => { const v = Number(pv.closes[k]); if (v > 0) px[trCanonSym(k)] = v; });
     else if (pv.close) px[trCanonSym(trEffSym(n, pv.symbol, contracts))] = pv.close;
     // 台股:預覽帶的未還原收盤(runtime 1.1.134 起)蓋掉還原價
@@ -3685,7 +3685,7 @@ function trCfStates(r, stored, sending, contracts) {
      草稿用預覽的 raw_closes;都沒有才用預覽的還原價(0.1.27 以前的 lib 寫的預覽沒有 closes) */
   Object.keys(live).forEach((n) => { const rc = live[n] && live[n].raw_closes;
     if (rc && typeof rc === "object") Object.keys(rc).forEach((k) => { const v = Number(rc[k]), c = trCanonSym(k); if (v > 0 && isFinite(v) && TR_TWSTOCK_RE.test(c)) px[c] = v; }); });
-  return { states, px, pvPx, pv: pvs, missing };
+  return { states, px, pvPx, missing, old };
 }
 /* 下一輪對帳器先不動的部分(lib/portfolio 的 first_signal_wait 與訊號閘)。快照 caps 沒有 first_signal_wait = 舊 lib,前一種不算。
    還沒算出第一個訊號的成員:草稿一律算(存檔時 runtime 移走它的舊 state.json;當根的 state 會留著、對帳器就不等,框照等算,只差那句說明);
@@ -3722,13 +3722,6 @@ function trCfHolds(r, stored, sending, contracts, st) {
     // 閘中的那支貢獻列帶 gated: true(同一個 lib 起);舊 lib 沒有這欄:沒綁交易所以外的 gated 列都當閘中,撐它的還有金額就算
     if (cs.some((c) => c && funded(c.strategy) && (newLib ? c.gated === true : !row.unrouted))) gate.push(trCanonKey(k)); });
   return { wait, gate, anchor };
-}
-/* 表頭的「依哪一根算」:只看真的撐到框裡某一列的預覽(names = 那幾列的貢獻策略)。回 { at, date, dailyClose } 取最舊那根;沒有一列用到預覽回 null。
-   dailyClose = 全是台股／美股日線:寫「依 MM/DD 收盤」,日期用機器給的當地交易日(bar_date);美股那根標在 UTC 午夜,換本機時區會寫成前一天或 08:00 */
-function trCfAsof(st, names) {
-  let out = null, daily = true;
-  names.forEach((n) => { const p = st.pv[n]; if (!p) return; if (!p.dailyClose) daily = false; if (p.at != null && (!out || p.at < out.at)) out = { at: p.at, date: p.date }; });
-  return out ? Object.assign(out, { dailyClose: daily }) : null;
 }
 // 帳上各標的的現價(交易所回報的 mark_price):只有 live 策略持有、沒有預覽收盤價的標的,用它換算數量
 function trMarks(r) {
@@ -3976,8 +3969,6 @@ function trCfOpen(o) {
   const relevant = (n) => (!(n in stored) && Number(sending[n]) > 0) || ((n in stored) && Number(sending[n]) !== old(n));
   // 輸入格下面那一行(單腳不送單時只寫換算量,不出表);台股每一腳都換算不到 1 股時 cf.noShare
   const refEl = inp ? trEl("p", "cf-ref cf-in-ref") : null;
-  // 「儲存並下單」型的那一句:有輸入格時接在換算那一行下面,沒有時放表下
-  const nextEl = trEl("p", inp ? "cf-in-ref cf-next" : "cf-note", t("tr.cf.nextRound"));
   // 有輸入格時主鈕停用:空白、0、看不懂、跟存的一樣(沒換合約)、台股每一腳都不到 1 股
   const inOff = () => { if (!inp) return false; const v = ivVal(); if (v == null || !(v > 0)) return true;
     return (v === old(inp.name) && !iv.ct) || !!cf.noShare; };
@@ -4003,7 +3994,11 @@ function trCfOpen(o) {
     // 對帳器先不動的那句只講算得出的:等的那支沒有訊號、沒有預覽時整句不出(不留半句)
     const known = (ns) => ns.every((n) => m.st.missing.indexOf(n) < 0);
     const hw = held.wait.length && known(held.names) ? held.wait : [], hg = held.gate;
-    const sig = JSON.stringify([fire, m, hw, hg, TR_TWN.v, trTxfPrice()]);
+    const nextOn = fire && (!orders || m.st.missing.some(relevant) || m.st.old.some(relevant));
+    // 移出或歸 0、判不出帳上有沒有部位、也沒列成賣單:標籤不能講(空手的人會看到假話),用一句講會發生什麼
+    const sold = (n) => { const ks = trCfSymsOf(n, (r.states || {})[n], ctAfter); return orders && !!ks && ks.length > 0 && ks.every((k) => m.rows.some((x) => x.sym === k && x.side === "sell")); };
+    const closeMaybe = fire && Object.keys(stored).some((n) => old(n) > 0 && !(Number(sending[n]) > 0) && trStratHeld(n) === null && !keepsPos(n) && !sold(n));
+    const sig = JSON.stringify([fire, m, hw, hg, nextOn, closeMaybe, TR_TWN.v, trTxfPrice()]);
     if (sig === cf.sig) return; cf.sig = sig;
     body.textContent = "";
     // 單腳(加密、台指期)不送單:輸入格下面只寫換算量,不出「原 → 新」表(那一列就是輸入格本身)
@@ -4030,13 +4025,10 @@ function trCfOpen(o) {
     const sub = trEl("p", "cf-sub");
     const zones = m.rows.map((x) => x.z).filter((z, i, a) => a.indexOf(z) === i), multi = zones.length > 1;
     const ccys = zones.map((z) => (z === TR_ZONE_LOTS ? t("tr.lotsUnit") : z === TR_ZONE_UNKNOWN ? t("tr.grpUnknown") : z)).join(LANG === "zh" ? "、" : ", ");
-    // 時間只講一次(canon):框裡任何一列是預覽撐的,表頭寫是哪一根。台股／美股日線不寫(預覽可能不是最新那根,不拿一個收盤日當準)
-    const pvAt = trCfAsof(m.st, m.rows.length ? [].concat(...m.rows.map((x) => (x.noAuto ? [] : x.by || []))) : amtOnly);
-    const asof = !pvAt || pvAt.dailyClose ? "" : t("tr.cf.asofBar", { d: trCfMD(pvAt.at, true) });
     if (!oneLeg && m.rows.length) {
-      const nOpen = m.rows.filter((x) => !x.closed).length, asofTail = asof ? (LANG === "zh" ? "，" : ", ") + asof : "";
+      const nOpen = m.rows.filter((x) => !x.closed).length;
       // 全部台股都留到開盤(這一輪一筆都不送):表頭講開盤後要送,逐列不再標休市(稽核 0.1.27 batch2 P2-2)
-      sub.textContent = (m.kind === "orders" ? t(nOpen ? "tr.cf.capOrders" : "tr.cf.capOrdersOpen", { n: String(nOpen || m.rows.length) }) : t(m.rows.length === 1 ? "tr.cf.capChangesOne" : "tr.cf.capChanges", { n: String(m.rows.length), ccy: ccys })) + asofTail;
+      sub.textContent = (m.kind === "orders" ? t(nOpen ? "tr.cf.capOrders" : "tr.cf.capOrdersOpen", { n: String(nOpen || m.rows.length) }) : t(m.rows.length === 1 ? "tr.cf.capChangesOne" : "tr.cf.capChanges", { n: String(m.rows.length), ccy: ccys }));
       if (sub.textContent) body.appendChild(sub);
       const dl = trEl("dl", "cf-rows cf-amt"), mixed = m.kind === "orders" && m.rows.map((x) => x.venues || []).flat().filter((v, i, a) => a.indexOf(v) === i).length > 1;
       m.rows.forEach((x) => {
@@ -4073,8 +4065,9 @@ function trCfOpen(o) {
         dl.appendChild(cfRow("", trDisplay(n), dd)); });
       body.appendChild(dl);
     }
-    nextEl.hidden = !fire;
-    if (!inp && fire) body.appendChild(nextEl);
+    // 說明句只在表講不完時出,放表下(canon):列不出單、有策略算不出、用到不是最新那根的預覽
+    if (nextOn) body.appendChild(trEl("p", "cf-note", t("tr.cf.nextRound")));
+    if (closeMaybe) body.appendChild(trEl("p", "cf-note", t("tr.cf.closeMaybe")));
     // 一句最多點名三檔,其餘「和另外 N 檔」(同補齊那句 trCatchWill)
     const syms = (ks) => { const ns = ks.map((k) => { const b = k.replace(/@spot$/, ""), sp = trTxfSpec(trCapitalCanon(b)), tw = sp ? "" : trTwName(k); return sp ? t(sp.prod) : b + (tw ? " " + tw : ""); });
       return ns.slice(0, 3).join(LANG === "zh" ? "、" : ", ") + (ns.length > 3 ? (LANG === "zh" ? "" : " ") + t("tr.opt.catchMore", { n: ns.length - 3 }) : ""); };
@@ -4085,7 +4078,7 @@ function trCfOpen(o) {
       $("del-title").textContent = title; $("del-ok").textContent = t(fire ? "tr.cf.titleFire" : "tr.save"); $("del-ok").disabled = blocked || inOff();
       const mk = $("del-mark"), paper = trCfPaperOnly(); mk.hidden = !fire; mk.className = "mode " + (paper ? "paper" : "real"); mk.textContent = fire ? t(paper ? "tr.mode.paper" : "tr.mode.real") : "";
     }
-    cf.title = title; cf.firing = fire; cf.rows = m.rows.length + amtOnly.length; cf.notes = (fire ? 1 : 0) + (hw.length ? 1 : 0) + (hg.length ? 1 : 0);
+    cf.title = title; cf.firing = fire; cf.rows = m.rows.length + amtOnly.length; cf.notes = (nextOn ? 1 : 0) + (closeMaybe ? 1 : 0) + (hw.length ? 1 : 0) + (hg.length ? 1 : 0);
   })));
   paintBody();
   const frag = document.createDocumentFragment();
@@ -4093,7 +4086,7 @@ function trCfOpen(o) {
     // 打字／換合約:整段重算(送出的這一份、表下、標的表),主鈕的停用跟著換
     derive(); cf.sending = sending; cf.blocked = blocked; cf.sig = null; paintBody();
     if (cf.ctx && delCtx === cf.ctx) $("del-ok").disabled = blocked || inOff();
-  }, () => !cf.firing && !$("del-ok").disabled)).appendChild(nextEl);
+  }, () => !cf.firing && !$("del-ok").disabled));
   frag.append(body, extra);
   const anyChange = !!inp || cf.rows > 0 || cf.notes > 0 || stratRows.length > 0 || blank.length > 0 || Object.keys(sending).some((n) => Number(sending[n]) !== old(n));
   // 框腳左邊的「到策略組合」(策略頁的輸入格框,台股沒有):關框、把已填的金額帶成草稿(poAdd)
@@ -4185,8 +4178,6 @@ function trCfTick() {
   if (!cf || delCtx !== cf.ctx || $("del-scrim").hidden) { TR_CF.cur = null; return; }
   cf.paint();
 }
-// 表頭的「MM/DD」／「MM/DD HH:MM」(本機時區)
-function trCfMD(sec, hm) { const d = new Date(sec * 1000), p = (x) => String(x).padStart(2, "0"); return p(d.getMonth() + 1) + "/" + p(d.getDate()) + (hm ? " " + p(d.getHours()) + ":" + p(d.getMinutes()) : ""); }
 /* 請機器背景重算這支的回測到最新資料(stats_refresh,同「更新績效」那條;同碼不定版):只為了拿到最新那一根的預覽。
    一分鐘內請過就不再請;ack 的 CODE_CHANGED(程式改過還沒回測)記下來 */
 function trPvRequest(S, name) {

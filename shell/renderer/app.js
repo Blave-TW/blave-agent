@@ -1480,10 +1480,10 @@ async function upAskPull() {
 var UP_PILL_DAY_KEY = "ws_upd_pill_day";   // var:upPaint 可能在這一行之前被叫到
 function upPillNow() { return upPillPlan({ up: UP, localTurn: upLocalTurn() }); }
 /* 膠囊的字:「重新啟動更新：{v}」,v = updater 暫存好、等著裝的那一版(UP.version)。拿不到或形狀不像版號就退回不帶版號那句,不出空冒號 */
-function upPillLabel(p, v, tt) {
+function upPillLabel(p, v, tt, short) {
   if (p.kind === "restarting") return tt("up.restarting");
   const ok = typeof v === "string" && /^\d+(\.\d+){1,3}([-+][0-9A-Za-z.-]{1,20})?$/.test(v);
-  return (ok ? tt("up.pillV", { v }) : tt("up.pill")) + (p.ask ? "…" : "");
+  return (ok ? tt(short ? "up.pillS" : "up.pillV", { v }) : tt("up.pill")) + (p.ask ? "…" : "");
 }
 function upPillPaint() {
   const p = upPillNow(), wrap = $("up-pill-wrap"), pill = $("up-pill"), dot = $("up-rail");
@@ -1508,8 +1508,12 @@ function upPillPaint() {
 // 量字那一段(span 自己 overflow:hidden):整顆鈕的 scrollWidth 會算進熱區 ::before 伸出去的 4px,不能拿來判
 function upPillFit() {
   const pill = $("up-pill"), txt = $("up-pill-t"); if (!pill || !txt || pill.offsetParent === null) return;
+  // 三階:全句帶圖示 → 全句不帶圖示 → 短句不帶圖示。版號一律不截(切成 0.1.4 是錯的值);短句時全句放 title 與可及名稱
+  const p = upPillNow(), full = upPillLabel(p, UP && UP.version, t), busyTip = p.kind === "busy" ? t("busy.update") : "";
+  txt.textContent = full; pill.title = busyTip; pill.removeAttribute("aria-label");
   pill.classList.remove("no-ic");
   if (txt.scrollWidth > txt.clientWidth) pill.classList.add("no-ic");
+  if (txt.scrollWidth > txt.clientWidth) { const s = upPillLabel(p, UP && UP.version, t, true); if (s !== full) { txt.textContent = s; pill.title = busyTip || full; pill.setAttribute("aria-label", full); } }
 }
 function upPillClick(btn) {
   const p = upPillNow();
