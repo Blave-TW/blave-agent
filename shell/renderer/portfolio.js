@@ -8,7 +8,6 @@
 /* ── 純邏輯(tests/check_shell_portfolio.js 從原文切出來跑;這一段不准碰 DOM)────────────── */
 const MG_EQUAL = "equal", MG_SLOPE = "slope", MG_SHARPE = "sharpe";
 const MG_LOOKBACK_DEFAULT = 365;      // = manager.py LOOKBACK
-const MG_TARGET_VOL_DEFAULT = 0.3;    // = manager.py TARGET_VOL
 const MG_RANDOM_N = 1000;             // = management_backtest.py --random-n 預設,不傳
 const MG_REFRESH_BATCH = 50;          // = stats_refresh 一次最多幾支(runtime STATS_REFRESH_MAX_NAMES)
 const MG_REFRESH_MAX_MS = 20 * 60000; // 跑優化前更新績效最多等多久(沒上線的成員是整支重跑回測,一支最多 15 分鐘);逾時用現有數字跑
@@ -707,8 +706,8 @@ function mgSave(S, key, v) {
   try { localStorage.setItem(key, JSON.stringify(v)); } catch (_) { return; }   // 存不了就只記在這一頁
 }
 function mgManager() { const m = (trReport() || {}).manager; return m && typeof m === "object" ? m : null; }
-// 機器 workspace 落後、跑不動策略管理(can_manage false;舊 runtime 連 manager 區塊都沒有)
-function mgBlocked() { const m = mgManager(); return !m || m.can_manage === false; }
+// 機器 workspace 落後、跑不動策略管理(can_manage false;舊 runtime 連 manager 區塊都沒有)。沒回報內建方法的舊 runtime 要 target_vol 才跑,那格不是用戶填的,一樣先更新
+function mgBlocked() { const m = mgManager(); return !m || m.can_manage === false || !mgReportedBuiltins(); }
 function mgStrategies() { const m = mgManager(); return (m && Array.isArray(m.strategies) ? m.strategies : []).filter((s) => s && typeof s.name === "string" && s.name); }
 function mgAllocators() { const m = mgManager(); return (m && Array.isArray(m.allocators) ? m.allocators : []).filter((a) => a && typeof a.name === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(a.name)); }
 // 舊世界唯一的內建是 slope(吃 --lookback):機器沒回報內建方法時替它宣告那一格
@@ -766,16 +765,7 @@ function mgSig(o) { return o && typeof o === "object" ? JSON.stringify(o) : null
 function mgNotDropped(kind, o) { const G = mgBag(); return !(G.dropped && G.dropped[kind] !== null && G.dropped[kind] === mgSig(o)); }
 // 套用金額只在兩邊的策略是同一組時可以按:建議只算優化清單裡的,集合不同時套用會漏改或多改
 function mgSameAsAmounts() { const a = mgMembers(), b = trNames().slice().sort(); return a.length === b.length && a.every((n, i) => n === b[i]); }
-function mgArgs() {
-  const G = mgBag(), params = Object.assign({}, G.params);
-  // 舊 runtime(1.1.46 以前)硬性要求 params 同時有 lookback 與 target_vol:只在這條相容分支背後默默補(同網頁 mgArgs)
-  if (!mgReportedBuiltins()) {
-    if (typeof params.lookback !== "number") params.lookback = MG_LOOKBACK_DEFAULT;
-    const pct = ((trReport() || {}).config || {}).target_vol_pct;
-    params.target_vol = typeof pct === "number" && mgParamInRange("target_vol", pct / 100) ? pct / 100 : MG_TARGET_VOL_DEFAULT;
-  }
-  return { members: mgMembers(), allocator: mgWireAlloc(G.alloc), params };
-}
+function mgArgs() { const G = mgBag(); return { members: mgMembers(), allocator: mgWireAlloc(G.alloc), params: Object.assign({}, G.params) }; }
 function mgProposal() { const m = mgManager(), G = mgBag(); return m && mgSameSel(m.proposal, mgMembers(), G.alloc, G.params) && mgNotDropped("prop", m.proposal) ? m.proposal : null; }
 function mgJobAny() { const m = mgManager(); return m && m.backtest_job && typeof m.backtest_job === "object" ? m.backtest_job : null; }
 function mgJob() { const j = mgJobAny(), G = mgBag(); return j && mgSameSel(j, mgMembers(), G.alloc, G.params) && mgNotDropped("job", j) ? j : null; }
