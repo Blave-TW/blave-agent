@@ -61,7 +61,7 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
     d({ a: 0 }, false) === true && d({}, true) === true && d({}, false) === false && d({ a: 0, b: 5 }, true) === false
     && (C.TR_BAGS = { local: { st: null } }, C.trStored = () => ({ a: 0 }), C.onbData().amt) === false);
   // 雲端那一份:清單讀 TR_BAGS.cloud.list;清單還沒載入(listLoaded)前不下結論(不然既有用戶會被當成還沒回測、之後假慶祝)
-  const dc = (list, loaded, stored) => { C.TR_BAGS = { local: { st: null }, cloud: { st: { report: {} }, list, listLoaded: loaded } }; C.trStored = () => stored; C.trZDraft = () => false; return C.onbData("cloud"); };
+  const dc = (list, loaded, stored) => { C.envCloudKind = () => "running"; C.TR_BAGS = { local: { st: null }, cloud: { st: { report: {} }, list, listLoaded: loaded } }; C.trStored = () => stored; C.trZDraft = () => false; return C.onbData("cloud"); };
   const c1 = dc([{ name: "x", hasBacktest: true }], true, { x: 5 }), c2 = dc([{ name: "x", hasBacktest: true }], false, { x: 5 }), c3 = dc([{ name: "x", hasBacktest: false }], true, {});
   ok("② onbData(cloud):回測過看雲端清單(不看本機 RP.list)、金額看雲端那一袋;清單沒載入 → known false", c1.known && c1.bt && c1.funded && !c2.known && c3.known && !c3.bt && !c3.funded, JSON.stringify([c1, c2, c3]));
   const paint = cutFn(src, "onbPaint");
@@ -98,7 +98,8 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
   ok("② F:#wf 開著、沒有完成行;E:#wc 開著、#wf 收起", !F.wf.hidden && F["onb-fin"].hidden && F.wc.hidden && E.wf.hidden && !E.wc.hidden);
   ok("② #10／#22:回測做完而狀態問過還沒讀到,③ 下面出原因句;其他情況不出", !run("wait")["onb-wait"].hidden && E["onb-wait"].hidden && /<p class="onb-wait" id="onb-wait" data-i18n="onb\.wait" hidden><\/p>/.test(html));
   const dd = (st, list) => { const C = { TR_BAGS: { local: { st } }, RP: { list }, trExecState: () => "idle", trWith: () => ({}), trStored: () => ({}), trZDraft: () => false }; vm.createContext(C); vm.runInContext(cutFn(src, "onbData"), C); return C.onbData("local"); };
-  ok("② onbData.wait:問過了、沒有報告 → true;開機第一輪還沒回來(st null)不算;讀到了不算", dd({ report: null }, []).wait === true && dd(null, []).wait === false && dd({ report: {} }, []).wait === false);
+  ok("② onbData.wait:問過了、沒有報告 → true;開機第一輪還沒回來(st null)不算;讀到了不算", dd({ report: null }, []).wait === true && dd(null, []).wait === false && dd({ report: {} }, []).wait === false
+    && (() => { const C = { TR_BAGS: { cloud: { st: { report: null }, list: [], listLoaded: true } }, RP: { list: [] }, envCloudKind: () => "stopped", trExecState: () => "idle" }; vm.createContext(C); vm.runInContext(cutFn(src, "onbData"), C); return C.onbData("cloud").wait === false; })());
   ok("② 完成事件只在 onbEval 送,onbPaint 不碰;同一次開著 V.fin 之後 onbPhase 不再給 event,onb_done 只送一次", !/onb_done/.test(cutFn(src, "onbPaint")) && (src.match(/trackFeature\("onb_done"\)/g) || []).length === 1 && JSON.parse(ph({ fin: true, base: false, complete: true })).event === false);
   const seen = [];
   const mkEl = (tag, cls, txt) => ({ tag, className: cls || "", kids: [], attrs: {}, text: txt == null ? "" : String(txt), on: {}, append(...x) { this.kids.push(...x); }, appendChild(x) { this.kids.push(x); return x; }, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener(k, f) { this.on[k] = f; } });

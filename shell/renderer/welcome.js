@@ -190,8 +190,8 @@ function onbData(env) {
   const funded = Object.keys(stored).some((n) => Number(stored[n]) > 0);
   // ③ 已經勾了沒存、或存了但金額全 0:下一步是填金額,不是再開一次框(借頁首 trZCase 的 draft／amt 兩個判斷;那支要綁好帳戶才回值,新手多半沒綁,不整支照搬)
   const amt = known && !funded && (Object.keys(stored).length > 0 || trWith(L, () => trZDraft()));
-  // wait:狀態問過了還是沒讀到。平常只閃一下,常駐程式起不來時會一直這樣,③ 沒有鈕,要講原因(開機第一輪還沒回來不算)
-  return { known, bt: (cloud ? (L && L.list) || [] : RP.list).some((x) => x.hasBacktest), funded, amt, wait: !!st && !known };
+  // wait:狀態問過了還是沒讀到。平常只閃一下,常駐程式起不來時會一直這樣,③ 沒有鈕,要講原因(開機第一輪還沒回來不算;雲端停機有自己那一行)
+  return { known, bt: (cloud ? (L && L.list) || [] : RP.list).some((x) => x.hasBacktest), funded, amt, wait: !!st && !known && !(cloud && envCloudKind(st) === "stopped") };
 }
 /* ── ①的策略卡(spec desktop-welcome-library-first §2–3)── */
 // 手上沒有、作廢了、換了語言才問(主行程有 5 分鐘快取)。不從 wcPaint 叫:libLoad 結束會叫 wcPaint,讀不到時會一直重打。

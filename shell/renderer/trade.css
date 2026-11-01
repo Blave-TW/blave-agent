@@ -169,7 +169,7 @@ html.ws-sc .side-gate { display: none; }
 /* 標頭三列(spec v2 §12-4 的 V2b):列 1 = 標題 | 動作槽,列 2 = 狀態句,列 3 = 原因行,兩句都跨滿寬。
    舊版是 flex + `.act { flex: none }`:1024 最小視窗、三欄全開時中欄只有 336,兩顆英文鈕吃掉固定寬度,
    文字欄只剩 60 px(約八個英文字母一行)→ 最長的狀態 36 行。`.txt` 走 display: contents,
-   讓標題、狀態句、原因行直接變成 grid item;`.act` 缺席時(#cv-empty 那個標頭)收掉第二欄與欄距 */
+   讓標題、狀態句、原因行直接變成 grid item;`.act` 缺席時收掉第二欄與欄距 */
 .main-head { flex: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-16); align-items: start; padding: var(--space-16) var(--space-24) var(--space-12); }
 .main-head:not(:has(.act)) { grid-template-columns: minmax(0, 1fr); column-gap: 0; }
 .main-head > .txt { display: contents; }
