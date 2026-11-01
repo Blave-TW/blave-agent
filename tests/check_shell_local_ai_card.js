@@ -84,7 +84,7 @@ if (!process.versions.electron) (async () => {
     ok("② 隨包跑不起來(不帶 via):〔再試一次〕重抓 + cn.pkgBad", sh(r) === "claude:cn.use:-:-::fill / codex:cn.retry:-:cn.pkgBad::" && r[1].pkg && r[1].reinstall, sh(r));
     r = R(D(IN, NONE), "blave", null, {}, { phase: "download", bytes: 1e6, total: 166e6, fail: null });
     ok("② Codex 下載中:狀態字 cn.pkgDl(帶 a／b)、沒有鈕", sh(r) === "claude:cn.use:-:-::fill / codex:-:cn.pkgDl:-::" && r[1].stVars.a === "1.0", sh(r));
-    ok("② laiAct:下載列走 codexPkgGo;laiPaint 把 PKG.snap 傳給 laiRows、說明與狀態字帶 vars", /if \(r\.pkg\) return codexPkgGo\(r\.reinstall, r\.act === "cn\.connect" \? "lai-rows" : null\);/.test(fn("laiAct"))
+    ok("② laiAct:下載列走 codexPkgGo;laiPaint 把 PKG.snap 傳給 laiRows、說明與狀態字帶 vars", /if \(r\.pkg\) return codexPkgGo\(r\.reinstall, "lai-rows"\);/.test(fn("laiAct"))
       && /laiRows\(MDL\.busy \? null : lastDetect, cur, loginPending, LAI\.msg, PKG\.snap\)/.test(fn("laiPaint")) && /t\(r\.sub, r\.subVars \|\| rowVars\(r\.kind, r\.name\)\)/.test(fn("laiPaint")) && /t\(r\.st, r\.stVars\)/.test(fn("laiPaint")));
     const lp = fn("laiPaint");
     ok("② laiPaint:等登入中只有〔取消等待〕能按;腳只在有一列不能用時出(mdlNeedsRedetect)、偵測中或等待中鎖住;〔怎麼安裝〕是文字鈕",

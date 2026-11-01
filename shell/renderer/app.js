@@ -53,7 +53,7 @@ function detectingRows() {
 }
 
 let lastDetect = null;   // 換語言重畫列用,不重跑偵測
-// Codex 引擎隨包(main.js codexPkg):snap = 主行程那份快照(還沒拉到是 null);redetect = 下載完成那一刻正在偵測或等登入,下一次重畫時補偵測;auto／done = 按〔連結〕的那個表面、下載完成等接登入(codexAutoLogin)
+// Codex 引擎隨包(main.js codexPkg):snap = 主行程那份快照(還沒拉到是 null);redetect = 下載完成那一刻正在偵測或等登入,下一次重畫時補偵測;auto／done = 按下載的那個表面、下載完成等接登入(codexAutoLogin)
 const PKG = { snap: null, redetect: false, auto: null, done: false };
 let detectAt = 0;        // 回到前景重偵測的限頻用
 const ROWMSG = { claude: null, codex: null };   // 連結畫面各列名字底下那一句:null | "opened" | "failed"(rowMsg)
@@ -113,7 +113,7 @@ function codexPkgGo(reinstall, from) {
   PKG.auto = from || null; PKG.done = false;
   window.blave.codexPkgEnsure(reinstall ? { reinstall: true } : null).then((r) => { if (r && r.ok === false) PKG.auto = null; }, () => { PKG.auto = null; });
 }
-/* 按〔連結〕抓完 Codex 引擎,接著開登入,不用再按一次。from = 按的那個表面;背景補抓(codexKick)沒有 from,不接。
+/* 按〔連結〕或〔再試一次〕抓完 Codex 引擎,接著開登入,不用再按一次。from = 按的那個表面;背景補抓(codexKick)沒有 from,不接。
    只接偵測確定裝好、確定沒登入的:已登入、查不出來、跑不起來、表面已經關了,都停在列上,一次機會,不重試 */
 function codexAutoLogin() {
   const x = lastDetect && lastDetect.codex;
@@ -177,7 +177,7 @@ function paintRows(d) {
     const pk = kind === "codex" ? codexPkgRow(PKG.snap, x) : null;
     if (pk) {
       rows.appendChild(row({ name, kind, st: pk.st ? t(pk.st.key, pk.st.vars) : null, stClass: pk.off ? "" : undefined, sub: pk.desc ? t(pk.desc.key, pk.desc.vars) : null,
-        action: pk.act ? btn("btn-out", t(pk.act), () => codexPkgGo(pk.reinstall, pk.act === "cn.connect" ? "agent-rows" : null)) : null }));
+        action: pk.act ? btn("btn-out", t(pk.act), () => codexPkgGo(pk.reinstall, "agent-rows")) : null }));
     } else if (x.installed && x.loggedIn) {
       ROWMSG[kind] = null;
       rows.appendChild(row({ name, kind, st: t("st.signedIn"), stClass: "on", cur: cur === kind,
@@ -448,7 +448,7 @@ function mdlAct(o, b) {
   if (o.kind === "blave") return blaveGo(b);
   if (o.kind === "apikey") return o.act === "ak.setup" ? akOpen("set") : connect("apikey", {});
   if (o.act === "cn.signIn") return localLogin(o.kind, b);
-  if (o.pkg) return codexPkgGo(o.reinstall, o.act === "cn.connect" ? "set-model" : null);
+  if (o.pkg) return codexPkgGo(o.reinstall, "set-model");
   return connect(o.kind, (lastDetect && lastDetect[o.kind]) || {});
 }
 function mdlPaint() {
@@ -4620,7 +4620,7 @@ function laiAct(r, b) {
   if (r.act === "login.cancel") return window.blave.cancelAgentLogin();
   if (r.act === "lai.install") return window.blave.openExternal(LAI_INSTALL[r.kind]);
   if (r.act === "cn.signIn" || r.act === "login.retry") return localLogin(r.kind, b);
-  if (r.pkg) return codexPkgGo(r.reinstall, r.act === "cn.connect" ? "lai-rows" : null);
+  if (r.pkg) return codexPkgGo(r.reinstall, "lai-rows");
   return connect(r.kind, (lastDetect && lastDetect[r.kind]) || {});
 }
 // 不送 acct_card_click、不設 acctGone:那條漏斗只算綁卡

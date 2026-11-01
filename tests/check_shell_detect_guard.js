@@ -121,6 +121,15 @@ const authUnknown = eval("(" + app.match(/^const authUnknown = (.*);$/m)[1] + ")
     ok("下載失敗 → 不接,也不留著等下一次", m.login.length === 0 && m.ctx.PKG.auto === null, m.ctx.PKG);
     m.f.on(DL); m.f.on(DONE);
     ok("…之後別的下載完成也不接", m.login.length === 0, m.login);
+    m.f.go(false, "agent-rows"); await Promise.resolve(); m.f.on(DL); m.f.on(DONE); await Promise.resolve();
+    ok("失敗後用戶按〔再試一次〕、這次成功 → 接登入", m.login.join() === "codex", m.login);
+    ok("…連結畫面那顆鈕不分〔連結〕〔再試一次〕都帶表面", /codexPkgGo\(pk\.reinstall, "agent-rows"\)/.test(fn("paintRows")));
+    m = mkA(); m.f.go(true, "set-model"); await Promise.resolve(); m.f.on(DL); m.f.on(DONE); await Promise.resolve();
+    ok("跑不起來按〔再試一次〕(reinstall)重抓成功、沒登入 → 接登入;ensure 帶 reinstall", m.login.join() === "codex" && m.ensure[0].reinstall === true, m.login);
+    m = await run({ detected: { codex: { installed: true, loggedIn: true } } }, "set-model");
+    ok("重抓成功、本來就登入 → 不接", m.login.length === 0, m.login);
+    m = await run({}, "agent-rows", FAIL); m.f.go(false, "agent-rows"); await Promise.resolve(); m.f.on(DL); m.f.on(FAIL);
+    ok("〔再試一次〕又失敗 → 不接、不自己重抓", m.login.length === 0 && m.ensure.length === 2 && m.ctx.PKG.auto === null, m.ctx.PKG);
     m = mkA({ ensure: Promise.resolve({ ok: false }) }); m.f.go(false, "agent-rows"); await Promise.resolve(); await Promise.resolve();
     ok("ensure 回 ok:false → 清掉", m.ctx.PKG.auto === null, m.ctx.PKG);
     m = mkA({ ensure: Promise.reject(new Error("x")) }); m.f.go(false, "agent-rows"); await Promise.resolve(); await Promise.resolve();
