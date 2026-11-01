@@ -2745,6 +2745,7 @@ async function libraryDownload(strategyId) {
   const key = loadToken() ? loadDataKey() : null;
   // 舊契約只在有 key 時退回舊句(agent 自己用 .env 的 key 打 /code);沒有 key 時舊 agent 會撞牆、叫人登入,免登入策略不准出現那句(spec §0.1)
   if (!libContractReady()) return key ? { ok: true, legacy: true } : { ok: false, kind: libAnonOk(strategyId) ? "fail" : "signin" };
+  const q = `?lang=${siteLang()}`;   // api 照介面語言換掉碼裡的 DISPLAY_NAME / DESCRIPTION(官方原文是中文)
   const anon = async () => {
     if (!libAnonOk(strategyId)) return null;
     // 埋點的 install_id 讓 api 記「N 人安裝」的匿名那份(策略 × install_id 去重);用戶關掉使用事件就不帶,只是不計數。
@@ -2752,11 +2753,11 @@ async function libraryDownload(strategyId) {
     let h = {};
     try { if (telemetryLive() && tm().isEnabled()) h = { "X-Install-Id": tm().installId() }; } catch (_) { h = {}; }
     h = Object.assign(h, libVerHeader());
-    try { return await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/public_code`, h); } catch (_) { return { status: 0, body: null }; }
+    try { return await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/public_code${q}`, h); } catch (_) { return { status: 0, body: null }; }
   };
   let r = null, viaAnon = false;
   if (key) {
-    try { r = await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/code`, Object.assign({ "api-key": key.api_key, "secret-key": key.secret_key }, libVerHeader())); }
+    try { r = await getJSON(`${API_BASE}/openclaw/marketplace/strategies/${strategyId}/code${q}`, Object.assign({ "api-key": key.api_key, "secret-key": key.secret_key }, libVerHeader())); }
     catch (_) { return { ok: false, kind: "fail" }; }
     const kb = r.body && typeof r.body === "object" ? r.body : {};
     if (r.status === 401 || (r.status === 403 && kb.error_code === "ERR005")) { r = await anon(); viaAnon = true; }   // key 被撤(別台登出 / 撤銷):能匿名的照樣裝
