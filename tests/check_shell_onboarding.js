@@ -1,6 +1,6 @@
 // 歡迎頁入門步驟(spec .claude/output/specs/agent-onboarding-e-f-spec-2026-10-19.md;shell/renderer/welcome.js + trade.js 連接框)。
 //   ① 純邏輯(從原文切出來跑):onbSteps 步驟狀態機(0.1.29 起不分市場、三步:①②同時、③輪到才露、狀態檔沒讀到不下結論)、
-//      onbPhase E／fin／F 切換(當下完成才慶祝與送 onb_done,上線那天就已經完成的直接進 F)
+//      onbPhase E／fin／F 切換(當下完成才慶祝與送 onb_done,上線那天就已經完成的直接進 F);fin 是 F 多一行,不是另一頁
 //   ② 歡迎頁③〔加到策略組合〕(poPick)與選擇策略框 psOpen 原文接假 DOM 跑:到策略組合頁、開框、不替用戶勾;框開之前重讀這台電腦的清單
 //      (0.1.28 Wei 實機:剛裝好的策略不在框裡)
 //   ③ 連接框 cxModalOpen 原文接假 DOM 跑:預設模擬、統一照舊、每次打開記 cx_open
@@ -66,14 +66,14 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
   ok("② onbData(cloud):回測過看雲端清單(不看本機 RP.list)、金額看雲端那一袋;清單沒載入 → known false", c1.known && c1.bt && c1.funded && !c2.known && c3.known && !c3.bt && !c3.funded, JSON.stringify([c1, c2, c3]));
   const paint = cutFn(src, "onbPaint");
   ok("② onbPaint:鈕字照 amt 換(po.goAmounts／tr.pick),指紋帶 amt;click 把 ONB.amt 交給 poPick",
-    /\$\("onb-po"\)\.textContent = t\(d\.amt \? "po\.goAmounts" : "tr\.pick"\);/.test(paint) && /JSON\.stringify\(\[LANG, env, ph\.view, S\.steps, d\.amt\]\)/.test(paint) && /poPick\(ONB\.amt\)/.test(src));
+    /\$\("onb-po"\)\.textContent = t\(d\.amt \? "po\.goAmounts" : "tr\.pick"\);/.test(paint) && /JSON\.stringify\(\[LANG, env, ph\.view, S\.steps, d\.amt, d\.wait\]\)/.test(paint) && /poPick\(ONB\.amt\)/.test(src));
   // ①的策略卡(spec desktop-welcome-library-first §2.5):onbPaint 有三個提早 return,wcPaint 要在 onbEval 之後、指紋 return 之前,雲端轉 stale／stopped 才收得起來
   ok("② onbPaint:onbEval(env) 之後、if (key === ONB.key) return 之前叫 wcPaint",
     paint.indexOf("wcPaint();") > paint.indexOf("onbEval(env);") && paint.indexOf("wcPaint();") < paint.indexOf("if (key === ONB.key) return;") && paint.indexOf("onbEval(env);") > 0); }
 // 設計稽核 v030 S4:雲端主機本來就含資料,步驟②不出「可以回測的資料」(免費 vs Blave 兩欄會講錯事實);本機照舊、切回本機要再露出來
 { const run = (envs) => {
     const el = (id) => ({ id, hidden: false, textContent: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } });
-    const els = {}; ["wc", "wf", "onb-fin", "onb-steps", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl"].forEach((id) => { els[id] = el(id); });
+    const els = {}; ["wc", "wf", "onb-fin", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl", "onb-wait"].forEach((id) => { els[id] = el(id); });
     const C = { $: (id) => els[id], t: (k) => k, LANG: "zh", JSON, WC: { shown: true }, ONB: { prefs: {}, key: null, amt: false }, onbHead() {}, wcPaint() {}, ENVNOW: "local",
       onbEnv: () => C.ENVNOW, onbEval: () => ({ d: { amt: false }, S: { steps: [{ open: true }, { open: true }, { open: false }] }, ph: { view: "E" } }) };
     vm.createContext(C); vm.runInContext(paint, C);
@@ -83,6 +83,38 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
   const r = run(["local-open", "cloud", "local"]);
   ok("② 雲端歡迎頁步驟②不出「可以回測的資料」:#wl-fold 收掉、#wl 收起、aria-expanded false;本機照舊(展開著的不被收);切回本機 #wl-fold 再出現",
     JSON.stringify(r) === JSON.stringify(["local-open,false,false,true", "cloud,true,true,false", "local,false,true,false"]), JSON.stringify(r)); }
+// ── ② 方案 A(mockup-welcome-fin-2026-11-01):完成行進 F,#12／#23 不再是死路;#25／#26 講出來;#10／#22 ③ 沒鈕時講原因 ──
+{ const html = read(path.join(R, "index.html")), css = read(path.join(R, "welcome.css"));
+  const wf = html.slice(html.indexOf('id="wf"'), html.indexOf("</section>", html.indexOf('id="wf"'))), wc = html.slice(html.indexOf('id="wc"'), html.indexOf('id="wf"'));
+  ok("② #onb-fin 住在 #wf 的 .fin-grp 裡、在三顆籤上方,#wc 裡沒有", wf.includes('id="onb-fin"') && !wc.includes('id="onb-fin"') && wf.indexOf('class="fin-grp"') < wf.indexOf('id="onb-fin"') && wf.indexOf('id="onb-fin"') < wf.indexOf('id="wf-idea"'));
+  ok("② .fin-grp 行和籤一組(間距 8)、置中;.onb-fin 上距歸零", /\.fin-grp \{ display: flex; flex-direction: column; align-items: center; gap: var\(--space-8\); \}/.test(css) && /\.onb-fin \{ margin: 0;/.test(css));
+  const mk = (id) => ({ id, hidden: true, textContent: "", attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } });
+  const run = (view) => { const els = {}; ["wc", "wf", "onb-fin", "onb-b1", "onb-b2", "onb-b3", "onb-po", "wl-fold", "wl", "onb-wait"].forEach((id) => { els[id] = mk(id); });
+    const C = { $: (id) => els[id], t: (k) => k, LANG: "zh", JSON, WC: { shown: true }, ONB: { prefs: {}, key: null, amt: false }, onbHead() {}, wcPaint() {}, onbEnv: () => "local",
+      onbEval: () => ({ d: { amt: false, bt: true, wait: view === "wait" }, S: { steps: [{ open: false }, { open: false }, { open: false }] }, ph: { view: view === "wait" ? "E" : view } }) };
+    vm.createContext(C); vm.runInContext(cutFn(src, "onbPaint"), C); C.onbPaint(); return els; };
+  const fin = run("fin"), F = run("F"), E = run("E");
+  ok("② fin:#wf 開著、完成行露出,步驟頁收起——三顆籤當場可按(舊碼 #wf 藏著)", !fin.wf.hidden && !fin["onb-fin"].hidden && fin.wc.hidden);
+  ok("② F:#wf 開著、沒有完成行;E:#wc 開著、#wf 收起", !F.wf.hidden && F["onb-fin"].hidden && F.wc.hidden && E.wf.hidden && !E.wc.hidden);
+  ok("② #10／#22:回測做完而狀態問過還沒讀到,③ 下面出原因句;其他情況不出", !run("wait")["onb-wait"].hidden && E["onb-wait"].hidden && /<p class="onb-wait" id="onb-wait" data-i18n="onb\.wait" hidden><\/p>/.test(html));
+  const dd = (st, list) => { const C = { TR_BAGS: { local: { st } }, RP: { list }, trExecState: () => "idle", trWith: () => ({}), trStored: () => ({}), trZDraft: () => false }; vm.createContext(C); vm.runInContext(cutFn(src, "onbData"), C); return C.onbData("local"); };
+  ok("② onbData.wait:問過了、沒有報告 → true;開機第一輪還沒回來(st null)不算;讀到了不算", dd({ report: null }, []).wait === true && dd(null, []).wait === false && dd({ report: {} }, []).wait === false);
+  ok("② 完成事件只在 onbEval 送,onbPaint 不碰;同一次開著 V.fin 之後 onbPhase 不再給 event,onb_done 只送一次", !/onb_done/.test(cutFn(src, "onbPaint")) && (src.match(/trackFeature\("onb_done"\)/g) || []).length === 1 && JSON.parse(ph({ fin: true, base: false, complete: true })).event === false);
+  const seen = [];
+  const mkEl = (tag, cls, txt) => ({ tag, className: cls || "", kids: [], attrs: {}, text: txt == null ? "" : String(txt), on: {}, append(...x) { this.kids.push(...x); }, appendChild(x) { this.kids.push(x); return x; }, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener(k, f) { this.on[k] = f; } });
+  const box = (id) => { const b = mkEl("p", "wc-alert"); b.id = id; b.hidden = true; Object.defineProperty(b, "textContent", { set() { b.kids = []; } }); b.classList = { toggle(c, on) { b.calm = !!on; } }; return b; }, A = { "wc-alert": box("wc-alert"), "wf-alert": box("wf-alert") };
+  const C2 = { $: (id) => A[id], t: (k) => k, LANG: "zh", WC: {}, wdEl: mkEl, trackFeature: (n) => seen.push(n), trOpen: () => seen.push("trOpen") }; vm.createContext(C2); vm.runInContext(cutFn(src, "wcAlert"), C2);
+  const flat = (n) => n.kids.map((k) => (k.kids && k.kids.length ? flat(k) : k.text || k)).join("|");
+  C2.wcAlert("stopped");
+  ok("② #25 停機:E 與 F 各一行,句子＋到自動下單", !A["wc-alert"].hidden && !A["wf-alert"].hidden && !A["wc-alert"].calm && flat(A["wc-alert"]).includes("wc.stopped|wc.goTrade") && flat(A["wf-alert"]).includes("wc.stopped|wc.goTrade"), flat(A["wc-alert"]));
+  A["wf-alert"].kids.find((k) => k.className === "ln-arrow").on.click();
+  ok("② 停機的箭頭開自動下單頁、記 wc_stopped_go", seen.join() === "wc_stopped_go,trOpen", seen.join());
+  C2.wcAlert("stale");
+  ok("② #26 過時:灰記號、沿用 ho.gate.stale、沒有鈕", A["wc-alert"].calm === true && flat(A["wc-alert"]).includes("ho.gate.stale") && !A["wc-alert"].kids.some((k) => k.className === "ln-arrow"), flat(A["wc-alert"]));
+  C2.wcAlert("live");
+  ok("② 恢復(live)或本機(null):兩行都收掉", A["wc-alert"].hidden && A["wf-alert"].hidden);
+  ok("② wcPaint 每輪都叫 wcAlert,在指紋 return 之前;E 的那行在記號與步驟之間、F 的在 .fin-grp 最上面", cutFn(src, "wcPaint").indexOf("wcAlert(cloud)") > 0 && cutFn(src, "wcPaint").indexOf("wcAlert(cloud)") < cutFn(src, "wcPaint").indexOf("key !== WC.key")
+    && wc.indexOf('class="wc-mark"') < wc.indexOf('id="wc-alert"') && wc.indexOf('id="wc-alert"') < wc.indexOf('id="onb-steps"') && wf.indexOf('id="wf-alert"') < wf.indexOf('id="onb-fin"')); }
 // ── ② ①的策略卡(spec desktop-welcome-library-first §2.2):wcCard 原文接假 DOM 跑 ──
 { const css = read(path.join(R, "welcome.css")), lib = read(path.join(R, "library.js"));
   const mkEl = (tag, cls, txt) => ({ tag, className: cls || "", textContent: txt == null ? "" : String(txt), kids: [], attrs: {}, dataset: {}, on: {}, id: "",

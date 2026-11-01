@@ -2906,6 +2906,15 @@ msgstr "Blave 資料已暫停。每天重試扣款。"
 msgid "env.empty.unknown"
 msgstr "查不到這個帳號的狀態。"
 
+msgid "wc.stopped"
+msgstr "雲端主機已停機。"
+
+msgid "wc.goTrade"
+msgstr "到自動下單"
+
+msgid "onb.wait"
+msgstr "還沒讀到下單狀態。可以先從左邊的策略組合進去。"
+
 msgid "side.cloud.emptyReady"
 msgstr "主機已經開好了。策略送上來之後，會列在這裡。"
 

@@ -281,7 +281,9 @@ const EVENTS = {
     // 0.1.39 Codex 引擎隨包(主行程 shell/codexpkg.js 送):套件下載、校驗、解壓、驗過、上架都成功。api 白名單同順序,api 先上
     "codex_pkg_done",
     // 雲端開通頁(0.1.41;renderer/app.js cloudPricingGo、trade.js envPaintEmpty):「其他方案與月價」外開定價頁、讀不到雲端／查不到帳號時的〔重新查看〕
-    "cloud_pricing", "cloud_recheck"] },
+    "cloud_pricing", "cloud_recheck",
+    // 雲端歡迎頁停機那一行的〔到自動下單〕(0.1.41;renderer/welcome.js wcAlert)
+    "wc_stopped_go"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

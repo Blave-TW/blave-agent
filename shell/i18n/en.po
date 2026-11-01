@@ -2895,6 +2895,15 @@ msgstr "Blave data is paused. Payment is retried daily."
 msgid "env.empty.unknown"
 msgstr "Couldn’t check this account."
 
+msgid "wc.stopped"
+msgstr "Cloud machine stopped."
+
+msgid "wc.goTrade"
+msgstr "Go to Auto Trading"
+
+msgid "onb.wait"
+msgstr "Order status hasn’t loaded yet. You can open Portfolio from the sidebar instead."
+
 msgid "side.cloud.emptyReady"
 msgstr "Your machine is up. Strategies you send here will be listed."
 

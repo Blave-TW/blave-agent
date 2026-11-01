@@ -129,7 +129,7 @@ for (const lang of ["zh", "en"]) {
     && /\.cv-ce, \.cv-st \{ margin: auto; width: 100%; max-width: 400px; padding-bottom: var\(--space-48\); \}/.test(css2) && !/cv-desc/.test(html + trade) && /<div class="trv" id="cv-empty" hidden>\s*<!--[^\n]*-->\s*<h5 class="sr-only" id="cv-h" tabindex="-1"/.test(html), html.slice(html.indexOf('id="cv-empty"'), html.indexOf('id="cv-empty"') + 200));
   const sent = (s, lang) => s.split(lang === "zh" ? /[。！？]/ : /(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean);
   const cnt = (p, lang) => (lang === "zh" ? (p.replace(/\{[a-z]+\}/g, "字").replace(/[0-9A-Za-z][0-9A-Za-z,.\-]*/g, "字").match(/[一-鿿字]/g) || []).length : p.split(/\s+/).length);
-  const NEWK = ["env.open.h", "env.open.lead", "env.open.pend", "env.open.trialOffer", "env.open.offer", "env.open.included", "env.open.trial", "env.open.trialOff", "env.open.planOn", "env.open.repay", "env.open.repayNoNum", "env.empty.starting", "env.empty.unknown"];
+  const NEWK = ["env.open.h", "env.open.lead", "env.open.pend", "env.open.trialOffer", "env.open.offer", "env.open.included", "env.open.trial", "env.open.trialOff", "env.open.planOn", "env.open.repay", "env.open.repayNoNum", "env.empty.starting", "env.empty.unknown", "wc.stopped", "onb.wait"];
   const long = []; for (const l of ["zh", "en"]) for (const k of NEWK) for (const p of sent(STR[l][k], l)) if (cnt(p, l) > (l === "zh" ? 25 : 16)) long.push(l + ":" + k + ":" + cnt(p, l));
   ok("新字串密度:zh 一句 ≤25 字、en 一句 ≤16 詞", long.length === 0, long.join()); }
 
