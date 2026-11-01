@@ -149,7 +149,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
   vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trFmt2", "trFmtPrice", "trMoneyInto", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames",
     "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTwLotsText", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag",
     "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trLotsInto", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
-    "trPaintPosCell", "trAmountTable", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trCfOpen", "trCfBookBad", "trCfStates", "trCfHolds", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trPvRequest", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trAwaitKeys", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trWaitStranded", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
+    "trPaintPosCell", "trAmountTable", "trNoVenueYet", "trGoStartKey", "trTradableFunded", "trUnrouted", "trRouteDirty", "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trCfOpen", "trCfBookBad", "trCfStates", "trCfHolds", "trMarks", "trCfQty", "trCfRows", "trCfTick", "trPvRequest", "trLivePositions", "trBook", "trTwClosedKeys", "trGatedKeys", "trAwaitKeys", "poPartStates", "poSigTable", "trPosDetail", "trManualPart", "trPlanTotal", "trTxfPrice", "trNetRows", "trWithUnit", "trCatchWill", "trWaitStranded", "trGateSide", "trTradesSym", "trAppRestartQuiet"].map((n) => cutF(src, n)).join("\n"), ctx);
   const V = { credentials: true, pair: true, order: true, account: true };
   const bag = (venues, extra) => ({ env: "local", listLoaded: true, picked: null, sent: null, save: null, edits: { btc: 600 }, bad: {}, raw: {}, sig: {}, ct: { edits: {}, basis: {}, sent: null }, just: null,
     list: [{ name: "btc", displayName: "BTC", hasBacktest: true, symbol: "BTCUSDT" }, { name: "tw", displayName: "TW", hasBacktest: true, symbol: "2330" }],
@@ -422,6 +422,20 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     const a4 = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx)); vm.runInContext('envHeadState = () => "running";', ctx);
     ok("沒改金額、沒在下單(dead):儲存列的位置是「還沒開始下單 ·〔到自動下單啟動〕」(btn-fill, fk go-start)", a.some((n) => n.text === "po.goIdle") && a.some((n) => n.dataset && n.dataset.fk === "go-start" && n.text === "po.goBtn") && !a2.some((n) => n.dataset && n.dataset.fk === "go-start")
       && !a3.some((n) => n.dataset && n.dataset.fk === "go-start") && !a4.some((n) => n.dataset && n.dataset.fk === "go-start")); }
+  // 策略組合儲存列:一家都沒連時講「還沒連接交易所」＋〔連接交易所〕(同網頁 46c27902a);綁定中、失敗、開通中、沒金額不出
+  { const k = (mut) => { ctx.TR = bag({}); ctx.TR.edits = {}; ctx.TR.st.report.config.amounts = { btc: 500 }; if (mut) mut(ctx.TR, ctx.TR.st.report); vm.runInContext("TR = this.TR", ctx); return vm.runInContext("trGoStartKey('noaccount', TR.st.report)", ctx); };
+    ok("noaccount:一家都沒連、有金額 → tr.noAccount", k() === "tr.noAccount", k());
+    ok("noaccount:沒金額不出", k((S, r) => { r.config.amounts = { btc: 0 }; }) === null);
+    ok("noaccount:綁定中／失敗(回報帶金鑰、還沒成對)不出", k((S, r) => { r.venues = { binance: { credentials: true, pair: false } }; }) === null);
+    ok("noaccount:券商開通中不出", k((S, r) => { r.president_connect = { worker: { status: "running" } }; }) === null && k((S, r) => { r.capital_local_connect = { worker: { status: "running" } }; }) === null);
+    ok("noaccount:雲端剛送出連接、等回報不出", k((S) => { S.cxSaved = { venue: "binance", at: Date.now() }; }) === null);
+    ctx.TR = bag({}); ctx.TR.edits = {}; ctx.TR.st.report.config.amounts = { btc: 500 }; vm.runInContext('envHeadState = () => "noaccount";', ctx);
+    let opened = 0; ctx.cxModalOpen = () => { opened++; }; vm.runInContext("cxModalOpen = this.cxModalOpen", ctx);
+    const a = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx)), go = a.find((n) => n.dataset && n.dataset.fk === "go-connect");
+    vm.runInContext('envHeadState = () => "running";', ctx); if (go) go.on.click();
+    ok("儲存列:「還沒連接交易所」＋〔連接交易所〕,按了開連接框", a.some((n) => n.text === "tr.noAccount") && !!go && go.text === "cx.connect" && opened === 1, J(a.map((n) => n.text).filter(Boolean)));
+    const S0 = new Function(fs.readFileSync(path.join(R, "strings.js"), "utf8") + "\nreturn STRINGS;")();
+    ok("字同網頁:zh「還沒連接交易所」「連接交易所」", S0.zh["tr.noAccount"] === "還沒連接交易所" && S0.zh["cx.connect"] === "連接交易所"); }
   // 第 5′ 列:這家能下的金額——統一只算台指期、模擬交易不算台股(台指期算);標的不明不扣
   { const f = (vid, list, amounts, states) => { ctx.TR = { list, env: "local" }; return vm.runInContext("trTradableFunded(" + J({ venues: { [vid]: V }, config: { amounts }, states: states || {} }) + ")", ctx); };
     ok("trTradableFunded:統一 + 只有 BTC 有金額 → 0(Z,啟動下單停用);統一 + 台指期 → 1;模擬 + 台股 → 0、模擬 + 台指期 → 1;Binance 照算;標的不明 → 算",

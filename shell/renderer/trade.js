@@ -2634,9 +2634,17 @@ function trPaintNoAmt(key, vars) {
 /* 配置頁儲存列格位的「去啟動」(post-connect-flow 第 4 列):envHeadState 每個值都列舉,新增狀態時這裡要跟著決定。
    running／unconfirmed → 不畫(在下單,或可能仍在下單);dead → 還沒開始下單;halted → 下單已暫停;
    loading／unknown／setup／noaccount → 不畫(還沒有可以啟動的東西,自動下單頁會講原因)。沒有這家能下的金額也不畫 */
+/* 一家都沒連,而且沒有正在連的:沒有綁定、回報裡沒有帶金鑰的交易所(綁定中、失敗)、券商沒有開通中、剛送出的連接還沒回報(同網頁 pfNoVenueYet) */
+function trNoVenueYet(r) {
+  const vs = (r && r.venues) || {};
+  if (trVenueIds(r).length || Object.keys(vs).some((id) => vs[id] && vs[id].credentials)) return false;
+  if (r && (r.capital_connect || r.capital_local_connect || r.president_connect)) return false;
+  return !TR.cxSaved && !TR.cxPend && !(typeof spCxOn === "function" && spCxOn(TR, Date.now()));
+}
 function trGoStartKey(state, r) {
-  const M = { running: null, unconfirmed: null, dead: "po.goIdle", halted: "po.goHalt", loading: null, unknown: null, setup: null, noaccount: null };
+  const M = { running: null, unconfirmed: null, dead: "po.goIdle", halted: "po.goHalt", loading: null, unknown: null, setup: null, noaccount: "tr.noAccount" };
   if (!Object.prototype.hasOwnProperty.call(M, state)) return null;
+  if (state === "noaccount" && !trNoVenueYet(r)) return null;
   return M[state] && trTradableFunded(r || {}) > 0 ? M[state] : null;
 }
 /* 「確認帳戶」的確認框(spec-account-confirm §2.2):主鈕「同一個帳戶」、次鈕「不同帳戶」(不用紅色:兩個都是正當答案、都不下單);
@@ -3424,6 +3432,12 @@ function trAmountTable(names, stored, states) {
     // 存好了、還沒在下單(post-connect-flow 第 4 列):儲存列的位置換成「還沒開始下單／下單已暫停 ·〔到自動下單啟動〕」
     // 過場中(剛按了啟動／暫停)、要確認帳戶、金鑰被拒:自動下單頁的出口不是「啟動下單」,不畫(稽核 audit-post-connect-b)
     const goKey = !dirty && !routeDirty && TR.save !== "failed" && !cfgBad && !TR.pending && !trAcctAsk(trReport()) && !trKeyBad(TR.env) ? trGoStartKey(envHeadState(TR.st, Date.now()), trReport()) : null;
+    // 一家都沒連:存完金額也不會下單,這裡講;〔連接交易所〕開連接框,cx_open 在框裡記
+    if (goKey === "tr.noAccount") {
+      const cb = trEl("button", "btn-fill", t("cx.connect")); cb.type = "button"; cb.dataset.fk = "go-connect";
+      cb.addEventListener("click", () => cxModalOpen(cb));
+      bar.append(trEl("span", "txt", t(goKey)), cb); return;
+    }
     if (goKey) {
       const gb = trEl("button", "btn-fill", t("po.goBtn")); gb.type = "button"; gb.dataset.fk = "go-start";
       gb.addEventListener("click", () => { trackFeature("cfg_go_start"); trOpen("pos").then(() => { const g = $("tr-go"); if (g && !g.hidden) g.focus(); }); });
