@@ -10,6 +10,9 @@ const R = path.join(__dirname, "..", "shell", "renderer");
 const src = fs.readFileSync(path.join(R, "trade.js"), "utf8"), psrc = fs.readFileSync(path.join(R, "portfolio.js"), "utf8"), html = fs.readFileSync(path.join(R, "index.html"), "utf8");
 let red = 0; const ok = (name, c, info) => { console.log((c ? "PASS  " : "FAIL  ") + name + (c || !info ? "" : "\n      " + info)); if (!c) red++; };
 const J = JSON.stringify;
+// 等被測程式走到那一步,不賭幾毫秒:機器忙時固定等待會比被測程式先結束,那支就假紅。等不到才走到逾時,紅留給後面的斷言
+const until = async (cond, ms = 10000) => { const end = Date.now() + ms; while (!cond() && Date.now() < end) await new Promise((r) => setTimeout(r, 2)); };
+const waiting = (ctx, w) => () => !!(ctx.TR.mg && ctx.TR.mg.wait && ctx.TR.mg.wait[w]);
 const block = (s, a, b) => { const i = s.indexOf(a), j = s.indexOf(b); if (i < 0 || j < 0) throw new Error("找不到標記:" + a); return s.slice(i, j); };
 const cutF = (s, n) => { const i = s.indexOf("function " + n + "("); if (i < 0) throw new Error("no " + n); let d = 0; for (let k = s.indexOf("{", i); k < s.length; k++) { if (s[k] === "{") d++; else if (s[k] === "}" && --d === 0) return s.slice(i, k + 1); } throw new Error("no " + n); };
 
@@ -840,11 +843,11 @@ const btCancelTest = (async () => {
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push(cmd); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
     loadStrategy: async () => ({ perf: done ? { at: 1 } : { at: 1, refresh: { status: "running" } } }) } };
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  vm.runInContext("mgRunBacktest()", ctx); await wait(30); vm.runInContext("mgCancelBacktest()", ctx); await wait(80); done = true; await wait(60);
+  vm.runInContext("mgRunBacktest()", ctx); await until(waiting(ctx, "bt")); vm.runInContext("mgCancelBacktest()", ctx); await wait(80); done = true; await wait(60);
   const G1 = ctx.TR.mg, sent1 = sent.slice();
   ok("P1-2 等更新績效時按取消:等完不送 manage_backtest、不送 manage_cancel;鈕放開(btSending false)", sent1.indexOf("manage_backtest") < 0 && sent1.indexOf("manage_cancel") < 0 && G1.btSending === false, J(sent1));
   sent.length = 0; done = false; ctx.TR.mg = null;
-  vm.runInContext("mgRunBacktest()", ctx); await wait(30); done = true; await wait(80);
+  vm.runInContext("mgRunBacktest()", ctx); await until(waiting(ctx, "bt")); done = true; await until(() => sent.indexOf("manage_backtest") >= 0);
   ok("P1-2 對照:沒按取消,更新完就照常送 manage_backtest", sent.indexOf("manage_backtest") >= 0, J(sent));
 })();
 // Wei 10-14(同網頁 951af7ac):跑前只更新 6 小時沒更新過(或拿不到時間)的成員;全部都新就不送、不等,直接跑
@@ -858,7 +861,7 @@ const freshTest = (async () => {
     let loads = 0; const redone = new Set();
     ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push([cmd, a && a.names ? a.names.slice() : null]); if (cmd === "stats_refresh") a.names.forEach((n) => redone.add(n)); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
       tradeStatus: async () => ({}), loadStrategy: async (n) => { loads++; return redone.has(n) ? { perf: { at: NOW } } : n in perfAt ? { perf: { at: perfAt[n] } } : {}; } } };
-    vm.runInContext("mgRunBacktest()", ctx); await new Promise((r) => setTimeout(r, 120));
+    vm.runInContext("mgRunBacktest()", ctx); await until(() => sent.some((x) => x[0] === "manage_backtest"));
     return sent;
   };
   const allFresh = await runOnce(["a", "b"], { a: NOW - H, b: NOW - 6 * H + 5 }, {});
@@ -876,13 +879,13 @@ const pollTest = (async () => {
   let refreshed = false, t0 = 0, tRun = 0;
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd) => { sent.push(cmd); if (cmd === "stats_refresh") { t0 = Date.now(); setTimeout(() => { refreshed = true; }, 10); return { ok: true, result: { started: ["a"], skipped: {} } }; } tRun = Date.now(); return { ok: true, result: {} }; },
     tradeStatus: async () => ({}), loadStrategy: async () => ({ perf: refreshed ? { at: Math.floor(Date.now() / 1000) } : { at: 1, refresh: { status: "running" } } }) } };
-  vm.runInContext("mgRunBacktest()", ctx); await new Promise((r) => setTimeout(r, 400));
+  vm.runInContext("mgRunBacktest()", ctx); await until(() => tRun);
   ok("輪詢:更新 10ms 就完成 → 第一輪(40ms)抓完當場判斷就放行,不多等一輪;間隔前 1 分鐘 3 秒、之後 15 秒、上限 20 分鐘",
     sent.indexOf("manage_backtest") > 0 && tRun - t0 < 150 && /const MG_REFRESH_POLL_MS = \{ fast: 3000, slow: 15000, fastFor: 60000 \};/.test(psrc) && /const MG_REFRESH_MAX_MS = 20 \* 60000;/.test(psrc), J({ sent, dt: tRun - t0 }));
 })();
 // runtime 1.1.136 回條先到、「更新中」晚到;舊 runtime 先推後回條。兩種順序都要等到這一次真的結束才跑
 const orderTest = (async () => {
-  const go = async ({ base, timeline, waitMs }) => {
+  const go = async ({ base, timeline }) => {
     const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
       mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
     vm.runInContext(pp.replace(/^const /gm, "var ") + "\nfunction mgOptBlockReason() { return null; }\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgOptPin", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
@@ -890,7 +893,7 @@ const orderTest = (async () => {
     ctx.TR = { env: "cloud", mg: null, sig: {}, api: {
       tradeSend: async (cmd, a) => { sent.push(cmd); if (cmd === "stats_refresh") { t0 = Date.now(); return { ok: true, result: { started: a.names, skipped: {} } }; } runAt = Date.now() - t0; return { ok: true, result: {} }; },
       tradeStatus: async () => ({}), loadStrategy: async () => ({ perf: t0 ? timeline(Date.now() - t0) : base }) } };
-    vm.runInContext("mgRunBacktest()", ctx); await new Promise((r) => setTimeout(r, waitMs || 200));
+    vm.runInContext("mgRunBacktest()", ctx); await until(() => runAt !== null);
     return { sent, runAt };
   };
   const OLD = 1700000000, RUN = { status: "running", at: OLD + 50 };
@@ -905,12 +908,12 @@ const orderTest = (async () => {
   const failed = await go({ base: { at: OLD, refresh: prevFail }, timeline: (ms) => ms < 60 ? { at: OLD, refresh: prevFail } : { at: OLD, refresh: { status: "failed", at: OLD + 60, err: "DATA" } } });
   ok("送出前就掛著上一次的 failed:推送前不放行,這一次的 failed 回來才送", failed.runAt !== null && failed.runAt >= 55, J(failed));
   // 送出前 detail 沒有 perf(拿不到基準):照舊只看 running,不卡滿 20 分鐘
-  const nobase = await go({ base: null, timeline: () => null, waitMs: 120 });
+  const nobase = await go({ base: null, timeline: () => null });
   ok("送出前拿不到 perf.at:不等推送,照舊沒看到更新中就跑", nobase.runAt !== null && nobase.runAt < 60, J(nobase));
 })();
 // 稽核 web-mgrefresh P1-2:雲端輪詢走 loadStrategyLite(只拿 perf);讀不到(429／斷線)= 繼續等,不是結束;不在了(null)= 結束
 const liteTest = (async () => {
-  const go = async (lite, waitMs) => {
+  const go = async (lite) => {
     const sent = [], full = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
       mgMembers: () => ["a"], mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null, mgArgs: () => ({ members: ["a"], allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
     vm.runInContext(pp.replace(/^const /gm, "var ") + "\nfunction mgOptBlockReason() { return null; }\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgOptPin", "mgPerfAt", "mgRefreshThen", "mgRunBacktest", "mgSendBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
@@ -919,20 +922,20 @@ const liteTest = (async () => {
       tradeSend: async (cmd, a) => { sent.push(cmd); if (cmd === "stats_refresh") { t0 = Date.now(); return { ok: true, result: { started: a.names, skipped: {} } }; } runAt = Date.now() - t0; return { ok: true, result: {} }; },
       tradeStatus: async () => ({}), loadStrategy: async (n) => { full.push(n); return null; },
       loadStrategyLite: async (n) => lite(t0 ? Date.now() - t0 : -1, n) } };
-    vm.runInContext("mgRunBacktest()", ctx); await new Promise((r) => setTimeout(r, waitMs || 200));
+    vm.runInContext("mgRunBacktest()", ctx); await until(() => runAt !== null);
     return { sent, full, runAt };
   };
   const OLD = 1700000000;
   const unreach = await go((ms, n) => { if (ms < 0) return { name: n, perf: { at: OLD } }; if (ms < 80) throw new Error("UNREACH"); return { name: n, perf: { at: OLD + 99 } }; });
   ok("雲端輪詢讀不到(429)那段繼續等,讀到 at 換新才送 manage_backtest;基準與輪詢都走 lite,不抓整份", unreach.runAt !== null && unreach.runAt >= 75 && unreach.full.length === 0, J(unreach));
-  const gone = await go((ms, n) => (ms < 0 ? { name: n, perf: { at: OLD } } : null), 120);
+  const gone = await go((ms, n) => (ms < 0 ? { name: n, perf: { at: OLD } } : null));
   ok("讀得到但這支已經不在了(null):當結束,直接跑", gone.runAt !== null && gone.runAt < 60, J(gone));
 })();
 // 稽核 audit-prerun-refresh:BUSY 要等、skip 不等、ack 失敗直接跑、超過 50 支分批且每批的 started 都收齊、剛好 6 小時不更新
 const refreshEdgeTest = (async () => {
   const NOWMS = Date.parse("2026-10-14T06:00:00Z"), NOWS = NOWMS / 1000;
   class FixedDate extends Date { static now() { return NOWMS; } }
-  const go = async ({ members, perfAt, ack, running, waitMs }) => {
+  const go = async ({ members, perfAt, ack, running }) => {
     const sent = [], ctx = vm.createContext({ console, JSON, Object, Array, String, Number, Math, Date: FixedDate, Promise, setTimeout, isFinite, t: (k) => k, trackFeature() {}, mgPaint() {}, trPollSoon() {},
       mgMembers: () => members, mgStrategies: () => [], mgJobAny: () => null, mgRunning: () => false, mgBlocked: () => false, mgBtBlockReason: () => null,
       mgArgs: () => ({ members, allocator: null, params: {} }), trWith: (S, f) => f(), trRejectText: (x) => x, mgShortFromError: () => false, mgErrLine: (x) => x });
@@ -942,7 +945,7 @@ const refreshEdgeTest = (async () => {
       tradeSend: async (cmd, a) => { sent.push([cmd, a && a.names ? a.names.length : null]); if (cmd !== "stats_refresh") { runAt = Date.now() - T0; return { ok: true, result: {} }; } a.names.forEach((n) => asked.add(n)); return ack(a.names); },
       tradeStatus: async () => ({}),
       loadStrategy: async (n) => { const on = running(n, Date.now() - T0); return { perf: Object.assign({ at: asked.has(n) && !on ? perfAt(n) + 100 : perfAt(n) }, on ? { refresh: { status: "running" } } : {}) }; } } };
-    vm.runInContext("mgRunBacktest()", ctx); await new Promise((r) => setTimeout(r, waitMs || 150));
+    vm.runInContext("mgRunBacktest()", ctx); await until(() => runAt !== null);
     return { sent, runAt };
   };
   const OLD = () => NOWS - 7 * 3600;
@@ -976,14 +979,14 @@ const cancelGenTest = (async () => {
     tradeSend: async (cmd, a) => { sent.push(cmd); if (cmd === "stats_refresh") { runs++; return { ok: true, result: { started: a.names, skipped: {} } }; } if (cmd === "manage_backtest" && ackDelay) await wait(ackDelay); return { ok: true, result: {} }; },
     tradeStatus: async () => ({}), loadStrategy: async () => ({ perf: done ? { at: 1 + runs } : { at: 1, refresh: { status: "running" } } }) } };
   // 1. 等更新中按取消、馬上重按:更新結束後只送一次 manage_backtest(新的那一輪),舊的那一輪不送;取消不送 manage_cancel
-  vm.runInContext("mgRunBacktest()", ctx); await wait(30); vm.runInContext("mgCancelBacktest()", ctx); vm.runInContext("mgRunBacktest()", ctx); await wait(30); done = true; await wait(80);
+  vm.runInContext("mgRunBacktest()", ctx); await until(waiting(ctx, "bt")); vm.runInContext("mgCancelBacktest()", ctx); vm.runInContext("mgRunBacktest()", ctx); await until(waiting(ctx, "bt")); done = true; await until(() => sent.indexOf("manage_backtest") >= 0); await wait(40);
   ok("取消等待中的那一次後馬上重按:更新完只送一次 manage_backtest(舊那一輪換了號碼不送),也不送 manage_cancel",
     sent.filter((c) => c === "manage_backtest").length === 1 && sent.indexOf("manage_cancel") < 0, J(sent));
   // 2. 已經送出 manage_backtest、ack 還沒回時按取消:是真的有 job → 送 manage_cancel
   sent.length = 0; ctx.TR.mg = null; done = true; ackDelay = 80;
-  vm.runInContext("mgRunBacktest()", ctx); await wait(30);
+  vm.runInContext("mgRunBacktest()", ctx); await until(() => sent.indexOf("manage_backtest") >= 0);
   const inFlight = sent.indexOf("manage_backtest") >= 0;
-  vm.runInContext("mgCancelBacktest()", ctx); await wait(120);
+  vm.runInContext("mgCancelBacktest()", ctx); await until(() => sent.indexOf("manage_cancel") >= 0);
   ok("回測已送出、ack 還沒回時按取消:送 manage_cancel(不是當成還在等更新而作廢)", inFlight && sent.indexOf("manage_cancel") >= 0, J(sent));
 })();
 // Wei 10-14:等更新績效時鈕下方一行「等「X」更新績效…」+「先用目前數字跑」——按了停止等待、立刻送一次;正在跑的更新不取消
@@ -995,15 +998,15 @@ const runNowTest = (async () => {
       tradeStatus: async () => ({}), loadStrategy: async () => ({ perf: { at: 1, refresh: { status: "running" } } }) } };
     return { sent, ctx }; };
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  { const { sent, ctx } = mk(); vm.runInContext("mgRunOptimize()", ctx); await wait(30);
+  { const { sent, ctx } = mk(); vm.runInContext("mgRunOptimize()", ctx); await until(waiting(ctx, "opt"));
     const W = vm.runInContext("TR.mg.wait.opt", ctx), left = W ? W.left.slice() : null;
-    vm.runInContext("mgRunNow('opt'); mgRunNow('opt')", ctx); await wait(40);
+    vm.runInContext("mgRunNow('opt'); mgRunNow('opt')", ctx); await until(() => sent.indexOf("manage_optimize") >= 0); await wait(40);
     ok("跑優化在等三支更新:G.wait.opt.left 是那三支(鈕下方那一行的來源);按「先用目前數字跑」→ 不等 2 秒輪詢、馬上送一次 manage_optimize;按兩下也只送一次;埋點 mg_run_now 一次;不送取消更新的指令",
       J(left) === J(["a", "b", "c"]) && sent.filter((c) => c === "manage_optimize").length === 1 && sent.filter((c) => c === "feature:mg_run_now").length === 1 && vm.runInContext("TR.mg.wait.opt", ctx) === null
       && !sent.some((c) => /cancel/.test(c)), J(sent)); }
-  { const { sent, ctx } = mk(); vm.runInContext("mgRunBacktest()", ctx); await wait(30); vm.runInContext("mgRunNow('bt')", ctx); await wait(40);
+  { const { sent, ctx } = mk(); vm.runInContext("mgRunBacktest()", ctx); await until(waiting(ctx, "bt")); vm.runInContext("mgRunNow('bt')", ctx); await until(() => sent.indexOf("manage_backtest") >= 0); await wait(40);
     ok("跑回測等更新時「先用目前數字跑」→ 馬上送一次 manage_backtest(世代號照舊)", sent.filter((c) => c === "manage_backtest").length === 1, J(sent)); }
-  { const { sent, ctx } = mk(); vm.runInContext("mgRunBacktest()", ctx); await wait(30); vm.runInContext("mgCancelBacktest()", ctx); const gone = vm.runInContext("TR.mg.wait.bt", ctx);
+  { const { sent, ctx } = mk(); vm.runInContext("mgRunBacktest()", ctx); await until(waiting(ctx, "bt")); vm.runInContext("mgCancelBacktest()", ctx); const gone = vm.runInContext("TR.mg.wait.bt", ctx);
     vm.runInContext("mgRunNow('bt')", ctx); await wait(40);
     ok("等更新時按「取消」照舊:那一行當場收掉;之後再按舊的「先用目前數字跑」也不送;不送 manage_backtest、不送 manage_cancel", gone === null && vm.runInContext("TR.mg.wait.bt", ctx) === null
       && sent.indexOf("manage_backtest") < 0 && sent.indexOf("manage_cancel") < 0 && sent.indexOf("feature:mg_run_now") < 0, J(sent)); }
@@ -1018,15 +1021,15 @@ const refreshFlagTest = (async () => {
   vm.runInContext(pp.replace(/^const /gm, "var ") + "\nfunction mgOptBlockReason() { return null; }\nMG_REFRESH_POLL_MS = { fast: 10, slow: 10, fastFor: 60000 };\n" + ["mgBag", "mgPrefsLoad", "mgSizingCloudLoad", "mgOptPin", "mgPerfAt", "mgRefreshThen", "mgRunNow", "mgRunBacktest", "mgSendBacktest", "mgCancelBacktest"].map((n) => (/^async /.test(psrc.slice(psrc.indexOf("function " + n + "(") - 6, psrc.indexOf("function " + n + "("))) ? "async " : "") + cutF(psrc, n)).join("\n"), ctx);
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   ctx.TR = { env: "cloud", mg: null, sig: {}, api: { tradeSend: async (cmd, a) => { sent.push(cmd); return cmd === "stats_refresh" ? { ok: true, result: { started: a.names, skipped: {} } } : { ok: true, result: {} }; },
-    tradeStatus: async () => ({}), loadStrategy: async () => { if (slow) await wait(80); return { perf: { at: 1, refresh: { status: "running" } } }; } } };
+    tradeStatus: async () => ({}), loadStrategy: async () => { if (slow) { stuck++; await wait(80); left++; } return { perf: { at: 1, refresh: { status: "running" } } }; } } };
   // 讓舊那一輪卡在「抓 detail」(80ms):取消、重按之後,新那一輪先把旗標立起來,舊那一輪才結束——結束時不能清掉新那一輪的
-  let slow = false;
-  vm.runInContext("mgRunBacktest()", ctx); await wait(5); slow = true; await wait(30);
-  vm.runInContext("mgCancelBacktest()", ctx); slow = false; vm.runInContext("mgRunBacktest()", ctx); await wait(120);
+  let slow = false, stuck = 0, left = 0;
+  vm.runInContext("mgRunBacktest()", ctx); await until(waiting(ctx, "bt")); slow = true; await until(() => stuck);
+  vm.runInContext("mgCancelBacktest()", ctx); slow = false; vm.runInContext("mgRunBacktest()", ctx); await until(() => left === stuck && waiting(ctx, "bt")()); await wait(40);
   const G = ctx.TR.mg;
   ok("取消後馬上重按:舊那一輪結束後,新那一輪仍在等——G.refreshing.bt 還是 true、G.wait.bt 是新那一輪的、沒送 manage_backtest",
     G.refreshing.bt === true && !!G.wait.bt && G.wait.bt.left.length === 1 && sent.indexOf("manage_backtest") < 0, J({ refreshing: G.refreshing, sent }));
-  vm.runInContext("mgRunNow('bt')", ctx); await wait(40);
+  vm.runInContext("mgRunNow('bt')", ctx); await until(() => sent.indexOf("manage_backtest") >= 0); await wait(10);
   ok("…新那一輪按「先用目前數字跑」才送一次 manage_backtest,轉圈旗標才收", sent.filter((c) => c === "manage_backtest").length === 1 && G.refreshing.bt === false, J(sent));
 })();
 // 對齊網頁:優化權重換成台指期不到一口 → 列上「0 口（不足一口）」、表底講少投多少;等待那一行加「優化：」「回測：」;剛選進還沒回報的不猜「合約」

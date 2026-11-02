@@ -209,7 +209,7 @@ const V = (info, o = {}) => sig.verifyManifest(info, { keys: o.keys || [pubA], f
     fs.mkdirSync(home, { recursive: true });
     const r = cp.spawnSync(process.execPath, [path.join(SHELL, "tools", "sign-update.js"), "keygen", "--dry-run"], { encoding: "utf8", env: { ...process.env, HOME: home, BLAVE_UPDATE_SIGNING_KEY: kpath } });
     t("keygen --dry-run:不產生私鑰、不改 update-keys.json、只印會寫到哪", r.status === 0 && /演練/.test(r.stdout) && !fs.existsSync(kpath) && !fs.existsSync(path.dirname(kpath)) && fs.readFileSync(path.join(SHELL, "update-keys.json"), "utf8") === before);
-    fs.writeFileSync(path.join(SHELL, "update-keys.json"), before); }   // 退步時它會寫進 repo 的那份:還原,紅留在上面那條
+    if (fs.readFileSync(path.join(SHELL, "update-keys.json"), "utf8") !== before) fs.writeFileSync(path.join(SHELL, "update-keys.json"), before); }   // 退步時它會寫進 repo 的那份:還原,紅留在上面那條
   t("keygen 不覆寫已存在的私鑰", (() => { try { signer.keygen(keyPath, keysFile); return false; } catch (e) { return /不覆寫/.test(e.message); } })());
 
   // ── 5. 釘死的前提(electron-updater 升版、打包、CI 改形狀時會紅)──

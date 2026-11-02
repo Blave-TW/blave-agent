@@ -16,14 +16,19 @@ position the same round without the wait leaves]. After the windows (gates and H
 rounds) the two whole histories end on the same position (account-read mode: within the drift band,
 which leaves path-dependent residue a hand close made).
 
+The seeds are split across FUZZ_JOBS processes (default 4): each its own workspace, the same N
+histories as one process. FUZZ_JOBS=1 runs them here.
+
 Run: cd blave-agent && .venv/bin/python tests/check_first_signal_fuzz.py [N] [--seed S] [--dump F]
 """
+import atexit
 import copy
 import json
 import logging
 import os
 import random
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -31,8 +36,10 @@ import time
 ROOT = os.environ.get("FUZZ_LIB_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 BASE = tempfile.mkdtemp(prefix="first-signal-fuzz-")
+atexit.register(shutil.rmtree, BASE, True)
 W, C = os.path.join(BASE, "w"), os.path.join(BASE, "c")
 os.makedirs(W)
+os.makedirs(C)
 os.chdir(W)
 logging.disable(logging.CRITICAL)
 
@@ -58,6 +65,35 @@ LOTSPEC = {"type": "futures_contracts", "contract_value": 50, "currency": "TWD",
 STATS = {"window": 0, "held": 0}
 WINDOW = 3600
 EPS = 1e-6
+
+
+def read_tree(root):
+    dirs, files = set(), {}
+    for at, ds, fs in os.walk(root):
+        rel = os.path.relpath(at, root)
+        dirs.update(os.path.normpath(os.path.join(rel, d)) for d in ds)
+        for f in fs:
+            with open(os.path.join(at, f), "rb") as fh:
+                files[os.path.normpath(os.path.join(rel, f))] = fh.read()
+    return dirs, files
+
+
+def mirror(src, dst):
+    """dst becomes a copy of src, writing only what differs. A copytree + rmtree every round was two
+    thirds of this test's syscalls, and create / unlink / mkdir do not scale across processes on
+    APFS: under load this one test took 8 minutes."""
+    want_dirs, want = read_tree(src)
+    have_dirs, have = read_tree(dst)
+    for rel in have.keys() - want.keys():
+        os.remove(os.path.join(dst, rel))
+    for rel in sorted(have_dirs - want_dirs, key=len, reverse=True):
+        os.rmdir(os.path.join(dst, rel))
+    for rel in sorted(want_dirs - have_dirs, key=len):
+        os.mkdir(os.path.join(dst, rel))
+    for rel, data in want.items():
+        if have.get(rel) != data:
+            with open(os.path.join(dst, rel), "wb") as fh:
+                fh.write(data)
 
 
 def write_strategy(name, sym=None, universe=None, market="swap"):
@@ -377,8 +413,7 @@ class World:
         """This round with the wait off, on a copy of the workspace: what it would have sent."""
         saved = {g: copy.deepcopy(getattr(portfolio, g)) for g in GLOBS if hasattr(portfolio, g)}
         halt_flag, venue = guard._halt_flag, copy.deepcopy(self.v)
-        shutil.rmtree(C, ignore_errors=True)
-        shutil.copytree(W, C)
+        mirror(W, C)
         os.chdir(C)
         FEATURE[0], venue.fills = False, []
         try:
@@ -463,6 +498,36 @@ def one(seed, ops, bad, unconverged):
     return len(w.rows)
 
 
+def run_seeds(seed0, n):
+    bad, unconverged, rounds = [], [], 0
+    for s in range(seed0, seed0 + n):
+        rounds += one(s, gen(s), bad, unconverged)
+    return {"bad": bad, "unconverged": unconverged, "rounds": rounds, "stats": STATS}
+
+
+def run_workers(seed0, n, jobs):
+    """Contiguous seed ranges, one process each. A worker that dies is a failure, never fewer seeds."""
+    size, extra, procs, at = n // jobs, n % jobs, [], seed0
+    for i in range(jobs):
+        count = size + (i < extra)
+        procs.append((at, count, subprocess.Popen(
+            [sys.executable, os.path.abspath(__file__), str(count), "--seed", str(at), "--worker"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)))
+        at += count
+    total = {"bad": [], "unconverged": [], "rounds": 0, "stats": dict(STATS)}
+    for start, count, p in procs:
+        out, err = p.communicate()
+        if p.returncode:
+            raise RuntimeError(f"worker for seeds {start}..{start + count - 1} exited {p.returncode}:\n{err[-3000:]}")
+        part = json.loads(out.splitlines()[-1])
+        total["bad"] += part["bad"]
+        total["unconverged"] += part["unconverged"]
+        total["rounds"] += part["rounds"]
+        for k, v in part["stats"].items():
+            total["stats"][k] += v
+    return total
+
+
 def main():
     args = sys.argv[1:]
     n = int(args[0]) if args and args[0].isdigit() else int(os.environ.get("FUZZ_N", "2000"))
@@ -476,15 +541,18 @@ def main():
                 f.write(json.dumps([s, w.rows]) + "\n")
         print(f"dumped {n} control histories to {dump}")
         return 0
-    bad, unconverged, rounds = [], [], 0
+    if "--worker" in args:
+        print(json.dumps(run_seeds(seed0, n)))
+        return 0
     fixed_bad, fixed_unc = [], []
     for s, ops in FIXED:
         one(f"audit-{s}", ops, fixed_bad, fixed_unc)
-    for s in range(seed0, seed0 + n):
-        rounds += one(s, gen(s), bad, unconverged)
+    jobs = max(1, min(int(os.environ.get("FUZZ_JOBS", "4")), n))
+    done = run_workers(seed0, n, jobs) if jobs > 1 else run_seeds(seed0, n)
+    bad, unconverged, rounds = done["bad"], done["unconverged"], done["rounds"]
     print(f"{len(FIXED)} fixed histories from the audit: {len(fixed_bad)} outside the bound, {len(fixed_unc)} unconverged")
     print(f"{n} histories, {rounds} rounds (seeds {seed0}..{seed0 + n - 1}); feature path: "
-          f"{STATS['window']} key-rounds inside a window, {STATS['held']} with something held")
+          f"{done['stats']['window']} key-rounds inside a window, {done['stats']['held']} with something held")
     bad, unconverged = fixed_bad + bad, fixed_unc + unconverged
     for s, v in bad[:20]:
         print(f"FAIL seed {s}: position left [book, the same round without the wait]: {v}")

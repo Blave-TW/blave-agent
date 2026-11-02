@@ -19,6 +19,8 @@ os.makedirs("state", exist_ok=True)
 
 import lib.order_capital as oc
 
+oc.capital_vault.LAST_ORDER_PATH = os.path.abspath("state/capital_last_order_at")  # not the repo's
+
 fails = 0
 
 
