@@ -853,7 +853,7 @@ function mvBlock(mk) {
    PH = 主行程 relayStateOut,null = 讀不到 = 不出。兩個容器各一個訊息槽:開關下面的 #ph-status,手機那一組的 #ph-msg */
 // lucide smartphone(線寬由 CSS 給 1.75):分頁上的手機記號、+N 選單列、「來自手機」標籤共用這一顆
 const PHONE_IC = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/></svg>';
-let PH = null, PH_BUSY = false, PH_ERR = "", PH_KC = null, PH_PHONES = null, PH_CODE = null, PH_ACTS = null, PH_MSG = "", PH_QUIET = false, PH_EXP = null;
+let PH = null, PH_BUSY = false, PH_WAIT = null, PH_ERR = "", PH_KC = null, PH_PHONES = null, PH_CODE = null, PH_ACTS = null, PH_MSG = "", PH_QUIET = false, PH_EXP = null;
 async function phStateLoad() { try { PH = await window.blave.relayState(); } catch (_) { PH = null; } return PH; }
 async function phLoad() {
   await phStateLoad();
@@ -930,8 +930,9 @@ function phActs(p) {
   phActsLoad(p.device_id);
 }
 // 「讀不到…。〔重試〕」這類句子:句子後面接一顆文字鈕
-function phRetryInto(el, text, onRetry, id, label) {
+function phRetryInto(el, text, onRetry, id, label, busy) {
   const b = document.createElement("button"); b.className = "btn-quiet"; b.type = "button"; b.textContent = t(label || "ph.retry"); if (id) b.id = id;
+  if (busy) { const sp = document.createElement("span"); sp.className = "spin16"; sp.setAttribute("aria-hidden", "true"); b.textContent = ""; b.append(sp, " ", t(label)); b.disabled = true; }
   b.addEventListener("click", onRetry); el.append(text + " ", b); return el;
 }
 function phActsBox(mk, id) {
@@ -1010,7 +1011,7 @@ function phStatus(mk) {
   const s = PH.sync || {};
   if (PH_ERR) p.textContent = PH_ERR;
   else if (PH.pending) p.textContent = t("ph.pending");
-  else if (PH.on && PH.needVerify) phRetryInto(p, t("ph.verify"), (e) => phSet(true, null, e.currentTarget), "ph-verify", "ph.verifyBtn");
+  else if (PH.on && PH.needVerify) phRetryInto(p, t("ph.verify"), phReverify, "ph-verify", "ph.verifyBtn", PH_BUSY);
   else if (PH.on && s.error) phRetryInto(p, s.total ? t("ph.syncFail", { n: s.done || 0, m: s.total }) : t("ph.syncFail0"), phRetry, "ph-retry");
   else if (PH.on && s.running && s.total) { p.textContent = t("ph.syncing", { n: s.done || 0, m: s.total }); if (PH_QUIET) p.setAttribute("aria-live", "off"); }
   p.hidden = !p.textContent;
@@ -1018,38 +1019,48 @@ function phStatus(mk) {
 }
 const phLive = () => (PH.mobileTurns || 0) + (PH.queued || 0) > 0;
 /* 打開要過 email 驗證碼(api relay_enable_gate):驗證碼那一步借確認框,字與狀態照改金鑰(trade.js kcView／kcStep),不送 key_verify——那個事件是改金鑰的。
-   碼只在 PH_KC.code,取消、通過就丟。框裡換內容不算取消 */
-const phKcDrop = () => { PH_KC = null; };
+   碼只在 PH_KC.code,取消、通過就丟。〔開啟〕〔確認〕都留在框裡等、主鈕轉圈;等待中取消 = 放棄這次回應(PH_WAIT 換掉),不開框也不改畫面 */
+function phKcDrop() { PH_KC = null; PH_WAIT = null; phRepaint(); const f = $("ph-verify") || $("ph-sw"); if (f) f.focus(); }
 function phKcBox(opener) {
   const h = PH_KC;
-  if (delCtx && delCtx.onCancel === phKcDrop) delCtx.onCancel = null;
-  confirmBox({ title: t("cx.kc.title"), lines: [], extra: kcStep(h, PH_BUSY, phKcGo, phKcSync), ok: t("cx.kc.ok"), okDisabled: !kcReady(h), stay: true, opener, onOk: phKcGo, onCancel: phKcDrop, focus: h.view.dead ? null : "cx-kc" });
+  if (delCtx && delCtx.onCancel === phKcDrop) delCtx.onCancel = null;   // 框裡換內容不算取消
+  // 沒有碼可輸(鎖住、沒有 email、過期又達上限):只有一句和〔知道了〕
+  if (h.view.dead) { confirmBox({ title: t("ph.kc.title"), lines: [kcSay(h.view)], ok: t("cdel.gotIt"), single: true, opener, onOk: phKcDrop, onCancel: phKcDrop }); return; }
+  confirmBox({ title: t("ph.kc.title"), lines: [], extra: kcStep(h, PH_BUSY, phKcGo, phKcSync), ok: t("cx.kc.ok"), okDisabled: !kcReady(h), stay: true, opener, onOk: phKcGo, onCancel: phKcDrop, focus: "cx-kc" });
 }
-function phKcSync() { $("del-ok").disabled = PH_BUSY || !kcReady(PH_KC); const i = $("cx-kc"); if (i) i.readOnly = PH_BUSY; }
+function phKcSync() { $("del-ok").disabled = !PH_BUSY && !kcReady(PH_KC); const i = $("cx-kc"); if (i) i.readOnly = PH_BUSY; }
 function phKcGo() { if (PH_KC && kcReady(PH_KC) && !PH_BUSY) phSet(true, PH_KC, PH_KC.opener); }
+/* 〔重新驗證〕:框沒開,鈕自己轉圈。按下當下設定開著,回來時才可能開驗證碼那一步 */
+function phReverify(e) { trackFeature("phone_reverify"); phSet(true, null, e.currentTarget); }
+const phHere = () => !!$("set-scrim") && !$("set-scrim").hidden && !!$("set-connect") && !$("set-connect").hidden;
 /* h = 驗證碼那一步(帶碼送)。碼過期 = 不帶碼再送一次,讓 api 寄新的一組(同 capSaveCreds) */
 async function phSet(on, h, opener) {
   if (PH_BUSY) return;
-  PH_BUSY = true; PH_ERR = "";
-  if (h) phKcSync();
-  let ok = false, r = null, expired = false;
+  const boxed = on && !!delCtx, w = {};   // boxed:從框裡按的(〔開啟〕〔確認〕),沒有框的是〔重新驗證〕與關掉
+  PH_WAIT = w; PH_BUSY = true; PH_ERR = "";
+  if (boxed) { delOkBusy(true); if (h) phKcSync(); } else if (on) phRepaint();
+  let r = null, expired = false;
   try {
     r = await window.blave.relaySet(on, { code: h ? h.code : null, lang: LANG });
     if (r && r.code === "RELAY_ENABLE_CODE_EXPIRED") { expired = true; r = await window.blave.relaySet(on, { lang: LANG }); }
-    if (r && r.state) PH = r.state;
-    ok = !!(r && r.ok);
-    if (!ok) PH_ERR = t(r && r.code === "SIGNED_OUT" ? "mv.leadOut" : "ph.err");
-  } catch (_) { PH_ERR = t("ph.err"); } finally { PH_BUSY = false; }
-  if (on && r && KC_GATE[r.code]) {
-    PH_ERR = "";
-    if (h && PH_KC !== h) { phRepaint(); return; }   // 送碼途中按了取消:沒過的結果不上畫面
+  } catch (_) { r = null; } finally { PH_BUSY = false; }
+  if (r && r.state) PH = r.state;
+  const ok = !!(r && r.ok), gated = on && !!r && !!KC_GATE[r.code];
+  if (w !== PH_WAIT) { phRepaint(); return; }   // 等待中取消:這次回應丟掉
+  PH_WAIT = null;
+  if (gated && !boxed && !phHere()) { phRepaint(); return; }   // 〔重新驗證〕途中關了設定:不彈到主畫面上
+  if (gated) {
+    if (r.code === "VERIFY_LOCKED") trackFeature("phone_vfy_locked"); else if (!h) trackFeature("phone_vfy_shown");
     const view = kcView({ code: r.code, detail: r.gate, expired }, h && h.view);
     if (view.status === "failed") view.status = "phFailed";   // cx.kc.failed 講的是金鑰
-    PH_KC = { code: "", view, why: "ph.kc.why", opener };
-    phKcBox(opener); srSay(kcSay(view));
+    PH_KC = { code: "", view, noWhy: true, opener };
+    phRepaint(); phKcBox(opener); srSay(kcSay(view));
     return;
   }
-  if (PH_KC) { PH_KC = null; delClose(false); }
+  if (!ok) PH_ERR = t(r && r.code === "SIGNED_OUT" ? "mv.leadOut" : "ph.err");
+  if (ok && h) trackFeature("phone_vfy_ok");
+  PH_KC = null;
+  if (boxed && delCtx) { delCtx.acted = true; delClose(false); }
   if (!on) { PH_CODE = null; PH_ACTS = null; PH_MSG = ""; clearTimeout(PH_EXP); }
   if (ok && on) {
     // 下一步一定是配對:帳號還沒有手機就直接要碼、打開面板;已經有(例如在網頁配過)就不自動開
@@ -1062,9 +1073,9 @@ function phToggle(e) {
   if (!phShown() || !PH.signedIn || PH_BUSY) return;
   const opener = e && e.currentTarget;
   if (!PH.on) {
-    // 三段一般內文,第一段當 lede(主墨):下單、上傳、刪除三件事只在這裡講一次
+    // 三段一般內文,第一段當 lede(主墨):下單、上傳、刪除。關閉框的 ph.off.del 講的是當下要刪,兩個入口各講一次
     const lead = document.createElement("p"); lead.className = "cf-lede"; lead.textContent = t("ph.cf.1");
-    confirmBox({ title: t("ph.cf.title"), lead, lines: [t("ph.cf.2"), t("ph.cf.3")], ok: t("ph.cf.ok"), opener, onOk: () => phSet(true, null, opener) });
+    confirmBox({ title: t("ph.cf.title"), lead, lines: [t("ph.cf.2"), t("ph.cf.3")], ok: t("ph.cf.ok"), stay: true, opener, onOk: () => phSet(true, null, opener), onCancel: phKcDrop });
     return;
   }
   confirmBox({ title: t("ph.off.title"), lines: phLive() ? [t("ph.off.live"), t("ph.off.del")] : [t("ph.off.del")], ok: t("ph.off.ok"), opener, onOk: () => phSet(false) });
@@ -3093,8 +3104,19 @@ function cfSupersede() {
 /* focus = 開框後焦點給哪個 id(預設取消;有輸入格的存金額框給輸入格並全選,canon › 確認 modal 的輸入格變體)。
    link = { label, onClick }:框腳最左邊的文字鈕(策略頁金額框的「到策略組合」);按了先關框(算取消)再做 */
 // stay:按主鈕不關框(驗證碼那一步:送出後留在框裡等結果,由 onOk 自己收)
+/* 主鈕等待中:圓環＋字不換,寫法照 #cx-go。aria-disabled 不用 disabled:焦點留在鈕上 */
+function delOkBusy(on) {
+  const b = $("del-ok"), label = b.textContent.trim();
+  b.textContent = "";
+  if (on) { const sp = document.createElement("span"); sp.className = "spin16"; sp.setAttribute("aria-hidden", "true"); b.append(sp, " "); }
+  b.append(label);
+  b.classList.toggle("is-busy", on);
+  if (on) { b.setAttribute("aria-disabled", "true"); $("del-modal").setAttribute("aria-busy", "true"); }
+  else { b.removeAttribute("aria-disabled"); $("del-modal").removeAttribute("aria-busy"); }
+}
 function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel, focus, link, stay }) {
   cfSupersede();
+  delOkBusy(false);
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   $("del-title").textContent = title;
   $("del-cancel").textContent = cancel || t("del.cancel");
@@ -3154,6 +3176,7 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
 function delClose(deleted) {
   const sc = $("del-scrim"); if (sc.hidden || sc.dataset.lock) return;   // lock:策略庫購買扣款在路上(library.js libPurchase),Esc / ✕ / 框外都不關
   sc.classList.remove("open"); sc.hidden = true;
+  delOkBusy(false);
   $("set-scrim").inert = false; $("lai-scrim").inert = false;
   $("view-ws").inert = laiOn();   // 確認框疊在「用你自己的 AI」上面:關掉確認框,工作頁仍歸那個框鎖著
   const c = delCtx; delCtx = null;

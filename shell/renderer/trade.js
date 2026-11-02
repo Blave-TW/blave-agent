@@ -5774,7 +5774,7 @@ function kcNext(kc, r) {
    退回表單、框關掉、通過就丟。sync = 打字時只改主鈕能不能按,不重畫 */
 function kcStep(holder, busy, ok, sync) {
   const v = holder.view, w = trEl("div", "cx-kc-step");
-  w.appendChild(trEl("p", "cx-manual-note", t(holder.why || "cx.kc.why")));
+  if (!holder.noWhy) w.appendChild(trEl("p", "cx-manual-note", t("cx.kc.why")));
   const st = kcStatusText(v); if (st) w.appendChild(trEl("p", "cx-manual-note", st));
   const l = trEl("label", "fld"); l.appendChild(trEl("span", "fld-l", t("cx.kc.label")));
   const i = trEl("input", "f-input"); i.id = "cx-kc"; i.type = "text"; i.inputMode = "numeric"; i.autocomplete = "one-time-code"; i.maxLength = 6; i.spellcheck = false;
