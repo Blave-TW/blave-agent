@@ -269,8 +269,8 @@ const EVENTS = {
     // 0.1.38 側欄策略資料夾(renderer/stratgroups.js、stratflags.js):操作成功才送,不帶資料夾名、策略名或哪個 emoji;
     // spec 原名 strat_folder_* 超過 prop VARCHAR(16),縮成 sfolder_*。api 白名單同順序,接在 0.1.37 的 app_link_android 之後
     "sfolder_create", "sfolder_auto", "sfolder_rename", "sfolder_emoji", "sfolder_reorder", "sfolder_delete", "sfolder_toggle", "sfolder_move",
-    // 0.1.39 手機 App 跟這台電腦對話(spec mobile-agent-chat-mvp §7;主行程 relay.js 送):phone_chat_on／off = 從關打開成功(0.1.42 起要過 email 驗證碼)／關掉;
-    // phone_pair = 這台出的碼配對完成(出碼後清單多一支)、phone_revoke = 在這台撤銷一支手機;phone_turn = 手機那一輪真的開跑;
+    // 0.1.39 手機 App 跟這台電腦對話(spec mobile-agent-chat-mvp §7;主行程 relay.js 送):phone_chat_on／off = 從關打開成功／關掉;
+    // phone_pair = 這台出的碼配對完成、phone_revoke = 在這台撤銷一支手機(兩個 0.1.43 起無送出點:配對與撤銷搬到 App／網站,等 0.1.42 退場再拿);phone_turn = 手機那一輪真的開跑;
     // phone_turn_q = 同一條在跑、排在後面;phone_turn_stop = 電腦前的人停掉手機那一輪;phone_sync_ok／fail = 開啟後第一次上傳完成／失敗要按重試
     "phone_chat_on", "phone_chat_off", "phone_pair", "phone_revoke", "phone_turn", "phone_turn_q", "phone_turn_stop", "phone_sync_ok", "phone_sync_fail",
     // 0.1.39 建議下一步點了直接送(同 api,api 先上):點托盤直接送出的那輪,還沒回覆、沒工具收據就被停止(renderer/suggest.js sugUndo)
@@ -291,8 +291,10 @@ const EVENTS = {
     "cloud_pricing", "cloud_recheck",
     // 雲端歡迎頁停機那一行的〔到自動下單〕(0.1.41;renderer/welcome.js wcAlert)
     "wc_stopped_go",
-    // 0.1.42 打開手機對話的 email 驗證(renderer/app.js phSet;同 api 順序,api 先上):關卡擋下、驗過、鎖住;設定 › 連結按〔重新驗證〕。名字要 ≤16 字
-    "phone_vfy_shown", "phone_vfy_ok", "phone_vfy_locked", "phone_reverify"] },
+    // 0.1.42 打開手機對話的 email 驗證:關卡擋下、驗過、鎖住;設定 › 連結按〔重新驗證〕。0.1.43 驗證碼拿掉,無送出點,等 0.1.42 退場再拿
+    "phone_vfy_shown", "phone_vfy_ok", "phone_vfy_locked", "phone_reverify",
+    // 0.1.43 手機配對完、這台關著時主視窗跳的確認框(renderer/app.js phAskMaybe;同 api 順序,api 先上):跳出來、按〔打開〕、按〔不用〕或關掉框
+    "phone_ask_shown", "phone_ask_on", "phone_ask_no"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

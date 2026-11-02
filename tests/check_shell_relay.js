@@ -9,9 +9,9 @@
 //   5. 刪除:跑中拒刪;電腦上刪的先落地 relay-outbox.jsonl、送成才拿掉
 //   6. 上傳:近 30 天、≤ 100 則一批、32 KB 截斷、時間是 ms、手機那句 origin app＋message_id、照 sync_state 補缺的、墓碑不傳、先送 done 再同步
 //   7. 關掉刪伺服器那份、沒網路記待刪;poll reason off → 停、藏起來;reason not_enabled／409 → 重打 enable
-//   8. 狀態檔只有布林;給畫面的沒有憑證;圖只送手機那一輪;手機清單／勾選／撤銷／最近操作
+//   8. 狀態檔只有布林;給畫面的沒有憑證;圖只送手機那一輪;帳號下的手機清單(唯讀,只回四個欄位)
 //   9. main.js 接線
-//  10. 打開過 email 驗證碼(mobile-chat-shell-enable-verify):setOn 寄碼／帶碼、碼對才寫 on;自動重打不寄信、被關卡擋下記 needVerify 不再打;重新驗證不丟待送的刪除;舊 api
+//  10. 打開只有同意框(mobile-pairing-v2-api-2026-11-02 §2):enable 不帶驗證碼、200 就開;配對確認框(§4):/relay/enabled 的 prompt、本機只問一次、〔不用〕打 prompt/seen
 //  12. 換帳號(OAuth 重新登入):換 token 前照登出關掉,不帶著開關換身分
 //  11. 手機回合的 fault code(mobile-chat-shell-fault-code):主行程分類、暫扣、代碼放回合的 error;沒有視窗也一樣;跟 renderer 的 regex 同一份
 // 跑法:node tests/check_shell_relay.js
@@ -329,7 +329,7 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     const r = await m.r.setOn(false);
     ok("7 關掉:叫 disable;沒網路記待刪", r.ok && r.pending === true && m.r.state().pending === true && m.tracked.includes("phone_chat_off"));
     const st = JSON.parse(fs.readFileSync(path.join(m.dir, "relay.json"), "utf8"));
-    ok("8 狀態檔只有布林", Object.values(st).every((v) => typeof v === "boolean") && !JSON.stringify(st).includes(TOKEN));
+    ok("8 狀態檔只有布林、問過的配對(asked:device_id:配對時間)與待補送的 seen(只有 device_id、answer)", Object.entries(st).every(([k, v]) => (k === "asked" ? Array.isArray(v) && v.every((x) => /^[A-Za-z0-9_-]{8,64}:\d*$/.test(x)) : k === "seenOut" ? Array.isArray(v) && v.every((x) => /^[A-Za-z0-9_-]{8,64}$/.test(x.device_id)) : typeof v === "boolean")) && !JSON.stringify(st).includes(TOKEN));
     dis = { status: 200, body: {} }; await m.r.tick();
     ok("7 下一輪重送刪除、送成就清掉待刪", m.r.state().pending === false && m.of(RL.EP.disable).length === 2);
     await m.end(); }
@@ -363,8 +363,7 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
 
   // ── 8 圖、手機清單 ──
   { const m = rig({ sessions: { "desktop-i0000001": { last: 1, rows: [row(1, "user", "x")] } },
-      resp: { [RL.EP.phones]: { status: 200, body: { max: 5, phones: [{ device_id: "devA0000001", platform: "ios", label: "iPhone 15", paired_via: "web", created_at: "2026-10-01T00:00:00Z", last_used_at: null, granted: false, extra: "x" }, { device_id: "../bad" }] } },
-        [RL.EP.revoke]: { status: 200, body: { revoked: true } }, [RL.EP.actions]: { status: 200, body: { actions: [{ ts: "2026-10-30T00:00:00Z", action: "send", device: "iPhone 15", ip: "1.2.3.4" }] } } } });
+      resp: { [RL.EP.phones]: { status: 200, body: { max: 5, phones: [{ device_id: "devA0000001", platform: "ios", label: "iPhone 15", paired_via: "app", created_at: "2026-10-01T00:00:00Z", last_used_at: "2026-10-30T00:00:00Z", granted: true, extra: "x" }, { device_id: "../bad" }] } } } });
     await m.r.tick(); await m.r.setOn(true); await wait(20);
     ok("8 圖:不是手機那一輪不送", (await m.r.image("desktop-i0000001", "image/png", "AAAA", "x")) === false && m.of(RL.EP.image).length === 0);
     m.feed([msg("desktop-i0000001", "msg0000000i")]); await wait(30);
@@ -380,14 +379,8 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     ok("8 圖:認領中(started 還在路上)不送——那條上跑的是電腦前那個人的回合", m.r.claiming("desktop-i0000001") && (await m.r.image("desktop-i0000001", "image/png", "AAAA", "x")) === false && m.of(RL.EP.image).length === n0);
     release(); await wait(30); delete m.resp[RL.EP.report];
     const ph = await m.r.phones();
-    ok("8 手機清單:只回篩過的欄位、壞 device_id 丟掉", ph.ok && ph.phones.length === 1 && !("extra" in ph.phones[0]) && ph.phones[0].granted === false && ph.phones[0].label === "iPhone 15");
-    await m.r.grant("devA0000001", true);
-    ok("8 勾選:送 device_id＋granted", m.of(RL.EP.grant)[0].device_id === "devA0000001" && m.of(RL.EP.grant)[0].granted === true);
-    ok("8 勾選:壞 id／非布林不送", (await m.r.grant("../x", true)).ok === false && (await m.r.grant("devA0000001", "yes")).ok === false && m.of(RL.EP.grant).length === 1);
-    const rv = await m.r.revoke("devA0000001", "en");
-    ok("8 撤銷:送 device_id＋lang、成功記 phone_revoke", rv.ok && m.of(RL.EP.revoke)[0].lang === "en" && m.tracked.includes("phone_revoke"));
-    const ac = await m.r.actions("devA0000001");
-    ok("8 最近操作:時間、操作、裝置、IP", ac.ok && ac.actions[0].action === "send" && ac.actions[0].ip === "1.2.3.4");
+    ok("8 帳號下的手機(唯讀):只回 device_id／platform／label／last_used_at、壞 device_id 丟掉", ph.ok && ph.phones.length === 1 && JSON.stringify(Object.keys(ph.phones[0]).sort()) === '["device_id","label","last_used_at","platform"]' && ph.phones[0].label === "iPhone 15" && ph.phones[0].last_used_at === "2026-10-30T00:00:00Z", ph);
+    ok("8 配對、勾選、撤銷、最近操作都不在電腦版:沒有那幾支端點與函式", !["pairCode", "grant", "revoke", "actions"].some((k) => k in RL.EP || typeof m.r[k] === "function"));
     await m.end(); }
   { const m = rig({ pingMs: 60, sessions: { "desktop-p0000001": { last: 1, rows: [row(1, "user", "x")] } } });
     await m.r.tick(); await m.r.setOn(true); await wait(20);
@@ -479,85 +472,115 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     await m.end(); }
 
   // ── 10 ──
-  const V403 = (extra) => ({ status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", ...extra } });
   { const m = rig(); await m.r.tick();
-    const r = await m.r.setOn(true, { lang: "en" }); await wait(20);
+    const r = await m.r.setOn(true); await wait(20);
     const b = m.of(RL.EP.enable)[0];
-    ok("10 已開著(api 200):不進輸入碼;第一次請求帶 send_code、lang,沒有 enable_code", r.ok === true && m.r.isOn() === true && b.send_code === true && b.lang === "en" && !("enable_code" in b));
+    ok("10 打開:enable 不帶驗證碼欄位(send_code／enable_code／lang),200 就寫 on、開輪詢、記 phone_chat_on", r.ok === true && m.r.isOn() === true && !("send_code" in b) && !("enable_code" in b) && !("lang" in b)
+      && JSON.parse(fs.readFileSync(path.join(m.dir, "relay.json"), "utf8")).on === true && m.of(RL.EP.poll).length >= 1 && m.tracked.includes("phone_chat_on"));
     await m.end(); }
-  { const m = rig(); await m.r.tick();
-    const answers = [V403({ sent: true, reason: null }), { status: 403, body: { error_code: "RELAY_ENABLE_CODE_INVALID" } }];
-    m.resp[RL.EP.enable] = (b) => (answers.length ? answers.shift() : (b.enable_code === "123456" ? { status: 200, body: { enabled: true } } : { status: 500, body: {} }));
-    const r1 = await m.r.setOn(true, { lang: "zh" });
-    ok("10 寄碼:回關卡與明細,本機維持關、不輪詢", r1.ok === false && r1.code === "RELAY_ENABLE_VERIFY" && r1.gate.sent === true && r1.gate.reason === null && m.r.isOn() === false && m.of(RL.EP.poll).length === 0);
-    const r2 = await m.r.setOn(true, { code: "000000", lang: "zh" });
-    const b2 = m.of(RL.EP.enable)[1];
-    ok("10 碼錯:帶 enable_code、不帶 send_code,留在這一步,本機維持關", r2.ok === false && r2.code === "RELAY_ENABLE_CODE_INVALID" && b2.enable_code === "000000" && !("send_code" in b2) && m.r.isOn() === false);
-    const before = fs.existsSync(path.join(m.dir, "relay.json"));
-    const r3 = await m.r.setOn(true, { code: "123456", lang: "zh" }); await wait(20);
-    ok("10 碼對才寫 on(落檔)、開輪詢、記 phone_chat_on", before === false && r3.ok === true && JSON.parse(fs.readFileSync(path.join(m.dir, "relay.json"), "utf8")).on === true && m.of(RL.EP.poll).length >= 1 && m.tracked.includes("phone_chat_on"));
+  { const m = rig({ resp: { [RL.EP.enable]: { status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", sent: true } } } }); await m.r.tick();
+    const r = await m.r.setOn(true);
+    ok("10 舊 api 還在要驗證碼(403):就是沒開成,不進驗證碼、不帶關卡明細", r.ok === false && r.code === "FAILED" && !("gate" in r) && m.r.isOn() === false);
     await m.end(); }
-  { const m = rig(); await m.r.tick(); const n0 = m.calls.length;
-    const r = await m.r.setOn(true, { code: "12a456" });
-    ok("10 碼不是 6 位數字:不送", r.ok === false && m.calls.length === n0);
-    await m.end(); }
-  { const gate = async (resp) => { const m = rig({ resp: { [RL.EP.enable]: resp } }); await m.r.tick(); const r = await m.r.setOn(true); await m.end(); return r; };
-    const ex = await gate({ status: 403, body: { error_code: "RELAY_ENABLE_CODE_EXPIRED" } }), lock = await gate({ status: 429, body: { error_code: "VERIFY_LOCKED" } });
-    const lim = await gate({ status: 429, body: { error_code: "ERR429" } }), un = await gate({ status: 503, body: { error_code: "RELAY_STATE_UNAVAILABLE" } }), aud = await gate({ status: 503, body: { error_code: "AUDIT_UNAVAILABLE" } });
-    const odd = await gate(V403({ sent: false, reason: "whatever" })), net = await gate({ status: 0, body: null });
-    ok("10 其他回應:過期、鎖住帶關卡;限流、讀不到紀錄、稽核寫不進走 FAILED;沒網路 OFFLINE;不認得的 reason 當 null", ex.code === "RELAY_ENABLE_CODE_EXPIRED" && !!ex.gate && lock.code === "VERIFY_LOCKED" && !!lock.gate
-      && lim.code === "FAILED" && un.code === "FAILED" && !un.gate && aud.code === "FAILED" && odd.gate.reason === null && net.code === "OFFLINE", [ex, lock, lim, un, aud, odd, net]); }
   { let T = Date.now(); const m = rig({ now: () => T }); await m.r.tick(); await m.r.setOn(true); await wait(20); m.setServerOn(false);
-    m.resp[RL.EP.enable] = V403({ sent: false, reason: "not_requested" });
-    const en0 = m.of(RL.EP.enable).length; await m.r.tick();
-    const b = m.of(RL.EP.enable)[en0];
-    ok("10 自動重打:請求沒有 send_code;收到 RELAY_ENABLE_VERIFY 記 needVerify,本機開關不動,畫面收得到", !!b && !("send_code" in b) && !("enable_code" in b) && m.r.state().needVerify === true && m.r.isOn() === true && m.changes.at(-1).needVerify === true);
-    T += 60000; await m.r.tick();
-    ok("10 needVerify 之後不再打 enable", m.of(RL.EP.enable).length === en0 + 1);
-    m.setServerOn(true); await m.r.tick();
-    ok("10 /relay/enabled 回 on:true 清掉 needVerify", m.r.state().needVerify === false);
-    await m.end(); }
-  { const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20); m.setServerOn(false);
-    m.resp[RL.EP.enable] = V403({ sent: false, reason: "not_requested" }); await m.r.tick();
-    m.resp[RL.EP.enable] = { status: 200, body: { enabled: true } };
-    const on0 = m.tracked.filter((x) => x === "phone_chat_on").length;
-    const r = await m.r.setOn(true, { code: "123456" });
-    ok("10 重新驗證過:清 needVerify,不再記一次 phone_chat_on", r.ok && m.r.state().needVerify === false && m.tracked.filter((x) => x === "phone_chat_on").length === on0);
-    await m.end(); }
-  { const SD = "desktop-d1000001", m = rig({ sessions: { [SD]: { last: Date.now() / 1000, rows: [row(1, "user", "x")] } } }); await m.r.tick(); await m.r.setOn(true); await wait(1300); m.setServerOn(false);
-    m.resp[RL.EP.enable] = V403({ sent: false, reason: "not_requested" }); await m.r.tick();
-    m.resp[RL.EP.report] = { status: 409, body: { error_code: "RELAY_NOT_ENABLED" } };
-    ok("10 needVerify 期間在電腦上刪對話:先落地 outbox", m.r.sessionDeleted(SD) === true && fs.existsSync(path.join(m.stateDir, RL.OUTBOX)));
-    await wait(30);
-    const n0 = m.tracked.filter((x) => x === "phone_sync_ok").length;
-    delete m.resp[RL.EP.report]; m.resp[RL.EP.enable] = { status: 200, body: { enabled: true } };
-    const r = await m.r.setOn(true, { code: "123456" }); await wait(1300);
-    ok("10 重新驗證過:待送的刪除送到伺服器、outbox 清空,不重記 phone_sync_ok", r.ok && m.chunks().some((c) => c.type === "session_delete" && c.session_id === SD) && !fs.existsSync(path.join(m.stateDir, RL.OUTBOX)) && m.tracked.filter((x) => x === "phone_sync_ok").length === n0, [m.chunks().map((c) => c.type), m.tracked]);
-    await m.end(); }
-  { const SD = "desktop-d1000002", m = rig({ sessions: { [SD]: { last: Date.now() / 1000, rows: [row(1, "user", "x")] } } }); await m.r.tick(); await m.r.setOn(true); await wait(30);
-    await m.r.setOn(false); m.resp[RL.EP.disable] = undefined;
-    fs.mkdirSync(m.stateDir, { recursive: true }); fs.writeFileSync(path.join(m.stateDir, RL.OUTBOX), JSON.stringify({ type: "session_delete", session_id: SD, ts: 1 }) + "\n");
-    await m.r.setOn(true); await wait(30);
-    ok("10 從關打開:待送的刪除照舊作廢(伺服器那份剛刪過)", !fs.existsSync(path.join(m.stateDir, RL.OUTBOX)) && !m.chunks().some((c) => c.type === "session_delete"));
-    await m.end(); }
-  for (const how of ["off", "signOut"]) {
-    const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20); m.setServerOn(false);
-    m.resp[RL.EP.enable] = V403({ sent: false, reason: "not_requested" }); await m.r.tick();
-    const was = m.r.state().needVerify;
-    if (how === "off") await m.r.setOn(false); else await m.r.signOut();
-    ok("10 " + how + " 清 needVerify", was === true && m.r.state().needVerify === false);
-    await m.end();
-  }
-  { const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20); m.setServerOn(false);
-    m.resp[RL.EP.enable] = { status: 503, body: { error_code: "RELAY_STATE_UNAVAILABLE" } }; await m.r.tick();
-    ok("10 自動重打 503 RELAY_STATE_UNAVAILABLE:不設 needVerify,本機開關不動", m.r.state().needVerify === false && m.r.isOn() === true);
+    m.resp[RL.EP.enable] = { status: 403, body: { error_code: "RELAY_ENABLE_VERIFY" } };
+    const en0 = m.of(RL.EP.enable).length; await m.r.tick(); T += 60000; await m.r.tick();
+    ok("10 自動重打被擋:本機開關不動,30 秒後照樣再打(沒有 needVerify 停打)", m.r.isOn() === true && m.of(RL.EP.enable).length === en0 + 2 && !("needVerify" in m.r.state()));
     await m.end(); }
   { const m = rig({ resp: { [RL.EP.enabled]: { status: 404, body: null } } }); await m.r.tick();
     const r = await m.r.setOn(true);
     ok("10 api 還沒上這條路由(/relay/enabled 404):設定區不出現、打不開、不輪詢", m.r.state().visible === false && r.ok === false && r.code === "OFF" && m.of(RL.EP.enable).length === 0 && m.of(RL.EP.poll).length === 0);
     await m.end(); }
-  ok("10 接線:畫面收得到 needVerify;relay-set 只把字串的碼交給 setOn;preload 帶 code、lang", /needVerify: st\.needVerify/.test(main) && /setOn\(on, \{ code: o && typeof o\.code === "string" \? o\.code : null, lang: o && o\.lang \}\)/.test(main)
-    && /relaySet: \(on, o\) => ipcRenderer\.invoke\("relay-set", on === true, \{ code: o && o\.code, lang: o && o\.lang \}\)/.test(fs.readFileSync(path.join(SHELL, "preload.js"), "utf8")));
+  // 配對確認框:prompt 走 /relay/enabled(開關關著也打);本機記「問過」= device_id:配對時間
+  const DEV = "devA0000001", NOW = Date.now(), PROMPT = (o) => ({ device_id: DEV, label: "iPhone 15", platform: "ios", paired_at: Math.floor(NOW / 1000) - 3600, ...(o || {}) });
+  const askRig = (prompt, o) => { let p = prompt, on = false; const m = rig(Object.assign({ resp: { [RL.EP.enabled]: () => ({ status: 200, body: { enabled: true, on, prompt: p } }), [RL.EP.enable]: () => { on = true; return { status: 200, body: { enabled: true } }; } } }, o || {}));
+    m.setPrompt = (x) => { p = x; }; return m; };
+  { const m = askRig(PROMPT()); await m.r.tick();
+    const a = m.r.state().ask;
+    ok("10 prompt:開關關著、總開關開 → state.ask 帶機型、平台、配對時間(秒→ms),配對距今超過 LATE_MS = late(標題帶時間)", !!a && a.label === "iPhone 15" && a.platform === "ios" && a.at === (Math.floor(NOW / 1000) - 3600) * 1000 && a.late === true && a.id === DEV + ":" + a.at && m.changes.at(-1).ask && m.changes.at(-1).ask.id === a.id, a);
+    ok("10 prompt:給畫面的 ask 沒有 device_id 以外的憑證", !JSON.stringify(m.r.state()).includes(TOKEN));
+    ok("10 askShown:本機記成問過(落檔),state.ask 清掉;同一個 prompt 下一輪不再出", m.r.askShown(a.id) === true && m.r.state().ask === null && JSON.parse(fs.readFileSync(path.join(m.dir, "relay.json"), "utf8")).asked.includes(a.id));
+    await m.r.tick();
+    ok("10 問過的那一次:api 再給也不出", m.r.state().ask === null);
+    await wait(10);
+    const s0 = m.of(RL.EP.promptSeen);
+    ok("10 框一出現就打 prompt/seen(device_id、不帶 answer;by = shown)", s0.length === 1 && s0[0].device_id === DEV && !("answer" in s0[0]) && s0[0].token === TOKEN, s0);
+    const seen = await m.r.askNo(a.id);
+    const s1 = m.of(RL.EP.promptSeen);
+    ok("10 〔不用〕:再打一次帶 answer no(多台各記各的,api 用 device 分)", seen === true && s1.length === 2 && s1[1].device_id === DEV && s1[1].answer === "no");
+    ok("10 〔不用〕同一次只送一次;沒跳過的 id 不送", (await m.r.askNo(a.id)) === false && (await m.r.askNo("x")) === false && m.of(RL.EP.promptSeen).length === 2);
+    m.setPrompt(PROMPT({ paired_at: Math.floor(NOW / 1000) + 60 })); await m.r.tick();
+    const b = m.r.state().ask;
+    ok("10 同一支撤銷後重配(配對時間不同):再問一次;配對時間距今很近 = 不帶時間", !!b && b.id !== a.id && b.late === false, b);
+    await m.end(); }
+  { const m = askRig(PROMPT()); await m.r.tick(); const a = m.r.state().ask;
+    const r = await m.r.setOn(true); await wait(20);
+    ok("10 〔打開〕(setOn):開了就記成問過、ask 清掉;不另打 seen(enable 會記)", r.ok && m.r.state().ask === null && JSON.parse(fs.readFileSync(path.join(m.dir, "relay.json"), "utf8")).asked.includes(a.id) && m.of(RL.EP.promptSeen).length === 0);
+    await m.end(); }
+  { const m = askRig(null); await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.setPrompt(PROMPT()); await m.r.tick();
+    ok("10 開關開著:prompt 不出,直接記成問過", m.r.state().ask === null && JSON.parse(fs.readFileSync(path.join(m.dir, "relay.json"), "utf8")).asked.length === 1);
+    await m.end(); }
+  { const m = askRig(PROMPT({ device_id: "../bad" })); await m.r.tick();
+    ok("10 prompt 的 device_id 不合格:不出", m.r.state().ask === null);
+    m.setPrompt(PROMPT()); await m.r.tick();
+    const had = !!m.r.state().ask; await m.r.signOut();
+    ok("10 登出(換帳號):還沒跳的那一次丟掉", had && m.r.state().ask === null);
+    await m.end(); }
+  { let flagOn = true; const m = rig({ resp: { [RL.EP.enabled]: () => ({ status: 200, body: { enabled: flagOn, on: false, prompt: PROMPT() } }) } }); await m.r.tick();
+    const had = !!m.r.state().ask; flagOn = false; await m.r.tick();
+    ok("10 總開關關:畫面不出 ask", had && m.r.state().ask === null);
+    await m.end(); }
+  { const dir = fs.mkdtempSync(path.join(os.tmpdir(), "relay-ask-")); fs.writeFileSync(path.join(dir, "relay.json"), JSON.stringify({ on: false, asked: [DEV + ":" + (Math.floor(NOW / 1000) - 3600) * 1000] }));
+    const R3 = RL.createRelay({ dir, stateDir: path.join(dir, "state"), apiBase: API, post: async (u) => (u.endsWith(RL.EP.enabled) ? { status: 200, body: { enabled: true, on: false, prompt: PROMPT() } } : { status: 200, body: {} }),
+      getCreds: () => ({ token: TOKEN, appSecret: SECRET }), installId: () => "11111111-2222-4333-8444-555555555555", ver: "x", startTurn: async () => ({}), stopTurn: () => true, turnBusy: () => false, isRestarting: () => false,
+      sessions: { list: () => [], rowsAfter: () => [], maxId: () => 0, exists: () => false, remove: () => false }, turnArgs: () => ({}), known: () => [], origins: { add() {}, get: () => new Map() } });
+    await R3.tick();
+    ok("10 重開 app:落檔的「問過」照算,不再跳", R3.state().ask === null); await R3.quit(); }
+  { let T = NOW; const pr = PROMPT({ paired_at: Math.floor(NOW / 1000) }); const m = askRig(pr, { now: () => T }); await m.r.tick();
+    const fresh = m.r.state().ask.late;
+    T += RL.LATE_MS + 1000; m.setPrompt(PROMPT({ paired_at: Math.floor(NOW / 1000) + 1 })); await m.r.tick();
+    ok("10 late 看配對時間距今,不看啟動時間:app 開著但睡著、隔很久才跳的也帶時間", fresh === false && m.r.state().ask.late === true);
+    await m.end(); }
+  { const m = askRig(PROMPT()); await m.r.tick(); const a = m.r.state().ask;
+    m.resp[RL.EP.promptSeen] = { status: 0, body: null };
+    m.r.askShown(a.id); await wait(10); await m.r.askNo(a.id);
+    const out = JSON.parse(fs.readFileSync(path.join(m.dir, "relay.json"), "utf8")).seenOut;
+    ok("10 seen 送不到(離線):落檔留著,兩筆照順序", out.length === 2 && out[0].device_id === DEV && !out[0].answer && out[1].answer === "no", out);
+    m.resp[RL.EP.promptSeen] = { status: 503, body: {} }; await m.r.tick(); await wait(10);
+    ok("10 下一輪 tick 補送;5xx 照樣留著", JSON.parse(fs.readFileSync(path.join(m.dir, "relay.json"), "utf8")).seenOut.length === 2);
+    delete m.resp[RL.EP.promptSeen]; const n0 = m.of(RL.EP.promptSeen).length; await m.r.tick(); await wait(10);
+    const sent = m.of(RL.EP.promptSeen).slice(n0);
+    ok("10 送到了才拿掉,照順序(shown 再 no)", JSON.parse(fs.readFileSync(path.join(m.dir, "relay.json"), "utf8")).seenOut.length === 0 && sent.length === 2 && !sent[0].answer && sent[1].answer === "no", sent);
+    m.resp[RL.EP.promptSeen] = { status: 404, body: { error_code: "DEVICE_NOT_FOUND" } }; m.setPrompt(PROMPT({ paired_at: Math.floor(NOW / 1000) - 60 })); await m.r.tick();
+    m.r.askShown(m.r.state().ask.id); await wait(10);
+    ok("10 404 DEVICE_NOT_FOUND(手機已撤銷):不重送", JSON.parse(fs.readFileSync(path.join(m.dir, "relay.json"), "utf8")).seenOut.length === 0);
+    m.resp[RL.EP.promptSeen] = { status: 0, body: null }; m.setPrompt(PROMPT({ paired_at: Math.floor(NOW / 1000) - 30 })); await m.r.tick();
+    m.r.askShown(m.r.state().ask.id); await wait(10); await m.r.signOut();
+    ok("10 登出(換帳號):沒送到的 seen 丟掉", JSON.parse(fs.readFileSync(path.join(m.dir, "relay.json"), "utf8")).seenOut.length === 0);
+    await m.end(); }
+  { let n = 0; const m = rig({ resp: { [RL.EP.enabled]: () => (n++ === 0 ? { status: 200, body: { enabled: true, on: false, prompt: PROMPT() } } : { status: 429, body: { error_code: "ERR429", message: "Too many requests" } }) } });
+    await m.r.tick(); const a = m.r.state().ask; await m.r.tick();
+    ok("10 /relay/enabled 429:總開關、確認框照上一次,設定區不收起", m.r.state().visible === true && !!m.r.state().ask && m.r.state().ask.id === a.id);
+    await m.end(); }
+  { let T = 1e12; const m = askRig(null, { now: () => T }); await m.r.tick(); const c0 = m.of(RL.EP.enabled).length;
+    const f1 = await m.r.focusTick(); T += 5000; const f2 = await m.r.focusTick(); T += RL.FOCUS_TICK_GAP_MS; const f3 = await m.r.focusTick();
+    ok("10 視窗取得焦點:開關關著時加打 /relay/enabled,20 秒內只一次", f1 === true && f2 === false && f3 === true && m.of(RL.EP.enabled).length === c0 + 2 && RL.FOCUS_TICK_GAP_MS === 20000);
+    await m.r.setOn(true); await wait(20); T += 60000; const c1 = m.of(RL.EP.enabled).length;
+    ok("10 開關開著:焦點不加打", (await m.r.focusTick()) === false && m.of(RL.EP.enabled).length === c1);
+    await m.end(); }
+  { let creds = { token: TOKEN, appSecret: SECRET }, release; const dir = fs.mkdtempSync(path.join(os.tmpdir(), "relay-tok-"));
+    const R4 = RL.createRelay({ dir, stateDir: path.join(dir, "state"), apiBase: API, getCreds: () => creds, installId: () => "11111111-2222-4333-8444-555555555555", ver: "x",
+      post: async (u) => (u.endsWith(RL.EP.enabled) ? new Promise((res) => { release = () => res({ status: 200, body: { enabled: true, on: false, prompt: PROMPT() } }); }) : { status: 200, body: {} }),
+      startTurn: async () => ({}), stopTurn: () => true, turnBusy: () => false, isRestarting: () => false,
+      sessions: { list: () => [], rowsAfter: () => [], maxId: () => 0, exists: () => false, remove: () => false }, turnArgs: () => ({}), known: () => [], origins: { add() {}, get: () => new Map() } });
+    const p = R4.tick(); await wait(5); creds = { token: "tok-other-B", appSecret: "sec-B" }; release(); await p;
+    ok("10 /relay/enabled 在路上時換了帳號:回來的 prompt 是上一個帳號的,不收", R4.state().ask === null); await R4.quit(); }
+  ok("10 契約:prompt/seen 路徑、PAIR_SRC 讀 prompt 與 phones", RL.EP.promptSeen === "/oauth/desktop/relay/prompt/seen" && RL.PAIR_SRC.askOf({ prompt: null }) === null && RL.PAIR_SRC.askOf({ prompt: { device_id: "d", paired_at: 2 } }).paired_at === 2000);
+  { const pre = fs.readFileSync(path.join(SHELL, "preload.js"), "utf8");
+    ok("10 接線:畫面收得到 ask、沒有 needVerify;relay-set 只收布林;跳出來／〔不用〕兩支 IPC;preload 沒有配對碼、勾選、撤銷、最近操作", /ask: st\.ask \}\);/.test(main) && !/needVerify|pairSeq/.test(main)
+      && /handle\("relay-set", async \(_e, on\) => \(typeof on === "boolean" \? \{ \.\.\.\(await relay\(\)\.setOn\(on\)\)/.test(main) && /handle\("relay-ask-shown"/.test(main) && /handle\("relay-ask-no"/.test(main) && /win\.on\("focus", \(\) => \{ if \(app\.hasSingleInstanceLock\(\)\) relay\(\)\.focusTick\(\)\.catch\(\(\) => \{\}\); \}\);/.test(main)
+      && /relaySet: \(on\) => ipcRenderer\.invoke\("relay-set", on === true\),/.test(pre) && !/relayPairCode|relayGrant|relayRevoke|relayActions|relay-pair-code|relay-grant|relay-revoke|relay-actions/.test(pre + main)); }
 
   // ── 11 ──
   const SF = "desktop-f1000001";
@@ -654,7 +677,7 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     const calls = [];
     const post = async (u, b) => { const ep = u.slice(API.length); calls.push([ep, b.token]);
       if (ep === RL.EP.enabled) return { status: 200, body: { enabled: true, on: onFor === b.token } };
-      if (ep === RL.EP.enable) { if (onFor === b.token || b.enable_code) { onFor = b.token; return { status: 200, body: { enabled: true } }; } return { status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", sent: b.send_code === true, reason: b.send_code === true ? null : "not_requested" } }; }
+      if (ep === RL.EP.enable) { onFor = b.token; return { status: 200, body: { enabled: true } }; }
       if (ep === RL.EP.disable) { if (onFor === b.token) onFor = null; return { status: 200, body: {} }; }
       if (ep === RL.EP.poll) return new Promise(() => {});
       if (ep === RL.EP.syncState) return { status: 200, body: { sessions: [], tombstones: [] } };
@@ -665,7 +688,7 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
       startTurn: async () => ({ started: true }), stopTurn: () => true, turnBusy: () => false, isRestarting: () => false,
       sessions: { list: () => [{ id: SA, last: Date.now() / 1000 }], rowsAfter: (s, a0) => [row(1, "user", "A 帳號的對話")].filter((x) => x.id > a0), maxId: () => 1, exists: () => true, remove: () => true },
       turnArgs: () => ({}), known: () => [], origins: { add() {}, get: () => new Map() } });
-    await R2.tick(); await R2.setOn(true); await R2.setOn(true, { code: "111111" }); await wait(1300);
+    await R2.tick(); await R2.setOn(true); await wait(1300);
     const wasOn = R2.isOn();
     // 原文那一段:relay() 換成這一個、loadToken 是 A 的;跑完才換成 B 的 token(= saveToken)
     const settles = [];
@@ -674,7 +697,7 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     const n = calls.length;
     await R2.tick(); await wait(50);
     const st = R2.state(), after = calls.slice(n);
-    ok("12 A 同意並開啟後,OAuth 換成 B:換之前用 A 的憑證關掉(disable 帶 A)、本機開關關、不待驗", wasOn && calls.some((c) => c[0] === RL.EP.disable && c[1] === "tok-account-A") && st.on === false && st.needVerify === false && st.pending === false, [st, calls.slice(-4)]);
+    ok("12 A 同意並開啟後,OAuth 換成 B:換之前用 A 的憑證關掉(disable 帶 A)、本機開關關", wasOn && calls.some((c) => c[0] === RL.EP.disable && c[1] === "tok-account-A") && st.on === false && st.pending === false, [st, calls.slice(-4)]);
     ok("12 B 登入後:不自動重打 enable、不用 B 的 token 同步任何對話;要開得重走同意框", !after.some((c) => c[0] === RL.EP.enable || c[0] === RL.EP.sync || c[0] === RL.EP.poll), after);
     ok("12 接線:startOAuth 在 saveToken 之前叫 relay().signOut()", /try \{ await relay\(\)\.signOut\(\); \}/.test(seg));
     ok("12 回給畫面 phoneOff(原本開著);登入完成回傳帶它", phoneOff === true && /return \{ ok: true, phoneOff \};/.test(oa));

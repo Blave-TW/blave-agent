@@ -10083,7 +10083,7 @@ msgid "ph.cf.title"
 msgstr "允許手機對話？"
 
 msgid "ph.cf.1"
-msgstr "手機送的話會在這台電腦上執行。agent 能做的跟你在電腦前一樣，包括下單。"
+msgstr "帳號下所有手機都能叫這台做事，包括下單。之後新配對的手機也一樣。"
 
 msgid "ph.cf.2"
 msgstr "近 30 天和之後的對話會上傳，金鑰與資料夾路徑會先遮掉。關掉就刪除伺服器上那份。"
@@ -10127,68 +10127,40 @@ msgstr "伺服器上的對話還沒刪掉，連上網路後會自動刪。"
 msgid "ph.err"
 msgstr "沒有開成，請檢查網路後再試。"
 
-msgid "ph.kc.title"
-msgstr "確認是你本人"
-
-msgid "ph.kc.failed"
-msgstr "驗證碼沒寄出去，請稍後再試。"
-
-msgid "ph.kc.limitedDead"
-msgstr "寄送次數已達上限，請稍後再試。"
-
 msgid "ph.offRelogin"
 msgstr "重新登入後手機對話已關閉，要用請到 設定 › 連結 重新打開。"
 
-msgid "ph.verify"
-msgstr "手機連不上這台電腦。"
+# 0.1.43 設定 › 連結 手機那一組的標籤(取代 ph.group):帳號下配對過的手機,唯讀(mockup-web-only-pairing-2026-11-02 §8)
+msgid "ph.list"
+msgstr "帳號下的手機"
 
-msgid "ph.verifyBtn"
-msgstr "重新驗證"
+# 組標籤右邊的文字鈕,開網站 設定 › 已配對的手機;帳號還沒有手機時不出
+msgid "ph.webRevoke"
+msgstr "到網站撤銷"
 
-msgid "ph.group"
-msgstr "允許連這台的手機"
+# 〔到網站撤銷〕的讀屏名稱:會開瀏覽器(同 rp.help.aria)
+msgid "ph.webRevoke.aria"
+msgstr "到網站撤銷（在瀏覽器開啟）"
 
-msgid "ph.pair"
-msgstr "配對手機"
+# 開著、帳號還沒有手機:組內那一槽
+msgid "ph.none"
+msgstr "還沒有配對的手機。在 App 的 Agent 分頁配對。"
 
-msgid "ph.pairHow"
-msgstr "用 App 的 Agent 分頁掃描，或輸入這組碼。"
+# 手機配對完、這台開關關著時主視窗跳的確認框(§9b):標題帶機型,內文沿用 ph.cf.1–3;電腦當時沒開的話標題後面另接配對時間(mono)
+msgid "ph.ask.title"
+msgstr "{name} 想連這台電腦"
 
-msgid "ph.pairUntil"
-msgstr "{hm} 前有效"
+msgid "ph.ask.no"
+msgstr "不用"
 
-msgid "ph.pairExpired"
-msgstr "配對碼過期了。"
-
-msgid "ph.pairAgain"
-msgstr "重新產生"
-
-msgid "ph.pairFail"
-msgstr "沒拿到配對碼，請再試一次。"
-
-msgid "ph.pairMax"
-msgstr "已有 5 支手機，先撤銷一支才能再配對。"
-
-msgid "ph.pairedSay"
-msgstr "已配對 {name}"
+msgid "ph.ask.ok"
+msgstr "打開"
 
 msgid "ph.meta"
-msgstr "配對 {paired} · 最近使用 {used}"
+msgstr "最近使用 {used}"
 
 msgid "ph.metaNever"
-msgstr "配對 {paired} · 還沒用過"
-
-msgid "ph.acts"
-msgstr "最近操作"
-
-msgid "ph.actsMore"
-msgstr "顯示全部"
-
-msgid "ph.actsFail"
-msgstr "讀不到紀錄。"
-
-msgid "ph.revoke"
-msgstr "撤銷"
+msgstr "還沒用過"
 
 msgid "ph.iphone"
 msgstr "iPhone"
@@ -10196,59 +10168,8 @@ msgstr "iPhone"
 msgid "ph.android"
 msgstr "Android 手機"
 
-msgid "ph.errRow"
-msgstr "沒有改成，請檢查網路後再試。"
-
 msgid "ph.phonesFail"
 msgstr "讀不到手機清單。"
-
-msgid "ph.revokedSay"
-msgstr "已撤銷 {name}"
-
-msgid "ph.revoke.title"
-msgstr "撤銷 {name}？"
-
-msgid "ph.revoke.body"
-msgstr "這支手機不能再跟 agent 對話，要再用得重新配對。"
-
-msgid "ph.revoke.stop"
-msgstr "它送來的回覆如果還在跑，會停下。"
-
-msgid "ph.revoke.ok"
-msgstr "撤銷"
-
-msgid "ph.act.send"
-msgstr "送出訊息"
-
-msgid "ph.act.stop"
-msgstr "停止回覆"
-
-msgid "ph.act.withdraw"
-msgstr "撤回訊息"
-
-msgid "ph.act.session_new"
-msgstr "開新對話"
-
-msgid "ph.act.session_rename"
-msgstr "改對話名稱"
-
-msgid "ph.act.session_delete"
-msgstr "刪除對話"
-
-msgid "ph.act.pair"
-msgstr "配對"
-
-msgid "ph.act.auth"
-msgstr "驗證身分"
-
-msgid "ph.act.revoke"
-msgstr "撤銷"
-
-msgid "ph.act.grant"
-msgstr "允許連這台"
-
-msgid "ph.act.ungrant"
-msgstr "停止連這台"
 
 msgid "tm.phoneHiddenTitle"
 msgstr "手機對話開著"

@@ -89,7 +89,7 @@ const show = (xs) => [...new Set(xs.map((x) => x.name + " @ " + x.file + ":" + x
 // index.html 的載入順序就是「哪幾支共用一個全域」的事實來源;node_modules 來的那一支只貢獻它的全域名字
 const html = fs.readFileSync(path.join(SHELL, "renderer", "index.html"), "utf8");
 const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-const RENDERER_GLOBALS = set(BROWSER, LANGUAGE, "LightweightCharts", "qrcode");   // 兩個 node_modules 的 script 掛的全域(index.html)
+const RENDERER_GLOBALS = set(BROWSER, LANGUAGE, "LightweightCharts");   // node_modules 的 script 掛的全域(index.html)
 
 const i = process.argv.indexOf("--file");
 if (i > 0) {   // 對照組:把 renderer 裡同名的那一支換成指定的檔,其餘照舊

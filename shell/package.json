@@ -22,8 +22,7 @@
   },
   "dependencies": {
     "electron-updater": "6.8.12",
-    "lightweight-charts": "5.2.1",
-    "qrcode-generator": "2.0.4"
+    "lightweight-charts": "5.2.1"
   },
   "author": "Blave"
 }

@@ -607,7 +607,7 @@ function relay() {
   return _relay;
 }
 // 給畫面的只有開關、同步進度與數字,沒有憑證、沒有對話內容
-const relayStateOut = (st) => ({ visible: st.visible, on: st.on, pending: st.pending, signedIn: st.signedIn, needVerify: st.needVerify, sync: st.sync, mobileTurns: st.mobileTurns, queued: st.queued, phoneSids: st.phoneSids, pairSeq: st.pairSeq });
+const relayStateOut = (st) => ({ visible: st.visible, on: st.on, pending: st.pending, signedIn: st.signedIn, sync: st.sync, mobileTurns: st.mobileTurns, queued: st.queued, phoneSids: st.phoneSids, ask: st.ask });
 /* 手機那一輪用電腦當下存的引擎與型號(手機 MVP 不給選):照設定頁選擇器存的那一組;沒有就交給 turnModelArgs 的預設 */
 function relayTurnArgs() {
   const kind = (loadConnection() || {}).kind, slot = (loadModelPrefs() || {})[kind] || {};
@@ -975,8 +975,8 @@ async function startOAuth(lang, forBlaveAi) {
   // 重新登入(方案頁的「重新登入」、登入失效後的原地登入)時手上還有上一顆 token:新的換到手之後把舊的
   // 撤銷掉——不然伺服器上那顆連同它的資料 key 會一直活著,「已授權的電腦」也會多一列同名的裝置。
   // best-effort:撤不掉不影響這次登入。
-  // 手機對話的開關跟著「誰同意的」走:外殼認不出新 token 是不是同一個帳號,換 token 前一律照登出關掉(刪伺服器那份、清待驗)。
-  // 不關的話 B 帳號按〔重新驗證〕就會把 A 同意上傳的對話傳到 B,沒經過同意框。用舊憑證打 disable,所以要在 saveToken 之前
+  // 手機對話的開關跟著「誰同意的」走:外殼認不出新 token 是不是同一個帳號,換 token 前一律照登出關掉(刪伺服器那份)。
+  // 不關的話 relay 的自動重打 enable 不用驗證就會替 B 帳號開起來,A 同意上傳的對話就流到 B,沒經過同意框。用舊憑證打 disable,所以要在 saveToken 之前
   await rotator().settle();
   const phoneOff = relay().isOn() && relay().isVisible();   // 回給畫面:原本開著、而且設定 › 連結看得到那一區,才講「重新登入後關了」
   try { await relay().signOut(); } catch (_) { /* 刪不成:伺服器那份跟著舊 token 藏起來,30 天無活動自己清 */ }
@@ -3788,6 +3788,8 @@ function createWindow() {
     Menu.buildFromTemplate([{ label: tmLabels.menuCopyLink || MENU_EN.menuCopyLink, click: () => clipboard.writeText(p.linkURL) }]).popup({ window: win });
   });
   win.on("enter-full-screen", appMenuSync); win.on("leave-full-screen", appMenuSync);   // 全螢幕那一格的字跟著換
+  // 人回到電腦前:開關關著時多問一次 /relay/enabled,剛配對的手機不用等 2 分鐘的 tick 就跳確認框(relay.focusTick 自己限 20 秒一次)
+  win.on("focus", () => { if (app.hasSingleInstanceLock()) relay().focusTick().catch(() => {}); });
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
 }
 
@@ -4146,14 +4148,12 @@ app.whenReady().then(() => {
   handle("stop-turn", (_e, sid) => stopTurn(typeof sid === "string" ? sid : null), false);
   handle("relay-state", () => relayStateOut(relay().state()), null);
   // 打開前畫面已經跳過確認框(§4.2);這裡只收布林
-  handle("relay-set", async (_e, on, o) => (typeof on === "boolean" ? { ...(await relay().setOn(on, { code: o && typeof o.code === "string" ? o.code : null, lang: o && o.lang })), state: relayStateOut(relay().state()) } : { ok: false }), { ok: false });
+  handle("relay-set", async (_e, on) => (typeof on === "boolean" ? { ...(await relay().setOn(on)), state: relayStateOut(relay().state()) } : { ok: false }), { ok: false });
   handle("relay-retry", async () => { await relay().retry(); return relayStateOut(relay().state()); }, null);
-  // 設定區:配對碼、授權手機清單、勾選、撤銷、最近操作。回的是 relay.js 篩過的欄位,沒有憑證
-  handle("relay-pair-code", () => relay().pairCode(), { ok: false });
+  // 設定區的手機清單(唯讀)、配對後確認框跳出來了。回的是 relay.js 篩過的欄位,沒有憑證
   handle("relay-phones", () => relay().phones(), { ok: false });
-  handle("relay-grant", (_e, id, on) => relay().grant(typeof id === "string" ? id : "", on === true), { ok: false });
-  handle("relay-revoke", (_e, id) => relay().revoke(typeof id === "string" ? id : "", uiLang === "en" ? "en" : "zh"), { ok: false });
-  handle("relay-actions", (_e, id) => relay().actions(typeof id === "string" ? id : null), { ok: false });
+  handle("relay-ask-shown", (_e, id) => relay().askShown(typeof id === "string" ? id : ""), false);
+  handle("relay-ask-no", (_e, id) => relay().askNo(typeof id === "string" ? id : ""), false);
   // 自帶 API 金鑰:只有 set(驗過才存)/ test(重驗已存的那把)/ remove,加一支不帶值的取消。**沒有任何一支把金鑰交回畫面**
   const llmDenied = { ok: false, code: "NOT_ALLOWED", status: 0 };
   handle("apikey-set", (_e, a) => llmKeySet(a && typeof a === "object" ? { preset: a.preset, key: a.key, connect: a.connect === true } : null), llmDenied);
