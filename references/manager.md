@@ -36,7 +36,7 @@ python3 manager/manager.py --members a,b,c --allocator equal            # dry-ru
 python3 manager/manager.py --members a,b,c --allocator equal --apply    # write config
 ```
 
-`--target-vol`: sets target annual volatility; computes `leverage = target_vol / ann_vol`, where `ann_vol` is realized over the **trailing 90 days only** (`VOL_WINDOW`) — volatility clusters, so a regime from years back must not dilute what leverage is safe today. Sharpe and the walk-forward still use the full history; the proposal reports the days actually used as `vol_window_days`. A weighted strategy whose backtest has no data inside that window looks risk-free, which understates `ann_vol` and overstates the leverage derived from it — the script prints a `WARNING:` naming the strategy and how many days are missing. **Re-run those backtests before sizing anything on that leverage.** **Omit it and the config's own `target_vol_pct` is used** — passing a value overwrites that setting on `--apply`, so only pass one when the user asked to change it. This target and the `leverage` it yields are a reference figure in the proposal. They are not what the user set on the page and they do not size live positions (`amounts` does).
+`--target-vol`: sets target annual volatility; computes `leverage = target_vol / ann_vol`, where `ann_vol` is realized over the **trailing 90 days only** (`VOL_WINDOW`) — volatility clusters, so a regime from years back must not dilute what leverage is safe today. Sharpe and the walk-forward still use the full history; the proposal reports the days actually used as `vol_window_days`. A weighted strategy whose backtest has no data inside that window looks risk-free, which understates `ann_vol` and overstates the leverage derived from it — the script prints a `WARNING:` naming the strategy and how many days are missing. **Re-run those backtests before sizing anything on that leverage.** **Omit it and the config's own `target_vol_pct` is used** — passing a value overwrites that setting on `--apply`. A user asking to change target volatility, leverage or position size is asking for 部位大小 on the page (*Position sizing on the page*), not this flag: live positions follow `amounts`, so `--target-vol … --apply` would change nothing they trade on. This target and the `leverage` it yields are a reference figure in the proposal. They are not what the user set on the page and they do not size live positions (`amounts` does).
 
 **Name the method explicitly on `--apply`.** Omitting `--allocator` resolves to the method the live config was applied with (a config with no `allocator`, or a null one, means `slope` — it predates `equal`); only a portfolio that has never been applied falls to the default. That keeps a bare re-run from silently re-weighting live positions, but the command reads clearer when the method is spelled out.
 
@@ -75,8 +75,8 @@ Two separate choices, both the user's:
 
 - **How to split** — 管理方法 (`equal`, `slope`, `sharpe` or a custom allocator). This sets the weights.
 - **How big** — 部位大小, the button in the 權重分配 block on 策略組合 › 優化. The user enters 投入資金 and picks one of three:
-  - 目標波動: target ÷ the proposal's `ann_vol_pct` (trailing 90 days). If no weighted strategy held a position in those 90 days, the volatility is 0, the page shows 「—」 and this method cannot size. A portfolio of one strategy is not a problem in itself: that strategy's own volatility is used.
-  - 最大回撤: leverage solved from `port_returns` (capped at 100×); unavailable when it cannot be solved or `port_returns` is null (under 90 days of overlap)
+  - 目標波動: target ÷ the proposal's `ann_vol_pct` (trailing 90 days). `ann_vol_pct` is 0 when every weighted strategy's returns in that window are flat (no position, or a stale backtest with no data there); the page then says 「這份結果算不出目標波動，換一個方法」 — re-run those backtests or pick another method. A portfolio of one strategy is not a problem in itself: that strategy's own volatility is used.
+  - 最大回撤: leverage solved from `port_returns`; unavailable when the target would need a very high leverage or `port_returns` is null (under 90 days of overlap)
   - 固定槓桿: the multiple the user typed
 
 Each row's amount = 投入資金 × implied leverage × weight (台指期 converts to lots). 確定 only changes the page; 套用金額 writes `amounts` to the machine. There is no default target. 30% is only the CLI default for `target_vol_pct`.
@@ -84,7 +84,8 @@ Each row's amount = 投入資金 × implied leverage × weight (台指期 conver
 When the user asks about leverage or target volatility:
 
 - Never say the target is fixed, not adjustable, or an account-level setting, and never say leverage cannot be set by hand.
-- The values typed into 部位大小 are not on this machine. Do not read `target_vol_pct` or `leverage` from `portfolio_config.json` or the proposal as what the user chose. What the user actually applied is `amounts`.
+- Never run `--target-vol … --apply` or hand-edit `target_vol_pct` / `leverage` to honor a sizing request; send the user to 部位大小 and 套用金額.
+- The values typed into 部位大小 are not in the workspace; you cannot read them. Do not read `target_vol_pct` or `leverage` from `portfolio_config.json` or the proposal as what the user chose. What the user actually applied is `amounts`.
 - To change it: 策略組合 › 優化 → 跑優化 → 部位大小 → 確定 → 套用金額. Applying amounts is the user's own action (`references/portfolio-steps.md`); walk them through it, do not write `amounts` yourself. The mobile app has no 部位大小; point the user to the web or desktop app.
 
 ## portfolio_config.json — Exchange Routing
