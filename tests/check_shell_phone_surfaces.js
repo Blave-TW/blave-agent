@@ -158,6 +158,7 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
 {
   const want = { "chat.fromPhone": ["來自手機", "From phone"], "ph.tip": ["Blave 開著、電腦醒著，手機才送得到。", "Works only while Blave is open and this computer is awake."],
     "ph.cf.1": ["手機送的話會在這台電腦上執行。agent 能做的跟你在電腦前一樣，包括下單。", "Messages from your phone run on this computer. The agent can do anything it can here, including placing orders."],
+    "ph.cf.3": ["舊對話的附件和圖片不上傳，策略程式也不上傳。手機那一輪回覆裡的圖片會上傳。關掉就刪除伺服器上那份。", "Attachments and images in older chats stay here, and so does strategy code. Images in replies to your phone are uploaded. Turning this off deletes the copy on Blave."],
     "ph.off.live": ["手機送來、正在跑的回覆會停下。", "The reply your phone started will stop."], "ph.off.del": ["伺服器上的對話會刪除，這台電腦上的不受影響。", "Chats on Blave are deleted. Chats on this computer stay."],
     "ph.group": ["允許連這台的手機", "Phones allowed on this computer"], "ph.pairHow": ["用 App 的 Agent 分頁掃描，或輸入這組碼。", "Scan it in the app's Agent tab, or enter the code."],
     "ph.pairMax": ["已有 5 支手機，先撤銷一支才能再配對。", "You have 5 phones. Revoke one to pair another."], "ph.revoke.title": ["撤銷 {name}？", "Revoke {name}?"],
