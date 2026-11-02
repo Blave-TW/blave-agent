@@ -160,7 +160,7 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
 {
   const want = { "chat.fromPhone": ["來自手機", "From phone"], "ph.tip": ["Blave 開著、電腦醒著，手機才送得到。", "Works only while Blave is open and this computer is awake."],
     "ph.cf.1": ["手機送的話會在這台電腦上執行。agent 能做的跟你在電腦前一樣，包括下單。", "Messages from your phone run on this computer. The agent can do anything it can here, including placing orders."],
-    "ph.cf.3": ["舊對話的附件和圖片不上傳，策略程式也不上傳。手機那一輪回覆裡的圖片會上傳。關掉就刪除伺服器上那份。", "Attachments and images in older chats stay here, and so does strategy code. Images in replies to your phone are uploaded. Turning this off deletes the copy on Blave."],
+    "ph.cf.3": ["舊對話的附件和圖片不上傳，策略程式也不上傳。手機那一輪回覆裡的圖片會上傳。", "Attachments and images in older chats stay here, and so does strategy code. Images in replies to your phone are uploaded."],
     "ph.off.live": ["手機送來、正在跑的回覆會停下。", "The reply your phone started will stop."], "ph.off.del": ["伺服器上的對話會刪除，這台電腦上的不受影響。", "Chats on Blave are deleted. Chats on this computer stay."],
     "ph.kc.why": ["打開手機對話前，先確認是你本人。", "Confirm it's you before turning on phone chat."], "ph.kc.failed": ["驗證碼寄不出去，手機對話沒有打開。請稍後再試。", "The code couldn't be sent, so phone chat stayed off. Try again later."],
     "ph.verify": ["這台電腦要重新驗證，手機才連得上。", "Verify again so your phone can reach this computer."], "ph.verifyBtn": ["驗證", "Verify"],

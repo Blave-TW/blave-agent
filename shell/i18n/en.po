@@ -10058,7 +10058,7 @@ msgid "ph.cf.2"
 msgstr "Chats from the last 30 days are uploaded so your phone can show them. Keys and folder paths are masked first."
 
 msgid "ph.cf.3"
-msgstr "Attachments and images in older chats stay here, and so does strategy code. Images in replies to your phone are uploaded. Turning this off deletes the copy on Blave."
+msgstr "Attachments and images in older chats stay here, and so does strategy code. Images in replies to your phone are uploaded."
 
 msgid "ph.cf.ok"
 msgstr "Turn on"
