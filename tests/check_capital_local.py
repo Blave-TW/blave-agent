@@ -214,9 +214,12 @@ capl._LOCAL["secrets"] = capl_secrets
 # 5b. 全部平倉 on this computer: the flatten child gets 群益's line too, and each vault reads its own
 class _FlatProc:
     def __init__(self, argv, **kw):
-        self.argv, self.kw, self.written = argv, kw, b""
+        self.argv, self.kw, self.written, self.pid = argv, kw, b"", 4242
         self.stdin = self
         _flat.append(self)
+
+    def poll(self):
+        return None
 
     def write(self, b):
         self.written += b
