@@ -3174,6 +3174,91 @@
       }
     },
     {
+      "name": "paired_notice_on",
+      "desc": "開關開著:enabled 帶 paired_notice → 畫面拿到 notice;一出現打 prompt/seen(device_id),之後 api 不再給、那一行留到關掉;關掉不打 api",
+      "requests": [
+        {
+          "endpoint": "enabled",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "on": true,
+              "prompt": null,
+              "paired_notice": null
+            }
+          }
+        },
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "enabled",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "on": true,
+              "prompt": null,
+              "paired_notice": {
+                "device_id": "devresp0002",
+                "label": "Pixel 9",
+                "platform": "android",
+                "paired_at": 1730530000,
+                "more": 1
+              }
+            }
+          }
+        },
+        {
+          "endpoint": "prompt/seen",
+          "body": {
+            "device_id": "devresp0002"
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "ok": true
+            }
+          }
+        },
+        {
+          "endpoint": "enabled",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "on": true,
+              "prompt": null,
+              "paired_notice": null
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
       "name": "D_started_lost",
       "desc": "探針 D:started 一直沒回應 → 重送到期限 → start_aborted＋message_failed not_run(不知道 api 有沒有記到開跑,api 認其中一個),不跑",
       "requests": [

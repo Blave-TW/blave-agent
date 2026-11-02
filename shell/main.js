@@ -607,7 +607,7 @@ function relay() {
   return _relay;
 }
 // 給畫面的只有開關、同步進度與數字,沒有憑證、沒有對話內容
-const relayStateOut = (st) => ({ visible: st.visible, on: st.on, pending: st.pending, signedIn: st.signedIn, sync: st.sync, mobileTurns: st.mobileTurns, queued: st.queued, phoneSids: st.phoneSids, ask: st.ask });
+const relayStateOut = (st) => ({ visible: st.visible, on: st.on, pending: st.pending, signedIn: st.signedIn, sync: st.sync, mobileTurns: st.mobileTurns, queued: st.queued, phoneSids: st.phoneSids, ask: st.ask, notice: st.notice });
 /* 手機那一輪用電腦當下存的引擎與型號(手機 MVP 不給選):照設定頁選擇器存的那一組;沒有就交給 turnModelArgs 的預設 */
 function relayTurnArgs() {
   const kind = (loadConnection() || {}).kind, slot = (loadModelPrefs() || {})[kind] || {};
@@ -978,7 +978,7 @@ async function startOAuth(lang, forBlaveAi) {
   // 手機對話的開關跟著「誰同意的」走:外殼認不出新 token 是不是同一個帳號,換 token 前一律照登出關掉(刪伺服器那份)。
   // 不關的話 relay 的自動重打 enable 不用驗證就會替 B 帳號開起來,A 同意上傳的對話就流到 B,沒經過同意框。用舊憑證打 disable,所以要在 saveToken 之前
   await rotator().settle();
-  const phoneOff = relay().isOn() && relay().isVisible();   // 回給畫面:原本開著、而且設定 › 連結看得到那一區,才講「重新登入後關了」
+  const phoneOff = relay().isOn() && (relay().isVisible() || relay().authLost());   // 回給畫面:原本開著、而且設定 › 連結看得到那一區(或是 token 被撤、401 才收起來的),才講「重新登入後關了」
   try { await relay().signOut(); } catch (_) { /* 刪不成:伺服器那份跟著舊 token 藏起來,30 天無活動自己清 */ }
   // signOut 最長約 7 秒,這段可能有輪替落地:再等一次再讀舊值,讀舊值到 saveToken 之間不能有 await(否則撤到的是輪替前那顆)
   await rotator().settle();
@@ -4154,6 +4154,9 @@ app.whenReady().then(() => {
   handle("relay-phones", () => relay().phones(), { ok: false });
   handle("relay-ask-shown", (_e, id) => relay().askShown(typeof id === "string" ? id : ""), false);
   handle("relay-ask-no", (_e, id) => relay().askNo(typeof id === "string" ? id : ""), false);
+  // 開關開著、帳號下剛配對了手機的那一行(account-session-revoke §3.3):畫出來了、關掉
+  handle("relay-notice-shown", (_e, id) => relay().noticeShown(typeof id === "string" ? id : ""), false);
+  handle("relay-notice-close", (_e, id) => relay().noticeClose(typeof id === "string" ? id : ""), false);
   // 自帶 API 金鑰:只有 set(驗過才存)/ test(重驗已存的那把)/ remove,加一支不帶值的取消。**沒有任何一支把金鑰交回畫面**
   const llmDenied = { ok: false, code: "NOT_ALLOWED", status: 0 };
   handle("apikey-set", (_e, a) => llmKeySet(a && typeof a === "object" ? { preset: a.preset, key: a.key, connect: a.connect === true } : null), llmDenied);

@@ -34,7 +34,7 @@ function rig(o = {}) {
       else if (ep === RL.EP.promptSeen) resp = { status: 200, body: { ok: true } };
       else resp = { status: 200, body: {} };
     }
-    if (ep === RL.EP.ack || ep === RL.EP.report || ep === RL.EP.enable || ep === RL.EP.disable || ep === RL.EP.promptSeen || (ep === RL.EP.enabled && resp && (resp.status === 429 || (resp.body && "prompt" in resp.body)))) {
+    if (ep === RL.EP.ack || ep === RL.EP.report || ep === RL.EP.enable || ep === RL.EP.disable || ep === RL.EP.promptSeen || (ep === RL.EP.enabled && resp && (resp.status === 429 || (resp.body && ("prompt" in resp.body || "paired_notice" in resp.body))))) {
       const { token, app_secret, device, ...rest } = body;   // eslint-disable-line no-unused-vars
       log.push({ endpoint: name(ep), body: rest, response: resp });
     }
@@ -190,6 +190,12 @@ const CASES = [
   ["enabled_429", "/relay/enabled 每台限流 429 ERR429:總開關、開關、確認框都照上一次,不收起設定區、不停輪詢", {
     noOn: true, script: (ep, b, n) => (ep === RL.EP.enabled ? (n === 0 ? { status: 200, body: { enabled: true, on: false, prompt: { device_id: "devresp0001", label: "iPhone 15", platform: "ios", paired_at: 1730530000 } } } : { status: 429, body: { error_code: "ERR429", message: "Too many requests" } }) : undefined) },
   async (m) => { m.ask = m.r.state().ask; await m.r.tick(); }, (m) => m.r.state().visible === true && !!m.r.state().ask && m.r.state().ask.id === m.ask.id],
+  // 開關開著時剛配對的手機(account-session-revoke §3.3):paired_notice 在 /relay/enabled;一行提示出現打 prompt/seen(不帶 answer),關掉不打
+  ["paired_notice_on", "開關開著:enabled 帶 paired_notice → 畫面拿到 notice;一出現打 prompt/seen(device_id),之後 api 不再給、那一行留到關掉;關掉不打 api", {
+    script: (ep, b, n) => (ep === RL.EP.enabled ? { status: 200, body: { enabled: true, on: true, prompt: null, paired_notice: n === 1 ? { device_id: "devresp0002", label: "Pixel 9", platform: "android", paired_at: 1730530000, more: 1 } : null } } : undefined) },
+  async (m) => { await m.r.tick(); m.notice = m.r.state().notice; if (!m.notice || !m.r.noticeShown) return; m.r.noticeShown(m.notice.id); await wait(10); await m.r.tick(); m.kept = !!m.r.state().notice; m.r.noticeClose(m.notice.id); },
+  (m) => !!m.notice && m.notice.label === "Pixel 9" && m.notice.more === 1 && m.notice.at === 1730530000000 && m.kept && m.r.state().notice === null
+    && JSON.stringify(m.log.filter((x) => x.endpoint === "prompt/seen").map((x) => x.body)) === '[{"device_id":"devresp0002"}]'],
   ["D_started_lost", "探針 D:started 一直沒回應 → 重送到期限 → start_aborted＋message_failed not_run(不知道 api 有沒有記到開跑,api 認其中一個),不跑", {
     script: (ep, b) => (ep === RL.EP.report && b.chunks.some((c) => c.type === "started") ? { status: 0, body: null } : undefined) },
   async (m) => { m.feed([msg(S, "msgresp00017", "下單")]); await wait(2200); },

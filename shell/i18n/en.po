@@ -10128,6 +10128,14 @@ msgstr "Not Now"
 msgid "ph.ask.ok"
 msgstr "Turn On"
 
+# 開關開著、帳號下剛配對了手機:輸入框上方那一列(設計 account-security-mails §7.3),句尾接〔到網站撤銷〕ph.webRevoke、右上 ✕(set.close)
+msgid "ph.newPhone"
+msgstr "{name} was just paired and can now control this computer."
+
+# 同上,同時不只一支:只寫最新一支的名字,其他用支數(more ≥ 1);en 不分單複數
+msgid "ph.newPhones"
+msgstr "{name} and {more} more were just paired and can now control this computer."
+
 msgid "ph.meta"
 msgstr "Last used {used}"
 

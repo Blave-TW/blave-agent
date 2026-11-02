@@ -10156,6 +10156,14 @@ msgstr "不用"
 msgid "ph.ask.ok"
 msgstr "打開"
 
+# 開關開著、帳號下剛配對了手機:輸入框上方那一列(設計 account-security-mails §7.3),句尾接〔到網站撤銷〕ph.webRevoke、右上 ✕(set.close)
+msgid "ph.newPhone"
+msgstr "{name} 剛配對，現在能叫這台電腦做事。"
+
+# 同上,同時不只一支:只寫最新一支的名字,其他用支數(more ≥ 1);en 不分單複數
+msgid "ph.newPhones"
+msgstr "{name} 和另外 {more} 支手機剛配對，現在能叫這台電腦做事。"
+
 msgid "ph.meta"
 msgstr "最近使用 {used}"
 
