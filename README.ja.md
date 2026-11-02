@@ -15,7 +15,7 @@ Claude Code や Codex で、戦略を書き、バックテストして自動売�
 
 </div>
 
-> この文書は英語版 README の commit [`593f8b3`](https://github.com/Blave-TW/blave-agent/blob/593f8b3/README.md) から翻訳したものです。食い違いがある場合は英語の原文が優先されます。
+> この文書は英語版 README の commit [`3550319`](https://github.com/Blave-TW/blave-agent/blob/3550319/README.md) から翻訳したものです。食い違いがある場合は英語の原文が優先されます。
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 

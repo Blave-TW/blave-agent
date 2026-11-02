@@ -15,7 +15,7 @@
 
 </div>
 
-> 本文译自英文版 README 的 commit [`593f8b3`](https://github.com/Blave-TW/blave-agent/blob/593f8b3/README.md)。内容有出入时，以英文原文为准。
+> 本文译自英文版 README 的 commit [`3550319`](https://github.com/Blave-TW/blave-agent/blob/3550319/README.md)。内容有出入时，以英文原文为准。
 
 https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 

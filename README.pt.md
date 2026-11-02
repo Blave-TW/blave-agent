@@ -15,7 +15,7 @@ Crie, faça backtest e opere estratégias ao vivo com Claude Code ou Codex. Grá
 
 </div>
 
-> Traduzido do README em inglês no commit [`593f8b3`](https://github.com/Blave-TW/blave-agent/blob/593f8b3/README.md). Se algo divergir, vale o original em inglês.
+> Traduzido do README em inglês no commit [`3550319`](https://github.com/Blave-TW/blave-agent/blob/3550319/README.md). Se algo divergir, vale o original em inglês.
 
 https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
