@@ -69,7 +69,7 @@ if (!process.versions.electron) {
   const bin = GATE.bin(SHELL);
   if (!bin) { process.exit(red ? 1 : 0); }
   const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
-  process.exit(red || r.status ? 1 : 0);
+  process.exit(red || r.status !== 0 ? 1 : 0);   // 被訊號結束時 status 是 null,也算紅
 }
 
 // ---- 行為(真 Electron):連續 type 的 input 事件數——第一次逐字(N 次)、緊接著的一次填入(1 次)、8s 後回逐字

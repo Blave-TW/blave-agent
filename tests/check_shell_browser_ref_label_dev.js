@@ -18,7 +18,7 @@ if (!process.versions.electron) {
   const bin = GATE.bin(SHELL);
   if (!bin) { process.exit(red ? 1 : 0); }
   const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
-  process.exit(red || r.status ? 1 : 0);
+  process.exit(red || r.status !== 0 ? 1 : 0);   // 被訊號結束時 status 是 null,也算紅
 }
 
 // ---- 行為:把真的 mark() 丟進頁面跑(closed shadow 的 root 存在 host.__r,同 world 拿得到)

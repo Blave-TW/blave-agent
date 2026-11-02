@@ -385,7 +385,7 @@ async function main() {
   // ── ⑤ 真站(選跑)──
   if (process.env.BLAVE_LIVE_TV === "1") {
     const bin = GATE.bin(SHELL, "⑤");
-    if (bin) { const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit", env: { ...process.env, ELECTRON_ENABLE_LOGGING: "" } }); if (r.status) red++; }
+    if (bin) { const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit", env: { ...process.env, ELECTRON_ENABLE_LOGGING: "" } }); if (r.status !== 0) red++; }   // 被訊號結束時 status 是 null,也算紅
   } else console.log("SKIP  真站那段(BLAVE_LIVE_TV=1 才跑:離屏視窗、匿名、會短暫用到剪貼簿)");
   console.log(red ? "\n" + red + " FAILED" : "\nALL PASS");
 }

@@ -320,7 +320,7 @@ if (!process.versions.electron) {
   const bin = GATE.bin(SHELL, "③");
   if (!bin) { console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0); }
   const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit", env: { ...process.env, ELECTRON_ENABLE_LOGGING: "" } });
-  process.exit(red || r.status ? 1 : 0);
+  process.exit(red || r.status !== 0 ? 1 : 0);   // 被訊號結束時 status 是 null,也算紅
 }
 
 const { app, BrowserWindow } = require("electron");

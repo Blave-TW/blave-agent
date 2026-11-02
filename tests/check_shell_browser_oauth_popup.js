@@ -82,7 +82,7 @@ if (!process.versions.electron) {
     const bin = GATE.bin(SHELL);
     if (!bin) { process.exit(red ? 1 : 0); }
     const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
-    process.exit(red || r.status ? 1 : 0);
+    process.exit(red || r.status !== 0 ? 1 : 0);   // 被訊號結束時 status 是 null,也算紅
   })();
   return;
 }
@@ -185,6 +185,11 @@ app.whenReady().then(async () => {
   const v = win.contentView.children.find((c) => c.webContents && c.webContents.getURL().includes("site.test"));
   // 模擬 agent 窗口:直接標 agentActive 做不到(內部 Map),改走「沒接手+沒 agent 窗」=deny 已驗;
   // agent 分支的擋單由靜態斷言釘(by === "user" 才進 oauth)
+  // 先關分頁、等 webContents 真的銷毀才 app.exit:還在載的分頁不能留到結束途中才載入失敗
+  const pages = electron.webContents.getAllWebContents().filter((x) => x !== win.webContents && !x.isDestroyed());
+  B._oauth.close(); for (const tab of B._tabs.all()) B._tabs.close(tab.id);
+  await Promise.race([Promise.all(pages.map((x) => (x.isDestroyed() ? 0 : new Promise((r) => x.once("destroyed", r))))), sleep(5000)]);
+  ok("收尾:分頁的 webContents 都關掉了", pages.every((x) => x.isDestroyed()));
   console.log(red ? `\n${red} FAILED` : "\nALL PASS");
   app.exit(red ? 1 : 0);
 });

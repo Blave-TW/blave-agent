@@ -28,6 +28,9 @@ if (!process.versions.electron) {
   const doc = (state, ps) => ({ readyState: state, body: {}, querySelectorAll: () => ps });
   t("readable():主文件還在解析 → 0;短字(導覽、按鈕)不算;40 字以上的段落才算", run(doc("loading", [el(500)])) === 0 && run(doc("interactive", Array.from({ length: 30 }, () => el(20)))) === 0 && run(doc("interactive", [el(300), el(39), el(150)])) === 450 && run({ readyState: "complete", body: null, querySelectorAll: () => [] }) === 0);
   t("browser_read 遇到還在載的頁自己短等", /if \(t\.status === "loading"\) await waitLoaded\(t, READ_WAIT_MS\);/.test(cut(idx, "async function doRead(")));
+  // 關機途中同步 close 自己事件裡的 webContents 會 SIGTRAP(Electron 結束時 close 同步刪、Chromium 還在通知觀察者):釘住延到下一輪
+  const dv = cut(idx, "function destroyView(");
+  t("分頁的 webContents 延到下一輪才 close、先查還沒銷毀;沒有同步 close", /setImmediate\(\(\) => \{ try \{ if \(!v\.wc\.isDestroyed\(\)\) v\.wc\.close\(\); \}/.test(dv) && !/^\s*try \{ v\.wc\.close\(\)/m.test(dv), dv);
   const md = fs.readFileSync(path.join(__dirname, "..", "references", "browser.md"), "utf8"), desc = require(path.join(SHELL, "browser", "tools.js")).TOOLS.find((x) => x.name === "browser_wait").description;
   t("規則與工具說明跟著改:讀得到就算好、先讀好的、browser_read 自己會等;不再叫它 still_waiting 就再等", /\*\*A page is ready as soon as its text is there\*\*/.test(md) && /`still_loading`/.test(md) && /wait once more at most/.test(md)
     && /ready as soon as its text is there/.test(desc) && /still_loading/.test(desc) && !/If it returns still_waiting, call it again/.test(desc));
@@ -95,12 +98,14 @@ if (!process.versions.electron) {
     w = await timed("browser_wait", { tab: o.tab, timeout_s: 3 });
     t("e 一頁都還沒好:照舊等到期限、回 still_waiting", w.r.ok === false && w.r.error === "still_waiting" && w.ms >= 2500, w);
     BT.end(B);
+    // 先關分頁、等 webContents 真的銷毀,才斷掉掛著的連線:不然還在載的頁會在 app.exit 途中才載入失敗
+    const pages = electron.webContents.getAllWebContents().filter((x) => x !== win.webContents && !x.isDestroyed());
+    for (const tab of B._tabs.all()) B._tabs.close(tab.id);
+    await Promise.race([Promise.all(pages.map((x) => (x.isDestroyed() ? 0 : new Promise((r) => x.once("destroyed", r))))), new Promise((r) => setTimeout(r, 5000))]);
+    t("收尾:分頁的 webContents 都關掉了", pages.every((x) => x.isDestroyed()), pages.filter((x) => !x.isDestroyed()).length);
     hung.forEach((r) => { try { r.destroy(); } catch (_) { /* 已斷 */ } });
     srv.close(); try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { /* userData 還鎖著 */ }
     console.log(red ? `\n${red} FAILED` : "\nALL PASS(②)");
-    // 斷線、代理都還在收尾就 app.exit,Chromium 偶爾在關機時 SIGTRAP(斷言全過、結束碼卻是 null):先關視窗等它收完
-    await ses.closeAllConnections().catch(() => {}); await ses.setProxy({ mode: "direct" }).catch(() => {});
-    win.destroy(); await new Promise((r) => setTimeout(r, 500));
     app.exit(red ? 1 : 0);
   }).catch((e) => { console.log("FAIL  " + (e && e.stack) + "\n      last: " + JSON.stringify(last).slice(0, 500)); app.exit(1); });
 }

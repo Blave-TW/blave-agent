@@ -206,6 +206,7 @@ function createBrowser(o) {
     // 空文件(下面的 priming)的事件不算這一格的載入:只認網址(空文件的 did-stop-loading 可能在 priming 收掉之後才到),分頁物件的其他事件照常
     const priming = (u) => u === "about:blank" || (!!v.priming && !u);
     wc.setWindowOpenHandler(({ url }) => {
+      if (views.get(t.id) !== v) return { action: "deny" };   // 這一格已經關了(close 延到下一輪):不開任何東西
       // 稽核 S7:頁面自己開的 popup(不在 agent 動作窗口內、也不是用戶在操作)一律不開,不能拿來佔滿 8 格
       const by = agentActive(wc.id) ? "agent" : t.userControl ? "user" : null;
       // OAuth 例外(Wei 實測 Google 登入沒反應):白名單身分提供者放行成受控視窗(oauth.js,
@@ -323,7 +324,9 @@ function createBrowser(o) {
     if (expanded === t.id) expanded = null;
     v.page.detach();
     try { if (win && !win.isDestroyed()) win.contentView.removeChildView(v.view); } catch (_) { /* 已移除 */ }
-    try { v.wc.close(); } catch (_) { /* 已關 */ }
+    // close 延到下一輪:這裡常是從這一格自己的事件裡被叫到(did-fail-load → tabs.failed)。app 正在結束時 Electron 的 close
+    // 會同步刪掉 webContents,Chromium 還在通知觀察者 → CHECK 失敗、整個 app SIGTRAP
+    setImmediate(() => { try { if (!v.wc.isDestroyed()) v.wc.close(); } catch (_) { /* 已關 */ } });
     if (t.status === "discarded") emit("page_discarded", { id: t.id, snapshot_id: t.snapshotId || null });
   }
 
@@ -1386,7 +1389,10 @@ function createBrowser(o) {
     prefs: () => ({ enabled: !!prefs.enabled }),
     setPrefs(p) { if (p && typeof p.enabled === "boolean") prefs.enabled = p.enabled; if (o.savePrefs) o.savePrefs(prefs); return { enabled: prefs.enabled }; },
     async clearData() {
+      const wcs = [...views.values()].map((v) => v.wc);
       for (const t of tabs.all()) tabs.close(t.id);
+      // 分頁的 close 延到下一輪:等頁面真的銷毀才清,不然清到一半頁面還能寫 cookie / storage
+      await Promise.race([Promise.all(wcs.map((w) => (w.isDestroyed() ? 0 : new Promise((r) => w.once("destroyed", r))))), sleep(3000)]);
       oauth.close();   // 清瀏覽資料連登入視窗一起收(它的 cookie 就在這個 partition)
       await session().clearStorageData(); await session().clearCache(); snaps.clearAll();
       favCache.clear(); favTried.clear();   // 看過哪些網站也是瀏覽資料
