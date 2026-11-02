@@ -753,6 +753,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     balLast = null; }
   { // ── 帳號與方案:最上面那一組、登出的確認框、訊息格(真的跑 planPaint / acctOutAsk / acctPaintAcct)──
     const boxes = []; const confirmBox = (o) => { boxes.push(o); }; let oauthPending = false; const acctSignOut = () => {};
+    let PH = { visible: true, signedIn: true, on: false }; const phShown = () => !!(PH && PH.visible === true);
     eval(fnSrc("acctOutAsk")); eval(fnSrc("acctPaintAcct"));
     const walkP = (n, out = []) => { (n.children || []).forEach((c) => { if (c && typeof c === "object") { out.push(c); walkP(c, out); } }); return out; };
     const page = () => { const all = walkP(dom["set-plan-main"]), sc = all.find((n) => n.className === "plan-scroll"), id = all.find((n) => n.className === "plan-id"), rows = id ? id.children.filter((c) => c.className === "plan-bal") : [];
@@ -806,6 +807,9 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     const press = (o) => { boxes.length = 0; cur = o.cur; acct = o.acct; hasToken = true; planPaint(); const b = page().who.btn; b._click(); return boxes[0]; };
     const own = press({ cur: "claude", acct: { plan: { state: "none" } } });
     ok("按「登出」:出確認框(標題、確認鈕、開它的那顆鈕);用自己的 CLI、沒有主機 → 兩句", !!own && own.title === "acct.cf.title" && own.ok === "acct.cf.ok" && own.opener === page().who.btn && own.lines.join() === "acct.out.1,acct.out.2" && typeof own.onOk === "function");
+    PH = { visible: true, signedIn: true, on: true }; const phOn = press({ cur: "claude", acct: { plan: { state: "running" } } }).lines.join();
+    PH = { visible: false, signedIn: true, on: true }; const phHidden = press({ cur: "claude", acct: { plan: { state: "none" } } }).lines.join(); PH = { visible: true, signedIn: true, on: false };
+    ok("手機對話開著:多一句「手機對話會關閉,伺服器上的對話會刪除」,排在主機那句前面;總開關關著(區塊不出)不講", phOn === "acct.out.1,acct.out.6,acct.out.4,acct.out.2" && phHidden === "acct.out.1,acct.out.2", [phOn, phHidden]);
     ok("用 Blave AI:多一句「登出會回到選 AI 的畫面」,排第一", press({ cur: "blave", acct: { plan: { state: "none" } } }).lines.join() === "acct.out.3,acct.out.1,acct.out.2");
     ok("帳號有主機(啟動中 / 運行中 / 已停機):多一句「登出不會停用雲端主機,主機費照扣」;沒有主機不出", ["starting", "running", "stopped"].every((st) => press({ cur: "claude", acct: { plan: { state: st } } }).lines.join() === "acct.out.1,acct.out.4,acct.out.2")
       && press({ cur: "blave", acct: { plan: { state: "running" } } }).lines.join() === "acct.out.3,acct.out.1,acct.out.4,acct.out.2");

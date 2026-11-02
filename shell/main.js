@@ -975,14 +975,18 @@ async function startOAuth(lang, forBlaveAi) {
   // 重新登入(方案頁的「重新登入」、登入失效後的原地登入)時手上還有上一顆 token:新的換到手之後把舊的
   // 撤銷掉——不然伺服器上那顆連同它的資料 key 會一直活著,「已授權的電腦」也會多一列同名的裝置。
   // best-effort:撤不掉不影響這次登入。
-  await rotator().settle();
-  const prevToken = loadToken();
   // 手機對話的開關跟著「誰同意的」走:外殼認不出新 token 是不是同一個帳號,換 token 前一律照登出關掉(刪伺服器那份、清待驗)。
   // 不關的話 B 帳號按〔重新驗證〕就會把 A 同意上傳的對話傳到 B,沒經過同意框。用舊憑證打 disable,所以要在 saveToken 之前
+  await rotator().settle();
+  const phoneOff = relay().isOn();   // 回給畫面:原本開著才講「重新登入後關了」
   try { await relay().signOut(); } catch (_) { /* 刪不成:伺服器那份跟著舊 token 藏起來,30 天無活動自己清 */ }
+  // signOut 最長約 7 秒,這段可能有輪替落地:再等一次再讀舊值,讀舊值到 saveToken 之間不能有 await(否則撤到的是輪替前那顆)
+  await rotator().settle();
+  const prevToken = loadToken();
   if (!saveToken(r.body.access_token)) {
     throw new Error("KEYCHAIN_UNAVAILABLE");
   }
+  relay().tick().catch(() => {});   // 平台旗標登入前問到的是「沒有」:現在問一次,設定 › 連結不用等下一輪 2 分鐘
   rotator().reset();   // 上一個帳號 / 上一顆的寬限舊值不能拿來補救這一顆
   rotator().noteLogin(r.body.access_token, r.body.expires_in);
   if (prevToken && prevToken !== r.body.access_token) {
@@ -1010,7 +1014,7 @@ async function startOAuth(lang, forBlaveAi) {
   const s = forBlaveAi ? await Promise.race([acctNow, new Promise((ok) => { timer = setTimeout(() => ok(null), LOGIN_ACCT_WAIT_MS); })]) : null;
   clearTimeout(timer);
   if (!HEADLESS && loginFocus(forBlaveAi, s) === "steal") app.focus({ steal: true });
-  return { ok: true };
+  return { ok: true, phoneOff };
 }
 
 // ── 第 4 步:引擎 ─────────────────────────────────────────────
