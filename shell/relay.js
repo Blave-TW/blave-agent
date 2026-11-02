@@ -151,6 +151,7 @@ function createRelay(opts) {
   let pending = [];          // 待送的 chunk(每段帶 session_id),照收到的順序
   let batchTimer = null, reporting = null, retryTimer = null, flushBackoff = BACKOFF_MIN_MS, pingTimer = null;
   let inflight = null;       // 在路上那一批:{ sids, p }(認領只等自己那條的)
+  let acctGen = 0, signingOut = false;   // 登出換一次世代:之前在路上的回報、/relay/enabled 回來後都當上一個帳號的丟掉
   const tombstones = new Set();
   const sync = { running: false, done: 0, total: 0, error: false, lastIds: null, again: new Set() };
 
@@ -220,13 +221,13 @@ function createRelay(opts) {
   }
 
   async function refreshFlag() {
-    const tok = (creds() || {}).token;
+    const tok = (creds() || {}).token, gen = acctGen;
     const r = await call(EP.enabled);
     if (r.noCreds) { setFlag(false); return false; }
     if (r.status === 429) return flag;   // 每台限流:總開關、開關、確認框都照上一次,下一輪再問
     if (r.status !== 200 || !r.body) { setFlag(false); return false; }
     setFlag(r.body.enabled === true);
-    if (tok && tok === (creds() || {}).token) askFrom(r.body);   // 路上換了帳號:這份 prompt 是上一個帳號的
+    if (tok && tok === (creds() || {}).token && gen === acctGen && !signingOut) askFrom(r.body);   // 路上換了帳號或登出中:這份 prompt 是上一個帳號的
     if (flag && r.body.on === false) await reenable();
     return flag;
   }
@@ -245,6 +246,7 @@ function createRelay(opts) {
     if (reporting) return reporting.then(() => (pending.length ? flush() : undefined));
     if (batchTimer) { clearTimeout(batchTimer); batchTimer = null; }
     if (!pending.length && !outboxRead().length) return Promise.resolve();
+    const gen = acctGen;
     reporting = (async () => {
       try {
         while (pending.length) {
@@ -259,6 +261,7 @@ function createRelay(opts) {
           inflight = { sids: new Set(take.map((c) => c.session_id)), p };
           const r = await p;
           inflight = null;
+          if (gen !== acctGen) break;
           if (r.status === 200 && r.body) { flushBackoff = BACKOFF_MIN_MS; reportAnswer(r.body); continue; }
           // 斷線、限流、部署中的 5xx:放回最前面、過一下再送(同 claimStart)。done／start_aborted 丟了,api 那條會一直停在回覆中
           if ((r.status === 0 || r.status === 429 || r.status >= 500) && !r.noCreds && !quitting) {
@@ -644,6 +647,7 @@ function createRelay(opts) {
     let batch = [], nTurns = 0, nBytes = 0;
     const send = async () => {
       if (!batch.length) return true;
+      if (!live()) return false;   // 同一條很長、分好幾批時:登出後別帶下一個帳號的 token 接著傳
       const r = await call(EP.sync, { sessions: batch });
       if (r.status !== 200) { log("relay: sync not sent (" + (r.status || "offline") + ")"); return false; }
       const res = (r.body && r.body.sessions) || {};
@@ -760,12 +764,25 @@ function createRelay(opts) {
     const s = load();
     if (ask) { ask = null; changed(); }   // 換帳號不帶著上一個帳號的配對
     if (s.seenOut.length) { s.seenOut = []; save(); }   // 沒送到的 seen 是上一個帳號的,換了憑證送也是 404
-    if (!s.on && !s.pendingDisable) return;
-    stopPoll(); dropMobile();
-    await withTimeout(flush(), QUIT_TIMEOUT_MS);
-    await call(EP.disable, null, QUIT_TIMEOUT_MS);
-    s.on = false; s.pendingDisable = false; s.synced = false; save(); outboxWrite([]);
-    sync.lastIds = null; seenToken = null; lastToken = null; changed();
+    if (!s.on && !s.pendingDisable) { forgetReports(); return; }
+    // 先在記憶體關掉:等 flush／disable 這幾秒裡 tick 不會重開輪詢、409 不會補打 enable
+    s.on = false; stopPoll(); dropMobile();
+    signingOut = true;
+    try {
+      await withTimeout(flush(), QUIT_TIMEOUT_MS);
+      await call(EP.disable, null, QUIT_TIMEOUT_MS);
+    } finally { signingOut = false; }
+    s.pendingDisable = false; s.synced = false; save(); outboxWrite([]);
+    sync.lastIds = null; seenToken = null; lastToken = null; ask = null;
+    forgetReports(); changed();
+  }
+  /* 上一個帳號沒送完的回報整批丟掉:call 送出當下才讀憑證,留著會帶下一個帳號的 token 送出去 */
+  function forgetReports() {
+    acctGen++;
+    pending = [];
+    if (batchTimer) { clearTimeout(batchTimer); batchTimer = null; }
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    flushBackoff = BACKOFF_MIN_MS;
   }
   /* app 結束:排隊的那幾句回 not_run(最多等 3 秒),之後不再收 */
   async function quit() {
@@ -859,7 +876,7 @@ function createRelay(opts) {
   }
   /* 主視窗取得焦點:開關關著、已登入才加打,同一台 20 秒內只一次 */
   function focusTick() {
-    if (stopped || load().on || !creds() || clock() - focusAt < FOCUS_TICK_GAP_MS) return Promise.resolve(false);
+    if (stopped || signingOut || load().on || !creds() || clock() - focusAt < FOCUS_TICK_GAP_MS) return Promise.resolve(false);
     focusAt = clock();
     return tick().then(() => true);
   }

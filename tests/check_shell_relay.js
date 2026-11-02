@@ -8,7 +8,7 @@
 //      排隊叫出的那句先回報 started、api 回 ok 才開跑;401／409 停掉手機的回合、清空排隊;結束 app 排隊的回 not_run
 //   5. 刪除:跑中拒刪;電腦上刪的先落地 relay-outbox.jsonl、送成才拿掉
 //   6. 上傳:近 30 天、≤ 100 則一批、32 KB 截斷、時間是 ms、手機那句 origin app＋message_id、照 sync_state 補缺的、墓碑不傳、先送 done 再同步
-//   7. 關掉刪伺服器那份、沒網路記待刪;poll reason off → 停、藏起來;reason not_enabled／409 → 重打 enable
+//   7. 關掉刪伺服器那份、沒網路記待刪;poll reason off → 停、藏起來;reason not_enabled／409 → 重打 enable;登出收尾丟掉沒送完的回報、等 disable 時不重開輪詢、不撿回上一個帳號的配對確認框、同步到一半不換 token 接著傳
 //   8. 狀態檔只有布林;給畫面的沒有憑證;圖只送手機那一輪;帳號下的手機清單(唯讀,只回四個欄位)
 //   9. main.js 接線
 //  10. 打開只有同意框(mobile-pairing-v2-api-2026-11-02 §2):enable 不帶驗證碼、200 就開;配對確認框(§4):/relay/enabled 的 prompt、本機只問一次、〔不用〕打 prompt/seen
@@ -45,7 +45,7 @@ function rig(o = {}) {
     return { status: 200, body: { ok: true } };
   };
   const r = RL.createRelay({
-    dir, stateDir, apiBase: API, post, getCreds: () => ({ token: TOKEN, appSecret: SECRET }), installId: () => "11111111-2222-4333-8444-555555555555", ver: "0.1.37", engineKind: () => o.kind,
+    dir, stateDir, apiBase: API, post, getCreds: o.getCreds || (() => ({ token: TOKEN, appSecret: SECRET })), installId: () => "11111111-2222-4333-8444-555555555555", ver: "0.1.37", engineKind: () => o.kind,
     startTurn: async (payload, origin) => { started.push([payload, origin]); if (o.startResult) return o.startResult(payload); busy.add(payload.sessionId); return { started: true }; },
     stopTurn: (sid) => { stopped.push(sid); return true; }, turnBusy: (sid) => busy.has(sid), isRestarting: () => restarting,
     sessions: {
@@ -359,6 +359,61 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     await m.r.signOut();
     ok("7 登出:撤銷前刪伺服器那份;之後要重新確認才開", m.of(RL.EP.disable).length === 1 && m.r.isOn() === false);
     ok("8 給畫面的狀態沒有憑證", !JSON.stringify(m.r.state()).includes(TOKEN) && !JSON.stringify(m.r.state()).includes(SECRET));
+    await m.end(); }
+  // 登出時還在路上／沒送完的回報:收尾整批丟掉,換成下一個帳號後不帶新 token 送(release = 在路上那批回來的結果)
+  const signOutLeak = async (release, waitMs) => {
+    let creds = { token: "tok-acct-A", appSecret: "sec-A" }, open;
+    const gate = new Promise((res) => { open = res; });
+    const m = rig({ getCreds: () => creds, sessions: { "desktop-l0000001": { last: 1, rows: [row(1, "user", "x")] } } });
+    await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.feed([msg("desktop-l0000001", "msg0000000l")]); await wait(30);
+    m.resp[RL.EP.report] = () => gate;
+    for (let i = 0; i < 120; i++) m.r.onTurn("desktop-l0000001", "turn-event", { type: "text", text: "t" + i });
+    await wait(RL.BATCH_MS + 50);
+    await m.r.signOut();
+    creds = { token: "tok-acct-B", appSecret: "sec-B" }; delete m.resp[RL.EP.report];
+    open(release); await wait(waitMs);
+    const leaked = m.calls.filter((c) => c[1].token === "tok-acct-B").map((c) => c[0]);
+    await m.end();
+    return leaked;
+  };
+  { const [ok200, off] = await Promise.all([signOutLeak({ status: 200, body: { results: [], interrupt: [], cancel: [] } }, 100), signOutLeak({ status: 0, body: null }, 2400)]);
+    ok("7 登出:flush 逾時後在路上那批送成,剩下的不換成下一個帳號的 token 接著送", ok200.length === 0, ok200);
+    ok("7 登出:在路上那批斷線回來,不放回、不排重送(不帶下一個帳號的 token)", off.length === 0, off); }
+  { const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20);
+    let open; m.resp[RL.EP.disable] = () => new Promise((res) => { open = res; });
+    const out = m.r.signOut(); await wait(10);
+    const n = m.of(RL.EP.poll).length; await m.r.tick(); await wait(30);
+    ok("7 登出等 disable 的那幾秒:tick 不重開輪詢", m.of(RL.EP.poll).length === n, [n, m.of(RL.EP.poll).length]);
+    open({ status: 200, body: {} }); await out; await wait(20);
+    ok("7 登出收尾:不再輪詢", m.of(RL.EP.poll).length === n);
+    await m.end(); }
+  // 登出那幾秒、與登出前就送出的 /relay/enabled:上一個帳號的配對確認框不撿回來
+  const promptA = { enabled: true, on: true, prompt: { device_id: "phoneAAAA1111", label: "A's iPhone", platform: "ios", paired_at: Math.floor(Date.now() / 1000) } };
+  { const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.resp[RL.EP.enabled] = { status: 200, body: promptA };
+    let open; m.resp[RL.EP.disable] = () => new Promise((res) => { open = res; });
+    const out = m.r.signOut(); await wait(10);
+    await m.r.focusTick(); await wait(10);
+    open({ status: 200, body: {} }); await out;
+    ok("7 登出等 disable 時視窗取得焦點:上一個帳號的配對確認框不撿回來", m.r.state().ask === null, m.r.state().ask);
+    await m.end(); }
+  { const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20);
+    let open; m.resp[RL.EP.enabled] = () => new Promise((res) => { open = res; });
+    const t = m.r.tick(); await wait(10);
+    await m.r.signOut();
+    open({ status: 200, body: promptA }); await t;
+    ok("7 登出前送出的 /relay/enabled 登出後才回來(還是同一顆 token):配對確認框不撿回來", m.r.state().ask === null, m.r.state().ask);
+    await m.end(); }
+  // 單一對話超過一批(> 100 則):兩批中間那 1 秒登出並換帳號,下一批不帶下一個帳號的 token 送
+  { let creds = { token: "tok-acct-A", appSecret: "sec-A" };
+    const rows = Array.from({ length: 250 }, (_, i) => row(i + 1, i % 2 ? "assistant" : "user", "x" + i));
+    const m = rig({ getCreds: () => creds, sessions: { "desktop-s0000001": { last: Date.now() / 1000, rows } } });
+    await m.r.tick(); await m.r.setOn(true); await wait(30);
+    await m.r.signOut(); creds = { token: "tok-acct-B", appSecret: "sec-B" };
+    await wait(1500);
+    const leaked = m.calls.filter((c) => c[1].token === "tok-acct-B").map((c) => c[0]);
+    ok("7 登出:同步到一半(同一條分好幾批)不換成下一個帳號的 token 接著傳", m.of(RL.EP.sync).length >= 1 && leaked.length === 0, [m.of(RL.EP.sync).length, leaked]);
     await m.end(); }
 
   // ── 8 圖、手機清單 ──
