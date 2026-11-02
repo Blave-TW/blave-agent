@@ -231,7 +231,7 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
   const off = await run([{ ok: true, state: { on: false } }], async (S) => { await S.phSet(false); });
   ok("關:不經驗證碼", off.boxes.length === 0 && off.calls[0][0] === false);
   ok("〔開啟〕帶 stay 與 onCancel;主鈕圓環寫法照 #cx-go;CSS", /ok: t\("ph\.cf\.ok"\), stay: true, opener, onOk: \(\) => phSet\(true, null, opener\), onCancel: phKcDrop/.test(app) && /sp\.className = "spin16"[^\n]*b\.append\(sp, " "\)/.test(fnOf(app, "delOkBusy")) && /#del-ok \.spin16/.test(css));
-  ok(".sw:disabled 不用 opacity,照 canon › Switch › Disabled", !/\.sw:disabled \{[^}]*opacity/.test(css) && /\.sw:disabled \{ cursor: not-allowed; background: var\(--color-greyLightMedium\); \}/.test(css) && /\[data-theme="dark"\] \.sw\.off:disabled \{ background: var\(--color-darkCard\); box-shadow: inset 0 0 0 1px var\(--color-darkBorder\); \}/.test(css));
+  ok(".sw:disabled 不用 opacity,照 canon › Switch › Disabled", !/\.sw:disabled \{[^}]*opacity/.test(css) && /\.sw:disabled \{ cursor: not-allowed; background: var\(--color-greyLightMedium\); \}/.test(css) && /\[data-theme="dark"\] \.sw\.off:disabled \{ background: var\(--field-disabled-bg\); box-shadow: inset 0 0 0 1px var\(--border-hairline\); \}/.test(css));
   ok("埋點四個都在白名單、名字 ≤16 字", ["phone_vfy_shown", "phone_vfy_ok", "phone_vfy_locked", "phone_reverify"].every((n) => n.length <= 16 && fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8").includes('"' + n + '"')));
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   process.exit(red ? 1 : 0);

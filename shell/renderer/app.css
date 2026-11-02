@@ -1026,9 +1026,10 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .sw.off::after { left: 3px; background: var(--color-pureWhite); }
 .sw:disabled { cursor: not-allowed; background: var(--color-greyLightMedium); }
 .sw.off:disabled { background: var(--color-greyLight); }
-[data-theme="dark"] .sw:disabled { background: var(--color-darkBorder); }
-[data-theme="dark"] .sw.off:disabled { background: var(--color-darkCard); box-shadow: inset 0 0 0 1px var(--color-darkBorder); }
-[data-theme="dark"] .sw:disabled::after { background: var(--color-greyDark); }
+/* 深色照設計稽核的值(darkBorder／darkCard／greyDark),經語意角色取,renderer 不直接引 --color-dark* */
+[data-theme="dark"] .sw:disabled { background: var(--surface-muted); }
+[data-theme="dark"] .sw.off:disabled { background: var(--field-disabled-bg); box-shadow: inset 0 0 0 1px var(--border-hairline); }
+[data-theme="dark"] .sw:disabled::after { background: var(--ink-disabled); }
 .priv-lead { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); }
 /* 在手機 App 上查看這台電腦的部位:用間距跟下面的「傳送使用資料」分組,不加線;電腦名稱用等寬字、不斷行 */
 .mv { margin-bottom: var(--space-24); }
