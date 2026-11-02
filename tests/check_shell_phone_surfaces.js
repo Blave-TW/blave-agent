@@ -78,8 +78,8 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
 {
   const names = ["phDate", "phFill", "phRetryInto", "phRow", "phGroup", "phStatus", "phBlock"];
   const consts = [lineOf(app, /const phShown = [^\n]*;/), lineOf(app, /const phName = [^\n]*;/), lineOf(app, /const phWebUrl = [^\n]*;/)];
-  const opened = [];
-  const env = { document: doc, t, LANG: "zh", $: () => null, setCat() {}, srSay() {}, libExtIcon: () => mk("svg", "ic"), window: { blave: { openExternal: (u) => opened.push(u) } }, phToggle() {}, phPhonesReload() {}, phRetry() {} };
+  const opened = [], tracked3 = [];
+  const env = { document: doc, t, LANG: "zh", $: () => null, setCat() {}, srSay() {}, libExtIcon: () => mk("svg", "ic"), trackFeature: (n) => tracked3.push(n), window: { blave: { openExternal: (u) => opened.push(u) } }, phToggle() {}, phPhonesReload() {}, phRetry() {} };
   const S = new Function("env", "with (env) { var PH, PH_BUSY = false, PH_ERR = '', PH_PHONES = null, PH_QUIET = false;\n" + consts.join("\n") + "\n" + names.map((n) => fnOf(app, n)).join("\n")
     + "\nreturn { set: (o) => { for (const k in o) eval(k + ' = o[k]'); }, " + names.join(", ") + " }; }")(env);
   const now = new Date(2026, 9, 31, 13, 5).getTime();
@@ -108,7 +108,8 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
   ok("〔到網站撤銷〕會開瀏覽器:字後面接 ↗(libExtIcon,同 rpHelpLink)、讀屏名稱帶「在瀏覽器開啟」;熱區補到 44 高(同〔檢查更新〕)", webB.children.at(-1).classSet.has("ic") && webB.getAttribute("aria-label") === "ph.webRevoke.aria" && webB.classSet.has("ph-web")
     && /\.ph-web::before \{ inset: -15px -4px; \}/.test(css) && /#set-up-btn::before \{ inset: -15px -4px; \}/.test(css));
   byId(grp, "ph-web").listeners.click();
-  ok("〔到網站撤銷〕外開網站 設定 › 已配對的手機(帶語言、from=desktop)", opened.at(-1) === "https://blave.org/landing/zh/setting?tab=phones&from=desktop", opened);
+  ok("〔到網站撤銷〕外開網站 設定 › 已配對的手機(帶語言、from=desktop),記 phone_web_revoke(只送名字)", opened.at(-1) === "https://blave.org/landing/zh/setting?tab=phones&from=desktop" && tracked3.join() === "phone_web_revoke"
+    && fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8").includes('"phone_ask_no", "phone_web_revoke"]'), [opened, tracked3]);
   ok("每支一列唯讀:機型(空的用 Android 手機)+ 最近使用(mono)/還沒用過;沒有開關、勾選、最近操作、撤銷", rowsEl.length === 2 && byCls(rowsEl[0], "ph-name")[0].textContent === "iPhone 15" && byCls(rowsEl[1], "ph-name")[0].textContent === "ph.android"
     && byCls(rowsEl[0], "ph-meta")[0].children.some((c) => c.className === "mono" && c.textContent === "10/30 13:00") && byCls(rowsEl[1], "ph-meta")[0].textContent === "ph.metaNever"
     && !walk(grp).some((x) => x.tagName === "input" || x.getAttribute("role") === "switch" || x.tagName === "img") && !walk(grp).some((x) => x.tagName === "button" && x.id !== "ph-web"));

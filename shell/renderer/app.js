@@ -905,7 +905,7 @@ function phGroup(mk) {
   // 沒有手機時不出:出口在 App,不在網站
   if (list && list.length) {
     const web = mk("button", "btn-quiet ph-web", t("ph.webRevoke")); web.type = "button"; web.id = "ph-web"; web.setAttribute("aria-label", t("ph.webRevoke.aria"));
-    web.append(libExtIcon()); web.addEventListener("click", () => window.blave.openExternal(phWebUrl())); head.append(web);
+    web.append(libExtIcon()); web.addEventListener("click", () => { trackFeature("phone_web_revoke"); window.blave.openExternal(phWebUrl()); }); head.append(web);
   }
   g.append(head);
   const msg = mk("p", "ph-msg"); msg.id = "ph-msg"; msg.setAttribute("role", "status");
