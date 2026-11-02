@@ -269,7 +269,7 @@ const EVENTS = {
     // 0.1.38 側欄策略資料夾(renderer/stratgroups.js、stratflags.js):操作成功才送,不帶資料夾名、策略名或哪個 emoji;
     // spec 原名 strat_folder_* 超過 prop VARCHAR(16),縮成 sfolder_*。api 白名單同順序,接在 0.1.37 的 app_link_android 之後
     "sfolder_create", "sfolder_auto", "sfolder_rename", "sfolder_emoji", "sfolder_reorder", "sfolder_delete", "sfolder_toggle", "sfolder_move",
-    // 0.1.39 手機 App 跟這台電腦對話(spec mobile-agent-chat-mvp §7;主行程 relay.js 送):phone_chat_on／off = 確認框按〔開啟〕／關掉;
+    // 0.1.39 手機 App 跟這台電腦對話(spec mobile-agent-chat-mvp §7;主行程 relay.js 送):phone_chat_on／off = 從關打開成功(0.1.42 起要過 email 驗證碼)／關掉;
     // phone_pair = 這台出的碼配對完成(出碼後清單多一支)、phone_revoke = 在這台撤銷一支手機;phone_turn = 手機那一輪真的開跑;
     // phone_turn_q = 同一條在跑、排在後面;phone_turn_stop = 電腦前的人停掉手機那一輪;phone_sync_ok／fail = 開啟後第一次上傳完成／失敗要按重試
     "phone_chat_on", "phone_chat_off", "phone_pair", "phone_revoke", "phone_turn", "phone_turn_q", "phone_turn_stop", "phone_sync_ok", "phone_sync_fail",
@@ -290,7 +290,9 @@ const EVENTS = {
     // 雲端開通頁(0.1.41;renderer/app.js cloudPricingGo、trade.js envPaintEmpty):「其他方案與月價」外開定價頁、讀不到雲端／查不到帳號時的〔重新查看〕
     "cloud_pricing", "cloud_recheck",
     // 雲端歡迎頁停機那一行的〔到自動下單〕(0.1.41;renderer/welcome.js wcAlert)
-    "wc_stopped_go"] },
+    "wc_stopped_go",
+    // 0.1.42 打開手機對話的 email 驗證(renderer/app.js phSet;同 api 順序,api 先上):關卡擋下、驗過、鎖住;設定 › 連結按〔重新驗證〕。名字要 ≤16 字
+    "phone_vfy_shown", "phone_vfy_ok", "phone_vfy_locked", "phone_reverify"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

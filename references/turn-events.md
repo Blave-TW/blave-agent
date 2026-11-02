@@ -20,6 +20,35 @@ runtime side ships first (api, then web / desktop, follow the same contract).
   may carry it briefly, exactly like `<suggest>`; `text_replace` (web / desktop) and the final
   Telegram edit replace it. `tests/check_await_marker.py` enumerates the sinks.
 
+## `error.code` on phone turns (desktop shell → api `/oauth/desktop/relay/report`)
+
+A desktop phone turn adds five codes to the runtime's fault codes. The api accepts them on relay
+namespaces only and drops any other code, so a client falls back to `message`. Clients key their
+own copy off the code; `message` stays the redacted engine text.
+
+| `code` | Meaning |
+|---|---|
+| `no_credit` | Blave AI turn, the engine reported `API Error: 402` |
+| `auth_invalid` | Blave AI turn, the engine reported `API Error: 401` or `403` |
+| `engine_signed_out` | The user's own Claude Code or Codex reported `401` / `403`, or Claude Code's `Not logged in`, `Login expired`, `OAuth token revoked`, `Invalid API key · Please run /login`, `Please run /login` (Codex: runtime code `needs_login`) |
+| `usage_limit` | Claude Code's `You've hit your … limit · resets …` |
+| `engine_missing` | The turn ended with `AGENT_BIN_MISSING` or `AGENT_BIN_DOWNLOADING` in its stderr tail |
+
+- These failures arrive from the engine as `text` followed by `error` (`not_started` / `partial`).
+  The shell classifies in its main process, because a phone turn often has no window open: it holds
+  back text that could still be one of the above, anchored at the start of a text segment (a segment
+  restarts at each running `tool`), and releases it as soon as it cannot match.
+- Matched text is never sent, not even followed by `text_replace`: the api's fold ignores
+  `text_replace`, so the text would stay in the history and the push excerpt.
+- The code replaces the code of the `error` that follows. If the turn has no `error`, the shell
+  sends one and no `done`.
+- These codes apply only to a turn that has not started a tool. Once a `tool` has started, the turn
+  may already have changed something (an order placed), so the `error` carries `partial` instead and
+  no reason code: `partial` wins over all five. The matched text is still not sent.
+- A bring-your-own API key turn (`apikey`) carries no code: its 401 / 402 are the provider's, not
+  Blave's balance.
+- `message_failed` is separate: that message never ran.
+
 ## `done` chunk (runtime → api `/report`; desktop stdout line)
 
 ```json

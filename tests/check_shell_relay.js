@@ -11,6 +11,9 @@
 //   7. 關掉刪伺服器那份、沒網路記待刪;poll reason off → 停、藏起來;reason not_enabled／409 → 重打 enable
 //   8. 狀態檔只有布林;給畫面的沒有憑證;圖只送手機那一輪;手機清單／勾選／撤銷／最近操作
 //   9. main.js 接線
+//  10. 打開過 email 驗證碼(mobile-chat-shell-enable-verify):setOn 寄碼／帶碼、碼對才寫 on;自動重打不寄信、被關卡擋下記 needVerify 不再打;重新驗證不丟待送的刪除;舊 api
+//  12. 換帳號(OAuth 重新登入):換 token 前照登出關掉,不帶著開關換身分
+//  11. 手機回合的 fault code(mobile-chat-shell-fault-code):主行程分類、暫扣、代碼放回合的 error;沒有視窗也一樣;跟 renderer 的 regex 同一份
 // 跑法:node tests/check_shell_relay.js
 const fs = require("fs"), os = require("os"), path = require("path");
 const SHELL = path.join(__dirname, "..", "shell");
@@ -42,7 +45,7 @@ function rig(o = {}) {
     return { status: 200, body: { ok: true } };
   };
   const r = RL.createRelay({
-    dir, stateDir, apiBase: API, post, getCreds: () => ({ token: TOKEN, appSecret: SECRET }), installId: () => "11111111-2222-4333-8444-555555555555", ver: "0.1.37",
+    dir, stateDir, apiBase: API, post, getCreds: () => ({ token: TOKEN, appSecret: SECRET }), installId: () => "11111111-2222-4333-8444-555555555555", ver: "0.1.37", engineKind: () => o.kind,
     startTurn: async (payload, origin) => { started.push([payload, origin]); if (o.startResult) return o.startResult(payload); busy.add(payload.sessionId); return { started: true }; },
     stopTurn: (sid) => { stopped.push(sid); return true; }, turnBusy: (sid) => busy.has(sid), isRestarting: () => restarting,
     sessions: {
@@ -474,6 +477,204 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     const back = Date.now(); down = false; await wait(4000);
     ok("8 直送 started 判 lost:退避歸零,補送的 message_failed 很快送到", mfAt && mfAt - back < 2000, mfAt ? mfAt - back : null);
     await m.end(); }
+
+  // ── 10 ──
+  const V403 = (extra) => ({ status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", ...extra } });
+  { const m = rig(); await m.r.tick();
+    const r = await m.r.setOn(true, { lang: "en" }); await wait(20);
+    const b = m.of(RL.EP.enable)[0];
+    ok("10 已開著(api 200):不進輸入碼;第一次請求帶 send_code、lang,沒有 enable_code", r.ok === true && m.r.isOn() === true && b.send_code === true && b.lang === "en" && !("enable_code" in b));
+    await m.end(); }
+  { const m = rig(); await m.r.tick();
+    const answers = [V403({ sent: true, reason: null }), { status: 403, body: { error_code: "RELAY_ENABLE_CODE_INVALID" } }];
+    m.resp[RL.EP.enable] = (b) => (answers.length ? answers.shift() : (b.enable_code === "123456" ? { status: 200, body: { enabled: true } } : { status: 500, body: {} }));
+    const r1 = await m.r.setOn(true, { lang: "zh" });
+    ok("10 寄碼:回關卡與明細,本機維持關、不輪詢", r1.ok === false && r1.code === "RELAY_ENABLE_VERIFY" && r1.gate.sent === true && r1.gate.reason === null && m.r.isOn() === false && m.of(RL.EP.poll).length === 0);
+    const r2 = await m.r.setOn(true, { code: "000000", lang: "zh" });
+    const b2 = m.of(RL.EP.enable)[1];
+    ok("10 碼錯:帶 enable_code、不帶 send_code,留在這一步,本機維持關", r2.ok === false && r2.code === "RELAY_ENABLE_CODE_INVALID" && b2.enable_code === "000000" && !("send_code" in b2) && m.r.isOn() === false);
+    const before = fs.existsSync(path.join(m.dir, "relay.json"));
+    const r3 = await m.r.setOn(true, { code: "123456", lang: "zh" }); await wait(20);
+    ok("10 碼對才寫 on(落檔)、開輪詢、記 phone_chat_on", before === false && r3.ok === true && JSON.parse(fs.readFileSync(path.join(m.dir, "relay.json"), "utf8")).on === true && m.of(RL.EP.poll).length >= 1 && m.tracked.includes("phone_chat_on"));
+    await m.end(); }
+  { const m = rig(); await m.r.tick(); const n0 = m.calls.length;
+    const r = await m.r.setOn(true, { code: "12a456" });
+    ok("10 碼不是 6 位數字:不送", r.ok === false && m.calls.length === n0);
+    await m.end(); }
+  { const gate = async (resp) => { const m = rig({ resp: { [RL.EP.enable]: resp } }); await m.r.tick(); const r = await m.r.setOn(true); await m.end(); return r; };
+    const ex = await gate({ status: 403, body: { error_code: "RELAY_ENABLE_CODE_EXPIRED" } }), lock = await gate({ status: 429, body: { error_code: "VERIFY_LOCKED" } });
+    const lim = await gate({ status: 429, body: { error_code: "ERR429" } }), un = await gate({ status: 503, body: { error_code: "RELAY_STATE_UNAVAILABLE" } }), aud = await gate({ status: 503, body: { error_code: "AUDIT_UNAVAILABLE" } });
+    const odd = await gate(V403({ sent: false, reason: "whatever" })), net = await gate({ status: 0, body: null });
+    ok("10 其他回應:過期、鎖住帶關卡;限流、讀不到紀錄、稽核寫不進走 FAILED;沒網路 OFFLINE;不認得的 reason 當 null", ex.code === "RELAY_ENABLE_CODE_EXPIRED" && !!ex.gate && lock.code === "VERIFY_LOCKED" && !!lock.gate
+      && lim.code === "FAILED" && un.code === "FAILED" && !un.gate && aud.code === "FAILED" && odd.gate.reason === null && net.code === "OFFLINE", [ex, lock, lim, un, aud, odd, net]); }
+  { let T = Date.now(); const m = rig({ now: () => T }); await m.r.tick(); await m.r.setOn(true); await wait(20); m.setServerOn(false);
+    m.resp[RL.EP.enable] = V403({ sent: false, reason: "not_requested" });
+    const en0 = m.of(RL.EP.enable).length; await m.r.tick();
+    const b = m.of(RL.EP.enable)[en0];
+    ok("10 自動重打:請求沒有 send_code;收到 RELAY_ENABLE_VERIFY 記 needVerify,本機開關不動,畫面收得到", !!b && !("send_code" in b) && !("enable_code" in b) && m.r.state().needVerify === true && m.r.isOn() === true && m.changes.at(-1).needVerify === true);
+    T += 60000; await m.r.tick();
+    ok("10 needVerify 之後不再打 enable", m.of(RL.EP.enable).length === en0 + 1);
+    m.setServerOn(true); await m.r.tick();
+    ok("10 /relay/enabled 回 on:true 清掉 needVerify", m.r.state().needVerify === false);
+    await m.end(); }
+  { const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20); m.setServerOn(false);
+    m.resp[RL.EP.enable] = V403({ sent: false, reason: "not_requested" }); await m.r.tick();
+    m.resp[RL.EP.enable] = { status: 200, body: { enabled: true } };
+    const on0 = m.tracked.filter((x) => x === "phone_chat_on").length;
+    const r = await m.r.setOn(true, { code: "123456" });
+    ok("10 重新驗證過:清 needVerify,不再記一次 phone_chat_on", r.ok && m.r.state().needVerify === false && m.tracked.filter((x) => x === "phone_chat_on").length === on0);
+    await m.end(); }
+  { const SD = "desktop-d1000001", m = rig({ sessions: { [SD]: { last: Date.now() / 1000, rows: [row(1, "user", "x")] } } }); await m.r.tick(); await m.r.setOn(true); await wait(1300); m.setServerOn(false);
+    m.resp[RL.EP.enable] = V403({ sent: false, reason: "not_requested" }); await m.r.tick();
+    m.resp[RL.EP.report] = { status: 409, body: { error_code: "RELAY_NOT_ENABLED" } };
+    ok("10 needVerify 期間在電腦上刪對話:先落地 outbox", m.r.sessionDeleted(SD) === true && fs.existsSync(path.join(m.stateDir, RL.OUTBOX)));
+    await wait(30);
+    const n0 = m.tracked.filter((x) => x === "phone_sync_ok").length;
+    delete m.resp[RL.EP.report]; m.resp[RL.EP.enable] = { status: 200, body: { enabled: true } };
+    const r = await m.r.setOn(true, { code: "123456" }); await wait(1300);
+    ok("10 重新驗證過:待送的刪除送到伺服器、outbox 清空,不重記 phone_sync_ok", r.ok && m.chunks().some((c) => c.type === "session_delete" && c.session_id === SD) && !fs.existsSync(path.join(m.stateDir, RL.OUTBOX)) && m.tracked.filter((x) => x === "phone_sync_ok").length === n0, [m.chunks().map((c) => c.type), m.tracked]);
+    await m.end(); }
+  { const SD = "desktop-d1000002", m = rig({ sessions: { [SD]: { last: Date.now() / 1000, rows: [row(1, "user", "x")] } } }); await m.r.tick(); await m.r.setOn(true); await wait(30);
+    await m.r.setOn(false); m.resp[RL.EP.disable] = undefined;
+    fs.mkdirSync(m.stateDir, { recursive: true }); fs.writeFileSync(path.join(m.stateDir, RL.OUTBOX), JSON.stringify({ type: "session_delete", session_id: SD, ts: 1 }) + "\n");
+    await m.r.setOn(true); await wait(30);
+    ok("10 從關打開:待送的刪除照舊作廢(伺服器那份剛刪過)", !fs.existsSync(path.join(m.stateDir, RL.OUTBOX)) && !m.chunks().some((c) => c.type === "session_delete"));
+    await m.end(); }
+  for (const how of ["off", "signOut"]) {
+    const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20); m.setServerOn(false);
+    m.resp[RL.EP.enable] = V403({ sent: false, reason: "not_requested" }); await m.r.tick();
+    const was = m.r.state().needVerify;
+    if (how === "off") await m.r.setOn(false); else await m.r.signOut();
+    ok("10 " + how + " 清 needVerify", was === true && m.r.state().needVerify === false);
+    await m.end();
+  }
+  { const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20); m.setServerOn(false);
+    m.resp[RL.EP.enable] = { status: 503, body: { error_code: "RELAY_STATE_UNAVAILABLE" } }; await m.r.tick();
+    ok("10 自動重打 503 RELAY_STATE_UNAVAILABLE:不設 needVerify,本機開關不動", m.r.state().needVerify === false && m.r.isOn() === true);
+    await m.end(); }
+  { const m = rig({ resp: { [RL.EP.enabled]: { status: 404, body: null } } }); await m.r.tick();
+    const r = await m.r.setOn(true);
+    ok("10 api 還沒上這條路由(/relay/enabled 404):設定區不出現、打不開、不輪詢", m.r.state().visible === false && r.ok === false && r.code === "OFF" && m.of(RL.EP.enable).length === 0 && m.of(RL.EP.poll).length === 0);
+    await m.end(); }
+  ok("10 接線:畫面收得到 needVerify;relay-set 只把字串的碼交給 setOn;preload 帶 code、lang", /needVerify: st\.needVerify/.test(main) && /setOn\(on, \{ code: o && typeof o\.code === "string" \? o\.code : null, lang: o && o\.lang \}\)/.test(main)
+    && /relaySet: \(on, o\) => ipcRenderer\.invoke\("relay-set", on === true, \{ code: o && o\.code, lang: o && o\.lang \}\)/.test(fs.readFileSync(path.join(SHELL, "preload.js"), "utf8")));
+
+  // ── 11 ──
+  const SF = "desktop-f1000001";
+  const turn = async (kind, events, end, n) => {
+    const m = rig({ kind, sessions: { [SF]: { last: Date.now() / 1000, rows: [row(1, "user", "x")] } } }); await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.feed([msg(SF, "msg000fault" + (n || 1))]); await wait(40);
+    for (const e of events) m.r.onTurn(SF, "turn-event", e);
+    if (end) m.r.onTurn(SF, "turn-end", end);
+    await wait(RL.BATCH_MS + 60);
+    const out = m.chunks().filter((c) => !["started", "ping"].includes(c.type));
+    await m.end(); return out;
+  };
+  const types = (cs) => cs.map((c) => c.type).join();
+  const texts = (cs) => cs.filter((c) => c.type === "text").map((c) => c.text).join("");
+  const code = (cs) => (cs.find((c) => c.type === "error") || {}).code;
+  const ERR = { type: "error", message: "turn failed", code: "not_started" }, END = { code: 1, errTail: "" };
+  const T = (text) => ({ type: "text", text });
+  const cases = [
+    ["blave", "API Error: 402 insufficient credit", "no_credit"], ["blave", "Failed to authenticate. API Error: 401 bad", "auth_invalid"], ["blave", "API Error: 403 forbidden", "auth_invalid"],
+    ["claude", "API Error: 401 invalid", "engine_signed_out"], ["codex", "API Error: 403 denied", "engine_signed_out"], ["claude", "Not logged in · Please run /login", "engine_signed_out"],
+    ["claude", "Login expired · Please run /login", "engine_signed_out"], ["claude", "OAuth token revoked · Please run /login", "engine_signed_out"], ["claude", "Invalid API key · Please run /login", "engine_signed_out"], ["claude", "Please run /login · API Error: 401 bad", "engine_signed_out"],
+    ["claude", "You've hit your session limit · resets 1:50pm (Asia/Taipei)", "usage_limit"], ["claude", "You’ve hit your weekly limit · resets Oct 3, 9am", "usage_limit"],
+  ];
+  for (const [kind, text, want] of cases) {
+    const cs = await turn(kind, [T(text), ERR], END);
+    ok("11 " + kind + " 「" + text.slice(0, 30) + "」→ " + want + ":字不送、代碼換掉 error 的、沒有 done", code(cs) === want && !texts(cs) && types(cs) === "error" && cs[0].message === "turn failed", cs);
+  }
+  { const cs = await turn("blave", [T("API "), T("Err"), T("or: 40"), T("2 no credit"), ERR], END);
+    ok("11 錯誤字分幾段來:一樣扣住、一樣判到", code(cs) === "no_credit" && !texts(cs), cs); }
+  { const cs = await turn("blave", [T("API Error: 402 no credit"), { type: "done", awaiting: false }], { code: 0, errTail: "" });
+    ok("11 後面沒有 error(只有 done):補一則帶代碼的 error,不送 done,message 是遮過的字", types(cs) === "error" && code(cs) === "no_credit" && cs[0].message === "API Error: 402 no credit", cs); }
+  { const cs = await turn("blave", [T("API Error: 402 no credit")], END);
+    ok("11 後面什麼都沒有(行程掛掉):turn-end 補的 error 帶代碼", types(cs) === "error" && code(cs) === "no_credit", cs); }
+  { const cs = await turn("blave", [T("先查一下"), { type: "tool", tool: "Bash", status: "running" }, T("API Error: 402 x"), ERR], END);
+    ok("11 工具開跑過才出錯:前面的字照送,錯誤字不送,代碼 partial 優先於原因碼", texts(cs) === "先查一下" && code(cs) === "partial", cs); }
+  { const cs = await turn("blave", [T("先想一下"), { type: "thinking", text: "..." }, T("。"), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 沒動工具的一般回覆不受影響", code(cs) === undefined && types(cs).endsWith("done"), cs); }
+  for (const [kind, text] of [["blave", "API Error: 402 x"], ["blave", "API Error: 401 x"], ["claude", "Login expired · Please run /login"], ["claude", "You've hit your session limit · resets 1:50pm (Asia/Taipei)"]]) {
+    const before = await turn(kind, [T(text), { type: "error", message: "m", code: "not_started" }], END);
+    const after = await turn(kind, [{ type: "tool", tool: "Bash", status: "running" }, { type: "tool", tool: "Bash", status: "done" }, T(text), { type: "error", message: "m", code: "partial" }], END);
+    ok("11 " + kind + " 「" + text.slice(0, 20) + "」:還沒動工具送原因碼;工具開跑過維持 partial;字都不送", !["partial", undefined, "not_started"].includes(code(before)) && code(after) === "partial" && !texts(after) && !texts(before), [before, after]);
+  }
+  { const cs = await turn("blave", [{ type: "tool", tool: "Bash", status: "running" }, T("API Error: 402 x"), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 工具開跑過、只有 done:補的 error 是 partial,不送 done", types(cs).endsWith("error") && !/done/.test(types(cs)) && code(cs) === "partial", cs); }
+  { const cs = await turn("blave", [{ type: "tool", tool: "Bash", status: "running" }, T("API Error: 402 x")], END);
+    ok("11 工具開跑過、行程掛掉:turn-end 補的 error 是 partial", code(cs) === "partial", cs); }
+  { const cs = await turn("claude", [{ type: "tool", tool: "Bash", status: "running" }], { code: 1, errTail: "AGENT_BIN_MISSING" });
+    ok("11 工具開跑過、errTail 帶 AGENT_BIN:一樣 partial", code(cs) === "partial", cs); }
+  { const cs = await turn("blave", [T("BTC 現在"), T(" API Error: 402"), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 一般回覆:第一段就放行(內文提到 API Error 不算),done 照送", texts(cs) === "BTC 現在 API Error: 402" && types(cs) === "text,text,done", cs); }
+  { const cs = await turn("blave", [T("API Error: 500 upstream"), ERR], END);
+    ok("11 5xx 不在表上:字照送,error 的代碼不動", texts(cs) === "API Error: 500 upstream" && code(cs) === "not_started", cs); }
+  { const cs = await turn("claude", [T("You've hit your stop loss at 63000, so the position closed."), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 開頭像上限句的真回覆:放行", /stop loss/.test(texts(cs)) && types(cs).endsWith("done"), cs); }
+  { const cs = await turn("blave", [T("API Error: 402 means payment required, here is why"), { type: "tool", tool: "Bash", status: "running" }, T("done"), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 開頭一樣但後面接工具:不是錯誤,字放行、順序不亂", types(cs).startsWith("text,tool") && /payment required/.test(texts(cs)), cs); }
+  { const cs = await turn("blave", [T("API Error: 402 " + "x".repeat(5000)), T("y"), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 超過暫扣上限:放行、不判錯誤", /y$/.test(texts(cs)) && types(cs).endsWith("done"), cs.map((c) => c.type)); }
+  for (const [kind, text] of [["apikey", "API Error: 402 billing"], ["apikey", "API Error: 401 bad key"], ["claude", "API Error: 402 x"], ["blave", "Not logged in · Please run /login"], ["blave", "You've hit your session limit · resets 1:50pm"]]) {
+    const cs = await turn(kind, [T(text), ERR], END);
+    ok("11 " + kind + " 「" + text.slice(0, 22) + "」:不帶 fault code,字照送", texts(cs) === text && code(cs) === "not_started", cs);
+  }
+  { const cs = await turn("codex", [{ type: "error", message: "login", code: "needs_login" }], END);
+    ok("11 Codex 401(runtime needs_login):engine_signed_out", code(cs) === "engine_signed_out", cs); }
+  for (const c of ["MISSING", "DOWNLOADING"]) {
+    const cs = await turn("codex", [], { code: 1, errTail: "Error: AGENT_BIN_" + c });
+    ok("11 AGENT_BIN_" + c + ":turn-end 補的 error 帶 engine_missing", types(cs) === "error" && code(cs) === "engine_missing", cs);
+  }
+  { const cs = await turn("blave", [T("API Error: 402 x")], { code: 0, errTail: "", canceled: true });
+    ok("11 用戶按停止:不帶 code,照「已停止」收尾,錯誤字一樣不送", code(cs) === undefined && cs.at(-1).message === "stopped" && !texts(cs), cs); }
+  { const cs = await turn("codex", [], { code: 1, errTail: "Error: AGENT_BIN_BROKEN" });
+    ok("11 AGENT_BIN_BROKEN:不帶 code(spec 只列 MISSING、DOWNLOADING)", code(cs) === undefined, cs); }
+  { const cs = await turn("blave", [T("API Error: 402 x"), { type: "thinking", text: "..." }, { type: "suggestions", items: ["a"] }, ERR], END);
+    ok("11 錯誤字和 error 中間夾 thinking、suggestions:一樣判到(同 renderer 不動草稿)", code(cs) === "no_credit" && !texts(cs), cs); }
+  { const cs = await turn("blave", [T("API Error: 402 " + "x".repeat(1000)), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 補的 error:message 截短", cs[0].message.length <= 200 && code(cs) === "no_credit", cs[0].message.length); }
+  { const cs = await turn("codex", [T("API"), { type: "error", message: "login", code: "needs_login" }], END);
+    ok("11 needs_login:手上不是錯誤的字不丟", texts(cs) === "API" && code(cs) === "engine_signed_out", cs); }
+  { const cs = await turn("blave", [T("API Error: "), { type: "text_replace", text: "乾淨的回覆" }, { type: "done" }], { code: 0, errTail: "" });
+    ok("11 暫扣中 text_replace:換成新的字放行", texts(cs) === "乾淨的回覆" && types(cs) === "text,done", cs); }
+  { const cs = await turn("blave", [T("API Error: 402 key sec_Zz99Yy88Xx77"), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 補的 error:message 過遮蔽", !JSON.stringify(cs).includes(SECRET) && code(cs) === "no_credit", cs); }
+  { const app = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
+    const lim = /\{ engine: "claude", re: (\/.*\/i) \}/.exec(app), api = /const m = (\/\^\(\?:Failed to authenticate.*?\/)\.exec\(text \|\| ""\);\n  if \(!m\) return null;/.exec(app);
+    ok("11 判定跟 renderer 同一份:上限句、API Error 的 regex 逐字相同", !!lim && !!api && lim[1] === String(RL.USAGE_LIMIT_RE) && api[1] === String(RL.API_ERROR_RE), [lim && lim[1], api && api[1]]);
+    ok("11 登入句:renderer 還認得的兩段,主行程開頭錨定", /\/\^Not logged in\\b\|Please run \\\/login\/\.test\(text \|\| ""\)\) return localAuthFault\("claude"\)/.test(app)); }
+  ok("11 接線:engineKind 取連線種類", /engineKind: \(\) => \(loadConnection\(\) \|\| \{\}\)\.kind/.test(main));
+
+  // ── 12 換帳號:OAuth 重新登入換 token 之前照登出關掉手機對話(main.js startOAuth 那一段原文切出來跑) ──
+  { const seg = main.slice(main.indexOf("  const prevToken = loadToken();\n", main.indexOf("async function startOAuth(")), main.indexOf("  if (!saveToken(r.body.access_token)) {"));
+    const SA = "desktop-a1000001";
+    let creds = { token: "tok-account-A", appSecret: "sec-A" }, onFor = null;
+    const calls = [];
+    const post = async (u, b) => { const ep = u.slice(API.length); calls.push([ep, b.token]);
+      if (ep === RL.EP.enabled) return { status: 200, body: { enabled: true, on: onFor === b.token } };
+      if (ep === RL.EP.enable) { if (onFor === b.token || b.enable_code) { onFor = b.token; return { status: 200, body: { enabled: true } }; } return { status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", sent: b.send_code === true, reason: b.send_code === true ? null : "not_requested" } }; }
+      if (ep === RL.EP.disable) { if (onFor === b.token) onFor = null; return { status: 200, body: {} }; }
+      if (ep === RL.EP.poll) return new Promise(() => {});
+      if (ep === RL.EP.syncState) return { status: 200, body: { sessions: [], tombstones: [] } };
+      if (ep === RL.EP.sync) return { status: 200, body: { sessions: {} } };
+      return { status: 200, body: {} }; };
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "relay-acct-"));
+    const R2 = RL.createRelay({ dir, stateDir: path.join(dir, "state"), apiBase: API, post, getCreds: () => creds, installId: () => "11111111-2222-4333-8444-555555555555", ver: "x",
+      startTurn: async () => ({ started: true }), stopTurn: () => true, turnBusy: () => false, isRestarting: () => false,
+      sessions: { list: () => [{ id: SA, last: Date.now() / 1000 }], rowsAfter: (s, a0) => [row(1, "user", "A 帳號的對話")].filter((x) => x.id > a0), maxId: () => 1, exists: () => true, remove: () => true },
+      turnArgs: () => ({}), known: () => [], origins: { add() {}, get: () => new Map() } });
+    await R2.tick(); await R2.setOn(true); await R2.setOn(true, { code: "111111" }); await wait(1300);
+    const wasOn = R2.isOn();
+    // 原文那一段:relay() 換成這一個、loadToken 是 A 的;跑完才換成 B 的 token(= saveToken)
+    await new Function("relay", "loadToken", "return (async () => {\n" + seg + "\n})();")(() => R2, () => creds.token);
+    creds = { token: "tok-account-B", appSecret: "sec-B" };
+    const n = calls.length;
+    await R2.tick(); await wait(50);
+    const st = R2.state(), after = calls.slice(n);
+    ok("12 A 同意並開啟後,OAuth 換成 B:換之前用 A 的憑證關掉(disable 帶 A)、本機開關關、不待驗", wasOn && calls.some((c) => c[0] === RL.EP.disable && c[1] === "tok-account-A") && st.on === false && st.needVerify === false && st.pending === false, [st, calls.slice(-4)]);
+    ok("12 B 登入後:不自動重打 enable、不用 B 的 token 同步任何對話;要開得重走同意框", !after.some((c) => c[0] === RL.EP.enable || c[0] === RL.EP.sync || c[0] === RL.EP.poll), after);
+    ok("12 接線:startOAuth 在 saveToken 之前叫 relay().signOut()", /try \{ await relay\(\)\.signOut\(\); \}/.test(seg)); }
 
   // ── 9 ──
   const send = main.slice(main.indexOf("function sendTurn(sid, ch, payload) {"), main.indexOf("function turnNice("));

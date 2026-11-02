@@ -33,7 +33,7 @@ function rig(o = {}) {
 
   const r = RL.createRelay({
     dir, stateDir: path.join(dir, "state"), apiBase: API, post, getCreds: () => ({ token: "t-replay", appSecret: "s-replay" }),
-    installId: () => "11111111-2222-4333-8444-555555555555", ver: "0.1.37",
+    installId: () => "11111111-2222-4333-8444-555555555555", ver: "0.1.37", engineKind: () => "blave",
     startTurn: async (p) => { busy.add(p.sessionId); return { started: true }; },
     stopTurn: (sid) => { if (o.onStop) o.onStop(sid); return true; }, turnBusy: (sid) => busy.has(sid), isRestarting: () => false,
     sessions: { list: () => [], rowsAfter: () => [], maxId: () => 0, exists: () => true, remove: () => true },
@@ -53,6 +53,12 @@ const SCENARIOS = [
     m.r.onTurn(SID, "turn-event", { type: "tool", tool: "Bash", status: "running", where: "local" }); await settle();
     m.r.onTurn(SID, "turn-event", { type: "done", awaiting: false }); m.busy.delete(SID);
     m.r.onTurn(SID, "turn-end", { code: 0, errTail: "" }); await settle();
+  }],
+  ["fault_code", "引擎的錯誤字:text 不送,代碼放回合的 error", async (m) => {
+    m.feed([msg(SID, "msgreplay0040", "跑回測")]); await wait(30);
+    m.r.onTurn(SID, "turn-event", { type: "text", text: "API Error: 402 insufficient credit" }); await settle();
+    m.r.onTurn(SID, "turn-event", { type: "error", message: "這一輪沒有跑起來", code: "not_started" }); m.busy.delete(SID);
+    m.r.onTurn(SID, "turn-end", { code: 1, errTail: "" }); await settle();
   }],
   ["error_after_start", "開跑之後出錯:回合的 error chunk(不是 message_failed)", async (m) => {
     m.feed([msg(SID, "msgreplay0002", "跑回測")]); await wait(30);

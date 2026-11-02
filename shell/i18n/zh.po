@@ -10083,10 +10083,10 @@ msgid "ph.cf.1"
 msgstr "手機送的話會在這台電腦上執行。agent 能做的跟你在電腦前一樣，包括下單。"
 
 msgid "ph.cf.2"
-msgstr "近 30 天的對話會上傳，手機才看得到。金鑰與資料夾路徑會先遮掉。"
+msgstr "近 30 天和之後的對話會上傳，金鑰與資料夾路徑會先遮掉。關掉就刪除伺服器上那份。"
 
 msgid "ph.cf.3"
-msgstr "附件、圖片和策略程式不上傳。關掉就刪除伺服器上那份。"
+msgstr "附件、策略程式和舊對話的圖片不上傳。回覆手機時的圖片會上傳。"
 
 msgid "ph.cf.ok"
 msgstr "開啟"
@@ -10123,6 +10123,21 @@ msgstr "伺服器上的對話還沒刪掉，連上網路後會自動刪。"
 
 msgid "ph.err"
 msgstr "沒有開成，請檢查網路後再試。"
+
+msgid "ph.kc.title"
+msgstr "確認是你本人"
+
+msgid "ph.kc.failed"
+msgstr "驗證碼沒寄出去，請稍後再試。"
+
+msgid "ph.kc.limitedDead"
+msgstr "寄送次數已達上限，請稍後再試。"
+
+msgid "ph.verify"
+msgstr "手機連不上這台電腦。"
+
+msgid "ph.verifyBtn"
+msgstr "重新驗證"
 
 msgid "ph.group"
 msgstr "允許連這台的手機"

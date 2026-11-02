@@ -10055,13 +10055,13 @@ msgid "ph.cf.1"
 msgstr "Messages from your phone run on this computer. The agent can do anything it can here, including placing orders."
 
 msgid "ph.cf.2"
-msgstr "Chats from the last 30 days are uploaded so your phone can show them. Keys and folder paths are masked first."
+msgstr "Chats from the last 30 days and new ones are uploaded, with keys and folder paths masked. Turning this off deletes the copy on Blave."
 
 msgid "ph.cf.3"
-msgstr "Attachments, images and strategy code stay here. Turning this off deletes the copy on Blave."
+msgstr "Attachments, strategy code and images in older chats stay here. Images in replies to your phone are uploaded."
 
 msgid "ph.cf.ok"
-msgstr "Turn on"
+msgstr "Turn On"
 
 msgid "ph.off.title"
 msgstr "Turn off phone chat?"
@@ -10073,7 +10073,7 @@ msgid "ph.off.del"
 msgstr "Chats on Blave are deleted. Chats on this computer stay."
 
 msgid "ph.off.ok"
-msgstr "Turn off"
+msgstr "Turn Off"
 
 msgid "ph.syncing"
 msgstr "Synced {n} of {m} chats"
@@ -10095,6 +10095,21 @@ msgstr "The chats on Blave aren't deleted yet. They will be once you're back onl
 
 msgid "ph.err"
 msgstr "Couldn't turn it on. Check your connection and try again."
+
+msgid "ph.kc.title"
+msgstr "Confirm it's you"
+
+msgid "ph.kc.failed"
+msgstr "Couldn't send the code. Try again later."
+
+msgid "ph.kc.limitedDead"
+msgstr "Send limit reached. Try again later."
+
+msgid "ph.verify"
+msgstr "Your phone can't reach this computer."
+
+msgid "ph.verifyBtn"
+msgstr "Verify Again"
 
 msgid "ph.group"
 msgstr "Phones allowed on this computer"

@@ -191,7 +191,7 @@ contextBridge.exposeInMainWorld("blave", {
   mobileViewSet: (on) => ipcRenderer.invoke("mobile-view-set", on === true),
   // 手機 App 跟這台電腦對話(relay.js):只有開關、同步進度與數字,沒有憑證與對話內容
   relayState: () => ipcRenderer.invoke("relay-state"),
-  relaySet: (on) => ipcRenderer.invoke("relay-set", on === true),
+  relaySet: (on, o) => ipcRenderer.invoke("relay-set", on === true, { code: o && o.code, lang: o && o.lang }),
   relayRetry: () => ipcRenderer.invoke("relay-retry"),
   relayPairCode: () => ipcRenderer.invoke("relay-pair-code"),
   relayPhones: () => ipcRenderer.invoke("relay-phones"),
