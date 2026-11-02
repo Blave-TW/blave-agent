@@ -1570,7 +1570,7 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
    組標題 .sg-head 與列是 .strat-list 的兄弟節點(絕不包容器);列高 44 = 熱區,hover 填色與字的視覺高 32(上下各留 6)。
    圖示左緣對齊列文字 x=24,不縮排;組距 16 = margin-top 10 + 填色上方留白 6;sticky 釘頂、底鋪 --bg-body,z-index 低於拖拉中的列(3) */
 .strat-add[hidden] { display: none; }   /* .strat-add 是 flex,蓋過 UA 的 [hidden];≤7 支且沒資料夾時新增資料夾鈕要真的不見(§4) */
-.strat-head .sg-add:not([hidden]) + .strat-add { margin-left: var(--space-16); }   /* 兩顆熱區各 44、視覺 28:隔 16 才不重疊 */
+.strat-head .sg-add:not([hidden]) + .strat-add { margin-left: var(--space-4); }   /* 兩顆同一組:隔 4,同網頁 */
 .strat-add:disabled { color: var(--ink-disabled); background: none; cursor: not-allowed; }   /* canon › Disabled:無 hover */
 .sg-limit { padding: 0 var(--space-4) var(--space-8); font-size: 12px; color: var(--ink-3); }
 .sg-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; height: 44px; margin-top: 10px; padding-left: var(--space-12); background: var(--bg-body); }
@@ -1755,8 +1755,9 @@ html[data-platform="win32"] .mode, html[data-platform="win32"] .envm, html[data-
 /* 側欄「策略」標題旁的 ＋(照 web .strat-add,值換語意角色):28×28、hover 灰填 */
 .strat-add { margin-left: auto; flex: none; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); color: var(--ink-3); transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
 .strat-add:hover { background: var(--surface-muted); color: var(--ink); }
-/* 熱區 44×44(視覺 28 不變) */
+/* 熱區 44×44(視覺 28 不變):透明 ::before 往外側長,不佔版面。兩顆隔 4,中間這 4 分給兩邊剛好相接:資料夾鈕佔 1、＋佔 3(＋右邊只長得到 13,再過去是側欄分隔線) */
 .strat-head .strat-add { position: relative; }
-.strat-head .strat-add::before { content: ""; position: absolute; inset: -8px; }
+.strat-head .strat-add::before { content: ""; position: absolute; inset: -8px -13px -8px -3px; }
+.strat-head .sg-add::before { inset: -8px -1px -8px -15px; }
 .strat-add .ic { stroke-width: 1.75; }
 @media (prefers-reduced-motion: reduce) { .strat-add { transition: none; } }
