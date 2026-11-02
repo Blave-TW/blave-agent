@@ -647,7 +647,8 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
   ok("11 接線:engineKind 取連線種類", /engineKind: \(\) => \(loadConnection\(\) \|\| \{\}\)\.kind/.test(main));
 
   // ── 12 換帳號:OAuth 重新登入換 token 之前照登出關掉手機對話(main.js startOAuth 那一段原文切出來跑) ──
-  { const seg = main.slice(main.indexOf("  const prevToken = loadToken();\n", main.indexOf("async function startOAuth(")), main.indexOf("  if (!saveToken(r.body.access_token)) {"));
+  { const oa = main.slice(main.indexOf("async function startOAuth("), main.indexOf("\n}\n", main.indexOf("async function startOAuth(")));
+    const seg = oa.slice(oa.indexOf("  await rotator().settle();\n  const phoneOff"), oa.indexOf("  if (!saveToken(r.body.access_token)) {"));
     const SA = "desktop-a1000001";
     let creds = { token: "tok-account-A", appSecret: "sec-A" }, onFor = null;
     const calls = [];
@@ -667,14 +668,21 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     await R2.tick(); await R2.setOn(true); await R2.setOn(true, { code: "111111" }); await wait(1300);
     const wasOn = R2.isOn();
     // 原文那一段:relay() 換成這一個、loadToken 是 A 的;跑完才換成 B 的 token(= saveToken)
-    await new Function("relay", "loadToken", "return (async () => {\n" + seg + "\n})();")(() => R2, () => creds.token);
+    const settles = [];
+    const phoneOff = !/const phoneOff/.test(seg) ? null : await new Function("relay", "loadToken", "rotator", "return (async () => {\n" + seg + "\nreturn phoneOff;\n})();")(() => R2, () => { settles.push("read"); return creds.token; }, () => ({ settle: async () => { settles.push("settle"); } }));
     creds = { token: "tok-account-B", appSecret: "sec-B" };
     const n = calls.length;
     await R2.tick(); await wait(50);
     const st = R2.state(), after = calls.slice(n);
     ok("12 A 同意並開啟後,OAuth 換成 B:換之前用 A 的憑證關掉(disable 帶 A)、本機開關關、不待驗", wasOn && calls.some((c) => c[0] === RL.EP.disable && c[1] === "tok-account-A") && st.on === false && st.needVerify === false && st.pending === false, [st, calls.slice(-4)]);
     ok("12 B 登入後:不自動重打 enable、不用 B 的 token 同步任何對話;要開得重走同意框", !after.some((c) => c[0] === RL.EP.enable || c[0] === RL.EP.sync || c[0] === RL.EP.poll), after);
-    ok("12 接線:startOAuth 在 saveToken 之前叫 relay().signOut()", /try \{ await relay\(\)\.signOut\(\); \}/.test(seg)); }
+    ok("12 接線:startOAuth 在 saveToken 之前叫 relay().signOut()", /try \{ await relay\(\)\.signOut\(\); \}/.test(seg));
+    ok("12 回給畫面 phoneOff(原本開著);登入完成回傳帶它", phoneOff === true && /return \{ ok: true, phoneOff \};/.test(oa));
+    ok("12 signOut 之後再等一次輪替才讀舊 token,讀舊值到 saveToken 之間沒有 await", settles.join() === "settle,settle,read" && !/await/.test(oa.slice(oa.indexOf("const prevToken = loadToken();"), oa.indexOf("if (!saveToken(r.body.access_token))"))));
+    ok("12 存好 token 立刻 tick 一次(設定 › 連結不用等 2 分鐘)", /throw new Error\("KEYCHAIN_UNAVAILABLE"\);\n  \}\n  relay\(\)\.tick\(\)\.catch\(\(\) => \{\}\);/.test(oa)); }
+  { const app2 = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
+    ok("12 畫面:四個登入入口都走 oauthStart,原本開著才出 ph.offRelogin;登出框開著時多 acct.out.6", (app2.match(/await oauthStart\(/g) || []).length === 4 && !/window\.blave\.startOAuth\(/.test(app2.replace(/async function oauthStart[\s\S]*?\n\}/, ""))
+      && /if \(r && r\.phoneOff\) setHint\(\{ text: t\("ph\.offRelogin"\) \}\);/.test(app2) && /mvOn \? \[t\("acct\.out\.5"\)\] : \[\], phShown\(\) && PH\.signedIn && PH\.on \? \[t\("acct\.out\.6"\)\] : \[\]/.test(app2)); }
 
   // ── 9 ──
   const send = main.slice(main.indexOf("function sendTurn(sid, ch, payload) {"), main.indexOf("function turnNice("));

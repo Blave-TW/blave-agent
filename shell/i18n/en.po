@@ -1449,6 +1449,9 @@ msgstr "Signing out doesn’t turn off your cloud machine. It keeps billing."
 msgid "acct.out.5"
 msgstr "The mobile app won’t show this computer’s positions anymore."
 
+msgid "acct.out.6"
+msgstr "Phone chat turns off and chats on Blave are deleted."
+
 msgid "acct.lbl"
 msgstr "Blave account"
 
@@ -10104,6 +10107,9 @@ msgstr "Couldn't send the code. Try again later."
 
 msgid "ph.kc.limitedDead"
 msgstr "Send limit reached. Try again later."
+
+msgid "ph.offRelogin"
+msgstr "Phone chat was turned off when you signed in again. Turn it back on in Settings › Connections."
 
 msgid "ph.verify"
 msgstr "Your phone can't reach this computer."

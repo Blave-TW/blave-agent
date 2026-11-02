@@ -1457,6 +1457,9 @@ msgstr "登出不會停用雲端主機，主機費照扣。"
 msgid "acct.out.5"
 msgstr "手機 App 也看不到這台電腦的部位了。"
 
+msgid "acct.out.6"
+msgstr "手機對話會關閉，伺服器上的對話會刪除。"
+
 msgid "acct.lbl"
 msgstr "Blave 帳號"
 
@@ -10132,6 +10135,9 @@ msgstr "驗證碼沒寄出去，請稍後再試。"
 
 msgid "ph.kc.limitedDead"
 msgstr "寄送次數已達上限，請稍後再試。"
+
+msgid "ph.offRelogin"
+msgstr "重新登入後手機對話已關閉，要用請到 設定 › 連結 重新打開。"
 
 msgid "ph.verify"
 msgstr "手機連不上這台電腦。"

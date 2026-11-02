@@ -26,18 +26,18 @@ t("只有 Blave AI 那條會等(race 逾時當 null);其他登入不 await",
   && (tail.match(/\bawait\b/g) || []).length === 1);
 t("account_status 丟例外不會讓登入失敗(.catch 成 null)", /const acctNow = accountStatus\(\)\.catch\(\(\) => null\);/.test(tail));
 t("搶前景看 loginFocus;判斷在 return { ok: true } 之前、之後不再有東西",
-  /if \(!HEADLESS && loginFocus\(forBlaveAi, s\) === "steal"\) app\.focus\(\{ steal: true \}\);\n  return \{ ok: true \};$/.test(oa));
+  /if \(!HEADLESS && loginFocus\(forBlaveAi, s\) === "steal"\) app\.focus\(\{ steal: true \}\);\n  return \{ ok: true, phoneOff \};$/.test(oa));
 t("IPC 只把字面 \"blave\" 當意圖(布林進 startOAuth)",
   /handle\("start-oauth", \(_e, lang, intent\) => startOAuth\(lang === "en" \? "en" : "zh", intent === "blave"\)\);/.test(src));
 t("preload 轉送第二個參數", /startOAuth: \(lang, intent\) => ipcRenderer\.invoke\("start-oauth", lang, intent\),/.test(fs.readFileSync(path.join(SHELL, "preload.js"), "utf8")));
 
 // renderer:只有連結畫面 / 設定「使用」的 blaveGo 帶意圖;方案頁登入 / 重登、登入失效的原地登入都不帶(照舊搶)
 const app = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
-const calls = app.match(/window\.blave\.startOAuth\([^)]*\)/g) || [];
+const calls = app.match(/\boauthStart\([^)]*\)/g).filter((c) => !/oauthStart\(lang, intent\)/.test(c)) || [];   // 0.1.42 起都經 oauthStart(登入後手機對話被關要講一句)
 const fnOf = (re) => { const m = app.match(re); return m ? app.slice(m.index, app.indexOf("\n}\n", m.index)) : ""; };
 t(`startOAuth 呼叫 ${calls.length} 處,帶 "blave" 的只有 1 處`, calls.length >= 4 && calls.filter((c) => /"blave"/.test(c)).length === 1);
-t("…那一處在 blaveGoNow 裡(blaveGo 只是回合中的守門,0.1.27)", /window\.blave\.startOAuth\(LANG, "blave"\)/.test(fnOf(/async function blaveGoNow\(/)));
-t("…登入失效的 blaveLoginFlow 不帶", /window\.blave\.startOAuth\(LANG\)/.test(fnOf(/function blaveLoginFlow\(/)));
+t("…那一處在 blaveGoNow 裡(blaveGo 只是回合中的守門,0.1.27)", /oauthStart\(LANG, "blave"\)/.test(fnOf(/async function blaveGoNow\(/)));
+t("…登入失效的 blaveLoginFlow 不帶", /oauthStart\(LANG\)/.test(fnOf(/function blaveLoginFlow\(/)));
 
 console.log(red ? `\n${red} 紅` : "\n全綠");
 process.exit(red ? 1 : 0);

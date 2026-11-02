@@ -230,6 +230,12 @@ function cmdLine(kind) {
 /* 連結畫面的 #cn-hint 與設定 › 模型接入 是兩個地方、同一句話:狀態記在這裡,兩邊各畫各的。
    h = null 或 { text, cmd?(kind:失敗時附上終端機指令) }。 */
 let HINT = null;
+/* 所有登入都走這裡:換 token 前手機對話是開著的(main.js startOAuth 照登出關掉了),登入完成那一刻講一句,不然他拿起手機才發現連不上 */
+async function oauthStart(lang, intent) {
+  const r = await window.blave.startOAuth(lang, intent);
+  if (r && r.phoneOff) setHint({ text: t("ph.offRelogin") });
+  return r;
+}
 function setHint(h) {
   HINT = h || null;
   const n = $("cn-hint"); n.textContent = ""; n.hidden = !HINT;
@@ -542,7 +548,7 @@ function acctOutAsk(opener) {
   const mvOn = typeof mvShown === "function" && mvShown() && MV.on === true;
   // 第 1 句只在用 Blave AI 時出(登出後會被送回選 AI 的畫面);主機那一句只在帳號有主機時出
   const hasMachine = !!acct && ["starting", "running", "stopped"].includes(planState());
-  const lines = (busyOn() ? [t("busy.cut.out")] : []).concat(cur === "blave" ? [t("acct.out.3")] : [], [t("acct.out.1")], mvOn ? [t("acct.out.5")] : [], hasMachine ? [t("acct.out.4")] : [], [t("acct.out.2")]);
+  const lines = (busyOn() ? [t("busy.cut.out")] : []).concat(cur === "blave" ? [t("acct.out.3")] : [], [t("acct.out.1")], mvOn ? [t("acct.out.5")] : [], phShown() && PH.signedIn && PH.on ? [t("acct.out.6")] : [], hasMachine ? [t("acct.out.4")] : [], [t("acct.out.2")]);
   // 回合中登出:token 撤掉後那條回覆的下一個請求會失敗、斷在半路,所以先停再登出(busyStopThen)
   confirmBox({ title: t("acct.cf.title"), lines, ok: t("acct.cf.ok"), opener, onOk: () => busyStopThen(acctSignOut) });
 }
@@ -600,7 +606,7 @@ async function blaveGoNow(b) {
   trackFeature("login_click");
   try {
     // 同意頁的 <lang> 收 en/zh/cn/…,跟我們的語系代號同一組,直接送。"blave" = 為了用 Blave AI 登入:還不能跑就不搶前景(main.js loginFocus)
-    await window.blave.startOAuth(LANG, "blave");
+    await oauthStart(LANG, "blave");
     hasToken = true; acct = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate();
     await window.blave.saveConnection({ kind: "blave" });
     enterWorkspace("blave", {});
@@ -4430,7 +4436,7 @@ function blaveLoginFlow(card) {
     card.set(sysLz(() => ({ calm: true, text: t("oauth.opened"), label: t("oauth.cancel"), out: true, on: () => window.blave.cancelOAuth() })));
     trackFeature("login_click");
     try {
-      await window.blave.startOAuth(LANG);
+      await oauthStart(LANG);
       oauthPending = false; waitChanged(); hasToken = true; acct = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate();
       mpInit("blave");                         // 失效期間型錄抓回來是空的
       card.set(sysLz(() => (resendState(card, () => t("fault.authOk")))));
@@ -5082,7 +5088,7 @@ async function planLogin() {
   setHint(null);                             // 上一則(例如離線登出「還要去補撤」)講的是上一次的事,不該活過這次登入
   planLoginBusy = oauthPending = true; planErr = null; planPaint(); waitChanged();
   trackFeature("login_click");
-  try { await window.blave.startOAuth(LANG); hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); acctPaintAcct(); await acctCheck(); balLoad(); }
+  try { await oauthStart(LANG); hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); acctPaintAcct(); await acctCheck(); balLoad(); }
   // 取消或失敗:留在原地,不報錯
   catch (_) { planErr = null; }
   planLoginBusy = oauthPending = planLoginOut = false; planPaint(); waitChanged();
@@ -5198,7 +5204,7 @@ async function planRelogin() {
   if (oauthPending || planLoginBusy) return;
   oauthPending = true; waitChanged();
   // 可能換了帳號:上一個帳號的數字不能留到花錢確認框
-  try { await window.blave.startOAuth(LANG); planErr = null; hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); await acctCheck(); balLoad(); }
+  try { await oauthStart(LANG); planErr = null; hasToken = true; acct = null; balLast = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate(); await acctCheck(); balLoad(); }
   // 取消或失敗:那句話留著,鈕還在
   catch (_) { /* noop */ }
   oauthPending = false; waitChanged();
