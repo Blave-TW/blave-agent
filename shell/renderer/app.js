@@ -4436,10 +4436,12 @@ function blaveLoginFlow(card) {
     card.set(sysLz(() => ({ calm: true, text: t("oauth.opened"), label: t("oauth.cancel"), out: true, on: () => window.blave.cancelOAuth() })));
     trackFeature("login_click");
     try {
-      await oauthStart(LANG);
+      const lr = await oauthStart(LANG);
       oauthPending = false; waitChanged(); hasToken = true; acct = null; if (typeof libInvalidate === "function") libInvalidate(); if (typeof rptInvalidate === "function") rptInvalidate();
       mpInit("blave");                         // 失效期間型錄抓回來是空的
-      card.set(sysLz(() => (resendState(card, () => t("fault.authOk")))));
+      // 手機對話被關掉那句:setHint 寫不到這張卡,人又正看著它,接在同一行(CJK 句號結尾直接接)
+      const okText = () => { const a = t("fault.authOk"); return lr && lr.phoneOff ? a + (/[。！？]$/.test(a) ? "" : " ") + t("ph.offRelogin") : a; };
+      card.set(sysLz(() => (resendState(card, okText))));
       acctPrecheck();
     } catch (e) {
       oauthPending = false; waitChanged();

@@ -679,9 +679,11 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     ok("12 接線:startOAuth 在 saveToken 之前叫 relay().signOut()", /try \{ await relay\(\)\.signOut\(\); \}/.test(seg));
     ok("12 回給畫面 phoneOff(原本開著);登入完成回傳帶它", phoneOff === true && /return \{ ok: true, phoneOff \};/.test(oa));
     ok("12 signOut 之後再等一次輪替才讀舊 token,讀舊值到 saveToken 之間沒有 await", settles.join() === "settle,settle,read" && !/await/.test(oa.slice(oa.indexOf("const prevToken = loadToken();"), oa.indexOf("if (!saveToken(r.body.access_token))"))));
-    ok("12 存好 token 立刻 tick 一次(設定 › 連結不用等 2 分鐘)", /throw new Error\("KEYCHAIN_UNAVAILABLE"\);\n  \}\n  relay\(\)\.tick\(\)\.catch\(\(\) => \{\}\);/.test(oa)); }
+    ok("12 新 app_secret 存好之後才 tick 一次(設定 › 連結不用等 2 分鐘;新 token 配舊 secret 會 401)", /saveAppSecret\(r\.body\.app_secret\);[^\n]*\n(?:  \/\/[^\n]*\n)*  relay\(\)\.tick\(\)\.catch\(\(\) => \{\}\);/.test(oa) && oa.indexOf("relay().tick()") > oa.indexOf("saveAppSecret(r.body.app_secret)"));
+    ok("12 phoneOff 也看平台旗標(區塊看得到才講)", /const phoneOff = relay\(\)\.isOn\(\) && relay\(\)\.isVisible\(\);/.test(oa)); }
   { const app2 = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
     ok("12 畫面:四個登入入口都走 oauthStart,原本開著才出 ph.offRelogin;登出框開著時多 acct.out.6", (app2.match(/await oauthStart\(/g) || []).length === 4 && !/window\.blave\.startOAuth\(/.test(app2.replace(/async function oauthStart[\s\S]*?\n\}/, ""))
+      && /const okText = \(\) => \{ const a = t\("fault\.authOk"\); return lr && lr\.phoneOff \? a \+ \(\/\[。！？\]\$\/\.test\(a\) \? "" : " "\) \+ t\("ph\.offRelogin"\) : a; \};\n      card\.set\(sysLz\(\(\) => \(resendState\(card, okText\)\)\)\);/.test(app2)
       && /if \(r && r\.phoneOff\) setHint\(\{ text: t\("ph\.offRelogin"\) \}\);/.test(app2) && /mvOn \? \[t\("acct\.out\.5"\)\] : \[\], phShown\(\) && PH\.signedIn && PH\.on \? \[t\("acct\.out\.6"\)\] : \[\]/.test(app2)); }
 
   // ── 9 ──

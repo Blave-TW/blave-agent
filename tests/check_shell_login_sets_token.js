@@ -15,6 +15,8 @@ lines.forEach((l, i) => {
   console.log((good ? "PASS  " : "FAIL  ") + `app.js:${i + 1} ${l.trim().slice(0, 70)}`);
   if (!good) red++;
 });
+// 登入點只准經 oauthStart:包裝以外直接 await startOAuth 的登入點,這支列舉不到
+{ const src = lines.join("\n").replace(/async function oauthStart[\s\S]*?\n\}/, ""); if (/window\.blave\.startOAuth\(/.test(src)) { console.log("FAIL  oauthStart 以外還有直接呼叫 window.blave.startOAuth(的登入點"); red++; } }
 if (n < 5) { console.log(`FAIL  只找到 ${n} 個登入點,預期至少 5 個(比對字串可能改了,這支測試要跟著改)`); red++; }
 console.log(red ? `${red} 紅` : "all pass");
 process.exit(red ? 1 : 0);
