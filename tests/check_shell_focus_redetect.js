@@ -10,6 +10,8 @@ const STR = eval(fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "ut
 let red = 0; const t = (n, ok, info) => { console.log((ok ? "PASS  " : "FAIL  ") + n + (ok || info === undefined ? "" : "  " + JSON.stringify(info))); if (!ok) red++; };
 const grab = (re, name) => { const m = app.match(re); if (!m) { console.log("FAIL  找不到 " + name); process.exit(1); } return m[0]; };
 const fnOf = (name) => grab(new RegExp("^(?:async )?function " + name + "\\([^)]*\\) \\{[\\s\\S]*?\\n\\}", "m"), name);
+// 舊碼沒有的那幾支換成「照舊碼的行為」,讓舊碼跑得到斷言、紅在行為上而不是紅在切不到原文
+const optFn = (name, fallback) => (app.match(new RegExp("^(?:async )?function " + name + "\\(", "m")) ? fnOf(name) : fallback);
 const constOf = (name) => grab(new RegExp("^const " + name + " = .*$", "m"), name);
 
 const mkEl = (tag) => {
@@ -17,26 +19,27 @@ const mkEl = (tag) => {
     append: (...xs) => xs.forEach((x) => { if (typeof x === "string") n.children.push({ text: x }); else { x.parent = n; n.children.push(x); } }),
     appendChild: (x) => { n.append(x); return x; },
     addEventListener: (ev, fn) => { if (ev === "click") n._click = fn; },
-    setAttribute: () => {}, focus: () => {},
-    querySelector: () => null,
+    setAttribute: () => {}, focus: () => { S.focused = n; },
+    contains: (x) => { for (let p = x; p; p = p.parent) if (p === n) return true; return false; },
+    querySelector: (q) => { const k = (q.match(/data-kind="([^"]+)"\] button/) || [])[1]; const r = k && n.children.find((c) => c.dataset && c.dataset.kind === k); return r ? r.children.find((c) => c.tag === "button") || null : null; },
     querySelectorAll: (q) => { const out = []; const walk = (x) => (x.children || []).forEach((c) => { if (q === "button" && c.tag === "button") out.push(c); walk(c); }); walk(n); return out; },
-    closest: (q) => { const k = (q.match(/data-kind="([^"]+)"/) || [])[1]; let p = n; while (p) { if (k && p.dataset && p.dataset.kind === k) return p; p = p.parent; } return null; } };
+    closest: (q) => { const k = (q.match(/data-kind="([^"]+)"/) || [])[1]; let p = n; while (p) { if (p.dataset && (k ? p.dataset.kind === k : q === "[data-kind]" && p.dataset.kind)) return p; p = p.parent; } return null; } };
   Object.defineProperty(n, "textContent", { get: () => n.children.map((c) => c.text !== undefined ? c.text : c.textContent).join("") + n._txt, set: (v) => { n.children.length = 0; n._txt = String(v); } });
   Object.defineProperty(n, "innerHTML", { get: () => n._html, set: (v) => { n._html = v; n.children.length = 0; if (!v) return; const s = mkEl("span"); s.parent = n; n.children.push(s); n._first = s; } });
   Object.defineProperty(n, "firstChild", { get: () => n._first });
   return n;
 };
 const dom = {}; const $ = (id) => dom[id] || (dom[id] = mkEl("div"));
-const document = { createElement: mkEl, createDocumentFragment: () => mkEl("#frag") };
+const document = { createElement: mkEl, createDocumentFragment: () => mkEl("#frag"), activeElement: null };
 const tr = (k, v) => { let s = STR.zh[k] || k; for (const x of Object.keys(v || {})) s = s.split("{" + x + "}").join(v[x]); return s; };
 
 // 主行程那一頭:每次偵測回一個由測試決定何時 resolve 的 promise
 const IPC = { calls: 0, pending: [] };
 const window = { blave: { detectAgents: () => { IPC.calls++; return new Promise((res) => IPC.pending.push(res)); } } };
-const S = {};
+const S = { hints: [] };
 const R = new Function("document", "$", "t", "window", "S", `
   let loginPending = null, oauthPending = false, cur = null, localReady = false;
-  const MDL = { busy: false }, mdlPaint = () => {}, paintBlaveBtn = () => {}, connectLockPaint = () => {}, setHint = () => {}, trackEvent = () => {}, laiOn = () => false;
+  const MDL = { busy: false }, mdlPaint = () => {}, paintBlaveBtn = () => {}, connectLockPaint = () => {}, setHint = (h) => { S.hints.push(h); }, trackEvent = () => {}, laiOn = () => false;
   const connect = (k) => { S.connected = k; }, localLogin = (k) => { S.login = k; }, codexPkgGo = (re) => { S.pkgGo = re; }, codexAutoLogin = () => {};
   ${fnOf("row")}
   ${fnOf("btn")}
@@ -45,7 +48,11 @@ const R = new Function("document", "$", "t", "window", "S", `
   const PKG = { snap: null, redetect: false, auto: null, done: false };
   let detectAt = 0;
   ${constOf("ROWMSG")}
+  let detectP = null;
   ${fnOf("detect")}
+  ${optFn("detectFresh", "async function detectFresh() { return detect(); }")}
+  ${optFn("detectRun", "")}
+  ${fnOf("codexPkgOnState")}
   ${constOf("REDETECT_GAP_MS")}
   ${fnOf("focusRedetect")}
   ${constOf("LOCAL_FAULTS")}
@@ -57,7 +64,7 @@ const R = new Function("document", "$", "t", "window", "S", `
   ${fnOf("paintRows")}
   ${fnOf("rowMsg")}
   ${constOf("rowVars")}
-  return { detect, focusRedetect, paintRows, PKG, MDL, set: (k, v) => { eval(k + " = v"); }, get: (k) => eval(k) };`)(document, $, tr, window, S);
+  return { detect, detectFresh, codexPkgOnState, focusRedetect, paintRows, PKG, MDL, set: (k, v) => { eval(k + " = v"); }, get: (k) => eval(k) };`)(document, $, tr, window, S);
 
 ["view-connect", "set-scrim", "set-model"].forEach((id) => { $(id).hidden = true; });
 $("view-connect").hidden = false;
@@ -107,6 +114,43 @@ const answer = (d) => { const f = IPC.pending.shift(); if (f) f(d); };
     const p = R.detect({ type: "click" });
     t("手動〔重新偵測〕:兩列都是「偵測中…」、沒有鈕、MDL.busy", stOf("claude").includes(tr("cn.detecting")) && !btnOf("claude") && R.MDL.busy === true, stOf("claude"));
     answer(d0); await p; }
+
+  // ④ 稽核 P2-1:回前景那一輪還在飛,Codex 引擎就重抓完(〔再試一次〕)。裝好那一刻的重偵測不能共用裝之前起跑的那一輪:
+  //    先記著(PKG.redetect),那一輪收尾再起新的
+  { const bad = D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: false, why: "codex_cantrun", path: "/x/codex" });
+    R.PKG.snap = idle; R.set("lastDetect", bad); R.paintRows(bad); R.set("detectAt", 0); R.PKG.redetect = false;
+    const c0 = IPC.calls; R.focusRedetect();
+    R.codexPkgOnState({ phase: "install" }); R.codexPkgOnState({ ...idle });
+    const c1 = IPC.calls - c0, flagged = R.PKG.redetect;
+    answer(bad); await tick(); await tick();
+    const c2 = IPC.calls - c0;
+    t("回前景那一輪在飛時引擎裝好:不馬上重偵測(會共用到裝之前那一輪),記 PKG.redetect;那一輪收尾再起新的一輪",
+      c1 === 1 && flagged === true && c2 === 2 && R.PKG.redetect === false, { c1, flagged, c2 });
+    answer(D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: true, path: "/x/codex" })); await tick();
+    t("…新的那一輪結果畫上去:Codex 已登入,不再是〔再試一次〕", stOf("codex").includes(tr("st.signedIn")), stOf("codex")); }
+
+  // ⑤ 稽核 P3-3:回前景那一輪開始時不清提示句(設定頁那句登入失敗),結果回來才清
+  { const d0 = D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: true, path: "/x/codex" });
+    R.set("lastDetect", d0); R.paintRows(d0); R.set("detectAt", 0); S.hints.length = 0;
+    R.focusRedetect(); const atStart = S.hints.length;
+    answer(d0); await tick();
+    t("回前景:提示句等結果回來才清(開始時不清)", atStart === 0 && S.hints.length === 1 && S.hints[0] === null, { atStart, hints: S.hints }); }
+
+  // ⑥ 稽核 P3-2:結果回來整列重建,焦點放回原本那一列的鈕
+  { const d0 = D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: true, path: "/x/codex" });
+    R.set("lastDetect", d0); R.paintRows(d0); R.set("detectAt", 0);
+    R.focusRedetect(); document.activeElement = btnOf("claude"); S.focused = null;
+    answer(d0); await tick();
+    t("回前景:重畫後焦點回到 Claude 那一列新的〔連結〕", !!S.focused && S.focused === btnOf("claude"), { f: S.focused && S.focused.textContent });
+    document.activeElement = null; }
+
+  // ⑦ 稽核 P3-4:登入完那次偵測要「登入之後」的結果:回前景那一輪還在飛就等它跑完再起新的
+  { const d0 = D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: true, path: "/x/codex" });
+    R.set("detectAt", 0); R.focusRedetect(); const c0 = IPC.calls;
+    const f = R.detectFresh(); await tick(); const c1 = IPC.calls - c0;
+    answer(d0); await tick(); await tick(); const c2 = IPC.calls - c0;
+    answer(D({ loggedIn: true }, { loggedIn: true, path: "/x/codex" })); await f;
+    t("detectFresh:在飛那一輪跑完才起新的一輪(不共用登入前那一輪),結果是新的那份", c1 === 0 && c2 === 1 && R.get("lastDetect").claude.loggedIn === true, { c1, c2 }); }
 
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

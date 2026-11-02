@@ -304,7 +304,8 @@ async function detectAgentsRaw() {
    超時或 reject 回完整形狀、兩條都是 installed:true + *_timeout:畫面畫「沒有回應」(不是「未偵測到」),跟 detectWhy 的 _timeout 同一個意思。
    內層超時後還會跑完、再寫一行 detect.log、更新 BAD_BIN,接受。
    同時進來的呼叫(回前景重偵測途中按〔連結〕,agentLogin／saveConnection 又要偵測)共用進行中的那一輪:兩輪 detectAgentsRaw
-   會搶 BAD_BIN／codexRan／lastDetected,子行程也加倍。那一輪跑超過上限就不再共用,免得一輪卡住拖住之後每一次 */
+   會搶 BAD_BIN／codexRan／lastDetected,子行程也加倍。那一輪跑超過上限就不再共用,免得一輪卡住拖住之後每一次;
+   這時另開的新一輪仍可能被晚到的舊輪覆寫那三個值(改之前每次都各跑一輪,一樣),接受 */
 const DETECT_TOTAL_MS = 2 * (5000 + LOGIN_CHECK_MS) + 10000;
 let detectShared = null;
 async function detectAgents(ms = DETECT_TOTAL_MS) {

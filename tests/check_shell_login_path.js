@@ -279,6 +279,16 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
       t("detectAgents:raw reject → 同一份形狀;err 記 e.code、不記訊息", shapeOk(dr) && rej.logged.length === 1 && rej.logged[0][1].err === "EPIPE" && !JSON.stringify(rej.logged).includes("secret"), rej.logged);
       const rej2 = mkW(() => Promise.reject(new TypeError("x"))), dr2 = await rej2.f();
       t("…沒有 code 時記 e.name", shapeOk(dr2) && rej2.logged[0][1].err === "TypeError", rej2.logged);
+      const RAW0 = { claude: { installed: true, loggedIn: false }, codex: { installed: false } };
+      { let n = 0; const hold = mkW(() => { n++; return new Promise(() => {}); });
+        const [a1, a2] = await Promise.all([hold.f(), hold.f()]); const n1 = n;
+        await hold.f(); const n2 = n;
+        t("detectAgents:同時進來的兩次共用一輪 raw;那一輪跑超過上限後再叫,另開新的一輪(不被卡住的那輪拖住)",
+          n1 === 1 && n2 === 2 && shapeOk(a1) && shapeOk(a2), { n1, n2 }); }
+      { let n = 0, done; const sl = mkW(() => { n++; return new Promise((r) => { done = r; }); });
+        const p1 = sl.f(); await new Promise((r) => setTimeout(r, 10)); const p2 = sl.f(); done(RAW0); const [b1, b2] = await Promise.all([p1, p2]);
+        const p3 = sl.f(); done(RAW0); await p3;
+        t("…上限內、上一輪還在跑時進來的共用它;那一輪結束後再叫是新的一輪", n === 2 && b1 === RAW0 && b2 === RAW0, { n }); }
       const RAW = { claude: { installed: true, loggedIn: true }, codex: { installed: false } }, okw = mkW(async () => RAW), dk = await okw.f();
       t("detectAgents:raw 正常回來 → 原樣回傳、不多寫 detect.log", dk === RAW && okw.logged.length === 0);
       t("四個呼叫點(detect-agents IPC、agentLogin、saveConnection、開 app 的 cli_auth)都叫包裝那支,不直接叫 raw;raw 只被包裝叫",

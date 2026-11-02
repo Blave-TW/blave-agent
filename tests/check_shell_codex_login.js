@@ -204,6 +204,7 @@ exit 2
      let loginSpawned = null;
      const MDL = { busy: false }, mdlPaint = () => {}, paintBlaveBtn = () => {}, connect = (k) => { state.connected = k; }, srSay = (x) => said.push(x), trackEvent = () => {}, trackFeature = () => {};
      ${fnOf(app, "cmdLine")}
+     function detectFresh() { return detect(); }
      function detect(quiet) { detects++; state.quiet = quiet; detectAt = Date.now(); if (state.next) lastDetect = state.next; }
      function setHint(h) { HINT = h || null; }
      let detectAt = 0;

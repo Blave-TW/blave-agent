@@ -15,7 +15,7 @@ const authUnknown = eval("(" + app.match(/^const authUnknown = (.*);$/m)[1] + ")
   const mk = (ipc, akInfo) => {
     const log = { paint: [], ak: 0, ev: [] };
     const R = new Function("ctx", `with (ctx) { ${DETECT}\nreturn { detect, get: () => lastDetect, PKG }; }`)({
-      $: (id) => ({ hidden: id !== "view-connect" ? false : false }), localReady: false, AK: { info: akInfo }, detectingRows: () => {}, setHint: () => {},
+      $: (id) => ({ hidden: id !== "view-connect" ? false : false }), localReady: false, AK: { info: akInfo }, detectingRows: () => {}, setHint: () => {}, loginPending: null, document: { activeElement: null },
       paintRows: (d) => log.paint.push(d), akSetInfo: () => { log.ak++; }, trackEvent: (e, p) => log.ev.push(e + ":" + JSON.stringify(p)), t: (k) => k, MDL: { busy: true },
       window: { blave: { detectAgents: ipc } } });
     return { R, log };
@@ -45,20 +45,20 @@ const authUnknown = eval("(" + app.match(/^const authUnknown = (.*);$/m)[1] + ")
     ok("detect_fail:codex_none 只在 PKG.snap.unsupported 時送(arch／tar);一般機器與快照還沒到不送;codex_timeout／codex_nonzero／cantrun→nonzero 照送;claude_none 照送",
       none === "" && snapless === "" && arch === SENT && tar === SENT && slow === 'detect_fail:{"why":"codex_timeout"}' && no === NZ && bad === NZ
       && cl.log.ev.filter((e) => e.startsWith("detect_fail:")).join() === 'detect_fail:{"why":"claude_none"}', { none, snapless, arch, tar, slow, no, bad, cl: cl.log.ev }); }
-  ok("catch 分支不另外重畫(paintRows 自己放開 MDL.busy 並 mdlPaint;不加 finally 連畫兩遍)", !/finally/.test(fn("detect")) && (fn("detect").match(/paintRows\(/g) || []).length === 1);
+  ok("catch 分支不另外重畫(paintRows 自己放開 MDL.busy 並 mdlPaint;不加 finally 連畫兩遍)", !/finally/.test(fn("detectRun")) && (fn("detectRun").match(/paintRows\(/g) || []).length === 1);
 
   // ── localLogin／localLoginFlow:agentLoginRun 丟例外 → 收尾照跑(detect 重畫、loginPending 清掉) ──
   const LL = "async " + fn("localLogin"), LF = fn("localLoginFlow");
   ok("localLogin:agentLoginRun 包在 try/catch,catch 給失敗的結果物件再走原本的收尾(await detect())",
     /let r;\n  try \{\n    r = await agentLoginRun\(kind, /.test(LL) && /\} catch \(_\) \{[\s\S]*?r = \{ ok: false, cancelled: false, busy: false, cantRun: false \};\n  \}/.test(LL)
-    && LL.indexOf("r = { ok: false") < LL.indexOf("loginPending = null;") && LL.indexOf("loginPending = null;") < LL.indexOf("await detect();"));
+    && LL.indexOf("r = { ok: false") < LL.indexOf("loginPending = null;") && LL.indexOf("loginPending = null;") < LL.indexOf("await detectFresh();"));
   { // 真的跑一次 localLogin(連結畫面那一列):例外之後 loginPending 清掉、detect 被叫、那一列畫成登入沒完成
     const log = { detect: 0, paints: 0 };
     const ctx = { loginPending: null, oauthPending: false, ROWMSG: { claude: null, codex: null }, LAI: { msg: {} }, lastDetect: null, LANG: "zh",
       $: () => ({ querySelector: () => null, focus: () => {} }), setHint: () => {}, paintRows: () => { log.paints++; }, laiPaint: () => {}, laiOn: () => false, srSay: () => {}, t: (k) => k, trackEvent: () => {}, trackFeature: () => {},
       rowMsgText: () => "", whyState, connect: () => {},
       agentLoginRun: async () => { throw new Error("spawn EBADF"); },
-      detect: async () => { log.detect++; ctx.lastDetect = { codex: { installed: true, loggedIn: false, why: "codex_nonzero" } }; } };
+      detectFresh: async () => { log.detect++; ctx.lastDetect = { codex: { installed: true, loggedIn: false, why: "codex_nonzero" } }; } };
     const run = new Function("ctx", `with (ctx) { ${LL}\nreturn localLogin; }`)(ctx);
     const b = { closest: (q) => (q === "#lai-rows" || q === ".cn-opts" ? null : {}) };
     let threw = false; try { await run("codex", b); } catch (_) { threw = true; }
@@ -79,7 +79,7 @@ const authUnknown = eval("(" + app.match(/^const authUnknown = (.*);$/m)[1] + ")
     const mkBtn = (kind) => ({ kind, disabled: false, focus() { doc.activeElement = this; }, closest: () => ({ dataset: { kind } }) });
     const box = { btns: [mkBtn("claude"), mkBtn("codex")], contains(x) { return this.btns.includes(x); }, querySelector(q) { const k = (q.match(/data-kind="([^"]+)"/) || [])[1]; return this.btns.find((b) => b.kind === k) || null; } };
     const doc = { activeElement: null };
-    const ctx = { PKG: { snap: null, redetect: false }, loginPending: null, MDL: { busy: false }, lastDetect: { claude: {}, codex: { installed: false } }, calls: [], document: doc, $: () => box };
+    const ctx = { PKG: { snap: null, redetect: false }, loginPending: null, detectP: null, MDL: { busy: false }, lastDetect: { claude: {}, codex: { installed: false } }, calls: [], document: doc, $: () => box };
     Object.assign(ctx, { detect: () => ctx.calls.push("detect"), paintRows: () => { ctx.calls.push("paint"); box.btns = [mkBtn("claude"), mkBtn("codex")]; doc.activeElement = null; } });
     const onState = new Function("ctx", `with (ctx) { ${fn("codexPkgOnState")}\nreturn codexPkgOnState; }`)(ctx);
     const DL = { phase: "download", bytes: 1, total: 2, fail: null }, DONE = { phase: "idle", fail: null }, FAIL = { phase: "idle", fail: { kind: "net" } };
@@ -89,6 +89,8 @@ const authUnknown = eval("(" + app.match(/^const authUnknown = (.*);$/m)[1] + ")
     ok("…完成那一刻正在偵測(MDL.busy)→ 不疊一次偵測、記 PKG.redetect;進度也不重畫(偵測中的列不蓋掉)", ctx.calls.length === 0 && ctx.PKG.redetect === true, ctx.calls);
     ctx.MDL.busy = false; ctx.PKG.redetect = false; ctx.loginPending = "claude"; onState(DL); onState(DONE);
     ok("…完成那一刻在等登入 → 記 PKG.redetect", ctx.PKG.redetect === true && !ctx.calls.includes("detect"));
+    ctx.loginPending = null; ctx.PKG.redetect = false; ctx.calls.length = 0; ctx.detectP = Promise.resolve(); onState(DL); onState(DONE); ctx.detectP = null;
+    ok("…完成那一刻有一輪偵測在飛(回前景那種不立 MDL.busy)→ 記 PKG.redetect,不共用裝之前那一輪(稽核 v043-focus-redetect P2-1)", ctx.PKG.redetect === true && !ctx.calls.includes("detect"), ctx.calls);
     ctx.loginPending = null; ctx.PKG.redetect = false; ctx.calls.length = 0; onState(DL); onState(FAIL);
     ok("下載失敗(idle + fail)→ 不偵測,重畫列(寫原因、給〔再試一次〕)", ctx.calls.join() === "paint,paint" && !ctx.PKG.redetect, ctx.calls);
     ctx.calls.length = 0; box.btns[0].focus(); onState({ phase: "download", bytes: 5, total: 9, fail: null });
@@ -100,7 +102,7 @@ const authUnknown = eval("(" + app.match(/^const authUnknown = (.*);$/m)[1] + ")
   { // 按〔連結〕抓完接登入:原文跑 codexPkgGo／codexPkgOnState／codexAutoLogin,detect 用假的(接原文那一行)
     const mkA = (o = {}) => { const login = [], ensure = [], btnEl = { disabled: false };
       const panes = { "agent-rows": { querySelector: () => (o.noBtn ? null : btnEl) }, "set-model": { hidden: false, querySelector: () => btnEl }, "lai-rows": { querySelector: () => btnEl }, "view-connect": { hidden: !!o.closed }, "set-scrim": { hidden: false } };
-      const ctx = { PKG: { snap: null, redetect: false, auto: null, done: false }, MDL: { busy: false }, loginPending: o.loginPending || null, oauthPending: false, lastDetect: null, whyState, laiOn: () => !o.closed,
+      const ctx = { PKG: { snap: null, redetect: false, auto: null, done: false }, MDL: { busy: false }, detectP: null, loginPending: o.loginPending || null, oauthPending: false, lastDetect: null, whyState, laiOn: () => !o.closed,
         $: (id) => panes[id], localLogin: (k, b) => login.push(k), paintRows: () => {}, document: { activeElement: null },
         detect() { ctx.lastDetect = o.detected || { codex: { installed: true, loggedIn: false, why: "codex_nonzero" } }; if (ctx.PKG.auto) ctx.codexAutoLogin(); },
         window: { blave: { codexPkgEnsure: (a) => { ensure.push(a); return o.ensure || Promise.resolve({ ok: true }); } } } };

@@ -59,13 +59,28 @@ let detectAt = 0;        // 回到前景重偵測的限頻用
 const ROWMSG = { claude: null, codex: null };   // 連結畫面各列名字底下那一句:null | "opened" | "failed"(rowMsg)
 /* quiet = 回前景那一次:列照上一次的畫、鈕留著,結果回來才重畫。先清列的話,把視窗叫回前景的那一下會點在「偵測中…」上
    (0.1.41 Windows〔再試一次〕點三下才動、Mac 第一下〔連結〕被吃);途中按下去的〔連結〕／〔再試一次〕照常走,
-   主行程那邊同時進來的偵測共用同一輪(main.js detectAgents) */
-async function detect(quiet) {
+   主行程那邊同時進來的偵測共用同一輪(main.js detectAgents)。
+   detectP = 在飛的那一次:這時要「某件事之後」的結果(引擎裝好、登入完)不能直接叫 detect(),會共用到那件事之前起跑的一輪,
+   要嘛記 PKG.redetect 等收尾補,要嘛 detectFresh() 等它跑完再起新的 */
+let detectP = null;
+function detect(quiet) {
+  const p = detectRun(quiet === true).finally(() => { if (detectP === p) detectP = null; });   // 〔重新偵測〕直接掛在 click 上,收到的是 Event
+  detectP = p;
+  return p;
+}
+async function detectFresh() {
+  while (detectP) await detectP;
+  return detect();
+}
+async function detectRun(quiet) {
   detectAt = Date.now();
-  if (quiet !== true) detectingRows();   // 〔重新偵測〕直接掛在 click 上,收到的是 Event
-  setHint(null);
+  if (!quiet) { detectingRows(); setHint(null); }
   let d = null;
   try { d = await window.blave.detectAgents(); } catch (_) { d = null; }
+  // 回前景那一次:提示句等結果回來才清(一回前景就抹掉,新的答案卻還沒到);途中又開始等登入就留著那一句
+  if (quiet && !loginPending) setHint(null);
+  // 整份列重建會把鍵盤焦點清掉:記下焦點在哪一列的鈕、畫完還回去(同 codexPkgOnState)
+  const box = $("agent-rows"), a = document.activeElement, fk = quiet && box && a && box.contains(a) ? (a.closest("[data-kind]") || {}).dataset : null;
   if (d) {
     lastDetect = d;
     if (typeof akSetInfo === "function") akSetInfo(lastDetect.apikey);   // 存了哪一家 + 上架清單(主行程從不給金鑰值)
@@ -77,6 +92,7 @@ async function detect(quiet) {
       apikey: (typeof AK === "object" && AK.info) || null };
   }
   paintRows(lastDetect);
+  if (fk && fk.kind) { const b = box.querySelector('[data-kind="' + fk.kind + '"] button'); if (b && !b.disabled) b.focus(); }
   if (PKG.auto) codexAutoLogin();
   // 連結畫面上本機兩個都不能用:是狀態不是失敗,但「沒連上任何 AI 的安裝」只有這裡答得出為什麼
   if (!$("view-connect").hidden && !localReady) trackEvent("connect_failed", { kind: "no_local" });
@@ -133,7 +149,7 @@ function codexPkgOnState(snap) {
   PKG.snap = snap && typeof snap === "object" ? snap : null;
   if (prev && prev.phase !== "idle" && PKG.snap && PKG.snap.phase === "idle" && !PKG.snap.fail) {
     PKG.done = !!PKG.auto;
-    if (loginPending || MDL.busy) PKG.redetect = true; else detect();
+    if (loginPending || MDL.busy || detectP) PKG.redetect = true; else detect();
     return;
   }
   if (PKG.snap && PKG.snap.fail) PKG.auto = null;
@@ -305,7 +321,7 @@ async function localLogin(kind, b) {
   if (!r.ok && !r.cancelled && !r.busy) trackEvent("connect_failed", { kind: kind === "codex" ? "codex_login" : "claude_login" });
   if (inRow) ROWMSG[kind] = null;
   if (inLai) { LAI.msg[kind] = null; LAI.login = null; }
-  await detect();
+  await detectFresh();   // 登入前起跑的那一輪(回前景)還在飛的話,不拿它的結果
   const x = (lastDetect && lastDetect[kind]) || {};
   if (r.ok && x.loggedIn) trackFeature(kind === "codex" ? "codex_login_ok" : "claude_login_ok");   // 登入指令回 0 但偵測仍沒登入:畫面講的是失敗,不記成功
   if ((inRow || inLai) && r.ok && x.installed && x.loggedIn) {
