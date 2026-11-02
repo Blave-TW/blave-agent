@@ -998,7 +998,7 @@ function phAskDrop(st) {
    輸入框上方一列,不自動消失;✕ 或〔到網站撤銷〕才收(主行程記掉、之後不再出同一批)。第一次畫出來跟主行程說,它打 prompt/seen。
    只在 id／支數／語言變了才重寫字:狀態每次推來都重寫的話,role="status" 會一直念。
    prompt/seen 一出現就送(spec §3.3);phone_new_shown 要等真的看得到(視窗在前面、聊天欄展開、那一列有畫出來)才記,每一批記一次 */
-var PH_NOTICE_KEY = "", PH_NOTICE_CLOSED = "";   // var:applyStatic 可能在這一行之前被叫到。CLOSED:剛按掉的那一批,主行程還沒推新狀態前又推來舊的也不重畫
+let PH_NOTICE_KEY = "", PH_NOTICE_CLOSED = "";   // CLOSED:剛按掉的那一批,主行程還沒推新狀態前又推來舊的也不重畫
 const PH_NOTICE_SEEN_KEY = "ph_notice_counted";
 function phNoticeVisible() {
   const box = $("ph-notice");
