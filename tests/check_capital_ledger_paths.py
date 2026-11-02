@@ -58,7 +58,8 @@ Scenarios (each in its own child process and scratch dir):
 
 President (統一) runs the same scenarios when lib/order_president.py exists
 (another branch); on main they are skipped. Every contract-calendar "now" is
-frozen (freeze_clock); the 5 s sleeps are real (note_account_short's spacing).
+frozen (freeze_clock); the >=5 s between two reads (note_account_short's spacing)
+is time.time() moved ahead (let_time_pass), for every module of the child at once.
 
 A scenario that fails because of a real bug asserts the intended behaviour and is
 listed in KNOWN_BUGS: reported "xfail", and fails the run the day it passes
@@ -122,9 +123,10 @@ class World:
 
 def capital_world(tmp):
     w = World("capital", tmp)
-    from lib import account_capital as ac, order_capital as oc
+    from lib import account_capital as ac, capital_vault, order_capital as oc
     ac._SNAPSHOT = os.path.join(tmp, "state", "capital_account.json")
     oc._REFRESH_FLAG = os.path.join(tmp, "state", "capital_refresh")
+    capital_vault.LAST_ORDER_PATH = os.path.join(tmp, "state", "capital_last_order_at")
 
     clk = types.SimpleNamespace(t=0.0)
     oc.time = types.SimpleNamespace(time=lambda: clk.t,
@@ -235,6 +237,15 @@ def president_world(tmp):
     return w
 
 
+def let_time_pass(seconds):
+    """What a real time.sleep(seconds) between two rounds looks like to the round. The whole child
+    shares this one clock, so the snapshot's read_at and portfolio's spacing cannot disagree."""
+    let_time_pass.skew += seconds
+
+
+let_time_pass.skew = 0.0
+
+
 def freeze_clock(w):
     """Every contract-calendar "now" (settlement times, the entry roll, the
     book's settlement check) goes through lib.president_contracts._now."""
@@ -246,6 +257,8 @@ def freeze_clock(w):
 
 
 def child(venue, sid, tmp):
+    real_time = time.time
+    time.time = lambda: real_time() + let_time_pass.skew
     os.chdir(tmp)
     sys.path.insert(0, SRC)
     os.environ["BLAVE_AGENT_HOME"] = os.environ["BLAVECLAW_HOME"] = tmp
@@ -338,7 +351,7 @@ def child(venue, sid, tmp):
         round_("user closed it in the app, signal unchanged")
         w.signal(0)
         round_("signal -> 0")
-        time.sleep(5.5)
+        let_time_pass(5.5)
         last = round_("next round, >=5 s later")
         sent_after = [o for r in log[2:] for o in r["sent"]]
         ok = not sent_after and w.net() == 0 and ledger_txf(last) == 0
@@ -347,7 +360,7 @@ def child(venue, sid, tmp):
         w.rows = {k: v - 1 for k, v in w.rows.items()}
         w.signal(0)
         round_("user closed 1 of 2, signal -> 0")
-        time.sleep(5.5)
+        let_time_pass(5.5)
         last = round_("next round, >=5 s later")
         sent_after = [o for r in log[2:] for o in r["sent"]]
         ok = [o["lots"] for o in sent_after] == [1] and w.net() == 0 and ledger_txf(last) == 0
@@ -356,7 +369,7 @@ def child(venue, sid, tmp):
         w.rows = {k: v - 1 for k, v in w.rows.items()}
         w.signal(0.5 if sid == "A4" else 1 / 3)
         round_("user closed 1 by hand, signal cut to 1 lot")
-        time.sleep(5.5)
+        let_time_pass(5.5)
         round_("next round, >=5 s later")
         mid = round_("converged")
         sent_mid = [o["lots"] for r in log[2:] for o in r["sent"]]
@@ -373,7 +386,7 @@ def child(venue, sid, tmp):
         w.fake = {code(2026, 11): 1}
         w.signal(1 / 3)
         round_("read shows the root only in November, signal cut to 1 lot")
-        time.sleep(5.5)
+        let_time_pass(5.5)
         r2 = round_("next round, >=5 s later: still only November")
         r3 = round_("one more round")
         held_mid, book_mid = w.net(), ledger_txf(r3)
@@ -394,7 +407,7 @@ def child(venue, sid, tmp):
         w.rows = {}
         w.signal(-1)
         r1 = round_("user closed it in the app, signal flips to -1")
-        time.sleep(5.5)
+        let_time_pass(5.5)
         round_("next round, >=5 s later")
         last = round_("converged")
         nets = [sum(r["broker"].values()) for r in log]
@@ -411,7 +424,7 @@ def child(venue, sid, tmp):
             w.lag = True
         round_("signal flips to -1")
         w.lag = False
-        time.sleep(5.5)
+        let_time_pass(5.5)
         round_("next round")
         last = round_("converged")
         nets = [sum(r["broker"].values()) for r in log]
@@ -441,7 +454,7 @@ def child(venue, sid, tmp):
         round_("converged")
         w.signal(0)
         round_("signal -> 0")
-        time.sleep(5.5)
+        let_time_pass(5.5)
         last = round_("next round")
         ok = w.rows.get(month) == -1 and ledger_txf(last) == 0
         why = f"after the bot's round trip beside the user's -1: broker={w.rows}, book TXF={ledger_txf(last)}"
@@ -452,7 +465,7 @@ def child(venue, sid, tmp):
         cfg["amounts"][STRAT] = 0
         json.dump(cfg, open("manager/portfolio_config.json", "w"))
         r1 = round_("amount -> 0 (unpicked)")
-        time.sleep(5.5)
+        let_time_pass(5.5)
         last = round_("next round, >=5 s later")
         sent_after = [o for r in log[2:] for o in r["sent"]]
         closes = [o for o in sent_after if o["side"] == "sell" and o["lots"] == 2
@@ -472,7 +485,7 @@ def child(venue, sid, tmp):
                f"resolved_symbol={contract!r}")
     elif sid == "R1":
         r1 = round_("signal unchanged")
-        time.sleep(5.5)
+        let_time_pass(5.5)
         r2 = round_("next round, >=5 s later")
         w.signal(0)
         last = round_("signal -> 0")
@@ -486,7 +499,7 @@ def child(venue, sid, tmp):
             w.rows.pop(code(2026, 10), None)
         months_listed((2026, 11), (2026, 12), (2027, 1))
         round_("October settled; the user's November is now the front month")
-        time.sleep(5.5)
+        let_time_pass(5.5)
         round_("next round")
         round_("converged")
         w.signal(0)
@@ -500,7 +513,7 @@ def child(venue, sid, tmp):
         d_third = 18
         at(y, m, d_third, 13, 31)  # the calendar's settlement time: postponed, still trading
         r1 = round_("past the third Wednesday 13:30, still listed / held")
-        time.sleep(5.5)
+        let_time_pass(5.5)
         r2 = round_("next round")
         held_ok = (not r1["sent"] and not r2["sent"] and ledger_txf(r2) == 1 and not r2["halt"])
         at(y, m, d_late, 13, 31)  # the postponed settlement
@@ -508,7 +521,7 @@ def child(venue, sid, tmp):
             w.rows.pop(code(y, m), None)
         months_listed((y, m + 1), (y, m + 2), (y, m + 3))
         round_("postponed settlement passed")
-        time.sleep(5.5)
+        let_time_pass(5.5)
         last = round_("next round")
         nxt = w.rows.get(code(y, m + 1))
         ok = held_ok and nxt == 1 and ledger_txf(last) == 1 and not last["halt"]
@@ -523,7 +536,7 @@ def child(venue, sid, tmp):
             w.listed = {"TXF": ["TXFK6", "TXFL6", "TXFA7"]}
         if sid == "B1":
             round_("settled, signal unchanged")
-            time.sleep(5.5)
+            let_time_pass(5.5)
             last = round_("next round")
             ok = (w.rows.get("TX2611" if venue == "capital" else "TXFK6") == 1 and not last["halt"]
                   and ledger_txf(last) == 1 and audits("ledger_settled")
@@ -542,7 +555,7 @@ def child(venue, sid, tmp):
                 round_("contract list unread past 13:30 (ListUnknown)")
                 w.rows, w.listed = {"TXFJ6": 1}, {"TXF": ["TXFK6", "TXFL6", "TXFA7"]}
             first = round_("next good read: settled")
-            time.sleep(5.5)
+            let_time_pass(5.5)
             last = round_("next round")
             ok = not first["halt"] and not last["halt"] and ledger_txf(last) == 1 and last["sent"]
             why = (f"halt={first['halt'] or last['halt']} reason={first['halt_reason']!r} "
@@ -550,7 +563,7 @@ def child(venue, sid, tmp):
         elif sid == "B2R":
             boot()  # fresh reconciler module: what a restart / reboot loads
             first = round_("first round after restart, settled")
-            time.sleep(5.5)
+            let_time_pass(5.5)
             last = round_("next round")
             ok = not first["halt"] and not last["halt"] and ledger_txf(last) == 1 and last["sent"]
             why = (f"halt={first['halt'] or last['halt']} reason={first['halt_reason']!r} "
@@ -559,7 +572,7 @@ def child(venue, sid, tmp):
             round_("settled, signal unchanged")
             w.signal(0)
             round_("signal -> 0")
-            time.sleep(5.5)
+            let_time_pass(5.5)
             last = round_("next round")
             sent_after = [o for r in log[2:] for o in r["sent"]]
             ok = not sent_after
