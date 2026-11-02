@@ -9,12 +9,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -74,12 +75,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -166,12 +168,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -286,12 +289,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -408,12 +412,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -605,12 +610,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -627,7 +633,10 @@
           "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -649,12 +658,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -750,12 +760,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -835,12 +846,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -960,12 +972,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -1183,12 +1196,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -1373,12 +1387,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -1529,12 +1544,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -1636,12 +1652,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -1744,12 +1761,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -1857,12 +1875,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -1990,12 +2009,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -2140,12 +2160,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -2274,12 +2295,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -2511,12 +2533,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -2645,12 +2668,13 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
@@ -2839,29 +2863,12 @@
       }
     },
     {
-      "name": "enable_gate_sent",
-      "desc": "打開:403 RELAY_ENABLE_VERIFY sent:true → 不開、不輪詢;碼對 200 才開",
+      "name": "enable_ok",
+      "desc": "打開:enable 只帶憑證,200 → 開、輪詢",
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
-          "response": {
-            "status": 403,
-            "body": {
-              "error_code": "RELAY_ENABLE_VERIFY",
-              "sent": true,
-              "reason": null
-            }
-          }
-        },
-        {
-          "endpoint": "enable",
-          "body": {
-            "enable_code": "123456",
-            "lang": "zh"
-          },
+          "body": {},
           "response": {
             "status": 200,
             "body": {
@@ -2884,204 +2891,12 @@
       }
     },
     {
-      "name": "enable_gate_cooldown",
-      "desc": "打開:reason cooldown → 進輸入碼,沒開",
-      "requests": [
-        {
-          "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
-          "response": {
-            "status": 403,
-            "body": {
-              "error_code": "RELAY_ENABLE_VERIFY",
-              "sent": false,
-              "reason": "cooldown"
-            }
-          }
-        }
-      ],
-      "shell": {
-        "startTurn": [],
-        "stopTurn": []
-      }
-    },
-    {
-      "name": "enable_gate_limited",
-      "desc": "打開:reason limited",
-      "requests": [
-        {
-          "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
-          "response": {
-            "status": 403,
-            "body": {
-              "error_code": "RELAY_ENABLE_VERIFY",
-              "sent": false,
-              "reason": "limited"
-            }
-          }
-        }
-      ],
-      "shell": {
-        "startTurn": [],
-        "stopTurn": []
-      }
-    },
-    {
-      "name": "enable_gate_send_failed",
-      "desc": "打開:reason send_failed",
-      "requests": [
-        {
-          "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
-          "response": {
-            "status": 403,
-            "body": {
-              "error_code": "RELAY_ENABLE_VERIFY",
-              "sent": false,
-              "reason": "send_failed"
-            }
-          }
-        }
-      ],
-      "shell": {
-        "startTurn": [],
-        "stopTurn": []
-      }
-    },
-    {
-      "name": "enable_gate_noemail",
-      "desc": "打開:帳號沒有 email(sent false、reason null)",
-      "requests": [
-        {
-          "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
-          "response": {
-            "status": 403,
-            "body": {
-              "error_code": "RELAY_ENABLE_VERIFY",
-              "sent": false,
-              "reason": null
-            }
-          }
-        }
-      ],
-      "shell": {
-        "startTurn": [],
-        "stopTurn": []
-      }
-    },
-    {
-      "name": "enable_code_invalid",
-      "desc": "打開:碼錯留在這一步",
-      "requests": [
-        {
-          "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
-          "response": {
-            "status": 403,
-            "body": {
-              "error_code": "RELAY_ENABLE_VERIFY",
-              "sent": true,
-              "reason": null
-            }
-          }
-        },
-        {
-          "endpoint": "enable",
-          "body": {
-            "enable_code": "000000"
-          },
-          "response": {
-            "status": 403,
-            "body": {
-              "error_code": "RELAY_ENABLE_CODE_INVALID"
-            }
-          }
-        }
-      ],
-      "shell": {
-        "startTurn": [],
-        "stopTurn": []
-      }
-    },
-    {
-      "name": "enable_code_expired",
-      "desc": "打開:過期",
-      "requests": [
-        {
-          "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
-          "response": {
-            "status": 403,
-            "body": {
-              "error_code": "RELAY_ENABLE_VERIFY",
-              "sent": true,
-              "reason": null
-            }
-          }
-        },
-        {
-          "endpoint": "enable",
-          "body": {
-            "enable_code": "000000"
-          },
-          "response": {
-            "status": 403,
-            "body": {
-              "error_code": "RELAY_ENABLE_CODE_EXPIRED"
-            }
-          }
-        }
-      ],
-      "shell": {
-        "startTurn": [],
-        "stopTurn": []
-      }
-    },
-    {
-      "name": "enable_locked",
-      "desc": "打開:429 VERIFY_LOCKED",
-      "requests": [
-        {
-          "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
-          "response": {
-            "status": 429,
-            "body": {
-              "error_code": "VERIFY_LOCKED"
-            }
-          }
-        }
-      ],
-      "shell": {
-        "startTurn": [],
-        "stopTurn": []
-      }
-    },
-    {
       "name": "enable_rate_limited",
       "desc": "打開:429 ERR429 走 FAILED",
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 429,
             "body": {
@@ -3097,13 +2912,11 @@
     },
     {
       "name": "enable_audit_unavailable",
-      "desc": "打開:碼對但稽核寫不進(503 AUDIT_UNAVAILABLE)走 FAILED",
+      "desc": "打開:稽核寫不進(503 AUDIT_UNAVAILABLE)走 FAILED",
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 503,
             "body": {
@@ -3119,13 +2932,11 @@
     },
     {
       "name": "enable_state_unavailable",
-      "desc": "打開:503 RELAY_STATE_UNAVAILABLE 可重試,不進輸入碼",
+      "desc": "打開:503 RELAY_STATE_UNAVAILABLE 走 FAILED",
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 503,
             "body": {
@@ -3145,9 +2956,7 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 403,
             "body": {
@@ -3162,28 +2971,28 @@
       }
     },
     {
-      "name": "reenable_verify",
-      "desc": "本機開著、api 沒記著:自動重打收到 not_requested → 不寄信、記 needVerify、不再打",
+      "name": "reenable_ok",
+      "desc": "本機開著、api 沒記著:自動重打 enable(不帶驗證碼欄位),200 照常",
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {
           "endpoint": "enable",
           "body": {},
           "response": {
-            "status": 403,
+            "status": 200,
             "body": {
-              "error_code": "RELAY_ENABLE_VERIFY",
-              "sent": false,
-              "reason": "not_requested"
+              "enabled": true,
+              "server_time": 1
             }
           }
         },
@@ -3201,17 +3010,182 @@
       }
     },
     {
+      "name": "prompt_off_no",
+      "desc": "開關關著:enabled 帶 prompt → 畫面拿到 ask;框一出現打 prompt/seen(device_id),按〔不用〕再打一次帶 answer no;再給同一個不再出",
+      "requests": [
+        {
+          "endpoint": "enabled",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "on": false,
+              "prompt": {
+                "device_id": "devresp0001",
+                "label": "iPhone 15",
+                "platform": "ios",
+                "paired_at": 1730530000
+              }
+            }
+          }
+        },
+        {
+          "endpoint": "prompt/seen",
+          "body": {
+            "device_id": "devresp0001"
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "ok": true
+            }
+          }
+        },
+        {
+          "endpoint": "prompt/seen",
+          "body": {
+            "device_id": "devresp0001",
+            "answer": "no"
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "ok": true
+            }
+          }
+        },
+        {
+          "endpoint": "enabled",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "on": false,
+              "prompt": {
+                "device_id": "devresp0001",
+                "label": "iPhone 15",
+                "platform": "ios",
+                "paired_at": 1730530000
+              }
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "prompt_off_on",
+      "desc": "開關關著:框一出現打 prompt/seen,按〔打開〕→ enable(api 由 enable 覆寫),不再帶 answer",
+      "requests": [
+        {
+          "endpoint": "enabled",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "on": false,
+              "prompt": {
+                "device_id": "devresp0001",
+                "label": "iPhone 15",
+                "platform": "ios",
+                "paired_at": 1730530000
+              }
+            }
+          }
+        },
+        {
+          "endpoint": "prompt/seen",
+          "body": {
+            "device_id": "devresp0001"
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "ok": true
+            }
+          }
+        },
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "enabled_429",
+      "desc": "/relay/enabled 每台限流 429 ERR429:總開關、開關、確認框都照上一次,不收起設定區、不停輪詢",
+      "requests": [
+        {
+          "endpoint": "enabled",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "on": false,
+              "prompt": {
+                "device_id": "devresp0001",
+                "label": "iPhone 15",
+                "platform": "ios",
+                "paired_at": 1730530000
+              }
+            }
+          }
+        },
+        {
+          "endpoint": "enabled",
+          "body": {},
+          "response": {
+            "status": 429,
+            "body": {
+              "error_code": "ERR429",
+              "message": "Too many requests"
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
       "name": "D_started_lost",
       "desc": "探針 D:started 一直沒回應 → 重送到期限 → start_aborted＋message_failed not_run(不知道 api 有沒有記到開跑,api 認其中一個),不跑",
       "requests": [
         {
           "endpoint": "enable",
-          "body": {
-            "send_code": true
-          },
+          "body": {},
           "response": {
             "status": 200,
-            "body": {}
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
           }
         },
         {

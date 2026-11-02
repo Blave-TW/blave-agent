@@ -10055,7 +10055,7 @@ msgid "ph.cf.title"
 msgstr "Allow phone chat?"
 
 msgid "ph.cf.1"
-msgstr "Messages from your phone run on this computer. The agent can do anything it can here, including placing orders."
+msgstr "Every phone on your account can tell this computer what to do, including placing orders. Phones paired later can too."
 
 msgid "ph.cf.2"
 msgstr "Chats from the last 30 days and new ones are uploaded, with keys and folder paths masked. Turning this off deletes the copy on Blave."
@@ -10099,68 +10099,40 @@ msgstr "The chats on Blave aren't deleted yet. They will be once you're back onl
 msgid "ph.err"
 msgstr "Couldn't turn it on. Check your connection and try again."
 
-msgid "ph.kc.title"
-msgstr "Confirm it's you"
-
-msgid "ph.kc.failed"
-msgstr "Couldn't send the code. Try again later."
-
-msgid "ph.kc.limitedDead"
-msgstr "Send limit reached. Try again later."
-
 msgid "ph.offRelogin"
 msgstr "Phone chat was turned off when you signed in again. Turn it back on in Settings › Connections."
 
-msgid "ph.verify"
-msgstr "Your phone can't reach this computer."
+# 0.1.43 設定 › 連結 手機那一組的標籤(取代 ph.group):帳號下配對過的手機,唯讀(mockup-web-only-pairing-2026-11-02 §8)
+msgid "ph.list"
+msgstr "Phones on This Account"
 
-msgid "ph.verifyBtn"
-msgstr "Verify Again"
+# 組標籤右邊的文字鈕,開網站 設定 › 已配對的手機;帳號還沒有手機時不出
+msgid "ph.webRevoke"
+msgstr "Revoke on Website"
 
-msgid "ph.group"
-msgstr "Phones allowed on this computer"
+# 〔到網站撤銷〕的讀屏名稱:會開瀏覽器(同 rp.help.aria)
+msgid "ph.webRevoke.aria"
+msgstr "Revoke on Website (opens in browser)"
 
-msgid "ph.pair"
-msgstr "Pair a Phone"
+# 開著、帳號還沒有手機:組內那一槽
+msgid "ph.none"
+msgstr "No phones paired yet. Pair one in the app's Agent tab."
 
-msgid "ph.pairHow"
-msgstr "Scan it in the app's Agent tab, or enter the code."
+# 手機配對完、這台開關關著時主視窗跳的確認框(§9b):標題帶機型,內文沿用 ph.cf.1–3;電腦當時沒開的話標題後面另接配對時間(mono)
+msgid "ph.ask.title"
+msgstr "{name} wants to connect to this computer"
 
-msgid "ph.pairUntil"
-msgstr "Valid until {hm}"
+msgid "ph.ask.no"
+msgstr "Not Now"
 
-msgid "ph.pairExpired"
-msgstr "This code has expired."
-
-msgid "ph.pairAgain"
-msgstr "Get a New Code"
-
-msgid "ph.pairFail"
-msgstr "Couldn't get a pairing code. Try again."
-
-msgid "ph.pairMax"
-msgstr "You have 5 phones. Revoke one to pair another."
-
-msgid "ph.pairedSay"
-msgstr "Paired {name}"
+msgid "ph.ask.ok"
+msgstr "Turn On"
 
 msgid "ph.meta"
-msgstr "Paired {paired} · Last used {used}"
+msgstr "Last used {used}"
 
 msgid "ph.metaNever"
-msgstr "Paired {paired} · Not used yet"
-
-msgid "ph.acts"
-msgstr "Recent Activity"
-
-msgid "ph.actsMore"
-msgstr "Show All"
-
-msgid "ph.actsFail"
-msgstr "Couldn't load activity."
-
-msgid "ph.revoke"
-msgstr "Revoke"
+msgstr "Not used yet"
 
 msgid "ph.iphone"
 msgstr "iPhone"
@@ -10168,59 +10140,8 @@ msgstr "iPhone"
 msgid "ph.android"
 msgstr "Android phone"
 
-msgid "ph.errRow"
-msgstr "Couldn't save that. Check your connection and try again."
-
 msgid "ph.phonesFail"
 msgstr "Couldn't load your phones."
-
-msgid "ph.revokedSay"
-msgstr "Revoked {name}"
-
-msgid "ph.revoke.title"
-msgstr "Revoke {name}?"
-
-msgid "ph.revoke.body"
-msgstr "This phone can no longer chat with the agent. Pair it again to use it."
-
-msgid "ph.revoke.stop"
-msgstr "If a reply it started is still running, it stops."
-
-msgid "ph.revoke.ok"
-msgstr "Revoke"
-
-msgid "ph.act.send"
-msgstr "Sent a message"
-
-msgid "ph.act.stop"
-msgstr "Stopped a reply"
-
-msgid "ph.act.withdraw"
-msgstr "Withdrew a message"
-
-msgid "ph.act.session_new"
-msgstr "New chat"
-
-msgid "ph.act.session_rename"
-msgstr "Renamed a chat"
-
-msgid "ph.act.session_delete"
-msgstr "Deleted a chat"
-
-msgid "ph.act.pair"
-msgstr "Paired"
-
-msgid "ph.act.auth"
-msgstr "Verified"
-
-msgid "ph.act.revoke"
-msgstr "Revoked"
-
-msgid "ph.act.grant"
-msgstr "Allowed on this computer"
-
-msgid "ph.act.ungrant"
-msgstr "Stopped on this computer"
 
 msgid "tm.phoneHiddenTitle"
 msgstr "Phone chat is on"

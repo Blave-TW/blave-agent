@@ -11,7 +11,8 @@
  *   - 兩顆憑證只在主行程:不寫檔、不 log;第 1 條遮蔽要比對的值也只在記憶體。
  *   - 平台總開關不是開(/relay/enabled、poll 的 enabled:false reason off、任何 403 APP_CHAT_OFF):不收、不傳、設定頁不出這一區。
  *     api 說這台沒開(reason not_enabled、409 RELAY_NOT_ENABLED)而本機開著:重打 /relay/enable;401／409 時手機的回合一律停、排隊清空。
- *   - 從關打開要過 email 驗證碼(setOn 帶碼;契約 api openclaw/app_auth.relay_enable_gate)。自動重打不寄信,被關卡擋下記 needVerify,等用戶到設定頁驗。
+ *   - 開關從關打開只有同意框,api 回 200 就算開。帳號下的手機配對完、這台關著:設定頁讀手機清單、主視窗跳一次確認框(9b),
+ *     讀 api 回應的只有 PAIR_SRC 兩個函式(契約 mobile-pairing-v2-api §4–§5)。
  *   - 那一句還沒開跑就不會跑的(not_run／desktop_restarting／bad_session／bad_message)送 message_failed;開跑之後的失敗走回合的 error。
  *   - 引擎的錯誤是接在 error 前面的一段 text,手機回合常沒開視窗,renderer 的 classifyFault 不會跑,分類在這裡做:每段開頭可能是錯誤字就先扣著,
  *     判成錯誤整段不送(api 的 fold 不理 text_replace,送了就留在歷史與推播),代碼放回合的 error。契約 references/turn-events.md。
@@ -23,11 +24,10 @@ const fs = require("fs");
 const path = require("path");
 const { redact } = require("./redact");
 const { deviceOf } = require("./mobileview");
-const { KEY_CHANGE_CODE_RE } = require("./cloudcmd");
 
 const EP = {
   enabled: "/oauth/desktop/relay/enabled",   // → { enabled, on }
-  enable: "/oauth/desktop/relay/enable",     // + send_code: true | enable_code, lang → 200 | 403／429 關卡(GATE_403、VERIFY_LOCKED)
+  enable: "/oauth/desktop/relay/enable",     // → 200
   disable: "/oauth/desktop/relay/disable",   // 同時刪伺服器上這台的對話(§4.4)
   poll: "/oauth/desktop/relay/poll",         // + ver, restarting → { enabled, messages, controls, server_time } | { enabled:false, reason }
   ack: "/oauth/desktop/relay/ack",           // + message_ids → { acked, rejected }
@@ -35,17 +35,26 @@ const EP = {
   image: "/oauth/desktop/relay/image",       // + session_id, message_id, mime, b64, caption?(只限手機那一輪)
   syncState: "/oauth/desktop/relay/sync_state",   // → { sessions: [{ session_id, last_id }], tombstones: [sid] }
   sync: "/oauth/desktop/relay/sync",         // + sessions: [{ session_id, title, last_at(ms), turns: [{ id, role, content, created_at(ms), origin?, message_id? }] }]
-  pairCode: "/oauth/desktop/relay/pair_code",   // → { code, expires_in }
-  phones: "/oauth/desktop/relay/phones",     // → { max, phones: [{ device_id, platform, label, paired_via, created_at, last_used_at, granted }] }
-  grant: "/oauth/desktop/relay/phones/grant",   // + device_id, granted
-  revoke: "/oauth/desktop/relay/phones/revoke", // + device_id, lang
-  actions: "/oauth/desktop/relay/phones/actions",   // + device_id? → { actions: [{ ts, action, device, ip }] }
+  phones: "/oauth/desktop/relay/phones",     // → { phones: [{ device_id, platform, label, last_used_at, …}] };只讀這四個
+  promptSeen: "/oauth/desktop/relay/prompt/seen",   // + device_id, answer?("no"):框一出現打一次,〔不用〕／關框再帶 answer 打一次(〔打開〕由 enable 記)
 };
-const OFF_CODE = "APP_CHAT_OFF", NOT_ENABLED_CODE = "RELAY_NOT_ENABLED", VERIFY_CODE = "RELAY_ENABLE_VERIFY";
-const GATE_403 = [VERIFY_CODE, "RELAY_ENABLE_CODE_INVALID", "RELAY_ENABLE_CODE_EXPIRED"];
-const GATE_REASONS = ["cooldown", "limited", "send_failed"];
+/* api 契約 mobile-pairing-v2-api-2026-11-02 §4–§5。手機清單與配對確認框(9b)的 api 欄位只在這裡讀。
+   確認框走 /relay/enabled 的 prompt(開關關著也打:tick 每 FLAG_TICK_MS 一次、啟動先打一次;長輪詢只在開著時跑)。
+   askOf → { device_id, label, platform, paired_at(ms) } | null;phonesOf → [{ device_id, platform, label, last_used_at }] */
+const PAIR_SRC = {
+  askOf: (b) => {
+    const p = b && b.prompt;
+    if (!p || typeof p !== "object") return null;
+    const sec = Number(p.paired_at);
+    return { device_id: p.device_id, label: p.label, platform: p.platform, paired_at: Number.isFinite(sec) && sec > 0 ? sec * 1000 : null };
+  },
+  phonesOf: (b) => (Array.isArray(b.phones) ? b.phones : []),
+};
+const OFF_CODE = "APP_CHAT_OFF", NOT_ENABLED_CODE = "RELAY_NOT_ENABLED";
 const POLL_HOLD_MS = 25000, POLL_TIMEOUT_MS = 40000, REQUEST_TIMEOUT_MS = 10000, QUIT_TIMEOUT_MS = 3000;
 const FLAG_TICK_MS = 2 * 60 * 1000;
+const FOCUS_TICK_GAP_MS = 20000;   // 視窗取得焦點時加打的 /relay/enabled,同一台最快 20 秒一次(api 每台每分鐘 6 次)
+const LATE_MS = FLAG_TICK_MS + 60000;   // 配對時間距今超過這段才算「電腦當時沒開／睡著」,確認框標題帶配對時間
 const BATCH_MS = 300;
 const REPORT_MAX_CHUNKS = 50, REPORT_MAX_BYTES = 1536 * 1024;   // api REPORT_CHUNKS_MAX = 50、body 上限 2 MB(留給憑證與 JSON 外殼)
 // 手機那一輪跑著、沒有輸出時(一個工具跑很久)的存活訊號:api 在線時 TURN_MAX_S 沒聽到任何東西就當收尾丟了
@@ -58,6 +67,8 @@ const MESSAGE_MAX_BYTES = 1024 * 1024;   // = main.js / runtime 的 stdin 上限
 const MSG_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 const NEW_SID_RE = /^desktop-m[a-z0-9]{3,15}$/;   // api 替手機開的新對話(§3.2);其他的必須是這台已經有的
 const DEVICE_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+const ASK_ID_RE = /^[A-Za-z0-9_-]{8,64}:\d{0,15}$/, ASKED_MAX = 50;
+const seenOk = (x) => !!x && typeof x === "object" && DEVICE_ID_RE.test(x.device_id || "") && (x.answer === undefined || x.answer === "no");   // 本機記的「問過」= 手機 device_id:配對時間(同一支撤銷後重配會再問一次)
 const TITLE_MAX = 60;
 const OUTBOX = "relay-outbox.jsonl";
 // LocalSink 會送、api 會轉給手機的 chunk(= api relay.TURN_TYPES);image 走 /relay/image,其他(strategies…)不送
@@ -116,8 +127,6 @@ function clipBytes(s, maxBytes) {
   for (const ch of s) { const b = Buffer.byteLength(ch, "utf8"); if (n + b > maxBytes - 3) break; out += ch; n += b; }
   return out + "…";
 }
-/* 關卡的明細(同 cloudcmd.keyGate,這道關沒有 until);not_requested 只有自動重打會收到,畫面不用分 */
-const gateOf = (b) => ({ sent: b.sent === true, reason: GATE_REASONS.includes(b.reason) ? b.reason : null });
 const toMs = (sec) => Math.round(Number(sec) * 1000);   // session.db 的時間是秒(REAL);api 收 ms 整數
 
 /* opts:{ dir(userData), stateDir(BASE/state), apiBase, post(url, body, extra), getCreds(), installId(), ver, now?, log?,
@@ -126,14 +135,16 @@ const toMs = (sec) => Math.round(Number(sec) * 1000);   // session.db 的時間�
                       exists(sid), remove(sid) → bool },
           turnArgs() → { model, effort }(電腦當下存的那一組), known() → [值](第 1 條),
           origins: { add(sid, [{ id, mid }]), get(sid) → Map(turn id → message_id) },
-          track(name), onChange(state), onMobileActive(bool) } */
+          track(name), onChange(state), onMobileActive(bool), pairSrc?(測試換掉 PAIR_SRC) } */
 function createRelay(opts) {
   const file = path.join(opts.dir, "relay.json");
   const outboxFile = path.join(opts.stateDir, OUTBOX);
   const clock = opts.now || (() => Date.now());
   const log = opts.log || (() => {});
   let st = null, flag = false, polling = false, pollGen = 0, flagTimer = null, stopped = false, quitting = false, reenableAt = 0, reenabling = null;
-  let needVerify = false;   // 本機開著、api 要驗碼才肯再開:不重打,設定頁出一行
+  const src = { ...PAIR_SRC, ...(opts.pairSrc || {}) };
+  let ask = null;           // 還沒跳過的那一次配對(api 給的、本機沒問過的)
+  let focusAt = 0;
   let seenToken = null, lastToken = null;   // 上一顆帳號 token(輪替後幾秒內的輸出可能還帶著它):第 1 條也比對
   const queue = new Map();   // sid → [{ message_id, content }]:同一條在跑時排在後面
   const active = new Map();  // sid → { message_id, ended, idBefore, kind, hold }:正在跑的手機那一輪;hold = 這段暫扣的字,null = 這段已判定不是錯誤;toolRan = 這一輪有工具開跑過
@@ -147,7 +158,9 @@ function createRelay(opts) {
     if (st) return st;
     let raw = null;
     try { raw = JSON.parse(fs.readFileSync(file, "utf8")); } catch (_) { /* 沒檔 = 預設關(§2.6) */ }
-    st = { on: !!(raw && raw.on === true), pendingDisable: !!(raw && raw.pendingDisable === true), synced: !!(raw && raw.synced === true) };
+    st = { on: !!(raw && raw.on === true), pendingDisable: !!(raw && raw.pendingDisable === true), synced: !!(raw && raw.synced === true),
+      asked: raw && Array.isArray(raw.asked) ? raw.asked.filter((x) => typeof x === "string" && ASK_ID_RE.test(x)).slice(-ASKED_MAX) : [],
+      seenOut: raw && Array.isArray(raw.seenOut) ? raw.seenOut.filter(seenOk).slice(-ASKED_MAX) : [] };
     return st;
   }
   function save() {
@@ -195,25 +208,25 @@ function createRelay(opts) {
   const track = (n) => { try { if (opts.track) opts.track(n); } catch (_) { /* 追蹤不擋 */ } };
   /* api 那邊這台沒記成開著(換了 token、伺服器清過)而本機開著:補打 enable,30 秒內只打一次 */
   function reenable() {
-    if (!load().on || load().pendingDisable || needVerify) return Promise.resolve(false);
+    if (!load().on || load().pendingDisable) return Promise.resolve(false);
     if (clock() - reenableAt < REENABLE_GAP_MS) return reenabling || Promise.resolve(false);   // 30 秒內同一次的結果
     reenableAt = clock();
-    // 不帶 send_code:這條路沒人在看,寄了就是每 30 秒一封信
     reenabling = call(EP.enable).then((r) => {
       if (r.status === 200) return true;
-      if (r.status === 403 && r.body && r.body.error_code === VERIFY_CODE) { needVerify = true; changed(); }
-      else log("relay: re-enable " + (r.status || "offline"));
+      log("relay: re-enable " + (r.status || "offline"));
       return false;
     });
     return reenabling;
   }
 
   async function refreshFlag() {
+    const tok = (creds() || {}).token;
     const r = await call(EP.enabled);
     if (r.noCreds) { setFlag(false); return false; }
+    if (r.status === 429) return flag;   // 每台限流:總開關、開關、確認框都照上一次,下一輪再問
     if (r.status !== 200 || !r.body) { setFlag(false); return false; }
     setFlag(r.body.enabled === true);
-    if (r.body.on === true && needVerify) { needVerify = false; changed(); }
+    if (tok && tok === (creds() || {}).token) askFrom(r.body);   // 路上換了帳號:這份 prompt 是上一個帳號的
     if (flag && r.body.on === false) await reenable();
     return flag;
   }
@@ -696,29 +709,24 @@ function createRelay(opts) {
   }
 
   /* ── 開關 ─────────────────────────────────────────── */
-  /* 確認框按〔開啟〕之後才叫。api 記下這台開著才會收到訊息;記不成就維持關。
-     o.code = 用戶輸入的驗證碼;不帶就請 api 寄一組。o.lang = 信件語言 */
-  async function setOn(on, o) {
+  /* 確認框按〔開啟〕〔打開〕之後才叫。api 記下這台開著才會收到訊息;記不成就維持關 */
+  async function setOn(on) {
     const s = load();
     if (on) {
       if (!flag || !creds()) return { ok: false, code: flag ? "SIGNED_OUT" : "OFF" };
-      const code = o && o.code, lang = o && ["zh", "cn", "en"].includes(o.lang) ? o.lang : null;
-      if (code && !KEY_CHANGE_CODE_RE.test(code)) return { ok: false, code: "FAILED" };
       if (s.pendingDisable) {
         const d = await call(EP.disable);
         if (d.status !== 200 && d.status !== 401) return { ok: false, code: "OFFLINE" };
         s.pendingDisable = false; save();
       }
-      const r = await call(EP.enable, { ...(code ? { enable_code: code } : { send_code: true }), ...(lang ? { lang } : {}) });
-      const ec = r.body && r.body.error_code;
-      if ((r.status === 403 && GATE_403.includes(ec)) || (r.status === 429 && ec === "VERIFY_LOCKED")) return { ok: false, code: ec, gate: gateOf(r.body) };
+      const r = await call(EP.enable);
       if (r.status !== 200) return { ok: false, code: r.status ? "FAILED" : "OFFLINE" };
       const was = s.on;
-      // 從關打開:伺服器那份剛刪掉,待送的刪除作廢。重新驗證(本機本來開著):伺服器那份還在,待送的刪除要送到、不重新同步
+      // 從關打開:伺服器那份剛刪掉,待送的刪除作廢。本機本來就開著:伺服器那份還在,待送的刪除要送到、不重新同步
       s.on = true;
       if (!was) { s.synced = false; outboxWrite([]); tombstones.clear(); }
+      if (ask) { askedAdd(ask.id); ask = null; }   // 開了就不用再問(askedAdd 會存檔)
       save();
-      needVerify = false;
       if (!was) track("phone_chat_on");
       stopped = false; startPoll(); syncAll();
       if (was) flush();
@@ -727,7 +735,7 @@ function createRelay(opts) {
     }
     if (!s.on && !s.pendingDisable) return { ok: true };
     const wasOn = s.on;
-    s.on = false; needVerify = false; stopPoll();
+    s.on = false; stopPoll();
     dropMobile();
     await withTimeout(flush(), QUIT_TIMEOUT_MS);
     const r = await call(EP.disable);
@@ -750,12 +758,14 @@ function createRelay(opts) {
   /* 登出:撤銷 token 之前叫(之後這對憑證就刪不了伺服器那份)。之後要再打開得重新確認 */
   async function signOut() {
     const s = load();
+    if (ask) { ask = null; changed(); }   // 換帳號不帶著上一個帳號的配對
+    if (s.seenOut.length) { s.seenOut = []; save(); }   // 沒送到的 seen 是上一個帳號的,換了憑證送也是 404
     if (!s.on && !s.pendingDisable) return;
     stopPoll(); dropMobile();
     await withTimeout(flush(), QUIT_TIMEOUT_MS);
     await call(EP.disable, null, QUIT_TIMEOUT_MS);
     s.on = false; s.pendingDisable = false; s.synced = false; save(); outboxWrite([]);
-    needVerify = false; sync.lastIds = null; seenToken = null; lastToken = null; changed();
+    sync.lastIds = null; seenToken = null; lastToken = null; changed();
   }
   /* app 結束:排隊的那幾句回 not_run(最多等 3 秒),之後不再收 */
   async function quit() {
@@ -768,6 +778,7 @@ function createRelay(opts) {
   async function tick() {
     if (stopped) return;
     await refreshFlag();
+    if (load().seenOut.length && creds()) seenFlush().catch(() => {});
     const s = load();
     if (s.pendingDisable && creds()) {
       const r = await call(EP.disable);
@@ -784,55 +795,82 @@ function createRelay(opts) {
     flagTimer = setInterval(() => { tick().catch(() => {}); }, FLAG_TICK_MS); if (flagTimer.unref) flagTimer.unref();
   }
 
-  /* ── 設定頁:配對碼、授權手機清單、勾選、撤銷、最近操作(回給畫面的只有 api 回的欄位,沒有憑證)── */
-  // api 的回應只在 relay.js 裡讀;回給畫面的一律另外組白名單欄位
-const okBody = (r) => (r.status === 200 && r.body ? { ok: true, ...r.body } : { ok: false, code: /^[A-Z_]{2,40}$/.test((r.body && r.body.error_code) || "") ? r.body.error_code : r.status ? "FAILED" : "OFFLINE" });
-  /* 出碼之後 10 分鐘內每 5 秒看一次清單,多出一支就是配對完成(埋點 phone_pair;api 不推通知過來) */
-  let pairWatch = null, pairSeq = 0;   // pairSeq:配對成功一次加一,畫面靠它收起配對面板
-  async function pairCode() {
-    const before = await phones();
-    const r = okBody(await call(EP.pairCode));
-    if (!r.ok || typeof r.code !== "string" || !/^[0-9A-Z]{8}$/.test(r.code)) return { ok: false, code: r.ok ? "FAILED" : r.code };
-    if (pairWatch) clearInterval(pairWatch);
-    const had = new Set(before.ok ? before.phones.map((p) => p.device_id) : []), until = clock() + (Number(r.expires_in) || 600) * 1000;
-    pairWatch = setInterval(async () => {
-      if (clock() > until || stopped) { clearInterval(pairWatch); pairWatch = null; return; }
-      const now = await phones();
-      if (now.ok && now.phones.some((p) => !had.has(p.device_id))) { clearInterval(pairWatch); pairWatch = null; pairSeq++; track("phone_pair"); changed(); }
-    }, 5000);
-    if (pairWatch.unref) pairWatch.unref();
-    return { ok: true, code: r.code, expires_in: Number(r.expires_in) || 600 };
-  }
+  /* ── 設定頁的手機清單(唯讀)與配對後的確認框(9b)。回給畫面的只有白名單欄位,沒有憑證 ── */
+  const okBody = (r) => (r.status === 200 && r.body ? { ok: true, ...r.body } : { ok: false, code: /^[A-Z_]{2,40}$/.test((r.body && r.body.error_code) || "") ? r.body.error_code : r.status ? "FAILED" : "OFFLINE" });
   async function phones() {
     const r = okBody(await call(EP.phones));
     if (!r.ok) return r;
-    return { ok: true, max: r.max, phones: (Array.isArray(r.phones) ? r.phones : []).filter((p) => p && DEVICE_ID_RE.test(p.device_id || "")).map((p) => ({
-      device_id: p.device_id, platform: p.platform === "android" ? "android" : "ios", label: String(p.label || "").slice(0, 64), paired_via: p.paired_via === "web" ? "web" : "desktop",
-      created_at: p.created_at || null, last_used_at: p.last_used_at || null, granted: p.granted === true })) };
+    let list = [];
+    try { list = src.phonesOf(r) || []; } catch (_) { list = []; }
+    return { ok: true, phones: list.filter((p) => p && DEVICE_ID_RE.test(p.device_id || "")).map((p) => ({
+      device_id: p.device_id, platform: p.platform === "android" ? "android" : "ios", label: String(p.label || "").slice(0, 64), last_used_at: p.last_used_at || null })) };
   }
-  async function grant(deviceId, granted) {
-    if (!DEVICE_ID_RE.test(deviceId || "") || typeof granted !== "boolean") return { ok: false, code: "BAD_REQUEST" };
-    const r = okBody(await call(EP.grant, { device_id: deviceId, granted }));
-    return r.ok ? { ok: true, device_id: deviceId, granted: r.granted === true } : { ok: false, code: r.code };
+  const shownDev = new Map();   // 跳出來、還沒回答的那幾次:問過的 id → 手機 device_id(answer no 要帶)
+  function askedAdd(id) { const s = load(); if (s.asked.includes(id)) return; s.asked = s.asked.concat(id).slice(-ASKED_MAX); save(); }
+  /* /relay/enabled 的回應:有一次配對、這台關著、沒問過才留著給畫面跳框。開關開著時收到的直接記成問過(開著不跳) */
+  function askFrom(body) {
+    let a = null;
+    try { a = src.askOf(body); } catch (_) { a = null; }
+    const dev = a && typeof a.device_id === "string" && DEVICE_ID_RE.test(a.device_id) ? a.device_id : null;
+    const at = a && Number.isFinite(a.paired_at) && a.paired_at > 0 ? Math.round(a.paired_at) : null;
+    const id = dev ? dev + ":" + (at == null ? "" : at) : null;
+    const was = ask && ask.id;
+    if (!id || load().asked.includes(id)) ask = null;
+    else if (load().on) { askedAdd(id); ask = null; }
+    else if (!ask || ask.id !== id) ask = { id, device: dev, label: String(a.label || "").slice(0, 64), platform: a.platform === "android" ? "android" : "ios", at, late: at != null && clock() - at > LATE_MS };
+    if ((ask && ask.id) !== was) changed();
   }
-  async function revoke(deviceId, lang) {
-    if (!DEVICE_ID_RE.test(deviceId || "")) return { ok: false, code: "BAD_REQUEST" };
-    const r = okBody(await call(EP.revoke, { device_id: deviceId, lang: ["zh", "cn", "en"].includes(lang) ? lang : "zh" }));
-    if (r.ok && r.revoked) track("phone_revoke");
-    return r.ok ? { ok: true, revoked: r.revoked === true } : { ok: false, code: r.code };
+  /* 畫面把框跳出來了:本機記成問過,也馬上跟 api 說(by = shown;框開著時當掉,下次啟動不再問同一支) */
+  function askShown(id) {
+    if (typeof id !== "string" || !ASK_ID_RE.test(id)) return false;
+    askedAdd(id);
+    if (!ask || ask.id !== id) return true;
+    shownDev.set(id, ask.device);
+    seenQueue({ device_id: ask.device });
+    ask = null; changed();
+    return true;
   }
-  async function actions(deviceId) {
-    if (deviceId != null && !DEVICE_ID_RE.test(deviceId)) return { ok: false, code: "BAD_REQUEST" };
-    const r = okBody(await call(EP.actions, deviceId ? { device_id: deviceId } : {}));
-    if (!r.ok) return r;
-    return { ok: true, actions: (Array.isArray(r.actions) ? r.actions : []).slice(0, 50).map((a) => ({ ts: a.ts || null, action: String(a.action || ""), device: String(a.device || ""), ip: String(a.ip || "") })) };
+  /* 〔不用〕或關掉框:再打一次帶 answer no,App 立刻改回「關了手機對話」 */
+  function askNo(id) {
+    const dev = shownDev.get(id); shownDev.delete(id);
+    if (!dev) return Promise.resolve(false);
+    return seenQueue({ device_id: dev, answer: "no" });
+  }
+  /* prompt/seen 先落檔再送,送不成(離線、5xx、429)留著,下一輪 tick 補送;404(手機已撤銷)與其他 4xx 不重送 */
+  function seenQueue(x) {
+    const s = load(); s.seenOut = s.seenOut.concat(x).slice(-ASKED_MAX); save();
+    return seenFlush();
+  }
+  let seenSending = null;
+  function seenFlush() {
+    if (seenSending) return seenSending.then(() => (load().seenOut.length ? seenFlush() : true));
+    seenSending = (async () => {
+      let ok = true;
+      while (load().seenOut.length) {
+        const x = load().seenOut[0];
+        const r = await call(EP.promptSeen, { device_id: x.device_id, ...(x.answer ? { answer: x.answer } : {}) });
+        if (r.status === 0 || r.status === 429 || r.status >= 500 || r.noCreds) { log("relay: prompt seen " + (r.status || "offline") + ", retry next tick"); ok = false; break; }
+        if (r.status !== 200) log("relay: prompt seen " + r.status);
+        const s = load(); s.seenOut = s.seenOut.slice(1); save();
+      }
+      return ok;
+    })().finally(() => { seenSending = null; });
+    return seenSending;
+  }
+  /* 主視窗取得焦點:開關關著、已登入才加打,同一台 20 秒內只一次 */
+  function focusTick() {
+    if (stopped || load().on || !creds() || clock() - focusAt < FOCUS_TICK_GAP_MS) return Promise.resolve(false);
+    focusAt = clock();
+    return tick().then(() => true);
   }
 
   function state() {
     const s = load();
-    return { visible: flag, on: s.on, pending: s.pendingDisable, signedIn: !!creds(), needVerify,
+    const signedIn = !!creds();
+    return { visible: flag, on: s.on, pending: s.pendingDisable, signedIn,
       sync: { running: sync.running, done: sync.done, total: sync.total, error: sync.error, synced: s.synced },
-      mobileTurns: active.size, queued: [...queue.values()].reduce((n, q) => n + q.length, 0), phoneSids: phoneSids(), pairSeq };
+      mobileTurns: active.size, queued: [...queue.values()].reduce((n, q) => n + q.length, 0), phoneSids: phoneSids(),
+      ask: ask && flag && signedIn && !s.on ? { ...ask } : null };
   }
   // 每條對話有幾句手機的話在跑或排隊(sid → 數);只有 sid 與數字,沒有內容
   function phoneSids() {
@@ -841,11 +879,11 @@ const okBody = (r) => (r.status === 200 && r.body ? { ok: true, ...r.body } : { 
     for (const [sid, q] of queue) if (q.length) out[sid] = (out[sid] || 0) + q.length;
     return out;
   }
-  return { start, tick, setOn, retry, signOut, quit, onTurn, image, sessionDeleted, state, pairCode, phones, grant, revoke, actions,
+  return { start, tick, setOn, retry, signOut, quit, onTurn, image, sessionDeleted, state, phones, askShown, askNo, focusTick,
     isOn: () => load().on, isVisible: () => flag, mobileLive: () => active.size > 0,
     isMobile: (sid) => active.has(sid) || (queue.get(sid) || []).length > 0,
     claiming: (sid) => !!(active.get(sid) && active.get(sid).claiming),
     _internals: { route, control, flush, syncAll, queue, active } };
 }
 
-module.exports = { createRelay, scrubDeep, clipBytes, faultCodeOf, mayBeFault, API_ERROR_RE, USAGE_LIMIT_RE, EP, POLL_HOLD_MS, BATCH_MS, SYNC_BATCH_TURNS, SYNC_BATCH_BYTES, TURN_MAX_BYTES, OUTBOX, TURN_TYPES, REPORT_MAX_CHUNKS };
+module.exports = { createRelay, PAIR_SRC, LATE_MS, FOCUS_TICK_GAP_MS, scrubDeep, clipBytes, faultCodeOf, mayBeFault, API_ERROR_RE, USAGE_LIMIT_RE, EP, POLL_HOLD_MS, BATCH_MS, SYNC_BATCH_TURNS, SYNC_BATCH_BYTES, TURN_MAX_BYTES, OUTBOX, TURN_TYPES, REPORT_MAX_CHUNKS };

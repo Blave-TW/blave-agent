@@ -30,9 +30,11 @@ function rig(o = {}) {
       else if (ep === RL.EP.ack) resp = { status: 200, body: { acked: body.message_ids, rejected: [] } };
       else if (ep === RL.EP.report) resp = okReport(body);
       else if (ep === RL.EP.syncState) resp = { status: 200, body: { sessions: [], tombstones: [] } };
+      else if (ep === RL.EP.enable) resp = { status: 200, body: { enabled: true, server_time: 1 } };   // 契約的形狀(mobile-pairing-v2-api §2)
+      else if (ep === RL.EP.promptSeen) resp = { status: 200, body: { ok: true } };
       else resp = { status: 200, body: {} };
     }
-    if (ep === RL.EP.ack || ep === RL.EP.report || ep === RL.EP.enable || ep === RL.EP.disable) {
+    if (ep === RL.EP.ack || ep === RL.EP.report || ep === RL.EP.enable || ep === RL.EP.disable || ep === RL.EP.promptSeen || (ep === RL.EP.enabled && resp && (resp.status === 429 || (resp.body && "prompt" in resp.body)))) {
       const { token, app_secret, device, ...rest } = body;   // eslint-disable-line no-unused-vars
       log.push({ endpoint: name(ep), body: rest, response: resp });
     }
@@ -162,36 +164,32 @@ const CASES = [
   async (m) => { m.feed([msg(S, "msgresp00015", "第一句")]); await wait(40); m.feed([msg(S, "msgresp00016", "第二句")]); await wait(40);
     m.r.onTurn(S, "turn-event", { type: "text", text: "x" }); await settle(); m.endTurn(S); await settle(); },
   (m) => m.started.join() === "第一句" && m.stopped.includes(S) && m.r.state().visible === false && m.r.state().mobileTurns === 0 && m.r.state().queued === 0],
-  ["enable_gate_sent", "打開:403 RELAY_ENABLE_VERIFY sent:true → 不開、不輪詢;碼對 200 才開", {
-    gated: true, script: (ep, b, n) => (ep === RL.EP.enable ? (b.enable_code === "123456" ? { status: 200, body: { enabled: true, server_time: 1 } } : { status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", sent: true, reason: null } }) : undefined) },
-  async (m) => { await m.r.setOn(true, { code: "123456", lang: "zh" }); await wait(20); },
-  (m) => m.r.isOn() === true && m.gateAt0 === "RELAY_ENABLE_VERIFY"],
-  ["enable_gate_cooldown", "打開:reason cooldown → 進輸入碼,沒開", { script: (ep) => (ep === RL.EP.enable ? { status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", sent: false, reason: "cooldown" } } : undefined) },
-  async () => {}, (m) => m.r.isOn() === false && m.first.gate.reason === "cooldown"],
-  ["enable_gate_limited", "打開:reason limited", { script: (ep) => (ep === RL.EP.enable ? { status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", sent: false, reason: "limited" } } : undefined) },
-  async () => {}, (m) => m.r.isOn() === false && m.first.gate.reason === "limited"],
-  ["enable_gate_send_failed", "打開:reason send_failed", { script: (ep) => (ep === RL.EP.enable ? { status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", sent: false, reason: "send_failed" } } : undefined) },
-  async () => {}, (m) => m.r.isOn() === false && m.first.gate.reason === "send_failed"],
-  ["enable_gate_noemail", "打開:帳號沒有 email(sent false、reason null)", { script: (ep) => (ep === RL.EP.enable ? { status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", sent: false, reason: null } } : undefined) },
-  async () => {}, (m) => m.r.isOn() === false && m.first.gate.sent === false && m.first.gate.reason === null],
-  ["enable_code_invalid", "打開:碼錯留在這一步", { script: (ep, b) => (ep === RL.EP.enable ? (b.enable_code ? { status: 403, body: { error_code: "RELAY_ENABLE_CODE_INVALID" } } : { status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", sent: true, reason: null } }) : undefined) },
-  async (m) => { m.second = await m.r.setOn(true, { code: "000000" }); }, (m) => m.r.isOn() === false && m.second.code === "RELAY_ENABLE_CODE_INVALID"],
-  ["enable_code_expired", "打開:過期", { script: (ep, b) => (ep === RL.EP.enable ? (b.enable_code ? { status: 403, body: { error_code: "RELAY_ENABLE_CODE_EXPIRED" } } : { status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", sent: true, reason: null } }) : undefined) },
-  async (m) => { m.second = await m.r.setOn(true, { code: "000000" }); }, (m) => m.r.isOn() === false && m.second.code === "RELAY_ENABLE_CODE_EXPIRED"],
-  ["enable_locked", "打開:429 VERIFY_LOCKED", { script: (ep) => (ep === RL.EP.enable ? { status: 429, body: { error_code: "VERIFY_LOCKED" } } : undefined) },
-  async () => {}, (m) => m.r.isOn() === false && m.first.code === "VERIFY_LOCKED"],
+  // 打開(mobile-pairing-v2-api §2):enable 不帶驗證碼欄位,200 就開;其他回應都是沒開成
+  ["enable_ok", "打開:enable 只帶憑證,200 → 開、輪詢", {}, async () => {}, (m) => m.r.isOn() === true && m.first.ok === true && JSON.stringify(m.log.find((x) => x.endpoint === "enable").body) === "{}"],
   ["enable_rate_limited", "打開:429 ERR429 走 FAILED", { script: (ep) => (ep === RL.EP.enable ? { status: 429, body: { error_code: "ERR429" } } : undefined) },
   async () => {}, (m) => m.r.isOn() === false && m.first.code === "FAILED"],
-  ["enable_audit_unavailable", "打開:碼對但稽核寫不進(503 AUDIT_UNAVAILABLE)走 FAILED", { script: (ep) => (ep === RL.EP.enable ? { status: 503, body: { error_code: "AUDIT_UNAVAILABLE" } } : undefined) },
+  ["enable_audit_unavailable", "打開:稽核寫不進(503 AUDIT_UNAVAILABLE)走 FAILED", { script: (ep) => (ep === RL.EP.enable ? { status: 503, body: { error_code: "AUDIT_UNAVAILABLE" } } : undefined) },
   async () => {}, (m) => m.r.isOn() === false && m.first.code === "FAILED"],
-  ["enable_state_unavailable", "打開:503 RELAY_STATE_UNAVAILABLE 可重試,不進輸入碼", { script: (ep) => (ep === RL.EP.enable ? { status: 503, body: { error_code: "RELAY_STATE_UNAVAILABLE" } } : undefined) },
-  async () => {}, (m) => m.r.isOn() === false && m.first.code === "FAILED" && !m.first.gate],
+  ["enable_state_unavailable", "打開:503 RELAY_STATE_UNAVAILABLE 走 FAILED", { script: (ep) => (ep === RL.EP.enable ? { status: 503, body: { error_code: "RELAY_STATE_UNAVAILABLE" } } : undefined) },
+  async () => {}, (m) => m.r.isOn() === false && m.first.code === "FAILED"],
   ["enable_chat_off", "打開:403 APP_CHAT_OFF 收起設定區", { script: (ep) => (ep === RL.EP.enable ? { status: 403, body: { error_code: "APP_CHAT_OFF" } } : undefined) },
   async () => {}, (m) => m.r.isOn() === false && m.r.state().visible === false],
-  ["reenable_verify", "本機開著、api 沒記著:自動重打收到 not_requested → 不寄信、記 needVerify、不再打", {
-    script: (ep, b, n) => (ep === RL.EP.enabled && n > 0 ? { status: 200, body: { enabled: true, on: false } } : ep === RL.EP.enable && n > 0 ? { status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", sent: false, reason: "not_requested" } } : undefined) },
-  async (m) => { await m.r.tick(); await m.r.tick(); },
-  (m) => m.r.state().needVerify === true && m.r.isOn() === true && m.log.filter((x) => x.endpoint === "enable").length === 2 && !("send_code" in m.log.filter((x) => x.endpoint === "enable")[1].body)],
+  ["reenable_ok", "本機開著、api 沒記著:自動重打 enable(不帶驗證碼欄位),200 照常", {
+    script: (ep, b, n) => (ep === RL.EP.enabled && n === 1 ? { status: 200, body: { enabled: true, on: false } } : undefined) },
+  async (m) => { await m.r.tick(); }, (m) => m.r.isOn() === true && m.log.filter((x) => x.endpoint === "enable").length === 2 && JSON.stringify(m.log.filter((x) => x.endpoint === "enable")[1].body) === "{}"],
+  // 配對確認框(§4):prompt 在 /relay/enabled(開關關著也打);〔不用〕打 prompt/seen,〔打開〕走 enable
+  ["prompt_off_no", "開關關著:enabled 帶 prompt → 畫面拿到 ask;框一出現打 prompt/seen(device_id),按〔不用〕再打一次帶 answer no;再給同一個不再出", {
+    noOn: true, script: (ep) => (ep === RL.EP.enabled ? { status: 200, body: { enabled: true, on: false, prompt: { device_id: "devresp0001", label: "iPhone 15", platform: "ios", paired_at: 1730530000 } } } : undefined) },
+  async (m) => { m.ask = m.r.state().ask; m.r.askShown(m.ask.id); await m.r.askNo(m.ask.id); await m.r.tick(); },
+  (m) => { const seen = m.log.filter((x) => x.endpoint === "prompt/seen").map((x) => x.body); return !!m.ask && m.ask.label === "iPhone 15" && m.ask.at === 1730530000000 && m.r.isOn() === false && m.r.state().ask === null
+    && JSON.stringify(seen) === '[{"device_id":"devresp0001"},{"device_id":"devresp0001","answer":"no"}]'; }],
+  ["prompt_off_on", "開關關著:框一出現打 prompt/seen,按〔打開〕→ enable(api 由 enable 覆寫),不再帶 answer", {
+    noOn: true, script: (ep, b, n) => (ep === RL.EP.enabled ? { status: 200, body: { enabled: true, on: false, prompt: { device_id: "devresp0001", label: "iPhone 15", platform: "ios", paired_at: 1730530000 } } } : undefined) },
+  async (m) => { m.ask = m.r.state().ask; m.r.askShown(m.ask.id); await m.r.setOn(true); await wait(20); },
+  (m) => !!m.ask && m.r.isOn() === true && m.r.state().ask === null && JSON.stringify(m.log.filter((x) => x.endpoint === "prompt/seen").map((x) => x.body)) === '[{"device_id":"devresp0001"}]' && m.log.filter((x) => x.endpoint === "enable").length === 1],
+  ["enabled_429", "/relay/enabled 每台限流 429 ERR429:總開關、開關、確認框都照上一次,不收起設定區、不停輪詢", {
+    noOn: true, script: (ep, b, n) => (ep === RL.EP.enabled ? (n === 0 ? { status: 200, body: { enabled: true, on: false, prompt: { device_id: "devresp0001", label: "iPhone 15", platform: "ios", paired_at: 1730530000 } } } : { status: 429, body: { error_code: "ERR429", message: "Too many requests" } }) : undefined) },
+  async (m) => { m.ask = m.r.state().ask; await m.r.tick(); }, (m) => m.r.state().visible === true && !!m.r.state().ask && m.r.state().ask.id === m.ask.id],
   ["D_started_lost", "探針 D:started 一直沒回應 → 重送到期限 → start_aborted＋message_failed not_run(不知道 api 有沒有記到開跑,api 認其中一個),不跑", {
     script: (ep, b) => (ep === RL.EP.report && b.chunks.some((c) => c.type === "started") ? { status: 0, body: null } : undefined) },
   async (m) => { m.feed([msg(S, "msgresp00017", "下單")]); await wait(2200); },
@@ -205,8 +203,7 @@ const CASES = [
   const checks = [];
   for (const [nm, desc, o, run, check] of CASES) {
     const m = rig(o);
-    await m.r.tick(); m.first = await m.r.setOn(true); await wait(20);
-    m.gateAt0 = m.first.code;
+    await m.r.tick(); if (!o.noOn) { m.first = await m.r.setOn(true); await wait(20); }
     await run(m, o);
     checks.push([nm, desc, check(m), { started: m.started, stopped: m.stopped, sent: sent(m).map((c) => c.type) }]);
     await m.end();

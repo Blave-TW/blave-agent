@@ -5731,16 +5731,15 @@ function cxChkTextCloud(r) {
 }
 /* 改金鑰驗證碼(api key_change_gate:帳號 24 小時內配對過新手機)。關卡擋下時連接框換成驗證碼那一步,雲端連接與雲端群益共用;
    狀態與字串照網頁 js/key_verify.js 的 view／statusText。until = 這道關自己消失的時間,不是鎖的時間 */
-// RELAY_*:打開手機對話(app.js phSet)用同一套畫面
-const KC_GATE = { KEY_CHANGE_VERIFY: 1, KEY_CHANGE_CODE_INVALID: 1, VERIFY_LOCKED: 1, RELAY_ENABLE_VERIFY: 1, RELAY_ENABLE_CODE_INVALID: 1 };
+const KC_GATE = { KEY_CHANGE_VERIFY: 1, KEY_CHANGE_CODE_INVALID: 1, VERIFY_LOCKED: 1 };
 const KC_REASON = { cooldown: "cooldown", limited: "limited", send_failed: "failed" };
-const KC_TEXT = { sent: "cx.kc.sent", resent: "cx.kc.resent", cooldown: "cx.kc.cooldown", limited: "cx.kc.limited", failed: "cx.kc.failed", phFailed: "ph.kc.failed", noemail: "cx.kc.noemail", invalid: "cx.kc.invalid", locked: "cx.kc.locked" };
+const KC_TEXT = { sent: "cx.kc.sent", resent: "cx.kc.resent", cooldown: "cx.kc.cooldown", limited: "cx.kc.limited", failed: "cx.kc.failed", noemail: "cx.kc.noemail", invalid: "cx.kc.invalid", locked: "cx.kc.locked" };
 // 關卡回應 → 這一步的畫面。prev = 上一個畫面:碼錯時寄送狀態那句沿用。dead = 沒有碼可輸(鎖住、沒有 email)。
 // 紅字只有碼錯與鎖住;過期不是用戶的錯:重寄成功是 resent 一句,重寄沒成功(冷卻、達上限)才在狀態句前講過期
 function kcView(r, prev) {
   const c = r && r.code, d = (r && r.detail) || {};
   if (c === "VERIFY_LOCKED") return { status: null, err: "locked", until: d.until || null, dead: true, expired: false };
-  if (c === "KEY_CHANGE_CODE_INVALID" || c === "RELAY_ENABLE_CODE_INVALID") return { status: prev ? prev.status : "sent", err: "invalid", until: prev ? prev.until : null, dead: false, expired: prev ? prev.expired : false };
+  if (c === "KEY_CHANGE_CODE_INVALID") return { status: prev ? prev.status : "sent", err: "invalid", until: prev ? prev.until : null, dead: false, expired: prev ? prev.expired : false };
   const status = d.sent ? (r.expired ? "resent" : "sent") : KC_REASON[d.reason] || (d.reason ? "failed" : "noemail");
   // 過期後重寄撞到上限:手上沒有能用的碼,比照沒有 email(停用輸入、焦點給取消)
   const expired = !!r.expired && (status === "cooldown" || status === "limited");
@@ -5774,7 +5773,7 @@ function kcNext(kc, r) {
    退回表單、框關掉、通過就丟。sync = 打字時只改主鈕能不能按,不重畫 */
 function kcStep(holder, busy, ok, sync) {
   const v = holder.view, w = trEl("div", "cx-kc-step");
-  if (!holder.noWhy) w.appendChild(trEl("p", "cx-manual-note", t("cx.kc.why")));
+  w.appendChild(trEl("p", "cx-manual-note", t("cx.kc.why")));
   const st = kcStatusText(v); if (st) w.appendChild(trEl("p", "cx-manual-note", st));
   const l = trEl("label", "fld"); l.appendChild(trEl("span", "fld-l", t("cx.kc.label")));
   const i = trEl("input", "f-input"); i.id = "cx-kc"; i.type = "text"; i.inputMode = "numeric"; i.autocomplete = "one-time-code"; i.maxLength = 6; i.spellcheck = false;
