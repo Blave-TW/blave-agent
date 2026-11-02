@@ -705,10 +705,13 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     // 計時器:start() 排一次,讀 opts.strategies()
     let calls = 0;
     const tmr = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")), { strategies: () => { calls++; return null; }, strategiesMs: 10 });
-    // 上限照實際經過的時間算:機器忙時計時器只會晚到,排了兩個才會比「每 10ms 一次」多
-    const T0 = Date.now(); tmr.tm.start(); tmr.tm.start();
+    // 數排了幾個計時器,不量時間:機器忙時計時器只會晚到,用時間算上限分不出排了一個還是兩個
+    const realSI = global.setInterval; let armed = 0;
+    global.setInterval = (fn, ms, ...rest) => { if (ms === 10) armed++; return realSI(fn, ms, ...rest); };
+    try { tmr.tm.start(); tmr.tm.start(); } finally { global.setInterval = realSI; }
+    const T0 = Date.now();
     while (calls < 3 && Date.now() - T0 < 10000) await new Promise((r) => setTimeout(r, 2));
-    t("start() 排計時器讀 strategies()(重複 start 不重排)", calls >= 3 && calls <= Math.ceil((Date.now() - T0) / 10) + 1, calls); }
+    t("start() 排計時器讀 strategies()(重複 start 不重排)", armed === 1 && calls >= 3, { armed, calls }); }
   console.log(red ? red + " 紅" : "ALL PASS");
 } finally { fs.rmSync(TMP_ROOT, { recursive: true, force: true }); }
   process.exit(red ? 1 : 0);

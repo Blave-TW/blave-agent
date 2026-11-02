@@ -12,4 +12,5 @@ set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 PY=${PYTHON:-$REPO/.venv/bin/python}
 [ -x "$PY" ] || PY=python3
+echo "直譯器:$PY($("$PY" -c 'import sys; print(sys.executable)'))"
 exec "$PY" "$REPO/tests/_run_all.py" "$@"

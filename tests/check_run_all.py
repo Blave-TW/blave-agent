@@ -96,6 +96,33 @@ pid = int(open(os.path.join(seen, "orphan.pid")).read())
 alive = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
 t("測試留下的背景行程跟著收掉", alive == "" or alive.startswith("Z"), alive)
 
+# 序列段跑到一半收到 SIGTERM:那支的 process group 要先收掉,不能在刪掉的暫存目錄上繼續跑
+iroot = tempfile.mkdtemp(prefix="run-all-int-")
+itests = os.path.join(iroot, "tests")
+os.makedirs(itests)
+shutil.copy(os.path.join(HERE, "_run_all.py"), itests)
+pidfile = os.path.join(iroot, "serial.pid")
+with open(os.path.join(itests, "check_tw_lots.py"), "w") as f:  # SERIAL 裡的名字
+    f.write(f"import os, time\nopen({pidfile!r}, 'w').write(str(os.getpid()))\ntime.sleep(90)\n")
+runner = subprocess.Popen([sys.executable, os.path.join(itests, "_run_all.py")], cwd=iroot, stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL, env=dict(os.environ, BLAVE_TEST_TIMEOUT="120"))
+import time  # noqa: E402
+
+deadline = time.time() + 30
+while not os.path.exists(pidfile) and time.time() < deadline:
+    time.sleep(0.05)
+started = os.path.exists(pidfile)
+runner.terminate()
+rrc = runner.wait(30)
+child = int(open(pidfile).read()) if started else None
+time.sleep(0.3)
+state = subprocess.run(["ps", "-o", "stat=", "-p", str(child)], capture_output=True, text=True).stdout.strip() if child else "?"
+t("序列段收到 SIGTERM:runner 回 130,那支測試已經不在", started and rrc == 130 and (state == "" or state.startswith("Z")),
+  (started, rrc, state))
+if child and state and not state.startswith("Z"):
+    os.kill(child, 9)
+shutil.rmtree(iroot, ignore_errors=True)
+
 shutil.rmtree(root, ignore_errors=True)
 print(("\n%d 紅" % red) if red else "\nALL PASS")
 sys.exit(1 if red else 0)

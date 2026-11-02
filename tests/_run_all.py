@@ -106,6 +106,10 @@ def run_one(name, index, root, env, jobs):
             timed_out = True
             kill_group(p.pid)
             rc = p.wait()
+        except BaseException:
+            # Ctrl-C／SIGTERM 落在這裡(序列段沒有 pool 那層代收):先收掉這支,暫存目錄才能刪
+            kill_group(p.pid)
+            raise
     running.pop(name, None)
     # 測試留下的背景子行程不能活到下一支:這個 group 是上面 start_new_session 開的,不會殺到別人
     kill_group(p.pid)
