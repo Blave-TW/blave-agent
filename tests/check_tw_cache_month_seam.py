@@ -3,16 +3,17 @@
 Pins, on a fixed clock against in-process fakes (no network):
   1. single-file layout: a day missing at the rollover lands on a later read, whatever the
      last cached bar is; once the month has settled the delta is the plain last-bar one again;
-  2. a file from before `settled`: one read from _SETTLE_HEAL_FROM fills an old seam, not the
-     whole history, and it does not repeat;
+  2. a file from before `settled` is left alone, in a month's first week too: no seam read, its
+     holes stay, and from its first write it only tracks months that end from then on; a seam
+     asks from the month's last bar, and an earlier backtest does not pull `settled` back;
   3. a request ending in a past month heals too, and a re-read short of the tail does not stamp
      the tail as fetched;
   4. batch: the re-read stays inside the prefetch window, /bulk only ever sees the 1st of last
-     month, the heal goes to /batch, no id falls to the full-range phase 2, and a fixed `end`
+     month, no id falls to the full-range phase 2, an old file stays on /bulk, and a fixed `end`
      short of the seam stays on /bulk;
-  5. monthly layout: a Taiwan month is read once more after it settles, an old file the TTL
-     check keeps refreshing heals by its footer (TXF and stock minute), nothing before
-     _SETTLE_HEAL_FROM does, and exchange-direct and unlisted series are left alone;
+  5. monthly layout: a month written by this rule is read once more after it settles, the TTL
+     check's mtime refresh does not hide it, an old file (TXF and stock minute) gets no request
+     and keeps its bytes, and exchange-direct and unlisted series are left alone;
   6. _merge_meta never invents `settled`.
 Run: cd blave-agent && .venv/bin/python tests/check_tw_cache_month_seam.py
 """
@@ -87,7 +88,7 @@ out = d._extend_cache_monthly(P, ID, src, "2026-09-01", None)
 got = [x.strftime("%Y-%m-%d") for x in out.index]
 check("2026-10-29" in got and "2026-10-30" in got and "2026-11-03" in got,
       f"the days missing at the rollover land on a later read ({got[-5:]})")
-check(src.calls[-1][0] == "2026-10-01", f"the re-read starts at last month's 1st, not at the history ({src.calls[-1]})")
+check(src.calls[-1][0] == "2026-10-28", f"the re-read starts at last month's last cached day, not its 1st ({src.calls[-1]})")
 
 src2 = Source("2026-11-04", skip={"2026-10-30"})      # the last bar is past the hole already
 fresh_cache()
@@ -98,7 +99,7 @@ Clock.at = datetime(2026, 11, 4, 12)
 d._extend_cache_monthly(P, ID, src2, "2026-09-01", None)
 check("2026-10-30" in cached_days(P, ID), "a hole behind the last cached bar is filled too")
 
-for at, want in ((datetime(2026, 11, 7, 23), "2026-10-01"), (datetime(2026, 11, 8, 1), "2026-10-01")):
+for at, want in ((datetime(2026, 11, 7, 23), "2026-10-30"), (datetime(2026, 11, 8, 1), "2026-10-30")):
     Clock.at = at
     d._extend_cache_monthly(P, ID, src2, "2026-09-01", None)
     check(src2.calls[-1][0] == want, f"still inside the week at {at:%m-%d %H:%M}, or its closing read ({src2.calls[-1]})")
@@ -117,11 +118,57 @@ frame = pd.DataFrame({"Close": 1.0}, index=pd.DatetimeIndex(hist))
 d._write_single(P, ID, frame, {"from": "2026-01", "to": "2026-11", "tail_fetched_at": "2026-11-19T02:00:00"})
 src = Source("2026-11-20")
 d._extend_cache_monthly(P, ID, src, "2026-01-01", None)
-check(src.calls == [("2026-08-01", "2026-11-21")], f"one read from the layout's first month, not from 2026-01 ({src.calls})")
-check("2026-09-30" in cached_days(P, ID), "an old seam's hole is filled without clearing the cache")
+check(src.calls == [("2026-11-19", "2026-11-21")], f"no seam read on an old file, the plain delta only ({src.calls})")
+check("2026-09-30" not in cached_days(P, ID), "its old hole stays")
+check(d._read_single_meta(P, ID)["settled"] == "2026-10", "its first write starts tracking from this month's end on")
 src.calls.clear()
+Clock.at = datetime(2026, 12, 2, 2)
 d._extend_cache_monthly(P, ID, src, "2026-01-01", None)
-check(src.calls[0][0] >= "2026-11-01", f"…once ({src.calls})")
+check(src.calls[0][0] == "2026-11-20" and "2026-09-30" not in cached_days(P, ID),
+      f"the next rollover re-reads the month that just ended, nothing older ({src.calls})")
+
+# an old file in the first week of a month: today's case, the week the seam is open
+fresh_cache()
+Clock.at = datetime(2026, 11, 3, 2)
+hist = [x for x in days("2026-05-01", "2026-11-02") if x != "2026-09-30"]
+frame = pd.DataFrame({"Close": 1.0}, index=pd.DatetimeIndex(hist))
+d._write_single(P, ID, frame, {"from": "2026-05", "to": "2026-11", "tail_fetched_at": "2026-11-02T02:00:00"})
+src = Source("2026-11-03")
+d._extend_cache_monthly(P, ID, src, "2026-05-01", None)
+check(src.calls == [("2026-11-02", "2026-11-04")], f"first-week update: no read of the month that just ended ({src.calls})")
+check(d._read_single_meta(P, ID)["settled"] == "2026-10", "…and that month counts as settled from here on")
+src.calls.clear()
+Clock.at = datetime(2026, 11, 4, 2)
+d._extend_cache_monthly(P, ID, src, "2026-05-01", None)
+check(not any(s < "2026-11-01" for s, _ in src.calls), f"…on the next call too ({src.calls})")
+
+# a month re-read at the rollover keeps everything before its closing days
+fresh_cache()
+Clock.at = datetime(2026, 11, 5, 2)
+hist = [x for x in days("2026-05-01", "2026-11-20") if x != "2026-11-03"]
+frame = pd.DataFrame({"Close": 1.0}, index=pd.DatetimeIndex(hist))
+d._write_single(P, ID, frame, {"from": "2026-05", "to": "2026-11", "tail_fetched_at": "2026-11-20T02:00:00",
+                               "settled": "2026-10"})
+Clock.at = datetime(2026, 12, 2, 2)
+src = Source("2026-12-01")
+out = d._extend_cache_monthly(P, ID, src, "2026-05-01", None)
+check(src.calls[0][0] == "2026-11-20", f"the seam asks from the month's last bar ({src.calls[0]})")
+check(pd.Timestamp("2026-11-03") not in out.index and out.loc["2026-11-02", "Close"] == 1.0,
+      "a hole and a value before the closing days stay as they were")
+check(pd.Timestamp("2026-11-30") in out.index, "…and the closing days land")
+
+# a backtest behind the coverage does not pull the seam back
+fresh_cache()
+Clock.at = datetime(2026, 11, 20, 2)
+hist = days("2025-01-01", "2026-11-19")
+frame = pd.DataFrame({"Close": 1.0}, index=pd.DatetimeIndex(hist))
+d._write_single(P, ID, frame, {"from": "2025-01", "to": "2026-11", "tail_fetched_at": "2026-11-19T02:00:00",
+                               "settled": "2026-10"})
+d._save_single(P, ID, pd.DataFrame({"Close": 1.0}, index=pd.DatetimeIndex(days("2025-12-01", "2025-12-31"))), "2024-12-01", "2024-12-31")
+check(d._read_single_meta(P, ID)["settled"] == "2026-10", "an earlier backtest leaves `settled` where it was")
+src = Source("2026-11-20")
+d._extend_cache_monthly(P, ID, src, "2025-01-01", None)
+check(src.calls == [("2026-11-19", "2026-11-21")], f"…so the next live read is the plain delta ({src.calls})")
 
 # 3. a request that ends in a past month
 fresh_cache()
@@ -137,11 +184,11 @@ fresh_cache()
 Clock.at = datetime(2026, 11, 20, 2)
 hist = days("2026-01-01", "2026-10-20")
 d._write_single(P, ID, pd.DataFrame({"Close": 1.0}, index=pd.DatetimeIndex(hist)),
-                {"from": "2026-01", "to": "2026-10", "tail_fetched_at": "2026-10-20T10:00:00"})
+                {"from": "2026-01", "to": "2026-10", "tail_fetched_at": "2026-10-20T10:00:00", "settled": "2026-07"})
 src = Source("2026-11-20")
 d._extend_cache_monthly(P, ID, src, "2026-01-01", "2026-08-31")
 meta = d._read_single_meta(P, ID)
-check(src.calls == [("2026-08-01", "2026-09-01")] and meta["tail_fetched_at"] == "2026-10-20T10:00:00",
+check(src.calls == [("2026-08-31", "2026-09-01")] and meta["tail_fetched_at"] == "2026-10-20T10:00:00",
       f"a seam read short of the tail leaves the tail stamp alone ({src.calls}, {meta})")
 check(meta.get("settled") == "2026-08", f"…and settles only what it read ({meta.get('settled')})")
 
@@ -190,10 +237,10 @@ for sid in IDS:                                       # as 0.1.40 wrote them
     meta.pop("settled")
     d._write_single("twstock_price3", {"id": sid}, df, meta)
 out = d.fetch_twstock_price_adj_batch(IDS, "2026-09-01", None, {})
-check(len(api.calls) == 9 and set(api.calls) == {("batch", "2026-09-01")}, f"the heal goes to /batch in one pass ({api.calls[:2]}, {len(api.calls)} calls)")
+check(api.calls == [("bulk", "2026-11-01")], f"old files stay on the plain /bulk ({api.calls[:2]}, {len(api.calls)} calls)")
 api.calls = []
 d.fetch_twstock_price_adj_batch(IDS, "2026-09-01", None, {})
-check(api.calls == [("bulk", "2026-11-01")], f"…and the next tick is the plain /bulk ({api.calls[:3]})")
+check(api.calls == [("bulk", "2026-11-01")], f"…and so does the next tick ({api.calls[:3]})")
 
 def strip_settled():                                  # as 0.1.40 wrote them
     for sid in IDS:
@@ -212,10 +259,13 @@ for n in (1, 2):
     api.calls = []
     d.fetch_twstock_price_adj_batch(IDS, "2026-06-01", "2026-07-31", {})
     check(api.calls == [("bulk", "2026-11-01")], f"a fixed end before the seam: /bulk only, call {n} ({api.calls[:2]})")
+for sid in IDS:
+    df, meta = d._read_single("twstock_price3", {"id": sid})
+    d._write_single("twstock_price3", {"id": sid}, df, {**meta, "settled": "2026-07"})
 api.calls = []
 d.fetch_twstock_price_adj_batch(IDS, "2026-06-01", "2026-08-31", {})
 check(len(api.calls) == 9 and set(api.calls) == {("batch", "2026-08-01")},
-      f"a fixed end reaching the seam reads it on /batch ({api.calls[:2]}, {len(api.calls)} calls)")
+      f"a fixed end reaching an unsettled seam reads it on /batch ({api.calls[:2]}, {len(api.calls)} calls)")
 api.calls = []
 d.fetch_twstock_price_adj_batch(IDS, "2026-06-01", "2026-08-31", {})
 check(api.calls == [("bulk", "2026-11-01")], f"…and the same call next time is /bulk only ({api.calls[:2]})")
@@ -244,12 +294,12 @@ Clock.at = datetime(2026, 11, 8, 12)
 src.calls.clear()
 out = d._extend_cache_monthly(M, MID, src, "2026-09-01", None)
 got = out.index.strftime("%Y-%m-%d")
-check(("2026-10-01", "2026-11-01") in src.calls and "2026-10-30" in got,
+check(("2026-10-28", "2026-11-01") in src.calls and "2026-10-30" in got,
       f"a week after the month ended it is read once more and the days land ({src.calls})")
 stamp(oct_file, Clock.at)
 src.calls.clear()
 d._extend_cache_monthly(M, MID, src, "2026-09-01", None)
-check(("2026-10-01", "2026-11-01") not in src.calls, f"…once ({src.calls})")
+check(("2026-10-30", "2026-11-01") not in src.calls, f"…once ({src.calls})")
 
 fresh_cache()
 Clock.at = datetime(2026, 11, 1, 2)
@@ -267,7 +317,7 @@ Clock.at = datetime(2026, 11, 9, 12)
 src.calls.clear()
 d._extend_cache_monthly(T, TID, src, "2026-10-01", None, empty_marker_ttl_hours=24)
 d._stale_incomplete_month = real_stale
-check(seen and ("2026-10-01", "2026-11-01") in src.calls, f"the TTL check's mtime refresh does not hide it ({src.calls})")
+check(seen and ("2026-10-28", "2026-11-01") in src.calls, f"the TTL check's mtime refresh does not hide it ({src.calls})")
 
 for label, prefix, params in (("TXF 1m", "twfutures3_1m", {"symbol": "TXF"}),
                               ("stock 5m", "twstock_minute_5m", {"id": "2330", "adj": 0})):
@@ -281,17 +331,12 @@ for label, prefix, params in (("TXF 1m", "twfutures3_1m", {"symbol": "TXF"}),
         pd.DataFrame({"Close": 1.0}, index=idx).to_parquet(mdir / f"{ym}.parquet")
         stamp(mdir / f"{ym}.parquet", datetime(2026, 11, 19, 2))
     src = Source("2026-11-20")
+    raw = {p: p.read_bytes() for p in mdir.glob("*.parquet")}
     d._stale_incomplete_month = lambda p, ttl, ym, edge_days=15: False
     d._extend_cache_monthly(prefix, params, src, "2026-06-01", None, empty_marker_ttl_hours=24)
-    sep = pd.read_parquet(mdir / "2026-09.parquet")
-    check(("2026-08-01", "2026-11-01") in src.calls and pd.Timestamp("2026-09-30") in sep.index,
-          f"{label}: an old month past the mark, mtime refreshed, heals ({src.calls})")
-    check(not any(s < "2026-08" for s, _ in src.calls), f"{label}: a month before the heal floor is left alone")
-    src.calls.clear()
-    stamp(mdir / "2026-09.parquet", datetime(2026, 11, 19, 2))
-    d._extend_cache_monthly(prefix, params, src, "2026-06-01", None, empty_marker_ttl_hours=24)
     d._stale_incomplete_month = real_stale
-    check(not any(s < "2026-11" for s, _ in src.calls), f"{label}: …once, whatever the mtime says ({src.calls})")
+    check(not any(s < "2026-11" for s, _ in src.calls), f"{label}: an old month gets no request ({src.calls})")
+    check(all(p.read_bytes() == b for p, b in raw.items()), f"{label}: …and keeps its bytes, hole included")
 
 fresh_cache()
 Clock.at = datetime(2026, 11, 20, 2)
@@ -327,6 +372,9 @@ check(("2026-10-01", "2026-11-01") not in src.calls, f"an exchange-direct month 
 a = {"from": "2026-01", "to": "2026-10", "tail_fetched_at": "2026-11-01T00:00:00"}
 b = {"from": "2026-09", "to": "2026-11", "tail_fetched_at": "2026-11-02T00:00:00", "settled": "2026-09"}
 check("settled" not in d._merge_meta(a, b), "merging with a file that has no `settled` leaves it unknown")
+old = {"from": "2025-01", "to": "2026-11", "tail_fetched_at": "2026-11-02T00:00:00", "settled": "2026-10"}
+new = {"from": "2024-03", "to": "2026-06", "tail_fetched_at": "2026-07-01T00:00:00", "settled": "2026-06"}
+check(d._merge_meta(old, new)["settled"] == "2026-10", "a read ending inside the coverage does not pull `settled` back")
 check(d._merge_meta({**a, "settled": "2026-08"}, b)["settled"] == "2026-08", "merging keeps the earlier `settled`")
 
 shutil.rmtree(TMP, ignore_errors=True)
