@@ -10,7 +10,7 @@ second argument. A method that FITS on that window owns it and declares it in
 `PARAMS` like any other knob, which is what puts it in the page's parameter
 form — the built-in `slope` does, `equal` does not. A method that declares no
 window leaves the choice to the caller. `target_vol` is the one name a file
-must never declare (see RESERVED_PARAM_KEYS): it is the account's leverage
+must never declare (see RESERVED_PARAM_KEYS): it is the proposal's leverage
 target, not a weighting input. The method's own knobs live in a module-level
 `PARAMS` dict, edited in the file, exactly like a strategy's top-of-file
 constants (see `references/allocator-code.md`).
@@ -33,9 +33,9 @@ ALLOCATORS_DIR = 'allocators'
 # rather than let the user believe their file is the one being traded.
 BUILTIN_ALLOCATORS = ('equal', 'slope', 'sharpe')
 
-# `target_vol` scales portfolio leverage and is not a weighting input at all —
+# `target_vol` is the proposal's leverage target, not a weighting input at all —
 # a file declaring it would have it read as the caller's flag and never see the
-# page's value in its own PARAMS, so refuse the name.
+# value in its own PARAMS, so refuse the name.
 #
 # `lookback` is NOT reserved: a method that fits on a window owns that window,
 # declares it like any other knob, and the page offers it. The scripts pass the
@@ -74,8 +74,8 @@ def load(name):
         if clash:
             raise ValueError(
                 f"{path} declares reserved PARAMS {clash} — target_vol is the "
-                f"portfolio's leverage target, set once for the account, not a "
-                f"weighting input a method gets to choose."
+                f"proposal's leverage target, not a weighting input a method gets "
+                f"to choose."
             )
     if uses_window(path) and not (isinstance(declared, dict) and 'lookback' in declared):
         raise ValueError(

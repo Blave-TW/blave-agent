@@ -33,7 +33,7 @@ DESCRIPTION = "波動越大的策略給越小的權重"
 # holds out. A method that declares none is read as needing none (equal weight
 # is the built-in example), and the backtest then treats every day as out of
 # sample. `target_vol` is the one name that must never appear here (loading
-# raises): it is the account's leverage target, not a weighting input.
+# raises): it is the proposal's leverage target, not a weighting input.
 PARAMS = {"lookback": 365, "floor_vol": 0.001}
 
 

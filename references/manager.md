@@ -36,7 +36,7 @@ python3 manager/manager.py --members a,b,c --allocator equal            # dry-ru
 python3 manager/manager.py --members a,b,c --allocator equal --apply    # write config
 ```
 
-`--target-vol`: sets target annual volatility; computes `leverage = target_vol / ann_vol`, where `ann_vol` is realized over the **trailing 90 days only** (`VOL_WINDOW`) — volatility clusters, so a regime from years back must not dilute what leverage is safe today. Sharpe and the walk-forward still use the full history; the proposal reports the days actually used as `vol_window_days`. A weighted strategy whose backtest has no data inside that window looks risk-free, which understates `ann_vol` and overstates the leverage derived from it — the script prints a `WARNING:` naming the strategy and how many days are missing. **Re-run those backtests before sizing anything on that leverage.** **Omit it and the account's own `target_vol_pct` is used** — passing a value overwrites that setting on `--apply`, so only pass one when the user asked to change it.
+`--target-vol`: sets target annual volatility; computes `leverage = target_vol / ann_vol`, where `ann_vol` is realized over the **trailing 90 days only** (`VOL_WINDOW`) — volatility clusters, so a regime from years back must not dilute what leverage is safe today. Sharpe and the walk-forward still use the full history; the proposal reports the days actually used as `vol_window_days`. A weighted strategy whose backtest has no data inside that window looks risk-free, which understates `ann_vol` and overstates the leverage derived from it — the script prints a `WARNING:` naming the strategy and how many days are missing. **Re-run those backtests before sizing anything on that leverage.** **Omit it and the config's own `target_vol_pct` is used** — passing a value overwrites that setting on `--apply`. A user asking to change target volatility, leverage or position size is asking for 部位大小 on the page (*Position sizing on the page*), not this flag: live positions follow `amounts`, so `--target-vol … --apply` would change nothing they trade on. This target and the `leverage` it yields are a reference figure in the proposal. They are not what the user set on the page and they do not size live positions (`amounts` does).
 
 **Name the method explicitly on `--apply`.** Omitting `--allocator` resolves to the method the live config was applied with (a config with no `allocator`, or a null one, means `slope` — it predates `equal`); only a portfolio that has never been applied falls to the default. That keeps a bare re-run from silently re-weighting live positions, but the command reads clearer when the method is spelled out.
 
@@ -53,13 +53,13 @@ python3 manager/manager.py --members a,b,c --allocator equal --apply    # write 
 Flags both scripts share (these are what the workspace's 投資組合 page drives; the agent can use them too):
 
 - `--members a,b,c` — restrict to those strategies (directory names under `strategies/`). Unknown name → exit 2, nothing written.
-- `--params-json '{"k": v}'` — override an allocator's `PARAMS` for this run (declared keys only). `slope` and `sharpe` declare `lookback` (they fit on that window); `equal` declares nothing — it has no window, and the walk-forward treats every day as out of sample for it. `--target-vol` is not a method knob at all: it scales leverage and is no longer offered on the page.
+- `--params-json '{"k": v}'` — override an allocator's `PARAMS` for this run (declared keys only). `slope` and `sharpe` declare `lookback` (they fit on that window); `equal` declares nothing — it has no window, and the walk-forward treats every day as out of sample for it. `--target-vol` is not a method knob at all: it only sets the `leverage` field of the proposal. The user sizes the portfolio on the page instead — see *Position sizing on the page*.
 - `manager.py --json PATH` — also write the dry-run proposal as JSON (weights, sharpe, leverage, `history_days`…). `port_returns` is `{start, end, days, r}` — the unlevered daily return of the proposed weights, calendar-daily from `start`, clipped to the days every member with weight > 0 has data (unlike `sharpe`/`ann_vol_pct`; a zero-weight member never sets the span); `null` when that span is shorter than `VOL_WINDOW` (90 days) or the held members never overlap. The page sizes leverage by max drawdown from it. Check: `python3 manager/check_port_returns.py`. `management_backtest.py --progress PATH` — write `{day, total}` during the walk-forward. `stats.json` additionally carries `members`, `params`, `managed_cum`, `member_spans`, `overlap` (`start`/`end`/`eval_days`) and `random_benchmark.band` + `band_start` (per-day p5/p50/p95 cumulative %).
 - Exit codes: 2 = bad input (reason is the last stderr line); `management_backtest.py` exits 3 when the members share no day at all, or share fewer days than `--lookback` needs.
 
 The page writes `manager/proposal.json`, `manager/mgmt_job.json`, `manager/mgmt_progress.json` — never edit or delete them by hand.
 
-**manager.py never touches `account_value`.** It only writes `weights` and `leverage`. `account_value` is the live position-sizing base (`contribution = account_value * leverage * weight * position`), so changing capital is a separate, explicit action: edit `portfolio_config.json["account_value"]` by hand. There is intentionally no `--account` flag — updating weights must not be able to resize live positions.
+**manager.py never touches `account_value`.** It only writes `weights` and `leverage`. Live positions are sized by `amounts` (`lib/portfolio.strategy_amounts`); `account_value * leverage * weight` is only the fallback for a config that has never saved `amounts`. Changing `account_value` is therefore a separate, explicit action that only matters for such a legacy config; once `amounts` exists, the user changes capital on the page (*Position sizing on the page*). There is intentionally no `--account` flag — updating weights must not be able to resize live positions.
 
 **`--apply` flag — protects live trading.** Default is dry-run: weights are computed and printed but `portfolio_config.json` is untouched, so a research run can never silently change the weights the live reconciler is trading on. The optimiser is seeded (`np.random.seed(42)`), so the `--apply` re-run produces exactly the weights shown in the dry-run (same stats.json inputs).
 
@@ -68,6 +68,25 @@ Required workflow:
 2. Ask for explicit confirmation that these weights should go live.
 3. Only after the user confirms, re-run the SAME command with `--apply` appended.
 4. Never pass `--apply` on the first run, and never assume confirmation from context.
+
+## Position sizing on the page
+
+Two separate choices, both the user's:
+
+- **How to split** — 管理方法 (`equal`, `slope`, `sharpe` or a custom allocator). This sets the weights.
+- **How big** — 部位大小, the button in the 權重分配 block on 策略組合 › 優化. The user enters 投入資金 and picks one of three:
+  - 目標波動: target ÷ the proposal's `ann_vol_pct` (trailing 90 days). `ann_vol_pct` is 0 when every weighted strategy's returns in that window are flat (no position, or a stale backtest with no data there); the page then says 「這份結果算不出目標波動，換一個方法」 — re-run those backtests or pick another method. A portfolio of one strategy is not a problem in itself: that strategy's own volatility is used.
+  - 最大回撤: leverage solved from `port_returns`; unavailable when the target would need a very high leverage or `port_returns` is null (under 90 days of overlap)
+  - 固定槓桿: the multiple the user typed
+
+Each row's amount = 投入資金 × implied leverage × weight (台指期 converts to lots). 確定 only changes the page; 套用金額 writes `amounts` to the machine. There is no default target. 30% is only the CLI default for `target_vol_pct`.
+
+When the user asks about leverage or target volatility:
+
+- Never say the target is fixed, not adjustable, or an account-level setting, and never say leverage cannot be set by hand.
+- Never run `--target-vol … --apply` or hand-edit `target_vol_pct` / `leverage` to honor a sizing request; send the user to 部位大小 and 套用金額.
+- The values typed into 部位大小 are not in the workspace; you cannot read them. Do not read `target_vol_pct` or `leverage` from `portfolio_config.json` or the proposal as what the user chose. What the user actually applied is `amounts`.
+- To change it: 策略組合 › 優化 → 跑優化 → 部位大小 → 確定 → 套用金額. Applying amounts is the user's own action (`references/portfolio-steps.md`); walk them through it, do not write `amounts` yourself. The mobile app has no 部位大小; point the user to the web or desktop app.
 
 ## portfolio_config.json — Exchange Routing
 
@@ -725,7 +744,7 @@ python3 manager/close_symbol.py --venue <id> --symbol <SYM> --side long|short \
 - Conflict check (heuristic): refused when another live strategy — a schedule line or a running python/bash process references it, or it is a portfolio member on this venue — has code or config files (`.py`, `.json` such as `params.json`, `.yaml`/`.yml`, `.toml`, `.txt`, `.env`/`.ini`/`.cfg`/`.conf` — not `.csv` or logs) that mention the symbol on the same key. Same key = the key name appears; for the venue's plain key, either the plain name appears, or no other key name of the venue appears but the files name the venue (`order_<venue>` or the venue word). The output lists every strategy it scanned. Tell the user which strategies conflict and stop them first if they agree.
 - Exit codes (same for both): 0 done and verified (sub-minimum dust may remain — printed); 1 a step failed or something is left — incl. a cancel/close failure, a venue lib that could not list/cancel its conditional orders, an unverifiable result, or (stop) leftover schedule lines/processes/registry entries; 2 refused or the exchange could not be read before anything changed; 3 (`stop_strategy.py` only) no schedule line, process or registry entry matched any name — nothing changed; if the user still wants the coin closed, run `close_symbol.py` instead; 4 no position on that side — nothing sent (for `stop_strategy.py`: stopped and verified, nothing to close).
 
-**Changing `account_value` (capital):** edit `portfolio_config.json["account_value"]` by hand — the ONLY way, and only when the user explicitly asks to change capital (never as a side effect of a weight update). Procedure: (1) the value is total account equity in the account currency (USD) — use the real figure, never a placeholder like 10000; (2) editing resizes every live position, so show the user the old → new value and get explicit confirmation BEFORE writing, same as `--apply`; (3) no restart needed — the reconciler re-reads the file on its next poll. `manager.py` never writes this field.
+**Changing `account_value` (capital):** only for a config that has never saved `amounts` (with `amounts`, capital is the user's 部位大小 on the page — see *Position sizing on the page*). Edit `portfolio_config.json["account_value"]` by hand — the ONLY way, and only when the user explicitly asks to change capital (never as a side effect of a weight update). Procedure: (1) the value is total account equity in the account currency (USD) — use the real figure, never a placeholder like 10000; (2) editing resizes every live position, so show the user the old → new value and get explicit confirmation BEFORE writing, same as `--apply`; (3) no restart needed — the reconciler re-reads the file on its next poll. `manager.py` never writes this field.
 
 **Order-qty UNITS pitfall (measured live 2026-08, sCode 51008):** the order libs'
 `place_market_order` / `close_position_partial` take **BASE-currency qty** (ETH, SOL…)
@@ -988,4 +1007,4 @@ POC guidance about moving the cert to a different account store.
 ```
 The reconciler touches `state/heartbeat/reconciler` on every poll loop; `manager/healthcheck.py` alerts the user if the heartbeat goes stale (see `references/deployment.md` › Deployment Healthcheck). Without this registration the healthcheck cannot see the daemon.
 
-**Trace the full calculation chain before flagging an inconsistency.** If `state.json` shows a non-zero position but a field in `portfolio_config.json` (e.g. `weight=0`) seems contradictory, read `lib/portfolio.py` first. `contribution = account_value * leverage * weight * position` — a zero weight zeroes out the contribution by design. Do not report a bug until you have followed every variable through the aggregation logic.
+**Trace the full calculation chain before flagging an inconsistency.** If `state.json` shows a non-zero position but a field in `portfolio_config.json` (e.g. `weight=0`) seems contradictory, read `lib/portfolio.py` first. In a legacy config without `amounts`, `contribution = account_value * leverage * weight * position` — a zero weight zeroes out the contribution by design; with `amounts`, a strategy's size is its `amounts` entry. Do not report a bug until you have followed every variable through the aggregation logic.

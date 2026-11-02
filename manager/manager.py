@@ -28,9 +28,9 @@ because a method that re-fits weights every day has to beat leaving them alone,
 and the walk-forward gate is where it proves it.
 
 This command ONLY recomputes weights / leverage. It never changes
-account_value — that is the live position-sizing base (see lib/portfolio.py:
-contribution = account_value * leverage * weight * position). To change capital,
-edit portfolio_config.json["account_value"] directly as a separate, explicit step.
+account_value. Live positions are sized by `amounts` (lib/portfolio.strategy_amounts),
+which the user sets with 部位大小 on the page; account_value * leverage * weight is
+only the fallback for a config that has never saved `amounts`.
 """
 import argparse, json, os, sys, time
 import numpy as np
@@ -333,7 +333,8 @@ def default_target_vol():
     default. manager.py writes target_vol_pct into portfolio_config on --apply,
     so taking the module default here would overwrite whatever the user set —
     and the leverage in the proposal they act on would be computed at someone
-    else's target. The workspace page no longer offers this knob at all."""
+    else's target. The page does not read target_vol_pct: it sizes positions
+    with 部位大小 (amounts), so this only sets the proposal's `leverage`."""
     try:
         cfg = load_json(CONFIG_PATH)
         pct = float(cfg['target_vol_pct'])
@@ -496,9 +497,9 @@ def main():
         cfg = {'account_value': 10000}
 
     # Preserve deployment fields that manager must never overwrite.
-    # account_value is deliberately NOT settable here — it is the live
-    # position-sizing base and must be changed as a separate explicit step,
-    # never as a side effect of a weight update.
+    # account_value is deliberately NOT settable here — it is the sizing base
+    # of a legacy config without `amounts`, so a weight update must never
+    # resize it.
     cfg.setdefault('account_value', 10000)
     cfg.setdefault('exchanges', {})
     cfg.setdefault('asset_specs', {})
