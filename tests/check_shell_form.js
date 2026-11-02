@@ -111,7 +111,9 @@ ok("en 預設句 96 字元、最長組合 97,都在 FORM_MAX_SENTENCE_CHARS 120 
 ok("formPick:chunk 不是物件 → null", loaded && ctx.formPick(null) === null && ctx.formPick("x") === null);
 { const vp = path.join(process.env.BLAVE_WEB_DIR || path.join(__dirname, "..", "..", "web"), "tests", "form_vectors.json");
   const V = fs.existsSync(vp) ? JSON.parse(fs.readFileSync(vp, "utf8")) : null;
-  ok("讀得到網頁的 form_vectors.json(設 BLAVE_WEB_DIR)", !!V && Array.isArray(V.pick) && Array.isArray(V.sentence) && V.sentence.some((x) => x.lang === "en"), vp);
+  // 旁邊沒有 web 樹(CI 只 checkout 這個 repo)才 SKIP;樹在、檔不在照紅
+  if (!fs.existsSync(path.dirname(path.dirname(vp)))) console.log("SKIP  網頁 form_vectors.json 比對(需要 BLAVE_WEB_DIR 或 monorepo 版面)");
+  else ok("讀得到網頁的 form_vectors.json(設 BLAVE_WEB_DIR)", !!V && Array.isArray(V.pick) && Array.isArray(V.sentence) && V.sentence.some((x) => x.lang === "en"), vp);
   if (V) {   // 網頁那份的形狀:pick 只比收不收(ok),sentence 比 formSentence(state, lang) 的輸出
     for (const v of V.pick) ok("網頁測資 formPick:" + v.name, loaded && (ctx.formPick(v.chunk) !== null) === v.ok, loaded && ctx.formPick(v.chunk));
     for (const v of V.sentence) { ctx.LANG = v.lang; const s = loaded ? ctx.formSentence(v.state, v.lang) : null; ok("網頁測資 formSentence:" + v.name, s === v.out, s); }
@@ -261,7 +263,10 @@ ok("form.js 不讀「有沒有回合」(回合結束在 turnEndPost 裡同步跑
   const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "relay.py");
   const m = fs.existsSync(apiPy) && /^TURN_TYPES = \(([^)]*)\)/m.exec(fs.readFileSync(apiPy, "utf8"));
   const apiT = m ? [...m[1].matchAll(/"(\w+)"/g)].map((x) => x[1]) : null;
-  ok("手機中轉不轉 form chunk:relay.js TURN_TYPES 沒有 form,且與 api relay.py 同一份(設 BLAVE_API_DIR)", !RL.TURN_TYPES.includes("form") && !!apiT && J(apiT) === J(RL.TURN_TYPES), { shell: RL.TURN_TYPES, api: apiT }); }
+  ok("手機中轉不轉 form chunk:relay.js TURN_TYPES 沒有 form", !RL.TURN_TYPES.includes("form"), RL.TURN_TYPES);
+  // 旁邊沒有 api 樹(CI)才 SKIP;樹在、常數讀不到照紅
+  if (!fs.existsSync(path.dirname(path.dirname(apiPy)))) console.log("SKIP  relay.js TURN_TYPES 與 api relay.py 比對(需要 BLAVE_API_DIR 或 monorepo 版面)");
+  else ok("relay.js TURN_TYPES 與 api relay.py 同一份(設 BLAVE_API_DIR)", !!apiT && J(apiT) === J(RL.TURN_TYPES), { shell: RL.TURN_TYPES, api: apiT }); }
 
 console.log(red ? `\n${red} 紅` : "\nALL PASS");
 process.exit(red ? 1 : 0);
