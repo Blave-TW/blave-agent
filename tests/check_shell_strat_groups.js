@@ -28,17 +28,27 @@ const block = (s, head, end) => { const i = s.indexOf(head); if (i < 0) throw ne
     c.plan(sc([], { s0: "crypto", s1: "crypto" }), L(8)) === null && c.plan(sc([], {}), L(12)) === null);
 }
 
-// ── ①b 新增資料夾鈕:有 1 支策略就出,0 支時(就算還留著資料夾)不出;達上限停用(同網頁 sgApiOn && n > 0) ──
+// ── ①b 新增資料夾鈕:不看支數,0 支策略也出(Wei 11-02);達上限停用 ──
 {
   const el = () => ({ hidden: false, disabled: false, textContent: "", title: "", attrs: {}, getAttribute(k) { return this.attrs[k] || null; }, setAttribute(k, v) { this.attrs[k] = v; }, appendChild() {}, addEventListener() {}, after() {}, insertBefore() {} });
   const dom = { "sg-add": el(), "sg-limit": el(), "strat-head": el() };
   const c = { $: (id) => dom[id], t: (k) => k };
   vm.runInNewContext([block(sg, "const SG_MAX = ", ";"), cutFn(sg, "sgHeadPaint")].join("\n") + "\nthis.paint = sgHeadPaint; this.MIN = typeof SG_AUTO_MIN === 'undefined' ? null : SG_AUTO_MIN;", c);
   const run = (nList, nFolders) => { c.sgStore = () => ({ last: Array.from({ length: nList }, (_, i) => ({ name: "s" + i })), groups: () => ({ folders: Array.from({ length: nFolders }, (_, i) => ({ id: "f" + i })) }) }); c.paint(); return { hidden: dom["sg-add"].hidden, disabled: dom["sg-add"].disabled }; };
-  ok("①b 1 支策略、沒有資料夾:新增資料夾鈕出現", run(1, 0).hidden === false);
-  ok("①b 0 支策略:不出(沒有資料夾、或還留著資料夾都一樣)", run(0, 0).hidden === true && run(0, 2).hidden === true);
+  ok("①b 0 支策略、沒有資料夾:新增資料夾鈕也出", run(0, 0).hidden === false);
+  ok("①b 0 支策略、還留著資料夾:也出", run(0, 2).hidden === false);
+  ok("①b 1 支策略:也出", run(1, 0).hidden === false);
   ok("①b 7 支策略(建市場門檻以下)也出;達 20 個資料夾停用", run(7, 0).hidden === false && run(3, 20).disabled === true && run(3, 19).disabled === false);
   ok("①b 建市場資料夾的門檻常數叫 SG_AUTO_MIN、值 8(同網頁 AUTO_MIN),新增鈕不看它", c.MIN === 8 && !/SG_AUTO_MIN/.test(cutFn(sg, "sgHeadPaint")) && /list\.length < SG_AUTO_MIN/.test(cutFn(sg, "sgAutoPlan")));
+}
+
+// ── ①c 空清單下移動、刪資料夾不寫順序(稽核 P1-3):api 把 [] 當清掉自訂順序;有列照寫 ──
+{
+  const box = (n) => ({ querySelectorAll: () => Array.from({ length: n }, (_, i) => ({ dataset: { name: "s" + i } })) });
+  const c = {}; vm.runInNewContext(cutFn(sf, "sfWriteOrder") + "\nthis.w = sfWriteOrder;", c);
+  const run = (n) => { const got = []; c.w({ box: () => box(n), moved: (x) => got.push(x) }); return got; };
+  ok("①c 空清單:不呼叫 moved", run(0).length === 0);
+  ok("①c 有列:照寫", JSON.stringify(run(2)) === JSON.stringify([["s0", "s1"]]));
 }
 
 // ── ② 清單與字串 ──

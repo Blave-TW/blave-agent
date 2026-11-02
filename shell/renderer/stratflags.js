@@ -149,8 +149,11 @@ function sfCloudTrim(k, v) {
 }
 function sfCloudFlush(retry) {
   const p = { epoch: SFC.epoch }, sent = {}, ep = SFC.epoch;
-  SFC.dirty.forEach((k) => { sent[k] = SFC.over[k]; p[SFC_KEYS[k]] = sfCloudTrim(k, SFC.over[k]); });
-  SFC.dirty.clear();
+  // 清單讀不全、歸屬超過 200 筆:截斷會吃掉真的歸屬,這包不送資料夾,留著等下一次寫入(那時清單齊了才修剪)
+  const held = !SFC.names && SFC.dirty.has("groups") && Object.keys(SFC.over.groups.map || {}).length > 200;
+  SFC.dirty.forEach((k) => { if (held && k === "groups") return; sent[k] = SFC.over[k]; p[SFC_KEYS[k]] = sfCloudTrim(k, SFC.over[k]); });
+  SFC.dirty.clear(); if (held) SFC.dirty.add("groups");
+  if (!Object.keys(sent).length) return;
   Promise.resolve(window.blave.cloudStratPrefsSet(p)).then((r) => {
     if (!r || ep !== SFC.epoch) return;
     const live = Object.keys(sent).filter((k) => SFC.over[k] === sent[k]);   // 送出之後又改過的鍵換了新物件、下一包已排好:不放手、不補送
@@ -349,8 +352,10 @@ $("strat-list-cloud").addEventListener("scroll", () => sfPopClose(false));
    落點每次 pointermove 拿指標 y 比可見節點——列用起手時存的基準矩形(不含讓位的 transform,捲動補 scrollTop 差,否則列一讓位落點就翻回來),
    組標題用即時矩形(釘頂中的也算,疊在一起時取 DOM 最後那個 = 畫面最上面那個)。指到組標題 = 該組最底;列的上半 = 排在它前、下半 = 排在它後 */
 // 寫回:畫面由上到下的列(含收合組裡 hidden 的列)。資料夾換序、刪資料夾、建市場資料夾也走這條,但不送 strat_reorder
+// 清單是空的(含主機沒回、讀不全)時畫面沒有順序可寫:api 把 [] 當清掉自訂順序,同網頁 sgCommitLayout
 function sfWriteOrder(sc) {
-  sc.moved([...sc.box().querySelectorAll(":scope > .strat-wrap")].map((w) => w.dataset.name).filter(Boolean));
+  const names = [...sc.box().querySelectorAll(":scope > .strat-wrap")].map((w) => w.dataset.name).filter(Boolean);
+  if (names.length) sc.moved(names);
 }
 function sfMoved(sc) {
   trackFeature("strat_reorder");

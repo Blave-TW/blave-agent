@@ -530,6 +530,11 @@ function trAmountsToSend(names, stored, edits, keep) {
   (Array.isArray(keep) ? keep : []).forEach((n) => { if (!(n in out) && n in stored) out[n] = stored[n]; });
   return out;
 }
+/* 金額留空的新列不算加入(Wei 11-02):沒存過、格子是空的。打了 0 再清空也算空(input 把 "" 解析成 0,原字記在 raw);打了 0 留著照舊是加入 0 */
+function trBlankNew(n, stored, edits, raw) {
+  if (n in stored) return false;
+  return edits[n] == null || (!(edits[n] > 0) && !!raw && raw[n] != null && !String(raw[n]).trim());
+}
 function trRemoved(stored, sending) { return Object.keys(stored).filter((n) => !(n in sending)); }
 /* 雲端存量裡、表上沒列出來、**而且清單也找不到**的那幾支(api 讀不到 summary / 清單暫時缺):不是已刪除(稽核 #1,真錢——
    api 讀不到清單時也可能回空陣列),金額照原樣帶著送,表下與確認框講有幾支。清單找得到、只是被取消勾選的 = 移出,不算在這裡。 */
@@ -3416,6 +3421,10 @@ function trAmountTable(names, stored, states) {
     // 淨值倍數搬到自動下單 › 部位的合計列(設計 autotrade-bridge A7:跟著帳上走)
   };
   const anyBad = () => Object.keys(TR.bad).length > 0;
+  // 表上會變的只有空的新列:存了等於沒存,不給按(已存列的改動、移出、換合約、路由都算有東西可存)
+  const onlyBlank = () => { const left = names.filter((n) => !trBlankNew(n, stored, TR.edits, TR.raw));
+    return left.length < names.length && !trRouteDirty(trReport()) && !trCtDirty(left) && !trDirty(left, stored, TR.edits) && !left.some((n) => !(n in stored)) && !trRemoved(stored, trSendAmounts(TR.env, left, stored, TR.edits, trListNames())).length; };
+  const saveOff = () => anyBad() || stale || cfgBad || onlyBlank();
   const settles = [];   // 每一格的離開欄位驗證:按「儲存」時全部重跑一次,不靠 blur 有沒有先發生(稽核 audit-0.1.13-web S1)
   let svBtn = null;   // 儲存鈕:blur 時只更新它的 disabled,不重建整列——打完直接點「儲存」時,mousedown 要落在還活著的那顆鈕上(稽核 R3)
   const paintBar = () => {
@@ -3449,7 +3458,7 @@ function trAmountTable(names, stored, states) {
     // 還原 = 回到底稿(雲端存完還沒對上時是送出的那一份);picker 的草稿一起放掉(新勾的列消失、被取消勾選的列帶原金額回來);內容變了,request_id 也跟著換(S4 §4)
     rv.addEventListener("click", () => { TR.edits = {}; TR.bad = {}; TR.raw = {}; TR.picked = null; TR.a1 = null; TR.ct.edits = {}; TR.ct.basis = {}; delete TR.reqIds.amounts; TR.saveUnknownAt = 0; TR.save = TR.sent && cloud ? "sent" : null; TR.saveErr = null; TR.sig.cfg = null; poPaintCfg(); $("po-h").focus(); });
     const sv = trEl("button", "btn-fill", t("tr.save")); sv.type = "button"; sv.dataset.fk = "save";
-    sv.disabled = anyBad() || stale || cfgBad; svBtn = sv;   // 有一格看不懂就不給存:確認框列的必須是用戶打的那個數
+    sv.disabled = saveOff(); svBtn = sv;   // 有一格看不懂就不給存:確認框列的必須是用戶打的那個數
     sv.addEventListener("click", () => { settles.forEach((f) => f()); if (!anyBad()) trCfOpen({ names, stored, opener: sv }); });
     bar.append(rv, sv);
   };
@@ -3613,7 +3622,7 @@ function trAmountTable(names, stored, states) {
         if (txf && why === "bad" && TR.edits[n] == null && !Number.isInteger(Number(stored[n] || 0)) && inp.value === trFmt(stored[n] || 0)) why = "oldLots";
         // 留空不換成 0,記在 raw:口數格確認框要點名(7-2);沒存過金額的錢格補 0 就是預填
         const blank = (txf || !(stored[n] > 0)) && !String(inp.value).trim();
-        markBad(why); if (!why) { inp.value = blank ? "" : trFmt(parse(inp.value)); if (TR.raw) { if (blank) TR.raw[n] = ""; else delete TR.raw[n]; } } if (svBtn && svBtn.isConnected) svBtn.disabled = anyBad() || stale || cfgBad; else paintBar(); };
+        markBad(why); if (!why) { inp.value = blank ? "" : trFmt(parse(inp.value)); if (TR.raw) { if (blank) TR.raw[n] = ""; else delete TR.raw[n]; } } if (svBtn && svBtn.isConnected) svBtn.disabled = saveOff(); else paintBar(); };
       inp.addEventListener("blur", settle); settles.push(settle);
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); settle(); } });
       row.appendChild(tgt); tb.appendChild(row); repaint();
@@ -3934,7 +3943,7 @@ function trCfOpen(o) {
   // 換合約的判讀(trCt / trCtPayload / trRowTxfNew)讀 TR.ct.edits:有輸入格時換成只有框裡那一支的選擇,策略組合頁那份不算進來
   const ctView = (f) => { if (!inp) return f(); const keep = S.ct; S.ct = Object.assign({}, keep, { edits: iv.ct ? { [inp.name]: iv.ct } : {} }); try { return f(); } finally { S.ct = keep; } };
   const mayFire = trMayFire(S.st, S.pending), old = (n) => Number(stored[n]) || 0;
-  let names, sending, removed, ctAll, ctPending, joined, swappedNs;
+  let names, sending, removed, ctAll, ctPending, joined, swappedNs, blankNew = [];
   const arrow = (dd, was) => { dd.append(trEl("span", "was", was), trEl("span", "arr", "→")); };
   const cfRow = (cls, label, dd) => { const r = trEl("div", "cf-row" + (cls ? " " + cls : "")); r.append(trEl("dt", "", label), dd); return r; };
   // 口數列:下方小字寫商品名與名目(框裡沒有標的欄,商品名只能放這裡;§9.8)。0 口只寫商品名
@@ -3951,7 +3960,8 @@ function trCfOpen(o) {
     return !!ks && ks.length > 0 && ks.every((k) => hold0.keys.indexOf(k) >= 0); };
   const derive = () => ctView(() => {
   names = inp ? Object.keys(stored).concat(inp.name in stored ? [] : [inp.name]) : opt.names;
-  sending = inp ? sendingNow() : trSendAmounts(S.env, names, stored, TR.edits, trListNames()); removed = trRemoved(stored, sending);
+  blankNew = inp ? [] : names.filter((n) => trBlankNew(n, stored, TR.edits, TR.raw));   // 存檔前算好:清掉 edits／raw 之後判不出
+  sending = inp ? sendingNow() : trSendAmounts(S.env, names.filter((n) => blankNew.indexOf(n) < 0), stored, TR.edits, trListNames()); removed = trRemoved(stored, sending);
   ctAll = trCtPayload(Object.keys(sending)); ctPending = Object.keys(sending).some((n) => { const c = trCtStored(n); return !!c && trCt(n) !== c; });
   joined = Object.keys(sending).filter((n) => !(n in stored));
   swappedNs = Object.keys(sending).filter((n) => { const f = trCtStored(n); return !!f && f !== trCt(n); });
@@ -4185,6 +4195,8 @@ function trCfOpen(o) {
         if (!sp) { S.edits = {}; S.raw = {}; S.ct.edits = {}; if (all) S.picked = null; return; }
         if (inp) { delete S.edits[inp.name]; if (S.raw) delete S.raw[inp.name]; if (iv.ct) delete S.ct.edits[inp.name]; }
       };
+      // 空列沒送出去,草稿也拿掉:雲端靠 picked 跟 sent 一致才放掉(trSentCheck),留著會一直算沒存,之後別處加的策略被下一次存檔平掉
+      if (res && res.ok && S.picked) blankNew.forEach((n) => S.picked.delete(n));
       if (res && res.ok && cloud) {
         // ack ok = 主機已經寫進設定檔,不是「已套用」:格子畫送出的值 + .pend,等報告對上(trPoll 裡的 trSentSettled)
         const rc = S.st && S.st.cloud;

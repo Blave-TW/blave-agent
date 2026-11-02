@@ -91,8 +91,10 @@ function focusRedetect() {
   if (PKG.snap && PKG.snap.phase !== "idle") return false;   // Codex 引擎下載中:裝好那一刻自己會重偵測
 
   const onModel = !$("set-scrim").hidden && !$("set-model").hidden;
-  // 不確定的列不算:自動重跑會讓用戶正要按的鈕消失 20 秒,手動〔重新偵測〕留著
-  const onRows = ["claude", "codex"].some((k) => { const x = (lastDetect && lastDetect[k]) || {}; return !!lastDetect && !(x.installed && x.loggedIn) && !authUnknown(x); }) && (!$("view-connect").hidden || onModel || laiOn());   // 額度用完卡片開的 modal:裝完回來不用按重新偵測
+  const rows = ["claude", "codex"].map((k) => (lastDetect && lastDetect[k]) || {}), shown = !$("view-connect").hidden || onModel || laiOn();   // laiOn:額度用完卡片開的 modal:裝完回來不用按重新偵測
+  // 有一列不確定就整個不跑:偵測先清掉每一列,那一列正要按的鈕會消失 20 秒(另一列沒登入也一樣),手動〔重新偵測〕留著
+  if (shown && rows.some(authUnknown)) return false;
+  const onRows = shown && !!lastDetect && rows.some((x) => !(x.installed && x.loggedIn));
   if (!onRows && !localFaultsLive().length) return false;
   Promise.resolve(detect()).then(localFaultsRecheck); return true;
 }

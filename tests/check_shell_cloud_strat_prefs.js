@@ -110,6 +110,12 @@ const env = (o) => ({ status: 200, body: Object.assign({ machine: { state: "runn
   let snap = { epoch: 1, fetched_at: 100, strat_order: ["b", "a"], strat_flags: { a: 1 } };
   let p = ctx.prefs(snap);
   const OF = (x) => J({ order: x.order, flags: x.flags });
+  // 清單讀不全、歸屬超過 200 筆:不截斷、不送資料夾,其他鍵照送;清單齊了才修剪送出
+  { const big = {}; for (let i = 0; i < 205; i++) big["s" + i] = "f1"; ctx.prefs({ epoch: 1, fetched_at: 90, strat_groups: { v: 1, folders: [{ id: "f1", name: "A", emoji: null }], map: {} } });
+    ctx.SFC.names = null; ctx.SF_CLOUD.setGroups({ v: 1, folders: [{ id: "f1", name: "A", emoji: null }], map: big }); ctx.SF_CLOUD.moved(["s1"]); await flush();
+    ok("② 清單讀不全＋map 超過 200:這包沒有 strat_groups,順序照送", sent.length === 1 && !("strat_groups" in sent[0]) && "strat_order" in sent[0], J(sent.map((x) => Object.keys(x))));
+    ok("② …資料夾留著等下一次", ctx.SFC.dirty.has("groups"));
+    sent.length = 0; epochs.length = 0; ctx.SFC.dirty.clear(); ctx.forget(); }
   ok("② 沒改過 = api 那一份;套序 order 內的先、新策略 append", OF(p) === J({ order: ["b", "a"], flags: { a: 1 } }) && J(p.groups) === '{"v":1,"folders":[],"map":{}}' && names(ctx.apply(L("a", "b", "c"), p.order)) === "b,a,c", J(p));
   ctx.SF_CLOUD.moved(["c", "a", "b"]); ctx.SF_CLOUD.setFlag("b", 3); ctx.SF_CLOUD.setFlag("a", null);
   p = ctx.prefs(snap);

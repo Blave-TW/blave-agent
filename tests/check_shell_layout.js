@@ -192,7 +192,11 @@ app.whenReady().then(async () => {
     a.focus(); a.dispatchEvent(new FocusEvent("blur")); out.blurEmpty = a.value;
     a.focus(); a.setSelectionRange(0, 0); document.execCommand("insertText", false, "1000"); out.typed = a.value; out.edit = TR.edits.fresh; a.dispatchEvent(new FocusEvent("blur")); out.after = a.value;
     const k = cell("kept"); k.focus(); k.select(); document.execCommand("delete"); k.dispatchEvent(new FocusEvent("blur")); out.keptCleared = k.value;
+    const sv = () => box.querySelector('[data-fk="save"]');
+    if (document.activeElement) document.activeElement.blur(); TR.edits = {}; TR.raw = {}; TR.bad = {}; TR.picked = new Set(["fresh", "kept"]); TR.sig.cfg = null; poPaintCfg(); out.saveOffBlank = sv() ? sv().disabled : null;
+    const f2 = cell("fresh"); f2.focus(); f2.setSelectionRange(0, 0); document.execCommand("insertText", false, "300"); out.saveOffTyped = sv() ? sv().disabled : null;
     TR.picked = null; TR.edits = {}; TR.raw = {}; TR.list = []; return out; })()`);
+  ok(`⑮ 只有空的新列:〔儲存〕停用;打了金額立刻可按:${JSON.stringify([seq.saveOffBlank, seq.saveOffTyped])}`, seq.saveOffBlank === true && seq.saveOffTyped === false);
   ok(`⑮ 新列格子空的、游標在最前面打 1000 是 1,000、沒打就離開不補 0;已存過金額清空照舊寫 0:${JSON.stringify(seq)}`, seq.start === "" && seq.keptStart === "2,000" && seq.blurEmpty === "" && seq.typed === "1000" && seq.edit === 1000 && seq.after === "1,000" && seq.keptCleared === "0");
   ok(`⑪ 別的分頁空著又閒著:＋ 切過去、不疊空分頁;換語言分頁名跟著換:${JSON.stringify(tb)}`, tb.two && tb.reuse && tb.en.includes("New chat") && !tb.en.includes("新對話") && tb.zh.includes("新對話"));
   console.log(red ? `\n${red} 紅` : "\nALL PASS");

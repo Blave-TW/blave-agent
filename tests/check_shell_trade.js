@@ -474,7 +474,7 @@ ok("dead 分兩種:監督者被叫去跑(wanted:true)= 異常;沒有 wanted / �
     && !trIsLot(null, "BTCUSDT") && !trIsLot(snap(null, null), "BTCUSDT") && !trIsLot(snap({}, {}), "BTCUSDT") && !trIsLot(snap({ BTCUSDT: { asset_spec: "x" } }, {}), "BTCUSDT"));
   ok("標的寫法不一致(小寫、帶 -、@spot)也對得起來", trIsLot(snap({ "txf@spot": { exchange: "capital" } }, {}), "TXF@spot") === true && trIsLot(snap({ "btc-usdt": { exchange: "capital" } }, {}), "BTCUSDT") === true); }
 
-  ok("稽核 R3:blur 不重建儲存列(打完直接點「儲存」,mousedown 要落在還活著的那顆鈕上)——只更新鈕的 disabled", /if \(svBtn && svBtn\.isConnected\) svBtn\.disabled = anyBad\(\) \|\| stale \|\| cfgBad; else paintBar\(\); \};/.test(src) && /sv\.disabled = anyBad\(\) \|\| stale \|\| cfgBad; svBtn = sv;/.test(src));
+  ok("稽核 R3:blur 不重建儲存列(打完直接點「儲存」,mousedown 要落在還活著的那顆鈕上)——只更新鈕的 disabled", /if \(svBtn && svBtn\.isConnected\) svBtn\.disabled = saveOff\(\); else paintBar\(\); \};/.test(src) && /sv\.disabled = saveOff\(\); svBtn = sv;/.test(src));
   ok("「模擬」只留頂列記號與確認框標題:單位只寫幣別、側欄記號與綠點的節點拿掉、資產與設定帳戶列不掛、cx.perfNote 只剩總覽一處", /function trUnit\(\) \{ return trCcy\(\); \}/.test(src) && !/tr-nav-mode|tr-nav-dot/.test(html + src)
     && (src.match(/"mode paper"/g) || []).length === 0 && (src.match(/t\("cx\.perfNote"\)/g) || []).length === 1 && /mark: trIsPaper\(\) \? t\("tr\.mode\.paper"\) : null/.test(src));
   ok("綠燈只留切換器那顆:標題下那一行不再畫 run-dot(側欄策略列的呼吸點另外畫,在 envDotInto)", !/run-dot/.test(src.slice(src.indexOf("function trPaintHead("), src.indexOf("\nfunction ", src.indexOf("function trPaintHead(") + 1)))
@@ -753,10 +753,10 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("S4 §4 輸入框的 input 事件清掉 reqIds.amounts", /inp\.addEventListener\("input", \(\) => \{[\s\S]*?delete TR\.reqIds\.amounts;/.test(tbl));
     ok("S4 §4 還原也清掉 reqIds.amounts", /rv\.addEventListener\("click", \(\) => \{[^\n]*delete TR\.reqIds\.amounts;/.test(tbl));
     ok("S4 §4 雲端存檔走 trSend(單飛 + request_id 沿用),不直叫 tradeSend", /cloud \? await trSend\(S, "amounts", step\)/.test(fnOf("trCfOpen")));
-    ok("S4 §1.1 ① 讀不到新狀態不給存:儲存鈕 disabled、儲存函式也擋", /sv\.disabled = anyBad\(\) \|\| stale \|\| cfgBad;/.test(tbl)
+    ok("S4 §1.1 ① 讀不到新狀態不給存:儲存鈕 disabled、儲存函式也擋", /sv\.disabled = saveOff\(\);/.test(tbl)
       && /if \(cloud && \(!\(S\.st && S\.st\.alive\) \|\| trCfgUnread\(trReport\(\)\)\)\) return;/.test(fnOf("trCfOpen")));
     ok("S4 §1.1 ② 雲端清單走 trCloudListOk(strategies_ok + 空清單有金額不算)", /C\.listLoaded = trCloudListOk\(C\.st && C\.st\.cloud && C\.st\.cloud\.strategies_ok, C\.list,/.test(tsrc) && !/C\.listLoaded = true/.test(tsrc));
-    ok("#1 存檔走 trSendAmounts(依視角);④ 雲端送出前內容變了就換 request_id", /sending = inp \? sendingNow\(\) : trSendAmounts\(S\.env, names, /.test(fnOf("trCfOpen"))
+    ok("#1 存檔走 trSendAmounts(依視角);④ 雲端送出前內容變了就換 request_id", /sending = inp \? sendingNow\(\) : trSendAmounts\(S\.env, names\.filter\(\(n\) => blankNew\.indexOf\(n\) < 0\), /.test(fnOf("trCfOpen"))
       && /if \(S\.reqFor\.amounts !== key\) delete S\.reqIds\.amounts;/.test(fnOf("trCfOpen")));
     ok("L3 雲端表下合計與確認框同口徑(看不見但照送的那幾支也算);讀不到設定時儲存函式也擋",
       /const am = cloud \? trSendAmounts\("cloud", names, stored, TR\.edits, trListNames\(\)\) : trCurrentAmounts\(names, stored, TR\.edits\);\n\s*const zt = trZoneSum\(am, eq\)/.test(tbl)
@@ -2048,7 +2048,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /TR\.edits = \{\}; TR\.bad = \{\}; TR\.raw = \{\}; TR\.picked = null;/.test(tbl) && /S\.save = "saved"; clearDrafts\(true\);/.test(save) && /if \(!sp\) \{ S\.edits = \{\}; S\.raw = \{\}; S\.ct\.edits = \{\}; if \(all\) S\.picked = null; return; \}/.test(save)
       && /const sent = C\.sent; C\.sent = null;[^\n]*if \(!trPickDirty\(C\.picked, sent, trPickKeep\("cloud", C\.picked, sent, .*?\)\)\) C\.picked = null; \}/.test(cutF("trSentCheck"))
       && /C\.reqFor = \{\}; C\.sig\.cfg = null; C\.picked = null;/.test(cutF("trCloudOwnerCheck")) && !/trPickStaged|trPickApply/.test(src));
-    ok("儲存走 trSendAmounts(env, …, trListNames()):雲端只把清單找不到的帶著;確認框移出的列沿用 trRemoved(列上標 tr.cfTagRemove)", /sending = inp \? sendingNow\(\) : trSendAmounts\(S\.env, names, stored, TR\.edits, trListNames\(\)\); removed = trRemoved\(stored, sending\);/.test(save)
+    ok("儲存走 trSendAmounts(env, …, trListNames()):雲端只把清單找不到的帶著;確認框移出的列沿用 trRemoved(列上標 tr.cfTagRemove)", /sending = inp \? sendingNow\(\) : trSendAmounts\(S\.env, names\.filter\(\(n\) => blankNew\.indexOf\(n\) < 0\), stored, TR\.edits, trListNames\(\)\); removed = trRemoved\(stored, sending\);/.test(save)
       && /\n  stratRows = removed\.concat\(/.test(save) && /t\("tr\.cfTagRemove"\)/.test(save) && !/tr\.saveRemoved/.test(save) && !/loaded/.test(cutF("trSendAmounts")));
     ok("picker 的殼:框在 index.html(cx 之後、del 之前)、切視角守門含 ps-scrim、開框 inert、Esc / Tab 在 trade.js 自己接(app.js 不動)、關框焦點回開框那顆鈕",
       (() => { const html = fs.readFileSync(path.join(R, "index.html"), "utf8"), i = html.indexOf('id="cx-scrim"'), j = html.indexOf('id="ps-scrim"'), k = html.indexOf('id="del-scrim"');

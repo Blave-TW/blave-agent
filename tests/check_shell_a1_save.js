@@ -38,7 +38,7 @@ vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "var trTipSe
   "trListNames", "trDisplay", "trPickOff", "trVenueId", "trVenueLabel", "trVenueKind", "trTwBroker", "trTwNamesWant", "trTwName", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty",
   "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText",
   "trCloseTag", "trStratHeld", "trPaperTwOk", "trPaperTw", "trCtCloseTag", "trCfOpen", "trLivePositions", "trBook", "poPartStates", "trTxfPrice", "trGateSide", "trTradesSym", "trSentBeforeOf", "trWith", "trIsPaper", "trCfPaperOnly",
-  "trCfBookBad", "trCfStates", "trCfHolds", "trMarks", "trCfQty", "trCfFlat", "trCfLongOnly", "trCfRows", "trCfTick", "trPvRequest", "trCtErrKey", "trManualPart", "trPosDetail", "trTwClosedKeys"].map((n) => cutF(n)).join("\n")
+  "trCfBookBad", "trBlankNew", "trCfStates", "trCfHolds", "trMarks", "trCfQty", "trCfFlat", "trCfLongOnly", "trCfRows", "trCfTick", "trPvRequest", "trCtErrKey", "trManualPart", "trPosDetail", "trTwClosedKeys"].map((n) => cutF(n)).join("\n")
   + "\n" + cutF("trCfField") + "\n" + ["poAdd"].map((n) => cutF(n, psrc)).join("\n"), ctx);
 
 // 台股時段照牆上時鐘會讓結果隨星期幾變:預設開盤,休市那組(F15)自己切 TW_OPEN = false
@@ -146,6 +146,17 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
   { bag({ edits: { btc: 600 } }); const f = open();
     ok("① 沒綁交易所也出框(推翻 10-13「沒連交易所不跳框」)", !f.direct && f.title === "tr.cf.title", J(f)); }
 
+  // ── 空的新列不算加入(Wei 11-02,全流程報告):儲存時略過,不寫進 amounts、不寫 0;框裡不算進列與 N 支
+  { const S = bag({ picked: ["btc", "tw", "n5"], edits: { btc: 600 } }); const f = open(); await f.box.onOk(); await tick();
+    const am = sends.filter((x) => x.cmd === "amounts").pop();
+    ok("空新列:送出的 amounts 沒有它(不是 0)", am && !("n5" in am.args.amounts) && am.args.amounts.btc === 600, J(am));
+    ok("空新列:框裡不算(列與表頭只有改的那支)", !f.rows.some((x) => /N5/.test(x)) && !/"n":"2"/.test(f.cap), J(f)); }
+  { bag({ picked: ["btc", "tw", "n5"], edits: { n5: 0 }, raw: { n5: "" } }); const f = open();
+    ok("打了再清空:一樣算空,不開框、不送它", f.direct === true && !sends.filter((x) => x.cmd === "amounts").some((x) => "n5" in x.args.amounts), J({ f, sends })); }
+  { const S = bag({ picked: ["btc", "tw", "n5"], edits: { n5: 0 }, raw: { n5: "0" } }); open(); await tick();
+    ok("空新列判斷:打了 0 留著不算空;已存列清空照舊歸 0", vm.runInContext("trBlankNew('n5', trBase(), TR.edits, TR.raw)", ctx) === false && vm.runInContext("trBlankNew('btc', trBase(), { btc: 0 }, { btc: '' })", ctx) === false); }
+  { bag({ picked: ["btc", "tw"], edits: { btc: 0 }, raw: { btc: "" } }); const f = open();
+    ok("已存列清空:照舊進確認(0)", !f.direct && f.rows.some((x) => /^BTCUSDT500→0/.test(x)), J(f)); }
   // ── ② F3 既有分支
   { bag({ picked: ["btc", "tw", "n5"], edits: { n5: 200000 }, rep: { venues: { paper: V }, account: { read_at: now, venues: {} } } });
     vm.runInContext("trPaperTwOk = function () { return false; }", ctx);

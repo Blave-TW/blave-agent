@@ -308,7 +308,7 @@ exit 2
       a === true && b === false && c === false && d === false && e === true && f === false && R.get("detects") === 2, { a, b, c, d, e, f, n: R.get("detects") });
     R.set("detectAt", 0); R.set("loginPending", null); $("view-connect").hidden = false; R.set("lastDetect", D({ loggedIn: true }, { loggedIn: false, why: "codex_timeout", path: "/x/codex" }));
     const unk = R.focusRedetect(); R.set("lastDetect", D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: false, why: "codex_timeout", path: "/x/codex" })); const mix = R.focusRedetect();
-    t("focusRedetect:不確定的列不自動重偵測(鈕不消失);另一列真的沒登入照樣會", unk === false && mix === true, { unk, mix }); $("view-connect").hidden = true;
+    t("focusRedetect:有一列不確定就不自動重偵測(鈕不消失),另一列真的沒登入也一樣(0.1.41 Mac:第一下〔連結〕被吃掉)", unk === false && mix === false, { unk, mix }); $("view-connect").hidden = true;
     t("…掛在 window 的 focus 上", /window\.addEventListener\("focus", focusRedetect\);/.test(app)); }
 
   // 工作頁的登入失效卡也回前景重新偵測(設計師 D1):卡上那句「回到這裡」才成立。lastDetect 可能還是回合開始前那份(說已登入),
