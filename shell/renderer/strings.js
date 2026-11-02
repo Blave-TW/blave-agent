@@ -6,7 +6,7 @@
  */
 const STRINGS = {
   en: {
-    "cn.h": "Blave has no AI of its own.",
+    "cn.h": "Connect Your Agent",
     "cn.blave.title": "Use Blave AI",
     "cn.blave.desc": "First card adds 100 TWD of AI credit, then pay per use",
     "cn.h.free": "Start with Blave AI",
@@ -3352,7 +3352,7 @@ const STRINGS = {
     "form.txf_backtest.sentence_other": "Backtest a strategy on TAIFEX {code} {tf} bars, using {per}; the strategy is:",
   },
   zh: {
-    "cn.h": "Blave 不內建 AI。",
+    "cn.h": "連接你的 Agent",
     "cn.blave.title": "用 Blave AI",
     "cn.blave.desc": "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費",
     "cn.h.free": "先用 Blave AI 開始",

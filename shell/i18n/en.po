@@ -4,7 +4,7 @@ msgstr ""
 "Language: en\n"
 
 msgid "cn.h"
-msgstr "Blave has no AI of its own."
+msgstr "Connect Your Agent"
 
 msgid "cn.blave.title"
 msgstr "Use Blave AI"

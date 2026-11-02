@@ -25,7 +25,7 @@ const line = (re) => { const m = app.match(re); if (!m) throw new Error("找不�
     return { paint: () => { sync(); cnFreePaint(); }, mode: () => { sync(); return cnFreeMode(); } };`)(
     { querySelector: (sel) => (/h4$/.test(sel) ? els.h4 : /cn-ttl/.test(sel) ? els.ttl : els.meta) }, t, S);
   const shown = () => [els.h4.textContent, els.ttl.textContent, els.meta.textContent].join(" | ");
-  const ORIG_ZH = "Blave 不內建 AI。 | 用 Blave AI | 首次綁卡送 100 TWD 的 AI 額度，之後按用量計費";
+  const ORIG_ZH = "連接你的 Agent | 用 Blave AI | 首次綁卡送 100 TWD 的 AI 額度，之後按用量計費";
   S.pub = { trial: { days: 14 }, free_ai_credit: 30 }; S.lastDetect = { claude: {}, codex: {} }; M.paint();
   ok("① 偵測完都不能用、沒登入、有額度 → 大標「先用 Blave AI 開始」、標題「Blave AI」、副標只說登入就能用(不提額度與金額)",
     shown() === "先用 Blave AI 開始 | Blave AI | 登入就能直接開始用", shown());

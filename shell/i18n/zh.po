@@ -4,7 +4,7 @@ msgstr ""
 "Language: zh\n"
 
 msgid "cn.h"
-msgstr "Blave 不內建 AI。"
+msgstr "連接你的 Agent"
 
 msgid "cn.blave.title"
 msgstr "用 Blave AI"
