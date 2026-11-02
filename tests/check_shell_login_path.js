@@ -264,7 +264,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
         tot[0] === "const DETECT_TOTAL_MS = 2 * (5000 + LOGIN_CHECK_MS) + 10000;" && new Function("LOGIN_CHECK_MS", tot[0] + "\nreturn DETECT_TOTAL_MS;")(20000) === 60000
         && /"-c", `command -v \$\{name\}`\], envPath, 5000\)/.test(src));
       const mkW = (raw) => { const logged = [];
-        const f = new Function("detectAgentsRaw", "detectLogWrite", "path", "BASE", "process", "const DETECT_TOTAL_MS = 50;\n" + wrap[0] + "\nreturn detectAgents;")(raw, (fl, e) => logged.push([fl, e]), path, "/b", { platform: "darwin" });
+        const f = new Function("detectAgentsRaw", "detectLogWrite", "path", "BASE", "process", "const DETECT_TOTAL_MS = 50;\nlet detectShared = null;\n" + wrap[0] + "\nreturn detectAgents;")(raw, (fl, e) => logged.push([fl, e]), path, "/b", { platform: "darwin" });
         return { f, logged }; };
       const shapeOk = (d) => Object.keys(d.claude).sort().join() === keysOf("claude") && Object.keys(d.codex).sort().join() === keysOf("codex")
         && d.claude.installed === true && d.codex.installed === true && d.claude.path === null && d.codex.path === null && d.claude.loggedIn === false && d.codex.loggedIn === false
@@ -282,7 +282,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
       const RAW = { claude: { installed: true, loggedIn: true }, codex: { installed: false } }, okw = mkW(async () => RAW), dk = await okw.f();
       t("detectAgents:raw 正常回來 → 原樣回傳、不多寫 detect.log", dk === RAW && okw.logged.length === 0);
       t("四個呼叫點(detect-agents IPC、agentLogin、saveConnection、開 app 的 cli_auth)都叫包裝那支,不直接叫 raw;raw 只被包裝叫",
-        (src.match(/(?<!function )\bdetectAgentsRaw\(\)/g) || []).length === 1 && /Promise\.race\(\[detectAgentsRaw\(\), /.test(wrap[0])
+        (src.match(/(?<!function )\bdetectAgentsRaw\(\)/g) || []).length === 1 && /mine\.p = detectAgentsRaw\(\)\.finally\(/.test(wrap[0]) && /Promise\.race\(\[raw, /.test(wrap[0])
         && /handle\("detect-agents", \(\) => detectAgents\(\)\.then/.test(src) && /const d = await detectAgents\(\);/.test(src) && /d = await detectAgents\(\); agentPath =/.test(src) && /\n\s*detectAgents\(\)\.then\(\(d\) => \{ tm\(\)\.track\("cli_auth"/.test(src)); } }
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

@@ -302,11 +302,20 @@ async function detectAgentsRaw() {
 /* 整次偵測的上限(spec codex-detect-gaps §3.4):裡面每一步都有上限,但任何一處 reject 畫面就永遠停在「偵測中…」、
    登入鈕全部鎖死(uid 33959)。最壞路徑是 claude 那條:which + 登入檢查,cantRun 後退路再走一輪,兩倍再留 10 秒(含第一次偵測 loginShellPath 的 8 秒)。
    超時或 reject 回完整形狀、兩條都是 installed:true + *_timeout:畫面畫「沒有回應」(不是「未偵測到」),跟 detectWhy 的 _timeout 同一個意思。
-   內層超時後還會跑完、再寫一行 detect.log、更新 BAD_BIN,接受 */
+   內層超時後還會跑完、再寫一行 detect.log、更新 BAD_BIN,接受。
+   同時進來的呼叫(回前景重偵測途中按〔連結〕,agentLogin／saveConnection 又要偵測)共用進行中的那一輪:兩輪 detectAgentsRaw
+   會搶 BAD_BIN／codexRan／lastDetected,子行程也加倍。那一輪跑超過上限就不再共用,免得一輪卡住拖住之後每一次 */
 const DETECT_TOTAL_MS = 2 * (5000 + LOGIN_CHECK_MS) + 10000;
+let detectShared = null;
 async function detectAgents(ms = DETECT_TOTAL_MS) {
+  if (!detectShared || Date.now() - detectShared.t0 >= ms) {
+    const mine = { t0: Date.now() };
+    mine.p = detectAgentsRaw().finally(() => { if (detectShared === mine) detectShared = null; });
+    detectShared = mine;
+  }
+  const raw = detectShared.p;
   let timer = null, err = null, out = null;
-  try { out = await Promise.race([detectAgentsRaw(), new Promise((r) => { timer = setTimeout(r, ms, null); })]); }
+  try { out = await Promise.race([raw, new Promise((r) => { timer = setTimeout(r, ms, null); })]); }
   catch (e) { err = e; }
   clearTimeout(timer);
   if (out) return out;

@@ -57,9 +57,12 @@ let lastDetect = null;   // 換語言重畫列用,不重跑偵測
 const PKG = { snap: null, redetect: false, auto: null, done: false };
 let detectAt = 0;        // 回到前景重偵測的限頻用
 const ROWMSG = { claude: null, codex: null };   // 連結畫面各列名字底下那一句:null | "opened" | "failed"(rowMsg)
-async function detect() {
+/* quiet = 回前景那一次:列照上一次的畫、鈕留著,結果回來才重畫。先清列的話,把視窗叫回前景的那一下會點在「偵測中…」上
+   (0.1.41 Windows〔再試一次〕點三下才動、Mac 第一下〔連結〕被吃);途中按下去的〔連結〕／〔再試一次〕照常走,
+   主行程那邊同時進來的偵測共用同一輪(main.js detectAgents) */
+async function detect(quiet) {
   detectAt = Date.now();
-  detectingRows();
+  if (quiet !== true) detectingRows();   // 〔重新偵測〕直接掛在 click 上,收到的是 Event
   setHint(null);
   let d = null;
   try { d = await window.blave.detectAgents(); } catch (_) { d = null; }
@@ -91,14 +94,10 @@ function focusRedetect() {
   if (PKG.snap && PKG.snap.phase !== "idle") return false;   // Codex 引擎下載中:裝好那一刻自己會重偵測
 
   const onModel = !$("set-scrim").hidden && !$("set-model").hidden;
-  const [cl, cx] = ["claude", "codex"].map((k) => (lastDetect && lastDetect[k]) || {}), shown = !$("view-connect").hidden || onModel || laiOn();   // laiOn:額度用完卡片開的 modal:裝完回來不用按重新偵測
-  // 有一列不確定就不為列重跑:偵測先清掉每一列,那一列正要按的鈕會消失 20 秒(另一列沒登入也一樣),手動〔重新偵測〕留著。
-  // Codex 引擎跑不起來同理:出路只有列上的〔再試一次〕,在 app 外面做什麼都修不好它,點回來那一下卻被重偵測吃掉(0.1.41 Windows 點三下才動)。
-  // 工作頁失效卡那條照跑:它要的是回來就知道登入好了沒
-  const hold = authUnknown(cl) || authUnknown(cx) || /_cantrun$/.test(cx.why || "");
-  const onRows = shown && !hold && !!lastDetect && [cl, cx].some((x) => !(x.installed && x.loggedIn));
+  const shown = !$("view-connect").hidden || onModel || laiOn();   // laiOn:額度用完卡片開的 modal:裝完回來不用按重新偵測
+  const onRows = shown && !!lastDetect && ["claude", "codex"].some((k) => { const x = lastDetect[k] || {}; return !(x.installed && x.loggedIn); });
   if (!onRows && !localFaultsLive().length) return false;
-  Promise.resolve(detect()).then(localFaultsRecheck); return true;
+  Promise.resolve(detect(true)).then(localFaultsRecheck); return true;
 }
 // 工作頁的本機登入失效卡(localLoginFlow 登記、登入好了就除名):只算還在畫面上、而且講的是現在這條的
 const LOCAL_FAULTS = [];
