@@ -11,8 +11,8 @@
 //   7. 關掉刪伺服器那份、沒網路記待刪;poll reason off → 停、藏起來;reason not_enabled／409 → 重打 enable
 //   8. 狀態檔只有布林;給畫面的沒有憑證;圖只送手機那一輪;手機清單／勾選／撤銷／最近操作
 //   9. main.js 接線
+//  10. 打開過 email 驗證碼(mobile-chat-shell-enable-verify):setOn 寄碼／帶碼、碼對才寫 on;自動重打不寄信、被關卡擋下記 needVerify 不再打;重新驗證不丟待送的刪除;舊 api
 //  11. 手機回合的 fault code(mobile-chat-shell-fault-code):主行程分類、暫扣、代碼放回合的 error;沒有視窗也一樣;跟 renderer 的 regex 同一份
-//  10. 打開過 email 驗證碼(mobile-chat-shell-enable-verify):setOn 寄碼／帶碼、碼對才寫 on;自動重打不寄信、被關卡擋下記 needVerify 不再打;舊 api
 // 跑法:node tests/check_shell_relay.js
 const fs = require("fs"), os = require("os"), path = require("path");
 const SHELL = path.join(__dirname, "..", "shell");
@@ -523,6 +523,22 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     const r = await m.r.setOn(true, { code: "123456" });
     ok("10 重新驗證過:清 needVerify,不再記一次 phone_chat_on", r.ok && m.r.state().needVerify === false && m.tracked.filter((x) => x === "phone_chat_on").length === on0);
     await m.end(); }
+  { const SD = "desktop-d1000001", m = rig({ sessions: { [SD]: { last: Date.now() / 1000, rows: [row(1, "user", "x")] } } }); await m.r.tick(); await m.r.setOn(true); await wait(1300); m.setServerOn(false);
+    m.resp[RL.EP.enable] = V403({ sent: false, reason: "not_requested" }); await m.r.tick();
+    m.resp[RL.EP.report] = { status: 409, body: { error_code: "RELAY_NOT_ENABLED" } };
+    ok("10 needVerify 期間在電腦上刪對話:先落地 outbox", m.r.sessionDeleted(SD) === true && fs.existsSync(path.join(m.stateDir, RL.OUTBOX)));
+    await wait(30);
+    const n0 = m.tracked.filter((x) => x === "phone_sync_ok").length;
+    delete m.resp[RL.EP.report]; m.resp[RL.EP.enable] = { status: 200, body: { enabled: true } };
+    const r = await m.r.setOn(true, { code: "123456" }); await wait(1300);
+    ok("10 重新驗證過:待送的刪除送到伺服器、outbox 清空,不重記 phone_sync_ok", r.ok && m.chunks().some((c) => c.type === "session_delete" && c.session_id === SD) && !fs.existsSync(path.join(m.stateDir, RL.OUTBOX)) && m.tracked.filter((x) => x === "phone_sync_ok").length === n0, [m.chunks().map((c) => c.type), m.tracked]);
+    await m.end(); }
+  { const SD = "desktop-d1000002", m = rig({ sessions: { [SD]: { last: Date.now() / 1000, rows: [row(1, "user", "x")] } } }); await m.r.tick(); await m.r.setOn(true); await wait(30);
+    await m.r.setOn(false); m.resp[RL.EP.disable] = undefined;
+    fs.mkdirSync(m.stateDir, { recursive: true }); fs.writeFileSync(path.join(m.stateDir, RL.OUTBOX), JSON.stringify({ type: "session_delete", session_id: SD, ts: 1 }) + "\n");
+    await m.r.setOn(true); await wait(30);
+    ok("10 從關打開:待送的刪除照舊作廢(伺服器那份剛刪過)", !fs.existsSync(path.join(m.stateDir, RL.OUTBOX)) && !m.chunks().some((c) => c.type === "session_delete"));
+    await m.end(); }
   for (const how of ["off", "signOut"]) {
     const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20); m.setServerOn(false);
     m.resp[RL.EP.enable] = V403({ sent: false, reason: "not_requested" }); await m.r.tick();
@@ -561,6 +577,7 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
   const cases = [
     ["blave", "API Error: 402 insufficient credit", "no_credit"], ["blave", "Failed to authenticate. API Error: 401 bad", "auth_invalid"], ["blave", "API Error: 403 forbidden", "auth_invalid"],
     ["claude", "API Error: 401 invalid", "engine_signed_out"], ["codex", "API Error: 403 denied", "engine_signed_out"], ["claude", "Not logged in · Please run /login", "engine_signed_out"],
+    ["claude", "Login expired · Please run /login", "engine_signed_out"], ["claude", "OAuth token revoked · Please run /login", "engine_signed_out"], ["claude", "Invalid API key · Please run /login", "engine_signed_out"], ["claude", "Please run /login · API Error: 401 bad", "engine_signed_out"],
     ["claude", "You've hit your session limit · resets 1:50pm (Asia/Taipei)", "usage_limit"], ["claude", "You’ve hit your weekly limit · resets Oct 3, 9am", "usage_limit"],
   ];
   for (const [kind, text, want] of cases) {
@@ -574,7 +591,20 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
   { const cs = await turn("blave", [T("API Error: 402 no credit")], END);
     ok("11 後面什麼都沒有(行程掛掉):turn-end 補的 error 帶代碼", types(cs) === "error" && code(cs) === "no_credit", cs); }
   { const cs = await turn("blave", [T("先查一下"), { type: "tool", tool: "Bash", status: "running" }, T("API Error: 402 x"), ERR], END);
-    ok("11 工具之後那段才出錯:前面的字照送,新的一段一樣判", texts(cs) === "先查一下" && code(cs) === "no_credit", cs); }
+    ok("11 工具開跑過才出錯:前面的字照送,錯誤字不送,代碼 partial 優先於原因碼", texts(cs) === "先查一下" && code(cs) === "partial", cs); }
+  { const cs = await turn("blave", [T("先想一下"), { type: "thinking", text: "..." }, T("。"), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 沒動工具的一般回覆不受影響", code(cs) === undefined && types(cs).endsWith("done"), cs); }
+  for (const [kind, text] of [["blave", "API Error: 402 x"], ["blave", "API Error: 401 x"], ["claude", "Login expired · Please run /login"], ["claude", "You've hit your session limit · resets 1:50pm (Asia/Taipei)"]]) {
+    const before = await turn(kind, [T(text), { type: "error", message: "m", code: "not_started" }], END);
+    const after = await turn(kind, [{ type: "tool", tool: "Bash", status: "running" }, { type: "tool", tool: "Bash", status: "done" }, T(text), { type: "error", message: "m", code: "partial" }], END);
+    ok("11 " + kind + " 「" + text.slice(0, 20) + "」:還沒動工具送原因碼;工具開跑過維持 partial;字都不送", !["partial", undefined, "not_started"].includes(code(before)) && code(after) === "partial" && !texts(after) && !texts(before), [before, after]);
+  }
+  { const cs = await turn("blave", [{ type: "tool", tool: "Bash", status: "running" }, T("API Error: 402 x"), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 工具開跑過、只有 done:補的 error 是 partial,不送 done", types(cs).endsWith("error") && !/done/.test(types(cs)) && code(cs) === "partial", cs); }
+  { const cs = await turn("blave", [{ type: "tool", tool: "Bash", status: "running" }, T("API Error: 402 x")], END);
+    ok("11 工具開跑過、行程掛掉:turn-end 補的 error 是 partial", code(cs) === "partial", cs); }
+  { const cs = await turn("claude", [{ type: "tool", tool: "Bash", status: "running" }], { code: 1, errTail: "AGENT_BIN_MISSING" });
+    ok("11 工具開跑過、errTail 帶 AGENT_BIN:一樣 partial", code(cs) === "partial", cs); }
   { const cs = await turn("blave", [T("BTC 現在"), T(" API Error: 402"), { type: "done" }], { code: 0, errTail: "" });
     ok("11 一般回覆:第一段就放行(內文提到 API Error 不算),done 照送", texts(cs) === "BTC 現在 API Error: 402" && types(cs) === "text,text,done", cs); }
   { const cs = await turn("blave", [T("API Error: 500 upstream"), ERR], END);
@@ -596,7 +626,15 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     ok("11 AGENT_BIN_" + c + ":turn-end 補的 error 帶 engine_missing", types(cs) === "error" && code(cs) === "engine_missing", cs);
   }
   { const cs = await turn("blave", [T("API Error: 402 x")], { code: 0, errTail: "", canceled: true });
-    ok("11 用戶按停止:不帶 code,照「已停止」收尾", code(cs) === undefined && cs.at(-1).message === "stopped", cs); }
+    ok("11 用戶按停止:不帶 code,照「已停止」收尾,錯誤字一樣不送", code(cs) === undefined && cs.at(-1).message === "stopped" && !texts(cs), cs); }
+  { const cs = await turn("codex", [], { code: 1, errTail: "Error: AGENT_BIN_BROKEN" });
+    ok("11 AGENT_BIN_BROKEN:不帶 code(spec 只列 MISSING、DOWNLOADING)", code(cs) === undefined, cs); }
+  { const cs = await turn("blave", [T("API Error: 402 x"), { type: "thinking", text: "..." }, { type: "suggestions", items: ["a"] }, ERR], END);
+    ok("11 錯誤字和 error 中間夾 thinking、suggestions:一樣判到(同 renderer 不動草稿)", code(cs) === "no_credit" && !texts(cs), cs); }
+  { const cs = await turn("blave", [T("API Error: 402 " + "x".repeat(1000)), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 補的 error:message 截短", cs[0].message.length <= 200 && code(cs) === "no_credit", cs[0].message.length); }
+  { const cs = await turn("codex", [T("API"), { type: "error", message: "login", code: "needs_login" }], END);
+    ok("11 needs_login:手上不是錯誤的字不丟", texts(cs) === "API" && code(cs) === "engine_signed_out", cs); }
   { const cs = await turn("blave", [T("API Error: "), { type: "text_replace", text: "乾淨的回覆" }, { type: "done" }], { code: 0, errTail: "" });
     ok("11 暫扣中 text_replace:換成新的字放行", texts(cs) === "乾淨的回覆" && types(cs) === "text,done", cs); }
   { const cs = await turn("blave", [T("API Error: 402 key sec_Zz99Yy88Xx77"), { type: "done" }], { code: 0, errTail: "" });

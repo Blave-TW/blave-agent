@@ -30,7 +30,7 @@ own copy off the code; `message` stays the redacted engine text.
 |---|---|
 | `no_credit` | Blave AI turn, the engine reported `API Error: 402` |
 | `auth_invalid` | Blave AI turn, the engine reported `API Error: 401` or `403` |
-| `engine_signed_out` | The user's own Claude Code or Codex reported `401` / `403`, or Claude Code's `Not logged in` / `Please run /login` (Codex: runtime code `needs_login`) |
+| `engine_signed_out` | The user's own Claude Code or Codex reported `401` / `403`, or Claude Code's `Not logged in`, `Login expired`, `OAuth token revoked`, `Invalid API key · Please run /login`, `Please run /login` (Codex: runtime code `needs_login`) |
 | `usage_limit` | Claude Code's `You've hit your … limit · resets …` |
 | `engine_missing` | The turn ended with `AGENT_BIN_MISSING` or `AGENT_BIN_DOWNLOADING` in its stderr tail |
 
@@ -42,6 +42,9 @@ own copy off the code; `message` stays the redacted engine text.
   `text_replace`, so the text would stay in the history and the push excerpt.
 - The code replaces the code of the `error` that follows. If the turn has no `error`, the shell
   sends one and no `done`.
+- These codes apply only to a turn that has not started a tool. Once a `tool` has started, the turn
+  may already have changed something (an order placed), so the `error` carries `partial` instead and
+  no reason code: `partial` wins over all five. The matched text is still not sent.
 - A bring-your-own API key turn (`apikey`) carries no code: its 401 / 402 are the provider's, not
   Blave's balance.
 - `message_failed` is separate: that message never ran.

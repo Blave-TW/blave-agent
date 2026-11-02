@@ -64,10 +64,11 @@ const OUTBOX = "relay-outbox.jsonl";
 const TURN_TYPES = ["text", "thinking", "tool", "tool_prep", "done", "error", "export", "text_replace", "suggestions", "ui_nav", "withdraw_result", "ping"];
 // 那一句還沒開跑就不會跑了(message_failed 的 code);開跑之後的失敗走回合的 error chunk
 const NOT_RUN = "not_run", DESKTOP_RESTARTING = "desktop_restarting", BAD_SESSION = "bad_session", BAD_MESSAGE = "bad_message";
+// 工具開跑過的回合出錯一律 partial、不送原因碼:可能已經下了單,手機要講「可能只做完一部分」,不能讓人照原因補救後重送同一句。
 // 引擎錯誤字的判定:同 renderer/app.js classifyFault、LIMIT_RULES(tests/check_shell_relay.js 比對原文)。
-// 「Please run /login」renderer 沒錨定;這裡要靠開頭決定放不放行,一律錨定(實際那句開頭是 Not logged in)
+// 「Please run /login」renderer 沒錨定;這裡要靠開頭決定放不放行,所以列舉 CLI 會吐的開頭(2.1.316 執行檔;都以 assistant text 出現)
 const API_ERROR_RE = /^(?:Failed to authenticate\. )?API Error: (40[123])\b/;
-const NOT_LOGGED_IN_RE = /^Not logged in\b|^Please run \/login/;
+const NOT_LOGGED_IN_RE = /^Not logged in\b|^Please run \/login|^(?:Login expired|OAuth token revoked|Invalid API key) · Please run \/login/;
 const USAGE_LIMIT_RE = /^You[’']ve hit your (?:[a-z0-9-]+ ){0,3}limit\b[^\n]*?\bresets\s+([^()\n]+?)\s*(?:\(([^()\n]+)\))?\s*$/i;
 const USAGE_LIMIT_SO_FAR_RE = /^You[’']ve hit your (?:[a-z0-9-]+ ){0,3}(?:[a-z0-9-]*|limit\b[^\n]*)$/i;
 const AGENT_BIN_RE = /AGENT_BIN_(MISSING|DOWNLOADING)/;
@@ -76,8 +77,9 @@ const apiHeads = (...codes) => codes.flatMap((c) => ["API Error: " + c, "Failed 
 const FAULT_HEADS = {
   blave: apiHeads(401, 402, 403),
   codex: apiHeads(401, 403),
-  claude: [...apiHeads(401, 403), "Not logged in", "Please run /login", "You've hit your ", "You’ve hit your "],
+  claude: [...apiHeads(401, 403), "Not logged in", "Please run /login", "Login expired · Please run /login", "OAuth token revoked · Please run /login", "Invalid API key · Please run /login", "You've hit your ", "You’ve hit your "],
 };
+const FAULT_MSG_MAX = 200;   // = turn-end 補的 error 取的 errTail 長度
 const HOLD_MAX = 4096;   // 錯誤字很短;開頭剛好一樣的真回覆不扣到回合結束
 /* 一段完整的字 → api DESKTOP_FAULT_CODES 之一或 null */
 function faultCodeOf(text, kind) {
@@ -134,7 +136,7 @@ function createRelay(opts) {
   let needVerify = false;   // 本機開著、api 要驗碼才肯再開:不重打,設定頁出一行
   let seenToken = null, lastToken = null;   // 上一顆帳號 token(輪替後幾秒內的輸出可能還帶著它):第 1 條也比對
   const queue = new Map();   // sid → [{ message_id, content }]:同一條在跑時排在後面
-  const active = new Map();  // sid → { message_id, ended, idBefore, kind, hold }:正在跑的手機那一輪;hold = 這段暫扣的字,null = 這段已判定不是錯誤
+  const active = new Map();  // sid → { message_id, ended, idBefore, kind, hold }:正在跑的手機那一輪;hold = 這段暫扣的字,null = 這段已判定不是錯誤;toolRan = 這一輪有工具開跑過
   let pending = [];          // 待送的 chunk(每段帶 session_id),照收到的順序
   let batchTimer = null, reporting = null, retryTimer = null, flushBackoff = BACKOFF_MIN_MS, pingTimer = null;
   let inflight = null;       // 在路上那一批:{ sids, p }(認領只等自己那條的)
@@ -392,7 +394,7 @@ function createRelay(opts) {
   const withdrawResult = (sid, mid, result) => enqueueChunk({ type: "withdraw_result", session_id: sid, message_id: mid, result }, true);
   async function launch(sid, mid, content) {
     let idBefore = 0; try { idBefore = opts.sessions.maxId(sid) || 0; } catch (_) { idBefore = 0; }
-    const rec = { message_id: mid, ended: false, idBefore, claiming: true, abort: null, kind: null, hold: "" };   // abort:認領途中手機撤回(withdraw)或停止(interrupt)
+    const rec = { message_id: mid, ended: false, idBefore, claiming: true, abort: null, kind: null, hold: "", toolRan: false };   // abort:認領途中手機撤回(withdraw)或停止(interrupt)
     active.set(sid, rec);
     mobileActiveSync();
     const claim = await claimStart(sid, mid);
@@ -462,19 +464,16 @@ function createRelay(opts) {
         return;
       }
       if (end) {
-        const code = faultCodeOf(a.hold, a.kind) || (type === "error" && payload.code === "needs_login" ? "engine_signed_out" : null);
+        const heldCode = faultCodeOf(a.hold, a.kind), reason = heldCode || (type === "error" && payload.code === "needs_login" ? "engine_signed_out" : null);
+        const held = a.hold, code = reason && (a.toolRan ? "partial" : reason);
         a.ended = true;
+        if (heldCode) a.hold = null; else holdRelease(sid, a, null);
         if (code) {
           // 判成錯誤:字不送;runtime 沒送 error 的(只有 done)補一則,不送 done
-          const held = a.hold; a.hold = null;
-          forward(sid, a, type === "error" ? { ...payload, code } : { type: "error", message: held, code }, true);
+          forward(sid, a, type === "error" ? { ...payload, code } : { type: "error", message: held.slice(0, FAULT_MSG_MAX), code }, true);
           return;
         }
-        holdRelease(sid, a, null);
-      } else {
-        // 接著還有動作:手上那段不是錯誤。工具開跑 = 下一段(同 renderer collectDraft)
-        holdRelease(sid, a, type === "tool" && payload.status !== "done" ? "" : a.hold === "" ? "" : null);
-      }
+      } else if (type === "tool" && payload.status !== "done") { holdRelease(sid, a, ""); a.toolRan = true; }   // 工具開跑 = 下一段,手上那段是旁白;其他事件不動草稿(同 renderer collectDraft)
       forward(sid, a, src, end);
       return;
     }
@@ -485,10 +484,11 @@ function createRelay(opts) {
       if (!a.ended) {
         // 回合沒說結果就結束(停止、spawn 前就失敗、行程掛掉):補一則回合的 error,手機不會一直停在回覆中
         const raw = payload && typeof payload.errTail === "string" ? payload.errTail : "", tail = raw.trim().slice(-200), canceled = !!(payload && payload.canceled);
-        const heldCode = canceled ? null : faultCodeOf(a.hold, a.kind), code = heldCode || (!canceled && AGENT_BIN_RE.test(raw) ? "engine_missing" : null);
+        const heldCode = faultCodeOf(a.hold, a.kind), reason = canceled ? null : heldCode || (AGENT_BIN_RE.test(raw) ? "engine_missing" : null);
+        const code = reason && (a.toolRan ? "partial" : reason);
         const held = a.hold;
         if (heldCode) a.hold = null; else holdRelease(sid, a, null);
-        sent = forward(sid, a, { type: "error", message: tail || (heldCode ? held : canceled ? "stopped" : "turn_failed"), ...(code ? { code } : {}) }, true);
+        sent = forward(sid, a, { type: "error", message: tail || (canceled ? "stopped" : heldCode ? held.slice(0, FAULT_MSG_MAX) : "turn_failed"), ...(code ? { code } : {}) }, true);
       } else sent = flush();
       try {
         const rows = opts.sessions.rowsAfter(sid, a.idBefore, 50) || [];
@@ -714,10 +714,14 @@ function createRelay(opts) {
       if ((r.status === 403 && GATE_403.includes(ec)) || (r.status === 429 && ec === "VERIFY_LOCKED")) return { ok: false, code: ec, gate: gateOf(r.body) };
       if (r.status !== 200) return { ok: false, code: r.status ? "FAILED" : "OFFLINE" };
       const was = s.on;
-      s.on = true; s.synced = false; save(); outboxWrite([]); tombstones.clear();
+      // 從關打開:伺服器那份剛刪掉,待送的刪除作廢。重新驗證(本機本來開著):伺服器那份還在,待送的刪除要送到、不重新同步
+      s.on = true;
+      if (!was) { s.synced = false; outboxWrite([]); tombstones.clear(); }
+      save();
       needVerify = false;
       if (!was) track("phone_chat_on");
       stopped = false; startPoll(); syncAll();
+      if (was) flush();
       changed();
       return { ok: true };
     }
