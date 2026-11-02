@@ -171,6 +171,16 @@ app.whenReady().then(async () => {
   const hot = await X(`(async () => { ${HIT} const o = {}, add = $("strat-add"), sg = $("sg-add"); $("strat-head").hidden = false; sg.hidden = false; o.add = __hit(add); o.sg = __hit(sg);
     await setOpen(); setCat("display"); await new Promise((r) => setTimeout(r, 400)); o.sw = __hit($("set-rs-sw")); const os = $("set-rn-os"), was = os.hidden; os.hidden = false; await new Promise((r) => setTimeout(r, 100)); o.go = __hit($("set-rn-os-go")); o.sug = __hit(document.querySelector(".set-sug .sw") || $("set-rs-sw")); os.hidden = was; setClose(); return o; })()`);
   ok(`⑭ 側欄 ＋、資料夾鈕視覺 28、熱區 ≥44×44:${JSON.stringify([hot.add, hot.sg])}`, [hot.add, hot.sg].every((x) => x.vw === 28 && x.vh === 28 && x.w >= 44 && x.h >= 44));
+  // ⑯ 兩顆隔 4(同網頁):熱區透明外擴不佔版面、貼著不重疊;預設 236 與最窄 180 都量,標題不被擠
+  w.setContentSize(1440, 760); await nap(400);
+  for (const sw of [236, 180]) {
+    const g = await X(`(async () => { ${HIT} paneSt.side.off = false; paneSt.side.w = paneSt.side.want = ${sw}; panesRender(false); await new Promise((r) => setTimeout(r, 450));
+      const a = $("sg-add"), b = $("strat-add"), ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(), y = ra.y + ra.height / 2, l = document.querySelector("#strat-head .label"), rl = l.getBoundingClientRect();
+      let dead = 0, both = 0, last = null; for (let x = Math.floor(ra.right); x < Math.ceil(rb.left); x++) { const e = document.elementFromPoint(x + 0.5, y); const own = e === a || a.contains(e) ? "a" : e === b || b.contains(e) ? "b" : null; if (!own) dead++; else if (last === "b" && own === "a") both++; last = own; }
+      return { gap: rb.left - ra.right, a: __hit(a), b: __hit(b), dead, both, labelW: rl.width, labelGap: ra.left - rl.right, headOver: rb.right - $("strat-head").getBoundingClientRect().right, paneOver: (() => { const p = $("strat-head").parentElement; return { over: p.scrollWidth - p.clientWidth, ox: getComputedStyle(p).overflowX, cls: p.className }; })() }; })()`);
+    ok(`⑯ 側欄 ${sw}:圖示隔 4、熱區各 ≥44×44、中間沒有死區也沒有搶點、標題有留位:${JSON.stringify(g)}`, g.gap === 4 && g.a.vw === 28 && g.b.vw === 28 && g.a.w >= 44 && g.b.w >= 44 && g.a.h >= 44 && g.b.h >= 44 && g.dead === 0 && g.both === 0 && g.labelGap >= 16 && g.headOver <= 0 && (g.paneOver.over <= 0 || g.paneOver.ox === "hidden" || g.paneOver.ox === "visible" || g.paneOver.ox === "clip"), JSON.stringify(g));
+  }
+  await X(`paneSt.side.w = paneSt.side.want = PANES.side.def; panesRender(false);`); w.setContentSize(1024, 760); await nap(300);
   ok(`⑭ 提示音開關熱區 ≥44×44、下一顆也是;「開啟系統設定」熱區 ≥44 高:${JSON.stringify([hot.sw, hot.sug, hot.go])}`, hot.sw.w >= 44 && hot.sw.h >= 44 && hot.sug.h >= 44 && hot.go.h >= 44 && hot.go.w >= 80);
   // ⑬ 投資組合列的標的格寫股票名字:欄窄時只在名字之間換行,不把一個名字拆兩半,也不把表撐開
   const nm = await X(`(() => { const host = document.createElement("div"); host.style.cssText = "position:fixed;left:0;top:0;width:420px;background:#fff;z-index:99";
