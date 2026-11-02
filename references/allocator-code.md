@@ -108,7 +108,7 @@ def allocate(returns, lookback):
   file**, exactly like a strategy's top-of-file constants. There is
   deliberately no `--param` CLI flag: params are code, versioned with the
   method that uses them. `target_vol` is the one name a file must never
-  declare — loading raises — because it is the account's leverage target, not
+  declare — loading raises — because it is the proposal's leverage target, not
   a weighting input. **Values must be plain scalars** (int / float / bool /
   str): a list or dict is silently dropped from the workspace page's parameter
   form, so the user sees a method whose knob has vanished. A knob that is

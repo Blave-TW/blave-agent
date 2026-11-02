@@ -333,7 +333,8 @@ def default_target_vol():
     default. manager.py writes target_vol_pct into portfolio_config on --apply,
     so taking the module default here would overwrite whatever the user set —
     and the leverage in the proposal they act on would be computed at someone
-    else's target. The workspace page no longer offers this knob at all."""
+    else's target. The page does not read target_vol_pct: it sizes positions
+    with 部位大小 (amounts), so this only sets the proposal's `leverage`."""
     try:
         cfg = load_json(CONFIG_PATH)
         pct = float(cfg['target_vol_pct'])
