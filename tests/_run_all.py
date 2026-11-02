@@ -30,10 +30,10 @@ TAIL = 25
 
 # 先開跑最長的,長尾才不會全擠在最後。數字來自 2026-11-01 序列實測;順序舊了只是慢一點,不影響結果
 LONGEST = """
-check_first_signal_fuzz.py check_local_daemon_chain.py check_president_lib.py check_self_ledger_qty.py
+check_first_signal_fuzz.py check_president_lib.py check_self_ledger_qty.py
 check_version_matrix.py check_shell_relay.js check_shell_browser_verify_outcome.js
 check_paper_scenarios.py check_demo_routing.py check_twstock_bulk_fetch.py
-check_stats_refresh_command.py check_shell_codex_login.js check_tw_lots.py check_restore_command.py
+check_stats_refresh_command.py check_shell_codex_login.js check_restore_command.py
 check_local_daemon_windows.py check_shell_relay_api_responses.js check_rejoin_stale_state.py
 """.split()
 
@@ -43,6 +43,9 @@ SERIAL = {
     "check_exec_test_grid.py": "斷言全表 1 秒內算完,機器忙就假紅(-P 8 量到 2.2 秒)",
     "check_exit_levels.py": "新舊版耗時比值上限 15%,兩邊量的當下負載不同就假紅(load 50 量到 16%)",
     "check_turn_stop.py": "斷言回合幾秒內收掉,機器忙就假紅(-P 8 量到 3.3 秒)",
+    "check_shell_portfolio.js": "斷言毫秒級的順序與上限,機器忙就假紅(load 180 量到 134ms 對上限 60ms)",
+    "check_local_daemon_chain.py": "等 reconciler 收掉有時限,機器忙就假紅(-P 8、load 75 量到收不掉)",
+    "check_tw_lots.py": "斷言查價在 TW_CLOSE_BUDGET_S 內交回,機器忙就假紅(-P 8、load 75)",
 }
 
 ELECTRON_SKIP = "SKIP (set BLAVE_TEST_WINDOW=1"
