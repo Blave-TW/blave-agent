@@ -64,7 +64,13 @@ const ROWMSG = { claude: null, codex: null };   // 連結畫面各列名字底�
    要嘛記 PKG.redetect 等收尾補,要嘛 detectFresh() 等它跑完再起新的 */
 let detectP = null;
 function detect(quiet) {
-  const p = detectRun(quiet === true).finally(() => { if (detectP === p) detectP = null; });   // 〔重新偵測〕直接掛在 click 上,收到的是 Event
+  const p = detectRun(quiet === true).finally(() => {   // 〔重新偵測〕直接掛在 click 上,收到的是 Event
+    if (detectP !== p) return;
+    detectP = null;
+    // Codex 引擎在偵測途中或登入途中裝好了:那一次的結果是裝好之前的,補偵測一次。放在這裡不放 paintRows:
+    // 偵測途中換語言、主行程推快照也會重畫列,在那裡用掉旗標會補到還在飛的舊那一輪
+    if (PKG.redetect && !loginPending) { PKG.redetect = false; detect(); }
+  });
   detectP = p;
   return p;
 }
@@ -221,8 +227,6 @@ function paintRows(d) {
   if (loginPending) rows.querySelectorAll("button").forEach((x) => { if (!x.closest('[data-kind="' + loginPending + '"]')) x.disabled = true; });
   MDL.busy = false; mdlPaint();
   if (MDL.connecting) connectLockPaint();
-  // Codex 引擎在偵測途中或登入途中裝好了:那一次的結果是裝好之前的,補偵測一次
-  if (PKG.redetect && !loginPending) { PKG.redetect = false; detect(); }
 }
 /* 連結畫面那一列名字底下的訊息(方案 B,原本在卡底的 #cn-hint):等瀏覽器 / 登入沒完成。失敗的退路看是哪一家——
    claude 寫出終端機指令;Codex 只跑隨包那顆,不在 PATH 上,`codex login` 是死路,只講〔登入〕會開瀏覽器 */

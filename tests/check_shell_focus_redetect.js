@@ -129,6 +129,19 @@ const answer = (d) => { const f = IPC.pending.shift(); if (f) f(d); };
     answer(D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: true, path: "/x/codex" })); await tick();
     t("…新的那一輪結果畫上去:Codex 已登入,不再是〔再試一次〕", stOf("codex").includes(tr("st.signedIn")), stOf("codex")); }
 
+  // ④b 同一情境,但那一輪在飛時列又被重畫(換語言、主行程推進度快照):旗標不能在重畫時被用掉、補到還在飛的舊那一輪
+  { const bad = D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: false, why: "codex_cantrun", path: "/x/codex" });
+    R.PKG.snap = idle; R.set("lastDetect", bad); R.paintRows(bad); R.set("detectAt", 0); R.PKG.redetect = false;
+    const c0 = IPC.calls; R.focusRedetect();
+    R.codexPkgOnState({ phase: "install" }); R.codexPkgOnState({ ...idle });
+    R.paintRows(R.get("lastDetect"));   // 換語言重畫
+    const c1 = IPC.calls - c0, kept = R.PKG.redetect;
+    answer(bad); await tick(); await tick();
+    const c2 = IPC.calls - c0;
+    t("在飛時列被重畫:不補偵測、旗標留著;那一輪收尾才起新的一輪",
+      c1 === 1 && kept === true && c2 === 2 && R.PKG.redetect === false, { c1, kept, c2 });
+    answer(D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: true, path: "/x/codex" })); await tick(); }
+
   // ⑤ 稽核 P3-3:回前景那一輪開始時不清提示句(設定頁那句登入失敗),結果回來才清
   { const d0 = D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: true, path: "/x/codex" });
     R.set("lastDetect", d0); R.paintRows(d0); R.set("detectAt", 0); S.hints.length = 0;

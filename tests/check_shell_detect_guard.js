@@ -74,7 +74,7 @@ const authUnknown = eval("(" + app.match(/^const authUnknown = (.*);$/m)[1] + ")
     const last = sets[sets.length - 1];
     ok("localLoginFlow:例外不往外丟、loginPending 清掉、卡片回「登入沒有完成」+〔再試一次〕", !threw && ctx.loginPending === null && last.label === "login.retry" && last.text === "login.failed", { threw, last });
   }
-  // ── Codex 引擎隨包裝好的那一刻(spec codex-bundled-engine §4.3):正在偵測／等登入時記 PKG.redetect,paintRows 收尾時補偵測 ──
+  // ── Codex 引擎隨包裝好的那一刻(spec codex-bundled-engine §4.3):正在偵測／等登入時記 PKG.redetect,detect() 收尾時補偵測 ──
   { // 假 DOM:#agent-rows 裡兩列各一顆鈕;paintRows 會整份重建(舊鈕換成新鈕),看焦點有沒有還回同一列
     const mkBtn = (kind) => ({ kind, disabled: false, focus() { doc.activeElement = this; }, closest: () => ({ dataset: { kind } }) });
     const box = { btns: [mkBtn("claude"), mkBtn("codex")], contains(x) { return this.btns.includes(x); }, querySelector(q) { const k = (q.match(/data-kind="([^"]+)"/) || [])[1]; return this.btns.find((b) => b.kind === k) || null; } };
@@ -142,7 +142,7 @@ const authUnknown = eval("(" + app.match(/^const authUnknown = (.*);$/m)[1] + ")
     ok("別的登入等待中 → 不搶(補偵測排給 paintRows)", m.login.length === 0 && m.ctx.PKG.redetect === true, m.ctx.PKG);
     m = mkA(); m.f.go(false, "agent-rows"); m.f.on(DL); m.ctx.lastDetect = { codex: { installed: false } }; m.ctx.PKG.done = true; m.ctx.codexAutoLogin();
     ok("裝好之前開跑的偵測先回來(還沒裝)→ 不消耗這次機會", m.login.length === 0 && m.ctx.PKG.auto === "agent-rows", m.ctx.PKG); }
-  { // paintRows 真的跑一次:尾端把 PKG.redetect 消化成一次 detect();等登入中不消化
+  { // paintRows 真的跑一次:不碰 PKG.redetect(補偵測在 detect() 收尾;偵測途中換語言、推快照的重畫不能用掉它,check_shell_focus_redetect ④b)
     const el = () => { const n = { children: [], innerHTML: "", appendChild: (c) => { n.children.push(c); return c; }, querySelectorAll: () => [] }; return n; };
     const rowsEl = el(), calls = [];
     const ctx = { PKG: { snap: null, redetect: true }, loginPending: null, MDL: { busy: true }, ROWMSG: { claude: null, codex: null }, cur: null, localReady: false,
@@ -150,12 +150,9 @@ const authUnknown = eval("(" + app.match(/^const authUnknown = (.*);$/m)[1] + ")
       rowMsg: () => "", rowVars: () => ({}), connect: () => {}, localLogin: () => {}, codexPkgGo: () => {}, window: { blave: {} }, whyState, authUnknown };
     const paint = new Function("ctx", `with (ctx) { ${fn("codexPkgRow")}\n${fn("paintRows")}\nreturn paintRows; }`)(ctx);
     const D0 = { claude: { installed: false }, codex: { installed: false } };
-    ctx.loginPending = "claude"; paint(D0);
-    ok("paintRows:等登入中 → PKG.redetect 留著、不偵測", ctx.PKG.redetect === true && !calls.includes("detect"), calls);
-    ctx.loginPending = null; calls.length = 0; paint(D0);
-    ok("paintRows:收尾(MDL.busy = false、mdlPaint 之後)把 PKG.redetect 消化成一次 detect()", ctx.PKG.redetect === false && calls.join() === "mdlPaint,detect" && ctx.MDL.busy === false, calls);
-    calls.length = 0; paint(D0);
-    ok("…消化過就不再偵測", !calls.includes("detect"));
+    ctx.loginPending = "claude"; paint(D0); ctx.loginPending = null; paint(D0);
+    ok("paintRows:等登入中、沒在等都不偵測、PKG.redetect 留著;收尾放開 MDL.busy、mdlPaint", ctx.PKG.redetect === true && !calls.includes("detect") && calls.join() === "mdlPaint,mdlPaint" && ctx.MDL.busy === false, calls);
+    ok("…補偵測在 detect() 收尾(.finally),沒在等登入才補", /\.finally\([\s\S]*?if \(PKG\.redetect && !loginPending\) \{ PKG\.redetect = false; detect\(\); \}/.test(fn("detect")) && !/PKG\.redetect/.test(fn("paintRows")));
     ctx.PKG.snap = { phase: "idle", fail: null, size: 203 }; paint(D0);
     const cx = rowsEl.children.filter((r) => r.kind === "codex").pop();
     ok("paintRows:Codex 沒偵測到、有快照 → 那一列是下載列(說明 cn.pkgSize、有鈕),不是「未偵測到」", cx && cx.sub === "cn.pkgSize" && !!cx.action && cx.st === null, cx);
