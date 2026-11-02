@@ -35,7 +35,7 @@ ok("沒有一顆登入鈕開的是帳號與方案", signinRoutedToPlan.length ==
 ok("report-share / report-sharelist 不再開帳號與方案", !/setCat\("plan"\)/.test(shr) && !/setCat\("plan"\)/.test(shl));
 
 { // 按登入的埋點:三個開瀏覽器的入口都在 startOAuth 之前送 login_click(planSignIn 的入口都經 planLogin)
-  const before = (body) => { const a = body.indexOf('trackFeature("login_click")'), b = body.indexOf("window.blave.startOAuth("); return a > 0 && b > a; };
+  const before = (body) => { const a = body.indexOf('trackFeature("login_click")'), b = body.indexOf("oauthStart("); return a > 0 && b > a; };
   const flow = cut(app, "blaveLoginFlow"), start = flow.slice(flow.indexOf("async function start()"));
   ok("login_click 在 blaveGoNow / blaveLoginFlow.start / planLogin 的 startOAuth 之前各送一次", before(cut(app, "blaveGoNow")) && before(start) && before(cut(app, "planLogin"))
     && (app.match(/trackFeature\("login_click"\)/g) || []).length === 3);
