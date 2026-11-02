@@ -33,8 +33,9 @@ t("preload 轉送第二個參數", /startOAuth: \(lang, intent\) => ipcRenderer\
 
 // renderer:只有連結畫面 / 設定「使用」的 blaveGo 帶意圖;方案頁登入 / 重登、登入失效的原地登入都不帶(照舊搶)
 const app = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
-const calls = app.match(/\boauthStart\([^)]*\)/g).filter((c) => !/oauthStart\(lang, intent\)/.test(c)) || [];   // 0.1.42 起都經 oauthStart(登入後手機對話被關要講一句)
+const calls = (app.match(/\boauthStart\([^)]*\)/g) || []).filter((c) => !/oauthStart\(lang, intent\)/.test(c));   // 0.1.42 起都經 oauthStart(登入後手機對話被關要講一句)
 const fnOf = (re) => { const m = app.match(re); return m ? app.slice(m.index, app.indexOf("\n}\n", m.index)) : ""; };
+t("oauthStart 把 (lang, intent) 原樣交給 startOAuth(丟了 intent,Blave AI 那條會退回一律搶前景)", /async function oauthStart\(lang, intent\) \{\n  const r = await window\.blave\.startOAuth\(lang, intent\);/.test(app));
 t(`startOAuth 呼叫 ${calls.length} 處,帶 "blave" 的只有 1 處`, calls.length >= 4 && calls.filter((c) => /"blave"/.test(c)).length === 1);
 t("…那一處在 blaveGoNow 裡(blaveGo 只是回合中的守門,0.1.27)", /oauthStart\(LANG, "blave"\)/.test(fnOf(/async function blaveGoNow\(/)));
 t("…登入失效的 blaveLoginFlow 不帶", /oauthStart\(LANG\)/.test(fnOf(/function blaveLoginFlow\(/)));

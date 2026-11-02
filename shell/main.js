@@ -978,7 +978,7 @@ async function startOAuth(lang, forBlaveAi) {
   // 手機對話的開關跟著「誰同意的」走:外殼認不出新 token 是不是同一個帳號,換 token 前一律照登出關掉(刪伺服器那份、清待驗)。
   // 不關的話 B 帳號按〔重新驗證〕就會把 A 同意上傳的對話傳到 B,沒經過同意框。用舊憑證打 disable,所以要在 saveToken 之前
   await rotator().settle();
-  const phoneOff = relay().isOn();   // 回給畫面:原本開著才講「重新登入後關了」
+  const phoneOff = relay().isOn() && relay().isVisible();   // 回給畫面:原本開著、而且設定 › 連結看得到那一區,才講「重新登入後關了」
   try { await relay().signOut(); } catch (_) { /* 刪不成:伺服器那份跟著舊 token 藏起來,30 天無活動自己清 */ }
   // signOut 最長約 7 秒,這段可能有輪替落地:再等一次再讀舊值,讀舊值到 saveToken 之間不能有 await(否則撤到的是輪替前那顆)
   await rotator().settle();
@@ -986,7 +986,6 @@ async function startOAuth(lang, forBlaveAi) {
   if (!saveToken(r.body.access_token)) {
     throw new Error("KEYCHAIN_UNAVAILABLE");
   }
-  relay().tick().catch(() => {});   // 平台旗標登入前問到的是「沒有」:現在問一次,設定 › 連結不用等下一輪 2 分鐘
   rotator().reset();   // 上一個帳號 / 上一顆的寬限舊值不能拿來補救這一顆
   rotator().noteLogin(r.body.access_token, r.body.expires_in);
   if (prevToken && prevToken !== r.body.access_token) {
@@ -1001,6 +1000,8 @@ async function startOAuth(lang, forBlaveAi) {
   saveDataKey(r.body.data_api_key, r.body.data_secret_key);
   clearAppSecret();
   saveAppSecret(r.body.app_secret);      // 舊版 api 沒有這欄:之後按「啟動方案」會被要求重新登入
+  // 平台旗標登入前問到的是「沒有」:現在問一次,設定 › 連結不用等下一輪 2 分鐘。要在新 app_secret 存好之後(新 token 配舊 secret 會 401、把那一區藏起來)
+  relay().tick().catch(() => {});
   // 換了帳號:cloud.js 自己會認出 token 換了、把上一個人的東西丟掉(不靠這一行);這一行只是讓畫面不必等下一輪輪詢
   if (_cloud && _cloud.isRunning()) _cloud.refresh(true).catch(() => {});
   lastAcct = null;                    // 可能換了一個帳號:上一個帳號的「含不含資料」不能沿用
