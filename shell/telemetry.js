@@ -295,7 +295,9 @@ const EVENTS = {
     "phone_vfy_shown", "phone_vfy_ok", "phone_vfy_locked", "phone_reverify",
     // 0.1.43 手機配對完、這台關著時主視窗跳的確認框(renderer/app.js phAskMaybe;同 api 順序,api 先上):跳出來、按〔打開〕、按〔不用〕或關掉框;
     // 設定 › 連結按〔到網站撤銷〕(phGroup)
-    "phone_ask_shown", "phone_ask_on", "phone_ask_no", "phone_web_revoke"] },
+    "phone_ask_shown", "phone_ask_on", "phone_ask_no", "phone_web_revoke",
+    // 0.1.43 開關開著、帳號下剛配對了手機,輸入框上方那一列(renderer/app.js phNoticePaint;同 api 順序,api 先上):出現、按 ✕、按這一列的〔到網站撤銷〕
+    "phone_new_shown", "phone_new_close", "phone_new_revoke"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

@@ -109,7 +109,7 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
     && /\.ph-web::before \{ inset: -15px -4px; \}/.test(css) && /#set-up-btn::before \{ inset: -15px -4px; \}/.test(css));
   byId(grp, "ph-web").listeners.click();
   ok("〔到網站撤銷〕外開網站 設定 › 已配對的手機(帶語言、from=desktop),記 phone_web_revoke(只送名字)", opened.at(-1) === "https://blave.org/landing/zh/setting?tab=phones&from=desktop" && tracked3.join() === "phone_web_revoke"
-    && fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8").includes('"phone_ask_no", "phone_web_revoke"]'), [opened, tracked3]);
+    && fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8").includes('"phone_ask_no", "phone_web_revoke",'), [opened, tracked3]);
   ok("每支一列唯讀:機型(空的用 Android 手機)+ 最近使用(mono)/還沒用過;沒有開關、勾選、最近操作、撤銷", rowsEl.length === 2 && byCls(rowsEl[0], "ph-name")[0].textContent === "iPhone 15" && byCls(rowsEl[1], "ph-name")[0].textContent === "ph.android"
     && byCls(rowsEl[0], "ph-meta")[0].children.some((c) => c.className === "mono" && c.textContent === "10/30 13:00") && byCls(rowsEl[1], "ph-meta")[0].textContent === "ph.metaNever"
     && !walk(grp).some((x) => x.tagName === "input" || x.getAttribute("role") === "switch" || x.tagName === "img") && !walk(grp).some((x) => x.tagName === "button" && x.id !== "ph-web"));
@@ -212,10 +212,79 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
   }
   const keep = await run([], async (S) => { S.phAskMaybe(); S.phAskDrop({ signedIn: true, on: false, visible: true }); }, { PH: PHA(ASK) });
   ok("9b 狀態沒變:框留著", keep.closed.length === 0);
-  ok("9b 接線:狀態推來(先看要不要收框)、啟動讀一次、視窗回到前面／取得焦點、確認框關掉後都試一次", /phRepaint\(\);\n  phAskDrop\(st\);\n  phAskMaybe\(\);\n\}\);/.test(app) && /phStateLoad\(\)\.then\(phAskMaybe\);/.test(app)
+  ok("9b 接線:狀態推來(先看要不要收框)、啟動讀一次、視窗回到前面／取得焦點、確認框關掉後都試一次", /phRepaint\(\);\n  phAskDrop\(st\);\n  phAskMaybe\(\);\n  phNoticePaint\(\);\n\}\);/.test(app) && /phStateLoad\(\)\.then\(\(\) => \{ phAskMaybe\(\); phNoticePaint\(\); \}\);/.test(app)
     && /document\.addEventListener\("visibilitychange", phAskMaybe\);/.test(app) && /window\.addEventListener\("focus", phAskMaybe\);/.test(app) && /if \(typeof phAskMaybe === "function"\) setTimeout\(phAskMaybe, 0\);/.test(fnOf(app, "delClose")));
   ok("9b 埋點三個在白名單、≤16 字;驗證碼四個沒有送出點", ["phone_ask_shown", "phone_ask_on", "phone_ask_no"].every((n) => n.length <= 16 && fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8").includes('"' + n + '"'))
     && !/phone_vfy_|phone_reverify/.test(app));
+  // ── 5. 開關開著、帳號下剛配對了手機:輸入框上方那一列(spec account-session-revoke §3.3、設計 account-security-mails §7.3)──
+  const NOTE = { id: "devN0000001:1730530000000", label: "Pixel 9", platform: "android", at: 1730530000000, more: 0 };
+  const nrun = async (ph, steps, o = {}) => {
+    const box = el("div"), body = el("div"), ta = el("textarea"), shown = [], closed = [], opened = [], tracked = [];
+    box.hidden = true; box.contains = (x) => !!x && (x === box || walk(box).includes(x)); box.children.push(body);
+    const seen = new Set(); let writes = 0; const look = () => { if (!seen.has(body.children)) { seen.add(body.children); writes++; } };   // 寫一次字 = textContent 換掉一次 children 陣列
+    box.offsetParent = o.detached ? null : {};   // 聊天欄所在的畫面沒顯示(連結畫面等)= null
+    const store = o.store || {}, docN = Object.create(doc); docN.visibilityState = o.bg ? "hidden" : "visible"; docN.hasFocus = () => !o.blur;
+    const env = { document: docN, t, LANG: "zh", trackFeature: (n) => tracked.push(n), requestAnimationFrame: (f) => f(), libExtIcon: () => mk("svg", "ic"),
+      lsGet: (k) => (k in store ? store[k] : null), lsSet: (k, v) => { store[k] = v; }, paneSt: { chat: { get off() { return !!o.chatOff; } } },
+      window: { blave: { relayNoticeShown: (id) => { shown.push(id); return Promise.resolve(true); }, relayNoticeClose: (id) => { closed.push(id); return Promise.resolve(true); }, openExternal: (u) => opened.push(u) } },
+      $: (id) => ({ "ph-notice": box, "ph-notice-t": body, ta }[id] || null) };
+    let S; try { S = new Function("env", "with (env) { var PH = " + JSON.stringify(ph) + ";\n"
+      + [lineOf(app, /const phShown = [^\n]*;/), lineOf(app, /const phName = [^\n]*;/), lineOf(app, /const phWebUrl = [^\n]*;/), lineOf(app, /^var PH_NOTICE_KEY = [^\n]*/m), lineOf(app, /^const PH_NOTICE_SEEN_KEY = [^\n]*/m), fnOf(app, "phNoticeVisible"), fnOf(app, "phNoticeTrack"), fnOf(app, "phNoticePaint"), fnOf(app, "phNoticeClose")].join("\n")
+      + "\nreturn { phNoticePaint, phNoticeTrack, setPH: (x) => { PH = x; }, setLang: (l) => { LANG = l; }, x: () => { " + lineOf(app, /\$\("ph-notice-x"\)\.addEventListener\("click", ([^\n]*)\);/).replace(/^\$\("ph-notice-x"\)\.addEventListener\("click", \(\) => \{ /, "").replace(/ \}\);$/, "") + " } }; }")(env); } catch (e) { ok("剛配對:畫面那幾支切不出來", false, String(e.message)); const no = () => {}; S = { phNoticePaint: no, phNoticeTrack: no, setPH: no, setLang: no, x: no }; }
+    const paint = S.phNoticePaint; S.phNoticePaint = () => { paint(); look(); };
+    await steps(S, { box, body, ta, o, docN });
+    await tick();
+    return { box, body, ta, shown, closed, opened, tracked, store, writes: () => writes };
+  };
+  const PHN = (n, x) => Object.assign({ visible: true, signedIn: true, on: true, notice: n }, x || {});
+  const web = (r) => walk(r.body).find((x) => x.classSet.has("ph-web"));
+  const n1 = await nrun(PHN(NOTE), async (S) => { S.phNoticePaint(); S.phNoticePaint(); });
+  ok("剛配對:開著＋有 notice → 那一列出現,字 = ph.newPhone(帶機型)、句尾〔到網站撤銷〕(ph-web 那顆、讀屏名稱、外連圖示)", n1.box.hidden === false && (n1.body.children[0] || {}).text === 'ph.newPhone{"name":"Pixel 9","more":"0"}' && (n1.body.children[1] || {}).text === " "
+    && !!web(n1) && web(n1).textContent === "ph.webRevoke" && web(n1).getAttribute("aria-label") === "ph.webRevoke.aria" && web(n1).classSet.has("btn-quiet") && web(n1).children.some((c) => c.classSet && c.classSet.has("ic")), n1.body.textContent);
+  ok("剛配對:出現時跟主行程說一次(relayNoticeShown → prompt/seen)、看得到就記 phone_new_shown 一次;狀態再推來不重寫字(status 不重念)", n1.shown.join() === NOTE.id && n1.tracked.join() === "phone_new_shown" && n1.writes() === 1, [n1.shown, n1.tracked, n1.writes()]);
+  const n2 = await nrun(PHN(NOTE), async (S) => { S.phNoticePaint(); }, { store: { ph_notice_counted: NOTE.id } });
+  ok("剛配對:這一批記過了(重開 app)→ 不再記 phone_new_shown", n2.shown.length === 1 && n2.tracked.length === 0);
+  for (const [nm, o] of [["視窗在背景", { bg: true }], ["視窗沒有焦點", { blur: true }], ["聊天欄收起", { chatOff: true }], ["聊天欄那個畫面沒顯示", { detached: true }]]) {
+    const r = await nrun(PHN(NOTE), async (S, d) => { S.phNoticePaint(); await tick(); d.o.bg = d.o.blur = d.o.chatOff = d.o.detached = false; d.docN.visibilityState = "visible"; d.box.offsetParent = {}; }, o);
+    const before = r.tracked.slice();
+    ok("剛配對:" + nm + " → prompt/seen 照送、那一列留著,phone_new_shown 不記", r.shown.join() === NOTE.id && r.box.hidden === false && before.length === 0, [r.shown, before]);
+  }
+  {
+    const r = await nrun(PHN(NOTE), async (S, d) => { S.phNoticePaint(); await tick(); d.o.chatOff = false; S.phNoticeTrack(); S.phNoticeTrack(); }, { chatOff: true });
+    ok("剛配對:聊天欄收起時不記,之後展開(paneToggle → phNoticeTrack)才記一次", r.tracked.join() === "phone_new_shown" && r.store.ph_notice_counted === NOTE.id && /if \(key === "chat" && !off && typeof phNoticeTrack === "function"\) phNoticeTrack\(\);/.test(fnOf(app, "paneToggle"))
+      && /document\.addEventListener\("visibilitychange", phNoticeTrack\);\nwindow\.addEventListener\("focus", phNoticeTrack\);/.test(app)); }
+  const n3 = await nrun(PHN(Object.assign({}, NOTE, { more: 2, label: "" })), async (S) => { S.phNoticePaint(); });
+  ok("剛配對:不只一支 → ph.newPhones(最新那支的名字 + 支數);機型空的用 Android 手機", (n3.body.children[0] || {}).text === 'ph.newPhones{"name":"ph.android","more":"2"}', n3.body.textContent);
+  const n4 = await nrun(PHN(NOTE), async (S) => { S.phNoticePaint(); S.setLang("en"); S.phNoticePaint(); });
+  ok("剛配對:換語言重寫字,不重記、不重打 shown", n4.writes() === 2 && n4.shown.length === 1 && n4.tracked.join() === "phone_new_shown");
+  for (const [nm, ph] of [["開關關著", PHN(NOTE, { on: false })], ["沒有 notice", PHN(null)], ["總開關關", PHN(NOTE, { visible: false })], ["沒登入", PHN(NOTE, { signedIn: false })], ["讀不到狀態", null]]) {
+    const r = await nrun(ph, async (S) => { S.phNoticePaint(); });
+    ok("剛配對:" + nm + " → 不出、不打 shown", r.box.hidden === true && r.shown.length === 0);
+  }
+  const n5 = await nrun(PHN(NOTE), async (S, d) => { S.phNoticePaint(); S.setPH(PHN(null)); S.phNoticePaint(); });
+  ok("剛配對:主行程收掉(關開關、登出、401)→ 那一列收掉", n5.box.hidden === true);
+  const n6 = await nrun(PHN(NOTE), async (S, d) => { S.phNoticePaint(); await tick(); doc.activeElement = web({ body: d.body }); S.x(); });
+  ok("剛配對 ✕:記 phone_new_close、跟主行程說關掉(relayNoticeClose)、當場收、焦點回輸入框", n6.tracked.join() === "phone_new_shown,phone_new_close" && n6.closed.join() === NOTE.id && n6.box.hidden === true && doc.activeElement === n6.ta, [n6.tracked, n6.closed, n6.box.hidden, doc.activeElement && doc.activeElement.tagName]);
+  const n7 = await nrun(PHN(NOTE), async (S, d) => { S.phNoticePaint(); await tick(); const w = web({ body: d.body }); if (w) w.listeners.click(); });
+  ok("剛配對〔到網站撤銷〕:記 phone_new_revoke(不是設定頁那顆的 phone_web_revoke)、開網站 設定 › 已配對的手機、這一列也收掉", n7.tracked.join() === "phone_new_shown,phone_new_revoke" && n7.opened.join() === "https://blave.org/landing/zh/setting?tab=phones&from=desktop" && n7.closed.join() === NOTE.id && n7.box.hidden === true, [n7.tracked, n7.opened, n7.closed, n7.box.hidden]);
+  const n8 = await nrun(PHN(NOTE), async (S) => { S.phNoticePaint(); await tick(); S.x(); S.phNoticePaint(); S.setPH(PHN(Object.assign({}, NOTE, { id: "devN0000002:1730530001000" }))); S.phNoticePaint(); });
+  ok("剛配對 ✕ 之後主行程又推來還帶舊那一批的狀態:不閃回;下一批照出", n8.box.hidden === false && n8.shown.join() === NOTE.id + ",devN0000002:1730530001000" && n8.closed.join() === NOTE.id);
+  { const r = await nrun(PHN(NOTE), async (S, d) => { S.phNoticePaint(); await tick(); S.x(); S.phNoticePaint(); d.box.flashAfter = d.box.hidden; });
+    ok("剛配對 ✕ 後同一批再推來:那一列維持收起", r.box.flashAfter === true); }
+  ok("剛配對:〔到網站撤銷〕在這一列裡熱區上緣只到 −3(折行不蓋前一行),設定頁那顆不動;✕ 在 #ws-update 出現時上緣收到 −4;zh 句子 text-wrap: pretty",
+    /\.ph-notice \.ph-web::before \{ inset: -3px -4px -12px; \}/.test(css) && /\.ph-web::before \{ inset: -15px -4px; \}/.test(css)
+    && /\.ws-update:not\(\[hidden\]\) \+ \.ph-notice \.ph-notice-x::before \{ top: -4px; \}/.test(css) && /\.ph-notice \.fault-body:lang\(zh\) \{ text-wrap: pretty; \}/.test(css));
+  const wrap = html.slice(html.indexOf('<div class="chat-input-wrap">'), html.indexOf('<div class="chat-input">'));
+  ok("剛配對:位置在聊天欄輸入框上方、#ws-update 下一層自己一列;role=status、字不掛 data-i18n、✕ 讀屏名稱沿用 set.close、16 的 x 圖示",
+    wrap.indexOf('id="ws-update"') >= 0 && wrap.indexOf('id="ph-notice"') > wrap.indexOf('id="ws-update"') && /<div class="ph-notice" id="ph-notice" role="status" hidden>\s*<span class="fault-mark" aria-hidden="true"><\/span>\s*<div class="fault-body" id="ph-notice-t"><\/div>\s*<button type="button" class="ph-notice-x" id="ph-notice-x" data-i18n-aria="set\.close"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"\/><\/svg><\/button>/.test(wrap));
+  ok("剛配對:樣子跟回合失敗卡同一組(13px、ink-2、行高 1.6、紅記號、不加框);✕ 視覺 28 熱區 44、ink-3;離輸入框 8、離 #ws-update 4",
+    /\.msg\.fault, \.ph-notice \{ display: flex; align-items: flex-start; gap: var\(--space-8\); font-size: 13px; line-height: 1\.6; color: var\(--ink-2\); \}/.test(css)
+    && /\.ph-notice \{ margin: 0 0 var\(--space-8\); \}/.test(css) && /\.ws-update:not\(\[hidden\]\) \+ \.ph-notice \{ margin-top: var\(--space-4\); \}/.test(css)
+    && /\.ph-notice-x \{[^}]*width: 28px; height: 28px;[^}]*color: var\(--ink-3\);/.test(css) && /\.ph-notice-x::before \{ content: ""; position: absolute; inset: -8px; \}/.test(css) && !/\.ph-notice[^{]*\{[^}]*(border:|background: var\(--color-red|color: var\(--color-red)/.test(css));
+  ok("剛配對:字照設計 §7.3 逐字(zh / en;en 不分單複數)", po(0, "ph.newPhone") === "{name} 剛配對，現在能叫這台電腦做事。" && po(0, "ph.newPhones") === "{name} 和另外 {more} 支手機剛配對，現在能叫這台電腦做事。"
+    && po(1, "ph.newPhone") === "{name} was just paired and can now control this computer." && po(1, "ph.newPhones") === "{name} and {more} more were just paired and can now control this computer." && po(0, "ph.revokeWeb") === null);
+  ok("剛配對:接線(狀態推來、啟動、換語言都畫一次);埋點三個在白名單、接在 phone_web_revoke 後面", /phAskMaybe\(\);\n  phNoticePaint\(\);\n\}\);/.test(app) && /if \(typeof phNoticePaint === "function" && typeof PH !== "undefined"\) phNoticePaint\(\);/.test(fnOf(app, "applyStatic"))
+    && fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8").includes('"phone_web_revoke",\n    // 0.1.43 開關開著') && ["phone_new_shown", "phone_new_close", "phone_new_revoke"].every((n) => n.length <= 16 && fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8").includes('"' + n + '"')));
   ok("#del-title .cf-when:mono、--ink-3、不折行", /#del-title \.cf-when \{ font-family: var\(--font-mono\);[^}]*color: var\(--ink-3\); white-space: nowrap; \}/.test(css));
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   process.exit(red ? 1 : 0);

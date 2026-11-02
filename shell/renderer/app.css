@@ -1689,7 +1689,7 @@ html[data-platform="win32"] .flag-pop.sg-pick { width: calc(224px + var(--scroll
 /* ── 回合失敗卡(照雲端 .chat-notice.is-fault;設計師 M1)──
    不加容器、圖示、紅字:紅只上在 8×2 的記號(錯誤是狀態不是內容);字升到 13px / ink-2,
    因為它取代的是這一輪的回覆,不是 caption。 */
-.msg.fault { display: flex; align-items: flex-start; gap: var(--space-8); font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+.msg.fault, .ph-notice { display: flex; align-items: flex-start; gap: var(--space-8); font-size: 13px; line-height: 1.6; color: var(--ink-2); }
 .fault-mark { flex: none; width: 8px; height: 2px; margin-top: 9px; background: var(--color-red); }   /* 對到首行視覺中線(13×1.6) */
 .msg.fault.is-calm .fault-mark { background: var(--ink-3); }      /* 等待中 / 已完成:不是錯誤了,記號退灰 */
 .fault-body { min-width: 0; overflow-wrap: anywhere; }
@@ -1700,6 +1700,20 @@ html[data-platform="win32"] .flag-pop.sg-pick { width: calc(224px + var(--scroll
 /* 額度用完卡片:〔改用 Claude Code 或 Codex〕與〔用加密貨幣轉帳儲值〕兩顆文字鈕同一列,8 的話兩條底線讀起來黏成一條(同 act-only 的 16);行距仍是 8 */
 .msg.fault.two-quiet .fault-act { column-gap: var(--space-16); }
 .fault-sub { margin-top: var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+/* 輸入框上方那一列「剛配對」(設計 account-security-mails §7.3):回合失敗卡同一組,加右上 ✕(16 圖示、視覺 28、熱區 44)。
+   左右對齊輸入框(同在 .chat-input-wrap 裡),離輸入框 8、離上面的 #ws-update 4 */
+.ph-notice { margin: 0 0 var(--space-8); }
+.ph-notice[hidden] { display: none; }
+.ws-update:not([hidden]) + .ph-notice { margin-top: var(--space-4); }
+.ph-notice .fault-body { flex: 1; }
+.ph-notice .fault-body:lang(zh) { text-wrap: pretty; }   /* 「做／事。」別單字落行 */
+/* 〔到網站撤銷〕折到第二行時熱區不往上蓋住句子(設定頁那顆的 −15 是給 44 高的列);下緣讓 .chat-input 蓋過去 */
+.ph-notice .ph-web::before { inset: -3px -4px -12px; }
+.ph-notice-x { flex: none; position: relative; width: 28px; height: 28px; margin: -4px -6px 0 0; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm); color: var(--ink-3); transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
+.ph-notice-x::before { content: ""; position: absolute; inset: -8px; }
+.ws-update:not([hidden]) + .ph-notice .ph-notice-x::before { top: -4px; }   /* 不壓到上面〔重新啟動以完成更新〕的熱區 */
+.ph-notice-x:hover { background: var(--surface-muted); color: var(--ink); }
 .fault-sub code, .cn-hint code { font-family: var(--font-mono); color: var(--ink-2); }
 /* disabled 原本完全沒有樣式:鈕鎖住之後外觀不變,看不出按下去有沒有生效(設計師 M7) */
 /* 失效的實心鈕:框取比填色亮一階的灰——只靠填色的話對 darkBody 只有 1.5:1,看不出那裡有一顆鈕(canon Disabled) */

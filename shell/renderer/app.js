@@ -994,8 +994,58 @@ function phAskDrop(st) {
   PH_ASK_BOX.drop = true; PH_ASK_BOX = null;
   if (delCtx) delClose(false);
 }
+/* 開關開著、帳號下剛配對了手機(主行程 PH.notice;spec account-session-revoke §3.3、設計 account-security-mails §7.3):
+   輸入框上方一列,不自動消失;✕ 或〔到網站撤銷〕才收(主行程記掉、之後不再出同一批)。第一次畫出來跟主行程說,它打 prompt/seen。
+   只在 id／支數／語言變了才重寫字:狀態每次推來都重寫的話,role="status" 會一直念。
+   prompt/seen 一出現就送(spec §3.3);phone_new_shown 要等真的看得到(視窗在前面、聊天欄展開、那一列有畫出來)才記,每一批記一次 */
+var PH_NOTICE_KEY = "", PH_NOTICE_CLOSED = "";   // var:applyStatic 可能在這一行之前被叫到。CLOSED:剛按掉的那一批,主行程還沒推新狀態前又推來舊的也不重畫
+const PH_NOTICE_SEEN_KEY = "ph_notice_counted";
+function phNoticeVisible() {
+  const box = $("ph-notice");
+  return !!box && !box.hidden && document.visibilityState === "visible" && document.hasFocus() && !(typeof paneSt !== "undefined" && paneSt.chat.off) && box.offsetParent !== null;
+}
+function phNoticeTrack() {
+  const n = PH && PH.notice;
+  if (!n || PH_NOTICE_KEY.split("|")[0] !== n.id || lsGet(PH_NOTICE_SEEN_KEY) === n.id || !phNoticeVisible()) return;
+  lsSet(PH_NOTICE_SEEN_KEY, n.id); trackFeature("phone_new_shown");
+}
+function phNoticePaint() {
+  const box = $("ph-notice"); if (!box) return;
+  let n = phShown() && PH.signedIn && PH.on ? PH.notice : null;
+  if (n && n.id === PH_NOTICE_CLOSED) n = null;
+  if (!n) {
+    if (!box.hidden && box.contains(document.activeElement)) $("ta").focus();   // 那一列收掉了:焦點不能掉到 BODY
+    box.hidden = true; PH_NOTICE_KEY = ""; return;
+  }
+  const key = n.id + "|" + n.more + "|" + LANG;
+  if (key === PH_NOTICE_KEY && !box.hidden) return;
+  const first = !PH_NOTICE_KEY.startsWith(n.id + "|");
+  PH_NOTICE_KEY = key;
+  const body = $("ph-notice-t"); body.textContent = "";
+  box.hidden = false;   // 先讓 status 進可及樹再填字,出現時才會念一次
+  requestAnimationFrame(() => {
+    if (PH_NOTICE_KEY !== key) return;
+    body.textContent = "";
+    body.append(t(n.more > 0 ? "ph.newPhones" : "ph.newPhone", { name: phName(n), more: String(n.more) }));
+    const web = document.createElement("button"); web.type = "button"; web.className = "btn-quiet ph-web"; web.textContent = t("ph.webRevoke");
+    web.setAttribute("aria-label", t("ph.webRevoke.aria")); web.append(libExtIcon());
+    web.addEventListener("click", () => { trackFeature("phone_new_revoke"); window.blave.openExternal(phWebUrl()); phNoticeClose(n.id); });
+    body.append(" ", web);
+    phNoticeTrack();
+  });
+  if (first) window.blave.relayNoticeShown(n.id).catch(() => {});
+}
+function phNoticeClose(id) {
+  const box = $("ph-notice"), had = box.contains(document.activeElement);
+  box.hidden = true; PH_NOTICE_KEY = ""; PH_NOTICE_CLOSED = id;
+  if (had) $("ta").focus();
+  window.blave.relayNoticeClose(id).catch(() => {});
+}
+$("ph-notice-x").addEventListener("click", () => { const n = PH && PH.notice; if (!n) return; trackFeature("phone_new_close"); phNoticeClose(n.id); });
 document.addEventListener("visibilitychange", phAskMaybe);
 window.addEventListener("focus", phAskMaybe);
+document.addEventListener("visibilitychange", phNoticeTrack);
+window.addEventListener("focus", phNoticeTrack);
 async function phRetry() { if (PH_BUSY) return; PH_BUSY = true; try { PH = (await window.blave.relayRetry()) || PH; } catch (_) { /* noop */ } finally { PH_BUSY = false; } phRepaint(); }
 function phBlock(mk) {
   if (!phShown()) return null;
@@ -1026,8 +1076,9 @@ if (typeof window.blave.onRelayState === "function") window.blave.onRelayState((
   if (!was || JSON.stringify(was) !== JSON.stringify(st)) phRepaint();
   phAskDrop(st);
   phAskMaybe();
+  phNoticePaint();
 });
-phStateLoad().then(phAskMaybe);   // 開機時已經有一次沒問過的配對(電腦當時沒開):主視窗起來就問
+phStateLoad().then(() => { phAskMaybe(); phNoticePaint(); });   // 開機時已經有一次沒問過的配對(電腦當時沒開):主視窗起來就問
 /* 開著之後的下一步是拿手機開 App:兩個商店 QR(圖是 web footer 那兩張,靜態檔、不在 runtime 產生)。
    圖是透明底黑碼,暗色也固定白底才掃得到;商店名稱是給不能掃的人的替代路徑,所以圖 alt="" */
 const MV_APP_IOS = "https://apps.apple.com/tw/app/blave/id6747014559";
@@ -5466,6 +5517,7 @@ function paneToggle(key, off) {
   paneSt[key].off = off;
   if (!off) paneSt[key].w = paneClamp(key, paneSt[key].want);
   panesRender(true);
+  if (key === "chat" && !off && typeof phNoticeTrack === "function") phNoticeTrack();   // 聊天欄展開:輸入框上方那一列這時才看得到
 }
 function panesInit() {
   try {
@@ -5556,6 +5608,7 @@ function applyStatic() {
   if (typeof trPushLabels === "function") trPushLabels();   // 主行程的選單列 / 結束攔截跟著換語言
   if (typeof upPaint === "function" && typeof UP !== "undefined") upPaint();
   if (typeof upRelang === "function") upRelang();   // 聊天裡那則更新 / 換官方檔的通知
+  if (typeof phNoticePaint === "function" && typeof PH !== "undefined") phNoticePaint();   // 輸入框上方那一列「剛配對」(key 帶語言,換了才重寫)
   if (typeof resRelang === "function") resRelang();   // 聊天結果卡(renderer/results.js)
   if (typeof akRelang === "function") akRelang();     // API 金鑰表單(renderer/apikey.js)
   if (typeof xpRelang === "function") xpRelang();     // 轉出卡(renderer/export.js)

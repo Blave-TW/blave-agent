@@ -196,6 +196,8 @@ contextBridge.exposeInMainWorld("blave", {
   relayPhones: () => ipcRenderer.invoke("relay-phones"),
   relayAskShown: (id) => ipcRenderer.invoke("relay-ask-shown", String(id || "")),
   relayAskNo: (id) => ipcRenderer.invoke("relay-ask-no", String(id || "")),
+  relayNoticeShown: (id) => ipcRenderer.invoke("relay-notice-shown", String(id || "")),
+  relayNoticeClose: (id) => ipcRenderer.invoke("relay-notice-close", String(id || "")),
   onRelayState: (fn) => ipcRenderer.on("relay-state", (_e, st) => fn(st && typeof st === "object" ? st : null)),
   ensureEngine: () => ipcRenderer.invoke("ensure-engine"),
   sendMessage: (payload) => ipcRenderer.invoke("send-message", payload),
