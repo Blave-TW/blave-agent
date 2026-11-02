@@ -12,6 +12,7 @@
 //   8. 狀態檔只有布林;給畫面的沒有憑證;圖只送手機那一輪;手機清單／勾選／撤銷／最近操作
 //   9. main.js 接線
 //  10. 打開過 email 驗證碼(mobile-chat-shell-enable-verify):setOn 寄碼／帶碼、碼對才寫 on;自動重打不寄信、被關卡擋下記 needVerify 不再打;重新驗證不丟待送的刪除;舊 api
+//  12. 換帳號(OAuth 重新登入):換 token 前照登出關掉,不帶著開關換身分
 //  11. 手機回合的 fault code(mobile-chat-shell-fault-code):主行程分類、暫扣、代碼放回合的 error;沒有視窗也一樣;跟 renderer 的 regex 同一份
 // 跑法:node tests/check_shell_relay.js
 const fs = require("fs"), os = require("os"), path = require("path");
@@ -644,6 +645,36 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     ok("11 判定跟 renderer 同一份:上限句、API Error 的 regex 逐字相同", !!lim && !!api && lim[1] === String(RL.USAGE_LIMIT_RE) && api[1] === String(RL.API_ERROR_RE), [lim && lim[1], api && api[1]]);
     ok("11 登入句:renderer 還認得的兩段,主行程開頭錨定", /\/\^Not logged in\\b\|Please run \\\/login\/\.test\(text \|\| ""\)\) return localAuthFault\("claude"\)/.test(app)); }
   ok("11 接線:engineKind 取連線種類", /engineKind: \(\) => \(loadConnection\(\) \|\| \{\}\)\.kind/.test(main));
+
+  // ── 12 換帳號:OAuth 重新登入換 token 之前照登出關掉手機對話(main.js startOAuth 那一段原文切出來跑) ──
+  { const seg = main.slice(main.indexOf("  const prevToken = loadToken();\n", main.indexOf("async function startOAuth(")), main.indexOf("  if (!saveToken(r.body.access_token)) {"));
+    const SA = "desktop-a1000001";
+    let creds = { token: "tok-account-A", appSecret: "sec-A" }, onFor = null;
+    const calls = [];
+    const post = async (u, b) => { const ep = u.slice(API.length); calls.push([ep, b.token]);
+      if (ep === RL.EP.enabled) return { status: 200, body: { enabled: true, on: onFor === b.token } };
+      if (ep === RL.EP.enable) { if (onFor === b.token || b.enable_code) { onFor = b.token; return { status: 200, body: { enabled: true } }; } return { status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", sent: b.send_code === true, reason: b.send_code === true ? null : "not_requested" } }; }
+      if (ep === RL.EP.disable) { if (onFor === b.token) onFor = null; return { status: 200, body: {} }; }
+      if (ep === RL.EP.poll) return new Promise(() => {});
+      if (ep === RL.EP.syncState) return { status: 200, body: { sessions: [], tombstones: [] } };
+      if (ep === RL.EP.sync) return { status: 200, body: { sessions: {} } };
+      return { status: 200, body: {} }; };
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "relay-acct-"));
+    const R2 = RL.createRelay({ dir, stateDir: path.join(dir, "state"), apiBase: API, post, getCreds: () => creds, installId: () => "11111111-2222-4333-8444-555555555555", ver: "x",
+      startTurn: async () => ({ started: true }), stopTurn: () => true, turnBusy: () => false, isRestarting: () => false,
+      sessions: { list: () => [{ id: SA, last: Date.now() / 1000 }], rowsAfter: (s, a0) => [row(1, "user", "A 帳號的對話")].filter((x) => x.id > a0), maxId: () => 1, exists: () => true, remove: () => true },
+      turnArgs: () => ({}), known: () => [], origins: { add() {}, get: () => new Map() } });
+    await R2.tick(); await R2.setOn(true); await R2.setOn(true, { code: "111111" }); await wait(1300);
+    const wasOn = R2.isOn();
+    // 原文那一段:relay() 換成這一個、loadToken 是 A 的;跑完才換成 B 的 token(= saveToken)
+    await new Function("relay", "loadToken", "return (async () => {\n" + seg + "\n})();")(() => R2, () => creds.token);
+    creds = { token: "tok-account-B", appSecret: "sec-B" };
+    const n = calls.length;
+    await R2.tick(); await wait(50);
+    const st = R2.state(), after = calls.slice(n);
+    ok("12 A 同意並開啟後,OAuth 換成 B:換之前用 A 的憑證關掉(disable 帶 A)、本機開關關、不待驗", wasOn && calls.some((c) => c[0] === RL.EP.disable && c[1] === "tok-account-A") && st.on === false && st.needVerify === false && st.pending === false, [st, calls.slice(-4)]);
+    ok("12 B 登入後:不自動重打 enable、不用 B 的 token 同步任何對話;要開得重走同意框", !after.some((c) => c[0] === RL.EP.enable || c[0] === RL.EP.sync || c[0] === RL.EP.poll), after);
+    ok("12 接線:startOAuth 在 saveToken 之前叫 relay().signOut()", /try \{ await relay\(\)\.signOut\(\); \}/.test(seg)); }
 
   // ── 9 ──
   const send = main.slice(main.indexOf("function sendTurn(sid, ch, payload) {"), main.indexOf("function turnNice("));

@@ -10102,6 +10102,9 @@ msgstr "Confirm it's you"
 msgid "ph.kc.failed"
 msgstr "Couldn't send the code. Try again later."
 
+msgid "ph.kc.limitedDead"
+msgstr "Send limit reached. Try again later."
+
 msgid "ph.verify"
 msgstr "Your phone can't reach this computer."
 

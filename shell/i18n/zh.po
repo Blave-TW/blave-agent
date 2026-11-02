@@ -10130,6 +10130,9 @@ msgstr "確認是你本人"
 msgid "ph.kc.failed"
 msgstr "驗證碼沒寄出去，請稍後再試。"
 
+msgid "ph.kc.limitedDead"
+msgstr "寄送次數已達上限，請稍後再試。"
+
 msgid "ph.verify"
 msgstr "手機連不上這台電腦。"
 

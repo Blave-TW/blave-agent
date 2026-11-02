@@ -977,6 +977,9 @@ async function startOAuth(lang, forBlaveAi) {
   // best-effort:撤不掉不影響這次登入。
   await rotator().settle();
   const prevToken = loadToken();
+  // 手機對話的開關跟著「誰同意的」走:外殼認不出新 token 是不是同一個帳號,換 token 前一律照登出關掉(刪伺服器那份、清待驗)。
+  // 不關的話 B 帳號按〔重新驗證〕就會把 A 同意上傳的對話傳到 B,沒經過同意框。用舊憑證打 disable,所以要在 saveToken 之前
+  try { await relay().signOut(); } catch (_) { /* 刪不成:伺服器那份跟著舊 token 藏起來,30 天無活動自己清 */ }
   if (!saveToken(r.body.access_token)) {
     throw new Error("KEYCHAIN_UNAVAILABLE");
   }

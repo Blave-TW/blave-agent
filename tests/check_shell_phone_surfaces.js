@@ -165,7 +165,7 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
     "ph.cf.2": ["近 30 天和之後的對話會上傳，金鑰與資料夾路徑會先遮掉。關掉就刪除伺服器上那份。", "Chats from the last 30 days and new ones are uploaded, with keys and folder paths masked. Turning this off deletes the copy on Blave."],
     "ph.cf.3": ["附件、策略程式和舊對話的圖片不上傳。回覆手機時的圖片會上傳。", "Attachments, strategy code and images in older chats stay here. Images in replies to your phone are uploaded."], "ph.cf.ok": ["開啟", "Turn On"], "ph.off.ok": ["關閉", "Turn Off"],
     "ph.off.live": ["手機送來、正在跑的回覆會停下。", "The reply your phone started will stop."], "ph.off.del": ["伺服器上的對話會刪除，這台電腦上的不受影響。", "Chats on Blave are deleted. Chats on this computer stay."],
-    "ph.kc.title": ["確認是你本人", "Confirm it's you"], "ph.kc.failed": ["驗證碼沒寄出去，請稍後再試。", "Couldn't send the code. Try again later."],
+    "ph.kc.title": ["確認是你本人", "Confirm it's you"], "ph.kc.failed": ["驗證碼沒寄出去，請稍後再試。", "Couldn't send the code. Try again later."], "ph.kc.limitedDead": ["寄送次數已達上限，請稍後再試。", "Send limit reached. Try again later."],
     "ph.verify": ["手機連不上這台電腦。", "Your phone can't reach this computer."], "ph.verifyBtn": ["重新驗證", "Verify Again"],
     "ph.group": ["允許連這台的手機", "Phones allowed on this computer"], "ph.pairHow": ["用 App 的 Agent 分頁掃描，或輸入這組碼。", "Scan it in the app's Agent tab, or enter the code."],
     "ph.pairMax": ["已有 5 支手機，先撤銷一支才能再配對。", "You have 5 phones. Revoke one to pair another."], "ph.revoke.title": ["撤銷 {name}？", "Revoke {name}?"],
@@ -224,6 +224,8 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
   ok("〔重新驗證〕設定開著:開驗證碼那一步,不跳同意框", h2.boxes.length === 1 && h2.boxes[0].title === "ph.kc.title" && h2.busy.length === 0);
   const lk = await run([{ ok: false, code: "VERIFY_LOCKED", gate: {} }], first);
   ok("鎖住:死路框只有一句和〔知道了〕,沒有欄位;記 phone_vfy_locked", lk.boxes[0].single === true && lk.boxes[0].ok === "cdel.gotIt" && !lk.boxes[0].extra && lk.boxes[0].lines.length === 1 && lk.tracked.join() === "phone_vfy_locked");
+  const ld = await run([V(), { ok: false, code: "RELAY_ENABLE_CODE_EXPIRED", gate: {} }, V({ sent: false, reason: "limited" })], async (S) => { await first(S); S.setCode("111111"); S.phKcGo(); await tick(); });
+  ok("過期又達上限:死路框講過期＋ph.kc.limitedDead,不沿用 cx.kc.limited", ld.boxes.at(-1).single === true && ld.boxes.at(-1).lines[0] === "cx.kc.expired ph.kc.limitedDead", ld.boxes.at(-1).lines);
   const ne = await run([V({ sent: false, reason: null })], first);
   ok("沒有 email:同上", ne.boxes[0].single === true && !ne.boxes[0].extra && ne.boxes[0].lines[0] === "cx.kc.noemail");
   const res = await run([V()], async (S) => { S.setErr("ph.err"); await first(S); S.cancel(); });

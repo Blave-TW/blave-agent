@@ -1025,7 +1025,12 @@ function phKcBox(opener) {
   const h = PH_KC;
   if (delCtx && delCtx.onCancel === phKcDrop) delCtx.onCancel = null;   // 框裡換內容不算取消
   // 沒有碼可輸(鎖住、沒有 email、過期又達上限):只有一句和〔知道了〕
-  if (h.view.dead) { confirmBox({ title: t("ph.kc.title"), lines: [kcSay(h.view)], ok: t("cdel.gotIt"), single: true, opener, onOk: phKcDrop, onCancel: phKcDrop }); return; }
+  if (h.view.dead) {
+    // 過期又達上限:改金鑰那句叫人用最近的碼,這裡手上沒有碼可用,另寫一句
+    const say = kcSay(h.view), lim = h.view.expired && h.view.status === "limited" ? t("ph.kc.limitedDead") : "";
+    confirmBox({ title: t("ph.kc.title"), lines: [lim ? say + (/[。！？]$/.test(say) ? "" : " ") + lim : say], ok: t("cdel.gotIt"), single: true, opener, onOk: phKcDrop, onCancel: phKcDrop });
+    return;
+  }
   confirmBox({ title: t("ph.kc.title"), lines: [], extra: kcStep(h, PH_BUSY, phKcGo, phKcSync), ok: t("cx.kc.ok"), okDisabled: !kcReady(h), stay: true, opener, onOk: phKcGo, onCancel: phKcDrop, focus: "cx-kc" });
 }
 function phKcSync() { $("del-ok").disabled = !PH_BUSY && !kcReady(PH_KC); const i = $("cx-kc"); if (i) i.readOnly = PH_BUSY; }
