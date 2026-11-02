@@ -229,7 +229,7 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
       window: { blave: { relayNoticeShown: (id) => { shown.push(id); return Promise.resolve(true); }, relayNoticeClose: (id) => { closed.push(id); return Promise.resolve(true); }, openExternal: (u) => opened.push(u) } },
       $: (id) => ({ "ph-notice": box, "ph-notice-t": body, ta }[id] || null) };
     let S; try { S = new Function("env", "with (env) { var PH = " + JSON.stringify(ph) + ";\n"
-      + [lineOf(app, /const phShown = [^\n]*;/), lineOf(app, /const phName = [^\n]*;/), lineOf(app, /const phWebUrl = [^\n]*;/), lineOf(app, /^var PH_NOTICE_KEY = [^\n]*/m), lineOf(app, /^const PH_NOTICE_SEEN_KEY = [^\n]*/m), fnOf(app, "phNoticeVisible"), fnOf(app, "phNoticeTrack"), fnOf(app, "phNoticePaint"), fnOf(app, "phNoticeClose")].join("\n")
+      + [lineOf(app, /const phShown = [^\n]*;/), lineOf(app, /const phName = [^\n]*;/), lineOf(app, /const phWebUrl = [^\n]*;/), lineOf(app, /^let PH_NOTICE_KEY = [^\n]*/m), lineOf(app, /^const PH_NOTICE_SEEN_KEY = [^\n]*/m), fnOf(app, "phNoticeVisible"), fnOf(app, "phNoticeTrack"), fnOf(app, "phNoticePaint"), fnOf(app, "phNoticeClose")].join("\n")
       + "\nreturn { phNoticePaint, phNoticeTrack, setPH: (x) => { PH = x; }, setLang: (l) => { LANG = l; }, x: () => { " + lineOf(app, /\$\("ph-notice-x"\)\.addEventListener\("click", ([^\n]*)\);/).replace(/^\$\("ph-notice-x"\)\.addEventListener\("click", \(\) => \{ /, "").replace(/ \}\);$/, "") + " } }; }")(env); } catch (e) { ok("剛配對:畫面那幾支切不出來", false, String(e.message)); const no = () => {}; S = { phNoticePaint: no, phNoticeTrack: no, setPH: no, setLang: no, x: no }; }
     const paint = S.phNoticePaint; S.phNoticePaint = () => { paint(); look(); };
     await steps(S, { box, body, ta, o, docN });
