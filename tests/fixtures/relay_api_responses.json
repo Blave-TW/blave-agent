@@ -9,7 +9,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -72,7 +74,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -162,7 +166,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -280,7 +286,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -400,7 +408,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -595,7 +605,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -637,7 +649,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -736,7 +750,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -819,7 +835,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -942,7 +960,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -1163,7 +1183,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -1351,7 +1373,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -1505,7 +1529,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -1610,7 +1636,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -1716,7 +1744,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -1827,7 +1857,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -1958,7 +1990,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -2106,7 +2140,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -2238,7 +2274,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -2473,7 +2511,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -2605,7 +2645,9 @@
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}
@@ -2797,12 +2839,376 @@
       }
     },
     {
+      "name": "enable_gate_sent",
+      "desc": "打開:403 RELAY_ENABLE_VERIFY sent:true → 不開、不輪詢;碼對 200 才開",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {
+            "send_code": true
+          },
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "RELAY_ENABLE_VERIFY",
+              "sent": true,
+              "reason": null
+            }
+          }
+        },
+        {
+          "endpoint": "enable",
+          "body": {
+            "enable_code": "123456",
+            "lang": "zh"
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "server_time": 1
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "enable_gate_cooldown",
+      "desc": "打開:reason cooldown → 進輸入碼,沒開",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {
+            "send_code": true
+          },
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "RELAY_ENABLE_VERIFY",
+              "sent": false,
+              "reason": "cooldown"
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "enable_gate_limited",
+      "desc": "打開:reason limited",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {
+            "send_code": true
+          },
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "RELAY_ENABLE_VERIFY",
+              "sent": false,
+              "reason": "limited"
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "enable_gate_send_failed",
+      "desc": "打開:reason send_failed",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {
+            "send_code": true
+          },
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "RELAY_ENABLE_VERIFY",
+              "sent": false,
+              "reason": "send_failed"
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "enable_gate_noemail",
+      "desc": "打開:帳號沒有 email(sent false、reason null)",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {
+            "send_code": true
+          },
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "RELAY_ENABLE_VERIFY",
+              "sent": false,
+              "reason": null
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "enable_code_invalid",
+      "desc": "打開:碼錯留在這一步",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {
+            "send_code": true
+          },
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "RELAY_ENABLE_VERIFY",
+              "sent": true,
+              "reason": null
+            }
+          }
+        },
+        {
+          "endpoint": "enable",
+          "body": {
+            "enable_code": "000000"
+          },
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "RELAY_ENABLE_CODE_INVALID"
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "enable_code_expired",
+      "desc": "打開:過期",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {
+            "send_code": true
+          },
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "RELAY_ENABLE_VERIFY",
+              "sent": true,
+              "reason": null
+            }
+          }
+        },
+        {
+          "endpoint": "enable",
+          "body": {
+            "enable_code": "000000"
+          },
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "RELAY_ENABLE_CODE_EXPIRED"
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "enable_locked",
+      "desc": "打開:429 VERIFY_LOCKED",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {
+            "send_code": true
+          },
+          "response": {
+            "status": 429,
+            "body": {
+              "error_code": "VERIFY_LOCKED"
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "enable_rate_limited",
+      "desc": "打開:429 ERR429 走 FAILED",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {
+            "send_code": true
+          },
+          "response": {
+            "status": 429,
+            "body": {
+              "error_code": "ERR429"
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "enable_audit_unavailable",
+      "desc": "打開:碼對但稽核寫不進(503 AUDIT_UNAVAILABLE)走 FAILED",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {
+            "send_code": true
+          },
+          "response": {
+            "status": 503,
+            "body": {
+              "error_code": "AUDIT_UNAVAILABLE"
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "enable_state_unavailable",
+      "desc": "打開:503 RELAY_STATE_UNAVAILABLE 可重試,不進輸入碼",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {
+            "send_code": true
+          },
+          "response": {
+            "status": 503,
+            "body": {
+              "error_code": "RELAY_STATE_UNAVAILABLE"
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "enable_chat_off",
+      "desc": "打開:403 APP_CHAT_OFF 收起設定區",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {
+            "send_code": true
+          },
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "APP_CHAT_OFF"
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "reenable_verify",
+      "desc": "本機開著、api 沒記著:自動重打收到 not_requested → 不寄信、記 needVerify、不再打",
+      "requests": [
+        {
+          "endpoint": "enable",
+          "body": {
+            "send_code": true
+          },
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        },
+        {
+          "endpoint": "enable",
+          "body": {},
+          "response": {
+            "status": 403,
+            "body": {
+              "error_code": "RELAY_ENABLE_VERIFY",
+              "sent": false,
+              "reason": "not_requested"
+            }
+          }
+        },
+        {
+          "endpoint": "poll",
+          "response": {
+            "status": 0,
+            "body": null
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
       "name": "D_started_lost",
       "desc": "探針 D:started 一直沒回應 → 重送到期限 → start_aborted＋message_failed not_run(不知道 api 有沒有記到開跑,api 認其中一個),不跑",
       "requests": [
         {
           "endpoint": "enable",
-          "body": {},
+          "body": {
+            "send_code": true
+          },
           "response": {
             "status": 200,
             "body": {}

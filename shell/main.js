@@ -607,7 +607,7 @@ function relay() {
   return _relay;
 }
 // 給畫面的只有開關、同步進度與數字,沒有憑證、沒有對話內容
-const relayStateOut = (st) => ({ visible: st.visible, on: st.on, pending: st.pending, signedIn: st.signedIn, sync: st.sync, mobileTurns: st.mobileTurns, queued: st.queued, phoneSids: st.phoneSids, pairSeq: st.pairSeq });
+const relayStateOut = (st) => ({ visible: st.visible, on: st.on, pending: st.pending, signedIn: st.signedIn, needVerify: st.needVerify, sync: st.sync, mobileTurns: st.mobileTurns, queued: st.queued, phoneSids: st.phoneSids, pairSeq: st.pairSeq });
 /* 手機那一輪用電腦當下存的引擎與型號(手機 MVP 不給選):照設定頁選擇器存的那一組;沒有就交給 turnModelArgs 的預設 */
 function relayTurnArgs() {
   const kind = (loadConnection() || {}).kind, slot = (loadModelPrefs() || {})[kind] || {};
@@ -4138,7 +4138,7 @@ app.whenReady().then(() => {
   handle("stop-turn", (_e, sid) => stopTurn(typeof sid === "string" ? sid : null), false);
   handle("relay-state", () => relayStateOut(relay().state()), null);
   // 打開前畫面已經跳過確認框(§4.2);這裡只收布林
-  handle("relay-set", async (_e, on) => (typeof on === "boolean" ? { ...(await relay().setOn(on)), state: relayStateOut(relay().state()) } : { ok: false }), { ok: false });
+  handle("relay-set", async (_e, on, o) => (typeof on === "boolean" ? { ...(await relay().setOn(on, { code: o && typeof o.code === "string" ? o.code : null, lang: o && o.lang })), state: relayStateOut(relay().state()) } : { ok: false }), { ok: false });
   handle("relay-retry", async () => { await relay().retry(); return relayStateOut(relay().state()); }, null);
   // 設定區:配對碼、授權手機清單、勾選、撤銷、最近操作。回的是 relay.js 篩過的欄位,沒有憑證
   handle("relay-pair-code", () => relay().pairCode(), { ok: false });

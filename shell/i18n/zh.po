@@ -10124,6 +10124,18 @@ msgstr "伺服器上的對話還沒刪掉，連上網路後會自動刪。"
 msgid "ph.err"
 msgstr "沒有開成，請檢查網路後再試。"
 
+msgid "ph.kc.why"
+msgstr "打開手機對話前，先確認是你本人。"
+
+msgid "ph.kc.failed"
+msgstr "驗證碼寄不出去，手機對話沒有打開。請稍後再試。"
+
+msgid "ph.verify"
+msgstr "這台電腦要重新驗證，手機才連得上。"
+
+msgid "ph.verifyBtn"
+msgstr "驗證"
+
 msgid "ph.group"
 msgstr "允許連這台的手機"
 

@@ -11,6 +11,7 @@
  *   - 兩顆憑證只在主行程:不寫檔、不 log;第 1 條遮蔽要比對的值也只在記憶體。
  *   - 平台總開關不是開(/relay/enabled、poll 的 enabled:false reason off、任何 403 APP_CHAT_OFF):不收、不傳、設定頁不出這一區。
  *     api 說這台沒開(reason not_enabled、409 RELAY_NOT_ENABLED)而本機開著:重打 /relay/enable;401／409 時手機的回合一律停、排隊清空。
+ *   - 從關打開要過 email 驗證碼(setOn 帶碼;契約 api openclaw/app_auth.relay_enable_gate)。自動重打不寄信,被關卡擋下記 needVerify,等用戶到設定頁驗。
  *   - 那一句還沒開跑就不會跑的(not_run／desktop_restarting／bad_session／bad_message)送 message_failed;開跑之後的失敗走回合的 error。
  *
  * 不 require electron;HTTP、時鐘、回合表、session.db 都由呼叫端注入(tests/check_shell_relay.js 用假的)。
@@ -20,10 +21,11 @@ const fs = require("fs");
 const path = require("path");
 const { redact } = require("./redact");
 const { deviceOf } = require("./mobileview");
+const { KEY_CHANGE_CODE_RE } = require("./cloudcmd");
 
 const EP = {
   enabled: "/oauth/desktop/relay/enabled",   // → { enabled, on }
-  enable: "/oauth/desktop/relay/enable",
+  enable: "/oauth/desktop/relay/enable",     // + send_code: true | enable_code, lang → 200 | 403／429 關卡(GATE_403、VERIFY_LOCKED)
   disable: "/oauth/desktop/relay/disable",   // 同時刪伺服器上這台的對話(§4.4)
   poll: "/oauth/desktop/relay/poll",         // + ver, restarting → { enabled, messages, controls, server_time } | { enabled:false, reason }
   ack: "/oauth/desktop/relay/ack",           // + message_ids → { acked, rejected }
@@ -37,7 +39,9 @@ const EP = {
   revoke: "/oauth/desktop/relay/phones/revoke", // + device_id, lang
   actions: "/oauth/desktop/relay/phones/actions",   // + device_id? → { actions: [{ ts, action, device, ip }] }
 };
-const OFF_CODE = "APP_CHAT_OFF", NOT_ENABLED_CODE = "RELAY_NOT_ENABLED";
+const OFF_CODE = "APP_CHAT_OFF", NOT_ENABLED_CODE = "RELAY_NOT_ENABLED", VERIFY_CODE = "RELAY_ENABLE_VERIFY";
+const GATE_403 = [VERIFY_CODE, "RELAY_ENABLE_CODE_INVALID", "RELAY_ENABLE_CODE_EXPIRED"];
+const GATE_REASONS = ["cooldown", "limited", "send_failed"];
 const POLL_HOLD_MS = 25000, POLL_TIMEOUT_MS = 40000, REQUEST_TIMEOUT_MS = 10000, QUIT_TIMEOUT_MS = 3000;
 const FLAG_TICK_MS = 2 * 60 * 1000;
 const BATCH_MS = 300;
@@ -76,6 +80,8 @@ function clipBytes(s, maxBytes) {
   for (const ch of s) { const b = Buffer.byteLength(ch, "utf8"); if (n + b > maxBytes - 3) break; out += ch; n += b; }
   return out + "…";
 }
+/* 關卡的明細(同 cloudcmd.keyGate,這道關沒有 until);not_requested 只有自動重打會收到,畫面不用分 */
+const gateOf = (b) => ({ sent: b.sent === true, reason: GATE_REASONS.includes(b.reason) ? b.reason : null });
 const toMs = (sec) => Math.round(Number(sec) * 1000);   // session.db 的時間是秒(REAL);api 收 ms 整數
 
 /* opts:{ dir(userData), stateDir(BASE/state), apiBase, post(url, body, extra), getCreds(), installId(), ver, now?, log?,
@@ -91,6 +97,7 @@ function createRelay(opts) {
   const clock = opts.now || (() => Date.now());
   const log = opts.log || (() => {});
   let st = null, flag = false, polling = false, pollGen = 0, flagTimer = null, stopped = false, quitting = false, reenableAt = 0, reenabling = null;
+  let needVerify = false;   // 本機開著、api 要驗碼才肯再開:不重打,設定頁出一行
   let seenToken = null, lastToken = null;   // 上一顆帳號 token(輪替後幾秒內的輸出可能還帶著它):第 1 條也比對
   const queue = new Map();   // sid → [{ message_id, content }]:同一條在跑時排在後面
   const active = new Map();  // sid → { message_id, ended, idBefore }:正在跑的手機那一輪
@@ -152,10 +159,16 @@ function createRelay(opts) {
   const track = (n) => { try { if (opts.track) opts.track(n); } catch (_) { /* 追蹤不擋 */ } };
   /* api 那邊這台沒記成開著(換了 token、伺服器清過)而本機開著:補打 enable,30 秒內只打一次 */
   function reenable() {
-    if (!load().on || load().pendingDisable) return Promise.resolve(false);
+    if (!load().on || load().pendingDisable || needVerify) return Promise.resolve(false);
     if (clock() - reenableAt < REENABLE_GAP_MS) return reenabling || Promise.resolve(false);   // 30 秒內同一次的結果
     reenableAt = clock();
-    reenabling = call(EP.enable).then((r) => (r.status === 200 ? true : (log("relay: re-enable " + (r.status || "offline")), false)));
+    // 不帶 send_code:這條路沒人在看,寄了就是每 30 秒一封信
+    reenabling = call(EP.enable).then((r) => {
+      if (r.status === 200) return true;
+      if (r.status === 403 && r.body && r.body.error_code === VERIFY_CODE) { needVerify = true; changed(); }
+      else log("relay: re-enable " + (r.status || "offline"));
+      return false;
+    });
     return reenabling;
   }
 
@@ -164,6 +177,7 @@ function createRelay(opts) {
     if (r.noCreds) { setFlag(false); return false; }
     if (r.status !== 200 || !r.body) { setFlag(false); return false; }
     setFlag(r.body.enabled === true);
+    if (r.body.on === true && needVerify) { needVerify = false; changed(); }
     if (flag && r.body.on === false) await reenable();
     return flag;
   }
@@ -617,27 +631,34 @@ function createRelay(opts) {
   }
 
   /* ── 開關 ─────────────────────────────────────────── */
-  /* 確認框按〔開啟〕之後才叫。api 記下這台開著才會收到訊息;記不成就維持關 */
-  async function setOn(on) {
+  /* 確認框按〔開啟〕之後才叫。api 記下這台開著才會收到訊息;記不成就維持關。
+     o.code = 用戶輸入的驗證碼;不帶就請 api 寄一組。o.lang = 信件語言 */
+  async function setOn(on, o) {
     const s = load();
     if (on) {
       if (!flag || !creds()) return { ok: false, code: flag ? "SIGNED_OUT" : "OFF" };
+      const code = o && o.code, lang = o && ["zh", "cn", "en"].includes(o.lang) ? o.lang : null;
+      if (code && !KEY_CHANGE_CODE_RE.test(code)) return { ok: false, code: "FAILED" };
       if (s.pendingDisable) {
         const d = await call(EP.disable);
         if (d.status !== 200 && d.status !== 401) return { ok: false, code: "OFFLINE" };
         s.pendingDisable = false; save();
       }
-      const r = await call(EP.enable);
+      const r = await call(EP.enable, { ...(code ? { enable_code: code } : { send_code: true }), ...(lang ? { lang } : {}) });
+      const ec = r.body && r.body.error_code;
+      if ((r.status === 403 && GATE_403.includes(ec)) || (r.status === 429 && ec === "VERIFY_LOCKED")) return { ok: false, code: ec, gate: gateOf(r.body) };
       if (r.status !== 200) return { ok: false, code: r.status ? "FAILED" : "OFFLINE" };
+      const was = s.on;
       s.on = true; s.synced = false; save(); outboxWrite([]); tombstones.clear();
-      track("phone_chat_on");
+      needVerify = false;
+      if (!was) track("phone_chat_on");
       stopped = false; startPoll(); syncAll();
       changed();
       return { ok: true };
     }
     if (!s.on && !s.pendingDisable) return { ok: true };
     const wasOn = s.on;
-    s.on = false; stopPoll();
+    s.on = false; needVerify = false; stopPoll();
     dropMobile();
     await withTimeout(flush(), QUIT_TIMEOUT_MS);
     const r = await call(EP.disable);
@@ -665,7 +686,7 @@ function createRelay(opts) {
     await withTimeout(flush(), QUIT_TIMEOUT_MS);
     await call(EP.disable, null, QUIT_TIMEOUT_MS);
     s.on = false; s.pendingDisable = false; s.synced = false; save(); outboxWrite([]);
-    sync.lastIds = null; seenToken = null; lastToken = null; changed();
+    needVerify = false; sync.lastIds = null; seenToken = null; lastToken = null; changed();
   }
   /* app 結束:排隊的那幾句回 not_run(最多等 3 秒),之後不再收 */
   async function quit() {
@@ -740,7 +761,7 @@ const okBody = (r) => (r.status === 200 && r.body ? { ok: true, ...r.body } : { 
 
   function state() {
     const s = load();
-    return { visible: flag, on: s.on, pending: s.pendingDisable, signedIn: !!creds(),
+    return { visible: flag, on: s.on, pending: s.pendingDisable, signedIn: !!creds(), needVerify,
       sync: { running: sync.running, done: sync.done, total: sync.total, error: sync.error, synced: s.synced },
       mobileTurns: active.size, queued: [...queue.values()].reduce((n, q) => n + q.length, 0), phoneSids: phoneSids(), pairSeq };
   }

@@ -79,7 +79,7 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
   const names = ["phDate", "phFill", "phQr", "phRetryInto", "phActsBox", "phRow", "phPairPanel", "phGroup", "phStatus", "phBlock"];
   const consts = [lineOf(app, /const phShown = [^\n]*;/), lineOf(app, /const phName = [^\n]*;/), lineOf(app, /const PH_ACT = [^\n]*;/)];
   const env = { document: doc, t, qrcode: require(path.join(SHELL, "node_modules", "qrcode-generator")), $: () => null, setCat() {}, srSay() {},
-    phToggle() {}, phPairClick() {}, phGrant() {}, phRevoke() {}, phActs() {}, phActsLoad() {}, phPhonesReload() {}, phRetry() {}, phPair() {} };
+    phToggle() {}, phSet() {}, phPairClick() {}, phGrant() {}, phRevoke() {}, phActs() {}, phActsLoad() {}, phPhonesReload() {}, phRetry() {}, phPair() {} };
   const S = new Function("env", "with (env) { var PH, PH_ERR = '', PH_PHONES = null, PH_CODE = null, PH_ACTS = null, PH_MSG = '', PH_QUIET = false;\n" + consts.join("\n") + "\n" + names.map((n) => fnOf(app, n)).join("\n")
     + "\nreturn { set: (o) => { for (const k in o) eval(k + ' = o[k]'); }, " + names.join(", ") + " }; }")(env);
   const now = new Date(2026, 9, 31, 13, 5).getTime();
@@ -99,6 +99,8 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
   ok("關了、伺服器那份還沒刪成:槽裡只有待刪那一句", byId(S.phBlock(mk), "ph-status").textContent === "ph.pending");
   // 狀態槽:一次一句,開啟失敗 > 待刪 > 同步失敗 > 同步中
   const st = (ph, err, quiet) => { S.set({ PH: Object.assign({ visible: true, signedIn: true, on: true, pending: false }, ph), PH_ERR: err || "", PH_QUIET: !!quiet, PH_PHONES: { ok: true, max: 5, phones: [] } }); return S.phStatus(mk); };
+  const nv = st({ needVerify: true, sync: { error: true } }), nvErr = st({ needVerify: true }, "ph.err"), nvOff = st({ on: false, needVerify: true });
+  ok("needVerify:開關下那一句接〔驗證〕,排在開啟失敗之後、同步失敗之前;關著不出", nv.textContent === "ph.verify ph.verifyBtn" && !!byId(nv, "ph-verify") && nvErr.textContent === "ph.err" && nvOff.hidden === true, [nv.textContent, nvErr.textContent]);
   const s1 = st({ pending: true, sync: { error: true, total: 9, done: 2 } }, "ph.err"), s2 = st({ pending: true, sync: { error: true } }), s3 = st({ sync: { error: true, total: 48, done: 12 } }), s4 = st({ sync: { error: true } }), s5 = st({ sync: { running: true, total: 48, done: 12 } }), s6 = st({ sync: { running: true, total: 48, done: 13 } }, "", true), s7 = st({ sync: { synced: true } });
   ok("狀態槽一次一句(role=status):開啟失敗 > 待刪 > 同步失敗(有總數／沒總數,接〔重試〕)> 同步中 > 空;同步完成不留字", s1.textContent === "ph.err" && s2.textContent === "ph.pending"
     && s3.textContent === 'ph.syncFail{"n":12,"m":48} ph.retry' && byId(s3, "ph-retry") && s4.textContent === "ph.syncFail0 ph.retry" && s5.textContent === 'ph.syncing{"n":12,"m":48}' && s7.hidden === true && s1.getAttribute("role") === "status");
@@ -160,6 +162,8 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
     "ph.cf.1": ["手機送的話會在這台電腦上執行。agent 能做的跟你在電腦前一樣，包括下單。", "Messages from your phone run on this computer. The agent can do anything it can here, including placing orders."],
     "ph.cf.3": ["舊對話的附件和圖片不上傳，策略程式也不上傳。手機那一輪回覆裡的圖片會上傳。關掉就刪除伺服器上那份。", "Attachments and images in older chats stay here, and so does strategy code. Images in replies to your phone are uploaded. Turning this off deletes the copy on Blave."],
     "ph.off.live": ["手機送來、正在跑的回覆會停下。", "The reply your phone started will stop."], "ph.off.del": ["伺服器上的對話會刪除，這台電腦上的不受影響。", "Chats on Blave are deleted. Chats on this computer stay."],
+    "ph.kc.why": ["打開手機對話前，先確認是你本人。", "Confirm it's you before turning on phone chat."], "ph.kc.failed": ["驗證碼寄不出去，手機對話沒有打開。請稍後再試。", "The code couldn't be sent, so phone chat stayed off. Try again later."],
+    "ph.verify": ["這台電腦要重新驗證，手機才連得上。", "Verify again so your phone can reach this computer."], "ph.verifyBtn": ["驗證", "Verify"],
     "ph.group": ["允許連這台的手機", "Phones allowed on this computer"], "ph.pairHow": ["用 App 的 Agent 分頁掃描，或輸入這組碼。", "Scan it in the app's Agent tab, or enter the code."],
     "ph.pairMax": ["已有 5 支手機，先撤銷一支才能再配對。", "You have 5 phones. Revoke one to pair another."], "ph.revoke.title": ["撤銷 {name}？", "Revoke {name}?"],
     "ph.revoke.body": ["這支手機不能再跟 agent 對話，要再用得重新配對。", "This phone can no longer chat with the agent. Pair it again to use it."],
@@ -168,5 +172,45 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
   const bad = Object.entries(want).filter(([k, [z, e]]) => po(0, k) !== z || po(1, k) !== e).map(([k]) => k);
   ok("手機對話的字照 spec 逐字(zh / en)", bad.length === 0, bad);
 }
-console.log(red ? `\n${red} 紅` : "\nALL PASS");
-process.exit(red ? 1 : 0);
+// ── 4. 打開要驗證碼:畫面流程(phSet 真的跑,假 relaySet) ──
+(async () => {
+  const tr = fs.readFileSync(path.join(R, "trade.js"), "utf8");
+  const cst = (src, n) => lineOf(src, new RegExp("^const " + n + " = [^\\n]*;", "m"));
+  const run = async (answers, steps) => {
+    const calls = [], boxes = [], closed = [], order = answers.slice(), delOk = { disabled: false };
+    const env = { document: doc, t, LANG: "en", srSay() {}, trEl: (tag, cls, text) => mk(tag, cls, text), trStamp: (x) => x, connectPaint() {}, phPhonesReload: async () => {}, phPair: async () => {},
+      window: { blave: { relaySet: async (on, o) => { calls.push([on, o]); const r = order.shift(); return r === undefined ? { ok: true, state: { on: true } } : r; } } },
+      $: (id) => (id === "del-ok" ? delOk : null), PH_PHONES: null };
+    env.confirmBox = (o) => { boxes.push(o); };
+    env.delClose = (x) => { closed.push(x); };
+    const S = new Function("env", "with (env) { var PH = {}, PH_BUSY = false, PH_ERR = '', PH_KC = null, PH_CODE = null, PH_ACTS = null, PH_MSG = '', PH_EXP = null, delCtx = null, PH_PHONES = null;\n"
+      + ["KC_GATE", "KC_REASON", "KC_TEXT"].map((n) => cst(tr, n)).join("\n") + "\n" + lineOf(tr, /const kcReady = [^\n]*;/) + "\n" + lineOf(tr, /const kcSay = [^\n]*;/) + "\n" + ["kcView", "kcStatusText", "kcStep"].map((n) => fnOf(tr, n)).join("\n") + "\n"
+      + lineOf(app, /const phKcDrop = [^\n]*;/) + "\n" + [fnOf(app, "phKcBox"), lineOf(app, /^function phKcSync\(\) [^\n]*/m), lineOf(app, /^function phKcGo\(\) [^\n]*/m), fnOf(app, "phSet"), lineOf(app, /^function phRepaint\(\) [^\n]*/m)].join("\n")
+      + "\nreturn { phSet, phKcGo, kc: () => PH_KC, err: () => PH_ERR, drop: () => phKcDrop(), setCode: (c) => { PH_KC.code = c; } }; }")(env);
+    await steps(S, boxes, calls);
+    return { calls, boxes, closed, S };
+  };
+  const V = (o) => ({ ok: false, code: "RELAY_ENABLE_VERIFY", gate: { sent: true, reason: null, ...o }, state: { on: false } });
+  const a = await run([V()], async (S) => { await S.phSet(true, null, null); });
+  ok("開:第一次不帶碼、帶語言;關卡擋下 → 開驗證碼那一步,主鈕「確認」、碼沒滿不能按、按了不關框", a.calls.length === 1 && a.calls[0][0] === true && !a.calls[0][1].code && a.calls[0][1].lang === "en" && a.boxes.length === 1 && a.boxes[0].ok === "cx.kc.ok" && a.boxes[0].okDisabled === true && a.boxes[0].stay === true);
+  const why = walk(a.boxes[0].extra).find((x) => x.classSet.has("cx-manual-note"));
+  ok("驗證碼那一步的原因句講手機對話,不講金鑰;寄失敗也是", why.textContent === "ph.kc.why");
+  const f = await run([V({ sent: false, reason: "send_failed" })], async (S) => { await S.phSet(true, null, null); });
+  ok("寄不出去:字用 ph.kc.failed", f.S.kc().view.status === "phFailed" && walk(f.boxes[0].extra).some((x) => x.textContent === "ph.kc.failed"));
+  const b = await run([V(), { ok: false, code: "RELAY_ENABLE_CODE_INVALID", gate: { sent: false, reason: null } }], async (S) => { await S.phSet(true, null, null); S.setCode("000000"); S.phKcGo(); await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r)); });
+  ok("碼錯:帶碼送、留在這一步、紅字、寄送狀態那句沿用", b.calls[1][1].code === "000000" && b.S.kc().view.err === "invalid" && b.S.kc().view.status === "sent" && b.boxes.length === 2 && b.closed.length === 0);
+  const c = await run([V(), { ok: false, code: "RELAY_ENABLE_CODE_EXPIRED", gate: {} }, V()], async (S) => { await S.phSet(true, null, null); S.setCode("111111"); S.phKcGo(); await new Promise((r) => setTimeout(r, 5)); });
+  ok("過期:自動再要一次碼(第二次不帶碼),寄出講 resent", c.calls.length === 3 && !c.calls[2][1].code && c.S.kc().view.status === "resent", c.calls);
+  const d = await run([V(), { ok: true, state: { on: true } }], async (S) => { await S.phSet(true, null, null); S.setCode("123456"); S.phKcGo(); await new Promise((r) => setTimeout(r, 5)); });
+  ok("碼對:收框、碼丟掉", d.S.kc() === null && d.closed.length === 1);
+  const e = await run([{ ok: false, code: "FAILED", state: { on: false } }], async (S) => { await S.phSet(true, null, null); });
+  ok("503 這類:不進驗證碼那一步,出 ph.err", e.boxes.length === 0 && e.S.err() === "ph.err");
+  const g = await run([V(), { ok: false, code: "RELAY_ENABLE_CODE_INVALID", gate: {} }], async (S) => { await S.phSet(true, null, null); S.setCode("000000"); S.phKcGo(); S.drop(); await new Promise((r) => setTimeout(r, 5)); });
+  ok("送碼途中按取消:沒過的結果不上畫面", g.boxes.length === 1 && g.S.kc() === null);
+  const lk = await run([{ ok: false, code: "VERIFY_LOCKED", gate: {} }], async (S) => { await S.phSet(true, null, null); });
+  ok("鎖住:不能輸入、焦點不給欄位", lk.S.kc().view.dead === true && lk.boxes[0].focus === null);
+  const off = await run([{ ok: true, state: { on: false } }], async (S) => { await S.phSet(false); });
+  ok("關:不經驗證碼", off.boxes.length === 0 && off.calls[0][0] === false);
+  console.log(red ? `\n${red} 紅` : "\nALL PASS");
+  process.exit(red ? 1 : 0);
+})().catch((e) => { console.error(e); process.exit(1); });

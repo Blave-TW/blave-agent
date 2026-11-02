@@ -11,6 +11,7 @@
 //   7. 關掉刪伺服器那份、沒網路記待刪;poll reason off → 停、藏起來;reason not_enabled／409 → 重打 enable
 //   8. 狀態檔只有布林;給畫面的沒有憑證;圖只送手機那一輪;手機清單／勾選／撤銷／最近操作
 //   9. main.js 接線
+//  10. 打開過 email 驗證碼(mobile-chat-shell-enable-verify):setOn 寄碼／帶碼、碼對才寫 on;自動重打不寄信、被關卡擋下記 needVerify 不再打;舊 api
 // 跑法:node tests/check_shell_relay.js
 const fs = require("fs"), os = require("os"), path = require("path");
 const SHELL = path.join(__dirname, "..", "shell");
@@ -474,6 +475,71 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     const back = Date.now(); down = false; await wait(4000);
     ok("8 直送 started 判 lost:退避歸零,補送的 message_failed 很快送到", mfAt && mfAt - back < 2000, mfAt ? mfAt - back : null);
     await m.end(); }
+
+  // ── 10 ──
+  const V403 = (extra) => ({ status: 403, body: { error_code: "RELAY_ENABLE_VERIFY", ...extra } });
+  { const m = rig(); await m.r.tick();
+    const r = await m.r.setOn(true, { lang: "en" }); await wait(20);
+    const b = m.of(RL.EP.enable)[0];
+    ok("10 已開著(api 200):不進輸入碼;第一次請求帶 send_code、lang,沒有 enable_code", r.ok === true && m.r.isOn() === true && b.send_code === true && b.lang === "en" && !("enable_code" in b));
+    await m.end(); }
+  { const m = rig(); await m.r.tick();
+    const answers = [V403({ sent: true, reason: null }), { status: 403, body: { error_code: "RELAY_ENABLE_CODE_INVALID" } }];
+    m.resp[RL.EP.enable] = (b) => (answers.length ? answers.shift() : (b.enable_code === "123456" ? { status: 200, body: { enabled: true } } : { status: 500, body: {} }));
+    const r1 = await m.r.setOn(true, { lang: "zh" });
+    ok("10 寄碼:回關卡與明細,本機維持關、不輪詢", r1.ok === false && r1.code === "RELAY_ENABLE_VERIFY" && r1.gate.sent === true && r1.gate.reason === null && m.r.isOn() === false && m.of(RL.EP.poll).length === 0);
+    const r2 = await m.r.setOn(true, { code: "000000", lang: "zh" });
+    const b2 = m.of(RL.EP.enable)[1];
+    ok("10 碼錯:帶 enable_code、不帶 send_code,留在這一步,本機維持關", r2.ok === false && r2.code === "RELAY_ENABLE_CODE_INVALID" && b2.enable_code === "000000" && !("send_code" in b2) && m.r.isOn() === false);
+    const before = fs.existsSync(path.join(m.dir, "relay.json"));
+    const r3 = await m.r.setOn(true, { code: "123456", lang: "zh" }); await wait(20);
+    ok("10 碼對才寫 on(落檔)、開輪詢、記 phone_chat_on", before === false && r3.ok === true && JSON.parse(fs.readFileSync(path.join(m.dir, "relay.json"), "utf8")).on === true && m.of(RL.EP.poll).length >= 1 && m.tracked.includes("phone_chat_on"));
+    await m.end(); }
+  { const m = rig(); await m.r.tick(); const n0 = m.calls.length;
+    const r = await m.r.setOn(true, { code: "12a456" });
+    ok("10 碼不是 6 位數字:不送", r.ok === false && m.calls.length === n0);
+    await m.end(); }
+  { const gate = async (resp) => { const m = rig({ resp: { [RL.EP.enable]: resp } }); await m.r.tick(); const r = await m.r.setOn(true); await m.end(); return r; };
+    const ex = await gate({ status: 403, body: { error_code: "RELAY_ENABLE_CODE_EXPIRED" } }), lock = await gate({ status: 429, body: { error_code: "VERIFY_LOCKED" } });
+    const lim = await gate({ status: 429, body: { error_code: "ERR429" } }), un = await gate({ status: 503, body: { error_code: "RELAY_STATE_UNAVAILABLE" } }), aud = await gate({ status: 503, body: { error_code: "AUDIT_UNAVAILABLE" } });
+    const odd = await gate(V403({ sent: false, reason: "whatever" })), net = await gate({ status: 0, body: null });
+    ok("10 其他回應:過期、鎖住帶關卡;限流、讀不到紀錄、稽核寫不進走 FAILED;沒網路 OFFLINE;不認得的 reason 當 null", ex.code === "RELAY_ENABLE_CODE_EXPIRED" && !!ex.gate && lock.code === "VERIFY_LOCKED" && !!lock.gate
+      && lim.code === "FAILED" && un.code === "FAILED" && !un.gate && aud.code === "FAILED" && odd.gate.reason === null && net.code === "OFFLINE", [ex, lock, lim, un, aud, odd, net]); }
+  { let T = Date.now(); const m = rig({ now: () => T }); await m.r.tick(); await m.r.setOn(true); await wait(20); m.setServerOn(false);
+    m.resp[RL.EP.enable] = V403({ sent: false, reason: "not_requested" });
+    const en0 = m.of(RL.EP.enable).length; await m.r.tick();
+    const b = m.of(RL.EP.enable)[en0];
+    ok("10 自動重打:請求沒有 send_code;收到 RELAY_ENABLE_VERIFY 記 needVerify,本機開關不動,畫面收得到", !!b && !("send_code" in b) && !("enable_code" in b) && m.r.state().needVerify === true && m.r.isOn() === true && m.changes.at(-1).needVerify === true);
+    T += 60000; await m.r.tick();
+    ok("10 needVerify 之後不再打 enable", m.of(RL.EP.enable).length === en0 + 1);
+    m.setServerOn(true); await m.r.tick();
+    ok("10 /relay/enabled 回 on:true 清掉 needVerify", m.r.state().needVerify === false);
+    await m.end(); }
+  { const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20); m.setServerOn(false);
+    m.resp[RL.EP.enable] = V403({ sent: false, reason: "not_requested" }); await m.r.tick();
+    m.resp[RL.EP.enable] = { status: 200, body: { enabled: true } };
+    const on0 = m.tracked.filter((x) => x === "phone_chat_on").length;
+    const r = await m.r.setOn(true, { code: "123456" });
+    ok("10 重新驗證過:清 needVerify,不再記一次 phone_chat_on", r.ok && m.r.state().needVerify === false && m.tracked.filter((x) => x === "phone_chat_on").length === on0);
+    await m.end(); }
+  for (const how of ["off", "signOut"]) {
+    const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20); m.setServerOn(false);
+    m.resp[RL.EP.enable] = V403({ sent: false, reason: "not_requested" }); await m.r.tick();
+    const was = m.r.state().needVerify;
+    if (how === "off") await m.r.setOn(false); else await m.r.signOut();
+    ok("10 " + how + " 清 needVerify", was === true && m.r.state().needVerify === false);
+    await m.end();
+  }
+  { const m = rig(); await m.r.tick(); await m.r.setOn(true); await wait(20); m.setServerOn(false);
+    m.resp[RL.EP.enable] = { status: 503, body: { error_code: "RELAY_STATE_UNAVAILABLE" } }; await m.r.tick();
+    ok("10 自動重打 503 RELAY_STATE_UNAVAILABLE:不設 needVerify,本機開關不動", m.r.state().needVerify === false && m.r.isOn() === true);
+    await m.end(); }
+  { const m = rig({ resp: { [RL.EP.enabled]: { status: 404, body: null } } }); await m.r.tick();
+    const r = await m.r.setOn(true);
+    ok("10 api 還沒上這條路由(/relay/enabled 404):設定區不出現、打不開、不輪詢", m.r.state().visible === false && r.ok === false && r.code === "OFF" && m.of(RL.EP.enable).length === 0 && m.of(RL.EP.poll).length === 0);
+    await m.end(); }
+  ok("10 接線:畫面收得到 needVerify;relay-set 只把字串的碼交給 setOn;preload 帶 code、lang", /needVerify: st\.needVerify/.test(main) && /setOn\(on, \{ code: o && typeof o\.code === "string" \? o\.code : null, lang: o && o\.lang \}\)/.test(main)
+    && /relaySet: \(on, o\) => ipcRenderer\.invoke\("relay-set", on === true, \{ code: o && o\.code, lang: o && o\.lang \}\)/.test(fs.readFileSync(path.join(SHELL, "preload.js"), "utf8")));
 
   // ── 9 ──
   const send = main.slice(main.indexOf("function sendTurn(sid, ch, payload) {"), main.indexOf("function turnNice("));

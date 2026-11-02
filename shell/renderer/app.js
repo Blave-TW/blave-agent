@@ -853,7 +853,7 @@ function mvBlock(mk) {
    PH = 主行程 relayStateOut,null = 讀不到 = 不出。兩個容器各一個訊息槽:開關下面的 #ph-status,手機那一組的 #ph-msg */
 // lucide smartphone(線寬由 CSS 給 1.75):分頁上的手機記號、+N 選單列、「來自手機」標籤共用這一顆
 const PHONE_IC = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/></svg>';
-let PH = null, PH_BUSY = false, PH_ERR = "", PH_PHONES = null, PH_CODE = null, PH_ACTS = null, PH_MSG = "", PH_QUIET = false, PH_EXP = null;
+let PH = null, PH_BUSY = false, PH_ERR = "", PH_KC = null, PH_PHONES = null, PH_CODE = null, PH_ACTS = null, PH_MSG = "", PH_QUIET = false, PH_EXP = null;
 async function phStateLoad() { try { PH = await window.blave.relayState(); } catch (_) { PH = null; } return PH; }
 async function phLoad() {
   await phStateLoad();
@@ -1010,18 +1010,46 @@ function phStatus(mk) {
   const s = PH.sync || {};
   if (PH_ERR) p.textContent = PH_ERR;
   else if (PH.pending) p.textContent = t("ph.pending");
+  else if (PH.on && PH.needVerify) phRetryInto(p, t("ph.verify"), (e) => phSet(true, null, e.currentTarget), "ph-verify", "ph.verifyBtn");
   else if (PH.on && s.error) phRetryInto(p, s.total ? t("ph.syncFail", { n: s.done || 0, m: s.total }) : t("ph.syncFail0"), phRetry, "ph-retry");
   else if (PH.on && s.running && s.total) { p.textContent = t("ph.syncing", { n: s.done || 0, m: s.total }); if (PH_QUIET) p.setAttribute("aria-live", "off"); }
   p.hidden = !p.textContent;
   return p;
 }
 const phLive = () => (PH.mobileTurns || 0) + (PH.queued || 0) > 0;
-async function phSet(on) {
+/* 打開要過 email 驗證碼(api relay_enable_gate):驗證碼那一步借確認框,字與狀態照改金鑰(trade.js kcView／kcStep),不送 key_verify——那個事件是改金鑰的。
+   碼只在 PH_KC.code,取消、通過就丟。框裡換內容不算取消 */
+const phKcDrop = () => { PH_KC = null; };
+function phKcBox(opener) {
+  const h = PH_KC;
+  if (delCtx && delCtx.onCancel === phKcDrop) delCtx.onCancel = null;
+  confirmBox({ title: t("cx.kc.title"), lines: [], extra: kcStep(h, PH_BUSY, phKcGo, phKcSync), ok: t("cx.kc.ok"), okDisabled: !kcReady(h), stay: true, opener, onOk: phKcGo, onCancel: phKcDrop, focus: h.view.dead ? null : "cx-kc" });
+}
+function phKcSync() { $("del-ok").disabled = PH_BUSY || !kcReady(PH_KC); const i = $("cx-kc"); if (i) i.readOnly = PH_BUSY; }
+function phKcGo() { if (PH_KC && kcReady(PH_KC) && !PH_BUSY) phSet(true, PH_KC, PH_KC.opener); }
+/* h = 驗證碼那一步(帶碼送)。碼過期 = 不帶碼再送一次,讓 api 寄新的一組(同 capSaveCreds) */
+async function phSet(on, h, opener) {
   if (PH_BUSY) return;
   PH_BUSY = true; PH_ERR = "";
-  let ok = false;
-  try { const r = await window.blave.relaySet(on); if (r && r.state) PH = r.state; ok = !!(r && r.ok); if (!ok) PH_ERR = t(r && r.code === "SIGNED_OUT" ? "mv.leadOut" : "ph.err"); }
-  catch (_) { PH_ERR = t("ph.err"); } finally { PH_BUSY = false; }
+  if (h) phKcSync();
+  let ok = false, r = null, expired = false;
+  try {
+    r = await window.blave.relaySet(on, { code: h ? h.code : null, lang: LANG });
+    if (r && r.code === "RELAY_ENABLE_CODE_EXPIRED") { expired = true; r = await window.blave.relaySet(on, { lang: LANG }); }
+    if (r && r.state) PH = r.state;
+    ok = !!(r && r.ok);
+    if (!ok) PH_ERR = t(r && r.code === "SIGNED_OUT" ? "mv.leadOut" : "ph.err");
+  } catch (_) { PH_ERR = t("ph.err"); } finally { PH_BUSY = false; }
+  if (on && r && KC_GATE[r.code]) {
+    PH_ERR = "";
+    if (h && PH_KC !== h) { phRepaint(); return; }   // 送碼途中按了取消:沒過的結果不上畫面
+    const view = kcView({ code: r.code, detail: r.gate, expired }, h && h.view);
+    if (view.status === "failed") view.status = "phFailed";   // cx.kc.failed 講的是金鑰
+    PH_KC = { code: "", view, why: "ph.kc.why", opener };
+    phKcBox(opener); srSay(kcSay(view));
+    return;
+  }
+  if (PH_KC) { PH_KC = null; delClose(false); }
   if (!on) { PH_CODE = null; PH_ACTS = null; PH_MSG = ""; clearTimeout(PH_EXP); }
   if (ok && on) {
     // 下一步一定是配對:帳號還沒有手機就直接要碼、打開面板;已經有(例如在網頁配過)就不自動開
@@ -1036,7 +1064,7 @@ function phToggle(e) {
   if (!PH.on) {
     // 三段一般內文,第一段當 lede(主墨):下單、上傳、刪除三件事只在這裡講一次
     const lead = document.createElement("p"); lead.className = "cf-lede"; lead.textContent = t("ph.cf.1");
-    confirmBox({ title: t("ph.cf.title"), lead, lines: [t("ph.cf.2"), t("ph.cf.3")], ok: t("ph.cf.ok"), opener, onOk: () => phSet(true) });
+    confirmBox({ title: t("ph.cf.title"), lead, lines: [t("ph.cf.2"), t("ph.cf.3")], ok: t("ph.cf.ok"), opener, onOk: () => phSet(true, null, opener) });
     return;
   }
   confirmBox({ title: t("ph.off.title"), lines: phLive() ? [t("ph.off.live"), t("ph.off.del")] : [t("ph.off.del")], ok: t("ph.off.ok"), opener, onOk: () => phSet(false) });
@@ -3064,7 +3092,8 @@ function cfSupersede() {
 }
 /* focus = 開框後焦點給哪個 id(預設取消;有輸入格的存金額框給輸入格並全選,canon › 確認 modal 的輸入格變體)。
    link = { label, onClick }:框腳最左邊的文字鈕(策略頁金額框的「到策略組合」);按了先關框(算取消)再做 */
-function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel, focus, link }) {
+// stay:按主鈕不關框(驗證碼那一步:送出後留在框裡等結果,由 onOk 自己收)
+function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel, focus, link, stay }) {
   cfSupersede();
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   $("del-title").textContent = title;
@@ -3112,7 +3141,7 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
   $("del-alt").classList.toggle("cf-alt-danger", !!(alt && alt.danger));
   $("del-modal").classList.toggle("has-alt", !!alt);
   $("del-modal").classList.toggle("has-choices", !!choices);
-  delCtx = { custom: true, onOk: choices ? (pre ? pre.onOk : null) : onOk, onAlt: alt && alt.onOk, onLink: link && link.onClick, opener, onCancel };
+  delCtx = { custom: true, stay, onOk: choices ? (pre ? pre.onOk : null) : onOk, onAlt: alt && alt.onOk, onLink: link && link.onClick, opener, onCancel };
   $("view-ws").inert = true; $("set-scrim").inert = true; $("lai-scrim").inert = true;   // 疊在「用你自己的 AI」上面時(回合中按〔使用〕):底下那層也鎖
   // single:只有一顆鈕(「知道了」那種:沒有要取消的事)。焦點給它;Esc / 框外 / ✕ 照舊關
   $("del-cancel").hidden = !!single;
@@ -3142,7 +3171,7 @@ $("del-scrim").addEventListener("keydown", (e) => trapTab(e, $("del-modal")));
 $("del-alt").addEventListener("click", () => { const go = delCtx && delCtx.onAlt; if (delCtx) delCtx.acted = true; delClose(false); if (go) go(); });
 $("del-link").addEventListener("click", () => { const go = delCtx && delCtx.onLink; delClose(false); if (go) go(); });
 $("del-ok").addEventListener("click", async () => {
-  if (delCtx && delCtx.custom) { const go = delCtx.onOk; if (!go) return; delCtx.acted = true; delClose(false); go(); return; }   // 沒選選項(choices):鈕本來就停用,這裡再守一次
+  if (delCtx && delCtx.custom) { const go = delCtx.onOk; if (!go) return; if (delCtx.stay) { go(); return; } delCtx.acted = true; delClose(false); go(); return; }   // 沒選選項(choices):鈕本來就停用,這裡再守一次
   const m = delCtx && delCtx.m; if (!m) return;
   if (!(await window.blave.deleteSession(m.id))) { delClose(false); const w = csWhy(); w.textContent = t("cs.delFail"); w.hidden = false; return; }   // 沒刪成(回覆中那條 / 寫不進):不能無聲關框
   { const T = CS.tabs.get(m.id); if (T) tabsClose(T, { deleted: true }); }

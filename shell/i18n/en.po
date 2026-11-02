@@ -10096,6 +10096,18 @@ msgstr "The chats on Blave aren't deleted yet. They will be once you're back onl
 msgid "ph.err"
 msgstr "Couldn't turn it on. Check your connection and try again."
 
+msgid "ph.kc.why"
+msgstr "Confirm it's you before turning on phone chat."
+
+msgid "ph.kc.failed"
+msgstr "The code couldn't be sent, so phone chat stayed off. Try again later."
+
+msgid "ph.verify"
+msgstr "Verify again so your phone can reach this computer."
+
+msgid "ph.verifyBtn"
+msgstr "Verify"
+
 msgid "ph.group"
 msgstr "Phones allowed on this computer"
 
