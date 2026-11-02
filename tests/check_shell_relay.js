@@ -11,6 +11,7 @@
 //   7. 關掉刪伺服器那份、沒網路記待刪;poll reason off → 停、藏起來;reason not_enabled／409 → 重打 enable
 //   8. 狀態檔只有布林;給畫面的沒有憑證;圖只送手機那一輪;手機清單／勾選／撤銷／最近操作
 //   9. main.js 接線
+//  11. 手機回合的 fault code(mobile-chat-shell-fault-code):主行程分類、暫扣、代碼放回合的 error;沒有視窗也一樣;跟 renderer 的 regex 同一份
 //  10. 打開過 email 驗證碼(mobile-chat-shell-enable-verify):setOn 寄碼／帶碼、碼對才寫 on;自動重打不寄信、被關卡擋下記 needVerify 不再打;舊 api
 // 跑法:node tests/check_shell_relay.js
 const fs = require("fs"), os = require("os"), path = require("path");
@@ -43,7 +44,7 @@ function rig(o = {}) {
     return { status: 200, body: { ok: true } };
   };
   const r = RL.createRelay({
-    dir, stateDir, apiBase: API, post, getCreds: () => ({ token: TOKEN, appSecret: SECRET }), installId: () => "11111111-2222-4333-8444-555555555555", ver: "0.1.37",
+    dir, stateDir, apiBase: API, post, getCreds: () => ({ token: TOKEN, appSecret: SECRET }), installId: () => "11111111-2222-4333-8444-555555555555", ver: "0.1.37", engineKind: () => o.kind,
     startTurn: async (payload, origin) => { started.push([payload, origin]); if (o.startResult) return o.startResult(payload); busy.add(payload.sessionId); return { started: true }; },
     stopTurn: (sid) => { stopped.push(sid); return true; }, turnBusy: (sid) => busy.has(sid), isRestarting: () => restarting,
     sessions: {
@@ -540,6 +541,71 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     await m.end(); }
   ok("10 接線:畫面收得到 needVerify;relay-set 只把字串的碼交給 setOn;preload 帶 code、lang", /needVerify: st\.needVerify/.test(main) && /setOn\(on, \{ code: o && typeof o\.code === "string" \? o\.code : null, lang: o && o\.lang \}\)/.test(main)
     && /relaySet: \(on, o\) => ipcRenderer\.invoke\("relay-set", on === true, \{ code: o && o\.code, lang: o && o\.lang \}\)/.test(fs.readFileSync(path.join(SHELL, "preload.js"), "utf8")));
+
+  // ── 11 ──
+  const SF = "desktop-f1000001";
+  const turn = async (kind, events, end, n) => {
+    const m = rig({ kind, sessions: { [SF]: { last: Date.now() / 1000, rows: [row(1, "user", "x")] } } }); await m.r.tick(); await m.r.setOn(true); await wait(20);
+    m.feed([msg(SF, "msg000fault" + (n || 1))]); await wait(40);
+    for (const e of events) m.r.onTurn(SF, "turn-event", e);
+    if (end) m.r.onTurn(SF, "turn-end", end);
+    await wait(RL.BATCH_MS + 60);
+    const out = m.chunks().filter((c) => !["started", "ping"].includes(c.type));
+    await m.end(); return out;
+  };
+  const types = (cs) => cs.map((c) => c.type).join();
+  const texts = (cs) => cs.filter((c) => c.type === "text").map((c) => c.text).join("");
+  const code = (cs) => (cs.find((c) => c.type === "error") || {}).code;
+  const ERR = { type: "error", message: "turn failed", code: "not_started" }, END = { code: 1, errTail: "" };
+  const T = (text) => ({ type: "text", text });
+  const cases = [
+    ["blave", "API Error: 402 insufficient credit", "no_credit"], ["blave", "Failed to authenticate. API Error: 401 bad", "auth_invalid"], ["blave", "API Error: 403 forbidden", "auth_invalid"],
+    ["claude", "API Error: 401 invalid", "engine_signed_out"], ["codex", "API Error: 403 denied", "engine_signed_out"], ["claude", "Not logged in · Please run /login", "engine_signed_out"],
+    ["claude", "You've hit your session limit · resets 1:50pm (Asia/Taipei)", "usage_limit"], ["claude", "You’ve hit your weekly limit · resets Oct 3, 9am", "usage_limit"],
+  ];
+  for (const [kind, text, want] of cases) {
+    const cs = await turn(kind, [T(text), ERR], END);
+    ok("11 " + kind + " 「" + text.slice(0, 30) + "」→ " + want + ":字不送、代碼換掉 error 的、沒有 done", code(cs) === want && !texts(cs) && types(cs) === "error" && cs[0].message === "turn failed", cs);
+  }
+  { const cs = await turn("blave", [T("API "), T("Err"), T("or: 40"), T("2 no credit"), ERR], END);
+    ok("11 錯誤字分幾段來:一樣扣住、一樣判到", code(cs) === "no_credit" && !texts(cs), cs); }
+  { const cs = await turn("blave", [T("API Error: 402 no credit"), { type: "done", awaiting: false }], { code: 0, errTail: "" });
+    ok("11 後面沒有 error(只有 done):補一則帶代碼的 error,不送 done,message 是遮過的字", types(cs) === "error" && code(cs) === "no_credit" && cs[0].message === "API Error: 402 no credit", cs); }
+  { const cs = await turn("blave", [T("API Error: 402 no credit")], END);
+    ok("11 後面什麼都沒有(行程掛掉):turn-end 補的 error 帶代碼", types(cs) === "error" && code(cs) === "no_credit", cs); }
+  { const cs = await turn("blave", [T("先查一下"), { type: "tool", tool: "Bash", status: "running" }, T("API Error: 402 x"), ERR], END);
+    ok("11 工具之後那段才出錯:前面的字照送,新的一段一樣判", texts(cs) === "先查一下" && code(cs) === "no_credit", cs); }
+  { const cs = await turn("blave", [T("BTC 現在"), T(" API Error: 402"), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 一般回覆:第一段就放行(內文提到 API Error 不算),done 照送", texts(cs) === "BTC 現在 API Error: 402" && types(cs) === "text,text,done", cs); }
+  { const cs = await turn("blave", [T("API Error: 500 upstream"), ERR], END);
+    ok("11 5xx 不在表上:字照送,error 的代碼不動", texts(cs) === "API Error: 500 upstream" && code(cs) === "not_started", cs); }
+  { const cs = await turn("claude", [T("You've hit your stop loss at 63000, so the position closed."), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 開頭像上限句的真回覆:放行", /stop loss/.test(texts(cs)) && types(cs).endsWith("done"), cs); }
+  { const cs = await turn("blave", [T("API Error: 402 means payment required, here is why"), { type: "tool", tool: "Bash", status: "running" }, T("done"), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 開頭一樣但後面接工具:不是錯誤,字放行、順序不亂", types(cs).startsWith("text,tool") && /payment required/.test(texts(cs)), cs); }
+  { const cs = await turn("blave", [T("API Error: 402 " + "x".repeat(5000)), T("y"), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 超過暫扣上限:放行、不判錯誤", /y$/.test(texts(cs)) && types(cs).endsWith("done"), cs.map((c) => c.type)); }
+  for (const [kind, text] of [["apikey", "API Error: 402 billing"], ["apikey", "API Error: 401 bad key"], ["claude", "API Error: 402 x"], ["blave", "Not logged in · Please run /login"], ["blave", "You've hit your session limit · resets 1:50pm"]]) {
+    const cs = await turn(kind, [T(text), ERR], END);
+    ok("11 " + kind + " 「" + text.slice(0, 22) + "」:不帶 fault code,字照送", texts(cs) === text && code(cs) === "not_started", cs);
+  }
+  { const cs = await turn("codex", [{ type: "error", message: "login", code: "needs_login" }], END);
+    ok("11 Codex 401(runtime needs_login):engine_signed_out", code(cs) === "engine_signed_out", cs); }
+  for (const c of ["MISSING", "DOWNLOADING"]) {
+    const cs = await turn("codex", [], { code: 1, errTail: "Error: AGENT_BIN_" + c });
+    ok("11 AGENT_BIN_" + c + ":turn-end 補的 error 帶 engine_missing", types(cs) === "error" && code(cs) === "engine_missing", cs);
+  }
+  { const cs = await turn("blave", [T("API Error: 402 x")], { code: 0, errTail: "", canceled: true });
+    ok("11 用戶按停止:不帶 code,照「已停止」收尾", code(cs) === undefined && cs.at(-1).message === "stopped", cs); }
+  { const cs = await turn("blave", [T("API Error: "), { type: "text_replace", text: "乾淨的回覆" }, { type: "done" }], { code: 0, errTail: "" });
+    ok("11 暫扣中 text_replace:換成新的字放行", texts(cs) === "乾淨的回覆" && types(cs) === "text,done", cs); }
+  { const cs = await turn("blave", [T("API Error: 402 key sec_Zz99Yy88Xx77"), { type: "done" }], { code: 0, errTail: "" });
+    ok("11 補的 error:message 過遮蔽", !JSON.stringify(cs).includes(SECRET) && code(cs) === "no_credit", cs); }
+  { const app = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8");
+    const lim = /\{ engine: "claude", re: (\/.*\/i) \}/.exec(app), api = /const m = (\/\^\(\?:Failed to authenticate.*?\/)\.exec\(text \|\| ""\);\n  if \(!m\) return null;/.exec(app);
+    ok("11 判定跟 renderer 同一份:上限句、API Error 的 regex 逐字相同", !!lim && !!api && lim[1] === String(RL.USAGE_LIMIT_RE) && api[1] === String(RL.API_ERROR_RE), [lim && lim[1], api && api[1]]);
+    ok("11 登入句:renderer 還認得的兩段,主行程開頭錨定", /\/\^Not logged in\\b\|Please run \\\/login\/\.test\(text \|\| ""\)\) return localAuthFault\("claude"\)/.test(app)); }
+  ok("11 接線:engineKind 取連線種類", /engineKind: \(\) => \(loadConnection\(\) \|\| \{\}\)\.kind/.test(main));
 
   // ── 9 ──
   const send = main.slice(main.indexOf("function sendTurn(sid, ch, payload) {"), main.indexOf("function turnNice("));

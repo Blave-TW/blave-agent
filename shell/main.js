@@ -597,7 +597,7 @@ function relay() {
     post: (u, b, extra) => postJSON(u, b, extra), getCreds: blaveCreds, installId: () => tm().installId(), ver: app.getVersion(),
     log: (m) => console.error("[relay]", m),
     startTurn: (payload, origin) => startTurn(payload, origin), stopTurn: (sid) => stopTurn(sid, "phone"), turnBusy: (sid) => turns.has(sid),
-    isRestarting: () => !!restarting,
+    isRestarting: () => !!restarting, engineKind: () => (loadConnection() || {}).kind,
     sessions: { list: listSessions, rowsAfter: sessionRowsAfter, maxId: sessionMaxId, exists: sessionExists, remove: deleteSessionLocal },
     turnArgs: relayTurnArgs, known: relayKnown, origins: { add: chatOriginAdd, get: chatOriginMids },
     track: (name) => tm().track("feature_used", { name }),

@@ -13,6 +13,8 @@
  *     api 說這台沒開(reason not_enabled、409 RELAY_NOT_ENABLED)而本機開著:重打 /relay/enable;401／409 時手機的回合一律停、排隊清空。
  *   - 從關打開要過 email 驗證碼(setOn 帶碼;契約 api openclaw/app_auth.relay_enable_gate)。自動重打不寄信,被關卡擋下記 needVerify,等用戶到設定頁驗。
  *   - 那一句還沒開跑就不會跑的(not_run／desktop_restarting／bad_session／bad_message)送 message_failed;開跑之後的失敗走回合的 error。
+ *   - 引擎的錯誤是接在 error 前面的一段 text,手機回合常沒開視窗,renderer 的 classifyFault 不會跑,分類在這裡做:每段開頭可能是錯誤字就先扣著,
+ *     判成錯誤整段不送(api 的 fold 不理 text_replace,送了就留在歷史與推播),代碼放回合的 error。契約 references/turn-events.md。
  *
  * 不 require electron;HTTP、時鐘、回合表、session.db 都由呼叫端注入(tests/check_shell_relay.js 用假的)。
  * 契約:api openclaw/desktop_auth.py 的 relay 段與 openclaw/relay.py;端點都在下面 EP。
@@ -62,6 +64,38 @@ const OUTBOX = "relay-outbox.jsonl";
 const TURN_TYPES = ["text", "thinking", "tool", "tool_prep", "done", "error", "export", "text_replace", "suggestions", "ui_nav", "withdraw_result", "ping"];
 // 那一句還沒開跑就不會跑了(message_failed 的 code);開跑之後的失敗走回合的 error chunk
 const NOT_RUN = "not_run", DESKTOP_RESTARTING = "desktop_restarting", BAD_SESSION = "bad_session", BAD_MESSAGE = "bad_message";
+// 引擎錯誤字的判定:同 renderer/app.js classifyFault、LIMIT_RULES(tests/check_shell_relay.js 比對原文)。
+// 「Please run /login」renderer 沒錨定;這裡要靠開頭決定放不放行,一律錨定(實際那句開頭是 Not logged in)
+const API_ERROR_RE = /^(?:Failed to authenticate\. )?API Error: (40[123])\b/;
+const NOT_LOGGED_IN_RE = /^Not logged in\b|^Please run \/login/;
+const USAGE_LIMIT_RE = /^You[’']ve hit your (?:[a-z0-9-]+ ){0,3}limit\b[^\n]*?\bresets\s+([^()\n]+?)\s*(?:\(([^()\n]+)\))?\s*$/i;
+const USAGE_LIMIT_SO_FAR_RE = /^You[’']ve hit your (?:[a-z0-9-]+ ){0,3}(?:[a-z0-9-]*|limit\b[^\n]*)$/i;
+const AGENT_BIN_RE = /AGENT_BIN_(MISSING|DOWNLOADING)/;
+const apiHeads = (...codes) => codes.flatMap((c) => ["API Error: " + c, "Failed to authenticate. API Error: " + c]);
+// 引擎 → 這段字開頭還可能長成錯誤的那幾種。apikey 的 402／401 不是 Blave 餘額,不帶代碼,不扣
+const FAULT_HEADS = {
+  blave: apiHeads(401, 402, 403),
+  codex: apiHeads(401, 403),
+  claude: [...apiHeads(401, 403), "Not logged in", "Please run /login", "You've hit your ", "You’ve hit your "],
+};
+const HOLD_MAX = 4096;   // 錯誤字很短;開頭剛好一樣的真回覆不扣到回合結束
+/* 一段完整的字 → api DESKTOP_FAULT_CODES 之一或 null */
+function faultCodeOf(text, kind) {
+  const s = String(text || "");
+  if (kind === "claude" && USAGE_LIMIT_RE.test(s.trim())) return "usage_limit";
+  if (kind === "claude" && NOT_LOGGED_IN_RE.test(s)) return "engine_signed_out";
+  const m = API_ERROR_RE.exec(s);
+  if (!m) return null;
+  if (kind === "blave") return m[1] === "402" ? "no_credit" : "auth_invalid";
+  return (kind === "claude" || kind === "codex") && m[1] !== "402" ? "engine_signed_out" : null;
+}
+/* 串流中:這段字再長下去還可能是錯誤嗎。不可能就放行,回覆不會被拖慢 */
+function mayBeFault(text, kind) {
+  const heads = FAULT_HEADS[kind];
+  if (!heads || text.length > HOLD_MAX) return false;
+  const s = text.trim(), low = s.toLowerCase();
+  return heads.some((h) => h.toLowerCase().startsWith(low)) || !!faultCodeOf(text, kind) || (kind === "claude" && USAGE_LIMIT_SO_FAR_RE.test(s));
+}
 
 function withTimeout(p, ms) {
   return Promise.race([p, new Promise((resolve) => { const t = setTimeout(() => resolve(null), ms); if (t.unref) t.unref(); })]);
@@ -85,7 +119,7 @@ const gateOf = (b) => ({ sent: b.sent === true, reason: GATE_REASONS.includes(b.
 const toMs = (sec) => Math.round(Number(sec) * 1000);   // session.db 的時間是秒(REAL);api 收 ms 整數
 
 /* opts:{ dir(userData), stateDir(BASE/state), apiBase, post(url, body, extra), getCreds(), installId(), ver, now?, log?,
-          startTurn(payload, origin) → { started|queued|busy|blocked }, stopTurn(sid), turnBusy(sid), isRestarting(),
+          startTurn(payload, origin) → { started|queued|busy|blocked }, stopTurn(sid), turnBusy(sid), isRestarting(), engineKind() → 連線種類(blave／claude／codex／apikey),
           sessions: { list() → [{ id, last, title }], rowsAfter(sid, afterId, limit, latest) → [{ id, role, content, created_at }], maxId(sid),
                       exists(sid), remove(sid) → bool },
           turnArgs() → { model, effort }(電腦當下存的那一組), known() → [值](第 1 條),
@@ -100,7 +134,7 @@ function createRelay(opts) {
   let needVerify = false;   // 本機開著、api 要驗碼才肯再開:不重打,設定頁出一行
   let seenToken = null, lastToken = null;   // 上一顆帳號 token(輪替後幾秒內的輸出可能還帶著它):第 1 條也比對
   const queue = new Map();   // sid → [{ message_id, content }]:同一條在跑時排在後面
-  const active = new Map();  // sid → { message_id, ended, idBefore }:正在跑的手機那一輪
+  const active = new Map();  // sid → { message_id, ended, idBefore, kind, hold }:正在跑的手機那一輪;hold = 這段暫扣的字,null = 這段已判定不是錯誤
   let pending = [];          // 待送的 chunk(每段帶 session_id),照收到的順序
   let batchTimer = null, reporting = null, retryTimer = null, flushBackoff = BACKOFF_MIN_MS, pingTimer = null;
   let inflight = null;       // 在路上那一批:{ sids, p }(認領只等自己那條的)
@@ -358,7 +392,7 @@ function createRelay(opts) {
   const withdrawResult = (sid, mid, result) => enqueueChunk({ type: "withdraw_result", session_id: sid, message_id: mid, result }, true);
   async function launch(sid, mid, content) {
     let idBefore = 0; try { idBefore = opts.sessions.maxId(sid) || 0; } catch (_) { idBefore = 0; }
-    const rec = { message_id: mid, ended: false, idBefore, claiming: true, abort: null };   // abort:認領途中手機撤回(withdraw)或停止(interrupt)
+    const rec = { message_id: mid, ended: false, idBefore, claiming: true, abort: null, kind: null, hold: "" };   // abort:認領途中手機撤回(withdraw)或停止(interrupt)
     active.set(sid, rec);
     mobileActiveSync();
     const claim = await claimStart(sid, mid);
@@ -375,6 +409,7 @@ function createRelay(opts) {
       return;
     }
     rec.claiming = false;
+    try { rec.kind = opts.engineKind ? opts.engineKind() : null; } catch (_) { rec.kind = null; }   // 開跑當下定:判定時用戶可能已換引擎
     pingSync();
     let r = null;
     try { r = await opts.startTurn({ sessionId: sid, message: content, ...(opts.turnArgs ? opts.turnArgs() : {}) }, "mobile"); }
@@ -403,6 +438,9 @@ function createRelay(opts) {
   }
   /* main.js sendTurn 的每一則都經過這裡(視窗關著也是):只轉手機那一輪的。回合的 chunk 帶那一輪的 message_id 當關聯
      (「那一句沒跑」另外有 message_failed,api 不拿回合的 chunk 判) */
+  const forward = (sid, a, c, now) => enqueueChunk(scrubDeep({ ...c, session_id: sid, message_id: a.message_id }, known()), now);
+  /* 暫扣的字放行;next = 這段接下來的狀態 */
+  function holdRelease(sid, a, next) { const h = a.hold; if (h) forward(sid, a, { type: "text", text: h }, false); a.hold = next; }
   function onTurn(sid, ch, payload) {
     const a0 = active.get(sid);
     // 認領中(started 還在路上、手機那一輪還沒開跑):這條上的回合事件都不是手機的——電腦前的人那輪不轉給手機,它的 turn-end 也不收掉認領中那筆
@@ -412,9 +450,32 @@ function createRelay(opts) {
       if (!TURN_TYPES.includes(payload.type)) return;
       // 轉出卡帶的是策略程式全文:策略程式不出這台電腦(§4.1),手機只畫一行「到電腦上看」
       const src = payload.type === "export" ? { type: "export", target: payload.target, strategy: payload.strategy } : payload;
-      const c = scrubDeep({ ...src, session_id: sid, message_id: a.message_id }, known());
-      if (payload.type === "done" || payload.type === "error") a.ended = true;
-      enqueueChunk(c, payload.type === "done" || payload.type === "error");
+      const type = payload.type, end = type === "done" || type === "error";
+      if (type === "text" && a.hold !== null) {
+        a.hold += typeof payload.text === "string" ? payload.text : "";
+        if (!mayBeFault(a.hold, a.kind)) holdRelease(sid, a, null);
+        return;
+      }
+      if (type === "text_replace" && a.hold) {   // 手機還沒看到這段:換掉就好
+        a.hold = typeof payload.text === "string" ? payload.text : "";
+        if (a.hold && !mayBeFault(a.hold, a.kind)) holdRelease(sid, a, null);
+        return;
+      }
+      if (end) {
+        const code = faultCodeOf(a.hold, a.kind) || (type === "error" && payload.code === "needs_login" ? "engine_signed_out" : null);
+        a.ended = true;
+        if (code) {
+          // 判成錯誤:字不送;runtime 沒送 error 的(只有 done)補一則,不送 done
+          const held = a.hold; a.hold = null;
+          forward(sid, a, type === "error" ? { ...payload, code } : { type: "error", message: held, code }, true);
+          return;
+        }
+        holdRelease(sid, a, null);
+      } else {
+        // 接著還有動作:手上那段不是錯誤。工具開跑 = 下一段(同 renderer collectDraft)
+        holdRelease(sid, a, type === "tool" && payload.status !== "done" ? "" : a.hold === "" ? "" : null);
+      }
+      forward(sid, a, src, end);
       return;
     }
     if (ch !== "turn-end") return;
@@ -423,8 +484,11 @@ function createRelay(opts) {
       active.delete(sid);
       if (!a.ended) {
         // 回合沒說結果就結束(停止、spawn 前就失敗、行程掛掉):補一則回合的 error,手機不會一直停在回覆中
-        const tail = payload && typeof payload.errTail === "string" ? payload.errTail.trim().slice(-200) : "";
-        sent = enqueueChunk({ type: "error", session_id: sid, message_id: a.message_id, message: redact(tail || (payload && payload.canceled ? "stopped" : "turn_failed"), known()) }, true);
+        const raw = payload && typeof payload.errTail === "string" ? payload.errTail : "", tail = raw.trim().slice(-200), canceled = !!(payload && payload.canceled);
+        const heldCode = canceled ? null : faultCodeOf(a.hold, a.kind), code = heldCode || (!canceled && AGENT_BIN_RE.test(raw) ? "engine_missing" : null);
+        const held = a.hold;
+        if (heldCode) a.hold = null; else holdRelease(sid, a, null);
+        sent = forward(sid, a, { type: "error", message: tail || (heldCode ? held : canceled ? "stopped" : "turn_failed"), ...(code ? { code } : {}) }, true);
       } else sent = flush();
       try {
         const rows = opts.sessions.rowsAfter(sid, a.idBefore, 50) || [];
@@ -442,6 +506,7 @@ function createRelay(opts) {
     const a = active.get(sid);
     // 認領中:這條上跑的是電腦前那個人的回合(同 onTurn)
     if (!a || a.claiming || !live() || typeof b64 !== "string") return Promise.resolve(false);
+    holdRelease(sid, a, a.hold === "" ? "" : null);   // 中途插圖:這段不是錯誤(同 renderer 的 draftPromote)
     const cap = typeof caption === "string" && caption.trim() ? redact(caption.slice(0, 500), known()) : "";
     // 帶呼叫當下那一句:圖跟 report 不同路,可能在這一輪收尾、下一句開跑之後才到,api 對不上就丟,不掛到下一句
     return call(EP.image, { session_id: sid, message_id: a.message_id, mime, b64, ...(cap && cap !== "⟦R:msg⟧" ? { caption: cap } : {}) }).then((r) => r.status === 200);
@@ -779,4 +844,4 @@ const okBody = (r) => (r.status === 200 && r.body ? { ok: true, ...r.body } : { 
     _internals: { route, control, flush, syncAll, queue, active } };
 }
 
-module.exports = { createRelay, scrubDeep, clipBytes, EP, POLL_HOLD_MS, BATCH_MS, SYNC_BATCH_TURNS, SYNC_BATCH_BYTES, TURN_MAX_BYTES, OUTBOX, TURN_TYPES, REPORT_MAX_CHUNKS };
+module.exports = { createRelay, scrubDeep, clipBytes, faultCodeOf, mayBeFault, API_ERROR_RE, USAGE_LIMIT_RE, EP, POLL_HOLD_MS, BATCH_MS, SYNC_BATCH_TURNS, SYNC_BATCH_BYTES, TURN_MAX_BYTES, OUTBOX, TURN_TYPES, REPORT_MAX_CHUNKS };

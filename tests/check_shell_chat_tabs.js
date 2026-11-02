@@ -29,7 +29,7 @@ const GLOBAL_OK = {
   thinkFoldSeq: "aria-controls 流水號", stepCharW: "量字寬的快取", loginPending: "本機 AI 登入中", acct: "帳號狀態", acctAt: "同上", acctRetry: "同上", balLast: "餘額",
   balSeq: "同上", acctGone: "去瀏覽器綁卡", acctPending: "帳號重查", acctSettled: "同上", taKeyed: "輸入框打過字(帳號卡)", planSlowSaid: "方案開通", planBusyPlan: "同上",
   planErr: "同上", planBusy: "同上", planSince: "同上", planTimer: "同上", planWas: "同上", planDoneSaid: "同上", planDonePending: "方案開好了那句:等眼前分頁閒著才講",
-  pub: "公開資訊", pubAt: "同上", PH: "手機對話設定(主行程 relay.js 的狀態)", PH_BUSY: "同上", PH_ERR: "同上", PH_PHONES: "同上(授權手機清單)", PH_CODE: "同上(配對碼)", PH_ACTS: "同上(最近操作)", PH_MSG: "同上(手機那一組的訊息槽)", PH_QUIET: "同上(同步數字變時不念)", PH_EXP: "同上(配對碼到期的計時)", planLoginBusy: "方案登入", planLastView: "同上", planLoginOut: "同上",
+  pub: "公開資訊", pubAt: "同上", PH: "手機對話設定(主行程 relay.js 的狀態)", PH_BUSY: "同上", PH_ERR: "同上", PH_KC: "同上(驗證碼那一步)", PH_PHONES: "同上(授權手機清單)", PH_CODE: "同上(配對碼)", PH_ACTS: "同上(最近操作)", PH_MSG: "同上(手機那一組的訊息槽)", PH_QUIET: "同上(同步數字變時不念)", PH_EXP: "同上(配對碼到期的計時)", planLoginBusy: "方案登入", planLastView: "同上", planLoginOut: "同上",
 };
 const unclassified = lets.filter((n) => !tabKeys.includes(n) && !(n in GLOBAL_OK));
 ok("app.js 每一個頂層 let 都歸類:每個分頁一份(TAB_KEYS)或全 app 一份(GLOBAL_OK)", unclassified.length === 0, unclassified);

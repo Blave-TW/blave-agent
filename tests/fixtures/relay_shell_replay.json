@@ -64,6 +64,46 @@
       ]
     },
     {
+      "name": "fault_code",
+      "desc": "引擎的錯誤字:text 不送,代碼放回合的 error",
+      "requests": [
+        {
+          "endpoint": "/oauth/desktop/relay/ack",
+          "body": {
+            "message_ids": [
+              "msgreplay0040"
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "started",
+                "session_id": "desktop-mreplay0001",
+                "message_id": "msgreplay0040"
+              }
+            ]
+          }
+        },
+        {
+          "endpoint": "/oauth/desktop/relay/report",
+          "body": {
+            "chunks": [
+              {
+                "type": "error",
+                "message": "這一輪沒有跑起來",
+                "code": "no_credit",
+                "session_id": "desktop-mreplay0001",
+                "message_id": "msgreplay0040"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "error_after_start",
       "desc": "開跑之後出錯:回合的 error chunk(不是 message_failed)",
       "requests": [
