@@ -11,7 +11,7 @@ Claude Code や Codex で、戦略を書き、バックテストして自動売�
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | **日本語** | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-<a href="https://download.blave.org/desktop/mac/Blave-universal.dmg"><img src="docs/readme-dl-mac.ja.png" alt="Mac 版をダウンロード" width="250"></a>&nbsp;&nbsp; <a href="https://download.blave.org/desktop/win/Blave-Setup.exe"><img src="docs/readme-dl-win.ja.png" alt="Windows 版をダウンロード" width="250"></a>
+<a href="https://download.blave.org/desktop/mac/Blave-universal.dmg?src=gh_readme_ja"><img src="docs/readme-dl-mac.ja.png" alt="Mac 版をダウンロード" width="250"></a>&nbsp;&nbsp; <a href="https://download.blave.org/desktop/win/Blave-Setup.exe?src=gh_readme_ja"><img src="docs/readme-dl-win.ja.png" alt="Windows 版をダウンロード" width="250"></a>
 
 </div>
 
@@ -39,7 +39,7 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
 ## クイックスタート
 
-1. [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) 版か [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) 版をダウンロードして開きます。
+1. [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg?src=gh_readme_ja) 版か [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe?src=gh_readme_ja) 版をダウンロードして開きます。
 2. AI を選びます。
 3. アイデアを話します：
 

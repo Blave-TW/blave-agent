@@ -11,7 +11,7 @@ Crea, haz backtest y opera estrategias en vivo con Claude Code o Codex. Gratis y
 
 [English](README.md) | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | **Español** | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-<a href="https://download.blave.org/desktop/mac/Blave-universal.dmg"><img src="docs/readme-dl-mac.es.png" alt="Descargar para Mac" width="241"></a>&nbsp;&nbsp; <a href="https://download.blave.org/desktop/win/Blave-Setup.exe"><img src="docs/readme-dl-win.es.png" alt="Descargar para Windows" width="241"></a>
+<a href="https://download.blave.org/desktop/mac/Blave-universal.dmg?src=gh_readme_es"><img src="docs/readme-dl-mac.es.png" alt="Descargar para Mac" width="241"></a>&nbsp;&nbsp; <a href="https://download.blave.org/desktop/win/Blave-Setup.exe?src=gh_readme_es"><img src="docs/readme-dl-win.es.png" alt="Descargar para Windows" width="241"></a>
 
 </div>
 
@@ -39,7 +39,7 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
 ## Inicio rápido
 
-1. Descarga la versión para [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) o [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) y ábrela.
+1. Descarga la versión para [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg?src=gh_readme_es) o [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe?src=gh_readme_es) y ábrela.
 2. Elige tu IA.
 3. Describe una idea:
 

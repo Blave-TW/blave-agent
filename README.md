@@ -11,7 +11,7 @@ Build, backtest and trade strategies live with Claude Code or Codex. Free and op
 
 **English** | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-<a href="https://download.blave.org/desktop/mac/Blave-universal.dmg"><img src="docs/readme-dl-mac.en.png" alt="Download for Mac" width="228"></a>&nbsp;&nbsp; <a href="https://download.blave.org/desktop/win/Blave-Setup.exe"><img src="docs/readme-dl-win.en.png" alt="Download for Windows" width="228"></a>
+<a href="https://download.blave.org/desktop/mac/Blave-universal.dmg?src=gh_readme_en"><img src="docs/readme-dl-mac.en.png" alt="Download for Mac" width="228"></a>&nbsp;&nbsp; <a href="https://download.blave.org/desktop/win/Blave-Setup.exe?src=gh_readme_en"><img src="docs/readme-dl-win.en.png" alt="Download for Windows" width="228"></a>
 
 </div>
 
@@ -37,7 +37,7 @@ https://github.com/user-attachments/assets/7b33edb7-9c65-4e19-854a-40295c6e8b74
 
 ## Quick Start
 
-1. Download for [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) or [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) and open it.
+1. Download for [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg?src=gh_readme_en) or [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe?src=gh_readme_en) and open it.
 2. Pick your AI.
 3. Describe an idea:
 

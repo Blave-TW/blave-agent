@@ -11,7 +11,7 @@
 
 [English](README.md) | **繁體中文** | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Português](README.pt.md) | [Tiếng Việt](README.vi.md)
 
-<a href="https://download.blave.org/desktop/mac/Blave-universal.dmg"><img src="docs/readme-dl-mac.zh-TW.png" alt="下載 Mac 版" width="173"></a>&nbsp;&nbsp; <a href="https://download.blave.org/desktop/win/Blave-Setup.exe"><img src="docs/readme-dl-win.zh-TW.png" alt="下載 Windows 版" width="173"></a>
+<a href="https://download.blave.org/desktop/mac/Blave-universal.dmg?src=gh_readme_zh_tw"><img src="docs/readme-dl-mac.zh-TW.png" alt="下載 Mac 版" width="173"></a>&nbsp;&nbsp; <a href="https://download.blave.org/desktop/win/Blave-Setup.exe?src=gh_readme_zh_tw"><img src="docs/readme-dl-win.zh-TW.png" alt="下載 Windows 版" width="173"></a>
 
 </div>
 
@@ -37,7 +37,7 @@ https://github.com/user-attachments/assets/66c747e9-b068-4da9-a372-84d9afa7cb0d
 
 ## 快速開始
 
-1. 下載 [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg) 或 [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe) 版並打開。
+1. 下載 [macOS](https://download.blave.org/desktop/mac/Blave-universal.dmg?src=gh_readme_zh_tw) 或 [Windows](https://download.blave.org/desktop/win/Blave-Setup.exe?src=gh_readme_zh_tw) 版並打開。
 2. 選 AI。
 3. 說出你的點子：
 
