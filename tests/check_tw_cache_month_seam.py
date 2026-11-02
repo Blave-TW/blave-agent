@@ -12,7 +12,7 @@ Pins, on a fixed clock against in-process fakes (no network):
      short of the seam stays on /bulk;
   5. monthly layout: a Taiwan month is read once more after it settles, an old file the TTL
      check keeps refreshing heals by its footer (TXF and stock minute), nothing before
-     _SETTLE_HEAL_FROM does, and exchange-direct and crypto series are left alone;
+     _SETTLE_HEAL_FROM does, and exchange-direct and unlisted series are left alone;
   6. _merge_meta never invents `settled`.
 Run: cd blave-agent && .venv/bin/python tests/check_tw_cache_month_seam.py
 """
@@ -304,13 +304,13 @@ check(not any(s < "2026-11" for s, _ in src.calls), f"a month first read after i
 fresh_cache()
 Clock.at = datetime(2026, 11, 1, 2)
 src = Source("2026-10-28")
-K, KID = "kline3", {"symbol": "BTCUSDT", "period": "1h"}
+K, KID = "db_ohlcv1d", {"dataset": "GLBX", "symbol": "ES"}
 d._extend_cache_monthly(K, KID, src, "2026-10-01", None)
 stamp(d._monthly_cache_dir(K, KID) / "2026-10.parquet", Clock.at)
 Clock.at = datetime(2026, 11, 9, 12)
 src.calls.clear()
 d._extend_cache_monthly(K, KID, src, "2026-10-01", None)
-check(("2026-10-01", "2026-11-01") not in src.calls, f"a crypto month is not re-read ({src.calls})")
+check(("2026-10-01", "2026-11-01") not in src.calls, f"a series on no settle clock is not re-read ({src.calls})")
 
 fresh_cache()
 Clock.at = datetime(2026, 11, 1, 2)

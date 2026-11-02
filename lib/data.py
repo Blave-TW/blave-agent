@@ -219,8 +219,8 @@ def _month_end_utc(ym):
     return datetime(int(nxt[:4]), int(nxt[5:7]), 1)
 
 
-def _written_before_month_end(path, ym):
-    """True if `path` was last written before month `ym` was over (UTC).
+def _written_before_month_end(path, ym, grace=timedelta(0)):
+    """True if `path` was last written before month `ym` was over (UTC), plus `grace`.
 
     A past-month file written while that month was still the current month may
     be missing its tail (the delta-update path stops running once the month
@@ -229,7 +229,7 @@ def _written_before_month_end(path, ym):
     An unstatable file counts as incomplete → re-fetch.
     """
     try:
-        return datetime.utcfromtimestamp(path.stat().st_mtime) < _month_end_utc(ym)
+        return datetime.utcfromtimestamp(path.stat().st_mtime) < _month_end_utc(ym) + grace
     except Exception:
         return True
 
@@ -237,28 +237,126 @@ def _written_before_month_end(path, ym):
 # Blave's Taiwan series can lag the exchanges: the read that completes a month can run before
 # the api has that month's last days, and the file then looks complete for good. So such a month
 # only counts as final once it has been read this long after it ended. A lag beyond this bound
-# still freezes a hole. Exchange-direct monthly caches publish same-day and are not listed.
+# still freezes a hole. Taiwan's exchange-direct monthly caches publish same-day and are not listed.
 _SETTLE_DAYS = 7
 _SETTLE_PREFIXES = ('twstock_minute_', 'twfutures3_', 'twfutures_bav')
 _SETTLE_HEAL_FROM = '2026-07'   # see the single-file layout below
 _SETTLED_META = {b'blave_month_settled': b'1'}
+# Same rule for crypto, on a shorter clock. The tick at 00:00:05 is the worst moment to complete a
+# month: finalized alpha needs a 5m base that lands up to 15 min late, plus 5 min of api cache, and
+# a kline can still be forming. Every read inside the grace asks again, so a live tick gets last
+# month's closing bar as soon as it exists. db_* (CME via its own vendor) has not been looked at.
+_CRYPTO_GRACE = timedelta(minutes=30)
+_CRYPTO_SETTLE_PREFIXES = (
+    'kline3', 'bingx_kline', 'oi_history', 'holder_concentration', 'funding_rate', 'taker_intensity',
+    'whale_hunter', 'unusual_movement', 'squeeze_momentum', 'liquidation', 'market_direction',
+    'capital_shortage', 'market_sentiment', 'blave_top_trader')
+_EMPTY_READ_RETRY = timedelta(days=1)   # an answer that does not reach the month's end is doubted this long
+_LIVE_SETTLE_WINDOWS = 3   # older months re-read per batch call on a live tick; the rest wait for the next one
 
 
-def _settled_by(ym, now):
-    return now >= _month_end_utc(ym) + timedelta(days=_SETTLE_DAYS)
+def _settle_delay(prefix):
+    """How long after a month ends a read of it is final; None = this series is not tracked."""
+    if prefix.startswith(_SETTLE_PREFIXES):
+        return timedelta(days=_SETTLE_DAYS)
+    return _CRYPTO_GRACE if prefix.startswith(_CRYPTO_SETTLE_PREFIXES) else None
 
 
-def _month_unsettled(path, ym):
-    """True once for past month `path`: it is past _SETTLE_DAYS, and no read since then has
-    written the footer flag. A footer, not the mtime: the TTL check refreshes that every 24 h,
-    which would pass for this read. Months a file can hold a hole in only start after
-    _SETTLE_HEAL_FROM, as in the single-file layout; older ones stay as they are."""
-    if ym <= _SETTLE_HEAL_FROM or not _settled_by(ym, datetime.utcnow()):
-        return False
+def _settled_by(ym, now, delay):
+    return now >= _month_end_utc(ym) + delay
+
+
+def _month_has_gap(path, ym, tail=True):
+    """A bar short at the head of the month, inside it, or (tail=True) at its end, by the file's
+    own bar spacing. An unreadable file counts as a gap."""
     try:
-        return not (_read_schema(path).metadata or {}).get(b'blave_month_settled')
+        idx = pd.DatetimeIndex(_normalise_index(_read_parquet(path, columns=[])).index)
     except Exception:
         return True
+    if len(idx) < 2:
+        return True
+    step = pd.Series(idx).diff().median()
+    edges = idx.insert(0, pd.Timestamp(f'{ym}-01') - step)
+    if tail:
+        edges = edges.append(pd.DatetimeIndex([_month_end_utc(ym)]))
+    return pd.Series(edges).diff().max() > step * 1.5
+
+
+def _tail_short(idx, ym):
+    idx = pd.DatetimeIndex(idx)
+    if len(idx) < 2:
+        return True
+    return idx[-1] + pd.Series(idx).diff().median() * 1.5 < _month_end_utc(ym)
+
+
+def _month_final(idx, ym, now, delay):
+    """May a read at `now` that left the month with index `idx` flag it? An api still behind
+    past the grace leaves the tail short: not final yet, though a series that really ended
+    (a delisting) must stop asking, so the doubt runs out after _EMPTY_READ_RETRY."""
+    if not delay or not _settled_by(ym, now, delay):
+        return False
+    return delay != _CRYPTO_GRACE or _settled_by(ym, now, delay + _EMPTY_READ_RETRY) or not _tail_short(idx, ym)
+
+
+def _stamp_settled(path):
+    """Add the footer flag to a month that needs no read. Worst case on failure: a rescan."""
+    try:
+        table = _read_table(path)
+        table = table.replace_schema_metadata({**(table.schema.metadata or {}), **_SETTLED_META})
+        tmp = _tmp_path(path)
+        try:
+            pq.write_table(table, tmp)
+            _winreplace.atomic_replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
+    except Exception as e:
+        print(f"  ⚠️  cache: could not flag {path.name} ({type(e).__name__})")
+
+
+def _month_unsettled(path, ym, delay):
+    """True once for past month `path`: it is past `delay`, and no read since then has written
+    the footer flag. A footer, not the mtime: the TTL check refreshes that every 24 h, which
+    would pass for this read.
+
+    Files from before the flag: Taiwan months a file can hold a hole in only start after
+    _SETTLE_HEAL_FROM, as in the single-file layout, and each is read once. Crypto has no such
+    floor (half-month files from a batch fetch reach back as far as a backtest did), so the
+    file's index decides locally: a whole month is flagged with no request, only a month with a
+    gap is read. A file with no columns is an empty-month marker, nothing to complete."""
+    taiwan = delay > _CRYPTO_GRACE
+    if (taiwan and ym <= _SETTLE_HEAL_FROM) or not _settled_by(ym, datetime.utcnow(), delay):
+        return False
+    try:
+        schema = _read_schema(path)
+        if (schema.metadata or {}).get(b'blave_month_settled'):
+            return False
+        if taiwan:
+            return True
+        if not schema.names:
+            return False
+        if _month_has_gap(path, ym):
+            return True
+        _stamp_settled(path)
+        return False
+    except Exception:
+        return True
+
+
+def _reread_from(path, ym, delay):
+    """The day to re-read past month `path` from just to settle it, None when it needs none.
+    Inside the grace a crypto month is asked again on every read, from its last bar: every tick
+    of a 1min strategy pays this, so it must not be a month, and a hole inside the month will
+    not change in 30 minutes. Past the grace a head or inside gap is read whole, once."""
+    if delay is None:
+        return None
+    grace = delay if delay == _CRYPTO_GRACE else timedelta(0)
+    if not ((grace and _written_before_month_end(path, ym, grace)) or _month_unsettled(path, ym, delay)):
+        return None
+    if grace and (not _settled_by(ym, datetime.utcnow(), grace) or not _month_has_gap(path, ym, tail=False)):
+        idx = _normalise_index(_read_parquet(path, columns=[])).index
+        if len(idx):
+            return idx[-1].strftime('%Y-%m-%d')
+    return f'{ym}-01'
 
 
 _HEAD_VERIFIED_META = {b'blave_head_verified': b'1'}
@@ -399,7 +497,8 @@ def _atomic_to_parquet(df, path, footer_meta=None):
 
 
 def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
-                          empty_marker_ttl_hours=None, month_by_month=False, present_fresh_after=None):
+                          empty_marker_ttl_hours=None, month_by_month=False, present_fresh_after=None,
+                          deferred=None):
     """Monthly-partitioned cache.
 
     Past months (before current month) are stored immutably — fetched once, never re-fetched,
@@ -465,7 +564,8 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
     except Exception:
         head_check = False
     footer_meta = _HEAD_VERIFIED_META if head_check else None
-    settling = prefix.startswith(_SETTLE_PREFIXES)
+    delay = _settle_delay(prefix)
+    rereads = {}      # months read only to settle them (the cache already served these) → from day
 
     def _needs_fetch(ym):
         path = cache_dir / f'{ym}.parquet'
@@ -473,17 +573,34 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
             return True
         if _written_before_month_end(path, ym):
             return True   # cached mid-month, tail may be missing — complete it once
-        if settling and _month_unsettled(path, ym):
+        reread = _reread_from(path, ym, delay)
+        if reread:
+            rereads[ym] = reread
             return True
         if head_check and _head_short_unverified(path, ym):
             return True   # cached from a clamped start, head may be missing — complete it once
         return (empty_marker_ttl_hours is not None
                 and _stale_incomplete_month(path, empty_marker_ttl_hours, ym))
     missing = [ym for ym in past_months if _needs_fetch(ym)]
-    for span in ([[ym] for ym in missing] if month_by_month else _contiguous_spans(missing)):
-        span_start = f'{span[0]}-01'
+    tails = [ym for ym in missing if rereads.get(ym, f'{ym}-01') != f'{ym}-01']
+    whole = [ym for ym in missing if ym not in tails]
+    for span in [[ym] for ym in tails] + ([[ym] for ym in whole] if month_by_month else _contiguous_spans(whole)):
+        span_start = rereads[span[0]] if span[0] in tails else f'{span[0]}-01'
         span_end   = f'{_next_month(span[-1])}-01'   # exclusive upper bound
-        df = fetch_raw_fn(span_start, span_end)
+        only_rereads = all(ym in rereads for ym in span)
+        try:
+            df = fetch_raw_fn(span_start, span_end)
+        except _NeedsBatchRange:
+            if not only_rereads or deferred is None:
+                raise
+            deferred.append((span_start, span_end))   # the batch caller reads these after this pass
+            continue
+        except Exception as e:
+            if not only_rereads:
+                raise
+            print(f"  ⚠️  {prefix} {span[0]}..{span[-1]}: re-read failed ({type(e).__name__}: {str(e)[:100]}) "
+                  f"— using the cache, asking again next call")
+            continue
         if not df.empty:
             df = _normalise_index(df)
             df = df[~df.index.duplicated(keep='last')].sort_index()
@@ -499,10 +616,19 @@ def _extend_cache_monthly(prefix, params, fetch_raw_fn, start, end,
                 except Exception:
                     existing = pd.DataFrame()
                 if not existing.empty:
+                    if grp is None and ym in rereads and not _settled_by(ym, now, delay + _EMPTY_READ_RETRY):
+                        continue          # nothing came back: not evidence the month is final
                     grp = existing if grp is None else pd.concat([existing, grp])
                     grp = grp[~grp.index.duplicated(keep='last')].sort_index()
-            month_meta = {**(footer_meta or {}), **(_SETTLED_META if settling and _settled_by(ym, now) else {})}
-            _atomic_to_parquet(grp if grp is not None else pd.DataFrame(), path, month_meta)
+            grp = grp if grp is not None else pd.DataFrame()
+            final = _month_final(grp.index, ym, now, delay) if len(grp) else bool(delay and _settled_by(ym, now, delay))
+            month_meta = {**(footer_meta or {}), **(_SETTLED_META if final else {})}
+            try:
+                _atomic_to_parquet(grp, path, month_meta)
+            except Exception as e:
+                if ym not in rereads:
+                    raise
+                print(f"  ⚠️  {prefix} {ym}: could not save the re-read ({type(e).__name__}) — asking again next call")
 
     # One batched read for all past months instead of one read_parquet call per month
     # file — with hundreds of ids x ~140 month files each, the per-file open/parse
@@ -589,13 +715,14 @@ def _save_monthly(prefix, params, df):
     cache_dir.mkdir(parents=True, exist_ok=True)
     df = _normalise_index(df)
     df = df[~df.index.duplicated(keep='last')].sort_index()
+    now, delay = datetime.utcnow(), _settle_delay(prefix)
     for ym, grp in df.groupby(df.index.strftime('%Y-%m')):
         path = cache_dir / f'{ym}.parquet'
         if path.exists():
             existing = _normalise_index(_read_parquet(path))
             grp = pd.concat([existing, grp])
             grp = grp[~grp.index.duplicated(keep='last')].sort_index()
-        grp.to_parquet(path, compression='snappy')
+        _atomic_to_parquet(grp, path, _SETTLED_META if _month_final(grp.index, ym, now, delay) else None)
 
 
 # ── Single-file cache layout (daily datasets) ─────────────────────────────────
@@ -4530,7 +4657,8 @@ def fetch_twstock_ratios_batch(stock_ids, headers, start=None, end=None):
 
 def _mark_empty_months(prefix, sid, start, end):
     """Write empty-marker parquets for every PAST month in [start, end] that has
-    no cached file.
+    no cached file, and flag the settled ones that have: the fetch that got here
+    read them whole, even when it answered no rows for one.
 
     The /batch endpoint only returns months that have data, so the empty early
     months (e.g. institutional before the dataset existed) never get a file from
@@ -4539,14 +4667,18 @@ def _mark_empty_months(prefix, sid, start, end):
     """
     cache_dir = _monthly_cache_dir(prefix, {'id': sid})
     cache_dir.mkdir(parents=True, exist_ok=True)
-    current_ym = datetime.utcnow().strftime('%Y-%m')
-    end_str = end or datetime.utcnow().strftime('%Y-%m-%d')
+    now, delay = datetime.utcnow(), _settle_delay(prefix)
+    current_ym = now.strftime('%Y-%m')
+    end_str = end or now.strftime('%Y-%m-%d')
     for ym in _iter_months(start, end_str):
         if ym >= current_ym:        # never freeze the current (still-growing) month
             continue
         path = cache_dir / f'{ym}.parquet'
         if not path.exists():
             pd.DataFrame().to_parquet(path)
+        elif delay and _settled_by(ym, now, delay) and \
+                not (_read_schema(path).metadata or {}).get(b'blave_month_settled'):
+            _stamp_settled(path)
 
 
 # /bulk: one request answers a dataset for every listed stock over a date window (api
@@ -4682,7 +4814,8 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
 
     answered = []
 
-    def _fetch_batch_range(id_list, range_start, range_end, size=chunk_size, workers=8, give_up_after=None):
+    def _fetch_batch_range(id_list, range_start, range_end, size=chunk_size, workers=8, give_up_after=None,
+                           request_kw=None):
         """size ids per request x date_chunk_days-sized date spans, `workers` at a time.
         give_up_after=N (serial only): when the first N requests all fail outright, the rest are
         not sent and their ids count as failed — a dead upstream answers the same to every one.
@@ -4700,7 +4833,7 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
             partial = {}
             try:
                 params = {id_param_name: ','.join(chunk), start_param: span_start, end_param: span_end}
-                r = _retry_get(batch_url, headers=headers, params=params, timeout=120)
+                r = _retry_get(batch_url, **{'headers': headers, 'params': params, 'timeout': 120, **(request_kw or {})})
                 body = r.json()
                 answered.append(True)
                 failed = body.get('failed', [])
@@ -4766,17 +4899,21 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
         prev_ym = (now.replace(day=1) - timedelta(days=1)).strftime('%Y-%m')
         tomorrow = (now + timedelta(days=1)).strftime('%Y-%m-%d')
 
-        def _prev_month_needs_completion(_id):
+        def _prev_month_from(_id):
+            """The day this id's previous month is read from, None when it needs no read."""
+            whole = f'{prev_ym}-01'
             if single:
                 meta = _read_single_meta(prefix, {'id': _id})   # footer only, no data pages
                 # unknown / older coverage → treat as needing the wider window
-                return meta is None or meta['to'] < prev_ym or _tail_needs_completion(meta, prev_ym)
+                incomplete = meta is None or meta['to'] < prev_ym or _tail_needs_completion(meta, prev_ym)
+                return whole if incomplete else None
             path = _monthly_cache_dir(prefix, {'id': _id}) / f'{prev_ym}.parquet'
-            return not path.exists() or _written_before_month_end(path, prev_ym)
+            if not path.exists() or _written_before_month_end(path, prev_ym):
+                return whole
+            return _reread_from(path, prev_ym, _settle_delay(prefix))
 
-        widen = (prev_ym >= start[:7]
-                 and any(_prev_month_needs_completion(_id) for _id in to_extend))
-        prefetch_start = f'{prev_ym}-01' if widen else f'{current_ym}-01'
+        needed = [_prev_month_from(_id) for _id in to_extend] if prev_ym >= start[:7] else []
+        prefetch_start = min([f'{current_ym}-01', *filter(None, needed)])
         fresh = _fresh_since()
         if single and fresh:
             cap_to = min((end or now.strftime('%Y-%m-%d'))[:7], current_ym)
@@ -4838,8 +4975,41 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
             prefix, {'id': _id},
             _make_fetch_fn(_id),
             start, end,
+            deferred=deferred.setdefault(_id, []),
         )
 
+    def _settle_older_months():
+        """Older months waiting only to settle, read per window for just the ids that need it.
+        The cache already answered for them, so nothing here may fail the call: a failure is a
+        warning and the next call asks again. → the ids whose rows changed."""
+        windows = {}
+        for _id, spans in deferred.items():
+            for span in spans:
+                windows.setdefault(span, []).append(_id)
+        order = sorted(windows, reverse=True)
+        request_kw = None
+        if _live_feeds:                   # bounded inside a tick, in time as well as in windows
+            order, request_kw = order[:_LIVE_SETTLE_WINDOWS], {'max_retries': 2, 'timeout': 30}
+        now, delay, healed = datetime.utcnow(), _settle_delay(prefix), set()
+        for s, e in order:
+            ids = windows[(s, e)]
+            last_day = (datetime.strptime(e, '%Y-%m-%d') - timedelta(days=1)).strftime('%Y-%m-%d')
+            try:
+                got, failed = _fetch_batch_range(ids, s, last_day, workers=2, request_kw=request_kw)
+                for _id, df in got.items():
+                    if _id not in failed:
+                        _save_monthly(prefix, {'id': _id}, df)
+                        healed.add(_id)
+                if _settled_by(s[:7], now, delay + _EMPTY_READ_RETRY):
+                    for _id in set(ids) - set(got) - failed:   # no rows: a series that ended stops asking
+                        for ym in _iter_months(s, last_day):
+                            _stamp_settled(_monthly_cache_dir(prefix, {'id': _id}) / f'{ym}.parquet')
+            except Exception as e_:
+                print(f"  ⚠️  {prefix} {s}..{last_day}: re-read failed ({type(e_).__name__}: {str(e_)[:100]}) "
+                      f"— using the cache, asking again next call")
+        return healed
+
+    deferred = {}
     with ThreadPoolExecutor(max_workers=10) as pool:
         futures = {pool.submit(_extend_one, _id): _id for _id in to_extend}
         for future in as_completed(futures):
@@ -4848,16 +5018,23 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
                 results[_id] = future.result()
             except Exception:
                 uncached.append(_id)
+    for _id in _settle_older_months():
+        if _id in results:
+            try:
+                results[_id] = _extend_one(_id)   # the frame this call returns carries what was just read
+            except Exception:
+                pass                              # the first frame stands
 
-    # Month-aligned start for the single-file layout, like _extend_cache_monthly's
-    # spans: the cache claims the whole start month, so it must hold the whole month
-    # (a later request from the 1st would otherwise find a permanent hole).
-    # (Single layout only: the monthly batch path keeps its exact `start` — sub-5min
-    # kline batches are validated against the server's earliest date and a month-
-    # aligned start before it is a hard 400, not a clamp.)
-    full_start = f'{start[:7]}-01' if (single and start) else start
+    # Whole months, like _extend_cache_monthly's spans: a month stored here counts as
+    # complete from then on, so a mid-month start (or a mid-month `end` in a past month,
+    # monthly layout; the single layout tracks that in tail_fetched_at) would otherwise
+    # leave a permanent hole. The answer is cut back to [start, end] below.
+    full_start = f'{start[:7]}-01' if start else start
+    full_end = end
+    if end and not single and end[:7] < datetime.utcnow().strftime('%Y-%m'):
+        full_end = (_month_end_utc(end[:7]) - timedelta(days=1)).strftime('%Y-%m-%d')
     answered.clear()
-    fetched, failed_ids = _fetch_batch_range(uncached, full_start, end)
+    fetched, failed_ids = _fetch_batch_range(uncached, full_start, full_end)
     # One serial pass in smaller chunks, no waiting and no loop: the usual cause is the server's
     # hourly upstream quota (2026-10-03: FinMind 27k calls against 18k, 7,254 stock-requests
     # dropped and a backtest went through with 0 trades), which will not come back within the run.
@@ -4866,7 +5043,7 @@ def _fetch_batch_cached(prefix, batch_url, id_param_name, raw_fn, parse_fn, ids,
         retry_ids = [_id for _id in dict.fromkeys(uncached) if _id in failed_ids]
         retry_ids += sorted(failed_ids.difference(retry_ids))
         print(f'  [batch] {batch_url}: retrying {len(retry_ids)} failed ids, one request at a time')
-        again, failed_ids = _fetch_batch_range(retry_ids, full_start, end,
+        again, failed_ids = _fetch_batch_range(retry_ids, full_start, full_end,
                                                size=max(1, chunk_size // 5), workers=1, give_up_after=3)
         for _id, df in again.items():
             df = pd.concat([fetched[_id], df]) if _id in fetched else df
