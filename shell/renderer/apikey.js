@@ -185,7 +185,8 @@ function akFault(text, capped) {
   const m = AK_FAULT_RE.exec(text || ""), net = AK_NET_RE.test(text || "");
   if (!m && !net) return null;
   const p = akTurnProvider(), s = m ? m[1] : "";
-  const resend = () => { resendLast(); }, rs = resendable() ? t("fault.resend") : null;   // 手機那一輪沒有可重送的那句:不出鈕
+  const resend = () => { resendLast(); };
+  const rs = resendable() ? t("fault.resend") : null;   // 手機那一輪沒有可重送的那句:不出鈕
   const toModels = () => setOpen().then(() => setCat("model"));
   if (s === "429" && capped) return { cap: true, text: t("ak.f.cap"), label: rs, act: resend };
   if (s === "401" || s === "403") return { text: t("ak.f.key", { p, s }), label: t("ak.f.keyBtn"), act: () => toModels().then(() => akOpen("set")) };
