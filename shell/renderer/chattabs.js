@@ -170,7 +170,8 @@ function tabsOnEvent(c) {
   if (c.type === "started") {
     tabsQueued(T, false);
     // 不是這個畫面送出的那一輪(手機來的、開成分頁的):這裡才知道它在跑——記成回合中,機器層級的鎖與分頁的「回覆中」才看得到
-    withTab(T, () => { if (!running) { running = true; turnSeq++; turnSeqMine = turnSeq; } busyStart(); });
+    // 這一輪沒有畫面上的那句可收回(lastUserTyped = false):停掉它時不把上一輪電腦前打的字塞回輸入框
+    withTab(T, () => { if (!running) { running = true; turnSeq++; turnSeqMine = turnSeq; turnFresh(null); lastUserTyped = false; } busyStart(); });
     tabsPaint(); return;
   }
   if (c.type === "browser_wait") { withTab(T, () => { busySet(t("tabs.brWait"), "", "wait"); if (ACT) ACT.shown = "browser_wait|"; }); return; }
@@ -495,12 +496,13 @@ if (typeof window.blave.onTabClose === "function") window.blave.onTabClose(() =>
 // 列外那個 aria-live 念一次「{標題}，來自手機」,不然讀屏不知道列上多了一個分頁
 if (typeof window.blave.onTabOpen === "function") window.blave.onTabOpen((o) => {
   if (!o || typeof o.sid !== "string") return;
-  const was = CS.tabs.has(o.sid) && !CS.tabs.get(o.sid).closed, p = csOpen(o.sid, { focus: o.focus !== false });
+  const was = CS.tabs.has(o.sid) && !CS.tabs.get(o.sid).closed, p = csOpen(o.sid, { focus: o.focus !== false, since: o.origin === "mobile" ? o.since : 0 });
   if (o.origin !== "mobile") return;
   trackFeature("tab_remote");
   p.then((T) => {
     if (!T || T.dead) return;
-    if (o.echo) withTab(T, () => addHistoryYou(o.echo, "mobile"));
+    if (o.echo && !T.echoDrawn) withTab(T, () => addHistoryYou(o.echo, "mobile"));   // 讀歷史時已經畫到那一句(csDraw):不補第二次
+    T.echoDrawn = false;
     if (!was && o.focus === false) { const el = $("tabs-live"); if (el) { el.textContent = ""; requestAnimationFrame(() => { el.textContent = tabsTitle(T) + "，" + t("chat.fromPhone"); }); } }
   }).catch(() => {});
 });

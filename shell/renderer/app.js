@@ -2926,7 +2926,7 @@ function histFixOrder(out, x) {
 /* 打開一條對話:開著就切過去,沒開就加在分頁列最後並選中(spec §4)。o.focus === false = 背景開(手機來的),不切 */
 async function csOpen(id, o) {
   const had = CS.tabs.get(id);
-  if (had) { if (had.closed) tabsAdd(had); if (!(o && o.focus === false)) tabShow(had); if (!had.drawn) await csDraw(had); return had; }
+  if (had) { if (had.closed) tabsAdd(had); if (!(o && o.focus === false)) tabShow(had); if (!had.drawn) await csDraw(had, o && o.since); return had; }
   const T = tabMake(id, { title: (csItems.find((m) => m && m.id === id) || {}).title || "" });
   // 主行程那邊這一條已經在跑(手機來的、重載前就開跑的):先記成回合中,再畫歷史(即時那一段接在歷史後面)
   const ph = CS.main.get(id);
@@ -2934,14 +2934,17 @@ async function csOpen(id, o) {
   if (ph === "queued") tabsQueued(T, true);
   tabsAdd(T);
   if (!(o && o.focus === false)) tabShow(T);
-  await csDraw(T);
+  await csDraw(T, o && o.since);
   return T;
 }
-/* 把 session.db 裡那條畫進分頁 T 的容器(重開 app 時只畫選中那一條,其餘點到才畫:§12 第 12 條) */
-async function csDraw(T) {
+/* 把 session.db 裡那條畫進分頁 T 的容器(重開 app 時只畫選中那一條,其餘點到才畫:§12 第 12 條)。
+   since = 手機那一輪開跑的時間(tab-open 帶來):runtime 搶先寫進的那句手機的話照「來自手機」畫,T.echoDrawn 告訴 tab-open 別再補一次 */
+async function csDraw(T, since) {
   T.drawn = true;
   const id = T.sid;
   const turns = await window.blave.loadSession(id);
+  const echo = since ? turns.find((x) => x.role === "user" && x.ts >= since) : null;
+  if (echo) { echo.origin = "mobile"; T.echoDrawn = true; }
   if (!turns.length) { withTab(T, () => csRenderHead()); return; }
   const imgs = await window.blave.loadSessionImages(id);
   const brs = typeof brHistoryItems === "function" ? await brHistoryItems(id) : [];   // 內建瀏覽器每一輪的摘要列
@@ -4005,6 +4008,12 @@ async function sendDraft() {
   // chip 由 submitMessage 在送出去的那一刻清(安裝失敗後按「重試」送出的也走那裡);沒送出去的路(busy / 版本閘 / 引擎起不來)把句子還原到輸入框、檔也留著,不靜默消失
   await submitMessage(msg, { typed: true, attachments });
 }
+/* 每輪狀態歸零。畫面送出的(submitMessage)與畫面外開跑的(手機那一輪,chattabs.js 的 started)都要經過:
+   漏了的話 liveBubble 還指著上一輪的回覆泡泡——下一輪一碰工具就把它拔掉,沒碰工具就把新回覆接進那顆舊泡泡(0.1.42 手機實測) */
+function turnFresh(bubble) {
+  liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = []; turnAiBubbles = []; turnFaultEl = null;
+  turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCap = false; turnCards = []; turnBubble = bubble; turnHadTool = false;
+}
 /* 真的送出一句話。回傳這一輪有沒有跑起來(「再送一次」要知道)。不碰輸入框的字;這一句帶的檔送出去了就把 chip 清掉。 */
 async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / 拉回」確認框送的那句才有(handoff.js);重送(lastUserText)不帶
   rsArm();   // 每個送出入口都經過這裡:回覆音的 AudioContext 先建好
@@ -4074,7 +4083,7 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
       // 暖機期間按了停止:主行程還沒有回合可停,在這裡收掉,不送出
       if (turnStopped) { turnStopped = false; unlock(); unsend(); return false; }
       // 沒有型錄(選擇器沒畫)時 model / effort 都是 null,runTurn 就不帶旗標
-      turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCap = false; turnCards = []; turnBubble = bubble; turnHadTool = false;
+      turnFresh(bubble);
       return true;
     });
     if (!step2) return false;

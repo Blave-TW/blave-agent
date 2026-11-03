@@ -111,7 +111,7 @@ const TAB = [   // 眼前這一條(分頁自己的 running;切分頁時整組換
   ["app.js", /if \(running\) planDonePending = sessionId; else planSayDone\(\);/, "方案開好了那句不插進眼前這條的串流,記是哪一條"],
   ["app.js", /if \(ph\) withTab\(T, \(\) => \{ running = true; turnSeq\+\+; turnSeqMine = turnSeq;/, "開成分頁時主行程那邊已在跑(手機來的):記成回合中"],
   ["app.js", /const keep = running \? \{ busy, liveBubble,/, "畫歷史時那一條在跑:狀態列與串流泡泡留著"],
-  ["chattabs.js", /withTab\(T, \(\) => \{ if \(!running\) \{ running = true; turnSeq\+\+; turnSeqMine = turnSeq; \} busyStart\(\); \}\);/, "started:不是這個畫面送出的那一輪也記成回合中"],
+  ["chattabs.js", /withTab\(T, \(\) => \{ if \(!running\) \{ running = true; turnSeq\+\+; turnSeqMine = turnSeq; turnFresh\(null\); lastUserTyped = false; \} busyStart\(\); \}\);/, "started:不是這個畫面送出的那一輪也記成回合中(每輪狀態歸零)"],
   ["app.js", /^let running = false;/, "宣告"],
   ["chattabs.js", /\["running", \(\) => running, \(v\) => \{ running = v; \}/, "TAB_KEYS"],
   ["chattabs.js", /function csAway\(\) \{ if \(csTitle \|\| running\)/, "從別處送一句話:眼前這條在跑就另開"],

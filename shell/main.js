@@ -3650,7 +3650,8 @@ async function startTurn(payload, origin) {
   turns.set(sid, rec);
   // 手機來的對話:畫面開成背景分頁(加在最後、不切過去,spec 技術方案 §1.5);事件照 sid 畫進去
   // started:這一輪不是畫面送出的,畫面要從這裡才知道那個分頁在回覆中;echo = 手機送的那句,歷史畫完後接在後面(帶「來自手機」)
-  if (rec.origin === "mobile") sendTurn(sid, "tab-open", { origin: "mobile", focus: false, echo: typeof payload.message === "string" ? payload.message : "" });
+  // since:這一刻之後 runtime 寫進 session.db 的那句就是 echo——畫面讀歷史若已讀到它,不再補畫一次
+  if (rec.origin === "mobile") sendTurn(sid, "tab-open", { origin: "mobile", focus: false, echo: typeof payload.message === "string" ? payload.message : "", since: Date.now() / 1000 });
   if (rec.cloud) { try { cloudHost().start(); } catch (_) { /* 起不來:名額照讀不到算 */ } }
   // 最低版本閘:只擋 Blave AI;連自己 CLI 的人照常聊
   try {

@@ -208,7 +208,7 @@ contextBridge.exposeInMainWorld("blave", {
   tabsPrefsSet: (p) => ipcRenderer.invoke("tabs-prefs-set", p && typeof p === "object" ? { tabs: Array.isArray(p.tabs) ? p.tabs.filter((x) => typeof x === "string") : [], sel: typeof p.sel === "string" ? p.sel : null } : null),
   onTabNew: (fn) => ipcRenderer.on("tab-new", () => fn()),
   onTabClose: (fn) => ipcRenderer.on("tab-close", () => fn()),
-  onTabOpen: (fn) => ipcRenderer.on("tab-open", (_e, o) => fn(o && typeof o === "object" ? { sid: typeof o.sid === "string" ? o.sid : "", origin: o.origin === "mobile" ? "mobile" : "desktop", focus: o.focus !== false, echo: typeof o.echo === "string" ? o.echo : "" } : null)),
+  onTabOpen: (fn) => ipcRenderer.on("tab-open", (_e, o) => fn(o && typeof o === "object" ? { sid: typeof o.sid === "string" ? o.sid : "", origin: o.origin === "mobile" ? "mobile" : "desktop", focus: o.focus !== false, echo: typeof o.echo === "string" ? o.echo : "", since: Number.isFinite(o.since) ? o.since : 0 } : null)),
   windowClose: () => ipcRenderer.send("window-close"),
   // 安裝進度(renderer/engine.js):主行程那一份快照,拉一次 + 之後每次變動推過來
   engineState: () => ipcRenderer.invoke("engine-state"),
