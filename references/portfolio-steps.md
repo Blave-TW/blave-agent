@@ -36,14 +36,14 @@ On mobile (narrow screens) the chat fills the screen — prepend one line:
 
 **Bind the paper venue / an exchange** (a key already pasted in chat: bind it with `lib.venue.bind` per AGENTS.md instead of sending this script):
 1. 點左側「自動下單」
-2. 點「連接交易所」
+2. 點「連接帳戶」
 3. 選「模擬交易（免金鑰）」（real venue: pick it and fill in its API keys）
-4. 按「連接交易所」送出
+4. 按「連接帳戶」送出
 
 **Add to the portfolio / set amounts:**
 1. 點左側「策略組合」，切到「配置」分頁
 2. 點「選擇策略」勾選策略，按「確定」
-3. 在「金額」欄填金額（填 0＝不下單），按「儲存」（已連接交易所時，確認框也按「儲存」）
+3. 在「金額」欄填金額（填 0＝不下單），按「儲存」（已連接帳戶時，確認框也按「儲存」）
 4. 還沒在下單：點「到自動下單啟動」，照下面那套啟動（已在下單：存好就照新金額下單）
 
 **Start / resume trading:**
@@ -57,9 +57,9 @@ The switcher at the top of the middle pane picks the side: 「這台電腦」 fo
 
 **Bind the paper venue / an exchange** (one venue at a time: if one is connected, 「設定」分頁 ›「解除綁定」 first):
 1. 點左側「自動下單」
-2. 點「連接交易所」
-3. 在「交易所／券商」選「模擬交易（免金鑰）」（real venue: pick it and fill in its API keys）
-4. 按「連接交易所」送出
+2. 點「連接帳戶」
+3. 在「交易所或期貨商」選「模擬交易（免金鑰）」（real venue: pick it and fill in its API keys）
+4. 按「連接帳戶」送出
 
 **Add to the portfolio / set amounts:**
 1. 點左側「策略組合」，切到「配置」分頁

@@ -67,9 +67,9 @@ prefer the near-month aliases, or the V2.13.54+ `bstrCIDTandem`(`FITX`) + `bstrS
   trading password, touch neither this computer nor the cloud machine.
   - **Connecting Capital on this computer** (no cloud-view line this turn):
     - **Windows PC**: not every app build has it yet, and you cannot see the app's menu — so say both
-      ways in one reply: 「如果 app 的 自動下單 › 連接交易所 選單裡有群益，就在那裡照畫面開通；沒有的話是這一版還沒開放，
-      要用 Windows 雲端主機：在網頁開雲端主機時選 Windows（開好之後不能換）。」/ "If Auto trading › Connect an
-      exchange in the app lists Capital, set it up there and follow the steps on screen. If it doesn't, this
+      ways in one reply: 「如果 app 的 自動下單 › 連接帳戶 選單裡有群益，就在那裡照畫面開通；沒有的話是這一版還沒開放，
+      要用 Windows 雲端主機：在網頁開雲端主機時選 Windows（開好之後不能換）。」/ "If Auto trading › Connect
+      Account in the app lists Capital, set it up there and follow the steps on screen. If it doesn't, this
       build has not opened it yet: use a Windows cloud machine — choose Windows when you launch one on the
       web (it can't be changed afterward)." Where the menu has it, the app connects it, not you: it
       installs the component for this Windows account, finds, imports or issues the certificate, takes the

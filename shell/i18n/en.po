@@ -9888,9 +9888,6 @@ msgstr "Performance was updated. Rerun the test to update this."
 msgid "xt.busyRefresh"
 msgstr "Performance is updating. Press again when it finishes."
 
-msgid "xt.busyTurn"
-msgstr "The agent is replying and may still be editing strategies. Test after it finishes."
-
 # 下單結果不明(order_unconfirmed,canon notifications §3):事件列標題／說明、本機 P1 通知內文、列下那一句;策略段(策略檔名)組字
 msgid "tr.ov.evUnconfirmed"
 msgstr "Order outcome unknown"

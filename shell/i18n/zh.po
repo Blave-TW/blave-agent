@@ -9916,9 +9916,6 @@ msgstr "績效更新過，重新測試後才會更新。"
 msgid "xt.busyRefresh"
 msgstr "績效正在更新，跑完再按一次。"
 
-msgid "xt.busyTurn"
-msgstr "agent 正在回覆，可能還在改策略，回覆完再測。"
-
 # 下單結果不明(order_unconfirmed,canon notifications §3):事件列標題／說明、本機 P1 通知內文、列下那一句;策略段(策略檔名)組字
 msgid "tr.ov.evUnconfirmed"
 msgstr "下單結果不明"

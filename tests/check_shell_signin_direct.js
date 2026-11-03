@@ -17,6 +17,7 @@ const NOT_SIGNIN = {   // 檔 → 所在函式:登出之後切到這一類、查
   "app.js": ["acctSignOut", "setCat", "dataCardState", "planOpen", "mvBlock", "phBlock"],
   "library.js": ["libGateBtn", "libBuyBox", "libPaintList"],   // libPaintList:方案制試用閘門旁的「看方案」(paywall-redesign-2026-10-21)
   "welcome.js": ["wdNote"],
+  "portfolio.js": ["mgWhyGo"],   // 〔套用金額〕原因句的「登入 Blave」:mockup-apply-why-links 定的,開帳號與方案、焦點落那顆登入鈕,關設定回優化分頁;行內的 pv.signin 是找那顆鈕
 };
 const SIGNIN_KEYS = /"(cn\.blave\.btn|pv\.signin|shr\.gateGo|wd\.note\.out(NoNum|\.m)?)"/;
 const sites = [];
@@ -30,7 +31,7 @@ fs.readdirSync(R).filter((f) => f.endsWith(".js")).forEach((f) => {
 });
 const stray = sites.filter((s) => !(NOT_SIGNIN[s.f] || []).includes(s.fn));
 ok("每一個開帳號與方案的呼叫點都有登記(共 " + sites.length + " 處)", sites.length >= 8 && stray.length === 0, stray.map((s) => s.f + ":" + s.i + " " + s.fn).join(", "));
-const signinRoutedToPlan = sites.filter((s) => SIGNIN_KEYS.test(s.line));
+const signinRoutedToPlan = sites.filter((s) => SIGNIN_KEYS.test(s.line) && s.fn !== "mgWhyGo");
 ok("沒有一顆登入鈕開的是帳號與方案", signinRoutedToPlan.length === 0, signinRoutedToPlan.map((s) => s.f + ":" + s.i).join(", "));
 ok("report-share / report-sharelist 不再開帳號與方案", !/setCat\("plan"\)/.test(shr) && !/setCat\("plan"\)/.test(shl));
 
@@ -144,7 +145,7 @@ function harness() {
 
   /* 4. 資料卡:沒登入那一態是〔登入 Blave〕+ planSignIn;查不到狀態那一態照舊開帳號與方案 */
   hit.length = 0;
-  const D = { t: (k) => k, hasToken: false, acct: null, planLoginBusy: false, dataCard: { b1: "B1" }, planVars: () => ({ t: 14, p: 0 }), pvK: (k) => k, planState: () => "none",
+  const D = { t: (k) => k, hasToken: false, acct: null, planLoginBusy: false, dataCard: { b1: "B1" }, planVars: () => ({ t: 14, p: 0 }), pvPriced: (_k, v) => !!v.p, pvK: (k) => k, planState: () => "none",
     planSignIn: (x) => hit.push(["signin", x]), planOpen: () => hit.push(["planOpen"]) };
   vm.createContext(D);
   vm.runInContext(cut(app, "dataCardState"), D);

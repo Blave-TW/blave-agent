@@ -242,7 +242,7 @@ t("#7b 電腦版步驟裡每個「」標籤都是外殼 zh.po 的原文", not mi
 old_doc = doc.replace("### Web workspace\n", "").replace("### Desktop app\n", "#### desktop\n")
 with open(os.path.join(WS, "references", "portfolio-steps.md"), "w", encoding="utf-8") as f:
     f.write(old_doc)
-t("#7b 舊檔(沒有子段):整段照舊回,不回空", "點「連接交易所」" in at._portfolio_steps_block(WS, desktop=True))
+t("#7b 舊檔(沒有子段):整段照舊回,不回空", "點「連接帳戶」" in at._portfolio_steps_block(WS, desktop=True))
 
 src = open(os.path.join(ROOT, "runtime", "agent_turn.py"), encoding="utf-8").read()
 t("#7b build_prompt 兩個呼叫點都帶 desktop=_desktop_surface(sink)(連同 suggest_mode,續跑那一輪不掉回 normal)",

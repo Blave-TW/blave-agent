@@ -30,7 +30,7 @@ check("Either way stop here" in desk and "touch neither" in desk, "both cases st
 win_i, mac_i = local.find("**Windows PC**"), local.find("**Mac**")
 check(0 < win_i < mac_i, "this-computer case splits Windows PC, then Mac")
 win, mac = local[win_i:mac_i], local[mac_i:]
-check("app 的 自動下單 › 連接交易所 選單裡有群益" in win and "Auto trading › Connect an\n      exchange in the app lists Capital" in win
+check("app 的 自動下單 › 連接帳戶 選單裡有群益" in win and "Auto trading › Connect\n      Account in the app lists Capital" in win
       and "the app connects it, not you" in win and "never ask for the ID or the\n  trading password" in desk,
       "Windows PC: if the menu lists 群益, the app's connect flow (zh + en); the agent asks for no credentials")
 check("沒有的話是這一版還沒開放" in win and "在網頁開雲端主機時選 Windows" in win and "this\n      build has not opened it yet" in win

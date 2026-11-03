@@ -50,11 +50,11 @@ if (!process.versions.electron) {
   ok("① 尖峰 = 穩健同格時是 inside 不是 peak(穩健格本身優先)", R.robWhere(R.sanitizeScan({ ...SCAN, peak: { i: 2, j: 2 }, current: { i: 2, j: 2 } }, null, "")) === "inside");
   ok("① window 不是正整數 / 超過每軸上限 → 1;window 2 時鄰域擴到 5×5", R.sanitizeScan({ ...SCAN, window: 0 }, null, "").w === 1 && R.sanitizeScan({ ...SCAN, window: 41 }, null, "").w === 1 && R.sanitizeScan({ ...SCAN, window: 2.5 }, null, "").w === 1 && R.sanitizeScan({ ...SCAN, window: 2 }, null, "").w === 2 && R.robWhere(R.sanitizeScan({ ...SCAN, window: 2, current: { i: 0, j: 2 } }, null, "")) === "inside");
   ok("① 格式:負號用 U+2212(科學記號的指數負號也換)、缺值 —", R.pv(-0.5, 2) === "−0.50" && R.pv(1e-7, 2) === "1e−7" && R.f2(null) === "—" && R.f2(-0.001) === "0.00" && R.f2(1.234) === "1.23");
-  { const V = R.valBtn, J = (x) => JSON.stringify([x.state, x.cls, x.disabled, x.lock, x.labelKey]);
-    ok("① 鈕態表:不實心;優先序 behind > sent > busy > empty > stale > fresh;busy 的鈕型與鈕字取底下那一態、只有 sent 是真 disabled",
-      J(V({})) === '["fresh","btn-quiet",false,false,"rerun"]' && J(V({ stale: true })) === '["stale","btn-out",false,false,"rerun"]' && J(V({ empty: true, stale: true })) === '["empty","btn-out",false,false,"start"]'
-      && J(V({ busy: true })) === '["busy","btn-quiet",false,true,"rerun"]' && J(V({ busy: true, stale: true })) === '["busy","btn-out",false,true,"rerun"]' && J(V({ busy: true, empty: true })) === '["busy","btn-out",false,true,"start"]'
-      && J(V({ sent: true, busy: true })) === '["sent","btn-out",true,false,"sent"]' && J(V({ behind: true, sent: true, busy: true })) === '["behind","btn-out",false,false,"update"]'); }
+  { const V = R.valBtn, J = (x) => JSON.stringify([x.state, x.cls, x.disabled, x.labelKey]);
+    ok("① 鈕態表:不實心;優先序 behind > sent > empty > stale > fresh;回合中沒有這一態(busy 旗標不起作用)、只有 sent 是真 disabled",
+      J(V({})) === '["fresh","btn-quiet",false,"rerun"]' && J(V({ stale: true })) === '["stale","btn-out",false,"rerun"]' && J(V({ empty: true, stale: true })) === '["empty","btn-out",false,"start"]'
+      && J(V({ busy: true })) === '["fresh","btn-quiet",false,"rerun"]' && J(V({ busy: true, stale: true })) === '["stale","btn-out",false,"rerun"]'
+      && J(V({ sent: true })) === '["sent","btn-out",true,"sent"]' && J(V({ behind: true, sent: true })) === '["behind","btn-out",false,"update"]'); }
   ok("① 送出簽章只看 scan / code / Generated At(整份 stats 每根 K 都會變)", R.sentSig({ scan: SCAN, code: "x", stats: { "Generated At": 1, "Sharpe Ratio": 2 } }) === R.sentSig({ scan: SCAN, code: "x", stats: { "Generated At": 1, "Sharpe Ratio": 3 } }) && R.sentSig({ scan: SCAN, code: "x", stats: null }) !== R.sentSig({ scan: SCAN, code: "y", stats: null }));
 
   // ── ① 過時判定第 1 層(spec-0.1.12-scan-stale §2 / §6):掃描自己的 start / end / fee 對現在的回測;web 工作頁同一套 ──

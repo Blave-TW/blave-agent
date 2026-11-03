@@ -238,7 +238,7 @@ try:
          "try:\n venue.bind('binance', {'BINANCE_API_KEY': 'k'*20, 'BINANCE_SECRET_KEY': 's'*20})\n"
          "except ValueError as e: print('REFUSED', e)"],
         cwd=WS, env=ENV, capture_output=True, text=True, timeout=60)
-    check("REFUSED" in chat.stdout and "連接交易所" in chat.stdout
+    check("REFUSED" in chat.stdout and "連接帳戶" in chat.stdout
           and "BINANCE" not in open(os.path.join(WS, ".env")).read(),
           f"chat bind (lib.venue.bind) of a real venue is refused on the desktop: {chat.stdout.strip()[:80]}")
     a = send("amounts", {"amounts": {"typeb": 100}})

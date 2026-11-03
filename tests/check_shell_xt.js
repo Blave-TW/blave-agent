@@ -165,10 +165,10 @@ ok("② 主機落後時不收結果(落後那格蓋過測試中);perfXtSync 比�
 // 兩層狀態(parity 測試另比兩邊同一組情境)
 { const P = X.xtPageOf, C = X.xtCellOf, x0 = X.xtSanitize(A);
   const pages = [P({ verActive: true, x: x0 }), P({ restoring: true }), P({ x: null }), P({ x: x0, sharpe: 1.618 }), P({ x: x0, sharpe: 1.6 }), P({ cfg: false, perf: "running", x: x0, sharpe: 1.618 })];
-  const cells = [C({ cfg: false, perf: "running" }), C({ cfg: null }), C({ cfg: true, perf: "running", mine: "busy" }), C({ cfg: true, perf: "failed", mine: "fail", turn: true }),
-    C({ cfg: true, perf: "failed", mine: "busy" }), C({ cfg: true, perf: "failed", mine: null }), C({ cfg: true, turn: true }), C({ cfg: true })];
+  const cells = [C({ cfg: false, perf: "running" }), C({ cfg: null }), C({ cfg: true, perf: "running", mine: "busy" }), C({ cfg: true, perf: "failed", mine: "fail" }),
+    C({ cfg: true, perf: "failed", mine: "busy" }), C({ cfg: true, perf: "failed", mine: null }), C({ cfg: true })];
   ok("② xtPageOf:1 時光機、2 還原重跑、4 空、6 新鮮、7 過時(落後、在跑都不影響整頁)", pages.join() === "1,2,4,6,7,6", pages.join());
-  ok("② xtCellOf:3 落後(蓋過在跑、null 也算)、5 在跑(BUSY 也是)、8 這頁按的失敗(蓋過回合中)、BUSY／別處的失敗不算 8、9 回合中、0 一般鈕", cells.join() === "3,3,5,8,0,0,9,0", cells.join()); }
+  ok("② xtCellOf:3 落後(蓋過在跑、null 也算)、5 在跑(BUSY 也是)、8 這頁按的失敗、BUSY／別處的失敗不算 8、0 一般鈕(回合中不鎖,沒有第 9 態)", cells.join() === "3,3,5,8,0,0,0", cells.join()); }
 
 // 禁用字:判讀標籤與評語(spec §1、§3.1)不准出現在這頁的程式與兩語譯文
 const FORBID = ["緩坡", "斷崖", "完全不動", "越晚越高", "看不出方向", "敏感", "下單要快", "不怕慢", "可疑"];
@@ -197,7 +197,7 @@ ok("③ 鈕 = 更新績效同一條路(perfClick → stats_refresh、ack 才記 
   && /perfXtSlot\(B, kind\) : null/.test(app) && /perfXtInfo\(B\) : null/.test(app) && /onMetric: \(\) => \{ trackFeature\("xt_metric"\); \},/.test(app));
 ok("③ 失敗句 xt.updFail = 「沒測成功」;§3.6 新字都在", /perfFailLine\(side, st, "xt\.updFail"\)/.test(perf) && zh["xt.updFail"] === "沒測成功"
   && zh["xt.btnRun"] === "開始測試" && zh["xt.btnRerun"] === "重新測試" && zh["xt.btnBusy"] === "測試中" && zh["xt.btnTip"] === "用最新資料重跑回測，績效會一起更新。"
-  && zh["xt.verdictStale"] === "績效更新過，重新測試後才會更新。" && zh["xt.busyRefresh"] === "績效正在更新，跑完再按一次。" && zh["xt.busyTurn"] === "agent 正在回覆，可能還在改策略，回覆完再測。"
+  && zh["xt.verdictStale"] === "績效更新過，重新測試後才會更新。" && zh["xt.busyRefresh"] === "績效正在更新，跑完再按一次。" && !("xt.busyTurn" in zh)
   && !("xt.fog" in zh) && !/xt\.fog"/.test(R("renderer/report-xt.js")));
 
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

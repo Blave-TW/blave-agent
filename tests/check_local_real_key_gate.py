@@ -278,7 +278,7 @@ try:
     venue.bind("binance", dict(ENV))
     check(False, "lib.venue.bind refuses a real venue on the desktop")
 except ValueError as e:
-    check("連接交易所" in str(e) and not loaded and KEY not in str(e),
+    check("連接帳戶" in str(e) and not loaded and KEY not in str(e),
           "lib.venue.bind refuses a real venue on the desktop, runtime never touched")
 
 # 7. the cloud box runs the SAME Binance check (2026-09-22 — it used to write

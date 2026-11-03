@@ -125,6 +125,8 @@ EXEMPT = [
     ('lib/lint_export.py', 'selftest', 'os.path.join(folder, f)', 'agent', 'selftest fixtures'),
     ('lib/lint_export.py', 'write_meta', 'os.path.join(strat_dir, "strategy.py")',
      'code', 'code / doc / VERSION text, not a state file'),
+    ('lib/param_scan.py', '_strategy_code_hash', "os.path.join(str(output_dir), 'strategy.py')",
+     'code', 'strategy source; an unreadable file gives no hash, so nothing claims to match'),
     ('lib/notify.py', '_load_config', '_ALLOW_FROM_PATH',
      'cloud', 'OpenClaw config / Telegram allowFrom: cloud (Linux) only, no Windows replace window'),
     ('lib/notify.py', '_load_config', '_CONFIG_PATH',

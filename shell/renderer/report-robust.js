@@ -590,24 +590,21 @@
    * 掃描回合結束沒產出、之後任何無關回合開始時 turn 對不上;scope 讓本機 / 雲端的同名策略不互相污染 */
   const sent = new Map();
   /* 三個驗證分頁的鈕態(canon › 驗證分頁重跑鈕):參數掃描、樣本外驗證、成交測試共用這一份;web workspace.html 同名常數,check_web_desktop_parity.js 逐列比。
-   * kind:out = 描邊、quiet = 文字鈕;實心留給頁首主鈕,這裡沒有。disabled:true = 真 disabled、"aria" = 回合中的鎖(鈕型與鈕字照底下那一態);
+   * kind:out = 描邊、quiet = 文字鈕;實心留給頁首主鈕,這裡沒有。disabled:true = 真 disabled。回合中不鎖,沒有這一態(掃描、樣本外排在後面,更新績效、成交測試照跑);
    * labelKey 是槽位,各分頁的字串 key 不同(start／rerun／sent／update) */
   const VAL_BTN = {
     behind: { kind: "out", disabled: false, labelKey: "update" },
     sent: { kind: "out", disabled: true, labelKey: "sent" },
-    busy: { kind: null, disabled: "aria", labelKey: null },
     empty: { kind: "out", disabled: false, labelKey: "start" },
     stale: { kind: "out", disabled: false, labelKey: "rerun" },
     fresh: { kind: "quiet", disabled: false, labelKey: "rerun" },
   };
-  const VAL_BTN_ORDER = ["behind", "sent", "busy", "empty", "stale", "fresh"];
+  const VAL_BTN_ORDER = ["behind", "sent", "empty", "stale", "fresh"];
   const VAL_BTN_CLS = { out: "btn-out", quiet: "btn-quiet" };
-  // flags = { behind, sent, busy, empty, stale }:照優先序取第一個成立的態;都不成立就是 fresh。busy 的鈕型與鈕字取底下那一態
+  // flags = { behind, sent, empty, stale }:照優先序取第一個成立的態;都不成立就是 fresh
   function valBtn(flags) {
-    const f = flags || {}, on = (k) => k === "fresh" || !!f[k];
-    const state = VAL_BTN_ORDER.find(on), row = VAL_BTN[state];
-    const base = row.kind ? row : VAL_BTN[VAL_BTN_ORDER.slice(VAL_BTN_ORDER.indexOf(state) + 1).find(on)];
-    return { state, cls: VAL_BTN_CLS[base.kind], kind: base.kind, labelKey: base.labelKey, disabled: row.disabled === true, lock: row.disabled === "aria" };
+    const f = flags || {}, state = VAL_BTN_ORDER.find((k) => k === "fresh" || !!f[k]), row = VAL_BTN[state];
+    return { state, cls: VAL_BTN_CLS[row.kind], kind: row.kind, labelKey: row.labelKey, disabled: row.disabled === true };
   }
 
   const shown = new WeakMap();   // container → 這一次畫的那一份(robSync 就地改鈕或整片重畫、onScan 回來時對一下容器沒換成別支)

@@ -321,9 +321,9 @@ for (const lang of ["zh", "en"]) {
     "xt.costSub": "workspace_xt_cost_sub", "xt.costLbl": "workspace_xt_cost_lbl", "xt.colCost": "workspace_xt_col_cost", "xt.free": "workspace_xt_free", "xt.freeAx": "workspace_xt_free_ax",
     "xt.perSide": "workspace_xt_per_side", "xt.beK": "workspace_xt_be_k", "xt.beLine": "workspace_xt_be_line", "xt.beOut": "workspace_xt_be_out", "xt.clip": "workspace_xt_clip",
     "xt.costHow": "workspace_xt_cost_how", "xt.fogOld": "workspace_xt_fog_old", "xt.behind": "workspace_xt_behind", "xt.updFail": "workspace_xt_upd_fail",
-    // 按了才算(spec §3.6,10-27):鈕、過時句、BUSY 那行、回合中那句;還原後重跑中那句是掃描／驗證／成交測試共用的
+    // 按了才算(spec §3.6,10-27):鈕、過時句、BUSY 那行;還原後重跑中那句是掃描／驗證／成交測試共用的
     "xt.btnRun": "workspace_xt_btn_run", "xt.btnRerun": "workspace_xt_btn_rerun", "xt.btnBusy": "workspace_xt_btn_busy", "xt.btnTip": "workspace_xt_btn_tip",
-    "xt.verdictStale": "workspace_xt_verdict_stale", "xt.busyRefresh": "workspace_xt_busy_refresh", "xt.busyTurn": "workspace_xt_busy_turn",
+    "xt.verdictStale": "workspace_xt_verdict_stale", "xt.busyRefresh": "workspace_xt_busy_refresh",
     "ver.frozenRerun": "workspace_ver_frozen_rerun",
     // 轉出鈕跟成交測試分頁在同一列、同一次為 1280 放得下改字(desktop-tabs-1280 §5),一起比
     "xp.btn": "workspace_xp_btn" };
@@ -340,9 +340,9 @@ for (const lang of ["zh", "en"]) {
   const X0 = { lag: { "0": [1.2, 10, -10] } };
   const CASES = [["page", { verActive: true, x: X0 }, 1], ["page", { restoring: true }, 2], ["page", { x: null }, 4], ["page", { x: X0, sharpe: 1.2 }, 6], ["page", { x: X0, sharpe: 1.21 }, 7],
     ["page", { cfg: false, perf: "running", mine: "run", x: X0, sharpe: 1.2 }, 6],
-    ["cell", { cfg: false, perf: "running" }, 3], ["cell", { cfg: null }, 3], ["cell", { cfg: true, perf: "running", mine: "run" }, 5], ["cell", { cfg: true, perf: "running", mine: "busy", turn: true }, 5],
-    ["cell", { cfg: true, perf: "failed", mine: "fail", turn: true }, 8], ["cell", { cfg: true, perf: "failed", mine: "busy" }, 0], ["cell", { cfg: true, perf: "failed", mine: null }, 0],
-    ["cell", { cfg: true, turn: true }, 9], ["cell", { cfg: true }, 0]];
+    ["cell", { cfg: false, perf: "running" }, 3], ["cell", { cfg: null }, 3], ["cell", { cfg: true, perf: "running", mine: "run" }, 5], ["cell", { cfg: true, perf: "running", mine: "busy" }, 5],
+    ["cell", { cfg: true, perf: "failed", mine: "fail" }, 8], ["cell", { cfg: true, perf: "failed", mine: "busy" }, 0], ["cell", { cfg: true, perf: "failed", mine: null }, 0],
+    ["cell", { cfg: true }, 0]];
   const badS = CASES.filter(([k, i, want]) => !dS || !wS || dS[k](i) !== want || wS[k](i) !== want).map(([k, i, want]) => k + JSON.stringify(i) + "→" + want + " 電腦版 " + (dS && dS[k](i)) + " web " + (wS && wS[k](i)));
   ok("成交測試畫面狀態兩邊同一組情境同一個答案(" + CASES.length + " 組)", badS.length === 0, badS.join(";"));
   ok("成交測試分頁位置兩邊同一處(樣本外驗證 → 成交測試 → 程式碼)", order(html, /class="rp-tab"[^>]*data-tab="(\w+)"/g) === "wf,xt,code" && order(web, /class="main-tab"[\s\S]*?data-tab="(\w+)"/g) === "wf,xt,code"); }
@@ -608,9 +608,9 @@ for (const lang of ["zh", "en"]) {
   const TBL = /const VAL_BTN = (\{[\s\S]*?\n\s*\});/, ORD = /const VAL_BTN_ORDER = (\[[^\]]*\]);/, HLP = /const RP_HELP_SLUG = (\{[^}]*\});/;
   const D = lit(robSrc, TBL, "電腦版 VAL_BTN"), DO = lit(robSrc, ORD, "電腦版 VAL_BTN_ORDER"), DH = lit(appSrc, HLP, "電腦版 RP_HELP_SLUG");
   const W = lit(web, TBL, "網頁 VAL_BTN"), WO = lit(web, ORD, "網頁 VAL_BTN_ORDER"), WH = lit(web, HLP, "網頁 RP_HELP_SLUG");
-  const SPEC = { behind: ["out", false, "update"], sent: ["out", true, "sent"], busy: [null, "aria", null], empty: ["out", false, "start"], stale: ["out", false, "rerun"], fresh: ["quiet", false, "rerun"] };
-  ok("驗證鈕:電腦版 VAL_BTN 六態照 canon(不實心)、優先序 主機太舊 > 已送出 > 回合中 > 還沒跑 > 過時 > 沒過時", !!D && !!DO && JSON.stringify(DO) === JSON.stringify(["behind", "sent", "busy", "empty", "stale", "fresh"])
-    && Object.keys(SPEC).every((k) => D[k] && JSON.stringify([D[k].kind, D[k].disabled, D[k].labelKey]) === JSON.stringify(SPEC[k])) && Object.keys(D).length === 6, JSON.stringify(D));
+  const SPEC = { behind: ["out", false, "update"], sent: ["out", true, "sent"], empty: ["out", false, "start"], stale: ["out", false, "rerun"], fresh: ["quiet", false, "rerun"] };
+  ok("驗證鈕:電腦版 VAL_BTN 五態照 canon(不實心)、優先序 主機太舊 > 已送出 > 還沒跑 > 過時 > 沒過時", !!D && !!DO && JSON.stringify(DO) === JSON.stringify(["behind", "sent", "empty", "stale", "fresh"])
+    && Object.keys(SPEC).every((k) => D[k] && JSON.stringify([D[k].kind, D[k].disabled, D[k].labelKey]) === JSON.stringify(SPEC[k])) && Object.keys(D).length === 5, JSON.stringify(D));
   ok("怎麼看:電腦版對照表只有回測數據、參數掃描、樣本外驗證三頁", !!DH && JSON.stringify(DH) === JSON.stringify({ bt: "backtest_metrics", rob: "avoid_overfitting", wf: "walk_forward" }), JSON.stringify(DH));
   if (!W || !WO) console.log("SKIP  驗證鈕 VAL_BTN／VAL_BTN_ORDER 兩邊同一份(網頁 workspace.html 還沒有這個常數:web 那顆還沒上線)");
   else ok("驗證鈕:VAL_BTN 逐列、優先序兩邊同一份", JSON.stringify(W) === JSON.stringify(D) && JSON.stringify(WO) === JSON.stringify(DO), JSON.stringify(W) + " vs " + JSON.stringify(D));
@@ -623,4 +623,47 @@ for (const lang of ["zh", "en"]) {
     const off = Object.keys(LABELS).filter((k) => !d[k] || d[k] !== w[LABELS[k]]);
     ok("驗證鈕:三個分頁開始／重跑／已送出、主機太舊的鈕字兩邊同一份(" + lang + ")", off.length === 0, off.map((k) => k + ": " + d[k] + " vs " + w[LABELS[k]]).join(";"));
   } }
+/* 〔套用金額〕停用原因(0.1.44):補救連結對照表、原因優先序、字樣,以及回合鎖「碰過哪一支」的判準。兩邊同一份,不同的只有下面具名的兩處:
+   登入那兩條只有電腦版(web 沒有未登入這個狀態);en 的功能名 web 是 Title Case(同 web check_mg_sizing_parity)。 */
+{ const pfSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "portfolio.js"), "utf8"), resSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "results.js"), "utf8");
+  const WHY_KEY = { "mg.applyDiffSet": "mgApplyDiffSet", "mg.propOtherAlloc": "mgPropOtherAlloc", "mg.needFund": "mgNeedFund", "mg.needSize": "mgNeedSize", "mg.needMethod": "mgNeedMethod", "mg.needTarget": "mgNeedTarget",
+    "mg.sizeNoHist": "mgSizeNoHist", "mg.sizeNoSolve": "mgSizeNoSolve", "sz.shortMdd": "szShortMdd", "sz.noVol": "szNoVol", "sz.staleMdd": "szStaleMdd", "sz.oldMdd": "szOldMdd",
+    "mg.why.alloc": "mgWhyAlloc", "mg.why.method": "mgWhyMethod", "mg.why.changeMethod": "mgWhyChangeMethod", "mg.why.changeTarget": "mgWhyChangeTarget", "mg.why.shortMdd": "mgWhyShortMdd", "mg.why.noVol": "mgWhyNoVol",
+    "mg.why.rerun": "mgWhyRerun", "mg.why.updCloud": "mgWhyUpdCloud", "mg.applyWhyUnread": "mgApplyWhyUnread", "mg.applyWhyFx": "mgApplyWhyFx", "mg.applyWhyQuote": "mgApplyWhyQuote", "mg.applyWhySame": "mgApplyWhySame", "tr.saving": "pfSaving" };
+  const WHY_DESK_ONLY = ["mg.applyWhyLogin", "mg.applyWhyFxOld"];
+  const cutLit = (src, re) => { const m = re.exec(src); return m ? m[0] : null; };
+  const dTbl = cutLit(pfSrc, /const MG_WHY_SIZE = [^\n]*\nconst MG_WHY_FIX = \{[\s\S]*?\n\};/), wTbl = cutLit(web, /function mgWhySize\([\s\S]*?\n\s*\}\n\s*const MG_WHY_FIX = \{[\s\S]*?\n\s*\};/);
+  const dFix = dTbl && new Function(dTbl + "\nreturn MG_WHY_FIX;")(), wFix = wTbl && new Function(wTbl + "\nreturn MG_WHY_FIX;")();
+  ok("MG_WHY_FIX 兩邊都切得出來", !!dFix && !!wFix);
+  if (dFix && wFix) { const mapK = (k) => (k === undefined ? undefined : WHY_KEY[k] || "未對照:" + k);
+    const mapped = Object.keys(dFix).filter((k) => !WHY_DESK_ONLY.includes(k)).map((k) => [mapK(k), { go: dFix[k].go, focusOn: dFix[k].focusOn, link: mapK(dFix[k].link), text: dFix[k].text && (dFix[k].text === "mg.why.shortMdd" ? "mgWhyShortMdd" : "mgWhyNoVol") }]);
+    const view = (o) => JSON.stringify([o.go, o.focusOn, o.link, o.text]);
+    const off = mapped.filter(([wk, v]) => !wFix[wk] || view(wFix[wk]) !== view(v)).map(([wk]) => wk).concat(Object.keys(wFix).filter((wk) => !mapped.some(([k]) => k === wk)));
+    ok("MG_WHY_FIX 兩邊同一份:每條原因去哪、聚焦哪格、連結字與換句(電腦版另有登入兩條)", off.length === 0 && mapped.length === 12 && WHY_DESK_ONLY.every((k) => dFix[k] && dFix[k].go === "login"), off.join()); }
+  const dWhy = cutLit(pfSrc, /function mgApplyWhy\(d, quoteMissing, changed\) \{[\s\S]*?\n\}/), wWhy = cutLit(web, /function mgApplyWhyKey\(f\) \{[\s\S]*?\n\s*\}/);
+  ok("原因優先序兩邊都切得出來", !!dWhy && !!wWhy);
+  if (dWhy && wWhy) { const wF = new Function(wWhy + "\nreturn mgApplyWhyKey;")(), bad = [];
+    const dF = (f) => new Function("trCfgUnread", "trReport", "trStored", "mgSameAsAmounts", "mgFxWhy", "trUnknownWhyKey", "TR", dWhy + "\nreturn mgApplyWhy;")(() => f.cfgUnread, () => ({}), () => ({}), () => !f.diffSet, () => "mg.applyWhyFx", () => "UNK", { save: f.saving ? "saving" : null, listLoaded: true, env: "local" })(
+      { eff: f.noSize ? null : 1, gap: f.gap, rows: f.quoteMissing ? (f.fxMissing ? [{ fxMissing: true }] : f.unitUnknown ? [{ money: 1, native: null, name: "x" }] : []) : [] }, f.quoteMissing, false);
+    const FLAGS = ["cfgUnread", "diffSet", "quoteMissing", "fxMissing", "unitUnknown", "noSize", "saving"];
+    for (let i = 0; i < 1 << FLAGS.length; i++) for (const gap of [null, "mgNeedFund"]) { const f = {}; FLAGS.forEach((k, b) => { f[k] = !!(i & (1 << b)); }); f.gap = gap;
+      const w = wF(f), dk = dF({ ...f, gap: gap && "mg.needFund" }), d = dk === "UNK" ? "pfUnknownWhy" : dk === "mg.needFund" ? "mgNeedFund" : WHY_KEY[dk] || dk;
+      if (w !== d) bad.push(JSON.stringify(f) + " web=" + w + " 電腦版=" + dk); }
+    ok("〔套用金額〕原因優先序兩邊同一份(7 個條件全組合 × 有無 gap)", bad.length === 0, bad.slice(0, 3).join(";")); }
+  const WHY_STR = { "mg.applyDiffSet": "workspace_mg_apply_diff_set", "mg.applyDiffSetN": "workspace_mg_apply_diff_set_n", "mg.propOtherAlloc": "workspace_mg_prop_other_alloc", "mg.applyWhyUnread": "workspace_mg_apply_why_unread", "mg.applyWhyQuote": "workspace_mg_apply_why_quote", "mg.applyWhyFx": "workspace_mg_apply_why_fx", "mg.applyWhySame": "workspace_mg_apply_why_same",
+    "mg.needFund": "workspace_mg_need_fund", "mg.needSize": "workspace_mg_need_size", "mg.needMethod": "workspace_mg_need_method", "mg.needTarget": "workspace_mg_need_target", "mg.sizeNoHist": "workspace_mg_size_no_hist", "mg.sizeNoSolve": "workspace_mg_size_no_solve",
+    "sz.shortMdd": "workspace_sz_short_mdd", "sz.staleMdd": "workspace_sz_stale_mdd", "sz.oldMdd": "workspace_sz_old_mdd", "sz.noVol": "workspace_sz_no_vol",
+    "mg.why.alloc": "workspace_mg_why_alloc", "mg.why.method": "workspace_mg_why_method", "mg.why.tbMethod": "workspace_mg_why_tb_method", "mg.why.changeMethod": "workspace_mg_why_change_method", "mg.why.changeTarget": "workspace_mg_why_change_target", "mg.why.shortMdd": "workspace_mg_why_short_mdd", "mg.why.noVol": "workspace_mg_why_no_vol", "mg.why.rerun": "workspace_mg_why_rerun", "mg.why.updCloud": "workspace_mg_why_upd_cloud", "mg.why.pickTitle": "workspace_mg_why_pick_title",
+    "tr.noAccount": "workspace_pf_no_account", "tr.fogConnect": "workspace_pf_fog_connect", "po.fogNew": "workspace_pf_fog_new", "mg.fogNew": "workspace_mg_no_strategies", "rpt.fogNew": "workspace_rp_fog_new" };
+  // en 兩條字樣小差,對齊前不比:sz.shortMdd 電腦版 Under、web Less than(web 自己的 mg.why.shortMdd 也是 Under);mg.applyWhyQuote web 用直引號,其餘都是 ’
+  const EN_OPEN = new Set(["sz.shortMdd", "mg.applyWhyQuote"]), norm = (s) => s.toLowerCase();
+  for (const lang of ["zh", "en"]) { const d = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), w = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+    const same = (a, b) => (lang === "zh" ? a === b.replace(/%%/g, "%") : norm(a) === norm(b.replace(/%%/g, "%")));
+    const off = Object.entries(WHY_STR).filter(([dk, wk]) => !(lang === "en" && EN_OPEN.has(dk)) && (typeof d[dk] !== "string" || typeof w[wk] !== "string" || !same(d[dk], w[wk])));
+    ok("原因句、補救連結、空狀態新字樣兩邊同一份(" + lang + "," + Object.keys(WHY_STR).length + " 句)", off.length === 0, off.map(([dk, wk]) => dk + "「" + d[dk] + "」 vs " + wk + "「" + w[wk] + "」").join(";")); }
+  const dPath = /const RES_STRAT_PATH = (\/.*\/g);/.exec(resSrc), wPath = /const CS_STRAT_PATH = (\/.*\/g);/.exec(web);
+  ok("回合碰過哪支:路徑 regex 兩邊同一份", !!dPath && !!wPath && dPath[1] === wPath[1], (dPath && dPath[1]) + " vs " + (wPath && wPath[1]));
+  const listOf = (src, re) => { const m = re.exec(src); return m ? JSON.stringify(JSON.parse(m[1]).sort()) : null; };
+  const dK = listOf(resSrc, /const RES_KIND_STRAT = new Set\((\[[^\]]*\])\)/), wK = listOf(web, /const CS_STRAT_KINDS = (\[[^\]]*\])/), dS = listOf(resSrc, /const RES_KIND_SAFE = new Set\((\[[^\]]*\])\)/), wS = listOf(web, /const CS_STRAT_SAFE = (\[[^\]]*\])/);
+  ok("回合碰過哪支:策略類 kind、確定不碰的 kind 兩邊同一份", !!dK && dK === wK && !!dS && dS === wS, dK + " vs " + wK + ";" + dS + " vs " + wS); }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

@@ -81,7 +81,7 @@ const mk = (reply, o) => { const sent = []; let creds = (o && o.creds) || { toke
   { const code = app.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     ok("一個來源:畫面(帳號與方案那一列、模型選單底部)只經過 balNow(),讀只有 balLoad() 一處;餘額不再從帳號狀態讀", (code.match(/= (?:on \? )?balNow\(\)/g) || []).length === 2 && (code.match(/balNow\(\)/g) || []).length === 3
       && !/acct\.balance|balNum\(acct/.test(code) && (code.match(/window\.blave\.balance\(\)/g) || []).length === 1 && /window\.blave\.balance\(\)/.test(fn("balLoad"))); }
-  ok("什麼時候讀:打開帳號與方案、打開模型選單(引擎是 Blave AI)、Blave AI 的回合結束、登入回來;不輪詢", /if \(hasToken\) \{ acctCheck\(\); balLoad\(\); \}/.test(fn("setCat")) && /if \(cur === "blave" && hasToken\) balLoad\(\);/.test(fn("mpOpen"))
+  ok("什麼時候讀:打開帳號與方案、打開模型選單(引擎是 Blave AI)、Blave AI 的回合結束、登入回來;不輪詢", /if \(hasToken\) \{ acctCheck\(\); balLoad\(\);/.test(fn("setCat")) && /if \(cur === "blave" && hasToken\) balLoad\(\);/.test(fn("mpOpen"))
     && /draftPromote\(\);[^\n]*\n  if \(cur === "blave" && hasToken\) balLoad\(\);/.test(app) && (app.match(/await acctCheck\(\); balLoad\(\); \}/g) || []).length === 2 && !/setInterval\([^)]*balLoad/.test(app));
   ok("登出、登入、換帳號都把上一個數字清掉", (app.match(/acct = null; balLast = null;/g) || []).length === 3);
   // ---- 4
