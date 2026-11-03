@@ -1146,7 +1146,7 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
     && /function mpsProp\(\) \{ return mgProposal\(\) \|\| mgOtherProp\(\); \}/.test(psrc) && /mgProposal\(\) \|\| mgOtherProp\(\) \|\| mgBacktest\(\)/.test(cutF(psrc, "mgFogOn"))
     && /ap\.disabled = !!other \|\|/.test(cutF(psrc, "mgSuggestTable")) && /const wk = other \? "mg\.propOtherAlloc" : ap\.disabled \? mgApplyWhy\(d, quoteMissing, changed\) : null;/.test(cutF(psrc, "mgSuggestTable"))
     && /if \(!mgProposal\(\) \|\|/.test(cutF(psrc, "mgApply")) && !/mg-other-alloc/.test(psrc)); }
-let psPromise = null, loginPromise = null;
+let psPromise = null;
 // ── 0.1.44 〔套用金額〕停用原因可點(mockup apply-why-links B 版)、策略名可點、目標波動算不出停用 ──
 { const STR = fs.readFileSync(path.join(R, "strings.js"), "utf8"), box = { }; vm.runInNewContext(STR.replace(/^const /gm, "var ") + "\nthis.out = typeof STRINGS !== 'undefined' ? STRINGS : null;", box);
   const CAT = box.out, WHY = psrc.slice(psrc.indexOf("const MG_WHY_SIZE"), psrc.indexOf("function mgWhyParts")), cut = (...ns) => ns.map((n) => cutF(psrc, n)).join("\n");
@@ -1155,7 +1155,7 @@ let psPromise = null, loginPromise = null;
   const FOCUS = { at: null }, flatText = (e) => e.kids.map((k) => k.textContent).join("");
   const whyCtx = (o) => { const log = [], c = vm.createContext(Object.assign({ log, TR: { env: "local", st: { alive: true } }, trEl: (g, cl, x) => mkEl(g, cl, x), t: (k, a) => { const v = CAT[(o && o.lang) || "zh"][k]; return a ? v.replace(/\{(\w+)\}/g, (_, n) => a[n]) : v; },
       mgBag: () => ({ params: {}, optBusy: false }), trPickOff: () => false, mpsProp: () => ({}), mgBlocked: () => false, mgOptBlockReason: () => null, mgMembers: () => ["a", "b"], trackFeature: (n) => log.push("track:" + n),
-      psOpen: (b, m, f, op) => log.push("psOpen:" + m + ":" + J(op)), mgMethodOpen: () => log.push("method"), mgSizeOpen: (b, fo) => log.push("size:" + fo), upCloudUpdate: () => log.push("update"), mgRunOptimize: () => log.push("run"), $: () => mkEl("div"), setOpen: () => Promise.resolve(), setCat: () => {}, setBack: null }, o || {}));
+      psOpen: (b, m, f, op) => log.push("psOpen:" + m + ":" + J(op)), mgMethodOpen: () => log.push("method"), mgSizeOpen: (b, fo) => log.push("size:" + fo), upCloudUpdate: () => log.push("update"), mgRunOptimize: () => log.push("run"), $: () => mkEl("div"), planSignIn: (x) => log.push(x), signInLabel: (x, l) => { x.dataset.signin = l; x.textContent = l; return x; } }, o || {}));
     vm.runInContext(WHY + "\n" + cut("mgWhyParts", "mgWhyCan", "mgWhyFill", "mgWhyGo"), c); return c; };
   // 列舉:表上每一條、兩語,連結字都在句子裡(不在 = 接句尾那兩條);中文 ≤25 字;字串都在
   { const c = whyCtx(), FIX = vm.runInContext("MG_WHY_FIX", c), bad = [], APPEND = ["mg.applyDiffSet", "mg.propOtherAlloc"];
@@ -1181,16 +1181,11 @@ let psPromise = null, loginPromise = null;
       && flatText(go("mg.applyDiffSet", { trPickOff: () => true }).el) === "配置 2 檔、這裡 3 檔");
     const c2 = whyCtx(), plain = mkEl("div"); c2.plain = plain; vm.runInContext("mgWhyFill(plain, '建議金額跟目前一樣', MG_WHY_FIX['mg.applyWhySame'], 'mg-why-fix')", c2);
     ok("等一下就好／好狀態不連:表上沒有這幾個原因", plain.kids.length === 1 && plain.kids[0].tag === "span" && ["mg.applyWhySame", "mg.applyWhyQuote", "mg.applyWhyFx", "mg.applyWhyWait", "mg.applyWhyUnread", "tr.saving", "tr.ccyMixed"].every((k) => !(k in vm.runInContext("MG_WHY_FIX", c2)))); }
-  // 登入:開設定 › 帳號與方案,關掉回優化分頁(不是 ws-conn)
-  { const po = mkEl("div"), link = mkEl("button"), ap = mkEl("button"), h = mkEl("h5"); po.querySelector = (q) => (q === '[data-fk="mg-why-fix"]' ? (link.isConnected ? link : null) : null);
-    const c = whyCtx({ $: (id) => ({ "po-opt": po, "mg-apply": ap, "po-h": h, "set-plan-main": mkEl("div") }[id]) }); vm.runInContext(cutF(psrc, "mgWhyFocus"), c); c.b = mkEl("button");
-    vm.runInContext("setBack = null; mgWhyGo(MG_WHY_FIX['mg.applyWhyLogin'], b)", c);
-    loginPromise = Promise.resolve().then(() => {
-      const back = vm.runInContext("setBack", c);
-      FOCUS.at = null; const r1 = back(); const a1 = FOCUS.at; link.isConnected = false; po.querySelector = () => null; FOCUS.at = null; back(); const a2 = FOCUS.at; ap.disabled = true; FOCUS.at = null; back(); const a3 = FOCUS.at; po.offsetParent = null;
-      ok("登入連結:關設定回連結;連結不在(登入成功)落可按的〔套用金額〕;都沒有落標題;切走了回 false 由 setClose 照舊", r1 === true && a1 === link && a2 === ap && a3 === h && back() === false);
-    });
-    ok("setClose 只在 setBack 沒接手時才落 ws-conn;用過即清", /const back = setBack; setBack = null;\n  if \(!\(back && back\(\)\)\) \$\("ws-conn"\)\.focus\(\);/.test(fs.readFileSync(path.join(R, "app.js"), "utf8"))); }
+  // 登入:原地開瀏覽器登入(planSignIn 帶這顆鈕),不繞去設定;等待中被輪詢重畫,鈕字由 signInLabel 接手
+  { const c = whyCtx(), host = mkEl("div"); c.host = host; vm.runInContext("mgWhyFill(host, 'x', MG_WHY_FIX['mg.applyWhyLogin'], 'mg-why-fix')", c);
+    const b = host.kids.find((k) => k.tag === "button"); c.b = b; c.log.length = 0; vm.runInContext("mgWhyGo(MG_WHY_FIX['mg.applyWhyLogin'], b)", c);
+    ok("登入連結:直接 planSignIn(帶這顆鈕)、鈕經 signInLabel、不開設定", c.log[0] === "track:mg_why_fix" && c.log[1] === b && c.log.length === 2 && b.dataset.signin === "登入 Blave" && !b.attrs["aria-haspopup"]
+      && !/setOpen|setCat/.test(cutF(psrc, "mgWhyGo"))); }
   // 原因順序:讀不到設定排第一(trNames 空,不能講配置 0 檔);幣別未定講幣別不講報價
   { const c = vm.createContext({ TR: { save: null, env: "local", listLoaded: true, st: { alive: true } }, TR_BAGS: { cloud: { st: { cloud: { code: "OK" } } } }, trFxView: () => ({}), unread: true, mgSameAsAmounts: () => false, trReport: () => ({ states: {} }), trStored: () => ({}), trUnknownWhyKey: (ns) => "unk:" + ns.join() });
     c.trCfgUnread = () => c.unread; vm.runInContext(cut("mgApplyWhy", "mgFxWhy"), c); const why = (d, q) => { c.d = d; c.q = q; return vm.runInContext("mgApplyWhy(d, q, true)", c); };
@@ -1254,4 +1249,4 @@ let psPromise = null, loginPromise = null;
     const r = [open(undefined, { checked: true }).to, open(undefined, {}).to, open("fund", { checked: true }).to, open("seg", { checked: true }).to, open("seg", {}).to, open("t", { checked: true, t: true }).to, open("t", { checked: true }).to];
     ok("框的落點:照舊(選中的方法→投入資金);fund;seg 選中那顆、停用時第一顆能用的;t 目標格全選,沒目標格退方法", J(r) === J(["checked", "fund", "fund", "checked", "first", "t", "checked"]) && open("t", { t: true }).sel === 1, J(r)); }
 }
-Promise.all([btCancelTest, freshTest, pollTest, orderTest, liteTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest, mgOptTest, psPromise, loginPromise]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });
+Promise.all([btCancelTest, freshTest, pollTest, orderTest, liteTest, refreshEdgeTest, cancelGenTest, runNowTest, refreshFlagTest, global.__sizingCloudTest, mgOptTest, psPromise]).then(() => { console.log(red ? `\n${red} 項沒過` : "\nALL PASS"); process.exit(red ? 1 : 0); });

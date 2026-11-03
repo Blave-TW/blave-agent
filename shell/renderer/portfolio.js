@@ -1123,6 +1123,7 @@ function mgWhyFill(el, text, fix, fk) {
   if (!fix || !mgWhyCan(fix)) { el.appendChild(trEl("span", "", text)); return el; }
   const p = mgWhyParts(text, fix.link ? t(fix.link) : text), b = trEl("button", "btn-quiet busy-fix", p.link);
   b.type = "button"; b.dataset.fk = fk;
+  if (fix.go === "login") signInLabel(b, p.link);   // 輪詢重畫:等待中這顆要還是「取消等待」,按了才有反應
   if (fix.go === "pick" || fix.go === "method" || fix.go === "size") b.setAttribute("aria-haspopup", "dialog");
   b.addEventListener("click", () => mgWhyGo(fix, b));
   if (p.pre) el.appendChild(trEl("span", "", p.pre));
@@ -1137,12 +1138,7 @@ function mgWhyGo(fix, b) {
   else if (fix.go === "size") mgSizeOpen(b, fix.focusOn);
   else if (fix.go === "update") upCloudUpdate(b);
   else if (fix.go === "run") { mgRunOptimize(); const o = $("po-opt").querySelector('[data-fk="mg-opt"]'); if (o && !o.disabled) o.focus(); }
-  else {
-    setOpen().then(() => {
-      setBack = () => { if (!$("po-opt").offsetParent) return false; if (mgWhyFocus()) return true; const ap = $("mg-apply"), to = ap && !ap.disabled ? ap : $("po-h"); to.focus(); return true; };
-      setCat("plan"); const on = [...$("set-plan-main").querySelectorAll("button")].find((x) => x.textContent === t("pv.signin")); if (on) on.focus();
-    });
-  }
+  else planSignIn(b);
 }
 // 輪詢重畫會換掉連結本身:框關掉時憑 data-fk 找現在那一顆;已經沒有了回 false
 function mgWhyFocus() { const b = $("po-opt").querySelector('[data-fk="mg-why-fix"]'); if (b && b.offsetParent) { b.focus(); return true; } return false; }
