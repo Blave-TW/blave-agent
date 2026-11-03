@@ -235,7 +235,7 @@ ok("③ 顏色只用 token(不寫死 hex、不寫死毫秒)", !/#[0-9a-fA-F]{3,8
       stopRestore: (t) => log.push("restore:" + t), trackFeature: (n) => log.push("track:" + n),
       engHold: (msg, opts, bubble) => { held.push({ msg, opts, bubble }); log.push("hold"); }, engAfter: () => {}, engDropHeld: () => {}, engOnState: () => {},
       busyStart: () => log.push("busyStart"), attachKinds: () => [], faultCard: () => ({ set: (o) => log.push("fault:" + o.text) }), t: (k) => k,
-      sessionId: "s1", MP: { model: null }, mpEffort: () => null, chatViewing: () => ({ env: "local" }), lastUserText: "", csTitle: "x",
+      envInputGate: () => false, sessionId: "s1", MP: { model: null }, mpEffort: () => null, chatViewing: () => ({ env: "local" }), lastUserText: "", csTitle: "x",
       console, Promise, Object, JSON, setTimeout,
       CS: (() => { const L = { composer: { files: [] } }; return { loaded: L, cur: L }; })(), withTab: (T, fn) => fn(), tabBg: () => false, turnUiSync: () => {}, tabsQueued: () => {}, tabsTrackParallel: () => {},   // 對話分頁:單分頁
     };

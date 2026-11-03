@@ -565,7 +565,7 @@ html.ws-sc .side-gate { display: none; }
 .cf-lab { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: var(--space-12); cursor: pointer; }
 .cf-wrap.off .cf-lab { cursor: not-allowed; }
 .cx-facts { margin: var(--space-8) 0 0 calc(18px + var(--space-12)); padding: 0; list-style: none; display: grid; gap: var(--space-2); }
-.cx-facts li { position: relative; padding-left: var(--space-12); font-size: 12px; line-height: 1.6; color: var(--ink); }
+.cx-facts li { position: relative; padding-left: var(--space-12); font-size: 12px; line-height: 1.6; color: var(--ink); text-wrap: pretty; }
 .cx-facts li::before { content: ""; position: absolute; left: 2px; top: .75em; width: 4px; height: 4px; border-radius: var(--radius-pill); background: currentColor; }
 .cf-wrap.off .cx-facts li { color: var(--ink-3); }
 .cx-row .cn-st .fault-mark { margin-top: 0; }
@@ -652,7 +652,7 @@ html.ws-sc .side-gate { display: none; }
 #cx-go .spin16 { vertical-align: -3px; }   /* 串接中那顆鈕裡的圓環(同 #set-up-btn) */
 .cx-manual-note .btn-quiet { font-size: inherit; }
 /* 連接 Binance:欄位下面那塊說明(spec §5.2):上邊線,權限句 / 白名單+IP+複製 / 這個 IP 是什麼 */
-.cx-note { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.cx-note { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); text-wrap: pretty; }
 .cx-note p { margin: 0; }
 .cx-note p + p { margin-top: var(--space-4); }
 /* IP chip + icon 複製鈕、「金鑰存在哪?」展開列(設計師規格 v2 方案 C) */
@@ -668,7 +668,7 @@ html.ws-sc .side-gate { display: none; }
 .cx-icb.is-done .ic-check { display: block; }
 .cx-said { font-size: 12px; color: var(--ink-2); }
 .cx-note .btn-quiet { font-size: 12px; }   /* 「再查一次」:熱區靠 app.css 的 .btn-quiet::before,不用 min-height 撐行高 */
-.cx-hint { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
+.cx-hint { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); text-wrap: pretty; }
 .cx-note p.cx-hint { margin-top: var(--space-6); }
 .cx-disc { position: relative; display: inline-flex; align-items: center; gap: var(--space-6); margin-top: var(--space-12); padding: 0; font-size: 12px; color: var(--ink-2); }
 .cx-disc::before { content: ""; position: absolute; inset: -6px -4px; }   /* 視覺高 17,熱區高約 30 */
@@ -706,11 +706,15 @@ html.ws-sc .side-gate { display: none; }
 .pf-tbl td.n .sub { display: block; font-size: 11px; color: var(--ink-3); }
 
 /* Setup fog(canon › Components › Setup fog):示意底本身模糊 + 實心遮罩,上面一張 CTA 卡;霧區內不能捲動 */
+/* .pf 是區塊:不開 flex 的話霧只有內容那麼高,遮罩停在半路,底下露出沒有遮罩的主區(亮色看得到一條接縫) */
+.pf:has(> .fog) { display: flex; flex-direction: column; }
+.pf:has(> .fog) > :not(.fog) { flex: none; }
 .fog { position: relative; flex: 1; min-height: 360px; overflow: hidden; margin: calc(-1 * var(--space-24)); }
 .fog-under { padding: var(--space-24); filter: blur(var(--fog-blur)); pointer-events: none; user-select: none; transform: translateZ(0); overflow: hidden; }
 .fog::after { content: ""; position: absolute; inset: 0; background: var(--fog-mask); pointer-events: none; }
 /* 優化分頁的霧在工具列下面:上緣不往上吃進工具列 */
 #po-opt > .fog.mg-fog { margin-top: var(--space-16); }
+#po-opt > .fog.mg-fog:first-child { margin-top: calc(-1 * var(--space-24)); }   /* mg-new 上方沒有真控件:貼齊主區頂,不留一條接縫 */
 .fog-card { position: absolute; z-index: 1; left: 50%; top: 48px; transform: translateX(-50%); width: 360px; max-width: calc(100% - 32px); box-sizing: border-box;
   padding: var(--space-24); background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); text-align: center; }
 .fog-card p { margin: 0 0 var(--space-16); font-size: 14px; line-height: 1.6; color: var(--ink); }

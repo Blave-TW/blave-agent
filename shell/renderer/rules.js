@@ -247,7 +247,7 @@ function rulesPaintList(grp) {
   if (RS.note === "rules") grp.append(rsEl("p", "cn-hint up rules-note", t("rules.agentChanged")));
   if (empty) {
     const e = rsEl("div", "src-empty rules-empty");
-    e.append(rsEl("p", null, t("rules.emptyLead")), rsBtn("btn-fill", t("rules.add"), rulesAddRow));
+    e.append(rsEl("p", null, t("rules.emptyLead")), rsBtn("btn-out", t("rules.add"), rulesAddRow));
     grp.append(e); return;
   }
   const list = rsEl("ul", "rules-list"); list.setAttribute("aria-label", t("rules.aria"));
@@ -327,7 +327,7 @@ function rulesFocus(kind, i) {
     if (el) { el.focus(); const n = el.value.length; try { el.setSelectionRange(n, n); } catch (_) { /* focus already there */ } return; }
   } else if (kind === "confirm") el = pane.querySelector(".rules-cf-cancel");   // 破壞性動作不預設焦點在破壞側
   else if (kind === "row") { const rows = pane.querySelectorAll(".rules-item"); el = rows[Math.min(i, rows.length - 1)] || null; }
-  if (!el) el = pane.querySelector(".rules-add") || pane.querySelector(".rules-empty .btn-fill");
+  if (!el) el = pane.querySelector(".rules-add") || pane.querySelector(".rules-empty .btn-out");
   if (!el) el = document.querySelector('.set-cat[data-set-cat="rules"]');
   if (el && el.focus) el.focus();
 }

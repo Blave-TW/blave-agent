@@ -88,6 +88,7 @@ function rptI18n(env) {
 /* ── 開 / 關 ──────────────────────────────────────────── */
 async function rptOpen() {
   const B = rptBag();
+  if (B.reading) { B.reading = null; ++RPT.readSeq; }   // 從別頁進來落清單;結果卡要開某一份的(results.js)接著自己 rptShowRead
   if (typeof trLeave === "function") trLeave(libEnv());
   if (typeof libLeave === "function") libLeave();
   if (libEnv() === "local") { if (typeof stratSelect === "function") await stratSelect(null); }
@@ -104,7 +105,7 @@ async function rptOpen() {
 // 焦點:進清單落在「新增報告」;那顆鈕停用時退到 #rpt-h;閱讀層在返回鈕
 function rptFocusHome() {
   const B = rptBag();
-  const h = B.reading ? $("rpt-back") : !$("rpt-ask").disabled ? $("rpt-ask") : $("rpt-h");   // 回合中的 aria-disabled 仍停得上去:落在它身上
+  const h = B.reading ? $("rpt-back") : $("rpt-fog-new") || (!$("rpt-ask").disabled ? $("rpt-ask") : $("rpt-h"));   // 回合中的 aria-disabled 仍停得上去:落在它身上
   if (h && h.offsetParent) h.focus();
 }
 // 選了策略 / 開自動下單 / 開策略庫:那一邊的報告收起來(中欄一次只有一個視圖)。trOpen 直接翻 DOM、不經 envShowMain,所以這裡自己收 #rpt
@@ -144,7 +145,7 @@ async function rptLoad(env, force) {
   if (r && Array.isArray(r.reports) && (env === "local" || r.code === "OK")) RPT.data[env] = rptSort(r.reports, env);
   else RPT.failed[env] = true;   // 手上有舊清單就照畫舊的;沒有才畫「讀不到」
   if (!rptVisible(env) || rptBag(env).reading) return true;
-  if (prev !== JSON.stringify(RPT.data[env]) || RPT.failed[env]) rptPaintList(); else rptPaintTools();   // 沒變就不重畫列(捲動、焦點都留著)
+  if (prev !== JSON.stringify(RPT.data[env]) || RPT.failed[env]) rptPaintList(); else rptPaintHead();   // 沒變就不重畫列(捲動、焦點都留著)
   return true;
 }
 // 登入 / 登出 / 換帳號(app.js 在 hasToken 翻轉的地方叫):雲端那一袋是這個帳號的,作廢;開著就立刻重問
@@ -159,7 +160,7 @@ function rptInvalidate() {
 // 回合開始 / 結束(running 變了):工具列的鈕與那一行就地重畫;新增報告框開著也跟著
 function rptSync() {
   if (!csAnyTurn()) RPT.busyTold = false;   // 清在這裡、不在 rptPaintTools:忙碌中也會重畫
-  if (!$("rpt").hidden && !rptBag().reading) rptPaintTools();
+  if (!$("rpt").hidden && !rptBag().reading) rptPaintHead();
   if (!$("rpn-scrim").hidden) rptNewPaint();
 }
 // 換語言(app.js applyStatic):清單 / 閱讀頁都是 t() 現組的字;讀過的本體整組丟掉重畫
@@ -194,7 +195,7 @@ function rptTurnEnd(rt) {
   const p = mine(RPT.pending.local) ? RPT.pending.local : null, since = RPT.turnAt;
   RPT.turnAt = null;
   if (!p && since == null) return Promise.resolve([]);
-  if (p) { RPT.pending.local = null; rptPaintTools(); }
+  if (p) { RPT.pending.local = null; rptPaintHead(); }
   return rptLoad("local", true).then((applied) => {
     if (!applied) return [];   // 被更新的一趟蓋過:那一趟自己會畫,這裡不拿舊資料下結論
     const fresh = p ? rptNewEntries(p.before, RPT.data.local) : rptWrittenSince(since, RPT.data.local);
@@ -245,12 +246,49 @@ function rptPaint() {
   if (reading) { $("rpt-rows").textContent = ""; $("rpt-state").hidden = true; $("rpt-state").textContent = ""; rptFetch(env, B.reading); }
   else { $("rpt-read").textContent = ""; rptPaintList(); $("rpt-body").scrollTop = B.scroll || 0; }
 }
+/* 空清單的 Setup fog:請求回來、確定是空,而且現在按得下去才上霧。agent 寫作中、主機停了／逾時沒有第一步可做、重讀失敗,照舊一行字(canon › Setup fog › 不用);
+   訊息槽有「這一輪沒有產出新報告」時也是:狀態句與引導不並存(文案密度 #5) */
+function rptFogOn(env) {
+  const data = RPT.data[env];
+  if (!data || data.length || RPT.noNew === env || RPT.failed[env]) return false;
+  const st = rptAskState(rptCtx(env));
+  return st === "free" || st === "busy";
+}
+// 狀態變了要不要換霧／字:工具列就地重畫不動列,霧上霧下那一刻才重畫清單
+function rptPaintHead() {
+  if (rptFogOn(libEnv()) !== !!$("rpt-fog-new")) rptPaintList(); else rptPaintTools();
+}
+// 回合中同工具列那顆:aria-disabled + title,點了才把那句寫進 rpt-msg
+function rptFogBtnSync(b, st) {
+  if (st === "busy") { b.setAttribute("aria-disabled", "true"); b.title = t("turn.busy"); }
+  else { b.removeAttribute("aria-disabled"); b.removeAttribute("title"); b.removeAttribute("aria-describedby"); }
+}
+function rptFog(st) {
+  const fog = libEl("div", "fog rpt-fog"), under = libEl("div", "fog-under"), card = libEl("div", "fog-card");
+  under.setAttribute("aria-hidden", "true"); under.inert = true;
+  [["rpt.fogRow.a", "2026-01-05 09:00", "performance"], ["rpt.fogRow.b", "2026-01-02 14:30", "morning"], ["rpt.fogRow.c", "2025-12-29 08:45", "research"]].forEach(([k, stamp, type]) => {
+    const r = libEl("div", "rpt-row"), m = libEl("div", "m");
+    m.append(libEl("span", "mono", stamp), " · " + t(rptTypeKey(type)));
+    r.append(libEl("div", "t", t(k)), m); under.appendChild(r);
+  });
+  const b = libEl("button", "btn-fill", t("rpt.ask")); b.type = "button"; b.id = "rpt-fog-new";
+  rptFogBtnSync(b, st);
+  b.addEventListener("click", () => {
+    if (b.getAttribute("aria-disabled") === "true") { rptBusyTell(); b.setAttribute("aria-describedby", "rpt-msg"); return; }
+    libTrack("rpt_fog_new"); rptNewOpen(b);
+  });
+  card.append(libEl("p", "", t("rpt.fogNew")), b);
+  fog.append(under, card);
+  return fog;
+}
 // 回傳訊息槽有沒有字:有字時空狀態不畫引導(一個容器一個訊息槽)
 function rptPaintTools() {
   const env = libEnv(), data = RPT.data[env], n = data ? data.length : 0, count = $("rpt-count");
   count.textContent = t(n === 1 ? "rpt.count.one" : "rpt.count.other", { n: String(n) });
   count.classList.toggle("is-zero", n === 0);   // 0 份藏字留位
   const st = rptAskState(rptCtx(env)), ask = $("rpt-ask");
+  ask.hidden = rptFogOn(env);   // 同一個動作只出現一次(canon › Setup fog)
+  const fogBtn = $("rpt-fog-new"); if (fogBtn) rptFogBtnSync(fogBtn, st);
   // 回合中「點了才講」(同策略庫主鈕、策略版本):aria-disabled + title,點了才把那句寫進 rpt-msg;其餘停用態照舊原生 disabled + 常駐句
   ask.disabled = st !== "free" && st !== "busy";
   if (st === "busy") { ask.setAttribute("aria-disabled", "true"); ask.title = t("turn.busy"); }
@@ -290,6 +328,7 @@ function rptRow(r, current) {
 }
 function rptPaintList() {
   const env = libEnv(), B = rptBag(env), rows = $("rpt-rows"), state = $("rpt-state");
+  const fogFocus = document.activeElement && document.activeElement.id === "rpt-fog-new";
   rows.textContent = ""; state.hidden = true; state.textContent = ""; state.className = "rpt-state";
   const said = rptPaintTools();
   const data = RPT.data[env];
@@ -303,7 +342,12 @@ function rptPaintList() {
     }
     return;
   }
-  if (!data.length) {   // 空狀態(§1.4):置中、不在中間再放一顆鈕(填充動作是右上那顆);訊息槽有字時只剩名詞句
+  if (rptFogOn(env)) {
+    rows.appendChild(rptFog(rptAskState(rptCtx(env))));
+    if (fogFocus) $("rpt-fog-new").focus();
+    return;
+  }
+  if (!data.length) {   // 等得到東西、沒有第一步可做(寫作中、主機停了):置中一行;訊息槽有字時只剩名詞句
     state.hidden = false; state.className = "rpt-state rpt-empty";
     state.appendChild(libEl("p", "l1", t("rpt.empty")));
     if (!said) state.appendChild(libEl("p", "l2", t("rpt.emptyHint")));
@@ -432,8 +476,14 @@ function rptNewPaint() {
   $("rpn-honest").textContent = t("rpt.new.honest");
   if (RPT.sending) return;
   const st = rptAskState(rptCtx(env));
-  $("rpn-send").disabled = st !== "free";
+  rptNewSendSync(st);
   $("rpn-msg").textContent = st === "busy" ? t("turn.busy") : st === "stopped" ? t("ho.gate.stopped") : st === "stale" ? t("ho.gate.stale") : st === "pending" ? t("rpt.note.pending") : RPT.fail ? t("modal.sendFailed") : "";
+}
+// 描述欄空著不能按,原因是說明句(canon 文案密度 #5);閘門的原因在 foot-msg,不掛
+function rptNewSendSync(st) {
+  const send = $("rpn-send"), blank = !$("rpn-desc").value.trim();
+  send.disabled = st !== "free" || blank;
+  if (st === "free" && blank) send.setAttribute("aria-describedby", "rpn-honest"); else send.removeAttribute("aria-describedby");
 }
 // 送出中:三顆都停用(送出後撤不回,取消沒有意義;首次裝引擎可能等一分鐘,不能讓人按了沒反應)
 function rptNewLock(on) { ["rpn-send", "rpn-cancel", "rpn-close"].forEach((id) => { $(id).disabled = on; }); }
@@ -452,6 +502,7 @@ function rptFillTpl(key) {
   d.value = t(key);
   d.style.height = "auto";
   d.style.height = Math.min(d.scrollHeight + d.offsetHeight - d.clientHeight, window.innerHeight * 0.5) + "px";
+  rptNewSendSync(rptAskState(rptCtx(libEnv())));
   d.focus();
 }
 // 送出(同策略庫 libSend):描述空著 → 焦點回欄、不送;閘門沒開 → 只更新那一句;成功(跑起來)才關框、記 pending、reports_ask(不在對話貼回音:鈕態＋訊息槽已講進度)
@@ -486,7 +537,7 @@ async function rptSend() {
 /* ── 接線(這支比 app.js 先載:只用 getElementById,不碰 app.js 的全域;handler 裡的才在點擊時取)── */
 (function rptWire() {
   const g = (id) => document.getElementById(id);
-  g("rpt-nav").addEventListener("click", () => { if (!rptBag().open) rptOpen(); else sideReclick(() => rptLeave()); });   // 再點一次 = 回 welcome;展開層蓋著時先收展開層(trade.js sideReclick)
+  g("rpt-nav").addEventListener("click", () => { if (!rptBag().open) rptOpen(); else sideReclick(() => rptLeave(), rptBag().reading ? rptBack : null); });   // 閱讀層先回清單;清單再點 = 回 welcome;展開層蓋著時先收展開層(trade.js sideReclick)
   g("rpt-back").addEventListener("click", rptBack);
   g("rpt-ask").addEventListener("click", () => { if (g("rpt-ask").getAttribute("aria-disabled") === "true") { rptBusyTell(); return; } rptNewOpen(g("rpt-ask")); });
   g("rpt-rows").addEventListener("click", (e) => {   // 列會重畫:委派
@@ -496,6 +547,7 @@ async function rptSend() {
   ["click", "auxclick"].forEach((ev) => g("rpt-read").addEventListener(ev, rptExtLink));
   g("rpt-body").addEventListener("scroll", () => { const B = rptBag(); if (!B.reading) B.scroll = g("rpt-body").scrollTop; });
   g("rpn-modal").addEventListener("submit", (e) => { e.preventDefault(); rptSend(); });   // CSP form-action 'none':原生送出一律擋
+  g("rpn-desc").addEventListener("input", () => { if (!RPT.sending) rptNewSendSync(rptAskState(rptCtx(libEnv()))); });
   g("rpn-cancel").addEventListener("click", () => rptNewClose());
   g("rpn-close").addEventListener("click", () => rptNewClose());
   g("rpn-scrim").addEventListener("mousedown", (e) => { if (e.target === g("rpn-scrim")) rptNewClose(); });

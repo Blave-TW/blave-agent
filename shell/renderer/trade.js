@@ -1444,6 +1444,10 @@ function envCloudKind(st) {
   if (c.code !== "OK" || !c.machine) return "unreach";
   return ["none", "starting", "stopped", "running"].indexOf(c.machine.state) >= 0 ? c.machine.state : "none";
 }
+/* 雲端視角沒有主機可下指示(沒登入、沒主機、啟動中、讀不到、還沒問到)。stopped 有主機、「準備好了」主機在跑,都不算。
+   送出去只會花一輪 AI 額度換一句連不上,所以輸入框與送出鈕都停用 */
+function envCloudGated() { const k = envCloudKind(TR_BAGS.cloud.st); return k !== "running" && k !== "stopped"; }
+function envInputGate() { return ENV.cur === "cloud" && envCloudGated(); }
 // 錢的記號:連了模擬帳戶 = paper,連了真的交易所 = real,沒連 = null
 function envMoney(st) { const id = trVenueIds(st && st.report)[0] || null; return !id ? null : id === "paper" ? "paper" : "real"; }
 // 不是人按的暫停(對帳器 / 健檢 / 停機保護自己踩的):切換器上要出紅記號叫人
@@ -3084,8 +3088,8 @@ function poPaintCfg() {
     box.appendChild(poCfgSec());
     box.appendChild(trEl("div", "pf-state", t("tr.cfgNull")));
   } else if (!names.length && !trPickDirty(TR.picked, stored, trPickKeep(TR.env, TR.picked, stored, trListNames())) && !Object.keys(TR.bad).length) {
-    // 一支都沒選(或連可選的都沒有):Setup fog(canon › Components › Setup fog);草稿把策略都取消勾選、等著儲存時不上霧(儲存列是唯一的出口)
-    box.appendChild(poFog("pick"));
+    // Setup fog(canon › Components › Setup fog);草稿把策略都取消勾選、等著儲存時不上霧(儲存列是唯一的出口)
+    box.appendChild(poFog(TR.list.some((x) => x.hasBacktest) ? "pick" : "po-new"));
   } else {
     box.appendChild(trAmountTable(names, stored, states));
     box.appendChild(poSigTable(r, stored, states, "cfg"));
@@ -5867,7 +5871,14 @@ function cxPaperNote() {
   note.append(disc, p);
   return note;
 }
+// 真實帳戶、這一家要的金鑰還沒填滿:主鈕停用,Enter 也不送
+function cxKeysBlank(venue) {
+  if (venue === PAPER || venue === CAPITAL || venue === "president") return false;
+  return !CXF.apiKey.trim() || !CXF.secret.trim() || !!(CX_VENUES[venue] && CX_VENUES[venue].pass && !CXF.passphrase.trim());
+}
 function cxModalPaint() {
+  // 金鑰沒填滿的停用只屬於下面這條;換到群益、統一那幾條不帶過去
+  $("cx-go").classList.remove("is-lock"); $("cx-go").disabled = false;
   if (CXF.venue === CAPITAL && CXF.env === "cloud") return capPaint();   // 群益整個框交給 capital.js
   if (typeof capFootRestore === "function") capFootRestore();
   if (CXF.venue === CAPITAL && CXF.env === "local") {   // 群益本機整個框交給 capital_local.js;第一次進來先找憑證、讀系統地區
@@ -5884,6 +5895,7 @@ function cxModalPaint() {
   // 雲端:框開著時主機停了 → 框不自己關(可能正在貼金鑰),主鈕鎖住、結果那一格講原因;限速不做 app 端計時鎖(主機自己在冷卻)
   const down = cloud && envCloudKind(TR_BAGS.cloud.st) !== "running";
   const venue = CXF.venue, locked = !cloud && Date.now() < CXF.lockUntil, kc = cloud ? CXF.kc : null;
+  const blank = !kc && !L.cx.busy && cxKeysBlank(venue);
   const off = L.cx.busy || (venue === BINANCE && locked) || down || (!!kc && !kcReady(kc));
   const cip = cloud ? cxCloudIp() : null;
   const sig = LANG + "|" + JSON.stringify([CXF.env, CXF.mode, CXF.bound, venue, L.cx, cloud ? cip : CXF.ip === undefined ? "?" : CXF.ip, CXF.ipBusy, CXF.res && [CXF.res.code, CXF.res.detail, CXF.res.expired], kc && kc.view, locked, down]);
@@ -5899,6 +5911,11 @@ function cxModalPaint() {
     go.append(goLabel);
   }
   go.setAttribute("aria-disabled", off ? "true" : "false"); go.classList.toggle("is-busy", !!L.cx.busy); go.classList.toggle("is-lock", !!kc && !kcReady(kc));
+  if (blank) {   // 真 disabled:按了也沒有原因可講。焦點在鈕上時(連接失敗清了欄位)退到第一個空欄,不掉到 body
+    const refocus = document.activeElement === go;
+    go.disabled = true;
+    if (refocus) { const e = [["cx-api", "apiKey"], ["cx-secret", "secret"], ["cx-pass", "passphrase"]].find(([id, k]) => $(id) && !CXF[k].trim()); if (e) $(e[0]).focus(); }
+  }
   box.setAttribute("aria-busy", L.cx.busy ? "true" : "false");
   // 雲端的五處差異之 1、4:標題列灰底 +「雲端」記號;鈕正上方講目的地
   $("cx-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
@@ -5922,7 +5939,7 @@ function cxModalPaint() {
       const l = trEl("label", "fld"); l.appendChild(trEl("span", "fld-l", label));
       const i = trEl("input", "f-input"); i.id = id; i.type = "password"; i.autocomplete = "off"; i.spellcheck = false; i.setAttribute("autocapitalize", "off");
       i.value = CXF[key]; i.readOnly = !!L.cx.busy;
-      i.addEventListener("input", () => { CXF[key] = i.value; });
+      i.addEventListener("input", () => { CXF[key] = i.value; cxModalPaint(); });   // 簽章不含金鑰:只更新主鈕,不重畫欄位
       i.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); cxConnect(); } });
       l.appendChild(i);
       if (hint) { const h = trEl("p", "cx-hint", hint); h.id = id + "-hint"; i.setAttribute("aria-describedby", h.id); l.appendChild(h); }
@@ -6061,6 +6078,7 @@ async function cxConnect() {
     return;
   }
   if (CXF.venue === "president") { if (CXF.env === "local" && ENV.cur === "local" && !$("cx-scrim").hidden) return presPrimary(); return; }
+  if (!CXF.kc && cxKeysBlank(CXF.venue)) return;
   if (CXF.env === "cloud") { if (!TR_BAGS.cloud.cx.busy && !$("cx-scrim").hidden && ENV.cur === "cloud") return cxConnectCloud(); return; }
   const L = TR_BAGS.local;
   if (L.cx.busy || ENV.cur !== "local" || $("cx-scrim").hidden) return;
@@ -6181,7 +6199,11 @@ async function psOpen(opener, mode, fresh) {
   $("ps-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
   $("ps-env").hidden = !cloud; $("ps-env").textContent = cloud ? t("env.cloud") : "";
   const list = $("ps-list"); list.textContent = "";
-  if (!rows.length) list.appendChild(trEl("div", "pf-state", t("tr.pick.empty")));
+  if (!rows.length) {   // 歡迎頁③、Z 導引會直接開框:空的時候也要有出路(一般從策略組合頁走的是 po-new 霧)
+    const p = trEl("p", "ps-next", t("tr.pick.empty") + " "), b = trEl("button", "btn-quiet", t("lib.nav")); b.type = "button"; b.dataset.fk = "pick-empty";
+    b.addEventListener("click", () => { psClose(); if (typeof libOpen === "function") libOpen(); });
+    p.appendChild(b); list.appendChild(p);
+  }
   else rows.forEach((r, i) => list.appendChild(psRow(r, cloud, i)));
   // 清單是空的(一列都沒有;全部鎖住的不算):沒有東西可「確定」,底部只留一顆「關閉」(0.1.29 e2e 稽核建議 5)
   const cancel = $("ps-cancel"); $("ps-ok").hidden = !rows.length;
@@ -6340,11 +6362,13 @@ function envNavMark(which) {
   [["po", "po-nav"], ["tr", "tr-nav"]].forEach(([k, id]) => { if (which === k) $(id).setAttribute("aria-current", "page"); else $(id).removeAttribute("aria-current"); });
 }
 /* 側欄已選中的那一項再點一次(Wei 09-28)。瀏覽器展開層蓋著中欄時,人眼前看到的是展開層、不是那一頁:這一下先收展開層、露出那一頁
-   (那一頁本來就開著,MutationObserver 看不到「新畫面冒出來」,不收就永遠沒反應)。沒蓋著才 leave() 收掉那一頁,
-   由 envShowMain 落到這一邊的 welcome。守門同切視角:框開著 / 組字中不動 */
-function sideReclick(leave) {
+   (那一頁本來就開著,MutationObserver 看不到「新畫面冒出來」,不收就永遠沒反應)。
+   back = 這一區還在第二層(策略庫、報告的詳情):先回第一層的列表,列表再點才回 welcome。
+   都沒有才 leave() 收掉那一頁,由 envShowMain 落到這一邊的 welcome。守門同切視角:框開著 / 組字中不動 */
+function sideReclick(leave, back) {
   if (!envCanSwitch()) return;
   if (typeof BR !== "undefined" && BR.exp && BR.bw && !BR.bw.hidden) { brCollapse(true); return; }
+  if (back) { back(); return; }
   leave(); envShowMain();
 }
 /* 每一輪都叫(trPaint 的第一步):切換器兩格、側欄、視窗標題、雲端空態。回 false = 中欄現在是雲端空態,自動下單頁不必畫。
@@ -6389,8 +6413,14 @@ function envPaint() {
   if (ready && sg.dataset.i18n !== "side.cloud.emptyReady") { sg.dataset.i18n = "side.cloud.emptyReady"; sg.textContent = t("side.cloud.emptyReady"); }
   $("strat-list").hidden = cloud; $("strat-list-cloud").hidden = !cloud || gate;
   // 雲端視角的 placeholder。走 dataset:換語言時 applyStatic 會照 data-i18n-ph 重填
-  const phKey = cloud ? "chat.ph.cloud" : "ws.placeholder";
+  const inGate = envInputGate();
+  const phKey = !cloud ? "ws.placeholder" : !inGate || kind === "loading" ? "chat.ph.cloud" : kind === "unreach" ? "chat.ph.cloudUnreach" : "chat.ph.cloudGate";
   if (ENV.sig.ph !== phKey) { ENV.sig.ph = phKey; $("ta").dataset.i18nPh = phKey; $("ta").placeholder = t(phKey); }
+  if ($("ta").disabled !== inGate) {   // 打到一半的字留著,切回這台電腦就能送;原因只在開通卡講一次
+    $("ta").disabled = inGate;
+    if (inGate) $("ta").setAttribute("aria-describedby", "cv-h"); else $("ta").removeAttribute("aria-describedby");
+    sendBtnSync();
+  }
   if (cloud) envPaintSide(kind, C.st);
   if (typeof sgHeadPaint === "function") sgHeadPaint();   // 新增資料夾鈕與上限訊息依目前視角(#strat-head 兩個視角共用)
   const cur = cells[ENV.cur];

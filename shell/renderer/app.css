@@ -326,6 +326,8 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
   max-height: 120px; padding: var(--space-4) 0;
 }
 .chat-input textarea::placeholder { color: var(--ink-3); }
+.chat-input textarea:disabled { cursor: not-allowed; color: var(--ink-3); }
+.btn-send:disabled, .btn-send:disabled:hover { background: var(--surface-muted); color: var(--ink-3); border: 1px solid var(--color-greyMedium); cursor: not-allowed; opacity: 1; }   /* 同 .btn-fill:disabled;canon Disabled 不用 opacity */
 .msg.sys { color: var(--ink-3); font-size: 12px; }
 
 /* =========================================================================
@@ -1051,6 +1053,8 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .priv-gh { margin: 0 0 var(--space-2); font-size: 12px; font-weight: 400; line-height: 1.7; color: var(--ink); }
 /* 法遵入口(服務條款 / 隱私權政策):安靜文字鈕自己一行,跟上面那一段拉開一個群組間距 */
 .set-legal { margin: var(--space-16) 0 0; font-size: 12px; color: var(--ink-3); }   /* 字級 / 色給兩份之間的「·」 */
+/* 框腳:內容區自己捲,法遵連結釘在一般那頁的底(矮視窗不被切);bottom 抵銷 .set-content 的內距 */
+.set-pane > .set-legal { position: sticky; bottom: calc(-1 * var(--space-16)); padding: var(--space-8) 0; background: var(--surface-card); }
 /* 「來自手機」:泡泡正下方、靠右,離泡泡 4;圖示跟分頁上的手機記號同一顆(desktop-phone-chat-settings §2) */
 .msg.you.from-phone { flex-direction: column; align-items: flex-end; }
 .msg.you .msg-from { display: flex; align-items: center; gap: var(--space-6); margin-top: var(--space-4); font-size: 12px; line-height: 1.4; color: var(--ink-3); }
@@ -1216,7 +1220,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cf-opt input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .cf-opt-t { font-size: 13px; font-weight: 500; line-height: 20px; color: var(--ink); }
 .cf-opt:has(input:checked) .cf-opt-t { font-weight: 600; }
-.cf-opt-d { font-size: 12px; line-height: 1.6; color: var(--ink-2); }
+.cf-opt-d { font-size: 12px; line-height: 1.6; color: var(--ink-2); text-wrap: pretty; }
 .cf-opt-w { margin-top: var(--space-4); font-size: 12px; line-height: 1.6; color: var(--ink); }   /* 情境句:主墨,不用紅 */
 .cf-opt.off, .cf-opt.off input { cursor: not-allowed; }
 .cf-opt.off, .cf-opt.off:hover, .cf-opt.off:has(input:checked) { background: var(--bg-body); }   /* 鎖住:底一律灰(選中的留框),同網頁 .is-off */
@@ -1749,7 +1753,7 @@ html[data-platform="win32"] .mode, html[data-platform="win32"] .envm, html[data-
 .f-area:focus { outline: none; border-color: var(--ink); }
 .f-input::placeholder, .f-area::placeholder { color: var(--ink-3); }
 .f-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-12); }
-.ns-hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.ns-hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); text-wrap: pretty; }
 .cf-quote { margin: 0; padding: var(--space-8) var(--space-12); border-left: 2px solid var(--border-frame); font-size: 12px; line-height: 1.6; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .cf-quote.empty { color: var(--ink-3); }
 .foot-msg { flex-basis: 100%; min-height: 0; font-size: 12px; line-height: 1.45; color: var(--ink-2); }

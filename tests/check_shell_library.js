@@ -740,7 +740,7 @@ app.whenReady().then(async () => {
     pick("all"); window.__lib.list = keep; await libLoad(true); return { a, b, back: q("#lib-rows .lib-row").length }; })()`);
   ok("④ 只有未驗證的社群策略時:兩支照列(新的先)、不出空狀態;切到台股 0 列 → lib.emptyMkt + 一顆描邊「新增策略」(內建瀏覽器關著,找點子不出;spec-0.1.13 §2.5)", r.a.state && r.a.ids === "12,8" && !r.b.state && r.b.text === (await T("lib.emptyMkt")) && r.b.btn === (await T("ns.chip")) + ":btn-out" && r.b.n === 0 && r.back === 8, JSON.stringify(r));
   // 詳情
-  const gatesOf = `q("#lib-det .gates li").map((li) => li.querySelector(".gn").textContent + "=" + li.querySelector(".gr > .gv").textContent + "[" + [...li.querySelectorAll(".gr > .gx")].map((x) => x.textContent).join(";") + "]").join("|")`;
+  const gatesOf = `q("#lib-det .gates li").map((li) => li.querySelector(".gn").textContent + "=" + li.querySelector(".gr .gv").textContent + "[" + [...li.querySelectorAll(".gr .gx")].map((x) => x.textContent).join(";") + "]").join("|")`;
   r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; window.__lib.reportCalls = []; q('#lib-rows .lib-row[data-id="101"]')[0].click(); const c0 = LIB.chart;
     const sync = { back: !document.getElementById("lib-back").hidden, headList: document.getElementById("lib-head-list").hidden, rows: q("#lib-rows .lib-row").length, gate: q("#lib-grps > *").length === 0, h5: q("#lib-det h5")[0].textContent, meta: q("#lib-det .lib-meta")[0].textContent, sum: q("#lib-det .lib-sum")[0].textContent,
       chart: q("#lib-det .lib-card .chart").length, chartH: q("#lib-det .lib-card .chart")[0].getBoundingClientRect().height, canvas: q("#lib-det .lib-card .chart canvas").length, kv: q("#lib-det .lib-kv .k").map((x) => x.textContent).join("|") + " / " + q("#lib-det .lib-kv .v").map((x) => x.textContent).join("|"), gates: ${gatesOf}, lead: q("#lib-det .lib-card")[1].querySelector(".lib-p"),
@@ -752,7 +752,7 @@ app.whenReady().then(async () => {
     ok("④ 詳情:返回鈕出、清單頭 / 閘門卡收;標題 / meta(7 人安裝)/ 摘要;曲線先用 spark 畫出來(canvas、圖高 200);回測欄總報酬在第一列 + 四個數字 + 上架兩格;三道關卡都通過、右欄帶數值(費率兩行、p < 0.001、鄰域 91%);官方不出結論段;說明留換行;dl 回測期間先用曲線區間 / 標的 / 方向 / 曝險;沒有「用了之後」卡;焦點在返回鈕",
       s.back && s.headList && s.rows === 0 && s.gate && s.h5 === "BTC 通道動能共振" && s.meta === "Blave 官方 · BTC/USDT 永續 · 5 分 K · 7 人安裝" && s.sum === "通道 + 動能。" && s.chart === 1 && s.chartH === 200 && s.canvas >= 1 && s.c0
       && s.kv === "總報酬|年化報酬|Sharpe|最大回撤|樣本|上架天數|安裝 / +312.50%|+24.61%|1.50|−20.00%|6.5 年|107|7".replace("107", String(Math.max(0, Math.floor((Date.now() - Date.parse("2026-06-10T00:00:00")) / 86400000))))
-      && s.gates === "誠實回測=通過[假設 0.05%;交易所 0.04%]|統計顯著=通過[p < 0.001]|參數穩健=通過[鄰域保留 91%]" && s.lead === null
+      && s.gates === "誠實回測=通過[假設 0.05%;實際 0.04%]|統計顯著=通過[p < 0.001]|參數穩健=通過[鄰域保留 91%]" && s.lead === null
       && s.how === "第一段。\n第二段。" && s.dl === "2020-01-01 — 2026-06-30|BTC/USDT 永續 · 5 分 K|純做多|1 倍" && s.period === "2020-01-01 — 2026-06-30" && s.steps === 0 && s.focus === "lib-back", JSON.stringify(s));
     ok("④ 免費態:主鈕「用這支」、沒有說明句(免費不寫)", s.cta === (await T("lib.use")) && s.note === "", JSON.stringify(s.note)); }
   ok("④ /report 回來(問一次、帶語言):只換曲線(#lib-chart 還在、LIB.chart 換新、canvas 在)與回測期間(backtest_start — backtest_end、.mono);頭部 / CTA / 焦點都沒重畫", JSON.stringify(r.after.calls) === "[[101,\"zh\"]]" && r.after.swapped && r.after.chart === 1 && r.after.canvas >= 1
@@ -800,7 +800,7 @@ app.whenReady().then(async () => {
     document.getElementById("lib-back").click(); q('#lib-rows .lib-row[data-id="74"]')[0].click(); const b = { gates: ${gatesOf}, na: q("#lib-det .gates .gv.na").length };
     document.getElementById("lib-back").click(); LIB.reports.clear(); window.__lib.report = ${JSON.stringify(REPORT)}; return { a, b }; })()`);
   ok("④ #101 的 /report 晚到、人已在 #72 → #72 的曲線與期間不被動到;#74(MCPT 不適用)右欄只有狀態那一行、沒有 —", r.a.same && r.a.period === "2023-03-02 — 2026-08-31" && r.a.detail === 72 && r.a.h5 === "DOGE 籌碼集中度"
-    && r.b.gates === "誠實回測=通過[假設 0.05%;交易所 0.04%]|統計顯著=MCPT 不適用（組合策略）[]|參數穩健=通過[鄰域保留 91%]" && r.b.na === 1, JSON.stringify(r));
+    && r.b.gates === "誠實回測=通過[假設 0.05%;實際 0.04%]|統計顯著=不適用[]|參數穩健=通過[鄰域保留 91%]" && r.b.na === 1, JSON.stringify(r));
   // 清單沒曲線(#86:spark null)但 /report 有:「尚未提供權益曲線」那行換成圖;報告只有壞曲線 → 留著那行
   r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; window.__lib.report = (id) => (id === 86 ? ${JSON.stringify(Object.assign({}, REPORT, { equity_from: "2021-01-01", equity_to: "2026-06-30" }))} : null); q('#lib-rows .lib-row[data-id="86"]')[0].click();
     const before = { none: q("#lib-det .chart-none").length, chart: q("#lib-det #lib-chart").length, period: document.getElementById("lib-period").textContent };
@@ -818,8 +818,8 @@ app.whenReady().then(async () => {
       down: q("#lib-det .gates .gv.down").map((x) => x.textContent).join("|"), downColor: getComputedStyle(q("#lib-det .gates .gv.down")[0]).color, redText: getComputedStyle(document.documentElement).getPropertyValue("--color-redText").trim(), gxColor: getComputedStyle(q("#lib-det .gates .gx")[0]).color, cta: q("#lib-cta .btn-fill")[0].textContent, note: q("#lib-cta .note")[0].textContent };
     document.getElementById("lib-back").click(); q('#lib-rows .lib-row[data-id="101"]')[0].click(); return { a, focus8, b }; })()`);   // 後面的閘門態測試接著看 #101 的詳情
   ok("④ #8(沒 gate_checks):沒有「未驗證」badge、只有價格、關卡卡只有一句 lib.gates.community、不列三道、CTA 仍「購買並使用 1,200 TWD」;返回焦點回那一列", r.a.tags === "1,200TWD" && r.a.card === (await T("lib.gates.title")) && r.a.p === (await T("lib.gates.community")) && r.a.lis === 0 && r.a.cta === (await T("lib.buy", { price: "1,200 TWD" })) && r.focus8 === "8", JSON.stringify(r));
-  ok("④ #12(兩道 fail):關卡卡第一段「2 道關卡未通過…」(句首不帶「未驗證：」)(2 進 .mono、在 ul 之前),兩道「未通過」紅字 + 數值(假設 0.03% / 交易所 0.04%、p = 0.120、鄰域 82%);CTA「購買並使用 800 TWD」、鈕下沒有說明句", r.b.tags === "800TWD" && !/^未驗證/.test(r.b.p) && r.b.p === (await T("lib.gates.failed", { k: 2 })) && r.b.k === "2" && r.b.first === "lib-p"
-    && r.b.gates === "誠實回測=未通過[假設 0.03%;交易所 0.04%]|統計顯著=未通過[p = 0.120]|參數穩健=通過[鄰域保留 82%]" && r.b.down === "未通過|未通過" && r.b.downColor !== r.b.gxColor && r.b.cta === (await T("lib.buy", { price: "800 TWD" })) && r.b.note === "", JSON.stringify(r));
+  ok("④ #12(兩道 fail):關卡卡第一段「2 道關卡未通過…」(句首不帶「未驗證：」)(2 進 .mono、在 ul 之前),兩道「未通過」紅字 + 數值(假設 0.03% / 實際 0.04%、p = 0.120、鄰域 82%);CTA「購買並使用 800 TWD」、鈕下沒有說明句", r.b.tags === "800TWD" && !/^未驗證/.test(r.b.p) && r.b.p === (await T("lib.gates.failed", { k: 2 })) && r.b.k === "2" && r.b.first === "lib-p"
+    && r.b.gates === "誠實回測=未通過[假設 0.03%;實際 0.04%]|統計顯著=未通過[p = 0.120]|參數穩健=通過[鄰域保留 82%]" && r.b.down === "未通過|未通過" && r.b.downColor !== r.b.gxColor && r.b.cta === (await T("lib.buy", { price: "800 TWD" })) && r.b.note === "", JSON.stringify(r));
   // 閘門態
   const cta = () => js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; const b = q("#lib-cta .btn-fill")[0], qb = q("#lib-cta .btn-quiet"); return { btn: b ? b.textContent : null, dis: b ? b.disabled : null, quiet: qb.map((x) => x.textContent).join("|"), note: q("#lib-cta .note")[0].textContent, up: q("#lib-cta .note")[0].classList.contains("up"), err: q("#lib-cta .err").map((x) => x.textContent).join() }; })()`);
   await js(`hasToken = false; libSync();`); r = await cta();
@@ -886,7 +886,7 @@ app.whenReady().then(async () => {
   r = await js(`(async () => { window.__lib.strats = [{ name: "btc_channel", displayName: "BTC 通道", mtime: 5, hasBacktest: true }]; running = false;
     await stratRefresh(true); libTurnEnd(); await new Promise((r) => setTimeout(r, 40));
     const libHidden = document.getElementById("lib").hidden, rp = document.getElementById("rp").hidden, sel = RP.name;
-    await libOpen(); await new Promise((r) => setTimeout(r, 40)); const q = (x) => [...document.querySelectorAll(x)]; const b = q("#lib-cta .btn-fill")[0];
+    await libOpen({ silent: true }); await new Promise((r) => setTimeout(r, 40)); const q = (x) => [...document.querySelectorAll(x)]; const b = q("#lib-cta .btn-fill")[0];
     return { patches: window.__lib.patches, installed: LIB.installed, libHidden, rp, sel, pending: LIB.pending, btn: b.textContent, quiet: q("#lib-cta .btn-quiet").map((x) => x.textContent).join(), note: q("#lib-cta .note")[0].textContent, noteHidden: q("#lib-cta .note")[0].hidden, detail: libBag().detail }; })()`);
   ok("④ turn-end:本機清單多了 btc_channel → 對照表記 101 → btc_channel(寫進主行程)、不自動選中新策略(策略庫留著、報告頁不出現);同一支詳情 → 已安裝態(打開這支策略 + 再下載一份,鈕下沒有說明句)",
     JSON.stringify(r.patches) === '[{"id":101,"name":"btc_channel"}]' && r.installed["101"] === "btc_channel" && !r.libHidden && r.rp && r.sel === null && r.pending === null && r.detail === 101
@@ -979,7 +979,7 @@ app.whenReady().then(async () => {
   // 雲端視角的「已安裝」(Windows 真機補測):送出時記雲端清單(名字 → mtime)、回合結束比不到就掛著等、輪詢帶新清單來才記;不寫檔、不打端點;那支從雲端消失就拿掉;等太久就放掉。
   // 清單「缺席」(strategies_ok 不為 true)那一輪:不刪、不記、不動;等待中再送第二支 → 第一支的等待放掉;回合結束當場比到 → 清單當場重畫;同名 mtime 變了(再下載一份)→ 也算、也重畫;登出清掉
   r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; running = false; LIB.pending = null; LIB.bags.cloud.open = true; LIB.bags.cloud.detail = null; document.getElementById("cv-empty").hidden = true; ENV.cur = "cloud";
-    const st = (ok, list) => ({ cloud: { strategies_ok: ok, strategies: list || [{ name: "old", updated_at: 1 }] } }); const tag = (id) => q('#lib-rows .lib-row[data-id="' + id + '"] .tag').map((x) => x.textContent).join("|"); const ch = (x) => libCloudChanged(envCloudList(TR_BAGS.cloud.st = x));
+    const st = (ok, list) => ({ cloud: { code: "OK", machine: { state: "running" }, strategies_ok: ok, strategies: list || [{ name: "old", updated_at: 1 }] } }); const tag = (id) => q('#lib-rows .lib-row[data-id="' + id + '"] .tag').map((x) => x.textContent).join("|"); const ch = (x) => libCloudChanged(envCloudList(TR_BAGS.cloud.st = x));
     TR_BAGS.cloud.st = st(true); envShowMain(); await new Promise((r) => setTimeout(r, 60));
     const n0 = window.__lib.sent.length, p0 = window.__lib.patches.length; TR_BAGS.cloud.st = st(true); libSend(libFind(101)); await new Promise((r) => setTimeout(r, 60));
     const a = { env: LIB.pending && LIB.pending.env, before: LIB.pending && [...LIB.pending.before.entries()].join(), viewing: window.__lib.sent[n0] && window.__lib.sent[n0].viewing && window.__lib.sent[n0].viewing.env };

@@ -1493,7 +1493,7 @@ msgid "cx.store.q"
 msgstr "Where are my keys stored?"
 
 msgid "cx.venue"
-msgstr "Exchange / broker"
+msgstr "Exchange or futures broker"
 
 msgid "cx.paper"
 msgstr "Paper trading (no keys)"
@@ -1502,7 +1502,7 @@ msgid "cx.paperShort"
 msgstr "Paper trading"
 
 msgid "cx.connect"
-msgstr "Connect an Exchange"
+msgstr "Connect Account"
 
 msgid "cx.connecting"
 msgstr "Connecting…"
@@ -1606,7 +1606,7 @@ msgid "tr.s.died"
 msgstr "Trading stopped"
 
 msgid "tr.noAccount"
-msgstr "No exchange connected"
+msgstr "No trading account connected"
 
 msgid "tr.loading"
 msgstr "Loading…"
@@ -1976,13 +1976,13 @@ msgid "tr.tab.set"
 msgstr "Settings"
 
 msgid "tr.onboard"
-msgstr "Connect an exchange account, then press Release pause above and set amounts."
+msgstr "Connect a trading account, then press Release pause above and set amounts."
 
 msgid "tr.onboard.cloud"
 msgstr "Order sizes are derived from your exchange equity, and this cloud machine has no exchange connected yet."
 
 msgid "tr.cloud.onboardExtra"
-msgstr "The exchange connected on this computer doesn’t carry over. The cloud needs its own connection."
+msgstr "The account connected on this computer doesn’t carry over. The cloud needs its own."
 
 msgid "tr.zeroMeansOff"
 msgstr "Position = amount × signal. 0 means no orders — the strategy still runs and computes its signal; it just holds no position."
@@ -4721,7 +4721,7 @@ msgid "tr.pick.ok"
 msgstr "Done"
 
 msgid "tr.pick.empty"
-msgstr "No backtested strategies yet — ask the agent in chat to build and backtest one."
+msgstr "No backtested strategies yet."
 
 msgid "tr.pick.gone"
 msgstr "no longer on this computer — uncheck to remove"
@@ -5177,7 +5177,7 @@ msgid "lib.gate.feeAssumed"
 msgstr "Assumed {v}"
 
 msgid "lib.gate.feeActual"
-msgstr "Exchange {v}"
+msgstr "Actual {v}"
 
 msgid "lib.gate.p"
 msgstr "p = {p}"
@@ -5272,7 +5272,7 @@ msgid "lib.gate1"
 msgstr "Honest backtest"
 
 msgid "lib.gate1d"
-msgstr "Fees at or above the exchange's normal rate, no fake history"
+msgstr "Fees at or above the actual rate, no fake history"
 
 msgid "lib.gate2"
 msgstr "Statistically significant"
@@ -5568,7 +5568,7 @@ msgid "rpt.new.descLabel"
 msgstr "What the report should cover"
 
 msgid "rpt.new.descPh"
-msgstr "Describe the report you want — e.g. a brief on my TW-stock holdings today, including institutional net buying."
+msgstr "E.g. today’s Taiwan stock holdings, with institutional flows"
 
 msgid "rpt.new.examples"
 msgstr "Examples:"
@@ -6344,7 +6344,7 @@ msgid "cap.venue"
 msgstr "Capital Futures"
 
 msgid "cap.group.tw"
-msgstr "Taiwan stocks"
+msgstr "Taiwan futures"
 
 msgid "cap.title"
 msgstr "Connect Capital Futures"
@@ -8103,7 +8103,7 @@ msgstr "Change the trading password"
 
 # ── 方案制(.m = api 切換之後的版本;app.js pvK 依 planMo() 挑)──
 msgid "pv.d.noTrial.m"
-msgstr "This account has no first-card trial. Blave data comes with a Blave Agent plan (from {p} TWD a month)."
+msgstr "This account has no first-card trial. Blave data comes with a Blave Agent plan (from {p} TWD every {pd} days)."
 
 msgid "pv.d.trial.m"
 msgstr "Data is free until {d}. When the trial ends, the first period {p} TWD is charged, then it renews every {pd} days. Paid from your balance first, the card if it doesn’t cover a period."
@@ -8120,13 +8120,13 @@ msgstr "Your first card starts a free trial"
 
 # 「自動」不能拿掉,否則會被讀成可選訂閱;扣第一期／取消就不扣留給綁卡那一步的 pv.f.offer.m
 msgid "pv.f.out.m"
-msgstr "After the trial, billing starts automatically at {p} TWD a month."
+msgstr "After the trial, billing starts automatically at {p} TWD every {pd} days."
 
 msgid "pv.f.offer.m"
-msgstr "A {v} TWD card check goes to your balance, and auto top-up turns on. The trial runs {t} days, then {p} TWD a month is charged automatically: from your balance first, this card if that’s short. Cancel during the trial and nothing is charged."
+msgstr "A {v} TWD card check goes to your balance, and auto top-up turns on. The trial runs {t} days, then the first period ({p} TWD every {pd} days) is charged automatically: from your balance first, this card if that’s short. Cancel during the trial and nothing is charged."
 
 msgid "pv.e.sub.m"
-msgstr "When the trial ends, {p} TWD a month is charged automatically; cancel during the trial and nothing is charged."
+msgstr "When the trial ends, the first period is charged automatically: {p} TWD every {pd} days. Cancel during the trial and nothing is charged."
 
 msgid "pv.e.noTrial.m"
 msgstr "This computer can’t reach Blave data yet. It comes with a Blave Agent plan."
@@ -8147,7 +8147,7 @@ msgid "pv.st.noPlan"
 msgstr "No plan"
 
 msgid "pv.d.plan.m"
-msgstr "Blave data comes with a Blave Agent plan (from {p} TWD a month; no cloud machine needed). Without one, this app runs on public data only."
+msgstr "Blave data comes with a Blave Agent plan (from {p} TWD every {pd} days). Without one, this app runs on public data only."
 
 msgid "pv.f.plan.m"
 msgstr "Starting pays the first period now: from your wallet first, then your card."
@@ -8561,10 +8561,10 @@ msgid "po.fogStrat"
 msgstr "Strategy {x}"
 
 msgid "tr.fogConnect"
-msgstr "Connect an exchange and your strategies trade on their own."
+msgstr "Connect an account and your strategies can trade on their own."
 
 msgid "tr.cloud.fogConnect"
-msgstr "The cloud machine needs its own exchange connection; once connected, it trades on its own."
+msgstr "The cloud machine needs its own account. Once connected, strategies can trade on their own."
 
 msgid "tr.unmanagedTag"
 msgstr "Off-strategy"
@@ -10257,3 +10257,39 @@ msgstr "Backtest {st} strategy on TAIFEX {code} {tf} bars, using {per}"
 # 策略類型選「其他」時用這句,游標停在句尾讓用戶接著打
 msgid "form.txf_backtest.sentence_other"
 msgstr "Backtest a strategy on TAIFEX {code} {tf} bars, using {per}; the strategy is:"
+
+# 電腦版 UI 修正 0.1.44(spec desktop-ui-fixes-2026-11-02)
+msgid "po.fogNew"
+msgstr "Ask the agent for a strategy. Once it’s backtested, you can size it."
+
+msgid "mg.fogNew"
+msgstr "Ask the agent for a few strategies. Once they’re backtested, you can optimize."
+
+msgid "lib.gate.naShort"
+msgstr "N/A"
+
+msgid "lib.gate.robustOver"
+msgstr "Neighboring parameters average better than the chosen set"
+
+msgid "br.set.sub"
+msgstr "The agent can open pages to look things up and work on websites."
+
+msgid "rpt.fogRow.a"
+msgstr "Report A: weekly performance review"
+
+msgid "rpt.fogRow.b"
+msgstr "Report B: Taiwan stocks"
+
+msgid "rpt.fogRow.c"
+msgstr "Report C: crypto funding and liquidation watch"
+
+# 雲端視角沒登入／沒主機／啟動中／讀不到:輸入框停用時的 placeholder
+msgid "chat.ph.cloudGate"
+msgstr "Set up the cloud machine to send it instructions"
+
+msgid "chat.ph.cloudUnreach"
+msgstr "Can’t reach the cloud machine"
+
+# 報告空清單 Setup fog 卡上那句;扁平態仍用 rpt.emptyHint
+msgid "rpt.fogNew"
+msgstr "Ask the agent for your first report."

@@ -82,7 +82,7 @@ const trCss = read("trade.css"), appCss = read("app.css"), sf = read("stratflags
     var C = { TR: S, TR_BAGS: { cloud: S }, ENV: { cur: "cloud" }, $: (id) => els[id], t: (k) => "«" + k + "»", requestAnimationFrame: (f) => f(), trackFeature() {}, trPickOff: () => false,
       trNames: () => [], trReport: () => ({}), trVenueId: () => null, trPaperTwOk: () => true, trTwBroker: () => false, PAPER: "paper", trPickPrefs: () => ({ order: [], flags: {} }),
       trPickRows: () => rows, trTwdVenueLock: () => null, envDotsUp: () => false, envRunDot: () => false, mgMembers: () => [], psRow: (r) => ({ row: r.name }), psLoading: false, psOpener: null, psMode: "",
-      trEl: (tag, cls, txt) => ({ tag, cls, txt, kids: [], dataset: {}, setAttribute() {}, appendChild(x) { this.kids.push(x); return x; } }) };
+      trEl: (tag, cls, txt) => ({ tag, cls, txt, kids: [], dataset: {}, setAttribute() {}, addEventListener() {}, appendChild(x) { this.kids.push(x); return x; } }) };
     vm.createContext(C);
     vm.runInContext("var psLoading = false, psOpener = null, psMode = '';\nvar psOpen = async " + cutFn(tr, "psOpen"), C);
     return C.psOpen(null).then(() => ({ els, focused: C.focused }));

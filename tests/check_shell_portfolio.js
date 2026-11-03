@@ -436,9 +436,9 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     let opened = 0; ctx.cxModalOpen = () => { opened++; }; vm.runInContext("cxModalOpen = this.cxModalOpen", ctx);
     const a = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), TR.st.report.states)", ctx)), go = a.find((n) => n.dataset && n.dataset.fk === "go-connect");
     vm.runInContext('envHeadState = () => "running";', ctx); if (go) go.on.click();
-    ok("儲存列:「還沒連接交易所」＋〔連接交易所〕,按了開連接框", a.some((n) => n.text === "tr.noAccount") && !!go && go.text === "cx.connect" && opened === 1, J(a.map((n) => n.text).filter(Boolean)));
+    ok("儲存列:「還沒連接下單帳戶」＋〔連接帳戶〕,按了開連接框", a.some((n) => n.text === "tr.noAccount") && !!go && go.text === "cx.connect" && opened === 1, J(a.map((n) => n.text).filter(Boolean)));
     const S0 = new Function(fs.readFileSync(path.join(R, "strings.js"), "utf8") + "\nreturn STRINGS;")();
-    ok("字同網頁:zh「還沒連接交易所」「連接交易所」", S0.zh["tr.noAccount"] === "還沒連接交易所" && S0.zh["cx.connect"] === "連接交易所"); }
+    ok("字:zh「還沒連接下單帳戶」(模擬與期貨商也算,spec desktop-ui-fixes §5)「連接帳戶」", S0.zh["tr.noAccount"] === "還沒連接下單帳戶" && S0.zh["cx.connect"] === "連接帳戶"); }
   // 第 5′ 列:這家能下的金額——統一只算台指期、模擬交易不算台股(台指期算);標的不明不扣
   { const f = (vid, list, amounts, states) => { ctx.TR = { list, env: "local" }; return vm.runInContext("trTradableFunded(" + J({ venues: { [vid]: V }, config: { amounts }, states: states || {} }) + ")", ctx); };
     ok("trTradableFunded:統一 + 只有 BTC 有金額 → 0(Z,啟動下單停用);統一 + 台指期 → 1;模擬 + 台股 → 0、模擬 + 台指期 → 1;Binance 照算;標的不明 → 算",
@@ -1101,12 +1101,13 @@ ok("回測卡:btWaiting 時只寫 mg.btWaitPerf + 取消(不畫進度條、不�
   const fog = vm.runInContext("poFog('pick')", fctx), card = fog.kids[1], btn = card.kids[1];
   btn.on.click();
   ok("霧:CTA 是「選擇策略」(tr.pick),按下開選擇框、不丟聊天框;卡片字 po.fogPick", btn.textContent === "tr.pick" && card.kids[0].textContent === "po.fogPick" && fx.opened.length === 1 && !fx.asked.length, J([btn.textContent, fx]));
-  const call = src.match(/box\.appendChild\(poFog\(([^)]*)\)\);\n  \} else \{\n    box\.appendChild\(trAmountTable/);
-  ok("沒選策略、沒有可選的策略:都上同一張「pick」霧(不再分 none、不叫 agent)", !!call && call[1] === '"pick"' && !/kind === "none"|fog-ask/.test(psrc), call && call[1]);
+  // 0.1.44 推翻「兩種霧都是選擇策略」(spec desktop-ui-fixes §1):沒有回測完成的策略走 po-new,鈕開新增策略框;選擇框只當保險
+  const call = src.match(/box\.appendChild\(poFog\((.*)\)\);\n  \} else \{\n    box\.appendChild\(trAmountTable/);
+  ok("沒選策略:有回測完成的上 pick 霧,一支都沒有上 po-new 霧;沒有 none 那條、不叫 agent", !!call && call[1] === 'TR.list.some((x) => x.hasBacktest) ? "pick" : "po-new"' && !/kind === "none"|fog-ask/.test(psrc), call && call[1]);
   const S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
-  ok("po.fogNone / po.fogNoneBtn / po.fogNoneAsk 兩語都刪了;框內空狀態字同網頁 pfPickEmpty",
-    !/po\.fogNone/.test(S) && S.includes("還沒有回測完成的策略——先在聊天請代理建立並回測。") && S.includes("No backtested strategies yet — ask the agent in chat to build and backtest one.")
-    && /if \(!rows\.length\) list\.appendChild\(trEl\("div", "pf-state", t\("tr\.pick\.empty"\)\)\);/.test(src));
+  ok("po.fogNone / po.fogNoneBtn / po.fogNoneAsk 兩語都刪了;框內空狀態一句接〔策略庫〕",
+    !/po\.fogNone/.test(S) && S.includes('"tr.pick.empty": "還沒有回測完成的策略。"') && S.includes('"tr.pick.empty": "No backtested strategies yet."')
+    && /const p = trEl\("p", "ps-next", t\("tr\.pick\.empty"\) \+ " "\)/.test(src));
 }
 // 網頁 01b51a54(設計師必改):細節行未實現取整到元、帶正負號;啟動框合計包成 .plan-tot(≈ 前面補間距)
 { const det = /seg\(t\("po\.dUpnl", \{ v: money\(trFmt\(Math\.round\(x\.unrealized_pnl\) \|\| 0, true\)\) \}\)\)/.test(src) && /t\("po\.dUpnl", \{ v: trFmt\(Math\.round\(su\) \|\| 0, true\) \}\)/.test(src);

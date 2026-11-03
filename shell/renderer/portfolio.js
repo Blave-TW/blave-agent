@@ -466,23 +466,26 @@ function poPaint() {
 const PO = { wired: false };
 
 /* Setup fog(canon › Components › Setup fog):示意底用真元件、固定泛稱資料(不讀用戶的任何東西),模糊後蓋遮罩,上面一張 CTA 卡。
-   kind:"pick"(一支都沒選;沒有可選的策略也走這個,出路寫在選擇框的空狀態 tr.pick.empty,同網頁 pfPickEmpty)/"connect"(自動下單沒連交易所)/
+   kind:"pick"(有回測完成的策略、一支都沒選)/"po-new"／"mg-new"(配置／優化:連一支回測完成的都沒有,鈕開新增策略框,策略庫的出口在框裡)/"connect"(自動下單沒連帳戶)/
    "pos-pick"／"pos-new"／"pos-draft"(自動下單 › 部位還沒選策略／沒有能勾的／勾了還沒存;spec-autotrade-empty §2、§4)。卡上那句的 id 是停用的啟動下單的 aria-describedby */
 function poFog(kind) {
   const fog = trEl("div", "fog"), under = trEl("div", "fog-under pf"), pos = kind === "pos-pick" || kind === "pos-new" || kind === "pos-draft";
   under.setAttribute("aria-hidden", "true"); under.inert = true;
-  if (kind === "opt") fog.classList.add("mg-fog");
-  if (kind === "connect") under.appendChild(poFogOver()); else if (pos) under.appendChild(poFogPos()); else if (kind === "opt") under.appendChild(poFogOpt()); else under.appendChild(poFogCfg());
+  const opt = kind === "opt" || kind === "mg-new";
+  if (opt) fog.classList.add("mg-fog");
+  if (kind === "connect") under.appendChild(poFogOver()); else if (pos) under.appendChild(poFogPos()); else if (opt) under.appendChild(poFogOpt()); else under.appendChild(poFogCfg());
   const card = trEl("div", "fog-card");
   const optNeeds = kind === "opt" ? mgOptBlockReason() : null;
-  const msg = card.appendChild(trEl("p", "", kind === "opt" ? optNeeds || t("mg.fogOpt", { n: mgMembers().length }) : t(kind === "pick" ? "po.fogPick" : kind === "pos-pick" ? "tr.fogPosPick" : kind === "pos-new" ? "tr.fogPosNew" : kind === "pos-draft" ? "tr.startOffDraft" : TR.env === "cloud" ? "tr.cloud.fogConnect" : "tr.fogConnect")));
+  const msg = card.appendChild(trEl("p", "", kind === "opt" ? optNeeds || t("mg.fogOpt", { n: mgMembers().length }) : t(kind === "pick" ? "po.fogPick" : kind === "po-new" ? "po.fogNew" : kind === "mg-new" ? "mg.fogNew" : kind === "pos-pick" ? "tr.fogPosPick" : kind === "pos-new" ? "tr.fogPosNew" : kind === "pos-draft" ? "tr.startOffDraft" : TR.env === "cloud" ? "tr.cloud.fogConnect" : "tr.fogConnect")));
   if (pos) msg.id = "tr-pos-fog-msg";
-  const b = trEl("button", "btn-fill", t(kind === "opt" ? "mg.optRun" : kind === "pick" || kind === "pos-pick" ? "tr.pick" : kind === "pos-new" ? "ns.chip" : kind === "pos-draft" ? "po.goAmounts" : "cx.title")); b.type = "button";
+  const b = trEl("button", "btn-fill", t(kind === "opt" ? "mg.optRun" : kind === "pick" || kind === "pos-pick" ? "tr.pick" : kind === "pos-new" || kind === "po-new" || kind === "mg-new" ? "ns.chip" : kind === "pos-draft" ? "po.goAmounts" : "cx.title")); b.type = "button";
   if (kind === "pick") { b.id = "tr-pick"; b.dataset.fk = "pick"; b.disabled = trPickOff(); b.addEventListener("click", () => psOpen(b)); }
   // 部位霧只在選擇策略框開得了時才出(trZNow 的 wait 含 trPickOff),停用在這裡只是保險,不會有停用而沒有原因的卡
   else if (kind === "opt") { b.id = "mg-fog-opt"; b.dataset.fk = "mg-fog-opt"; b.disabled = !!optNeeds; b.addEventListener("click", mgRunOptimize); }
   else if (kind === "pos-pick") { b.id = "tr-pos-pick"; b.dataset.fk = "pos-pick"; b.disabled = trPickOff(); b.addEventListener("click", () => { trackFeature("trade_fog_pick"); trZGo("pick", b); }); }
   else if (kind === "pos-new") { b.id = "tr-pos-new"; b.dataset.fk = "pos-new"; b.addEventListener("click", () => { trackFeature("trade_fog_new"); trZGo("noStrat", b); }); }
+  else if (kind === "po-new") { b.id = "tr-po-new"; b.dataset.fk = "po-new"; b.addEventListener("click", () => { trackFeature("po_fog_new"); trZGo("noStrat", b); }); }
+  else if (kind === "mg-new") { b.id = "mg-fog-new"; b.dataset.fk = "mg-fog-new"; b.addEventListener("click", () => { trackFeature("mg_fog_new"); trZGo("noStrat", b); }); }
   else if (kind === "pos-draft") { b.id = "tr-pos-draft"; b.dataset.fk = "pos-draft"; b.addEventListener("click", () => { trackFeature("trade_fog_pick"); trZGo("draft", b); }); }
   else { b.id = "tr-connect"; b.addEventListener("click", () => cxModalOpen(b)); }
   card.appendChild(b);
@@ -858,12 +861,11 @@ function mpsPreview(s) {
 function mgPaint() {
   const box = $("po-opt"); if (!box || box.hidden) return;
   const S = TR, G = mgBag(S), m = mgManager();
-  // 一支策略都沒有(或都沒有回測):優化分頁跟配置分頁一樣霧化 + 選擇策略(Windows e2e 10-14)
   if (TR.listLoaded && !TR.list.some((x) => x.hasBacktest)) {
-    if (box.dataset.fog !== "1") { box.textContent = ""; box.appendChild(poFog("pick")); box.dataset.fog = "1"; S.sig.opt = null; }
+    if (box.dataset.fog !== LANG) { box.textContent = ""; box.appendChild(poFog("mg-new")); box.dataset.fog = LANG; S.sig.opt = null; }
     return;
   }
-  if (box.dataset.fog === "1") { delete box.dataset.fog; S.sig.opt = null; }
+  if (box.dataset.fog) { delete box.dataset.fog; S.sig.opt = null; }
   if (G.prefs !== "ok") {   // 讀回來之前不畫、不定初值;讀不到照實講,不畫成沒填過
     const sg = "prefs:" + G.prefs + LANG; if (S.sig.opt === sg) return;
     S.sig.opt = sg; box.textContent = ""; if (G.prefs === "failed") box.appendChild(mgPrefsBox());

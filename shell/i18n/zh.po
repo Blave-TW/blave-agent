@@ -1501,7 +1501,7 @@ msgid "cx.store.q"
 msgstr "金鑰存在哪？"
 
 msgid "cx.venue"
-msgstr "交易所／券商"
+msgstr "交易所或期貨商"
 
 msgid "cx.paper"
 msgstr "模擬交易（免金鑰）"
@@ -1510,7 +1510,7 @@ msgid "cx.paperShort"
 msgstr "模擬交易"
 
 msgid "cx.connect"
-msgstr "連接交易所"
+msgstr "連接帳戶"
 
 msgid "cx.connecting"
 msgstr "串接中…"
@@ -1615,7 +1615,7 @@ msgid "tr.s.died"
 msgstr "下單停了"
 
 msgid "tr.noAccount"
-msgstr "還沒連接交易所"
+msgstr "還沒連接下單帳戶"
 
 msgid "tr.loading"
 msgstr "載入中…"
@@ -1985,13 +1985,13 @@ msgid "tr.tab.set"
 msgstr "設定"
 
 msgid "tr.onboard"
-msgstr "先接交易所帳戶，再按上方「解除暫停」、設金額。"
+msgstr "先連接下單帳戶，再按上方「解除暫停」、設金額。"
 
 msgid "tr.onboard.cloud"
 msgstr "下單金額是從交易所的淨值算出來的，這台雲端主機還沒接交易所。"
 
 msgid "tr.cloud.onboardExtra"
-msgstr "這台電腦上連接的交易所不會帶過來；雲端要自己連一次。"
+msgstr "這台電腦連的帳戶不會帶過來，雲端要自己連一次。"
 
 msgid "tr.zeroMeansOff"
 msgstr "部位＝金額 × 訊號。填 0 就是不下單——策略照常跑、照常算訊號，只是不會有部位。"
@@ -2105,7 +2105,7 @@ msgid "tr.amountAria"
 msgstr "金額（{ccy}）"
 
 msgid "tr.noStrategies"
-msgstr "還沒有可以下單的策略。先請代理做一檔，回測跑完就能設金額。"
+msgstr "還沒有可以下單的策略。先請 agent 做一支，回測完就能設金額。"
 
 msgid "tr.typeC"
 msgstr "Blave 要先更新"
@@ -2866,7 +2866,7 @@ msgid "env.open.lead"
 msgstr "含 Blave 行情與籌碼資料。"
 
 msgid "env.open.more"
-msgstr "其他方案與月價"
+msgstr "其他方案與價格"
 
 msgid "env.open.spec"
 msgstr "{label} · {vcpu} vCPU · {ram} GB"
@@ -4733,7 +4733,7 @@ msgid "tr.pick.ok"
 msgstr "確定"
 
 msgid "tr.pick.empty"
-msgstr "還沒有回測完成的策略——先在聊天請代理建立並回測。"
+msgstr "還沒有回測完成的策略。"
 
 msgid "tr.pick.gone"
 msgstr "已不存在，取消勾選可移除"
@@ -5189,7 +5189,7 @@ msgid "lib.gate.feeAssumed"
 msgstr "假設 {v}"
 
 msgid "lib.gate.feeActual"
-msgstr "交易所 {v}"
+msgstr "實際 {v}"
 
 msgid "lib.gate.p"
 msgstr "p = {p}"
@@ -5285,7 +5285,7 @@ msgid "lib.gate1"
 msgstr "誠實回測"
 
 msgid "lib.gate1d"
-msgstr "手續費不低於交易所一般費率、沒有假歷史"
+msgstr "手續費不低於實際費率、沒有假歷史"
 
 msgid "lib.gate2"
 msgstr "統計顯著"
@@ -5582,7 +5582,7 @@ msgid "rpt.new.descLabel"
 msgstr "報告需求"
 
 msgid "rpt.new.descPh"
-msgstr "描述你要的報告，例如：幫我做一份今天的台股持倉報告，含法人買賣超。"
+msgstr "例如：今天的台股持倉報告，含法人買賣超"
 
 msgid "rpt.new.examples"
 msgstr "範例："
@@ -6358,7 +6358,7 @@ msgid "cap.venue"
 msgstr "群益期貨"
 
 msgid "cap.group.tw"
-msgstr "台股"
+msgstr "台灣期貨"
 
 msgid "cap.title"
 msgstr "連接群益期貨"
@@ -8119,7 +8119,7 @@ msgstr "改交易密碼"
 
 # ── 方案制(.m = api 切換之後的版本;app.js pvK 依 planMo() 挑)──
 msgid "pv.d.noTrial.m"
-msgstr "這個帳號沒有首次綁卡的試用。Blave 資料要開通 Blave Agent 方案（每月 {p} TWD 起）。"
+msgstr "這個帳號沒有首次綁卡的試用。Blave 資料要開通 Blave Agent 方案（每 {pd} 天 {p} TWD 起）。"
 
 msgid "pv.d.trial.m"
 msgstr "到 {d}為止資料免費；試用結束扣第一期 {p} TWD，之後每 {pd} 天自動續扣。先從錢包扣，不夠一期就刷卡。"
@@ -8136,13 +8136,13 @@ msgstr "首次綁卡免費試用一段時間"
 
 # 「自動」不能拿掉,否則會被讀成可選訂閱;扣第一期／取消就不扣留給綁卡那一步的 pv.f.offer.m
 msgid "pv.f.out.m"
-msgstr "試用結束後自動開始計費，{p} TWD／月。"
+msgstr "試用結束後自動開始計費，每 {pd} 天 {p} TWD。"
 
 msgid "pv.f.offer.m"
-msgstr "綁卡時收 {v} TWD 驗證金，全額進你的餘額，並開啟自動儲值。試用 {t} 天，到期自動扣第一期 {p} TWD／月：先扣錢包，不夠再刷這張卡。試用期間取消就不扣。"
+msgstr "綁卡時收 {v} TWD 驗證金，全額進你的餘額，並開啟自動儲值。試用 {t} 天，到期自動扣第一期（每 {pd} 天 {p} TWD）：先扣錢包，不夠再刷這張卡。試用期間取消就不扣。"
 
 msgid "pv.e.sub.m"
-msgstr "試用結束自動扣第一期 {p} TWD／月，試用期間取消就不扣。"
+msgstr "試用結束自動扣第一期，每 {pd} 天 {p} TWD。試用期間取消就不扣。"
 
 msgid "pv.e.noTrial.m"
 msgstr "這台還拿不到 Blave 的資料：要開通 Blave Agent 方案。"
@@ -8163,7 +8163,7 @@ msgid "pv.st.noPlan"
 msgstr "沒有方案"
 
 msgid "pv.d.plan.m"
-msgstr "Blave 資料要開通 Blave Agent 方案（每月 {p} TWD 起，不必開雲端主機）；沒有的話，電腦版只用公開資料。"
+msgstr "Blave 資料要開通 Blave Agent 方案（每 {pd} 天 {p} TWD 起）。沒有的話，電腦版只用公開資料。"
 
 msgid "pv.f.plan.m"
 msgstr "開通當下付第一期：先從錢包扣，不夠再刷綁定的卡。"
@@ -8577,10 +8577,10 @@ msgid "po.fogStrat"
 msgstr "策略 {x}"
 
 msgid "tr.fogConnect"
-msgstr "連上交易所，策略就會自動下單。"
+msgstr "連上帳戶，策略就能自動下單。"
 
 msgid "tr.cloud.fogConnect"
-msgstr "雲端主機要自己連一次交易所，連上就會自動下單。"
+msgstr "雲端主機要自己連一次帳戶，連上就能自動下單。"
 
 msgid "tr.unmanagedTag"
 msgstr "策略外"
@@ -8976,7 +8976,7 @@ msgid "tr.fogPosPick"
 msgstr "選好策略，就能啟動下單。"
 
 msgid "tr.fogPosNew"
-msgstr "請代理做一支策略，回測完成就能下單。"
+msgstr "請 agent 做一支策略，回測完成就能下單。"
 
 msgid "po.goAmounts"
 msgstr "設定金額"
@@ -10285,3 +10285,39 @@ msgstr "幫我做台指期 {code} {tf} 的{st}策略回測，用{per}"
 # 策略類型選「其他」時用這句,游標停在句尾讓用戶接著打
 msgid "form.txf_backtest.sentence_other"
 msgstr "幫我做台指期 {code} {tf} 的策略回測，用{per}，策略是："
+
+# 電腦版 UI 修正 0.1.44(spec desktop-ui-fixes-2026-11-02)
+msgid "po.fogNew"
+msgstr "請 agent 做一支策略，回測完成就能設金額。"
+
+msgid "mg.fogNew"
+msgstr "請 agent 做幾支策略，回測完成就能優化。"
+
+msgid "lib.gate.naShort"
+msgstr "不適用"
+
+msgid "lib.gate.robustOver"
+msgstr "鄰近參數平均比選定那組還好"
+
+msgid "br.set.sub"
+msgstr "agent 可以開網頁查資料、操作網站。"
+
+msgid "rpt.fogRow.a"
+msgstr "報告 A：每週績效回顧"
+
+msgid "rpt.fogRow.b"
+msgstr "報告 B：台股"
+
+msgid "rpt.fogRow.c"
+msgstr "報告 C：加密市場資金費率與清算觀察"
+
+# 雲端視角沒登入／沒主機／啟動中／讀不到:輸入框停用時的 placeholder
+msgid "chat.ph.cloudGate"
+msgstr "雲端主機開好後才能在這裡下指示"
+
+msgid "chat.ph.cloudUnreach"
+msgstr "連不上雲端主機"
+
+# 報告空清單 Setup fog 卡上那句;扁平態仍用 rpt.emptyHint
+msgid "rpt.fogNew"
+msgstr "請 agent 寫第一份報告。"

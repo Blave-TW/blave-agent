@@ -819,5 +819,6 @@ async function brSetPaint(box) {
   row.append(sw);
   const clr = brEl("button", "btn-quiet", t("br.set.clear")); clr.type = "button";
   clr.addEventListener("click", async () => { const ok = await window.blave.browserClear(); if (ok) BR_FAVS.clear(); clr.textContent = t(ok ? "br.set.cleared" : "br.set.busy"); srSay(clr.textContent); setTimeout(() => { if (clr.isConnected) clr.textContent = t("br.set.clear"); }, 2500); });
-  box.append(row, clr);
+  const sub = brEl("p", "priv-lead br-set-sub", t("br.set.sub"));
+  box.append(row, sub, clr);
 }

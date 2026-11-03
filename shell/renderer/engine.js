@@ -226,6 +226,8 @@ function engRetry() {
   const h = ENG.held;
   // 程式自己開的回合正在跑(送上雲端 / 拉回之類):那句先留著(還是等著重試的那句),這次只重裝
   if (h && h.bubble.isConnected && h.sessionId === sessionId && running) { window.blave.ensureEngine().catch(() => { /* 失敗由快照畫在卡上 */ }); return; }
+  // 雲端沒開好時送不出去(submitMessage 會擋):同樣留著,不然泡泡留在畫面上、句子卻沒了
+  if (h && h.bubble.isConnected && h.sessionId === sessionId && !(h.opts && h.opts.viewing) && typeof envInputGate === "function" && envInputGate()) { window.blave.ensureEngine().catch(() => { /* 失敗由快照畫在卡上 */ }); return; }
   ENG.held = null;
   if (h && h.bubble.isConnected && h.sessionId === sessionId) { submitMessage(h.msg, Object.assign({}, h.opts, { bubble: h.bubble })); return; }
   if (h && h.bubble.isConnected) h.bubble.remove();   // 換了對話:那句不在這個對話送

@@ -297,7 +297,9 @@ const EVENTS = {
     // 設定 › 連結按〔到網站撤銷〕(phGroup)
     "phone_ask_shown", "phone_ask_on", "phone_ask_no", "phone_web_revoke",
     // 0.1.43 開關開著、帳號下剛配對了手機,輸入框上方那一列(renderer/app.js phNoticePaint;同 api 順序,api 先上):出現、按 ✕、按這一列的〔到網站撤銷〕
-    "phone_new_shown", "phone_new_close", "phone_new_revoke"] },
+    "phone_new_shown", "phone_new_close", "phone_new_revoke",
+    // 0.1.44 沒有回測完成的策略時,策略組合 › 配置／優化霧上的〔新增策略〕(renderer/portfolio.js poFog;同 trade_fog_new);報告空清單霧上的〔新增報告〕(renderer/reports.js rptFog)。同 api 順序,api 先上
+    "po_fog_new", "mg_fog_new", "rpt_fog_new"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

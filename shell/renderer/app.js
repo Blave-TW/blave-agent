@@ -408,7 +408,8 @@ function codexPkgRow(pkg, x) {
   if (pkg.unsupported === "tar") return { st: null, desc: { key: "cn.pkgTar" }, act: null, off: true, busy: false };
   if (busy) return busy;
   if (pkg.fail) return { st: null, desc: { key: pkg.fail.kind === "net" ? "cn.pkgNet" : pkg.fail.kind === "disk" ? "cn.pkgDisk" : "cn.pkgFail" }, act: "cn.retry", off: false, busy: false };
-  return { st: null, desc: { key: "cn.pkgSize", vars: { size: String(pkg.size || "") } }, act: "cn.connect", off: false, busy: false };
+  // setLabel:設定 › 模型接入同一顆鈕的字。連結畫面的〔連結〕登入完會換過去;設定裡抓完引擎、開登入就停在列上(localLogin 的 inRow／inLai),而且同頁就有「連結」分頁
+  return { st: null, desc: { key: "cn.pkgSize", vars: { size: String(pkg.size || "") } }, act: "cn.connect", setLabel: "cn.signIn", off: false, busy: false };
 }
 function mdlOptions(d, curKind, tok, pend, ak, pkg) {
   const p = pend || {};
@@ -422,7 +423,7 @@ function mdlOptions(d, curKind, tok, pend, ak, pkg) {
     // 第 6 參數缺席(pkg == null)= 跟以前一樣;偵測中(d === null)照舊畫「偵測中…」
     const pk = kind === "codex" && pkg != null && d !== null ? codexPkgRow(pkg, x) : null;
     if (pk) {
-      out.push({ kind, name, desc: pk.desc ? pk.desc.key : null, descVars: pk.desc ? pk.desc.vars : undefined, st: pk.st, act: pk.act, pkg: true, reinstall: !!pk.reinstall, busy: pk.busy, isCur: false, off: pk.off });
+      out.push({ kind, name, desc: pk.desc ? pk.desc.key : null, descVars: pk.desc ? pk.desc.vars : undefined, st: pk.st, act: pk.act, setLabel: pk.setLabel, pkg: true, reinstall: !!pk.reinstall, busy: pk.busy, isCur: false, off: pk.off });
       return;
     }
     // 查不出登入狀態:可以用,跟就緒那一列同一個動作,結果等第一則訊息(authUnknown)
@@ -492,7 +493,7 @@ function mdlPaint() {
     if (o.edit) { const e = el("button", "btn-quiet", t("ak.edit")); e.type = "button"; e.disabled = waiting; e.addEventListener("click", () => akOpen("set")); r.appendChild(e); }
     if (o.isCur) r.appendChild(el("span", "cn-cur", t("cn.current")));
     // 等待中:只有那一顆能按(取消),其餘鎖住
-    else if (o.act) { const b = el("button", "pf-act", t(o.act)); b.type = "button"; b.disabled = waiting && o.act !== "login.cancel" && o.act !== "oauth.cancel"; b.addEventListener("click", () => mdlAct(o, b)); r.appendChild(b); }
+    else if (o.act) { const b = el("button", "pf-act", t(o.setLabel || o.act)); b.type = "button"; b.disabled = waiting && o.act !== "login.cancel" && o.act !== "oauth.cancel"; b.addEventListener("click", () => mdlAct(o, b)); r.appendChild(b); }
     into.appendChild(r);
   };
   put(grp(null)[1], opts[0]);
@@ -675,7 +676,7 @@ function setCat(cat) {
   if (cat === "connect") { connectPaint(); Promise.all([mvLoad(), phLoad()]).then(() => { connectCatSync(); if (!$("set-connect").hidden) connectPaint(); }); }
   if (cat === "plan" && typeof mvLoad === "function") mvLoad();   // 登出確認框要知道手機查看開著沒
   if (cat === "plan") shlOpen();   // 公開連結區段(renderer/report-sharelist.js):每次切到這一類重抓
-  if (cat === "plan") { planPaint(); trackFeature("settings_plan"); if (hasToken) { acctCheck(); balLoad(); } else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
+  if (cat === "plan") { planPaint(); trackFeature("settings_plan"); if (hasToken) { acctCheck(); balLoad(); if (!pub) pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); } else pubLoad().then(() => { if (!$("set-plan").hidden) planPaint(); }); }
   if (cat === "plan" && SHL_SCROLL) { SHL_SCROLL = false; shlReveal(); }
 }
 async function setOpen() {
@@ -3968,7 +3969,7 @@ function sendBtnSync() {
   b.dataset.i18nAria = queued ? "tabs.queueCancel" : running ? "ws.stop" : "ws.send";
   b.setAttribute("aria-label", t(b.dataset.i18nAria));
   if (queued) b.title = t("tabs.queueCancelTitle"); else b.removeAttribute("title");
-  b.disabled = false;
+  b.disabled = $("ta").disabled && !b.classList.contains("is-stop");   // 雲端沒開好才停用;這顆是停止鈕時照常能按
   if (!running) taWaitShow(false);
 }
 async function stopTurn() {
@@ -3998,6 +3999,7 @@ function stopRestore(text, attachments) {   // attachments:那一句帶的整份
 }
 const bootSendParked = () => typeof CS !== "undefined" && CS.bootSend === true;
 async function sendDraft() {
+  if (typeof envInputGate === "function" && envInputGate()) return;
   // 前一句還停在 CS.boot 等分頁接回(還沒設 running):同回合中按 Enter,字留在輸入框。不然接回後這句在 submitMessage 撞 running、無聲不見
   if (bootSendParked() && ($("ta").value.trim() || attachedFiles.length)) { busySendTell(); return; }
   const msg = $("ta").value.trim();
@@ -4020,6 +4022,8 @@ async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / �
   // 剛進工作頁、tabsRestore 還在讀分頁記憶:等它接回再送,這句才落在接回的那條分頁(沒有 CS.loaded 會在 tabsTrackParallel 炸成「引擎準備失敗」)。
   // csSendAway 的呼叫端裡會同步讀 CS.away 的(策略庫、報告、掃描、雲端更新)在分頁接回前沒有畫面可按,這裡不替它們回填
   if (typeof CS !== "undefined" && CS.boot && !CS.loaded && !CS_BOOTED) { CS.bootSend = true; return CS.boot.then(() => { CS.bootSend = false; return submitMessage(msg, opts); }); }
+  // 重送、建議句等不經輸入框的入口同一道擋;呼叫端指定 viewing 的(更新雲端)自己知道要去哪
+  if (!(opts && opts.viewing) && typeof envInputGate === "function" && envInputGate()) return false;
   // opts.attachments:這一句帶的清單 [{ file, name, from }](sendDraft,以及重送 / 安裝失敗後重試帶的同一份)。
   // 「再送一次」連檔一起重送(resendLast)——跟雲端不同:雲端的重送鈕出現時檔已經落在機器上,這裡 started 回來時主行程還沒落地,
   // 失敗的那一輪(Codex 不見、金鑰不見、形狀不對)可能根本沒存到檔;只重送句子的話檔就無聲不見,純附件那句更是無從重送
@@ -4144,8 +4148,13 @@ function chatSwitched(from, to) {
   if (running === true) { swHeld = { from, to }; return; }
   if (from === to) return;
   const box = chatEl();
-  if (swLine) { if (swLine.parentNode === box && box.lastElementChild === swLine) swLine.remove(); swLine = null; }
-  if (!box.children.length) return;
+  if (swLine) {   // 舊行後面還沒有對話泡泡就換掉(忙碌列、建議列不算),來回切不累加
+    let said = false;
+    for (let n = swLine.nextElementSibling; n; n = n.nextElementSibling) if (n.classList.contains("msg")) { said = true; break; }
+    if (swLine.parentNode === box && !said) swLine.remove();
+    swLine = null;
+  }
+  if (!box.children.length || envCloudGated()) return;   // 雲端沒開好:兩個方向都不講(「之後的指示會在雲端執行」是假話,切回來也沒有換過)
   const el = document.createElement("div"); el.className = "sysline";
   el.dataset.i18n = to === "cloud" ? "chat.sw.cloud" : "chat.sw.local"; el.textContent = t(el.dataset.i18n);
   box.appendChild(el); busyPin(); scrollChat();
@@ -4495,7 +4504,7 @@ const pvK = (k) => (planMo() ? k + ".m" : !acct || typeof acct.data_access === "
 function pvCardFoot(pv, v) {
   if (pv === "noTrial") return v.b ? t("pv.f.noTrial", v) : "";
   const k = pvK("pv.f.offer");
-  return v.v && v.t && (k === "pv.f.offer" || v.p) ? t(k, v) : "";
+  return v.v && v.t && (k === "pv.f.offer" || pvPriced(k, v)) ? t(k, v) : "";
 }
 /* 雲端開通頁試用中那一格的扣款句,日期在卡右上,「開機不另收」在上一行。切換前照舊「之後照上面的價格」。
    下一期金額 v.x(已排月↔年、內部帳號都算進去),沒有就退 Starter 月價 v.p;到期不會扣、或扣不到的人不講扣款 */
@@ -4737,7 +4746,7 @@ const dataCardSessions = new Set();
 let dataCard = null;
 function dataCardState() {
   const v = planVars(), go = { label: t("pv.e.btn"), on: () => planOpen(), out: true, calm: true };
-  if (!hasToken) return { ...go, label: t(planLoginBusy ? "oauth.cancel" : "pv.signin"), on: () => planSignIn(dataCard && dataCard.b1), text: v.t ? t("pv.e.out", v) : t("pv.e.outNoNum", v), sub: v.t && v.p ? t(pvK("pv.e.sub"), v) : null };
+  if (!hasToken) return { ...go, label: t(planLoginBusy ? "oauth.cancel" : "pv.signin"), on: () => planSignIn(dataCard && dataCard.b1), text: v.t ? t("pv.e.out", v) : t("pv.e.outNoNum", v), sub: v.t && pvPriced(pvK("pv.e.sub"), v) ? t(pvK("pv.e.sub"), v) : null };
   if (planState() === "starting") return { calm: true, text: t("data.starting") };   // 已經按過啟動:不再叫他去看方案
   if (!acct) return { ...go, text: t("pv.e.unknown") };                              // 狀態查不到:不斷言它在哪個方案裡
   const da = dataAccessOf(acct);
@@ -4761,7 +4770,7 @@ function dataCardState() {
     return { ...top, text: v.r ? t("data.noBalance", v) : t("data.noBalanceNoNum"), sub: t("data.noBalanceSub") };
   }
   // 以下切換前只有舊 api(沒有 data_access)走得到:那時資料真的只在試用 / 方案裡
-  if (acctOffer(acct)) return { ...go, text: t(cur === "blave" ? "pv.e.card" : "pv.e.card.cli", v), sub: v.p ? t(pvK("pv.e.sub"), v) : null };
+  if (acctOffer(acct)) return { ...go, text: t(cur === "blave" ? "pv.e.card" : "pv.e.card.cli", v), sub: pvPriced(pvK("pv.e.sub"), v) ? t(pvK("pv.e.sub"), v) : null };
   return { ...go, text: t(planMo() ? "pv.e.noTrial.m" : "pv.e.noTrial") };
 }
 function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
@@ -4824,6 +4833,10 @@ async function pubLoad() {
   // 主行程還沒有這支、或離線:用退化句
   catch (_) { pub = null; }
   return pub;
+}
+// 方案制的價句是「每 {pd} 天 {p} TWD」:公開價目還沒回來時兩個值可能缺,缺一個整句不出(字面的 {pd} 不能上畫面)
+function pvPriced(key, v) {
+  return !!v.p && (!/\.m$/.test(key) || !!v.pd);
 }
 function planVars() {
   const s = acct || {}, pl = s.plan || {}, tr = (pub && pub.trial) || {}, pp = (pub && pub.plan) || {}, dp = s.data_paths || {};
@@ -4967,7 +4980,7 @@ function planPaint() {
     : pl.no_auto_payment || pl.next_charge_source === "free" || pl.next_charge_source === "none" ? null
     : btn("btn-quiet", t("plan.trialCancel"), () => { trackFeature("trial_cancel_web"); window.blave.openExternal(planPayUrl()); }));
   const V = {
-    out:      { h: offerH, lead: mo ? "" : hasNum ? offerLead() : t(pvK("pv.d.noPrice")), list: mo ? offerList() : null, rule: hasNum ? t(pvK("pv.f.out"), v) : "",
+    out:      { h: offerH, lead: mo ? "" : hasNum ? offerLead() : t(pvK("pv.d.noPrice")), list: mo ? offerList() : null, rule: hasNum && pvPriced(pvK("pv.f.out"), v) ? t(pvK("pv.f.out"), v) : "",
                 wait: planLoginBusy ? t("pv.w.waiting") : t(mo && cur !== "blave" ? "pv.w.out.cli" : "pv.w.out"),
                 acts: [planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin) : btn("btn-fill", t("pv.signin"), planLogin)] },
     unknown:  { h: "pv.h.unknown", lead: t("pv.d.unknown"), acts: [btn("btn-out", t("plan.recheck"), () => acctCheck())] },
@@ -4975,7 +4988,7 @@ function planPaint() {
     // 帳號列已經寫「登入已失效」:卡片標題只講要做什麼、不再加說明句(設計最終稽核:同一畫面別講三次)
     revoked:  { h: "pv.h.revoked", lead: "", acts: [planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin) : btn("btn-fill", t("pv.signin"), planLogin)] },
     offer:    { h: offerH, lead: mo ? "" : offerLead(), list: mo ? offerList() : null, rule: pvCardFoot("offer", v), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
-    noTrial:  { h: pvK("pv.h.billed") === "pv.h.billed" ? "pv.h.billed" : "pv.h.plan", lead: t(pvK("pv.d.noTrial"), v), rule: pvCardFoot("noTrial", v), wait: t(pvK("pv.w.noTrial")), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
+    noTrial:  { h: pvK("pv.h.billed") === "pv.h.billed" ? "pv.h.billed" : "pv.h.plan", lead: !mo || pvPriced("pv.d.noTrial.m", v) ? t(pvK("pv.d.noTrial"), v) : "", rule: pvCardFoot("noTrial", v), wait: t(pvK("pv.w.noTrial")), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
     /* 試用中:取消／恢復試用在網站用量頁(電腦版沒有寫入端點,外開)。已取消(api trial_cancel_at_end):狀態講哪天結束;
        方案制講到期不收第一期,切換前講到期不轉成方案、之後照目前的計費——兩種時期各自是真話 */
     trial:    trialCx ? { st: ["on", t("pv.st.trialCancelled", v)], h: "pv.h.ready", lead: trialLead(), rule: t(mo ? "pv.f.trialCancelled.m" : "pv.f.trialCancelled", v),
@@ -4983,7 +4996,7 @@ function planPaint() {
                       : { st: ["on", t("pv.st.trial", v)], h: "pv.h.ready", lead: trialLead(), rule: t(mo ? "pv.f.trial.m" : "pv.f.trial", v),
                           acts: [btn("btn-quiet", t("plan.trialCancel"), () => { trackFeature("trial_cancel_web"); window.blave.openExternal(planPayUrl()); }), mo ? btn("btn-out", t("plan.cloudWeb"), cloudWebGo) : btn("btn-out", t("plan.start"), planAsk, !planPriceOk(v))] },
     // 只開方案不進「啟動中」那格(planBusyPlan):在途時主鈕停用、字換進行式,連點不會再開一次確認框
-    plan:     mo ? { st: ["", t("pv.st.noPlan")], h: "pv.h.plan.m", lead: t("pv.d.plan.m", v), rule: t("pv.f.plan.m", v),
+    plan:     mo ? { st: ["", t("pv.st.noPlan")], h: "pv.h.plan.m", lead: pvPriced("pv.d.plan.m", v) ? t("pv.d.plan.m", v) : "", rule: t("pv.f.plan.m", v),
                      acts: [btn("btn-quiet", t("pv.apiPlan"), apiPlanGo), btn("btn-fill", t(planBusy ? "plan.startingM" : "plan.startM"), planAsk, !planPriceOk(v) || planBusy)] }
                  : { st: ["", t("pv.st.none")], h: "pv.h.plan", lead: t("pv.d.plan", v), rule: t("pv.f.plan", v), acts: [btn("btn-fill", t("plan.start"), planAsk, !planPriceOk(v))] },
     // 方案制的 included 是 API 方案或 legacy 機器戶:資料已含,要雲端主機到網站開
