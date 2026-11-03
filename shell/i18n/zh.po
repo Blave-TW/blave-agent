@@ -3715,6 +3715,12 @@ msgstr "留在雲端"
 msgid "ho.gate.stale"
 msgstr "現在讀不到雲端的狀況，先不送。"
 
+msgid "ho.sending"
+msgstr "這支正在送，進度在對話裡。"
+
+msgid "ho.updating"
+msgstr "雲端主機正在更新，更新完再送。"
+
 msgid "ho.gate.stopped"
 msgstr "雲端主機已停機，現在送不上去。"
 
@@ -4858,9 +4864,6 @@ msgstr "開始掃描"
 msgid "rob.btnSent"
 msgstr "已送出，看對話"
 
-msgid "rob.busy"
-msgstr "這條回覆完才能送出。"
-
 msgid "rob.emptyCap"
 msgstr "agent 掃完後，這裡會出現結論與熱圖。"
 
@@ -5403,6 +5406,9 @@ msgstr "確認購買"
 
 msgid "lib.buy.busy"
 msgstr "購買中…"
+
+msgid "lib.buyWait"
+msgstr "正在裝的策略裝好之後才能買。"
 
 msgid "lib.buy.topup"
 msgstr "目前餘額 {balance}，不足。將向你的信用卡扣取 {price} 後完成購買。"
@@ -6696,6 +6702,9 @@ msgstr "只能轉出有回測的策略"
 
 msgid "xp.why.tm"
 msgstr "轉出只做目前這一版。"
+
+msgid "xp.sending"
+msgstr "這支正在轉，進度在對話裡。"
 
 msgid "xp.why.busy"
 msgstr "agent 正在回覆，回覆完再轉出。"
@@ -9324,9 +9333,6 @@ msgstr "你已經建了 {n} 支策略。"
 # 回合中的鎖(busy.js;設計 spec busy-lock-2026-10 第一期):點了被鎖的控件,在控件附近的訊息槽講一句原因＋補救連結
 msgid "busy.update"
 msgstr "有 1 條對話正在回覆，重新啟動會中斷它。"
-
-msgid "busy.perf"
-msgstr "agent 正在回覆，可能還在改策略，回覆完再刷新。"
 
 msgid "busy.rerun"
 msgstr "agent 正在回覆，可能還在改策略，回覆完再重跑。"

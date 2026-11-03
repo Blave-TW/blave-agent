@@ -160,7 +160,8 @@ def _hold_backtest_lock(name, out_dir, wait_s=0.0):
         raise SystemExit(
             f"❌ A backtest of {name} is already running (PID {holder.get('pid', '?')}, "
             f"started {holder.get('started', '?')}). Not starting a second one — wait for that run to "
-            f"finish and read its result; do not kill it, and do not delete stats.json or versions/.")
+            f"finish; do not kill it, and do not delete stats.json or versions/. If you changed the strategy "
+            f"file after it started, its result is not for your code: run the backtest again once it ends.")
     _held_backtest_locks[name] = fd
     try:
         _write_json_atomic(out_dir / BACKTEST_HOLDER,

@@ -8,6 +8,9 @@ function csAnyTurn() { return typeof running !== "undefined" && running === true
 function withTab(T, fn) { return fn(); }
 function tabBound(fn) { return fn; }
 function csSendAway(m, o) { const p = submitMessage(m, o); CS.away = { sid: typeof sessionId !== "undefined" ? sessionId : null, seq: typeof turnSeqMine !== "undefined" ? turnSeqMine : 0 }; return p; }
+function csCloudTurn() { return typeof running !== "undefined" && running === true ? (typeof sessionId !== "undefined" && sessionId) || "stub" : null; }   // 單分頁:那條在跑就當對著雲端;本機回合不擋雲端更新的行為在 check_shell_busy_relax.js 用真碼測
+function csOnceLive() { return null; }
+function csOnceMark() {}
 function tabRun() { return typeof running !== "undefined" && running === true; }
 function csAway() {}
 function turnUiSync() {}

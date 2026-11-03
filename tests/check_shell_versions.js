@@ -191,7 +191,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
     }
     const doc = { activeElement: null, createElement: (tag) => new El(tag), createDocumentFragment: () => new El("#fragment") };
     const names = ["verEl", "verEntry", "verDate", "verDateDay", "verAmount", "verPaint", "verReset", "verPaintTrigger", "verPaintBanner", "verMenuOpen", "verMenuClose", "verPick", "verBack", "vcFill", "vcOpen",
-      "verEffective", "verPendingOf", "verHolds", "verHidesAct", "verPaintRerun", "verPaintErr", "verBusy", "verShowTab", "verStatePaint", "verSend", "verBoxCtx", "verIsLots", "verGuard", "verNeedUpdate",
+      "verEffective", "verPendingOf", "verHolds", "verHidesAct", "verPaintRerun", "verPaintErr", "verBusy", "verShowTab", "verStatePaint", "verSend", "verBoxCtx", "verIsLots", "verGuard", "verNeedUpdate", "verTurnOf", "verRestoreLocked",
       "verRestoreAsk", "verRetry", "verAckKind", "verDoRestore", "verRollback", "verSideRefresh", "verPollNeed", "verPollStop", "verPollEnsure", "verPollTick", "verOverlayExpire", "verBusyNote"];
     const consts = ["verSideOf", "VO", "VP", "voKey", "RERUN_WHY"].map((n) => constSrc(verSrc, n)).join("");
     const body = consts + "let vcSeq = 0, vcSide = null;\n" + names.map((n) => fnSrc(verSrc, n)).join("\n") + "\nreturn { " + names.join(", ") + ", VO, VP };";
@@ -220,7 +220,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       const env = { document: doc, $, t, LANG: lang, VER: g.blaveVersions, VS: { local: vs(), cloud: vs() }, RP, RPC, rpBag: () => bag, trackFeature: (n) => tracked.push(n),
         TR_BAGS: { local: { st: side === "local" ? st : null, api }, cloud: { st: side === "cloud" ? st : null, api } }, shlFmtTime, trMD: (d) => String(d.getMonth() + 1).padStart(2, "0") + "/" + String(d.getDate()).padStart(2, "0"), requestAnimationFrame: (f) => f(),
         verLoad: (...a) => loads.push(["ver"].concat(a)), vcLoad: () => loads.push(["vc"]), hoPaint: () => { hoPaints.push(1); $("rp-act").hidden = false; }, rpShowTab: (tab) => shows.push(tab), rpPaintHead() {}, rpTab: (B) => B.tab,
-        running: false, confirmBox: (o) => boxes.push(o), setOpen: async () => {}, setCat() {}, srSay: (x) => said.push(x), submitMessage: async () => true, csSendAway: async () => true, csAnyTurn: () => false, paneSt: { chat: { off: false } }, paneToggle() {},
+        running: false, confirmBox: (o) => boxes.push(o), setOpen: async () => {}, setCat() {}, srSay: (x) => said.push(x), submitMessage: async () => true, csSendAway: async () => true, csAnyTurn: () => false, csStratTurn: () => null, csCloudTurn: () => null, paneSt: { chat: { off: false } }, paneToggle() {},
         trFmt: (x) => String(x), trUnit: () => "USDT", trTxfSpec: TXF.trTxfSpec, trWith: (b, fn) => fn(), trRowTxf: () => (opt.rowTxf ? {} : null), xpSetTimeMachine() {}, RP_WAIT_DELAY_MS: 200, setTimeout: (f, ms) => { timers.push([f, ms]); return timers.length; }, clearTimeout() {},
         window: { blave: { loadStrategy: async () => null, cloudRefresh: async () => { refreshed.push("cloud"); } } }, Date: FakeDate,
         stratRefresh: async () => { refreshed.push("list"); }, stratSelect: async (n, f) => { refreshed.push(["sel", n, f]); }, ENV: { cloudDirty: false }, trPoll: () => refreshed.push("poll"),
@@ -591,8 +591,8 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
           && note.kids[1].textContent === zh["busy.rerun"] && note.kids[0].className === "fault-mark" && note.kids[2].dataset.fix === "view" && r.hits.join() === "rerun");
         r.F.verBusy();
         ok("S8:回合結束(verBusy 解鎖)→ 那一行收掉", note.hidden === true);
-        ok("S8:「還原成這一版」回合中被點(硬鎖,Wei 10-17)→ 原因 busy.restore 寫進橫幅的原因行(同一條 recipe)＋「查看」、記 lock_restore",
-          /S\.err = \{ key: "busy\.restore", v: S\.open \}; verPaintErr\(S\);[^\n]*\n\s*busyHit\("restore"\);/.test(verSrc) && /if \(S\.err\.key === "busy\.restore"\) busyFixLink\(el, "view"\);/.test(fnSrc(verSrc, "verPaintErr")));
+        ok("S8:「還原成這一版」碰這一支的回合中被點(Wei 11-03 縮到同一支)→ 原因 busy.restore 寫進橫幅的原因行(同一條 recipe)＋「查看」、記 lock_restore",
+          /S\.err = \{ key: "busy\.restore", v: S\.open, sid: verTurnOf\(rpBag\(\)\) \}; verPaintErr\(S\);[^\n]*\n\s*busyHit\("restore"\);/.test(verSrc) && /if \(S\.err\.key === "busy\.restore"\) \{[^\n]*busyFixLink\(el, "view"\); \}/.test(fnSrc(verSrc, "verPaintErr")));
       }
       ok("S3:沒完成那一列、回滾原因行的 fault 記號對齊首行中線(margin-top 8px),圓環維持 1px",
         /\.vr-t \.fault-mark, \.vb-err \.fault-mark \{ flex: none; margin-top: 8px; \}/.test(fs.readFileSync(path.join(R, "versions.css"), "utf8")) && /\.vr-t \.spin16 \{ flex: none; margin-top: 1px; \}/.test(fs.readFileSync(path.join(R, "versions.css"), "utf8")));

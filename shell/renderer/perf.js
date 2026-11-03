@@ -93,15 +93,14 @@ function perfPaint(B) {
   } else {
     const tip = t(perfLive(side, B) ? "perf.tip" : "perf.tipBt", { t: shlFmtTime(st.at, now) }), days = Math.floor((now / 1000 - st.at) / 86400);
     const btn = pfEl("button", "btn-quiet", t("perf.btn")); btn.type = "button"; btn.id = "perf-btn";
-    // 滿一天才出「N 天前」,title 跟著它;未滿一天只有鈕,title 在鈕上(回合進行中 perfBusy 會暫時換成原因,所以另存一份)
+    // 滿一天才出「N 天前」,title 跟著它;未滿一天只有鈕,title 在鈕上
     if (days >= 1) { const ts = pfEl("span", "ts", days === 1 ? t("perf.agoOne") : t("perf.ago", { n: String(days) })); ts.title = tip; upd.appendChild(ts); }
-    else { btn.title = tip; btn.dataset.tip = tip; }
+    else btn.title = tip;
     btn.addEventListener("click", () => perfClick(B));
     upd.appendChild(btn);
   }
   meta.appendChild(upd);
   if (st.kind === "failed") meta.parentNode.insertBefore(perfFailLine(side, st, "perf.fail"), meta.nextSibling);
-  perfBusy();
   perfPollEnsure(side, B);
 }
 /* 失敗那一行:回測數據分頁 meta 下、成交測試霧卡的鈕下共用。failKey = 看得到的那句(霧卡上沒有數字,不講「數字是舊的」) */
@@ -150,9 +149,9 @@ function perfXtSlot(B, kind) {
   const st = info.st, box = pfEl("div", "xt-upd");
   box.dataset.xtUpd = "1"; box.dataset.xtKind = kind || "empty";
   box.dataset.xtSig = [box.dataset.xtKind, st.kind, info.mine, st.err || "", st.why || ""].join(":");
-  const view = window.BlaveReport._rob.valBtn({ sent: st.kind === "running", empty: box.dataset.xtKind === "empty", stale: box.dataset.xtKind === "stale" });   // 回合中的鎖由 perfBusy 套
+  const view = window.BlaveReport._rob.valBtn({ sent: st.kind === "running", empty: box.dataset.xtKind === "empty", stale: box.dataset.xtKind === "stale" });
   const btn = pfEl("button", view.cls); btn.type = "button"; btn.dataset.perfBtn = "1"; btn.dataset.xtBtn = "1";
-  const tip = t("xt.btnTip"); btn.title = tip; btn.dataset.tip = tip;   // 回合中 perfBusy 會暫時換成原因,所以另存一份
+  btn.title = t("xt.btnTip");
   if (st.kind === "running") {
     // 跑的期間鈕停用:焦點交給這一格(role=status、tabindex -1,同 web 的狀態節點),不帶回分頁列
     btn.disabled = true; box.setAttribute("role", "status"); box.setAttribute("tabindex", "-1");
@@ -197,30 +196,12 @@ function perfXtSync(B) {
     const at = $("xt-lines-anchor");
     [...next.querySelectorAll("[data-xt-line]")].forEach((x) => row.insertBefore(x, at ? at.nextSibling : null));
   }
-  perfBusy();
   if (had) { const b = next.querySelector("[data-perf-btn]"); (b && !b.disabled ? b : next).focus(); }
-}
-// 回合進行中:鈕 aria-disabled(同版本還原那兩顆;spec §8),點了在 meta 列下講原因＋查看(busy.js)。app.js 在上鎖 / 解鎖的同一處叫它
-function perfBusy() {
-  const xt = $("rp-xt");   // 成交測試那顆(perfXtSlot)同一套,原因句用它自己那句
-  [$("perf-btn")].concat(xt ? [...xt.querySelectorAll("[data-perf-btn]")] : []).forEach((b) => {
-    if (!b || (b.dataset.xtBtn && b.disabled)) return;   // 成交測試跑的期間是 sent,優先於鎖
-    const lock = csAnyTurn();   // 機器層級:任何分頁有回合(同 busy.js)
-    // 成交測試那顆:灰階靠 .is-lock(同參數掃描)
-    if (b.dataset.xtBtn) b.className = b.className.replace(/\s*\bis-lock\b/g, "") + (lock ? " is-lock" : "");
-    if (lock) { b.setAttribute("aria-disabled", "true"); b.title = t(b.dataset.xtBtn ? "xt.busyTurn" : "busy.perf"); return; }
-    b.removeAttribute("aria-disabled");
-    if (b.dataset.tip) b.title = b.dataset.tip; else b.removeAttribute("title");
-  });
 }
 /* 按下:當下畫更新中、送 stats_refresh {names:[name]}(成交測試那顆另帶 exec_test:true:本機永遠帶、雲端 can_exec_test 為 true 才帶)。
    ack 排進佇列(started)才記埋點;BUSY(已經在跑)與結果不明都等報告;
    PF_WHY 有的 skip 碼(CODE_CHANGED / INDEX_BROKEN / NOT_RUNNABLE / CONFIG_UNREADABLE)= 失敗行寫專屬原因;其餘(拒收、NO_STATS、daemon 不在)= 沒更新成功,鈕就是重試 */
 async function perfClick(B, opener) {
-  const b = opener || $("perf-btn");   // opener = 成交測試那顆(原因句講在它下面)
-  // 回合進行中:觸控看不到 title。成交測試結果頁的原因句放頂列後面那一列(#xt-lines 的錨點後,同 web;不擠進頂列推動 meta),空狀態放鈕下
-  const xtAnchor = () => (opener.parentNode && opener.parentNode.dataset && opener.parentNode.dataset.xtKind !== "empty" && $("xt-lines-anchor")) || opener;
-  if (b && b.getAttribute("aria-disabled") === "true") { busyTell(busySlot("perf-why", opener ? xtAnchor() : $("rp-bt").querySelector(".bt-meta") || b), opener ? "xtPerf" : "perf"); return; }
   const side = pfSide(B), name = B.name, p = perfOf(B);
   if (!p || !name) return;
   const o = { at0: p.at, ref0: pfRefKey(p.refresh), ackAt: 0, failed: null };

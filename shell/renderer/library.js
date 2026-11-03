@@ -204,10 +204,9 @@ function libP(tpl, p, alpha) {
 }
 
 const LIB = { bags: { local: libNewBag(), cloud: libNewBag() }, data: null, loading: false, skel: false, failed: false, stale: false, seq: 0,
-  pending: null, noNew: null, buying: null, installed: {}, chart: null, paintedEnv: null, reports: new Map(),   // reports: id → Promise<report|null>(詳情的 400 點曲線 + 回測期間)
+  pending: new Map(), noNew: null, buying: null, installed: {}, chart: null, paintedEnv: null, reports: new Map(),   // reports: id → Promise<report|null>(詳情的 400 點曲線 + 回測期間)
   dlFail: null,   // 本機代下載沒成:{ id, kind: blocked | gone | signin | fail | unsent }(§4.2);再按一次、離開詳情、libInvalidate 清掉
   cloudInstalled: {}, cloudWait: null, cloudNames: null,   // 雲端視角的「已安裝」(只在這次 app 開著的期間;見 libCloudChanged)
-  busyTold: null,   // 回合中點過哪一支的停用主鈕(那句「上一輪還在跑。」要留著,回合結束 libSync 清掉)
   brOn: false, ideaShown: null };   // brOn:內建瀏覽器開關的快取;ideaShown:清單上次畫的找點子入口是開是關
 const LIB_CLOUD_WAIT_MS = 3 * 60 * 1000;   // 回合結束後等雲端清單跟上的上限(主機的回報器有延遲);過了就不再認新出現的那支是這次下載的
 function libNewBag() { return { open: false, detail: null, mkt: "all", scroll: 0, row: null }; }
@@ -297,8 +296,8 @@ function libCtx() {
 function libCtaOf(s) {
   const c = libCtx();
   return libCta(s, Object.assign(c, {
-    running: false, cloud: c.env === "cloud" ? libCloud() : null,   // 回合中不再擋〔使用〕:另開分頁送(csSendAway);進度看 LIB.pending
-    pending: LIB.pending ? LIB.pending.id : null, noNew: LIB.noNew, buying: LIB.buying,
+    running: false, cloud: c.env === "cloud" ? libCloud() : null,   // 回合中不再擋〔使用〕:另開分頁送(csSendAway);進度看 LIB.pending(每支一份)
+    pending: LIB.pending.has(s.id) ? s.id : null, noNew: LIB.noNew, buying: LIB.buying,
     installedName: libInstalledOf(s, c.env),
   }));
 }
@@ -387,22 +386,39 @@ function libInvalidate() { LIB.stale = true; LIB.dlFail = null; LIB.cloudInstall
 function libRefresh() { if (!$("lib").hidden) libLoad(false); }
 // 送出「用這支」那一輪結束(app.js onTurnEnd,stratRefresh(true) 之後):本機多了一支就記下對照表;沒有就出灰字。雲端只重問一次狀態
 function libTurnEnd() {
-  const p = LIB.pending;
-  if (!p || p.stage === "dl") return;   // 還在代下載:結束的是用戶另外送的那一輪,不是這支的
-  if (p.sid && p.sid !== sessionId) return;   // 結束的是別條(對話分頁並行):這支那一輪還在跑
-  LIB.pending = null;
+  // 還在代下載(stage dl)的不算:結束的是用戶另外送的那一輪。sid 對不上的是別條(對話分頁並行):那支那一輪還在跑
+  const mine = [...LIB.pending.values()].filter((p) => p.stage !== "dl" && (!p.sid || p.sid === sessionId));
+  if (!mine.length) return;
+  for (const p of mine) libTurnSettle(p);
+  libSync();
+  if (typeof wcPaint === "function") wcPaint();   // 剛裝好的那支立刻從歡迎頁的卡拿掉(稽核 B4)
+}
+function libTurnSettle(p) {
+  LIB.pending.delete(p.id);
   if (p.env === "local") {
-    // 新出現、或同名但 mtime 變了(「再下載一份」是整份覆蓋同名那支)都算成功;對照表已記的名字優先認它
-    const touched = RP.list.filter((x) => p.before.get(x.name) !== x.mtime);
-    const known = LIB.installed[String(p.id)], hit = touched.find((x) => x.name === known) || touched[0];
+    // 只認新出現的、或對照表已記的那支程式碼變了(「再下載一份」是整份覆蓋同名那支);別支被動到不算
+    const known = LIB.installed[String(p.id)], touched = RP.list.filter((x) => !p.before.has(x.name) || (x.name === known && p.before.get(x.name) !== x.codeMtime));
+    const hit = touched.find((x) => x.name === known) || touched[0];
+    // 兩支同時裝:多出來的資料夾分不出是誰的。寧可沒標「已安裝」,也不能把這支的資料夾記到另一支(同 cloudWait 的取捨)
+    if (p.overlap && !(hit && hit.name === known)) {
+      const taken = new Set(Object.values(LIB.installed)), free = touched.filter((x) => !taken.has(x.name));
+      if (free.length === 1 && !LIB.pending.size) { libInstalledSet(p.id, free[0].name); libTrack("lib_installed"); }
+      return;
+    }
     if (hit) { libInstalledSet(p.id, hit.name); libTrack("lib_installed"); } else { LIB.noNew = p.id; libTrack("library_no_new"); }
   } else {
     if (window.blave && typeof window.blave.cloudRefresh === "function") window.blave.cloudRefresh().catch(() => {});
     if (libCloudSettle(p, libCloudList())) { libTrack("lib_installed"); libCloudRepaintList(); }
     else LIB.cloudWait = { id: p.id, before: p.before, until: Date.now() + LIB_CLOUD_WAIT_MS };   // 清單還沒跟上:等輪詢帶新的來
   }
-  libSync();
-  if (typeof wcPaint === "function") wcPaint();   // 剛裝好的那支立刻從歡迎頁的卡拿掉(稽核 B4)
+}
+// 這支擋不擋:本機每支一份,不同支可以同時裝;雲端「等清單跟上」只有一格(LIB.cloudWait),一次一支
+function libPendingBlocks(s) { return LIB.pending.has(s.id) || (libEnv() === "cloud" && [...LIB.pending.values()].some((p) => p.env === "cloud")); }
+function libPendingSet(id, rec) {
+  const others = [...LIB.pending.values()].filter((p) => p.id !== id && p.env === rec.env);
+  if (others.length) { rec.overlap = true; for (const p of others) p.overlap = true; }
+  const old = LIB.pending.get(id); if (old && old.overlap) rec.overlap = true;
+  LIB.pending.set(id, rec);
 }
 function libInstalledSet(id, name) {
   LIB.installed[String(id)] = name;
@@ -410,7 +426,6 @@ function libInstalledSet(id, name) {
 }
 // 回合開始 / 結束(running 變了)、購買中、對照表變了:詳情的 CTA 就地重畫;清單的 tag 在 libStratChanged
 function libSync() {
-  if (!csAnyTurn()) LIB.busyTold = null;   // 清在這裡、不在 libPaintCta:忙碌中也會重畫,會把剛講的那句抹掉
   if (typeof wcBusySync === "function") wcBusySync();   // 歡迎頁卡的回合鎖與代下載鎖:用戶在歡迎頁時策略庫是藏著的,要在下一行之前
   if ($("lib").hidden) return;
   const B = libBag(), s = B.detail ? libFind(B.detail) : null;
@@ -731,13 +746,6 @@ function libPaintCta(s) {
   switch (c.state) {
     case "signedOut": row.appendChild(libSignInBtn()); break;   // 鈕本身就說了「登入 Blave」,鈕下不再補一句(Wei 10-17);卡與資料登入後真的撞到資料牆再講(Wei 10-02)
     case "noData": row.appendChild(libGateBtn(c.why)); note.classList.add("up"); note.textContent = libNoDataText(s, c.why); break;
-    case "busy": {   // 點了才講(同策略版本):不常駐那句;aria-disabled 讓鍵盤停得上去,點 / Enter / Space 才把原因寫進鈕下
-      const b = btn("btn-fill", c.paid ? buyLabel() : t("lib.use"), () => libBusyTell(s));
-      b.setAttribute("aria-disabled", "true"); b.title = t("turn.busy"); row.appendChild(b);
-      note.setAttribute("role", "status");
-      if (LIB.busyTold === s.id) { note.textContent = t("turn.busy"); busyFixLink(note, "stop"); b.setAttribute("aria-describedby", "lib-cta-note"); }
-      break;
-    }
     case "stopped": case "stale": row.appendChild(dis(c.paid ? buyLabel() : t("lib.use"))); note.textContent = t(c.state === "stopped" ? "ho.gate.stopped" : "ho.gate.stale"); break;
     case "pending": row.appendChild(dis(t("lib.pending"))); break;   // 鈕本身說了進行中,鈕下不再補「進度在右邊的對話」(Wei 10-17)
     case "buying": row.appendChild(dis(t("lib.buy.busy"))); break;
@@ -750,7 +758,7 @@ function libPaintCta(s) {
       row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b)));
   }
   if (row.childNodes.length) box.appendChild(row);
-  note.hidden = !note.textContent && c.state !== "busy";   // 忙碌態那一格空著也留在無障礙樹裡:帶著內容才出現的 live region 讀屏常常不唸
+  note.hidden = !note.textContent;
   box.appendChild(note);
   if (c.err) { const e = libEl("p", "err"), m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, libEl("span", "", t("lib.err.noNew"))); box.appendChild(e); }
   if (LIB.dlFail && LIB.dlFail.id === s.id && c.state !== "pending") {
@@ -760,13 +768,6 @@ function libPaintCta(s) {
   if (hadFocus) { const b = box.querySelector("button:not(:disabled)"); if (b) b.focus(); }   // 停用的(下載中)接不了焦點:那條路由 libSend 自己還
 }
 
-// 回合中點了停用的主鈕:就地寫那句(不整個重畫,焦點留在鈕上);記下是哪一支,忙碌中重畫時補回
-function libBusyTell(s) {
-  LIB.busyTold = s.id; busyHit("send");
-  const n = $("lib-cta-note"), b = libCtaMain();
-  if (n) { n.textContent = t("turn.busy"); busyFixLink(n, "stop"); n.hidden = false; }   // 不在輸入框旁:補〔停止〕(聊天欄收著時看不到送出鍵)
-  if (b) b.setAttribute("aria-describedby", "lib-cta-note");
-}
 
 /* ── 成功筆記(canon › 說明文章外連):詳情的入口卡,用瀏覽器開網站那一頁。只能連免費筆記(付費的在網站上會跳解鎖牆);清單沒帶 price,外殼判斷不了,靠上架時把關 ── */
 function libExtIcon() {   // Lucide arrow-up-right
@@ -792,7 +793,7 @@ function libNoteLink(s) {
 /* o.from === "welcome"(歡迎頁①的卡):確定後先切到這支的詳情再送。下載失敗、沒送出、沒新策略只畫在詳情的 #lib-cta,
    從歡迎頁直送的話錯誤畫進藏著的面板(稽核 M1)。焦點由 delClose 先還給卡的 CTA,libShowDetail 再交給詳情的返回鈕 */
 function libAsk(s, opener, o) {
-  if (LIB.pending) return;   // 代下載那一兩秒 running 還是 false:切到另一支再按不能起第二個下載
+  if (libPendingBlocks(s)) return;   // 同一支不起第二個下載;別支本機可以同時裝
   if (typeof envCanSwitch === "function" && !envCanSwitch()) return;   // 別的框開著 / 選字中
   const cloud = libEnv() === "cloud", fee = libFeeLine(libEnv(), LIB.data ? LIB.data.dataAccess : null, libNeeds(s));
   const again = libCtaOf(s).state === "installed";   // 頁首拿掉了覆蓋說明,改在按下「再下載一份」後的框裡講
@@ -808,23 +809,23 @@ function libAsk(s, opener, o) {
    本機先由外殼代下載(§4.2;主行程 libraryDownload 寫 workspace/tmp/library_<id>.py),成功才送 lib.msgLocal——
    那句是 runtime 契約(references/marketplace.md › Desktop-downloaded picks)。雲端照舊送 lib.msg / lib.msgPaid,外殼寫不進雲端主機 */
 async function libSend(s, o) {
-  if (LIB.pending) return;
+  if (libPendingBlocks(s)) return;
   const env = libEnv(), local = env !== "cloud";
   const msg = libMsg(s, t(local ? "lib.msgLocal" : libIsFree(s) ? "lib.msg" : "lib.msgPaid"));
   if (!msg) return;
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);   // 聊天欄收著就先展開:過程在那裡回報
-  const cl = env === "cloud" ? libCloudList() : RP.list, before = cl ? new Map(cl.map((x) => [x.name, x.mtime])) : null;   // 同 stratRefresh 的比法:名字 + mtime;雲端清單缺席就不記(之後不猜)
+  const cl = env === "cloud" ? libCloudList() : RP.list, before = cl ? new Map(cl.map((x) => [x.name, env === "cloud" ? x.mtime : x.codeMtime])) : null;   // 本機比程式碼的 mtime(mtime 含 stats／scan,別支更新績效會被當成這支裝好);雲端只有 mtime,清單缺席就不記(之後不猜)
   if (env === "cloud") LIB.cloudWait = null;   // 上一支還在等清單跟上就放掉:寧可它沒標「已安裝」,也不能把第二支的資料夾記到第一支
   LIB.dlFail = null;
   let send = msg, opts;
   if (local) {
     // 送出對象在按下去那一刻定案:下載那一兩秒裡切到雲端視角,這句也不能變成送給雲端主機(那邊沒有 tmp/library_<id>.py)
     opts = { viewing: typeof chatViewing === "function" ? chatViewing() : { env: "local" } };
-    LIB.pending = { id: s.id, env, before, stage: "dl" }; LIB.noNew = null; libSync();
+    libPendingSet(s.id, { id: s.id, env, before, stage: "dl" }); LIB.noNew = null; libSync();
     let r = null;
     try { r = await window.blave.libraryDownload(s.id); } catch (_) { r = null; }
     if (!r || r.ok !== true) {
-      LIB.pending = null;
+      LIB.pending.delete(s.id);
       const kind = r && ["blocked", "gone", "anonGone", "signin", "rateLimited", "agentOld", "agentOldReopen"].includes(r.kind) ? r.kind : "fail";
       if (kind === "agentOld" || kind === "agentOldReopen") libBlocked("agent_old");   // 想用但這台 lib 太舊(api 交付碼前擋下)
       if (kind === "gone" || kind === "anonGone") libInvalidate();   // 下架了(或匿名那條已不給):清單重拉(先清再記,libInvalidate 會把 dlFail 清掉)
@@ -834,20 +835,20 @@ async function libSend(s, o) {
     }
     if (r.legacy) {   // workspace 還是舊契約:照舊由 agent 自己下載
       send = libMsg(s, t(libIsFree(s) ? "lib.msg" : "lib.msgPaid"));
-      if (!send) { LIB.pending = null; libSync(); return; }
+      if (!send) { LIB.pending.delete(s.id); libSync(); return; }
     }
-    LIB.pending.stage = "turn"; libSync();
+    LIB.pending.get(s.id).stage = "turn"; libSync();
   }
   const sent = csSendAway(send, opts), at = CS.away;
-  if (LIB.pending) LIB.pending.sid = at.sid;   // 代下載那段的 pending(stage turn)也只認這一條
+  if (LIB.pending.has(s.id)) LIB.pending.get(s.id).sid = at.sid;   // 代下載那段的 pending(stage turn)也只認這一條
   sent.then((ok) => {
     if (ok) {
-      LIB.pending = { id: s.id, env, before, sid: at.sid }; LIB.noNew = null; libTrack("library_use");
+      libPendingSet(s.id, { id: s.id, env, before, sid: at.sid }); LIB.noNew = null; libTrack("library_use");
       if (o && o.from === "welcome") libTrack(local ? "wcard_use" : "wcard_use_cloud");
       // 這支的資料需求(§8):只在本機送——雲端沒有資料牆,這個屬性在那邊沒有意義
       if (local) { try { window.blave.trackEvent("lib_pick", { data: libPickData(s) }); } catch (_) { } }
     }
-    else if (local) { LIB.pending = null; LIB.dlFail = { id: s.id, kind: "unsent" }; }   // 下載中有別句先送出(回合在跑)等:講出來,不靜默
+    else if (local) { LIB.pending.delete(s.id); LIB.dlFail = { id: s.id, kind: "unsent" }; }   // 下載中有別句先送出(回合在跑)等:講出來,不靜默
     libSync();
     // 回合送出了,但引擎是 Blave AI 而帳號不能跑:下一步就是 402(按了「使用」但被擋)
     const a = typeof acct !== "undefined" ? acct : null;
@@ -857,7 +858,9 @@ async function libSend(s, o) {
 
 /* ── 購買(規格 §4.4):兩段確認框對齊網頁 libBuy / libPurchase;憑證只在主行程 ── */
 function libBuyBox(s, stage, opener, o) {
-  if (LIB.buying !== null || LIB.pending) return;   // 代下載中:買完接著的 libSend 會被擋掉,變成付了錢卻沒裝
+  if (LIB.buying !== null) return;
+  // 任何一支裝到一半都不開購買(碰錢不放寬;代下載中買完接著的 libSend 可能被擋掉,變成付了錢卻沒裝)
+  if (LIB.pending.size) { const n = $("lib-cta-note"); if (n) { n.textContent = t("lib.buyWait"); n.hidden = false; } return; }
   if (typeof envCanSwitch === "function" && !envCanSwitch()) return;
   const price = libPriceText(s) || "—", title = t("lib.buy.title", { title: s.title });
   if (stage === "confirm") {

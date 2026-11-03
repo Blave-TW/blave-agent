@@ -8,7 +8,7 @@
 //   ④ renderer 三態(假 DOM 跑真的 perf.js):Type A／C 都出、Type B 不出(xpIsTypeB)、閒置(滿一天才出 N 天前;上線中 / 非上線兩句 title)/ 更新中 / 失敗、
 //      按下的指令形狀、ack 之後才記埋點、ack skip 碼各自的失敗行(CODE_CHANGED / INDEX_BROKEN / NOT_RUNNABLE / CONFIG_UNREADABLE)、
 //      報告帶回的 SUPERSEDED / BUSY、上線中 = 下單設定有 key(金額 0 也算,versions.js verPicked)、完成唸一句
-//   ⑤ 接線:rpShowTab 畫完回測分頁叫 perfPaint、三處上鎖 / 解鎖叫 perfBusy、index.html 載入順序、CSS、zh / en 字串
+//   ⑤ 接線:rpShowTab 畫完回測分頁叫 perfPaint、index.html 載入順序、CSS、zh / en 字串
 const fs = require("fs"), path = require("path"), os = require("os");
 const S = path.join(__dirname, "..", "shell"), R = path.join(S, "renderer"), ROOT = path.join(__dirname, "..");
 const read = (p) => fs.readFileSync(p, "utf8");
@@ -107,7 +107,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   new Function("window", "document", read(path.join(R, "report-robust.js")))(XT_WIN, doc);   // 鈕態表 VAL_BTN 在這支
   const XT_GRID = (s0) => ({ lag: Object.fromEntries(["0", "1", "2", "3", "5", "10"].map((k) => [k, [s0, 10, -10]])), close_fill: [s0, 10, -10],
     cost: Object.fromEntries(["free", "0.01", "0.02", "0.05", "0.1", "0.2", "0.5"].map((k) => [k, [s0, 10, -10]])), fee_per_side_pct: 0.05, position_changes: 40 });
-  const names = ["pfEl", "pfNowWhy", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfFailLine", "perfXtInfo", "perfXtFresh", "perfXtSlot", "perfXtNote", "perfXtSync", "perfBusy", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
+  const names = ["pfEl", "pfNowWhy", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfFailLine", "perfXtInfo", "perfXtFresh", "perfXtSlot", "perfXtNote", "perfXtSync", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
   const body = ["PF", "PFL", "PFP", "PFX", "PF_POLL_MS", "PF_POLL_MAX_MS", "PF_ERRS", "PF_NO_DATA", "PF_WHY", "pfSide", "pfRefKey"].map((n) => constSrc(perfSrc, n)).join("") + names.map((n) => fnSrc(perfSrc, n)).join("\n")
     + "\nreturn { " + names.join(", ") + ", PF, PFL, PFP, PFX };";
   const clock = { now: new Date(new Date().getFullYear(), 8, 28, 10, 0, 0).getTime() };   // 今年 9/28 10:00 本地時間(格式斷言不隨時區翻)
@@ -306,15 +306,12 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
       await ackWhy("NOT_RUNNABLE") === "這類策略不能更新績效" && await ackWhy("INDEX_BROKEN") === "版本索引讀不到，請先回測一次" && await ackWhy("CONFIG_UNREADABLE") === "下單設定讀不到，沒有更新" && await ackWhy("NO_STATS") === "中途出錯"
       && await ackWhy("NOT_RUNNABLE", "en") === "This kind of strategy can't update its performance." && await ackWhy("INDEX_BROKEN", "en") === "The version index can't be read; run a backtest first." && await ackWhy("CONFIG_UNREADABLE", "en") === "The trading settings can't be read; nothing was updated.");
   }
-  // 回合進行中:鈕 aria-disabled + title 原因,按了不送、在 meta 列下講原因(busy.js perf);解鎖後 title 回到時間那句
+  // 回合進行中(0.1.44 放寬):更新績效不開對話回合,機器端有 .backtest.lock 擋同時寫;別條在跑照按
   {
     const r = rig("zh", { running: true }); r.F.perfPaint(r.B);
-    ok("回合進行中:aria-disabled、title = busy.perf", r.btn().attrs["aria-disabled"] === "true" && r.btn().title === STR.zh["busy.perf"]);
+    ok("回合進行中:鈕不鎖、title 照舊", !("aria-disabled" in r.btn().attrs) && r.btn().title === tipZh(nowS() - 3600));
     r.btn().click(); await flush();
-    ok("按了不送、不畫更新中;原因句寫進 meta 列下的 perf-why(觸控看不到 title)", r.sent.length === 0 && r.btn() && r.env.told.length === 1 && r.env.told[0][0] === "perf-why" && r.env.told[0][1] === "perf" && r.env.told[0][2] === r.meta);
-    r.env.running = false;   // perfBusy 讀的是呼叫當下的 running
-    const F2 = new Function(...Object.keys(r.env), body)(...Object.values(r.env)); F2.perfBusy();
-    ok("解鎖:aria-disabled 拿掉、title 回到「MM/DD HH:mm 更新 · 每天報告前自動更新一次」", !("aria-disabled" in r.btn().attrs) && r.btn().title === tipZh(nowS() - 3600));
+    ok("回合進行中按:照送 stats_refresh、不講原因句", r.sent.length === 1 && r.env.told.length === 0);
   }
   // 輪詢:內容變了才重畫(整袋換掉、drawn 清空 → rpPaintHead + rpShowTab),沒變就只重算疊層;換了策略就停
   {
@@ -339,7 +336,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   // ── ⑤ 接線 ──
   const html = read(path.join(R, "index.html")), css = read(path.join(R, "report-backtest.css"));
   ok("app.js:rpShowTab 畫完回測分頁就叫 perfPaint(B)", /R\.renderBacktest\(\$\("rp-bt"\), B\.data\.stats, \{ help: \(\) => rpHelpLink\("bt"\) \}\);\n\s*if \(tab === "bt" && typeof perfPaint === "function"\) perfPaint\(B\);/.test(fnSrc(appSrc, "rpShowTab")));
-  ok("app.js:三處上鎖 / 解鎖都在 verBusy 旁邊叫 perfBusy", /if \(typeof verBusy === "function"\) verBusy\(\); if \(typeof perfBusy === "function"\) perfBusy\(\);/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")));
+  ok("chattabs.js:共用畫面重畫不再叫 perfBusy", !/perfBusy/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")));
   ok("index.html:perf.js 在 versions.js 之後(用它的 verAmount / verPendingOf / VS / RERUN_WHY)、app.js 之後、export.js 之後(xpIsTypeB)", html.indexOf('src="perf.js"') > html.indexOf('src="versions.js"') && html.indexOf('src="versions.js"') > html.indexOf('src="app.js"') && html.indexOf('src="perf.js"') > html.indexOf('src="export.js"'));
   ok("CSS:.upd 靠右(margin-left: auto)、更新中 .busy、aria-disabled 的鈕走灰階退場、失敗行緊跟 meta(8)而三組條列仍離 16",
     /\.bt-meta > \.upd \{ display: inline-flex; align-items: center; gap: var\(--space-8\); margin-left: auto; white-space: nowrap; \}/.test(css) && /\.bt-meta > \.upd \.busy \{/.test(css)
@@ -428,17 +425,12 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     FOC.at = null; }
   { const tb = rig("zh", { code: "# Type: B\n" }), nop = rig("zh", { perf: null });
     ok("成交測試:Type B / 沒有 perf → null(不出鈕)", tb.F.perfXtSlot(tb.B, "empty") === null && nop.F.perfXtSlot(nop.B, "empty") === null); }
-  { const bz = rig("zh", { running: true }), s = bz.F.perfXtSlot(bz.B, "fresh"); bz.$("rp-xt").appendChild(s); bz.F.perfBusy();
-    ok("成交測試:回合中(#9)鈕 aria-disabled + .is-lock(變灰,同參數掃描)、title 是成交測試自己那句", s.kids[0].getAttribute("aria-disabled") === "true" && s.kids[0].has("is-lock") && s.kids[0].title === "agent 正在回覆，可能還在改策略，回覆完再測。");
-    bz.env.running = false; { const F2 = new Function(...Object.keys(bz.env), body)(...Object.values(bz.env)); F2.perfBusy(); }
-    ok("成交測試:回合結束 → .is-lock 拿掉、title 回到 tooltip", !s.kids[0].has("is-lock") && s.kids[0].title === "用最新資料重跑回測，績效會一起更新。" && s.kids[0].getAttribute("aria-disabled") === null);
-    bz.env.running = true; bz.F.perfBusy();
+  { const bz = rig("zh", { running: true }), s = bz.F.perfXtSlot(bz.B, "fresh"); bz.$("rp-xt").appendChild(s);
+    ok("成交測試:回合中(0.1.44 放寬)鈕不鎖、title 是 tooltip", s.kids[0].getAttribute("aria-disabled") === null && !s.kids[0].has("is-lock") && s.kids[0].title === "用最新資料重跑回測，績效會一起更新。");
     s.kids[0].click(); await flush();
-    ok("成交測試:回合中按 = 不送;結果頁的原因句接在頂列後面那一列的錨點後(不擠進頂列推動 meta;xtPerf → 埋點同 perf 那把鎖)", bz.sent.length === 0 && bz.env.told.length === 1 && bz.env.told[0][1] === "xtPerf" && bz.env.told[0][2].id === "xt-lines-anchor");
-    const e = bz.F.perfXtSlot(bz.B, "empty"); bz.$("rp-xt").appendChild(e); bz.F.perfBusy(); e.kids[0].click(); await flush();
-    ok("成交測試:空狀態回合中按 = 原因句在那顆鈕下(那一格裡、置中)", bz.sent.length === 0 && bz.env.told.length === 2 && bz.env.told[1][2] === e.kids[0]); }
+    ok("成交測試:回合中按 = 照送、帶 exec_test、不講原因句", bz.sent.length === 1 && bz.env.told.length === 0); }
   { const busySrc = read(path.join(R, "busy.js"));
-    ok("busy.js:xtPerf 的句子是 xt.busyTurn、埋點同 perf(lock_perf)", /xtPerf:\s+\{ key: "xt\.busyTurn",\s+fix: "view" \}/.test(busySrc) && /xtPerf: "lock_perf"/.test(busySrc)); }
+    ok("busy.js:更新績效與成交測試不再有鎖(perf／xtPerf 拿掉)", !/\bperf:\s+\{ key/.test(busySrc) && !/xtPerf/.test(busySrc)); }
   { const { argsOk } = require(path.join(S, "daemon.js")), A = (a) => argsOk("stats_refresh", a);
     ok("daemon.js stats_refresh 形狀(本機那條不經 api;= runtime / api):exec_test:true 一支收;兩支、false、字串、只有 exec_test、多一個 key 拒;不帶照舊",
       A({ names: ["momo"], exec_test: true }) && A({ names: ["momo", "b"] }) && !A({ names: ["momo", "b"], exec_test: true }) && !A({ names: ["momo"], exec_test: false })

@@ -256,11 +256,11 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     && !/trackFeature/.test(appSrc.slice(appSrc.indexOf("function rpShowTab("), appSrc.indexOf("function rpRobOpts(")))
     && /function trSetTab\(tab, focus\) \{\n\s*TR\.tab = tab; TR\.landed = true;\n\s*trackFeature\(TR_TAB_FEATURE\[tab\]\);/.test(trSrc)
     && /\(!mg && trPickOff\(\)\)\) return;\n\s*psMode = [^\n]*\n\s*if \(!mg\) trackFeature\("strategy_picker"\);/.test(trSrc) && /if \(env === ENV\.cur\) \{ if \(via === "link"\) head\(\); return; \}\n\s*if \(env === "cloud"\) trackFeature\("view_cloud"\);/.test(trSrc)
-    && /\.then\(\(ok\) => \{ if \(ok\) trackFeature\("scan_requested"\); resolve\(ok \? at\.seq : false\); \}\)/.test(appSrc)
-    && /\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? at\.seq : false\); \}\)/.test(appSrc) && /if \(r\.started \|\| r\.queued\) \{ trackFeature\("chat_sent"\); for \(const k of attachKinds\(attachments\)\) trackFeature\(ATTACH_FEATURE\[k\]\); if \(attachments\.length > 1\) trackFeature\("attach_multi"\); \}/.test(appSrc)
+    && /\.then\(\(ok\) => \{ if \(ok\) trackFeature\("scan_requested"\); resolve\(ok \? at : false\); \}, \(\) => resolve\(false\)\)/.test(appSrc)
+    && /\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? at : false\); \}, \(\) => resolve\(false\)\)/.test(appSrc) && /if \(r\.started \|\| r\.queued\) \{ trackFeature\("chat_sent"\); for \(const k of attachKinds\(attachments\)\) trackFeature\(ATTACH_FEATURE\[k\]\); if \(attachments\.length > 1\) trackFeature\("attach_multi"\); \}/.test(appSrc)
     && /turnStopping = true; turnStopped = true; sendBtnSync\(\);\n\s*if \(!\(T && T\.queued\)\) trackFeature\("chat_stop"\);/.test(appSrc)
     && /if \(cat === "src"\) \{ srcLoad\(\); trackFeature\("settings_datasrc"\); \}/.test(appSrc) && /if \(cat === "plan"\) \{ planPaint\(\); trackFeature\("settings_plan"\);/.test(appSrc)
-    && /csSendAway\(msg, \{ handoff: dir, noBacktest: tb === "B" \}\)[^\n]*\n\s*\.then\(\(ok\) => \{ if \(ok\) trackFeature\(dir === "up" \? "handoff_cloud" : "handoff_pull"\); \}\);/.test(hoSrc));
+    && /csSendAway\(msg, \{ handoff: dir, noBacktest: tb === "B" \}\);[^\n]*\n\s*csOnceMark\(onceKey\);\n\s*sending\.then\(\(ok\) => \{ if \(ok\) trackFeature\(dir === "up" \? "handoff_cloud" : "handoff_pull"\); \}\);/.test(hoSrc));
   // 主行程:preload 只暴露 send、主行程只收自家頁面、名字交給 track()——表外的整則不送、表內的 props 只有 name 一格
   t("接線:preload trackFeature → send(\"track-feature\");主行程 fromOurPage 才 tm().track(\"feature_used\", { name })",
     /trackFeature: \(name\) => ipcRenderer\.send\("track-feature", name\),/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "preload.js"), "utf8"))
@@ -510,7 +510,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     t("…送出點:lib_pick 只在本機 submitMessage 回 ok 那一支(值來自 libPickData);idea_sent 在找點子框送出成功、關框之後;都包 try",
       /if \(ok\) \{[\s\S]*?if \(local\) \{ try \{ window\.blave\.trackEvent\("lib_pick", \{ data: libPickData\(s\) \}\); \} catch \(_\) \{ \} \}/.test(lib13) && (lib13.match(/trackEvent\("lib_pick"/g) || []).length === 1
       && /ideaClose\(\);[\s\S]*try \{ window\.blave\.trackEvent\("idea_sent", \{ from \}\); \} catch \(_\) \{ \}/.test(ns13) && (ns13.match(/trackEvent\("idea_sent"/g) || []).length === 1);
-    t("…feature_used 的兩個名字:lib_installed 在本機認到新策略與雲端認到(libTurnEnd 兩處 + libCloudChanged)、library_no_new 只在本機沒新策略", (lib13.match(/libTrack\("lib_installed"\)/g) || []).length === 3 && (lib13.match(/libTrack\("library_no_new"\)/g) || []).length === 1);
+    t("…feature_used 的兩個名字:lib_installed 在本機認到新策略(兩支同裝認得出的那條也算)與雲端認到(libTurnSettle 三處 + libCloudChanged)、library_no_new 只在本機沒新策略", (lib13.match(/libTrack\("lib_installed"\)/g) || []).length === 4 && (lib13.match(/libTrack\("library_no_new"\)/g) || []).length === 1);
     const apiPy13 = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "desktop_telemetry.py");
     if (!fs.existsSync(apiPy13)) console.log("SKIP  api 端 0.1.13 事件比對(需要 monorepo 版面)");
     else { const api = fs.readFileSync(apiPy13, "utf8"), got = {};

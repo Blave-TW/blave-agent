@@ -1529,7 +1529,10 @@ function loadStrategy(name) {
   // 參數掃描(lib/param_scan.write_scan 的 scan.json)與樣本外驗證(lib/walk_forward.run_walk_forward 的 wf.json):
   // 逐欄檢查在 renderer/report-robust.js 的 sanitizeScan / report-wf.js 的 sanitizeWf
   const scan = readResultJson(path.join(dir, "scan.json")), wf = readResultJson(path.join(dir, "wf.json"));
-  try { code = fs.readFileSync(path.join(dir, "strategy.py"), "utf8"); } catch (_) {}
+  let codeBuf = null;
+  try { codeBuf = fs.readFileSync(path.join(dir, "strategy.py")); code = codeBuf.toString("utf8"); } catch (_) {}
+  // 掃描／樣本外是哪一版碼跑的(lib 寫的 code_hash = lib.strategy.code_hash):跟現在的檔不同就不是這份碼的結論,畫面照過時畫
+  if (codeBuf) { const h = crypto.createHash("sha256").update(codeBuf).digest("hex").slice(0, 16); for (const r of [scan, wf]) if (r && typeof r.code_hash === "string" && r.code_hash !== h) r.code_stale = true; }
   return { name, stats, scan, wf, code, dataSources: stratDataSources(dir), missingSources: stratMissingSources(dir), versions: stratVersions(dir), perf: stratPerf(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir) };
 }
 /* 績效的新鮮度(renderer/perf.js 的「更新績效」),形狀同 runtime strategy_reporter._read_perf:{ at, refresh? },沒有 stats.json = null。

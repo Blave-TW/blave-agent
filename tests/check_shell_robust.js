@@ -139,10 +139,10 @@ if (!process.versions.electron) {
   ok("③ 已送出是真 disabled:拿著焦點的鈕先交給分頁鈕,才設 disabled(順序反了焦點掉到 body)", /if \(v\.disabled && !st\.btn\.disabled && document\.activeElement === st\.btn && typeof opts\.refocus === "function"\) opts\.refocus\(\);\n\s*st\.btn\.disabled = v\.disabled;/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "report-robust.js"), "utf8")));
   ok("③ app.js:rpShowTab / rpBodyPaint 的分頁清單含 rob,rob 交給 renderRobust(t / busy / onScan / buildMeta 都從外面交進去);index.html 有分頁鈕、面板、css、js", (app.match(/\["bt", "tr", "rob", "wf", "xt", "code"\]/g) || []).length === 2
     && /R\.renderRobust\(\$\("rp-rob"\), \{ stats: B\.data\.stats, scan: B\.data\.scan \|\| null, code: B\.data\.code, name: B\.name \}, rpRobOpts\(\)\)/.test(app)
-    && /return \{ t, busy: csAnyTurn\(\), turn: turnSeq, scope: rpBag\(\) === RPC \? "cloud" : "local", onScan: rpRobAsk, busyFix: \(el\) => busyFixLink\(el, "stop"\), buildMeta: R\.buildMeta, help: \(\) => rpHelpLink\("rob"\), resync: rpRobSync, refocus: rpRobRefocus \};/.test(app)
+    && /return \{ t, live: \(s\) => csTurnLive\(s\.sid, s\.turn\), scope: rpBag\(\) === RPC \? "cloud" : "local", onScan: rpRobAsk, buildMeta: R\.buildMeta, help: \(\) => rpHelpLink\("rob"\), resync: rpRobSync, refocus: rpRobRefocus \};/.test(app)
     && /data-tab="rob" data-i18n="rp\.tab\.rob"/.test(html) && /id="rp-rob" role="tabpanel" hidden/.test(html) && /report-robust\.css/.test(html) && /<script src="report-robust\.js"><\/script>\s*(?:<script src="(?:report-wf|report-xt|md|report-blocks|reports|report-share|report-sharelist|report-pdf|newstrategy)\.js"><\/script>\s*)*<script src="trade\.js">/.test(html));
   ok("③ app.js:掃描鈕走確認框 → csSendAway(從別處送一句話;不覆寫 viewing:chatViewing 在雲端視角本來就回 env:cloud + strategy)、resolve 回合序號;回合開始 / 結束三處都叫 turnUiSync(裡面 rpRobSync 就地改鈕,不重畫);每輪 turnSeq++",
-    /onOk: \(\) => \{ if \(typeof begin === "function"\) begin\(\); const p = csSendAway\(msg\), at = CS\.away; p\.then\(\(ok\) => \{ if \(ok\) trackFeature\("scan_requested"\); resolve\(ok \? at\.seq : false\); \}\); \}/.test(app) && !/viewing/.test(app.slice(app.indexOf("function rpRobAsk"), app.indexOf("function rpRobSync"))) && (app.match(/turnUiSync\(\)/g) || []).length >= 3 && /rpRobSync\(\); rpWfSync\(\);/.test(fs.readFileSync(path.join(SHELL, "renderer", "chattabs.js"), "utf8"))
+    /onOk: \(\) => \{ if \(typeof begin === "function"\) begin\(\); const p = csSendAway\(msg\), at = CS\.away; p\.then\(\(ok\) => \{ if \(ok\) trackFeature\("scan_requested"\); resolve\(ok \? at : false\); \}, \(\) => resolve\(false\)\); \}/.test(app) && !/viewing/.test(app.slice(app.indexOf("function rpRobAsk"), app.indexOf("function rpRobSync"))) && (app.match(/turnUiSync\(\)/g) || []).length >= 3 && /rpRobSync\(\); rpWfSync\(\);/.test(fs.readFileSync(path.join(SHELL, "renderer", "chattabs.js"), "utf8"))
     && /R\.robSync\(\$\("rp-rob"\), rpRobOpts\(\)\)/.test(app) && /UPD\.turnCloud = false; turnSeq\+\+;/.test(app));
   ok("③ app.js onTurnEnd:碰過雲端的回合結束 → 雲端那支的報告背景重抓(rpCloudSelect force),而且在 upTurnEnded 歸零 UPD.turnCloud 之前先記下", (() => { const s = app.slice(app.indexOf("function turnEndPre("), app.indexOf("/* 側欄 / 聊天欄")); return /const cloudTurn = UPD\.turnCloud;/.test(s) && s.indexOf("const cloudTurn = UPD.turnCloud;") < s.indexOf("upTurnEnded(faulted);") && /if \(cloudTurn && RPC\.name\) rpCloudSelect\(RPC\.name, true\);/.test(s) && s.indexOf("turnUiSync();") < s.indexOf("rpCloudSelect(RPC.name, true)"); })());
   {
@@ -244,7 +244,7 @@ app.whenReady().then(async () => {
   const STATS = { symbol: "BTCUSDT", interval: "1h", start: "2025-01-01", end: "2025-06-01", "fee [%]": 0.05, "Generated At": 50 };
   // 一次畫進 #rp-rob 的複本(同 CSS 環境);opts 由測試自己給:t 用畫面上那顆、onScan 記下呼叫並回 true
   await js(`window.__calls = []; window.__turn = 1; window.__box = document.createElement("div"); document.body.appendChild(window.__box);
-    window.__opts = (busy, turn, scope) => ({ t, busy, turn: turn == null ? window.__turn : turn, scope: scope || "local", buildMeta: window.BlaveReport.buildMeta, onScan: (name, opener, begin, info) => { window.__calls.push([name, opener && opener.tagName]); window.__info = info; return new Promise((r) => setTimeout(() => r(window.__turn), 5)); } });   // 同 app:resolve 時才知道跑起來的是哪一輪
+    window.__opts = (busy, turn, scope) => ({ t, live: (s) => !!busy && s.turn === (turn == null ? window.__turn : turn), scope: scope || "local", buildMeta: window.BlaveReport.buildMeta, onScan: (name, opener, begin, info) => { window.__calls.push([name, opener && opener.tagName]); window.__info = info; return new Promise((r) => setTimeout(() => r({ sid: "desktop-s1", seq: window.__turn }), 5)); } });   // 同 app:resolve 時才知道跑起來的是哪一輪;live 替 csTurnLive
     window.__render = (data, busy, turn, scope) => window.BlaveReport.renderRobust(window.__box, data, window.__opts(busy, turn, scope));
     window.__sync = (busy, turn, scope) => window.BlaveReport.robSync(window.__box, window.__opts(busy, turn, scope)); 0;`);
 
@@ -254,35 +254,26 @@ app.whenReady().then(async () => {
     const b = window.__box.querySelector(".rob-empty button.btn-out"), p = window.__box.querySelector(".rob-empty .rob-empty-txt"); return { has: !!b, dis: b && window.__lk(b), txt: b && b.textContent, line: p && p.textContent, before: p && p.nextElementSibling === b, cap: !!window.__box.querySelector(".rob-cap"), heat: !!window.__box.querySelector(".rob-tbl") }; })()`);
   ok("② 沒有 scan:空狀態 = 一句「還沒掃過參數。」+ 一顆「開始掃描」填色鈕(句在鈕前)、可按、沒有熱圖", r.has && !r.dis && r.txt === (await js(`t("rob.btnScan")`)) && r.line === (await js(`t("rob.empty")`)) && r.before && !r.cap && !r.heat);
   r = await js(`(() => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, true);
-    const b = window.__box.querySelector(".rob-empty button.btn-out"); return { dis: window.__lk(b), native: b.disabled, aria: b.getAttribute("aria-disabled"), txt: b.textContent, cap: (window.__box.querySelector(".rob-cap") || {}).textContent }; })()`);
-  ok("② 回合進行中:鈕鎖住(aria-disabled,不是原生 disabled:鍵盤停得上去)+ 一行常駐原因;文字仍是「開始掃描」", r.dis && !r.native && r.aria === "true" && r.txt === (await js(`t("rob.btnScan")`)) && r.cap === (await js(`t("rob.busy")`)));
-  // 〔停止〕:同 app.js rpRobOpts 交真的 busyFixLink;回合中實點 → 真的 stopTurn 走下去(轉成停止中)、記 lock_fix;點被鎖的鈕本身不送
-  r = await js(`(() => { const tr = []; const tf = window.trackFeature; window.trackFeature = (n) => tr.push(n);
-    running = true; turnStopping = false; window.__calls = [];
-    window.BlaveReport.renderRobust(window.__box, { stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, { ...window.__opts(true), busyFix: (el) => busyFixLink(el, "stop") });
-    const b = window.__box.querySelector(".rob-empty button.btn-out"); b.click();
-    const cap = window.__box.querySelector(".rob-cap"), fix = cap && cap.querySelector("button.busy-fix");
-    const o = { sent: window.__calls.length, txt: cap && cap.textContent, role: cap && cap.getAttribute("role"), fix: fix && fix.textContent };
-    if (fix) fix.click();
-    o.stopping = turnStopping; o.tr = tr.slice(); running = false; window.trackFeature = tf; return o; })()`);
-  ok("② 〔停止〕實點:原因句「…送出。 停止」、role=status;點被鎖的鈕不送;點〔停止〕→ 回合轉停止中、記 lock_fix",
-    r.sent === 0 && r.txt === (await js(`t("rob.busy") + " " + t("busy.fix.stop")`)) && r.role === "status" && r.fix === (await js(`t("busy.fix.stop")`)) && r.stopping === true && r.tr.includes("lock_fix"), JSON.stringify(r));
-  await wait(50); await js(`turnStopping = false; turnStopped = false; 0`);
+    const b = window.__box.querySelector(".rob-empty button.btn-out"); return { dis: window.__lk(b), txt: b.textContent, cap: !!window.__box.querySelector(".rob-cap") }; })()`);
+  ok("② 別條回合在跑:鈕不鎖、沒有原因行;文字仍是「開始掃描」(0.1.44 放寬,另開分頁送)", !r.dis && r.txt === (await js(`t("rob.btnScan")`)) && !r.cap);
   r = await js(`(async () => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, false);
     const b0 = window.__box.querySelector(".rob-empty button"); b0.focus(); b0.click();
-    window.__turn = 7; window.__sync(true);   // 送出 → app 那邊回合開始:busy + 新序號(promise 還沒回來)
-    const mid = { dis: window.__lk(b0), txt: b0.textContent, cap: !!window.__box.querySelector(".rob-cap") };
-    await new Promise((r) => setTimeout(r, 30));
+    window.__turn = 7; window.__sync(true);   // 送出 → 回合開始(promise 還沒回來;這個替身沒叫 begin)
+    const mid = { dis: window.__lk(b0), txt: b0.textContent };
+    await new Promise((r) => setTimeout(r, 30)); window.__sync(true);
     const b = window.__box.querySelector(".rob-empty button.btn-out");
     return { calls: window.__calls, mid, same: b === b0, dis: window.__lk(b), txt: b.textContent, cap: !!window.__box.querySelector(".rob-cap") }; })()`);
   // 焦點:Chromium 把 focus 中的鈕設成 disabled 就會自己掉到 body(真 disabled 的規格行為,web 同),節點不重建能保的是不閃、不 reflow
-  ok("② 按下 → 回合開始先鎖鈕 + 忙碌說明 → onScan 回來(回合序號)→ 同一顆鈕就地改成「已送出，看對話」(不重建、說明收掉)",
-    JSON.stringify(r.calls) === '[["s1","BUTTON"]]' && r.mid.dis && r.mid.txt === (await js(`t("rob.btnScan")`)) && r.mid.cap && r.same && r.dis && r.txt === (await js(`t("rob.btnSent")`)) && !r.cap);
+  ok("② 按下 → onScan 回來(那一輪)→ 同一顆鈕就地改成「已送出，看對話」(不重建)",
+    JSON.stringify(r.calls) === '[["s1","BUTTON"]]' && !r.mid.dis && r.mid.txt === (await js(`t("rob.btnScan")`)) && r.same && r.dis && r.txt === (await js(`t("rob.btnSent")`)) && !r.cap);
   r = await js(`(() => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, true); const b = window.__box.querySelector(".rob-empty button"); return b.textContent; })()`);
   ok("② 同一支、簽章沒變、同一回合還在跑:整塊重畫仍是「已送出」", r === (await js(`t("rob.btnSent")`)));
   r = await js(`(() => { window.__sync(false); const a = window.__box.querySelector(".rob-empty button"); const r1 = [a.textContent, window.__lk(a), !!window.__box.querySelector(".rob-cap")];
     window.__turn = 8; window.__sync(true); const b = window.__box.querySelector(".rob-empty button"); return { r1, r2: [b.textContent, window.__lk(b), !!window.__box.querySelector(".rob-cap")], same: a === b }; })()`);
-  ok("② 回合結束沒產出:就地解鎖回「開始掃描」;下一輪無關的回合開始:只是停用 + 忙碌說明,不再變回「已送出」(不跨回合)", r.r1[0] === (await js(`t("rob.btnScan")`)) && r.r1[1] === false && !r.r1[2] && r.r2[0] === (await js(`t("rob.btnScan")`)) && r.r2[1] === true && r.r2[2] && r.same);
+  ok("② 回合結束沒產出:就地解鎖回「開始掃描」;下一輪無關的回合開始:不再變回「已送出」(不跨回合)、也不鎖", r.r1[0] === (await js(`t("rob.btnScan")`)) && r.r1[1] === false && !r.r1[2] && r.r2[0] === (await js(`t("rob.btnScan")`)) && r.r2[1] === false && !r.r2[2] && r.same);
+  r = await js(`(() => { window.__turn = 7; window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, true, 7); const a = window.__box.querySelector(".rob-empty button").textContent;
+    window.__turn = 11; window.__sync(true, 7); const b = window.__box.querySelector(".rob-empty button").textContent; window.__sync(false); return { a, b }; })()`);
+  ok("② 別條開跑(全 app 流水號往前走了)、送出那一輪還在跑:照樣「已送出」,不會解鎖變成可以重送", r.a === (await js(`t("rob.btnSent")`)) && r.b === r.a, JSON.stringify(r));
   r = await js(`(() => { window.__turn = 7; window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, true, 7, "cloud"); return window.__box.querySelector(".rob-empty button").textContent; })()`);
   ok("② 雲端視角的同名策略(同 sig、同回合):不吃本機那份的「已送出」", r === (await js(`t("rob.btnScan")`)));
   // 結果頁:頂列常駐「重新掃描」(spec-0.1.12-scan-stale §3.1)
@@ -290,18 +281,18 @@ app.whenReady().then(async () => {
     const top = window.__box.querySelector(".bt.rob > .rob-top"), b = top && top.querySelector("button.rob-go"), tbl = window.__box.querySelector(".rob-tbl");
     window.__sync(true); const busy = { dis: window.__lk(b), cap: (top.querySelector(".rob-cap") || {}).textContent, same: top.querySelector("button.rob-go") === b, tbl: window.__box.querySelector(".rob-tbl") === tbl };
     window.__sync(false); return { first: top.firstElementChild.classList.contains("bt-meta"), cls: b.className, txt: b.textContent, dis0: window.__lk(b), busy, after: [window.__lk(b), !!top.querySelector(".rob-cap"), b.isConnected, window.__box.querySelector(".rob-tbl") === tbl] }; })()`);
-  ok("② 結果頁(新鮮):頂列 = meta + 描邊鈕「重新掃描」;別的回合在跑 → 就地停用 + 一行忙碌說明(不重畫熱圖),結束解鎖",
-    r.first && r.cls === "btn-quiet rob-go" && r.txt === (await js(`t("rob.btnRescan")`)) && !r.dis0 && r.busy.dis && r.busy.cap === (await js(`t("rob.busy")`)) && r.busy.same && r.busy.tbl && JSON.stringify(r.after) === "[false,false,true,true]", JSON.stringify(r));
+  ok("② 結果頁(新鮮):頂列 = meta + 描邊鈕「重新掃描」;別的回合在跑 → 不鎖、沒有原因行(不重畫熱圖)",
+    r.first && r.cls === "btn-quiet rob-go" && r.txt === (await js(`t("rob.btnRescan")`)) && !r.dis0 && !r.busy.dis && !r.busy.cap && r.busy.same && r.busy.tbl && JSON.stringify(r.after) === "[false,false,true,true]", JSON.stringify(r));
   r = await js(`(async () => { window.__calls = []; window.__turn = 9; const b0 = window.__box.querySelector("button.rob-go"); b0.click();
     window.__sync(true); const mid = { dis: window.__lk(b0), card: !!window.__box.querySelector(".rob-card") };
-    await new Promise((r) => setTimeout(r, 30));
+    await new Promise((r) => setTimeout(r, 30)); window.__sync(true);
     const b = window.__box.querySelector("button.rob-go");
     const sentView = { calls: window.__calls, info: window.__info, cls: b.className, dis: window.__lk(b), txt: b.textContent, spin: !!b.querySelector(".spin16"), card: !!window.__box.querySelector(".rob-card"), heat: !!window.__box.querySelector(".rob-tbl"), meta: !!window.__box.querySelector(".rob-top .bt-meta") };
     window.__sync(false); const back = window.__box.querySelector("button.rob-go");
     return { mid, sentView, back: [back.className, back.disabled, !!window.__box.querySelector(".rob-card"), !!window.__box.querySelector(".rob-tbl")] }; })()`);
   ok("② 結果頁按「重新掃描」:onScan 帶 info(rescan、上次兩軸、現在的期間 / 費率)→ 送出成功只留 meta + 填色停用鈕(轉圈 +「已送出，看對話」),結論卡與熱圖收掉;回合結束沒新結果 → 舊結果回來",
     JSON.stringify(r.sentView.calls) === '[["s2","BUTTON"]]' && r.sentView.info.rescan === true && r.sentView.info.grid.rp === "A" && r.sentView.info.grid.r1 === "30" && r.sentView.info.now.fee === "0.05"
-    && r.mid.dis && r.mid.card && r.sentView.cls === "btn-out rob-go" && r.sentView.dis && r.sentView.spin && r.sentView.txt === (await js(`t("rob.btnSent")`)) && !r.sentView.card && !r.sentView.heat && r.sentView.meta
+    && !r.mid.dis && r.mid.card && r.sentView.cls === "btn-out rob-go" && r.sentView.dis && r.sentView.spin && r.sentView.txt === (await js(`t("rob.btnSent")`)) && !r.sentView.card && !r.sentView.heat && r.sentView.meta
     && JSON.stringify(r.back) === '["btn-quiet rob-go",false,true,true]', JSON.stringify(r));
 
   // 有 scan:目前參數在尖峰上(策略碼 A=10 / B=0.5)

@@ -1470,7 +1470,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .busy-fix::before { inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, -50%); }
 /* 熱區要落在原因句自己的盒子裡,不伸進上下鄰列(稽核 0127b1 P1-4:轉出的原因句〔停止〕壓到「進出場紀錄」分頁下緣;側欄的被鄰列擋掉 5px)。
    字的行盒 18、熱區 44:掛了補救鈕的原因句上下各留 13 內距。只在有補救鈕時留,沒有鈕的原因句照舊緊貼 */
-:is(.busy-why, .xp-note, .rp-ho-note, .rob-cap, .wf-cap, #lib-cta-note, #ver-banner-err, #ver-rerun-busy):has(> .busy-fix) { padding-top: 13px; padding-bottom: 13px; }
+:is(.busy-why, .xp-note, .rp-ho-note, #lib-cta-note, #ver-banner-err, #ver-rerun-busy):has(> .busy-fix) { padding-top: 13px; padding-bottom: 13px; }
 #cs-why { padding: 0 var(--space-12) var(--space-8); }
 #busy-cut-why { padding: 0 var(--space-16) var(--space-8); }
 #ws-up-why { text-align: right; margin-bottom: var(--space-6); }
@@ -1720,9 +1720,9 @@ html[data-platform="win32"] .flag-pop.sg-pick { width: calc(224px + var(--scroll
 /* 回合進行中「點了才講」的鈕(策略庫主鈕、報告「新增報告」;aria-disabled:鍵盤停得上去、點了才把原因寫在鈕下)長相同 :disabled、hover 不給回饋。
    只點名這兩處:datasrc / 下單啟動過場 / 群益開通的 aria-disabled 實心鈕各有自己的長相,不跟著變灰 */
 .btn-fill:disabled, .lib-cta .btn-fill[aria-disabled="true"], .btn-fill.is-lock { background: var(--surface-muted); color: var(--ink-3); border: 1px solid var(--color-greyMedium); cursor: not-allowed; opacity: 1; }
-.btn-out:disabled, #rpt-ask[aria-disabled="true"], .btn-out.is-lock { color: var(--ink-3); background: transparent; cursor: not-allowed; }
-/* 回合中的鎖(三個驗證分頁的鈕):長相同上,游標照 canon › Disabled ①。「已送出」是原生 disabled,.is-lock 只點名「被鎖」 */
-.lib-cta .btn-fill[aria-disabled="true"], .btn-fill.is-lock, .btn-out.is-lock { cursor: not-allowed; }
+.btn-out:disabled, #rpt-ask[aria-disabled="true"] { color: var(--ink-3); background: transparent; cursor: not-allowed; }
+/* 被鎖的主鈕:長相同上,游標照 canon › Disabled ① */
+.lib-cta .btn-fill[aria-disabled="true"], .btn-fill.is-lock { cursor: not-allowed; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 /* ── Windows 捲軸 ─────────────────────────────────

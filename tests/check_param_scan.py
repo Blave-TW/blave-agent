@@ -306,4 +306,56 @@ try:
 finally:
     plt.savefig = _orig_savefig
 
+# 兩個回合可能同時寫同一支的 scan.json:tmp 帶 pid,不互相覆蓋或搶 os.replace
+_replaced = []
+_orig_replace = os.replace
+os.replace = lambda a, b: (_replaced.append(a), _orig_replace(a, b))[1]
+try:
+    write_scan(grid, row_vals, col_vals, nbr_mean, best_idx, tempfile.mkdtemp(),
+                      row_param="ENTRY_TH", col_param="EXIT_TH", fee=0.0005,
+                      start="2024-01-01", end="2026-08-31", current=(0.8, 0.2))
+finally:
+    os.replace = _orig_replace
+check(any(x.endswith(f"scan.json.{os.getpid()}.tmp") for x in _replaced), "scan.json 的 tmp 檔名帶 pid")
+
+import time
+# 舊碼防線:scan.json 帶 code_hash;跑的期間 strategy.py 變了就不寫。裸 os.replace 換成 atomic_replace;孤兒 tmp 清掉
+import lib.param_scan as _ps
+from lib.strategy import code_hash as _code_hash
+_d = tempfile.mkdtemp()
+_src = os.path.join(_d, "strategy.py")
+with open(_src, "wb") as f:
+    f.write(b"A = 1\n")
+_scan_args = dict(row_param="ENTRY_TH", col_param="EXIT_TH", fee=0.0005, start="2024-01-01", end="2026-08-31", current=(0.8, 0.2))
+_ages = os.path.join(_d, "scan.json.111.tmp"), os.path.join(_d, "scan.json.222.tmp")
+for _p in _ages:
+    open(_p, "w").close()
+os.utime(_ages[0], (1, 1))
+_past = time.time() - 60
+os.utime(_src, (_past, _past))
+_used = []
+_orig_atomic = getattr(_ps, "atomic_replace", None)
+_ps.atomic_replace = lambda a, b: (_used.append(a), os.replace(a, b))[1]
+try:
+    _doc = json.load(open(write_scan(grid, row_vals, col_vals, nbr_mean, best_idx, _d, **_scan_args)))
+finally:
+    if _orig_atomic:
+        _ps.atomic_replace = _orig_atomic
+check(_doc.get("code_hash") == _code_hash(b"A = 1\n"), "scan.json 帶那份碼的 code_hash")
+check(bool(_used), "scan.json 走 atomic_replace(Windows 重試),不是裸 os.replace")
+check(not os.path.exists(_ages[0]) and os.path.exists(_ages[1]), "舊的孤兒 tmp 清掉,剛寫的(別的行程在用)留著")
+_d2 = tempfile.mkdtemp()
+_src2 = os.path.join(_d2, "strategy.py")
+open(_src2, "w").close()
+_future = time.time() + 60
+os.utime(_src2, (_future, _future))
+try:
+    write_scan(grid, row_vals, col_vals, nbr_mean, best_idx, _d2, **_scan_args)
+    _exited = False
+except SystemExit:
+    _exited = True
+check(_exited and not os.path.exists(os.path.join(_d2, "scan.json")), "跑的期間 strategy.py 變了:拒寫、不留 scan.json")
+_d3 = tempfile.mkdtemp()
+check("code_hash" not in json.load(open(write_scan(grid, row_vals, col_vals, nbr_mean, best_idx, _d3, **_scan_args))), "沒有 strategy.py:不帶 code_hash")
+
 print("all checks passed" if not fails else f"FAILED: {fails}"); sys.exit(1 if fails else 0)

@@ -262,7 +262,6 @@
 }
 .rob-top > .bt-meta { grid-column: 1; min-width: 0; min-height: 32px; align-content: center; }
 .rob-top .rob-go { grid-column: 2; display: inline-flex; align-items: center; gap: var(--space-8); white-space: nowrap; }
-.rob-top .rob-cap { grid-column: 1 / -1; text-align: right; }
 .rob-go.btn-quiet, .xt-upd > .btn-quiet { height: 32px; }
 .rob-go.btn-quiet::before, .xt-upd > .btn-quiet::before { inset: -6px -8px; }
 
@@ -284,9 +283,3 @@
   color: var(--ink-3);
 }
 .rob-empty > .btn-out { display: inline-flex; align-items: center; gap: var(--space-8); }
-.rob-cap {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--ink-3);
-}

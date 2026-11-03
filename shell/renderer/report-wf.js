@@ -7,7 +7,7 @@
  * 借 report-robust.js 的 _rob(同一套,不另抄)。這頁刻意沒有「採用」鈕、不出現任何 p 值(Wei 09-10 #10)。
  *
  * 這支**不依賴桌面版的全域**,環境全在 opts:`t` = i18n;`onRun(name, lookback, step, rerun, opener, begin)` = 送出(確認框按下時先叫 begin())
- * (回 Promise<turn|false>);`busy` / `turn` = 回合狀態(「已送出」只認送出那一輪);`scope` = 本機 / 雲端;
+ * (回 Promise<{sid, seq}|false>);`live(紀錄)` = 送出的那一輪還在不在跑(「已送出」只認那一輪);`scope` = 本機 / 雲端;
  * `gate` = 主機的 lib 帶不帶 walk_forward(true / false / null,false 才擋);`onUpdate(btn)` = 落後時那顆鈕;
  * `buildMeta(stats)` = 回測那一行 meta;`resync()` = 沒送出去時照現在的回合狀態重畫;`refocus()` = 重畫拿掉焦點時交給分頁鈕;
  * 雲端才用的:`refetch(name)` = 背景重抓雲端那一支(回 false = 人已經不在那一支)。回合結束另由呼叫端叫 `wfTurnEnded(turn, failed, { refetch })`;
@@ -105,7 +105,7 @@
     if (!excluded && runs) excluded = runs.filter((r) => r.trS !== null && r.trS <= 0).map((r) => r.k);
 
     const current = wfPairVals(raw.current);
-    // 過時 = 程式碼裡的兩個常數任一 ≠ wf.current(重用參數掃描那套讀法);讀不到常數 / 檔案沒有 current → 一律判為否
+    // 過時 = 程式碼裡的兩個常數任一 ≠ wf.current(重用參數掃描那套讀法);讀不到常數 / 檔案沒有 current → 這條判為否
     let stale = false, codeCur = null;
     // 單參數策略:第二軸只有一格、名字 "_"(references/lib.md › Single-constant)。過時判定只看第一個常數,第二軸整個不畫
     const single = !!(cols && cols.length === 1 && colParam === "_");
@@ -117,6 +117,7 @@
       }
     }
 
+    if (raw.code_stale === true) stale = true;   // 不是現在這份碼跑的(主行程比 code_hash)
     const nRuns = wfPosInt(raw.n_runs, WF_MAX_RUNS) || (runs ? runs.length : null);
     const tail = Number.isInteger(raw.tail_days) && raw.tail_days >= 0 && raw.tail_days <= WF_MAX_DAYS ? raw.tail_days : null;
     return {
@@ -615,12 +616,14 @@
    * 留著的期間每 WF_CLOUD_REFETCH_MS 叫一次 opts.refetch(送出那一支的名字)(背景重抓雲端那一份,抓到不同才換) */
   const WF_CLOUD_HOLD_MS = 5 * 60 * 1000, WF_CLOUD_REFETCH_MS = 30 * 1000;
   const nowOf = (opts) => (typeof opts.now === "function" ? opts.now() : Date.now());
+  // 認送出的那一輪(呼叫端用 sid + 輪次判):別條開跑不算,同一條接著聊的下一輪也不算
+  const turnLive = (s, opts) => typeof opts.live === "function" && opts.live(s);
   // 純函式(tests/check_shell_wf.js 直接跑):這一份現在是不是「已送出」。會在 s 上記 done(到上限時)
   // done = 已經因為失敗或上限退回過:之後時間怎麼算,都不再變回已送出
   function sentNow(s, sig, opts, now) {
     if (!s || s.done || s.sig !== sig) return false;
-    if (s.pending) return !!opts.busy;
-    if (opts.busy && s.turn === opts.turn) return true;   // 送出的那一回合還在跑
+    if (s.pending) return true;
+    if (turnLive(s, opts)) return true;   // 送出的那一回合還在跑
     if (opts.scope !== "cloud") return false;              // 本機:回合結束就回來(wf.json 已經落地)
     if (s.endAt == null) s.endAt = now;                    // 兜底:呼叫端沒報回合結束(wfTurnEnded)時,第一次看到它結束就算
     if (now - s.endAt < WF_CLOUD_HOLD_MS) return true;
@@ -630,7 +633,7 @@
   }
   // 還在「等雲端結果」的那一段:剩幾毫秒到上限;不在那一段 → null
   function holdLeft(s, opts, now) {
-    if (!s || s.done || s.pending || s.endAt == null || opts.scope !== "cloud" || (opts.busy && s.turn === opts.turn)) return null;
+    if (!s || s.done || s.pending || s.endAt == null || opts.scope !== "cloud" || turnLive(s, opts)) return null;
     const left = WF_CLOUD_HOLD_MS - (now - s.endAt);
     return left > 0 ? left : null;
   }
@@ -644,7 +647,7 @@
     const s = sent.get(sentKey(opts, data.name));
     // 送出的那一回合還在跑:不抓。wf.json 在回合結束才寫,這時抓不到新結果;agent 若在回合裡先重跑回測,抓回來的明確回測會讓簽章對不上、
     // 「已送出」提早退掉而把舊結果當這次的(0.1.11 code 稽核 P2-1)。回合結束有 wfTurnEnded / rpCloudSelect 那一次抓
-    if (!s || s.pending || (opts.busy && s.turn === opts.turn)) return false;
+    if (!s || s.pending || turnLive(s, opts)) return false;
     return s.sig === sentSig(data) && (!s.done || !!s.timedOut);
   }
   // 等雲端結果那一段的兩個計時:到上限叫 resync(畫回舊結果)、期間定時 refetch。換了一筆紀錄 / 不在那一段就收掉
@@ -677,7 +680,7 @@
 
   /* 旋鈕組(空狀態與頂端重跑列共用):預填 / 即時估算 / 輪數 < 3 或 > 1000 擋下 / 已送出兩個 input 一起 disabled。
    * 重跑列(rerun):box 就是 .wf-bar,不帶時間軸;空狀態:box 是 display:contents 的 .wf-kbox,旋鈕與估算之間夾迷你時間軸。
-   * 回合進行中(別的回合)鈕停用 + 一行說明(同參數掃描空狀態);就地換,不重建——打到一半的窗長不會被洗掉 */
+   * 回合中不鎖(別條在跑照送,另開分頁) */
   function buildKnobs(container, data, stats, w, opts, rerun) {
     const t = opts.t, total = wfTotalDays(stats, w), snt = isSent(data, opts), rec = sent.get(sentKey(opts, data.name));
     const init = snt ? rec : w ? { lookback: w.lookback, step: w.step } : wfPreset(total);
@@ -704,7 +707,6 @@
     const behind = opts.gate === false;
     const btn = el("button", rob().valBtn({ behind, sent: snt, empty: !rerun, stale: !!(w && w.stale) }).cls + " wf-go", rerun ? t("wf.btnRerun") : t("wf.btnRun"));
     btn.type = "button";
-    let busyCap = null, busyNow = false, inited = false;
     if (behind) {
       // 只剩重跑區會走到這裡(空狀態的落後態不建旋鈕):一行說明 + 鈕換成立即更新
       box.appendChild(el("p", "wf-est is-bad", t("wf.behind")));
@@ -727,17 +729,13 @@
     }
     setWait(holdLeft(rec, opts, nowOf(opts)) !== null);
     const read = () => ({ lookback: parseInt(iLb.value, 10) || 0, step: parseInt(iSt.value, 10) || 0 });
-    // 拿著焦點的鈕要停用(別的回合開了、送不出去):先把焦點交給分頁鈕,不讓它掉到 <body>(設計複稽核 R2)
-    // 回合中(且不是已送出)是鎖:aria-disabled、焦點留得住,原因句常駐＋〔停止〕(busy-lock spec §8);其他原因照舊原生 disabled
+    // 拿著焦點的鈕要停用:先把焦點交給分頁鈕,不讓它掉到 <body>(設計複稽核 R2)
     const setDis = (v) => {
-      if (busyNow) { btn.disabled = false; btn.setAttribute("aria-disabled", "true"); return; }
-      btn.removeAttribute("aria-disabled");
       if (v && !btn.disabled && document.activeElement === btn && typeof opts.refocus === "function") opts.refocus();
       btn.disabled = v;
     };
-    const capFill = () => { busyCap.textContent = t("rob.busy"); busyCap.hidden = false; if (typeof opts.busyFix === "function") opts.busyFix(busyCap); };   // 被別處的新句收起來過也放回來
     function recalc() {
-      const locked = behind ? false : snt || busyNow;   // 輪數估算不得解鎖這兩態的鈕
+      const locked = behind ? false : snt;   // 輪數估算不得解鎖已送出的鈕
       const v = read();
       // 回測的起訖日讀不出來就估不了輪數:估算行留白、鈕照樣可按(擋下的判準是「算得出來而且不夠」)
       if (!total) {
@@ -759,22 +757,11 @@
       est.appendChild(fillTpl(t("wf.estRuns"), { n }));
       if (!behind) setDis(locked);
     }
-    function setBusy(busy) {
-      const next = !!busy && !snt && !behind;
-      if (inited && next === busyNow) return;   // 雲端輪詢每 15 秒叫一次:狀態沒變就不重算(時間軸五列不必重建)
-      inited = true;
-      busyNow = next;
-      btn.classList.toggle("is-lock", busyNow);
-      if (busyNow && !busyCap) { busyCap = el("p", "wf-cap"); busyCap.setAttribute("role", "status"); capFill(); box.appendChild(busyCap); }
-      else if (!busyNow && busyCap) { busyCap.remove(); busyCap = null; }
-      recalc();
-    }
-    // 鈕放在組裡最後、忙碌說明再接在鈕後面(兩種模式同一個順序;空狀態的 box 是 display:contents,鈕照樣是 .wf-empty 的直向項目)
+    // 鈕放在組裡最後(兩種模式同一個順序;空狀態的 box 是 display:contents,鈕照樣是 .wf-empty 的直向項目)
     box.appendChild(btn);
     iLb.addEventListener("input", recalc);
     iSt.addEventListener("input", recalc);
     btn.addEventListener("click", () => {
-      if (btn.getAttribute("aria-disabled") === "true") { if (busyCap) capFill(); return; }
       if (behind) { if (typeof opts.onUpdate === "function") opts.onUpdate(btn); return; }
       const v = read();   // 送出時再驗一次
       const nn = total ? wfRunsOf(total, v.lookback, v.step) : null;
@@ -783,23 +770,23 @@
       const sig = sentSig(data), key = sentKey(opts, data.name);
       // begin:呼叫端在確認框按下、送出之前叫——送出那一刻回合一開(running)就認得是自己送的
       const begin = () => sent.set(key, { sig, turn: null, pending: true, lookback: v.lookback, step: v.step });
-      Promise.resolve(opts.onRun(data.name, v.lookback, v.step, rerun, btn, begin)).catch(() => false).then((turn) => {
-        if (!turn && turn !== 0) {
-          // 沒送出去(別的回合剛好開了等):收掉 pending,照現在的回合狀態重畫(忙碌就是停用 + 那一行說明)
+      Promise.resolve(opts.onRun(data.name, v.lookback, v.step, rerun, btn, begin)).catch(() => false).then((at) => {
+        if (!at) {
+          // 沒送出去:收掉 pending,重畫回原本的鈕
           const cur = sent.get(key);
           if (cur && cur.pending) { sent.delete(key); if (typeof opts.resync === "function") opts.resync(); }
-          // 確認框收起時把焦點還給 opener,那時它可能已經被停用(別的回合先開了)→ 焦點落在 body:交給分頁鈕(R2)
+          // 確認框收起時把焦點還給 opener,那時它可能已經被停用 → 焦點落在 body:交給分頁鈕(R2)
           if (document.activeElement === document.body && typeof opts.refocus === "function") opts.refocus();
           return;
         }
-        sent.set(key, { sig, turn, name: data.name, lookback: v.lookback, step: v.step });
+        sent.set(key, { sig, sid: at.sid, turn: at.seq, name: data.name, lookback: v.lookback, step: v.step });
         // 送出成功 = 那一回合已開:整片重畫成「已送出」(舊結果拿掉、環在鈕裡)
         const st = shown.get(container);
-        if (st && st.data === data) renderWf(container, data, { ...opts, busy: true, turn });
+        if (st && st.data === data) renderWf(container, data, opts);
       });
     });
-    setBusy(opts.busy);
-    return { box, btn, setBusy, setWait };
+    recalc();
+    return { box, btn, setWait };
   }
 
   // 空狀態:落後的機器 = 一句話 + 立即更新,旋鈕與估算對它全是死的 UI;能跑的機器 = 兩個旋鈕 + 迷你時間軸 + 共 N 輪 + 開始驗證
@@ -895,7 +882,6 @@
     if (isSent(st.data, opts) !== st.sent || (opts.gate === false) !== (st.gate === false)) { renderWf(container, st.data, opts); return; }
     holdArm(container, st, opts);   // 回合剛結束、雲端結果還沒到:畫面不動(舊結果不閃回來),只把上限與重抓的計時掛上
     if (st.sent && st.knobs && st.knobs.setWait) st.knobs.setWait(holdLeft(sent.get(sentKey(opts, st.data.name)), opts, nowOf(opts)) !== null);   // 鈕上的字就地換成「結果傳回中」(A1)
-    if (st.knobs && st.knobs.btn.isConnected) st.knobs.setBusy(opts.busy);
   }
 
   window.BlaveReport = window.BlaveReport || {};

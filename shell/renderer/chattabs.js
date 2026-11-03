@@ -50,6 +50,7 @@ const TAB_KEYS = [
   ["turnAiBubbles", () => turnAiBubbles, (v) => { turnAiBubbles = v; }, () => []],
   ["turnFaultEl", () => turnFaultEl, (v) => { turnFaultEl = v; }, () => null],
   ["turnSeqMine", () => turnSeqMine, (v) => { turnSeqMine = v; }, () => 0],
+  ["turnViewCloud", () => turnViewCloud, (v) => { turnViewCloud = v; }, () => false],
   ["UPD.turnCloud", () => UPD.turnCloud, (v) => { UPD.turnCloud = v; }, () => false],
   ["SUG", () => SUG, (v) => { SUG = v; }, () => ({ pending: null, timer: null, text: null, kind: null, shownOnce: false, used: false, gone: false, files: 0, filledText: null, inflight: null, direct: false, shownAt: 0, undoable: null })],
   ["FORM", () => FORM, (v) => { FORM = v; }, () => ({ pending: null, live: null, filled: null, shown: false, inflight: null })],
@@ -135,7 +136,7 @@ function csTurnCount() { let n = 0; for (const T of CS.tabs.values()) if ((T ===
 /* 共用畫面照「眼前分頁＋任何回合」重畫一次。只重畫、不搬焦點、不播報、不記埋點(withTab 換回時會叫) */
 function turnUiSync() {
   if (CS.bg) { CS.dirtyUi = true; return; }
-  sendBtnSync(); stratDelSync(); busySync(); hoBusy(); if (typeof verBusy === "function") verBusy(); if (typeof perfBusy === "function") perfBusy();
+  sendBtnSync(); stratDelSync(); busySync(); hoBusy(); if (typeof verBusy === "function") verBusy();
   upPaint(); rpRobSync(); rpWfSync(); if (typeof libSync === "function") libSync(); if (typeof rptSync === "function") rptSync(); if (typeof nsSync === "function") nsSync(); if (typeof wcBusySync === "function") wcBusySync();
   if (typeof xpSync === "function") xpSync();
   if (typeof tabsPaint === "function") tabsPaint();
@@ -143,6 +144,31 @@ function turnUiSync() {
 
 const csTabRunning = (sid) => { const T = CS.tabs.get(sid); return T ? (T === CS.loaded ? running : T.st.running) === true : !!CS.main.get(sid); };
 const tabRun = (T) => (T === CS.loaded ? running : T.st.running) === true;
+const tabVal = (T, loaded, key) => (T === CS.loaded ? loaded : T.st[key]);
+/* 送出的那一輪還在不在跑。sid 之外還要比輪次:同一條接著聊的下一輪不是它,turnSeq 是全 app 的,別條開跑也不是它 */
+function csTurnLive(sid, seq) { const T = CS.tabs.get(sid); return !!T && tabRun(T) && tabVal(T, turnSeqMine, "turnSeqMine") === seq; }
+/* 對著雲端的回合(回傳那一條的 sid,沒有 = null):更新雲端主機只跟它們衝突,本機回合不相干。
+   送出時看著雲端、這一輪碰過雲端、更新那一輪自己;手機來的與沒開成分頁的看不出對著哪邊,一律算 */
+function csCloudTurn() {
+  for (const T of CS.tabs.values()) if (tabRun(T) && (tabVal(T, turnViewCloud, "turnViewCloud") === true || tabVal(T, UPD.turnCloud, "UPD.turnCloud") === true || UPD.cloudSid === T.sid)) return T.sid;
+  for (const [sid, ph] of CS.main) if (ph && !CS.tabs.has(sid)) return sid;
+  return null;
+}
+/* 碰這一支策略的回合(回傳那一條的 sid,沒有 = null):還原、再跑一次只跟它們衝突。判準 = 送出時看著的那支 ∪ 這一輪工具已碰過的,不分本機雲端;
+   agent 之後才碰的算不到(Wei 11-03 接受)。看不出碰什麼的(手機來的、沒開成分頁的、收尾中已沒有紀錄的、工具認不出對象的 rt.opaque)一律算 */
+function csStratTurn(name) {
+  for (const T of CS.tabs.values()) {
+    if (!tabRun(T)) continue;
+    const rt = tabVal(T, RES.turn, "RES.turn");
+    if (!rt || rt.opaque || rt.viewStrat === name || rt.touched.has(name)) return T.sid;
+  }
+  for (const [sid, ph] of CS.main) if (ph && !CS.tabs.has(sid)) return sid;
+  return null;
+}
+/* 同一支的同一件事還在跑就不送第二條(送上雲端、轉出:回合中不上鎖,連按會開兩條分頁做同一件事) */
+const CS_ONCE = new Map();   // key → CS.away
+function csOnceLive(key) { const a = CS_ONCE.get(key); if (a && csTurnLive(a.sid, a.seq)) return a; CS_ONCE.delete(key); return null; }
+function csOnceMark(key) { CS_ONCE.set(key, CS.away); }
 
 /* 從別處送一句話(策略頁的掃描／重跑／還原、策略庫〔使用〕、報告〔問〕、歡迎頁的籤、送上雲端…;spec §3 sendAway):
    眼前分頁閒著而且還沒講過話 → 送進這裡;其他情況開新分頁送,直接跑。兩件事不混在同一串脈絡裡 */
@@ -158,7 +184,13 @@ function csSendAway(msg, opts) {
 
 function csStopOne(sid) { const T = CS.tabs.get(sid); if (T && tabRun(T)) withTab(T, () => { stopTurn(); }); else window.blave.stopTurn(sid); }
 function csStopAll() { for (const T of [...CS.tabs.values()]) if (tabRun(T)) withTab(T, () => { stopTurn(); }); }
-function csShowRunning() { if (running) return; const T = [...CS.tabs.values()].find((x) => tabRun(x) && !x.closed); if (T) tabShow(T); }
+// 只剩關掉但還在跑的、或沒開成分頁的那條也要帶得到:csOpen 會把它接回分頁列
+function csShowRunning() {
+  if (running) return;
+  const tabs = [...CS.tabs.values()], T = tabs.find((x) => tabRun(x) && !x.closed) || tabs.find((x) => tabRun(x));
+  if (T) { if (T.closed) csOpen(T.sid); else tabShow(T); return; }
+  for (const [sid, ph] of CS.main) if (ph) { csOpen(sid); return; }
+}
 
 /* ── 事件路由:照 c.sid 找分頁 ── */
 function tabsOf(sid) { return sid ? CS.tabs.get(sid) || null : CS.cur; }
@@ -172,7 +204,7 @@ function tabsOnEvent(c) {
     // 不是這個畫面送出的那一輪(手機來的、開成分頁的):這裡才知道它在跑——記成回合中,機器層級的鎖與分頁的「回覆中」才看得到
     // 這一輪的那句不在電腦上:停掉它時不把上一輪電腦前打的字塞回輸入框,錯誤卡也不出〔再送一次〕(會送出上一輪電腦前那句;
     // 改送手機那句也不行——手機那邊可能已經自己重送,同一句下單會跑兩次)
-    withTab(T, () => { if (!running) { running = true; turnSeq++; turnSeqMine = turnSeq; turnFresh(null); lastUserTyped = false; lastUserText = ""; lastUserAttachments = []; } busyStart(); });
+    withTab(T, () => { if (!running) { running = true; turnSeq++; turnSeqMine = turnSeq; turnFresh(null); lastUserTyped = false; lastUserText = ""; lastUserAttachments = []; turnViewCloud = true; } busyStart(); });
     tabsPaint(); return;
   }
   if (c.type === "browser_wait") { withTab(T, () => { busySet(t("tabs.brWait"), "", "wait"); if (ACT) ACT.shown = "browser_wait|"; }); return; }

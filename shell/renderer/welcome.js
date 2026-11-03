@@ -304,17 +304,17 @@ function wcCard(s, first) {
 /* 「安裝並回測 →」:不是一鍵,走策略庫同一個確認框(libAsk from welcome)。先擋回合中與代下載中——別支在代下載時這張的 libCtaOf 仍是 free,
    不先擋的話 libAsk 會靜默 return、畫面沒反應。狀態不是 free(例如剛登出)只開詳情,閘門與原因句由詳情講 */
 function wcUse(s, a) {
-  if (LIB.pending) { busySendTell(); return; }   // 代下載中(另一支):回合中不再擋,另開分頁送
+  if (libPendingBlocks(s)) { busySendTell(); return; }   // 同一支還在裝、或雲端已有一支在裝(一次一支);本機別支照裝
   if (libCtaOf(s).state !== "free") { wcDetail(s); return; }
   libAsk(s, a, { from: "welcome" });
 }
 // 回合鎖與代下載鎖(app.js 送出／解鎖那三排、library.js libSync):就地換,不重建卡。正在裝的那支換成「安裝與回測中…」;名字按鈕不鎖
 function wcBusySync() {
   const box = $("wc-cards"); if (!box || box.hidden) return;
-  const busy = !!LIB.pending, pid = LIB.pending && LIB.pending.env === onbEnv() ? String(LIB.pending.id) : null;
+  const env = onbEnv(), mineIds = new Set([...LIB.pending.values()].filter((p) => p.env === env).map((p) => String(p.id))), lockAll = env === "cloud" && mineIds.size > 0;   // 雲端一次一支;本機只鎖正在裝的那張
   box.querySelectorAll(".wc-card:not(.is-skel) .ln-arrow").forEach((a) => {
-    const mine = a.dataset.id === pid, tx = a.querySelector(".lbl"), want = t(mine ? "lib.pending" : "lib.use");
-    busyLock(a, busy);
+    const mine = mineIds.has(a.dataset.id), tx = a.querySelector(".lbl"), want = t(mine ? "lib.pending" : "lib.use");
+    busyLock(a, mine || lockAll);
     if (tx.textContent !== want) tx.textContent = want;
     a.querySelector(".ar").hidden = mine;
   });

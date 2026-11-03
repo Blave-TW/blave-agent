@@ -188,19 +188,20 @@ function verPaintErr(S) {
   const txt = verEl("span");
   t(S.err.key).split("{v}").forEach((p, i) => { if (i) txt.appendChild(verEl("span", "mono", "v" + S.err.v)); if (p) txt.append(p); });
   el.append(m, txt); el.hidden = false;
-  if (S.err.key === "busy.restore") busyFixLink(el, "view");
+  if (S.err.key === "busy.restore") { if (S.err.sid) el.dataset.sid = S.err.sid; else delete el.dataset.sid; busyFixLink(el, "view"); }
 }
 // 點到 aria-disabled 的「再跑一次」(回合進行中):原因寫進那一列的原因行＋「查看」(busy.js),同回滾原因行的 recipe;回合結束(verBusy)就收掉
 function verBusyNote(el) {
   if (!el) return;
   el.textContent = "";
+  const sid = verTurnOf(rpBag()); if (sid) el.dataset.sid = sid; else delete el.dataset.sid;   // 〔查看〕帶去擋路那條
   const m = verEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
   el.append(m, verEl("span", "", t("busy.rerun"))); busyFixLink(el, "view"); el.hidden = false;
   busyHit("rerun");
 }
-// 回合進行中:「還原成這一版」「再跑一次」是 aria-disabled(同頁首 #rp-ho:鍵盤停得上去、讀屏唸得到原因)。app.js 在上鎖 / 解鎖的同一處叫它
+// 有回合碰這一支:「還原成這一版」「再跑一次」是 aria-disabled(同頁首 #rp-ho:鍵盤停得上去、讀屏唸得到原因)。回合開始／結束、畫這一支、回合碰到新策略時叫它
 function verBusy() {
-  const busy = csAnyTurn();   // 機器層級:還原／再跑一次會改策略檔,任何分頁有回合都擋(spec chat-tabs §3)
+  const busy = !!verTurnOf(rpBag());   // 只鎖同一支(Wei 11-03,判準見 chattabs.js);刪策略另外維持全機鎖
   if (!busy) {
     const nb = $("ver-rerun-busy"); if (nb) nb.hidden = true;
     const S = VS[verSideOf(rpBag())];
@@ -437,9 +438,16 @@ function verNeedUpdate(side, B, n, opener) {
   confirmBox({ title: t("ver.rsTitle", { v: "v" + n }), lines: [t("ver.needUpdate")], ok: t("minv.btn"), opener: opener || c.opener, env: c.env, footWhere: c.footWhere,
     onOk: () => setOpen().then(() => { setCat("display"); const b = $("set-upc-btn"); if (b && !b.hidden) b.focus(); }) });
 }
+// 擋還原／再跑一次的那一條。雲端那袋多算所有對著雲端的回合:SSH 指令的摘要最認不準
+function verTurnOf(B) { return csStratTurn(B.name) || (B === RPC ? csCloudTurn() : null); }
+function verRestoreLocked(S, B, v) {
+  const sid = verTurnOf(B); if (!sid) return false;
+  S.err = { key: "busy.restore", v, sid }; verPaintErr(S);
+  return true;
+}
 function verRestoreAsk() {
   const B = rpBag(), side = verSideOf(B), S = VS[side];
-  if (!S.data || S.open === null || csAnyTurn()) return;
+  if (!S.data || S.open === null || verTurnOf(B)) return;
   const n = S.open, cur = S.data.current;
   S.err = null; verPaintErr(S);
   const amt = verAmount(side, B);
@@ -449,13 +457,13 @@ function verRestoreAsk() {
   // 沒回測過的修改會先另存:事前不知道檔案有沒有被改過,所以每次都講(Wei 拍板 Q1)
   confirmBox({ title: t("ver.rsTitle", { v: "v" + n }), lines: [t("ver.rsB1", { v: "v" + n }), t("ver.rsB2", { v: "v" + n, cur: "v" + cur })],
     extra: verEl("p", "cf-note", t("ver.rsNote")), ok: t("ver.rsOk"), opener: c.opener, env: c.env, footWhere: c.footWhere,
-    onOk: () => verDoRestore(side, B.name, n, cur, false) });
+    onOk: () => { if (verRestoreLocked(S, B, n)) return; verDoRestore(side, B.name, n, cur, false); } });   // 框開著的期間回合可能碰到這支
 }
 // 「再跑一次」(沒完成時):同一條指令、同一個 {name, n};按下當下切回重跑中。不記埋點(spec §11)。回 true = 指令送出了
 // 雲端主機的 lib 太舊 → 同還原那一條出更新框、不送(主機換回舊 lib 時,留著的 rerun.json 還會畫出這顆鈕)
 function verRetry() {
   const B = rpBag(), side = verSideOf(B), S = VS[side], pd = S.data && S.open === null && VER ? VER.pending(S.data) : null;
-  if (!pd || pd.status !== "failed" || csAnyTurn()) return false;
+  if (!pd || pd.status !== "failed" || verTurnOf(B)) return false;
   S.rerr = null;
   if (side === "cloud" && !VER.canRestoreInPlace(S.data)) { verPaintRerun(S, pd); verNeedUpdate(side, B, pd.n, $("ver-retry")); return false; }
   const raw = B.data && B.data.versions, rr = raw && raw.rerun;
@@ -596,7 +604,7 @@ async function verPollTick(side, P) {
 $("ver-back").addEventListener("click", verBack);
 $("ver-restore").addEventListener("click", () => {
   if ($("ver-restore").getAttribute("aria-disabled") !== "true") { verRestoreAsk(); return; }
-  const S = VS[verSideOf(rpBag())]; S.err = { key: "busy.restore", v: S.open }; verPaintErr(S);   // 設計稽核 S8;硬鎖(Wei 10-17)
+  const S = VS[verSideOf(rpBag())]; S.err = { key: "busy.restore", v: S.open, sid: verTurnOf(rpBag()) }; verPaintErr(S);   // 設計稽核 S8;只鎖同一支(Wei 11-03)
   busyHit("restore");
 });
 

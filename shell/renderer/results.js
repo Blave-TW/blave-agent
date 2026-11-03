@@ -154,17 +154,27 @@ function resFmt() {
 // submitMessage:記下回合開始與本機策略快照(當下重讀一次,不拿上一輪結束時的清單——那之後 live tick / 刪除都可能動過)
 function resTurnStart(viewing, noBt) {
   const rt = { sid: sessionId, at: Date.now(), ts: 0, env: viewing && viewing.env === "cloud" ? "cloud" : "local", snap: null, cloudSnap: resCloudSnap(), noBt: noBt === true,
-    items: [], host: null, anchor: null, cloud: false, ready: null, go: null, touched: new Set(), overlap: false };
+    items: [], host: null, anchor: null, cloud: false, ready: null, go: null, touched: new Set(), overlap: false, viewStrat: viewing && viewing.strategy ? viewing.strategy : null };
   rt.ready = new Promise((r) => { rt.go = r; });
   rt.snapP = window.blave.listStrategies().then((l) => { rt.snap = resSnapOf(l); }, () => { rt.snap = resSnapOf(RP.list); });
   RES.turn = rt;
 }
 /* 這一輪的 tool chunk 碰過哪幾支(摘要／受詞裡的 strategies/<name>/)。多條對話同時跑時,回合結束的清單差異會包含別條做的事:
    那時只認這一輪自己碰過的(spec 技術方案 §1.2 結果卡會認錯輪);只有這一條在跑時照舊看整份差異(工具摘要不一定帶路徑) */
-const RES_STRAT_PATH = /strategies\/([A-Za-z0-9_-]{1,64})\//g;
+const RES_STRAT_PATH = /(?<![A-Za-z0-9_-])strategies[\\/]([A-Za-z0-9_-]{1,64})(?=[\\/"'\s]|$)/g;   // Windows 反斜線、`cd strategies/x` 的路徑尾
+const RES_KIND_STRAT = new Set(["strategy_write", "strategy_read", "backtest", "live_tick", "scan", "validate"]);   // 這些 kind 的 kind_obj 是資料夾名(runtime _tool_kind;scan／validate 可能空著)
+// 確定不碰策略資料夾的 kind(strategies/ 底下的讀寫 runtime 會判成 strategy_*)。其餘認不出碰哪支的一律當碰過(opaque):寧可多鎖,放過已經碰的會讓還原蓋掉進行中的修改
+const RES_KIND_SAFE = new Set(["silent", "search", "web_read", "web_read_many", "web_act", "docs", "files", "file_read", "file_write", "cloud"]);
 function resTurnTool(c) {
   const rt = RES.turn; if (!rt || !c || c.type !== "tool") return;
-  for (const s of [c.summary, c.kind_obj]) if (typeof s === "string") for (const m of s.matchAll(RES_STRAT_PATH)) rt.touched.add(m[1]);
+  const seen = [], obj = typeof c.kind_obj === "string" ? c.kind_obj : "";
+  for (const s of [c.summary, c.kind_obj]) if (typeof s === "string") for (const m of s.matchAll(RES_STRAT_PATH)) seen.push(m[1]);
+  // kind_obj 超長被截成「…」就不是完整名字(runtime KIND_OBJ_MAX)
+  if (RES_KIND_STRAT.has(c.kind) && obj && !obj.endsWith("…")) seen.push(obj);
+  let changed = false;
+  for (const n of seen) if (!rt.touched.has(n)) { rt.touched.add(n); changed = true; }
+  if (!seen.length && !RES_KIND_SAFE.has(c.kind) && !rt.opaque) { rt.opaque = true; changed = true; }
+  if (changed && typeof verBusy === "function") verBusy();   // 回合中才碰到眼前這支:還原鈕當場鎖
 }
 function resTurnOverlap() { const rt = RES.turn; if (rt) rt.overlap = true; }
 function resTurnClose() { const rt = RES.turn; RES.turn = null; if (rt) rt.ts = Date.now() / 1000; return rt; }
