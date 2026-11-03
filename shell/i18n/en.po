@@ -9225,7 +9225,7 @@ msgid "mg.applyWhyUnread"
 msgstr "Can’t read the amounts; apply once it updates"
 
 msgid "sz.noVol"
-msgstr "No positions in the last 90 days, so target volatility isn’t available"
+msgstr "No volatility data in the last 90 days, so target volatility is off"
 
 msgid "mg.why.alloc"
 msgstr "Change Allocation"
@@ -9246,7 +9246,7 @@ msgid "mg.why.shortMdd"
 msgstr "Under 90 days of shared data, so max drawdown isn’t available; change the method"
 
 msgid "mg.why.noVol"
-msgstr "No positions in the last 90 days, so target volatility isn’t available; change the method"
+msgstr "No volatility data in the last 90 days, so target volatility is off; change the method"
 
 msgid "mg.why.rerun"
 msgstr "Rerun the optimization"

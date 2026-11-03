@@ -1162,6 +1162,7 @@ let psPromise = null, loginPromise = null;
       if (!sent || !link) bad.push(L + " 缺 " + sk); else if (APPEND.indexOf(k) < 0 && sent.indexOf(link) < 0) bad.push(L + " " + k + " 句中沒有連結字「" + link + "」"); });
       if (CAT.zh[sk] && CAT.zh[sk].replace(/\s/g, "").replace(/[A-Za-z]+|\d+|\{\w+\}/g, "N").length > 25) bad.push("zh 超過 25 字 " + sk); });
     ok("原因連結表 " + Object.keys(FIX).length + " 條,兩語連結字都在句中、中文句 ≤25 字", Object.keys(FIX).length === 14 && !bad.length, bad.join(";")); }
+  ok("Wei 定字:sz.noVol 兩語;鈕下那句同字接連結", CAT.zh["sz.noVol"] === "近 90 天沒有波動資料，不能用目標波動" && CAT.en["sz.noVol"] === "No volatility data in the last 90 days, so target volatility is off" && CAT.en["mg.why.noVol"] === CAT.en["sz.noVol"] + "; " + CAT.en["mg.why.changeMethod"]);
   ["mg.applyDiffSetN", "mg.applyWhyUnread", "sz.noVol", "mg.why.pickTitle"].forEach((k) => { if (!CAT.zh[k] || !CAT.en[k] || CAT.zh[k].length > 25) ok("字串 " + k, false); });
   ok("工具列三句(缺方法／方法不見／缺參數)兩語都含〔方法〕連結字", ["mg.needAlloc", "mg.allocGone", "mg.needParams"].every((k) => ["zh", "en"].every((L) => CAT[L][k].indexOf(CAT[L]["mg.why.tbMethod"]) >= 0)));
   // 每一條帶去哪:點了走對的函式、送 mg_why_fix;整句是連結時沒有前段
@@ -1225,13 +1226,13 @@ let psPromise = null, loginPromise = null;
   { const render = (prop, draftM) => { const body = mkEl("div"), c = vm.createContext({ mgsDraft: { method: draftM, t: { vol: "", mdd: "", lev: "" }, fund: "", fundCcy: "USDT", fundCcys: ["USDT"] }, $: () => body, trEl: (g, cl, x) => mkEl(g, cl, x), document: { createElement: (g) => mkEl(g) }, t: (k) => k, mpsProp: () => prop, mgSizeField: () => mkEl("div"), mgSizePreview: () => {}, MPS_METHODS: ["vol", "mdd", "lev"], mpsNoSeriesKey: () => "sz.shortMdd", mpsSeriesOf: (p) => p.s || null, mpsHistVolOf: F.mpsHistVolOf });
       vm.runInContext(cut("mpsVolIsZero", "mpsNoVolKey", "mgSizeRender") + "\nmgSizeRender();", c); const mf = body.kids[1], seg = mf.kids[1]; return { btn: Object.fromEntries(seg.kids.map((b) => [b.dataset.m, b])), notes: mf.kids.slice(2).filter((n) => !n.hidden).map((n) => n.textContent), d: c.mgsDraft }; };
     const zero = render({ ann_vol_pct: 0, s: [1, 2] }, "vol"), fine = render({ ann_vol_pct: 12, s: [1, 2] }, "vol"), oldP = render({ s: [1, 2] }, null), both = render({ ann_vol_pct: 0 }, null);
-    ok("波動 0:目標波動停用,原因常駐講近 90 天沒持倉;已選的方法不被換掉", zero.btn.vol.disabled === true && zero.btn.lev.disabled === false && zero.notes.join() === "sz.noVol" && zero.d.method === "vol" && zero.btn.vol.attrs["aria-checked"] === "true", J(zero.notes));
+    ok("波動 0:目標波動停用,原因常駐講近 90 天沒波動資料;已選的方法不被換掉", zero.btn.vol.disabled === true && zero.btn.lev.disabled === false && zero.notes.join() === "sz.noVol" && zero.d.method === "vol" && zero.btn.vol.attrs["aria-checked"] === "true", J(zero.notes));
     ok("算得出波動:不停用、不多一句", fine.btn.vol.disabled === false && fine.notes.length === 0, J(fine.notes));
-    ok("舊提案沒有波動欄位:一樣停用,但不能講成沒持倉;兩顆都不能用時兩句都在", oldP.btn.vol.disabled === true && oldP.notes.join() === "mg.sizeNoHist" && both.btn.mdd.disabled === true && both.notes.join() === "sz.shortMdd,sz.noVol", J([oldP.notes, both.notes]));
+    ok("舊提案沒有波動欄位:一樣停用,但不能講成沒波動資料;兩顆都不能用時兩句都在", oldP.btn.vol.disabled === true && oldP.notes.join() === "mg.sizeNoHist" && both.btn.mdd.disabled === true && both.notes.join() === "sz.shortMdd,sz.noVol", J([oldP.notes, both.notes]));
     ok("點停用那顆不換方法", (() => { const before = zero.d.method; zero.btn.vol.on.click(); return zero.d.method === before && zero.d.methodDirty !== true; })());
     ok("真錢:算不出時金額仍是 null、不退回別的方法;mpsSizeGap 只換原因 key", F.mpsLevFor({ method: "vol", target: { vol: 30, mdd: null, lev: 2 } }, { ann_vol_pct: 0 }) === null && F.mpsSizeGap({ fund: 100, method: "vol", target: { vol: 30, mdd: null, lev: 2 } }, { ann_vol_pct: 0 }, "x") === "sz.noVol");
     const gapV = (p) => F.mpsSizeGap({ fund: 100, method: "vol", target: { vol: 30, mdd: null, lev: 2 } }, p, "x");
-    ok("沒持倉時鈕下與框內同一個原因:波動 0 → sz.noVol,舊提案沒欄位 → mg.sizeNoHist;鈕下那句多接連結字", gapV({ ann_volatility_pct: 0 }) === "sz.noVol" && gapV({}) === "mg.sizeNoHist" && CAT.zh["mg.why.noVol"] === CAT.zh["sz.noVol"] + "，" + CAT.zh["mg.why.changeMethod"]); }
+    ok("沒波動資料時鈕下與框內同一個原因:波動 0 → sz.noVol,舊提案沒欄位 → mg.sizeNoHist;鈕下那句多接連結字", gapV({ ann_volatility_pct: 0 }) === "sz.noVol" && gapV({}) === "mg.sizeNoHist" && CAT.zh["mg.why.noVol"] === CAT.zh["sz.noVol"] + "，" + CAT.zh["mg.why.changeMethod"]); }
 
   // 設計師／稽核回修:停用外觀、下拉留白、拆解列熱區不撐高列、描述念整句、更新連結不當死鈕
   { const css = fs.readFileSync(path.join(R, "trade.css"), "utf8");

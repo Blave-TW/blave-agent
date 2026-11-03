@@ -121,7 +121,7 @@ function mpsHistVolOf(prop) {
   const p = prop || {}, v = typeof p.ann_vol_pct === "number" ? p.ann_vol_pct : typeof p.ann_volatility_pct === "number" ? p.ann_volatility_pct : null;
   return typeof v === "number" && isFinite(v) && v > 0 ? v : null;
 }
-// 波動是 0 = 近 90 天(manager VOL_WINDOW)每支都沒持倉;欄位不在是舊提案,不能講成沒持倉
+// 波動是 0 = 近 90 天(manager VOL_WINDOW)沒有波動資料;欄位不在是舊提案,不能講成這句
 function mpsVolIsZero(prop) { const p = prop || {}; return p.ann_vol_pct === 0 || p.ann_volatility_pct === 0; }
 // 部位大小的隱含槓桿:目標波動 = 目標 ÷ 歷史波動;最大回撤 = 反推;固定槓桿 = 本身。沒選方法、沒填目標、選的方法算不出來都是 null,不換別的方法代算
 function mpsLevFor(s, prop) {

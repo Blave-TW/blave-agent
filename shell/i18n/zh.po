@@ -9244,7 +9244,7 @@ msgid "mg.applyWhyUnread"
 msgstr "讀不到金額設定，更新後就能套用"
 
 msgid "sz.noVol"
-msgstr "近 90 天沒持倉，不能用目標波動"
+msgstr "近 90 天沒有波動資料，不能用目標波動"
 
 msgid "mg.why.alloc"
 msgstr "改配置"
@@ -9265,7 +9265,7 @@ msgid "mg.why.shortMdd"
 msgstr "共同資料不到 90 天，不能用最大回撤，換一個方法"
 
 msgid "mg.why.noVol"
-msgstr "近 90 天沒持倉，不能用目標波動，換一個方法"
+msgstr "近 90 天沒有波動資料，不能用目標波動，換一個方法"
 
 msgid "mg.why.rerun"
 msgstr "重跑一次優化"
