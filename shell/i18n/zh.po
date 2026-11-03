@@ -4602,6 +4602,12 @@ msgstr "雲端主機 {cv}"
 msgid "up.row.cloudOff"
 msgstr "雲端主機（停機）"
 
+msgid "up.row.checkFail"
+msgstr "更新失敗，再試一次"
+
+msgid "up.row.downloading"
+msgstr "正在下載新版"
+
 msgid "up.row.latest"
 msgstr "已是最新版"
 

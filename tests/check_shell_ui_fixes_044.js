@@ -112,6 +112,15 @@ window.blave = new Proxy({}, { get: (_, k) => typeof k !== "string" ? undefined
       ok("§18 " + theme + " " + kind + ":霧的頂、底 = 主區頂、底(±1),不捲動", g.h > 300 && Math.abs(g.fb - g.bb) <= 1 && Math.abs(g.ft - g.bt) <= 1 && g.sc <= 1, J(g));
     }
     await js(`document.documentElement.setAttribute("data-theme", "light")`);
+    // 窄欄 .pf padding 收成 16:霧的負 margin 跟著收,縱橫都不能捲(走查 1024×680;padding 斷言防這條變空測)
+    const jsN = await open(1024, 680);
+    for (const [kind, host, id] of [["po-new", "po", "po-cfg"], ["mg-new", "po", "po-opt"], ["pick", "po", "po-cfg"], ["pos-new", "tr", "tr-pos"], ["connect", "tr", "tr-over"]]) {
+      const g = await jsN(`(() => { $("view-ws").hidden = false; for (const x of ["tr", "po", "rpt", "lib", "main-empty", "rp"]) $(x).hidden = true; $(${J(host)}).hidden = false;
+        for (const x of ["po-cfg", "po-opt", "tr-onboard", "tr-over", "tr-pos", "tr-assets", "tr-hist", "tr-set"]) $(x).hidden = true;
+        const box = $(${J(id)}); box.hidden = false; box.textContent = ""; box.appendChild(poFog(${J(kind)}));
+        const f = box.querySelector(".fog").getBoundingClientRect(), b = box.getBoundingClientRect(), o = { pad: getComputedStyle(box).paddingTop, dt: f.top - b.top, dl: f.left - b.left, dr: f.right - b.right, sy: box.scrollHeight - box.clientHeight, sx: box.scrollWidth - box.clientWidth }; box.textContent = ""; return o; })()`);
+      ok("窄欄 " + kind + ":霧貼齊容器,縱橫都不捲", g.pad === "16px" && Math.abs(g.dt) <= 1 && Math.abs(g.dl) <= 1 && Math.abs(g.dr) <= 1 && g.sy <= 1 && g.sx <= 1, J(g));
+    }
 
     // §1 選擇框空狀態:一句接〔策略庫〕,按下關框、到策略庫
     const ps = await js(`(async () => { for (const x of ["po"]) $(x).hidden = false; TR.open = true; TR.view = "po"; TR.listLoaded = true; TR.list = []; trPickOff = () => false; trLoadStrategies = async () => {}; window.__lib = 0; libOpen = () => { window.__lib++; };

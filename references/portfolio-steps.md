@@ -38,7 +38,7 @@ On mobile (narrow screens) the chat fills the screen — prepend one line:
 1. 點左側「自動下單」
 2. 點「連接帳戶」
 3. 選「模擬交易（免金鑰）」（real venue: pick it and fill in its API keys）
-4. 按「連接帳戶」送出
+4. 按「開始模擬交易」（real venue:「連接帳戶」）
 
 **Add to the portfolio / set amounts:**
 1. 點左側「策略組合」，切到「配置」分頁
@@ -59,7 +59,7 @@ The switcher at the top of the middle pane picks the side: 「這台電腦」 fo
 1. 點左側「自動下單」
 2. 點「連接帳戶」
 3. 在「交易所或期貨商」選「模擬交易（免金鑰）」（real venue: pick it and fill in its API keys）
-4. 按「連接帳戶」送出
+4. 按「開始模擬交易」（real venue:「連接帳戶」）
 
 **Add to the portfolio / set amounts:**
 1. 點左側「策略組合」，切到「配置」分頁

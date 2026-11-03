@@ -4590,6 +4590,12 @@ msgstr "Cloud machine {cv}"
 msgid "up.row.cloudOff"
 msgstr "Cloud machine (stopped)"
 
+msgid "up.row.checkFail"
+msgstr "Update failed. Try again"
+
+msgid "up.row.downloading"
+msgstr "Downloading the new version"
+
 msgid "up.row.latest"
 msgstr "Up to date"
 

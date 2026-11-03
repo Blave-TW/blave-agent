@@ -722,6 +722,10 @@ html.ws-sc .side-gate { display: none; }
 /* 優化分頁的霧在工具列下面:上緣不往上吃進工具列 */
 #po-opt > .fog.mg-fog { margin-top: var(--space-16); }
 #po-opt > .fog.mg-fog:first-child { margin-top: calc(-1 * var(--space-24)); }   /* mg-new 上方沒有真控件:貼齊主區頂,不留一條接縫 */
+@container (max-width: 520px) {   /* 窄欄 .pf 的 padding 收成 16,霧的負 margin 跟著收,不然四邊多 8px 可捲 */
+  .pf > .fog { margin: calc(-1 * var(--space-16)); }
+  #po-opt > .fog.mg-fog:first-child { margin-top: calc(-1 * var(--space-16)); }
+}
 .fog-card { position: absolute; z-index: 1; left: 50%; top: 48px; transform: translateX(-50%); width: 360px; max-width: calc(100% - 32px); box-sizing: border-box;
   padding: var(--space-24); background: var(--surface-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); text-align: center; }
 .fog-card p { margin: 0 0 var(--space-16); font-size: 14px; line-height: 1.6; color: var(--ink); }

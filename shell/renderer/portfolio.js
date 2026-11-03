@@ -1129,8 +1129,12 @@ function mgWhyFill(el, text, fix, fk) {
   if (p.pre) el.appendChild(trEl("span", "", p.pre));
   el.appendChild(b);
   if (p.post) el.appendChild(trEl("span", "", p.post));
+  if (fix.go === "login") mgWhyWait(b);
   return el;
 }
+/* 等待登入時連結字是「取消等待」,接原因句的前後段會變錯話:只留這顆。planSignIn／planLogin 只換鈕字不重畫,由 mgWhySignSync 跟上 */
+function mgWhyWait(b) { const wait = b.textContent === t("oauth.cancel"); [...b.parentElement.children].forEach((x) => { if (x !== b) x.hidden = wait; }); }
+function mgWhySignSync() { document.querySelectorAll("button.busy-fix[data-signin]").forEach(mgWhyWait); }
 function mgWhyGo(fix, b) {
   trackFeature("mg_why_fix");
   if (fix.go === "pick") psOpen(b, "amounts", false, { check: mgMembers() });

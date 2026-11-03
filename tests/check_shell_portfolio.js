@@ -1151,12 +1151,12 @@ let psPromise = null;
 { const STR = fs.readFileSync(path.join(R, "strings.js"), "utf8"), box = { }; vm.runInNewContext(STR.replace(/^const /gm, "var ") + "\nthis.out = typeof STRINGS !== 'undefined' ? STRINGS : null;", box);
   const CAT = box.out, WHY = psrc.slice(psrc.indexOf("const MG_WHY_SIZE"), psrc.indexOf("function mgWhyParts")), cut = (...ns) => ns.map((n) => cutF(psrc, n)).join("\n");
   const mkEl = (tag, cls, text) => { const e = { tag, className: cls || "", textContent: text == null ? "" : text, kids: [], dataset: {}, attrs: {}, on: {}, isConnected: true, offsetParent: {}, disabled: false, hidden: false, focusCalls: 0, selected: 0,
-      appendChild(k) { this.kids.push(k); return k; }, append(...ks) { ks.forEach((k) => this.kids.push(k)); }, setAttribute(a, v) { this.attrs[a] = v; }, addEventListener(n, f) { this.on[n] = f; }, focus() { this.focusCalls++; FOCUS.at = this; }, select() { this.selected++; }, querySelector: () => null, querySelectorAll: () => [] }; return e; };
+      appendChild(k) { this.kids.push(k); k.parentElement = this; return k; }, get children() { return this.kids; }, append(...ks) { ks.forEach((k) => { this.kids.push(k); k.parentElement = this; }); }, setAttribute(a, v) { this.attrs[a] = v; }, addEventListener(n, f) { this.on[n] = f; }, focus() { this.focusCalls++; FOCUS.at = this; }, select() { this.selected++; }, querySelector: () => null, querySelectorAll: () => [] }; return e; };
   const FOCUS = { at: null }, flatText = (e) => e.kids.map((k) => k.textContent).join("");
   const whyCtx = (o) => { const log = [], c = vm.createContext(Object.assign({ log, TR: { env: "local", st: { alive: true } }, trEl: (g, cl, x) => mkEl(g, cl, x), t: (k, a) => { const v = CAT[(o && o.lang) || "zh"][k]; return a ? v.replace(/\{(\w+)\}/g, (_, n) => a[n]) : v; },
       mgBag: () => ({ params: {}, optBusy: false }), trPickOff: () => false, mpsProp: () => ({}), mgBlocked: () => false, mgOptBlockReason: () => null, mgMembers: () => ["a", "b"], trackFeature: (n) => log.push("track:" + n),
       psOpen: (b, m, f, op) => log.push("psOpen:" + m + ":" + J(op)), mgMethodOpen: () => log.push("method"), mgSizeOpen: (b, fo) => log.push("size:" + fo), upCloudUpdate: () => log.push("update"), mgRunOptimize: () => log.push("run"), $: () => mkEl("div"), planSignIn: (x) => log.push(x), signInLabel: (x, l) => { x.dataset.signin = l; x.textContent = l; return x; } }, o || {}));
-    vm.runInContext(WHY + "\n" + cut("mgWhyParts", "mgWhyCan", "mgWhyFill", "mgWhyGo"), c); return c; };
+    vm.runInContext(WHY + "\n" + cut("mgWhyParts", "mgWhyCan", "mgWhyFill", "mgWhyWait", "mgWhySignSync", "mgWhyGo"), c); return c; };
   // 列舉:表上每一條、兩語,連結字都在句子裡(不在 = 接句尾那兩條);中文 ≤25 字;字串都在
   { const c = whyCtx(), FIX = vm.runInContext("MG_WHY_FIX", c), bad = [], APPEND = ["mg.applyDiffSet", "mg.propOtherAlloc"];
     Object.keys(FIX).forEach((k) => { const f = FIX[k], sk = f.text || k; ["zh", "en"].forEach((L) => { const sent = CAT[L][sk], link = f.link ? CAT[L][f.link] : sent;
@@ -1182,10 +1182,20 @@ let psPromise = null;
     const c2 = whyCtx(), plain = mkEl("div"); c2.plain = plain; vm.runInContext("mgWhyFill(plain, '建議金額跟目前一樣', MG_WHY_FIX['mg.applyWhySame'], 'mg-why-fix')", c2);
     ok("等一下就好／好狀態不連:表上沒有這幾個原因", plain.kids.length === 1 && plain.kids[0].tag === "span" && ["mg.applyWhySame", "mg.applyWhyQuote", "mg.applyWhyFx", "mg.applyWhyWait", "mg.applyWhyUnread", "tr.saving", "tr.ccyMixed"].every((k) => !(k in vm.runInContext("MG_WHY_FIX", c2)))); }
   // 登入:原地開瀏覽器登入(planSignIn 帶這顆鈕),不繞去設定;等待中被輪詢重畫,鈕字由 signInLabel 接手
-  { const c = whyCtx(), host = mkEl("div"); c.host = host; vm.runInContext("mgWhyFill(host, 'x', MG_WHY_FIX['mg.applyWhyLogin'], 'mg-why-fix')", c);
+  { const c = whyCtx(), host = mkEl("div"); c.host = host; vm.runInContext("mgWhyFill(host, '登入 Blave 才拿得到匯率', MG_WHY_FIX['mg.applyWhyLogin'], 'mg-why-fix')", c);
     const b = host.kids.find((k) => k.tag === "button"); c.b = b; c.log.length = 0; vm.runInContext("mgWhyGo(MG_WHY_FIX['mg.applyWhyLogin'], b)", c);
     ok("登入連結:直接 planSignIn(帶這顆鈕)、鈕經 signInLabel、不開設定", c.log[0] === "track:mg_why_fix" && c.log[1] === b && c.log.length === 2 && b.dataset.signin === "登入 Blave" && !b.attrs["aria-haspopup"]
-      && !/setOpen|setCat/.test(cutF(psrc, "mgWhyGo"))); }
+      && !/setOpen|setCat/.test(cutF(psrc, "mgWhyGo")));
+    // 等待登入:連結字換「取消等待」時句子前後段不留,收尾後回來;按下當下、收尾都由 app.js 叫 mgWhySignSync(不重畫),輪詢重畫走 mgWhyFill
+    const CANCEL = "取消等待"; c.t0 = c.t; c.document = { querySelectorAll: () => [b] };
+    vm.runInContext(`var __t = t; t = (k, a) => (k === "oauth.cancel" ? ${JSON.stringify(CANCEL)} : __t(k, a));`, c);
+    const seen = () => host.kids.filter((k) => !k.hidden).map((k) => k.textContent).join("|");
+    const idle = seen(); b.textContent = CANCEL; vm.runInContext("mgWhySignSync()", c); const waiting = seen(); b.textContent = "登入 Blave"; vm.runInContext("mgWhySignSync()", c); const back = seen();
+    ok("登入等待中整行只留〔取消等待〕,句子前後段不畫;結束後整句回來", idle === "登入 Blave| 才拿得到匯率" && waiting === CANCEL && back === idle, J([idle, waiting, back]));
+    c.signInLabel = (x, l) => { x.dataset.signin = l; x.textContent = CANCEL; return x; }; const h2 = mkEl("div"); c.h2 = h2; vm.runInContext("mgWhyFill(h2, '上次存的匯率已超過 30 天，登入 Blave 更新', MG_WHY_FIX['mg.applyWhyFxOld'], 'mg-why-fix')", c);
+    ok("等待中被輪詢重畫:也只留〔取消等待〕", h2.kids.filter((k) => !k.hidden).map((k) => k.textContent).join("|") === CANCEL, J(h2.kids.map((k) => [k.textContent, k.hidden])));
+    const asrc = fs.readFileSync(path.join(R, "app.js"), "utf8"), fnA = (n) => { const i = asrc.indexOf("function " + n + "("); return asrc.slice(i, asrc.indexOf("\n}", i)); };
+    ok("planSignIn 換字、planLogin 收尾都叫 mgWhySignSync", /mgWhySignSync\(\)/.test(fnA("planSignIn")) && /mgWhySignSync\(\)/.test(fnA("planLogin"))); }
   // 原因順序:讀不到設定排第一(trNames 空,不能講配置 0 檔);幣別未定講幣別不講報價
   { const c = vm.createContext({ TR: { save: null, env: "local", listLoaded: true, st: { alive: true } }, TR_BAGS: { cloud: { st: { cloud: { code: "OK" } } } }, trFxView: () => ({}), unread: true, mgSameAsAmounts: () => false, trReport: () => ({ states: {} }), trStored: () => ({}), trUnknownWhyKey: (ns) => "unk:" + ns.join() });
     c.trCfgUnread = () => c.unread; vm.runInContext(cut("mgApplyWhy", "mgFxWhy"), c); const why = (d, q) => { c.d = d; c.q = q; return vm.runInContext("mgApplyWhy(d, q, true)", c); };

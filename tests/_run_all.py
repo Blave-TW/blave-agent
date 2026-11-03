@@ -46,6 +46,7 @@ SERIAL = {
     "check_shell_portfolio.js": "斷言毫秒級的順序與上限,機器忙就假紅(load 180 量到 134ms 對上限 60ms)",
     "check_local_daemon_chain.py": "等 reconciler 收掉有時限,機器忙就假紅(-P 8、load 75 量到收不掉)",
     "check_tw_lots.py": "斷言查價在 TW_CLOSE_BUDGET_S 內交回,機器忙就假紅(-P 8、load 75)",
+    "check_shell_codex_login.js": "LOGIN_CHECK_MS 寫死 2 秒、假 CLI 是真 shell,機器忙就逾時(16 份並行可重現)",
 }
 
 ELECTRON_SKIP = "SKIP (set BLAVE_TEST_WINDOW=1"

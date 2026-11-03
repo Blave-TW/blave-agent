@@ -1251,6 +1251,8 @@ function upPlan(o) {
   /* 「已是最新版」只在查過之後才接上:啟動後 30 秒(updater FIRST_CHECK_MS)才第一次查,checkedAt 只有 update-not-available 會寫;
      檢查中沿用上一次的結論(圓環在連結上) */
   else if ((ph === "idle" || ph === "checking") && st.checkedAt > 0) status = ["up.row.latest"];
+  else if (ph === "downloading" || ph === "staging") status = ["up.row.downloading"];   // 這時按檢查更新不會查(updater check 回 false),不講就是沒反應
+  else if (ph === "error") status = ["up.row.checkFail"];
   const spin = !!(o.checking || ph === "checking");
   const link = restarting ? { kind: "restarting", disabled: true } : ready ? { kind: "restart", disabled: turn, ask } : { kind: "check", disabled: spin };
   /* 第二行(雲端主機):只在主機在跑或停機時出現。版號讀不到(舊機器 / api 快取 null)不印「雲端主機 null」;
@@ -1422,9 +1424,10 @@ function upPaint() {
 /* 「檢查更新」:app 重查一次 + 雲端唯讀刷新一次報告(第二行的版號跟著新)。永遠不送訊息——雲端更新只走「更新雲端主機」 */
 async function upCheck() {
   if (UP_CHECKING) return;
+  const btn = $("set-up-btn"), hadFocus = document.activeElement === btn;   // 檢查中鈕是真 disabled,焦點會掉
   UP_CHECKING = true; upPaint();
   try { await Promise.all([window.blave.updateCheck().then(upRefresh).catch(() => {}), upCloudRefresh()]); }
-  finally { UP_CHECKING = false; upPaint(); }
+  finally { UP_CHECKING = false; upPaint(); if (hadFocus && !btn.disabled) btn.focus(); }
 }
 /* 回 false = 主行程沒回(這次不動雲端) */
 async function upCloudRefresh() {
@@ -5100,6 +5103,7 @@ async function planLogin() {
   planLoginBusy = oauthPending = planLoginOut = false; planPaint(); waitChanged();
   // 等待中被畫成「取消等待」的外面那幾顆(signInLabel)換回原字:登入成功時呼叫端自己會重畫,取消／失敗沒有人重畫
   document.querySelectorAll("button[data-signin]").forEach((x) => { if (x.textContent === t("oauth.cancel")) x.textContent = x.dataset.signin; });
+  if (typeof mgWhySignSync === "function") mgWhySignSync();
 }
 /* 設定以外的「登入 Blave」(策略庫、資料卡、歡迎頁、分享框、公開連結):直接走 planLogin,不先開設定 › 帳號與方案再要他按一次。
    planLogin 只重畫設定頁與開通頁,所以等待中這顆鈕自己換成「取消等待」,再按一次 = planLogin 的取消。字不是「取消等待」的(分享框、
@@ -5110,7 +5114,7 @@ async function planSignIn(b, inSettings) {
   if (oauthPending) return;
   const was = b ? b.dataset.signin || b.textContent : null, p = planLogin();
   planLoginOut = inSettings !== true;   // 設定 › 公開連結(shlSignIn)在設定裡面:關設定照舊取消
-  if (b) { b.dataset.signin = was; b.textContent = t("oauth.cancel"); }
+  if (b) { b.dataset.signin = was; b.textContent = t("oauth.cancel"); if (typeof mgWhySignSync === "function") mgWhySignSync(); }
   await p;
   if (b && b.isConnected && b.textContent === t("oauth.cancel")) b.textContent = was;
 }
