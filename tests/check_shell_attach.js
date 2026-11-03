@@ -233,7 +233,7 @@ try {
   t("上一句帶的清單另外記(lastUserAttachments;沒帶 = []、來源記在每一個上);檔名不進 lastUserText", /lastUserText = msg;/.test(sub) && !/lastUserText = [^;]*attachment/.test(sub) && /lastUserAttachments = attachments;/.test(sub) && !/lastUserFrom/.test(appSrc));
   { // 「再送一次」:真的跑 canResend / resendLast
     const line = (name) => (appSrc.match(new RegExp("^function " + name + "\\(\\)[^\\n]*$", "m")) || [""])[0];
-    const rig = (text, atts, running) => { const calls = []; const api = new Function("submitMessage", "running", "lastUserText", "lastUserAttachments", line("canResend") + "\n" + line("resendLast") + "\nreturn { canResend, resendLast };")((m, o) => { calls.push([m, o]); return Promise.resolve(true); }, !!running, text, atts); return { api, calls }; };
+    const rig = (text, atts, running) => { const calls = []; const api = new Function("submitMessage", "running", "lastUserText", "lastUserAttachments", (appSrc.match(/^const resendable = [^\n]*$/m) || [""])[0] + "\n" + line("canResend") + "\n" + line("resendLast") + "\nreturn { canResend, resendLast };")((m, o) => { calls.push([m, o]); return Promise.resolve(true); }, !!running, text, atts); return { api, calls }; };
     const list = [{ file: { name: "a.csv", type: "text/csv" }, name: "a.csv", from: "paste" }, { file: { name: "b.png", type: "image/png" }, name: "b.png", from: "file" }];
     const pure = rig("", list), both = rig("看一下", list), txt = rig("嗨", []), none = rig("", []), busy = rig("嗨", list, true);
     pure.api.resendLast(); both.api.resendLast(); txt.api.resendLast(); none.api.resendLast(); busy.api.resendLast();
