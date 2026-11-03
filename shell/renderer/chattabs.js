@@ -170,8 +170,9 @@ function tabsOnEvent(c) {
   if (c.type === "started") {
     tabsQueued(T, false);
     // 不是這個畫面送出的那一輪(手機來的、開成分頁的):這裡才知道它在跑——記成回合中,機器層級的鎖與分頁的「回覆中」才看得到
-    // 這一輪沒有畫面上的那句可收回(lastUserTyped = false):停掉它時不把上一輪電腦前打的字塞回輸入框
-    withTab(T, () => { if (!running) { running = true; turnSeq++; turnSeqMine = turnSeq; turnFresh(null); lastUserTyped = false; } busyStart(); });
+    // 這一輪的那句不在電腦上:停掉它時不把上一輪電腦前打的字塞回輸入框,錯誤卡也不出〔再送一次〕(會送出上一輪電腦前那句;
+    // 改送手機那句也不行——手機那邊可能已經自己重送,同一句下單會跑兩次)
+    withTab(T, () => { if (!running) { running = true; turnSeq++; turnSeqMine = turnSeq; turnFresh(null); lastUserTyped = false; lastUserText = ""; lastUserAttachments = []; } busyStart(); });
     tabsPaint(); return;
   }
   if (c.type === "browser_wait") { withTab(T, () => { busySet(t("tabs.brWait"), "", "wait"); if (ACT) ACT.shown = "browser_wait|"; }); return; }

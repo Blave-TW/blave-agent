@@ -4342,11 +4342,13 @@ function faultCard() {
 /* 「再送一次」(設計師 M3):不自動重送(那句話可能是下單,而且已經隔了好幾分鐘,最後一步留給人),
    也不要他重打(那一輪沒跑是我們知道的事)。不碰輸入框——他可能已經在打下一句。 */
 let lastUserText = "", lastUserAttachments = [];   // 上一句的字與它帶的清單(各自記來源 file / paste;沒帶 = [])
-function canResend() { return !running && !!(lastUserText || lastUserAttachments.length); }   // 純附件那句(字是空的)也能重送
+const resendable = () => !!(lastUserText || lastUserAttachments.length);   // 純附件那句(字是空的)也能重送;手機那一輪清空 = 不出鈕
+function canResend() { return !running && resendable(); }
 function resendLast() { return canResend() ? submitMessage(lastUserText, { attachments: lastUserAttachments }) : Promise.resolve(false); }
 // okText:字或回傳字的函式(函式才跟著換語言,見 sysRelang)
 function resendState(card, okText) {
   const ok = () => (typeof okText === "function" ? okText() : okText);
+  if (!resendable()) return { calm: true, text: ok() };
   return { calm: true, text: ok(), label: t("fault.resend"), on: async () => {
     if (running) { busySendTell(); return; }   // 卡上的鈕回合中照畫:原因寫在輸入框上方那一行
     if (await resendLast()) {
@@ -4573,7 +4575,7 @@ function acctPaint() {
   // 長任務跑到 25+ 次時多幾次預檢會把一筆 LLM 擠成 429——稽核抓的)
   if (s.can_run) creditCards.length = 0;
 }
-function resendSecond() { return { label: t("fault.resend"), on: () => { resendLast(); } }; }
+function resendSecond() { return resendable() ? { label: t("fault.resend"), on: () => { resendLast(); } } : null; }
 let acctPending = 0;
 // 這次開 app 至少查完過一次(不論查到沒):歡迎頁的卡在這之前出骨架,之後查不到就當 unknown(離線時不能永遠停在骨架)
 let acctSettled = false;
@@ -5260,7 +5262,7 @@ function addFault(f, mk) {
   if (f.flow === "blave") return blaveLoginFlow(card);
   if (f.flow === "credit") return creditFlow(card);
   card.set(sysLz(() => { const g = (mk && mk()) || f; return { text: g.text, label: g.label, on: g.act,
-             second: g.second ? g.second : g.resend ? { label: t("fault.resend"), on: () => { resendLast(); } } : null }; }));
+             second: g.second ? g.second : g.resend && resendable() ? { label: t("fault.resend"), on: () => { resendLast(); } } : null }; }));
 }
 
 /* 回合進行中的文字先不進回覆區。串流當下還不知道這段後面有沒有工具呼叫:有的話它是過場旁白

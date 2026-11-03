@@ -1131,7 +1131,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   const went = [], trackFeature = (n) => went.push("track:" + n), bindGo = (n) => went.push("bind:" + n);
   let pub = null; eval(fnSrc("planMo"));
   eval(fnSrc("dataAccessOf")); for (const n of ["acctNoCard", "acctOffer"]) { const m = src.match(new RegExp("^const " + n + " = [^\\n]*$", "m")); if (m) eval(m[0].replace(/^const /, "var ")); } eval(src.match(/^const hasData = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var "));
-  eval(fnSrc("dataReadyText")); eval(src.match(/^function canResend\(\)[^\n]*$/m)[0]); eval(src.match(/^function resendLast\(\)[^\n]*$/m)[0]); eval(src.match(/^function sysLz\(fn\)[^\n]*$/m)[0]); eval(fnSrc("resendState")); eval(fnSrc("dataCardState")); eval(fnSrc("dataCardSync")); eval(fnSrc("maybeDataCard")); eval(fnSrc("acctPaint"));
+  eval(fnSrc("dataReadyText")); eval(src.match(/^const resendable = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^function canResend\(\)[^\n]*$/m)[0]); eval(src.match(/^function resendLast\(\)[^\n]*$/m)[0]); eval(src.match(/^function sysLz\(fn\)[^\n]*$/m)[0]); eval(fnSrc("resendState")); eval(fnSrc("dataCardState")); eval(fnSrc("dataCardSync")); eval(fnSrc("maybeDataCard")); eval(fnSrc("acctPaint"));
   const A = (o) => ({ can_run: true, plan: { state: "none" }, ...o });
   acct = A({ data_access: "none", reason: "NO_CREDIT", data_hourly: 2 });
   let c = dataCardState();

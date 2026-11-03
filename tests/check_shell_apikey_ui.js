@@ -135,7 +135,7 @@ const presetsFor = (url) => ({ deepseek: { ...relayMod.PRESETS.deepseek, origin:
   // ── ⑥ 回合失敗分類(renderer/apikey.js akFault / akErrText) ──
   const tt = (k, v) => k + (v ? JSON.stringify(v) : "");
   let resent = 0;
-  const R = new Function("t", "MP", "resendLast", "setOpen", "setCat", "mpOpen", "akOpen_", akSrc.replace(/^const /gm, "var ") + "; return { akFault, akErrText };")(tt, { provider: "DeepSeek" }, () => { resent++; }, () => Promise.resolve(), () => {}, () => {});
+  const R = new Function("t", "MP", "resendLast", "setOpen", "setCat", "mpOpen", "akOpen_", "resendable", akSrc.replace(/^const /gm, "var ") + "; return { akFault, akErrText };")(tt, { provider: "DeepSeek" }, () => { resent++; }, () => Promise.resolve(), () => {}, () => {}, undefined, () => true);
   const cap = R.akFault('API Error: 429 {"type":"error","error":{"type":"rate_limit_error","message":"turn usage limit reached"}}', true);
   cap.act();
   t("這一輪收過 llm_cap 的 429 → 「這一輪用量到上限」卡(可再送一次:走 app.js 的 resendLast,純附件那句與它帶的檔也重送)", cap && cap.cap === true && cap.text === "ak.f.cap" && cap.label === "fault.resend" && resent === 1);

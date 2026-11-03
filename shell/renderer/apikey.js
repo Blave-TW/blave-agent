@@ -185,13 +185,13 @@ function akFault(text, capped) {
   const m = AK_FAULT_RE.exec(text || ""), net = AK_NET_RE.test(text || "");
   if (!m && !net) return null;
   const p = akTurnProvider(), s = m ? m[1] : "";
-  const resend = () => { resendLast(); };
+  const resend = () => { resendLast(); }, rs = resendable() ? t("fault.resend") : null;   // 手機那一輪沒有可重送的那句:不出鈕
   const toModels = () => setOpen().then(() => setCat("model"));
-  if (s === "429" && capped) return { cap: true, text: t("ak.f.cap"), label: t("fault.resend"), act: resend };
+  if (s === "429" && capped) return { cap: true, text: t("ak.f.cap"), label: rs, act: resend };
   if (s === "401" || s === "403") return { text: t("ak.f.key", { p, s }), label: t("ak.f.keyBtn"), act: () => toModels().then(() => akOpen("set")) };
-  if (s === "402") return { text: t("ak.f.credit", { p }), label: t("fault.resend"), act: resend, second: { label: t("fault.limitBtn"), on: toModels } };
-  if (s === "429") return { text: t("ak.f.rate", { p }), label: t("fault.resend"), act: resend };
+  if (s === "402") return { text: t("ak.f.credit", { p }), label: rs, act: resend, second: { label: t("fault.limitBtn"), on: toModels } };
+  if (s === "429") return { text: t("ak.f.rate", { p }), label: rs, act: resend };
   if (s === "400") return { text: t("ak.f.compat", { p }), label: t("fault.noModelBtn"), act: () => mpOpen() };
-  if (net || s === "502" || s === "503" || s === "504") return { text: t("ak.f.net", { p }), label: t("fault.resend"), act: resend };
+  if (net || s === "502" || s === "503" || s === "504") return { text: t("ak.f.net", { p }), label: rs, act: resend };
   return null;
 }
