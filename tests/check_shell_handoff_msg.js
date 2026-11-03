@@ -202,9 +202,9 @@ t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down �
       t: (k, v) => k + (v ? JSON.stringify(v) : ""), confirmBox: (o) => boxes.push(o), $: () => ({}), document: { createElement: el, createDocumentFragment: el },
       envCloudList: () => cloudList, RP: { list: localList, data: dir === "up" && code ? { code } : null }, RPC: { data: dir === "down" && code ? { code } : null }, LANG: "zh",
       hoTpl: (k) => (k === "B" ? TPLB : TPL), HO_NOTE: { "": ["ho.note.up", "ho.note.down"], B: ["ho.noteB.up", "ho.noteB.down"] }, paneSt: { chat: {} },
-      submitMessage: (m, o) => { sent.push(m); opts.push(o); return Promise.resolve(false); }, csSendAway: (m, o) => { sent.push(m); opts.push(o); return Promise.resolve(false); }, trackFeature: () => {} };
+      submitMessage: (m, o) => { sent.push(m); opts.push(o); return Promise.resolve(false); }, csSendAway: (m, o) => { sent.push(m); opts.push(o); return Promise.resolve(false); }, csOnceLive: () => null, csOnceMark: () => {}, UPD: {}, csTabRunning: () => false, trackFeature: () => {} };
     vm.createContext(c);
-    vm.runInContext(["hoMsg", "hoMovesRow", "hoFreeName", "hoKind", "hoAsk"].map((n) => cut(src, n)).join("\n") + cut(trSrc, "cdelInUse")
+    vm.runInContext(["hoMsg", "hoMovesRow", "hoFreeName", "hoKind", "hoBlocked", "hoAsk"].map((n) => cut(src, n)).join("\n") + cut(trSrc, "cdelInUse")
       + xpSrc.slice(xpSrc.indexOf("function xpIsTypeB("), xpSrc.indexOf("\n", xpSrc.indexOf("function xpIsTypeB("))), c);
     c.hoAsk(dir, "btc_rsi", {});
     const b = boxes[0]; if (!b) return null;

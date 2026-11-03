@@ -313,13 +313,6 @@
   color: var(--ink-2);
   white-space: normal;
 }
-/* 回合進行中那一行(同參數掃描空狀態的 .rob-cap) */
-.wf-cap {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--ink-3);
-}
 /* 已送出:等待環在鈕裡、文字前 */
 .wf-go {
   display: inline-flex;
@@ -327,7 +320,7 @@
   justify-content: center;
   gap: var(--space-8);
 }
-/* 結果頁頂端重跑列(canon › 驗證分頁重跑鈕):左欄兩個旋鈕 + 共 N 輪自己換行,右欄鈕固定在右上,落後句與原因句跨兩欄;無卡底、無 label */
+/* 結果頁頂端重跑列(canon › 驗證分頁重跑鈕):左欄兩個旋鈕 + 共 N 輪自己換行,右欄鈕固定在右上,落後句跨兩欄;無卡底、無 label */
 .wf-bar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -340,7 +333,7 @@
 .wf-bar > .wf-go { grid-area: 1 / 2; }
 .wf-go.btn-quiet { height: 32px; }
 .wf-go.btn-quiet::before { inset: -6px -8px; }
-.wf-bar > .wf-est, .wf-bar > .wf-cap { grid-column: 1 / -1; }
+.wf-bar > .wf-est { grid-column: 1 / -1; }
 /* 空狀態:一句 + 旋鈕組 + 描邊動作,無插圖。旋鈕組不另包排版,子元素直接吃 .wf-empty 的 gap */
 .wf-empty {
   display: flex;

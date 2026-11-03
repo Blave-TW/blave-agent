@@ -101,9 +101,12 @@ if (!process.versions.electron) {
   // ── ① 雲端「已送出」留到新結果到(稽核 P2-4,Wei 選 B):純函式 sentNow / holdLeft ──
   {
     const H = W.WF_CLOUD_HOLD_MS, sig = "S1", e = (x) => ({ sig, turn: 7, ...(x || {}) });
-    const o = (x) => ({ busy: false, turn: 7, scope: "cloud", ...(x || {}) });
-    ok("① 回合還在跑(就是送出那一輪):本機 / 雲端都是已送出;pending 只在回合進行中算", W.sentNow(e(), sig, o({ busy: true }), 0) && W.sentNow(e(), sig, o({ busy: true, scope: "local" }), 0)
-      && W.sentNow(e({ pending: true, turn: null }), sig, o({ busy: true }), 0) && !W.sentNow(e({ pending: true, turn: null }), sig, o(), 0));
+    const LIVE = (m) => ({ ...m, live: (s) => !!m.busy && s.turn === m.turn });   // 替 app.js 的 csTurnLive:那條在跑(busy)、而且是送出那一輪
+    const o = (x) => LIVE({ busy: false, turn: 7, scope: "cloud", ...(x || {}) });
+    ok("① 回合還在跑(就是送出那一輪):本機 / 雲端都是已送出;pending(確認框按下、還沒回來)也算,沒送出去由呼叫端收掉", W.sentNow(e(), sig, o({ busy: true }), 0) && W.sentNow(e(), sig, o({ busy: true, scope: "local" }), 0)
+      && W.sentNow(e({ pending: true, turn: null }), sig, o({ busy: true }), 0) && W.sentNow(e({ pending: true, turn: null }), sig, o(), 0));
+    ok("① 本機:別條開跑(全 app 流水號往前走)、送出那一輪還在跑:照樣已送出,不解鎖", W.sentNow(e(), sig, { scope: "local", turn: 9, live: (s) => s.turn === 7 }, 0));
+    ok("① 本機:同一條接著聊的下一輪不算這一次(那一輪結束就回來)", !W.sentNow(e(), sig, { scope: "local", live: (s) => s.turn === 8 }, 0));
     ok("① 本機:回合結束就回來(wf.json 已落地)", !W.sentNow(e(), sig, o({ scope: "local" }), 0) && W.holdLeft(e({ endAt: 0 }), o({ scope: "local" }), 1) === null);
     { const x = e(), t0 = 1000;
       ok("① 雲端:回合結束後留著(第一次看到結束時記 endAt),回合結束後滿 5 分鐘前一刻還留、到了就回來",
@@ -127,7 +130,7 @@ if (!process.versions.electron) {
       setInterval: (fn, ms) => { const id = ++F.seq; F.i.set(id, { fn, ms }); return id; }, clearInterval: (id) => { F.ci.push(id); F.i.delete(id); } });
     const reset = () => { F.t.clear(); F.i.clear(); F.ct.length = 0; F.ci.length = 0; W._sent.clear(); };
     const data = { name: "c1", wf: { x: 1 }, code: "A = 1", stats: null }, sig = W.sentSig(data), T0 = 1e9;
-    const opts = (x) => ({ busy: false, turn: 7, scope: "cloud", now: () => T0 + 1000, resync: () => { F.resynced = (F.resynced || 0) + 1; }, refetch: (n) => { (F.ref = F.ref || []).push(n); return F.refRet !== false; }, ...(x || {}) });
+    const opts = (x) => { const m = { busy: false, turn: 7, ...(x || {}) }; return { live: (s) => !!m.busy && s.turn === m.turn, scope: "cloud", now: () => T0 + 1000, resync: () => { F.resynced = (F.resynced || 0) + 1; }, refetch: (n) => { (F.ref = F.ref || []).push(n); return F.refRet !== false; }, ...m }; };
     const box = {}, st = { data, sent: true, gate: true, knobs: null };
     // wfTurnEnded:只記「那一回合」的紀錄;失敗 → done,雲端那筆 30 秒後補抓一次(本機不抓)
     reset(); W._sent.set("cloud:c1", { sig, turn: 7, name: "c1" }); W._sent.set("cloud:c2", { sig, turn: 6, name: "c2" }); W._sent.set("local:c1", { sig, turn: 7, name: "c1" });
@@ -171,8 +174,8 @@ if (!process.versions.electron) {
 
   // ── ① 0.1.11 B10 wfAwaiting:切回分頁 / 視窗回前景時要不要補抓(只讀不寫) ──
   {
-    const data = { name: "c1", wf: { x: 1 }, code: "A = 1", stats: null }, sig = W.sentSig(data), cloud = { scope: "cloud", busy: false, turn: 7 };
-    const at = (rec, o, d) => { W._sent.clear(); if (rec) W._sent.set((rec.key || "cloud") + ":c1", { sig, turn: 7, name: "c1", ...rec }); return W.wfAwaiting(d || data, { ...cloud, ...(o || {}) }); };
+    const data = { name: "c1", wf: { x: 1 }, code: "A = 1", stats: null }, sig = W.sentSig(data), cloud = { scope: "cloud", busy: false, turn: 7 }, liveOf = (m) => ({ ...m, live: (s) => !!m.busy && s.turn === m.turn });
+    const at = (rec, o, d) => { W._sent.clear(); if (rec) W._sent.set((rec.key || "cloud") + ":c1", { sig, turn: 7, name: "c1", ...rec }); return W.wfAwaiting(d || data, liveOf({ ...cloud, ...(o || {}) })); };
     ok("① B10 wfAwaiting:結果傳回中(回合結束、等雲端;之後別的回合在跑也算)/ 滿上限退回(timedOut)→ 要補抓",
       at({ endAt: 0 }) && at({ endAt: 0 }, { busy: true, turn: 9 }) && at({ endAt: 0, done: true, timedOut: true }));
     ok("① P2-1 送出的那一回合還在跑 → 不抓(wf.json 回合結束才寫;回合裡重跑回測會讓簽章對不上、「已送出」提早退掉)", !at({}, { busy: true }) && !at({ endAt: 0 }, { busy: true }));
@@ -208,7 +211,7 @@ if (!process.versions.electron) {
     const page = (lang, wf, code, rec) => {
       const t = (k) => S[lang][k], box = node("div"), data = { stats: STATS, wf, code: code == null ? CODE : code, name: "s1" };
       DW._sent.clear(); if (rec) DW._sent.set("local:s1", { sig: DW.sentSig(data), turn: 1, name: "s1", ...rec });
-      R.renderWf(box, data, { t, busy: false, turn: 1, scope: "local", gate: true });
+      R.renderWf(box, data, { t, scope: "local", gate: true });
       const card = one(box, "wf-card"), legs = cls(box, "wf-legend"), mv = one(one(box, "wf-facts"), "bt-mv");
       return { card, first: card.childNodes[0].className, verdict: (one(card, "wf-verdict") || {}).textContent, mv: mv.textContent, band: one(mv, "wf-band"),
         tags: cls(box, "wf-tag").length + cls(box, "wf-status").length, chartLabel: cls(box, "bt-label")[0].textContent, legs: legs.map((l) => l.childNodes.map((x) => x.textContent)), all: box.textContent };
@@ -345,22 +348,21 @@ if (!process.versions.electron) {
     && /id="rp-wf" role="tabpanel" hidden/.test(html) && /report-wf\.css/.test(html) && /<script src="report-robust\.js"><\/script>\s*<script src="report-wf\.js"><\/script>/.test(html));
   ok("③ rpShowTab 把 wf 交給 renderWf(t / busy / turn / scope / gate / onRun / onUpdate / buildMeta 從外面交進去);三處回合開始 / 結束都叫 rpWfSync;雲端狀態輪詢也叫(閘門翻面)",
     /R\.renderWf\(\$\("rp-wf"\), rpWfData\(B\.data, B\.name\), rpWfOpts\(\)\)/.test(app) && /function rpWfData\(data, name\) \{ return \{ stats: data\.stats, wf: data\.wf \|\| null, code: data\.code, name \}; \}/.test(app)
-    && /return \{ t, busy: csAnyTurn\(\), turn: turnSeq, scope: cloud \? "cloud" : "local", gate, onRun: rpWfAsk, busyFix: \(el\) => busyFixLink\(el, "stop"\), onUpdate: rpWfUpdate, buildMeta: R\.buildMeta, help: \(\) => rpHelpLink\("wf"\),\s*resync: rpWfSync, refocus: rpWfRefocus, refetch: rpWfRefetch \};/.test(app)
+    && /return \{ t, live: \(s\) => csTurnLive\(s\.sid, s\.turn\), scope: cloud \? "cloud" : "local", gate, onRun: rpWfAsk, onUpdate: rpWfUpdate, buildMeta: R\.buildMeta, help: \(\) => rpHelpLink\("wf"\),\s*resync: rpWfSync, refocus: rpWfRefocus, refetch: rpWfRefetch \};/.test(app)
     && /window\.BlaveReport\.wfTurnEnded\(turnSeqMine, faulted \|\| stopped, \{ refetch: rpWfRefetch \}\);\n  upTurnEnded\(faulted\);\n  running = false;[^\n]*turnUiSync\(\);/.test(app)
     && /const gate = !cloud \? true : typeof c\.config_supports_wf === "boolean" \? c\.config_supports_wf : null;/.test(app)
     && /rpRobSync\(\); rpWfSync\(\);/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")) && /if \(typeof rpWfSync === "function"\) rpWfSync\(\);/.test(tr));
   ok("③ 送出:確認框 → 先 begin()(暖機那段也算已送出,稽核 P2-1)→ 固定訊息(msgRun,name 傳資料夾名)→ 成功才記 wf_requested、回合序號;不覆寫 viewing",
-    /onOk: \(\) => \{ if \(typeof begin === "function"\) begin\(\); rpWfAuto\.delete\(name\); const p = csSendAway\(t\("wf\.msgRun", \{ name, lookback: String\(lookback\), step: String\(step\) \}\)\), at = CS\.away; p\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? at\.seq : false\); \}\); \}/.test(app)
+    /onOk: \(\) => \{ if \(typeof begin === "function"\) begin\(\); rpWfAuto\.delete\(name\); const p = csSendAway\(t\("wf\.msgRun", \{ name, lookback: String\(lookback\), step: String\(step\) \}\)\), at = CS\.away; p\.then\(\(ok\) => \{ if \(ok\) trackFeature\("wf_requested"\); resolve\(ok \? at : false\); \}, \(\) => resolve\(false\)\); \}/.test(app)
     && !/viewing/.test(app.slice(app.indexOf("function rpWfAsk"), app.indexOf("function rpWfUpdate"))) && /lines: \(behindMaybe \? \[t\("wf\.needUpdate"\)\] : \[\]\)\.concat\(\[t\("wf\.emptyBoundary"\), t\("wf\.confirmBody"\)\]\)/.test(app));
   ok("③ 還原凍結:時光機 / 重跑中 wf 分頁跟進出場、參數掃描一起 disabled、面板一起收", /b\.disabled = b\.dataset\.tab === "tr" \|\| b\.dataset\.tab === "rob" \|\| b\.dataset\.tab === "wf" \|\|/.test(ver) && /for \(const k of \["bt", "tr", "rob", "wf", "xt", "code"\]\) \$\("rp-" \+ k\)\.hidden = true;/.test(ver));
 
   { const css = read("renderer/report-wf.css"), wfjs = read("renderer/report-wf.js"), robjs = read("renderer/report-robust.js");
     ok("③ R1 每輪明細:表頭固定 58(折不折行看資料不看語言),捲動框上限 = 表頭 + 12.5 列 × 50(12 輪不捲、13 輪起固定露出半列)",
       /\.wf-run-tbl thead th \{ vertical-align: bottom; height: 58px; \}/.test(css) && /\.wf-scroll \{\s*max-height: calc\(58px \+ 12\.5 \* 50px\);/.test(css) && !/en 58/.test(css));
-    ok("③ R2 回合中是 aria-disabled(焦點留得住,busy-lock spec §8);其他原因原生停用前先把焦點交給分頁鈕(樣本外驗證 setDis);送不出去時焦點落在 body 也交回;app.js 兩支 refocus",
-      /if \(busyNow\) \{ btn\.disabled = false; btn\.setAttribute\("aria-disabled", "true"\); return; \}\n\s*btn\.removeAttribute\("aria-disabled"\);\n\s*if \(v && !btn\.disabled && document\.activeElement === btn && typeof opts\.refocus === "function"\) opts\.refocus\(\);\n\s*btn\.disabled = v;/.test(wfjs)
-      && !/[^.]btn\.disabled = (locked|true)/.test(wfjs.slice(wfjs.indexOf("function recalc"), wfjs.indexOf("function setBusy")))
-      && /if \(v\.lock\) st\.btn\.setAttribute\("aria-disabled", "true"\); else st\.btn\.removeAttribute\("aria-disabled"\);/.test(robjs)
+    ok("③ R2 原生停用前先把焦點交給分頁鈕(樣本外驗證 setDis);回合中不鎖、沒有 aria-disabled 那條路;送不出去時焦點落在 body 也交回;app.js 兩支 refocus",
+      !/aria-disabled/.test(wfjs) && !/aria-disabled/.test(robjs) && /const setDis = \(v\) => \{\n\s*if \(v && !btn\.disabled && document\.activeElement === btn && typeof opts\.refocus === "function"\) opts\.refocus\(\);\n\s*btn\.disabled = v;/.test(wfjs)
+      && !/[^.]btn\.disabled = (locked|true)/.test(wfjs.slice(wfjs.indexOf("function recalc"), wfjs.indexOf("box.appendChild(btn);")))
       && (wfjs.match(/if \(document\.activeElement === document\.body && typeof opts\.refocus === "function"\) opts\.refocus\(\);/g) || []).length === 1
       && (robjs.match(/if \(document\.activeElement === document\.body && typeof opts\.refocus === "function"\) opts\.refocus\(\);/g) || []).length === 1
       && /function rpRobRefocus\(\) \{ const b = \$\("rp-tabs-scroll"\)\.querySelector\('\.rp-tab\[data-tab="rob"\]'\); if \(b && !b\.disabled\) b\.focus\(\); \}/.test(app)); }
@@ -539,8 +541,8 @@ app.whenReady().then(async () => {
   const r0 = await js(`(() => { const b = document.querySelector('#rp-tabs [data-tab="wf"]'); return b && b.textContent; })()`);
   ok("② 真的 index.html:分頁列有「" + (await tf("rp.tab.wf")) + "」那一顆(data-i18n 翻出來)", r0 === (await tf("rp.tab.wf")));
   await js(`window.__calls = []; window.__turn = 1; window.__upd = 0; window.__box = document.createElement("div"); window.__box.style.width = "760px"; document.body.appendChild(window.__box);
-    window.__opts = (busy, turn, scope, gate) => ({ t, busy, turn: turn == null ? window.__turn : turn, scope: scope || "local", gate: gate === undefined ? true : gate, buildMeta: window.BlaveReport.buildMeta,
-      onUpdate: () => { window.__upd++; }, onRun: (name, lb, st, rerun, opener) => { window.__calls.push([name, lb, st, rerun, opener && opener.tagName]); return new Promise((r) => setTimeout(() => r(window.__turn), 10)); } });
+    window.__opts = (busy, turn, scope, gate) => ({ t, live: (s) => !!busy && s.turn === (turn == null ? window.__turn : turn), scope: scope || "local", gate: gate === undefined ? true : gate, buildMeta: window.BlaveReport.buildMeta,
+      onUpdate: () => { window.__upd++; }, onRun: (name, lb, st, rerun, opener) => { window.__calls.push([name, lb, st, rerun, opener && opener.tagName]); return new Promise((r) => setTimeout(() => r({ sid: "desktop-wf", seq: window.__turn }), 10)); } });
     window.__render = (data, busy, turn, scope, gate) => window.BlaveReport.renderWf(window.__box, data, window.__opts(busy, turn, scope, gate));
     window.__sync = (busy, turn, scope, gate) => window.BlaveReport.wfSync(window.__box, window.__opts(busy, turn, scope, gate)); 0;`);
   const D = (wf, code) => JSON.stringify({ stats: { symbol: "BTCUSDT", interval: "1d", start: "2023-01-01", end: "2024-11-30", "Generated At": 50 }, wf, code: code == null ? "ENTRY_TH = 0.002\nEXIT_TH = -0.002\n" : code, name: "s1" });
@@ -583,22 +585,10 @@ app.whenReady().then(async () => {
   // 回合進行中 / 送出 / 回合結束
   r = await js(`(() => { window.__render(${D(null)}, false); const i = window.__box.querySelector(".wf-empty input"); i.value = "400"; i.dispatchEvent(new Event("input"));
     window.__turn = 5; window.__sync(true); const a = ${EMPTY}; window.__sync(false); const b = ${EMPTY}; return { a, b }; })()`);
-  ok("② 別的回合進行中:鈕鎖住(aria-disabled)+ 一行常駐原因;回合結束解鎖——打到一半的 400 沒被洗掉(就地換,不重畫)",
-    r.a.dis && r.a.aria === "true" && r.a.cap === (await tf("rob.busy")) && r.a.knobs[0] === "400" && !r.b.dis && !r.b.cap && r.b.knobs[0] === "400", JSON.stringify(r));
-  // 〔停止〕:同 app.js rpWfOpts 交真的 busyFixLink;回合中實點 → 真的 stopTurn 走下去(轉成停止中)、記 lock_fix;點被鎖的鈕本身不送、也不是原生 disabled
-  r = await js(`(() => { const tr = []; const tf0 = window.trackFeature; window.trackFeature = (n) => tr.push(n);
-    running = true; turnStopping = false; window.__calls = [];
-    window.BlaveReport.renderWf(window.__box, ${D(null)}, { ...window.__opts(true), busyFix: (el) => busyFixLink(el, "stop") });
-    const b = window.__box.querySelector(".wf-empty .wf-go"); b.click();
-    const cap = window.__box.querySelector(".wf-cap"), fix = cap && cap.querySelector("button.busy-fix");
-    const o = { native: b.disabled, aria: b.getAttribute("aria-disabled"), sent: window.__calls.length, txt: cap && cap.textContent, role: cap && cap.getAttribute("role"), fix: fix && fix.textContent };
-    if (fix) fix.click();
-    o.stopping = turnStopping; o.tr = tr.slice(); running = false; window.trackFeature = tf0; return o; })()`);
-  await new Promise((res) => setTimeout(res, 50)); await js(`turnStopping = false; turnStopped = false; 0`);
-  ok("② 走勢驗證〔停止〕實點:鈕 aria-disabled(不是原生 disabled)、點了不送;原因句「…送出。 停止」、role=status;點〔停止〕→ 回合轉停止中、記 lock_fix",
-    !r.native && r.aria === "true" && r.sent === 0 && r.txt === (await tf("rob.busy")) + " " + (await tf("busy.fix.stop")) && r.role === "status" && r.fix === (await tf("busy.fix.stop")) && r.stopping === true && r.tr.includes("lock_fix"), JSON.stringify(r));
+  ok("② 別條回合進行中(0.1.44 放寬):鈕不鎖、沒有原因行;打到一半的 400 沒被洗掉",
+    !r.a.dis && !r.a.cap && r.a.knobs[0] === "400" && !r.b.dis && !r.b.cap && r.b.knobs[0] === "400", JSON.stringify(r));
   r = await js(`(async () => { window.__render(${D(SAMPLE)}, false); window.__box.querySelector(".wf-bar .wf-go").click(); window.__turn = 9;
-    await new Promise((r) => setTimeout(r, 40)); return { calls: window.__calls, page: ${PAGE} }; })()`);
+    await new Promise((r) => setTimeout(r, 40)); window.__sync(true, 9); return { calls: window.__calls, page: ${PAGE} }; })()`);
   ok("② 重新驗證 → onRun(資料夾名、365、30、rerun、鈕)→ 已送出:舊結果整塊拿掉、旋鈕鎖住、鈕停用且環在鈕裡「已送出，看對話」",
     JSON.stringify(r.calls) === '[["s1",365,30,true,"BUTTON"]]' && !r.page.card && r.page.runs === 0 && r.page.knobs.join() === "365x,30x" && r.page.btnDis && r.page.spin && r.page.btn === (await tf("wf.btnSent")));
   r = await js(`(() => { window.__render(${D(SAMPLE)}, true, 9); return ${PAGE}; })()`);
@@ -629,7 +619,7 @@ app.whenReady().then(async () => {
   await js(`window.__p = { mode: "ok", begun: 0, refocused: 0, resynced: 0 }; window.__dummy = document.createElement("button"); document.body.appendChild(window.__dummy);
     window.__popts = (busy, turn, gate) => ({ ...window.__opts(busy, turn, "local", gate), resync: () => { window.__p.resynced++; window.__sync(true, 77); }, refocus: () => { window.__p.refocused++; window.__dummy.focus(); },
       onRun: (name, lb, st, rerun, opener, begin) => { begin(); window.__p.begun++; window.__turn = 21; window.__sync(true, 21);   // 同 app:begin → submitMessage 同步把回合開起來(rpWfSync)
-        return new Promise((r) => setTimeout(() => r(window.__p.mode === "ok" ? 21 : false), 10)); } });
+        return new Promise((r) => setTimeout(() => r(window.__p.mode === "ok" ? { sid: "desktop-wf", seq: 21 } : false), 10)); } });
     window.__prender = (data, busy, turn, gate) => window.BlaveReport.renderWf(window.__box, data, window.__popts(busy, turn, gate));
     window.__sync = (busy, turn, scope, gate) => window.BlaveReport.wfSync(window.__box, window.__popts(busy, turn == null ? window.__turn : turn, gate)); 0;`);
   r = await js(`(async () => { window.__prender(${D(null)}, false); const b = window.__box.querySelector(".wf-empty .wf-go"); b.focus(); b.click();
@@ -639,8 +629,8 @@ app.whenReady().then(async () => {
     r.p.begun === 1 && r.mid.spin && !r.mid.cap && r.mid.txt === (await tf("wf.btnSent")) && r.mid.focusDummy && r.p.refocused >= 1, JSON.stringify(r));
   r = await js(`(async () => { window.__p.mode = "fail"; window.__p.resynced = 0; window.__turn = 30; window.__prender(${D({ ...SAMPLE, wfe: 0.42 })}, false, 30); window.__box.querySelector(".wf-bar .wf-go").click();
     await new Promise((r) => setTimeout(r, 40)); return { resynced: window.__p.resynced, card: !!window.__box.querySelector(".wf-card"), cap: (window.__box.querySelector(".wf-cap") || {}).textContent, spin: !!window.__box.querySelector(".wf-go .spin16") }; })()`);
-  ok("② P2-1 沒送出去(submitMessage 回 false,例如別的回合剛好開了):收掉 pending、照現在的回合狀態重畫——舊結果回來、鈕停用 + 那一行說明",
-    r.resynced === 1 && r.card && !r.spin && r.cap === (await tf("rob.busy")), JSON.stringify(r));
+  ok("② P2-1 沒送出去(submitMessage 回 false):收掉 pending、重畫——舊結果回來、鈕可再按",
+    r.resynced === 1 && r.card && !r.spin && !r.cap, JSON.stringify(r));
   r = await js(`(() => { window.__p.mode = "ok"; window.__prender(${D(null)}, false, 40, null); const i = window.__box.querySelector(".wf-empty input"); i.value = "400"; i.dispatchEvent(new Event("input"));
     window.BlaveReport.wfSync(window.__box, window.__popts(false, 40, true)); const a = window.__box.querySelector(".wf-empty input").value;
     window.BlaveReport.wfSync(window.__box, window.__popts(false, 40, false)); const b = !!window.__box.querySelector(".wf-empty p.lead"); return { a, b }; })()`);

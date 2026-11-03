@@ -172,12 +172,16 @@ function xpMenuKey(e) {
 function xpAsk(target, opener) {
   const id = RP.name;
   if (!XP_PLATFORM[target] || xpDisabled() || !xpLocal() || !id || !HO_ID_RE.test(id)) return;
+  const onceKey = "xp:" + target + ":" + id, onceTell = (a) => { xpNote(t("xp.sending")); $("xp-note").dataset.sid = a.sid; busyFixLink($("xp-note"), "view"); };   // 同一支同平台還在轉:不開第二條,講一句＋〔查看〕
+  const once = csOnceLive(onceKey); if (once) { onceTell(once); return; }
   const platform = XP_PLATFORM[target], title = xpTitle(target);
   confirmBox({ title, lines: [t("xp.cf.body", { platform })], ok: t("xp.cf.ok"), opener,
     onOk: () => {
       const msg = xpMsg(target, id, xpTpl()); if (!msg) return;
+      const again = csOnceLive(onceKey); if (again) { onceTell(again); return; }   // 框開著的期間另一條已經送了
       if (paneSt.chat.off) paneToggle("chat", false);                     // 聊天欄收著就先展開:轉的過程在那裡
-      csSendAway(msg).then((ok) => { if (ok) trackFeature(XP_FEATURE[target]); });   // 跑起來才算用過(同 rpRobAsk)
+      const sending = csSendAway(msg); csOnceMark(onceKey);
+      sending.then((ok) => { if (ok) trackFeature(XP_FEATURE[target]); });   // 跑起來才算用過(同 rpRobAsk)
     } });
   $("del-title").title = title;
 }

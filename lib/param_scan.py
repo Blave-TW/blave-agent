@@ -21,6 +21,11 @@ import time
 
 import numpy as np
 
+try:
+    from lib.winreplace import atomic_replace
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
+    atomic_replace = os.replace
+
 
 # api-side cap on each scan.json axis (api/openclaw/agent_strategies.py ingest) — a longer
 # axis is refused there and the web 穩健參數 tab stays blank, so refuse it here first
@@ -448,6 +453,51 @@ def _finite_numbers(x, what):
         raise ValueError(f"write_scan: {what} must be finite numbers, got {items}")
 
 
+_IMPORTED_AT = time.time()  # stand-in for "when this run started": scan scripts import this first
+_TMP_STALE_S = 3600
+
+
+def _strategy_code_hash(output_dir):
+    """code_hash of <output_dir>/strategy.py, or None when there is no such file."""
+    from lib.strategy import code_hash
+    try:
+        with open(os.path.join(str(output_dir), 'strategy.py'), 'rb') as f:
+            return code_hash(f.read())
+    except OSError:
+        return None
+
+
+def _scan_code_hash(output_dir):
+    """The hash scan.json carries. strategy.py changing after this process started means the
+    grid came from older code, so nothing is written: another turn may have edited or restored
+    the file, and a late scan.json would read as the conclusion for the new code."""
+    try:
+        changed = os.path.getmtime(os.path.join(str(output_dir), 'strategy.py')) > _IMPORTED_AT
+    except OSError:
+        return None
+    if changed:
+        raise SystemExit(f"❌ Scan discarded: {output_dir}/strategy.py changed while it ran; "
+                         "nothing was written. Re-run it.")
+    return _strategy_code_hash(output_dir)
+
+
+def _clear_stale_tmp(path):
+    """A process killed mid-write (Stop kills after 5s) leaves <path>.<pid>.tmp behind for good."""
+    folder, base = os.path.split(path)
+    try:
+        names = os.listdir(folder or '.')
+    except OSError:
+        return
+    for n in names:
+        if n.startswith(base + '.') and n.endswith('.tmp'):
+            p = os.path.join(folder, n)
+            try:
+                if time.time() - os.path.getmtime(p) > _TMP_STALE_S:
+                    os.remove(p)
+            except OSError:
+                pass
+
+
 def write_scan(grid, row_vals, col_vals, nbr_mean, best_idx, output_dir,
                row_param, col_param, fee, start, end, current=None, window=1):
     """
@@ -535,6 +585,9 @@ def write_scan(grid, row_vals, col_vals, nbr_mean, best_idx, output_dir,
         'fee': float(fee), 'start': start, 'end': end, 'window': int(window),
         'generated_at': int(time.time()),
     }
+    code_hash = _scan_code_hash(output_dir)
+    if code_hash:
+        doc['code_hash'] = code_hash
     if current is not None:
         rv, cv = current  # exactly two values — (row_val, col_val); vals is always length 2
         i, j = _locate(rv, row_list), _locate(cv, col_list)
@@ -547,11 +600,13 @@ def write_scan(grid, row_vals, col_vals, nbr_mean, best_idx, output_dir,
     # Atomic (same pattern as lib/report.py): the uploader may read mid-write, and a
     # half-written scan.json would break the web tab until the next scan. allow_nan=False
     # so a NaN that slipped past _grid_json fails here with a stack trace, not in the api.
-    tmp = path + '.tmp'
+    # Per-process tmp: two turns can write the same strategy's result at once.
+    _clear_stale_tmp(path)
+    tmp = f'{path}.{os.getpid()}.tmp'
     try:
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(doc, f, ensure_ascii=False, allow_nan=False)
-        os.replace(tmp, path)
+        atomic_replace(tmp, path)
     except Exception:
         try:
             os.remove(tmp)

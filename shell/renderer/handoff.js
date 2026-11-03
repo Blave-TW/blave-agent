@@ -172,15 +172,28 @@ function hoStay() {
    key 給 null 就收起來。這個位置只為那兩句存在(規格 §2)。 */
 function hoNote(key) {
   const n = $("rp-ho-note"); if (!n) return;
-  n.textContent = ""; n.hidden = !key; if (!key) return;
+  delete n.dataset.busy; n.textContent = ""; n.hidden = !key; if (!key) return;
   const b = document.createElement("button"); b.type = "button"; b.className = "btn-quiet"; b.textContent = t("ho.block.goCloud");
   b.addEventListener("click", () => { hoNote(null); envSwitchGuarded("cloud"); });   // 不記 pending:記了雲端那邊就會出「準備好了」卡,按幾次都繞回同一張
   n.append(t(key) + " ", b);
 }
 
+// 同一支同方向還在送(回合中不上鎖,連按會開兩條分頁搬同一支):講一句＋〔查看〕帶去那條
+function hoOnceTell(a) {
+  const n = $("rp-ho-note"); if (!n) return;
+  n.textContent = t(a.key); n.dataset.sid = a.sid; n.hidden = false;
+  busyFixLink(n, "view");
+}
+// 還能不能送:同一支同方向還在送,或雲端主機正在更新(搬檔與重跑回測會撞上換 lib/)
+function hoBlocked(onceKey) {
+  const a = csOnceLive(onceKey); if (a) return { key: "ho.sending", sid: a.sid };
+  return UPD.cloudSid && csTabRunning(UPD.cloudSid) ? { key: "ho.updating", sid: UPD.cloudSid } : null;
+}
 function hoAsk(dir, id, opener) {
   if (!HO.on || !HO_ID_RE.test(id)) return;
   if (!envCanSwitch()) return;                                           // IME 選字中、別的框開著
+  const onceKey = "ho:" + dir + ":" + id, once = hoBlocked(onceKey);
+  if (once) { hoOnceTell(once); return; }
   // 雲端沒在運行(沒登入、沒綁卡、沒主機、啟動中):切過去,那一頁自己會講。
   // 記下要送哪一支:那一頁通完(登入 / 啟動好)之後,雲端中欄會留一格「準備好了」卡,主鈕把人送回來按這顆鈕。
   // **切完才記**:envSwitch 自己會清 pending(人自己切視角 = 放棄這個意圖),先記會被那一行洗掉。
@@ -225,9 +238,11 @@ function hoAsk(dir, id, opener) {
     title, lines: [], extra, ok: t("ho.ok"), opener,
     onOk: () => {
       const msg = hoMsg(dir, id, hoTpl(tb), to); if (!msg) return;
+      const again = hoBlocked(onceKey); if (again) { hoOnceTell(again); return; }   // 框開著的期間另一條已經送了
       if (paneSt.chat.off) paneToggle("chat", false);                   // 聊天欄收著就先展開:過程在那裡回報
-      csSendAway(msg, { handoff: dir, noBacktest: tb === "B" })      // 不碰 #ta:輸入框裡的草稿原封不動;標記給主行程記「上雲端運行」那則事件(只有 up 算);noBacktest:雲端結果卡寫「沒有回測」
-        .then((ok) => { if (ok) trackFeature(dir === "up" ? "handoff_cloud" : "handoff_pull"); });   // 跑起來才算用過(busy / 被最低版本擋下不算),同 rpRobAsk
+      const sending = csSendAway(msg, { handoff: dir, noBacktest: tb === "B" });      // 不碰 #ta:輸入框裡的草稿原封不動;標記給主行程記「上雲端運行」那則事件(只有 up 算);noBacktest:雲端結果卡寫「沒有回測」
+      csOnceMark(onceKey);
+      sending.then((ok) => { if (ok) trackFeature(dir === "up" ? "handoff_cloud" : "handoff_pull"); });   // 跑起來才算用過(busy / 被最低版本擋下不算),同 rpRobAsk
     },
   });
   $("del-title").title = title;                                         // 標題單行截尾,全文放 title

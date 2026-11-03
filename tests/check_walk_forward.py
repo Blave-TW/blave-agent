@@ -256,4 +256,48 @@ check(sum(r["trades"] for r in docc["runs"]) == docc["oos_stats"]["Trades"],
 check(math.isfinite(docc["oos_stats"]["Sharpe Ratio"]) and len(docc["oos"]["cum"]) > 0,
       "Type C:樣本外統計與曲線都算得出來")
 
+# 兩個回合可能同時寫同一支的 wf.json:tmp 帶 pid,不互相覆蓋或搶 os.replace
+_replaced = []
+_orig_replace = os.replace
+os.replace = lambda a, b: (_replaced.append(a), _orig_replace(a, b))[1]
+try:
+    run_walk_forward(df, compute_signals, ENTRY_VALS, EXIT_VALS, tempfile.mkdtemp(),
+                     row_param="ENTRY_TH", col_param="EXIT_TH", fee=0.0005,
+                     lookback_days=LOOKBACK, step_days=STEP, warmup=WARMUP, current=(0.002, 0.0))
+finally:
+    os.replace = _orig_replace
+check(any(x.endswith(f"wf.json.{os.getpid()}.tmp") for x in _replaced), "wf.json 的 tmp 檔名帶 pid")
+
+# 舊碼防線:wf.json 帶開跑時那份碼的 code_hash;跑的期間 strategy.py 變了就不寫。裸 os.replace 換成 atomic_replace
+import lib.walk_forward as _wf
+from lib.strategy import code_hash as _code_hash
+_wf_args = dict(row_param="ENTRY_TH", col_param="EXIT_TH", fee=0.0005, lookback_days=LOOKBACK, step_days=STEP, warmup=WARMUP, current=(0.002, 0.0))
+_d = tempfile.mkdtemp()
+with open(os.path.join(_d, "strategy.py"), "wb") as f:
+    f.write(b"A = 1\n")
+_used = []
+_orig_atomic = getattr(_wf, "atomic_replace", None)
+_wf.atomic_replace = lambda a, b: (_used.append(a), os.replace(a, b))[1]
+try:
+    _doc = json.load(open(run_walk_forward(df, compute_signals, ENTRY_VALS, EXIT_VALS, _d, **_wf_args)))
+finally:
+    if _orig_atomic:
+        _wf.atomic_replace = _orig_atomic
+check(_doc.get("code_hash") == _code_hash(b"A = 1\n"), "wf.json 帶那份碼的 code_hash")
+check(bool(_used), "wf.json 走 atomic_replace(Windows 重試),不是裸 os.replace")
+_d2 = tempfile.mkdtemp()
+_src2 = os.path.join(_d2, "strategy.py")
+with open(_src2, "wb") as f:
+    f.write(b"A = 1\n")
+def _edit_midway(*a, **k):
+    with open(_src2, "wb") as f:
+        f.write(b"A = 2\n")
+    return compute_signals(*a, **k)
+try:
+    run_walk_forward(df, _edit_midway, ENTRY_VALS, EXIT_VALS, _d2, **_wf_args)
+    _exited = False
+except SystemExit:
+    _exited = True
+check(_exited and not os.path.exists(os.path.join(_d2, "wf.json")), "跑的期間 strategy.py 變了:拒寫、不留 wf.json")
+
 print("all checks passed" if not fails else f"FAILED: {fails}"); sys.exit(1 if fails else 0)

@@ -1,13 +1,12 @@
 /* 回合中的鎖(設計 spec busy-lock-2026-10 第一期)。0.1.37 起多條對話並行(chattabs.js):這裡的鎖都是機器層級,看「任何回合」(csAnyTurn);
    「這條自己在跑」的(送出鍵、Enter、刪回覆中那條)看分頁自己的 running。切換對話、開新對話、從別處送一句話不再上鎖(spec chat-tabs §3)。
+   參數掃描、樣本外(另開分頁送)、成交測試、更新績效(不開回合)不鎖;更新雲端主機只看對著雲端的回合(chattabs.js csCloudTurn)。
    留下的鎖只有 BUSY 這張表;每一把都是 aria-disabled(鈕照畫、可聚焦、可點),點了在控件附近的訊息槽寫一句原因＋一個補救連結
    (查看 = 帶回聊天欄看那條回覆;停止 = 停掉那條)。不出 toast,一個容器一個槽,新的一句取代舊的;回合結束(busySync)全部收掉。
    送一句話的鈕各自已有原因行(策略庫、報告、轉出…),那幾處只叫 busyHit("send") 記埋點,句子是 turn.busy、不加連結(mockup-v2 1-3:送出鍵就是停止)。
    載在 app.js 之前(handoff.js 前一支);用到 app.js 的 $ / t / running / stopTurn / trackFeature / setClose / csShowList / paneSt / paneToggle / scrollChat——都在呼叫時才取。 */
 const BUSY = {
   update:   { key: "busy.update",   fix: "view" },
-  perf:     { key: "busy.perf",     fix: "view" },
-  xtPerf:   { key: "xt.busyTurn",   fix: "view" },   // 成交測試的〔開始測試〕／〔重新測試〕:同一條指令、同一把鎖,句子換它自己的
   rerun:    { key: "busy.rerun",    fix: "view" },
   restore:  { key: "busy.restore",  fix: "view" },
   chatDel:  { key: "busy.chatDel",  fix: "stop" },
@@ -15,7 +14,7 @@ const BUSY = {
   send:     { key: "turn.busy",     fix: null },
 };
 // 埋點名(spec §4;tests/check_shell_telemetry.js 掃這張表):被擋那一下記哪一把鎖。del 不在 BUSY:刪策略被鎖時不講原因(Wei),只記埋點
-const BUSY_FEATURE = { update: "lock_update", perf: "lock_perf", xtPerf: "lock_perf", rerun: "lock_perf", restore: "lock_restore", del: "lock_del", chatDel: "lock_chat_del", cloudUpd: "lock_send", send: "lock_send" };
+const BUSY_FEATURE = { update: "lock_update", rerun: "lock_perf", restore: "lock_restore", del: "lock_del", chatDel: "lock_chat_del", cloudUpd: "lock_send", send: "lock_send" };
 // 停止之後等回合真的收掉再做(登出 / 換 AI / 移除自帶金鑰);主行程 STOP_KILL_MS 5 秒沒輸出就砍,這裡給到 20 秒。
 // 逾時不照做:確認框說了「會先停止」,停不下來就在原位講一句、留「停止」再按
 const BUSY_STOP_WAIT_MS = 20000;
@@ -53,7 +52,7 @@ function busyFixLink(el, action) {
   el.append(" ", b);
   busyQuietOthers(el); el.dataset.busy = "1";
 }
-function busyTell(slot, kind, sid) {   // sid:補救〔停止〕要停的那一條(刪回覆中那條);沒帶 = 全部在跑的
+function busyTell(slot, kind, sid) {   // sid:補救要對著的那一條(刪回覆中那條、擋更新雲端主機那條);只有「先停再做」的逾時句不帶 = 全部在跑的
   const L = BUSY[kind]; if (!slot || !L) return;
   if (sid) slot.dataset.sid = sid; else delete slot.dataset.sid;
   busyQuietOthers(slot);
@@ -66,11 +65,12 @@ function busyTell(slot, kind, sid) {   // sid:補救〔停止〕要停的那一�
 function busyFix(action, sid) {
   if (typeof trackFeature === "function") trackFeature("lock_fix");
   if (action === "stop") { if (sid && typeof csStopOne === "function") csStopOne(sid); else if (typeof csStopAll === "function") csStopAll(); else stopTurn(); return; }
-  busyView();
+  busyView(sid);
 }
 // 查看:回到聊天欄、在跑的那條回覆的最底下(眼前這條沒在跑就切到在跑的那條;設定 / 對話清單蓋著就收,聊天欄收著就展開)
-function busyView() {
-  if (typeof csShowRunning === "function") csShowRunning();
+function busyView(sid) {
+  if (sid && typeof csOpen === "function") csOpen(sid);
+  else if (typeof csShowRunning === "function") csShowRunning();
   if (!$("set-scrim").hidden) setClose();
   if (!$("cs-list").hidden) csShowList(false);
   if (typeof paneSt !== "undefined" && paneSt.chat.off) paneToggle("chat", false);
@@ -113,6 +113,8 @@ function busySync() {
   const on = busyOn();
   // 清單列尾的刪除:只鎖回覆中那條自己(csRow 掛 data-sid)
   document.querySelectorAll("#cs-rows .cs-row").forEach((row) => { const del = row.querySelector(".cs-del"); busyLock(del, typeof csTabRunning === "function" && csTabRunning(row.dataset.sid)); });
+  // 掛著 sid 的句子(去重、擋路那條):那條跑完就過期,不等全部結束
+  if (typeof csTabRunning === "function") document.querySelectorAll("[data-busy][data-sid]").forEach((s) => { if (!csTabRunning(s.dataset.sid)) busyQuiet(s); });
   if (on) return;
   document.querySelectorAll("[data-busy]").forEach(busyQuiet);
   const p = BUSY_PENDING; BUSY_PENDING = null;

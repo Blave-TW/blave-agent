@@ -75,22 +75,27 @@ function loginShellPath() {
 }
 
 /* Windows 的 npm 全域 CLI 是 .cmd 包裝檔,Node 不經 shell 開不了(EINVAL)。只有這種才走 shell;命令列裡只有我們寫死的字
-   與 where.exe 給的路徑(引號包住,路徑含空白也行)。 */
-const cmdWrap = (bin) => (process.platform === "win32" && /\.(cmd|bat)$/i.test(bin) ? { file: `"${bin}"`, shell: true } : { file: bin, shell: false });
+   與 where.exe 給的路徑(引號包住,路徑含空白也行)。走 shell 時自己接好整行、args 給空陣列:cmd.exe 拿到的命令列跟 Node 自己接的
+   一字不差,只是不觸發 DEP0190(shell 配 args 的棄用警告,0.1.41 win-test-6 的 stderr) */
+const cmdWrap = (bin, args) => (process.platform === "win32" && /\.(cmd|bat)$/i.test(bin) ? { file: [`"${bin}"`, ...args].join(" "), args: [], shell: true } : { file: bin, args, shell: false });
 // env 只給 detectAgents 的對照組(authOutside);其餘一律 probeEnv:跟 agent 回合同一組憑證環境
 function run(cmd, args, envPath, timeout = 10000, cwd = undefined, env = undefined) {
-  const w = cmdWrap(cmd), t0 = Date.now();
+  const w = cmdWrap(cmd, args), t0 = Date.now();
   return new Promise((resolve) => {
-    const done = (err, stdout, stderr) => resolve({
-      code: err ? (err.code === undefined ? -1 : err.code) : 0,
-      stdout: String(stdout || ""), stderr: String(stderr || ""),
-      timedOut: !!(err && err.killed), ms: Date.now() - t0,
-      // 只留動作名:非同步那支的 syscall 是「spawn <路徑>」,路徑不進 detect.log
-      ...(err && err.syscall ? { syscall: String(err.syscall).split(" ")[0] } : {}),
-    });
+    const done = (err, stdout, stderr) => {
+      const code = err ? (err.code === undefined ? -1 : err.code) : 0, out = String(stdout || ""), errText = String(stderr || ""), timedOut = !!(err && err.killed);
+      resolve({
+        code, stdout: out, stderr: errText, timedOut, ms: Date.now() - t0,
+        // 只留動作名:非同步那支的 syscall 是「spawn <路徑>」,路徑不進 detect.log
+        ...(err && err.syscall ? { syscall: String(err.syscall).split(" ")[0] } : {}),
+        // .cmd 經 cmd.exe:檔案被拒絕執行時是 cmd.exe 自己回非 0、只在 stderr 講(拒絕 RX 實測回 1),CLI 一個字都沒印。
+        // 沒登入的 CLI 會在 stdout 回答,所以 stdout 空、stderr 有字 = 包裝檔沒跑起來(cantRun)
+        ...(w.shell && !timedOut && typeof code === "number" && code !== 0 && !out.trim() && errText.trim() ? { refused: true } : {}),
+      });
+    };
     // Node 的 spawn 只有 EACCES／EAGAIN／EMFILE／ENFILE／ENOENT 走 error 事件,其他(EPERM…)同步 throw。
     // 不接住就變 reject,整次偵測倒掉、兩列都「沒有回應」(uid 33959 的 detect.log:hung、EPERM)
-    try { execFile(w.file, args, { timeout, cwd, shell: w.shell, windowsHide: true, env: env || probeEnv(envPath) }, done); }
+    try { execFile(w.file, w.args, { timeout, cwd, shell: w.shell, windowsHide: true, env: env || probeEnv(envPath) }, done); }
     catch (e) { done(e); }
   });
 }
@@ -136,11 +141,11 @@ function binKind(p) {
   if (/\.ps1$/i.test(p)) return "ps1";
   return /^(?:[a-z]:)?\\/i.test(p) ? "shim" : "posix";
 }
-const runRec = (r) => ({ code: r.code, timedOut: r.timedOut, ms: r.ms, ...(r.syscall ? { syscall: r.syscall } : {}) });
+const runRec = (r) => ({ code: r.code, timedOut: r.timedOut, ms: r.ms, ...(r.syscall ? { syscall: r.syscall } : {}), ...(r.refused ? { refused: true } : {}) });
 // 找得到檔、但跑不起來:126 不能執行、127 包裝腳本裡找不到真的那顆(cmux 開發版 PATH 上的 codex 就是這樣)、ENOENT/EACCES/EPERM/UNKNOWN 開不了
 // (Windows 拒絕存取是 EPERM、非 PE 檔是 UNKNOWN,win-test-6 實測)。逾時後殺不掉會回 code EPERM + timedOut,那是逾時,排除。
-// 這不是「沒登入」:叫用戶去登入只會再撞一次。純函式
-const cantRun = (r) => !!r && !r.timedOut && (r.code === 126 || r.code === 127 || r.code === "ENOENT" || r.code === "EACCES" || r.code === "EPERM" || r.code === "UNKNOWN");
+// refused = .cmd 被 cmd.exe 拒絕執行(run)。這不是「沒登入」:叫用戶去登入只會再撞一次。純函式
+const cantRun = (r) => !!r && !r.timedOut && (r.refused === true || r.code === 126 || r.code === 127 || r.code === "ENOENT" || r.code === "EACCES" || r.code === "EPERM" || r.code === "UNKNOWN");
 /* 這個 CLI 為什麼不能用(detect_fail 埋點的值;能用回 null)。純函式。
    none = 沒找到檔(claude 是 PATH 與隨包那顆都沒有;codex 是隨包還沒抓);timeout = 登入檢查逾時;
    cantrun = 找到了、跑不起來(cantRun,退路那顆也不行);badjson = `claude auth status` 回的不是 JSON(舊版);
@@ -297,11 +302,21 @@ async function detectAgentsRaw() {
 /* 整次偵測的上限(spec codex-detect-gaps §3.4):裡面每一步都有上限,但任何一處 reject 畫面就永遠停在「偵測中…」、
    登入鈕全部鎖死(uid 33959)。最壞路徑是 claude 那條:which + 登入檢查,cantRun 後退路再走一輪,兩倍再留 10 秒(含第一次偵測 loginShellPath 的 8 秒)。
    超時或 reject 回完整形狀、兩條都是 installed:true + *_timeout:畫面畫「沒有回應」(不是「未偵測到」),跟 detectWhy 的 _timeout 同一個意思。
-   內層超時後還會跑完、再寫一行 detect.log、更新 BAD_BIN,接受 */
+   內層超時後還會跑完、再寫一行 detect.log、更新 BAD_BIN,接受。
+   同時進來的呼叫(回前景重偵測途中按〔連結〕,agentLogin／saveConnection 又要偵測)共用進行中的那一輪:兩輪 detectAgentsRaw
+   會搶 BAD_BIN／codexRan／lastDetected,子行程也加倍。那一輪跑超過上限就不再共用,免得一輪卡住拖住之後每一次;
+   這時另開的新一輪仍可能被晚到的舊輪覆寫那三個值(改之前每次都各跑一輪,一樣),接受 */
 const DETECT_TOTAL_MS = 2 * (5000 + LOGIN_CHECK_MS) + 10000;
+let detectShared = null;
 async function detectAgents(ms = DETECT_TOTAL_MS) {
+  if (!detectShared || Date.now() - detectShared.t0 >= ms) {
+    const mine = { t0: Date.now() };
+    mine.p = detectAgentsRaw().finally(() => { if (detectShared === mine) detectShared = null; });
+    detectShared = mine;
+  }
+  const raw = detectShared.p;
   let timer = null, err = null, out = null;
-  try { out = await Promise.race([detectAgentsRaw(), new Promise((r) => { timer = setTimeout(r, ms, null); })]); }
+  try { out = await Promise.race([raw, new Promise((r) => { timer = setTimeout(r, ms, null); })]); }
   catch (e) { err = e; }
   clearTimeout(timer);
   if (out) return out;
@@ -334,11 +349,10 @@ async function agentLogin(kind, onSpawn) {
   if (slot.__cancelled) { loginChild = null; return { ok: false, cancelled: true, code: null, cantRun: false }; }
   if (!bin) { loginChild = null; return { ok: false }; }
   return new Promise((resolve) => {
-    const w = cmdWrap(bin);
+    const w = cmdWrap(bin, kind === "claude" ? ["auth", "login"] : ["login"]);
     let child;
     try {
-      child = spawn(w.file, kind === "claude" ? ["auth", "login"] : ["login"],
-        { env: probeEnv(envPath), stdio: "ignore", shell: w.shell, windowsHide: true });
+      child = spawn(w.file, w.args, { env: probeEnv(envPath), stdio: "ignore", shell: w.shell, windowsHide: true });
     } catch (e) {   // 同步 throw(見 run):loginChild 要放掉,不然之後每次登入都回 busy
       const code = (e && e.code) || "ERROR";
       loginChild = null;
@@ -1515,7 +1529,10 @@ function loadStrategy(name) {
   // 參數掃描(lib/param_scan.write_scan 的 scan.json)與樣本外驗證(lib/walk_forward.run_walk_forward 的 wf.json):
   // 逐欄檢查在 renderer/report-robust.js 的 sanitizeScan / report-wf.js 的 sanitizeWf
   const scan = readResultJson(path.join(dir, "scan.json")), wf = readResultJson(path.join(dir, "wf.json"));
-  try { code = fs.readFileSync(path.join(dir, "strategy.py"), "utf8"); } catch (_) {}
+  let codeBuf = null;
+  try { codeBuf = fs.readFileSync(path.join(dir, "strategy.py")); code = codeBuf.toString("utf8"); } catch (_) {}
+  // 掃描／樣本外是哪一版碼跑的(lib 寫的 code_hash = lib.strategy.code_hash):跟現在的檔不同就不是這份碼的結論,畫面照過時畫
+  if (codeBuf) { const h = crypto.createHash("sha256").update(codeBuf).digest("hex").slice(0, 16); for (const r of [scan, wf]) if (r && typeof r.code_hash === "string" && r.code_hash !== h) r.code_stale = true; }
   return { name, stats, scan, wf, code, dataSources: stratDataSources(dir), missingSources: stratMissingSources(dir), versions: stratVersions(dir), perf: stratPerf(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir) };
 }
 /* 績效的新鮮度(renderer/perf.js 的「更新績效」),形狀同 runtime strategy_reporter._read_perf:{ at, refresh? },沒有 stats.json = null。

@@ -21,7 +21,7 @@ for (const m of app.matchAll(/^let ([^\n]*)/gm)) {
 }
 const tabKeys = [...ct.matchAll(/^  \["([\w.]+)", \(\) =>/gm)].map((m) => m[1]);
 const GLOBAL_OK = {
-  localReady: "本機引擎偵測", lastDetect: "本機 AI 偵測結果", detectAt: "同上", HINT: "連結畫面提示", loginSpawned: "登入行程", cur: "連的是哪個 AI(全 app 一個)",
+  localReady: "本機引擎偵測", lastDetect: "本機 AI 偵測結果", detectAt: "同上", detectP: "同上(在飛的那一輪)", HINT: "連結畫面提示", loginSpawned: "登入行程", cur: "連的是哪個 AI(全 app 一個)",
   SYS_QUIET: "換語言重畫聊天系統行時的旗標(同步段落)", hasToken: "Blave 登入", csReady: "對話清單第一次載入", acctOutBusy: "登出中", oauthPending: "登入中", SHL_SCROLL: "設定頁捲動", PRIV: "隱私設定", MV: "手機查看",
   MV_BUSY: "同上", PRIV_BUSY: "同上", RN: "回覆通知設定", rsCtx: "回覆音 AudioContext", rsLast: "回覆音 2 秒內只響一次(全 app)", composing: "輸入法組字(共用輸入框)",
   attachedFiles: "共用輸入框的附件;切分頁時由 tabShow 換成那個分頁的 composer.files", rpWaitShownAt: "中欄報告", rpcSeq: "中欄雲端報告", rpcOwed: "中欄雲端報告欠的重抓(任何回合結束才補)",
@@ -85,11 +85,11 @@ const topNames = (src) => { const out = []; for (const m of src.matchAll(/^(?:le
   }
   ok("每輪模組物件裡看起來是「這一輪」的欄位(pending／turn／sid／seq／wait)都歸類;標 TAB 的真的在 TAB_KEYS", fbad.length === 0, fbad);
   ok("SID 類的收尾只認發起那一條:策略庫〔使用〕、新增報告、更新雲端主機、方案開好那句、掃描／樣本外的「已送出」序號",
-    /if \(p\.sid && p\.sid !== sessionId\) return;/.test(read("library.js")) && /LIB\.pending = \{ id: s\.id, env, before, sid: at\.sid \}/.test(read("library.js")) && /if \(LIB\.pending\) LIB\.pending\.sid = at\.sid;/.test(read("library.js"))
+    /\(!p\.sid \|\| p\.sid === sessionId\)/.test(read("library.js")) && /libPendingSet\(s\.id, \{ id: s\.id, env, before, sid: at\.sid \}\)/.test(read("library.js")) && /if \(LIB\.pending\.has\(s\.id\)\) LIB\.pending\.get\(s\.id\)\.sid = at\.sid;/.test(read("library.js"))
     && /const mine = \(q\) => !!q && \(!q\.sid \|\| q\.sid === sessionId\);/.test(read("reports.js")) && /RPT\.pending\[env\] = \{ env, before, sid: at && at\.sid \}/.test(read("reports.js"))
     && /if \(UPD\.cloudSid && UPD\.cloudSid !== sessionId\) return;/.test(app) && /UPD\.cloudSid = sid;/.test(app)
     && /planDonePending = sessionId;/.test(app) && /if \(planDonePending && planDonePending === sessionId\) planSayDone\(\);/.test(app)
-    && (app.match(/resolve\(ok \? at\.seq : false\)/g) || []).length === 2 && !/resolve\(ok \? turnSeq : false\)/.test(app)
+    && (app.match(/resolve\(ok \? at : false\)/g) || []).length === 2 && !/resolve\(ok \? turnSeq : false\)/.test(app)
     && /CS\.away = \{ sid: T \? T\.sid : sessionId, seq: turnSeqMine \};/.test(ct));
 }
 
@@ -111,11 +111,11 @@ const TAB = [   // 眼前這一條(分頁自己的 running;切分頁時整組換
   ["app.js", /if \(running\) planDonePending = sessionId; else planSayDone\(\);/, "方案開好了那句不插進眼前這條的串流,記是哪一條"],
   ["app.js", /if \(ph\) withTab\(T, \(\) => \{ running = true; turnSeq\+\+; turnSeqMine = turnSeq;/, "開成分頁時主行程那邊已在跑(手機來的):記成回合中"],
   ["app.js", /const keep = running \? \{ busy, liveBubble,/, "畫歷史時那一條在跑:狀態列與串流泡泡留著"],
-  ["chattabs.js", /withTab\(T, \(\) => \{ if \(!running\) \{ running = true; turnSeq\+\+; turnSeqMine = turnSeq; turnFresh\(null\); lastUserTyped = false; lastUserText = ""; lastUserAttachments = \[\]; \} busyStart\(\); \}\);/, "started:不是這個畫面送出的那一輪也記成回合中(每輪狀態歸零)"],
+  ["chattabs.js", /withTab\(T, \(\) => \{ if \(!running\) \{ running = true; turnSeq\+\+; turnSeqMine = turnSeq; turnFresh\(null\); lastUserTyped = false; lastUserText = ""; lastUserAttachments = \[\]; turnViewCloud = true; \} busyStart\(\); \}\);/, "started:不是這個畫面送出的那一輪也記成回合中(每輪狀態歸零)"],
   ["app.js", /^let running = false;/, "宣告"],
   ["chattabs.js", /\["running", \(\) => running, \(v\) => \{ running = v; \}/, "TAB_KEYS"],
   ["chattabs.js", /function csAway\(\) \{ if \(csTitle \|\| running\)/, "從別處送一句話:眼前這條在跑就另開"],
-  ["chattabs.js", /function csShowRunning\(\) \{ if \(running\) return;/, "查看:眼前這條在跑就看它"],
+  ["chattabs.js", /^  if \(running\) return;$/, "查看(csShowRunning):眼前這條在跑就看它"],
   ["chattabs.js", /const lone = order\.length === 1 && [^\n]*!running;/, "只有一條空的:列上不畫分頁"],
   ["chattabs.js", /const lone = CS\.order\.length <= 1 && !csTitle && !running;/, "⌘W 最後一個分頁"],
   ["chattabs.js", /\(T === CS\.loaded \? running : T\.st\.running\)/, "載入中那條讀全域、其他讀它自己那份(csAnyTurn／csTurnCount／csTabRunning／tabRun)"],
@@ -130,15 +130,11 @@ const ANY = [   // 任何回合(機器層級的鎖;busyOn() = csAnyTurn())
   ["app.js", /function upLocalTurn\(\) \{ try \{ return typeof csAnyTurn === "function" \? csAnyTurn\(\) : running === true;/, "更新會重開 app"],
   ["app.js", /busyLock\(d, csAnyTurn\(\)\)\); \}\); \}/, "刪策略"], ["app.js", /busyLock\(del, csAnyTurn\(\)\); del\.onBusy = \(\) => busyHit\("del"\);/, "刪策略"],
   ["app.js", /if \(csAnyTurn\(\)\) \{ rpcOwed = true; return; \}/, "雲端報告重抓等所有回合結束"],
-  ["app.js", /turn: csAnyTurn\(\), onMetric:/, "成交測試"], ["app.js", /return \{ t, busy: csAnyTurn\(\), turn: turnSeq, scope:/, "參數掃描／樣本外驗證"],
   ["busy.js", /function busyOn\(\) \{ return typeof csAnyTurn === "function" \? csAnyTurn\(\) : typeof running !== "undefined" && running === true; \}/, "鎖本身"],
   ["busy.js", /if \(!busyOn\(\)\) \{ fn\(\); return; \}/, "停了再做"], ["busy.js", /if \(!busyOn\(\)\) \{ go\(\); return; \}/, "busyCut"], ["busy.js", /const on = busyOn\(\);/, "busySync"],
   ["chattabs.js", /if \(!csAnyTurn\(\)\) return;/, "回覆中的時長每秒進一格"], ["chattabs.js", /function csAnyTurn\(\) \{/, "定義"],
   ["intro.js", /running: \(typeof csAnyTurn === "function" \? csAnyTurn\(\) : typeof running !== "undefined" && running === true\)/, "第一次對話 modal 不在任何回合中彈"],
-  ["library.js", /if \(!csAnyTurn\(\)\) LIB\.busyTold = null;/, "原因句"], ["perf.js", /const lock = csAnyTurn\(\);/, "更新績效"],
   ["reports.js", /if \(!csAnyTurn\(\)\) RPT\.busyTold = false;/, "原因句"], ["trade.js", /busyLock\(d, busyOn\(\)\); d\.onBusy = \(\) => busyHit\("del"\);/, "雲端刪策略"],
-  ["versions.js", /const busy = csAnyTurn\(\);/, "還原／再跑一次改策略檔"], ["versions.js", /if \(!S\.data \|\| S\.open === null \|\| csAnyTurn\(\)\) return;/, "還原"],
-  ["versions.js", /if \(!pd \|\| pd\.status !== "failed" \|\| csAnyTurn\(\)\) return false;/, "重試"],
 ];
 const LOCAL = [   // 同名但不是回合狀態
   ["app.js", /function phasesPaint\(ol, rows, now, running\)|\[running, rows\.map|tm && running && r\.start|running && i === rows\.length - 1/, "phasesPaint 的參數"],

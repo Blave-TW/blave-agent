@@ -30,24 +30,16 @@ const QUIET = [
   ["app.js", "function upLocalTurn()", "只是讀值"],
   ["app.js", "if (running === true) { swHeld = { from, to }; return; }", "切視角的系統行延到回合結束才插,不是擋操作(切視角本身照切)"],
   ["app.js", "function canResend() { return !running", "述詞;重送的鈕先看 running、走 busySendTell"],
-  ["versions.js", "if (!S.data || S.open === null || csAnyTurn()) return;", "verRestoreAsk:ver-restore 的 click 先看 aria-disabled、講原因"],
-  ["versions.js", "if (!pd || pd.status !== \"failed\" || csAnyTurn()) return false;", "verRetry:ver-retry 的 click 先看 aria-disabled、講原因"],
   ["suggest.js", "if (running) return;", "建議灰字停一拍之間又開了一輪,這句已經過期;不是點擊守門"],
   ["suggest.js", "return !!SUG.text && !SUG.used && !SUG.gone && !running", "述詞:托盤在不在場(回合中不畫),不是點擊守門"],
   ["engine.js", "&& running) { window.blave.ensureEngine()", "安裝重試照跑(進度卡就是回饋),等著的那句留到回合結束"],
   ["trade.js", "return running ? \"ct.errUpdate\"", "trCtErrKey 的參數叫 running(下單程式在跑),跟回合無關"],
-  ["perf.js", "b.setAttribute(\"aria-disabled\", \"true\"); b.title = t(b.dataset.xtBtn ? \"xt.busyTurn\" : \"busy.perf\"); return;", "perfBusy 畫鎖態,不是點擊(成交測試那顆換自己那句)"],
   ["portfolio.js", "if (!running && !mgBacktest()", "畫面組字(running 是本地變數)"],
   ["busy.js", "", "鎖本身"],
   ["chattabs.js", "", "對話分頁核心(0.1.37):每個分頁自己的 running 與「任何回合」的述詞,不是點擊守門"],
   ["app.js", "if (C && !csTitle && !running && !(o && o.force))", "csStartNew:眼前那條空著又閒著就用它、不疊空分頁;不是擋操作"],
   ["app.js", "if (upLocalTurn()) return;", "upInstall / upRestartAsk:入口(更新膠囊、細軌圓鈕、set-up-btn)先看 busyLocked、講原因;選單列那條由主行程擋(TURN_BUSY)"],
   ["export.js", "if (!XP_PLATFORM[target] || xpDisabled() ||", "xpAsk:入口 xpOpen 與 again 鈕先講原因(xpNote)"],
-  ["report-robust.js", "const isSent = (st, opts) =>", "「已送出」態的述詞,不是點擊守門"],
-  ["report-wf.js", "if (s.pending) return !!opts.busy;", "「已送出」態的述詞"],
-  ["report-wf.js", "if (opts.busy && s.turn === opts.turn) return true;", "「已送出」態的述詞"],
-  ["report-wf.js", "opts.scope !== \"cloud\" || (opts.busy && s.turn === opts.turn)) return null;", "雲端樣本外驗證的計時述詞"],
-  ["report-wf.js", "if (!s || s.pending || (opts.busy && s.turn === opts.turn)) return false;", "「已送出」態的述詞"],
 ];
 const hits = [];
 for (const f of fs.readdirSync(R).filter((n) => /\.js$/.test(n) && n !== "strings.js")) {
@@ -79,8 +71,6 @@ const natives = [];
 for (const f of fs.readdirSync(R).filter((n) => /\.js$/.test(n))) {
   const src = read(path.join(R, f));
   for (const m of src.matchAll(/[^\n]*\.disabled = [^;\n]*(\brunning\b|runningNow\(\)|upLocalTurn\(\)|busyOn\(\)|opts\.busy)[^\n]*/g)) {
-    // 已知例外(spec §1-2 偏差,待拍板):參數掃描鈕回合中原生 disabled,原因句 rob.busy 常駐在鈕下(不是點了沒反應)
-    if (f === "report-robust.js" && /st\.btn\.disabled = !!opts\.busy;/.test(m[0])) continue;
     natives.push(f + ": " + m[0].trim().slice(0, 120));
   }
   for (const m of src.matchAll(/\$\("(ws-conn|mp-trigger|cs-toggle|cs-new|cs-newrow)"\)\.disabled = /g)) natives.push(f + ": " + m[0]);
@@ -91,7 +81,7 @@ ok("② 對話清單(0.1.37 分頁):切換別條、新對話不再上鎖;只有�
   !/busyTell\(csWhy\(\), "switch"\)/.test(fnSrc(appSrc, "csRow")) && /busyLock\(del, csTabRunning\(m\.id\)\); del\.onBusy = \(\) => busyTell\(csWhy\(\), "chatDel", m\.id\);/.test(fnSrc(appSrc, "csRow"))
   && !/busyTell\(csWhy\(\), "new"\)/.test(fnSrc(appSrc, "csNewClick")) && /\$\("cs-new"\)\.addEventListener\("click", csNewClick\);/.test(appSrc) && !/cs-newrow/.test(appSrc));
 ok("② 更新三處(更新膠囊與細軌圓鈕、關於列的重新啟動以完成更新、更新雲端主機):回合中 aria-disabled、點了講原因", /busyTell\(busySlot\("up-pill-why", anchor\), "update"\)/.test(fnSrc(appSrc, "upPillClick")) && /busyLock\(b, p\.kind === "busy"\)/.test(fnSrc(appSrc, "upPillPaint")) && /busyTell\(busySlot\("set-up-why", b\.parentNode\), "update"\)/.test(appSrc)
-  && /if \(upLocalTurn\(\)\) \{ busyTell\(busySlot\("upc-why"/.test(fnSrc(appSrc, "upCloudUpdate")) && /busyLock\(btn, upBusy\)/.test(fnSrc(appSrc, "upPaint")) && /busyLock\(cbtn, cBusy\)/.test(fnSrc(appSrc, "upPaint")));
+  && /const cloudSid = upCloudTurn\(\);\n  if \(cloudSid\) \{ busyTell\(busySlot\("upc-why"[^\n]*"cloudUpd", cloudSid\); return; \}/.test(fnSrc(appSrc, "upCloudUpdate")) && /busyLock\(btn, upBusy\)/.test(fnSrc(appSrc, "upPaint")) && /busyLock\(cbtn, cBusy\)/.test(fnSrc(appSrc, "upPaint")));
 const flips = appSrc.split("\n").filter((l) => /(^\s*|[;{]\s*)running = (true|false);/.test(l) && !/^let running/.test(l));
 ok("② 每一個改 running 的地方都叫 turnUiSync(它叫 busySync;鎖態與原因句跟著回合走)", flips.length >= 3 && flips.every((l) => /turnUiSync\(\)/.test(l)) && /function turnUiSync\(\) \{[\s\S]{0,120}busySync\(\)/.test(read(path.join(R, "chattabs.js"))), flips.filter((l) => !/turnUiSync\(\)/.test(l)).map((l) => l.trim().slice(0, 80)));
 
@@ -139,16 +129,16 @@ ok("③ 按「停止」:停那條回合、記 lock_fix", calls.includes("stop") 
 B.busyTell(slot, "cloudUpd");
 ok("③ 一個容器一個槽:新的一句取代舊的(只剩一顆補救)", slot.kids[0].textContent === STR.zh["busy.cloudUpd"] && slot.kids.filter((k) => typeof k !== "string" && k.tag === "button").length === 1);
 $("set-scrim").hidden = false; $("cs-list").hidden = false; calls.length = 0;
-B.busyTell(B.busySlot("perf-why", $("x")), "perf");
+B.busyTell(B.busySlot("perf-why", $("x")), "update");
 { const perfSlot = B.busySlot("perf-why", $("x")), cap = new El("p"); $("x").appendChild(cap); cap.textContent = "x";
   ok("③ 稽核 0127b1 P1-5:同一畫面只留一句——別的槽寫新句時,上一句(cs-why)收掉", slot.hidden && slot.textContent === "" && !("busy" in slot.dataset) && !perfSlot.hidden && perfSlot.dataset.busy === "1");
   B.busyFixLink(cap, "stop");
   ok("③ P1-5:各頁自己的原因句(掃描／驗證／轉出…經 busyFixLink 掛〔停止〕)也算一句:收掉別處的、自己記 data-busy", perfSlot.hidden && cap.dataset.busy === "1");
-  B.busyTell(perfSlot, "perf"); }
+  B.busyTell(perfSlot, "update"); }
 ok("③ P1-5:轉出那一行換成別的原因(時光機)時先拿掉 data-busy,回合結束不會把它一起收", /function xpNote\(text\) \{ const n = \$\("xp-note"\); if \(!n\) return; delete n\.dataset\.busy;/.test(read(path.join(R, "export.js"))));
 B.busySlot("perf-why", $("x")).kids.find((k) => typeof k !== "string" && k.tag === "button").click();
-ok("③ 按「查看」:關設定、收清單、展開聊天欄、捲到底、焦點回輸入框;記 lock_fix", calls.join() === "setClose,list:false,pane:chat:false,scroll,focus:ta" && tracked.slice(-2).join() === "lock_perf,lock_fix", calls);
-const want = { update: "lock_update", perf: "lock_perf", xtPerf: "lock_perf", rerun: "lock_perf", restore: "lock_restore", del: "lock_del", chatDel: "lock_chat_del", cloudUpd: "lock_send", send: "lock_send" };   // switch／new／sendAway 0.1.37 起拿掉(對話分頁:切換、新對話、從別處送一句話不再上鎖)
+ok("③ 按「查看」:關設定、收清單、展開聊天欄、捲到底、焦點回輸入框;記 lock_fix", calls.join() === "setClose,list:false,pane:chat:false,scroll,focus:ta" && tracked.slice(-2).join() === "lock_update,lock_fix", calls);
+const want = { update: "lock_update", rerun: "lock_perf", restore: "lock_restore", del: "lock_del", chatDel: "lock_chat_del", cloudUpd: "lock_send", send: "lock_send" };   // switch／new／sendAway 0.1.37 起拿掉(對話分頁:切換、新對話、從別處送一句話不再上鎖)
 const FEATURES = require(path.join(SH, "telemetry.js")).EVENTS.feature_used.name;
 ok("③ 每一把鎖都有字(zh / en)、都對到 spec §4 的埋點名,名字都在白名單上;刪策略(del)只記埋點、沒有字(Wei 10-24)",
   JSON.stringify(Object.keys(B.BUSY).sort()) === JSON.stringify(Object.keys(want).filter((k) => k !== "del").sort()) && Object.keys(want).every((k) => B.BUSY_FEATURE[k] === want[k] && (k === "del" || (STR.zh[B.BUSY[k].key] && STR.en[B.BUSY[k].key])))
@@ -240,12 +230,12 @@ ok("字:「上一輪還在跑」這類工程用語不再出現在任何 zh 字�
   const pt = pad && /padding-top: (\d+)px/.exec(pad[2]), pb = pad && /padding-bottom: (\d+)px/.exec(pad[2]);
   ok("補救鈕熱區不伸進鄰列:掛了補救鈕的原因句上下內距 ≥ (44 − 18) / 2,而且涵蓋 busyFixLink 寫進的每一種容器",
     !!pt && !!pb && Number(pt[1]) >= 13 && Number(pb[1]) >= 13
-    && [".busy-why", ".xp-note", ".rp-ho-note", ".rob-cap", ".wf-cap", "#lib-cta-note", "#ver-banner-err", "#ver-rerun-busy"].every((x) => lst.indexOf(x) >= 0), JSON.stringify(lst)); }
+    && [".busy-why", ".xp-note", ".rp-ho-note", "#lib-cta-note", "#ver-banner-err", "#ver-rerun-busy"].every((x) => lst.indexOf(x) >= 0), JSON.stringify(lst)); }
 { const css = read(path.join(R, "app.css")), rob = read(path.join(R, "report-robust.js"));
   const grey = css.match(/\.btn-fill:disabled, [^{]*\{([^}]*)\}/), na = css.match(/\n(\.lib-cta \.btn-fill\[aria-disabled="true"\][^{]*)\{([^}]*)\}/);
-  ok("稽核 0127b1 P1-3:回合中鎖住的驗證鈕照 Disabled ①——描邊與文字鈕都有 is-lock／aria-disabled 的灰與 not-allowed;掃描、樣本外都走 .is-lock,只在被鎖(不是已送出)時掛",
-    !!grey && /\.btn-fill\.is-lock/.test(grey[0]) && !!na && /\.btn-out\.is-lock/.test(na[1]) && /cursor: not-allowed/.test(na[2]) && /\.btn-out:disabled,[^{]*\.btn-out\.is-lock/.test(css) && /\.btn-quiet\[aria-disabled="true"\]/.test(css) && !/\.wf-go\[aria-disabled/.test(css)
-    && /\(v\.lock \? " is-lock" : ""\)/.test(rob) && /btn\.classList\.toggle\("is-lock", busyNow\)/.test(read(path.join(R, "report-wf.js")))
+  ok("被鎖的主鈕照 Disabled ①(群益／交易所驗證碼那一步還在用 .btn-fill.is-lock);掃描、樣本外不鎖了,不再掛 .is-lock",
+    !!grey && /\.btn-fill\.is-lock/.test(grey[0]) && !!na && /\.btn-fill\.is-lock/.test(na[1]) && /cursor: not-allowed/.test(na[2]) && /\.btn-quiet\[aria-disabled="true"\]/.test(css) && !/\.btn-out\.is-lock/.test(css) && !/\.wf-go\[aria-disabled/.test(css)
+    && !/is-lock/.test(rob) && !/is-lock/.test(read(path.join(R, "report-wf.js"))) && !/is-lock/.test(read(path.join(R, "perf.js")))
     && /#rp-ho\[aria-disabled="true"\] \{[^}]*cursor: not-allowed/.test(css)); }
 (async () => {
   for (let n = 0; n < pend.length; n++) await pend[n];   // 巢狀的 await_ 會在跑的時候再推進來

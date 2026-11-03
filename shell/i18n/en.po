@@ -3704,6 +3704,12 @@ msgstr "Stay in the Cloud"
 msgid "ho.gate.stale"
 msgstr "The cloud’s state can’t be read right now, so this isn’t being sent."
 
+msgid "ho.sending"
+msgstr "This strategy is already on its way. Progress is in the chat."
+
+msgid "ho.updating"
+msgstr "The cloud machine is updating. Send it after that finishes."
+
 msgid "ho.gate.stopped"
 msgstr "Your cloud machine is stopped, so nothing can be sent up right now."
 
@@ -4846,9 +4852,6 @@ msgstr "Start Scan"
 msgid "rob.btnSent"
 msgstr "Sent — See Chat"
 
-msgid "rob.busy"
-msgstr "Wait for this reply to finish before sending."
-
 msgid "rob.emptyCap"
 msgstr "When the agent finishes, the verdict and heatmap appear here."
 
@@ -5390,6 +5393,9 @@ msgstr "Confirm Purchase"
 
 msgid "lib.buy.busy"
 msgstr "Purchasing…"
+
+msgid "lib.buyWait"
+msgstr "You can buy after the strategy being installed is done."
 
 msgid "lib.buy.topup"
 msgstr "Balance {balance} — not enough. Your card will be charged {price} before purchase."
@@ -6682,6 +6688,9 @@ msgstr "Backtested strategies only"
 
 msgid "xp.why.tm"
 msgstr "Only the current version can be exported."
+
+msgid "xp.sending"
+msgstr "This export is already running. Progress is in the chat."
 
 msgid "xp.why.busy"
 msgstr "The agent is replying. Export after it finishes."
@@ -9305,9 +9314,6 @@ msgstr "You've built {n} strategies."
 # 回合中的鎖(busy.js;設計 spec busy-lock-2026-10 第一期):點了被鎖的控件,在控件附近的訊息槽講一句原因＋補救連結
 msgid "busy.update"
 msgstr "A conversation is still replying. Restarting would interrupt it."
-
-msgid "busy.perf"
-msgstr "The agent is replying and may still be editing strategies. Refresh after it finishes."
 
 msgid "busy.rerun"
 msgstr "The agent is replying and may still be editing strategies. Run it again after it finishes."

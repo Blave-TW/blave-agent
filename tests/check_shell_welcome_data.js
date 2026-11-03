@@ -72,7 +72,7 @@ if (!process.versions.electron) {
     && ['class="wc-mark"', 'id="wc-cards"', 'id="chat-idea"', 'id="onb-lib"', 'id="chat-ns"', 'id="wl-fold"', 'id="wl"', 'id="onb-po"', 'id="wf"', 'id="wf-lib"'].every((x, i, a) => wcBox.includes(x) && (i === 0 || wcBox.indexOf(x) > wcBox.indexOf(a[i - 1]))));
   { // 樣本外驗證分頁的根是 <div class="bt wf">(report-wf.js):別的 css 寫 .wf / .wf-* 選擇器就會一起套上去(0.1.27 起歡迎頁 F 的 .wf 把整個分頁置中)。
     // 列舉 shell 底下每一支 css 的每一個選擇器;只有 report-wf.css 能用,app.css 那兩條共用清單(回合鎖灰鈕 .wf-go、原因行 .wf-cap)本來就是在指分頁裡的元素
-    const ALLOW = { "app.css": [".wf-cap", ".wf-go"] }, bad = [];
+    const ALLOW = { "app.css": [".wf-go"] }, bad = [];
     const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.name === "node_modules" ? [] : e.isDirectory() ? walk(path.join(d, e.name)) : /\.css$/.test(e.name) ? [path.join(d, e.name)] : []));
     const files = walk(SHELL);
     for (const f of files) {
@@ -286,10 +286,10 @@ if (!process.versions.electron) {
       && !/wcCurve|SEND_ROW_IC|ST_ROWS|ST_FEATURE|stPaint|stGo|stSync|stTurnEnd/.test(src));
     ok("② tag 用既有的 wd.mk.*(en 台股改 TW Stocks);輸入框提示改成講想法的短句(spec §9:聊天欄最窄 336 也放得下)",
       STR.en["wd.mk.tw"] === "TW Stocks" && STR.zh["wd.mk.tw"] === "台股" && STR.zh["ws.placeholder"] === "說一個交易想法…" && STR.en["ws.placeholder"] === "Describe a trading idea…");
-    ok("② ①策略卡的 CTA(spec §3.1):先擋回合中與代下載中(busySendTell)、狀態不是 free 只開詳情、free 才 libAsk(from welcome);名字按鈕記 wcard_open／wcard_open_cloud 再開詳情(libOpen silent);鎖由 wcBusySync 就地換(busyLock、正在裝的那支換 lib.pending)",
-      /if \(LIB\.pending\) \{ busySendTell\(\); return; \}[^\n]*\n\s*if \(libCtaOf\(s\)\.state !== "free"\) \{ wcDetail\(s\); return; \}\n\s*libAsk\(s, a, \{ from: "welcome" \}\);/.test(cutFn(src, "wcUse"))
+    ok("② ①策略卡的 CTA(spec §3.1):先擋同一支還在裝與雲端一次一支(busySendTell)、狀態不是 free 只開詳情、free 才 libAsk(from welcome);名字按鈕記 wcard_open／wcard_open_cloud 再開詳情(libOpen silent);鎖由 wcBusySync 就地換(busyLock、正在裝的那支換 lib.pending)",
+      /if \(libPendingBlocks\(s\)\) \{ busySendTell\(\); return; \}[^\n]*\n\s*if \(libCtaOf\(s\)\.state !== "free"\) \{ wcDetail\(s\); return; \}\n\s*libAsk\(s, a, \{ from: "welcome" \}\);/.test(cutFn(src, "wcUse"))
       && /trackFeature\(onbEnv\(\) === "cloud" \? "wcard_open_cloud" : "wcard_open"\); wcDetail\(s\);/.test(cutFn(src, "wcCard")) && /await libOpen\(\{ silent: true \}\); libShowDetail\(s\.id\);/.test(cutFn(src, "wcDetail"))
-      && /busyLock\(a, busy\);/.test(cutFn(src, "wcBusySync")) && /t\(mine \? "lib\.pending" : "lib\.use"\)/.test(cutFn(src, "wcBusySync")));
+      && /busyLock\(a, mine \|\| lockAll\);/.test(cutFn(src, "wcBusySync")) && /t\(mine \? "lib\.pending" : "lib\.use"\)/.test(cutFn(src, "wcBusySync")));
     // wcPaint 原文接假 DOM:骨架、收起、雲端停了收起、指紋沒變不碰 DOM
     { const mk = () => ({ hidden: true, kids: [], set textContent(v) { this.kids = []; this.cleared = (this.cleared || 0) + 1; }, appendChild(x) { this.kids.push(x); return x; }, querySelectorAll: () => [] });
       const run = (o) => { const box = mk(), C = Object.assign({ $: () => box, WC: { shown: true, key: null }, LANG: "zh", JSON, hasToken: false, acct: null, acctPending: 0, acctSettled: true,

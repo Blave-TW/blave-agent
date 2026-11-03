@@ -70,7 +70,7 @@ import time
 
 import numpy as np
 
-from lib.param_scan import SCAN_MAX_AXIS, find_plateau, _finite_numbers
+from lib.param_scan import SCAN_MAX_AXIS, find_plateau, _finite_numbers, _clear_stale_tmp, _strategy_code_hash, atomic_replace
 
 # Rolling window defaults (see default_windows), three tiers re-optimised monthly:
 # 1095/30 when the history cuts WF_MIN_RUNS runs out of it — a three-year training
@@ -343,6 +343,7 @@ def run_walk_forward(data, compute_signals_fn, row_vals, col_vals, output_dir,
     if fee is None:
         raise ValueError("fee is required: pass fee=lib.costs.fee_of(s) — the strategy's FEE, "
                          "else its market default (references/trading-costs.md)")
+    code0 = _strategy_code_hash(output_dir)
     import warnings
     warnings.filterwarnings('ignore', category=FutureWarning)
     from lib.analysis import compute_stats, count_trades
@@ -500,11 +501,20 @@ def run_walk_forward(data, compute_signals_fn, row_vals, col_vals, output_dir,
     # Atomic, same as write_scan: the uploader may read mid-write and a half-written
     # wf.json would break the tab until the next validation. allow_nan=False so a NaN
     # that slipped past _v fails here with a stack trace instead of 400ing the api.
-    tmp = path + '.tmp'
+    # strategy.py changed during the run (another turn edited or restored it): these runs came
+    # from older code, and a late wf.json would read as the conclusion for the new code.
+    if code0 != _strategy_code_hash(output_dir):
+        raise SystemExit(f"❌ Walk-forward discarded: {output_dir}/strategy.py changed while it ran; "
+                         "nothing was written. Re-run it.")
+    if code0:
+        doc['code_hash'] = code0
+    # Per-process tmp: two turns can write the same strategy's result at once.
+    _clear_stale_tmp(path)
+    tmp = f'{path}.{os.getpid()}.tmp'
     try:
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(doc, f, ensure_ascii=False, allow_nan=False)
-        os.replace(tmp, path)
+        atomic_replace(tmp, path)
     except Exception:
         try:
             os.remove(tmp)

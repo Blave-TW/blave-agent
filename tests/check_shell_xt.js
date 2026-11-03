@@ -191,9 +191,9 @@ ok("③ 雲端落後 = config_supports_exec_test 不是 true(spec §3.5 #3);clou
 ok("③ 時光機:看舊版本 xt 點得開、只有 vpanel-note 不給鈕;重跑中跟其他三個一起停用(同一句 ver.frozenRerun)",
   /const cur = tab === "code" \? "code" : tab === "xt" && S\.open !== null \? "xt" : "bt";/.test(ver) && /\|\| \(b\.dataset\.tab === "xt" && S\.open === null\);/.test(ver)
   && /renderXt\(\$\("rp-xt"\), null, \{ t, old: true \}\)/.test(ver));
-ok("③ 鈕 = 更新績效同一條路(perfClick → stats_refresh、ack 才記 perf_update_xt),不開確認框、不送對話;回合中一起 aria-disabled",
+ok("③ 鈕 = 更新績效同一條路(perfClick → stats_refresh、ack 才記 perf_update_xt),不開確認框、不送對話;回合中不鎖(0.1.44)",
   /btn\.addEventListener\("click", \(\) => perfClick\(B, btn\)\);/.test(perf) && /function perfXtSlot\(B, kind\)/.test(perf) && !/confirmBox|submitMessage/.test(perf)
-  && /\[\$\("perf-btn"\)\]\.concat\(xt \? \[\.\.\.xt\.querySelectorAll\("\[data-perf-btn\]"\)\] : \[\]\)/.test(perf) && /tradeSend\("stats_refresh", args\)/.test(perf)
+  && !/aria-disabled/.test(perf) && /tradeSend\("stats_refresh", args\)/.test(perf)
   && /perfXtSlot\(B, kind\) : null/.test(app) && /perfXtInfo\(B\) : null/.test(app) && /onMetric: \(\) => \{ trackFeature\("xt_metric"\); \},/.test(app));
 ok("③ 失敗句 xt.updFail = 「沒測成功」;§3.6 新字都在", /perfFailLine\(side, st, "xt\.updFail"\)/.test(perf) && zh["xt.updFail"] === "沒測成功"
   && zh["xt.btnRun"] === "開始測試" && zh["xt.btnRerun"] === "重新測試" && zh["xt.btnBusy"] === "測試中" && zh["xt.btnTip"] === "用最新資料重跑回測，績效會一起更新。"
