@@ -62,8 +62,8 @@ t("winOnPath:envPath 的子目錄、上層目錄都不算", winOnPath("C:\\Users
 t("winOnPath:全被濾掉 → pickWinBin null(當沒裝,不退回 cwd 那顆)", pickWinBin(winOnPath("D:\\evil\\claude.exe\r\n", EP)) === null);
 t("which 在 win32:cwd 釘 System32、where 的輸出先過 winOnPath 才 pickWinBin;run 把 cwd 交給 execFile",
   /run\(path\.win32\.join\(sys32, "where\.exe"\), \[name\], envPath, 5000, sys32\)/.test(src) && /pickWinBin\(winOnPath\(r\.stdout, envPath\)\)/.test(src)
-  && /function run\(cmd, args, envPath, timeout = 10000, cwd = undefined, env = undefined\)/.test(src) && /execFile\(w\.file, args, \{ timeout, cwd,/.test(src));
-t("which 在 win32 用 System32\\where.exe;run 只對 .cmd/.bat 開 shell", /const sys32 = path\.win32\.join\(process\.env\.SystemRoot \|\| "C:\\\\Windows", "System32"\)/.test(src) && /const cmdWrap = \(bin\) => \(process\.platform === "win32" && \/\\\.\(cmd\|bat\)\$\/i\.test\(bin\)/.test(src));
+  && /function run\(cmd, args, envPath, timeout = 10000, cwd = undefined, env = undefined\)/.test(src) && /execFile\(w\.file, w\.args, \{ timeout, cwd,/.test(src));
+t("which 在 win32 用 System32\\where.exe;run 只對 .cmd/.bat 開 shell", /const sys32 = path\.win32\.join\(process\.env\.SystemRoot \|\| "C:\\\\Windows", "System32"\)/.test(src) && /const cmdWrap = \(bin, args\) => \(process\.platform === "win32" && \/\\\.\(cmd\|bat\)\$\/i\.test\(bin\)/.test(src));
 // ── 偵測紀錄 + 登入檢查上限(0.1.15):紀錄只有檔種/回傳碼/逾時/耗時/登入與否,不帶路徑與 CLI 輸出 ──
 const bk = src.match(/^function binKind\(p\) \{[\s\S]*?\n\}/m), rr = src.match(/^const runRec = .*$/m), dl = src.match(/^function detectLogWrite\(f, entry\) \{[\s\S]*?\n\}/m),
   dm = src.match(/^const DETECT_LOG_MAX = .*$/m), rn = src.match(/^function run\(cmd, args, envPath, timeout = 10000, cwd = undefined, env = undefined\) \{[\s\S]*?\n\}/m), cw = src.match(/^const cmdWrap = .*$/m);
@@ -264,7 +264,7 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
         tot[0] === "const DETECT_TOTAL_MS = 2 * (5000 + LOGIN_CHECK_MS) + 10000;" && new Function("LOGIN_CHECK_MS", tot[0] + "\nreturn DETECT_TOTAL_MS;")(20000) === 60000
         && /"-c", `command -v \$\{name\}`\], envPath, 5000\)/.test(src));
       const mkW = (raw) => { const logged = [];
-        const f = new Function("detectAgentsRaw", "detectLogWrite", "path", "BASE", "process", "const DETECT_TOTAL_MS = 50;\n" + wrap[0] + "\nreturn detectAgents;")(raw, (fl, e) => logged.push([fl, e]), path, "/b", { platform: "darwin" });
+        const f = new Function("detectAgentsRaw", "detectLogWrite", "path", "BASE", "process", "const DETECT_TOTAL_MS = 50;\nlet detectShared = null;\n" + wrap[0] + "\nreturn detectAgents;")(raw, (fl, e) => logged.push([fl, e]), path, "/b", { platform: "darwin" });
         return { f, logged }; };
       const shapeOk = (d) => Object.keys(d.claude).sort().join() === keysOf("claude") && Object.keys(d.codex).sort().join() === keysOf("codex")
         && d.claude.installed === true && d.codex.installed === true && d.claude.path === null && d.codex.path === null && d.claude.loggedIn === false && d.codex.loggedIn === false
@@ -279,10 +279,20 @@ t("detectAgents:兩條登入檢查都帶 LOGIN_CHECK_MS(20 秒),run 預設仍 10
       t("detectAgents:raw reject → 同一份形狀;err 記 e.code、不記訊息", shapeOk(dr) && rej.logged.length === 1 && rej.logged[0][1].err === "EPIPE" && !JSON.stringify(rej.logged).includes("secret"), rej.logged);
       const rej2 = mkW(() => Promise.reject(new TypeError("x"))), dr2 = await rej2.f();
       t("…沒有 code 時記 e.name", shapeOk(dr2) && rej2.logged[0][1].err === "TypeError", rej2.logged);
+      const RAW0 = { claude: { installed: true, loggedIn: false }, codex: { installed: false } };
+      { let n = 0; const hold = mkW(() => { n++; return new Promise(() => {}); });
+        const [a1, a2] = await Promise.all([hold.f(), hold.f()]); const n1 = n;
+        await hold.f(); const n2 = n;
+        t("detectAgents:同時進來的兩次共用一輪 raw;那一輪跑超過上限後再叫,另開新的一輪(不被卡住的那輪拖住)",
+          n1 === 1 && n2 === 2 && shapeOk(a1) && shapeOk(a2), { n1, n2 }); }
+      { let n = 0, done; const sl = mkW(() => { n++; return new Promise((r) => { done = r; }); });
+        const p1 = sl.f(); await new Promise((r) => setTimeout(r, 10)); const p2 = sl.f(); done(RAW0); const [b1, b2] = await Promise.all([p1, p2]);
+        const p3 = sl.f(); done(RAW0); await p3;
+        t("…上限內、上一輪還在跑時進來的共用它;那一輪結束後再叫是新的一輪", n === 2 && b1 === RAW0 && b2 === RAW0, { n }); }
       const RAW = { claude: { installed: true, loggedIn: true }, codex: { installed: false } }, okw = mkW(async () => RAW), dk = await okw.f();
       t("detectAgents:raw 正常回來 → 原樣回傳、不多寫 detect.log", dk === RAW && okw.logged.length === 0);
       t("四個呼叫點(detect-agents IPC、agentLogin、saveConnection、開 app 的 cli_auth)都叫包裝那支,不直接叫 raw;raw 只被包裝叫",
-        (src.match(/(?<!function )\bdetectAgentsRaw\(\)/g) || []).length === 1 && /Promise\.race\(\[detectAgentsRaw\(\), /.test(wrap[0])
+        (src.match(/(?<!function )\bdetectAgentsRaw\(\)/g) || []).length === 1 && /mine\.p = detectAgentsRaw\(\)\.finally\(/.test(wrap[0]) && /Promise\.race\(\[raw, /.test(wrap[0])
         && /handle\("detect-agents", \(\) => detectAgents\(\)\.then/.test(src) && /const d = await detectAgents\(\);/.test(src) && /d = await detectAgents\(\); agentPath =/.test(src) && /\n\s*detectAgents\(\)\.then\(\(d\) => \{ tm\(\)\.track\("cli_auth"/.test(src)); } }
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

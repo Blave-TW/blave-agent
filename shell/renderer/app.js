@@ -57,12 +57,36 @@ let lastDetect = null;   // 換語言重畫列用,不重跑偵測
 const PKG = { snap: null, redetect: false, auto: null, done: false };
 let detectAt = 0;        // 回到前景重偵測的限頻用
 const ROWMSG = { claude: null, codex: null };   // 連結畫面各列名字底下那一句:null | "opened" | "failed"(rowMsg)
-async function detect() {
+/* quiet = 回前景那一次:列照上一次的畫、鈕留著,結果回來才重畫。先清列的話,把視窗叫回前景的那一下會點在「偵測中…」上
+   (0.1.41 Windows〔再試一次〕點三下才動、Mac 第一下〔連結〕被吃);途中按下去的〔連結〕／〔再試一次〕照常走,
+   主行程那邊同時進來的偵測共用同一輪(main.js detectAgents)。
+   detectP = 在飛的那一次:這時要「某件事之後」的結果(引擎裝好、登入完)不能直接叫 detect(),會共用到那件事之前起跑的一輪,
+   要嘛記 PKG.redetect 等收尾補,要嘛 detectFresh() 等它跑完再起新的 */
+let detectP = null;
+function detect(quiet) {
+  const p = detectRun(quiet === true).finally(() => {   // 〔重新偵測〕直接掛在 click 上,收到的是 Event
+    if (detectP !== p) return;
+    detectP = null;
+    // Codex 引擎在偵測途中或登入途中裝好了:那一次的結果是裝好之前的,補偵測一次。放在這裡不放 paintRows:
+    // 偵測途中換語言、主行程推快照也會重畫列,在那裡用掉旗標會補到還在飛的舊那一輪
+    if (PKG.redetect && !loginPending) { PKG.redetect = false; detect(); }
+  });
+  detectP = p;
+  return p;
+}
+async function detectFresh() {
+  while (detectP) await detectP;
+  return detect();
+}
+async function detectRun(quiet) {
   detectAt = Date.now();
-  detectingRows();
-  setHint(null);
+  if (!quiet) { detectingRows(); setHint(null); }
   let d = null;
   try { d = await window.blave.detectAgents(); } catch (_) { d = null; }
+  // 回前景那一次:提示句等結果回來才清(一回前景就抹掉,新的答案卻還沒到);途中又開始等登入就留著那一句
+  if (quiet && !loginPending) setHint(null);
+  // 整份列重建會把鍵盤焦點清掉:記下焦點在哪一列的鈕、畫完還回去(同 codexPkgOnState)
+  const box = $("agent-rows"), a = document.activeElement, fk = quiet && box && a && box.contains(a) ? (a.closest("[data-kind]") || {}).dataset : null;
   if (d) {
     lastDetect = d;
     if (typeof akSetInfo === "function") akSetInfo(lastDetect.apikey);   // 存了哪一家 + 上架清單(主行程從不給金鑰值)
@@ -74,6 +98,7 @@ async function detect() {
       apikey: (typeof AK === "object" && AK.info) || null };
   }
   paintRows(lastDetect);
+  if (fk && fk.kind) { const b = box.querySelector('[data-kind="' + fk.kind + '"] button'); if (b && !b.disabled) b.focus(); }
   if (PKG.auto) codexAutoLogin();
   // 連結畫面上本機兩個都不能用:是狀態不是失敗,但「沒連上任何 AI 的安裝」只有這裡答得出為什麼
   if (!$("view-connect").hidden && !localReady) trackEvent("connect_failed", { kind: "no_local" });
@@ -91,12 +116,10 @@ function focusRedetect() {
   if (PKG.snap && PKG.snap.phase !== "idle") return false;   // Codex 引擎下載中:裝好那一刻自己會重偵測
 
   const onModel = !$("set-scrim").hidden && !$("set-model").hidden;
-  const rows = ["claude", "codex"].map((k) => (lastDetect && lastDetect[k]) || {}), shown = !$("view-connect").hidden || onModel || laiOn();   // laiOn:額度用完卡片開的 modal:裝完回來不用按重新偵測
-  // 有一列不確定就整個不跑:偵測先清掉每一列,那一列正要按的鈕會消失 20 秒(另一列沒登入也一樣),手動〔重新偵測〕留著
-  if (shown && rows.some(authUnknown)) return false;
-  const onRows = shown && !!lastDetect && rows.some((x) => !(x.installed && x.loggedIn));
+  const shown = !$("view-connect").hidden || onModel || laiOn();   // laiOn:額度用完卡片開的 modal:裝完回來不用按重新偵測
+  const onRows = shown && !!lastDetect && ["claude", "codex"].some((k) => { const x = lastDetect[k] || {}; return !(x.installed && x.loggedIn); });
   if (!onRows && !localFaultsLive().length) return false;
-  Promise.resolve(detect()).then(localFaultsRecheck); return true;
+  Promise.resolve(detect(true)).then(localFaultsRecheck); return true;
 }
 // 工作頁的本機登入失效卡(localLoginFlow 登記、登入好了就除名):只算還在畫面上、而且講的是現在這條的
 const LOCAL_FAULTS = [];
@@ -132,7 +155,7 @@ function codexPkgOnState(snap) {
   PKG.snap = snap && typeof snap === "object" ? snap : null;
   if (prev && prev.phase !== "idle" && PKG.snap && PKG.snap.phase === "idle" && !PKG.snap.fail) {
     PKG.done = !!PKG.auto;
-    if (loginPending || MDL.busy) PKG.redetect = true; else detect();
+    if (loginPending || MDL.busy || detectP) PKG.redetect = true; else detect();
     return;
   }
   if (PKG.snap && PKG.snap.fail) PKG.auto = null;
@@ -204,8 +227,6 @@ function paintRows(d) {
   if (loginPending) rows.querySelectorAll("button").forEach((x) => { if (!x.closest('[data-kind="' + loginPending + '"]')) x.disabled = true; });
   MDL.busy = false; mdlPaint();
   if (MDL.connecting) connectLockPaint();
-  // Codex 引擎在偵測途中或登入途中裝好了:那一次的結果是裝好之前的,補偵測一次
-  if (PKG.redetect && !loginPending) { PKG.redetect = false; detect(); }
 }
 /* 連結畫面那一列名字底下的訊息(方案 B,原本在卡底的 #cn-hint):等瀏覽器 / 登入沒完成。失敗的退路看是哪一家——
    claude 寫出終端機指令;Codex 只跑隨包那顆,不在 PATH 上,`codex login` 是死路,只講〔登入〕會開瀏覽器 */
@@ -304,7 +325,7 @@ async function localLogin(kind, b) {
   if (!r.ok && !r.cancelled && !r.busy) trackEvent("connect_failed", { kind: kind === "codex" ? "codex_login" : "claude_login" });
   if (inRow) ROWMSG[kind] = null;
   if (inLai) { LAI.msg[kind] = null; LAI.login = null; }
-  await detect();
+  await detectFresh();   // 登入前起跑的那一輪(回前景)還在飛的話,不拿它的結果
   const x = (lastDetect && lastDetect[kind]) || {};
   if (r.ok && x.loggedIn) trackFeature(kind === "codex" ? "codex_login_ok" : "claude_login_ok");   // 登入指令回 0 但偵測仍沒登入:畫面講的是失敗,不記成功
   if ((inRow || inLai) && r.ok && x.installed && x.loggedIn) {

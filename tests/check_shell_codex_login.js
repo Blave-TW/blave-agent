@@ -25,7 +25,7 @@ t("字串:終端機那一句帶 {cmd} 佔位(兩語)", /\{cmd\}/.test(STR.zh["ro
 // ── 主行程:原文切出來,配假的 loginShellPath / BASE,子行程是真的 ──
 const POSIX = process.platform !== "win32";
 const PIECES = [constOf(src, "cmdWrap"), constOf(src, "WIN_ENV_DROP"), fnOf(src, "probeEnv"), fnOf(src, "run"), fnOf(src, "which"), "const LOGIN_CHECK_MS = 2000;", fnOf(src, "binKind"), constOf(src, "runRec"), constOf(src, "cantRun"),
-  fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "claudePath"), fnOf(src, "codexBundled"), constOf(src, "codexHome"), "let codexRan = null, lastDetected = null;", fnOf(src, "timedOutPath"), grab(src, /^function codexCredOk\(bin, home, fsx = fs\) \{[\s\S]*?\n\}/m, "codexCredOk"), fnOf(src, "detectAgentsRaw"), constOf(src, "DETECT_TOTAL_MS"), fnOf(src, "detectAgents"),
+  fnOf(src, "detectWhy"), grab(src, /^const BAD_BIN = .*$/m, "BAD_BIN"), fnOf(src, "claudePath"), fnOf(src, "codexBundled"), constOf(src, "codexHome"), "let codexRan = null, lastDetected = null;", fnOf(src, "timedOutPath"), grab(src, /^function codexCredOk\(bin, home, fsx = fs\) \{[\s\S]*?\n\}/m, "codexCredOk"), fnOf(src, "detectAgentsRaw"), constOf(src, "DETECT_TOTAL_MS"), "let detectShared = null;", fnOf(src, "detectAgents"),
   "let loginChild = null;", fnOf(src, "agentLogin"), fnOf(src, "cancelAgentLogin")].join("\n");
 // pkgBin = 隨包那顆(假的 codexpkg.installed 回它,codexBundled 跑原文);bundled = SDK 隨包的 claude
 // o.execFile／o.spawn／o.installed 換掉真的那支(同步 throw 的案例)
@@ -33,9 +33,9 @@ function mkMain(envPath, pkgBin, bundled, o = {}) {
   const logged = [];
   const api = new Function("execFile", "spawn", "fs", "path", "process", "loginShellPath", "bundledClaude", "BASE", "WIN", "detectLogWrite",
     "winOnPath", "pickWinBin", "cliAuthHow", "codexpkg", "CODEX_PIN", "TRIPLE", "os",
-    PIECES + "\nreturn { detectAgents, agentLogin, cancelAgentLogin, claudePath, codexBundled, BAD_BIN };")(
-    o.execFile || require("child_process").execFile, o.spawn || require("child_process").spawn, fs, path, process, async () => envPath, () => bundled, "/b", false, (f, e) => logged.push(e),
-    (s) => s, () => null, require(path.join(SHELL, "telemetry.js")).cliAuthHow, { installed: o.installed || (() => (pkgBin ? { path: pkgBin } : null)) }, "0.0.0", "x", os);
+    (o.loginMs ? PIECES.replace("const LOGIN_CHECK_MS = 2000;", "const LOGIN_CHECK_MS = " + o.loginMs + ";") : PIECES) + "\nreturn { detectAgents, agentLogin, cancelAgentLogin, claudePath, codexBundled, BAD_BIN };")(
+    o.execFile || require("child_process").execFile, o.spawn || require("child_process").spawn, fs, path, o.process || process, async () => envPath, () => bundled, "/b", false, (f, e) => logged.push(e),
+    (s) => s, o.pickWinBin || (() => null), require(path.join(SHELL, "telemetry.js")).cliAuthHow, { installed: o.installed || (() => (pkgBin ? { path: pkgBin } : null)) }, "0.0.0", "x", os);
   api.logged = logged; return api;
 }
 const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-codex-login-"));
@@ -136,6 +136,47 @@ exit 2
       t("claude 127 → 退到隨包那顆、已登入;表外的 authMethod → how other(cli_auth)", r.claude.loggedIn && r.claude.path === bundled && r.claude.why === null && m.BAD_BIN.claude === path.join(d, "claude") && r.claude.how === "other", r.claude);
       const m2 = mkMain(PATH_OF(d), null, null), r2 = await m2.detectAgents();
       t("…沒有隨包那顆 → claude_cantrun;JSON 讀不出來 how 留 null(不送 cli_auth)", r2.claude.installed && r2.claude.why === "claude_cantrun" && r2.claude.how === null, r2.claude); }
+    // 6c. 偵測途中按〔連結〕(回前景那一輪不清列,鈕按得到):agentLogin 要的偵測跟進行中那一輪共用,不再開第二輪去搶 BAD_BIN
+    { const d = binDir("bshare"), cnt = path.join(HOME, "status-count");
+      script(path.join(d, "claude"), `#!/bin/sh\nif [ "$1" = "auth" ] && [ "$2" = "login" ]; then exit 0; fi\necho x >> "${cnt}"\nsleep 0.6\necho '{"loggedIn":false}'\nexit 1\n`);
+      const m = mkMain(PATH_OF(d), null, null, { loginMs: 15000 }), first = m.detectAgents();   // 這段不驗逾時:機器忙時 2 秒的上限會假紅
+      await new Promise((res) => setTimeout(res, 150));
+      const [r1, lg] = await Promise.all([first, m.agentLogin("claude")]);
+      const n = fs.readFileSync(cnt, "utf8").split("\n").filter(Boolean).length;
+      t("偵測中按登入:只跑一輪(auth status 2 次 = 正式＋對照組)、detect.log 一行;登入照常跑完", n === 2 && m.logged.length === 1 && r1.claude.why === "claude_nonzero" && lg.ok === true, { n, logs: m.logged.length, lg });
+      fs.rmSync(cnt, { force: true });
+      await m.detectAgents(); const n2 = fs.readFileSync(cnt, "utf8").split("\n").filter(Boolean).length;
+      t("…那一輪結束後再偵測是新的一輪(不拿舊結果)", n2 === 2 && m.logged.length === 2, { n2, logs: m.logged.length }); fs.rmSync(cnt, { force: true }); }
+    // 6b. Windows 模擬(macOS 上跑:process.platform 換成 win32,where.exe 換成假的,.cmd 是 sh 腳本、經 shell 跑的路徑跟 Windows 同一條):
+    //     npm 的 claude.cmd 被拒絕執行時是 cmd.exe 回 1、只在 stderr 講(win-test-6 拒絕 RX 實測 code 1),以前當成沒登入畫〔登入〕、不退隨包
+    { const real = require("child_process").execFile, d = binDir("bcmd"), calls = [];
+      const warns = [], onW = (w) => warns.push(w.code); process.on("warning", onW);   // Node 一個 process 只發一次:從這一段第一個 .cmd 起就聽
+      const WINP = { platform: "win32", env: { ...process.env, USERPROFILE: HOME } };
+      const winMain = (cmd, bundled, spawnSpy) => mkMain(PATH_OF(d), null, bundled, { loginMs: 15000, process: WINP, pickWinBin: () => cmd,
+        execFile: (f, a, o, cb) => { calls.push({ f, a, shell: o.shell }); return /where\.exe$/i.test(f) ? cb(null, cmd + "\r\n", "") : real(f, a, o, cb); }, spawn: spawnSpy });
+      const denied = script(path.join(d, "claude.cmd"), "#!/bin/sh\necho 'Access is denied.' >&2\nexit 1\n");
+      const bundled = script(path.join(ROOT, "venv2", "claude_agent_sdk", "_bundled", "claude"), "#!/bin/sh\necho '{\"loggedIn\":false}'\nexit 1\n");
+      const m = winMain(denied, bundled), r = await m.detectAgents();
+      t("(Windows 模擬)被拒的 claude.cmd(cmd.exe 回 1、只有 stderr)→ 算跑不起來、退到隨包那顆:隨包沒登入 = 〔登入〕走隨包;detect.log 記 refused、不記 stderr 原文",
+        r.claude.path === bundled && r.claude.why === "claude_nonzero" && m.BAD_BIN.claude === denied && m.logged[0].claude.alt === "bundled" && !JSON.stringify(m.logged).includes("denied"), { c: r.claude, log: m.logged[0].claude });
+      const m2 = winMain(denied, null), r2 = await m2.detectAgents();
+      t("(Windows 模擬)…沒有隨包那顆 → claude_cantrun(畫面「無法啟動」＋重新安裝),不是〔登入〕", r2.claude.installed && r2.claude.why === "claude_cantrun" && m2.logged[0].claude.refused === true, r2.claude);
+      const out = script(path.join(d, "claude-out.cmd"), "#!/bin/sh\necho '{\"loggedIn\":false}'\necho 'warn' >&2\nexit 1\n"), r3 = await winMain(out, bundled).detectAgents();
+      t("(Windows 模擬)….cmd 有在 stdout 回答「沒登入」(exit 1)→ 照舊 claude_nonzero、用它自己,不退隨包", r3.claude.path === out && r3.claude.why === "claude_nonzero", r3.claude);
+      // DEP0190:shell 配非空 args 才警告。走 shell 的那一支 args 一律是空陣列,命令列是 Node 自己會接出來的那一行
+      calls.length = 0; await winMain(out, bundled).detectAgents();
+      const sh = calls.filter((c) => c.shell);
+      t("(Windows 模擬)….cmd 經 shell 時 execFile 的 args 是空陣列(不觸發 DEP0190),整行是「\"路徑\" --setting-sources= auth status」",
+        sh.length >= 1 && sh.every((c) => Array.isArray(c.a) && c.a.length === 0) && sh.some((c) => c.f === '"' + out + '" --setting-sources= auth status'), sh);
+      let sp = null; const spy = (f, a, o) => { sp = { f, a, shell: o.shell }; throw Object.assign(new Error("x"), { code: "EPERM" }); };
+      const lg = await winMain(out, null, spy).agentLogin("claude");
+      t("(Windows 模擬)…登入的 spawn 同理:args 空陣列、shell=true、整行帶 auth login;同步 throw 照舊接住(cantRun)",
+        sp && sp.shell === true && sp.a.length === 0 && sp.f === '"' + out + '" auth login' && lg.cantRun === true && lg.code === "EPERM", { sp, lg });
+      const major = Number(process.versions.node.split(".")[0]);
+      await new Promise((res) => setTimeout(res, 50)); process.removeListener("warning", onW);
+      if (major >= 24) t("(Windows 模擬、Node " + major + ")…這一段的偵測與登入都沒有 DEP0190", !warns.includes("DEP0190"), warns);
+      else console.log("SKIP  DEP0190 實際警告要 Node 24(現在 " + process.versions.node + "),上面的 args 斷言照跑");
+    }
   }
 
   // ── 畫面:原文切出來配假的 DOM ──
@@ -163,7 +204,8 @@ exit 2
      let loginSpawned = null;
      const MDL = { busy: false }, mdlPaint = () => {}, paintBlaveBtn = () => {}, connect = (k) => { state.connected = k; }, srSay = (x) => said.push(x), trackEvent = () => {}, trackFeature = () => {};
      ${fnOf(app, "cmdLine")}
-     function detect() { detects++; detectAt = Date.now(); if (state.next) lastDetect = state.next; }
+     function detectFresh() { return detect(); }
+     function detect(quiet) { detects++; state.quiet = quiet; detectAt = Date.now(); if (state.next) lastDetect = state.next; }
      function setHint(h) { HINT = h || null; }
      let detectAt = 0;
      ${constOf(app, "ROWMSG")}
@@ -307,8 +349,10 @@ exit 2
     t("focusRedetect:第一次重偵測、15 秒內不再;等登入中不碰;連結畫面與模型接入都關著不碰;模型接入開著會;兩個都就緒不碰",
       a === true && b === false && c === false && d === false && e === true && f === false && R.get("detects") === 2, { a, b, c, d, e, f, n: R.get("detects") });
     R.set("detectAt", 0); R.set("loginPending", null); $("view-connect").hidden = false; R.set("lastDetect", D({ loggedIn: true }, { loggedIn: false, why: "codex_timeout", path: "/x/codex" }));
-    const unk = R.focusRedetect(); R.set("lastDetect", D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: false, why: "codex_timeout", path: "/x/codex" })); const mix = R.focusRedetect();
-    t("focusRedetect:有一列不確定就不自動重偵測(鈕不消失),另一列真的沒登入也一樣(0.1.41 Mac:第一下〔連結〕被吃掉)", unk === false && mix === false, { unk, mix }); $("view-connect").hidden = true;
+    const unk = R.focusRedetect(), q1 = RSTATE.quiet;
+    R.set("detectAt", 0); R.set("lastDetect", D({ loggedIn: false, why: "claude_nonzero" }, { loggedIn: false, why: "codex_cantrun", path: "/x/codex" })); const bad = R.focusRedetect(), q2 = RSTATE.quiet;
+    t("focusRedetect:不確定、Codex 跑不起來都照樣重偵測,一律走不清列的那一種(detect(true));列與鈕留著,見 check_shell_focus_redetect",
+      unk === true && bad === true && q1 === true && q2 === true, { unk, bad, q1, q2 }); $("view-connect").hidden = true;
     t("…掛在 window 的 focus 上", /window\.addEventListener\("focus", focusRedetect\);/.test(app)); }
 
   // 工作頁的登入失效卡也回前景重新偵測(設計師 D1):卡上那句「回到這裡」才成立。lastDetect 可能還是回合開始前那份(說已登入),
