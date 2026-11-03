@@ -257,7 +257,8 @@ app.whenReady().then(async () => {
     ok("④ 列留白(spec-report-row-padding §2):第一列 .t 的 left = 頁首 h5 = 份數(±1)、填色外擴 12、.rpt-body 無橫向溢出、列高 52;寬欄與中欄 480 各量一次", fine(wide) && fine(nar), JSON.stringify({ wide, nar })); }
   // 空狀態
   await js(`window.__r.list = { reports: [] }; rptLoad("local", true);`); await wait(120); v = await view();
-  ok("④ 空狀態(可按):兩行置中、沒有第二顆鈕;份數藏字留位(visibility hidden);工具列照常", v.state === (await T("rpt.empty")) + (await T("rpt.emptyHint")) && /rpt-empty/.test(v.stateCls) && v.stateBtns === 0 && v.ids === "" && v.countVis === "hidden" && !v.askDis, JSON.stringify(v));
+  { const f = await js(`(() => { const c = document.querySelector("#rpt-rows .fog .fog-card"); return { card: c && c.querySelector("p").textContent, btn: c && c.querySelector("button").textContent, askHidden: document.getElementById("rpt-ask").hidden }; })()`);
+    ok("④ 空狀態(可按):Setup fog(spec desktop-ui-fixes §13),一句一鈕;工具列那顆藏;份數藏字留位(visibility hidden);沒有置中兩行", v.state === null && f.card === (await T("rpt.fogNew")) && f.btn === (await T("rpt.ask")) && f.askHidden && v.countVis === "hidden" && !/rpt-empty/.test(v.stateCls), JSON.stringify([v, f])); }
   // 13 份 → 更早
   const many = Array.from({ length: 13 }, (_, i) => ({ id: "r" + i, title: "R" + i, type: "research", created_at: 1788000000 - i }));
   await js(`window.__r.list = { reports: ${JSON.stringify(many)} }; rptLoad("local", true);`); await wait(120); v = await view();
@@ -295,8 +296,8 @@ app.whenReady().then(async () => {
   const box = () => js(`(() => { ${Q} const sc = g("rpn-scrim"), f = g("rpn-modal"); return { open: !sc.hidden, cloud: f.querySelector(".modal-head").classList.contains("cloud"), env: g("rpn-env").hidden, where: g("rpn-where").hidden, honest: g("rpn-honest").textContent, chips: q("#rpn-modal .pf-act").map((b) => b.textContent).join("|"), desc: g("rpn-desc").value, descH: g("rpn-desc").getBoundingClientRect().height,
     dis: g("rpn-send").disabled, msg: g("rpn-msg").textContent, busy: q("#rpn-msg .cf-busy .spin16").length, focus: document.activeElement && document.activeElement.id, inert: g("view-ws").inert, w: f.getBoundingClientRect().width, send: g("rpn-send").textContent }; })()`);
   await js(`(async () => { document.getElementById("rpt-ask").click(); await new Promise((r) => setTimeout(r, 120)); })()`); await wait(60); let bx = await box();
-  ok("④ 「新增報告」→ 開框:440、焦點在描述欄、3 顆 .pf-act 範例 chip、誠實句(不帶目的地)、送出鈕「請 agent 建立」常態可按、本機不掛雲端記號、底下 inert", bx.open && Math.round(bx.w) === 440 && bx.focus === "rpn-desc" && bx.chips.split("|").length === 3 && bx.chips.startsWith(await T("rpt.new.chip.tw")) && bx.honest === (await T("rpt.new.honest"))
-    && !bx.dis && bx.send === (await T("rpt.new.send")) && !bx.cloud && bx.env && bx.where && bx.inert && bx.msg === "", JSON.stringify(bx));
+  ok("④ 「新增報告」→ 開框:440、焦點在描述欄、3 顆 .pf-act 範例 chip、誠實句(不帶目的地)、送出鈕「請 agent 建立」描述空著停用、本機不掛雲端記號、底下 inert", bx.open && Math.round(bx.w) === 440 && bx.focus === "rpn-desc" && bx.chips.split("|").length === 3 && bx.chips.startsWith(await T("rpt.new.chip.tw")) && bx.honest === (await T("rpt.new.honest"))
+    && bx.dis && bx.send === (await T("rpt.new.send")) && !bx.cloud && bx.env && bx.where && bx.inert && bx.msg === "", JSON.stringify(bx));
   const h0 = bx.descH;
   await js(`document.querySelector('#rpn-modal [data-tpl="rpt.new.tpl.tw"]').click();`); bx = await box();
   ok("④ 點範例 chip → 範本填進描述欄(逐字 = web 的 workspace_rp_tpl_tw)、欄撐高、焦點回描述欄", bx.desc === (await T("rpt.new.tpl.tw")) && bx.descH > h0 && bx.focus === "rpn-desc", JSON.stringify(bx));
@@ -436,7 +437,7 @@ app.whenReady().then(async () => {
   await js(`ENV.cur = "local"; TR_BAGS.cloud.st = null; envShowMain();`); await wait(60); v = await view();
   ok("④ 切回本機:回到本機那袋——仍在讀 new1、article 畫出", v.on && v.headList && !v.back && v.article === 1 && (await js(`rptBag("local").reading`)) === "new1", JSON.stringify(v));
   // en:組句
-  await js(`(async () => { setLang("en"); applyStatic(); document.getElementById("rpt-back").click(); RPT.pending.local = null; running = false; rptSync(); document.getElementById("rpt-ask").click(); await new Promise((r) => setTimeout(r, 100)); document.getElementById("rpn-desc").value = "market brief"; document.getElementById("rpn-send").click(); })()`); await wait(250);
+  await js(`(async () => { setLang("en"); applyStatic(); document.getElementById("rpt-back").click(); RPT.pending.local = null; running = false; rptSync(); document.getElementById("rpt-ask").click(); await new Promise((r) => setTimeout(r, 100)); const d = document.getElementById("rpn-desc"); d.value = "market brief"; d.dispatchEvent(new Event("input")); document.getElementById("rpn-send").click(); })()`); await wait(250);
   s = await js(`(() => { const m = window.__r.sent[window.__r.sent.length - 1]; const out = { msg: m.message, note: m.note, h: document.getElementById("rpt-h").textContent, ask: document.getElementById("rpt-ask-t").textContent }; setLang("zh"); applyStatic(); return out; })()`);
   ok("④ en:送出的是 web 的英文句(只有用戶那句;指示走 note=report_once)、頁首與鈕換字", s.msg === 'Write me a report: "market brief".' && s.note === "report_once" && s.h === "Reports" && s.ask === "Agent is writing…", JSON.stringify(s));
   ok("④ 整個流程沒有開過外部瀏覽器、reports.js 的字只進 textContent(#rpt-rows 沒有 img / script)", (await js(`document.querySelectorAll("#rpt-rows img, #rpt-rows script").length`)) === 0);

@@ -17,6 +17,11 @@
 .rpt-msg .fault-mark { background: var(--ink-3); margin-top: 8px; }   /* 灰記號:不是錯誤,是「沒發生」 */
 .rpt-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--space-24) var(--space-24); }
 .rpt-body > * { max-width: 680px; }
+/* 空清單的 Setup fog(canon):鋪滿整欄到底;示意列照清單的寬 */
+.rpt-body:has(.rpt-fog) { display: flex; flex-direction: column; padding: 0; }
+.rpt-body:has(.rpt-fog) > .rpt-rows { flex: 1; min-height: 0; display: flex; flex-direction: column; max-width: none; }
+.fog.rpt-fog { margin: 0; }
+.rpt-fog .rpt-row { max-width: 680px; }
 .rpt-body:focus-visible { outline-offset: -2px; }
 /* 列:文件清單不是商品清單——52 高、兩行、列間不畫線(照 web 報告列;跟策略庫 56 高帶線的列刻意不同) */
 /* 填色往外擴 12、字不動:列內文字對齊頁首「報告」/ 份數 / 閱讀頁同一條左緣(同 .cn-opt;canon 底線分頁的負 margin+等量 padding)。.rpt-body 有 24 左右 padding,外擴 12 不溢出 */

@@ -324,9 +324,10 @@ function libIdeaPaint() {
 }
 
 /* ── 開 / 關 ──────────────────────────────────────────── */
-// silent:歡迎頁卡開詳情不記 library_open(卡的流量另記 wcard_*,不灌進策略庫報表)
+// silent:歡迎頁卡開詳情不記 library_open(卡的流量另記 wcard_*,不灌進策略庫報表);它接著開詳情。其餘從別頁進來一律落列表,不留在上次那支
 async function libOpen(o) {
   const B = libBag();
+  if (!(o && o.silent)) B.detail = null;
   if (typeof trLeave === "function") trLeave(libEnv());
   if (typeof rptLeave === "function") rptLeave();   // 報告與策略庫互斥(renderer/reports.js)
   if (libEnv() === "local") { if (typeof stratSelect === "function") await stratSelect(null); }
@@ -689,8 +690,9 @@ function libPaintDetail(s) {
       const ul = libEl("ul", "gates");
       [["fee", "lib.gate1", "lib.gate1d"], ["mcpt", "lib.gate2", "lib.gate2d"], ["robust", "lib.gate3", "lib.gate3d"]].forEach(([key, n, d]) => {
         const li = libEl("li"), v = gc[key], gr = libEl("span", "gr");
-        gr.appendChild(libEl("span", "gv " + (v === "pass" ? "up" : v === "fail" ? "down" : "na"), t(v === "pass" ? "lib.gate.pass" : v === "fail" ? "lib.gate.fail" : "lib.gate.na")));
-        vals[key].forEach((x) => gr.appendChild(libEl("span", "gx mono", x)));
+        const gv = libEl("span", "gv " + (v === "pass" ? "up" : v === "fail" ? "down" : "na"), t(v === "pass" ? "lib.gate.pass" : v === "fail" ? "lib.gate.fail" : "lib.gate.naShort"));
+        gr.appendChild(key === "mcpt" && v !== "pass" && v !== "fail" ? libGateTip(gv, t("lib.gate.na"), "lib-gate-na-tip") : gv);
+        vals[key].forEach((x) => { const gx = libEl("span", "gx mono", x); gr.appendChild(key === "robust" && rob.ratio > 1 ? libGateTip(gx, t("lib.gate.robustOver"), "lib-gate-rob-tip") : gx); });
         li.append(libEl("span", "gn", t(n)), gr, libEl("span", "gd", t(d))); ul.appendChild(li);
       });
       c2.appendChild(ul);
@@ -914,6 +916,13 @@ function libBenchTip(bm) {
   const sym = libBenchSym(bm);
   return libJoin(t(bm.adjusted === false ? "bt.tip.benchmarkBhRaw" : "bt.tip.benchmarkBhAdj", { sym }), bm.as_of ? t("bt.tip.benchmarkBhAsOf", { date: bm.as_of }) : "");
 }
+// 品質關卡那格的短解釋:同 libBenchTable 的泡泡(lib-tipw + mp-tip + .tip),字本身是觸發點,字級色都跟著那格
+function libGateTip(node, text, id) {
+  const tw = libEl("span", "lib-tipw"), btn = libEl("button", "mp-tip"), tip = libEl("span", "tip", text);
+  btn.type = "button"; btn.appendChild(node); tip.id = id; tip.setAttribute("role", "tooltip"); btn.setAttribute("aria-describedby", id);
+  tw.append(btn, tip);
+  return tw;
+}
 function libBenchLabel(bm) { return libRich("bt.benchmarkBh", { sym: libMono(libBenchSym(bm)) }); }
 function libBenchLegend(bm) {
   const lg = libEl("div", "bt-label lib-legend"), bh = libEl("span", "bt-legend bh");
@@ -985,7 +994,7 @@ function libChartDraw(host, r) {
 /* ── 接線(這支比 app.js 先載:只用 getElementById,不碰 app.js 的全域;handler 裡的才在點擊時取)── */
 (function libWire() {
   const g = (id) => document.getElementById(id);
-  g("lib-nav").addEventListener("click", () => { if (!libBag().open) libOpen(); else sideReclick(() => libLeave()); });   // 再點一次 = 回 welcome(trade.js sideReclick)
+  g("lib-nav").addEventListener("click", () => { if (!libBag().open) libOpen(); else sideReclick(() => libLeave(), libBag().detail ? libBack : null); });   // 詳情先回列表;列表再點 = 回 welcome(trade.js sideReclick)
   g("lib-back").addEventListener("click", libBack);
   g("lib-mkt-trig").addEventListener("click", () => { if (g("lib-mkt-menu").hidden) libMktOpen(); else libMktClose(false); });
   g("lib-mkt-menu").addEventListener("click", (e) => { const b = e.target.closest(".ct-mi[data-mkt]"); if (b) libMktPick(b.dataset.mkt); });

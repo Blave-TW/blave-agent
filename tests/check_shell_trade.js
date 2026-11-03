@@ -1237,7 +1237,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     // Title Case 撤回(web 已回 sentence case,兩邊要一致;Title Case 另開一批)。原本唯一留著的 tr.cloud.means.2 隨啟動框改版退役(Wei 0928 第 3 點)
     ok("EN 鈕名:下單那幾顆維持 sentence case(舊字串,另批處理);0.1.28 onboarding 與連接框這次新增／改動的鈕依 canon design-system.md Casing(按鈕 Title Case)", get("en", "tr.stop") === "Pause trading" && get("en", "tr.start") === "Start trading"
       && get("en", "tr.stopFlat") === "Pause and close positions" && get("en", "tr.startCatchUp") === "Start and catch up positions" && get("en", "up.restart") === "Restart to finish updating"
-      && get("en", "cx.connect") === "Connect an Exchange" && get("en", "cx.goPaper") === "Start Paper Trading"
+      && get("en", "cx.connect") === "Connect Account" && get("en", "cx.goPaper") === "Start Paper Trading"
       && get("en", "cx.mode.paper") === "Paper Trading" && get("en", "cx.mode.real") === "Real Account" && get("en", "cx.title") === "Choose a Trading Account"
       && ["Start Trading", "Update to the Latest Version Now", "Pause and Close Positions", "Catch Up Positions", "Wait for New Signals"].every((x) => en.indexOf(x) < 0)
       && (en.match(/Pause Trading/g) || []).length === 0
@@ -2058,7 +2058,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /if \(o && o\.isConnected && !o\.disabled\) o\.focus\(\); else if \(!\(fromWhy && mgWhyFocus\(\)\)\) psRefocus\(\);/.test(cutF("psClose")) && /const first = list\.querySelector\("\.ps-cb:not\(:disabled\)"\);/.test(cutF("psOpen")));
     ok("列:整列 label、真 disabled 的 checkbox、gone 用 tr.pick.gone、Type C 註記依視角(tr.typeC / tr.cloud.typeC);空清單 tr.pick.empty",
       /trEl\("label", "ps-row" \+ \(r\.locked \? " is-locked" : ""\)\)/.test(cutF("psRow")) && /cb\.disabled = r\.locked;/.test(cutF("psRow")) && /if \(r\.gone\) nm\.appendChild\(trEl\("span", "ps-gone", t\("tr\.pick\.gone"\)\)\);/.test(cutF("psRow"))
-      && /cloud \? t\("tr\.typeCHost"\) : t\("tr\.typeC"\)/.test(cutF("psRow")) && /list\.appendChild\(trEl\("div", "pf-state", t\("tr\.pick\.empty"\)\)\)/.test(cutF("psOpen")));
+      && /cloud \? t\("tr\.typeCHost"\) : t\("tr\.typeC"\)/.test(cutF("psRow")) && /trEl\("p", "ps-next", t\("tr\.pick\.empty"\) \+ " "\)/.test(cutF("psOpen")));
     ok("order-copy #12 清單底下:有被鎖的投資組合策略就出一行 ps-next + 更新鈕(本機 minv.btn → 設定 › 一般、焦點檢查更新;雲端 up.cloud.go → upCloudUpdate(含確認),不經雲端 agent);只出一行",
       /if \(rows\.some\(\(r\) => r\.note === "typeC"\)\) \{/.test(cutF("psOpen")) && /cloud \? t\("tr\.typeCNextHost"\) : t\("tr\.typeCNext"\)/.test(cutF("psOpen"))
       && /cloud \? t\("up\.cloud\.go"\) : t\("minv\.btn"\)/.test(cutF("psOpen")) && /const o = psOpener; psClose\(\); if \(cloud\) upCloudUpdate\(o\); else setOpen\(\)\.then\(\(\) => \{ setCat\("display"\); const u = \$\("set-up-btn"\); if \(u && !u\.hidden\) u\.focus\(\); \}\);/.test(cutF("psOpen")));

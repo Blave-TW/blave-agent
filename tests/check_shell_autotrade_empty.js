@@ -126,7 +126,7 @@ const COPY = {
   "tr.startOffZeroAmt": ["策略金額都是 0。", "Every strategy amount is 0."],
   "tr.startOffNoVenueStrat": ["還沒有{venue}能下的策略。", "No strategies {venue} can trade yet."],
   "tr.fogPosPick": ["選好策略，就能啟動下單。", "Pick strategies to start trading."],
-  "tr.fogPosNew": ["請代理做一支策略，回測完成就能下單。", "Ask the agent for a strategy. Once it’s backtested, it can trade."],
+  "tr.fogPosNew": ["請 agent 做一支策略，回測完成就能下單。", "Ask the agent for a strategy. Once it’s backtested, it can trade."],
   "po.goAmounts": ["設定金額", "Set Amounts"],
   "tr.startOffDraft": ["勾好的策略還沒儲存。", "Picked strategies aren’t saved yet."],
   "tr.runningZDraft": ["下單程式在跑 · 勾好的策略還沒儲存", "Order program running · picked strategies aren’t saved yet"],
@@ -183,7 +183,7 @@ ok("新增的句子不提哪個市場不能自動下單(Wei 10-16 更正:不擋�
   const pk = card("pos-pick"), nw = card("pos-new"), dr = card("pos-draft"); pk.btn.on.click(); nw.btn.on.click(); dr.btn.on.click();
   ok("部位霧 Z-pick:卡「選好策略，就能啟動下單。」(id tr-pos-fog-msg)＋實心〔選擇策略〕#tr-pos-pick,按下走 trZGo(pick)", pk.msg.textContent === "tr.fogPosPick" && pk.msg.id === "tr-pos-fog-msg"
     && pk.btn.textContent === "tr.pick" && pk.btn.className === "btn-fill" && pk.btn.id === "tr-pos-pick" && J(fx.go[0]) === J(["pick", "tr-pos-pick"]), J([pk.msg, fx.go]));
-  ok("部位霧 Z-new:卡「請代理做一支策略，回測完成就能下單。」＋實心〔新增策略〕#tr-pos-new,按下開新增策略框", nw.msg.textContent === "tr.fogPosNew" && nw.msg.id === "tr-pos-fog-msg"
+  ok("部位霧 Z-new:卡「請 agent 做一支策略，回測完成就能下單。」＋實心〔新增策略〕#tr-pos-new,按下開新增策略框", nw.msg.textContent === "tr.fogPosNew" && nw.msg.id === "tr-pos-fog-msg"
     && nw.btn.textContent === "ns.chip" && nw.btn.className === "btn-fill" && nw.btn.id === "tr-pos-new" && J(fx.go[1]) === J(["noStrat", "tr-pos-new"]));
   ok("部位霧 Z-draft:卡「勾好的策略還沒儲存。」(id tr-pos-fog-msg)＋實心〔設定金額〕#tr-pos-draft,按下走 trZGo(draft);示意底同部位那張", dr.msg.textContent === "tr.startOffDraft" && dr.msg.id === "tr-pos-fog-msg"
     && dr.btn.textContent === "po.goAmounts" && dr.btn.className === "btn-fill" && dr.btn.id === "tr-pos-draft" && J(fx.go[2]) === J(["draft", "tr-pos-draft"]) && J(flat(dr.under).map((n) => n.tag)) === J(flat(pk.under).map((n) => n.tag)), J([dr.msg, fx.go]));

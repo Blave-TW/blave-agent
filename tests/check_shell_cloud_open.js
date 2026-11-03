@@ -71,7 +71,7 @@ for (const lang of ["zh", "en"]) {
   ok(lang + " out:含什麼 11 字那句、試用句帶天數、鈕字不帶金額;不預告登入送的額度", one(out, "cv-note").textContent === W[lang].note && one(out, "cv-slot").textContent === sub("env.open.trialOffer", { t: 14 })
     && mainBtn(out).textContent === S["cn.blave.btn"] && one(out, "cv-foot").textContent === W[lang].cli && !out.text.includes("30 " + (lang === "zh" ? "額度" : "credit")) && !/999/.test(out.text), out.text);
   const seen = [], more = walk(out.page).find((n) => n.dataset.k === "more"); more.click(seen);
-  ok(lang + " 其他方案與月價:外開定價頁、帶 from=desktop、記 cloud_pricing;不再開設定頁", seen.join() === "feature:cloud_pricing,ext:https://blave.org/landing/" + lang + "/pricing?from=desktop" && more.className === "ln-arrow" && more.kids[0].textContent === S["env.open.more"] && more.kids[1].attrs["aria-hidden"] === "true" && !/→/.test(S["env.open.more"]), seen.join());
+  ok(lang + " 其他方案與價格:外開定價頁、帶 from=desktop、記 cloud_pricing;不再開設定頁", seen.join() === "feature:cloud_pricing,ext:https://blave.org/landing/" + lang + "/pricing?from=desktop" && more.className === "ln-arrow" && more.kids[0].textContent === S["env.open.more"] && more.kids[1].attrs["aria-hidden"] === "true" && !/→/.test(S["env.open.more"]), seen.join());
   const bare = paint(lang, "none", false, "out", { mo: false, pub: false });
   ok(lang + " 公開價目拿不到:規格列、價格、試用句整格不畫,不寫死、不露 {t}", !one(bare, "cv-spec") && !one(bare, "cv-pr") && !one(bare, "cv-slot") && !/\{|undefined|TWD|vCPU/.test(bare.text), bare.text);
   const wait = paint(lang, "none", false, "out", { mo: true, loginBusy: true });
