@@ -16,7 +16,6 @@ const MG_REFRESH_POLL_MS = { fast: 3000, slow: 15000, fastFor: 60000 };   // 等
 const MPS_METHODS = ["vol", "mdd", "lev"];
 const MPS_MDD_WARN = 30;              // 預覽的最大回撤超過這個 % 字變紅
 const MPS_SOLVE_LEV_MAX = 100;        // 目標回撤反推槓桿的上限
-const MG_LOTS_OVER_WARN = 0.05;       // 台指期進位讓整份組合比計畫總部位多出超過這個比例,優化表下才講(Wei 10-16)
 const MG_ALLOC_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MG_SHORT_RE = /insufficient history:\s*(\d+)\s*days?\s*<=\s*lookback\s*(\d+)/i;
 // PARAMS 值型別照 contract(int/float/bool/str);lookback / target_vol 合法範圍同 listener
@@ -122,6 +121,8 @@ function mpsHistVolOf(prop) {
   const p = prop || {}, v = typeof p.ann_vol_pct === "number" ? p.ann_vol_pct : typeof p.ann_volatility_pct === "number" ? p.ann_volatility_pct : null;
   return typeof v === "number" && isFinite(v) && v > 0 ? v : null;
 }
+// 波動是 0 = 近 90 天(manager VOL_WINDOW)每支都沒持倉;欄位不在是舊提案,不能講成沒持倉
+function mpsVolIsZero(prop) { const p = prop || {}; return p.ann_vol_pct === 0 || p.ann_volatility_pct === 0; }
 // 部位大小的隱含槓桿:目標波動 = 目標 ÷ 歷史波動;最大回撤 = 反推;固定槓桿 = 本身。沒選方法、沒填目標、選的方法算不出來都是 null,不換別的方法代算
 function mpsLevFor(s, prop) {
   const m = s.method, tg = m ? s.target[m] : null;
@@ -134,7 +135,7 @@ function mpsLevFor(s, prop) {
 function mpsSizeGap(s, prop, noSeriesKey) {
   const m = s.method, tg = m ? s.target[m] : null;
   if (m === null || tg === null) return s.fund === null ? "mg.needSize" : m === null ? "mg.needMethod" : "mg.needTarget";
-  if (mpsLevFor(s, prop) === null) return m !== "mdd" ? "mg.sizeNoHist" : mpsSeriesOf(prop) ? "mg.sizeNoSolve" : noSeriesKey;
+  if (mpsLevFor(s, prop) === null) return m !== "mdd" ? (mpsVolIsZero(prop) ? "sz.noVol" : "mg.sizeNoHist") : mpsSeriesOf(prop) ? "mg.sizeNoSolve" : noSeriesKey;
   return s.fund === null ? "mg.needFund" : null;
 }
 /* 部位大小設定鈕的摘要(同網頁:「投入金額 · 方法」,三種方法同一個格式,鈕上不寫槓桿倍數):
@@ -160,23 +161,6 @@ function mgPctText(x) {
 function mgBeatsOf(rb) {
   const f = (v) => (typeof v === "number" && isFinite(v) ? Math.round(v) + "%" : null);
   return { ret: f(rb && rb.managed_beats_pct_total_return), sharpe: f(rb && rb.managed_beats_pct_sharpe), mdd: f(rb && rb.managed_beats_pct_max_drawdown) };
-}
-/* 台指期進位造成的超配(同表底「不足一口」的反向):口數照對帳器 half-up 不改,只在整份組合因取整多出來的部分
-   (進位的加、捨去的扣)超過計畫總部位 eff 的 MG_LOTS_OVER_WARN 時,回進位的那幾支;pct = 那一支自己比配置多幾 %(0.7 口 → 1 口 = 43)。
-   分母用 eff(投入資金 × 槓桿)不用投入資金:槓桿 > 1 時合計本來就大於投入資金,不是進位造成的。
-   rows = mpsRows().rows;toF(台幣) = 折成投入資金的幣別,換不了 null。缺報價／缺匯率／沒有計畫 = 不判、回 [] */
-function mgLotsOver(rows, eff, toF) {
-  if (!(typeof eff === "number" && eff > 0)) return [];
-  let net = 0; const up = [];
-  for (const r of rows) {
-    if (!r.spec || !(r.money > 0)) continue;
-    if (r.lots === null || !(r.moneyTwd > 0) || !(r.perLot > 0)) return [];
-    const raw = r.moneyTwd / r.perLot;
-    net += r.lots * r.perLot - r.moneyTwd;
-    if (r.lots > raw) up.push({ name: r.name, lots: r.lots, pct: Math.round((r.lots / raw - 1) * 100) });
-  }
-  const f = up.length ? toF(net) : null;
-  return f !== null && f / eff > MG_LOTS_OVER_WARN ? up : [];
 }
 /* 認 job 本身、不比時間(同網頁):finished_at 是主機的時鐘,連雲端主機時跟這台電腦差幾分鐘,主機快會把上一次的結果當成這次跑完、
    主機慢會把這次跑完的卡在跑中面板到逾時。started_at 是整數秒,同一秒起兩個 job 靠 pid 分;沒有 job = null */
@@ -875,7 +859,7 @@ function mgPaint() {
   mgFundCcyFreeze(S, G);
   const sigM = m && m.backtest ? Object.assign({}, m, { backtest: Object.assign({}, m.backtest, { weights_history: m.backtest.weights_history ? Object.keys(m.backtest.weights_history).sort() : null }) }) : m;
   const sig = JSON.stringify([LANG, S.env, sigM, (trReport() || {}).config || null, mgMembers(), G.alloc, G.params, G.err, G.shortDays, G.shortDismissed, G.optBusy, G.btSending, !!G.btWaiting, G.refreshing.opt, G.refreshing.bt, G.wait.opt && G.wait.opt.left, G.wait.bt && G.wait.bt.left,
-    G.sizing, G.ctEdits, trTxfPrice(), trFxView(), trNames(), S.save, TR.list.map((x) => [x.name, x.displayName]), trCfgUnread(trReport()), (trReport() || {}).can_switch_contract]);
+    G.sizing, G.ctEdits, trTxfPrice(), trFxView(), trNames(), S.save, TR.list.map((x) => [x.name, x.displayName]), trCfgUnread(trReport()), (trReport() || {}).can_switch_contract, trPickOff(), mgWhyCan({ go: "update" })]);
   if (S.sig.opt === sig && box.childElementCount) { mgDrawChart(); return; }
   const keep = trPosFocusOf(box);
   S.sig.opt = sig; G.chartSig = null; box.textContent = "";
@@ -958,7 +942,7 @@ function mgToolbar(outdated, fog) {
   bt.title = reason || t("mg.btTip");
   bt.addEventListener("click", mgRunBacktest);
   acts.append(opt, bt); tb.appendChild(acts);
-  if (needs && !fog) tb.appendChild(trEl("p", "pf-note mg-need-fund", needs));   // 霧上的卡片自己講
+  if (needs && !fog) tb.appendChild(mgWhyFill(trEl("p", "pf-note mg-need-fund"), needs, { link: "mg.why.tbMethod", go: "method" }, "mg-need-fix"));   // 霧上的卡片自己講
   // 等更新績效時(Wei 10-14,同網頁):鈕下方一行講在等哪一支,後面「先用目前數字跑」;不等的時候這一行不出現
   ["opt", "bt"].forEach((w) => { const W = G.wait[w]; if (!W || !W.left.length) return;
     const line = trEl("div", "mg-wait"), n = W.left.length;
@@ -990,13 +974,14 @@ function mgSuggest() {
   sec.appendChild(poHelpGroup(trEl("span", "label", t("mg.secAmounts")), "optimize", "po-help-opt"));
   sec.appendChild(mgSizeChip());
   const acts = trEl("div", "pf-acts");
-  // 停用時旁邊一定有一句原因(停用鈕的 title 觸控看不到;Mac e2e 10-14:缺台幣匯率時原本什麼都沒寫)。內容由 mgSuggestTable 跟著停用條件一起寫
-  const why = acts.appendChild(trEl("span", "mg-apply-why", "")); why.id = "mg-apply-why";
+  // 停用時鈕正下方一定有一句原因(停用鈕的 title 觸控看不到;Mac e2e 10-14:缺台幣匯率時原本什麼都沒寫)。內容由 mgSuggestTable 跟著停用條件一起寫。
+  // 整行不放鈕旁:592 寬放不下,鈕會隨原因上下跳(mockup apply-why-links B 版)
+  const why = trEl("div", "mg-apply-why");
   const ap = trEl("button", "btn-fill", t("mg.apply")); ap.type = "button"; ap.dataset.fk = "mg-apply"; ap.id = "mg-apply"; ap.setAttribute("aria-describedby", "mg-apply-why");
   ap.addEventListener("click", () => mgApply(ap));
-  acts.appendChild(ap); sec.appendChild(acts); frag.appendChild(sec);
+  acts.appendChild(ap); sec.append(acts, why); frag.appendChild(sec);
   const wrap = trEl("div", "pf-scroll"); frag.appendChild(wrap);
-  mgSuggestTable(wrap, ap, other);
+  mgSuggestTable(wrap, ap, other, why);
   return frag;
 }
 /* 機器上那份權重是別的方法算的(proposal.json 只有一份,誰最後跑優化就是誰的):回那個方法名,權重表照畫、套用停用。
@@ -1021,7 +1006,7 @@ function mgSizeChip() {
   return b;
 }
 // 權重分配表「策略｜權重｜金額」(Wei 10-13);分區同金額表,單位只寫在區標題;金額 = 套用時寫進主機的數
-function mgSuggestTable(wrap, ap, other) {
+function mgSuggestTable(wrap, ap, other, why) {
   const d = mpsRows(), stored = trStored() || {}, byName = {}; d.rows.forEach((r) => { byName[r.name] = r; });
   const zoneOf = (n) => (byName[n].spec ? TR_ZONE_LOTS : byName[n].unit || TR_ZONE_UNKNOWN);
   const names = d.rows.map((r) => r.name), zones = trZoneOrder(names.map(zoneOf), trVenueId(), trMultZone(trVenueId(), trUnit(), names.map(zoneOf)));
@@ -1046,7 +1031,7 @@ function mgSuggestTable(wrap, ap, other) {
       tb.appendChild(g);
     }
     names.filter((n) => zoneOf(n) === z).forEach((n) => {
-      const r = byName[n], row = document.createElement("tr"), key = trEl("td", "key"), nm = trEl("span", "key-name", trDisplay(n));
+      const r = byName[n], row = document.createElement("tr"), key = trEl("td", "key"), nm = trStratName(n);
       nm.title = trDisplay(n); key.appendChild(nm);
       // 台指期列:同配置分頁的合約下拉,選單口數照這張表的金額換算;在這裡改不動配置,按「套用金額」才連合約一起寫進主機
       if (r.spec && trCtGate(n)) key.appendChild(ctTrigger("opt", n, mgCt(n), (root) => {
@@ -1073,28 +1058,92 @@ function mgSuggestTable(wrap, ap, other) {
   wrap.appendChild(tbl);
   if (underTwd > 0) { const conv = mpsConv(underTwd, TR_TXF_CCY, d.ccy), amt = conv === null ? trFmt(Math.round(underTwd)) + " " + TR_TXF_CCY : trFmt(Math.round(conv)) + " " + d.ccy;
     wrap.appendChild(trEl("p", "pf-note", t("mg.lotsUnderFoot", { amt }))); }
-  const over = mgLotsOver(d.rows, d.eff, (v) => mpsConv(v, TR_TXF_CCY, d.ccy));
-  over.forEach((o) => wrap.appendChild(trEl("p", "pf-note", over.length === 1 ? t("mg.lotsOverFoot", { lots: o.lots, pct: o.pct }) : t("mg.lotsOverFootN", { name: trDisplay(o.name), lots: o.lots, pct: o.pct }))));
   if (d.rows.some((r) => r.spec)) trTxfWant();
   // 套用:算不出來、算出來跟目前全等、儲存生命週期中、讀不到設定、兩邊策略不是同一組都停用
   ap.disabled = !!other || d.eff === null || quoteMissing || !changed || !!TR.save && TR.save !== "failed" || trCfgUnread(trReport()) || trStored() === null || !mgSameAsAmounts() || !TR.listLoaded || (TR.env === "cloud" && !(TR.st && TR.st.alive));
-  const whyEl = ap.parentNode && ap.parentNode.querySelector ? ap.parentNode.querySelector(".mg-apply-why") : null;
-  if (whyEl) whyEl.textContent = other ? t("mg.propOtherAlloc", { method: mgAllocLabel(other) }) : ap.disabled ? t(mgApplyWhy(d, quoteMissing, changed)) : "";
+  const wk = other ? "mg.propOtherAlloc" : ap.disabled ? mgApplyWhy(d, quoteMissing, changed) : null;
+  if (why && wk) { const fix = MG_WHY_FIX[wk]; mgWhyFill(why, other ? t(wk, { method: mgAllocLabel(other) }) : wk === "mg.applyDiffSet" ? mgDiffText() : t((fix && fix.text) || wk), fix, "mg-why-fix"); const host = mgWhyHost(why); host.id = "mg-apply-why"; }
   // 用的是上次存下來的匯率(登入失效／雲端讀不到):表下講是哪一天的,數字是 ≈
   const fv = trFxView(); if (fv.cached && d.rows.some((r) => r.spec || (r.unit && r.unit !== mpsCcy()))) wrap.appendChild(trEl("p", "pf-note", t("mg.fxCached", { d: new Date(fv.cached).toISOString().slice(0, 10) })));
 }
-/* 「套用金額」停用的原因(依序取第一個成立的;每一條停用條件都有字)。缺匯率時分開講:沒登入／登入失效 → 叫人登入;登入正常 → 缺台幣匯率;
-   匯率有、缺台指期報價 → 等報價 */
+/* 「套用金額」停用的原因(依序取第一個成立的;每一條停用條件都有字)。讀不到設定排第一:那時 trNames() 是空的,不能講成「配置 0 檔」。
+   缺匯率時分開講:沒登入／登入失效 → 叫人登入;登入正常 → 缺台幣匯率;幣別未定的列講幣別;都不是才是等台指期報價 */
 function mgApplyWhy(d, quoteMissing, changed) {
+  if (trCfgUnread(trReport()) || trStored() === null) return "mg.applyWhyUnread";
   if (!mgSameAsAmounts()) return "mg.applyDiffSet";
-  if (quoteMissing) return d.rows.some((r) => r.fxMissing) ? mgFxWhy() : "mg.applyWhyQuote";
+  if (quoteMissing) {
+    if (d.rows.some((r) => r.fxMissing)) return mgFxWhy();
+    const unk = d.rows.filter((r) => !r.spec && r.money && r.native === null).map((r) => r.name);
+    return unk.length ? trUnknownWhyKey(unk, (trReport() || {}).states) : "mg.applyWhyQuote";
+  }
   if (d.eff === null) return d.gap || "mg.needSize";
   if (TR.save && TR.save !== "failed") return "tr.saving";
-  if (trCfgUnread(trReport()) || trStored() === null) return TR.env === "cloud" ? "tr.cloud.cfgUnread" : "tr.cfgUnreadLocal";
   if (!TR.listLoaded || (TR.env === "cloud" && !(TR.st && TR.st.alive))) return "mg.applyWhyWait";
   if (!changed) return "mg.applyWhySame";
   return "mg.applyWhyWait";
 }
+function mgDiffText() {
+  const a = trNames(), b = mgMembers();
+  return a.length === b.length ? t("mg.applyDiffSetN", { n: a.filter((n) => b.indexOf(n) < 0).length }) : t("mg.applyDiffSet", { a: a.length, b: b.length });
+}
+/* 原因句的補救連結(mockup apply-why-links):有事能做才連,等一下就好的不在表上。link 是句中要畫底線的字,不在句中就接在句尾;沒寫 link = 整句都是連結。
+   優化清單沒有下單鎖,所以 pick 開的是配置的選擇策略框、預勾優化這組,鎖照配置的算,不一鍵寫 picked */
+const MG_WHY_SIZE = (focusOn, link, text) => ({ go: "size", focusOn, link, text });
+const MG_WHY_FIX = {
+  "mg.applyDiffSet": { go: "pick", link: "mg.why.alloc" },
+  "mg.propOtherAlloc": { go: "method", link: "mg.why.method" },
+  "mg.needFund": MG_WHY_SIZE("fund"), "mg.needSize": MG_WHY_SIZE("fund"), "mg.needMethod": MG_WHY_SIZE("seg"), "mg.needTarget": MG_WHY_SIZE("t"),
+  "mg.sizeNoHist": MG_WHY_SIZE("seg", "mg.why.changeMethod"), "mg.sizeNoSolve": MG_WHY_SIZE("t", "mg.why.changeTarget"),
+  "sz.shortMdd": MG_WHY_SIZE("seg", "mg.why.changeMethod", "mg.why.shortMdd"), "sz.noVol": MG_WHY_SIZE("seg", "mg.why.changeMethod", "mg.why.noVol"),
+  "sz.staleMdd": { go: "run", link: "mg.why.rerun" },
+  "sz.oldMdd": { go: "update", link: "mg.why.updCloud" },
+  "mg.applyWhyLogin": { go: "login", link: "mg.why.signin" }, "mg.applyWhyFxOld": { go: "login", link: "mg.why.signinUpd" },
+};
+// 鈕的描述掛哪:只含原因字的那段;連結打頭時後段是半句(「才拿得到匯率」),掛整行才念得完整
+function mgWhyHost(why) { const first = why.firstElementChild; return first.tagName === "BUTTON" && first.nextElementSibling ? why : first; }
+function mgWhyParts(text, link) {
+  if (link === text) return { pre: "", link, post: "" };
+  const i = text.indexOf(link);
+  return i < 0 ? { pre: text + "\u00a0\u00a0", link, post: "" } : { pre: text.slice(0, i), link, post: text.slice(i + link.length) };
+}
+// 現在按得動才出連結:開框的函式碰到不能開時是靜默不開的,畫了等於一顆死鈕
+function mgWhyCan(fix) {
+  const G = mgBag();
+  if (fix.go === "pick") return !trPickOff();
+  if (fix.go === "method") return !!G.params;
+  if (fix.go === "size") return !!mpsProp();
+  if (fix.go === "run") return !mgBlocked() && !mgOptBlockReason() && !G.optBusy && mgMembers().length > 0;
+  if (fix.go === "update") { if (TR.env !== "cloud") return false; const c = upNow().cloud; return !!(c && c.link); }   // 換檔中／已停:upCloudUpdate 靜默不動;回合中(disabled)它自己講原因,留著
+  return true;
+}
+function mgWhyFill(el, text, fix, fk) {
+  el.textContent = "";
+  if (!fix || !mgWhyCan(fix)) { el.appendChild(trEl("span", "", text)); return el; }
+  const p = mgWhyParts(text, fix.link ? t(fix.link) : text), b = trEl("button", "btn-quiet busy-fix", p.link);
+  b.type = "button"; b.dataset.fk = fk;
+  if (fix.go === "pick" || fix.go === "method" || fix.go === "size") b.setAttribute("aria-haspopup", "dialog");
+  b.addEventListener("click", () => mgWhyGo(fix, b));
+  if (p.pre) el.appendChild(trEl("span", "", p.pre));
+  el.appendChild(b);
+  if (p.post) el.appendChild(trEl("span", "", p.post));
+  return el;
+}
+function mgWhyGo(fix, b) {
+  trackFeature("mg_why_fix");
+  if (fix.go === "pick") psOpen(b, "amounts", false, { check: mgMembers() });
+  else if (fix.go === "method") mgMethodOpen(b);
+  else if (fix.go === "size") mgSizeOpen(b, fix.focusOn);
+  else if (fix.go === "update") upCloudUpdate(b);
+  else if (fix.go === "run") { mgRunOptimize(); const o = $("po-opt").querySelector('[data-fk="mg-opt"]'); if (o && !o.disabled) o.focus(); }
+  else {
+    setOpen().then(() => {
+      setBack = () => { if (!$("po-opt").offsetParent) return false; if (mgWhyFocus()) return true; const ap = $("mg-apply"), to = ap && !ap.disabled ? ap : $("po-h"); to.focus(); return true; };
+      setCat("plan"); const on = [...$("set-plan-main").querySelectorAll("button")].find((x) => x.textContent === t("pv.signin")); if (on) on.focus();
+    });
+  }
+}
+// 輪詢重畫會換掉連結本身:框關掉時憑 data-fk 找現在那一顆;已經沒有了回 false
+function mgWhyFocus() { const b = $("po-opt").querySelector('[data-fk="mg-why-fix"]'); if (b && b.offsetParent) { b.focus(); return true; } return false; }
 function mgFxWhy() {
   const c = typeof TR_BAGS !== "undefined" && TR_BAGS.cloud.st ? TR_BAGS.cloud.st.cloud : null;
   if (trFxView().expired) return "mg.applyWhyFxOld";   // 上次存下的匯率超過 30 天:不再拿來換算
@@ -1397,7 +1446,7 @@ function mgWire() {
   $("mgm-ask").addEventListener("click", () => { mgMethodClose(); poAskAgent(t("mg.askAgentMsg")); });   // 內建之外的方法跟 agent 討論:丟進輸入框、不送出
 }
 function mgScrimOpen(id, focusEl) { $("view-ws").inert = true; const sc = $(id); sc.hidden = false; requestAnimationFrame(() => sc.classList.add("open")); if (focusEl) focusEl.focus(); }
-function mgScrimClose(id, opener) { const sc = $(id); if (sc.hidden) return; sc.classList.remove("open"); sc.hidden = true; $("view-ws").inert = false; if (opener && opener.isConnected) opener.focus(); else { const b = $("po-opt").querySelector('[data-fk="mg-method"]'); if (b) b.focus(); else $("po-h").focus(); } }
+function mgScrimClose(id, opener) { const sc = $(id); if (sc.hidden) return; sc.classList.remove("open"); sc.hidden = true; $("view-ws").inert = false; if (opener && opener.isConnected) opener.focus(); else if (!(opener && opener.dataset && opener.dataset.fk === "mg-why-fix" && mgWhyFocus())) { const b = $("po-opt").querySelector('[data-fk="mg-method"]'); if (b) b.focus(); else $("po-h").focus(); } }
 function mgMethodOpen(opener) {
   const G = mgBag(); if (!G.params || !$("mgm-scrim").hidden) return;
   mgmOpener = opener; mgmPend = mgMethod(G.alloc) ? { G, alloc: G.alloc, params: Object.assign({}, G.params) } : { G, alloc: "", params: {} };
@@ -1449,14 +1498,17 @@ function mgMethodOk() {
   mgMethodClose(); TR.sig.opt = null; mgPaint();
   const b = $("po-opt").querySelector('[data-fk="mg-method"]'); if (b) b.focus();
 }
-function mgSizeOpen(opener) {
+function mgSizeOpen(opener, focusOn) {
   const G = mgBag(); if (!mpsProp() || !$("mgs-scrim").hidden) return;
   mgsOpener = opener;
   const s = G.sizing;
   mgsDraft = { G, method: s.method, methodDirty: false, fund: s.fund === null ? "" : String(s.fund), fundCcy: mpsFundCcy(s), fundCcys: [...new Set([mpsFundCcy(s), mpsCcy()])], ccyDirty: false, fundDirty: false, t: {}, dirty: {}, oldMsg: false };
   MPS_METHODS.forEach((m) => { const v = s.target[m]; mgsDraft.t[m] = v === null ? "" : m === "vol" ? v.toFixed(1) : m === "lev" ? v.toFixed(2) : String(Math.round(v * 10) / 10); mgsDraft.dirty[m] = false; });
   mgSizeRender();
-  mgScrimOpen("mgs-scrim", $("mgs-body").querySelector('.mg-size-seg [aria-checked="true"]:not(:disabled)') || $("mgs-fund"));
+  const seg = $("mgs-body").querySelector('.mg-size-seg [aria-checked="true"]:not(:disabled)'), tgt = focusOn === "t" ? $("mgs-t") : null;
+  // 從原因句來:落在缺的那一格;選中的方法正是不能用的那顆時落第一顆能用的
+  mgScrimOpen("mgs-scrim", tgt || (focusOn === "fund" ? $("mgs-fund") : seg || (focusOn ? $("mgs-body").querySelector(".mg-size-seg button:not(:disabled)") : null) || $("mgs-fund")));
+  if (tgt) tgt.select();
   trackFeature("mg_sizing_open");
 }
 function mgSizeClose(focusEl) { mgScrimClose("mgs-scrim", focusEl || mgsOpener); mgsOpener = null; }
@@ -1501,10 +1553,11 @@ function mpsNoReturnsKey() {
   if (TR.env !== "cloud") return "sz.staleMdd";
   return mpsCvBefore(((TR.st && TR.st.cloud) || {}).config_version, MPS_RETURNS_CV) ? "sz.oldMdd" : "sz.staleMdd";
 }
+function mpsNoVolKey() { return mpsVolIsZero(mpsProp()) ? "sz.noVol" : "mg.sizeNoHist"; }
 // 最大回撤用不了的原因:欄位在但是 null = 共同資料太短;欄位不在 = 這份提案比主機的版本舊
 function mpsNoSeriesKey() { const p = mpsProp(); return p && "port_returns" in p ? "sz.shortMdd" : mpsNoReturnsKey(); }
 function mgSizeRender() {
-  const d = mgsDraft, body = $("mgs-body"), pv = trEl("div", "mg-size-pv"), series = mpsSeriesOf(mpsProp());
+  const d = mgsDraft, body = $("mgs-body"), pv = trEl("div", "mg-size-pv"), series = mpsSeriesOf(mpsProp()), hist = mpsHistVolOf(mpsProp());
   body.textContent = "";
   const fundF = mgSizeField("mgs-fund", t("mg.fund"), d.fund, d.fundCcy, "numeric", (v) => { d.fund = v; d.fundDirty = true; mgSizePreview(pv); });
   if (d.fundCcys.length > 1) {   // 存的幣別跟現在成員的不同才有得選:選了只換單位,數字不換算。同幣別維持純字
@@ -1522,13 +1575,15 @@ function mgSizeRender() {
   MPS_METHODS.forEach((m) => {
     const b = trEl("button", "", t({ vol: "sz.m.vol", mdd: "sz.m.mdd", lev: "sz.m.lev" }[m])); b.type = "button"; b.setAttribute("role", "radio");
     b.setAttribute("aria-checked", m === d.method ? "true" : "false"); b.dataset.m = m;
-    const ok = m !== "mdd" || !!series;
-    if (!ok) b.disabled = true;   // 舊主機／共同資料不夠:真的停用,原因常駐寫在分段下面(同網頁 8fb666c2)
+    const ok = m === "mdd" ? !!series : m === "vol" ? hist !== null : true;
+    if (!ok) b.disabled = true;   // 舊主機／共同資料不夠／算不出波動:真的停用,原因常駐寫在分段下面(同網頁 8fb666c2)
     b.addEventListener("click", () => { if (!ok) return; if (m === d.method) return; d.method = m; d.methodDirty = true; mgSizeRender(); const on = body.querySelector('.mg-size-seg [data-m="' + m + '"]'); if (on) on.focus(); });
     seg.appendChild(b);
   });
   if (!series) old.hidden = false;   // 最大回撤不能選:原因常駐(不是點了才出現)
-  mf.append(seg, old); body.appendChild(mf);
+  mf.append(seg, old);
+  if (hist === null) mf.appendChild(trEl("p", "ps-hint mg-size-old", t(mpsNoVolKey())));
+  body.appendChild(mf);
   const m = d.method;
   if (m) body.appendChild(mgSizeField("mgs-t", t({ vol: "sz.t.vol", mdd: "sz.t.mdd", lev: "sz.lev" }[m]), d.t[m], m === "lev" ? "×" : "%", "decimal", (v) => { d.t[m] = v; d.dirty[m] = true; mgSizePreview(pv); }));
   body.appendChild(pv); mgSizePreview(pv);
@@ -1536,8 +1591,9 @@ function mgSizeRender() {
 function mgSizeOk() {
   const G = mgBag(); if (mgsDraft.G !== G) { mgSizeClose(); return; }   // 開著框時換了帳號:這份草稿是上一個人的
   const r = mgSizeParse(mgsDraft); if (r.bad) return;
+  const fromWhy = !!(mgsOpener && mgsOpener.dataset && mgsOpener.dataset.fk === "mg-why-fix");
   G.sizing = r.sizing; G.sizingSet = true; mgSave(TR, MG_SIZE_KEY, G.sizing);
   trackFeature("mg_sizing_set");
   mgSizeClose(); TR.sig.opt = null; mgPaint();
-  const chip = $("po-opt").querySelector(".mg-size-btn"); if (chip) chip.focus();   // 重建後原本那顆不在了
+  const ap = fromWhy ? $("mg-apply") : null, chip = ap && !ap.disabled ? ap : $("po-opt").querySelector(".mg-size-btn"); if (chip) chip.focus();   // 重建後原本那顆不在了;從原因句來、這下可以套用了就落套用
 }
