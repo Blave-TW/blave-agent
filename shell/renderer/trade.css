@@ -287,6 +287,13 @@ html.ws-sc .side-gate { display: none; }
 .pf-strat { padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; transition: color var(--motion-fast) var(--ease-standard); }
 .pf-strat::before { content: ""; position: absolute; inset: 0; }
 .pf-strat:hover { text-decoration: underline; text-underline-offset: 3px; color: var(--ink-2); }
+.pf-tbl td.sname:has(> .pf-strat) { position: relative; }
+.net-line .nm:has(> .pf-strat) { position: relative; overflow: visible; }
+.net-line .pf-strat { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 列距不動、不跨鄰列:中間列只能貼滿 22;首列往 .net-box 內距、末列往 .net-sum 上距多拿 */
+.net-line .pf-strat::before { inset: -2px 0; }
+.net-line:first-child .pf-strat::before { top: -10px; }
+.net-line:has(+ .net-sum) .pf-strat::before { bottom: -6px; }
 /* 窄寬 Type C 標的清單的 tooltip 要蓋在熱區上面才叫得出來;寬度收到字,蓋掉的熱區只有那幾個字 */
 .sub-sym[title] { position: relative; z-index: 1; width: fit-content; }
 .trv .buy { color: var(--color-greenText); }
@@ -769,8 +776,12 @@ html.ws-sc .side-gate { display: none; }
 .mg-warn p { margin: 0; }
 .mg-warn-acts { display: flex; gap: var(--space-12); margin-top: var(--space-8); }
 .mg-warn .btn-quiet { font-size: 12px; }
-.mg-apply-why { font-size: 12px; color: var(--ink-2); }
-.mg-tbl td.key .key-name { display: inline; }
+/* 鈕正下方自己一行、靠右;行高 44 = 連結熱區(同 .busy-fix),視覺間距由 13 內距給,負邊界抵掉 .pf-sec 的 gap 與下緣 */
+.mg-apply-why { flex: 0 0 100%; margin: -12px 0 -8px; padding: 13px 0; font-size: 12px; line-height: 18px; color: var(--ink-2); text-align: right; }
+.mg-apply-why:empty { display: none; }
+.mg-apply-why .busy-fix, .mg-need-fund .busy-fix { margin-left: 0; }
+.mg-tbl .ct-trig { position: relative; z-index: 1; }   /* 策略名熱區撐滿整格,合約下拉要蓋在上面 */
+.mg-tbl .ct-trig::before { inset: -8px 0; }   /* 24 高撐到 40、不越列界:點偏一點不該跳去策略頁 */
 .mg-tbl tr.total td { padding-top: var(--space-8); border-top: 1px solid var(--border-frame); color: var(--ink); }
 .mg-stat { position: relative; }   /* 各格「贏過」氣泡的定位祖先 */
 .mg-stat-beat { margin-top: var(--space-4); }
@@ -826,7 +837,8 @@ html.ws-sc .side-gate { display: none; }
 .mg-unitw .amt-in { width: calc(14ch + 2 * var(--space-8) + 2px); }
 .mg-size-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
 .mg-size-seg button { min-width: 0; min-height: 36px; padding: var(--space-4); font-size: 13px; line-height: 1.2; white-space: normal; word-break: keep-all; }
-.mg-size-seg button[aria-disabled="true"] { color: var(--ink-disabled); background: transparent; cursor: help; }
+.mg-size-seg button:disabled, .mg-size-seg button:disabled:hover { color: var(--ink-disabled); cursor: not-allowed; }
+.mg-size-seg button:disabled[aria-checked="true"] { background: transparent; border-color: var(--ink-disabled); }   /* 深色下 --ink-disabled 與 --surface-segment-on 同值:填色會把字吃掉,選中改靠框與字重 */
 .mg-size-old[hidden] { display: none; }
 .mg-size-pv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-12); margin-top: var(--space-16); padding: var(--space-12); border-radius: var(--radius-sm); background: var(--bg-body); }
 .mg-size-pv > div { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
@@ -863,6 +875,7 @@ html.ws-sc .side-gate { display: none; }
 .mg-wait .btn-quiet { font-size: inherit; }
 /* 投入資金空著時優化表上方那一句(設計最後一輪:上 8、下 16) */
 .pf-note.mg-need-fund { display: block; margin: var(--space-8) 0 var(--space-16); color: var(--ink-2); }
+.pf-note.mg-need-fund:has(> .busy-fix) { margin: -5px 0 var(--space-4); padding: 13px 0; }   /* 熱區 44 留在這一行;字的位置不動 */
 /* 策略頁頭金額框的輸入格(trCfField):標籤 → 格子＋單位(＋合約下拉)→ 換算量或錯字;表與表下照舊 */
 .cf-extra { display: contents; }
 .cf-in-fld .fld-l { display: block; margin-bottom: var(--space-6); font-size: 12px; color: var(--ink-3); }

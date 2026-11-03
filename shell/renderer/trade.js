@@ -3213,7 +3213,8 @@ function trZoneOf(n) {
   return (mk ? mk === "tw_stock" : x.twdAll === true) ? TR_TXF_CCY : z;
 }
 // 幣別未定的原因:全是還沒回報的投資組合 = 跑過一次、算出成分就知道;單一標的(BTCUSD 這種)或跑過還未定 = 混了幣別或看不出計價,再跑也不會變
-function trUnknownWhy(ns, states) { return ns.some((n) => (states && states[n]) || !(TR.list.find((y) => y.name === n) || {}).portfolio) ? t("tr.ccyMixed") : t("tr.ccyAfterRun"); }
+function trUnknownWhyKey(ns, states) { return ns.some((n) => (states && states[n]) || !(TR.list.find((y) => y.name === n) || {}).portfolio) ? "tr.ccyMixed" : "tr.ccyAfterRun"; }
+function trUnknownWhy(ns, states) { return t(trUnknownWhyKey(ns, states)); }
 function trZoneLabel(z) { return z === TR_ZONE_LOTS ? t("tr.grpLots") : z === TR_ZONE_UNKNOWN ? t("tr.grpUnknown") : z; }
 // 整表只有一區時寫在欄頭的單位:口數區寫「口」,未定區不寫
 function trZoneUnit(z) { return z === TR_ZONE_LOTS ? t("tr.lotsUnit") : z === TR_ZONE_UNKNOWN ? null : z; }
@@ -4266,7 +4267,8 @@ function trNetRows(sym, cs, cell, tb, lot, unit, cols) {
   cs.forEach((c) => {
     const line = trEl("div", "net-line"), v = trEl("span", "v mono " + (c.v > 0 ? "buy" : c.v < 0 ? "sell" : ""), lot ? trLotsTgtFmt(c.v, true) : trFmt(c.v, true));
     if (c.notYet) { v.textContent = "—"; v.className = "v mono na"; v.title = t("tr.sigNotYet"); }
-    line.append(trEl("span", "nm", trDisplay(c.name)), trEl("span", "f mono", trFmt(c.amount) + " × " + (c.notYet ? "—" : x2(c.x))), v);
+    const nm = trEl("span", "nm"); nm.appendChild(trStratName(c.name));
+    line.append(nm, trEl("span", "f mono", trFmt(c.amount) + " × " + (c.notYet ? "—" : x2(c.x))), v);
     box.appendChild(line);
   });
   const ns = trNetSum(cs), twn = trTwName(sym), base0 = sym.replace(/@spot$/i, "").replace(/(USDT|USDC|BUSD|FDUSD|USD)$/i, "") || sym, base = twn ? base0 + " " + twn : base0;
@@ -4417,8 +4419,8 @@ function poSigTable(r, stored, states, mode) {
     const zs = items.filter((it) => it.z === z && it.sym).sort((a, b) => (covered(b.sym) ? 1 : 0) - (covered(a.sym) ? 1 : 0) || (a.sym < b.sym ? -1 : a.sym > b.sym ? 1 : 0));
     zs.forEach((it) => sigRow(it.sym, z, tb));
     items.filter((it) => it.z === z && it.wait).forEach((it) => {
-      const row = document.createElement("tr"), nc = trEl("td", "sname", trDisplay(it.wait));
-      nc.appendChild(trEl("span", "mkt-tag", t("po.mktPortfolio")));
+      const row = document.createElement("tr"), nc = trEl("td", "sname");
+      nc.append(trStratName(it.wait), trEl("span", "mkt-tag", t("po.mktPortfolio")));
       row.append(nc, trEl("td", "n na pending", trHostOld() ? t("po.hostOld") : t("tr.typecPending")));
       for (let i = 2; i < cols; i++) row.appendChild(trEl("td", "n"));
       tb.appendChild(row);
@@ -6120,7 +6122,7 @@ async function cxRetest() {
    Esc 與 Tab 圈都在這裡自己接(app.js 的 escTop / trapTab 不動):escTop 沒認得這個框時回 null、不會 preventDefault,
    這裡就補上;它先關了別層(defaultPrevented)這裡就不再關第二層。 */
 // 同一個框兩種用途:配置(勾選改表上的草稿,儲存才寫 amounts)與優化(只改優化自己的清單,portfolio.js)。psToAmt = 從自動下單頁的導引開的(spec-autotrade-empty §4)
-let psOpener = null, psMode = "amounts", psToAmt = false;
+let psOpener = null, psMode = "amounts", psToAmt = false, psFromWhy = false;
 function psWire() {
   $("ps-cancel").addEventListener("click", () => psClose());
   $("ps-close").addEventListener("click", () => psClose());
@@ -6160,7 +6162,8 @@ function psRow(r, cloud, i) {
 }
 let psLoading = false;
 /* fresh = 呼叫端剛重讀過清單(poAdd 鎖住那條),不再讀一次 */
-async function psOpen(opener, mode, fresh) {
+// opts.check:優化分頁〔改配置〕來的,預勾優化這組。鎖照配置算(下單鎖只放過已在配置裡的),鎖住的那支勾不上;框頭講改的是配置
+async function psOpen(opener, mode, fresh, opts) {
   const S = TR, mg = mode === "mg", view = S.view;
   // psLoading:重讀還沒回來時再按一次不重讀、不開第二個框
   if (S !== TR_BAGS[ENV.cur] || !$("ps-scrim").hidden || psLoading) return;
@@ -6177,6 +6180,8 @@ async function psOpen(opener, mode, fresh) {
     : trPickRows(typeof sfApplyOrder === "function" ? sfApplyOrder(S.list, prefs.order) : S.list, names, (trReport() || {}).can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), prefs.flags, trTwdVenueLock());   // 台灣期貨券商(統一、群益)只下台指期:非台指期的列鎖住,已勾的可以取消
   const dotsUp = envDotsUp(S.env, S.st), now = Date.now();
   rows.forEach((r) => { r.live = dotsUp && envRunDot(r.name, S.st, now, S.just); });
+  psFromWhy = !!(opts && opts.check);
+  if (psFromWhy) { rows.forEach((r) => { r.checked = !r.locked && opts.check.indexOf(r.name) >= 0; }); $("ps-title").textContent = t("mg.why.pickTitle"); }
   psOpener = opener || null;
   $("ps-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
   $("ps-env").hidden = !cloud; $("ps-env").textContent = cloud ? t("env.cloud") : "";
@@ -6209,8 +6214,9 @@ async function psOpen(opener, mode, fresh) {
 function psClose() {
   const sc = $("ps-scrim"); if (sc.hidden) return;
   sc.classList.remove("open"); sc.hidden = true; $("view-ws").inert = false;
-  const o = psOpener; psOpener = null; psToAmt = false;
-  if (o && o.isConnected && !o.disabled) o.focus(); else psRefocus();
+  const o = psOpener, fromWhy = psFromWhy; psOpener = null; psToAmt = false;
+  if (fromWhy) { psFromWhy = false; $("ps-title").textContent = t("tr.pick.title"); }
+  if (o && o.isConnected && !o.disabled) o.focus(); else if (!(fromWhy && mgWhyFocus())) psRefocus();
 }
 // 確定之後表重畫、開框那顆鈕已經是新的一顆:焦點落回它;沒有(讀不到設定那一態鈕停用)就退到分頁鈕,不能掉到 BODY
 function psRefocus() { const b = $("tr-pick"); if (b && b.isConnected && !b.disabled && b.offsetParent) b.focus(); else $("po-h").focus(); }
@@ -6220,6 +6226,7 @@ function psApply() {
   const S = TR;
   const sel = new Set([...$("ps-list").querySelectorAll(".ps-cb")].filter((c) => c.checked).map((c) => c.value));
   const refocus = psToAmt ? trFocusFirstAmt : psRefocus;
+  const fromWhy = psFromWhy;
   if (psMode === "mg") { psOpener = null; psClose(); mgSetMembers(S, [...sel]); return; }   // 只改優化分頁自己的清單,不送任何指令
   psClose();
   const mine = () => TR === S && S.open && S.view === "po";
@@ -6233,6 +6240,11 @@ function psApply() {
   S.sig.cfg = null;
   if (!mine()) return;
   poPaintCfg();
+  if (fromWhy) {   // 留在優化分頁:下一步是套用,不搬去配置的金額格
+    S.sig.opt = null; mgPaint();
+    const ap = $("mg-apply"); if (ap && !ap.disabled) ap.focus(); else if (!mgWhyFocus()) $("po-h").focus();
+    return;
+  }
   // 新勾了:下一步是填金額,焦點落在第一支新列的金額格(同網頁;勾選順序 = 框裡的順序);沒有新勾的或那格停用就回〔選擇策略〕
   const inp = added.length ? [...$("po-cfg").querySelectorAll(".amt-in")].find((x) => x.dataset.amt === added[0]) : null;
   if (inp && !inp.disabled && inp.offsetParent) inp.focus(); else refocus();

@@ -8643,7 +8643,7 @@ msgid "mg.apply"
 msgstr "套用金額"
 
 msgid "mg.applyDiffSet"
-msgstr "策略跟配置分頁不一樣"
+msgstr "配置 {a} 檔、這裡 {b} 檔"
 
 msgid "mg.askAgent"
 msgstr "跟 agent 討論"
@@ -9215,13 +9215,7 @@ msgid "mg.lotsUnderFoot"
 msgstr "台指期不足一口的部分沒算進去：少投 ≈ {amt}"
 
 # 優化表下:台指期 half-up 進位讓整份組合比計畫總部位多超過 5%(portfolio.js MG_LOTS_OVER_WARN)。pct = 那一支自己比配置多幾 %;只有一支進位用這句
-msgid "mg.lotsOverFoot"
-msgstr "台指期進位成 {lots} 口，比配置多 {pct}%"
-
 # 同上,兩支以上台指期成員進位:一支一行、帶策略名
-msgid "mg.lotsOverFootN"
-msgstr "{name}：台指期進位成 {lots} 口，比配置多 {pct}%"
-
 msgid "mg.waitPrefixOpt"
 msgstr "優化："
 
@@ -9232,7 +9226,7 @@ msgid "mg.btWaitPerf"
 msgstr "等更新績效…"
 
 msgid "sz.oldMdd"
-msgstr "雲端主機版本較舊，不能用最大回撤；到設定 › 一般〔更新雲端主機〕後重跑一次優化"
+msgstr "雲端主機較舊，不能用最大回撤，更新雲端主機"
 
 msgid "sz.staleMdd"
 msgstr "重跑一次優化才能用最大回撤"
@@ -9251,6 +9245,51 @@ msgstr "先選部位大小的方法"
 
 msgid "mg.needTarget"
 msgstr "先填部位大小的目標"
+
+msgid "mg.applyDiffSetN"
+msgstr "配置有 {n} 檔不在這裡"
+
+msgid "mg.applyWhyUnread"
+msgstr "讀不到金額設定，更新後就能套用"
+
+msgid "sz.noVol"
+msgstr "近 90 天沒有波動資料，不能用目標波動"
+
+msgid "mg.why.alloc"
+msgstr "改配置"
+
+msgid "mg.why.method"
+msgstr "改方法"
+
+msgid "mg.why.tbMethod"
+msgstr "〔方法〕"
+
+msgid "mg.why.changeMethod"
+msgstr "換一個方法"
+
+msgid "mg.why.changeTarget"
+msgstr "改一個目標"
+
+msgid "mg.why.shortMdd"
+msgstr "共同資料不到 90 天，不能用最大回撤，換一個方法"
+
+msgid "mg.why.noVol"
+msgstr "近 90 天沒有波動資料，不能用目標波動，換一個方法"
+
+msgid "mg.why.rerun"
+msgstr "重跑一次優化"
+
+msgid "mg.why.updCloud"
+msgstr "更新雲端主機"
+
+msgid "mg.why.signin"
+msgstr "登入 Blave"
+
+msgid "mg.why.signinUpd"
+msgstr "登入 Blave 更新"
+
+msgid "mg.why.pickTitle"
+msgstr "配置的策略"
 
 msgid "mg.sizeNoHist"
 msgstr "這份結果算不出目標波動，換一個方法"

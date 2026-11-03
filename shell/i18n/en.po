@@ -8627,7 +8627,7 @@ msgid "mg.apply"
 msgstr "Apply Amounts"
 
 msgid "mg.applyDiffSet"
-msgstr "Strategies differ from the Allocation tab"
+msgstr "Allocation {a}, here {b}"
 
 msgid "mg.askAgent"
 msgstr "Discuss with the agent"
@@ -9197,12 +9197,6 @@ msgstr "0 lots (under 1 lot)"
 msgid "mg.lotsUnderFoot"
 msgstr "TAIEX futures below one lot aren’t counted: ≈ {amt} less invested"
 
-msgid "mg.lotsOverFoot"
-msgstr "TAIEX futures rounded up to whole lots ({lots}): {pct}% more than allocated"
-
-msgid "mg.lotsOverFootN"
-msgstr "{name} rounded up to whole lots of TAIEX futures ({lots}): {pct}% more than allocated"
-
 msgid "mg.waitPrefixOpt"
 msgstr "Optimize: "
 
@@ -9213,7 +9207,7 @@ msgid "mg.btWaitPerf"
 msgstr "Waiting for performance updates…"
 
 msgid "sz.oldMdd"
-msgstr "Cloud machine version is out of date, so max drawdown isn’t available. Press Update cloud machine in Settings › General, then rerun the optimization"
+msgstr "Cloud machine is out of date, so max drawdown isn’t available; update the cloud machine"
 
 msgid "sz.staleMdd"
 msgstr "Rerun the optimization to use max drawdown"
@@ -9232,6 +9226,51 @@ msgstr "Pick a position size method first"
 
 msgid "mg.needTarget"
 msgstr "Enter the position size target first"
+
+msgid "mg.applyDiffSetN"
+msgstr "Allocation has {n} not listed here"
+
+msgid "mg.applyWhyUnread"
+msgstr "Can’t read the amounts; apply once it updates"
+
+msgid "sz.noVol"
+msgstr "No volatility data in the last 90 days, so target volatility is off"
+
+msgid "mg.why.alloc"
+msgstr "Change Allocation"
+
+msgid "mg.why.method"
+msgstr "Change Method"
+
+msgid "mg.why.tbMethod"
+msgstr "Method"
+
+msgid "mg.why.changeMethod"
+msgstr "change the method"
+
+msgid "mg.why.changeTarget"
+msgstr "change the target"
+
+msgid "mg.why.shortMdd"
+msgstr "Under 90 days of shared data, so max drawdown isn’t available; change the method"
+
+msgid "mg.why.noVol"
+msgstr "No volatility data in the last 90 days, so target volatility is off; change the method"
+
+msgid "mg.why.rerun"
+msgstr "Rerun the optimization"
+
+msgid "mg.why.updCloud"
+msgstr "update the cloud machine"
+
+msgid "mg.why.signin"
+msgstr "Sign in to Blave"
+
+msgid "mg.why.signinUpd"
+msgstr "sign in to Blave to update it"
+
+msgid "mg.why.pickTitle"
+msgstr "Allocation strategies"
 
 msgid "mg.sizeNoHist"
 msgstr "This result can’t work out target volatility; change the method"

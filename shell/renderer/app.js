@@ -753,6 +753,7 @@ async function ccyPick(code) {
   $("set-ccy").dataset.sig = ""; ccyPaint();
   if (!$("set-scrim").hidden && !$("set-ccy-row").hidden) $("set-ccy").focus();
 }
+let setBack = null;   // 從頁面上的連結進設定時,關掉要回哪裡(portfolio.js mgWhyGo);回 false = 照舊
 function setClose() {
   const sc = $("set-scrim");
   if (sc.hidden) return;
@@ -765,7 +766,8 @@ function setClose() {
   sc.classList.remove("open");
   sc.hidden = true;
   if (typeof libRefresh === "function") libRefresh();   // 在設定裡綁了卡 / 儲了值 / 登入了:策略庫的閘門要跟上
-  $("ws-conn").focus();
+  const back = setBack; setBack = null;
+  if (!(back && back())) $("ws-conn").focus();
 }
 // 選項是各語言自己的名字(不翻譯、不進 .po);中文那個用跳脫碼寫,字串閘門不准
 // 程式行出現中文字面。\u7e41\u9ad4\u4e2d\u6587 = 「繁體中文」
