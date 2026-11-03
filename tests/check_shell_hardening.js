@@ -38,7 +38,7 @@ t("~/Blave 由 app 建立時是 0700(既有目錄不動)", /if \(!fs\.existsSync
 { const pkg = JSON.parse(fs.readFileSync(path.join(S, "package.json"), "utf8")), lock = JSON.parse(fs.readFileSync(path.join(S, "package-lock.json"), "utf8"));
   const major = Number(String(pkg.devDependencies.electron).split(".")[0]);
   t("Electron 釘在 44 以上的確切版本(38 已 EOL),lockfile 跟上", /^\d+\.\d+\.\d+$/.test(pkg.devDependencies.electron) && major >= 44 && lock.packages["node_modules/electron"].version === pkg.devDependencies.electron);
-  t("Node 下限寫進 engines 與 .nvmrc(electron ≥41 的 npm 套件要 Node ≥22.12)", pkg.engines && pkg.engines.node === ">=22.12.0" && fs.readFileSync(path.join(S, ".nvmrc"), "utf8").trim() === "24");
+  t("Node 下限寫進 engines 與 .nvmrc(electron ≥41 的 npm 套件要 Node ≥22.12)", pkg.engines && pkg.engines.node === ">=22.12.0" && fs.readFileSync(path.join(S, ".nvmrc"), "utf8").trim() === "24.22.2");
   const cfgSrc = fs.readFileSync(path.join(S, "electron-builder.config.js"), "utf8");
   t("最低系統 macOS 13 明寫進打包設定(Electron 44 不支援 12)", /minimumSystemVersion: "13\.0"/.test(cfgSrc)); }
 
