@@ -1237,6 +1237,7 @@ let psPromise = null, loginPromise = null;
   // 設計師／稽核回修:停用外觀、下拉留白、拆解列熱區不撐高列、描述念整句、更新連結不當死鈕
   { const css = fs.readFileSync(path.join(R, "trade.css"), "utf8");
     ok("部位大小框停用的方法:認真 disabled(灰字、not-allowed、hover 不變),舊的 aria-disabled 規則拿掉", /\.mg-size-seg button:disabled, \.mg-size-seg button:disabled:hover \{ color: var\(--ink-disabled\); cursor: not-allowed; \}/.test(css) && !/\.mg-size-seg button\[aria-disabled/.test(css));
+    ok("選中又停用的方法:不填色、1px --ink-disabled 框,深色下字才讀得到(--ink-disabled 與 --surface-segment-on 同值),權重壓得過選中規則", /\.mg-size-seg button:disabled\[aria-checked="true"\] \{ background: transparent; border-color: var\(--ink-disabled\); \}/.test(css));
     ok("優化表合約下拉上下各留 8px(24 高撐到 40、不越列界);配置表窄欄那顆不動", /\.mg-tbl \.ct-trig::before \{ inset: -8px 0; \}/.test(css) && !/\.sub-sym \.ct-trig::before/.test(css));
     ok("拆解列策略名熱區:列距不動;中間列貼滿 22、首列往框內距擴、末列往合計上距擴,不跨鄰列", /\.net-line \{ display: flex; align-items: baseline; gap: var\(--space-12\); padding: var\(--space-2\) 0; \}/.test(css) && /\.net-line \.pf-strat::before \{ inset: -2px 0; \}/.test(css) && /\.net-line:first-child \.pf-strat::before \{ top: -10px; \}/.test(css) && /\.net-line:has\(\+ \.net-sum\) \.pf-strat::before \{ bottom: -6px; \}/.test(css)); }
   { const c = vm.createContext({}); vm.runInContext(cutF(psrc, "mgWhyHost"), c); const K = (tagName, next) => ({ tagName, nextElementSibling: next || null }), row = (first) => ({ firstElementChild: first }), host = (r) => vm.runInContext("mgWhyHost", c)(r);

@@ -838,6 +838,7 @@ html.ws-sc .side-gate { display: none; }
 .mg-size-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
 .mg-size-seg button { min-width: 0; min-height: 36px; padding: var(--space-4); font-size: 13px; line-height: 1.2; white-space: normal; word-break: keep-all; }
 .mg-size-seg button:disabled, .mg-size-seg button:disabled:hover { color: var(--ink-disabled); cursor: not-allowed; }
+.mg-size-seg button:disabled[aria-checked="true"] { background: transparent; border-color: var(--ink-disabled); }   /* 深色下 --ink-disabled 與 --surface-segment-on 同值:填色會把字吃掉,選中改靠框與字重 */
 .mg-size-old[hidden] { display: none; }
 .mg-size-pv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-12); margin-top: var(--space-16); padding: var(--space-12); border-radius: var(--radius-sm); background: var(--bg-body); }
 .mg-size-pv > div { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
