@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.154 — 2026-11-04
+
+- **回覆語法規則寫得更明確(`agent_turn.WEB_FORMATTING_RULE`)**:1.1.153 canary 實測三句仍是粗體小標加清單。明寫不要「**主題**：內容」與清單項目開頭加粗、分段空一行、不用破折號。Telegram 不動。
+
 ## 1.1.153 — 2026-11-04
 
 - **web 與電腦版的回覆語法規則改成預設寫句子(`agent_turn.WEB_FORMATTING_RULE`,`LOCAL_FORMATTING_RULE` 跟著衍生;Wei:這條鼓勵粗體行分段加清單,整站 AI 味變重)**:拿掉「要分段就用粗體行」與「可用粗體、清單」,改成三件以上同類的事才用清單、不用粗體當小標。Telegram 的語法段不動。測試 `tests/check_reply_format_plain.py`(新)。
