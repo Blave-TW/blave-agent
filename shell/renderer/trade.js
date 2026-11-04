@@ -5059,7 +5059,6 @@ function trPaintOver() {
   box.appendChild(trOvCurve(z));
   box.appendChild(trOvEvents(r, z));
   trEvListFocus(box);
-  if (trIsPaper()) box.appendChild(trEl("div", "pf-foot", t("cx.perfNote")));
 }
 function trStatCell(label, value, cls, sub, tip) {
   const c = trEl("div", "stat" + (cls.hero ? " hero" : " wide"));
@@ -5081,7 +5080,7 @@ function trStatCell(label, value, cls, sub, tip) {
 function trPct(p) { const r = Math.round(p * 100) / 100; return (r > 0 ? "+" : r < 0 ? "-" : "") + Math.abs(r).toFixed(2) + "%"; }
 function trOvStats() {
   const grid = trEl("div", "bt-stats ov-stats"), cv = TR.ov.curve || {};
-  grid.appendChild(trStatCell(t("tr.ov.equity"), trEquity(), { hero: true }, null, t("tr.ov.equityTip")));
+  grid.appendChild(trStatCell(t("tr.ov.equity"), trEquity(), { hero: true }, null, t("tr.ov.equityTip") + (trIsPaper() ? (LANG === "zh" ? "" : " ") + t("cx.perfNote") : "")));
   // today = null:沒有夠新的基準(app 好幾天沒開;雲端今天不到兩筆快照、或跨過資金異動)→「—」,不拿好幾天前的點冒充「當日」;讀不到也是「—」,不是 0
   const today = cv.today && typeof cv.today === "object" ? cv.today : {};
   const dp = typeof today.pnl === "number" && isFinite(today.pnl) ? today.pnl : null;

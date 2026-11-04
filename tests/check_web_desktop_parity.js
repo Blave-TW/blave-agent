@@ -116,6 +116,13 @@ for (const lang of ["zh", "en"]) {
   const bad = Object.entries(LAG_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || (typeof wp[w] === "string" && dp[d].replace("{broker}", "%(broker)s") !== wp[w] && dp[d] !== wp[w]));
   ok(`全部平倉快照落後 ${lang}:電腦版有這幾句,網頁有的那幾句逐字一致(${Object.keys(LAG_PAIRS).length} 句)`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
+// 模擬帳戶總權益氣泡接的第二句:兩邊逐字同;網頁 en 把接句的空白放在字串開頭(電腦版接的時候才加),所以先 trim。任一邊沒有這個 key 也算紅
+const PAPER_TIP_PAIRS = { "cx.perfNote": "workspace_ov_equity_tip_paper" };
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const bad = Object.entries(PAPER_TIP_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d].trim() !== wp[w].trim());
+  ok(`模擬總權益氣泡第二句 ${lang} 兩邊逐字一致`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
 // Bitget 換帳戶類型:對不上的暫停句與清單(halt.mismatch)、事件列兩型(venue_mode_switched／venue_stops_missing)——zh / en 逐字一致,
 // 任一邊找不到這個 key 也算紅(稽核 v033-integ 第二輪 R2-P3-3)
 const BITGET_PAIRS = {

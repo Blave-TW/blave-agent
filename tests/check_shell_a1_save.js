@@ -133,7 +133,7 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
   { bag(draft({ firing: true, paper: true, noPv: true })); const f = open(); await tick();
     ok("① 在跑+預覽沒到:「儲存並下單」+ 模擬記號、主鈕一開就能按;框底只有下一輪那句,沒有半句",
       f.title === "tr.cf.titleFire" && f.ok === "tr.cf.titleFire" && f.mark === "tr.mode.paper" && !f.wait && !f.okDisabled && J(f.notes) === J(["cf-note:tr.cf.nextRound"])
-      && !/asof|tr\.cf\.(held|gated|late|oldPv|firstRead|codeChanged|hostOld|flat)|tr\.cfTagClose|tr\.typecPending/.test(J(f.rows) + f.cap) && !sends.some((x) => x.cmd === "stats_refresh"), J({ f, sends })); }
+      && !/asof|tr\.cf\.(held|gated|late|firstRead|codeChanged|hostOld|flat)|tr\.cfTagClose|tr\.typecPending/.test(J(f.rows) + f.cap) && !sends.some((x) => x.cmd === "stats_refresh"), J({ f, sends })); }
   { bag(draft({ pv: { latest: false } })); const f = open(); await tick();
     ok("① 預覽不是最新那根:照用、不請背景重算", !f.wait && f.rows.length === 2 && !sends.some((x) => x.cmd === "stats_refresh"), J({ f, sends })); }
   // ── ① 暫停中:儲存金額、不列單、沿用暫停句
@@ -201,7 +201,7 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
       !f.wait && !f.okDisabled && f.notes.length === 0 && !sends.some((x) => x.cmd === "stats_refresh"), J({ f, sends })); }
   { bag(draft({ noPv: true, oldHost: true })); const f = open();
     ok("③ 本機舊 runtime:同上", f.notes.length === 0, J(f.notes)); }
-  ok("③ 等預覽的上限常數、背景請預覽、逾時句都拿掉了", !/TR_CF_WAIT|pvAsk|tr\.cf\.late|tr\.cf\.oldPv|tr\.cf\.firstRead|tr\.cf\.codeChanged|tr\.cf\.hostOld|tr\.cf\.flat|tr\.cf\.asofClose|tr\.typecPending/.test(cutF("trCfOpen")));
+  ok("③ 等預覽的上限常數、背景請預覽、逾時句都拿掉了", !/TR_CF_WAIT|pvAsk|tr\.cf\.late|tr\.cf\.firstRead|tr\.cf\.codeChanged|tr\.cf\.hostOld|tr\.cf\.flat|tr\.cf\.asofClose|tr\.typecPending/.test(cutF("trCfOpen")));
 
   // ── 稽核 v027-a1 修正
   const FX = { name: "fx", displayName: "FX", hasBacktest: true, symbol: "TXF", market: "swap", twd: true, twdAll: true };
@@ -777,7 +777,7 @@ const draft = (o) => Object.assign({ picked: ["btc", "tw", "n5"], edits: { n5: 2
       ok("存檔後的路由 · 暫停中原樣按儲存:框照開、2330 寫「0 → 100,000」(已存的策略現況 0 也畫箭頭,設計稽核 S3)", B.opened && B.changes["2330"] === 100000 && B.arrows["2330"] === 0, J(B)); } }
 
   // ── 字串:兩語都有、中文全形
-  { const keys = ["tr.cf.title", "tr.cf.titleFire", "tr.cf.capOrders", "tr.cf.capOrdersOpen", "tr.cf.capChanges", "tr.cf.asofBar", "tr.cf.buy", "tr.cf.sell", "tr.cf.unitShares", "tr.cf.unitCoins", "tr.cf.flat", "tr.cf.flatLong", "tr.cf.flatNoOrder", "tr.cf.codeChanged", "tr.cf.hostOld", "tr.cf.hostOldCloud", "tr.cf.late", "tr.cf.firstRead", "tr.cf.oldPv", "tr.cf.held", "tr.cf.gated", "po.unsaved", "po.willOrder", "po.live", "po.add", "po.addGo"];
+  { const keys = ["tr.cf.title", "tr.cf.titleFire", "tr.cf.capOrders", "tr.cf.capOrdersOpen", "tr.cf.capChanges", "tr.cf.asofBar", "tr.cf.buy", "tr.cf.sell", "tr.cf.unitShares", "tr.cf.unitCoins", "tr.cf.flat", "tr.cf.flatLong", "tr.cf.flatNoOrder", "tr.cf.codeChanged", "tr.cf.hostOld", "tr.cf.hostOldCloud", "tr.cf.late", "tr.cf.firstRead", "tr.cf.held", "tr.cf.gated", "po.unsaved", "po.willOrder", "po.live", "po.add", "po.addGo"];
     ok("字串:新 key 兩語都有;標題與主鈕同字(儲存並下單)", keys.every((k) => S0.en[k] && S0.zh[k]) && S0.zh["tr.cf.titleFire"] === "儲存並下單" && S0.zh["tr.cf.title"] === "儲存金額" && S0.zh["po.add"] === "加到策略組合",
       J(keys.filter((k) => !S0.en[k] || !S0.zh[k]))); }
   console.log(red ? `\n${red} FAILED` : "\nall checks passed");

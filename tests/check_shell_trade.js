@@ -1866,6 +1866,11 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("雲端:累積損益只從資金異動之後那一段起算(3 筆,不把入金算成獲利);損益 mode 不出資金異動那一句", !!cv && /^tr\.ov\.curveAriaPnl\|/.test(cv.attrs["aria-label"]) && /"n":3/.test(cv.attrs["aria-label"]) && /"a":"0\.00 USDT"/.test(cv.attrs["aria-label"]) && foots(all).length === 0); }
     { const all = paint(bag("local", { curve: LOCAL })), cv = canvasOf(all), day = dayCell(all);
       ok("這台電腦不變:同一條路畫,口徑換過那一句照舊(不是資金異動)、當日損益照算", !!cv && /"n":5/.test(cv.attrs["aria-label"]) && !!day && day.textContent.startsWith("+12.50") && foots(all).includes("tr.ov.basisNote") && !foots(all).some((x) => x.startsWith("tr.ov.flowNote"))); }
+    { // cx.perfNote 從總覽區腳搬進總權益氣泡:模擬才接、zh 不加空白、真錢氣泡不變
+      const tipOf = (lang, venue) => { ctx.LANG = lang; const b = bag("local", { curve: LOCAL }); b.st = { report: { venues: { [venue]: { credentials: true, pair: true, order: true, account: true } }, account: { venues: { [venue]: { ok: true, equity: 1000, currency: "USDT" } } }, config: { amounts: { s1: 100 } } } };
+        const all = paint(b); ctx.LANG = "en"; return { tip: cls(all, "tip")[0].textContent, foots: foots(all) }; };
+      const pz = tipOf("zh", "paper"), pe = tipOf("en", "paper"), rz = tipOf("zh", "binance");
+      ok("模擬:總權益氣泡接 cx.perfNote(zh 不加空白、en 一個空白),區腳不再出;真錢氣泡只有第一句", pz.tip === "tr.ov.equityTipcx.perfNote" && pe.tip === "tr.ov.equityTip cx.perfNote" && rz.tip === "tr.ov.equityTip" && ![pz, pe, rz].some((x) => x.foots.some((f) => f.includes("cx.perfNote"))), JSON.stringify({ pz, pe, rz })); }
     { // 設計稽核 desktop-10-08 #1:TWD 帳戶(統一)總權益與當日損益整數、負值 U+2212(同資產分頁的淨值 trTwd);USDT 照舊兩位
       const TWD = { venues: { president: { credentials: true, pair: true, order: true, account: true } }, account: { venues: { president: { ok: true, equity: 12145031.5, currency: "TWD" } } } };
       const twd = (pnl) => { const bg = bag("local", { curve: { ...LOCAL, currency: "TWD", today: { pnl, start_equity: 12141581.5 } } }); bg.st = { report: TWD }; const all = paint(bg), c = cls(all, "stat"); return { eq: cls(flat(c[0]), "sv")[0], day: cls(flat(c[1]), "sv")[0] }; };
