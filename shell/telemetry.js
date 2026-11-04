@@ -301,7 +301,9 @@ const EVENTS = {
     // 0.1.44 優化分頁〔套用金額〕停用原因、工具列缺方法那一句的補救連結(renderer/portfolio.js mgWhyGo;同 api 順序,api 先上)
     "mg_why_fix",
     // 0.1.44 沒有回測完成的策略時,策略組合 › 配置／優化霧上的〔新增策略〕(renderer/portfolio.js poFog;同 trade_fog_new);報告空清單霧上的〔新增報告〕(renderer/reports.js rptFog)。同 api 順序,api 先上
-    "po_fog_new", "mg_fog_new", "rpt_fog_new"] },
+    "po_fog_new", "mg_fog_new", "rpt_fog_new",
+    // 0.1.45 連結畫面(mockup 01):本機沒有能用的 CLI 時按〔用 Blave AI 先試〕、沒裝那一列按〔安裝〕(外開安裝頁)
+    "cn_try", "cn_install"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

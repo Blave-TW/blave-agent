@@ -194,12 +194,12 @@ ok("③ 設定檔讀不到:沒有選單,一行說明", !find(box, "tr-exec-sel")
     const bad = cases.filter((c) => c[1] !== c[2]).map((c) => c[0] + " 得 " + c[1]);
     ok("⑥ 補齊部位的「怎麼下」:四種 × 模擬／真錢、統一／群益一律市價、送出中優先、舊 runtime、讀不到設定", !bad.length, bad.join(";"));
     const ST = new Function(S + "\nreturn STRINGS;")(), fill = (s, v) => Object.keys(v).reduce((a, k) => a.split("{" + k + "}").join(v[k]), s);
-    ok("⑥ 市價那句與改前逐字相同(兩語、模擬／真錢);TWAP 句子接得通",
-      fill(ST.zh["tr.opt.catchDesc"], { how: ST.zh["tr.opt.catchHow.market"] }) === "現在就用市價下單，把部位調到策略目前的訊號。策略已經在場內的話，等於中途上車。"
-      && fill(ST.zh["tr.opt.catchDescReal"], { how: ST.zh["tr.opt.catchHow.marketReal"] }) === "現在就用市價送出真實委託，把部位調到策略目前的訊號。策略已經在場內的話，等於中途上車。"
-      && fill(ST.en["tr.opt.catchDesc"], { how: ST.en["tr.opt.catchHow.market"] }) === "Places market orders now to bring each position to the strategy’s current signal. If a strategy is already in a trade, you join it mid-trade."
-      && fill(ST.en["tr.opt.catchDescReal"], { how: ST.en["tr.opt.catchHow.marketReal"] }) === "Sends real market orders now to bring each position to the strategy’s current signal. If a strategy is already in a trade, you join it mid-trade."
-      && fill(ST.zh["tr.opt.catchDesc"], { how: fill(ST.zh["tr.opt.catchHow.twap"], { min: 30 }) }).startsWith("現在就用 TWAP 30 分鐘分批下單，把部位")
+    ok("⑥ 市價那句照 03-start-box A 版(兩語、模擬／真錢);TWAP 句子接得通",
+      fill(ST.zh["tr.opt.catchDesc"], { how: ST.zh["tr.opt.catchHow.market"] }) === "現在用市價補到目前訊號，可能中途上車。"
+      && fill(ST.zh["tr.opt.catchDescReal"], { how: ST.zh["tr.opt.catchHow.marketReal"] }) === "現在用市價補到目前訊號，可能中途上車。"
+      && fill(ST.en["tr.opt.catchDesc"], { how: ST.en["tr.opt.catchHow.market"] }) === "Catches up to the current signal now with market orders; you may join mid-trade."
+      && fill(ST.en["tr.opt.catchDescReal"], { how: ST.en["tr.opt.catchHow.marketReal"] }) === "Catches up to the current signal now with market orders; you may join mid-trade."
+      && fill(ST.zh["tr.opt.catchDesc"], { how: fill(ST.zh["tr.opt.catchHow.twap"], { min: 30 }) }).startsWith("現在用 TWAP 30 分鐘分批補到目前訊號")
       && /desc: t\("tr\.opt\.catchDesc" \+ money, \{ how: trCatchHow\(r, real\) \}\)/.test(trade)); }
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   process.exit(red ? 1 : 0);

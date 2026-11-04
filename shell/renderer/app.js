@@ -219,7 +219,9 @@ function paintRows(d) {
       rows.appendChild(row({ name, kind, sub: msg ? rowMsg(kind, msg) : x.authOutside ? t("row.keyOff", rowVars(kind, name)) : null,
         action: btn("btn-out", t(label), waiting ? () => window.blave.cancelAgentLogin() : (e) => localLogin(kind, e.currentTarget)) }));
     } else {
-      rows.appendChild(row({ name, kind, st: t("st.notFound"), stClass: "" }));
+      // 沒裝:狀態字旁一顆〔安裝〕外開安裝頁(mockup 01)。Codex 是隨包下載、沒有外部安裝頁(codexPkgRow 接手),只有 LAI_INSTALL 有頁的才給
+      const url = LAI_INSTALL[kind];
+      rows.appendChild(row({ name, kind, st: t("st.notFound"), stClass: "", action: url ? btn("btn-quiet", t("cn.install"), () => { trackFeature("cn_install"); window.blave.openExternal(url); }) : null }));
     }
   });
   const ak = typeof akConnRow === "function" ? akConnRow() : null; if (ak) rows.appendChild(ak);
@@ -383,25 +385,26 @@ function paintBlaveBtn() {
   sec.classList.toggle("is-cur", cur === "blave");
   if (cur === "blave") { sec.setAttribute("aria-current", "true"); }
   else { sec.removeAttribute("aria-current"); }
-  b.textContent = hasToken && cur !== "blave" ? t("cn.blave.switch") : t("cn.blave.btn");
+  // 鈕講結果不講動作(mockup 01 B 版):本機沒有能用的 CLI → 「用 Blave AI 先試」;本機已登入自己的 CLI → 「用 Blave AI」。按下去都是 OAuth
+  b.dataset.mode = hasToken && cur !== "blave" ? "switch" : cnFreeMode() ? "try" : "use";   // click 只在 try 記 cn_try(切換、OAuth 等待中的「取消」不算)
+  b.textContent = t({ switch: "cn.blave.switch", try: "cn.blave.try", use: "cn.blave.use" }[b.dataset.mode]);
   b.className = localReady ? "btn-out" : "btn-fill";
   mdlPaint();                                // 設定 › 模型接入 是另一份 DOM(那張卡不再搬家),同一份狀態各畫各的
   cnFreePaint();
 }
-/* 連結畫面的大標與 Blave 那一列的標題／副標(0.1.22;spec desktop-precard-credit §5.2、mockup 01 步 B 版):偵測完本機兩個 CLI 都不能用、
-   還沒登入、而且公開價目有綁卡前額度 → 大標從「連接你的 Agent」(對這群人整頁讀起來是死路)換成出路,副標只說登入就能用——
-   額度與金額事先不講,用完才由卡片叫他綁卡。
-   數字來自 api(public_tiers.free_ai_credit),拿不到或 0(停發)維持原字;有本機 AI 的人那條路已經走得通、已登入的人「登入就能用」不是新消息,
-   都維持原字。applyStatic 的 data-i18n 會把字寫回原句,所以換語言之後要再畫一次 */
+/* 連結畫面的大標與 Blave 那一列的副標(mockup 01 B 版,uiux-mockups-agent-2026-11-04):本機沒有能用的 CLI(沒裝、裝了沒登入、還在偵測)
+   就是「先用 Blave AI 開始」——沒裝 CLI 的人下載後第一眼看到的不能是死路;只有本機已經登入自己的 CLI 才退回「Blave 不內建 AI。」,
+   那群人不被推去花 credit。不再看有沒有登入、公開價目有沒有額度:額度數字(api public_tiers.free_ai_credit)只決定副標帶不帶數字,
+   拿不到就退成「登入就能用，用完才綁卡」。applyStatic 的 data-i18n 會把字寫回原句,所以換語言之後要再畫一次 */
 const cnFreeQ = () => (pub && Number(pub.free_ai_credit) > 0 ? Number(pub.free_ai_credit).toLocaleString("en-US") : "");
-function cnFreeMode() { return !!cnFreeQ() && !hasToken && lastDetect !== null && !localReady; }
+function cnFreeMode() { return !localReady; }
 function cnFreePaint() {
   const h = document.querySelector("#view-connect h4"), ttl = document.querySelector(".cn-blave .cn-ttl"), meta = document.querySelector(".cn-blave .cn-meta");
   if (!h || !ttl || !meta) return;
-  const free = cnFreeMode();
+  const free = cnFreeMode(), q = cnFreeQ();
   h.textContent = t(free ? "cn.h.free" : "cn.h");
-  ttl.textContent = t(free ? "cn.blave.name" : "cn.blave.title");
-  meta.textContent = t(free ? "cn.blave.descFree" : "cn.blave.desc");
+  ttl.textContent = t("cn.blave.name");
+  meta.textContent = free ? (q ? t("cn.blave.descFree", { q }) : t("cn.blave.descFreeNoNum")) : t("cn.blave.desc");
 }
 
 /* ── 設定 › 模型接入 ───────────────────────────────────────
@@ -605,7 +608,7 @@ const oauthGaveUp = (code) => code === "OAUTH_CANCELLED" || code === "OAUTH_TIME
 // 等待期間這顆鈕變成「取消」而不是變灰:用戶把瀏覽器分頁關掉之後不會有人按
 // 「允許」,沒有取消的話這裡就卡到五分鐘逾時為止。
 let oauthPending = false;
-$("btn-blave").addEventListener("click", () => blaveGo($("btn-blave")));
+$("btn-blave").addEventListener("click", () => { if ($("btn-blave").dataset.mode === "try") trackFeature("cn_try"); blaveGo($("btn-blave")); });
 function blaveGo(b) {
   if (oauthPending) { window.blave.cancelOAuth(); return; }
   if (busyOn()) { busyCut(b, () => blaveGoNow(b)); return; }
@@ -620,9 +623,9 @@ async function blaveGoNow(b) {
     enterWorkspace("blave", {});
     return;
   }
-  const was = b.textContent;
+  const was = b.textContent, wasMode = b.dataset.mode;
   oauthPending = true;
-  b.textContent = t("oauth.cancel");
+  b.textContent = t("oauth.cancel"); b.dataset.mode = "cancel";
   setHint({ text: t("oauth.opened") });   // setHint 會重畫兩個表面
   waitChanged();
   trackFeature("login_click");
@@ -641,7 +644,7 @@ async function blaveGoNow(b) {
     setHint({ text: code && t(code) !== code ? t(code) : (m || t("oauth.failed")) });
   } finally {
     oauthPending = false;
-    b.textContent = was;
+    b.textContent = was; b.dataset.mode = wasMode;
     waitChanged();                           // 等待結束:兩個表面都要把「取消」換回來
   }
 }
@@ -2206,7 +2209,7 @@ document.addEventListener("mousedown", (e) => { if (!$("mp").contains(e.target))
 /* Esc 關最上面那一層,焦點在哪都一樣:點了框裡的字、從對話清單的 ✕ 開、視窗切回來,焦點會落在 body,
    掛在各框 scrim 上的 keydown 收不到(Wei 09-23 實機)。一次只關一層;由上往下照 DOM 疊的順序 */
 function escTop() {
-  return !$("del-scrim").hidden ? () => delClose(false) : !$("rpn-scrim").hidden ? rptNewClose : !$("ns-scrim").hidden ? nsClose : !$("idea-scrim").hidden ? ideaClose : !$("cx-scrim").hidden ? cxDismiss : !$("lai-scrim").hidden ? laiClose : !$("shr-scrim").hidden ? shrClose
+  return !$("del-scrim").hidden ? () => { if (!cfPopEsc()) delClose(false); } : !$("rpn-scrim").hidden ? rptNewClose : !$("ns-scrim").hidden ? nsClose : !$("idea-scrim").hidden ? ideaClose : !$("cx-scrim").hidden ? cxDismiss : !$("lai-scrim").hidden ? laiClose : !$("shr-scrim").hidden ? shrClose
     : !$("lb-scrim").hidden ? lbClose : !$("set-scrim").hidden ? (rulesEscFn() || setClose) : !$("intro-scrim").hidden ? () => introClose("close") : !$("mp-panel").hidden ? () => mpClose(true)
     : !$("cs-list").hidden ? () => { csShowList(false); $("cs-toggle").focus(); } : null;
 }
@@ -3108,7 +3111,10 @@ function delOkBusy(on) {
   if (on) { b.setAttribute("aria-disabled", "true"); $("del-modal").setAttribute("aria-busy", "true"); }
   else { b.removeAttribute("aria-disabled"); $("del-modal").removeAttribute("aria-busy"); }
 }
-function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel, focus, link, stay }) {
+// note:常駐說明縮成一行＋〔細節〕點開的小卡(mockup 03 A 版),小卡只放 details 裡帶 items 的那幾條;帶 text 的那一組(哪些部位算 Blave 的)
+// 留在收合的 <details>、summary 用它的 label(跟網頁同一份);沒有 note 才把全部塞進 <details>。
+// 小卡用點的不用 hover(裡面有連結);攤在那一行下面,流內、不用浮層 token;Esc 先收小卡再收框(escTop)
+function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel, focus, link, stay, note }) {
   cfSupersede();
   delOkBusy(false);
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -3133,16 +3139,26 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
   }
   if (extra) body.appendChild(extra);
   if (keep && keep.length) { const ul = mk("ul", "cf-keep"); keep.forEach((x) => ul.appendChild(mk("li", "", x))); body.appendChild(ul); }
-  if (details && details.length) {
-    const d = mk("details", "cf-more"), sm = mk("summary", "", t("cf.more")), cv = mk("span", "cv7"), inner = mk("div", "cf-more-in");
+  const groups = (host, list) => list.forEach((g) => {
+    const box = mk("div"); if (g.label) box.appendChild(mk("span", "lbl", g.label));
+    if (g.items) { const ul = mk("ul"); g.items.forEach((x) => { const li = mk("li", "", typeof x === "string" ? x : null); if (typeof x !== "string") li.appendChild(x); ul.appendChild(li); }); box.appendChild(ul); } else box.appendChild(mk("p", "", g.text));
+    host.appendChild(box);
+  });
+  const more = (list, label) => {
+    const d = mk("details", "cf-more"), sm = mk("summary", "", label), cv = mk("span", "cv7"), inner = mk("div", "cf-more-in");
     cv.setAttribute("aria-hidden", "true"); sm.appendChild(cv); d.open = !!detailsOpen;
-    details.forEach((g) => {
-      const box = mk("div"); if (g.label) box.appendChild(mk("span", "lbl", g.label));
-      if (g.items) { const ul = mk("ul"); g.items.forEach((x) => { const li = mk("li", "", typeof x === "string" ? x : null); if (typeof x !== "string") li.appendChild(x); ul.appendChild(li); }); box.appendChild(ul); } else box.appendChild(mk("p", "", g.text));
-      inner.appendChild(box);
-    });
+    groups(inner, list);
     d.append(sm, inner); body.appendChild(d);
-  }
+  };
+  if (note) {
+    const texty = (details || []).filter((g) => !g.items);
+    texty.forEach((g) => more([{ text: g.text }], g.label || t("cf.more")));
+    const line = mk("div", "cf-stop"), tb = mk("button", "btn-quiet", t("cf.more")), pop = mk("div", "cf-pop");
+    tb.type = "button"; pop.id = "cf-pop"; pop.hidden = true; tb.setAttribute("aria-expanded", "false"); tb.setAttribute("aria-controls", pop.id);
+    groups(pop, (details || []).filter((g) => g.items));
+    tb.addEventListener("click", () => cfPopToggle(tb, pop, pop.hidden));
+    line.append(mk("span", "t", note), tb, pop); body.appendChild(line);
+  } else if (details && details.length) more(details, t("cf.more"));
   const pre = choices && choices.find((c) => c.checked && !c.disabled);
   $("del-ok").textContent = pre ? pre.ok : ok; $("del-ok").disabled = !!okDisabled || !!(choices && !pre);
   // okWhy = 停用的主鈕為什麼按不了(lines 裡的那一句):讀屏停在鈕上時唸得到
@@ -3166,6 +3182,12 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
   const fx = focus && $(focus);
   if (fx) { fx.focus(); if (typeof fx.select === "function") fx.select(); }
   else if (single) $("del-ok").focus(); else $("del-cancel").focus();
+}
+function cfPopToggle(tb, pop, on) { pop.hidden = !on; tb.setAttribute("aria-expanded", on ? "true" : "false"); }
+// Esc 一次只收一層(canon Tooltip):確認框裡的小卡開著就只收小卡、焦點回〔細節〕;收了回 true
+function cfPopEsc() {
+  const pop = $("del-body").querySelector(".cf-pop"); if (!pop || pop.hidden) return false;
+  cfPopToggle(pop.previousElementSibling, pop, false); pop.previousElementSibling.focus(); return true;
 }
 function delClose(deleted) {
   const sc = $("del-scrim"); if (sc.hidden || sc.dataset.lock) return;   // lock:策略庫購買扣款在路上(library.js libPurchase),Esc / ✕ / 框外都不關

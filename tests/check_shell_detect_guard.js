@@ -147,7 +147,7 @@ const authUnknown = eval("(" + app.match(/^const authUnknown = (.*);$/m)[1] + ")
     const rowsEl = el(), calls = [];
     const ctx = { PKG: { snap: null, redetect: true }, loginPending: null, MDL: { busy: true }, ROWMSG: { claude: null, codex: null }, cur: null, localReady: false,
       $: () => rowsEl, row: (o) => o, btn: () => ({}), t: (k) => k, paintBlaveBtn: () => {}, mdlPaint: () => calls.push("mdlPaint"), detect: () => calls.push("detect"),
-      rowMsg: () => "", rowVars: () => ({}), connect: () => {}, localLogin: () => {}, codexPkgGo: () => {}, window: { blave: {} }, whyState, authUnknown };
+      rowMsg: () => "", rowVars: () => ({}), connect: () => {}, localLogin: () => {}, codexPkgGo: () => {}, window: { blave: {} }, whyState, authUnknown, LAI_INSTALL: { claude: "x" }, trackFeature: () => {} };
     const paint = new Function("ctx", `with (ctx) { ${fn("codexPkgRow")}\n${fn("paintRows")}\nreturn paintRows; }`)(ctx);
     const D0 = { claude: { installed: false }, codex: { installed: false } };
     ctx.loginPending = "claude"; paint(D0); ctx.loginPending = null; paint(D0);

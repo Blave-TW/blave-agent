@@ -40,13 +40,14 @@
   <div class="cn">
     <div class="cn-bar" style="-webkit-app-region:drag"></div>
     <div class="cn-mid">
-      <h4 data-i18n="cn.h"></h4>
+      <!-- 大標與副標的預設是「本機沒有能用的 CLI」那一組(下載後最多人看到的狀態);偵測完由 app.js cnFreePaint 決定 -->
+      <h4 data-i18n="cn.h.free"></h4>
       <div class="cn-card">
         <div class="cn-sec cn-blave">
           <!-- 說明是標題的副標、不是段落:兩個選項各少一次眼睛停留。 -->
           <p class="cn-head">
-            <span class="cn-ttl" data-i18n="cn.blave.title"></span>
-            <span class="cn-meta" data-i18n="cn.blave.desc"></span>
+            <span class="cn-ttl" data-i18n="cn.blave.name"></span>
+            <span class="cn-meta" data-i18n="cn.blave.descFreeNoNum"></span>
           </p>
           <span class="cn-cur" id="cn-blave-cur" hidden></span>
           <button class="btn-fill" id="btn-blave" type="button"></button>

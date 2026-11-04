@@ -202,7 +202,7 @@ exit 2
     `let LANG; const sync = () => { LANG = getLang(); };
      let loginPending = null, oauthPending = false, lastDetect = null, cur = null, HINT = null, detects = 0, said = [];
      let loginSpawned = null;
-     const MDL = { busy: false }, mdlPaint = () => {}, paintBlaveBtn = () => {}, connect = (k) => { state.connected = k; }, srSay = (x) => said.push(x), trackEvent = () => {}, trackFeature = () => {};
+     const MDL = { busy: false }, mdlPaint = () => {}, paintBlaveBtn = () => {}, connect = (k) => { state.connected = k; }, srSay = (x) => said.push(x), trackEvent = () => {}, trackFeature = () => {}, LAI_INSTALL = { claude: "x" };
      ${fnOf(app, "cmdLine")}
      function detectFresh() { return detect(); }
      function detect(quiet) { detects++; state.quiet = quiet; detectAt = Date.now(); if (state.next) lastDetect = state.next; }
@@ -252,7 +252,7 @@ exit 2
   R.set("lastDetect", D({ loggedIn: false, why: "claude_timeout", path: "/x/claude" }, { loggedIn: false, why: "codex_timeout", path: "/x/codex" })); R.paintRows(R.get("lastDetect"));
   t("…登入檢查逾時(有 path)→ 不擋路:一句「查不到登入狀態」+〔連結〕,Claude、Codex 同一種", JSON.stringify(rows()) === JSON.stringify(["claude|||查不到登入狀態，送出訊息就知道|連結", "codex|||查不到登入狀態，送出訊息就知道|連結"]), rows());
   R.set("lastDetect", D({ installed: false }, { loggedIn: false, why: "codex_nonzero" })); R.set("loginPending", "codex"); R.ROWMSG.codex = "opened"; R.paintRows(R.get("lastDetect"));
-  t("…等瀏覽器:那一列名字底下「已在瀏覽器開啟登入頁」、鈕是「取消等待」", JSON.stringify(rows()) === JSON.stringify(["claude|off|未偵測到||", "codex|||已在瀏覽器開啟登入頁|取消等待"]), rows());
+  t("…等瀏覽器:那一列名字底下「已在瀏覽器開啟登入頁」、鈕是「取消等待」", JSON.stringify(rows()) === JSON.stringify(["claude|off|未偵測到||安裝(x)", "codex|||已在瀏覽器開啟登入頁|取消等待"]), rows());
   R.set("loginPending", null); R.ROWMSG.codex = "failed"; R.paintRows(R.get("lastDetect"));
   t("…失敗:Codex 不在 PATH 上(codex login 是死路)→ 只講會開瀏覽器(不點名鈕:三個表面那時的鈕都是〔再試一次〕)", rows()[1] === "codex|||登入沒有完成。會開瀏覽器完成登入。|再試一次", rows());
   LANG = "en"; R.sync(); R.paintRows(R.get("lastDetect"));

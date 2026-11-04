@@ -3,26 +3,31 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Language: zh\n"
 
+# 連結畫面的大標:本機沒有能用的 CLI 時是 cn.h.free;本機已登入自己的 CLI 才退回原本這一句(mockup 01 B 版,設計師稽核後維持舊標)
 msgid "cn.h"
 msgstr "連接你的 Agent"
 
-msgid "cn.blave.title"
-msgstr "用 Blave AI"
-
+# Blave 那一列的副標:本機已登入自己的 CLI 時用這句;其餘用 cn.blave.descFree
 msgid "cn.blave.desc"
-msgstr "首次綁卡送 100 TWD 的 AI 額度，之後按用量計費"
+msgstr "登入就能用，按用量計費"
 
-# 連結畫面偵測完本機兩個 CLI 都不能用、沒登入、公開價目有綁卡前額度時的大標與 Blave 那一列的副標(0.1.22;spec desktop-precard-credit §5.2)。
-# 副標不講額度與金額(登入送的額度事先不預告,用完才由卡片叫他綁卡);不寫「夠跑幾輪」。這筆額度只能用 DeepSeek V4 Pro(0.1.33,選單上其他型號鎖住、旁邊講怎麼解開),所以字不提型號
+# 連結畫面本機沒有能用的 CLI(沒裝、裝了沒登入、還在偵測)時的大標(mockup 01 B 版);不看登入、不看額度有無。
+# 副標 cn.blave.descFree 直接講登入就有的額度數字(api public_tiers.free_ai_credit),拿不到數字退 descFreeNoNum;不寫「夠跑幾輪」。
+# 這筆額度只能用 DeepSeek V4 Pro(0.1.33,選單上其他型號鎖住、旁邊講怎麼解開),所以字不提型號
 msgid "cn.h.free"
 msgstr "先用 Blave AI 開始"
 
 msgid "cn.blave.descFree"
-msgstr "登入就能直接開始用"
+msgstr "登入就有 {q} TWD 額度，用完才綁卡"
 
-# 設定 › 模型接入 的 Blave AI 那一列,固定一行(12px:zh ≤ 346px、en ≤ 302px),句尾不加句號。沒登入且拿得到贈額數字時用這句
+# 拿不到額度數字(離線、api 沒回、停發)時的退路句
+msgid "cn.blave.descFreeNoNum"
+msgstr "登入就能用，用完才綁卡"
+
+# 設定 › 模型接入 的 Blave AI 那一列,固定一行(12px:zh ≤ 346px、en ≤ 302px),句尾不加句號。沒登入且拿得到額度數字時用這句;
+# 事實同 cn.blave.descFree:額度在電腦版登入換 token 那一刻發(api account/agent_free_credit.py),綁卡前就有
 msgid "cn.blave.descSet"
-msgstr "首次綁卡送 {q} TWD 的 AI 額度，之後按用量計費"
+msgstr "登入就有 {q} TWD 額度，用完才綁卡"
 
 # 已登入、或拿不到贈額數字時(離線、api 沒回):只講怎麼收錢
 msgid "cn.blave.descSetNoNum"
@@ -30,6 +35,17 @@ msgstr "按用量從 Blave 餘額扣款"
 
 msgid "cn.blave.btn"
 msgstr "登入 Blave"
+
+# 連結畫面 Blave 那顆主鈕:本機沒有能用的 CLI 時講結果(按下去仍是 OAuth);本機已登入自己的 CLI 時只講用法
+msgid "cn.blave.try"
+msgstr "用 Blave AI 先試"
+
+msgid "cn.blave.use"
+msgstr "用 Blave AI"
+
+# 「未偵測到」那一列旁的文字鈕:外開安裝頁
+msgid "cn.install"
+msgstr "安裝"
 
 msgid "cn.blave.switch"
 msgstr "切換"
@@ -1765,7 +1781,7 @@ msgid "tr.startCatchUp"
 msgstr "啟動並補齊部位"
 
 msgid "tr.startWait"
-msgstr "啟動，等新訊號才進場"
+msgstr "啟動，等新訊號"
 
 # 啟動下單框(先選再按):兩個選項各帶後果(真錢版講「真實委託」)、常駐安全句、「細節」裡的小標
 msgid "tr.opt.legend"
@@ -1775,34 +1791,34 @@ msgid "tr.opt.catch"
 msgstr "補齊部位"
 
 msgid "tr.opt.catchDesc"
-msgstr "現在就{how}，把部位調到策略目前的訊號。策略已經在場內的話，等於中途上車。"
+msgstr "現在{how}補到目前訊號，可能中途上車。"
 
 msgid "tr.opt.catchDescReal"
-msgstr "現在就{how}，把部位調到策略目前的訊號。策略已經在場內的話，等於中途上車。"
+msgstr "現在{how}補到目前訊號，可能中途上車。"
 
 msgid "tr.opt.catchHow.market"
-msgstr "用市價下單"
+msgstr "用市價"
 
 msgid "tr.opt.catchHow.marketReal"
-msgstr "用市價送出真實委託"
+msgstr "用市價"
 
 msgid "tr.opt.catchHow.twap"
-msgstr "用 TWAP {min} 分鐘分批下單"
+msgstr "用 TWAP {min} 分鐘分批"
 
 msgid "tr.opt.catchHow.twapReal"
-msgstr "用 TWAP {min} 分鐘分批送出真實委託"
+msgstr "用 TWAP {min} 分鐘分批"
 
 msgid "tr.opt.catchHow.chase"
-msgstr "用限價追價下單"
+msgstr "用限價追價"
 
 msgid "tr.opt.catchHow.chaseReal"
-msgstr "用限價追價送出真實委託"
+msgstr "用限價追價"
 
 msgid "tr.opt.catchHow.custom"
-msgstr "用自訂方式（{module}）下單"
+msgstr "用自訂方式（{module}）"
 
 msgid "tr.opt.catchHow.customReal"
-msgstr "用自訂方式（{module}）送出真實委託"
+msgstr "用自訂方式（{module}）"
 
 msgid "tr.opt.catchStale"
 msgstr "Blave 關著時訊號沒更新，現在補齊可能用到舊訊號。下次排程跑完才換新。"
@@ -1811,24 +1827,24 @@ msgid "tr.opt.wait"
 msgstr "等新訊號"
 
 msgid "tr.opt.waitDesc"
-msgstr "現在不下單。每條策略等下一次進場、出場或翻向才開始交易。"
+msgstr "現在不下單，等下一個訊號才動。"
 
 msgid "tr.opt.waitStranded"
 msgstr "有 {n} 筆部位策略已經想平：選「等新訊號」的話，這些部位會一直開著，直到策略的訊號再改變。"
 
 msgid "tr.opt.waitDescReal"
-msgstr "現在不下單。每條策略等下一次進場、出場或翻向才送出真實委託。"
+msgstr "現在不下單，等下一個訊號才動。"
 
 # 「只調整 Blave 自己那一份」跟著帳本基準分三種說法(只給真錢):讀不到 / 還沒建(第一次對帳會收編同方向的部位)/ 已建。
 # 三句同一個開頭與句號(設計師定稿);意思由後端依對帳邏輯定
 msgid "tr.keep.own"
-msgstr "只調整 Blave 自己那一份。"
+msgstr "只動 Blave 自己那一份。"
 
 msgid "tr.keep.ownFirst"
-msgstr "只調整 Blave 自己那一份。同一個幣你已經有同方向的部位時，第一次對帳會把它算進來。"
+msgstr "只動 Blave 自己那一份。同一個幣已有同方向部位時，第一次對帳會算進來。"
 
 msgid "tr.keep.ownBuilt"
-msgstr "只調整 Blave 自己那一份，你自己開的部位不算、也不抵掉目標部位。"
+msgstr "只動 Blave 自己那一份，你自己開的部位不算、也不抵目標。"
 
 msgid "tr.keep.ownBuilt2"
 msgstr "單向持倉帳戶上，交易所會把 Blave 的單與你同幣的部位合併計算。"
@@ -1839,8 +1855,9 @@ msgstr "哪些部位算 Blave 的"
 msgid "tr.det.ownRule"
 msgstr "第一次對帳時，同方向的現有部位不超過目標 1.5 倍就整份算 Blave 的，更大時只算到目標那麼多，其餘算你的、不會被平。單向持倉帳戶上，交易所會把 Blave 的單跟你同一個幣的部位合併計算。"
 
-msgid "tr.det.local"
-msgstr "在這台電腦上跑"
+# 這台電腦的啟動框:說明只留一行,其餘收進點開的小卡(mockup 03 A 版;每條 ≤25 字)
+msgid "tr.stopLine"
+msgstr "電腦睡眠或關掉 Blave 就停，部位不平倉。"
 
 msgid "tr.det.cloud"
 msgstr "在雲端跑"
@@ -1849,43 +1866,43 @@ msgid "cf.more"
 msgstr "細節"
 
 msgid "tr.means.1"
-msgstr "自動下單只在電腦醒著、Blave 開著、連得上網的時候跑。"
+msgstr "只在電腦醒著、Blave 開著、有網路時跑。"
 
 msgid "tr.means.2"
-msgstr "睡眠、闔蓋、關機、結束 Blave：自動下單停止，部位留在{venue}，不會自動平倉。"
+msgstr "睡眠、關機或結束 Blave 就停，{venue}上的部位不平倉。"
 
 msgid "tr.means.2p"
-msgstr "睡眠、闔蓋、關機、結束 Blave：自動下單停止，模擬部位留著，不會自動平倉。"
+msgstr "睡眠、關機或結束 Blave 就停，模擬部位留著。"
 
 msgid "tr.means.3"
-msgstr "結束 Blave 再打開後，自動下單是暫停的，要按「啟動下單」才會繼續。睡眠醒來或網路恢復則照常繼續。"
+msgstr "重開 Blave 後要再按「啟動下單」。"
 
 msgid "tr.means.4"
-msgstr "交易所端的停損單不受這台電腦影響；建議替部位掛上。"
+msgstr "交易所的停損單不受影響，建議掛上。"
 
 msgid "tr.means.twStop"
-msgstr "{venue}沒有券商端停損單；Blave 的停損是這台電腦每根 K 棒算出來才下市價單，電腦睡著或關機時部位沒有保護。"
+msgstr "{venue}沒有券商端停損單，電腦睡著時部位沒保護。"
 
 msgid "tr.keep.pres"
-msgstr "只調整 Blave 自己那一份；同一個商品別跟策略用同一個月份手動交易，Blave 會分不清。"
+msgstr "只動 Blave 自己那一份；同一個商品別跟策略用同一個月份手動交易，Blave 會分不清。"
 
 msgid "tr.means.presNight"
-msgstr "台指期夜盤 15:00 到隔天 05:00 也會下單，電腦要一直開著。"
+msgstr "台指期夜盤也會下單，電腦要一直開著。"
 
 msgid "tr.means.1a"
-msgstr "自動下單在跑時，Blave 不讓電腦閒置睡眠（螢幕照常會關）；要 Blave 開著、連得上網才會下單。"
+msgstr "跑的時候 Blave 不讓電腦閒置睡眠，但要開著、有網路。"
 
 msgid "tr.means.1aWin"
-msgstr "自動下單在跑時，Blave 不讓電腦閒置睡眠（螢幕照常會關；筆電要接著電源）；要 Blave 開著、連得上網才會下單。"
+msgstr "跑的時候 Blave 不讓電腦閒置睡眠，筆電要接電源。"
 
 msgid "tr.means.2a"
-msgstr "闔蓋、沒電、手動睡眠、關機、結束 Blave：自動下單停止，部位留在{venue}，不會自動平倉。"
+msgstr "闔蓋、沒電、手動睡眠或關機就停，{venue}上的部位不平倉。"
 
 msgid "tr.means.2pa"
-msgstr "闔蓋、沒電、手動睡眠、關機、結束 Blave：自動下單停止，模擬部位留著，不會自動平倉。"
+msgstr "闔蓋、沒電、手動睡眠或關機就停，模擬部位留著。"
 
 msgid "tr.means.cloud"
-msgstr "要 24 小時跑、不靠這台電腦："
+msgstr "要 24 小時跑："
 
 msgid "tr.means.cloudGo"
 msgstr "改用雲端主機"

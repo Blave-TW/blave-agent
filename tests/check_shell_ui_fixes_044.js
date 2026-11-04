@@ -74,7 +74,7 @@ if (!process.versions.electron) {
 
   // ── 埋點 ──
   { const wl = (fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8").match(/feature_used: \{ name: \[([\s\S]*?)\] \}/) || [, ""])[1];
-    ok("新事件名進白名單、接在最後(api 同順序先上)", /"po_fog_new", "mg_fog_new", "rpt_fog_new"\s*$/.test(wl)); }
+    ok("新事件名進白名單、接在 0.1.44 那一段的最後(api 同順序先上;0.1.45 的 cn_* 接在它後面)", /"po_fog_new", "mg_fog_new", "rpt_fog_new",\s*(\/\/[^\n]*\n\s*)?"cn_try", "cn_install"\s*$/.test(wl)); }
 
   const bin = GATE.bin(SHELL, "報告霧、連接框、版面");
   if (bin) {

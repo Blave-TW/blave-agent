@@ -6,21 +6,21 @@ msgstr ""
 msgid "cn.h"
 msgstr "Connect Your Agent"
 
-msgid "cn.blave.title"
-msgstr "Use Blave AI"
-
 msgid "cn.blave.desc"
-msgstr "First card adds 100 TWD of AI credit, then pay per use"
+msgstr "Sign in and pay per use"
 
 msgid "cn.h.free"
 msgstr "Start with Blave AI"
 
 msgid "cn.blave.descFree"
-msgstr "Sign in and start right away"
+msgstr "Sign in for {q} TWD of credit, add a card when it runs out"
+
+msgid "cn.blave.descFreeNoNum"
+msgstr "Sign in to start, add a card when credit runs out"
 
 # 設定 › 模型接入 的 Blave AI 那一列,固定一行(12px:zh ≤ 346px、en ≤ 302px),句尾不加句號。沒登入且拿得到贈額數字時用這句
 msgid "cn.blave.descSet"
-msgstr "First card adds {q} TWD of AI credit"
+msgstr "{q} TWD of credit, card only when it runs out"
 
 # 已登入、或拿不到贈額數字時(離線、api 沒回):只講怎麼收錢
 msgid "cn.blave.descSetNoNum"
@@ -28,6 +28,15 @@ msgstr "Pay per use from your Blave balance"
 
 msgid "cn.blave.btn"
 msgstr "Sign in to Blave"
+
+msgid "cn.blave.try"
+msgstr "Try Blave AI first"
+
+msgid "cn.blave.use"
+msgstr "Use Blave AI"
+
+msgid "cn.install"
+msgstr "Install"
 
 msgid "cn.blave.switch"
 msgstr "Switch"
@@ -1766,34 +1775,34 @@ msgid "tr.opt.catch"
 msgstr "Catch up positions"
 
 msgid "tr.opt.catchDesc"
-msgstr "{how} now to bring each position to the strategy’s current signal. If a strategy is already in a trade, you join it mid-trade."
+msgstr "Catches up to the current signal now with {how}; you may join mid-trade."
 
 msgid "tr.opt.catchDescReal"
-msgstr "{how} now to bring each position to the strategy’s current signal. If a strategy is already in a trade, you join it mid-trade."
+msgstr "Catches up to the current signal now with {how}; you may join mid-trade."
 
 msgid "tr.opt.catchHow.market"
-msgstr "Places market orders"
+msgstr "market orders"
 
 msgid "tr.opt.catchHow.marketReal"
-msgstr "Sends real market orders"
+msgstr "market orders"
 
 msgid "tr.opt.catchHow.twap"
-msgstr "Places TWAP orders over {min} min"
+msgstr "TWAP over {min} min"
 
 msgid "tr.opt.catchHow.twapReal"
-msgstr "Sends real TWAP orders over {min} min"
+msgstr "TWAP over {min} min"
 
 msgid "tr.opt.catchHow.chase"
-msgstr "Places chase-limit orders"
+msgstr "limit chasing"
 
 msgid "tr.opt.catchHow.chaseReal"
-msgstr "Sends real chase-limit orders"
+msgstr "limit chasing"
 
 msgid "tr.opt.catchHow.custom"
-msgstr "Places orders with your custom method ({module})"
+msgstr "a custom method ({module})"
 
 msgid "tr.opt.catchHow.customReal"
-msgstr "Sends real orders with your custom method ({module})"
+msgstr "a custom method ({module})"
 
 msgid "tr.opt.catchStale"
 msgstr "Signals didn’t update while Blave was closed, so catching up may use old ones. They refresh after the next scheduled run."
@@ -1802,13 +1811,13 @@ msgid "tr.opt.wait"
 msgstr "Wait for new signals"
 
 msgid "tr.opt.waitDesc"
-msgstr "No orders now. Each strategy starts trading only at its next entry, exit, or flip."
+msgstr "No orders now; it acts on the next signal."
 
 msgid "tr.opt.waitStranded"
 msgstr "Positions the strategies already want closed: {n}. With Wait for new signals they stay open until the signal changes again."
 
 msgid "tr.opt.waitDescReal"
-msgstr "No orders now. Each strategy sends real orders only at its next entry, exit, or flip."
+msgstr "No orders now; it acts on the next signal."
 
 # 「只調整 Blave 自己那一份」跟著帳本基準分三種說法(只給真錢):讀不到 / 還沒建(第一次對帳會收編同方向的部位)/ 已建。
 # 三句同一個開頭與句號(設計師定稿);意思由後端依對帳邏輯定
@@ -1830,8 +1839,8 @@ msgstr "Which positions count as Blave’s"
 msgid "tr.det.ownRule"
 msgstr "On the first reconcile, an existing same-side position counts as Blave’s in full if it’s at most 1.5× the target, otherwise up to the target; the rest is yours and won’t be closed. On a one-way account the exchange nets Blave’s orders against your own position in the same coin."
 
-msgid "tr.det.local"
-msgstr "Running on this computer"
+msgid "tr.stopLine"
+msgstr "Sleep or quitting Blave stops it; positions stay open."
 
 msgid "tr.det.cloud"
 msgstr "Running in the cloud"
@@ -1840,43 +1849,43 @@ msgid "cf.more"
 msgstr "Details"
 
 msgid "tr.means.1"
-msgstr "Auto-trading runs only while the computer is awake, Blave is open and the network is up."
+msgstr "Runs only while the computer is awake, Blave is open and online."
 
 msgid "tr.means.2"
-msgstr "Sleep, a closed lid, shutdown or quitting Blave: auto-trading stops, positions stay on {venue} and are not closed."
+msgstr "Sleep, shutdown or quitting Blave stops it; positions stay on {venue}."
 
 msgid "tr.means.2p"
-msgstr "Sleep, a closed lid, shutdown or quitting Blave: auto-trading stops; paper positions stay open and are not closed."
+msgstr "Sleep, shutdown or quitting Blave stops it; paper positions stay open."
 
 msgid "tr.means.3"
-msgstr "After you quit and reopen Blave, trading stays paused until you press Start trading. After sleep or a dropped connection, it picks up on its own."
+msgstr "After reopening Blave, press Start trading again."
 
 msgid "tr.means.4"
-msgstr "Stop orders placed on the exchange are not affected by this computer; consider placing them."
+msgstr "Stop orders on the exchange are unaffected; consider placing them."
 
 msgid "tr.means.twStop"
-msgstr "{venue} has no broker-side stop orders; Blave’s stop-loss is computed on this computer each bar and sent as a market order, so a sleeping or shut-down computer leaves the position unprotected."
+msgstr "{venue} has no broker-side stops; a sleeping computer leaves positions unprotected."
 
 msgid "tr.keep.pres"
 msgstr "Only Blave’s own share is traded; don’t trade the same product and month by hand as a strategy — Blave can’t tell them apart."
 
 msgid "tr.means.presNight"
-msgstr "TAIEX futures also trade in the night session, 15:00–05:00; keep this computer on."
+msgstr "TAIEX futures also trade at night; keep this computer on."
 
 msgid "tr.means.1a"
-msgstr "While auto-trading runs, Blave keeps the computer from idle sleep (the screen still turns off); it trades only while Blave is open and the network is up."
+msgstr "Blave blocks idle sleep while running; keep it open and online."
 
 msgid "tr.means.1aWin"
-msgstr "While auto-trading runs, Blave keeps the computer from idle sleep (the screen still turns off; a laptop must stay plugged in); it trades only while Blave is open and the network is up."
+msgstr "Blave blocks idle sleep while running; keep a laptop plugged in."
 
 msgid "tr.means.2a"
-msgstr "A closed lid, a dead battery, manual sleep, shutdown or quitting Blave: auto-trading stops, positions stay on {venue} and are not closed."
+msgstr "A closed lid, dead battery, manual sleep or shutdown stops it; positions stay on {venue}."
 
 msgid "tr.means.2pa"
-msgstr "A closed lid, a dead battery, manual sleep, shutdown or quitting Blave: auto-trading stops; paper positions stay open and are not closed."
+msgstr "A closed lid, dead battery, manual sleep or shutdown stops it; paper positions stay open."
 
 msgid "tr.means.cloud"
-msgstr "To run around the clock without this computer:"
+msgstr "To run around the clock:"
 
 msgid "tr.means.cloudGo"
 msgstr "Use a cloud host"
