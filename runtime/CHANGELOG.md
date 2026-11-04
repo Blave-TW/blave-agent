@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.153 — 2026-11-04
+
+- **web 與電腦版的回覆語法規則改成預設寫句子(`agent_turn.WEB_FORMATTING_RULE`,`LOCAL_FORMATTING_RULE` 跟著衍生;Wei:這條鼓勵粗體行分段加清單,整站 AI 味變重)**:拿掉「要分段就用粗體行」與「可用粗體、清單」,改成三件以上同類的事才用清單、不用粗體當小標。Telegram 的語法段不動。測試 `tests/check_reply_format_plain.py`(新)。
+
 ## 1.1.152 — 2026-11-02(desktop 0.1.41)
 
 - **聊天裡的澄清表單(spec designer agent-clarify-form-2026-10-31 §1;Wei 拍板排 0.1.41)**:要做台指期回測、缺兩個以上設定時,模型寫兩句＋自成一行 `<form id="txf_backtest" …/>`(只寫用戶講過的屬性),runtime 剝掉、另送 `{"type": "form", …}` chunk;題目、選項、預設、起始年、資料那一句都由 `agent_turn._FORM_CATALOG` 與環境決定(雲端 2011;電腦版 TXF 1998／MXF 2001／TMF 有資料 2011、沒資料 2024;`BLAVE_DATA_ACCESS=0` 時分 K 那題帶 `note`,`signed_out` → `nodata_signed_out`、其餘 → `nodata`)。`extract_form` 取最後一個合法標記,id 不在型錄或格式不合只剝不觸發;四個 sink 都剝(`WebSink`／`LocalSink`／`ReportSink` 送 chunk 的順序是 text_replace → export → form → suggestions → done,被 Stop 截斷不送;`TelegramSink` 只剝),`visible_text` 也剝。規則 `_FORM_RULE` 只在新旗標 `--clarify-form` 時由 `build_prompt` 逐輪掛在建議錨之前(兩個呼叫點都帶;TG 永遠不掛);`web_bridge` 收 `context.clarify_form is True` 才帶旗標。AGENTS.md › Response Style 加一條(根 VERSION 同 commit bump)。**出貨順序:api(v041-clarify-api:歷史剝 `<form`／`<await`、`/report` 驗型錄重建 form chunk、`clarify_*` 埋點白名單)先上**;沒旗標就沒規則,舊外殼零影響。契約 `references/turn-events.md`。測試 `tests/check_clarify_form.py`(新)、`tests/check_await_marker.py`、`tests/check_web_bridge_suggest_mode.py`。
