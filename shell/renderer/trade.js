@@ -2862,7 +2862,6 @@ function trAskStart(opener, presOk) {
   const notes = trStartNotes({ awake: typeof AWAKE === "undefined" || AWAKE !== false, cloud, paper, real, own: r.self_ledger === true, book: trBookBaseline(r), v: cloud ? planVars() : null, mo: cloud && planMo(), venue: paper ? "" : trPadLatin(trVenueLabel(trVenueId(), true)), tw: trTwBroker(trVenueId()), pres: !cloud && trVenueId() === "president", win: window.blave.platform === "win32" });
   if (!cloud) notes.details[notes.details.length - 1].items.push(trAwakeCloudGo());   // 要 24 小時跑:去雲端那一袋(K4)
   const catchUp = () => { if (!trRecomputing(trReport())) go("resume"); };   // 框開著的時候不會跟著回報翻:要等重算完,關掉重開一次
-  const money = real ? "Real" : "";
   // 補齊會送出的單(post-connect-flow 第 8 列):口數或金額取自部位表的差額,最多三檔,其餘「等 N 檔」
   const will = trCatchWill(r);
   const stranded = trWaitStranded(r);
@@ -2878,10 +2877,10 @@ function trAskStart(opener, presOk) {
     choicesLabel: t("tr.opt.legend"),
     // 預選「等新訊號」(mockup 03 A 版):它不會立刻動錢,當預設沒有風險;補齊會立刻送市價單,留給用戶主動選。主鈕跟著預選換字、不停用
     choices: [
-      { id: "wait", title: t("tr.opt.wait"), checked: true, desc: t("tr.opt.waitDesc" + money), warn: stranded ? t("tr.opt.waitStranded", { n: stranded }) : null,
+      { id: "wait", title: t("tr.opt.wait"), checked: true, desc: t("tr.opt.waitDesc"), warn: stranded ? t("tr.opt.waitStranded", { n: stranded }) : null,
         ok: t("tr.startWait"), onOk: () => go("resume_wait") },
       // Blave 重開(本機):關著的時候策略沒跑,現在補齊用的可能是舊訊號——掛在它影響的那個選項裡。主機重開(B)由重算那一句與閘門講
-      { id: "catch", title: t("tr.opt.catch"), desc: t("tr.opt.catchDesc" + money, { how: trCatchHow(r, real) }) + (will ? " " + will : ""), warn: rkS === "app" ? t("tr.opt.catchStale") : null,
+      { id: "catch", title: t("tr.opt.catch"), desc: t("tr.opt.catchDesc", { how: trCatchHow(r) }) + (will ? " " + will : ""), warn: rkS === "app" ? t("tr.opt.catchStale") : null,
         disabled: recomputing, why: t("tr.cloud.recomputing"), ok: t("tr.startCatchUp"), onOk: catchUp },
     ],
     ok: t("tr.start"),
@@ -4488,7 +4487,7 @@ function poSigTable(r, stored, states, mode) {
         const dc = trEl("td", "n " + (acts && running ? (d > 0 ? "buy" : "sell") : acts || held ? "hold" : "na"), numText(lot, d));
         // 灰色差額 = 低於下單門檻、這輪不下單:「這輪不下單:」+ 原因放這一格的 tooltip(門檻腳注不再佔合計列);減倉／平倉門檻等於平坦的 10 時沒有要解釋的(同網頁)
         const short = sym.replace(/@spot$/i, "").replace(/(USDT|USDC|BUSD|FDUSD|USD)$/i, "") || sym;
-        const why = !held ? null : gated ? t(trIsPaper() ? "tr.opt.waitDesc" : "tr.opt.waitDescReal")
+        const why = !held ? null : gated ? t("tr.opt.waitDesc")
           : awaiting ? t("tr.cf.held", { syms: short, names: aw.names.map(trDisplay).join(LANG === "zh" ? "、" : ", ") }) : closed ? (willTrade ? t("po.twClosedHold") : null) : lot ? t("tr.gateFootReduce", { sym: short })
           : gs && !((gs.reduce || gs.close) && gs.usd <= 10) ? (gs.band ? t("tr.gateFootBand", { sym: short, m: trFmt(gs.usd) }) : gs.reduce ? t("tr.gateFootReduce", { sym: short }) : t("tr.gateFootEntry", { sym: short, m: trFmt(gs.usd) })) : null;
         if (why) dc.title = closed || gated || awaiting ? why : t("tr.gateFootLead") + why;
@@ -4912,13 +4911,13 @@ function trExecStored(r) {
 }
 // 現在生效的下單方式:台灣期貨券商一律市價;其餘是送出中的那個 → 報告的(讀不到設定時當市價,同網頁 execCurrent)
 function trExecCurrent(r, id) { return trTwBroker(id) ? "market" : TR.exec.edit != null ? TR.exec.edit : trExecStored(r) || "market"; }
-// 啟動框「補齊部位」說明的「怎麼下」(spec portfolio-help-icon §4):跟設定分頁同一個值。real = 連的是真的交易所(同 tr.opt.catchDesc 的 Real 後綴)
-function trCatchHow(r, real) {
-  const k = trExecCurrent(r, trVenueId()), sfx = real ? "Real" : "";
-  if (k.indexOf("twap:") === 0) return t("tr.opt.catchHow.twap" + sfx, { min: k.slice(5) });
-  if (k === "chase") return t("tr.opt.catchHow.chase" + sfx);
-  if (k.indexOf("custom:") === 0) return t("tr.opt.catchHow.custom" + sfx, { module: k.slice(7) });
-  return t("tr.opt.catchHow.market" + sfx);
+// 啟動框「補齊部位」說明的「怎麼下」(spec portfolio-help-icon §4):跟設定分頁同一個值
+function trCatchHow(r) {
+  const k = trExecCurrent(r, trVenueId());
+  if (k.indexOf("twap:") === 0) return t("tr.opt.catchHow.twap", { min: k.slice(5) });
+  if (k === "chase") return t("tr.opt.catchHow.chase");
+  if (k.indexOf("custom:") === 0) return t("tr.opt.catchHow.custom", { module: k.slice(7) });
+  return t("tr.opt.catchHow.market");
 }
 function trExecSection(box, r, id) {
   const S = TR, stored = trExecStored(r);

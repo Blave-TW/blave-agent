@@ -191,7 +191,7 @@ function world(o) {
     ok("啟動後不再寫「看過細節」的旗標(trStartSeenKey 退役)", !Object.keys(a.store).length && !/trStartSeenKey|tr_start_seen_/.test(trade), a.store); }
   // ---- 字串
   { const has = (k) => (strings.match(new RegExp('"' + k.replace(/\./g, "\\.") + '":', "g")) || []).length === 2;
-    const NEW = ["tr.keep.own", "tr.keep.ownFirst", "tr.keep.ownBuilt", "tr.keep.pres", "tr.means.presNight", "tr.means.twStop", "tr.det.own", "tr.det.ownRule", "tr.opt.legend", "tr.opt.catch", "tr.opt.catchDesc", "tr.opt.catchDescReal", "tr.opt.catchStale", "tr.opt.wait", "tr.opt.waitDesc", "tr.opt.waitDescReal", "tr.stopLine", "tr.det.cloud", "cf.more", "tr.means.1a", "tr.means.2a", "tr.means.2pa", "tr.means.cloud", "tr.means.cloudGo"];
+    const NEW = ["tr.keep.own", "tr.keep.ownFirst", "tr.keep.ownBuilt", "tr.keep.pres", "tr.means.presNight", "tr.means.twStop", "tr.det.own", "tr.det.ownRule", "tr.opt.legend", "tr.opt.catch", "tr.opt.catchDesc", "tr.opt.catchStale", "tr.opt.wait", "tr.opt.waitDesc", "tr.stopLine", "tr.det.cloud", "cf.more", "tr.means.1a", "tr.means.2a", "tr.means.2pa", "tr.means.cloud", "tr.means.cloudGo"];
     const GONE = ["tr.startOwnOnly", "tr.startChoice", "tr.startWarn2", "tr.startWarn2Local", "tr.means.l", "tr.cloud.means.l", "tr.cloud.means.2", "tr.keep.sleep", "tr.det.local"];
     ok("新字串兩語都在;退役的兩語都拿掉、程式也不再引用", NEW.every(has) && GONE.every((k) => strings.indexOf('"' + k + '"') < 0 && trade.indexOf('"' + k + '"') < 0), NEW.filter((k) => !has(k)).concat(GONE.filter((k) => strings.indexOf('"' + k + '"') >= 0)));
     const zh = strings.slice(strings.indexOf("\n  zh: {")), get = (k) => (zh.match(new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"')) || [])[1] || "";
@@ -219,8 +219,8 @@ function world(o) {
     { const T = new Function("LANG", fn(trade, "trPadLatin") + fn(trade, "trTidyZh") + "; return (v) => trTidyZh(STR.replace('{venue}', trPadLatin(v)));".replace("STR", JSON.stringify(get("tr.means.2"))))("zh");
       ok("英文交易所名在句中:全形逗號後不留空格、名字後面接中文才留(「，Binance 上的部位」);中文券商名不墊", T("Binance") === "睡眠、關機或結束 Blave 就停，Binance 上的部位不平倉。" && T("統一期貨") === "睡眠、關機或結束 Blave 就停，統一期貨上的部位不平倉。", T("Binance")); }
     ok("一行說明、小卡每條、選項說明都 ≤25 字(zh;設計師逐字裁定的兩句除外)", CARD.every((k) => get(k) && (OVER.includes(k) || cnt(get(k)) <= 25)), CARD.map((k) => k + "=" + cnt(get(k) || "")).filter((x) => +x.split("=")[1] > 25 && !OVER.includes(x.split("=")[0])));
-    ok("逐字照 mockup:一行說明、等新訊號、補齊(市價)、常駐句", get("tr.stopLine") === "電腦睡眠或關掉 Blave 就停，部位不平倉。" && get("tr.opt.waitDesc") === "現在不下單，等下一個訊號才動。" && get("tr.opt.waitDescReal") === get("tr.opt.waitDesc")
-      && get("tr.opt.catchDesc").replace("{how}", get("tr.opt.catchHow.market")) === "現在用市價補到目前訊號，可能中途上車。" && get("tr.opt.catchDescReal").replace("{how}", get("tr.opt.catchHow.marketReal")) === "現在用市價補到目前訊號，可能中途上車。"
+    ok("逐字照 mockup:一行說明、等新訊號、補齊(市價)、常駐句", get("tr.stopLine") === "電腦睡眠或關掉 Blave 就停，部位不平倉。" && get("tr.opt.waitDesc") === "現在不下單，等下一個訊號才動。"
+      && get("tr.opt.catchDesc").replace("{how}", get("tr.opt.catchHow.market")) === "現在用市價補到目前訊號，可能中途上車。"
       && get("tr.means.1") === "只在電腦醒著、Blave 開著、有網路時跑。" && get("tr.means.2") === "睡眠、關機或結束 Blave 就停，{venue}上的部位不平倉。" && get("tr.means.3") === "重開 Blave 後要再按「啟動下單」。" && get("tr.means.4") === "交易所的停損單不受影響，建議掛上。" && get("tr.means.cloud") === "要 24 小時跑：" && get("tr.means.cloudGo") === "改用雲端主機"); }
   console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })().catch((e) => { console.log("FAIL  " + (e && e.stack)); process.exit(1); });

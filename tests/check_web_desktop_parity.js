@@ -116,12 +116,11 @@ for (const lang of ["zh", "en"]) {
   const bad = Object.entries(LAG_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || (typeof wp[w] === "string" && dp[d].replace("{broker}", "%(broker)s") !== wp[w] && dp[d] !== wp[w]));
   ok(`全部平倉快照落後 ${lang}:電腦版有這幾句,網頁有的那幾句逐字一致(${Object.keys(LAG_PAIRS).length} 句)`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
-// 啟動下單框(mockup 03 A 版,2026-11-04;web 同框同字):標題、選項字、兩種說明(模擬／真錢)、補齊怎麼下的八句、常駐句、兩顆主鈕字、「細節」兩邊逐字同(zh / en)。
+// 啟動下單框(mockup 03 A 版,2026-11-04;web 同框同字):標題、選項字、兩句說明、補齊怎麼下的四句、常駐句、兩顆主鈕字、「細節」兩邊逐字同(zh / en)。模擬／真錢同字,兩邊都收成一個 key
 // 電腦版那一行說明(tr.stopLine)與小卡五條是本機環境的話(電腦睡眠就停…),網頁在雲端講的是主機停機,內容依環境、不比
 const START_PAIRS = { "tr.start": "workspace_pf_start", "tr.opt.legend": "workspace_pf_start_group", "tr.opt.catch": "workspace_pf_opt_catch", "tr.opt.wait": "workspace_pf_opt_wait",
-  "tr.opt.catchDesc": "workspace_pf_opt_catch_paper", "tr.opt.catchDescReal": "workspace_pf_opt_catch_real", "tr.opt.waitDesc": "workspace_pf_opt_wait_paper", "tr.opt.waitDescReal": "workspace_pf_opt_wait_real",
-  "tr.opt.catchHow.market": "workspace_pf_catch_how_market", "tr.opt.catchHow.marketReal": "workspace_pf_catch_how_market_real", "tr.opt.catchHow.twap": "workspace_pf_catch_how_twap", "tr.opt.catchHow.twapReal": "workspace_pf_catch_how_twap_real",
-  "tr.opt.catchHow.chase": "workspace_pf_catch_how_chase", "tr.opt.catchHow.chaseReal": "workspace_pf_catch_how_chase_real", "tr.opt.catchHow.custom": "workspace_pf_catch_how_custom", "tr.opt.catchHow.customReal": "workspace_pf_catch_how_custom_real",
+  "tr.opt.catchDesc": "workspace_pf_opt_catch_paper", "tr.opt.waitDesc": "workspace_pf_opt_wait_paper",
+  "tr.opt.catchHow.market": "workspace_pf_catch_how_market", "tr.opt.catchHow.twap": "workspace_pf_catch_how_twap", "tr.opt.catchHow.chase": "workspace_pf_catch_how_chase", "tr.opt.catchHow.custom": "workspace_pf_catch_how_custom",
   "tr.keep.own": "workspace_pf_keep_own", "tr.keep.ownFirst": "workspace_pf_keep_own_first", "tr.keep.ownBuilt": "workspace_pf_keep_own_built", "tr.startWait": "workspace_pf_start_wait", "tr.startCatchUp": "workspace_pf_start_catch_up", "cf.more": "workspace_pf_more" };
 for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));

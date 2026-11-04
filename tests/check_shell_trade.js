@@ -1257,7 +1257,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       /const recomputing = trRecomputing\(r\), rkS = trRestartKind\(r\);/.test(start)
       && /disabled: recomputing, why: t\("tr\.cloud\.recomputing"\), ok: t\("tr\.startCatchUp"\), onOk: catchUp \},/.test(start)
       && /const catchUp = \(\) => \{ if \(!trRecomputing\(trReport\(\)\)\) go\("resume"\); \};/.test(start)
-      && /desc: t\("tr\.opt\.waitDesc" \+ money\), warn: stranded \? t\("tr\.opt\.waitStranded", \{ n: stranded \}\) : null,\n\s*ok: t\("tr\.startWait"\), onOk: \(\) => go\("resume_wait"\) \},/.test(start)
+      && /desc: t\("tr\.opt\.waitDesc"\), warn: stranded \? t\("tr\.opt\.waitStranded", \{ n: stranded \}\) : null,\n\s*ok: t\("tr\.startWait"\), onOk: \(\) => go\("resume_wait"\) \},/.test(start)
       && /ok: t\("tr\.startCatchUp"\), okDisabled: recomputing, okWhy: recomputing \? t\("tr\.cloud\.recomputing"\) : null, onOk: catchUp,/.test(start));
     const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
     ok("recomputed 文字(zh / en)", /msgid "tr\.cloud\.recomputing"\nmsgstr "策略正在用開機後的資料重算，算完才能補齊部位；算完後關掉這個框再開一次。"/.test(po("zh"))
@@ -2630,9 +2630,9 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const gc = diffOf(g), go = diffOf(gOpen), gs = diffOf(gStale);
       const bg = JSON.parse(JSON.stringify(BTCREP)); bg.last_reconcile.target.BTCUSDT.gated = true;
       const brow = paintP(bg).find((n) => n.tag === "tr" && n.kids.length === 4 && n.kids[0].tag === "td" && n.kids[0].textContent.startsWith("BTCUSDT")), bd = brow && brow.kids[3];
-      ok("F7 gated 的列:差額灰(hold)不上買色,title 是 tr.opt.waitDesc(模擬)／waitDescReal(真錢);gated＋休市講等新訊號不講開盤;快照過舊照常上色",
+      ok("F7 gated 的列:差額灰(hold)不上買色,title 是 tr.opt.waitDesc(模擬／真錢同一句);gated＋休市講等新訊號不講開盤;快照過舊照常上色",
         !!gc && gc.className === "n hold" && gc.title === "tr.opt.waitDesc" && !!go && go.className === "n hold" && go.title === "tr.opt.waitDesc"
-        && !!bd && bd.className === "n hold" && bd.title === "tr.opt.waitDescReal" && !!gs && gs.className === "n buy",
+        && !!bd && bd.className === "n hold" && bd.title === "tr.opt.waitDesc" && !!gs && gs.className === "n buy",
         [gc && [gc.className, gc.title], go && [go.className, go.title], bd && [bd.className, bd.title], gs && gs.className]); }
     { const r = JSON.parse(JSON.stringify(BTCREP)); r.config.amounts = { b: 300, tw: 300000, sol: 100 };
       r.states = { b: { symbol: "BTCUSDT", market: "swap", position: 1 }, tw: { weights: { 2330: 0.5, 2454: 0 }, market: "spot" }, sol: { symbol: "SOLUSDC", market: "spot", position: 1 } };

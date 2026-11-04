@@ -1793,31 +1793,16 @@ msgstr "補齊部位"
 msgid "tr.opt.catchDesc"
 msgstr "現在{how}補到目前訊號，可能中途上車。"
 
-msgid "tr.opt.catchDescReal"
-msgstr "現在{how}補到目前訊號，可能中途上車。"
-
 msgid "tr.opt.catchHow.market"
-msgstr "用市價"
-
-msgid "tr.opt.catchHow.marketReal"
 msgstr "用市價"
 
 msgid "tr.opt.catchHow.twap"
 msgstr "用 TWAP {min} 分鐘分批"
 
-msgid "tr.opt.catchHow.twapReal"
-msgstr "用 TWAP {min} 分鐘分批"
-
 msgid "tr.opt.catchHow.chase"
 msgstr "用限價追價"
 
-msgid "tr.opt.catchHow.chaseReal"
-msgstr "用限價追價"
-
 msgid "tr.opt.catchHow.custom"
-msgstr "用自訂方式（{module}）"
-
-msgid "tr.opt.catchHow.customReal"
 msgstr "用自訂方式（{module}）"
 
 msgid "tr.opt.catchStale"
@@ -1831,9 +1816,6 @@ msgstr "現在不下單，等下一個訊號才動。"
 
 msgid "tr.opt.waitStranded"
 msgstr "有 {n} 筆部位策略已經想平：選「等新訊號」的話，這些部位會一直開著，直到策略的訊號再改變。"
-
-msgid "tr.opt.waitDescReal"
-msgstr "現在不下單，等下一個訊號才動。"
 
 # 「只調整 Blave 自己那一份」跟著帳本基準分三種說法(只給真錢):讀不到 / 還沒建(第一次對帳會收編同方向的部位)/ 已建。
 # 三句同一個開頭與句號(設計師定稿);意思由後端依對帳邏輯定

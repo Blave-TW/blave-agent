@@ -1777,31 +1777,16 @@ msgstr "Catch up positions"
 msgid "tr.opt.catchDesc"
 msgstr "Catches up to the current signal now with {how}; you may join mid-trade."
 
-msgid "tr.opt.catchDescReal"
-msgstr "Catches up to the current signal now with {how}; you may join mid-trade."
-
 msgid "tr.opt.catchHow.market"
-msgstr "market orders"
-
-msgid "tr.opt.catchHow.marketReal"
 msgstr "market orders"
 
 msgid "tr.opt.catchHow.twap"
 msgstr "TWAP over {min} min"
 
-msgid "tr.opt.catchHow.twapReal"
-msgstr "TWAP over {min} min"
-
 msgid "tr.opt.catchHow.chase"
 msgstr "limit chasing"
 
-msgid "tr.opt.catchHow.chaseReal"
-msgstr "limit chasing"
-
 msgid "tr.opt.catchHow.custom"
-msgstr "a custom method ({module})"
-
-msgid "tr.opt.catchHow.customReal"
 msgstr "a custom method ({module})"
 
 msgid "tr.opt.catchStale"
@@ -1815,9 +1800,6 @@ msgstr "No orders now; it acts on the next signal."
 
 msgid "tr.opt.waitStranded"
 msgstr "Positions the strategies already want closed: {n}. With Wait for new signals they stay open until the signal changes again."
-
-msgid "tr.opt.waitDescReal"
-msgstr "No orders now; it acts on the next signal."
 
 # 「只調整 Blave 自己那一份」跟著帳本基準分三種說法(只給真錢):讀不到 / 還沒建(第一次對帳會收編同方向的部位)/ 已建。
 # 三句同一個開頭與句號(設計師定稿);意思由後端依對帳邏輯定

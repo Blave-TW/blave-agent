@@ -176,31 +176,30 @@ ok("③ 設定檔讀不到:沒有選單,一行說明", !find(box, "tr-exec-sel")
     && /"tr\.exec\.customAsk": "Custom — tell the agent"/.test(en) && /"tr\.exec\.customPrefill": "I want a custom execution style: "/.test(en));
   ok("⑤「每支策略的下單方式在網頁」那兩句不在了(tr.cloud.onlyWebExec 拿掉、pv.inc.web 改寫)",
     !/onlyWebExec/.test(S + trade) && !/每支策略的下單方式|per-strategy order handling/.test(S));
-  // ── ⑥ 啟動框「補齊部位」說明跟著下單方式走(spec portfolio-help-icon §4;同網頁 pfCatchHow):讀值跟設定分頁同一條 ──
-  { const how = (eff, real, o) => { o = o || {}; ctx.VID = o.vid || "binance"; vm.runInContext("TR.exec.edit = " + J(o.edit == null ? null : o.edit), ctx);
-      const r = o.rep || rep(eff); return vm.runInContext("(r, real) => trCatchHow(r, real)", ctx)(r, real); };
+  // ── ⑥ 啟動框「補齊部位」說明跟著下單方式走(spec portfolio-help-icon §4;同網頁 pfCatchHow):讀值跟設定分頁同一條;模擬／真錢同一句(Real 後綴 key 已收掉) ──
+  { const how = (eff, o) => { o = o || {}; ctx.VID = o.vid || "binance"; vm.runInContext("TR.exec.edit = " + J(o.edit == null ? null : o.edit), ctx);
+      const r = o.rep || rep(eff); return vm.runInContext("(r) => trCatchHow(r)", ctx)(r); };
     const cases = [
-      ["市價(模擬)", how({ type: "market" }, false), "tr.opt.catchHow.market"], ["市價(真錢)", how({ type: "market" }, true), "tr.opt.catchHow.marketReal"],
-      ["TWAP 30(模擬)", how({ type: "twap", duration_min: 30 }, false), 'tr.opt.catchHow.twap{"min":"30"}'], ["TWAP 30(真錢)", how({ type: "twap", duration_min: 30 }, true), 'tr.opt.catchHow.twapReal{"min":"30"}'],
-      ["限價追價(模擬)", how({ type: "chase" }, false), "tr.opt.catchHow.chase"], ["限價追價(真錢)", how({ type: "chase" }, true), "tr.opt.catchHow.chaseReal"],
-      ["自訂(模擬)", how({ type: "custom", module: "my_exec" }, false), 'tr.opt.catchHow.custom{"module":"my_exec"}'], ["自訂(真錢)", how({ type: "custom", module: "my_exec" }, true), 'tr.opt.catchHow.customReal{"module":"my_exec"}'],
-      ["綁統一:一律市價", how({ type: "twap", duration_min: 30 }, true, { vid: "president" }), "tr.opt.catchHow.marketReal"],
-      ["綁群益:一律市價(送出中的也不算)", how({ type: "chase" }, true, { vid: "capital", edit: "twap:5" }), "tr.opt.catchHow.marketReal"],
-      ["送出中的值優先於報告", how({ type: "market" }, false, { edit: "twap:45" }), 'tr.opt.catchHow.twap{"min":"45"}'],
-      ["舊 runtime(沒有 execution_effective)讀 config.execution_default", how(null, false, { rep: { config: { amounts: {}, execution_default: { type: "chase" } } } }), "tr.opt.catchHow.chase"],
-      ["設定讀不到:當市價", how(null, true, { rep: { config: null } }), "tr.opt.catchHow.marketReal"],
+      ["市價", how({ type: "market" }), "tr.opt.catchHow.market"],
+      ["TWAP 30", how({ type: "twap", duration_min: 30 }), 'tr.opt.catchHow.twap{"min":"30"}'],
+      ["限價追價", how({ type: "chase" }), "tr.opt.catchHow.chase"],
+      ["自訂", how({ type: "custom", module: "my_exec" }), 'tr.opt.catchHow.custom{"module":"my_exec"}'],
+      ["綁統一:一律市價", how({ type: "twap", duration_min: 30 }, { vid: "president" }), "tr.opt.catchHow.market"],
+      ["綁群益:一律市價(送出中的也不算)", how({ type: "chase" }, { vid: "capital", edit: "twap:5" }), "tr.opt.catchHow.market"],
+      ["送出中的值優先於報告", how({ type: "market" }, { edit: "twap:45" }), 'tr.opt.catchHow.twap{"min":"45"}'],
+      ["舊 runtime(沒有 execution_effective)讀 config.execution_default", how(null, { rep: { config: { amounts: {}, execution_default: { type: "chase" } } } }), "tr.opt.catchHow.chase"],
+      ["設定讀不到:當市價", how(null, { rep: { config: null } }), "tr.opt.catchHow.market"],
     ];
     vm.runInContext("TR.exec.edit = null", ctx);
     const bad = cases.filter((c) => c[1] !== c[2]).map((c) => c[0] + " 得 " + c[1]);
-    ok("⑥ 補齊部位的「怎麼下」:四種 × 模擬／真錢、統一／群益一律市價、送出中優先、舊 runtime、讀不到設定", !bad.length, bad.join(";"));
+    ok("⑥ 補齊部位的「怎麼下」:四種、統一／群益一律市價、送出中優先、舊 runtime、讀不到設定", !bad.length, bad.join(";"));
     const ST = new Function(S + "\nreturn STRINGS;")(), fill = (s, v) => Object.keys(v).reduce((a, k) => a.split("{" + k + "}").join(v[k]), s);
-    ok("⑥ 市價那句照 03-start-box A 版(兩語、模擬／真錢);TWAP 句子接得通",
+    ok("⑥ 市價那句照 03-start-box A 版(兩語);TWAP 句子接得通;Real 後綴 key 已收掉",
       fill(ST.zh["tr.opt.catchDesc"], { how: ST.zh["tr.opt.catchHow.market"] }) === "現在用市價補到目前訊號，可能中途上車。"
-      && fill(ST.zh["tr.opt.catchDescReal"], { how: ST.zh["tr.opt.catchHow.marketReal"] }) === "現在用市價補到目前訊號，可能中途上車。"
       && fill(ST.en["tr.opt.catchDesc"], { how: ST.en["tr.opt.catchHow.market"] }) === "Catches up to the current signal now with market orders; you may join mid-trade."
-      && fill(ST.en["tr.opt.catchDescReal"], { how: ST.en["tr.opt.catchHow.marketReal"] }) === "Catches up to the current signal now with market orders; you may join mid-trade."
+      && !/tr\.opt\.(catchDesc|waitDesc|catchHow\.\w+)Real/.test(S + trade)
       && fill(ST.zh["tr.opt.catchDesc"], { how: fill(ST.zh["tr.opt.catchHow.twap"], { min: 30 }) }).startsWith("現在用 TWAP 30 分鐘分批補到目前訊號")
-      && /desc: t\("tr\.opt\.catchDesc" \+ money, \{ how: trCatchHow\(r, real\) \}\)/.test(trade)); }
+      && /desc: t\("tr\.opt\.catchDesc", \{ how: trCatchHow\(r\) \}\)/.test(trade)); }
   console.log(red ? `\n${red} 紅` : "\nALL PASS");
   process.exit(red ? 1 : 0);
 })();
