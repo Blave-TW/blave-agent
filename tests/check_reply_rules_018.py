@@ -283,6 +283,11 @@ t("長網址:WEB_FORMATTING_RULE 自己那段帶「附網址寫成 [來源標題
   web_rule is not None and style is not None and URL_RULE in ast.literal_eval("(" + web_rule.group(1) + ")")
   and "LOCAL_FORMATTING_RULE = WEB_FORMATTING_RULE.replace(" in turn_src and "裸網址" not in style.group(1))
 
+# 回覆提到策略寫顯示名稱、交易所寫名稱(runtime 1.1.155;細項在 tests/check_strategy_display_names.py)
+t("_STYLE_RULES 帶「策略寫 DISPLAY_NAME、沒有就 # Strategy: 或慣稱、都沒有才代號」與「交易所不寫 id」兩條,_SUGGEST_RULE 同一個退路順序",
+  style is not None and "DISPLAY_NAME;沒有就用 # Strategy: 或用戶慣稱;都沒有才用代號" in style.group(1) and "_VENUE_NAMES.items()" in style.group(1)
+  and "策略寫 DISPLAY_NAME；沒有就用 # Strategy: 或用戶慣稱；都沒有才用代號" in rule)
+
 if fails:
     sys.exit(f"{len(fails)} failed")
 print("all passed")

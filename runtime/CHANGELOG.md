@@ -8,6 +8,13 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.155 — 2026-11-04
+
+- **回覆提到策略寫顯示名稱,不寫程式代號(`agent_turn._STYLE_RULES`,web、電腦版、App、Telegram 共用;Wei 拍板)**:風格規則加兩條。策略寫 `DISPLAY_NAME`,沒有就用 `# Strategy:` 或用戶慣稱,都沒有才用代號;交易所與券商寫名稱不寫 id(新表 `_VENUE_NAMES`:president 統一期貨、capital 群益期貨、paper 模擬交易,中英各一,字照 shell `i18n/zh.po`、`en.po` 的 msgstr,測試釘住)。建議規則 `_SUGGEST_RULE` 與逐輪錨 `_SUGGEST_ANCHOR_TAIL` 改成同一個退路順序。
+- **模型拿到的策略事實帶顯示名稱**:`_deploy_state_line` 每一列寫「顯示名（代號）」,工作頁狀態(`build_prompt` 的 viewing_strategy)寫「顯示名」(代號 x)。名稱由新的 `_display_name` 用 `strategy_reporter.strategy_consts` 取 DISPLAY_NAME 常數(只解析不執行,只讀檔頭 64KB,吃 BOM);每列先切 15 支才查名稱,工作區幾百支時每輪最多解析 60 個檔。名稱含事實行的分隔字、（）「」或 Unicode 分行／格式字元(會偽造代號或斷行)、沒有、跟代號相同,代號含路徑分隔、磁碟機字母(Windows `D:x`)或絕對路徑,讀檔解析失敗,都退回代號,回合不受影響。雲端視角不查本機同名資料夾。
+- **停止鈕那一句不露程式名(`_stop_note`、`_STOP_SCRIPT_WORDS`)**:`turn_stop.money_label` 的標籤(`lib/order_*`、`manager/flatten`、`reconciler.py`、`close_symbol`…)在給用戶看的句子裡換成平倉程式、下單程式;`manager/stop_strategy.py` 停排程、收行程,帶 `--flatten` 才平倉,標籤分不出有沒有帶,寫「停止策略的程式」;表外寫背景程式,同詞只寫一次;「下單腳本」統一成「下單程式」。英文句改用逗號分隔、句首大寫。`money_label` 本身不動(它也是判定會動到錢的規則,`check_turn_stop` 鎖它的輸出)。
+- 測試 `tests/check_strategy_display_names.py`(新)、`tests/check_stop_note_steps.py` ⑥(列舉 money_label 每種輸出)、`tests/check_turn_stop.py`、`tests/check_reply_rules_018.py`、`tests/check_reply_format_plain.py`、`tests/check_state_read_retry.py`(EXEMPT 補 `_display_name` 一列)。交易所 id 用 `venue_traits` 常數,`check_venue_traits` 照舊綠。
+
 ## 1.1.154 — 2026-11-04
 
 - **回覆語法規則寫得更明確(`agent_turn.WEB_FORMATTING_RULE`)**:1.1.153 canary 實測三句仍是粗體小標加清單。明寫不要「**主題**：內容」與清單項目開頭加粗、分段空一行、不用破折號。Telegram 不動。

@@ -391,8 +391,9 @@ def claude_money_query(script):
     return q
 
 
-for script, label in (("manager/close_symbol.py", "close_symbol"), ("lib/president_worker.py", "president_worker"),
-                      ("tmp/adhoc.py", "下單腳本")):
+# 程式名換成用戶看得懂的詞(agent_turn._STOP_SCRIPT_WORDS):回覆裡不露路徑與檔名
+for script, label in (("manager/close_symbol.py", "平倉程式"), ("lib/president_worker.py", "下單程式"),
+                      ("tmp/adhoc.py", "下單程式")):
     procs.clear()
     sdk.query = claude_money_query(script)
     # Stop right after "cancelled" is on disk
@@ -415,7 +416,8 @@ for script, label in (("manager/close_symbol.py", "close_symbol"), ("lib/preside
     check(f"Claude + {script}: engine killed", not alive(procs["engine"]), procs)
     check(f"Claude + {script}: stopped after 'cancelled', it still closes and writes the ledger",
           ledger_wait(procs["ledger"], ["cancelled", "closed", "ledger"], 5), open(procs["ledger"]).read())
-    check(f"Claude + {script}: the reply says it is finishing in the background", label in text and "背景" in text, text)
+    check(f"Claude + {script}: the reply says it is finishing in the background", label in text and "背景" in text
+          and not re.search(r"[A-Za-z_]", text.split("中斷的步驟")[0]), text)
     _, recent = at.ss.get_context("s3")
     check(f"Claude + {script}: history keeps the note and the receipts", label in recent[-1][1] and "[中斷前已執行" in recent[-1][1], recent[-1])
 
@@ -937,7 +939,7 @@ with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
 took = time.monotonic() - t0 - 0.8
 text = "".join(json.loads(l[9:]).get("text", "") for l in out.getvalue().splitlines() if l.startswith("@@BLAVE@@"))
 check(f"Codex hold is capped: the turn ends shortly after HOLD_MAX_S ({took:.1f}s)", took < 3.5, took)
-check("…and the reply says it was no longer waited on", "不再等它" in text and "reconciler.py" in text, text)
+check("…and the reply says it was no longer waited on", "不再等它" in text and "下單程式" in text and "reconciler" not in text, text)
 # By pid, never by name: `pkill -f manager/reconciler.py` reaches every reconciler on the
 # machine — a desktop app trading next to this test run lost its order daemon each time.
 with contextlib.suppress(OSError, ValueError):

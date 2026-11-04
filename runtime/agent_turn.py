@@ -31,6 +31,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -46,6 +47,7 @@ import sched_pack  # noqa: E402
 import session_store as ss  # noqa: E402
 import strategy_reporter  # noqa: E402
 import turn_stop  # noqa: E402
+import venue_traits  # noqa: E402
 
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -637,6 +639,45 @@ def _paused_one(workspace, names, funded=()):
     return sorted(out)
 
 
+# 事實行的分隔字、_named 與 viewing 句包代號用的（）「」,加上 Unicode 分行與格式字元:名稱帶這些就能偽造一個代號或斷行
+_NAME_UNSAFE = re.compile(r"[、;:；：\[\]（）「」\r\n\x0b\x0c\x85\u2028\u2029]")
+_NAME_READ_MAX = 65536  # DISPLAY_NAME 在檔頭;截斷的檔 ast 失敗會退到 regex,一樣拿得到
+
+
+def _name_ok(v):
+    return not _NAME_UNSAFE.search(v) and not any(unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") for c in v)
+
+
+def _display_name(workspace, code, cache=None):
+    """策略的 DISPLAY_NAME(同 strategy_reporter._extract 的取法,只取常數);沒有、跟代號一樣、
+    讀不到,或含事實行的分隔字(會讓那一行讀不懂)→ None。"""
+    if cache is not None and code in cache:
+        return cache[code]
+    name = None
+    try:
+        if (not code or code.startswith(".") or any(c in code for c in "/\\:")
+                or ntpath.splitdrive(code)[0] or os.path.isabs(code)):
+            raise ValueError(code)
+        sdir = os.path.join(workspace, "strategies")
+        for p in (os.path.join(sdir, code, "strategy.py"), os.path.join(sdir, code + ".py")):
+            if os.path.isfile(p):
+                with open(p, encoding="utf-8-sig", errors="replace") as f:
+                    v = strategy_reporter.strategy_consts(f.read(_NAME_READ_MAX)).get("DISPLAY_NAME")
+                v = (v or "").strip()[:60]
+                name = v if v and v != code and _name_ok(v) else None
+                break
+    except Exception:
+        name = None
+    if cache is not None:
+        cache[code] = name
+    return name
+
+
+def _named(workspace, code, cache=None):
+    disp = _display_name(workspace, code, cache)
+    return f"{disp}（{code}）" if disp else code
+
+
 def _deploy_state_line(workspace=None, now=None):
     """上線現況的一行機器事實(建議規則配套,web 專屬)。2026-08-24 實測:
     supertrend_sol 已在模擬盤跑兩天,agent 仍建議「上模擬盤」——prompt 要求
@@ -673,17 +714,21 @@ def _deploy_state_line(workspace=None, now=None):
         # 「還沒上線」照畫面的定義(strategy_versions.js:上線中 = 金額 > 0):金額 0 的也算,名字後加註;金額讀不到就不列(不知道)。
         # 金額 0 的排最前面:超過 15 支截斷時,「已在自動下單頁、只差設金額」這件事不能被截掉
         zero_in = sorted(n for n in known if known[n] <= 0 and n not in other)
-        notlive = ([n + "(在策略組合、金額 0)" for n in zero_in]
-                   + [n for n in names if n not in known and n not in other])[:15] if amounts is not None else []
+        cache = {}
+        nm = lambda n: _named(ws, n, cache)  # noqa: E731
+        # 先切 15 支再查名稱:查名稱要讀檔解析,工作區幾百支時每輪全讀會拖慢回合
+        notlive = ([(n, "(在策略組合、金額 0)") for n in zero_in]
+                   + [(n, "") for n in names if n not in known and n not in other])[:15] if amounts is not None else []
+        notlive = [nm(n) + tag for n, tag in notlive]
         paper = os.path.isfile(os.path.join(ws, "state", "paper_ledger.json"))
-        parts = ["策略組合有金額:" + ("、".join(funded) if funded else "無") if amounts is not None
+        parts = ["策略組合有金額:" + ("、".join(map(nm, funded)) if funded else "無") if amounts is not None
                  else "策略組合的金額:讀不到(設定檔壞掉或讀取失敗,不是沒設)"]
         if other:
-            parts.append("自己排程的策略:" + "、".join(other))
+            parts.append("自己排程的策略:" + "、".join(map(nm, other)))
         parts.append("下單狀態:" + _order_state(ws, funded if amounts is not None else None, other, now))
         paused = _paused_one(ws, sorted(deployed), funded)
         if paused:
-            parts.append("已自動暫停:" + "、".join(paused[:15]))
+            parts.append("已自動暫停:" + "、".join(map(nm, paused[:15])))
         if notlive:
             parts.append("還沒上線:" + "、".join(notlive))
         parts.append("模擬交易:" + ("已連接" if paper else "未連接"))
@@ -1883,7 +1928,7 @@ _FORM_RULE = (
 
 # 結尾規則的逐輪錨(build_prompt,web／電腦版)。客戶端這一輪畫不畫建議由 --suggest-mode 告知:
 # reduced = 用戶連續沒用建議,只畫導航句;off = 用戶關掉了。畫不出來的那一句改寫進正文最後,下一步才不會無聲消失。
-_SUGGEST_ANCHOR_TAIL = "提到策略用它的名稱、不用底線代號;建議跟本則結論同方向:正文說不建議用,就不提上線、也不提正文勸退的做法。]"
+_SUGGEST_ANCHOR_TAIL = "提到策略寫 DISPLAY_NAME,沒有就用 # Strategy: 或用戶慣稱,都沒有才用代號;建議跟本則結論同方向:正文說不建議用,就不提上線、也不提正文勸退的做法。]"
 _SUGGEST_ANCHORS = {
     "normal": "[結尾規則:只有命中里程碑才在最後附 <suggest>(1 句、用戶口吻;一般句 ≤20 字,「帶我看怎麼」開頭的 ≤28 字);"
               "其他回合寫完答案就結束,不提議、不用問句收尾。" + _SUGGEST_ANCHOR_TAIL,
@@ -1934,9 +1979,12 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
             focus = "的程式碼"
         else:
             focus = ""
+        # 雲端視角開的是雲端那一份(shell/main.js --viewing-strategy),本機同名資料夾不一定是同一支
+        disp = None if viewing_env == "cloud" else _display_name(WORKSPACE, viewing_strategy)
+        shown = f"「{disp}」(代號 {viewing_strategy})" if disp else f"「{viewing_strategy}」"
         parts.append(
             f"[工作頁狀態(僅供釐清指代,不是工作指令):使用者畫面上開著策略"
-            f"「{viewing_strategy}」{focus}。訊息裡有「這支 / 這個策略 / 這裡 / 這結果」"
+            f"{shown}{focus}。訊息裡有「這支 / 這個策略 / 這裡 / 這結果」"
             f"這類指示詞時,指的通常是它。訊息沒指名策略、而對話正在處理另一支時,"
             f"以對話脈絡為準,不要因為分頁開著就對它動手;兩邊衝突拿不準,"
             f"先用一句話確認要動哪一支再動。需要看內容就自己讀 strategies/ 底下對應的檔"
@@ -2178,6 +2226,14 @@ _NO_NARRATION = (
     "（結果、發現、決定、簡短的下一步提示），跳過「我正在做什麼」的旁白。"
 )
 
+# 交易所／券商名,中英各一,照 shell/i18n/zh.po、en.po 的 msgstr(tests/check_strategy_display_names.py 釘住);
+# 這裡只列 id 跟名稱不同字的正式支援場所
+_VENUE_NAMES = {
+    venue_traits.PRESIDENT: ("統一期貨", "President Futures"),
+    venue_traits.CAPITAL: ("群益期貨", "Capital Futures"),
+    "paper": ("模擬交易", "Paper trading"),
+}
+
 # Telegram uses LEGACY Markdown (single-asterisk bold) and cannot render
 # tables at all; each text segment becomes its own message bubble.
 # 兩個 sink 共用的回覆風格(語法各自另訂)。長度紀律一定要兩邊都掛——
@@ -2195,6 +2251,10 @@ _STYLE_RULES = (
     "- 回測結果只報關鍵數字(報酬、Sharpe、最大回撤、勝率這類挑 3–4 個)。\n"
     "- 不要向使用者敘述內部探索過程或背景任務狀態。\n"
     "- 使用者看不到檔案系統,別對他列目錄或路徑;指涉用「左側策略頁」「回測分頁」。\n"
+    "- 提到策略寫 DISPLAY_NAME;沒有就用 # Strategy: 或用戶慣稱;都沒有才用代號。\n"
+    "- 交易所與券商寫名稱、不寫 id:"
+    + "、".join(f"{k} 寫{zh}(英文 {en})" for k, (zh, en) in _VENUE_NAMES.items())
+    + ";其他寫官方名(Binance、OKX、Gate.io)。\n"
 )
 
 TELEGRAM_FORMATTING_RULE = (
@@ -2267,7 +2327,7 @@ _SUGGEST_RULE = (
     "長度（策略名照算、空白不算）：一般句 ≤20 字（英文 ≤48 字元）；導航句 ≤28 字（英文 ≤60 字元）。"
     "策略名太長時用用戶慣稱的短名，句子太長用戶不會看完。"
     "部署類（加進策略組合、綁定、小額實盤）是導航句，固定以「帶我看怎麼」起手（要縮短就縮策略名，不要改掉起手），你回操作步驟、不代做；其他是一般執行句。"
-    "策略寫名稱（strategy.py 的 # Strategy: 或用戶慣稱）："
+    "策略寫 DISPLAY_NAME；沒有就用 # Strategy: 或用戶慣稱；都沒有才用代號："
     "寫「把 BTC 4h 均線交叉加進策略組合」，不寫「把 btc_ma_cross_4h 加進策略組合」；〈〉只是佔位，不寫進句子。"
     "有轉出檔時 `<export … />` 照寫、放在 <suggest> 區塊的前一行。\n"
     "語言跟正文一致：英文用戶用英文，導航句以「Show me how to」起手（Show me how to add 〈strategy name〉 to the portfolio）；"
@@ -4530,6 +4590,26 @@ _STOP_STEP_TEXT = {
 }
 
 
+# turn_stop 的標籤(money_label 的輸出、"order script")是內部名稱,給用戶看的換成這幾個詞;
+# 表上沒有的(update_workspace、seed_ledger、新加進 MONEY_ARGV 的)一律寫通用詞。
+_STOP_SCRIPT_WORDS = (
+    (re.compile(r"close_symbol|close_all|flatten", re.I), ("平倉程式", "平仓程序", "the close-out script")),
+    # manager/stop_strategy.py 停排程、收掉行程,帶 --flatten 才平倉;標籤分不出有沒有帶,寫它實際一定會做的事
+    (re.compile(r"stop_strategy", re.I), ("停止策略的程式", "停止策略的程序", "the stop-strategy script")),
+    (re.compile(r"order|execute|venue|portfolio|reconciler|_worker", re.I), ("下單程式", "下单程序", "the order script")),
+)
+_STOP_SCRIPT_OTHER = ("背景程式", "后台程序", "a background script")
+
+
+def _stop_script_words(labels, col):
+    out = []
+    for lb in labels:
+        w = next((ws[col] for rx, ws in _STOP_SCRIPT_WORDS if rx.search(str(lb))), _STOP_SCRIPT_OTHER[col])
+        if w not in out:
+            out.append(w)
+    return out
+
+
 def _stop_note(left_running, in_flight, message, lang=None, gave_up=()):
     """停止鈕收尾那一句(進回覆也進歷史):哪幾支會動到部位/帳本的腳本沒被中斷、還在背景
     跑完(turn_stop 刻意放過),Codex 等了 HOLD_MAX_S 還沒結束、不再等的那幾支(輸出管線
@@ -4542,30 +4622,30 @@ def _stop_note(left_running, in_flight, message, lang=None, gave_up=()):
     zh = lang in ("zh", "cn") or (not lang and _is_zh(message))
     col = (1 if lang == "cn" else 0) if zh else 2
     steps = list(dict.fromkeys(_STOP_STEP_TEXT[k][col] for k in in_flight if k in _STOP_STEP_TEXT))
-    left, cut, gone = "、".join(left_running), ("、" if zh else ", ").join(steps), "、".join(gave_up)
+    sep = "、" if zh else ", "
+    left, cut, gone = (sep.join(_stop_script_words(left_running, col)), sep.join(steps),
+                       sep.join(_stop_script_words(gave_up, col)))
     if zh:
         simp = lang == "cn"
-        name = "下单脚本" if simp else "下單腳本"
-        left, gone = left.replace("order script", name), gone.replace("order script", name)
         parts = ["已停止。"]
         if left_running:
-            parts.append((f"{left} 会动到仓位或账本，没有中断，仍在后台跑完——请稍后确认仓位与账本。" if simp else
-                          f"{left} 會動到部位或帳本，沒有中斷，仍在背景跑完——請稍後確認部位與帳本。"))
+            parts.append((f"{left}会动到仓位或账本，没有中断，仍在后台跑完——请稍后确认仓位与账本。" if simp else
+                          f"{left}會動到部位或帳本，沒有中斷，仍在背景跑完——請稍後確認部位與帳本。"))
         if gave_up:
-            parts.append((f"{gone} 停止后两分钟仍未结束，已不再等它；它的输出已中断，可能没有跑完——请确认仓位与账本。" if simp else
-                          f"{gone} 停止後兩分鐘仍未結束，已不再等它；它的輸出已中斷，可能沒有跑完——請確認部位與帳本。"))
+            parts.append((f"{gone}停止后两分钟仍未结束，已不再等它；它的输出已中断，可能没有跑完——请确认仓位与账本。" if simp else
+                          f"{gone}停止後兩分鐘仍未結束，已不再等它；它的輸出已中斷，可能沒有跑完——請確認部位與帳本。"))
         if unseen:
-            parts.append("无法确认是否还有下单脚本在跑——请稍后确认仓位与账本。" if simp else
-                         "無法確認是否還有下單腳本在跑——請稍後確認部位與帳本。")
+            parts.append("无法确认是否还有下单程序在跑——请稍后确认仓位与账本。" if simp else
+                         "無法確認是否還有下單程式在跑——請稍後確認部位與帳本。")
         if steps:
             parts.append((f"中断的步骤：{cut}。" if simp else f"中斷的步驟：{cut}。"))
         return "".join(parts)
     parts = ["Stopped."]
     if left_running:
-        parts.append(f" {left} can move positions or the ledger, so it was not interrupted and is finishing "
+        parts.append(f" {left[:1].upper() + left[1:]} can move positions or the ledger, so it was not interrupted and is finishing "
                      "in the background — check positions and the ledger shortly.")
     if gave_up:
-        parts.append(f" {gone} was still running two minutes after the stop, so it is no longer waited on; "
+        parts.append(f" {gone[:1].upper() + gone[1:]} was still running two minutes after the stop, so it is no longer waited on; "
                      "its output was cut and it may not have finished — check positions and the ledger.")
     if unseen:
         parts.append(" Could not confirm whether an order script is still running — check positions "

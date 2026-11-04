@@ -50,6 +50,9 @@ t("LOCAL 與 WEB 只差導航段",
   at.LOCAL_FORMATTING_RULE == at.WEB_FORMATTING_RULE.replace(at._NAV_RULE, at._NAV_RULE_LOCAL))
 t("Telegram 語法段一字不變,也沒有新句",
   at.TELEGRAM_FORMATTING_RULE == TELEGRAM_OWN + at._STYLE_RULES + at._NO_NARRATION)
+t("策略名稱與交易所名稱那兩條在共用風格段,三份格式規則都帶到",
+  "都沒有才用代號" in at._STYLE_RULES and "不寫 id" in at._STYLE_RULES
+  and all(at._STYLE_RULES in r for r in (at.WEB_FORMATTING_RULE, at.LOCAL_FORMATTING_RULE, at.TELEGRAM_FORMATTING_RULE)))
 
 shutil.rmtree(WS, ignore_errors=True)
 print(f"\n{'FAIL' if fails else 'OK'}: {len(fails)} failed")

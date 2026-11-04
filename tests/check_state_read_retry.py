@@ -258,6 +258,7 @@ EXEMPT = [
      'env', '.env, raises loudly; the reader retries next cycle'),
     ('runtime/agent_turn.py', '_bash_kind', 'os.path.join(workspace, path)',
      'code', 'a script the agent is about to run'),
+    ('runtime/agent_turn.py', '_display_name', 'p', 'code', 'strategy source (DISPLAY_NAME only); a failed read falls back to the code'),
     ('runtime/agent_turn.py', '_order_state', 'os.path.join(workspace, "lib", "guard.py")',
      'code', 'code / doc / VERSION text, not a state file'),
     ('runtime/agent_turn.py', '_portfolio_steps_block', 'path', 'code', 'reference doc text'),

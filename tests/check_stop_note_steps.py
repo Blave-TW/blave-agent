@@ -45,20 +45,50 @@ t("order 這一種涵蓋撤單 / 平倉 / 改槓桿:寫「執行下單指令」,
 import turn_stop  # noqa: E402
 n = [at._stop_note([turn_stop.UNSEEN], [], ZH), at._stop_note([turn_stop.UNSEEN], [], ZH, "cn"),
      at._stop_note([turn_stop.UNSEEN], [], EN), at._stop_note([], [], ZH, gave_up=[turn_stop.UNSEEN])]
-t("讀不到行程表:說「無法確認」,不說有下單腳本在跑", n == [
-    "已停止。無法確認是否還有下單腳本在跑——請稍後確認部位與帳本。",
-    "已停止。无法确认是否还有下单脚本在跑——请稍后确认仓位与账本。",
+t("讀不到行程表:說「無法確認」,不說有下單程式在跑", n == [
+    "已停止。無法確認是否還有下單程式在跑——請稍後確認部位與帳本。",
+    "已停止。无法确认是否还有下单程序在跑——请稍后确认仓位与账本。",
     "Stopped. Could not confirm whether an order script is still running — check positions and the ledger shortly.",
-    "已停止。無法確認是否還有下單腳本在跑——請稍後確認部位與帳本。"], n)
+    "已停止。無法確認是否還有下單程式在跑——請稍後確認部位與帳本。"], n)
 n = at._stop_note([turn_stop.UNSEEN, "close_symbol"], [], ZH)
-t("…真的看到的腳本照舊列名", n.startswith("已停止。close_symbol 會動到部位或帳本") and "無法確認" in n, n)
+t("…真的看到的程式照舊列出(換成平倉程式)", n.startswith("已停止。平倉程式會動到部位或帳本") and "無法確認" in n, n)
 _zh_po = open(os.path.join(ROOT, "shell", "i18n", "zh.po"), encoding="utf-8").read()
 _en_po = open(os.path.join(ROOT, "shell", "i18n", "en.po"), encoding="utf-8").read()
 _act = [re.search(r'msgid "act\.order"\nmsgstr "([^"]+)"', x).group(1) for x in (_zh_po, _en_po)]
 t("order 的字跟狀態列 act.order 同一套(zh 拿掉「正在」、en 小寫開頭)",
   _act[0] == "正在" + at._STOP_STEP_TEXT["order"][0] and _act[1][0].lower() + _act[1][1:] == at._STOP_STEP_TEXT["order"][2], _act)
 n = at._stop_note(["order script"], ["unknown"], ZH)
-t("背景下單腳本那句照舊、步驟不列", n.startswith("已停止。下單腳本 會動到部位") and "步驟" not in n, n)
+t("背景下單程式那句照舊、步驟不列", n.startswith("已停止。下單程式會動到部位") and "步驟" not in n, n)
+
+# ⑥ 程式名不露給用戶:money_label 會吐的每一種標籤都換成對照表的詞,表外寫通用詞
+LABELS = ["close_symbol", "stop_strategy", "manager/flatten", "close_all", "update_workspace", "seed_ledger",
+          "reconciler.py", "capital_worker", "president_worker", "lib/order", "lib/execute", "lib/venue",
+          "lib/portfolio", "order_binance", "from lib import order_okx", "order script"]
+_cmds = ["python3 manager/close_symbol.py", "python3 manager/stop_strategy.py x", "python3 manager/flatten.py",
+         "python3 manager/close_all.py", "python3 manager/update_workspace.py apply", "python3 manager/seed_ledger.py",
+         "python3 manager/reconciler.py", "python capital_worker.py", "python president_worker.py",
+         "python -c 'import lib.order_binance'", "python lib/execute.py", "python lib/venue.py", "python lib/portfolio.py",
+         "python -c 'import order_binance'", "python -c 'from lib import order_okx'"]
+_got = {turn_stop.money_label(c) for c in _cmds}
+t("列舉涵蓋 money_label 的每種輸出(MONEY_ARGV 加了新的就要補進來)", _got <= set(LABELS), sorted(_got - set(LABELS)))
+leak = []
+for lang, msg in ((None, ZH), ("cn", ZH), (None, EN)):
+    for lb in LABELS:
+        for n in (at._stop_note([lb], [], msg, lang), at._stop_note([], [], msg, lang, gave_up=[lb])):
+            body = n.replace("Stopped.", "").replace("ledger", "")
+            if re.search(r"/|\.py|_|lib|order_|reconciler|worker|flatten|close_|seed|update", body):
+                leak.append((lang, lb, n))
+t("三種語言、兩種句子:沒有路徑、檔名、底線代號", not leak, leak[:3])
+t("平倉類 → 平倉程式", all(at._stop_note([lb], [], ZH).startswith("已停止。平倉程式") for lb in ("close_symbol", "manager/flatten", "close_all")))
+t("下單類 → 下單程式", all(at._stop_note([lb], [], ZH).startswith("已停止。下單程式")
+                          for lb in ("lib/order", "reconciler.py", "capital_worker", "order_binance", "order script")))
+t("表外 → 背景程式", at._stop_note(["update_workspace"], [], ZH).startswith("已停止。背景程式"))
+t("stop_strategy → 停止策略的程式(帶 --flatten 才平倉,標籤分不出來,不寫成平倉程式)",
+  at._stop_note(["stop_strategy"], [], ZH).startswith("已停止。停止策略的程式會動到"))
+n = at._stop_note(["lib/order", "reconciler.py", "close_symbol"], [], ZH)
+t("同一個詞只寫一次", n.startswith("已停止。平倉程式、下單程式會動到") or n.startswith("已停止。下單程式、平倉程式會動到"), n)
+n = at._stop_note(["lib/order", "close_symbol"], [], EN)
+t("en:逗號分隔、句首大寫", n.startswith("Stopped. The ") and ", the " in n and "、" not in n, n)
 
 # ③ 列舉:狀態列的 act.* 扣掉不是工具的那幾個
 po = open(os.path.join(ROOT, "shell", "i18n", "en.po"), encoding="utf-8").read()
