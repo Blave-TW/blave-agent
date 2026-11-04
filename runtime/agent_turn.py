@@ -639,8 +639,11 @@ def _paused_one(workspace, names, funded=()):
     return sorted(out)
 
 
-# 事實行的分隔字、_named 與 viewing 句包代號用的（）「」,加上 Unicode 分行與格式字元:名稱帶這些就能偽造一個代號或斷行
-_NAME_UNSAFE = re.compile(r"[、;:；：\[\]（）「」\r\n\x0b\x0c\x85\u2028\u2029]")
+# 事實行的分隔字、viewing 句包名稱用的「」,加上 Unicode 分行與格式字元:名稱帶這些就能偽造一個代號或斷行
+_NAME_UNSAFE = re.compile(r"[、;:；：「」\r\n\x0b\x0c\x85\u2028\u2029]")
+# 「[測試] …」「ETH 均線交叉（4h）」這種名稱很常見,整個退回代號就等於沒做(1.1.155 canary 29026);
+# 換成長得像的字:[] 會收掉事實行、（）是 _named 包代號用的,換掉就偽造不了
+_NAME_FOLD = str.maketrans({"[": "［", "]": "］", "（": "(", "）": ")"})
 _NAME_READ_MAX = 65536  # DISPLAY_NAME 在檔頭;截斷的檔 ast 失敗會退到 regex,一樣拿得到
 
 
@@ -663,7 +666,9 @@ def _display_name(workspace, code, cache=None):
             if os.path.isfile(p):
                 with open(p, encoding="utf-8-sig", errors="replace") as f:
                     v = strategy_reporter.strategy_consts(f.read(_NAME_READ_MAX)).get("DISPLAY_NAME")
-                v = (v or "").strip()[:60]
+                v = (v or "").strip()
+                # 範本的佔位名整串包在 [] 裡(TEMPLATE_A／C;判法同 api openclaw/marketplace.py),複製後沒改就不是名稱
+                v = "" if v.startswith("[") and v.endswith("]") else v[:60].translate(_NAME_FOLD)
                 name = v if v and v != code and _name_ok(v) else None
                 break
     except Exception:
@@ -1928,7 +1933,7 @@ _FORM_RULE = (
 
 # 結尾規則的逐輪錨(build_prompt,web／電腦版)。客戶端這一輪畫不畫建議由 --suggest-mode 告知:
 # reduced = 用戶連續沒用建議,只畫導航句;off = 用戶關掉了。畫不出來的那一句改寫進正文最後,下一步才不會無聲消失。
-_SUGGEST_ANCHOR_TAIL = "提到策略寫 DISPLAY_NAME,沒有就用 # Strategy: 或用戶慣稱,都沒有才用代號;建議跟本則結論同方向:正文說不建議用,就不提上線、也不提正文勸退的做法。]"
+_SUGGEST_ANCHOR_TAIL = "提到策略寫 DISPLAY_NAME,沒有就用 # Strategy: 或用戶慣稱,都沒有才用代號,列舉時也一樣、名稱後不括代號;建議跟本則結論同方向:正文說不建議用,就不提上線、也不提正文勸退的做法。]"
 _SUGGEST_ANCHORS = {
     "normal": "[結尾規則:只有命中里程碑才在最後附 <suggest>(1 句、用戶口吻;一般句 ≤20 字,「帶我看怎麼」開頭的 ≤28 字);"
               "其他回合寫完答案就結束,不提議、不用問句收尾。" + _SUGGEST_ANCHOR_TAIL,
@@ -2251,7 +2256,9 @@ _STYLE_RULES = (
     "- 回測結果只報關鍵數字(報酬、Sharpe、最大回撤、勝率這類挑 3–4 個)。\n"
     "- 不要向使用者敘述內部探索過程或背景任務狀態。\n"
     "- 使用者看不到檔案系統,別對他列目錄或路徑;指涉用「左側策略頁」「回測分頁」。\n"
-    "- 提到策略寫 DISPLAY_NAME;沒有就用 # Strategy: 或用戶慣稱;都沒有才用代號。\n"
+    "- 提到策略寫 DISPLAY_NAME;沒有就用 # Strategy: 或用戶慣稱;都沒有才用代號。"
+    "列舉幾支策略也一樣只寫名稱,名稱後面不括代號;代號只在用戶要動檔案或要對照時才附。"
+    "設定檔、工具結果裡只看到代號時,照「上線現況」那一行或策略檔的 DISPLAY_NAME 換成名稱再寫。\n"
     "- 交易所與券商寫名稱、不寫 id:"
     + "、".join(f"{k} 寫{zh}(英文 {en})" for k, (zh, en) in _VENUE_NAMES.items())
     + ";其他寫官方名(Binance、OKX、Gate.io)。\n"

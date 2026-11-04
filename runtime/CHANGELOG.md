@@ -8,6 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.156 — 2026-11-04
+
+- **名稱帶 [] 或（）的策略也寫名稱(`_display_name`、`_NAME_FOLD`)**:1.1.155 把含 `[]（）` 的 DISPLAY_NAME 整個退回代號,29026 canary 的「[測試] 台積電 1 分 K 均線交叉」「ETH 均線交叉（4h）」因此在回覆裡寫成 canary_2330_1m、eth_ma_cross_4h。改成換字照用:`[]` 換全形 `［］`(收不掉事實行),`（）` 換半形 `()`(偽造不了 `_named` 包代號的（）)。`、;:；：「」` 與分行／格式字元照舊退回代號。整串包在 `[]` 裡的值(TEMPLATE_A／C 的佔位名,判法同 api `openclaw/marketplace.py`)換字前先退回代號,複製範本沒改名不會把佔位字串當名稱。
+- **列舉策略只寫名稱(`_STYLE_RULES`、`_SUGGEST_ANCHOR_TAIL`)**:風格規則與逐輪錨加一句,列舉幾支也只寫名稱、名稱後不括代號,代號只在用戶要動檔案或要對照時才附;設定檔、工具結果只看到代號時照上線現況或 DISPLAY_NAME 換成名稱。上線現況那一行的定稿句不動(`check_deploy_prompt_010` 逐字鎖)。
+
 ## 1.1.155 — 2026-11-04
 
 - **回覆提到策略寫顯示名稱,不寫程式代號(`agent_turn._STYLE_RULES`,web、電腦版、App、Telegram 共用;Wei 拍板)**:風格規則加兩條。策略寫 `DISPLAY_NAME`,沒有就用 `# Strategy:` 或用戶慣稱,都沒有才用代號;交易所與券商寫名稱不寫 id(新表 `_VENUE_NAMES`:president 統一期貨、capital 群益期貨、paper 模擬交易,中英各一,字照 shell `i18n/zh.po`、`en.po` 的 msgstr,測試釘住)。建議規則 `_SUGGEST_RULE` 與逐輪錨 `_SUGGEST_ANCHOR_TAIL` 改成同一個退路順序。

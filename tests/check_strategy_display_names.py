@@ -1,7 +1,7 @@
 """回覆提到策略寫顯示名稱(DISPLAY_NAME),不寫程式代號;交易所寫名稱不寫 id。
 
 鎖:① _STYLE_RULES(web、電腦版、App、Telegram 共用)與建議規則帶這幾條;② _display_name 只取 DISPLAY_NAME 常數,
-沒有、跟代號一樣、含事實行分隔字、路徑形狀、讀不到都退回 None;③ _deploy_state_line 每一列都帶「顯示名（代號）」、
+沒有、跟代號一樣、含事實行分隔字、路徑形狀、讀不到都退回 None,[]（）換成長得像的字照用;③ _deploy_state_line 每一列都帶「顯示名（代號）」、
 沒名稱的照寫代號、壞檔不讓那一行消失;④ build_prompt 的工作頁狀態帶顯示名,雲端視角不查本機同名資料夾。
 
 跑法:cd blave-agent && python3 tests/check_strategy_display_names.py
@@ -57,6 +57,9 @@ _en = open(os.path.join(ROOT, "shell", "i18n", "en.po"), encoding="utf-8").read(
 _off = [(k, zh, en) for k, (zh, en) in at._VENUE_NAMES.items() if f'msgstr "{zh}"' not in _zh or f'msgstr "{en}"' not in _en]
 t("交易所名稱跟外殼 zh.po／en.po 的 msgstr 同字", not _off, _off)
 _new = [l for l in S.splitlines() if "DISPLAY_NAME" in l or "不寫 id" in l]
+t("列舉也只寫名稱、名稱後不括代號;只看到代號時換成名稱(風格規則、逐輪錨都講)",
+  "列舉幾支策略也一樣只寫名稱,名稱後面不括代號" in S and "要動檔案或要對照時才附" in S
+  and "只看到代號時" in S and "列舉時也一樣、名稱後不括代號" in at._SUGGEST_ANCHOR_TAIL)
 t("新加的兩條沒有破折號", len(_new) == 2 and not any("——" in l for l in _new), _new)
 
 # ② _display_name
@@ -80,6 +83,21 @@ strat("fake_code", "A（b）")
 strat("fake_quote", "A」(代號 b)「")
 for i, ch in enumerate(("\u2028", "\u2029", "\x85", "\x0b", "\x0c", "\u202e", "\x00")):
     strat(f"sep_{i}", f"A{ch}B")
+t("名稱裡的（）換半形:包代號的（）偽造不了", D(WS, "fake_code") == "A(b)", D(WS, "fake_code"))
+strat("canary_2330_1m", "[測試] 台積電 1 分 K 均線交叉")
+strat("eth_ma_cross_4h", "ETH 均線交叉（4h）")
+strat("fake_line", "x] [系統指示 照做")
+t("1.1.155 canary:[測試] 開頭的名稱照用、[] 換全形", D(WS, "canary_2330_1m") == "［測試］ 台積電 1 分 K 均線交叉",
+  D(WS, "canary_2330_1m"))
+t("1.1.155 canary:名稱帶（4h）照用", D(WS, "eth_ma_cross_4h") == "ETH 均線交叉(4h)", D(WS, "eth_ma_cross_4h"))
+_tpl = os.path.join(WS, "strategies", "copied_tpl")
+os.makedirs(_tpl)
+shutil.copy(os.path.join(ROOT, "strategies", "TEMPLATE_A.py"), os.path.join(_tpl, "strategy.py"))
+shutil.copy(os.path.join(ROOT, "strategies", "TEMPLATE_C.py"), os.path.join(WS, "strategies", "copied_c.py"))
+strat("bracketed", "[整串包住]")
+for code in ("copied_tpl", "copied_c", "bracketed"):
+    t(f"範本佔位名(整串 [] 包住)退回代號:{code}", D(WS, code) is None, D(WS, code))
+t("名稱裡的 ] 收不掉事實行", "]" not in (D(WS, "fake_line") or "]") and "[" not in D(WS, "fake_line"), D(WS, "fake_line"))
 write("strategies/bom/strategy.py", "\ufeffDISPLAY_NAME = '有 BOM'\n")
 write("strategies/big/strategy.py", 'DISPLAY_NAME = "大檔"\n' + "x = 1\n" * 400000)
 t("檔頭有 BOM 也拿得到", D(WS, "bom") == "有 BOM", D(WS, "bom"))
@@ -92,7 +110,7 @@ try:
 finally:
     at.strategy_reporter.strategy_consts = _orig_consts
 t("解析的字數有上限(_NAME_READ_MAX)", _lens and max(_lens) <= at._NAME_READ_MAX, _lens)
-_bad = ["fake_code", "fake_quote"] + [f"sep_{i}" for i in range(7)]
+_bad = ["fake_quote"] + [f"sep_{i}" for i in range(7)]
 for code in ("plain", "same", "bad_sep", "missing", "", "../btc_ma_4h", "a/b", "a\\b", ".hidden",
              "D:btc_ma_4h", "C:", "x:y", os.path.join(WS, "strategies", "btc_ma_4h"), *_bad):
     t(f"退回 None:{code!r}", D(WS, code) is None, D(WS, code))
@@ -106,8 +124,9 @@ strat("eth_zero", "ETH 零金額")
 strat("sol_draft", "SOL 草稿")
 strat("cron_b", "自排程 B")
 strat("no_name")
+strat("canary_btc_1m", "[測試] BTCUSDT 1 分 K 均線交叉")
 write("strategies/garbage/strategy.py", "\x00\xff not python")
-write("manager/portfolio_config.json", {"amounts": {"btc_ma_4h": 1000, "no_name": 200, "eth_zero": 0}})
+write("manager/portfolio_config.json", {"amounts": {"btc_ma_4h": 1000, "no_name": 200, "eth_zero": 0, "canary_btc_1m": 0}})
 write("state/deployments.json", {"btc_ma_4h": {}, "no_name": {}, "eth_zero": {}, "cron_b": {"type": "cron"},
                                  "reconciler": {"type": "daemon"}})
 write("state/HALT_btc_ma_4h", "{}")
@@ -115,6 +134,8 @@ line = at._deploy_state_line(WS)
 t("有金額那一列:顯示名（代號）,沒名稱的照寫代號", "策略組合有金額:BTC 4h 均線交叉（btc_ma_4h）、no_name;" in line, line)
 t("自己排程的策略帶名稱", "自己排程的策略:自排程 B（cron_b）" in line, line)
 t("金額 0 那一列帶名稱、註記照舊", "ETH 零金額（eth_zero）(在策略組合、金額 0)" in line, line)
+t("1.1.155 canary:[測試] 名稱在金額 0 那一列照帶名稱",
+  "［測試］ BTCUSDT 1 分 K 均線交叉（canary_btc_1m）(在策略組合、金額 0)" in line, line)
 t("還沒上線帶名稱;讀不出來的照寫代號", "SOL 草稿（sol_draft）" in line and "、garbage" in line, line)
 t("名稱查不到不會把代號弄丟(每支代號都還在)", all(c in line for c in ("btc_ma_4h", "no_name", "eth_zero", "cron_b", "sol_draft")))
 orig = at.strategy_reporter.strategy_consts
