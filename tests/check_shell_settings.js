@@ -504,7 +504,7 @@ ok("偵測中:兩列只換狀態字、不給動作(列數不變);Blave 那一列
 ok("「重新偵測」只在本機有一個不能用時出:兩個都就緒不出、還沒偵測過不出", !mdlNeedsRedetect({ claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: true } })
   && mdlNeedsRedetect(D) && mdlNeedsRedetect({ claude: { installed: true, loggedIn: true }, codex: { installed: false } }) && !mdlNeedsRedetect(null));
 { // mdlPaint 真的畫一次(假 DOM):全部就緒 → 只有「使用」「使用」「使用中」;一個沒登入 → 那一列講、本機那組底下出「重新偵測」(安靜文字鈕,不在組標題)
-  var MDL = MDL || { busy: false }, PKG = { snap: null, redetect: false }, lastDetect = null, loginPending = null, detect = () => {}, mdlAct = () => {}, laiPaint = () => {}, planVars = () => ({ q: "100" }); hasToken = true;
+  var MDL = MDL || { busy: false }, PKG = { snap: null, redetect: false }, lastDetect = null, loginPending = null, detect = () => {}, mdlAct = () => {}, laiPaint = () => {}, cnFreeQ = () => "30"; hasToken = true;
   eval(fnSrc("mdlPaint"));
   const walk = (n, out = []) => { (n.children || []).forEach((c) => { if (c && typeof c === "object") { out.push(c); walk(c, out); } }); return out; };
   const texts = () => walk($("set-model")).map((n) => [n._cls, n.textContent]);
@@ -527,14 +527,14 @@ ok("「重新偵測」只在本機有一個不能用時出:兩個都就緒不出
     && !/cn\.blave\.group/.test(src + PO2[0] + PO2[1]) && /\.cn-grp>\.cn-opts:first-child\{margin-top:0\}/.test(css));
   lastDetect = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: false } };
   hasToken = false; cur = "claude"; mdlPaint(); const outNum = blave();
-  planVars = () => ({ q: "" }); mdlPaint(); const outNoNum = blave();
-  planVars = () => ({ q: "100" }); oauthPending = true; mdlPaint(); const waitOauth = blave(), lockedWhileWait = rows().slice(1).map((r) => r.tail.join()).join("|");
+  cnFreeQ = () => ""; mdlPaint(); const outNoNum = blave();
+  cnFreeQ = () => "30"; oauthPending = true; mdlPaint(); const waitOauth = blave(), lockedWhileWait = rows().slice(1).map((r) => r.tail.join()).join("|");
   oauthPending = false; loginPending = "codex"; mdlPaint(); const waitLogin = rows();
   loginPending = null; hasToken = true; mdlPaint(); const inIdle = blave();
   cur = "blave"; mdlPaint(); const inCur = blave();
-  ok("Blave AI 的說明:沒登入 + 有數字 → 贈額句(數字來自 planVars);沒登入 + 拿不到數字 → 扣款句;已登入(不管用不用)→ 扣款句", outNum.desc === 'cn.blave.descSet{"q":"100"}' && outNoNum.desc === "cn.blave.descSetNoNum" && inIdle.desc === "cn.blave.descSetNoNum" && inCur.desc === "cn.blave.descSetNoNum");
+  ok("Blave AI 的說明:沒登入 + 有數字 → 贈額句(數字來自 cnFreeQ = public_tiers.free_ai_credit,不是綁卡試用那池 planVars().q);沒登入 + 拿不到數字 → 扣款句;已登入(不管用不用)→ 扣款句", outNum.desc === 'cn.blave.descSet{"q":"30"}' && outNoNum.desc === "cn.blave.descSetNoNum" && inIdle.desc === "cn.blave.descSetNoNum" && inCur.desc === "cn.blave.descSetNoNum");
   ok("Blave AI 的列尾只有一樣:沒登入 = 一顆鈕(沒有「尚未登入」)、等待登入中 = 只有「取消等待」、已登入 = 「使用」、使用中 = 「使用中」",
-    outNum.tail.join() === "pf-act:cn.blave.signinSwitch" && waitOauth.tail.join() === "pf-act:oauth.cancel" && waitOauth.desc === 'cn.blave.descSet{"q":"100"}' && inIdle.tail.join() === "pf-act:cn.use" && inCur.tail.join() === "cn-cur:cn.current"
+    outNum.tail.join() === "pf-act:cn.blave.signinSwitch" && waitOauth.tail.join() === "pf-act:oauth.cancel" && waitOauth.desc === 'cn.blave.descSet{"q":"30"}' && inIdle.tail.join() === "pf-act:cn.use" && inCur.tail.join() === "cn-cur:cn.current"
     && lockedWhileWait === "cn-cur:cn.current|pf-act:cn.signIn");
   ok("本機登入等待中:那一列只有「取消等待」;每一列的列尾都只有一樣", waitLogin[2].tail.join() === "pf-act:login.cancel" && waitLogin.every((r) => r.tail.length === 1));
   hasToken = true; cur = null; lastDetect = null;

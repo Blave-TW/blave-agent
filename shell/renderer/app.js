@@ -437,7 +437,7 @@ function codexPkgRow(pkg, x) {
 }
 function mdlOptions(d, curKind, tok, pend, ak, pkg) {
   const p = pend || {};
-  const out = [{ kind: "blave", nameKey: "cn.blave.name", desc: tok ? "cn.blave.descSetNoNum" : "cn.blave.descSet",   // 沒登入講首次綁卡的贈額(數字來自 api,mdlPaint 填;拿不到就退成扣款那句),登入後只講怎麼收錢
+  const out = [{ kind: "blave", nameKey: "cn.blave.name", desc: tok ? "cn.blave.descSetNoNum" : "cn.blave.descSet",   // 沒登入講登入那刻發的綁卡前額度(數字來自 api public_tiers.free_ai_credit,mdlPaint 填;拿不到就退成扣款那句),登入後只講怎麼收錢
     st: null,
     // 已經有 token 就不必再跑一次 OAuth:切回去是一個選擇,不是重新授權
     act: p.oauth ? "oauth.cancel" : curKind === "blave" ? null : tok ? "cn.use" : curKind ? "cn.blave.signinSwitch" : "cn.blave.btn",
@@ -509,8 +509,9 @@ function mdlPaint() {
     const r = el("div", "cn-opt" + (o.isCur ? " is-cur" : "") + (o.off ? " off" : "")); r.dataset.kind = o.kind;
     if (o.isCur) r.setAttribute("aria-current", "true");
     const tc = el("div", "t"); tc.appendChild(el("p", "n", o.nameKey ? t(o.nameKey) : o.name));
-    // 首次綁卡送多少 AI 額度來自 api(登入後 account_status、沒登入 public-pricing),不寫死;拿不到數字就退成怎麼收錢那句
-    if (o.desc) { const q = o.desc === "cn.blave.descSet" ? planVars().q : ""; tc.appendChild(el("p", "m", o.desc === "cn.blave.descSet" ? (q ? t(o.desc, { q }) : t("cn.blave.descSetNoNum")) : o.descVars ? t(o.desc, o.descVars) : t(o.desc, /^row\./.test(o.desc) ? rowVars(o.kind, o.name) : undefined))); }
+    // 登入那刻發的綁卡前額度(agent_free_credit.FREE_AI_CREDIT,走 public-pricing 的 free_ai_credit;跟連結畫面同一個來源 cnFreeQ),不寫死;
+    // 不是綁卡試用那池(planVars().q = trial_ai_credit)。拿不到數字就退成怎麼收錢那句
+    if (o.desc) { const q = o.desc === "cn.blave.descSet" ? cnFreeQ() : ""; tc.appendChild(el("p", "m", o.desc === "cn.blave.descSet" ? (q ? t(o.desc, { q }) : t("cn.blave.descSetNoNum")) : o.descVars ? t(o.desc, o.descVars) : t(o.desc, /^row\./.test(o.desc) ? rowVars(o.kind, o.name) : undefined))); }
     else if (o.names) tc.appendChild(el("p", "m", o.names.join(t("ak.sep"))));
     r.appendChild(tc);
     if (o.st) r.appendChild(el("span", "st", t(o.st.key, o.st.vars)));
