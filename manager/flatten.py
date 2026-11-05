@@ -99,9 +99,11 @@ LAST_PATH = "state/last_flatten.json"
 CAPITAL_PENDING_PATH = "state/capital_pending_sent.json"
 CAPITAL_QUEUED_HOLD_S = 16 * 60
 CAPITAL_SETTLE_S = 20   # = lib/capital_vault.ORDER_SETTLE_S
-# 群益 closes 群益 took without a fill report: key -> when that close went out. Carried in LAST_PATH
-# (`capital_queued`) and copied forward unchanged by a run that only held them back, so pressing
-# again never renews the hold — it ends CAPITAL_QUEUED_HOLD_S after the real send.
+# 群益 closes 群益 took without a fill report: key -> until when another close must not go out —
+# CAPITAL_QUEUED_HOLD_S after the send, or past the next open plus settle when it went out of
+# session (queued to the open, as the reconciler's queued_until). Carried in LAST_PATH
+# (`capital_hold_until`) and copied forward unchanged by a run that only held them back, so
+# pressing again never renews the hold.
 _CAP_QUEUED = {}
 _TAIPEI = timezone(timedelta(hours=8))
 MSG_MAX = 300
@@ -158,15 +160,26 @@ def _note(vid, key, why):
 
 
 def _load_cap_queued(prev, now):
-    """This run's _CAP_QUEUED: the previous record's entries still inside their hold."""
+    """This run's _CAP_QUEUED: the previous record's holds not yet over."""
     _CAP_QUEUED.clear()
-    got = prev.get("capital_queued") if isinstance(prev, dict) else None
+    got = prev.get("capital_hold_until") if isinstance(prev, dict) else None
     for k, t in (got.items() if isinstance(got, dict) else ()):
         try:
-            if now - float(t) < CAPITAL_QUEUED_HOLD_S:
+            if float(t) > now:
                 _CAP_QUEUED[str(k)] = float(t)
         except (TypeError, ValueError):
             continue
+
+
+def _capital_hold_until(sent_at):
+    """When a 群益 close sent at `sent_at` with no report stops holding the next one."""
+    until = sent_at + CAPITAL_QUEUED_HOLD_S
+    try:
+        from lib import tw_clock
+        queued = tw_clock.queued_until(sent_at)
+    except Exception:
+        queued = None
+    return max(until, float(queued) + CAPITAL_SETTLE_S) if queued else until
 
 
 def _capital_close_queued(key, now=None):
@@ -194,7 +207,7 @@ def _capital_close_queued(key, now=None):
         except (TypeError, ValueError, AttributeError):
             continue
     if key in _CAP_QUEUED:
-        until = max(until, _CAP_QUEUED[key] + CAPITAL_QUEUED_HOLD_S)
+        until = max(until, _CAP_QUEUED[key])
     return (True, until) if until > now else (False, None)
 
 
@@ -854,7 +867,7 @@ def _outcome(ok, started_at, done_at):
             "ok": None if done_at is None else bool(ok and not unclosed and not unconf
                                                      and _RUN["first_err"] is None),
             "closed": closed, "unclosed": unclosed, "unconfirmed": unconf,
-            "capital_queued": {k: round(t, 3) for k, t in sorted(_CAP_QUEUED.items())},
+            "capital_hold_until": {k: round(t, 3) for k, t in sorted(_CAP_QUEUED.items())},
             # msg = our own reason (log-grade); reply = the venue's own words, the only text a page
             # may put after "<venue> replied:" — None when no venue answered (unconfirmed, timeouts)
             "msg": msg[:MSG_MAX], "reply": next((u["reply"] for u in unclosed if u["reply"]), None)}
@@ -1255,7 +1268,7 @@ def _flatten():
                     logging.warning(f"[{vid}] {key}: an earlier close is not reported yet — not sent "
                                     f"again{f' before {at}' if at else ''}")
                     _record_order_error(key, vid, f"close-all: 群益上一筆平倉還在等回報，"
-                                                  f"{f'{at} 後再按，' if at else ''}急的話到群益下單軟體自己平。",
+                                                  f"{f'{at} 後再按' if at else '過幾分鐘再按'}，或到群益下單軟體看過委託再平。",
                                         extra={"kind": "manual_close_required", "symbols": key,
                                                "reason": "queued",
                                                **({"until": int(until)} if until else {})})
@@ -1393,7 +1406,7 @@ def _flatten():
                 _note(vid, key, "unconfirmed" if status in ("sent", "unknown") and not float(got or 0)
                       else "partial" if float(got or 0) else "no_fill")
                 if vid == venue_traits.CAPITAL and status == "sent" and not float(got or 0):
-                    _CAP_QUEUED[key] = time.time()
+                    _CAP_QUEUED[key] = _capital_hold_until(time.time())
                 logging.error(f"[{vid}] {sym}: close not confirmed filled ({got}/{size})")
                 label = venue_traits.get(vid, "label") or vid
                 _record_order_error(key, vid, f"close-all: {label}平倉未確認成交({got or 0}/{size:g} 口),"

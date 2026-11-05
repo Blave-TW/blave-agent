@@ -125,6 +125,28 @@ for (const lang of ["zh", "en"]) {
   const bad = Object.entries(QUEUED_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== wp[w]);
   ok(`全部平倉群益上一筆還在等回報 ${lang}:兩句兩邊逐字一致`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
+// …而且 api 的 TG／信件那句(openclaw/notify.py _MANUAL_CLOSE_QUEUED,「後」／after 在 until 欄位裡)代入同一組值,
+// 跟電腦版／網頁逐字同。從原始碼取 tuple 與欄位值,不 import api(那邊要 config 與資料庫)
+{ const apiNotify = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "notify.py");
+  const src = fs.existsSync(apiNotify) ? fs.readFileSync(apiNotify, "utf8") : "";
+  const block = (src.match(/_MANUAL_CLOSE_QUEUED = \(([\s\S]*?)\n\)/) || [])[1] || "";
+  const parts = [], lit = /"((?:[^"\\]|\\.)*)"\s*(,?)/g;
+  let cur = "", m;
+  while ((m = lit.exec(block))) { cur += m[1]; if (m[2]) { parts.push(cur); cur = ""; } }
+  if (cur) parts.push(cur);
+  const f = (re) => (src.match(re) || [])[1];
+  const fields = { at: { en: f(/until_en=f"([^"]*\{hm\}[^"]*)"/), zh: f(/until_zh=f"([^"]*\{hm\}[^"]*)"/) },
+                   soon: { en: f(/until_en="([^"{]*)", until_zh="[^"{]*"\)/), zh: f(/until_en="[^"{]*", until_zh="([^"{]*)"\)/) } };
+  const BROKER = { zh: "群益", en: "Capital" };
+  for (const [i, lang] of [[0, "en"], [1, "zh"]]) {
+    const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+    const api = (until) => parts[i] && parts[i].replace(/^🚨 /, "").split("{broker_" + lang + "}").join(BROKER[lang]).split("{until_" + lang + "}").join(until);
+    const ui = (tpl) => typeof tpl === "string" ? tpl.split("{broker}").join(BROKER[lang]).split("{at}").join("01:20") : null;
+    const rows = [["有 until", api(fields.at[lang] && fields.at[lang].split("{hm}").join("01:20")), ui(dp["tr.ov.evManualCloseQueued"]), ui(wp["workspace_ov_ev_manual_close_queued"])],
+                  ["沒 until", api(fields.soon[lang]), ui(dp["tr.ov.evManualCloseQueuedSoon"]), ui(wp["workspace_ov_ev_manual_close_queued_soon"])]];
+    for (const [label, a, d, w] of rows)
+      ok(`全部平倉群益上一筆還在等回報 ${lang} ${label}:api(TG／信)、電腦版、網頁三邊逐字一致`, !!a && a === d && a === w, `api「${a}」 電腦版「${d}」 網頁「${w}」`);
+  } }
 // 啟動下單框(mockup 03 A 版,2026-11-04;web 同框同字):標題、選項字、兩句說明、補齊怎麼下的四句、常駐句、兩顆主鈕字、「細節」兩邊逐字同(zh / en)。模擬／真錢同字,兩邊都收成一個 key
 // 電腦版那一行說明(tr.stopLine)與小卡五條是本機環境的話(電腦睡眠就停…),網頁在雲端講的是主機停機,內容依環境、不比
 const START_PAIRS = { "tr.start": "workspace_pf_start", "tr.opt.legend": "workspace_pf_start_group", "tr.opt.catch": "workspace_pf_opt_catch", "tr.opt.wait": "workspace_pf_opt_wait",

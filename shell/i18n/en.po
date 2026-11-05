@@ -4401,10 +4401,10 @@ msgid "tr.ov.evManualCloseLag"
 msgstr "Not closed on {broker}: position data lags the last order. In a minute, press “Pause and close positions” again, or close at your broker."
 
 msgid "tr.ov.evManualCloseQueued"
-msgstr "Not closed on {broker}: the last close there is not reported yet and may still be queued. Press “Pause and close positions” again after {at} (Taiwan time), or close it at your broker now."
+msgstr "Not closed on {broker}: the last close there is not reported yet. Press “Pause and close positions” again after {at} (Taiwan time), or check your orders at your broker before closing there."
 
 msgid "tr.ov.evManualCloseQueuedSoon"
-msgstr "Not closed on {broker}: the last close there is not reported yet and may still be queued. Press “Pause and close positions” again in a few minutes, or close it at your broker now."
+msgstr "Not closed on {broker}: the last close there is not reported yet. Press “Pause and close positions” again in a few minutes, or check your orders at your broker before closing there."
 
 msgid "tr.ov.brokerCapital"
 msgstr "Capital"
@@ -10068,10 +10068,10 @@ msgid "tm.evCloseQueued"
 msgstr "Capital positions not closed"
 
 msgid "tm.evCloseQueuedNote"
-msgstr "The last close is not reported yet. Press “Pause and close positions” again after {at}, or close it in Capital's trading software now."
+msgstr "The last close is not reported yet. Press “Pause and close positions” again after {at} (Taiwan time), or check your orders in Capital's trading software before closing there."
 
 msgid "tm.evCloseQueuedSoonNote"
-msgstr "The last close is not reported yet. Press “Pause and close positions” again in a few minutes, or close it in Capital's trading software now."
+msgstr "The last close is not reported yet. Press “Pause and close positions” again in a few minutes, or check your orders in Capital's trading software before closing there."
 
 msgid "tr.ov.evUnconfirmedCloseAll"
 msgstr "Not closed with the rest"

@@ -167,7 +167,10 @@ def run_flatten(identity_ok, ledger=None, capital=CAP_ONE, close=None, keep_last
 # from 全部平倉 would fill beside it as the reverse (sNewClose=2) — held until CAPITAL_QUEUED_HOLD_S after
 # the REAL send (re-audit N-1: a held press must not restart it; N-2: an old park leg never holds)
 import time as _t0  # noqa: E402
+from lib import tw_clock as _twc  # noqa: E402
 HOLD = flatten.CAPITAL_QUEUED_HOLD_S
+_real_qu = _twc.queued_until
+_twc.queued_until = lambda now=None: None   # in session unless a case says otherwise
 
 
 def park(at, intent="reduce"):
@@ -184,7 +187,7 @@ park(_t0.time() - 120)
 run_flatten(True)
 q = queued_rows()
 check(("capital", "TM2610") not in closes and ("binance", "BTCUSDT") in closes and q
-      and abs(q[0][3].get("until", 0) - (_t0.time() - 120 + HOLD)) < 5 and "後再按" in q[0][2] and "自己平" in q[0][2],
+      and abs(q[0][3].get("until", 0) - (_t0.time() - 120 + HOLD)) < 5 and "後再按" in q[0][2] and "看過委託再平" in q[0][2],
       f"the reconciler's unreported close 2 min ago: not sent again, one 'queued' row with when to press again ({errors})")
 last = json.load(open(flatten.LAST_PATH))
 check("TMF" not in last.get("unconfirmed", []) and any(u.get("key") == "TMF" and u.get("why") == "queued"
@@ -199,20 +202,37 @@ run_flatten(True)
 check(("capital", "TM2610") in closes, "an unreported entry does not hold the close")
 os.remove(flatten.CAPITAL_PENDING_PATH)
 run_flatten(True, close={"TM2610": "sent"})
-sent_at = (json.load(open(flatten.LAST_PATH)).get("capital_queued") or {}).get("TMF")
-check(sent_at and abs(sent_at - _t0.time()) < 30, f"a flatten's own 'sent' 群益 close is recorded with its send time ({sent_at})")
+hold = (json.load(open(flatten.LAST_PATH)).get("capital_hold_until") or {}).get("TMF")
+check(hold and abs(hold - (_t0.time() + HOLD)) < 30, f"a flatten's own 'sent' 群益 close in session holds 16 min from its send ({hold})")
 rec = json.load(open(flatten.LAST_PATH))
-rec["capital_queued"] = {"TMF": _t0.time() - 10 * 60}
+rec["capital_hold_until"] = {"TMF": _t0.time() - 10 * 60 + HOLD}   # sent 10 min ago
 json.dump(rec, open(flatten.LAST_PATH, "w"))
 run_flatten(True, keep_last=True)
-again = (json.load(open(flatten.LAST_PATH)).get("capital_queued") or {}).get("TMF")
-check(("capital", "TM2610") not in closes and again and abs(again - (_t0.time() - 10 * 60)) < 2,
-      f"N-1: pressed again 10 min after the send: held, and the record keeps the REAL send time ({again})")
+again = (json.load(open(flatten.LAST_PATH)).get("capital_hold_until") or {}).get("TMF")
+check(("capital", "TM2610") not in closes and again and abs(again - (_t0.time() - 10 * 60 + HOLD)) < 2,
+      f"N-1: pressed again 10 min after the send: held, and the record keeps the same deadline ({again})")
 rec = json.load(open(flatten.LAST_PATH))
-rec["capital_queued"] = {"TMF": _t0.time() - 22 * 60}
+rec["capital_hold_until"] = {"TMF": _t0.time() - 22 * 60 + HOLD}   # sent 22 min ago
 json.dump(rec, open(flatten.LAST_PATH, "w"))
 run_flatten(True, keep_last=True)
 check(("capital", "TM2610") in closes, "N-1: pressed again 22 min after the send (after a held press): sent")
+# N-4: sent out of session (14:00, or a weekend), it may sit queued to the next open — held past
+# that open plus settle, as the reconciler's queued_until, not just 16 min; the row names that time
+OPEN = _t0.time() + 3600
+_twc.queued_until = lambda now=None: OPEN
+run_flatten(True, close={"TM2610": "sent"})
+hold = (json.load(open(flatten.LAST_PATH)).get("capital_hold_until") or {}).get("TMF")
+check(hold and abs(hold - (OPEN + flatten.CAPITAL_SETTLE_S)) < 2,
+      f"N-4: an out-of-session 'sent' close holds to the next open + settle ({hold} vs {OPEN})")
+_twc.queued_until = lambda now=None: None
+flatten._load_cap_queued(json.load(open(flatten.LAST_PATH)), _t0.time())
+held, until = flatten._capital_close_queued("TMF", now=_t0.time() + 20 * 60)
+check(held and abs(until - (OPEN + flatten.CAPITAL_SETTLE_S)) < 2, "N-4: 20 min later (before the open) still held, until the open")
+run_flatten(True, keep_last=True)
+q = queued_rows()
+check(("capital", "TM2610") not in closes and q and abs(q[0][3].get("until", 0) - (OPEN + flatten.CAPITAL_SETTLE_S)) < 2,
+      f"N-4: the held row's until is the open, not 16 min after the send ({q[:1]})")
+_twc.queued_until = _real_qu
 os.remove(flatten.LAST_PATH)
 
 res = run_flatten(False)
