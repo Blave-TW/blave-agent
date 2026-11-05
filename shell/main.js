@@ -4343,6 +4343,8 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_machine_restart_stopped: "Machine restarted — trading paused", ev_machine_restart_stopped_n: "No orders are going out — nothing is managing your positions, and exits and stops won't run. Press Start trading to resume.",
   ev_venue_stops_missing: "Bitget positions without a stop-loss", ev_venue_stops_missing_n: "After the account switch some positions have no stop-loss on Bitget. Trading continues; Blave won’t re-place them.",
   ev_venue_login_blocked: "President login stopped", ev_venue_login_blocked_n: "New orders and closes can't go out. Press Sign In Again on the auto-trading page.",
+  ev_venue_login_blocked_capital: "Capital login stopped", ev_venue_login_blocked_capital_n: "New orders and closes can't go out. Enter the trading password again on the auto-trading page.",
+  ev_venue_login_blocked_capital_locked_n: "New orders and closes can't go out. Unlock it with Capital, then enter the trading password again on the auto-trading page.",
   ev_halt_unconfirmed_n: "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading.",
   ev_order_unconfirmed_close_all: "Not closed with the rest", ev_order_unconfirmed_close_all_n: "An order here has an unknown outcome and was left out of this close. Don't trade it yourself: tell your agent how much filled, then press Pause and close positions again.",
   ev_order_unconfirmed: "Order outcome unknown", ev_order_unconfirmed_n: "This order may have filled — don't place it again yourself. New entries on this symbol are paused; closes still run.",
@@ -4960,10 +4962,12 @@ function p1Sync() {
     // 這裡的事件全部來自這台電腦的狀態檔:標題第一個詞講是哪一邊(雲端的通知之後由它自己的來源加 notifPrefixCloud)
     const closeAll = e.type === "order_unconfirmed" && e.payload && e.payload.close_all === true;
     const stuck = !closeAll && e.type === "order_unconfirmed" && e.payload && e.payload.stuck === true;
-    const variant = closeAll ? "_close_all" : stuck ? "_stuck" : "";
+    const capital = e.type === "venue_login_blocked" && e.payload && e.payload.venue === "capital";
+    const variant = closeAll ? "_close_all" : stuck ? "_stuck" : capital ? "_capital" : "";
     const head = tmLabels["ev_" + e.type + variant] || tmLabels["ev_" + e.type];
     // 下單結果不明、追蹤不了而整台暫停:講可能已成交、不要手動補單、怎麼恢復,不是只有「什麼單都不送」
     const note = e.type === "halt" && e.payload && e.payload.unconfirmed && tmLabels.ev_halt_unconfirmed_n ? tmLabels.ev_halt_unconfirmed_n
+      : capital && e.payload.reason === "LOCKED" && tmLabels.ev_venue_login_blocked_capital_locked_n ? tmLabels.ev_venue_login_blocked_capital_locked_n
       : tmLabels["ev_" + e.type + variant + "_n"] || tmLabels["ev_" + e.type + "_n"];
     const n = new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, head + (sym ? " · " + sym : "")), body: p1WithStrat(e.payload && e.payload.strategies, note) });
     p1Alive.add(n); const drop = () => p1Alive.delete(n);

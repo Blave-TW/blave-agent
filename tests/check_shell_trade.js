@@ -2835,7 +2835,16 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && /act\.insertBefore\(go, b\)/.test(src) && /trackFeature\("pres_stop_cont"\); cxModalOpen\(go, go\.dataset\.venue\)/.test(src));
       ok("venue_login_blocked:P1 紅字、事件列有字;別家不畫;本機 P1 通知會叫",
         trEvLevel("venue_login_blocked", {}) === 1 && trEventText("venue_login_blocked", { venue: "president", reason: "TIMEOUT" })[2] === 1 && trEventText("venue_login_blocked", { venue: "x" }) === null
-        && /const P1_TYPES = \[[^\]]*"venue_login_blocked"[^\]]*\]/.test(mainSrc2) && /ev_venue_login_blocked: t\("tr\.ov\.evPresStopped"\)/.test(src)); }
+        && /const P1_TYPES = \[[^\]]*"venue_login_blocked"[^\]]*\]/.test(mainSrc2) && /ev_venue_login_blocked: t\("tr\.ov\.evPresStopped"\)/.test(src));
+      { const cp = trEventText("venue_login_blocked", { venue: "capital", reason: "PASSWORD" }), cl = trEventText("venue_login_blocked", { venue: "capital", reason: "LOCKED" }),
+          pr = trEventText("venue_login_blocked", { venue: "president", reason: "PASSWORD" });
+        ok("venue_login_blocked 群益:P1、標題講群益不講統一;307 先到群益解鎖、300 只重填;本機通知同一組字",
+          cp && cl && cp[2] === 1 && cp[0] === cl[0] && cp[0] !== pr[0] && cp[1] !== cl[1]
+          && STR.zh["tr.ov.evCapStopped"] === "群益登入已停止" && /先到群益解鎖/.test(STR.zh["tr.ov.evCapLockedNote"]) && !/解鎖/.test(STR.zh["tr.ov.evCapStoppedNote"])
+          && /Unlock it with Capital/.test(STR.en["tr.ov.evCapLockedNote"])
+          && /ev_venue_login_blocked_capital: t\("tr\.ov\.evCapStopped"\)/.test(src) && /ev_venue_login_blocked_capital_locked_n: t\("tr\.ov\.evCapLockedNote"\)/.test(src)
+          && /capital \? "_capital" : ""/.test(mainSrc2) && /capital && e\.payload\.reason === "LOCKED"/.test(mainSrc2)
+          && /ev_venue_login_blocked_capital: "Capital login stopped"/.test(mainSrc2)); } }
     ok("行情句:雲端視角、別家、沒有那一欄、沒有台指期口數、狀態不在跑 / 過場中都不出;已暫停、沒停住照出",
       L(q("president", null), "cloud") === null && L(q("president", null), "local", "capital") === null && L({ venues: {} }) === null && L(null) === null
       && L(q("president", null), "local", "president", "running", false) === null

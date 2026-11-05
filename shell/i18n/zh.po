@@ -1647,6 +1647,15 @@ msgstr "統一登入已停止"
 msgid "tr.ov.evPresStoppedNote"
 msgstr "新單與平倉都送不出去。到自動下單按「重新登入」。"
 
+msgid "tr.ov.evCapStopped"
+msgstr "群益登入已停止"
+
+msgid "tr.ov.evCapStoppedNote"
+msgstr "新單與平倉都送不出去。到自動下單重填交易密碼。"
+
+msgid "tr.ov.evCapLockedNote"
+msgstr "新單與平倉都送不出去。先到群益解鎖，再到自動下單重填交易密碼。"
+
 msgid "tr.s.off"
 msgstr "尚未啟動"
 

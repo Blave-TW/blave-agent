@@ -128,6 +128,13 @@ SECRET_MIN_CHARS = 32
 POLL_S = 0.5
 STATUS_EVERY_S = 15
 ACCOUNT_EVERY_S = 60       # the cloud's account timer cadence
+# lib/tw_clock's TAIFEX entry gate checks this machine's clock against the api's Date header,
+# sampled off Blave data calls — a desktop without data access makes none, and its gate then
+# trusts a clock that may be minutes fast (a pre-open market IOC is queued to the open and sent
+# again every round). A sample every 10 min keeps the median of 3 inside SAMPLE_MAX_AGE_S.
+CLOCK_EVERY_S = 600
+CLOCK_PATH = "/fx_rates"   # public, Redis only, already called by lib/paper_data
+CLOCK_VENUES = {"CAPITAL", "PRESIDENT"}
 ACCOUNT_TIMEOUT_S = 180
 RESTART_DELAY_S = 10       # = manager/start_reconciler.sh's `sleep 10`
 CAPITAL_RESTART_EXIT = 76  # = manager/reconciler.py: 群益 9997, a fresh process logs in again
@@ -1310,6 +1317,18 @@ class Daemon:
                 self.dirty.set()
             self.stop.wait(2)
 
+    def _clock_loop(self):
+        """clock_sample every CLOCK_EVERY_S while a TW futures broker is bound."""
+        while not self.stop.is_set():
+            try:
+                with open(os.path.join(self.ws, ".env"), encoding="utf-8") as f:
+                    bound = CLOCK_VENUES & set(self.cl._venue_cred_ids(f.read().splitlines()))
+            except (OSError, AttributeError):
+                bound = set()
+            if bound:
+                clock_sample(self.ws)
+            self.stop.wait(CLOCK_EVERY_S)
+
     def _reconcile_watch(self):
         """A reconcile round ended — read off disk, the reconciler being its own
         process: the snapshot it writes (lib/portfolio) has a new mtime, or the
@@ -1409,7 +1428,7 @@ class Daemon:
         cl._resume_restore_watch()
         cl._resume_perf_refresh()
         loops = [cl._scheduler_loop, self._status_loop, self._account_loop,
-                 self._supervise_loop]
+                 self._supervise_loop, self._clock_loop]
         if watch_parent:
             self._ppid = os.getppid()
             loops.append(self._watch_parent)
@@ -1487,6 +1506,30 @@ def _is_link(path):
 def _make_junction(target, path):
     import _winapi
     _winapi.CreateJunction(target, path)
+
+
+def clock_sample(ws):
+    """One lib/tw_clock skew sample off the api's Date header, into this workspace's
+    state/clock_skew.json. tw_clock is loaded by path into a private module with its skew file
+    made absolute (this thread must not depend on the cwd). False when nothing was sampled."""
+    import importlib.util
+    path = os.path.join(ws, "lib", "tw_clock.py")
+    if not os.path.isfile(path):
+        return False
+    try:
+        import requests
+        spec = importlib.util.spec_from_file_location("_daemon_tw_clock", path)
+        tc = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tc)
+        tc.SKEW_PATH = os.path.join(ws, "state", "clock_skew.json")
+        base = os.environ.get("BLAVE_API_BASE", "https://api.blave.org")
+        t0 = time.time()
+        r = requests.get(base + CLOCK_PATH, timeout=tc.SAMPLE_MAX_RTT_S)
+        tc.note_reply(r, t0, time.time())
+        return True
+    except Exception as e:
+        _log(f"clock sample failed: {type(e).__name__}")
+        return False
 
 
 def _read_line_fd0():

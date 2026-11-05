@@ -26,8 +26,9 @@ it is not a wall against a SYSTEM process set on bypassing it — SYSTEM can rea
 rdp_password.txt and run as Administrator.
 
 Known limit (audit C-1, recheck 2026-09-27): two child processes still get a password on
-their command line — `schtasks /create … /rp <Administrator password>` (_as_administrator,
-the same vehicle lib/capital_probe.ps1 has always used) and `certutil -user -p <export
+their command line — `schtasks /create … /rp <Administrator password>` (_as_administrator and
+its no-wait twin run_detached_as_administrator, the same vehicle lib/capital_probe.ps1 has
+always used) and `certutil -user -p <export
 password> -importpfx` (_certutil_import). Anything that can list process command lines
 sees them for the second or so the process lives, and a host with process-creation
 auditing that includes command lines (event 4688, off by default) writes them to the
@@ -650,6 +651,25 @@ def _as_administrator(command, admin_pw, done, timeout):
         _refuse("IMPORT_FAILED", f"no result after {timeout}s")
     finally:
         _run_quiet(["cmd", "/c", f"schtasks /delete /tn {VEHICLE_TASK} /f >nul 2>nul"], 30, "schtasks delete")
+
+
+def run_detached_as_administrator(command, admin_pw, task):
+    """_as_administrator without the wait: create the one-shot task, start it, return. The
+    caller drops it (drop_task) once its program is done — whether deleting a task ends the
+    program it started is not known, so never while it may still run."""
+    drop_task(task)
+    r = _run_quiet(["schtasks", "/create", "/tn", task, "/tr", command, "/sc", "once",
+                    "/st", "00:00", "/ru", ADMIN_ACCOUNT, "/rp", admin_pw, "/rl", "HIGHEST", "/f"],
+                   30, "schtasks create")
+    if r.returncode != 0:
+        _refuse("ADMIN_TASK_FAILED", "could not schedule the Administrator task (password wrong?)")
+    if _run_quiet(["schtasks", "/run", "/tn", task], 30, "schtasks run").returncode != 0:
+        drop_task(task)
+        _refuse("ADMIN_TASK_FAILED", "could not start the Administrator task")
+
+
+def drop_task(task):
+    _run_quiet(["cmd", "/c", f"schtasks /delete /tn {task} /f >nul 2>nul"], 30, "schtasks delete")
 
 
 def import_via_vehicle(pfx, password, meta, admin_pw):

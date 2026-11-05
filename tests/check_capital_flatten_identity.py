@@ -72,6 +72,8 @@ def check(cond, msg):
 
 # ── flatten ──────────────────────────────────────────────────────────────────
 flatten.LOCK_PATH = os.path.join(BASE, "flatten.lock")
+flatten.LAST_PATH = os.path.join(BASE, "last_flatten.json")
+flatten.CAPITAL_PENDING_PATH = os.path.join(BASE, "capital_pending_sent.json")
 errors, closes, logged, zeroed = [], [], [], set()
 LEDGER = {}
 CFG = {"self_ledger": False}  # account-read opt-out unless a case turns the book on
@@ -139,9 +141,11 @@ CAP_ONE = {"TM2610": {"side": "long", "size": 2}}
 BIN_ONE = [{"symbol": "BTCUSDT", "side": "long", "size": 0.01, "mark_price": 60000}]
 
 
-def run_flatten(identity_ok, ledger=None, capital=CAP_ONE, close=None):
+def run_flatten(identity_ok, ledger=None, capital=CAP_ONE, close=None, keep_last=False):
     for bucket in (errors, closes, logged, zeroed):
         bucket.clear()
+    if not keep_last and os.path.exists(flatten.LAST_PATH):
+        os.remove(flatten.LAST_PATH)   # each case stands alone: a previous run's unconfirmed close holds the next
     CFG.clear()
     CFG["self_ledger"] = False  # account-read opt-out unless a case turns the book on
     LEDGER.clear()
@@ -158,6 +162,33 @@ def run_flatten(identity_ok, ledger=None, capital=CAP_ONE, close=None):
         flatten._LOCK.close()
     return res
 
+
+# B-2 (audit 11-05): a 群益 close 群益 took without a report may sit queued to the open; a second close
+# from 全部平倉 would fill beside it as the reverse (sNewClose=2) — not sent, one row instead
+import time as _t0  # noqa: E402
+json.dump({"TMF": {"root": "TMF", "lots": -2.0, "legs": [{"at": _t0.time(), "lots": -2.0, "status": "sent",
+                                                         "broker_ack": True, "intent": "reduce"}]}},
+          open(flatten.CAPITAL_PENDING_PATH, "w"))
+run_flatten(True)
+check(("capital", "TM2610") not in closes and ("binance", "BTCUSDT") in closes
+      and any(e[3] and e[3].get("kind") == "order_unconfirmed" and e[3].get("close_all") for e in errors),
+      f"the reconciler's unreported 群益 close is parked: 全部平倉 sends no second close, crypto still closes ({errors})")
+json.dump({"TMF": {"root": "TMF", "lots": 2.0, "legs": [{"at": _t0.time(), "lots": 2.0, "status": "sent",
+                                                        "broker_ack": True, "intent": "entry"}]}},
+          open(flatten.CAPITAL_PENDING_PATH, "w"))
+run_flatten(True)
+check(("capital", "TM2610") in closes, "an unreported entry does not hold the close")
+os.remove(flatten.CAPITAL_PENDING_PATH)
+json.dump({"started_at": _t0.time() - 60, "done_at": _t0.time() - 10, "unconfirmed": ["TMF"]},
+          open(flatten.LAST_PATH, "w"))
+run_flatten(True, keep_last=True)
+check(("capital", "TM2610") not in closes,
+      "the previous 全部平倉 left the TMF close unconfirmed 10 s ago: a second press does not send it again")
+json.dump({"started_at": _t0.time() - 3600, "done_at": _t0.time() - 3000, "unconfirmed": ["TMF"]},
+          open(flatten.LAST_PATH, "w"))
+run_flatten(True, keep_last=True)
+check(("capital", "TM2610") in closes, "…50 min later (past the 16-min hold) it is sent")
+os.remove(flatten.LAST_PATH)
 
 res = run_flatten(False)
 MANUAL = {"kind": "manual_close_required", "symbols": "TMF", "reason": "identity"}
@@ -457,6 +488,121 @@ check(cl._in_workspace(cl._cmd_close_all, {}) == "close_all=started" and len(pop
 WAITS.clear(); run_flatten(True)
 check(flatten._inflight_wait_s() >= 90 and WAITS and WAITS[0].get("timeout_s") == flatten._inflight_wait_s(),
       f"close-all's in-flight wait ≥ 90 s and flatten() passes it ({flatten._inflight_wait_s()}, {WAITS[:1]})")
+
+# ── cloud 群益 closes as Administrator (unbind-consistency §5 step 2) ─────────────────────────
+# off by default: until Wei's real 1-lot close the cloud keeps today's 群益-manual answers
+pr._capital_order_identity_ok = lambda: False
+pr._cloud_windows = lambda: True
+PW = "Adm1n-Secret-xyz"
+os.makedirs(os.path.join(BASE, "credentials"), exist_ok=True)
+open(os.path.join(BASE, "credentials", "rdp_password.txt"), "w").write(PW)
+check(pr.CAPITAL_ADMIN_FLATTEN_ON is False and pr.can_flatten({"capital": CAP}) is False
+      and pr.manual_close_venues({"capital": CAP}) == ["capital"],
+      "admin switch off by default: 群益-only under the bridge identity stays not closable")
+pr.CAPITAL_ADMIN_FLATTEN_ON = True
+check(pr.can_flatten({"capital": CAP}) is True and pr.manual_close_venues({"capital": CAP}) == []
+      and cl._manual_venues({"capital"}) == set(),
+      "switch on, Administrator password on file: 群益 is closable, nothing left manual")
+os.remove(os.path.join(BASE, "credentials", "rdp_password.txt"))
+check(pr.can_flatten({"capital": CAP}) is False and cl._manual_venues({"capital"}) == {"capital"},
+      "no Administrator password on file: as before")
+open(os.path.join(BASE, "credentials", "rdp_password.txt"), "w").write(PW)
+pr._cloud_windows = lambda: False
+check(pr.can_flatten({"capital": CAP}) is False, "not cloud Windows (desktop, Linux): never switches")
+pr._cloud_windows = lambda: True
+
+TASKS, DROPS = [], []
+import capital_connect as _cc  # noqa: E402
+import time as _time  # noqa: E402
+_real_run, _real_drop = _cc.run_detached_as_administrator, _cc.drop_task
+LAST = os.path.join(WS, "state", "last_flatten.json")
+STATUS = cl.ADMIN_FLATTEN_STATUS
+TASK_DOES = {"mode": "ok"}   # what the scheduled .cmd does on this machine
+
+
+def fake_task(command, admin_pw, task):
+    TASKS.append((command, admin_pw, task))
+    m = TASK_DOES["mode"]
+    if m == "silent":
+        return
+    if m == "nopython":
+        open(STATUS, "w").write("nopython")
+        return
+    open(STATUS, "w").write("running")
+    if m == "ok":   # flatten ran: it wrote its record, then the .cmd its exit
+        json.dump({"started_at": _time.time(), "done_at": _time.time() + 1}, open(LAST, "w"))
+        open(STATUS, "w").write("exit 0")
+    elif m == "crash":   # python ran, flatten died before its lock: no record
+        open(STATUS, "w").write("exit 1")
+
+
+_cc.run_detached_as_administrator = fake_task
+_cc.drop_task = lambda task: DROPS.append(task)
+_real_platform = cl.platform.system
+cl.platform.system = lambda: "Windows"
+cl._ADMIN_FLATTEN_CMD_S, cl._ADMIN_FLATTEN_POLL_S = 0.6, 0.05
+LOGS = []
+_real_log = cl._log
+cl._log = lambda m: LOGS.append(m)
+pr.venues = lambda: {"capital": CAP}
+
+
+def run_admin(mode):
+    TASKS.clear(); DROPS.clear(); TASK_DOES["mode"] = mode
+    for f_ in (LAST, STATUS):
+        if os.path.exists(f_):
+            os.remove(f_)
+    n = len(popens)
+    ack = cl._in_workspace(cl._cmd_close_all, {})
+    for _ in range(60):
+        if DROPS:
+            break
+        _time.sleep(0.05)
+    _time.sleep(0.1)
+    return ack, popens[n:]
+
+
+ack, pops = run_admin("ok")
+cmd_path = os.path.join(WS, "state", "flatten_admin.cmd")
+script = open(cmd_path).read() if os.path.exists(cmd_path) else ""
+check(ack == "close_all=started" and len(TASKS) == 1 and not pops
+      and TASKS[0][1] == PW and TASKS[0][2] == cl.CAPITAL_FLATTEN_TASK and cmd_path in TASKS[0][0],
+      f"群益-only close_all: started through the Administrator task, not the LocalSystem launch ({ack}, {TASKS})")
+check(f'cd /d "{WS}"' in script and "manager\\flatten.py" in script and 'set "BLAVE_AGENT_LOCAL="' in script
+      and f'set "BLAVE_AGENT_WORKSPACE={WS}"' in script and PW not in script and "where python" in script
+      and "echo running>" in script and "echo exit %ERRORLEVEL%>" in script,
+      f"the task's .cmd: workspace cwd and env, BLAVE_AGENT_LOCAL cleared, status lines, no password ({script!r})")
+check(DROPS == [cl.CAPITAL_FLATTEN_TASK] and not any(PW in m for m in LOGS),
+      f"the task is dropped once the flatten wrote done_at; the password reaches no log ({DROPS})")
+check("_flatten_already_running" not in cl._launch_flatten_as_admin.__code__.co_names
+      and "_flatten_already_running" not in cl._flatten_started_since.__code__.co_names,
+      "the watcher reads last_flatten.json, never probes flatten.lock (a probe can make a starting flatten exit)")
+for mode, what in (("nopython", "python not on the Administrator's PATH"),
+                   ("silent", "the task never ran its .cmd")):
+    ack, pops = run_admin(mode)
+    check(ack == "close_all=started" and len(pops) == 1 and "powershell" in pops[0][0] and DROPS,
+          f"{what}: no 'started' on its say-so — started as this identity instead, task dropped ({ack}, {len(pops)})")
+ack, pops = run_admin("crash")
+check(ack == "close_all=started" and len(pops) == 1 and "powershell" in pops[0][0] and DROPS
+      and any("ended before starting" in m for m in LOGS),
+      f"python ran but the flatten never started (exit 1, no record): started as this identity ({len(pops)})")
+check(cl._capital_admin_scope(("--venues", "binance", "--request-id", "r1")) is False
+      and cl._capital_admin_scope(("--venues", "binance,capital", "--request-id", "r1")) is True,
+      "only a scope with 群益 in it switches identity")
+
+
+def _refused(command, admin_pw, task):
+    raise ValueError("ADMIN_TASK_FAILED: could not schedule the Administrator task (password wrong?)")
+
+
+_cc.run_detached_as_administrator = _refused
+n_pop = len(popens)
+ack = cl._in_workspace(cl._cmd_close_all, {})
+check(ack == "close_all=started" and len(popens) == n_pop + 1 and "powershell" in popens[-1][0],
+      f"the Administrator task refused: started as today instead (群益 then recorded manual) ({ack})")
+_cc.run_detached_as_administrator, _cc.drop_task = _real_run, _real_drop
+cl.platform.system, cl._log = _real_platform, _real_log
+pr.CAPITAL_ADMIN_FLATTEN_ON = False
 
 print("PASS" if not fails else f"{fails} FAILED")
 sys.exit(1 if fails else 0)

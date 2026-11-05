@@ -57,8 +57,9 @@ Scenarios (each in its own child process and scratch dir):
   H2  the same for 2023-01 (01-18 -> 01-30).
   L1  群益 only: the entry fills but no fill report comes ('sent'). Right: parked, the next
       read books the 2 lots, nothing sent again (before: the next round bought 2 more).
-  L2  群益 only: an IOC not taken (accepted, nothing fills). Right: the next read clears it
-      and the entry goes once more.
+  L2  群益 only: an IOC not taken (accepted, nothing fills). Right: 'sent' is 群益 taking it,
+      like 統一's 0000 — held QUEUED_HOLD_S (it may be queued to the open), nothing sent again
+      inside it; past it the read clears it and the entry goes once more.
   L3  群益 only: a close sent in the pre-open sits queued to the open. Right: no second close
       before the open (sNewClose=2 would open a short of 2), the open's read books it.
 
@@ -548,16 +549,26 @@ def child(venue, sid, tmp):
         why = (f"after settlement beside the user's November: November={nov}, broker={w.rows}, "
                f"book TXF={ledger_txf(last)}")
     elif sid in ("L1", "L2"):
+        held_sends = None
+        if sid == "L2":
+            let_time_pass(60)
+            round_("a minute on, inside the hold")
+            held_sends = sum(len(r["sent"]) for r in log)
+            from manager.reconciler import QUEUED_HOLD_S
+            let_time_pass(QUEUED_HOLD_S)
+            round_("past the hold: cleared")
         last = round_("one more")
         sent = [o for r in log for o in r["sent"]]
         want = 1 if sid == "L1" else 2
         adopted, cleared = audits("late_fill_adopted"), audits("unfilled_order_cleared")
         ok = (len(sent) == want and w.net() == 2 and ledger_txf(last) == 2 and not last["halt"]
+              and held_sends in (None, 1)
               and len(adopted) == (sid == "L1") and len(cleared) == (sid == "L2")
               and (not os.path.exists("state/capital_pending_sent.json")
                    or json.load(open("state/capital_pending_sent.json")) == {}))
         why = (f"{'no fill report' if sid == 'L1' else 'IOC not taken'}: sends={len(sent)}, broker={w.rows}, "
-               f"book TXF={ledger_txf(last)}, adopted={len(adopted)}, cleared={len(cleared)}")
+               f"book TXF={ledger_txf(last)}, adopted={len(adopted)}, cleared={len(cleared)}, "
+               f"sends inside the hold={held_sends}")
     elif sid == "L3":
         w.session, w.open_at, w.mode = False, time.time() + 120, "queue"
         w.signal(0)

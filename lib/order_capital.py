@@ -321,7 +321,7 @@ def _new_session(env):
 
     capital_vault.set_log_path(center)
     code = center.SKCenterLib_Login(login_id, password)
-    capital_vault.record_login(login_id, password, code)
+    capital_vault.record_login(login_id, password, code, auto=True)
     if code == LOGIN_LIMIT_CODE and _desktop():
         _restart["needed"] = True
     if code not in (0, 2003):
@@ -370,6 +370,19 @@ def reset_session():
     global _session
     with _lock:
         _session = None
+
+
+# sNewClose: 0 新倉, 1 平倉, 2 自動. Under 自動 a close larger than the position closes what is there
+# and opens the rest; a 平倉 order larger than the opposing position is refused whole (TAIFEX rule on
+# open/close codes) — what 統一's opencloseflag "1" gets as 9868. So with CLOSE_CODE_ON a reduce goes
+# as 1 and a second close cannot open the reverse. Off until a live TMF run shows 群益 takes a 平倉
+# market IOC, refuses the over-close (and with which code), and counts a close still queued in the
+# pre-open (capital-local-impl-2026-11-05 D3). Entries stay 2, the live-tested setting.
+CLOSE_CODE_ON = False
+
+
+def _new_close_code(intent):
+    return 1 if CLOSE_CODE_ON and intent == "reduce" else 2
 
 
 # Return codes that mean THIS login is gone and only a new one helps — SKCOM manual V2.13.59
@@ -526,7 +539,8 @@ def place_futures_market_order(env, symbol, action, lots, intent, confirm_timeou
         raise ValueError(f"lots must be >= 1, got {lots}")
 
     fields = {"venue": "capital", "market": "futures", "symbol": symbol,
-              "action": action, "qty": lots, "unit": "lots", "intent": intent}
+              "action": action, "qty": lots, "unit": "lots", "intent": intent,
+              "new_close": _new_close_code(intent)}
     guard.check_restart_stop(fields["intent"], fields)  # before the SKCOM login
     _check_halt(fields)
 
@@ -541,7 +555,7 @@ def place_futures_market_order(env, symbol, action, lots, intent, confirm_timeou
     p.sTradeType = 1        # IOC — 'M' market price is only valid with IOC/FOK
     p.bstrPrice = "M"
     p.nQty = lots
-    p.sNewClose = 2         # auto 新倉/平倉 — the live-tested setting
+    p.sNewClose = _new_close_code(intent)
     p.sDayTrade = 0
     p.sReserved = 0
 

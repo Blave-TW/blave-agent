@@ -561,10 +561,14 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     except PendingUnreadable as e:
         row = {'legs': []}  # unknown whether lots are parked: entries wait, closes go
         _note_capital_pending_unreadable(root, e)
-    if reduce_only and any(l.get('queued_until') for l in (row or {}).get('legs') or []):
-        # sNewClose=2: a second close while the first sits queued to the open opens the other side
-        logging.info(f"[reconciler/capital] {root}: close of {lots} waits — the one sent before the "
-                     f"open is queued at the broker")
+    if reduce_only and any(l.get('queued_until') or (l.get('broker_ack') and l.get('intent') == 'reduce')
+                           for l in (row or {}).get('legs') or []):
+        # sNewClose=2: a second close while the first may sit queued to the open opens the other
+        # side — 統一's broker refuses that over-close (9868), 群益's does not. So a close 群益 took
+        # without reporting it holds the next close too, until the claim settles the row (at most
+        # QUEUED_HOLD_S): a stop is late by that much when only the report was lost (Wei 11-05, D3)
+        logging.info(f"[reconciler/capital] {root}: close of {lots} waits — the close sent before is "
+                     f"not reported yet and may be queued at the broker")
         return False
     if not reduce_only:
         if row is not None:
@@ -593,7 +597,7 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     requested = lots if action == 'buy' else -lots
     parked = True
     if got + 1e-9 < lots or row is not None:
-        parked = _capital_park(root, result, requested, base) is not False
+        parked = _capital_park(root, result, requested, base, intent) is not False
     if result.get('status') != 'filled' or got + 1e-9 < lots:
         # P1 (notifications.md 下單失敗 row): order_errors.json is diffed by the platform into an
         # order_error event — workspace, TG, email. Under self_ledger the book counts only `got`;
@@ -605,6 +609,11 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
             # nothing will claim this send: "booked by itself, no hand re-entry" would not hold
             msg = (f"群益收了 {symbol} {lots - got:g} 口（序號 {result.get('seq_no') or '?'}），還沒回報成交，"
                    f"Blave 記不進待確認紀錄。{symbol} 新倉先停，平倉照常。到群益下單軟體核對這筆。")
+        elif result.get('status') == 'sent' and reduce_only:
+            # the close gate above holds the next close on this row until the claim settles it
+            msg = (f"群益收了 {symbol} {lots} 口平倉（序號 {result.get('seq_no') or '?'}），還沒回報成交。"
+                   f"{symbol} 新倉和下一筆平倉先停，最多等 {QUEUED_HOLD_S // 60} 分鐘。"
+                   f"有成交會自動記帳，沒成交會照訊號再送，不用自己補單。")
         elif result.get('status') == 'sent':
             msg = (f"群益收了 {symbol} {lots} 口（序號 {result.get('seq_no') or '?'}），還沒回報成交。"
                    f"{symbol} 新倉先停，平倉照常。有成交會自動記帳，沒成交會照訊號再送，不用自己補單。")
@@ -699,7 +708,7 @@ def _note_capital_pending_unreadable(root, err):
                         extra={'kind': KIND_TW_HOLD})
 
 
-def _capital_park(root, result, requested, base):
+def _capital_park(root, result, requested, base, intent=None):
     """`requested` signed lots, `base` {contract: net} read before the send (None: unknown —
     the row can then only end in the PENDING_SENT_MAX_READS HALT). The unfilled part is parked;
     a fill on a root already parked moves the row's expectation. False = the park file could not
@@ -739,7 +748,11 @@ def _capital_park(root, result, requested, base):
     row['reads'] = []
     if unfilled:
         leg = {'at': time.time(), 'lots': unfilled, 'status': result.get('status'),
-               'seq_no': result.get('seq_no'), 'orderno': result.get('seq_no')}
+               'seq_no': result.get('seq_no'), 'orderno': result.get('seq_no'), 'intent': intent}
+        if result.get('status') == 'sent':
+            # lib/order_capital returns 'sent' only after ncode 0 and a sequence number: 群益 took
+            # it and reported nothing — 統一's 0000, held the same QUEUED_HOLD_S (_row_queued)
+            leg['broker_ack'] = True
         queued = _queued_until()
         if queued:
             leg['queued_until'] = queued
@@ -1006,14 +1019,14 @@ QUEUED_HOLD_S = 16 * 60
 def _row_queued(row, at, settle=None):
     """Until when an unchanged account is not "the IOC was not taken": a leg sent outside the
     regular session (lib/tw_clock) waits for the open plus the settle wait; a leg the broker
-    only acknowledged (0000, nothing after) waits QUEUED_HOLD_S. None = not held."""
+    only acknowledged (統一 0000, 群益 'sent' — broker_ack) waits QUEUED_HOLD_S. None = not held."""
     if settle is None:
         from lib.president_vault import ORDER_SETTLE_S as settle
     until = 0.0
     for l in row.get('legs') or []:
         if l.get('queued_until'):
             until = max(until, float(l['queued_until']) + settle)
-        elif l.get('status') == 'sent' and l.get('statuscode') == '0000':
+        elif l.get('status') == 'sent' and (l.get('statuscode') == '0000' or l.get('broker_ack')):
             until = max(until, float(l.get('at') or 0) + QUEUED_HOLD_S)
     return until if at < until else None
 
@@ -1479,6 +1492,10 @@ def place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
         # a 統一 login failed: nothing logs in until the user confirms it (lib/president_vault
         # STOP) — skip, not an order_error per leg; other venues' legs go on
         return False
+    if exchange == venue_traits.CAPITAL and _capital_login_stopped():
+        # 群益 answered 300/307: nothing logs in with these credentials until the user re-enters
+        # the password (lib/capital_vault BLOCK) — skip like 統一's stop, other venues go on
+        return False
     if exchange == venue_traits.PRESIDENT and not _president_credentials_ready():
         # desktop, right after the daemon (re)started: the app hands the passwords over
         # within seconds and this reconciler is respawned with them — skip, not an error
@@ -1928,6 +1945,30 @@ def _president_login_stopped():
     return bool(kind)
 
 
+_cap_stop_noted_round = None
+
+
+def _capital_login_stopped():
+    """True while 群益 answered 300/307 to this machine's credentials. One audit line per round.
+    Not a failed read: counting it would HALT the whole machine three rounds later."""
+    global _cap_stop_noted_round
+    try:
+        from dotenv import dotenv_values
+        from lib import capital_vault
+        code = capital_vault.stopped(dotenv_values())
+    except Exception:
+        return False
+    if code and _cap_stop_noted_round != _round_no:
+        _cap_stop_noted_round = _round_no
+        logging.warning(f"[reconciler] 群益 login stopped ({code}) — its legs skipped until the user "
+                        f"re-enters the trading password")
+        try:
+            capital_vault.notify_stopped(min_age=STOP_NOTICE_RETRY_AFTER_S)
+        except AttributeError:   # half-updated workspace: a vault without it
+            pass
+    return bool(code)
+
+
 def _president_waiting():
     try:
         from lib import account_president
@@ -1962,6 +2003,8 @@ def _get_positions_guarded(now=None):
             logging.warning(f"[reconciler] venue lookup failed ({ve})")
         if venue == venue_traits.PRESIDENT and _president_login_stopped():
             # the worker stopped on a failed login and wrote no snapshot: not an outage
+            raise ReadSkipped(f"{venue} login stopped — round skipped", original=e) from e
+        if venue == venue_traits.CAPITAL and _capital_login_stopped():
             raise ReadSkipped(f"{venue} login stopped — round skipped", original=e) from e
         gap = _president_waiting() if venue == venue_traits.PRESIDENT else None
         if gap:

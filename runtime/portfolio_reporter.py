@@ -1115,6 +1115,47 @@ def _capital_order_identity_ok():
         return False
 
 
+# Cloud 群益 closes started as Administrator (command_listener._launch_flatten): the bridge runs as
+# LocalSystem, and SKCOM only logs in under the password-logon Administrator the certificate was
+# issued to. Off until a real 1-lot TMF close on a Windows test box has shown the order fills, that
+# dropping the task does not end the flatten, that the worker beside it is not logged out, and that
+# the password reaches no log (unbind-consistency-2026-11-05 §2 做法 A).
+CAPITAL_ADMIN_FLATTEN_ON = False
+
+
+def _capital_admin_password_on_file():
+    """= command_listener._capital_admin_password's two sources hold a value. Only whether."""
+    try:
+        if os.path.getsize(os.path.join(os.path.dirname(WORKSPACE), "credentials", "rdp_password.txt")) > 0:
+            return True
+    except OSError:
+        pass
+    try:
+        with open(os.path.join(WORKSPACE, ".env"), encoding="utf-8") as f:
+            for line in f.read().splitlines():
+                k, _, v = line.partition("=")
+                if k.strip().casefold() == "admin_password" and v.strip():
+                    return True
+    except (OSError, ValueError):
+        pass
+    return False
+
+
+def _cloud_windows():
+    return os.name == "nt" and os.environ.get("BLAVE_AGENT_LOCAL") != "1"
+
+
+def capital_admin_switch():
+    """A cloud Windows bridge that can't send 群益 orders itself, but can start the flatten as
+    Administrator. Desktop never: there the signed-in user is the identity."""
+    return (CAPITAL_ADMIN_FLATTEN_ON and _cloud_windows() and not _capital_order_identity_ok()
+            and _capital_admin_password_on_file())
+
+
+def _capital_closable():
+    return _capital_order_identity_ok() or capital_admin_switch()
+
+
 def can_flatten(vens):
     """flatten.py present, and not a machine whose only closable venue is 群益
     under an identity that can't send 群益 orders — there the button would halt
@@ -1126,7 +1167,7 @@ def can_flatten(vens):
     closable = {vid for vid, v in (vens or {}).items() if v.get("account") and v.get("order")}
     only_identity_gated = bool(closable) and all(venue_traits.has(v, "windows_identity")
                                                  for v in closable)
-    return not (only_identity_gated and not _capital_order_identity_ok())
+    return not (only_identity_gated and not _capital_closable())
 
 
 def can_close_unbind(vens):
@@ -1143,7 +1184,7 @@ def can_close_unbind(vens):
 def manual_close_venues(vens):
     """Bound venues a flatten here skips for identity (= command_listener._manual_venues)."""
     gated = sorted(v for v in (vens or {}) if venue_traits.has(v, "windows_identity"))
-    return [] if not gated or _capital_order_identity_ok() else gated
+    return [] if not gated or _capital_closable() else gated
 
 
 def _small_json(path, limit=64 * 1024):

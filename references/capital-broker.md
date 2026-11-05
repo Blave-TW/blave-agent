@@ -348,6 +348,9 @@ the account. 300: ask the user for the correct password and re-save it. 307: the
 群益 first; if the password did not change, the app's 「繼續」 grants exactly ONE retry
 (`capital_probe` with `after_unlock`) — if that fails too, only a changed password gets another
 try. Never delete or edit the block file to "retry", and never grant the retry yourself.
+While the block stands only 群益 stops: the reconciler skips 群益's reads and orders (no HALT, other
+venues trade on), and a block hit by the worker or an order (not a probe) sends the user one P1
+(`venue_login_blocked`, reason `PASSWORD` for 300, `LOCKED` for 307).
 
 **Ask the user (in one message):**
 > 請提供你的身分證字號和群益交易密碼（跟登入群益下單軟體同一組）。

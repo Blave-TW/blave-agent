@@ -180,14 +180,70 @@ def login_blocked(login_id, password, consume_retry=False):
     return block.get("code")
 
 
-def block_login(login_id, password, code):
+def block_login(login_id, password, code, auto=False):
+    """`auto`: written by a login nobody is watching (the worker's loop, the order lib) — the
+    block is then the user's P1 (venue_login_blocked), sent once. A probe's block is not: the
+    user is looking at the answer. The runtime's own writer keeps only fp/code/at/unlock_used,
+    so a block it rewrites is never sent (again)."""
     if code not in BLOCK_CODES:
         return
     prev = _read_block(login_id, password) or {}
     if prev.get("unreadable"):
         prev = {"unlock_used": True}  # unknown whether the one post-unlock retry was spent: assume it was
-    _write_block({"fp": fingerprint(login_id, password), "code": code, "at": int(time.time()),
-                  "unlock_used": bool(prev.get("unlock_used"))})
+    block = {"fp": fingerprint(login_id, password), "code": code, "at": int(time.time()),
+             "unlock_used": bool(prev.get("unlock_used"))}
+    if auto:
+        block["auto"] = True
+    if _write_block(block) and auto:
+        notify_stopped()
+
+
+# 群益's two blocking answers → the class venue_login_blocked carries (api notify._LOGIN_BLOCK_REASON)
+STOP_REASONS = {300: "PASSWORD", 307: "LOCKED"}
+
+
+def _held_rows():
+    """The last snapshot's rows as 'TXFK6 +2', or None. Read before the worker replaces the
+    snapshot with ok=false; a notice retried later has none to give."""
+    try:
+        rows = load_json(os.path.join(os.path.dirname(BLOCK), "capital_account.json"),
+                         encoding="utf-8").get("positions")
+        out = [f"{str(r['symbol'])[:12]} {float(r['lots']) * (1 if r['side'] == 'buy' else -1):+g}"
+               for r in rows if float(r.get("lots") or 0)][:10] if rows else None
+        return out or None
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
+        return None
+
+
+def notify_stopped(min_age=0):
+    """The standing automatic block's P1, once. `min_age`: the reconciler's retry leaves the
+    writer of a block this long to send it itself. Never raises: a notice must not cost a login."""
+    try:
+        block = load_json(BLOCK, encoding="utf-8")
+        if not isinstance(block, dict) or not block.get("auto") or block.get("notified") \
+                or time.time() - float(block.get("at") or 0) < min_age:
+            return
+        if __package__ == "lib":
+            from lib.events import emit
+        else:  # run as a script: lib/ is sys.path[0]
+            from events import emit
+        if emit("venue_login_blocked", venue="capital", reason=STOP_REASONS.get(block.get("code"), "UNKNOWN"),
+                positions=_held_rows()) is not None:
+            _write_block(dict(block, notified=True))
+    except (OSError, ValueError, TypeError, ImportError):
+        pass
+
+
+def stopped(env):
+    """The 300/307 that stops every login with this machine's 群益 credentials, or None — also
+    None when the credentials cannot be resolved (the desktop's not handed over yet)."""
+    try:
+        login_id, password = resolve(env)
+    except RuntimeError:
+        return None
+    if not login_id or not password:
+        return None
+    return login_blocked(login_id, password)
 
 
 # Answers that come only after 群益 has checked the password: the password is
@@ -196,13 +252,14 @@ def block_login(login_id, password, code):
 PASSWORD_OK_CODES = (0, 2003, 321, 507, 600, 602, 604)
 
 
-def record_login(login_id, password, code):
+def record_login(login_id, password, code, auto=False):
     """Right after SKCenterLib_Login, in every login path: 300/307 blocks these
     credentials; a PASSWORD_OK_CODES answer clears their block (a post-unlock
     retry that got past the password but failed later must not leave the user
-    stuck behind a spent 307); any other code leaves the block as it is."""
+    stuck behind a spent 307); any other code leaves the block as it is.
+    `auto`: see block_login."""
     if code in BLOCK_CODES:
-        block_login(login_id, password, code)
+        block_login(login_id, password, code, auto=auto)
     elif code in PASSWORD_OK_CODES:
         clear_block(login_id, password)
 

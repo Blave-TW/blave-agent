@@ -1631,6 +1631,15 @@ msgstr "President login stopped"
 msgid "tr.ov.evPresStoppedNote"
 msgstr "New orders and closes can't go out. Press Sign In Again on the auto-trading page."
 
+msgid "tr.ov.evCapStopped"
+msgstr "Capital login stopped"
+
+msgid "tr.ov.evCapStoppedNote"
+msgstr "New orders and closes can't go out. Enter the trading password again on the auto-trading page."
+
+msgid "tr.ov.evCapLockedNote"
+msgstr "New orders and closes can't go out. Unlock it with Capital, then enter the trading password again on the auto-trading page."
+
 msgid "tr.s.off"
 msgstr "Not started"
 

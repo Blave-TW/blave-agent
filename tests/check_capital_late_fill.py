@@ -64,6 +64,7 @@ class Pump:
 
 plan = {}
 orders_sent = []
+new_close = []
 
 
 class Sess:
@@ -75,6 +76,7 @@ class Sess:
         @staticmethod
         def SendFutureOrderCLR(_login, _async, p):
             orders_sent.append(p.nQty)
+            new_close.append(p.sNewClose)
             seq = f"{len(orders_sent):013d}"
             for at, q in plan["rows"]:
                 deliveries.append((clk.t + at, seq, {"qty": float(q), "price": 100.0, "symbol": "TM2610", "fill_id": f"{seq}-{at}", "market": "TF"}))
@@ -170,6 +172,21 @@ r_park = reconciler._capital_park("TMF", {"status": "filled", "fill_qty": 1.0, "
 after = _json.load(open(reconciler.CAPITAL_PENDING_PATH))
 os.remove(reconciler.CAPITAL_PENDING_PATH)
 check(r_park is True and after == halted, f"a full fill beside a halted 群益 row leaves the row as it was ({after})")
+
+# D3 (Wei 11-05): a reduce goes as sNewClose=1 (平倉, the broker refuses an over-close) only with
+# CLOSE_CODE_ON; off (until the live TMF run) everything stays 2 (自動), entries always
+def send_code(intent):
+    deliveries.clear(); Fills.fills.clear(); clk.t = 0.0; plan.update(rows=[(0.5, 1)], raise_after=None)
+    oc.place_futures_market_order({}, "TM0000", "sell", 1, intent=intent, confirm_timeout=15)
+    return new_close[-1]
+
+
+check(oc.CLOSE_CODE_ON is False and send_code("reduce") == 2 and send_code("entry") == 2,
+      "close code off by default: entries and closes go as 2 (自動), the live-tested setting")
+oc.CLOSE_CODE_ON = True
+check(send_code("reduce") == 1 and send_code("entry") == 2, "close code on: a reduce goes as 1 (平倉), an entry as 2")
+check('"new_close": 1' in open("state/audit.jsonl").read(), "the audit row says which code went out")
+oc.CLOSE_CODE_ON = False
 
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)

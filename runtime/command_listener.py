@@ -5678,20 +5678,15 @@ def _launch_flatten(prefix, argv=()):
                 pass
         _kick_when_flatten_exits(proc)
         return prefix + "started"
+    if platform.system() == "Windows" and _capital_admin_scope(argv):
+        try:
+            _launch_flatten_as_admin(argv, log_path, child_env)
+            return prefix + "started"
+        except Exception as e:
+            # the old launch below: the others close, 群益 is skipped and recorded as manual
+            _log(f"flatten: Administrator launch failed ({type(e).__name__}) — started as this identity")
     if platform.system() == "Windows":
-        # 脫離 NSSM 的 process tree:bridge 重啟時 NSSM 會殺整棵樹,平倉做一半
-        # 被砍=HALT 掛著、倉平一半。經由一個立刻退場的 powershell 中轉
-        # (Start-Process 的子程序在 powershell 死後變孤兒,樹掃描摸不到)。
-        ps_cmd = (
-            f"Start-Process -WindowStyle Hidden -FilePath python "
-            f"-ArgumentList {','.join(repr(a) for a in ('manager/flatten.py', *argv))} "
-            f"-WorkingDirectory '{WORKSPACE}' "
-            f"-RedirectStandardOutput '{log_path}.out' "
-            f"-RedirectStandardError '{log_path}.err'"
-        )
-        subprocess.Popen(["powershell", "-NoProfile", "-Command", ps_cmd],
-                         cwd=WORKSPACE, env=child_env,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_child_kw())
+        _launch_flatten_windows(argv, log_path, child_env)
         return prefix + "started"
     # Linux:bridge unit 是 KillMode=process(見 systemd/blave-agent-web.service)
     # ——重啟只殺 bridge 本體,flatten 活到收工
@@ -5703,6 +5698,130 @@ def _launch_flatten(prefix, argv=()):
         )
     _kick_when_flatten_exits(proc)
     return prefix + "started"
+
+
+def _launch_flatten_windows(argv, log_path, child_env):
+    # 脫離 NSSM 的 process tree:bridge 重啟時 NSSM 會殺整棵樹,平倉做一半
+    # 被砍=HALT 掛著、倉平一半。經由一個立刻退場的 powershell 中轉
+    # (Start-Process 的子程序在 powershell 死後變孤兒,樹掃描摸不到)。
+    ps_cmd = (
+        f"Start-Process -WindowStyle Hidden -FilePath python "
+        f"-ArgumentList {','.join(repr(a) for a in ('manager/flatten.py', *argv))} "
+        f"-WorkingDirectory '{WORKSPACE}' "
+        f"-RedirectStandardOutput '{log_path}.out' "
+        f"-RedirectStandardError '{log_path}.err'"
+    )
+    subprocess.Popen(["powershell", "-NoProfile", "-Command", ps_cmd],
+                     cwd=WORKSPACE, env=child_env,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **_child_kw())
+
+
+CAPITAL_FLATTEN_TASK = "BlaveCapitalFlatten"
+_ADMIN_FLATTEN_ARG_RE = re.compile(r"^[A-Za-z0-9_,.-]{1,200}$")
+_ADMIN_FLATTEN_CMD_S = 20       # the task's .cmd reports python found within this, or the ack falls back
+_ADMIN_FLATTEN_POLL_S = 5
+_ADMIN_FLATTEN_MAX_S = 2 * 3600  # a flatten that never wrote done_at: the task is dropped anyway
+ADMIN_FLATTEN_STATUS = os.path.join(WORKSPACE_STATE, "flatten_admin.status")
+
+
+def _capital_admin_scope(argv):
+    """Cloud Windows, a 群益 position in this flatten's scope (--venues, else every bound venue),
+    and portfolio_reporter.capital_admin_switch: start it as Administrator, or it skips 群益."""
+    try:
+        import portfolio_reporter
+        if not portfolio_reporter.capital_admin_switch():
+            return False
+        args = list(argv)
+        scope = (set(args[args.index("--venues") + 1].split(",")) if "--venues" in args
+                 else set(portfolio_reporter.venues()))
+        return any(venue_traits.has(v, "windows_identity") for v in scope)
+    except Exception:
+        return False
+
+
+def _admin_status():
+    try:
+        with open(ADMIN_FLATTEN_STATUS, encoding="utf-8", errors="replace") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def _flatten_started_since(t):
+    """manager/flatten.py writes last_flatten.json (done_at None) once it holds its lock: a record
+    started at or after `t` is this launch's. Read, never the lock — probing flatten.lock can make
+    a flatten starting that instant exit already_running."""
+    last = _read_last_flatten() or {}
+    try:
+        return float(last.get("started_at") or 0) >= t - 1, last.get("done_at") is not None
+    except (TypeError, ValueError):
+        return False, False
+
+
+def _launch_flatten_as_admin(argv, log_path, child_env):
+    """manager/flatten.py through a one-shot Administrator task (capital_connect's vehicle). The
+    task runs a .cmd: schtasks /tr is capped at 261 characters and sets no working directory or
+    environment. Never BLAVE_AGENT_LOCAL — flatten.py would judge the identity by the desktop's
+    rule. The .cmd writes ADMIN_FLATTEN_STATUS: `nopython`, `running`, then `exit <code>`.
+    Raises (the caller then starts it as this identity) unless `running` shows within
+    _ADMIN_FLATTEN_CMD_S; after that a watcher starts it as this identity if python exited
+    without the flatten ever starting, and drops the task once it is done."""
+    bad = '"%&^|<> '
+    if any(c in WORKSPACE + log_path for c in bad) or not all(_ADMIN_FLATTEN_ARG_RE.match(a) for a in argv):
+        raise RuntimeError("path or argument not usable in a .cmd")
+    status = ADMIN_FLATTEN_STATUS
+    script = os.path.join(WORKSPACE_STATE, "flatten_admin.cmd")
+    _write_atomic(script, "\n".join([
+        "@echo off",
+        f'cd /d "{WORKSPACE}"',
+        f'set "BLAVE_AGENT_WORKSPACE={WORKSPACE}"',
+        'set "BLAVE_AGENT_LOCAL="',
+        f'where python >nul 2>nul || (echo nopython> "{status}" & exit /b 9009)',
+        f'echo running> "{status}"',
+        f'python manager\\flatten.py {" ".join(argv)} >> "{log_path}.out" 2>> "{log_path}.err"',
+        f'echo exit %ERRORLEVEL%> "{status}"', ""]))
+    try:
+        os.remove(status)
+    except OSError:
+        pass
+    launched = time.time()
+    capital_connect.run_detached_as_administrator(f'cmd /c "{script}"', _capital_admin_password(),
+                                                  CAPITAL_FLATTEN_TASK)
+    deadline = launched + _ADMIN_FLATTEN_CMD_S
+    while not _admin_status() and time.time() < deadline:
+        time.sleep(0.5)
+    if _admin_status() in ("", "nopython"):
+        _drop_admin_task()
+        raise RuntimeError(f"Administrator task did not start python ({_admin_status() or 'no status'})")
+
+    def _watch():
+        while time.time() - launched < _ADMIN_FLATTEN_MAX_S:
+            started, done = _flatten_started_since(launched)
+            st = _admin_status()
+            if done or (started and st.startswith("exit")):
+                break
+            if st.startswith("exit") and st != f"exit {FLATTEN_EXIT_ALREADY_RUNNING}":
+                # python ran and left without the flatten ever starting (import error, crash):
+                # nothing was closed on ANY venue — start it as this identity (群益 recorded manual)
+                _log(f"flatten: the Administrator run ended before starting ({st}) — started as this identity")
+                try:
+                    _launch_flatten_windows(argv, log_path, child_env)
+                except Exception as e:
+                    _log(f"flatten: fallback launch failed ({type(e).__name__})")
+                break
+            if st.startswith("exit"):
+                break   # another flatten held the lock: that one closes
+            time.sleep(_ADMIN_FLATTEN_POLL_S)
+        _drop_admin_task()
+
+    threading.Thread(target=_watch, daemon=True).start()
+
+
+def _drop_admin_task():
+    try:
+        capital_connect.drop_task(CAPITAL_FLATTEN_TASK)
+    except Exception as e:
+        _log(f"flatten: Administrator task not dropped ({type(e).__name__})")
 
 
 # ── 平倉後解除綁定(close_then_unbind;spec unbind-positions §5) ─────────────────────
@@ -5807,7 +5926,7 @@ def _manual_venues(scope):
         return set()
     try:
         import portfolio_reporter
-        return set() if portfolio_reporter._capital_order_identity_ok() else gated
+        return set() if portfolio_reporter._capital_closable() else gated
     except Exception:
         return gated
 

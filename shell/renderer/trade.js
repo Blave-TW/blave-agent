@@ -1876,6 +1876,8 @@ function trPushLabels() {
     ev_machine_restart_stopped: t("tr.ov.evRestartStopped"), ev_machine_restart_stopped_n: t("tm.evRestartStoppedNote"),
     ev_venue_stops_missing: t("tm.evBitgetNoStop"), ev_venue_stops_missing_n: t("tr.ov.evBitgetNoStopNote"),
     ev_venue_login_blocked: t("tr.ov.evPresStopped"), ev_venue_login_blocked_n: t("tr.ov.evPresStoppedNote"),
+    ev_venue_login_blocked_capital: t("tr.ov.evCapStopped"), ev_venue_login_blocked_capital_n: t("tr.ov.evCapStoppedNote"),
+    ev_venue_login_blocked_capital_locked_n: t("tr.ov.evCapLockedNote"),
     ev_order_unconfirmed: t("tr.ov.evUnconfirmed"), ev_order_unconfirmed_n: t("tm.evUnconfirmedNote"),
     ev_clock_skew_hold: t("tr.ov.evClockHold"), ev_clock_skew_hold_n: t("tm.evClockHoldNote"),
     ev_tw_entry_hold: t("tr.ov.evTwHold"), ev_tw_entry_hold_n: t("tm.evTwHoldNote"),
@@ -5613,6 +5615,8 @@ function trEventText(type, d) {
     return out(t(head), t("tr.ov.evBitgetNoStopNote"), null, names, legs.length > 10 ? t("tr.ov.evDeadMore", { total: legs.length, more: legs.length - 10 }) : null);
   }
   if (type === "venue_login_blocked" && d.venue === "president") return out(t("tr.ov.evPresStopped"), t("tr.ov.evPresStoppedNote"));
+  // 群益 307:密碼被群益鎖住,重填之前要先到群益解鎖
+  if (type === "venue_login_blocked" && d.venue === "capital") return out(t("tr.ov.evCapStopped"), t(d.reason === "LOCKED" ? "tr.ov.evCapLockedNote" : "tr.ov.evCapStoppedNote"));
   if (type === "bar_stale") return d.computed === true ? null : out(t("tr.ov.evBarStale"), d.minutes == null ? null : t("tr.ov.evBarStaleNote", v));
   // 目標部位過久沒更新(同網頁 workspace_ov_ev_target_stale):換算門檻同 api notify._age_text;沒 age_s 用不帶時間那句
   if (type === "target_stale") {

@@ -175,6 +175,58 @@ check(reconciler._row_queued(row_ack, t0 + reconciler.QUEUED_HOLD_S - 1)
       "a 0000-only leg (clock not trusted) holds QUEUED_HOLD_S")
 check(not reconciler._row_queued({"legs": [{"at": t0, "status": "sent", "statuscode": "0002"}]}, t0 + 1),
       "a canceled IOC (0002) does not hold")
+check(not reconciler._row_queued({"legs": [{"at": t0, "status": "sent"}]}, t0 + 1),
+      "a 'sent' leg with neither 0000 nor broker_ack does not hold (統一's unknown legs unchanged)")
+
+# 4b. 群益 'sent' (ncode 0 + sequence number, no report) is 統一's 0000: parked with broker_ack, and
+# an unchanged account inside QUEUED_HOLD_S is "may still be queued", not "not taken" — even with
+# no clock sample (a fast clock believes the session open, so queued_until is never written)
+real_q, real_nets = reconciler._queued_until, reconciler._capital_nets
+reconciler._queued_until = lambda: None
+reconciler._capital_nets = lambda root=None: {"TXFK6": 0.0}
+if os.path.exists(reconciler.CAPITAL_PENDING_PATH):
+    os.remove(reconciler.CAPITAL_PENDING_PATH)
+reconciler._capital_park("TXF", {"status": "sent", "fill_qty": 0, "seq_no": "0000000000001", "symbol": "TX0000"},
+                         -1, {"TXFK6": 0.0})
+row = reconciler._pending_sent(reconciler.CAPITAL_PENDING_PATH).get("TXF") or {}
+leg = (row.get("legs") or [{}])[0]
+check(leg.get("broker_ack") is True and "queued_until" not in leg, "群益 'sent' close leg parked with broker_ack", row)
+at = float(leg.get("at") or 0)
+reconciler._capital_claim_pending(at + 120)
+check("TXF" in reconciler._pending_sent(reconciler.CAPITAL_PENDING_PATH),
+      "unchanged account 2 min after a 群益 'sent': kept (may still be queued), not cleared for a re-send")
+reconciler._capital_claim_pending(at + reconciler.QUEUED_HOLD_S + 1)
+check("TXF" not in reconciler._pending_sent(reconciler.CAPITAL_PENDING_PATH),
+      "past QUEUED_HOLD_S with the account unchanged: cleared, the next diff may send again")
+# D3 (Wei 11-05): sNewClose=2 has no broker over-close refusal, so a close 群益 took without a report
+# holds the next close until the row is settled; an unreported entry does not hold a close
+sent2, real_place2 = [], oc.place_futures_market_order
+oc.place_futures_market_order = lambda env, sym, action, lots, intent: (
+    sent2.append((action, lots, intent)) or {"status": "sent", "fill_qty": 0, "seq_no": f"{len(sent2):013d}", "symbol": "TX00"})
+r1 = reconciler._capital_place_order("TXF", -1, reduce_only=True)
+r2 = reconciler._capital_place_order("TXF", -1, reduce_only=True)
+check(len(sent2) == 1 and r2 is False
+      and (reconciler._pending_sent(reconciler.CAPITAL_PENDING_PATH)["TXF"]["legs"][0].get("intent") == "reduce"),
+      "a 群益 close came back 'sent': the next close waits, nothing sent twice", sent2)
+_close_row = next((e for e in reversed(errors()) if e.get("kind") == "order_unconfirmed"), {})
+check("下一筆平倉先停" in _close_row.get("error", "") and "16 分鐘" in _close_row.get("error", "")
+      and "平倉照常" not in _close_row.get("error", ""),
+      "the user's row for that close says the next close waits up to 16 min, never 'closes go on'", _close_row)
+os.remove(reconciler.CAPITAL_PENDING_PATH)
+reconciler._capital_park("TXF", {"status": "sent", "fill_qty": 0, "seq_no": "0000000000009", "symbol": "TX00"},
+                         1, {"TXFK6": 0.0}, "entry")
+r3 = reconciler._capital_place_order("TXF", -1, reduce_only=True)
+check(len(sent2) == 2, "an unreported entry does not hold a close", sent2)
+oc.place_futures_market_order = real_place2
+os.remove(reconciler.CAPITAL_PENDING_PATH)
+os.remove("manager/order_errors.json")   # keeps at most 5 rows: the counts below need room
+reconciler._capital_park("TXF", {"status": "filled", "fill_qty": 1, "seq_no": "0000000000002", "symbol": "TXFK6"},
+                         2, {"TXFK6": 0.0})
+row = reconciler._pending_sent(reconciler.CAPITAL_PENDING_PATH).get("TXF") or {}
+check(row and not any(l.get("broker_ack") for l in row.get("legs") or []),
+      "a short 'filled' (IOC rest canceled) is not marked broker_ack", row)
+os.remove(reconciler.CAPITAL_PENDING_PATH)
+reconciler._queued_until, reconciler._capital_nets = real_q, real_nets
 
 
 # ── 5. 9868 is a rejection ───────────────────────────────────────────────────

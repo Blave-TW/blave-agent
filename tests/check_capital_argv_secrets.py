@@ -1,6 +1,6 @@
 """Secrets on a child's command line in runtime/capital_connect.py (recheck audit C-1).
 
-Two known sites are accepted and documented in the module docstring (Known limit):
+The known sites are accepted and documented in the module docstring (Known limit):
 schtasks /rp <Administrator password> and certutil -p <export password>. This check
 enumerates every subprocess call whose argv list names a password-like variable and
 fails if the set differs — a new site, or a fixed one still listed as known.
@@ -12,7 +12,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "runtime", "capital_connect.py")
 SECRET_NAMES = {"pw", "admin_pw", "password", "passwd", "secret", "export_pw", "trade_pw"}
 CALLS = {"run", "Popen", "check_output", "check_call", "call", "_run_quiet"}
-KNOWN = {("_as_administrator", "admin_pw"), ("_certutil_import", "pw")}
+KNOWN = {("_as_administrator", "admin_pw"), ("run_detached_as_administrator", "admin_pw"),
+         ("_certutil_import", "pw")}
 
 tree = ast.parse(open(SRC, encoding="utf-8").read())
 found = set()
@@ -32,6 +33,6 @@ for fn in ast.walk(tree):
 doc = ast.get_docstring(tree) or ""
 ok1 = found == KNOWN
 ok2 = "Known limit (audit C-1" in doc and "/rp" in doc and "certutil" in doc
-print(("PASS" if ok1 else "FAIL") + f"  secrets on argv are exactly the two documented sites: {sorted(found)}")
+print(("PASS" if ok1 else "FAIL") + f"  secrets on argv are exactly the documented sites: {sorted(found)}")
 print(("PASS" if ok2 else "FAIL") + "  the module docstring states the known limit and why")
 sys.exit(0 if ok1 and ok2 else 1)

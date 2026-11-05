@@ -95,6 +95,10 @@ _LOCK = None  # the open lock file, pinned for the life of the process (see _sin
 # rewritten with done_at null when the lock is taken, and again on every exit while it is
 # still held — a loser of the lock never writes, it would erase the holder's result.
 LAST_PATH = "state/last_flatten.json"
+# = manager/reconciler.CAPITAL_PENDING_PATH / QUEUED_HOLD_S (the flatten does not import the reconciler)
+CAPITAL_PENDING_PATH = "state/capital_pending_sent.json"
+CAPITAL_QUEUED_HOLD_S = 16 * 60
+_PREV_LAST = {}   # the previous run's LAST_PATH record, read before this run replaces it
 MSG_MAX = 300
 # --venues: only these venues are closed (the unbind of one venue must not sell another's);
 # --request-id: echoed into LAST_PATH and turns on the after-close re-read (_verify_flat)
@@ -146,6 +150,30 @@ def _note(vid, key, why):
         _RUN["unconfirmed"].add((vid, key))
     else:
         _RUN["why"].setdefault((vid, key), why)
+
+
+def _capital_close_queued(key, now=None):
+    """A 群益 close of `key` that 群益 took and has not reported, sent in the last
+    CAPITAL_QUEUED_HOLD_S — by the reconciler (its park file) or by the previous flatten (its
+    record's `unconfirmed`). It may sit queued to the open; under sNewClose=2 a second close fills
+    beside it as the reverse position. An unreadable park file counts as one."""
+    now = time.time() if now is None else now
+    from lib.winreplace import load_json
+    try:
+        row = (load_json(CAPITAL_PENDING_PATH, encoding="utf-8") or {}).get(key) or {}
+    except FileNotFoundError:
+        row = {}
+    except (OSError, ValueError, AttributeError):
+        return True
+    if any(l.get("queued_until") or (l.get("broker_ack") and l.get("intent") == "reduce")
+           for l in row.get("legs") or []):
+        return True
+    prev = _PREV_LAST if isinstance(_PREV_LAST, dict) else {}
+    try:
+        recent = now - float(prev.get("done_at") or prev.get("started_at") or 0) < CAPITAL_QUEUED_HOLD_S
+    except (TypeError, ValueError):
+        recent = False
+    return recent and key in (prev.get("unconfirmed") or [])
 
 
 def _takes(fn, name):
@@ -744,6 +772,12 @@ def flatten():
         logging.info(f"close-all: another flatten holds {LOCK_PATH} — this one exits")
         return ALREADY_RUNNING
     started = time.time()
+    global _PREV_LAST
+    try:
+        from lib.winreplace import load_json
+        _PREV_LAST = load_json(LAST_PATH, encoding="utf-8") or {}
+    except (OSError, ValueError, ImportError):
+        _PREV_LAST = {}
     _write_last(_outcome(None, started, None))
     result = False
     try:
@@ -1188,6 +1222,15 @@ def _flatten():
                         continue
                     else:
                         size = min(size, float(led["size"]) / price)
+                if vid == venue_traits.CAPITAL and _capital_close_queued(key):
+                    unclosed.add(key)
+                    _note(vid, key, "unconfirmed")
+                    logging.warning(f"[{vid}] {key}: an earlier close is not reported yet — not sent again")
+                    _record_order_error(key, vid, "close-all: 群益上一筆平倉還沒回報成交，可能排在開盤，"
+                                                  "這次沒有再送。開盤後到群益下單軟體核對部位。",
+                                        extra={"kind": "order_unconfirmed", "close_all": True})
+                    errors += 1
+                    continue
                 held_back = _held(vid, key)
                 if held_back:
                     # a close of unknown outcome is parked on it: only the rest is closed —

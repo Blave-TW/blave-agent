@@ -171,7 +171,7 @@ login_calls = []
 saved = (oc._init_com, oc.capital_vault, getattr(oc, "comtypes", None), getattr(oc, "sk", None))
 oc._init_com = lambda: None
 oc.capital_vault = types.SimpleNamespace(resolve=lambda env: ("A123456789", "pw"), login_blocked=lambda *a: None,
-                                         set_log_path=lambda c: None, record_login=lambda *a: None)
+                                         set_log_path=lambda c: None, record_login=lambda *a, **k: None)
 oc.comtypes = types.SimpleNamespace(client=types.SimpleNamespace(CreateObject=lambda cls, interface=None: center,
                                                                  GetEvents=lambda o, e: None))
 oc.sk = types.SimpleNamespace(SKCenterLib=1, ISKCenterLib=1, SKReplyLib=1, ISKReplyLib=1, SKOrderLib=1, ISKOrderLib=1)
@@ -224,7 +224,7 @@ check(loaded('{"n": 999999999, "until": %f}' % (now + 10))[0] <= 16, "a huge n i
 saved = (oc._init_com, oc.capital_vault, oc.comtypes, oc.sk)
 oc._init_com = lambda: None
 oc.capital_vault = types.SimpleNamespace(resolve=lambda env: ("A123456789", "pw"), login_blocked=lambda *a: None,
-                                         set_log_path=lambda c: None, record_login=lambda *a: None)
+                                         set_log_path=lambda c: None, record_login=lambda *a, **k: None)
 oc.comtypes = types.SimpleNamespace(client=types.SimpleNamespace(CreateObject=lambda cls, interface=None: center,
                                                                  GetEvents=lambda o, e: None))
 oc.sk = types.SimpleNamespace(SKCenterLib=1, ISKCenterLib=1, SKReplyLib=1, ISKReplyLib=1, SKOrderLib=1, ISKOrderLib=1)

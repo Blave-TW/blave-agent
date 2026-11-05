@@ -320,7 +320,7 @@ def _fail_and_exit(payload):
     sys.exit(1)  # NSSM restarts us with a fresh COM session
 
 
-def _connect(login_id, password):
+def _connect(login_id, password, auto=False):
     """Login -> SKOrderLib init -> ReadCertByID -> GetUserAccount, the exact
     order that works (see 602/2017 notes). Returns (center, order, tf, ts,
     handles) on success; raises ProbeError(stage, msg) on any Capital return
@@ -335,7 +335,7 @@ def _connect(login_id, password):
 
     capital_vault.set_log_path(center)
     code = center.SKCenterLib_Login(login_id, password)
-    capital_vault.record_login(login_id, password, code)
+    capital_vault.record_login(login_id, password, code, auto=auto)
     if code not in (0, 2003):
         raise ProbeError("login", f"login failed code={code} {center.SKCenterLib_GetReturnCodeMessage(code)}",
                          code)
@@ -447,7 +447,7 @@ def main():
 
     try:
         _refuse_if_blocked(login_id, password)
-        _center, order, tf, ts, _handles = _connect(login_id, password)
+        _center, order, tf, ts, _handles = _connect(login_id, password, auto=True)
     except ProbeError as e:
         if os.environ.get("BLAVE_AGENT_LOCAL") == "1" and e.code in capital_vault.BLOCK_CODES:
             # desktop (runtime/capital_local._LocalWorker): stay stopped instead of a backoff
