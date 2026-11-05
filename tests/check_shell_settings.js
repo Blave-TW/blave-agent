@@ -609,11 +609,11 @@ ok("帳號與方案跟其他分類一樣由 .set-content 捲:不再接手內距�
 const PO = ["zh", "en"].map((l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8"));
 ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效(切換後以主行程回的為準)", /data-set-cat="plan"[^>]*><\/button>\s*\n\s*(<!--[\s\S]*?-->\s*\n\s*)?<button[^>]*data-set-cat="priv"[^>]*><\/button>\s*\n\s*<\/nav>/.test(html)
   && /setAttribute\("role", "switch"\)/.test(fnSrc("privPaint")) && /aria-checked/.test(fnSrc("privPaint")) && /PRIV = \(await window\.blave\.telemetrySet\(want\)\) === true/.test(src));
-{ // 原本隱私頁的三顆開關跟一般三列同一種:開關文字是 label[for],點字會切換;名稱只來自 label,不再另掛 aria-label(0.1.32 起分住連結 / 隱私 / Agent 三頁)
+{ // 原本隱私頁的三顆開關跟一般三列同一種:開關文字是 label[for],點字會切換(連結頁 mv-sw 例外:0.1.46 起 label 不掛 for);名稱只來自 label,不再另掛 aria-label(0.1.32 起分住連結 / 隱私 / Agent 三頁)
   const br = fs.readFileSync(path.join(R, "browser.js"), "utf8"), i = br.indexOf("async function brSetPaint("), brFn = br.slice(i, br.indexOf("\n}", i) + 2);
   const rules = fs.readFileSync(path.join(R, "rules.js"), "utf8"), ri = rules.indexOf("function rulesPaint("), rulesFn = rules.slice(ri, rules.indexOf("\n}", ri) + 2);
-  ok("三顆開關(mv-sw / priv-sw / br-sw)的字是 label[for] 指向開關、沒有 aria-label;清除瀏覽資料與隱私權政策不在 label 裡",
-    /lbl = mk\("label", "sw-l"\); lbl\.htmlFor = "mv-sw";/.test(fnSrc("mvBlock")) && /tl = mk\("span", "set-tipl", t\("mv\.switch"\)\)/.test(fnSrc("mvBlock")) && /lbl\.append\(tl, tip\); row\.append\(lbl\);/.test(fnSrc("mvBlock"))
+  ok("priv-sw / br-sw 的字是 label[for] 指向開關;mv-sw 的 label 不掛 for(0.1.46:點字會切掉、關掉就刪伺服器資料,見 check_shell_connect_tip);都沒有 aria-label;清除瀏覽資料與隱私權政策不在 label 裡",
+    /lbl = mk\("label", "sw-l"\);/.test(fnSrc("mvBlock")) && !/htmlFor/.test(fnSrc("mvBlock")) && /tl = mk\("span", "set-tipl", t\("mv\.switch"\)\)/.test(fnSrc("mvBlock")) && /lbl\.append\(tl, tip\); row\.append\(lbl\);/.test(fnSrc("mvBlock"))
     && /lbl = mk\("label", "sw-l", t\("priv\.switch"\)\); lbl\.htmlFor = "priv-sw"; row\.append\(lbl\);/.test(fnSrc("privPaint"))
     && /lbl = brEl\("label", "sw-l"\); lbl\.htmlFor = "br-sw";/.test(brFn) && /lbl\.append\(name, tip\); row\.append\(lbl\);/.test(brFn)
     && ![fnSrc("mvBlock"), fnSrc("privPaint"), brFn].some((f) => /"span", "sw-l"|aria-label(?!ledby)/.test(f))

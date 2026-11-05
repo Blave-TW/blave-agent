@@ -1109,7 +1109,9 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 /* 設定 › 連結「允許手機對話」:跟手機查看那組空 32、不畫線;全組沒有分隔線 */
 .ph { margin-top: var(--space-32); }
 .ph:first-child { margin-top: 0; }
-.ph .sw-l { position: relative; }
+.mv .sw-l, .ph .sw-l { position: relative; }
+/* 頁頂那一列往上只剩 .set-content 的 16 內距,泡泡會被捲動框裁掉:改往下長(mv 不出時 ph 就是第一列) */
+#set-connect > :first-child .sw-l > .tip { bottom: auto; top: calc(100% + 6px); }
 .ph-top:has(.sw:focus-visible:not([data-tip-off])) .tip { display: block; }
 .mv .sw-row:has(.sw:focus-visible:not([data-tip-off])) .tip { display: block; }
 .ph-status, .ph-msg { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); }

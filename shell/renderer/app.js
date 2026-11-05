@@ -859,7 +859,7 @@ async function mvToggle() {
 }
 function mvBlock(mk) {
   if (!mvShown()) return null;
-  const wrap = mk("div", "mv"), row = mk("div", "sw-row"), lbl = mk("label", "sw-l"); lbl.htmlFor = "mv-sw";
+  const wrap = mk("div", "mv"), row = mk("div", "sw-row"), lbl = mk("label", "sw-l");   // 不掛 for:點字只開 tooltip,關掉會刪伺服器上的資料,誤觸不能切
   const tl = mk("span", "set-tipl", t("mv.switch")); tl.id = "mv-l";
   const tip = mk("span", "tip", t("mv.tip")); tip.id = "mv-tip"; tip.setAttribute("role", "tooltip");   // 同 phBlock:上傳頻率與關掉會刪放 tooltip,開著時開關下不再有說明句
   lbl.append(tl, tip); row.append(lbl);
@@ -1074,7 +1074,7 @@ window.addEventListener("focus", phNoticeTrack);
 async function phRetry() { if (PH_BUSY) return; PH_BUSY = true; try { PH = (await window.blave.relayRetry()) || PH; } catch (_) { /* noop */ } finally { PH_BUSY = false; } phRepaint(); }
 function phBlock(mk) {
   if (!phShown()) return null;
-  const wrap = mk("div", "ph"), row = mk("div", "sw-row ph-top"), lbl = mk("label", "sw-l"); lbl.htmlFor = "ph-sw";
+  const wrap = mk("div", "ph"), row = mk("div", "sw-row ph-top"), lbl = mk("label", "sw-l");   // 同 mvBlock:不掛 for,點字不切開關
   const tl = mk("span", "set-tipl", t("ph.switch")); tl.id = "ph-l";
   const tip = mk("span", "tip", t("ph.tip")); tip.id = "ph-tip"; tip.setAttribute("role", "tooltip");   // 限制條件放 tooltip,不跟著開關狀態換字
   lbl.append(tl, tip); row.append(lbl);
