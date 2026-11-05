@@ -4420,6 +4420,12 @@ msgstr "請在群益下單軟體手動平倉"
 msgid "tr.ov.evManualCloseLag"
 msgstr "沒替{broker}平倉：部位資料還沒跟上剛送的單。一分鐘後再按「暫停並關閉部位」，或到券商平倉。"
 
+msgid "tr.ov.evManualCloseQueued"
+msgstr "沒替{broker}平倉：上一筆平倉還在等回報，可能還在排隊。{at} 後再按「暫停並關閉部位」，急的話到券商自己平。"
+
+msgid "tr.ov.evManualCloseQueuedSoon"
+msgstr "沒替{broker}平倉：上一筆平倉還在等回報，可能還在排隊。過幾分鐘再按「暫停並關閉部位」，急的話到券商自己平。"
+
 msgid "tr.ov.brokerCapital"
 msgstr "群益"
 

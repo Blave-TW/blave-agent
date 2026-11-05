@@ -5650,6 +5650,13 @@ function trEventText(type, d) {
       const broker = t(Object.prototype.hasOwnProperty.call(TR_BROKER_KEY, d.exchange) ? TR_BROKER_KEY[d.exchange] : "tr.ov.brokerOther");
       return out(t("tr.ov.evManualCloseLag", { broker }), null, null, syms);   // 整句同 api(TG／信件同一句),不拆說明
     }
+    // reason queued(群益):上一筆平倉還沒回報、可能排在開盤,這次沒再送——講幾點後再按(until,台灣時間),急的話自己平
+    if (d.reason === "queued") {
+      const broker = t(Object.prototype.hasOwnProperty.call(TR_BROKER_KEY, d.exchange) ? TR_BROKER_KEY[d.exchange] : "tr.ov.brokerOther");
+      const u = typeof d.until === "number" && isFinite(d.until) && d.until > 0 ? new Date(d.until * 1000) : null;
+      const at = u ? u.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Taipei" }) : null;
+      return out(at ? t("tr.ov.evManualCloseQueued", { broker, at }) : t("tr.ov.evManualCloseQueuedSoon", { broker }), null, null, syms);
+    }
     return out(t("tr.ov.evManualClose"), t("tr.ov.evManualCloseNote"), null, syms);
   }
   if (type === "downtime_paused") return out(t("tr.ov.evHaltAuto"), t("tr.ov.evDowntimeNote"));   // 不是 HALT:連平倉都凍結,不能用 evHaltNote 那句

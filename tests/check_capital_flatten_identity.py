@@ -164,30 +164,55 @@ def run_flatten(identity_ok, ledger=None, capital=CAP_ONE, close=None, keep_last
 
 
 # B-2 (audit 11-05): a 群益 close 群益 took without a report may sit queued to the open; a second close
-# from 全部平倉 would fill beside it as the reverse (sNewClose=2) — not sent, one row instead
+# from 全部平倉 would fill beside it as the reverse (sNewClose=2) — held until CAPITAL_QUEUED_HOLD_S after
+# the REAL send (re-audit N-1: a held press must not restart it; N-2: an old park leg never holds)
 import time as _t0  # noqa: E402
-json.dump({"TMF": {"root": "TMF", "lots": -2.0, "legs": [{"at": _t0.time(), "lots": -2.0, "status": "sent",
-                                                         "broker_ack": True, "intent": "reduce"}]}},
-          open(flatten.CAPITAL_PENDING_PATH, "w"))
+HOLD = flatten.CAPITAL_QUEUED_HOLD_S
+
+
+def park(at, intent="reduce"):
+    json.dump({"TMF": {"root": "TMF", "lots": -2.0, "legs": [{"at": at, "lots": -2.0, "status": "sent",
+                                                             "broker_ack": True, "intent": intent}]}},
+              open(flatten.CAPITAL_PENDING_PATH, "w"))
+
+
+def queued_rows():
+    return [e for e in errors if e[3] and e[3].get("kind") == "manual_close_required" and e[3].get("reason") == "queued"]
+
+
+park(_t0.time() - 120)
 run_flatten(True)
-check(("capital", "TM2610") not in closes and ("binance", "BTCUSDT") in closes
-      and any(e[3] and e[3].get("kind") == "order_unconfirmed" and e[3].get("close_all") for e in errors),
-      f"the reconciler's unreported 群益 close is parked: 全部平倉 sends no second close, crypto still closes ({errors})")
-json.dump({"TMF": {"root": "TMF", "lots": 2.0, "legs": [{"at": _t0.time(), "lots": 2.0, "status": "sent",
-                                                        "broker_ack": True, "intent": "entry"}]}},
-          open(flatten.CAPITAL_PENDING_PATH, "w"))
+q = queued_rows()
+check(("capital", "TM2610") not in closes and ("binance", "BTCUSDT") in closes and q
+      and abs(q[0][3].get("until", 0) - (_t0.time() - 120 + HOLD)) < 5 and "後再按" in q[0][2] and "自己平" in q[0][2],
+      f"the reconciler's unreported close 2 min ago: not sent again, one 'queued' row with when to press again ({errors})")
+last = json.load(open(flatten.LAST_PATH))
+check("TMF" not in last.get("unconfirmed", []) and any(u.get("key") == "TMF" and u.get("why") == "queued"
+                                                         for u in last.get("unclosed", [])),
+      f"a held key is unclosed (why queued), never unconfirmed: nothing was sent ({last.get('unclosed')})")
+park(_t0.time() - 6 * 3600)
+run_flatten(True)
+check(("capital", "TM2610") in closes,
+      "N-2: a park leg sent 6 h ago (no reconciler claim since: restart stop, login stop) no longer holds the close")
+park(_t0.time() - 60, intent="entry")
 run_flatten(True)
 check(("capital", "TM2610") in closes, "an unreported entry does not hold the close")
 os.remove(flatten.CAPITAL_PENDING_PATH)
-json.dump({"started_at": _t0.time() - 60, "done_at": _t0.time() - 10, "unconfirmed": ["TMF"]},
-          open(flatten.LAST_PATH, "w"))
+run_flatten(True, close={"TM2610": "sent"})
+sent_at = (json.load(open(flatten.LAST_PATH)).get("capital_queued") or {}).get("TMF")
+check(sent_at and abs(sent_at - _t0.time()) < 30, f"a flatten's own 'sent' 群益 close is recorded with its send time ({sent_at})")
+rec = json.load(open(flatten.LAST_PATH))
+rec["capital_queued"] = {"TMF": _t0.time() - 10 * 60}
+json.dump(rec, open(flatten.LAST_PATH, "w"))
 run_flatten(True, keep_last=True)
-check(("capital", "TM2610") not in closes,
-      "the previous 全部平倉 left the TMF close unconfirmed 10 s ago: a second press does not send it again")
-json.dump({"started_at": _t0.time() - 3600, "done_at": _t0.time() - 3000, "unconfirmed": ["TMF"]},
-          open(flatten.LAST_PATH, "w"))
+again = (json.load(open(flatten.LAST_PATH)).get("capital_queued") or {}).get("TMF")
+check(("capital", "TM2610") not in closes and again and abs(again - (_t0.time() - 10 * 60)) < 2,
+      f"N-1: pressed again 10 min after the send: held, and the record keeps the REAL send time ({again})")
+rec = json.load(open(flatten.LAST_PATH))
+rec["capital_queued"] = {"TMF": _t0.time() - 22 * 60}
+json.dump(rec, open(flatten.LAST_PATH, "w"))
 run_flatten(True, keep_last=True)
-check(("capital", "TM2610") in closes, "…50 min later (past the 16-min hold) it is sent")
+check(("capital", "TM2610") in closes, "N-1: pressed again 22 min after the send (after a held press): sent")
 os.remove(flatten.LAST_PATH)
 
 res = run_flatten(False)
@@ -570,7 +595,7 @@ check(ack == "close_all=started" and len(TASKS) == 1 and not pops
       f"群益-only close_all: started through the Administrator task, not the LocalSystem launch ({ack}, {TASKS})")
 check(f'cd /d "{WS}"' in script and "manager\\flatten.py" in script and 'set "BLAVE_AGENT_LOCAL="' in script
       and f'set "BLAVE_AGENT_WORKSPACE={WS}"' in script and PW not in script and "where python" in script
-      and "echo running>" in script and "echo exit %ERRORLEVEL%>" in script,
+      and "echo running>" in script and f'>"{STATUS}" echo exit %ERRORLEVEL%' in script,
       f"the task's .cmd: workspace cwd and env, BLAVE_AGENT_LOCAL cleared, status lines, no password ({script!r})")
 check(DROPS == [cl.CAPITAL_FLATTEN_TASK] and not any(PW in m for m in LOGS),
       f"the task is dropped once the flatten wrote done_at; the password reaches no log ({DROPS})")

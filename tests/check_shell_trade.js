@@ -2844,7 +2844,15 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           && /Unlock it with Capital/.test(STR.en["tr.ov.evCapLockedNote"])
           && /ev_venue_login_blocked_capital: t\("tr\.ov\.evCapStopped"\)/.test(src) && /ev_venue_login_blocked_capital_locked_n: t\("tr\.ov\.evCapLockedNote"\)/.test(src)
           && /capital \? "_capital" : ""/.test(mainSrc2) && /capital && e\.payload\.reason === "LOCKED"/.test(mainSrc2)
-          && /ev_venue_login_blocked_capital: "Capital login stopped"/.test(mainSrc2)); } }
+          && /ev_venue_login_blocked_capital: "Capital login stopped"/.test(mainSrc2)); }
+      { const q = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF", reason: "queued", until: 1793899200 }),
+          qs = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF", reason: "queued" });
+        ok("manual_close_required queued(群益上一筆平倉沒回報):講幾點後再按(台灣時間)、急的話自己平;沒有時間講過幾分鐘;不叫人不要自己下單",
+          q && q[2] === 1 && /^tr\.ov\.evManualCloseQueued\{/.test(q[0]) && /"at":"01:20"/.test(q[0]) && q[4] === "TMF"
+          && qs && /^tr\.ov\.evManualCloseQueuedSoon\{/.test(qs[0])
+          && /{at} 後再按/.test(STR.zh["tr.ov.evManualCloseQueued"]) && /自己平/.test(STR.zh["tr.ov.evManualCloseQueued"])
+          && /過幾分鐘再按/.test(STR.zh["tr.ov.evManualCloseQueuedSoon"]) && /after {at} \(Taiwan time\)/.test(STR.en["tr.ov.evManualCloseQueued"])
+          && !/不要自己|Don't/.test(STR.zh["tr.ov.evManualCloseQueued"] + STR.en["tr.ov.evManualCloseQueued"])); } }
     ok("行情句:雲端視角、別家、沒有那一欄、沒有台指期口數、狀態不在跑 / 過場中都不出;已暫停、沒停住照出",
       L(q("president", null), "cloud") === null && L(q("president", null), "local", "capital") === null && L({ venues: {} }) === null && L(null) === null
       && L(q("president", null), "local", "president", "running", false) === null

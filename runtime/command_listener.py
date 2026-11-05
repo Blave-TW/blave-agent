@@ -5779,7 +5779,8 @@ def _launch_flatten_as_admin(argv, log_path, child_env):
         f'where python >nul 2>nul || (echo nopython> "{status}" & exit /b 9009)',
         f'echo running> "{status}"',
         f'python manager\\flatten.py {" ".join(argv)} >> "{log_path}.out" 2>> "{log_path}.err"',
-        f'echo exit %ERRORLEVEL%> "{status}"', ""]))
+        # redirect first: "...%ERRORLEVEL%> f" reads a lone digit before > as a stream handle (2> etc.)
+        f'>"{status}" echo exit %ERRORLEVEL%', ""]))
     try:
         os.remove(status)
     except OSError:
