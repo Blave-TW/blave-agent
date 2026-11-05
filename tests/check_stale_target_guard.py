@@ -3,7 +3,8 @@ target. lib/portfolio holds that member's OWN share of the key: it may shrink to
 close, a flip's close half), never grow or open the other side; the other members on the key trade
 as computed. Stale = state/bar_wait/<name>.json last_attempt_failed_at newer than state.json and
 at most TARGET_STALE_RECENT_S old (a failing strategy fails again every few minutes; one failure
-at the start of a data gap must not cover the whole gap), and state.json older than
+at the start of a data gap must not cover the whole gap — that recency only gates going stale: a
+held member is released only by state.json written after its last failure), and state.json older than
 max(TARGET_STALE_BARS × INTERVAL, TARGET_STALE_FLOOR_S), + TARGET_STALE_WEEKEND_S for daily bars
 of a market that closes (not a crypto-only strategy). The held share is fixed when the member goes
 stale (state/stale_share.json, from the previous round's other targets) and only shrinks after
@@ -248,6 +249,62 @@ for self_ledger in (False, True):
     check(v.calls == [("BTCUSDT", -50, True)], f"{tag} corrupt record: the last known share 50 holds ({v.calls})")
     # whole lots and spot
     lots = {"type": "futures_contracts", "contract_value": 1, "currency": "USD", "lot_size": 1}
+    # 11-04 (統一, real money): s +6.09 lots goes stale beside f −1.09, book +5. The share was
+    # bounded by the whole key's book every round, so it sold a lot a round to 0 and one past it
+    setup({"s": (LONG, "1h", 60, None, {"amount": 6.09, "spec": lots}),
+           "f": (SHORT, "1h", 60, None, {"amount": 1.09, "spec": lots})}, self_ledger)
+    v = Venue({"BTCUSDT": 5})
+    mode(v, self_ledger)
+    portfolio.reconcile(v.positions, v.place)
+    check(v.calls == [], f"{tag} 6.09 beside −1.09 on a book of 5: nothing to do ({v.calls})")
+    put_state("s", LONG, *FAILING)
+    for _ in range(6):
+        portfolio.reconcile(v.positions, v.place)
+    check(v.calls == [] and v.held["BTCUSDT"] == 5,
+          f"{tag} s stale beside f's short: held at 5 over six rounds, nothing sold ({v.calls}, {v.held})")
+    v.held["BTCUSDT"] = 3  # the user closes 2 by hand
+    for _ in range(3):
+        portfolio.reconcile(v.positions, v.place)
+    check(v.calls == [] and v.held["BTCUSDT"] == 3
+          and abs(json.load(open("state/stale_share.json"))["BTCUSDT"]["share"] - 4.09) < 1e-9,
+          f"{tag} a hand close of 2: the share follows it down to 4.09 and is not bought back ({v.calls})")
+    put_state("f", FLAT, 60, None)
+    portfolio.reconcile(v.positions, v.place)
+    check(v.calls == [("BTCUSDT", 1, False)] and v.held["BTCUSDT"] == 4,
+          f"{tag} f exits its short: f's lot is bought back, s stays at its 4.09 ({v.calls})")
+    del v.calls[:]
+    for _ in range(3):
+        portfolio.reconcile(v.positions, v.place)
+    check(v.calls == [], f"{tag} …and nothing after ({v.calls})")
+    # 11-04 17:38: s's last failure ages past TARGET_STALE_RECENT_S while s still has not computed.
+    # Releasing on that bought the 15:00 target back; the hold now stays until state.json is
+    # written after the failure — through a hand close and two days without a signal
+    setup({"s": (LONG, "1h", 60, None, {"amount": 6.09, "spec": lots}),
+           "f": (SHORT, "1h", 60, None, {"amount": 1.09, "spec": lots})}, self_ledger)
+    v = Venue({"BTCUSDT": 5})
+    mode(v, self_ledger)
+    portfolio.reconcile(v.positions, v.place)
+    put_state("s", LONG, *FAILING)
+    for _ in range(2):
+        portfolio.reconcile(v.positions, v.place)
+    v.held["BTCUSDT"] = 3  # the user closes 2 by hand
+    for _ in range(2):
+        portfolio.reconcile(v.positions, v.place)
+    put_state("s", LONG, 3 * H + 2 * H, portfolio.TARGET_STALE_RECENT_S + 60)
+    for _ in range(3):
+        portfolio.reconcile(v.positions, v.place)
+    check(v.calls == [] and v.held["BTCUSDT"] == 3,
+          f"{tag} failure older than TARGET_STALE_RECENT_S, no new signal: still held, the hand close "
+          f"is not bought back ({v.calls})")
+    put_state("s", LONG, 3 * D, 2 * D)
+    for _ in range(3):
+        portfolio.reconcile(v.positions, v.place)
+    check(v.calls == [] and v.held["BTCUSDT"] == 3 and "BTCUSDT" in json.load(open("state/stale_share.json")),
+          f"{tag} two days without a signal: still held, nothing sent, no error ({v.calls})")
+    put_state("s", LONG, 60, 2 * D)  # s computes again: state.json newer than its last failure
+    portfolio.reconcile(v.positions, v.place)
+    check(v.calls == [("BTCUSDT", 2, False)] and "BTCUSDT" not in json.load(open("state/stale_share.json")),
+          f"{tag} s computes (state.json after the failure): released, trades its target ({v.calls})")
     v = run({"s": (LONG, "1h", *FAILING, {"amount": 1, "spec": lots}),
              "f": ({"symbol": "BTCUSDT", "position": 0.6}, "1h", 60, None, {"amount": 1, "spec": lots})},
             {}, self_ledger)

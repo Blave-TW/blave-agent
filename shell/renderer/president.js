@@ -76,6 +76,9 @@ function presView(pc, ui, ctx) {
   if (ui.recheck) return "d-pw";
   if (ui.recert) return cert.status === "failed" && cert.error !== "INTERRUPTED" ? "d-cert-err" : "d-cert";
   const wErr = String(worker.error || "");
+  // worker 還在讀、只有 STOP 檔(下單自己的登入失敗,回報的 login_stop):同一組登入失敗畫面,「確認登入」在裡面;比它新的確認登入過了就往下走
+  const ls = pc && pc.login_stop && typeof pc.login_stop === "object" ? pc.login_stop : null;
+  if (worker.status === "ok" && ls && !(probe.status === "ok" && (probe.at || 0) > (ls.at || 0))) return "d-" + (PRES_STOP_VIEW[String(ls.kind || "")] || "UNKNOWN");
   if (worker.status === "ok") return "d-done";
   if (worker.status === "failed" && wErr.indexOf("LOGIN_FAILED") !== 0) return "d-finish-fail";
   if (cert.status === "failed") return "d-cert-err";

@@ -268,6 +268,7 @@ const EVENTS = {
     "app_link_ios", "app_link_android",
     // 0.1.38 側欄策略資料夾(renderer/stratgroups.js、stratflags.js):操作成功才送,不帶資料夾名、策略名或哪個 emoji;
     // spec 原名 strat_folder_* 超過 prop VARCHAR(16),縮成 sfolder_*。api 白名單同順序,接在 0.1.37 的 app_link_android 之後
+    // sfolder_auto:0.1.45 起無送出點(拿掉建市場資料夾),0.1.44 以前的外殼還會送,留到它們退場
     "sfolder_create", "sfolder_auto", "sfolder_rename", "sfolder_emoji", "sfolder_reorder", "sfolder_delete", "sfolder_toggle", "sfolder_move",
     // 0.1.39 手機 App 跟這台電腦對話(spec mobile-agent-chat-mvp §7;主行程 relay.js 送):phone_chat_on／off = 從關打開成功／關掉;
     // phone_pair = 這台出的碼配對完成、phone_revoke = 在這台撤銷一支手機(兩個 0.1.43 起無送出點:配對與撤銷搬到 App／網站,等 0.1.42 退場再拿);phone_turn = 手機那一輪真的開跑;
@@ -303,7 +304,19 @@ const EVENTS = {
     // 0.1.44 沒有回測完成的策略時,策略組合 › 配置／優化霧上的〔新增策略〕(renderer/portfolio.js poFog;同 trade_fog_new);報告空清單霧上的〔新增報告〕(renderer/reports.js rptFog)。同 api 順序,api 先上
     "po_fog_new", "mg_fog_new", "rpt_fog_new",
     // 0.1.45 連結畫面(mockup 01):本機沒有能用的 CLI 時按〔用 Blave AI 先試〕、沒裝那一列按〔安裝〕(外開安裝頁)
-    "cn_try", "cn_install"] },
+    "cn_try", "cn_install",
+    // 統一登入停了、狀態行旁的〔繼續〕(0.1.45)
+    "pres_stop_cont",
+    // 0.1.45 閒著自動裝(main.js scheduledInstall):手機對話開著、視窗收進背景,install 前送;成敗看 update_failed。同 api 順序,api 先上
+    "upd_idle_run",
+    // 側欄提示格(0.1.45;spec sidebar-prompt-slot §8):slot_up_* 更新膠囊畫出、按下(renderer/app.js);slot_ph_* 手機那則畫出、按下、按 ×(renderer/promptslot.js)
+    "slot_up_show", "slot_up_open", "slot_ph_show", "slot_ph_open", "slot_ph_close",
+    // 0.1.45 策略庫下載一律要登入(renderer/library.js libSignIn、welcome.js wcUse):策略庫觸發的登入(含重新登入)、沒登入時按歡迎頁卡的 CTA。同 api 順序,api 先上
+    "login_lib", "wcard_signin",
+    // 0.1.45 側欄「在手機上用」pop 裡的〔登入 Blave〕(renderer/promptslot.js slotPopPaint;spec slot-phone-steps §4)。同 api 順序,api 先上
+    "slot_ph_login",
+    // 0.1.45 解除綁定框(renderer/trade.js;spec unbind-positions §6):選了保留部位並解除／平倉並解除／在平倉失敗那一態重新平倉。同 api 順序,api 先上
+    "unbind_keep", "unbind_close", "unbind_retry"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other
@@ -507,6 +520,7 @@ function createTelemetry(opts) {
   }
   return {
     track,
+    sentOnce: (ev) => ONCE.indexOf(ev) >= 0 && load().sent.indexOf(ev) >= 0,
     start() { track("app_first_open"); track("app_open"); beatStart(); stratStart(); },   // 關掉 / 已送過:track 自己會擋;心跳與策略三步的計時器各只排一次
     strategySteps,
     isEnabled: () => load().enabled,

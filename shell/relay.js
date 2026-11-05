@@ -26,7 +26,7 @@ const { redact } = require("./redact");
 const { deviceOf } = require("./mobileview");
 
 const EP = {
-  enabled: "/oauth/desktop/relay/enabled",   // → { enabled, on, prompt, paired_notice }
+  enabled: "/oauth/desktop/relay/enabled",   // → { enabled, on, prompt, paired_notice, paired_ever }
   enable: "/oauth/desktop/relay/enable",     // → 200
   disable: "/oauth/desktop/relay/disable",   // 同時刪伺服器上這台的對話(§4.4)
   poll: "/oauth/desktop/relay/poll",         // + ver, restarting → { enabled, messages, controls, server_time } | { enabled:false, reason }
@@ -166,6 +166,7 @@ function createRelay(opts) {
   let pending = [];          // 待送的 chunk(每段帶 session_id),照收到的順序
   let batchTimer = null, reporting = null, retryTimer = null, flushBackoff = BACKOFF_MIN_MS, pingTimer = null;
   let inflight = null;       // 在路上那一批:{ sids, p }(認領只等自己那條的)
+  let pairedEver;
   let acctGen = 0, signingOut = false;   // 登出換一次世代:之前在路上的回報、/relay/enabled 回來後都當上一個帳號的丟掉
   let authLost = false;   // 本機開著時 api 回 401(帳號被重設密碼／全部撤銷、或網站撤了這台):設定區因此收起,重新登入時照樣要講「關了」
   const tombstones = new Set();
@@ -213,6 +214,8 @@ function createRelay(opts) {
     return r || { status: 0, body: null };
   }
   function changed() { try { if (opts.onChange) opts.onChange(state()); } catch (_) { /* 畫面壞掉不擋 */ } }
+  // 帳號有沒有配對過手機(側欄提示格;含已撤銷,api app_devices 有任何一列)。只收布林,其餘 = 讀不到 = 畫面不畫手機那則
+  function pairedSet(v) { const n = typeof v === "boolean" ? v : undefined; if (pairedEver === n) return; pairedEver = n; changed(); }
   function setFlag(v) { if (flag === v) return; flag = v; if (!v) stopPoll(); changed(); }
   const live = () => flag && load().on && !load().pendingDisable && !!creds() && !stopped;
   // 也通知畫面:分頁上的手機記號跟著每條對話的手機回合數(state().phoneSids)
@@ -243,12 +246,12 @@ function createRelay(opts) {
     if (seenSending) await seenSending.catch(() => {});
     const tok = (creds() || {}).token, gen = acctGen, markedAt = load().notice && load().notice.marked ? load().notice.id : null;
     const r = await call(EP.enabled);
-    if (r.noCreds) { setFlag(false); return false; }
+    if (r.noCreds) { pairedSet(undefined); setFlag(false); return false; }
     if (r.status === 429) return flag;   // 每台限流:總開關、開關、確認框都照上一次,下一輪再問
-    if (r.status !== 200 || !r.body) { setFlag(false); return false; }
+    if (r.status !== 200 || !r.body) { pairedSet(undefined); setFlag(false); return false; }
     authLost = false;
     setFlag(r.body.enabled === true);
-    if (tok && tok === (creds() || {}).token && gen === acctGen && !signingOut) { askFrom(r.body); noticeFrom(r.body, markedAt); }   // 路上換了帳號或登出中:這份 prompt 是上一個帳號的
+    if (tok && tok === (creds() || {}).token && gen === acctGen && !signingOut) { pairedSet(r.body.paired_ever); askFrom(r.body); noticeFrom(r.body, markedAt); }   // 路上換了帳號或登出中:這份 prompt 是上一個帳號的
     if (flag && r.body.on === false) await reenable();
     return flag;
   }
@@ -794,7 +797,7 @@ function createRelay(opts) {
       await call(EP.disable, null, QUIT_TIMEOUT_MS);
     } finally { signingOut = false; }
     s.pendingDisable = false; s.synced = false; save(); outboxWrite([]);
-    sync.lastIds = null; seenToken = null; lastToken = null; ask = null; authLost = false;
+    sync.lastIds = null; seenToken = null; lastToken = null; ask = null; authLost = false; pairedEver = undefined;
     forgetReports(); changed();
   }
   /* 上一個帳號沒送完的回報整批丟掉:call 送出當下才讀憑證,留著會帶下一個帳號的 token 送出去 */
@@ -947,7 +950,7 @@ function createRelay(opts) {
   function state() {
     const s = load();
     const signedIn = !!creds();
-    return { visible: flag, on: s.on, pending: s.pendingDisable, signedIn,
+    return { visible: flag, on: s.on, pending: s.pendingDisable, signedIn, pairedEver: signedIn ? pairedEver : undefined,
       sync: { running: sync.running, done: sync.done, total: sync.total, error: sync.error, synced: s.synced },
       mobileTurns: active.size, queued: [...queue.values()].reduce((n, q) => n + q.length, 0), phoneSids: phoneSids(),
       ask: ask && flag && signedIn && !s.on ? { ...ask } : null,

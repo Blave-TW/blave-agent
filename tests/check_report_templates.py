@@ -12,6 +12,11 @@ os.environ["BLAVE_REPORT_PACKS"] = "off"   # 每格自己的假資料:不重用�
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np, pandas as pd
 from lib import data as d
+try:  # these fetch the real api from the repo: its Date samples (lib/tw_clock) go to scratch, not the repo's state/
+    from lib import tw_clock as _twc
+    _twc.SKEW_PATH = os.path.join(tempfile.mkdtemp(prefix="skew-", dir=os.environ.get("SCRATCHPAD") or None), "clock_skew.json")
+except ImportError:
+    pass
 import lib.report_templates as T
 
 

@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("blave", {
   // 聊天附件檔名上限:主行程 shell/attach.js 的 ATTACH_NAME_MAX,經 webPreferences.additionalArguments 進來(數字只寫在那一處)。0 = 沒拿到:畫面不擋,仍由主行程擋
   attachNameMax: Number(((process.argv || []).find((a) => a.indexOf("--blave-attach-name-max=") === 0) || "").split("=")[1]) || 0,
+  hiddenBoot: (process.argv || []).includes("--blave-hidden-boot"),   // 隱藏重開的頁(renderer/hidden-boot.js)
+  onHiddenBootShown: (fn) => ipcRenderer.on("hidden-boot-shown", () => fn()),
   platform: process.platform,   // app.js 掛到 <html data-platform>:Windows 的捲軸樣式只認這個記號
   detectAgents: () => ipcRenderer.invoke("detect-agents"),
   saveConnection: (choice) => ipcRenderer.invoke("save-connection", choice),
@@ -28,6 +30,9 @@ contextBridge.exposeInMainWorld("blave", {
   replyCue: (kind, snippet, sid) => ipcRenderer.send("reply-cue", { kind: String(kind), snippet: typeof snippet === "string" ? snippet : "", ...(typeof sid === "string" && sid ? { sid } : {}) }),
   theme: () => ipcRenderer.invoke("theme"),
   themeSet: (v) => ipcRenderer.invoke("theme-set", typeof v === "string" ? v : ""),
+  slotState: () => ipcRenderer.invoke("slot-state"),
+  slotFirstReply: () => ipcRenderer.invoke("slot-first-reply"),
+  slotPhoneSet: (p) => ipcRenderer.invoke("slot-phone-set", { closes: Number(p && p.closes), until: Number(p && p.until), seenDays: p && Array.isArray(p.seenDays) ? p.seenDays.map(String) : [] }),
   welcomePrefs: () => ipcRenderer.invoke("welcome-prefs"),
   welcomePrefsSet: (p) => ipcRenderer.invoke("welcome-prefs-set", { ...(p && "done" in p ? { done: p.done === true } : {}), ...(p && "cloudDone" in p ? { cloudDone: p.cloudDone === true } : {}) }),
   introCheck: () => ipcRenderer.invoke("intro-check"),
@@ -100,7 +105,8 @@ contextBridge.exposeInMainWorld("blave", {
   presidentTcem: () => ipcRenderer.invoke("president-tcem"),
   presidentCert: (caPassword, source) => ipcRenderer.invoke("president-cert", { caPassword, source }),
   presidentStep: (name, o) => ipcRenderer.invoke("president-step", name, o || {}),
-  presidentUnbind: () => ipcRenderer.invoke("president-unbind"),
+  // o = { close: true, requestId }:平倉後解除(close_then_unbind);沒帶 = 原本的直接解除
+  presidentUnbind: (o) => ipcRenderer.invoke("president-unbind", o || {}),
   // 群益本機的憑證那一段(capital_local.js):拿得回來的只有代號、張數、到期日
   caplScan: () => ipcRenderer.invoke("capl-scan"),
   caplLocale: () => ipcRenderer.invoke("capl-locale"),
@@ -113,7 +119,7 @@ contextBridge.exposeInMainWorld("blave", {
   caplConnect: (id, pw) => ipcRenderer.invoke("capl-connect", { id, pw }),
   caplStep: (name, o) => ipcRenderer.invoke("capl-step", name, o || {}),
   caplOld: (remove) => ipcRenderer.invoke("capl-old", remove === true),
-  caplUnbind: () => ipcRenderer.invoke("capl-unbind"),
+  caplUnbind: (o) => ipcRenderer.invoke("capl-unbind", o || {}),
   // 最低版本閘:{ blocked, min, current, checked_at };被擋時 trade-send 的啟動類回 UPDATE_REQUIRED、send-message 回 { blocked: "UPDATE_REQUIRED" }
   minVersionState: () => ipcRenderer.invoke("min-version-state"),
   onMinVersionState: (fn) => ipcRenderer.on("min-version-state", (_e, st) => fn(st)),

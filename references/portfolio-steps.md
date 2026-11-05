@@ -49,7 +49,7 @@ On mobile (narrow screens) the chat fills the screen — prepend one line:
 **Start / resume trading:**
 1. 點左側「自動下單」
 2. 按「啟動下單」
-3. 選「啟動並補齊部位」或「啟動，等新訊號才進場」
+3. 選「啟動並補齊部位」或「啟動，等新訊號」
 
 ### Desktop app
 
@@ -70,4 +70,4 @@ The switcher at the top of the middle pane picks the side: 「這台電腦」 fo
 **Start / resume trading:**
 1. 點左側「自動下單」
 2. 按上方的「啟動下單」
-3. 選「補齊部位」或「等新訊號」，再按下方的「啟動並補齊部位」或「啟動，等新訊號才進場」
+3. 選「補齊部位」或「等新訊號」，再按下方的「啟動並補齊部位」或「啟動，等新訊號」

@@ -66,6 +66,11 @@ ok("下單程式失敗 → d-finish-fail;它自己登入失敗停了(LOGIN_FAILE
   && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "failed", error: "LOGIN_FAILED:PASSWORD", at: S - 3 } })) === "d-PASSWORD"
   && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "failed", error: "LOGIN_FAILED:TIMEOUT", at: S - 3 } })) === "d-TIMEOUT"
   && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "failed", error: "LOGIN_FAILED:WEIRD", at: S - 3 } })) === "d-UNKNOWN");
+ok("worker 還在讀、只有 STOP 檔(回報 login_stop):那一類的畫面(「確認登入」在裡面);比它新的確認登入過了 → d-done",
+  view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "ok", ok_at: S - 20, at: S - 20 }, login_stop: { kind: "TIMEOUT", at: S - 3 } })) === "d-TIMEOUT"
+  && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "ok", ok_at: S - 20, at: S - 20 }, login_stop: { kind: "WEIRD", at: S - 3 } })) === "d-UNKNOWN"
+  && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 1 }, worker: { status: "ok", ok_at: S - 20, at: S - 20 }, login_stop: { kind: "TIMEOUT", at: S - 3 } })) === "d-done"
+  && view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 9 }, worker: { status: "ok", ok_at: S - 20, at: S - 20 } })) === "d-done");
 ok("用戶按了「確認登入」而且過了(probe 比那次失敗新)→ 往下啟動", view(pc({ env: "live", cert: CERT_OK, probe: { status: "ok", state: "ok", env: "live", at: S - 1 }, worker: { status: "failed", error: "LOGIN_FAILED:PASSWORD", at: S - 3 } })) === "d-finish");
 ok("第一次真錢的口數列:有金額的策略、排序、四捨五入", JSON.stringify(presFirstRows({ b: 2, a: 1.4, z: 0, x: "3" })) === JSON.stringify([{ name: "a", lots: 1 }, { name: "b", lots: 2 }]));
 

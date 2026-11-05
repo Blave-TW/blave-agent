@@ -96,7 +96,7 @@ if (!process.versions.electron) {
     && (html.slice(html.indexOf('id="wl-seg"'), html.indexOf("</span>", html.indexOf('id="wl-seg"'))).match(/data-mk="(crypto|tw|txf)" aria-pressed="(true|false)" data-i18n="wd\.mk\.\1"/g) || []).length === 3
     && /data-mk="crypto" aria-pressed="true"/.test(html) && /<div class="wl-body" id="wl-body"><\/div>\s*<div class="wl-foot"><button class="btn-quiet" id="wl-all" type="button" data-i18n="wd\.all"><\/button><p class="wl-state" id="wl-state" aria-live="polite"><\/p><\/div>/.test(html)
     && html.split('id="wl-state"').length === 2);
-  ok("② 載入順序:welcome.css 有載;welcome.js 在 app.js 之後(用 app.js 的 $ / t / acct / planVars / autosize / trackFeature;放最後,只有 0.1.33 第一次對話 intro.js(用 welcome.js 的 stFill / runningNow)排在它後面;不插進 app.js → suggest.js 之間)", /<link rel="stylesheet" href="welcome\.css">/.test(html) && html.indexOf('src="welcome.js"') > html.indexOf('src="app.js"') && (html.match(/<script src="[^"]+"><\/script>/g) || []).slice(-3).join() === '<script src="welcome.js"></script>,<script src="intro.js"></script>,<script src="chattabs.js"></script>');   // 0.1.37 對話分頁核心(chattabs.js)排最後:要用前面每一支的全域
+  ok("② 載入順序:welcome.css 有載;welcome.js 在 app.js 之後(用 app.js 的 $ / t / acct / planVars / autosize / trackFeature;放最後,只有 0.1.33 第一次對話 intro.js(用 welcome.js 的 stFill / runningNow)排在它後面;不插進 app.js → suggest.js 之間)", /<link rel="stylesheet" href="welcome\.css">/.test(html) && html.indexOf('src="welcome.js"') > html.indexOf('src="app.js"') && (html.match(/<script src="[^"]+"><\/script>/g) || []).slice(-4).join() === '<script src="welcome.js"></script>,<script src="intro.js"></script>,<script src="chattabs.js"></script>,<script src="promptslot.js"></script>');   // 0.1.37 對話分頁核心(chattabs.js)要用前面每一支的全域;0.1.45 提示格(promptslot.js)要用 chattabs.js 的 csAnyAwait,接在最後
   ok("② app.js 四個重畫入口:acctPaint(帳號狀態變)、acctPrecheck(能跑的人不走 acctPaint)、applyStatic 最後(換語言)、acctSignOut(登出)",
     /wdPaint\(\)/.test(cutFn(appSrc, "acctPaint")) && /acctSet\(await window\.blave\.accountStatus\(\)\); acctAt = Date\.now\(\);\n[^\n]*\n\s*if \(typeof wdPaint === "function"\) wdPaint\(\);/.test(appSrc)
     && /\[data-i18n-aria\]"\)\.forEach[^\n]*\n\s*if \(typeof wdPaint === "function"\) wdPaint\(\);[^\n]*\n\}/.test(appSrc) && /hasToken = false; acct = null; balLast = null; planErr = null; planBusy = false;\n\s*if \(typeof wdPaint === "function"\) wdPaint\(\);/.test(appSrc));
@@ -286,8 +286,8 @@ if (!process.versions.electron) {
       && !/wcCurve|SEND_ROW_IC|ST_ROWS|ST_FEATURE|stPaint|stGo|stSync|stTurnEnd/.test(src));
     ok("② tag 用既有的 wd.mk.*(en 台股改 TW Stocks);輸入框提示改成講想法的短句(spec §9:聊天欄最窄 336 也放得下)",
       STR.en["wd.mk.tw"] === "TW Stocks" && STR.zh["wd.mk.tw"] === "台股" && STR.zh["ws.placeholder"] === "說一個交易想法…" && STR.en["ws.placeholder"] === "Describe a trading idea…");
-    ok("② ①策略卡的 CTA(spec §3.1):先擋同一支還在裝與雲端一次一支(busySendTell)、狀態不是 free 只開詳情、free 才 libAsk(from welcome);名字按鈕記 wcard_open／wcard_open_cloud 再開詳情(libOpen silent);鎖由 wcBusySync 就地換(busyLock、正在裝的那支換 lib.pending)",
-      /if \(libPendingBlocks\(s\)\) \{ busySendTell\(\); return; \}[^\n]*\n\s*if \(libCtaOf\(s\)\.state !== "free"\) \{ wcDetail\(s\); return; \}\n\s*libAsk\(s, a, \{ from: "welcome" \}\);/.test(cutFn(src, "wcUse"))
+    ok("② ①策略卡的 CTA(spec §3.1):先擋同一支還在裝與雲端一次一支(busySendTell)、狀態不是 free 只開詳情(沒登入另記 wcard_signin)、free 才 libAsk(from welcome);名字按鈕記 wcard_open／wcard_open_cloud 再開詳情(libOpen silent);鎖由 wcBusySync 就地換(busyLock、正在裝的那支換 lib.pending)",
+      /if \(libPendingBlocks\(s\)\) \{ busySendTell\(\); return; \}[^\n]*\n\s*const st = libCtaOf\(s\)\.state;\n\s*if \(st !== "free"\) \{ if \(st === "signedOut"\) trackFeature\("wcard_signin"\); wcDetail\(s\); return; \}\n\s*libAsk\(s, a, \{ from: "welcome" \}\);/.test(cutFn(src, "wcUse"))
       && /trackFeature\(onbEnv\(\) === "cloud" \? "wcard_open_cloud" : "wcard_open"\); wcDetail\(s\);/.test(cutFn(src, "wcCard")) && /await libOpen\(\{ silent: true \}\); libShowDetail\(s\.id\);/.test(cutFn(src, "wcDetail"))
       && /busyLock\(a, mine \|\| lockAll\);/.test(cutFn(src, "wcBusySync")) && /t\(mine \? "lib\.pending" : "lib\.use"\)/.test(cutFn(src, "wcBusySync")));
     // wcPaint 原文接假 DOM:骨架、收起、雲端停了收起、指紋沒變不碰 DOM
@@ -420,7 +420,7 @@ app.whenReady().then(async () => {
     k.cols.length === 2 && cardOk(k) && Math.abs(k.cols[1][0].l - k.cols[0][0].r - 16) < 0.6 && Math.abs((k.cols[0][0].r - k.cols[0][0].l) - (k.cols[1][0].r - k.cols[1][0].l)) < 0.6 && k.over <= 0, JSON.stringify(k));
   ok("③ 步驟內容同一條左軸:①的第一顆籤、新增策略、欄小標、卡、「看全部資料」的左緣同一條 x,比記號內縮 32;由上到下 記號 → 新增策略那一列 → 清單",
     axisOk(k) && k.order.every((y, i) => i === 0 || y >= k.order[i - 1] - 0.5) && Math.abs(k.head.indent - 32) < 0.6, JSON.stringify([k.axis, k.order, k.head]));
-  // ①的策略卡(spec desktop-welcome-library-first §2.2–§3.1):stub 的 libraryList 讀不到,清單直接放進 LIB.data;沒登入只出 libAnonOk 的。901 樣本較長 → 排第一(libCompare 比樣本長)
+  // ①的策略卡(spec desktop-welcome-library-first §2.2–§3.1):stub 的 libraryList 讀不到,清單直接放進 LIB.data;沒登入只出不用 Blave 資料的。901 樣本較長 → 排第一(libCompare 比樣本長)
   const wcRep = (y1, o) => Object.assign({ symbol: "BTCUSDT", interval: "4h", annual_return: 21.5, total_return: 300, sharpe: 1.4, max_drawdown: -22, equity_from: y1 + "-01-01", equity_to: "2026-06-30" }, o);
   const WC_LIST = [
     { id: 901, title: "BTC 通道動能共振", price: 0, is_official: true, verified: true, is_owner: false, market: "crypto", blave_data: "none", report: wcRep(2014) },
@@ -432,11 +432,16 @@ app.whenReady().then(async () => {
         return { iB: i.bottom, iR: i.right, sT: s.top, sB: s.bottom, sL: s.left, sR: s.right, aT: a.top, aL: a.left - cr.left, aX: a.left, over: c.scrollWidth - c.clientWidth }; }) }; })()`);
   { await js(`(() => { hasToken = false; acct = null; LIB.data = { strategies: ${JSON.stringify(WC_LIST)}, signedIn: false, dataAccess: null, why: null, lang: LANG }; WC.key = null; wcPaint(); return true; })()`); await wait(50);
     const c1 = await wcGeo();
-    ok("③ ①的卡 1600 寬(中欄 ≥ 640):沒登入只出免登入的兩支(要 Blave 資料的台指期不出、不補)、一張一行(名字｜數字｜CTA 左右排)、只有第一張帶 gloss、不溢出",
+    ok("③ ①的卡 1600 寬(中欄 ≥ 640):沒登入只出不用 Blave 資料的兩支(要資料的台指期不出、不補)、一張一行(名字｜數字｜CTA 左右排)、只有第一張帶 gloss、不溢出",
       !c1.hidden && c1.ids === "901,902" && c1.tips === 3 && c1.rows.every((x) => x.sL >= x.iR - 0.5 && x.aX >= x.sR - 0.5 && x.over <= 0), JSON.stringify(c1));
     const hit = await js(`(() => { const a = $("wc-cards").querySelector(".ln-arrow"); a.scrollIntoView({ block: "center" }); const r = a.getBoundingClientRect(), x = r.left + r.width / 2, cy = (r.top + r.bottom) / 2; let n = 0;
       for (let y = Math.floor(cy) - 30; y <= Math.ceil(cy) + 30; y++) { const e = document.elementFromPoint(x, y); if (e && (e === a || a.contains(e))) n++; } return { h: r.height, n }; })()`);
     ok("③ CTA 熱區實測 ≥ 44(視覺 32、::before 上下各補 6)", hit.h >= 31.5 && hit.n >= 44, JSON.stringify(hit));
+    // 0.1.45 沒登入(spec library-login-required 案 1A):卡的字不變,按了先進詳情,不開確認框;記 wcard_signin
+    const so = await js(`(async () => { window.__tf.length = 0; const a = $("wc-cards").querySelector(".ln-arrow"), lbl = a.querySelector(".lbl").textContent; a.click(); await new Promise((r) => setTimeout(r, 80));
+      const b = document.querySelector("#lib-cta .btn-fill"), r = { lbl, box: !$("del-scrim").hidden, lib: !$("lib").hidden, detail: libBag().detail, btn: b && b.textContent, tf: window.__tf.slice() }; libLeave(); envShowMain(); await new Promise((res) => setTimeout(res, 40)); return r; })()`);
+    ok("③ 沒登入按卡的 CTA:字仍是安裝並回測、不開確認框、進那支詳情、主鈕登入 Blave、記 wcard_signin", so.lbl === Z["lib.use"] && !so.box && so.lib && so.detail === 901 && so.btn === Z["cn.blave.btn"] && so.tf.join() === "wcard_signin", JSON.stringify(so));
+    await js(`(() => { hasToken = true; acct = { can_run: true, data_access: "billed", plan: { state: "none" } }; LIB.data.signedIn = true; LIB.data.dataAccess = "billed"; WC.key = null; wcPaint(); return true; })()`); await wait(40);
     const cf = await js(`(async () => { window.__tf.length = 0; const a = $("wc-cards").querySelector(".ln-arrow"); a.click(); await new Promise((r) => setTimeout(r, 50));
       const r = { open: !$("del-scrim").hidden, title: $("del-title").textContent, focus: document.activeElement === $("del-cancel") };
       $("del-cancel").click(); await new Promise((res) => setTimeout(res, 50)); r.closed = $("del-scrim").hidden; r.back = document.activeElement === a; r.tf = window.__tf.slice(); r.lib = $("lib").hidden; return r; })()`);

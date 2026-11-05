@@ -125,7 +125,7 @@ _ACCOUNT, _SECRET, _CA_PW = "president_account", "president_password", "presiden
 # lib/president_worker.py's LoginError classes → the page's states
 LOGIN_STATES = {"CERT_MISMATCH": "cert_mismatch", "CERT": "cert", "PASSWORD": "password",
                 "MAINTENANCE": "maintenance", "TIMEOUT": "timeout", "NON_TEST_SERVER": "unknown",
-                "UNKNOWN": "unknown"}
+                "UNKNOWN": "unknown", "BUSY": "timeout"}  # BUSY: another login held the machine's login lock
 
 _SECTIONS = ("setup", "cert", "probe", "test_order", "worker")
 # every step that logs in (or, for finish, starts what logs in): needs the bind AND the certificate

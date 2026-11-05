@@ -45,15 +45,21 @@ function cloudLine(st) {
   // halt 排在前面先判:「重開沒停住但已按暫停」回 paused,那是真話(舊對帳器認 HALT)
   if (r.reconciler && r.reconciler.stopped && r.reconciler.stopped.reason === "machine_restart" && r.reconciler.stopped.gated === false) return { money, venue, state: "mayTrade" };
   if (r.reconciler && r.reconciler.stopped && r.reconciler.stopped.reason === "machine_restart") return { money, venue, state: "paused" };
+  if (r.reconciler && r.reconciler.alive && presLoginStopped(r)) return { money, venue, state: "loginStopped" };
   return { money, venue, state: r.reconciler && r.reconciler.alive ? "on" : "notStarted" };
 }
 /* 選單列 / Dock 第一行:這台電腦現在怎樣(0.1.9 起常駐,沒在下單也講;設計 spec-desktop-tray-resident-0.1.9 §2.2)。
    st = 下單宿主的 status(),沒有宿主(引擎還沒裝好)傳 null。回 { money?, venue?, state } 或 null(常駐程式剛起、第一份報告還在路上:這一行先不出)。
-   state:none 還沒連接交易所 / notStarted / paused / mayTrade / unknown / on / onZ(下單程式在跑、沒有策略設金額)。沒有 money = 樣板不帶交易所名。
+   state:none 還沒連接交易所 / notStarted / paused / mayTrade / unknown / on / onZ(下單程式在跑、沒有策略設金額)/ loginStopped(統一登入停了)。沒有 money = 樣板不帶交易所名。
    判定照 renderer trExecState 的順序;on / onZ 的條件跟 main.js tradeLive() 同一組欄位。
    lastVenue:狀態檔這一輪 build 失敗(沒有 venues)時,上一次看到的場所。 */
 // 這台電腦開通的券商 → 回報裡它的開通狀態欄(runtime president_connect / capital_local)
 const LOCAL_CONNECT = { president: "president_connect", capital: "capital_local_connect" };
+// 統一登入停了、對帳器還在跑:單全被擋,不准講在執行(同 trade.js trPresLoginHeld)
+function presLoginStopped(r) {
+  const c = r && r.venues && r.venues.president && r.president_connect, w = c && c.worker;
+  return !!c && !!((c.login_stop && typeof c.login_stop === "object") || (w && w.status === "failed" && String(w.error || "").indexOf("LOGIN_FAILED") === 0));
+}
 function localLine(st, lastVenue) {
   if (!st) return { state: "none" };
   const r = st.report;
@@ -79,6 +85,7 @@ function localLine(st, lastVenue) {
   // 心跳舊了(睡眠醒來)但監督者說對帳器在跑 = 可能還在下單:講讀不到,不講沒在跑
   if (!st.alive) return line(st.running && sup && sup.running ? "unknown" : "notStarted");
   if (!rec.alive || (sup && sup.running === false)) return line("notStarted");
+  if (presLoginStopped(r)) return line("loginStopped");
   const a = r.config && r.config.amounts;   // 同 trNoAmounts:設定檔讀不到(null)不算沒設金額
   return line(r.config !== null && !(a && typeof a === "object" && Object.keys(a).some((k) => Number(a[k]) > 0)) ? "onZ" : "on");
 }
@@ -93,7 +100,7 @@ function statusLine(tpl, line, labels) {
   // 台灣券商的名字要翻(群益 / Capital):字由 renderer 交過來,還沒交就整行不出,不拿 id 首字大寫頂
   const money = !line.money ? "" : line.money === "paper" ? labels.moneyPaper : line.venue === "capital" ? labels.venueCapital
     : line.venue === "president" ? labels.venuePresident : venueLabel(line.venue) || labels.moneyReal;
-  const state = line.state === "on" ? labels.stOn : line.state === "onZ" ? labels.runningZ : line.state === "paused" ? labels.stPaused
+  const state = line.state === "loginStopped" ? labels.stLoginStopped : line.state === "on" ? labels.stOn : line.state === "onZ" ? labels.runningZ : line.state === "paused" ? labels.stPaused
     : line.state === "mayTrade" ? labels.stMayTrade : line.state === "notStarted" ? labels.stNotStarted : line.state === "none" ? labels.noAccount : labels.stUnknown;
   if ((line.money && !money) || !state) return null;
   return clean(fmt(tpl, { money, state }), 80);

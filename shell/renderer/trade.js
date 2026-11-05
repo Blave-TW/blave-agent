@@ -129,6 +129,13 @@ function trPresWip(r, id) { const c = id === "president" && r && r.president_con
 function trPresStopped(r, id) { const c = id === "president" && r && r.president_connect; return !!c && typeof c === "object" && !!c.worker && c.worker.status === "failed" && !trPresWip(r, id); }
 // 停掉的那一種是登入失敗(runtime 寫 worker.error = LOGIN_FAILED:<類別>;其他失敗是沒寫出快照那類):設定 › 帳戶 那一列講「登入已停止」而不是讀帳原文
 function trPresLoginStopped(r, id) { return trPresStopped(r, id) && String(r.president_connect.worker.error || "").indexOf("LOGIN_FAILED") === 0; }
+/* 登入停了 = 什麼單都送不出去(tests/check_president_stop_orders.py 跑真對帳器驗過)。本機看 worker 的登入失敗;
+   雲端的 worker 由 NSSM 管、狀態段不會變 failed,看回報帶的 login_stop(portfolio_reporter,STOP 檔)。開通中不算 */
+function trPresLoginHeld(r, id) { const c = id === "president" && r && r.president_connect; return !!c && typeof c === "object" && !trPresWip(r, id) && (trPresLoginStopped(r, id) || (!!c.login_stop && typeof c.login_stop === "object")); }
+// 對帳程式還活著、看起來在跑,其實統一的單全被擋:這一態不准寫「執行中」(標題下那一行、頂列、切換器同一個判準)
+/* 台指期那幾種不是交易所拒單的 P1(manager/reconciler KIND_*):照 kind 換標題,不掛「下單失敗」;原文是 Blave 自己寫的句子,照原句(同 api agent_overview) */
+const TR_TW_NOTICE = { clock_skew_hold: "tr.ov.evClockHold", tw_entry_hold: "tr.ov.evTwHold" };
+function trPresHeldRun(state, r) { return state === "running" && trVenueIds(r).indexOf("president") >= 0 && trPresLoginHeld(r, "president"); }
 /* 統一下單程式剛起來(worker ok、或 wanted 著還在 running)、帳戶讀取器還沒讀到它之後的那一輪(account.read_at 早於那一刻、或還沒有 account):
    這時掛著的是上一輪的舊失敗,不是串接失敗(10-13 乾淨機模擬 發現 2:開通成功回到頁面頭幾秒紅字「串接失敗」)。
    超過 TR_PRES_BOOT_MS 還沒讀到就照舊講失敗;worker 明確失敗(status failed)不走這裡 */
@@ -144,18 +151,18 @@ function trPresBooting(r, nowMs) {
 /* 台指期實盤行情來源那一句(設計 spec desktop-live-source-line;lib/data 在每次 live tick 寫 state/twfutures_live_source.json,reporter 原樣帶出)。
    四個條件同時成立才出:這台電腦且綁統一、回報有那一欄(還沒 tick 過就沒有,不出佔位句)、至少一個台指期口數列 > 0(`lots`;
    全 0 時沒有 live tick,檔案是舊的)、狀態在跑 / 已暫停 / 沒停住(過場中、死掉、開通中都不出)。
-   `paused`(市場沒開、worker 在時段外重蓋快照)不是退路,照正常句;退路時先用 president_connect 判「統一還沒登入」
-   (後端沒有獨立代碼:worker 沒登入只是不寫檔,落 stale / no_file),再看 reason;
+   `paused`(市場沒開、worker 在時段外重蓋快照)不是退路,照正常句;退路時先看是不是真的登入失敗(trPresLoginHeld:
+   後端沒有獨立代碼,worker 沒登入只是不寫檔,落 stale / no_file),其他 worker 狀態(剛啟動、沒寫出快照)照 reason 講;
    `empty` 併進 noFile。fallback = 退路句(顏色升一階,trPaintQuote) */
 const TR_QUOTE_WHY = { stale: "tr.quote.why.stale", not_enabled: "tr.quote.why.notEnabled", no_overlap: "tr.quote.why.noOverlap" };
 const TR_QUOTE_STATES = ["running", "halted", "unconfirmed"];
 function trQuoteLine(r, env, id, state, lots) {
-  const q = env === "local" && id === "president" && lots && TR_QUOTE_STATES.indexOf(state) >= 0 && r && r.twfutures_live_source;
+  const q = env === "local" && (id === "president" || trVenueIds(r).indexOf("president") >= 0) && lots && TR_QUOTE_STATES.indexOf(state) >= 0 && r && r.twfutures_live_source;
   if (!q || typeof q !== "object") return null;
   // paused = 市場沒開(worker 在時段外重蓋快照):不是退路,照正常句
   if (q.source === "president" || q.reason === "paused") return { key: "tr.quote.pres", why: null, fallback: false };
-  const w = r.president_connect && r.president_connect.worker, why = String(q.reason || "");
-  const k = w && w.status && w.status !== "ok" ? "tr.quote.why.noLogin"
+  const why = String(q.reason || "");
+  const k = trPresLoginHeld(r, "president") ? "tr.quote.why.noLogin"
     : TR_QUOTE_WHY[why] || (why.indexOf("not_ok") === 0 ? "tr.quote.why.notOk" : "tr.quote.why.noFile");
   return { key: "tr.quote.blave", why: k, fallback: true };
 }
@@ -1391,7 +1398,7 @@ const ENV_API = ["tradeStatus", "listStrategies", "loadStrategy", "tradeEquity",
 /* 雲端送得出去的指令:**只開真的有 UI 在用的**(稽核 S-2)。`amounts` = 雲端填金額(S4);`delete_strategy` = 雲端側欄的刪除;
    `credentials_remove` / `retest_accounts` = 雲端設定分頁(S5)。`credentials` 永遠不在這裡:金鑰只走主行程專用的 cloud-connect。
    沒有 `update` / `restart_reconciler`:用本機 app 不觸發雲端 agent 回合(Wei 09-22)。主行程還會再擋一次(CLOUD_SHIPPED,兩份逐項相等)。 */
-const ENV_CLOUD_CMDS = ["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"];
+const ENV_CLOUD_CMDS = ["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "close_then_unbind", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"];
 function envApi(env, host) {
   if (env !== "cloud") { const o = { env: "local" }; ENV_API.forEach((k) => { o[k] = (...a) => host[k](...a); });
     /* 事件清單兩個視角同一個形狀 { code, events }。這台電腦永遠是 OK:那是本機檔案,檔不在就是真的沒發生過事
@@ -1483,6 +1490,8 @@ function envCell(env, st, pending) {
   // 雲端有在途的指令:切走也看得到(規格 §1.3)。排在紅短劃後面——出事比「我按的還在路上」更該先講。
   // 詞不可沿用 side.starting(那是主機在開機,不是指令在路上)
   if (env === "cloud" && pending) { out.dot = "busy"; out.word = "env.st.sending"; return out; }
+  // 統一登入停了:單全被擋、部位沒人管,同「下單停了」那一級。排在過場後面:按了暫停,過場先講
+  if (!pending && st && trPresHeldRun(state, st.report)) { const pc = st.report.president_connect, stop = pc.login_stop; out.dot = "bad"; out.word = "tr.s.presStopped"; out.sig = "pres-stop:" + String((stop && stop.at) || (pc.worker && pc.worker.at) || ""); return out; }
   out.run = state === "running" && !pending && !trFailedIds(st.report).length && !trKeyBad(env);
   return out;
 }
@@ -1780,8 +1789,20 @@ function trTxfSymInto(node, sym) {
   if (raw !== canon) node.append(LANG === "zh" ? "（" : " (", trEl("span", "mono", raw), LANG === "zh" ? "）" : ")");
   return true;
 }
-// 口數單實際成交的月份合約:orders.jsonl 的 symbol 是帳本 key(TXF),月份代碼在 legs[].resolved_symbol(lib 0.1.13 起);舊列沒有就用 symbol
-function trOrderContract(o) { const l = (Array.isArray(o.legs) ? o.legs : []).find((x) => x && typeof x.resolved_symbol === "string" && x.resolved_symbol); return l ? l.resolved_symbol : String(o.symbol || ""); }
+// 口數單的月份合約:orders.jsonl 的 symbol 是帳本 key(TXF),成交的月份在 legs[].resolved_symbol(lib 0.1.13 起),
+// 沒成交的單是送單時的合約 legs[].sent_symbol(0.1.45 起;群益只知道別名,不寫);都沒有就用 symbol
+function trOrderContract(o) {
+  const legs = Array.isArray(o.legs) ? o.legs : [], pick = (k) => { const l = legs.find((x) => x && typeof x[k] === "string" && x[k]); return l && l[k]; };
+  return pick("resolved_symbol") || pick("sent_symbol") || String(o.symbol || "");
+}
+/* 口數單實際的口數:腿上有 sent_qty(實際送出的口數,0.1.45 起)時,成交的腿算成交口數、沒成交的算送出口數。
+   整筆 signed_diff 是取整與平倉上限之前的差額(平倉 1 口會寫成 6 口),只在舊列(任一腿沒有 sent_qty)退回它 */
+function trOrderLotsQty(o) {
+  const legs = Array.isArray(o.legs) ? o.legs : [];
+  const q = legs.map((l) => (!l || !(typeof l.sent_qty === "number" && l.sent_qty > 0) ? null
+    : typeof l.executed_qty === "number" && l.executed_qty > 0 ? l.executed_qty : l.sent_qty));
+  return legs.length && q.every((x) => x != null) ? q.reduce((a, b) => a + b, 0) : Math.abs(typeof o.signed_diff === "number" ? o.signed_diff : NaN);
+}
 // cols = [[字, class, 單位?, title?]]:整表只有一區時單位寫在欄頭(units spec §9.4);title = 欄頭的原生說明(th 在橫捲容器裡,氣泡會被裁)
 function trHead(cols) {
   const thead = document.createElement("thead"), row = document.createElement("tr");
@@ -1854,14 +1875,17 @@ function trPushLabels() {
     ev_execution_stuck: t("tr.ov.evExecStuck"), ev_execution_stuck_n: t("tr.ov.evExecStuckNote"),
     ev_machine_restart_stopped: t("tr.ov.evRestartStopped"), ev_machine_restart_stopped_n: t("tm.evRestartStoppedNote"),
     ev_venue_stops_missing: t("tm.evBitgetNoStop"), ev_venue_stops_missing_n: t("tr.ov.evBitgetNoStopNote"),
+    ev_venue_login_blocked: t("tr.ov.evPresStopped"), ev_venue_login_blocked_n: t("tr.ov.evPresStoppedNote"),
     ev_order_unconfirmed: t("tr.ov.evUnconfirmed"), ev_order_unconfirmed_n: t("tm.evUnconfirmedNote"),
+    ev_clock_skew_hold: t("tr.ov.evClockHold"), ev_clock_skew_hold_n: t("tm.evClockHoldNote"),
+    ev_tw_entry_hold: t("tr.ov.evTwHold"), ev_tw_entry_hold_n: t("tm.evTwHoldNote"),
     ev_halt_unconfirmed_n: t("tm.evHaltUnconfirmedNote"),   // 大寫開頭、不帶標的(標題已帶「· 標的」)
     ev_order_unconfirmed_close_all: t("tr.ov.evUnconfirmedCloseAll"), ev_order_unconfirmed_close_all_n: t("tr.ov.evUnconfirmedCloseAllNote"),
     ev_order_unconfirmed_stuck: t("tr.ov.evUnconfirmedStuck"), ev_order_unconfirmed_stuck_n: t("tr.ov.evUnconfirmedStuckNote"),
     stratOne: t("tr.ov.evStratOne", { name: "{name}" }), stratTwo: t("tr.ov.evStratTwo", { a: "{a}", b: "{b}" }),
     stratMany: t("tr.ov.evStratMany", { name: "{name}", n: "{n}", more: "{more}" }), withStrat: t("tm.evWithStrat", { strat: "{strat}", note: "{note}" }),
     // 選單列兩行狀態、app 選單「顯示」兩項與官網、結束攔截多的那一句、通知標題的前綴(主行程:traytext.js / main.js)
-    lang: LANG, stLocal: t("tm.stLocal"), stLocalOnly: t("tm.stLocalOnly"), noAccount: t("tr.noAccount"), runningZ: t("tr.runningZ"), stCloud: t("tm.stCloud"), stOn: t("tm.stOn"), stPaused: t("tm.stPaused"), stUnknown: t("tm.stUnknown"), stMayTrade: t("tm.stMayTrade"), stNotStarted: t("tr.notStarted"),
+    lang: LANG, stLocal: t("tm.stLocal"), stLocalOnly: t("tm.stLocalOnly"), noAccount: t("tr.noAccount"), runningZ: t("tr.runningZ"), stCloud: t("tm.stCloud"), stOn: t("tm.stOn"), stPaused: t("tm.stPaused"), stUnknown: t("tm.stUnknown"), stMayTrade: t("tm.stMayTrade"), stLoginStopped: t("tr.s.presStopped"), stNotStarted: t("tr.notStarted"),
     moneyPaper: t("tr.mode.paper"), moneyReal: t("tr.mode.real"), venueCapital: t("cap.venue"), venuePresident: t("pres.venue"), pauseLocal: t("tm.pauseLocal"), quitCloudNote: t("tm.quitCloudNote"),
     // Binance 金鑰重查的通知(主行程 binanceNotify):這些事件只會來自這台電腦,{where} 在這裡就填好;{ip} 留給主行程填
     key_ipTitle: t("tm.key.ipTitle", { where: t("env.local") }), key_ipBody: t("tm.key.ipBody", { ip: "{ip}" }), key_rejTitle: t("tm.key.rejTitle", { where: t("env.local") }),
@@ -2158,6 +2182,7 @@ function trStateText(state) {
   // 第一份報告還在路上:通用的「載入中…」只有在「不知道在等誰、多久、會不會自己好」時才該用,這裡三件事都知道(spec §1 規則 5)
   if (state === "loading") return TR.env === "cloud" ? t("tr.cloud.hdFetching") : trLoadingText();
   if (state === "unknown") return t("tr.unknown");
+  if (trPresHeldRun(state, r)) return t(TR.env === "cloud" ? "tr.presStoppedCloud" : "tr.presStopped");   // 不接「串接失敗」前綴,出口在主鈕旁的〔重新登入〕
   if (state === "setup") return trVenueLabel(trVenueIds(r)[0], true) + " · " + t("cap.pending");   // 開通中(統一／群益本機):不接「串接失敗」前綴、不講已暫停
   // 雲端剛存了金鑰 / 模擬帳戶、主機還沒回報(S5):標頭不跟內文打架——「連接中…」,過了上限「沒有收到主機確認」(v2 §5)
   if (state === "noaccount" && TR.env === "cloud" && TR.cxSaved) return trCxSavedStale(TR.cxSaved, Date.now()) ? t("tr.cloud.hdNoConfirm")
@@ -2169,6 +2194,8 @@ function trStateText(state) {
   if (state === "unconfirmed") s = t("tr.cloud.mayTrade") + " · " + t("tr.cloud.restartUnconfirmed");
   /* 已暫停一律帶原因行(常駐、不截斷):重開過 = 什麼單都不下(B,優先);HALT = 不開新倉、平倉停損照走(A)。
      兩者同時成立(先按暫停、之後又重開)講 B——那時「平倉照常」已經不成立 */
+  // 暫停中又遇到統一登入停了:平倉與停損也送不出去,不接 HALT 那句「平倉照常」(設計複查 v045 R3)
+  else if (state === "halted" && trVenueIds(r).indexOf("president") >= 0 && trPresLoginHeld(r, "president")) s = t("tr.halted") + " · " + t(TR.env === "cloud" ? "tr.presStoppedCloud" : "tr.presStoppedHalted");
   else if (state === "halted") { const rk = trRestartKind(r), ask = trAcctAsk(r), done = !trBookHold(r) && TR.acctDone && (TR.acctDone.outcome === "kept" || TR.acctDone.outcome === "reset");
     s = !ask && !done && trAppRestartQuiet(r) ? t("tr.notStarted")
       : (ask ? t("env.st.autoPaused") : done || rk || envHeadWord(state, TR.st) !== "env.st.autoPaused" ? t("tr.halted") : t("env.st.autoPaused")) + " · "
@@ -2203,6 +2230,7 @@ function trShortState(state) {
   if (TR.env === "cloud" && envCloudKind(TR.st) === "stopped") return t("side.stopped");
   if (TR.pending) return TR.pending.want === "halted" ? t("tr.stopping") : TR.pending.want === "released" ? t("tr.releasing") : TR.pending.want === "acct" ? t("tr.acct.confirming") : t("tr.starting");
   if (trHostDown(TR.st, Date.now())) return t("tr.hostShort");
+  if (trPresHeldRun(state, r)) return t("tr.s.presStopped");
   const s = state === "setup" ? t("cap.pending") : state === "running" ? t("tr.s.on") : state === "unconfirmed" ? t("tr.cloud.mayTrade") : state === "halted" ? (envHeadWord(state, TR.st) === "env.st.autoPaused" ? t("env.st.autoPaused") : t("tr.halted"))
     : state === "dead" ? (trDeadKind(r) === "died" ? t("tr.s.died") : t("tr.s.off")) : "";
   return trFailedIds(r).length || trKeyBad(TR.env) ? t("cx.failShort") + (s ? " · " + s : "") : s;
@@ -2510,11 +2538,13 @@ function trPaintHead() {
     trPaintGoStop(false); trPaintNoAmt(null); trPaintGoRel(false, false);
     const sv = trVenueIds(trReport())[0];
     if (sv !== "president" && !CAPL_LOCAL_ON) { if (pcBtn) pcBtn.remove(); return; }
-    const go = pcBtn || trEl("button", "btn-fill"); go.textContent = t("cap.continue"); go.dataset.venue = sv;
+    const go = pcBtn || trEl("button", "btn-fill"); go.className = "btn-fill"; go.textContent = t("cap.continue"); go.dataset.venue = sv; delete go.dataset.stop;
     if (!pcBtn) { go.type = "button"; go.id = "tr-pres-continue"; go.addEventListener("click", () => cxModalOpen(go, go.dataset.venue)); act.appendChild(go); }
     return;
   }
-  if (pcBtn) pcBtn.remove();
+  // 統一登入停了、對帳程式還活著:〔繼續〕回開通框的確認登入,描邊排在「暫停下單」左邊(同「解除暫停」);暫停鈕照舊在
+  const presHeld = TR.env === "local" && !stopped && trPresHeldRun(state, trReport());
+  if (pcBtn && (!presHeld || !$("tr-go"))) { if (document.activeElement === pcBtn) $("tr-h").focus(); pcBtn.remove(); }
   const b0 = state === "noaccount" && trNoAccountStopped(trReport());
   if (!stopped && (b0 || state === "noaccount" || state === "loading" || (ro && state === "unknown"))) { if (b) { if (document.activeElement === b) $("tr-h").focus(); b.remove(); } trPaintGoStop(false); trPaintNoAmt(pend); trPaintGoRel(b0, b0); return; }
   if (!b) {
@@ -2529,6 +2559,17 @@ function trPaintHead() {
     trPaintGoStop(false); trPaintGoRel(false); trPaintNoAmt(pend);
     return;
   }
+  // 登入停了:能解決的只有〔重新登入〕→ 實心,〔暫停下單〕退成描邊(Wei 11-04,只這個場景;開通中的 cap.continue 不動)
+  if (presHeld) {
+    let go = $("tr-pres-continue");
+    if (!go) {
+      go = trEl("button", "btn-fill", ""); go.type = "button"; go.id = "tr-pres-continue"; go.dataset.venue = "president";
+      go.addEventListener("click", () => { if (go.dataset.stop === "1") trackFeature("pres_stop_cont"); cxModalOpen(go, go.dataset.venue); });
+      act.insertBefore(go, b);
+    }
+    go.className = "btn-fill"; go.dataset.stop = "1"; go.textContent = t("tr.presRelogin");
+  }
+  b.classList.toggle("btn-out", presHeld); b.classList.toggle("btn-fill", !presHeld);
   b.classList.remove("is-ro"); b.removeAttribute("aria-describedby");
   // 指令通道通不通:本機看常駐程式;雲端看主機在不在 running(指令是 api 排進佇列、機器自己取,跟本機那支 listener 無關)
   const up = ro ? envCloudKind(TR.st) === "running" : trChannelUp(TR.st);
@@ -2549,12 +2590,16 @@ function trPaintHead() {
   if (trStartPending(TR.pending)) b.setAttribute("aria-describedby", "tr-go-hint");
   // 狀態不明時鈕照給、而且不看狀態檔裡的 listener 旗標(那份檔就是不能信的那個):暫停是安全方向
   const usable = state === "unknown" ? !!(TR.st && TR.st.alive) : up;
+  // 平倉後解除進行中(④):不給啟動。暫停一拿掉,flatten 收尾 kick 的那一輪會照策略開回部位,接著金鑰被刪(機器端也擋,稽核 closeout3 S2)
+  const ubRun = !!(TR.ub && TR.ub.state === "run");
+  if (ubRun && document.activeElement === b) { $("tr-h").focus(); TR.focusParked = true; }
   // disabled 的鈕會把焦點丟到 BODY(確認框關掉時焦點剛還給它):先把焦點交給標題(tabindex=-1),再停用
   if (flying && document.activeElement === b) { $("tr-h").focus(); TR.focusParked = true; }
   b.disabled = flying || zv.off || (!busy && !usable);   // zv.off:沒有策略設金額時啟動下單**永遠**按不了(不變式,tests/check_shell_trade.js 列舉)
   // 暫停收斂(或逾時)放開之後,焦點還回主鈕——停在標題或掉到 body 都等於把鍵盤使用者丟在原地(新狀態稽核 §3-8)
+  if (ubRun) b.disabled = true;   // 焦點已在上面交給標題;下一行看到停用就不還回來
   if (!flying && TR.focusParked) { TR.focusParked = false; const ae = document.activeElement; if (!b.disabled && (!ae || ae === document.body || ae === $("tr-h"))) b.focus(); }
-  b.title = zv.off ? "" : !busy && !usable ? t("tr.cmdUnavailable") : "";   // 停用的原因在原因行,不讓「連不上」蓋掉它
+  b.title = zv.off ? "" : ubRun ? t("tr.ub.runLine") : !busy && !usable ? t("tr.cmdUnavailable") : "";   // 停用的原因在原因行,不讓「連不上」蓋掉它
 }
 /* 啟動在途時主鈕右邊那顆「暫停下單」(spec-desktop-start-pending-stop §2 B)。文字鈕、不是第二顆實心鈕;
    只在 want:"running" 的過場出現,收斂或被暫停蓋掉就收。焦點不搬過來:剛按完啟動的人按 Enter 不該變成開暫停框。
@@ -2567,12 +2612,14 @@ function trPaintGoRel(on, solid, close) {
   // B0 沒有那顆停用的實心「啟動下單」,這顆就是視窗裡唯一能做的事 → 實心(新狀態視覺稽核 2-5);其餘狀態維持描邊
   if (!u) { u = trEl("button", "btn-out", ""); u.type = "button"; u.id = "tr-go-rel"; u.addEventListener("click", () => { if (!TR.pending) trAskRelease(u); }); $("tr-act").insertBefore(u, $("tr-go")); }
   u.classList.toggle("btn-fill", !!solid); u.classList.toggle("btn-out", !solid);
-  const rel = !!TR.pending && TR.pending.want === "released", up = TR.env === "cloud" ? envCloudKind(TR.st) === "running" : trChannelUp(TR.st);
+  // ubRun:平倉後解除進行中不給解除暫停(同主鈕),跟「通道不通」同一條停用路徑
+  const ubRun = !!(TR.ub && TR.ub.state === "run");
+  const rel = !!TR.pending && TR.pending.want === "released", up = !ubRun && (TR.env === "cloud" ? envCloudKind(TR.st) === "running" : trChannelUp(TR.st));
   u.textContent = rel ? t("tr.releasing") : close ? t("tr.releaseClose") : t("tr.release");   // 會平倉時鈕字講出來(§3.2);外觀照舊描邊,不用紅
   // 送出之後這顆會停用:焦點先交給標題,放開再還回來(同主鈕的 focusParked;視覺稽核 2-1)
   const off = !!TR.pending || !up;
   if (off && document.activeElement === u) { $("tr-h").focus(); TR.relParked = true; }
-  u.disabled = off; u.classList.toggle("is-busy", rel);
+  u.disabled = off; u.classList.toggle("is-busy", rel); u.title = ubRun ? t("tr.ub.runLine") : "";
   if (!off && TR.relParked) { TR.relParked = false; const ae = document.activeElement; if (!ae || ae === document.body || ae === $("tr-h")) u.focus(); }
 }
 /* 備案 B(post-connect-flow;設計稽核 review-post-connect-b 必改 1):純 Z(沒有能下的金額、沒有「解除暫停」)時,動作列多一顆鈕,
@@ -2986,6 +3033,7 @@ function trSetTab(tab, focus) {
   trPaintTab();
 }
 function trPaint() {
+  trUbTick();
   if (!envPaint()) return;                         // 雲端沒有主機可看(沒主機 / 未登入 / 啟動中 / 讀不到):中欄是空態,這一頁不畫
   trPaintHead();
   if (!TR.open) return;
@@ -4550,7 +4598,7 @@ function poSigTable(r, stored, states, mode) {
   errs.forEach((le, key) => {
     const sym = String(le.symbol || "—").replace(/@spot$/, ""), err = String(le.error || le.message || ""), closeAll = err.indexOf("close-all:") === 0;
     const plain = le.kind === "order_unconfirmed" ? t(le.close_all === true ? "tr.ov.evUnconfirmedCloseAllNote"   // close_all 優先(同網頁)
-      : le.manual === true ? "tr.err.unconfirmedManual" : "tr.err.unconfirmed") : trOrderErrParse(err) ? trOrderErrText("", err).replace(/^[\s:：—-]+/, "").replace(/^[a-z]/, (c) => c.toUpperCase()) : null;
+      : le.manual === true ? "tr.err.unconfirmedManual" : "tr.err.unconfirmed") : TR_TW_NOTICE[le.kind] ? err.slice(0, 300) : trOrderErrParse(err) ? trOrderErrText("", err).replace(/^[\s:：—-]+/, "").replace(/^[a-z]/, (c) => c.toUpperCase()) : null;
     const loud = !closeAll && trErrLoud(le, hs, TR.startAt, r.last_reconcile);
     const line = trEl("span", loud ? "pf-note err" : "pf-note past");
     // 節流中的重複失敗只更新那一列的 last_at／count(4647a2e):時間寫最後一次失敗;哪一筆還在失敗照舊看 ts(trLiveOrderErrs)
@@ -4763,10 +4811,10 @@ function trPaintHist() {
     const amt = trEl("span", "amt mono");
     if (trOrderLots(o)) {
       // 口數單(同網頁):欄位寫「N 口」(群益整條鏈的原生單位);TWD 名目市值是推導值,收進 title,算不出就不掛
-      const lots = trFmt(target), cv = trOrderCv(o);
+      const n = trOrderLotsQty(o), lots = trFmt(n), cv = trOrderCv(o);
       amt.textContent = lots == null ? "—" : lots;
       if (lots != null) {
-        amt.appendChild(trEl("span", "ccy lots", t(trLotsKey(target, "tr.lotsUnit", "tr.lotUnit"))));
+        amt.appendChild(trEl("span", "ccy lots", t(trLotsKey(n, "tr.lotsUnit", "tr.lotUnit"))));
         if (hasFill && cv) amt.title = t("tr.orderNotional", { amount: trFmt(fill * cv) + " TWD" });
       }
     } else {
@@ -4800,7 +4848,9 @@ function trPaintSet() {
   const bn = !ro && id === BINANCE ? CXF.bn : null;   // Binance 金鑰重查的結果(主行程 binance_link 的 state;只有這台電腦)
   // 雲端:按過重新測試 / 解除之後,那一列灰字「已送出,等回報」直到報告跟上(帳戶讀取時間比送出新 / 這一家消失)
   const pend = ro && TR.cxPend ? TR.cxPend : null;
-  if (!trShould("set", box, [id, TR.unbinding, ro, TR.cx.retest, TR.cx.err, e && [e.ok, e.error], bn && [bn.verdict, bn.last && [bn.last.code, bn.last.detail]], pend && pend.what, ro && trCapWip(r, id), trExecStored(r), TR.exec, !!TR.sending.execution, !ro && id === "president" && [presWip(r), trPresStopped(r, id)], !ro && id === CAPITAL && [trCapWip(r, id), trCaplStopped(r, id)]])) return;
+  // 登入停了而頁首已有〔重新登入〕:這一列不再放鈕、不再講一次,狀態詞寫「登入已停止」(設計稽核 v045 M5)
+  const headRelogin = !ro && id === "president" && trPresLoginHeld(r, "president") && trPresHeldRun(envHeadState(TR.st, Date.now()), r);
+  if (!trShould("set", box, [headRelogin, id, TR.unbinding, TR.ub && TR.ub.state, TR.ub && TR.ub.box, ro, TR.cx.retest, TR.cx.err, e && [e.ok, e.error], bn && [bn.verdict, bn.last && [bn.last.code, bn.last.detail]], pend && pend.what, ro && trCapWip(r, id), trExecStored(r), TR.exec, !!TR.sending.execution, !ro && id === "president" && [presWip(r), trPresStopped(r, id), trPresLoginStopped(r, id), trPresLoginHeld(r, id)], !ro && id === CAPITAL && [trCapWip(r, id), trCaplStopped(r, id)]])) return;
   const hadFocus = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
   box.appendChild(trSec(trEl("span", "label", t("tr.account"))));
@@ -4813,35 +4863,47 @@ function trPaintSet() {
   // 統一在這台電腦開通中(d-row-pending)同一個長相:讀帳失敗是預期的(worker 還沒寫第一份快照)
   const presW = !ro && id === "president" && presWip(r);
   // 開通過又停掉的(稽核 integ-0118 B-1):畫紅記號「串接失敗」,但「繼續」照給——「確認登入」只在開通框裡
-  const presIn = presW || (!ro && trPresStopped(r, id));
+  // 登入停了也算:worker 還在讀、只有 STOP 檔(下單自己的登入失敗)時,這一列同樣要給〔重新登入〕(稽核 v045 closeout2 B3)
+  const presIn = presW || (!ro && (trPresStopped(r, id) || trPresLoginHeld(r, id)));
+  // 登入停了(不是開通中):出口跟頁首同一顆〔重新登入〕,重新測試救不回登入、不畫(設計複查 v045 S1／S2)
+  const presLogin = !ro && !presW && trPresLoginHeld(r, id);
   // 旗標關的版本(本機群益入口還沒對外)遇到測試包留下的綁定:不給「繼續」(框裡的步驟這一版不在),只留解除綁定
   const caplW = !ro && id === CAPITAL && trCapWip(r, id), caplStop = !ro && trCaplStopped(r, id) && CAPL_LOCAL_ON;
   const capWip = (ro && trCapWip(r, id)) || presW || caplW;
-  const failed = !capWip && ((!!e && !e.ok) || !!(bn && bn.verdict)), st = trEl("span", "cn-st" + (capWip ? " cx-wait" : failed ? "" : e ? " on" : " cx-wait"));
+  const failed = !capWip && ((!!e && !e.ok) || !!(bn && bn.verdict) || presLogin), st = trEl("span", "cn-st" + (capWip ? " cx-wait" : failed ? "" : e ? " on" : " cx-wait"));
   if (capWip) st.appendChild(trEl("span", "cap-dot"));
   else if (e && e.ok && !failed) st.appendChild(trEl("i", "dot"));
   else if (failed) { const m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); st.appendChild(m); }
   else { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); st.appendChild(sp); }
-  st.appendChild(trEl("span", "", capWip ? t("cap.pending") : failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
+  st.appendChild(trEl("span", "", capWip ? t("cap.pending") : presLogin ? t("tr.s.presStopped") : failed ? t("cx.failShort") : e ? t("cx.connected") : t("cx.connecting")));
   row.appendChild(st);
   const acts = trEl("span", "pf-acts");
   if ((capWip && !presW && (ro || CAPL_LOCAL_ON)) || caplStop) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "cap-continue"; go.addEventListener("click", () => cxModalOpen(go, CAPITAL)); acts.appendChild(go); }
-  // 統一:「繼續」回到清單當下那一步(開通中、或開通過又停掉 → 那一類登入失敗的列與「確認登入」)
-  if (presIn) { const go = trEl("button", "pf-act main-act", t("cap.continue")); go.type = "button"; go.id = "pres-continue"; go.addEventListener("click", () => cxModalOpen(go, "president")); acts.appendChild(go); }
+  // 統一:「繼續」回到清單當下那一步(開通中、或開通過又停掉 → 那一類登入失敗的列與「確認登入」);登入停了叫〔重新登入〕
+  if (presIn && !headRelogin) { const go = trEl("button", "pf-act main-act", t(presLogin ? "tr.presRelogin" : "cap.continue")); go.type = "button"; go.id = "pres-continue"; go.addEventListener("click", () => cxModalOpen(go, "president")); acts.appendChild(go); }
   // 兩個視角都按得動(S5):雲端的重新測試 / 解除走雲端指令,吃當下那一袋。
   // 「重新測試」在讀帳失敗 / 金鑰重查出事(紅記號 + 串接失敗)時畫,Binance 重查的灰記號(沒設白名單、現貨 / 合約沒開)也畫——
   // 它是 24 小時自動重查之前唯一能叫 binanceRecheck 的入口(Wei 0.0.6)。乾淨的已連接與串接中都沒有東西要重試;鈕消失時焦點由最後一行交給設定分頁
   const bnD = (bn && bn.last && bn.last.ok && bn.last.detail) || {};
   const bnNote = !!(bn && bn.last && bn.last.ok) && (bn.last.code === "NO_IP_RESTRICT" || bnD.futures === false || bnD.spot === false);
-  if (failed || bnNote) {
+  if ((failed || bnNote) && !presLogin) {
     const rt = trEl("button", "pf-act", TR.cx.retest ? t("cx.retesting") : t("cx.retest")); rt.type = "button"; rt.id = "cx-retest";
     rt.disabled = TR.cx.retest || !id; rt.addEventListener("click", cxRetest);
     acts.appendChild(rt);
   }
-  const ub = trEl("button", "pf-act", TR.unbinding ? t("tr.unbinding") : t("tr.unbind")); ub.type = "button"; ub.id = "tr-unbind";
-  ub.disabled = !!TR.unbinding || !id || !trEnvNames(id).length; ub.addEventListener("click", () => trUnbind(ub));
+  // 平倉後解除進行中:進度只看這顆鈕(spec §3)。用 aria-disabled 不用 disabled:關掉 ④ 時焦點要回得來(設計稽核 M6)
+  const unbindingClose = !!(TR.ub && TR.ub.state === "run");
+  const ub = trEl("button", "pf-act", unbindingClose ? t("tr.ub.runningBtn") : TR.unbinding ? t("tr.unbinding") : t("tr.unbind")); ub.type = "button"; ub.id = "tr-unbind";
+  ub.disabled = !!TR.unbinding || !id || !trEnvNames(id).length;
+  if (unbindingClose) ub.setAttribute("aria-disabled", "true");
+  ub.addEventListener("click", () => { if (ub.getAttribute("aria-disabled") !== "true") trUnbind(ub); });
   acts.appendChild(ub); row.appendChild(acts); box.appendChild(row);
   if (pend) box.appendChild(trEl("p", "pf-note", t("tr.cloud.pendRow")));
+  // 關掉框之後才停住:頁面要講,不然鈕從「平倉中…」變回〔解除綁定〕像什麼都沒發生(設計稽核 S3;web 同一句、同一個位置)
+  if (!TR.unbinding && TR.ub && TR.ub.state === "fail") {
+    const p = trEl("p", "pf-note ub-held"), a = trEl("button", "btn-quiet", t("tr.ub.failTitleN")); a.type = "button"; a.id = "tr-ub-held";
+    a.addEventListener("click", () => trUnbind(a)); p.appendChild(a); box.appendChild(p);
+  }
   // 失敗原因放在這一列下面(紅記號 + 次要字),不佔用標題區那個唯一的紅字槽
   const errLine = (text) => { const p = trEl("p", "plan-err"), m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); p.append(m, trEl("span", "", text)); return p; };
   if (bn && bn.verdict) {   // 重查出事(spec §5.4):講哪一種+下一步;IP 換了就把新 IP 連同複製鈕給他
@@ -4857,12 +4919,12 @@ function trPaintSet() {
     if (bn.last.code === "NO_IP_RESTRICT") calm(t("cx.chk.noWhitelist"));
     if (d.futures === false) calm(t("cx.note.noFutures")); else if (d.spot === false) calm(t("cx.note.noSpot"));
   }
-  if (e && !e.ok && !capWip) {
+  // 統一登入失敗停掉:出口是〔重新登入〕→ 開通框的「確認登入」,講這個就好,讀帳原文(worker error 的轉述)不出
+  if (presLogin) { if (!headRelogin) box.appendChild(errLine(t("cx.presStopped"))); }
+  else if (e && !e.ok && !capWip) {
     const ae = trAcctErr(e.error);
-    // 統一登入失敗停掉:出口是「繼續」→ 開通框的「確認登入」,講這個就好,讀帳原文(worker error 的轉述)不出
-    if (!ro && trPresLoginStopped(r, id)) box.appendChild(errLine(t("cx.presStopped")));
     // 帳戶模式擋下(Bitget 統一帳戶還沒開放;OKX 不支援合約):讀帳戶就會擋,講怎麼改,不出原文
-    else if (trErrToken(ae.msg) === "bitget_uta_unsupported") box.appendChild(errLine(t("cx.err.bitgetUtaBound")));
+    if (trErrToken(ae.msg) === "bitget_uta_unsupported") box.appendChild(errLine(t("cx.err.bitgetUtaBound")));
     else if (trErrToken(ae.msg) === "bitget_copy_trading_key") box.appendChild(errLine(t("cx.err.bitgetCopyKeyBound")));
     else if (trErrToken(ae.msg) === "okx_account_mode") box.appendChild(errLine(t("cx.err.okxMode")));
     // 列上已有「串接失敗」記號與交易所名:這一行只留原因,有階段代碼才帶括號(設計稽核 desktop-10-08 #5)
@@ -4992,26 +5054,206 @@ function trEnvNames(id) {
   const v = Object.prototype.hasOwnProperty.call(CX_VENUES, id) ? CX_VENUES[id] : null;
   return v ? [v.env + "_API_KEY", v.env + "_SECRET_KEY"].concat(v.pass ? [v.env + "_PASSPHRASE"] : []) : [];
 }
+/* ── 解除綁定(spec unbind-positions-2026-11-05 A 版;混合機器 unbind-consistency §5)──────────────
+   有部位時三顆鈕:取消｜平倉並解除(紅字次鈕)｜保留部位並解除(主鈕,不動錢的那條)。平倉並解除送 close_then_unbind,
+   順序由機器負責(平倉 → 重讀歸零 → 才刪金鑰);框停在「平倉中」,全部成交機器自己解除,沒全部成交停在「平倉失敗」,
+   不會自己接著解除。台指期休市不給平倉;這台平不了的(雲端群益 close_unbind_manual)只給保留。判定順序同解除暫停那一套
+   (trReleaseKind),拿掉重開停止那道閘:模擬 → 沒部位 → 不能平(舊 runtime／平不了／休市)→ 有部位 */
+function trUbPositions(r, id) {
+  const none = { n: null, rows: null, at: null };
+  if (!r) return none;
+  const last = r.last_reconcile && typeof r.last_reconcile === "object" ? r.last_reconcile : null;
+  if (r.self_ledger === true) {
+    const book = last && last.ledger;
+    if (!book || typeof book !== "object") return none;
+    const rows = trReleaseRows(book);
+    if (rows.length) return { n: rows.length, rows, at: trMs(last.ts) };
+    // 那一輪有送單:帳本空不代表現在空(同 trReleaseKind)
+    return Array.isArray(last.orders) && last.orders.length ? none : { n: 0, rows: [], at: null };
+  }
+  const a = r.account, at = a ? trMs(a.read_at) : null, e = trLiveEntry(r, id);
+  if (at == null || Date.now() - at > TR_STALE_MS || !e || !e.ok || !e.positions || typeof e.positions !== "object") return none;
+  const rows = trReleaseRows(e.positions);
+  return { n: rows.length, rows, at };
+}
+function trUbKind(r, id) {
+  if (id === PAPER) return { kind: "paper" };
+  const p = trUbPositions(r, id);
+  if (p.n === 0) return { kind: "x0", p };
+  if (r.can_close_unbind !== true) return { kind: "cant", p, old: true };   // 舊 runtime:不給「看起來成功、其實沒平」的鈕
+  if (Array.isArray(r.close_unbind_manual) && r.close_unbind_manual.indexOf(id) >= 0) return { kind: "cant", p };
+  const ses = r.txf_session;
+  if (trTwBroker(id) && ses && ses.open === false) return { kind: "closed", p, next: Number(ses.next_open) || null };   // 前端不自己算台指期時段
+  return { kind: "ask", p };
+}
+// 券商 app 的名字(「到{app} app 自己平」):台灣兩家用短名,其餘同交易所名
+function trUbApp(id) { return id === "president" ? t("tr.ub.appPres") : id === CAPITAL ? t("tr.ub.appCap") : trVenueLabel(id, true); }
+function trUbSay(key, vars) { return trTidyZh(t(key, vars)); }
+function trUbVenue(id) { return trPadLatin(trVenueLabel(id, true)); }
+/* 部位清單(cf-rows),st(x) 回列尾狀態 { text, bad, done, spin } 或 null。超過 6 列只列 5 列 + 「還有 N 個」(同解除暫停) */
+function trUbRowsEl(rows, at, st) {
+  const f = document.createDocumentFragment();
+  if (at != null) f.appendChild(trEl("p", "cf-sub", t("tr.relReadAt", { time: trRelTime(at, Date.now()) })));
+  const dl = trEl("dl", "cf-rows ub"), shown = rows.length > 6 ? rows.slice(0, 5) : rows;
+  shown.forEach((x) => {
+    const s = st ? st(x) : null, row = trEl("div", "cf-row pos" + (s && s.done ? " done" : "")), dt = trEl("dt", "mono", x.sym.replace(/@spot$/, "")), dd = document.createElement("dd");
+    if (x.v) dt.appendChild(trEl("span", "side " + (x.v > 0 ? "buy" : "sell"), x.v > 0 ? t("tr.rel.long") : t("tr.rel.short")));
+    (x.lots ? trLotsInto : trMoneyInto)(dd, Math.abs(x.v));
+    row.append(dt, dd);
+    if (s) {
+      const c = trEl("span", "cf-st" + (s.bad ? " bad" : ""));
+      if (s.spin) { const sp = trEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); c.appendChild(sp); }
+      c.appendChild(document.createTextNode(s.text)); row.appendChild(c);
+    }
+    dl.appendChild(row);
+  });
+  f.appendChild(dl);
+  if (shown.length < rows.length) f.appendChild(trEl("p", "cf-sub", t("tr.relMore", { n: rows.length - shown.length })));
+  return f;
+}
+function trUbTitle(base, n) { return n == null ? t(base + "N") : n === 1 ? t(base + "1") : t(base, { n }); }
+// 每一態都帶帳戶記號(真錢／模擬,同 web 與雲端),標題長的換行不截(設計稽核 M3、M4)
+function trUbMark(o) { const paper = trIsPaper(); o.mark = t(paper ? "tr.mode.paper" : "tr.mode.real"); o.markKind = paper ? "paper" : "real"; o.wrapTitle = true; return trCloudBox(o); }
+/* 關框後焦點回頁面上的〔解除綁定〕(④ 期間它是「平倉中…」、aria-disabled 仍可聚焦);那顆鈕會隨回報重畫,所以關框那一刻才找。
+   找不到(分頁換了)退回設定分頁鈕(設計稽核 M6) */
+const TR_UB_OPENER = { isConnected: true, focus() { const b = $("tr-unbind") || $("tr-tab-set"); if (b) b.focus(); } };
+// 回報裡這一家的等待紀錄。不比 request_id:重開 app 前、或另一個表面發起的也是這一家正在平倉／已停住(設計稽核 M1,同 web pfUbView)
+function trUbMarker(r, id) { const m = r && r.unbind_after_close; return m && typeof m === "object" && Array.isArray(m.venues) && m.venues.indexOf(id) >= 0 ? m : null; }
 function trUnbind(opener) {
   const S = TR, id = trVenueId(), cloud = S.env === "cloud"; if (!id) return;
-  confirmBox(trCloudBox({
-    title: t("tr.unbind"), mark: id === PAPER ? t("tr.mode.paper") : null, lines: [id === PAPER ? t("tr.unbindWarnPaper") : cloud ? t("tr.cloud.unbindWarn") : t("tr.unbindWarn")], ok: t("tr.unbind"), opener,
-    onOk: async () => {
-      const mine = () => TR === S && S.open;
-      S.unbinding = true; if (mine()) trPaintSet();
-      // 統一(這台電腦):機器上的五行與憑證先拿掉,成功了主行程才丟掉它存的帳密(presidentUnbind)
-      const res = cloud && id === CAPITAL ? await capUnbindSend() : cloud ? await trSend(S, "credentials_remove", { env: trEnvNames(id) })
-        : id === "president" ? await window.blave.presidentUnbind() : id === CAPITAL ? await window.blave.caplUnbind()
-        : await S.api.tradeSend("credentials_remove", { env: trEnvNames(id) });
-      S.unbinding = false; S.sig = {};
-      // 失敗文案帶 S.env:跨 await 之後 TR 可能已經是另一邊,不帶會拿本機那組「這台電腦」的句子
-      if (!res || !res.ok) { trAlert(trSendError(res, "unbind", S.env), "noaccount", S); if (mine()) { trPaintSet(); $("tr-tab-set").focus(); } trPollSoon(1500); return; }
-      trAlert("", null, S); S.edits = {};
-      if (cloud) { S.cxPend = { what: "unbind", at: Date.now() }; if (mine()) { trPaintSet(); $("tr-tab-set").focus(); } trPollSoon(1500); return; }   // 雲端要等回報:那一列灰字
-      if (mine()) $("tr-nav").focus();             // 這個分頁馬上會整個換成 onboard:焦點先停在入口
-      trPollSoon(300);
-    },
-  }));
+  if (S.ub && S.ub.id === id) { trUbShow(S, opener); return; }   // 平倉中／平倉失敗:回到那個框,不另起一次
+  const r = trReport() || {}, k = trUbKind(r, id), venue = trUbVenue(id);
+  const keep = { ok: t("tr.ub.keepGo"), onOk: () => trUbKeep(S, id) };
+  if (k.kind === "paper" || k.kind === "x0") {
+    const lines = k.kind === "paper" ? [t("tr.unbindWarnPaper")] : [t(cloud ? "tr.ub.x0Cloud" : "tr.ub.x0")].concat(id === "president" ? [t("tr.ub.x0Pres")] : []);
+    confirmBox(trUbMark({ title: t("tr.unbind"), lines, ok: t("tr.unbind"), opener, onOk: () => trUbKeep(S, id) }));
+    return;
+  }
+  const p = k.p, lead = p.rows ? trUbRowsEl(p.rows, p.at) : null, head = p.rows ? [] : [t("tr.ub.unreadN")];
+  if (k.kind === "cant" || k.kind === "closed") {
+    const lines = k.kind === "closed"
+      ? [k.next ? trUbSay("tr.ub.closedWhen", { time: trRelTime(k.next * 1000, Date.now()) }) : t("tr.ub.closedWhenN"), trUbSay("tr.ub.closedLater", { app: trPadLatin(trUbApp(id)) })]
+      : [k.old ? trUbSay("tr.ub.keepOld", { venue }) : t("tr.ub.cantClose")];
+    confirmBox(trUbMark(Object.assign({ title: trUbTitle("tr.ub.closedTitle", p.n), opener, lead, lines: head.concat(lines) }, keep)));
+    return;
+  }
+  confirmBox(trUbMark(Object.assign({
+    title: trUbTitle("tr.ub.askTitle", p.n), opener, lead,
+    lines: head.concat([t(r.self_ledger === true ? "tr.ub.closeSelf" : "tr.ub.closeAll"), trUbSay("tr.ub.keep", { venue })]),
+    // stay:按了不關框,原地換成「平倉中」(設計稽核 M7)
+    alt: { label: t("tr.ub.closeGo"), danger: true, stay: true, onOk: () => trUbClose(S, id, p.rows || [], p.at, false) },
+  }, keep)));
+}
+// 保留部位並解除 = 原本的解除綁定(credentials_remove);停在平倉失敗時選它,機器順手清掉等著的那一筆
+async function trUbKeep(S, id) {
+  const mine = () => TR === S && S.open, cloud = S.env === "cloud";
+  trackFeature("unbind_keep");
+  S.ub = null; S.unbinding = true; if (mine()) trPaintSet();
+  // 統一(這台電腦):機器上的五行與憑證先拿掉,成功了主行程才丟掉它存的帳密(presidentUnbind)
+  const res = cloud && id === CAPITAL ? await capUnbindSend() : cloud ? await trSend(S, "credentials_remove", { env: trEnvNames(id) })
+    : id === "president" ? await window.blave.presidentUnbind() : id === CAPITAL ? await window.blave.caplUnbind()
+    : await S.api.tradeSend("credentials_remove", { env: trEnvNames(id) });
+  S.unbinding = false; S.sig = {};
+  // 失敗文案帶 S.env:跨 await 之後 TR 可能已經是另一邊,不帶會拿本機那組「這台電腦」的句子
+  if (!res || !res.ok) { trAlert(trSendError(res, "unbind", S.env), "noaccount", S); if (mine()) { trPaintSet(); $("tr-tab-set").focus(); } trPollSoon(1500); return; }
+  trAlert("", null, S); S.edits = {};
+  if (cloud) { S.cxPend = { what: "unbind", at: Date.now() }; if (mine()) { trPaintSet(); $("tr-tab-set").focus(); } trPollSoon(1500); return; }   // 雲端要等回報:那一列灰字
+  if (mine()) $("tr-nav").focus();             // 這個分頁馬上會整個換成 onboard:焦點先停在入口
+  trPollSoon(300);
+}
+const TR_UB_ACK_GRACE_MS = { local: 20000, cloud: 90000 };   // 送出後多久還看不到機器的等待紀錄,就當沒在跑(雲端回報較慢)
+async function trUbClose(S, id, rows, at, retry) {
+  trackFeature(retry ? "unbind_retry" : "unbind_close");
+  const rid = "ub" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);   // 每按一次一個:機器端靠它認重送
+  S.ub = { id, rid, rows, at, state: "run", sentAt: Date.now(), ackAt: null, lf: null, m: null, box: false };
+  trUbShow(S);
+  if (TR === S && S.open) trPaintSet();
+  const args = { env: trEnvNames(id), request_id: rid }, cloud = S.env === "cloud";
+  // 統一／群益(這台電腦):走主行程,它等機器真的解除了(回報裡那一家不見)才丟掉存的帳密
+  const res = cloud ? await trSend(S, "close_then_unbind", args)
+    : id === "president" ? await window.blave.presidentUnbind({ close: true, requestId: rid })
+    : id === CAPITAL ? await window.blave.caplUnbind({ close: true, requestId: rid })
+    : await S.api.tradeSend("close_then_unbind", args);
+  const u = S.ub; if (!u || u.rid !== rid) return;
+  const state = res && res.ok ? String(res.result || "").replace(/^close_then_unbind=(?:restart_stopped:)?/, "") : null;
+  if (state === "started" || state === "already_running" || state === "held" || state === "unconfirmed") { u.ackAt = Date.now(); trPollSoon(cloud ? 1500 : 500); return; }
+  S.ub = null;
+  if (state === "not_bound") { trPollSoon(300); return; }
+  // 機器說平不了(休市／群益／舊 workspace):回到不給平倉的那個框,不當成錯誤
+  if (state === "market_closed" || state === "capital_manual" || state === "unsupported") { trPollSoon(300); if (u.box) trUnbind(); return; }
+  if (u.box) delClose(false);
+  trAlert(state === "flatten_busy" ? t("tr.ub.busy") : trSendError(res, "unbind", S.env) || t("tr.cmdFailed"), "noaccount", S);
+  if (TR === S && S.open) trPaintSet();
+  trPollSoon(1500);
+}
+// 這一筆在機器上的狀態:run(平倉中)/ fail(停住)/ done(那一家已經不在)
+function trUbState(S, r) {
+  const u = S.ub, v = r && r.venues && r.venues[u.id];
+  if (r && r.venues && !(v && v.credentials)) return "done";
+  const m = trUbMarker(r, u.id);
+  if (m) { u.m = m; if (m.request_id) u.rid = m.request_id; }   // 機器正在等的那一筆才是這一家的結果(按下時 already_running／unconfirmed 是別筆)
+  if (r && r.last_flatten && r.last_flatten.request_id === u.rid) u.lf = r.last_flatten;
+  if (m && m.held) return "fail";
+  // 送出去夠久了機器還沒有這一筆(沒收到、或被清掉),金鑰也還在:不能一直轉圈
+  const since = u.ackAt || u.sentAt;
+  if (!m && Date.now() - since > TR_UB_ACK_GRACE_MS[S.env === "cloud" ? "cloud" : "local"]) return "fail";
+  return "run";
+}
+function trUbTick() {
+  const S = TR;
+  if (!S.ub) {
+    // 重開 app／重載畫面:記憶體裡沒有這一筆,但機器還在等或已停住 → 從回報接回來(清單退回帳本或帳上現有的部位,同 web)
+    const r = trReport(), id = trVenueId(), m = id && trUbMarker(r, id);
+    if (!m) return;
+    const p = trUbPositions(r, id);
+    S.ub = { id, rid: m.request_id || null, rows: p.rows || [], at: p.at, state: m.held ? "fail" : "run", sentAt: Date.now(), ackAt: Date.now(), lf: null, m, box: false, adopted: true };
+    trUbState(S, r);
+    return;
+  }
+  const u = S.ub;
+  const state = trUbState(S, trReport());
+  if (state === u.state && state !== "run") return;
+  if (state === "done") {
+    S.ub = null; S.edits = {}; trAlert("", null, S);
+    if (u.box) delClose(false);
+    if (S.open && $("tr-nav")) $("tr-nav").focus();
+    return;
+  }
+  if (state !== u.state) { u.state = state; if (u.box) trUbShow(S); }
+}
+function trUbShow(S, opener) {
+  const u = S.ub; if (!u) return;
+  const lf = u.lf || {}, m = u.m || {}, manual = Array.isArray(m.manual) ? m.manual : [];
+  const keyOf = (k) => trCanonKey(k).replace(/@spot$/, "");
+  const closed = new Set((lf.closed || []).map(keyOf)), unconf = new Set((lf.unconfirmed || []).map(keyOf));
+  const unclosed = new Set((lf.unclosed || []).map((x) => keyOf(x && x.key)));
+  const rows = u.rows.slice();
+  [...unclosed, ...unconf].forEach((k) => { if (k !== "*" && !rows.some((x) => x.sym === k)) rows.push({ sym: k, v: 0, lots: false }); });
+  const onCancel = () => { u.box = false; if (TR === S && S.open) trPaintSet(); }, pending = u.state === "run";
+  if (pending) {
+    const busyLabel = t("tr.ub.runningBtn"), run = manual.indexOf(u.id) >= 0 ? { text: t("tr.ub.stManual") } : { text: t("tr.ub.running"), spin: true };
+    // 焦點留在「平倉中…」(同 web focusOk,設計稽核 M5)
+    confirmBox(trUbMark({ title: t("tr.ub.runTitle"), opener: TR_UB_OPENER, lead: trUbRowsEl(rows, null, () => run), lines: [t("tr.ub.runLine")],
+      cancel: t("tr.ub.close"), ok: busyLabel, onOk: () => {}, stay: true, onCancel, focus: "del-ok" }));
+    delOkBusy(true);   // 等待樣式:aria-disabled、焦點留在鈕上(同 delOkBusy 的刪除中)
+    u.box = true;
+    return;
+  }
+  // 「有 N 個沒平掉」只數真的沒成交的:未確認那筆可能已經成交,只有未確認時用沒有數字的標題(設計稽核 S2,web 同一算法)
+  const n = unclosed.size - (unclosed.has("*") ? 1 : 0), venue = trUbVenue(u.id), app = trPadLatin(trUbApp(u.id));
+  const st = (x) => unconf.has(x.sym) ? { text: t("tr.ub.stUnconf"), bad: true } : unclosed.has(x.sym) ? { text: t("tr.ub.stNoFill"), bad: true }
+    : closed.has(x.sym) ? { text: t("tr.ub.stDone"), done: true } : manual.indexOf(u.id) >= 0 ? { text: t("tr.ub.stManual") } : null;
+  const lines = [];
+  // 只放券商真的回的話(last_flatten.reply);我們自己的原因(msg:逾時、帳本沒基準…)不冒充成券商回覆(設計稽核 S3)
+  if (lf.reply) lines.push(trEl("span", "ub-reply", trUbSay("tr.ub.failReply", { venue, msg: String(lf.reply).slice(0, 300) })));
+  lines.push(t("tr.ub.failState"));
+  const hasUnconf = unconf.size > 0 || m.why === "unconfirmed";
+  if (hasUnconf) { const w = trEl("span", "", trUbSay("tr.ub.unconfirmed", { app })); w.id = "ub-unconf"; lines.push(w); }
+  // 重新平倉:群益自動新平倉對已平的部位再送一次會反手開新倉,有未確認的單就不給(機器端也擋)
+  confirmBox(trUbMark({ title: n > 0 ? trUbTitle("tr.ub.failTitle", n) : t("tr.ub.failTitleN"), opener: TR_UB_OPENER, lead: rows.length ? trUbRowsEl(rows, null, st) : null, lines,
+    ok: t("tr.ub.keepGo"), onOk: () => trUbKeep(S, u.id), onCancel,
+    alt: { label: t("tr.ub.retryGo"), danger: true, stay: true, disabled: hasUnconf, why: hasUnconf ? "ub-unconf" : null, onOk: () => trUbClose(S, u.id, u.rows, u.at, true) } }));
+  u.box = true;
 }
 
 /* ── 總覽:PnL 條 + 權益曲線 + 事件時間軸 ─────────────────────────
@@ -5309,7 +5551,7 @@ function trOrderErrText(sym, err) {
 /* 事件級別:先讀 api 帶的 level(trEvApiLevel),缺欄位才用這張表——鏡射 api agent_events.SPECS + level_for
    (halt 看 source、主機重開看 trigger),同網頁 ovEvLevel;不在表裡的當 P3。標題顏色只看它:1 紅、2 強調、3 一般字 */
 const TR_EV_P1 = ["order_error", "order_unconfirmed", "manual_close_required", "execution_interrupted", "execution_fallback_market", "execution_stuck",
-  "market_hold", "settings_unsafe", "machine_restart_stop_failed", "downtime_paused", "venue_stops_missing"];
+  "market_hold", "settings_unsafe", "machine_restart_stop_failed", "downtime_paused", "venue_stops_missing", "venue_login_blocked"];
 const TR_EV_P2 = ["reconciler_dead", "venue_disconnected", "strategy_failed", "bar_stale", "target_stale", "dead_members", "scheduler_error",
   "venue_unbound", "market_check_off", "ui_override", "settings_rollback_failed", "report_degraded", "exchange_unreachable",
   "machine_silent", "disk_full", "memory_low", "report_rejected"];
@@ -5370,6 +5612,7 @@ function trEventText(type, d) {
       : d.mode === "classic" ? "tr.ov.evBitgetNoStopClassic" : "tr.ov.evBitgetNoStopUta";
     return out(t(head), t("tr.ov.evBitgetNoStopNote"), null, names, legs.length > 10 ? t("tr.ov.evDeadMore", { total: legs.length, more: legs.length - 10 }) : null);
   }
+  if (type === "venue_login_blocked" && d.venue === "president") return out(t("tr.ov.evPresStopped"), t("tr.ov.evPresStoppedNote"));
   if (type === "bar_stale") return d.computed === true ? null : out(t("tr.ov.evBarStale"), d.minutes == null ? null : t("tr.ov.evBarStaleNote", v));
   // 目標部位過久沒更新(同網頁 workspace_ov_ev_target_stale):換算門檻同 api notify._age_text;沒 age_s 用不帶時間那句
   if (type === "target_stale") {
@@ -5553,6 +5796,7 @@ function trOvEvents(r, z) {
         tail(t(e.stuck === true ? "tr.ov.evUnconfirmedStuckNote" : "tr.ov.evUnconfirmedNote"));
         return;
       }
+      if (TR_TW_NOTICE[e.kind]) { body.appendChild(trEl("span", "err", t(TR_TW_NOTICE[e.kind]))); tail(raw.slice(0, 300)); return; }
       body.appendChild(trEl("span", "err", t("tr.ov.evErr")));
       trEvCount(body, e.count);   // lib/portfolio._record_order_error 同標的同原因併成一列、累加 count
       if (strat) body.append(" ", strat);
@@ -5628,6 +5872,7 @@ function cxModalOpen(opener, venue, onConnected) {
   const st = TR_BAGS[env].st, bid = trVenueIds(st && st.report)[0] || null;
   CXF.bound = !!bid && !trSetupOnly(st);
   CXF.venue = CXF.bound ? bid : venue === CAPITAL ? CAPITAL : venue === "president" && env === "local" ? venue : PAPER;   // 群益:雲端 capital.js / 這台電腦 capital_local.js
+  if (CXF.bound && venue === "president" && env === "local" && trPresLoginHeld(st && st.report, "president")) CXF.venue = venue;   // 跟模擬同綁時第一家是 paper:〔繼續〕要開統一
   CXF.mode = CXF.venue === PAPER ? "paper" : "real";
   trackFeature("cx_open");
   if (CXF.venue === CAPITAL && env === "cloud" && typeof capResume === "function") capResume();
@@ -6405,8 +6650,8 @@ function envPaintLocalDots() {
   const st = TR_BAGS.local.st, now = Date.now();
   const L = TR_BAGS.local, up = envDotsUp("local", st);
   $("strat-list").querySelectorAll(".strat-row").forEach((b) => { const nm = b.querySelector(".strat-name"); if (nm) envDotInto(nm, up && envRunDot(b.dataset.name, st, now, L.just)); });
-  // 資料夾組尾的綠點與可及名稱跟著列上的點;「建市場資料夾」要等常駐程式回報市場,狀態每輪回來重判(renderer/stratgroups.js)
-  if (typeof sgHeadsSync === "function") { sgHeadsSync($("strat-list")); sgAutoSync($("strat-list"), SF_LOCAL); }
+  // 資料夾組尾的綠點與可及名稱跟著列上的點(renderer/stratgroups.js)
+  if (typeof sgHeadsSync === "function") sgHeadsSync($("strat-list"));
 }
 function envPaint() {
   const cloud = ENV.cur === "cloud", C = TR_BAGS.cloud, kind = envCloudKind(C.st);

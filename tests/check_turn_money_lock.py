@@ -143,8 +143,10 @@ def body(path, start, end):
 
 fl = body("manager/flatten.py", "def flatten():", "\ndef _flatten():")
 t("flatten:singleflight 之前就 hold_turn_money(等鎖時不佔 flatten.lock);忙就一列錯誤、這一支什麼都不平(複稽核 R-P1)",
-  fl.index("guard.hold_turn_money()") < fl.index("_singleflight()") < fl.index("return _flatten()")
-  and bool(re.search(r"except guard\.TurnMoneyBusy as e:\n\s*logging\.error\([^\n]*\n\s*_record_order_error\(\"\*\", \"\*\", f\"close-all: \{e\}\"\)\n\s*return False", fl)))
+  fl.index("guard.hold_turn_money()") < fl.index("_singleflight()") < fl.index("result = _flatten()")
+  # between the error row and the return only the run's own result file (close_then_unbind) is written
+  and bool(re.search(r"except guard\.TurnMoneyBusy as e:\n\s*logging\.error\([^\n]*\n\s*_record_order_error\(\"\*\", \"\*\", f\"close-all: \{e\}\"\)\n"
+                     r"(?:\s*(?:if REQUEST_ID is not None:|#[^\n]*|now = time\.time\(\)|_write_last\(_outcome\(False, now, now\)\))\n)*\s*return False", fl)))
 fl2 = body("manager/flatten.py", "def _flatten():", "\nif __name__")
 t("flatten:每家的 order lib 載入包在 try,壞一家只記那一家、照平下一家",
   bool(re.search(r"try:\n\s*order = importlib\.import_module\(f\"lib\.order_\{vid\}\"\) if has_order else None\n\s*except Exception as e:", fl2))

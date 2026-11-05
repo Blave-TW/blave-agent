@@ -2161,7 +2161,7 @@ def settle_expired_months(actual, venue=_CURRENT, now=None):
     return changed
 
 
-def book_late_fill(symbol, venue, contract, lots, park_id=None):
+def book_late_fill(symbol, venue, contract, lots, park_id=None, ordernos=None):
     """One orders.jsonl line for `lots` (signed) of `symbol` in `contract` that
     the venue confirmed only after the order call had returned without the fill
     (統一 'sent' / 'unknown' — manager/reconciler._president_claim_pending). The
@@ -2173,7 +2173,9 @@ def book_late_fill(symbol, venue, contract, lots, park_id=None):
     the book is not written again (False), and the line is appended strictly, so
     any failure — the book unreadable, the append refused — raises and the caller
     keeps its park row for the next round. Returns True when the line was written.
-    Without `park_id` (an older caller): not idempotent, a failed append only HALTs."""
+    Without `park_id` (an older caller): not idempotent, a failed append only HALTs.
+    `ordernos`: the parked sends' order numbers, so the line names the send that filled
+    (runtime/portfolio_reporter.pair_unconfirmed_orders still pairs by nearest send)."""
     venue = _resolve_venue(venue)
     lots = float(lots)
     if park_id is not None and late_fill_booked(park_id):
@@ -2186,7 +2188,8 @@ def book_late_fill(symbol, venue, contract, lots, park_id=None):
                             'legs': [{'signed_diff': lots, 'reduce_only': held * lots < 0,
                                       'signed_qty': lots, 'executed_qty': abs(lots),
                                       'resolved_symbol': contract}],
-                            **({'late_fill_park_id': park_id} if park_id is not None else {})},
+                            **({'late_fill_park_id': park_id} if park_id is not None else {}),
+                            **({'late_fill_ordernos': list(ordernos)} if ordernos else {})},
                            strict=park_id is not None)
     return True
 
@@ -2914,11 +2917,13 @@ def _first_signal_window_s(name):
 # TARGET_STALE_RECENT_S covers the slowest repeat) AND state.json is older than TARGET_STALE_BARS
 # bars, at least TARGET_STALE_FLOOR_S, plus TARGET_STALE_WEEKEND_S for daily-and-longer bars of
 # a market that closes on weekends (not a crypto-only strategy).
-# Recency matters because only a successful run clears the failure: one transient error at the
-# start of a data gap (a TAIFEX night-to-day gap, a weekend, a holiday) would otherwise read as
-# stale for the whole gap. Left by design: a single failure while the next bar has not landed, on
-# a target already past the age limit (after a long holiday), holds for at most
-# TARGET_STALE_RECENT_S. Type B (no INTERVAL, no bar_wait contract) is not judged.
+# Recency matters for going stale: one transient error at the start of a data gap (a TAIFEX
+# night-to-day gap, a weekend, a holiday) would otherwise read as stale for the whole gap. Once
+# held (state/stale_share.json names it), the one way out is the strategy computing again:
+# state.json written after the last failure (a good run also clears the failure). Left by
+# design: a single failure while the next bar has not landed, on a target already past the age
+# limit (after a long holiday), holds until that strategy's next good run. Type B (no INTERVAL,
+# no bar_wait contract) is not judged.
 # What it holds: only the stale member's own share of the key, and only from growing — see
 # _stale_share_targets. The other members on the key trade normally.
 TARGET_STALE_BARS = 2
@@ -2952,8 +2957,13 @@ def _stale_target_age(name, now=None):
     except (OSError, ValueError, AttributeError):
         return None
     now = time.time() if now is None else now
-    if not _finite(failed) or failed < written or now - failed > TARGET_STALE_RECENT_S:
-        return None
+    if not _finite(failed) or failed < written:
+        return None  # the strategy computed after its last failure (a good run clears it too)
+    if now - failed > TARGET_STALE_RECENT_S:
+        # Only a hold already in place outlives the failure's recency: the failure aging out
+        # is not a new signal, so releasing here would trade the old target back (11-04: a
+        # 15:00 target bought back at 17:38). A new hold still needs a recent failure.
+        return now - written if name in _stale_held_names() else None
     limit = (max(TARGET_STALE_BARS * bar, TARGET_STALE_FLOOR_S)
              + (TARGET_STALE_WEEKEND_S if bar >= 86400 and not _crypto_only(name) else 0))
     age = now - written
@@ -2983,6 +2993,10 @@ def _stale_share_book():
     return json.loads(json.dumps(book))
 
 
+def _stale_held_names():
+    return {n for v in _stale_share_book().values() for n in v.get('names') or ()}
+
+
 def _stale_share_save(book):
     global _stale_share_unsaved, _stale_share_last
     try:
@@ -3008,7 +3022,8 @@ def _stale_share_targets(target, book, skip_roots=(), stale_keys=None):
     The share is fixed in the first stale round from the book and the OTHER members' targets of
     the previous round (what the book held for them — this round's may not be bought yet), kept
     on disk, and from then on only shrinks: toward the stale members' own target, and toward the
-    whole key's book when that is smaller (a hand close, a partial fill, a mark drop). The other
+    key's book less the others' previous targets on the other side when that is smaller (a hand
+    close, a partial fill, a mark drop). The other
     members trade their target as computed. Cleared once no member on the key is stale. A
     contract rollover in progress (skip_roots) is left as computed: the user's own switch moves
     the share to the new contract, and holding it there would close it. stale_keys = every key
@@ -3031,12 +3046,12 @@ def _stale_share_targets(target, book, skip_roots=(), stale_keys=None):
         others = sum(float(c.get('contribution') or 0) for c in contribs if c.get('strategy') not in names)
         held_book = _row_signed(book.get(key))
         rec = anchors.get(key)
+        if prev is None:
+            prev = _last_snapshot_target() or {}
+        prow = prev.get(key)
+        before = (sum(v for n, v in _contribs(prow).items() if n not in names)
+                  if isinstance(prow, dict) else others)
         if rec is None or rec['names'] != names:
-            if prev is None:
-                prev = _last_snapshot_target() or {}
-            prow = prev.get(key)
-            before = (sum(v for n, v in _contribs(prow).items() if n not in names)
-                      if isinstance(prow, dict) else others)
             share = _toward_zero(stale, held_book - before)
             if rec is not None:
                 # the members that joined bring their own previous share, the ones that left take
@@ -3048,7 +3063,13 @@ def _stale_share_targets(target, book, skip_roots=(), stale_keys=None):
             guard.audit('stale_share_held', symbol=key, strategies=names, wants=round(stale, 4),
                         held=round(share, 4), first=True)
         else:
-            share = _toward_zero(_toward_zero(float(rec['share']), stale), held_book)
+            # the bound is the key's book with the others' opposite side added back: a short of
+            # another member beside the stale long (−1.09 beside +6.09, book +5) sold the share
+            # down a lot a round, to 0 and past it (11-04). The others' same side stays in: their
+            # entry that has not filled yet must not shrink the share.
+            share = float(rec['share'])
+            bound = held_book - (before if before * share < 0 else 0.0)
+            share = _toward_zero(_toward_zero(share, stale), bound)
             if abs(share - rec['share']) > 1e-9:
                 guard.audit('stale_share_held', symbol=key, strategies=names,
                             wants=round(stale, 4), held=round(share, 4))
@@ -4758,7 +4779,12 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                                  ('netted_exit', 'netted_exit'),
                                  # 群益: the month contract that filled (TX2610) — the order row's
                                  # symbol is the book key (TXF); the pages show 「大台（TX2610）」
-                                 ('resolved_symbol', 'resolved_symbol')):
+                                 ('resolved_symbol', 'resolved_symbol'),
+                                 # 統一's 委託書號: names the send a late fill (late_fill_ordernos) belongs to
+                                 ('orderno', 'orderno'),
+                                 # TW futures: the lots and month contract actually sent — an unfilled
+                                 # send's trade-history row shows these, not the whole diff
+                                 ('sent_qty', 'sent_qty'), ('sent_symbol', 'sent_symbol')):
                     if placed.get(src) is not None:
                         leg[dst] = placed[src]
                 if not float(placed.get('executed_qty') or 0):

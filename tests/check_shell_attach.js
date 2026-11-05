@@ -193,7 +193,7 @@ try {
   t("…主行程確實不收空檔(畫面那一道擋的就是這個)", at.validate({ name: "empty.csv", data: "" }) === null);
   {
     const preLine = (preSrc.match(/^\s*attachNameMax: ([^\n]*?),\n/m) || [])[1] || "null", argOf = (argv) => new Function("process", "return " + preLine)({ argv });
-    t("上限的來源只有 shell/attach.js:main.js 用 additionalArguments 帶 ATTACH_NAME_MAX、preload 從 process.argv 讀(沒有 argv 也回 0、不丟例外:preload 一丟 window.blave 就不存在);app.js 與 preload 都不寫數字", /additionalArguments: \["--blave-attach-name-max=" \+ require\("\.\/attach"\)\.ATTACH_NAME_MAX\],/.test(mainSrc)
+    t("上限的來源只有 shell/attach.js:main.js 用 additionalArguments 帶 ATTACH_NAME_MAX、preload 從 process.argv 讀(沒有 argv 也回 0、不丟例外:preload 一丟 window.blave 就不存在);app.js 與 preload 都不寫數字", /additionalArguments: \["--blave-attach-name-max=" \+ require\("\.\/attach"\)\.ATTACH_NAME_MAX[,\]]/.test(mainSrc)
       && argOf(["electron", "--x=1", "--blave-attach-name-max=" + at.ATTACH_NAME_MAX]) === at.ATTACH_NAME_MAX && argOf(["electron"]) === 0 && argOf(["electron", "--blave-attach-name-max=abc"]) === 0 && argOf(undefined) === 0
       && /nameMax = window\.blave\.attachNameMax;/.test(cut("takeAttachments")) && !/\b\d{2,}\b/.test(cut("takeAttachments")) && !/\d/.test(preLine.replace("[1]", "").replace("=== 0", "").replace("|| 0", "")), { preLine }); }
   { // 拖放:兩支純函式真的跑

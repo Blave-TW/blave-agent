@@ -119,6 +119,16 @@ def _desktop_denied(r):
         raise DataAccessError(_NO_ACCESS_MSG)
 
 
+def _note_clock(r, t0, t1):
+    """The api's Date header against this machine's clock (lib/tw_clock: a clock minutes off
+    holds Taiwan futures entries). A workspace without the module skips it."""
+    try:
+        from lib import tw_clock
+    except ImportError:
+        return
+    tw_clock.note_reply(r, t0, t1)
+
+
 def _retry_get(url, max_retries=6, **kwargs):
     """GET with exponential backoff on transient failures: 2, 4, 8, 16, 32 s between the
     six tries (~1 min of waiting); after the last try it raises at once.
@@ -139,7 +149,10 @@ def _retry_get(url, max_retries=6, **kwargs):
         _check_data_access(kwargs.get('headers') or {})
     for attempt in range(max_retries):
         try:
+            t0 = time.time()
             r = requests.get(url, **kwargs)
+            if blave:
+                _note_clock(r, t0, time.time())
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             if attempt == max_retries - 1:
                 raise

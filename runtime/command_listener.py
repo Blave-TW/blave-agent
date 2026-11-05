@@ -4523,20 +4523,16 @@ def _stop_reconciler():
     return ok
 
 
-def _cmd_credentials_remove(args):
-    """Unbind: drop exchange keys from the workspace .env.
-
-    The platform's own blave_* data-API credentials are never removed, no
-    matter what the caller lists — losing those takes the machine's market
-    data down with it.
-    """
+def _unbind_targets(args, cmd):
+    """(env names, casefolded names to drop, venue ids lowercased) of an unbind's `env` list —
+    credentials_remove and close_then_unbind read it the same way."""
     names = args.get("env")
     if (
         not isinstance(names, list)
         or not names
         or not all(isinstance(n, str) and n.replace("_", "").isalnum() for n in names)
     ):
-        raise ValueError("credentials_remove needs a list of env names")
+        raise ValueError(f"{cmd} needs a list of env names")
     # casefold like the write side: a MixedCase line (agent-hand-written
     # Gateio_Api_Key) must still match its unbind name
     drop = {n.casefold() for n in names if not n.upper().startswith("BLAVE_")}
@@ -4546,6 +4542,32 @@ def _cmd_credentials_remove(args):
         _own = set(_t.get("cred_env") or {})
         if _own & drop:
             drop |= _own
+    # DATA_* excluded: removing a data-source key is not an unbind — no venue
+    # to prune, and it must not halt trading. Judged on the ID (suffix off),
+    # the same thing _venue_cred_ids judges: the env NAME of a venue called
+    # "DATA" (DATA_API_KEY) starts with the prefix, its id does not.
+    dropped_ids = {
+        m[0].lower() for n in drop
+        if (m := _cred_match(n)) and m[1] == "API_KEY" and not _is_data_cred_id(m[0])
+    }
+    return names, drop, dropped_ids
+
+
+def _cmd_credentials_remove(args):
+    """Unbind: drop exchange keys from the workspace .env.
+
+    The platform's own blave_* data-API credentials are never removed, no
+    matter what the caller lists — losing those takes the machine's market
+    data down with it.
+    """
+    names, drop, dropped_ids = _unbind_targets(args, "credentials_remove")
+    marker = _read_unbind_marker()
+    if (marker and not marker.get("held") and not marker.get("unbinding")
+            and dropped_ids & set(marker.get("venues") or ())):
+        # a close_then_unbind is closing this venue: its flatten already holds the keys and keeps
+        # sending; pulling them now leaves exactly the half state that command exists to prevent.
+        # It unbinds on its own when flat, or stops (held) and this goes through then
+        raise RuntimeError("close_then_unbind is closing this venue's positions — unbind once it finishes")
 
     path = os.path.join(WORKSPACE, ".env")
     with _env_lock():
@@ -4580,14 +4602,6 @@ def _cmd_credentials_remove(args):
     # Prune the unbound venues from account.json right away — the account
     # reader only rewrites it every 2 min, and until then the web would keep
     # showing a live-looking equity for an account that no longer has a key.
-    # DATA_* excluded: removing a data-source key is not an unbind — no venue
-    # to prune, and it must not halt trading. Judged on the ID (suffix off),
-    # the same thing _venue_cred_ids judges: the env NAME of a venue called
-    # "DATA" (DATA_API_KEY) starts with the prefix, its id does not.
-    dropped_ids = {
-        m[0].lower() for n in drop
-        if (m := _cred_match(n)) and m[1] == "API_KEY" and not _is_data_cred_id(m[0])
-    }
     if dropped_ids:
         apath = os.path.join(WORKSPACE, "manager", "account.json")
         try:
@@ -4678,6 +4692,11 @@ def _cmd_credentials_remove(args):
                 # the workspace lib reads its id (lib.portfolio.book_account_check).
             else:
                 _log("reconciler not confirmed stopped — membership kept")
+
+    # 「保留部位並解除」 after a held close_then_unbind (or the unbind that request was waiting
+    # for): nothing is left to wait on for these venues
+    if marker and dropped_ids & set(marker.get("venues") or ()):
+        _drop_unbind_marker()
 
     return f"credentials_remove={removed}"  # count only — never the names' values
 
@@ -5514,10 +5533,16 @@ def _cmd_close_all(args):
     flatten gets a one-time close-only pass (lib/guard.claim_close_all_pass) and
     every state above carries a `restart_stopped:` prefix instead of the halt —
     e.g. `close_all=restart_stopped:started`."""
+    return _close_all("close_all")
+
+
+def _close_all(label, argv=()):
+    """_cmd_close_all's body; close_then_unbind runs the same path with its own ack label and
+    flatten.py arguments (--venues / --request-id)."""
     from lib.guard import trip_halt
 
     restart = os.path.exists(RESTART_STOP_PATH)
-    prefix = "close_all=restart_stopped:" if restart else "close_all="
+    prefix = f"{label}=restart_stopped:" if restart else f"{label}="
     flatten_path = os.path.join(WORKSPACE, "manager", "flatten.py")
     try:
         with open(flatten_path, encoding="utf-8") as f:
@@ -5536,7 +5561,7 @@ def _cmd_close_all(args):
         _mark_halt_closing(False)  # flipped once a flatten is known to be running
     result = None
     try:
-        result = _close_all_launch(prefix, restart, claims_pass, flatten_path)
+        result = _close_all_launch(prefix, restart, claims_pass, flatten_path, argv)
         return result
     finally:
         if halted_here and _CLOSE_ALL_CLOSING_RE.search(result or ""):
@@ -5565,7 +5590,7 @@ def _mark_halt_closing(closing):
         _log(f"close_all: HALT closing mark failed: {type(e).__name__}: {e}")
 
 
-def _close_all_launch(prefix, restart, claims_pass, flatten_path):
+def _close_all_launch(prefix, restart, claims_pass, flatten_path, argv=()):
     if not os.path.isfile(flatten_path):
         # workspace 還沒更新到有平倉層——誠實回報只掛了 halt(reporter 的
         # can_flatten 同一判準,前端本來就不會給這顆選項;這裡是最後防線)
@@ -5586,7 +5611,7 @@ def _close_all_launch(prefix, restart, claims_pass, flatten_path):
             return prefix + "nothing_closed"  # the flatten could close nothing without it
         pass_written = True
     try:
-        return _launch_flatten(prefix)
+        return _launch_flatten(prefix, argv)
     except BaseException:
         if pass_written:  # never leave a claimable pass behind a flatten that did not start
             try:
@@ -5623,7 +5648,7 @@ def _kick_when_flatten_exits(proc):
     threading.Thread(target=_run, daemon=True).start()
 
 
-def _launch_flatten(prefix):
+def _launch_flatten(prefix, argv=()):
     # log 進檔案不進 DEVNULL:detached 程序的失敗路徑(沒 order lib、平倉炸)
     # 除了 order_errors.json 外,還要有完整紀錄可查
     log_path = os.path.join(WORKSPACE, "state", "flatten.log")
@@ -5640,7 +5665,7 @@ def _launch_flatten(prefix):
         line = "".join(json.dumps({k: v for d in held for k, v in d.items()}) + "\n" for _ in held)
         flags = {**president_connect.child_flags(), **capital_local.child_flags()}
         with atomic_file.open_append(log_path) as logf:
-            proc = subprocess.Popen([sys.executable, "manager/flatten.py"], cwd=WORKSPACE,
+            proc = subprocess.Popen([sys.executable, "manager/flatten.py", *argv], cwd=WORKSPACE,
                                     env=_local_child_env(**flags),
                                     stdout=logf, stderr=logf, start_new_session=True,
                                     **_child_kw(**({"stdin": subprocess.PIPE} if line else {})))
@@ -5659,7 +5684,8 @@ def _launch_flatten(prefix):
         # (Start-Process 的子程序在 powershell 死後變孤兒,樹掃描摸不到)。
         ps_cmd = (
             f"Start-Process -WindowStyle Hidden -FilePath python "
-            f"-ArgumentList 'manager/flatten.py' -WorkingDirectory '{WORKSPACE}' "
+            f"-ArgumentList {','.join(repr(a) for a in ('manager/flatten.py', *argv))} "
+            f"-WorkingDirectory '{WORKSPACE}' "
             f"-RedirectStandardOutput '{log_path}.out' "
             f"-RedirectStandardError '{log_path}.err'"
         )
@@ -5671,12 +5697,292 @@ def _launch_flatten(prefix):
     # ——重啟只殺 bridge 本體,flatten 活到收工
     with atomic_file.open_append(log_path) as logf:
         proc = subprocess.Popen(
-            ["python3", "manager/flatten.py"],
+            ["python3", "manager/flatten.py", *argv],
             cwd=WORKSPACE, env=child_env,
             stdout=logf, stderr=logf, start_new_session=True, **_child_kw()
         )
     _kick_when_flatten_exits(proc)
     return prefix + "started"
+
+
+# ── 平倉後解除綁定(close_then_unbind;spec unbind-positions §5) ─────────────────────
+# One command owns the whole order — close, confirm flat, only then drop the keys — so a page
+# reloaded or an app closed halfway never leaves keys gone with positions open, or a close sent
+# with the keys already gone. The request waits in UNBIND_AFTER_CLOSE_PATH; manager/flatten.py
+# writes its result to LAST_FLATTEN_PATH; unbind_after_close_tick (on the command thread of both
+# the cloud listener and the desktop daemon, so it survives a restart) decides once that result
+# is in: everything closed and re-read flat → credentials_remove; anything else → held, keys kept,
+# HALT kept, nothing sent again on its own.
+
+UNBIND_AFTER_CLOSE_PATH = os.path.join(WORKSPACE_STATE, "unbind_after_close.json")
+LAST_FLATTEN_PATH = os.path.join(WORKSPACE_STATE, "last_flatten.json")
+_UNBIND_RID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_UNBIND_START_GRACE_S = 300   # > guard.TURN_MONEY_WAIT_S (90): a flatten waiting on a turn has not written yet
+_UNBIND_PROBE_EVERY_S = 60    # a crashed flatten (no pid to watch) is found by its released lock
+_UNBIND_TICK_EVERY_S = 2
+_UNBIND_TICK = {"next": 0.0, "probed": 0.0}
+
+
+def _flatten_supports_unbind():
+    """The workspace's flatten.py takes --venues / --request-id and writes last_flatten.json —
+    the runtime ships first, and an older flatten would close every venue and report nothing.
+    Same artifact test as the report's can_close_unbind."""
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "flatten.py"), encoding="utf-8") as f:
+            src = f.read()
+    except OSError:
+        return False
+    return "last_flatten.json" in src and '"--request-id"' in src and '"--venues"' in src
+
+
+def _read_unbind_marker():
+    try:
+        m = atomic_file.load_json(UNBIND_AFTER_CLOSE_PATH)
+    except (OSError, ValueError):
+        return None
+    return m if isinstance(m, dict) and isinstance(m.get("env"), list) else None
+
+
+def _drop_unbind_marker():
+    try:
+        os.remove(UNBIND_AFTER_CLOSE_PATH)
+    except FileNotFoundError:
+        pass
+
+
+def _write_unbind_marker(m):
+    _write_atomic(UNBIND_AFTER_CLOSE_PATH, json.dumps(m))
+
+
+def _read_last_flatten():
+    try:
+        r = atomic_file.load_json(LAST_FLATTEN_PATH)
+    except (OSError, ValueError):
+        return None
+    return r if isinstance(r, dict) else None
+
+
+def _tw_positions_held(vid):
+    """Does the bot hold anything on this TW futures venue? Snapshot file and book only — never
+    a broker login. Unreadable → True: the safe answer when the market is shut is not to send."""
+    import importlib
+    try:
+        import lib.portfolio as _pf
+        cfg = _pf.load_portfolio_config()
+        own = _pf.own_positions_only(cfg) if hasattr(_pf, "own_positions_only") else cfg.get("self_ledger")
+        if own and _pf.book_ready(cfg):
+            book = _pf.ledger_positions(vid)
+            return any(float(r.get("size") or 0) > 0 or float(r.get("qty") or 0) > 0 for r in book.values())
+        rows = importlib.import_module(f"lib.account_{vid}").get_positions({})
+        rows = rows.values() if isinstance(rows, dict) else rows
+        return any(float((r or {}).get("size") or 0) > 0 for r in rows)
+    except Exception as e:
+        _log(f"close_then_unbind: {vid} positions unread ({type(e).__name__}) — taken as held")
+        return True
+
+
+def _txf_closed_for(scope):
+    """A TW futures venue in `scope` holds positions and the TAIFEX session is shut: a market
+    IOC now is refused (9902) or, in the pre-open, queued to the open. Holidays are not known
+    (lib/tw_clock) — the broker's refusal comes back as a held result then."""
+    import importlib
+    tw = sorted(v for v in scope if venue_traits.has(v, "hand_wired"))
+    if not tw:
+        return False
+    try:
+        tc = importlib.import_module("lib.tw_clock")
+        if tc.in_session(tc.corrected()):
+            return False
+    except Exception:
+        return True
+    return any(_tw_positions_held(v) for v in tw)
+
+
+def _manual_venues(scope):
+    """The venues in `scope` this machine can't close: only a password-logon Administrator can
+    trade them (群益) and this identity isn't one — the same identity test close_all's
+    flatten skips them by (portfolio_reporter.manual_close_venues, the report's side)."""
+    gated = {v for v in scope if venue_traits.has(v, "windows_identity")}
+    if not gated:
+        return set()
+    try:
+        import portfolio_reporter
+        return set() if portfolio_reporter._capital_order_identity_ok() else gated
+    except Exception:
+        return gated
+
+
+def _cmd_close_then_unbind(args):
+    """Close the positions of the venues being unbound, then unbind them — or stop with the
+    keys kept. args: {"env": [names] (= credentials_remove), "request_id"?: str}.
+
+    Ack (opaque `close_then_unbind=<state>`, additive like close_all):
+      started          — HALT tripped (as close_all), flatten launched for these venues only;
+                         the unbind follows on its own once flat (unbind_after_close_tick)
+      already_running  — this machine's close-then-unbind is still working: nothing launched
+      held             — the same request_id again after it was held: nothing launched
+      unconfirmed      — the last attempt left a close of unknown outcome: no new flatten
+                         (群益's auto open/close would open the reverse of one that did fill)
+      market_closed    — a TW futures venue holds positions out of session: nothing done
+      capital_manual   — every venue in scope is 群益 that this identity can't trade: nothing
+                         done. Mixed with closable venues, 群益 is kept instead (marker `manual`)
+                         and unbinds with the rest once they are flat
+      flatten_busy     — another close-all holds the flatten lock: nothing done
+      not_bound        — none of these venues is bound (already unbound): nothing done
+      unsupported      — the workspace's flatten.py predates this: nothing done
+    plus close_all's own states through the same path (restart_stopped: prefix included)."""
+    names, _drop, ids = _unbind_targets(args, "close_then_unbind")
+    rid = args.get("request_id")
+    if rid is not None and (not isinstance(rid, str) or not _UNBIND_RID_RE.match(rid)):
+        raise ValueError("request_id must be 1-64 of [A-Za-z0-9_-]")
+    if not ids:
+        raise ValueError("close_then_unbind needs a venue's env names")
+    p = "close_then_unbind="
+    if not _flatten_supports_unbind():
+        return p + "unsupported"
+    cur = _read_unbind_marker()
+    if cur and not cur.get("held"):
+        return p + "already_running"
+    if cur and rid and cur.get("request_id") == rid:
+        return p + "held"
+    last = _read_last_flatten()
+    if cur and last and last.get("request_id") == cur.get("request_id") and last.get("unconfirmed"):
+        return p + "unconfirmed"
+    # unreadable raises (the ack says so): an empty read would answer not_bound
+    with open(os.path.join(WORKSPACE, ".env")) as f:
+        bound = {i.lower() for i in _venue_cred_ids(f.read().splitlines())}
+    scope = ids & bound
+    if not scope:
+        return p + "not_bound"
+    # 群益 under this identity is kept, as if the user chose keep-and-unbind for it (Wei 2026-11-05,
+    # unbind-consistency §5 step 1): the others close, and once they are flat every venue in
+    # `scope` unbinds together. Only 群益 alone has nothing to close → keep-and-unbind only.
+    manual = _manual_venues(scope)
+    closing = scope - manual
+    if not closing:
+        return p + "capital_manual"
+    # only what is sent: a kept 群益 TXF out of session is not a reason to hold the others
+    if _txf_closed_for(closing):
+        return p + "market_closed"
+    if _flatten_already_running():
+        return p + "flatten_busy"
+    rid = rid or uuid.uuid4().hex[:16]
+    _UNBIND_TICK["probed"] = 0.0
+    _write_unbind_marker({"env": names, "venues": sorted(scope), "closing": sorted(closing),
+                          "manual": sorted(manual), "at": round(time.time(), 3),
+                          "request_id": rid, "held": False})
+    try:
+        result = _close_all("close_then_unbind", ("--venues", ",".join(sorted(closing)), "--request-id", rid))
+    except BaseException:
+        _drop_unbind_marker()
+        raise
+    if result.endswith("started"):
+        m = _read_unbind_marker()
+        if m and m.get("request_id") == rid:
+            m["halt_ts"] = _halt_ts()   # the stop this request stands on; None = restart-stopped, no HALT
+            _write_unbind_marker(m)
+    if not result.endswith("started"):
+        # nothing of ours is running: no request left to wait on. already_running here is
+        # another close-all's flatten (ours was refused above), which closes every venue
+        # and never unbinds
+        _drop_unbind_marker()
+        if result.endswith("already_running"):
+            return p + "flatten_busy"
+    return result
+
+
+def _halt_ts():
+    try:
+        h = atomic_file.load_json(os.path.join(WORKSPACE_STATE, "HALT"))
+    except (OSError, ValueError):
+        return None
+    return h.get("ts") if isinstance(h, dict) else None
+
+
+def _stop_still_stands(marker):
+    """Nothing has traded since the flatten closed: the same HALT this request tripped is still
+    there (a resume removes it; a resume then a new halt replaces its ts), or — a request made
+    while restart-stopped — the restart record still is. Anything else and the reconciler may
+    have re-opened what was closed (flatten kicks it when done), so the keys stay."""
+    ts = marker.get("halt_ts")
+    if ts is not None:
+        return _halt_ts() == ts
+    return os.path.exists(RESTART_STOP_PATH) or ("halt_ts" not in marker and _halt_ts() is not None)
+
+
+def _unbind_hold(marker, why):
+    marker.update({"held": True, "why": why, "held_at": round(time.time(), 3)})
+    try:
+        _write_unbind_marker(marker)
+    except OSError as e:
+        _log(f"close_then_unbind: held mark not written ({type(e).__name__})")
+    _log(f"close_then_unbind {marker.get('request_id')}: held ({why}) — keys kept, trading stays paused")
+    _push(_ON_APPLIED, "close_then_unbind held")
+    return f"held:{why}"
+
+
+def unbind_after_close_tick():
+    """Advance a waiting close_then_unbind. Called from the command thread (cloud run(), desktop
+    daemon loop), where the dispatch it shares cwd swaps with runs too. Cheap when nothing
+    waits; never blocks: the re-read flat check is flatten.py's own (it can wait out a TW
+    snapshot that lags its closes), this only reads the result and probes the lock once at the
+    moment of decision — probing it often would make a flatten starting that instant exit
+    already_running having closed nothing (flatten_running)."""
+    now = time.time()
+    if now < _UNBIND_TICK["next"]:
+        return None
+    _UNBIND_TICK["next"] = now + _UNBIND_TICK_EVERY_S
+    if not os.path.exists(UNBIND_AFTER_CLOSE_PATH):
+        return None
+    marker = _read_unbind_marker()
+    if not marker or marker.get("held"):
+        return None
+    last = _read_last_flatten()
+    if not last or last.get("request_id") != marker.get("request_id"):
+        if now - float(marker.get("at") or 0) < _UNBIND_START_GRACE_S or flatten_running():
+            return None
+        return _unbind_hold(marker, "not_started")
+    if last.get("done_at") is None:
+        if flatten_running() or now - _UNBIND_TICK["probed"] < _UNBIND_PROBE_EVERY_S:
+            return None
+        _UNBIND_TICK["probed"] = now
+        if _flatten_already_running():
+            return None
+        last = _read_last_flatten() or {}
+        if last.get("request_id") != marker.get("request_id") or last.get("done_at") is None:
+            return _unbind_hold(marker, "interrupted")
+    if _flatten_already_running():
+        return None   # the result is written while the lock is still held; it goes a moment later
+    if last.get("unconfirmed"):
+        return _unbind_hold(marker, "unconfirmed")
+    if last.get("unclosed"):
+        return _unbind_hold(marker, "unclosed")
+    if last.get("ok") is not True:
+        return _unbind_hold(marker, "error")
+    if not _stop_still_stands(marker):
+        return _unbind_hold(marker, "resumed")
+    try:
+        marker["unbinding"] = True   # this unbind is the one the request waits for
+        _write_unbind_marker(marker)
+        result = _in_workspace(_cmd_credentials_remove, {"env": marker["env"]})
+    except Exception as e:
+        _log(f"close_then_unbind: credentials_remove failed: {type(e).__name__}: {e}")
+        try:
+            with open(os.path.join(WORKSPACE, ".env")) as f:
+                still = {i.lower() for i in _venue_cred_ids(f.read().splitlines())}
+        except OSError:
+            still = None
+        if still is not None and not still & set(marker.get("venues") or ()):
+            # the keys went before the failure (a later step, e.g. the reconciler stop): it is
+            # unbound, and a held mark would tell the page the keys are still there
+            _drop_unbind_marker()
+            _push(_ON_APPLIED, "close_then_unbind done")
+            return f"unbound_with_error:{type(e).__name__}"
+        return _unbind_hold(marker, "unbind_failed")
+    _drop_unbind_marker()
+    _log(f"close_then_unbind {marker.get('request_id')}: flat — {result}")
+    _push(_ON_APPLIED, "close_then_unbind done")
+    return result
 
 
 # ── 策略管理(工作頁 投資組合 › 策略管理)──────────────────────────────────────
@@ -7373,6 +7679,7 @@ HANDLERS = {
     "execution": _cmd_execution,
     "credentials": _cmd_credentials,
     "credentials_remove": _cmd_credentials_remove,
+    "close_then_unbind": _cmd_close_then_unbind,
     "retest_accounts": _cmd_retest_accounts,
     "restart_reconciler": _cmd_restart_reconciler,
     "delete_strategy": _cmd_delete_strategy,
@@ -7427,7 +7734,13 @@ def dispatch(command):
     # for its unbind-halt (audit H2: outside it, that halt was inert — either
     # a swallowed ImportError or a HALT file in the wrong cwd); credentials for
     # the same reason (its rebind-eviction halt).
-    if cmd in ("halt", "resume", "resume_wait", "downtime_hold", "close_all",
+    if cmd in ("resume", "resume_wait") and args.get("strategies") is None:
+        m = _read_unbind_marker()
+        if m and not m.get("held"):
+            # 平倉後解除進行中:解除暫停會讓 flatten 結束時 kick 的那一輪照策略把部位開回來,
+            # 接著金鑰被刪、部位沒人管——這個指令要防的正是這個。HALT 原樣留著
+            raise RuntimeError("close_then_unbind is closing positions — resume once it finishes or stops")
+    if cmd in ("halt", "resume", "resume_wait", "downtime_hold", "close_all", "close_then_unbind",
                "credentials", "credentials_remove", "book_account_confirm"):
         result = _in_workspace(fn, args)
     else:
@@ -7571,6 +7884,10 @@ def run(on_applied=None, on_progress=None):
 
     while True:
         _beat()
+        try:
+            unbind_after_close_tick()
+        except Exception as e:
+            _log(f"close_then_unbind tick failed: {type(e).__name__}: {e}")
         try:
             command = poll_once()
         except Exception as e:

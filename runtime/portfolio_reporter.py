@@ -1129,6 +1129,62 @@ def can_flatten(vens):
     return not (only_identity_gated and not _capital_order_identity_ok())
 
 
+def can_close_unbind(vens):
+    """= command_listener._flatten_supports_unbind, and can_flatten."""
+    try:
+        with open(os.path.join(WORKSPACE, "manager", "flatten.py"), encoding="utf-8") as f:
+            src = f.read()
+    except OSError:
+        return False
+    return ("last_flatten.json" in src and '"--request-id"' in src and '"--venues"' in src
+            and can_flatten(vens))
+
+
+def manual_close_venues(vens):
+    """Bound venues a flatten here skips for identity (= command_listener._manual_venues)."""
+    gated = sorted(v for v in (vens or {}) if venue_traits.has(v, "windows_identity"))
+    return [] if not gated or _capital_order_identity_ok() else gated
+
+
+def _small_json(path, limit=64 * 1024):
+    """A dict from a state file the machine writes, or None (absent, unreadable, oversized)."""
+    try:
+        if os.path.getsize(path) > limit:
+            return None
+        d = atomic_file.load_json(path)
+    except (OSError, ValueError):
+        return None
+    return d if isinstance(d, dict) else None
+
+
+def unbind_after_close_view():
+    m = _small_json(os.path.join(WORKSPACE_STATE, "unbind_after_close.json"))
+    if not m:
+        return None
+    return {k: m.get(k) for k in ("venues", "closing", "manual", "at", "request_id", "held", "why", "held_at")}
+
+
+def txf_session(now=None):
+    """Loaded by path into a private module, its skew file pointed at this workspace: the
+    reporter never imports lib (cwd is not the workspace here, and tw_clock reads a relative path)."""
+    import importlib.util
+    path = os.path.join(WORKSPACE, "lib", "tw_clock.py")
+    if not os.path.isfile(path):
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("_report_tw_clock", path)
+        tc = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(tc)
+        tc.SKEW_PATH = os.path.join(WORKSPACE_STATE, "clock_skew.json")
+        now = time.time() if now is None else now
+        s = tc.skew(now) or 0
+        real = now - s
+        is_open = tc.in_session(real)
+        return {"open": bool(is_open), "next_open": None if is_open else int(tc.next_open(real) + s)}
+    except Exception:
+        return None
+
+
 def _fresh(ts, window=HEARTBEAT_STALE_S):
     return bool(ts and (time.time() - ts) < window)
 
@@ -2311,6 +2367,21 @@ def build_report(reporter=None):
         "runtime_version": RUNTIME_VERSION,
         "workspace_version": atomic_file.read_version(os.path.join(WORKSPACE, "VERSION")),
         "can_flatten": can_flatten(vens),
+        # 平倉後解除綁定 (command_listener close_then_unbind): offered only when the workspace's
+        # flatten.py can be scoped to the venue and reports its result — keyed on the artifact,
+        # like can_flatten. Absent (old runtime) = the pages offer keep-and-unbind only.
+        "can_close_unbind": can_close_unbind(vens),
+        # bound venues this machine can't close (群益 under a non-Administrator identity):
+        # close_then_unbind keeps their positions and unbinds them with the rest
+        "close_unbind_manual": manual_close_venues(vens),
+        # the last close-all's result as flatten.py wrote it: done_at null = still running;
+        # unclosed [{key, venue, why, msg}] / unconfirmed [key] = what stopped the unbind
+        "last_flatten": _small_json(os.path.join(WORKSPACE_STATE, "last_flatten.json")),
+        # a close_then_unbind waiting ({held: false}) or stopped ({held: true, why}); None = none
+        "unbind_after_close": unbind_after_close_view(),
+        # TAIFEX regular session on the machine's corrected clock (lib/tw_clock; holidays not
+        # known): {open, next_open (epoch s)}. None = this workspace has no tw_clock
+        "txf_session": txf_session(),
         # self_ledger: whether this machine diffs against the bot's own book —
         # the web's stop dialog phrases what 「關閉 bot 部位」actually closes
         # from this (bot's book only vs the whole account), the desktop's

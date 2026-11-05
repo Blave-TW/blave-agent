@@ -38,12 +38,12 @@ ok("三個平台都轉不了:觸發器 aria-disabled、按了講原因不開選�
   && /r\.append\(XP_PLATFORM\[k\] \+ " ", lang, xpMk\("span", "d", t\(XP_OFF_KEY\[off\]\)\)\)/.test(xp) && !/xp-why/.test(xp)
   && ["portfolio", "nosignal", "crypto"].every((k) => new RegExp(k + ': "xp\\.off\\.' + k + '"').test(xp))
   && ["en", "zh"].every((l) => ["xp.off.portfolio", "xp.off.nosignal", "xp.off.crypto"].every((k) => fs.readFileSync(path.join(SHELL, "i18n", l + ".po"), "utf8").includes('msgid "' + k + '"'))));
-// 設計稽核 v030 S7:#xp-note 那一行三句都收句號——選單列的 desc 照舊不帶,顯示在 #xp-note 時由 xpEnd 補(xp.why.tm／busy 本身就帶)
+// 設計稽核 v030 S7:#xp-note 那一行三句都收句號——選單列的 desc 照舊不帶,顯示在 #xp-note 時由 xpEnd 補(xp.why.tm 本身就帶)
 { const line = (xp.match(/^const xpEnd = .*$/m) || [""])[0], end = (L) => new Function("LANG", line + "\nreturn xpEnd;")(L);
   const S = {}; require("vm").runInNewContext(fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "utf8") + "\nthis.S = STRINGS;", S);
-  ok("#xp-note 的三種原因句都收句號(zh「。」、en「.」),跟 xp.why.tm／busy 一致;選單列的 desc 不帶",
+  ok("#xp-note 的三種原因句都收句號(zh「。」、en「.」),跟 xp.why.tm 一致;選單列的 desc 不帶",
     !!line && ["zh", "en"].every((L) => ["xp.off.portfolio", "xp.off.nosignal", "xp.off.crypto"].every((k) => !/[。.]$/.test(S.S[L][k]) && end(L)(S.S[L][k]) === S.S[L][k] + (L === "zh" ? "。" : "."))
-      && ["xp.why.tm", "xp.why.busy"].every((k) => S.S[L][k].endsWith(L === "zh" ? "。" : ".")))); }
+      && S.S[L]["xp.why.tm"].endsWith(L === "zh" ? "。" : ".") && !S.S[L]["xp.why.busy"])); }
 // e2e 0.1.8 #67:Type B 的程式碼分頁不叫人去跑回測
 ok("沒有回測那一句:Type B 換成 rp.noBtB,key 放在 data-i18n 上(切語言照它重譯)", /nb\.dataset\.i18n = typeof xpIsTypeB === "function" && xpIsTypeB\(B\.data\) \? "rp\.noBtB" : "rp\.noBt"; nb\.textContent = t\(nb\.dataset\.i18n\);/.test(app));
 const tpl = { xq: "把策略 {id} 轉成 XQ XS 版。", mc: "mc {id}", pine: "pine {id}" };

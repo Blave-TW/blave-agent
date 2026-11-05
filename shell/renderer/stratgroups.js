@@ -14,14 +14,7 @@ const SG_EMOJI = (
 );
 const SG_EMOJI_LIST = [...SG_EMOJI], SG_EMOJI_SET = new Set(SG_EMOJI_LIST);
 const SG_CATS = ["sg.cat.common", "sg.cat.market", "sg.cat.strategy", "sg.cat.animal", "sg.cat.nature", "sg.cat.object"];
-// SG_AUTO_MIN:「建市場資料夾」的支數門檻,同網頁 strat_folders.js 的 AUTO_MIN(新增資料夾鈕一律出,不看支數)
-const SG_MAX = 20, SG_NAME_MAX = 20, SG_AUTO_MIN = 8, SG_COLS = 6;
-// 建市場資料夾(§10):market → [組名字串, 預填 emoji]。不在表上的市場(含空值)留在未分類。
-// 組名用自己的 sg.mkt.*(同網頁 workspace_sg_mkt_*):建好就成了用戶的資料夾名,受 20 碼點上限管,不跟策略庫的市場標籤綁在一起
-const SG_MARKETS = {
-  crypto: ["sg.mkt.crypto", "💎"], tw_index_futures: ["sg.mkt.txf", "📈"], tw_stock_futures: ["sg.mkt.stockFut", "📊"],
-  tw_stock: ["sg.mkt.tw", "🏦"], us_stock: ["sg.mkt.us", "💵"], global_futures: ["sg.mkt.global", "🌐"], mixed: ["sg.mkt.mixed", "🧩"],
-};
+const SG_MAX = 20, SG_NAME_MAX = 20, SG_COLS = 6;
 const sgEmojiName = (e) => t("sg.e." + e.codePointAt(0).toString(16).toUpperCase());
 const sgStore = () => (typeof ENV !== "undefined" && ENV.cur === "cloud" ? SF_CLOUD : SF_LOCAL);
 // 有資料夾就畫組標題,0 支策略也畫(不然剛建的資料夾存進去了卻看不到,Wei 11-02);有沒有策略只影響要不要畫「未分類」
@@ -60,12 +53,12 @@ const sgCodepoints = (s) => [...String(s)].length;
 function sgSetFolders(sc, folders, map) { const g = sc.groups(); sc.setGroups({ v: 1, folders, map: map || g.map }); }
 
 /* ── 版面:列建好(照清單順序)之後叫,把列照組重排、插組標題、收合的列加 hidden。app.js stratRefresh / trade.js envPaintSide 各叫一次,
-   資料夾操作後由 sgRelayout 原地再叫(不必重讀清單)。≤7 支且沒有資料夾 = 跟現在完全一樣(§4) */
+   資料夾操作後由 sgRelayout 原地再叫(不必重讀清單)。沒有資料夾 = 跟現在完全一樣(§4) */
 function sgLayout(box, sc, list) {
   sc.last = list;
   const ae = document.activeElement, keepHead = ae && box.contains(ae) && ae.closest(".sg-head");
   const keep = keepHead ? { gid: keepHead.dataset.gid, cls: ae.classList.contains("sg-more") ? ".sg-more" : ".sg-tog" } : null;
-  box.querySelectorAll(":scope > .sg-head, :scope > .sg-auto").forEach((n) => n.remove());
+  box.querySelectorAll(":scope > .sg-head").forEach((n) => n.remove());
   const wraps = [...box.querySelectorAll(":scope > .strat-wrap")];
   const on = sgOn(sc);
   box.classList.toggle("has-groups", on);
@@ -79,7 +72,6 @@ function sgLayout(box, sc, list) {
     });
     sgHeadsSync(box);
   }
-  sgAutoSync(box, sc);
   if (keep) { const h = box.querySelector(':scope > .sg-head[data-gid="' + keep.gid + '"]'), b = h && h.querySelector(keep.cls); if (b) b.focus(); }
   else if (ae && ae !== document.activeElement && ae.isConnected && box.contains(ae) && !ae.closest("[hidden]")) ae.focus({ preventScroll: true });   // 列被搬過會失焦:接回去
   if (sc === sgStore()) sgHeadPaint();
@@ -175,37 +167,6 @@ function sgHeadPaint() {
   const full = !add.hidden && add.disabled && !$("strat-head").hidden;
   set(lim, "hidden", !full); set(lim, "textContent", full ? t("sg.max") : "");
 }
-// 「建市場資料夾」:沒有資料夾、≥8 支、已知市場 ≥2 種才出,不符就不出現(不留停用鈕)。本機的市場要等常駐程式回報,所以狀態每輪回來也重判
-function sgAutoPlan(sc, list) {
-  if (sc.groups().folders.length || list.length < SG_AUTO_MIN) return null;
-  const order = [], by = {};
-  list.forEach((x) => { const m = sc.market(x); if (!SG_MARKETS[m]) return; if (!by[m]) { by[m] = []; order.push(m); } by[m].push(x.name); });
-  return order.length >= 2 ? { order, by } : null;
-}
-function sgAutoSync(box, sc) {
-  const plan = sgAutoPlan(sc, sc.last || []), cur = box.querySelector(":scope > .sg-auto");
-  if (!plan) { if (cur) cur.remove(); return; }
-  if (cur) return;
-  const b = sgEl("button", "sg-auto", t("sg.auto")); b.type = "button";
-  b.addEventListener("click", () => sgAuto(sc));
-  const first = box.querySelector(":scope > .strat-wrap");
-  if (first) box.insertBefore(b, first);
-}
-function sgAuto(sc) {
-  const plan = sgAutoPlan(sc, sc.last || []);
-  if (!plan) return;
-  const folders = [], map = {}, g = { folders: [] };
-  plan.order.forEach((m) => {   // 依各市場第一支在目前清單的顯示順序;組名依目前語系,建好後就是用戶資料、換語系不翻譯
-    const f = { id: sgNewId(g), name: t(SG_MARKETS[m][0]), emoji: SG_MARKETS[m][1] };
-    g.folders.push(f); folders.push(f);
-    plan.by[m].forEach((n) => { map[n] = f.id; });
-  });
-  sgSetFolders(sc, folders, map);
-  sgRelayout(sc); sfWriteOrder(sc);
-  trackFeature("sfolder_auto");
-  const h = sc.box().querySelector(":scope > .sg-head .sg-tog"); if (h) h.focus();
-}
-
 /* ── 編輯列(建立 / 改名):圖示鈕＋名稱框。Enter 或失焦送出,空字串與 Esc 都是取消。
    開著時 SG.editing 擋住三條重建路(stratRefresh 的 sfBeforeRebuild、envPaintSide 的 sfCloudHold),結束時 sfFlushWaiters 補一次 */
 function sgEditOpen(sc, mode, gid) {
@@ -226,7 +187,7 @@ function sgEditOpen(sc, mode, gid) {
   else {
     const heads = [...box.querySelectorAll(":scope > .sg-head")], uncat = heads.find((h) => h.dataset.gid === "_u");
     if (uncat) uncat.before(node);   // 清單最後一個資料夾之後(未分類之前)
-    else { const top = box.querySelector(":scope > .strat-wrap, :scope > .sg-auto"); if (top) box.insertBefore(node, top); else box.appendChild(node); }
+    else { const top = box.querySelector(":scope > .strat-wrap"); if (top) box.insertBefore(node, top); else box.appendChild(node); }
   }
   SG.editing = true; SG.edit = { sc, mode, gid: f ? f.id : null, node, head, input, ib, ic, emoji: f ? f.emoji : null };
   sgIconInto(ic, SG.edit.emoji);

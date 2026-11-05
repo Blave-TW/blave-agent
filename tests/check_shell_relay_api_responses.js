@@ -34,7 +34,7 @@ function rig(o = {}) {
       else if (ep === RL.EP.promptSeen) resp = { status: 200, body: { ok: true } };
       else resp = { status: 200, body: {} };
     }
-    if (ep === RL.EP.ack || ep === RL.EP.report || ep === RL.EP.enable || ep === RL.EP.disable || ep === RL.EP.promptSeen || (ep === RL.EP.enabled && resp && (resp.status === 429 || (resp.body && ("prompt" in resp.body || "paired_notice" in resp.body))))) {
+    if (ep === RL.EP.ack || ep === RL.EP.report || ep === RL.EP.enable || ep === RL.EP.disable || ep === RL.EP.promptSeen || (ep === RL.EP.enabled && resp && (resp.status === 429 || (resp.body && ("prompt" in resp.body || "paired_notice" in resp.body || "paired_ever" in resp.body))))) {
       const { token, app_secret, device, ...rest } = body;   // eslint-disable-line no-unused-vars
       log.push({ endpoint: name(ep), body: rest, response: resp });
     }
@@ -190,6 +190,19 @@ const CASES = [
   ["enabled_429", "/relay/enabled 每台限流 429 ERR429:總開關、開關、確認框都照上一次,不收起設定區、不停輪詢", {
     noOn: true, script: (ep, b, n) => (ep === RL.EP.enabled ? (n === 0 ? { status: 200, body: { enabled: true, on: false, prompt: { device_id: "devresp0001", label: "iPhone 15", platform: "ios", paired_at: 1730530000 } } } : { status: 429, body: { error_code: "ERR429", message: "Too many requests" } }) : undefined) },
   async (m) => { m.ask = m.r.state().ask; await m.r.tick(); }, (m) => m.r.state().visible === true && !!m.r.state().ask && m.r.state().ask.id === m.ask.id],
+  // 側欄提示格(spec sidebar-prompt-slot §7):paired_ever 只收布林,讀不到(舊 api、怪值、非 200)= undefined,畫面不畫手機那則
+  ["paired_ever_false", "enabled 帶 paired_ever:false → state().pairedEver === false", {
+    noOn: true, script: (ep) => (ep === RL.EP.enabled ? { status: 200, body: { enabled: true, on: false, paired_ever: false } } : undefined) },
+  async () => {}, (m) => m.r.state().pairedEver === false],
+  ["paired_ever_true", "enabled 帶 paired_ever:true(含全部撤銷)→ state().pairedEver === true", {
+    noOn: true, script: (ep) => (ep === RL.EP.enabled ? { status: 200, body: { enabled: true, on: false, paired_ever: true } } : undefined) },
+  async () => {}, (m) => m.r.state().pairedEver === true],
+  ["paired_ever_bad", "paired_ever 不是布林 → undefined(讀不到)", {
+    noOn: true, script: (ep) => (ep === RL.EP.enabled ? { status: 200, body: { enabled: true, on: false, paired_ever: "false" } } : undefined) },
+  async () => {}, (m) => m.r.state().pairedEver === undefined],
+  ["paired_ever_gone", "先讀到 false、下一輪 500 → 回到 undefined,不留舊值", {
+    noOn: true, script: (ep, b, n) => (ep === RL.EP.enabled ? (n === 0 ? { status: 200, body: { enabled: true, on: false, paired_ever: false } } : { status: 500, body: {} }) : undefined) },
+  async (m) => { await m.r.tick(); }, (m) => m.r.state().pairedEver === undefined],
   // 開關開著時剛配對的手機(account-session-revoke §3.3):paired_notice 在 /relay/enabled;一行提示出現打 prompt/seen(不帶 answer),關掉不打
   ["paired_notice_on", "開關開著:enabled 帶 paired_notice → 畫面拿到 notice;一出現打 prompt/seen(device_id),之後 api 不再給、那一行留到關掉;關掉不打 api", {
     script: (ep, b, n) => (ep === RL.EP.enabled ? { status: 200, body: { enabled: true, on: true, prompt: null, paired_notice: n === 1 ? { device_id: "devresp0002", label: "Pixel 9", platform: "android", paired_at: 1730530000, more: 1 } : null } } : undefined) },

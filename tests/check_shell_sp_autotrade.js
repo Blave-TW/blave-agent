@@ -239,11 +239,15 @@ app.whenReady().then(async () => {
   ok("③ …句子裡的「設定」是連結", (await js(`[...$("rp-ho-note").querySelectorAll("button")].map((b) => b.textContent).join()`)) === (await T("tr.tab.set")));
   await run(`const q = $("rp-ho-note").querySelector("button"); if (q) q.click()`); await wait(400);
   ok("③ …按了到自動下單 › 設定分頁", (await js(`TR.open && TR.view === "tr" && TR.tab === "set" && !$("tr").hidden`)) === true, J(await js(`({ open: TR.open, view: TR.view, tab: TR.tab })`)));
+  // 下單程式還在跑時串接失敗不進原因句(策略頁頭只講主鈕的原因;中欄頂列已講串接失敗,設計判斷 strategy-header-link-state 11-05)
   h = await st("btc", rep({ venue: "binance", amounts: { btc: 1000 }, running: true, extra: { account: failAcct } }));
-  ok("③ 讀帳失敗、下單程式還在跑:記號照出,說明行是「串接失敗」", h.st === "running" && !!h.mark && !!h.note && h.note.startsWith(await T("cx.failShort")), J(h));
-  ok("③ …那一句帶一顆到自動下單頁的文字鈕", (await js(`[...$("rp-ho-note").querySelectorAll("button")].map((b) => b.textContent).join()`)) === (await T("tr.nav")));
-  await run(`const q = $("rp-ho-note").querySelector("button"); if (q) q.click()`); await wait(400);
-  ok("③ …按了到自動下單頁", (await js(`TR.open && TR.view === "tr" && !$("tr").hidden`)) === true);
+  ok("③ 讀帳失敗、下單程式還在跑:記號照出,沒有說明行", h.st === "running" && !!h.mark && h.note === null, J(h));
+  let h0 = await st("btc", rep({ venue: "binance", amounts: { btc: 500 }, halt: true, running: true }));
+  h = await st("btc", rep({ venue: "binance", amounts: { btc: 500 }, halt: true, running: true, extra: { account: failAcct } }));
+  ok("③ start 態加讀帳失敗(下單程式還在跑):原因句仍是 goNote 那句(沒讀帳失敗時同一句),不被「串接失敗」蓋掉", h0.st === "start" && h.st === "start" && h.note === h0.note && !(h.note || "").startsWith(await T("cx.failShort")), J({ h0, h }));
+  const failPres = { read_at: now, venues: { president: { ok: false, error: "get_equity: boom" } } };
+  h = await st("btc", rep({ venue: "president", amounts: { btc: 500 }, halt: true, running: true, extra: { account: failPres } }));
+  ok("③ off 態加讀帳失敗(下單程式還在跑):原因句仍是 spOffNote 那句「統一期貨只能下台指期」", h.st === "off" && h.dis === true && h.note === (await T("tr.pick.txf", { venue: await T("pres.venue") })), J(h));
   h = await st("eth", rep({ venue: "binance", amounts: { btc: 1000 } }), `CXF.bn = { verdict: { reason: "KEY_REJECTED" } }`);
   ok("③ 金鑰被拒(Binance 重查不過)、這一支還沒配:一樣是 fail,不給〔自動下單〕開框", h.st === "fail" && h.dis === true && h.note === (await T("cx.failStopped")), J(h));
   await run(`CXF.bn = null`);

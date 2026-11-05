@@ -314,6 +314,8 @@ if (!process.versions.electron) {
   }
 
   // ── ③ 接線 ──
+  ok("③ 結果頁 meta 的期間讀 wf.json 自己的第一輪起點 → 最後一輪終點(實跑在 ②,run_all 不起 Electron,這裡釘接線)",
+    /const own = w\.runs \? \{ start: w\.runs\[0\]\.tr0, end: w\.runs\[w\.runs\.length - 1\]\.te1 \} : null;/.test(fs.readFileSync(path.join(SHELL, "renderer", "report-wf.js"), "utf8")) && /opts\.buildMeta\(Object\.assign\(\{\}, stats, own\)\)/.test(fs.readFileSync(path.join(SHELL, "renderer", "report-wf.js"), "utf8")));
   const read = (f) => fs.readFileSync(path.join(SHELL, f), "utf8");
   const main = read("main.js"), app = read("renderer/app.js"), ver = read("renderer/versions.js"), html = read("renderer/index.html"), res = read("renderer/results.js"), tr = read("renderer/trade.js");
   const fn = (n) => main.slice(main.indexOf("function " + n + "("), main.indexOf("\n}\n", main.indexOf("function " + n + "(")));
@@ -457,6 +459,11 @@ if (!process.versions.electron) {
     // 0.1.9 就出貨的參數掃描觸發句(0.1.3 起沒改過):session.db 裡的舊對話原文要認得。改了 rob.msgScan 的字,這條會紅——提醒舊泡泡會變回全文
     const OLD = { zh: "請掃描策略 btc_sma 的參數（lib.param_scan：scan_grid → find_plateau → write_scan → plot_heatmap），範圍由你依指標分佈決定，掃完回報尖峰與穩健點。",
       en: "Please scan the parameters of strategy btc_sma (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap). Choose the ranges from the indicator distribution, then report the peak and the robust point." };
+    // 0.1.45 起掃描句寫「顯示名」(代號)(同 ver.msgFork):摘要認得、代號抓對;拿掉 legacy 比對,上面那條舊句會紅
+    const NEW = T("zh", "rob.msgScan", { display_name: "台積電 動能", name: "tw_2330" }), NEWEN = T("en", "rob.msgRescan", { display_name: "BTC 均線交叉", name: "btc_sma", start: "2020-01-01", end: "2025-01-01", fee: "0.05", rp: "A", r0: "1", r1: "9", cp: "B", c0: "2", c1: "8" });
+    ok("③ B5 0.1.45 掃描句帶顯示名:「台積電 動能」(tw_2330) → 摘要「掃描 台積電 動能 的參數」、代號抓對;en 重新掃描同樣",
+      NEW.startsWith("請掃描策略「台積電 動能」(tw_2330) 的參數") && at("zh", NEW) === "掃描 台積電 動能 的參數" && ctx.fm(NEW, ctx.STRINGS).vars.name === "tw_2330"
+      && NEWEN.startsWith("Please rescan the parameters of strategy BTC 均線交叉 (btc_sma) (") && ctx.fm(NEWEN, ctx.STRINGS).vars.name === "btc_sma" && at("en", NEWEN) === "Rescan the parameters of BTC 均線交叉");
     ok("③ B5 舊紀錄:0.1.9 出貨的參數掃描原句(zh / en)照樣換成摘要", at("zh", OLD.zh) === "掃描 BTC 均線交叉 的參數" && at("en", OLD.en) === "Scan the parameters of BTC 均線交叉");
     const odd = ["a.b(c)*+?[x]", "x 做 walk-forward 樣本外驗證：訓練窗 7 天"];
     ok("③ B5 名稱帶 regex 特殊字元、或含模板的分隔字時照樣抓對(錨定 + 最短比對往後擴到整句成立);清單查不到 → 退回代號",
@@ -557,6 +564,7 @@ app.whenReady().then(async () => {
 
   let r = await js(`(() => { window.__render(${D(SAMPLE)}, false); return ${PAGE}; })()`);
   ok("② 結果頁:meta → 重跑列(旋鈕預填這次的 365 / 30、共 11 輪、重新驗證可按)→ 結論卡", r.meta && r.meta.includes("BTCUSDT") && r.bar && r.knobs.join() === "365,30" && r.est === (await tf("wf.estRuns", { n: "11" })) && r.btn === (await tf("wf.btnRerun")) && !r.btnDis && r.card);
+  ok("② meta 的期間是這次驗證實際跑的(第一輪訓練起點 → 最後一輪測試終點),不是回測的 2023-01-01 → 2024-11-30:更新績效把回測往後推時才對得上", r.meta.includes("2023-01-21 \u2192 2024-11-25") && !r.meta.includes("2024-11-30"), r.meta);
   ok("② 結論卡:頂上沒有警示也沒有 tag;比較表兩列 × 三欄;樣本外效率那一列「0.99 · 高於門檻」(中性)", !r.status && !r.verdict && r.band === (await tf("wf.tagHigh")) && !/is-risk/.test(r.bandCls) && r.cmp.length === 2 && r.cmp.every((x) => x.length === 3) && r.wfe === "0.99 · " + (await tf("wf.tagHigh")));
   ok("② 曲線畫得出來(畫布有寬)、legend:樣本外 / 重選虛線(11 輪 ≤12)/ 末尾不足一輪(B3 刪掉「樣本內沒有曲線」)", r.canvas > 0 && r.dash === 1 && r.legend === 3, JSON.stringify(r));
   ok("② 落點網格 4×3 = 12 格、格內次數加總 = 11 輪、目前參數一格虛線;每輪明細 11 列;事實行「11 輪選出…」", r.grid === 12 && r.hits === 11 && r.cur === 1 && r.focus >= 1 && r.runs === 11 && r.facts && r.facts.startsWith("11"));

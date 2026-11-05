@@ -174,8 +174,8 @@ pair of surrounding quotes removed, nothing else interpreted) — a mapping pass
 ignored.
 
 **A failed login stops — nothing retries by itself.** 統一 locks an account after three wrong
-logins. ANY failed login (password, certificate, a refusal the libs can't classify, a timeout or no
-connection) writes `state/president_login_stop.json` with its class; from then on every login on
+logins. ANY failed login (password, certificate, a refusal the libs can't classify; a timeout
+on the second in a row) writes `state/president_login_stop.json` with its class; from then on every login on
 this machine — worker, orders, a flatten — is refused locally as `STOPPED` without contacting the
 broker, the worker exits and is not restarted, and the reconciler skips 統一 legs (one log line a
 round, no order_error per leg). Only the user's **「確認登入」** on the connect page (the platform's
@@ -188,6 +188,34 @@ Login errors come back as a class only (`PASSWORD`, `CERT`, `CERT_MISMATCH`, `UN
 `MAINTENANCE`; `STOPPED` for a login refused locally) — for display; every class stops the same
 way. The broker's own text for a certificate that is not this account's contains the national id,
 so it is never passed on. No login is attempted in 05:30–05:50 (that is not a failure).
+
+One exception: a `TIMEOUT` (unreachable, refused connection, read timeout, a login hanging past
+30 s) writes no stop the first time in a row — the worker tries once more 5 minutes later, an order
+fails that round and the next round's login is the retry. The second `TIMEOUT` in a row stops like
+any failure; any login that passes resets the count (`state/president_login_timeouts.json`, one
+per machine). A timeout may have delivered the password, so automatic logins can spend at most two
+of 統一's three tries before stopping; the third stays with the user's 「確認登入」, where a
+`TIMEOUT` stops at once. An `UNKNOWN` stop keeps the broker's text (sanitized) as `detail` in the
+stop file — local only, the platform gets the class.
+
+**When the worker holds a session.** Only inside a trading window, Mon–Fri Taipei: 08:30–14:00
+(day session 08:45–13:45) and 14:45–05:15 (night 15:00–05:00, Friday's runs into Saturday). Each
+window opens with one fresh login at 08:30 / 14:45; outside it the worker is logged out and keeps
+the last read as the snapshot (`maintenance`: `closed`, or the broker window). No session crosses
+統一's maintenance: on 2026-11-05 one held across 06:00–07:30 went stale and its 07:30 re-login was
+refused (`UNKNOWN`). Inside a window a read that fails gets one fresh login. While logged out with
+nothing to carry, or while a TIMEOUT waits for its retry, the snapshot carries `waiting` and the
+reconciler skips the round (no failed-read count, no HALT). Every login on the machine — worker,
+orders, 「確認登入」 — takes one OS lock first and re-reads the stop and the TIMEOUT count inside it,
+so two logins never run at once (`BUSY` if the lock is not free in time; no stop). Logins per weekday:
+2 scheduled, +1 per TIMEOUT retry or dropped session, +1 per order (the order lib's own short
+session); none on weekends.
+
+While stopped nothing goes out on 統一, closes included: the reconciler skips the whole round
+(no HALT, no order_error) until the login is confirmed, then converges to the current target once.
+The stop raises one P1 `venue_login_blocked` (`lib/president_vault.notify_stopped`; class and held
+rows only), never for a failed 「確認登入」; a running worker exits at its next tick when an order's
+login wrote the stop.
 
 ---
 
@@ -486,9 +514,10 @@ with the 15:01 label).
 - **Per-minute query/order caps** come from the server at login (`dtrade_limit_counts`,
   `daccount_limit_counts`); over the cap the SDK answers `超過每分鐘限制!` without a network call.
   The worker skips that tick and keeps the last snapshot.
-- **Maintenance (Taipei):** login 05:30–05:50; account queries 06:00–07:30; domestic futures
-  trading 07:00–07:27. The worker does not query inside these windows and does not report them as
-  a disconnect.
+- **Maintenance (Taipei, 統一's published schedule — PFCEC/unitrade `說明/系統維護時程與時間格式說明.md`):**
+  login 05:30–05:50 daily; account queries 06:00–07:30; domestic futures trading 07:00–07:27
+  (weekends Sat 07:00 – Mon 07:27). The worker does not query inside these windows and does not report them as
+  a disconnect; it holds no session outside 08:30–14:00 / 14:45–05:15 (see Step 4).
 - **Trading hours:** day 08:45–13:45, night 15:00–05:00 (Mon–Fri).
 
 ---
@@ -536,5 +565,7 @@ Margin fields other than `optequity` against the app; `dwamt` as a flow source; 
 wrong password (so `PASSWORD` is classified from it, not counted as `UNKNOWN`);
 partial fills and the IOC-cancel report; order recovery after a restart (`query_reply` /
 `query_match`); behaviour on a real settlement day and on holiday-shifted settlements; production
-connection/rate limits and IP registration; the worker's behaviour across the daily maintenance
-windows and weekends.
+connection/rate limits and IP registration; the worker's behaviour across weekends, and when 統一
+takes logins again after the account window (one data point, 2026-11-05: a session read through
+05:30–05:50, went stale across 06:00–07:30, and a login at 07:30 was refused as `UNKNOWN`); whether 統一
+counts a timed-out login toward its three.

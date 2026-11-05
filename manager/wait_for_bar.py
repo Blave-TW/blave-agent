@@ -128,6 +128,14 @@ same quiet on the stock session (_tw_stock_bar_exists: 09:00–13:30, weekdays o
 table): a 1m 2330 strategy alerted at 13:47 (29026, 10-27) — the 13:30 closing-auction bar
 landed, the clock moved on to bars that never come.
 
+TAIFEX daily strategies (_tw_futures_kind, INTERVAL 1d) too, on when the bar is served rather than
+on whether it exists: trading day D's bar is labelled D 00:00 Taipei (16:00Z the day before), the
+UTC floor asks for it from 08:00 D, and the api holds it back until D 13:46 (see
+_tw_fut_daily_quiet). Without this every trading day alerted at 08:15. Only the word is dropped:
+the state, the polling and so the tick a bar is computed on stay what they were with the alert
+(the one at 08:15 still sets stall_alert_at and throttles until the data moves). A bar still
+missing at 16:00 alerts at 16:15, not 24 hours after the silent one.
+
 TWSE/TPEx stock daily strategies (only fetch_twstock_price* prices, _tw_stock_daily) do use the calendar:
 their bars exist on trading days only, so the expected bar is the latest weekday not on the
 holiday table (TWSE's annual schedule plus the ad-hoc closures Blave adds after the fact).
@@ -849,15 +857,18 @@ def _tick(name):
         return
 
     # A TAIFEX or TWSE intraday strategy between sessions: quiet (module docstring, _tw_fut_quiet).
+    # A TAIFEX daily one before its bar is served only drops the alert, polling must not change.
     tw_kind = holiday_fn = None
-    if not (tw_stock or us_stock) and td < timedelta(days=1):
+    daily = td == timedelta(days=1)
+    if not (tw_stock or us_stock) and td <= timedelta(days=1):
         tw_kind = _tw_futures_kind(name)
         if tw_kind and not _tw_fut_data(name):
             tw_kind = None   # sized in contracts, priced off something else: its own hours
-        if tw_kind is None and _tw_stock_minute(name):
+        if tw_kind is None and not daily and _tw_stock_minute(name):
             tw_kind = "stock"
     if tw_kind:
         holiday_fn = _tw_fut_holiday_memo(state)
+    if tw_kind and not daily:
         lots_night = _tw_fut_lots_night(state, now)
         quiet = _tw_fut_quiet(tw_kind, expected, td, state.get("last_seen_bar"), holiday_fn,
                               lots_night)
@@ -917,7 +928,7 @@ def _tick(name):
         observed_iso = observed_ts.isoformat() if observed_ts is not None else None
         fp, newest_iso = _fingerprint(latest)
 
-        if tw_kind == "lots" and observed_ts is not None and _tw_fut_night_label(observed_ts, td):
+        if tw_kind == "lots" and not daily and observed_ts is not None and _tw_fut_night_label(observed_ts, td):
             state["tw_fut_night_bar"] = observed_iso   # on the ready path too: a prompt feed is never pending
 
         if ready:
@@ -962,7 +973,7 @@ def _tick(name):
             if forward and not isinstance(straggler_symbol, _FeedWait):
                 state["pending_since"] = now.isoformat()
 
-        if tw_kind and not isinstance(straggler_symbol, _FeedWait) and \
+        if tw_kind and not daily and not isinstance(straggler_symbol, _FeedWait) and \
                 _tw_fut_quiet(tw_kind, expected, td, observed_iso, holiday_fn,
                               _tw_fut_lots_night(state, now)):
             state["pending_since"] = None   # stall_alert_at stays: it may be a real stall's
@@ -987,11 +998,17 @@ def _tick(name):
                 # both a brand-new stall AND a strategy that has NEVER had a single
                 # data point — see comment above, that must not silently never-alert).
                 due = stall_alert_at is None or (time.time() - stall_alert_at >= STALL_REALERT_SECONDS)
-                if due:
+                daily_mute = daily and tw_kind and not isinstance(straggler_symbol, _FeedWait)
+                # The silent one below said nothing, so its 24-hour repeat must not hold back the real one
+                late_after_mute = bool(daily_mute and stall_alert_at is not None and observed_iso) and \
+                    _tw_fut_daily_quiet(observed_iso, datetime.fromtimestamp(stall_alert_at, timezone.utc).replace(tzinfo=None), holiday_fn) and \
+                    not _tw_fut_daily_quiet(observed_iso, now - timedelta(minutes=STALE_TIMEOUT_MINUTES), holiday_fn)
+                if due or late_after_mute:
                     computed = bool(state.get("computed_bar") and observed_iso
                                     and state["computed_bar"] > observed_iso)
-                    _alert_stale(name, expected, int(waited.total_seconds() // 60), straggler_symbol,
-                                 computed=computed)
+                    minutes = STALE_TIMEOUT_MINUTES if late_after_mute else int(waited.total_seconds() // 60)
+                    if not (daily_mute and _tw_fut_daily_quiet(observed_iso, now, holiday_fn)):   # not late yet: no word, same polling
+                        _alert_stale(name, expected, minutes, straggler_symbol, computed=computed)
                     state["stall_alert_at"] = time.time()
         _track_lag(name, state, now, td, observed_ts, straggler_symbol)
         _save_state(name, state)
@@ -1188,6 +1205,34 @@ def _tw_fut_quiet(kind, expected, td, seen_iso, holiday_fn, lots_night=False):
         return False
     last = before(expected)
     return last is not None and seen >= last
+
+
+# api tw/sinopac/services._SCHEMA_MINUTES["1d"] = 826: a daily bar is held back until 13:46 on its own
+# trading date (the label + 826 minutes), then up to 5 minutes of api cache. A strategy that joins it
+# with TAIFEX's after-close data shows the bar later still (a PCR strategy computed at 14:52 on 11-03,
+# TAIFEX publishes ~15:00): a bar missing past 16:00 is late, before that it is not known to be.
+_TW_FUT_DAILY_DUE = timedelta(hours=16)
+
+
+def _tw_fut_daily_quiet(seen_iso, now, holiday_fn):
+    """A TAIFEX daily strategy (naive UTC `now`): `seen_iso` already holds the newest trading day
+    whose bar is due. Weekends and closed days on the holiday table have no bar. Not quiet, so
+    waited on and alerted as before: no data yet, a label that is not Taipei midnight (a series
+    with another convention), a seen bar on a day the calendar says did not trade (the table is
+    wrong), the table unreachable on a closed day. A night session belongs to the next trading
+    day's bar, so it never changes the answer. Not known: a typhoon closure before Blave adds it."""
+    try:
+        seen = datetime.fromisoformat(seen_iso) + _TPE
+    except (TypeError, ValueError):
+        return False
+    if (seen.hour, seen.minute, seen.second) != (0, 0, 0) or seen.weekday() > 4 or holiday_fn(seen.date()):
+        return False
+    day = (now + _TPE - _TW_FUT_DAILY_DUE).date()
+    for _ in range(22):   # as _tw_fut_last_bar_before: the longest closure runs 9–12 calendar days
+        if day.weekday() <= 4 and not holiday_fn(day):
+            return seen.date() >= day
+        day -= timedelta(days=1)
+    return False
 
 
 # TWSE/TPEx regular session, Taipei minutes of the day, [open, close) in minute-START labels:

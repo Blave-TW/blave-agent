@@ -76,7 +76,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib import guard, venue_traits
-from lib.portfolio import (_append_reconciler_log, _load_ledger_seed, _record_order_error,
+from lib.portfolio import _record_order_error as _pf_record_order_error
+from lib.portfolio import (_append_reconciler_log, _load_ledger_seed,
                            ledger_positions, load_portfolio_config,
                            zero_ledger_symbols)
 
@@ -89,6 +90,62 @@ LOCK_PATH = "state/flatten.lock"  # relative — this module chdir'd to the work
 ALREADY_RUNNING = "already_running"  # flatten()'s return when another one holds the lock
 EXIT_ALREADY_RUNNING = 3  # ...and the exit code for it, distinct from 1 = ran with errors
 _LOCK = None  # the open lock file, pinned for the life of the process (see _singleflight)
+
+# The outcome of this run, for the unbind that waits on it (runtime close_then_unbind):
+# rewritten with done_at null when the lock is taken, and again on every exit while it is
+# still held — a loser of the lock never writes, it would erase the holder's result.
+LAST_PATH = "state/last_flatten.json"
+MSG_MAX = 300
+# --venues: only these venues are closed (the unbind of one venue must not sell another's);
+# --request-id: echoed into LAST_PATH and turns on the after-close re-read (_verify_flat)
+SCOPE = None
+REQUEST_ID = None
+_RUN = {"unconfirmed": set(), "why": {}, "err": {}, "reply": {}, "first_err": None, "venues": []}
+# the TW brokers' refusal: "…statuscode=9902 尚未開始接收委託" (lib/order_president _await) — the text after the code is theirs
+_TW_REPLY_RE = re.compile(r"statuscode=\S*\s+(.+)$")
+_REJECT_TOKEN_RE = re.compile(r"\[order_reject:[a-z_]+\] ?")
+
+
+def _record_order_error(symbol, exchange, error, extra=None, repeat=False):
+    """lib.portfolio's, plus the text kept per (venue, key) for LAST_PATH's reasons."""
+    msg = str(error)
+    if msg.startswith("close-all: "):
+        msg = msg[len("close-all: "):]
+    msg = msg[:MSG_MAX]
+    for k in str(symbol or "*").split(","):
+        _RUN["err"].setdefault((exchange, k), msg)
+    if _RUN["first_err"] is None:
+        _RUN["first_err"] = msg
+    if repeat:
+        return _pf_record_order_error(symbol, exchange, error, extra, repeat=True)
+    return _pf_record_order_error(symbol, exchange, error, extra)
+
+
+def _broker_reply(exc):
+    """What the venue itself answered, or None. Only a TW broker's status text or an exception a
+    venue lib tagged with the venue's own code (lib/venue_errors.tag) counts — a timeout, a
+    network error or our own wording is not a reply, and the page must not say it was."""
+    msg = str(exc)
+    m = _TW_REPLY_RE.search(msg)
+    if m:
+        return m.group(1).strip()[:MSG_MAX] or None
+    if getattr(exc, "code", None) is not None:
+        return _REJECT_TOKEN_RE.sub("", msg, count=1).strip()[:MSG_MAX] or None
+    return None
+
+
+def _note_reply(vid, key, exc):
+    r = _broker_reply(exc)
+    if r:
+        _RUN["reply"].setdefault((vid, key), r)
+
+
+def _note(vid, key, why):
+    """Why a key stayed open; 'unconfirmed' = may have filled, nobody knows yet."""
+    if why == "unconfirmed":
+        _RUN["unconfirmed"].add((vid, key))
+    else:
+        _RUN["why"].setdefault((vid, key), why)
 
 
 def _takes(fn, name):
@@ -333,6 +390,7 @@ def _flatten_spot(vid, order, env, book=None, parked_held=None):
                 amt *= share
             amt = float(f"{amt:.12g}")
             unclosed.add(f"{sym}@spot")  # its book keeps describing the parked part
+            _note(vid, f"{sym}@spot", "unconfirmed")
             logging.warning(f"[{vid}] {sym} spot: a sale of unknown outcome is parked — selling "
                             f"{share:.0%} of the bot's share, the parked part is left")
         if amt <= 0:
@@ -349,6 +407,7 @@ def _flatten_spot(vid, order, env, book=None, parked_held=None):
                 cost = _book_cost(book.get(sym) if book is not None else None, amt, usd)
                 _pf.park_or_halt(f"{sym}@spot", vid, u, -cost, True, sign=-1)
                 unclosed.add(f"{sym}@spot")
+                _note(vid, f"{sym}@spot", "unconfirmed")
                 errors += 1
                 continue
             d = _defer_tw_close(vid, f"{sym}@spot", e)
@@ -357,6 +416,7 @@ def _flatten_spot(vid, order, env, book=None, parked_held=None):
                 errors += d == "refused"
                 continue
             logging.error(f"[{vid}] close-all spot {sym} failed: {e}")
+            _note_reply(vid, f"{sym}@spot", e)
             _record_order_error(sym, vid, f"close-all spot: {e}")
             errors += 1
             continue
@@ -389,6 +449,7 @@ def _flatten_spot(vid, order, env, book=None, parked_held=None):
                                                    f"{amt:g}),剩下的仍是 Blave 的")
             errors += 1
             unclosed.add(f"{sym}@spot")
+            _note(vid, f"{sym}@spot", "partial")
             continue
         closed += 1
         closed_symbols.add(f"{sym}@spot")
@@ -463,6 +524,7 @@ def _restore_netted(vid, order, env, positions, ledger, closed_symbols, unclosed
             # a close of unknown outcome is parked on this row: only what it leaves is restored
             qty = float(f"{qty * _unparked_share(row.get('size'), held_back):.12g}")
             unclosed.add(key)
+            _note(vid, key, "unconfirmed")
             if qty <= 0:
                 continue
         try:
@@ -483,9 +545,11 @@ def _restore_netted(vid, order, env, positions, ledger, closed_symbols, unclosed
                 sign = -1 if side == "long" else 1
                 _pf.park_or_halt(key, vid, u, sign * _book_cost(row, qty, 0), True, sign=sign)
                 unclosed.add(key)
+                _note(vid, key, "unconfirmed")
                 errors += 1
                 continue
             logging.error(f"[{vid}] restoring the netted {sym} failed: {e}")
+            _note_reply(vid, key, e)
             _record_order_error(key, vid, f"close-all: 還原被淨額的部位失敗: {e}")
             unclosed.add(key)
             errors += 1
@@ -506,6 +570,7 @@ def _restore_netted(vid, order, env, positions, ledger, closed_symbols, unclosed
             logging.error(f"[{vid}] {sym}: netted restore filled {got}/{qty}")
             _record_order_error(key, vid, f"close-all: 還原被淨額的部位未平完({got:g}/{qty:g})")
             unclosed.add(key)
+            _note(vid, key, "partial")
             errors += 1
         elif abs(float(row.get("qty") or 0) - qty) <= 1e-12:
             closed_symbols.add(key)
@@ -666,6 +731,10 @@ def flatten():
     except guard.TurnMoneyBusy as e:
         logging.error(f"close-all: {e}")
         _record_order_error("*", "*", f"close-all: {e}")
+        if REQUEST_ID is not None:
+            # no lock held: written only for a request of its own, never over another run's result
+            now = time.time()
+            _write_last(_outcome(False, now, now))
         return False
     _LOCK = _singleflight()
     if _LOCK is None:
@@ -674,15 +743,157 @@ def flatten():
         # before launching us — the stop half of the button is never skipped.
         logging.info(f"close-all: another flatten holds {LOCK_PATH} — this one exits")
         return ALREADY_RUNNING
+    started = time.time()
+    _write_last(_outcome(None, started, None))
+    result = False
     try:
-        import lib.portfolio as _pf
-        hold = _pf._unconfirmed.hold if getattr(_pf, "_unconfirmed", None) is not None else None
-    except Exception:
-        hold = None
-    if hold is None or not callable(hold):
-        return _flatten()
-    with hold():
-        return _flatten()
+        try:
+            import lib.portfolio as _pf
+            hold = _pf._unconfirmed.hold if getattr(_pf, "_unconfirmed", None) is not None else None
+        except Exception:
+            hold = None
+        if hold is None or not callable(hold):
+            result = _flatten()
+        else:
+            with hold():
+                result = _flatten()
+        return result
+    except BaseException as e:
+        if _RUN["first_err"] is None:
+            _RUN["first_err"] = f"{type(e).__name__}: {e}"[:MSG_MAX]
+        raise
+    finally:
+        _write_last(_outcome(result is True, started, time.time()))
+
+
+def _outcome(ok, started_at, done_at):
+    """LAST_PATH's record. done_at None = still running. unclosed = keys left open for a
+    known reason; unconfirmed = keys whose close may or may not have filled — kept apart
+    because closing those again can open the reverse (群益 sNewClose=2). ok = the run recorded
+    no error and left nothing in either list."""
+    unconf_pairs = _RUN["unconfirmed"]
+    unconf = sorted({k for _, k in unconf_pairs})
+    closed, unclosed = [], []
+    left_by = _RUN.get("unclosed_by") or {}
+    for vid, keys in sorted((_RUN.get("closed_by") or {}).items()):
+        closed += sorted(set(keys) - set(left_by.get(vid, ())))
+    for vid, keys in sorted(left_by.items()):
+        for k in sorted(keys):
+            if (vid, k) in unconf_pairs or ("*", k) in unconf_pairs:
+                continue
+            unclosed.append({"key": k, "venue": vid, "why": _RUN["why"].get((vid, k), "error"),
+                             "msg": _RUN["err"].get((vid, k)) or "",
+                             "reply": _RUN["reply"].get((vid, k))})
+    msg = next((u["msg"] for u in unclosed if u["msg"]), None)
+    if msg is None:
+        msg = next((m for (v, k), m in _RUN["err"].items() if k in unconf), None)
+    if msg is None:
+        msg = _RUN["first_err"] or ""
+    return {"request_id": REQUEST_ID,
+            "venues": sorted(SCOPE) if SCOPE is not None else sorted(_RUN["venues"]),
+            "started_at": round(started_at, 3),
+            "done_at": None if done_at is None else round(done_at, 3),
+            # any error row of this run counts, keyed or not: "no baseline yet" / "book account
+            # unreadable" skip a venue's closes without naming a key, and the book then reads empty
+            "ok": None if done_at is None else bool(ok and not unclosed and not unconf
+                                                     and _RUN["first_err"] is None),
+            "closed": closed, "unclosed": unclosed, "unconfirmed": unconf,
+            # msg = our own reason (log-grade); reply = the venue's own words, the only text a page
+            # may put after "<venue> replied:" — None when no venue answered (unconfirmed, timeouts)
+            "msg": msg[:MSG_MAX], "reply": next((u["reply"] for u in unclosed if u["reply"]), None)}
+
+
+def _write_last(rec):
+    """Best effort: a result that can't be written leaves the unbind waiting on it held,
+    never unbound."""
+    tmp = f"{LAST_PATH}.{os.getpid()}.tmp"
+    try:
+        os.makedirs(os.path.dirname(LAST_PATH), exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(rec, f, ensure_ascii=False)
+        try:
+            from lib.winreplace import atomic_replace
+        except ImportError:
+            atomic_replace = os.replace
+        atomic_replace(tmp, LAST_PATH)
+    except Exception as e:
+        logging.error(f"close-all: {LAST_PATH} not written ({type(e).__name__}: {e})")
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
+VERIFY_TRIES = 3
+VERIFY_GAP_S = 2.0
+
+
+def _open_keys(vid, rows):
+    """Book keys of the position rows (list or {symbol: row}) that still hold something."""
+    if isinstance(rows, dict):
+        rows = [{"symbol": k, **(v if isinstance(v, dict) else {})} for k, v in rows.items()]
+    out = set()
+    for p in rows or []:
+        sym = str(p.get("symbol") or "*").replace("-", "").upper()
+        try:
+            if float(p.get("size") or 0) > 0:
+                out.add(_book_key(vid, sym))
+        except (TypeError, ValueError):
+            out.add(_book_key(vid, sym))
+    return out
+
+
+def _verify_flat(env, settle_end):
+    """The re-read an unbind waits on: after this run, is what it was to empty empty? Own
+    positions only → the bot's book on each venue (the account may still hold the user's own);
+    opt-out → the account. Either way the account must read, after the snapshot has caught up
+    with this run's closes (a read begun before them still shows them). A key still open joins
+    unclosed as still_open (dust included: it stays on the account). Returns the venues not
+    shown flat."""
+    import lib.portfolio as _pf
+    per_venue = hasattr(_pf, "book_ready")
+    unclosed_by = _RUN.get("unclosed_by") or {}
+    bad = 0
+    for vid in _RUN["venues"]:
+        if vid not in (_RUN.get("read") or {}):
+            continue  # its positions never read: already an error of this run
+        acct, months, own = _RUN["read"][vid]
+        left, why = None, None
+        for i in range(VERIFY_TRIES):
+            try:
+                _wait_snapshot_settled(vid, acct, wait_s=None if settle_end is None
+                                       else max(0.0, settle_end - time.time()))
+                rows = (acct.get_positions(env, book_months=months) if months is not None
+                        else acct.get_positions(env))
+                if own:
+                    book = ledger_positions(vid) if per_venue else ledger_positions()
+                    left = {k for k, r in book.items()
+                            if float(r.get("size") or 0) > 0 or float(r.get("qty") or 0) > 0}
+                else:
+                    left = _open_keys(vid, rows)
+            except Exception as e:
+                left, why = None, f"{type(e).__name__}: {str(e)[:200]}"
+            if left == set():
+                break
+            if i + 1 < VERIFY_TRIES:
+                time.sleep(VERIFY_GAP_S)
+        if left == set():
+            continue
+        bad += 1
+        if left is None:
+            logging.error(f"[{vid}] close-all: re-read after the closes failed ({why})")
+            _RUN["err"].setdefault((vid, "*"), f"re-read failed: {why}"[:MSG_MAX])
+            if _RUN["first_err"] is None:
+                _RUN["first_err"] = f"re-read failed: {why}"[:MSG_MAX]
+            unclosed_by.setdefault(vid, set()).add("*")
+            _note(vid, "*", "unread")
+            continue
+        for k in sorted(left):
+            if k not in unclosed_by.setdefault(vid, set()):
+                logging.error(f"[{vid}] {k}: still open after the close-all")
+                unclosed_by[vid].add(k)
+                _note(vid, k, "still_open")
+    return bad
 
 
 def _flatten():
@@ -812,6 +1023,9 @@ def _flatten():
     # one settle-wait budget for the whole run when this is an agent turn (TURN_SETTLE_BUDGET_S); None = per venue
     settle_end = time.time() + TURN_SETTLE_BUDGET_S if os.environ.get("BLAVE_TURN_INTERRUPT_FILE") else None
     for vid in _venues(env):
+        if SCOPE is not None and vid not in SCOPE:
+            continue
+        _RUN["venues"].append(vid)
         closed_symbols = closed_by.setdefault(vid, set())
         unclosed = unclosed_by.setdefault(vid, set())
         ledger, spot_book = _venue_book(vid)
@@ -839,6 +1053,7 @@ def _flatten():
             else:
                 months_by_key = None
                 positions = acct.get_positions(env)
+            _RUN.setdefault("read", {})[vid] = (acct, months_by_key, ledger is not None)
         except _SnapshotLag as e:
             logging.error(f"[{vid}] position snapshot has not caught up with the last order: {e} — not closed")
             # a deliberate skip with positions possibly still open = P1 (.claude/docs/notifications.md,
@@ -846,6 +1061,8 @@ def _flatten():
             keys = ",".join(sorted(ledger)) if ledger else ""
             if ledger:
                 unclosed |= set(ledger)
+                for k in ledger:
+                    _note(vid, k, "snapshot_lag")
             _record_order_error(keys or "*", vid,
                                 "close-all: 部位快取還沒跟上剛才送出的單,這一次沒有平這家(避免把舊部位再平一次變成反向開倉),"
                                 "請稍後再按一次全部平倉,或到券商下單軟體手動平倉 / positions here were not closed: the "
@@ -886,6 +1103,7 @@ def _flatten():
                         continue  # not the bot's — flatten would leave it anyway
                 unclosed.add(key)
                 skipped.add(key)
+                _note(vid, key, "identity")
                 logging.error(f"[{vid}] {key} NOT closed — this process cannot log in to SKCOM")
                 errors += 1
             if skipped:
@@ -984,6 +1202,7 @@ def _flatten():
                         size = min(float(p.get("size", 0)), bot_qty * share)
                     size = float(f"{size:.12g}")
                     unclosed.add(key)  # its book keeps describing the parked part
+                    _note(vid, key, "unconfirmed")
                     logging.warning(f"[{vid}] {key}: a close of unknown outcome is parked — "
                                     f"closing {share:.0%} of it, the parked part is left")
                     if size <= 0:
@@ -1042,6 +1261,7 @@ def _flatten():
                                      (-1.0 if side == "long" else 1.0) * cost,
                                      True, sign=-1 if side == "long" else 1)
                     unclosed.add(_book_key(vid, sym))
+                    _note(vid, _book_key(vid, sym), "unconfirmed")
                     errors += 1
                     continue
                 d = _defer_tw_close(vid, _book_key(vid, sym), e) if sym else None
@@ -1050,6 +1270,8 @@ def _flatten():
                     errors += d == "refused"
                     continue
                 logging.error(f"[{vid}] close {p.get('symbol')} failed: {e}")
+                if sym:
+                    _note_reply(vid, _book_key(vid, sym), e)
                 _record_order_error(_book_key(vid, sym) if sym else "?", vid, f"close-all: {e}")
                 errors += 1
                 if sym:
@@ -1092,6 +1314,11 @@ def _flatten():
                 # 'sent' = accepted, no fill seen within the timeout — may or
                 # may not have filled; never book an unconfirmed close as flat
                 got = result.get("executed_qty") if isinstance(result, dict) else None
+                status = result.get("status") if isinstance(result, dict) else None
+                # 統一 0000 with no match row is 'sent': an IOC the market didn't take, or a fill
+                # not reported yet — not known either way, unlike a fill short of the size
+                _note(vid, key, "unconfirmed" if status in ("sent", "unknown") and not float(got or 0)
+                      else "partial" if float(got or 0) else "no_fill")
                 logging.error(f"[{vid}] {sym}: close not confirmed filled ({got}/{size})")
                 label = venue_traits.get(vid, "label") or vid
                 _record_order_error(key, vid, f"close-all: {label}平倉未確認成交({got or 0}/{size:g} 口),"
@@ -1105,6 +1332,7 @@ def _flatten():
                                               "剩下的仍是 Blave 的部位")
                 errors += 1
                 unclosed.add(key)
+                _note(vid, key, "partial")
                 continue
             closed += 1
             closed_symbols.add(key)
@@ -1150,11 +1378,26 @@ def _flatten():
     except (ImportError, OSError):
         pass
     for key, venue, ident in left:
+        _note(venue or "*", key, "unconfirmed")
         _record_order_error(key, venue or "*",
                             "close-all: 這個標的有一筆結果不明的單，那部分沒平。"
                             "請到交易所核對部位。",
                             extra={"kind": "order_unconfirmed", "stuck": True, "close_all": True, **ident})
         errors += 1
+    if SCOPE is not None:
+        # every venue this run was asked to close must have been read here: one this flatten does
+        # not know (no keys / unverified / no libs) closed nothing, and an unbind on it would drop
+        # the keys over open positions
+        for vid in sorted(SCOPE - set(_RUN.get("read") or {})):
+            logging.error(f"[{vid}] close-all: in --venues but its positions were never read — not flat")
+            _record_order_error("*", vid, f"close-all: {vid} positions not read here (not bound, unverified "
+                                          "or no account/order lib) — not closed")
+            unclosed_by.setdefault(vid, set()).add("*")
+            _note(vid, "*", "unread")
+            errors += 1
+    _RUN["closed_by"], _RUN["unclosed_by"] = closed_by, unclosed_by
+    if REQUEST_ID is not None:
+        errors += _verify_flat(env, settle_end)
     if any(unclosed_by.values()):
         # a close accepted but not confirmed filled (群益) is still in the book;
         # the reconciler's capital positions snapshot is up to 300 s old, so a
@@ -1168,8 +1411,27 @@ def _flatten():
     return errors == 0
 
 
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_VENUE_ID_RE = re.compile(r"^[a-z0-9_]{1,32}$")
+
+
+def _parse_argv(argv):
+    """--venues a,b and --request-id X (runtime close_then_unbind). A malformed value
+    closes nothing rather than everything: an unbind of one venue must never sell another's."""
+    global SCOPE, REQUEST_ID
+    it = iter(argv)
+    for a in it:
+        if a == "--venues":
+            vs = [v for v in str(next(it, "")).lower().split(",") if v]
+            SCOPE = {v for v in vs if _VENUE_ID_RE.match(v)} if all(_VENUE_ID_RE.match(v) for v in vs) else set()
+        elif a == "--request-id":
+            rid = str(next(it, ""))
+            REQUEST_ID = rid if _REQUEST_ID_RE.match(rid) else "invalid"
+
+
 if __name__ == "__main__":
     # the user's close: 群益 logs in now, not after the reconciler's re-login backoff (lib/order_capital)
     os.environ["BLAVE_CAPITAL_OWN_BACKOFF"] = "1"
+    _parse_argv(sys.argv[1:])
     _result = flatten()
     sys.exit(EXIT_ALREADY_RUNNING if _result == ALREADY_RUNNING else (0 if _result else 1))

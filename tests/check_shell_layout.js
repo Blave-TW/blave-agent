@@ -165,8 +165,9 @@ app.whenReady().then(async () => {
   w.setContentSize(1024, 760); await nap(300);
   console.log("      膠囊量測:" + JSON.stringify(pills));
   const at = (sw) => pills.filter((x) => x.sw === sw);
-  ok(`⑫ 膠囊預設側欄 236:全句、zh／en、下單中,字完整、版號完整`, at(236).length === 4 && at(236).every((x) => x.sw0 <= x.cw && x.text.includes("0.1.41") && /重新啟動更新|Restart to update/.test(x.text)), JSON.stringify(at(236)));
-  ok(`⑫ 最窄側欄 180:換短句「更新：0.1.41」、版號不被切、全句在 title 與可及名稱`, at(180).length === 4 && at(180).every((x) => x.sw0 <= x.cw && /^(更新：|Update: )0\.1\.41…?$/.test(x.text) && /重新啟動更新|Restart to update/.test(x.title) && x.aria === x.title), JSON.stringify(at(180)));
+  // 放不下先換短字、圖示留著(canon › 側欄提示格):英文下單中多一個「…」,全句或短句看字寬,哪個都不能溢出、不能拿圖示
+  ok(`⑫ 膠囊預設側欄 236:zh 與英文一般狀態全句;英文下單中全句或短句;字與版號完整、圖示留著`, at(236).length === 4 && at(236).every((x) => x.sw0 <= x.cw && x.text.includes("0.1.41") && !x.noIc && (x.lang === "en" && x.ph === "blocked" ? /^(Restart to update|Update): 0\.1\.41…$/.test(x.text) : /重新啟動更新|Restart to update/.test(x.text))), JSON.stringify(at(236)));
+  ok(`⑫ 最窄側欄 180:換短句「更新：0.1.41」、版號不被切、全句在 title 與可及名稱`, at(180).length === 4 && at(180).every((x) => x.sw0 <= x.cw && /^(更新：|Update: )0\.1\.41…?$/.test(x.text) && /重新啟動更新|Restart to update/.test(x.title) && x.aria === x.title && !x.noIc), JSON.stringify(at(180)));
   // ⑭ 設計稽核 B4 的熱區(視覺不變):側欄 ＋／資料夾鈕 44×44 不重疊、提示音開關 44×44、「開啟系統設定」80×45
   const hot = await X(`(async () => { ${HIT} const o = {}, add = $("strat-add"), sg = $("sg-add"); $("strat-head").hidden = false; sg.hidden = false; o.add = __hit(add); o.sg = __hit(sg);
     await setOpen(); setCat("display"); await new Promise((r) => setTimeout(r, 400)); o.sw = __hit($("set-rs-sw")); const os = $("set-rn-os"), was = os.hidden; os.hidden = false; await new Promise((r) => setTimeout(r, 100)); o.go = __hit($("set-rn-os-go")); o.sug = __hit(document.querySelector(".set-sug .sw") || $("set-rs-sw")); os.hidden = was; setClose(); return o; })()`);

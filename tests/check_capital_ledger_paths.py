@@ -55,6 +55,12 @@ Scenarios (each in its own child process and scratch dir):
       13:30 the February contract still trades: kept, nothing re-entered; once it
       settles on 02-23 the book drops it and re-enters in March.
   H2  the same for 2023-01 (01-18 -> 01-30).
+  L1  群益 only: the entry fills but no fill report comes ('sent'). Right: parked, the next
+      read books the 2 lots, nothing sent again (before: the next round bought 2 more).
+  L2  群益 only: an IOC not taken (accepted, nothing fills). Right: the next read clears it
+      and the entry goes once more.
+  L3  群益 only: a close sent in the pre-open sits queued to the open. Right: no second close
+      before the open (sNewClose=2 would open a short of 2), the open's read books it.
 
 President (統一) runs the same scenarios when lib/order_president.py exists
 (another branch); on main they are skipped. Every contract-calendar "now" is
@@ -121,8 +127,19 @@ class World:
         return sum(self.rows.values())
 
 
+def _pin_session():
+    """Entries go only in the TAIFEX regular session (lib/tw_clock): pinned open, so a
+    scenario does not depend on the hour it runs."""
+    try:
+        from lib import tw_clock
+    except ImportError:
+        return
+    tw_clock.in_session = lambda ts: True
+
+
 def capital_world(tmp):
     w = World("capital", tmp)
+    _pin_session()
     from lib import account_capital as ac, capital_vault, order_capital as oc
     ac._SNAPSHOT = os.path.join(tmp, "state", "capital_account.json")
     oc._REFRESH_FLAG = os.path.join(tmp, "state", "capital_refresh")
@@ -150,11 +167,18 @@ def capital_world(tmp):
                 side = "buy" if p.sBuySell == 0 else "sell"
                 w.sent[-1].update(alias=p.bstrStockNo, side=side, lots=p.nQty,
                                   sNewClose=p.sNewClose, month=w.near)
-                w.rows[w.near] = w.rows.get(w.near, 0) + (p.nQty if side == "buy" else -p.nQty)
-                w.rows = {k: v for k, v in w.rows.items() if v}
                 seq = f"{len(w.sent):013d}"
-                pending.append((seq, {"qty": float(p.nQty), "price": 23000.0, "symbol": w.near,
-                                      "fill_id": seq, "market": "TF"}))
+                signed = p.nQty if side == "buy" else -p.nQty
+                if w.mode == "queue":    # pre-open: accepted, filled at the open, no report now
+                    w.queued.append((w.near, signed))
+                    return seq, 0
+                if w.mode == "drop":     # an IOC not taken: accepted, nothing fills
+                    return seq, 0
+                w.rows[w.near] = w.rows.get(w.near, 0) + signed
+                w.rows = {k: v for k, v in w.rows.items() if v}
+                if w.mode != "silent":   # silent: filled, the report never comes
+                    pending.append((seq, {"qty": float(p.nQty), "price": 23000.0, "symbol": w.near,
+                                          "fill_id": seq, "market": "TF"}))
                 return seq, 0
 
     oc.pythoncom = Pump
@@ -176,11 +200,19 @@ def capital_world(tmp):
                   open(ac._SNAPSHOT, "w"))
     w.write_snapshot = write_snapshot
     w.near = "TX2610"
+    w.mode, w.queued = None, []
+
+    def open_market():
+        for month, signed in w.queued:
+            w.rows[month] = w.rows.get(month, 0) + signed
+        w.rows, w.queued = {k: v for k, v in w.rows.items() if v}, []
+    w.open_market = open_market
     return w
 
 
 def president_world(tmp):
     w = World("president", tmp)
+    _pin_session()
     from datetime import datetime
     ut, utu = types.ModuleType("unitrade"), types.ModuleType("unitrade.unitrade")
     utu.DOrderObject = type("DOrderObject", (), {})
@@ -342,7 +374,14 @@ def child(venue, sid, tmp):
         months_listed((2023, 1), (2023, 2), (2023, 3))
     if sid in ("R1", "R2"):
         w.rows[code(2026, 11)] = -1 if sid == "R1" else 1  # the user's own, opened in the app
+    if sid[0] == "L":
+        from lib import tw_clock
+        w.session, w.open_at = True, None
+        tw_clock.in_session = lambda ts: w.session
+        tw_clock.next_open = lambda ts: w.open_at
+        w.mode = {"L1": "silent", "L2": "drop"}.get(sid)
     round_("entry")
+    w.mode = None
     round_("converged")
     ok, why = True, ""
 
@@ -508,6 +547,37 @@ def child(venue, sid, tmp):
         ok = nov == 1 and ledger_txf(last) == 0 and not last["halt"]
         why = (f"after settlement beside the user's November: November={nov}, broker={w.rows}, "
                f"book TXF={ledger_txf(last)}")
+    elif sid in ("L1", "L2"):
+        last = round_("one more")
+        sent = [o for r in log for o in r["sent"]]
+        want = 1 if sid == "L1" else 2
+        adopted, cleared = audits("late_fill_adopted"), audits("unfilled_order_cleared")
+        ok = (len(sent) == want and w.net() == 2 and ledger_txf(last) == 2 and not last["halt"]
+              and len(adopted) == (sid == "L1") and len(cleared) == (sid == "L2")
+              and (not os.path.exists("state/capital_pending_sent.json")
+                   or json.load(open("state/capital_pending_sent.json")) == {}))
+        why = (f"{'no fill report' if sid == 'L1' else 'IOC not taken'}: sends={len(sent)}, broker={w.rows}, "
+               f"book TXF={ledger_txf(last)}, adopted={len(adopted)}, cleared={len(cleared)}")
+    elif sid == "L3":
+        w.session, w.open_at, w.mode = False, time.time() + 120, "queue"
+        w.signal(0)
+        r1 = round_("pre-open: signal -> 0, the close is queued")
+        let_time_pass(30)
+        r2 = round_("pre-open, next round")
+        let_time_pass(30)
+        r3 = round_("pre-open, one more")
+        held = (len(r1["sent"]) == 1 and not r2["sent"] and not r3["sent"] and w.net() == 2
+                and ledger_txf(r3) == 2)
+        w.session, w.mode = True, None
+        w.open_market()
+        let_time_pass(120)
+        r4 = round_("the open")
+        last = round_("converged")
+        closes = [o for r in log[2:] for o in r["sent"]]
+        ok = (held and len(closes) == 1 and w.net() == 0 and ledger_txf(last) == 0 and not last["halt"]
+              and len(audits("late_fill_adopted")) == 1)
+        why = (f"pre-open close: held before the open={held}, closes sent={len(closes)}, broker={w.rows}, "
+               f"book TXF={ledger_txf(last)}, halt={last['halt_reason']!r}")
     elif sid in ("H1", "H2"):
         y, m, d_late = (2026, 2, 23) if sid == "H1" else (2023, 1, 30)
         d_third = 18
@@ -590,7 +660,10 @@ def main():
     verbose = "-v" in sys.argv
     failed, xfail = [], []
     for venue in venues:
-        for sid in ("A", "A2", "A3", "A4", "A5", "A6", "F", "M", "M2", "Z", "R1", "R2", "B1", "B2", "B2R", "B3", "H1", "H2"):
+        for sid in ("A", "A2", "A3", "A4", "A5", "A6", "F", "M", "M2", "Z", "R1", "R2", "B1", "B2", "B2R", "B3", "H1", "H2",
+                    "L1", "L2", "L3"):
+            if sid[0] == "L" and venue != "capital":
+                continue  # 統一's park: tests/check_president_lib.py and check_tw_entry_gate.py
             cid = f"{venue}:{sid}"
             tmp = tempfile.mkdtemp(prefix=f"ledgerpaths-{venue}-{sid}-")
             try:

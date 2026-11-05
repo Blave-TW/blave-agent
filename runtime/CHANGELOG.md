@@ -8,6 +8,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.157 — 2026-11-05(desktop 0.1.45)
+
+- **統一登入等鎖逾時(`president_connect.LOGIN_STATES` 加 `"BUSY": "timeout"`)**:lib 的登入鎖被另一個登入佔著、等不到時回 BUSY,頁面當成「逾時」那一態,不算新的一類錯誤。BUSY 不寫 STOP、不佔一天的登入次數(lib/president_vault)。
+- **平倉後解除綁定(`close_then_unbind {env, request_id?}`)**:只平要解除的那幾家(flatten `--venues`),全部成交而且重讀歸零,才跑原本的 `credentials_remove`。沒平完、結果不明(統一 0000 沒回報成交)、或 flatten 沒跑完,就停住(`held`),金鑰和暫停都保留,不會自己再送。台指期休市、群益在這個身分下平不了、workspace 的 flatten.py 太舊,這三種情況什麼都不做。等待中的請求放在 `state/unbind_after_close.json`,雲端 listener 和電腦版 daemon 都在指令執行緒上推進,重開後接著做。報告新增 `can_close_unbind`、`last_flatten`、`unbind_after_close`、`txf_session`。舊的 `credentials_remove` 行為不變,只多清掉同一家等待中的請求。進行中時拒絕整機的 `resume`／`resume_wait`(帶 `strategies` 的照舊),解除前也確認當初掛的 HALT 還在、沒被換過;不在就停住(`resumed`),不刪金鑰。flatten 的 `--venues` 裡有任何一家沒讀到部位,整次就算沒平(`unread`)。需要同版 workspace 的 `manager/flatten.py`;api 要先把 `close_then_unbind` 加進 ALLOWED。
+
 ## 1.1.156 — 2026-11-04
 
 - **名稱帶 [] 或（）的策略也寫名稱(`_display_name`、`_NAME_FOLD`)**:1.1.155 把含 `[]（）` 的 DISPLAY_NAME 整個退回代號,29026 canary 的「[測試] 台積電 1 分 K 均線交叉」「ETH 均線交叉（4h）」因此在回覆裡寫成 canary_2330_1m、eth_ma_cross_4h。改成換字照用:`[]` 換全形 `［］`(收不掉事實行),`（）` 換半形 `()`(偽造不了 `_named` 包代號的（）)。`、;:；：「」` 與分行／格式字元照舊退回代號。整串包在 `[]` 裡的值(TEMPLATE_A／C 的佔位名,判法同 api `openclaw/marketplace.py`)換字前先退回代號,複製範本沒改名不會把佔位字串當名稱。

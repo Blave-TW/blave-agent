@@ -133,6 +133,8 @@ const OPEN = zh("tm.open"), QUIT = zh("menu.quit"), QUIT_ASK = zh("tm.quit"), PA
     ["尚未啟動(要起來、還沒起)", [running(null, { reconciler: { alive: false }, daemon: { reconciler: { running: false, wanted: true } } })], "notStarted"],
     ["常駐程式不在跑", [{ ...running(), running: false, alive: false }], "notStarted"],
     ["已暫停(HALT)", [running(null, { halt: { halted: true } })], "paused"],
+    ["統一登入停了、對帳器活著:不講在執行", [running({ president: { credentials: true, pair: true, order: true, account: true } }, { president_connect: { worker: { status: "failed", error: "LOGIN_FAILED:TIMEOUT", ok_at: 1 } } })], "loginStopped"],
+    ["統一 login_stop(worker 還沒退)同一句", [running({ president: { credentials: true, pair: true, order: true, account: true } }, { president_connect: { worker: { status: "ok", ok_at: 1 }, login_stop: { kind: "TIMEOUT", at: 1 } } })], "loginStopped"],
     ["機器重開後停著", [running(null, { reconciler: { alive: false, stopped: { reason: "machine_restart" } } })], "paused"],
     ["機器重開沒停住", [running(null, { reconciler: { alive: false, stopped: { reason: "machine_restart", gated: false } } })], "mayTrade"],
     ["app 重開、對帳器等人按啟動(有舊心跳、沒被要求)", [running(null, { reconciler: { alive: false, heartbeat_at: 1 }, daemon: { reconciler: { running: false } } })], "paused"],
@@ -184,7 +186,7 @@ const OPEN = zh("tm.open"), QUIT = zh("menu.quit"), QUIT_ASK = zh("tm.quit"), PA
   const run = (trading, turn, restarting) => {
     let handler = null, prevented = false, hidden = false;
     const ctx = { app: { on: (_ev, f) => f(null, { on: (ev, h) => { if (ev === "close") handler = h; }, hide: () => { hidden = true; } }) },
-      draftOk: true, tradeMaybeLive: () => trading, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: turn ? {} : null, turnStarting: false, quitting: false, quitConfirmed: !!restarting, restarting: restarting || null, hiddenSaid: true, tmLabels: {}, Notification: { isSupported: () => false } };
+      phoneOn: () => false, bgHidden: false, draftOk: true, tradeMaybeLive: () => trading, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: turn ? {} : null, turnStarting: false, quitting: false, quitConfirmed: !!restarting, restarting: restarting || null, hiddenSaid: true, tmLabels: {}, Notification: { isSupported: () => false } };
     new Function("ctx", "with (ctx) { " + CLOSE + "); }")(ctx);
     handler({ preventDefault: () => { prevented = true; } });
     return { prevented, hidden };

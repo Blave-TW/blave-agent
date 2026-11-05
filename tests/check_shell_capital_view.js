@@ -11,7 +11,7 @@ if (a < 0 || b < 0) { console.log("FAIL  capital.js 找不到純邏輯段的記�
 const head = src.slice(0, src.indexOf("const capBlank"));   // 常數(CAP_STEP_OF_BUSY、CAP_STUCK_MS…)
 const blank = /const capBlank = \(\) => \((\{[\s\S]*?\})\);/.exec(src)[1];
 const ctx = {}; vm.createContext(ctx);
-vm.runInContext(head + "\nconst capBlank = () => (" + blank + ");\n" + src.slice(a, b) + "\nthis.capView = capView; this.capIsWindows = capIsWindows; this.capRunning = capRunning; this.capProbeRow = capProbeRow; this.capDate = capDate; this.capBlank = capBlank;", ctx);
+vm.runInContext(head + "\nconst capBlank = () => (" + blank + ");\n" + src.slice(a, b) + "\nthis.capView = capView; this.capIsWindows = capIsWindows; this.capRunning = capRunning; this.capProbeRow = capProbeRow; this.capDate = capDate; this.capBlank = capBlank; this.capCertFailed = typeof capCertFailed === \"function\" ? capCertFailed : () => null;", ctx);
 const { capView, capIsWindows, capRunning, capProbeRow, capDate } = ctx;
 
 const NOW = 1790000000 * 1000, S = NOW / 1000;
@@ -95,5 +95,22 @@ const doneRows = (fsrc, fname, extra, probe, arg) => {
   ok("雲端開通結果框:只列期貨與憑證到期兩列、沒有證券列;期貨沒讀到(c-done-ts)照講 cap.tfMissing;cap.acct.ts 從字串表清掉",
     JSON.stringify(both.dt) === JSON.stringify(["cap.acct.tf", "cap.acct.exp"]) && !both.miss && JSON.stringify(ts.dt) === JSON.stringify(["cap.acct.tf", "cap.acct.exp"]) && ts.miss
     && !S2.includes('"cap.acct.ts"'), [both, ts]); }
+
+// 〔換一種做法〕(同 web 6452f07b6):按下記 { cert, probe } 兩段的 at,同一份回報的錯不再把人拉回匯入;新的回報照樣報
+{ const bad = cc({ cert: { status: "failed", at: S - 20, error: "PFX_PASSWORD" } }), gone = { cert: S - 20, probe: null };
+  ok("匯入失敗 → 換一種做法 → c-pick;再選匯入是沒有錯的表單;選遠端桌面 → c-rdp",
+    view(bad) === "c-pfx" && view(bad, ui({ certDismissed: gone })) === "c-pick" && view(bad, ui({ certDismissed: gone, route: "pfx" })) === "c-pfx"
+    && !ctx.capCertFailed(bad.cert, ui({ certDismissed: gone })) && ctx.capCertFailed(bad.cert, ui()) && view(bad, ui({ certDismissed: gone, route: "rdp" })) === "c-rdp");
+  ok("之後的新失敗回報(at 換了)照樣 c-pfx 報錯", view(cc({ cert: { status: "failed", at: S - 10, error: "PFX_OLDER" } }), ui({ certDismissed: gone })) === "c-pfx"
+    && ctx.capCertFailed({ status: "failed", at: S - 10 }, ui({ certDismissed: gone })));
+  const okc = { status: "ok", at: S - 60, not_after: "2027-01-01T00:00:00Z" }, pr = (at) => cc({ cert: okc, probe: { status: "failed", at, state: "cert_expired" } });
+  const g2 = () => ui({ certDismissed: { cert: S - 60, probe: S - 30 } });
+  ok("確認帳密回憑證不能用(cert_*)也一樣:按掉回 c-pick,新的確認結果照樣 c-cert-bad",
+    view(pr(S - 30)) === "c-cert-bad" && view(pr(S - 30), g2()) === "c-pick" && view(pr(S - 30), Object.assign(g2(), { route: "pfx" })) === "c-pfx" && view(pr(S - 29), g2()) === "c-cert-bad");
+  const i0 = src.indexOf("function capPfxBody("), body = src.slice(i0, src.indexOf("\nfunction ", i0 + 1));
+  ok("capPfxBody:錯誤碼經 capCertFailed(按掉的那份不再顯示);〔換一種做法〕記兩段 at、清掉已選檔案與匯出密碼、主行程的 pfx 歸零",
+    /code = view === "c-pfx" && capCertFailed\(cert, CAP\) \? cert\.error : null;/.test(body)
+    && /CAP\.certDismissed = \{ cert: cert\.at, probe: capSec\(cc, "probe"\)\.at \};/.test(body) && /CAP\.file = null; CAP\.ppw = "";/.test(body) && /window\.blave\.capitalForget\(\)/.test(body)
+    && /JSON\.stringify\(\[view, cc, CAP\.route, CAP\.certDismissed,/.test(src)); }
 console.log(red ? `${red} FAIL` : "ALL PASS");
 process.exit(red ? 1 : 0);

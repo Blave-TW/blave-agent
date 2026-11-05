@@ -302,10 +302,11 @@ function wcCard(s, first) {
   return c;
 }
 /* 「安裝並回測 →」:不是一鍵,走策略庫同一個確認框(libAsk from welcome)。先擋回合中與代下載中——別支在代下載時這張的 libCtaOf 仍是 free,
-   不先擋的話 libAsk 會靜默 return、畫面沒反應。狀態不是 free(例如剛登出)只開詳情,閘門與原因句由詳情講 */
+   不先擋的話 libAsk 會靜默 return、畫面沒反應。狀態不是 free(沒登入、剛登出)只開詳情,閘門與原因句由詳情講 */
 function wcUse(s, a) {
   if (libPendingBlocks(s)) { busySendTell(); return; }   // 同一支還在裝、或雲端已有一支在裝(一次一支);本機別支照裝
-  if (libCtaOf(s).state !== "free") { wcDetail(s); return; }
+  const st = libCtaOf(s).state;
+  if (st !== "free") { if (st === "signedOut") trackFeature("wcard_signin"); wcDetail(s); return; }
   libAsk(s, a, { from: "welcome" });
 }
 // 回合鎖與代下載鎖(app.js 送出／解鎖那三排、library.js libSync):就地換,不重建卡。正在裝的那支換成「安裝與回測中…」;名字按鈕不鎖

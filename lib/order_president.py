@@ -109,6 +109,10 @@ _TAG_RE = re.compile(r"^[A-Za-z0-9]{1,10}$")
 # already 0004 (10-02); the test host answers 0000 and never fills.
 _ACCEPTED = {"0000", "0001", "0003", "0004", "0006"}
 _CANCELED = {"0002"}  # 0001 (a reduction) is not terminal
+# Live, 11-04 (QL229): 9868 "FUF0092 無足夠口數留倉平倉" — a close beyond the lots held (minus
+# queued closes). Read as 'unknown' it was parked and the close sent again every round. The
+# rest of 98xx stays 'unknown': what those codes mean is not documented.
+_REDUCE_REJECTED = {"9868"}
 
 _tags_lock = threading.Lock()
 
@@ -154,6 +158,14 @@ def _os_lock(path, timeout, what):
                 pass
     finally:
         os.close(fd)
+
+
+def _reject_tag(kind, msg):
+    try:
+        from lib import reject_token
+    except ImportError:  # half-updated workspace: the message goes out untagged
+        return msg
+    return reject_token.tag(kind, msg)
 
 
 class PresidentError(Exception):
@@ -559,6 +571,10 @@ def _await(reports, seq, lots, timeout, fields):
     unknown = False
     if ack and code not in _ACCEPTED and code not in _CANCELED:
         err = president_vault.sanitize(ack.get("orderstatus"))
+        if code in _REDUCE_REJECTED:
+            guard.audit("order_error", seq=seq, code=code, error=err, **fields)
+            raise PresidentError(_reject_tag("reduce_only_rejected",
+                                             f"統一 rejected the close: statuscode={code} {err}"))
         if str(code).startswith(("99", "ERR")):
             guard.audit("order_error", seq=seq, code=code, error=err, **fields)
             raise PresidentError(f"統一 rejected the order: statuscode={code} {err}")

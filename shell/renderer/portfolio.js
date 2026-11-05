@@ -236,9 +236,6 @@ function spView(cloud) {
       unsaved: routeDirty && trUnsaved(), zvOff: !!gv.zv.off, firing: trCfFiring(S.st, S.pending) && hasAcct, goKey: gv.key, goOff: !usable,
       offNote: gv.zv.off ? spOffNote(S, name, r || {}) : null, goNote: !gv.zv.off && gv.zv.reason ? { key: gv.zv.reason, vars: gv.zv.book ? { n: trBookQty(gv.zv.book) } : null } : null });
     if (v.st === "route" && S.spErr) v.note = { text: S.spErr, err: true };   // 〔儲存〕直送失敗:沒有框可重開,原因換在這一行(錯誤色,同框裡那句)
-    /* 串接失敗但下單程式還在跑(不是 fail 態:記號照出、鈕照給):說明行講串接失敗那個詞(IP 換了會帶新 IP),帶一顆到自動下單頁的文字鈕(設計稽核 §6) */
-    if (hasAcct && !failStop && ["start", "acct", "off", "running"].indexOf(v.st) >= 0 && (trFailedIds(r).length > 0 || trKeyBad(S.env)))
-      v.note = { text: cxFailWord(S.env), go: "tr" };
     return Object.assign(v, { name, env: S.env, market, paper: v.mark ? trCfPaperOnly() : null });
   });
 }
@@ -252,7 +249,6 @@ function spPaintNote(note) {
   // fail 態:句子裡的「設定」做成連結,到自動下單 › 設定分頁(帳戶與金鑰在那裡)
   if (note.go === "set") { const w = t("tr.tab.set"), i = text.indexOf(w);
     if (i >= 0) { const g = trEl("button", "btn-quiet", w); g.type = "button"; g.addEventListener("click", () => trOpen("set")); n.append(text.slice(0, i), g, text.slice(i + w.length)); return; } }
-  if (note.go === "tr") { const g = trEl("button", "btn-quiet", t("tr.nav")); g.type = "button"; g.addEventListener("click", () => trOpen()); n.append(text + " ", g); return; }
   if (at < 0) { n.textContent = text; return; }
   const a = trEl("button", "btn-quiet", text.slice(at, at + word.length)); a.type = "button"; a.addEventListener("click", () => poOpen("cfg", true));
   n.append(text.slice(0, at), a, text.slice(at + word.length));

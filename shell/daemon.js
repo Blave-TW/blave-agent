@@ -12,7 +12,7 @@ const wsfile = require("./wsfile");
 
 // renderer 可以要求送的指令。比 daemon 的 ALLOWED 窄:畫面上沒有的功能不開(報告排程、偏好、刪策略…
 // 在電腦版走別條路或還沒做);多開一個就是多一個 renderer 被攻破時能碰到的面。
-const UI_COMMANDS = new Set(["halt", "resume", "resume_wait", "amounts", "execution", "credentials", "credentials_remove",
+const UI_COMMANDS = new Set(["halt", "resume", "resume_wait", "amounts", "execution", "credentials", "credentials_remove", "close_then_unbind",
   "restart_reconciler", "retest_accounts", "close_all", "book_account_confirm", "version_restore", "stats_refresh",
   "manage_optimize", "manage_backtest", "manage_cancel"]);
 // manage_optimize 是 Deferred(腳本最長 120 秒才 ack),等 ack 的時間另給;雲端那條(main.js cloud-send)也用這一份
@@ -92,6 +92,9 @@ function argsOk(cmd, a, trusted) {
   // 解除綁定只准拿掉這一版認得的憑證 key(handler 自己也永遠不刪 blave_*)
   if (cmd === "credentials_remove") return keys.length === 1 && Array.isArray(a.env) && a.env.length > 0 && a.env.length <= 16
     && a.env.every((n) => typeof n === "string" && REMOVABLE.has(n.toUpperCase()));
+  // 平倉後解除:同一份名字,多一個選填的 request_id(機器端靠它認重送)
+  if (cmd === "close_then_unbind") return keys.every((k) => k === "env" || k === "request_id") && Array.isArray(a.env) && a.env.length > 0 && a.env.length <= 16
+    && a.env.every((n) => typeof n === "string" && REMOVABLE.has(n.toUpperCase())) && (a.request_id === undefined || (typeof a.request_id === "string" && ID_RE.test(a.request_id)));
   if (cmd === "amounts") {
     const m = a.amounts, c = a.contracts;
     if (!keys.every((k) => k === "amounts" || k === "contracts")) return false;
@@ -278,6 +281,8 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
     while (Date.now() < until) {
       const a = readAck(id);
       if (a && a.ok && cmd === "credentials_remove") { eqAppend({ ts: Math.floor(Date.now() / 1000), reset: true }); eqLast = null; }
+      // 平倉後解除:機器平完才自己刪金鑰——曲線的 reset 與時間軸的「解除」等回報裡那一家真的不見了才記(status())
+      if (a && a.ok && cmd === "close_then_unbind") unbindVenues(args.env).forEach((id) => ubWaiting.add(id));
       if (a && a.ok && (cmd === "credentials" || cmd === "retest_accounts")) setTimeout(eqTick, 12000);   // 連上後第一筆:等帳戶讀取器讀完
       if (a && a.ok) uiEvent(cmd, cmd === "close_all" ? { closing: closeAllStarted(a.result) } : undefined);
       if (a) return a.ok ? { ok: true, result: a.result } : { ok: false, error: String(a.error || "FAILED") };
@@ -293,9 +298,21 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
 
   /* 狀態檔原樣交出去,外加宿主這一側知道的事。檔案是 daemon 原子寫的,讀到一半的情形不存在;
      讀不到 / 壞掉 → report:null,畫面照「還沒有狀態」處理,不猜。 */
+  const ubWaiting = new Set();
+  function ubSettle(report) {
+    const v = report && report.venues;
+    if (!ubWaiting.size || !v || typeof v !== "object") return;
+    for (const id of [...ubWaiting]) {
+      if (v[id] && v[id].credentials) continue;
+      ubWaiting.delete(id);
+      eqAppend({ ts: Math.floor(Date.now() / 1000), reset: true }); eqLast = null;
+      uiEvent("credentials_remove");
+    }
+  }
   function status() {
     let report = null;
     try { report = JSON.parse(fs.readFileSync(statusFile, "utf8")); } catch (_) { /* 還沒寫出來 */ }
+    ubSettle(report);
     const hb = report && report.daemon && Number(report.daemon.heartbeat_at);
     const hbMs = hb ? (hb > 1e12 ? hb : hb * 1000) : 0;
     const alive = !!child && !!hbMs && Date.now() - hbMs <= HEARTBEAT_DEAD_MS;
@@ -422,5 +439,16 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
 }
 /* close_all 的 ack(runtime command_listener._cmd_close_all):只有 started / already_running 真的有平倉程式在跑;
    halted_only、halted_capital_manual、nothing_closed、capital_manual 只掛了暫停(或什麼都沒送),事件列不能寫成在平倉 */
+// 解除綁定的 env 名 → 交易所 id(統一／群益是自己那一組名字,其餘 {ID}_API_KEY)
+function unbindVenues(names) {
+  const out = new Set();
+  (Array.isArray(names) ? names : []).forEach((n) => {
+    const k = String(n).toLowerCase();
+    if (PRESIDENT_ENV.indexOf(k) >= 0 || PRESIDENT_ENV.indexOf(k.toUpperCase()) >= 0) out.add("president");
+    else if (CAPITAL_ENV.indexOf(k) >= 0 || CAPITAL_ENV.indexOf(k.toUpperCase()) >= 0) out.add("capital");
+    else { const m = /^(.+)_api_key$/.exec(k); if (m) out.add(m[1]); }
+  });
+  return [...out];
+}
 function closeAllStarted(result) { return /^close_all=(?:restart_stopped:)?(?:started|already_running)$/.test(String(result || "")); }
 module.exports = { createDaemonHost, UI_COMMANDS, CMD_TIMEOUT_MS, MAIN_ONLY_COMMANDS, PRESIDENT_ENV, CAPITAL_ENV, argsOk, closeAllStarted };

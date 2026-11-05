@@ -68,6 +68,11 @@ FIXED_NOW = datetime(2026, 10, 20, 16, 0, tzinfo=TAIPEI)
 _real_now = pc._now
 pc._now = lambda now: _real_now(now or FIXED_NOW)
 
+# entries go only in the TAIFEX regular session (lib/tw_clock); this test's clock is the
+# wall clock, so it pins the session open
+from lib import tw_clock  # noqa: E402
+tw_clock.in_session = lambda ts: True
+
 # ── 1. near month ────────────────────────────────────────────────────────────
 T = lambda *a: datetime(*a, tzinfo=TAIPEI)  # noqa: E731
 check(op.settlement_at(2026, 10) == T(2026, 10, 21, 13, 30), "Oct 2026 settles Wed 10/21 13:30")
@@ -710,6 +715,8 @@ check(took < 5, "killed holder → the lock is free at once (no stale-file wait)
 import contextlib, io  # noqa: E402
 president_vault.in_login_maintenance = lambda now=None: False
 president_worker.maintenance = lambda now=None: None
+# inside one trading window whatever the wall clock says: the loop below never logs out for the hour
+president_worker.session_window = lambda now=None: datetime(2026, 11, 5, 8, 30, tzinfo=president_worker.TAIPEI)
 LOGIN_SCRIPT = []
 
 
@@ -883,7 +890,7 @@ finally:
      president_worker.HEARTBEAT_PATH, president_worker._sleep_until_refresh) = _wsaved
     LOGIN_SCRIPT[:] = []
 creds2 = president_vault.resolve()
-# every failure stops, whatever its class (display only)
+# every failure stops, whatever its class (display only); a TIMEOUT on the second in a row
 for script, kind in (([Resp(ok=False, error="[APGW]something unexpected")], "UNKNOWN"),
                      ([ValueError("unexpected reply layout")], "UNKNOWN"),
                      ([ConnectionError("Failed to establish a new connection")], "TIMEOUT"),
@@ -893,22 +900,31 @@ for script, kind in (([Resp(ok=False, error="[APGW]something unexpected")], "UNK
                      ([Resp(ok=False, error="Timeout")], "TIMEOUT"),
                      ([Resp(ok=False, error="密碼錯誤,請重新輸入!")], "PASSWORD"),
                      ([Resp(ok=False, error="超過每分鐘限制!")], "UNKNOWN")):
-    os.path.exists(STOP) and os.remove(STOP)
-    LOGIN_SCRIPT[:] = list(script)
+    for _p in (STOP, president_vault._timeouts_path()):
+        os.path.exists(_p) and os.remove(_p)
+    LOGIN_SCRIPT[:] = list(script) * 2
     n = FakeUnitrade.logins
     got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+    first_retry = kind != "TIMEOUT" or (got.retry and president_vault.stopped() is None)
+    if kind == "TIMEOUT":
+        got = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
     got2 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-    check(got.kind == kind and got2.kind == "STOPPED" and FakeUnitrade.logins == n + 1 and president_vault.stopped() == kind,
-          f"{script[0]!r:.60} → {kind}, logins stop (the next one never reaches the broker)")
+    tries = 2 if kind == "TIMEOUT" else 1
+    check(first_retry and got.kind == kind and got2.kind == "STOPPED" and FakeUnitrade.logins == n + tries
+          and president_vault.stopped() == kind,
+          f"{script[0]!r:.60} → {kind}, logins stop after {tries} (the next one never reaches the broker)")
 real_lt = president_vault.LOGIN_TIMEOUT_S
 president_vault.LOGIN_TIMEOUT_S = 0.2
 os.remove(STOP)
-LOGIN_SCRIPT[:] = [lambda: _t.sleep(0.6) or Resp(ok=True, error="")]
+LOGIN_SCRIPT[:] = [lambda: _t.sleep(0.6) or Resp(ok=True, error="")] * 2
 g1 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
-check(g1.kind == "TIMEOUT" and president_vault.stopped() == "TIMEOUT", "a login thread that never answers → TIMEOUT, stopped")
+g2 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
+check(g1.kind == "TIMEOUT" and g1.retry and g2.kind == "TIMEOUT" and president_vault.stopped() == "TIMEOUT",
+      "a login thread that never answers → TIMEOUT; the second in a row stops")
 president_vault.LOGIN_TIMEOUT_S = real_lt
 check(not hasattr(president_vault, "unblock") and not hasattr(president_vault, "TIMEOUT_BLOCK_AT")
-      and not hasattr(president_vault, "TRANSIENT_TEXTS"), "no release-once, no timeout counting, no TRANSIENT class any more")
+      and not hasattr(president_vault, "TRANSIENT_TEXTS"),
+      "no release-once, no TRANSIENT class (TIMEOUTs are counted by TIMEOUTS_BEFORE_STOP instead)")
 check(president_vault.classify("密碼錯誤 系統維護") == "PASSWORD" and president_vault.classify("登入失敗!") == "UNKNOWN",
       "a credential word wins; the SDK's bare 登入失敗 is UNKNOWN")
 
@@ -967,7 +983,9 @@ def fake_place(env, sym, action, lots, intent, **kw):
     sent_legs.append((sym, action, lots, intent))
     st = FILL.get(intent, "filled")
     fq = FILL.get("fill_qty", lots) if st == "filled" else 0   # fill_qty < lots = a partial fill
-    return {"status": st, "fill_qty": float(fq), "avg_fill_price": 100.0, "symbol": sym + "J6"}
+    return {"status": st, "fill_qty": float(fq), "avg_fill_price": 100.0, "symbol": sym + "J6",
+            **({"orderno": FILL["orderno"]} if FILL.get("orderno") else {}),
+            **({"statuscode": FILL["statuscode"]} if FILL.get("statuscode") else {})}
 
 
 real_place = op.place_futures_market_order
@@ -1036,11 +1054,33 @@ try:
     sent_legs.clear()
     reconciler.place_order("TMF", 1, exchange="president")
     check(sent_legs == [("TMF", "buy", 1, "entry")], "…and the entry goes out again")
+    # Z (v045 final audit P1-A): in session a close gets only 0000 and then nothing (it died), so the
+    # 0000 hold keeps its row; a second close fills. That fill moves the row's expected net — before,
+    # the next claim read the account at expected + lots and booked the dead close too (book −1 over 0)
+    os.remove(reconciler.PENDING_SENT_PATH) if os.path.exists(reconciler.PENDING_SENT_PATH) else None
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1, "net_current": 1}])
+    FILL.clear()
+    FILL.update(reduce="sent", statuscode="0000")
+    reconciler.place_order("TMF", -1, exchange="president", reduce_only=True)
+    FILL.clear()
+    gp()
+    held = "TMFJ6" in pending()
+    n_late = len(audits("late_fill_adopted"))
+    r2 = reconciler.place_order("TMF", -1, exchange="president", reduce_only=True)
+    snapshot([])
+    gp()
+    check(held and r2["executed_qty"] == 1 and len(audits("late_fill_adopted")) == n_late
+          and pending()["TMFJ6"]["net_expected"] == 0,
+          "a 0000-only close held, then a second close fills: the fill moves the parked row, the dead close "
+          "is never booked as a late fill", pending())
+    os.remove(reconciler.PENDING_SENT_PATH)
+    FILL.clear()
     # late fill: the entry reports no fill, the next snapshot shows the lot → booked, never re-sent
     FILL["entry"] = "sent"
+    FILL["orderno"] = "QK899"
     snapshot([])
     sent_legs.clear()
-    r = reconciler.place_order("TMF", 1, exchange="president")
+    r = sent_r = reconciler.place_order("TMF", 1, exchange="president")
     p = pending()["TMFJ6"]
     check(r["status"] == "sent" and p["lots"] == 1 and p["net_expected"] == 0, "entry 'sent' on a flat account: +1 parked", p)
     r = reconciler.place_order("TMF", 1, exchange="president")
@@ -1057,6 +1097,9 @@ try:
           and lo["legs"] == [{"signed_diff": 1.0, "reduce_only": False, "signed_qty": 1.0, "executed_qty": 1.0,
                               "resolved_symbol": "TMFJ6"}],
           "…as one orders.jsonl line (late_fill, no fill price) — the replay is what books it", lo)
+    check(lo.get("late_fill_ordernos") == ["QK899"] and sent_r.get("orderno") == "QK899",
+          "…naming the parked send's order number, which place_order also returned for the send's own "
+          "line", (lo, sent_r))
     FILL.clear()
     sent_legs.clear()
     reconciler.place_order("TMF", 1, exchange="president")
@@ -1108,17 +1151,18 @@ try:
     FILL.clear()
     sent_legs.clear()
     reconciler.place_order("TMF", -1, exchange="president", reduce_only=True)
-    check(sent_legs == [("TMF", "sell", 1, "reduce")] and pending()["TMFJ6"]["lots"] == 1,
-          "a close goes out while lots are parked; the parking is untouched")
+    check(sent_legs == [("TMF", "sell", 1, "reduce")] and pending()["TMFJ6"]["lots"] == 1
+          and pending()["TMFJ6"]["net_expected"] == 1,
+          "a close goes out while lots are parked; the parked lots stay, the expected net follows the close (2 → 1)")
     op.place_futures_market_order = real_place
     snapshot([])
     api = use([ACK])
     e = raises(op.PresidentError, lambda: reconciler.place_order("TMF", -1, exchange="president", reduce_only=True))
     check(e is not None and not api.sent, "…and with nothing held the lib refuses the close before the broker (no reverse entry)", e)
     op.place_futures_market_order = fake_place
-    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
+    snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 1, "net_current": 1}])
     gp()
-    check(pending() == {}, "cleanup: cleared at the expected net")
+    check(pending() == {}, "cleanup: cleared at the expected net (the account after the close)")
     # M1: net_before only from a snapshot that has caught up with the last send — else nothing is sent
     json.dump({"TMFJ6": __import__("time").time()}, open(op.LAST_ORDER_PATH, "w"))
     snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}],
@@ -1138,7 +1182,8 @@ try:
     r1 = reconciler.place_order("TMF", 1, exchange="president")
     r2 = reconciler.place_order("TMF", 1, exchange="president")
     check(r1 is False and r2 is False and sent_legs == [] and len(errors()) == n_err + 1
-          and reconciler.PENDING_SENT_PATH in errors()[-1]["error"],
+          and errors()[-1].get("kind") == "tw_entry_hold" and "移除" not in errors()[-1]["error"]
+          and reconciler.PENDING_SENT_PATH not in errors()[-1]["error"],
           "corrupt pending file: entries wait, one order_errors row per process", errors()[-1:])
     reconciler.place_order("TMF", -1, exchange="president", reduce_only=True)
     check(sent_legs == [("TMF", "sell", 1, "reduce")], "…closes still go")
@@ -1178,13 +1223,17 @@ try:
         gp()  # the same snapshot again does not count as another read
         return n_err, halts
 
+    def full_freeze_reason(text):   # HALT stops closes and stops too (lib/guard): the words must say so
+        return ("自動下單已全部暫停，平倉與停損也不會送" in text and "平倉照常" not in text and "closes still run" not in text
+                and "「解除暫停」" in text and "已停止下單" not in text and "恢復下單" not in text)
+
     n_err, halts = park_then_escalate()
-    e = errors()[-1] if len(errors()) > n_err else {}
-    check(guard.halted() and len(errors()) == n_err + 1 and e.get("exchange") == "president" and "TMFJ6" in e.get("error", "")
-          and "平掉" in e.get("error", "") and len(audits("halt_tripped")) == halts + 1
+    e = guard.halt_info() or {}
+    check(guard.halted() and len(errors()) == n_err and "TMFJ6" in e.get("reason", "")
+          and "平掉" in e.get("reason", "") and full_freeze_reason(e.get("reason", "")) and len(audits("halt_tripped")) == halts + 1
           and audits("halt_tripped")[-1]["source"] == "reconciler" and pending()["TMFJ6"].get("halted") is True,
-          "the third distinct snapshot that fits neither: one order_errors row (P1, says to flatten in the app first), "
-          "HALT by the reconciler, the row kept as halted", e)
+          "the third distinct snapshot that fits neither: HALT by the reconciler (its reason the P1: a full freeze, "
+          "flatten in the app first, 解除暫停), no order_errors row beside it, the row kept as halted", e)
     sent_legs.clear()
     reconciler.place_order("TMF", 1, exchange="president")
     check(sent_legs == [], "…and HALT holds the entry")
@@ -1194,7 +1243,7 @@ try:
           "while halted, the account back at the expected net clears the row (the user flattened it in the app)")
     guard.clear_halt("test")
     n_err, halts = park_then_escalate()
-    check(guard.halted() and pending()["TMFJ6"].get("halted") is True and len(errors()) == n_err + 1, "escalated again (setup)")
+    check(guard.halted() and pending()["TMFJ6"].get("halted") is True and len(errors()) == n_err, "escalated again (setup)")
     guard.clear_halt("test")
     gp()
     check(pending() == {} and audits("parked_order_dropped")[-1]["contract"] == "TMFJ6"
@@ -1324,7 +1373,7 @@ try:
 
     # 4. the book cannot be read before the line is written (book_late_fill's ledger_book)
     q0, a4 = park_one(), adopted()
-    n_err = len([x for x in errors() if "記不進帳本" in x.get("error", "")])
+    n_err, before_rows = len(errors()), errors()[-1:]
     real_lb = _pf.ledger_book
 
     def unreadable(*a, **k):
@@ -1333,10 +1382,12 @@ try:
     _pf.ledger_book = unreadable
     e = failing_round(PermissionError)
     _pf.ledger_book = real_lb
-    check(isinstance(e, PermissionError) and guard.halted()
-          and len([x for x in errors() if "記不進帳本" in x.get("error", "")]) == n_err + 1
+    reason = (guard.halt_info() or {}).get("reason", "")
+    check(isinstance(e, PermissionError) and guard.halted() and "記不進帳本" in reason and full_freeze_reason(reason)
+          and errors()[-1:] == before_rows
           and "TMFJ6" in pending() and book_qty() == q0 and adopted() == a4,
-          "book unreadable: HALT + one order_errors row, raised, row kept, no late_fill_adopted", (e, errors()[-1:]))
+          "book unreadable: HALT (reason: a full freeze, 解除暫停), no order_errors row, raised, row kept, no late_fill_adopted",
+          (e, reason, errors()[-1:]))
     guard.clear_halt("test")
     gp()
     check(pending() == {} and book_qty() == q0 + 1, "…after resume the next round books it once", book_qty())
@@ -1403,7 +1454,8 @@ try:
     seen = []
     for _ in range(reconciler.CLAIM_SAVE_FAILS_MAX):
         failing_round(PermissionError)
-        seen.append(len([x for x in errors() if "連續" in x.get("error", "") and "存不進去" in x.get("error", "")]))
+        seen.append(len([x for x in errors() if x.get("kind") == "tw_entry_hold" and "存不進紀錄" in x.get("error", "")
+                        and "平倉照常" in x["error"] and reconciler.PENDING_SENT_PATH not in x["error"]]))
     reconciler._save_pending_sent = real_save
     check(seen == [0] * (reconciler.CLAIM_SAVE_FAILS_MAX - 1) + [1] and book_qty() == q0 + 1,
           "park file refused three rounds in a row: one order_errors row on the third, booked once", seen)
@@ -1411,7 +1463,8 @@ try:
     check(pending() == {} and book_qty() == q0 + 1, "…the file takes it again: row dropped by its id")
     # …and that successful save reset the count: three more refused rounds give one more row
     def save_fail_rows():
-        return [x.get("ts") for x in errors() if "連續" in x.get("error", "") and "存不進去" in x.get("error", "")]
+        return [x.get("ts") for x in errors() if x.get("kind") == "tw_entry_hold" and "存不進紀錄" in x.get("error", "")
+                        and "平倉照常" in x["error"] and reconciler.PENDING_SENT_PATH not in x["error"]]
 
     q0 = park_one()
     before = save_fail_rows()
@@ -1442,9 +1495,10 @@ try:
     reconciler.place_order("TMF", -1, exchange="president", reduce_only=True)
     FILL.clear()
     _pf.late_fill_booked = real_lfb
-    check(guard.halted() and any("確認不了" in x.get("error", "") for x in errors())
-          and audits("order_unfilled_park_unverified"),
-          "a leg parked onto a row whose booking can't be read: one order_errors row and HALT", errors()[-1:])
+    reason = (guard.halt_info() or {}).get("reason", "")
+    check(guard.halted() and "確認不了" in reason and full_freeze_reason(reason)
+          and not any("確認不了" in x.get("error", "") for x in errors()) and audits("order_unfilled_park_unverified"),
+          "a leg parked onto a row whose booking can't be read: HALT (reason: a full freeze), no order_errors row", reason)
     guard.clear_halt("test")
     acct[0] = n - 1
     snapshot([{"root": "TMF", "productid": "TMFJ6", "net": n - 1, "net_current": n - 1}] if n - 1 else [])

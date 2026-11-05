@@ -166,7 +166,7 @@ if (!process.versions.electron) {
       actx.rpRobAsk("s1", null, () => {}, info);
       const o = actx.calls[0], rows = rowsOf(o), note = o.extra.kids.find((k) => k.className === "cf-note");
       o.onOk();   // 只比送出的訊息本身(trackFeature 在 submitMessage 的微任務裡)
-      const want = T("rob.msgRescan", { name: "s1", start: "2015-01-01", end: "2025-06-01", fee: "0.05", rp: "A", r0: "10", r1: "30", cp: "B", c0: "0.5", c1: "0.9" });
+      const want = T("rob.msgRescan", { display_name: "s1", name: "s1", start: "2015-01-01", end: "2025-06-01", fee: "0.05", rp: "A", r0: "10", r1: "30", cp: "B", c0: "0.5", c1: "0.9" });
       ok("③ (" + L + ") 重新掃描確認框:標題「" + T("rob.btnRescan") + "」、lead、期間 / 手續費 / 網格三列(值包 .mono,dl 是 cf-rows kv)、cf-note;送出的訊息寫明期間、費率與上次兩軸",
         o.title === T("rob.btnRescan") && o.lines.length === 1 && o.lines[0] === T("rob.cfLead") && o.ok === T("rob.cfOk") && o.extra.kids[0].className === "cf-rows kv"
         && JSON.stringify(rows) === JSON.stringify([[T("rob.cfPeriod"), "2015-01-01 → 2025-06-01", "mono"], [T("rob.cfFee"), "0.05%", "mono"], [T("rob.cfGrid"), T("rob.cfGridVal", { rp: "A", r0: "10", r1: "30", cp: "B", c0: "0.5", c1: "0.9", R: "3", C: "3" }), 8]])
@@ -175,7 +175,7 @@ if (!process.versions.electron) {
       actx.rpRobAsk("s1", null, () => {}, R.scanInfo(BT, R.sanitizeScan({ ...SCAN, row_vals: [-1, -2.5, -3] }, BT, "")));
       { const o2 = actx.calls[0]; o2.onOk(); const gridTxt = rowsOf(o2)[2][1];
         ok("③ (" + L + ") 負數遞減軸:確認框的網格列顯示 −3.0–−1.0(pv),送給 agent 的訊息寫 A(-3–-1)原值、ASCII 負號、小的在前",
-          gridTxt.indexOf("A −3.0–−1.0") === 0 && actx.sent[0] === T("rob.msgRescan", { name: "s1", start: "2025-01-01", end: "2025-06-01", fee: "0.05", rp: "A", r0: "-3", r1: "-1", cp: "B", c0: "0.5", c1: "0.9" }) && !/\u2212/.test(actx.sent[0]), gridTxt + " | " + actx.sent[0]); }
+          gridTxt.indexOf("A −3.0–−1.0") === 0 && actx.sent[0] === T("rob.msgRescan", { display_name: "s1", name: "s1", start: "2025-01-01", end: "2025-06-01", fee: "0.05", rp: "A", r0: "-3", r1: "-1", cp: "B", c0: "0.5", c1: "0.9" }) && !/\u2212/.test(actx.sent[0]), gridTxt + " | " + actx.sent[0]); }
       const fm = vm.runInContext("fixedMatch", actx)(want, vm.runInContext("STRINGS", actx));
       ok("③ (" + L + ") 重新掃描的訊息在對話裡顯示成一行摘要(FIXED_PROMPTS 認得,名稱抓對)", fm && fm.label === "rob.msgRescanLabel" && fm.title === "rob.msgScanTitle" && fm.vars.name === "s1" && fm.vars.r1 === "30");
       actx.calls.length = 0; actx.sent.length = 0;
@@ -183,10 +183,10 @@ if (!process.versions.electron) {
       const e = actx.calls[0]; e.onOk();
       ok("③ (" + L + ") 空狀態「開始掃描」確認框:emptyCap + 期間 / 手續費兩列、沒有網格與 cf-note;訊息仍是 rob.msgScan 原句(觸發句不動)",
         e.title === T("rob.btnScan") && e.lines[0] === T("rob.emptyCap") && JSON.stringify(rowsOf(e)) === JSON.stringify([[T("rob.cfPeriod"), "2025-01-01 → 2025-06-01", "mono"], [T("rob.cfFee"), "0.05%", "mono"]])
-        && !e.extra.kids.some((k) => k.className === "cf-note") && actx.sent[0] === T("rob.msgScan", { name: "s1" }));
+        && !e.extra.kids.some((k) => k.className === "cf-note") && actx.sent[0] === T("rob.msgScan", { display_name: "s1", name: "s1" }));
       actx.calls.length = 0; actx.sent.length = 0;
       actx.rpRobAsk("s1", null, () => {}, R.scanInfo(BT, R.sanitizeScan(SINGLE, BT, "N = 20\n")));
-      { const o1 = actx.calls[0]; o1.onOk(); const rows1 = rowsOf(o1), want1 = T("rob.msgRescan1", { name: "s1", start: "2025-01-01", end: "2025-06-01", fee: "0.05", rp: "N", r0: "10", r1: "60" });
+      { const o1 = actx.calls[0]; o1.onOk(); const rows1 = rowsOf(o1), want1 = T("rob.msgRescan1", { display_name: "s1", name: "s1", start: "2025-01-01", end: "2025-06-01", fee: "0.05", rp: "N", r0: "10", r1: "60" });
         const fm1 = vm.runInContext("fixedMatch", actx)(want1, vm.runInContext("STRINGS", actx));
         ok("③ (" + L + ") 單參數重新掃描:lead 換 cfLead1、第三列是「範圍」N 10–60(6 格)、cf-note 照舊;送 rob.msgRescan1(二維句不動)、句裡沒有 _（ / 0–0;對話摘要認得(label 沿用)",
           o1.lines[0] === T("rob.cfLead1") && JSON.stringify(rows1[2]) === JSON.stringify([T("rob.cfRange"), T("rob.cfRangeVal", { rp: "N", r0: "10", r1: "60", R: "6" }), 4]) && rows1.length === 3 && o1.extra.kids.some((k) => k.className === "cf-note")
@@ -205,7 +205,7 @@ if (!process.versions.electron) {
     ok("③ lib.md 的 write_scan:start / end 傳回測 stats.json 記的那組;Type A = s.START;Type C 是 WARMUP 之後第一根(不是 s.START);資料比回測新建議切到回測的 end(只是建議:掃描較新時訖日較晚不判過時);Rescan 觸發句有寫怎麼做",
       /`start` \/ `end` = \*\*the backtest's own range, as recorded in `strategies\/<name>\/stats\.json`/.test(ws) && /Type A: stats `start` is `s\.START` verbatim/.test(ws)
       && /Type C: stats `start` is the first bar the runner keeps after `WARMUP` \(`price_df\.iloc\[WARMUP:\]`\), \*\*not\*\* `s\.START`/.test(ws) && /Recommended: scan the same bars the backtest saw[^;]*df = df\.loc\[:end\]/.test(ws) && /fresher bars are not flagged/.test(ws)
-      && /- \*\*Rescan\*\* — zh「請重新掃描策略 \{name\} 的參數/.test(lm) && /four fixed prompts/.test(lm), ws.slice(0, 200));
+      && /- \*\*Rescan\*\* — zh「請重新掃描策略「\{display_name\}」\(\{name\}\) 的參數/.test(lm) && /four fixed prompts/.test(lm), ws.slice(0, 200));
     ok("③ 上面那句跟 runner 對得上:Type A stats start = config START、Type C = WARMUP 裁掉之後 close_df 的第一根",
       /'start': config\.get\('START'\), 'end': df\.index\[-1\]/.test(runner) && /price_df += price_df\.iloc\[warmup:\]/.test(runner) && /'start': close_df\.index\[0\]\.strftime\('%Y-%m-%d'\)/.test(runner));
   }

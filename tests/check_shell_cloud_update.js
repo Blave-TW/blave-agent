@@ -118,7 +118,7 @@ const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent 
         "Couldn’t read auto-trading status, so it’s treated as running. If trading code changes, it restarts on the new version between orders.",
         "Only Blave’s official code and reference files change; your strategy files and keys are left alone. Positions stay open.", "If no gap comes up, only the files change and auto-trading stays on the old code.",
         "If the update doesn’t finish, the chat says why; press Start update again and it picks up where it stopped.",
-        "Official files you changed are replaced with the official versions; the old copies are backed up in .official-backup/ on the machine.", "Order integrations you added yourself are left alone.", "Start update", "Update cloud machine"] };
+        "Official files you changed are replaced with the official versions; the old copies are backed up in .official-backup/ on the machine.", "Order integrations you added yourself are left alone.", "Start update", "Update Cloud Machine"] };
     const keys = ["up.cf.title", "up.cf.lede", "up.cf.ledeBare", "up.cf.body1", "up.cf.body1Unconfirmed", "up.cf.body1Unknown", "up.cf.d1", "up.cf.d2", "up.cf.d3", "up.cf.d4", "up.cf.d5", "up.cf.ok", "up.cloud.go"];
     const all = keys.map((k) => V.zh[k] + V.en[k]).join();
     ok("確認框與連結的字 = 設計師 D 版定稿(zh / en 逐字;不寫分鐘數上限、不寫「策略不受影響」、不寫「不撤單」)", ["zh", "en"].every((l) => keys.every((k, i) => V[l][k] === want[l][i]))

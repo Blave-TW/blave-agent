@@ -46,8 +46,18 @@ ok("S5 讀帳失敗:仍算有帳戶(不回 onboard),另外列為串接失敗", t
       trPresStopped({ president_connect: pcF }, "president") && !trPresWip({ president_connect: pcF }, "president")
       && !trPresStopped({ president_connect: { worker: { status: "failed", error: "LOGIN_FAILED:PASSWORD" } } }, "president") && trPresWip({ president_connect: { worker: { status: "failed" } } }, "president")
       && !trPresStopped({ president_connect: pcOk }, "president") && !trPresStopped({ president_connect: pcF }, "paper")
-      && /const presIn = presW \|\| \(!ro && trPresStopped\(r, id\)\);/.test(src) && /if \(presIn\) \{ const go = trEl\("button", "pf-act main-act", t\("cap\.continue"\)\);[^\n]*"pres-continue"/.test(src)
-      && /!ro && id === "president" && \[presWip\(r\), trPresStopped\(r, id\)\], !ro && id === CAPITAL && \[trCapWip\(r, id\), trCaplStopped\(r, id\)\]\]\)\) return;/.test(src));
+      && /const presIn = presW \|\| \(!ro && \(trPresStopped\(r, id\) \|\| trPresLoginHeld\(r, id\)\)\);/.test(src) && /if \(presIn && !headRelogin\) \{ const go = trEl\("button", "pf-act main-act", t\(presLogin \? "tr\.presRelogin" : "cap\.continue"\)\);[^\n]*"pres-continue"/.test(src)
+      && /!ro && id === "president" && \[presWip\(r\), trPresStopped\(r, id\), trPresLoginStopped\(r, id\), trPresLoginHeld\(r, id\)\], !ro && id === CAPITAL && \[trCapWip\(r, id\), trCaplStopped\(r, id\)\]\]\)\) return;/.test(src));
+    ok("設計稽核 v045:登入停了的頁首〔重新登入〕實心、〔暫停下單〕描邊;設定 › 帳戶那一列頁首有鈕時不畫〔繼續〕與那句、狀態詞「登入已停止」;選單列寫短詞",
+      /go\.className = "btn-fill"; go\.dataset\.stop = "1"; go\.textContent = t\("tr\.presRelogin"\);/.test(src) && /b\.classList\.toggle\("btn-out", presHeld\); b\.classList\.toggle\("btn-fill", !presHeld\);/.test(src)
+      && /presLogin \? t\("tr\.s\.presStopped"\)/.test(src) && /if \(presLogin\) \{ if \(!headRelogin\) box\.appendChild\(errLine\(t\("cx\.presStopped"\)\)\); \}/.test(src)
+      && /stLoginStopped: t\("tr\.s\.presStopped"\)/.test(src) && /go\.textContent = t\("cap\.continue"\); go\.dataset\.venue = sv; delete go\.dataset\.stop;/.test(src));
+    { const S = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"), M = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+      ok("設計複查 v045 R2/R3:登入停了的通知與事件列指〔重新登入〕不再叫人按「繼續」;暫停中遇到登入停了,標題下不接「平倉照常」",
+        S.includes('"tr.ov.evPresStoppedNote": "新單與平倉都送不出去。到自動下單按「重新登入」。"') && S.includes('"tr.ov.evPresStoppedNote": "New orders and closes can\'t go out. Press Sign In Again on the auto-trading page."')
+        && !/Press Continue on the auto-trading page/.test(S + M) && /ev_venue_login_blocked_n: "New orders and closes can't go out\. Press Sign In Again on the auto-trading page\."/.test(M)
+        && /else if \(state === "halted" && trVenueIds\(r\)\.indexOf\("president"\) >= 0 && trPresLoginHeld\(r, "president"\)\) s = t\("tr\.halted"\) \+ " · " \+ t\(TR\.env === "cloud" \? "tr\.presStoppedCloud" : "tr\.presStoppedHalted"\);/.test(src)
+        && S.includes('"tr.presStoppedHalted": "統一登入已停止，新單與平倉都送不出去，要重新登入。"') && !/照常/.test(S.match(/"tr\.presStoppedHalted": "[^"]*"/g).join(""))); }
     ok("B-1 從沒 ok 過的 worker 碰到機器重開(停著 / 沒停住):也不是 setup——重開警示一律優先", trExecState(st({ venues: VP, account: accP, president_connect: pcW, halt: {}, ...mr })) === "halted"
       && trExecState(st({ venues: VP, account: accP, president_connect: pcW, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", gated: false } } })) === "unconfirmed"); }
   ok("統一開通中:不算串接失敗;worker ok 之後讀帳失敗才算", J(trFailedIds({ venues: VP, account: accP, president_connect: pcW })) === J([])
@@ -182,7 +192,7 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
     ok("Bitget UTA 沒開放:[bitget_account_mode:uta] → tr.err.bitgetUta(下單)、讀帳那列 cx.err.bitgetUtaBound;經典帳戶的標記照舊 key_permission",
       trErrToken(u) === want && trErrToken("close_symbol: " + u) === (shut ? want : null) && TR_REJECT_TEXT.bitget_uta_unsupported === "tr.err.bitgetUta"
       && trErrToken("[order_reject:key_permission] x [bitget_account_mode:classic]") === "key_permission"
-      && src.includes('else if (trErrToken(ae.msg) === "bitget_uta_unsupported") box.appendChild(errLine(t("cx.err.bitgetUtaBound")));')); }
+      && src.includes('if (trErrToken(ae.msg) === "bitget_uta_unsupported") box.appendChild(errLine(t("cx.err.bitgetUtaBound")));')); }
   // Bitget 40731(lib/account_bitget error_of 的句子形狀,kind=key_permission):跟單金鑰先認,不落成 tr.err.key;連接框、讀帳那列、雲端視角都換句
   { const c = "[order_reject:key_permission] 這組 Bitget 金鑰屬於跟單或帶單帳戶 [bitget_copy_trading_key]（code=40731），Bitget 不讓它讀一般帳戶或下單";
     ok("Bitget 40731:[bitget_copy_trading_key] → tr.err.bitgetCopyKey(下單)、cx.err.bitgetCopyKeyBound(讀帳那列)、cx.err.bitgetCopyKey(連接框本機與雲端)",
@@ -508,23 +518,25 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(R, "strings.js"), "utf8").replace(/^const /gm, "var ") + "\n" + fs.readFileSync(path.join(R, "i18n.js"), "utf8").replace(/^(const|let) /gm, "var "), ctx);
   vm.runInContext(src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var "), ctx);
-  vm.runInContext(src.slice(src.indexOf("const PAPER = "), src.indexOf("const cxVenuesFor")).replace(/^const /gm, "var ") + "\n" + ["trEl", "trReport", "trVenueId", "trEnvNames", "trPaintSet", "trUnbind", "trTipLabel", "trTwBroker", "trExecKey", "trExecStored", "trExecCurrent", "trExecSection"].map(cutF).join("\n"), ctx);
+  vm.runInContext(src.slice(src.indexOf("const PAPER = "), src.indexOf("const cxVenuesFor")).replace(/^const /gm, "var ") + "\n" + ["trEl", "trReport", "trVenueId", "trEnvNames", "trPaintSet", "trUnbind", "trUbKind", "trUbPositions", "trUbVenue", "trUbSay", "trUbTitle", "trUbMark", "trUbApp", "trPadLatin", "trTidyZh", "trTipLabel", "trTwBroker", "trExecKey", "trExecStored", "trExecCurrent", "trExecSection"].map(cutF).join("\n"), ctx);
   const frag = () => { const f = node("#frag"); f.frag = true; return f; }, textNode = (s) => { const n = node("#text"); n.text = String(s); return n; };
   const tipbs = (root) => flat(root).filter((n) => / tr-tipb\b/.test(" " + n.className));
   // acctOk:true = 已連接、false = 讀帳失敗、null = 還沒讀過(串接中…);bn = Binance 金鑰重查的 state(主行程 binance_link)
   // err = 讀帳失敗時的 error 欄位(字串或統一那種物件);pc = 狀態檔的 president_connect
-  const paint = (venue, env, lang, focusRetest, acctOk = true, bn = null, err = "get_equity: paper ledger unreadable", pc = undefined) => {
+  const paint = (venue, env, lang, focusRetest, acctOk = true, bn = null, err = "get_equity: paper ledger unreadable", pc = undefined, head = "unknown") => {
     const box = node("div"), tab = node("button"), els = { "tr-set": box, "tr-tab-set": tab };
     ctx.document = { createElement: node, createDocumentFragment: frag, createTextNode: textNode, activeElement: null };
     if (focusRetest) { const was = node("button"); was.id = "cx-retest"; box.kids.push(was); ctx.document.activeElement = was; }
     ctx.$ = (id) => els[id] || flat(box).find((n) => n.id === id) || null;
     ctx.trShould = () => true; ctx.trSec = (x) => x; ctx.trVenueLabel = (id) => id; ctx.cxRetest = () => {}; ctx.cxIpChip = () => node("span");
     ctx.planWebUrl = () => ""; ctx.window = { blave: { openExternal() {} } }; ctx.CXF = { bn };
+    ctx.envHeadState = () => head;   // 頁首狀態預設不在這組測資裡:頁首〔重新登入〕那條另由原文斷言
     ctx.TR = { env, cx: { retest: false, err: null }, unbinding: false, cxPend: null, exec: { edit: null, err: null, raw: null }, sending: {},
       st: { alive: true, report: { venues: { [venue]: { credentials: true, pair: true, order: true, account: true } }, account: { venues: acctOk == null ? {} : { [venue]: acctOk ? { ok: true, equity: 1000 } : { ok: false, error: err } } }, president_connect: pc } } };
     vm.runInContext("LANG = " + JSON.stringify(lang) + "; trPaintSet();", ctx);
     const all = flat(box), T = ((tbl) => (k) => tbl[k])(vm.runInContext("STRINGS[LANG]", ctx));   // 當下那一語的表:斷言時 LANG 可能已經換了
-    return { retest: all.some((n) => n.id === "cx-retest"), unbind: all.some((n) => n.id === "tr-unbind"), foots: all.filter((n) => n.className === "pf-foot").map((n) => n.textContent),
+    const pcb = all.find((n) => n.id === "pres-continue");
+    return { retest: all.some((n) => n.id === "cx-retest"), unbind: all.some((n) => n.id === "tr-unbind"), pres: pcb ? pcb.textContent : null, foots: all.filter((n) => n.className === "pf-foot").map((n) => n.textContent),
       errs: all.filter((n) => n.className === "plan-err").map((n) => n.textContent), tipbs: tipbs(box), T, tab, active: ctx.document.activeElement };
   };
   // 10-08 Wei 截圖:設定分頁底部一條孤立的點線——.tr-tipb 的字不見了就只剩點線底線。設定分頁本來就不掛解釋鈕;
@@ -552,10 +564,20 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && !/object Object/.test(e1) && !/串接失敗|president 串接/.test(e1) && errs("binance", "local", "zh", false, false) === "paper ledger unreadable（get_equity）"
       && errs("binance", "local", "zh", false, false, null, "boom") === "boom" && errs("binance", "local", "en", false, false, null, { msg: "boom" }) === "boom"
       && J(trAcctErr(objErr)) === J({ stage: "get_equity", msg: objErr.msg }) && J(trAcctErr({ msg: "x" })) === J({ stage: "—", msg: "x" }) && J(trAcctErr("boom")) === J({ stage: "—", msg: "boom" }) && J(trAcctErr(null)) === J({ stage: "—", msg: "" }));
-    ok("開通過又登入失敗停掉(trPresStopped + LOGIN_FAILED):這一列先講「登入已停止,按「繼續」確認登入」,不出讀帳原文;停掉但不是登入失敗 → 照原文", errs("president", "local", "zh", false, false, null, objErr, stopW) === "登入已停止，按「繼續」確認登入。"
-      && errs("president", "local", "en", false, false, null, objErr, stopW) === "Login stopped. Press Continue to confirm login."
+    ok("開通過又登入失敗停掉(trPresStopped + LOGIN_FAILED):這一列先講「登入已停止,按「重新登入」確認登入」,不出讀帳原文;停掉但不是登入失敗 → 照原文", errs("president", "local", "zh", false, false, null, objErr, stopW) === "登入已停止，按「重新登入」確認登入。"
+      && errs("president", "local", "en", false, false, null, objErr, stopW) === "Login stopped. Press Sign In Again to confirm login."
       && /TIMEOUT/.test(errs("president", "local", "zh", false, false, null, objErr, deadW)) && trPresLoginStopped({ president_connect: stopW }, "president") && !trPresLoginStopped({ president_connect: deadW }, "president")
       && !trPresLoginStopped({ president_connect: { worker: { status: "failed", error: "LOGIN_FAILED:TIMEOUT" } } }, "president"));
+    // 設計複查 v045 S1／S2:登入停了,帳戶列只留〔重新登入〕與〔解除綁定〕(不畫〔重新測試〕);停掉但不是登入失敗照舊〔繼續〕＋〔重新測試〕
+    const zS = paint("president", "local", "zh", false, false, null, objErr, stopW), eS = paint("president", "local", "en", false, false, null, objErr, stopW), zD = paint("president", "local", "zh", false, false, null, objErr, deadW);
+    ok("登入停了:帳戶列〔重新登入〕(zh/en 同頁首那顆)＋〔解除綁定〕,沒有〔重新測試〕;不是登入失敗的停掉照舊〔繼續〕＋〔重新測試〕",
+      zS.pres === "重新登入" && eS.pres === "Sign In Again" && !zS.retest && !eS.retest && zS.unbind && zD.pres === "繼續" && zD.retest && zD.unbind, { zS: [zS.pres, zS.retest], eS: [eS.pres, eS.retest], zD: [zD.pres, zD.retest] });
+    const hS = paint("president", "local", "zh", false, false, null, objErr, stopW, "running");
+    ok("登入停了而頁首已有〔重新登入〕:帳戶列不重複畫,只剩〔解除綁定〕、不講那一句", hS.pres === null && !hS.retest && hS.unbind && hS.errs.length === 0, [hS.pres, hS.retest, hS.errs]);
+    // 稽核 v045 closeout2 B3:worker 還在讀(ok)、只有 STOP 檔(回報的 login_stop)、下單已暫停 → 這一列給〔重新登入〕、狀態詞「登入已停止」、講那一句、不畫重新測試
+    const lsW = { worker: { status: "ok", ok_at: 5, at: 9 }, login_stop: { kind: "TIMEOUT", at: 20 } };
+    const bP = paint("president", "local", "zh", false, true, null, undefined, lsW);
+    ok("只有 STOP 檔、已暫停(B'):帳戶列有〔重新登入〕與「登入已停止」那一句,沒有重新測試", bP.pres === "重新登入" && !bP.retest && bP.unbind && bP.errs.join("") === "登入已停止，按「重新登入」確認登入。", [bP.pres, bP.retest, bP.errs]);
     delete ctx.presWip; }
   const cases = [];
   ["zh", "en"].forEach((lang) => ["local", "cloud"].forEach((env) => ["paper", "binance"].forEach((venue) => cases.push({ lang, env, venue, r: paint(venue, env, lang) }))));
@@ -586,17 +608,89 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     vm.runInContext(src.slice(src.indexOf("const PAPER = "), src.indexOf("const cxVenuesFor")).replace(/^const /gm, "var ") + "\n" + cutF("trVenueLabel") + "\n" + src.match(/const envVenueText = [^\n]*/)[0].replace(/^const /, "var "), c2);
     ok("記號的字:模擬 → 「模擬」;Binance / OKX / Gate.io 照表;表外 id 首字大寫;沒連 → 空(不再有「真錢」)",
       vm.runInContext('[envVenueText("paper", "paper"), envVenueText("real", "binance"), envVenueText("real", "okx"), envVenueText("real", "gateio"), envVenueText("real", "kraken"), envVenueText(null, null)].join("|")', c2) === "模擬|Binance|OKX|Gate.io|Kraken|"); }
-  // 按「解除綁定」跳出的確認框:模擬帳戶講下單設定清空 + 再綁從頭開始,不講金鑰;真實交易所照舊
-  const warn = (venue, env, lang) => { let box = null; ctx.confirmBox = (o) => { box = o; }; ctx.trCloudBox = (o) => o;
-    paint(venue, env, lang); vm.runInContext("trUnbind(null)", ctx); return { line: box && box.lines[0], tbl: vm.runInContext("STRINGS[LANG]", ctx) }; };
+  /* 按「解除綁定」跳出的確認框(spec unbind-positions A 版):沒部位只給一句後果＋解除綁定;有部位三顆鈕(取消｜平倉並解除 紅字次鈕｜
+     保留部位並解除 主鈕);台指期休市、這台平不了(close_unbind_manual)、舊 runtime(沒有 can_close_unbind)不給平倉鈕 */
+  const warn = (venue, env, lang, extra) => { let box = null; ctx.confirmBox = (o) => { box = o; }; ctx.trCloudBox = (o) => o; ctx.trIsPaper = () => venue === "paper";
+    ctx.trUbRowsEl = (rows) => ({ rows }); ctx.trRelTime = () => "11/06 08:45"; ctx.TR_STALE_MS = 600000; ctx.trMs = (x) => x * 1000;
+    ["presWip", "trPresStopped", "trPresLoginStopped", "trPresLoginHeld", "trCapWip", "trCaplStopped"].forEach((f) => { if (typeof ctx[f] !== "function") ctx[f] = () => false; });
+    paint(venue, env, lang);
+    const r = ctx.TR.st.report; r.account.read_at = Date.now() / 1000; r.account.venues[venue] = { ok: true, equity: 1000, positions: {} };
+    if (extra) extra(r);
+    vm.runInContext("trUnbind(null)", ctx); return { box, line: box && box.lines[0], tbl: vm.runInContext("STRINGS[LANG]", ctx) }; };
   const wcases = []; ["zh", "en"].forEach((lang) => ["local", "cloud"].forEach((env) => ["paper", "binance"].forEach((venue) => wcases.push({ lang, env, venue, w: warn(venue, env, lang) }))));
-  const wKey = (c) => c.venue === "paper" ? "tr.unbindWarnPaper" : c.env === "cloud" ? "tr.cloud.unbindWarn" : "tr.unbindWarn";
-  const b3 = wcases.filter((c) => !c.w.tbl[wKey(c)] || c.w.line !== c.w.tbl[wKey(c)]).map((c) => c.lang + "/" + c.env + "/" + c.venue);
-  // 設計稽核 desktop-10-08 #6:這台電腦那句改成兩家(交易所 / 統一)都成立的中性句——「登入資料」,不講「交易所金鑰」(統一存的是帳號、交易密碼與憑證設定)
-  ok("解除綁定確認框:模擬帳戶用自己那句(策略組合與金額保留、再綁時權益重新開始、不寫死初始金額、不提金鑰),這台電腦講「登入資料」不講金鑰,雲端照舊金鑰那句" + (b3.length ? " ✗ " + b3 : ""), b3.length === 0
+  const wKey = (c) => c.venue === "paper" ? "tr.unbindWarnPaper" : c.env === "cloud" ? "tr.ub.x0Cloud" : "tr.ub.x0";
+  const b3 = wcases.filter((c) => !c.w.tbl[wKey(c)] || c.w.line !== c.w.tbl[wKey(c)] || c.w.box.alt).map((c) => c.lang + "/" + c.env + "/" + c.venue);
+  // 設計稽核 desktop-10-08 #6:這台電腦那句講「登入資料」不講金鑰;沒部位時不寫「部位沒人管」(spec §2:沒部位那句是假警報)
+  ok("解除綁定確認框(沒部位):模擬帳戶用自己那句;本機講「這台電腦」、雲端講「主機」,都講登入資料、不講沒人管,只有一顆解除綁定" + (b3.length ? " ✗ " + b3 : ""), b3.length === 0
     && wcases.filter((c) => c.venue === "paper").every((c) => /重新開始|start over/.test(c.w.line) && !/100,000/.test(c.w.line) && !/金鑰|keys/.test(c.w.line))
-    && wcases.filter((c) => c.venue !== "paper" && c.env === "local").every((c) => /登入資料|login details/.test(c.w.line) && !/金鑰|keys|交易所/.test(c.w.line))
-    && wcases.filter((c) => c.venue !== "paper" && c.env === "cloud").every((c) => /金鑰|keys/.test(c.w.line))); }
+    && wcases.filter((c) => c.venue !== "paper").every((c) => /登入資料|Login details/.test(c.w.line) && !/沒人管|unmanaged/.test(c.w.line))
+    && wcases.filter((c) => c.venue !== "paper" && c.env === "cloud").every((c) => /主機|server/.test(c.w.line)));
+  const pos = (r, id) => { r.account.venues[id].positions = { BTCUSDT: { side: "long", size: 0.01, mark_price: 100000 } }; };
+  const ask = warn("binance", "local", "zh", (r) => { r.can_close_unbind = true; pos(r, "binance"); });
+  ok("有部位、開盤中、機器有這個指令:三顆鈕——主鈕保留部位並解除、紅字次鈕平倉並解除;標題帶部位數;內文兩句各講一條路",
+    ask.box.ok === ask.tbl["tr.ub.keepGo"] && ask.box.alt && ask.box.alt.danger === true && ask.box.alt.label === ask.tbl["tr.ub.closeGo"]
+    && ask.box.title === ask.tbl["tr.ub.askTitle1"] && ask.box.lines.length === 2 && /平倉並解除/.test(ask.box.lines[0]) && /保留部位並解除/.test(ask.box.lines[1]));
+  const old = warn("binance", "local", "zh", (r) => { pos(r, "binance"); });
+  ok("舊 runtime(沒有 can_close_unbind):不給平倉鈕,只留保留部位並解除", !old.box.alt && old.box.ok === old.tbl["tr.ub.keepGo"]);
+  const closed = warn("president", "local", "zh", (r) => { r.can_close_unbind = true; r.txf_session = { open: false, next_open: 1794789905 }; pos(r, "president"); });
+  ok("統一、台指期休市:不給平倉鈕,標題「沒人管」,寫開盤時間、開盤後再來或到 app 自己平",
+    !closed.box.alt && closed.box.title === closed.tbl["tr.ub.closedTitle1"] && /11\/06 08:45/.test(closed.box.lines[0]) && /app/.test(closed.box.lines[1]));
+  const crypt = warn("binance", "local", "zh", (r) => { r.can_close_unbind = true; r.txf_session = { open: false, next_open: 1 }; pos(r, "binance"); });
+  ok("加密不受台指期休市影響:照樣給平倉鈕", !!(crypt.box.alt && crypt.box.alt.danger));
+  const man = warn("capital", "cloud", "zh", (r) => { r.can_close_unbind = true; r.close_unbind_manual = ["capital"]; pos(r, "capital"); });
+  ok("雲端群益平不了(close_unbind_manual):不給平倉鈕,寫明要到群益 app 自己平", !man.box.alt && man.box.lines[0] === man.tbl["tr.ub.cantClose"]);
+  const unread = warn("binance", "local", "zh", (r) => { r.can_close_unbind = true; r.account.venues.binance = { ok: false, error: "x" }; });
+  ok("讀不到部位:不當成沒部位,走「可能有」那一組(標題 askTitleN、第一句 unreadN),照樣給平倉鈕",
+    unread.box.title === unread.tbl["tr.ub.askTitleN"] && unread.box.lines[0] === unread.tbl["tr.ub.unreadN"] && !!unread.box.alt); }
+// 平倉後解除(close_then_unbind)的過場:機器回報驅動,不是畫面自己推進(spec §5:中途關頁也照樣做完)
+{ const vm = require("vm");
+  const cut = (n) => { const i = src.indexOf("function " + n + "("); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(i, k + 1); } throw new Error("no " + n); };
+  const c = { Date, Math, Set, Array, String, Number, Object };
+  vm.createContext(c);
+  vm.runInContext(src.match(/const TR_UB_ACK_GRACE_MS = [^\n]*/)[0].replace(/^const /, "var ") + "\n" + cut("trUbMarker") + "\n" + cut("trUbState"), c);
+  const S = (env, sentAgo, ackAgo) => ({ env, ub: { id: "binance", rid: "ub1", sentAt: Date.now() - sentAgo, ackAt: ackAgo == null ? null : Date.now() - ackAgo } });
+  const bound = { venues: { binance: { credentials: true } } };
+  const st = (s, r) => c.trUbState(s, r);
+  ok("過場:機器還在等(held:false)→ 平倉中;held → 平倉失敗;那一家不見了 → 解除完成;別的 request_id 不算",
+    st(S("local", 1000, 500), Object.assign({ unbind_after_close: { request_id: "ub1", venues: ["binance"], held: false } }, bound)) === "run"
+    && st(S("local", 1000, 500), Object.assign({ unbind_after_close: { request_id: "ub1", venues: ["binance"], held: true, why: "unclosed" } }, bound)) === "fail"
+    && st(S("local", 1000, 500), Object.assign({ unbind_after_close: { request_id: "other", venues: ["okx"], held: true } }, bound)) === "run"
+    && st(S("local", 1000, 500), { venues: {} }) === "done");
+  { const s1 = S("local", 1000, 500), r1 = Object.assign({ unbind_after_close: { request_id: "fromWeb", venues: ["binance"], held: true, why: "unconfirmed" },
+      last_flatten: { request_id: "fromWeb", unconfirmed: ["TXF"] } }, bound);
+    ok("這一家的等待紀錄不比 request_id(重開前、另一個表面發起的也是它):接上那一筆的狀態與結果(設計稽核 M1)",
+      st(s1, r1) === "fail" && s1.ub.rid === "fromWeb" && s1.ub.lf === r1.last_flatten); }
+  const tick = cut("trUbTick"), ubSrc = cut("trUbShow"), unb = cut("trUnbind"), mk = cut("trUbMark");
+  ok("重開 app／重載:記憶體沒有這一筆但回報有這一家的等待紀錄 → 從回報接回 ④ 或 ⑤(清單退回現有部位)",
+    /if \(!S\.ub\) \{[\s\S]*trUbMarker\(r, id\)[\s\S]*state: m\.held \? "fail" : "run"/.test(tick));
+  ok("②→④ 不閃:平倉並解除與重新平倉的次鈕都 stay(原地換內容);confirmBox 的 alt.stay 不關框",
+    /alt: \{ label: t\("tr\.ub\.closeGo"\), danger: true, stay: true/.test(unb) && /alt: \{ label: t\("tr\.ub\.retryGo"\), danger: true, stay: true/.test(ubSrc)
+    && /if \(delCtx && delCtx\.altStay\) \{ if \(go\) go\(\); return; \}/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.js"), "utf8")));
+  ok("④ 焦點在「平倉中…」;④⑤ 關框後焦點回頁面上的〔解除綁定〕(關框那一刻才找那顆鈕)",
+    /focus: "del-ok"/.test(ubSrc) && (ubSrc.match(/opener: TR_UB_OPENER/g) || []).length === 2 && /const b = \$\("tr-unbind"\) \|\| \$\("tr-tab-set"\)/.test(src));
+  ok("④ 平倉中:〔啟動下單〕與〔解除暫停〕都停用、title 講原因(機器端也拒整機 resume;稽核 closeout3 S2)",
+    /if \(ubRun\) b\.disabled = true;/.test(src) && /up = !ubRun && \(/.test(cut("trPaintGoRel"))
+    && /ubRun \? t\("tr\.ub\.runLine"\)/.test(cut("trPaintGoRel")));
+  ok("每一態都帶帳戶記號(真錢／模擬)、標題換行不截;① 也走它",
+    /o\.mark = t\(paper \? "tr\.mode\.paper" : "tr\.mode\.real"\)/.test(mk) && /o\.wrapTitle = true/.test(mk) && /confirmBox\(trUbMark\(\{ title: t\("tr\.unbind"\)/.test(unb));
+  ok("送出去夠久了機器沒有這一筆、金鑰還在 → 不一直轉圈,當平倉失敗;雲端回報慢,等得比本機久",
+    st(S("local", 60000, 30000), bound) === "fail" && st(S("cloud", 60000, 30000), bound) === "run" && st(S("cloud", 200000, 120000), bound) === "fail");
+  const sh = cut("trUbShow");
+  ok("平倉失敗那一態:有未確認的單時「重新平倉並解除」停用並指到原因句(群益自動新平倉會反手);主鈕仍是保留部位並解除",
+    /disabled: hasUnconf, why: hasUnconf \? "ub-unconf" : null/.test(sh) && /ok: t\("tr\.ub\.keepGo"\), onOk: \(\) => trUbKeep\(S, u\.id\)/.test(sh));
+  ok("平倉失敗的標題只數沒成交的(只有未確認時用不帶數字的 failTitleN);「回覆」那行只放 last_flatten.reply(券商真的回的話),不放我們自己的 msg",
+    /const n = unclosed\.size - \(unclosed\.has\("\*"\) \? 1 : 0\)/.test(sh) && /title: n > 0 \? trUbTitle\("tr\.ub\.failTitle", n\) : t\("tr\.ub\.failTitleN"\)/.test(sh)
+    && /if \(lf\.reply\) lines\.push/.test(sh) && !/lf\.msg/.test(sh));
+  const mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+  const mc = {}; vm.createContext(mc);
+  vm.runInContext("var _forgetWhenGone = {};\n" + (() => { const i = mainSrc2.indexOf("function forgetWhenGone("); let d = 0; for (let k = mainSrc2.indexOf("{", i); ; k++) { if (mainSrc2[k] === "{") d++; else if (mainSrc2[k] === "}" && --d === 0) return mainSrc2.slice(i, k + 1); } })(), mc);
+  let forgot = 0; mc._forgetWhenGone.president = () => { forgot++; };
+  mc.forgetWhenGone({ venues: { president: { credentials: true } } });
+  const keptWhileBound = forgot === 0;
+  mc.forgetWhenGone({ venues: {} });
+  ok("統一／群益本機平倉後解除:回報裡那一家還在就不丟存的帳密;不見了才丟,而且只丟一次",
+    keptWhileBound && forgot === 1 && (mc.forgetWhenGone({ venues: {} }), forgot === 1)
+    && /if \(o && o\.close === true\) return unbindAfterClose\("president"/.test(mainSrc2) && /if \(o && o\.close === true\) return unbindAfterClose\("capital"/.test(mainSrc2)); }
 (async () => {
   const c0 = src.indexOf("async function trRun("), c1 = src.indexOf("\nfunction trPaintHead()");
   if (c0 < 0 || c1 < 0) throw new Error("找不到 trRun");
@@ -1245,7 +1339,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     // v4 §7 驗收:「立即更新到最新版本」那顆鈕已經不在,全 app 可見字串(兩語 .po、產出的 strings.js、renderer 與主行程的 js)都不能再叫人去按它
     const SH = path.join(__dirname, "..", "shell"), shellSrc = [po("zh"), po("en")].concat(["renderer", "."].flatMap((d) => fs.readdirSync(path.join(SH, d)).filter((f) => /\.(js|html)$/.test(f)).map((f) => fs.readFileSync(path.join(SH, d, f), "utf8")))).join("\n");
     ok("全 app 不再出現「立即更新到最新版本」/ Update to the latest version now(兩語);三句改講「更新雲端主機」(0.1.15:檢查更新不再碰雲端)", !/立即更新到最新版本|Update to the latest version now/i.test(shellSrc)
-      && ["tr.cloud.restartUnconfirmed", "tr.ov.evRestartStopFailedNote", "tr.cloud.haltReasonUnconfirmed"].every((k) => /「更新雲端主機」/.test(get("zh", k)) && !/檢查更新/.test(get("zh", k)) && /Update cloud machine/.test(get("en", k)) && !/Check for updates/.test(get("en", k)))
+      && ["tr.cloud.restartUnconfirmed", "tr.ov.evRestartStopFailedNote", "tr.cloud.haltReasonUnconfirmed"].every((k) => /「更新雲端主機」/.test(get("zh", k)) && !/檢查更新/.test(get("zh", k)) && /Update Cloud Machine/.test(get("en", k)) && !/Check for updates/.test(get("en", k)))
       ); }
   { // 重開停著、策略還沒用開機後的資料算完(stopped.recomputed === false):鎖「補齊部位」,「等新訊號」照給
     const SR = (o) => ({ reconciler: { stopped: { reason: "machine_restart", at: 1, ...o } } });
@@ -2380,7 +2474,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       $: (id) => (id === "tr-hist" ? hist : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "zh", CX_VENUES: {}, PAPER: "paper", trShould: () => true, trUnit: () => "TWD", trSetTab: (tab, focus) => { ctx.tabbed = [tab, focus]; } });
     vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "\n" + src.slice(src.indexOf("const TR_EV_P1 = ["), src.indexOf("function trOvEvents(")).replace(/^const /gm, "var ")
       + src.match(/^let trHistTipEl = [^\n]*/m)[0].replace(/^let /, "var ") + "\n"
-      + ["trEl", "trSec", "trFmt", "trFmtPrice", "trStamp", "trHM", "trReport", "trDisplay", "trStratName", "trVenueLabel", "trTxfSymInto", "trOrderContract", "trWithUnit", "trPosKey", "trPosFocusOf", "trHistTipBox", "trHistTipShow", "trHistTipHide", "trHistTipBtn", "trPaintHist", "trTwNamesWant", "trTwName", "trTwNameEl", "trOvFills", "trOvEvents"].map(cutF).join("\n"), ctx);
+      + ["trEl", "trSec", "trFmt", "trFmtPrice", "trStamp", "trHM", "trReport", "trDisplay", "trStratName", "trVenueLabel", "trTxfSymInto", "trOrderContract", "trOrderLotsQty", "trWithUnit", "trPosKey", "trPosFocusOf", "trHistTipBox", "trHistTipShow", "trHistTipHide", "trHistTipBtn", "trPaintHist", "trTwNamesWant", "trTwName", "trTwNameEl", "trOvFills", "trOvEvents"].map(cutF).join("\n"), ctx);
     const now = Math.floor(Date.now() / 1000);
     const CAP = { ts: now - 60, action: "BUY", symbol: "TX2610", exchange: "capital", signed_diff: 2, legs: [{ executed_qty: 2, fill_price: 23000 }] };
     const CAP_SPEC = { ts: now - 50, action: "SELL", symbol: "TMF", exchange: "paper", asset_spec: { type: "futures_contracts", contract_value: 10 }, signed_diff: -3, legs: [] };
@@ -2480,6 +2574,15 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const syms = paintHist([REAL, OLD]).filter((n) => n.tag === "span" && n.kids.some((k) => k && k.className === "mkt-tag")).map((n) => n.textContent);
       ok("#14 真資料:symbol TXF + legs[].resolved_symbol TX2610 → 下單紀錄寫「大台（TX2610）」;舊列沒有 resolved_symbol 只寫商品名(總覽事件自 0.1.20 不列成交)",
         syms.includes("tr.txfProd.txf（TX2610）tr.mkt.fut") && syms.includes("tr.txfProd.txftr.mkt.fut"), J(syms)); }
+    { // 沒成交的單(統一 11-04):整筆 signed_diff −6 是平倉上限前的差額,實際送出 1 口、合約 TXFK6——寫送單時的合約與口數
+      const NONE = { ts: now - 20, action: "SELL", symbol: "TXF", exchange: "president", asset_spec: { type: "futures_contracts", contract_value: 200 },
+        signed_diff: -6, fill_state: "unfilled", legs: [{ signed_diff: 0, reduce_only: true, executed_qty: 0, fill_price: 0, sent_qty: 1, sent_symbol: "TXFK6" }] };
+      const OLD = { ...NONE, ts: now - 10, legs: [{ signed_diff: 0, executed_qty: 0, fill_price: 0 }] };
+      const rows = paintHist([NONE, OLD]).filter((n) => /^pf-log-row/.test(n.className)), [old, none] = rows;
+      const amt = (r) => r.kids.find((k) => k && k.className === "amt mono").textContent;
+      ok("未成交的單:寫送單時的合約「大台（TXFK6）」與實際送出 1 口(不是整筆差額 6 口);舊列沒有 sent_* 照舊",
+        /tr\.txfProd\.txf（TXFK6）/.test(none.textContent) && amt(none) === "1tr.lotUnit"
+        && !/TXFK6/.test(old.textContent) && amt(old) === "6tr.lotsUnit", J([none.textContent, old.textContent])); }
     { // 送出後沒回報成交(runtime pair_unconfirmed_orders 配好的 fill_state);設計稽核 order-history-fill-state-2026-10-28 §4
       const base = { action: "BUY", symbol: "TMF", exchange: "capital", asset_spec: { type: "futures_contracts", contract_value: 10 }, signed_diff: 1 };
       const UNC = { ...base, ts: now - 40, fill_state: "unconfirmed", legs: [{ executed_qty: 0, fill_price: 0 }] };
@@ -2707,9 +2810,32 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && L(q("blave", "not_enabled")).why === "tr.quote.why.notEnabled" && L(q("blave", "no_file")).why === "tr.quote.why.noFile"
       && L(q("blave", "empty")).why === "tr.quote.why.noFile" && L(q("blave", "weird")).why === "tr.quote.why.noFile"
       && J(L(q("blave", "paused", "failed"))) === J({ key: "tr.quote.pres", why: null, fallback: false }));   // 市場沒開不是退路(worker 狀態也不看)
-    ok("行情句:退路時 worker 沒登入(president_connect.worker.status ≠ ok)先講「統一還沒登入」;統一正常句不看它",
-      L(q("blave", "stale", "failed")).why === "tr.quote.why.noLogin" && L(q("blave", "no_file", "idle")).why === "tr.quote.why.noLogin"
-      && L(q("president", null, "failed")).key === "tr.quote.pres" && L({ twfutures_live_source: { source: "blave", reason: "stale" } }).why === "tr.quote.why.stale");
+    { const lf = (extra) => ({ twfutures_live_source: { source: "blave", reason: "stale" }, president_connect: { worker: { status: "failed", error: "LOGIN_FAILED:TIMEOUT", ok_at: 1 }, ...extra } });
+      const other = (st, err) => ({ twfutures_live_source: { source: "blave", reason: "stale" }, president_connect: { worker: { status: st, error: err, ok_at: 1 } } });
+      ok("行情句:noLogin 只在真的登入失敗(LOGIN_FAILED 或回報帶 login_stop);剛啟動、沒寫出快照照 reason 講;統一正常句不看它",
+        L(lf()).why === "tr.quote.why.noLogin" && L(other("ok", null)).why === "tr.quote.why.stale" && L({ ...other("ok", null), president_connect: { worker: { status: "ok", ok_at: 1 }, login_stop: { kind: "TIMEOUT", at: 1 } } }).why === "tr.quote.why.noLogin"
+        && L(other("running")).why === "tr.quote.why.stale" && L(other("failed", "WORKER_FAILED")).why === "tr.quote.why.stale" && L(other("idle")).why === "tr.quote.why.stale"
+        && L(q("blave", "no_file", "idle")).why === "tr.quote.why.noFile" && L(q("president", null, "failed")).key === "tr.quote.pres"
+        && L({ twfutures_live_source: { source: "blave", reason: "stale" } }).why === "tr.quote.why.stale"); }
+    { const BOUND = { credentials: true, pair: true, order: true, account: true }, R = (pc) => ({ venues: { president: BOUND }, president_connect: pc });
+      const STR = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "\nreturn STRINGS;")();
+      const mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+      const stopped = R({ worker: { status: "failed", error: "LOGIN_FAILED:TIMEOUT", ok_at: 1, at: 2 } }), cloud = R({ worker: { status: "ok", ok_at: 1 }, login_stop: { kind: "TIMEOUT", at: 3 } });
+      ok("統一登入停了、對帳程式活著:trPresHeldRun 只認 running;本機看 worker,雲端看 login_stop;開通中、別家、沒寫出快照都不算",
+        trPresHeldRun("running", stopped) && trPresHeldRun("running", cloud) && !trPresHeldRun("halted", stopped) && !trPresHeldRun("dead", stopped)
+        && !trPresHeldRun("running", R({ worker: { status: "failed", error: "WORKER_FAILED", ok_at: 1 } })) && !trPresHeldRun("running", R({ worker: { status: "failed", error: "LOGIN_FAILED:TIMEOUT" } }))
+        && !trPresHeldRun("running", { venues: { okx: BOUND }, president_connect: { worker: { status: "failed", error: "LOGIN_FAILED:X", ok_at: 1 } } }) && !trPresHeldRun("running", R({ worker: { status: "ok", ok_at: 1 } })));
+      ok("統一跟模擬同綁(第一家是 paper):照樣認得登入停止,〔繼續〕開統一的框",
+        trPresHeldRun("running", { venues: { paper: BOUND, president: BOUND }, president_connect: { worker: { status: "failed", error: "LOGIN_FAILED:TIMEOUT", ok_at: 1 } } })
+        && /CXF\.bound && venue === "president" && env === "local" && trPresLoginHeld\(st && st\.report, "president"\)\) CXF\.venue = venue/.test(src));
+      const H = src.slice(src.indexOf("function trStateText(state)"), src.indexOf("function trHeadText"));
+      ok("狀態行與頂列:這一態不寫「執行中」,本機雲端各一句,字都講單送不出去;暫停鈕照舊、〔繼續〕插在它左邊用開通框",
+        /trPresHeldRun\(state, r\)\) return t\(TR\.env === "cloud" \? "tr\.presStoppedCloud" : "tr\.presStopped"\)/.test(H) && /trPresHeldRun\(state, r\)\) return t\("tr\.s\.presStopped"\)/.test(src)
+        && /送不出去/.test(STR.zh["tr.presStopped"]) && /can't go out/.test(STR.en["tr.presStopped"]) && !/執行中/.test(STR.zh["tr.presStopped"])
+        && /act\.insertBefore\(go, b\)/.test(src) && /trackFeature\("pres_stop_cont"\); cxModalOpen\(go, go\.dataset\.venue\)/.test(src));
+      ok("venue_login_blocked:P1 紅字、事件列有字;別家不畫;本機 P1 通知會叫",
+        trEvLevel("venue_login_blocked", {}) === 1 && trEventText("venue_login_blocked", { venue: "president", reason: "TIMEOUT" })[2] === 1 && trEventText("venue_login_blocked", { venue: "x" }) === null
+        && /const P1_TYPES = \[[^\]]*"venue_login_blocked"[^\]]*\]/.test(mainSrc2) && /ev_venue_login_blocked: t\("tr\.ov\.evPresStopped"\)/.test(src)); }
     ok("行情句:雲端視角、別家、沒有那一欄、沒有台指期口數、狀態不在跑 / 過場中都不出;已暫停、沒停住照出",
       L(q("president", null), "cloud") === null && L(q("president", null), "local", "capital") === null && L({ venues: {} }) === null && L(null) === null
       && L(q("president", null), "local", "president", "running", false) === null

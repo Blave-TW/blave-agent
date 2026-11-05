@@ -102,6 +102,14 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     t("§5.2 換版失敗:同一版不再排(failed === version);出了更新一版才又可以", go({ failed: "0.1.36" }).go === false && go({ failed: "0.1.36", version: "0.1.37" }).go === true);
     t("§5.2 已暫存的版號讀不到 → 不重開(不寫不出的目標版號)", go({ version: null }).go === false && go({ version: "" }).go === false);
     t("§5.2 在下單的人永遠不會被自動重開:trading 一真,其他怎樣都不動", [{}, { idleSec: 1e9 }, { reports: { running: false, next_due_at: null } }].every((x) => go({ ...x, trading: true }).go === false));
+    // 真的 tradeMaybeLive(main.js)接真的 schedPlan:對帳器崩潰重生的空窗(wanted)與讀不到,都不准自動裝(重開後對帳器不會自己起來)
+    { const ml = new Function("tradeLive", "lastVenue", "_tradeHost", cut(src, "function tradeMaybeLive(") + "\nreturn tradeMaybeLive;")(() => null, "binance", null);
+      const up = (reconciler, extra) => ({ running: true, alive: true, report: { venues: {}, halt: { halted: false }, ...(reconciler === undefined ? {} : { daemon: { reconciler } }), ...extra } });
+      const ROWS = [["對帳器在跑", up({ running: true, wanted: true }), true], ["崩潰重生的空窗 wanted", up({ running: false, wanted: true }), true], ["報告沒有 daemon 區塊", up(undefined), true], ["區塊裡沒有 running", up({ wanted: false }), true],
+        ["daemon 在跑、報告讀不到", { running: true, alive: false, report: null }, true], ["監督者明說沒在跑、沒被要求", up({ running: false, wanted: false }), false], ["同上、舊版沒有 wanted 欄位", up({ running: false }), false],
+        ["人按了暫停", up({ running: false, wanted: true }, { halt: { halted: true } }), false], ["常駐程式不在", { running: false, alive: false, report: null }, false], ["沒有宿主", null, false]];
+      const bad = ROWS.filter(([, st, want]) => !!ml(st) !== want || (go({ trading: !!ml(st) }).why === "trading") !== want).map((r) => r[0]);
+      t("§5.2 自動裝的「下單中」列舉 " + ROWS.length + " 種狀態:wanted 與讀不到都算,不裝;只有明說沒在跑才可以", bad.length === 0, bad); }
     // 防無限重開:啟動時對版號
     t("§5.2 啟動時目前版號追上目標(或超過):刪記號、不送失敗", JSON.stringify(schedBoot({ current: "0.1.36", target: "0.1.36", failed: null })) === '{"target":null,"failed":null,"report":false}'
       && JSON.stringify(schedBoot({ current: "0.1.37", target: "0.1.36", failed: null })) === '{"target":null,"failed":null,"report":false}');
@@ -114,7 +122,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     const rig = (o) => {
       const log = [], prefs = {};
       const at6 = new Date(2026, 9, 29, 6, 5).getTime();
-      const ctx = { _schedRunning: false, draftOk: false, quitAsking: false, moveAsking: false, restarting: null, quitConfirmed: false, quitting: false, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: null, turnStarting: false, _engineRun: null,
+      const ctx = { _schedRunning: false, draftOk: false, quitAsking: false, moveAsking: false, restarting: null, setRestarting: (v) => { ctx.restarting = v; }, installWatch: () => {}, bgEligible: () => !!o.bg, bgAuto: false, lastTurnAt: 0, quitConfirmed: false, quitting: false, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: null, turnStarting: false, _engineRun: null,
         updater: () => ({ state: () => { log.push("collect"); return { phase: o.phase || "ready", version: "0.1.36" }; }, install: () => { log.push("install"); return o.installRes || { ok: true }; } }),
         _tradeHost: o.noHost ? null : { status: () => ({ running: o.daemonRunning !== false, alive: o.alive !== false, lockRetry: o.lockRetry || null,
           report: { daemon: { pid: 4242, ...(o.flattening !== undefined ? { flattening: o.flattening } : {}), ...(o.optimizing !== undefined ? { optimizing: o.optimizing } : {}), ...(o.reports === "absent" ? {} : { reports: o.reports === undefined ? { running: false, next_due_at: null } : o.reports }) }, ...(o.manager ? { manager: o.manager } : {}), ...(o.halt ? { halt: o.halt } : {}) } }) },
@@ -191,7 +199,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       && (await paRig(W(() => { throw new Error("destroyed"); }))("x")) === null);
     t("每分鐘一次、只在 06:00–06:30 判(schedupdate.inWindow);第二份 app 不排;啟動時先對版號(updSchedBoot)", /if \(app\.hasSingleInstanceLock\(\)\) startStep\("update schedule", \(\) => \{\n    updSchedBoot\(\);\n    const t = setInterval\(\(\) => \{ scheduledInstall\(\)\.catch\(/.test(src) && /\}, 60000\);/.test(src)
       && /getHours\(\) === WINDOW_HOUR && d\.getMinutes\(\) < WINDOW_MIN/.test(fs.readFileSync(path.join(SHELL, "schedupdate.js"), "utf8")));
-    t("updSchedBoot:沒追上就送 update_failed stage=install(主行程送,經 schedBoot)", /if \(b\.report\) \{ try \{ tm\(\)\.track\("update_failed", \{ stage: "install" \}\); \}/.test(cut(src, "function updSchedBoot(")));
+    t("updSchedBoot:沒追上就送 update_failed stage=install(主行程送,經 schedBoot)", /if \(b\.report \|\| m\.report\) \{ try \{ tm\(\)\.track\("update_failed", \{ stage: "install" \}\); \}/.test(cut(src, "function updSchedBoot(")));
     t("預設開、存 ui-prefs autoUpdate(缺 = 開,舊版升上來也是開)", /autoUpdate !== false; \} catch \(_\) \{ return true; \}/.test(src) && /handle\("update-auto-set", \(_e, on\) => updAutoSet\(on === true\), null\);/.test(src));
     t("條件 10 讀的是 runtime 寫的 daemon.reports(runtime/local_daemon.py write_status),daemon 在跑時心跳不新鮮就不信", /return host\.alive && host\.report && host\.report\.daemon \? host\.report\.daemon\.reports : undefined;/.test(cut(src, "function updSchedReports(")) && /reports: updSchedReports\(host\), \.\.\.updSchedJobs\(host, now\) \}/.test(SCHED) && /reports: updSchedReports\(host2\), \.\.\.updSchedJobs\(host2, now2\)/.test(SCHED)
       && /doc\["daemon"\]\["reports"\] = self\.cl\.report_activity\(\)/.test(fs.readFileSync(path.join(SHELL, "..", "runtime", "local_daemon.py"), "utf8"))); }
@@ -203,7 +211,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       const log = [], win = o && o.noWin ? null : mkWin("file:///app/index.html");
       const ctx = { _upAsk: null, _upAskSeq: 0, quitAsking: false, UP_ASK_PICKUP_MS: (o && o.pickupMs) || 200, UP_ASK_HOLD_MS: 60000, showMain: () => log.push("showMain"), draftMainWin: () => win, setTimeout, clearTimeout, Promise,
         // before-quit 用的(同 check_shell_update_restart.js 的 quitRig)
-        restarting: null, quitting: false, quitConfirmed: false, draftOk: false, draftNote: false, draftNoted: (d) => d, moveAsking: false, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: null, turnStarting: false,
+        restarting: null, setRestarting: (v) => { ctx.restarting = v; }, noteManualTarget: () => {}, installWatch: () => {}, quitting: false, quitConfirmed: false, draftOk: false, draftNote: false, draftNoted: (d) => d, moveAsking: false, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: null, turnStarting: false,
         draftDirty: () => { log.push("draftDirty"); return new Promise(() => {}); }, tradeMaybeLive: () => null, twLots: () => ({ held: false }), _tradeHost: null, _engineSetup: null, engineAbort: () => Promise.resolve(),
         app: { on: (ev, fn) => { ctx.handler = fn; }, quit: () => { log.push("app.quit"); } }, console: { error: () => {} } };
       const updAsk = new Function("ctx", "with (ctx) { " + UA + "\n return updAsk; }")(ctx);
@@ -385,7 +393,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     // ::before 錨在 padding box:1px 透明框不算,所以是 視覺 − 2 + 2×inset
     t("M1 膠囊熱區:視覺高 32 − 框 2 + ::before 上下各 " + -pi[0] + " = " + (30 - 2 * pi[0]) + " ≥ 44", /height: 32px;/.test(pill) && /border: 1px solid transparent;/.test(pill) && 30 - 2 * pi[0] >= 44);
     t("M2 細軌圓鈕:28 正圓、flex:none(不被 .side-rail 擠扁)、max-width:none(不被 .up-pill 的 max-width:100% 卡成 27)、不裁切;熱區 28 − 框 2 + 2×" + -ri[0] + " = " + (26 - 2 * ri[0]) + " ≥ 44", /flex: none;/.test(rail) && /max-width: none;/.test(rail) && /max-width: 100%;/.test(pill) && /width: 28px; height: 28px;/.test(rail) && !/overflow/.test(rail) && 26 - 2 * ri[0] >= 44 && ri.length === 1);
-    t("S3 拿掉圖示時左右內距一致(12)", /^\.up-pill\.no-ic \{ padding-left: var\(--space-12\); \}/m.test(css) && /padding: 0 var\(--space-12\) 0 var\(--space-8\)/.test(pill));
+    t("S3 內距加框 1 = 左 12 右 14(圖示欄對齊〔設定〕);拿掉圖示時左右一致", /^\.up-pill\.no-ic \{ padding-left: 13px; \}/m.test(css) && /padding: 0 13px 0 11px/.test(pill));
     t("S4 停用:底、字、框照 .btn-fill:disabled(surface-muted／ink-3／greyMedium)", /\.up-pill:disabled, \.up-pill\[aria-disabled="true"\] \{ background: var\(--surface-muted\); border-color: var\(--color-greyMedium\); color: var\(--ink-3\);/.test(css)
       && /\.btn-fill:disabled[^{]*\{ background: var\(--surface-muted\); color: var\(--ink-3\); border: 1px solid var\(--color-greyMedium\);/.test(css));
     t("S1 條列最後一條不留底距、整組跟後面的草稿句隔 12", /\.del-body \.up-notes li:last-child \{ margin-bottom: 0; \}/.test(css) && /\.del-body \.up-notes-slot \{ margin-bottom: var\(--space-12\); \}/.test(css));
@@ -423,7 +431,7 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
     t("main.js 拿 app.isPackaged 判,沒打包才換成假的", /const fake = require\("\.\/updater"\)\.devFakeVersion\(process\.env, app\.isPackaged\);/.test(src));
     let trading = false; const st = []; const f = U.createDevFake({ version: "9.9.9", currentVersion: "0.1.36", isTrading: () => trading, onState: (s) => st.push(s.phase) });
     let installed = 0; const f2 = U.createDevFake({ version: "9.9.9", currentVersion: "0.1.36", isTrading: () => false, onState: () => {}, onInstall: () => installed++ }); f2.install();
-    t("假更新 install 叫 onInstall;main.js 幾秒後收回 quitConfirmed／draftOk／restarting(不留著)", installed === 1 && /const fakeDone = \(\) => setTimeout\(\(\) => \{ quitConfirmed = false; draftOk = false; if \(restarting\) setRestarting\(null\); \}, 3000\);/.test(src) && /onInstall: fakeDone/.test(src));
+    t("假更新 install 叫 onInstall;main.js 幾秒後收回 quitConfirmed／draftOk／restarting(不留著)", installed === 1 && /const fakeDone = \(\) => setTimeout\(\(\) => \{ quitConfirmed = false; draftOk = false; bgAuto = false; try \{ uiPrefsPatch\(\{ updHiddenBoot: null, updManualTarget: null \}\); \} catch \(_\) \{[^}]*\} if \(restarting\) setRestarting\(null\); \}, 3000\);/.test(src) && /onInstall: fakeDone/.test(src));
     t("假更新:沒在下單 ready、下單中 blocked;install 不真的重開(沒有 quitAndInstall)", f.state().phase === "ready" && ((trading = true), f.state().phase === "blocked") && f.install().error === "TRADING" && ((trading = false), f.install().ok === true)
       && !/quitAndInstall/.test(cut(fs.readFileSync(path.join(SHELL, "updater.js"), "utf8"), "function createDevFake("))); }
 

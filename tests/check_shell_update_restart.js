@@ -34,7 +34,7 @@ function rig(o) {
     draftOk: o.draft === undefined, draftNote: false,
     draftDirty: async () => { log.push("draftDirty"); if (o.stopDuringDraft) child = false; return o.draft === "dirty"; },
     draftGate: async () => { log.push("draftGate"); return true; },
-    quitAsking: !!o.asking, moveAsking: !!o.moveAsking, quitting: false, restarting: null, setRestarting: (v) => { ctx.restarting = v; }, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: o.turn ? {} : null, turnStarting: false, tmLabels: { ...L }, TT: { quitDetail: TT.quitDetail, cloudTrading: (s) => !!(s && s.trading), stayGo: TT.stayGo }, process: { platform: o.platform || "darwin" },
+    quitAsking: !!o.asking, moveAsking: !!o.moveAsking, quitting: false, restarting: null, setRestarting: (v) => { ctx.restarting = v; }, noteManualTarget: () => { log.push("noteManual"); }, installWatch: () => { log.push("installWatch"); }, anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: o.turn ? {} : null, turnStarting: false, tmLabels: { ...L }, TT: { quitDetail: TT.quitDetail, cloudTrading: (s) => !!(s && s.trading), stayGo: TT.stayGo }, process: { platform: o.platform || "darwin" },
     planRestart, cloudSt: () => (o.cloud ? { trading: true } : null), BrowserWindow: { getAllWindows: () => [] },
     tradeMaybeLive: () => (child ? { venue: "binance" } : null), venueName: (id) => (id === "binance" ? "Binance" : ""),
     showMain: () => { log.push("showMain"); },
@@ -58,11 +58,11 @@ function rig(o) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
   { const r = rig({ trading: false, phase: "ready", draft: "clean" }), res = await r.run({ confirmed: true });
-    t("沒在下單、畫面已開過 §4.1(confirmed):直接 install,不再問、不跑 draftGate;裝成才送埋點 feature_used update_restart", res.ok === true && r.log.join() === "install:ok,used" && r.boxes.length === 0 && r.tracked.join() === "feature_used:update_restart" && r.ctx.draftOk === true, r.log); }
+    t("沒在下單、畫面已開過 §4.1(confirmed):直接 install,不再問、不跑 draftGate;裝成才送埋點 feature_used update_restart", res.ok === true && r.log.join() === "install:ok,noteManual,used,installWatch" && r.ctx.restarting === "installing" && r.boxes.length === 0 && r.tracked.join() === "feature_used:update_restart" && r.ctx.draftOk === true, r.log); }
   { const r = rig({ trading: false, phase: "ready", draft: "dirty" }), res = await r.run({ confirmed: true });
     t("…有草稿也不跑 draftGate、不跳系統框(草稿那句 §4.1 已經講了)", res.ok === true && !r.log.includes("draftGate") && !r.log.includes("draftDirty") && !r.log.includes("NATIVE DIALOG"), r.log); }
   { const r = rig({ trading: false, phase: "ready", go: true }), res = await r.run();
-    t("沒在下單、沒帶 confirmed(選單列入口):主行程叫畫面開 §4.1(plain、帶已暫存的版號),按重新啟動才 install", res.ok === true && r.log.join() === "ask:plain,install:ok,used" && r.boxes[0].data.v === "0.1.36", r.log); }
+    t("沒在下單、沒帶 confirmed(選單列入口):主行程叫畫面開 §4.1(plain、帶已暫存的版號),按重新啟動才 install", res.ok === true && r.log.join() === "ask:plain,install:ok,noteManual,used,installWatch" && r.boxes[0].data.v === "0.1.36", r.log); }
   { const r = rig({ trading: false, phase: "ready", go: false, draft: "clean" }), res = await r.run();
     t("…§4.1 按取消:回 CANCELED,不 install、不送埋點、draftOk 不設", res.error === "CANCELED" && r.log.join() === "ask:plain" && r.tracked.length === 0 && r.ctx.draftOk === false, r.log); }
   for (const bad of [{ confirmed: "true" }, { confirmed: 1 }, "confirmed", null]) {
@@ -83,23 +83,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   { const r = rig({ trading: true, phase: "blocked", draft: "dirty", stopDuringDraft: true, go: false }), res = await r.run();
     t("P3-2 下單中查草稿時剛好停單:改開 §4.1,按取消就不 install", res.error === "CANCELED" && r.log.join() === "draftDirty,ask:plain", r.log); }
   { const r = rig({ trading: true, phase: "blocked", draft: "dirty", stopDuringDraft: true, go: true }), res = await r.run();
-    t("P3-2 …§4.1 按重新啟動:問過才 install", res.ok === true && r.log.join() === "draftDirty,ask:plain,install:ok,used" && r.ctx.draftOk === true, r.log); }
+    t("P3-2 …§4.1 按重新啟動:問過才 install", res.ok === true && r.log.join() === "draftDirty,ask:plain,install:ok,noteManual,used,installWatch" && r.ctx.draftOk === true, r.log); }
   { const r = rig({ trading: false, phase: "ready" }); let n = 0;
     r.ctx.updAsk = (kind) => { r.boxes.push({ kind }); r.log.push("ask:" + kind); n++; if (n === 1) r.ctx.tradeMaybeLive = () => ({ venue: "binance" }); return Promise.resolve(n === 1); };
     const res = await r.run();
     t("§4.1 開著時開始下單:按重新啟動後主行程改問 §4.2(由主行程回畫面開),不直接裝", r.log.join() === "ask:plain,ask:trading" && res.error === "CANCELED", r.log); }
   // 稽核 P3-1:直接裝送出之後 Squirrel／NSIS 才失敗(onState phase error、restarting 不是 installing):收回 draftOk
   { const ON = cut(src, "const onState = (st) =>").replace(/^const onState = /, ""), log = [];
-    const ctx = { BrowserWindow: { getAllWindows: () => [] }, _officialBackup: null, restarting: null, draftOk: true, app: { quit: () => log.push("app.quit") }, upNotesKick: (v) => log.push("notes:" + v), _upStaged: null };
+    const ctx = { BrowserWindow: { getAllWindows: () => [] }, _officialBackup: null, restarting: null, draftOk: true, app: { quit: () => log.push("app.quit") }, installFailed: () => log.push("installFailed"), upNotesKick: (v) => log.push("notes:" + v), _upStaged: null };
     const on = new Function("ctx", "with (ctx) { return (" + ON + "); }")(ctx);
     on({ phase: "ready", version: "0.1.36" }); const kept = ctx.draftOk;
     on({ phase: "error" }); const dropped = ctx.draftOk === false && log.join() === "notes:0.1.36";
     ctx.draftOk = true; ctx.restarting = "installing"; on({ phase: "error" });
-    t("P3-1 直接裝之後才失敗:draftOk 收回(下次結束照樣問草稿);收工後失敗那條照舊 app.quit();進 ready 時抓一次更新說明", kept === true && dropped && log.join() === "notes:0.1.36,app.quit", [kept, dropped, log]); }
+    t("P3-1 直接裝之後才失敗:draftOk 收回(下次結束照樣問草稿);installing 之後失敗走 installFailed;進 ready 時抓一次更新說明", kept === true && dropped && log.join() === "notes:0.1.36,installFailed", [kept, dropped, log]); }
   { const r = rig({ trading: false, phase: "ready", installing: true }), res = await r.run({ confirmed: true });
-    t("0.1.12 背景安裝的 pip 在跑:先收掉 pip(等它結束)再 install", res.ok === true && r.log.join() === "engineAbort,install:ok,used", r.log); }
+    t("0.1.12 背景安裝的 pip 在跑:先收掉 pip(等它結束)再 install", res.ok === true && r.log.join() === "engineAbort,install:ok,noteManual,used,installWatch", r.log); }
   { const r = rig({ trading: true, go: true, installing: true }), res = await r.run();
-    t("0.1.12 下單中、按確認、pip 也在跑:停單收完 → 收 pip → install", res.ok === true && r.log.join() === "ask:trading,used,quitConfirmed=true,noteQuit,stop:start,stop:done,engineAbort,install:ok", r.log); }
+    t("0.1.12 下單中、按確認、pip 也在跑:停單收完 → 收 pip → install", res.ok === true && r.log.join() === "ask:trading,used,quitConfirmed=true,noteQuit,stop:start,stop:done,engineAbort,install:ok,noteManual", r.log); }
   { const r = rig({ trading: true, go: false }), res = await r.run();
     t("下單中、按取消:沒 noteQuit、沒 stop、沒 install;回 CANCELED", res.error === "CANCELED" && r.log.join() === "ask:trading", r.log);
     t("…取消後旗標都還原:quitConfirmed 沒設、restarting 沒設(下次結束 / 再按照樣會問)", r.confirmed() === false && r.ctx.restarting === null);
@@ -115,7 +115,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     t("雲端也確定在下單:§4.2 帶 cloud: true(畫面加 tm.quitCloudNote)", r.boxes[0].data.cloud === true); }
   t("系統原生框退役:restartToUpdate 裡沒有 dialog.showMessageBox、沒有 stayGo、沒有 updateBody", !/showMessageBox|stayGo|updateBody/.test(RESTART));
   { const r = rig({ trading: true, go: true }), res = await r.run();
-    t("按確認:順序 quitConfirmed=true → noteQuit → stop 收完 → install(收工走結束 app 同一條)", r.log.join() === "ask:trading,used,quitConfirmed=true,noteQuit,stop:start,stop:done,install:ok" && res.ok === true, r.log);
+    t("按確認:順序 quitConfirmed=true → noteQuit → stop 收完 → install(收工走結束 app 同一條)", r.log.join() === "ask:trading,used,quitConfirmed=true,noteQuit,stop:start,stop:done,install:ok,noteManual" && res.ok === true, r.log);
     t("…交給 quitAndInstall 之後 restarting = installing(紅燈、Cmd+Q 放行,它要關視窗才能重開)", r.ctx.restarting === "installing");
     t("…沒有另外接回下單(重開後對帳器照規矩停著)", !/_tradeHost\.(start|send)\(|tradeHost\(\)\.(start|send)\(|tradeStartIfReady|"resume"/.test(RESTART));
     t("…埋點 feature_used update_restart 一次(確認後,stop 最多 11 秒,送得出去)", r.tracked.join() === "feature_used:update_restart"); }
@@ -164,7 +164,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const trS = fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8");
     t("選單列的「重新啟動中…」:trPushLabels 交 tm.restarting、主行程英文退路 Restarting…;兩語逐字", /restarting: t\("tm\.restarting"\)/.test(trS) && /restarting: "Restarting…",/.test(src)
       && zh("tm.restarting") === "重新啟動中…" && zh("up.restarting") === "重新啟動中…" && /"tm\.restarting": "Restarting…"/.test(S) && /"up\.restarting": "Restarting…"/.test(S));
-    t("restartToUpdate 設 restarting 一律經 setRestarting(沒有直接賦值)", !/\brestarting = /.test(RESTART) && (RESTART.match(/setRestarting\(/g) || []).length === 3
+    t("restartToUpdate 設 restarting 一律經 setRestarting(沒有直接賦值)", !/\brestarting = /.test(RESTART) && (RESTART.match(/setRestarting\(/g) || []).length === 5
       && /handle\("update-state", \(\) => \(\{ \.\.\.updater\(\)\.state\(\), backup: _officialBackup, restarting: !!restarting \}\)\);/.test(src)
       && /send\("update-state", \{ \.\.\.st, backup: _officialBackup, restarting: !!restarting \}\)/.test(src)); }
 
@@ -173,7 +173,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     t("收工中按 Cmd+Q:before-quit 先擋(restarting === stopping),不再跑一次 stop、不跟 quitAndInstall 搶", /^app\.on\("before-quit", \(e\) => \{\n[^\n]*\n  if \(restarting === "stopping"\) \{ e\.preventDefault\(\); return; \}/.test(bq));
     t("收工中按紅燈:只收視窗;交給 quitAndInstall 之後放行(它要關視窗才能重開)", /if \(restarting === "stopping"\) \{ e\.preventDefault\(\); win\.hide\(\); return; \}/.test(close));
     t("before-quit 兩道確認框:showMain 在設 quitAsking 之前、包在 try(稽核 P2-1)", (bq.match(/try \{ showMain\(\); \} catch \(_\) \{[^}]*\}\n    quitAsking = true;/g) || []).length === 2 && !/quitAsking = true;\n    showMain\(\);/.test(bq));
-    t("quitAndInstall 自己失敗(Squirrel 非同步出錯,phase → error)而 restarting = installing:改走 app.quit()", /if \(restarting === "installing" && st\.phase === "error"\) app\.quit\(\);/.test(up)); }
+    t("quitAndInstall 自己失敗(Squirrel 非同步出錯,phase → error)而 restarting = installing:走 installFailed(下面逐條跑)", /if \(restarting === "installing" && st\.phase === "error"\) installFailed\(\);/.test(up)); }
 
   // ── §4 askMoveToApps ──
   const moveRig = (o) => {
@@ -367,6 +367,152 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     && /moveAuthExists: t\("tm\.move\.authExists"\), moveAuthApps: t\("tm\.move\.authApps"\), gotIt: t\("src\.gotIt"\)/.test(fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8"))
     && /moveAuthExists: "", moveAuthApps: "", gotIt: "",/.test(src));
   t("up.row.readyQuit 刪乾淨(.po、strings.js、程式都沒有)", !/readyQuit/.test(po.zh + po.en + S + shellJs.map((x) => x[1]).join("")));
+
+  // ── 手機對話開著按更新(0.1.45;11-03 Wei 真機:視窗收掉、app 沒結束、沒裝)──
+  // Mac 的 quitAndInstall 要所有視窗關掉才交給 Squirrel;假 install 當場觸發真的 close handler,看有沒有被藏窗攔下
+  { const CLOSE = cut(src, 'app.on("browser-window-created", (_e, win) => {') + ");", SCHED = cut(src, "async function scheduledInstall(");
+    const line = (re) => { const m = re.exec(src); if (!m) throw new Error("找不到 " + re); return m[0]; };
+    const PHONE_ON = line(/^const phoneOn = [^\n]*$/m);
+    const LIVE = cut(src, "function tradeLive(") + "\n" + cut(src, "function tradeMaybeLive(");
+    const BG = cut(src, "function bgEligible("), BACK = cut(src, "function installBack("), FAILED = cut(src, "function installFailed("), WATCH = cut(src, "function installWatch("), QC = cut(src, "function quitCanceled(");
+    const AT = (h, m) => new Date(2026, 10, 4, h, m).getTime();
+    const rigC = (o) => {
+      const on = {}, log = [], prefs = { ...(o.prefs || {}) }, tracked = [], windows = [];
+      const mkWin = (visible) => { const win = { h: {}, visible, isDestroyed: () => false, isVisible: () => win.visible, hide() { win.visible = false; ctx.hid = true; }, webContents: { getURL: () => "file:///ours" }, on(ev, f) { win.h[ev] = f; } }; on["browser-window-created"](null, win); windows.push(win); return win; };
+      const fireClose = (win) => { const e = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } }; win.h.close(e); return e.defaultPrevented; };
+      const halted = o.trade === "halt", live = o.trade === "live";
+      const status = () => (halted || live ? { alive: true, running: true, report: { venues: { paper: { credentials: 1, pair: 1, order: 1, account: 1 } }, halt: { halted }, reconciler: { alive: true }, daemon: { reconciler: { running: true } } } } : { alive: false, running: false, report: null });
+      const ctx = { app: { on: (ev, f) => { on[ev] = f; }, quit: () => log.push("app.quit"), relaunch: () => log.push("app.relaunch"), getVersion: () => "0.1.45" },
+        restarting: null, quitConfirmed: false, quitting: false, quitAsking: false, moveAsking: false, draftOk: false, draftNote: false, hiddenSaid: false, bgHidden: !!o.bgHidden, bgAuto: false,
+        _relay: { isOn: () => o.phone !== false, isVisible: () => o.phone !== false }, _tradeHost: { status }, lastVenue: "paper", venueReady: (v) => !!(v && v.credentials && v.pair && v.order && v.account),
+        anyTurn: () => !!o.turn, anyTurnOrQueued: () => !!(o.turn || o.queued), twLots: () => ({ held: !!o.twHeld }), isOurPageUrl: () => true, draftGate: async () => { log.push("draftGate"); return false; }, draftDirty: async () => false, tmLabels: {},
+        Notification: { isSupported: () => false }, notifWatch: (n) => n, phoneHiddenSaid: () => true, phoneHiddenSaidSet() {}, setRestarting: (v) => { ctx.restarting = v; log.push("restarting:" + v); },
+        engineAbort: async () => { if (o.onAbort) o.onAbort(ctx, windows); }, planRestart, updAsk: async () => true, tm: () => ({ track: (ev, p) => tracked.push(ev + ":" + (p.name || p.stage)) }),
+        updAutoGet: () => o.on !== false, updSchedRec: () => ({ target: prefs.updSchedTarget || null, failed: prefs.updSchedFailed || null, manual: prefs.updManualTarget || null }), updSchedReports: () => ({ running: false, next_due_at: null }), updSchedJobs: () => ({}), engineSetup: () => ({ busy: () => false }), _engineRun: null,
+        pageAsk: async (x) => (/upIdleUi/.test(x) ? o.uiIdle !== false : !!o.dirty), uiPrefsPatch: (p) => { Object.assign(prefs, p); log.push("prefs:" + Object.keys(p).join("+")); }, _schedRunning: false, venueName: () => "", cloudSt: () => null, TT: {}, tradePaperOnly: () => false, showMain: () => log.push("showMain"), draftMainWin: () => (o.noMain ? null : windows[0] || null),
+        INSTALL_WATCH_MS: 5, console: { error() {} }, setTimeout, process: { platform: o.platform || "darwin" }, BrowserWindow: { getAllWindows: () => windows.filter((w) => !w.closed) }, noteManualTarget: () => log.push("noteManual"), installWatch: () => log.push("installWatch"),
+        require: (m) => (m === "electron" ? { powerMonitor: { getSystemIdleTime: () => (o.idle === undefined ? 9999 : o.idle) } } : require(path.join(SHELL, m))), Date: class extends Date { static now() { return o.now || AT(6, 5); } },
+        bgWinOn: () => !!o.winOn, updater: () => ({ state: () => ({ phase: o.phase || "ready", version: "0.1.99" }), install: (a) => { log.push("install"); ctx.installArg = a; if (o.installRes) return o.installRes; const win = mkWin(true); ctx.fired = true; ctx.prevented = fireClose(win); return { ok: true }; } }) };
+      new Function("ctx", "with (ctx) {" + LIVE + "\n" + PHONE_ON + "\n" + CLOSE + "\n" + BG + "\n" + RESTART + "\n" + SCHED + "\n" + BACK + "\n" + FAILED + "\n" + QC + "\nctx.r = restartToUpdate; ctx.s = scheduledInstall; ctx.tml = tradeMaybeLive; ctx.back = installBack; ctx.failed = installFailed; ctx.qc = quitCanceled; ctx.bge = bgEligible; ctx.watch = () => {" + WATCH.replace(/^function installWatch\(\) \{/, "").replace(/\}$/, "") + "}; }")(ctx);
+      return { ctx, log, prefs, tracked, mkWin, fireClose, windows };
+    };
+    for (const entry of ["pill", "tray", "sched"]) for (const phone of [true, false]) {
+      const r = rigC({ phone, trade: "halt" });
+      await (entry === "sched" ? r.ctx.s(AT(6, 5)) : r.ctx.r(entry === "pill" ? { confirmed: true } : undefined));
+      t(`手機${phone ? "開" : "關"} × ${entry}:install 當下關窗不被攔、不藏窗(修法拿掉這一格會紅)`, r.ctx.fired === true && r.ctx.prevented === false && !r.ctx.hid && r.ctx.restarting === "installing", r.log);
+    }
+    { const r = rigC({}), win = r.mkWin(true);
+      t("平常手機開著紅燈仍是收進背景,bgHidden 立起來;視窗再出現(show 事件)就收回", r.fireClose(win) === true && r.ctx.hid === true && r.ctx.bgHidden === true && (win.h.show(), r.ctx.bgHidden === false)); }
+    { const r = rigC({ queued: true }), res = await r.ctx.r({ confirmed: true });
+      t("排隊中的回合:按重新啟動不裝(不然視窗關了才跳回合框)", res.error === "TURN_BUSY" && !r.log.includes("install") && r.ctx.restarting === null, r.log); }
+    { const r = rigC({ installRes: { ok: false, error: "NOT_READY" } }), res = await r.ctx.r({ confirmed: true });
+      t("install 當場失敗:restarting 與 draftOk 都收回", res.ok === false && r.ctx.restarting === null && r.ctx.draftOk === false && !r.log.includes("noteManual"), r.log); }
+    { const r = rigC({ installRes: { ok: false, error: "NOT_READY" } }), res = await r.ctx.s(AT(6, 5));
+      t("排程 install 當場失敗:restarting 收回、不寫目標版號、窗內不會每分鐘卡住", res.go === false && r.ctx.restarting === null && r.prefs.updSchedTarget === null, r.log); }
+
+    // Squirrel 之後才失敗:不能留在視窗收掉卻沒更新的狀態
+    { const r = rigC({ prefs: { updManualTarget: "0.1.99" } }); r.ctx.restarting = "installing"; r.ctx.failed();
+      t("人按的:回錯時視窗已全關 → 結束,不重開(ShipIt 可能還排著那份安裝)", r.log.join() === "app.quit" && r.prefs.updManualTarget === "0.1.99", r.log); }
+    { const r = rigC({ prefs: { updSchedTarget: "0.1.99", updHiddenBoot: { v: "0.1.99", at: 1 } } }); r.ctx.restarting = "installing"; r.ctx.bgAuto = true; r.ctx.failed();
+      t("閒著自動裝:回錯時視窗已全關 → 用舊版重開回背景(標記改舊版版號)、目標版號留給下次啟動記失敗", r.log.join() === "prefs:updHiddenBoot,app.relaunch,app.quit" && r.prefs.updHiddenBoot.v === "0.1.45" && r.prefs.updSchedTarget === "0.1.99", r.log); }
+    { const r = rigC({}); r.ctx.restarting = "installing"; r.ctx.bgAuto = true; r.ctx.quitting = true; r.ctx.failed();
+      t("回錯時 before-quit 正在等收工:照叫 relaunch,但不再叫 app.quit(會切斷對帳器撤單與手機回 not_run)", r.log.includes("app.relaunch") && !r.log.includes("app.quit"), r.log); }
+    { const r = rigC({ prefs: { updManualTarget: "0.1.99" } }), w = r.mkWin(true); r.ctx.restarting = "installing"; r.ctx.draftOk = true; r.ctx.failed();
+      t("視窗還在(Windows NSIS 在 app.quit 前就失敗):不結束、回原畫面、送 update_failed、清標記", !r.log.includes("app.quit") && r.ctx.restarting === null && r.ctx.draftOk === false && r.prefs.updManualTarget === null && r.tracked.join() === "update_failed:install" && w.visible, r.log); }
+    { const r = rigC({ prefs: { updSchedTarget: "0.1.99" } }); r.mkWin(false); r.ctx.restarting = "installing"; r.ctx.bgAuto = true; r.ctx.draftOk = true; r.ctx.back();
+      t("收回時是閒著那條:不叫視窗、同一版記成失敗不再試", !r.log.includes("showMain") && r.prefs.updSchedFailed === "0.1.99" && r.prefs.updSchedTarget === null && r.ctx.bgAuto === false, r.log); }
+    { const r = rigC({ prefs: { updManualTarget: "0.1.99" } }); r.mkWin(false); r.ctx.restarting = "installing"; r.ctx.back();
+      t("收回時是人按的:視窗叫回來、不記成排程失敗", r.log.includes("showMain") && !r.prefs.updSchedFailed, r.log); }
+    { const r = rigC({}); r.mkWin(false); r.ctx.restarting = "installing"; r.ctx.watch(); await new Promise((ok) => setTimeout(ok, 25));
+      t("看門狗:install 回 ok 之後 app 還活著 → 收回(Windows 的 BaseUpdater 找不到安裝檔時不發事件)", r.ctx.restarting === null && r.tracked.join() === "update_failed:install", r.log); }
+    { const r = rigC({}); r.mkWin(false); r.ctx.restarting = "installing"; r.ctx.quitAsking = true; r.ctx.installWatch = r.ctx.watch; r.ctx.watch(); await new Promise((ok) => setTimeout(ok, 25)); const held = r.ctx.restarting === "installing";
+      r.ctx.quitAsking = false; await new Promise((ok) => setTimeout(ok, 25));
+      t("看門狗:結束框開著時等它,框收了才判", held && r.ctx.restarting === null, r.log); }
+    { const r = rigC({}); r.mkWin(false); r.ctx.restarting = "installing"; r.ctx.quitting = true; r.ctx.watch(); await new Promise((ok) => setTimeout(ok, 25));
+      t("看門狗:已經在結束就不動", r.ctx.restarting === "installing" && r.tracked.length === 0, r.log); }
+    { const r = rigC({}); r.ctx.restarting = "installing"; r.ctx.draftOk = true; r.ctx.qc();
+      t("結束框(統一／群益部位)按取消:restarting 收回,不卡在重新啟動中", r.ctx.restarting === null && r.ctx.draftOk === false, r.log); }
+
+    // 閒著自動裝
+    const bgRig = (o = {}) => { const r = rigC({ bgHidden: true, now: AT(14, 0), trade: "none", ...o }); r.mkWin(false); return r; };
+    { const r = bgRig(), res = await r.ctx.s(AT(14, 0));
+      t("閒著:窗外也裝;先寫隱藏標記與 upd_idle_run 才 install,寫目標版號、不送 upd_sched_run", res.go === true && r.log.indexOf("prefs:updHiddenBoot") < r.log.indexOf("install") && r.tracked.join() === "feature_used:upd_idle_run" && r.prefs.updHiddenBoot.v === "0.1.99" && r.prefs.updSchedTarget === "0.1.99" && r.ctx.bgAuto === true && r.ctx.prevented === false, r.log); }
+    { const r = bgRig({ trade: "halt" }), res = await r.ctx.s(AT(14, 0));
+      t("暫停中(HALT):tradeMaybeLive 回 null,算閒著", r.ctx.tml() === null && res.go === true, [res, r.log]); }
+    { const r = bgRig({ trade: "live" }), res = await r.ctx.s(AT(14, 0));
+      t("下單中:不動", !!r.ctx.tml() && res.go === false && res.why === "trading" && !r.log.includes("install") && r.ctx.restarting === null, [res, r.log]); }
+    for (const [name, o, why] of [["手機對話關著", { phone: false }, "window"], ["視窗沒收進背景", { bgHidden: false }, "window"], ["開關關掉(用戶說不要自動重開)", { on: false }, "off"], ["Windows 預設關", { platform: "win32" }, "window"], ["回合在跑", { turn: true }, "turn"], ["回合排隊", { queued: true }, "turn"],
+      ["統一／群益有部位", { twHeld: true }, "tw_held"], ["有草稿", { dirty: true }, "draft"], ["畫面有框或輸入框不空", { uiIdle: false }, "ui"], ["同一版失敗過", { prefs: { updSchedFailed: "0.1.99" } }, "failed"], ["還沒暫存好", { phase: "staging" }, "phase"]]) {
+      const r = bgRig(o), res = await r.ctx.s(AT(14, 0));
+      t("閒著不裝:" + name + " → " + why, res.go === false && res.why === why && !r.log.includes("install") && !("updHiddenBoot" in r.prefs) && r.ctx.restarting === null, [res, r.log]);
+    }
+    { const r = bgRig({ idle: 0 }), res = await r.ctx.s(AT(14, 0));
+      t("閒著:用戶正在用電腦(鍵鼠剛動過)也裝,只看視窗藏著", res.go === true && r.log.includes("install"), [res, r.log]); }
+    { const r = rigC({ idle: 30, trade: "none", now: AT(6, 5) }), res = await r.ctx.s(AT(6, 5));
+      t("06:00 視窗看得到:仍要鍵鼠閒置", res.go === false && res.why === "active", res); }
+    { const r = bgRig({ platform: "win32", winOn: true }), res = await r.ctx.s(AT(14, 0));
+      t("Windows 打開旗標:閒著走靜默安裝、寫隱藏標記", res.go === true && r.ctx.installArg && r.ctx.installArg.silent === true && !!r.prefs.updHiddenBoot, [res, r.log]); }
+    { const r = bgRig(), res = await r.ctx.s(AT(14, 0));
+      t("Mac 閒著:install 不帶 silent", res.go === true && r.ctx.installArg === undefined, res); }
+    { const r = rigC({ platform: "win32", winOn: true, trade: "none", now: AT(6, 5) }), res = await r.ctx.s(AT(6, 5));
+      t("Windows 06:00 視窗看得到:不靜默", res.go === true && r.ctx.installArg === undefined, res); }
+    { const r = rigC({ platform: "win32", winOn: true, phone: true }), res = await r.ctx.r({ confirmed: true });
+      t("Windows 人按的:不靜默", res.ok === true && r.ctx.installArg === undefined, [res, r.log]); }
+    { const { createUpdater } = require("../shell/updater.js"), calls = [], au = { quitAndInstall: (...a) => calls.push(a), on() {}, setFeedURL() {} };
+      let fire = null; const on0 = au.on; au.on = (ev, f) => { if (ev === "update-downloaded") fire = f; return on0.call(au, ev, f); };
+      const u = createUpdater({ autoUpdater: au, nativeUpdater: null, feedUrl: "http://x", currentVersion: "1.0.0", isTrading: () => false, onState() {}, setTimer: () => {} });
+      u.start(); fire({ version: "1.0.1" }); u.install(); await tick(); u.install({ silent: true }); await tick();
+      t("updater.install:預設 quitAndInstall(false, true);silent 才 (true, true)", JSON.stringify(calls) === "[[false,true],[true,true]]", calls); }
+    { const r = bgRig(); r.windows[0].visible = true; const res = await r.ctx.s(AT(14, 0));
+      t("還有視窗看得到(標記漏收的保險):不裝", res.go === false && res.why === "window", res); }
+    { const r = bgRig({ onAbort: (c, w) => { w[0].visible = true; } }), res = await r.ctx.s(AT(14, 0));
+      t("收引擎那段用戶把視窗叫回來:放掉這一輪、restarting 收回、不送埋點", res.go === false && res.why === "shown" && !r.log.includes("install") && r.ctx.restarting === null && r.ctx.draftOk === false && r.tracked.length === 0, [res, r.log]); }
+    { const r = rigC({ bgHidden: true, trade: "none" }); r.mkWin(false); const res = await r.ctx.s(AT(6, 5));
+      t("06:00 窗內也符合閒著:走同一次、只裝一次,照閒著那條藏窗", res.go === true && r.log.filter((x) => x === "install").length === 1 && r.tracked.join() === "feature_used:upd_idle_run" && !!r.prefs.updHiddenBoot, r.log); }
+    { const r = rigC({ trade: "none" }), res = await r.ctx.s(AT(6, 5));
+      t("06:00 視窗看得到:照舊重開(不寫隱藏標記、送 upd_sched_run)", res.go === true && !("updHiddenBoot" in r.prefs) && r.tracked.join() === "feature_used:upd_sched_run", r.log); }
+
+    // 重開那一端
+    const { hiddenBoot, HIDDEN_BOOT_MAX_MS, schedPlan } = require("../shell/schedupdate.js");
+    const HB = { current: "0.1.46", now: 1e12, platform: "darwin" };
+    t("隱藏啟動:版號對、時間內才藏(Windows 同一份標記)", hiddenBoot({ v: "0.1.46", at: 1e12 - 60000 }, HB) === true && hiddenBoot({ v: "0.1.46", at: 1e12 }, { ...HB, platform: "win32" }) === true);
+    t("隱藏啟動:沒裝上(舊版被打開)、標記過期、未來時間、其他平台、壞標記 → 視窗照常", [[{ v: "0.1.45", at: 1e12 }, HB], [{ v: "0.1.46", at: 1e12 - HIDDEN_BOOT_MAX_MS }, HB], [{ v: "0.1.46", at: 1e12 + 1 }, HB], [{ v: "0.1.46", at: 1e12 }, { ...HB, platform: "linux" }], [null, HB], [{ v: "0.1.46" }, HB], ["x", HB]].every(([m, c]) => hiddenBoot(m, c) === false));
+    const ok6 = { now: AT(14, 0), on: true, phase: "ready", version: "1", idleSec: 9999, reports: { running: false, next_due_at: null }, dirty: false, uiBusy: false };
+    t("schedPlan:background 只免時間窗與鍵鼠閒置,其餘條件一條都不少", schedPlan(ok6).why === "window" && schedPlan({ ...ok6, background: true }).go === true && ["trading", "turn", "twHeld", "asking", "engineBusy", "backtesting", "optimizing", "exectesting", "refreshing", "rerunning", "closing"].every((k) => schedPlan({ ...ok6, background: true, [k]: true }).go === false) && schedPlan({ ...ok6, background: true, on: false }).go === false && schedPlan({ ...ok6, background: true, idleSec: 0 }).go === true);
+    { const BOOT = cut(src, "function bgBootCheck(");
+      const go = (prefs, o = {}) => { const log = [], cur = { ...prefs }; const ctx = { app: { hasSingleInstanceLock: () => o.lock !== false, getVersion: () => "0.1.46", hide: () => log.push("hide") }, fs: { readFileSync: () => { if (o.noFile) throw new Error("ENOENT"); return JSON.stringify(cur); } }, uiPrefsPath: () => "x", uiPrefsPatch: (p) => { Object.assign(cur, p); log.push("patch"); }, process: { platform: "darwin" }, require: (m) => require(path.join(SHELL, m)), bgBoot: false, bgHidden: false, moveChecked: false, bgBootQuietUntil: 0, BG_BOOT_QUIET_MS: 5000, Date };
+        new Function("ctx", "with (ctx) {" + BOOT + "\nbgBootCheck(); }")(ctx); return { ctx, log, cur }; };
+      const fresh = go({ updHiddenBoot: { v: "0.1.46", at: Date.now() } });
+      t("啟動讀到標記:藏窗、app.hide 把焦點還回去、之後幾秒 activate 不算人按、不問搬移、讀完就清", fresh.ctx.bgBoot === true && fresh.ctx.bgHidden === true && fresh.ctx.moveChecked === true && fresh.ctx.bgBootQuietUntil > Date.now() && fresh.log.join() === "patch,hide" && fresh.cur.updHiddenBoot === null);
+      const old = go({ updHiddenBoot: { v: "0.1.45", at: Date.now() } });
+      t("標記版號對不上:照常開視窗,標記一樣清掉(一次性)", old.ctx.bgBoot === false && old.log.join() === "patch" && old.cur.updHiddenBoot === null);
+      t("沒標記、第二份 app:什麼都不動(第二份不能清第一份的標記)", go({}).log.length === 0 && go({ updHiddenBoot: { v: "0.1.46", at: Date.now() } }, { lock: false }).log.length === 0); }
+    { const BOOT2 = cut(src, "function updSchedBoot(");
+      const go = (rec, ver) => { const tracked = [], patched = []; const ctx = { updSchedRec: () => rec, require: (m) => require(path.join(SHELL, m)), app: { getVersion: () => ver }, uiPrefsPatch: (p) => patched.push(p), tm: () => ({ track: (e, p) => tracked.push(e + ":" + p.stage) }) };
+        new Function("ctx", "with (ctx) {" + BOOT2 + "\nupdSchedBoot(); }")(ctx); return { tracked, patched }; };
+      const a = go({ target: null, failed: null, manual: "0.1.46" }, "0.1.45");
+      t("人按的沒裝上:下次啟動送 update_failed stage=install,清掉記號,不記成排程失敗", a.tracked.join() === "update_failed:install" && a.patched[0].updManualTarget === null && a.patched[0].updSchedFailed === null);
+      const b = go({ target: null, failed: null, manual: "0.1.46" }, "0.1.46");
+      t("人按的裝上了:不送", b.tracked.length === 0 && b.patched[0].updManualTarget === null); }
+    // 隱藏重開的頁:第一次顯示前不能把提示算成看過。真的 hidden-boot.js + 真的 phAskMaybe
+    { const HB_SRC = fs.readFileSync(path.join(SHELL, "renderer", "hidden-boot.js"), "utf8"), APP = fs.readFileSync(path.join(SHELL, "renderer", "app.js"), "utf8"), vm = require("vm");
+      const pg = (hidden, stored) => { const seen = [], ls = {}, listeners = []; let shown = null; const doc = Object.assign(Object.create({ visibilityState: "visible", hidden: false }), { querySelectorAll: () => [], addEventListener: (_e, f) => listeners.push(f), dispatchEvent: () => listeners.forEach((f) => f()) });
+        const c = { document: doc, Event: function () {}, sessionStorage: { getItem: (k) => (stored ? "1" : ls[k] || null), setItem: (k, v) => { ls[k] = v; } }, window: { blave: { hiddenBoot: hidden, onHiddenBootShown: (f) => { shown = f; }, relayAskShown: async (id) => { seen.push("askShown:" + id); } } }, Object,
+          PH: { ask: { id: "a1" }, signedIn: true, on: false }, PH_ASKED: null, PH_BUSY: false, phShown: () => true, trackFeature: (n) => seen.push(n) };
+        c.$stub = () => {}; vm.createContext(c); vm.runInContext(HB_SRC, c);
+        vm.runInContext(cut(APP, "function phAskMaybe(").replace(/\n  PH_ASKED = a\.id;[\s\S]*$/, '\n  PH_ASKED = a.id;\n  window.blave.relayAskShown(a.id);\n  trackFeature("phone_ask_shown");\n}'), c); doc.addEventListener("visibilitychange", () => vm.runInContext("phAskMaybe()", c));
+        return { c, doc, seen, show: () => shown && shown(), ask: () => vm.runInContext("phAskMaybe()", c), stored: () => ls.blaveHiddenBootShown }; };
+      { const p = pg(true); p.ask(); const before = p.seen.length; p.show();
+        t("藏窗啟動:顯示前配對框不算看過;第一次顯示才算(靠補的 visibilitychange)、記下顯示過", before === 0 && p.doc.visibilityState === "visible" && p.seen.join() === "askShown:a1,phone_ask_shown" && p.stored() === "1", p.seen); }
+      { const p = pg(false); p.ask(); t("一般啟動:不動 visibilityState,照舊當下就算", p.seen.length === 2 && p.doc.visibilityState === "visible", p.seen); }
+      { const p = pg(true, true); p.ask(); t("顯示過之後重新載入:不再回報 hidden", p.seen.length === 2, p.seen); }
+      const html = fs.readFileSync(path.join(SHELL, "renderer", "index.html"), "utf8");
+      t("hidden-boot.js 在所有頁面腳本之前(theme-boot.js 不讀 visibilityState,排它前面);只有藏窗那一扇帶參數;顯示時才通知", (html.match(/<script[^>]*>/g) || []).slice(0, 2).join().replace(/\s+/g, " ") === '<script src="theme-boot.js">,<script src="hidden-boot.js">' && /\.\.\.\(bgBoot \? \["--blave-hidden-boot"\] : \[\]\)/.test(src) && /win\.once\("show", \(\) => \{ shown = true; tell\(\); \}\);/.test(src) && /win\.webContents\.once\("did-finish-load", tell\);/.test(src)); }
+    { const sm = cut(src, "function showMain(");
+      t("showMain 先解除 app.hide,不然隱藏重開之後點選單列也叫不出視窗", /^function showMain\(\) \{\n  if \(!HEADLESS && app\.isHidden && app\.isHidden\(\)\) app\.show\(\);/.test(sm));
+      t("隱藏重開剛起來那幾秒 activate 不叫視窗", /app\.on\("activate", \(\) => \{ if \(Date\.now\(\) >= bgBootQuietUntil\) showMain\(\); \}\);/.test(src));
+      t("createWindow 只有啟動那一扇藏", /\.\.\.\(bgBoot \? \{ show: false, paintWhenInitiallyHidden: true \} : \{\}\),/.test(src) && /bgBoot = false;   \/\/ 只有啟動那一扇/.test(cut(src, "function createWindow("))); }
+  }
 
   await tick();
   console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

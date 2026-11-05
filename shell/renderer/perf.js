@@ -78,7 +78,7 @@ function perfState(side, B, now) {
 /* app.js rpShowTab 畫完回測分頁就叫:把 .upd 掛進 .bt-meta 列尾、失敗那一行插在 meta 下面。每次重建(狀態換了才會被叫到) */
 function perfPaint(B) {
   const side = pfSide(B), host = $("rp-bt"), meta = host ? host.querySelector(".bt-meta") : null;
-  if (host) host.querySelectorAll(".upd, .upd-fail").forEach((x) => x.remove());
+  if (host) host.querySelectorAll(".upd-box, .upd-fail").forEach((x) => x.remove());
   perfXtSync(B);
   if (!meta || !perfShown(side, B)) { PFL[side] = null; perfPollEnsure(side, B); return; }
   const now = Date.now(), st = perfState(side, B, now), last = PFL[side];
@@ -99,9 +99,18 @@ function perfPaint(B) {
     btn.addEventListener("click", () => perfClick(B));
     upd.appendChild(btn);
   }
-  meta.appendChild(upd);
+  meta.appendChild(perfBox(upd));
   if (st.kind === "failed") meta.parentNode.insertBefore(perfFailLine(side, st, "perf.fail"), meta.nextSibling);
   perfPollEnsure(side, B);
+}
+/* .upd 的外框:三態與「N 天前」的有無寬度都不同,meta 列折行的位置會跟著變,按下去下面的內容就跳一行。
+   藏起來的兩份(最寬的閒置那組、更新中)把寬度撐成定值,哪一態都折在同一處 */
+function perfBox(upd) {
+  const box = pfEl("span", "upd-box"), idle = pfEl("span", "upd-hold"), run = pfEl("span", "upd-hold is-run", t("perf.busy"));
+  idle.append(pfEl("span", "", t("perf.ago", { n: "999" })), pfEl("span", "", t("perf.btn")));
+  idle.setAttribute("aria-hidden", "true"); run.setAttribute("aria-hidden", "true");
+  box.append(idle, run, upd);
+  return box;
 }
 /* 失敗那一行:回測數據分頁 meta 下、成交測試霧卡的鈕下共用。failKey = 看得到的那句(霧卡上沒有數字,不講「數字是舊的」) */
 function perfFailLine(side, st, failKey) {

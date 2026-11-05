@@ -2,8 +2,8 @@
 //
 // app 版號 = 框架版號:runtime / lib / references 是隨包的 extraResources,一次更新換一整包。
 // 規則:
-//   - 啟動後與之後每 4 小時查一次;有新版就在背景下載。自己重啟只有一條:每天 06:00 的排程(main.js scheduledInstall,
-//     沒在下單、沒人在用才走;spec desktop-update-pill §5),其餘都等人按。
+//   - 啟動後與之後每 4 小時查一次;有新版就在背景下載。自己重啟只有 main.js scheduledInstall 一支(沒在下單、沒人在用才走):每天 06:00(spec desktop-update-pill §5),
+//     以及手機對話開著、視窗收進背景時不等 06:00;其餘都等人按。
 //   - 自動下單在跑的時候不安裝:「重新啟動並更新」那顆鈕在執行中是擋下來的(isTrading),
 //     用戶先暫停、或正常結束 app(結束 = 停止下單)時才裝。結束時自動安裝是安全的——那一刻已經沒有東西在下單。
 //   - 用戶的東西(策略、帳本、state/、workspace .env)都在 BLAVE_HOME,不在 app 包裡,更新碰不到。
@@ -118,10 +118,11 @@ function createUpdater(opts) {
     return true;
   }
   // 「重新啟動並更新」:只有已下載、而且現在沒有在下單才做。下單中要先收工,由 main.js restartToUpdate 決定(planRestart)
-  function install() {
+  // o.silent:Windows 閒著自動裝用,NSIS 帶 /S 不跳進度窗;第二個參數在 silent 時才生效(--force-run,裝完重開)。Mac 的 Squirrel 兩個都不看
+  function install(o) {
     if (state.phase !== "ready" && state.phase !== "blocked") return { ok: false, error: "NOT_READY" };
     if (opts.isTrading()) return { ok: false, error: "TRADING" };
-    setImmediate(() => au.quitAndInstall(false, true));
+    setImmediate(() => au.quitAndInstall(!!(o && o.silent), true));
     return { ok: true };
   }
   return { start, check, install, poll, state: publicState };
@@ -172,7 +173,7 @@ function devFakeVersion(env, isPackaged) {
   return /^\d+\.\d+\.\d+$/.test(v) ? v : "9.9.9";
 }
 /* 同 createUpdater 的介面;install 不真的重開,只記一行並叫 opts.onInstall(main.js 幾秒後收回 restarting／quitConfirmed／draftOk)。
-   下單中那條會先照真的流程停掉開發版的下單、設 restarting,所以收回之前看得到「重新啟動中…」;沒在下單那條不設 restarting */
+   兩條都會設 restarting(下單中那條還會先照真的流程停掉開發版的下單),所以收回之前看得到「重新啟動中…」 */
 function createDevFake(opts) {
   const log = opts.log || (() => {});
   const publicState = () => ({ phase: opts.isTrading() ? "blocked" : "ready", version: opts.version, percent: 100, error: null, current: opts.currentVersion });

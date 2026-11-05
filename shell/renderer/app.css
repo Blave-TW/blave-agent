@@ -885,10 +885,10 @@ body.resizing * { cursor: col-resize !important; }
 /* 更新膠囊(spec desktop-update-pill §3;canon › In-app 功能動作鈕 › 具名例外:電腦版更新膠囊)。
    橘實心墨字、hover primaryDark;視覺 32 / 熱區 44(透明 ::before)。停用照 Disabled 退灰(不用 opacity)。
    細軌那顆是 28 的圓、熱區 44,同一個 class 加 .up-rail */
-.up-pill-wrap { margin: 0 0 var(--space-8); padding: 0 var(--space-4); }
+.up-pill-wrap { margin: 0 0 var(--space-8); }
 .up-pill {
-  position: relative; display: inline-flex; align-items: center; gap: var(--space-6);
-  max-width: 100%; height: 32px; min-height: 0; padding: 0 var(--space-12) 0 var(--space-8);   /* 不裁切:::before 的熱區要伸出去;裁切在 .up-pill-t */
+  position: relative; display: inline-flex; align-items: center; gap: var(--space-8);
+  max-width: 100%; height: 32px; min-height: 0; padding: 0 13px 0 11px;   /* 加上 1px 框 = 左 12 右 14,圖示欄對齊〔設定〕(canon › 側欄提示格)。不裁切:::before 的熱區要伸出去;裁切在 .up-pill-t */
   border: 1px solid transparent; border-radius: var(--radius-pill);
   background: var(--color-primary); color: var(--ink-on-primary);
   font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer;
@@ -899,13 +899,58 @@ body.resizing * { cursor: col-resize !important; }
 .up-pill:disabled, .up-pill[aria-disabled="true"] { background: var(--surface-muted); border-color: var(--color-greyMedium); color: var(--ink-3); cursor: not-allowed; }   /* 同 .btn-fill:disabled */
 .up-pill-ic { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .up-pill-t { min-width: 0; overflow: hidden; }
-.up-pill.no-ic { padding-left: var(--space-12); }
+.up-pill-wrap .up-pill-ic { stroke-width: 1.75; }
+.up-pill.no-ic { padding-left: 13px; }
 .up-pill.no-ic .up-pill-ic { display: none; }
 .up-pill-wrap .busy-why { margin: var(--space-8) var(--space-4) 0; text-align: left; white-space: normal; }
 .up-rail { flex: none; max-width: none; width: 28px; height: 28px; padding: 0; justify-content: center; margin-top: auto; }
 .up-rail::before { inset: -9px; }   /* 1px 透明框不算在 padding box 裡:28 − 2 + 18 = 44 */
 html.ws-sc .side-rail { flex: 1 1 auto; }
-@media (prefers-reduced-motion: reduce) { .up-pill { transition: none; } }
+/* 側欄提示格的手機那則(canon › Components › 側欄提示格):同形膠囊,卡面底。× 視覺 24、熱區 44,滑過或焦點才出;熱區壓到膠囊時膠囊贏,不誤關 */
+.ph-slot { position: relative; display: flex; align-items: center; margin: 0 0 var(--space-8); }
+.ph-slot[hidden] { display: none; }
+.ph-slot::after { content: ""; flex: 0 1 6px; }   /* × 離右緣 6;英文、最窄側欄時縮成 0,× 才不壓到膠囊 */
+.ph-pill {
+  position: relative; z-index: 1; flex: none; display: inline-flex; align-items: center; gap: var(--space-8);
+  max-width: 100%; height: 32px; min-height: 0; padding: 0 14px 0 var(--space-12);
+  border-radius: var(--radius-pill); background: var(--surface-card); box-shadow: var(--shadow-sm); color: var(--ink);
+  font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.ph-pill::before { content: ""; position: absolute; inset: -6px 0; }
+.ph-pill:hover { background: var(--surface-control-on); }
+.ph-pill .up-pill-ic { stroke-width: 1.75; }
+.ph-x {
+  position: relative; flex: none; margin-left: auto; width: 24px; height: 24px; min-height: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center; border-radius: var(--radius-xs); color: var(--ink-3);
+  opacity: 0; transition: opacity var(--motion-fast) var(--ease-standard);
+}
+.ph-x::before { content: ""; position: absolute; inset: -10px; }
+.ph-x .ic { width: 14px; height: 14px; stroke-width: 1.75; }
+.ph-slot:hover .ph-x, .ph-x:focus-visible { opacity: 1; }
+.ph-x:hover { background: var(--surface-muted); color: var(--ink); }
+@media (hover: none) { .ph-x { opacity: 1; } }
+.ph-pop {
+  position: fixed; z-index: 40; width: 212px; padding: var(--space-16);
+  background: var(--surface-card); box-shadow: var(--shadow-md); border-radius: var(--radius-lg);
+}
+.ph-plate { display: inline-block; padding: var(--space-8); background: var(--color-pureWhite); border-radius: var(--radius-md); line-height: 0; }
+.ph-plate img { display: block; width: 136px; height: 136px; }
+/* pop 裡的編號步驟(spec slot-phone-steps §3):號碼欄 16、欄距 8、列距 16;目前這步 --ink,其餘 --ink-3 */
+.ph-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-16); }
+.ph-step { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: var(--space-8); align-items: start; }
+.ph-step.btn { align-items: center; }
+.ph-n { font-size: 12px; font-weight: 500; line-height: 20px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.ph-step.btn .ph-n { line-height: 32px; }
+.ph-t { font-size: 13px; line-height: 20px; color: var(--ink-3); }
+.ph-step.now .ph-n, .ph-step.now .ph-t { color: var(--ink); }
+.ph-step.now .ph-t { font-weight: 500; }
+.ph-say { line-height: 1.5; }
+.ph-step.now .ph-say { font-weight: 400; color: var(--ink-2); }
+.ph-nw { white-space: nowrap; }
+.ph-body { grid-column: 2; margin-top: var(--space-8); }
+.ph-links { display: flex; gap: var(--space-16); margin-top: var(--space-8); }
+@media (prefers-reduced-motion: reduce) { .up-pill, .ph-pill, .ph-x { transition: none; } }
 /* 更新 modal 的「這版改了什麼」:純文字條列 */
 .del-body .up-notes { margin: 0; padding-left: 18px; color: var(--ink); }
 .del-body .up-notes li { margin-bottom: var(--space-4); }
@@ -1066,6 +1111,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .ph:first-child { margin-top: 0; }
 .ph .sw-l { position: relative; }
 .ph-top:has(.sw:focus-visible:not([data-tip-off])) .tip { display: block; }
+.mv .sw-row:has(.sw:focus-visible:not([data-tip-off])) .tip { display: block; }
 .ph-status, .ph-msg { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); }
 .ph-status .btn-quiet, .ph-msg .btn-quiet { font-size: inherit; }
 .ph-grp { margin-top: var(--space-24); }
@@ -1191,7 +1237,14 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cf-row dt .side { margin-left: var(--space-8); font-family: var(--font-sans); font-size: 12px; }
 .cf-row dt .side.buy { color: var(--color-greenText); }
 .cf-row dt .side.sell { color: var(--color-redText); }
-.cf-row dt .side:first-child { margin: 0 var(--space-8) 0 0; }   /* 存金額框「買進／賣出 標的」:記號在標的前面 */
+.cf-amt .cf-row dt .side { margin: 0 var(--space-8) 0 0; }   /* 存金額框「買進／賣出 標的」:記號在標的前面(認框不認 :first-child:標的是文字節點,後置的多空也會比對到) */
+/* 解除綁定框的列尾狀態欄(canon 提案 unbind-positions §1):平倉中＋圓環、已平(整列退灰)、沒成交／未確認(紅)、要自己平 */
+.cf-row .cf-st { flex: 0 0 56px; text-align: right; white-space: nowrap; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+:lang(en) .cf-row .cf-st { flex-basis: 84px; }
+.cf-row .cf-st .spin16 { margin-right: var(--space-4); vertical-align: -3px; }
+.cf-row .cf-st.bad, .del-body.lines .ub-reply { color: var(--color-redText); }
+[data-theme="dark"] .cf-row .cf-st.bad, [data-theme="dark"] .del-body.lines .ub-reply { color: var(--color-redBlack); }
+.cf-row.done dt, .cf-row.done dt .side, .cf-row.done dd { color: var(--ink-3); }
 .del-body.lines p.cf-removed { margin: var(--space-12) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
 .del-body.lines p.cf-block { margin: var(--space-8) 0 0; font-size: 13px; line-height: 1.6; color: var(--color-redText); }
 .del-body.lines p.cf-note { margin: var(--space-16) 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-3); }
@@ -1588,8 +1641,8 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 .sg-head.sg-drop { z-index: 5; }   /* 當落點的那個組標題浮在被拖的列(3)之上,灰填與組名才不被蓋住(同 web) */
 .sg-tog { position: relative; flex: 1; min-width: 0; height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 var(--space-12); border-radius: var(--radius-md); font-size: 12px; color: var(--ink-3); text-align: left; }
 .sg-tog::before { content: ""; position: absolute; inset: 6px 0; z-index: -1; border-radius: var(--radius-md); }
-/* 焦點框內縮:切換鈕與「建市場資料夾」右緣貼齊清單(overflow-x hidden),外擴的框會被裁掉(同 web、電腦版 .cs-item) */
-.sg-tog:focus-visible, .sg-auto:focus-visible { outline-offset: -2px; }
+/* 焦點框內縮:切換鈕右緣貼齊清單(overflow-x hidden),外擴的框會被裁掉(同 web、電腦版 .cs-item) */
+.sg-tog:focus-visible { outline-offset: -2px; }
 .sg-head:is(.menu-open, .sg-drop) .sg-tog::before { background: var(--surface-card); }   /* 由 .sg-head 層驅動:滑到 ⋯ 上不熄;當落點時同一個灰階,不畫插入線 */
 .sg-head.menu-open .sg-tog { color: var(--ink-2); }
 @media (hover: hover) {
@@ -1619,9 +1672,6 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
 body.is-dragging .sg-head .sg-more { opacity: 0; pointer-events: none; }
 body.is-dragging .sg-head .sg-live { margin-right: 0; }
 .strat-list.has-groups > .strat-wrap { scroll-margin-top: 44px; }   /* 釘頂的組標題會蓋住捲到頂的列 */
-/* 「建市場資料夾」:清單最上方一顆 32 高的文字鈕,hover 同列 */
-.sg-auto { display: flex; align-items: center; width: calc(100% - var(--space-12)); height: 32px; margin: 0 0 var(--space-4) var(--space-12); padding: 0 var(--space-12); border-radius: var(--radius-md); font-size: 12px; color: var(--ink-2); text-align: left; }
-@media (hover: hover) { .sg-auto:hover { background: var(--surface-card); color: var(--ink); } }
 /* 編輯列:圖示鈕(視覺 24,圖示左緣仍在 x=24)＋名稱框 */
 .sg-edit { display: flex; align-items: center; gap: 6px; height: 44px; margin-top: 10px; padding: 0 var(--space-12) 0 20px; }
 .sg-edit:first-child { margin-top: 0; }

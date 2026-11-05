@@ -47,13 +47,17 @@
 .rp-help:hover .lt { text-decoration: underline; text-underline-offset: 3px; }
 
 /* ---- 1b. 更新績效(renderer/perf.js 掛進 .bt-meta 列尾;spec stats-manual-refresh §10)----
-   .upd 不是 .mgrp:靠右、前面不畫點;更新中是圓環(Loader inline 階 16/2,currentColor = ink-3)+ 三個字。
+   .upd-box 不是 .mgrp:靠右、前面不畫點;更新中是圓環(Loader inline 階 16/2,currentColor = ink-3)+ 三個字。
    失敗那一行緊跟在 meta 下面(8),三組條列照舊離它 16 */
-.bt-meta > .upd { display: inline-flex; align-items: center; gap: var(--space-8); margin-left: auto; white-space: nowrap; }
-.bt-meta > .upd .ts[title] { cursor: help; }
-.bt-meta > .upd .busy { display: inline-flex; align-items: center; gap: var(--space-6); }
-.bt-meta > .upd .btn-quiet[aria-disabled="true"] { color: var(--ink-disabled); text-decoration: none; cursor: not-allowed; }
-.bt-meta > .upd .btn-quiet::before { inset: -15px -6px; }   /* 熱區補到 44 高(視覺 14 + 15×2;設計稽核量到 42.25,只動這一顆,全域 .btn-quiet 仍是 24 最小) */
+.bt-meta > .upd-box { display: inline-grid; justify-items: end; align-items: center; margin-left: auto; }
+.upd-box > * { grid-area: 1 / 1; }
+.upd-box > .upd-hold { display: inline-flex; gap: var(--space-8); white-space: nowrap; visibility: hidden; }
+.upd-box > .upd-hold.is-run { padding-left: calc(16px + var(--space-6)); }   /* 圓環 16 + 間距,同 .busy */
+.upd-box > .upd { display: inline-flex; align-items: center; gap: var(--space-8); white-space: nowrap; }
+.upd-box > .upd .ts[title] { cursor: help; }
+.upd-box > .upd .busy { display: inline-flex; align-items: center; gap: var(--space-6); }
+.upd-box > .upd .btn-quiet[aria-disabled="true"] { color: var(--ink-disabled); text-decoration: none; cursor: not-allowed; }
+.upd-box > .upd .btn-quiet::before { inset: -15px -6px; }   /* 熱區補到 44 高(視覺 14 + 15×2;設計稽核量到 42.25,只動這一顆,全域 .btn-quiet 仍是 24 最小) */
 .bt > .bt-meta + .upd-fail { margin-top: var(--space-8); }
 .bt > .upd-fail + * { margin-top: var(--space-16); }
 .upd-fail { display: flex; align-items: flex-start; gap: var(--space-6); margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }

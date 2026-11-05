@@ -78,24 +78,24 @@
 .lib-back .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .lib-det { display: flex; flex-direction: column; gap: var(--space-16); padding-top: var(--space-4); }
 .lib-det[hidden] { display: none; }
-.lib-dhead { display: flex; flex-direction: column; gap: var(--space-12); }
-.lib-dhead-l { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+/* 主鈕一律在右上、登入前後同一點(spec library-login-required §3.1):不用斷點,放不下整組掉到下一行仍貼右緣 */
+.lib-dhead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: var(--space-12) var(--space-24); }
+.lib-dhead-l { flex: 1 1 200px; display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
 .lib-badges { display: flex; gap: var(--space-6); flex-wrap: wrap; }
 .lib-dhead h5 { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3; color: var(--ink); overflow-wrap: anywhere; }
 .lib-meta { font-size: 12px; color: var(--ink-3); }
 .lib-sum { margin: var(--space-4) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
-.lib-cta { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-6); flex: none; }
-.lib-cta .row { display: flex; align-items: center; gap: var(--space-12); }
+.lib-cta { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-6); flex: none; margin-left: auto; max-width: min(280px, 100%); }
+.lib-cta .row { display: flex; flex-direction: row-reverse; flex-wrap: wrap; align-items: center; gap: var(--space-12); }
+.lib-cta .note, .lib-cta .err { align-self: flex-end; text-align: left; }
 .lib-cta .note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .lib-cta .note.up { color: var(--ink-2); }
 .lib-cta .note .btn-quiet { font-size: inherit; }
 .lib-cta .err { margin: 0; display: flex; gap: var(--space-8); font-size: 12px; line-height: 1.6; color: var(--ink-2); }
 .lib-cta .err .fault-mark { background: var(--ink-3); margin-top: 8px; }   /* 灰記號:不是錯誤,是「沒發生」 */
-@container (min-width: 640px) {
-  .lib-dhead { flex-direction: row; justify-content: space-between; align-items: flex-start; gap: var(--space-24); }
-  .lib-cta { align-items: flex-end; max-width: 280px; }
-  .lib-cta .note, .lib-cta .err { align-self: stretch; text-align: left; }
-}
+.lib-gone { margin: 0 0 var(--space-12); display: flex; gap: var(--space-8); font-size: 12px; line-height: 1.6; color: var(--ink-2); }
+.lib-gone[hidden] { display: none; }
+.lib-gone .fault-mark { background: var(--ink-3); margin-top: 8px; }
 .lib-card { background: var(--surface-card); border-radius: var(--radius-lg); padding: var(--space-16); min-width: 0; }
 .lib-card h6 { margin: 0 0 var(--space-8); font-size: 12px; font-weight: 400; color: var(--ink-3); }
 .lib-card .chart { width: 100%; height: 200px; }   /* lightweight-charts 容器:182 圖 + 18 年份軸(詳情的主要證據,不是縮圖) */

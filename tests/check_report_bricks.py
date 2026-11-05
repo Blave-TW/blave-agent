@@ -10,6 +10,11 @@ for k in ("BLAVE_DATA_ACCESS", "BLAVE_DATA_ACCESS_WHY", "BLAVE_AGENT_LOCAL", "BL
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np, pandas as pd
 from lib import data as d
+try:  # these fetch the real api from the repo: its Date samples (lib/tw_clock) go to scratch, not the repo's state/
+    from lib import tw_clock as _twc
+    _twc.SKEW_PATH = os.path.join(tempfile.mkdtemp(prefix="skew-", dir=os.environ.get("SCRATCHPAD") or None), "clock_skew.json")
+except ImportError:
+    pass
 import lib.report_templates as T
 import lib.report_bricks as B
 from lib import report as R

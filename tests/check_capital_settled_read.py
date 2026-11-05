@@ -34,6 +34,10 @@ open("manager/portfolio_config.json", "w").write("{}")
 
 from lib import account_capital, capital_vault, capital_worker, order_capital  # noqa: E402
 from manager import reconciler  # noqa: E402
+# entries go only in the TAIFEX regular session (lib/tw_clock); this test's clock is the
+# wall clock, so it pins the session open
+from lib import tw_clock  # noqa: E402
+tw_clock.in_session = lambda ts: True
 
 capital_vault.LAST_ORDER_PATH = os.path.join(TMP, "capital_last_order_at")
 

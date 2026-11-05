@@ -126,7 +126,8 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // cxRetest:本機那半直送(雲端那半走 trSend);cdelRun:雲端刪除,request_id 以名字為單位沿用(CDEL.ids),審過
   // psApply 不在這裡:0.1.26 起 picker 的勾選是草稿,儲存才走 trCfOpen 送出;trExecSend:下單方式(0.1.26)
   // trPvRequest:存金額框請機器重算草稿的預覽(stats_refresh,0.1.27;同 perf.js 不帶 request_id,重送 = 機器回 BUSY)
-  const entries = ["trSend", "trCfOpen", "trPvRequest", "trExecSend", "trUnbind", "cxRetest", "cdelRun"];
+  // trUbKeep / trUbClose(解除綁定,0.1.45):雲端都走 trSend(沿用 request_id);本機的 tradeSend 不看 request_id
+  const entries = ["trSend", "trCfOpen", "trPvRequest", "trExecSend", "trUbKeep", "trUbClose", "cxRetest", "cdelRun"];
   const users = code.split(/\n(?:async )?function /).filter((b) => /S\.api\.tradeSend\(/.test(b)).map((b) => b.slice(0, b.indexOf("(")));
   ok("用 S.api 送指令的函式就是這幾個(多一個就要有人看過它的 request_id 有沒有沿用):" + users.join(), users.length === entries.length && users.every((n) => entries.indexOf(n) >= 0));
   // 會改變執行狀態的那三個指令一律經過 trSend(冪等:重試沿用同一顆 request_id);直接叫 S.api.tradeSend 會繞過它
@@ -173,7 +174,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       && /const CLOUD_ONLY = require\("\.\/cloudcmd"\)\.CLOUD_ONLY_COMMANDS;/.test(mainSrc)
       && JSON.stringify(require("../shell/cloudcmd").CLOUD_ONLY_COMMANDS) === '["delete_strategy"]'
       && !require("../shell/daemon").UI_COMMANDS.has("delete_strategy")
-      && /const CLOUD_SHIPPED = \["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"\];/.test(mainSrc));
+      && /const CLOUD_SHIPPED = \["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "close_then_unbind", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"\];/.test(mainSrc));
     // api 的測試釘住 update 不在 daemon.js 的 UI_COMMANDS(本機 daemon 不收);這裡也釘一次,免得有人為了過白名單把它塞進去
     ok("update 不在 daemon.js 的 UI_COMMANDS", !require("../shell/daemon").UI_COMMANDS.has("update"));
     ok("用本機 app 不觸發雲端 agent 回合:cloud-send 的白名單沒有 update / restart_reconciler", !/"update"|"restart_reconciler"/.test((mainSrc.match(/const CLOUD_SHIPPED = \[[^\]]*\]/) || [""])[0]));
@@ -317,7 +318,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // 寫進雲端的確認框要標明目的地(規格 §5:刻意講三次);本機不給那兩個參數,框逐位元組不變
   { const app2 = fs.readFileSync(path.join(R, "app.js"), "utf8"), html2 = fs.readFileSync(path.join(R, "index.html"), "utf8");
     ok("confirmBox 有 env / footWhere / lead 三個選用參數,DOM 兩個槽在,關框時一起收掉",
-      /function confirmBox\(\{ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel, focus, link, stay, note \}\)/.test(app2)
+      /function confirmBox\(\{ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel, focus, link, stay, note, wrapTitle \}\)/.test(app2)
       && /<span class="envm" id="del-env" hidden><\/span>/.test(html2) && /<span class="del-where" id="del-where" hidden><\/span>/.test(html2)
       && /\$\("del-env"\)\.hidden = true; \$\("del-where"\)\.hidden = true; \$\("del-modal"\)\.querySelector\("\.modal-head"\)\.classList\.remove\("cloud"\); \$\("del-cancel"\)\.hidden = false;/.test(app2.slice(app2.indexOf("function delClose"))));
     ok("雲端的框:灰標題列 + 「雲端」記號 + 錢記號 + 鈕上方的目的地那一行;暫停與啟動都經過同一支",
@@ -334,6 +335,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
 
   // ── 切換器每格 ──
   const cell = (e, s, p) => { const c = envCell(e, s, p); return [c.money, c.run, c.dot, c.word].join(); };
+  ok("還沒有狀態(開機第一輪 st = null):不丟例外、不算統一停止", (() => { try { return envCell("local", null, false).word !== "tr.s.presStopped"; } catch (_) { return false; } })());
   ok("這台電腦:沒連帳戶 = 只有字;模擬 / 真錢記號;下單中才有綠點", cell("local", { alive: true, report: rep({ venues: {} }) }) === ",false,," && cell("local", { alive: true, report: rep({ venues: P, account: null }) }) === "paper,true,," && cell("local", { alive: true, report: rep() }) === "real,true,,");
   ok("過場中 / 讀帳失敗 / 常駐程式不在:沒有綠點", cell("local", { alive: true, report: rep() }, true) === "real,false,," && cell("local", { alive: true, report: rep({ account: { venues: { binance: { ok: false } } } }) }) === "real,false,," && cell("local", { alive: false, report: rep() }) === "real,false,,");
   // Binance 金鑰重查出事:單可能送不出去 → 這台電腦那格不亮綠點(原本 trKeyBad 沒有任何測試:變異成恆 false 這裡會紅)
@@ -432,7 +434,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   ok("S5 雲端連接走主行程的 cloudConnect,不叫本機的 binanceConnect / binanceIp", /window\.blave\.cloudConnect\(/.test(fn("cxConnectCloud")) && !/binanceConnect|binanceIp|binanceRecheck/.test(fn("cxConnectCloud"))
     && /if \(CXF\.env === "cloud"\) return;/.test(fn("cxIpLookup")));
   ok("S5 雲端的「重新測試」「解除綁定」按得動,走雲端指令、失敗文案帶 S.env", !/is-ro/.test(fn("trPaintSet")) && /rt\.addEventListener\("click", cxRetest\)/.test(fn("trPaintSet"))
-    && /cloud \? await trSend\(S, "retest_accounts", \{\}\)/.test(fn("cxRetest")) && /trSendError\(res, "unbind", S\.env\)/.test(fn("trUnbind")) && /cloud \? t\("tr\.cloud\.unbindWarn"\)/.test(fn("trUnbind")));
+    && /cloud \? await trSend\(S, "retest_accounts", \{\}\)/.test(fn("cxRetest")) && /trSendError\(res, "unbind", S\.env\)/.test(fn("trUbKeep")) && /cloud \? await trSend\(S, "close_then_unbind", args\)/.test(fn("trUbClose")) && /t\(cloud \? "tr\.ub\.x0Cloud" : "tr\.ub\.x0"\)/.test(fn("trUnbind")));
   { const ob = fn("trPaintOnboard"), S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
     ok("S5 雲端 noaccount:主鈕換回「連接交易所」(同一顆 #tr-connect);送出之後換成「已存到、等回報」那一態、沒有鈕",
       !/plan\.openWs/.test(ob) && /b\.id = "tr-connect"/.test(ob) && /const saved = TR\.env === "cloud" \? TR\.cxSaved : null, savedStale = trCxSavedStale\(saved, Date\.now\(\)\);/.test(ob) && /tr\.cloud\.cxSavedBn/.test(ob));
@@ -455,7 +457,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
     ok("規格刪掉的 key 兩語都刪了;錯誤句保留「通常是」不寫成斷言", !/"cx\.(perm|whitelist|ip\.local|ip\.localNoIp|ip\.copy)"/.test(S) && /"cx\.chk\.trading": "[^"]*通常是/.test(S) && /"cx\.chk\.trading": "[^"]*Usually/.test(S));
     ok("複製元件:icon 鈕有可及名稱、成功才換勾並在 status 槽講「已複製」2 秒;「IP 換了」句子不再夾 {ip}", /b\.setAttribute\("aria-label", t\("cx\.ip\.copyThis"\)\)/.test(src) && /said\.setAttribute\("role", "status"\)/.test(src)
       && /await navigator\.clipboard\.writeText\(ip\); \} catch \(_\) \{ return; \}\s*b\.classList\.add\("is-done"\); said\.textContent = t\("cx\.ip\.copied"\);\s*setTimeout\([^\n]*2000\)/.test(src) && !/"cx\.re\.ipChanged": "[^"]*\{ip\}/.test(S) && /t\("cx\.re\.ipChanged"\)\s*:/.test(src)); }
-  const afterAwait = ["trPoll", "trOpen", "trRun", "trSend", "trCfOpen", "trUnbind", "trLoadCurve", "cxConnect", "cxRetest"].map((n) => { const b = fn(n), i = b.indexOf("await "); return [n, i < 0 ? "" : b.slice(i).replace(/TR === S|TR_BAGS|TR_[A-Z_]+/g, "")]; });
+  const afterAwait = ["trPoll", "trOpen", "trRun", "trSend", "trCfOpen", "trUbKeep", "trUbClose", "trLoadCurve", "cxConnect", "cxRetest"].map((n) => { const b = fn(n), i = b.indexOf("await "); return [n, i < 0 ? "" : b.slice(i).replace(/TR === S|TR_BAGS|TR_[A-Z_]+/g, "")]; });
   const leaks = afterAwait.filter((x) => /\bTR\b/.test(x[1])).map((x) => x[0]);
   ok("N8 跨 await 的流程在第一個 await 之後不碰裸的 TR(只准 TR === S 與 TR_BAGS):" + (leaks.join() || "無"), afterAwait.every((x) => x[1].length > 0) && leaks.length === 0);
   ok("N3/N4/N7 寫法:設定開著不搬焦點、切視角前放掉輸入框焦點、排下一輪在 finally", /if \(!\$\("set-scrim"\)\.hidden\) \{[^}]*\}\s*else if \(via === "link"\)/.test(fn("envSwitch")) && /\.blur\(\)/.test(fn("envSwitch")) && /finally \{[\s\S]*TRP\.timer = setTimeout\(trPoll/.test(fn("trPoll")));

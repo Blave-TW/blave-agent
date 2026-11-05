@@ -842,7 +842,9 @@
     }
     const root = el("div", "bt wf");
     let meta = null;
-    try { meta = typeof opts.buildMeta === "function" ? opts.buildMeta(stats) : null; } catch (e) { console.warn("[wf]", e); }
+    // 期間寫這次驗證實際跑的(wf.json 每輪的日期),不是現在回測的:更新績效把回測往後推,這份結果沒有跟著動
+    const own = w.runs ? { start: w.runs[0].tr0, end: w.runs[w.runs.length - 1].te1 } : null;
+    try { meta = typeof opts.buildMeta === "function" ? opts.buildMeta(Object.assign({}, stats, own)) : null; } catch (e) { console.warn("[wf]", e); }
     if (meta) {
       const help = typeof opts.help === "function" ? opts.help() : null;
       if (help) meta.appendChild(help);

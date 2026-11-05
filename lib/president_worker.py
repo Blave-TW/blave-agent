@@ -21,13 +21,25 @@ query is made and the last good snapshot is re-stamped with `maintenance`
 set — the market is closed then, so the carried positions are still true,
 and a planned outage never reads as a dead worker.
 
+A session is held only inside a trading window (Mon–Fri, Taipei): 08:30–14:00 around the
+day session (08:45–13:45) and 14:45–05:15 around the night session (15:00–05:00). Each
+window opens with a fresh login at its start — a session is never carried across the
+broker's maintenance or after hours (2026-11-05: one held across 06:00–07:30 went stale
+and its 07:30 re-login was refused). Outside a window the worker is logged out and
+re-stamps the last good snapshot with `maintenance` = 'closed' (or the broker window).
+Inside one, a read that fails gets one fresh login, as before.
+
 A failed login stops it for good (exit LOGIN_STOPPED_EXIT, which its supervisor —
 NSSM's AppExit, the desktop daemon — does not restart) and every later login on
-this machine refuses until the user confirms one (lib/president_vault STOP). A login
+this machine refuses until the user confirms one (lib/president_vault STOP). So does an
+order's own failed login, seen at the next tick: this session still reads, but no order
+can go out and the page only offers the confirmation to a stopped worker. A login
 that passes on an ID with no futures account backs off, and exits the same way on the
 third within an hour (counted across restarts, reset by any login that finds the account;
 no STOP file: the login itself was good). A failed read after a good login backs off, and
-the backoff only resets once an account read succeeds.
+the backoff only resets once an account read succeeds. A TIMEOUT login that the vault lets
+through once (LoginError.retry) is tried again LOGIN_RETRY_S later in the same process; a
+second TIMEOUT in a row stops like any failed login.
 
 Run: python lib/president_worker.py              (daemon)
      python lib/president_worker.py --once       (the user's 「確認登入」: one real login + read → state/president_probe.json)
@@ -83,6 +95,11 @@ MAINTENANCE = (
     (dtime(5, 30), dtime(5, 50), "login"),
     (dtime(6, 0), dtime(7, 30), "account"),
 )
+# (login at, logged out at): 15 min before each open, 15 min after each close
+DAY_WINDOW = (dtime(8, 30), dtime(14, 0))
+NIGHT_WINDOW = (dtime(14, 45), dtime(5, 15))
+CLOSES = ((dtime(13, 45), range(0, 5)), (dtime(5, 0), range(1, 6)))  # day Mon–Fri, night ends Tue–Sat
+LOGIN_RETRY_S = 300
 _RATE_LIMITED = "超過每分鐘限制"  # unitrade Error.MSG012
 MARGIN_CURRENCY = "NTT"
 
@@ -98,6 +115,43 @@ def maintenance(now=None):
         if start <= t < end:
             return label
     return None
+
+
+def session_window(now=None):
+    """Start of the trading window `now` falls in (its scheduled login), or None — after
+    hours and weekends. Holidays are not known here: a holiday window logs in and reads."""
+    now = (now or datetime.now(TAIPEI)).astimezone(TAIPEI)
+    t, today = now.time(), now.date()
+    at = lambda d, hm: datetime.combine(d, hm, tzinfo=TAIPEI)  # noqa: E731
+    if now.weekday() < 5 and DAY_WINDOW[0] <= t < DAY_WINDOW[1]:
+        return at(today, DAY_WINDOW[0])
+    if now.weekday() < 5 and t >= NIGHT_WINDOW[0]:
+        return at(today, NIGHT_WINDOW[0])
+    yesterday = today - timedelta(days=1)
+    if t < NIGHT_WINDOW[1] and yesterday.weekday() < 5:
+        return at(yesterday, NIGHT_WINDOW[0])
+    return None
+
+
+def last_close(now=None):
+    """The latest session close at or before `now`."""
+    now = (now or datetime.now(TAIPEI)).astimezone(TAIPEI)
+    return max(datetime.combine(now.date() - timedelta(days=back), hm, tzinfo=TAIPEI)
+               for back in range(8) for hm, days in CLOSES
+               if (now.date() - timedelta(days=back)).weekday() in days
+               and datetime.combine(now.date() - timedelta(days=back), hm, tzinfo=TAIPEI) <= now)
+
+
+def _carried_snapshot():
+    """The snapshot on disk when it was read after the last close (the market has not moved
+    it since): a worker restarted after hours carries it instead of logging in."""
+    try:
+        snap = load_json(OUT_PATH, encoding="utf-8")
+    except (OSError, ValueError):
+        return None
+    if not isinstance(snap, dict) or not snap.get("ok") or snap.get("login_stopped"):
+        return None
+    return snap if float(snap.get("data_at") or 0) >= last_close().timestamp() else None
 
 
 class RateLimited(RuntimeError):
@@ -383,25 +437,62 @@ def run_once():
 
 
 def main():
-    last_good = None
-    api = actno = None
+    last_good = _carried_snapshot()
+    api = actno = held = None  # held: the window the session was logged in for
+    retry_at = 0.0
+    read_once = False
+
+    def drop():
+        nonlocal api, held
+        _quote_api(None)
+        if api is not None:
+            api.logout()
+        api = held = None
+
+    def retry_snapshot():
+        _write_snapshot({"ok": False, "waiting": "login_retry", "retry_at": retry_at,
+                         "error": f"統一期貨 login timed out — one more try at "
+                                  f"{datetime.fromtimestamp(retry_at, TAIPEI):%H:%M}"})
+
+    def login_retry(e):
+        nonlocal retry_at
+        retry_at = time.time() + LOGIN_RETRY_S
+        _log(f"{e} — one more try in {LOGIN_RETRY_S // 60} min")
+        retry_snapshot()
+        _sleep_until_refresh()
+
     try:
         while True:
             os.makedirs(os.path.dirname(HEARTBEAT_PATH), exist_ok=True)
             with open(HEARTBEAT_PATH, "w"):
                 pass
-            window = maintenance()
-            if window:
+            window = session_window()
+            label = maintenance() or (None if window else "closed")
+            if label:
+                if api is not None:
+                    _log("outside the trading window — logged out until the next one")
+                    drop()
                 if last_good:
-                    _write_snapshot(dict(last_good, maintenance=window))
+                    _write_snapshot(dict(last_good, maintenance=label))
                 else:
-                    _write_snapshot({"ok": False, "error": f"統一期貨 {window} maintenance — "
-                                                          f"no snapshot yet", "maintenance": window})
+                    # `waiting`: a planned gap, not a failed read — the reconciler skips the round
+                    _write_snapshot({"ok": False, "error": f"統一期貨 {label} — no snapshot yet",
+                                     "maintenance": label, "waiting": label})
+                _sleep_until_refresh()
+                continue
+            if api is not None and held != window:
+                _log("new trading window — fresh login")
+                drop()
+            if api is None and time.time() < retry_at:
+                retry_snapshot()
                 _sleep_until_refresh()
                 continue
             try:
+                if api is not None and president_vault.stopped():
+                    raise president_vault.LoginError("STOPPED")
                 if api is None:
                     api, actno = _login()
+                    held = window
                     _quote_api(api)
                 snap = read_account(api, actno)
             except RateLimited as e:
@@ -409,8 +500,11 @@ def main():
                 _sleep_until_refresh()
                 continue
             except president_vault.LoginError as e:
-                if e.kind == "MAINTENANCE":
+                if e.kind in ("MAINTENANCE", "BUSY"):
                     _sleep_until_refresh()
+                    continue
+                if e.retry:
+                    login_retry(e)
                     continue
                 _login_stopped(president_vault.sanitize(str(e)))
             except NoFuturesAccount as e:
@@ -420,27 +514,33 @@ def main():
                     err = president_vault.sanitize(f"{type(e).__name__}: {e}")
                     _log(f"login failed: {err}")
                     _backoff_and_exit(err)
-                # a session that went stale across a maintenance window gets one fresh login
-                _quote_api(None)
-                api.logout()
-                api = None
+                # a session that dropped inside the window gets one fresh login
+                drop()
+                first = president_vault.sanitize(f"{type(e).__name__}: {e}")
                 try:
                     api, actno = _login()
+                    held = window
                     _quote_api(api)
                     snap = read_account(api, actno)
                 except president_vault.LoginError as e2:
+                    _log(f"read failed: {first} / re-login: {president_vault.sanitize(str(e2))}")
+                    if e2.kind in ("MAINTENANCE", "BUSY"):
+                        _sleep_until_refresh()
+                        continue
+                    if e2.retry:
+                        login_retry(e2)
+                        continue
                     _login_stopped(president_vault.sanitize(str(e2)))
                 except NoFuturesAccount as e2:
+                    _log(f"read failed: {first}")
                     _no_account(president_vault.sanitize(str(e2)), 0)  # this process's first login found one
                 except Exception as e2:
                     err = president_vault.sanitize(f"{type(e2).__name__}: {e2}")
-                    _log(f"tick failed: {president_vault.sanitize(f'{type(e).__name__}: {e}')} / retry: {err}")
-                    if api is not None:
-                        _quote_api(None)
-                        api.logout()
-                        api = None
+                    _log(f"tick failed: {first} / retry: {err}")
+                    drop()
                     _backoff_and_exit(err, no_account=0)
-            if last_good is None:
+            if not read_once:
+                read_once = True
                 # only a read clears the backoff: a login that passes while the account query
                 # keeps failing would otherwise reset the ladder to 30 s every restart
                 try:

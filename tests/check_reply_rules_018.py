@@ -140,7 +140,7 @@ t("N 規則不引用要禁的句子,改講正面的:回覆第一句講用戶要�
 t("被 runtime 拒絕的動作不換寫法重試;雲端主機的排程另有規則(AGENTS.md › Desktop app)", "**What the runtime refused stays refused:**" in read("AGENTS.md")
   and "never reword the command, wrap it in a script or switch tools" in read("AGENTS.md") and "*A schedule on the cloud machine*" in read("AGENTS.md"))
 t("從電腦版操作雲端主機:只裝被要求的那一條,不順帶裝健康檢查", "never the health check beside it" in dep and "「做好就排程上線」" in dep)
-t("O 回覆用用戶的話:檔名、旗標、結束碼、環境變數、cron 語法、內部狀態名不進回覆", "**Say it in the user's words, not the machine's:**" in style and "cron syntax" in style and "「每小時整點跑一次」「已暫停」「還沒設定金額」" in style)
+t("O 回覆用用戶的話:檔名、旗標、結束碼、環境變數、cron 語法、內部狀態名不進回覆", "- Say it in the user's words, not the machine's." in style and "cron syntax" in style and "「每小時整點跑一次」「已暫停」「還沒設定金額」" in style)
 
 # 第七批
 flow = section(br, "## Standard flow")
@@ -183,11 +183,11 @@ t("#5B 規則:AGENTS › Reports 的自訂報告那一句改成從 quickstart() 
   and "**Start from `quickstart()`, not from this file.**" in section(rep, "### Custom recipes"))
 
 t("#143 #167 時間:回覆、表格、報告裡的時間一律換成用戶的時區並標明;不寫其實是 UTC 的「今天 21:34」,不出「時間(UTC)」欄(AGENTS › Response Style,一句)",
-  len([l for l in style.splitlines() if l.startswith("- **Clock times are the user's, and say whose:**")]) == 1 and "converted to the user's timezone" in style and "named once" in style
+  len([l for l in style.splitlines() if l.startswith("- Clock times are the user's, and say whose.")]) == 1 and "converted to the user's timezone" in style and "named once" in style
   and "never a bare 「今天 21:34」 that is really UTC" in style and "no 「時間(UTC)」 column unless the user asked for UTC" in style)
 # 0.1.17 e2e:歡迎頁點列送出的討論句,回合 1 以三個問題收尾(方向／標的／週期),跟畫面上的建議句各講各的。
 # runtime 的結尾規則只管「提議下一步的問句」,問用戶偏好的問句不在它的範圍內
-discuss = [l for l in style.splitlines() if l.startswith("- **Asked to discuss how to build a strategy from some data")]
+discuss = [l for l in style.splitlines() if l.startswith("- When asked to discuss how to build a strategy from some data")]
 t("0.1.17 討論型開場:編號提案收尾、標一個預設、回編號就開始做;缺的細節用預設並寫明、不逐項問、最多一個問題;建議句出自同一組提案(AGENTS › Response Style,一句)",
   len(discuss) == 1 and "end on your numbered proposals with one marked as the recommended default" in discuss[0] and "replying with a number starts the build" in discuss[0]
   and "(symbol, interval, contract, capital)" in discuss[0] and "not asked one by one" in discuss[0] and "at most one clarifying question" in discuss[0] and "picked from those same proposals" in discuss[0])

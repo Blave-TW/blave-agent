@@ -68,9 +68,9 @@ Reply in the user's language; the example below is the shape, not the wording.
 
 <example>
 All three use only public Binance klines, no Blave data; I read the page descriptions, not the code.
-1. **First-4-hour fake breakout**: price breaks out of the UTC 0–4 range and closes back inside, so enter the other way. The author tested it only on gold.
+1. First-4-hour fake breakout. Price breaks out of the UTC 0–4 range and closes back inside, so enter the other way. The author tested it only on gold.
 https://www.tradingview.com/script/…
-2. **Bollinger squeeze breakout (ETH)**: volatility contracts, then expands; follow the direction. The page shows only 11 trades, and two parameters are left for us to fill in.
+2. Bollinger squeeze breakout (ETH). Volatility contracts, then expands; follow the direction. The page shows only 11 trades, and two parameters are left for us to fill in.
 https://jesse.trade/strategies/…
 3. …
 I'd test 1 first: its rules are the most complete and need no extra parameters. Reply with a number to start the backtest.

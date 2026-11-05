@@ -161,7 +161,7 @@ for (const kind of ["done", "await", "fail", "stopped", "nope"]) for (const focu
   ok("一輪一聲:同一輪畫面再送一次不再響", y.snd.length === 1); }
 { const y = mk({ senderGone: true }); y.ctx.setPending({ sid: SID, awaiting: false });
   ok("畫面已銷毀:不送、不拋", y.cue({ kind: "done", snippet: "x" }) === true && y.snd.length === 0); }
-ok("silent: true 整個 main.js 只有一處、在 replyCue 裡(P1 與其他通知照用系統聲)", (main.match(/silent: true/g) || []).length === 1 && /silent: true/.test(fn(main, "replyCue")));
+ok("通知的 silent: true 整個 main.js 只有一處、在 replyCue 裡(P1 與其他通知照用系統聲;install 的 silent 是 NSIS 靜默,不是通知)", (main.match(/new Notification\(\{[^\n]*silent: true/g) || []).length === 1 && /silent: true/.test(fn(main, "replyCue")));
 // 主行程:replySound 沒存過跟著 replyNotify;存過就各管各的;檔不在／壞掉／null 一律算開
 { const getSrc = line(/const replySoundGet = .*;/);
   const run = (raw) => new Function("fs", "uiPrefsPath", getSrc + "\nreturn replySoundGet();")({ readFileSync: () => { if (raw === undefined) throw new Error("ENOENT"); return raw; } }, () => "/x");

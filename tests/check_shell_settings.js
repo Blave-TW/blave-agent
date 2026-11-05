@@ -187,13 +187,13 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
     ".official-backup/a\"-20260924T051200Z", "lib/2026-09-22-p-20260924T051200Z", ".official-backup/2026-09-22-p", ".official-backup/" + "x".repeat(41) + "-20260924T051200Z", "d/", "", "ls -la; rm -rf ~"].every((d) => dir(d) === null)); }
 (async () => {
   calls.length = 0; modals.length = 0; featured.length = 0; paint({ ...C, phase: "ready" }, cloud()); await $("up-pill").onclick(); await new Promise((r) => setImmediate(r));
-  ok("(b) 按膠囊(沒在下單):畫面開 §4.1(plain,帶已暫存的版號),先不裝;記 upd_go_pill", calls.length === 0 && modals.length === 1 && modals[0].kind === "plain" && modals[0].data.v === "0.0.8" && featured.join() === "upd_go_pill" && sent.length === 0);
+  ok("(b) 按膠囊(沒在下單):畫面開 §4.1(plain,帶已暫存的版號),先不裝;記 upd_go_pill", calls.length === 0 && modals.length === 1 && modals[0].kind === "plain" && modals[0].data.v === "0.0.8" && featured.filter((n) => n !== "slot_up_show").join() === "upd_go_pill,slot_up_open" && sent.length === 0);
   modals[0].done(true); await new Promise((r) => setImmediate(r));
   ok("…§4.1 按重新啟動 = updateInstall({ confirmed: true }),不送任何雲端指令", calls.join() === "install" && JSON.stringify(lastInstall) === '{"confirmed":true}' && sent.length === 0);
   calls.length = 0; modals.length = 0; modals.length = 0; paint({ ...C, phase: "ready" }, cloud()); await $("up-pill").onclick(); modals[0].done(false); await new Promise((r) => setImmediate(r));
   ok("…§4.1 按取消:不裝", calls.length === 0);
   calls.length = 0; modals.length = 0; featured.length = 0; paint({ ...C, phase: "blocked" }, cloud()); await $("up-rail").onclick(); await new Promise((r) => setImmediate(r));
-  ok("(b) 下單中按細軌圓鈕:直接叫主行程(updateInstall 不帶 confirmed),畫面不先開 §4.1;同樣記 upd_go_pill", calls.join() === "install" && modals.length === 0 && JSON.stringify(lastInstall) === '{}' && featured.join() === "upd_go_pill");
+  ok("(b) 下單中按細軌圓鈕:直接叫主行程(updateInstall 不帶 confirmed),畫面不先開 §4.1;同樣記 upd_go_pill", calls.join() === "install" && modals.length === 0 && JSON.stringify(lastInstall) === '{}' && featured.filter((n) => n !== "slot_up_show").join() === "upd_go_pill");
   calls.length = 0; modals.length = 0; paint({ ...C, phase: "ready" }, cloud()); await $("set-up-btn").onclick(); await new Promise((r) => setImmediate(r));
   ok("關於列的「重新啟動以完成更新」同一套:沒在下單開 §4.1", calls.length === 0 && modals.length === 1 && modals[0].kind === "plain");
   calls.length = 0; modals.length = 0; paint({ ...C, phase: "blocked" }, cloud()); await $("set-up-btn").onclick(); await new Promise((r) => setImmediate(r));
@@ -613,7 +613,7 @@ ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效
   const br = fs.readFileSync(path.join(R, "browser.js"), "utf8"), i = br.indexOf("async function brSetPaint("), brFn = br.slice(i, br.indexOf("\n}", i) + 2);
   const rules = fs.readFileSync(path.join(R, "rules.js"), "utf8"), ri = rules.indexOf("function rulesPaint("), rulesFn = rules.slice(ri, rules.indexOf("\n}", ri) + 2);
   ok("三顆開關(mv-sw / priv-sw / br-sw)的字是 label[for] 指向開關、沒有 aria-label;清除瀏覽資料與隱私權政策不在 label 裡",
-    /lbl = mk\("label", "sw-l", t\("mv\.switch"\)\); lbl\.htmlFor = "mv-sw"; row\.append\(lbl\);/.test(fnSrc("mvBlock"))
+    /lbl = mk\("label", "sw-l"\); lbl\.htmlFor = "mv-sw";/.test(fnSrc("mvBlock")) && /tl = mk\("span", "set-tipl", t\("mv\.switch"\)\)/.test(fnSrc("mvBlock")) && /lbl\.append\(tl, tip\); row\.append\(lbl\);/.test(fnSrc("mvBlock"))
     && /lbl = mk\("label", "sw-l", t\("priv\.switch"\)\); lbl\.htmlFor = "priv-sw"; row\.append\(lbl\);/.test(fnSrc("privPaint"))
     && /lbl = brEl\("label", "sw-l"\); lbl\.htmlFor = "br-sw";/.test(brFn) && /lbl\.append\(name, tip\); row\.append\(lbl\);/.test(brFn)
     && ![fnSrc("mvBlock"), fnSrc("privPaint"), brFn].some((f) => /"span", "sw-l"|aria-label(?!ledby)/.test(f))
@@ -629,14 +629,14 @@ ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效
 // 會收的組(0.1.39):PRIV_COLLECT 從原文 eval 出來,組 id、句數、順序逐一對;舊的 priv.collect.<n> 一條都不能留
 const PRIV_COLLECT_V = eval(src.match(/const PRIV_COLLECT = [^\n]*;/)[0].replace(/^const PRIV_COLLECT = /, "(").replace(/;$/, ")"));
 const POS = (L, k) => { const m = PO[L].match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\nmsgstr "([^"]*)"')); return m ? m[1] : null; };
-const PRIV_SHAPE = [["step", 4], ["strat", 5], ["feat", 6], ["stuck", 7], ["auth", 5], ["meta", 5], ["lib", 3], ["acct", 2]];
+const PRIV_SHAPE = [["step", 4], ["strat", 5], ["feat", 6], ["stuck", 7], ["auth", 5], ["meta", 5], ["acct", 2]];
 const PRIV_GROUPS_OK = JSON.stringify(PRIV_COLLECT_V) === JSON.stringify(PRIV_SHAPE.map(([g, n]) => ["priv.c." + g + ".h", Array.from({ length: n }, (_, i) => "priv.c." + g + "." + (i + 1))]))
   && PRIV_COLLECT_V.every(([h, ks]) => [h, ...ks].every((k) => POS(0, k) && POS(1, k)))
   && PO.every((x) => !/msgid "priv\.collect\.\d+"/.test(x)) && !/priv\.collect\.\d/.test(src)
   && /if \(!off\) box\.append\(mk\("p", "priv-lead", t\("priv\.lead"\)\)\);/.test(src) && PO.every((x) => !/msgid "(priv|mv|br\.set)\.leadOff"/.test(x)) && /PRIV_NEVER = \[("priv\.never\.[1-6]",? ?){6}\]/.test(src)
   && /msgid "priv\.never\.6"\nmsgstr "事件紀錄不含 IP 位址"/.test(PO[0]) && /msgid "priv\.never\.6"\nmsgstr "Event records contain no IP address"/.test(PO[1])
   && /off \? t\("priv\.collect\.hOff"\) : t\("priv\.collect\.h"\)/.test(src) && /off \? t\("priv\.kept"\) : t\("priv\.fine"\)/.test(src);
-ok("隱私:會收分 8 組(0.1.39 設計稽核 §C,Wei 核准):組的順序照原本 11 條的順序拆;關掉時仍送「已關閉」寫在關閉態那行 priv.kept)、不收 6 條(含「事件紀錄不含 IP 位址」原話);關掉後清單留著、標題與尾句換掉、不畫說明行", PRIV_GROUPS_OK
+ok("隱私:會收分 7 組(0.1.39 設計稽核 §C,Wei 核准;0.1.45 拿掉策略庫下載那組):組的順序照原本 11 條的順序拆;關掉時仍送「已關閉」寫在關閉態那行 priv.kept)、不收 6 條(含「事件紀錄不含 IP 位址」原話);關掉後清單留著、標題與尾句換掉、不畫說明行", PRIV_GROUPS_OK
   && /if \(!off\) box\.append\(mk\("p", "priv-lead", t\("priv\.lead"\)\)\);/.test(src) && PO.every((x) => !/msgid "(priv|mv|br\.set)\.leadOff"/.test(x)) && /PRIV_NEVER = \[("priv\.never\.[1-6]",? ?){6}\]/.test(src)
   && /msgid "priv\.never\.6"\nmsgstr "事件紀錄不含 IP 位址"/.test(PO[0]) && /msgid "priv\.never\.6"\nmsgstr "Event records contain no IP address"/.test(PO[1])
   && /off \? t\("priv\.collect\.hOff"\) : t\("priv\.collect\.h"\)/.test(src) && /off \? t\("priv\.kept"\) : t\("priv\.fine"\)/.test(src));
@@ -667,7 +667,7 @@ ok("隱私:會收分 8 組(0.1.39 設計稽核 §C,Wei 核准):組的順序照�
   LANG = "zh"; privPaint();
   { const all = []; const walk = (n) => { if (!n || !n.children) return; n.children.forEach((c) => { if (c && typeof c === "object") { all.push(c); walk(c); } }); }; walk($("set-priv"));
     const gs = all.filter((n) => n._cls === "priv-g"), heads = gs.map((g) => g.children[0]);
-    ok("隱私:privPaint 把會收畫成 8 組,每組一個 .priv-gh 小標(不是 li,不吃短劃)接一份 ul;組內句數照 PRIV_COLLECT", gs.length === 8
+    ok("隱私:privPaint 把會收畫成 7 組,每組一個 .priv-gh 小標(不是 li,不吃短劃)接一份 ul;組內句數照 PRIV_COLLECT", gs.length === 7
       && heads.every((h, i) => h._cls === "priv-gh" && h.textContent === PRIV_COLLECT[i][0]) && gs.every((g, i) => g.children[1].children.length === PRIV_COLLECT[i][1].length)
       && /\.priv-g \+ \.priv-g \{ margin-top: var\(--space-8\); \}/.test(css) && /\.priv-gh \{[^}]*font-weight: 400;[^}]*color: var\(--ink\);/.test(css)); }
   // privPaint 用 document.createElement 組節點,不經過 $():從 #set-priv 的子樹把那顆鈕找出來
@@ -705,12 +705,11 @@ const PRIV_ZH = {
   stuck: ["卡在哪一步", "回合失敗、連不上 AI、策略庫用不了的原因類別", "綁卡／儲值提示有沒有出現與按下、回來後能不能用", "啟動雲端方案的結果、更新卡在哪一步", "第一次收到 AI 回覆", "第一次安裝或更新後補裝引擎與策略套件，有沒有裝好", "沒裝好是哪一類原因", "只記類別，不含內容"],
   auth: ["登入與金鑰", "本機 AI 的登入方式，例如訂閱或 API 金鑰", "不含帳號與金鑰", "登入失敗的類別，以及當下是否判定為已登入", "改金鑰時驗證碼框的出現、通過與鎖住", "不含驗證碼"],
   meta: ["每筆紀錄都帶", "發生的時間", "app 版本、作業系統與版本、系統語言", "電腦類型：筆電或桌機", "安裝識別碼：這份安裝隨機產生的編號", "登入後，安裝識別碼會跟你的帳號對上"],
-  lib: ["策略庫下載", "沒登入或登入失效時，從策略庫下載免登入策略", "記策略庫編號與安裝識別碼，用來算安裝人數", "之後登入就會跟你的帳號對上"],
   acct: ["帳號上", "登入後，帳號會記下連的是哪種 AI", "也記這台電腦有沒有跑過回測，保留 90 天"],
 };
 const privKeys = (g) => ["priv.c." + g + ".h", ...PRIV_ZH[g].slice(1).map((_, i) => "priv.c." + g + "." + (i + 1))];
 const zhCount = (x) => { const CJK = /[\p{Script=Han}]/gu; return (x.match(CJK) || []).length + (x.replace(CJK, " ").match(/[\p{L}\p{N}_]+(?:[.,]\p{N}+)*/gu) || []).length; };
-ok("隱私 0.1.39:會收八組的 zh 逐字、每句 ≤25 字(canon 算法);組標題與句子 en 都有", Object.keys(PRIV_ZH).every((g) => privKeys(g).every((k, i) => POS(0, k) === PRIV_ZH[g][i] && zhCount(PRIV_ZH[g][i]) <= 25 && !!POS(1, k))));
+ok("隱私 0.1.39:會收七組的 zh 逐字、每句 ≤25 字(canon 算法);組標題與句子 en 都有", Object.keys(PRIV_ZH).every((g) => privKeys(g).every((k, i) => POS(0, k) === PRIV_ZH[g][i] && zhCount(PRIV_ZH[g][i]) <= 25 && !!POS(1, k))));
 // 事件數跟告知綁在一起:加事件而沒補「會收」那幾組,這裡就紅(canon product-telemetry 出貨清單第 5 條)
 ok("隱私:三十一個事件逐項對得上契約的白名單(heartbeat=做到哪一步「app 開著的每一天」;strat_* 三個=每支策略,只記型別與市場類別;feature_used=用了哪些功能,名稱、每日一次、不含內容;lib_pick / idea_sent=用了哪些功能的策略庫與找點子;reply_notif=系統通知;0.1.9 九個、0.1.12 引擎安裝兩個、0.1.15 detect_fail=卡在哪一步,只記類別;cli_auth / auth_fail / key_verify=登入與金鑰;device_type=每筆紀錄都帶的電腦類型,spec-0.1.13 #12:寫作業系統與版本,不寫 macOS)",
   Object.keys(require("../shell/telemetry.js").EVENTS).length === 31
@@ -718,12 +717,11 @@ ok("隱私:三十一個事件逐項對得上契約的白名單(heartbeat=做到�
   && /^App version, operating system and version, system language$/.test(POS(1, "priv.c.meta.2")) && /^Computer type: laptop or desktop$/.test(POS(1, "priv.c.meta.3"))
   && /whether local auto-trading runs/.test(POS(1, "priv.c.step.2")) && /type \(A\/B\/C\) and market category/.test(POS(1, "priv.c.strat.2")) && /^Never its name or symbol$/.test(POS(1, "priv.c.strat.3"))
   && /whether it needs Blave data/.test(POS(1, "priv.c.feat.3")) && /which entry point/.test(POS(1, "priv.c.feat.4")) && /^Never the chat title or text$/.test(POS(1, "priv.c.feat.6"))
-  && /^Categories only, never the content$/.test(POS(1, "priv.c.stuck.7")) && /^Never the code$/.test(POS(1, "priv.c.auth.5")) && /kept 90 days/.test(POS(1, "priv.c.acct.2"))
-  && /signed out or your sign-in expired/.test(POS(1, "priv.c.lib.1")) && /to count installs/.test(POS(1, "priv.c.lib.2")));
+  && /^Categories only, never the content$/.test(POS(1, "priv.c.stuck.7")) && /^Never the code$/.test(POS(1, "priv.c.auth.5")) && /kept 90 days/.test(POS(1, "priv.c.acct.2")));
 ok("acct.sub 開通試用那句兼講期限(Wei 核准 0.1.10):zh / en 逐字", /msgid "acct\.sub"\nmsgstr "首次綁卡，\{t\} 天內有 \{q\} TWD 的 AI 額度，電腦版也拿得到 Blave 的資料。"/.test(PO[0])
   && /msgid "acct\.sub"\nmsgstr "A first-time card gets \{q\} TWD of AI credit and Blave data in the desktop app, both for \{t\} days\."/.test(PO[1]));
 // 例外只有報告分享的掛名二選一(shr.anon):那是公開頁上作者欄真的不出名字,不是在講追蹤資料匿名
-ok("隱私 0.1.13(Wei 核准草稿 §B):priv.never.2 收窄成「你自己的策略」(免登入下載那條 0.1.39 起在「策略庫下載」組,逐字見上)", /msgid "priv\.never\.2"\nmsgstr "你自己的策略：程式碼與名稱"/.test(PO[0]) && /msgid "priv\.never\.2"\nmsgstr "Your own strategies' code and names"/.test(PO[1]));
+ok("隱私 0.1.13(Wei 核准草稿 §B):priv.never.2 收窄成「你自己的策略」", /msgid "priv\.never\.2"\nmsgstr "你自己的策略：程式碼與名稱"/.test(PO[0]) && /msgid "priv\.never\.2"\nmsgstr "Your own strategies' code and names"/.test(PO[1]));
 ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選項 shr.anon 除外);首次告知的 priv.notice* 沒有建", PO.every((x) => !/匿名|anonym/i.test(x.replace(/^#.*$/gm, "").replace(/msgid "shr\.anon"\nmsgstr "[^"]*"/, ""))) && PO.every((x) => !/priv\.notice/.test(x)) && !/telemetryNoticed/.test(src));
 // 設定 › 資料與雲端方案 › 主機運行中那格:主鈕是「切到雲端」(關設定 + 走切換器同一個守門入口),不再外開網頁(Wei:不用前往工作頁了)
 {
@@ -1365,7 +1363,14 @@ ok("確認框字(r8):body1 有 Linux Starter;鈕「付 {x} TWD 開通」/ Pay {x
     ok("連結頁 QR:登入且開著才出兩張(iOS、Android,alt 空);關著、pending、登出都不出;圖檔在 renderer/img", on.length === 2 && on.map((n) => n.src).join() === "img/qr_ios.png,img/qr_android.png" && on.every((n) => n.alt === "")
       && [{ visible: true, signedIn: true, on: false }, { visible: true, signedIn: true, on: false, pending: true }, { visible: true, signedIn: false, on: true }].every((m) => imgs(m).length === 0)
       && ["qr_ios.png", "qr_android.png"].every((f) => fs.existsSync(path.join(R, "img", f)))
-      && /const MV_APP_IOS = "https:\/\/apps\.apple\.com\/tw\/app\/blave\/id6747014559";/.test(src) && /const MV_APP_ANDROID = "https:\/\/play\.google\.com\/store\/apps\/details\?id=org\.wuchi\.blave\.android";/.test(src)); }
+      && /const MV_APP_IOS = "https:\/\/apps\.apple\.com\/tw\/app\/blave\/id6747014559";/.test(src) && /const MV_APP_ANDROID = "https:\/\/play\.google\.com\/store\/apps\/details\?id=org\.wuchi\.blave\.android";/.test(src));
+    // 設定 › 連結精簡版(connect-page-trim-2026-11-05):上傳頻率與關掉會刪進開關名稱的 tooltip,開著時開關下不再有說明句;兩件同一批
+    const nodes = (mv) => flat(block(mv)), leads = (mv) => nodes(mv).filter((n) => n.cls === "priv-lead");
+    ok("手機查看:開關名稱掛 tooltip(mv.tip、虛線字),開著時開關下沒有說明句;待刪那句照出;tooltip 鍵盤打得開",
+      [{ visible: true, signedIn: true, on: true }, { visible: true, signedIn: true, on: false }].every((m) => nodes(m).some((n) => n.cls === "tip" && n.text === "mv.tip") && nodes(m).some((n) => n.cls === "set-tipl" && n.text === "mv.switch"))
+      && leads({ visible: true, signedIn: true, on: true, name: "Mac" }).length === 0 && leads({ visible: true, signedIn: true, on: false, pending: true }).map((n) => n.textContent).join() === "mv.leadPending"
+      && /setAttribute\("aria-labelledby", "mv-l"\); sw\.setAttribute\("aria-describedby", "mv-tip"\)/.test(fnSrc("mvBlock")) && !/mv\.lead"|mv\.leadNoName/.test(src)
+      && css.includes(".mv .sw-row:has(.sw:focus-visible:not([data-tip-off])) .tip { display: block; }")); }
   ok("資料來源空狀態的金鑰那句拿掉了,.src-fine 跟著刪", !/src-fine/.test(fs.readFileSync(path.join(R, "datasrc.css"), "utf8") + fs.readFileSync(path.join(R, "datasrc.js"), "utf8")));
 })().then(() => {
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

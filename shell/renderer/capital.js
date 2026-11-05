@@ -19,7 +19,7 @@ const CAP_PFX_FILE_ERR = { PFX_INVALID: "cap.pfx.errFile", PFX_TOO_LARGE: "cap.p
 const CAP_PROBE_ERR = { cert_old: "cap.err.certOld", cert_unusable: "cap.err.certUnusable", cert_expired: "cap.err.certExpired",
   timeout: "cap.err.timeout", vehicle_failed: "cap.err.vehicle", api_version: "cap.err.apiVersion", no_credentials: "cap.err.noCreds" };
 
-const capBlank = () => ({ credsUpd: undefined, base: null, phase: "form", id: "", pw: "", ppw: "", file: null, fileErr: null, route: null, sent: null, busy: false, msg: null, notCapable: false,
+const capBlank = () => ({ credsUpd: undefined, base: null, phase: "form", id: "", pw: "", ppw: "", file: null, fileErr: null, route: null, certDismissed: null, sent: null, busy: false, msg: null, notCapable: false,
   setupSent: false, finishSent: false, signOpened: false, signChecked: false, unlockUsed: false, recheck: false, storeOpen: false, seen: {}, sig: null, kc: null });
 let CAP = capBlank();
 
@@ -52,6 +52,10 @@ function capProbeRow(cc) {
   const st = capSec(cc, "probe").state;
   return st === "no_accounts" ? "sign" : st === "verify_needed" ? "verify" : st === "pw_wrong" || st === "pw_locked" || st === "no_credentials" ? "pw" : "cert";
 }
+/* 上傳失敗還算不算數:按過〔換一種做法〕(certDismissed = 當下 cert／probe 的 at)就不再用同一份回報把用戶拉回匯入;
+   at 換了(新的回報)照樣算(同 web capital_connect.js) */
+const capCertFailed = (cert, ui) => cert.status === "failed" && !(ui.certDismissed && cert.at === ui.certDismissed.cert);
+const capProbeDismissed = (probe, ui) => !!ui.certDismissed && probe.at === ui.certDismissed.probe;
 /* (capital_connect, 畫面自己的狀態, { win, now }) → 態的名字(spec 的 c-* 家族 + 這版補的幾個)。順序有意義:
    在跑的最先(按鈕全鎖)、再來是要用戶做事的、最後是選做法 */
 function capView(cc, ui, ctx) {
@@ -71,7 +75,8 @@ function capView(cc, ui, ctx) {
   if (fresh(worker) && worker.status === "ok") return probe.futures === false ? "c-done-ts" : "c-done";
   if (fresh(worker) && worker.status === "failed") return "c-finish-fail";
   // 上一次上傳失敗、而且比上一次確認帳密新:先講上傳的錯(主機上原本那張還在,但用戶剛做的事沒成)
-  const pfxNewer = cert.status === "failed" && (typeof probe.at !== "number" || (typeof cert.at === "number" && cert.at >= probe.at));
+  const certFailed = capCertFailed(cert, ui);
+  const pfxNewer = certFailed && (typeof probe.at !== "number" || (typeof cert.at === "number" && cert.at >= probe.at));
   if (!pfxNewer && fresh(probe) && (probe.status === "ok" || probe.status === "failed") && typeof probe.state === "string") {
     switch (probe.state) {
       case "ok": return "c-finish";
@@ -79,12 +84,14 @@ function capView(cc, ui, ctx) {
       case "pw_wrong": case "no_credentials": return "c-pw-err";
       case "pw_locked": return ui.unlockUsed ? "c-pw-change" : "c-pw-locked";
       case "verify_needed": return "c-verify";
-      case "cert_old": case "cert_unusable": case "cert_expired": return "c-cert-bad";
+      case "cert_old": case "cert_unusable": case "cert_expired":
+        if (!capProbeDismissed(probe, ui)) return "c-cert-bad";
+        return ui.route === "pfx" ? "c-pfx" : ui.route === "rdp" ? "c-rdp" : "c-pick";
       case "api_version": return "c-setup-fail";
       default: return "c-probe-fail";
     }
   }
-  if (cert.status === "failed") return "c-pfx";
+  if (certFailed) return "c-pfx";
   if (cert.status === "ok" || (!fresh(probe) && probe.status !== "idle" && probe.status)) return "c-probe-idle";
   return ui.route === "pfx" ? "c-pfx" : ui.route === "rdp" ? "c-rdp" : "c-pick";
 }
@@ -306,7 +313,7 @@ function capNoMove() {
 }
 
 function capPfxBody(cc, view) {
-  const cert = capSec(cc, "cert"), code = view === "c-pfx" && cert.status === "failed" ? cert.error : null;
+  const cert = capSec(cc, "cert"), code = view === "c-pfx" && capCertFailed(cert, CAP) ? cert.error : null;
   const fileErrKey = CAP.fileErr ? CAP_PFX_FILE_ERR[CAP.fileErr] || "cap.pfx.errRead" : code && CAP_PFX_FILE_ERR[code];
   const pwErr = code === "PFX_PASSWORD" ? t("cap.pfx.errPw") : null;
   const setupOk = capSec(cc, "setup").status === "ok", off = CAP.busy || capDown() || !setupOk || !!(cc && cc.busy);
@@ -328,7 +335,11 @@ function capPfxBody(cc, view) {
   f.appendChild(trEl("p", "cx-manual-note cap-e2e", t("cap.pfx.e2e")));
   const go = capBtn("btn-fill", t("cap.pfx.go"), capUpload, "cap-upload", off || !CAP.file || !CAP.ppw);
   go.dataset.need = "file,ppw";
-  f.appendChild(capActs(go, capBtn("btn-quiet", t("cap.c.other"), () => { CAP.route = null; CAP.fileErr = null; capPaint(); }, "cap-other")));
+  f.appendChild(capActs(go, capBtn("btn-quiet", t("cap.c.other"), () => {
+    CAP.route = null; CAP.fileErr = null; CAP.certDismissed = { cert: cert.at, probe: capSec(cc, "probe").at };
+    CAP.file = null; CAP.ppw = ""; if (window.blave && typeof window.blave.capitalForget === "function") window.blave.capitalForget().catch(() => {});
+    capPaint();
+  }, "cap-other")));
   return f;
 }
 function capPickBody() {
@@ -514,7 +525,7 @@ function capPaint() {
   $("cx-title").textContent = CAP.kc ? t("cx.kc.title") : view === "c-form" || view === "c-win" ? t("cx.title") : t("cap.title");
   capFoot(view);
   box.setAttribute("aria-busy", CAP.busy || view === "c-finish" || view === "c-probe" || view === "c-importing" ? "true" : "false");
-  const sig = LANG + "|" + JSON.stringify([view, cc, CAP.route, CAP.busy, CAP.msg, CAP.kc && CAP.kc.view, CAP.file, CAP.fileErr, CAP.signOpened, CAP.unlockUsed, CAP.verifyDl, CAP.verifyChecked, down,
+  const sig = LANG + "|" + JSON.stringify([view, cc, CAP.route, CAP.certDismissed, CAP.busy, CAP.msg, CAP.kc && CAP.kc.view, CAP.file, CAP.fileErr, CAP.signOpened, CAP.unlockUsed, CAP.verifyDl, CAP.verifyChecked, down,
     CAP.sent && Date.now() - CAP.sent.at >= CAP_NO_MOVE_MS, false]);
   if (CAP.sig === sig && box.firstChild) return;
   CAP.sig = sig;

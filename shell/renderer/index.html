@@ -6,6 +6,7 @@
 <title>Blave</title>
 <!-- 主題:比所有樣式表早、同步跑,第一幀就是對的明暗 -->
 <script src="theme-boot.js"></script>
+<script src="hidden-boot.js"></script>
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="suggest.css">
@@ -106,6 +107,12 @@
       <div class="ws-foot">
         <!-- 更新膠囊(spec desktop-update-pill §3):新版已暫存好才出,設定鈕那一列上方;品牌橘是 canon 具名例外,整個視窗只這一顆 -->
         <div class="up-pill-wrap" id="up-pill-wrap" hidden><button class="up-pill" id="up-pill" type="button"><svg class="up-pill-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg><span class="up-pill-t" id="up-pill-t"></span></button></div>
+        <!-- 手機那則(spec sidebar-prompt-slot §1、§6;pop 內容 spec slot-phone-steps §3):跟更新膠囊同一格,一次一則,renderer/promptslot.js 畫,pop 裡的步驟也是它建。pop 緊接膠囊:Tab 從膠囊直接進 pop -->
+        <div class="ph-slot" id="ph-slot" hidden>
+          <button class="ph-pill" id="ph-pill" type="button" aria-expanded="false" aria-controls="ph-pop"><svg class="up-pill-ic" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/></svg><span data-i18n="ph.slot"></span></button>
+          <div class="ph-pop" id="ph-pop" hidden></div>
+          <button class="ph-x" id="ph-x" type="button" data-i18n-aria="set.close"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
         <button class="ws-more" id="ws-conn" type="button" aria-haspopup="dialog">
           <svg class="ws-more-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
           <span data-i18n="ws.settings"></span>
@@ -269,6 +276,7 @@
         </div>
         <div class="lib-body" id="lib-body" tabindex="0">
           <!-- 沒權限時的兩組(spec-0.1.13 §2.2):section.lib-grp × 2,閘門卡掛在第二組頭上;不分組時空著、列畫在 #lib-rows。內容由 library.js 的 libPaintList 畫 -->
+          <p class="lib-gone" id="lib-gone" role="status" hidden></p>
           <div id="lib-grps"></div>
           <div class="lib-rows" id="lib-rows"></div>
           <p class="lib-state" id="lib-state" role="status" hidden></p>
@@ -929,4 +937,5 @@
 <script src="welcome.js"></script>
 <script src="intro.js"></script>
 <script src="chattabs.js"></script>
+<script src="promptslot.js"></script>
 </body></html>

@@ -851,7 +851,7 @@ msgid "up.check"
 msgstr "Check for updates"
 
 msgid "up.cloud.go"
-msgstr "Update cloud machine"
+msgstr "Update Cloud Machine"
 
 msgid "cn.current"
 msgstr "In use"
@@ -1535,7 +1535,7 @@ msgid "cx.fail"
 msgstr "{msg} ({stage})"
 
 msgid "cx.presStopped"
-msgstr "Login stopped. Press Continue to confirm login."
+msgstr "Login stopped. Press Sign In Again to confirm login."
 
 msgid "cx.err.okxMode"
 msgstr "This OKX account mode can't trade futures. In OKX, go to Settings → Account mode and switch to Futures mode or Multi-currency margin."
@@ -1607,6 +1607,29 @@ msgstr "Trading stopped, and not because you paused it · last ran {t}. Press St
 
 msgid "tr.s.on"
 msgstr "Running"
+
+msgid "tr.s.presStopped"
+msgstr "Login stopped"
+
+msgid "tr.presStopped"
+msgstr "President login stopped. New orders and closes can't go out."
+
+# 統一登入停了、頁首的實心鈕(開通框確認登入;開通中的 cap.continue 不動)
+msgid "tr.presRelogin"
+msgstr "Sign In Again"
+
+# 暫停中又遇到統一登入停了:標題下那句(不接 HALT 的「平倉照常」)
+msgid "tr.presStoppedHalted"
+msgstr "President login stopped. New orders and closes can't go out until you sign in again."
+
+msgid "tr.presStoppedCloud"
+msgstr "President login stopped. New orders and closes can't go out. Confirm the login on the website."
+
+msgid "tr.ov.evPresStopped"
+msgstr "President login stopped"
+
+msgid "tr.ov.evPresStoppedNote"
+msgstr "New orders and closes can't go out. Press Sign In Again on the auto-trading page."
 
 msgid "tr.s.off"
 msgstr "Not started"
@@ -1943,7 +1966,7 @@ msgid "tr.quote.why.notEnabled"
 msgstr "this President account has no quote permission — have your broker rep enable it"
 
 msgid "tr.quote.why.noLogin"
-msgstr "not logged in to President"
+msgstr "President login stopped"
 
 msgid "tr.quote.why.notOk"
 msgstr "President's quotes could not be read"
@@ -2337,6 +2360,125 @@ msgstr "This computer’s login details are removed; the order engine can’t tr
 
 msgid "tr.unbindWarnPaper"
 msgstr "Reconnecting paper trading makes its equity and positions start over; trade history stays. Your portfolio and amounts are kept; save once after reconnecting."
+
+# 解除綁定確認框(spec unbind-positions-2026-11-05 A 版 §4;混合機器 unbind-consistency §5)。zh 為準,web workspace_pf_ub_* 同字
+msgid "tr.ub.x0"
+msgstr "Login details are removed from this computer and trading stops. Portfolio and amounts are kept; save once after reconnecting."
+
+msgid "tr.ub.x0Cloud"
+msgstr "Login details are removed from the server and trading stops. Portfolio and amounts are kept; save once after reconnecting."
+
+msgid "tr.ub.x0Pres"
+msgstr "The President login and certificate file are deleted too."
+
+msgid "tr.ub.askTitle"
+msgstr "Close these {n} positions before disconnecting?"
+
+msgid "tr.ub.askTitle1"
+msgstr "Close this position before disconnecting?"
+
+msgid "tr.ub.askTitleN"
+msgstr "Close positions before disconnecting?"
+
+msgid "tr.ub.unreadN"
+msgstr "Positions couldn’t be read. Auto-trading may still hold some."
+
+msgid "tr.ub.closeSelf"
+msgstr "“Close and disconnect” closes only auto-trading’s positions, then disconnects once all fill."
+
+msgid "tr.ub.closeAll"
+msgstr "“Close and disconnect” closes every position here, including manual ones."
+
+msgid "tr.ub.keep"
+msgstr "With “Keep and disconnect” they go unmanaged. Handle them on {venue}."
+
+msgid "tr.ub.keepOld"
+msgstr "Handle them on {venue}."
+
+msgid "tr.ub.keepGo"
+msgstr "Keep and disconnect"
+
+msgid "tr.ub.closeGo"
+msgstr "Close and disconnect"
+
+msgid "tr.ub.closedTitle"
+msgstr "{n} positions go unmanaged after disconnecting"
+
+msgid "tr.ub.closedTitle1"
+msgstr "1 position goes unmanaged after disconnecting"
+
+msgid "tr.ub.closedTitleN"
+msgstr "Positions may go unmanaged after disconnecting"
+
+msgid "tr.ub.closedWhen"
+msgstr "Taiwan futures are closed. Positions can close after {time}."
+
+msgid "tr.ub.closedWhenN"
+msgstr "Taiwan futures are closed. Positions can close after the open."
+
+msgid "tr.ub.closedLater"
+msgstr "To close first, disconnect after the open, or close them in the {app} app."
+
+msgid "tr.ub.cantClose"
+msgstr "This server can’t close Capital positions. Close them in the Capital app."
+
+msgid "tr.ub.runTitle"
+msgstr "Closing, then disconnecting"
+
+msgid "tr.ub.runLine"
+msgstr "Disconnects once all fill. Closing this window won’t stop it."
+
+msgid "tr.ub.running"
+msgstr "Closing"
+
+msgid "tr.ub.runningBtn"
+msgstr "Closing…"
+
+msgid "tr.ub.failTitle"
+msgstr "{n} positions didn’t close. Still connected."
+
+msgid "tr.ub.failTitle1"
+msgstr "1 position didn’t close. Still connected."
+
+msgid "tr.ub.failTitleN"
+msgstr "The close didn’t finish. Still connected."
+
+msgid "tr.ub.failReply"
+msgstr "{venue} replied: {msg}"
+
+msgid "tr.ub.failState"
+msgstr "Trading stays paused. Unclosed positions are still open."
+
+msgid "tr.ub.unconfirmed"
+msgstr "Check the {app} app to see whether the unconfirmed one filled."
+
+msgid "tr.ub.retryGo"
+msgstr "Retry and disconnect"
+
+msgid "tr.ub.stDone"
+msgstr "Closed"
+
+msgid "tr.ub.stNoFill"
+msgstr "Not filled"
+
+msgid "tr.ub.stUnconf"
+msgstr "Unconfirmed"
+
+msgid "tr.ub.stManual"
+msgstr "Close manually"
+
+msgid "tr.ub.close"
+msgstr "Close"
+
+msgid "tr.ub.busy"
+msgstr "Another close is still running. Try again once it finishes."
+
+# 「到{app} app 自己平」的券商 app 短名
+msgid "tr.ub.appPres"
+msgstr "President"
+
+msgid "tr.ub.appCap"
+msgstr "Capital"
 
 msgid "tr.ov.equity"
 msgstr "Total equity"
@@ -3146,11 +3288,9 @@ msgstr "Privacy"
 msgid "mv.switch"
 msgstr "See this computer’s positions in the mobile app"
 
-msgid "mv.lead"
-msgstr "Uploads strategies, positions and equity every 2 minutes, visible only to you. Your phone calls this computer {name}. Turning it off deletes its data on Blave."
-
-msgid "mv.leadNoName"
-msgstr "Uploads strategies, positions and equity every 2 minutes, visible only to your account. Turning it off deletes this computer’s data on Blave."
+# 開關名稱的 tooltip(設定 › 連結精簡版):原本開著時開關下那一段搬進來,電腦名稱不留
+msgid "mv.tip"
+msgstr "Uploads strategies, positions and equity every 2 minutes, only for you. Turning it off deletes them from Blave."
 
 msgid "mv.appIos"
 msgstr "App Store"
@@ -3159,7 +3299,7 @@ msgid "mv.appAndroid"
 msgstr "Google Play"
 
 msgid "mv.leadPending"
-msgstr "Off, but this computer’s data on Blave hasn’t been deleted yet. It’s deleted automatically once you’re back online."
+msgstr "This computer’s data on Blave isn’t deleted yet. It will be once you’re back online."
 
 msgid "mv.leadOut"
 msgstr "Sign in to your Blave account to use this. "
@@ -3293,18 +3433,6 @@ msgid "priv.c.meta.4"
 msgstr "Installation ID: a random ID for this install"
 
 msgid "priv.c.meta.5"
-msgstr "Once you sign in, it is linked to your Blave account"
-
-msgid "priv.c.lib.h"
-msgstr "Library downloads"
-
-msgid "priv.c.lib.1"
-msgstr "Downloading a no-sign-in library strategy while signed out or your sign-in expired"
-
-msgid "priv.c.lib.2"
-msgstr "Its library number and the installation ID, to count installs"
-
-msgid "priv.c.lib.3"
 msgstr "Once you sign in, it is linked to your Blave account"
 
 msgid "priv.c.acct.h"
@@ -3874,9 +4002,6 @@ msgstr "New folder"
 msgid "sg.uncat"
 msgstr "Uncategorized"
 
-msgid "sg.auto"
-msgstr "Group by market"
-
 msgid "sg.max"
 msgstr "Up to 20 folders"
 
@@ -3945,27 +4070,6 @@ msgstr "Move to {name}"
 
 msgid "sg.moveOut"
 msgstr "Remove from folder"
-
-msgid "sg.mkt.crypto"
-msgstr "Crypto"
-
-msgid "sg.mkt.txf"
-msgstr "TAIEX Futures"
-
-msgid "sg.mkt.tw"
-msgstr "TW Stocks"
-
-msgid "sg.mkt.us"
-msgstr "US Stocks"
-
-msgid "sg.mkt.stockFut"
-msgstr "Stock Futures"
-
-msgid "sg.mkt.global"
-msgstr "Global Futures"
-
-msgid "sg.mkt.mixed"
-msgstr "Mixed"
 
 msgid "sg.e.2B50"
 msgstr "Star"
@@ -4367,13 +4471,13 @@ msgid "tm.stMayTrade"
 msgstr "May still be trading"
 
 msgid "tr.cloud.restartUnconfirmed"
-msgstr "After the restart, we couldn’t confirm trading stopped. Press Pause trading, then Update cloud machine."
+msgstr "After the restart, we couldn’t confirm trading stopped. Press Pause trading, then Update Cloud Machine."
 
 msgid "tr.ov.evRestartStopFailed"
 msgstr "Machine restarted — trading may not have stopped"
 
 msgid "tr.ov.evRestartStopFailedNote"
-msgstr "press Pause trading first, then Update cloud machine; the machine is out of date"
+msgstr "press Pause trading first, then Update Cloud Machine; the machine is out of date"
 
 msgid "tr.haltReasonAll"
 msgstr "No orders are going out — exits and stops won’t run either. Fix it, then press Start trading; unsure why? Ask the agent in chat."
@@ -4385,7 +4489,7 @@ msgid "tr.cloud.recomputing"
 msgstr "Strategies are recomputing on post-restart data. Catch up becomes available when they finish; close this box and open it again then."
 
 msgid "tr.cloud.haltReasonUnconfirmed"
-msgstr "The old trading program may still be running; press Update cloud machine first. Unsure why it paused? Ask the agent in chat."
+msgstr "The old trading program may still be running; press Update Cloud Machine first. Unsure why it paused? Ask the agent in chat."
 
 msgid "tr.ov.curveAriaPnl"
 msgstr "Cumulative PnL curve, {a} to {b}, {n} records"
@@ -4679,9 +4783,9 @@ msgstr "Restart"
 msgid "up.md.stay"
 msgstr "Cancel to keep trading. Blave updates when you quit it."
 
-# 設定 › 一般 › 關於:每天 06:00 自動更新的開關(預設開)
+# 設定 › 一般 › 關於:自動更新的開關(預設開):每天 06:00,手機對話開著時視窗收進背景也會裝
 msgid "up.sch.sw"
-msgstr "Update automatically at 06:00"
+msgstr "Auto-update"
 
 # 上面那個開關底下的說明句
 msgid "up.sch.lead"
@@ -4856,7 +4960,7 @@ msgid "rob.cfOk"
 msgstr "Send"
 
 msgid "rob.msgScan"
-msgstr "Please scan the parameters of strategy {name} (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap). Choose the ranges from the indicator distribution, then report the peak and the robust point."
+msgstr "Please scan the parameters of strategy {display_name} ({name}) (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap). Choose the ranges from the indicator distribution, then report the peak and the robust point."
 
 msgid "rob.msgScanLabel"
 msgstr "Scan the parameters of {name}"
@@ -4898,7 +5002,7 @@ msgid "rob.cfNote"
 msgstr "Usually takes a few minutes — longer with more data or a bigger grid. The new scan replaces this one."
 
 msgid "rob.msgRescan"
-msgstr "Please rescan the parameters of strategy {name} (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap). Use the current backtest's period and fee: {start} → {end}, fee {fee}%. Keep the previous axes — {rp} {r0}–{r1} and {cp} {c0}–{c1}; if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."
+msgstr "Please rescan the parameters of strategy {display_name} ({name}) (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap). Use the current backtest's period and fee: {start} → {end}, fee {fee}%. Keep the previous axes — {rp} {r0}–{r1} and {cp} {c0}–{c1}; if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."
 
 msgid "rob.msgRescanLabel"
 msgstr "Rescan the parameters of {name}"
@@ -4928,7 +5032,7 @@ msgid "rob.cfRangeVal"
 msgstr "{rp} {r0}–{r1} ({R} cells)"
 
 msgid "rob.msgRescan1"
-msgstr "Please rescan the parameters of strategy {name} (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap; a single parameter uses the one-cell second axis described in the lib docs). Use the current backtest's period and fee: {start} → {end}, fee {fee}%. There is only one parameter, {rp}; keep the previous range {r0}–{r1}, and if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."
+msgstr "Please rescan the parameters of strategy {display_name} ({name}) (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap; a single parameter uses the one-cell second axis described in the lib docs). Use the current backtest's period and fee: {start} → {end}, fee {fee}%. There is only one parameter, {rp}; keep the previous range {r0}–{r1}, and if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."
 
 msgid "rob.tag.atPlateau1"
 msgstr "Current: the robust value"
@@ -5430,19 +5534,12 @@ msgstr "Couldn't download this strategy. Please try again."
 msgid "lib.dl.blocked"
 msgstr "This strategy failed the platform security scan and can't be downloaded."
 
-# 0.1.13 稽核補的兩種(字待設計師定稿)
-msgid "lib.dl.signin"
-msgstr "This computer's Blave sign-in needs renewing. Sign in to Blave again, then press again."
-
+# 0.1.13 稽核補的(字待設計師定稿)
 msgid "lib.dl.unsent"
 msgstr "The install request wasn't sent, so this strategy isn't installed. Press again once the chat is free."
 
 msgid "lib.dl.gone"
 msgstr "This strategy is no longer in the library."
-
-# 匿名 /public_code 的 404:下架或已不符合免登入條件分不出來,講中性句(spec-0.1.13-smallfixes #10)
-msgid "lib.dl.anonGone"
-msgstr "This strategy can't be downloaded without signing in anymore. It may have been removed, or it now needs sign-in. The list has been refreshed."
 
 # 429(匿名下載每 IP 每小時 30 次):講「稍後」,不講「再試一次」(稽核 0.1.13 UI S5)
 msgid "lib.dl.rateLimited"
@@ -5989,9 +6086,6 @@ msgstr "After Topping Up"
 msgid "lib.grp.check"
 msgstr "After Your Account Is Confirmed"
 
-msgid "lib.grp.signedOut"
-msgstr "Sign In First"
-
 msgid "lib.grp.gate.noCard"
 msgstr "These need a card on file to backtest."
 
@@ -6000,9 +6094,6 @@ msgstr "This hour's data fee couldn't be charged, so these can't backtest for no
 
 msgid "lib.grp.gate.unknown"
 msgstr "Your account's data status couldn't be checked, so these may not backtest."
-
-msgid "lib.grp.gate.signedOut"
-msgstr "Sign in to Blave to download these."
 
 msgid "lib.grp.empty"
 msgstr "None here use public prices only yet."
@@ -6688,9 +6779,6 @@ msgstr "Only the current version can be exported."
 
 msgid "xp.sending"
 msgstr "This export is already running. Progress is in the chat."
-
-msgid "xp.why.busy"
-msgstr "The agent is replying. Export after it finishes."
 
 msgid "xp.cf.title.xq"
 msgstr "Export to XQ (XS)"
@@ -9882,6 +9970,19 @@ msgstr "Performance was updated. Rerun the test to update this."
 msgid "xt.busyRefresh"
 msgstr "Performance is updating. Press again when it finishes."
 
+# 台指期不是交易所拒單的 P1(order_errors 帶 kind:clock_skew_hold／tw_entry_hold):事件列標題、本機通知內文
+msgid "tr.ov.evClockHold"
+msgstr "TAIEX futures entries paused"
+
+msgid "tr.ov.evTwHold"
+msgstr "New Taiwan futures positions paused"
+
+msgid "tm.evTwHoldNote"
+msgstr "TAIEX futures entries are paused; closes still run. Open Blave to see what to check."
+
+msgid "tm.evClockHoldNote"
+msgstr "This computer’s clock is off, so TAIEX futures entries are paused; closes still run. Open Blave to see how to fix it."
+
 # 下單結果不明(order_unconfirmed,canon notifications §3):事件列標題／說明、本機 P1 通知內文、列下那一句;策略段(策略檔名)組字
 msgid "tr.ov.evUnconfirmed"
 msgstr "Order outcome unknown"
@@ -10114,6 +10215,24 @@ msgstr "Chats on Blave are deleted. Chats on this computer stay."
 msgid "ph.off.ok"
 msgstr "Turn Off"
 
+msgid "ph.slot"
+msgstr "Use on Phone"
+
+# 側欄「在手機上用」pop 的步驟(spec slot-phone-steps §3)。清單項目用句首大寫,不是按鈕
+msgid "ph.stepGet"
+msgstr "Get the app"
+
+msgid "ph.stepPair"
+msgstr "Pair in the app"
+
+# 「Chat」是 App 的 mchat_entry;App 改字要回頭同步這句
+msgid "ph.stepChat"
+msgstr "In the app's Agent tab, tap Chat to pair."
+
+# 最後一步,「允許手機對話」已開就不列。「Turn On」要跟配對確認框的鈕 ph.ask.ok 逐字相同
+msgid "ph.stepAllow"
+msgstr "After pairing, this computer asks whether to let your phone in. Choose Turn On."
+
 msgid "ph.syncing"
 msgstr "Synced {n} of {m} chats"
 
@@ -10152,7 +10271,7 @@ msgstr "Revoke on Website (opens in browser)"
 
 # 開著、帳號還沒有手機:組內那一槽
 msgid "ph.none"
-msgstr "No phones paired yet. Pair one in the app's Agent tab."
+msgstr "In the app's Agent tab, tap Chat to pair."
 
 # 手機配對完、這台開關關著時主視窗跳的確認框(§9b):標題帶機型,內文沿用 ph.cf.1–3;電腦當時沒開的話標題後面另接配對時間(mono)
 msgid "ph.ask.title"

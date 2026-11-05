@@ -556,6 +556,8 @@ html.ws-sc .side-gate { display: none; }
 /* ---- 確認框:第二動作(雲端 .cf-alt 的紅字;shell 的框是 .btn-out 底)。啟動框的選項 / 常駐句 / 細節在 app.css 的 .cf-* ---- */
 #del-alt[hidden] { display: none; }
 .btn-out.cf-alt-danger { color: var(--color-redText); }
+/* 停用的危險次鈕(解除綁定 ⑤ 有未確認的單時的「重新平倉並解除」):不能還是紅的——同 .btn-out:disabled 的停用色 */
+.btn-out.cf-alt-danger:disabled { color: var(--ink-3); }
 .del-modal .modal-foot { flex-wrap: wrap; }
 /* 三顆鈕的框(啟動 / 暫停)放寬到 520:英文版 440 會折成兩列、主要鈕自己一列 */
 .del-modal.has-alt { width: min(520px, 92vw); }

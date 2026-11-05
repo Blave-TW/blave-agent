@@ -586,10 +586,11 @@ SDK["ok"] = True
 check("8 a confirmed login that passes lifts the stop", login_kind(explicit=True) == "OK" and SDK["logins"] == 3 and pv.stopped() is None)
 check("8 …then ordinary logins go through again", login_kind() == "OK" and SDK["logins"] == 4)
 SDK["ok"], SDK["error"] = False, "Read timed out"
-check("8 a timeout stops too (any login failure)", login_kind() == "TIMEOUT" and pv.stopped() == "TIMEOUT")
+check("8 a first timeout does not stop (one more try allowed)", login_kind() == "TIMEOUT" and pv.stopped() is None and SDK["logins"] == 5)
+check("8 …the second timeout in a row stops", login_kind() == "TIMEOUT" and pv.stopped() == "TIMEOUT" and SDK["logins"] == 6)
 pv.in_login_maintenance = lambda now=None: True
 os.remove(pv.STOP)
-check("8 maintenance is never attempted and never stops", login_kind() == "MAINTENANCE" and pv.stopped() is None and SDK["logins"] == 5)
+check("8 maintenance is never attempted and never stops", login_kind() == "MAINTENANCE" and pv.stopped() is None and SDK["logins"] == 6)
 pv.in_login_maintenance = lambda now=None: False
 SDK["error"] = "使用者密碼錯誤"
 
@@ -597,6 +598,8 @@ SDK["error"] = "使用者密碼錯誤"
 import lib.president_worker as pw  # noqa: E402
 pv.use_local_secrets({"president_password": PW, "president_ca_password": CAPW, "live": True})
 pw.maintenance = lambda now=None: None
+# inside one trading window whatever the wall clock says (off hours the loop never logs in)
+pw.session_window = lambda now=None: datetime.datetime(2026, 11, 5, 8, 30, tzinfo=pw.TAIPEI)
 code = None
 n0 = SDK["logins"]
 try:

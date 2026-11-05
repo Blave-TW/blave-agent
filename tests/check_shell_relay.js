@@ -870,7 +870,7 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
   ok("9 手機那一輪帶 BLAVE_TURN_ORIGIN=app,其餘不帶", /\.\.\.\(rec\.origin === "mobile" \? \{ BLAVE_TURN_ORIGIN: "app" \} : \{\}\),/.test(main));
   ok("9 畫面刪對話成功才記待送;手機要刪的走 deleteSessionLocal(不再回送)", /const ok = deleteSessionLocal\(id\);\n  if \(ok && typeof _relay !== "undefined" && _relay\) \{ try \{ _relay\.sessionDeleted\(id\);/.test(main) && /remove: deleteSessionLocal/.test(main));
   ok("9 手機回合防睡:awakeWanted 認 phone、結束後再撐 2 分鐘", /if \(o\.phone\) return true;/.test(main) && /const RELAY_AWAKE_TAIL_MS = 2 \* 60 \* 1000;/.test(main));
-  ok("9 開著時關視窗只收起來", /if \(quitting \|\| quitConfirmed \|\| \(!trading && !turn && !phone\)\) \{/.test(main));
+  ok("9 開著時關視窗只收起來", /if \(quitting \|\| quitConfirmed \|\| restarting === "installing" \|\| \(!trading && !turn && !phone\)\) \{/.test(main) && /const phoneOn = \(\) => !!\(typeof _relay !== "undefined" && _relay && _relay\.isOn\(\) && _relay\.isVisible\(\)\);/.test(main));
   ok("9 結束 app 等 relay 回 not_run", /relayQuit \? _relay\.quit\(\)\.catch\(\(\) => false\) : null/.test(main));
   ok("9 只有拿到單一實例鎖的那份開長輪詢", /if \(app\.hasSingleInstanceLock\(\)\) startStep\("relay", \(\) => relay\(\)\.start\(\)\);/.test(main));
   ok("9 本機收圖的接收端也交給 relay(只限手機那一輪由 relay 判)", /_relay\.image\(j\.session_id, j\.mime, j\.b64, caption\)/.test(main));

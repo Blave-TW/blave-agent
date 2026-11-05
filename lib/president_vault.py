@@ -23,15 +23,31 @@ Login failures leave this module as a CLASS only (PASSWORD, CERT, CERT_MISMATCH,
 UNKNOWN, TIMEOUT, MAINTENANCE — display only), never the broker's text: when the
 certificate does not match the account, the SDK's message is
 f"{national id} {certificate json}". Every broker string that is passed on goes
-through sanitize() first.
+through sanitize() first. The one kept is an UNKNOWN stop's "detail" (below); classify()
+sends any text with an id shape to CERT_MISMATCH, so that one never holds an id.
 
 統一 locks an account after three wrong logins, so a failed login STOPS logging in
 on this machine: any failure (MAINTENANCE aside — that is never attempted) writes
 state/president_login_stop.json with its class, and every later login refuses
 with STOPPED without contacting the broker — the worker, the order lib, a flatten.
 Only an explicit login (`president_worker.py --once`, the user's 「確認登入」)
-tries again, once per press, and a login that passes removes the stop. There is
-no automatic retry of any kind (Wei 2026-10-07).
+tries again, once per press, and a login that passes removes the stop.
+
+One exception (Wei 2026-11-05): a TIMEOUT — the broker unreachable or silent — writes no
+stop the first time in a row; the LoginError carries `retry` and the caller may try once
+more. The second TIMEOUT in a row stops like any other failure; any login that passes
+resets the count (state/president_login_timeouts.json, shared by the worker and the order
+lib). A timeout may have delivered the password (unitrade sends it in its first request
+and folds connect and read timeouts into one "Timeout"), so this spends at most two of
+統一's three tries before the stop, and leaves the third to the user's 「確認登入」.
+
+An UNKNOWN stop keeps the broker's text, sanitized, under "detail" in the stop file —
+local only: the platform report copies kind and at, nothing else.
+
+Every order waits on that press, so the stop itself is the user's P1
+(venue_login_blocked, notifications.md): once per stop, carrying the class only. An explicit
+login that fails is not: the user is looking at the answer. notify_stopped records it in the
+stop file; an append that failed is retried from the reconciler's round.
 
 Desktop app (Windows): there is no vault file. The app keeps the trading and
 certificate passwords in the OS's encrypted store and hands them to the local
@@ -53,7 +69,15 @@ import re
 import secrets
 import time
 from datetime import datetime, time as dtime, timedelta, timezone
+from contextlib import contextmanager
 from urllib.parse import urlparse
+
+try:
+    import fcntl
+    msvcrt = None
+except ImportError:  # Windows
+    fcntl = None
+    import msvcrt
 
 try:
     if __package__ == "lib":  # never a same-named file elsewhere on sys.path
@@ -62,6 +86,15 @@ try:
         from winreplace import atomic_replace
 except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
     atomic_replace = os.replace
+try:
+    if __package__ == "lib":  # never a same-named file elsewhere on sys.path
+        from lib.winreplace import load_json
+    else:  # run as a script: lib/ is sys.path[0]
+        from winreplace import load_json
+except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
+    def load_json(path, **open_kw):
+        with open(path, **open_kw) as f:
+            return json.load(f)
 
 _WS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(_WS, ".env")
@@ -80,6 +113,11 @@ LOGIN_MAINTENANCE = (dtime(5, 30), dtime(5, 50))
 _SECRETS = ("president_password", "president_ca_password")
 # a failed login stops further logins until the user confirms one (see the docstring)
 STOP = os.path.join(_WS, "state", "president_login_stop.json")
+TIMEOUTS_BEFORE_STOP = 2
+
+
+def _timeouts_path():
+    return os.path.join(os.path.dirname(STOP), "president_login_timeouts.json")  # beside STOP, wherever it points
 # How long after a send the worker's next read must START before it counts as
 # showing that send (order lib close check, reconciler Read-Your-Writes). An IOC
 # market order is filled or killed at the exchange within the second; what is
@@ -156,10 +194,12 @@ class LoginError(RuntimeError):
                    "(統一 locks the account after three wrong logins)",
         "NON_TEST_SERVER": "the server is not a test server and production is not switched on",
         "UNKNOWN": "the broker refused the login",
+        "BUSY": "another login on this machine is still running — not attempted",
     }
 
-    def __init__(self, kind):
+    def __init__(self, kind, retry=False):
         self.kind = kind
+        self.retry = retry
         super().__init__(f"統一期貨 login failed: {kind} — {self.TEXT.get(kind, '')}")
 
 
@@ -192,7 +232,8 @@ def classify(text):
                             "SSLError", "CERTIFICATE_VERIFY_FAILED", "Max retries", "ConnectionError")) \
             or s.strip() == "Timeout" or "timed out" in s.lower():
         return "TIMEOUT"
-    if any(t in s for t in ("密碼", "查無此使用者", "使用者密碼未設定")):
+    # [SP000101] wrong password, [AG000005] no such login id (統一's own FAQ, PFCEC/unitrade)
+    if any(t in s for t in ("密碼", "查無此使用者", "使用者密碼未設定", "[SP000101]", "[AG000005]")):
         return "PASSWORD"
     return "UNKNOWN"
 
@@ -337,18 +378,72 @@ def stopped():
     return str(st.get("kind") or "UNKNOWN") if isinstance(st, dict) else "UNKNOWN"
 
 
-def _stop(kind):
+def _stop(kind, explicit=False, detail=None):
+    stop = {"kind": kind, "at": int(time.time())}
+    if kind == "UNKNOWN" and detail:
+        stop["detail"] = sanitize(detail)
+    if explicit:
+        stop["notified"] = True
     try:
-        replace_json(STOP, {"kind": kind, "at": int(time.time())})
+        replace_json(STOP, stop)
     except OSError:
+        pass
+    if not explicit:
+        notify_stopped()
+
+
+def _held_rows():
+    """The last snapshot's rows as 'TXFK6 +2', or None when it has none to give: the worker
+    replaces it with ok=false right after a failed login, and a retried notice comes later."""
+    try:
+        rows = load_json(os.path.join(_WS, "state", "president_account.json"), encoding="utf-8").get("positions")
+        return [f"{str(r['productid'])[:12]} {int(r['net']):+d}" for r in rows][:10] if rows else None
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
+        return None
+
+
+def notify_stopped(min_age=0):
+    """The standing stop's P1, once. `min_age`: the reconciler's retry leaves the writer of a
+    stop this long to send it itself. Never raises: a notice must not cost a login path."""
+    try:
+        st = load_json(STOP, encoding="utf-8")
+        if not isinstance(st, dict) or st.get("notified") or time.time() - float(st.get("at") or 0) < min_age:
+            return
+        if __package__ == "lib":
+            from lib.events import emit
+        else:  # run as a script: lib/ is sys.path[0]
+            from events import emit
+        if emit("venue_login_blocked", venue="president", reason=str(st.get("kind") or "UNKNOWN"),
+                positions=_held_rows()) is not None:
+            replace_json(STOP, dict(st, notified=True))
+    except (OSError, ValueError, TypeError, ImportError):
         pass
 
 
 def _clear():
+    for path in (STOP, _timeouts_path()):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def _timeout_stops():
+    """Count one more TIMEOUT in a row; True when it is the one that stops. A count that
+    cannot be read or written stops: an unknown count must not buy another try."""
     try:
-        os.remove(STOP)
+        n = int(load_json(_timeouts_path(), encoding="utf-8").get("count") or 0)
+    except FileNotFoundError:
+        n = 0
+    except (OSError, ValueError, AttributeError, TypeError):
+        return True
+    if n + 1 >= TIMEOUTS_BEFORE_STOP:
+        return True
+    try:
+        replace_json(_timeouts_path(), {"count": n + 1, "at": int(time.time())})
     except OSError:
-        pass
+        return True
+    return False
 
 
 def in_login_maintenance(now=None):
@@ -358,6 +453,46 @@ def in_login_maintenance(now=None):
 
 # ── the one login path (worker and order lib) ────────────────────────────────
 LOGIN_TIMEOUT_S = 30
+# a holder runs one login: up to LOGIN_TIMEOUT_S, twice that when it hangs and is joined again
+LOGIN_LOCK_WAIT_S = 2 * LOGIN_TIMEOUT_S + 15
+
+
+@contextmanager
+def _login_lock(wait_s=None):
+    """One login at a time on this machine (worker, orders, 「確認登入」): the STOP and the
+    TIMEOUT count are read after the previous login wrote them, so two logins in flight can
+    never spend a third try together. An OS lock (flock / msvcrt): the OS drops it when its
+    holder dies. LoginError("BUSY") — no stop — when it is not free in time."""
+    path = os.path.join(os.path.dirname(STOP), "president_login.lock")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    deadline = time.time() + (LOGIN_LOCK_WAIT_S if wait_s is None else wait_s)
+    try:
+        while True:
+            try:
+                if fcntl:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                else:
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                break
+            except OSError:
+                if time.time() > deadline:
+                    raise LoginError("BUSY")
+                time.sleep(0.1)
+        try:
+            yield
+        finally:
+            try:
+                if fcntl:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                else:
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            except OSError:
+                pass
+    finally:
+        os.close(fd)
 
 
 class _CwdOs:
@@ -395,16 +530,21 @@ def login(creds, log_dir, explicit=False):
 
     A failure stops logins (STOP); after that only `explicit` (the user's
     「確認登入」 through president_worker --once) contacts the broker again."""
-    import threading
-
     if in_login_maintenance():
         raise LoginError("MAINTENANCE")
+    with _login_lock():
+        return _login_locked(creds, log_dir, explicit)
+
+
+def _login_locked(creds, log_dir, explicit):
+    import threading
+
     if not explicit and stopped():
         raise LoginError("STOPPED")
     if not _pfx_readable(creds.get("ca_path")):
         # the SDK sends the password before it opens the certificate: an unreadable
         # .pfx would spend a broker login try for nothing
-        _stop("CERT")
+        _stop("CERT", explicit)
         raise LoginError("CERT")
 
     from unitrade.unitrade import Unitrade
@@ -424,20 +564,24 @@ def login(creds, log_dir, explicit=False):
     t.start()
     t.join(LOGIN_TIMEOUT_S)
     try:
+        text = None
         if t.is_alive():
-            _stop("TIMEOUT")
-            raise LoginError("TIMEOUT")
-        if "exc" in box:
-            kind = classify(f"{type(box['exc']).__name__} {box['exc']}")
-            _stop(kind)
-            raise LoginError(kind)
-        resp = box["resp"]
-        if not resp.ok:
-            kind = classify(resp.error)
-            _stop(kind)
+            kind = "TIMEOUT"
+        elif "exc" in box:
+            text = f"{type(box['exc']).__name__} {box['exc']}"
+            kind = classify(text)
+        elif not box["resp"].ok:
+            text = str(box["resp"].error)
+            kind = classify(text)
+        else:
+            kind = None
+        if kind is not None:
+            if kind == "TIMEOUT" and not explicit and not _timeout_stops():
+                raise LoginError(kind, retry=True)
+            _stop(kind, explicit, text)
             raise LoginError(kind)
         if not creds["live"] and api.test_mode is not True:
-            _stop("UNKNOWN")
+            _stop("UNKNOWN", explicit)
             raise LoginError("NON_TEST_SERVER")
         _clear()
         return api

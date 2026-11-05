@@ -71,6 +71,19 @@ function harness() {
   C.resolve(); await pRun;
   C = harness(); C.oauthPending = true; await C.planSignIn(null);
   ok("別的登入在等(模型接入那條):不另開一次", C.calls === 0);
+  { // planLogin 回結果(策略庫分取消與失敗)、不換 AI:只拿 token,oauthStart 不帶 intent;token 換到之後查帳號失敗不算登入失敗
+    const P = { t: (k) => k, planLoginBusy: false, oauthPending: false, planLoginOut: false, hasToken: false, planErr: 1, setHint() {}, planPaint() {}, waitChanged() {}, trackFeature() {}, acctPaintAcct() {}, balLoad() {}, LANG: "zh", document: { querySelectorAll: () => [] }, args: null, fail: null, acctFail: false, window: { blave: {} } };
+    P.oauthStart = async (...a) => { P.args = a; if (P.fail) throw new Error(P.fail); return {}; }; P.acctCheck = async () => { if (P.acctFail) throw new Error("NETWORK_DOWN"); };
+    vm.createContext(P); vm.runInContext(cut(app, "planLogin").replace(/^async function planLogin/m, "var planLogin = async function"), P);
+    const r1 = await P.planLogin(), tok1 = P.hasToken, args1 = JSON.stringify(P.args);
+    P.acctFail = true; P.hasToken = false; const r2 = await P.planLogin(), tok2 = P.hasToken; P.acctFail = false;
+    P.hasToken = false; P.fail = "Error invoking remote method 'start-oauth': Error: OAUTH_TIMEOUT"; const r3 = await P.planLogin(), tok3 = P.hasToken;
+    P.fail = "boom"; const r4 = await P.planLogin();
+    ok("planLogin 回 { ok, code }:成功 ok;查帳號失敗仍算登入成功;IPC 包過的錯抽出代號;認不得的 code null;失敗不設 hasToken;等待旗標都收", r1.ok === true && tok1 === true && r2.ok === true && tok2 === true && r3.ok === false && r3.code === "OAUTH_TIMEOUT" && tok3 === false && r4.ok === false && r4.code === null && !P.planLoginBusy && !P.oauthPending, JSON.stringify([r1, r2, r3, r4]));
+    ok("planLogin 不改連線:oauthStart 只帶語言(沒有 blave intent)、整支沒有 saveConnection / cur =", args1 === '["zh"]' && !/saveConnection|\bcur = /.test(cut(app, "planLogin")), args1);
+    const S = harness(); S.planLogin = async () => ({ ok: false, code: "X" }); const rs = await S.planSignIn(null); ok("planSignIn 把 planLogin 的結果往回傳;等待中再按(取消)回空", rs.code === "X");
+    const main = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), store = fs.readFileSync(path.join(__dirname, "..", "shell", "connstore.js"), "utf8");
+    ok("主行程:start-oauth 只有 intent === \"blave\" 才算為了 Blave AI;reseal 只動 kind === blave 的連結紀錄", /handle\("start-oauth", \(_e, lang, intent\) => startOAuth\(lang === "en" \? "en" : "zh", intent === "blave"\)\)/.test(main) && /reseal\(\) \{ if \(cached && cached\.kind === "blave"\)/.test(store)); }
   C = harness(); const p3 = C.planSignIn(null); C.resolve(); await p3;
   ok("沒有鈕(分享框的確認鈕)也能登入", C.calls === 1);
 
@@ -93,7 +106,7 @@ function harness() {
     ok("signInLabel:等待中建的鈕字是取消等待、原字記在 data-signin;沒在等就是原字", b9.textContent === "oauth.cancel" && b9.dataset.signin === "cn.blave.btn" && b10.textContent === "cn.blave.btn");
     ok("planLogin 收尾把 data-signin 的鈕從取消等待換回原字;策略庫、歡迎頁的登入鈕用 signInLabel 建;資料卡沒登入那態等待中鈕字是取消等待",
       /querySelectorAll\("button\[data-signin\]"\)\.forEach\(\(x\) => \{ if \(x\.textContent === t\("oauth\.cancel"\)\) x\.textContent = x\.dataset\.signin; \}\);/.test(cut(app, "planLogin"))
-      && /signInLabel\(libEl\("button", "btn-fill"\), t\("cn\.blave\.btn"\)\)/.test(cut(lib, "libSignInBtn")) && /if \(signIn\) signInLabel\(b, txt\);/.test(cut(wel, "wdNote"))
+      && /signInLabel\(libEl\("button", cls \|\| "btn-fill"\), t\(key \|\| "cn\.blave\.btn"\)\)/.test(cut(lib, "libSignInBtn")) && /if \(signIn\) signInLabel\(b, txt\);/.test(cut(wel, "wdNote"))
       && /label: t\(planLoginBusy \? "oauth\.cancel" : "pv\.signin"\)/.test(cut(app, "dataCardState"))); }
   ok("公開連結的登入鈕也用 signInLabel 建(稽核 r2 S4);資料卡沒登入那態記 data-signin = pv.signin,等待中才長出來的也換得回原字(r2 S2)",
     /signInLabel\(libEl\("button", "btn-out"\), t\("cn\.blave\.btn"\)\)/.test(shl) && /if \(b1\) \{ if \(!hasToken && !ready\) b1\.dataset\.signin = t\("pv\.signin"\); else delete b1\.dataset\.signin; \}/.test(cut(app, "dataCardSync")));
@@ -106,9 +119,9 @@ function harness() {
   const L = { t: (k) => k, hit, planLoginBusy: false, signInLabel: (b, label) => { b.dataset.signin = label; b.textContent = label; return b; }, planSignIn: (x) => hit.push(["signin", x]), setOpen: () => { hit.push(["setOpen"]); return Promise.resolve(); }, setCat: () => hit.push(["setCat"]), planOpen: () => hit.push(["planOpen"]),
     libEl: () => btn() };
   vm.createContext(L);
-  vm.runInContext(cut(lib, "libSignInBtn"), L);
+  vm.runInContext(cut(lib, "libSignInBtn") + "\nvar libTrack = () => {}, oauthGaveUp = () => true, libSync = () => {}, libCtaFocusNow = () => {}, libFocusFree = () => false, libCtaMain = () => null, libBag = () => ({ detail: 1 }), libEnv = () => 'local', libClearFail = () => {}, oauthPending = false, LIB = { dlFail: null, loading: false }, $ = () => ({ hidden: false });\n" + cut(lib, "libSignIn"), L);
   const lb = L.libSignInBtn(); lb.click();
-  ok("策略庫「登入 Blave」(清單閘門卡與詳情主鈕同一顆):直接 planSignIn(帶著自己這顆鈕)", hit.length === 1 && hit[0][0] === "signin" && hit[0][1] === lb, JSON.stringify(hit.map((h) => h[0])));
+  ok("策略庫詳情「登入 Blave」:直接 planSignIn(帶著自己這顆鈕)", hit.length === 1 && hit[0][0] === "signin" && hit[0][1] === lb, JSON.stringify(hit.map((h) => h[0])));
 
   hit.length = 0;
   const W = { t: (k) => k, planMo: () => false, signInLabel: (b, label) => { b.dataset.signin = label; b.textContent = label; return b; }, planSignIn: (x) => hit.push(["signin", x]), planOpen: () => hit.push(["planOpen"]), wdEl: () => btn() };

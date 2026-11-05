@@ -190,6 +190,21 @@ def get_query_started_at() -> float:
     return float(q)
 
 
+def waiting():
+    """The worker's planned gap while its snapshot is fresh — 'closed' (outside a trading window
+    with nothing to carry), a broker window, or 'login_retry' (a TIMEOUT waiting for its one
+    retry) — else None. Not a failed read: the reconciler skips the round."""
+    try:
+        snap = load_json(_SNAPSHOT, encoding="utf-8")
+    except (OSError, ValueError):
+        return None
+    if not isinstance(snap, dict) or snap.get("ok") or not snap.get("waiting"):
+        return None
+    if time.time() - float(snap.get("read_at") or 0) > _STALE_S:
+        return None
+    return str(snap["waiting"])
+
+
 def get_snapshot_read_at() -> float:
     """Unix seconds of the worker's last snapshot write (same freshness/ok
     checks as get_positions)."""

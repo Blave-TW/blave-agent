@@ -126,6 +126,8 @@ function tabShow(T) {
 }
 
 /* ── 機器層級:有沒有任何回合(本機任何分頁回覆中／排隊中,或主行程說還有沒有分頁的回合) ── */
+/* agent 在等用戶回應:最後一輪以等你回覆收尾(同 reply_notif 的 await:done 帶 awaiting、不是停止或失敗)。下一輪收尾時覆寫;只活在開著的分頁,重開 app 不記 */
+function csAnyAwait() { for (const T of CS.tabs.values()) if (T.waitUser === true) return true; return false; }
 function csAnyTurn() {
   for (const T of CS.tabs.values()) if ((T === CS.loaded ? running : T.st.running) === true) return true;   // 載入中那個的 T.st 要等換出去才更新:讀全域
   for (const ph of CS.main.values()) if (ph) return true;
@@ -228,6 +230,7 @@ async function tabsOnEnd(r) {
     T.unread = res && res.faulted ? "fail" : T.awaiting ? "wait" : "unseen";
     tabsLiveSay(T);
   }
+  T.waitUser = T.awaiting === true && !(res && (res.stopped || res.faulted));
   T.awaiting = false;
   if (T.closed && !tabRun(T)) tabsDestroy(T);   // 關掉但還在跑的那條:跑完就收掉(清單裡照樣有它)
   tabsPaint();
@@ -536,9 +539,20 @@ if (typeof window.blave.onTabOpen === "function") window.blave.onTabOpen((o) => 
     if (!T || T.dead) return;
     if (o.echo && !T.echoDrawn) withTab(T, () => addHistoryYou(o.echo, "mobile"));   // 讀歷史時已經畫到那一句(csDraw):不補第二次
     T.echoDrawn = false;
+    if (o.echo) tabsPhoneTitle(T, o.echo);
     if (!was && o.focus === false) { const el = $("tabs-live"); if (el) { el.textContent = ""; requestAnimationFrame(() => { el.textContent = tabsTitle(T) + "，" + t("chat.fromPhone"); }); } }
   }).catch(() => {});
 });
+// 手機那句是這條的第一句:標題比照電腦前送出(app.js submitMessage),空才設、不帶附件行。歷史先讀到 session.db 時標題還是空的,
+// 送出那條路又不經過這裡,不補的話分頁、+N 選單與對話清單一直是「新對話」。背景分頁不動眼前的標題列
+function tabsPhoneTitle(T, echo) {
+  const a = splitAttachNote(echo), title = a.text || a.attachments[0] || "";
+  if (!title || !withTab(T, () => { if (csTitle) return false; csTitle = title; if (!CS.bg) csRenderHead(); return true; })) return;
+  T.title = title;
+  const m = csItems.find((x) => x && x.id === T.sid); if (m && !m.title) m.title = title;
+  const list = $("cs-list"); if (list && !list.hidden) csFilter();
+  tabsSave(); tabsPaint();
+}
 // 拉寬拉窄即時重算(凍住的寬也放掉);寬沒變的通知(重畫本身)不理
 new ResizeObserver(() => { const w = $("cs-tabs").clientWidth; if (w === CS.barW) return; CS.barW = w; CS.freeze = null; tabsPaint(); }).observe($("cs-tabs"));
 $("cs-tabs").addEventListener("mouseleave", () => { if (CS.freeze) { CS.freeze = null; tabsPaint(); } });

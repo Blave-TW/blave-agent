@@ -101,7 +101,7 @@ except ImportError:  # POSIX
 # there.
 ALLOWED = frozenset({
     "halt", "resume", "resume_wait", "downtime_hold", "amounts", "execution", "credentials",
-    "credentials_remove", "restart_reconciler", "retest_accounts", "close_all",
+    "credentials_remove", "close_then_unbind", "restart_reconciler", "retest_accounts", "close_all",
     "delete_strategy", "manage_optimize", "manage_backtest", "manage_cancel",
     "report_pause", "report_resume", "report_run_now", "report_delete",
     "report_edit_pending", "preferences_set", "tz_set", "reply_lang_set",
@@ -1427,6 +1427,11 @@ class Daemon:
                 self._prune_acks()
             for path in self._pending():
                 self.handle_file(path)
+            try:
+                # on this thread, like the commands: its unbind swaps the cwd as dispatch does
+                cl.unbind_after_close_tick()
+            except Exception as e:
+                _log(f"close_then_unbind tick failed: {type(e).__name__}: {e}")
             self.stop.wait(POLL_S)
         _log("stopping")
         try:

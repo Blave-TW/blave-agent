@@ -107,7 +107,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   new Function("window", "document", read(path.join(R, "report-robust.js")))(XT_WIN, doc);   // 鈕態表 VAL_BTN 在這支
   const XT_GRID = (s0) => ({ lag: Object.fromEntries(["0", "1", "2", "3", "5", "10"].map((k) => [k, [s0, 10, -10]])), close_fill: [s0, 10, -10],
     cost: Object.fromEntries(["free", "0.01", "0.02", "0.05", "0.1", "0.2", "0.5"].map((k) => [k, [s0, 10, -10]])), fee_per_side_pct: 0.05, position_changes: 40 });
-  const names = ["pfEl", "pfNowWhy", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfFailLine", "perfXtInfo", "perfXtFresh", "perfXtSlot", "perfXtNote", "perfXtSync", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
+  const names = ["pfEl", "pfNowWhy", "perfOf", "perfShown", "perfLive", "perfState", "perfPaint", "perfBox", "perfFailLine", "perfXtInfo", "perfXtFresh", "perfXtSlot", "perfXtNote", "perfXtSync", "perfClick", "perfPollNeed", "perfPollStop", "perfPollEnsure", "perfPollTick"];
   const body = ["PF", "PFL", "PFP", "PFX", "PF_POLL_MS", "PF_POLL_MAX_MS", "PF_ERRS", "PF_NO_DATA", "PF_WHY", "pfSide", "pfRefKey"].map((n) => constSrc(perfSrc, n)).join("") + names.map((n) => fnSrc(perfSrc, n)).join("\n")
     + "\nreturn { " + names.join(", ") + ", PF, PFL, PFP, PFX };";
   const clock = { now: new Date(new Date().getFullYear(), 8, 28, 10, 0, 0).getTime() };   // 今年 9/28 10:00 本地時間(格式斷言不隨時區翻)
@@ -173,7 +173,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   {
     const r = rig("zh"); r.F.perfPaint(r.B);
     const u = r.upd(), b = r.btn();
-    ok("閒置 < 1 天:.upd 是 meta 列最後一個子節點(不是 .mgrp,不會多一顆點),裡面只有一顆 .btn-quiet「更新績效」", u && r.meta.kids[r.meta.kids.length - 1] === u && u.kids.length === 1 && b && b.tagName === "button" && b.attrs.type === undefined && b.type === "button" && b.textContent === "更新績效" && b.id === "perf-btn");
+    ok("閒置 < 1 天:.upd 的外框是 meta 列最後一個子節點(不是 .mgrp,不會多一顆點),裡面只有一顆 .btn-quiet「更新績效」", u && r.meta.kids[r.meta.kids.length - 1] === u.parentNode && u.parentNode.has("upd-box") && u.kids.length === 1 && b && b.tagName === "button" && b.attrs.type === undefined && b.type === "button" && b.textContent === "更新績效" && b.id === "perf-btn");
     ok("閒置 < 1 天:title = 「MM/DD HH:mm 更新 · 每天報告前自動更新一次」,沒有「N 天前」、沒有 role=status、沒有失敗行", b.title === tipZh(nowS() - 3600) && !u.all((k) => k.has("ts")).length && !("role" in u.attrs) && !r.fail());
     const e = rig("en"); e.F.perfPaint(e.B);
     ok("en:Update Performance / Updated … · auto-updated once a day before the daily report", e.btn().textContent === "Update Performance" && e.btn().title === "Updated " + shlFmtTime(nowS() - 3600, clock.now) + " · auto-updated once a day before the daily report");
@@ -339,10 +339,18 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
   ok("chattabs.js:共用畫面重畫不再叫 perfBusy", !/perfBusy/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")));
   ok("index.html:perf.js 在 versions.js 之後(用它的 verAmount / verPendingOf / VS / RERUN_WHY)、app.js 之後、export.js 之後(xpIsTypeB)", html.indexOf('src="perf.js"') > html.indexOf('src="versions.js"') && html.indexOf('src="versions.js"') > html.indexOf('src="app.js"') && html.indexOf('src="perf.js"') > html.indexOf('src="export.js"'));
   ok("CSS:.upd 靠右(margin-left: auto)、更新中 .busy、aria-disabled 的鈕走灰階退場、失敗行緊跟 meta(8)而三組條列仍離 16",
-    /\.bt-meta > \.upd \{ display: inline-flex; align-items: center; gap: var\(--space-8\); margin-left: auto; white-space: nowrap; \}/.test(css) && /\.bt-meta > \.upd \.busy \{/.test(css)
-    && /\.bt-meta > \.upd \.btn-quiet\[aria-disabled="true"\] \{ color: var\(--ink-disabled\); text-decoration: none; cursor: not-allowed; \}/.test(css)
-    && /\.bt-meta > \.upd \.btn-quiet::before \{ inset: -15px -6px; \}/.test(css)
+    /\.bt-meta > \.upd-box \{ display: inline-grid; justify-items: end; align-items: center; margin-left: auto; \}/.test(css) && /\.upd-box > \.upd \{ display: inline-flex; align-items: center; gap: var\(--space-8\); white-space: nowrap; \}/.test(css) && /\.upd-box > \.upd \.busy \{/.test(css)
+    && /\.upd-box > \.upd \.btn-quiet\[aria-disabled="true"\] \{ color: var\(--ink-disabled\); text-decoration: none; cursor: not-allowed; \}/.test(css)
+    && /\.upd-box > \.upd \.btn-quiet::before \{ inset: -15px -6px; \}/.test(css)
     && /\.bt > \.bt-meta \+ \.upd-fail \{ margin-top: var\(--space-8\); \}/.test(css) && /\.bt > \.upd-fail \+ \* \{ margin-top: var\(--space-16\); \}/.test(css) && !/#[0-9a-fA-F]{3,6}\b/.test(css.split("1b. 更新績效")[1].split("---- 2.")[0]));
+  // 量測在 check_shell_perf_no_jump.js(要 Electron);這裡釘寬度來源:四態都有同一組藏起來的撐寬,換態不會改折行(按下去內容跳一行那個問題)
+  { const box = (r) => r.host.querySelector(".upd-box"), holds = (r) => box(r).kids.filter((k) => k.has("upd-hold"));
+    const shape = (lang, perf) => { const r = rig(lang, { perf }); r.F.perfPaint(r.B); const h = holds(r); return { h: h.map((k) => k.textContent).join("|"), hid: h.length === 2 && h.every((k) => k.attrs["aria-hidden"] === "true"), real: box(r).kids[2] === r.upd(), noBtn: h.every((k) => !k.querySelector("btn-quiet")) }; };
+    for (const lang of ["zh", "en"]) { const a = shape(lang, { at: nowS() - 3600 }), b = shape(lang, { at: nowS() - 5 * 86400 }), c = shape(lang, { at: nowS() - 3600, refresh: { status: "running", at: nowS() - 10 } }), d = shape(lang, { at: nowS() - 3600, refresh: { status: "failed", at: nowS() - 10, err: "EXIT" } });
+      ok("撐寬(" + lang + "):閒置、N 天前、更新中、失敗同一組藏起來的字;讀屏略過;裡面沒有鈕", a.h && [b, c, d].every((x) => x.h === a.h) && [a, b, c, d].every((x) => x.hid && x.real && x.noBtn), JSON.stringify([a, c])); }
+    ok("CSS:撐寬疊在同一格、visibility: hidden(不佔讀屏、不收點擊),圓環的寬度算進去", /\.upd-box > \* \{ grid-area: 1 \/ 1; \}/.test(css) && /\.upd-box > \.upd-hold \{[^}]*visibility: hidden;/.test(css) && /\.upd-hold\.is-run \{ padding-left: calc\(16px \+ var\(--space-6\)\); \}/.test(css));
+    ok("換態先收整個外框(不留下舊的撐寬)", /host\.querySelectorAll\("\.upd-box, \.upd-fail"\)/.test(perfSrc));
+  }
   ok("CSS:沒資料權限那句的記號退灰(.upd-fail.is-calm,同 app.css 兩處 is-calm 前例)", /\.upd-fail\.is-calm \.fault-mark \{ background: var\(--ink-3\); \}/.test(css));
   const keys = ["perf.btn", "perf.ago", "perf.agoOne", "perf.tip", "perf.busy", "perf.doneSr", "perf.fail"];
   ok("字串:七個 key zh / en 都有,逐字 = spec §10", keys.every((k) => STR.zh[k] && STR.en[k]) && STR.zh["perf.btn"] === "更新績效" && STR.zh["perf.busy"] === "更新中" && STR.zh["perf.fail"] === "沒更新成功，數字是舊的" && STR.zh["perf.doneSr"] === "績效已更新"

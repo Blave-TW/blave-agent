@@ -8,8 +8,9 @@
      名字被刪就從表裡拿掉。雲端視角不寫檔:同一套「送出前記清單、之後看多了誰」的比法,只記在這次 app 開著的期間(libCloudChanged)。
    - 不導流(§13):未驗證的社群策略也列(平鋪在同一份清單的尾段,帶「未驗證」tag;spec-desktop-0.1.6 §2),詳情用 /report 補到 400 點曲線、
      總報酬、關卡數值、回測期間;沒有任何開網頁的入口。
-   - 付不出資料費(spec-desktop-0.1.6 §3)、沒登入(spec-0.1.13 §2):why 只有一個來源(主行程 libraryList 回的 why);清單分「現在就能用」與第二組,
+   - 付不出資料費(spec-desktop-0.1.6 §3):why 只有一個來源(主行程 libraryList 回的 why);清單分「現在就能用」與第二組,
      閘門卡掛在第二組頭上,詳情主鈕照這支要不要 Blave 資料分流(libGrouping / libCta)。本機「用這支」由主行程代下載。
+   - 沒登入(spec library-login-required):清單與詳情照舊公開、清單不預告;下載一律要登入,詳情主鈕是〔登入 Blave〕,回來停在同一支。
    - 上網找點子(spec-0.1.13 §5):三個入口都問 libIdeaOn,框本身在 newstrategy.js(ideaOpen)。
    - 付費策略在 app 內買(§4.4):購買框兩段對齊網頁 libBuy / libPurchase;憑證只在主行程(帳號 token + app 專用密鑰)。
    用到 app.js 的 $ / t / LANG / hasToken / running / RP / RPC / csTitle / csStartNew / submitMessage / confirmBox / delClose / setOpen / setCat /
@@ -46,8 +47,6 @@ function libListedDays(s, now) { const c = libCreated(s); return c === null ? nu
 function libIsFree(s) { return !(s && typeof s.price === "number" && s.price > 0); }
 // 這支要不要 Blave 資料(api 的 blave_data;spec-0.1.13 §1.1):"none" / "required" / null(未標)。用到它的判斷一律把 null 當 required
 function libNeeds(s) { return s && (s.blave_data === "none" || s.blave_data === "required") ? s.blave_data : null; }
-// 不登入也能用(§1.1b;Wei 10-02):官方 × 免費 × 不用 Blave 資料,三個缺一不可(未標不算)。主行程的 libAnonOk 與 api /public_code 各再判一次
-function libAnonOk(s) { return !!s && s.is_official === true && libIsFree(s) && libNeeds(s) === "none"; }
 // lib_pick 的 data 屬性(§8):未標記成 unknown
 function libPickData(s) { const n = libNeeds(s); return n === "none" ? "none" : n === "required" ? "required" : "unknown"; }
 /* 清單要不要分組、用哪一套組名(§1.2;c = { env, signedIn, dataAccess, why })。null = 不分組;否則 signedOut / no_card / no_balance /
@@ -61,10 +60,10 @@ function libGrouping(c) {
     return ["no_card", "no_balance", "no_plan", "plan_failed"].includes(c.why) ? c.why : "unknown";
   return "unknown";
 }
-// 分組的兩組(§2.2):沒登入時第一組是免登入策略、已登入時是免資料的;兩組各自保持 libVisible 的順序
-function libSplit(list, grouping) {
-  const first = grouping === "signedOut" ? libAnonOk : (s) => libNeeds(s) === "none", now = [], later = [];
-  (Array.isArray(list) ? list : []).forEach((s) => (first(s) ? now : later).push(s));
+// 分組的兩組(§2.2):第一組是免資料的;兩組各自保持 libVisible 的順序。沒登入不分組(library-login-required:清單不預告登入)
+function libSplit(list) {
+  const now = [], later = [];
+  (Array.isArray(list) ? list : []).forEach((s) => (libNeeds(s) === "none" ? now : later).push(s));
   return { now, later };
 }
 /* 找點子四個入口共用的條件(§1.4;c = { env, browserOn, engine, signedIn, canRun }):這台電腦、內建瀏覽器開著、引擎跑得動。
@@ -74,7 +73,7 @@ function libIdeaOn(c) {
   return c.env === "local" && c.browserOn === true && engineOk;
 }
 // 代下載沒成的那句:主行程判的 kind(+ 畫面自己的 unsent)→ 字串 key;認不得的一律當 fail
-function libDlKey(kind) { return ["blocked", "gone", "anonGone", "signin", "rateLimited", "unsent", "agentOld", "agentOldReopen"].includes(kind) ? "lib.dl." + kind : "lib.dl.fail"; }
+function libDlKey(kind) { return kind === "signinFailed" ? "row.failed" : ["blocked", "gone", "rateLimited", "unsent", "agentOld", "agentOldReopen"].includes(kind) ? "lib.dl." + kind : "lib.dl.fail"; }
 // 確認框與購買框的資料費那一行(§4.1):本機、按小時計費、而且這支不是只用公開資料。兩個框共用這一支,條件不會漂
 function libFeeLine(env, dataAccess, needs) { return env !== "cloud" && dataAccess === "billed" && needs !== "none"; }
 // 推薦排序(同公開頁 library_rules.recoSort):已驗證 → 樣本長 → 新;刻意不看報酬 / Sharpe(最漂亮的回測多半最過擬合)
@@ -103,16 +102,16 @@ function libRate(v) {
 }
 function libGateFails(gc) { return gc ? ["fee", "mcpt", "robust"].filter((k) => gc[k] === "fail").length : 0; }
 /* CTA 態(spec-0.1.13 §1.3 + 0.1.6 §4.4,由上到下取第一個成立的;進行中提到最前——那支的回合就是它的進度)。c = { running, env, signedIn, dataAccess, why, cloud: "live"|"stale"|"stopped"|null,
-   pending, noNew, buying, installedName }。回 { state, paid, name, err, why, pub }:paid = 付費且還沒買;err = 上一輪是這支的下載、結束時沒新策略;
-   why = noData 態的原因(libGrouping 的 no_card / no_balance / unknown,只在 noData 帶);pub = 分組中而這支只用公開資料(鈕下講那一句)。
-   沒登入只擋不是免登入策略的那幾支;資料牆只擋要資料(含未標)的。installedName 兩個視角各有來源(本機 = userData 的對照表、
+   pending, noNew, buying, installedName }。回 { state, paid, name, err, why, pub, again }:paid = 付費且還沒買;err = 上一輪是這支的下載、結束時沒新策略;
+   why = noData 態的原因(libGrouping 的 no_card / no_balance / unknown,只在 noData 帶);pub = 分組中而這支只用公開資料(鈕下講那一句);again = 已安裝態能不能再下載一份(沒登入不能)。
+   沒登入一律擋下載,已安裝的照樣打得開;資料牆只擋要資料(含未標)的。installedName 兩個視角各有來源(本機 = userData 的對照表、
    雲端 = 這次開 app 期間看到雲端清單多出來的那支),這裡只認有沒有 */
 function libCta(s, c) {
   const paid = !libIsFree(s) && !s.purchased && !s.is_owner, local = c.env !== "cloud", g = libGrouping(c), none = libNeeds(s) === "none";
-  const st = (state, name) => ({ state, paid, name: name || null, err: c.noNew === s.id && (state === "free" || state === "owned" || state === "installed"), why: state === "noData" ? g : null, pub: local && g !== null && none });
+  const st = (state, name) => ({ state, paid, name: name || null, err: c.noNew === s.id && (state === "free" || state === "owned" || state === "installed"), why: state === "noData" ? g : null, pub: local && g !== null && none, again: !(local && c.signedIn === false) });
   if (c.pending === s.id) return st("pending");   // 正在下載的那支:回合當然在跑,它講的是自己的進度,不是「上一輪還在跑」
   if (c.running) return st("busy");
-  if (local && c.signedIn === false && !libAnonOk(s)) return st("signedOut");
+  if (local && c.signedIn === false && !c.installedName) return st("signedOut");
   if (local && g !== null && g !== "signedOut" && !none) return st("noData");
   if (!local && c.cloud !== "live") return st(c.cloud === "stopped" ? "stopped" : "stale");
   if (c.buying === s.id) return st("buying");
@@ -179,14 +178,14 @@ function libCurve(spark, from, to) {
 // 這一語言的成功筆記 id / 標題(spec-0.1.12-library-notes §2.2):缺就是缺,不拿另一個語言頂
 function libNoteId(s, lang) { const m = s && s.success_note_ids; const v = m && typeof m === "object" ? m[lang] : null; return Number.isInteger(v) && v > 0 ? v : null; }
 /* 歡迎頁①的卡(spec desktop-welcome-library-first §2.3)。候選 = 免費 × 官方 × 不是自己的 × 這個視角沒裝過(installed 回呼);
-   不看 purchased:官方策略 /code 抓過一次 api 就記一筆 0 元購買,不代表這台有。只留現在就能跑的,不拿要登入／要資料的補滿(歡迎頁是第一眼,不放牆):
-   雲端、資料已含 → 全部;沒登入 → libAnonOk;其餘(billed／none／方案制／查不到)→ 不用 Blave 資料的。billed 也只出不用資料的:第一眼不讓確認框多出收費句。
+   不看 purchased:官方策略 /code 抓過一次 api 就記一筆 0 元購買,不代表這台有。只留不用再付錢就能跑的,不拿要資料的補滿(歡迎頁是第一眼,不放牆;沒登入按下去先進詳情,welcome.js wcUse):
+   雲端、資料已含 → 全部;其餘(沒登入／billed／none／方案制／查不到)→ 不用 Blave 資料的。billed 也只出不用資料的:第一眼不讓確認框多出收費句。
    每個市場先一支、不到三支照 libVisible 補;回傳照 libVisible 的順序,不照挑的順序。c = { env, signedIn, dataAccess, wait, installed };wait = 帳號狀態還在讀 → null(骨架) */
 function wcReco(list, c) {
   const o = c || {};
   if (o.wait) return null;
   const seen = typeof o.installed === "function" ? o.installed : () => false;
-  const runs = o.env === "cloud" || (o.signedIn !== false && o.dataAccess === "included") ? () => true : o.signedIn === false ? libAnonOk : (s) => libNeeds(s) === "none";
+  const runs = o.env === "cloud" || (o.signedIn !== false && o.dataAccess === "included") ? () => true : (s) => libNeeds(s) === "none";
   const cands = libVisible((Array.isArray(list) ? list : []).filter((s) => s && libIsFree(s) && s.is_official === true && !s.is_owner && runs(s) && !seen(s)), "all");
   const picked = [], mk = new Set();
   cands.forEach((s) => { const m = String(libMarket(s)); if (picked.length < 3 && !mk.has(m)) { mk.add(m); picked.push(s); } });
@@ -205,7 +204,8 @@ function libP(tpl, p, alpha) {
 
 const LIB = { bags: { local: libNewBag(), cloud: libNewBag() }, data: null, loading: false, skel: false, failed: false, stale: false, seq: 0,
   pending: new Map(), noNew: null, buying: null, installed: {}, chart: null, paintedEnv: null, reports: new Map(),   // reports: id → Promise<report|null>(詳情的 400 點曲線 + 回測期間)
-  dlFail: null,   // 本機代下載沒成:{ id, kind: blocked | gone | signin | fail | unsent }(§4.2);再按一次、離開詳情、libInvalidate 清掉
+  dlFail: null,   // 本機代下載沒成:{ id, kind: blocked | gone | signin | fail | unsent | signinFailed,relogin }(§4.2);再按一次、離開詳情、libInvalidate 清掉
+  gone: false, ctaFocus: null,   // gone:開著的詳情那支從清單消失,清單頂端講一句;ctaFocus:這支剛登入回來,清單畫好後焦點給主鈕
   cloudInstalled: {}, cloudWait: null, cloudNames: null,   // 雲端視角的「已安裝」(只在這次 app 開著的期間;見 libCloudChanged)
   brOn: false, ideaShown: null };   // brOn:內建瀏覽器開關的快取;ideaShown:清單上次畫的找點子入口是開是關
 const LIB_CLOUD_WAIT_MS = 3 * 60 * 1000;   // 回合結束後等雲端清單跟上的上限(主機的回報器有延遲);過了就不再認新出現的那支是這次下載的
@@ -345,7 +345,7 @@ async function libOpen(o) {
 function libLeave(env) {
   const B = libBag(env);
   if (!B.open) return;
-  B.open = false; LIB.noNew = null; LIB.dlFail = null;
+  B.open = false; LIB.noNew = null; LIB.dlFail = null; LIB.gone = false; LIB.ctaFocus = null;
   if (B === libBag()) { libMktClose(false); $("lib").hidden = true; $("lib-nav").removeAttribute("aria-current"); libChartDrop(); }
 }
 /* envShowMain(trade.js)的最後一步:策略庫開著就蓋掉其餘視圖。gate = 雲端沒主機可看(開通頁),那時側欄入口也藏著 */
@@ -380,6 +380,7 @@ async function libLoad(force) {
   else LIB.failed = true;   // 手上有舊清單就照畫舊的;沒有才畫「讀不到」
   if (!$("lib").hidden && (prev === null || prev !== JSON.stringify(LIB.data) || LIB.paintedEnv !== libEnv())) libPaint();   // 沒變就不重畫(捲動、焦點、曲線都留著)
   if (typeof wcPaint === "function") wcPaint();   // 歡迎頁①的卡(renderer/welcome.js;自己有指紋)
+  libCtaFocusNow();
 }
 // 登入 / 登出 / 換帳號 / 買了(app.js 在 hasToken 翻轉的地方叫;購買成功自己叫):手上那份作廢,開著就立刻重問
 function libInvalidate() { LIB.stale = true; LIB.dlFail = null; LIB.cloudInstalled = {}; LIB.cloudWait = null; LIB.cloudNames = null; libRefresh(); }   // 雲端「已安裝」是這個帳號的記憶:換人就丟
@@ -439,12 +440,15 @@ function libRepaint() { if ($("lib").hidden) return; LIB.reports.clear(); libPai
 /* ── 畫 ──────────────────────────────────────────────── */
 function libPaint() {
   const B = libBag(); LIB.paintedEnv = libEnv();
-  if (B.detail && LIB.data && !libFind(B.detail)) B.detail = null;   // 那支不在清單裡了(下架):回清單
+  const lost = !!(B.detail && LIB.data && !libFind(B.detail));
+  if (lost) { B.detail = null; LIB.dlFail = null; LIB.gone = true; }   // 那支不在清單裡了(下架):回清單,頂端講一句
   const det = B.detail ? libFind(B.detail) : null;
   $("lib-head-list").hidden = !!det; $("lib-back").hidden = !det;
+  libPaintGone();
   libMktClose(!det && $("lib-mkt-menu").contains(document.activeElement));   // 選單開著時清單重畫(清單到了、換語言):焦點在面板裡就還給觸發鈕,不掉到 body
   if (det) { $("lib-rows").textContent = ""; $("lib-grps").textContent = ""; $("lib-state").hidden = true; libPaintDetail(det); }
   else { libChartDrop(); $("lib-det").hidden = true; $("lib-det").textContent = ""; libPaintDesc(); libPaintList(); $("lib-body").scrollTop = B.scroll || 0; }
+  if (lost && libFocusFree()) $("lib-h").focus();
 }
 // 市場選單:選中的那項、觸發器上的值、每一項的支數(0 也印、照樣可選;網頁同一套)。清單還沒到就都不印;清單每重畫一次就跟著重算
 function libPaintMkt() {
@@ -476,7 +480,7 @@ function libMktOpen() {
 function libMktPick(mkt) {
   libMktClose(true);
   if (mkt === libBag().mkt) return;
-  libBag().mkt = mkt; libTrack("lib_mkt_pick"); libPaint();
+  libBag().mkt = mkt; LIB.gone = false; libTrack("lib_mkt_pick"); libPaint();
 }
 /* 頁首說明句(§2.7):排序那句;找點子開著時後面接「沒有合適的,〔請 agent 上網找點子〕。」——文字鈕和句號包在同一個 nowrap 裡,句號不單獨掉行 */
 function libPaintDesc() {
@@ -573,7 +577,7 @@ function libPaintList() {
     return;
   }
   // 沒權限時分兩組(§2.2 / §2.3):閘門卡掛在它管的第二組頭上;第二組空就平鋪(這個分段全部能直接用)
-  const g = libGrouping(libCtx()), sp = g ? libSplit(v, g) : null;
+  const g = libGrouping(libCtx()), sp = g && g !== "signedOut" ? libSplit(v) : null;
   if (!sp || !sp.later.length) { v.forEach((s) => rows.appendChild(libRow(s))); return; }
   const grp = (id, label, n) => {
     const sec = libEl("section", "lib-grp"), h = libEl("h6", "lib-grp-h"); sec.setAttribute("aria-labelledby", id); h.id = id;
@@ -594,14 +598,14 @@ function libPaintList() {
     const act = libEl("div", "act"), more = libEl("button", "btn-quiet", t("data.seePlan")); more.type = "button";
     more.addEventListener("click", () => { libTrack("plan_lib"); planOpen(); });
     act.append(libGateBtn(g), more); gate.appendChild(act);
-  } else gate.append(libEl("p", "", t(LIB_GRP_KEYS[g][1])), g === "signedOut" ? libSignInBtn() : libGateBtn(g));
+  } else gate.append(libEl("p", "", t(LIB_GRP_KEYS[g][1])), libGateBtn(g));
   g2.append(gate, listOf(sp.later));
   grps.append(g1, g2);
 }
 // 第二組的組名與閘門卡那一句(§2.2 表)
 const LIB_GRP_KEYS = { no_card: ["lib.grp.card", "lib.grp.gate.noCard"], no_balance: ["lib.grp.topup", "lib.grp.gate.noBalance"],
   no_plan: ["lib.grp.plan", "lib.grp.gate.noPlan"], plan_failed: ["lib.grp.repay", "lib.grp.gate.planFailed"],
-  unknown: ["lib.grp.check", "lib.grp.gate.unknown"], signedOut: ["lib.grp.signedOut", "lib.grp.gate.signedOut"] };
+  unknown: ["lib.grp.check", "lib.grp.gate.unknown"] };
 const libPlanMo = () => typeof planMo === "function" && planMo();
 /* 付不出資料費的出口(§3.2):no_card 有試用 → 「綁卡,送 {t} 天資料」/ 沒試用或 t 空 → 「前往綁卡」/ no_balance → 「儲值」/ unknown → 描邊「帳號與方案」
    (查不到狀態時不擺一顆要錢的主鈕;鈕字用 pv.e.btn——「開這一頁的鈕」的字,跟資料卡那顆共用)。這幾顆開 設定 › 帳號與方案。
@@ -621,25 +625,57 @@ function libGateBtn(why) {
   b.type = "button"; b.addEventListener("click", () => { if (why !== "unknown") libTrack(why === "no_balance" ? "topup_lib" : "bind_lib"); planOpen(); });
   return b;
 }
-// 「登入 Blave」(詳情主鈕與沒登入那組的閘門卡同一顆):直接開瀏覽器登入(app.js planSignIn)。登入後 libInvalidate 重畫,詳情主鈕換成下一步
-function libSignInBtn() {
-  const b = signInLabel(libEl("button", "btn-fill"), t("cn.blave.btn")); b.type = "button";
-  b.addEventListener("click", () => planSignIn(b));
+// 詳情的「登入 Blave」/「重新登入 Blave」:直接開瀏覽器登入(app.js planSignIn);不做登入後自動續走(同 report-share.js,案 1A)。cls:已安裝那格是文字鈕
+function libSignInBtn(key, cls) {
+  const b = signInLabel(libEl("button", cls || "btn-fill"), t(key || "cn.blave.btn")); b.type = "button";
+  b.addEventListener("click", () => libSignIn(b));
   return b;
+}
+async function libSignIn(b) {
+  const id = libBag().detail, env = libEnv(), was = LIB.dlFail && LIB.dlFail.id === id ? LIB.dlFail : null;
+  if (!planLoginBusy && !oauthPending) libTrack("login_lib");   // 等待中再按是取消,不算一次登入
+  if (was && was.kind === "signinFailed") { LIB.dlFail = was.relogin ? { id, kind: "signin" } : null; libClearFail(); }   // 上一次沒成的那句活不過這一次;key 被撤的那句留著
+  const r = await planSignIn(b);
+  if (!r) return;   // 這一按是取消:結果由開始登入那一按收
+  const here = () => !$("lib").hidden && libEnv() === env && libBag().detail === id;
+  if (r.ok) { LIB.ctaFocus = id; if (LIB.loading) b.disabled = true; else libCtaFocusNow(); return; }   // 清單還在路上:這顆舊鈕再按會又登入一次
+  if (!here()) return;
+  if (!oauthGaveUp(r.code)) LIB.dlFail = { id, kind: "signinFailed", relogin: !!(was && (was.kind === "signin" || was.relogin)) };
+  libSync();
+  const m = libCtaMain(); if (m && libFocusFree()) m.focus();
+}
+function libClearFail() { const c = $("lib-cta"), e = c && c.querySelector(".err"); if (e) e.remove(); }
+// 等瀏覽器時他可能已經在輸入框打字或開了框:焦點還在策略庫裡(或掉到 body)才接手
+function libFocusFree() { const a = document.activeElement; return !a || a === document.body || $("lib").contains(a); }
+/* 登入回來:清單與帳號狀態到了才畫得出真正的下一步(綁卡、購買),所以等 libLoad 收尾才給焦點;只給一次、不自動開確認框。
+   重畫會換掉鈕,放在 libLoad 最後一步;那支剛好下架就交給 libPaint 的頁首焦點 */
+function libCtaFocusNow() {
+  const id = LIB.ctaFocus;
+  if (id === null) return;
+  LIB.ctaFocus = null;
+  if ($("lib").hidden || libBag().detail !== id) return;
+  libSync();
+  const m = libCtaMain(); if (m && libFocusFree()) m.focus();
+}
+function libPaintGone() {
+  const p = $("lib-gone"); p.textContent = ""; p.hidden = !LIB.gone;
+  if (!LIB.gone) return;
+  const m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true");
+  p.append(m, libEl("span", "", t("lib.dl.gone")));
 }
 /* 詳情 noData 鈕下那句(§3):第一句看資料需求(要用 / 未標),第二句看原因——no_card 不接(鈕字已經講了) */
 function libNoDataText(s, why) {
   return libJoin(t(libNeeds(s) === "required" ? "lib.need.data" : "lib.need.unknown"), why === "no_balance" ? t("lib.why.noBalance") : why === "no_plan" ? t("lib.why.noPlan") : why === "plan_failed" ? t("lib.why.planFailed") : why === "unknown" ? t("lib.why.unknown") : "");
 }
 function libShowDetail(id) {
-  const B = libBag(); B.row = id; B.detail = id;
+  const B = libBag(); B.row = id; B.detail = id; LIB.gone = false;
   libPaint(); $("lib-body").scrollTop = 0;
   const s = libFind(id); if (s) libBlocked(libBlockedWhy(libCtaOf(s)));
   $("lib-back").focus();
 }
 function libBack() {
   const B = libBag();
-  B.detail = null; LIB.noNew = null; LIB.dlFail = null;
+  B.detail = null; LIB.noNew = null; LIB.dlFail = null; LIB.gone = false; LIB.ctaFocus = null;
   libPaint();
   const r = $("lib-body").querySelector('.lib-row[data-id="' + B.row + '"]');   // 主段或(展開著的)社群段
   if (r) r.focus(); else $("lib-h").focus();
@@ -736,7 +772,7 @@ function libReportApply(rep, s) {
   const per = $("lib-period");
   if (per && rep.backtest_start && rep.backtest_end) { per.textContent = ""; per.appendChild(libMono(rep.backtest_start + " — " + rep.backtest_end)); }
 }
-function libCtaMain() { const c = $("lib-cta"); return c ? c.querySelector(".btn-fill") : null; }
+function libCtaMain() { const c = $("lib-cta"); return c ? c.querySelector(".btn-fill, .btn-out") : null; }
 function libPaintCta(s) {
   const box = $("lib-cta"); if (!box) return;
   const hadFocus = box.contains(document.activeElement);   // 重畫前焦點在鈕上:畫完還給新的主鈕(§3 末,同 libPurchase)
@@ -745,14 +781,19 @@ function libPaintCta(s) {
   const btn = (cls, label, on) => { const b = libEl("button", cls, label); b.type = "button"; if (on) b.addEventListener("click", () => on(b)); return b; };
   const dis = (label) => { const b = btn("btn-fill", label); b.disabled = true; return b; };
   const buyLabel = () => t("lib.buy", { price: libPriceText(s) || "—" });
-  switch (c.state) {
-    case "signedOut": row.appendChild(libSignInBtn()); break;   // 鈕本身就說了「登入 Blave」,鈕下不再補一句(Wei 10-17);卡與資料登入後真的撞到資料牆再講(Wei 10-02)
+  // 下載撞到 key 被撤(有 token、沒有能用的 key):再按安裝一樣撞,主鈕換成重新登入;已安裝那格主鈕仍是打開,換掉的是再下載那顆
+  const dl = LIB.dlFail && LIB.dlFail.id === s.id && libEnv() === "local" ? LIB.dlFail : null, relogin = !!dl && (dl.kind === "signin" || dl.relogin === true);
+  switch (relogin && ["free", "owned", "paid"].includes(c.state) ? "relogin" : c.state) {
+    case "relogin": row.appendChild(libSignInBtn("fault.authBtn")); break;
+    case "signedOut": row.appendChild(libSignInBtn()); break;   // 鈕本身就說了「登入 Blave」,鈕下不再補一句(Wei 10-17、11-04);卡與資料登入後真的撞到資料牆再講(Wei 10-02)
     case "noData": row.appendChild(libGateBtn(c.why)); note.classList.add("up"); note.textContent = libNoDataText(s, c.why); break;
     case "stopped": case "stale": row.appendChild(dis(c.paid ? buyLabel() : t("lib.use"))); note.textContent = t(c.state === "stopped" ? "ho.gate.stopped" : "ho.gate.stale"); break;
     case "pending": row.appendChild(dis(t("lib.pending"))); break;   // 鈕本身說了進行中,鈕下不再補「進度在右邊的對話」(Wei 10-17)
     case "buying": row.appendChild(dis(t("lib.buy.busy"))); break;
     case "installed":
-      row.append(btn("btn-fill", t("lib.open"), async () => { await (libEnv() === "cloud" ? rpCloudSelect(c.name) : stratSelect(c.name)); $("rp-name").focus(); }), btn("btn-quiet", t("lib.again"), (b) => libAsk(s, b)));
+      row.append(btn("btn-fill", t("lib.open"), async () => { await (libEnv() === "cloud" ? rpCloudSelect(c.name) : stratSelect(c.name)); $("rp-name").focus(); }));
+      if (relogin) row.appendChild(libSignInBtn("fault.authBtn", "btn-quiet"));
+      else if (c.again) row.appendChild(btn("btn-quiet", t("lib.again"), (b) => libAsk(s, b)));
       break;
     case "paid": row.appendChild(btn("btn-fill", buyLabel(), (b) => libBuyBox(s, "confirm", b, {}))); break;
     case "owned": row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b))); break;
@@ -763,7 +804,8 @@ function libPaintCta(s) {
   note.hidden = !note.textContent;
   box.appendChild(note);
   if (c.err) { const e = libEl("p", "err"), m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, libEl("span", "", t("lib.err.noNew"))); box.appendChild(e); }
-  if (LIB.dlFail && LIB.dlFail.id === s.id && c.state !== "pending") {
+  // key 被撤(signin):鈕字〔重新登入 Blave〕已經講了,不另寫一句(中欄 480 會把標題區擠壞;設計稽核 v045)
+  if (LIB.dlFail && LIB.dlFail.id === s.id && c.state !== "pending" && LIB.dlFail.kind !== "signin") {
     const e = libEl("p", "err"), m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.setAttribute("role", "status");
     e.append(m, libEl("span", "", t(libDlKey(LIB.dlFail.kind)))); box.appendChild(e);
   }
@@ -828,9 +870,9 @@ async function libSend(s, o) {
     try { r = await window.blave.libraryDownload(s.id); } catch (_) { r = null; }
     if (!r || r.ok !== true) {
       LIB.pending.delete(s.id);
-      const kind = r && ["blocked", "gone", "anonGone", "signin", "rateLimited", "agentOld", "agentOldReopen"].includes(r.kind) ? r.kind : "fail";
+      const kind = r && ["blocked", "gone", "signin", "rateLimited", "agentOld", "agentOldReopen"].includes(r.kind) ? r.kind : "fail";
       if (kind === "agentOld" || kind === "agentOldReopen") libBlocked("agent_old");   // 想用但這台 lib 太舊(api 交付碼前擋下)
-      if (kind === "gone" || kind === "anonGone") libInvalidate();   // 下架了(或匿名那條已不給):清單重拉(先清再記,libInvalidate 會把 dlFail 清掉)
+      if (kind === "gone") libInvalidate();   // 下架了:清單重拉(先清再記,libInvalidate 會把 dlFail 清掉)
       LIB.dlFail = { id: s.id, kind };
       libSync(); const b = libCtaMain(); if (b) b.focus();
       return;

@@ -3174,6 +3174,94 @@
       }
     },
     {
+      "name": "paired_ever_false",
+      "desc": "enabled 帶 paired_ever:false → state().pairedEver === false",
+      "requests": [
+        {
+          "endpoint": "enabled",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "on": false,
+              "paired_ever": false
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "paired_ever_true",
+      "desc": "enabled 帶 paired_ever:true(含全部撤銷)→ state().pairedEver === true",
+      "requests": [
+        {
+          "endpoint": "enabled",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "on": false,
+              "paired_ever": true
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "paired_ever_bad",
+      "desc": "paired_ever 不是布林 → undefined(讀不到)",
+      "requests": [
+        {
+          "endpoint": "enabled",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "on": false,
+              "paired_ever": "false"
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
+      "name": "paired_ever_gone",
+      "desc": "先讀到 false、下一輪 500 → 回到 undefined,不留舊值",
+      "requests": [
+        {
+          "endpoint": "enabled",
+          "body": {},
+          "response": {
+            "status": 200,
+            "body": {
+              "enabled": true,
+              "on": false,
+              "paired_ever": false
+            }
+          }
+        }
+      ],
+      "shell": {
+        "startTurn": [],
+        "stopTurn": []
+      }
+    },
+    {
       "name": "paired_notice_on",
       "desc": "開關開著:enabled 帶 paired_notice → 畫面拿到 notice;一出現打 prompt/seen(device_id),之後 api 不再給、那一行留到關掉;關掉不打 api",
       "requests": [
