@@ -2843,7 +2843,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           && STR.zh["tr.ov.evCapStopped"] === "群益登入已停止" && /先到群益解鎖/.test(STR.zh["tr.ov.evCapLockedNote"]) && !/解鎖/.test(STR.zh["tr.ov.evCapStoppedNote"])
           && /Unlock it with Capital/.test(STR.en["tr.ov.evCapLockedNote"])
           && /ev_venue_login_blocked_capital: t\("tr\.ov\.evCapStopped"\)/.test(src) && /ev_venue_login_blocked_capital_locked_n: t\("tr\.ov\.evCapLockedNote"\)/.test(src)
-          && /capital \? "_capital" : ""/.test(mainSrc2) && /capital && e\.payload\.reason === "LOCKED"/.test(mainSrc2)
+          && /capital \? "_capital"/.test(mainSrc2) && /capital && e\.payload\.reason === "LOCKED"/.test(mainSrc2)
           && /ev_venue_login_blocked_capital: "Capital login stopped"/.test(mainSrc2)); }
       { const q = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF", reason: "queued", until: 1793899200 }),
           qs = trEventText("manual_close_required", { exchange: "capital", symbols: "TMF", reason: "queued" });

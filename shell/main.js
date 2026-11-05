@@ -4349,6 +4349,10 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_order_unconfirmed_close_all: "Not closed with the rest", ev_order_unconfirmed_close_all_n: "An order here has an unknown outcome and was left out of this close. Don't trade it yourself: tell your agent how much filled, then press Pause and close positions again.",
   ev_order_unconfirmed: "Order outcome unknown", ev_order_unconfirmed_n: "This order may have filled — don't place it again yourself. New entries on this symbol are paused; closes still run.",
   ev_clock_skew_hold: "TAIEX futures entries paused", ev_clock_skew_hold_n: "This computer’s clock is off, so TAIEX futures entries are paused; closes still run. Open Blave to see how to fix it.",
+  ev_manual_close_required: "Capital positions still open", ev_manual_close_required_n: "This computer can't sign in to Capital's order API. Close them in Capital's trading software.",
+  ev_manual_close_required_lag: "Positions not closed", ev_manual_close_required_lag_n: "Position data lags the last order. In a minute, press “Pause and close positions” again, or close at your broker.",
+  ev_manual_close_required_queued: "Capital positions not closed", ev_manual_close_required_queued_n: "The last close is not reported yet. Press “Pause and close positions” again after {at}, or close it in Capital's trading software now.",
+  ev_manual_close_required_queued_soon_n: "The last close is not reported yet. Press “Pause and close positions” again in a few minutes, or close it in Capital's trading software now.",
   ev_tw_entry_hold: "New entries paused", ev_tw_entry_hold_n: "TAIEX futures entries are paused; closes still run. Open Blave to see what to check.",
   ev_order_unconfirmed_stuck: "Order outcome still unknown", ev_order_unconfirmed_stuck_n: "Still no result, so new entries on this symbol stay paused. Check the exchange, tell your agent how much filled, and don't place it again yourself.",
   stratOne: "", stratTwo: "", stratMany: "", withStrat: "",
@@ -4875,6 +4879,15 @@ const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fal
   "venue_stops_missing", "venue_login_blocked", "order_unconfirmed", "clock_skew_hold", "tw_entry_hold"];   // 全部十一型(標籤用)
 // order_unconfirmed 與台指期那三種(manager/reconciler KIND_*)跟拒單同一個來源:order_errors[] 帶 kind 的那列,不在 events 裡
 const P1_ERR_KINDS = ["order_unconfirmed", "clock_skew_hold", "tw_entry_hold"];
+// 全部平倉刻意沒送單的那列(manager/flatten):同 api agent_overview 的分流,認得的券商＋原因才叫 manual_close_required,
+// 其他照舊當拒單。reason 選標題:identity(或沒帶)身分登不進、snapshot_lag 快照落後、queued 上一筆平倉還在等回報
+function p1ManualClose(e) {
+  if (!e || e.kind !== "manual_close_required") return null;
+  const r = e.reason == null ? "identity" : e.reason;
+  if (!((e.exchange === "capital" && ["identity", "snapshot_lag", "queued"].indexOf(r) >= 0) || (e.exchange === "president" && r === "snapshot_lag"))) return null;
+  return { reason: r, until: typeof e.until === "number" && isFinite(e.until) && e.until > 0 ? e.until : null };
+}
+function p1TwClock(sec) { return new Date(sec * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Taipei" }); }
 const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error" && P1_ERR_KINDS.indexOf(ty) < 0);   // 會出現在 events 裡的六型
 const HALT_AUTO_SOURCES = ["reconciler", "portfolio"];   // 同 api openclaw/agent_events._HALT_AUTO_SOURCES
 const notifiedPath = () => path.join(app.getPath("userData"), "p1-notified.json");
@@ -4915,8 +4928,9 @@ function p1FromState(r, mark, nowS) {   // 純函式:halt / 拒單從狀態檔�
     // manual 停車的第一列不叫:同一刻的 HALT 已經叫了(只有部位表那句用它)
     if (mark.err != null && nowS - ts <= 900 && !(e.kind === "order_unconfirmed" && e.manual === true && e.stuck !== true)) {
       const strategies = Array.isArray(e.strategies) ? e.strategies.filter((x) => typeof x === "string" && x).slice(0, 10) : [];
-      out.show.push({ type: P1_ERR_KINDS.indexOf(e.kind) >= 0 ? e.kind : "order_error", ts,
-        payload: { symbol: typeof e.symbol === "string" ? e.symbol : "", strategies, stuck: e.stuck === true, close_all: e.close_all === true } });
+      const mc = p1ManualClose(e);
+      out.show.push({ type: mc ? "manual_close_required" : P1_ERR_KINDS.indexOf(e.kind) >= 0 ? e.kind : "order_error", ts,
+        payload: { symbol: typeof e.symbol === "string" ? e.symbol : "", strategies, stuck: e.stuck === true, close_all: e.close_all === true, ...(mc || {}) } });
     }
   }
   out.err = top < 0 ? 0 : top;
@@ -4963,11 +4977,15 @@ function p1Sync() {
     const closeAll = e.type === "order_unconfirmed" && e.payload && e.payload.close_all === true;
     const stuck = !closeAll && e.type === "order_unconfirmed" && e.payload && e.payload.stuck === true;
     const capital = e.type === "venue_login_blocked" && e.payload && e.payload.venue === "capital";
-    const variant = closeAll ? "_close_all" : stuck ? "_stuck" : capital ? "_capital" : "";
+    const mcr = e.type === "manual_close_required" && e.payload ? e.payload.reason : null;
+    const variant = closeAll ? "_close_all" : stuck ? "_stuck" : capital ? "_capital"
+      : mcr === "snapshot_lag" ? "_lag" : mcr === "queued" ? "_queued" : "";
     const head = tmLabels["ev_" + e.type + variant] || tmLabels["ev_" + e.type];
     // 下單結果不明、追蹤不了而整台暫停:講可能已成交、不要手動補單、怎麼恢復,不是只有「什麼單都不送」
     const note = e.type === "halt" && e.payload && e.payload.unconfirmed && tmLabels.ev_halt_unconfirmed_n ? tmLabels.ev_halt_unconfirmed_n
       : capital && e.payload.reason === "LOCKED" && tmLabels.ev_venue_login_blocked_capital_locked_n ? tmLabels.ev_venue_login_blocked_capital_locked_n
+      : mcr === "queued" ? (e.payload.until ? String(tmLabels.ev_manual_close_required_queued_n || "").replace("{at}", p1TwClock(e.payload.until))
+        : tmLabels.ev_manual_close_required_queued_soon_n)
       : tmLabels["ev_" + e.type + variant + "_n"] || tmLabels["ev_" + e.type + "_n"];
     const n = new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, head + (sym ? " · " + sym : "")), body: p1WithStrat(e.payload && e.payload.strategies, note) });
     p1Alive.add(n); const drop = () => p1Alive.delete(n);

@@ -1881,6 +1881,10 @@ function trPushLabels() {
     ev_order_unconfirmed: t("tr.ov.evUnconfirmed"), ev_order_unconfirmed_n: t("tm.evUnconfirmedNote"),
     ev_clock_skew_hold: t("tr.ov.evClockHold"), ev_clock_skew_hold_n: t("tm.evClockHoldNote"),
     ev_tw_entry_hold: t("tr.ov.evTwHold"), ev_tw_entry_hold_n: t("tm.evTwHoldNote"),
+    ev_manual_close_required: t("tm.evCloseIdentity"), ev_manual_close_required_n: t("tm.evCloseIdentityNote"),
+    ev_manual_close_required_lag: t("tm.evCloseLag"), ev_manual_close_required_lag_n: t("tm.evCloseLagNote"),
+    ev_manual_close_required_queued: t("tm.evCloseQueued"), ev_manual_close_required_queued_n: t("tm.evCloseQueuedNote"),
+    ev_manual_close_required_queued_soon_n: t("tm.evCloseQueuedSoonNote"),
     ev_halt_unconfirmed_n: t("tm.evHaltUnconfirmedNote"),   // 大寫開頭、不帶標的(標題已帶「· 標的」)
     ev_order_unconfirmed_close_all: t("tr.ov.evUnconfirmedCloseAll"), ev_order_unconfirmed_close_all_n: t("tr.ov.evUnconfirmedCloseAllNote"),
     ev_order_unconfirmed_stuck: t("tr.ov.evUnconfirmedStuck"), ev_order_unconfirmed_stuck_n: t("tr.ov.evUnconfirmedStuckNote"),

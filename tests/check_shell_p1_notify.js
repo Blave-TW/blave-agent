@@ -82,4 +82,21 @@ t("stuck 那則有自己的標題與內文", src.includes("ev_order_unconfirmed_
   { ts: NOW - 8, symbol: "ETHUSDT", kind: "order_unconfirmed", stuck: true, close_all: true, inflight_id: "ETHUSDT_market" }]), { halt: 0, err: 0 }, NOW);
   t("manual 停車第一列不叫(HALT 已叫);全部平倉沒平到那列帶 close_all", x.show.length === 1 && x.show[0].payload.close_all === true
     && src.includes("ev_order_unconfirmed_close_all:") && src.includes("ev_order_unconfirmed_close_all_n:")); }
+// 全部平倉刻意沒送單那列(manager/flatten manual_close_required):不再當「下單失敗」叫;同 api 的分流與 reason
+{ const MC = (extra) => Object.assign({ ts: NOW - 5, symbol: "TMF", kind: "manual_close_required", exchange: "capital", symbols: "TMF" }, extra);
+  const pick = (row) => p1FromState(R({ halted: false }, [row]), { halt: 0, err: 0 }, NOW).show[0];
+  const q = pick(MC({ reason: "queued", until: 1793899200 })), id = pick(MC({})), lag = pick(MC({ reason: "snapshot_lag", exchange: "president" }));
+  t("manual_close_required:群益 queued／identity(或沒帶)、統一 snapshot_lag 都叫自己的型別,payload 帶 reason 與 until",
+    q.type === "manual_close_required" && q.payload.reason === "queued" && q.payload.until === 1793899200
+    && id.type === "manual_close_required" && id.payload.reason === "identity" && lag.payload.reason === "snapshot_lag");
+  t("manual_close_required:認不得的組合照舊當拒單(統一沒有身分問題、新 reason)",
+    pick(MC({ exchange: "president", reason: "identity" })).type === "order_error" && pick(MC({ reason: "new_one" })).type === "order_error");
+  t("本機通知的標題與內文按 reason 換,queued 講幾點後再按(台灣時間)",
+    /mcr === "snapshot_lag" \? "_lag" : mcr === "queued" \? "_queued"/.test(src) && /replace\("\{at\}", p1TwClock\(e\.payload\.until\)\)/.test(src)
+    && p1TwClock(1793899200) === "01:20" && /ev_manual_close_required_queued_n: "[^"]*\{at\}/.test(src)
+    && !/Order failed|rejected/.test((src.match(/ev_manual_close_required[^\n]*/g) || []).join(" "))); }
+{ const tr = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
+  t("畫面交給主行程的字:manual_close_required 三種標題與內文都有",
+    ["ev_manual_close_required:", "ev_manual_close_required_n:", "ev_manual_close_required_lag:", "ev_manual_close_required_lag_n:",
+     "ev_manual_close_required_queued:", "ev_manual_close_required_queued_n:", "ev_manual_close_required_queued_soon_n:"].every((k) => tr.includes(k) && src.includes(k))); }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

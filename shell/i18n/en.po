@@ -10052,6 +10052,27 @@ msgstr "an order may have filled, so nothing goes out. Don't place it again your
 msgid "tm.evHaltUnconfirmedNote"
 msgstr "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading."
 
+msgid "tm.evCloseIdentity"
+msgstr "Capital positions still open"
+
+msgid "tm.evCloseIdentityNote"
+msgstr "This computer can't sign in to Capital's order API. Close them in Capital's trading software."
+
+msgid "tm.evCloseLag"
+msgstr "Positions not closed"
+
+msgid "tm.evCloseLagNote"
+msgstr "Position data lags the last order. In a minute, press “Pause and close positions” again, or close at your broker."
+
+msgid "tm.evCloseQueued"
+msgstr "Capital positions not closed"
+
+msgid "tm.evCloseQueuedNote"
+msgstr "The last close is not reported yet. Press “Pause and close positions” again after {at}, or close it in Capital's trading software now."
+
+msgid "tm.evCloseQueuedSoonNote"
+msgstr "The last close is not reported yet. Press “Pause and close positions” again in a few minutes, or close it in Capital's trading software now."
+
 msgid "tr.ov.evUnconfirmedCloseAll"
 msgstr "Not closed with the rest"
 
