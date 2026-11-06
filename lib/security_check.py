@@ -72,6 +72,7 @@ def check(filepath: str) -> list[dict]:
 def _ast_checks(tree: ast.AST) -> list[dict]:
     findings = []
     consent_lines = set()
+    _attach_parents(tree)   # before the walk: the environ check reads _parent
     for node in ast.walk(tree):
         if _consent_only(node) and node.lineno not in consent_lines:
             consent_lines.add(node.lineno)
@@ -95,23 +96,23 @@ def _ast_checks(tree: ast.AST) -> list[dict]:
                 _check_open(node, findings)
 
         elif isinstance(node, ast.Attribute):
-            # os.environ used as a whole object (not subscript, not .get/.setdefault)
+            # os.environ as a whole object; one key (os.environ["X"], os.environ.get) is fine.
+            # .copy()/.items() fall through to here — the line regex below lets them pass.
             if (
                 node.attr == "environ"
                 and isinstance(node.value, ast.Name)
                 and node.value.id == "os"
             ):
                 parent = getattr(node, "_parent", None)
-                if not isinstance(parent, (ast.Subscript, ast.Attribute)):
+                one_key = (isinstance(parent, ast.Subscript) and parent.value is node) or (
+                    isinstance(parent, ast.Attribute) and parent.attr == "get")
+                if not one_key:
                     findings.append(_w(node.lineno, "os.environ referenced — verify only specific keys are read"))
 
         # writing to lib/ via string literal path
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             if re.search(r"\blib/", node.value):
                 findings.append(_w(node.lineno, f"string path contains 'lib/' — possible write to shared lib: {node.value!r}"))
-
-    # attach parent refs so the environ check above can inspect context
-    _attach_parents(tree)
     return findings
 
 

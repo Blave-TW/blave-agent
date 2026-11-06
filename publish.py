@@ -41,7 +41,8 @@ A dry-run needs none of them; only `publish` does.
 
 Version comes from runtime/VERSION — bump it first; re-publishing an existing
 version number is refused (machines that rolled a version back skip re-attempts
-of the same number, so a fix must ship under a new one).
+of the same number, so a fix must ship under a new one). `publish` (canary too)
+also refuses a dirty runtime/ or systemd dir and a HEAD that is not on origin/main.
 """
 import hashlib
 import io
@@ -295,6 +296,35 @@ def build_tarball():
     return version, buf.getvalue()
 
 
+def tree_problems(repo=HERE, systemd=SYSTEMD):
+    """Why `publish` must not ship from this checkout — [] when it may. The tarball is
+    whatever sits in runtime/ (and the api's systemd dir) right now, so an uncommitted
+    debug print or a half-done file would reach the whole fleet; HEAD must also already
+    be on origin/main, so every release maps back to a reviewed, pushed commit."""
+    import subprocess
+
+    def git(cwd, *a):
+        r = subprocess.run(["git", "-C", cwd, *a], capture_output=True, text=True)
+        return r.returncode, r.stdout
+
+    bad = []
+    # --ignored: build_tarball packs every runtime/*.py, so one hidden by a personal
+    # exclude rule would ship unseen; ignored caches are not packed and stay allowed.
+    code, out = git(repo, "status", "--porcelain", "--ignored=matching", "--", "runtime")
+    out = "\n".join(l for l in out.splitlines() if not l.startswith("!! ") or l.endswith(".py"))
+    if code or out.strip():
+        bad.append("runtime/ has uncommitted or untracked files" if not code else "git status failed")
+    if git(repo, "merge-base", "--is-ancestor", "HEAD", "origin/main")[0]:
+        bad.append("HEAD is not on origin/main (fetch, push, or check out main)")
+    if os.path.isdir(systemd):
+        code, out = git(systemd, "status", "--porcelain", "--", ".")
+        if code or out.strip():
+            bad.append(f"{systemd} has uncommitted or untracked files")
+        if git(systemd, "merge-base", "--is-ancestor", "HEAD", "origin/main")[0]:
+            bad.append(f"{systemd} HEAD is not on the api's origin/main")
+    return bad
+
+
 def _s3():
     import boto3
 
@@ -372,6 +402,10 @@ def main():
         return
     do_publish = args[:1] == ["publish"]
     canary = "--canary" in args
+    if do_publish:
+        bad = tree_problems()
+        if bad:
+            sys.exit("ERROR: refusing to publish — " + "; ".join(bad))
     version, data = build_tarball()
     sha = hashlib.sha256(data).hexdigest()
     manifest = {"latest": version, "sha256": sha, "size": len(data)}
