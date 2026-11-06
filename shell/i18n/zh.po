@@ -3848,10 +3848,10 @@ msgid "ho.down.aria"
 msgstr "拉回這台電腦"
 
 msgid "ho.up.title"
-msgstr "送上雲端 {id}"
+msgstr "送上雲端「{id}」"
 
 msgid "ho.down.title"
-msgstr "拉回這台電腦 {id}"
+msgstr "拉回這台電腦「{id}」"
 
 msgid "ho.row.moves"
 msgstr "會搬"
@@ -3893,7 +3893,7 @@ msgid "ho.ready.h"
 msgstr "雲端主機準備好了"
 
 msgid "ho.ready.body"
-msgstr "回這台電腦按「送上雲端」，就會把 {id} 送上來。"
+msgstr "回這台電腦按「送上雲端」，就會把「{id}」送上來。"
 
 msgid "ho.ready.stay"
 msgstr "留在雲端"
@@ -10634,6 +10634,12 @@ msgstr "在對話裡請 agent 改。"
 
 msgid "strat.renameJob"
 msgstr "正在重跑回測，跑完再改。"
+
+msgid "strat.renameLockTurn"
+msgstr "agent 正在回覆，回覆完再改名。"
+
+msgid "strat.renameLockJob"
+msgstr "這支正在背景重跑，跑完再改名。"
 
 msgid "strat.renameFail"
 msgstr "沒有改成，按 Enter 再試一次。"

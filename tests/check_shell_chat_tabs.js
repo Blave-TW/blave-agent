@@ -136,7 +136,7 @@ const ANY = [   // 任何回合(機器層級的鎖;busyOn() = csAnyTurn())
   ["promptslot.js", /return \{ turn: csAnyTurn\(\), awaiting: csAnyAwait\(\),/, "側欄提示格:任何對話在回覆就不畫手機"],
   ["intro.js", /running: \(typeof csAnyTurn === "function" \? csAnyTurn\(\) : typeof running !== "undefined" && running === true\)/, "第一次對話 modal 不在任何回合中彈"],
   ["reports.js", /if \(!csAnyTurn\(\)\) RPT\.busyTold = false;/, "原因句"], ["trade.js", /busyLock\(d, busyOn\(\)\); d\.onBusy = \(\) => busyHit\("del"\);/, "雲端刪策略"],
-  ["stratrename.js", /if \(typeof busyOn === "function" && busyOn\(\)\) return true;/, "〔改名〕停用:同刪策略,任何回合"],
+  ["stratrename.js", /if \(typeof busyOn === "function" && busyOn\(\)\) return "strat\.renameLockTurn";/, "〔改名〕停用:同刪策略,任何回合(機器 rename_strategy 也是任何回合都拒);停用時講原因"],
 ];
 const LOCAL = [   // 同名但不是回合狀態
   ["app.js", /function phasesPaint\(ol, rows, now, running\)|\[running, rows\.map|tm && running && r\.start|running && i === rows\.length - 1/, "phasesPaint 的參數"],

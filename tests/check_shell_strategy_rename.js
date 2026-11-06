@@ -70,9 +70,23 @@ const keys = ["strat.rename", "strat.menu", "strat.nameAria", "strat.nameMax", "
 ok("④ 用到的 key 兩語都有", keys.every((k) => S.en[k] && S.zh[k]), keys.filter((k) => !S.en[k] || !S.zh[k]));
 ok("④ {c}／{name} 佔位在兩語都在", S.zh["strat.nameBad"].includes("{c}") && S.en["strat.nameBad"].includes("{c}") && S.en["strat.menu"].includes("{name}") && S.zh["strat.renamed"].includes("{name}"));
 const flags = read(path.join(R, "stratflags.js")), build = fnOf(flags, "sfPopBuild");
-ok("④ 選單順序:旗標 — 改名、移除旗標、送上雲端／拉回、移到資料夾 — 移到垃圾桶(最多兩條線:搬家與移到資料夾上面都沒有線)", /sfPop\.append\(d1, rn, rm, ho, moves, d2, del\)/.test(build) && !/const dm = sep\(\)/.test(build) && !/const dh = sep\(\)/.test(build) && /hidden = !\(canRn \|\| cur \|\| hoDir \|\| mv\)/.test(fnOf(flags, "sfPopOpen")));
+ok("④ 選單順序:旗標 — 改名、移除旗標、送上雲端／拉回、移到資料夾 — 移到垃圾桶(最多兩條線:搬家與移到資料夾上面都沒有線)", /sfPop\.append\(d1, rn, rm, ho, moves, d2, del, why\)/.test(build) && !/const dm = sep\(\)/.test(build) && !/const dh = sep\(\)/.test(build) && /hidden = !\(canRn \|\| cur \|\| hoDir \|\| mv\)/.test(fnOf(flags, "sfPopOpen")));
 ok("④ 選單 aria-label 用 strat.menu", /t\("strat\.menu", \{ name: x\.displayName \|\| x\.name \}\)/.test(fnOf(flags, "sfPopText")));
-ok("④ 停用 = aria-disabled、按了沒反應;機器不會改名就不出", /rn\.getAttribute\("aria-disabled"\) === "true"\) return/.test(build) && /rn\.hidden = !canRn/.test(fnOf(flags, "sfPopOpen")));
+ok("④ 停用 = aria-disabled、按了只念原因不開編輯列;機器不會改名就不出", /rn\.getAttribute\("aria-disabled"\) === "true"\) \{ if \(why\.textContent && typeof srSay === "function"\) srSay\(why\.textContent\); return; \}/.test(build) && /rn\.hidden = !canRn/.test(fnOf(flags, "sfPopOpen")));
+// 停用一定講原因(Wei 11-06:回合中別支的〔改名〕也灰,滑過去沒說為什麼):srnLockKey 回哪一句,選單項 title 與 sr-only #sf-rn-why 就寫那一句
+{ const K = new Function("busyOn", "RP", "RPC", fnOf(rn, "srnLockKey") + "return srnLockKey;");
+  const idle = () => false, busy = () => true, x = { name: "zec" }, other = { name: "btc" };
+  const rpRerun = { name: "zec", data: { versions: { rerun: { status: "running" } } } }, rpNone = { name: "zec", data: {} };
+  ok("④ srnLockKey:任何回合 → renameLockTurn(別支也鎖:機器 rename_strategy 任何回合都回 TURN_RUNNING)",
+    K(busy, rpNone, null)({ env: "local" }, other) === "strat.renameLockTurn" && /raise ValueError\("TURN_RUNNING/.test(read(path.join(ROOT, "runtime", "command_listener.py"))));
+  ok("④ srnLockKey:這支背景重跑(jobRunning／開著那支的 rerun)→ renameLockJob;別支、閒著 → null",
+    K(idle, rpNone, null)({ env: "local" }, { name: "zec", jobRunning: true }) === "strat.renameLockJob" && K(idle, rpRerun, null)({ env: "local" }, x) === "strat.renameLockJob"
+    && K(idle, rpRerun, null)({ env: "local" }, other) === null && K(idle, rpNone, null)({ env: "local" }, x) === null);
+  const open = fnOf(flags, "sfPopOpen");
+  ok("④ 選單項停用時 title 與 aria-describedby(#sf-rn-why)寫同一句,可用時兩個都拿掉", /const rnWhy = canRn && typeof srnLockKey === "function" \? srnLockKey\(sc, x\) : null;/.test(open)
+    && /rn\.title = t\(rnWhy\); rn\.setAttribute\("aria-describedby", "sf-rn-why"\);/.test(open) && /rn\.removeAttribute\("title"\); rn\.removeAttribute\("aria-describedby"\);/.test(open)
+    && /\$\("sf-rn-why"\)\.textContent = rnWhy \? t\(rnWhy\) : "";/.test(open) && /why\.id = "sf-rn-why"; why\.className = "sr-only";/.test(build));
+  ok("④ 兩句原因兩語都有、zh ≤ 40 字", ["strat.renameLockTurn", "strat.renameLockJob"].every((k) => S.en[k] && S.zh[k] && Array.from(S.zh[k]).length <= 40)); }
 ok("④ 改名列開著時擋住清單重建(sgEditing 看 SRN.edit)", /SRN\.edit/.test(lineOf(flags, /^const sgEditing = [^\n]*/m)));
 ok("④ 回合結束與開資料夾編輯列都先照失焦收", /srnCommit\(\)/.test(read(path.join(R, "app.js"))) && /srnCommit\(\)/.test(fnOf(read(path.join(R, "stratgroups.js")), "sgEditOpen")));
 ok("④ 輸入法組字中的 Enter／Esc 不算", /e\.isComposing \|\| e\.keyCode === 229\) return/.test(rn));
@@ -96,7 +110,7 @@ ok("⑤ 主行程等 ack 90 秒 > runtime 給改名的 60 秒(冷啟動第一次
   ok("⑤ 機器回的錯只寫一行字,框不變紅(紅框只給名稱規則)", /const err = ed\.err, bad = !!p && !p\.hint && !p\.machine;/.test(paint) && /machine: true \}/.test(fnOf(rn, "srnSave"))); }
 ok("⑤ JOB_RUNNING 講正在重跑,不叫人按 Enter 再試", errKeys.JOB_RUNNING === "strat.renameJob" && S.zh["strat.renameJob"] && !/Enter/.test(S.en["strat.renameJob"]));
 ok("⑤ 兩句錯誤字照 recheck 縮成 web 窄側欄也一行放得下", S.zh["strat.renameNoLiteral"] === "在對話裡請 agent 改。" && S.zh["strat.renameJob"] === "正在重跑回測，跑完再改。");
-ok("⑤ 背景重跑時停用:本機清單每支帶 jobRunning,srnLocked 先看它", /if \(x\.jobRunning === true\) return true;/.test(fnOf(rn, "srnLocked")) && /renamable, jobRunning \}/.test(main));
+ok("⑤ 背景重跑時停用:本機清單每支帶 jobRunning,srnLockKey 先看它", /if \(x\.jobRunning === true\) return "strat\.renameLockJob";/.test(fnOf(rn, "srnLockKey")) && /renamable, jobRunning \}/.test(main));
 const css = read(path.join(R, "app.css"));
 ok("⑤ 框貼齊列的 hover 底、框裡的字對齊列字(11 + 1px 框 = 12)、轉圈在框內、框下那行對齊框裡的字",
   /\.srn-edit \{[^}]*padding: 0 0 0 var\(--space-12\);/.test(css) && /\.srn-input \{[^}]*padding: 0 var\(--space-6\) 0 11px;/.test(css)

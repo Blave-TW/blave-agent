@@ -3829,10 +3829,10 @@ msgid "ho.down.aria"
 msgstr "Bring back to this computer"
 
 msgid "ho.up.title"
-msgstr "Send to Cloud: {id}"
+msgstr "Send to Cloud: “{id}”"
 
 msgid "ho.down.title"
-msgstr "Bring Back to This Computer: {id}"
+msgstr "Bring Back to This Computer: “{id}”"
 
 msgid "ho.row.moves"
 msgstr "Moves"
@@ -3874,7 +3874,7 @@ msgid "ho.ready.h"
 msgstr "Your cloud machine is ready"
 
 msgid "ho.ready.body"
-msgstr "Go back to this computer and press Send to Cloud to put {id} up there."
+msgstr "Go back to this computer and press Send to Cloud to put “{id}” up there."
 
 msgid "ho.ready.stay"
 msgstr "Stay in the Cloud"
@@ -10598,6 +10598,12 @@ msgstr "Ask the agent in chat."
 
 msgid "strat.renameJob"
 msgstr "Rerunning the backtest. Rename when it’s done."
+
+msgid "strat.renameLockTurn"
+msgstr "The agent is replying. Rename when it’s done."
+
+msgid "strat.renameLockJob"
+msgstr "This strategy is rerunning. Rename when it’s done."
 
 msgid "strat.renameFail"
 msgstr "Couldn’t rename. Press Enter to try again."

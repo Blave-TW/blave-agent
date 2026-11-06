@@ -7015,7 +7015,7 @@ function envPaintEmpty(kind, pid) {
   else main = btn("btn-out", t("plan.recheck"), () => { trackFeature("cloud_recheck"); acctCheck(); if (typeof window.blave.cloudRefresh === "function") window.blave.cloudRefresh(); after(); }, "main");   // unknown／unreach
   if (["starting", "unreach", "unknown", "relogin", "ready"].includes(view)) {
     const st = trEl("div", "cv-st"); box.appendChild(st);
-    if (view === "ready") st.append(trEl("h4", "", t("ho.ready.h")), trEl("p", "", t("ho.ready.body", { id: pid })));
+    if (view === "ready") st.append(trEl("h4", "", t("ho.ready.h")), trEl("p", "", t("ho.ready.body", { id: typeof hoLabel === "function" ? hoLabel(pid, RP.list) : pid })));
     else if (view === "starting") { const p = trEl("p", "is-up"), d = trEl("i", "dot busy"); d.setAttribute("aria-hidden", "true"); p.append(d, trEl("span", "", t(slow ? "plan.err.slow" : "env.empty.starting"))); st.appendChild(p); }
     else st.appendChild(err ? errEl() : trEl("p", "", t(view === "unreach" ? "env.empty.unreach" : view === "unknown" ? "env.empty.unknown" : "env.empty.relogin")));
     if (main) { const act = trEl("div", "cv-act"); act.appendChild(main); if (side) act.appendChild(side); st.appendChild(act); }

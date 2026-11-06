@@ -36,7 +36,7 @@ const QUIET = [
   ["trade.js", "return running ? \"ct.errUpdate\"", "trCtErrKey 的參數叫 running(下單程式在跑),跟回合無關"],
   ["portfolio.js", "if (!running && !mgBacktest()", "畫面組字(running 是本地變數)"],
   ["busy.js", "", "鎖本身"],
-  ["stratrename.js", "if (typeof busyOn === \"function\" && busyOn()) return true;", "srnLocked 述詞:選單項 aria-disabled、不講原因(同刪策略,Wei 10-24)"],
+  ["stratrename.js", "if (typeof busyOn === \"function\" && busyOn()) return \"strat.renameLockTurn\";", "srnLockKey 述詞:回傳原因 key,選單項 aria-disabled + title／aria-describedby 講原因(Wei 11-06;刪策略的 ✕ 仍不講)"],
   ["chattabs.js", "", "對話分頁核心(0.1.37):每個分頁自己的 running 與「任何回合」的述詞,不是點擊守門"],
   ["app.js", "if (C && !csTitle && !running && !(o && o.force))", "csStartNew:眼前那條空著又閒著就用它、不疊空分頁;不是擋操作"],
   ["app.js", "if (upLocalTurn()) return;", "upInstall / upRestartAsk:入口(更新膠囊、細軌圓鈕、set-up-btn)先看 busyLocked、講原因;選單列那條由主行程擋(TURN_BUSY)"],

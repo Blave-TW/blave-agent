@@ -168,7 +168,7 @@ function hoPaint() {
     if (!keep.ho) b.addEventListener("click", () => { if (b.dataset.dir === "up") trackFeature("sp_cloud_icon"); hoAsk(b.dataset.dir, b.dataset.id, b); });
     if (cloud) {
       b.className = "btn-out has-ic"; const l = document.createElement("span"); l.textContent = t("ho.down.btn"); b.append(hoIcon(dir), l);
-      const full = t("ho.down.aria") + (LANG === "zh" ? "：" : ": ") + B.name; b.title = full; b.setAttribute("aria-label", full); b.removeAttribute("aria-describedby");
+      const full = t("ho.down.aria") + (LANG === "zh" ? "：" : ": ") + hoLabel(B.name, envCloudList(TR_BAGS.cloud.st)); b.title = full; b.setAttribute("aria-label", full); b.removeAttribute("aria-describedby");
       act.appendChild(b);
     } else {
       b.className = "rp-ic"; b.title = ""; b.setAttribute("aria-label", t("ho.up.btn")); b.setAttribute("aria-describedby", "rp-ho-tip"); b.appendChild(hoIcon(dir));
@@ -278,7 +278,8 @@ function hoAsk(dir, id, opener) {
   // 講清楚按下去之後會發生什麼:搬過去、在那邊重跑一次回測、兩邊數字並排;Type B 沒有回測,講確認它跑得起來
   const B0 = dir === "up" ? RP : RPC, tb = hoKind(B0.name === id ? B0.data : null);
   extra.appendChild(mk("p", "cf-note", t(HO_NOTE[tb][dir === "up" ? 0 : 1])));
-  const title = dir === "up" ? t("ho.up.title", { id }) : t("ho.down.title", { id });
+  const name = hoLabel(id, dir === "up" ? RP.list : envCloudList(srcSt));
+  const title = dir === "up" ? t("ho.up.title", { id: name }) : t("ho.down.title", { id: name });
   confirmBox({
     title, lines: [], extra, ok: dir === "up" ? t("ho.ok.up") : t("ho.ok.down"), opener,
     onOk: () => {
@@ -440,6 +441,15 @@ async function hoGoDest(j) {
   else { if (ENV.cur !== "local" && !envSwitchGuarded("local")) return; await stratSelect(j.dest); }
   const h = $("rp-name"); if (h && h.offsetParent) h.focus();
 }
+/* 講「哪一支要搬」的地方(確認框標題、準備好卡、對話動作卡)寫策略名稱:規則照 canon notifications §3.1(trade.js trStratLabel),
+   過不了規則或清單裡沒有才寫代號;同一份清單裡別支也叫這個名字時補「（代號）」。
+   講「存成哪個資料夾」的句子({to}/{dest})照舊寫代號:撞名改存的新資料夾跟來源同名,只有代號分得出來 */
+function hoLabel(id, list) {
+  const L = Array.isArray(list) ? list : [], lab = (x) => (x && typeof trStratLabel === "function" ? trStratLabel(x.displayName, x.name) : null);
+  const name = lab(L.find((x) => x && x.name === id));
+  if (!name) return id;
+  return L.some((x) => x && x.name !== id && lab(x) === name) ? name + "（" + id + "）" : name;   // 包法同 api strategy_names.labeler,兩語一樣
+}
 /* 側欄列選單(stratflags.js sfPopOpen 問):這一列給哪個方向,不給回 null。本機清單 = 送上雲端、雲端清單 = 拉回(雲端要看得到現況)。
    畫不出頁首鈕的情況同樣不給:功能關、名字過不了閘門、時光機或重跑中(只對正在看的那一支判得出來) */
 function hoMenuDir(cloudList, name) {
@@ -474,8 +484,7 @@ function hoCardTurnEnd(ok) {
   if (!ok || !p || !HO.on) return;
   const host = turnAiBubbles.filter((b) => b.parentNode).pop(); if (!host) return;
   const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const shown = (p.dir === "up" ? RP.list : envCloudList(TR_BAGS.cloud.st)).find((x) => x.name === p.name);
-  const label = shown && shown.displayName ? shown.displayName : p.name;
+  const label = hoLabel(p.name, p.dir === "up" ? RP.list : envCloudList(TR_BAGS.cloud.st));
   const card = mk("div", "ho-card"), ic = hoIcon(p.dir), txt = mk("span", "ho-card-t", label); txt.title = label;
   const b = mk("button", "btn-out", t(p.dir === "up" ? "ho.card.upBtn" : "ho.card.downBtn")); b.type = "button";
   b.setAttribute("aria-label", t(p.dir === "up" ? "ho.card.up" : "ho.card.down", { name: label }));   // 卡上只放名字,鈕的可及名稱講全句

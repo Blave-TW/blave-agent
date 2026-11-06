@@ -256,10 +256,12 @@ function sfPopBuild() {
   sfPop.appendChild(grid);
   const sep = () => { const d = document.createElement("div"); d.className = "divider"; d.setAttribute("role", "separator"); return d; };
   const item = (cls) => { const b = document.createElement("button"); b.type = "button"; b.className = cls; b.setAttribute("role", "menuitem"); return b; };
-  // 〔改名〕(spec strategy-rename §2):第一條線下第一項,機器會改名才出;回合中、這支在背景重跑時 aria-disabled、按了沒反應
+  // 〔改名〕(spec strategy-rename §2):第一條線下第一項,機器會改名才出;回合中、這支在背景重跑時 aria-disabled,
+  // 原因句放 title(滑過)與 sr-only 的 #sf-rn-why(aria-describedby,聚焦就念),按了再念一次、不開編輯列
   const rn = item("item"); rn.dataset.rn = "1";
+  const why = document.createElement("span"); why.id = "sf-rn-why"; why.className = "sr-only"; why.setAttribute("role", "none");
   rn.addEventListener("click", () => {
-    if (rn.getAttribute("aria-disabled") === "true") return;
+    if (rn.getAttribute("aria-disabled") === "true") { if (why.textContent && typeof srSay === "function") srSay(why.textContent); return; }
     const x = SF.popX, sc = SF.popStore, w = SF.popWrap; sfPopClose(false);
     if (x && typeof srnOpen === "function") srnOpen(sc, w, x);
   });
@@ -286,7 +288,7 @@ function sfPopBuild() {
   });
   // 移到資料夾(給不能拖的人;spec §13):有資料夾才出,內容每次開啟時由 stratgroups.js sgMoveFill 填
   const moves = document.createElement("div"); moves.className = "sg-moves"; moves.dataset.mv = "1";
-  sfPop.append(d1, rn, rm, ho, moves, d2, del);   // 鍵盤排序提示那行 Wei 10-12 拿掉(Alt+↑/↓ 仍可用,只是不印)
+  sfPop.append(d1, rn, rm, ho, moves, d2, del, why);   // 鍵盤排序提示那行 Wei 10-12 拿掉(Alt+↑/↓ 仍可用,只是不印)
   sfPop.addEventListener("keydown", (e) => {
     if (e.key === "Escape") { if (e.isComposing || e.keyCode === 229) return; e.preventDefault(); e.stopPropagation(); sfPopClose(true); return; }   // 不給 app.js 的 escTop:一次只關一層
     if (["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].indexOf(e.key) < 0) return;
@@ -326,7 +328,10 @@ function sfPopOpen(wrap, anchor, x, ctx, store) {
   sfPop.querySelectorAll("[data-mv]").forEach((n) => { n.hidden = !mv; });
   const rn = sfPop.querySelector(".item[data-rn]"), canRn = typeof srnAvailable === "function" && srnAvailable(x);
   rn.hidden = !canRn;
-  if (canRn && srnLocked(sc, x)) rn.setAttribute("aria-disabled", "true"); else rn.removeAttribute("aria-disabled");
+  const rnWhy = canRn && typeof srnLockKey === "function" ? srnLockKey(sc, x) : null;
+  if (rnWhy) { rn.setAttribute("aria-disabled", "true"); rn.title = t(rnWhy); rn.setAttribute("aria-describedby", "sf-rn-why"); }
+  else { rn.removeAttribute("aria-disabled"); rn.removeAttribute("title"); rn.removeAttribute("aria-describedby"); }
+  $("sf-rn-why").textContent = rnWhy ? t(rnWhy) : "";
   sfPop.querySelector("[data-d1]").hidden = !(canRn || cur || hoDir || mv);
   sfPop.querySelectorAll(".swcell").forEach((c) => { const on = Number(c.dataset.flag) === cur; c.classList.toggle("selected", on); c.setAttribute("aria-checked", on ? "true" : "false"); });
   wrap.classList.add("flag-open");

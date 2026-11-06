@@ -26,14 +26,18 @@ function srnShown(name, display) {
 }
 // 〔改名〕出不出:機器的 lib 會改名(本機 = workspace 的 lib;雲端 = runtime 報告的 renamable)
 const srnAvailable = (x) => !!x && x.renamable === true;
-// 停用:任何回合進行中(同 ✕ 的 busyLock),或這支正在背景重跑(還原後的重跑、更新績效;本機清單每支帶 jobRunning,雲端只看得到開著的那支)
-function srnLocked(sc, x) {
-  if (typeof busyOn === "function" && busyOn()) return true;
-  if (x.jobRunning === true) return true;
+/* 停用時那一句的 key;null = 可以改。任何回合進行中都擋(同 ✕ 的 busyLock):機器的 rename_strategy 自己也是任何回合都回 TURN_RUNNING
+   (runtime command_listener._chat_turn_running),分不出那一輪碰了哪一支,這邊只鎖一支等於讓別支按了才失敗。
+   或這支正在背景重跑(還原後的重跑、更新績效;本機清單每支帶 jobRunning,雲端只看得到開著的那支)。
+   跟 ✕ 不同,這裡講原因(Wei 11-06:ZEC 回測時別支的〔改名〕也灰、滑過去沒說為什麼) */
+function srnLockKey(sc, x) {
+  if (typeof busyOn === "function" && busyOn()) return "strat.renameLockTurn";
+  if (x.jobRunning === true) return "strat.renameLockJob";
   const B = sc.env === "cloud" ? (typeof RPC !== "undefined" ? RPC : null) : RP, d = B && B.name === x.name ? B.data : null;
   const run = (o) => !!o && o.status === "running";
-  return !!d && (run(d.versions && d.versions.rerun) || run(d.perf && d.perf.refresh));
+  return d && (run(d.versions && d.versions.rerun) || run(d.perf && d.perf.refresh)) ? "strat.renameLockJob" : null;
 }
+const srnLocked = (sc, x) => !!srnLockKey(sc, x);
 function srnOthers(sc, name) {
   const list = sc.env === "cloud" ? (typeof envCloudList === "function" ? envCloudList(TR_BAGS.cloud.st) : []) : RP.list;
   return (list || []).filter((s) => s && s.name !== name).map((s) => srnFold(s.displayName || s.name));
