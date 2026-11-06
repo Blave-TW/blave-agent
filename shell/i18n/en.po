@@ -4327,12 +4327,6 @@ msgstr "Missing keys for {a}, {b} and {k} more, so this strategy can’t run."
 msgid "rp.btnUpdate"
 msgstr "Update now"
 
-msgid "rp.help"
-msgstr "How to read"
-
-msgid "rp.help.aria"
-msgstr "How to read (opens in browser)"
-
 msgid "rp.missKey.go"
 msgstr "Open Data Sources"
 
@@ -10313,7 +10307,7 @@ msgstr "Phones on This Account"
 msgid "ph.webRevoke"
 msgstr "Revoke on Website"
 
-# 〔到網站撤銷〕的讀屏名稱:會開瀏覽器(同 rp.help.aria)
+# 〔到網站撤銷〕的讀屏名稱:會開瀏覽器
 msgid "ph.webRevoke.aria"
 msgstr "Revoke on Website (opens in browser)"
 

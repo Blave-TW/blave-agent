@@ -350,7 +350,7 @@ if (!process.versions.electron) {
     && /id="rp-wf" role="tabpanel" hidden/.test(html) && /report-wf\.css/.test(html) && /<script src="report-robust\.js"><\/script>\s*<script src="report-wf\.js"><\/script>/.test(html));
   ok("③ rpShowTab 把 wf 交給 renderWf(t / busy / turn / scope / gate / onRun / onUpdate / buildMeta 從外面交進去);三處回合開始 / 結束都叫 rpWfSync;雲端狀態輪詢也叫(閘門翻面)",
     /R\.renderWf\(\$\("rp-wf"\), rpWfData\(B\.data, B\.name\), rpWfOpts\(\)\)/.test(app) && /function rpWfData\(data, name\) \{ return \{ stats: data\.stats, wf: data\.wf \|\| null, code: data\.code, name \}; \}/.test(app)
-    && /return \{ t, live: \(s\) => csTurnLive\(s\.sid, s\.turn\), scope: cloud \? "cloud" : "local", gate, onRun: rpWfAsk, onUpdate: rpWfUpdate, buildMeta: R\.buildMeta, help: \(\) => rpHelpLink\("wf"\),\s*resync: rpWfSync, refocus: rpWfRefocus, refetch: rpWfRefetch \};/.test(app)
+    && /return \{ t, live: \(s\) => csTurnLive\(s\.sid, s\.turn\), scope: cloud \? "cloud" : "local", gate, onRun: rpWfAsk, onUpdate: rpWfUpdate, buildMeta: R\.buildMeta,\s*resync: rpWfSync, refocus: rpWfRefocus, refetch: rpWfRefetch \};/.test(app)
     && /window\.BlaveReport\.wfTurnEnded\(turnSeqMine, faulted \|\| stopped, \{ refetch: rpWfRefetch \}\);\n  upTurnEnded\(faulted\);\n  running = false;[^\n]*turnUiSync\(\);/.test(app)
     && /const gate = !cloud \? true : typeof c\.config_supports_wf === "boolean" \? c\.config_supports_wf : null;/.test(app)
     && /rpRobSync\(\); rpWfSync\(\);/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")) && /if \(typeof rpWfSync === "function"\) rpWfSync\(\);/.test(tr));

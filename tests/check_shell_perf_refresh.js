@@ -335,7 +335,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
 
   // ── ⑤ 接線 ──
   const html = read(path.join(R, "index.html")), css = read(path.join(R, "report-backtest.css"));
-  ok("app.js:rpShowTab 畫完回測分頁就叫 perfPaint(B)", /R\.renderBacktest\(\$\("rp-bt"\), B\.data\.stats, \{ help: \(\) => rpHelpLink\("bt"\) \}\);\n\s*if \(tab === "bt" && typeof perfPaint === "function"\) perfPaint\(B\);/.test(fnSrc(appSrc, "rpShowTab")));
+  ok("app.js:rpShowTab 畫完回測分頁就叫 perfPaint(B)", /R\.renderBacktest\(\$\("rp-bt"\), B\.data\.stats\);\n\s*if \(tab === "bt" && typeof perfPaint === "function"\) perfPaint\(B\);/.test(fnSrc(appSrc, "rpShowTab")));
   ok("chattabs.js:共用畫面重畫不再叫 perfBusy", !/perfBusy/.test(require("fs").readFileSync(require("path").join(__dirname, "..", "shell", "renderer", "chattabs.js"), "utf8")));
   ok("index.html:perf.js 在 versions.js 之後(用它的 verAmount / verPendingOf / VS / RERUN_WHY)、app.js 之後、export.js 之後(xpIsTypeB)", html.indexOf('src="perf.js"') > html.indexOf('src="versions.js"') && html.indexOf('src="versions.js"') > html.indexOf('src="app.js"') && html.indexOf('src="perf.js"') > html.indexOf('src="export.js"'));
   ok("CSS:.upd 靠右(margin-left: auto)、更新中 .busy、aria-disabled 的鈕走灰階退場、失敗行緊跟 meta(8)而三組條列仍離 16",

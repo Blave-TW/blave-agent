@@ -1120,7 +1120,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .ph-gh { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-12); }
 .ph-gh .lbl { font-size: 12px; color: var(--ink-3); }
 .ph-gh .btn-quiet { font-size: 12px; }
-/* 〔到網站撤銷〕:會開瀏覽器,字後面接 ↗(同 .rp-help);12px 文字鈕熱區補到 44 高(同〔檢查更新〕) */
+/* 〔到網站撤銷〕:會開瀏覽器,字後面接 ↗(libExtIcon);12px 文字鈕熱區補到 44 高(同〔檢查更新〕) */
 .ph-web { display: inline-flex; align-items: center; gap: var(--space-4); }
 .ph-web::before { inset: -15px -4px; }
 .ph-web .ic { width: 14px; height: 14px; display: block; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }

@@ -44,7 +44,7 @@ app.whenReady().then(async () => {
           box.style.width = wd + "px"; box.textContent = "";
           const now = Date.now() / 1000, at = now - (aged ? 5 * 86400 : 3600);
           const B = { name: "s", data: { name: "s", stats: ${JSON.stringify(STATS)}, perf: { at }, code: "" } };
-          window.BlaveReport.renderBacktest(box, B.data.stats, { help: () => rpHelpLink("bt") });
+          window.BlaveReport.renderBacktest(box, B.data.stats);
           const read = () => { const m = box.querySelector(".bt-meta"), b = box.querySelector(".upd-box"); return { top: m.nextElementSibling.getBoundingClientRect().top, boxW: b ? b.getBoundingClientRect().width : -1, h: m.getBoundingClientRect().height }; };
           PF.local.delete("s"); perfPaint(B); const idle = read();
           PF.local.set("s", { at0: at, ref0: null }); perfPaint(B); const run = read(); PF.local.delete("s");

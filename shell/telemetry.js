@@ -284,7 +284,7 @@ const EVENTS = {
     // 0.1.41 聊天裡的澄清表單(renderer/form.js;同 api 順序,api 先上):畫出來、按「用這些設定」、填入的句子原樣／改過送出且回合
     // started／queued、按「我自己打」、畫過沒填自己打字送出。不帶選了哪個值
     "clarify_shown", "clarify_filled", "clarify_sent", "clarify_sent_ed", "clarify_self", "clarify_missed",
-    // 策略頁「怎麼看」外連三個分頁、策略庫成功筆記外開(canon › 說明文章外連;app.js、library.js)。api 白名單同順序,api 先上
+    // 策略頁「怎麼看」外連三個分頁(rp_help_*:0.1.47 送出點拿掉,api 要收舊版送的,等 0.1.46 退場再拿)、策略庫成功筆記外開(library.js)。api 白名單同順序,api 先上
     "rp_help_bt", "rp_help_rob", "rp_help_wf", "lib_note_web",
     // 優化分頁讀不到上次的設定:按〔重試〕／〔重新填〕(同網頁;只記名字)
     "mg_prefs_retry", "mg_prefs_reset",

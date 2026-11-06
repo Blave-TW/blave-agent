@@ -845,11 +845,7 @@
     // 期間寫這次驗證實際跑的(wf.json 每輪的日期),不是現在回測的:更新績效把回測往後推,這份結果沒有跟著動
     const own = w.runs ? { start: w.runs[0].tr0, end: w.runs[w.runs.length - 1].te1 } : null;
     try { meta = typeof opts.buildMeta === "function" ? opts.buildMeta(Object.assign({}, stats, own)) : null; } catch (e) { console.warn("[wf]", e); }
-    if (meta) {
-      const help = typeof opts.help === "function" ? opts.help() : null;
-      if (help) meta.appendChild(help);
-      root.appendChild(meta);
-    }
+    if (meta) root.appendChild(meta);
     // meta 只留資料:這次用的窗長與輪數由下一行的旋鈕(預填這次的值)兼任
     const k = buildKnobs(container, data, stats, w, opts, true);
     st.knobs = k;

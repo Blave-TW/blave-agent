@@ -682,22 +682,20 @@ for (const lang of ["zh", "en"]) {
     ok("策略頁頭豁免 5 還成立:存金額的事件網頁是 trade_amounts_saved 帶 source,電腦版是 portfolio_save／sp_amt_saved 不帶屬性(埋點事件名與屬性不比,規則三)",
       /gaEvent\("trade_amounts_saved", \{ source: /.test(web));
   } }
-/* 三個驗證分頁的鈕態表與「怎麼看」對照(canon › 驗證分頁重跑鈕、說明文章外連;cross-surface-parity 規則三):
-   電腦版 report-robust.js 的 VAL_BTN／VAL_BTN_ORDER、app.js 的 RP_HELP_SLUG,網頁 workspace.html 同名常數。逐列比 kind、disabled、labelKey 與優先序。
+/* 三個驗證分頁的鈕態表(canon › 驗證分頁重跑鈕;cross-surface-parity 規則三):
+   電腦版 report-robust.js 的 VAL_BTN／VAL_BTN_ORDER,網頁 workspace.html 同名常數;「怎麼看」0.1.47 兩邊都拿掉,只驗兩邊都沒有。逐列比 kind、disabled、labelKey 與優先序。
    鈕字 key 不同名,比各分頁開始／重跑的 zh／en 原文。網頁還沒有常數 = web 那顆還沒上線,SKIP 講原因 */
 { const robSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "report-robust.js"), "utf8");
   const lit = (src, re, where) => { const m = re.exec(src); if (!m) return null; try { return (0, eval)("(" + m[1] + ")"); } catch (e) { ok(where + " 讀得出來", false, e.message); return null; } };
   const TBL = /const VAL_BTN = (\{[\s\S]*?\n\s*\});/, ORD = /const VAL_BTN_ORDER = (\[[^\]]*\]);/, HLP = /const RP_HELP_SLUG = (\{[^}]*\});/;
-  const D = lit(robSrc, TBL, "電腦版 VAL_BTN"), DO = lit(robSrc, ORD, "電腦版 VAL_BTN_ORDER"), DH = lit(appSrc, HLP, "電腦版 RP_HELP_SLUG");
-  const W = lit(web, TBL, "網頁 VAL_BTN"), WO = lit(web, ORD, "網頁 VAL_BTN_ORDER"), WH = lit(web, HLP, "網頁 RP_HELP_SLUG");
+  const D = lit(robSrc, TBL, "電腦版 VAL_BTN"), DO = lit(robSrc, ORD, "電腦版 VAL_BTN_ORDER");
+  const W = lit(web, TBL, "網頁 VAL_BTN"), WO = lit(web, ORD, "網頁 VAL_BTN_ORDER");
   const SPEC = { behind: ["out", false, "update"], sent: ["out", true, "sent"], empty: ["out", false, "start"], stale: ["out", false, "rerun"], fresh: ["quiet", false, "rerun"] };
   ok("驗證鈕:電腦版 VAL_BTN 五態照 canon(不實心)、優先序 主機太舊 > 已送出 > 還沒跑 > 過時 > 沒過時", !!D && !!DO && JSON.stringify(DO) === JSON.stringify(["behind", "sent", "empty", "stale", "fresh"])
     && Object.keys(SPEC).every((k) => D[k] && JSON.stringify([D[k].kind, D[k].disabled, D[k].labelKey]) === JSON.stringify(SPEC[k])) && Object.keys(D).length === 5, JSON.stringify(D));
-  ok("怎麼看:電腦版對照表只有回測數據、參數掃描、樣本外驗證三頁", !!DH && JSON.stringify(DH) === JSON.stringify({ bt: "backtest_metrics", rob: "avoid_overfitting", wf: "walk_forward" }), JSON.stringify(DH));
   if (!W || !WO) console.log("SKIP  驗證鈕 VAL_BTN／VAL_BTN_ORDER 兩邊同一份(網頁 workspace.html 還沒有這個常數:web 那顆還沒上線)");
   else ok("驗證鈕:VAL_BTN 逐列、優先序兩邊同一份", JSON.stringify(W) === JSON.stringify(D) && JSON.stringify(WO) === JSON.stringify(DO), JSON.stringify(W) + " vs " + JSON.stringify(D));
-  if (!WH) console.log("SKIP  怎麼看 RP_HELP_SLUG 兩邊同一份(網頁 workspace.html 還沒有這個常數:web 那顆還沒上線)");
-  else ok("怎麼看:RP_HELP_SLUG 兩邊同一份", JSON.stringify(WH) === JSON.stringify(DH), JSON.stringify(WH) + " vs " + JSON.stringify(DH));
+  ok("怎麼看已拿掉:電腦版 app.js 與網頁 workspace.html 都沒有 RP_HELP_SLUG", !HLP.test(appSrc) && !HLP.test(web), "app.js " + HLP.test(appSrc) + " / workspace.html " + HLP.test(web));
   const LABELS = { "rob.btnScan": "workspace_rob_btn_scan", "rob.btnRescan": "workspace_rob_btn_rescan", "wf.btnRun": "workspace_wf_btn_run", "wf.btnRerun": "workspace_wf_btn_rerun", "xt.btnRun": "workspace_xt_btn_run", "xt.btnRerun": "workspace_xt_btn_rerun",
     "rob.btnSent": "workspace_rob_btn_sent", "wf.btnSent": "workspace_wf_btn_sent", "xt.btnBusy": "workspace_xt_btn_busy", "rp.btnUpdate": "workspace_upd_go" };
   for (const lang of ["zh", "en"]) {

@@ -1,4 +1,4 @@
-/* window.BlaveReport.renderBacktest(container, stats, opts) — 報告頁「回測」分頁。
+/* window.BlaveReport.renderBacktest(container, stats) — 報告頁「回測」分頁。
  *
  * 移植自雲端工作頁(web/.../agent/workspace.html 的 buildBtMeta / buildEquity /
  * renderBtChart / buildBtHeatmap),視覺語言照抄、不自創。差別只有一個:雲端的 bt
@@ -827,7 +827,7 @@
     redraws.forEach(function (fn, c) { if (c.isConnected) fn(); else redraws.delete(c); });
   });
 
-  function renderBacktest(container, stats, opts) {
+  function renderBacktest(container, stats) {
     const prev = observers.get(container);
     if (prev) { prev.disconnect(); observers.delete(container); }
     redraws.delete(container);
@@ -846,11 +846,7 @@
         console.warn("[backtest]", e);
       }
     }
-    section(function () {
-      const meta = buildMeta(stats), help = meta && opts && typeof opts.help === "function" ? opts.help() : null;   // 「怎麼看」不寫在 buildMeta:它四頁共用,成交測試沒有文章
-      if (help) meta.appendChild(help);
-      return meta;
-    });
+    section(function () { return buildMeta(stats); });
     section(function () { return buildMetrics(stats); });
 
     let chart = null;

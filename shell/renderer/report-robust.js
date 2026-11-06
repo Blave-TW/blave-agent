@@ -337,8 +337,6 @@
       g.appendChild(el("span", "", opts.t("rob.metaScan")));
       meta.appendChild(fillMono(g, opts.t("rob.cells"), { n: String(sc.rows.length) }));
     } else group(opts.t("rob.metaScan"), sc.rows.length + "×" + sc.cols.length);
-    const help = typeof opts.help === "function" ? opts.help() : null;   // 「怎麼看」排在這一頁自己加的組之後,meta 最後一組
-    if (help) meta.appendChild(help);
     return meta;
   }
 

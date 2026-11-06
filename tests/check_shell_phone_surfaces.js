@@ -105,7 +105,7 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
   const on = S.phBlock(mk), grp = byCls(on, "ph-grp")[0], rowsEl = byCls(on, "ph-row");
   const webB = byId(grp, "ph-web");
   ok("開著:組標籤「帳號下的手機」(ph.list,role=group)、右邊〔到網站撤銷〕", grp.getAttribute("role") === "group" && grp.getAttribute("aria-labelledby") === "ph-gl" && byId(grp, "ph-gl").textContent === "ph.list" && webB.children[0].text === "ph.webRevoke");
-  ok("〔到網站撤銷〕會開瀏覽器:字後面接 ↗(libExtIcon,同 rpHelpLink)、讀屏名稱帶「在瀏覽器開啟」;熱區補到 44 高(同〔檢查更新〕)", webB.children.at(-1).classSet.has("ic") && webB.getAttribute("aria-label") === "ph.webRevoke.aria" && webB.classSet.has("ph-web")
+  ok("〔到網站撤銷〕會開瀏覽器:字後面接 ↗(libExtIcon)、讀屏名稱帶「在瀏覽器開啟」;熱區補到 44 高(同〔檢查更新〕)", webB.children.at(-1).classSet.has("ic") && webB.getAttribute("aria-label") === "ph.webRevoke.aria" && webB.classSet.has("ph-web")
     && /\.ph-web::before \{ inset: -15px -4px; \}/.test(css) && /#set-up-btn::before \{ inset: -15px -4px; \}/.test(css));
   byId(grp, "ph-web").listeners.click();
   ok("〔到網站撤銷〕外開網站 設定 › 已配對的手機(帶語言、from=desktop),記 phone_web_revoke(只送名字)", opened.at(-1) === "https://blave.org/landing/zh/setting?tab=phones&from=desktop" && tracked3.join() === "phone_web_revoke"
