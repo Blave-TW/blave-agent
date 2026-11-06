@@ -611,6 +611,7 @@ function relay() {
     post: (u, b, extra) => postJSON(u, b, extra), getCreds: blaveCreds, installId: () => tm().installId(), ver: app.getVersion(),
     log: (m) => console.error("[relay]", m),
     startTurn: (payload, origin) => startTurn(payload, origin), stopTurn: (sid) => stopTurn(sid, "phone"), turnBusy: (sid) => turns.has(sid),
+    halt: () => haltFromPhone(),
     isRestarting: () => !!restarting, engineKind: () => (loadConnection() || {}).kind,
     sessions: { list: listSessions, rowsAfter: sessionRowsAfter, maxId: sessionMaxId, exists: sessionExists, remove: deleteSessionLocal },
     turnArgs: relayTurnArgs, known: relayKnown, origins: { add: chatOriginAdd, get: chatOriginMids },
@@ -4407,6 +4408,8 @@ function setRestarting(v) {
 }
 let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading", pause: "Pause trading (keep positions)", open: "Open Blave", quit: "Quit Blave…",
   notifTitle: "Trading paused", notifBody: "Positions were not touched.", pauseFail: "The pause command didn’t go through. Trading may still be running.",
+  phoneHalt: "Trading paused from your phone", phoneHaltFail: "The pause from your phone didn’t go through",
+  phoneHaltUnsure: "Pause from your phone: result not confirmed", phoneHaltUnsureBody: "This computer took the pause but hasn’t confirmed it. It has most likely taken effect. Open Blave to check.",
   pauseUnknown: "The pause command was sent, but this computer hasn’t reported the result yet. Check the status on this page.",
   quitTitle: "Auto trading is still running", quitBody: "After you quit Blave, this computer stops placing orders. Positions are not closed.", quitGo: "Quit Blave", quitStay: "Cancel", ok: "OK",
   // 畫面還沒交字之前就按結束:回合中那一道也要有字(不然 message 退回下單那句、detail 是空的)
@@ -4574,6 +4577,23 @@ async function pauseFromMenu() {
   showMain();
   dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: pauseLabel(),
     detail: r && r.error === "UNKNOWN_RESULT" ? tmLabels.pauseUnknown : tmLabels.pauseFail, buttons: [tmLabels.ok] });
+}
+/* 手機送來的暫停(relay.js 的 halt 控制):跟畫面上按暫停同一個指令、同樣的防睡與選單列收尾,結果回給手機。
+   沒成功不叫出視窗掛框:按的人在手機上,App 會講;這台只在背景發一則通知(視窗在前景不發,notifications §8.1 第 2 條:
+   頁面狀態已經換了)。UNKNOWN_RESULT = daemon 收走了指令、還沒回 ack,多半已生效:標題講「不確定」,不講沒生效 */
+async function haltFromPhone() {
+  let r = null;
+  try { r = await tradeHost().send("halt", { reason: "phone" }, { by: "phone" }); } catch (_) { /* 當成沒送到 */ }
+  awakeStartAt = 0; startStep("awake", awakeSync); traySync();
+  // 常駐程式沒在跑:halt 只排進佇列、沒有東西在下單(同畫面 trRun 的 queued),不講「已停止下單」
+  if (Notification.isSupported() && !BrowserWindow.getFocusedWindow() && !(r && r.ok && r.result && r.result.queued)) {
+    const done = !!(r && r.ok), unsure = !done && !!r && r.error === "UNKNOWN_RESULT";
+    const n = new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, done ? tmLabels.phoneHalt : unsure ? tmLabels.phoneHaltUnsure : tmLabels.phoneHaltFail),
+      body: done ? tmLabels.notifBody : unsure ? tmLabels.phoneHaltUnsureBody : tmLabels.pauseFail });
+    n.on("click", () => showMain());
+    notifWatch(n, "phone halt").show();
+  }
+  return r && r.ok ? { ok: true } : { ok: false, error: (r && r.error) || "FAILED" };
 }
 // 新版已經暫存好、但因為正在下單而沒裝:桌機用戶的 app 常常整天開著,不講的話他們不會知道有新版在等
 const updateWaiting = () => { try { const p = updater().state().phase; return p === "blocked" || p === "ready"; } catch (_) { return false; } };

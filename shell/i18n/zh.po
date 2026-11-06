@@ -2705,6 +2705,9 @@ msgstr "昨天"
 msgid "tr.ov.evHalt"
 msgstr "已暫停下單"
 
+msgid "tr.ov.evHaltPhone"
+msgstr "從手機暫停下單"
+
 msgid "tr.spotNoShort"
 msgstr "現貨不放空"
 
@@ -2910,6 +2913,19 @@ msgstr "已暫停下單"
 
 msgid "tm.notifBody"
 msgstr "已停止下單；部位沒有動。要恢復，到 Blave 的「自動下單」按「啟動下單」。"
+
+msgid "tm.phoneHalt"
+msgstr "從手機暫停下單"
+
+msgid "tm.phoneHaltFail"
+msgstr "手機送來的暫停沒有生效"
+
+# 手機暫停回 UNKNOWN_RESULT(下單程式收走了指令、還沒回報):多半已生效,標題不講沒生效(0.1.47,Wei 拍板)
+msgid "tm.phoneHaltUnsure"
+msgstr "手機送來的暫停，結果還不確定"
+
+msgid "tm.phoneHaltUnsureBody"
+msgstr "這台電腦收到了暫停，還沒回報結果，多半已經生效。打開 Blave 看一下狀態。"
 
 msgid "tm.pauseFail"
 msgstr "暫停的指令沒有送到，它可能還在交易。打開 Blave 再按一次「暫停下單」。"

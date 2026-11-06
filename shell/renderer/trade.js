@@ -215,6 +215,8 @@ function trHaltFreeze(r) { return !!(r && r.halt && r.halt.freeze === true); }
 /* 用戶自己按的暫停(含沒有 source 的手動 HALT):凍結時講「什麼單都不送」,不講「問題處理好之後」那句(那是自動暫停的) */
 const TR_HALT_USER = ["web", "user", "flatten", "desktop"];
 function trHaltByUser(h) { const src = h && h.source; return !src || TR_HALT_USER.indexOf(src) >= 0; }
+// 手機送來的暫停(main.js haltFromPhone 帶 reason "phone",runtime _cmd_halt 記 source web):daemon 沒在跑時事件列沒有那一筆,狀態列照這個換字
+function trHaltByPhone(h) { return !!h && h.source === "web" && h.reason === "phone"; }
 function trHaltStopsAll(h) {
   if (h && typeof h.holds_all === "boolean") return h.holds_all;
   const src = h && h.source; return !!(h && typeof src === "string" && src && TR_HALT_KEEP_EXITS.indexOf(src) < 0);
@@ -1864,7 +1866,7 @@ function trInit() {
 function trPushLabels() {
   if (typeof window.blave.tradeLabels !== "function") return;
   window.blave.tradeLabels({ running: t("tr.autoOn"), paperVenue: t("cx.paperShort"), pause: t("tm.pause"), open: t("tm.open"), quit: t("tm.quit"),
-    notifTitle: t("tm.notifTitle"), notifBody: t("tm.notifBody"), pauseFail: t("tm.pauseFail"), pauseUnknown: t("tr.cmdUnknown"), quitTitle: t("tm.quitTitle"), quitBody: t("tm.quitBody"),
+    notifTitle: t("tm.notifTitle"), notifBody: t("tm.notifBody"), pauseFail: t("tm.pauseFail"), phoneHalt: t("tm.phoneHalt"), phoneHaltFail: t("tm.phoneHaltFail"), phoneHaltUnsure: t("tm.phoneHaltUnsure"), phoneHaltUnsureBody: t("tm.phoneHaltUnsureBody"), pauseUnknown: t("tr.cmdUnknown"), quitTitle: t("tm.quitTitle"), quitBody: t("tm.quitBody"),
     quitGo: t("tm.quitGo"), quitStay: t("tm.quitStay"), ok: t("tm.ok"), hidden: t(window.blave.platform === "win32" ? "tm.hiddenWin" : "tm.hidden"), phoneHiddenTitle: t("tm.phoneHiddenTitle"), phoneHidden: t(window.blave.platform === "win32" ? "tm.phoneHiddenWin" : "tm.phoneHidden"), updateReady: t("tm.updateReady"), restarting: t("tm.restarting"),
     quitTurnTitle: t("tm.quitTurnTitle"), quitTurnBody: t("tm.quitTurnBody"), quitTurnBodyN: t("tm.quitTurnBodyN", { n: "{n}" }), quitQueuedN: t("tm.quitQueuedN", { n: "{n}" }), quitQueuedTitle: t("tm.quitQueuedTitle"),   // 結束攔截:本機 agent 回合還在跑(兩條以上主行程填數字)
     unsavedTitle: t("tm.unsavedTitle"), unsavedBody: t("tm.unsavedBody"), unsavedGo: t("tm.unsavedGo"), unsavedNote: t("tm.unsavedNote"),   // 結束 / 關窗攔截:策略組合有還沒儲存的變更
@@ -5824,7 +5826,7 @@ function trOvEvents(r, z) {
     let head = null, note = null, lv = 3, tip = null, code = null, tail = null, strat = null;
     // 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);這台電腦記的那一筆沒有 source = 人按的
     // halt 的字照 source(trEvLevel);顏色在 push 那裡讓 api 的 level 蓋過
-    if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, trHaltNow(ev, d, r)); head = t(lv === 1 ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : "tr.ov.evHalt"); note = trHaltUnconfirmedSym(d) != null ? trHaltUnconfirmedNote(d) : trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : closes ? null : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
+    if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, trHaltNow(ev, d, r)); head = t(lv === 1 ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : d.by === "phone" ? "tr.ov.evHaltPhone" : "tr.ov.evHalt"); note = trHaltUnconfirmedSym(d) != null ? trHaltUnconfirmedNote(d) : trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : closes ? null : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
     // 前一筆是暫停才叫「恢復」;第一次啟動(或之前的暫停不在紀錄裡,例如對帳器自動暫停)寫「已啟動下單」。標題已經講完,不帶說明
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t(lastRun === "halt" ? "tr.ov.evResume" : "tr.ov.evStart"); lastRun = "resume"; }
     else if (ev.type === "venue_connected" && venue) head = ["tr.ov.evConnected", { venue }];
@@ -5841,7 +5843,7 @@ function trOvEvents(r, z) {
     // 顏色照級別(execute / settings 的暫停由 execution_interrupted / settings_unsafe 那列當 P1,這列不再紅一次);字照舊
     const auto = !!halt.source && halt.source !== "web";
     const closes = !auto && trHaltCloses("halt", halt);
-    body.appendChild(trEl("span", trEvClass(trEvLevel("halt", halt)), auto ? t("tr.ov.evHaltAuto") : t(closes ? "tr.ov.evHaltClose" : "tr.ov.evHalt")));
+    body.appendChild(trEl("span", trEvClass(trEvLevel("halt", halt)), auto ? t("tr.ov.evHaltAuto") : t(closes ? "tr.ov.evHaltClose" : trHaltByPhone(halt) ? "tr.ov.evHaltPhone" : "tr.ov.evHalt")));
     // 平倉那一列標題已經講完,不再帶「平倉與停損停利照常執行」(設計稽核 S2);什麼單都不下那句照舊
     if (trHaltUnconfirmedSym(halt) != null) body.append(" ", trEl("span", "dim", "— " + trHaltUnconfirmedNote(halt)));
     else if (trHaltStopsAll(halt) || !closes) body.append(" ", trEl("span", "dim", "— " + (trHaltStopsAll(halt) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"))));   // A′:什麼單都不下,同重開那一句

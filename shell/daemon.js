@@ -283,7 +283,7 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
   }
   /* 送一個指令並等 ack。回 {ok, result} / {ok:false, error};daemon 沒在跑、逾時也走 error。
      `halt` 在 daemon 沒跑(或 secret 不在)時照送不簽——它是安全方向,daemon 起來就會吃到。 */
-  async function send(cmd, args, { timeoutMs = CMD_TIMEOUT_MS[cmd] || 20000, trusted = false } = {}) {
+  async function send(cmd, args, { timeoutMs = CMD_TIMEOUT_MS[cmd] || 20000, trusted = false, by = null } = {}) {
     if (!UI_COMMANDS.has(cmd) && !(trusted === true && MAIN_ONLY_COMMANDS.has(cmd))) return { ok: false, error: "NOT_ALLOWED" };
     if (!argsOk(cmd, args || {}, trusted === true)) return { ok: false, error: "BAD_ARGS" };
     const live = !!(child && secret);
@@ -299,7 +299,7 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
       // 平倉後解除:機器平完才自己刪金鑰——曲線的 reset 與時間軸的「解除」等回報裡那一家真的不見了才記(status())
       if (a && a.ok && cmd === "close_then_unbind") unbindVenues(args.env).forEach((id) => ubWaiting.add(id));
       if (a && a.ok && (cmd === "credentials" || cmd === "retest_accounts")) setTimeout(eqTick, 12000);   // 連上後第一筆:等帳戶讀取器讀完
-      if (a && a.ok) uiEvent(cmd, cmd === "close_all" ? { closing: closeAllStarted(a.result) } : undefined);
+      if (a && a.ok) uiEvent(cmd, cmd === "close_all" ? { closing: closeAllStarted(a.result) } : cmd === "halt" && by === "phone" ? { by } : undefined);
       if (a) return a.ok ? { ok: true, result: a.result } : { ok: false, error: String(a.error || "FAILED") };
       if (!child) return { ok: false, error: withdraw(id) ? "DAEMON_DOWN" : "UNKNOWN_RESULT" };
       await new Promise((r) => setTimeout(r, 150));
@@ -417,7 +417,8 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
   }
 
   /* 用戶在畫面上做的事(暫停 / 恢復 / 連接 / 解除)。雲端這些來自平台的事件流;電腦版沒有那一層,
-     由宿主在指令 ack 成功時自己記一筆,總覽的時間軸才畫得出「已暫停 → 已恢復」。只記型別與時間,不記參數。 */
+     由宿主在指令 ack 成功時自己記一筆,總覽的時間軸才畫得出「已暫停 → 已恢復」。只記型別與時間,不記參數。
+     手機送來的暫停多記 by: "phone"(主行程 send 的選項,不從參數讀:畫面送的 reason 是任意字),那一列寫「從手機暫停」 */
   const uiFile = path.join(stateDir, "ui_events.jsonl");
   const UI_EVENT = { halt: "halt", close_all: "halt_close", resume: "resume", resume_wait: "resume_wait", credentials: "venue_connected", credentials_remove: "venue_disconnected" };
   function uiEvent(cmd, extra) {
@@ -434,7 +435,7 @@ function createDaemonHost({ python, script, base, workspace, env, log = () => {}
        往上拋——畫面才會說「讀不到」,而不是替資料斷言「這段期間沒有發生事情」。 */
     let txt = ""; try { txt = fs.readFileSync(uiFile, "utf8"); } catch (e) { if (e && e.code === "ENOENT") return []; throw e; }
     const from = Date.now() / 1000 - (Number(days) > 0 ? Math.min(Number(days), 3660) : 30) * 86400, out = [];
-    for (const line of txt.split("\n")) { if (!line) continue; try { const r = JSON.parse(line); if (r && typeof r.ts === "number" && r.ts >= from && typeof r.type === "string") out.push({ ts: r.ts, type: r.type, venue: typeof r.venue === "string" ? r.venue : null, ...(typeof r.holds_all === "boolean" ? { holds_all: r.holds_all } : {}), ...(typeof r.closing === "boolean" ? { closing: r.closing } : {}) }); } catch (_) { /* 壞行跳過 */ } }
+    for (const line of txt.split("\n")) { if (!line) continue; try { const r = JSON.parse(line); if (r && typeof r.ts === "number" && r.ts >= from && typeof r.type === "string") out.push({ ts: r.ts, type: r.type, venue: typeof r.venue === "string" ? r.venue : null, ...(typeof r.holds_all === "boolean" ? { holds_all: r.holds_all } : {}), ...(typeof r.closing === "boolean" ? { closing: r.closing } : {}), ...(r.by === "phone" ? { by: "phone" } : {}) }); } catch (_) { /* 壞行跳過 */ } }
     return out.slice(-500);
   }
 
