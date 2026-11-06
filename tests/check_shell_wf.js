@@ -254,9 +254,9 @@ if (!process.versions.electron) {
     // 0.1.11 追加(Wei 核准):en 全部的 re-run 都統一成 rerun,連送給 agent 的搬移句(ho.msg.*)也是;固定觸發句 wf.msgRun / rob.msgScan 本來就沒有這個字,也不能動
     const reRun = Object.entries(S.en).filter(([, v]) => /re-run/i.test(v)).map(([k]) => k);
     ok("① en 全部字串沒有 re-run / Re-run(rob.verdict.stale、res.notRerun、ho.msg.* / ho.note.* 都是 rerun)", reRun.length === 0
-      && S.en["rob.verdict.stale"] === "The backtest was rerun — the current position updates after a rescan." && S.en["res.notRerun"] === "Not rerun yet", reRun.join(", "));
+      && S.en["rob.verdict.stale"] === "The backtest was rerun — the current position updates after a rescan." && S.en["res.notRerun"] === "not rerun yet", reRun.join(", "));
     ok("① 讀屏的曲線描述(wf.chartAria)也拿掉「（測試窗接起來）」,跟 chartLabel 一致",
-      S.zh["wf.chartAria"] === "樣本外累積報酬：累積報酬 {r}，區間 {a} 至 {b}；每 {d} 天重新選一次參數" && S.en["wf.chartAria"] === "Out-of-sample cumulative return: cumulative return {r}, {a} to {b}; parameters re-picked every {d} days");
+      S.zh["wf.chartAria"] === "樣本外累積報酬：累積報酬 {r}，區間 {a} 至 {b}，每 {d} 天重新選一次參數" && S.en["wf.chartAria"] === "Out-of-sample cumulative return: cumulative return {r}, {a} to {b}; parameters re-picked every {d} days");
   }
 
   // ── ① 跟雲端工作頁那一份逐項比 ──

@@ -248,6 +248,19 @@ for (const lang of ["zh", "en"]) {
   ok("提示格 SLOT_PH 兩邊同一份(30 天、2 次、7 個使用日、下單後 30 分鐘)", !!dS && !!wS && dS[1] === wS[1], (dS && dS[1]) + " vs " + (wS && wS[1])); }
 // 對話分頁(0.1.37;技術方案 §1.4、§4):對著雲端主機、名額滿了的排隊行與〔取消排隊〕,電腦版 chattabs.js tabsQueued 與網頁 csShowQueued 同一句;
 // 歷史清單的狀態字(回覆中／排隊中／做完，還沒看)與分組(今天／昨天／更早)也跟網頁 workspace_cs_* 同一組
+// 聊天結果卡第二行(一句話:分隔字、報告句、卡專用類型與落點字,設計師 0.1.48 標點複查):兩邊逐字一致。en 的分隔字電腦版是「,」、空格由 CSS 間距補,web 寫進字串,所以分隔字只比去掉空白後的字
+{ const RES_PAIRS = { "res.sep": "workspace_res_sep", "res.sepList": "workspace_res_sep_list", "res.report": "workspace_res_report",
+    "res.type.research": "workspace_res_type_research", "res.type.morning": "workspace_res_type_morning", "res.type.performance": "workspace_res_type_performance",
+    "res.pos.peak": "workspace_res_pos_peak", "res.pos.inside": "workspace_res_pos_inside", "res.pos.outside": "workspace_res_pos_outside",
+    "res.pos.outscan": "workspace_res_pos_outscan", "res.pos.atPlateau": "workspace_res_pos_atplateau",
+    "res.kind.new": "workspace_res_kind_new", "res.kind.bt": "workspace_res_kind_bt", "res.kind.btUpd": "workspace_res_kind_bt_upd", "res.kind.scan": "workspace_res_kind_scan",
+    "res.kind.code": "workspace_res_kind_code", "res.noBt": "workspace_res_no_bt", "res.notRerun": "workspace_res_not_rerun", "res.later": "workspace_res_later" };
+  const SEP = new Set(["res.sep", "res.sepList"]);
+  for (const lang of ["zh", "en"]) {
+    const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+    const bad = Object.entries(RES_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || (SEP.has(d) ? dp[d].trim() !== wp[w].trim() : dp[d] !== wp[w]));
+    ok(`聊天結果卡第二行的字 ${lang} 兩邊逐字一致(${Object.keys(RES_PAIRS).length} 句)`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+  } }
 const TAB_PAIRS = { "tabs.queue": "workspace_cs_queue_line", "tabs.queueCancel": "workspace_cs_cancel_queued", "tabs.queueCancelTitle": "workspace_cs_cancel_queued_title", "tabs.st.queued": "workspace_cs_queued",
   "tabs.st.unseen": "workspace_cs_unread", "tabs.group.today": "workspace_cs_today", "tabs.group.yesterday": "workspace_cs_yesterday", "tabs.group.earlier": "workspace_cs_earlier",
   "tabs.search": "workspace_cs_search_ph" };

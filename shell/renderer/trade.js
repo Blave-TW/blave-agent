@@ -1395,6 +1395,8 @@ function trQtyFmt(v) {
   const s = a >= 1 ? a.toFixed(4) : a.toPrecision(4);
   return s.indexOf(".") >= 0 ? s.replace(/0+$/, "").replace(/\.$/, "") : s;
 }
+// 異常停止那一句要加重的那一段:用 tr.diedLead 本身定位,不靠分隔字(句子改標點時分隔字會不見)
+function trDiedCut(full, lead) { return lead && full.startsWith(lead) ? lead.length : -1; }
 /* ── 純邏輯到此 ─────────────────────────────────────────────── */
 
 /* ── 視角純邏輯(「這台電腦｜雲端」;tests/check_shell_envsw.js 從原文切出來跑,這一段不准碰 DOM / window)──────
@@ -2500,9 +2502,9 @@ function trPaintHead() {
   const staleAt = c && (c.transient ? c.last_ok_at : c.stale && !stopped && c.reported_at ? c.reported_at * 1000 : !TR.st.alive && !stopped && kind === "running" ? c.last_ok_at : 0);
   const full = staleAt ? text + " · " + t("tr.cloud.stale", { t: trStamp(staleAt / 1000) }) : text;
   const desc = $("tr-desc"); desc.textContent = "";
-  // 異常停止那一句:「下單停了，不是你按的」那一段加重(句子以第一個「 · 」分段;前面若有「串接失敗 · 」就不拆)
+  // 異常停止那一句:tr.diedLead 那一段加重;前面若有「串接失敗 · 」、後面接「最後更新」就不拆
   const died = state === "dead" && !TR.pending && !trHostDown(TR.st, Date.now()) && trDeadKind(trReport()) === "died";
-  const cutAt = died && full === text && !trFailedIds(trReport()).length && !trKeyBad(TR.env) ? full.indexOf(" · ") : -1;
+  const cutAt = died && full === text && !trFailedIds(trReport()).length && !trKeyBad(TR.env) ? trDiedCut(full, t("tr.diedLead")) : -1;
   const tx = trEl("span", "txt");
   // 重開那一條原因行升為正文墨色(警示語氣但不用紅字);HALT 那一條照舊次要灰
   // A′(自動暫停、什麼單都不下)與沒有交易所的重開停止(B0)同 B 一級

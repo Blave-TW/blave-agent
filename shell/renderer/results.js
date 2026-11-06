@@ -71,13 +71,12 @@ function resCloudItems(snap, list, sinceMs, live, seen, noBt) {
   }
   return out;
 }
-/* 報告卡第二行的類型字:跟閱讀頁的類型標籤同一個來源(label)。三種情況退回清單用的類型詞(f.typeKey):沒有 label(雲端、舊卡)、
-   標題已經含那個字(閱讀頁這時不畫標籤)、label 只是 type 代號(lib/report.py 沒給 report_type 時的預設,不是給人看的字) */
+/* 報告卡第二行的類型字:一律用卡專用的三個詞(res.type.*)。不用閱讀頁的 label:那是 agent 自己寫的 report_type,
+   可能是「一次性」這種當不了主詞的字,最長 40 字會把卡撐成三行;閱讀頁打開就看得到。認不得的類型回空字串,由呼叫端寫「報告」 */
+const RES_TYPE_KEYS = { research: "res.type.research", morning: "res.type.morning", performance: "res.type.performance" };
 function resTypeText(item, f) {
-  const x = item.facts || {}, lb = typeof x.label === "string" ? x.label : "";
-  if (lb && lb !== x.type && String(item.title || "").indexOf(lb) < 0) return lb;
-  const tk = f.typeKey(x.type);
-  return tk ? f.t(tk) : "";
+  const ty = (item.facts || {}).type;
+  return typeof ty === "string" && Object.prototype.hasOwnProperty.call(RES_TYPE_KEYS, ty) ? f.t(RES_TYPE_KEYS[ty]) : "";
 }
 const resSame = (a, b) => a.kind === b.kind && a.env === b.env && a.ref === b.ref;
 // 依產出時間由舊到新(報告與策略混排,跟回覆敘事的先後一致);同時間照原順序
@@ -95,28 +94,30 @@ function resBtnKey(item) {
   if (item.env === "cloud") return "res.open.strat";
   return { rob: "res.open.scan", code: "res.open.code", bt: "res.open.bt" }[resTab(item)];
 }
-/* 卡的第二行:一組一組([段, 段…]),組與組之間才換行(不用「·」分項:窄寬時會掛在行尾)。段 = { text, cls }:
-   cls "v" = 數字(mono、ink-2)/ "mono" / "tag" = 雲端記號;缺值的那一組整組不放。
-   f = { t, pct, fixed, stamp, typeKey }:i18n 與格式由呼叫端交進來(回測頁同一支 fmtSignedPct / fmtFixed、報告清單同一支時間 / 類型) */
+/* 卡的第二行是一句話(canon 介面標點 2、14:會折行的列不用「·」):一組一組([段, 段…]),組尾接 res.sep(子句)或 res.sepList(兩組都是數字),
+   分隔字在前一組裡,換行只在分隔字之後。段 = { text, cls }:cls "v" = 數字(mono、ink-2)/ "mono" / "tag" = 雲端記號;缺值的那一組整組不放。
+   f = { t, pct, fixed, stamp }:i18n 與格式由呼叫端交進來(回測頁同一支 fmtSignedPct / fmtFixed、報告清單同一支時間) */
 function resFacts(item, state, f) {
   const x = item.facts || {}, W = (text, cls) => ({ text, cls: cls || "" });
   if (state === "gone") return [[W(f.t(item.kind === "report" ? "res.gone.report" : "res.gone.strat"))]];
   const g = [];
-  const kv = (label, v, fmt) => { const s = typeof v === "number" ? (fmt || f.pct)(v) : null; if (s) g.push([W(f.t(label) + " "), W(s, "v")]); };
+  const kv = (label, v, fmt) => { const s = typeof v === "number" ? (fmt || f.pct)(v) : null; if (s) { const grp = [W(f.t(label) + " "), W(s, "v")]; grp.num = true; g.push(grp); } };
   if (item.kind === "report") {
     const one = item.env === "cloud" ? [W(f.t("env.cloud"), "tag")] : [], stamp = f.stamp(x.created_at), kind = resTypeText(item, f);
-    if (stamp) one.push(W(stamp, "mono"));
-    if (kind) one.push(W((stamp ? " · " : "") + kind));
-    if (!stamp && !kind) one.push(W(f.t("rpt.nav")));
+    if (stamp) f.t("res.report").split(/(\{type\}|\{time\})/).forEach((p) => { if (p === "{time}") one.push(W(stamp, "mono")); else if (p) one.push(W(p === "{type}" ? kind || f.t("rpt.nav") : p)); });
+    else one.push(W(kind || f.t("rpt.nav")));
     g.push(one);
   } else if (item.env === "cloud") {
     g.push([W(f.t("env.cloud"), "tag"), W(f.t(x.is_new ? "res.kind.new" : "res.kind.cloudUpd"))]);
     if (x.no_bt === true) g.push([W(f.t("res.noBt"))]);
   } else if (item.sub === "scan") {
-    g.push([W(f.t("res.kind.scan"))]);
-    if (x.single === true && Number.isInteger(x.grid_rows)) { const [a, b] = f.t("rob.cells").split("{n}"); g.push([W(a), W(String(x.grid_rows), "mono"), W(b || "")].filter((s) => s.text)); }   // 單參數:「20 格」,不寫 N×1
-    else if (Number.isInteger(x.grid_rows) && Number.isInteger(x.grid_cols)) g.push([W(x.grid_rows + "×" + x.grid_cols, "mono")]);
-    if (typeof x.tag === "string" && /^rob\.tag\.[A-Za-z0-9]+$/.test(x.tag)) g.push([W(f.t(x.tag))]);   // atPlateau1 = 單參數版
+    const one = [W(f.t("res.kind.scan"))];
+    if (x.single === true && Number.isInteger(x.grid_rows)) { const [a, b] = f.t("rob.cells").split("{n}"); one.push(W(" "), ...[W(a), W(String(x.grid_rows), "mono"), W(b || "")].filter((s) => s.text)); }   // 單參數:「20 格」,不寫 N×1
+    else if (Number.isInteger(x.grid_rows) && Number.isInteger(x.grid_cols)) one.push(W(" "), W(x.grid_rows + "×" + x.grid_cols, "mono"));
+    g.push(one);
+    // 落點用卡專用的句中字(rob.tag.* 帶冒號);atPlateau1 = 單參數版,句中字同一句
+    const pos = typeof x.tag === "string" && /^rob\.tag\.(peak|inside|outside|outscan|atPlateau)1?$/.exec(x.tag);
+    if (pos) g.push([W(f.t("res.pos." + pos[1]))]);
   } else if (item.sub === "code") {
     g.push([W(f.t("res.kind.code"))]);
     if (x.has_bt) g.push([W(f.t("res.notRerun"))]);
@@ -129,6 +130,7 @@ function resFacts(item, state, f) {
     else { kv("bt.totalReturn", x.total_return); kv("bt.maxDrawdown", x.max_dd); }   // 0.1.18 以前存的卡只有總報酬
   }
   if (state === "later") g.push([W(f.t("res.later"))]);
+  for (let i = 0; i < g.length - 1; i++) g[i].push(W(f.t(g[i].num && g[i + 1].num ? "res.sepList" : "res.sep")));
   return g;
 }
 /* ── 純邏輯到此 ── */
@@ -147,7 +149,7 @@ function resIcon(kind) {
 }
 function resFmt() {
   const R = window.BlaveReport || {};
-  return { t, pct: (v) => (R.fmtSignedPct ? R.fmtSignedPct(v) : null), fixed: (v) => (R.fmtFixed ? R.fmtFixed(v) : null), stamp: rptFmtStamp, typeKey: rptTypeKey };
+  return { t, pct: (v) => (R.fmtSignedPct ? R.fmtSignedPct(v) : null), fixed: (v) => (R.fmtFixed ? R.fmtFixed(v) : null), stamp: rptFmtStamp };
 }
 
 /* ── 一輪的生命週期 ── */

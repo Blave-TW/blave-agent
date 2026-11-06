@@ -333,13 +333,13 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
       const v2 = { counter: 2, current: 2, items: [itE(1, "2026-09-20"), itE(2, "2026-09-27")] };
       const a = open("zh", v2, { end: "2026-09-28" }), w = wins(a)[0], row = rows(a)[0];
       ok("說明句:頁面終點較新 → 只有目前那一列多一句,是列內最後一個子元素(第一行 → 數字 → 說明句)", wins(a).length === 1 && row.kids.map((k) => k.className).join() === "vmi-top,vmi-stats,vmi-win" && rows(a)[1].kids.map((k) => k.className).join() === "vmi-top,vmi-stats");
-      ok("說明句:zh 逐字,兩個日期各包 .mono,非互動(span、沒有 role / title / aria-* / tabindex / 事件)", w.textContent === "這一版存的是回測到 09/27 的結果；頁面會跟著新資料更新，現在到 09/28。"
+      ok("說明句:zh 逐字,兩個日期各包 .mono,非互動(span、沒有 role / title / aria-* / tabindex / 事件)", w.textContent === "這一版存的是回測到 09/27 的結果。頁面會跟著新資料更新，現在到 09/28。"
         && w.kids.filter((k) => typeof k !== "string").map((k) => k.tagName + "." + k.className + "=" + k.textContent).join() === "span.mono=09/27,span.mono=09/28"
         && w.tagName === "span" && Object.keys(w.attrs).length === 0 && w.tabIndex === undefined && Object.keys(w.on).length === 0);
       ok("說明句:在 menuitem 裡面,併進那一列的可及名稱;數字照舊是存下來的那組", row.attrs.role === "menuitem" && row.textContent.endsWith("現在到 09/28。") && row.all((k) => k.className === "v mono")[0].textContent === "+12.00%");
       const e = open("en", v2, { end: "2026-09-28" });
       ok("說明句:en 逐字", wins(e)[0].textContent === "Saved with data through 09/27. The page keeps updating with new data, now through 09/28.");
-      ok("說明句:跨年帶年份", wins(open("zh", { counter: 1, current: 1, items: [itE(1, "2026-12-30")] }, { end: "2027-01-02" }))[0].textContent === "這一版存的是回測到 2026/12/30 的結果；頁面會跟著新資料更新，現在到 2027/01/02。");
+      ok("說明句:跨年帶年份", wins(open("zh", { counter: 1, current: 1, items: [itE(1, "2026-12-30")] }, { end: "2027-01-02" }))[0].textContent === "這一版存的是回測到 2026/12/30 的結果。頁面會跟著新資料更新，現在到 2027/01/02。");
       ok("說明句:同一天 / 頁面沒有回測 / 資料還在載入 / end 不是字串 → 不出", [open("zh", v2, { end: "2026-09-27" }), open("zh", v2, null), open("zh", v2, undefined), open("zh", v2, { end: "2026-09-28" }, { pending: true }), open("zh", v2, { end: 20260928 })].every((r) => wins(r).length === 0));
       const d = open("zh", Object.assign({}, v2, { drift: true }), { end: "2026-09-28" }, { amounts: { momo: 100 } });
       ok("說明句:同列有「檔案已改」→ 原因句 → 數字 → 說明句", rows(d)[0].kids.map((k) => k.className).join() === "vmi-top,vmi-warn,vmi-stats,vmi-win");
@@ -374,7 +374,7 @@ const constSrc = (src, name) => { const m = new RegExp("const " + name + " = [\\
         ok("當下:回到目前版畫法、觸發器「v2 目前」、時光機橫幅收起、重跑狀態列出來", r.S.open === null && r.S.data.current === 2 && r.E["ver-trig-n"].textContent === "v2" && r.E["ver-trig-l"].textContent === "目前"
           && r.E["ver-banner"].hidden === true && bar(r).hidden === false);
         ok("重跑狀態列:圓環 + 一句(v2 包粗體 mono),沒有鈕、不給百分比", bar(r).kids.length === 1 && bar(r).kids[0].kids[0].className === "spin16" && bar(r).kids[0].kids[0].attrs["aria-hidden"] === "true"
-          && bar(r).textContent === "已回到 v2，先顯示它當初存的結果；正在用最新資料重跑回測，跑完會更新。" && bar(r).kids[0].kids[1].kids.some((k) => k.tagName === "b" && k.className === "mono" && k.textContent === "v2"));
+          && bar(r).textContent === "已回到 v2，先顯示它當初存的結果。正在用最新資料重跑回測，跑完會更新。" && bar(r).kids[0].kids[1].kids.some((k) => k.tagName === "b" && k.className === "mono" && k.textContent === "v2"));
         ok("重跑中:說明句收起、送上雲端 / 拉回收起、轉出不算時光機、回測數字交給 versions.js 畫 blob", r.E["rp-desc"].hidden === true && r.E["rp-act"].hidden === true && r.F.verHidesAct() === true
           && r.F.verHolds(r.B) === true && r.F.verShowTab("bt") === true && r.E["rp-nobt"].textContent === "回測重跑完就有進出場紀錄。參數掃描、樣本外驗證、成交測試要再跑一次。");
         ok("重跑中:比較框預設 A = 版號最大、不是目前的那一版(v3),B = 目前(v2)", (r.F.vcOpen(), r.E["vc-a"].value === "3" && r.E["vc-b"].value === "2"));

@@ -19,8 +19,10 @@
   font-size: 13px; font-weight: 500; line-height: 1.45; color: var(--ink); overflow-wrap: anywhere;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;   /* 最多兩行,全文在 title */
 }
-/* 事實列:一組「標籤 + 數字」是一個 .kv,換行只在組與組之間;數字不拆 */
-.res .m { margin-top: var(--space-2); display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-12); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+/* 事實列是一句話:一組「標籤 + 數字」是一個 .kv,組尾帶著分隔字(results.js resFacts),換行只在分隔字之後;數字不拆。
+   全形逗號、頓號自帶字距,組間不留空;en 的「,」後面要一個空格,組尾的空白會被吃掉,所以由間距補 */
+.res .m { margin-top: var(--space-2); display: flex; flex-wrap: wrap; align-items: center; column-gap: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.res .m:lang(en) { column-gap: var(--space-4); }
 .res .m .kv { min-width: 0; }
 .res .m .v, .res .m .mono { white-space: nowrap; }
 .res .m .v { color: var(--ink-2); }   /* 不上紅綠:聊天欄裡其他東西都不上色,一張卡的正負色會變成整欄唯一的顏色 */

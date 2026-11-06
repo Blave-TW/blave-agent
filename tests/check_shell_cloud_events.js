@@ -87,7 +87,7 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
   const valsOf = (b) => Object.fromEntries([...b.matchAll(/^\s*("(?:[^"\\]|\\.)*"): ("(?:[^"\\]|\\.)*"),?$/gm)].map((m) => [JSON.parse(m[1]), JSON.parse(m[2])]));
   const enV = valsOf(block("en")), zhV = valsOf(block("zh"));
   ok("「對帳器」對外字串全拿掉(改「下單程式」)", ![...Object.values(zhV), ...Object.values(enV)].some((x) => /對帳器|reconciler/i.test(x)));
-  ok("停機凍結那句縮短:連平倉也不做、按啟動下單恢復", zhV["tr.ov.evDowntimeNote"] === "全部凍結，連平倉也不做；按「啟動下單」恢復");
+  ok("停機凍結那句縮短:連平倉也不做、按啟動下單恢復", zhV["tr.ov.evDowntimeNote"] === "全部凍結，連平倉也不做，按「啟動下單」恢復");
   ok("renderer 不出現中文字面(放的是 key,不是句子)", !/[一-鿿]/.test(cut("const TR_EV_P1 = [", "\nfunction trOvEvents(").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""))); }
 
 // ui 那一段(會碰 DOM,只驗寫法)

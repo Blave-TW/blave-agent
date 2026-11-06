@@ -781,14 +781,14 @@ ok("1264 寬開著聊天欄(Windows 捲軸佔 17px):中欄 ≤ 600 時表頭可�
   ok("Z 時(設計稽核必改 2):有金額、但這家都下不了 → 「還沒有{venue}能下的策略金額。」;完全沒有金額由 trZGuide 換成缺哪一步(spec-autotrade-empty),剩下的只有設定讀不到",
     /line\.append\(trUnrouted\(rr\)\.length \? t\("tr\.startOffNoRoute"\) : any \? t\("tr\.startOffNoVenueAmt", \{ venue: trVenueLabel\(trVenueId\(\), true\) \}\) : t\("tr\.cfgNull"\)\);/.test(src)
     && S.includes('"tr.startOffNoVenueAmt": "還沒有{venue}能下的策略金額。"') && S.includes('"tr.startOffNoVenueAmt": "No strategy has an amount {venue} can trade yet."'));
-  ok("pres.s.worker* 改名:連上統一／連線中…／沒有讀到統一帳戶…(跟頁首的「下單程式」分開)", S.includes('"pres.s.worker": "連上統一"') && S.includes('"pres.s.workerRun": "連線中…"') && S.includes('"pres.s.workerFail": "沒有讀到統一帳戶。再試一次；還是不行，看設定 › 帳戶的狀態。"'));
+  ok("pres.s.worker* 改名:連上統一／連線中…／沒有讀到統一帳戶…(跟頁首的「下單程式」分開)", S.includes('"pres.s.worker": "連上統一"') && S.includes('"pres.s.workerRun": "連線中…"') && S.includes('"pres.s.workerFail": "沒有讀到統一帳戶。再試一次，還是不行就看設定 › 帳戶的狀態。"'));
   ok("選擇策略框:每一列都被「只下台指期」鎖住 → 清單底下 tr.pick.noTxf + 到策略庫(關框、開策略庫)", /if \(!mg && rows\.length && rows\.every\(\(r\) => r\.note === "txf"\)\) \{/.test(src) && /psClose\(\); if \(typeof libOpen === "function"\) libOpen\(\);/.test(src) && S.includes('"tr.pick.noTxf": "還沒有台指期策略。"'));
   ok("埋點:cfg_go_start 在白名單、按「到自動下單啟動」時送;post_connect_to_cfg 不加", /"cfg_go_start",/.test(tel) && /"mg_run_now",/.test(tel) && /trackFeature\("cfg_go_start"\)/.test(src) && !/post_connect_to_cfg/.test(tel + src)); }
 // 設計師:句中的 venue 用各語言自己的名字(zh 統一期貨／en President Futures,不混中英);「5 口」接「的部位」不留空白
 { const S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
   ok("「還沒有{venue}能下的策略金額」的 venue 走 trVenueLabel → pres.venue(zh 統一期貨、en President Futures,不是中英並列的選單標籤);tr.startOnBook 的 {n} 後面沒有空白",
     S.includes('"pres.venue": "統一期貨"') && S.includes('"pres.venue": "President Futures"') && /if \(id === "president"\) return t\("pres\.venue"\);/.test(src)
-    && /t\("tr\.startOffNoVenueAmt", \{ venue: trVenueLabel\(trVenueId\(\), true\) \}\)/.test(src) && S.includes('"tr.startOnBook": "帳本上還有 {n}的部位；')); }
+    && /t\("tr\.startOffNoVenueAmt", \{ venue: trVenueLabel\(trVenueId\(\), true\) \}\)/.test(src) && S.includes('"tr.startOnBook": "帳本上還有 {n}的部位。')); }
 { const S = fs.readFileSync(path.join(R, "strings.js"), "utf8"), gone = ["tr.unsaved", "tr.exchPositions", "tr.noPositions", "tr.net.foot", "tr.unmanaged", "tr.threshold", "tr.cloud.saveIdle", "tr.cloud.saveLag",
     "tr.cloud.saveIdleUnconfirmed", "tr.cloud.saveLive.h", "tr.cloud.saveLive.b", "tr.amountFoot", "tr.pick.hint", "tr.orderFailedLast", "tr.orderFailedLastWhy", "tr.strategies"];
   ok("退場的 key 兩語都刪了(設計稽核偏離 #8);還在用的 tr.onboard / tr.pick.noneChosen / tr.noStrategies 留著", gone.every((k) => S.indexOf('"' + k + '":') < 0) && ["tr.onboard", "tr.pick.noneChosen", "tr.noStrategies"].every((k) => S.indexOf('"' + k + '":') >= 0)); }

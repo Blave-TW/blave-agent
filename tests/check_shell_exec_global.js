@@ -83,7 +83,7 @@ const paint = (rep, id) => { ctx.REP = rep; const box = mk("div"); vm.runInConte
 const rep = (eff, cfg) => ({ config: Object.assign({ amounts: { a: 100, b: 0 } }, cfg || {}), execution_effective: eff });
 
 let box = paint(rep({ type: "market" }), "okx"), sel = find(box, "tr-exec-sel");
-ok("③ 市價:三個選項 + 常駐的「自訂——跟 agent 說」入口、選中市價、沒有時長格、沒有說明行(tr.exec.all 退役)",
+ok("③ 市價:三個選項 + 常駐的「自訂，跟 agent 說」入口、選中市價、沒有時長格、沒有說明行(tr.exec.all 退役)",
   !!sel && J(sel.children.map((o) => o.value)) === J(["market", "twap", "chase", "custom-ask"]) && sel.children[3].textContent === "tr.exec.customAsk" && sel.value === "market" && !sel.disabled
   && !find(box, "tr-exec-min") && note(box) === undefined && !all(box).some((n) => n.className === "tip") && !/noteTwap|noteChase|tr\.exec\.tw\b/.test(text(box)));
 box = paint(rep({ type: "twap", duration_min: 45 }), "binance"); sel = find(box, "tr-exec-sel");
@@ -95,7 +95,7 @@ box = paint(rep({ type: "custom", module: "my_exec" }), "okx"); sel = find(box, 
 ok("③ custom 是現值:列成第四個選項並選中(只能跟 agent 建,這裡不新增),入口項排最後", sel.children.length === 5 && sel.value === "custom:my_exec" && sel.children[4].value === "custom-ask");
 for (const tw of ["president", "capital"]) {
   box = paint(rep({ type: "twap", duration_min: 30 }), tw); sel = find(box, "tr-exec-sel");
-  ok(`③ ${tw}:選單停用、顯示市價、沒有時長格、不列「自訂——跟 agent 說」(同網頁)、那一行講統一／群益一律市價`, sel.disabled && sel.value === "market" && !find(box, "tr-exec-min")
+  ok(`③ ${tw}:選單停用、顯示市價、沒有時長格、不列「自訂，跟 agent 說」(同網頁)、那一行講統一／群益一律市價`, sel.disabled && sel.value === "market" && !find(box, "tr-exec-min")
     && J(sel.children.map((o) => o.value)) === J(["market", "twap", "chase"])
     && note(box) === "tr.exec.tw");
 }
@@ -141,7 +141,7 @@ ok("③ 設定檔讀不到:沒有選單,一行說明", !find(box, "tr-exec-sel")
     ok("④ 送出失敗那一句是 .plan-err(整段操作失敗的長相),不是欄位紅字", all(b2).some((n) => n.className === "plan-err") && !find(b2, "tr-exec-err")); }
   ctx.NEXT = null;
 
-  // ── ④b「自訂——跟 agent 說」(同網頁 chatAskCustomExec)──
+  // ── ④b「自訂，跟 agent 說」(同網頁 chatAskCustomExec)──
   sent.length = 0; ctx.TR.exec = { edit: null, err: null, raw: null }; ctx.TR.env = "local";
   box = paint(rep({ type: "twap", duration_min: 45 }), "okx"); sel = find(box, "tr-exec-sel");
   sel.value = "custom-ask"; sel.on.change(); await flush();
@@ -172,7 +172,7 @@ ok("③ 設定檔讀不到:沒有選單,一行說明", !find(box, "tr-exec-sel")
   ok("⑤ tr.exec.* 中英兩份都有,而且來源是 .po(strings.js 是產生的)", KEYS.every((k) => en.indexOf(`"${k}":`) >= 0 && zh.indexOf(`"${k}":`) >= 0)
     && ["en", "zh"].every((l) => { const po = read(path.join(SHELL, "i18n", l + ".po")); return KEYS.every((k) => po.indexOf(`msgid "${k}"\n`) >= 0) && !/onlyWebExec/.test(po); }));
   ok("⑤ tr.exec.all 退役:.po、strings.js、trade.js 都沒有", !/tr\.exec\.all\b/.test(S + trade) && ["en", "zh"].every((l) => !/msgid "tr\.exec\.all"/.test(read(path.join(SHELL, "i18n", l + ".po")))));
-  ok("⑤ 入口那一句照網頁的字(workspace_pf_exec_custom_ask / _prefill)", /"tr\.exec\.customAsk": "自訂——跟 agent 說"/.test(zh) && /"tr\.exec\.customPrefill": "我想自訂下單方式："/.test(zh)
+  ok("⑤ 入口那一句照網頁的字(workspace_pf_exec_custom_ask / _prefill)", /"tr\.exec\.customAsk": "自訂，跟 agent 說"/.test(zh) && /"tr\.exec\.customPrefill": "我想自訂下單方式："/.test(zh)
     && /"tr\.exec\.customAsk": "Custom — tell the agent"/.test(en) && /"tr\.exec\.customPrefill": "I want a custom execution style: "/.test(en));
   ok("⑤「每支策略的下單方式在網頁」那兩句不在了(tr.cloud.onlyWebExec 拿掉、pv.inc.web 改寫)",
     !/onlyWebExec/.test(S + trade) && !/每支策略的下單方式|per-strategy order handling/.test(S));

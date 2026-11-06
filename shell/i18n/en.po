@@ -1616,6 +1616,10 @@ msgstr "last ran until {t}"
 msgid "tr.died"
 msgstr "Trading stopped, and not because you paused it · last ran {t}. Press Start trading to resume."
 
+# tr.died／tr.diedZ 開頭要加重的那一段(trade.js trDiedCut);兩句的開頭要跟它逐字相同
+msgid "tr.diedLead"
+msgstr "Trading stopped, and not because you paused it"
+
 msgid "tr.s.on"
 msgstr "Running"
 
@@ -3016,19 +3020,19 @@ msgid "env.st.sending"
 msgstr "Sending a command"
 
 msgid "env.tip"
-msgstr "{where} — {money}, {state}"
+msgstr "{where} · {money} · {state}"
 
 msgid "env.tip1"
-msgstr "{where} — {x}"
+msgstr "{where} · {x}"
 
 msgid "env.cellAria1"
 msgstr "{where}: {x}"
 
 msgid "env.winTitle"
-msgstr "Blave — {where} · {money}"
+msgstr "Blave · {where} · {money}"
 
 msgid "env.winTitle0"
-msgstr "Blave — {where}"
+msgstr "Blave · {where}"
 
 msgid "tr.mode.real"
 msgstr "Real money"
@@ -4015,7 +4019,7 @@ msgid "side.flagRemove"
 msgstr "Remove flag"
 
 msgid "side.flagTitle"
-msgstr "{name} — flag: {color}"
+msgstr "{name}, flag: {color}"
 
 msgid "side.flagAria"
 msgstr "{name}, flag: {color}"
@@ -5778,13 +5782,13 @@ msgid "res.kind.cloudUpd"
 msgstr "Strategy updated"
 
 msgid "res.noBt"
-msgstr "No backtest"
+msgstr "no backtest"
 
 msgid "res.notRerun"
-msgstr "Not rerun yet"
+msgstr "not rerun yet"
 
 msgid "res.later"
-msgstr "Updated since"
+msgstr "updated since"
 
 msgid "res.gone.report"
 msgstr "This report was deleted"
@@ -5794,6 +5798,42 @@ msgstr "This strategy was deleted"
 
 msgid "res.more"
 msgstr "{n} more"
+
+# 卡的第二行寫成一句話(canon 介面標點 2):組與組之間接 res.sep,前後兩組都是數字時接 res.sepList;分隔字放在前一組裡,跟著不換行。en 的空格由 results.css 的 :lang(en) 間距補
+msgid "res.sep"
+msgstr ","
+
+msgid "res.sepList"
+msgstr ","
+
+# 報告卡:{type} = 閱讀頁的類型字或 res.type.*、沒有類型時用 rpt.nav;{time} = MM/DD HH:mm(.mono)
+msgid "res.report"
+msgstr "{type}, created {time}"
+
+msgid "res.type.research"
+msgstr "Research report"
+
+msgid "res.type.morning"
+msgstr "Briefing"
+
+msgid "res.type.performance"
+msgstr "Performance report"
+
+# 掃描卡的落點(接在逗號後,所以不沿用帶冒號的 rob.tag.*;回測頁的標籤字不動)
+msgid "res.pos.peak"
+msgstr "current params on a peak"
+
+msgid "res.pos.inside"
+msgstr "current params in the plateau"
+
+msgid "res.pos.outside"
+msgstr "current params outside the plateau"
+
+msgid "res.pos.outscan"
+msgstr "current params outside the scan"
+
+msgid "res.pos.atPlateau"
+msgstr "current params are the robust ones"
 
 # 兩個表單 modal 共用:submitMessage 回 false(引擎失敗 / 被擋)時腳的那一句;原因由對話講
 msgid "modal.sendFailed"
@@ -6980,7 +7020,7 @@ msgid "ver.viewing"
 msgstr "Viewing {v}"
 
 msgid "ver.readonly"
-msgstr "— read-only"
+msgstr "· read-only"
 
 msgid "ver.back"
 msgstr "Back to current version"

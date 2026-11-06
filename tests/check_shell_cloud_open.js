@@ -52,7 +52,7 @@ function paint(lang, kind, token, pv, o) {
 // ── 1. 開通頁方向 A(mockup-cloud-empty-2026-11-01):18 態,卡與狀態頁 ──
 const W = {
   zh: { h: "關上電腦，策略照跑", note: "含 Blave 行情與籌碼資料。", cli: "登入不花錢，也不會換掉你用的 AI。",
-    body3: "沒在用、停機都照扣；要停止收費，需到網頁刪除主機。",
+    body3: "沒在用、停機都照扣。要停止收費，需到網頁刪除主機。",
     body2: "開好後每個整點從餘額扣 2 TWD（每月 1,440 TWD，以 30 天計）。", price: "1,440 TWD／30 天", yearly: "14,400 TWD／365 天" },
   en: { h: "Close the laptop, the strategy keeps running", note: "Blave market and positioning data included.", cli: "Signing in costs nothing and keeps your AI.",
     body3: "It bills even when idle or stopped. To stop the charges, delete the machine on the web.",
@@ -158,7 +158,7 @@ for (const lang of ["zh", "en"]) {
   ok(lang + " 啟動確認框:三句直接顯示;第二句只講扣多少(不再重講存在就扣),第三句一句講完沒在用 / 停機照扣、刪除才停", boxes.length === 1 && boxes[0].lines.length === 3
     && boxes[0].lines[1] === W[lang].body2 && boxes[0].lines[2] === W[lang].body3, JSON.stringify(boxes[0] && boxes[0].lines));
   const trial = []; new Function("t", "planVars", "confirmBox", "planGo", "planMo", cut(app, "planAsk") + "\nreturn planAsk;")(t, () => ({ p: "1,440", h: "2", d: "10/10" }), (o) => trial.push(o), () => {}, () => false)();
-  ok(lang + " 啟動確認框(試用):第二句同樣刪掉句尾那段重複", trial[0].lines[1] === (lang === "zh" ? "10/10前免主機費；之後每個整點從餘額扣 2 TWD。" : "No machine fee until 10/10. After that, 2 TWD comes out of your balance every hour."), trial[0].lines[1]);
+  ok(lang + " 啟動確認框(試用):第二句同樣刪掉句尾那段重複", trial[0].lines[1] === (lang === "zh" ? "10/10前免主機費。之後每個整點從餘額扣 2 TWD。" : "No machine fee until 10/10. After that, 2 TWD comes out of your balance every hour."), trial[0].lines[1]);
 }
 ok("鈕旁:設定 › 帳號與方案(未登入)切換前讀 pv.w.out(lead 已講 AI 照用,只留登入不花錢)、方案制 D 版沒有 lead → 自帶 AI 讀 pv.w.out.cli、Blave AI 讀 pv.w.out;開通頁讀 pv.w.out.cli",
   /wait: planLoginBusy \? t\("pv\.w\.waiting"\) : t\(mo && cur !== "blave" \? "pv\.w\.out\.cli" : "pv\.w\.out"\),/.test(app) && /side = trEl\("span", "wait", planLoginBusy \? t\("pv\.w\.waiting"\) : t\("pv\.w\.out\.cli"\)\)/.test(trade)

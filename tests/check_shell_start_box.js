@@ -206,7 +206,7 @@ function world(o) {
         && getEn("tr.keep.ownBuilt") === "Only Blave’s own share is traded. Positions you opened aren’t counted and don’t offset targets."
         && getEn("tr.keep.ownBuilt2") === "On a one-way account, the exchange nets Blave’s orders with your position in the same coin."
         && ["tr.keep.ownFirst", "tr.keep.ownBuilt"].every((k) => get(k).indexOf("只動 Blave 自己那一份") === 0) && ["tr.keep.own", "tr.keep.ownFirst", "tr.keep.ownBuilt"].every((k) => getEn(k).indexOf("Only Blave’s own share is traded.") === 0));
-      ok("統一的兩句(設計師裁定,逐字)", get("tr.keep.pres") === "只動 Blave 自己那一份；同一個商品別跟策略用同一個月份手動交易，Blave 會分不清。"
+      ok("統一的兩句(設計師裁定,逐字)", get("tr.keep.pres") === "只動 Blave 自己那一份。同一個商品別跟策略用同一個月份手動交易，Blave 會分不清。"
         && getEn("tr.keep.pres") === "Only Blave’s own share is traded; don’t trade the same product and month by hand as a strategy — Blave can’t tell them apart."
         && get("tr.means.presNight") === "台指期夜盤也會下單，電腦要一直開著。" && getEn("tr.means.presNight") === "TAIEX futures also trade at night; keep this computer on.");
       ok("台灣券商停損那一句(逐字,{venue} 帶券商名)", get("tr.means.twStop") === "{venue}沒有券商端停損單，電腦睡著時部位沒保護。"

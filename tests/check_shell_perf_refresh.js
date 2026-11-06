@@ -148,7 +148,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     return { F, E, $, B: bag, side, meta, root, host, upd, fail, btn, tracked, sent, said, timers, acks, paints, env, VS };
   }
   const flush = () => new Promise((r) => setImmediate(r));
-  const tipZh = (at) => shlFmtTime(at, clock.now) + " 更新 · 每天報告前自動更新一次";
+  const tipZh = (at) => shlFmtTime(at, clock.now) + " 更新，每天報告前自動更新一次";
   // Type A／C 都出(Wei 10-12):非上線的也有鈕,title 只寫上次回測時間(機器端是重跑回測,沒有每天自動);Type B 不出
   const tipBtZh = (at) => "上次回測 " + shlFmtTime(at, clock.now);
   for (const [tag, amounts] of [["不在金額表", { other: 100 }], ["讀不到回報", null]]) {
@@ -174,7 +174,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     const r = rig("zh"); r.F.perfPaint(r.B);
     const u = r.upd(), b = r.btn();
     ok("閒置 < 1 天:.upd 的外框是 meta 列最後一個子節點(不是 .mgrp,不會多一顆點),裡面只有一顆 .btn-quiet「更新績效」", u && r.meta.kids[r.meta.kids.length - 1] === u.parentNode && u.parentNode.has("upd-box") && u.kids.length === 1 && b && b.tagName === "button" && b.attrs.type === undefined && b.type === "button" && b.textContent === "更新績效" && b.id === "perf-btn");
-    ok("閒置 < 1 天:title = 「MM/DD HH:mm 更新 · 每天報告前自動更新一次」,沒有「N 天前」、沒有 role=status、沒有失敗行", b.title === tipZh(nowS() - 3600) && !u.all((k) => k.has("ts")).length && !("role" in u.attrs) && !r.fail());
+    ok("閒置 < 1 天:title = 「MM/DD HH:mm 更新，每天報告前自動更新一次」,沒有「N 天前」、沒有 role=status、沒有失敗行", b.title === tipZh(nowS() - 3600) && !u.all((k) => k.has("ts")).length && !("role" in u.attrs) && !r.fail());
     const e = rig("en"); e.F.perfPaint(e.B);
     ok("en:Update Performance / Updated … · auto-updated once a day before the daily report", e.btn().textContent === "Update Performance" && e.btn().title === "Updated " + shlFmtTime(nowS() - 3600, clock.now) + " · auto-updated once a day before the daily report");
     ok("閒置時不輪詢", r.timers.length === 0 && e.timers.length === 0);
@@ -213,7 +213,7 @@ const constSrc = (src, name) => { const m = new RegExp("^const " + name + " = [^
     ok("原因沿用版本重跑的四個字串(ver.rerunWhy.*);不認得的 → 中途出錯", why("REFUSED") === "被回測檢查擋下" && why("TIMEOUT") === "跑太久，已停下" && why("EXIT") === "中途出錯" && why("NOPE") === "中途出錯" && why("DATA", "en") === "no data came back");
     const e = rig("en", { perf: { at: nowS() - 100, refresh: { status: "failed", at: nowS() - 60, err: "EXIT" } } }); e.F.perfPaint(e.B);
     ok("en:Update failed; figures unchanged. / it hit an error;失敗不輪詢", e.fail().kids[1].textContent === "Update failed; figures unchanged." && e.fail().title === "it hit an error" && e.timers.length === 0);
-    ok("報告帶回 SUPERSEDED(跑完但 runner 丟棄:檔案在途中被改)/ BUSY(等 runner 的回測鎖等到逾時)各有自己一句", why("SUPERSEDED") === "策略在更新途中被改過，數字沒換；再按一次" && why("BUSY") === "這支策略正在回測中，等它跑完再按一次"
+    ok("報告帶回 SUPERSEDED(跑完但 runner 丟棄:檔案在途中被改)/ BUSY(等 runner 的回測鎖等到逾時)各有自己一句", why("SUPERSEDED") === "策略在更新途中被改過，數字沒換，再按一次" && why("BUSY") === "這支策略正在回測中，等它跑完再按一次"
       && why("SUPERSEDED", "en") === "The strategy was edited while updating; figures unchanged. Press again." && why("BUSY", "en") === "This strategy is being backtested right now; press again when it finishes.");
   }
   // 沒有資料權限(runtime 寫的 why):現在的原因還是同一個才講原因(灰記號、不掛 title);過期、查不到、雲端 → 通用句(紅記號、title 照舊)

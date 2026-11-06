@@ -109,7 +109,7 @@ const reset = (s) => { cloudSt = s; TR_BAGS.cloud.st = s; running = false; sent 
     const want = { zh: ["把雲端主機更新到最新版", "雲端主機會從 {cv} 換到 {lv}。過程要幾分鐘，在聊天裡跑，做完會說一聲。", "雲端主機會換成最新版。過程要幾分鐘，在聊天裡跑，做完會說一聲。",
         "自動下單正在跑：動到下單程式時，會等沒有單在送出的空檔，再用新版重新啟動。", "主機重開後沒能確認自動下單已停下：換成新版後會先停住，按「啟動下單」才會繼續。",
         "讀不到自動下單狀態，照在跑處理。動到下單程式時，會等沒單在送的空檔再用新版重啟。",
-        "只換 Blave 官方的程式與說明檔，不碰你的策略檔與金鑰；部位不會平倉。", "一直等不到空檔，就只換檔，自動下單先留在舊版。", "沒更新完成會在聊天說明原因，再按一次就會接著做。",
+        "只換 Blave 官方的程式與說明檔，不碰你的策略檔與金鑰。部位不會平倉。", "一直等不到空檔，就只換檔，自動下單先留在舊版。", "沒更新完成會在聊天說明原因，再按一次就會接著做。",
         "你改過的官方檔會換成官方版，舊檔備份在主機的 .official-backup/。", "你自己加的下單整合不動。", "開始更新", "更新雲端主機"],
       en: ["Update the cloud machine", "The cloud machine goes from {cv} to {lv}. It takes a few minutes, runs in the chat, and says there when it’s done.",
         "The cloud machine updates to the latest version. It takes a few minutes, runs in the chat, and says there when it’s done.",

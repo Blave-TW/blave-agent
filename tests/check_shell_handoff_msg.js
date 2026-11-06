@@ -292,11 +292,11 @@ t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down �
   r = run("down", {}, {});
   t("拉回、這台電腦沒有同名 → 沒有改名那一行,原名送出", sendable(r) && !/ho\.rename/.test(r.txt) && r.run.to === "btc_rsi");
   t("擋下態與覆蓋態整段退場(程式與字串表都沒有 ho.block.up/down、ho.over.*、goLocal、hoState、okDisabled、alt)", !/ho\.block\.(up|down)"|ho\.over\.|goLocal/.test(strings) && !/ho\.block\.(up|down)\b|ho\.over\.|goLocal|hoState|hoAmount|okDisabled|alt:/.test(src));
-  t("改名那幾句的字", /"ho\.rename\.up": "雲端已經有同名的 \{id\}，這份會存成新策略 \{to\}；原本那支不動。"/.test(strings) && /"ho\.rename\.down": "這台電腦已經有同名的 \{id\}，這份會存成新策略 \{to\}；原本那支不動。"/.test(strings)
+  t("改名那幾句的字", /"ho\.rename\.up": "雲端已經有同名的 \{id\}，這份會存成新策略 \{to\}。原本那支不動。"/.test(strings) && /"ho\.rename\.down": "這台電腦已經有同名的 \{id\}，這份會存成新策略 \{to\}。原本那支不動。"/.test(strings)
     && /"ho\.rename\.maybeUp": "若雲端已有同名策略，會改存成新名字，原本那支不動。"/.test(strings));
   t("舊的來源擋下態整段退場(ho.block.srcUp / srcDown 不在程式與字串表)", !/ho\.block\.src/.test(src + strings));
   t("那一句的字:兩個方向都講「照常下單」與「給金額才會開始下單」", ["up", "down"].every((d) => (strings.match(new RegExp('"ho\\.srcLive\\.' + d + '": "[^"]*"', "g")) || []).length === 2)
-    && /"ho\.srcLive\.up": "這台電腦這一支照常下單；雲端那份[^"]*給金額，才會開始下單。"/.test(strings) && /"ho\.srcLive\.down": "雲端那一支照常下單；[^"]*給金額，才會開始下單。"/.test(strings));
+    && /"ho\.srcLive\.up": "這台電腦這一支照常下單。雲端那份[^"]*給金額，才會開始下單。"/.test(strings) && /"ho\.srcLive\.down": "雲端那一支照常下單。[^"]*給金額，才會開始下單。"/.test(strings));
   // 0.1.12 市場檢查出貨前整個拿掉:送上雲端 / 拉回不看市場(美股不在這裡擋,也不多那一行「對不上」)
   t("送上雲端 / 拉回不看市場:handoff.js 沒有 trGateOf / market_gate / ho.gate.usstock / ho.gate.mismatch;字串表也沒有那三句",
     !/trGateOf|market_gate|ho\.gate\.(usstock|mismatch)/.test(src) && !/ho\.gate\.(usstock|mismatch)/.test(strings)); }

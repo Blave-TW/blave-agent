@@ -1157,6 +1157,11 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && !trPresBooting({ venues: Vf, account: stale }, Date.now()), readThisRound);
       const died = dead(fresh); died.report.daemon.reconciler.wanted = true; TR.st = died;
       ok("…對帳器自己掛了(died)那句照講,不被啟動中蓋掉", trStateText("dead").indexOf("tr.died") === 0, trStateText("dead"));
+      { const S2 = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "\nreturn STRINGS;")();
+        const cuts = ["zh", "en"].flatMap((l) => ["tr.died", "tr.diedZ"].map((k) => { const full = S2[l][k].replace("{t}", "11/06 14:32"), lead = S2[l]["tr.diedLead"]; return [l + ":" + k, trDiedCut(full, lead), full.slice(0, trDiedCut(full, lead))]; }));
+        ok("異常停止那一句的加重段:zh / en 的 tr.died、tr.diedZ 都以 tr.diedLead 開頭,trDiedCut 切出的就是它;頁首用 trDiedCut、不再找「 · 」",
+          cuts.every(([k, n, head]) => n > 0 && head === S2[k.split(":")[0]]["tr.diedLead"]) && trDiedCut("下單程式在跑 · x", S2.zh["tr.diedLead"]) === -1
+          && /const cutAt = [^\n]*\? trDiedCut\(full, t\("tr\.diedLead"\)\) : -1;/.test(src) && !/cutAt = [^\n]*indexOf\(" · "\)/.test(src), J(cuts)); }
       ok("設定 › 帳戶那一列:啟動中那幾秒把舊失敗當還沒讀過(e = null → 圓環 + 串接中…)", /const e = id && !\(!ro && id === "president" && trPresBooting\(r, Date\.now\(\)\)\) \? trLiveEntry\(r, id\) : null;/.test(src));
       TR.env = "cloud"; TR.st = C0({ gated: false }); }
     ok("狀態行:可能仍在下單 + 紅字原因行;頂列短詞同一個詞;已按暫停後是「已暫停 · A」",
@@ -1352,7 +1357,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("「沒開著的時段」那一句整句拿掉:兩份 .po 與產生的 strings.js 都沒有 tr.ov.gapNote", !/tr\.ov\.gapNote/.test(po("zh") + po("en") + strs) && !/沒開著的時段沒有紀錄|connects straight across/.test(strs));
     ok("A′ / B0 / S1 文字照稽核;事件兩句 note 同網頁語序", /^什麼單都不下，平倉與停損也不執行。/.test(get("zh", "tr.haltReasonAll")) && /^No orders are going out — exits and stops won’t run either\./.test(get("en", "tr.haltReasonAll"))
       && /^主機重開過，什麼單都不下/.test(get("zh", "tr.cloud.restartNoAccountZ")) && get("zh", "tr.cloud.restartNoAccountStart") === null && get("zh", "tr.cloud.restartNoAccount") === null
-      && get("zh", "tr.ov.evHaltNote") === "平倉與停損停利照常執行；停開新倉" && get("zh", "tr.ov.evRestartStoppedNote") === "什麼單都不送"   // 稽核 0127b1 P2-20:跟狀態列同一個講法,一句就夠
+      && get("zh", "tr.ov.evHaltNote") === "平倉與停損停利照常執行，停開新倉" && get("zh", "tr.ov.evRestartStoppedNote") === "什麼單都不送"   // 稽核 0127b1 P2-20:跟狀態列同一個講法,一句就夠
       && /更新主機後按「啟動下單」/.test(get("zh", "tr.cloud.closeAllWarn2Unconfirmed")) && get("zh", "tr.cloud.saveIdleUnconfirmed") === null   // 存金額框的 idle 那句 0.1.24 退場
       && /after you update the machine and press Start trading/.test(get("en", "tr.cloud.closeAllWarn2Unconfirmed")) && get("en", "tr.cloud.saveIdleUnconfirmed") === null
       && get("en", "tr.cloud.restartStartWarn2") === null && get("zh", "tr.cloud.restartStartWarn2") === null);
@@ -1385,7 +1390,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /desc: t\("tr\.opt\.waitDesc"\), warn: stranded \? t\("tr\.opt\.waitStranded", \{ n: stranded \}\) : null,\n\s*ok: t\("tr\.startWait"\), onOk: \(\) => go\("resume_wait"\) \},/.test(start)
       && /ok: t\("tr\.startCatchUp"\), okDisabled: recomputing, okWhy: recomputing \? t\("tr\.cloud\.recomputing"\) : null, onOk: catchUp,/.test(start));
     const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
-    ok("recomputed 文字(zh / en)", /msgid "tr\.cloud\.recomputing"\nmsgstr "策略正在用開機後的資料重算，算完才能補齊部位；算完後關掉這個框再開一次。"/.test(po("zh"))
+    ok("recomputed 文字(zh / en)", /msgid "tr\.cloud\.recomputing"\nmsgstr "策略正在用開機後的資料重算，算完才能補齊部位。算完後關掉這個框再開一次。"/.test(po("zh"))
       && /msgid "tr\.cloud\.recomputing"\nmsgstr "Strategies are recomputing on post-restart data\. Catch up becomes available when they finish; close this box and open it again then\."/.test(po("en"))); }
   { // round-2 稽核 B1(列舉):C(主機重開、沒能確認停住)裡沒有啟動鈕——看得到的狀態字一個都不可以叫人按「啟動下單」
     //   每一種 C 子狀態 × zh / en,用真的字串表畫:未暫停、已暫停 × 每一類 halt.source(白名單 / 自動 / 認不得 / 缺欄位)、讀帳失敗、回報過舊
@@ -1495,7 +1500,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         === J([{ sym: "TXF", v: 2, lots: true }, { sym: "BTCUSDT", v: -300, lots: false }, { sym: "ETHUSDT@spot", v: 50, lots: false }]) && J(trBookRows({})) === "[]" && J(trBookRows({ last_reconcile: null })) === "[]");
       // 原因行那一句:兩語都有、帶 {n}、講「先平掉」;口數 venue 用口、加密用數量(trBookQty 在 DOM 側,鎖原文)
       const strings = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8");
-      ok("0.1.20 tr.startOnBook 兩語都有(po2js 產物)、帶 {n}、講啟動後先平掉", /"tr\.startOnBook": "帳本上還有 \{n\}的部位；啟動後下單程式會先照目前金額（0）平掉。"/.test(strings)
+      ok("0.1.20 tr.startOnBook 兩語都有(po2js 產物)、帶 {n}、講啟動後先平掉", /"tr\.startOnBook": "帳本上還有 \{n\}的部位。啟動後下單程式會先照目前金額（0）平掉。"/.test(strings)
         && /"tr\.startOnBook": "The ledger still holds \{n\} in positions\. Once started, the order program closes them first, following the current amounts \(0\)\."/.test(strings));
       ok("0.1.20 trBookQty:口數列 Σ|口| + 口;加密 Σ|成本| + 帳戶幣", /const lots = rows\.filter\(\(x\) => x\.lots\), sum = \(a\) => a\.reduce\(\(s, x\) => s \+ Math\.abs\(x\.v\), 0\);\n\s*if \(lots\.length\) \{ const n = sum\(lots\); return trLotsFmt\(n\) \+ " " \+ t\(trLotsKey\(Math\.round\(n\), "tr\.lotsUnit", "tr\.lotUnit"\)\); \}\n\s*return trWithUnit\(trFmt\(sum\(rows\)\)\);/.test(src)
         && /const text = t\(key, vars\), word = t\("po\.nav"\)/.test(src) && /p\.dataset\.key = key \+ "\|" \+ LANG \+ \(vars \? "\|" \+ JSON\.stringify\(vars\) : ""\);/.test(src));
@@ -1720,7 +1725,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       && /The numbers on this page are still the old ones\./.test(po2("en"))
       && !/分鐘|秒/.test(zhOf("tr.cloud.startPendAmountsStale")) && !/就能啟動|先到「部位」/.test(zhOf("tr.cloud.startPendAmountsStale")));
     ok("§2 慢的那一句才講數字,而且叫人不要再按一次(同 plan.err.slow 的語氣)",
-      zhOf("tr.cloud.startPendSlow") === "比平常久。主機還在回報，不用再按一次；最久大約兩分鐘。"
+      zhOf("tr.cloud.startPendSlow") === "比平常久。主機還在回報，不用再按一次，最久大約兩分鐘。"
       && /Taking longer than usual\./.test(po2("en")) && /兩分鐘/.test(zhOf("tr.cloud.startPendSlow")));
     // §2-3c(a):spinner 放在原因行上,**不放進鈕裡**
     const noamt = fnS("trPaintNoAmt");
@@ -1925,9 +1930,9 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       vm.runInContext('LANG = "zh"', ctx);
       const bad2 = cases.filter(([, r]) => { const txt = one(r); return /還沒有策略設定金額|解除暫停|「部位」/.test(txt); });
       ok("§12 Z 的狀態句不提金額、不提鈕(A′ / B 雲端 / B 本機兩種 / dead)" + (bad2.length ? ":" + bad2[0][0] + " → " + one(bad2[0][1]) : ""), bad2.length === 0
-        && /主機重開過，什麼單都不下——部位現在沒有人在管/.test(one({ venues: Vz2, config: { amounts: {} }, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1 } } })));
+        && /主機重開過，什麼單都不下。部位現在沒有人在管/.test(one({ venues: Vz2, config: { amounts: {} }, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1 } } })));
       ok("§12 A(用戶自己按的暫停)與「尚未啟動下單」不需要 Z 變體:原句本來就沒提鈕", /: rec\.heartbeat_at \? t\("tr\.notStarted"\) \+ " · " \+ t\("tr\.lastRun"[^\n]*\) : t\("tr\.notStarted"\);/.test(fnS("trStateText"))
-        && !/tr\.notStartedZ|tr\.haltReasonZ/.test(src) && /不開新倉；平倉與停損停利照常執行。/.test(one({ venues: { paper: { credentials: true, pair: true, order: true, account: true } }, config: { amounts: {} }, halt: { halted: true, source: "web" }, reconciler: { alive: true } })));
+        && !/tr\.notStartedZ|tr\.haltReasonZ/.test(src) && /不開新倉，平倉與停損停利照常執行。/.test(one({ venues: { paper: { credentials: true, pair: true, order: true, account: true } }, config: { amounts: {} }, halt: { halted: true, source: "web" }, reconciler: { alive: true } })));
       ok("§12 B0 是唯一保留出口的狀態句(它沒有停用的啟動鈕,也就沒有原因行)", /按「解除暫停」恢復放行。$/.test(one({ venues: {}, config: { amounts: {} }, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1 } } }))
         && trZView("noaccount", { venues: {}, config: { amounts: {} }, halt: {}, reconciler: { alive: false, stopped: { reason: "machine_restart", at: 1 } } }).reason === null);
       // 驗收:一個標頭裡「還沒有策略設定金額」只出現一次(狀態句 + 原因行合起來算)
@@ -2057,7 +2062,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     { const po = (l) => fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", l + ".po"), "utf8");
       const get = (l, k) => { const m = po(l).match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\\nmsgstr "([^\\n]*)"')); return m ? m[1] : null; };
       ok("讀不到那一句講「讀不到」不講「沒有紀錄」;資金異動那一句(設計師 0.1.28 #3 定稿,網頁逐字同)、tooltip、flowWait、vsBasis 不提資金異動(zh / en)", /讀不到/.test(get("zh", "tr.ov.curveUnreach")) && /不代表沒有紀錄/.test(get("zh", "tr.ov.curveUnreach")) && /Can’t read/.test(get("en", "tr.ov.curveUnreach"))
-        && get("zh", "tr.ov.flowNote") === "曲線從最近一次資金異動畫起；累積損益不含異動金額。" && get("en", "tr.ov.flowNote") === "The curve starts at the latest funds movement; cumulative PnL excludes the amount moved."
+        && get("zh", "tr.ov.flowNote") === "曲線從最近一次資金異動畫起。累積損益不含異動金額。" && get("en", "tr.ov.flowNote") === "The curve starts at the latest funds movement; cumulative PnL excludes the amount moved."
         && /出入金/.test(get("zh", "tr.ov.flowTip")) && /deposit/.test(get("en", "tr.ov.flowTip")) && /要兩筆/.test(get("zh", "tr.ov.flowWait")) && /takes two/.test(get("en", "tr.ov.flowWait"))
         && !/資金異動/.test(get("zh", "tr.ov.vsBasis")) && !/funds/.test(get("en", "tr.ov.vsBasis")) && /資金異動/.test(get("zh", "tr.ov.vsSeg"))); }
     ok("hover 第三行:資金異動用 vsSeg、這台電腦口徑換過用 vsBasis(不寫資金異動)、沒斷點用 vsStart", /t\(flow \? "tr\.ov\.vsSeg" : s > 0 \? "tr\.ov\.vsBasis" : "tr\.ov\.vsStart"\)/.test(cutF("trOvCurve")));

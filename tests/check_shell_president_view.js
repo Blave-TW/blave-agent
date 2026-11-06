@@ -200,7 +200,7 @@ const countZh = presKeys.filter((k) => /次數|三次|登入次/.test(sctx.S.zh[
 ok("pres.* 兩語都沒有登入次數那類句子", countZh.length === 0 && countEn.length === 0, countZh.concat(countEn));
 ok("「這一步沒有開始。再試一次。」", sctx.S.zh["pres.err.generic"] === "這一步沒有開始。再試一次。");
 // 完成頁(設計師裁定,Wei 嫌字多):兩句說明逐字;夜盤 / 電腦不睡 / 同月份那幾句搬去啟動框(check_shell_start_box.js),完成頁不再有
-ok("n1／n2 逐字;沒有夜盤、不睡、同月份;完成頁只剩 n1,n2 搬到第一次真錢框最後一行", sctx.S.zh["pres.done.n1"] === "結束 Blave 或關機就不再下單；部位留在統一，不會自動平倉。" && sctx.S.zh["pres.done.n2"] === "Blave 只管自己下的部位，不動你在統一 app 手動下的單。"
+ok("n1／n2 逐字;沒有夜盤、不睡、同月份;完成頁只剩 n1,n2 搬到第一次真錢框最後一行", sctx.S.zh["pres.done.n1"] === "結束 Blave 或關機就不再下單。部位留在統一，不會自動平倉。" && sctx.S.zh["pres.done.n2"] === "Blave 只管自己下的部位，不動你在統一 app 手動下的單。"
   && sctx.S.en["pres.done.n1"] === "Quit Blave or shut down and orders stop; positions stay at President and aren’t closed." && sctx.S.en["pres.done.n2"] === "Blave manages only its own positions, not trades you place in the President app."
   && Object.keys(sctx.S.zh).filter((k) => k.indexOf("pres.done.") === 0).every((k) => !/夜盤|不睡|月份|night|awake|month/i.test(sctx.S.zh[k] + sctx.S.en[k]))
   && /note\.appendChild\(presP\("", t\("pres\.done\.n1"\)\)\);/.test(src) && !/pres\.done\.n3/.test(src)
@@ -210,7 +210,7 @@ ok("stopNote 沒有數字", !/\d/.test(sctx.S.zh["pres.err.stopNote"]) && !/\d/.
 // 設計稽核 desktop-10-08(電腦版統一畫面)#2 / #8 / #10
 ok("#2 第一次真錢框:權益數「12,147,198 TWD」(trTwd 整數 + 幣別後綴),不用 NT$;保證金那句不再講「統一沒有給用戶的模擬環境」",
   !/"NT\$/.test(src) && /t\("pres\.first\.equity", \{ v: trTwd\(a\.equity\) \+ " " \+ TR_TXF_CCY \}\)/.test(src) && /trEl\("div", "v mono", typeof a\.equity === "number" \? trTwd\(a\.equity\) \+ " " \+ TR_TXF_CCY : "—"\)/.test(src)
-  && sctx.S.zh["pres.first.margin"] === "每口保證金以統一公告為準；保證金不足時統一會拒單。這幾口是真錢。" && !/模擬環境|simulated/i.test(sctx.S.zh["pres.first.margin"] + sctx.S.en["pres.first.margin"]));
+  && sctx.S.zh["pres.first.margin"] === "每口保證金以統一公告為準，保證金不足時統一會拒單。這幾口是真錢。" && !/模擬環境|simulated/i.test(sctx.S.zh["pres.first.margin"] + sctx.S.en["pres.first.margin"]));
 { const body = src.slice(src.indexOf("function presProbeBody("), src.indexOf("function presTestHostBody("));
   ok("#8 失敗畫面的輔助句照類別:PASSWORD / UNKNOWN → 被鎖找營業員;TIMEOUT → 恢復後再試;憑證 / 維護 / 沒帳密 → 沒有輔助句",
     /const hintKey = view === "d-PASSWORD" \|\| view === "d-UNKNOWN" \? "pres\.err\.stopNote" : view === "d-TIMEOUT" \? "pres\.err\.retryNote" : null;/.test(body)

@@ -95,7 +95,7 @@ ok("② 有結果、新鮮:頂列(meta＋〔重新測試〕描邊那格)→ 結�
   && full.cls("rob-verdict").length === 1 && full.cls("rob-verdict")[0].textContent === "晚一根 Sharpe 掉 24%。每邊成本多 0.02%，Sharpe 從 1.62 掉到 1.06。"
   && full.cls("xt-sec").length === 2 && full.text.includes("晚幾根成交") && full.text.includes("成本高一點") && full.cls("xt-stale").length === 0 && full.box.kids[0].dataset.xtMineRun === "false",
   full.cls("rob-verdict").map((n) => n.textContent));
-ok("② meta 只交標的／週期／期間(全頁叫交易成本,費率由成本段標題列講)", JSON.stringify(Object.keys(metaSeen[0])) === '["symbol","interval","start","end"]' && full.text.includes("現行每邊 0.005%・年換手 511 倍"));
+ok("② meta 只交標的／週期／期間(全頁叫交易成本,費率由成本段標題列講)", JSON.stringify(Object.keys(metaSeen[0])) === '["symbol","interval","start","end"]' && full.text.includes("現行每邊 0.005% · 年換手 511 倍"));
 ok("② 晚幾根的圖:橫軸 現行 +1…+10、Sharpe 不帶單位、虛線在現行;1 根＝1 小時", (() => { const s = full.cls("levels")[0].spec; return s.labels.join() === "現行,+1,+2,+3,+5,+10" && s.unit === "" && s.base === 1.618 && s.cur === 0; })() && full.text.includes("1 根＝1 小時，晚 10 根＝10 小時"));
 ok("② 收盤成交差 ≥2%:講一句(吃掉 11%)", full.text.includes("訊號那根收盤就成交：Sharpe 1.80（現行 1.62）。開盤跳空吃掉 11%。"));
 const pick = full.box.querySelector('button[data-xt-sec="lag"][data-xt-key="ann"]');

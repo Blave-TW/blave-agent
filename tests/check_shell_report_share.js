@@ -53,7 +53,7 @@ if (!process.versions.electron) {
     ok("① 第三行不提推薦碼(zh / en 定稿)", STR.zh["shr.ack3"] === "我不是投顧／期顧從業人員，沒有因此收取報酬，也不用它招攬付費策略或收費服務"
       && STR.en["shr.ack3"] === "I am not affiliated with a securities or futures advisory enterprise; I received no compensation for publishing this and won't use it to solicit anyone to paid strategies, paid groups, or other paid services.");
     for (const n of [1, 2, 3]) sameAsWeb("① shr.ack" + n + " 逐字同 web workspace_share_ack_" + n, STR, "shr.ack" + n, "workspace_share_ack_" + n);
-    ok("① 確認框三行 + 標題照 W1 定稿(zh / en)", STR.zh["shr.ack2"] === "內容由我的 Blave Agent 產出，公開是我的決定，後果由我負責；Blave 未審核" && STR.en["shr.ack2"] === "This content was produced by my Blave Agent; publishing it is my decision and my responsibility, and Blave has not reviewed it."
+    ok("① 確認框三行 + 標題照 W1 定稿(zh / en)", STR.zh["shr.ack2"] === "內容由我的 Blave Agent 產出，公開是我的決定，後果由我負責，Blave 未審核" && STR.en["shr.ack2"] === "This content was produced by my Blave Agent; publishing it is my decision and my responsibility, and Blave has not reviewed it."
       && STR.zh["shr.dlgTitle"] === "公開這份報告" && STR.en["shr.dlgTitle"] === "Publish this report" && STR.zh["shr.revokeTitle"] === "取消分享這份報告？" && STR.en["shr.revokeTitle"] === "Stop sharing this report?");
 
     ok("① 績效報告提醒句照定稿(zh / en)", STR.zh["shr.perfNote"] === "這份報告含你的帳戶資產與部位，公開後拿到連結的人都看得到。" && STR.en["shr.perfNote"] === "This report shows your account balance and positions. Once it's public, anyone with the link can see them.");
@@ -65,7 +65,7 @@ if (!process.versions.electron) {
 
     ok("① 拒絕訊息照 A4 定稿(zh / en):先講「沒有公開」、再講怎麼辦;太大那句的數字是佔位,不寫死", STR.zh["shr.badContent"] === "這份報告有一處格式自動修不好，沒有公開。請在聊天裡請 agent「重新整理這份報告」，整理好再公開。"
       && STR.en["shr.badContent"] === "One part of this report couldn't be fixed automatically, so it wasn't published. In chat, ask the agent to \"tidy up this report\", then publish again."
-      && STR.zh["shr.tooLarge"] === "這份報告太大，沒有公開。圖片最多 {n} 張、合計 {mb} MB 以內；請 agent 減少圖片或縮短內容，再公開。"
+      && STR.zh["shr.tooLarge"] === "這份報告太大，沒有公開。圖片最多 {n} 張、合計 {mb} MB 以內。請 agent 減少圖片或縮短內容，再公開。"
       && STR.en["shr.tooLarge"] === "This report is too large, so it wasn't published. It can hold up to {n} images, {mb} MB in total. Ask the agent to use fewer images or shorten it, then publish again.");
     sameAsWeb("① shr.badContent 逐字同 web workspace_share_bad_content", STR, "shr.badContent", "workspace_share_bad_content");
     sameAsWeb("① shr.tooLarge 逐字同 web workspace_share_too_large", STR, "shr.tooLarge", "workspace_share_too_large");

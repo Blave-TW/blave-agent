@@ -121,12 +121,12 @@ function box(extra) {
   it.facts.grid_rows = tag.rows; it.facts.grid_cols = tag.cols; it.facts.tag = tag.tag;
   const f = S.resFmt(), line = (x, st) => S.resFacts(x, st || "ok", f).map((g) => g.map((s) => s.text).join("")).join(" | ");
   const by = (r) => items.find((x) => x.ref === r);
-  ok("② 新策略:「新策略 | 年化報酬 +15.12% | Sharpe 1.42 | 最大回撤 −12.40%」——固定三個數字、固定順序(canon 聊天結果卡);年化 / 回撤 = 回測頁 fmtSignedPct,Sharpe = fmtFixed(不帶 %、不帶正號);新策略不帶版號、不再寫總報酬",
-    line(by("btc4h")) === "新策略 | 年化報酬 +15.12% | Sharpe 1.42 | 最大回撤 −12.40%" && !("total_return" in by("btc4h").facts), line(by("btc4h")));
-  ok("② 回測:這一輪定了新版才帶 v8(mono);Sharpe 負值 U+2212、兩位小數", line(by("eth_fr")) === "回測 v8 | 年化報酬 +40.50% | Sharpe −0.34 | 最大回撤 −27.81%" && S.resFacts(by("eth_fr"), "ok", f)[0].some((s) => s.cls === "mono" && s.text === "v8"), line(by("eth_fr")));
+  ok("② 新策略:「新策略， | 年化報酬 +15.12%、 | Sharpe 1.42、 | 最大回撤 −12.40%」——固定三個數字、固定順序(canon 聊天結果卡);年化 / 回撤 = 回測頁 fmtSignedPct,Sharpe = fmtFixed(不帶 %、不帶正號);新策略不帶版號、不再寫總報酬",
+    line(by("btc4h")) === "新策略， | 年化報酬 +15.12%、 | Sharpe 1.42、 | 最大回撤 −12.40%" && !("total_return" in by("btc4h").facts), line(by("btc4h")));
+  ok("② 回測:這一輪定了新版才帶 v8(mono);Sharpe 負值 U+2212、兩位小數;子句接逗號、數字之間接頓號(canon 介面標點 2)", line(by("eth_fr")) === "回測 v8， | 年化報酬 +40.50%、 | Sharpe −0.34、 | 最大回撤 −27.81%" && S.resFacts(by("eth_fr"), "ok", f)[0].some((s) => s.cls === "mono" && s.text === "v8"), line(by("eth_fr")));
   const legacy = { ...by("eth_fr"), facts: { has_bt: true, total_return: 38.2, max_dd: -12.4 } }, half = { ...by("btc4h"), facts: { has_bt: true, ann_return: null, sharpe: 1.42, max_dd: -12.4 } };
   ok("② 舊存檔(0.1.18 以前只有 total_return)照畫總報酬;年化算不出來(null)但有 Sharpe → 只畫 Sharpe + 最大回撤;數字全是 v(ink-2),不上紅綠",
-    line(legacy) === "回測更新 | 總報酬 +38.20% | 最大回撤 −12.40%" && line(half) === "新策略 | Sharpe 1.42 | 最大回撤 −12.40%"
+    line(legacy) === "回測更新， | 總報酬 +38.20%、 | 最大回撤 −12.40%" && line(half) === "新策略， | Sharpe 1.42、 | 最大回撤 −12.40%"
     && S.resFacts(by("eth_fr"), "ok", f).flat().filter((s) => /^[+−]?\d/.test(s.text)).every((s) => s.cls === "v"), line(legacy) + " / " + line(half));
   // 主行程的年化跟回測頁同一條公式(兩份 code、一條 parity):Type C 自帶、Type A 由 start/end 推、沒日期退回 daily_dates、底數 ≤ 0 回 null
   { const sb = { isFinite, Math, Date, Array }; vm.runInNewContext("const num = (v) => (typeof v === \"number\" && isFinite(v) ? v : null);\n" + cutFn(mainSrc, "stratAnnReturn") + "\nthis.A = stratAnnReturn;", sb);
@@ -135,29 +135,32 @@ function box(extra) {
     const mine = cases.map(sb.A), ref = cases.map(S.window.BlaveReport._bt.annualReturn);
     ok("② 主行程 stratAnnReturn = 回測頁 annualReturn(五組 stats 同值;自帶 23.4、一年 38.2% → 38.1 左右、180 天 20% → 40+、−100% → null、沒總報酬 → null)",
       JSON.stringify(mine) === JSON.stringify(ref) && mine[0] === 23.4 && Math.abs(mine[1] - 38.1) < 0.2 && mine[2] > 40 && mine[3] === null && mine[4] === null && /annReturn: stratAnnReturn\(st\)/.test(mainSrc), JSON.stringify([mine, ref])); }
-  ok("② 只改程式碼 / Type B 新策略 / 參數掃描:「程式碼修改 | 還沒重跑回測」「新策略 | 沒有回測」「參數掃描 | 3×4 | 目前參數：…」(落點跟掃描分頁同一支判斷)",
-    line(by("sol_bo")) === "程式碼修改 | 還沒重跑回測" && line(by("dca")) === "新策略 | 沒有回測" && line(it) === "參數掃描 | 3\u00d74 | " + STR.zh[tag.tag] && /^rob\.tag\./.test(tag.tag), [line(by("sol_bo")), line(by("dca")), line(it)].join(" / "));
+  ok("② 只改程式碼 / Type B 新策略 / 參數掃描:「改了程式碼，還沒重跑回測」「新策略，沒有回測」「參數掃描 3×4，目前參數在…」(落點跟掃描分頁同一支判斷,句中字不帶冒號)",
+    line(by("sol_bo")) === "改了程式碼， | 還沒重跑回測" && line(by("dca")) === "新策略， | 沒有回測" && line(it) === "參數掃描 3\u00d74， | " + STR.zh[tag.tag.replace(/^rob\.tag\.(\w+?)1?$/, "res.pos.$1")] && /^rob\.tag\./.test(tag.tag) && !/：/.test(line(it)), [line(by("sol_bo")), line(by("dca")), line(it)].join(" / "));
   ok("② 鈕:回測 / 新策略 → 看回測、掃描 → 看掃描(rob 分頁)、程式碼 / 沒回測 → 看程式碼", ["btc4h", "eth_fr", "btc_ma", "sol_bo", "dca"].map((r) => S.resBtnKey(by(r)) + ">" + S.resTab(by(r))).join() === "res.open.bt>bt,res.open.bt>bt,res.open.scan>rob,res.open.code>code,res.open.code>code");
   const rep = S.resReportItem({ id: "etf", title: "ETF 資金流週報", type: "research", created_at: 1790000000, stored_at: 1790000100 }, "cloud", "etf@1790000100");
-  ok("② 雲端報告:雲端記號 + MM/DD HH:mm(mono)· 類型;類型認不得只放時間、時間也壞只放「報告」", S.resFacts(rep, "ok", f)[0][0].cls === "tag" && /^雲端\d\d\/\d\d \d\d:\d\d · 研究$/.test(line(rep))
-    && line({ ...rep, env: "local", facts: { created_at: null, type: "x" } }) === "報告", line(rep));
+  ok("② 雲端報告:雲端記號 + 一句話「研究報告，MM/DD HH:mm 產出」(時間 mono);類型認不得寫「報告，… 產出」、時間壞了只放類型、兩個都壞只放「報告」", S.resFacts(rep, "ok", f)[0][0].cls === "tag" && /^雲端研究報告，\d\d\/\d\d \d\d:\d\d 產出$/.test(line(rep))
+    && S.resFacts(rep, "ok", f)[0].some((s) => s.cls === "mono" && /^\d\d\/\d\d \d\d:\d\d$/.test(s.text)) && /^報告，\d\d\/\d\d \d\d:\d\d 產出$/.test(line({ ...rep, env: "local", facts: { created_at: 1790000000, type: "x" } }))
+    && line({ ...rep, env: "local", facts: { created_at: null, type: "research" } }) === "研究報告" && line({ ...rep, env: "local", facts: { created_at: null, type: "x" } }) === "報告", line(rep));
   // e2e #22:卡第二行的類型字 = 閱讀頁類型標籤的那個字(meta.report_type);主行程的信封把它交出來
   const lrep = (o) => S.resReportItem({ id: "symbol-btc", title: "BTC 收盤高於 60 日均線", type: "morning", created_at: 1790000000, mtime: 5, ...o }, "local", "symbol-btc@5");
-  ok("② 報告卡的類型字跟閱讀頁同一個來源:有 label 用 label(「單標的晨報」,不是清單的「晨報」);沒有 label / 標題已含那個字 / label 只是 type 代號 → 退回類型詞",
-    /· 單標的晨報$/.test(line(lrep({ label: "單標的晨報" }))) && /· 晨報$/.test(line(lrep({}))) && /· 晨報$/.test(line(lrep({ label: "BTC 收盤" }))) && /· 晨報$/.test(line(lrep({ label: "morning" }))) && /· 晨報$/.test(line(lrep({ label: 7 }))),
-    [line(lrep({ label: "單標的晨報" })), line(lrep({})), line(lrep({ label: "morning" }))].join(" / "));
+  ok("② 報告卡的類型字一律用卡專用三詞(res.type.*),不用 agent 自寫的 label(設計師複查 §1):label「單標的晨報」「一次性」→ 仍寫「晨報」;research／performance → 研究報告／績效報告;認不得 → 報告",
+    ["單標的晨報", "一次性", undefined].every((lb) => /^晨報，\d\d\/\d\d \d\d:\d\d 產出$/.test(line(lrep({ label: lb })))) && /^研究報告，/.test(line(lrep({ type: "research", label: "x" })))
+    && /^績效報告，/.test(line(lrep({ type: "performance" }))) && /^報告，/.test(line(lrep({ type: "weird", label: "一次性" }))),
+    [line(lrep({ label: "單標的晨報" })), line(lrep({ type: "research" })), line(lrep({ type: "weird", label: "一次性" }))].join(" / "));
   { const sb = {}; vm.runInNewContext("const RPT_TITLE_MAX = 200, RPT_TYPE_MAX = 32, RPT_LABEL_MAX = 40, RPT_TS_MIN = 946684800, RPT_TS_MAX = 4102444800;\n" + cutFn(mainSrc, "rptEnvelope") + "\nthis.E = rptEnvelope;", sb);
     const e = (blocks) => sb.E("a", { title: "t", type: "morning", created_at: 1790000000, blocks }, 5000);
     ok("② 主行程的信封帶 label = blocks[0](meta)的 report_type:控制字元收掉、截 40;沒有 meta / 不是字串 / 空的 → null;存檔的形狀檢查收得下(字串 ≤ 64)",
       e([{ type: "meta", report_type: " 單標的\n晨報 " }]).label === "單標的 晨報" && e([{ type: "meta", report_type: "x".repeat(50) }]).label.length === 40 && e([{ type: "text", report_type: "x" }]).label === null
       && e([{ type: "meta", report_type: 5 }]).label === null && e([{ type: "meta", report_type: "  " }]).label === null && e(undefined).label === null, JSON.stringify(e([{ type: "meta", report_type: " 單標的\n晨報 " }]))); }
   ok("② 標題行高 1.45(spec §2、web .res-t 同值)", /\.res \.t \{\s*font-size: 13px; font-weight: 500; line-height: 1\.45;/.test(read("results.css")));
+  ok("② 第二行組間不留空(分隔字自帶字距),en 的逗號後由 :lang(en) 間距補空格", /\.res \.m \{[^}]*column-gap: 0;/.test(read("results.css")) && /\.res \.m:lang\(en\) \{ column-gap: var\(--space-4\); \}/.test(read("results.css")) && STR.en["res.sep"] === "," && STR.zh["res.sep"] === "，" && STR.zh["res.sepList"] === "、");
   const cs = S.resCloudItems(new Map([["live1", 1]]), [{ name: "tx_night", displayName: "台指期夜盤突破", mtime: Math.floor(Date.now() / 1000) }, { name: "live1", displayName: "跑著的", mtime: Math.floor(Date.now() / 1000) }], Date.now() - 1000, new Set(["live1"]), new Set());
   ok("② 雲端策略:新出現的出「雲端 新策略」(沒數字);組合裡跑著的那支 updated_at 一直變 → 不出「策略更新」", cs.length === 1 && cs[0].ref === "tx_night" && line(cs[0]) === "雲端新策略", JSON.stringify(cs));
   // e2e 0.1.8 H:Type B 送上雲端(這一輪帶 noBt)→ 卡是「雲端 新策略」+「沒有回測」;只有新出現而且清單說沒有回測才寫,其餘雲端卡照舊不講回測
   { const now = Math.floor(Date.now() / 1000), L = (hb) => [{ name: "watch", displayName: "資金費率監控", mtime: now, hasBacktest: hb }];
     const nb = S.resCloudItems(new Map(), L(false), Date.now() - 1000, new Set(), new Set(), true);
-    ok("② Type B 搬上雲端:卡寫「雲端 新策略」與「沒有回測」", nb.length === 1 && nb[0].facts.no_bt === true && line(nb[0]) === "雲端新策略 | " + S.t("res.noBt"), JSON.stringify(nb) + line(nb[0] || {}));
+    ok("② Type B 搬上雲端:卡寫「雲端 新策略」與「沒有回測」", nb.length === 1 && nb[0].facts.no_bt === true && line(nb[0]) === "雲端新策略" + S.t("res.sep") + " | " + S.t("res.noBt"), JSON.stringify(nb) + line(nb[0] || {}));
     ok("② 沒帶 noBt(Type A/C 的搬運、一般回合)或清單說有回測 → 不寫「沒有回測」", [S.resCloudItems(new Map(), L(false), Date.now() - 1000, new Set(), new Set()), S.resCloudItems(new Map(), L(true), Date.now() - 1000, new Set(), new Set(), true)]
       .every((x) => x.length === 1 && x[0].facts.no_bt === undefined && line(x[0]) === "雲端新策略")); }
   // J:組合策略(Type C)的回測沒有逐筆紀錄(只有成交次數):「進出場紀錄」分頁講這件事,不講成「沒有進出場」
@@ -232,7 +235,7 @@ function box(extra) {
     S.resRestore(hist[0].res);
     const cards = ai.querySelector(".res-group").children;
     ok("③ 重畫:掛在那一輪思考過程下的那則回覆裡(跳過後面的系統行)、舊卡不再播進場動畫;之後有更新的照畫當時的數字 + 「之後有更新」、鈕照常",
-      cards.length === 3 && cards.every((c) => c.classList.contains("is-still")) && texts(cards[0]).includes("年化報酬 +15.12%Sharpe 1.42最大回撤 −12.40%") && texts(cards[0]).endsWith("之後有更新看回測") && !!cards[0].querySelector("button"), cards.map(texts).join(" / "));
+      cards.length === 3 && cards.every((c) => c.classList.contains("is-still")) && texts(cards[0]).includes("新策略，年化報酬 +15.12%、Sharpe 1.42、最大回撤 −12.40%，之後有更新") && texts(cards[0]).endsWith("之後有更新看回測") && !!cards[0].querySelector("button"), cards.map(texts).join(" / "));
     const you2 = El("div"); you2.className = "msg you"; CHAT.appendChild(you2);
     S.resRestore(hist[1].res);
     const host2 = CHAT.lastElementChild, gone = host2.querySelector(".res");
@@ -268,7 +271,7 @@ function box(extra) {
   const g = host.querySelector(".res-group"), cards = g.children.filter((c) => c.classList.contains("res"));
   const btn = cards[0].querySelector("button");
   ok("④ 切 en:結果卡當場換成英文(回測更新 → Backtest updated、總報酬 → Total Return、看回測 → View backtest),可及名稱用半形冒號",
-    texts(cards[0].querySelector(".m")).startsWith(STR.en["res.kind.btUpd"] + STR.en["bt.totalReturn"] + " +12.50%") && btn.textContent === STR.en["res.open.bt"] && btn.getAttribute("aria-label") === STR.en["res.open.bt"] + ": BTC SMA", texts(cards[0]) + " | " + (btn && btn.getAttribute("aria-label")));
+    texts(cards[0].querySelector(".m")).startsWith(STR.en["res.kind.btUpd"] + STR.en["res.sep"] + STR.en["bt.totalReturn"] + " +12.50%" + STR.en["res.sepList"]) && btn.textContent === STR.en["res.open.bt"] && btn.getAttribute("aria-label") === STR.en["res.open.bt"] + ": BTC SMA", texts(cards[0]) + " | " + (btn && btn.getAttribute("aria-label")));
   ok("④ 狀態跟著留:已刪除那張仍是無鈕的已刪除態(英文)、之後有更新那張帶 Updated since、新策略那張是 New strategy",
     cards[1].classList.contains("is-gone") && !cards[1].querySelector("button") && texts(cards[1]).includes(STR.en["res.gone.strat"]) && texts(cards[3]).includes(STR.en["res.later"]) && texts(cards[2]).includes(STR.en["res.kind.new"]), cards.map(texts).join(" / "));
   ok("④ 重畫不重播進場動畫、展開過的保持展開、張數與順序不變、卡上沒有剩下的中文",
