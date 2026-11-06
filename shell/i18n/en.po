@@ -1793,6 +1793,10 @@ msgstr "Real orders resume immediately, moving your strategies’ positions to t
 msgid "tr.unmanagedTip"
 msgstr "Blave didn’t open this position; reconciling never touches it."
 
+# 「帳戶實際 N」的 tooltip(trade.js detRow)
+msgid "tr.acctActualTip"
+msgstr "The strategy records more than the account holds, maybe from a manual close. To realign, ask the agent."
+
 msgid "tr.startCatchUp"
 msgstr "Start and catch up positions"
 
@@ -9005,6 +9009,10 @@ msgstr "Orders follow {n} strategy in Portfolio."
 msgid "po.manualPart"
 msgstr "Plus manual {n}"
 
+# 帳本模式:帳戶比帳本少(差額跟帳本反號)時取代「另有手動」(trade.js detRow)
+msgid "po.acctActual"
+msgstr "In account: {n}"
+
 msgid "po.detInclManual"
 msgstr " (incl. manual)"
 
@@ -9786,6 +9794,10 @@ msgstr "After Bitget switched to a classic account, {n} positions don’t match 
 # Bitget 40731 讓對帳器 HALT(reason 帶 [bitget_copy_trading_key];trade.js trHaltReasonText)
 msgid "tr.haltBitgetCopyKey"
 msgstr "Keys of a Bitget copy-trading or elite-trader account can't trade. Create a trading key from a regular account in API Management: Read and Trade, no Withdraw."
+
+# 讀帳是空的、策略還記著部位而自動暫停(reason 開頭 positions read back empty;trade.js trHaltReasonText)
+msgid "tr.haltEmptyRead"
+msgstr "The account is flat but the strategy isn't, so nothing goes out. Same account, closed by you? Press Start trading again, or ask the agent."
 
 # 對不上的倉位清單(trade.js trPaintMismatch):欄名與出口句
 msgid "tr.mm.colSym"

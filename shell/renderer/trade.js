@@ -285,6 +285,9 @@ function trHaltReasonText(r, done) {
   // 照 HALT 的實際原因講(Mac e2e 10-14:解綁造成的暫停被講成「Blave 重開過」)。主機重開停住(machine)那一種最根本,照舊優先;
   // 解綁那一種再分下單程式在不在跑:沒在跑就什麼單都不下,在跑照 A 的規則(不開新倉、平倉照常)
   // 「平倉與停損停利照常執行」只有對帳器真的活著才成立(從沒啟動過、自己掛了、解綁時被停掉都不成立;稽核 r4 P1-2)
+  // 讀帳是空的、策略還記著部位(manager/reconciler.py account_guard_decide):通用句的「處理好後」沒有對象,講是什麼、怎麼放行。
+  // 比對機器的英文原因(還沒有 tag);Z 時啟動鈕停用,不叫人按它,退回通用的 Z 句
+  if (H && rk !== "machine" && !z && /^positions read back empty/.test(String((r.halt && r.halt.reason) || ""))) return t("tr.haltEmptyRead");
   if (H && rk !== "machine" && /^exchange unbound/.test(String((r.halt && r.halt.reason) || ""))) {
     const sup = r.daemon && r.daemon.reconciler, alive = !!(r.reconciler && r.reconciler.alive) && !(sup && sup.running === false);
     return t(alive ? (trHaltFreeze(r) ? "tr.haltUnboundFreeze" : "tr.haltUnbound") : "tr.haltUnboundOff");
@@ -2313,7 +2316,12 @@ function trPendingCheck() {
   const pr = (TR.st && TR.st.report) || {}, relDone = p.want === "released" && !!TR.st && !!TR.st.report && !(pr.halt && pr.halt.halted) && !trRestartStopped(pr);
   // 帳戶確認:報告裡不再有 book_hold 就算答完(兩個答案都拿掉它;HALT 照舊,所以不能等狀態變)
   const acctDone = p.want === "acct" && !!TR.st && !!TR.st.report && !trBookHold(pr);
-  if (state === p.want || relDone || acctDone) { TR.pending = null; trClearRunIds(TR.reqIds); trAlert(""); }
+  /* 啟動之後機器隨即自動暫停(守門擋下,如接回後讀帳是空的):指令有送到、也執行了,當場收掉過場、不出「沒有送到」,原因交給頁首。
+     暫停時間是機器時鐘;雲端換成伺服器時鐘再比(同 repAfterAck,不加那 20 秒——方向相反,加了就收不到一秒後的暫停) */
+  const cs0 = (TR.st && TR.st.cloud) || {}, skew = cloud && cs0.server_time > 0 && cs0.fetched_at > 0 ? cs0.server_time * 1000 - cs0.fetched_at : 0;
+  const haltAt = pr.halt && pr.halt.halted && !trHaltByUser(pr.halt) ? trMs(pr.halt.at) : null;
+  const autoHalted = p.want === "running" && typeof p.at === "number" && haltAt != null && haltAt > p.at + skew;
+  if (state === p.want || relDone || acctDone || autoHalted) { TR.pending = null; trClearRunIds(TR.reqIds); trAlert(""); }
   /* 等到逾時還沒對上。本機:ack 代表指令檔已經落地,沒收斂就是真的失敗,照原本那兩句。
      雲端:ack 只代表機器收下了,沒收斂多半是那份回報還沒送出來——**不可以因為沒收斂就說「沒送到」**
      (規格 §1.3);說了就是叫一個暫停其實已經生效的人去交易所撤 key。一律走「結果不明」。
@@ -2360,7 +2368,7 @@ async function trSend(S, cmd, args, intent) {
 async function trRun(want, steps, cmd) {
   const S = TR;
   if (trBtnLocked(S.pending, want === "halted")) return;   // 暫停照送(新的意圖蓋掉舊的過場);啟動在過場中不重複送
-  S.pending = { want, cmd: cmd || null, until: Date.now() + (S.env === "cloud" ? TR_CONFIRM_CLOUD_MS : TR_CONFIRM_MS) };
+  S.pending = { want, cmd: cmd || null, at: Date.now(), until: Date.now() + (S.env === "cloud" ? TR_CONFIRM_CLOUD_MS : TR_CONFIRM_MS) };
   const mine = S.pending;   // 跨 await 抓住自己那一顆意圖(同 N8 的規矩,層級從「袋」下到「意圖」)
   trAlert("", null, S); trPaint();
   let res = null;
@@ -3726,10 +3734,12 @@ function trStratHeld(n) {
 /* 帳本模式下同標的的手動部位(同網頁 pfManualPart 00825f03)。回帶正負號的量;0 = 沒有;null = 判不出來(不畫那一行、不註「含手動」、那一列照常進合計)。
    帳本的 size 是**成本**、讀帳的 size 是**市值**(數量 × 現價),不能直接相減:金額列比**數量**——帳本 ledger[sym].qty(方向看 side)對讀帳 size ÷ mark_price,
    差超過較大那個的 0.5% 才算,顯示 = 差的數量 × mark_price。帳本沒有這一檔、帳戶有:整份帳戶部位都是手動(市值,不必換算)。
-   判不出來:對帳快照比讀帳新或沒有讀帳結果、帳本列 legacy 或沒有 qty、讀帳沒有 mark_price、同標的兩列讀帳或兩列帳本、快照沒有 ledger、帳本有而讀帳沒有。口數列直接比口數 */
-function trManualPart(r, sym, lot, bk) {
+   判不出來:對帳快照比讀帳新或沒有讀帳結果、帳本列 legacy 或沒有 qty、讀帳沒有 mark_price、同標的兩列讀帳或兩列帳本、快照沒有 ledger、帳本有而讀帳沒有。口數列直接比口數。
+   out(可省):差額跟帳本反號、沒超過帳本(帳戶比帳本少,不是用戶加開)時寫 out.acct = 帳戶實際的量(口數列口數、金額列市值),畫成「帳戶實際 N」 */
+function trManualPart(r, sym, lot, bk, out) {
   if (r.self_ledger !== true) return 0;
-  if (lot) return (bk.actual[sym] || 0) - (bk.mine[sym] || 0);
+  const shrink = (d, book) => !!book && !!d && Math.sign(d) !== Math.sign(book) && Math.abs(d) <= Math.abs(book);
+  if (lot) { const a = bk.actual[sym] || 0, m = bk.mine[sym] || 0; if (out && shrink(a - m, m)) out.acct = a; return a - m; }
   // 對帳快照比讀帳新(下單那一輪剛寫完帳本,讀帳還是上一輪的)、或根本沒有讀帳結果:兩邊不是同一刻,比出來的差是成交、不是手動 → 判不出來(同網頁 30ea6d23)
   const acctMs = r.account && r.account.venues ? trMs(r.account.read_at) : null, lastMs = bk.last ? trMs(bk.last.ts) : null;
   if (acctMs == null || (lastMs != null && lastMs > acctMs)) return null;
@@ -3746,7 +3756,9 @@ function trManualPart(r, sym, lot, bk) {
   if (!bookQty) return trSigned(pos);
   const mark = pos.mark_price; if (typeof mark !== "number" || !(mark > 0)) return null;
   const acctQty = trSigned(pos) / mark, d = acctQty - bookQty;
-  return Math.abs(d) <= 0.005 * Math.max(Math.abs(acctQty), Math.abs(bookQty)) ? 0 : d * mark;
+  if (Math.abs(d) <= 0.005 * Math.max(Math.abs(acctQty), Math.abs(bookQty))) return 0;
+  if (out && shrink(d, bookQty)) out.acct = trSigned(pos);
+  return d * mark;
 }
 /* 機器的 lib 會在模擬交易裡下台股(台幣換美元記帳、休市不下單;runtime 回報 can_paper_twstock)。缺這欄 = 舊 runtime,照舊鎖 */
 function trPaperTwOk() { return ((typeof trReport === "function" && trReport()) || {}).can_paper_twstock === true; }
@@ -4553,23 +4565,25 @@ function poSigTable(r, stored, states, mode) {
     /* 只管自己的部位(帳本模式)時,同一標的帳戶比帳本多出來的是手動部位(Wei 10-14,同網頁 5d93c656):帳上、差額照舊只算策略那份,
        這一列底下多一行「另有手動 N」(tooltip:對帳不會動它)。交易所的均價／未實現／保證金是整個帳戶那一檔的,拆不出策略那份——
        細節行尾註明「含手動」,這一列也不進表底合計 */
-    if (trade && !firstRead && covered(sym)) { const as = mine[sym] || 0; detRow(sym, tb, lot, as, trManualPart(r, sym, lot, bk) || 0); }
+    if (trade && !firstRead && covered(sym)) { const as = mine[sym] || 0, sh = {}; detRow(sym, tb, lot, as, trManualPart(r, sym, lot, bk, sh) || 0, sh.acct); }
     if (!trade && contribs[sym] && contribs[sym].length >= 2) trNetRows(sym, contribs[sym], sc, tb, lot, trZoneUnit(z), cols);
   }
   // 帳上不是 0 的列底下:均價 · 未實現 · 保證金(槓桿),只寫讀得到的那幾樣;一樣都沒有就不加這一行。未實現與保證金取整到元、未實現帶正負號(同網頁 pfFmtSignedAmt)
   // 口數列(台指期)的未實現與保證金是台幣(TAIFEX 保證金、點值 × 指數),跟帳戶幣不同:數字後面寫幣別,表底也不跟別的幣別加在一起。
   // 帳上不為 0 的每一列都進表底合計的分母(沒有細節的、含手動的以空物件記):缺一列,那一項就不畫(缺一列的和是低估)
-  function detRow(sym, tb, lot, as, manual) {
+  /* acct = 帳戶比帳本少時帳戶實際的量(trManualPart 的 out):那一口不是手動開的、是帳本多記,改寫「帳戶實際 N」、不註「含手動」 */
+  function detRow(sym, tb, lot, as, manual, acct) {
     const hasManual = Math.abs(manual) > 1e-9, x = as ? det[sym] || {} : null, has = !!x && Object.keys(x).length > 0;
     const unit = trUnit(), rowCcy = lot || zoneOfSym[sym] === TR_TXF_CCY ? TR_TXF_CCY : unit, ccy = rowCcy !== unit ? rowCcy : null, money = (v) => (ccy ? v + " " + ccy : v);
     if (x) detRows.push(Object.assign({ ccy: rowCcy || "" }, hasManual ? {} : x));
     if (!has && !hasManual) return;
     const td = trEl("td", "note po-det"), seg = (node) => { if (segN++) td.append(" · "); td.append(node); }; let segN = 0;
-    if (hasManual) { const ml = trEl("span", "po-manual", t("po.manualPart", { n: lot ? trLotsFmt(manual, true) + " " + t(trLotsKey(Math.abs(manual), "tr.lotsUnit", "tr.lotUnit")) : trFmt(manual, true) })); ml.title = t("tr.unmanagedTip"); seg(ml); }
+    const fewer = hasManual && typeof acct === "number", qty = (v) => (lot ? trLotsFmt(v, true) + " " + t(trLotsKey(Math.abs(v), "tr.lotsUnit", "tr.lotUnit")) : trFmt(v, true));
+    if (hasManual) { const ml = trEl("span", "po-manual", fewer ? t("po.acctActual", { n: qty(acct) }) : t("po.manualPart", { n: qty(manual) })); ml.title = t(fewer ? "tr.acctActualTip" : "tr.unmanagedTip"); seg(ml); }
     if (has && "entry_price" in x) seg(t("po.dEntry", { v: trFmtPrice(x.entry_price) }));
     if (has && "unrealized_pnl" in x) seg(t("po.dUpnl", { v: money(trFmt(Math.round(x.unrealized_pnl) || 0, true)) }));   // 取整後是 0 寫「0」、不帶正負號
     if (has && "margin" in x) seg(t("po.dMargin", { v: money(trFmt(Math.round(x.margin))) }) + ("leverage" in x ? t("po.dLev", { x: x.leverage.toLocaleString("en-US", { maximumFractionDigits: 2 }) }) : ""));
-    if (hasManual && has) td.append(t("po.detInclManual"));
+    if (hasManual && has && !fewer) td.append(t("po.detInclManual"));
     const row = document.createElement("tr"); td.colSpan = cols; row.appendChild(td);
     const host = tb.lastChild; if (host && host.classList) host.classList.add("has-note");
     tb.appendChild(row); rowOf[sym] = row;   // 拒單接在細節行底下(列 → 細節 → 拒單,同網頁)

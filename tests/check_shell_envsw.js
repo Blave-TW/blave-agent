@@ -261,6 +261,25 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
       timedOut(ackSt(60000, rep({ reconciler: { alive: false }, halt: { halted: true, source: "web" } })), { acked: true, ackedAt: ACK }) === "tr.cloud.cmdUnknown");
     ok("…收過回條、但雲端狀態讀不到新的(alive:false):不斷言沒在跑,照舊「結果不明」",
       timedOut(ackSt(60000, deadRep, false), { acked: true, ackedAt: ACK }) === "tr.cloud.cmdUnknown");
+    /* 啟動之後機器隨即自動暫停(接回後讀帳是空的,designer rebind-autohalt-ux 3.1):當場收掉過場、不出「沒有送到」,原因交給頁首。
+       按下之前就掛著的暫停、用戶自己按的暫停都不算。雲端的暫停時間是機器時鐘,換成伺服器時鐘比(這裡伺服器快一小時) */
+    const PRESS = NOW - 3000, iso = (ms) => new Date(ms).toISOString();
+    const startPend = (env, report, extra) => { TR = { env, st: env === "cloud" ? cloudSt(okc("running", { server_time: (NOW + SKEW) / 1000, fetched_at: NOW }), report) : { alive: true, report },
+      pending: { want: "running", at: PRESS, until: NOW + 1e6, ...extra }, reqIds: { resume: "R3" }, alertText: "", alertWant: null, alertSrc: null };
+      TR_BAGS[env] = TR; trPendingCheck(); return TR; };
+    const autoH = (atMs, source = "reconciler") => rep({ halt: { halted: true, source, at: iso(atMs), reason: "positions read back empty while strategies still hold targets" } });
+    { const a = startPend("local", autoH(PRESS + 1000));
+      ok("本機:按啟動 1 秒後對帳器自動暫停 → 過場當場收掉、request_id 清掉、不出紅字", a.pending === null && Object.keys(a.reqIds).length === 0 && a.alertText === ""); }
+    { const a = startPend("local", autoH(PRESS - 60000));
+      ok("…暫停是按下之前就掛著的:不收(等收斂或逾時)", a.pending !== null && a.alertText === ""); }
+    { const a = startPend("local", autoH(PRESS + 1000, "web"));
+      ok("…是用戶自己按的暫停(source web):不收", a.pending !== null); }
+    { const a = startPend("local", autoH(PRESS + 1000), { at: undefined });
+      ok("…過場沒有按下時間(舊的掛法):不收", a.pending !== null); }
+    { const a = startPend("cloud", autoH(PRESS + SKEW + 1000));
+      ok("雲端:機器時鐘比這台快一小時、暫停在按下 1 秒後 → 收掉", a.pending === null && a.alertText === ""); }
+    { const a = startPend("cloud", autoH(PRESS + 1000));
+      ok("…同一個時間戳不換時鐘看是「按下之後」,換成伺服器時鐘其實早了一小時 → 不收", a.pending !== null); }
     delete globalThis.t; }
   // 在途的指令:切換器那一格出呼吸點(切走也看得到)。詞不可沿用 side.starting——那是主機在開機,不是指令在路上
   { const c1 = envCell("cloud", cloudSt(okc("running")), true), c2 = envCell("cloud", cloudSt(okc("running"), rep({ halt: { halted: true, source: "reconciler", at: "t1" } })), true);
@@ -274,7 +293,7 @@ const okc = (state, extra = {}) => ({ code: "OK", machine: { state }, strategies
   // 等的過程中主機停機:人要看到的是「它停了」,不是「我按的那個不知道怎樣」
   ok("trPendingCheck:雲端停機 → 直接清過場、不出「結果不明」;收斂了就把 request_id 一起清掉",
     /if \(cloud && envCloudKind\(TR\.st\) === "stopped"\) \{ TR\.pending = null; trClearRunIds\(TR\.reqIds\); trAlert\(""\); return; \}/.test(fn("trPendingCheck"))
-    && /if \(state === p\.want \|\| relDone \|\| acctDone\) \{ TR\.pending = null; trClearRunIds\(TR\.reqIds\); trAlert\(""\); \}/.test(fn("trPendingCheck")));
+    && /if \(state === p\.want \|\| relDone \|\| acctDone \|\| autoHalted\) \{ TR\.pending = null; trClearRunIds\(TR\.reqIds\); trAlert\(""\); \}/.test(fn("trPendingCheck")));
   /* 逾時還沒收斂:雲端的 ack 只代表機器收下了,沒收斂多半是那份回報還沒送出來。
      這一條**只准**出「結果不明」——說「沒送到」就是叫一個暫停其實已經生效的人去交易所撤 key(規格 §1.3)。 */
   { const timeout = fn("trPendingCheck").slice(fn("trPendingCheck").indexOf("else if (Date.now() > p.until)"));

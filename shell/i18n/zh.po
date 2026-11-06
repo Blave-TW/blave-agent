@@ -1809,6 +1809,10 @@ msgstr "會重新開始送出真實委託，把策略的部位調到目前的目
 msgid "tr.unmanagedTip"
 msgstr "這個部位不是 Blave 下單建立的，對帳不會動它。"
 
+# 「帳戶實際 N」的 tooltip(trade.js detRow)
+msgid "tr.acctActualTip"
+msgstr "策略記的比帳戶多，可能是你在交易所自己平過。要對齊，請 agent 處理。"
+
 msgid "tr.startCatchUp"
 msgstr "啟動並補齊部位"
 
@@ -9030,6 +9034,10 @@ msgstr "照策略組合 {n} 支策略下單。"
 msgid "po.manualPart"
 msgstr "另有手動 {n}"
 
+# 帳本模式:帳戶比帳本少(差額跟帳本反號)時取代「另有手動」(trade.js detRow)
+msgid "po.acctActual"
+msgstr "帳戶實際 {n}"
+
 msgid "po.detInclManual"
 msgstr "（含手動）"
 
@@ -9822,6 +9830,10 @@ msgstr "Bitget 換成經典帳戶後，{n} 個倉位跟換之前對不上。暫�
 # Bitget 40731 讓對帳器 HALT(reason 帶 [bitget_copy_trading_key];trade.js trHaltReasonText)
 msgid "tr.haltBitgetCopyKey"
 msgstr "Bitget 跟單或帶單帳戶的金鑰下不了單。用一般帳戶在「API 管理」建交易金鑰，勾讀取與交易、不勾提領。"
+
+# 讀帳是空的、策略還記著部位而自動暫停(reason 開頭 positions read back empty;trade.js trHaltReasonText)
+msgid "tr.haltEmptyRead"
+msgstr "帳戶沒有部位了，策略還記著，什麼單都不送。同一帳戶、自己平的就再按「啟動下單」，不然問 agent。"
 
 # 對不上的倉位清單(trade.js trPaintMismatch):欄名與出口句
 msgid "tr.mm.colSym"

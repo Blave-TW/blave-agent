@@ -1021,6 +1021,14 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && trHaltMismatch(mmR({ halt: { ...mmR({}).halt, mismatch: { ...mmR({}).halt.mismatch, legs: [] } } })) === null
         && trHaltMismatch(mmR({ halt: { ...mmR({}).halt, halted: false } })) === null
         && trHaltReasonText(mmR({ halt: { ...mmR({}).halt, mismatch: undefined } }), null) === "tr.haltReasonAll");
+      { // 接回後讀帳是空的而自動暫停(designer rebind-autohalt-ux 3.2):專屬句;別的自動暫停、Z、主機重開照舊。比對字串是機器端 manager/reconciler.py 的原文
+        const er = (o, h) => mmR({ halt: { halted: true, at: 1, source: "reconciler", reason: "positions read back empty while strategies still hold targets — confirm this is the right account", ...h }, ...o });
+        const recSrc = fs.readFileSync(path.join(__dirname, "..", "manager", "reconciler.py"), "utf8");
+        ok("讀帳是空的自動暫停:原因句換成 tr.haltEmptyRead;其他原因、沒有金額(Z)、主機重開都不講這句",
+          recSrc.includes('reason = ("positions read back empty while') && trHaltReasonText(er({}), null) === "tr.haltEmptyRead"
+          && trHaltReasonText(er({}, { reason: "credentials rejected" }), null) === "tr.haltReasonAll"
+          && trHaltReasonText(er({ config: { amounts: {} } }), null) !== "tr.haltEmptyRead"
+          && trHaltReasonText(er({ reconciler: { stopped: { reason: "machine_restart" } } }), null) === "tr.cloud.restartStopped"); }
       ok("對不上的清單畫在狀態句下面(#tr-mm,停暫停才出、過場中不出),欄位:標的／換之前／Bitget 現在,沒有那一腿寫「沒有倉位」",
         /trPaintMismatch\(state === "halted" && !TR\.pending \? trHaltMismatch\(hr\) : null\);/.test(src)
         && /\[\[t\("tr\.mm\.colSym"\), ""\], \[t\("tr\.mm\.colBefore"\), "n"\], \[t\("tr\.mm\.colNow"\), "n"\]\]/.test(fn2("trPaintMismatch"))

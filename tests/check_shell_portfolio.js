@@ -252,6 +252,17 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     const more = run({ size: 15450, mark_price: 103000 }, { size: 10000, qty: 0.1 });
     ok("數量多出 0.05(× 現價 = 5,150):細節行「另有手動 +5,150」(tooltip 對帳不會動它)、行尾「含手動」;帳上仍是策略那份;這一列不進表底合計",
       !!more.man && /po\.manualPart \{"n":"\+5,150"\}/.test(more.man.textContent) && more.man.title === "tr.unmanagedTip" && /po\.detInclManual$/.test(more.det) && more.row[2] === "+10,000" && !more.foot, J(more.row) + more.det);
+    /* 帳戶比帳本少(差額跟帳本反號、沒超過帳本;designer rebind-autohalt-ux 3.3):不是用戶加開,是帳本多記——改寫「帳戶實際 N」(帳戶市值)、
+       tooltip 換 tr.acctActualTip、不註「含手動」,照舊不進合計。帳戶翻到另一邊(超過帳本)照舊算手動 */
+    const fewer = run({ size: 5150, mark_price: 103000 }, { size: 10000, qty: 0.1 });
+    ok("帳本 0.1、帳戶 0.05:細節行「帳戶實際 +5,150」(帳戶市值)、tooltip tr.acctActualTip、不加「含手動」、不進合計",
+      !!fewer.man && /po\.acctActual \{"n":"\+5,150"\}/.test(fewer.man.textContent) && fewer.man.title === "tr.acctActualTip" && !/detInclManual/.test(fewer.det) && !fewer.foot, J(fewer.row) + fewer.det + (fewer.man && fewer.man.textContent));
+    const flip = run({ side: "short", size: 5150, mark_price: 103000 }, { size: 10000, qty: 0.1 });
+    ok("…帳戶翻成空 0.05(差額超過帳本):照舊「另有手動」+ tr.unmanagedTip", !!flip.man && /po\.manualPart/.test(flip.man.textContent) && flip.man.title === "tr.unmanagedTip", flip.man && flip.man.textContent);
+    { const lot = (actual, mine) => { ctx.__a = [{ self_ledger: true }, { actual: { TMF: actual }, mine: { TMF: mine }, last: null }, {}];
+        const d = vm.runInContext("trManualPart(__a[0], 'TMF', true, __a[1], __a[2])", ctx); return [d, ctx.__a[2].acct]; };
+      ok("口數列:帳本 −1、帳戶 0 → 差 +1、帳戶實際 0;帳本 −2、帳戶 −1 → 帳戶實際 −1;帳本 −1、帳戶 +1(翻邊)與帳本 1、帳戶 3(加開)不標",
+        J(lot(0, -1)) === J([1, 0]) && J(lot(-1, -2)) === J([1, -1]) && J(lot(1, -1)) === J([2, undefined]) && J(lot(3, 1)) === J([2, undefined])); }
     const noQty = run({ size: 15450, mark_price: 103000 }, { size: 10000, legacy: true }), noMark = run({ size: 15450 }, { size: 10000, qty: 0.1 });
     ok("拿不到數量(舊帳本)或現價:不畫手動那一行、不加「含手動」、照常進合計", !noQty.man && noQty.foot && !noMark.man && noMark.foot && !/detInclManual/.test(noQty.det + noMark.det));
     const tol = run({ size: 10340, mark_price: 103000 }, { size: 10000, qty: 0.1 });   // 數量差 0.39% < 0.5%
@@ -270,7 +281,7 @@ ok("必改 3:存金額框的策略列用 trCloseTag / trCtCloseTag(「平倉」�
     ctx.TR.st.report.self_ledger = false;
     const m2 = flat(vm.runInContext("poSigTable(TR.st.report, TR.st.report.config.amounts, TR.st.report.states, 'trade')", ctx));
     ok("不是帳本模式:沒有「另有手動」,表底照畫合計", !m2.some((n) => /po-manual/.test(n.className)) && m2.some((n) => /po-gate/.test(n.className)));
-    ok("口數列直接比口數(帳戶口數 − 帳本口數)", /if \(lot\) return \(bk\.actual\[sym\] \|\| 0\) - \(bk\.mine\[sym\] \|\| 0\);/.test(src)); }
+    ok("口數列直接比口數(帳戶口數 − 帳本口數)", /if \(lot\) \{ const a = bk\.actual\[sym\] \|\| 0, m = bk\.mine\[sym\] \|\| 0; if \(out && shrink\(a - m, m\)\) out\.acct = a; return a - m; \}/.test(src)); }
   // 「平倉」小標判不出來的三種(讀帳失敗、同標的多支策略、剛換合約舊合約還在)一律 null = 照舊標;投資組合也是
   ok("trStratHeld:任一家讀帳失敗 / 讀數過期(6 分鐘)/ 同標的還有別支 / 換合約中或帳上有別的台指期合約 / 投資組合 → null;確定帳上沒有才 false",
     /return !!e && e\.ok === false; \}\)\) return null;/.test(src) && /Date\.now\(\) - at > 6 \* 60 \* 1000\) return null;/.test(src) && /if \(Object\.keys\(stored\)\.some\(\(m\) => m !== n && keyOf\(m\) === key\)\) return null;/.test(src)
