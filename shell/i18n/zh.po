@@ -1452,13 +1452,13 @@ msgid "cn.blave.name"
 msgstr "Blave AI"
 
 msgid "acct.out.1"
-msgstr "登出之後，這台電腦不再取得 Blave 的資料。"
+msgstr "這台電腦不再取得 Blave 資料。"
 
 msgid "acct.out.2"
-msgstr "對話與策略都留在這台電腦，不受影響。"
+msgstr "對話與策略都留著。"
 
 msgid "acct.out.3"
-msgstr "你現在用的是 Blave AI，登出會回到選 AI 的畫面，要先選一個才能繼續用。"
+msgstr "Blave AI 停用，要重選一個 AI。"
 
 # 登出的確認框(登出鈕在「帳號與方案」最上面那一列;「登出會怎樣」按了才出)。acct.out.4 只在帳號有主機時出
 msgid "acct.cf.title"
@@ -1468,13 +1468,24 @@ msgid "acct.cf.ok"
 msgstr "登出"
 
 msgid "acct.out.4"
-msgstr "登出不會停用雲端主機，主機費照扣。"
+msgstr "雲端主機照跑，主機費照扣。"
 
 msgid "acct.out.5"
-msgstr "手機 App 也看不到這台電腦的部位了。"
+msgstr "手機 App 看不到這台的部位。"
 
 msgid "acct.out.6"
-msgstr "手機對話會關閉，伺服器上的對話會刪除。"
+msgstr "手機對話關閉，伺服器上的對話刪除。"
+
+# 登出確認框的兩組小標(spec signout-dialog A 案):會停止的在前,不變的在後;主機那句排「不變」第一、主墨色
+msgid "acct.out.gStop"
+msgstr "會停止"
+
+msgid "acct.out.gKeep"
+msgstr "不變"
+
+# 登出框「會停止」組第一句(回合中才出)。不共用 busy.cut.out:那句換 AI、移除金鑰框也在用
+msgid "acct.out.busy"
+msgstr "進行中的回覆會先停止。"
 
 msgid "acct.lbl"
 msgstr "Blave 帳號"
@@ -10285,13 +10296,17 @@ msgstr "下載 App"
 msgid "ph.stepPair"
 msgstr "在 App 配對"
 
+# 已登入時第 1 步(打勾),下面小字是 Blave 帳號 email
+msgid "ph.signed"
+msgstr "已登入"
+
 # 〔對話〕是 App 的 mchat_entry;App 改字要回頭同步這句
 msgid "ph.stepChat"
-msgstr "在 App 的 Agent 分頁按〔對話〕配對。"
+msgstr "在 App 的 Agent 分頁按〔對話〕配對"
 
 # 最後一步,「允許手機對話」已開就不列。〔打開〕要跟配對確認框的鈕 ph.ask.ok 逐字相同
 msgid "ph.stepAllow"
-msgstr "配對後，這台電腦會問要不要讓手機連進來，按〔打開〕。"
+msgstr "電腦跳出確認時，按〔打開〕"
 
 msgid "ph.syncing"
 msgstr "已同步 {n}／{m} 條對話"

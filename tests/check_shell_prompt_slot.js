@@ -27,7 +27,7 @@ const STR = vm.runInNewContext(read("renderer/strings.js") + "\nSTRINGS");
 const BODY = { id: "body" };
 const ctx = { $, Date, Promise, console, Set, Number, Array, String, setTimeout,
   document: { body: BODY, get activeElement() { return doc.active || BODY; }, get visibilityState() { return doc.visibilityState; }, querySelectorAll: (q) => (q === ".scrim" ? doc.scrims : []), documentElement: { classList: { contains: (c) => c === "ws-sc" && doc.rail } },
-    addEventListener: (ev, fn) => { doc.listeners[ev] = fn; }, createElement: (tag) => mkEl(null, tag), createTextNode: (x) => ({ textContent: x, parent: null }) },
+    addEventListener: (ev, fn) => { doc.listeners[ev] = fn; }, createElement: (tag) => mkEl(null, tag), createElementNS: (ns, tag) => Object.assign(mkEl(null, tag), { ns }), createTextNode: (x) => ({ textContent: x, parent: null }) },
   window: { innerHeight: 800, addEventListener: (ev, fn) => { doc.listeners["win_" + ev] = fn; }, blave: { slotState: async () => ctx.__state, slotPhoneSet: async (p) => { saved.push(p); return p; }, openExternal: (u) => opened.push(u) } },
   LANG: "zh", t: (k) => STR.zh[k] || k, planLoginBusy: false, oauthPending: false, planSignIn: async (b) => { signins.push(b); }, MV_APP_IOS: "IOS_URL", MV_APP_ANDROID: "AND_URL",
   trackFeature: (n) => feat.push(n), setInterval: () => 0, phStateLoad: async () => {},
@@ -174,8 +174,10 @@ t("主行程交給畫面的白名單帶 pairedEver(relayStateOut 漏了畫面永
     reset(ST()); ctx.PH = OUT; X.slotPaint(); feat.length = 0;
     dom["ph-pill"].listeners.click(); await flush();
     const s1 = steps();
-    t("steps §3 沒登入 pop:四步,1〔登入 Blave〕是 btn-fill 目前這步,2、3、4 灰字,4 是配對後按〔打開〕", s1.length === 4 && s1[0].classList.contains("now") && s1.slice(1).every((li) => !li.classList.contains("now"))
-      && btns().length === 1 && btns()[0].className === "btn-fill" && btns()[0].textContent === "登入 Blave" && stepText(s1[1]) === "下載 App" && stepText(s1[2]) === "在 App 配對" && stepText(s1[3]) === STR.zh["ph.stepAllow"] && s1.map((li) => li.children[0].textContent).join() === "1,2,3,4", s1.map(stepText));
+    const states = (ls) => ls.map((li) => ["done", "now", "next"].filter((c) => li.classList.contains(c)).join("+")).join();
+    const cur = (ls) => ls.map((li) => li.attrs["aria-current"] || "-").join();
+    t("v2 §2 沒登入 pop:四步 now,next,next,next(只有一步 now);1〔登入 Blave〕是描邊鈕 btn-out,4 是按〔打開〕", s1.length === 4 && states(s1) === "now,next,next,next" && cur(s1) === "step,-,-,-"
+      && btns().length === 1 && btns()[0].className === "btn-out" && btns()[0].textContent === "登入 Blave" && stepText(s1[1]) === "下載 App" && stepText(s1[2]) === "在 App 配對" && stepText(s1[3]) === STR.zh["ph.stepAllow"] && s1.map((li) => li.children[0].textContent).join() === "1,2,3,4", [states(s1), cur(s1), s1.map(stepText)]);
     const sb = btns()[0]; sb.listeners.click(); await flush();
     t("steps §4 按〔登入 Blave〕:走 planSignIn(同一顆鈕)、送 slot_ph_login", signins.length === 1 && signins[0] === sb && feat.includes("slot_ph_login"), { feat });
     feat.length = 0; ctx.planLoginBusy = true; ctx.oauthPending = true; sb.listeners.click(); await flush();
@@ -186,21 +188,40 @@ t("主行程交給畫面的白名單帶 pairedEver(relayStateOut 漏了畫面永
     sb.focus(); ctx.planLoginBusy = false; ctx.oauthPending = false;
     ctx.PH = { visible: true, signedIn: true, pairedEver: false }; X.slotPaint(); await flush();
     const s2 = steps(), b2 = btns();
-    t("steps §2 登入完成 pop 開著:原地換成三步(第 3 步配對後按〔打開〕灰字)、不收", dom["ph-pop"].hidden === false && dom["ph-slot"].hidden === false && s2.length === 3 && s2[0].classList.contains("now") && s2[1].classList.contains("now") && !s2[2].classList.contains("now")
-      && stepText(s2[2]) === STR.zh["ph.stepAllow"] && s2.map((li) => li.children[0].textContent).join() === "1,2,3", s2.map(stepText));
+    const disc = (li) => li.children[0], check = (li) => { const sv = disc(li).children[0]; return !!sv && sv.tag === "svg" && /svg/.test(sv.ns) && sv.attrs.class === "ic" && sv.children[0] && sv.children[0].attrs.d === "M20 6 9 17l-5-5"; };
+    t("v2 §2 登入完成 pop 開著:原地換成四步 done,now,next,next(0.1.45 的兩個 now 拿掉)、不收", dom["ph-pop"].hidden === false && dom["ph-slot"].hidden === false && s2.length === 4 && states(s2) === "done,now,next,next" && cur(s2) === "-,step,-,-"
+      && stepText(s2[3]) === STR.zh["ph.stepAllow"] && s2.slice(1).map((li) => disc(li).textContent).join() === "2,3,4", [states(s2), cur(s2), s2.map(stepText)]);
+    t("v2 §3 done 那步:盤裡是 Lucide check 的 svg(不是號碼)、字「已登入」;api 沒帶 email 就只寫已登入", check(s2[0]) && disc(s2[0]).textContent === "" && s2[0].children[1].className === "ph-t" && s2[0].children[1].text === "已登入" && !s2[0].children[1].children.some((k) => k.className === "ph-who") && !s2.slice(1).some(check));
     t("steps §2 登入完成:焦點落在 pop 第一個能按的(App Store)", doc.active === b2[0]);
     const img = dom["ph-pop"].all().find((k) => k.tag === "img");
-    t("steps §3 已登入 pop:1 下載 App + 白底 plate 的 QR 136(qr-app.svg、alt 空)+ App Store、Google Play 兩顆 btn-quiet", stepText(s2[0]).startsWith("下載 App") && img && img.src === "qr-app.svg" && img.width === 136 && img.height === 136 && img.alt === "" && img.parent.className === "ph-plate"
+    t("v2 §3 已登入 pop:2 下載 App + 白底 plate 的 QR 112(qr-app.svg、alt 空)+ App Store、Google Play 兩顆 btn-quiet", stepText(s2[1]).startsWith("下載 App") && img && img.src === "qr-app.svg" && img.width === 112 && img.height === 112 && img.alt === "" && img.parent.className === "ph-plate"
       && b2.length === 2 && b2.every((b) => b.className === "btn-quiet") && b2[0].textContent === "App Store" && b2[1].textContent === "Google Play");
-    t("steps §3 已登入 pop:2 在 App 的 Agent 分頁按〔對話〕配對。,〔對話〕連前一個字不斷行;3〔打開〕。也連前一個字", s2[1].children[1].text === "在 App 的 Agent 分頁按〔對話〕配對。" && s2[1].all().some((k) => k.className === "ph-nw" && k.textContent === "按〔對話〕") && s2[2].all().some((k) => k.className === "ph-nw" && k.textContent === "按〔打開〕。") && s2[1].children[1].classList.contains("ph-say"));
+    t("v2 §3 已登入 pop:3 在 App 的 Agent 分頁按〔對話〕配對(無句號),〔對話〕連前一個字不斷行;4〔打開〕也連前一個字", s2[2].children[1].text === "在 App 的 Agent 分頁按〔對話〕配對" && s2[2].all().some((k) => k.className === "ph-nw" && k.textContent === "按〔對話〕") && s2[3].all().some((k) => k.className === "ph-nw" && k.textContent === "按〔打開〕"));
+    // 稽核建議 1:en 只包鈕名(Chat、Turn On=ph.ask.ok),其餘字照常斷行
+    { ctx.LANG = "en"; ctx.t = (k) => STR.en[k] || k; X.slotPaint();
+      const ls = steps(), nw = (li) => li.all().filter((k) => k.className === "ph-nw").map((k) => k.textContent);
+      t("稽核 1:en〔Chat〕〔Turn On〕包 ph-nw、整句字不變", nw(ls[2]).join() === "Chat" && nw(ls[3]).join() === "Turn On" && ls[2].children[1].text === STR.en["ph.stepChat"] && ls[3].children[1].text === STR.en["ph.stepAllow"], [nw(ls[2]), nw(ls[3])]);
+      ctx.LANG = "zh"; ctx.t = (k) => STR.zh[k] || k; X.slotPaint(); }
+    // email:account_status 帶回來才出;換 email 要重建(key 帶 email)
+    // 稽核建議 2:email 晚到(account_status 回來)只原地補那一行,<ol> 與鈕都是同一顆、焦點留在原處(這裡放在 Google Play)
+    { const olBefore = dom["ph-pop"].children[0], gp = btns()[1]; gp.focus();
+      ctx.acct = { email: "a.very.long.name@blave.org" }; X.slotPaint();
+      const ls = steps(), d = ls[0].children[1], who = d.children.find((k) => k.className === "ph-who");
+      t("v2 §3 account_status 帶 email:done 那步下面小字 ph-who、title 放完整 email", states(ls) === "done,now,next,next" && !!who && who.textContent === "a.very.long.name@blave.org" && who.title === "a.very.long.name@blave.org" && d.text.startsWith("已登入"), d.children.map((k) => k.className));
+      t("稽核 2:email 晚到不重建 pop(同一個 <ol>、同一顆鈕)、焦點不搬(留在 Google Play)", dom["ph-pop"].children[0] === olBefore && btns()[1] === gp && doc.active === gp);
+      ctx.acct = { email: "b@blave.org" }; X.slotPaint(); t("稽核 2:email 換了也只換那一行", dom["ph-pop"].children[0] === olBefore && steps()[0].children[1].children.find((k) => k.className === "ph-who").textContent === "b@blave.org" && doc.active === gp); }
+    const noWho = () => !steps()[0].children[1].children.some((k) => k.className === "ph-who");
+    ctx.acct = { email: "  " }; X.slotPaint(); t("v2 §3 email 空白:不畫那一行(原地拿掉)", noWho());
+    ctx.acct = { email: 42 }; X.slotPaint(); t("v2 §3 email 不是字串:不畫那一行", noWho());
+    ctx.acct = null; X.slotPaint();
     feat.length = 0; b2[0].listeners.click(); b2[1].listeners.click();
     t("steps §4 商店連結沿用 app_link_ios／app_link_android,外開 MV_APP_*", feat.join() === "app_link_ios,app_link_android" && opened.join() === "IOS_URL,AND_URL", { feat, opened });
     t("steps §3 pop 沒有 role=dialog、不搶焦點(disclosure 寫法維持)", !/role/.test(src) && !/ph-pop[^\n]*role=/.test(html));
     ctx.PH = { visible: true, signedIn: true, pairedEver: false, on: true }; X.slotPaint();
-    t("steps 允許手機對話已開:已登入不列〔打開〕那步、剩兩步", steps().length === 2 && !steps().some((li) => stepText(li) === STR.zh["ph.stepAllow"]));
+    t("v2 允許手機對話已開:已登入不列〔打開〕那步、剩三步 done,now,next", steps().length === 3 && states(steps()) === "done,now,next" && !steps().some((li) => stepText(li) === STR.zh["ph.stepAllow"]));
     ctx.PH = { visible: true, signedIn: true, pairedEver: false }; X.slotPaint();
-    t("steps 開關關回去:那步又出來", steps().length === 3);
-    t("稽核 4:步驟號碼 aria-hidden(<ol> 已經念號碼,不念兩次)", steps().every((li) => li.children[0].className === "ph-n" && li.children[0].attrs["aria-hidden"] === "true"));
+    t("steps 開關關回去:那步又出來", steps().length === 4);
+    t("稽核 4:號碼盤 aria-hidden(<ol> 已經念號碼,不念兩次;打勾那顆也是)", steps().every((li) => li.children[0].className === "ph-n" && li.children[0].attrs["aria-hidden"] === "true"));
     // 稽核 2:焦點在 pop 裡、膠囊整個收掉(登入後發現配對過)→ 焦點到〔設定〕,不掉到 BODY
     doc.lastFocus = null; btns()[0].focus(); ctx.PH = { visible: true, signedIn: true, pairedEver: true }; X.slotPaint();
     t("稽核 2:焦點在 pop 裡、膠囊收掉 → 焦點到〔設定〕", dom["ph-slot"].hidden === true && doc.lastFocus === "ws-conn");
@@ -209,7 +230,7 @@ t("主行程交給畫面的白名單帶 pairedEver(relayStateOut 漏了畫面永
     ctx.PH = { visible: true, signedIn: true, pairedEver: false }; X.slotPaint(); dom["ph-pill"].listeners.click();
     // 換回沒登入(登出):pop 收著時換內容,不碰焦點
     doc.listeners.keydown({ key: "Escape", stopPropagation() {} }); doc.active = null; ctx.PH = OUT; X.slotPaint();
-    t("steps 登出後:pop 收著也換回四步、焦點不動", steps().length === 4 && doc.active === null);
+    t("steps 登出後:pop 收著也換回四步 now,next,next,next、焦點不動", steps().length === 4 && states(steps()) === "now,next,next,next" && doc.active === null);
     ctx.PH = { ...OUT, on: true }; X.slotPaint();
     t("steps 允許手機對話已開:沒登入也不列〔打開〕那步、剩三步", steps().length === 3 && steps().map((li) => li.children[0].textContent).join() === "1,2,3");
     ctx.PH = PHOK; }
@@ -236,20 +257,27 @@ t("主行程交給畫面的白名單帶 pairedEver(relayStateOut 漏了畫面永
     t("膠囊:高 32、內距左 12 右 14、圖示間距 8、半徑 pill、卡面底、shadow-sm、字 ink", /height: 32px/.test(pill) && /padding: 0 14px 0 var\(--space-12\)/.test(pill) && /gap: var\(--space-8\)/.test(pill) && /--radius-pill/.test(pill) && /--surface-card/.test(pill) && /--shadow-sm/.test(pill) && /color: var\(--ink\)/.test(pill));
     t("更新膠囊:wrap 拿掉左右內距;內距加框 1 = 左 12 右 14、間距 8", /^\.up-pill-wrap \{ margin: 0 0 var\(--space-8\); \}/m.test(css) && /padding: 0 13px 0 11px/.test(up) && /gap: var\(--space-8\)/.test(up));
     t("× 視覺 24、熱區 44;滑過或焦點才出,觸控常駐", /width: 24px; height: 24px/.test(rule(".ph-x")) && /inset: -10px/.test(rule(".ph-x::before")) && /opacity: 0/.test(rule(".ph-x")) && /\.ph-slot:hover \.ph-x, \.ph-x:focus-visible \{ opacity: 1; \}/.test(css) && /@media \(hover: none\) \{ \.ph-x \{ opacity: 1; \} \}/.test(css));
-    t("popover 寬 212、內距 16、卡面底、shadow-md;QR 136 白底 plate", /width: 212px/.test(rule(".ph-pop")) && /padding: var\(--space-16\)/.test(rule(".ph-pop")) && /--surface-card/.test(rule(".ph-pop")) && /--shadow-md/.test(rule(".ph-pop")) && /--color-pureWhite/.test(rule(".ph-plate")) && /width: 136px; height: 136px/.test(rule(".ph-plate img")));
+    t("v2 popover 寬 240、內距 16、卡面底、shadow-md;QR 112 白底 plate", /width: 240px/.test(rule(".ph-pop")) && /padding: var\(--space-16\)/.test(rule(".ph-pop")) && /--surface-card/.test(rule(".ph-pop")) && /--shadow-md/.test(rule(".ph-pop")) && /--color-pureWhite/.test(rule(".ph-plate")) && /width: 112px; height: 112px/.test(rule(".ph-plate img")));
+    t("v2 pop 開著膠囊用按下的底色(同 hover);沒有縮放", css.includes('.ph-pill[aria-expanded="true"] { background: var(--surface-control-on); }') && !/\.ph-pill[^{]*\{[^}]*scale/.test(css));
     t("手機膠囊與 popover 不用橘(canon 橘只給更新膠囊)", !/primary/.test(pill + rule(".ph-pop") + rule(".ph-x")));
     t("提示格在 .ws-foot 裡、〔設定〕正上方(細軌時跟著藏);更新在前,手機在後", (() => { const f = html.indexOf('class="ws-foot"'), u = html.indexOf('id="up-pill-wrap"'), p = html.indexOf('id="ph-slot"'), s = html.indexOf('id="ws-conn"'); return f >= 0 && f < u && u < p && p < s; })() && /html\.ws-sc \.ws-foot[^{]*\{ display: none; \}|html\.ws-sc \.strat-head, html\.ws-sc \.strat-list, html\.ws-sc \.ws-foot \{ display: none; \}/.test(css));
     t("手機圖示維持 lucide smartphone", /id="ph-pill"[^\n]*<rect width="14" height="20" x="5" y="2" rx="2"\/><path d="M12 18h\.01"\/>/.test(html));
     const qr = read("renderer/qr-app.svg");
     t("QR 是靜態檔,內容註明在檔頭;不加執行期相依", /^<!-- https:\/\/blave\.org\/app\?src=desktop -->/.test(qr) && /img\.src = "qr-app\.svg"/.test(src) && !/qr/i.test(JSON.stringify(JSON.parse(read("package.json")).dependencies)));
     t("pop 在 html 是空殼、緊接膠囊(Tab 從膠囊直接進 pop),內容由 promptslot.js 建", /id="ph-pill"[^\n]*<\/button>\n\s*<div class="ph-pop" id="ph-pop" hidden><\/div>\n\s*<button class="ph-x"/.test(html));
-    t("步驟列:號碼欄 16、欄距 8、列距 16;號碼 12/500 tabular;目前這步 --ink", /gap: var\(--space-16\)/.test(rule(".ph-steps")) && /grid-template-columns: 16px minmax\(0, 1fr\); column-gap: var\(--space-8\)/.test(rule(".ph-step")) && /font-size: 12px; font-weight: 500;[^}]*tabular-nums/.test(rule(".ph-n")) && /\.ph-step\.now \.ph-n, \.ph-step\.now \.ph-t \{ color: var\(--ink\); \}/.test(css));
+    t("v2 步驟列:號碼盤 20、欄距 12(稽核建議 3,回到 4 的倍數)、列距 16;盤 pill、11/600 tabular", /gap: var\(--space-16\)/.test(rule(".ph-steps")) && /grid-template-columns: 20px minmax\(0, 1fr\); column-gap: var\(--space-12\)/.test(rule(".ph-step"))
+      && /width: 20px; height: 20px; border-radius: var\(--radius-pill\)/.test(rule(".ph-n")) && /font-size: 11px; font-weight: 600;[^}]*tabular-nums/.test(rule(".ph-n")));
+    t("v2 三態只用墨色:next 空心框 --border-frame、號碼 --ink-3;done／now 實心 --control-fill;勾 12、線寬 3;不用綠橘", /color: var\(--ink-3\); box-shadow: inset 0 0 0 1px var\(--border-frame\)/.test(rule(".ph-n"))
+      && css.includes(".ph-step.done .ph-n, .ph-step.now .ph-n { background: var(--control-fill); color: var(--control-fill-text); box-shadow: none; }") && /width: 12px; height: 12px;[^}]*stroke-width: 3/.test(rule(".ph-n .ic"))
+      && !/primary|green|orange|red/i.test([".ph-n", ".ph-step.done .ph-n, .ph-step.now .ph-n", ".ph-t", ".ph-step.now .ph-t", ".ph-step.done .ph-t", ".ph-who"].map(rule).join()));
+    t("v2 字色:next --ink-2、now --ink 500、done --ink-3;email 12/18 --ink-3 單行省略;zh 斷行 pretty", /color: var\(--ink-2\)/.test(rule(".ph-t")) && /color: var\(--ink\); font-weight: 500/.test(rule(".ph-step.now .ph-t")) && /color: var\(--ink-3\)/.test(rule(".ph-step.done .ph-t"))
+      && /font-size: 12px; line-height: 18px; color: var\(--ink-3\); overflow: hidden; text-overflow: ellipsis; white-space: nowrap/.test(rule(".ph-who")) && css.includes(".ph-t:lang(zh) { text-wrap: pretty; }"));
     const strs = vm.runInNewContext(read("renderer/strings.js") + "\nSTRINGS");
     t("字:zh／en 照 spec,× 用既有 set.close", strs.zh["ph.slot"] === "在手機上用" && strs.en["ph.slot"] === "Use on Phone" && /id="ph-x"[^>]*data-i18n-aria="set\.close"/.test(html) && strs.zh["set.close"] === "關閉" && strs.en["set.close"] === "Close");
     t("字:pop 步驟照 steps §3(EN 句首大寫);ph.slotHint 已拿掉", strs.zh["ph.stepGet"] === "下載 App" && strs.en["ph.stepGet"] === "Get the app" && strs.zh["ph.stepPair"] === "在 App 配對" && strs.en["ph.stepPair"] === "Pair in the app"
-      && strs.zh["ph.stepChat"] === "在 App 的 Agent 分頁按〔對話〕配對。" && strs.en["ph.stepChat"] === "In the app's Agent tab, tap Chat to pair." && !("ph.slotHint" in strs.zh) && !("ph.slotHint" in strs.en) && strs.zh["pv.signin"] === "登入 Blave");
-    t("字:配對後那步照 Wei 定稿,鈕名跟配對確認框 ph.ask.ok 逐字相同", strs.zh["ph.stepAllow"] === "配對後，這台電腦會問要不要讓手機連進來，按〔打開〕。" && strs.zh["ph.stepAllow"].includes("〔" + strs.zh["ph.ask.ok"] + "〕")
-      && strs.en["ph.stepAllow"] === "After pairing, this computer asks whether to let your phone in. Choose Turn On." && strs.en["ph.stepAllow"].endsWith("Choose " + strs.en["ph.ask.ok"] + ".")); }
+      && strs.zh["ph.stepChat"] === "在 App 的 Agent 分頁按〔對話〕配對" && strs.en["ph.stepChat"] === "In the app's Agent tab, tap Chat to pair" && strs.zh["ph.signed"] === "已登入" && strs.en["ph.signed"] === "Signed in" && !("ph.slotHint" in strs.zh) && !("ph.slotHint" in strs.en) && strs.zh["pv.signin"] === "登入 Blave");
+    t("v2 字:按〔打開〕那步縮成短標籤(無句號),鈕名跟配對確認框 ph.ask.ok 逐字相同", strs.zh["ph.stepAllow"] === "電腦跳出確認時，按〔打開〕" && strs.zh["ph.stepAllow"].endsWith("〔" + strs.zh["ph.ask.ok"] + "〕")
+      && strs.en["ph.stepAllow"] === "When this computer asks, choose Turn On" && strs.en["ph.stepAllow"].endsWith("choose " + strs.en["ph.ask.ok"])); }
 
   // ── 埋點 ──
   const tele = read("telemetry.js");

@@ -319,6 +319,8 @@ const EVENTS = {
     "unbind_keep", "unbind_close", "unbind_retry",
     // 0.1.47 側欄策略改名(renderer/stratrename.js;spec strategy-rename §8):機器說改成了才送,不帶名字。同 api 順序,api 先上
     "strat_rename",
+    // 0.1.47 登出確認框按〔登出〕(renderer/app.js acctOutAsk);撤銷成不成功都算。同 api 順序,api 先上
+    "acct_out",
     // 0.1.47 送上雲端／拉回改成 app 直接搬(renderer/handoff.js;同 api 順序,api 先上):從側欄策略列選單開框、從對話動作卡開框、展開並排比較
     "handoff_menu", "handoff_card", "handoff_compare"] },
 };

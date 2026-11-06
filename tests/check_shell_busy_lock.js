@@ -64,7 +64,7 @@ ok("② 放開(spec §2.3):設定、模型、登出、登入不再看 running", 
 ok("② 換 AI / 登出:回合中走確認框、先停再做(busyCut / busyStopThen),不是靜默擋",
   /if \(busyOn\(\)\) \{ busyCut\(null, \(\) => connectNow\(kind, info\)\); return; \}/.test(fnSrc(appSrc, "connect")) && /busyCut\(b, \(\) => blaveGoNow\(b\)\)/.test(fnSrc(appSrc, "blaveGo"))
   && !/busyOn\(\)/.test(fnSrc(appSrc, "connectNow")) && !/busyOn\(\)/.test(fnSrc(appSrc, "blaveGoNow"))
-  && /onOk: \(\) => busyStopThen\(acctSignOut\)/.test(fnSrc(appSrc, "acctOutAsk")) && /busyOn\(\) \? \[t\("busy\.cut\.out"\)\]/.test(fnSrc(appSrc, "acctOutAsk"))
+  && /onOk: \(\) => \{ trackFeature\("acct_out"\); busyStopThen\(acctSignOut\); \}/.test(fnSrc(appSrc, "acctOutAsk")) && /busyOn\(\) \? \[t\("acct\.out\.busy"\)\]/.test(fnSrc(appSrc, "acctOutAsk"))
   && /if \(!hasToken \|\| oauthPending \|\| planLoginBusy \|\| acctOutBusy\) return;\n  acctOutBusy = true;\n  const r = await window\.blave\.signOutBlave\(\)\.finally\(\(\) => \{ acctOutBusy = false; \}\);/.test(fnSrc(appSrc, "acctSignOut")));
 { const ak = read(path.join(R, "apikey.js")), ask = fnSrc(ak, "akRemoveAsk");
   ok("② 回合中移除正在用的自帶金鑰:確認框先講會停、按下走 busyStopThen(akRemove)", /const cut = cur === "apikey" && busyOn\(\);/.test(ask) && /cut \? \[t\("busy\.cut\.out"\)\] : \[\]/.test(ask) && /onOk: cut \? \(\) => busyStopThen\(akRemove\) : akRemove/.test(ask)); }

@@ -575,10 +575,11 @@ ok("訊息格只由 planPaint 寫:index.html 沒有那個節點、程式裡只�
   && /\n  mdlPaint\(\);\n  acctPaintAcct\(\);\n/.test(fnSrc("setHint")) && /if \(!\$\("set-scrim"\)\.hidden && !\$\("set-plan"\)\.hidden\) planPaint\(\);/.test(fnSrc("acctPaintAcct")) && !/acctPaintAcct\(\)/.test(fnSrc("planPaint")));
 ok("登出沒撤成那句到得了這一頁", /setHint\(\{ text: t\("cn\.blave\.signOutLocalOnly"\) \}\)/.test(src));
 ok("字串:合併後的頁名、確認框、刪掉的五個 key(zh / en)", /msgid "set\.cat\.plan"\nmsgstr "帳號與方案"/.test(PO2[0]) && /msgid "set\.cat\.plan"\nmsgstr "Account & plan"/.test(PO2[1]) && /msgid "pv\.e\.btn"\nmsgstr "Account & Plan"/.test(PO2[1])
-  && /msgid "acct\.cf\.title"\nmsgstr "登出 Blave？"/.test(PO2[0]) && /msgid "acct\.cf\.ok"\nmsgstr "Sign Out"/.test(PO2[1]) && /msgid "acct\.out\.4"\nmsgstr "登出不會停用雲端主機，主機費照扣。"/.test(PO2[0])
+  && /msgid "acct\.cf\.title"\nmsgstr "登出 Blave？"/.test(PO2[0]) && /msgid "acct\.cf\.ok"\nmsgstr "Sign Out"/.test(PO2[1]) && /msgid "acct\.out\.4"\nmsgstr "雲端主機照跑，主機費照扣。"/.test(PO2[0])
   && PO2.every((p) => !/msgid "lib\.gate\.unknown"/.test(p)) && PO2.every((p) => !/msgid "(set\.cat\.acct|acct\.toPlan|acct\.toPlanBtn|acct\.in\.1|acct\.in\.2)"/.test(p) && !/資料與雲端方案|Data & [Cc]loud [Pp]lan/.test(p)));
 ok("agent 文件裡的頁名跟著改", /Settings › 帳號與方案 \(en: Account & plan\)/.test(fs.readFileSync(path.join(__dirname, "..", "references", "billing.md"), "utf8")) && /Sign in from Settings › Account & plan/.test(fs.readFileSync(path.join(__dirname, "..", "references", "cloud-handoff.md"), "utf8")));
-ok("字串:acct.out.3 照定稿(不跟 acct.out.2「對話留在這台電腦」打架)", /msgid "acct\.out\.3"\nmsgstr "你現在用的是 Blave AI，登出會回到選 AI 的畫面，要先選一個才能繼續用。"/.test(PO2[0]));
+ok("字串:登出框 A 案短句與兩組小標(zh / en,mockup signout-dialog-2026-11-05)", [["acct.out.3", "Blave AI 停用，要重選一個 AI。", "Blave AI turns off. Pick another AI to continue."], ["acct.out.2", "對話與策略都留著。", "Chats and strategies stay."],
+  ["acct.out.busy", "進行中的回覆會先停止。", "The reply in progress stops first."], ["acct.out.gStop", "會停止", "Stops"], ["acct.out.gKeep", "不變", "Unchanged"]].every(([k, z, e]) => PO2[0].includes(`msgid "${k}"\nmsgstr "${z}"`) && PO2[1].includes(`msgid "${k}"\nmsgstr "${e}"`)));
 // 聊天欄捲動邊界:靜止沒有線,捲起來才浮一條
 // 分頁列定稿(chat-tabs §13):列與對話靠底色分,捲起來也不浮線
 ok("聊天欄頂列沒有線:靜止沒有、捲起來也不浮(is-scrolled／chatEdge 拿掉)", !/is-scrolled/.test(css + src) && !/chatEdge/.test(src) && !/\.chat-head \{[^}]*box-shadow/.test(css));
@@ -804,18 +805,22 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     ok("已登入、查不到:帳號列照出,餘額列畫「—」", page().rows === 2 && page().who.v === "acct.signedIn" && page().bal.v === "—" && page().foot.join() === "btn-out:plan.recheck");
     // 登出:按了才出確認框(Wei 2026-09-28 定案);三句說明不常駐
     const press = (o) => { boxes.length = 0; cur = o.cur; acct = o.acct; hasToken = true; planPaint(); const b = page().who.btn; b._click(); return boxes[0]; };
+    // A 案:內文全在兩組 sections,lines 空;ink 那句記成 *key
+    const grp = (b) => b && b.lines.length === 0 && b.sections ? b.sections.map((g) => g.label + ":" + g.lines.map((x) => (typeof x === "string" ? x : (x.ink ? "*" : "") + x.text)).join()).join("|") : "BAD";
     const own = press({ cur: "claude", acct: { plan: { state: "none" } } });
-    ok("按「登出」:出確認框(標題、確認鈕、開它的那顆鈕);用自己的 CLI、沒有主機 → 兩句", !!own && own.title === "acct.cf.title" && own.ok === "acct.cf.ok" && own.opener === page().who.btn && own.lines.join() === "acct.out.1,acct.out.2" && typeof own.onOk === "function");
-    PH = { visible: true, signedIn: true, on: true }; const phOn = press({ cur: "claude", acct: { plan: { state: "running" } } }).lines.join();
-    PH = { visible: false, signedIn: true, on: true }; const phHidden = press({ cur: "claude", acct: { plan: { state: "none" } } }).lines.join(); PH = { visible: true, signedIn: true, on: false };
-    ok("手機對話開著:多一句「手機對話會關閉,伺服器上的對話會刪除」,排在主機那句前面;總開關關著(區塊不出)不講", phOn === "acct.out.1,acct.out.6,acct.out.4,acct.out.2" && phHidden === "acct.out.1,acct.out.2", [phOn, phHidden]);
-    ok("用 Blave AI:多一句「登出會回到選 AI 的畫面」,排第一", press({ cur: "blave", acct: { plan: { state: "none" } } }).lines.join() === "acct.out.3,acct.out.1,acct.out.2");
-    ok("帳號有主機(啟動中 / 運行中 / 已停機):多一句「登出不會停用雲端主機,主機費照扣」;沒有主機不出", ["starting", "running", "stopped"].every((st) => press({ cur: "claude", acct: { plan: { state: st } } }).lines.join() === "acct.out.1,acct.out.4,acct.out.2")
-      && press({ cur: "blave", acct: { plan: { state: "running" } } }).lines.join() === "acct.out.3,acct.out.1,acct.out.4,acct.out.2");
+    ok("按「登出」:出確認框(標題、確認鈕、開它的那顆鈕);用自己的 CLI、沒有主機 → 兩句", !!own && own.title === "acct.cf.title" && own.ok === "acct.cf.ok" && own.opener === page().who.btn && grp(own) === "acct.out.gStop:acct.out.1|acct.out.gKeep:acct.out.2" && typeof own.onOk === "function", grp(own));
+    { const n0 = featured.length; const bx = press({ cur: "claude", acct: { plan: { state: "none" } } }); const opened = featured.length - n0; bx.onOk();
+      ok("埋點:開框不送;按〔登出〕送一次 feature_used acct_out,在白名單", opened === 0 && featured.slice(n0).join() === "acct_out" && /"acct_out"/.test(fs.readFileSync(path.join(R, "..", "telemetry.js"), "utf8"))); }
+    PH = { visible: true, signedIn: true, on: true }; const phOn = grp(press({ cur: "claude", acct: { plan: { state: "running" } } }));
+    PH = { visible: false, signedIn: true, on: true }; const phHidden = grp(press({ cur: "claude", acct: { plan: { state: "none" } } })); PH = { visible: true, signedIn: true, on: false };
+    ok("手機對話開著:多一句「手機對話會關閉,伺服器上的對話會刪除」,排在主機那句前面;總開關關著(區塊不出)不講", phOn === "acct.out.gStop:acct.out.1,acct.out.6|acct.out.gKeep:*acct.out.4,acct.out.2" && phHidden === "acct.out.gStop:acct.out.1|acct.out.gKeep:acct.out.2", [phOn, phHidden]);
+    ok("用 Blave AI:多一句「登出會回到選 AI 的畫面」,排第一", grp(press({ cur: "blave", acct: { plan: { state: "none" } } })) === "acct.out.gStop:acct.out.3,acct.out.1|acct.out.gKeep:acct.out.2");
+    ok("帳號有主機(啟動中 / 運行中 / 已停機):「不變」組第一句多「主機費照扣」、升主墨(ink);沒有主機不出", ["starting", "running", "stopped"].every((st) => grp(press({ cur: "claude", acct: { plan: { state: st } } })) === "acct.out.gStop:acct.out.1|acct.out.gKeep:*acct.out.4,acct.out.2")
+      && grp(press({ cur: "blave", acct: { plan: { state: "running" } } })) === "acct.out.gStop:acct.out.3,acct.out.1|acct.out.gKeep:*acct.out.4,acct.out.2");
     { boxes.length = 0; oauthPending = true; acctOutAsk(null); oauthPending = false; ok("等待登入中:不出框", boxes.length === 0);
       cur = "claude"; acct = { plan: { state: "none" } }; running = true; acctOutAsk(null); running = false;
-      ok("回合進行中(busy-lock spec §2.3:登出放開):照出框,第一句講正在回覆的這條會先停", boxes.length === 1 && boxes[0].lines.join() === "busy.cut.out,acct.out.1,acct.out.2"); }
-    ok("確認框按下去才走登出那一支(回合中先停再登出:busyStopThen);登出之後(用自己 CLI 的人留在原地)焦點回左欄的「帳號與方案」、讀屏念一次;用 Blave AI 的人照舊回選 AI 的畫面", /confirmBox\(\{ title: t\("acct\.cf\.title"\), lines, ok: t\("acct\.cf\.ok"\), opener, onOk: \(\) => busyStopThen\(acctSignOut\) \}\);/.test(src)
+      ok("回合進行中(busy-lock spec §2.3:登出放開):照出框,「會停止」組第一句講進行中的回覆先停(登出自己的短句,不改共用的 busy.cut.out)", boxes.length === 1 && grp(boxes[0]) === "acct.out.gStop:acct.out.busy,acct.out.1|acct.out.gKeep:acct.out.2"); }
+    ok("確認框按下去才走登出那一支(回合中先停再登出:busyStopThen);登出之後(用自己 CLI 的人留在原地)焦點回左欄的「帳號與方案」、讀屏念一次;用 Blave AI 的人照舊回選 AI 的畫面", /confirmBox\(\{ title: t\("acct\.cf\.title"\), lines: \[\], sections: \[\{ label: t\("acct\.out\.gStop"\), lines: stop \}, \{ label: t\("acct\.out\.gKeep"\), lines: keep \}\], ok: t\("acct\.cf\.ok"\), opener, onOk: \(\) => \{ trackFeature\("acct_out"\); busyStopThen\(acctSignOut\); \} \}\);/.test(src)
       && /async function acctSignOut\(\) \{\n  if \(!hasToken \|\| oauthPending \|\| planLoginBusy \|\| acctOutBusy\) return;\n  acctOutBusy = true;\n  const r = await window\.blave\.signOutBlave\(\)\.finally\(\(\) => \{ acctOutBusy = false; \}\);/.test(src)
       && /srSay\(t\("acct\.outDone"\)\);\n    const c = document\.querySelector\('\.set-cat\[data-set-cat="plan"\]'\); if \(c\) c\.focus\(\);/.test(src) && /await window\.blave\.clearConnection\(\);\n  cur = null;\n  setClose\(\);/.test(src));
     // 訊息格
@@ -1371,6 +1376,16 @@ ok("確認框字(r8):body1 有 Linux Starter;鈕「付 {x} TWD 開通」/ Pay {x
       && leads({ visible: true, signedIn: true, on: true, name: "Mac" }).length === 0 && leads({ visible: true, signedIn: true, on: false, pending: true }).map((n) => n.textContent).join() === "mv.leadPending"
       && /setAttribute\("aria-labelledby", "mv-l"\); sw\.setAttribute\("aria-describedby", "mv-tip"\)/.test(fnSrc("mvBlock")) && !/mv\.lead"|mv\.leadNoName/.test(src)
       && css.includes(".mv .sw-row:has(.sw:focus-visible:not([data-tip-off])) .tip { display: block; }")); }
+  { // 登出框 A 案:confirmBox 的 sections 真的畫成兩組(小標 span.gl + 每句一個 p),ink 那句帶 cf-ink;CSS 組內 4、組間 16、小標 13/600 --ink-3、ink 句升主墨
+    const box = fnSrc("confirmBox"), line = box.split("\n").find((l) => /^\s*\(sections \|\| \[\]\)\.forEach/.test(l)) || "";
+    const body = el(), mk = (tag, cls, text) => { const n = el(); n.tag = tag; n.className = cls || ""; if (text != null) n.textContent = text; return n; };
+    new Function("sections", "mk", "body", line)([{ label: "STOP", lines: ["a", "b"] }, { label: "KEEP", lines: [{ text: "money", ink: true }, "c"] }], mk, body);
+    const g = body.children, sh = (n) => n.children.map((c) => c.tag + "." + c.className + ":" + c.textContent).join();
+    ok("登出框 A 案:sections 畫成兩組 div.cf-grp,組名 span.gl 在前、每句一個 p;ink 那句 p.cf-ink、其餘沒有 class",
+      g.length === 2 && g.every((x) => x.tag === "div" && x.className === "cf-grp") && sh(g[0]) === "span.gl:STOP,p.:a,p.:b" && sh(g[1]) === "span.gl:KEEP,p.cf-ink:money,p.:c", g.map(sh));
+    ok("登出框 A 案 CSS:組間 16、組內 4(壓過 .del-body.lines p+p 的 8)、組名 13/600 --ink-3、ink 句 --ink;不畫線",
+      css.includes(".del-body .cf-grp + .cf-grp { margin-top: var(--space-16); }") && /\.del-body \.cf-grp \.gl \{ display: block; margin-bottom: var\(--space-4\); font-size: 13px; font-weight: 600; line-height: 1\.5; color: var\(--ink-3\); \}/.test(css)
+      && css.includes(".del-body.lines .cf-grp p + p { margin-top: var(--space-4); }") && css.includes(".del-body.lines .cf-grp p.cf-ink { color: var(--ink); }") && !/\.cf-grp[^{]*\{[^}]*border/.test(css)); }
   ok("資料來源空狀態的金鑰那句拿掉了,.src-fine 跟著刪", !/src-fine/.test(fs.readFileSync(path.join(R, "datasrc.css"), "utf8") + fs.readFileSync(path.join(R, "datasrc.js"), "utf8")));
 })().then(() => {
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

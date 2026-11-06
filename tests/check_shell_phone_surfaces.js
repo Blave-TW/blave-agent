@@ -132,7 +132,7 @@ const t = (k, v) => (v ? k + JSON.stringify(v) : TPL[k] || k);
     "ph.cf.2": ["近 30 天和之後的對話會上傳，金鑰與資料夾路徑會先遮掉。關掉就刪除伺服器上那份。", "Chats from the last 30 days and new ones are uploaded, with keys and folder paths masked. Turning this off deletes the copy on Blave."],
     "ph.cf.3": ["附件、策略程式和舊對話的圖片不上傳。回覆手機時的圖片會上傳。", "Attachments, strategy code and images in older chats stay here. Images in replies to your phone are uploaded."], "ph.cf.ok": ["打開", "Turn On"], "ph.off.ok": ["關閉", "Turn Off"],
     "ph.off.live": ["手機送來、正在跑的回覆會停下。", "The reply your phone started will stop."], "ph.off.del": ["伺服器上的對話會刪除，這台電腦上的不受影響。", "Chats on Blave are deleted. Chats on this computer stay."],
-    "acct.out.6": ["手機對話會關閉，伺服器上的對話會刪除。", "Phone chat turns off and chats on Blave are deleted."], "ph.offRelogin": ["重新登入後手機對話已關閉，要用請到 設定 › 連結 重新打開。", "Phone chat was turned off when you signed in again. Turn it back on in Settings › Connections."],
+    "acct.out.6": ["手機對話關閉，伺服器上的對話刪除。", "Phone chat turns off. Its chats on Blave are deleted."], "ph.offRelogin": ["重新登入後手機對話已關閉，要用請到 設定 › 連結 重新打開。", "Phone chat was turned off when you signed in again. Turn it back on in Settings › Connections."],
     "ph.list": ["帳號下的手機", "Phones on This Account"], "ph.webRevoke": ["到網站撤銷", "Revoke on Website"], "ph.webRevoke.aria": ["到網站撤銷（在瀏覽器開啟）", "Revoke on Website (opens in browser)"], "ph.none": ["在 App 的 Agent 分頁按〔對話〕配對。", "In the app's Agent tab, tap Chat to pair."],
     "ph.ask.title": ["{name} 想連這台電腦", "{name} wants to connect to this computer"], "ph.ask.no": ["不用", "Not Now"], "ph.ask.ok": ["打開", "Turn On"],
     "ph.meta": ["最近使用 {used}", "Last used {used}"], "ph.metaNever": ["還沒用過", "Not used yet"],

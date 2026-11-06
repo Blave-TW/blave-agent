@@ -574,9 +574,11 @@ function acctOutAsk(opener) {
   const mvOn = typeof mvShown === "function" && mvShown() && MV.on === true;
   // 第 1 句只在用 Blave AI 時出(登出後會被送回選 AI 的畫面);主機那一句只在帳號有主機時出
   const hasMachine = !!acct && ["starting", "running", "stopped"].includes(planState());
-  const lines = (busyOn() ? [t("busy.cut.out")] : []).concat(cur === "blave" ? [t("acct.out.3")] : [], [t("acct.out.1")], mvOn ? [t("acct.out.5")] : [], phShown() && PH.signedIn && PH.on ? [t("acct.out.6")] : [], hasMachine ? [t("acct.out.4")] : [], [t("acct.out.2")]);
+  // 分「會停止／不變」兩組(spec signout-dialog A 案);主機費那句放「不變」第一句、升主墨
+  const stop = (busyOn() ? [t("acct.out.busy")] : []).concat(cur === "blave" ? [t("acct.out.3")] : [], [t("acct.out.1")], mvOn ? [t("acct.out.5")] : [], phShown() && PH.signedIn && PH.on ? [t("acct.out.6")] : []);
+  const keep = (hasMachine ? [{ text: t("acct.out.4"), ink: true }] : []).concat([t("acct.out.2")]);
   // 回合中登出:token 撤掉後那條回覆的下一個請求會失敗、斷在半路,所以先停再登出(busyStopThen)
-  confirmBox({ title: t("acct.cf.title"), lines, ok: t("acct.cf.ok"), opener, onOk: () => busyStopThen(acctSignOut) });
+  confirmBox({ title: t("acct.cf.title"), lines: [], sections: [{ label: t("acct.out.gStop"), lines: stop }, { label: t("acct.out.gKeep"), lines: keep }], ok: t("acct.cf.ok"), opener, onOk: () => { trackFeature("acct_out"); busyStopThen(acctSignOut); } });
 }
 let acctOutBusy = false;   // 撤銷在路上:第二下不再撤一次
 async function acctSignOut() {
@@ -3110,7 +3112,7 @@ function delOkBusy(on) {
 // note:常駐說明縮成一行＋〔細節〕點開的小卡(mockup 03 A 版),小卡只放 details 裡帶 items 的那幾條;帶 text 的那一組(哪些部位算 Blave 的)
 // 留在收合的 <details>、summary 用它的 label(跟網頁同一份);沒有 note 才把全部塞進 <details>。
 // 小卡用點的不用 hover(裡面有連結);攤在那一行下面,流內、不用浮層 token;Esc 先收小卡再收框(escTop)
-function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel, focus, link, stay, note, wrapTitle }) {
+function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra, okDisabled, okWhy, env, footWhere, lead, single, cancel, choices, choicesLabel, keep, details, detailsOpen, onCancel, focus, link, stay, note, wrapTitle, sections }) {
   cfSupersede();
   delOkBusy(false);
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -3120,6 +3122,8 @@ function confirmBox({ title, lines, ok, onOk, opener, alt, mark, markKind, extra
   const body = $("del-body"); body.className = "del-body lines" + (choices ? " has-choices" : ""); body.textContent = "";
   if (lead) body.appendChild(lead);
   lines.forEach((x) => { const p = document.createElement("p"); if (typeof x === "string") p.textContent = x; else p.appendChild(x); if (okDisabled && okWhy && x === okWhy) p.id = "del-ok-why"; body.appendChild(p); });
+  // sections = [{ label, lines: [字串 | { text, ink }] }]:內文分組、每組一個小標(登出框);ink = 這句升主墨,要讀到的那句(主機費照扣)不被當成好消息略過
+  (sections || []).forEach((g) => { const box = mk("div", "cf-grp"); box.appendChild(mk("span", "gl", g.label)); g.lines.forEach((x) => box.appendChild(mk("p", x.ink ? "cf-ink" : "", typeof x === "string" ? x : x.text))); body.appendChild(box); });
   if (choices) {
     const fs = mk("fieldset", "cf-opts"); fs.appendChild(mk("legend", "", choicesLabel || ""));
     choices.forEach((c) => {

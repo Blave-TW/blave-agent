@@ -1437,13 +1437,13 @@ msgid "cn.blave.name"
 msgstr "Blave AI"
 
 msgid "acct.out.1"
-msgstr "After signing out, this computer no longer gets Blave data."
+msgstr "This computer stops getting Blave data."
 
 msgid "acct.out.2"
-msgstr "Chats and strategies stay on this computer and aren’t affected."
+msgstr "Chats and strategies stay."
 
 msgid "acct.out.3"
-msgstr "You’re using Blave AI, so signing out returns you to the AI picker. You’ll need to pick one again before you can carry on."
+msgstr "Blave AI turns off. Pick another AI to continue."
 
 # 登出的確認框(登出鈕在「帳號與方案」最上面那一列;「登出會怎樣」按了才出)。acct.out.4 只在帳號有主機時出
 msgid "acct.cf.title"
@@ -1453,13 +1453,24 @@ msgid "acct.cf.ok"
 msgstr "Sign Out"
 
 msgid "acct.out.4"
-msgstr "Signing out doesn’t turn off your cloud machine. It keeps billing."
+msgstr "The cloud machine keeps running and billing."
 
 msgid "acct.out.5"
-msgstr "The mobile app won’t show this computer’s positions anymore."
+msgstr "The mobile app stops showing positions from here."
 
 msgid "acct.out.6"
-msgstr "Phone chat turns off and chats on Blave are deleted."
+msgstr "Phone chat turns off. Its chats on Blave are deleted."
+
+# 登出確認框的兩組小標(spec signout-dialog A 案):會停止的在前,不變的在後;主機那句排「不變」第一、主墨色
+msgid "acct.out.gStop"
+msgstr "Stops"
+
+msgid "acct.out.gKeep"
+msgstr "Unchanged"
+
+# 登出框「會停止」組第一句(回合中才出)。不共用 busy.cut.out:那句換 AI、移除金鑰框也在用
+msgid "acct.out.busy"
+msgstr "The reply in progress stops first."
 
 msgid "acct.lbl"
 msgstr "Blave account"
@@ -10249,13 +10260,17 @@ msgstr "Get the app"
 msgid "ph.stepPair"
 msgstr "Pair in the app"
 
+# 已登入時第 1 步(打勾),下面小字是 Blave 帳號 email
+msgid "ph.signed"
+msgstr "Signed in"
+
 # 「Chat」是 App 的 mchat_entry;App 改字要回頭同步這句
 msgid "ph.stepChat"
-msgstr "In the app's Agent tab, tap Chat to pair."
+msgstr "In the app's Agent tab, tap Chat to pair"
 
 # 最後一步,「允許手機對話」已開就不列。「Turn On」要跟配對確認框的鈕 ph.ask.ok 逐字相同
 msgid "ph.stepAllow"
-msgstr "After pairing, this computer asks whether to let your phone in. Choose Turn On."
+msgstr "When this computer asks, choose Turn On"
 
 msgid "ph.syncing"
 msgstr "Synced {n} of {m} chats"

@@ -61,42 +61,68 @@ function slotBlocks() {
     acctCard: !!(acctCard && acctCard.el.isConnected) || creditCards.some((c) => c.el && c.el.isConnected),
     rail: document.documentElement.classList.contains("ws-sc") };
 }
-/* pop 內容(spec slot-phone-steps §3):沒登入〔登入 Blave〕、下載、配對;已登入 QR 加兩個商店、在 App 按〔對話〕。
-   兩種都在最後接「配對後按〔打開〕」(Wei 11-05 加;「允許手機對話」已開就不列,同意框不會再問)。
+/* pop 內容(spec slot-phone-steps §3,號碼盤三態改 spec slot-phone-v2 §2–3):沒登入〔登入 Blave〕、下載、配對;已登入 打勾的已登入、QR 加兩個商店、在 App 按〔對話〕。
+   兩種都在最後接「按〔打開〕」(「允許手機對話」已開就不列,同意框不會再問)。電腦版只看得到登不登入:只有第 1 步能打勾,
+   下載 App 之後的進度看不到,所以 now 永遠只有一步、後面都是 next,不假裝有進度。
+   email 要等 account_status 帶回來才出(api 還沒給時只寫「已登入」);晚到只原地補那一行(slotWhoPaint),不重建、不搬焦點。
    登入狀態、開關或語言變了才重建;開著時原地換、不收,焦點本來在 pop 裡(登入鈕被拿掉後掉到 BODY)就接到 pop 第一個能按的 */
-let SLOT_POP_KEY = "";
+let SLOT_POP_KEY = "", SLOT_WHO_HOST = null, SLOT_WHO;
+function slotWhoPaint(email) {
+  if (!SLOT_WHO_HOST || SLOT_WHO === email) return;
+  SLOT_WHO = email;
+  const kids = [document.createTextNode(t("ph.signed"))];
+  if (email) { const who = document.createElement("span"); who.className = "ph-who"; who.textContent = email; who.title = email; kids.push(who); }
+  SLOT_WHO_HOST.replaceChildren(...kids);
+}
+const SLOT_CHECK = "M20 6 9 17l-5-5";   // Lucide check
 function slotPopPaint() {
-  const signedIn = !!(PH && PH.signedIn === true), allowOn = !!(PH && PH.on === true), key = signedIn + "|" + allowOn + "|" + LANG;
-  if (SLOT_POP_KEY === key) return;
+  const signedIn = !!(PH && PH.signedIn === true), allowOn = !!(PH && PH.on === true);
+  const email = signedIn && acct && typeof acct.email === "string" ? acct.email.trim() : "";
+  const key = signedIn + "|" + allowOn + "|" + LANG;
+  if (SLOT_POP_KEY === key) { slotWhoPaint(email); return; }
   SLOT_POP_KEY = key;
   const pop = $("ph-pop"), a = document.activeElement, refocus = !pop.hidden && (a === document.body || pop.contains(a));
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   const ol = mk("ol", "ph-steps");
-  const step = (now, ...kids) => { const li = mk("li", "ph-step" + (now ? " now" : "")); const n = mk("span", "ph-n", String(ol.children.length + 1)); n.setAttribute("aria-hidden", "true");   // <ol> 已經念號碼
-    li.append(n, ...kids); ol.append(li); return li; };
-  const say = (k) => { const el = mk("span", "ph-t ph-say");   // 〔對話〕〔打開〕連前一個字一起不斷行:鈕名不單獨掉到最後一行
-    for (const part of t(k).split(/(.〔[^〕]+〕。?)/)) if (part) el.append(/^.〔/.test(part) ? mk("span", "ph-nw", part) : document.createTextNode(part));
+  const step = (state, ...kids) => {
+    const li = mk("li", "ph-step " + state), n = mk("span", "ph-n");
+    n.setAttribute("aria-hidden", "true");   // <ol> 已經念號碼;done 那步的字是「已登入」,不靠勾
+    if (state === "done") {
+      const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg"), path = document.createElementNS(NS, "path");
+      svg.setAttribute("class", "ic"); svg.setAttribute("viewBox", "0 0 24 24"); path.setAttribute("d", SLOT_CHECK); svg.append(path); n.append(svg);
+    } else n.textContent = String(ol.children.length + 1);
+    if (state === "now") li.setAttribute("aria-current", "step");
+    li.append(n, ...kids); ol.append(li); return li;
+  };
+  /* 鈕名不斷開:zh〔對話〕〔打開〕連前一個字一起包,鈕名不單獨掉到最後一行;en 只包鈕名(Chat 是 App 的鈕名,Turn On 同 ph.ask.ok)。
+     split 的捕捉組落在奇數位 */
+  const nwRe = LANG === "zh" ? /(.〔[^〕]+〕。?)/ : new RegExp("\\b(Chat|" + t("ph.ask.ok").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")\\b");
+  const say = (k) => { const el = mk("span", "ph-t");
+    t(k).split(nwRe).forEach((part, i) => { if (part) el.append(i % 2 ? mk("span", "ph-nw", part) : document.createTextNode(part)); });
     return el; };
+  SLOT_WHO_HOST = null; SLOT_WHO = undefined;
   if (!signedIn) {
-    const b = signInLabel(mk("button", "btn-fill"), t("pv.signin")); b.type = "button";
+    const b = signInLabel(mk("button", "btn-out"), t("pv.signin")); b.type = "button";
     b.addEventListener("click", () => { if (!planLoginBusy && !oauthPending) trackFeature("slot_ph_login"); planSignIn(b); });   // 等待中再按是取消,不算一次登入
     const cell = mk("span"); cell.append(b);
-    step(true, cell).classList.add("btn");
-    step(false, mk("span", "ph-t", t("ph.stepGet")));
-    step(false, mk("span", "ph-t", t("ph.stepPair")));
+    step("now", cell).classList.add("btn");
+    step("next", mk("span", "ph-t", t("ph.stepGet")));
+    step("next", mk("span", "ph-t", t("ph.stepPair")));
   } else {
+    SLOT_WHO_HOST = mk("span", "ph-t"); slotWhoPaint(email);
+    step("done", SLOT_WHO_HOST);
     const plate = mk("span", "ph-plate"), img = mk("img"), links = mk("div", "ph-links");
-    img.src = "qr-app.svg"; img.alt = ""; img.width = img.height = 136; plate.append(img);   // 內容 https://blave.org/app?src=desktop,依裝置分流商店
+    img.src = "qr-app.svg"; img.alt = ""; img.width = img.height = 112; plate.append(img);   // 內容 https://blave.org/app?src=desktop,依裝置分流商店
     for (const ios of [true, false]) {
       const go = mk("button", "btn-quiet", t(ios ? "mv.appIos" : "mv.appAndroid")); go.type = "button";
       go.addEventListener("click", () => { trackFeature(ios ? "app_link_ios" : "app_link_android"); window.blave.openExternal(ios ? MV_APP_IOS : MV_APP_ANDROID); });
       links.append(go);
     }
     const body = mk("div", "ph-body"); body.append(plate, links);
-    step(true, mk("span", "ph-t", t("ph.stepGet")), body);
-    step(true, say("ph.stepChat"));
+    step("now", mk("span", "ph-t", t("ph.stepGet")), body);
+    step("next", say("ph.stepChat"));
   }
-  if (!allowOn) step(false, say("ph.stepAllow"));   // 配對完才會發生:灰字
+  if (!allowOn) step("next", say("ph.stepAllow"));
   pop.replaceChildren(ol);
   if (refocus) { const f = pop.querySelector("button"); if (f) f.focus(); }
 }

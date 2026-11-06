@@ -136,7 +136,7 @@ function rig(tabs, main) {
 // ── ⑦ 留著的鎖 ──
 { ok("⑦ 更新重啟看任何回合", /function upLocalTurn\(\) \{ try \{ return typeof csAnyTurn === "function" \? csAnyTurn\(\)/.test(app) && /localTurn: upLocalTurn\(\), cloudTurn: !!upCloudTurn\(\)/.test(app));
   ok("⑦ 刪策略(畫面與主行程)看任何回合;還原、再跑一次縮到同一支的測試在 check_shell_restore_lock.js", /busyLock\(d, csAnyTurn\(\)\)/.test(fnOf(app, "stratDelSync")) && /if \(anyTurn\(\)\) return \{ ok: false, code: "TURN_RUNNING" \};/.test(fs.readFileSync(path.join(R, "..", "main.js"), "utf8")));
-  ok("⑦ 換 AI、登出、刪回覆中那條", /busyCut\(null, \(\) => connectNow\(kind, info\)\)/.test(app) && /busyOn\(\) \? \[t\("busy\.cut\.out"\)\]/.test(app) && /busyLock\(del, csTabRunning\(m\.id\)\)/.test(app));
+  ok("⑦ 換 AI、登出、刪回覆中那條", /busyCut\(null, \(\) => connectNow\(kind, info\)\)/.test(app) && /busyOn\(\) \? \[t\("acct\.out\.busy"\)\]/.test(app) && /busyLock\(del, csTabRunning\(m\.id\)\)/.test(app));
   ok("⑦ 同條對話:Enter 與重送回合中照擋(Wei 11-03 拍板不做排隊)", /if \(running && \$\("ta"\)\.value\.trim\(\)\) \{ busySendTell\(\); return; \}/.test(app) && /function canResend\(\) \{ return !running/.test(app)); }
 
 console.log(red ? red + " 紅" : "ALL PASS");

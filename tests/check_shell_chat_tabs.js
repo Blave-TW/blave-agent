@@ -51,7 +51,7 @@ const MOD_GLOBAL = {
   "president.js": { PRES: "統一期貨", presTimer: "同上", PRES_FIRST_ARMED: "同上" }, "report-sharelist.js": { SHL_IO: "分享清單" }, "stratflags.js": { sfPop: "彈出層" }, "stratgroups.js": { sgMenu: "資料夾 ⋯ 選單,一次一個", sgPick: "emoji 選擇器,一次一個" },
   "suggest.js": { SUG: "TAB_KEYS 整個換(托盤跟著分頁)" }, "form.js": { FORM: "TAB_KEYS 整個換(表單跟著分頁)", formSeq: "radio 群組名流水號(全 app 一組,兩條分頁的表單名字不撞)" },
   "trade.js": { TR_AS_SAVED: "自動下單頁", TR: "同上", trTipSeq: "同上", trHistTipEl: "同上", trHistTipAt: "同上", trHistTipOpened: "同上", trHistTipQuiet: "同上", trCvHide: "同上", trCvEscN: "同上", cxOpener: "同上", psOpener: "同上", psMode: "同上", psToAmt: "同上", psFromWhy: "同上", psLoading: "同上", ENV_COMPOSING: "輸入法" },
-  "versions.js": { vcSeq: "版本頁", vcSide: "同上" }, "promptslot.js": { SLOT_ST: "側欄提示格(全 app 一格)", SLOT_SHOW_DAY: "同上", SLOT_POP_KEY: "同上(pop 內容照登入狀態與語言建)" },
+  "versions.js": { vcSeq: "版本頁", vcSide: "同上" }, "promptslot.js": { SLOT_ST: "側欄提示格(全 app 一格)", SLOT_SHOW_DAY: "同上", SLOT_POP_KEY: "同上(pop 內容照登入狀態與語言建)", SLOT_WHO_HOST: "同上(已登入那步的字,email 晚到原地補)", SLOT_WHO: "同上" },
 };
 const FIELDS = {
   LIB: { pending: "SID", seq: "GLOBAL 清單請求流水號(丟掉晚到的舊回應)", noNew: "GLOBAL 灰字掛在那一支卡上", cloudWait: "GLOBAL 一次只等一支(換一支就放掉)" },
@@ -125,7 +125,7 @@ const TAB = [   // 眼前這一條(分頁自己的 running;切分頁時整組換
 ];
 const ANY = [   // 任何回合(機器層級的鎖;busyOn() = csAnyTurn())
   ["apikey.js", /const cut = cur === "apikey" && busyOn\(\);/, "移除自帶金鑰會中斷回合"],
-  ["app.js", /if \(busyOn\(\)\) \{ busyCut\(null, \(\) => connectNow\(kind, info\)\); return; \}/, "換 AI"], ["app.js", /const lines = \(busyOn\(\) \? \[t\("busy\.cut\.out"\)\]/, "登出"],
+  ["app.js", /if \(busyOn\(\)\) \{ busyCut\(null, \(\) => connectNow\(kind, info\)\); return; \}/, "換 AI"], ["app.js", /const stop = \(busyOn\(\) \? \[t\("acct\.out\.busy"\)\]/, "登出"],
   ["app.js", /if \(busyOn\(\)\) \{ busyCut\(b, \(\) => blaveGoNow\(b\)\); return; \}/, "換成 Blave AI"],
   ["app.js", /function upLocalTurn\(\) \{ try \{ return typeof csAnyTurn === "function" \? csAnyTurn\(\) : running === true;/, "更新會重開 app"],
   ["app.js", /busyLock\(d, csAnyTurn\(\)\)\); \}\); \}/, "刪策略"], ["app.js", /busyLock\(del, csAnyTurn\(\)\); del\.onBusy = \(\) => busyHit\("del"\);/, "刪策略"],
