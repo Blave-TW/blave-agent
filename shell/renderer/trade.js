@@ -2123,6 +2123,31 @@ function trNamesOf(picked) {
 function trNames() { return trNamesOf(TR.picked); }
 function trListNames() { return TR.list.map((x) => x.name); }
 function trDisplay(n) { const x = TR.list.find((y) => y.name === n); return x ? x.displayName : n; }
+/* 事件列上的策略名稱(canon notifications §3.1):規則同 api openclaw/strategy_names.clean 一字不差,
+   tests/check_web_desktop_parity.js 拿 api 的 CASES 跑這一份。過不了就退代號,不截一半 */
+const TR_LABEL_MAX = 40;
+const TR_LABEL_TLDS = ["com", "net", "org", "io", "co", "me", "ly", "cc", "gg", "tv", "to", "so", "sh", "gl", "gd",
+  "im", "fm", "ai", "app", "dev", "xyz", "top", "vip", "pro", "info", "biz", "link", "site",
+  "club", "online", "shop", "tw", "cn", "hk", "jp", "kr", "sg", "us", "uk", "ru"];
+// 不帶 u 旗標:/i 才不會把 ſ、K(U+212A)折成 ASCII(api 那邊用 re.A)
+const TR_LABEL_URL = new RegExp("://|www\\.|[a-z0-9-]\\.(?:" + TR_LABEL_TLDS.join("|") + ")(?![a-z0-9])", "i");
+const TR_LABEL_UNSAFE = /[、;:；：「」\r\n\x0b\x0c\x85\u2028\u2029]|[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+const TR_LABEL_FOLD = { "[": "［", "]": "］", "（": "(", "）": ")" };
+const trLabelTrim = (v) => v.replace(/^[ \t\u00a0\u3000]+|[ \t\u00a0\u3000]+$/g, "");
+function trStratLabel(name, code) {
+  let v = typeof name === "string" ? trLabelTrim(name) : "";
+  if (!v || (v.startsWith("[") && v.endsWith("]"))) return null;
+  if (TR_LABEL_UNSAFE.test(v) || TR_LABEL_URL.test(v)) return null;
+  v = trLabelTrim(Array.from(v.replace(/[[\]（）]/g, (c) => TR_LABEL_FOLD[c])).slice(0, TR_LABEL_MAX).join(""));
+  return v && v !== code ? v : null;
+}
+// 事件那一列的策略段:雲端用 api 查好的 strategy_label(讀不到名稱時就是代號),沒有這欄(舊 api、這台電腦的事件)查自己的清單。
+// 回 { text, code }:code = 寫的是代號,包 .mono
+function trEvStrat(code, apiLabel) {
+  if (typeof code !== "string" || !code) return null;
+  const name = typeof apiLabel === "string" && apiLabel ? (apiLabel !== code ? apiLabel : null) : trStratLabel(trDisplay(code), code);
+  return name ? { text: name, code: false } : { text: code, code: true };
+}
 
 /* ── 開/關視圖 ─────────────────────────────────────────── */
 async function trOpen(tab) {
@@ -5575,18 +5600,21 @@ const TR_EV_P1 = ["order_error", "order_unconfirmed", "manual_close_required", "
 const TR_EV_P2 = ["reconciler_dead", "venue_disconnected", "strategy_failed", "bar_stale", "target_stale", "dead_members", "scheduler_error",
   "venue_unbound", "market_check_off", "ui_override", "settings_rollback_failed", "report_degraded", "exchange_unreachable",
   "machine_silent", "disk_full", "memory_low", "report_rejected"];
-// 下單那一腿背後的策略(策略檔名):一支、兩支照列,三支以上「A 等 N 支策略」;沒有回 null。三個 key 同網頁
-// workspace_ov_ev_strat_one/two/many。檔名包 .mono、其餘字灰(designer v034 UX P3),一律走 textContent
+// 下單那一腿背後的策略:一支、兩支照列,三支以上「A 等 N 支策略」;沒有回 null。三個 key 同網頁
+// workspace_ov_ev_strat_one/two/many。名稱一般字、代號包 .mono、其餘字灰(designer v034 UX P3),一律走 textContent
 function trStratEl(names) {
-  const list = Array.isArray(names) ? names.filter((x) => typeof x === "string" && x).map((x) => x.slice(0, 40)) : [];
+  const list = Array.isArray(names) ? names.filter((x) => typeof x === "string" && x) : [];
   if (!list.length) return null;
+  // 名稱查這一邊的策略清單、套同一份規則(0.1.46);order_errors 來自報告,沒有 api 的 strategy_labels。代號才 .mono
+  // 先用完整代號查名稱,查不到要寫代號時才截 40(先截再查,長代號永遠查不到)
+  const lab = list.map((x) => { const r = trEvStrat(x); return r.code ? { text: r.text.slice(0, 40), code: true } : r; });
   const A = "\u0001", B = "\u0002", N = "\u0003", M = "\u0004";
   const tpl = list.length === 1 ? t("tr.ov.evStratOne", { name: A }) : list.length === 2 ? t("tr.ov.evStratTwo", { a: A, b: B })
     : t("tr.ov.evStratMany", { name: A, n: N, more: M });
-  const mono = { [A]: list[0], [B]: list[1], [N]: String(list.length), [M]: String(list.length - 1) };   // 數字也 mono(同網頁)
+  const vals = { [A]: lab[0], [B]: lab[1], [N]: { text: String(list.length), code: true }, [M]: { text: String(list.length - 1), code: true } };   // 數字也 mono(同網頁)
   const span = trEl("span", "dim");
   tpl.split(/([\u0001-\u0004])/).forEach((part) => {
-    if (Object.prototype.hasOwnProperty.call(mono, part)) span.appendChild(trEl("span", "mono", mono[part]));
+    if (Object.prototype.hasOwnProperty.call(vals, part)) span.appendChild(trEl("span", vals[part].code ? "mono" : "", vals[part].text));
     else if (part) span.append(part);
   });
   return span;
@@ -5615,10 +5643,12 @@ const TR_BROKER_KEY = { capital: "tr.ov.brokerCapital", president: "tr.ov.broker
 function trStrategyFailedNoteKey(d) {
   return /\bDataAccessError\b/.test(d && typeof d.error === "string" ? d.error : "") ? "tr.ov.evStrategyFailedNoData" : "tr.ov.evStrategyFailedNote";
 }
-function trEventText(type, d) {
+function trEventText(type, d, strat) {
   const v = { venue: trVenueLabel(String(d.venue || ""), true), minutes: d.minutes };
   const lv = trEvLevel(type, d), str = (x) => (typeof x === "string" ? x : "");
-  const out = (head, note, tip, code, tail) => [head, note == null ? null : note, lv, tip || null, code || null, tail || null];
+  const out = (head, note, tip, code, tail) => [head, note == null ? null : note, lv, tip || null, code || null, tail || null, null];
+  // 帶策略的那幾種:策略段由呼叫端照 trEvStrat 查好(名稱;查不到是代號),沒傳就寫代號
+  const outS = (...a) => { const o = out(...a); o[6] = strat || (str(d.strategy) ? { text: d.strategy, code: true } : null); return o; };
   if (type === "exchange_unreachable") return out(["tr.ov.evExUnreach", v], t("tr.ov.evExUnreachNote"), t("tr.ov.evExUnreachTip"));
   if (type === "exchange_recovered") return out(["tr.ov.evExBack", v], null);
   // Bitget 換帳戶類型後倉位全對上、自動恢復(P3,只進事件列;對不上的那一種走 halt)
@@ -5635,18 +5665,17 @@ function trEventText(type, d) {
   if (type === "venue_login_blocked" && d.venue === "president") return out(t("tr.ov.evPresStopped"), t("tr.ov.evPresStoppedNote"));
   // 群益 307:密碼被群益鎖住,重填之前要先到群益解鎖
   if (type === "venue_login_blocked" && d.venue === "capital") return out(t("tr.ov.evCapStopped"), t(d.reason === "LOCKED" ? "tr.ov.evCapLockedNote" : "tr.ov.evCapStoppedNote"));
-  if (type === "bar_stale") return d.computed === true ? null : out(t("tr.ov.evBarStale"), d.minutes == null ? null : t("tr.ov.evBarStaleNote", v));
+  if (type === "bar_stale") return d.computed === true ? null : outS(t("tr.ov.evBarStale"), d.minutes == null ? null : t("tr.ov.evBarStaleNote", v));
   // 目標部位過久沒更新(同網頁 workspace_ov_ev_target_stale):換算門檻同 api notify._age_text;沒 age_s 用不帶時間那句
   if (type === "target_stale") {
     const s = d.age_s, m = typeof s === "number" && isFinite(s) && s >= 0 ? Math.floor(s / 60) : null, h = m == null ? 0 : Math.floor(m / 60);
-    const name = str(d.strategy);
-    return out(t("tr.ov.evTargetStale"),
-      m == null ? t("tr.ov.evTargetStaleNote") : m < 120 ? t("tr.ov.evTargetStaleMin", { n: m }) : h < 48 ? t("tr.ov.evTargetStaleHour", { n: h }) : t("tr.ov.evTargetStaleDay", { n: Math.floor(h / 24) }), null, name);
+    return outS(t("tr.ov.evTargetStale"),
+      m == null ? t("tr.ov.evTargetStaleNote") : m < 120 ? t("tr.ov.evTargetStaleMin", { n: m }) : h < 48 ? t("tr.ov.evTargetStaleHour", { n: h }) : t("tr.ov.evTargetStaleDay", { n: Math.floor(h / 24) }));
   }
   // 成分股停止更新:列前 10 檔,其餘「等 N 檔」——{total}/{more} 兩個都給,語系自己挑
   if (type === "dead_members") {
     const syms = (Array.isArray(d.symbols) ? d.symbols : []).filter((x) => typeof x === "string" && x).map((x) => x.replace(/@spot$/, ""));
-    return out(t("tr.ov.evDeadMembers"), t("tr.ov.evDeadMembersNote"), null, syms.slice(0, 10).join(", "),
+    return outS(t("tr.ov.evDeadMembers"), t("tr.ov.evDeadMembersNote"), null, syms.slice(0, 10).join(", "),
       syms.length > 10 ? t("tr.ov.evDeadMore", { total: syms.length, more: syms.length - 10 }) : null);
   }
   if (type === "execution_fallback_market") return out(t("tr.ov.evExecFallback"), t("tr.ov.evExecFallbackNote"));
@@ -5654,8 +5683,8 @@ function trEventText(type, d) {
   // kind 只有 overdue/abandoned;認不得的照樣是通用句(同網頁)
   if (type === "execution_stuck") return d.kind === "abandoned" ? out(t("tr.ov.evExecAbandoned"), t("tr.ov.evExecAbandonedNote"))
     : out(t(d.kind === "overdue" ? "tr.ov.evExecOverdue" : "tr.ov.evExecStuck"), t("tr.ov.evExecStuckNote"));
-  if (type === "scheduler_error") return out(t("tr.ov.evSchedErr"), t("tr.ov.evSchedErrNote"));
-  if (type === "strategy_failed") return out(t("tr.ov.evStrategyFailed"), t(trStrategyFailedNoteKey(d)));
+  if (type === "scheduler_error") return outS(t("tr.ov.evSchedErr"), t("tr.ov.evSchedErrNote"));
+  if (type === "strategy_failed") return outS(t("tr.ov.evStrategyFailed"), t(trStrategyFailedNoteKey(d)));
   // 主機重開、對帳那支程式停著:標題已暫停,說明講「什麼單都不下」——跟 HALT 那列(平倉停損照常)並排時要分得出來;顏色跟 trigger
   if (type === "machine_restart_stopped") return out(t("tr.ov.evRestartStopped"), t("tr.ov.evRestartStoppedNote"));
   if (type === "machine_restart_stop_failed") return out(t("tr.ov.evRestartStopFailed"), t("tr.ov.evRestartStopFailedNote"));
@@ -5701,7 +5730,7 @@ function trEventText(type, d) {
     const n = typeof d.count === "number" && isFinite(d.count) && d.count >= 1 ? Math.floor(d.count) : null;
     return out(head, n == null ? t("tr.ov.evReportDegradedNoteNoCount") : t("tr.ov.evReportDegradedNote", { count: n }));
   }
-  if (type === "market_hold") return out(t("tr.ov.evMarketHold"), t("tr.ov.evMarketHoldNote"), null, str(d.strategy));
+  if (type === "market_hold") return outS(t("tr.ov.evMarketHold"), t("tr.ov.evMarketHoldNote"));
   if (type === "settings_unsafe") return out(t("tr.ov.evSettingsUnsafe"), t("tr.ov.evSettingsUnsafeNote"));
   if (type === "settings_rollback_failed") return out(t("tr.ov.evSettingsRollbackFailed"), t("tr.ov.evSettingsRollbackFailedNote"));
   if (type === "market_check_off") return out(t("tr.ov.evMarketCheckOff"), t("tr.ov.evMarketCheckOffNote"));
@@ -5740,10 +5769,19 @@ function trEvHead(head, cls) {
 function trEvCount(body, count) {
   if (typeof count === "number" && isFinite(count) && count >= 2) body.append(" ", trEl("span", "mono dim", "×" + Math.floor(count)));
 }
-// 一列事件的內容:標題(級別色)→ ×N → 代號(.mono)→ 代號後的補充 → 「— 說明」(說明的 tooltip 掛 title)
-function trEvBody(body, head, note, lv, tip, count, code, tail) {
+// 策略段:zh 包「」(名稱與代號都包,同 api 的 TG／信件),en 不加;代號 .mono、名稱一般字。一律 textContent
+function trStratSpan(st) {
+  const box = trEl("span", ""), parts = String(t("tr.ov.evStratName", { name: "\u0001" })).split("\u0001");
+  if (parts[0]) box.append(parts[0]);
+  box.appendChild(trEl("span", st.code ? "mono" : "", st.text));
+  if (parts.length > 1 && parts.slice(1).join("")) box.append(parts.slice(1).join(""));
+  return box;
+}
+// 一列事件的內容:標題(級別色)→ ×N → 策略(名稱一般字、代號 .mono)→ 代號(.mono)→ 代號後的補充 → 「— 說明」(說明的 tooltip 掛 title)
+function trEvBody(body, head, note, lv, tip, count, code, tail, strat) {
   body.appendChild(trEvHead(head, trEvClass(lv)));
   trEvCount(body, count);
+  if (strat) body.append(" ", trStratSpan(strat));
   // 中文標題以全形冒號收尾(後面接清單)時不再補空格
   if (code) body.append(typeof head === "string" && /：$/.test(head) ? "" : " ", trEl("span", "mono", code));
   if (tail) body.append(" ", trEl("span", "", tail));
@@ -5782,7 +5820,7 @@ function trOvEvents(r, z) {
     if (!ev || typeof ev.ts !== "number" || typeof ev.type !== "string") return;
     const d = ev.data && typeof ev.data === "object" ? ev.data : ev;   // 平台格式的欄位在 data;這台電腦那一份直接放最外層
     const venue = trVenueLabel(String(d.venue || ""), true);
-    let head = null, note = null, lv = 3, tip = null, code = null, tail = null;
+    let head = null, note = null, lv = 3, tip = null, code = null, tail = null, strat = null;
     // 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);這台電腦記的那一筆沒有 source = 人按的
     // halt 的字照 source(trEvLevel);顏色在 push 那裡讓 api 的 level 蓋過
     if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, trHaltNow(ev, d, r)); head = t(lv === 1 ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : "tr.ov.evHalt"); note = trHaltUnconfirmedSym(d) != null ? trHaltUnconfirmedNote(d) : trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : closes ? null : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
@@ -5792,9 +5830,9 @@ function trOvEvents(r, z) {
     else if (ev.type === "machine_restart_stopped") { const txt = trEventText(ev.type, d); if (txt) [head, note, lv, tip, code, tail] = txt; lastRun = "halt"; }
     // 雲端格式(欄位在 data)才是平台記的「被解除」(P2);這台電腦記的那筆是用戶自己按的,一般字
     else if (ev.type === "venue_disconnected" && venue) { head = ["tr.ov.evDisconnected", { venue }]; lv = d !== ev ? 2 : 3; }
-    else { const txt = trEventText(ev.type, d); if (txt) [head, note, lv, tip, code, tail] = txt; }   // 雲端才有的型別(交易所連不上…);desktop_action 回 null 不畫
+    else { const txt = trEventText(ev.type, d, trEvStrat(d.strategy, ev.strategy_label)); if (txt) [head, note, lv, tip, code, tail, strat] = txt; }   // 雲端才有的型別(交易所連不上…);desktop_action 回 null 不畫
     if (!head) return;
-    push(ev.ts * 1000, (body) => trEvBody(body, head, note, trEvApiLevel(ev) || lv, tip, ev.count, code, tail));
+    push(ev.ts * 1000, (body) => trEvBody(body, head, note, trEvApiLevel(ev) || lv, tip, ev.count, code, tail, strat));
   });
   // 目前的 HALT(狀態檔的現況):畫面上按的那一次已經在上面了,兩分鐘內的同一件事不重複列;自動暫停、聊天裡的暫停只有這裡看得到
   const halt = r.halt || {}, haltMs = trMs(halt.at);
@@ -5836,9 +5874,9 @@ function trOvEvents(r, z) {
   (Array.isArray(r.events) ? r.events : []).forEach((ev) => {
     if (!ev || typeof ev.type !== "string") return;
     const evd = ev.payload && typeof ev.payload === "object" ? ev.payload : ev.data && typeof ev.data === "object" ? ev.data : ev;   // 機器事件的欄位叫 payload(runtime/events.py);data 是平台格式
-    const txt = trEventText(ev.type, evd);
+    const txt = trEventText(ev.type, evd, trEvStrat(evd.strategy, ev.strategy_label));
     if (!txt) return;
-    push(trMs(ev.ts), (body) => trEvBody(body, txt[0], txt[1], trEvApiLevel(ev) || txt[2], txt[3], ev.count, txt[4], txt[5]));
+    push(trMs(ev.ts), (body) => trEvBody(body, txt[0], txt[1], trEvApiLevel(ev) || txt[2], txt[3], ev.count, txt[4], txt[5], txt[6]));
   });
   /* 讀不到就說讀不到:絕不可以把「這一輪沒讀到」畫成「這段期間沒有事件」(同權益曲線的先例——讀不到就不畫,不斷言)。
      報告裡的那幾種(下單、現在的 HALT、下單失敗)是另一個來源,讀得到就照列,所以這一句是加在清單上面、不取代清單。 */

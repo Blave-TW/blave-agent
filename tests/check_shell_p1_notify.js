@@ -71,6 +71,13 @@ t("order_unconfirmed 是 P1 型別、但不從 events 來", P1_TYPES.includes("o
 var tmLabels = {}; tmLabels.stratOne = "策略 {name}"; tmLabels.stratTwo = "策略 {a}、{b}"; tmLabels.stratMany = "{name} 等 {n} 支策略"; tmLabels.withStrat = "{strat}：{note}";
 t("通知內文:一支、兩支、三支以上、沒有策略", p1WithStrat(["a"], "N") === "策略 a：N" && p1WithStrat(["a", "b"], "N") === "策略 a、b：N"
   && p1WithStrat(["a", "b", "c"], "N") === "a 等 3 支策略：N" && p1WithStrat([], "N") === "N" && p1WithStrat(undefined, "N") === "N");
+// 0.1.46:策略寫名稱(呼叫端給 label,同一份規則讀不到就是代號);zh 範本包「」
+tmLabels.stratOne = "策略「{name}」"; tmLabels.stratTwo = "策略「{a}」、「{b}」"; tmLabels.stratMany = "「{name}」等 {n} 支策略";
+const lbl = (c) => ({ a: "台指期 籌碼", b: "b" }[c] || c);
+t("通知內文:策略名經 label 換成名稱、zh 包「」;沒 label 照舊代號", p1WithStrat(["a"], "N", lbl) === "策略「台指期 籌碼」：N"
+  && p1WithStrat(["a", "b"], "N", lbl) === "策略「台指期 籌碼」、「b」：N" && p1WithStrat(["a"], "N") === "策略「a」：N");
+t("系統通知:market_hold 這種只帶單一 strategy 的也帶策略,名稱照 p1StratLabel",
+  /body: p1WithStrat\(e\.payload && \(Array\.isArray\(e\.payload\.strategies\) \? e\.payload\.strategies : typeof e\.payload\.strategy === "string" \? \[e\.payload\.strategy\] : null\), note, p1StratLabel\)/.test(src));
 t("stuck 那則有自己的標題與內文", src.includes("ev_order_unconfirmed_stuck:") && src.includes("ev_order_unconfirmed_stuck_n:"));
 { const x = p1FromState(R({ halted: true, at: NOW - 5, source: "reconciler", reason: "[order_unconfirmed_unparked] BTCUSDT: unknown" }), { halt: 0, err: 0 }, NOW);
   t("追蹤不了而整台暫停:halt 那則帶 unconfirmed,內文用專屬那句(有英文退路)", x.show.length === 1 && x.show[0].payload.unconfirmed === true

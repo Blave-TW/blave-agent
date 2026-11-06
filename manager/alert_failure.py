@@ -1,5 +1,7 @@
 """
-Sends a Telegram alert when a strategy's cron run crashes (non-zero exit).
+Records a strategy_failed event when a strategy's cron run crashes (non-zero exit); the platform
+sends the Telegram for it. Only when the event cannot land (an old runtime with no event channel)
+does this send the Telegram itself.
 CLI form is called only by manager/run_strategy.sh; alert() is also called
 directly by manager/wait_for_bar.py's cross-platform launcher (no bash/shell
 in between there, so it calls the Python function instead of the CLI).
@@ -28,16 +30,21 @@ def alert(strategy_name, exit_code, output, transient=False):
     # 事件落檔在冷卻檢查「之前」——冷卻(24h)是給 Telegram 那一半用的,平台會自己
     # 依級別去重(P2 同因 6 小時)。機器先壓過一輪,平台就永遠看不到那些事實。
     # exit_code 從 argv 進來是字串,平台的欄位白名單要數值,轉不動就不送那一格。
+    landed = None
     try:
         from lib.events import emit
         try:
             _code = int(exit_code)
         except (TypeError, ValueError):
             _code = None
-        emit("strategy_failed", strategy=strategy_name, exit_code=_code,
-             error=str(output)[-500:], transient=bool(transient))
+        landed = emit("strategy_failed", strategy=strategy_name, exit_code=_code,
+                      error=str(output)[-500:], transient=bool(transient))
     except Exception:
         pass
+    # 落檔了就由平台送(P2,同一個 bot、同一批 chat);這裡再送是同一件事兩則(canon notifications §5 第 2 步)。
+    # 落不了檔(舊 runtime 沒有事件通道)才自己送
+    if landed:
+        return
 
     state_path = f"strategies/{strategy_name}/failure_alert_state.json"
     now = time.time()
@@ -53,8 +60,13 @@ def alert(strategy_name, exit_code, output, transient=False):
     outlook = ("The data source did not answer this time; the position is left as it is and "
                "the next run tries again automatically." if transient else
                "The same error will likely repeat on every run until it is fixed.")
+    try:
+        from lib.strategy_names import label
+        shown = label(strategy_name)
+    except Exception:
+        shown = strategy_name
     msg = (
-        f"⚠️ Strategy {strategy_name} failed (exit={exit_code})\n"
+        f"⚠️ Strategy {shown} failed (exit={exit_code})\n"
         f"The schedule will keep firing, but this run did not complete — no orders "
         f"or signals were produced. {outlook}\n\n{tail}"
     )

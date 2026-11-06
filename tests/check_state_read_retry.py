@@ -219,6 +219,7 @@ EXEMPT = [
      'helper', "the retry helper's own open, or the half-updated-workspace fallback"),
     ('lib/venue_wiring.py', 'load_json', 'path',
      'helper', "the retry helper's own open, or the half-updated-workspace fallback"),
+    ('lib/strategy_names.py', '_display_name', 'p', 'code', 'strategy source read for DISPLAY_NAME'),
     ('lib/winreplace.py', '_load_json', 'path',
      'helper', "the retry helper's own open, or the half-updated-workspace fallback"),
     ('manager/alert_failure.py', 'alert', 'state_path',

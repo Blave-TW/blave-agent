@@ -687,14 +687,26 @@ def _run_strategy_protected(name):
     return True
 
 
+def _label(name):
+    try:
+        from lib.strategy_names import label
+        return label(name)
+    except Exception:
+        return name
+
+
 def _alert_stale(name, expected, minutes_waited, straggler_symbol, computed=False):
     # 事件落檔與 Telegram 並行(dual-write)——見 lib/events。冷卻交給平台。
+    landed = None
     try:
         from lib.events import emit
-        emit("bar_stale", strategy=name, symbol=straggler_symbol,
-             minutes=minutes_waited, computed=bool(computed))
+        landed = emit("bar_stale", strategy=name, symbol=straggler_symbol,
+                      minutes=minutes_waited, computed=bool(computed))
     except Exception:
         pass
+    # 落檔了平台就會送(P2);computed=true 平台壓成 P3 不送,只剩這一則
+    if landed and not computed:
+        return
     who = f"卡住的是 {straggler_symbol}。若已下市或長期停牌，請從 UNIVERSE 移除。" \
         if straggler_symbol is not None else ""
     if isinstance(straggler_symbol, _FeedWait):
@@ -706,7 +718,7 @@ def _alert_stale(name, expected, minutes_waited, straggler_symbol, computed=Fals
     try:
         from lib.notify import send_text
         send_text(
-            f"⚠️ {name}：{expected.strftime('%m-%d %H:%M')} 的 K 棒晚了 {minutes_waited} 分鐘。"
+            f"⚠️「{_label(name)}」：{expected.strftime('%m-%d %H:%M')} 的 K 棒晚了 {minutes_waited} 分鐘。"
             + ("訊號已先用最新資料算出，那檔沿用最後一筆。" if computed else "仍在重試，訊號會晚發。")
             + (f"\n{who}" if who else "")
         )
@@ -715,15 +727,18 @@ def _alert_stale(name, expected, minutes_waited, straggler_symbol, computed=Fals
 
 
 def _alert_lag(name, minutes, straggler_symbol):
+    landed = None
     try:
         from lib.events import emit
-        emit("bar_stale", strategy=name, symbol=straggler_symbol, minutes=minutes, computed=False)
+        landed = emit("bar_stale", strategy=name, symbol=straggler_symbol, minutes=minutes, computed=False)
     except Exception:
         pass
+    if landed:   # 平台送,同 _alert_stale
+        return
     who = f"（落後的是 {straggler_symbol}）" if straggler_symbol is not None else ""
     try:
         from lib.notify import send_text
-        send_text(f"⚠️ {name}：K 棒一直晚一根才到{who}。已 {minutes} 分鐘沒算出訊號，仍在重試。")
+        send_text(f"⚠️「{_label(name)}」K 棒一直晚一根才到{who}。已 {minutes} 分鐘沒算出訊號，仍在重試。")
     except Exception as e:  # best-effort, like _alert_stale
         logging.warning(f"[wait_for_bar] lag notification dropped ({e})")
 
@@ -769,18 +784,21 @@ def _note_dead(name, state, dead, long_dead, latest=None):
     state["not_waited"], state["dead_noticed"] = dead, long_dead
     if not new:
         return
+    landed = None
     try:
         from lib.events import emit
         last = [latest[m] for m in new if latest and latest.get(m) is not None]
         # Capped here, not left to the platform: a payload over its 4KB limit is dropped whole
-        emit("dead_members", strategy=name, symbols=[str(m)[:40] for m in new[:50]],
-             last_trade=max(last).date().isoformat() if last else None)
+        landed = emit("dead_members", strategy=name, symbols=[str(m)[:40] for m in new[:50]],
+                      last_trade=max(last).date().isoformat() if last else None)
     except Exception:
         pass
+    if landed:   # 平台送,同 _alert_stale
+        return
     shown = "、".join(new[:10]) + (f" 等 {len(new)} 檔" if len(new) > 10 else "")
     try:
         from lib.notify import send_text
-        send_text(f"ℹ️ {name}：{shown} 已經一個月以上沒有新資料（多半是已下市），排程不再等它，"
+        send_text(f"ℹ️「{_label(name)}」：{shown} 已經一個月以上沒有新資料（多半是已下市），排程不再等它，"
                   f"訊號照其他標的準時算。若已下市，請從 UNIVERSE 移除，以免策略還配權重給它。")
     except Exception as e:  # best-effort, like _alert_stale
         logging.warning(f"[wait_for_bar] dead-member notification dropped ({e})")
@@ -798,13 +816,16 @@ def _alert_wrapper_error(name, exc):
     except Exception:
         state = {}
     # 事件在冷卻檢查之前落檔:冷卻(6h)是給 Telegram 那一半的,平台自己會去重。
+    landed = None
     try:
         from lib.events import emit
-        emit("scheduler_error", strategy=name,
-             error="".join(traceback.format_exception(
-                 type(exc), exc, exc.__traceback__))[-500:])
+        landed = emit("scheduler_error", strategy=name,
+                      error="".join(traceback.format_exception(
+                          type(exc), exc, exc.__traceback__))[-500:])
     except Exception:
         pass
+    if landed:   # 平台送,同 _alert_stale
+        return
 
     last = state.get("wrapper_error_alerted_at") or 0
     if now - last < WRAPPER_ERROR_COOLDOWN_SECONDS:
@@ -812,7 +833,7 @@ def _alert_wrapper_error(name, exc):
     try:
         from lib.notify import send_text
         tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))[-1500:]
-        send_text(f"⚠️ wait_for_bar.py 本身出錯（{name}），排程可能完全停擺：\n\n{tb}")
+        send_text(f"⚠️ wait_for_bar.py 本身出錯（策略「{_label(name)}」），排程可能完全停擺：\n\n{tb}")
     except Exception as e:
         logging.warning(f"[wait_for_bar] wrapper-error notification dropped ({e})")
     state["wrapper_error_alerted_at"] = now

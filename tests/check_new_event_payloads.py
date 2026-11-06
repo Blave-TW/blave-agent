@@ -134,9 +134,10 @@ check(p.get("symbols") == members[:50] and p.get("strategy") == "tw_c",
       f"(2) symbols = the newly dead only, capped at 50 ({len(p.get('symbols', []))})")
 check(p.get("last_trade") == "2026-09-03", f"(2) last_trade = newest last bar among them ({p.get('last_trade')})")
 check(got and clean(got[0]) and len(json.dumps(p).encode()) < 4096, "(2) the payload passes the whitelist, under 4KB")
-check(len(sent) == 3 and "S000" in sent[-1], "(2) the Telegram notice still goes out")
+# 事件落檔了就由平台送(canon notifications §5 第 2 步):機器只剩 bar_stale computed=true 那一則(平台壓成 P3 不送)
+check(len(sent) == 1 and "訊號已先用最新資料算出" in sent[0], f"(2) landed events leave the Telegram to the platform ({sent})")
 wfb._note_dead("tw_c", state, members + ["OLD"], members + ["OLD"], latest=latest)
-check(landed() == [] and len(sent) == 3, "(2) the same set again: no second event, no second notice")
+check(landed() == [] and len(sent) == 1, "(2) the same set again: no second event, no second notice")
 wfb._note_dead("tw_d", {}, ["X"], ["X"])
 got = landed()
 check(len(got) == 1 and "last_trade" not in got[0]["payload"] and clean(got[0]),

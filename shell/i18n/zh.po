@@ -10060,13 +10060,16 @@ msgid "tr.err.unconfirmed"
 msgstr "結果不明，可能已經成交，不要手動補單。這個標的暫停開倉，平倉照常。"
 
 msgid "tr.ov.evStratOne"
-msgstr "策略 {name}"
+msgstr "策略「{name}」"
 
 msgid "tr.ov.evStratTwo"
-msgstr "策略 {a}、{b}"
+msgstr "策略「{a}」、「{b}」"
 
 msgid "tr.ov.evStratMany"
-msgstr "{name} 等 {n} 支策略"
+msgstr "「{name}」等 {n} 支策略"
+
+msgid "tr.ov.evStratName"
+msgstr "「{name}」"
 
 msgid "tm.evWithStrat"
 msgstr "{strat}：{note}"

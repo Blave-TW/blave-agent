@@ -2480,7 +2480,9 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const hist = node("div");
     const ctx = vm.createContext({ document: { createElement: node, createDocumentFragment: () => node("#frag"), body: node("body"), addEventListener() {} }, window: { addEventListener() {} }, Date, Math, JSON, Array, Object, Number, String, isFinite, console,
       $: (id) => (id === "tr-hist" ? hist : null), t: (k, v) => (v ? k + "|" + JSON.stringify(v) : k), LANG: "zh", CX_VENUES: {}, PAPER: "paper", trShould: () => true, trUnit: () => "TWD", trSetTab: (tab, focus) => { ctx.tabbed = [tab, focus]; } });
-    vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "\n" + src.slice(src.indexOf("const TR_EV_P1 = ["), src.indexOf("function trOvEvents(")).replace(/^const /gm, "var ")
+    // 事件列的策略段(trEvStrat 與名稱規則),0.1.46
+    const labels = src.slice(src.indexOf("/* 事件列上的策略名稱"), src.indexOf("\n\n/* ── 開/關視圖")).replace(/^const /gm, "var ");
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\n" + consts + "\n" + labels + "\n" + src.slice(src.indexOf("const TR_EV_P1 = ["), src.indexOf("function trOvEvents(")).replace(/^const /gm, "var ")
       + src.match(/^let trHistTipEl = [^\n]*/m)[0].replace(/^let /, "var ") + "\n"
       + ["trEl", "trSec", "trFmt", "trFmtPrice", "trStamp", "trHM", "trReport", "trDisplay", "trStratName", "trVenueLabel", "trTxfSymInto", "trOrderContract", "trOrderLotsQty", "trWithUnit", "trPosKey", "trPosFocusOf", "trHistTipBox", "trHistTipShow", "trHistTipHide", "trHistTipBtn", "trPaintHist", "trTwNamesWant", "trTwName", "trTwNameEl", "trOvFills", "trOvEvents"].map(cutF).join("\n"), ctx);
     const now = Math.floor(Date.now() / 1000);
@@ -2565,6 +2567,20 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       // 主機重開後停住也算暫停(同網頁):雲端的 ui 流裡那一筆、或這台電腦的機器事件(r.events,ts 是 ISO 字串)在前 → 「已恢復下單」
       const paintEv = (ui, events) => { ctx.TR = { st: { report: { events } }, list: [], ov: { days: 7, ui, uiErr: false } }; return flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)).filter((x) => x.className === "ev-row").map((x) => x.textContent); };
       const iso = (sec) => new Date(sec * 1000).toISOString();
+      { // 0.1.46:兩支策略各一列「K 棒沒到位」以前字一模一樣;雲端用 api 的 strategy_label,這台電腦的事件查清單
+        const rowsOf = (ui, events, list) => { ctx.TR = { st: { report: { events } }, list, ov: { days: 7, ui, uiErr: false } }; return flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)).filter((x) => x.className === "ev-row").map((x) => x.textContent); };
+        const cloud = rowsOf([{ ts: d0 - 60, type: "bar_stale", data: { strategy: "a_1m", minutes: 7 }, strategy_label: "台指期籌碼" },
+          { ts: d0 - 90, type: "bar_stale", data: { strategy: "b_1m", minutes: 7 }, strategy_label: "b_1m" }], [], []);
+        const local = rowsOf([], [{ ts: iso(d0 - 60), type: "strategy_failed", payload: { strategy: "a_1m" } },
+          { ts: iso(d0 - 90), type: "scheduler_error", payload: { strategy: "c_1m" } }], [{ name: "a_1m", displayName: "台指期籌碼" }, { name: "c_1m", displayName: "到 t.me/x" }]);
+        ok("事件列帶策略:雲端兩列分得出(名稱／沒名稱寫代號),這台電腦查清單、網址名稱退代號",
+          cloud.length === 2 && cloud[0].includes("台指期籌碼") && cloud[1].includes("b_1m") && local.length === 2 && local[0].includes("台指期籌碼") && local[1].includes("c_1m") && !local[1].includes("t.me"), J([cloud, local]));
+        ctx.TR = { st: { report: { events: [], order_errors: [{ ts: iso(d0 - 60), symbol: "TXF", error: "x", strategies: ["a_1m", "c_1m"] }] } },
+          list: [{ name: "a_1m", displayName: "台指期籌碼" }, { name: "c_1m", displayName: "到 t.me/x" }], ov: { days: 7, ui: [], uiErr: false } };
+        const t0 = ctx.t; ctx.t = (k, v) => { let x = k === "tr.ov.evStratTwo" ? "策略「{a}」、「{b}」" : k; if (v) for (const n in v) x = x.split("{" + n + "}").join(v[n]); return x; };
+        const spans = (() => { try { return flat(vm.runInContext("TR = this.TR; trOvEvents(TR.st.report)", ctx)); } finally { ctx.t = t0; } })();
+        const nameSpan = spans.find((x) => x.text === "台指期籌碼"), codeSpan = spans.find((x) => x.text === "c_1m");
+        ok("下單失敗那列的策略段:名稱一般字、讀不到名稱的寫代號 mono(trStratEl)", !!nameSpan && nameSpan.className === "" && !!codeSpan && codeSpan.className === "mono", J(spans.map((x) => [x.className, x.text]))); }
       const cloudMrs = paintEv([{ ts: d0 - 30, type: "resume" }, { ts: d0 - 120, type: "machine_restart_stopped", data: { downtime_s: 600 } }], []);
       const localMrs = paintEv([{ ts: d0 - 30, type: "resume" }], [{ ts: iso(d0 - 120), type: "machine_restart_stopped", payload: { downtime_s: 600 } }]);
       const afterMrs = paintEv([{ ts: d0 - 120, type: "resume" }], [{ ts: iso(d0 - 30), type: "machine_restart_stopped", payload: {} }]);

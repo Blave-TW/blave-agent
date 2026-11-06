@@ -10032,6 +10032,9 @@ msgstr "strategies {a}, {b}"
 msgid "tr.ov.evStratMany"
 msgstr "{name} and {more} more strategies"
 
+msgid "tr.ov.evStratName"
+msgstr "{name}"
+
 msgid "tm.evWithStrat"
 msgstr "{strat}: {note}"
 

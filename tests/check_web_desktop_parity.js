@@ -200,6 +200,7 @@ const UNCONFIRMED_PAIRS = {
   "tr.ov.evUnconfirmedStuck": "workspace_ov_ev_unconfirmed_stuck", "tr.ov.evUnconfirmedNote": "workspace_ov_ev_unconfirmed_note",
   "tr.ov.evUnconfirmedStuckNote": "workspace_ov_ev_unconfirmed_stuck_note",
   "tr.ov.evStratOne": "workspace_ov_ev_strat_one", "tr.ov.evStratTwo": "workspace_ov_ev_strat_two", "tr.ov.evStratMany": "workspace_ov_ev_strat_many",
+  "tr.ov.evStratName": "workspace_ov_ev_strat_name",
   // 停車解除後(released／filled)與追蹤不了而整台暫停([order_unconfirmed_unparked])
   "tr.ov.evUnconfirmedReleased": "workspace_ov_ev_unconfirmed_released",
   "tr.ov.evUnconfirmedReleasedFilled": "workspace_ov_ev_unconfirmed_released_filled",
@@ -782,4 +783,22 @@ for (const lang of ["zh", "en"]) {
     /trEl\("p", "pf-note ub-held"\)[^\n]*t\("tr\.ub\.failTitleN"\)[\s\S]{0,200}addEventListener\("click", \(\) => trUnbind\(a\)\)/.test(tradeSrc)
     && /el\("span", "ub-held"\)[\s\S]{0,120}I18N\.ubFailTitleN[\s\S]{0,200}addEventListener\("click", unbindAccount\)/.test(web));
 }
+// 策略名稱規則(canon notifications §3.1):電腦版 trStratLabel 跑 api tests/check_strategy_names.py 的同一張 CASES,
+// TLD 表與 40 字上限跟 api openclaw/strategy_names.py 同一份。api 那棵找不到就 fail
+{ const apiDir = process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api");
+  const apiTest = path.join(apiDir, "tests", "check_strategy_names.py"), apiRule = path.join(apiDir, "openclaw", "strategy_names.py");
+  if (!fs.existsSync(apiTest) || !fs.existsSync(apiRule)) ok("策略名稱:找得到 api 那棵的規則與測資(" + apiTest + ";設 BLAVE_API_DIR)", false);
+  else {
+    const m = /# CASES_BEGIN\nCASES = json\.loads\(r'''([\s\S]*?)'''\)\n# CASES_END/.exec(fs.readFileSync(apiTest, "utf8")), cases = m ? JSON.parse(m[1]) : [];
+    const rule = fs.readFileSync(apiRule, "utf8"), pyTld = /URL_TLDS = \(([\s\S]*?)\)/.exec(rule), pyMax = /^LABEL_MAX = (\d+)$/m.exec(rule);
+    const block = desk.slice(desk.indexOf("/* 事件列上的策略名稱"), desk.indexOf("\nfunction trEvStrat("));
+    const L = new Function(block.replace(/^const /gm, "var ") + "\nreturn { trStratLabel, TR_LABEL_TLDS, TR_LABEL_MAX };")();
+    const bad = cases.filter(([n, c, want]) => (L.trStratLabel(n, c) || "") !== want);
+    ok(`策略名稱:電腦版跑 api 的 ${cases.length} 筆測資結果一致`, cases.length > 20 && !bad.length, JSON.stringify(bad.map(([n, c, w]) => [n, w, L.trStratLabel(n, c)])));
+    const ms = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"), mi = ms.indexOf("function stratLabelClean("), mj = ms.indexOf("\n// 本機 P1 系統通知講到策略", mi);
+    const mainClean = mi >= 0 && mj > mi ? new Function(ms.slice(mi, mj) + "\nreturn stratLabelClean;")() : () => "<missing>";
+    const badMain = cases.filter(([n, c, want]) => (mainClean(n, c) || "") !== want);
+    ok(`策略名稱:主行程(系統通知)跑 api 的 ${cases.length} 筆測資結果一致`, cases.length > 20 && !badMain.length, JSON.stringify(badMain.map(([n, c, w]) => [n, w, mainClean(n, c)])));
+    ok("策略名稱:TLD 表與上限跟 api 同一份", !!pyTld && !!pyMax && JSON.stringify([...pyTld[1].matchAll(/"([a-z]+)"/g)].map((x) => x[1])) === JSON.stringify(L.TR_LABEL_TLDS) && Number(pyMax[1]) === L.TR_LABEL_MAX);
+  } }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

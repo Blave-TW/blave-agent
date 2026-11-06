@@ -32,9 +32,9 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
     J([0, 59, 60, 7199, 7200, 172799, 172800, 259199].map(ts)) === J(['tr.ov.evTargetStaleMin|{"n":0}', 'tr.ov.evTargetStaleMin|{"n":0}', 'tr.ov.evTargetStaleMin|{"n":1}', 'tr.ov.evTargetStaleMin|{"n":119}',
       'tr.ov.evTargetStaleHour|{"n":2}', 'tr.ov.evTargetStaleHour|{"n":47}', 'tr.ov.evTargetStaleDay|{"n":2}', 'tr.ov.evTargetStaleDay|{"n":2}']));
   ok("target_stale 沒 / 壞 age_s → 不帶時間那句(後果不消失)", [undefined, null, -5, "3600", NaN, Infinity].every((a) => ts(a) === "tr.ov.evTargetStaleNote"));
-  ok("target_stale 策略名是代號(另一個節點),標題不拼它;沒有就只有標題", J(E("target_stale", { strategy: "s2" }).slice(4)) === J(["s2", null]) && E("target_stale", { strategy: "s2" })[0] === "tr.ov.evTargetStale" && E("target_stale", {})[4] === null);
+  ok("target_stale 策略在策略段(另一個節點),標題不拼它;沒有就只有標題", J(E("target_stale", { strategy: "s2" }).slice(4)) === J([null, null, { text: "s2", code: true }]) && E("target_stale", { strategy: "s2" })[0] === "tr.ov.evTargetStale" && E("target_stale", {})[6] === null);
   const syms = (n) => Array.from({ length: n }, (_x, i) => "S" + i), dm = (list) => E("dead_members", { strategy: "s3", symbols: list });
-  ok("dead_members ≤10 檔全列(標的是代號,不帶策略名;同網頁)", J(dm(syms(10))) === J(["tr.ov.evDeadMembers", "tr.ov.evDeadMembersNote", 2, null, syms(10).join(", "), null]));
+  ok("dead_members ≤10 檔全列(標的是代號);0.1.46 起帶策略段", J(dm(syms(10))) === J(["tr.ov.evDeadMembers", "tr.ov.evDeadMembersNote", 2, null, syms(10).join(", "), null, { text: "s3", code: true }]));
   ok("dead_members 11 檔 → 前 10 + 等 1(total/more 兩個都給)", dm(syms(11))[4] === syms(10).join(", ") && dm(syms(11))[5] === 'tr.ov.evDeadMore|{"total":11,"more":1}');
   ok("dead_members 去 @spot、濾掉空與非字串;沒 symbols 只剩標題", dm(["A@spot", "", null, 5, "B"])[4] === "A, B" && E("dead_members", { strategy: "s3" })[0] === "tr.ov.evDeadMembers" && !E("dead_members", { strategy: "s3" })[4]);
   ok("不認得的型別照舊不顯示", E("target_stale_v2", {}) === null);
@@ -49,9 +49,9 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
   ok("主機重開依 trigger:意外/沒帶 P1、resume P2、upgrade P3", J(["unexpected", undefined, "resume", "upgrade"].map((tg) => LV("machine_restart_stopped", { trigger: tg }))) === J([1, 1, 2, 3]));
   ok("halt 級別:自動(reconciler/portfolio)P1,其他 P3", J([trEvLevel("halt", { source: "reconciler" }), trEvLevel("halt", { source: "portfolio" }), trEvLevel("halt", { source: "web" }), trEvLevel("halt", {})]) === J([1, 1, 3, 3]));
   ok("級別 → class:1 err、2 hl、3 空", trEvClass(1) === "err" && trEvClass(2) === "hl" && trEvClass(3) === "");
-  ok("exchange_unreachable:說明縮短、後半句進 tooltip", J(E("exchange_unreachable", { venue: "okx", minutes: 30 })) === J([["tr.ov.evExUnreach", { venue: "okx", minutes: 30 }], "tr.ov.evExUnreachNote", 2, "tr.ov.evExUnreachTip", null, null]));
+  ok("exchange_unreachable:說明縮短、後半句進 tooltip", J(E("exchange_unreachable", { venue: "okx", minutes: 30 })) === J([["tr.ov.evExUnreach", { venue: "okx", minutes: 30 }], "tr.ov.evExUnreachNote", 2, "tr.ov.evExUnreachTip", null, null, null]));
   ok("execution_stuck 分 overdue／abandoned／其他", J(["overdue", "abandoned", "x"].map((k) => E("execution_stuck", { kind: k }).slice(0, 2))) === J([["tr.ov.evExecOverdue", "tr.ov.evExecStuckNote"], ["tr.ov.evExecAbandoned", "tr.ov.evExecAbandonedNote"], ["tr.ov.evExecStuck", "tr.ov.evExecStuckNote"]]));
-  ok("market_hold 策略名是代號、不拼進標題", E("market_hold", { strategy: "s4", venue: "okx" })[0] === "tr.ov.evMarketHold" && E("market_hold", { strategy: "s4" })[4] === "s4" && E("market_hold", { strategy: "s4" })[1] === "tr.ov.evMarketHoldNote");
+  ok("market_hold 策略在策略段、不拼進標題", E("market_hold", { strategy: "s4", venue: "okx" })[0] === "tr.ov.evMarketHold" && J(E("market_hold", { strategy: "s4" })[6]) === J({ text: "s4", code: true }) && E("market_hold", { strategy: "s4" })[1] === "tr.ov.evMarketHoldNote");
   ok("settings_unsafe / rollback_failed / market_check_off 各自一句", J([E("settings_unsafe", {}), E("settings_rollback_failed", {}), E("market_check_off", { kind: "table" })].map((x) => x.slice(0, 2)))
     === J([["tr.ov.evSettingsUnsafe", "tr.ov.evSettingsUnsafeNote"], ["tr.ov.evSettingsRollbackFailed", "tr.ov.evSettingsRollbackFailedNote"], ["tr.ov.evMarketCheckOff", "tr.ov.evMarketCheckOffNote"]]));
   ok("reconciler / machine / venue_unbound / ui_override 照網頁有句子", E("reconciler_dead", {})[0] === "tr.ov.evRecDead" && E("reconciler_recovered", {})[0] === "tr.ov.evRecBack"
@@ -93,7 +93,7 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
 // ui 那一段(會碰 DOM,只驗寫法)
 { const loop = cut("const ui = (Array.isArray(TR.ov.ui)", "// 目前的 HALT");
   ok("ui:平台格式的欄位包在 data 裡,這台電腦那一份在最外層——兩邊同一支迴圈", /const d = ev\.data && typeof ev\.data === "object" \? ev\.data : ev;/.test(loop) && /String\(d\.venue \|\| ""\)/.test(loop));
-  ok("ui:認不得的型別交給 trEventText(雲端才有的 desktop_action / 交易所連不上…),還是認不得就不畫", /else \{ const txt = trEventText\(ev\.type, d\); if \(txt\) \[head, note, lv, tip, code, tail\] = txt; \}/.test(loop) && /if \(!head\) return;/.test(loop));
+  ok("ui:認不得的型別交給 trEventText(雲端才有的 desktop_action / 交易所連不上…),還是認不得就不畫", /else \{ const txt = trEventText\(ev\.type, d, trEvStrat\(d\.strategy, ev\.strategy_label\)\); if \(txt\) \[head, note, lv, tip, code, tail, strat\] = txt; \}/.test(loop) && /if \(!head\) return;/.test(loop));
   ok("ui:halt 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);沒有 source = 人按的", /lv = trEvLevel\(ev\.type, d\); const closes = lv !== 1 && trHaltCloses\(ev\.type, trHaltNow\(ev, d, r\)\); head = t\(lv === 1 \? "tr\.ov\.evHaltAuto" : closes \? "tr\.ov\.evHaltClose" : "tr\.ov\.evHalt"\)/.test(loop));
   // 0.1.28 Wei 實測:按「暫停並關閉部位」事件只寫「已暫停下單」。這台電腦的 halt_close 看 daemon 記的 closing;
   // 雲端 halt 與現在的 HALT 看 runtime 判完才寫的 closing(稽核 B-3),沒有這欄(舊 runtime)才退回寫死的 reason
@@ -132,8 +132,9 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
   ok("ui:雲端記的 venue_disconnected P2、這台電腦自己按的一般字", /lv = d !== ev \? 2 : 3;/.test(loop));
   ok("現在的 HALT 那列顏色照級別(execute/settings 暫停不再紅,P1 由對應事件那列承擔)", /trEl\("span", trEvClass\(trEvLevel\("halt", halt\)\),/.test(cut("// 目前的 HALT", "trUnconfirmedRows(r.order_errors)")));
   ok("ui 與機器事件兩段都走 trEvBody(帶 ev.count)", (src.match(/trEvBody\(body, .*?, ev\.count, .*?\)\);/g) || []).length === 2);
-  ok("兩段的顏色都先讀 api 的 level、缺才用自己算的", /trEvBody\(body, head, note, trEvApiLevel\(ev\) \|\| lv, tip, ev\.count, code, tail\)/.test(src)
-    && /trEvBody\(body, txt\[0\], txt\[1\], trEvApiLevel\(ev\) \|\| txt\[2\], txt\[3\], ev\.count, txt\[4\], txt\[5\]\)/.test(src));
+  ok("兩段的顏色都先讀 api 的 level、缺才用自己算的", /trEvBody\(body, head, note, trEvApiLevel\(ev\) \|\| lv, tip, ev\.count, code, tail, strat\)/.test(src)
+    && /trEvBody\(body, txt\[0\], txt\[1\], trEvApiLevel\(ev\) \|\| txt\[2\], txt\[3\], ev\.count, txt\[4\], txt\[5\], txt\[6\]\)/.test(src));
+  ok("機器事件那段的策略段同 ui 那段(雲端讀 strategy_label、這台電腦查清單)", /const txt = trEventText\(ev\.type, evd, trEvStrat\(evd\.strategy, ev\.strategy_label\)\);/.test(src));
   ok("下單失敗那列也接 ×N(order_errors 的 count),在標題後、標的前", /t\("tr\.ov\.evErr"\)\)\);\n\s*trEvCount\(body, e\.count\);/.test(cut("trUnconfirmedRows(r.order_errors).forEach(", "(Array.isArray(r.events)"))); }
 ok("trEvApiLevel:P1/P2/P3 → 1/2/3;缺、小寫、P4、數字、非物件 → null",
   JSON.stringify([trEvApiLevel({ level: "P1" }), trEvApiLevel({ level: "P2" }), trEvApiLevel({ level: "P3" }), trEvApiLevel({}), trEvApiLevel({ level: "p1" }),
@@ -144,8 +145,9 @@ ok("trEvApiLevel:P1/P2/P3 → 1/2/3;缺、小寫、P4、數字、非物件 → n
   N.prototype.appendChild = function (c) { this.kids.push(c); return c; };
   N.prototype.append = function (...xs) { xs.forEach((x) => this.kids.push(typeof x === "string" ? { text: x, kids: [] } : x)); };
   const mk = (tag, cls, text) => new N(tag, cls, text), flat = (n) => n.text + n.kids.map(flat).join("");
-  const tpl = { k: "{venue} down {minutes} m" };
-  const fn = new Function("trEl", "trEvClass", "t", cut("function trEvHead(", "/* 事件 = 狀態改變") + "\nreturn trEvBody;")(mk, trEvClass, (k) => tpl[k] || k);
+  const tpl = { k: "{venue} down {minutes} m", "tr.ov.evStratName": "「{name}」" };
+  const fn = new Function("trEl", "trEvClass", "t", cut("function trEvHead(", "/* 事件 = 狀態改變") + "\nreturn trEvBody;")(mk, trEvClass,
+    (k, v) => { let x = tpl[k] || k; if (v) for (const n in v) x = x.split("{" + n + "}").join(v[n]); return x; });
   const run = (count, note, tip, code, tail, head) => { const b = new N("span", "body"); fn(b, head || "H", note, 1, tip, count, code, tail); return b; };
   ok("trEvBody:×N 在標題後、說明前", flat(run(4, "NOTE")) === "H ×4 — NOTE" && run(4, "NOTE").kids[0].cls === "err" && run(4, "NOTE").kids[2].cls === "mono dim");
   const wc = run(3, "N", null, "1101, 1216", "T");
@@ -155,7 +157,40 @@ ok("trEvApiLevel:P1/P2/P3 → 1/2/3;缺、小寫、P4、數字、非物件 → n
     flat(tv) === "Binance down 12 m ×2" && hd.cls === "" && JSON.stringify(hd.kids.map((k) => k.cls)) === JSON.stringify(["mono", "err", "mono", "err"]) && tv.kids[2].cls === "mono dim");
   ok("trEvBody:[key, vars] 缺值那格不出(不印 undefined)", flat(run(0, null, null, null, null, ["k", { venue: "Binance" }])) === "Binance down  m");
   ok("trEvBody:count 1／缺／字串／NaN 不出,2.9 取 2", ["H — N", "H — N", "H — N", "H — N", "H ×2 — N"].join("|") === [1, undefined, "3", NaN, 2.9].map((c) => flat(run(c, "N"))).join("|"));
-  ok("trEvBody:沒說明只剩標題(+×N);tooltip 掛在說明的 title", flat(run(3, null)) === "H ×3" && run(0, "N", "TIP").kids.slice(-1)[0].title === "TIP"); }
+  ok("trEvBody:沒說明只剩標題(+×N);tooltip 掛在說明的 title", flat(run(3, null)) === "H ×3" && run(0, "N", "TIP").kids.slice(-1)[0].title === "TIP");
+  const sb = (strat) => { const b = new N("span", "body"); fn(b, "H", "N", 2, null, 2, null, null, strat); return b; };
+  const nm = sb({ text: "台指期 籌碼", code: false }), cd = sb({ text: "txf_flow", code: true });
+  ok("trEvBody:策略段在 ×N 後、說明前;zh 包「」;名稱一般字、代號 mono", flat(nm) === "H ×2 「台指期 籌碼」 — N" && nm.kids[4].kids[1].cls === "" && cd.kids[4].kids[1].cls === "mono" && flat(sb(null)) === "H ×2 — N"); }
+
+// 帶策略的五種事件:第 7 格是策略段(0.1.46 起 bar_stale／strategy_failed／scheduler_error 也帶,用戶看到兩列一模一樣的「K 棒沒到位」)
+{ const S = { text: "ETH 均線", code: false };
+  const five = [["bar_stale", { strategy: "eth_ma", minutes: 3 }], ["strategy_failed", { strategy: "eth_ma" }], ["scheduler_error", { strategy: "eth_ma" }],
+    ["target_stale", { strategy: "eth_ma", age_s: 60 }], ["market_hold", { strategy: "eth_ma", venue: "okx" }]];
+  ok("五種都帶呼叫端給的策略段", five.every(([ty, d]) => trEventText(ty, d, S)[6] === S));
+  ok("沒給就寫代號(mono)", five.every(([ty, d]) => JSON.stringify(trEventText(ty, d)[6]) === JSON.stringify({ text: "eth_ma", code: true })));
+  ok("target_stale／market_hold 的代號不再塞在代號格", trEventText("target_stale", five[3][1], S)[4] === null && trEventText("market_hold", five[4][1], S)[4] === null);
+  ok("沒有策略欄位就沒有策略段;其他型別不帶", trEventText("strategy_failed", {})[6] === null && trEventText("exchange_recovered", { venue: "binance", strategy: "x" }, S)[6] === null); }
+
+// trEvStrat:雲端用 api 的 strategy_label(等於代號 = 沒名稱),沒有這欄才查清單並套同一份規則
+{ const list = [{ name: "eth_ma", displayName: "ETH 均線" }, { name: "phish", displayName: "到 t.me/x" }, { name: "same", displayName: "same" }];
+  const F = new Function(cut("function trDisplay(n)", "\n\n/* ── 開/關視圖").replace(/^const /gm, "var ") + "\nreturn trEvStrat;");
+  const TRg = globalThis.TR; globalThis.TR = { list };
+  try {
+    const st = F(), J = JSON.stringify;
+    ok("api 給了名稱就用", J(st("eth_ma", "ETH 均線交叉")) === J({ text: "ETH 均線交叉", code: false }));
+    ok("api 給的等於代號 = 沒名稱,寫代號", J(st("phish", "phish")) === J({ text: "phish", code: true }));
+    ok("沒有 strategy_label:查清單,名稱過規則才用", J(st("eth_ma")) === J({ text: "ETH 均線", code: false }) && J(st("phish")) === J({ text: "phish", code: true })
+      && J(st("same")) === J({ text: "same", code: true }) && J(st("gone")) === J({ text: "gone", code: true }));
+    ok("沒有代號就沒有策略段", st("", "x") === null && st(undefined) === null);
+    // 從主行程 interpretEvents 進來(api 回的列原樣):strategy_label／count／level 要活著走到 renderer,同名補代號才看得到
+    const { interpretEvents } = require(path.join(__dirname, "..", "shell", "cloud.js"));
+    const got = interpretEvents({ status: 200, body: { events: [
+      { ts: 1, type: "strategy_failed", data: { strategy: "same" }, strategy_label: "same（same）", count: 3, level: "P2", strategy_labels: ["a", 7] },
+      { ts: 2, type: "bar_stale", data: { strategy: "eth_ma" }, strategy_label: 5, count: 0, level: "P9" }] } }).events;
+    ok("interpretEvents 留 api 的 strategy_label → 畫成 api 的名稱(同名補代號那份)", J(st(got[0].data.strategy, got[0].strategy_label)) === J({ text: "same（same）", code: false }));
+    ok("interpretEvents 留 count／level／strategy_labels,型別不對的丟掉", got[0].count === 3 && got[0].level === "P2" && J(got[0].strategy_labels) === J(["a", ""])
+      && !("strategy_label" in got[1]) && !("count" in got[1]) && !("level" in got[1]) && J(st(got[1].data.strategy, got[1].strategy_label)) === J({ text: "ETH 均線", code: false }));
+  } finally { globalThis.TR = TRg; } }
 
 
 /* 讀不到 ≠ 沒有事件(這條是硬規則:畫面不可以替資料說「這段期間什麼都沒發生」)。

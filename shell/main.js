@@ -1449,6 +1449,27 @@ function stratAnnReturn(st) {
   const ann = (Math.pow(base, 365 / days) - 1) * 100;
   return isFinite(ann) ? ann : null;
 }
+/* 策略名稱規則(canon notifications §3.1):同 api openclaw/strategy_names.clean 與 renderer trStratLabel 一字不差,
+   tests/check_web_desktop_parity.js 拿 api 的 CASES 跑。過不了就回 null(呼叫端退代號) */
+function stratLabelClean(name, code) {
+  const TLDS = ["com", "net", "org", "io", "co", "me", "ly", "cc", "gg", "tv", "to", "so", "sh", "gl", "gd",
+    "im", "fm", "ai", "app", "dev", "xyz", "top", "vip", "pro", "info", "biz", "link", "site",
+    "club", "online", "shop", "tw", "cn", "hk", "jp", "kr", "sg", "us", "uk", "ru"];
+  const URL = new RegExp("://|www\\.|[a-z0-9-]\\.(?:" + TLDS.join("|") + ")(?![a-z0-9])", "i");
+  const UNSAFE = /[、;:；：「」\r\n\x0b\x0c\x85\u2028\u2029]|[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+  const FOLD = { "[": "［", "]": "］", "（": "(", "）": ")" }, trim = (v) => v.replace(/^[ \t\u00a0\u3000]+|[ \t\u00a0\u3000]+$/g, "");
+  let v = typeof name === "string" ? trim(name) : "";
+  if (!v || (v.startsWith("[") && v.endsWith("]"))) return null;
+  if (UNSAFE.test(v) || URL.test(v)) return null;
+  v = trim(Array.from(v.replace(/[[\]（）]/g, (c) => FOLD[c])).slice(0, 40).join(""));
+  return v && v !== code ? v : null;
+}
+// 本機 P1 系統通知講到策略:讀這台電腦策略檔的 DISPLAY_NAME,過不了規則或讀不到就寫代號
+function p1StratLabel(code) {
+  if (typeof code !== "string" || !/^[\w-][\w.-]*$/.test(code)) return code;
+  try { return stratLabelClean(stratMeta(fs.readFileSync(path.join(STRAT_DIR(), code, "strategy.py"), "utf8")).displayName, code) || code; }
+  catch (_) { return code; }
+}
 function listStrategies() {
   return stratNames().map((name) => {
     const dir = path.join(STRAT_DIR(), name);
@@ -4937,8 +4958,8 @@ function p1FromState(r, mark, nowS) {   // 純函式:halt / 拒單從狀態檔�
   return out;
 }
 // 策略名(策略檔名)放在通知內文前面(canon §3 下單失敗列:一支、兩支、三支以上);字還沒交或沒有策略名 → 原句
-function p1WithStrat(names, note) {
-  const list = Array.isArray(names) ? names.filter((x) => typeof x === "string" && x).map((x) => x.slice(0, 40)) : [];
+function p1WithStrat(names, note, label) {
+  const list = Array.isArray(names) ? names.filter((x) => typeof x === "string" && x).map((x) => (typeof label === "function" ? label(x) : x).slice(0, 80)) : [];
   if (!list.length || !tmLabels.withStrat || !tmLabels.stratOne || !tmLabels.stratTwo || !tmLabels.stratMany) return note;
   const strat = list.length === 1 ? tmLabels.stratOne.replace("{name}", () => list[0])
     : list.length === 2 ? tmLabels.stratTwo.replace("{a}", () => list[0]).replace("{b}", () => list[1])
@@ -4987,7 +5008,7 @@ function p1Sync() {
       : mcr === "queued" ? (e.payload.until ? String(tmLabels.ev_manual_close_required_queued_n || "").replace("{at}", p1TwClock(e.payload.until))
         : tmLabels.ev_manual_close_required_queued_soon_n)
       : tmLabels["ev_" + e.type + variant + "_n"] || tmLabels["ev_" + e.type + "_n"];
-    const n = new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, head + (sym ? " · " + sym : "")), body: p1WithStrat(e.payload && e.payload.strategies, note) });
+    const n = new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, head + (sym ? " · " + sym : "")), body: p1WithStrat(e.payload && (Array.isArray(e.payload.strategies) ? e.payload.strategies : typeof e.payload.strategy === "string" ? [e.payload.strategy] : null), note, p1StratLabel) });
     p1Alive.add(n); const drop = () => p1Alive.delete(n);
     n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop); notifWatch(n, "p1 " + e.type);
     if (p1Alive.size > 20) p1Alive.delete(p1Alive.values().next().value);
