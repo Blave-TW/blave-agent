@@ -1991,29 +1991,44 @@ msgstr "電腦睡著時，自動下單停止。"
 msgid "set.awake.leadOffWin"
 msgstr "電腦睡著時，自動下單停止。統一期貨有部位時，接著電源的電腦仍會保持清醒。"
 
-msgid "tr.quote.pres"
-msgstr "實盤行情：統一期貨"
+# {broker} = 綁的那家台灣期貨券商全名(cap.venue / pres.venue)
+msgid "tr.quote.live"
+msgstr "實盤行情：{broker}"
 
 msgid "tr.quote.blave"
 msgstr "實盤行情：Blave 快取，訊號慢 1–2 分鐘（{why}）"
 
+# tr.quote.why.* 裡的 {b}
+msgid "tr.quote.short.president"
+msgstr "統一"
+
+msgid "tr.quote.short.capital"
+msgstr "群益"
+
 msgid "tr.quote.why.noFile"
-msgstr "還沒收到統一的行情"
+msgstr "還沒收到{b}的行情"
 
 msgid "tr.quote.why.stale"
-msgstr "統一的行情超過 90 秒沒更新"
+msgstr "{b}的行情超過 90 秒沒更新"
 
 msgid "tr.quote.why.notEnabled"
-msgstr "統一帳號沒有行情權限，找營業員開通"
+msgstr "{b}帳號沒有行情權限，找營業員開通"
 
 msgid "tr.quote.why.noLogin"
-msgstr "統一登入已停止"
+msgstr "{b}登入已停止"
 
 msgid "tr.quote.why.notOk"
-msgstr "統一的行情讀不到"
+msgstr "{b}的行情讀不到"
 
 msgid "tr.quote.why.noOverlap"
-msgstr "統一的 K 線還接不上"
+msgstr "{b}的 K 線還接不上"
+
+# 群益:結算日、或近月代碼 TX00 對到的月份不是序列月時(lib/capital_quote.roll_guard)
+msgid "tr.quote.why.roll"
+msgstr "換月日先不用{b}的行情"
+
+msgid "tr.quote.why.connLimit"
+msgstr "{b}的行情連線數已滿"
 
 msgid "tr.tab.over"
 msgstr "總覽"

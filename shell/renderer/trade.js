@@ -149,22 +149,27 @@ function trPresBooting(r, nowMs) {
   return readAt < since;
 }
 /* 台指期實盤行情來源那一句(設計 spec desktop-live-source-line;lib/data 在每次 live tick 寫 state/twfutures_live_source.json,reporter 原樣帶出)。
-   四個條件同時成立才出:這台電腦且綁統一、回報有那一欄(還沒 tick 過就沒有,不出佔位句)、至少一個台指期口數列 > 0(`lots`;
+   統一、群益同一句,券商名照綁的那家(broker = 這台綁的台灣期貨券商)。
+   四個條件同時成立才出:這台電腦且綁統一或群益、回報有那一欄(還沒 tick 過就沒有,不出佔位句)、至少一個台指期口數列 > 0(`lots`;
    全 0 時沒有 live tick,檔案是舊的)、狀態在跑 / 已暫停 / 沒停住(過場中、死掉、開通中都不出)。
-   `paused`(市場沒開、worker 在時段外重蓋快照)不是退路,照正常句;退路時先看是不是真的登入失敗(trPresLoginHeld:
+   `paused`(市場沒開、worker 在時段外重蓋快照)不是退路,照正常句;退路時先看是不是真的登入失敗(統一 trPresLoginHeld、群益 trCaplStopped:
    後端沒有獨立代碼,worker 沒登入只是不寫檔,落 stale / no_file),其他 worker 狀態(剛啟動、沒寫出快照)照 reason 講;
-   `empty` 併進 noFile。fallback = 退路句(顏色升一階,trPaintQuote) */
-const TR_QUOTE_WHY = { stale: "tr.quote.why.stale", not_enabled: "tr.quote.why.notEnabled", no_overlap: "tr.quote.why.noOverlap" };
+   群益的換月保護(結算日、近月代碼對不上)與行情連線數滿各有一句;`empty` 併進 noFile。fallback = 退路句(顏色升一階,trPaintQuote) */
+const TR_QUOTE_WHY = { stale: "tr.quote.why.stale", not_enabled: "tr.quote.why.notEnabled", no_overlap: "tr.quote.why.noOverlap",
+  "not_ok:QUOTE_ROLL_GUARD": "tr.quote.why.roll", "not_ok:QUOTE_CONN_LIMIT": "tr.quote.why.connLimit", price_mismatch: "tr.quote.why.notOk" };
 const TR_QUOTE_STATES = ["running", "halted", "unconfirmed"];
+const TR_QUOTE_BROKERS = ["president", "capital"];
 function trQuoteLine(r, env, id, state, lots) {
-  const q = env === "local" && (id === "president" || trVenueIds(r).indexOf("president") >= 0) && lots && TR_QUOTE_STATES.indexOf(state) >= 0 && r && r.twfutures_live_source;
+  const ids = r ? trVenueIds(r) : [], broker = TR_QUOTE_BROKERS.find((b) => id === b || ids.indexOf(b) >= 0);
+  const q = env === "local" && broker && lots && TR_QUOTE_STATES.indexOf(state) >= 0 && r && r.twfutures_live_source;
   if (!q || typeof q !== "object") return null;
   // paused = 市場沒開(worker 在時段外重蓋快照):不是退路,照正常句
-  if (q.source === "president" || q.reason === "paused") return { key: "tr.quote.pres", why: null, fallback: false };
+  if (q.source === broker || q.reason === "paused") return { key: "tr.quote.live", why: null, fallback: false, broker };
   const why = String(q.reason || "");
-  const k = trPresLoginHeld(r, "president") ? "tr.quote.why.noLogin"
+  const held = broker === "president" ? trPresLoginHeld(r, broker) : trCaplStopped(r, broker);
+  const k = held ? "tr.quote.why.noLogin"
     : TR_QUOTE_WHY[why] || (why.indexOf("not_ok") === 0 ? "tr.quote.why.notOk" : "tr.quote.why.noFile");
-  return { key: "tr.quote.blave", why: k, fallback: true };
+  return { key: "tr.quote.blave", why: k, fallback: true, broker };
 }
 // 讀帳失敗的原因:多數 lib 回「stage: msg」字串;統一的是物件 {stage, type, msg}(10-08 e2e 畫成 [object Object])
 function trAcctErr(err) {
@@ -2822,10 +2827,11 @@ function trPaintRoNote(key) {
 // 台指期實盤行情來源那一句(trQuoteLine):狀態句正下方自己一行、.tr-ro-note 的字級;退路句 .is-fallback 升一階;不播讀屏(是事實不是事件)
 function trPaintQuote(state) {
   const stored = trStored() || {}, lots = Object.keys(stored).some((n) => stored[n] > 0 && trRowIsLot(n));
-  const n = $("tr-quote"), q = trQuoteLine(trReport(), TR.env, trVenueId(), state, lots), sig = LANG + "|" + (q ? q.key + "|" + q.why : "");
+  const n = $("tr-quote"), q = trQuoteLine(trReport(), TR.env, trVenueId(), state, lots), sig = LANG + "|" + (q ? q.key + "|" + q.why + "|" + q.broker : "");
   if (ENV.sig.quote === sig) return;
   ENV.sig.quote = sig; n.hidden = !q; n.classList.toggle("is-fallback", !!(q && q.fallback));
-  n.textContent = q ? t(q.key, { why: q.why ? t(q.why) : "" }) : "";
+  const b = q ? { broker: t(q.broker === "capital" ? "cap.venue" : "pres.venue"), b: t(q.broker === "capital" ? "tr.quote.short.capital" : "tr.quote.short.president") } : null;
+  n.textContent = q ? t(q.key, { ...b, why: q.why ? t(q.why, b) : "" }) : "";
 }
 // 停機:紅記號 + 一段話(數字來自方案頁同一個來源;拿不到數字就用不帶數字的那句,不寫死)
 function trPaintVerdict(on) {

@@ -2828,19 +2828,28 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   // 統一綁定的這台電腦:台指期實盤行情來源那一句(trQuoteLine;lib/data 每次 live tick 寫 state/twfutures_live_source.json、reporter 原樣帶出)
   { const q = (s, reason, w) => ({ twfutures_live_source: { source: s, reason }, president_connect: { worker: { status: w || "ok" } } });
     const L = (r, env, id, state, lots) => trQuoteLine(r, env === undefined ? "local" : env, id || "president", state === undefined ? "running" : state, lots === undefined ? true : lots);
-    ok("行情句:統一 → tr.quote.pres;Blave 快取帶原因 key、fallback;empty / 不認得的原因退 noFile", J(L(q("president", null))) === J({ key: "tr.quote.pres", why: null, fallback: false })
-      && J(L(q("blave", "stale"))) === J({ key: "tr.quote.blave", why: "tr.quote.why.stale", fallback: true })
+    ok("行情句:統一 → tr.quote.live;Blave 快取帶原因 key、fallback;empty / 不認得的原因退 noFile", J(L(q("president", null))) === J({ key: "tr.quote.live", why: null, fallback: false, broker: "president" })
+      && J(L(q("blave", "stale"))) === J({ key: "tr.quote.blave", why: "tr.quote.why.stale", fallback: true, broker: "president" })
       && L(q("blave", "not_ok:RuntimeError: boom")).why === "tr.quote.why.notOk" && L(q("blave", "no_overlap")).why === "tr.quote.why.noOverlap"
       && L(q("blave", "not_enabled")).why === "tr.quote.why.notEnabled" && L(q("blave", "no_file")).why === "tr.quote.why.noFile"
       && L(q("blave", "empty")).why === "tr.quote.why.noFile" && L(q("blave", "weird")).why === "tr.quote.why.noFile"
-      && J(L(q("blave", "paused", "failed"))) === J({ key: "tr.quote.pres", why: null, fallback: false }));   // 市場沒開不是退路(worker 狀態也不看)
+      && J(L(q("blave", "paused", "failed"))) === J({ key: "tr.quote.live", why: null, fallback: false, broker: "president" }));   // 市場沒開不是退路(worker 狀態也不看)
     { const lf = (extra) => ({ twfutures_live_source: { source: "blave", reason: "stale" }, president_connect: { worker: { status: "failed", error: "LOGIN_FAILED:TIMEOUT", ok_at: 1 }, ...extra } });
       const other = (st, err) => ({ twfutures_live_source: { source: "blave", reason: "stale" }, president_connect: { worker: { status: st, error: err, ok_at: 1 } } });
       ok("行情句:noLogin 只在真的登入失敗(LOGIN_FAILED 或回報帶 login_stop);剛啟動、沒寫出快照照 reason 講;統一正常句不看它",
         L(lf()).why === "tr.quote.why.noLogin" && L(other("ok", null)).why === "tr.quote.why.stale" && L({ ...other("ok", null), president_connect: { worker: { status: "ok", ok_at: 1 }, login_stop: { kind: "TIMEOUT", at: 1 } } }).why === "tr.quote.why.noLogin"
         && L(other("running")).why === "tr.quote.why.stale" && L(other("failed", "WORKER_FAILED")).why === "tr.quote.why.stale" && L(other("idle")).why === "tr.quote.why.stale"
-        && L(q("blave", "no_file", "idle")).why === "tr.quote.why.noFile" && L(q("president", null, "failed")).key === "tr.quote.pres"
+        && L(q("blave", "no_file", "idle")).why === "tr.quote.why.noFile" && L(q("president", null, "failed")).key === "tr.quote.live"
         && L({ twfutures_live_source: { source: "blave", reason: "stale" } }).why === "tr.quote.why.stale"); }
+    { const cq = (s, reason, w) => ({ twfutures_live_source: { source: s, reason }, capital_local_connect: { worker: { status: w || "ok", ok_at: 1 } } });
+      const C = (r, state) => L(r, "local", "capital", state);
+      ok("行情句:綁群益同一句、券商名照綁的那家;統一的來源不算群益的;換月保護、連線數滿各一句;群益 worker 停了 = noLogin",
+        J(C(cq("capital", null))) === J({ key: "tr.quote.live", why: null, fallback: false, broker: "capital" })
+        && J(C(cq("president", null))) === J({ key: "tr.quote.blave", why: "tr.quote.why.noFile", fallback: true, broker: "capital" })
+        && C(cq("blave", "not_ok:QUOTE_ROLL_GUARD")).why === "tr.quote.why.roll" && C(cq("blave", "not_ok:QUOTE_CONN_LIMIT")).why === "tr.quote.why.connLimit"
+        && C(cq("blave", "price_mismatch")).why === "tr.quote.why.notOk" && C(cq("blave", "not_ok:QUOTE_SILENT")).why === "tr.quote.why.notOk"
+        && C(cq("blave", "stale", "failed")).why === "tr.quote.why.noLogin" && C(cq("blave", "paused", "failed")).key === "tr.quote.live"
+        && L({ ...cq("capital", null), venues: { capital: { credentials: true, pair: true, order: true, account: true } } }, "local", "paper").broker === "capital"); }
     { const BOUND = { credentials: true, pair: true, order: true, account: true }, R = (pc) => ({ venues: { president: BOUND }, president_connect: pc });
       const STR = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "\nreturn STRINGS;")();
       const mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
@@ -2878,7 +2887,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           && /過幾分鐘再按/.test(STR.zh["tr.ov.evManualCloseQueuedSoon"]) && /after {at} \(Taiwan time\)/.test(STR.en["tr.ov.evManualCloseQueued"])
           && !/不要自己|Don't/.test(STR.zh["tr.ov.evManualCloseQueued"] + STR.en["tr.ov.evManualCloseQueued"])); } }
     ok("行情句:雲端視角、別家、沒有那一欄、沒有台指期口數、狀態不在跑 / 過場中都不出;已暫停、沒停住照出",
-      L(q("president", null), "cloud") === null && L(q("president", null), "local", "capital") === null && L({ venues: {} }) === null && L(null) === null
+      L(q("president", null), "cloud") === null && L(q("president", null), "local", "okx") === null && L({ venues: {} }) === null && L(null) === null
       && L(q("president", null), "local", "president", "running", false) === null
       && ["dead", "setup", "noaccount", "loading", "unknown", null].every((s) => L(q("president", null), "local", "president", s) === null)
       && ["halted", "unconfirmed"].every((s) => L(q("blave", "stale"), "local", "president", s).fallback === true));
