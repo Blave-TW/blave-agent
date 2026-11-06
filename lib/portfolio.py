@@ -3184,7 +3184,8 @@ def _first_signal_window_s(name):
 
 # A scheduled Type A/C tick that keeps failing leaves state.json at its last good target, and the
 # reconciler would keep trading toward it (a US strategy hand-run once, then refused every tick).
-# Stale = wait_for_bar's last failure is newer than state.json AND recent (a failing strategy
+# Stale = wait_for_bar's last failure (a failed run, or its expected bar 15 minutes overdue on a
+# market whose hours it knows — data_missing_at) is newer than state.json AND recent (a failing strategy
 # fails again every few minutes: 300s backoff, a 15-min stall throttle, a 20-min run timeout — so
 # TARGET_STALE_RECENT_S covers the slowest repeat) AND state.json is older than TARGET_STALE_BARS
 # bars, at least TARGET_STALE_FLOOR_S, plus TARGET_STALE_WEEKEND_S for daily-and-longer bars of
@@ -3224,7 +3225,11 @@ def _stale_target_age(name, now=None):
     if not bar:
         return None
     try:
-        failed = load_json(f'state/bar_wait/{name}.json').get('last_attempt_failed_at')
+        wait = load_json(f'state/bar_wait/{name}.json')
+        # data_missing_at: the expected bar kept not coming (Blave answering 200 with nothing new)
+        # — no run fails, yet the target is as old as if one had
+        failed = max((v for v in (wait.get('last_attempt_failed_at'), wait.get('data_missing_at'))
+                      if _finite(v)), default=None)
         written = os.path.getmtime(f'strategies/{name}/state.json')
     except (OSError, ValueError, AttributeError):
         return None

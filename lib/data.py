@@ -6078,7 +6078,65 @@ def _with_broker_tail(hist, traded, schema, broker):
         pass
     if source == 'blave' and reason != 'paused':
         logging.warning(f'[twfutures] live bars from the Blave cache, not {broker} ({reason})')
+    _tw_feed_episode(broker, source, reason, now)
     return out
+
+
+# One tw_feed_fallback (P2) per outage of a broker's own quote feed. Not counted: `paused` (no
+# session), `no_file` / `not_enabled` (never logged in / quote right not opened — setup, shown on
+# the 自動下單 line and by the login notices). A session's first minute or two is routinely
+# `no_overlap` (Blave has not got the opening bar yet), hence the dwell: the notice goes once the
+# fallback has lasted _TW_FEED_NOTICE_AFTER_S across ticks — a 60m strategy's second tick. The
+# outage ends on the first tick that reads the broker again; a pause before the notice went
+# forgets the start, so last night's two stale minutes do not page at this morning's open.
+_TW_FEED_NOTICE_AFTER_S = 300
+_TW_FEED_UNCOUNTED = ('paused', 'no_file', 'not_enabled')
+
+
+def _tw_feed_episode(broker, source, reason, now):
+    try:
+        path, marker = _STATE_DIR / 'tw_feed_down.json', _STATE_DIR / f'tw_feed_notified_{broker}'
+        try:
+            book = json.loads(_read_text(path, encoding='utf-8'))
+            book = book if isinstance(book, dict) else {}
+        except (OSError, ValueError):
+            book = {}
+        since = book.get(broker)
+
+        def save():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = _tmp_path(path)
+            tmp.write_text(json.dumps(book))
+            _winreplace.atomic_replace(tmp, path)
+
+        if source == broker or reason is None or (reason == 'paused' and not marker.exists()):
+            if since is not None:
+                book.pop(broker, None)
+                save()
+            if source == broker:
+                marker.unlink(missing_ok=True)
+            return
+        if reason in _TW_FEED_UNCOUNTED:
+            return
+        if not isinstance(since, (int, float)) or isinstance(since, bool):
+            book[broker] = now
+            save()
+            return
+        if now - since < _TW_FEED_NOTICE_AFTER_S:
+            return
+        try:   # several strategies tick in the same minute: the one that creates the marker sends
+            os.close(os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        except FileExistsError:
+            return
+        from lib.events import emit
+        if emit("tw_feed_fallback", venue=broker, reason=str(reason)[:32]):
+            return
+        from lib import venue_traits
+        from lib.notify import send_text
+        name = venue_traits.get(broker, 'label') or '券商'
+        send_text(f'⚠️ {name}的台指期即時行情斷了，訊號改用 Blave 的資料，會慢 1–2 分鐘。行情回來會自動切回。')
+    except Exception as e:  # noqa: BLE001 — a notice never fails the tick
+        logging.warning(f'[twfutures] feed-outage notice skipped ({e})')
 
 
 def fetch_twfutures_ohlcv(symbol, schema, start, end, headers):

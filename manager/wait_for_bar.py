@@ -76,12 +76,24 @@ State: state/bar_wait/<name>.json
                          TW_FUT_NIGHT_KEEP_DAYS after it (_tw_fut_lots_night)
   not_waited / dead_noticed : Type C members readiness does not wait for (lib.bar_ready.dead_members),
                          and those of them already notified as long dead (_note_dead)
-  lag_since / lag_seen_at : INTERVAL up to 15m only: the poll that first saw data past the last
-                         computed bar (or any data, never computed) while the expected bar was
-                         still not in, and the latest poll that still did. Cleared when the bar
-                         lands, a prime computes, or a quiet close; restarted after a gap in polling
+  lag_since / lag_seen_at : INTERVAL up to 15m only: the start of the poll that first saw data past
+                         the last computed bar (or any data, never computed) while the expected bar
+                         was still not in, and the end of the latest poll that still did. Cleared
+                         when the bar lands, a prime computes, or a quiet close; restarted after a
+                         gap in polling
   lag_alert_at        : epoch seconds of the last lag alert (_alert_lag). At most one a day, kept
                          across recoveries on purpose; never touches stall_alert_at or the throttle
+  data_missing_at     : epoch seconds of the latest poll that found the expected bar STALE_TIMEOUT_MINUTES
+                         late (_on_calendar strategies only). lib/portfolio reads it beside
+                         last_attempt_failed_at: a bar that never comes holds the target like a failed
+                         run does (target_stale). Separate field: last_attempt_failed_at backs polling off
+  gap_since / gap_seen_at / gap_alert_at : _track_gap — the start of the first and the end of the
+                         latest poll (in scope) that found no new bar or fetch_data raising, and when data_gap_exposed went
+                         out for this gap. Cleared once the bar is in; a quiet close clears gap_since
+                         only; a gap in polling (asleep, off) restarts gap_since
+  throttle_cell       : the latest stall-throttle minute (:00 / :05 of a quarter, _poll_cell) at or
+                         before the last poll that took the lock. A throttled tick polls each such
+                         minute at most once (module docstring › Scheduled time)
 
 Priming (Wei: a signal is always computed on the newest data there is): while the expected bar
 is not in, a strategy whose data moved since it last computed — any member's newest closed bar
@@ -184,6 +196,16 @@ pass without a run or a prime moving it (_alert_lag, same bar_stale event). A st
 computed yet (just deployed: the runtime deletes its state) counts from its first data. Not
 while a stall alert stands (that one already said it), not on a quiet TAIFEX/TWSE close, and a
 gap in polling longer than STALE_TIMEOUT_MINUTES (machine off) restarts the count.
+
+Scheduled time: the runtime's tick gate can hold a tick up to 300 s behind shorter-INTERVAL ones
+and does not queue a name again while it waits or runs, so one launch can stand for several
+minutes. The runtime hands over the earliest of them (BLAVE_TICK_SLOT, epoch seconds; _slot_time).
+The stall throttle polls when one of its minutes falls between that and now, once per throttle
+minute (throttle_cell): a tick due at :14 that launches at :16:01 is the :15 poll. The poll-gap
+clocks (_track_gap, _track_lag) time from it too, so the queueing is not counted as not polling.
+Everything else (the expected bar, pending_since, the stale alert) keeps the real start. No slot
+(cron, an older runtime, gate off) = the real start, which reduces to the old rule: the tick's own
+minute must be a throttle minute.
 
 Concurrency: a stale-safe lock file (state/bar_wait/<name>.lock) guards the
 fetch+run section so an overrunning previous tick's subprocess can't overlap
@@ -322,6 +344,12 @@ _STARTED = time.monotonic()
 LOCK_STALE_SECONDS = 1800
 TAKEOVER_STALE_SECONDS = 60     # a takeover holds its marker for milliseconds
 RETRY_BACKOFF_SECONDS = 300        # after a failed run OR a fetch_data() error, don't re-attempt every single minute
+TICK_SLOT_ENV = "BLAVE_TICK_SLOT"  # = runtime command_listener.TICK_SLOT_ENV
+# A slot is at most: one cycle skipped while the previous tick still ran (boot included), that
+# tick's remaining run, then MAX_WAIT_SECONDS (300) in the queue. Older reads as not ours: a tick
+# queued when a laptop lid closed wakes up holding its pre-sleep slot (the gate's clock is
+# monotonic), and counting the sleep as polling would page on the first failed wake.
+TICK_SLOT_MAX_LAG = timedelta(minutes=10)
 WRAPPER_ERROR_COOLDOWN_SECONDS = 6 * 3600         # this script's own crashes, not the strategy's
 
 
@@ -374,6 +402,11 @@ def _default_state():
         "lag_since": None,
         "lag_seen_at": None,
         "lag_alert_at": None,
+        "data_missing_at": None,
+        "gap_since": None,
+        "gap_seen_at": None,
+        "gap_alert_at": None,
+        "throttle_cell": None,
     }
 
 
@@ -761,7 +794,7 @@ def _track_lag(name, state, now, td, observed_ts, straggler_symbol):
         gap = now - datetime.fromisoformat(state["lag_seen_at"])
     except (TypeError, ValueError):
         gap = None
-    state["lag_seen_at"] = now.isoformat()
+    state["lag_seen_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()   # see _track_gap
     if state.get("lag_since") is None or gap is None or gap > timedelta(minutes=STALE_TIMEOUT_MINUTES):
         state["lag_since"] = now.isoformat()   # first look, or polling stopped (machine off) in between
         return
@@ -771,6 +804,122 @@ def _track_lag(name, state, now, td, observed_ts, straggler_symbol):
             (last is None or time.time() - last >= STALL_REALERT_SECONDS):
         _alert_lag(name, int(waited.total_seconds() // 60), straggler_symbol)
         state["lag_alert_at"] = time.time()
+
+
+GAP_ALERT_BARS = 2                 # data_gap_exposed: this many bars in a row without a new one…
+GAP_ALERT_FLOOR_MINUTES = 30       # …and at least this long
+GAP_SNAPSHOT_MAX_AGE_S = 24 * 3600
+# Longest a polling machine goes between one poll's end and the next poll's slotted time
+# (_slot_time: the tick gate's queueing does not count): the retry backoff, then up to the
+# throttle grid's widest step (:05 → :15). 20 minutes, not more: a machine asleep longer than
+# this restarts the count instead of paging on its first failed wake.
+GAP_POLL_BREAK = timedelta(minutes=STALL_POLL_MINUTES + RETRY_BACKOFF_SECONDS // 60)
+_CRYPTO_FETCHERS = frozenset(("fetch_kline", "fetch_kline_batch", "fetch_bingx_kline"))
+
+
+def _crypto_only(name):
+    """Every price the strategy reads is a crypto kline (7×24, no closed days). Text only."""
+    try:
+        with open(f"strategies/{name}/strategy.py", encoding="utf-8", errors="replace") as f:
+            fetchers = _price_fetchers(f.read())
+    except OSError:
+        return False
+    return bool(fetchers) and fetchers <= _CRYPTO_FETCHERS
+
+
+def _on_calendar(name, tw_kind, daily, tw_stock=False, us_stock=False):
+    """Strategies whose closed hours this script knows: crypto (never closed), TAIFEX / TWSE
+    intraday (_tw_fut_quiet), TWSE and US stock daily (expected mapped to a trading day). Anything
+    else (CME, mixed feeds) waits on a bar every weekend — counting that as missing would hold its
+    target and page the user every Saturday."""
+    return bool(tw_stock or us_stock or (tw_kind and not daily)) or _crypto_only(name)
+
+
+def _exposed_keys(name):
+    """Ledger keys `name` holds a share of that are open on the account, from the reconciler's own
+    last snapshot (manager/last_reconcile.json: no venue module, no exchange call). A snapshot
+    over a day old or unreadable → []: no claim either way. Paper trading is not money."""
+    try:
+        snap = load_json("manager/last_reconcile.json")
+        age = (datetime.now(timezone.utc).replace(tzinfo=None) - datetime.fromisoformat(snap["ts"])).total_seconds()
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return []
+    if not 0 <= age <= GAP_SNAPSHOT_MAX_AGE_S:
+        return []
+    book = snap.get("ledger") if isinstance(snap.get("ledger"), dict) else snap.get("actual")
+    book = book if isinstance(book, dict) else {}
+
+    def nonzero(v):
+        try:
+            return abs(float(v)) > 1e-12
+        except (TypeError, ValueError):
+            return False
+    out = []
+    for key, row in (snap.get("target") or {}).items():
+        if not isinstance(row, dict) or row.get("exchange") == "paper":
+            continue
+        mine = any(isinstance(c, dict) and c.get("strategy") == name and nonzero(c.get("contribution"))
+                   for c in row.get("contributors") or ())
+        pos = book.get(key)
+        if mine and isinstance(pos, dict) and nonzero(pos.get("size")):
+            out.append(str(key))
+    return sorted(out)[:20]
+
+
+def _alert_gap(name, keys, minutes):
+    landed = None
+    try:
+        from lib.events import emit
+        landed = emit("data_gap_exposed", strategy=name, keys=[k[:64] for k in keys], minutes=minutes)
+    except Exception:
+        pass
+    if landed:   # 平台送(P1:TG＋email),電腦版由外殼 P1 通知
+        return
+    try:
+        from lib.notify import send_text
+        send_text(f"🚨「{_label(name)}」{minutes} 分鐘沒拿到新 K 棒，訊號停在上一根。"
+                  f"帳上還有 {'、'.join(keys)} 的部位，這段時間不會照策略調整。Blave 會繼續重試，請先看一下部位。")
+    except Exception as e:  # best-effort, like _alert_stale
+        logging.warning(f"[wait_for_bar] data-gap notification dropped ({e})")
+
+
+def _track_gap(name, state, now, td):
+    """A poll in scope that got no new bar to compute on (not ready, or fetch_data raising). Once
+    GAP_ALERT_BARS bars / GAP_ALERT_FLOOR_MINUTES have gone by since the first such poll and the
+    strategy still holds a position, one data_gap_exposed for this gap. A prime that computes
+    resets it (a Type C straggler the others are computed around is not a gap). Polling that
+    stopped for more than GAP_POLL_BREAK in between (machine asleep or off) restarts the count,
+    like _track_lag: the time it was not polling says nothing about the data. gap_seen_at is
+    when this poll ended, not when the tick started: the backoff runs from the fetch's end, so
+    a fetch that took 20 minutes to raise must not count as 20 minutes of not polling.
+    _track_lag's lag_seen_at is recorded the same way; `now` for both is the tick's slotted
+    time (_slot_time)."""
+    try:
+        idle = now - datetime.fromisoformat(state["gap_seen_at"])
+    except (KeyError, TypeError, ValueError):
+        idle = None
+    state["gap_seen_at"] = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
+    if state.get("gap_since") is None or idle is None or idle > GAP_POLL_BREAK:
+        state["gap_since"] = now.isoformat()
+        return
+    if state.get("gap_alert_at") is not None:
+        return
+    try:
+        waited = now - datetime.fromisoformat(state["gap_since"])
+    except (TypeError, ValueError):
+        state["gap_since"] = now.isoformat()
+        return
+    if waited < max((GAP_ALERT_BARS - 1) * td, timedelta(minutes=GAP_ALERT_FLOOR_MINUTES)):
+        return
+    keys = _exposed_keys(name)
+    if not keys:   # flat: nothing unmanaged. Not marked, so a position found later still alerts
+        return
+    _alert_gap(name, keys, int(waited.total_seconds() // 60))
+    state["gap_alert_at"] = time.time()
+
+
+def _gap_closed(state):
+    state["gap_since"] = state["gap_alert_at"] = state["gap_seen_at"] = None
 
 
 def _note_dead(name, state, dead, long_dead, latest=None):
@@ -843,6 +992,26 @@ def _alert_wrapper_error(name, exc):
         pass
 
 
+def _slot_time(now):
+    """The earliest scheduler cycle this tick stands for (module docstring › Scheduled time), naive
+    UTC; `now` when the runtime did not say or the value is not a recent past time. Taken out of
+    the environment so the strategy child does not inherit it."""
+    raw = os.environ.pop(TICK_SLOT_ENV, None)
+    try:
+        slot = datetime.fromtimestamp(float(raw), timezone.utc).replace(tzinfo=None)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return now
+    return slot if timedelta(0) <= now - slot <= TICK_SLOT_MAX_LAG else now
+
+
+def _poll_cell(t):
+    """The latest stall-throttle minute (minute % STALL_POLL_MINUTES in (0, grace)) at or before t."""
+    t = t.replace(second=0, microsecond=0)
+    q = t.minute % STALL_POLL_MINUTES
+    grace = PRIME_GRACE_SECONDS // 60
+    return t - timedelta(minutes=q - grace if q >= grace else q)
+
+
 def _tick(name):
     global _fetched_since, _dead
     mod = _load_strategy_module(name)
@@ -853,6 +1022,7 @@ def _tick(name):
         return
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    slot = _slot_time(now)
     expected = _expected_closed_bar_open(interval, now)
     td = _interval_to_timedelta(interval)
     tw_stock = interval == "1d" and _tw_stock_daily(name)
@@ -903,8 +1073,9 @@ def _tick(name):
     # bar is primed then, on everything that landed by the grace, not 15 minutes later.
     # A quiet TAIFEX close polls on the same minutes: a bar the calendar got wrong still lands
     # within 10 minutes.
+    cell = _poll_cell(now)
     if state.get("stall_alert_at") is not None or quiet:
-        if now.minute % STALL_POLL_MINUTES not in (0, PRIME_GRACE_SECONDS // 60):
+        if cell < slot.replace(second=0, microsecond=0) or cell.isoformat() == state.get("throttle_cell"):
             return   # no state write outside the lock: the memo is kept by the next polled tick
 
     # After the fast path and the throttle: the holiday table is a request, and this runs every minute.
@@ -919,7 +1090,10 @@ def _tick(name):
     lock_path = _acquire_lock(name)
     if lock_path is None:
         return  # a previous tick's run is still in flight — skip, don't overlap
+    state["throttle_cell"] = cell.isoformat()
     try:
+        on_calendar = _on_calendar(name, tw_kind, daily, tw_stock, us_stock)
+        gap_scope = on_calendar and td < timedelta(days=1) and not quiet
         try:
             _fetched_since = datetime.now(timezone.utc).replace(tzinfo=None)
             _dead = None
@@ -940,6 +1114,8 @@ def _tick(name):
                     output += "\n美股日線這輪抓不到,沒有算訊號,部位維持原樣不動,稍後自動重試。"
                 _alert_failure().alert(name, "fetch_error", output, transient=transient)
                 state["last_attempt_failed_at"] = time.time()
+                if gap_scope:
+                    _track_gap(name, state, slot, td)
                 _save_state(name, state)
                 return
             # Bars are in, an align_feed row they need is not published yet: "not ready",
@@ -954,12 +1130,13 @@ def _tick(name):
 
         if ready:
             state["lag_since"] = None   # the bar is in: a failing run is strategy_failed's, not lag
+            _gap_closed(state)          # …and not a data gap either
             if _run_strategy_protected(name):
                 state["last_processed_bar"] = expected_iso
                 state["pending_since"] = None
                 state["last_seen_bar"] = observed_iso
                 state["stall_alert_at"] = None
-                state["last_attempt_failed_at"] = None
+                state["last_attempt_failed_at"] = state["data_missing_at"] = None
                 state["computed_fp"], state["computed_bar"] = fp, newest_iso
             else:
                 state["last_attempt_failed_at"] = time.time()
@@ -998,7 +1175,7 @@ def _tick(name):
                 _tw_fut_quiet(tw_kind, expected, td, observed_iso, holiday_fn,
                               _tw_fut_lots_night(state, now)):
             state["pending_since"] = None   # stall_alert_at stays: it may be a real stall's
-            state["lag_since"] = None
+            state["lag_since"] = state["gap_since"] = None   # gap_alert_at stays: a close is not a recovery
             _save_state(name, state)
             return
 
@@ -1014,6 +1191,8 @@ def _tick(name):
         else:
             waited = now - datetime.fromisoformat(state["pending_since"])
             if waited >= timedelta(minutes=STALE_TIMEOUT_MINUTES):
+                if on_calendar:
+                    state["data_missing_at"] = time.time()
                 stall_alert_at = state.get("stall_alert_at")
                 # stall_alert_at is None ⇒ never alerted for this episode yet (covers
                 # both a brand-new stall AND a strategy that has NEVER had a single
@@ -1031,7 +1210,11 @@ def _tick(name):
                     if not (daily_mute and _tw_fut_daily_quiet(observed_iso, now, holiday_fn)):   # not late yet: no word, same polling
                         _alert_stale(name, expected, minutes, straggler_symbol, computed=computed)
                     state["stall_alert_at"] = time.time()
-        _track_lag(name, state, now, td, observed_ts, straggler_symbol)
+        _track_lag(name, state, slot, td, observed_ts, straggler_symbol)
+        if isinstance(straggler_symbol, _FeedWait):
+            _gap_closed(state)   # the bars are in; an align_feed row is late — bar_stale's case
+        elif gap_scope:
+            _track_gap(name, state, slot, td)
         _save_state(name, state)
     finally:
         _release_lock(lock_path)
@@ -1513,6 +1696,7 @@ def _maybe_prime(name, state, now, expected, td, latest, straggler_symbol):
     if _run_strategy_protected(name):
         state["computed_fp"], state["computed_bar"] = fp, newest_iso
         state["lag_since"] = None
+        _gap_closed(state)
         print(f"[wait_for_bar] {name}: computed on data up to {newest_iso} "
               f"(expected {expected.isoformat()} not in yet)")
     else:

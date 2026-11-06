@@ -1714,6 +1714,15 @@ _tick_gate = None
 _tick_gate_read = False
 _retry_minutes = {}       # <5m Type A/C name -> INTERVAL minutes, from the last full cycle
 _queued_logged = {}       # name -> when its last "queued" line was written
+# A gated tick's wait_for_bar gets BLAVE_TICK_SLOT = the earliest cycle its name was due in since
+# its last launch. The gate holds a tick up to MAX_WAIT_SECONDS and skips the cycles that come
+# while it waits or runs, so a tick due at :14 that launches at :18 also stands for :15–:18;
+# wait_for_bar's stall throttle polls when one of its minutes falls in that span, and times its
+# poll gaps from it. Gate off: nothing is held back, no slot. Thread-local so _tick_one keeps its
+# one-argument shape (tests and the gate-off spawn use it as the thread target).
+TICK_SLOT_ENV = "BLAVE_TICK_SLOT"
+_tick_due = {}            # name -> wall time of the earliest cycle it was due in, not yet launched
+_tick_ctx = threading.local()
 LATE_LAUNCH_SECOND = 45   # a <5m tick launched past this in its minute may compute the next bar
 EARLY_TIMER_TOLERANCE = 1  # a timer may fire this early (Windows: a few ms) and still be its slot
 
@@ -1771,6 +1780,7 @@ def _gated_tick(gate, name, interval_min):
 
     def body():
         launched.append(time.time())
+        _tick_ctx.slot = _tick_due.pop(name, None)
         _tick_one(name)
 
     release = None
@@ -1794,6 +1804,9 @@ def _start_ticks(minutes):
             threading.Thread(target=_tick_one, args=(name,),
                              daemon=True, name=f"strategy-tick-{name}").start()
         return
+    now = time.time()
+    for name in minutes:   # the waiting / running ones too: their next launch stands for this cycle
+        _tick_due.setdefault(name, now)
     queued = gate.enqueue(list(minutes.items()))
     for i, name in enumerate(queued):
         try:
@@ -2926,10 +2939,11 @@ def _tick_one(name):
     to prevent recurring — a wrong subprocess env the interpreter can't even
     boot under). That failure mode is otherwise silent, so it's logged here,
     not swallowed as a bare last-resort net for "failed to start"."""
+    slot = getattr(_tick_ctx, "slot", None)
     try:
         r = subprocess.run(
             [_workspace_python(), os.path.join("manager", "wait_for_bar.py"), name],
-            cwd=WORKSPACE, env=_strategy_subprocess_env(),
+            cwd=WORKSPACE, env=_strategy_subprocess_env(**({TICK_SLOT_ENV: f"{slot:.3f}"} if slot else {})),
             capture_output=True, text=True,
             timeout=SCHEDULER_TICK_TIMEOUT_SECONDS, **_child_kw()
         )

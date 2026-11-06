@@ -2835,16 +2835,16 @@ msgid "tr.ov.evTargetStale"
 msgstr "Target position stale"
 
 msgid "tr.ov.evTargetStaleNote"
-msgstr "not updated for a while; can reduce but not add. Ask your agent why its runs fail"
+msgstr "reduce-only after a while without updates, so ask your agent to check its schedule and bars"
 
 msgid "tr.ov.evTargetStaleMin"
-msgstr "not updated for {n} min; can reduce but not add. Ask your agent why its runs fail"
+msgstr "reduce-only after {n} min without updates, so ask your agent to check its schedule and bars"
 
 msgid "tr.ov.evTargetStaleHour"
-msgstr "not updated for {n} hours; can reduce but not add. Ask your agent why its runs fail"
+msgstr "reduce-only after {n} hours without updates, so ask your agent to check its schedule and bars"
 
 msgid "tr.ov.evTargetStaleDay"
-msgstr "not updated for {n} days; can reduce but not add. Ask your agent why its runs fail"
+msgstr "reduce-only after {n} days without updates, so ask your agent to check its schedule and bars"
 
 msgid "tr.ov.evDeadMembers"
 msgstr "Members stopped updating"
@@ -10806,3 +10806,18 @@ msgstr "Bring Back to This Computer…"
 
 msgid "ho.done.none"
 msgstr "Saved {at} as {dest}, but no backtest came out on that side."
+
+msgid "tr.ov.evDataGap"
+msgstr "No new bars, open position not managed"
+
+msgid "tr.ov.evDataGapNote"
+msgstr "no new bar for {minutes} min, signal stuck on the last one, so check your position"
+
+msgid "tm.evDataGapNote"
+msgstr "The signal is stuck on the last bar, so the strategy won't adjust its open position. Check the position."
+
+msgid "tr.ov.evFeedFallback"
+msgstr "{broker} live quotes dropped, using Blave data"
+
+msgid "tr.ov.evFeedFallbackNote"
+msgstr "signals run 1–2 minutes slower and switch back once quotes return"

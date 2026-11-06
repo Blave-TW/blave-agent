@@ -2854,16 +2854,16 @@ msgid "tr.ov.evTargetStale"
 msgstr "目標部位過久沒更新"
 
 msgid "tr.ov.evTargetStaleNote"
-msgstr "一段時間沒更新，只減不加，請 agent 查排程為什麼失敗"
+msgstr "一段時間沒更新，只減不加，請 agent 查排程跟 K 棒"
 
 msgid "tr.ov.evTargetStaleMin"
-msgstr "{n} 分鐘沒更新，只減不加，請 agent 查排程為什麼失敗"
+msgstr "{n} 分鐘沒更新，只減不加，請 agent 查排程跟 K 棒"
 
 msgid "tr.ov.evTargetStaleHour"
-msgstr "{n} 小時沒更新，只減不加，請 agent 查排程為什麼失敗"
+msgstr "{n} 小時沒更新，只減不加，請 agent 查排程跟 K 棒"
 
 msgid "tr.ov.evTargetStaleDay"
-msgstr "{n} 天沒更新，只減不加，請 agent 查排程為什麼失敗"
+msgstr "{n} 天沒更新，只減不加，請 agent 查排程跟 K 棒"
 
 msgid "tr.ov.evDeadMembers"
 msgstr "成分股停止更新"
@@ -10842,3 +10842,21 @@ msgstr "拉回這台電腦…"
 
 msgid "ho.done.none"
 msgstr "已存成{at} {dest}，那邊沒有跑出回測。"
+
+# 事件列(P1):K 棒連續兩根以上、至少 30 分鐘拿不到,訊號停在上一根,而這支策略帳上還有部位(trade.js trEventText data_gap_exposed;也是本機 P1 通知標題)
+msgid "tr.ov.evDataGap"
+msgstr "拿不到 K 棒，有部位沒照策略調整"
+
+msgid "tr.ov.evDataGapNote"
+msgstr "{minutes} 分鐘沒新 K 棒，訊號停在上一根，請先看一下部位"
+
+# 本機 P1 系統通知的內文(main.js tmLabels ev_data_gap_exposed_n);事件列沒帶分鐘時也用這句
+msgid "tm.evDataGapNote"
+msgstr "訊號停在上一根，帳上部位不會照策略調整。請先看一下部位。"
+
+# 事件列(P2):券商自己的台指期即時行情斷了,這段改用 Blave 的資料({broker} = 統一／群益／這家券商)
+msgid "tr.ov.evFeedFallback"
+msgstr "{broker}即時行情斷了，改用 Blave 資料"
+
+msgid "tr.ov.evFeedFallbackNote"
+msgstr "訊號會慢 1–2 分鐘，行情回來會自動切回"

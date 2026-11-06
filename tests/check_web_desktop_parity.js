@@ -41,6 +41,10 @@ const EV_PAIRS = {
   evTargetStaleMin: "target_stale_min",
   evTargetStaleHour: "target_stale_hour",
   evTargetStaleDay: "target_stale_day",
+  evDataGap: "data_gap",
+  evDataGapNote: "data_gap_note",
+  evFeedFallback: "feed_fallback",
+  evFeedFallbackNote: "feed_fallback_note",
   evDeadMembers: "dead_members",
   evDeadMembersNote: "dead_members_note",
   evDeadMore: "dead_more",
@@ -104,6 +108,10 @@ for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
   const diff = Object.entries(EV_PAIRS).filter(([d, w]) => !dp["tr.ov." + d] || dp["tr.ov." + d] !== wp["workspace_ov_ev_" + w]).map(([d]) => d);
   ok(`事件文案 ${lang} 兩邊逐字一致(${Object.keys(EV_PAIRS).length} 句)`, diff.length === 0, diff.join(", "));
+  // data_gap_exposed 沒帶 minutes 時的附註,電腦版放在 tm. 底下
+  ok(`資料斷線沒帶分鐘的附註 ${lang} 兩邊逐字一致(tm.evDataGapNote ↔ workspace_ov_ev_data_gap_note_nomin)`,
+    typeof dp["tm.evDataGapNote"] === "string" && dp["tm.evDataGapNote"] === wp.workspace_ov_ev_data_gap_note_nomin,
+    "tm.evDataGapNote「" + dp["tm.evDataGapNote"] + "」 vs workspace_ov_ev_data_gap_note_nomin「" + wp.workspace_ov_ev_data_gap_note_nomin + "」");
 }
 // 全部平倉快照落後(manual_close_required reason snapshot_lag;api 1aed82a8 起群益、統一都走這個型別):整句與券商短名兩邊逐字同。
 // 網頁這幾個 key 還沒上(同步改中):網頁沒有就只記一筆 NOTE,有了就必須逐字一致

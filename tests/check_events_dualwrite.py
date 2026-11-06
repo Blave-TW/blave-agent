@@ -29,6 +29,7 @@ ALLOWED = {
     "execution_interrupted", "execution_fallback_market", "execution_stuck",
     "strategy_failed", "bar_stale", "scheduler_error", "venue_unbound",
     "ui_override", "exchange_unreachable", "exchange_recovered", "dead_members",
+    "data_gap_exposed", "tw_feed_fallback",
 }
 # 平台自己 diff payload 產生的，config 寫了就是同一件事落兩筆
 FORBIDDEN = {"halt", "order_error"}
@@ -54,7 +55,7 @@ assert ev.emit("ui_override") is None, "append 失敗必須吞掉,不能炸掉�
 
 # ── 4. 每個接線點用的型別都在白名單裡，而且沒人寫 halt / order_error ─────
 WIRED = ["lib/execute.py", "lib/portfolio.py", "lib/venue_wiring.py",
-         "manager/alert_failure.py", "manager/wait_for_bar.py", "manager/reconciler.py"]
+         "manager/alert_failure.py", "manager/wait_for_bar.py", "manager/reconciler.py", "lib/data.py"]
 found = set()
 for path in WIRED:
     src = open(path, encoding="utf-8").read()

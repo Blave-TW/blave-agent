@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **排隊的 tick 帶上排定時間(`BLAVE_TICK_SLOT`,`command_listener._tick_due`)**:閘門開著時,wait_for_bar 子程序多一個環境變數,值是這個策略從上次啟動以來第一個輪到它的排程週期(epoch 秒)。排隊或還在跑時被略過的週期都算在下一次啟動裡。workspace 的 wait_for_bar 拿它判斷停滯節流:這段時間裡有節流分鐘(每刻鐘的 :00、:05)就輪詢,每個節流分鐘最多一次;斷線計時(`_track_gap`、`_track_lag`)也從它算,排隊的時間不算沒在輪詢。以前閘門讓 tick 晚 56 秒以上,那一輪就被節流丟掉,`gap_since` 會被重設,資料斷線的 P1 晚好幾小時或不發。閘門關著不帶。舊 workspace 不讀這個變數,新 workspace 沒拿到就照 tick 實際開始的時間判斷,跟以前一樣;兩邊誰先更新都不會比現在差,兩邊都更新才修好。測試 `tests/check_tick_gate.py` W、`tests/check_data_gap_alerts.py` G。
+
 ## 1.1.159 — 2026-11-06(desktop 0.1.48)
 
 - **群益實盤 K 棒改吃群益行情(配合 blave-agent 2026-11-07-a 的 `lib/capital_quote`)**:雲端 Windows 的 live tick 子行程也帶 `BLAVE_TW_BROKER`(`_strategy_subprocess_env` 雲端 Windows 分支補 `_tw_broker_flag()`,backtest 不帶),`lib/data` 才知道這台綁群益、去讀 worker 寫的 `state/capital_bars_TXF_1m.json`;舊 lib 只認統一的電腦版,所以 runtime 先發無害。解綁群益時連行情快照一起刪:電腦版 `capital_local.drop_local`、雲端 `capital_connect.drop_vault`。`portfolio_reporter` 一行註解改指 `lib/data._with_broker_tail`。

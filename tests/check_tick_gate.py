@@ -23,6 +23,9 @@
   G  the "queued … launched at :SS" log line: written for a <5m tick launched past :45 (judged on
      the launch second, not when the tick finished) or any tick queued ≥ 10 s; at most one line
      an hour per strategy.
+  W  BLAVE_TICK_SLOT: a gated tick's wait_for_bar gets the earliest cycle its name was due in since
+     its last launch — the cycle that queued it even when it launches cycles later, the cycle that
+     came while it was still running for the launch after; gate off → no slot.
   R  the real _run_scheduler_cycle: gate on → cap held, all ticked, 1m before 1h; gate off →
      every tick spawned at once with target=_tick_one, exactly as before (a barrier of N only
      opens if all N run together).
@@ -38,6 +41,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = tempfile.mkdtemp(prefix="tick-gate-")
@@ -407,6 +411,56 @@ try:
     check(len(logged) == 1, f"the same strategy queued every minute: one line, then the next an hour later ({len(logged)})")
 finally:
     cl._log, cl.time, cl._tick_one = real_log, real_time, real_tick
+
+# ── W ──
+wall, runs, hold = [1000.0], [], threading.Event()
+
+
+def fake_run(argv, **kw):
+    runs.append((argv[-1], kw["env"].get(cl.TICK_SLOT_ENV)))
+    if argv[-1] == "hold" and not hold.is_set():
+        hold.wait(10)
+    return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+
+def settle():
+    for t in threading.enumerate():
+        if t.name.startswith("strategy-tick-"):
+            t.join(10)
+
+
+real_run, real_time = cl.subprocess.run, cl.time
+cl.subprocess.run = fake_run
+cl.time = types.SimpleNamespace(time=lambda: wall[0])
+cl._tick_gate, cl._tick_gate_read = tg.TickGate(1), True
+cl._tick_due.clear()
+try:
+    cl._start_ticks({"hold": 60})
+    for _ in range(100):
+        if runs:
+            break
+        time.sleep(0.02)
+    wall[0] = 1060.0
+    cl._start_ticks({"hold": 60, "x": 60})    # x queued behind hold; hold skipped while it runs
+    wall[0] = 1120.0
+    cl._start_ticks({"hold": 60, "x": 60})    # x still waiting: not queued again
+    time.sleep(0.1)
+    hold.set()
+    settle()
+    wall[0] = 1180.0
+    cl._start_ticks({"hold": 60})
+    settle()
+    cl._tick_gate = None
+    cl._start_ticks({"y": 60})
+    settle()
+finally:
+    hold.set()
+    cl.subprocess.run, cl.time = real_run, real_time
+check(runs[:2] == [("hold", "1000.000"), ("x", "1060.000")],
+      f"W the first launch carries its cycle; x, queued at 1060 and launched after 1120, carries 1060 ({runs[:2]})")
+check(runs[2:3] == [("hold", "1060.000")],
+      f"W …hold, skipped at 1060 and 1120 while it ran, carries 1060 on its next launch ({runs[2:3]})")
+check(runs[3:] == [("y", None)] and not cl._tick_due, f"W gate off: no slot, nothing left behind ({runs[3:]}, {cl._tick_due})")
 
 # ── E ──
 reads, real_src = {}, cl._strategy_source

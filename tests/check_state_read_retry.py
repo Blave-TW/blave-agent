@@ -259,6 +259,8 @@ EXEMPT = [
      'code', 'code / doc / VERSION text, not a state file'),
     ('manager/wait_for_bar.py', '_us_stock_daily', 'f"strategies/{name}/strategy.py"',
      'code', 'code / doc / VERSION text, not a state file'),
+    ('manager/wait_for_bar.py', '_crypto_only', 'f"strategies/{name}/strategy.py"',
+     'code', 'code / doc / VERSION text, not a state file'),
     ('manager/wait_for_bar.py', 'load_json', 'path',
      'helper', "the retry helper's own open, or the half-updated-workspace fallback"),
     ('runtime/account_reader.py', '_read_env', 'path',

@@ -1891,6 +1891,7 @@ function trPushLabels() {
     ev_execution_stuck: t("tr.ov.evExecStuck"), ev_execution_stuck_n: t("tr.ov.evExecStuckNote"),
     ev_machine_restart_stopped: t("tr.ov.evRestartStopped"), ev_machine_restart_stopped_n: t("tm.evRestartStoppedNote"),
     ev_venue_stops_missing: t("tm.evBitgetNoStop"), ev_venue_stops_missing_n: t("tr.ov.evBitgetNoStopNote"),
+    ev_data_gap_exposed: t("tr.ov.evDataGap"), ev_data_gap_exposed_n: t("tm.evDataGapNote"),
     ev_venue_login_blocked: t("tr.ov.evPresStopped"), ev_venue_login_blocked_n: t("tr.ov.evPresStoppedNote"),
     ev_venue_login_blocked_capital: t("tr.ov.evCapStopped"), ev_venue_login_blocked_capital_n: t("tr.ov.evCapStoppedNote"),
     ev_venue_login_blocked_capital_locked_n: t("tr.ov.evCapLockedNote"),
@@ -5615,10 +5616,10 @@ function trOrderErrText(sym, err) {
 /* 事件級別:先讀 api 帶的 level(trEvApiLevel),缺欄位才用這張表——鏡射 api agent_events.SPECS + level_for
    (halt 看 source、主機重開看 trigger),同網頁 ovEvLevel;不在表裡的當 P3。標題顏色只看它:1 紅、2 強調、3 一般字 */
 const TR_EV_P1 = ["order_error", "order_unconfirmed", "manual_close_required", "execution_interrupted", "execution_fallback_market", "execution_stuck",
-  "market_hold", "settings_unsafe", "machine_restart_stop_failed", "downtime_paused", "venue_stops_missing", "venue_login_blocked"];
+  "market_hold", "settings_unsafe", "machine_restart_stop_failed", "downtime_paused", "venue_stops_missing", "venue_login_blocked", "data_gap_exposed"];
 const TR_EV_P2 = ["reconciler_dead", "venue_disconnected", "strategy_failed", "bar_stale", "target_stale", "dead_members", "scheduler_error",
   "venue_unbound", "market_check_off", "ui_override", "settings_rollback_failed", "report_degraded", "exchange_unreachable",
-  "machine_silent", "disk_full", "memory_low", "report_rejected"];
+  "machine_silent", "disk_full", "memory_low", "report_rejected", "tw_feed_fallback"];
 // 下單那一腿背後的策略:一支、兩支照列,三支以上「A 等 N 支策略」;沒有回 null。三個 key 同網頁
 // workspace_ov_ev_strat_one/two/many。名稱一般字、代號包 .mono、其餘字灰(designer v034 UX P3),一律走 textContent
 function trStratEl(names) {
@@ -5697,6 +5698,16 @@ function trEventText(type, d, strat) {
     return outS(t("tr.ov.evDeadMembers"), t("tr.ov.evDeadMembersNote"), null, syms.slice(0, 10).join(", "),
       syms.length > 10 ? t("tr.ov.evDeadMore", { total: syms.length, more: syms.length - 10 }) : null);
   }
+  // 資料斷太久而帳上有部位(wait_for_bar._track_gap,P1):keys 照 dead_members 列前 10 個
+  if (type === "data_gap_exposed") {
+    const keys = (Array.isArray(d.keys) ? d.keys : []).filter((x) => typeof x === "string" && x).map((x) => x.replace(/@spot$/, ""));
+    return outS(t("tr.ov.evDataGap"), typeof d.minutes === "number" && isFinite(d.minutes) ? t("tr.ov.evDataGapNote", v) : t("tm.evDataGapNote"),
+      null, keys.slice(0, 10).join(", ") || null, keys.length > 10 ? t("tr.ov.evDeadMore", { total: keys.length, more: keys.length - 10 }) : null);
+  }
+  // 券商自己的台指期行情斷了、改用 Blave 資料(lib/data._tw_feed_episode,P2);券商名照固定對照表,不讀 payload 原文
+  if (type === "tw_feed_fallback")
+    return out(t("tr.ov.evFeedFallback", { broker: t(Object.prototype.hasOwnProperty.call(TR_BROKER_KEY, d.venue) ? TR_BROKER_KEY[d.venue] : "tr.ov.brokerOther") }),
+      t("tr.ov.evFeedFallbackNote"));
   if (type === "execution_fallback_market") return out(t("tr.ov.evExecFallback"), t("tr.ov.evExecFallbackNote"));
   if (type === "execution_interrupted") return out(t("tr.ov.evExecInterrupted"), t("tr.ov.evExecInterruptedNote"));
   // kind 只有 overdue/abandoned;認不得的照樣是通用句(同網頁)
