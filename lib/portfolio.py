@@ -1,4 +1,5 @@
-import glob, hashlib, inspect, json, logging, math, os, re, time
+import functools, glob, hashlib, inspect, json, logging, math, os, re, threading, time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 from lib import guard, venue_traits
@@ -14,6 +15,19 @@ try:
     from lib import unconfirmed as _unconfirmed
 except ImportError:  # half-updated workspace: nothing is parked, failures report as before
     _unconfirmed = None
+try:
+    from lib.winreplace import read_retry as _read_retry
+except ImportError:  # half-updated workspace (lib/winreplace.py not landed): no retry
+    def _read_retry(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+try:
+    import fcntl as _fcntl
+except ImportError:  # Windows
+    _fcntl = None
+try:
+    import msvcrt as _msvcrt
+except ImportError:  # POSIX
+    _msvcrt = None
 try:
     from lib.winreplace import load_json
 except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
@@ -475,6 +489,11 @@ def book_unconfirmed(key, entry, qty, price, source, pid=None):
     netted part (lib/venue_wiring._netted_room / _netted_exit). A park id the book
     already has is not booked twice (a crash between booking and the release)."""
     pid = pid or _unconfirmed.park_id(entry)
+    if _sent_before_reset(entry.get('venue'), entry.get('parked_at')):
+        logging.warning(f"[reconcile] parked {key} {pid} predates {entry.get('venue')}'s book reset — "
+                        f"not booked, released")
+        guard.audit('order_unconfirmed_dropped_reset', symbol=key, park_id=pid, venue=entry.get('venue'))
+        return
     # a close of the whole account position: past the bot's own share it was the user's
     cap = entry.get('book_cap')
     if cap is None and entry.get('book_cap_cost') is not None and price > 0:
@@ -603,6 +622,56 @@ def _settle_parked(query=None, now=None, cancel=None):
 _LEDGER_SEED_PATH = 'manager/ledger_seed.json'
 _ORDERS_LOG_PATH  = 'manager/orders.jsonl'
 _LEDGER_ADOPTION_PATH = 'manager/ledger_migration.json'
+_SEED_LOCK_PATH = 'state/ledger_seed.lock'
+_SEED_LOCK_TIMEOUT_S = 30
+_seed_rlock = threading.RLock()
+_seed_held = {'depth': 0, 'fh': None}
+
+
+@contextmanager
+def _seed_lock(timeout=_SEED_LOCK_TIMEOUT_S):
+    """Every read-modify-write of the seed holds this: the reconciler, flatten, the bind and
+    the unbind write it from separate processes, and a save from a stale read silently drops
+    the other's change (an unbind's venue_reset gone, another venue's zeroed row back).
+    Across processes (flock / msvcrt), re-entrant inside one. Raises TimeoutError."""
+    if not _seed_rlock.acquire(timeout=timeout):
+        raise TimeoutError(f"{_SEED_LOCK_PATH} busy in this process past {timeout}s")
+    try:
+        if _seed_held['depth'] == 0:
+            os.makedirs(os.path.dirname(_SEED_LOCK_PATH), exist_ok=True)
+            fh = open(_SEED_LOCK_PATH, 'a+')
+            deadline = time.time() + timeout
+            while True:
+                try:
+                    if _fcntl is not None:
+                        _fcntl.flock(fh, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+                    elif _msvcrt is not None:
+                        _msvcrt.locking(fh.fileno(), _msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    if time.time() >= deadline:
+                        fh.close()
+                        raise TimeoutError(f"{_SEED_LOCK_PATH} held by another process past {timeout}s")
+                    time.sleep(0.05)
+            _seed_held['fh'] = fh
+        _seed_held['depth'] += 1
+        try:
+            yield
+        finally:
+            _seed_held['depth'] -= 1
+            if _seed_held['depth'] == 0:
+                _seed_held['fh'].close()
+                _seed_held['fh'] = None
+    finally:
+        _seed_rlock.release()
+
+
+def _seed_rmw(fn):
+    @functools.wraps(fn)
+    def run(*a, **kw):
+        with _seed_lock():
+            return fn(*a, **kw)
+    return run
 
 
 def _load_ledger_seed():
@@ -913,6 +982,11 @@ def book_account_check(env=None, venue=_CURRENT, account=_CURRENT):
     uid, err, transient = _read_account_id(venue, env) if account is _CURRENT else account
     if uid is None and err is None:
         return 'unsupported', f"lib.account_{venue} has no get_account_id"
+    with _seed_lock():
+        return _book_account_decide(venue, env, uid, err, transient)
+
+
+def _book_account_decide(venue, env, uid, err, transient):
     fp = _creds_fp(env, venue)
     seed = _load_ledger_seed()
     accounts = dict(seed.get('venue_account') or {})
@@ -982,6 +1056,7 @@ def book_hold_asking(venue):
     return isinstance(hold, dict) and bool(hold.get('ask')) and hold.get('venue') == venue
 
 
+@_seed_rmw
 def book_account_confirm(venue, same, env=None):
     """The user's answer to a book hold (book_account_check → 'unreadable'):
     is the key now bound on `venue` the same exchange account the bot's book
@@ -1055,6 +1130,184 @@ def book_account_confirm(venue, same, env=None):
     return outcome
 
 
+_PENDING_SENT_PATHS = {venue_traits.PRESIDENT: 'state/president_pending_sent.json',
+                       venue_traits.CAPITAL: 'state/capital_pending_sent.json'}
+# {venue: reset ts}: an unbind's reset whose cleanup (parked orders, pending_sent) is not done yet
+_RESET_TODO_PATH = 'state/venue_reset_todo.json'
+
+
+def _read_reset_todo():
+    try:
+        todo = load_json(_RESET_TODO_PATH)
+    except FileNotFoundError:
+        return {}
+    if not isinstance(todo, dict):
+        raise ValueError(f"{_RESET_TODO_PATH} is not a JSON object")
+    return todo
+
+
+def _write_reset_todo(todo):
+    if not todo:
+        try:
+            _read_retry(os.remove, _RESET_TODO_PATH)
+        except FileNotFoundError:
+            pass
+        return
+    os.makedirs(os.path.dirname(_RESET_TODO_PATH), exist_ok=True)
+    tmp = f"{_RESET_TODO_PATH}.{os.getpid()}.tmp"
+    with open(tmp, 'w') as f:
+        json.dump(todo, f)
+    atomic_replace(tmp, _RESET_TODO_PATH)
+
+
+def _finish_venue_reset(venue):
+    """The cleanup an unbind's reset owes `venue`: its parked orders released, its
+    sent-but-unclaimed file deleted. ([released pids], [what is still left]); the
+    todo entry goes only when nothing is left."""
+    released, left = [], []
+    if _unconfirmed is not None:
+        try:
+            rows = _unconfirmed.load()
+        except Exception as e:
+            rows = {}
+            left.append(f"parked orders unreadable ({type(e).__name__})")
+        for pid, entry in rows.items():
+            if isinstance(entry, dict) and (entry.get('venue') == venue
+                                            or str(entry.get('key') or '').startswith(f"{venue}|")):
+                try:
+                    if _unconfirmed.release(pid):
+                        released.append(pid)
+                except Exception as e:
+                    left.append(f"park {pid} not released ({type(e).__name__})")
+    sent = _PENDING_SENT_PATHS.get(venue)
+    if sent:
+        try:
+            _read_retry(os.remove, sent)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            left.append(f"{sent} not deleted ({type(e).__name__})")
+    if not left:
+        with _seed_lock():
+            todo = _read_reset_todo()
+            if todo.pop(venue, None) is not None:
+                _write_reset_todo(todo)
+    return released, left
+
+
+def _venue_reset_at(venue):
+    """The seed's venue_reset[venue] as a datetime, None when there is none. Read raw: the
+    seed unreadable raises (the caller keeps whatever it was about to book or drop)."""
+    try:
+        raw = load_json(_LEDGER_SEED_PATH)
+    except FileNotFoundError:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError(f"{_LEDGER_SEED_PATH} is not a JSON object")
+    at = (raw.get('venue_reset') or {}).get(venue) if venue else None
+    return datetime.fromisoformat(str(at)) if at else None
+
+
+def _sent_before_reset(venue, sent_epoch):
+    """An order sent before `venue`'s book was reset (an unbind, another account) belongs to
+    the book that was emptied: booked now it would be a position the bot never held on the
+    new one. The seed's venue_reset is the only commit point — this never depends on the
+    unbind's cleanup having deleted the order's record. Unknown send time on a venue that
+    was reset: not booked (every real park row carries one)."""
+    reset = _venue_reset_at(venue)
+    if reset is None:
+        return False
+    try:
+        return datetime.utcfromtimestamp(float(sent_epoch)) <= reset
+    except (TypeError, ValueError, OverflowError, OSError):
+        return True
+
+
+def _settle_reset_todo(venue):
+    """Before `venue`'s book is read: finish an unbind's owed cleanup (release its parked
+    orders, delete its pending_sent). Hygiene only — what was sent before the reset is
+    never booked anyway (_sent_before_reset) — so nothing here raises: what is still
+    left stays owed and is tried again on the next read. A todo entry newer than the
+    seed's venue_reset is a reset that never committed: dropped, nothing cleaned; the seed
+    unreadable keeps it."""
+    if not os.path.exists(_RESET_TODO_PATH):
+        return
+    try:
+        at = _read_reset_todo().get(venue)
+        if not at:
+            return
+        reset = _venue_reset_at(venue)
+    except (OSError, ValueError) as e:
+        logging.warning(f"[ledger] {venue}: owed unbind cleanup not checked ({type(e).__name__})")
+        return
+    try:
+        if reset is None or reset < datetime.fromisoformat(str(at)):
+            with _seed_lock():
+                todo = _read_reset_todo()
+                todo.pop(venue, None)
+                _write_reset_todo(todo)
+            return
+        released, left = _finish_venue_reset(venue)
+    except (OSError, ValueError) as e:
+        logging.warning(f"[ledger] {venue}: owed unbind cleanup not done ({type(e).__name__})")
+        return
+    if released:
+        guard.audit("book_reset_cleanup", venue=venue, released=released)
+    if left:
+        logging.warning(f"[ledger] {venue}: unbind cleanup still owed: {left}")
+
+
+def reset_venue_book(venue, reason):
+    """`venue` was unbound (Wei 2026-11-06): the bot holds nothing there any more.
+    Its book restarts now (`venue_reset`, the same cut book_account_check makes for
+    another account), its recorded account and to-be-migrated symbols go, and the
+    orders still parked or sent-but-unclaimed there are dropped — booked later, any
+    of them would grow a position on the empty book. Whatever stays on the account
+    is the user's from here on.
+    Every other venue's rows, fills and parked orders, `seeded_at` and
+    `own_only_basis` are untouched: the seed is edited, never rewritten fresh, or
+    book_ready() turns False and the next start adopts the user's positions.
+    The seed write is the commit point. Before it, any failure raises and nothing is
+    written; after it the reset holds, and a cleanup step that fails (a Windows file
+    lock, an unreadable park file) stays owed in state/venue_reset_todo.json and is
+    retried on every read of this venue's book (_settle_reset_todo). Correctness never
+    waits on it: a parked order or late fill sent before venue_reset is not booked
+    (_sent_before_reset). Returns {'released', 'left'}."""
+    guard.mark_money_process()  # writes the ledger: Stop in the chat never kills this process (lib/guard)
+    venue = str(venue or '').lower()
+    if not venue:
+        raise ValueError('reset_venue_book needs a venue')
+    with _seed_lock():
+        try:
+            raw = load_json(_LEDGER_SEED_PATH)
+        except FileNotFoundError:
+            raw = {}
+        if not isinstance(raw, dict):
+            raise ValueError(f"{_LEDGER_SEED_PATH} is not a JSON object")
+        seed = _load_ledger_seed()
+        kept = ('seeded_at', 'own_only_basis', 'symbols', 'venue_reset', 'venue_account')
+        if any(raw.get(k) for k in kept) and not any(seed.get(k) for k in kept):
+            # _load_ledger_seed's empty fallback: saving it would wipe every venue's book
+            raise ValueError(f"{_LEDGER_SEED_PATH} unreadable")
+        now = datetime.utcnow().isoformat()
+        todo = _read_reset_todo()
+        todo[venue] = now
+        _write_reset_todo(todo)  # owed before the reset counts; a reset that never lands drops it
+        seed['venue_reset'] = {**(seed.get('venue_reset') or {}), venue: now}
+        seed['pending'] = {k: v for k, v in (seed.get('pending') or {}).items()
+                           if not str(k).startswith(f"{venue}|")}
+        accounts = dict(seed.get('venue_account') or {})
+        accounts.pop(venue, None)
+        seed['venue_account'] = accounts
+        _save_ledger_seed(seed)
+    # outside the seed lock: settling a parked order takes the park lock and then the seed's
+    released, left = _finish_venue_reset(venue)
+    guard.audit("book_reset", venue=venue, reason=reason, released=released, left=left)
+    if left:
+        logging.warning(f"[ledger] {venue} book reset; cleanup still owed: {left}")
+    return {'released': released, 'left': left}
+
+
 def book_ready(config=None):
     """The book has a baseline the own-positions rule can trust: written by this
     lib (`own_only_basis`), or a machine that was already on the book
@@ -1095,6 +1348,7 @@ def _save_ledger_seed(seed):
     atomic_replace(tmp, _LEDGER_SEED_PATH)
 
 
+@_seed_rmw
 def claim_unvenued_rows(venue=_CURRENT):
     """Rows written before books were per venue (seed_ledger --absorb, older
     zero rows) carry no venue and would read as the bot's on EVERY bound venue
@@ -1224,11 +1478,13 @@ def seed_ledger(get_positions_fn, absorb=False, get_qty_fn=None, venue=_CURRENT)
     # pre-seed orders.jsonl history must never leak into the ledger
     # which account each venue's book belongs to outlives a re-seed: fills from
     # here on are still that account's (book_account_check)
-    _save_ledger_seed({'seeded_at': now, 'own_only_basis': 1, 'symbols': symbols,
-                       'venue_account': _load_ledger_seed()['venue_account']})
+    with _seed_lock():
+        _save_ledger_seed({'seeded_at': now, 'own_only_basis': 1, 'symbols': symbols,
+                           'venue_account': _load_ledger_seed()['venue_account']})
     return {v['symbol']: v['size'] for v in symbols.values()}
 
 
+@_seed_rmw
 def zero_ledger_symbols(symbols, venue=_CURRENT):
     """Reset the self-ledger baseline to flat, timestamped now, for exactly
     these symbols — every OTHER symbol's seed and accumulated history is left
@@ -1616,14 +1872,20 @@ def resolve_pending(target, actual, config):
             continue
         done[pk] = row or {'size': 0.0, 'qty': 0.0, 'ts': now, 'venue': venue, 'symbol': sym}
     if done:
-        for pk, row in done.items():
-            seed['pending'].pop(pk, None)
-            _pending_seen.pop(pk, None)
-            seed['symbols'][pk] = row
-        _save_ledger_seed(seed)
-        decided = {r['symbol']: {'size': round(r['size'], 2), 'qty': r['qty']} for r in done.values()}
-        guard.audit('ledger_baseline_pending', venue=venue, decided=decided)
-        logging.warning(f"[ledger] waited-on symbols decided for {venue}: {decided}")
+        with _seed_lock():
+            seed = _load_ledger_seed()  # re-read under the lock: the decision above took reads
+            # one dropped meanwhile (an unbind's reset) stays dropped
+            done = {pk: row for pk, row in done.items() if pk in seed['pending']}
+            for pk, row in done.items():
+                seed['pending'].pop(pk, None)
+                _pending_seen.pop(pk, None)
+                seed['symbols'][pk] = row
+            if done:
+                _save_ledger_seed(seed)
+        if done:
+            decided = {r['symbol']: {'size': round(r['size'], 2), 'qty': r['qty']} for r in done.values()}
+            guard.audit('ledger_baseline_pending', venue=venue, decided=decided)
+            logging.warning(f"[ledger] waited-on symbols decided for {venue}: {decided}")
     return still
 
 
@@ -1673,6 +1935,8 @@ def _ledger_walk(venue=_CURRENT):
     # one venue's book: its own rows and fills, plus rows from before books were
     # per venue (no venue at all). The latest row of a symbol is its baseline.
     venue = _resolve_venue(venue)
+    if venue:
+        _settle_reset_todo(venue)
     reset_at = seed.get('venue_reset', {}).get(venue, '') if venue else ''
     base = {}
     for srow in seed['symbols'].values():
@@ -2172,12 +2436,19 @@ def book_late_fill(symbol, venue, contract, lots, park_id=None, ordernos=None):
     `park_id` makes it idempotent, the way book_unconfirmed is: an id already in
     the book is not written again (False), and the line is appended strictly, so
     any failure — the book unreadable, the append refused — raises and the caller
-    keeps its park row for the next round. Returns True when the line was written.
+    keeps its park row for the next round. Returns True when the line was written, None
+    when it was sent before the venue's book reset (an unbind) and so is not booked.
     Without `park_id` (an older caller): not idempotent, a failed append only HALTs.
     `ordernos`: the parked sends' order numbers, so the line names the send that filled
     (runtime/portfolio_reporter.pair_unconfirmed_orders still pairs by nearest send)."""
     venue = _resolve_venue(venue)
     lots = float(lots)
+    sent = str(park_id).rsplit('@', 1)[-1] if park_id is not None else None
+    if _sent_before_reset(venue, sent):
+        # None, not False: the caller records it as dropped, not as adopted (reconciler)
+        logging.warning(f"[reconcile] late fill {symbol} {park_id} predates {venue}'s book reset — "
+                        f"not booked, the row is dropped")
+        return None
     if park_id is not None and late_fill_booked(park_id):
         logging.info(f"[reconcile] late fill {symbol} {park_id} already in the book — not booked again")
         return False
@@ -2194,6 +2465,7 @@ def book_late_fill(symbol, venue, contract, lots, park_id=None, ordernos=None):
     return True
 
 
+@_seed_rmw
 def _rebase_ledger_symbol(symbol, venue, months, qty=None):
     """One symbol's book restarts now at `months` ({} = flat) — a lots row,
     so its cost is its quantity. With `qty` and months=None the lots have no

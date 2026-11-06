@@ -753,14 +753,15 @@ for (const lang of ["zh", "en"]) {
 // 埋點(product-telemetry):三個事件名兩邊都要有送出點
 { const UNBIND_PAIRS = { "tr.ub.x0Cloud": "x0", "tr.ub.x0Pres": "x0_pres", "tr.unbindWarnPaper": "-workspace_pf_unbind_warn_paper",
     "tr.ub.askTitle": "ask_title", "tr.ub.askTitle1": "ask_title_1", "tr.ub.askTitleN": "ask_title_n", "tr.ub.unreadN": "unread_n",
-    "tr.ub.closeSelf": "close_self", "tr.ub.closeAll": "close_all", "tr.ub.keep": "keep", "tr.ub.keepOld": "keep_old", "tr.ub.keepGo": "keep_go", "tr.ub.closeGo": "close_go",
+    "tr.ub.closeSelf": "close_self", "tr.ub.closeAll": "close_all", "tr.ub.keep": "keep", "tr.ub.keepOld": "keep_old", "tr.ub.keepRejoin": "keep_rejoin", "tr.ub.keepAskOld": "keep_ask_old", "tr.ub.keepGo": "keep_go", "tr.ub.closeGo": "close_go",
     "tr.ub.closedTitle": "closed_title", "tr.ub.closedTitle1": "closed_title_1", "tr.ub.closedTitleN": "closed_title_n",
     "tr.ub.closedWhen": "closed_when", "tr.ub.closedWhenN": "closed_when_n", "tr.ub.closedLater": "closed_later", "tr.ub.cantClose": "cant_close",
     "tr.ub.runTitle": "run_title", "tr.ub.runLine": "run_line", "tr.ub.running": "running", "tr.ub.runningBtn": "running_btn",
     "tr.ub.failTitle": "fail_title", "tr.ub.failTitle1": "fail_title_1", "tr.ub.failTitleN": "fail_title_n", "tr.ub.failReply": "fail_reply",
     "tr.ub.failState": "fail_state", "tr.ub.unconfirmed": "unconfirmed", "tr.ub.retryGo": "retry_go",
     "tr.ub.stDone": "st_done", "tr.ub.stNoFill": "st_nofill", "tr.ub.stUnconf": "st_unconf", "tr.ub.stManual": "st_manual", "tr.ub.busy": "busy",
-    "tr.ub.close": "-workspace_ns_close", "tr.ub.appPres": "-workspace_ov_broker_president", "tr.ub.appCap": "-workspace_ov_broker_capital" };
+    "tr.ub.close": "-workspace_ns_close", "tr.ub.appPres": "-workspace_ov_broker_president", "tr.ub.appCap": "-workspace_ov_broker_capital",
+    "cx.cancelSetup": "-workspace_cx_cancel_setup" };
   const wk = (w) => w.charAt(0) === "-" ? w.slice(1) : "workspace_pf_ub_" + w;
   for (const lang of ["zh", "en"]) {
     const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));

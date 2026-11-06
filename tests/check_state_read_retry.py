@@ -395,6 +395,8 @@ EXEMPT = [
      'broken file restarts from {} and drops other sessions\' model choices — low stakes'),
     ('runtime/portfolio_reporter.py', '_capital_admin_password_on_file', 'os.path.join(WORKSPACE, ".env")',
      'vault', 'admin password file / .env for it'),
+    ('runtime/portfolio_reporter.py', 'unbind_clears_book', 'os.path.join(WORKSPACE, "lib", "portfolio.py")',
+     'code', "lib source probed for reset_venue_book; a failed read reports false for one report"),
     ('runtime/portfolio_reporter.py', 'can_close_unbind', 'os.path.join(WORKSPACE, "manager", "flatten.py")',
      'code', 'manager/flatten.py source probe'),
     ('runtime/portfolio_reporter.py', '_ac_interval', 'os.path.join(WORKSPACE, "strategies", name, "strategy.py")',

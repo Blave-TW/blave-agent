@@ -2448,13 +2448,19 @@ msgid "tr.ub.closeAll"
 msgstr "「平倉並解除」會平掉帳戶上所有部位，含你手動開的單。"
 
 msgid "tr.ub.keep"
-msgstr "「保留部位並解除」之後沒人管，要自己到{venue}處理。"
+msgstr "「自己處理並解除」後，策略從此不管這些部位。接回同一帳戶時算手動部位，策略可能重複開倉。"
 
 msgid "tr.ub.keepOld"
 msgstr "要自己到{venue}處理。"
 
+msgid "tr.ub.keepAskOld"
+msgstr "「自己處理並解除」後沒人管，要自己到{venue}處理。"
+
+msgid "tr.ub.keepRejoin"
+msgstr "接回同一帳戶時算手動部位，策略可能重複開倉。"
+
 msgid "tr.ub.keepGo"
-msgstr "保留部位並解除"
+msgstr "自己處理並解除"
 
 msgid "tr.ub.closeGo"
 msgstr "平倉並解除"
@@ -9604,6 +9610,9 @@ msgstr "憑證只存在你的雲端主機"
 # 已綁定時框裡兩個大選項與選單鎖住,下面這一句
 msgid "cx.bound"
 msgstr "要換帳戶，先在設定解除綁定。"
+
+msgid "cx.cancelSetup"
+msgstr "改連別家會取消{venue}的開通。"
 
 msgid "cx.mode.paper"
 msgstr "模擬交易"

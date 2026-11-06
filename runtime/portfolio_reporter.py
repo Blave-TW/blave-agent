@@ -1182,6 +1182,20 @@ def can_close_unbind(vens):
             and can_flatten(vens))
 
 
+def unbind_clears_book():
+    """An unbind the page sends with `clear_book: true` empties that venue's book here:
+    this runtime honours the flag (command_listener._cmd_credentials_remove,
+    close_then_unbind, a bind's eviction) whenever the workspace lib has
+    reset_venue_book. A page that sends the flag says a rebound account's positions are
+    manual only when this is true; one that does not send it (desktop ≤0.1.47) never
+    clears, whatever this says."""
+    try:
+        with open(os.path.join(WORKSPACE, "lib", "portfolio.py"), encoding="utf-8") as f:
+            return "def reset_venue_book(" in f.read()
+    except OSError:
+        return False
+
+
 def manual_close_venues(vens):
     """Bound venues a flatten here skips for identity (= command_listener._manual_venues)."""
     gated = sorted(v for v in (vens or {}) if venue_traits.has(v, "windows_identity"))
@@ -2413,6 +2427,9 @@ def build_report(reporter=None):
         # flatten.py can be scoped to the venue and reports its result — keyed on the artifact,
         # like can_flatten. Absent (old runtime) = the pages offer keep-and-unbind only.
         "can_close_unbind": can_close_unbind(vens),
+        # an unbind sent with clear_book empties that venue's book (Wei 2026-11-06); absent or
+        # false = it is kept either way, and the pages do not say the positions count as manual
+        "unbind_clears_book": unbind_clears_book(),
         # bound venues this machine can't close (群益 under a non-Administrator identity):
         # close_then_unbind keeps their positions and unbinds them with the rest
         "close_unbind_manual": manual_close_venues(vens),

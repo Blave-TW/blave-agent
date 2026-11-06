@@ -191,8 +191,25 @@ the bind — the key's fingerprint is recorded instead, and a verified id is
 never replaced by a fingerprint-only record.
 `lib.portfolio.book_account_check` compares it at bind, at the reconciler's
 start, on every credentials change, and in close-all before it sells anything:
-- same id → the book is kept. A rotated key on the same account keeps it; a
-  full unbind keeps it too.
+- same id → the book is kept. A rotated key on the same account keeps it.
+- unbind → when the page sends `clear_book: true` (it told the user), that
+  venue's book is emptied the moment its keys leave `.env` (`credentials_remove`,
+  close-then-unbind; runtime → `lib.portfolio.reset_venue_book`); without the
+  flag (an older page) the book is kept. Binding another venue over it never
+  empties it, flag or not: seed `venue_reset`, its
+  `venue_account` and migration `pending` dropped, its parked unconfirmed
+  orders released, 統一/群益 `*_pending_sent.json` deleted, and the last
+  snapshot (`manager/last_reconcile.json`) removed. Whatever stays on the
+  account is the user's — bound back, even to the same account, those
+  positions are manual and a strategy may open its own on top. Other venues'
+  rows and fills, `seeded_at` and `own_only_basis` are untouched; never
+  delete or rewrite `manager/ledger_seed.json` to do this by hand. Every
+  read-modify-write of the seed holds `state/ledger_seed.lock`
+  (`lib.portfolio._seed_lock`). Cleanup the reset could not finish (a locked
+  file, an unreadable park file) is owed in `state/venue_reset_todo.json` and
+  retried whenever that venue's book is read. A parked order or a late fill
+  sent before the venue's `venue_reset` is never booked, whether or not its
+  record was deleted.
 - another id → that venue's book restarts empty at once (seed `venue_reset`),
   before anything reads it — binding over the old account, or unbind → another
   venue → back with another account, alike. On a real venue the machine also

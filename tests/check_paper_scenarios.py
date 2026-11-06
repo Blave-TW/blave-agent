@@ -1132,7 +1132,7 @@ def tc11(w):
 def tc12(w):
     _long(w)
     seed0 = w.seed()
-    r = w.cmd("credentials_remove", env=PAPER_KEYS)
+    r = w.cmd("credentials_remove", env=PAPER_KEYS, clear_book=True)
     w.check("credentials_remove" in str(r), f"unbind ({r})")
     h = w.halt_info() or {}
     w.check("unbound" in h.get("reason", ""), f"HALT: {h.get('reason')}")
@@ -1141,12 +1141,14 @@ def tc12(w):
     w.eq((sorted(cfg["amounts"]), set(cfg["exchanges"].values())), (["a1"], {""}),
          "members and amounts kept, routing blanked (Wei 10-14)")
     seed = w.seed()
-    w.check(seed.get("seeded_at") == seed0.get("seeded_at") and not seed.get("venue_reset"),
-            "the book is kept: it is per venue (a rebind decides — TC-13)")
-    w.eq(w.book(), {B: (0.02, 1000.0)}, "the bot's 0.02 is still in paper's book")
-    w.check((seed.get("venue_account") or {}).get("paper", {}).get("id"),
-            "…and the account it was built on stays recorded (the exchange's id, not the key)")
-    w.eq(w.paper_pos(B), 0.02, "…and still on the paper ledger file")
+    w.check(seed.get("seeded_at") == seed0.get("seeded_at")
+            and seed.get("own_only_basis") == seed0.get("own_only_basis")
+            and "paper" in (seed.get("venue_reset") or {}),
+            "the book is emptied (venue_reset, Wei 11-06); seeded_at and own_only_basis kept")
+    w.eq(w.book(), {}, "paper's book is empty: the 0.02 left on the account is the user's now")
+    w.check(not (seed.get("venue_account") or {}).get("paper"),
+            "…and the account it was built on is forgotten")
+    w.eq(w.paper_pos(B), 0.02, "…nothing closed: the 0.02 is still on the paper ledger file")
     w.eq(json.load(open("manager/credentials.ui.json"))["ids"], [], "manifest empty")
     w.eq(w.round(), "down", "no reconciler runs")
 
@@ -1184,7 +1186,7 @@ OKX_CONFIG = ("GET", "https://www.okx.com/api/v5/account/config")
 def tc15(w):
     _long(w)
     hits = w.okx_answers()  # a key that may read and trade, not withdraw
-    r = w.cmd("credentials", env=OKX_KEYS)
+    r = w.cmd("credentials", env=OKX_KEYS, clear_book=True)  # ignored on a bind
     w.check(isinstance(r, dict), f"bind okx over paper ({r})")
     w.check(bool(hits) and set(hits) == {OKX_CONFIG},
             f"the bind asked OKX for the key's permissions, and nothing else ({sorted(set(hits))})")
@@ -1196,7 +1198,7 @@ def tc15(w):
             f"eviction halts: {h.get('reason')}")
     w.eq(json.load(open("manager/portfolio_config.json"))["exchanges"], {"a1": ""},
          "routing to the evicted venue cleared")
-    w.eq(w.book(venue="paper"), {B: (0.02, 1000.0)}, "paper's book untouched (books are per venue)")
+    w.eq(w.book(venue="paper"), {B: (0.02, 1000.0)}, "paper's book untouched: a bind never empties the venue it evicts (Wei 11-06)")
     w.eq(w.book(venue="okx"), {}, "okx's book starts empty")
 
 

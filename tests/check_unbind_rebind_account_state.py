@@ -4,11 +4,14 @@ TC-28: an unbind that confirmed the reconciler stopped leaves a stop mark; a
 start inside the 15 s "running right now" window then starts it again instead
 of reading the stopped daemon's last heartbeat as alive.
 
-TC-13: a full unbind parks the old account's snapshot (manager/last_reconcile.json)
-and account-guard state (state/venue_account.json). A rebind to the SAME account
-gets them back — the guard judges it exactly as before; any other account starts
-without them, so its first start does not trip the guard on the old account's
-positions. Identity = the venue credential values + PAPER_BOUND_TS.
+TC-13: a full unbind deletes the old account's snapshot (manager/last_reconcile.json)
+and account-guard state (state/venue_account.json) with its emptied book (Wei
+2026-11-06, tests/check_unbind_clears_book.py) — a rebind, to the same account or
+another, starts without them, so its first start does not trip the guard on the
+old account's positions. A workspace lib without reset_venue_book parks them
+instead, and a rebind to the SAME account (identity = the venue credential values
++ PAPER_BOUND_TS) gets them back; parked files an older runtime left are restored
+the same way.
 
 Runtime only, no network, no supervisor (stopped / started are stubs). Keys are
 not-a-real-* strings.
@@ -42,6 +45,7 @@ import command_listener as cl  # noqa: E402
 # these keys are fake — answer "unreadable" without asking OKX
 sys.path.insert(0, WS)
 import lib.account_okx as _okx  # noqa: E402
+from lib import portfolio  # noqa: E402
 
 
 def _no_account_id(env):
@@ -95,7 +99,7 @@ def trading_on(env):
 
 
 def unbind(env):
-    return cl.dispatch({"cmd": "credentials_remove", "args": {"env": list(env)}})
+    return cl.dispatch({"cmd": "credentials_remove", "args": {"env": list(env), "clear_book": True}})
 
 
 try:
@@ -113,10 +117,9 @@ try:
     # ── TC-13: another account after a full unbind starts clean ──────────────
     trading_on(OKX)
     unbind(OKX)
-    parked = json.load(open(cl.PARKED_ACCOUNT_STATE)) if os.path.exists(cl.PARKED_ACCOUNT_STATE) else {}
     check(not os.path.exists(SNAP) and not os.path.exists(GUARD)
-          and set(parked.get("files") or {}) == {SNAP, GUARD},
-          "full unbind (stop confirmed): snapshot and guard state parked, then cleared")
+          and not os.path.exists(cl.PARKED_ACCOUNT_STATE),
+          "full unbind (stop confirmed): snapshot and guard state deleted, nothing parked")
     cfg = json.load(open(os.path.join(WS, "manager", "portfolio_config.json")))
     check(cfg["amounts"] == {"a1": 1000} and cfg["exchanges"] == {"a1": ""}
           and cfg["asset_specs"] == {"a1": {"type": "futures_contracts", "contract_value": 200}}
@@ -133,38 +136,73 @@ try:
           "rebind with another key: the old account's snapshot and guard state are dropped — its "
           "first start has nothing to trip on")
 
-    # ── same account: exactly today's behaviour ─────────────────────────────
-    snap_before, guard_before = trading_on(OKX)
+    # ── same account: nothing comes back (its book was emptied with them) ────
+    trading_on(OKX)
     unbind(OKX)
     cl.dispatch({"cmd": "credentials", "args": {"env": dict(OKX)}})
-    check(open(SNAP).read() == snap_before and open(GUARD).read() == guard_before
+    check(not os.path.exists(SNAP) and not os.path.exists(GUARD)
           and not os.path.exists(cl.PARKED_ACCOUNT_STATE),
-          "rebind the SAME key: snapshot and guard state restored byte for byte (the guard judges "
-          "it as before the unbind)")
+          "rebind the SAME key: no snapshot or guard state comes back")
 
-    for label, ts2, want_back in (("same PAPER_BOUND_TS", 100, True), ("newer PAPER_BOUND_TS", 200, False)):
-        snap_before, _ = trading_on(paper(100))
+    for label, ts2 in (("same PAPER_BOUND_TS", 100), ("newer PAPER_BOUND_TS", 200)):
+        trading_on(paper(100))
         unbind(paper(100))
         cl.dispatch({"cmd": "credentials", "args": {"env": paper(ts2)}})
-        back = os.path.exists(SNAP) and open(SNAP).read() == snap_before
-        check(back == want_back and not os.path.exists(cl.PARKED_ACCOUNT_STATE),
-              f"paper rebind, {label}: {'restored' if want_back else 'dropped'}")
+        check(not os.path.exists(SNAP) and not os.path.exists(cl.PARKED_ACCOUNT_STATE),
+              f"paper rebind, {label}: nothing restored")
 
-    # ── what must NOT park ──────────────────────────────────────────────────
+    # ── stop not confirmed: membership kept, the book emptied all the same ───
     trading_on(OKX)
     stop_ok["v"] = False
     unbind(OKX)
     stop_ok["v"] = True
-    check(os.path.exists(SNAP) and os.path.exists(GUARD) and not os.path.exists(cl.PARKED_ACCOUNT_STATE)
+    check(not os.path.exists(SNAP) and not os.path.exists(GUARD) and not os.path.exists(cl.PARKED_ACCOUNT_STATE)
           and not os.path.exists(cl.RECONCILER_STOP_MARK)
           and json.load(open(os.path.join(WS, "manager", "portfolio_config.json")))["asset_specs"] == {"a1": {"type": "futures_contracts", "contract_value": 200}},
-          "stop NOT confirmed (membership kept): nothing parked, no stop mark, asset_specs kept — today's behaviour")
-    trading_on(OKX)
-    os.makedirs(cl.PARKED_ACCOUNT_STATE)  # the park write cannot land
-    unbind(OKX)
-    check(os.path.exists(SNAP) and os.path.exists(GUARD),
-          "park write fails: the snapshot and guard state stay where they were")
-    os.rmdir(cl.PARKED_ACCOUNT_STATE)
+          "stop NOT confirmed (membership kept): no stop mark, asset_specs kept; snapshot and guard state "
+          "deleted with the emptied book, nothing parked")
+
+    # ── a workspace lib without reset_venue_book: park / unpark as before ────
+    real_reset = portfolio.reset_venue_book
+    del portfolio.reset_venue_book
+    try:
+        snap_before, guard_before = trading_on(OKX)
+        unbind(OKX)
+        parked = json.load(open(cl.PARKED_ACCOUNT_STATE)) if os.path.exists(cl.PARKED_ACCOUNT_STATE) else {}
+        check(not os.path.exists(SNAP) and not os.path.exists(GUARD)
+              and set(parked.get("files") or {}) == {SNAP, GUARD},
+              "old lib, full unbind: snapshot and guard state parked, then cleared")
+        cl.dispatch({"cmd": "credentials", "args": {"env": dict(OKX)}})
+        check(open(SNAP).read() == snap_before and open(GUARD).read() == guard_before
+              and not os.path.exists(cl.PARKED_ACCOUNT_STATE),
+              "…rebind the SAME key: snapshot and guard state restored byte for byte")
+        trading_on(OKX)
+        unbind(OKX)
+        cl.dispatch({"cmd": "credentials", "args": {"env": dict(OKX2)}})
+        check(not os.path.exists(SNAP) and not os.path.exists(GUARD)
+              and not os.path.exists(cl.PARKED_ACCOUNT_STATE),
+              "…rebind with another key: the parked state is dropped")
+        for label, ts2, want_back in (("same PAPER_BOUND_TS", 100, True), ("newer PAPER_BOUND_TS", 200, False)):
+            snap_before, _ = trading_on(paper(100))
+            unbind(paper(100))
+            cl.dispatch({"cmd": "credentials", "args": {"env": paper(ts2)}})
+            back = os.path.exists(SNAP) and open(SNAP).read() == snap_before
+            check(back == want_back and not os.path.exists(cl.PARKED_ACCOUNT_STATE),
+                  f"…paper rebind, {label}: {'restored' if want_back else 'dropped'}")
+        trading_on(OKX)
+        stop_ok["v"] = False
+        unbind(OKX)
+        stop_ok["v"] = True
+        check(os.path.exists(SNAP) and os.path.exists(GUARD) and not os.path.exists(cl.PARKED_ACCOUNT_STATE),
+              "…stop NOT confirmed: nothing parked")
+        trading_on(OKX)
+        os.makedirs(cl.PARKED_ACCOUNT_STATE)  # the park write cannot land
+        unbind(OKX)
+        check(os.path.exists(SNAP) and os.path.exists(GUARD),
+              "…park write fails: the snapshot and guard state stay where they were")
+        os.rmdir(cl.PARKED_ACCOUNT_STATE)
+    finally:
+        portfolio.reset_venue_book = real_reset
     snap_before, _ = trading_on(OKX)
     outside = os.path.join(BASE, "outside.txt")
     same = cl._account_identity(open(os.path.join(WS, ".env")).read().splitlines())

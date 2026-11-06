@@ -2429,13 +2429,19 @@ msgid "tr.ub.closeAll"
 msgstr "“Close and disconnect” closes every position here, including manual ones."
 
 msgid "tr.ub.keep"
-msgstr "With “Keep and disconnect” they go unmanaged. Handle them on {venue}."
+msgstr "After “Disconnect without closing”, strategies stop managing these positions for good. After reconnecting this account, they count as manual, so strategies may open duplicate positions."
 
 msgid "tr.ub.keepOld"
 msgstr "Handle them on {venue}."
 
+msgid "tr.ub.keepAskOld"
+msgstr "After “Disconnect without closing”, handle them on {venue}."
+
+msgid "tr.ub.keepRejoin"
+msgstr "After reconnecting this account, they count as manual, so strategies may open duplicate positions."
+
 msgid "tr.ub.keepGo"
-msgstr "Keep and disconnect"
+msgstr "Disconnect without closing"
 
 msgid "tr.ub.closeGo"
 msgstr "Close and disconnect"
@@ -9577,6 +9583,9 @@ msgstr "Certificates stay on your cloud machine"
 # Shown when an account is already bound: the two options and the list are locked
 msgid "cx.bound"
 msgstr "To switch accounts, unbind in Settings first."
+
+msgid "cx.cancelSetup"
+msgstr "Connecting another account cancels the {venue} setup."
 
 msgid "cx.mode.paper"
 msgstr "Paper Trading"

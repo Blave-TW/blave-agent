@@ -131,7 +131,8 @@ read-only and install the worker. Afterwards `.env` holds only sentinels (`presi
 `president_ca_password=vault:ca`), `president_ca_path` points at `<base>\credentials\president.pfx`,
 both hosts are written (`president_url` and `president_test_url`) and the secrets sit in the vault. Never rewrite those lines, never write the vault or the `.pfx`, never
 run the steps by hand; if the user asks you to bind it, send them to the page. Unbinding (or binding
-another venue) removes all seven lines, the vault, the `.pfx` and the worker service. The `.env` block
+another venue) removes all seven lines, the vault, the `.pfx` and the worker service, and empties
+Blave's 統一 book (`state/president_pending_sent.json` goes with it; see `manager.md` › self_ledger). The `.env` block
 above is for a machine set up by hand (development / test host).
 
 **Test environment first (cloud binding).** 統一 opens production API access only after the user

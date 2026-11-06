@@ -93,10 +93,11 @@ function argsOk(cmd, a, trusted) {
     return !!allow && Object.keys(env).every((k) => Object.prototype.hasOwnProperty.call(allow, k) && typeof env[k] === "string" && allow[k].test(env[k]));
   }
   // 解除綁定只准拿掉這一版認得的憑證 key(handler 自己也永遠不刪 blave_*)
-  if (cmd === "credentials_remove") return keys.length === 1 && Array.isArray(a.env) && a.env.length > 0 && a.env.length <= 16
+  // clear_book:只收 true(畫面說了解除後帳本清掉才帶,runtime _cmd_credentials_remove)
+  if (cmd === "credentials_remove") return keys.every((k) => k === "env" || (k === "clear_book" && a.clear_book === true)) && Array.isArray(a.env) && a.env.length > 0 && a.env.length <= 16
     && a.env.every((n) => typeof n === "string" && REMOVABLE.has(n.toUpperCase()));
   // 平倉後解除:同一份名字,多一個選填的 request_id(機器端靠它認重送)
-  if (cmd === "close_then_unbind") return keys.every((k) => k === "env" || k === "request_id") && Array.isArray(a.env) && a.env.length > 0 && a.env.length <= 16
+  if (cmd === "close_then_unbind") return keys.every((k) => k === "env" || k === "request_id" || (k === "clear_book" && a.clear_book === true)) && Array.isArray(a.env) && a.env.length > 0 && a.env.length <= 16
     && a.env.every((n) => typeof n === "string" && REMOVABLE.has(n.toUpperCase())) && (a.request_id === undefined || (typeof a.request_id === "string" && ID_RE.test(a.request_id)));
   if (cmd === "amounts") {
     const m = a.amounts, c = a.contracts;

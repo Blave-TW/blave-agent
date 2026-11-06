@@ -280,7 +280,7 @@ for ledger in (False, True):
           f"{mode} 統一: 同一請求重送 → held,不再平")
     check(send("president", "rq2") == "close_then_unbind=unconfirmed" and len(LAUNCHES) == 1,
           f"{mode} 統一: 有未確認時新請求也不起 flatten(群益自動新平倉會反手)")
-    # 「保留部位並解除」 = the old command, unchanged; it clears the waiting request
+    # 「自己處理並解除」 = the old command, unchanged; it clears the waiting request
     r = cl.dispatch({"cmd": "credentials_remove", "args": {"env": UNBIND_ENV["president"]}})
     check(r.startswith("credentials_remove=") and not env_has("president") and marker() is None,
           f"{mode} 統一: 停住後送舊的 credentials_remove → 照舊解除、清掉請求檔")
@@ -526,6 +526,25 @@ setup(["fakex"], False, {"fakex": 0.002})
 r = cl.dispatch({"cmd": "credentials_remove", "args": {"env": UNBIND_ENV["fakex"]}})
 check(r.startswith("credentials_remove=") and not env_has("fakex") and sim_size("fakex") == 0.002
       and not LAUNCHES, "舊指令 credentials_remove:照舊只刪金鑰,不平倉")
+
+# ── clear_book (Wei 2026-11-06): the page decides; the request carries it to its own finish ──
+def _reset_of(v):
+    try:
+        return (json.load(open(path("manager", "ledger_seed.json"))).get("venue_reset") or {}).get(v)
+    except FileNotFoundError:
+        return None
+
+
+for flag in (True, False):
+    setup(["fakex"], True, {"fakex": 0.002})
+    args = {"env": UNBIND_ENV["fakex"], **({"clear_book": True} if flag else {})}
+    ack = cl.dispatch({"cmd": "close_then_unbind", "args": args})
+    held_flag = (marker() or {}).get("clear_book")
+    r = tick()
+    check(ack.endswith("started") and str(r).startswith("credentials_remove=") and not env_has("fakex")
+          and held_flag is (True if flag else None) and bool(_reset_of("fakex")) is flag,
+          f"close_then_unbind {'帶' if flag else '不帶'} clear_book:請求檔{'記著' if flag else '沒有'}旗標,"
+          f"平完解除時{'清' if flag else '不清'}這一家的帳本 ({ack}, {r}, {held_flag}, {_reset_of('fakex')})")
 
 print(f"\n{fails} FAIL" if fails else "\nALL PASS")
 sys.exit(1 if fails else 0)

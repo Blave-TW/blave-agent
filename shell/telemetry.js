@@ -315,7 +315,7 @@ const EVENTS = {
     "login_lib", "wcard_signin",
     // 0.1.45 側欄「在手機上用」pop 裡的〔登入 Blave〕(renderer/promptslot.js slotPopPaint;spec slot-phone-steps §4)。同 api 順序,api 先上
     "slot_ph_login",
-    // 0.1.45 解除綁定框(renderer/trade.js;spec unbind-positions §6):選了保留部位並解除／平倉並解除／在平倉失敗那一態重新平倉。同 api 順序,api 先上
+    // 0.1.45 解除綁定框(renderer/trade.js;spec unbind-positions §6):選了自己處理並解除／平倉並解除／在平倉失敗那一態重新平倉。同 api 順序,api 先上
     "unbind_keep", "unbind_close", "unbind_retry",
     // 0.1.47 側欄策略改名(renderer/stratrename.js;spec strategy-rename §8):機器說改成了才送,不帶名字。同 api 順序,api 先上
     "strat_rename",

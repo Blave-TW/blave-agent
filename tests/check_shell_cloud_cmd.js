@@ -319,7 +319,7 @@ const ackCalls = (w) => w.posts.filter((p) => p.u.indexOf("/ack") >= 0).length;
     await cap2.saveCreds({ id: "A123456789", pw: "pw1234", keyChangeCode: "654321", lang: "en" });
     const mainSrc2 = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
     t("雲端群益:碼與語言交給 cloudCmd.send 的第四個參數(cloudcmd 再驗形狀、鑄新的 request_id)", seen && seen.keyChangeCode === "654321" && seen.lang === "en"
-      && /send: \(cmd, args, secrets, o\) => cloudCmd\(\)\.send\(cmd, args, secrets, o\)/.test(mainSrc2)); }
+      && /send: \(cmd, args, secrets, o\) => cloudCmd\(\)\.send\(cmd, cmd === "credentials_remove" \? \{ \.\.\.args, \.\.\.clearBookArg\(cloudHost\(\)\) \} : args, secrets, o\)/.test(mainSrc2)); }
 
   // ── 畫面:驗證碼那一步的狀態機(trade.js kcView／kcNext／kcStatusText,連接框與雲端群益共用)與雲端群益送出流程(capital.js capSaveCreds)──
   { const rd = (f) => fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", f), "utf8");

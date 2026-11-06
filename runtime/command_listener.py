@@ -1356,6 +1356,8 @@ def _cmd_credentials(args):
                         json.dump(cfg, f, indent=2)
         except (OSError, ValueError) as e:
             _log(f"evicted-venue routing clear failed: {type(e).__name__}: {e}")
+        # its book is never emptied here (Wei 2026-11-06, canon unbind-positions: a rebind does not
+        # clear): no page says so on a bind, so a `clear_book` sent with one is ignored
     # rebind restores the signal schedules the unbind cleared (audit: without
     # this, 解除→重綁→啟動下單 trades real money on signals frozen at unbind
     # time — the exact quiet failure scheduled_strategies() exists to surface).
@@ -2057,8 +2059,9 @@ STRAY_RESULT = "reconciler running outside the supervisor — not started again"
 # than this is the stopped one's, however fresh (TC-28: unbind → rebind → start
 # inside RECONCILER_RUNNING_S read the dead daemon as running).
 RECONCILER_STOP_MARK = os.path.join(WORKSPACE_STATE, "reconciler_stop_mark")
-# A full unbind parks the old account's snapshot and guard state here; the
-# rebind restores them only for the same account (TC-13).
+# A full unbind on a workspace lib without reset_venue_book parks the old
+# account's snapshot and guard state here (and runtimes before this change always
+# did); the rebind restores them only for the same account (TC-13).
 PARKED_ACCOUNT_STATE = os.path.join(WORKSPACE_STATE, "unbound_account_state.json")
 _SNAPSHOT_PATH = os.path.join(WORKSPACE, "manager", "last_reconcile.json")
 _ACCOUNT_GUARD_PATH = os.path.join(WORKSPACE_STATE, "venue_account.json")
@@ -2635,11 +2638,75 @@ def _read_text(path):
         return f.read()
 
 
+def _reset_unbound_books(venues):
+    """An unbind (or a bind that evicted these venues) empties their books
+    (Wei 2026-11-06): lib.portfolio.reset_venue_book. A reset that returns has
+    committed (cleanup it could not finish is owed and retried by the lib before
+    that book is read again); one that raises wrote nothing. False = the workspace
+    lib predates it, or a reset raised — the caller keeps the old behaviour (park
+    on a full unbind) so the snapshot never goes without its book."""
+    if not venues:
+        return False
+    try:
+        pf = _in_workspace(_ws_portfolio)
+    except Exception as e:
+        _log(f"unbound books not reset ({type(e).__name__})")
+        return False
+    if not hasattr(pf, "reset_venue_book"):
+        _log("workspace lib has no reset_venue_book — unbound books kept")
+        return False
+    done = True
+    for vid in sorted(venues):
+        try:
+            _in_workspace(pf.reset_venue_book, vid, "unbound")
+        except Exception as e:
+            done = False
+            _log(f"{vid} book not reset ({type(e).__name__}: {str(e)[:120]})")
+    return done
+
+
+def _drop_account_state(venues, whole):
+    """After the books of `venues` were emptied: the snapshot goes (it names no
+    venue, and its positions would trip the empty-read guard on a rebind), and
+    the account-guard state goes with it — whole when no venue is left, else only
+    what names these venues. A running reconciler rewrites both from memory; it
+    rereads the seed every round, so the book reset holds either way."""
+    for path in (_SNAPSHOT_PATH,) + ((_ACCOUNT_GUARD_PATH,) if whole else ()):
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            _log(f"account state not cleared ({type(e).__name__}): {os.path.basename(path)}")
+    if whole:
+        return
+    try:
+        state = _read_account_guard_for_update()
+    except (OSError, ValueError) as e:
+        _log(f"account guard not pruned ({type(e).__name__})")
+        return
+    changed = False
+    for key in ("pending", "book_hold", "bind_reset"):
+        if isinstance(state.get(key), dict) and state[key].get("venue") in venues:
+            state.pop(key)
+            changed = True
+    if state.get("venue") in venues:
+        state.pop("venue")
+        state.pop("account_id", None)
+        changed = True
+    if changed:
+        try:
+            _write_atomic(_ACCOUNT_GUARD_PATH, json.dumps(state))
+        except OSError as e:
+            _log(f"account guard not pruned ({type(e).__name__})")
+
+
 def _park_account_state(identity):
-    """Full unbind: the old account's last snapshot and account-guard state go
-    aside, so a rebind to another account starts fresh instead of tripping the
-    guard on the old account's positions (TC-13). Parked first, removed
-    second: a failed park leaves both in place (today's behaviour)."""
+    """Full unbind on a workspace lib without reset_venue_book: the old
+    account's last snapshot and account-guard state go aside, so a rebind to
+    another account starts fresh instead of tripping the guard on the old
+    account's positions (TC-13). Parked first, removed second: a failed park
+    leaves both in place."""
     parked = {"identity": identity, "files": {}}
     for path in (_SNAPSHOT_PATH, _ACCOUNT_GUARD_PATH):
         try:
@@ -2662,7 +2729,9 @@ def _park_account_state(identity):
 
 def _unpark_account_state(identity):
     """Rebind: the same account gets its parked state back (the guard judges it
-    as before the unbind); any other account drops it."""
+    as before the unbind); any other account drops it. Parked files left by an
+    older unbind are restored as they were, never emptied for the user: that
+    unbind never told them their positions would stop being the bot's."""
     try:
         parked = atomic_file.load_json(PARKED_ACCOUNT_STATE)
     except FileNotFoundError:
@@ -4564,6 +4633,8 @@ def _cmd_credentials_remove(args):
     The platform's own blave_* data-API credentials are never removed, no
     matter what the caller lists — losing those takes the machine's market
     data down with it.
+    args: {"env": [names], "clear_book"?: true} — the venue's book is emptied only
+    with clear_book (the page told the user; desktop ≥0.1.48 and the web send it).
     """
     names, drop, dropped_ids = _unbind_targets(args, "credentials_remove")
     marker = _read_unbind_marker()
@@ -4583,6 +4654,11 @@ def _cmd_credentials_remove(args):
             return "credentials_remove=0"
         kept = [l for l in lines if l.split("=", 1)[0].strip().casefold() not in drop]
         removed = len(lines) - len(kept)
+        # only a venue whose keys were really here is unbound — a stale or repeated unbind empties no book.
+        # And only when the page asked (`clear_book: true`, Wei 2026-11-06): a page from before 0.1.48
+        # never told the user the positions stop being the bot's, so its unbind keeps the book
+        really = dropped_ids & {i.lower() for i in _venue_cred_ids(lines)}
+        unbound = really if args.get("clear_book") is True else set()
         # atomic — a torn .env would strand the machine keyless
         with atomic_file.replacing(path, perm=0o600, prepare=_env_acl) as f:
             f.write("\n".join(kept) + "\n")
@@ -4664,7 +4740,11 @@ def _cmd_credentials_remove(args):
             # machine keeps daemon and portfolio as-is.
             if _stop_reconciler():
                 _mark_reconciler_stopped()
-                _park_account_state(_account_identity(lines))
+                # the books go after the stop: a last round's fill can no longer land on the emptied book
+                if _reset_unbound_books(unbound):
+                    _drop_account_state(unbound, whole=True)
+                elif really:  # a stale unbind (keys already gone) has nothing to park
+                    _park_account_state(_account_identity(lines))
                 # mirror first, config second (P2-2 write order); the mirror is
                 # sourced from itself, never from the config (P1-3)
                 mpath = os.path.join(WORKSPACE, "manager", "amounts.ui.json")
@@ -4691,14 +4771,19 @@ def _cmd_credentials_remove(args):
                     pass  # no portfolio was ever written — nothing to unroute
                 except (OSError, ValueError) as e:
                     _log(f"membership unroute failed: {type(e).__name__}: {e}")
-                # The book is kept per venue, so it survives the unbind: binding the
-                # SAME exchange account back finds the bot's own positions still its
-                # own; a DIFFERENT account resets that venue's book the first time
-                # the workspace lib reads its id (lib.portfolio.book_account_check).
             else:
                 _log("reconciler not confirmed stopped — membership kept")
+                # emptied all the same: HALT blocks every entry leg on any lib, and an
+                # empty book has no reduce leg — the old book is the one that could sell
+                if _reset_unbound_books(unbound):
+                    _drop_account_state(unbound, whole=True)
+        # An unbound venue's book is emptied (Wei 2026-11-06): what stays on the
+        # account is the user's, also when the same account is bound back. A lib
+        # without reset_venue_book keeps it (and a full unbind parks the snapshot).
+        elif _reset_unbound_books(unbound):
+            _drop_account_state(unbound, whole=False)
 
-    # 「保留部位並解除」 after a held close_then_unbind (or the unbind that request was waiting
+    # 「自己處理並解除」 after a held close_then_unbind (or the unbind that request was waiting
     # for): nothing is left to wait on for these venues
     if marker and dropped_ids & set(marker.get("venues") or ()):
         _drop_unbind_marker()
@@ -5940,7 +6025,8 @@ def _manual_venues(scope):
 
 def _cmd_close_then_unbind(args):
     """Close the positions of the venues being unbound, then unbind them — or stop with the
-    keys kept. args: {"env": [names] (= credentials_remove), "request_id"?: str}.
+    keys kept. args: {"env": [names] (= credentials_remove), "request_id"?: str,
+    "clear_book"?: true (= credentials_remove: the unbind at the end empties the book)}.
 
     Ack (opaque `close_then_unbind=<state>`, additive like close_all):
       started          — HALT tripped (as close_all), flatten launched for these venues only;
@@ -5996,7 +6082,8 @@ def _cmd_close_then_unbind(args):
     _UNBIND_TICK["probed"] = 0.0
     _write_unbind_marker({"env": names, "venues": sorted(scope), "closing": sorted(closing),
                           "manual": sorted(manual), "at": round(time.time(), 3),
-                          "request_id": rid, "held": False})
+                          "request_id": rid, "held": False,
+                          **({"clear_book": True} if args.get("clear_book") is True else {})})
     try:
         result = _close_all("close_then_unbind", ("--venues", ",".join(sorted(closing)), "--request-id", rid))
     except BaseException:
@@ -6090,7 +6177,8 @@ def unbind_after_close_tick():
     try:
         marker["unbinding"] = True   # this unbind is the one the request waits for
         _write_unbind_marker(marker)
-        result = _in_workspace(_cmd_credentials_remove, {"env": marker["env"]})
+        result = _in_workspace(_cmd_credentials_remove, {"env": marker["env"],
+                                                          "clear_book": marker.get("clear_book") is True})
     except Exception as e:
         _log(f"close_then_unbind: credentials_remove failed: {type(e).__name__}: {e}")
         try:

@@ -758,9 +758,10 @@ import portfolio_reporter as pr  # noqa: E402
 cl._sync_strategy_crons = lambda *a, **k: None
 cl._stop_reconciler = lambda: True
 # The book is per venue AND per exchange account — the exchange's own id, never the
-# key: a full unbind keeps it; the same account back (a rotated key included) keeps
-# the bot's positions its own; another account starts that venue's book empty, the
-# moment its id is read — no HALT clear involved.
+# key: an unbind empties it (Wei 2026-11-06 — what stays there is the user's, the same
+# account bound back included); a rotated key on the same account keeps the bot's
+# positions its own; another account starts that venue's book empty, the moment its id
+# is read — no HALT clear involved.
 open(os.path.join(WS, "lib", "portfolio.py"), "w").write("def book_account_check(env):\n")
 UID = {"id": "U1"}
 
@@ -801,9 +802,12 @@ check(portfolio.book_account_check(bind("key-a"), "binance")[0] == "ok" and qty(
       and json.load(open(SEED))["venue_account"]["binance"]["id"] == "U1",
       "first read: the book's account is recorded (U1)")
 json.dump(FUND(50), open(CFG, "w"))
-cl._cmd_credentials_remove({"env": ["BINANCE_API_KEY", "BINANCE_SECRET_KEY"]})
-check(qty() == 0.001 and json.load(open(SEED)).get("venue_account", {}).get("binance"),
-      "full unbind: the book and the account it belongs to are kept")
+cl._cmd_credentials_remove({"env": ["BINANCE_API_KEY", "BINANCE_SECRET_KEY"], "clear_book": True})
+_sd = json.load(open(SEED))
+check(qty() is None and not _sd.get("venue_account", {}).get("binance") and _sd.get("own_only_basis") == 1,
+      "full unbind: the binance book is emptied and its account forgotten; own_only_basis kept")
+one_fill()
+portfolio.book_account_check(bind("key-a"), "binance")
 v = portfolio.book_account_check(bind("key-a2"), "binance")
 check(v[0] == "ok" and qty() == 0.001, f"a new key on the SAME account (U1): the book is kept {v}")
 UID["id"] = "U2"
@@ -826,13 +830,13 @@ check(list(json.load(open(SEED)).get("pending", {})) == ["okx|ETHUSDT"],
 # unbind → another venue → the first venue again with ANOTHER account (the variant path)
 one_fill()
 portfolio.book_account_check(bind("key-a"), "binance")
-cl._cmd_credentials_remove({"env": ["BINANCE_API_KEY", "BINANCE_SECRET_KEY"]})
+cl._cmd_credentials_remove({"env": ["BINANCE_API_KEY", "BINANCE_SECRET_KEY"], "clear_book": True})
 open(os.path.join(WS, ".env"), "w").write("OKX_API_KEY=o\nOKX_SECRET_KEY=o\nOKX_PASSPHRASE=p\n")
-cl._cmd_credentials_remove({"env": ["OKX_API_KEY", "OKX_SECRET_KEY", "OKX_PASSPHRASE"]})
+cl._cmd_credentials_remove({"env": ["OKX_API_KEY", "OKX_SECRET_KEY", "OKX_PASSPHRASE"], "clear_book": True})
 UID["id"] = "U3"
 v = portfolio.book_account_check(bind("key-c"), "binance")
-check(v[0] == "reset" and qty() is None,
-      f"unbind → other venue → binance with another account: binance book empty {v}")
+check(v[0] == "ok" and qty() is None,
+      f"unbind → other venue → binance with another account: binance book empty (emptied at the unbind) {v}")
 
 # the id cannot be read after a key change, with the bot's book open: never guess
 one_fill()

@@ -5109,7 +5109,7 @@ function trEnvNames(id) {
   return v ? [v.env + "_API_KEY", v.env + "_SECRET_KEY"].concat(v.pass ? [v.env + "_PASSPHRASE"] : []) : [];
 }
 /* ── 解除綁定(spec unbind-positions-2026-11-05 A 版;混合機器 unbind-consistency §5)──────────────
-   有部位時三顆鈕:取消｜平倉並解除(紅字次鈕)｜保留部位並解除(主鈕,不動錢的那條)。平倉並解除送 close_then_unbind,
+   有部位時三顆鈕:取消｜平倉並解除(紅字次鈕)｜自己處理並解除(主鈕,不動錢的那條)。平倉並解除送 close_then_unbind,
    順序由機器負責(平倉 → 重讀歸零 → 才刪金鑰);框停在「平倉中」,全部成交機器自己解除,沒全部成交停在「平倉失敗」,
    不會自己接著解除。台指期休市不給平倉;這台平不了的(雲端群益 close_unbind_manual)只給保留。判定順序同解除暫停那一套
    (trReleaseKind),拿掉重開停止那道閘:模擬 → 沒部位 → 不能平(舊 runtime／平不了／休市)→ 有部位 */
@@ -5188,25 +5188,29 @@ function trUnbind(opener) {
     const lines = k.kind === "closed"
       ? [k.next ? trUbSay("tr.ub.closedWhen", { time: trRelTime(k.next * 1000, Date.now()) }) : t("tr.ub.closedWhenN"), trUbSay("tr.ub.closedLater", { app: trPadLatin(trUbApp(id)) })]
       : [k.old ? trUbSay("tr.ub.keepOld", { venue }) : t("tr.ub.cantClose")];
+    // 機器解除就清帳本(回報 unbind_clears_book)才講接回後的後果:同一顆鈕在哪個框按都講;沒這個值就不講
+    if (r.unbind_clears_book === true) lines.push(t("tr.ub.keepRejoin"));
     confirmBox(trUbMark(Object.assign({ title: trUbTitle("tr.ub.closedTitle", p.n), opener, lead, lines: head.concat(lines) }, keep)));
     return;
   }
   confirmBox(trUbMark(Object.assign({
     title: trUbTitle("tr.ub.askTitle", p.n), opener, lead,
-    lines: head.concat([t(r.self_ledger === true ? "tr.ub.closeSelf" : "tr.ub.closeAll"), trUbSay("tr.ub.keep", { venue })]),
+    lines: head.concat([t(r.self_ledger === true ? "tr.ub.closeSelf" : "tr.ub.closeAll"), trUbSay(r.unbind_clears_book === true ? "tr.ub.keep" : "tr.ub.keepAskOld", { venue })]),
     // stay:按了不關框,原地換成「平倉中」(設計稽核 M7)
     alt: { label: t("tr.ub.closeGo"), danger: true, stay: true, onOk: () => trUbClose(S, id, p.rows || [], p.at, false) },
   }, keep)));
 }
-// 保留部位並解除 = 原本的解除綁定(credentials_remove);停在平倉失敗時選它,機器順手清掉等著的那一筆
+// 自己處理並解除 = 原本的解除綁定(credentials_remove,機器清掉這一家的帳本);停在平倉失敗時選它,機器順手清掉等著的那一筆
 async function trUbKeep(S, id) {
   const mine = () => TR === S && S.open, cloud = S.env === "cloud";
   trackFeature("unbind_keep");
   S.ub = null; S.unbinding = true; if (mine()) trPaintSet();
   // 統一(這台電腦):機器上的五行與憑證先拿掉,成功了主行程才丟掉它存的帳密(presidentUnbind)
-  const res = cloud && id === CAPITAL ? await capUnbindSend() : cloud ? await trSend(S, "credentials_remove", { env: trEnvNames(id) })
+  // 清不清帳本由畫面決定:回報說會清才帶 clear_book(同框裡那句後果);統一／群益與雲端群益由主行程照同一個值帶
+  const clear = (trReport() || {}).unbind_clears_book === true ? { clear_book: true } : {};
+  const res = cloud && id === CAPITAL ? await capUnbindSend() : cloud ? await trSend(S, "credentials_remove", { env: trEnvNames(id), ...clear })
     : id === "president" ? await window.blave.presidentUnbind() : id === CAPITAL ? await window.blave.caplUnbind()
-    : await S.api.tradeSend("credentials_remove", { env: trEnvNames(id) });
+    : await S.api.tradeSend("credentials_remove", { env: trEnvNames(id), ...clear });
   S.unbinding = false; S.sig = {};
   // 失敗文案帶 S.env:跨 await 之後 TR 可能已經是另一邊,不帶會拿本機那組「這台電腦」的句子
   if (!res || !res.ok) { trAlert(trSendError(res, "unbind", S.env), "noaccount", S); if (mine()) { trPaintSet(); $("tr-tab-set").focus(); } trPollSoon(1500); return; }
@@ -5222,7 +5226,7 @@ async function trUbClose(S, id, rows, at, retry) {
   S.ub = { id, rid, rows, at, state: "run", sentAt: Date.now(), ackAt: null, lf: null, m: null, box: false };
   trUbShow(S);
   if (TR === S && S.open) trPaintSet();
-  const args = { env: trEnvNames(id), request_id: rid }, cloud = S.env === "cloud";
+  const args = { env: trEnvNames(id), request_id: rid, ...((trReport() || {}).unbind_clears_book === true ? { clear_book: true } : {}) }, cloud = S.env === "cloud";
   // 統一／群益(這台電腦):走主行程,它等機器真的解除了(回報裡那一家不見)才丟掉存的帳密
   const res = cloud ? await trSend(S, "close_then_unbind", args)
     : id === "president" ? await window.blave.presidentUnbind({ close: true, requestId: rid })
@@ -5303,6 +5307,7 @@ function trUbShow(S, opener) {
   lines.push(t("tr.ub.failState"));
   const hasUnconf = unconf.size > 0 || m.why === "unconfirmed";
   if (hasUnconf) { const w = trEl("span", "", trUbSay("tr.ub.unconfirmed", { app })); w.id = "ub-unconf"; lines.push(w); }
+  if ((trReport() || {}).unbind_clears_book === true) lines.push(t("tr.ub.keepRejoin"));
   // 重新平倉:群益自動新平倉對已平的部位再送一次會反手開新倉,有未確認的單就不給(機器端也擋)
   confirmBox(trUbMark({ title: n > 0 ? trUbTitle("tr.ub.failTitle", n) : t("tr.ub.failTitleN"), opener: TR_UB_OPENER, lead: rows.length ? trUbRowsEl(rows, null, st) : null, lines,
     ok: t("tr.ub.keepGo"), onOk: () => trUbKeep(S, u.id), onCancel,
@@ -6201,6 +6206,11 @@ function cxKeysBlank(venue) {
   if (venue === PAPER || venue === CAPITAL || venue === "president") return false;
   return !CXF.apiKey.trim() || !CXF.secret.trim() || !!(CX_VENUES[venue] && CX_VENUES[venue].pass && !CXF.passphrase.trim());
 }
+// 這台電腦開通中的那一家(統一／群益,沒有別家綁著、對帳器也沒在跑:trSetupOnly);沒有 → null
+function cxSetupWip() {
+  const st = TR_BAGS.local.st, r = st && st.report;
+  return trSetupOnly(st) ? trVenueIds(r).find((id) => trPresWip(r, id) || trCaplWip(r, id)) || null : null;
+}
 function cxModalPaint() {
   // 金鑰沒填滿的停用只屬於下面這條;換到群益、統一那幾條不帶過去
   $("cx-go").classList.remove("is-lock"); $("cx-go").disabled = false;
@@ -6246,7 +6256,11 @@ function cxModalPaint() {
   $("cx-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
   $("cx-env").hidden = !cloud; $("cx-env").textContent = cloud ? t("env.cloud") : "";
   const money = venue === PAPER ? "paper" : "real";
-  $("cx-where").hidden = !cloud; $("cx-where").textContent = cloud ? t("tr.cloud.footWhere", { where: t("env.cloud"), money: envMoneyText(money), venue: trVenueLabel(venue, true) }) : "";
+  // 這台電腦的統一／群益開通中、改選了別家:連上會把開通中那家擠掉(金鑰、憑證設定一起刪),鈕正上方先講(Wei 11-06)
+  const wip = !cloud ? cxSetupWip() : null, cancels = !!wip && venue !== wip;
+  $("cx-where").hidden = !cloud && !cancels;
+  $("cx-where").textContent = cloud ? t("tr.cloud.footWhere", { where: t("env.cloud"), money: envMoneyText(money), venue: trVenueLabel(venue, true) })
+    : cancels ? trUbSay("cx.cancelSetup", { venue: trPadLatin(trVenueLabel(wip, true)) }) : "";
   if (L.sig.cxm === sig && box.firstChild) return;
   L.sig.cxm = sig;
   const hadId = box.contains(document.activeElement) ? document.activeElement.id : null;

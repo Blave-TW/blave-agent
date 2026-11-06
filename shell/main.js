@@ -3079,7 +3079,7 @@ function stopTurn(sidArg, by) {
 let _tradeHost = null;
 /* 平倉後解除(統一／群益在這台電腦,close_then_unbind):機器平完、重讀歸零才自己刪金鑰,所以這裡存的帳密
    不能在指令回來時就丟——那時金鑰還在、平倉也還沒結束(spec unbind-positions §5.5)。記下來,等回報裡那一家不見了才丟;
-   停住(held)的那一家留著,用戶選「保留部位並解除」時走原本那條、當場丟。app 關著時不會丟,下次開 app 看到不見了才丟 */
+   停住(held)的那一家留著,用戶選「自己處理並解除」時走原本那條、當場丟。app 關著時不會丟,下次開 app 看到不見了才丟 */
 const _forgetWhenGone = {};
 function forgetWhenGone(report) {
   const v = report && report.venues;
@@ -3091,9 +3091,9 @@ function forgetWhenGone(report) {
   }
 }
 async function unbindAfterClose(id, names, requestId, forget) {
-  const args = { env: names.map((k) => k.toLowerCase()) };
+  const h = tradeHost(), args = { env: names.map((k) => k.toLowerCase()), ...clearBookArg(h) };
   if (typeof requestId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(requestId)) args.request_id = requestId;
-  const h = tradeHost(), r = await h.send("close_then_unbind", args);
+  const r = await h.send("close_then_unbind", args);
   if (r && r.ok) _forgetWhenGone[id] = forget;
   return r;
 }
@@ -3327,6 +3327,10 @@ function engineKick() {
 let _binanceLink = null, binanceStarted = false;
 const binanceStatePath = () => path.join(app.getPath("userData"), "binance-link.json");
 // 真實交易所的金鑰只從這裡進 daemon(trusted:daemon.js TRUSTED_SETS 一家一組);renderer 的 trade-send 只收模擬交易
+/* 解除綁定(含平倉後解除)清不清那一家的帳本由畫面決定(Wei 2026-11-06):機器回報 unbind_clears_book 才帶
+   clear_book,解除框講「接回算手動部位」也看同一個值。綁定(credentials)一律不帶:換綁擠掉的那家畫面沒講,帳本不動 */
+const clearBookArg = (host) => { let r = null; try { r = host.status().report; } catch (_) { /* 沒有回報:不帶 */ }
+  return r && r.unbind_clears_book === true ? { clear_book: true } : {}; };
 const sendTrustedCreds = (env) => tradeHost().send("credentials", { env }, { trusted: true });
 function binanceLink() {
   if (!_binanceLink) {
@@ -4112,7 +4116,7 @@ app.whenReady().then(() => {
   handle("capl-unbind", async (_e, o) => {
     const h = tradeHost(), CE = require("./daemon").CAPITAL_ENV;
     if (o && o.close === true) return unbindAfterClose("capital", CE, o.requestId, () => capitalLocal().unbound());
-    const r = await h.send("credentials_remove", { env: CE.map((k) => k.toLowerCase()) });
+    const r = await h.send("credentials_remove", { env: CE.map((k) => k.toLowerCase()), ...clearBookArg(h) });
     if (r && r.ok) { capitalLocal().unbound(); delete _forgetWhenGone.capital; }
     return r;
   }, { ok: false, error: "NOT_ALLOWED" });
@@ -4130,7 +4134,7 @@ app.whenReady().then(() => {
   /* 雲端主機的群益開通(cloud_capital.js;畫面 renderer/capital.js)。pfx 與匯出密碼只在這個行程裡封裝,renderer 只拿得到檔名與代號;
      指令只收固定那幾步。送完不管結果都要一份新狀態:長步驟的結果在主機回報的 capital_connect 裡,不在回條裡 */
   const capital = () => _capital || (_capital = require("./cloud_capital").createCapital({
-    send: (cmd, args, secrets, o) => cloudCmd().send(cmd, args, secrets, o),
+    send: (cmd, args, secrets, o) => cloudCmd().send(cmd, cmd === "credentials_remove" ? { ...args, ...clearBookArg(cloudHost()) } : args, secrets, o),
     pick: async () => { const w = BrowserWindow.getAllWindows()[0]; const r = await dialog.showOpenDialog(w, { properties: ["openFile"], filters: [{ name: "PFX", extensions: ["pfx", "p12"] }] }); return r.canceled ? null : r.filePaths[0]; },
     stat: (p) => fs.statSync(p), readFile: (p) => fs.readFileSync(p), basename: (p) => path.basename(p),
     after: () => { cloudHost().start(); cloudHost().refresh(true).catch(() => {}); },
@@ -4156,7 +4160,7 @@ app.whenReady().then(() => {
   handle("president-unbind", async (_e, o) => {
     const h = tradeHost(), PE = require("./daemon").PRESIDENT_ENV;
     if (o && o.close === true) return unbindAfterClose("president", PE, o.requestId, () => president().forget());
-    const r = await h.send("credentials_remove", { env: PE.map((k) => k.toLowerCase()) });
+    const r = await h.send("credentials_remove", { env: PE.map((k) => k.toLowerCase()), ...clearBookArg(h) });
     if (r && r.ok) { president().forget(); delete _forgetWhenGone.president; }
     return r;
   }, { ok: false, error: "NOT_ALLOWED" });

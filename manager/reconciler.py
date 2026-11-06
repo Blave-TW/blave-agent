@@ -803,13 +803,17 @@ def _capital_claim_pending(started):
                         park_id=park_id)
         elif moved is not None and len(moved) == 1 and abs(next(iter(moved.values())) - lots) < 1e-9:
             contract = next(iter(moved))
-            _book_late_fill_or_halt('群益', root, venue_traits.CAPITAL, contract, lots, park_id, seqs)
+            booked = _book_late_fill_or_halt('群益', root, venue_traits.CAPITAL, contract, lots, park_id, seqs)
             del pending[root]
             save()
-            guard.audit('late_fill_adopted', venue=venue_traits.CAPITAL, symbol=root, contract=contract,
-                        lots=lots, legs=row['legs'], park_id=park_id)
-            logging.warning(f"[reconciler/capital] {root}: the account shows the {lots:+g} lots in "
-                            f"{contract} the order reported no fill for — booked, not re-sent")
+            if booked is None:  # sent before an unbind emptied this book: the user's now, not booked
+                guard.audit('late_fill_dropped_after_reset', venue=venue_traits.CAPITAL, symbol=root,
+                            contract=contract, lots=lots, legs=row['legs'], park_id=park_id)
+            else:
+                guard.audit('late_fill_adopted', venue=venue_traits.CAPITAL, symbol=root, contract=contract,
+                            lots=lots, legs=row['legs'], park_id=park_id)
+                logging.warning(f"[reconciler/capital] {root}: the account shows the {lots:+g} lots in "
+                                f"{contract} the order reported no fill for — booked, not re-sent")
         elif moved == {} and _row_queued(row, started, ORDER_SETTLE_S):
             wake = _row_queued(row, started, ORDER_SETTLE_S) + 1
             _entry_wake_at = wake if _entry_wake_at is None else min(_entry_wake_at, wake)
@@ -1204,13 +1208,17 @@ def _president_claim_pending(started):
                         contract=pid, lots=lots, park_id=park_id)
             logging.info(f"[reconciler/president] {pid}: park {park_id} is already in the book — row dropped")
         elif abs(net - (expected + lots)) < 1e-9:
-            _book_late_fill_or_halt('統一', root, venue_traits.PRESIDENT, pid, lots, park_id, _row_ordernos(row))
+            booked = _book_late_fill_or_halt('統一', root, venue_traits.PRESIDENT, pid, lots, park_id, _row_ordernos(row))
             del pending[pid]
             _save_claimed(pending, venue_traits.PRESIDENT)
-            guard.audit('late_fill_adopted', venue=venue_traits.PRESIDENT, symbol=root, contract=pid,
-                        lots=lots, legs=row['legs'], park_id=park_id)
-            logging.warning(f"[reconciler/president] {pid}: the account shows the {lots:+g} lots the "
-                            f"order reported no fill for — booked, not re-sent")
+            if booked is None:  # sent before an unbind emptied this book: the user's now, not booked
+                guard.audit('late_fill_dropped_after_reset', venue=venue_traits.PRESIDENT, symbol=root,
+                            contract=pid, lots=lots, legs=row['legs'], park_id=park_id)
+            else:
+                guard.audit('late_fill_adopted', venue=venue_traits.PRESIDENT, symbol=root, contract=pid,
+                            lots=lots, legs=row['legs'], park_id=park_id)
+                logging.warning(f"[reconciler/president] {pid}: the account shows the {lots:+g} lots the "
+                                f"order reported no fill for — booked, not re-sent")
         elif abs(net - expected) < 1e-9 and _row_queued(row, started):
             wake = _row_queued(row, started) + 1
             _entry_wake_at = wake if _entry_wake_at is None else min(_entry_wake_at, wake)

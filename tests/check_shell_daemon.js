@@ -39,6 +39,13 @@ const host = createDaemonHost({ python: PY, script: path.join(ROOT, "runtime", "
     && !argsOk("credentials", { env: {} }) && !argsOk("credentials", { env: { PAPER_API_KEY: "paper" }, extra: 1 }));
   t("credentials_remove 只准拿掉認得的 key", argsOk("credentials_remove", { env: ["PAPER_API_KEY", "paper_secret_key"] })
     && !argsOk("credentials_remove", { env: ["blave_api_key"] }) && !argsOk("credentials_remove", { env: [] }));
+  // clear_book(Wei 2026-11-06):畫面說了解除會清帳本才帶;只收 true
+  t("解除／平倉後解除收 clear_book: true,其他值拒;綁定一律不收(換綁不清帳本)",
+    argsOk("credentials_remove", { env: ["PAPER_API_KEY"], clear_book: true })
+    && argsOk("close_then_unbind", { env: ["PAPER_API_KEY"], request_id: "r1", clear_book: true })
+    && [true, false, "true", 1, null].every((v) => !argsOk("credentials", { env: { PAPER_API_KEY: "paper", PAPER_SECRET_KEY: "paper", PAPER_BOUND_TS: "1789920000" }, clear_book: v }))
+    && [false, "true", 1, null].every((v) => !argsOk("credentials_remove", { env: ["PAPER_API_KEY"], clear_book: v })
+      && !argsOk("close_then_unbind", { env: ["PAPER_API_KEY"], clear_book: v })));
   t("amounts:名字、有限非負數、上限", argsOk("amounts", { amounts: { a_b: 1000, c: 0 } }) && !argsOk("amounts", { amounts: { a: -1 } })
     && !argsOk("amounts", { amounts: { a: 1e12 } }) && !argsOk("amounts", { amounts: { "../x": 1 } }) && !argsOk("amounts", { amounts: { a: "1" } }));
   // 台指期換執行合約(txf-contract-switch §1):contracts 選填、整份;值只收三個家族代號原字、名字要在這次的 amounts 裡

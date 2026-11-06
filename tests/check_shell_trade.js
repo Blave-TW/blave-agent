@@ -609,7 +609,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("記號的字:模擬 → 「模擬」;Binance / OKX / Gate.io 照表;表外 id 首字大寫;沒連 → 空(不再有「真錢」)",
       vm.runInContext('[envVenueText("paper", "paper"), envVenueText("real", "binance"), envVenueText("real", "okx"), envVenueText("real", "gateio"), envVenueText("real", "kraken"), envVenueText(null, null)].join("|")', c2) === "模擬|Binance|OKX|Gate.io|Kraken|"); }
   /* 按「解除綁定」跳出的確認框(spec unbind-positions A 版):沒部位只給一句後果＋解除綁定;有部位三顆鈕(取消｜平倉並解除 紅字次鈕｜
-     保留部位並解除 主鈕);台指期休市、這台平不了(close_unbind_manual)、舊 runtime(沒有 can_close_unbind)不給平倉鈕 */
+     自己處理並解除 主鈕);台指期休市、這台平不了(close_unbind_manual)、舊 runtime(沒有 can_close_unbind)不給平倉鈕 */
   const warn = (venue, env, lang, extra) => { let box = null; ctx.confirmBox = (o) => { box = o; }; ctx.trCloudBox = (o) => o; ctx.trIsPaper = () => venue === "paper";
     ctx.trUbRowsEl = (rows) => ({ rows }); ctx.trRelTime = () => "11/06 08:45"; ctx.TR_STALE_MS = 600000; ctx.trMs = (x) => x * 1000;
     ["presWip", "trPresStopped", "trPresLoginStopped", "trPresLoginHeld", "trCapWip", "trCaplStopped"].forEach((f) => { if (typeof ctx[f] !== "function") ctx[f] = () => false; });
@@ -626,19 +626,26 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     && wcases.filter((c) => c.venue !== "paper").every((c) => /登入資料|Login details/.test(c.w.line) && !/沒人管|unmanaged/.test(c.w.line))
     && wcases.filter((c) => c.venue !== "paper" && c.env === "cloud").every((c) => /主機|server/.test(c.w.line)));
   const pos = (r, id) => { r.account.venues[id].positions = { BTCUSDT: { side: "long", size: 0.01, mark_price: 100000 } }; };
-  const ask = warn("binance", "local", "zh", (r) => { r.can_close_unbind = true; pos(r, "binance"); });
-  ok("有部位、開盤中、機器有這個指令:三顆鈕——主鈕保留部位並解除、紅字次鈕平倉並解除;標題帶部位數;內文兩句各講一條路",
+  const ask = warn("binance", "local", "zh", (r) => { r.can_close_unbind = true; r.unbind_clears_book = true; pos(r, "binance"); });
+  ok("有部位、開盤中、機器有這個指令:三顆鈕——主鈕自己處理並解除、紅字次鈕平倉並解除;標題帶部位數;內文兩句各講一條路",
     ask.box.ok === ask.tbl["tr.ub.keepGo"] && ask.box.alt && ask.box.alt.danger === true && ask.box.alt.label === ask.tbl["tr.ub.closeGo"]
-    && ask.box.title === ask.tbl["tr.ub.askTitle1"] && ask.box.lines.length === 2 && /平倉並解除/.test(ask.box.lines[0]) && /保留部位並解除/.test(ask.box.lines[1]));
+    && ask.box.title === ask.tbl["tr.ub.askTitle1"] && ask.box.lines.length === 2 && /平倉並解除/.test(ask.box.lines[0]) && /自己處理並解除/.test(ask.box.lines[1]));
   const old = warn("binance", "local", "zh", (r) => { pos(r, "binance"); });
-  ok("舊 runtime(沒有 can_close_unbind):不給平倉鈕,只留保留部位並解除", !old.box.alt && old.box.ok === old.tbl["tr.ub.keepGo"]);
-  const closed = warn("president", "local", "zh", (r) => { r.can_close_unbind = true; r.txf_session = { open: false, next_open: 1794789905 }; pos(r, "president"); });
+  ok("舊 runtime(沒有 can_close_unbind):不給平倉鈕,只留自己處理並解除", !old.box.alt && old.box.ok === old.tbl["tr.ub.keepGo"]);
+  const closed = warn("president", "local", "zh", (r) => { r.can_close_unbind = true; r.unbind_clears_book = true; r.txf_session = { open: false, next_open: 1794789905 }; pos(r, "president"); });
   ok("統一、台指期休市:不給平倉鈕,標題「沒人管」,寫開盤時間、開盤後再來或到 app 自己平",
     !closed.box.alt && closed.box.title === closed.tbl["tr.ub.closedTitle1"] && /11\/06 08:45/.test(closed.box.lines[0]) && /app/.test(closed.box.lines[1]));
   const crypt = warn("binance", "local", "zh", (r) => { r.can_close_unbind = true; r.txf_session = { open: false, next_open: 1 }; pos(r, "binance"); });
   ok("加密不受台指期休市影響:照樣給平倉鈕", !!(crypt.box.alt && crypt.box.alt.danger));
-  const man = warn("capital", "cloud", "zh", (r) => { r.can_close_unbind = true; r.close_unbind_manual = ["capital"]; pos(r, "capital"); });
+  const man = warn("capital", "cloud", "zh", (r) => { r.can_close_unbind = true; r.unbind_clears_book = true; r.close_unbind_manual = ["capital"]; pos(r, "capital"); });
   ok("雲端群益平不了(close_unbind_manual):不給平倉鈕,寫明要到群益 app 自己平", !man.box.alt && man.box.lines[0] === man.tbl["tr.ub.cantClose"]);
+  const rj = (o) => o.box.lines.indexOf(o.tbl["tr.ub.keepRejoin"]) >= 0;
+  ok("自己處理並解除在休市、平不了的框也講接回同一帳戶的後果(Wei 11-06 三個框都補);舊 runtime 不清帳本,不講",
+    rj(closed) && rj(man) && !rj(old) && closed.box.lines[closed.box.lines.length - 1] === closed.tbl["tr.ub.keepRejoin"]);
+  const askKept = warn("binance", "local", "zh", (r) => { r.can_close_unbind = true; pos(r, "binance"); });
+  const closedKept = warn("president", "local", "zh", (r) => { r.can_close_unbind = true; r.txf_session = { open: false, next_open: 1794789905 }; pos(r, "president"); });
+  ok("機器不清帳本(回報沒有 unbind_clears_book):不講接回的後果——有部位那句退回 keepAskOld(點名鈕),休市框不補句",
+    askKept.box.lines.length === 2 && /^「自己處理並解除」後沒人管，要自己到 ?binance ?處理。$/i.test(askKept.box.lines[1]) && askKept.box.lines.indexOf(askKept.tbl["tr.ub.keep"]) < 0 && !rj(closedKept));
   const unread = warn("binance", "local", "zh", (r) => { r.can_close_unbind = true; r.account.venues.binance = { ok: false, error: "x" }; });
   ok("讀不到部位:不當成沒部位,走「可能有」那一組(標題 askTitleN、第一句 unreadN),照樣給平倉鈕",
     unread.box.title === unread.tbl["tr.ub.askTitleN"] && unread.box.lines[0] === unread.tbl["tr.ub.unreadN"] && !!unread.box.alt); }
@@ -676,8 +683,24 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   ok("送出去夠久了機器沒有這一筆、金鑰還在 → 不一直轉圈,當平倉失敗;雲端回報慢,等得比本機久",
     st(S("local", 60000, 30000), bound) === "fail" && st(S("cloud", 60000, 30000), bound) === "run" && st(S("cloud", 200000, 120000), bound) === "fail");
   const sh = cut("trUbShow");
-  ok("平倉失敗那一態:有未確認的單時「重新平倉並解除」停用並指到原因句(群益自動新平倉會反手);主鈕仍是保留部位並解除",
+  ok("平倉失敗那一態:有未確認的單時「重新平倉並解除」停用並指到原因句(群益自動新平倉會反手);主鈕仍是自己處理並解除",
     /disabled: hasUnconf, why: hasUnconf \? "ub-unconf" : null/.test(sh) && /ok: t\("tr\.ub\.keepGo"\), onOk: \(\) => trUbKeep\(S, u\.id\)/.test(sh));
+  ok("解除與平倉後解除:回報 unbind_clears_book 為 true 才帶 clear_book(畫面決定清不清,同框裡那句後果)",
+    /const clear = \(trReport\(\) \|\| \{\}\)\.unbind_clears_book === true \? \{ clear_book: true \} : \{\};/.test(src)
+    && /"credentials_remove", \{ env: trEnvNames\(id\), \.\.\.clear \}/.test(src)
+    && /request_id: rid, \.\.\.\(\(trReport\(\) \|\| \{\}\)\.unbind_clears_book === true \? \{ clear_book: true \} : \{\}\)/.test(src)
+    && /const clearBookArg = \(host\) =>[\s\S]{0,200}unbind_clears_book === true \? \{ clear_book: true \} : \{\}/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8")));
+  { const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+    ok("這台電腦統一／群益開通中、改選別家:連接框鈕正上方講會取消那家的開通(cx.cancelSetup);雲端照舊講目的地",
+    /function cxSetupWip\(\) \{[\s\S]{0,200}trSetupOnly\(st\)[\s\S]{0,120}trPresWip\(r, id\) \|\| trCaplWip\(r, id\)/.test(src)
+    && /const wip = !cloud \? cxSetupWip\(\) : null, cancels = !!wip && venue !== wip;/.test(src)
+    && /cancels \? trUbSay\("cx\.cancelSetup", \{ venue: trPadLatin\(trVenueLabel\(wip, true\)\) \}\)/.test(src));
+  ok("綁定(credentials)一律不帶 clear_book:換綁擠掉的那家畫面沒講,帳本不動(Wei 11-06)",
+      /send\("credentials", \{ env \}, \{ trusted: true \}\)/.test(mainSrc) && /cloudCmd\(\)\.send\("credentials", \{\}, built\.secrets/.test(mainSrc)
+      && /cmd === "credentials_remove" \? \{ \.\.\.args, \.\.\.clearBookArg\(cloudHost\(\)\) \} : args/.test(mainSrc)
+      && !/"credentials", \{ env: \{ PAPER_API_KEY[^\n]*clear_book/.test(src)); }
+  ok("平倉失敗那一態也講接回同一帳戶的後果(keepRejoin),只在機器解除就清帳本時",
+    /if \(\(trReport\(\) \|\| \{\}\)\.unbind_clears_book === true\) lines\.push\(t\("tr\.ub\.keepRejoin"\)\)/.test(sh));
   ok("平倉失敗的標題只數沒成交的(只有未確認時用不帶數字的 failTitleN);「回覆」那行只放 last_flatten.reply(券商真的回的話),不放我們自己的 msg",
     /const n = unclosed\.size - \(unclosed\.has\("\*"\) \? 1 : 0\)/.test(sh) && /title: n > 0 \? trUbTitle\("tr\.ub\.failTitle", n\) : t\("tr\.ub\.failTitleN"\)/.test(sh)
     && /if \(lf\.reply\) lines\.push/.test(sh) && !/lf\.msg/.test(sh));
