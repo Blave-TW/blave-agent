@@ -35,7 +35,6 @@ chat transport and strategy_reporter: the token resolves to this user only.
 """
 import ast
 import ctypes
-import hashlib
 import json
 import math
 import os
@@ -466,9 +465,11 @@ def tw_lots(cfg, states, vens=None):
     return out
 
 
-def _code_hash(src_bytes):
-    """= workspace lib/strategy.code_hash (the runtime cannot import the workspace lib)."""
-    return hashlib.sha256(src_bytes).hexdigest()[:16]
+def _same_code(src_bytes, stored):
+    """= workspace lib/strategy.hash_matches (the runtime cannot import the workspace lib): the
+    DISPLAY_NAME line does not count, and a stamp from an older lib is the raw hash."""
+    import strategy_reporter as sr
+    return sr.hash_matches(src_bytes, stored)
 
 
 def _price_markets(src_bytes):
@@ -576,7 +577,7 @@ def typec_previews(cfg, states, now=None):
             continue
         markets = _price_markets(src)
         # US-stock prices: no live portfolio (Type C) on them, so no preview of one
-        if _code_hash(src) != data["code_hash"] or "us_stock" in markets:
+        if not _same_code(src, data["code_hash"]) or "us_stock" in markets:
             continue
         weights = _portfolio_weights(data.get("weights"))
         try:
@@ -661,7 +662,7 @@ def backtest_previews(cfg, states, now=None):
         except OSError:
             continue
         markets = _price_markets(src)
-        if _code_hash(src) != data["code_hash"]:
+        if not _same_code(src, data["code_hash"]):
             continue
         try:
             bar_at = int(data.get("bar_at"))

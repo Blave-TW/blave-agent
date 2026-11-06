@@ -62,6 +62,8 @@ stop: 進場價下方 2 倍 ATR(14)
 
 Always set `DISPLAY_NAME`, `DESCRIPTION` and `LOGIC` when creating a strategy — the workspace shows the technical id only as a fallback when the names are missing, and shows no 策略邏輯 at all without `LOGIC`. A `LOGIC` with no prefixed line is shown as one block of text; prefer the prefixes. Type B strategies (no entry/exit signal) may leave it `""`.
 
+**Renaming is not an edit.** Keep `DISPLAY_NAME` one plain line at the top level — `DISPLAY_NAME = "…"`, no expression, no second assignment — because the workspace's 改名 rewrites exactly that line, and the version hash leaves it out: changing only the name mints no new version and raises no file-changed notice on a live strategy, so a rename (yours or the user's) is safe on a funded strategy. The user may rename a strategy in the sidebar between your turns: reread `DISPLAY_NAME` from the file before quoting or rewriting it, never put back the name you remember. Restoring a version keeps the current name.
+
 **Keep the words true to the code.** `DESCRIPTION` is the subtitle of the strategy page, `LOGIC` is the rule list under it, and the header comment (`# Signal:` and the like) is what the next reader trusts. When you change a parameter that either of them states as a number (a threshold, a window, a symbol list), change it there in the same edit — measured on the desktop: `THRESHOLD_PCT` went from 0.03 to 0.05 while `DESCRIPTION` and the header still said 0.03%, so the page described a strategy that no longer existed. Same for a fork: its `DESCRIPTION` and `LOGIC` describe the fork. Editing `LOGIC` is an edit like any other: the next backtest mints a new version, and a live strategy shows the file-changed notice.
 
 ## Editing a live strategy (fork, never in place)

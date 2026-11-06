@@ -10493,3 +10493,40 @@ msgstr "Can’t reach the cloud machine"
 # 報告空清單 Setup fog 卡上那句;扁平態仍用 rpt.emptyHint
 msgid "rpt.fogNew"
 msgstr "Ask the agent for your first report."
+
+# 側欄策略改名(renderer/stratrename.js;spec strategy-rename-2026-11-05 §2/§3/§5):選單項、選單 aria、名稱框、框下那一行、錯誤碼對應句、改好後的朗讀
+msgid "strat.rename"
+msgstr "Rename"
+
+msgid "strat.menu"
+msgstr "Options for {name}"
+
+msgid "strat.nameAria"
+msgstr "Strategy name"
+
+msgid "strat.nameMax"
+msgstr "Up to 60 characters"
+
+msgid "strat.nameBad"
+msgstr "Names can’t contain {c}"
+
+msgid "strat.nameWrapped"
+msgstr "Names can’t be wrapped in [ ]"
+
+msgid "strat.nameDup"
+msgstr "Another strategy has this name"
+
+msgid "strat.renameGone"
+msgstr "This strategy’s folder is gone. The list is refreshed."
+
+msgid "strat.renameNoLiteral"
+msgstr "Ask the agent in chat."
+
+msgid "strat.renameJob"
+msgstr "Rerunning the backtest. Rename when it’s done."
+
+msgid "strat.renameFail"
+msgstr "Couldn’t rename. Press Enter to try again."
+
+msgid "strat.renamed"
+msgstr "Renamed to {name}"

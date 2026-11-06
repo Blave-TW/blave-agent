@@ -316,7 +316,9 @@ const EVENTS = {
     // 0.1.45 側欄「在手機上用」pop 裡的〔登入 Blave〕(renderer/promptslot.js slotPopPaint;spec slot-phone-steps §4)。同 api 順序,api 先上
     "slot_ph_login",
     // 0.1.45 解除綁定框(renderer/trade.js;spec unbind-positions §6):選了保留部位並解除／平倉並解除／在平倉失敗那一態重新平倉。同 api 順序,api 先上
-    "unbind_keep", "unbind_close", "unbind_retry"] },
+    "unbind_keep", "unbind_close", "unbind_retry",
+    // 0.1.46 側欄策略改名(renderer/stratrename.js;spec strategy-rename §8):機器說改成了才送,不帶名字。同 api 順序,api 先上
+    "strat_rename"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

@@ -105,7 +105,7 @@ ALLOWED = frozenset({
     "delete_strategy", "manage_optimize", "manage_backtest", "manage_cancel",
     "report_pause", "report_resume", "report_run_now", "report_delete",
     "report_edit_pending", "preferences_set", "tz_set", "reply_lang_set",
-    "book_account_confirm", "version_restore", "stats_refresh",
+    "book_account_confirm", "version_restore", "stats_refresh", "rename_strategy",
 })
 # In the api's list, refused here: the Capital (群益) and 統一期貨 connect steps
 # install broker components and an NSSM worker on a cloud Windows host —

@@ -1682,6 +1682,20 @@ body.is-dragging .sg-head .sg-live { margin-right: 0; }
 /* 密 input(≤30)用 radius-xs;字 12 = 送出後組名的字級,按 Enter 那一下不縮(同 web) */
 .sg-input { flex: 1; min-width: 0; height: 28px; padding: 0 var(--space-6); border: 1px solid var(--ink); border-radius: var(--radius-xs); background: var(--surface-field); font: inherit; font-size: 12px; color: var(--ink); }
 .sg-input:focus { outline: none; }
+/* 策略改名(renderer/stratrename.js;spec strategy-rename §3/§4):編輯列取代 .strat-wrap,高 34 = 列高;框 28、字 13 = 列的字級,按 Enter 那一下不跳。
+   框下那一行 12/1.5,左緣對齊框內的字;放在 --bg-body 上,錯誤字用 redText(卡面上的 redBlack 規定不適用側欄) */
+.srn-edit { position: relative; display: flex; align-items: center; height: 34px; padding: 0 0 0 var(--space-12); }   /* 框左右貼齊列的 hover 底 */
+.srn-input { flex: 1; min-width: 0; height: 28px; padding: 0 var(--space-6) 0 11px;   /* 11 + 1px 框 = 列字的 12,按〔改名〕那下字不跳 */
+  border: 1px solid var(--ink); border-radius: var(--radius-xs); background: var(--surface-field); font: inherit; font-size: 13px; color: var(--ink); }
+.srn-input:focus { outline: none; }
+.srn-input.is-bad { border-color: var(--color-redText); }
+.srn-input[readonly] { color: var(--ink-3); padding-right: 28px; }
+.srn-ring { position: absolute; right: var(--space-6); top: 9px; color: var(--ink-3); }
+.srn-err { margin: var(--space-2) var(--space-12) var(--space-6) calc(var(--space-12) + var(--space-12)); font-size: 12px; line-height: 1.5; color: var(--color-redText); }
+.srn-err.is-hint { color: var(--ink-3); }
+.srn-err .srn-ch { display: inline-block; min-width: 16px; margin: 0 var(--space-2); padding: 0 var(--space-4); border-radius: var(--radius-xs); background: var(--surface-muted); font-family: var(--font-mono); font-size: 13px; text-align: center; color: var(--ink); }   /* 半形 : ; \ 在 12px 看不見:給一個小底塊 */
+.flag-pop .item[aria-disabled="true"] { color: var(--ink-disabled); cursor: not-allowed; }
+.flag-pop .item[aria-disabled="true"]:hover { background: transparent; color: var(--ink-disabled); }
 /* emoji 選擇器(Dropdown Panel):6 欄 32×32、格距 4、內容高上限 320 內捲;選中 = 1px --active-line 框、無填色,hover / 焦點 = --surface-muted 底,兩者疊加都看得到 */
 .flag-pop.sg-pick { width: 224px; max-height: 320px; overflow-x: hidden; overflow-y: auto; }
 /* Windows 的捲軸佔內容寬(上面 win32 那組捲軸樣式):不加寬會擠出橫捲、直捲軸壓住最右一欄 */

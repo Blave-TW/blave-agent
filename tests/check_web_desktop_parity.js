@@ -801,4 +801,21 @@ for (const lang of ["zh", "en"]) {
     ok(`策略名稱:主行程(系統通知)跑 api 的 ${cases.length} 筆測資結果一致`, cases.length > 20 && !badMain.length, JSON.stringify(badMain.map(([n, c, w]) => [n, w, mainClean(n, c)])));
     ok("策略名稱:TLD 表與上限跟 api 同一份", !!pyTld && !!pyMax && JSON.stringify([...pyTld[1].matchAll(/"([a-z]+)"/g)].map((x) => x[1])) === JSON.stringify(L.TR_LABEL_TLDS) && Number(pyMax[1]) === L.TR_LABEL_MAX);
   } }
+// 側欄策略改名(spec strategy-rename-2026-11-05 §3、§5、§7;參照面 = 電腦版):名稱規則三常數、錯誤碼集合、框下那一行與錯誤碼對應句 zh / en 逐字同。
+// 網頁 workspace.html 照電腦版 renderer/stratrename.js 寫成同名常數;網頁還沒落地就紅(不 SKIP)。帶 {c}／{name} 的三句佔位寫法兩邊不同,不比
+{ const dSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "stratrename.js"), "utf8");
+  for (const re of [/const SRN_NAME_MAX = (\d+);/, /const SRN_NAME_BAD = (\/[^\n]*\/);/]) {
+    const d = re.exec(dSrc), w = re.exec(web);
+    ok("策略改名 " + re.source.slice(6, 18) + " 兩邊同一份", !!d && !!w && d[1] === w[1], (d && d[1]) + " vs " + (w && w[1]));
+  }
+  const codes = (src) => { const m = /const SRN_ERR_KEYS = \{([\s\S]*?)\};/.exec(src); return m ? [...m[1].matchAll(/(\w+):/g)].map((x) => x[1]).sort().join(",") : null; };
+  ok("策略改名錯誤碼集合兩邊同一份(SRN_ERR_KEYS 的 key)", !!codes(dSrc) && codes(dSrc) === codes(web), codes(dSrc) + " vs " + codes(web));
+  for (const lang of ["zh", "en"]) {
+    const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+    for (const [d, w] of [["strat.rename", "workspace_strat_rename"], ["strat.nameMax", "workspace_strat_name_max"], ["strat.nameWrapped", "workspace_strat_name_wrapped"],
+      ["strat.nameDup", "workspace_strat_name_dup"], ["strat.renameGone", "workspace_strat_rename_gone"], ["strat.renameNoLiteral", "workspace_strat_rename_no_literal"],
+      ["strat.renameFail", "workspace_strat_rename_fail"], ["strat.renameJob", "workspace_strat_rename_job"]])
+      ok(`策略改名 ${lang} 兩邊逐字一致(${d} ↔ ${w})`, typeof dp[d] === "string" && dp[d] === wp[w], d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」");
+  }
+}
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

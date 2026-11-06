@@ -100,10 +100,10 @@ ok("manage_optimize / manage_backtest 形狀:剛好三欄、成員 1–64 不重
   && !argsOk("manage_optimize", { members: ["../x"], allocator: null, params: {} }) && !argsOk("manage_optimize", { members: ["a b"], allocator: null, params: {} })
   && !argsOk("manage_optimize", { ...good, allocator: "bad name" }) && !argsOk("manage_optimize", { ...good, params: { lookback: Infinity } })
   && !argsOk("manage_optimize", { ...good, extra: 1 }) && !argsOk("manage_cancel", { x: 1 }));
-ok("優化是 Deferred(腳本最長 120 秒才 ack):等 ack 給 150 秒,其餘照舊 20 秒", /const CMD_TIMEOUT_MS = \{ manage_optimize: 150000 \};/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "daemon.js"), "utf8"))
+ok("優化是 Deferred(腳本最長 120 秒才 ack):等 ack 給 150 秒,其餘照舊 20 秒", /const CMD_TIMEOUT_MS = \{ manage_optimize: 150000(?:, rename_strategy: 90000)? \};/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "daemon.js"), "utf8"))
   && /timeoutMs = CMD_TIMEOUT_MS\[cmd\] \|\| 20000/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "daemon.js"), "utf8")));
 ok("雲端視角也送得出優化三個指令:沒有雲端停用鈕,ENV_CLOUD_CMDS 依序接上 manage_*", !/mgCloudOff|mg\.cloudOff/.test(psrc)
-  && /ENV_CLOUD_CMDS = \[[^\]]*"stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"\]/.test(src));
+  && /ENV_CLOUD_CMDS = \[[^\]]*"stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"(?:, "rename_strategy")?\]/.test(src));
 ok("雲端的優化 ack 窗同本機那份 150 秒(其餘照舊 20 秒)", /ackWindowMs: require\("\.\/daemon"\)\.CMD_TIMEOUT_MS\[cmd\]/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8"))
   && /now\(\) \+ \(\(sendOpts && sendOpts\.ackWindowMs\) \|\| ACK_WINDOW_MS\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "cloudcmd.js"), "utf8")));
 

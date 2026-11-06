@@ -10529,3 +10529,40 @@ msgstr "連不上雲端主機"
 # 報告空清單 Setup fog 卡上那句;扁平態仍用 rpt.emptyHint
 msgid "rpt.fogNew"
 msgstr "請 agent 寫第一份報告。"
+
+# 側欄策略改名(renderer/stratrename.js;spec strategy-rename-2026-11-05 §2/§3/§5):選單項、選單 aria、名稱框、框下那一行、錯誤碼對應句、改好後的朗讀
+msgid "strat.rename"
+msgstr "改名"
+
+msgid "strat.menu"
+msgstr "{name} 的選項"
+
+msgid "strat.nameAria"
+msgstr "策略名稱"
+
+msgid "strat.nameMax"
+msgstr "最多 60 字"
+
+msgid "strat.nameBad"
+msgstr "名稱不能有 {c}"
+
+msgid "strat.nameWrapped"
+msgstr "名稱不能整個包在 [ ] 裡"
+
+msgid "strat.nameDup"
+msgstr "已經有一支叫這個名字"
+
+msgid "strat.renameGone"
+msgstr "這支策略的資料夾不見了，清單已重新整理。"
+
+msgid "strat.renameNoLiteral"
+msgstr "在對話裡請 agent 改。"
+
+msgid "strat.renameJob"
+msgstr "正在重跑回測，跑完再改。"
+
+msgid "strat.renameFail"
+msgstr "沒有改成，按 Enter 再試一次。"
+
+msgid "strat.renamed"
+msgstr "已改名為{name}"

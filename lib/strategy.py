@@ -4,9 +4,11 @@ import hashlib
 import json
 import math
 import os
+import re
 import shutil
 import threading
 import time
+import unicodedata
 from pathlib import Path
 
 import numpy as np
@@ -332,11 +334,40 @@ def versions_dir(name):
     return _REPO_ROOT / 'strategies' / str(name) / 'versions'
 
 
-def code_hash(src_bytes):
-    """An index entry's `code_hash`: sha256 of the strategy file's raw bytes, first 16
-    hex chars. Truncated because the whole entry is budgeted at ~200 bytes (canon §9)
-    and 64 bits is far more than "is this file still what v<N> stored" needs."""
+# Capability flag, read as TEXT like RESTORE_IN_PLACE (strategy_reporter.lib_renames, shell
+# main.js): code_hash ignores the DISPLAY_NAME line, restore() keeps the current name and
+# rename() exists. The runtime refuses rename_strategy without it — an older runner would flag
+# a renamed live strategy as edited and mint a copy of it on the next backtest.
+STRATEGY_RENAME = 1
+
+# Canon strategy-versions §2 改名不算改碼: a column-0 `DISPLAY_NAME = "…"` line, terminator and
+# all, is left out of the hash. Only the shape rename() writes (one string literal, optional
+# comment): anything else on that line (`; LEVERAGE = 3`, `if … else`) is real code and must
+# still move the hash, or a live strategy runs changed code under a "file unchanged" badge. Deleted rather than blanked so adding the line where there was
+# none (rename() on a file without one) hashes the same too. Byte-level and spelled the same in
+# runtime/strategy_reporter.py and shell/main.js — tests/fixtures/code_hash_name.json pins all three.
+_HASH_NAME_LINE_RE = re.compile(
+    rb'(?:^|(?<=\n))DISPLAY_NAME[ \t]*=[ \t]*(?:"[^"\\\r\n]*"|\'[^\'\\\r\n]*\')[ \t]*(?:#[^\r\n]*)?(?:\r\n|\n|\r|\Z)')
+
+
+def raw_code_hash(src_bytes):
+    """The pre-rename-era hash (raw bytes). Entries minted before it, and the runtime's and
+    shell's stored stamps from an older lib, still carry it — compare with hash_matches()."""
     return hashlib.sha256(src_bytes).hexdigest()[:16]
+
+
+def code_hash(src_bytes):
+    """An index entry's `code_hash`: sha256 of the strategy file's bytes without the
+    DISPLAY_NAME line, first 16 hex chars. Truncated because the whole entry is budgeted at
+    ~200 bytes (canon §9) and 64 bits is far more than "is this file still what v<N> stored"
+    needs."""
+    return hashlib.sha256(_HASH_NAME_LINE_RE.sub(b'', src_bytes)).hexdigest()[:16]
+
+
+def hash_matches(src_bytes, stored):
+    """Is `stored` (an index entry's, a preview's, a scan's code_hash) the hash of this code?
+    Either form: a stamp written before the name stopped counting is the raw hash."""
+    return isinstance(stored, str) and stored in (code_hash(src_bytes), raw_code_hash(src_bytes))
 
 
 def load_index(name):
@@ -450,6 +481,308 @@ def strategy_source_path(name):
     return None
 
 
+# ── Renaming (spec strategy-rename-2026-11-05 §3/§5) ──────────────────────────
+# The rules the sidebar's name box enforces — shell/renderer and web carry the same three, and
+# runtime agent_turn._display_name is why: a name it would drop back to the code (_NAME_UNSAFE,
+# Unicode line/format characters, a template's [placeholder]) or cut (60) is not offered. `"`
+# and `\` because the shell reads the line with a one-line regex and rename writes it in "".
+NAME_MAX = 60
+_NAME_BAD_RE = re.compile('[、;:；：「」"\\\\\r\n\x0b\x0c\x85\u2028\u2029]')
+_EOL_SPLIT_RE = re.compile(r'(\r\n|\r|\n)')   # ast's own line breaks, so lineno indexes this split
+_NAME_LITERAL_LINE_RE = re.compile(
+    r'DISPLAY_NAME[ \t]*=[ \t]*(?P<lit>"[^"\\\r\n]*"|\'[^\'\\\r\n]*\')[ \t]*(?:#.*)?')
+_BOM = b'\xef\xbb\xbf'
+
+
+def name_problem(value):
+    """None when `value` (already stripped) may be a DISPLAY_NAME, else EMPTY / TOO_LONG / CHAR /
+    WRAPPED. Counted in code points, like the runtime's v[:60]."""
+    if not isinstance(value, str) or not value:
+        return 'EMPTY'
+    if len(value) > NAME_MAX:
+        return 'TOO_LONG'
+    if _NAME_BAD_RE.search(value) or any(unicodedata.category(c) in ('Cc', 'Cf', 'Zl', 'Zp')
+                                         for c in value):
+        return 'CHAR'
+    if value.startswith('[') and value.endswith(']'):
+        return 'WRAPPED'
+    return None
+
+
+def _name_fold(value):
+    return unicodedata.normalize('NFKC', value.strip()).lower()
+
+
+def _literal_name_line(tree, lines):
+    """(line index, match) of the file's one DISPLAY_NAME assignment when it is a plain one-line
+    string at column 0, None when there is no assignment at all; raises ValueError when there is
+    one rename cannot rewrite (an expression, an annotation, several of them, an f-string)."""
+    stores = [n for n in ast.walk(tree)
+              if isinstance(n, ast.Name) and n.id == 'DISPLAY_NAME' and isinstance(n.ctx, ast.Store)]
+    if not stores:
+        return None
+    if len(stores) > 1:
+        raise ValueError('DISPLAY_NAME is assigned more than once')
+    node = next((a for a in tree.body if isinstance(a, ast.Assign) and a.targets == [stores[0]]), None)
+    if (node is None or not isinstance(node.value, ast.Constant) or not isinstance(node.value.value, str)
+            or node.lineno != node.end_lineno or node.col_offset != 0):
+        raise ValueError('DISPLAY_NAME is not a one-line string')
+    m = _NAME_LITERAL_LINE_RE.fullmatch(lines[node.lineno - 1])
+    if m is None:
+        raise ValueError('DISPLAY_NAME is not a plain "…" string')
+    return node.lineno - 1, m
+
+
+def _split_lines(text):
+    parts = _EOL_SPLIT_RE.split(text)
+    return parts[0::2], parts[1::2] + ['']
+
+
+def literal_name(text):
+    """The name a one-line DISPLAY_NAME assignment holds, or None (none, or not rewritable)."""
+    try:
+        hit = _literal_name_line(ast.parse(text), _split_lines(text)[0])
+    except (SyntaxError, ValueError):
+        return None
+    return hit[1].group('lit')[1:-1] if hit else None
+
+
+def set_display_name(text, value):
+    """`text` (a strategy file, BOM already stripped) with its DISPLAY_NAME set to `value`; only
+    that string changes, a trailing comment stays. Without a DISPLAY_NAME the line goes under
+    STRATEGY_NAME, else under the docstring and __future__ imports. ValueError when the file does
+    not parse, holds a DISPLAY_NAME rename cannot rewrite, or `value` cannot sit in "…"."""
+    if '"' in value or '\\' in value or _EOL_SPLIT_RE.search(value):
+        raise ValueError('the name cannot be written as a plain "…" string')
+    tree = ast.parse(text)
+    lines, eols = _split_lines(text)
+    hit = _literal_name_line(tree, lines)
+    if hit:
+        i, m = hit
+        lines[i] = lines[i][:m.start('lit')] + '"' + value + '"' + lines[i][m.end('lit'):]
+    else:
+        after = 0
+        for node in tree.body:
+            if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name) and node.targets[0].id == 'STRATEGY_NAME'
+                    and node.col_offset == 0 and node.lineno == node.end_lineno):
+                after = node.end_lineno
+                break
+        else:
+            for k, node in enumerate(tree.body):
+                is_doc = (k == 0 and isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+                          and isinstance(node.value.value, str))
+                if is_doc or (isinstance(node, ast.ImportFrom) and node.module == '__future__'):
+                    after = node.end_lineno
+                else:
+                    break
+        if after and not eols[after - 1]:
+            raise ValueError('nowhere to put DISPLAY_NAME without touching another line')
+        eol = (eols[after - 1] if after else '') or next((e for e in eols if e), '\n')
+        lines.insert(after, 'DISPLAY_NAME = "' + value + '"')
+        eols.insert(after, eol)
+    return ''.join(a + b for a, b in zip(lines, eols))
+
+
+def _shown_names(skip):
+    """What the sidebar shows for every other strategy: its DISPLAY_NAME, or its code (folder /
+    file stem and STRATEGY_NAME — the desktop shows the one, the web the other)."""
+    sdir = _REPO_ROOT / 'strategies'
+    try:
+        entries = sorted(os.listdir(sdir))
+    except OSError:
+        return
+    for entry in entries:
+        if entry.startswith('.') or entry == '__pycache__' or entry.startswith('TEMPLATE'):
+            continue
+        full = sdir / entry
+        p = full / 'strategy.py' if full.is_dir() else (full if entry.endswith('.py') else None)
+        if p is None or not p.is_file() or p.resolve() == skip:
+            continue
+        try:
+            with open(p, encoding='utf-8-sig', errors='replace') as f:
+                src = f.read(65536)
+        except OSError:
+            continue
+        found = {}
+        try:
+            for node in ast.walk(ast.parse(src)):
+                if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+                        and isinstance(node.value.value, str)):
+                    for t in node.targets:
+                        if isinstance(t, ast.Name) and t.id in ('DISPLAY_NAME', 'STRATEGY_NAME'):
+                            found.setdefault(t.id, node.value.value)
+        except (SyntaxError, ValueError):
+            pass
+        shown = (found.get('DISPLAY_NAME') or '').strip()
+        if shown:
+            yield shown
+        else:
+            yield entry[:-3] if p == full else entry
+            if found.get('STRATEGY_NAME'):
+                yield found['STRATEGY_NAME']
+
+
+def _rekey_versions(vdir, items, *codes):
+    """Entries still holding the raw-bytes hash get the name-blind one, when their code is at
+    hand (the given bytes, or the entry's own blob). The stored code is unchanged — only how its
+    hash is spelled — and without this a version minted before the rule would read as edited
+    the moment its strategy is renamed or restored under another name. True when any changed."""
+    known = {raw_code_hash(b): code_hash(b) for b in codes}
+    changed = False
+    for i in items:
+        h = i.get('code_hash')
+        if not isinstance(h, str):
+            continue
+        if h not in known:
+            try:
+                code = load_json(vdir / f"v{i.get('n')}.json", encoding='utf-8').get('code')
+            except (OSError, ValueError, AttributeError):
+                code = None
+            if isinstance(code, str):
+                b = code.encode('utf-8')
+                known.setdefault(raw_code_hash(b), code_hash(b))
+        if known.get(h, h) != h:
+            i['code_hash'] = known[h]
+            changed = True
+    return changed
+
+
+def rekey_current(name, src):
+    """The live tick's drift check, once per new file content: is the file the `current`
+    version's code under another DISPLAY_NAME, with an entry still on the raw-bytes hash (a
+    rename made in chat)? Then that entry is re-spelled name-blind and True comes back — no
+    drift. Reads one blob, never waits for the lock (the tick must not stall)."""
+    vdir = versions_dir(name)
+    try:
+        with versions_lock(name, timeout=0):
+            idx = load_index(name) or {}
+            items = [i for i in (idx.get('items') or []) if isinstance(i, dict)]
+            cur = next((i for i in items if i.get('n') == idx.get('current')), None)
+            if cur is None:
+                return False
+            code = load_json(vdir / f"v{cur.get('n')}.json", encoding='utf-8').get('code')
+            if not isinstance(code, str):
+                return False
+            b = code.encode('utf-8')
+            if code_hash(b) != code_hash(src) or not hash_matches(b, cur.get('code_hash')):
+                return False
+            if cur.get('code_hash') != code_hash(b):
+                cur['code_hash'] = code_hash(b)
+                idx['items'] = items
+                _write_index(vdir, idx)
+            return True
+    except (TimeoutError, OSError, ValueError, AttributeError):
+        return False
+
+
+def _write_index(vdir, idx):
+    _replace_bytes(vdir / 'index.json', json.dumps(idx, indent=2).encode('utf-8'))
+
+
+def _backtest_running(name):
+    """Does a backtest of `name` hold lib/runner's per-strategy lock (BACKTEST_LOCK) right now —
+    the agent's, a scan's, a restore's re-run, 更新績效? Probed, never waited for."""
+    p = _REPO_ROOT / 'strategies' / str(name) / '.backtest.lock'
+    try:
+        fd = os.open(p, os.O_RDWR)
+    except OSError:
+        return False
+    try:
+        try:
+            if fcntl is not None:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            elif msvcrt is not None:
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        except OSError:
+            return True
+        if fcntl is None and msvcrt is not None:
+            try:
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            except OSError:
+                pass
+        return False
+    finally:
+        os.close(fd)
+
+
+def rename(name, display_name):
+    """Set strategy `name`'s DISPLAY_NAME — the sidebar's 改名, no agent turn. Only that one
+    string changes: the folder, STRATEGY_NAME and every version stay as they are, and the code
+    hash ignores the line (canon strategy-versions §2), so a live strategy is not flagged as
+    edited and the next backtest mints nothing. Returns {"path", "display_name", "changed"}.
+
+    Raises with a code (same attribute as restore()): BAD_NAME (name_problem), DUPLICATE
+    (another strategy on this machine already shows that name), NOT_FOUND, JOB_RUNNING (a
+    backtest of it is running: the spec locks the menu item then), NOT_LITERAL (the
+    file's DISPLAY_NAME is not a line rename can rewrite, the file is not UTF-8 or does not
+    parse — the agent can still change it in chat)."""
+    value = display_name.strip() if isinstance(display_name, str) else None
+    why = name_problem(value)
+    if why:
+        raise _coded(ValueError(f"bad name ({why})"), 'BAD_NAME')
+    path = strategy_source_path(name)
+    if path is None:
+        raise _coded(FileNotFoundError(f"strategy {name} has no source file"), 'NOT_FOUND')
+    if _backtest_running(name):
+        raise _coded(RuntimeError(f"a backtest of {name} is running"), 'JOB_RUNNING')
+    want = _name_fold(value)
+    if any(_name_fold(s) == want for s in _shown_names(path.resolve())):
+        raise _coded(ValueError("another strategy already has this name"), 'DUPLICATE')
+    vdir = versions_dir(name)
+    # versions_lock creates versions/; a never-backtested strategy has no index to rewrite
+    lock = versions_lock(name) if vdir.is_dir() else contextlib.nullcontext()
+    with lock:
+        st0 = path.stat()
+        before = path.read_bytes()
+        bom = _BOM if before.startswith(_BOM) else b''
+        try:
+            text = before[len(bom):].decode('utf-8')
+            if literal_name(text) == value:
+                return {'path': str(path), 'display_name': value, 'changed': False}
+            after = bom + set_display_name(text, value).encode('utf-8')
+        except (UnicodeDecodeError, SyntaxError, ValueError) as e:
+            raise _coded(ValueError(f"cannot rename here: {e}"), 'NOT_LITERAL') from None
+        if code_hash(after) != code_hash(before) or literal_name(after[len(bom):].decode('utf-8')) != value:
+            raise _coded(ValueError("cannot rename here: the rewrite would change the code"),
+                         'NOT_LITERAL')
+        idx = load_index(name) if vdir.is_dir() else None
+        if idx is not None:
+            items = [i for i in (idx.get('items') or []) if isinstance(i, dict)]
+            # before the file: a crash in between leaves name-blind entries over the old file,
+            # which still match it
+            if _rekey_versions(vdir, items, before):
+                idx['items'] = items
+                _write_index(vdir, idx)
+        _replace_bytes(path, after)
+        # Wei: a renamed strategy keeps its place. The desktop sorts by "touched last" from this
+        # file's mtime; a rename is not touching the code, so the old mtime goes back on
+        try:
+            os.utime(path, ns=(st0.st_atime_ns, st0.st_mtime_ns))
+        except OSError:
+            pass
+    return {'path': str(path), 'display_name': value, 'changed': True}
+
+
+def _keep_name(code, current):
+    """v's code with the strategy file's current DISPLAY_NAME put back (Wei: a restore keeps the
+    name). Unchanged when either side has no rewritable line."""
+    cur_text = current[len(_BOM):] if current.startswith(_BOM) else current
+    try:
+        name = literal_name(cur_text.decode('utf-8'))
+    except UnicodeDecodeError:
+        return code
+    bom = '\ufeff' if code.startswith('\ufeff') else ''
+    body = code[len(bom):]
+    if name is None or literal_name(body) == name:
+        return code
+    try:
+        return bom + set_display_name(body, name)
+    except (SyntaxError, ValueError):
+        return code
+
+
 def _coded(exc, code):
     """Tag a refusal with a stable code for the runtime's direct command (UPDATE_REQUIRED /
     LIVE / NO_VERSION …), keeping the exception type the agent-facing contract names."""
@@ -550,9 +883,12 @@ def restore(name, v):
       - the file's current code matches no stored version (an edit nobody backtested, a hand
         edit) → saved to versions/pre-restore.py first (older saves shift to .1 / .2),
         backed_up=True. No version holds that code, so overwriting it would lose it for good.
-      - v's code is written back byte for byte (tmp + os.replace — an amount-0 strategy
-        still in the order settings imports this file on its next bar).
-      - the written bytes hash to v's code_hash → current = v, last_note = v's VERSION_NOTE
+      - v's code is written back byte for byte except its DISPLAY_NAME, which keeps the file's
+        current one (Wei: a restore keeps the name; the hash ignores that line) — tmp +
+        os.replace, an amount-0 strategy still in the order settings imports this file on its
+        next bar.
+      - the written bytes hash to v's code_hash → current = v, last_note = v's VERSION_NOTE,
+        entries still on the raw-bytes hash re-spelled name-blind (_rekey_versions)
         (otherwise the next edit that forgets to update the note stores v's old line as its
         summary), drift.json removed. They don't (a non-UTF-8 original, decoded with
         'replace' when minted) → current untouched, inplace=False, and the re-run mints a
@@ -623,16 +959,19 @@ def restore(name, v):
                 f"{name} v{v} is no longer in the version list — only the last "
                 f"{VERSIONS_KEEP} versions are kept"), 'NO_VERSION')
         before = path.read_bytes()
-        backed_up = code_hash(before) not in {i.get('code_hash') for i in items}
+        backed_up = not any(hash_matches(before, i.get('code_hash')) for i in items)
         if backed_up:
             _save_unversioned(vdir, before)
-        want = code.encode('utf-8')
+        stored_code = code.encode('utf-8')
+        want = _keep_name(code, before).encode('utf-8')
         try:
             if before != want:
                 _replace_bytes(path, want)
             stored = blob.get('code_hash') or entry.get('code_hash')
-            inplace = code_hash(path.read_bytes()) == stored
+            inplace = (hash_matches(stored_code, stored)
+                       and code_hash(path.read_bytes()) == code_hash(stored_code))
             if inplace:
+                _rekey_versions(vdir, items, stored_code)
                 idx.update({'v': idx.get('v', 1), 'current': v, 'last_note': version_note_of(code),
                             'items': items})
                 _replace_bytes(vdir / 'index.json', json.dumps(idx, indent=2).encode('utf-8'))

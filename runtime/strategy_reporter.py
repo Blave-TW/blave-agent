@@ -625,23 +625,60 @@ _lib_restore_cache = {}
 RERUN_ERRS = ("REFUSED", "DATA", "TIMEOUT", "EXIT", "SUPERSEDED", "BUSY")
 
 
-def lib_restore_in_place():
+def _lib_flag(pattern):
     path = os.path.join(WORKSPACE, "lib", "strategy.py")
     try:
         st = os.stat(path)
     except OSError:
         return False
-    key = (st.st_mtime_ns, st.st_size)
-    hit = _lib_restore_cache.get(path)
-    if hit and hit[0] == key:
+    key = (path, pattern.pattern)
+    stamp = (st.st_mtime_ns, st.st_size)
+    hit = _lib_restore_cache.get(key)
+    if hit and hit[0] == stamp:
         return hit[1]
     try:
         with open(path, "rb") as f:
-            ok = bool(_RESTORE_IN_PLACE_RE.search(f.read()))
+            ok = bool(pattern.search(f.read()))
     except OSError:
         ok = False
-    _lib_restore_cache[path] = (key, ok)
+    _lib_restore_cache[key] = (stamp, ok)
     return ok
+
+
+def lib_restore_in_place():
+    return _lib_flag(_RESTORE_IN_PLACE_RE)
+
+
+# The machine's lib renames (lib/strategy.py STRATEGY_RENAME): its code_hash ignores the
+# DISPLAY_NAME line, restore() keeps the current name, rename() exists. Without it a rename
+# would read as an edit (drift flag on a live strategy, a new version on the next backtest), so
+# rename_strategy refuses and the report leaves `renamable` out — the page hides 〔改名〕.
+_STRATEGY_RENAME_RE = re.compile(rb"^STRATEGY_RENAME\s*=\s*1\b", re.M)
+
+
+def lib_renames():
+    return _lib_flag(_STRATEGY_RENAME_RE)
+
+
+_RENAME_NAME_RE = _CHART_NAME_RE   # = command_listener rename_strategy's name gate
+
+
+# = lib/strategy.py code_hash / raw_code_hash / hash_matches (the runtime never imports lib);
+# tests/fixtures/code_hash_name.json pins the three spellings (here, lib, shell/main.js).
+_HASH_NAME_LINE_RE = re.compile(
+    rb"(?:^|(?<=\n))DISPLAY_NAME[ \t]*=[ \t]*(?:\"[^\"\\\r\n]*\"|'[^'\\\r\n]*')[ \t]*(?:#[^\r\n]*)?(?:\r\n|\n|\r|\Z)")
+
+
+def raw_code_hash(src_bytes):
+    return hashlib.sha256(src_bytes).hexdigest()[:16]
+
+
+def code_hash(src_bytes):
+    return hashlib.sha256(_HASH_NAME_LINE_RE.sub(b"", src_bytes)).hexdigest()[:16]
+
+
+def hash_matches(src_bytes, stored):
+    return isinstance(stored, str) and stored in (code_hash(src_bytes), raw_code_hash(src_bytes))
 
 
 def _read_rerun(vdir):
@@ -986,6 +1023,7 @@ def scan(include_newborn=False):
     scan and walk-forward validation (all optional, all absent rather than null when
     missing)."""
     strategies = _scan_sources(include_newborn)
+    renamable = lib_renames()
     for s in strategies:
         bt = _read_backtest(s["name"])
         if bt is not None:
@@ -1013,6 +1051,8 @@ def scan(include_newborn=False):
         # see is_portfolio_stats.
         s["is_portfolio"] = is_portfolio_stats(bt)
         s.update(_type_market(s))   # the header wins; no header but a Type C backtest → C
+        if renamable and _RENAME_NAME_RE.fullmatch(s.get("name") or ""):
+            s["renamable"] = True
     return strategies
 
 

@@ -12,6 +12,11 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 - **電腦版 daemon 自己校時(`local_daemon._clock_loop`)**:綁著群益或統一時,每 10 分鐘 GET 一次 api 的 `/fx_rates`(公開、只讀 Redis),回應的 Date 交給 `lib/tw_clock.note_reply` 寫進 workspace 的 `state/clock_skew.json`。沒有 Blave 資料權限的電腦版原本拿不到校時樣本,台指期新倉的時鐘閘等於沒作用;時鐘快超過 60 秒時,預開盤送出的市價單會被當成「沒成交」每輪重送。tw_clock 用檔案路徑載進私有模組,skew 檔指定絕對路徑,不受執行緒 cwd 影響;workspace 沒有 `lib/tw_clock.py` 就跳過。
 
+- **策略改名(`rename_strategy {name, display_name}`,spec strategy-rename-2026-11-05)**:側欄〔改名〕的直接指令,web 與電腦版兩個視角都走它,不經 agent。在 workspace 子行程跑 `lib.strategy.rename`(名稱規則、只改 `DISPLAY_NAME` 那一行、版本 hash 換寫法都在 lib);ack `{display_name, changed}`,改了才推一次 strategies。拒絕碼 `UPDATE_REQUIRED`(lib 沒有 `STRATEGY_RENAME`)／`TURN_RUNNING`(機器上有對話回合;排程報告的不算)／`JOB_RUNNING`(這支在背景重跑或回測鎖被佔)／`BAD_NAME`／`DUPLICATE`／`NOT_FOUND`／`NOT_LITERAL`／`BAD_ARGS`。`local_daemon.ALLOWED` 加它(api 先上 ALLOWED 與 `CLOUD_COMMANDS`)。
+- **報告每支策略帶 `renamable: true`**(lib 有 `STRATEGY_RENAME` 才帶;`strategy_reporter.lib_renames`,同 `lib_restore_in_place` 的文字比對):頁面沒有這個欄位就不出〔改名〕。
+- **改名不算改碼(canon strategy-versions §2)**:runtime 自己比 hash 的三處改成不算 `DISPLAY_NAME` 那一行、舊的整檔 hash 也認(`strategy_reporter.code_hash`／`hash_matches`,跟 lib 與 shell 跑同一份 `tests/fixtures/code_hash_name.json`):還原的背景重跑(`_version_code_hash`、`_file_is_version`:lib 會改名時釘不算名字的 hash,因為還原保留目前的名字)、更新績效的計畫(`_refresh_plan`)、組合預覽(`portfolio_reporter._same_code`)。
+- 測試 `tests/check_rename_command.py`(新)、`tests/check_strategy_rename.py`(新,lib)、`tests/fixtures/api_agent_command_allowed.json` 加 `rename_strategy`。
+
 ## 1.1.157 — 2026-11-05(desktop 0.1.45)
 
 - **統一登入等鎖逾時(`president_connect.LOGIN_STATES` 加 `"BUSY": "timeout"`)**:lib 的登入鎖被另一個登入佔著、等不到時回 BUSY,頁面當成「逾時」那一態,不算新的一類錯誤。BUSY 不寫 STOP、不佔一天的登入次數(lib/president_vault)。

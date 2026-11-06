@@ -5506,7 +5506,7 @@ function turnEndPre(r) {
   // 這一輪有真的回覆、沒有分類過的錯誤 → 那個 model 是能用的
   if (r.code === 0 && turnGotReply && !faultShown && turnModel) mpMarkWorks(turnModel);
   const rt = typeof resTurnClose === "function" ? resTurnClose() : null;   // 這一輪的結果卡(results.js):策略清單與報告都重讀完、回覆定稿之後才出
-  if (typeof sgEditCommit === "function") sgEditCommit();   // 資料夾編輯列開著:先照失焦送出,不然它擋住下面的 stratRefresh(true) 與結果卡
+  if (typeof sgEditCommit === "function") sgEditCommit(); if (typeof srnCommit === "function") srnCommit();   // 資料夾編輯列、策略改名列(stratrename.js)開著:先照失焦送出,不然它擋住下面的 stratRefresh(true) 與結果卡
   stratRefresh(true).catch(() => {}).then(tabBound(() => { if (typeof libTurnEnd === "function") libTurnEnd(); const rx = typeof rptTurnEnd === "function" ? rptTurnEnd(rt) : null; if (rt) resTurnParts(rt, rx); }));   // 策略庫的「用這支」:清單重讀完才知道有沒有多一支;重讀失敗也要收掉 pending
   // 連的是 Codex 但隨包那顆不能用:主行程刻意讓這一輪失敗(不會偷偷改跑 Claude)。講人話,不要丟代碼給用戶看
   const tail = r.errTail || "", code = r.code;

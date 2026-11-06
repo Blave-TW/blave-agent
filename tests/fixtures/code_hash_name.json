@@ -1,0 +1,90 @@
+{
+ "_doc": "lib/strategy.py code_hash, runtime/strategy_reporter.py code_hash, shell/main.js codeHash: src minus the column-0 `DISPLAY_NAME = \"…\"` lines rename() could have written (one string literal, optional comment; terminator included) must equal norm, byte for byte (UTF-8). Run by tests/check_strategy_rename.py and tests/check_shell_strategy_rename.js.",
+ "cases": [
+  {
+   "why": "plain LF",
+   "src": "STRATEGY_NAME = \"a\"\nDISPLAY_NAME = \"均線 A\"\nX = 1\n",
+   "norm": "STRATEGY_NAME = \"a\"\nX = 1\n"
+  },
+  {
+   "why": "CRLF, trailing comment",
+   "src": "A = 1\r\nDISPLAY_NAME = 'B'  # 名稱\r\nB = 2\r\n",
+   "norm": "A = 1\r\nB = 2\r\n"
+  },
+  {
+   "why": "CR only stays (line not after LF)",
+   "src": "A = 1\rDISPLAY_NAME = \"x\"\rB = 2\r",
+   "norm": "A = 1\rDISPLAY_NAME = \"x\"\rB = 2\r"
+  },
+  {
+   "why": "first line, no space before =",
+   "src": "DISPLAY_NAME=\"x\"\nA = 1\n",
+   "norm": "A = 1\n"
+  },
+  {
+   "why": "last line without terminator",
+   "src": "A = 1\nDISPLAY_NAME = \"x\"",
+   "norm": "A = 1\n"
+  },
+  {
+   "why": "BOM then name on line 1 stays",
+   "src": "﻿DISPLAY_NAME = \"x\"\nA = 1\n",
+   "norm": "﻿DISPLAY_NAME = \"x\"\nA = 1\n"
+  },
+  {
+   "why": "indented stays",
+   "src": "def f():\n    DISPLAY_NAME = \"x\"\n",
+   "norm": "def f():\n    DISPLAY_NAME = \"x\"\n"
+  },
+  {
+   "why": "longer identifier stays",
+   "src": "DISPLAY_NAME_EN = \"x\"\nA = 1\n",
+   "norm": "DISPLAY_NAME_EN = \"x\"\nA = 1\n"
+  },
+  {
+   "why": "annotated stays",
+   "src": "DISPLAY_NAME: str = \"x\"\n",
+   "norm": "DISPLAY_NAME: str = \"x\"\n"
+  },
+  {
+   "why": "expression line stays (not the shape rename writes)",
+   "src": "DISPLAY_NAME = \"a\" + B\nA = 1\n",
+   "norm": "DISPLAY_NAME = \"a\" + B\nA = 1\n"
+  },
+  {
+   "why": "two lines both go",
+   "src": "DISPLAY_NAME = \"a\"\nA = 1\nDISPLAY_NAME = \"b\"\n",
+   "norm": "A = 1\n"
+  },
+  {
+   "why": "absent: unchanged",
+   "src": "A = 1\n",
+   "norm": "A = 1\n"
+  },
+  {
+   "why": "tab before =",
+   "src": "DISPLAY_NAME\t= \"x\"\n",
+   "norm": ""
+  },
+  {
+   "why": "semicolon: real code on the same line stays",
+   "src": "DISPLAY_NAME = \"x\"; LEVERAGE = 3\nA = 1\n",
+   "norm": "DISPLAY_NAME = \"x\"; LEVERAGE = 3\nA = 1\n"
+  },
+  {
+   "why": "conditional expression stays",
+   "src": "DISPLAY_NAME = \"x\" if True else \"y\"\n",
+   "norm": "DISPLAY_NAME = \"x\" if True else \"y\"\n"
+  },
+  {
+   "why": "comment after the literal goes, even with ; inside it",
+   "src": "DISPLAY_NAME = \"x\"  # a; b = 2\nA = 1\n",
+   "norm": "A = 1\n"
+  },
+  {
+   "why": "escaped quote is not the shape rename writes: stays",
+   "src": "DISPLAY_NAME = \"a\\\"b\"\n",
+   "norm": "DISPLAY_NAME = \"a\\\"b\"\n"
+  }
+ ]
+}

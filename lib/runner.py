@@ -300,13 +300,13 @@ def _write_preview(out_dir, preview, src0):
         if preview is not None:
             _write_json_atomic(path, preview)
             return
-        from lib.strategy import code_hash
+        from lib.strategy import hash_matches
         try:
             with open(path, encoding='utf-8') as f:
                 kept = json.load(f).get('code_hash')
         except (OSError, ValueError, AttributeError):
             kept = None
-        if src0 is None or kept != code_hash(src0):
+        if src0 is None or not hash_matches(src0, kept):
             path.unlink(missing_ok=True)
     except Exception as e:
         logging.warning("backtest preview not written: %s", e)
@@ -503,8 +503,8 @@ def _exec_test_kept(out_dir, src0):
     except Exception as e:  # no file yet, or a half-written one — nothing to keep
         logging.debug("exec_test carry-over skipped: %s", e)
         return None
-    from lib.strategy import code_hash
-    if isinstance(old, dict) and old.get('code_hash') == code_hash(src0):
+    from lib.strategy import hash_matches
+    if isinstance(old, dict) and hash_matches(src0, old.get('code_hash')):
         return old
     return None
 
@@ -818,16 +818,17 @@ def _version_fields(stats):
     }
 
 
-def _same_code_version(idx, items, digest):
+def _same_code_version(idx, items, src):
     """Which stored version this code already is, or None (canon §2, same code mints nothing).
     `current` first: a pre-rule history can hold the same hash several times (a re-run with no
     edit used to mint again — v3 and v6 identical), and after restoring v3 its own re-run must
     stay on v3, not jump to v6. Otherwise the highest-numbered match."""
+    from lib.strategy import hash_matches
     cur = idx.get('current')
     for i in items:
-        if i.get('n') == cur and i.get('code_hash') == digest:
+        if i.get('n') == cur and hash_matches(src, i.get('code_hash')):
             return cur
-    hits = [i.get('n') for i in items if i.get('code_hash') == digest and isinstance(i.get('n'), int)]
+    hits = [i.get('n') for i in items if hash_matches(src, i.get('code_hash')) and isinstance(i.get('n'), int)]
     return max(hits) if hits else None
 
 
@@ -929,7 +930,7 @@ def _mint_version(config, stats, mode, src=None):
     with versions_lock(name):
         idx   = _index_for_mint(Path(vdir))
         items = [i for i in (idx.get('items') or []) if isinstance(i, dict)]
-        same  = _same_code_version(idx, items, digest)
+        same  = _same_code_version(idx, items, src)
         if same is not None:
             if idx.get('current') != same or idx.get('last_note') != note:
                 _write_json_atomic(vdir / 'index.json',
@@ -988,12 +989,12 @@ def _superseded(config, src0):
         # was still importing — same ghost as below
         return bool(config.get('__file__'))
     expect = os.environ.get('BLAVE_EXPECT_CODE_HASH')
-    if expect:
-        from lib.strategy import code_hash
-        if code_hash(src0) != expect:
-            return True
+    from lib.strategy import code_hash, hash_matches
+    if expect and not hash_matches(src0, expect):
+        return True
     try:
-        return Path(config['__file__']).read_bytes() != src0
+        # a rename landing mid-run is not an edit: same code, same numbers
+        return code_hash(Path(config['__file__']).read_bytes()) != code_hash(src0)
     except OSError:
         return True
 
@@ -1056,7 +1057,7 @@ def _drift_flag(config, mode):
     backtests the funded original side by side with its fork, and a gate there breaks it."""
     if mode == 'backtest' or not config.get('__file__'):
         return
-    from lib.strategy import code_hash, load_index, versions_dir
+    from lib.strategy import code_hash, hash_matches, load_index, versions_dir
     name  = config['STRATEGY_NAME']
     idx   = load_index(name) or {}
     items = [i for i in (idx.get('items') or []) if isinstance(i, dict)]
@@ -1064,16 +1065,17 @@ def _drift_flag(config, mode):
         return  # never versioned on this machine (older config) — nothing to compare against
     # the version `current` points at, not the last entry: after a restore they differ
     current = next((i for i in items if i.get('n') == idx.get('current')), items[-1])
-    digest  = code_hash(Path(config['__file__']).read_bytes())
+    src     = Path(config['__file__']).read_bytes()
+    digest  = code_hash(src)
     path    = versions_dir(name) / 'drift.json'
-    if digest != current.get('code_hash'):
+    if not hash_matches(src, current.get('code_hash')):
         # a restore may have written the file after the index was read above: read it again
         # before flagging, or the flag lands after restore removed it
         idx2  = load_index(name) or {}
         items2 = [i for i in (idx2.get('items') or []) if isinstance(i, dict)]
         if items2:
             current = next((i for i in items2 if i.get('n') == idx2.get('current')), items2[-1])
-    if digest == current.get('code_hash'):
+    if hash_matches(src, current.get('code_hash')):
         try:
             os.remove(path)
         except OSError:
@@ -1085,6 +1087,13 @@ def _drift_flag(config, mode):
                 return
     except (OSError, ValueError):
         pass
+    from lib.strategy import rekey_current
+    if rekey_current(name, src):   # renamed in chat, current minted before the name stopped counting
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        return
     _write_json_atomic(path, {'code_hash': digest, 'version': current.get('n'),
                               'at': int(time.time())})
 

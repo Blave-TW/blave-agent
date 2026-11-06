@@ -1401,7 +1401,7 @@ const ENV_API = ["tradeStatus", "listStrategies", "loadStrategy", "tradeEquity",
 /* 雲端送得出去的指令:**只開真的有 UI 在用的**(稽核 S-2)。`amounts` = 雲端填金額(S4);`delete_strategy` = 雲端側欄的刪除;
    `credentials_remove` / `retest_accounts` = 雲端設定分頁(S5)。`credentials` 永遠不在這裡:金鑰只走主行程專用的 cloud-connect。
    沒有 `update` / `restart_reconciler`:用本機 app 不觸發雲端 agent 回合(Wei 09-22)。主行程還會再擋一次(CLOUD_SHIPPED,兩份逐項相等)。 */
-const ENV_CLOUD_CMDS = ["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "close_then_unbind", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"];
+const ENV_CLOUD_CMDS = ["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "close_then_unbind", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel", "rename_strategy"];
 function envApi(env, host) {
   if (env !== "cloud") { const o = { env: "local" }; ENV_API.forEach((k) => { o[k] = (...a) => host[k](...a); });
     /* 事件清單兩個視角同一個形狀 { code, events }。這台電腦永遠是 OK:那是本機檔案,檔不在就是真的沒發生過事
@@ -1440,9 +1440,10 @@ function envApi(env, host) {
 function envCloudList(st) {
   const a = st && st.cloud && Array.isArray(st.cloud.strategies) ? st.cloud.strategies : [];
   return a.filter((x) => x && typeof x.name === "string" && x.name).map((x) => ({
-    name: x.name, displayName: typeof x.display_name === "string" && x.display_name ? x.display_name : x.name,
+    name: x.name, displayName: (typeof srnShown === "function" ? srnShown : (n, d) => d)(x.name, typeof x.display_name === "string" && x.display_name ? x.display_name : x.name),
     hasBacktest: x.has_backtest === true, mtime: x.updated_at == null ? null : x.updated_at, sig: typeof x.sig === "string" && x.sig ? x.sig : null, remote: true,
-    symbol: typeof x.symbol === "string" && x.symbol ? x.symbol : null, portfolio: x.is_portfolio === true, srcMarket: typeof x.market === "string" ? x.market : null }));
+    symbol: typeof x.symbol === "string" && x.symbol ? x.symbol : null, portfolio: x.is_portfolio === true, srcMarket: typeof x.market === "string" ? x.market : null,
+    renamable: x.renamable === true }));   // 主機的 lib 會改名(runtime 報告的 renamable;舊主機沒有 = 不出〔改名〕)
 }
 /* 雲端那一邊現在是哪一種(主行程 cloud.js 的 code + machine.state):
    loading(還沒問到)| signedOut(沒登入 / 舊登入沒有 app 專用密鑰 / 憑證被撤銷——都要登入才看得到)| unreach(還沒成功讀到過)|

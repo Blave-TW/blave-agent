@@ -119,7 +119,10 @@ pv = backtest(lambda h: (CLOSE.copy(), OPEN.copy()))
 # ── the reporter forwards it while the code matches, and only for a picked strategy without live weights
 import portfolio_reporter as pr  # noqa: E402
 
-check(pr._code_hash(b"x = 1\n") == code_hash(b"x = 1\n"), "runtime hash = lib.strategy.code_hash")
+import strategy_reporter as _sr  # noqa: E402  the runtime's copy (portfolio_reporter._same_code compares with it)
+_src = b'x = 1\nDISPLAY_NAME = "n"\n'
+check(_sr.code_hash(_src) == code_hash(_src) and pr._same_code(_src, code_hash(_src)),
+      "runtime hash = lib.strategy.code_hash (the DISPLAY_NAME line left out on both)")
 cfg = {"amounts": {"pf": 1000000.0}}
 # report clock: the bar after the preview's has not closed yet (crypto-style UTC daily labels)
 NOW_PV = datetime(1970, 1, 1) + timedelta(seconds=pv["bar_at"], days=1, hours=9)

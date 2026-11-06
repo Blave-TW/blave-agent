@@ -171,6 +171,7 @@ function sgHeadPaint() {
    開著時 SG.editing 擋住三條重建路(stratRefresh 的 sfBeforeRebuild、envPaintSide 的 sfCloudHold),結束時 sfFlushWaiters 補一次 */
 function sgEditOpen(sc, mode, gid) {
   if (SG.editing) sgEditEnd(false);
+  if (typeof srnCommit === "function") srnCommit();   // 策略改名列開著:照它的失焦規則收(stratrename.js)
   sgMenuClose(false);
   const box = sc.box(), groups = sc.groups();
   if (mode === "create" && groups.folders.length >= SG_MAX) return;

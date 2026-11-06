@@ -6925,25 +6925,32 @@ def _classify_rerun(tail):
 
 
 def _version_code_hash(name, n):
-    """v<n>.json's code_hash (lib.strategy.code_hash: sha256 of the file bytes, 16 hex), or None."""
+    """The hash v<n>'s re-run is pinned to (BLAVE_EXPECT_CODE_HASH), or None. A lib that renames
+    (strategy_reporter.lib_renames) wrote v<n>'s code back under the file's current DISPLAY_NAME
+    and its runner compares name-blind: the name-blind hash of the stored code. An older lib
+    wrote the bytes back as stored and compares exactly: the blob's own code_hash."""
+    import strategy_reporter
     try:
-        h = atomic_file.load_json(_versions_path(name, f"v{n}.json"), encoding="utf-8").get("code_hash")
+        blob = atomic_file.load_json(_versions_path(name, f"v{n}.json"), encoding="utf-8")
+        h, code = blob.get("code_hash"), blob.get("code")
     except (OSError, ValueError, AttributeError):
         return None
+    if strategy_reporter.lib_renames() and isinstance(code, str) and code:
+        return strategy_reporter.code_hash(code.encode("utf-8"))
     return h if isinstance(h, str) and h else None
 
 
 def _file_is_version(doc, name, n):
     """Does the strategy file still hold v<n>'s code? (what the re-run was asked to run)"""
-    import hashlib
+    import strategy_reporter
     script = doc.get("script") if isinstance(doc.get("script"), str) else ""
     want = _version_code_hash(name, n)
     try:
         with open(os.path.join(WORKSPACE, script), "rb") as f:
-            have = hashlib.sha256(f.read()).hexdigest()[:16]
+            have = f.read()
     except OSError:
         return False
-    return bool(script) and want is not None and have == want
+    return bool(script) and strategy_reporter.hash_matches(have, want)
 
 
 def _settle_rerun(name, pid, rc=None, err=None):
@@ -7140,6 +7147,100 @@ def _cmd_version_restore(args):
     return Deferred(_run)
 
 
+# ── 策略改名(spec strategy-rename-2026-11-05 §5)───────────────────────────────
+# `rename_strategy {name, display_name}`: the sidebar's 改名 on the web and the desktop (both
+# views), no agent turn. lib.strategy.rename in a workspace subprocess is the one implementation:
+# the name rules, the DISPLAY_NAME rewrite, re-spelling pre-rule version hashes under the versions
+# lock. Old lib (no STRATEGY_RENAME) → UPDATE_REQUIRED: its hash counts the name, so a rename
+# would flag a live strategy as edited and mint a copy on the next backtest. The report carries
+# `renamable` only when this would be accepted, so the page normally never sends it then.
+# TURN_RUNNING / JOB_RUNNING are the race the page's own lock leaves: an agent rewriting the file
+# from memory would undo the rename; a restore's re-run is pinned to the file it started on.
+_RENAME_DISPLAY_MAX = 400   # transport bound only; lib.strategy.name_problem is the rule (60)
+_RENAME_TIMEOUT_S = 60
+_RENAME_PY = (
+    "import json, sys\n"
+    "from lib.strategy import rename\n"
+    "try:\n"
+    "    out = {'ok': True, 'result': rename(sys.argv[1], json.loads(sys.argv[2]))}\n"
+    "except Exception as e:\n"
+    "    out = {'ok': False, 'code': getattr(e, 'restore_code', None) or 'FAILED',\n"
+    "           'error': f'{type(e).__name__}: {e}'[:300]}\n"
+    f"print({_RESTORE_MARK!r} + json.dumps(out))\n"
+)
+
+
+def _chat_turn_running():
+    """Any live turn slot but a scheduled report's (those never edit a strategy file, and run
+    for minutes — refusing every rename meanwhile would read as broken)."""
+    try:
+        names = os.listdir(turn_slots.SLOTS_DIR)
+    except OSError:
+        return False
+    for n in names:
+        p = os.path.join(turn_slots.SLOTS_DIR, n)
+        if not n.startswith("slot-") or turn_slots._is_stale(p):
+            continue
+        try:
+            with open(p, encoding="utf-8") as f:
+                surface = json.load(f).get("surface")
+        except (OSError, ValueError, AttributeError):
+            surface = None   # half-written or unreadable: count it
+        if surface != "report":
+            return True
+    return False
+
+
+def _cmd_rename_strategy(args):
+    """{"name": STRATEGY_NAME, "display_name": str} → result {display_name, changed}; refusals
+    raise "ValueError: <CODE>: …" with CODE in UPDATE_REQUIRED / TURN_RUNNING / JOB_RUNNING /
+    BAD_NAME / DUPLICATE / NOT_FOUND / NOT_LITERAL / BAD_ARGS / FAILED."""
+    if not isinstance(args, dict) or set(args) != {"name", "display_name"}:
+        raise ValueError("BAD_ARGS: rename_strategy takes exactly name and display_name")
+    name, value = args["name"], args["display_name"]
+    if not isinstance(name, str) or not _VERSION_RESTORE_NAME_RE.fullmatch(name):
+        raise ValueError("BAD_ARGS: bad strategy name")
+    if not isinstance(value, str) or len(value) > _RENAME_DISPLAY_MAX:
+        raise ValueError("BAD_NAME: display_name must be a short string")
+    import strategy_reporter
+    if not strategy_reporter.lib_renames():
+        raise ValueError("UPDATE_REQUIRED: this machine's blave-agent lib cannot rename a strategy "
+                         "— update blave-agent first")
+    if _chat_turn_running():
+        raise ValueError("TURN_RUNNING: a reply is still being written on this machine")
+
+    def _run():   # a workspace interpreter importing lib: seconds, not in front of halt
+        with _RESTORE_LOCK:   # not under a restore of the same file, and its re-run seen started
+            doc = _read_rerun_doc(name)
+            if doc and doc.get("status") == "running" and _rerun_pid_alive(name, doc.get("pid")):
+                raise ValueError("JOB_RUNNING: this strategy's backtest is re-running")
+            try:
+                r = subprocess.run([_workspace_python(), "-c", _RENAME_PY, name, json.dumps(value)],
+                                   cwd=WORKSPACE, env=_strategy_subprocess_env("backtest"),
+                                   capture_output=True, encoding="utf-8", errors="replace",
+                                   timeout=_RENAME_TIMEOUT_S, **_child_kw())
+            except subprocess.TimeoutExpired:
+                raise ValueError(f"FAILED: rename did not finish within {_RENAME_TIMEOUT_S}s")
+        line = next((x for x in reversed((r.stdout or "").splitlines()) if x.startswith(_RESTORE_MARK)), None)
+        try:
+            out = json.loads(line[len(_RESTORE_MARK):]) if line else None
+        except ValueError:
+            out = None
+        if not isinstance(out, dict):
+            raise ValueError(f"FAILED: rename exited {r.returncode} — {_tail(r.stderr, 200)}")
+        if not out.get("ok"):
+            code = out.get("code") if isinstance(out.get("code"), str) and out.get("code").isupper() else "FAILED"
+            raise ValueError(f"{code}: {out.get('error') or 'rename refused'}")
+        res = out.get("result") if isinstance(out.get("result"), dict) else {}
+        if res.get("changed"):
+            _push(_ON_APPLIED, "rename")
+        shown = res.get("display_name")
+        return {"display_name": shown if isinstance(shown, str) else value.strip(),
+                "changed": res.get("changed") is True}
+
+    return Deferred(_run)
+
+
 # ── 更新績效(performance refresh)────────────────────────────────────────────────
 # `stats_refresh {names: [...]}`: the workspace's 更新績效 button (one name) and the manager
 # table's chip (every stale member), no agent turn; every Type A/C strategy with a stats.json,
@@ -7306,18 +7407,20 @@ def _deployed_names():
 
 def _refresh_plan(name):
     """(code_hash, None) when re-running an undeployed strategy's backtest is a refresh — the
-    file equals a stored version (canon §2 mints nothing), or the strategy has no versions yet
-    (that backtest mints v1: a first version, not an edit); the hash (lib.strategy code_hash:
-    sha256 of the bytes, 16 hex) pins the run. (None, skip code) otherwise: CODE_CHANGED = the
+    file equals a stored version (canon §2 mints nothing; either hash form, the DISPLAY_NAME line
+    not counting), or the strategy has no versions yet (that backtest mints v1: a first version,
+    not an edit); the raw hash (sha256 of the bytes, 16 hex) pins the run. (None, skip code) otherwise: CODE_CHANGED = the
     file equals none of an existing history (edited since the last backtest, the run would mint);
     INDEX_BROKEN = the index is there but unreadable, or an entry has no code_hash, so nothing
     can be told; NOT_RUNNABLE = the file itself cannot be read."""
-    import hashlib
+    import strategy_reporter
     try:
         with open(os.path.join(WORKSPACE, "strategies", name, "strategy.py"), "rb") as f:
-            have = hashlib.sha256(f.read()).hexdigest()[:16]
+            src = f.read()
     except OSError:
         return None, "NOT_RUNNABLE"
+    # the raw hash pins the run: every runner takes it (a renaming one compares either form)
+    have = strategy_reporter.raw_code_hash(src)
     try:
         items = atomic_file.load_json(_versions_path(name, "index.json"), encoding="utf-8").get("items") or []
         if not isinstance(items, list):
@@ -7327,7 +7430,7 @@ def _refresh_plan(name):
     except (ValueError, AttributeError):
         return None, "INDEX_BROKEN"
     stored = [i.get("code_hash") if isinstance(i, dict) else None for i in items]
-    if not stored or have in stored:
+    if not stored or any(strategy_reporter.hash_matches(src, h) for h in stored):
         return have, None
     return None, "INDEX_BROKEN" if any(not isinstance(h, str) or not h for h in stored) else "CODE_CHANGED"
 
@@ -7817,6 +7920,7 @@ HANDLERS = {
     "telegram_reset": _cmd_telegram_reset,
     "book_account_confirm": _cmd_book_account_confirm,
     "version_restore": _cmd_version_restore,
+    "rename_strategy": _cmd_rename_strategy,
     "stats_refresh": _cmd_stats_refresh,
 }
 # 群益 cloud connect (runtime/capital_connect.py): long steps come back as Deferred

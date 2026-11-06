@@ -14,9 +14,10 @@ const wsfile = require("./wsfile");
 // 在電腦版走別條路或還沒做);多開一個就是多一個 renderer 被攻破時能碰到的面。
 const UI_COMMANDS = new Set(["halt", "resume", "resume_wait", "amounts", "execution", "credentials", "credentials_remove", "close_then_unbind",
   "restart_reconciler", "retest_accounts", "close_all", "book_account_confirm", "version_restore", "stats_refresh",
-  "manage_optimize", "manage_backtest", "manage_cancel"]);
+  "manage_optimize", "manage_backtest", "manage_cancel", "rename_strategy"]);
 // manage_optimize 是 Deferred(腳本最長 120 秒才 ack),等 ack 的時間另給;雲端那條(main.js cloud-send)也用這一份
-const CMD_TIMEOUT_MS = { manage_optimize: 150000 };
+// rename_strategy:runtime 給改名子行程 60 秒(_RENAME_TIMEOUT_S;剛開 app 冷啟動 import numpy/pandas 可能好幾秒),再加排隊,等 90 秒
+const CMD_TIMEOUT_MS = { manage_optimize: 150000, rename_strategy: 90000 };
 // 只有主行程送得出的(send(…, { trusted: true })):設定 › Agent 規則的兩個寫入(shell/agentrules.js)。不放進 UI_COMMANDS:
 // renderer 的寫入必須經過 rules-save / reply-lang-save 那兩支 IPC——「規則檔讀不到就不寫」那道閘在那裡,通用的 trade-send 繞得過它;
 // api 的雲端白名單(CLOUD_COMMANDS = UI_COMMANDS + …,api/tests/check_desktop_cloud_command.py 釘住)也就不跟著變。
@@ -136,6 +137,10 @@ function argsOk(cmd, a, trusted) {
      版號同 main.js versionN。有金額的策略由機器端的 restore() 在動檔前拒絕,這一層只擋形狀 */
   if (cmd === "version_restore") return keys.length === 2 && typeof a.name === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(a.name)
     && Number.isInteger(a.n) && a.n > 0 && a.n <= 1000000;
+  /* 策略改名(renderer/stratrename.js):剛好 name + display_name。名字規則同 version_restore(= runtime _cmd_rename_strategy);
+     display_name 這一層只擋形狀,名稱規則(1–60 字、不收的字、包在 [ ] 裡、同名)由機器端 lib.strategy.rename 判 */
+  if (cmd === "rename_strategy") return keys.length === 2 && typeof a.name === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(a.name)
+    && typeof a.display_name === "string" && a.display_name.length <= 400;
   // 更新績效(renderer/perf.js):names,1–50 支、不重複,名字規則同 version_restore;成交測試那顆多帶 exec_test,只能是 true、只配一支
   // (= runtime _stats_refresh_args、api _stats_refresh_args_error)
   if (cmd === "stats_refresh") return keys.every((k) => k === "names" || k === "exec_test") && Array.isArray(a.names) && a.names.length >= 1 && a.names.length <= 50

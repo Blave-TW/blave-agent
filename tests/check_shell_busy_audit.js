@@ -48,7 +48,10 @@ ok("B1 my_strategies/x 不算", !has({ type: "tool", kind: "file_read", summary:
   fs.writeFileSync(path.join(sd, "strategy.py"), code);
   const main = fs.readFileSync(path.join(SH, "main.js"), "utf8"), load = fnOf(main, "loadStrategy");
   // loadStrategy 回傳時讀的其他欄位不是這裡的事:沒列的名字一律給空函式
-  const env = (scan, wf) => new Proxy({ fs, path, crypto, stratNames: () => [name], STRAT_DIR: () => dir, readResultJson: (p) => (/scan\.json/.test(p) ? scan : wf) }, { has: (o, k) => k in o || !(k in globalThis), get: (o, k) => (k in o ? o[k] : k === Symbol.unscopables ? undefined : () => null) });
+  // 比對用 main.js 的 codeHashMatches(改名不算改碼,lib 同一份定義;tests/check_shell_strategy_rename.js)
+  const hashSrc = ["HASH_NAME_LINE_RE", "sha16", "codeHash", "codeHashMatches"].map((k) => { const m = new RegExp("^const " + k + " = [^\\n]*", "m").exec(main); return m ? m[0] + "\n" : ""; }).join("");
+  const { codeHashMatches } = new Function("crypto", hashSrc + "return { codeHashMatches };")(crypto);
+  const env = (scan, wf) => new Proxy({ fs, path, crypto, codeHashMatches, stratNames: () => [name], STRAT_DIR: () => dir, readResultJson: (p) => (/scan\.json/.test(p) ? scan : wf) }, { has: (o, k) => k in o || !(k in globalThis), get: (o, k) => (k in o ? o[k] : k === Symbol.unscopables ? undefined : () => null) });
   const run = (scan, wf) => new Function("env", `with (env) { ${load}\n return loadStrategy; }`)(env(scan, wf))(name);
   const a = run({ code_hash: "deadbeefdeadbeef" }, { code_hash: h }), b = run({ x: 1 }, null);
   ok("B2 主行程:code_hash 跟現在的檔不同 → scan 標 code_stale;相同不標;沒帶(舊機器的檔)不標", a.scan.code_stale === true && a.wf.code_stale !== true && b.scan.code_stale !== true, [a.scan, a.wf, b.scan]);

@@ -1471,11 +1471,13 @@ function p1StratLabel(code) {
   catch (_) { return code; }
 }
 function listStrategies() {
+  const renamable = libRenames(path.dirname(STRAT_DIR()));   // 每支都一樣:workspace 的 lib 會不會改名(側欄〔改名〕出不出)
   return stratNames().map((name) => {
     const dir = path.join(STRAT_DIR(), name);
     const statsPath = path.join(dir, "stats.json");
-    let mtime = 0;
-    try { mtime = fs.statSync(path.join(dir, "strategy.py")).mtimeMs; } catch (_) {}
+    let mtime = 0, cTime = 0;
+    // ctime 只進快取的 key:改名(lib.strategy.rename)把 mtime 還原、順序不動,顯示名還是要重讀
+    try { const st = fs.statSync(path.join(dir, "strategy.py")); mtime = st.mtimeMs; cTime = st.ctimeMs; } catch (_) {}
     let sMtime = 0;
     try { sMtime = fs.statSync(statsPath).mtimeMs; } catch (_) {}
     // scan.json 只影響「最近動過」的時間(renderer 靠 mtime 變了才重載):只掃參數、沒重跑回測的那一輪也要算動過
@@ -1486,9 +1488,12 @@ function listStrategies() {
     try { wfMtime = fs.statSync(path.join(dir, "wf.json")).mtimeMs; } catch (_) {}
     const touched = Math.max(mtime, sMtime, scMtime, wfMtime);
     // 三個 mtime 分開交出去:聊天結果卡要分得出這一輪動的是程式碼、回測還是掃描(renderer/results.js)
-    const parts = { codeMtime: mtime, statsMtime: sMtime, scanMtime: scMtime, wfMtime, version: stratVersionNow(dir) };
+    // jobRunning:還原後的背景重跑或更新績效還在跑(側欄〔改名〕停用;沒開著的那支也要看得到)
+    const pf = stratPerf(dir), rr = stratRerun(path.join(dir, "versions"));
+    const jobRunning = (!!rr && rr.status === "running") || (!!pf && !!pf.refresh && pf.refresh.status === "running");
+    const parts = { codeMtime: mtime, statsMtime: sMtime, scanMtime: scMtime, wfMtime, version: stratVersionNow(dir), renamable, jobRunning };
     const hit = stratCache.get(name);
-    if (hit && hit.mtime === sMtime && hit.cMtime === mtime) return { ...hit.summary, ...parts, mtime: touched };
+    if (hit && hit.mtime === sMtime && hit.cMtime === mtime && hit.cTime === cTime) return { ...hit.summary, ...parts, mtime: touched };
     let displayName = null;
     try { displayName = stratMeta(fs.readFileSync(path.join(dir, "strategy.py"), "utf8")).displayName; } catch (_) {}
     let summary = { name, displayName, hasBacktest: false, sharpe: null, annReturn: null, totalReturn: null, maxDrawdown: null, generatedAt: null };
@@ -1501,7 +1506,7 @@ function listStrategies() {
         tm().track("first_backtest_done");   // 每個安裝只會送出一次(telemetry.js 自己記)
       } catch (_) { /* 寫到一半或壞掉:當成還沒有回測 */ }
     }
-    stratCache.set(name, { mtime: sMtime, cMtime: mtime, summary });
+    stratCache.set(name, { mtime: sMtime, cMtime: mtime, cTime, summary });
     return { ...summary, ...parts, mtime: touched };
   }).sort(stratOrder);
 }
@@ -1552,8 +1557,8 @@ function loadStrategy(name) {
   const scan = readResultJson(path.join(dir, "scan.json")), wf = readResultJson(path.join(dir, "wf.json"));
   let codeBuf = null;
   try { codeBuf = fs.readFileSync(path.join(dir, "strategy.py")); code = codeBuf.toString("utf8"); } catch (_) {}
-  // 掃描／樣本外是哪一版碼跑的(lib 寫的 code_hash = lib.strategy.code_hash):跟現在的檔不同就不是這份碼的結論,畫面照過時畫
-  if (codeBuf) { const h = crypto.createHash("sha256").update(codeBuf).digest("hex").slice(0, 16); for (const r of [scan, wf]) if (r && typeof r.code_hash === "string" && r.code_hash !== h) r.code_stale = true; }
+  // 掃描／樣本外是哪一版碼跑的(lib 寫的 code_hash = lib.strategy.code_hash):跟現在的檔不同就不是這份碼的結論,畫面照過時畫。改名不算改碼
+  if (codeBuf) for (const r of [scan, wf]) if (r && typeof r.code_hash === "string" && !codeHashMatches(codeBuf, r.code_hash)) r.code_stale = true;
   return { name, stats, scan, wf, code, dataSources: stratDataSources(dir), missingSources: stratMissingSources(dir), versions: stratVersions(dir), perf: stratPerf(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir) };
 }
 /* 績效的新鮮度(renderer/perf.js 的「更新績效」),形狀同 runtime strategy_reporter._read_perf:{ at, refresh? },沒有 stats.json = null。
@@ -1664,6 +1669,23 @@ function libRestoreInPlace(ws) {
   libRestoreCache.set(p, { key, ok });
   return ok;
 }
+// = runtime strategy_reporter.lib_renames:lib 的 code_hash 不算 DISPLAY_NAME、restore 保留名字、rename() 在。沒有就不出〔改名〕
+const libRenamesCache = new Map();
+function libRenames(ws) {
+  const p = path.join(ws, "lib", "strategy.py");
+  let st = null; try { st = fs.statSync(p); } catch (_) { libRenamesCache.delete(p); return false; }
+  const key = st.mtimeMs + ":" + st.size, hit = libRenamesCache.get(p);
+  if (hit && hit.key === key) return hit.ok;
+  let ok = false; try { ok = /^STRATEGY_RENAME\s*=\s*1\b/m.test(fs.readFileSync(p, "utf8")); } catch (_) { ok = false; }
+  libRenamesCache.set(p, { key, ok });
+  return ok;
+}
+/* = lib/strategy.py code_hash / hash_matches(tests/fixtures/code_hash_name.json 三邊同跑):行首 `DISPLAY_NAME = "…"` 那一行(只認改名寫得出的形狀:一個字串字面值、可帶註解;同一行還有別的碼就照算)連行尾一起拿掉再算,
+   改名不算改碼;舊 lib 寫的戳記是整檔原始 bytes 的 hash,兩種都認。latin1 一個 byte 對一個字元,正則照 bytes 走 */
+const HASH_NAME_LINE_RE = /(?:^|(?<=\n))DISPLAY_NAME[ \t]*=[ \t]*(?:"[^"\\\r\n]*"|'[^'\\\r\n]*')[ \t]*(?:#[^\r\n]*)?(?:\r\n|\n|\r|$)/g;
+const sha16 = (buf) => crypto.createHash("sha256").update(buf).digest("hex").slice(0, 16);
+const codeHash = (buf) => sha16(Buffer.from(buf.toString("latin1").replace(HASH_NAME_LINE_RE, ""), "latin1"));
+const codeHashMatches = (buf, stored) => typeof stored === "string" && (stored === codeHash(buf) || stored === sha16(buf));
 function stratRerun(vdir) {
   let d = null; try { d = JSON.parse(fs.readFileSync(path.join(vdir, "rerun.json"), "utf8")); } catch (_) { return null; }
   if (!d || typeof d !== "object" || Array.isArray(d)) return null;
@@ -3997,7 +4019,7 @@ app.whenReady().then(() => {
   const CLOUD_ONLY = require("./cloudcmd").CLOUD_ONLY_COMMANDS;
   // 沒有 update:用本機 app 不觸發雲端 agent 回合(Wei 09-22),雲端更新改由本機 agent 經 MCP 去做。
   // 沒有 restart_reconciler:主機重開後對帳器停著的情況,機器端的 resume / resume_wait 自己會把它起來(command_listener._start_after_restart_stop)
-  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "close_then_unbind", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel"];
+  const CLOUD_SHIPPED = ["halt", "close_all", "resume", "resume_wait", "amounts", "execution", "delete_strategy", "credentials_remove", "close_then_unbind", "retest_accounts", "book_account_confirm", "version_restore", "stats_refresh", "manage_optimize", "manage_backtest", "manage_cancel", "rename_strategy"];
   handle("cloud-send", async (_e, cmd, args, requestId) => {
     if (typeof cmd !== "string" || cmd === "credentials" || !(require("./daemon").UI_COMMANDS.has(cmd) || CLOUD_ONLY.indexOf(cmd) >= 0) || CLOUD_SHIPPED.indexOf(cmd) < 0) return cloudDenied;
     const rid = typeof requestId === "string" && require("./cloudcmd").REQUEST_ID_RE.test(requestId) ? requestId : null;
