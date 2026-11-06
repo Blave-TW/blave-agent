@@ -648,12 +648,22 @@ TC odd-lot), 0-based:
   (stock `N` rows)
 - 23 date, 24 time (HH:MM:SS), 30 exchange seq (`1010/2110...`=委託, `1020/2120...`=成交),
   32/33 futures: series+month (`FITM`,`202608`), 38 成交編號 (`D` rows only),
-  45 KeyNo, 46 time with milliseconds
+  45 KeyNo, 46 time with milliseconds (as seen on 2.13.58)
+
+**The seq column moves between component versions — match it by value, never by index.** On
+2.13.58 (8/14) the 13-digit seq sat at idx45. On 2.13.59 idx45 is empty on fill rows (the manual
+lists SeqNo at idx47); the 10-30 live fill row had 49 fields with 13-digit values at idx30 and
+idx47. `lib/order_capital` books a `D` row under every 13-digit numeric field it carries, and the
+`order_filled` audit's `seq_idx` says which column held our seq. A report of more lots than were
+sent is never booked as reported: `manager/reconciler` parks the whole send and trips HALT (only
+the lots sent can be claimed later, on an account read that moved by exactly that much), and
+`close_position_partial` returns flatten's close as `sent` with 0 lots, so the close is held and
+the account read settles it.
 
 **Two consumer-side rules (both live-observed):** ① `SKReplyLib_ConnectByID` **replays every
 report from the whole session day** on each connect — a fresh process re-receives this morning's
 fills; ② stock (`TS`) reports arrived **duplicated** (same row delivered twice back-to-back).
-Any consumer MUST dedupe on (KeyNo idx45, type idx2, exchange seq idx30) before acting.
+Any consumer MUST dedupe on (the row's 13-digit seqs, type idx2, exchange seq idx30) before acting.
 
 ---
 

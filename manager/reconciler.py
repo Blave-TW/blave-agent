@@ -595,9 +595,13 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
         _capital_sent_at[root] = time.time()
     got = float(result.get('fill_qty') or 0)
     requested = lots if action == 'buy' else -lots
-    parked = True
+    if got > lots + 1e-9:
+        _capital_overfill(symbol, root, result, lots, requested, base, intent)
+        return False
+    parked, park_id = True, None
     if got + 1e-9 < lots or row is not None:
-        parked = _capital_park(root, result, requested, base, intent) is not False
+        park_id = _capital_park(root, result, requested, base, intent)
+        parked = park_id is not False
     if result.get('status') != 'filled' or got + 1e-9 < lots:
         # P1 (notifications.md 下單失敗 row): order_errors.json is diffed by the platform into an
         # order_error event — workspace, TG, email. Under self_ledger the book counts only `got`;
@@ -622,7 +626,10 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
                    f"沒成交會照訊號再送，不用自己補單。")
         if result.get('error'):
             msg += f"（{result['error']}）"
-        _record_order_error(symbol, venue_traits.CAPITAL, msg, extra={'kind': KIND_NO_REPORT})
+        extra = {'kind': KIND_NO_REPORT}
+        if isinstance(park_id, str):
+            extra['park_id'] = park_id  # the claim releases this row (lib.portfolio.mark_park_released)
+        _record_order_error(symbol, venue_traits.CAPITAL, msg, extra=extra)
     return {
         'avg_price':       result.get('avg_fill_price') or 0.0,
         'executed_qty':    result.get('fill_qty') or 0.0,
@@ -631,6 +638,40 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
         'status':          result.get('status'),
         'sent_qty':        lots,  # no sent_symbol: a 'sent' only names the alias (TM0000)
     }
+
+
+def _capital_overfill(symbol, root, result, lots, requested, base, intent):
+    """A report of more lots than were sent can only be a misread report (a column that moved, a
+    row counted under another order's seq): booking it sizes the book off a number the account
+    never held. Not booked; HALT; the whole send parked so the account read settles what did fill.
+    The HALT is the P1 (notifications.md): no order_errors row beside it."""
+    got = float(result.get('fill_qty') or 0)
+    seq = result.get('seq_no') or '?'
+    if _en():
+        # the api keeps 200 characters of a halt reason (_halt_words): the seq stays in audit and log
+        msg = (f"Capital reported {got:g} lots filled on {symbol}, more than the {lots} sent. All trading "
+               f"paused, closes and stops too. Check the {symbol} position in the Capital app, close any "
+               f"extra lots, then press Release pause.")
+    else:
+        msg = (f"群益回報 {symbol} 成交 {got:g} 口，比送出的 {lots} 口多（序號 {seq}）。Blave 沒有記這筆。"
+               f"自動下單已全部暫停，平倉與停損也不會送。到群益下單軟體核對 {symbol} 部位，"
+               f"多出的口數先平掉，再按「解除暫停」。")
+    guard.audit('order_overfill_refused', venue=venue_traits.CAPITAL, symbol=root, lots=lots, fill_qty=got,
+                seq_no=result.get('seq_no'))
+    logging.error(f"[reconciler/capital] {root}: {got:g} lots reported filled for a {lots}-lot order — "
+                  f"not booked, parked, HALT")
+    try:
+        guard.trip_halt(msg, 'reconciler')
+    except Exception as e:
+        logging.error(f"[reconciler/capital] HALT file not written ({e}) — halted in this process")
+    finally:
+        # parked as 'sent' with 0 filled: broker_ack holds the clear for QUEUED_HOLD_S while the worker
+        # catches up, so a real fill is adopted rather than cleared and re-sent after 解除暫停; halted
+        # keeps the claim from tripping a second HALT over this reason
+        if _capital_park(root, dict(result, fill_qty=0.0, status='sent'), requested, base, intent,
+                         halted=True) is False:
+            logging.error(f"[reconciler/capital] {root}: the overfilled send is not parked — "
+                          f"check {root} in the Capital app before releasing the HALT")
 
 
 # ── 群益 parked sends ─────────────────────────────────────────────────────────
@@ -708,11 +749,12 @@ def _note_capital_pending_unreadable(root, err):
                         extra={'kind': KIND_TW_HOLD})
 
 
-def _capital_park(root, result, requested, base, intent=None):
+def _capital_park(root, result, requested, base, intent=None, halted=False):
     """`requested` signed lots, `base` {contract: net} read before the send (None: unknown —
     the row can then only end in the PENDING_SENT_MAX_READS HALT). The unfilled part is parked;
-    a fill on a root already parked moves the row's expectation. False = the park file could not
-    be read, so nothing claims this send later."""
+    a fill on a root already parked moves the row's expectation. Returns the row's park id (None:
+    no row), False = the park file could not be read, so nothing claims this send later.
+    halted=True: the send already tripped HALT — the claim adopts or clears it, never re-trips."""
     filled = float(result.get('fill_qty') or 0) * (1 if requested > 0 else -1)
     unfilled = requested - filled
     code = str(result.get('symbol') or '').strip().upper()
@@ -727,13 +769,17 @@ def _capital_park(root, result, requested, base, intent=None):
     row = pending.get(root)
     booked = _row_booked(key, row) if row is not None else False
     if booked:
+        old_id = _park_id(key, row)
         guard.audit('late_fill_already_booked', venue=venue_traits.CAPITAL, symbol=root,
-                    lots=row.get('lots'), park_id=_park_id(key, row))
+                    lots=row.get('lots'), park_id=old_id)
+        from lib import portfolio
+        portfolio.mark_park_released(old_id, True)
         row = None
     elif booked is None:
         _halt_unknown_booked(root, root, row, venue_traits.CAPITAL, key)
     if not unfilled and (row is None or row.get('halted')):
-        return True  # a halted row keeps its lots and baseline (as 統一's): the user is sorting it out
+        # a halted row keeps its lots and baseline (as 統一's): the user is sorting it out
+        return None if row is None else _park_id(key, row)
     if row is None or row.pop('halted', None):
         row = {'root': root, 'lots': 0.0, 'legs': (row or {}).get('legs', []), 'reads': [],
                'months_expected': None if base is None else dict(base)}
@@ -761,9 +807,11 @@ def _capital_park(root, result, requested, base, intent=None):
                     status=result.get('status'), seq_no=result.get('seq_no'))
         logging.warning(f"[reconciler/capital] {root}: {unfilled:+g} lots reported no fill in time — "
                         f"parked; no {root} entry until a read claims it")
+    if halted:
+        row['halted'] = True
     pending[root] = row
     _save_capital_pending(pending)
-    return True
+    return _park_id(key, row)
 
 
 def _capital_claim_pending(started):
@@ -801,12 +849,15 @@ def _capital_claim_pending(started):
             save()
             guard.audit('late_fill_already_booked', venue=venue_traits.CAPITAL, symbol=root, lots=lots,
                         park_id=park_id)
+            portfolio.mark_park_released(park_id, True)
         elif moved is not None and len(moved) == 1 and abs(next(iter(moved.values())) - lots) < 1e-9:
             contract = next(iter(moved))
-            booked = _book_late_fill_or_halt('群益', root, venue_traits.CAPITAL, contract, lots, park_id, seqs)
+            took = _book_late_fill_or_halt('群益', root, venue_traits.CAPITAL, contract, lots, park_id, seqs)
             del pending[root]
             save()
-            if booked is None:  # sent before an unbind emptied this book: the user's now, not booked
+            # dropped after reset: the lots did fill, they are the user's now (not in the book)
+            portfolio.mark_park_released(park_id, True)
+            if took is None:  # sent before an unbind emptied this book: the user's now, not booked
                 guard.audit('late_fill_dropped_after_reset', venue=venue_traits.CAPITAL, symbol=root,
                             contract=contract, lots=lots, legs=row['legs'], park_id=park_id)
             else:
@@ -823,6 +874,7 @@ def _capital_claim_pending(started):
             save()
             guard.audit('unfilled_order_cleared', venue=venue_traits.CAPITAL, symbol=root, lots=lots,
                         legs=row['legs'])
+            portfolio.mark_park_released(park_id, False)
             logging.info(f"[reconciler/capital] {root}: the {lots:+g} lots did not fill (account "
                          f"unchanged) — cleared, the next diff may send again")
         elif row.get('halted'):
@@ -832,6 +884,7 @@ def _capital_claim_pending(started):
             save()
             guard.audit('parked_order_dropped', venue=venue_traits.CAPITAL, symbol=root, lots=lots,
                         legs=row['legs'])
+            portfolio.mark_park_released(park_id, False)
             logging.warning(f"[reconciler/capital] {root}: HALT cleared with {lots:+g} parked lots still "
                             f"unexplained — dropped as the user's; entries resume")
         else:
@@ -1208,10 +1261,10 @@ def _president_claim_pending(started):
                         contract=pid, lots=lots, park_id=park_id)
             logging.info(f"[reconciler/president] {pid}: park {park_id} is already in the book — row dropped")
         elif abs(net - (expected + lots)) < 1e-9:
-            booked = _book_late_fill_or_halt('統一', root, venue_traits.PRESIDENT, pid, lots, park_id, _row_ordernos(row))
+            took = _book_late_fill_or_halt('統一', root, venue_traits.PRESIDENT, pid, lots, park_id, _row_ordernos(row))
             del pending[pid]
             _save_claimed(pending, venue_traits.PRESIDENT)
-            if booked is None:  # sent before an unbind emptied this book: the user's now, not booked
+            if took is None:  # sent before an unbind emptied this book: the user's now, not booked
                 guard.audit('late_fill_dropped_after_reset', venue=venue_traits.PRESIDENT, symbol=root,
                             contract=pid, lots=lots, legs=row['legs'], park_id=park_id)
             else:
