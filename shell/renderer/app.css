@@ -658,7 +658,9 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 
 /* ── 策略報告的骨架(分頁內容由 report-*.css 各自負責)──── */
 .rp { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.rp-head { flex: none; min-width: 0; padding: var(--space-16) var(--space-24) var(--space-12); display: flex; align-items: flex-start; gap: var(--space-16); }
+.rp-head { flex: none; min-width: 0; padding: var(--space-16) var(--space-24) var(--space-12); display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 var(--space-16); }
+/* 說明下一行那一格與搬家的鈕列、並排表:橫跨整個頁首(動作槽那一列下面) */
+.rp-head > .rp-ho-note, .rp-head > .rp-ho-acts, .rp-head > .rp-ho-cmp { flex: 0 0 100%; min-width: 0; }
 .rp-head .txt { flex: 1; min-width: 0; }
 /* 狀態詞／記號／主鈕／雲朵 icon 鈕共用一條中線(記號 20、狀態詞 12px 不貼頂;spec strategy-page-autotrade 附錄 A.3-2) */
 .rp-head .act { flex: none; display: flex; align-items: center; gap: var(--space-8); }
@@ -695,6 +697,28 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 /* 說明下一行:雲端停機那兩句(hoNote)與策略頁頭的整句原因(spPaintNote)。要被讀到的那一階,--ink-2 */
 .rp-ho-note { margin: var(--space-4) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 .rp-ho-note .btn-quiet { font-size: inherit; }
+/* 搬家的鈕列(handoff.js hoJobPaint):不是 live region;文字鈕之間 12,熱區 44(同 .busy-fix::before)。句子裡不放鈕 */
+.rp-ho-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-12); margin: var(--space-4) 0 0; font-size: 12px; }
+.rp-ho-acts .btn-quiet { font-size: inherit; min-height: 44px; }
+.rp-ho-acts .btn-quiet::before { inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, -50%); }
+.rp-ho-note .spin16 { vertical-align: -3px; margin-right: var(--space-8); }
+/* 並排比較(hoCmpTable;spec §4):hidden 容器,〔看兩邊數字〕aria-controls 開合。數字 mono 靠右、不上紅綠;資料來源那格可折行 */
+.rp-ho-cmp { margin: var(--space-4) 0 0; overflow-x: auto; }
+.ho-cmp { border-collapse: collapse; font-size: 12px; }
+.ho-cmp th, .ho-cmp td { padding: var(--space-4) var(--space-12) var(--space-4) 0; text-align: left; font-weight: 400; color: var(--ink-2); vertical-align: top; }
+.ho-cmp thead th { color: var(--ink-3); text-align: right; }
+.ho-cmp thead th:first-child { text-align: left; }
+.ho-cmp td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); text-align: right; white-space: nowrap; }
+.ho-cmp td.wrap { white-space: normal; }
+/* 對話動作卡(handoff.js hoCardTurnEnd):一列高,殼同聊天結果卡(results.css .res):bg-body 墊在聊天欄 surface-card 上、無框、dark 也一樣 */
+.msg.ai .ho-card {
+  display: flex; align-items: center; gap: var(--space-12); margin: var(--space-12) 0 0; padding: var(--space-12);
+  border-radius: var(--radius-md); background: var(--bg-body);
+  animation: res-in var(--motion-base) var(--ease-standard) backwards;
+}
+.ho-card .ic { flex: none; width: 16px; height: 16px; color: var(--ink-3); }
+.ho-card-t { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ho-card .btn-out { flex: none; }
 .rp-ho-note.err { color: var(--color-redText); }   /* 直送失敗那句:同框裡 cf-block 的錯誤色 */   /* 句尾的文字鈕跟著那句話的字級(同 .tr-ro-note) */
 /* 第一行固定 32 高(= 動作鈕的高度),策略名在列內垂直置中(canon › 策略版本第 1 條):跟主鈕、狀態詞、雲朵鈕同一條中線 */
 .rp-name { margin: 0; font-size: 17px; font-weight: 600; line-height: 32px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

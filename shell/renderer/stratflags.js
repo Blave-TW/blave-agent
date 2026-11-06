@@ -275,11 +275,18 @@ function sfPopBuild() {
     if (!x.classList.contains("is-armed")) x.click();   // app.js armedDelete:第一下 = 武裝成「移到垃圾桶？」
     x.focus();
   });
-  // 第一條線分開「選顏色」與「對這支做事」(改名、移除旗標、移到資料夾);底下三項都不出時連線一起收。移到資料夾上面不再另畫線(spec strategy-rename §2)
+  // 第一條線分開「選顏色」與「對這支做事」(改名、移除旗標、送上雲端／拉回、移到資料夾);底下都不出時連線一起收。
+  // 最多兩條線(spec strategy-rename §2):搬家那一項併進這一組、不另畫線(0.1.47 兩支合併時的排法,待設計師看)
   const d1 = sep(); d1.dataset.d1 = "1"; rm.dataset.rm = "1";
+  // 送上雲端／拉回這台電腦(handoff.js hoMenuDir／hoGo;spec strategy-transfer-desktop §1):畫不出就不出
+  const ho = item("item"); ho.dataset.ho = "1";
+  ho.addEventListener("click", () => {
+    const x = SF.popX, dir = ho.dataset.dir, ret = SF.popReturn; sfPopClose(false);
+    if (x && dir && typeof hoGo === "function") hoGo(dir, x.name, ret, "menu");
+  });
   // 移到資料夾(給不能拖的人;spec §13):有資料夾才出,內容每次開啟時由 stratgroups.js sgMoveFill 填
   const moves = document.createElement("div"); moves.className = "sg-moves"; moves.dataset.mv = "1";
-  sfPop.append(d1, rn, rm, moves, d2, del);   // 鍵盤排序提示那行 Wei 10-12 拿掉(Alt+↑/↓ 仍可用,只是不印)
+  sfPop.append(d1, rn, rm, ho, moves, d2, del);   // 鍵盤排序提示那行 Wei 10-12 拿掉(Alt+↑/↓ 仍可用,只是不印)
   sfPop.addEventListener("keydown", (e) => {
     if (e.key === "Escape") { if (e.isComposing || e.keyCode === 229) return; e.preventDefault(); e.stopPropagation(); sfPopClose(true); return; }   // 不給 app.js 的 escTop:一次只關一層
     if (["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].indexOf(e.key) < 0) return;
@@ -312,12 +319,15 @@ function sfPopOpen(wrap, anchor, x, ctx, store) {
   anchor.setAttribute("aria-expanded", "true");
   const cur = sfFlagId(sc.flags()[x.name]);
   sfPop.querySelectorAll("[data-rm]").forEach((n) => { n.hidden = !cur; });
+  const hoDir = typeof hoMenuDir === "function" ? hoMenuDir(sc === SF_CLOUD, x.name) : null, hoIt = sfPop.querySelector(".item[data-ho]");
+  if (hoDir) { hoIt.dataset.dir = hoDir; hoIt.textContent = t(hoDir === "up" ? "ho.up.btn" : "ho.menu.down"); }
+  sfPop.querySelectorAll("[data-ho]").forEach((n) => { n.hidden = !hoDir; });
   const mv = typeof sgMoveFill === "function" && sgMoveFill(sfPop.querySelector(".sg-moves"), wrap, x, sc);
   sfPop.querySelectorAll("[data-mv]").forEach((n) => { n.hidden = !mv; });
   const rn = sfPop.querySelector(".item[data-rn]"), canRn = typeof srnAvailable === "function" && srnAvailable(x);
   rn.hidden = !canRn;
   if (canRn && srnLocked(sc, x)) rn.setAttribute("aria-disabled", "true"); else rn.removeAttribute("aria-disabled");
-  sfPop.querySelector("[data-d1]").hidden = !(canRn || cur || mv);
+  sfPop.querySelector("[data-d1]").hidden = !(canRn || cur || hoDir || mv);
   sfPop.querySelectorAll(".swcell").forEach((c) => { const on = Number(c.dataset.flag) === cur; c.classList.toggle("selected", on); c.setAttribute("aria-checked", on ? "true" : "false"); });
   wrap.classList.add("flag-open");
   // 先隱形量尺寸再定位(sfPopPlace)

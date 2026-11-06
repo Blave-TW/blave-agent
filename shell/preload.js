@@ -88,6 +88,9 @@ contextBridge.exposeInMainWorld("blave", {
   onReportPdfSaving: (fn) => ipcRenderer.on("report-pdf-saving", () => fn()),   // 存檔框按了儲存、開始產
   // 雲端寫入:只有指令名與參數過得來(金鑰不走這支,主行程也拒收);requestId = 重試時沿用上一趟那顆
   cloudSend: (cmd, args, requestId) => ipcRenderer.invoke("cloud-send", cmd, args, requestId),
+  // 送上雲端／拉回這台電腦(shell/transfer.js):只給策略資料夾名與提議的新名字;檔與金鑰由主行程讀,這裡拿不到
+  transferUp: (name, to, requestId) => ipcRenderer.invoke("transfer-up", name, to, requestId),
+  transferDown: (name, to) => ipcRenderer.invoke("transfer-down", name, to),
   // 雲端連交易所:金鑰只走這一支(cloud-send 拒收 credentials);回應只有 { ok, code, detail },沒有金鑰值
   cloudConnect: (a) => ipcRenderer.invoke("cloud-connect", { venue: a && a.venue, apiKey: a && a.apiKey, secret: a && a.secret, passphrase: a && a.passphrase, keyChangeCode: a && a.keyChangeCode, lang: a && a.lang }),
   // 雲端群益開通(cloud_capital.js):憑證檔由主行程開對話框讀進記憶體,這裡只拿得到檔名與代號

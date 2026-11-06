@@ -26,9 +26,9 @@ def ok(name, cond, detail=""):
         fails.append(name)
 
 
-MARKS = ("<await", "<form")  # 澄清表單標記同一套列舉(tests/check_clarify_form.py 管 chunk 內容)
+MARKS = ("<await", "<form", "<handoff")  # 澄清表單、搬策略動作卡的標記同一套列舉(表單 chunk 內容歸 tests/check_clarify_form.py)
 BODY = "我需要你先選一個：\n1. 4h 均線交叉\n2. 1h RSI\n"
-REPLY = BODY + '<form id="txf_backtest" prod="mxf"/>\n<await/>\n<suggest>\n掃一下參數\n</suggest>'
+REPLY = BODY + '<form id="txf_backtest" prod="mxf"/>\n<handoff dir="up" name="momo_2"/>\n<await/>\n<suggest>\n掃一下參數\n</suggest>'
 
 
 def has_mark(s):
@@ -46,6 +46,26 @@ for name, raw, want_text, want_flag in [
 ]:
     got = at.extract_await(raw)
     ok(f"extract_await:{name}", got == (want_text, want_flag), got)
+
+# ── 1b. extract_handoff:取最後一個合法標記;名字過不了搬家閘門(含 Windows 保留名)只剝不觸發 ──
+for name, raw, want in [
+    ("up", '兩句。\n<handoff dir="up" name="momo"/>', ("兩句。", {"type": "handoff", "dir": "up", "name": "momo"})),
+    ("down、帶空白", '兩句。\n<handoff dir="down" name="a-b_2" />', ("兩句。", {"type": "handoff", "dir": "down", "name": "a-b_2"})),
+    ("兩個取最後一個", '<handoff dir="up" name="a"/>\n<handoff dir="down" name="b"/>', ("", {"type": "handoff", "dir": "down", "name": "b"})),
+    ("壞方向只剝", '兩句。\n<handoff dir="sideways" name="momo"/>', ("兩句。", None)),
+    ("路徑形名字只剝", '兩句。\n<handoff dir="up" name="../x"/>', ("兩句。", None)),
+    ("保留名只剝", '兩句。\n<handoff dir="up" name="CON"/>', ("兩句。", None)),
+    ("中文名只剝", '兩句。\n<handoff dir="up" name="動能"/>', ("兩句。", None)),
+    ("沒有標記一字不動", "handoff 這個字不算", ("handoff 這個字不算", None)),
+]:
+    got = at.extract_handoff(raw)
+    ok(f"extract_handoff:{name}", got == want, got)
+import strategy_transfer  # noqa: E402
+ok("handoff 的名字閘門跟 strategy_transfer.NAME_RE 同一字串(agent_turn 不 import 它:那支會叫 crontab)",
+   at._HANDOFF_NAME_RE.pattern == strategy_transfer.NAME_RE.pattern, at._HANDOFF_NAME_RE.pattern)
+ok("_HANDOFF_RULE 只在 handoff_card 時掛", at._HANDOFF_RULE in at.build_prompt("", [], "把 momo 送上雲端", handoff_card=True,
+   suggest_directive=True, desktop=True) and at._HANDOFF_RULE not in at.build_prompt("", [], "把 momo 送上雲端",
+   suggest_directive=True, desktop=True))
 
 # ── 2. 規則是 prompt 最尾端那一節(_AWAIT_RULE,緊接在建議規則後),web 與電腦版都帶 ──
 ok("規則獨立在 _AWAIT_RULE,不再混在建議規則裡", "<await/>" in at._AWAIT_RULE and "<await/>" not in at._SUGGEST_RULE)
@@ -146,10 +166,14 @@ for cls_name in sorted(mod_sinks):
             sug = [c for c in chunks if c.get("type") == "suggestions"]
             ok(f"{cls_name}: 建議列照常剝出", sug and sug[-1]["items"] == ["掃一下參數"], sug)
             order = [c.get("type") for c in chunks if c.get("type") != "text"]
-            ok(f"{cls_name}: chunk 順序 text_replace → form → suggestions → done",
-               order == ["text_replace", "form", "suggestions", "done"], order)
+            ok(f"{cls_name}: chunk 順序 text_replace → form → handoff → suggestions → done",
+               order == ["text_replace", "form", "handoff", "suggestions", "done"], order)
+            ho = [c for c in chunks if c.get("type") == "handoff"]
+            ok(f"{cls_name}: handoff chunk 只有 type／dir／name", ho and ho[-1] == {"type": "handoff", "dir": "up",
+               "name": "momo_2", **({"session_id": ho[-1]["session_id"]} if "session_id" in ho[-1] else {})}, ho)
     if cls is at.TelegramSink:
-        ok(f"{cls_name}: 不送 form chunk(TG 沒有卡)", not any(c.get("type") == "form" for c in chunks), chunks)
+        ok(f"{cls_name}: 不送 form／handoff chunk(TG 沒有卡)",
+           not any(c.get("type") in ("form", "handoff") for c in chunks), chunks)
 ok("列舉完整:每個 sink 類別都被餵過", covered == mod_sinks, mod_sinks - covered)
 
 # ── 4. done 契約:沒標記 → awaiting False;被 Stop 截斷 → False;kinds 是這一輪的分類計數 ──
@@ -172,8 +196,8 @@ s.on_text(REPLY)
 s.interrupted = True
 s.finalize()
 done = [c for c in chunks if c.get("type") == "done"][-1]
-ok("被 Stop 截斷:標記照剝、awaiting False、不送 form", done.get("awaiting") is False and not has_mark(s.full_text)
-   and not any(c.get("type") == "form" for c in chunks), done)
+ok("被 Stop 截斷:標記照剝、awaiting False、不送 form／handoff", done.get("awaiting") is False and not has_mark(s.full_text)
+   and not any(c.get("type") in ("form", "handoff") for c in chunks), done)
 
 chunks.clear()
 s = at.WebSink("http://x/report", "t", "s4")

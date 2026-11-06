@@ -173,7 +173,7 @@ function interpretStrategy(res, name) {
   if (!s || typeof s !== "object" || s.name !== name) return STRATEGY_UNREACHABLE();
   const str = (v) => (typeof v === "string" ? v : "");
   const obj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
-  return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: obj(s.backtest), scan: obj(s.scan), wf: obj(s.wf), code: str(s.code), versions: obj(s.versions), perf: obj(s.perf), logic: logicOf(s.logic) } };
+  return { code: "OK", strategy: { name, displayName: str(s.display_name) || name, description: str(s.description), stats: obj(s.backtest), scan: obj(s.scan), wf: obj(s.wf), code: str(s.code), versions: obj(s.versions), perf: obj(s.perf), logic: logicOf(s.logic), transfer: obj(s.transfer) } };
 }
 /* 績效輪詢用的輕量版(body `lite: 1`,api 只回 name/display_name/status/sig/updated_at/perf):只取 perf。
    api 還沒有 lite 時會忽略這個欄位、回整份,這裡一樣只挑 perf,兩種回應結果相同。回 { code: "OK", strategy: { name, perf } | null } / UNREACH;

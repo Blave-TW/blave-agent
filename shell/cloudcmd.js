@@ -23,7 +23,7 @@
 //   - 憑證與金鑰的值只出現在 HTTPS body 裡:不回傳、不落地、不 log。這個檔不 require electron、不碰檔案系統。
 //
 // 給接線那一層(S2)的四條,不是實作細節,是契約:
-//   1. **這裡不是 `secrets` 的信任邊界**:這個檔只看 `cmd === "credentials"`,任何呼叫端都塞得進 secrets。
+//   1. **這裡不是 `secrets` 的信任邊界**:這個檔只看 cmd 在不在 SECRET_CMDS,任何呼叫端都塞得進 secrets。
 //      閘門在 main.js 的 IPC——通用的 `cloud-send` 必須**拒收 secrets**,金鑰只由專用的 `cloud-connect` 供應。
 //   2. 回傳**不是固定鍵集合**:`machineState` / `id` / `duplicate` / `requestId` 各有各的出現條件,一律當 optional 讀。
 //   3. `undelivered` 這一桶敢說「沒送到」的前提是**重試沿用同一顆 `requestId`**(把回傳那顆原樣傳回第四個參數)。
@@ -34,6 +34,9 @@ const { whoOf } = require("./tokenrotate");
 
 const ENDPOINT = "/oauth/desktop/cloud/command";
 const ACK_ENDPOINT = "/oauth/desktop/cloud/command/ack";
+const EXPORT_ENDPOINT = "/oauth/desktop/cloud/strategy_export";
+// 帶 secrets 的指令:credentials 只由 main.js cloud-connect 送,strategy_import 只由 transfer-up 送(cloud-send 兩個都拒)
+const SECRET_CMDS = ["credentials", "strategy_import"];
 const REQUEST_ID_RE = /^[A-Za-z0-9_-]{16,64}$/;   // 契約 §2;佇列 id(sha256 前 32 碼)也落在這個形狀裡
 const MACHINE_STATES = ["none", "starting", "stopped"];
 const BAD_REQUEST_CODES = ["UNKNOWN_COMMAND", "REQUEST_ID_REQUIRED", "BAD_COMMAND"];
@@ -118,7 +121,7 @@ function createCloudCmd(opts) {
 
   /* 送一個指令並等機器的回條。
        args    — 形狀見契約 §2(api 端 `_cloud_command_args` 再驗一次);沒有就給 {}
-       secrets — **只有 cmd === "credentials" 會被放進 body 的頂層 `secrets`**;別的指令帶了一律丟掉
+       secrets — **只有 SECRET_CMDS(credentials、strategy_import 的資料來源金鑰)會被放進 body 的頂層 `secrets`**;別的指令帶了一律丟掉
                  (api 對非 credentials 帶 secrets 是 400,而呼叫端傳錯不該讓金鑰白跑一趟網路)
        opts    — { requestId, ackWindowMs, keyChangeCode, lang }:requestId 重試時把上一趟回傳的那顆原樣傳回來(冪等);
                  ackWindowMs 給 ack 晚到的指令(manage_optimize 跑完腳本才 ack),沒給就是 ACK_WINDOW_MS;
@@ -138,7 +141,7 @@ function createCloudCmd(opts) {
 
     const body = { token, app_secret: c.appSecret, request_id: requestId, cmd,
       args: args && typeof args === "object" ? args : {} };
-    if (cmd === "credentials" && secrets && typeof secrets === "object") body.secrets = secrets;
+    if (SECRET_CMDS.indexOf(cmd) >= 0 && secrets && typeof secrets === "object") body.secrets = secrets;
     if (cmd === "credentials" && sendOpts && KEY_CHANGE_CODE_RE.test(String(sendOpts.keyChangeCode || ""))) body.key_change_code = sendOpts.keyChangeCode;
     if (cmd === "credentials" && sendOpts && ["zh", "en"].indexOf(sendOpts.lang) >= 0) body.lang = sendOpts.lang;
     // 排在前一個 POST 後面(檔頭)。排隊的時候登出 / 換人了 = 不打上線,確定沒送出
@@ -185,8 +188,19 @@ function createCloudCmd(opts) {
     return { ok: false, error: "UNKNOWN_RESULT", kind: KIND.UNKNOWN_RESULT, requestId, id, duplicate };
   }
 
+  /* 拉回取檔(api /oauth/desktop/cloud/strategy_export):strategy_export 的 ack 回 ok 之後,用同一個佇列 id 拿機器交上來的 *.py。
+     回 api 的 body({status:"pending"} 或 {status:"done", name, files, left_behind}),讀不到回 null;逐檔比對在 shell/transfer.js checkExport */
+  async function fetchExport(id) {
+    const c = creds();
+    if (!c || !REQUEST_ID_RE.test(String(id))) return null;
+    let res = null;
+    try { res = await opts.post(opts.apiBase + EXPORT_ENDPOINT, { token: c.token, app_secret: c.appSecret, id }); } catch (_) { return null; }
+    return res && res.status === 200 && res.body && typeof res.body === "object" ? res.body : null;
+  }
+
   return {
     send,
+    fetchExport,
     /* 登出:在途的指令回來時丟掉(它的結果是上一個人的)。**鏈不重設**:還沒出門的靠世代自己跳過;
        重設的話,登出再登入後按的暫停會插到還在路上的那個啟動 POST 前面。 */
     reset() { gen++; owner = null; },

@@ -18,8 +18,10 @@ any order actually fires. Sending orders directly stays out.
 Secrets: `credentials` carries an exchange key to the workspace .env. It is
 never printed, never echoed, and never included in an error message.
 """
+import base64
 import json
 import contextlib
+import hashlib
 import os
 import platform
 import re
@@ -56,6 +58,7 @@ import save_routing
 import tick_gate
 import turn_slots
 import venue_traits
+import strategy_transfer
 
 try:
     import fcntl
@@ -4932,6 +4935,7 @@ def _cmd_delete_strategy(args):
         raise RuntimeError("a version restore of this machine is in progress — try again")
     try:
         _kill_rerun(name)
+        _kill_transfer(name)
     finally:
         _RESTORE_LOCK.release()
     if prune_member:   # last refusal passed: the membership goes with the files
@@ -7241,6 +7245,337 @@ def _cmd_rename_strategy(args):
     return Deferred(_run)
 
 
+# ── 策略搬家(電腦版「送上雲端／拉回這台電腦」)──────────────────────────────────────
+# `strategy_import {name, to?, files, env?}` / `strategy_export {name}`: the desktop's two handoff
+# buttons, no agent turn (references/cloud-handoff.md is the same procedure for an agent asked in the
+# chat). The rules live in runtime/strategy_transfer.py; this part owns the locks, the background run
+# and the hand-over.
+#   import: a NEW folder strategies/<dest>/ (never overwrite: §4a), the *.py written .handoff → verify
+#   → rename, STRATEGY_NAME / DISPLAY_NAME renumbered when <dest> ≠ <name>, the data-source keys merged
+#   into .env's managed block (cloud only), then one background run: Type A/C a quiet backtest (it is
+#   <dest>'s v1, canon strategy-versions §2), Type B a 120 s trial unless the code can place an order.
+#   The ack = the files are in place; the run's state rides the strategies report as `transfer`
+#   (strategies/<dest>/transfer.json): running → gone after a backtest that wrote stats.json, failed +
+#   a code, or the trial's result. Nothing is scheduled and no amount is set (§6C).
+#   export: the *.py of strategies/<name>/ handed to the api's staging slot for this command id
+#   (api agent_command /export); the desktop fetches them and imports locally with the same handler.
+TRANSFER_FILE = "transfer.json"      # = strategy_reporter.TRANSFER_FILE
+TRANSFER_RUN_TIMEOUT_S = RESTORE_RERUN_TIMEOUT_S
+TRANSFER_TRIAL_TIMEOUT_S = 120
+TRANSFER_TAIL = 300
+_TRANSFER_LOCK = threading.Lock()    # one import at a time: two could pick the same free <dest>
+_TRANSFER_PROCS = {}                 # dest → the run Popen this process started
+
+
+def _transfer_path(name, *parts):
+    return os.path.join(WORKSPACE, "strategies", name, *parts)
+
+
+def _read_transfer_doc(name):
+    try:
+        doc = atomic_file.load_json(_transfer_path(name, TRANSFER_FILE), encoding="utf-8")
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def _transfer_pid_alive(name, pid):
+    proc = _TRANSFER_PROCS.get(name)
+    if proc is not None and proc.pid == pid:
+        return proc.poll() is None
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return False
+    return f"strategies/{name}/strategy.py" in _pid_cmdline(pid).replace("\\", "/")
+
+
+def _kill_transfer(name):
+    """Stop <name>'s transfer run (delete_strategy: it would recreate the folder it writes into).
+    The record goes first, under the lock _settle_transfer takes: the killed run's watcher then finds
+    nothing to settle instead of writing transfer.json back into a folder being removed."""
+    with _TRANSFER_LOCK:
+        doc = _read_transfer_doc(name)
+        try:
+            os.remove(_transfer_path(name, TRANSFER_FILE))
+        except FileNotFoundError:
+            pass
+    pid = doc.get("pid") if doc else None
+    if doc and doc.get("status") == "running" and _transfer_pid_alive(name, pid):
+        _kill_tree(pid)
+    proc = _TRANSFER_PROCS.pop(name, None)
+    if proc is not None and proc.poll() is None:
+        _kill_tree(proc.pid)
+
+
+def _stats_written_since(name, at):
+    try:
+        return os.stat(_transfer_path(name, "stats.json")).st_mtime >= at - 1
+    except OSError:
+        return False
+
+
+def _settle_transfer(name, pid, rc=None, timed_out=False):
+    """Terminal state of the run `pid` owns (a record a newer import replaced is left alone).
+    Backtest: stats.json written since it started → the record goes, stats.json is the result;
+    otherwise failed with the restore re-run's codes. Trial: exit code and output tail; still running
+    at 120 s = it started fine (`stopped_after_s`)."""
+    with _TRANSFER_LOCK:
+        doc = _read_transfer_doc(name)
+        if not doc or doc.get("pid") != pid or doc.get("status") != "running":
+            return None
+        tail = _log_tail(_transfer_path(name, "transfer.log"), TRANSFER_TAIL)
+        doc.pop("pid", None)
+        if doc.get("kind") == "backtest":
+            if not timed_out and _stats_written_since(name, doc.get("at") or 0):
+                _remove_retry(_transfer_path(name, TRANSFER_FILE), "transfer record")
+                return "done"
+            doc.update(status="failed", err="TIMEOUT" if timed_out else
+                       ("SUPERSEDED" if rc == 0 else _classify_rerun(tail)))
+        elif timed_out:
+            doc.update(status="done", exit=None, stopped_after_s=TRANSFER_TRIAL_TIMEOUT_S, tail=tail)
+        else:
+            doc.update(status="done" if rc == 0 else "failed", exit=rc if isinstance(rc, int) else None,
+                       tail=tail)
+            if rc != 0:
+                doc["err"] = "EXIT"
+        _write_json_atomic(_transfer_path(name, TRANSFER_FILE), doc)
+        return doc["status"]
+
+
+def _watch_transfer(name, proc, timeout):
+    rc, timed_out = None, False
+    try:
+        try:
+            rc = proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _kill_tree(proc.pid)
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+        _settle_transfer(name, proc.pid, rc, timed_out)
+    except Exception as e:
+        _log(f"transfer run watcher died: {type(e).__name__}: {e}")
+    if _TRANSFER_PROCS.get(name) is proc:
+        _TRANSFER_PROCS.pop(name, None)
+    _push(_ON_APPLIED, "transfer run")
+
+
+def _adopt_transfer(name, pid, deadline):
+    try:
+        while _transfer_pid_alive(name, pid) and time.time() < deadline:
+            time.sleep(_RESTORE_ADOPT_POLL_S)
+        timed_out = _transfer_pid_alive(name, pid)
+        if timed_out:
+            _kill_tree(pid)
+        _settle_transfer(name, pid, None, timed_out)
+    except Exception as e:
+        _log(f"adopted transfer watcher died: {type(e).__name__}: {e}")
+    _push(_ON_APPLIED, "transfer run")
+
+
+def _resume_transfer_watch():
+    """At listener start: a transfer run that outlived the previous process gets a watcher again; a
+    dead one is settled — otherwise the page shows it running forever."""
+    sdir = os.path.join(WORKSPACE, "strategies")
+    try:
+        names = sorted(os.listdir(sdir))
+    except OSError:
+        return
+    for name in names:
+        if not strategy_transfer.NAME_RE.fullmatch(name):
+            continue
+        doc = _read_transfer_doc(name)
+        if not doc or doc.get("status") != "running":
+            continue
+        pid = doc.get("pid")
+        limit = TRANSFER_TRIAL_TIMEOUT_S if doc.get("kind") == "trial" else TRANSFER_RUN_TIMEOUT_S
+        if _transfer_pid_alive(name, pid):
+            threading.Thread(target=_adopt_transfer, args=(name, pid, (doc.get("at") or 0) + limit),
+                             daemon=True, name="transfer-adopt").start()
+        else:
+            try:
+                _settle_transfer(name, pid)
+            except Exception as e:
+                _log(f"transfer settle failed: {type(e).__name__}: {e}")
+
+
+def _start_transfer_run(dest, kind, origin, expect_hash):
+    """The one run of an import, detached: `backtest` (quiet, BLAVE_MODE=backtest — v1 of <dest>) or
+    `trial` (Type B, at most 120 s)."""
+    script = f"strategies/{dest}/strategy.py"
+    popen_kw = {"start_new_session": True} if platform.system() != "Windows" else {
+        "creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    extra = {"PYTHONUNBUFFERED": "1", "PYTHONPATH": WORKSPACE}
+    # Both kinds run BLAVE_MODE=backtest, the trial too. Without BLAVE_MODE lib/runner infers live
+    # from the 下單設定 of whatever STRATEGY_NAME the code ends up with, and a live run writes that
+    # strategy's state.json, which the reconciler trades. In backtest mode runner never writes
+    # state.json and the reconciler never sees a tick, whichever name the code points at.
+    env = _strategy_subprocess_env("backtest", BLAVE_QUIET="1", **extra)
+    if kind == "backtest":
+        env["BLAVE_EXPECT_CODE_HASH"] = expect_hash
+    at = int(time.time())
+    with atomic_file.open_truncate(_transfer_path(dest, "transfer.log")) as logf:
+        proc = subprocess.Popen([_workspace_python(), script], cwd=WORKSPACE, env=env,
+                                stdout=logf, stderr=logf, **_child_kw(**popen_kw))
+    try:
+        _write_json_atomic(_transfer_path(dest, TRANSFER_FILE),
+                           {"kind": kind, "status": "running", "at": at, "pid": proc.pid, "from": origin})
+    except OSError as e:
+        _kill_tree(proc.pid)
+        raise ValueError(f"FAILED: could not record the run ({type(e).__name__})")
+    _TRANSFER_PROCS[dest] = proc
+    threading.Thread(target=_watch_transfer, daemon=True, name="transfer-run",
+                     args=(dest, proc, TRANSFER_RUN_TIMEOUT_S if kind == "backtest" else TRANSFER_TRIAL_TIMEOUT_S)
+                     ).start()
+
+
+def _transfer_write(dest, files):
+    """strategies/<dest>/ created here (exclusive: an existing folder is never written into), each
+    file as <f>.handoff → read back and hash-checked → renamed into place. Any failure removes exactly
+    what this call wrote and the folder it created, then raises."""
+    folder = _transfer_path(dest)
+    os.mkdir(folder)
+    written = []
+    try:
+        for f, raw, _ in files:
+            tmp, final = os.path.join(folder, f + ".handoff"), os.path.join(folder, f)
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o644)
+            written.append(tmp)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(raw)
+                fh.flush()
+                os.fsync(fh.fileno())
+            with open(tmp, "rb") as fh:
+                if hashlib.sha256(fh.read()).hexdigest() != hashlib.sha256(raw).hexdigest():
+                    raise OSError(f"{f} did not read back as written")
+            os.replace(tmp, final)
+            written[-1] = final
+    except Exception:
+        for p in reversed(written):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        try:
+            os.rmdir(folder)
+        except OSError:
+            pass
+        raise
+
+
+def _transfer_env(env):
+    """§5 on this machine's .env, under the same lock as every other .env writer → written names."""
+    path = os.path.join(WORKSPACE, ".env")
+    with _env_lock():
+        try:
+            with open(path, encoding="utf-8") as f:
+                old = f.read()
+        except FileNotFoundError:
+            old = ""
+        except OSError as e:
+            raise RuntimeError(f".env unreadable ({type(e).__name__})")
+        text, written = strategy_transfer.merge_env_text(old, env)
+        with atomic_file.replacing(path, perm=0o600, prepare=_env_acl) as f:
+            f.write(text)
+        _sweep_env_temps()
+    return written
+
+
+def _cmd_strategy_import(args):
+    """→ Deferred; ack result {dest, type, renamed, still_names, keys?, run, can_order?, order_lines?,
+    syntax_errors?, missing_keys?}. Refusals before anything is written raise "<CODE>: …" with CODE in
+    BAD_ARGS / BAD_FILES / TOO_LARGE / NOT_UTF8 / NOT_PORTABLE / NAME_MISMATCH / NO_STRATEGY_NAME /
+    CHECK_FAILED / NO_FREE_NAME. `run`: "backtest" / "trial" started; "not_run" (Type B that can place
+    an order, or does not compile); "keys_failed" (a key could not be written: nothing is run, the
+    strategy cannot fetch its data without it — §5)."""
+    name, start, files, env = strategy_transfer.import_args(args, _local_mode(), WORKSPACE)
+    origin = "cloud" if _local_mode() else "desktop"
+
+    def _run():
+        missing = strategy_transfer.missing_modules([t for _, _, t in files], WORKSPACE)
+        if missing:
+            raise strategy_transfer.Refused("NOT_PORTABLE", ", ".join(missing))
+        named = strategy_transfer.check_name(files, name) is not None
+        with _TRANSFER_LOCK:
+            taken = strategy_transfer.taken_check(WORKSPACE)
+            dest, k = name, start
+            while True:
+                while taken(dest):
+                    if k > start + 999:
+                        raise strategy_transfer.Refused("NO_FREE_NAME", name)
+                    dest, k = strategy_transfer.candidate(name, k), k + 1
+                if dest == name:
+                    out, still = files, []
+                elif named:
+                    out, still = strategy_transfer.rename(files, name, dest)
+                else:
+                    out, still = files, strategy_transfer.still_naming(files, name)
+                try:
+                    _transfer_write(dest, out)
+                    break
+                except FileExistsError:   # the folder appeared after the check (an agent turn): next name
+                    if os.path.lexists(_transfer_path(dest)):
+                        dest, k = strategy_transfer.candidate(name, k), k + 1
+                        continue
+                    raise
+        text = next(t for f, _, t in out if f == "strategy.py")
+        kind = strategy_transfer.strategy_type(text)
+        result = {"dest": dest, "type": kind, "renamed": dest != name, "still_names": still}
+        if env:
+            try:
+                result["keys"] = _transfer_env(env)
+            except Exception as e:
+                _log(f"strategy_import {dest}: keys not written: {type(e).__name__}")
+                result.update(keys=[], run="keys_failed")
+                _push(_ON_APPLIED, "strategy import")
+                return result
+        if kind == "B":
+            bad, hits = strategy_transfer.order_scan(out)
+            result.update(can_order=bool(hits), order_lines=hits, syntax_errors=bad)
+            if bad or hits:
+                result["run"] = "not_run"
+                _push(_ON_APPLIED, "strategy import")
+                return result
+        raw = next(r for f, r, _ in out if f == "strategy.py")
+        _start_transfer_run(dest, "trial" if kind == "B" else "backtest", origin,
+                            hashlib.sha256(raw).hexdigest()[:16])
+        result["run"] = "trial" if kind == "B" else "backtest"
+        _push(_ON_APPLIED, "strategy import")
+        return result
+
+    return Deferred(_run)
+
+
+def _cmd_strategy_export(args, cmd_id):
+    """→ Deferred; reads strategies/<name>/*.py and hands them to the api's staging slot for `cmd_id`.
+    Ack result {name, type, files: [{f, sha256}], left_behind}: the hashes the desktop checks what it
+    fetches against. Refusals: BAD_ARGS / NO_SOURCE / BAD_FILES / TOO_LARGE / NOT_UTF8 / HANDOVER."""
+    if not isinstance(args, dict) or set(args) != {"name"}:
+        raise strategy_transfer.Refused("BAD_ARGS", "strategy_export takes exactly name")
+    name = args["name"]
+    if not isinstance(cmd_id, str) or not re.fullmatch(r"[0-9a-f]{32}", cmd_id):
+        raise strategy_transfer.Refused("BAD_ARGS", "no command id to hand the files over under")
+
+    def _run():
+        files, left = strategy_transfer.collect_export(WORKSPACE, name)
+        text = base64.b64decode(next(x["b64"] for x in files if x["f"] == "strategy.py")).decode("utf-8")
+        body = json.dumps({"id": cmd_id, "name": name, "files": files, "left_behind": left}).encode()
+        req = urllib.request.Request(API_BASE + "/export", data=body, headers={
+            "Content-Type": "application/json", "x-api-key": f"proxy-{PROXY_TOKEN}"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                resp.read()
+        except urllib.error.HTTPError as e:
+            raise strategy_transfer.Refused("HANDOVER", f"the api answered {e.code}")
+        except (OSError, ValueError) as e:
+            raise strategy_transfer.Refused("HANDOVER", type(e).__name__)
+        return {"name": name, "type": strategy_transfer.strategy_type(text),
+                "files": [{"f": x["f"], "sha256": x["sha256"]} for x in files], "left_behind": left}
+
+    return Deferred(_run)
+
+
 # ── 更新績效(performance refresh)────────────────────────────────────────────────
 # `stats_refresh {names: [...]}`: the workspace's 更新績效 button (one name) and the manager
 # table's chip (every stale member), no agent turn; every Type A/C strategy with a stats.json,
@@ -7922,6 +8257,8 @@ HANDLERS = {
     "version_restore": _cmd_version_restore,
     "rename_strategy": _cmd_rename_strategy,
     "stats_refresh": _cmd_stats_refresh,
+    "strategy_import": _cmd_strategy_import,
+    "strategy_export": lambda args: _cmd_strategy_export(args, None),
 }
 # 群益 cloud connect (runtime/capital_connect.py): long steps come back as Deferred
 HANDLERS.update({
@@ -7967,6 +8304,8 @@ def dispatch(command):
     if cmd in ("halt", "resume", "resume_wait", "downtime_hold", "close_all", "close_then_unbind",
                "credentials", "credentials_remove", "book_account_confirm"):
         result = _in_workspace(fn, args)
+    elif cmd == "strategy_export":  # the staging slot is keyed by this command's id
+        result = _cmd_strategy_export(args, command.get("id"))
     else:
         result = fn(args)
     # a start held for an unanswered account question changed nothing: the
@@ -8061,6 +8400,7 @@ def run(on_applied=None, on_progress=None):
     _ON_PROGRESS = on_progress
     _resume_mgmt_watch()
     _resume_restore_watch()
+    _resume_transfer_watch()
     _resume_perf_refresh()
 
     # Type A/C strategy scheduling — its own daemon thread, independent of the

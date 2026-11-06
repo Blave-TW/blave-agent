@@ -83,10 +83,11 @@ ok("B1 my_strategies/x 不算", !has({ type: "tool", kind: "file_read", summary:
 { const sm = fnOf(app, "submitMessage");
   ok("B4 送上雲端／拉回(opts.handoff)一開跑就算對著雲端", /turnViewCloud = !!\(viewing && viewing\.env === "cloud"\) \|\| !!\(opts && opts\.handoff\);/.test(sm));
   ok("B8 turnViewCloud 在開跑那次重畫之前定案;開跑紀錄建好再判一次還原鎖", sm.indexOf("turnViewCloud =") > 0 && sm.indexOf("turnViewCloud =") < sm.indexOf("running = true;") && sm.indexOf("verBusy()") > sm.indexOf("resTurnStart(viewing"));
-  const s = fnOf(ho, "hoBlocked"), blocked = (once, sid, runningSid) => s ? new Function("csOnceLive", "UPD", "csTabRunning", s + "\nreturn hoBlocked;")(() => once, { cloudSid: sid }, (x) => x === runningSid)("k") : "none";
+  const s = fnOf(ho, "hoBlocked"), blocked = (job, sid, runningSid) => s ? new Function("HO", "UPD", "csTabRunning", s + "\nreturn hoBlocked;")({ jobs: new Map(job ? [["up:x", job]] : []) }, { cloudSid: sid }, (x) => x === runningSid)("up", "x") : "none";
   ok("B4 雲端更新中:送上雲端不送,帶去更新那條", JSON.stringify(blocked(null, "u", "u")) === '{"key":"ho.updating","sid":"u"}', blocked(null, "u", "u"));
-  ok("B4 更新那條跑完就放行;同一支還在送照擋", blocked(null, "u", "x") === null && blocked({ sid: "a" }, null, null).key === "ho.sending");
-  ok("B4 hoAsk 按下與確認都看 hoBlocked", (fnOf(ho, "hoAsk").match(/hoBlocked\(onceKey\)/g) || []).length === 2); }
+  ok("B4 更新那條跑完就放行;同一支同方向還在搬照擋(0.1.47 起看 HO.jobs);搬完就放行", blocked(null, "u", "x") === null && blocked({ phase: "run" }, null, null).key === "ho.busy"
+    && blocked({ phase: "send" }, null, null).key === "ho.busy" && blocked({ phase: "done" }, null, null) === null && blocked({ phase: "fail" }, null, null) === null);
+  ok("B4 hoAsk 按下與確認都看 hoBlocked", (fnOf(ho, "hoAsk").match(/hoBlocked\(dir, id\)/g) || []).length === 2); }
 
 // ── P3 ──
 { const quiet = [], els = [{ dataset: { busy: "1", sid: "done" } }, { dataset: { busy: "1", sid: "live" } }];

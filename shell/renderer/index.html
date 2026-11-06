@@ -208,11 +208,14 @@
             <button class="lg-tog" id="rp-logic-tog" type="button" aria-expanded="false" aria-controls="rp-logic" hidden><span data-i18n="rp.logic"></span><span class="mp-chev" aria-hidden="true"></span></button>
           </div>
           <div class="lg-body" id="rp-logic" hidden></div>
-          <!-- 雲端停機 / 讀不到時按「送上雲端」:不切視角,在原地講一句 + 一顆「去雲端看」(handoff.js 的 hoNote)。
-               role="status":按了鈕畫面只多這一行,讀屏不唸的話等於沒有回應 -->
-          <p class="rp-ho-note" id="rp-ho-note" role="status" hidden></p>
           </div>
           <div class="act" id="rp-act" hidden></div>
+          <!-- 說明下一行的那一格,橫跨整個頁首(排在動作槽那一列下面;中欄 404 時才不會被擠在左欄)。一格、互斥,優先序:
+               搬家那一行(handoff.js hoJobPaint,從送出到按〔收起〕)＞主鈕原因句(portfolio.js spPaintNote)＞停機句(hoNote)。
+               role="status" 只放句子、內容沒變不重寫;搬家的文字鈕與並排表在後面兩個非 live 的容器(設計稽核 strategy-transfer-desktop) -->
+          <p class="rp-ho-note" id="rp-ho-note" role="status" hidden></p>
+          <div class="rp-ho-acts" id="rp-ho-acts" hidden></div>
+          <div class="rp-ho-cmp" id="rp-ho-cmp" hidden></div>
         </div>
         <!-- 時光機橫幅(versions.js):看舊版時才出,「唯讀」在任何寬度都看得到 -->
         <div class="vbanner" id="ver-banner" hidden>

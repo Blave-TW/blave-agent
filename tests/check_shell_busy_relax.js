@@ -103,7 +103,8 @@ function rig(tabs, main) {
   A.st.running = false;
   ok("⑤ 跑完就作廢(不靠回合結束事件)", r.F.csOnceLive("k") === null && r.F.csOnceLive("k") === null);
   const hoAsk = fnOf(ho, "hoAsk"), xpAsk = fnOf(xp, "xpAsk");
-  ok("⑤ 送上雲端:按下先看、框開著的期間另一條送了再看一次、送出同步記", /const onceKey = "ho:" \+ dir \+ ":" \+ id, once = hoBlocked\(onceKey\);\n  if \(once\) \{ hoOnceTell\(once\); return; \}/.test(hoAsk) && /const again = hoBlocked\(onceKey\); if \(again\) \{ hoOnceTell\(again\); return; \}/.test(hoAsk) && /csSendAway\(msg, \{ handoff: dir[^\n]*\n\s*csOnceMark\(onceKey\);/.test(hoAsk));
+  ok("⑤ 送上雲端:按下先看、框開著的期間再看一次;0.1.47 起同一支同方向還在搬看 HO.jobs(app 直接搬,不開對話分頁)", /const once = hoBlocked\(dir, id\);\n  if \(once\) \{ hoTellBlocked\(once\); return; \}/.test(hoAsk)
+    && /const again = hoBlocked\(dir, id\); if \(again\) \{ hoTellBlocked\(again\); return; \}/.test(hoAsk) && /HO\.jobs\.set\(key, job\); hoJobPaint\(\);/.test(ho) && !/csSendAway|csOnceMark/.test(hoAsk));
   ok("⑤ 轉出:同一支同平台同一套;別的平台照轉", /const onceKey = "xp:" \+ target \+ ":" \+ id/.test(xpAsk) && /const again = csOnceLive\(onceKey\)/.test(xpAsk) && /const sending = csSendAway\(msg\); csOnceMark\(onceKey\);/.test(xpAsk)); }
 
 // ── ⑥ ──

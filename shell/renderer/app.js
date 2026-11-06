@@ -5451,6 +5451,8 @@ function turnEventIn(c) {
     if (typeof sugChunk === "function") sugChunk(c);   // 建議下一步:先收著,回合結束才長出(renderer/suggest.js)
   } else if (c.type === "form") {
     if (typeof formChunk === "function") formChunk(c);   // 澄清表單:先收著,回合結束才畫(renderer/form.js)
+  } else if (c.type === "handoff") {
+    if (typeof hoChunk === "function") hoChunk(c);   // 搬策略動作卡:先收著,回合結束才畫(renderer/handoff.js)
   } else if (c.type === "tool_prep") {
     actToolPrep(c);
   } else if (c.type === "thinking") {
@@ -5566,6 +5568,7 @@ function turnEndPost(r, pre, d) {
   mpTurnEnd();
   if (typeof sugTurnEnd === "function") sugTurnEnd(!stopped && !faulted);   // 建議灰字停一拍才畫,出錯與停止都不畫(renderer/suggest.js)
   if (typeof formTurnEnd === "function") formTurnEnd(!stopped && !faulted);   // 澄清表單畫在這一輪最後一則回覆下面,出錯與停止都不畫(renderer/form.js)
+  if (typeof hoCardTurnEnd === "function") hoCardTurnEnd(!stopped && !faulted);   // 搬策略動作卡,同表單卡的時機(renderer/handoff.js)
   if (rt) resTurnEnd(rt, cloudTurn);   // 最後一步:回覆泡泡已定稿(paintAi 會清空泡泡)、轉出卡已掛,結果卡才決定掛在哪一則
   chatSwitchFlush();   // 回合中切過視角:那一行排在這一輪之後(結果卡的落點已經在上一行定了)
   return { faulted, stopped };

@@ -3768,10 +3768,10 @@ msgid "src.cloudEmpty"
 msgstr "There are no data sources on the cloud machine."
 
 msgid "ho.up.btn"
-msgstr "Send to Cloud"
+msgstr "Send to Cloud…"
 
 msgid "ho.down.btn"
-msgstr "Bring Back"
+msgstr "Bring Back…"
 
 msgid "ho.down.aria"
 msgstr "Bring back to this computer"
@@ -3790,9 +3790,6 @@ msgstr "Strategy code"
 
 msgid "ho.row.movesKeys"
 msgstr "Strategy code, and the data-source keys it uses ({sources})"
-
-msgid "ho.row.movesMaybe"
-msgstr "Strategy code, and the data-source keys it uses (if any)"
 
 msgid "ho.row.stays"
 msgstr "Doesn’t move"
@@ -3818,9 +3815,6 @@ msgstr "The one in the cloud keeps trading. The copy here starts trading only af
 msgid "ho.block.goCloud"
 msgstr "View in Cloud"
 
-msgid "ho.ok"
-msgstr "Confirm"
-
 msgid "ho.emptyHint"
 msgstr "No strategies in the cloud yet. Open one on this computer and press Send to Cloud, or ask the agent to build one right here."
 
@@ -3836,9 +3830,6 @@ msgstr "Stay in the Cloud"
 msgid "ho.gate.stale"
 msgstr "The cloud’s state can’t be read right now, so this isn’t being sent."
 
-msgid "ho.sending"
-msgstr "This strategy is already on its way. Progress is in the chat."
-
 msgid "ho.updating"
 msgstr "The cloud machine is updating. Send it after that finishes."
 
@@ -3847,18 +3838,6 @@ msgstr "Your cloud machine is stopped, so nothing can be sent up right now."
 
 msgid "ho.back.btn"
 msgstr "Back to This Computer"
-
-msgid "ho.msg.up"
-msgstr "Send the strategy {id} to my cloud machine as {to}. Rerun the backtest there once it’s moved, and show me both sets of numbers side by side."
-
-msgid "ho.msg.down"
-msgstr "Bring the strategy {id} from my cloud machine back to this computer as {to}. Rerun the backtest here afterwards, and show me both sets of numbers side by side."
-
-msgid "ho.msgB.up"
-msgstr "Send the strategy {id} to my cloud machine as {to}. Once it’s moved, check that it starts there, and tell me the result."
-
-msgid "ho.msgB.down"
-msgstr "Bring the strategy {id} from my cloud machine back to this computer as {to}. Once it’s back, check that it starts here, and tell me the result."
 
 msgid "up.about"
 msgstr "About"
@@ -3942,16 +3921,16 @@ msgid "cdel.gotIt"
 msgstr "Got It"
 
 msgid "ho.note.up"
-msgstr "The agent moves it, reruns the backtest on your cloud machine, and shows both sets of numbers side by side in the chat."
+msgstr "Your cloud machine reruns the backtest, then both sets of numbers appear on this page."
 
 msgid "ho.note.down"
-msgstr "The agent brings it back, reruns the backtest on this computer, and shows both sets of numbers side by side in the chat."
+msgstr "This computer reruns the backtest, then both sets of numbers appear on this page."
 
 msgid "ho.noteB.up"
-msgstr "The agent moves it and checks that it starts on your cloud machine."
+msgstr "It checks that it starts on your cloud machine."
 
 msgid "ho.noteB.down"
-msgstr "The agent brings it back and checks that it starts on this computer."
+msgstr "It checks that it starts on this computer."
 
 msgid "strat.delInPf"
 msgstr "This strategy is still in your auto-trading portfolio, so it can’t be deleted. Remove it under Portfolio first, then come back."
@@ -10530,3 +10509,199 @@ msgstr "Couldn’t rename. Press Enter to try again."
 
 msgid "strat.renamed"
 msgstr "Renamed to {name}"
+
+# 0.1.47 送上雲端／拉回改成 app 直接搬(renderer/handoff.js)
+msgid "ho.row.staysVDown"
+msgstr "Exchange keys, data-source keys, amounts, trading state"
+
+msgid "ho.busy"
+msgstr "This strategy is already moving. Progress is on this line."
+
+msgid "ho.p.send.up"
+msgstr "Sending to the cloud"
+
+msgid "ho.p.send.down"
+msgstr "Bringing it back from the cloud"
+
+msgid "ho.p.run.up"
+msgstr "Saved in the cloud as {dest}. Rerunning the backtest there"
+
+msgid "ho.p.run.down"
+msgstr "Saved on this computer as {dest}. Rerunning the backtest"
+
+msgid "ho.p.trial.up"
+msgstr "Saved in the cloud as {dest}. Checking that it starts"
+
+msgid "ho.p.trial.down"
+msgstr "Saved on this computer as {dest}. Checking that it starts"
+
+msgid "ho.cmp.show"
+msgstr "Show both sets of numbers"
+
+msgid "ho.cmp.hide"
+msgstr "Hide numbers"
+
+msgid "ho.cmp.here"
+msgstr "This computer"
+
+msgid "ho.cmp.cloud"
+msgstr "Cloud"
+
+msgid "ho.cmp.ret"
+msgstr "Total return"
+
+msgid "ho.cmp.sharpe"
+msgstr "Sharpe"
+
+msgid "ho.cmp.mdd"
+msgstr "Max drawdown"
+
+msgid "ho.cmp.trades"
+msgstr "Trades"
+
+msgid "ho.cmp.start"
+msgstr "Start"
+
+msgid "ho.cmp.end"
+msgstr "End"
+
+msgid "ho.cmp.data"
+msgstr "Data source"
+
+msgid "ho.cmp.dataHere"
+msgstr "Binance public klines"
+
+msgid "ho.cmp.dataHereBlave"
+msgstr "Binance public klines, Blave data"
+
+msgid "ho.cmp.dataCloud"
+msgstr "Blave data"
+
+msgid "ho.err.unknown"
+msgstr "No reply from the cloud yet, so the result isn’t known. Check the list for {to} in a bit."
+
+msgid "ho.err.old"
+msgstr "Your cloud machine isn’t on this version yet. It updates itself; try again in a few minutes."
+
+msgid "ho.err.retry"
+msgstr "It didn’t move this time. Try again later."
+
+msgid "ho.err.portable"
+msgstr "It can’t move: it uses {x}, which the other side doesn’t have."
+
+msgid "ho.err.name"
+msgstr "It can’t move: STRATEGY_NAME in the file doesn’t match the folder name. Ask the agent to make them match first."
+
+msgid "ho.err.files"
+msgstr "It can’t move: {x} can’t be copied (too large, a file name outside the allowed characters, or not UTF-8)."
+
+msgid "ho.err.noSource"
+msgstr "The strategy’s code wasn’t found."
+
+msgid "ho.err.run"
+msgstr "Saved {at} as {dest}, but the backtest didn’t finish ({why})."
+
+msgid "ho.err.slow"
+msgstr "Saved {at} as {dest}. The backtest is still running after 20 minutes."
+
+msgid "ho.why.REFUSED"
+msgstr "stopped by the look-ahead check"
+
+msgid "ho.why.DATA"
+msgstr "couldn’t get the data"
+
+msgid "ho.why.TIMEOUT"
+msgstr "timed out"
+
+msgid "ho.why.EXIT"
+msgstr "it stopped with an error"
+
+msgid "ho.keys.none"
+msgstr "Saved in the cloud as {dest}, but there’s no {src} key on this computer, so none was copied."
+
+msgid "ho.keys.noneB"
+msgstr "Saved in the cloud as {dest}, but there’s no {src} key on this computer, so it hasn’t been checked yet."
+
+msgid "ho.keys.failed"
+msgstr "Saved in the cloud as {dest}, but the data-source keys weren’t written, so the backtest wasn’t run."
+
+msgid "ho.keys.failedB"
+msgstr "Saved in the cloud as {dest}, but the data-source keys weren’t written, so it hasn’t been checked yet."
+
+msgid "ho.keys.go"
+msgstr "Open Data Sources"
+
+msgid "ho.notrun.order"
+msgstr "Saved {at} as {dest}. It can place orders, so it wasn’t run; only the code was checked."
+
+msgid "ho.notrun.syntax"
+msgstr "Saved {at} as {dest}, but {x} has a syntax error, so it wasn’t run."
+
+msgid "ho.trial.ok"
+msgstr "Saved {at} as {dest}. It starts and finished normally."
+
+msgid "ho.trial.fail"
+msgstr "Saved {at} as {dest}, but it stopped with an error."
+
+msgid "ho.trial.stopped"
+msgstr "Saved {at} as {dest}. It starts; it was stopped after two minutes and isn’t on a schedule."
+
+msgid "ho.left"
+msgstr "Not moved: {x} (only .py files move)."
+
+msgid "ho.goDest.up"
+msgstr "View in Cloud"
+
+msgid "ho.goDest.down"
+msgstr "View on This Computer"
+
+msgid "ho.dismiss"
+msgstr "Dismiss"
+
+msgid "ho.card.up"
+msgstr "Send {name} to the cloud"
+
+msgid "ho.card.down"
+msgstr "Bring {name} back to this computer"
+
+msgid "ho.card.upBtn"
+msgstr "Send to Cloud…"
+
+msgid "ho.card.downBtn"
+msgstr "Bring Back…"
+
+msgid "ho.at.up"
+msgstr "in the cloud"
+
+msgid "ho.at.down"
+msgstr "on this computer"
+
+msgid "ho.done.match"
+msgstr "Saved {at} as {dest}. Trades and period match."
+
+msgid "ho.done.differs"
+msgstr "Saved {at} as {dest}. Trades differ between the two sides."
+
+msgid "ho.done.period"
+msgstr "Saved {at} as {dest}. The two backtests cover different periods."
+
+msgid "ho.done.nosrc"
+msgstr "Saved {at} as {dest}. The original has no backtest to compare against."
+
+msgid "ho.cmp.noise"
+msgstr "The two sides use different data sources, so small differences are normal."
+
+msgid "ho.ok.up"
+msgstr "Send to Cloud"
+
+msgid "ho.ok.down"
+msgstr "Bring Back"
+
+msgid "ho.row.staysVMissing"
+msgstr "Exchange keys, amounts, trading state, and the {sources} key (not on this computer)"
+
+msgid "ho.menu.down"
+msgstr "Bring Back to This Computer…"
+
+msgid "ho.done.none"
+msgstr "Saved {at} as {dest}, but no backtest came out on that side."

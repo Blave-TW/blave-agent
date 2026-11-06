@@ -735,6 +735,57 @@ def _read_perf(name):
     return out
 
 
+TRANSFER_FILE = "transfer.json"   # = command_listener.TRANSFER_FILE
+TRANSFER_KEEP_S = 7 * 86400
+_TRANSFER_TAIL_MAX = 300
+
+
+def _read_transfer(name):
+    """strategies/<name>/transfer.json (the run a desktop 送上雲端 / 拉回 started on this side,
+    written by command_listener) as {kind, status, at, from?, err?, exit?, stopped_after_s?, tail?};
+    None when absent, malformed, settled more than TRANSFER_KEEP_S ago, or a failed backtest that a
+    later backtest has since answered (stats.json newer than the record)."""
+    try:
+        doc = atomic_file.load_json(os.path.join(STRATEGIES_DIR, name, TRANSFER_FILE), encoding="utf-8")
+    except (OSError, ValueError):
+        return None
+    if not isinstance(doc, dict):
+        return None
+    kind, status, at = doc.get("kind"), doc.get("status"), doc.get("at")
+    if kind not in ("backtest", "trial") or status not in ("running", "failed", "done") \
+            or isinstance(at, bool) or not isinstance(at, int):
+        return None
+    if status != "running":
+        if time.time() - at > TRANSFER_KEEP_S:
+            return None
+        try:
+            if kind == "backtest" and os.stat(os.path.join(STRATEGIES_DIR, name, "stats.json")).st_mtime > at + 1:
+                return None
+        except OSError:
+            pass
+    out = {"kind": kind, "status": status, "at": at}
+    if doc.get("from") in ("desktop", "cloud"):
+        out["from"] = doc["from"]
+    if status == "failed":
+        out["err"] = doc.get("err") if doc.get("err") in RERUN_ERRS else "EXIT"
+    if kind == "trial" and status != "running":
+        ex = doc.get("exit")
+        out["exit"] = ex if isinstance(ex, int) and not isinstance(ex, bool) else None
+        if doc.get("stopped_after_s") is not None:
+            out["stopped_after_s"] = 120
+        if isinstance(doc.get("tail"), str):
+            out["tail"] = doc["tail"][-_TRANSFER_TAIL_MAX:]
+    return out
+
+
+def _transfer_marker(name):
+    try:
+        st = os.stat(os.path.join(STRATEGIES_DIR, name, TRANSFER_FILE))
+    except (OSError, ValueError):
+        return "none"
+    return f"{st.st_mtime_ns}:{st.st_size}"
+
+
 def _read_versions(name):
     """The strategy's version summary for the report: {counter, current, items, drift,
     inplace?, rerun?}, or None when this strategy has never been versioned (an older config on
@@ -915,11 +966,14 @@ def strategy_marker(s, image_sig=None):
     call it after every tool step, and _scan_sources has already read the sources this
     marker hashes."""
     name = s["name"]
-    columns = json.dumps(
-        [s["status"], _stats_marker(name, None), _scan_marker(name), _wf_marker(name),
-         image_sig, _content_marker(s), _perf_marker(name)],
-        sort_keys=True,
-    )
+    cols = [s["status"], _stats_marker(name, None), _scan_marker(name), _wf_marker(name),
+            image_sig, _content_marker(s), _perf_marker(name)]
+    # 5. A transfer run's record (transfer.json), for the same reason as point 4. Appended only when
+    # the file exists, so the strategies that never had one keep the marker they had (no fleet resend).
+    tm = _transfer_marker(name)
+    if tm != "none":
+        cols.append(tm)
+    columns = json.dumps(cols, sort_keys=True)
     # Hashed, not the columns verbatim: `image_sig` carries the image FILENAMES, which the
     # agent writes and which are routinely descriptive. Five default filenames already make
     # a 256-char marker and eight agent-named ones measured 522 — past the api's field
@@ -1045,6 +1099,9 @@ def scan(include_newborn=False):
         pf = _read_perf(s["name"])
         if pf is not None:
             s["perf"] = pf
+        tr = _read_transfer(s["name"])
+        if tr is not None:
+            s["transfer"] = tr
         # Web-side hint so the 下單設定 picker can grey the checkbox out; the
         # authoritative block is _cmd_amounts' save-time guard (a stale cache
         # here must not be the only defense). False when unknown — fail open,

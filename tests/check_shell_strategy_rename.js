@@ -70,7 +70,7 @@ const keys = ["strat.rename", "strat.menu", "strat.nameAria", "strat.nameMax", "
 ok("④ 用到的 key 兩語都有", keys.every((k) => S.en[k] && S.zh[k]), keys.filter((k) => !S.en[k] || !S.zh[k]));
 ok("④ {c}／{name} 佔位在兩語都在", S.zh["strat.nameBad"].includes("{c}") && S.en["strat.nameBad"].includes("{c}") && S.en["strat.menu"].includes("{name}") && S.zh["strat.renamed"].includes("{name}"));
 const flags = read(path.join(R, "stratflags.js")), build = fnOf(flags, "sfPopBuild");
-ok("④ 選單順序:旗標 — 改名、移除旗標、移到資料夾 — 移到垃圾桶(移到資料夾上面沒有線)", /sfPop\.append\(d1, rn, rm, moves, d2, del\)/.test(build) && !/const dm = sep\(\)/.test(build));
+ok("④ 選單順序:旗標 — 改名、移除旗標、送上雲端／拉回、移到資料夾 — 移到垃圾桶(最多兩條線:搬家與移到資料夾上面都沒有線)", /sfPop\.append\(d1, rn, rm, ho, moves, d2, del\)/.test(build) && !/const dm = sep\(\)/.test(build) && !/const dh = sep\(\)/.test(build) && /hidden = !\(canRn \|\| cur \|\| hoDir \|\| mv\)/.test(fnOf(flags, "sfPopOpen")));
 ok("④ 選單 aria-label 用 strat.menu", /t\("strat\.menu", \{ name: x\.displayName \|\| x\.name \}\)/.test(fnOf(flags, "sfPopText")));
 ok("④ 停用 = aria-disabled、按了沒反應;機器不會改名就不出", /rn\.getAttribute\("aria-disabled"\) === "true"\) return/.test(build) && /rn\.hidden = !canRn/.test(fnOf(flags, "sfPopOpen")));
 ok("④ 改名列開著時擋住清單重建(sgEditing 看 SRN.edit)", /SRN\.edit/.test(lineOf(flags, /^const sgEditing = [^\n]*/m)));

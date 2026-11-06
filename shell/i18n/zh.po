@@ -3787,10 +3787,10 @@ msgid "src.cloudEmpty"
 msgstr "雲端主機上沒有資料來源。"
 
 msgid "ho.up.btn"
-msgstr "送上雲端"
+msgstr "送上雲端…"
 
 msgid "ho.down.btn"
-msgstr "拉回這台電腦"
+msgstr "拉回…"
 
 msgid "ho.down.aria"
 msgstr "拉回這台電腦"
@@ -3809,9 +3809,6 @@ msgstr "策略程式碼"
 
 msgid "ho.row.movesKeys"
 msgstr "策略程式碼、它用到的資料來源金鑰（{sources}）"
-
-msgid "ho.row.movesMaybe"
-msgstr "策略程式碼，以及它用到的資料來源金鑰（如果有）"
 
 msgid "ho.row.stays"
 msgstr "不會搬"
@@ -3837,9 +3834,6 @@ msgstr "雲端那一支照常下單；拉回來的這份要在這台電腦的自
 msgid "ho.block.goCloud"
 msgstr "去雲端看"
 
-msgid "ho.ok"
-msgstr "確認"
-
 msgid "ho.emptyHint"
 msgstr "雲端還沒有策略。在這台電腦打開一支策略，按「送上雲端」；或直接在這裡請 agent 做一支。"
 
@@ -3855,9 +3849,6 @@ msgstr "留在雲端"
 msgid "ho.gate.stale"
 msgstr "現在讀不到雲端的狀況，先不送。"
 
-msgid "ho.sending"
-msgstr "這支正在送，進度在對話裡。"
-
 msgid "ho.updating"
 msgstr "雲端主機正在更新，更新完再送。"
 
@@ -3866,18 +3857,6 @@ msgstr "雲端主機已停機，現在送不上去。"
 
 msgid "ho.back.btn"
 msgstr "回這台電腦送上來"
-
-msgid "ho.msg.up"
-msgstr "把策略 {id} 送上我的雲端主機，存成 {to}。搬完在雲端重跑回測，把兩邊的數字並排給我看。"
-
-msgid "ho.msg.down"
-msgstr "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。拉回後在這裡重跑回測，把兩邊的數字並排給我看。"
-
-msgid "ho.msgB.up"
-msgstr "把策略 {id} 送上我的雲端主機，存成 {to}。搬完確認它在雲端跑得起來，告訴我結果。"
-
-msgid "ho.msgB.down"
-msgstr "把雲端主機上的策略 {id} 拉回這台電腦，存成 {to}。拉回後確認它在這裡跑得起來，告訴我結果。"
 
 msgid "up.about"
 msgstr "關於"
@@ -3961,16 +3940,16 @@ msgid "cdel.gotIt"
 msgstr "知道了"
 
 msgid "ho.note.up"
-msgstr "接下來由 agent 搬過去，在雲端重跑一次回測，兩邊的數字會並排在聊天裡。"
+msgstr "會在雲端重跑一次回測，跑完兩邊數字並排在這一頁。"
 
 msgid "ho.note.down"
-msgstr "接下來由 agent 搬回來，在這台電腦重跑一次回測，兩邊的數字會並排在聊天裡。"
+msgstr "會在這台電腦重跑一次回測，跑完兩邊數字並排在這一頁。"
 
 msgid "ho.noteB.up"
-msgstr "接下來由 agent 搬過去，確認它在雲端跑得起來。"
+msgstr "會在雲端確認它跑得起來。"
 
 msgid "ho.noteB.down"
-msgstr "接下來由 agent 搬回來，確認它在這台電腦跑得起來。"
+msgstr "會在這台電腦確認它跑得起來。"
 
 msgid "strat.delInPf"
 msgstr "這支策略還在自動下單的組合裡，不能刪除。先到「策略組合」把它移出，再回來刪除。"
@@ -10566,3 +10545,199 @@ msgstr "沒有改成，按 Enter 再試一次。"
 
 msgid "strat.renamed"
 msgstr "已改名為{name}"
+
+# 0.1.47 送上雲端／拉回改成 app 直接搬(renderer/handoff.js)
+msgid "ho.row.staysVDown"
+msgstr "交易所金鑰、資料來源金鑰、投入金額、下單狀態"
+
+msgid "ho.busy"
+msgstr "這支正在搬，進度在這一行。"
+
+msgid "ho.p.send.up"
+msgstr "正在送上雲端"
+
+msgid "ho.p.send.down"
+msgstr "正在從雲端拉回"
+
+msgid "ho.p.run.up"
+msgstr "已存成雲端的 {dest}，正在那邊重跑回測"
+
+msgid "ho.p.run.down"
+msgstr "已存成這台電腦的 {dest}，正在重跑回測"
+
+msgid "ho.p.trial.up"
+msgstr "已存成雲端的 {dest}，正在確認它跑得起來"
+
+msgid "ho.p.trial.down"
+msgstr "已存成這台電腦的 {dest}，正在確認它跑得起來"
+
+msgid "ho.cmp.show"
+msgstr "看兩邊數字"
+
+msgid "ho.cmp.hide"
+msgstr "收起數字"
+
+msgid "ho.cmp.here"
+msgstr "這台電腦"
+
+msgid "ho.cmp.cloud"
+msgstr "雲端"
+
+msgid "ho.cmp.ret"
+msgstr "總報酬"
+
+msgid "ho.cmp.sharpe"
+msgstr "Sharpe"
+
+msgid "ho.cmp.mdd"
+msgstr "最大回撤"
+
+msgid "ho.cmp.trades"
+msgstr "交易次數"
+
+msgid "ho.cmp.start"
+msgstr "開始"
+
+msgid "ho.cmp.end"
+msgstr "結束"
+
+msgid "ho.cmp.data"
+msgstr "資料來源"
+
+msgid "ho.cmp.dataHere"
+msgstr "Binance 公開 K 線"
+
+msgid "ho.cmp.dataHereBlave"
+msgstr "Binance 公開 K 線、Blave 資料"
+
+msgid "ho.cmp.dataCloud"
+msgstr "Blave 資料"
+
+msgid "ho.err.unknown"
+msgstr "還沒收到雲端的回覆，結果不確定。稍後看清單上有沒有 {to}。"
+
+msgid "ho.err.old"
+msgstr "雲端主機的程式還沒更新到這一版。它會自己更新，幾分鐘後再試。"
+
+msgid "ho.err.retry"
+msgstr "這次沒搬成，稍後再試。"
+
+msgid "ho.err.portable"
+msgstr "搬不過去：用到了 {x}，那邊沒有。"
+
+msgid "ho.err.name"
+msgstr "搬不過去：檔案裡的 STRATEGY_NAME 跟資料夾名不一致，請 agent 先改成一致。"
+
+msgid "ho.err.files"
+msgstr "搬不過去：{x} 這個檔不能搬（太大、檔名不合規，或不是 UTF-8）。"
+
+msgid "ho.err.noSource"
+msgstr "找不到這支策略的程式碼。"
+
+msgid "ho.err.run"
+msgstr "已存成{at} {dest}，但回測沒跑完（{why}）。"
+
+msgid "ho.err.slow"
+msgstr "已存成{at} {dest}，回測跑了 20 分鐘還沒結束。"
+
+msgid "ho.why.REFUSED"
+msgstr "被前視檢查擋下"
+
+msgid "ho.why.DATA"
+msgstr "取不到資料"
+
+msgid "ho.why.TIMEOUT"
+msgstr "逾時"
+
+msgid "ho.why.EXIT"
+msgstr "中途出錯"
+
+msgid "ho.keys.none"
+msgstr "已存成雲端的 {dest}，但這台電腦沒有 {src} 的金鑰，沒搬過去。"
+
+msgid "ho.keys.noneB"
+msgstr "已存成雲端的 {dest}，但這台電腦沒有 {src} 的金鑰，還沒確認它跑得起來。"
+
+msgid "ho.keys.failed"
+msgstr "已存成雲端的 {dest}，但資料來源金鑰沒寫進去，所以沒有跑回測。"
+
+msgid "ho.keys.failedB"
+msgstr "已存成雲端的 {dest}，但資料來源金鑰沒寫進去，所以還沒確認它跑得起來。"
+
+msgid "ho.keys.go"
+msgstr "去資料來源"
+
+msgid "ho.notrun.order"
+msgstr "已存成{at} {dest}。它會下單，所以沒有試跑，只檢查了程式碼。"
+
+msgid "ho.notrun.syntax"
+msgstr "已存成{at} {dest}，但 {x} 有語法錯誤，沒有試跑。"
+
+msgid "ho.trial.ok"
+msgstr "已存成{at} {dest}，它跑得起來，也正常結束了。"
+
+msgid "ho.trial.fail"
+msgstr "已存成{at} {dest}，但試跑時出錯了。"
+
+msgid "ho.trial.stopped"
+msgstr "已存成{at} {dest}，它跑得起來；兩分鐘後先停下，沒有排定時。"
+
+msgid "ho.left"
+msgstr "沒搬：{x}（只搬 .py 檔）。"
+
+msgid "ho.goDest.up"
+msgstr "到雲端看"
+
+msgid "ho.goDest.down"
+msgstr "到這台電腦看"
+
+msgid "ho.dismiss"
+msgstr "收起"
+
+msgid "ho.card.up"
+msgstr "把 {name} 送上雲端"
+
+msgid "ho.card.down"
+msgstr "把 {name} 拉回這台電腦"
+
+msgid "ho.card.upBtn"
+msgstr "送上雲端…"
+
+msgid "ho.card.downBtn"
+msgstr "拉回…"
+
+msgid "ho.at.up"
+msgstr "雲端的"
+
+msgid "ho.at.down"
+msgstr "這台電腦的"
+
+msgid "ho.done.match"
+msgstr "已存成{at} {dest}，交易次數與期間兩邊一致。"
+
+msgid "ho.done.differs"
+msgstr "已存成{at} {dest}，交易次數兩邊不一樣。"
+
+msgid "ho.done.period"
+msgstr "已存成{at} {dest}，兩邊回測期間不同。"
+
+msgid "ho.done.nosrc"
+msgstr "已存成{at} {dest}，原本那支沒有回測可以對照。"
+
+msgid "ho.cmp.noise"
+msgstr "兩邊資料來源不同，小幅差異是正常的。"
+
+msgid "ho.ok.up"
+msgstr "送上雲端"
+
+msgid "ho.ok.down"
+msgstr "拉回"
+
+msgid "ho.row.staysVMissing"
+msgstr "交易所金鑰、投入金額、下單狀態、{sources} 的金鑰（這台電腦沒有）"
+
+msgid "ho.menu.down"
+msgstr "拉回這台電腦…"
+
+msgid "ho.done.none"
+msgstr "已存成{at} {dest}，那邊沒有跑出回測。"

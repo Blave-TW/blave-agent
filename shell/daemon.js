@@ -24,7 +24,9 @@ const CMD_TIMEOUT_MS = { manage_optimize: 150000, rename_strategy: 90000 };
 // president_local(統一本機開通,shell/president_local.js)也只有主行程送:帳密在這裡封裝,renderer 碰不到密文以外的東西;
 // 它不在 api 的任何清單(runtime local_daemon.LOCAL_ONLY)
 // capital_local(群益本機開通,shell/capital_local.js)同一套:身分證與交易密碼在主行程封裝
-const MAIN_ONLY_COMMANDS = new Set(["preferences_set", "reply_lang_set", "president_local", "capital_local"]);
+// strategy_import(拉回這台電腦,shell/transfer.js down):主行程比過兩份 sha256、把檔寫進 state/transfer_in/<id>/ 之後才送,
+// 指令只帶暫存代號與雜湊;renderer 送不了,也就塞不進任意的檔
+const MAIN_ONLY_COMMANDS = new Set(["preferences_set", "reply_lang_set", "president_local", "capital_local", "strategy_import"]);
 const PRESIDENT_OPS = ["setup", "cert", "secrets", "probe", "host", "test_order", "start", "stop"];   // = runtime president_connect.LOCAL_OPS
 const CAPITAL_OPS = ["setup", "bind", "secrets", "probe", "start", "stop"];   // = runtime capital_local.LOCAL_OPS
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -146,6 +148,14 @@ function argsOk(cmd, a, trusted) {
   if (cmd === "stats_refresh") return keys.every((k) => k === "names" || k === "exec_test") && Array.isArray(a.names) && a.names.length >= 1 && a.names.length <= 50
     && a.names.every((n) => typeof n === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(n)) && new Set(a.names).size === a.names.length
     && (a.exec_test === undefined || (a.exec_test === true && a.names.length === 1)) && keys.indexOf("names") >= 0;
+  // 拉回:= runtime strategy_transfer.import_args 的暫存形狀;檔的內容由 daemon 讀暫存時再驗一次
+  if (cmd === "strategy_import") {
+    const T = require("./transfer");
+    return keys.every((k) => k === "name" || k === "to" || k === "stage" || k === "files") && T.NAME_RE.test(String(a.name))
+      && (a.to === undefined || T.NAME_RE.test(String(a.to))) && /^[0-9a-f]{32}$/.test(String(a.stage))
+      && Array.isArray(a.files) && a.files.length >= 1 && a.files.length <= T.MAX_FILES
+      && a.files.every((x) => x && typeof x === "object" && Object.keys(x).length === 2 && T.FILE_RE.test(String(x.f)) && /^[0-9a-f]{64}$/.test(String(x.sha256)));
+  }
   // 密文只驗形狀(base64、長度);內容由 daemon 解開後再驗
   if (cmd === "president_local") {
     if (PRESIDENT_OPS.indexOf(a.op) < 0) return false;

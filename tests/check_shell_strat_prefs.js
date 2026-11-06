@@ -156,7 +156,7 @@ try {
   ok("④ 旗標鈕 aria-expanded:建時 false、面板開 true、收 false", /fb\.setAttribute\("aria-expanded", "false"\)/.test(cutFn(sfSrc, "sfRowActions"))
     && /anchor\.setAttribute\("aria-expanded", "true"\)/.test(cutFn(sfSrc, "sfPopOpen")) && /if \(ret\) ret\.setAttribute\("aria-expanded", "false"\);/.test(cutFn(sfSrc, "sfPopClose")));
   ok("④ 面板底不再印按鍵提示(Wei 10-12 拿掉;Alt+↑/↓ 仍可用);移動後 srSay「已移到第 N 位」",
-    !/hint\.className = "hint"/.test(sfSrc) && /sfPop\.append\(d1, rn, rm, moves, d2, del\);/.test(sfSrc)
+    !/hint\.className = "hint"/.test(sfSrc) && /sfPop\.append\(d1, rn, rm, ho, moves, d2, del\);/.test(sfSrc)   // ho = 送上雲端／拉回(0.1.47),併在第一條線那組
     && !/side\.sortHint/.test(sfSrc)
     && /if \(sib\.classList\.contains\("strat-wrap"\)\) \{ if \(up\) sib\.before\(row\); else sib\.after\(row\); \}/.test(sfSrc)
     && /else \{ sfMoved\(sc\); srSay\(t\("side\.moved", \{ n: \[\.\.\.box\.querySelectorAll\(":scope > \.strat-wrap"\)\]\.indexOf\(row\) \+ 1 \}\)\); \}/.test(sfSrc)

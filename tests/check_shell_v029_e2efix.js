@@ -48,8 +48,8 @@ const trCss = read("trade.css"), appCss = read("app.css"), sf = read("stratflags
     /sfPopPlace\(anchor\.getBoundingClientRect\(\)/.test(open) && open.indexOf('querySelectorAll("[data-rm]").forEach((n) => { n.hidden = !cur; })') > 0
     && open.indexOf("[data-rm]") < open.indexOf("sfPop.offsetWidth"));
   // 0.1.46 策略改名(spec strategy-rename §2):第一條線下多了〔改名〕,線改成「底下有任一項才出」(data-d1),data-rm 只剩「移除旗標」
-  ok("建議 3:data-rm 只掛在「移除旗標」;第一條線底下三項都不出才收", /const d1 = sep\(\); d1\.dataset\.d1 = "1"; rm\.dataset\.rm = "1";/.test(sf) && (sf.match(/dataset\.rm =/g) || []).length === 1
-    && /sfPop\.querySelector\("\[data-d1\]"\)\.hidden = !\(canRn \|\| cur \|\| mv\);/.test(sf));
+  ok("建議 3:data-rm 只掛在「移除旗標」;第一條線底下四項(改名、移除旗標、送上雲端／拉回、移到資料夾)都不出才收", /const d1 = sep\(\); d1\.dataset\.d1 = "1"; rm\.dataset\.rm = "1";/.test(sf) && (sf.match(/dataset\.rm =/g) || []).length === 1
+    && /sfPop\.querySelector\("\[data-d1\]"\)\.hidden = !\(canRn \|\| cur \|\| hoDir \|\| mv\);/.test(sf));
   ok("建議 3:開閉動效的原點跟著改到左側(面板從鈕往右長)", /\.flag-pop \{[^}]*transform-origin: top left;/.test(appCss) && /\.flag-pop\.up \{ transform: translateY\(2px\); transform-origin: bottom left; \}/.test(appCss)); }
 
 // ── 建議 4 ──

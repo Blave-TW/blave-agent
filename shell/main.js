@@ -1559,7 +1559,26 @@ function loadStrategy(name) {
   try { codeBuf = fs.readFileSync(path.join(dir, "strategy.py")); code = codeBuf.toString("utf8"); } catch (_) {}
   // 掃描／樣本外是哪一版碼跑的(lib 寫的 code_hash = lib.strategy.code_hash):跟現在的檔不同就不是這份碼的結論,畫面照過時畫。改名不算改碼
   if (codeBuf) for (const r of [scan, wf]) if (r && typeof r.code_hash === "string" && !codeHashMatches(codeBuf, r.code_hash)) r.code_stale = true;
-  return { name, stats, scan, wf, code, dataSources: stratDataSources(dir), missingSources: stratMissingSources(dir), versions: stratVersions(dir), perf: stratPerf(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir) };
+  return { name, stats, scan, wf, code, dataSources: stratDataSources(dir), missingSources: stratMissingSources(dir), versions: stratVersions(dir), perf: stratPerf(dir), ...stratMeta(code), exports: stratExports(dir, code), cryptoKline: stratUsesKline(dir), transfer: stratTransfer(dir) };
+}
+/* 拉回之後本機背景跑的狀態(runtime command_listener 寫的 transfer.json),形狀與淘汰規則同雲端 strategy_reporter._read_transfer:
+   { kind, status, at, err?, exit?, stopped_after_s?, tail? };沒有、壞形狀、結束超過一週、或之後的回測已經寫出更新的 stats.json = null。
+   renderer 只拿來判「拉回這一份跑完沒」(handoff.js),逐欄再驗一次 */
+function stratTransfer(dir) {
+  let d = null; try { d = JSON.parse(fs.readFileSync(path.join(dir, "transfer.json"), "utf8")); } catch (_) { return null; }
+  if (!d || typeof d !== "object" || ["backtest", "trial"].indexOf(d.kind) < 0 || ["running", "failed", "done"].indexOf(d.status) < 0 || !Number.isInteger(d.at)) return null;
+  if (d.status !== "running") {
+    if (Date.now() / 1000 - d.at > 7 * 86400) return null;
+    try { if (d.kind === "backtest" && fs.statSync(path.join(dir, "stats.json")).mtimeMs / 1000 > d.at + 1) return null; } catch (_) { /* 沒有 stats.json */ }
+  }
+  const out = { kind: d.kind, status: d.status, at: d.at };
+  if (d.status === "failed") out.err = RERUN_ERRS.indexOf(d.err) >= 0 ? d.err : "EXIT";
+  if (d.kind === "trial" && d.status !== "running") {
+    out.exit = Number.isInteger(d.exit) ? d.exit : null;
+    if (d.stopped_after_s != null) out.stopped_after_s = 120;   // runtime 只寫 TRANSFER_TRIAL_TIMEOUT_S(120);固定值不讓檔案內容流進畫面
+    if (typeof d.tail === "string") out.tail = d.tail.slice(-300);
+  }
+  return out;
 }
 /* 績效的新鮮度(renderer/perf.js 的「更新績效」),形狀同 runtime strategy_reporter._read_perf:{ at, refresh? },沒有 stats.json = null。
    at = stats.json 的 mtime(秒)——最後一次寫績效的時間(回測、還原的重跑、更新績效;live tick 不寫這個檔),不是 Generated At(只有明確回測會動)。
@@ -3648,6 +3667,8 @@ async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEf
     // 澄清表單(renderer/form.js):電腦版 spawn 的永遠是包裡那份 runtime,沒有版本錯配(tests/check_shell_viewing.js 釘著 runtime 認得)。
     // 手機來的回合不帶:手機畫不出表單,模型寫了 <form> 用戶只會等不到問題
     ...(rec.origin === "mobile" ? [] : ["--clarify-form"]),
+    // 搬策略動作卡(renderer/handoff.js):同表單卡,手機畫不出;旗標關著時畫面沒有搬的路,也不叫 agent 出卡
+    ...(rec.origin === "mobile" || !cloudHandoffOn() ? [] : ["--handoff-card"]),
     // argv 上只有設定檔的**路徑**(碼在檔案裡,0600、workspace 以外、這一輪結束就刪);runtime 只在電腦版(LocalSink)認這個旗標
     ...(mcpFile ? ["--mcp-config=" + mcpFile] : []),
     ...(mcpServers.length ? ["--mcp-servers=" + mcpServers.join(",")] : []),
@@ -3752,9 +3773,8 @@ async function startTurn(payload, origin) {
 function turnLaunch(rec, payload) {
   rec.phase = "starting";
   turnParTrack();
-  // 使用追蹤「上雲端運行」:只認「送上雲端」確認框送的那句(payload.handoff === "up";拉回不算),而且旗標要開——關著時畫面到不了那條路,標記也不認
-  const cloudUp = cloudHandoffOn() && payload && payload.handoff === "up";
-  runTurn(rec, payload).then(() => { if (cloudUp) tm().track("cloud_started"); }).catch((err) => {
+  // 「上雲端運行」(cloud_started)0.1.47 起由 transfer-up 的 ack 成功送,不再看回合
+  runTurn(rec, payload).catch((err) => {
     turnFinish(rec, { code: 1, errTail: String((err && err.message) || err) }, false);
   });
 }
@@ -4034,6 +4054,31 @@ app.whenReady().then(() => {
   /* 雲端連交易所(S5):**金鑰只走這一條**(cloud-send 永遠拒收 credentials)。形狀在這裡驗、環境變數名在這裡決定;
      不從這台電腦查 Binance(白名單設成雲端 IP 的好金鑰從這裡查必定被拒)——權限由雲端主機寫入前自己查。
      每按一次新的 request_id:重送同一把只是主機多查一次。回應只有代號,金鑰值不回傳、不 log。 */
+  /* 送上雲端／拉回這台電腦(shell/transfer.js;spec strategy-transfer-desktop-2026-11-05):app 直接搬,不經 agent。
+     策略檔與資料來源金鑰都在這個行程讀,renderer 只給名字;金鑰值不回 renderer、不 log。拉回的檔比過兩份 sha256 才寫暫存,
+     再由主行程專用的 strategy_import 交給本機 daemon(daemon.js MAIN_ONLY_COMMANDS)。 */
+  const xfDenied = { ok: false, error: "NOT_ALLOWED", kind: "undelivered" };
+  const xfName = (n) => typeof n === "string" && require("./transfer").NAME_RE.test(n);
+  handle("transfer-up", async (_e, name, to, requestId) => {
+    if (!cloudHandoffOn() || !xfName(name) || (to != null && !xfName(to))) return xfDenied;
+    const rid = typeof requestId === "string" && require("./cloudcmd").REQUEST_ID_RE.test(requestId) ? requestId : undefined;
+    const r = await require("./transfer").up({
+      ws: WS, readEnv: () => fs.readFileSync(path.join(WS, ".env"), "utf8"),
+      sources: (n) => stratDataSources(path.join(WS, "strategies", n)), ds: require("./datasrc"),
+      send: (cmd, args, secrets, opts) => cloudCmd().send(cmd, args, secrets, opts),
+    }, name, to, rid);
+    if (r && r.ok) { tm().track("cloud_started"); cloudHost().start(); cloudHost().refresh(true).catch(() => {}); }
+    return r;
+  }, xfDenied);
+  handle("transfer-down", async (_e, name, to) => {
+    if (!cloudHandoffOn() || !xfName(name) || (to != null && !xfName(to))) return xfDenied;
+    return require("./transfer").down({
+      ws: WS, send: (cmd, args, secrets, opts) => cloudCmd().send(cmd, args, secrets, opts),
+      fetchExport: (id) => cloudCmd().fetchExport(id),
+      daemonSend: (args) => tradeHost().send("strategy_import", args, { trusted: true, timeoutMs: 60000 }),   // 只能寫一支新策略:不設金額、不排程
+      sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    }, name, to);
+  }, xfDenied);
   const cxDenied = { ok: false, code: "NOT_ALLOWED", detail: {} };
   handle("cloud-connect", async (_e, a) => {
     const CC = require("./cloudcmd");

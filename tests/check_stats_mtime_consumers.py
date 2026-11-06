@@ -73,9 +73,11 @@ ALLOWED = {
     "runtime/portfolio_reporter.py:_manager_strategies",   # ran_at → web mgIsStale (24 h), manager 數字截至
     "runtime/strategy_reporter.py:_read_perf",             # perf.at → 更新績效 caption (web + desktop)
     "shell/main.js:stratPerf",                             # desktop-local perf.at, same shape as _read_perf
-    "shell/main.js:loadStrategy",                          # stratPerf's leading comment (previous-function attribution)
+    "shell/main.js:stratTransfer",                         # 拉回後本機 transfer.json 的淘汰(同 runtime _read_transfer);也吃到 stratPerf 的前導註解
     "runtime/command_listener.py:_stats_sig",             # the refresh.s before/after signature (mtime_ns, size): did the run write it?
     "runtime/command_listener.py:_sweep_members",          # pre-report sweep: skip if refreshed < 1 h ago
+    "runtime/command_listener.py:_stats_written_since",    # strategy_import: did the transfer backtest write it?
+    "runtime/strategy_reporter.py:_read_transfer",         # a failed transfer record answered by a later backtest
     # change-detection caches, draft-only or existence-only for deployed strategies
     "runtime/strategy_reporter.py:_stats_marker",          # draft → mtime; live/deployed → "exists"
     "runtime/local_daemon.py:strategy_kinds",              # (mtime,size) cache key for the Type C verdict

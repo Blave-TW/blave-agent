@@ -403,6 +403,27 @@ def extract_form(text, cloud, why):
     return _FORM_STRIP_RE.sub("", text).rstrip(), chunk
 
 
+# ── 搬策略動作卡(handoff)───────────────────────────────────────────────────────
+# 用戶在電腦版對話裡要求送上雲端／拉回:模型不自己搬,只在正文後自成一行寫
+# <handoff dir="up|down" name="<資料夾名>"/>(_HANDOFF_RULE,只在 --handoff-card 時掛),外殼畫一張卡、
+# 用戶點了才開確認框、由 app 直接搬(strategy_import／strategy_export)。名字過不了搬家的名字閘門
+# 就只剝不觸發;四個 sink 都剝(tests/check_await_marker.py 列舉)。chunk:{"type": "handoff", "dir", "name"}。
+_HANDOFF_TAG_RE = re.compile(r'[ \t]*<handoff\s+dir="(up|down)"\s+name="([^"<>\s]{1,64})"\s*/>[ \t]*\n?')
+_HANDOFF_STRIP_RE = re.compile(r"[ \t]*</?handoff\b[^<>]*>[ \t]*\n?")
+# = strategy_transfer.NAME_RE(含 Windows 保留名;tests/check_await_marker.py 釘成同一字串)。不 import 那支:它會叫 crontab,
+# 這個行程只准起引擎與探針(tests/check_turn_stop.py)
+_HANDOFF_NAME_RE = re.compile(r"(?!(?i:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$))[A-Za-z0-9_-]{1,64}")
+
+
+def extract_handoff(text):
+    """(清理後文字, handoff chunk 或 None)。取最後一個合法標記;名字要過搬家的名字閘門。"""
+    if not text or "handoff" not in text:
+        return text, None
+    tags = [t for t in _HANDOFF_TAG_RE.findall(text) if _HANDOFF_NAME_RE.fullmatch(t[1])]
+    chunk = {"type": "handoff", "dir": tags[-1][0], "name": tags[-1][1]} if tags else None
+    return _HANDOFF_STRIP_RE.sub("", text).rstrip(), chunk
+
+
 # ── 轉出策略程式碼(export)──────────────────────────────────────────────────
 # 工作頁的「轉出 XQ / MultiCharts / TradingView」走一般聊天回合:agent 依
 # references/{xq-xs,multicharts-powerlanguage,tradingview-pine}.md 把轉好的檔存到
@@ -1931,6 +1952,16 @@ _FORM_RULE = (
     "用戶回的是「幫我做台指期 … 回測，用 …」這種組好的句子 → 直接照做,不再問。]"
 )
 
+# 搬策略動作卡規則(build_prompt 逐輪掛,只在 --handoff-card:外殼畫得出卡、而且會自己搬)。
+_HANDOFF_RULE = (
+    "[搬策略:用戶要把一支策略送上雲端主機,或從雲端拉回這台電腦 → 不要自己搬:不連雲端主機、不照 "
+    "references/cloud-handoff.md 的搬運步驟、不複製檔案。正文只寫兩句(第一句說按下面的按鈕就會搬,"
+    "第二句說搬完會在策略頁重跑回測、兩邊數字並排),然後自成一行寫標記:送上雲端 "
+    '<handoff dir="up" name="momo"/>,拉回 <handoff dir="down" name="momo"/>。'
+    "name 是 strategies/ 底下的資料夾名,不是顯示名稱;看不出是哪一支 → 一句話問,不寫標記。"
+    "一則回覆只寫一個標記,不附 <suggest>、不寫 <await/>,正文不提標記。]"
+)
+
 # 結尾規則的逐輪錨(build_prompt,web／電腦版)。客戶端這一輪畫不畫建議由 --suggest-mode 告知:
 # reduced = 用戶連續沒用建議,只畫導航句;off = 用戶關掉了。畫不出來的那一句改寫進正文最後,下一步才不會無聲消失。
 _SUGGEST_ANCHOR_TAIL = "提到策略寫 DISPLAY_NAME,沒有就用 # Strategy: 或用戶慣稱,都沒有才用代號,列舉時也一樣、名稱後不括代號;建議跟本則結論同方向:正文說不建議用,就不提上線、也不提正文勸退的做法。]"
@@ -1949,10 +1980,11 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
                  suggest_directive=False, viewing_view=None,
                  reply_lang=None, resume_note=None, viewing_env=None, cloud_mcp=False, lang_basis=None,
                  version_note=None, desktop=False, report_fail_line=None, user_tz=None,
-                 suggest_mode="normal", clarify_form=False):
+                 suggest_mode="normal", clarify_form=False, handoff_card=False):
     """`report_fail_line`:run_turn 每回合算一次傳進來(排程回合傳 "",續跑沿用同一行);
     None = 這裡自己算(測試與其他呼叫端)。`user_tz`:用戶的 IANA 時區,電腦版不傳。
-    `clarify_form`:外殼畫得出澄清表單(--clarify-form)才掛 _FORM_RULE。"""
+    `clarify_form`:外殼畫得出澄清表單(--clarify-form)才掛 _FORM_RULE。
+    `handoff_card`:外殼畫得出搬策略動作卡(--handoff-card)才掛 _HANDOFF_RULE。"""
     parts = []
     if summary:
         parts.append(f"[過去對話摘要]\n{summary}\n")
@@ -2054,6 +2086,8 @@ def build_prompt(summary, recent, message, viewing_strategy=None, viewing_tab=No
         if clarify_form:
             # 逐輪、貼著訊息(同建議錨):表單的觸發是這一句要做什麼,放系統尾端弱模型守不住
             parts.append(_FORM_RULE)
+        if handoff_card:
+            parts.append(_HANDOFF_RULE)
         parts.append(_SUGGEST_ANCHORS.get(suggest_mode, _SUGGEST_ANCHORS["normal"]))
     # 兩個 sink 都掛(不像 _deploy_state_line 是 web 專屬):這是機器層級的事實,不是
     # 工作頁的 UI 狀態,而且只從 TG 用的人更沒有別的地方會看到它。
@@ -2607,6 +2641,7 @@ class TelegramSink:
         cleaned, _ = extract_suggestions(cleaned)
         cleaned, _ = extract_await(cleaned)
         cleaned, _ = extract_form(cleaned, cloud=True, why=None)  # 只剝;TG 沒有卡,改用編號方案(AGENTS.md)
+        cleaned, _ = extract_handoff(cleaned)  # 只剝;TG 沒有卡
         cleaned = _EXPORT_STRIP_RE.sub("", cleaned)
         cleaned = _NAV_STRIP_RE.sub("", cleaned)
         self.chunk_text = cleaned
@@ -3747,6 +3782,7 @@ class WebSink:
         cleaned, awaiting = extract_await(cleaned)
         desktop = _desktop_surface(self)
         cleaned, form = extract_form(cleaned, cloud=not desktop, why=_form_why() if desktop else None)
+        cleaned, handoff = extract_handoff(cleaned)
         marked = "<export" in cleaned
         cleaned, exports = extract_exports(cleaned, note=getattr(self, "export_fail_note", None))
         if not marked:
@@ -3766,6 +3802,8 @@ class WebSink:
                 self._send(chunk)
         if form and not self.interrupted:
             self._send(form)
+        if handoff and not self.interrupted:
+            self._send(handoff)
         if suggestions and not self.interrupted:
             self._send({"type": "suggestions", "items": suggestions,
                         "kind": suggest_kind(suggestions[0])})
@@ -5136,7 +5174,8 @@ HANDOFF_ROOT_STALE_S = 20 * 60   # get_ssh_access 的憑證 15 分鐘,多留 5 �
 async def run_turn(session_id, message, model, sink, viewing_strategy=None, viewing_tab=None,
                    viewing_view=None, ui_lang=None,
                    engine="claude", codex_bin=None, effort=None, mcp_config=None,
-                   viewing_env=None, mcp_servers=None, suggest_mode="normal", clarify_form=False):
+                   viewing_env=None, mcp_servers=None, suggest_mode="normal", clarify_form=False,
+                   handoff_card=False):
     # engine="codex" 是電腦版專屬(用戶自己的 Codex 訂閱),只換掉「呼叫模型並消化它的
     # 事件流」那一段;prompt、session store、兜底分類、寫回歷史全部共用。機隊不帶
     # --engine,走的是原本那條路,一行都不經過 codex 分支(閘門:
@@ -5183,7 +5222,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                           reply_lang=reply_lang, viewing_env=viewing_env, cloud_mcp=cloud_mcp,
                           lang_basis=lang_msg, version_note=version_note,
                           report_fail_line=report_fail_line, user_tz=prompt_tz,
-                          clarify_form=clarify_form,
+                          clarify_form=clarify_form, handoff_card=handoff_card,
                           desktop=_desktop_surface(sink), suggest_mode=suggest_mode)
     agents_md = load_agents_md()
 
@@ -5592,7 +5631,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                                   viewing_env=viewing_env, cloud_mcp=cloud_mcp, lang_basis=lang_msg,
                                   version_note=version_note,
                                   report_fail_line=report_fail_line, user_tz=prompt_tz,
-                                  clarify_form=clarify_form,
+                                  clarify_form=clarify_form, handoff_card=handoff_card,
                                   desktop=_desktop_surface(sink), suggest_mode=suggest_mode)
             options.max_budget_usd = budget if options.max_budget_usd is not None else None
             options.max_turns = max(TURN_MAX_TURNS - spent_turns, _RESUME_MIN_TURNS)
@@ -5758,6 +5797,8 @@ def main():
     parser.add_argument("--suggest-mode", default="normal", choices=["normal", "reduced", "off"])
     # 外殼畫得出澄清表單(電腦版無條件帶、web_bridge 看 context.clarify_form);Telegram 永遠不帶
     parser.add_argument("--clarify-form", action="store_true")
+    # 外殼畫得出搬策略動作卡、而且自己會搬(電腦版 0.1.47 起帶);沒帶的外殼 agent 照 references 自己搬
+    parser.add_argument("--handoff-card", action="store_true")
     args = parser.parse_args()
     if args.message_stdin:
         raw = sys.stdin.buffer.read(MESSAGE_STDIN_MAX + 1)
@@ -5806,7 +5847,7 @@ def main():
         ui_lang=args.ui_lang, engine=args.engine, codex_bin=args.codex_bin,
         effort=args.effort, mcp_config=args.mcp_config, viewing_env=args.viewing_env,
         mcp_servers=args.mcp_servers, suggest_mode=args.suggest_mode,
-        clarify_form=args.clarify_form,
+        clarify_form=args.clarify_form, handoff_card=args.handoff_card,
     ))
     if args.scheduled:
         _write_sched_outcome()

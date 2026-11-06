@@ -157,7 +157,9 @@ const unusedE = all.filter((e) => !used.has(e)).map(([f, , why]) => f + " " + wh
 ok("清單上每一條都還對得到原文", unusedE.length === 0, unusedE);
 ok("切換對話、開新對話、從別處送一句話不再上鎖:busy.js 沒有 switch／new／sendAway;sendAway 的入口全走 csSendAway",
   !/\b(switch|new|sendAway):/.test(read("busy.js").slice(read("busy.js").indexOf("const BUSY = {"), read("busy.js").indexOf("};"))) && !/if \(csTitle\) csStartNew\(\);/.test(fs.readdirSync(R).filter((n) => n.endsWith(".js")).map(read).join("\n"))
-  && ["intro.js", "handoff.js", "capital.js", "export.js", "library.js", "pine-install.js", "newstrategy.js", "reports.js", "versions.js"].every((f) => /csSendAway\(/.test(read(f)) && !/\bsubmitMessage\(/.test(strip(read(f)))));
+  && ["intro.js", "capital.js", "export.js", "library.js", "pine-install.js", "newstrategy.js", "reports.js", "versions.js"].every((f) => /csSendAway\(/.test(read(f)) && !/\bsubmitMessage\(/.test(strip(read(f))))
+  // handoff.js 0.1.47 起不送話給 agent(app 直接搬),兩條入口都不該出現
+  && !/csSendAway\(|\bsubmitMessage\(/.test(strip(read("handoff.js"))));
 
 // ── 3. withTab 的換進換出 ──
 { const core = ct.slice(ct.indexOf("const CS = {"), ct.indexOf("/* ── 機器層級"));

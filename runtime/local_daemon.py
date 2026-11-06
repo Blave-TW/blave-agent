@@ -106,6 +106,9 @@ ALLOWED = frozenset({
     "report_pause", "report_resume", "report_run_now", "report_delete",
     "report_edit_pending", "preferences_set", "tz_set", "reply_lang_set",
     "book_account_confirm", "version_restore", "stats_refresh", "rename_strategy",
+    # 拉回:only the app's main process sends it (shell/daemon.js MAIN_ONLY_COMMANDS), with the files
+    # staged under state/transfer_in/ — a 16 KB command file cannot carry them
+    "strategy_import",
 })
 # In the api's list, refused here: the Capital (群益) and 統一期貨 connect steps
 # install broker components and an NSSM worker on a cloud Windows host —
@@ -114,6 +117,8 @@ CLOUD_ONLY = frozenset({
     "capital_setup", "capital_pfx_key", "capital_pfx", "capital_probe", "capital_finish",
     "president_setup", "president_pfx_key", "president_pfx", "president_pfx_local", "president_probe",
     "president_host", "president_test_order", "president_finish",
+    # 策略搬家:export 只有雲端有(本機的檔外殼自己讀)
+    "strategy_export",
 })
 # Not in the api's list at all: the desktop's own 統一期貨 connect flow
 # (runtime/president_connect.local_dispatch). Only the app's main process sends
