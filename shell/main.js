@@ -4409,7 +4409,7 @@ function setRestarting(v) {
 let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading", pause: "Pause trading (keep positions)", open: "Open Blave", quit: "Quit Blave…",
   notifTitle: "Trading paused", notifBody: "Positions were not touched.", pauseFail: "The pause command didn’t go through. Trading may still be running.",
   phoneHalt: "Trading paused from your phone", phoneHaltFail: "The pause from your phone didn’t go through",
-  phoneHaltUnsure: "Pause from your phone: result not confirmed", phoneHaltUnsureBody: "This computer took the pause but hasn’t confirmed it. It has most likely taken effect. Open Blave to check.",
+  phoneHaltUnsure: "Pause from your phone not confirmed", phoneHaltUnsureBody: "It has most likely taken effect. Open Blave to check.",
   pauseUnknown: "The pause command was sent, but this computer hasn’t reported the result yet. Check the status on this page.",
   quitTitle: "Auto trading is still running", quitBody: "After you quit Blave, this computer stops placing orders. Positions are not closed.", quitGo: "Quit Blave", quitStay: "Cancel", ok: "OK",
   // 畫面還沒交字之前就按結束:回合中那一道也要有字(不然 message 退回下單那句、detail 是空的)

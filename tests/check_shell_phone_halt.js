@@ -136,7 +136,7 @@ async function on(m) { await m.r.tick(); await m.r.setOn(true); await wait(20); 
     const src = fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "utf8");
     const S = new Function(src + "; return STRINGS;")();
     ok("6 兩語都有五個新字", ["en", "zh"].every((l) => ["tr.ov.evHaltPhone", "tm.phoneHalt", "tm.phoneHaltFail", "tm.phoneHaltUnsure", "tm.phoneHaltUnsureBody"].every((k) => typeof S[l][k] === "string" && S[l][k].length > 0)));
-    ok("6 不確定那則不講沒生效", ["zh", "en"].every((l) => S[l]["tm.phoneHaltUnsure"] !== S[l]["tm.phoneHaltFail"]) && !/沒有生效/.test(S.zh["tm.phoneHaltUnsure"]) && /不確定/.test(S.zh["tm.phoneHaltUnsure"]));
+    ok("6 不確定那則不講沒生效", ["zh", "en"].every((l) => S[l]["tm.phoneHaltUnsure"] !== S[l]["tm.phoneHaltFail"]) && !/沒有生效/.test(S.zh["tm.phoneHaltUnsure"]) && /結果不明/.test(S.zh["tm.phoneHaltUnsure"]));
     // 通知照 notifications §8.1:視窗在前景不發;背景才發,成功／不確定／失敗三種標題;常駐程式沒在跑(queued)不發
     const shown = [];
     class N { static isSupported() { return true; } constructor(o) { this.o = o; } on() { return this; } show() { shown.push(this.o); } }
@@ -153,7 +153,7 @@ async function on(m) { await m.r.tick(); await m.r.setOn(true); await wait(20); 
       bad = await run(false, { ok: false, error: "TIMEOUT" }), q = await run(false, { ok: true, result: { queued: true } });
     ok("6 前景不發、照回手機", fg.shown === "" && fg.back.ok === true, fg);
     ok("6 背景:成功／不確定／失敗各自的標題與內文;queued 不發", ok1.shown === "OK/B" && un.shown === "UNSURE/UB" && un.back.error === "UNKNOWN_RESULT" && bad.shown === "FAIL/PF" && q.shown === "", [ok1, un, bad, q]);
-    ok("6 中文寫「從手機暫停」", S.zh["tr.ov.evHaltPhone"].includes("從手機暫停") && S.zh["tm.phoneHalt"].includes("從手機暫停"));
+    ok("6 中文寫「已從手機暫停下單」(同組兄弟句都是完成式)", S.zh["tr.ov.evHaltPhone"] === "已從手機暫停下單" && S.zh["tm.phoneHalt"] === "已從手機暫停下單");
   });
   clearInterval(keepAlive);
   for (const d of TMP) try { fs.rmSync(d, { recursive: true, force: true }); } catch (_) { /* 刪不掉不算紅 */ }
