@@ -121,6 +121,9 @@ function trCapWip(r, id) {
 // 群益在這台電腦開通中:只看本機那份(capital_local_connect);trSetupOnly 用它——雲端的 capital_connect 不是這台電腦的開通
 function trCaplWip(r, id) { const l = id === "capital" && r && r.capital_local_connect; return !!l && typeof l === "object" && !(l.worker && (l.worker.status === "ok" || l.worker.ok_at)); }
 function trCaplStopped(r, id) { const l = id === "capital" && r && r.capital_local_connect; return !!l && typeof l === "object" && !!l.worker && l.worker.status === "failed" && !trCapWip(r, id); }
+// 停掉的那一種是登入被拒(runtime capital_local 寫 worker.error = LOGIN_FAILED:<類別>;WORKER_FAILED／SNAPSHOT_* 是起不來):只有這種才講「登入已停止」,
+// 其他失敗講成登入會讓用戶去重輸交易密碼、白用掉群益一次機會(同 trPresLoginStopped)
+function trCaplLoginStopped(r, id) { return trCaplStopped(r, id) && String(r.capital_local_connect.worker.error || "").indexOf("LOGIN_FAILED") === 0; }
 /* 統一在這台電腦開通中(狀態檔有 president_connect、worker 從來沒 ok 過;同 president.js presWip、traytext.localLine):讀帳失敗同樣是預期的。
    worker.ok_at = 開通過(runtime 在 worker 第一次 ok 寫、之後登入失敗不清):開通過又停掉的(機器重開落在維護時段、改了密碼)
    只看 status 會被當成開通中,暫停鈕與「部位沒人管」的紅字整個被吞(稽核 integ-0118 B-1) */
@@ -152,7 +155,7 @@ function trPresBooting(r, nowMs) {
    統一、群益同一句,券商名照綁的那家(broker = 這台綁的台灣期貨券商)。
    四個條件同時成立才出:這台電腦且綁統一或群益、回報有那一欄(還沒 tick 過就沒有,不出佔位句)、至少一個台指期口數列 > 0(`lots`;
    全 0 時沒有 live tick,檔案是舊的)、狀態在跑 / 已暫停 / 沒停住(過場中、死掉、開通中都不出)。
-   `paused`(市場沒開、worker 在時段外重蓋快照)不是退路,照正常句;退路時先看是不是真的登入失敗(統一 trPresLoginHeld、群益 trCaplStopped:
+   `paused`(市場沒開、worker 在時段外重蓋快照)不是退路,照正常句;退路時先看是不是真的登入失敗(統一 trPresLoginHeld、群益 trCaplLoginStopped:
    後端沒有獨立代碼,worker 沒登入只是不寫檔,落 stale / no_file),其他 worker 狀態(剛啟動、沒寫出快照)照 reason 講;
    群益的換月保護(結算日、近月代碼對不上)與行情連線數滿各有一句;`empty` 併進 noFile。fallback = 退路句(顏色升一階,trPaintQuote) */
 const TR_QUOTE_WHY = { stale: "tr.quote.why.stale", not_enabled: "tr.quote.why.notEnabled", no_overlap: "tr.quote.why.noOverlap",
@@ -166,7 +169,7 @@ function trQuoteLine(r, env, id, state, lots) {
   // paused = 市場沒開(worker 在時段外重蓋快照):不是退路,照正常句
   if (q.source === broker || q.reason === "paused") return { key: "tr.quote.live", why: null, fallback: false, broker };
   const why = String(q.reason || "");
-  const held = broker === "president" ? trPresLoginHeld(r, broker) : trCaplStopped(r, broker);
+  const held = broker === "president" ? trPresLoginHeld(r, broker) : trCaplLoginStopped(r, broker);
   const k = held ? "tr.quote.why.noLogin"
     : TR_QUOTE_WHY[why] || (why.indexOf("not_ok") === 0 ? "tr.quote.why.notOk" : "tr.quote.why.noFile");
   return { key: "tr.quote.blave", why: k, fallback: true, broker };

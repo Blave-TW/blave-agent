@@ -2869,14 +2869,16 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && L(other("running")).why === "tr.quote.why.stale" && L(other("failed", "WORKER_FAILED")).why === "tr.quote.why.stale" && L(other("idle")).why === "tr.quote.why.stale"
         && L(q("blave", "no_file", "idle")).why === "tr.quote.why.noFile" && L(q("president", null, "failed")).key === "tr.quote.live"
         && L({ twfutures_live_source: { source: "blave", reason: "stale" } }).why === "tr.quote.why.stale"); }
-    { const cq = (s, reason, w) => ({ twfutures_live_source: { source: s, reason }, capital_local_connect: { worker: { status: w || "ok", ok_at: 1 } } });
+    { const cq = (s, reason, w, err) => ({ twfutures_live_source: { source: s, reason }, capital_local_connect: { worker: { status: w || "ok", ok_at: 1, error: err } } });
       const C = (r, state) => L(r, "local", "capital", state);
-      ok("行情句:綁群益同一句、券商名照綁的那家;統一的來源不算群益的;換月保護、連線數滿各一句;群益 worker 停了 = noLogin",
+      ok("行情句:綁群益同一句、券商名照綁的那家;統一的來源不算群益的;換月保護、連線數滿各一句;群益 worker 登入被拒(LOGIN_FAILED)才 = noLogin,起不來(WORKER_FAILED／SNAPSHOT_*／沒寫原因)照 reason 講",
         J(C(cq("capital", null))) === J({ key: "tr.quote.live", why: null, fallback: false, broker: "capital" })
         && J(C(cq("president", null))) === J({ key: "tr.quote.blave", why: "tr.quote.why.noFile", fallback: true, broker: "capital" })
         && C(cq("blave", "not_ok:QUOTE_ROLL_GUARD")).why === "tr.quote.why.roll" && C(cq("blave", "not_ok:QUOTE_CONN_LIMIT")).why === "tr.quote.why.connLimit"
         && C(cq("blave", "price_mismatch")).why === "tr.quote.why.notOk" && C(cq("blave", "not_ok:QUOTE_SILENT")).why === "tr.quote.why.notOk"
-        && C(cq("blave", "stale", "failed")).why === "tr.quote.why.noLogin" && C(cq("blave", "paused", "failed")).key === "tr.quote.live"
+        && C(cq("blave", "stale", "failed", "LOGIN_FAILED:PASSWORD")).why === "tr.quote.why.noLogin" && C(cq("blave", "stale", "failed", "WORKER_FAILED")).why === "tr.quote.why.stale"
+        && C(cq("blave", "no_file", "failed", "SNAPSHOT_TIMEOUT")).why === "tr.quote.why.noFile" && C(cq("blave", "stale", "failed")).why === "tr.quote.why.stale"
+        && C(cq("blave", "paused", "failed", "LOGIN_FAILED:PASSWORD")).key === "tr.quote.live"
         && L({ ...cq("capital", null), venues: { capital: { credentials: true, pair: true, order: true, account: true } } }, "local", "paper").broker === "capital"); }
     { const BOUND = { credentials: true, pair: true, order: true, account: true }, R = (pc) => ({ venues: { president: BOUND }, president_connect: pc });
       const STR = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "\nreturn STRINGS;")();
