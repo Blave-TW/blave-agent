@@ -3868,7 +3868,7 @@ msgid "ho.block.goCloud"
 msgstr "View in Cloud"
 
 msgid "ho.emptyHint"
-msgstr "No strategies in the cloud yet. Open one on this computer and press Send to Cloud, or ask the agent to build one right here."
+msgstr "No strategies in the cloud yet. Send one up from this computer."
 
 msgid "ho.ready.h"
 msgstr "Your cloud machine is ready"

@@ -3887,7 +3887,7 @@ msgid "ho.block.goCloud"
 msgstr "去雲端看"
 
 msgid "ho.emptyHint"
-msgstr "雲端還沒有策略。在這台電腦打開一支策略，按「送上雲端」，或直接在這裡請 agent 做一支。"
+msgstr "雲端還沒有策略，可以從這台電腦送上來。"
 
 msgid "ho.ready.h"
 msgstr "雲端主機準備好了"

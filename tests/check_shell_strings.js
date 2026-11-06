@@ -166,10 +166,10 @@ const LIE = { zh: /只能看|留在電腦上|還不能操作/, en: /can only vie
   const AGENT_ACT = { zh: /agent[^。；;]*(啟動|暫停)/, en: /agent[^.;]*\b(start|pause)/i };
   const acts = ["en", "zh"].flatMap((l) => ["pv.d.running", "tr.onboard.cloud", "ho.emptyHint"].filter((k) => AGENT_ACT[l].test((l === "en" ? enV : zhV)[k] || "")).map((k) => l + ":" + k));
   if (acts.length) fail(`把啟動 / 暫停下單講成 agent 做的:[${acts}]`); else pass("啟動 / 暫停下單不跟 agent 同一句(主詞是用戶)");
-  // ho.emptyHint 兩條路並陳,順序仍是 handoff 在前(MVP 一句話:電腦 = 研發的地方);不可以只留「請 agent 做」
+  // ho.emptyHint 指向從這台電腦送上來(Wei 11-06 縮成一句,拿掉「或請 agent 做一支」);不可以只留「請 agent 做」
   const hz = zhV["ho.emptyHint"] || "", he = enV["ho.emptyHint"] || "";
-  if (hz.indexOf("送上雲端") > 0 && hz.indexOf("送上雲端") < hz.indexOf("agent") && /Send to Cloud/.test(he) && he.indexOf("Send to Cloud") < he.indexOf("agent")) pass("ho.emptyHint 兩條路並陳、handoff 在前");
-  else fail("ho.emptyHint 要先講「送上雲端」、再講「或請 agent 做一支」");
+  if (/從這台電腦送上來/.test(hz) && /Send one up from this computer/.test(he) && !/agent/.test(hz + he)) pass("ho.emptyHint 指向從這台電腦送上來");
+  else fail("ho.emptyHint 要講「從這台電腦送上來」,不講「請 agent 做」");
 }
 
 // ---- 7. 停機跨棒自動暫停還沒上線(lib/downtime 在 downtime-lib 分支、沒併進 main),兩句不得承諾它 ----
