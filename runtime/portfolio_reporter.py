@@ -2495,7 +2495,7 @@ def build_report(reporter=None):
         if isinstance(stop, dict):
             pres = dict(pres, login_stop={"kind": str(stop.get("kind") or "UNKNOWN"), "at": stop.get("at")})
         report["president_connect"] = pres
-    # which feed the last 台指期 live tick read its bars from (lib/data._with_president_tail,
+    # which feed the last 台指期 live tick read its bars from (lib/data._with_broker_tail,
     # 統一-bound desktop only) — the trade page's one-line 「行情:…」
     src = _read_json(os.path.join(WORKSPACE_STATE, "twfutures_live_source.json"))
     if isinstance(src, dict):

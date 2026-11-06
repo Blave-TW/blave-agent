@@ -1885,6 +1885,8 @@ def _strategy_subprocess_env(mode="live", **extra):
             extra = {**_tw_broker_flag(), **extra}
         return _local_child_env(BLAVE_MODE=mode, **extra)
     if platform.system() == "Windows":
+        if mode == "live":  # a cloud 群益 machine's tick reads the worker's quote feed too (lib/data)
+            extra = {**_tw_broker_flag(), **extra}
         env = {k: v for k, v in os.environ.items()
                if not k.startswith("BLAVE_") and k != "TZ"}
         env["BLAVE_MODE"] = mode

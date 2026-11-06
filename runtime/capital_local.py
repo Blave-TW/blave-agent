@@ -130,6 +130,7 @@ def _paths():
         "pid": os.path.join(WORKSPACE, "state", "capital_worker.pid"),
         "log": os.path.join(WORKSPACE, "state", "capital_worker.log"),
         "relogin": os.path.join(WORKSPACE, "state", "capital_relogin.json"),   # = lib/order_capital._RELOGIN_PATH
+        "bars": os.path.join(WORKSPACE, "state", "capital_bars_TXF_1m.json"),  # = lib/capital_quote.snapshot_path
         "env": os.path.join(WORKSPACE, ".env"),
     }
 
@@ -477,7 +478,7 @@ def drop_local(names):
     # snapshots and the worker log (account numbers). The wrong-password block stays: it is keyed on the
     # credentials, and re-binding the same wrong password must not buy another try toward 307
     p = _paths()
-    for f in (p["probe"], p["snapshot"], p["log"], p["log"] + ".1", p["relogin"]):
+    for f in (p["probe"], p["snapshot"], p["log"], p["log"] + ".1", p["relogin"], p["bars"]):
         try:
             os.remove(f)
         except OSError:

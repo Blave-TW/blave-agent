@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+- **群益實盤 K 棒改吃群益行情(配合 blave-agent 2026-11-06-c 的 `lib/capital_quote`)**:雲端 Windows 的 live tick 子行程也帶 `BLAVE_TW_BROKER`(`_strategy_subprocess_env` 雲端 Windows 分支補 `_tw_broker_flag()`,backtest 不帶),`lib/data` 才知道這台綁群益、去讀 worker 寫的 `state/capital_bars_TXF_1m.json`;舊 lib 只認統一的電腦版,所以 runtime 先發無害。解綁群益時連行情快照一起刪:電腦版 `capital_local.drop_local`、雲端 `capital_connect.drop_vault`。`portfolio_reporter` 一行註解改指 `lib/data._with_broker_tail`。
+
 ## 1.1.158 — 2026-11-06(desktop 0.1.47)
 
 - **雲端群益用 Administrator 身分平倉(`portfolio_reporter.CAPITAL_ADMIN_FLATTEN_ON`,預設關)**:開著時,雲端 Windows 的 bridge 身分登不進群益、但機器上有 Administrator 密碼,範圍裡有群益的平倉(close_all、close_then_unbind)改經 `capital_connect.run_detached_as_administrator` 起一次性排程(`BlaveCapitalFlatten`,跑 `state/flatten_admin.cmd`,清掉 `BLAVE_AGENT_LOCAL`),flatten 放開 `state/flatten.lock` 後刪排程。排程起不來就照舊用 bridge 身分起(群益記手動平)。`can_flatten`、`manual_close_venues`、listener `_manual_venues` 跟著認「可換身分」。要等 Windows 測試機上 1 口微台真單驗過(成交、刪排程不砍程式、worker 同時登入不互踢、密碼不進 log)才翻 true;翻的同一版補 `references/capital-broker.md` 與 `manager.md`。
