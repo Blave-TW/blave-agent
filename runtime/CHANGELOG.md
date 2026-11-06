@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.158 — 2026-11-06(desktop 0.1.47)
+
 - **雲端群益用 Administrator 身分平倉(`portfolio_reporter.CAPITAL_ADMIN_FLATTEN_ON`,預設關)**:開著時,雲端 Windows 的 bridge 身分登不進群益、但機器上有 Administrator 密碼,範圍裡有群益的平倉(close_all、close_then_unbind)改經 `capital_connect.run_detached_as_administrator` 起一次性排程(`BlaveCapitalFlatten`,跑 `state/flatten_admin.cmd`,清掉 `BLAVE_AGENT_LOCAL`),flatten 放開 `state/flatten.lock` 後刪排程。排程起不來就照舊用 bridge 身分起(群益記手動平)。`can_flatten`、`manual_close_venues`、listener `_manual_venues` 跟著認「可換身分」。要等 Windows 測試機上 1 口微台真單驗過(成交、刪排程不砍程式、worker 同時登入不互踢、密碼不進 log)才翻 true;翻的同一版補 `references/capital-broker.md` 與 `manager.md`。
 
 - **電腦版 daemon 自己校時(`local_daemon._clock_loop`)**:綁著群益或統一時,每 10 分鐘 GET 一次 api 的 `/fx_rates`(公開、只讀 Redis),回應的 Date 交給 `lib/tw_clock.note_reply` 寫進 workspace 的 `state/clock_skew.json`。沒有 Blave 資料權限的電腦版原本拿不到校時樣本,台指期新倉的時鐘閘等於沒作用;時鐘快超過 60 秒時,預開盤送出的市價單會被當成「沒成交」每輪重送。tw_clock 用檔案路徑載進私有模組,skew 檔指定絕對路徑,不受執行緒 cwd 影響;workspace 沒有 `lib/tw_clock.py` 就跳過。
