@@ -37,6 +37,15 @@ import tempfile
 import time
 import types
 
+# BLAVE_AGENT_LOCAL=1 below makes the import's backtest child run under THIS interpreter
+# (command_listener._workspace_python); without pandas it dies on import and §6 reads as a
+# transfer bug ("the backtest finishes" FAIL, then a missing versions/index.json).
+try:
+    import pandas  # noqa: F401
+except ImportError:
+    sys.exit(f"FAIL this interpreter ({sys.executable}) has no pandas — run with blave-agent's .venv "
+             "(tests/run_all.sh picks it) so the imported strategy's backtest can run")
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNTIME = os.path.join(ROOT, "runtime")
 BASE = tempfile.mkdtemp(prefix="strategy-transfer-")
