@@ -159,7 +159,7 @@ EXEMPT = [
      'inplace', 'state/ui_amounts_event, written in place'),
     ('lib/portfolio.py', 'load_json', 'path',
      'helper', "the retry helper's own open, or the half-updated-workspace fallback"),
-    ('lib/president_quote.py', 'load_json', 'path',
+    ('lib/twf_feed.py', 'load_json', 'path',
      'helper', "the retry helper's own open, or the half-updated-workspace fallback"),
     ('lib/president_vault.py', 'load_json', 'path',
      'helper', "the retry helper's own open, or the half-updated-workspace fallback"),
@@ -1117,7 +1117,7 @@ try:
 
     # ── ⑤ half-updated workspace ──
     IMPORTERS = ("lib.execute", "lib.guard", "lib.portfolio", "lib.paper_data", "lib.order_paper",
-                 "lib.order_president", "lib.account_president", "lib.account_capital", "lib.president_quote",
+                 "lib.order_president", "lib.account_president", "lib.account_capital", "lib.president_quote", "lib.twf_feed", "lib.capital_quote",
                  "lib.capital_vault", "lib.order_capital", "lib.strategy", "lib.report",
                  "lib.president_worker", "lib.runner", "lib.validation", "lib.pnl", "lib.venue_wiring",
                  "manager.reconciler", "manager.wait_for_bar", "manager.close_symbol",
@@ -1197,7 +1197,7 @@ try:
         f.write("REPLACE_RETRY_DELAYS = ()\nPLANTED = True\n\n\ndef atomic_replace(s, d):\n    raise SystemExit('planted')\n\n\n"
                 "def load_json(p, **k):\n    raise SystemExit('planted')\n\n\ndef read_retry(r, *a, **k):\n"
                 "    raise SystemExit('planted')\n")
-    MODS = ("capital_vault", "president_quote", "president_worker", "capital_worker", "president_vault",
+    MODS = ("capital_vault", "twf_feed", "president_worker", "capital_worker", "president_vault",
             "account_president", "account_capital")
     probe = (
         "import importlib, sys\n"

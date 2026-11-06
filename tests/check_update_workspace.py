@@ -412,8 +412,26 @@ try:
         got = uw.reconciler_state()
         check(got == want if isinstance(want, str) else (isinstance(got, tuple) and got[0] == "stop"),
               f"Windows reconciler_state reads {raw.decode('utf-16-le')} as {want!r}")
+    calls = []
+
+    def fake_nssm(states):
+        def f(argv, *a, **k):
+            calls.append(argv[1:])
+            return FakeRun(states.pop(0).encode("utf-16-le") if argv[1] == "status" else b"")
+        return f
+    uw.subprocess.run = fake_nssm(["SERVICE_RUNNING", "SERVICE_RUNNING"])
+    ok_restart = uw.restart_capital_worker()
+    restarted_calls = list(calls)
+    calls.clear()
+    uw.subprocess.run = fake_nssm(["SERVICE_STOPPED"])
+    stopped = uw.restart_capital_worker()
+    check(ok_restart is True and restarted_calls == [["status", "blave-agent-capital"], ["restart", "blave-agent-capital"],
+                                                     ["status", "blave-agent-capital"]]
+          and stopped is None and calls == [["status", "blave-agent-capital"]],
+          "Windows: a running 群益 worker service is restarted (new lib reaches it); a stopped / missing one is left alone")
     uw.subprocess.run = real_run
     uw.IS_WINDOWS = False
+    check(uw.restart_capital_worker() is None, "Linux: no 群益 worker service to restart")
 
     unit("inactive")
     real_plan, real_path = uw.plan, os.environ["PATH"]

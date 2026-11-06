@@ -157,7 +157,7 @@ try:
         ("lib/portfolio.py", "_drift_sigma"),
         ("lib/order_paper.py", "_save"), ("lib/order_president.py", "_write_tags"),
         ("lib/runner.py", "_write_atomic"), ("lib/validation.py", "write_mcpt_to_stats"),
-        ("lib/president_worker.py", "_atomic_write"), ("lib/president_quote.py", "_atomic_write"),
+        ("lib/president_worker.py", "_atomic_write"), ("lib/twf_feed.py", "atomic_write"),
         ("lib/capital_worker.py", "_write_snapshot"), ("lib/capital_worker.py", "_write_probe"),
         ("lib/capital_vault.py", "mark_order_sent"), ("lib/capital_vault.py", "_write_block"),
         ("lib/president_vault.py", "replace_json"),
@@ -332,7 +332,7 @@ try:
         "sys.path.insert(0, os.getcwd())\n"
         "bad = []\n"
         "for m in ('lib.guard', 'lib.execute', 'lib.portfolio', 'lib.order_paper', 'lib.order_president',\n"
-        "          'lib.runner', 'lib.validation', 'lib.president_vault', 'lib.capital_vault', 'lib.president_quote',\n"
+        "          'lib.runner', 'lib.validation', 'lib.president_vault', 'lib.capital_vault', 'lib.twf_feed',\n"
         "          'lib.president_worker', 'lib.capital_worker', 'manager.reconciler', 'manager.wait_for_bar'):\n"
         "    try:\n"
         "        mod = importlib.import_module(m)\n"

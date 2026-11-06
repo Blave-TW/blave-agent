@@ -391,8 +391,8 @@ check(labels_of(df) == [3, 4, 5, 6, 7, 8, 9, 10] and source()["source"] == "pres
       "5 feed fresh but nothing newer than Blave: source president, added 0", source())
 
 reads = []
-real_read = d._read_president_bars
-d._read_president_bars = lambda *a: (reads.append(a), real_read(*a))[1]
+real_read = d._read_broker_bars
+d._read_broker_bars = lambda *a: (reads.append(a), real_read(*a))[1]
 live({})
 df = run([10, 9, 8, 7, 6, 5, 4, 3], [6, 5, 4, 3, 2, 1])
 check(labels_of(df) == [3, 4, 5, 6, 7, 8, 9, 10] and source() is None and reads == [] and len(raw_calls) == 1,
@@ -405,14 +405,17 @@ df = run([10, 9, 8, 7, 6, 5, 4, 3], [6, 5, 4, 3, 2, 1])
 check(labels_of(df) == [3, 4, 5, 6, 7, 8, 9, 10] and source() is None and reads == [], "5 a cloud machine (no BLAVE_AGENT_LOCAL) never reads it")
 live(venue="capital")
 df = run([10, 9, 8, 7, 6, 5, 4, 3], [6, 5, 4, 3, 2, 1])
-check(labels_of(df) == [3, 4, 5, 6, 7, 8, 9, 10] and source() is None and reads == [], "5 a 群益-bound desktop never reads it")
+check(labels_of(df) == [3, 4, 5, 6, 7, 8, 9, 10] and [r[0] for r in reads] == ["capital"]
+      and source()["source"] == "blave" and source()["reason"] == "no_file",
+      "5 a 群益-bound desktop reads only its own feed file, never 統一's", (reads, source()))
+reads.clear()
 live(venue=None)
 df = run([10, 9, 8, 7, 6, 5, 4, 3], [6, 5, 4, 3, 2, 1])
 check(labels_of(df) == [3, 4, 5, 6, 7, 8, 9, 10] and source() is None and reads == [], "5 no TW broker bound (no BLAVE_TW_BROKER) never reads it")
 live()
 df = run([10, 9, 8, 7, 6, 5, 4, 3], [6, 5, 4, 3, 2, 1])
 check(len(reads) == 1 and source()["source"] == "president", "5 …back on a 統一-bound desktop live tick it is read")
-d._read_president_bars = real_read
+d._read_broker_bars = real_read
 df = d.fetch_twfutures_ohlcv("MXF", "1m", start, None, {})
 check(source()["traded"] == "MXF" and source()["root"] == "TXF" and labels_of(df) == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
       "5 an MXF / TMF strategy reads the TXF series + the TXF snapshot (same alias as the backtest), traded recorded", source())
@@ -420,18 +423,18 @@ check(source()["traded"] == "MXF" and source()["root"] == "TXF" and labels_of(df
 # 5m: the feed's 1m rows are resampled the server's way, complete bins only
 one = pd.DataFrame({"Open": 1.0, "High": 2.0, "Low": 0.5, "Close": 1.5, "Volume": 1.0},
                    index=pd.DatetimeIndex([pd.Timestamp("2026-10-08 01:06") + pd.Timedelta(minutes=i) for i in range(11)], name="time"))
-r5 = d._resample_president(one, "5min", pd.Timestamp("2026-10-08 01:16:30").timestamp())
+r5 = d._resample_broker(one, "5min", pd.Timestamp("2026-10-08 01:16:30").timestamp())
 check(list(r5.index) == [pd.Timestamp("2026-10-08 01:10")] and r5.iloc[0]["Volume"] == 5,
       "5 5m: bin 01:10 (5 rows) is whole; 01:05 is dropped (rows start at 01:06, neither its first label nor a session opener); "
       "01:15 (01:19 missing, not past) is not", list(r5.index))
-r5 = d._resample_president(one, "5min", pd.Timestamp("2026-10-08 01:20:00").timestamp())
+r5 = d._resample_broker(one, "5min", pd.Timestamp("2026-10-08 01:20:00").timestamp())
 check(list(r5.index)[-1] == pd.Timestamp("2026-10-08 01:15") and r5.iloc[-1]["Volume"] == 2,
       "5 5m: once the snapshot's written_at is past the bin's end a short bin (a session end) is whole", list(r5.index))
-r5 = d._resample_president(one, "5min", pd.Timestamp("2026-10-08 01:19:30").timestamp())
+r5 = d._resample_broker(one, "5min", pd.Timestamp("2026-10-08 01:19:30").timestamp())
 check(list(r5.index)[-1] == pd.Timestamp("2026-10-08 01:10"),
       "5 5m: the clock is the snapshot's written_at, not the wall clock — a feed a minute behind (01:19 missing, written 01:19:30) keeps 01:15 short")
 opener = one.copy(); opener.index = opener.index + (pd.Timestamp("2026-10-08 00:46") - pd.Timestamp("2026-10-08 01:06"))
-r5 = d._resample_president(opener, "5min", pd.Timestamp("2026-10-08 01:00:00").timestamp())
+r5 = d._resample_broker(opener, "5min", pd.Timestamp("2026-10-08 01:00:00").timestamp())
 check(list(r5.index)[0] == pd.Timestamp("2026-10-08 00:45") and r5.iloc[0]["Volume"] == 4,
       "5 5m: rows starting on the 08:46 Taipei opener keep their first (naturally short) bin", list(r5.index))
 m5 = (m % 300) // 60   # minutes back to the last 5-minute boundary → the labels below are aligned
@@ -459,45 +462,45 @@ def close_snap(labels_tpe, written_tpe, ok=True):
 
 day = [T(2026, 10, 12, 13, mi) for mi in range(36, 46)]   # END labels 13:36–13:45 (START 13:35–13:44, the day's last)
 wa = close_snap(day, T(2026, 10, 12, 13, 50, 5))
-df_c, why, clock = d._read_president_bars("TXF", T(2026, 10, 12, 13, 50, 7).timestamp())
-r5 = d._resample_president(df_c, "5min", clock) if df_c is not None else None
+df_c, why, clock = d._read_broker_bars("president", "TXF", T(2026, 10, 12, 13, 50, 7).timestamp())
+r5 = d._resample_broker(df_c, "5min", clock) if df_c is not None else None
 check(df_c is not None and why is None and clock == wa
       and list(r5.index) == [pd.Timestamp("2026-10-12 05:40"), pd.Timestamp("2026-10-12 05:45")] and r5.iloc[-1]["Volume"] == 10,
       "5 13:50 tick: the paused (closed) snapshot is read; the 13:45 5m bin (its one label) is whole and comes from 統一",
       (why, list(r5.index) if r5 is not None else None))
-r15 = d._resample_president(df_c, "15min", clock)
+r15 = d._resample_broker(df_c, "15min", clock)
 check(r15.empty, "5 …at 13:50 the 15m 13:45 bin is not due yet (ends 14:00): not whole", list(r15.index))
 close_snap(day, T(2026, 10, 12, 14, 0, 3))
-df_c, why, clock = d._read_president_bars("TXF", T(2026, 10, 12, 14, 0, 5).timestamp())
-r15 = d._resample_president(df_c, "15min", clock) if df_c is not None else None
+df_c, why, clock = d._read_broker_bars("president", "TXF", T(2026, 10, 12, 14, 0, 5).timestamp())
+r15 = d._resample_broker(df_c, "15min", clock) if df_c is not None else None
 check(df_c is not None and list(r15.index) == [pd.Timestamp("2026-10-12 05:45")] and r15.iloc[-1]["Volume"] == 10,
       "5 14:00 tick (15m): the paused snapshot is still read, the 13:45 bin is whole by the pause stamp",
       (why, list(r15.index) if r15 is not None else None))
 night = [T(2026, 10, 13, 4, mi) for mi in range(51, 60)] + [T(2026, 10, 13, 5, 0)]   # END labels 04:51–05:00
 wa = close_snap(night, T(2026, 10, 13, 5, 5, 3))
-df_c, why, clock = d._read_president_bars("TXF", T(2026, 10, 13, 5, 5, 6).timestamp())
-r5 = d._resample_president(df_c, "5min", clock) if df_c is not None else None
+df_c, why, clock = d._read_broker_bars("president", "TXF", T(2026, 10, 13, 5, 5, 6).timestamp())
+r5 = d._resample_broker(df_c, "5min", clock) if df_c is not None else None
 check(df_c is not None and list(r5.index)[-1] == pd.Timestamp("2026-10-12 21:00") and r5.iloc[-1]["Volume"] == 10,
       "5 05:05 tick: the 05:00 bin (label 05:00 Taipei = 21:00 UTC) comes from 統一", (why, list(r5.index) if r5 is not None else None))
 close_snap(night, T(2026, 10, 13, 6, 0, 2))   # inside the broker's 06:00–07:30 account window: paused "account", stamp fresh
-df_c, why, clock = d._read_president_bars("TXF", T(2026, 10, 13, 6, 0, 4).timestamp())
-r60 = d._resample_president(df_c, "60min", clock) if df_c is not None else None
+df_c, why, clock = d._read_broker_bars("president", "TXF", T(2026, 10, 13, 6, 0, 4).timestamp())
+r60 = d._resample_broker(df_c, "60min", clock) if df_c is not None else None
 check(df_c is not None and list(r60.index) == [pd.Timestamp("2026-10-12 21:00")] and r60.iloc[-1]["Volume"] == 10,
       "5 06:00 tick (60m): the 05:00 bin, due an hour after the night's last label, still comes from 統一",
       (why, list(r60.index) if r60 is not None else None))
 close_snap(night, T(2026, 10, 13, 5, 30, 2))
-df_c, why, clock = d._read_president_bars("TXF", T(2026, 10, 13, 5, 30, 4).timestamp())
-r30 = d._resample_president(df_c, "30min", clock) if df_c is not None else None
+df_c, why, clock = d._read_broker_bars("president", "TXF", T(2026, 10, 13, 5, 30, 4).timestamp())
+r30 = d._resample_broker(df_c, "30min", clock) if df_c is not None else None
 check(df_c is not None and list(r30.index) == [pd.Timestamp("2026-10-12 21:00")] and r30.iloc[-1]["Volume"] == 10,
       "5 05:30 tick (30m): the 05:00 bin comes from 統一", (why, list(r30.index) if r30 is not None else None))
 close_snap(night, T(2026, 10, 13, 5, 5, 3), ok=False)
-check(d._read_president_bars("TXF", T(2026, 10, 13, 5, 5, 6).timestamp())[1] == "paused",
+check(d._read_broker_bars("president", "TXF", T(2026, 10, 13, 5, 5, 6).timestamp())[1] == "paused",
       "5 paused but the last poll failed → paused (a feed that may be short closes no bin)")
 close_snap(night, T(2026, 10, 13, 6, 6, 0))
-check(d._read_president_bars("TXF", T(2026, 10, 13, 6, 6, 1).timestamp())[1] == "paused",
+check(d._read_broker_bars("president", "TXF", T(2026, 10, 13, 6, 6, 1).timestamp())[1] == "paused",
       "5 paused, rows older than the longest closing bin (65 min) → paused (Blave has them by then)")
 close_snap(night, T(2026, 10, 13, 5, 5, 3))
-check(d._read_president_bars("TXF", T(2026, 10, 13, 5, 7, 0).timestamp())[1] == "paused",
+check(d._read_broker_bars("president", "TXF", T(2026, 10, 13, 5, 7, 0).timestamp())[1] == "paused",
       "5 paused with a stale stamp (the worker is gone) → paused")
 seed_cache([m5 + 20, m5 + 15, m5 + 10], schema="5m")
 write_snap(list(range(m5 + 1, m5 + 15)), paused="closed")
@@ -593,7 +596,18 @@ check(tick.get("BLAVE_TW_BROKER") == "president" and tick.get("BLAVE_MODE") == "
       and "BLAVE_TW_BROKER" not in unbound and "BLAVE_TW_BROKER" not in broken and broken.get("BLAVE_MODE") == "live" and os.getcwd() == cwd0,
       "6 the desktop daemon's live tick env carries BLAVE_TW_BROKER=<hand-wired venue> read with cwd = WORKSPACE (daemon cwd elsewhere); "
       "a backtest, an unbound machine or a failed read carry none", (tick, bt))
-check("venue_wiring" not in open(os.path.join(ROOT, "lib", "data.py"), encoding="utf-8").read().split("def _president_feed_live")[0]
+bound["v"] = "capital"
+os.chdir(TMP)
+with mock.patch.dict(os.environ, {"BLAVE_PROXY_TOKEN": "x", "SystemRoot": "C:\\Windows"}, clear=True), \
+        mock.patch.object(cl.platform, "system", lambda: "Windows"), \
+        mock.patch.object(importlib, "import_module", lambda name, *a, **k: FakeVW if name == "lib.venue_wiring" else real_import(name, *a, **k)):
+    ctick, cbt = cl._strategy_subprocess_env(), cl._strategy_subprocess_env("backtest")
+os.chdir(cwd0)
+check(ctick.get("BLAVE_TW_BROKER") == "capital" and "BLAVE_TW_BROKER" not in cbt and "BLAVE_PROXY_TOKEN" not in ctick
+      and ctick.get("SystemRoot") == "C:\\Windows",
+      "6 a cloud Windows live tick carries BLAVE_TW_BROKER too (群益's feed is read on the cloud); a backtest does not; "
+      "the bridge's BLAVE_* still never reaches the strategy", (ctick, cbt))
+check("venue_wiring" not in open(os.path.join(ROOT, "lib", "data.py"), encoding="utf-8").read().split("def _tw_feed_file")[0]
       and "from lib import venue_wiring" not in open(os.path.join(ROOT, "lib", "data.py"), encoding="utf-8").read(),
       "6 lib/data never imports lib/venue_wiring (the scheduled-run guard's money-module closure)")
 pq.BAR_LABEL_OFFSET_MIN = 0

@@ -96,6 +96,12 @@ PATH_RE = re.compile(r"^[A-Za-z0-9_./-]{1,160}$")
 VERSION_RE = re.compile(r"^[A-Za-z0-9._-]{1,40}$")
 RECONCILER_UNIT = "blave-agent-reconciler.service"
 NSSM_SERVICE = "blaveclaw-reconciler"
+# The cloud 群益 worker is its own NSSM service and nothing else restarts it: new code in
+# what it imports (it runs lib/capital_worker.py as a bare script) waits for the next
+# reboot otherwise. Read-only worker, so no busy gate; a restart is one 群益 login.
+CAPITAL_SERVICE = "blave-agent-capital"
+CAPITAL_WORKER_FILES = ("lib/capital_worker.py", "lib/capital_vault.py", "lib/capital_quote.py",
+                        "lib/twf_feed.py", "lib/president_contracts.py", "lib/winreplace.py")
 IS_WINDOWS = platform.system() == "Windows"
 # String twins of lib/execute._INFLIGHT_DIR and manager/reconciler.ROUND_MARKER_PATH:
 # this script runs from the clone and never imports the workspace's own code.
@@ -278,6 +284,25 @@ def restart_reconciler():
         if reconciler_state() == "running":
             return True
         time.sleep(1)
+    return False
+
+
+def restart_capital_worker():
+    """None when no running 群益 worker service is here, else whether it is running again."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        r = subprocess.run(["nssm", "status", CAPITAL_SERVICE], capture_output=True, timeout=30)
+        if r.returncode != 0 or nssm_text(r.stdout) != "SERVICE_RUNNING":
+            return None
+        subprocess.run(["nssm", "restart", CAPITAL_SERVICE], capture_output=True, timeout=120)
+        for _ in range(10):
+            r = subprocess.run(["nssm", "status", CAPITAL_SERVICE], capture_output=True, timeout=30)
+            if nssm_text(r.stdout) == "SERVICE_RUNNING":
+                return True
+            time.sleep(1)
+    except (OSError, subprocess.SubprocessError):
+        pass
     return False
 
 
@@ -598,6 +623,10 @@ def _run(a, clone, workspace, result):
         else:
             restarted = "ok" if restart_reconciler() else "failed"
     result["restart"] = restarted
+    written = set(replaced) | set(added)
+    refused_paths = {x["path"] for x in refused}
+    if written & set(CAPITAL_WORKER_FILES) and not refused_paths & set(CAPITAL_WORKER_FILES):
+        result["capital_worker"] = restart_capital_worker()
     if restarted in ("failed", "busy", "refused"):
         set_pending(workspace, v_new)
     elif restarted in ("ok", "not_running_anymore") or state != "running":

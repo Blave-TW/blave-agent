@@ -9,17 +9,25 @@ LocalSystem and therefore cannot touch COM itself) only reads that file.
 
 Cadence: 60s. GetFutureRights is rate-limited (error 1019 when called too
 often); 60s measured safe 2026-08-13.
+
+The same login also feeds the live tick: a second thread owns SKQuoteLib
+(lib/capital_quote) and writes state/capital_bars_TXF_1m.json. It has its own
+COM apartment and message pump (measured 2026-11-06 on win-test-6: quote events
+arrive there while this thread's account reads go on unchanged), never logs in
+and never takes this worker down. Not started by --once.
 """
 import json
 import os
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 
 if __package__ == "lib":  # never a same-named file elsewhere on sys.path
-    from lib import capital_vault
+    from lib import capital_quote, capital_vault
 else:  # run as a script (NSSM / --once): lib/ is sys.path[0]
+    import capital_quote
     import capital_vault
 try:
     if __package__ == "lib":  # never a same-named file elsewhere on sys.path
@@ -459,6 +467,7 @@ def main():
         os.remove(BACKOFF_PATH)
     except OSError:
         pass
+    threading.Thread(target=_quote_thread, daemon=True, name="capital-quote").start()
 
     while True:
         # heartbeat for manager/healthcheck.py — a stale file means this daemon died
@@ -482,6 +491,16 @@ def main():
             _fail_and_exit({"ok": False, "error": f"{type(e).__name__}: {e}"})
 
         _sleep_until_refresh()
+
+
+def _quote_thread():
+    """lib/capital_quote on its own STA; anything it raises stays here."""
+    try:
+        pythoncom.CoInitialize()
+        capital_quote.run(lambda: comtypes.client.CreateObject(sk.SKQuoteLib, interface=sk.ISKQuoteLib),
+                          comtypes.client.GetEvents, pythoncom.PumpWaitingMessages, log=_log)
+    except Exception as e:  # noqa: BLE001 — the live tick falls back to Blave; the account reads go on
+        _log(f"quote thread stopped: {type(e).__name__}: {str(e)[:160]}")
 
 
 def _sleep_until_refresh():

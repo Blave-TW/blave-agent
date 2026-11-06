@@ -73,7 +73,7 @@ def check(cond, msg):
 # every venue lib on disk, by module name — the list the tick and this process are held to
 MONEY = sorted("lib." + os.path.basename(p)[:-3]
                for pat in ("order_*.py", "account_*.py", "*_worker.py", "*_vault.py",
-                           "president_quote.py")
+                           "*_quote.py")
                for p in glob.glob(os.path.join(ROOT, "lib", pat))) + ["lib.venue_wiring"]
 
 CFG = os.path.join(WS, "manager", "portfolio_config.json")

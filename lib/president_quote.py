@@ -35,32 +35,16 @@ Mon–Fri plus the Friday night's early hours); outside them, and inside the
 worker's maintenance windows, the snapshot is re-stamped with `paused` so a
 tick reads "market closed", not "feed stale".
 """
-import json
 import os
 import time
-from datetime import datetime, time as dtime, timedelta
+from datetime import datetime, timedelta
 
 if __package__ == "lib":  # never a same-named file elsewhere on sys.path
-    from lib import president_contracts as pc, president_vault
+    from lib import president_contracts as pc, president_vault, twf_feed
 else:  # run as a script: lib/ is sys.path[0]
     import president_contracts as pc
     import president_vault
-try:
-    if __package__ == "lib":  # never a same-named file elsewhere on sys.path
-        from lib.winreplace import atomic_replace
-    else:  # run as a script: lib/ is sys.path[0]
-        from winreplace import atomic_replace
-except ImportError:  # half-updated workspace (lib/winreplace.py not landed): plain replace
-    atomic_replace = os.replace
-try:
-    if __package__ == "lib":  # never a same-named file elsewhere on sys.path
-        from lib.winreplace import load_json
-    else:  # run as a script: lib/ is sys.path[0]
-        from winreplace import load_json
-except ImportError:  # half-updated workspace (lib/winreplace.py without load_json): no read retry
-    def load_json(path, **open_kw):
-        with open(path, **open_kw) as f:
-            return json.load(f)
+    import twf_feed
 
 try:
     from unitrade.core.error import Error as _SdkError
@@ -76,7 +60,7 @@ ROOTS = ("TXF",)
 BAR_LABEL_OFFSET_MIN = 1      # broker START label → cache END label
 PAGE_MIN = 100                # unitrade 1.0.0.7: a non-"D" span over 100 minutes is refused
 PAGE_COUNT = 100              # and count over 100
-KEEP_DAYS = 2                 # rolling window, calendar days
+KEEP_DAYS = twf_feed.KEEP_DAYS
 EMPTY_PAGES_STOP = 4          # ~6.7 h of nothing = a weekend / holiday, not a session gap
 MAX_PAGES = 40                # hard cap per poll (40 × 100 min > KEEP_DAYS)
 POLL_S = 12
@@ -84,16 +68,11 @@ PAGE_GAP_S = 0.2
 NOT_ENABLED = "QUOTE_NOT_ENABLED"
 _NO_DATA = "查無資料"
 
-_DAY_CUT = (13, 45)           # closing match starts here; the cache's last day label is 13:45
-_SETTLE_CUT = (13, 30)        # settlement day: the expiring month's last series bar
-_NIGHT_OPEN = (15, 0)
-_NIGHT_CUT = (5, 0)
-_DAY_OPEN = (8, 45)
-SESSIONS = (                  # polling windows (Taipei); a few minutes around each session
-    (dtime(8, 40), dtime(13, 50)),
-    (dtime(14, 55), dtime(23, 59, 59, 999999)),
-    (dtime(0, 0), dtime(5, 5)),
-)
+SESSIONS = twf_feed.SESSIONS
+_in_gap = twf_feed.in_gap
+series_span = twf_feed.series_span
+merge_rows = twf_feed.merge_rows
+_atomic_write = twf_feed.atomic_write
 
 
 def _log(msg):
@@ -108,31 +87,13 @@ def snapshot_path(root):
     return os.path.join(STATE, f"president_bars_{root}_1m.json")
 
 
-def _atomic_write(path, payload):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path + ".tmp", "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False)
-    atomic_replace(path + ".tmp", path)
-
-
 def read_snapshot(root):
-    try:
-        snap = load_json(snapshot_path(root), encoding="utf-8")
-    except (OSError, ValueError):
-        return None
-    return snap if isinstance(snap, dict) else None
+    return twf_feed.read_json(snapshot_path(root))
 
 
 def in_session(now=None):
-    """True inside a polling window: weekday day / night sessions and the early
-    hours that end a weekday's night session (Saturday 00:00–05:05 included,
-    Monday's not). Holidays are not known here — a closed day only costs empty pages."""
-    now = (now or datetime.now(TAIPEI)).astimezone(TAIPEI)
-    t, wd = now.time(), now.weekday()
-    for i, (start, end) in enumerate(SESSIONS):
-        if start <= t <= end:
-            return wd < 5 if i < 2 else 1 <= wd <= 5
-    return False
+    """twf_feed.in_session on the wall clock by default."""
+    return twf_feed.in_session(now or datetime.now(TAIPEI))
 
 
 def bar_start(bar):
@@ -149,53 +110,17 @@ def bar_start(bar):
         return None
 
 
-def _in_gap(start, settle_day):
-    """True for a bar the cache has no room for (module doc)."""
-    hm = (start.hour, start.minute)
-    if _NIGHT_CUT <= hm < _DAY_OPEN:
-        return True
-    cut = _SETTLE_CUT if start.date() == settle_day else _DAY_CUT
-    return cut <= hm < _NIGHT_OPEN
-
-
-def series_span(productid):
-    """[from, to): the aware Taipei span in which `productid` is the series contract."""
-    y, m = pc.month_of(productid)
-    py, pm = (y - 1, 12) if m == 1 else (y, m - 1)
-    return pc.series_roll_at(py, pm), pc.series_roll_at(y, m)
-
-
 def to_cache_rows(bars, productid, now=None):
     """BarData list → sorted [ts_epoch_utc, o, h, l, c, v] rows in the cache
     convention (END label, +1 min): the closing-match bars, anything outside the
     contract's series span and a bar not closed by `now` dropped."""
-    now = now or datetime.now(TAIPEI)
-    settle_day = pc.settlement_at(*pc.month_of(productid)).date()
-    span_from, span_to = series_span(productid)
-    rows = {}
+    items = []
     for b in bars or []:
-        start = bar_start(b)
-        if start is None or not (span_from <= start < span_to) or _in_gap(start, settle_day):
-            continue
-        end = start + timedelta(minutes=BAR_LABEL_OFFSET_MIN)
-        if end > now:
-            continue
-        ts = int(end.timestamp())
         try:
-            rows[ts] = [ts, float(b.open), float(b.high), float(b.low), float(b.close), int(b.volume or 0)]
-        except (TypeError, ValueError, AttributeError):
+            items.append((bar_start(b), b.open, b.high, b.low, b.close, b.volume))
+        except AttributeError:
             continue
-    return [rows[k] for k in sorted(rows)]
-
-
-def merge_rows(old, new, now_epoch):
-    """Union by timestamp (new wins), trimmed to the last KEEP_DAYS."""
-    floor = now_epoch - KEEP_DAYS * 86400
-    by_ts = {}
-    for r in list(old or []) + list(new or []):
-        if isinstance(r, list) and len(r) == 6 and isinstance(r[0], (int, float)) and r[0] >= floor:
-            by_ts[int(r[0])] = [int(r[0])] + [float(x) for x in r[1:5]] + [int(r[5])]
-    return [by_ts[k] for k in sorted(by_ts)]
+    return twf_feed.cache_rows(items, productid, now or datetime.now(TAIPEI), BAR_LABEL_OFFSET_MIN)
 
 
 def quote_enabled(api):
