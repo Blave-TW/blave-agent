@@ -77,5 +77,9 @@ tools = [c for c in s.sent if c.get("type") == "tool"]
 t("running/done chunk 都帶 where", [(c["status"], c.get("where")) for c in tools]
   == [("running", "cloud"), ("done", "cloud"), ("running", "local")])
 
+seg = at._viewing_env_segment(True)
+t("雲端視角:研究報告走 cloud-handoff R7,分析與 write_report 在雲端、資料檢查在這台",
+  "R7" in seg and "write_report 在雲端跑" in seg and "資料檢查在這台電腦做" in seg)
+
 print("\nall green" if not red else f"\n{red} red")
 sys.exit(1 if red else 0)
