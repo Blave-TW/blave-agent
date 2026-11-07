@@ -6161,7 +6161,7 @@ msgid "shr.gate"
 msgstr "Public links are tied to your Blave account. Sign in to publish."
 
 msgid "shr.gateGo"
-msgstr "Sign in"
+msgstr "Sign In to Blave"
 
 # 勾選列在捲動區外又還沒勾時,訊息槽的那一句(第十八批 DF2;同 web workspace_share_scroll_hint)
 msgid "shr.scrollHint"

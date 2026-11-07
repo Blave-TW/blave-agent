@@ -887,6 +887,18 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
     await m.end();
   });
   ok("13 TURN_TYPES 沒有 card(電腦版收的資料卡 chunk 不轉給手機)", !RL.TURN_TYPES.includes("card"));
+  await guard("13b", async () => {
+    const SID = "desktop-card0002", BODY = "BTC 籌碼集中度 62%,比上週高。\n\n| 日期 | 值 |\n|---|---|\n| 11/07 | 62 |\n用 `<b>` 或 a < b 這種字照留。";
+    const m = rig({ kind: "claude", sessions: { [SID]: { last: Date.now() / 1000, rows: [row(1, "user", "q")] } } });
+    await m.r.tick(); await m.r.setOn(true); await wait(30);
+    m.feed([msg(SID, "msg0000c002", "q")]); await wait(40); m.calls.length = 0;
+    m.r.onTurn(SID, "turn-event", { type: "text", text: BODY });
+    m.r.onTurn(SID, "turn-event", { type: "text_replace", text: BODY });
+    m.r.onTurn(SID, "turn-event", { type: "done", awaiting: false }); await wait(RL.BATCH_MS + 120);
+    const cs = m.chunks();
+    ok("13b 沒有記號的回覆送到手機完全不變(text 與 text_replace 逐字相同)", cs.filter((c) => c.type === "text").map((c) => c.text).join("") === BODY && cs.some((c) => c.type === "text_replace" && c.text === BODY), cs);
+    m.calls.length = 0;
+    await m.end(); });
 
   // ── 9 ──
   const send = main.slice(main.indexOf("function sendTurn(sid, ch, payload) {"), main.indexOf("function turnNice("));

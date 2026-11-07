@@ -85,8 +85,8 @@ const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || d ==
 
   // ── 10 ──
   const po = (lang) => { const o = {}; for (const m of fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", lang + ".po"), "utf8").matchAll(/^msgid "([^"]+)"\nmsgstr "((?:[^"\\]|\\.)*)"$/gm)) o[m[1]] = m[2]; return o; };
-  const zh = po("zh"), en = po("en"), KEYS = ["pv.signin", "cn.blave.btn", "fault.authBtn", "plan.relogin"];
-  ok("10 zh:Blave 登入的四個 key 只有〔登入 Blave〕〔重新登入 Blave〕兩種", JSON.stringify([...new Set(KEYS.map((k) => zh[k]))].sort()) === JSON.stringify(["登入 Blave", "重新登入 Blave"].sort()), KEYS.map((k) => zh[k]));
+  const zh = po("zh"), en = po("en"), KEYS = ["pv.signin", "cn.blave.btn", "fault.authBtn", "plan.relogin", "shr.gateGo"];   // shr.gateGo:分享框的登入鈕(Wei 0.1.50 加做)
+  ok("10 zh:Blave 登入的五個 key 只有〔登入 Blave〕〔重新登入 Blave〕兩種", JSON.stringify([...new Set(KEYS.map((k) => zh[k]))].sort()) === JSON.stringify(["登入 Blave", "重新登入 Blave"].sort()), KEYS.map((k) => zh[k]));
   ok("10 en:只有 Sign In to Blave／Sign In to Blave Again 兩種", JSON.stringify([...new Set(KEYS.map((k) => en[k]))].sort()) === JSON.stringify(["Sign In to Blave", "Sign In to Blave Again"].sort()), KEYS.map((k) => en[k]));
   ok("10 不在範圍的照舊:券商的 tr.presRelogin、句中連結 mg.why.signin", zh["tr.presRelogin"] === "重新登入" && en["mg.why.signin"] === "Sign in to Blave");
   ok("10 新句 pv.e.relogin 兩語都在", zh["pv.e.relogin"] === "這台電腦的 Blave 登入已失效。" && en["pv.e.relogin"] === "Blave sign-in on this computer has expired.");

@@ -6183,7 +6183,7 @@ msgid "shr.gate"
 msgstr "公開連結掛在你的 Blave 帳號下，先登入才能公開。"
 
 msgid "shr.gateGo"
-msgstr "去登入"
+msgstr "登入 Blave"
 
 # 勾選列在捲動區外又還沒勾時,訊息槽的那一句(第十八批 DF2;同 web workspace_share_scroll_hint)
 msgid "shr.scrollHint"

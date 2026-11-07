@@ -396,7 +396,7 @@ app.whenReady().then(async () => {
   // 未登入:按分享 → 守門框
   await js(`hasToken = false; shrClear();`); await openRead("res"); await js(`document.getElementById("rpt-share").click()`); await wait(200);
   d = await js(`({ shr: !$("shr-scrim").hidden, del: !$("del-scrim").hidden, body: $("del-body").textContent, ok: $("del-ok").textContent })`);
-  ok("④ 未登入(本機):鈕照出,按下開守門框「先登入才能公開」+「去登入」,不開確認框", !d.shr && d.del && d.body === (await T("shr.gate")) && d.ok === (await T("shr.gateGo")), JSON.stringify(d));
+  ok("④ 未登入(本機):鈕照出,按下開守門框「先登入才能公開」+〔登入 Blave〕,不開確認框", !d.shr && d.del && d.body === (await T("shr.gate")) && d.ok === (await T("shr.gateGo")), JSON.stringify(d));
   await js(`delClose(false)`);
   console.log(red ? `\n④ ${red} 紅` : "\n④ ALL PASS");
   app.exit(red ? 1 : 0);
