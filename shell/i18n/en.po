@@ -10133,7 +10133,7 @@ msgid "xt.clip"
 msgstr "Square points are below {v}; the table has the actual values."
 
 msgid "xt.costHow"
-msgstr "Each point adds X% cost per side. Trading cost covers fees, tax and slippage."
+msgstr "Each point adds X% cost per side. Trading cost covers fees, tax and slippage. Click a column header to chart it."
 
 msgid "xt.fogOld"
 msgstr "Older versions didn't save this tab's numbers."

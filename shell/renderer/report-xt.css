@@ -111,7 +111,7 @@
   font-size: 11px;
   color: var(--ink-3);
 }
-/* 表頭選指標:選中欄 = 分頁同一套選中語言(2px 底線 + ink 600);鈕本身 44×44;長欄頭(en Max Drawdown)折兩行,不撐出橫捲 */
+/* 表頭選指標:選中欄 = 欄頭 ink 600 + 整欄數字 ink;不畫底線(底線是分頁語言,會被讀成排序);鈕本身 44×44;長欄頭(en Max Drawdown)折兩行,不撐出橫捲 */
 .xt-pick th.pickable {
   padding: 0 0 0 var(--space-4);
   white-space: normal;
@@ -132,7 +132,6 @@
   white-space: normal;
   text-align: right;
   cursor: pointer;
-  box-shadow: inset 0 -2px 0 transparent;
 }
 .xt-pick .pick:hover {
   color: var(--ink);
@@ -140,7 +139,6 @@
 .xt-pick th.is-on .pick {
   color: var(--ink);
   font-weight: 600;
-  box-shadow: inset 0 -2px 0 var(--ink);
 }
 .xt-kpi {
   margin-top: var(--space-16);

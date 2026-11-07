@@ -199,5 +199,12 @@ ok("③ 失敗句 xt.updFail = 「沒測成功」;§3.6 新字都在", /perfFail
   && zh["xt.btnRun"] === "開始測試" && zh["xt.btnRerun"] === "重新測試" && zh["xt.btnBusy"] === "測試中" && zh["xt.btnTip"] === "用最新資料重跑回測，績效會一起更新。"
   && zh["xt.verdictStale"] === "績效更新過，重新測試後才會更新。" && zh["xt.busyRefresh"] === "績效正在更新，跑完再按一次。" && !("xt.busyTurn" in zh)
   && !("xt.fog" in zh) && !/xt\.fog"/.test(R("renderer/report-xt.js")));
+// 表頭選指標(canon tables.md「表頭選指標」,0.1.50):選中不畫底線(底線是分頁語言,會被讀成排序);兩張表的說明句都告訴人表頭能點
+{ const css = R("renderer/report-xt.css"), pick = [...css.matchAll(/^\.xt-pick[^{]*\{[^}]*\}/gm)].map((m) => m[0]).join("\n");
+  const en = {}; for (const m of R("i18n/en.po").matchAll(/^msgid "([^"]+)"\nmsgstr "((?:[^"\\]|\\.)*)"$/gm)) en[m[1]] = JSON.parse('"' + m[2] + '"');
+  ok("③ 表頭選指標:.xt-pick 不畫底線,選中 = ink 600", !!pick && !/box-shadow|border-bottom|text-decoration/.test(pick)
+    && /\.xt-pick th\.is-on \.pick \{[^}]*color: var\(--ink\);[^}]*font-weight: 600;/.test(css), pick);
+  ok("③ 成本表說明句也講「點表頭換圖上的指標」(zh / en 跟 lagHow 同一句)", zh["xt.costHow"].endsWith("點表頭換圖上的指標。") && zh["xt.lagHow"].endsWith("點表頭換圖上的指標。")
+    && en["xt.costHow"].endsWith(" Click a column header to chart it.") && en["xt.lagHow"].endsWith(" Click a column header to chart it."), [zh["xt.costHow"], en["xt.costHow"]]); }
 
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

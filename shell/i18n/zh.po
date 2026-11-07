@@ -10169,7 +10169,7 @@ msgid "xt.clip"
 msgstr "方點＝低於 {v}，實際值看下表。"
 
 msgid "xt.costHow"
-msgstr "每一點是每邊交易成本多 X% 的結果。交易成本含手續費、稅、滑價。"
+msgstr "每一點是每邊交易成本多 X% 的結果。交易成本含手續費、稅、滑價。點表頭換圖上的指標。"
 
 msgid "xt.fogOld"
 msgstr "舊版本沒存這一頁的數字。"
