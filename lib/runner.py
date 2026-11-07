@@ -54,6 +54,11 @@ CANDLES_MAX_COUNT = 20000
 # workspace pulls chunk-by-chunk (api/openclaw/agent_chart_data.py). Caps mirrored there.
 CHART_CHUNK_BARS = 20000
 CHART_MAX_CHUNKS = 50
+# Bars under 5 minutes: both readers stop loading at 500,000 bars (shell/renderer/report-trades.js
+# SUB5_MAX_BARS, web workspace.html EXEC_SUB5_MAX_BARS — the third copy, another repo). The stats
+# tail plus a partial newest chunk get there within 26 chunks; older ones were written and
+# uploaded but never shown. tests/check_chart_export.py pins this to the shell's constant.
+CHART_SUB5_MAX_CHUNKS = 26
 CHART_LIVE_REFRESH_MIN_AGE = 86400  # performance-refresh rebuild throttle: at most once a day per strategy
 
 # BLAVE_STATS_REFRESH=1 on a live run (BLAVE_MODE=live, or live inferred from the 下單設定):
@@ -587,23 +592,36 @@ def _build_panes(plot_series, df, max_points=PANES_MAX_POINTS):
         else:
             continue
         values = series.to_numpy()
-        # Capped: walk back from the end and stop at the cap instead of formatting years
-        # of 1m bars only to keep the tail. Per-element float() because values may be object.
-        if max_points:
-            rows = zip(values[::-1], df.index[::-1])
-        else:
-            rows = zip(values, df.index)
-        points = []
-        for v, t in rows:
+        fast = None
+        if not max_points and values.dtype.kind in 'biufO':  # datetimes/complex: numpy would cast what float() refuses
+            # full history (the chart export): column-wise when the whole series converts —
+            # numpy's object→float is the same float() per element; one that doesn't
+            # (a stray string) goes the per-element way below
             try:
-                fv = float(v)
+                fast = np.asarray(values, dtype=float)
             except (TypeError, ValueError):
-                continue
-            if not math.isfinite(fv):
-                continue
-            points.append([int(t.timestamp()), round(fv, 6)])
-            if max_points and len(points) == max_points:
-                break
+                fast = None
+        if fast is not None:
+            keep = np.flatnonzero(np.isfinite(fast))
+            points = [[t, round(v, 6)] for t, v in zip(_index_ts(df.index[keep]), fast[keep].tolist())]
+        else:
+            # Capped: walk back from the end and stop at the cap instead of formatting years
+            # of 1m bars only to keep the tail. Per-element float() because values may be object.
+            if max_points:
+                rows = zip(values[::-1], df.index[::-1])
+            else:
+                rows = zip(values, df.index)
+            points = []
+            for v, t in rows:
+                try:
+                    fv = float(v)
+                except (TypeError, ValueError):
+                    continue
+                if not math.isfinite(fv):
+                    continue
+                points.append([int(t.timestamp()), round(fv, 6)])
+                if max_points and len(points) == max_points:
+                    break
         if not points:
             continue
         if max_points:
@@ -642,34 +660,54 @@ def _build_candles(df, max_count=CANDLES_MAX_COUNT):
         vol = df['Volume'].to_numpy(dtype=float) if 'Volume' in df.columns else None
     except (TypeError, ValueError):
         return []  # non-numeric column — no candles rather than a crashed run
+    good = np.isfinite(o) & (o > 0) & np.isfinite(h) & (h > 0) \
+        & np.isfinite(l) & (l > 0) & np.isfinite(c) & (c > 0)
+    if vol is not None:
+        good &= np.isfinite(vol)
+    keep = np.flatnonzero(good)
     if max_count:  # tail — same convention as trades/panes; select it before formatting
-        good = np.isfinite(o) & (o > 0) & np.isfinite(h) & (h > 0) \
-            & np.isfinite(l) & (l > 0) & np.isfinite(c) & (c > 0)
-        if vol is not None:
-            good &= np.isfinite(vol)
-        keep = np.flatnonzero(good)[-max_count:]
+        keep = keep[-max_count:]
         return [[int(t.timestamp()),
                  round(float(o[i]), 6), round(float(h[i]), 6),
                  round(float(l[i]), 6), round(float(c[i]), 6),
                  None if vol is None else float(vol[i])]
                 for i, t in zip(keep, df.index[keep])]
-    candles = []
-    for i, t in enumerate(df.index):
-        bar = (float(o[i]), float(h[i]), float(l[i]), float(c[i]))
-        if not all(math.isfinite(x) and x > 0 for x in bar):
-            continue
-        if vol is None:
-            v = None
-        else:
-            v = float(vol[i])
-            if not math.isfinite(v):
-                continue
-        candles.append([int(t.timestamp()),
-                        round(bar[0], 6), round(bar[1], 6), round(bar[2], 6), round(bar[3], 6),
-                        v])
-    if max_count and len(candles) > max_count:
-        candles = candles[-max_count:]  # tail — same convention as trades/panes
-    return candles
+    # full history (the chart export): column-wise, whole numbers without '.0'
+    ts = _index_ts(df.index[keep])
+    vols = [None] * len(keep) if vol is None else _chart_nums(vol[keep], None)
+    return [list(r) for r in zip(ts, *(_chart_nums(a[keep]) for a in (o, h, l, c)), vols)]
+
+
+def _chart_sub5(interval):
+    from lib.data import _is_sub_5min
+    try:
+        return bool(_is_sub_5min(interval))
+    except (TypeError, ValueError):  # '1M' and the like: not a sub-5-minute bar
+        return False
+
+
+def _index_ts(index):
+    """[int(t.timestamp()) for t in index] without a Timestamp per bar (whole-second
+    DatetimeIndex); anything else goes the per-bar way, so the result is the same."""
+    if isinstance(index, pd.DatetimeIndex):
+        denom = {'s': 1, 'ms': 10**3, 'us': 10**6, 'ns': 10**9}.get(getattr(index, 'unit', 'ns'))
+        v = index.asi8
+        if denom and not (v % denom).any():
+            return (v // denom).tolist()
+    return [int(t.timestamp()) for t in index]
+
+
+def _chart_nums(a, digits=6):
+    """Candle values for the full-history chart: round(x, digits) as before, but a whole number
+    written without '.0' (TW futures and stock prices, lot volumes: ~20% of a chunk)."""
+    whole = (np.floor(a) == a) & (np.abs(a) < 2**53)
+    if whole.all():
+        return a.astype(np.int64).tolist()
+    whole = whole.tolist()
+    vals = a.tolist()
+    if digits is None:
+        return [int(x) if w else x for x, w in zip(vals, whole)]
+    return [int(x) if w else round(x, digits) for x, w in zip(vals, whole)]
 
 
 def _slice_ts(rows, t0, t1, key):
@@ -694,7 +732,8 @@ def _write_chart_dir(out_dir, df, candles, panes, trades, symbol, interval):
     Same element schemas as stats.json's candles / panes[].points / trades, but untruncated
     and split into CHART_CHUNK_BARS-bar chunks (by df.index position, so a pane point or
     trade on a bar whose candle was skipped still lands in exactly one chunk). More than
-    CHART_MAX_CHUNKS → keep the newest and flag manifest.truncated. Built in chart.tmp/
+    CHART_MAX_CHUNKS (CHART_SUB5_MAX_CHUNKS under 5-minute bars) → keep the newest and flag
+    manifest.truncated. Built in chart.tmp/
     and swapped in whole (the reporter never sees a half-written set; per-chunk sha1 in
     the manifest lets it detect a swap that raced its read). Hash = the chunk content, so
     re-running an identical backtest is a no-op for the uploader.
@@ -705,7 +744,7 @@ def _write_chart_dir(out_dir, df, candles, panes, trades, symbol, interval):
         return None
     n = len(df)
     n_chunks = -(-n // CHART_CHUNK_BARS)
-    first = max(0, n_chunks - CHART_MAX_CHUNKS)
+    first = max(0, n_chunks - (CHART_SUB5_MAX_CHUNKS if _chart_sub5(interval) else CHART_MAX_CHUNKS))
     truncated = first > 0
     _sweep_chart_leftovers(out_dir)
     # per writer: a live tick may rebuild chart/ while a BLAVE_MODE=backtest run does too
