@@ -5582,7 +5582,7 @@ msgid "lib.buy.price"
 msgstr "價格 {price}"
 
 msgid "lib.buy.lead"
-msgstr "從 Blave Agent 餘額扣款。買了就會開始安裝並回測，不會自動下單。"
+msgstr "從 Blave Agent 餘額扣款。"
 
 msgid "lib.buy.ok"
 msgstr "確認購買"
@@ -5601,6 +5601,78 @@ msgstr "扣款並購買"
 
 msgid "lib.buy.noCard"
 msgstr "餘額不足，而且這個帳號還沒綁卡。到「設定 › 帳號與方案」綁卡後再回來買。"
+
+msgid "lib.bb.ok"
+msgstr "綁卡並購買"
+
+msgid "lib.bb.planBtn"
+msgstr "開通方案"
+
+msgid "lib.bb.today"
+msgstr "策略，今天刷卡"
+
+msgid "lib.bb.trialRow"
+msgstr "方案試用 {d} 天"
+
+msgid "lib.bb.after"
+msgstr "之後每 30 天"
+
+msgid "lib.bb.trialNote"
+msgstr "這支要方案才能跑，試用期間取消不扣。"
+
+msgid "lib.bb.noAuto"
+msgstr "買了不會自動下單。"
+
+msgid "lib.bb.plain"
+msgstr "今天刷卡 {p}，買下這支策略。"
+
+msgid "lib.bb.needPlan"
+msgstr "這支要方案才能跑，方案每 30 天 {p}。"
+
+msgid "lib.bb.due"
+msgstr "你的方案欠費 {p}，綁卡後會一起補扣。"
+
+msgid "lib.bb.renew"
+msgstr "之後方案續期，錢包不夠會從這張卡扣。"
+
+msgid "lib.bb.topup"
+msgstr "綁卡後自動儲值是開著的：餘額低於 {lo} TWD 會自動儲值 {a} TWD，可隨時關閉。"
+
+msgid "lib.bb.waiting"
+msgstr "等待付款…"
+
+msgid "lib.bb.waitNote"
+msgstr "付完會自動更新。"
+
+msgid "lib.bb.reopen"
+msgstr "重新打開付款頁"
+
+msgid "lib.bb.gone"
+msgstr "已下架沒買成，{p} 已存入錢包。"
+
+msgid "lib.bb.owned"
+msgstr "已買過，{p} 已存入錢包。"
+
+msgid "lib.bb.wallet"
+msgstr "已刷 {p}，錢已存入錢包，策略沒買成。"
+
+msgid "lib.bb.walletNoAmt"
+msgstr "策略沒買成，錢已存入錢包。"
+
+msgid "lib.bb.trialOn"
+msgstr "試用照常，到 {d}。"
+
+msgid "lib.bb.failed"
+msgstr "刷卡沒成功，沒有扣款。"
+
+msgid "lib.bb.open"
+msgstr "上一筆付款頁還開著，仍能付款。再試一次會開新頁，兩頁都付的話，多的那筆存入錢包。"
+
+msgid "lib.bb.expired"
+msgstr "付款頁已過期，沒付的話不會扣款。"
+
+msgid "lib.bb.rate"
+msgstr "按太多次了，稍後再試。"
 
 msgid "lib.buy.inProgress"
 msgstr "這筆購買正在處理中，稍後再看一次結果。"

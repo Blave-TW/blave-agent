@@ -168,3 +168,12 @@
 /* 購買框裡的購買中那一行(spin16 來自 trade.css) */
 .cf-busy { display: flex; align-items: center; gap: var(--space-8); margin: var(--space-8) 0 0; font-size: 12px; color: var(--ink-2); }
 @media (prefers-reduced-motion: reduce) { .lib-row, .lib-seg button, .lib-mkt-trig, .lib-mkt-trig .ct-cv, .lib-back, .lib-noteln { transition: none; } .sk { animation: none; } }
+/* 綁卡即購買(原型 prototype-library-buy-with-bind):結果格可以兩句;刷卡失敗是紅記號,錢進錢包維持灰。框 1 的第一列升主墨、「免費」用 sans */
+.lib-cta .err p { margin: 0; }
+.lib-cta .err.is-bad .fault-mark { background: var(--color-red); }
+.del-body .cf-rows.bb { margin-bottom: var(--space-12); }
+.del-body .cf-row.lead dt { color: var(--ink); }
+.del-body .cf-row dd.sans { font-family: var(--font-sans); }
+.del-body.lines p.cf-lede { color: var(--ink); }
+.del-body.lines p.cf-due .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+.lib-cta .btn-fill .spin16 { margin-right: var(--space-6); vertical-align: -3px; }

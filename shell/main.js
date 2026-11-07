@@ -539,6 +539,7 @@ function clearToken() {
   clearDataKey();
   clearAppSecret();
   rptCloudInvalidate();   // 雲端報告的清單與本體是這個帳號的
+  libBbMarkSet(null);   // 綁卡即購買在等的那一筆也是這個帳號的:換人不白等(程式稽核 D2)
 }
 
 /* app_secret:登入時 api 多發的一顆、**只有這支主行程拿得到**的憑證。帳號 token 會進 agent 的
@@ -2747,8 +2748,12 @@ async function libraryReport(id, langRaw) {
 function libPurchaseBody(b) {
   if (!b || typeof b !== "object") return null;
   const s = (v) => (typeof v === "string" ? v.slice(0, 200) : null), n = (v) => (typeof v === "number" && isFinite(v) ? v : null);
-  return { status: s(b.status), error: s(b.error), error_code: s(b.error_code), needs_topup: b.needs_topup === true, has_card: b.has_card === true, balance: n(b.balance), required: n(b.required) };
+  // amount_twd / reason:卡刷了卻沒買成(402 / 400 / 500),錢在錢包(spec library-buy-with-bind §9)
+  return { status: s(b.status), error: s(b.error), error_code: s(b.error_code), needs_topup: b.needs_topup === true, has_card: b.has_card === true, balance: n(b.balance), required: n(b.required),
+    amount_twd: n(b.amount_twd), reason: libCode(b.reason), reason_code: libCode(b.reason_code) };
 }
+// api 的原因代號:只收小寫代號。failed 時 reason 是藍新的中文句,過不了這道,畫面也不拿它分流
+function libCode(v) { return typeof v === "string" && /^[a-z_]{1,40}$/.test(v) ? v : null; }
 async function libraryPurchase(strategyId, confirmTopup) {
   if (!Number.isInteger(strategyId) || strategyId <= 0) return { status: 400, body: { error_code: "STRATEGY_ID_REQUIRED" } };
   const token = loadToken(), secret = loadAppSecret();
@@ -2759,6 +2764,99 @@ async function libraryPurchase(strategyId, confirmTopup) {
   catch (_) { return { status: 0, body: null }; }
   libCache = null;   // 買了(或另一台正在買)之後 purchased 會變:下次開清單重打
   return { status: r.status, body: libPurchaseBody(r.body) };
+}
+/* 綁卡即購買(spec library-buy-with-bind-2026-11-06):沒卡又錢包不夠的人,綁卡與購買同一筆藍新付款。
+   POST /oauth/desktop/marketplace/bind_purchase:不帶 confirm 是報價(409 PRICE_CONFIRM_REQUIRED／PLAN_REQUIRED,錢不動);
+   帶 confirm = 畫面給用戶看過的價,api 回藍新表單。表單不進畫面:主行程在 127.0.0.1 起一頁自動送出的表單,用瀏覽器打開。
+   回 { status, opened: true } 或 { status, body }(只留畫面分流要的欄位)。 */
+function libBindBuyBody(b) {
+  if (!b || typeof b !== "object") return null;
+  const s = (v) => (typeof v === "string" ? v.slice(0, 200) : null), n = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+  return { error: s(b.error), error_code: s(b.error_code), price_twd: n(b.price_twd), trial: b.trial === true, trial_days: n(b.trial_days),
+    plan_monthly_twd: n(b.plan_monthly_twd), plan_due_twd: n(b.plan_due_twd) };
+}
+// 藍新正式／測試兩個網域;api 給的 url 不在這裡就不開
+const LIB_PAY_HOSTS = ["core.newebpay.com", "ccore.newebpay.com"];
+function libPayForm(b) {
+  if (!b || typeof b !== "object") return null;
+  let u = null; try { u = new URL(b.url); } catch (_) { return null; }
+  if (u.protocol !== "https:" || !LIB_PAY_HOSTS.includes(u.hostname) || u.username || u.password) return null;
+  const ok = (v, re) => typeof v === "string" && re.test(v);
+  if (!ok(b.MerchantID, /^[A-Za-z0-9_]{1,30}$/) || !ok(b.TradeInfo, /^[0-9a-fA-F]{32,16000}$/) || !ok(b.TradeSha, /^[0-9a-fA-F]{64}$/) || !ok(b.Version, /^[0-9.]{1,6}$/)) return null;
+  return { url: u.href, fields: { MerchantID: b.MerchantID, TradeInfo: b.TradeInfo, TradeSha: b.TradeSha, Version: b.Version } };
+}
+function libPayHtml(form, nonce) {
+  const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inputs = Object.keys(form.fields).map((k) => `<input type="hidden" name="${esc(k)}" value="${esc(form.fields[k])}">`).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Blave</title></head><body>`
+    + `<form id="f" method="POST" action="${esc(form.url)}">${inputs}<noscript><button type="submit">Continue</button></noscript></form>`
+    + `<script nonce="${nonce}">document.getElementById("f").submit();</script></body></html>`;
+}
+// 一次只留一頁、兩分鐘後收掉;路徑帶隨機碼,別的本機程式猜不到
+let libPaySrv = null;
+const LIB_PAY_TTL_MS = 2 * 60 * 1000;
+async function libPayOpen(form) {
+  if (libPaySrv) { try { libPaySrv.close(); } catch (_) { } libPaySrv = null; }
+  const pathKey = "/pay/" + crypto.randomBytes(16).toString("hex"), nonce = crypto.randomBytes(16).toString("base64");
+  const html = libPayHtml(form, nonce);
+  const srv = http.createServer((req, res) => {
+    if (req.method !== "GET" || req.url !== pathKey) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+      "Content-Security-Policy": `default-src 'none'; script-src 'nonce-${nonce}'; base-uri 'none'` });
+    res.end(html);
+  });
+  await new Promise((ok, no) => { srv.once("error", no); srv.listen(0, "127.0.0.1", ok); });
+  libPaySrv = srv;
+  setTimeout(() => { try { srv.close(); } catch (_) { } if (libPaySrv === srv) libPaySrv = null; }, LIB_PAY_TTL_MS).unref();
+  await shell.openExternal(`http://127.0.0.1:${srv.address().port}${pathKey}`);
+}
+/* 等結果的記號:{ id, at },存 userData。付款頁開著時 app 被關掉,重開進策略庫還查得到;拿到這支的終態或超過付款頁效期就清 */
+const LIB_BB_MARK_MS = 40 * 60 * 1000;   // 付款單 30 分鐘有效(spec §3.6),多留 10 分鐘等回呼
+const libBbMarkPath = () => path.join(app.getPath("userData"), "lib-bindbuy.json");
+function libBbMarkGet(now) {
+  let m = null; try { m = JSON.parse(fs.readFileSync(libBbMarkPath(), "utf8")); } catch (_) { return null; }
+  if (!m || !Number.isInteger(m.id) || m.id <= 0 || typeof m.at !== "number" || !(now - m.at < LIB_BB_MARK_MS && m.at <= now)) { libBbMarkSet(null); return null; }
+  return { id: m.id, at: m.at };
+}
+function libBbMarkSet(m) {
+  try { if (m) wsfile.replace(libBbMarkPath(), JSON.stringify(m)); else fs.rmSync(libBbMarkPath(), { force: true }); } catch (_) { }
+}
+async function libraryBindBuy(strategyId, opts) {
+  if (!Number.isInteger(strategyId) || strategyId <= 0) return { status: 400, body: null };
+  const token = loadToken(), secret = loadAppSecret();
+  if (!token || !secret) return { status: 401, body: libBindBuyBody({ error_code: token ? "APP_SECRET_REQUIRED" : "INVALID_CREDENTIALS" }) };
+  const o = opts && typeof opts === "object" ? opts : {};
+  const body = { token, app_secret: secret, strategy_id: strategyId, lang: o.lang === "en" ? "en" : "zh" };
+  if (Number.isInteger(o.confirm) && o.confirm > 0) body.confirm_price_twd = o.confirm;
+  if (o.restart === true) body.restart = true;
+  let r = null;
+  try { r = await postJSON(`${API_BASE}/oauth/desktop/marketplace/bind_purchase`, body); } catch (_) { return { status: 0, body: null }; }
+  if (r.status !== 200) return { status: r.status, body: libBindBuyBody(r.body) };
+  const form = libPayForm(r.body);
+  if (!form) return { status: 0, body: null };
+  try { await libPayOpen(form); } catch (_) { return { status: 0, body: null }; }
+  libBbMarkSet({ id: strategyId, at: Date.now() });
+  return { status: 200, opened: true };
+}
+// bind_purchase_result 的那一筆:形狀不對整筆當沒有。reason 只留代號(failed 時是中文句,丟掉;代號在 reason_code)
+function libBindResultOut(b) {
+  const r = b && typeof b === "object" ? b.bind_purchase : null;
+  if (!r || typeof r !== "object" || !["pending", "ok", "wallet", "failed"].includes(r.status) || !Number.isInteger(r.strategy_id)) return null;
+  const n = typeof r.amount_twd === "number" && isFinite(r.amount_twd) && r.amount_twd > 0 ? r.amount_twd : null;
+  const until = typeof r.trial_until === "string" && /^\d{4}-\d{2}-\d{2}/.test(r.trial_until) ? r.trial_until.slice(0, 40) : null;
+  return { status: r.status, strategy_id: r.strategy_id, amount_twd: n, reason: libCode(r.reason), reason_code: libCode(r.reason_code), trial_until: until };
+}
+/* 回 { mark, res }:沒有等著的就不打 api(mark null)。拿到這支的終態就清記號,帳號狀態與清單作廢(綁了卡、可能開了試用) */
+async function libraryBindResult() {
+  const mark = libBbMarkGet(Date.now());
+  if (!mark) return { mark: null, res: null };
+  const token = loadToken(), secret = loadAppSecret();
+  if (!token || !secret) return { mark, res: null };
+  let r = null;
+  try { r = await postJSON(`${API_BASE}/oauth/desktop/marketplace/bind_purchase_result`, { token, app_secret: secret }); } catch (_) { return { mark, res: null }; }
+  const res = r.status === 200 ? libBindResultOut(r.body) : null;
+  if (res && res.strategy_id === mark.id && res.status !== "pending") { libBbMarkSet(null); lastAcct = null; libCache = null; }
+  return { mark, res };
 }
 /* 代下載策略碼(spec-0.1.13-library-conversion §4.2 / D1):付不出資料費的帳號,workspace `.env` 裡沒有 Blave key(syncDataEnv),
    agent 自己打 /code 會撞牆。但 /code 不收資料費、不回任何資料,桌面 key 本來就在它的允許範圍(api decorators.DESKTOP_KEY_ALLOWED),
@@ -4253,6 +4351,8 @@ app.whenReady().then(() => {
   handle("library-list", (_e, lang, force) => libraryList(lang, force === true), null);
   handle("library-report", (_e, id, lang) => libraryReport(id, lang), null);
   ipcMain.handle("library-purchase", (e, id, confirmTopup) => (fromOurPage(e) ? libraryPurchase(id, confirmTopup) : { status: 0, body: null }));
+  handle("library-bind-buy", (_e, id, opts) => libraryBindBuy(id, opts), { status: 0, body: null });
+  handle("library-bind-result", () => libraryBindResult(), { mark: null, res: null });
   handle("library-installed", (_e, patch) => libraryInstalled(patch), {});
   // 側欄偏好(renderer/stratflags.js):順序與旗標只收自家頁面;拒絕時回空的 = 照預設序、沒旗標
   handle("keep-awake", () => keepAwakeGet(), true);

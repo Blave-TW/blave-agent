@@ -5561,7 +5561,7 @@ msgid "lib.buy.price"
 msgstr "Price {price}"
 
 msgid "lib.buy.lead"
-msgstr "Charged to your Blave Agent balance; the install and backtest start right after. No orders are placed."
+msgstr "Charged to your Blave Agent balance."
 
 msgid "lib.buy.ok"
 msgstr "Confirm Purchase"
@@ -5580,6 +5580,78 @@ msgstr "Charge & Purchase"
 
 msgid "lib.buy.noCard"
 msgstr "Not enough balance, and this account has no card on file. Add a card under Settings › Account & plan, then come back."
+
+msgid "lib.bb.ok"
+msgstr "Bind Card & Buy"
+
+msgid "lib.bb.planBtn"
+msgstr "Start a Plan"
+
+msgid "lib.bb.today"
+msgstr "Strategy, charged today"
+
+msgid "lib.bb.trialRow"
+msgstr "Plan trial, {d} days"
+
+msgid "lib.bb.after"
+msgstr "Then every 30 days"
+
+msgid "lib.bb.trialNote"
+msgstr "This one needs a plan to run. Cancel during the trial and you pay nothing."
+
+msgid "lib.bb.noAuto"
+msgstr "Buying it won't place any orders."
+
+msgid "lib.bb.plain"
+msgstr "Your card is charged {p} today for this strategy."
+
+msgid "lib.bb.needPlan"
+msgstr "This one needs a plan to run. The plan is {p} every 30 days."
+
+msgid "lib.bb.due"
+msgstr "Your plan is {p} overdue. Binding the card charges that too."
+
+msgid "lib.bb.renew"
+msgstr "When your plan renews, this card is charged if your balance is short."
+
+msgid "lib.bb.topup"
+msgstr "Auto top-up is on once you add a card: a balance below {lo} TWD triggers a {a} TWD top-up. You can turn it off anytime."
+
+msgid "lib.bb.waiting"
+msgstr "Waiting for Payment…"
+
+msgid "lib.bb.waitNote"
+msgstr "This updates once you've paid."
+
+msgid "lib.bb.reopen"
+msgstr "Reopen Payment Page"
+
+msgid "lib.bb.gone"
+msgstr "It was delisted, so it wasn't bought. {p} went to your balance."
+
+msgid "lib.bb.owned"
+msgstr "You already own it. {p} went to your balance."
+
+msgid "lib.bb.wallet"
+msgstr "Charged {p}. It went to your balance, but the strategy wasn't bought."
+
+msgid "lib.bb.walletNoAmt"
+msgstr "The strategy wasn't bought. The money went to your balance."
+
+msgid "lib.bb.trialOn"
+msgstr "Your trial still runs until {d}."
+
+msgid "lib.bb.failed"
+msgstr "The card charge failed. Nothing was charged."
+
+msgid "lib.bb.open"
+msgstr "Your last payment page is still open and can still be paid. Trying again opens a new page. If both get paid, the extra charge goes to your balance."
+
+msgid "lib.bb.expired"
+msgstr "The payment page expired. If you didn't pay, nothing was charged."
+
+msgid "lib.bb.rate"
+msgstr "Too many tries. Try again later."
 
 msgid "lib.buy.inProgress"
 msgstr "This purchase is already being processed. Check back in a moment."
