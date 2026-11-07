@@ -1529,7 +1529,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
 .cs-newrow:hover { background: var(--surface-muted); color: var(--ink); }
-.cs-newrow:focus-visible, .cs-item:focus-visible { outline-offset: -2px; }   /* 捲動容器會裁掉外擴的 ring */
+.cs-newrow:focus-visible, .cs-item:focus-visible, .strat-row:focus-visible { outline-offset: -2px; }   /* 捲動容器會裁掉外擴的 ring(策略列:.strat-list overflow-x hidden) */
 .cs-row { position: relative; }
 .cs-item {
   display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2);

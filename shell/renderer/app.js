@@ -2366,17 +2366,29 @@ async function stratRefresh(turnEnd) {
   if (RP.name && !RP.list.some((x) => x.name === RP.name)) stratSelect(null);
 }
 
+/* 選取換到別列、焦點還停在同一份清單的舊列上 → 焦點跟到選中那一列。否則框會留在沒被選中的那一列:滑鼠點過一列、
+   之後按過任何鍵(Cmd+Tab 也算),那一列就是 :focus-visible,再由結果卡／拉回等程式換選取,框就留在原地(Wei 11-07 截圖)。
+   用 focus() 搬:舊列沒有框(只用滑鼠)時新列也不會有。焦點不在清單的列上(輸入框、中欄)就不搶 */
+function stratFocusFollow(listId, name) {
+  const ae = document.activeElement, box = document.getElementById(listId);
+  if (!name || !box || !ae || !ae.classList.contains("strat-row") || !box.contains(ae) || ae.dataset.name === name) return;
+  const w = [...box.querySelectorAll(":scope > .strat-wrap")].find((x) => x.dataset.name === name && !x.hidden);
+  const r = w && w.querySelector(".strat-row");
+  if (r) r.focus({ preventScroll: true });
+}
 async function stratSelect(name, force) {
   if (name && typeof sgReveal === "function") sgReveal("local", name);   // 所在資料夾收合就展開、捲到看得見;在提早 return 之前,同一支收合後再按結果卡也會展開
   if (name === RP.name && !force) return;
   if (name) trLeave();   // 中欄一次只有一個視圖:選了策略就離開自動下單頁(trade.js)
   if (name && typeof libLeave === "function") libLeave("local");   // 策略庫也收(renderer/library.js)
   if (name && typeof rptLeave === "function") rptLeave("local");   // 報告也收(renderer/reports.js)
+  const prev = RP.name;
   RP.name = name; RP.drawn = {};
   $("strat-list").querySelectorAll(".strat-row").forEach((b) => {
     if (b.dataset.name === name) b.setAttribute("aria-current", "true");
     else b.removeAttribute("aria-current");
   });
+  if (name !== prev && typeof stratFocusFollow === "function") stratFocusFollow("strat-list", name);   // force 重選同一支(回合結束重抓)不搬
   // 中欄誰該出現由 envShowMain 決定(trade.js):雲端視角時這台電腦的三個視圖都收著,選中的那支照記、切回來才出現
   if (!name) { RP.data = null; envShowMain(); return; }
   RP.data = await window.blave.loadStrategy(name);
@@ -2494,7 +2506,9 @@ async function rpCloudSelect(name, force) {
   if (name && typeof sgReveal === "function") sgReveal("cloud", name);
   if (name === RPC.name && !force) return;
   const seq = ++rpcSeq;
+  const prev = RPC.name;
   RPC.name = name; RPC.drawn = {}; rpcOwed = false;
+  if (name !== prev && typeof stratFocusFollow === "function") stratFocusFollow("strat-list-cloud", name);   // 先搬焦點再重建:重建照焦點所在的那一列接回(trade.js envPaintSide keep)
   if (RPC_SEEN.name !== name) { RPC_SEEN.name = name; RPC_SEEN.sig = name ? rpCloudSig(envCloudList(TR_BAGS.cloud.st).find((y) => y.name === name)) : null; }
   if (name && typeof libLeave === "function") libLeave("cloud");   // 雲端視角的策略庫也收(renderer/library.js)
   if (name && typeof rptLeave === "function") rptLeave("cloud");   // 雲端視角的報告也收(renderer/reports.js)
