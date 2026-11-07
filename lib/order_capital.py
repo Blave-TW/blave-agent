@@ -830,7 +830,7 @@ def close_position_partial(env: dict, symbol: str, direction: str, qty: float,
     if got > lots + 1e-9:
         # a 1-lot close cannot fill 2: the report was misread. Booked as is, the lots past zero
         # open a reverse position in the book the account never held; 'sent' + 0 sends flatten
-        # down its unconfirmed-close path (held, then the account read settles it)
+        # down its unconfirmed-close path: parked for the reconciler, whose account read settles it
         logging.error(f"capital close {alias} {action} {lots} lots: {got:g} reported filled — "
                       f"more than sent, returned as sent/0 (seq {result.get('seq_no')})")
         guard.audit("order_overfill_refused", venue="capital", symbol=alias, lots=lots, fill_qty=got,
@@ -842,6 +842,7 @@ def close_position_partial(env: dict, symbol: str, direction: str, qty: float,
         "exchange": "capital",
         "resolved_symbol": result.get("symbol"),
         "status": result.get("status"),
+        "seq_no": result.get("seq_no"),  # flatten parks an unconfirmed close under it
     }
 
 

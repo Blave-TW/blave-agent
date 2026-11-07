@@ -659,8 +659,10 @@ idx47. `lib/order_capital` books a `D` row under every 13-digit numeric field it
 `order_filled` audit's `seq_idx` says which column held our seq. A report of more lots than were
 sent is never booked as reported: `manager/reconciler` parks the whole send and trips HALT (only
 the lots sent can be claimed later, on an account read that moved by exactly that much), and
-`close_position_partial` returns flatten's close as `sent` with 0 lots, so the close is held and
-the account read settles it.
+`close_position_partial` returns flatten's close as `sent` with 0 lots. Flatten parks every 群益
+close that did not report its whole fill (that `sent`, a plain `sent`, a short fill) in the
+reconciler's `state/capital_pending_sent.json` as a `reduce` leg, so the reconciler's claim settles
+it on an account read exactly as it does its own sends, and its close gate holds the next close.
 
 **Two consumer-side rules (both live-observed):** ① `SKReplyLib_ConnectByID` **replays every
 report from the whole session day** on each connect — a fresh process re-receives this morning's

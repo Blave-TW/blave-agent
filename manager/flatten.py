@@ -95,7 +95,7 @@ _LOCK = None  # the open lock file, pinned for the life of the process (see _sin
 # rewritten with done_at null when the lock is taken, and again on every exit while it is
 # still held — a loser of the lock never writes, it would erase the holder's result.
 LAST_PATH = "state/last_flatten.json"
-# = manager/reconciler.CAPITAL_PENDING_PATH / QUEUED_HOLD_S (the flatten does not import the reconciler)
+# = manager/reconciler.CAPITAL_PENDING_PATH / QUEUED_HOLD_S (the reconciler is loaded only to park a close: _reconciler)
 CAPITAL_PENDING_PATH = "state/capital_pending_sent.json"
 CAPITAL_QUEUED_HOLD_S = 16 * 60
 CAPITAL_SETTLE_S = 20   # = lib/capital_vault.ORDER_SETTLE_S
@@ -209,6 +209,70 @@ def _capital_close_queued(key, now=None):
     if key in _CAP_QUEUED:
         until = max(until, _CAP_QUEUED[key])
     return (True, until) if until > now else (False, None)
+
+
+_RECONCILER = None
+# root -> {contract: signed lots} the account holds as far as this run knows: the worker read
+# taken before this run's first 群益 close on the root, moved by this run's fills since (the
+# read does not move between closes). None = the read failed. A park's baseline, as the
+# reconciler reads one before each of its own sends.
+_CAP_BASE = {}
+
+
+def _reconciler():
+    """manager/reconciler, loaded by file path as manager/seed_ledger does — only when a 群益
+    close has to be parked, so no other flatten pays for its import."""
+    global _RECONCILER
+    if _RECONCILER is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("reconciler", os.path.join(os.path.dirname(
+            os.path.abspath(__file__)), "reconciler.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _RECONCILER = mod
+    _RECONCILER.CAPITAL_PENDING_PATH = CAPITAL_PENDING_PATH
+    return _RECONCILER
+
+
+def _capital_base(root):
+    if root not in _CAP_BASE:
+        try:
+            _CAP_BASE[root] = _reconciler()._capital_nets(root)
+        except Exception as e:  # the close still goes; a park then has no baseline (reconciler: the same)
+            logging.warning(f"[capital] {root}: account read for the park baseline failed ({e})")
+            _CAP_BASE[root] = None
+    return None if _CAP_BASE[root] is None else dict(_CAP_BASE[root])
+
+
+def _capital_park_close(key, side, lots, result, base):
+    """A 群益 close that did not report its whole fill goes into the reconciler's park file under
+    its own rule (reconciler._capital_park): its claim books a fill the account shows, clears one
+    the account never moved for, and its close gate holds the next close meanwhile (sNewClose=2:
+    a second close beside a queued one opens the reverse). A fill on a root already parked moves
+    the row's expectation, as the reconciler's own sends do. Never raises: the close is out."""
+    got = float(result.get("executed_qty") or 0)
+    filled = -got if side == "long" else got
+    code = str(result.get("resolved_symbol") or "").strip().upper()
+    if got and _CAP_BASE.get(key) is not None and _CAPITAL_FUT_RE.match(code):
+        _CAP_BASE[key][code] = _CAP_BASE[key].get(code, 0.0) + filled
+    try:
+        if got + 1e-9 >= lots:
+            from lib.winreplace import load_json
+            try:
+                if key not in (load_json(CAPITAL_PENDING_PATH, encoding="utf-8") or {}):
+                    return None
+            except FileNotFoundError:
+                return None
+            except (OSError, ValueError, AttributeError):
+                pass  # unreadable: _capital_park reports it
+        return _reconciler()._capital_park(
+            key, {"fill_qty": got, "status": result.get("status"), "symbol": result.get("resolved_symbol"),
+                  "seq_no": result.get("seq_no")},
+            -lots if side == "long" else lots, base, intent="reduce")
+    except Exception as e:
+        logging.error(f"[capital] {key}: the close was not parked ({type(e).__name__}: {e}) — "
+                      f"only this run's hold covers it")
+        return False
 
 
 def _takes(fn, name):
@@ -813,6 +877,7 @@ def flatten():
     except (OSError, ValueError, ImportError):
         prev = {}
     _load_cap_queued(prev, started)
+    _CAP_BASE.clear()
     _write_last(_outcome(None, started, None))
     result = False
     try:
@@ -1336,6 +1401,7 @@ def _flatten():
                     kw = {}
                     if months_by_key is not None and _takes(order.close_position_partial, "book_months"):
                         kw["book_months"] = months_by_key.get(key, set())
+                    cap_base = _capital_base(key) if vid == venue_traits.CAPITAL else None
                     result = order.close_position_partial(env, sym, side, size, client_order_id=cid, **kw)
             except Exception as e:
                 u = _unknown_outcome(e, vid, sym, cid) if sym else None
@@ -1394,6 +1460,8 @@ def _flatten():
                 "contributors": [],
                 "legs": [leg],
             })
+            if vid == venue_traits.CAPITAL and isinstance(result, dict) and not lots_row:
+                _capital_park_close(key, side, int(round(float(size))), result, cap_base)
             if venue_traits.has(vid, "close_needs_fill") and (
                     not isinstance(result, dict) or result.get("status") != "filled"
                     or float(result.get("executed_qty") or 0) + 1e-9 < size):
