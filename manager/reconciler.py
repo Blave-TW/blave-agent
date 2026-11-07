@@ -649,13 +649,13 @@ def _capital_overfill(symbol, root, result, lots, requested, base, intent):
     seq = result.get('seq_no') or '?'
     if _en():
         # the api keeps 200 characters of a halt reason (_halt_words): the seq stays in audit and log
-        msg = (f"Capital reported {got:g} lots filled on {symbol}, more than the {lots} sent. All trading "
-               f"paused, closes and stops too. Check the {symbol} position in the Capital app, close any "
-               f"extra lots, then press Start trading.")
+        msg = (f"Capital reported {got:g} lots filled on {symbol}, {lots} sent. Not booked. All trading "
+               f"paused, closes and stops too. Check {symbol} in the Capital app. Blave won't handle any "
+               f"difference. Then press Start trading.")
     else:
         msg = (f"群益回報 {symbol} 成交 {got:g} 口，比送出的 {lots} 口多（序號 {seq}）。Blave 沒有記這筆。"
                f"自動下單已全部暫停，平倉與停損也不會送。到群益下單軟體核對 {symbol} 部位，"
-               f"多出的口數先平掉，再按「啟動下單」。")
+               f"差額 Blave 不會處理。之後再按「啟動下單」。")
     guard.audit('order_overfill_refused', venue=venue_traits.CAPITAL, symbol=root, lots=lots, fill_qty=got,
                 seq_no=result.get('seq_no'))
     logging.error(f"[reconciler/capital] {root}: {got:g} lots reported filled for a {lots}-lot order — "
