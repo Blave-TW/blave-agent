@@ -13,12 +13,14 @@ this side checks them again — the trust boundary is the machine.
 import ast
 import base64
 import hashlib
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import time
+import tokenize
 
 # Windows reserved names (con, nul, com1.py…): neither a Windows cloud machine nor the desktop can create them
 WIN_RESERVED = r"(?!(?i:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$))"            # = api _WIN_RESERVED
@@ -57,7 +59,10 @@ _TYPE_RE = re.compile(r"^#\s*Type:\s*([ABC])\b", re.M | re.ASCII)   # = strategy
 
 
 class Refused(ValueError):
-    """`CODE: detail` — the ack's error. The detail names files or modules, never a value."""
+    """`CODE: detail` — the ack's error. The detail names files or modules, never a value.
+    NO_STRATEGY_NAME's detail is `<why>: <files>` (helpers / wildcard / literal), so the desktop can
+    say which file to change and how (shell/renderer/handoff.js HO_NAME_WHY) under the one code
+    0.1.48 and older already map."""
 
     def __init__(self, code, detail):
         super().__init__(f"{code}: {detail}")
@@ -364,6 +369,55 @@ def _wildcard_import(text):
     return any(isinstance(n, ast.ImportFrom) and any(a.name == "*" for a in n.names) for n in ast.walk(tree))
 
 
+def _writes_strategy_name(text):
+    """Whether a helper may set STRATEGY_NAME. Only two forms read it and pass: an attribute read
+    (`s.STRATEGY_NAME`, also inside an f-string's braces) and a bare-name read. Every other appearance
+    of the name refuses — a binding of any kind, an attribute store/delete, and the name as data
+    (str or bytes literal, docstring, getattr's argument, a comment): data can be turned into a
+    setattr / globals() write at run time. Unparseable → the substring rule, never let through.
+    Like the substring rule before it, a name assembled at run time ("STRATEGY" + "_NAME") is not
+    seen: this guards copied and ordinary code, not code written to get around it."""
+    key = "STRATEGY_NAME"
+    try:
+        tree = ast.parse(text)
+        comments = [t.string for t in tokenize.generate_tokens(io.StringIO(text).readline)
+                    if t.type == tokenize.COMMENT]
+    except (SyntaxError, ValueError, tokenize.TokenError):
+        return key in text
+    if any(key in c for c in comments):
+        return True   # `# STRATEGY_NAME` read back through open(__file__)
+    store = (ast.Store, ast.Del)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id == key and isinstance(node.ctx, store):
+            return True   # =, :=, +=, annotated, for / with / comprehension targets, unpacking, del, type alias
+        if isinstance(node, ast.Attribute) and node.attr == key and isinstance(node.ctx, store):
+            return True   # strategy.STRATEGY_NAME = …, __main__.STRATEGY_NAME = …
+        if isinstance(node, (ast.Global, ast.Nonlocal)) and key in node.names:
+            return True
+        if isinstance(node, ast.Import) and any((a.asname or a.name.split(".")[0]) == key for a in node.names):
+            return True
+        if isinstance(node, ast.ImportFrom) and any((a.asname or a.name) == key for a in node.names):
+            return True
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.ExceptHandler)) \
+                and node.name == key:
+            return True
+        if isinstance(node, ast.arg) and node.arg == key:
+            return True
+        if isinstance(node, ast.keyword) and node.arg == key:
+            return True   # run(dict(STRATEGY_NAME=…), …), globals().update(STRATEGY_NAME=…)
+        if type(node).__name__ in ("MatchAs", "MatchStar") and getattr(node, "name", None) == key:
+            return True
+        if type(node).__name__ == "MatchMapping" and getattr(node, "rest", None) == key:
+            return True   # case {**STRATEGY_NAME}:
+        # the name as data, docstrings and getattr's argument included: setattr(m, "STRATEGY_NAME", …),
+        # globals()["STRATEGY_NAME"] = …, {"STRATEGY_NAME": …} for lib.runner.run, exec("…"), __doc__
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and key in node.value:
+            return True
+        if isinstance(node, ast.Constant) and isinstance(node.value, bytes) and key.encode() in node.value:
+            return True   # setattr(m, b"STRATEGY_NAME".decode(), …)
+    return False
+
+
 def check_name(files, name):
     """lib/runner writes a strategy's output under strategies/<STRATEGY_NAME>/: a STRATEGY_NAME that is
     not the folder name, or one this cannot read as a single literal, could have the destination's first
@@ -371,14 +425,21 @@ def check_name(files, name):
     never mention STRATEGY_NAME and never import lib.runner (nothing to check, nothing to rename)."""
     text = next(t for f, _, t in files if f == "strategy.py")
     # Cross-file override: a helper copied from another strategy keeps its STRATEGY_NAME = "other", and
-    # an `import *` pulls it over strategy.py's — the backtest then mints and rewrites stats.json and
-    # daily_returns under that (possibly live) strategy. A helper naming it, or any wildcard import, refuses.
-    helpers = sorted(f for f, _, t in files if f != "strategy.py" and "STRATEGY_NAME" in t)
+    # an `import *` pulls it over strategy.py's (or the helper sets strategy.STRATEGY_NAME, setattr,
+    # globals()[…] itself) — the backtest then mints and rewrites stats.json and daily_returns under
+    # that (possibly live) strategy. So a helper refuses unless it only reads the name (scan.py's chart
+    # title `s.STRATEGY_NAME`; _writes_strategy_name lists what counts), and any wildcard import refuses
+    # whatever the helper says. strategy.py's literal is then checked against the folder below. A name
+    # spelled at run time ("STRATEGY" + "_NAME") gets past this, as it got past the substring rule, and
+    # so does the name pulled back out of an allowed read (an exception's .name, __code__.co_names, the
+    # file's own source) — that cannot be closed without refusing every read again. The check stops
+    # copied and ordinary code, not code written to evade it.
+    helpers = sorted(f for f, _, t in files if f != "strategy.py" and _writes_strategy_name(t))
     if helpers:
-        raise Refused("NO_STRATEGY_NAME", f"STRATEGY_NAME belongs in strategy.py only, also found in {', '.join(helpers)}")
+        raise Refused("NO_STRATEGY_NAME", "helpers: " + ", ".join(helpers))
     stars = sorted(f for f, _, t in files if _wildcard_import(t))
     if stars:
-        raise Refused("NO_STRATEGY_NAME", f"`import *` could rebind STRATEGY_NAME ({', '.join(stars)})")
+        raise Refused("NO_STRATEGY_NAME", "wildcard: " + ", ".join(stars))
     if strategy_type(text) == "B" and not any("STRATEGY_NAME" in t for _, _, t in files) \
             and not imports_runner([t for _, _, t in files]):
         # a plain Type B script that never reaches lib/runner: it writes no stats under any name, so
@@ -386,7 +447,7 @@ def check_name(files, name):
         return None
     const = strategy_name_const(text)
     if const is None:
-        raise Refused("NO_STRATEGY_NAME", f'strategy.py needs exactly one STRATEGY_NAME = "{name}" at the top level')
+        raise Refused("NO_STRATEGY_NAME", "literal: strategy.py")
     if const != name:
         raise Refused("NAME_MISMATCH", f"strategy.py says STRATEGY_NAME = {const!r}, the folder is {name}")
     return const
@@ -407,7 +468,7 @@ def rename(files, name, dest):
     disp = re.compile(r'^(DISPLAY_NAME[ \t]*(?::[ \t]*[A-Za-z_][\w.]*[ \t]*)?=[ \t]*)(["\'])(.*?)\2([ \t]*(?:#.*)?)$', re.M)
     k = dest.rsplit("_", 1)[-1]
     if len(line.findall(next(t for f, _, t in files if f == "strategy.py"))) != 1:
-        raise Refused("NO_STRATEGY_NAME", f'strategy.py has no single STRATEGY_NAME = "{name}" line')
+        raise Refused("NO_STRATEGY_NAME", "literal: strategy.py")
 
     def numbered(m):
         v = m.group(3)

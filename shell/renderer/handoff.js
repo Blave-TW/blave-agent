@@ -99,8 +99,19 @@ function hoCell(k, v) {
    kind "local" = 這台電腦讀檔就擋下(代碼在 error、檔名在 detail);"rejected" = 機器的 ack "<例外類別>: <CODE>: <detail>"
    (runtime _run_deferred／local_daemon 都是 f"{type(e).__name__}: {e}",搬家的拒絕類別是 strategy_transfer.Refused);
    "unknown" = 送出了沒收到回條;"undelivered" = 沒送出去,畫面走 trSendError(key "$send")。detail 只會是檔名或模組名 */
-const HO_REFUSE = { NOT_PORTABLE: "ho.err.portable", NAME_MISMATCH: "ho.err.name", NO_STRATEGY_NAME: "ho.err.name", TOO_LARGE: "ho.err.files",
+const HO_REFUSE = { NOT_PORTABLE: "ho.err.portable", NAME_MISMATCH: "ho.err.name", NO_STRATEGY_NAME: "ho.err.nameOnce", TOO_LARGE: "ho.err.files",
   BAD_FILES: "ho.err.files", NOT_UTF8: "ho.err.files", NO_SOURCE: "ho.err.noSource" };
+/* NO_STRATEGY_NAME 的 detail = "<why>: <檔名, 檔名>"(runtime strategy_transfer.check_name):依原因各一句,{x} 只放檔名。
+   1.1.159 以前的雲端 runtime 送英文句子:照它的字樣歸到同三類、檔名從括號或句尾取 */
+const HO_NAME_WHY = { helpers: "ho.err.nameOnce", wildcard: "ho.err.nameStar", literal: "ho.err.nameLiteral" };
+function hoNameWhy(detail) {
+  const m = /^(helpers|wildcard|literal):\s*([\s\S]*)$/.exec(detail);
+  if (m) return { key: HO_NAME_WHY[m[1]], x: m[2] };
+  const old = /also (?:found|set) in (.+)$/.exec(detail), star = /^`import \*`[^(]*\(([^)]*)\)/.exec(detail);
+  if (old) return { key: "ho.err.nameOnce", x: old[1] };
+  if (star) return { key: "ho.err.nameStar", x: star[1] };
+  return { key: "ho.err.nameLiteral", x: "strategy.py" };
+}
 function hoErr(r) {
   if (!r || typeof r !== "object") return { key: "ho.err.retry" };
   const e = String(r.error || "");
@@ -108,6 +119,7 @@ function hoErr(r) {
   if (e === "UNKNOWN_COMMAND" || e === "BAD_COMMAND" || /unknown command/i.test(e)) return { key: "ho.err.old" };
   const m = /^(?:[A-Za-z]\w*:\s*)?([A-Z_]{3,24}):\s*([\s\S]*)$/.exec(e);
   const code = r.kind === "local" ? e : m ? m[1] : null, detail = r.kind === "local" ? String(r.detail || "") : m ? m[2] : "";
+  if (code === "NO_STRATEGY_NAME") { const w = hoNameWhy(detail.replace(/[\r\n]+/g, " ")); return { key: w.key, vars: { x: w.x.slice(0, 80) } }; }
   if (code && HO_REFUSE[code]) return { key: HO_REFUSE[code], vars: { x: detail.replace(/[\r\n]+/g, " ").slice(0, 80) } };
   if (r.kind === "undelivered") return { key: "$send" };
   return { key: "ho.err.retry" };

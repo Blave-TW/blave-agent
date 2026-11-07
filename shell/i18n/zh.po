@@ -10759,6 +10759,15 @@ msgstr "搬不過去：用到了 {x}，那邊沒有。"
 msgid "ho.err.name"
 msgstr "搬不過去：檔案裡的 STRATEGY_NAME 跟資料夾名不一致，請 agent 先改成一致。"
 
+msgid "ho.err.nameOnce"
+msgstr "搬不過去：{x} 裡的 STRATEGY_NAME 只能寫成 s.STRATEGY_NAME，註解、字串也不能提。請 agent 先改好。"
+
+msgid "ho.err.nameStar"
+msgstr "搬不過去：{x} 用了 import *，可能蓋掉 STRATEGY_NAME。請 agent 改成逐一 import。"
+
+msgid "ho.err.nameLiteral"
+msgstr "搬不過去：strategy.py 最外層要剛好一行 STRATEGY_NAME = \"策略名\"。請 agent 先改好。"
+
 msgid "ho.err.files"
 msgstr "搬不過去：{x} 這個檔不能搬（太大、檔名不合規，或不是 UTF-8）。"
 

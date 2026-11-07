@@ -23,6 +23,9 @@ subprocesses in a temp workspace carrying a copy of this repo's lib/.
      id; an api refusal → HANDOVER. local_daemon takes import only; both have handlers.
   9. Staged files (拉回 here): read from state/transfer_in/<id>/, re-hashed, capped, symlinks not
      followed, the stage always removed; a cloud machine refuses them.
+ 10. Helpers that only read STRATEGY_NAME (scan.py's chart title) move, both directions; every form
+     that writes it is refused; an unparseable helper falls back to the substring rule; dropping the
+     Attribute branch turns the `s.STRATEGY_NAME = "x"` case red (mutation).
 
 Run: cd blave-agent && .venv/bin/python tests/check_strategy_transfer.py
 """
@@ -744,6 +747,163 @@ check(r.get("dest") == "pulled" and r.get("run") == "backtest" and os.path.isfil
       and not os.path.exists(os.path.join(STAGE_ROOT, SID)), f"strategy_import with a stage lands like any import → {r}")
 check(wait(lambda: os.path.isfile(os.path.join(SDIR, "pulled", "stats.json"))
            and not os.path.exists(os.path.join(SDIR, "pulled", "transfer.json"))), "…and its backtest finishes")
+
+# ── 10. helpers that read STRATEGY_NAME vs helpers that write it ─────────────
+with open(os.path.join(ROOT, "examples", "btc_sma_cross", "scan.py"), encoding="utf-8") as fh:
+    SCAN = fh.read()   # the shipped example: `title=f'{s.STRATEGY_NAME} — Sharpe Grid'`
+check("s.STRATEGY_NAME" in SCAN, "fixture: the example scan.py still reads s.STRATEGY_NAME")
+
+
+def with_helper(name, helper_text, f="scan.py"):
+    return [tf("strategy.py", TYPE_A.format(name=name, display="x")), tf("helper.py", 'HOW = ""\n'), tf(f, helper_text)]
+
+
+def name_check(files, name="momo"):
+    try:
+        return T.check_name(T.decode_files(files), name)
+    except T.Refused as e:
+        return e.code
+
+
+READS = {
+    "the example scan.py": SCAN,
+    "f-string": 'import strategy as s\ntitle = f"{s.STRATEGY_NAME} grid"\n',
+    "plain read into another name": 'import strategy as s\nname = s.STRATEGY_NAME\nprint(s.STRATEGY_NAME)\n',
+    "bare-name read in a function": 'def f():\n    return STRATEGY_NAME\n',
+}
+got = {k: name_check(with_helper("momo", v)) for k, v in READS.items()}
+check(set(got.values()) == {"momo"}, f"helpers that only read STRATEGY_NAME pass check_name ({got})")
+WRITES = {
+    "module level": 'STRATEGY_NAME = "x"\n',
+    "attribute": 'import strategy as s\ns.STRATEGY_NAME = "x"\n',
+    "setattr": 'import strategy as s\nsetattr(s, "STRATEGY_NAME", "x")\n',
+    "annotated": 'STRATEGY_NAME: str = "x"\n',
+    "augmented attribute": 'import strategy as s\ns.STRATEGY_NAME += "_x"\n',
+    "annotated attribute": 'import strategy as s\ns.STRATEGY_NAME: str = "x"\n',
+    "inside a function": 'def f():\n    global STRATEGY_NAME\n    STRATEGY_NAME = "x"\n',
+    "global alone": 'def f():\n    global STRATEGY_NAME\n',
+    "for target": 'for STRATEGY_NAME in ["x"]:\n    pass\n',
+    "with target": 'import contextlib\nwith contextlib.nullcontext("x") as STRATEGY_NAME:\n    pass\n',
+    "walrus": 'if (STRATEGY_NAME := "x"):\n    pass\n',
+    "tuple unpacking": 'STRATEGY_NAME, Y = "x", 1\n',
+    "import as": 'import json as STRATEGY_NAME\n',
+    "from import": 'from other import STRATEGY_NAME\n',
+    "from import as": 'from other import X as STRATEGY_NAME\n',
+    "del": 'import strategy as s\ndel s.STRATEGY_NAME\n',
+    "globals()[…]": 'globals()["STRATEGY_NAME"] = "x"\n',
+    "a config dict for runner": 'from lib.runner import run\nrun({"STRATEGY_NAME": "x"}, None, None)\n',
+    "keyword": 'globals().update(STRATEGY_NAME="x")\n',
+    "exec": 'exec("STRATEGY_NAME = \'x\'")\n',
+    "def": 'def STRATEGY_NAME():\n    return "x"\n',
+    "class": 'class STRATEGY_NAME:\n    pass\n',
+    "except as": 'try:\n    pass\nexcept Exception as STRATEGY_NAME:\n    pass\n',
+    "parameter": 'def f(STRATEGY_NAME="x"):\n    return STRATEGY_NAME\n',
+    "match capture": 'match 1:\n    case STRATEGY_NAME:\n        pass\n',
+    "unparseable, names it": 'STRATEGY_NAME = "x"\ndef broken(:\n',
+    "getattr read (data form)": 'import strategy as s\nn = getattr(s, "STRATEGY_NAME", "")\n',
+    "docstring mentions it": '"""Plots STRATEGY_NAME."""\nx = 1\n',
+}
+# the eight that a version of this check let through and the substring rule had refused (code-auditor
+# 0149): each turns the name into a run-time setattr; the first four were seen rewriting run(locals())
+AUDIT = {
+    "getattr rebound to setattr": ('import __main__\ngetattr = setattr\ngetattr(__main__, "STRATEGY_NAME", "live_one")\n', "STR"),
+    "setattr imported as hasattr": ('import __main__\nfrom builtins import setattr as hasattr\nhasattr(__main__, "STRATEGY_NAME", "live_one")\n', "STR"),
+    "bytes literal": ('import __main__\nsetattr(__main__, b"STRATEGY_NAME".decode(), "live_one")\n', "BYTES"),
+    "module docstring as the name": ('"""STRATEGY_NAME"""\nimport __main__\nsetattr(__main__, __doc__, "live_one")\n', "STR"),
+    "function docstring as the name": ('import __main__\ndef k():\n    "STRATEGY_NAME"\nsetattr(__main__, k.__doc__, "live_one")\n', "STR"),
+    "name from getattr's AttributeError": ('import __main__\ntry:\n    getattr(object(), "STRATEGY_NAME")\nexcept AttributeError as e:\n'
+                                           '    setattr(__main__, e.name, "live_one")\n', "STR"),
+    "comment read back from the source": ('# STRATEGY_NAME\nimport __main__\nsetattr(__main__, open(__file__).read().split()[1], "live_one")\n', "COMMENT"),
+    "match mapping rest": ('match {}:\n    case {**STRATEGY_NAME}:\n        pass\n', "MATCH"),
+}
+WRITES.update({k: v for k, (v, _) in AUDIT.items()})
+got = {k: name_check(with_helper("momo", v)) for k, v in WRITES.items()}
+check(set(got.values()) == {"NO_STRATEGY_NAME"}, f"every form of writing STRATEGY_NAME in a helper → NO_STRATEGY_NAME ({got})")
+check(name_check(with_helper("momo", "def broken(:\n")) == "momo",
+      "an unparseable helper that never names STRATEGY_NAME is left to the compile check (§6B), as before")
+check(name_check(with_helper("momo", 'import strategy as s\nt = s.STRATEGY_NAME\n'), name="other") == "NAME_MISMATCH",
+      "a read-only helper does not hide a strategy.py whose name is not the folder → NAME_MISMATCH")
+check(name_check([tf("strategy.py", TYPE_A.format(name="momo", display="x").replace("import helper\n", "from scan import *\n")),
+                  tf("helper.py", 'HOW = ""\n'), tf("scan.py", SCAN)]) == "NO_STRATEGY_NAME",
+      "import * still refuses even when the helper only reads the name")
+
+# the refusal's detail is `<why>: <file names>` only (the desktop picks its sentence by <why>, shows the names)
+
+
+def name_detail(files, name="momo"):
+    try:
+        T.check_name(T.decode_files(files), name)
+    except T.Refused as e:
+        return str(e)
+    return None
+
+
+check(name_detail(with_helper("momo", WRITES["attribute"]) + [tf("plot.py", "# STRATEGY_NAME\n")])
+      == "NO_STRATEGY_NAME: helpers: plot.py, scan.py"
+      and name_detail([tf("strategy.py", TYPE_A.format(name="momo", display="x").replace("import helper\n", "from scan import *\n")),
+                       tf("helper.py", 'HOW = ""\n'), tf("scan.py", SCAN)]) == "NO_STRATEGY_NAME: wildcard: strategy.py"
+      and name_detail([tf("strategy.py", '# Type: A\nSTRATEGY_NAME = "momo"\nSTRATEGY_NAME = "x"\n')]) == "NO_STRATEGY_NAME: literal: strategy.py",
+      "NO_STRATEGY_NAME detail: helpers / wildcard / literal, then the file names, comma-separated")
+try:
+    T.rename([("strategy.py", b"", 'STRATEGY_NAME = "other"\n')], "momo", "momo_2")
+    rn = None
+except T.Refused as e:
+    rn = str(e)
+check(rn == "NO_STRATEGY_NAME: literal: strategy.py", f"rename without the single literal line → literal detail ({rn})")
+
+# mutation: drop one branch of _writes_strategy_name and the cases it alone stops must get through —
+# so each assertion above is load-bearing (a red, not a coincidence of some other branch)
+with open(os.path.join(RUNTIME, "strategy_transfer.py"), encoding="utf-8") as fh:
+    SRC = fh.read()
+BRANCH = {
+    "ATTR": ("        if isinstance(node, ast.Attribute) and node.attr == key and isinstance(node.ctx, store):\n"
+             "            return True   # strategy.STRATEGY_NAME = …, __main__.STRATEGY_NAME = …\n"),
+    "STR": ("        if isinstance(node, ast.Constant) and isinstance(node.value, str) and key in node.value:\n"
+            "            return True\n"),
+    "BYTES": ("        if isinstance(node, ast.Constant) and isinstance(node.value, bytes) and key.encode() in node.value:\n"
+              "            return True   # setattr(m, b\"STRATEGY_NAME\".decode(), …)\n"),
+    "COMMENT": ("    if any(key in c for c in comments):\n"
+                "        return True   # `# STRATEGY_NAME` read back through open(__file__)\n"),
+    "MATCH": ('        if type(node).__name__ == "MatchMapping" and getattr(node, "rest", None) == key:\n'
+              "            return True   # case {**STRATEGY_NAME}:\n"),
+}
+
+
+def mutant_verdict(branch, helper_text):
+    m = types.ModuleType("strategy_transfer_mutant_" + branch)
+    exec(compile(SRC.replace(BRANCH[branch], ""), m.__name__ + ".py", "exec"), m.__dict__)
+    try:
+        return m.check_name(T.decode_files(with_helper("momo", helper_text)), "momo")
+    except m.Refused as e:
+        return e.code
+
+
+check(all(SRC.count(b) == 1 for b in BRANCH.values()), "mutation: each branch is found once in strategy_transfer.py")
+cases = [("attribute", WRITES["attribute"], "ATTR")] + [(k, v, b) for k, (v, b) in AUDIT.items()]
+got = {k: (name_check(with_helper("momo", v)), mutant_verdict(b, v)) for k, v, b in cases}
+check(all(now == "NO_STRATEGY_NAME" and mut == "momo" for now, mut in got.values()),
+      f"mutation: each case is refused now and gets through once its own branch is dropped ({got})")
+
+# both directions run the same check: 送上雲端 lands on the cloud machine's listener, 拉回 on this
+# computer's (local_daemon → the same handler, files staged by the app)
+os.environ["BLAVE_AGENT_LOCAL"] = "0"
+try:
+    up = imp({"name": "zec_up", "files": with_helper("zec_up", SCAN)})
+    up_bad = refused({"name": "zec_bad", "files": with_helper("zec_bad", WRITES["attribute"])})
+finally:
+    os.environ["BLAVE_AGENT_LOCAL"] = "1"
+check(up.get("dest") == "zec_up" and up.get("run") == "backtest" and "scan.py" in os.listdir(os.path.join(SDIR, "zec_up")),
+      f"送上雲端: a strategy with scan.py reading s.STRATEGY_NAME moves and backtests ({up})")
+check(up_bad == "NO_STRATEGY_NAME" and "zec_bad" not in os.listdir(SDIR), f"送上雲端: a helper writing it → refused, nothing written ({up_bad})")
+wait(lambda: (cl._read_transfer_doc("zec_up") or {}).get("status") != "running")
+SID2, SID3 = "b" * 32, "c" * 32
+down = imp({"name": "zec_down", "stage": SID2, "files": stage(SID2, with_helper("zec_down", SCAN))})
+down_bad = refused({"name": "zec_down_bad", "stage": SID3, "files": stage(SID3, with_helper("zec_down_bad", WRITES["setattr"]))})
+check(down.get("dest") == "zec_down" and down.get("run") == "backtest" and not os.path.exists(os.path.join(STAGE_ROOT, SID2)),
+      f"拉回: the same strategy, staged, moves and backtests ({down})")
+check(down_bad == "NO_STRATEGY_NAME" and "zec_down_bad" not in os.listdir(SDIR) and not os.path.exists(os.path.join(STAGE_ROOT, SID3)),
+      f"拉回: a helper writing it → refused, nothing written, stage removed ({down_bad})")
+wait(lambda: (cl._read_transfer_doc("zec_down") or {}).get("status") != "running")
 
 time.sleep(0.5)
 shutil.rmtree(BASE, ignore_errors=True)

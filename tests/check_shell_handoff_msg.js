@@ -43,8 +43,22 @@ t("ack 錯誤字串的組法還是 f\"{type(e).__name__}: {e}\"(雲端 listener 
 const wire = (code, detail) => REFUSED + ": " + code + ": " + detail;
 { const E = (r) => JSON.stringify(hoErr(r));
   t("拒絕對字:機器的 ack 字串(" + wire("NOT_PORTABLE", "lib.foo") + ")取代碼與點名的檔／模組", E({ ok: false, kind: "rejected", error: wire("NOT_PORTABLE", "lib.foo") }) === '{"key":"ho.err.portable","vars":{"x":"lib.foo"}}'
-    && E({ ok: false, kind: "rejected", error: wire("NAME_MISMATCH", "x") }).includes("ho.err.name") && E({ ok: false, kind: "rejected", error: wire("NO_STRATEGY_NAME", "helper.py") }).includes("ho.err.name")
+    && E({ ok: false, kind: "rejected", error: wire("NAME_MISMATCH", "x") }).includes("ho.err.name\"")
     && E({ ok: false, kind: "rejected", error: wire("BAD_FILES", "a b.py") }).includes("ho.err.files") && E({ ok: false, kind: "rejected", error: "NOT_PORTABLE: lib.foo" }).includes("ho.err.portable"));
+  /* NO_STRATEGY_NAME:detail「<why>: <檔名>」分三句,{x} 只放檔名;runtime 那邊送的就是這三個前綴(逐字釘住);
+     1.1.159 以前的英文 detail 也歸得到同三類 */
+  const N = (d) => E({ ok: false, kind: "rejected", error: wire("NO_STRATEGY_NAME", d) });
+  t("NO_STRATEGY_NAME 依原因分三句、{x} 是檔名:helpers → nameOnce、wildcard → nameStar、literal → nameLiteral",
+    N("helpers: scan.py, plot.py") === '{"key":"ho.err.nameOnce","vars":{"x":"scan.py, plot.py"}}'
+    && N("wildcard: strategy.py") === '{"key":"ho.err.nameStar","vars":{"x":"strategy.py"}}'
+    && N("literal: strategy.py") === '{"key":"ho.err.nameLiteral","vars":{"x":"strategy.py"}}'
+    && /Refused\("NO_STRATEGY_NAME", "helpers: " \+ ", "\.join\(helpers\)\)/.test(stSrc) && /Refused\("NO_STRATEGY_NAME", "wildcard: " \+ ", "\.join\(stars\)\)/.test(stSrc)
+    && (stSrc.match(/Refused\("NO_STRATEGY_NAME", "literal: strategy\.py"\)/g) || []).length === 2
+    && (stSrc.match(/Refused\("NO_STRATEGY_NAME"/g) || []).length === 4);
+  t("舊雲端 runtime 的英文 detail 也歸到同三類",
+    N("STRATEGY_NAME belongs in strategy.py only, also found in helper.py, scan.py") === '{"key":"ho.err.nameOnce","vars":{"x":"helper.py, scan.py"}}'
+    && N("`import *` could rebind STRATEGY_NAME (strategy.py)") === '{"key":"ho.err.nameStar","vars":{"x":"strategy.py"}}'
+    && N('strategy.py needs exactly one STRATEGY_NAME = "momo" at the top level') === '{"key":"ho.err.nameLiteral","vars":{"x":"strategy.py"}}');
   t("這台電腦讀檔就擋下(kind local):代碼在 error、檔名在 detail", E({ ok: false, kind: "local", error: "TOO_LARGE", detail: "big.py" }) === '{"key":"ho.err.files","vars":{"x":"big.py"}}');
   t("雲端 runtime 太舊:unknown command／UNKNOWN_COMMAND／BAD_COMMAND → 更新那句,不退回 agent", ["UNKNOWN_COMMAND", "BAD_COMMAND"].every((e) => E({ ok: false, kind: "undelivered", error: e }) === '{"key":"ho.err.old"}')
     && E({ ok: false, kind: "rejected", error: "ValueError: unknown command 'strategy_import'" }) === '{"key":"ho.err.old"}' && /raise ValueError\(f"unknown command \{cmd!r\}"\)/.test(clSrc));

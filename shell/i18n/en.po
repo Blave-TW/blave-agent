@@ -10723,6 +10723,15 @@ msgstr "It can’t move: it uses {x}, which the other side doesn’t have."
 msgid "ho.err.name"
 msgstr "It can’t move: STRATEGY_NAME in the file doesn’t match the folder name. Ask the agent to make them match first."
 
+msgid "ho.err.nameOnce"
+msgstr "It can’t move: in {x}, STRATEGY_NAME may only appear as s.STRATEGY_NAME, not in comments or strings either. Ask the agent to fix that first."
+
+msgid "ho.err.nameStar"
+msgstr "It can’t move: {x} uses import *, which could overwrite STRATEGY_NAME. Ask the agent to import names one by one."
+
+msgid "ho.err.nameLiteral"
+msgstr "It can’t move: strategy.py needs exactly one top-level line like STRATEGY_NAME = \"name\". Ask the agent to fix that first."
+
 msgid "ho.err.files"
 msgstr "It can’t move: {x} can’t be copied (too large, a file name outside the allowed characters, or not UTF-8)."
 
