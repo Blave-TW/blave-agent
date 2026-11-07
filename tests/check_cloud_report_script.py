@@ -142,15 +142,16 @@ CITED_IMAGES_MAX = 2
 def status(report_id):
     return "sent"
 '''
-# 有 target_id、還沒有引用圖(CITED_IMAGES_MAX)的 lib:帶 source 的圖會被平台拒,要先拿掉、列進 missing
-R_NOCITE = R_NEW.replace("CITED_IMAGES_MAX = 2\n", "")
 
 
 def put_pics(ws, pics):
     d = os.path.join(ws, "tmp", "cloud-report-" + TURN + "-files")
     for n, b in (pics or {}).items():
         os.makedirs(d, exist_ok=True)
-        open(os.path.join(d, n), "wb").write(b)
+        if isinstance(b, str):   # 一條路徑 = 放一個指過去的 symlink
+            os.symlink(b, os.path.join(d, n))
+        else:
+            open(os.path.join(d, n), "wb").write(b)
     return d
 
 
@@ -185,7 +186,7 @@ p, out, pub, left = run_r7(R_NEW, "publish", RREQ, BUILT)
 t("R7 新機 publish:佔位換成分析 block(list 攤平、照順序)、type／shareable／origin 進去、沒 source 的 image 與 meta 丟掉列出、沒用到的列 unused、兩個檔都刪",
   p.returncode == 0 and pub and [b["type"] for b in pub["blocks"]] == ["text", "kpi_row", "line_chart", "table", "footnote"]
   and pub["type"] == "research" and pub["meta"] == {"origin": "chat", "shareable": False} and pub["images"] is None
-  and pub["title"] == RREQ["title"] and out[-1] == {"published": "pcr-study-1.json", "upload": "sent", "dropped": ["blocks[3].image", "blocks[4].meta"], "unused": ["spare"], "missing": []}
+  and pub["title"] == RREQ["title"] and out[-1] == {"published": "pcr-study-1.json", "upload": "sent", "dropped": ["blocks[3].image", "blocks[4].meta"], "unused": ["spare"]}
   and left == (False, False), p.stdout + p.stderr)
 
 p, out, pub, left = run_r7(R_OLD, "publish", RREQ, BUILT)
@@ -234,7 +235,7 @@ IREQ = dict(RREQ, blocks=RREQ["blocks"][:3] + [PIC] + RREQ["blocks"][5:])
 p, out, pub, left = run_r7(R_NEW, "publish", IREQ, BUILT, pics={"cite-a.png": b"\x89PNG-a"})
 t("R7 帶 source 而且檔在暫存目錄的圖 → block 留著、bytes 用 images= 交出去、不列 dropped",
   p.returncode == 0 and pub and pub["images"] == {"cite-a.png": "\x89PNG-a"} and PIC in pub["blocks"]
-  and out[-1]["dropped"] == [] and out[-1]["missing"] == [], p.stdout + p.stderr)
+  and out[-1]["dropped"] == [], p.stdout + p.stderr)
 for name, req, pics in (("檔不在暫存目錄", IREQ, None),
                         ("檔名是路徑", dict(IREQ, blocks=[dict(PIC, file="../cloud-report-" + TURN + ".json")] + IREQ["blocks"][:3]),
                          {"cite-a.png": b"x"}),   # 目錄要在,../ 才解得到請求檔
@@ -244,10 +245,16 @@ for name, req, pics in (("檔不在暫存目錄", IREQ, None),
     t(f"R7 {name} → 那個 image 丟掉列進 dropped,報告照寫、不帶 images",
       p.returncode == 0 and pub and pub["images"] is None and "image" not in [b["type"] for b in pub["blocks"]]
       and any(d.endswith(".image") for d in out[-1]["dropped"]), p.stdout + p.stderr)
-p, out, pub, left = run_r7(R_NOCITE, "publish", IREQ, BUILT, pics={"cite-a.png": b"x"})
-t("R7 雲端 lib 比引用圖舊 → 圖拿掉、missing: [images](R6 那句加問要不要更新)、報告照寫",
+p, out, pub, left = run_r7(R_NEW, "publish", dict(IREQ, blocks=RREQ["blocks"][:2] + [{"analysis": "pic"}]),
+                          dict(BUILT, pic=PIC), pics={"cite-a.png": b"x"})
+t("R7 分析檔寫出來的 image(帶 source、檔也在)→ 不收、列進 dropped(圖只能是這台電腦擷取、請求檔點名的)",
   p.returncode == 0 and pub and pub["images"] is None and "image" not in [b["type"] for b in pub["blocks"]]
-  and out[-1]["missing"] == ["images"] and out[-1]["dropped"] == [], p.stdout + p.stderr)
+  and out[-1]["dropped"] == ["blocks[2].image"], p.stdout + p.stderr)
+lws = tempfile.mkdtemp(dir=SCRATCH)
+open(os.path.join(lws, "secret.png"), "wb").write(b"s")
+p, out, pub, left = run_r7(R_NEW, "publish", IREQ, BUILT, pics={"cite-a.png": os.path.join(lws, "secret.png")})
+t("R7 暫存圖目錄裡的 symlink → 不讀、那個 image 丟掉",
+  p.returncode == 0 and pub and pub["images"] is None and out[-1]["dropped"] == ["blocks[3].image"], p.stdout + p.stderr)
 p, out, pub, left = run_r7(R_NEW, "discard", IREQ, BUILT, reply=None, pics={"cite-a.png": b"x"})
 t("R7 discard 連暫存圖目錄一起刪", out == [{"discarded": True}] and not any(
     os.path.isdir(os.path.join(SCRATCH, w, "tmp", "cloud-report-" + TURN + "-files")) for w in os.listdir(SCRATCH)
@@ -483,7 +490,10 @@ def run_stage(ws, req, sidecars):
     json.dump(req, open(os.path.join(ws, "tmp", "cloud-handoff", TURN, "report.json"), "w"))
     for rel, b in sidecars.items():
         os.makedirs(os.path.dirname(os.path.join(ws, "reports", rel)), exist_ok=True)
-        open(os.path.join(ws, "reports", rel), "wb").write(b)
+        if isinstance(b, str):
+            os.symlink(b, os.path.join(ws, "reports", rel))
+        else:
+            open(os.path.join(ws, "reports", rel), "wb").write(b)
     p = subprocess.run([sys.executable, "-", TURN], input=STAGER, text=True, capture_output=True, cwd=ws,
                        env=dict(ENV, BLAVE_AGENT_WORKSPACE=ws), timeout=60)
     lines = [json.loads(x) for x in p.stdout.splitlines() if x.startswith("{")]
@@ -516,6 +526,30 @@ t("本機:不是 browser_capture 的檔(沒 cite- 前綴)、找不到的檔 → 
   out == [{"staged": [], "missing": ["perm.png", "cite-q.png"]}] and got == []
   and os.path.isfile(os.path.join(ws, "reports", "pcr-img.files", "perm.png")), p.stdout + p.stderr)
 
+ws = tempfile.mkdtemp(dir=REAL)
+p, out, got = run_stage(ws, dict(IMG, report_id="../x"), {"../x.files/cite-a.png": b"a"})
+t("本機:report_id 不合字元集 → {bad}、不拿去組路徑、一張都不搬",
+  p.returncode == 0 and out == [{"bad": ["report_id"]}] and got == [] and os.path.isfile(os.path.join(ws, "x.files", "cite-a.png")),
+  p.stdout + p.stderr)
+ws = tempfile.mkdtemp(dir=REAL)
+open(os.path.join(ws, "secret"), "wb").write(b"s")
+p, out, got = run_stage(ws, dict(IMG, blocks=[pic("cite-a.png")]), {"pcr-img.files/cite-a.png": os.path.join(ws, "secret")})
+t("本機:sidecar 裡的擷取檔是 symlink → missing、不搬(scp 會照 symlink 送出別的檔)",
+  out == [{"staged": [], "missing": ["cite-a.png"]}] and got == [], p.stdout + p.stderr)
+ws = tempfile.mkdtemp(dir=REAL)
+os.makedirs(os.path.join(ws, "tmp", "cloud-handoff", TURN, "files"))
+open(os.path.join(ws, "tmp", "cloud-handoff", TURN, "files", "notes.png"), "wb").write(b"n")
+p, out, got = run_stage(ws, dict(IMG, blocks=[pic("notes.png")]), {})
+t("本機:重跑時 files/ 裡沒有 cite- 前綴的檔也不算 staged(不送上雲)",
+  out == [{"staged": [], "missing": ["notes.png"]}], p.stdout + p.stderr)
+
+# ── mine() 只認請求檔的 rid:同一則先發 A,再放 B 的請求跑 status → none、檔留著(r3 P3-B) ──
+ws = tempfile.mkdtemp(dir=REAL)
+p, out, left = run_real(ws, "publish", GOOD, RB, "sent")
+p, out, left = run_real(ws, "status", dict(GOOD, report_id="pcr-other"), RB, None)
+t("真 lib:同一則發了 pcr-real,再放 pcr-other 的請求就跑 status → none、兩個檔留著",
+  p.returncode == 0 and out == [{"status": "none"}] and left == (True, True), p.stdout + p.stderr)
+
 t("R7 固定腳本只叫 lib.report:不 import 下單／帳戶／執行、不開子行程",
   not re.search(r"lib\.(order|account|execute)|subprocess|os\.system|report_templates", RSCRIPT))
 r7_text = r7[:r7.index("The research script")]
@@ -523,6 +557,14 @@ t("R7 文件:資料檢查在本機、分析在雲端寫 blocks 檔、分析腳�
   "Data check here, first" in r7_text and "tmp/cloud-report-<turn>-blocks.json" in r7_text
   and "never calls `write_report` or `publish`" in r7_text and "does not travel" not in r7_text
   and "tmp/cloud-report-<turn>-files/" in r7_text and "Never copy a picture into the cloud machine's `reports/`" in r7_text)
+t("R7.4／R7.5 中途停下前先 discard(雲端已經有請求檔與分析檔)",
+  "`discard` in place of `<name>` (the request and the analysis file are already there), then stop" in r7_text
+  and "run the script with `discard` in place of `<name>` (it needs no `<reply>`), then stop and report it" in r7_text)
+rs = open(os.path.join(ROOT, "references", "reports.md"), encoding="utf-8").read()
+cite = rs[rs.index("### Citing an image from the web"):]
+t("reports.md 引用圖那節點名雲端視角走 cloud-handoff R7.4、是那兩條規則唯一的例外",
+  "**A report asked from the cloud view**" in cite and "`references/cloud-handoff.md` R7.4" in cite
+  and "the one\n  exception to the two rules above" in cite)
 t("R7.5 先讀這一則的 BLAVE_TURN_ID、過 16 hex、當第二個參數;不合就停",
   "BLAVE_TURN_ID" in r7_text and "`^[0-9a-f]{16}$`" in r7_text and "`publish <reply>`" in r7_text
   and "`status <reply>`" in r7_text and "**`replace <reply>`**" in r7_text and "stop and report it" in r7_text)
@@ -550,7 +592,7 @@ t("R7.5 結果清單列了 mode 打錯、replace_expired;status／mode／none �
   '`{"error": "mode"}` → the mode or `<reply>` was mistyped' in r75 and '`{"error": "replace_expired"}` → nothing was written' in r75
   and '`status` runs, and runs answered by `{"error": "mode"}` or `{"status": "none"}`, do not count' in r75)
 t("R7.5 圖沒帶到自己一句、不准提議更新雲端主機(lib 太舊才走 R6 問更新);sent／pending 一律用 R6 那句(幾分鐘內出現)",
-  "這份少了擷取的圖：沒能從這台電腦帶到雲端主機。" in r75 and "這份沒有附圖" not in r75 and '`missing` = `["images"]`' in r75 and "Never offer to update the cloud machine for it" in r75
+  "這份少了擷取的圖：沒能從這台電腦帶到雲端主機。" in r75 and "這份沒有附圖" not in r75 and '`missing` = `["images"]`' not in r75 and "Never offer to update the cloud machine for it" in r75
   and "R6's one sentence" not in r75 and "Reports list now" not in r75 and "Either `upload` value gets R6's sentence" in r75)
 
 print("\nall green" if not red else f"\n{red} red")

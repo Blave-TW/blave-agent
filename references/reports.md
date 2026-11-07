@@ -1017,6 +1017,11 @@ transient failure. Same status code, different channel, opposite handling.
   `publish()` refuses a pack edited that way. A report you write by hand with
   `write_report`: put `file` and `source` into an `image` block unchanged; do
   not pass the picture through `write_report(images=…)`.
+- **A report asked from the cloud view** is written on the cloud machine, so
+  its pictures cross by `references/cloud-handoff.md` R7.4: that file's fixed
+  scripts move them and hand them to `write_report(images=…)` there — the one
+  exception to the two rules above. You still never move a picture or pass
+  `images=` yourself.
 - **A cited image the user asked for always goes in.** A capture that is not
   in the report makes `publish()` refuse until you either cite it or give
   `narrative["images_unused"]` (one sentence saying why); captures left out

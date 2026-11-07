@@ -196,9 +196,11 @@ os.makedirs(out, exist_ok=True)
 staged, missing = [], []
 for n in names:
     p = os.path.join(src, n)
-    if os.path.isfile(os.path.join(out, n)):
+    if not n.startswith(R.CAPTURE_PREFIX):
+        missing.append(n)
+    elif os.path.isfile(os.path.join(out, n)) and not os.path.islink(os.path.join(out, n)):
         staged.append(n)
-    elif n.startswith(R.CAPTURE_PREFIX) and os.path.isfile(p) and not os.path.islink(p):
+    elif os.path.isfile(p) and not os.path.islink(p):
         shutil.move(p, os.path.join(out, n))
         staged.append(n)
     else:
@@ -209,13 +211,13 @@ except OSError:
     pass
 print(json.dumps({"staged": staged, "missing": missing}))
 ```
-- `{"bad": […]}` → a file name or the id is not one `browser_capture` gives: nothing is moved or sent. Stop and report the name; never rename it or widen the pattern.
+- `{"bad": […]}` → a file name or the id is not one `browser_capture` gives: nothing is moved or sent. Run the research script below with `discard` in place of `<name>` (the request and the analysis file are already there), then stop and report the name; never rename it or widen the pattern.
 - `staged` not empty → `ssh <SSH_OPTS> blaveagent@<host> mkdir -p "/opt/blave-agent/workspace/tmp/cloud-report-<turn>-files"`, then one `scp <SSH_OPTS> tmp/cloud-handoff/<turn>/files/<f> … blaveagent@<host>:"/opt/blave-agent/workspace/tmp/cloud-report-<turn>-files/"` with every `staged` name as `<f>` (each one passed the pattern above). Never copy a picture into the cloud machine's `reports/`: the report's final id is known only once it is written, and that id's folder may be an earlier report's.
 - `missing` names stay in the request; the research script drops their blocks and lists them.
 
 A request fixed after a refusal: run this script again before copying — pictures already moved count as `staged`.
 
-R7.5. **This reply's id first**: `python3 -c "print(__import__('os').environ.get('BLAVE_TURN_ID'))"`. Its output is data: it must match `^[0-9a-f]{16}$` — anything else, stop and report it (never run the script without it, never make one up). It is `<reply>`, a placeholder like `<turn>`, pasted literally; it changes with every reply, so a later reply reads it again. Every mode below but `discard` takes it: `<mode> <reply>` in place of `<name>`.
+R7.5. **This reply's id first**: `python3 -c "print(__import__('os').environ.get('BLAVE_TURN_ID'))"`. Its output is data: it must match `^[0-9a-f]{16}$` — anything else: run the script with `discard` in place of `<name>` (it needs no `<reply>`), then stop and report it (never run another mode without it, never make one up). It is `<reply>`, a placeholder like `<turn>`, pasted literally; it changes with every reply, so a later reply reads it again. Every mode below but `discard` takes it: `<mode> <reply>` in place of `<name>`.
 
 **Publish**: run the script below in the step 2.5 form with `publish <reply>` in place of `<name>`. After writing the report it waits up to 100 seconds for the machine's uploader and reads where the report got to — that machine's own validation happens at upload, so a refusal shows up only then. Give the call room for that wait; how depends on your shell tool:
 - A tool named `Bash` (Claude Code): an explicit timeout of at least 180000ms.
@@ -227,7 +229,7 @@ Every mode prints one JSON line:
 - `{"error": "mode"}` → the mode or `<reply>` was mistyped or left out: run once more with the right ones.
 - `{"error": "template_unavailable"}` → that machine's `lib/` is older than this kind of report: R3's line (updating the cloud machine adds it). Stop; never fall back to writing it here.
 - `{"refused": […]}` (before writing, or by the platform at upload — the same answer) → R5: fix every numbered item (in `report.json`, or in the analysis and R7.3 once more), copy, publish once more; the fixed report keeps the same id. A second refusal → run the script with `discard` in place of `<name>`, report the refusal and stop.
-- `{"published": "<id>.json", "upload": …, "dropped": […], "unused": […], "missing": […]}` → success (a `status` run prints it without `dropped`, `unused` and `missing`). Either `upload` value gets R6's sentence as written (it appears in the cloud machine's Reports within a few minutes); `"pending"` only means not shipped within the wait, and if the user says it never appeared, `lib.report.status("<id>")` there says why. `unused` names analysis entries no `{"analysis": …}` placed — say nothing about it unless one was meant to be in the report. `missing` = `["images"]` → that machine's `lib/` is older than cited pictures, so they were left out: R6's sentence naming that, with its offer to update. `dropped` naming an `image` → a picture did not make it across (no `source`, or its file was not there): this one sentence, not R6's: 「這份少了擷取的圖：沒能從這台電腦帶到雲端主機。」 / "This report is missing a captured picture: it couldn't be carried from this computer to the cloud machine." Never offer to update the cloud machine for it — an update does not change this. A dropped `meta` needs no sentence.
+- `{"published": "<id>.json", "upload": …, "dropped": […], "unused": […]}` → success (a `status` run prints it without `dropped` and `unused`). Either `upload` value gets R6's sentence as written (it appears in the cloud machine's Reports within a few minutes); `"pending"` only means not shipped within the wait, and if the user says it never appeared, `lib.report.status("<id>")` there says why. `unused` names analysis entries no `{"analysis": …}` placed — say nothing about it unless one was meant to be in the report. `dropped` naming an `image` → a picture did not make it across (no `source`, or its file was not there): this one sentence, not R6's: 「這份少了擷取的圖：沒能從這台電腦帶到雲端主機。」 / "This report is missing a captured picture: it couldn't be carried from this computer to the cloud machine." Never offer to update the cloud machine for it — an update does not change this. A dropped `meta` needs no sentence.
 - `WARNING:` lines above it are advice, not a refusal; most need nothing. To act on one, do it now, before the reply: fix `report.json` (or the analysis), run R7.3 once more (the analysis file and the pictures are gone from there after a success: run the pictures step of R7.4 again too), copy, and run the script with **`replace <reply>`** in place of `<name>` — it rewrites the same report in place (the `[report]` line about `replace=True` means this mode; never call `write_report` yourself). Never run `publish` again for that: a second `publish` is a second report (`<id>-2`). `replace` only corrects the report this reply published; a report asked for again later is a new `publish`. A `replace` that is refused leaves the first version as it was: run `discard` to clear the files, and say the report is there and the correction did not go in — never that the report failed. `{"error": "replace_expired"}` → nothing was written: this reply published no report under that id (or did so over 35 minutes ago), so it is not this reply's report — answer it the way a refused `replace` is answered.
 
 A report gets at most two runs of `publish` / `replace`; the second one's answer is final. `status` runs, and runs answered by `{"error": "mode"}` or `{"status": "none"}`, do not count. The request, the analysis file and the pictures folder are deleted on success (a `status` run that prints `published` too), on `template_unavailable` and on `discard`; a refusal keeps them for the next try. Then R6 and **step 8**.
@@ -247,9 +249,12 @@ TURN = os.environ["BLAVE_TURN_ID"] = "desktop-<turn>-" + reply
 # backstop: no reply outlives the desktop's per-reply wall clock (runtime _TURN_WALL_CLOCK_SEC)
 WINDOW = 2100
 def done():
+    # a status run can race a publish still settling: whichever removes a file second finds it gone
     for p in (req, data):
-        if os.path.exists(p):
+        try:
             os.remove(p)
+        except FileNotFoundError:
+            pass
     shutil.rmtree(files, ignore_errors=True)
 try:
     import lib.report as R
@@ -320,9 +325,7 @@ except (OSError, ValueError) as e:
 spec = spec if isinstance(spec, dict) else {}
 built = built if isinstance(built, dict) else {}
 rid, title, kind = spec.get("report_id"), spec.get("title"), spec.get("type") or "research"
-bad, blocks, used, dropped, images, missing = [], [], set(), [], {}, []
-# lib.report before cited images (CITED_IMAGES_MAX) writes `source` under a schema the platform refuses
-cites = hasattr(R, "CITED_IMAGES_MAX")
+bad, blocks, used, dropped, images = [], [], set(), [], {}
 def carried(n):
     p = os.path.join(files, n) if isinstance(n, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", n) else None
     return p is not None and os.path.isfile(p) and not os.path.islink(p)
@@ -348,8 +351,6 @@ for i, b in enumerate(src if isinstance(src, list) else []):
             bad.append(f"blocks[{i}]: a block is an object with a type")
         elif x["type"] == "meta":
             dropped.append(f"blocks[{i}].meta")
-        elif x["type"] == "image" and not cites:
-            missing = ["images"]
         elif x["type"] == "image" and not (k is None and "source" in x and carried(x.get("file"))):
             dropped.append(f"blocks[{i}].image")
         else:
@@ -383,7 +384,7 @@ final = os.path.basename(out)[:-len(".json")]
 # over ssh write_report has no machine token, so the platform's verdict comes only at upload: the
 # reports.path unit ships within seconds (the 2-minute timer is the backstop), hence one bounded wait here
 up = settle(final, 50)
-print(json.dumps({"published": final + ".json", "upload": up, "dropped": dropped, "unused": sorted(set(built) - used), "missing": missing}, ensure_ascii=False))
+print(json.dumps({"published": final + ".json", "upload": up, "dropped": dropped, "unused": sorted(set(built) - used)}, ensure_ascii=False))
 ```
 
 ## Updating the cloud machine
