@@ -25,18 +25,23 @@
 .lib-body:focus-visible { outline-offset: -2px; }
 .lib-rows { border-top: 1px solid var(--border-hairline); }
 .lib-rows:empty { border-top: 0; }
-.lib-row { width: 100%; min-height: 56px; display: grid; grid-template-columns: minmax(0, 1fr) auto 12px; gap: var(--space-12); align-items: center; padding: var(--space-8); border-bottom: 1px solid var(--border-hairline); text-align: left; border-radius: 0; transition: background var(--motion-fast) var(--ease-standard); }
+.lib-row { width: 100%; min-height: 56px; display: grid; grid-template-columns: minmax(0, 1fr) 88px var(--lib-num-w) var(--lib-num-w) 12px; gap: var(--space-12); align-items: center; padding: var(--space-8); border-bottom: 1px solid var(--border-hairline); text-align: left; border-radius: 0; transition: background var(--motion-fast) var(--ease-standard); }
 .lib-row:hover { background: var(--surface-card); }
 .lib-row:focus-visible { outline-offset: -2px; }
 .lib-row-l { min-width: 0; }
-.lib-row .l1 { display: flex; align-items: center; gap: var(--space-6); min-width: 0; }
-.lib-row .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--ink); }
+/* 標題最多兩行、tag 接在後面(放不下就換到下一行),不讓 tag 把標題擠成省略號(設計稽核 library-sort-review 第 2 條) */
+.lib-row .l1 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4) var(--space-6); min-width: 0; }
+.lib-row .t { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; font-size: 13px; line-height: 1.4; font-weight: 600; color: var(--ink); }
 .lib-row .l2 { margin-top: var(--space-2); font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lib-row .num { text-align: right; }
+/* 兩格數字(§4.1):label 在上(11px ink-3)、數字在下;欄寬固定,各列才對得齊。en 的 label(Annual Return / Max Drawdown)比 zh 寬 */
+.lib { --lib-num-w: 64px; }
+.lib:lang(en) { --lib-num-w: 84px; }
+.lib-row .num { text-align: right; min-width: 0; }
+.lib-row .spark canvas { display: block; width: 88px; height: 28px; }
 .lib-row .num .v { font-size: 13px; white-space: nowrap; color: var(--ink); }
 .lib-row .num .v.up { color: var(--color-greenText); }
 .lib-row .num .v.down { color: var(--color-redText); }
-.lib-row .num .k { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+.lib-row .num .k { font-size: 11px; line-height: 1.3; color: var(--ink-3); white-space: nowrap; }
 .lib-row .go { color: var(--ink-3); font-size: 14px; line-height: 1; }
 .lib .up { color: var(--color-greenText); }
 .lib .down { color: var(--color-redText); }
@@ -55,6 +60,8 @@
 .lib-grp + .lib-grp { margin-top: var(--space-24); }
 .lib-grp-h { display: flex; align-items: baseline; gap: var(--space-6); margin: 0; padding: 0 0 var(--space-8); font-size: 12px; font-weight: 600; line-height: 1.5; color: var(--ink-2); }
 .lib-grp-h .mono { font-weight: 400; color: var(--ink-3); }
+/* 沉底組標籤(設計稽核 library-sort-review 第二節第 3 題,值抄 mockup-library-sort-decisions 的 .sink-h):組標題同款,上距 16 跟上一列分開,不加線 */
+.lib-sink-h { padding-top: var(--space-16); }
 .lib-grp .lib-gate { margin: 0 0 var(--space-12); }
 .lib-grp-empty { margin: 0; padding: var(--space-12) var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); border-top: 1px solid var(--border-hairline); border-bottom: 1px solid var(--border-hairline); }
 .lib-grp-empty .btn-quiet { font-size: inherit; }
@@ -67,9 +74,16 @@
 .fld-l .opt { font-weight: 400; color: var(--ink-3); }
 .lib-state .btn-out { display: inline-flex; align-items: center; margin-top: var(--space-12); }
 /* skeleton(canon Loader:200ms 內回來不畫、畫了至少留 300ms;微光靠 lib-shimmer) */
-.sk-row { min-height: 56px; display: grid; grid-template-columns: minmax(0, 1fr) 72px 12px; gap: var(--space-12); align-items: center; padding: var(--space-8); border-bottom: 1px solid var(--border-hairline); }
+.sk-row { min-height: 56px; display: grid; grid-template-columns: minmax(0, 1fr) 88px 72px 12px; gap: var(--space-12); align-items: center; padding: var(--space-8); border-bottom: 1px solid var(--border-hairline); }
 .sk { height: 10px; border-radius: var(--radius-pill); background: var(--surface-muted); animation: lib-shimmer calc(var(--motion-blink) * 2) ease-in-out infinite; }
 .sk.s { height: 8px; margin-top: var(--space-8); }
+.sk.sk-c { height: 28px; border-radius: var(--radius-xs); }
+/* 中欄 < 560 收掉曲線(§4.1;中欄只有 480–760) */
+@container (max-width: 559px) {
+  .lib-row { grid-template-columns: minmax(0, 1fr) var(--lib-num-w) var(--lib-num-w) 12px; }
+  .lib-row .spark, .sk-row .sk-c { display: none; }
+  .sk-row { grid-template-columns: minmax(0, 1fr) 72px 12px; }
+}
 @keyframes lib-shimmer { 50% { opacity: .45; } }
 /* 詳情 */
 .lib-back { display: inline-flex; align-items: center; gap: var(--space-4); height: 32px; padding: 0 var(--space-8) 0 var(--space-4); margin-left: calc(-1 * var(--space-4)); font-size: 13px; color: var(--ink-3); transition: color var(--motion-fast) var(--ease-standard); }

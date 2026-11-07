@@ -835,7 +835,7 @@ var UP = null;   // var:applyStatic 可能在這一行之前就被叫到(let 的
    開關的真值在主行程(telemetry.js 的狀態檔);這裡每次打開這一類就重讀,切換後以主行程回的為準。 */
 let PRIV = null;   // null = 還沒讀到(開關先鎖著,免得先畫成開、再跳成關)
 // 會收:組 → 組內幾句(0.1.39 設計稽核 §C)。key = priv.c.<組>.h 與 priv.c.<組>.<n>;組數與句數改了,tests/check_shell_settings.js 逐字對
-const PRIV_COLLECT = [["step", 4], ["strat", 5], ["feat", 6], ["stuck", 7], ["auth", 5], ["meta", 5], ["acct", 2]].map(([g, n]) => ["priv.c." + g + ".h", Array.from({ length: n }, (_, i) => "priv.c." + g + "." + (i + 1))]);
+const PRIV_COLLECT = [["step", 4], ["strat", 5], ["feat", 7], ["stuck", 7], ["auth", 5], ["meta", 5], ["acct", 2]].map(([g, n]) => ["priv.c." + g + ".h", Array.from({ length: n }, (_, i) => "priv.c." + g + "." + (i + 1))]);
 /* 功能被使用(canon .claude/docs/product-telemetry.md):只交一個白名單裡的名字給主行程,不帶內容、不計次(api 每安裝每 name 每日一列)。
    送出點放在「功能被使用」那一層(分頁切換、主要動作的 handler),不放 render;名字的字面在 tests/check_shell_telemetry.js 對兩端白名單掃 */
 function trackFeature(name) { try { window.blave.trackFeature(name); } catch (_) { } }   // 追蹤永遠不擋功能

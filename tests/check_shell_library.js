@@ -456,7 +456,8 @@ if (!process.versions.electron) {
     ok("③ 市場字串逐字:全部 / 加密 / 台指期 / 台股 / 美股;All / Crypto / TAIEX Futures / TW Stocks / US Stocks;標籤 市場 / Market",
       ["lib.mkt.all", "lib.mkt.crypto", "lib.mkt.txf", "lib.mkt.tw", "lib.mkt.us", "lib.mkt.aria"].map((k) => STR.zh[k] + "/" + STR.en[k]).join("|") === "全部/All|加密/Crypto|台指期/TAIEX Futures|台股/TW Stocks|美股/US Stocks|市場/Market");
     ok("③ 市場選單的接線:鍵盤同換合約選單(↑↓ 繞回、Home / End、Esc 擋 stopPropagation 並還焦點、Tab 關);點外面(capture)關;選完焦點回觸發鈕、選了不同市場才送 lib_mkt_pick(重選同一項不送、不重畫);開詳情 / 離開策略庫都收起來,清單重畫時焦點在面板裡就還給觸發鈕;清單重畫就重算支數",
-      ["ArrowDown", "ArrowUp", "Home", "End", "Tab"].every((k) => src.includes('e.key === "' + k + '"')) && /if \(e\.key === "Escape"\) \{ e\.preventDefault\(\); e\.stopPropagation\(\); libMktClose\(true\); \}/.test(src)
+      ["ArrowDown", "ArrowUp", "Home", "End", "Tab"].every((k) => src.includes('e.key === "' + k + '"')) && /if \(e\.key === "Escape"\) \{ e\.preventDefault\(\); e\.stopPropagation\(\); close\(true\); \}/.test(src)
+      && /menuKeys\("lib-mkt-menu", libMktClose\); menuKeys\("lib-sort-menu", libSortClose\);/.test(src)
       && /document\.addEventListener\("pointerdown", \(e\) => \{ if \(!g\("lib-mkt-menu"\)\.hidden && !g\("lib-mkt"\)\.contains\(e\.target\)\) libMktClose\(false\); \}, true\);/.test(src)
       && /function libMktPick\(mkt\) \{\s*libMktClose\(true\);\s*if \(mkt === libBag\(\)\.mkt\) return;\s*libBag\(\)\.mkt = mkt; LIB\.gone = false; libTrack\("lib_mkt_pick"\); libPaint\(\);\s*\}/.test(src) && (src.match(/libTrack\("lib_mkt_pick"\)/g) || []).length === 1
       && /libMktClose\(!det && \$\("lib-mkt-menu"\)\.contains\(document\.activeElement\)\);[^\n]*\n  if \(det\)/.test(cutFn(src, "libPaint")) && /libMktClose\(false\); \$\("lib"\)\.hidden = true;/.test(cutFn(src, "libLeave"))
@@ -484,7 +485,7 @@ if (!process.versions.electron) {
       && /if \(typeof libIdeaSync === "function"\) libIdeaSync\(\);/.test(cutFn(appSrc, "enterWorkspace")) && /if \(typeof libIdeaPaint === "function"\) libIdeaPaint\(\);/.test(cutFn(appSrc, "acctPaint"))
       && /tvPrefs\(\); if \(typeof libIdeaSync === "function"\) libIdeaSync\(\); \}\);/.test(brSrc) && (src.match(/libIdeaNow\(\)/g) || []).length === 5 && !/libIdeaOn\(/.test(src.slice(src.indexOf("/* ── 純邏輯到此")).replace(/return libIdeaOn\(\{/, "")));
     ok("③ 頁首說明句(§2.7):找點子開著才接 idea.descLead + 文字鈕 + 句號,文字鈕與句號同一個 .nw;拿掉「官方策略免費…」", /const nw = libEl\("span", "nw"\);\s*nw\.append\(libIdeaBtn\("btn-quiet", "idea\.link", "lib_head"\), LANG === "zh" \? "\\u3002" : "\."\);/.test(cutFn(src, "libPaintDesc"))
-      && STR.zh["lib.desc"] === "報酬皆為回測，已驗證的排前面。" && STR.en["lib.desc"] === "Returns are backtested. Verified first.");
+      && STR.zh["lib.desc"] === "報酬皆為回測。" && STR.en["lib.desc"] === "Returns are backtested.");
     {   // canon brand.md「數字必須真實或標注」:標注在頁首(卡上的字搬上去),所以真的把列與頁首畫出來,兩語、找點子開關都驗
       class N {
         constructor() { this.k = []; this.t = ""; this.dataset = {}; }
@@ -493,14 +494,15 @@ if (!process.versions.electron) {
         append(...a) { this.k.push(...a); } appendChild(x) { this.k.push(x); return x; } setAttribute() { } addEventListener() { }
       }
       const head = new N(), sb = { Node: N, document: { createElement: () => new N(), createDocumentFragment: () => new N() }, LIB: {}, $: () => head, LANG: "zh", IDEA: false,
-        libIdeaNow: () => sb.IDEA, libIdeaBtn: () => "link", libTags: () => [], libYears: () => 6.5, libPct: () => "+24.61%", libSymbolNodes: () => [], libMono: (x) => x, libShowDetail() { } };
+        libIdeaNow: () => sb.IDEA, libIdeaBtn: () => "link", libTags: () => [], libPct: () => "+24.61%", libFixed: () => "1.50", libMddOf: () => -20, wcFirstKv: () => "ann", libListedDays: () => 3,
+        LIB_SPARK_W: 88, LIB_SPARK_H: 28, libSymbolNodes: () => [], libMono: (x) => x, libShowDetail() { } };
       sb.t = (k) => STR[sb.LANG][k];
       vm.runInNewContext(["libEl", "libRich", "libJoin", "libRow", "libPaintDesc"].map((f) => cutFn(src, f)).join("\n"), sb);
       const seen = ["zh", "en"].flatMap((lang) => [false, true].map((idea) => {
         sb.LANG = lang; sb.IDEA = idea; sb.libPaintDesc();
         return { lang, idea, card: sb.libRow({ id: 1, title: "x", is_official: true, report: { annual_return: 24.61 } }).textContent, head: head.textContent };
       }));
-      ok("③ 回測標注:卡上只寫年化報酬、不含 backtest / 回測;頁首說明句(找點子開關都一樣)含回測標注", seen.every((x) => !/backtest|回測/i.test(x.card) && x.card.includes(STR[x.lang]["lib.annLabel"]) && /backtest|回測/i.test(x.head)), JSON.stringify(seen));
+      ok("③ 回測標注:卡上只寫年化報酬、不含 backtest / 回測;頁首說明句(找點子開關都一樣)含回測標注", seen.every((x) => !/backtest|回測/i.test(x.card) && x.card.includes(STR[x.lang]["lib.kv.ann"]) && /backtest|回測/i.test(x.head)), JSON.stringify(seen));
       const libPaintSrc = cutFn(src, "libPaint");
       ok("③ 回測標注每個清單狀態都看得到:#lib-desc 在 #lib-head-list 裡、捲動區 #lib-body 外;只有進詳情才收(詳情有 lib.kv.bt 回測欄頭);列表分支一律先畫頁首再畫清單,篩選 / 空 / 載入失敗都走這裡",
         html.indexOf('id="lib-head-list"') < html.indexOf('id="lib-desc"') && html.indexOf('id="lib-desc"') < html.indexOf('id="lib-body"') && /\$\("lib-head-list"\)\.hidden = !!det;/.test(libPaintSrc)
@@ -710,17 +712,17 @@ app.whenReady().then(async () => {
   let r = await js(`(async () => { await libOpen(); await new Promise((r) => setTimeout(r, 80)); const q = (x) => [...document.querySelectorAll(x)];
     return { on: !document.getElementById("lib").hidden, cur: document.getElementById("lib-nav").getAttribute("aria-current"), empty: document.getElementById("main-empty").hidden, tr: document.getElementById("tr").hidden,
       ids: q("#lib-rows .lib-row").map((b) => b.dataset.id).join(), foot: document.getElementById("lib-foot"), web: document.getElementById("lib-web"),
-      gate: q("#lib-grps > *").length === 0 && q("#lib .lib-grp, #lib .lib-gate").length === 0, comm: document.getElementById("lib-comm"), chev: q("#lib [aria-expanded]:not(#lib-mkt-trig)").length,
+      gate: q("#lib-grps > *").length === 0 && q("#lib .lib-grp, #lib .lib-gate").length === 0, comm: document.getElementById("lib-comm"), chev: q("#lib [aria-expanded]:not(#lib-mkt-trig):not(#lib-sort-trig)").length,
       tags12: q('#lib-rows .lib-row[data-id="12"] .tag').map((x) => x.textContent).join("|"), tags8: q('#lib-rows .lib-row[data-id="8"] .tag').map((x) => x.textContent + ":" + x.className).join("|"), l2_12: q('#lib-rows .lib-row[data-id="12"] .l2')[0].textContent,
       tags101: q('#lib-rows .lib-row[data-id="101"] .tag').map((x) => x.textContent).join("|"), tags5: q('#lib-rows .lib-row[data-id="5"] .tag').map((x) => x.textContent).join("|"), tags9: q('#lib-rows .lib-row[data-id="9"] .tag').map((x) => x.textContent).join("|"), tag5gap: (() => { const p = q('#lib-rows .lib-row[data-id="5"] .tag.is-price')[0]; const a = p.children[0].getBoundingClientRect(), b = p.children[1].getBoundingClientRect(); return p.children.length === 2 && p.children[1].textContent === "TWD" && b.left - a.right >= 3; })(),
       l2: q('#lib-rows .lib-row[data-id="101"] .l2')[0].textContent, ann: q('#lib-rows .lib-row[data-id="101"] .num .v')[0].textContent, annCls: q('#lib-rows .lib-row[data-id="101"] .num .v')[0].className, annColor: getComputedStyle(q('#lib-rows .lib-row[data-id="101"] .num .v')[0]).color, inkColor: getComputedStyle(q('#lib-rows .lib-row[data-id="101"] .t')[0]).color, greenText: getComputedStyle(document.documentElement).getPropertyValue("--color-greenText").trim(),
       imgs: q("#lib img").length, title5: q('#lib-rows .lib-row[data-id="5"] .t')[0].textContent, tags86: q('#lib-rows .lib-row[data-id="86"] .tag').map((x) => x.textContent).join("|"), focus: document.activeElement && document.activeElement.id }; })()`);
   ok("④ 開策略庫:#lib 出、入口 aria-current、歡迎頁與自動下單收;一份清單 8 列照推薦排序(未驗證的兩支在尾);焦點在 h5;沒有「在網頁版看」鈕;清單底沒有投稿腳注(#lib-foot 不存在);有資料時閘門卡不出", r.on && r.cur === "page" && r.empty && r.tr && r.ids === "74,101,72,5,9,86,12,8" && r.focus === "lib-h"
     && r.web === null && r.foot === null && r.gate === true, JSON.stringify(r));
-  ok("④ 社群平鋪(0.1.6 §2):未驗證的兩支直接列在清單尾(新的先)、沒有「未驗證」標籤、只有價格 tag(沒有 is-verified)、第二行「社群作者」;沒有 disclosure 列、沒有 chevron", r.comm === null && r.chev === 0 && r.tags12 === "800TWD" && /^1,200TWD:tag is-price$/.test(r.tags8) && !("lib.unverified" in STR.zh) && !("lib.unverified" in STR.en) && r.l2_12.startsWith((await T("lib.community")) + " · "), JSON.stringify(r));
-  ok("④ 列:tag(已驗證 + 免費 / 價格 1,500 TWD / 已購買)、第二行「Blave 官方 · BTC/USDT 永續 · 5 分 K · 樣本 6.5 年」、年化 +24.61% 綠字;api 來的字只進 textContent(沒有 img)",
+  ok("④ 社群平鋪(0.1.6 §2):未驗證的兩支直接列在清單尾(新的先)、沒有「未驗證」標籤、只有價格 tag(沒有 is-verified)、第二行只留標的(0.1.49 拿掉官方／社群);沒有 disclosure 列、沒有 chevron", r.comm === null && r.chev === 0 && r.tags12 === "800TWD" && /^1,200TWD:tag is-price$/.test(r.tags8) && !("lib.unverified" in STR.zh) && !("lib.unverified" in STR.en) && r.l2_12 === "SOL/USDT", JSON.stringify(r));
+  ok("④ 列:tag(已驗證 + 免費 / 價格 1,500 TWD / 已購買)、第二行只留代號「BTC/USDT」(設計稽核 library-sort-review 第 7 條)、第一格年化 +24.61% 綠字;api 來的字只進 textContent(沒有 img)",
     r.tags101 === (await T("lib.verified")) + "|" + (await T("lib.free")) && r.tags5 === (await T("lib.verified")) + "|1,500TWD" && r.tag5gap && r.tags9 === (await T("lib.verified")) + "|" + (await T("lib.owned"))
-    && r.l2 === "Blave 官方 · BTC/USDT 永續 · 5 分 K · 樣本 6.5 年" && r.ann === "+24.61%" && /\bup\b/.test(r.annCls) && r.annColor !== r.inkColor && r.imgs === 0 && r.title5 === "Cash-and-Carry <img onerror=x> Arbitrage"
+    && r.l2 === "BTC/USDT" && r.ann === "+24.61%" && /\bup\b/.test(r.annCls) && r.annColor !== r.inkColor && r.imgs === 0 && r.title5 === "Cash-and-Carry <img onerror=x> Arbitrage"
     && r.tags86 === (await T("lib.free")), JSON.stringify(r));   // 官方但未驗證(#86):既無「已驗證」也無「未驗證」
   // 市場選單:點觸發器開、點項目選(真的 click,走接線那條);每一項的支數、0 也印;選完焦點回觸發鈕;Esc 收起並還焦點
   const PICK = `const pick = (m) => { document.getElementById("lib-mkt-trig").click(); document.querySelector('#lib-mkt-menu .ct-mi[data-mkt="' + m + '"]').click(); };`;
@@ -960,7 +962,7 @@ app.whenReady().then(async () => {
     q('#lib-rows .lib-row[data-id="72"]')[0].click(); q("#lib-cta .btn-fill")[0].click(); document.getElementById("del-ok").click(); await new Promise((r) => setTimeout(r, 60));
     const out = { h, note, cfNotes, l2, last: window.__lib.sent[window.__lib.sent.length - 1].message, priceTag, owned5: q("#lib-cta .btn-fill")[0].textContent };
     setLang("zh"); applyStatic(); return out; })()`);
-  ok("④ en:頁首換字、付費鈕下仍無字、fx 註只在購買框的 .cf-note、列第二行 en、本機送出的是 en 的 lib.msgLocal", r.h === "Strategy Library" && r.note === "" && r.cfNotes.includes(STR.en["lib.fxNote"]) && r.l2 === "Blave Official · BTC/USDT Perp · 5m · 6.5-yr sample"
+  ok("④ en:頁首換字、付費鈕下仍無字、fx 註只在購買框的 .cf-note、列第二行 en、本機送出的是 en 的 lib.msgLocal", r.h === "Strategy Library" && r.note === "" && r.cfNotes.includes(STR.en["lib.fxNote"]) && r.l2 === "BTC/USDT"
     && r.last === "The library strategy \"DOGE 籌碼集中度\" (#72) is downloaded. Install it and run a backtest to see the results." && r.priceTag === 1, JSON.stringify(r));   // #8 平鋪在清單裡:只有價格一個 tag(未驗證不標)
   // 快取:每次進視圖重問主行程(綁卡 / 換帳號後閘門與 purchased 才會跟上);登出 / 登入 / 換語言 / 設定關掉 / 回前景都重問
   r = await js(`(async () => { running = false; LIB.pending.clear(); const n0 = window.__lib.calls.length; document.getElementById("lib-back").click();
@@ -1066,7 +1068,7 @@ app.whenReady().then(async () => {
   ok("④ 互斥:開自動下單 → 策略庫收(入口 aria-current 拿掉);再開策略庫 → 自動下單收", r.a.lib && !r.a.tr && r.a.cur === null && r.a.open === false && !r.b.lib && r.b.tr && r.b.trOpen === false, JSON.stringify(r));
   r = await js(`(() => { document.getElementById("wf-lib").click(); return { sent: window.__lib.sent.length, opened: window.__lib.opened, tools: [...document.querySelectorAll("#lib-head-list .lib-tools > *")].map((x) => x.id || x.className).join() }; })()`);
   await wait(30);
-  ok("④ 完成後首頁〔策略庫〕(#wf-lib)只開策略庫不送訊息;整個流程沒有開過外部瀏覽器;工具列只剩市場選單", r.opened === undefined && r.sent === (await js("window.__lib.sent.length")) && r.tools === "lib-mkt", JSON.stringify(r));
+  ok("④ 完成後首頁〔策略庫〕(#wf-lib)只開策略庫不送訊息;整個流程沒有開過外部瀏覽器;工具列是市場與排序兩個選單", r.opened === undefined && r.sent === (await js("window.__lib.sent.length")) && r.tools === "lib-mkt,lib-sort", JSON.stringify(r));
 
   console.log(red ? `\n④ ${red} 紅` : "\n④ ALL PASS");
   app.exit(red ? 1 : 0);

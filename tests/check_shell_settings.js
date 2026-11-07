@@ -630,7 +630,7 @@ ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效
 // 會收的組(0.1.39):PRIV_COLLECT 從原文 eval 出來,組 id、句數、順序逐一對;舊的 priv.collect.<n> 一條都不能留
 const PRIV_COLLECT_V = eval(src.match(/const PRIV_COLLECT = [^\n]*;/)[0].replace(/^const PRIV_COLLECT = /, "(").replace(/;$/, ")"));
 const POS = (L, k) => { const m = PO[L].match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\nmsgstr "([^"]*)"')); return m ? m[1] : null; };
-const PRIV_SHAPE = [["step", 4], ["strat", 5], ["feat", 6], ["stuck", 7], ["auth", 5], ["meta", 5], ["acct", 2]];
+const PRIV_SHAPE = [["step", 4], ["strat", 5], ["feat", 7], ["stuck", 7], ["auth", 5], ["meta", 5], ["acct", 2]];
 const PRIV_GROUPS_OK = JSON.stringify(PRIV_COLLECT_V) === JSON.stringify(PRIV_SHAPE.map(([g, n]) => ["priv.c." + g + ".h", Array.from({ length: n }, (_, i) => "priv.c." + g + "." + (i + 1))]))
   && PRIV_COLLECT_V.every(([h, ks]) => [h, ...ks].every((k) => POS(0, k) && POS(1, k)))
   && PO.every((x) => !/msgid "priv\.collect\.\d+"/.test(x)) && !/priv\.collect\.\d/.test(src)
@@ -702,7 +702,7 @@ ok("隱私:會收分 7 組(0.1.39 設計稽核 §C,Wei 核准;0.1.45 拿掉策�
 const PRIV_ZH = {
   step: ["做到哪一步", "首次開啟、每日開啟、登入", "app 開著的每一天，含本機自動下單有沒有在跑", "完成連結，記哪一種 AI", "第一次回測、啟動下單（模擬或真錢）、上雲端運行"],
   strat: ["每支策略", "新建、第一次回測、第一次配了金額時各記一次", "只記型別（A／B／C）與市場類別，例如加密貨幣、台指期", "不記策略名稱或標的", "三步記同一組代碼，代碼只有這台電腦算得出", "Blave 推不回策略名稱"],
-  feat: ["用了哪些功能", "分頁與按鈕的名稱，每天每項記一次", "不含分頁與按鈕裡的內容", "從策略庫用一支策略時，記它要不要 Blave 資料", "送出找點子時，記從哪個入口送出", "回覆好了的系統通知：有沒有跳出、有沒有被點開", "不含對話標題與內容"],
+  feat: ["用了哪些功能", "分頁與按鈕的名稱，每天每項記一次", "不含分頁與按鈕裡的內容", "從策略庫用一支策略時，記它要不要 Blave 資料", "送出找點子時，記從哪個入口送出", "換策略庫排序時，記選了哪一種", "回覆好了的系統通知：有沒有跳出、有沒有被點開", "不含對話標題與內容"],
   stuck: ["卡在哪一步", "回合失敗、連不上 AI、策略庫用不了的原因類別", "綁卡／儲值提示有沒有出現與按下、回來後能不能用", "啟動雲端方案的結果、更新卡在哪一步", "第一次收到 AI 回覆", "第一次安裝或更新後補裝引擎與策略套件，有沒有裝好", "沒裝好是哪一類原因", "只記類別，不含內容"],
   auth: ["登入與金鑰", "本機 AI 的登入方式，例如訂閱或 API 金鑰", "不含帳號與金鑰", "登入失敗的類別，以及當下是否判定為已登入", "改金鑰時驗證碼框的出現、通過與鎖住", "不含驗證碼"],
   meta: ["每筆紀錄都帶", "發生的時間", "app 版本、作業系統與版本、系統語言", "電腦類型：筆電或桌機", "安裝識別碼：這份安裝隨機產生的編號", "登入後，安裝識別碼會跟你的帳號對上"],
@@ -712,12 +712,12 @@ const privKeys = (g) => ["priv.c." + g + ".h", ...PRIV_ZH[g].slice(1).map((_, i)
 const zhCount = (x) => { const CJK = /[\p{Script=Han}]/gu; return (x.match(CJK) || []).length + (x.replace(CJK, " ").match(/[\p{L}\p{N}_]+(?:[.,]\p{N}+)*/gu) || []).length; };
 ok("隱私 0.1.39:會收七組的 zh 逐字、每句 ≤25 字(canon 算法);組標題與句子 en 都有", Object.keys(PRIV_ZH).every((g) => privKeys(g).every((k, i) => POS(0, k) === PRIV_ZH[g][i] && zhCount(PRIV_ZH[g][i]) <= 25 && !!POS(1, k))));
 // 事件數跟告知綁在一起:加事件而沒補「會收」那幾組,這裡就紅(canon product-telemetry 出貨清單第 5 條)
-ok("隱私:三十一個事件逐項對得上契約的白名單(heartbeat=做到哪一步「app 開著的每一天」;strat_* 三個=每支策略,只記型別與市場類別;feature_used=用了哪些功能,名稱、每日一次、不含內容;lib_pick / idea_sent=用了哪些功能的策略庫與找點子;reply_notif=系統通知;0.1.9 九個、0.1.12 引擎安裝兩個、0.1.15 detect_fail=卡在哪一步,只記類別;cli_auth / auth_fail / key_verify=登入與金鑰;device_type=每筆紀錄都帶的電腦類型,spec-0.1.13 #12:寫作業系統與版本,不寫 macOS)",
-  Object.keys(require("../shell/telemetry.js").EVENTS).length === 31
-  && (() => { const ev = require("../shell/telemetry.js").EVENTS; return ["heartbeat", "strat_created", "strat_backtested", "strat_deployed", "feature_used", "lib_pick", "idea_sent", "reply_notif", "detect_fail", "engine_setup", "engine_opt_fail", "cli_auth", "auth_fail", "key_verify", "device_type"].every((e) => !!ev[e]); })()
+ok("隱私:三十二個事件逐項對得上契約的白名單(lib_sort=用了哪些功能的策略庫排序;heartbeat=做到哪一步「app 開著的每一天」;strat_* 三個=每支策略,只記型別與市場類別;feature_used=用了哪些功能,名稱、每日一次、不含內容;lib_pick / idea_sent=用了哪些功能的策略庫與找點子;reply_notif=系統通知;0.1.9 九個、0.1.12 引擎安裝兩個、0.1.15 detect_fail=卡在哪一步,只記類別;cli_auth / auth_fail / key_verify=登入與金鑰;device_type=每筆紀錄都帶的電腦類型,spec-0.1.13 #12:寫作業系統與版本,不寫 macOS)",
+  Object.keys(require("../shell/telemetry.js").EVENTS).length === 32
+  && (() => { const ev = require("../shell/telemetry.js").EVENTS; return ["heartbeat", "strat_created", "strat_backtested", "strat_deployed", "feature_used", "lib_pick", "idea_sent", "lib_sort", "reply_notif", "detect_fail", "engine_setup", "engine_opt_fail", "cli_auth", "auth_fail", "key_verify", "device_type"].every((e) => !!ev[e]); })()
   && /^App version, operating system and version, system language$/.test(POS(1, "priv.c.meta.2")) && /^Computer type: laptop or desktop$/.test(POS(1, "priv.c.meta.3"))
   && /whether local auto-trading runs/.test(POS(1, "priv.c.step.2")) && /type \(A\/B\/C\) and market category/.test(POS(1, "priv.c.strat.2")) && /^Never its name or symbol$/.test(POS(1, "priv.c.strat.3"))
-  && /whether it needs Blave data/.test(POS(1, "priv.c.feat.3")) && /which entry point/.test(POS(1, "priv.c.feat.4")) && /^Never the chat title or text$/.test(POS(1, "priv.c.feat.6"))
+  && /whether it needs Blave data/.test(POS(1, "priv.c.feat.3")) && /which entry point/.test(POS(1, "priv.c.feat.4")) && /which sort you picked/.test(POS(1, "priv.c.feat.5")) && /^Never the chat title or text$/.test(POS(1, "priv.c.feat.7"))
   && /^Categories only, never the content$/.test(POS(1, "priv.c.stuck.7")) && /^Never the code$/.test(POS(1, "priv.c.auth.5")) && /kept 90 days/.test(POS(1, "priv.c.acct.2")));
 ok("acct.sub 開通試用那句兼講期限(Wei 核准 0.1.10):zh / en 逐字", /msgid "acct\.sub"\nmsgstr "首次綁卡，\{t\} 天內有 \{q\} TWD 的 AI 額度，電腦版也拿得到 Blave 的資料。"/.test(PO[0])
   && /msgid "acct\.sub"\nmsgstr "A first-time card gets \{q\} TWD of AI credit and Blave data in the desktop app, both for \{t\} days\."/.test(PO[1]));

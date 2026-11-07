@@ -56,6 +56,9 @@ const EVENTS = {
   // 找點子框送出成功時從哪個入口來。匿名使用不加屬性:看 user_id 有無、同一 install_id 之後有沒有 login_done
   lib_pick: { data: ["none", "required", "unknown"] },
   idea_sent: { from: ["welcome", "lib_head", "lib_empty"] },
+  // 策略庫排序選單(0.1.49;spec library-sort-rows-2026-11-06 §7.2,renderer 送):選了不同的排序才送,by = 選中那項的 key(library.js LIB_SORTS 同一份)。
+  // 不用裸的 feature_used:要知道大家選哪一種,才知道七項哪些該留。網頁 GA4 同名 lib_sort { by }
+  lib_sort: { by: ["reco", "installs", "sample", "sharpe", "mdd", "annual", "newest"] },
   // 0.1.15 偵測失敗(renderer 送,只在連結畫面偵測完時):本機那個 CLI 為什麼不能用。值由主行程 detectWhy 判,語意見 canon 登記表
   detect_fail: { why: ["claude_none", "claude_timeout", "claude_nonzero", "claude_badjson", "codex_none", "codex_shim", "codex_timeout", "codex_nonzero"] },
   // 本機策略的三步(0.1.18;主行程送,strategySteps):新建、第一次有回測、第一次配了錢(同雲端的 deployed;按下啟動下單另有 trade_started)。
@@ -333,7 +336,7 @@ const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   //
 // 放主行程而不是畫面:被攻破的 renderer 對 track-feature 灌合法名字也只會出門 20 次,搶不到 api 那顆全域熔斷
 const DAILY = ["feature_used", "acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed",
   "plan_start_res", "update_failed", "lib_blocked", "heartbeat", "engine_setup", "engine_opt_fail", "lib_pick", "idea_sent", "detect_fail",
-  "device_type", "reply_notif", "auth_fail", "cli_auth", "key_verify"];
+  "device_type", "reply_notif", "auth_fail", "cli_auth", "key_verify", "lib_sort"];
 // 每日一則、不分屬性值:心跳一天只要一列(live 記當天第一次送出那一刻的),下單中途開關不多送
 const DAILY_ONE = ["heartbeat"];
 const HEARTBEAT_MS = 10 * 60 * 1000;   // 啟動後 10 分鐘起每 10 分鐘看一次;當天送過就不出門(啟動當天另有 app_open)
@@ -351,7 +354,7 @@ const SID_ON = ["strat_created", "strat_backtested", "strat_deployed"];
 const SID_RE = /^[0-9a-f]{16}$/;
 const SID_KEY_RE = /^[0-9a-f]{64}$/;
 // 畫面(track-event)只准送這幾個;里程碑(app_first_open、login_done…)與主行程自己判的(plan_start_res、update_failed)不收
-const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify"];
+const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify", "lib_sort"];
 const DAY_RE = /^[0-9]{8}$/;
 const DEFAULT_ON = true;   // Wei 2026-09-21:預設開、照實告知、可關
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

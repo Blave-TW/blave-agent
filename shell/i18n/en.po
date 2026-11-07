@@ -3435,9 +3435,12 @@ msgid "priv.c.feat.4"
 msgstr "Sending an idea request: which entry point it came from"
 
 msgid "priv.c.feat.5"
-msgstr "Reply notifications: whether shown, whether clicked"
+msgstr "Changing the library sort: which sort you picked"
 
 msgid "priv.c.feat.6"
+msgstr "Reply notifications: whether shown, whether clicked"
+
+msgid "priv.c.feat.7"
 msgstr "Never the chat title or text"
 
 msgid "priv.c.stuck.h"
@@ -5289,7 +5292,7 @@ msgid "lib.nav"
 msgstr "Strategy Library"
 
 msgid "lib.desc"
-msgstr "Returns are backtested. Verified first."
+msgstr "Returns are backtested."
 
 msgid "lib.mkt.aria"
 msgstr "Market"
@@ -5345,14 +5348,41 @@ msgstr "Blave Official"
 msgid "lib.community"
 msgstr "Community author"
 
-msgid "lib.years"
-msgstr "{n}-yr sample"
-
-msgid "lib.annLabel"
-msgstr "Annual Return"
-
 msgid "lib.installs"
 msgstr "{n} installs"
+
+# 策略庫排序選單(spec library-sort-rows-2026-11-06 §6):觸發器標籤與面板 aria 名。七項字樣逐字同網頁公開頁 bc_mp_sort_* / bc_mp_report_annual(parity)
+msgid "lib.sort.aria"
+msgstr "Sort"
+
+msgid "lib.sort.reco"
+msgstr "Recommended"
+
+msgid "lib.sort.installs"
+msgstr "Most installed"
+
+msgid "lib.sort.sample"
+msgstr "Longest backtest"
+
+msgid "lib.sort.sharpe"
+msgstr "Sharpe"
+
+msgid "lib.sort.mdd"
+msgstr "Shallowest drawdown"
+
+msgid "lib.sort.annual"
+msgstr "Annual Return"
+
+msgid "lib.sort.newest"
+msgstr "Newest"
+
+# 策略庫清單:照 Sharpe／最大回撤較淺／年化報酬排時,沉底那段正上方的組標籤(同 web workspace_lib_sink_head)
+msgid "lib.sinkHead"
+msgstr "Unverified or Under 1 Year"
+
+# 照「最新上架」排時,清單列副標接在標的後面
+msgid "lib.listedFor"
+msgstr "Listed {n}d"
 
 msgid "lib.error"
 msgstr "Couldn't load the library."

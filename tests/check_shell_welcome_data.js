@@ -279,10 +279,10 @@ if (!process.versions.electron) {
     const badT = TABLE.filter(([c, want]) => Q.stFill(c) !== want).map(([c]) => JSON.stringify(c));
     ok("② stFill(§2.2 表逐列):自接 Claude／Codex／API 金鑰一律送;Blave AI 已登入且確定不能跑才只填;查不到當能跑;沒登入照送(交給登入卡);還沒連 AI 只填", badT.length === 0, badT.join(" "));
     const zpo = read(path.join(SHELL, "i18n", "zh.po")) + read(path.join(SHELL, "i18n", "en.po"));
-    ok("② 0.1.34 起手句退役:七個 starter_* 字串兩語字串表與 .po 都沒有;①策略卡的 workspace_lib_bt_span 加回(zh「回測 {span}」、en「Backtest {span}」);0.1.27 卡片其餘專用字(wc.annLabel、workspace_wel_or / _more、workspace_lib_detail)不回來,策略庫面板的 lib.annLabel 不動",
+    ok("② 0.1.34 起手句退役:七個 starter_* 字串兩語字串表與 .po 都沒有;①策略卡的 workspace_lib_bt_span 加回(zh「回測 {span}」、en「Backtest {span}」);0.1.27 卡片其餘專用字(wc.annLabel、workspace_wel_or / _more、workspace_lib_detail)不回來;策略庫面板的 lib.annLabel 0.1.49 拿掉(列上改用 lib.kv.ann / lib.kv.total,spec library-sort-rows §6)",
       ["crypto_row", "crypto_send", "tw_row", "tw_send", "txf_row", "txf_send", "since"].every((k) => !(("starter_" + k) in STR.zh) && !(("starter_" + k) in STR.en)) && !/msgid "starter_/.test(zpo)
       && STR.zh["workspace_lib_bt_span"] === "回測 {span}" && STR.en["workspace_lib_bt_span"] === "Backtest {span}"
-      && ["wc.annLabel", "workspace_wel_or", "workspace_wel_more", "workspace_lib_detail"].every((k) => !(k in STR.zh) && !(k in STR.en)) && STR.en["lib.annLabel"] === "Annual Return" && STR.zh["lib.annLabel"] === "年化報酬"
+      && ["wc.annLabel", "workspace_wel_or", "workspace_wel_more", "workspace_lib_detail"].every((k) => !(k in STR.zh) && !(k in STR.en)) && !("lib.annLabel" in STR.en) && !("lib.annLabel" in STR.zh)
       && !/wcCurve|SEND_ROW_IC|ST_ROWS|ST_FEATURE|stPaint|stGo|stSync|stTurnEnd/.test(src));
     ok("② tag 用既有的 wd.mk.*(en 台股改 TW Stocks);輸入框提示改成講想法的短句(spec §9:聊天欄最窄 336 也放得下)",
       STR.en["wd.mk.tw"] === "TW Stocks" && STR.zh["wd.mk.tw"] === "台股" && STR.zh["ws.placeholder"] === "說一個交易想法…" && STR.en["ws.placeholder"] === "Describe a trading idea…");

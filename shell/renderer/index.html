@@ -272,6 +272,21 @@
                   <button type="button" class="ct-mi" role="menuitemradio" aria-checked="false" tabindex="-1" data-mkt="usstock"><span class="l" data-i18n="lib.mkt.us"></span><span class="ct-mv"></span></button>
                 </div>
               </div>
+              <!-- 排序選單(spec library-sort-rows §3.4;key 同網頁公開頁 #mp_sort):外觀與鍵盤同市場選單,值由 library.js libPaintSort 畫 -->
+              <div class="lib-mkt lib-sort" id="lib-sort">
+                <button type="button" class="lib-mkt-trig" id="lib-sort-trig" aria-haspopup="menu" aria-expanded="false" aria-controls="lib-sort-menu">
+                  <span class="k" data-i18n="lib.sort.aria"></span><span class="v" id="lib-sort-v"></span><span class="ct-cv" aria-hidden="true"></span>
+                </button>
+                <div class="ct-menu lib-mkt-menu" id="lib-sort-menu" role="menu" data-i18n-aria="lib.sort.aria" hidden>
+                  <button type="button" class="ct-mi" role="menuitemradio" aria-checked="true" tabindex="-1" data-sort="reco"><span class="l" data-i18n="lib.sort.reco"></span></button>
+                  <button type="button" class="ct-mi" role="menuitemradio" aria-checked="false" tabindex="-1" data-sort="installs"><span class="l" data-i18n="lib.sort.installs"></span></button>
+                  <button type="button" class="ct-mi" role="menuitemradio" aria-checked="false" tabindex="-1" data-sort="sample"><span class="l" data-i18n="lib.sort.sample"></span></button>
+                  <button type="button" class="ct-mi" role="menuitemradio" aria-checked="false" tabindex="-1" data-sort="sharpe"><span class="l" data-i18n="lib.sort.sharpe"></span></button>
+                  <button type="button" class="ct-mi" role="menuitemradio" aria-checked="false" tabindex="-1" data-sort="mdd"><span class="l" data-i18n="lib.sort.mdd"></span></button>
+                  <button type="button" class="ct-mi" role="menuitemradio" aria-checked="false" tabindex="-1" data-sort="annual"><span class="l" data-i18n="lib.sort.annual"></span></button>
+                  <button type="button" class="ct-mi" role="menuitemradio" aria-checked="false" tabindex="-1" data-sort="newest"><span class="l" data-i18n="lib.sort.newest"></span></button>
+                </div>
+              </div>
             </div>
           </div>
           <!-- 詳情模式:頁首只剩返回鈕 -->

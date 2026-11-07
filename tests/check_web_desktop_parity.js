@@ -461,7 +461,7 @@ for (const lang of ["zh", "en"]) {
     const lib = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "library.js"), "utf8");
     const dfn = (n) => { const a = lib.indexOf("\nfunction " + n + "(") + 1; if (a < 1) return null; let i = lib.indexOf("{", a), d = 0; for (; i < lib.length; i++) { if (lib[i] === "{") d++; else if (lib[i] === "}" && --d === 0) break; } return lib.slice(a, i + 1) + "\n"; };
     const dconst = (n) => { const m = new RegExp("^const " + n + " = [^\\n]*;$", "m").exec(lib); return m ? m[0] + "\n" : null; };
-    const dParts = ["LIB_DAY", "LIB_MARKETS", "LIB_CATEGORY_MARKET"].map(dconst).concat(["libMarket", "libSampleYears", "libCreated", "libIsFree", "libNeeds", "libCompare", "libVisible", "wcReco"].map(dfn));
+    const dParts = ["LIB_DAY", "LIB_MARKETS", "LIB_CATEGORY_MARKET", "LIB_SORTS", "LIB_SINK_SORTS", "LIB_FLOOR_YEARS"].map(dconst).concat(["libMarket", "libSampleYears", "libCreated", "libIsFree", "libNeeds", "libCompare", "libRecoCmp", "libUnderYear", "libSinks", "libNum", "libMddOf", "libSortVal", "libVisible", "wcReco"].map(dfn));
     const wParts = ["libCommunity", "libReco", "wcReco"].map(wfn), rulesPath = path.join(webDir, "app", "static", "js", "library_rules.js");
     const installed = new Set([5]), isInst = (s) => installed.has(s.id);
     let dPick = null, wPick = null, err = "";
@@ -479,6 +479,52 @@ for (const lang of ["zh", "en"]) {
     try { d = dPick && dPick(pool).map((s) => s.id); w = wPick && wPick(pool).map((s) => s.id); } catch (e) { err += " 執行:" + e.message; }
     ok("歡迎頁策略卡挑選兩邊同一批、同一順序(雲端視角,8 支測資挑 3 張)", !dParts.includes(null) && !wParts.includes(null) && !!d && d.length === 3 && JSON.stringify(d) === JSON.stringify(w),
       (dParts.includes(null) || wParts.includes(null) ? "切不出函式;" : "") + "電腦版 " + JSON.stringify(d) + " vs 網頁 " + JSON.stringify(w) + err); } }
+// 策略庫排序(spec library-sort-rows-2026-11-06 §7.3;電腦版與 web 同一批出):key 集合與順序列舉兩邊(電腦版 LIB_SORTS、網頁公開頁 #mp_sort_panel
+// 與工作頁的 data-sort),排序結果拿 11-06 那 17 支各跑一次(公開頁 valueSort、工作頁 listSort),字樣逐字比。任一邊少一項或答案不同一律紅,不留「還沒做」的出口。
+// 推薦順序:Wei 11-07 定三邊同一份「已驗證 → 官方 → 樣本長 → 新」(設計稽核 library-sort-review 第二節第 1 題),電腦版本來就是——公開頁 recoSort 與工作頁都要等於電腦版,不留 NOTE。
+// 沉底組標籤(同稿第 3 題):電腦版 lib.sinkHead 與工作頁 workspace_lib_sink_head 逐字一致
+{ const lib = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "library.js"), "utf8");
+  const dfn = (n) => { const a = lib.indexOf("\nfunction " + n + "(") + 1; if (a < 1) return null; let i = lib.indexOf("{", a), d = 0; for (; i < lib.length; i++) { if (lib[i] === "{") d++; else if (lib[i] === "}" && --d === 0) break; } return lib.slice(a, i + 1) + "\n"; };
+  const dconst = (n) => { const m = new RegExp("^const " + n + " = [^\\n]*;$", "m").exec(lib); return m ? m[0] + "\n" : null; };
+  const parts = ["LIB_DAY", "LIB_MARKETS", "LIB_CATEGORY_MARKET", "LIB_SORTS", "LIB_SINK_SORTS", "LIB_FLOOR_YEARS"].map(dconst)
+    .concat(["libMarket", "libSampleYears", "libCreated", "libCompare", "libRecoCmp", "libUnderYear", "libSinks", "libNum", "libMddOf", "libSortVal", "libVisible"].map(dfn));
+  const D = parts.includes(null) ? null : new Function(parts.join("") + "return { LIB_SORTS, libVisible };")();
+  const mp = fs.readFileSync(path.join(webDir, "app", "main", "templates", "agent", "marketplace.html"), "utf8");
+  const keysIn = (src, a) => { const i = src.indexOf(a); return i < 0 ? null : [...src.slice(i, src.indexOf("</div>", i)).matchAll(/data-sort="(\w+)"/g)].map((m) => m[1]); };
+  const mpKeys = keysIn(mp, 'id="mp_sort_panel"'), wsKeys = web.includes("data-sort=") ? [...web.matchAll(/data-sort="(\w+)"/g)].map((m) => m[1]) : null;
+  const want = D ? JSON.stringify([...D.LIB_SORTS]) : null;
+  ok("排序:電腦版切得出 LIB_SORTS 與 libVisible 那一串", !!D);
+  ok("排序 key 與順序:網頁公開頁 #mp_sort_panel = 電腦版 LIB_SORTS", !!mpKeys && JSON.stringify(mpKeys) === want, JSON.stringify(mpKeys) + " vs " + want);
+  ok("排序 key 與順序:網頁工作頁的 data-sort = 電腦版 LIB_SORTS", !!wsKeys && JSON.stringify(wsKeys) === want, JSON.stringify(wsKeys) + " vs " + want);
+  const fx = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "library_sort_2026-11-06.json"), "utf8")).strategies;
+  let BL = null; try { globalThis.window = globalThis; const rp = path.join(webDir, "app", "static", "js", "library_rules.js"); delete require.cache[require.resolve(rp)]; require(rp); BL = globalThis.BlaveLibrary; } catch (_) { BL = null; }
+  ok("排序:網頁 library_rules.js 載得起來", !!BL && typeof BL.valueSort === "function" && typeof BL.recoSort === "function");
+  if (D && BL) {
+    const ids = (l) => l.map((s) => s.id).join();
+    // 工作頁的推薦:清單走 library_rules(listSort 還在就用它,web 併進 recoCompare 後刪掉 listSort 就退回 recoSort)。字面只確認工作頁真的呼叫 library_rules 排清單(否則下面比的結果跟工作頁無關),順序本身比跑出來的結果
+    const wsSort = typeof BL.listSort === "function" ? BL.listSort : (l, by) => (by === "reco" ? BL.recoSort(l) : BL.valueSort(l, by));
+    const wsReco = /LIB\.(listSort|recoSort|valueSort)\(base\b/.test(web);
+    // 17 支分不出「官方」那個主鍵(#86 官方未驗證本來就排在 #117 社群未驗證前面):補兩支,官方未驗證樣本短、社群未驗證樣本長
+    const pair = [{ id: 901, is_official: false, verified: false, created_at: "2026-01-01 00:00:00", report: { equity_from: "2015-01-01", equity_to: "2026-01-01" } },
+      { id: 902, is_official: true, verified: false, created_at: "2026-01-01 00:00:00", report: { equity_from: "2025-01-01", equity_to: "2026-01-01" } }];
+    const dOrder = ids(D.libVisible(fx, "all")) + "|" + ids(D.libVisible(pair, "all"));
+    const wsOrder = wsReco ? ids(wsSort(fx, "reco")) + "|" + ids(wsSort(pair, "reco")) : null, mpOrder = ids(BL.recoSort(fx)) + "|" + ids(BL.recoSort(pair));
+    ok("推薦順序:電腦版 = 網頁工作頁(已驗證 → 官方 → 樣本長;17 支加官方主鍵那兩支)", wsReco && dOrder === wsOrder, dOrder + " vs " + wsOrder + (wsReco ? "" : "(工作頁沒有用 library_rules 排清單)"));
+    ok("推薦順序:電腦版 = 網頁公開頁 recoSort(同上兩組;公開頁、合集、首頁畫廊與 valueSort 決勝共用它)", dOrder === mpOrder, dOrder + " vs " + mpOrder);
+    for (const by of D.LIB_SORTS.filter((k) => k !== "reco")) {
+      const d = ids(D.libVisible(fx, "all", by)), w = ids(BL.valueSort(fx, by)), l = ids(wsSort(fx, by));
+      ok("排序 " + by + ":電腦版 libVisible = 網頁公開頁 valueSort = 工作頁 listSort(17 支)", w === d && l === d, d + " vs valueSort " + w + " / listSort " + l);
+    }
+  }
+  // 選單字樣逐字同公開頁(§6):Sharpe 在網頁是寫死字面;任一邊缺 key 就紅
+  const SORT_PAIRS = { "lib.sort.aria": "bc_mp_sort_label", "lib.sort.reco": "bc_mp_sort_reco", "lib.sort.sample": "bc_mp_sort_sample", "lib.sort.mdd": "bc_mp_sort_mdd", "lib.sort.annual": "bc_mp_report_annual", "lib.sort.newest": "bc_mp_sort_newest", "lib.sort.installs": "bc_mp_sort_installs" };
+  for (const lang of ["zh", "en"]) {
+    const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+    const bad = Object.entries(SORT_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== wp[w]);
+    ok(`排序選單字樣 ${lang} 兩邊逐字一致(${Object.keys(SORT_PAIRS).length} 句;Sharpe 兩邊都是字面)`, bad.length === 0 && dp["lib.sort.sharpe"] === "Sharpe" && /data-sort="sharpe">Sharpe</.test(mp),
+      bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+    ok(`沉底組標籤 ${lang}:電腦版 lib.sinkHead = 網頁 workspace_lib_sink_head`, typeof dp["lib.sinkHead"] === "string" && dp["lib.sinkHead"] === wp["workspace_lib_sink_head"], "電腦版「" + dp["lib.sinkHead"] + "」 vs 網頁「" + wp["workspace_lib_sink_head"] + "」");
+  } }
 // 策略庫詳情跟基準比(spec library-benchmark-2026-10-27 B;電腦版 library.js libBench* + main.js libBenchSanitize、網頁 workspace.html libBench / libCmpTable):
 // 圖例「權益」、as_of 那句、表頭的「回測」「{n} 年」、總報酬／年化報酬／最大回撤逐字比(歡迎卡同 key)(tip_adj / tip_raw 已在上面 BH_KEYS);欄名「策略」是這次新增——網頁還沒有那個 msgid = web 那顆還沒上線,SKIP 講原因,有了就逐字比。
 // 判斷:同一組 /report 形狀(api _benchmark_payload 會給的),兩邊要嘛都畫基準、要嘛都不畫,畫的話代號同一個(BTCUSDT 寫 BTC)

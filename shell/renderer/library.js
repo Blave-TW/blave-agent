@@ -1,5 +1,5 @@
 /* 策略庫(設計:blave-canon output/designer/spec-desktop-library-2026-09-25.md;雲端工作頁 #lib_panel 縮成中欄的尺寸)。
-   側欄「策略庫」→ 中欄清單(市場分段、已驗證優先)→ 詳情(曲線、四個數字、三道關卡、怎麼交易)→「用這支」確認框 →
+   側欄「策略庫」→ 中欄清單(市場選單、排序選單;預設推薦 = 官方或已驗證優先)→ 詳情(曲線、四個數字、三道關卡、怎麼交易)→「用這支」確認框 →
    送給 agent 同一句固定訊息(lib.msg / lib.msgPaid,逐字同 web 的 workspace_lib_msg;runtime 認這個句型,一行不改)。
    - 清單由主行程打 api(renderer 的 CSP 不外連;主行程逐欄驗過型別才交過來);這裡仍一律 textContent。
    - 兩個視角各記一份「開著 / 詳情那支 / 分段 / 捲動」(LIB.bags,同 TR_BAGS 的作法);中欄誰該出現由 trade.js 的 envShowMain
@@ -88,9 +88,42 @@ function libCompare(a, b) {
 }
 /* 這個分段要畫的一份清單(spec-desktop-0.1.6 §2.1):主鍵「官方或已驗證」在前,其後照 libCompare。主鍵寫成 code 是因為 libCompare
    第一階只看 verified——「官方但沒跑關卡」在純 libCompare 下會掉到未驗證那一段;Wei 說的是「官方與已驗證在前」 */
-function libVisible(list, mkt) {
+function libRecoCmp(a, b) { return (Number(!!(b.is_official || b.verified)) - Number(!!(a.is_official || a.verified))) || libCompare(a, b); }
+/* 排序選單(spec library-sort-rows-2026-11-06 §3):key 與順序同網頁公開頁 #mp_sort 的 data-sort,另插 installs。
+   數值排序時未驗證或樣本未滿 1 年的沉底;官方身分不救(比的是數字可不可信)。同值照推薦決勝、缺值排最後(同 web valueSort) */
+const LIB_SORTS = ["reco", "installs", "sample", "sharpe", "mdd", "annual", "newest"];
+const LIB_SINK_SORTS = ["sharpe", "mdd", "annual"];
+const LIB_FLOOR_YEARS = 1;
+// 用不捨入的年數:#117 樣本 0.98 年捨入成 1.0,第一格講總報酬卻不沉底就對不上(§3.2)
+function libUnderYear(s) { const y = libSampleYears(s); return y !== null && y < LIB_FLOOR_YEARS; }
+function libSinks(s) { return !(s && s.verified) || libSampleYears(s) === null || libUnderYear(s); }
+// 沉底那段從第幾支開始(組標籤畫在它正上方;設計稽核 library-sort-review 第二節第 3 題):只有會沉底的三種排序有,沒有沉底的回 -1。
+// list 是 libVisible 排好的(沉底的全在後面),分組時每組各自呼叫
+function libSinkAt(list, sort) { return LIB_SINK_SORTS.includes(sort) ? list.findIndex(libSinks) : -1; }
+function libNum(v) { return typeof v === "number" && isFinite(v) ? v : null; }
+function libMddOf(s) { const v = libNum(s && s.report ? s.report.max_drawdown : null); return v === null ? null : -Math.abs(v); }
+function libSortVal(s, by) {
+  const r = s && s.report;
+  if (by === "installs") return libNum(s.purchase_count);
+  if (by === "sample") return libSampleYears(s);
+  if (by === "sharpe") return libNum(r ? r.sharpe : null);
+  if (by === "mdd") return libMddOf(s);
+  if (by === "annual") return libNum(r ? r.annual_return : null);
+  if (by === "newest") return libCreated(s);
+  return null;
+}
+function libVisible(list, mkt, sort) {
   const inMkt = (Array.isArray(list) ? list : []).filter((s) => s && (mkt === "all" || libMarket(s) === mkt));
-  return inMkt.sort((a, b) => (Number(!!(b.is_official || b.verified)) - Number(!!(a.is_official || a.verified))) || libCompare(a, b));
+  const by = LIB_SORTS.includes(sort) ? sort : "reco";
+  if (by === "reco") return inMkt.sort(libRecoCmp);
+  const sink = LIB_SINK_SORTS.includes(by);
+  return inMkt.sort((a, b) => {
+    if (sink) { const d = Number(libSinks(a)) - Number(libSinks(b)); if (d) return d; }
+    const x = libSortVal(a, by), y = libSortVal(b, by);
+    if (x === y) return libRecoCmp(a, b);
+    if (x === null) return 1; if (y === null) return -1;
+    return y - x;
+  });
 }
 // 關卡數值的字(抄 web library_rules.rate):費率 0.0005 → "0.05%"(最少 2 位、尾零去掉);p 的字是 libP(純邏輯區塊外面)
 function libRate(v) {
@@ -193,7 +226,13 @@ function wcReco(list, c) {
   return cands.filter((s) => picked.includes(s));
 }
 // 卡的第一格(canon › Beginner strategy card › 指標列):回測樣本未滿 1 年講總報酬,否則年化
-function wcFirstKv(s) { const y = libSampleYears(s); return y !== null && y < 1 ? "total" : "ann"; }
+function wcFirstKv(s) { return libUnderYear(s) ? "total" : "ann"; }
+// 列上迷你曲線的點:對數縱軸、起點那條基準線的 y;spark 不是 ≥ 2 個正數就回 null(不畫)
+function libSparkPath(sp, w, h, pad) {
+  if (!Array.isArray(sp) || sp.length < 2 || !sp.every((v) => typeof v === "number" && isFinite(v) && v > 0)) return null;
+  const lg = sp.map(Math.log), mn = Math.min(...lg), span = Math.max(...lg) - mn || 1, y = (v) => h - pad - ((v - mn) / span) * (h - 2 * pad);
+  return { pts: lg.map((v, i) => [(i * w) / (lg.length - 1), y(v)]), base: y(lg[0]) };
+}
 function libNoteTitle(s, lang) { const m = s && s.success_note_titles; const v = m && typeof m === "object" ? m[lang] : null; return typeof v === "string" && v.trim() ? v.trim() : null; }
 /* ── 純邏輯到此 ── */
 // p 的規則只有一份,在 strategy_versions.js fillP(那支在 library.js 之後載入,呼叫時才讀);門檻跟 api 的 mcpt_alpha 走
@@ -209,7 +248,7 @@ const LIB = { bags: { local: libNewBag(), cloud: libNewBag() }, data: null, load
   cloudInstalled: {}, cloudWait: null, cloudNames: null,   // 雲端視角的「已安裝」(只在這次 app 開著的期間;見 libCloudChanged)
   brOn: false, ideaShown: null };   // brOn:內建瀏覽器開關的快取;ideaShown:清單上次畫的找點子入口是開是關
 const LIB_CLOUD_WAIT_MS = 3 * 60 * 1000;   // 回合結束後等雲端清單跟上的上限(主機的回報器有延遲);過了就不再認新出現的那支是這次下載的
-function libNewBag() { return { open: false, detail: null, mkt: "all", scroll: 0, row: null }; }
+function libNewBag() { return { open: false, detail: null, mkt: "all", sort: "reco", scroll: 0, row: null }; }
 const libEnv = () => (typeof ENV !== "undefined" && ENV.cur === "cloud" ? "cloud" : "local");
 const libBag = (env) => LIB.bags[(env || libEnv()) === "cloud" ? "cloud" : "local"];
 const libWhere = () => t(libEnv() === "cloud" ? "lib.where.cloud" : "lib.where.local");
@@ -346,7 +385,7 @@ function libLeave(env) {
   const B = libBag(env);
   if (!B.open) return;
   B.open = false; LIB.noNew = null; LIB.dlFail = null; LIB.gone = false; LIB.ctaFocus = null;
-  if (B === libBag()) { libMktClose(false); $("lib").hidden = true; $("lib-nav").removeAttribute("aria-current"); libChartDrop(); }
+  if (B === libBag()) { libSortClose(false); libMktClose(false); $("lib").hidden = true; $("lib-nav").removeAttribute("aria-current"); libChartDrop(); }
 }
 /* envShowMain(trade.js)的最後一步:策略庫開著就蓋掉其餘視圖。gate = 雲端沒主機可看(開通頁),那時側欄入口也藏著 */
 function libShowMain(gate) {
@@ -445,6 +484,7 @@ function libPaint() {
   const det = B.detail ? libFind(B.detail) : null;
   $("lib-head-list").hidden = !!det; $("lib-back").hidden = !det;
   libPaintGone();
+  libSortClose(!det && $("lib-sort-menu").contains(document.activeElement));
   libMktClose(!det && $("lib-mkt-menu").contains(document.activeElement));   // 選單開著時清單重畫(清單到了、換語言):焦點在面板裡就還給觸發鈕,不掉到 body
   if (det) { $("lib-rows").textContent = ""; $("lib-grps").textContent = ""; $("lib-state").hidden = true; libPaintDetail(det); }
   else { libChartDrop(); $("lib-det").hidden = true; $("lib-det").textContent = ""; libPaintDesc(); libPaintList(); $("lib-body").scrollTop = B.scroll || 0; }
@@ -461,26 +501,50 @@ function libPaintMkt() {
     b.querySelector(".ct-mv").textContent = list ? String(n) : "";
   });
 }
-function libMktClose(focus) {
-  const m = $("lib-mkt-menu");
+// 市場與排序兩個選單共用開關(面板 id / 觸發器 id)
+function libMenuClose(menu, trig, focus) {
+  const m = $(menu);
   if (m.hidden) return;
   m.hidden = true; m.style.left = "";
-  $("lib-mkt-trig").setAttribute("aria-expanded", "false");
-  if (focus) $("lib-mkt-trig").focus();
+  $(trig).setAttribute("aria-expanded", "false");
+  if (focus) $(trig).focus();
 }
-function libMktOpen() {
-  const m = $("lib-mkt-menu"), trig = $("lib-mkt-trig");
+function libMenuOpen(menu, trig) {
+  const m = $(menu);
   m.hidden = false; m.style.left = "";
   // 中欄窄、觸發器被擠到列尾時:面板往左挪,不超出中欄右緣
   const gap = 8, over = m.getBoundingClientRect().right - ($("lib").getBoundingClientRect().right - gap);
   if (over > 0) m.style.left = -Math.round(over) + "px";
-  trig.setAttribute("aria-expanded", "true");
+  $(trig).setAttribute("aria-expanded", "true");
   (m.querySelector('[aria-checked="true"]') || m.querySelector(".ct-mi")).focus();
 }
+function libMktClose(focus) { libMenuClose("lib-mkt-menu", "lib-mkt-trig", focus); }
+function libMktOpen() { libMenuOpen("lib-mkt-menu", "lib-mkt-trig"); }
 function libMktPick(mkt) {
   libMktClose(true);
   if (mkt === libBag().mkt) return;
   libBag().mkt = mkt; LIB.gone = false; libTrack("lib_mkt_pick"); libPaint();
+}
+// 排序選單(§3.4):選中那項、觸發器上的值
+function libPaintSort() {
+  const B = libBag();
+  if (!LIB_SORTS.includes(B.sort)) B.sort = "reco";
+  $("lib-sort-menu").querySelectorAll(".ct-mi").forEach((b) => {
+    const on = b.dataset.sort === B.sort;
+    b.setAttribute("aria-checked", on ? "true" : "false");
+    if (on) $("lib-sort-v").textContent = b.querySelector(".l").textContent;
+  });
+}
+function libSortClose(focus) { libMenuClose("lib-sort-menu", "lib-sort-trig", focus); }
+function libSortOpen() { libMenuOpen("lib-sort-menu", "lib-sort-trig"); }
+// 換了順序還停在原捲動位置沒有意義:捲回頂端(清掉 B.scroll)
+function libSortPick(by) {
+  libSortClose(true);
+  const B = libBag();
+  if (by === B.sort || !LIB_SORTS.includes(by)) return;
+  B.sort = by; B.scroll = 0; LIB.gone = false;
+  try { if (window.blave && typeof window.blave.trackEvent === "function") window.blave.trackEvent("lib_sort", { by }); } catch (_) { }
+  libPaint();
 }
 /* 頁首說明句(§2.7):排序那句;找點子開著時後面接「沒有合適的,〔請 agent 上網找點子〕。」——文字鈕和句號包在同一個 nowrap 裡,句號不單獨掉行 */
 function libPaintDesc() {
@@ -523,43 +587,71 @@ function libPriceNode(s) {
   f.append(libMono(txt.slice(0, i)), libEl("span", "", txt.slice(i + 1)));   // 幣別自己一個節點:inline-flex 會吃掉純文字開頭的空白
   return f;
 }
-// 標的與頻率:「BTC/USDT 永續」「TXF 台指期」「2330 台股」/ 沒有標的 = 多標的;週期用網頁同一組字
-function libSymbolNodes(s) {
+// 標的與頻率:「BTC/USDT 永續」「TXF 台指期」「2330 台股」/ 沒有標的 = 多標的;週期用網頁同一組字。
+// noIv:清單列只留代號「BTC/USDT」「TXF」「2330」,不帶市場後綴與週期(同 web 列;設計稽核 library-sort-review 第 7 條)
+function libSymbolNodes(s, noIv) {
   const r = s.report || {}, sym = typeof r.symbol === "string" ? r.symbol.trim() : "", parts = [];
   if (!sym) parts.push(t("lib.mk.multi"));
+  else if (noIv) parts.push(libMono(LIB_PAIR_RE.test(sym) ? sym.replace(LIB_PAIR_RE, "$1/USDT") : sym));
   else if (LIB_PAIR_RE.test(sym)) parts.push(libMono(sym.replace(LIB_PAIR_RE, "$1/USDT")), " " + t("lib.mk.perp"));
   else if (/^(TXF|MXF|TMF)$/.test(sym)) parts.push(libMono(sym), " " + t("lib.mk.txf"));
   else if (/^\d{4,6}[A-Z]?$/.test(sym)) parts.push(libMono(sym), " " + t("lib.mk.tw"));
   else parts.push(libMono(sym));
+  if (noIv) return parts;
   const k = libIvKey(r.interval);
   if (k) parts.push(" · " + t(LIB_IV_KEYS[k])); else if (typeof r.interval === "string" && r.interval) parts.push(" · ", libMono(r.interval));
   return parts;
 }
-function libRow(s) {
+/* 列(§4.1):標題＋tag / 副標只留標的 → 迷你曲線 → 第一格(樣本未滿 1 年講總報酬,同 wcFirstKv)→ 第二格(照 Sharpe 排時換 Sharpe,否則最大回撤)→ ›。
+   副標只在「安裝最多」「最新上架」時接排序依據:那兩個數列上別處看不到 */
+function libRow(s, sort) {
   const b = libEl("button", "lib-row"); b.type = "button"; b.dataset.id = String(s.id);
   const l = libEl("div", "lib-row-l"), l1 = libEl("div", "l1"), l2 = libEl("div", "l2");
-  l1.appendChild(libEl("span", "t", s.title)); libTags(s).forEach((x) => l1.appendChild(x));
-  l2.append(t(s.is_official ? "lib.official" : "lib.community"), " · ", ...libSymbolNodes(s));
-  const y = libYears(s);
-  if (y !== null) l2.append(" · ", libRich("lib.years", { n: libMono(y.toFixed(1)) }));   // 同一組數字位數相同:1.0 年,不是 1 年
+  // 按鈕照內容唸(不另給 aria-label,看得到的 tag 才念得到):標題與 tag 之間塞空白文字節點,唸起來才不會黏在一起;flex 版面不畫它
+  l1.appendChild(libEl("span", "t", s.title)); libTags(s).forEach((x) => l1.append(" ", x));
+  l2.append(...libSymbolNodes(s, true));
+  if (sort === "installs") l2.append(" · ", libRich("lib.installs", { n: libMono(String(s.purchase_count)) }));
+  else if (sort === "newest") { const d = libListedDays(s, Date.now()); if (d !== null) l2.append(" · ", libRich("lib.listedFor", { n: libMono(String(d)) })); }
   l.append(l1, l2);
-  const r = s.report, ann = r ? r.annual_return : null;
-  const num = libEl("div", "num");
-  num.append(libEl("div", "v mono" + (typeof ann === "number" ? (ann > 0 ? " up" : ann < 0 ? " down" : "") : ""), libPct(ann)), libEl("div", "k", t("lib.annLabel")));
+  const r = s.report || {}, tot = wcFirstKv(s) === "total", v1 = tot ? r.total_return : r.annual_return, mdd = libMddOf(s);
+  const sign = (v) => (typeof v === "number" ? (v > 0 ? " up" : v < 0 ? " down" : "") : "");
+  const cells = [[t(tot ? "lib.kv.total" : "lib.kv.ann"), libPct(v1), sign(v1)],
+    sort === "sharpe" ? [t("lib.kv.sharpe"), libFixed(r.sharpe, 2), ""] : [t("lib.kv.mdd"), libPct(mdd), mdd === null ? "" : " down"]];
+  const spark = libEl("div", "spark"), cv = document.createElement("canvas");
+  cv.width = LIB_SPARK_W; cv.height = LIB_SPARK_H; cv.setAttribute("aria-hidden", "true"); cv.blaveSpark = r.spark;
+  spark.appendChild(cv);
+  b.append(l, spark);
+  cells.forEach(([k, v, cls]) => { const n = libEl("div", "num"); n.append(libEl("div", "k", k), libEl("div", "v mono" + cls, v)); b.appendChild(n); });
   const go = libEl("span", "go", "›"); go.setAttribute("aria-hidden", "true");
-  b.append(l, num, go);
+  b.append(go);
   b.addEventListener("click", () => libShowDetail(s.id));
   return b;
 }
+// 迷你曲線(§4.3):canvas 2D,不每列開 lightweight-charts;顏色從 CSS 變數讀,換主題重畫(blave:theme)。spark 壞掉就留白
+const LIB_SPARK_W = 88, LIB_SPARK_H = 28;
+function libSparkDraw(cv) {
+  const p = libSparkPath(cv.blaveSpark, LIB_SPARK_W, LIB_SPARK_H, 2), x = cv.getContext && cv.getContext("2d");
+  if (!x) return;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(LIB_SPARK_W * dpr); cv.height = Math.round(LIB_SPARK_H * dpr);
+  x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, LIB_SPARK_W, LIB_SPARK_H);
+  if (!p) return;
+  const tok = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  x.strokeStyle = tok("--border-frame"); x.lineWidth = 1; x.setLineDash([2, 2]);
+  x.beginPath(); x.moveTo(0, p.base); x.lineTo(LIB_SPARK_W, p.base); x.stroke(); x.setLineDash([]);
+  x.strokeStyle = tok("--color-green"); x.lineWidth = 1.25; x.lineJoin = "round";
+  x.beginPath(); p.pts.forEach(([px, py], i) => (i ? x.lineTo(px, py) : x.moveTo(px, py))); x.stroke();
+}
+function libSparkAll() { document.querySelectorAll("#lib .lib-row .spark canvas").forEach(libSparkDraw); }
 function libPaintList() {
   const B = libBag(), rows = $("lib-rows"), state = $("lib-state"), grps = $("lib-grps");
-  libPaintMkt();
+  libPaintMkt(); libPaintSort();
   rows.textContent = ""; state.hidden = true; state.textContent = ""; grps.textContent = "";
   if (!LIB.data) {
     if (LIB.skel) {
       [94, 82, 90, 76, 87].forEach((w) => {
         const r = libEl("div", "sk-row"), l = libEl("div"), a = libEl("div", "sk"), c = libEl("div", "sk s"), n = libEl("div", "sk");
-        a.style.width = w + "%"; c.style.width = Math.round(w * 0.7) + "%"; l.append(a, c); r.append(l, n, libEl("span"));
+        a.style.width = w + "%"; c.style.width = Math.round(w * 0.7) + "%"; l.append(a, c); r.append(l, libEl("div", "sk sk-c"), n, libEl("span"));
         rows.appendChild(r);
       });
     } else if (LIB.failed) {
@@ -569,7 +661,7 @@ function libPaintList() {
     }
     return;
   }
-  const v = libVisible(LIB.data.strategies, B.mkt);
+  const v = libVisible(LIB.data.strategies, B.mkt, B.sort);
   // 市場分段整個空(§2.5):一行字;找點子開著時頁首說明句已有那個連結,這裡不再給一次(稽核 W4),關著才接〔新增策略〕
   if (!v.length) {
     state.hidden = false; state.append(t(LIB.data.strategies.length ? "lib.emptyMkt" : "lib.empty"));
@@ -578,12 +670,17 @@ function libPaintList() {
   }
   // 沒權限時分兩組(§2.2 / §2.3):閘門卡掛在它管的第二組頭上;第二組空就平鋪(這個分段全部能直接用)
   const g = libGrouping(libCtx()), sp = g && g !== "signedOut" ? libSplit(v) : null;
-  if (!sp || !sp.later.length) { v.forEach((s) => rows.appendChild(libRow(s))); return; }
+  // 沉底組標籤:規則寫在它生效的位置(觸控與讀屏都拿得到,不靠 tooltip);同組標題的 h6,上距 16、不加線
+  const fill = (host, arr) => {
+    const at = libSinkAt(arr, B.sort);
+    arr.forEach((s, i) => { if (i === at) host.appendChild(libEl("h6", "lib-grp-h lib-sink-h", t("lib.sinkHead"))); host.appendChild(libRow(s, B.sort)); });
+  };
+  if (!sp || !sp.later.length) { fill(rows, v); libSparkAll(); return; }
   const grp = (id, label, n) => {
     const sec = libEl("section", "lib-grp"), h = libEl("h6", "lib-grp-h"); sec.setAttribute("aria-labelledby", id); h.id = id;
     h.append(label, libMono(String(n))); sec.appendChild(h); return sec;
   };
-  const listOf = (arr) => { const d = libEl("div", "lib-rows"); arr.forEach((s) => d.appendChild(libRow(s))); return d; };
+  const listOf = (arr) => { const d = libEl("div", "lib-rows"); fill(d, arr); return d; };
   const g1 = grp("lib-grp-now", t("lib.grp.now"), sp.now.length);
   if (sp.now.length) g1.appendChild(listOf(sp.now));
   else {   // 第一組空(台股 × 沒卡):一行字,找點子開著就接文字鈕
@@ -601,6 +698,7 @@ function libPaintList() {
   } else gate.append(libEl("p", "", t(LIB_GRP_KEYS[g][1])), libGateBtn(g));
   g2.append(gate, listOf(sp.later));
   grps.append(g1, g2);
+  libSparkAll();
 }
 // 第二組的組名與閘門卡那一句(§2.2 表)
 const LIB_GRP_KEYS = { no_card: ["lib.grp.card", "lib.grp.gate.noCard"], no_balance: ["lib.grp.topup", "lib.grp.gate.noBalance"],
@@ -1040,17 +1138,22 @@ function libChartDraw(host, r) {
   g("lib-back").addEventListener("click", libBack);
   g("lib-mkt-trig").addEventListener("click", () => { if (g("lib-mkt-menu").hidden) libMktOpen(); else libMktClose(false); });
   g("lib-mkt-menu").addEventListener("click", (e) => { const b = e.target.closest(".ct-mi[data-mkt]"); if (b) libMktPick(b.dataset.mkt); });
-  g("lib-mkt-menu").addEventListener("keydown", (e) => {   // 鍵盤同換合約選單(portfolio.js ctMenuBuild);Esc 擋在這裡,不讓 app.js escTop 再收一次
-    const items = [...g("lib-mkt-menu").querySelectorAll(".ct-mi")], i = items.indexOf(document.activeElement);
-    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); libMktClose(true); }
+  g("lib-sort-trig").addEventListener("click", () => { if (g("lib-sort-menu").hidden) libSortOpen(); else libSortClose(false); });
+  g("lib-sort-menu").addEventListener("click", (e) => { const b = e.target.closest(".ct-mi[data-sort]"); if (b) libSortPick(b.dataset.sort); });
+  // 鍵盤同換合約選單(portfolio.js ctMenuBuild);Esc 擋在這裡,不讓 app.js escTop 再收一次
+  const menuKeys = (id, close) => g(id).addEventListener("keydown", (e) => {
+    const items = [...g(id).querySelectorAll(".ct-mi")], i = items.indexOf(document.activeElement);
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(true); }
     else if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); }
     else if (e.key === "Home" || e.key === "End") { e.preventDefault(); items[e.key === "Home" ? 0 : items.length - 1].focus(); }
-    else if (e.key === "Tab") libMktClose(false);
+    else if (e.key === "Tab") close(false);
   });
+  menuKeys("lib-mkt-menu", libMktClose); menuKeys("lib-sort-menu", libSortClose);
   document.addEventListener("pointerdown", (e) => { if (!g("lib-mkt-menu").hidden && !g("lib-mkt").contains(e.target)) libMktClose(false); }, true);
+  document.addEventListener("pointerdown", (e) => { if (!g("lib-sort-menu").hidden && !g("lib-sort").contains(e.target)) libSortClose(false); }, true);
   g("lib-body").addEventListener("scroll", () => { const B = libBag(); if (!B.detail) B.scroll = g("lib-body").scrollTop; });
   window.addEventListener("focus", () => { libRefresh(); libIdeaSync(); });
-  window.addEventListener("blave:theme", () => { if (LIB.chart && LIB.chart.blaveRetheme) try { LIB.chart.blaveRetheme(); } catch (_) { } });   // 去瀏覽器綁卡 / 儲值回來:閘門要解(主行程回前景也會重問 account_status)
+  window.addEventListener("blave:theme", () => { libSparkAll(); if (LIB.chart && LIB.chart.blaveRetheme) try { LIB.chart.blaveRetheme(); } catch (_) { } });   // 去瀏覽器綁卡 / 儲值回來:閘門要解(主行程回前景也會重問 account_status)
   g("chat-idea").addEventListener("click", () => { if (typeof ideaOpen === "function") ideaOpen(g("chat-idea"), "welcome", "any"); });   // 歡迎頁①:開找點子框,不限市場
   libIdeaSync();
   window.blave.libraryInstalled().then((m) => { if (m && typeof m === "object") { LIB.installed = m; if (typeof wcPaint === "function") wcPaint(); } }).catch(() => {});

@@ -3454,9 +3454,12 @@ msgid "priv.c.feat.4"
 msgstr "送出找點子時，記從哪個入口送出"
 
 msgid "priv.c.feat.5"
-msgstr "回覆好了的系統通知：有沒有跳出、有沒有被點開"
+msgstr "換策略庫排序時，記選了哪一種"
 
 msgid "priv.c.feat.6"
+msgstr "回覆好了的系統通知：有沒有跳出、有沒有被點開"
+
+msgid "priv.c.feat.7"
 msgstr "不含對話標題與內容"
 
 msgid "priv.c.stuck.h"
@@ -5309,7 +5312,7 @@ msgid "lib.nav"
 msgstr "策略庫"
 
 msgid "lib.desc"
-msgstr "報酬皆為回測，已驗證的排前面。"
+msgstr "報酬皆為回測。"
 
 msgid "lib.mkt.aria"
 msgstr "市場"
@@ -5365,14 +5368,41 @@ msgstr "Blave 官方"
 msgid "lib.community"
 msgstr "社群作者"
 
-msgid "lib.years"
-msgstr "樣本 {n} 年"
-
-msgid "lib.annLabel"
-msgstr "年化報酬"
-
 msgid "lib.installs"
 msgstr "{n} 人安裝"
+
+# 策略庫排序選單(spec library-sort-rows-2026-11-06 §6):觸發器標籤與面板 aria 名。七項字樣逐字同網頁公開頁 bc_mp_sort_* / bc_mp_report_annual(parity)
+msgid "lib.sort.aria"
+msgstr "排序"
+
+msgid "lib.sort.reco"
+msgstr "推薦"
+
+msgid "lib.sort.installs"
+msgstr "安裝最多"
+
+msgid "lib.sort.sample"
+msgstr "樣本期較長"
+
+msgid "lib.sort.sharpe"
+msgstr "Sharpe"
+
+msgid "lib.sort.mdd"
+msgstr "最大回撤較淺"
+
+msgid "lib.sort.annual"
+msgstr "年化報酬"
+
+msgid "lib.sort.newest"
+msgstr "最新上架"
+
+# 策略庫清單:照 Sharpe／最大回撤較淺／年化報酬排時,沉底那段正上方的組標籤(同 web workspace_lib_sink_head)
+msgid "lib.sinkHead"
+msgstr "未驗證或樣本未滿 1 年"
+
+# 照「最新上架」排時,清單列副標接在標的後面
+msgid "lib.listedFor"
+msgstr "上架 {n} 天"
 
 msgid "lib.error"
 msgstr "讀不到策略庫。"
