@@ -166,6 +166,14 @@ for (const lang of ["zh", "en"]) {
   const bad = Object.entries(START_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || dp[d] !== wp[w]);
   ok(`啟動下單框 ${lang} 兩邊逐字一致(${Object.keys(START_PAIRS).length} 句)`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
+// Blave AI 402 卡(spec login-upgrade-buttons-0150 §1.5、§5 第 13 條):沒卡、有卡兩態的句子與四顆鈕字,zh / en 逐字一致。任一邊沒有這個 key 也算紅
+const CREDIT_FAULT_PAIRS = { "fault.noCredit": "workspace_fault_no_credit", "fault.needCard": "workspace_fault_need_card", "fault.noCreditBtn": "workspace_fault_act_topup",
+  "acct.addCard": "workspace_fault_act_card", "acct.cryptoTopup": "workspace_fault_act_crypto", "fault.resend": "workspace_fault_act_resend" };
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const bad = Object.entries(CREDIT_FAULT_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || dp[d] !== wp[w]);
+  ok(`Blave AI 402 卡 ${lang} 兩邊逐字一致(${Object.keys(CREDIT_FAULT_PAIRS).length} 句)`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
 // 模擬帳戶總權益氣泡接的第二句:兩邊逐字同;網頁 en 把接句的空白放在字串開頭(電腦版接的時候才加),所以先 trim。任一邊沒有這個 key 也算紅
 const PAPER_TIP_PAIRS = { "cx.perfNote": "workspace_ov_equity_tip_paper" };
 for (const lang of ["zh", "en"]) {
@@ -348,6 +356,9 @@ for (const lang of ["zh", "en"]) {
   const re = (src, kw, name) => { const m = src.match(new RegExp("^\\s*" + kw + " " + name + " = (/.*/[a-z]*);\\s*(?://.*)?$", "m")); return m ? m[1].replace(/(^|[^\\])\(([^()?][^()]*)\)(?![*+?{])/g, "$1$2") : null; };
   const tags = ["CARD_TAG", "SUG_BLOCK", "SUG_OPEN_TAIL", "AWAIT_TAG", "FORM_TAG"], off = tags.filter((n) => !re(appSrc, "const", n) || re(appSrc, "const", n) !== re(rc, "var", n));
   ok("回覆摘錄的五條標記 regex 兩邊同一份(FORM_TAG 是 0.1.41 澄清表單)", off.length === 0, off.map((n) => n + ": " + re(appSrc, "const", n) + " vs " + re(rc, "var", n)).join(";"));
+  // 轉給手機前拿掉記號的那份(shell/relay.js;主行程讀不到 renderer 的常數):跟電腦版 app.js 逐字同(spec login-upgrade-buttons-0150 §1.8)
+  const relaySrc = fs.readFileSync(path.join(__dirname, "..", "shell", "relay.js"), "utf8"), tagOf = (src) => (src.match(/^const CARD_TAG = (\/.*\/[a-z]*);/m) || [])[1];
+  ok("CARD_TAG:shell/relay.js 與 renderer/app.js 逐字同一份", !!tagOf(appSrc) && tagOf(appSrc) === tagOf(relaySrc), tagOf(appSrc) + " vs " + tagOf(relaySrc));
   // 回覆音 04 Rise(canon › Sound):兩音表、主增益、2 秒窗,兩邊逐值一致。網頁 var、電腦版 const,各自 eval 成值再比
   const num = (src, kw, n) => { const m = src.match(new RegExp("^\\s*" + kw + " " + n + " = ([\\s\\S]*?);", "m")); try { return m ? JSON.stringify(new Function("return " + m[1])()) : null; } catch (_) { return null; } };
   const rise = ["RISE", "RISE_GAIN", "SOUND_GAP_MS"].filter((n) => num(appSrc, "const", n) === null || num(appSrc, "const", n) !== num(rc, "var", n));

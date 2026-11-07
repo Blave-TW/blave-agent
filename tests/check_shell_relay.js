@@ -864,6 +864,30 @@ const row = (id, role, content, sec) => ({ id, role, content, created_at: sec ||
       && /const okText = \(\) => \{ const a = t\("fault\.authOk"\); return lr && lr\.phoneOff \? a \+ \(\/\[。！？\]\$\/\.test\(a\) \? "" : " "\) \+ t\("ph\.offRelogin"\) : a; \};\n      card\.set\(sysLz\(\(\) => \(resendState\(card, okText\)\)\)\);/.test(app2)
       && /if \(r && r\.phoneOff\) setHint\(\{ text: t\("ph\.offRelogin"\) \}\);/.test(app2) && /mvOn \? \[t\("acct\.out\.5"\)\] : \[\], phShown\(\) && PH\.signedIn && PH\.on \? \[t\("acct\.out\.6"\)\] : \[\]/.test(app2)); }
 
+  // ── 13 ── 資料卡記號與 card chunk 不到手機(spec login-upgrade-buttons-0150 §1.8)
+  await guard("13", async () => {
+    const SID = "desktop-card0001", TAG = "<blave-card:data-access/>";
+    const m = rig({ kind: "claude", sessions: { [SID]: { last: Date.now() / 1000, rows: [row(1, "user", "籌碼"), row(2, "assistant", "拿不到籌碼集中度。\n" + TAG, Date.now() / 1000)] } } });
+    await m.r.tick(); await m.r.setOn(true); await wait(2600);
+    const hist = m.of(RL.EP.sync).flatMap((b) => b.sessions).flatMap((x) => x.turns).find((x) => x.id === 2);
+    ok("13 歷史那條(舊對話上傳):助理那則的記號拿掉", hist && hist.content === "拿不到籌碼集中度。\n", hist);
+    m.feed([msg(SID, "msg0000c001", "BTC 籌碼集中度")]); await wait(40); m.calls.length = 0;
+    m.r.onTurn(SID, "turn-event", { type: "text", text: "拿不到籌碼集中度。\n<blave-ca" });
+    m.r.onTurn(SID, "turn-event", { type: "text", text: "rd:data-access/>" });
+    m.r.onTurn(SID, "turn-event", { type: "card", id: "data-access", code: "denied" });
+    m.r.onTurn(SID, "turn-event", { type: "text", text: "\n公開 K 線照樣能看 <b>粗</b> a<" });
+    m.r.onTurn(SID, "turn-event", { type: "tool", tool: "Bash", status: "running" });
+    m.r.onTurn(SID, "turn-event", { type: "text_replace", text: "整段換掉 " + TAG + " 完" });
+    m.r.onTurn(SID, "turn-event", { type: "done", awaiting: false }); await wait(RL.BATCH_MS + 120);
+    const cs = m.chunks(), txt = cs.filter((c) => c.type === "text").map((c) => c.text).join("");
+    ok("13 即時那條:記號拿掉(含被切在兩段之間的)、card chunk 不送;段尾不是記號的 < 在下一個事件前照原字放行",
+      !JSON.stringify(cs).includes("blave-card") && !cs.some((c) => c.type === "card") && txt === "拿不到籌碼集中度。\n\n公開 K 線照樣能看 <b>粗</b> a<"
+      && cs.findIndex((c) => c.type === "text" && c.text === "<") < cs.findIndex((c) => c.type === "tool")
+      && cs.some((c) => c.type === "text_replace" && c.text === "整段換掉  完"), cs);
+    await m.end();
+  });
+  ok("13 TURN_TYPES 沒有 card(電腦版收的資料卡 chunk 不轉給手機)", !RL.TURN_TYPES.includes("card"));
+
   // ── 9 ──
   const send = main.slice(main.indexOf("function sendTurn(sid, ch, payload) {"), main.indexOf("function turnNice("));
   ok("9 sendTurn 先交給 relay,再看有沒有視窗", send.indexOf("_relay.onTurn(sid, ch, payload)") > 0 && send.indexOf("_relay.onTurn") < send.indexOf("const w = turnWin();"));

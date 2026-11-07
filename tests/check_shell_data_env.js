@@ -81,7 +81,7 @@ t("登出要清:signOutBlave → clearToken → clearDataKey → 刪本機那份
 // 真的跑 main.js 的 dataAccessOf + hasBlaveData(account_status 用假的)→ turnCreds → syncDataEnv → spawn 那一行的對應
 { const cut = (name) => { const i = src.search(new RegExp("(async )?function " + name + "\\(")); let d = 0, end = -1;
     for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) { end = k + 1; break; } } return src.slice(i, end); };
-  let lastAcct = null, body = null; const ACCT_FRESH_MS = 5 * 60 * 1000;
+  let lastAcct = null, body = null, authRevoked = false; const ACCT_FRESH_MS = 5 * 60 * 1000;
   const accountStatus = async () => { if (body) lastAcct = { at: Date.now(), body }; return body; };
   eval(cut("dataAccessOf")); eval(cut("hasBlaveData").replace(/^async function hasBlaveData/, "var hasBlaveData = async function"));
   const tc = eval("(" + cut("turnCreds") + ")");
@@ -139,7 +139,14 @@ t("登出要清:signOutBlave → clearToken → clearDataKey → 刪本機那份
     t("WHY:登入、reason NO_CREDIT → no_balance", whyOf(true, S({ can_run: false, data_access: "none", reason: "NO_CREDIT" })) === "no_balance");
     t("WHY:登入、data_access none 而 reason 空 → no_balance", whyOf(true, S({ data_access: "none", reason: null })) === "no_balance");
     t("WHY:登入、舊 api 只有 data_included:false(沒有 data_access)→ unknown(那個布林是「不含資料」不是「餘額不夠」,N4)", whyOf(true, S({ data_included: false, reason: null })) === "unknown");
-    t("WHY:登入、account_status 查不到 → unknown", whyOf(true, null) === "unknown");
+    t("WHY:登入、account_status 查不到(網路錯、逾時)→ unknown", whyOf(true, null) === "unknown");
+    // spec login-upgrade-buttons-0150 §1.2:token 在、account_status 401／ACCOUNT_TOKEN_INVALID(accountStatus 設 authRevoked)→ relogin,不講方案
+    authRevoked = true;
+    t("WHY:登入、account_status 回 401(authRevoked)→ relogin;手上的舊答案也不沿用", whyOf(true, null) === "relogin" && whyOf(true, S({ data_access: "plan_required" })) === "relogin");
+    t("WHY:沒登入照舊 signed_out(authRevoked 不管)", whyOf(false, null) === "signed_out");
+    authRevoked = false;
+    t("WHY:accountStatus 只在 401／ACCOUNT_TOKEN_INVALID 設 authRevoked,網路錯走 catch 不動它", /if \(r\.status === 401 \|\| \(r\.status === 403 && r\.body && r\.body\.error_code === "ACCOUNT_TOKEN_INVALID"\)\) \{ if \(currentWho\(\) === who\) authRevoked = true; return null; \}/.test(src)
+      && /\} catch \(_\) \{ return null; \}\n\}/.test(cut("accountStatus")));
     t("WHY:登入、答案太舊不沿用 → unknown", (() => { lastAcct = { at: Date.now() - ACCT_FRESH_MS - 1, body: S({ data_access: "none", reason: "NO_CARD" }) }; return dataAccessWhy(true) === "unknown"; })());
     t("WHY:方案制 plan_required → no_plan;有試用資格又沒卡 → no_card(綁卡就有試用資料)", whyOf(true, S({ data_access: "plan_required", reason: "NO_CARD" })) === "no_plan"
       && whyOf(true, S({ data_access: "plan_required", reason: "NO_CARD", trial_eligible: true })) === "no_card" && whyOf(true, S({ data_access: "plan_required", reason: null })) === "no_plan");

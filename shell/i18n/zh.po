@@ -1207,7 +1207,7 @@ msgid "plan.err.relogin"
 msgstr "啟動方案前要重新登入一次。聊天與策略不受影響。"
 
 msgid "plan.relogin"
-msgstr "重新登入"
+msgstr "重新登入 Blave"
 
 msgid "plan.err.server"
 msgstr "啟動沒有完成。再按一次不會重複開主機。"
@@ -1441,6 +1441,9 @@ msgstr "之後資料在每月 {p} TWD 的 Blave Agent 雲端方案裡。"
 
 msgid "pv.e.unknown"
 msgstr "這台還拿不到 Blave 的資料。現在查不到帳號狀態，到「帳號與方案」重新查看。"
+
+msgid "pv.e.relogin"
+msgstr "這台電腦的 Blave 登入已失效。"
 
 msgid "pv.e.btn"
 msgstr "帳號與方案"
@@ -5719,9 +5722,6 @@ msgstr "這支策略要新版 Agent。更新電腦版後再按一次。"
 # 同上,但隨包的已經夠新、只是 workspace 沒同步成:重開才會再同步,叫人更新沒用
 msgid "lib.dl.agentOldReopen"
 msgstr "這支策略要新版 Agent。重新開啟電腦版後再按一次。"
-
-msgid "lib.gate.login"
-msgstr "登入"
 
 msgid "lib.cf.title"
 msgstr "安裝「{title}」？"

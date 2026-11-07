@@ -56,8 +56,8 @@ ok("主行程 authState:沒 token → out;帳號那一支 401／403(輪替救不
   ok("畫面的 authRevoked:主行程說 revoked 或雲端狀態 REVOKED 都算;沒登入不算(那是「沒登入」)", a1 === false && a2 === true && a3 === true && a4 === false); }
 { const ctx = vm.createContext({}); vm.runInContext(cutF(trade, "envOpenView"), ctx);
   ok("雲端分頁:帳號那一支說登入失效(planView revoked)也進「請重新登入」那一格,跟帳號頁同一個狀態", vm.runInContext('envOpenView("ok", true, "revoked")', ctx) === "relogin"); }
-ok("設定 › 帳號與方案:登入失效時不寫「已登入」、不講網路問題——帳號列「登入已失效」、卡片標題「請重新登入」、一顆登入鈕(不重講三次)",
-  /if \(typeof authRevoked === "function" && authRevoked\(\)\) return "revoked";/.test(app) && /revoked:  \{ h: "pv\.h\.revoked", lead: "", acts: \[planLoginBusy \? btn\("btn-out", t\("oauth\.cancel"\), planLogin\) : btn\("btn-fill", t\("pv\.signin"\), planLogin\)\] \}/.test(app)
+ok("設定 › 帳號與方案:登入失效時不寫「已登入」、不講網路問題——帳號列「登入已失效」、卡片標題「請重新登入」、一顆〔重新登入 Blave〕(不重講三次;鈕字 0.1.50 統一成 fault.authBtn)",
+  /if \(typeof authRevoked === "function" && authRevoked\(\)\) return "revoked";/.test(app) && /revoked:  \{ h: "pv\.h\.revoked", lead: "", acts: \[planLoginBusy \? btn\("btn-out", t\("oauth\.cancel"\), planLogin\) : btn\("btn-fill", t\("fault\.authBtn"\), planLogin\)\] \}/.test(app)
   && /t\(!hasToken \? "acct\.signedOut" : rv \? "acct\.revoked" : "acct\.signedIn"\)/.test(app));
 ok("每一處同一句:conn.expired(帳號頁、公開連結、分享)= 「登入已失效，請重新登入。」;雲端分頁那句同開頭",
   S.includes('"conn.expired": "登入已失效，請重新登入。"') && S.includes('"env.empty.relogin": "登入已失效，請重新登入。這台電腦上的對話與策略不受影響。"')

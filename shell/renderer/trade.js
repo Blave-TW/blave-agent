@@ -5691,6 +5691,29 @@ const TR_BROKER_KEY = { capital: "tr.ov.brokerCapital", president: "tr.ov.broker
 function trStrategyFailedNoteKey(d) {
   return /\bDataAccessError\b/.test(d && typeof d.error === "string" ? d.error : "") ? "tr.ov.evStrategyFailedNoData" : "tr.ov.evStrategyFailedNote";
 }
+const trEvPayload = (ev) => (ev.payload && typeof ev.payload === "object" ? ev.payload : ev.data && typeof ev.data === "object" ? ev.data : ev);   // 機器事件的欄位叫 payload(runtime/events.py);data 是平台格式
+/* 「沒有 Blave 資料權限,這一輪沒跑」那幾列裡最新的一筆(只有它接出口鈕,舊的同類列只留字);本機視角才有(雲端機不設 BLAVE_DATA_ACCESS)。沒有 → null */
+function trEvGateEv(events, local) {
+  if (!local || !Array.isArray(events)) return null;
+  let best = null, bestMs = null;
+  for (const ev of events) {
+    if (!ev || ev.type !== "strategy_failed" || trStrategyFailedNoteKey(trEvPayload(ev)) !== "tr.ov.evStrategyFailedNoData") continue;
+    const ms = trMs(ev.ts);
+    if (ms != null && (bestMs == null || ms > bestMs)) { best = ev; bestMs = ms; }
+  }
+  return best;
+}
+/* 那一列句子後面同一行接一顆文字鈕,照**現在**的帳號狀態出(事件沒帶出事當下的原因):表跟資料卡同一張(app.js dataGateAction)。拿得到資料、啟動中、查不到 → 不出 */
+function trEvDataGate(body) {
+  if (typeof dataGateAction !== "function") return;
+  let b = null;
+  const g = dataGateAction("event", { btn: () => b });
+  if (!g) return;
+  b = trEl("button", "btn-quiet", g.label); b.type = "button"; b.dataset.fk = "evgate";
+  if (g.idle) b.dataset.signin = g.idle;   // 登入等待中畫成「取消等待」時,planLogin 收尾換回原字
+  b.addEventListener("click", () => g.on());
+  body.append(" ", b);
+}
 function trEventText(type, d, strat) {
   const v = { venue: trVenueLabel(String(d.venue || ""), true), minutes: d.minutes };
   const lv = trEvLevel(type, d), str = (x) => (typeof x === "string" ? x : "");
@@ -5934,12 +5957,13 @@ function trOvEvents(r, z) {
       else { body.append(" ", trEl("span", "mono", sym)); if (tw) body.appendChild(tw); body.append(" ", trEl("span", "dim", "— " + raw.slice(0, 160))); }
     });
   });
+  const gateEv = trEvGateEv(r.events, TR.env === "local");
   (Array.isArray(r.events) ? r.events : []).forEach((ev) => {
     if (!ev || typeof ev.type !== "string") return;
-    const evd = ev.payload && typeof ev.payload === "object" ? ev.payload : ev.data && typeof ev.data === "object" ? ev.data : ev;   // 機器事件的欄位叫 payload(runtime/events.py);data 是平台格式
+    const evd = trEvPayload(ev);
     const txt = trEventText(ev.type, evd, trEvStrat(evd.strategy, ev.strategy_label));
     if (!txt) return;
-    push(trMs(ev.ts), (body) => trEvBody(body, txt[0], txt[1], trEvApiLevel(ev) || txt[2], txt[3], ev.count, txt[4], txt[5], txt[6]));
+    push(trMs(ev.ts), (body) => { trEvBody(body, txt[0], txt[1], trEvApiLevel(ev) || txt[2], txt[3], ev.count, txt[4], txt[5], txt[6]); if (ev === gateEv) trEvDataGate(body); });
   });
   /* 讀不到就說讀不到:絕不可以把「這一輪沒讀到」畫成「這段期間沒有事件」(同權益曲線的先例——讀不到就不畫,不斷言)。
      報告裡的那幾種(下單、現在的 HALT、下單失敗)是另一個來源,讀得到就照列,所以這一句是加在清單上面、不取代清單。 */

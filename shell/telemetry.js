@@ -328,7 +328,10 @@ const EVENTS = {
     // 0.1.47 登出確認框按〔登出〕(renderer/app.js acctOutAsk);撤銷成不成功都算。同 api 順序,api 先上
     "acct_out",
     // 0.1.47 送上雲端／拉回改成 app 直接搬(renderer/handoff.js;同 api 順序,api 先上):從側欄策略列選單開框、從對話動作卡開框、展開並排比較
-    "handoff_menu", "handoff_card", "handoff_compare"] },
+    "handoff_menu", "handoff_card", "handoff_compare",
+    // 0.1.50 登入鈕與升級鈕(spec login-upgrade-buttons-0150 §2;同 api 順序,api 先上):資料卡由 runtime 的 card chunk／只靠模型記號觸發、
+    // 資料卡上的〔登入 Blave〕〔重新登入 Blave〕、自動下單頁事件列那顆鈕的四種去處(renderer/app.js dataGateAction)
+    "data_card_rt", "data_card_tag", "login_data", "login_event", "bind_event", "topup_event", "plan_event"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other

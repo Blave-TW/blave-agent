@@ -27,7 +27,7 @@ msgid "cn.blave.descSetNoNum"
 msgstr "Pay per use from your Blave balance"
 
 msgid "cn.blave.btn"
-msgstr "Sign in to Blave"
+msgstr "Sign In to Blave"
 
 msgid "cn.blave.try"
 msgstr "Try Blave AI first"
@@ -400,7 +400,7 @@ msgid "fault.authInvalid"
 msgstr "This computer’s Blave sign-in is no longer valid, so this turn didn’t run."
 
 msgid "fault.authBtn"
-msgstr "Sign In Again"
+msgstr "Sign In to Blave Again"
 
 msgid "fault.noCredit"
 msgstr "Your Blave balance is empty, so this turn didn’t run."
@@ -1192,7 +1192,7 @@ msgid "plan.err.relogin"
 msgstr "Sign in again before starting the plan. Your chats and strategies aren’t affected."
 
 msgid "plan.relogin"
-msgstr "Sign In Again"
+msgstr "Sign In to Blave Again"
 
 msgid "plan.err.server"
 msgstr "The plan didn’t start. Pressing again won’t create a second machine."
@@ -1401,7 +1401,7 @@ msgid "pv.more.once"
 msgstr "The first-card trial is once per person and once per card."
 
 msgid "pv.signin"
-msgstr "Sign in to Blave"
+msgstr "Sign In to Blave"
 
 msgid "pv.e.out"
 msgstr "This computer can’t reach Blave data yet. Sign in to Blave, and your first card starts a {t}‑day free trial. AI stays on your {name}."
@@ -1426,6 +1426,9 @@ msgstr "After that, data comes with the Blave Agent Cloud Plan at {p} TWD a mont
 
 msgid "pv.e.unknown"
 msgstr "This computer can’t reach Blave data yet. The account status couldn’t be checked. Check again under Settings › Account & plan."
+
+msgid "pv.e.relogin"
+msgstr "Blave sign-in on this computer has expired."
 
 msgid "pv.e.btn"
 msgstr "Account & Plan"
@@ -5698,9 +5701,6 @@ msgstr "This strategy needs a newer Agent. Update the app, then press again."
 # 同上,但隨包的已經夠新、只是 workspace 沒同步成:重開才會再同步,叫人更新沒用
 msgid "lib.dl.agentOldReopen"
 msgstr "This strategy needs a newer Agent. Reopen the app, then press again."
-
-msgid "lib.gate.login"
-msgstr "Sign in"
 
 msgid "lib.cf.title"
 msgstr "Install \"{title}\"?"

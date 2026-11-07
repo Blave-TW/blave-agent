@@ -14,7 +14,8 @@ const btn = () => ({ textContent: "", isConnected: true, dataset: {}, h: null, a
    新增一個 planOpen / setCat("plan") 就得來這裡說它為什麼不是登入(登入一律走 planSignIn) */
 const NOT_SIGNIN = {   // 檔 → 所在函式:登出之後切到這一類、查不到狀態 / 舊 api、看方案、綁卡 / 儲值、看完整方案
   // mvBlock:設定 › 隱私「前往登入」切到同一個設定裡的帳號與方案(mockup-desktop-mobile-view-toggle A 版 mv.leadOut;登入失效同一句);phBlock:「允許手機對話」沒登入時同一句
-  "app.js": ["acctSignOut", "setCat", "dataCardState", "planOpen", "mvBlock", "phBlock"],
+  // dataGateAction:資料卡與事件列共用的出口表,planOpen 那一列是〔看方案〕(登入那兩列走 planSignIn)
+  "app.js": ["acctSignOut", "setCat", "dataCardState", "dataGateAction", "planOpen", "mvBlock", "phBlock"],
   "library.js": ["libGateBtn", "libBuyBox", "libPaintList", "libBindBuyBox"],   // libPaintList:方案制試用閘門旁的「看方案」(paywall-redesign-2026-10-21);
   // libBindBuyBox:框 3「開通方案」(spec library-buy-with-bind §3 決定 2)
   "welcome.js": ["wdNote"],
@@ -108,9 +109,9 @@ function harness() {
     ok("planLogin 收尾把 data-signin 的鈕從取消等待換回原字;策略庫、歡迎頁的登入鈕用 signInLabel 建;資料卡沒登入那態等待中鈕字是取消等待",
       /querySelectorAll\("button\[data-signin\]"\)\.forEach\(\(x\) => \{ if \(x\.textContent === t\("oauth\.cancel"\)\) x\.textContent = x\.dataset\.signin; \}\);/.test(cut(app, "planLogin"))
       && /signInLabel\(libEl\("button", cls \|\| "btn-fill"\), t\(key \|\| "cn\.blave\.btn"\)\)/.test(cut(lib, "libSignInBtn")) && /if \(signIn\) signInLabel\(b, txt\);/.test(cut(wel, "wdNote"))
-      && /label: t\(planLoginBusy \? "oauth\.cancel" : "pv\.signin"\)/.test(cut(app, "dataCardState"))); }
+      && /label: t\(planLoginBusy \? "oauth\.cancel" : key\)/.test(cut(app, "dataGateAction")) && /if \(!hasToken\) return signIn\("pv\.signin"\);/.test(cut(app, "dataGateAction"))); }
   ok("公開連結的登入鈕也用 signInLabel 建(稽核 r2 S4);資料卡沒登入那態記 data-signin = pv.signin,等待中才長出來的也換得回原字(r2 S2)",
-    /signInLabel\(libEl\("button", "btn-out"\), t\("cn\.blave\.btn"\)\)/.test(shl) && /if \(b1\) \{ if \(!hasToken && !ready\) b1\.dataset\.signin = t\("pv\.signin"\); else delete b1\.dataset\.signin; \}/.test(cut(app, "dataCardSync")));
+    /signInLabel\(libEl\("button", "btn-out"\), t\("cn\.blave\.btn"\)\)/.test(shl) && /if \(b1\) \{ if \(!ready && \(!hasToken \|\| card\._relogin \|\| authRevoked\(\)\)\) b1\.dataset\.signin = t\(hasToken \? "fault\.authBtn" : "pv\.signin"\); else delete b1\.dataset\.signin; \}/.test(cut(app, "dataCardSync")));
   C = harness(); b = btn(); b.textContent = "oauth.cancel"; b.dataset.signin = "cn.blave.btn"; C.planLoginBusy = true; C.resolve = () => { C.planLoginBusy = false; };
   C.planSignIn(b);
   ok("等待中重畫過、畫成取消等待的那顆:按了就是取消同一次", C.calls === 1 && C.planLoginBusy === false);
@@ -159,13 +160,22 @@ function harness() {
   /* 4. 資料卡:沒登入那一態是〔登入 Blave〕+ planSignIn;查不到狀態那一態照舊開帳號與方案 */
   hit.length = 0;
   const D = { t: (k) => k, hasToken: false, acct: null, planLoginBusy: false, dataCard: { b1: "B1" }, planVars: () => ({ t: 14, p: 0 }), pvPriced: (_k, v) => !!v.p, pvK: (k) => k, planState: () => "none",
+    revoked: false, authRevoked: () => D.revoked, hasData: (s) => !!(s && s.data_access === "included"), dataAccessOf: (s) => s && s.data_access, trackFeature: (n) => hit.push(["track", n]),
     planSignIn: (x) => hit.push(["signin", x]), planOpen: () => hit.push(["planOpen"]) };
   vm.createContext(D);
-  vm.runInContext(cut(app, "dataCardState"), D);
-  let st = D.dataCardState(); st.on();
-  ok("資料卡沒登入:鈕字 pv.signin、按了 planSignIn(帶資料卡那顆鈕)", st.label === "pv.signin" && hit.length === 1 && hit[0][0] === "signin" && hit[0][1] === "B1", JSON.stringify([st.label, hit]));
+  vm.runInContext(cut(app, "dataGateAction") + "\n" + app.match(/^const gateBtn = [^\n]*$/m)[0].replace(/^const /, "var ") + "\n" + cut(app, "dataCardState"), D);
+  let st = D.dataCardState(); await st.on();
+  ok("資料卡沒登入:鈕字 pv.signin、按了先記 login_data 再 planSignIn(帶資料卡那顆鈕)", st.label === "pv.signin" && JSON.stringify(hit) === JSON.stringify([["track", "login_data"], ["signin", "B1"]]), JSON.stringify([st.label, hit]));
+  hit.length = 0; D.planLoginBusy = true; st = D.dataCardState(); await st.on(); D.planLoginBusy = false;
+  ok("登入等待中:鈕字是取消等待、按了不記 login_data(是取消)", st.label === "oauth.cancel" && JSON.stringify(hit) === JSON.stringify([["signin", "B1"]]), JSON.stringify(hit));
   hit.length = 0; D.hasToken = true; st = D.dataCardState(); st.on();
   ok("資料卡已登入但狀態查不到:照舊〔帳號與方案〕開設定", st.label === "pv.e.btn" && hit.length === 1 && hit[0][0] === "planOpen", JSON.stringify([st.label, hit]));
+  // spec login-upgrade-buttons-0150 §1.2:登入失效(token 被撤)或這一輪 ERR005 → 同一張卡、句子換、主鈕〔重新登入 Blave〕、沒有第二顆
+  hit.length = 0; D.revoked = true; st = D.dataCardState(); await st.on(); D.revoked = false;
+  ok("登入失效:pv.e.relogin + fault.authBtn、planSignIn,沒有第二顆", st.text === "pv.e.relogin" && st.label === "fault.authBtn" && !st.second && JSON.stringify(hit) === JSON.stringify([["track", "login_data"], ["signin", "B1"]]), JSON.stringify([st, hit]));
+  hit.length = 0; D.acct = { data_access: "included" }; D.dataCard = { b1: "B1", _relogin: true }; st = D.dataCardState();
+  ok("ERR005 那張(_relogin):account_status 說有資料也照樣是重新登入那態", st.text === "pv.e.relogin" && st.label === "fault.authBtn", JSON.stringify(st));
+  D.acct = null; D.dataCard = { b1: "B1" };
 
   console.log(red ? "\n" + red + " 紅" : "\nALL PASS");
   process.exit(red ? 1 : 0);

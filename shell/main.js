@@ -2616,9 +2616,12 @@ async function hasBlaveData() {
    (09-24 真機)——外殼明明知道原因。no_card / no_balance 是切換前(按小時)的兩種;no_plan / plan_failed 是方案制的兩種。
    account_status 的 reason 只在 can_run=false 時有值(NO_CARD / NO_CREDIT);data_access=none 而 reason 空的組合(api 沒禁)當餘額不夠。
    方案制的「有沒有卡」看 has_card(跟 can_run 脫鉤:手上還有綁卡前額度的新人 reason 是空的);舊 api 沒這欄才退回 reason——同 renderer acctNoCard。
-   查不到(沒打到 / 太舊)就 unknown,不沿用舊答案,同 hasBlaveData。舊 api 只有 data_included:false、沒有 data_access:也 unknown。 */
+   查不到(沒打到 / 太舊)就 unknown,不沿用舊答案,同 hasBlaveData。舊 api 只有 data_included:false、沒有 data_access:也 unknown。
+   token 在、伺服器不認(account_status 401／ACCOUNT_TOKEN_INVALID 設的 authRevoked)→ relogin:跟方案無關,不能讓模型講「要開通方案」;
+   網路錯、逾時不動 authRevoked,照舊 unknown */
 function dataAccessWhy(signedIn) {
   if (!signedIn) return "signed_out";
+  if (authRevoked) return "relogin";
   const b = lastAcct && Date.now() - lastAcct.at <= ACCT_FRESH_MS ? lastAcct.body : null;
   if (!b) return "unknown";
   const a = dataAccessOf(b);
@@ -3796,6 +3799,10 @@ async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEf
         try {
           const c = JSON.parse(line.slice(9)); if (c && c.type === "done") { rec.finalized = true; turnAwaiting = c.awaiting === true; sessWaitingSave(sessionId, turnAwaiting); }   // awaiting 只存;kinds 不存不畫
           if (c && c.type === "export") { const rec = noteExport(c, sessionId); if (rec) { c.id = rec.id; turnXp.push(rec); } }   // 卡重開要畫回來:快照先落地,id 給卡的「下載…」
+          if (c && c.type === "card") {
+            if (dataAccess === "own") continue;   // 用戶自己的 API 方案 key:出路在網站 API 頁,不出資料卡(runtime 本來就不送,這裡再擋一次)
+            if (c.code === "err005" || c.code === "err007") lastAcct = null;   // 帳號狀態在這 5 分鐘內變了:下一輪的 BLAVE_DATA_ACCESS 要重問
+          }
           sendTurn(sessionId, "turn-event", c);
         } catch (_) {}
       }

@@ -3567,6 +3567,7 @@ class WebSink:
         # 一路攢到工具呼叫或回合結束才出現。-inf 讓第一個 delta 一定立刻送
         # (monotonic 的原點沒有定義,不能假設它從 0 開始)。
         self._last_flush = float("-inf")
+        self._data_card = None  # 這一輪工具輸出認到的資料權限問題(data_access_hit),回合結束送一張 card
 
     def _send(self, chunk):
         chunk.setdefault("session_id", self.session_id)
@@ -3721,6 +3722,9 @@ class WebSink:
         if not started:
             return
         t0, name, where = started[:3]
+        hit = data_access_hit(name, getattr(block, "content", None))
+        if hit and _DATA_CARD_RANK[hit] > _DATA_CARD_RANK.get(self._data_card, 0):
+            self._data_card = hit
         self._send({
             "type": "tool", "id": block.tool_use_id, "tool": name, "status": "done", "where": where,
             "ms": max(0, int((time.monotonic() - t0) * 1000)),
@@ -3810,6 +3814,9 @@ class WebSink:
         if suggestions and not self.interrupted:
             self._send({"type": "suggestions", "items": suggestions,
                         "kind": suggest_kind(suggestions[0])})
+        # 契約:references/turn-events.md。舊外殼不認得 card,直接略過
+        if self._data_card and not self.interrupted and _desktop_surface(self):
+            self._send({"type": "card", "id": "data-access", "code": self._data_card})
         # awaiting:被 Stop 截斷的回合不算(半途的標記不可信)。欄位契約:references/turn-events.md。
         self._send({"type": "done", "awaiting": bool(awaiting and not self.interrupted),
                     "kinds": dict(self._kinds)})
@@ -4471,11 +4478,15 @@ FAULT_PARTIAL = "partial"
 FAULT_MAX_TURNS = "max_turns"
 # 第五個:Codex 回 401。電腦版畫登入卡(renderer turnEventIn),不顯示下面的字;其他面不會碰到
 FAULT_NEEDS_LOGIN = "needs_login"
+# 第六個:Blave AI proxy 402(錢包付不出)。web 依 code 畫綁卡／儲值卡,電腦版併進 402 卡;舊前端退回 message
+FAULT_NO_CREDIT = "no_credit"
 
 # 只有 5xx / 429 算「上游擋掉」。零工具的回合還涵蓋 sink 少方法的 AttributeError、
 # 起 CLI 子行程失敗、proxy 回 402/403(試用額度)——那些情況說「模型服務沒有回應」
 # 是假話,一律退中性句。
 _API_ERROR_RE = re.compile(r"API Error: (5\d\d|429)")
+# proxy 402 的兩種樣子:CLI 轉成的引擎錯誤字,或 body 的 error_code(openclaw/proxy.py _credit_gate)
+_NO_CREDIT_RE = re.compile(r"API Error: 402\b|INSUFFICIENT_CREDIT")
 # 收據摘要接進歷史文字的列數上限:收件人是下一輪的模型,列夠它判斷「做到哪」就好。
 TOOL_STEPS_MAX = 12
 
@@ -4504,6 +4515,11 @@ FAULT_TEXT = {
             "Codex 沒有登入，你剛才那句沒有被執行。機器上什麼都沒動。",
             "Codex isn't signed in, so your last message did not run. Nothing on the machine changed.",
         ),
+        # 同 web 工作頁 402 卡「有卡」那態的字(workspace_fault_no_credit)
+        FAULT_NO_CREDIT: (
+            "Blave 餘額用完了，這一輪沒有跑。",
+            "Your Blave balance is empty, so this turn didn’t run.",
+        ),
     },
     "tg": {
         FAULT_NOT_STARTED_UPSTREAM: (
@@ -4526,6 +4542,10 @@ FAULT_TEXT = {
             "Codex 沒有登入，你剛才那句沒有被執行，機器上什麼都沒動。",
             "Codex isn't signed in, so your last message did not run. Nothing on the machine changed.",
         ),
+        FAULT_NO_CREDIT: (
+            "Blave 餘額用完了，這一輪沒有跑。到 Blave 網站儲值後，再傳一次剛才那句。",
+            "Your Blave balance is empty, so this turn didn’t run. Top up on the Blave website, then send the same message again.",
+        ),
     },
 }
 
@@ -4537,6 +4557,7 @@ FAULT_TEXT_CN = {
         FAULT_PARTIAL: "这一轮中途断了，你刚才的要求可能只做完一部分。上面是断掉前已经执行的步骤。",
         FAULT_MAX_TURNS: "这一轮步骤超过上限，停在半路。上面已经执行的步骤都生效了，把要求拆小一点再问一次。",
         FAULT_NEEDS_LOGIN: "Codex 没有登录，你刚才那句没有被执行。机器上什么都没动。",
+        FAULT_NO_CREDIT: "Blave 余额用完了，这一轮没有跑。",
     },
     "tg": {
         FAULT_NOT_STARTED_UPSTREAM: "模型服务没有响应，你刚才那句没有被执行，机器上什么都没动。\n把同一句再传一次就好。",
@@ -4544,12 +4565,13 @@ FAULT_TEXT_CN = {
         FAULT_PARTIAL: "这一轮中途断了，你刚才的要求可能只做完一部分。\n传「看一下机器现在的实际状态，只讲你能确认完成的」，我核对后回报。",
         FAULT_MAX_TURNS: "这一轮步骤超过上限，停在半路，前面做的都生效了。\n把要求拆小一点再传一次。",
         FAULT_NEEDS_LOGIN: "Codex 没有登录，你刚才那句没有被执行，机器上什么都没动。",
+        FAULT_NO_CREDIT: "Blave 余额用完了，这一轮没有跑。到 Blave 网站储值后，再传一次刚才那句。",
     },
 }
 
 
 def _fault_code(exc, tool_calls, result_info=None):
-    """兜底例外 + 這一輪跑過幾個工具 → 四個 code 之一。
+    """兜底例外 + 這一輪跑過幾個工具 → FAULT_* 之一。
 
     判定順序寫死:先 max_turns 再看工具數。撞上限的回合一定跑過工具,順序反過來
     就永遠出不了 max_turns(它也是 partial 家族,只是有更精確的說法)。
@@ -4574,6 +4596,9 @@ def _fault_code(exc, tool_calls, result_info=None):
     status = getattr(exc, "api_error_status", None)
     if not isinstance(status, int):
         status = info.get("api_error_status")
+    # 自帶 API 金鑰(relay 模式)的 402 是供應商的帳,不是 Blave 餘額(同 shell/relay.js FAULT_HEADS 的 apikey 規則)
+    if not _relay_mode() and (status == 402 or _NO_CREDIT_RE.search(text) or _NO_CREDIT_RE.search(info.get("result") or "")):
+        return FAULT_NO_CREDIT
     if isinstance(status, int) and (status >= 500 or status == 429):
         return FAULT_NOT_STARTED_UPSTREAM
     if _API_ERROR_RE.search(text) or _API_ERROR_RE.search(info.get("result") or ""):
@@ -4786,7 +4811,51 @@ DATA_ACCESS_WHY = {
     "no_plan": "the user is signed in; the account has no plan that includes Blave data",
     "plan_failed": "the user is signed in; the account's plan payment failed, so data is paused until it is paid",
     "unknown": "the user is signed in; the account status could not be read this turn",
+    # token 還在、伺服器不認(401／ACCOUNT_TOKEN_INVALID):跟方案無關,出口是重新登入
+    "relogin": "the Blave sign-in on this computer has expired or was revoked; signing in to Blave again restores it",
 }
+
+# 資料卡改由 runtime 觸發(spec login-upgrade-buttons-0150 §1.1):模型漏寫記號時外殼一樣拿得到。
+# 只看執行指令的輸出(agent 讀 lib/data.py 原始碼不算),只在外殼設了 BLAVE_DATA_ACCESS 時比——雲端機與 own 不設。
+DATA_CARD_SCAN_CHARS = 64 * 1024
+DATA_CARD_TOOLS = SHELL_TOOLS + ("TaskOutput", "BashOutput")   # 後兩個是背景指令的輸出,同一份字
+# access=0:traceback 結尾那行(行首,grep 出來的 `except DataAccessError:` 不算),或 lib/data._NO_ACCESS_MSG 的開頭句
+_DATA_DENIED_RE = re.compile(r"(?m)^(?:[\w.]+\.)?DataAccessError: |Blave data is not reachable on this desktop this turn")
+# access=1:lib/data 聊天回合 403 的兩種印法(_retry_get 的 HTTPError、fetch_kline 的 RuntimeError),後面接 api body 的頭 200 字。
+# Flask jsonify 是排序過的 compact JSON,error_code 一定在最前面;正式環境冒號後沒有空白。單獨一個 ERR007 字樣不算
+# 403 與 body 之間只容 600 字(URL + lib 加的「 — 」);寫成有上限的量詞,一行幾 MB 的輸出也不會回溯到秒級
+_DATA_ERR_RE = re.compile(r'(?:\b403 Client Error\b|\bHTTP 403: )[^\n]{0,600}?"error_code"[ \t]{0,4}:[ \t]{0,4}"(ERR00[57])"')
+# 同一輪多種命中:登入問題先解
+_DATA_CARD_RANK = {"denied": 1, "err007": 2, "err005": 3}
+
+
+def _tool_result_text(content):
+    """ToolResultBlock.content 是 str,或 [{"type": "text", "text": …}, …](圖片那種略過)。"""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        out = []
+        for part in content:
+            text = part.get("text") if isinstance(part, dict) else getattr(part, "text", None)
+            if isinstance(text, str):
+                out.append(text)
+        return "\n".join(out)
+    return ""
+
+
+def data_access_hit(tool, content, access=None):
+    """一筆工具結果 → "denied" / "err005" / "err007" / None。access 沒給就讀 BLAVE_DATA_ACCESS。"""
+    if access is None:
+        access = os.environ.get("BLAVE_DATA_ACCESS")
+    if access not in ("0", "1") or tool not in DATA_CARD_TOOLS:
+        return None
+    text = _tool_result_text(content)[-DATA_CARD_SCAN_CHARS:]
+    if not text:
+        return None
+    if access == "0":
+        return "denied" if _DATA_DENIED_RE.search(text) else None
+    codes = {m.group(1) for m in _DATA_ERR_RE.finditer(text)}
+    return "err005" if "ERR005" in codes else "err007" if "ERR007" in codes else None
 
 
 def local_mcp_config(sink, mcp_config):
@@ -4994,7 +5063,7 @@ def data_access_rule():
              所以這段講的是 `ERR007` / `ERR005`(key 被撤)/ `KEY_SCOPE`(越權)。
       `0`  = 沒有 key:沒登入 Blave,或這一小時付不出資料費(data_access = none),或方案制下沒有方案／方案扣款失敗
              (plan_required / payment_failed),或舊 api(沒有 data_access)且帳號不含資料。外殼另帶 BLAVE_DATA_ACCESS_WHY
-             說是哪一種(`signed_out` / `no_card` / `no_balance` / `no_plan` / `plan_failed` / `unknown`):少了它,模型對登入著、只是餘額
+             說是哪一種(`signed_out` / `no_card` / `no_balance` / `no_plan` / `plan_failed` / `unknown` / `relogin`):少了它,模型對登入著、只是餘額
              不夠的人也回「要先登入」(2026-09-24 真機)。舊外殼不帶 → 原文不變。
       未設 = 雲端機,或用戶自己手放進 `.env` 的 key(外殼刻意不設):回空字串,照 AGENTS.md
              的預設敘述走,system prompt 一個字都不變。
@@ -5067,7 +5136,9 @@ def data_access_rule():
             "Only when a `lib/data.py` call in this turn actually stopped with `DataAccessError`, "
             "your reply must: name which data is missing; "
             + ("say in one sentence that it needs signing in to Blave first; "
-               if why_key == "signed_out" else "say in one sentence that it needs a plan; ")
+               if why_key == "signed_out" else
+               "say in one sentence that the Blave sign-in on this computer has expired and needs signing in "
+               "again, not a plan; " if why_key == "relogin" else "say in one sentence that it needs a plan; ")
             + "not list conditions, and not mention an API plan, the card trial or hourly billing "
             "(the facts above are for you, not for the reply); carry "
             "no directions, next steps or prices; not push; and then answer "
@@ -5077,7 +5148,7 @@ def data_access_rule():
             "backtesting a library strategy that ran on public data only — does not bring up data "
             "access and carries no marker.\n"
             + ("State the actual reason above; do not say the user must sign in unless the reason "
-               "is signed_out.\n" if why else "")
+               "is signed_out or relogin.\n" if why else "")
             + f"In the reply that names the missing data, put this marker, verbatim, on its own line at the very end of the "
             f"reply text (before the `<suggest>` block if the reply has one): `{DATA_ACCESS_CARD}`. "
             "The marker is consumed by the runtime and never shown to the user. Never mention the "

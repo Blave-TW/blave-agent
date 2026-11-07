@@ -1127,7 +1127,8 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
 // 從 none 回來時,按小時付的那條要講「會收錢」,免費那條照舊「可以用了」。真的跑 dataCardState / acctPaint / maybeDataCard
 { const mkCard = () => { const c = { states: [] }; c.set = (x) => { c.states.push(x); c.last = x; }; return c; };
   let acct = null, hasToken = true, cur = "claude", dataCard = null, acctCard = null, sessionId = "s1", turnFaulted = false, running = false, lastUserText = "q", lastUserAttachments = [], acctGone = null;   // acctGone:acctPaint 補記 acct_card_back 用的,這裡沒按過卡上的鈕
-  const creditCards = [], dataCardSessions = new Set(); let turnCards = [];
+  const creditCards = [], dataCardSessions = new Set(); let turnCards = [], turnDataCode = null, planLoginBusy = false, REVOKED = false;
+  const authRevoked = () => REVOKED, planSignIn = async () => ({ ok: true });
   let V = { t: 14, p: "1,440", r: "2" };
   const planVars = () => V, planOpen = () => {}, planState = () => (acct && acct.plan && acct.plan.state) || "none", planWatch = () => {};
   const acctUrl = () => "topup", faultCard = () => mkCard(), submitMessage = async () => true, $ = () => ({ focus() {} });
@@ -1135,7 +1136,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   const went = [], trackFeature = (n) => went.push("track:" + n), bindGo = (n) => went.push("bind:" + n);
   let pub = null; eval(fnSrc("planMo"));
   eval(fnSrc("dataAccessOf")); for (const n of ["acctNoCard", "acctOffer"]) { const m = src.match(new RegExp("^const " + n + " = [^\\n]*$", "m")); if (m) eval(m[0].replace(/^const /, "var ")); } eval(src.match(/^const hasData = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var "));
-  eval(fnSrc("dataReadyText")); eval(src.match(/^const resendable = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^function canResend\(\)[^\n]*$/m)[0]); eval(src.match(/^function resendLast\(\)[^\n]*$/m)[0]); eval(src.match(/^function sysLz\(fn\)[^\n]*$/m)[0]); eval(fnSrc("resendState")); eval(fnSrc("dataCardState")); eval(fnSrc("dataCardSync")); eval(fnSrc("maybeDataCard")); eval(fnSrc("acctPaint"));
+  eval(fnSrc("dataReadyText")); eval(src.match(/^const resendable = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^function canResend\(\)[^\n]*$/m)[0]); eval(src.match(/^function resendLast\(\)[^\n]*$/m)[0]); eval(src.match(/^function sysLz\(fn\)[^\n]*$/m)[0]); eval(fnSrc("resendState")); eval(fnSrc("dataGateAction")); eval(src.match(/^const gateBtn = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(fnSrc("dataCardState")); eval(fnSrc("dataCardSync")); eval(fnSrc("maybeDataCard")); eval(fnSrc("acctPaint"));
   const A = (o) => ({ can_run: true, plan: { state: "none" }, ...o });
   acct = A({ data_access: "none", reason: "NO_CREDIT", data_hourly: 2 });
   let c = dataCardState();
@@ -1151,8 +1152,10 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   V = { t: 14, p: "1,440", r: "2" };
   acct = A({ data_access: "plan_required", data_paths: { api_plan: true } });
   c = dataCardState();
-  ok("方案制沒有方案:講清楚「開雲端方案或 API 方案」;主鈕〔看方案〕開設定 › 帳號與方案、第二顆〔API 方案〕",
-    c.text === "data.noPlan" && c.label === "data.seePlan" && !c.out && c.second && c.second.label === "pv.apiPlan" && !/noCreditBtn|addCard/.test(JSON.stringify(c)));
+  // spec login-upgrade-buttons-0150 §1.4:〔API 方案〕拿掉,只給 Blave Agent 方案的出口
+  went.length = 0; c.on();
+  ok("方案制沒有方案:主鈕〔看方案〕開設定 › 帳號與方案(記 plan_data)、沒有第二顆〔API 方案〕",
+    c.text === "data.noPlan" && c.label === "data.seePlan" && !c.out && !c.second && went.join() === "track:plan_data" && !/noCreditBtn|addCard|apiPlan/.test(JSON.stringify(c)));
   /* paywall-redesign-2026-10-21 §2.2 A 版:方案制、有試用資格又沒卡 → 只放動作:灰記號、填色〔綁卡免費試用 {t} 天〕直開綁卡頁(bind_data)、
      文字鈕〔看方案〕(plan_data);沒有句子、沒有收費小字、沒有〔API 方案〕。沒卡看 has_card(跟 can_run 脫鉤),舊 api 退回 reason */
   { const trialCard = (a) => { acct = A(a); const c = dataCardState(); went.length = 0; if (c.on) c.on(); const main = went.join(); went.length = 0; if (c.second) c.second.on(); return { c, main, side: went.join() }; };
@@ -1168,7 +1171,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     ok("§5.1 試用天數拿不到:主鈕退回不帶數字的「前往綁卡」(不寫死 14),一樣直開綁卡頁", r.c.label === "plan.addCard" && r.main === "bind:bind_data", JSON.stringify(r));
     for (const [why, a] of [["有卡", { has_card: true, trial_eligible: true }], ["has_card:true 但 reason 還是 NO_CARD", { has_card: true, reason: "NO_CARD", trial_eligible: true }], ["沒卡但試用資格用掉", { has_card: false, trial_eligible: false }], ["舊 api、reason 空", { reason: null, trial_eligible: true }]]) {
       const c = (acct = A({ data_access: "plan_required", ...a }), dataCardState());
-      ok("§5.1 方案制、" + why + " → 照現況「開通方案」那張(〔看方案〕〔API 方案〕)", c.text === "data.noPlan" && c.label === "data.seePlan" && c.second && c.second.label === "pv.apiPlan", JSON.stringify(c)); } }
+      ok("§5.1 方案制、" + why + " → 照現況「開通方案」那張(只有〔看方案〕)", c.text === "data.noPlan" && c.label === "data.seePlan" && !c.second, JSON.stringify(c)); } }
   acct = A({ data_access: "payment_failed" });
   ok("方案扣款失敗:〔重新付款〕,不出儲值", dataCardState().text === "data.payFail" && dataCardState().label === "plan.repay");
   acct = A({ data_included: false });
@@ -1193,7 +1196,35 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
     ok("還是 none:卡留著、跟著換成儲值那一句,不給〔再送一次〕", dataCard === card && card.last.label === "fault.noCreditBtn"); }
   // 卡出來的那一刻帳號已經付得起(狀態比 agent 那一輪新):直接給〔再送一次〕
   dataCard = null; turnCards = ["data-access"]; sessionId = "s2"; acct = A({ data_access: "billed", data_hourly: 2 }); maybeDataCard();
-  ok("卡出來時已經 billed:直接是「餘額夠了…會收」+〔再送一次〕", dataCard && /^data\.readyBilled/.test(dataCard.last.text) && dataCardSessions.has("s2")); }
+  ok("卡出來時已經 billed:直接是「餘額夠了…會收」+〔再送一次〕", dataCard && /^data\.readyBilled/.test(dataCard.last.text) && dataCardSessions.has("s2:plan"));
+  /* spec login-upgrade-buttons-0150 §1.1／§5 第 6 條:runtime 的 card chunk(turnDataCode)與模型記號、err005／err007、一段對話每類一次 */
+  const fresh = (sid) => { dataCard = null; turnCards = []; turnDataCode = null; sessionId = sid; went.length = 0; REVOKED = false; hasToken = true; };
+  fresh("c1"); turnDataCode = "denied"; turnCards = ["data-access"]; acct = A({ data_access: "plan_required" }); maybeDataCard(); const first = dataCard; maybeDataCard();
+  ok("同一輪 chunk 加記號 → 一張卡,記 data_card_rt(不是 data_card_tag)", first && dataCard === first && went.filter((x) => /data_card/.test(x)).join() === "track:data_card_rt", went.join());
+  fresh("c2"); turnCards = ["data-access"]; acct = A({ data_access: "plan_required" }); maybeDataCard();
+  ok("只有模型記號 → 記 data_card_tag", dataCard && went.join() === "track:data_card_tag", went.join());
+  fresh("c3"); turnDataCode = "err005"; acct = A({ data_access: "included", data_included: true }); maybeDataCard();
+  ok("err005 而 account_status 回 200 有資料 → 照樣出登入失效那態,不是〔再送一次〕", dataCard && dataCard.last.text === "pv.e.relogin" && dataCard.last.label === "fault.authBtn" && dataCardSessions.has("c3:login"), JSON.stringify(dataCard && dataCard.last));
+  { const card = dataCard; acctPaint();
+    ok("err005 那張:回前景重查還是有資料 → 停在重新登入,不換成〔再送一次〕", card.last.text === "pv.e.relogin");
+    card._relogin = false; card._key = null; dataCardSync(acct);
+    ok("重新登入成功(_relogin 清掉)之後:有資料就換〔再送一次〕", card.last.label === "fault.resend" && card.last.text === "data.ready"); }
+  fresh("c4"); turnDataCode = "err007"; acct = A({ data_access: "included", data_included: true }); maybeDataCard();
+  ok("err007 重讀有資料 → 不出(也不佔掉這段對話的名額)", dataCard === null && !dataCardSessions.has("c4:plan") && !went.length);
+  acct = A({ data_access: "plan_required" }); maybeDataCard();
+  ok("err007 重讀沒方案 → 照 dataCardState 出方案那張", dataCard && dataCard.last.text === "data.noPlan" && dataCardSessions.has("c4:plan"));
+  fresh("c5"); hasToken = false; acct = null; turnDataCode = "denied"; maybeDataCard(); const loginCard = dataCard;
+  ok("沒登入 → 登入類那張", loginCard && dataCardSessions.has("c5:login") && loginCard.last.label === "pv.signin");
+  hasToken = true; acct = A({ data_access: "plan_required" }); dataCard = null; turnDataCode = "denied"; went.length = 0; maybeDataCard();
+  ok("先出過登入類、登入後又撞到沒方案 → 第二張(方案類)照出", dataCard && dataCard !== loginCard && dataCardSessions.has("c5:plan") && dataCard.last.text === "data.noPlan");
+  const second = dataCard; dataCard = null; maybeDataCard();
+  ok("同一類第二次 → 不出", dataCard === null && second);
+  fresh("c6"); REVOKED = true; acct = null; turnDataCode = "denied"; maybeDataCard();
+  ok("token 被撤(authRevoked)→ 登入類、重新登入那態", dataCard && dataCardSessions.has("c6:login") && dataCard.last.text === "pv.e.relogin");
+  fresh("c7"); turnDataCode = "denied"; acct = A({ data_access: "plan_required" }); turnFaulted = true; maybeDataCard(); turnFaulted = false;
+  ok("讓位規則不變:這一輪有失敗卡 → 不出、不佔名額", dataCard === null && !dataCardSessions.has("c7:plan"));
+  fresh("c8"); maybeDataCard();
+  ok("沒有 chunk 也沒有記號 → 不出", dataCard === null && !went.length); }
 // 主機與資料費的時價只從 account_status 的 data_hourly 來,外殼一個數字都不寫死(提案 §3 C3;切換前那段照舊)
 // 方案的月價 / 年價 / 年繳付幾個月 / 寬限天數也都從 api 來(account_status 的 plan、data_paths,公開價目的 plan)
 { let acct = null, pub = null; const cur = "claude", planDate = (iso) => "D:" + iso;
@@ -1216,8 +1247,8 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
 // 聊天裡「這小時用到了 Blave 的資料,主機與資料費 N TWD」那一則已拿掉(Wei 2026-09-24:惱人;計費不變,只是不在對話裡講)
 ok("回合結束不再出費用那一則:dataFeeNote / dataFeeShow / data.fee 字串都不在外殼裡", !/dataFeeNote|dataFeeShow|DATA_RULE_KEY|DATA_NOTE_HOUR_KEY|"data\.fee(First)?"/.test(src));
 { /* 回合結束(dataTurnEnd)真的跑:有登入就重讀一次(稽核 Delta 3 #1:試用剛到期、餘額剛用完只有這裡看得到);卡用這一份 */
-  let acct = null, hasToken = true, fetched = 0, notes = [], NEXT = null, painted = 0, cardCalls = 0;
-  const window = { blave: { accountStatus: async () => { fetched++; return NEXT; }, openExternal: () => {} } };
+  let acct = null, hasToken = true, fetched = 0, notes = [], NEXT = null, painted = 0, cardCalls = 0, turnDataCode = null, turnCards = [], synced = 0;
+  const window = { blave: { accountStatus: async () => { fetched++; return NEXT; }, openExternal: () => {} } }, authSync = async () => { synced++; };
   const acctPaint = () => { painted++; }, faultCard = () => ({ set: (x) => notes.push(x) }), maybeDataCard = () => { cardCalls++; };
   const acctSet = (s) => { acct = s; };   // 模型選單那半(mpFreeSync)在 check_shell_free_lock 測
   eval(fnSrc("dataAccessOf"));
@@ -1230,7 +1261,10 @@ ok("回合結束不再出費用那一則:dataFeeNote / dataFeeShow / data.fee �
   ok("再一輪:照讀(卡要新的),還是不出", fetched === 2 && notes.length === 0);
   NEXT = null; const before = acct;
   await dataTurnEnd();
-  ok("讀不到:acct 留著,卡照舊檢查", acct === before && painted === 2 && cardCalls === 3);
+  ok("讀不到:acct 留著,卡照舊檢查;這一輪沒有要出卡就不多問登入狀態", acct === before && painted === 2 && cardCalls === 3 && synced === 0);
+  turnDataCode = "denied"; await dataTurnEnd(); turnDataCode = null;
+  ok("讀不到、這一輪要出資料卡:問一次登入狀態(401 那種要畫登入失效,不是「查不到」)", synced === 1 && cardCalls === 4);
+  cardCalls = 3;
   hasToken = false; fetched = 0; await dataTurnEnd();
   ok("沒登入:不讀、卡照舊檢查", fetched === 0 && cardCalls === 4);
   ok("接線:回合正常結束走 dataTurnEnd(卡在裡面)", /if \(!loggedOut && r\.code === 0\) dataTurnEnd\(\);/.test(src)); }

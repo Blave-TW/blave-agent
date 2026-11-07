@@ -63,6 +63,35 @@ own copy off the code; `message` stays the redacted engine text.
   a metric event; no surface displays it.
 - Both fields are additive: an older api or web ignores them.
 
+## `card` chunk (runtime → desktop stdout line only)
+
+```json
+{"type": "card", "session_id": "<sid>", "id": "data-access", "code": "denied" | "err005" | "err007"}
+```
+
+- The runtime reads the output of shell tools (`Bash` / `PowerShell` / `TaskOutput` / `BashOutput`;
+  Codex `command_execution`'s `aggregated_output`), last 64 KB per result, and only when the shell set
+  `BLAVE_DATA_ACCESS` (`agent_turn.data_access_hit`). File-reading tools never count, so reading
+  `lib/data.py` does not trigger it. Cloud machines and a user's own `.env` key never set the flag.
+  - `denied` — flag `0` and a `DataAccessError:` traceback line or `lib/data._NO_ACCESS_MSG`.
+  - `err005` / `err007` — flag `1` and an api 403 body as `lib/data` prints it in a chat turn
+    (`403 Client Error … — {"error_code":"ERR007",…` or `HTTP 403: {"error_code":"ERR005",…`). A bare
+    `ERR007` in a document does not count.
+- At most one per turn, sent right before `done`; `err005` beats `err007` beats `denied`. Not sent on
+  a failed turn (`error`) or a turn the user stopped.
+- The desktop shell draws the data card from it; the model's `<blave-card:data-access/>` marker stays
+  as the fallback for older runtimes. An older shell ignores the type. The phone relay does not forward
+  it (`relay.js` `TURN_TYPES`).
+
+## `error.code` `no_credit` (runtime fault code)
+
+- A turn that started no tool and hit the Blave AI proxy's 402 (`API Error: 402`,
+  `api_error_status` 402, or `INSUFFICIENT_CREDIT`) carries `code: "no_credit"`; it used to be
+  `not_started`. Web draws the card / top-up card from the code; an older web falls back to `message`.
+  A turn that already ran a tool still carries `partial`.
+- The api forwards it to web only once `no_credit` is in `openclaw/webchat.py` `FAULT_CODES`; until
+  then `/report` drops the code and web shows `message`.
+
 ## api (`openclaw/webchat.py`) — to follow
 
 - `/report` rebuilds `done` from validated fields only: `{"type": "done", "session_id": …,

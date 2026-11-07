@@ -4086,7 +4086,7 @@ async function sendDraft() {
    漏了的話 liveBubble 還指著上一輪的回覆泡泡——下一輪一碰工具就把它拔掉,沒碰工具就把新回覆接進那顆舊泡泡(0.1.42 手機實測) */
 function turnFresh(bubble) {
   liveBubble = null; faultShown = false; turnLimit = false; turnChanged = false; pendingErr = []; turnAiBubbles = []; turnFaultEl = null;
-  turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCap = false; turnCards = []; turnBubble = bubble; turnHadTool = false;
+  turnModel = MP.model; turnGotReply = false; turnErrored = false; turnFaulted = false; turnCap = false; turnCards = []; turnDataCode = null; turnBubble = bubble; turnHadTool = false;
 }
 /* 真的送出一句話。回傳這一輪有沒有跑起來(「再送一次」要知道)。不碰輸入框的字;這一句帶的檔送出去了就把 chip 清掉。 */
 async function submitMessage(msg, opts) {   // opts.handoff:「送上雲端 / 拉回」確認框送的那句才有(handoff.js);重送(lastUserText)不帶
@@ -4810,38 +4810,64 @@ $("lai-scrim").addEventListener("mousedown", (e) => { if (e.target === $("lai-sc
 $("lai-scrim").addEventListener("keydown", (e) => trapTab(e, $("lai-modal")));
 
 /* ── 沒有 Blave 資料權限的情境卡(設計師定稿)──────────────────
-   agent 因為這台沒有資料權限而拿不到 Blave 資料的那一輪,回覆尾端會帶 `<blave-card:data-access/>`
-   (runtime 的規則;paintAi 把它從畫面上拿掉、記在 turnCards)。**agent 只講事實,錢與動作由這張卡講**。
+   agent 因為這台沒有資料權限而拿不到 Blave 資料的那一輪,runtime 從工具輸出認出來、回合結束前送 `card` chunk(turnDataCode);
+   舊 runtime 只有模型寫在回覆尾端的 `<blave-card:data-access/>`(paintAi 把它從畫面上拿掉、記在 turnCards)。**agent 只講事實,錢與動作由這張卡講**。
    - 這一小時付不出資料費(data_access = none):出口是儲值(沒綁卡是綁卡),不提主機。
    - 沒登入 / 查不到 / 舊 api:描邊鈕開「帳號與方案」那一頁。
-   同一段對話只出一次;不擋輸入、不搶焦點。同一輪有錢的阻擋卡(402 / 還沒解的預檢卡)就讓位,
-   而且不算用掉那一次。視窗回前景重查到拿得到資料 → 換成 dataReadyText + 再送一次(不自動重送)。 */
-const dataCardSessions = new Set();
+   一段對話裡登入類(沒登入、登入失效)與方案類(其餘)各出一次:先出過登入卡、登入後又撞到沒方案是新的事(spec login-upgrade-buttons-0150 §1.1);
+   不擋輸入、不搶焦點。同一輪有錢的阻擋卡(402 / 還沒解的預檢卡)就讓位,而且不算用掉那一次。
+   視窗回前景重查到拿得到資料 → 換成 dataReadyText + 再送一次(不自動重送)。 */
+const dataCardSessions = new Set();   // `<sessionId>:login` / `<sessionId>:plan`
+const DATA_CARD_CODES = ["denied", "err005", "err007"];
 let dataCard = null;
+/* 拿不到 Blave 資料時的出口:資料卡與自動下單頁事件列(trade.js)讀同一張表,鈕字與去處只寫這一份。
+   where = "card" | "event"(只分埋點);o.relogin = 這一輪 runtime 認到 err005(.env 那把資料 key 被撤,account_status 照樣 200);
+   o.btn = 回那顆鈕的函式(登入等待中鈕字換「取消等待」);o.signedIn = 登入成功後要做的事。
+   回 { kind: "login" | "plan", label, on, idle? }(idle = 登入那兩態不在等待中的鈕字),或 null = 拿得到資料、啟動中、查不到(不出鈕)。舊 api(沒有 data_access)也回 null,資料卡自己有退路 */
+function dataGateAction(where, o) {
+  o = o || {};
+  const ev = where === "event", v = planVars();
+  const signIn = (key) => ({ kind: "login", label: t(planLoginBusy ? "oauth.cancel" : key), idle: t(key), on: async () => {
+    if (!planLoginBusy) trackFeature(ev ? "login_event" : "login_data");   // 等待中再按是取消,不記
+    const res = await planSignIn(o.btn && o.btn());
+    if (res && res.ok && o.signedIn) o.signedIn();
+  } });
+  if (!hasToken) return signIn("pv.signin");
+  if (o.relogin || authRevoked()) return signIn("fault.authBtn");
+  if (planState() === "starting" || !acct || hasData(acct)) return null;
+  const da = dataAccessOf(acct);
+  if (da === "plan_required" && acctOffer(acct)) return { kind: "plan", label: v.t ? t("lib.gate.trial", v) : t("plan.addCard"), on: () => bindGo(ev ? "bind_event" : "bind_data") };
+  if (da === "plan_required") return { kind: "plan", label: t("data.seePlan"), on: () => { trackFeature(ev ? "plan_event" : "plan_data"); planOpen(); } };
+  if (da === "payment_failed") return { kind: "plan", label: t("plan.repay"), on: () => planRepay() };
+  if (da === "none" && acct.reason === "NO_CARD") return { kind: "plan", label: t("acct.addCard"), on: () => bindGo(ev ? "bind_event" : "bind_data") };
+  if (da === "none") return { kind: "plan", label: t("fault.noCreditBtn"), on: () => bindGo(ev ? "topup_event" : "topup_data") };
+  return null;
+}
+const gateBtn = (g) => (g ? { label: g.label, on: g.on } : {});
 function dataCardState() {
-  const v = planVars(), go = { label: t("pv.e.btn"), on: () => planOpen(), out: true, calm: true };
-  if (!hasToken) return { ...go, label: t(planLoginBusy ? "oauth.cancel" : "pv.signin"), on: () => planSignIn(dataCard && dataCard.b1), text: v.t ? t("pv.e.out", v) : t("pv.e.outNoNum", v), sub: v.t && pvPriced(pvK("pv.e.sub"), v) ? t(pvK("pv.e.sub"), v) : null };
+  const v = planVars(), go = { label: t("pv.e.btn"), on: () => planOpen(), out: true, calm: true }, card = dataCard;
+  const g = dataGateAction("card", { relogin: !!(card && card._relogin), btn: () => card && card.b1,
+    signedIn: () => { if (dataCard === card) { card._relogin = false; dataCardSync(acct); } } });
+  if (!hasToken) return { ...go, ...gateBtn(g), text: v.t ? t("pv.e.out", v) : t("pv.e.outNoNum", v), sub: v.t && pvPriced(pvK("pv.e.sub"), v) ? t(pvK("pv.e.sub"), v) : null };
+  // 登入失效(token 被撤,或這一輪撞到 ERR005):不重講缺哪份資料(agent 那句講了),只有一顆鈕
+  if (g && g.kind === "login") return { ...go, ...gateBtn(g), text: t("pv.e.relogin") };
   if (planState() === "starting") return { calm: true, text: t("data.starting") };   // 已經按過啟動:不再叫他去看方案
   if (!acct) return { ...go, text: t("pv.e.unknown") };                              // 狀態查不到:不斷言它在哪個方案裡
   const da = dataAccessOf(acct);
   /* 方案制、有試用資格又沒卡(含手上還有綁卡前額度、can_run=true 的新人):只放動作、不放句子——agent 那一輪已經講了拿不到什麼;
      缺資料不是錯誤,記號灰。主鈕直接開綁卡頁,收費講在那一頁(spec paywall-redesign-2026-10-21 §2.2) */
   if (da === "plan_required" && acctOffer(acct)) {
-    return { calm: true, text: "", label: v.t ? t("lib.gate.trial", v) : t("plan.addCard"), on: () => bindGo("bind_data"),
+    return { calm: true, text: "", ...gateBtn(g),
       second: { label: t("data.seePlan"), quiet: true, on: () => { trackFeature("plan_data"); planOpen(); } } };
   }
-  // 方案制:沒有含資料的方案 → 兩個出口講清楚(雲端方案 / API 方案)
-  if (da === "plan_required") {
-    return { text: t("data.noPlan"), label: t("data.seePlan"), on: () => { trackFeature("plan_data"); planOpen(); },
-      second: { label: t("pv.apiPlan"), on: () => apiPlanGo() } };
-  }
-  if (da === "payment_failed") return { text: t("data.payFail"), label: t("plan.repay"), on: () => planRepay() };
+  // 方案制沒有含資料的方案:只給 Blave Agent 方案的出口(〔API 方案〕拿掉,spec login-upgrade-buttons-0150 §1.4)
+  if (da === "plan_required") return { text: t("data.noPlan"), ...gateBtn(g) };
+  if (da === "payment_failed") return { text: t("data.payFail"), ...gateBtn(g) };
   /* 切換前付不出(data_access = none):出口是錢包,不是主機——沒綁卡 → 綁卡(有試用就講送幾天);有卡 → 儲值。
      account_status 刻意不回餘額,所以不講「餘額 N TWD」 */
   if (da === "none") {
-    const top = { label: t(acct.reason === "NO_CARD" ? "acct.addCard" : "fault.noCreditBtn"), on: () => bindGo(acct.reason === "NO_CARD" ? "bind_data" : "topup_data") };
-    if (acct.reason === "NO_CARD") return { ...top, text: t("data.noCard"), sub: acct.trial_eligible && v.t ? t("data.noCardSub", v) : null };
-    return { ...top, text: v.r ? t("data.noBalance", v) : t("data.noBalanceNoNum"), sub: t("data.noBalanceSub") };
+    if (acct.reason === "NO_CARD") return { ...gateBtn(g), text: t("data.noCard"), sub: acct.trial_eligible && v.t ? t("data.noCardSub", v) : null };
+    return { ...gateBtn(g), text: v.r ? t("data.noBalance", v) : t("data.noBalanceNoNum"), sub: t("data.noBalanceSub") };
   }
   // 以下切換前只有舊 api(沒有 data_access)走得到:那時資料真的只在試用 / 方案裡
   if (acctOffer(acct)) return { ...go, text: t(cur === "blave" ? "pv.e.card" : "pv.e.card.cli", v), sub: pvPriced(pvK("pv.e.sub"), v) ? t(pvK("pv.e.sub"), v) : null };
@@ -4850,19 +4876,22 @@ function dataCardState() {
 function lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* noop */ } }
 /* 回合結束:有登入就重讀一次 account_status(一次;試用剛到期、餘額剛用完都只有這裡看得到——之前只在進工作頁、
-   重登、回前景時讀,「餘額夠了」會講在已經沒錢的時候,試用到期那一則也永遠出不來)。卡用這一份 */
+   重登、回前景時讀,「餘額夠了」會講在已經沒錢的時候,試用到期那一則也永遠出不來)。卡用這一份。
+   這一輪要出資料卡而讀不到時,問一次登入狀態:401 那種要畫登入失效,不是「查不到」 */
 async function dataTurnEnd() {
   if (hasToken) {
     const fresh = await window.blave.accountStatus().catch(() => null);
     if (fresh && hasToken) { acctSet(fresh); acctPaint(); }
+    else if (hasToken && (turnDataCode || turnCards.includes("data-access"))) await authSync();
   }
   maybeDataCard();
 }
 /* 那張卡的字跟著最新的帳號狀態走,拿到資料之後也不放手:餘額又用完了要換回儲值那一句,不能停在「餘額夠了」。
-   按了〔再送一次〕才放手(那之後的事由下一輪自己講)。同一句不重設(role 會重唸) */
+   按了〔再送一次〕才放手(那之後的事由下一輪自己講)。同一句不重設(role 會重唸)。
+   ERR005 的卡(_relogin)重新登入成功前不換成〔再送一次〕:account_status 照樣說有資料,.env 那把 key 卻已經被撤 */
 function dataCardSync(s) {
   if (!dataCard) return;
-  const ready = hasData(s), card = dataCard;
+  const card = dataCard, ready = hasData(s) && !card._relogin;
   const mk = () => { const st = ready ? resendState(card, () => dataReadyText(s)) : dataCardState();
     if (ready) { const go = st.on; st.on = async () => { if (running) { busySendTell(); return; } if (!canResend()) return; if (dataCard === card) dataCard = null; await go(); }; }
     return st; };
@@ -4870,15 +4899,23 @@ function dataCardSync(s) {
   if (dataCard._key === key) return;
   dataCard._key = key;
   dataCard.set(sysLz(mk));
-  // 沒登入那態的鈕可能在登入等待中才長出來(鈕字是取消等待):記原字,planLogin 收尾才換得回來(稽核 r2 S2)
+  // 登入那兩態的鈕可能在登入等待中才長出來(鈕字是取消等待):記原字,planLogin 收尾才換得回來(稽核 r2 S2)
   const b1 = dataCard.b1;
-  if (b1) { if (!hasToken && !ready) b1.dataset.signin = t("pv.signin"); else delete b1.dataset.signin; }
+  if (b1) { if (!ready && (!hasToken || card._relogin || authRevoked())) b1.dataset.signin = t(hasToken ? "fault.authBtn" : "pv.signin"); else delete b1.dataset.signin; }
 }
+/* 出卡:runtime 的 card chunk(turnDataCode)為主,模型寫的記號保底。err007 而重讀後拿得到資料 → 不出(比對錯了也不會叫拿得到資料的人去看方案);
+   err005 一律出登入失效那態,不看重讀結果 */
 function maybeDataCard() {
-  if (!turnCards.includes("data-access") || dataCardSessions.has(sessionId)) return;
+  const code = turnDataCode;
+  if (!code && !turnCards.includes("data-access")) return;
   if (turnFaulted || creditCards.length || (acctCard && acct && !acct.can_run)) return;
-  dataCardSessions.add(sessionId);
+  if (code === "err007" && hasData(acct)) return;
+  const relogin = code === "err005", cls = !hasToken || relogin || authRevoked() ? "login" : "plan";
+  if (dataCardSessions.has(sessionId + ":" + cls)) return;
+  dataCardSessions.add(sessionId + ":" + cls);
+  trackFeature(code ? "data_card_rt" : "data_card_tag");
   dataCard = faultCard();
+  dataCard._relogin = relogin;
   dataCardSync(acct);   // 卡出來的那一刻帳號已經拿得到資料(剛儲值):直接是〔再送一次〕
 }
 
@@ -5060,7 +5097,7 @@ function planPaint() {
     unknown:  { h: "pv.h.unknown", lead: t("pv.d.unknown"), acts: [btn("btn-out", t("plan.recheck"), () => acctCheck())] },
     // 登入已失效(token 被撤／過期):不是網路問題,也不是「已登入」——同一句 + 登入鈕
     // 帳號列已經寫「登入已失效」:卡片標題只講要做什麼、不再加說明句(設計最終稽核:同一畫面別講三次)
-    revoked:  { h: "pv.h.revoked", lead: "", acts: [planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin) : btn("btn-fill", t("pv.signin"), planLogin)] },
+    revoked:  { h: "pv.h.revoked", lead: "", acts: [planLoginBusy ? btn("btn-out", t("oauth.cancel"), planLogin) : btn("btn-fill", t("fault.authBtn"), planLogin)] },
     offer:    { h: offerH, lead: mo ? "" : offerLead(), list: mo ? offerList() : null, rule: pvCardFoot("offer", v), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
     noTrial:  { h: pvK("pv.h.billed") === "pv.h.billed" ? "pv.h.billed" : "pv.h.plan", lead: !mo || pvPriced("pv.d.noTrial.m", v) ? t(pvK("pv.d.noTrial"), v) : "", rule: pvCardFoot("noTrial", v), wait: t(pvK("pv.w.noTrial")), acts: [btn("btn-fill", t("plan.addCard"), () => bindGo("bind_set"))] },
     /* 試用中:取消／恢復試用在網站用量頁(電腦版沒有寫入端點,外開)。已取消(api trial_cancel_at_end):狀態講哪天結束;
@@ -5477,10 +5514,14 @@ function turnEventIn(c) {
     busyReason(c.text || "");
   } else if (c.type === "llm_cap") {
     turnCap = true;
+  } else if (c.type === "card") {
+    if (c.id === "data-access" && DATA_CARD_CODES.includes(c.code)) turnDataCode = c.code;   // 回合結束才出卡(dataTurnEnd)
   } else if (c.type === "error") {
     turnErrored = true;
     if (typeof sugCollapse === "function") sugCollapse();
-    if (faultShown && c.code === "not_started") { faultShown = false; return; }
+    if (faultShown && (c.code === "not_started" || c.code === "no_credit")) { faultShown = false; return; }
+    // runtime 認出 402(no_credit)而引擎那句沒以回覆的形式出來:畫同一張 402 卡;已經畫過就不重畫
+    if (c.code === "no_credit" && cur === "blave") { if (!turnFaulted) { turnFaulted = true; turnFail = "402"; addFault({ flow: "credit" }); } return; }
     // Codex 回 401(runtime needs_login):直接登入卡。憑證檔在、token 失效時偵測看不出來,只有這裡知道
     if (c.code === "needs_login" && !turnFaulted) { turnFaulted = true; turnFail = "auth"; addFault(localAuthFault("codex")); return; }
     if (turnLimit && limitSwallow(c.code, turnChanged)) return;   // 用量到上限那張卡已經講完了
@@ -5499,6 +5540,7 @@ let turnCap = false;   // 這一輪轉送口回報過每輪用量上限(自帶 A
 let turnBubble = null, turnHadTool = false;   // 這一輪「你的那則」與「有沒有工具收據」:停止收泡泡用(見 onTurnEnd)
 // 這一輪的回覆帶了哪些卡片標記(paintAi 從文字裡拿出來的);回合結束才出卡,不插在串流中間
 let turnCards = [];
+let turnDataCode = null;   // runtime 的 card chunk(denied／err005／err007):不放進 turnCards,draftPromote 會整個換掉它
 let pendingErr = [];
 let turnAiBubbles = [], turnFaultEl = null;   // 這一輪的回覆泡泡、最後一張錯誤卡:回合結束的系統通知摘錄用
 /* 回合結束交給主行程判斷要不要發系統通知(spec agent-reply-notifications-0130 §4):kind = done|fail|stopped;「等你回覆」由主行程看 runtime 的 done 判。

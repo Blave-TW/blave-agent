@@ -22,7 +22,7 @@ ok("addMsg 回傳節點(收回靠它)", /chatEl\(\)\.appendChild\(el\);[\s\S]{0,
 // ---- 停止後重複(Wei 定性):按停止把句子放回輸入框時,舊的那則泡泡一併收回;
 // 有工具收據(摺疊)時保留——收據需要上下文。session.db 照實留,只是畫面不重複。
 {
-  ok("回合起手記住泡泡+收據旗標", /turnCards = \[\]; turnBubble = bubble; turnHadTool = false;/.test(src));
+  ok("回合起手記住泡泡+收據旗標", /turnCards = \[\]; (?:turnDataCode = null; )?turnBubble = bubble; turnHadTool = false;/.test(src));
   ok("tool chunk 一到就記「有收據」", /\} else if \(c\.type === "tool"\) \{\n    turnHadTool = true;/.test(src));
   const stopBlk = (src.match(/if \(stopped && lastUserTyped\) \{[\s\S]*?\n  \}/) || [""])[0];
   ok("停止:沒回覆也沒收據 → 收回泡泡再還原輸入框(重送不出現兩則)",

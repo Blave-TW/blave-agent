@@ -607,9 +607,11 @@ class CodexTranslator:
         failed = item.get("status") in ("failed", "declined") \
             or item.get("exit_code") not in (None, 0) or bool(item.get("error"))
         on_result = getattr(self.sink, "on_tool_result", None)
+        # 指令輸出交給 sink 認資料權限錯誤(agent_turn.data_access_hit,同 Claude 那條);內容不外送
+        output = item.get("aggregated_output") if kind == "command_execution" else None
         for use_id in self._open.pop(item_id):
             if on_result:
-                on_result(SimpleNamespace(tool_use_id=use_id, is_error=failed))
+                on_result(SimpleNamespace(tool_use_id=use_id, is_error=failed, content=output))
         if self.on_tool_done:
             self.on_tool_done()
 

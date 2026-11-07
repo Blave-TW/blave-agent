@@ -131,7 +131,7 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
   ok("ui:時間仍然是秒(平台與這台電腦同一個單位)", /uiHalts\.push\(ev\.ts \* 1000\)/.test(loop) && /push\(ev\.ts \* 1000,/.test(loop));
   ok("ui:雲端記的 venue_disconnected P2、這台電腦自己按的一般字", /lv = d !== ev \? 2 : 3;/.test(loop));
   ok("現在的 HALT 那列顏色照級別(execute/settings 暫停不再紅,P1 由對應事件那列承擔)", /trEl\("span", trEvClass\(trEvLevel\("halt", halt\)\),/.test(cut("// 目前的 HALT", "trUnconfirmedRows(r.order_errors)")));
-  ok("ui 與機器事件兩段都走 trEvBody(帶 ev.count)", (src.match(/trEvBody\(body, .*?, ev\.count, .*?\)\);/g) || []).length === 2);
+  ok("ui 與機器事件兩段都走 trEvBody(帶 ev.count)", (src.match(/trEvBody\(body, .*?, ev\.count, .*?\)\)?;/g) || []).length === 2);   // 機器事件那段 0.1.50 起是區塊(後面接事件列的出口鈕)
   ok("兩段的顏色都先讀 api 的 level、缺才用自己算的", /trEvBody\(body, head, note, trEvApiLevel\(ev\) \|\| lv, tip, ev\.count, code, tail, strat\)/.test(src)
     && /trEvBody\(body, txt\[0\], txt\[1\], trEvApiLevel\(ev\) \|\| txt\[2\], txt\[3\], ev\.count, txt\[4\], txt\[5\], txt\[6\]\)/.test(src));
   ok("機器事件那段的策略段同 ui 那段(雲端讀 strategy_label、這台電腦查清單)", /const txt = trEventText\(ev\.type, evd, trEvStrat\(evd\.strategy, ev\.strategy_label\)\);/.test(src));

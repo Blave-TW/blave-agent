@@ -91,6 +91,12 @@ const TITLE_MAX = 60;
 const OUTBOX = "relay-outbox.jsonl";
 // LocalSink 會送、api 會轉給手機的 chunk(= api relay.TURN_TYPES);image 走 /relay/image,其他(strategies…)不送
 const TURN_TYPES = ["text", "thinking", "tool", "tool_prep", "done", "error", "export", "text_replace", "suggestions", "ui_nav", "withdraw_result", "ping"];
+/* 回覆裡的卡片記號(runtime 的契約字串;電腦版畫成卡,手機沒有卡、也不放方案與購買入口):轉給手機前拿掉,即時與歷史兩條都要。
+   字面跟 renderer/app.js 的 CARD_TAG 同一份(tests/check_web_desktop_parity.js 比對)。文字 300 毫秒一段送,記號可能剛好被切在兩段之間:
+   段尾像記號開頭的那截(CARD_TAG_OPEN)先扣著,接下一段再判 */
+const CARD_TAG = /<blave-card:([a-z-]+)\/>/g;
+const CARD_TAG_OPEN = /<(?:b(?:l(?:a(?:v(?:e(?:-(?:c(?:a(?:r(?:d(?::[a-z-]*\/?)?)?)?)?)?)?)?)?)?)?)?$/;
+const stripCards = (s) => String(s).replace(CARD_TAG, "");
 // 那一句還沒開跑就不會跑了(message_failed 的 code);開跑之後的失敗走回合的 error chunk
 const NOT_RUN = "not_run", DESKTOP_RESTARTING = "desktop_restarting", BAD_SESSION = "bad_session", BAD_MESSAGE = "bad_message";
 // 工具開跑過的回合出錯一律 partial、不送原因碼:可能已經下了單,手機要講「可能只做完一部分」,不能讓人照原因補救後重送同一句。
@@ -485,7 +491,20 @@ function createRelay(opts) {
   }
   /* main.js sendTurn 的每一則都經過這裡(視窗關著也是):只轉手機那一輪的。回合的 chunk 帶那一輪的 message_id 當關聯
      (「那一句沒跑」另外有 message_failed,api 不拿回合的 chunk 判) */
-  const forward = (sid, a, c, now) => enqueueChunk(scrubDeep({ ...c, session_id: sid, message_id: a.message_id }, known()), now);
+  const send = (sid, a, c, now) => enqueueChunk(scrubDeep({ ...c, session_id: sid, message_id: a.message_id }, known()), now);
+  function forward(sid, a, c, now) {
+    if (c.type === "text") {
+      let s = (a.tagTail || "") + (typeof c.text === "string" ? c.text : "");
+      s = stripCards(s);
+      const m = CARD_TAG_OPEN.exec(s);
+      a.tagTail = m ? s.slice(m.index) : "";
+      if (m) s = s.slice(0, m.index);
+      return s ? send(sid, a, { ...c, text: s }, now) : Promise.resolve();
+    }
+    if (c.type === "text_replace") { a.tagTail = ""; return send(sid, a, { ...c, text: stripCards(typeof c.text === "string" ? c.text : "") }, now); }
+    if (a.tagTail) { const tail = a.tagTail; a.tagTail = ""; send(sid, a, { type: "text", text: tail }, false); }   // 不是記號:照原字放行
+    return send(sid, a, c, now);
+  }
   /* 暫扣的字放行;next = 這段接下來的狀態 */
   function holdRelease(sid, a, next) { const h = a.hold; if (h) forward(sid, a, { type: "text", text: h }, false); a.hold = next; }
   function onTurn(sid, ch, payload) {
@@ -675,7 +694,7 @@ function createRelay(opts) {
     return out === "⟦R:msg⟧" ? "" : out;
   }
   function turnOut(row, k, mids) {
-    const content = clipBytes(redact(String(row.content || ""), k), TURN_MAX_BYTES);
+    const content = clipBytes(redact(stripCards(row.content || ""), k), TURN_MAX_BYTES);
     const mid = row.role === "user" ? mids.get(row.id) : undefined;
     return { id: row.id, role: row.role, content, created_at: toMs(row.created_at), origin: mid ? "app" : "local", ...(mid ? { message_id: mid } : {}) };
   }
@@ -987,4 +1006,4 @@ function createRelay(opts) {
     _internals: { route, control, flush, syncAll, queue, active } };
 }
 
-module.exports = { createRelay, PAIR_SRC, LATE_MS, FOCUS_TICK_GAP_MS, scrubDeep, clipBytes, faultCodeOf, mayBeFault, API_ERROR_RE, USAGE_LIMIT_RE, EP, POLL_HOLD_MS, BATCH_MS, SYNC_BATCH_TURNS, SYNC_BATCH_BYTES, TURN_MAX_BYTES, OUTBOX, TURN_TYPES, REPORT_MAX_CHUNKS };
+module.exports = { createRelay, CARD_TAG, PAIR_SRC, LATE_MS, FOCUS_TICK_GAP_MS, scrubDeep, clipBytes, faultCodeOf, mayBeFault, API_ERROR_RE, USAGE_LIMIT_RE, EP, POLL_HOLD_MS, BATCH_MS, SYNC_BATCH_TURNS, SYNC_BATCH_BYTES, TURN_MAX_BYTES, OUTBOX, TURN_TYPES, REPORT_MAX_CHUNKS };

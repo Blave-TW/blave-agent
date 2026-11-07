@@ -46,6 +46,7 @@ const TAB_KEYS = [
   ["turnBubble", () => turnBubble, (v) => { turnBubble = v; }, () => null],
   ["turnHadTool", () => turnHadTool, (v) => { turnHadTool = v; }, () => false],
   ["turnCards", () => turnCards, (v) => { turnCards = v; }, () => []],
+  ["turnDataCode", () => turnDataCode, (v) => { turnDataCode = v; }, () => null],
   ["pendingErr", () => pendingErr, (v) => { pendingErr = v; }, () => []],
   ["turnAiBubbles", () => turnAiBubbles, (v) => { turnAiBubbles = v; }, () => []],
   ["turnFaultEl", () => turnFaultEl, (v) => { turnFaultEl = v; }, () => null],
