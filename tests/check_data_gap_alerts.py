@@ -402,6 +402,78 @@ for dt in (80000, 80400):
     feed_tick(T + dt + 1, "blave", "not_enabled")
 check(len(sent) == 2, f"F no_file / not_enabled never count ({len(sent)})")
 
+# 群益 (Wei 11-07: same P2 as 統一): its own outage, marker and close-out, never mixed with 統一's
+del sent[:]
+C = T + 100_000
+
+
+def cap_tick(t, source, reason):
+    data._tw_feed_episode("capital", source, reason, t)
+
+
+cap_tick(C, "blave", "stale")
+feed_tick(C + 10, "president", None)   # 統一 reading fine meanwhile does not end 群益's outage
+cap_tick(C + 400, "blave", "stale")
+cap_tick(C + 460, "blave", "stale")
+check(sent == [("tw_feed_fallback", {"venue": "capital", "reason": "stale"})]
+      and os.path.exists(os.path.join(FEED_DIR, "tw_feed_notified_capital"))
+      and not os.path.exists(os.path.join(FEED_DIR, "tw_feed_notified_president")),
+      f"F 群益 out for over 300 s: one tw_feed_fallback with venue=capital, its own marker ({sent})")
+cap_tick(C + 500, "capital", None)
+with open(os.path.join(FEED_DIR, "tw_feed_down.json")) as fh:
+    book = json.load(fh)
+check("capital" not in book and not os.path.exists(os.path.join(FEED_DIR, "tw_feed_notified_capital")),
+      f"F 群益 reading again ends the outage: start forgotten, marker removed ({book})")
+cap_tick(C + 1000, "blave", "error:ValueError")
+cap_tick(C + 1400, "blave", "error:ValueError")
+check(len(sent) == 2 and sent[1][1]["venue"] == "capital", f"F 群益 back, then out again: a new notice ({sent})")
+cap_tick(C + 1500, "capital", None)
+cap_tick(C + 2000, "blave", "paused")
+cap_tick(C + 3000, "blave", "no_file")
+check(len(sent) == 2, f"F 群益 paused / no_file never count, as for 統一 ({len(sent)})")
+# no platform channel (emit refused): the machine's own message names 群益
+texts = []
+real_emit = events.emit
+events.emit = lambda ev_type, **p: 0
+import lib.notify as _notify  # noqa: E402
+real_send, _notify.send_text = _notify.send_text, lambda text, *a, **k: texts.append(text)
+try:
+    cap_tick(C + 5000, "blave", "stale")
+    cap_tick(C + 5400, "blave", "stale")
+finally:
+    events.emit, _notify.send_text = real_emit, real_send
+check(len(texts) == 1 and texts[0].startswith("⚠️ 群益的台指期即時行情斷了"), f"F 群益 fallback message names 群益 ({texts})")
+
+# the broker's name for venue=capital on every layer that renders tw_feed_fallback
+import re  # noqa: E402
+from lib import venue_traits  # noqa: E402
+names = {"lib venue_traits": venue_traits.get("capital", "label")}
+with open(os.path.join(ROOT, "shell", "i18n", "zh.po"), encoding="utf-8") as fh:
+    po = fh.read()
+with open(os.path.join(ROOT, "shell", "renderer", "trade.js"), encoding="utf-8") as fh:
+    tr = fh.read()
+m = re.search(r'const TR_BROKER_KEY = \{ capital: "([\w.]+)"', tr)
+pm = re.search(r'msgid "%s"\nmsgstr "([^"]*)"' % re.escape(m.group(1)), po) if m else None
+names["desktop trade.js"] = pm.group(1) if pm else None
+api = os.environ.get("BLAVE_API_DIR") or os.path.join(ROOT, "..", "api")
+web = os.environ.get("BLAVE_WEB_DIR") or os.path.join(ROOT, "..", "web")
+if os.path.isfile(os.path.join(api, "openclaw", "notify.py")):
+    with open(os.path.join(api, "openclaw", "notify.py"), encoding="utf-8") as fh:
+        am = re.search(r'"capital": \("([^"]*)", "([^"]*)"\)', fh.read())
+    names["api notify"] = am.group(2).strip() if am else None
+else:
+    print("SKIP  api notify._VENUE_NAMES (set BLAVE_API_DIR)")
+wpo = os.path.join(web, "app", "translations", "zh", "LC_MESSAGES", "messages.po")
+if os.path.isfile(wpo):
+    with open(os.path.join(web, "app", "main", "templates", "agent", "workspace.html"), encoding="utf-8") as fh:
+        wh = fh.read()
+    with open(wpo, encoding="utf-8") as fh:
+        wm = re.search(r'msgid "workspace_ov_broker_capital"\nmsgstr "([^"]*)"', fh.read())
+    names["web workspace"] = wm.group(1) if wm and 'data.venue === "capital" ? I18N.ovBrokerCapital' in wh else None
+else:
+    print("SKIP  web workspace broker name (set BLAVE_WEB_DIR)")
+check(set(names.values()) == {"群益"}, f"F venue=capital reads 群益 on every layer ({names})")
+
 shutil.rmtree(BASE, ignore_errors=True)
 print("ALL OK" if not fails else f"{fails} FAILED")
 sys.exit(1 if fails else 0)
