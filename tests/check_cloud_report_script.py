@@ -120,6 +120,8 @@ t("publish 走到一半就停(模板不可用)也刪掉請求檔", not left and 
 # ── R7 研究報告:分析腳本在雲端寫 blocks 檔,固定腳本組好後呼叫 lib.report.write_report ──
 r7 = sec[sec.index("### R7."):]
 RSCRIPT = re.search(r"The research script.*?```py\n(.*?\n)```\n", r7, re.S).group(1).replace("<turn>", TURN)
+# 電腦版這一則回覆的 BLAVE_TURN_ID(R7.5 先讀出來當第二個參數):status／replace 只認這一則寫的(稽核 r3 P3-A)
+REPLY, REPLY_B = "0123456789abcdef", "fedcba9876543210"
 # 舊機 = 2026-09-28 前(沒有 target_id:同 id 會覆蓋、不認 1.4 以上的 schema)
 R_OLD = '''
 def write_report(report_id, title, blocks, type="research", report_type=None, created_at=None, meta=None, images=None):
@@ -132,15 +134,27 @@ def target_id(report_id, replace=False):
 def write_report(report_id, title, blocks, type="research", report_type=None, created_at=None, meta=None, images=None, replace=False):
     if any(b.get("markdown") == "REFUSE" for b in blocks):
         raise ValueError("The platform refused report x, so nothing was written: HTTP 400 blocks[1]")
-    json.dump(dict(id=report_id, title=title, blocks=blocks, type=type, meta=meta, images=images), open("published.json", "w"))
+    json.dump(dict(id=report_id, title=title, blocks=blocks, type=type, meta=meta,
+                   images={k: v.decode("latin-1") for k, v in images.items()} if images else images), open("published.json", "w"))
     return "/w/reports/" + report_id + ".json"
 FAILED_DIR, SENT_DIR, LEDGER = "reports/failed", "reports/sent", "reports/.written.jsonl"
+CITED_IMAGES_MAX = 2
 def status(report_id):
     return "sent"
 '''
+# 有 target_id、還沒有引用圖(CITED_IMAGES_MAX)的 lib:帶 source 的圖會被平台拒,要先拿掉、列進 missing
+R_NOCITE = R_NEW.replace("CITED_IMAGES_MAX = 2\n", "")
 
 
-def run_r7(lib_src, mode, req, built):
+def put_pics(ws, pics):
+    d = os.path.join(ws, "tmp", "cloud-report-" + TURN + "-files")
+    for n, b in (pics or {}).items():
+        os.makedirs(d, exist_ok=True)
+        open(os.path.join(d, n), "wb").write(b)
+    return d
+
+
+def run_r7(lib_src, mode, req, built, reply=REPLY, pics=None):
     ws = tempfile.mkdtemp(prefix="cloud-research-", dir=SCRATCH)
     os.makedirs(os.path.join(ws, "lib")); os.makedirs(os.path.join(ws, "tmp"))
     open(os.path.join(ws, "lib", "__init__.py"), "w").close()
@@ -152,7 +166,8 @@ def run_r7(lib_src, mode, req, built):
         json.dump(req, open(reqp, "w"))
     if built is not None:
         json.dump(built, open(datap, "w"))
-    p = subprocess.run([sys.executable, "-", mode], input=RSCRIPT, text=True, capture_output=True, cwd=ws)
+    put_pics(ws, pics)
+    p = subprocess.run([sys.executable, "-", mode] + ([reply] if reply else []), input=RSCRIPT, text=True, capture_output=True, cwd=ws)
     lines = [json.loads(x) for x in p.stdout.splitlines() if x.startswith("{")]
     pub = os.path.join(ws, "published.json")
     return p, lines, (json.load(open(pub)) if os.path.exists(pub) else None), (os.path.exists(reqp), os.path.exists(datap))
@@ -167,10 +182,10 @@ RREQ = {"report_id": "pcr-study-1", "title": "PCR 高檔後一週台指期偏弱
                    {"type": "footnote", "items": [{"id": "1", "text": "s", "url": "https://x"}]}]}
 
 p, out, pub, left = run_r7(R_NEW, "publish", RREQ, BUILT)
-t("R7 新機 publish:佔位換成分析 block(list 攤平、照順序)、type／shareable／origin 進去、image 與 meta 丟掉列出、沒用到的列 unused、兩個檔都刪",
+t("R7 新機 publish:佔位換成分析 block(list 攤平、照順序)、type／shareable／origin 進去、沒 source 的 image 與 meta 丟掉列出、沒用到的列 unused、兩個檔都刪",
   p.returncode == 0 and pub and [b["type"] for b in pub["blocks"]] == ["text", "kpi_row", "line_chart", "table", "footnote"]
   and pub["type"] == "research" and pub["meta"] == {"origin": "chat", "shareable": False} and pub["images"] is None
-  and pub["title"] == RREQ["title"] and out[-1] == {"published": "pcr-study-1.json", "upload": "sent", "dropped": ["blocks[3].image", "blocks[4].meta"], "unused": ["spare"]}
+  and pub["title"] == RREQ["title"] and out[-1] == {"published": "pcr-study-1.json", "upload": "sent", "dropped": ["blocks[3].image", "blocks[4].meta"], "unused": ["spare"], "missing": []}
   and left == (False, False), p.stdout + p.stderr)
 
 p, out, pub, left = run_r7(R_OLD, "publish", RREQ, BUILT)
@@ -206,6 +221,37 @@ t("R7 shareable 不是 bool 不帶;type 沒給預設 research",
 p, out, pub, left = run_r7(R_NEW, "build", RREQ, BUILT)
 t("R7 mode 打錯 → {error: mode}、不刪檔、不呼叫", p.returncode == 0 and out == [{"error": "mode"}] and pub is None
   and left == (True, True), p.stdout + p.stderr)
+for rp in (None, "desktop-x", REPLY + " status"):
+    p, out, pub, left = run_r7(R_NEW, "publish", RREQ, BUILT, reply=rp)
+    t(f"R7 沒帶／帶錯這一則的 id({rp!r})→ {{error: mode}}、不刪檔、不呼叫",
+      p.returncode == 0 and out == [{"error": "mode"}] and pub is None and left == (True, True), p.stdout + p.stderr)
+p, out, pub, left = run_r7(R_NEW, "discard", RREQ, BUILT, reply=None)
+t("R7 discard 不用帶這一則的 id", out == [{"discarded": True}] and left == (False, False), p.stdout + p.stderr)
+
+# ── 引用圖:電腦版擷取 → 暫存目錄 → images= 交給 write_report ──
+PIC = {"type": "image", "file": "cite-a.png", "alt": "PCR 走勢", "source": {"name": "TAIFEX", "url": "https://www.taifex.com.tw/x"}}
+IREQ = dict(RREQ, blocks=RREQ["blocks"][:3] + [PIC] + RREQ["blocks"][5:])
+p, out, pub, left = run_r7(R_NEW, "publish", IREQ, BUILT, pics={"cite-a.png": b"\x89PNG-a"})
+t("R7 帶 source 而且檔在暫存目錄的圖 → block 留著、bytes 用 images= 交出去、不列 dropped",
+  p.returncode == 0 and pub and pub["images"] == {"cite-a.png": "\x89PNG-a"} and PIC in pub["blocks"]
+  and out[-1]["dropped"] == [] and out[-1]["missing"] == [], p.stdout + p.stderr)
+for name, req, pics in (("檔不在暫存目錄", IREQ, None),
+                        ("檔名是路徑", dict(IREQ, blocks=[dict(PIC, file="../cloud-report-" + TURN + ".json")] + IREQ["blocks"][:3]),
+                         {"cite-a.png": b"x"}),   # 目錄要在,../ 才解得到請求檔
+                        ("沒有 source(自己畫的圖)", dict(IREQ, blocks=[{k: v for k, v in PIC.items() if k != "source"}] + IREQ["blocks"][:3]),
+                         {"cite-a.png": b"x"})):
+    p, out, pub, left = run_r7(R_NEW, "publish", req, BUILT, pics=pics)
+    t(f"R7 {name} → 那個 image 丟掉列進 dropped,報告照寫、不帶 images",
+      p.returncode == 0 and pub and pub["images"] is None and "image" not in [b["type"] for b in pub["blocks"]]
+      and any(d.endswith(".image") for d in out[-1]["dropped"]), p.stdout + p.stderr)
+p, out, pub, left = run_r7(R_NOCITE, "publish", IREQ, BUILT, pics={"cite-a.png": b"x"})
+t("R7 雲端 lib 比引用圖舊 → 圖拿掉、missing: [images](R6 那句加問要不要更新)、報告照寫",
+  p.returncode == 0 and pub and pub["images"] is None and "image" not in [b["type"] for b in pub["blocks"]]
+  and out[-1]["missing"] == ["images"] and out[-1]["dropped"] == [], p.stdout + p.stderr)
+p, out, pub, left = run_r7(R_NEW, "discard", IREQ, BUILT, reply=None, pics={"cite-a.png": b"x"})
+t("R7 discard 連暫存圖目錄一起刪", out == [{"discarded": True}] and not any(
+    os.path.isdir(os.path.join(SCRATCH, w, "tmp", "cloud-report-" + TURN + "-files")) for w in os.listdir(SCRATCH)
+    if w.startswith("cloud-research-")), p.stdout + p.stderr)
 
 # ── R7 用真的 lib/report.py:WARNING、NaN 拒絕帶編號與 key、上傳被拒後同 id 重送、replace 同 id 覆寫 ──
 # 不帶 BLAVE_PROXY_TOKEN(= 經 SSH 跑的雲端機),平台的判決只在上傳時才有;uploader 由下面的 thread 代演,
@@ -218,10 +264,15 @@ ENV = {k: v for k, v in os.environ.items() if not k.startswith("BLAVE_")}
 ENV["PYTHONPATH"] = ROOT
 
 
+SHIPPED = {}   # 上傳替身搬走報告那一刻,它的 sidecar 裡有哪些圖
+
+
 def ship(rd, verdict, clear_delay=0.05):
     for n in (os.listdir(rd) if os.path.isdir(rd) else []):
         if not n.endswith(".json") or verdict is None:
             continue
+        side = os.path.join(rd, n[:-5] + ".files")
+        SHIPPED[n[:-5]] = sorted(os.listdir(side)) if os.path.isdir(side) else []
         sub = os.path.join(rd, verdict)
         os.makedirs(sub, exist_ok=True)
         if verdict == "failed":
@@ -251,12 +302,13 @@ def put_files(ws, req, built):
     return reqp, datap
 
 
-def run_real(ws, mode, req, built, verdict, clear_delay=0.05):
+def run_real(ws, mode, req, built, verdict, clear_delay=0.05, reply=REPLY, pics=None):
     reqp, datap = put_files(ws, req, built)
+    put_pics(ws, pics)
     stop = threading.Event()
     th = threading.Thread(target=fake_uploader, args=(os.path.join(ws, "reports"), verdict, stop, clear_delay), daemon=True)
     th.start()
-    p = subprocess.run([sys.executable, "-", mode], input=FAST, text=True, capture_output=True, cwd=ws,
+    p = subprocess.run([sys.executable, "-", mode, reply], input=FAST, text=True, capture_output=True, cwd=ws,
                        env=dict(ENV, BLAVE_AGENT_WORKSPACE=ws), timeout=60)
     stop.set(); th.join()
     lines = [json.loads(x) for x in p.stdout.splitlines() if x.startswith("{")]
@@ -329,7 +381,7 @@ t("真 lib:NaN／Infinity 被拒 → 每條有編號、分析來的點名 key、
 # ── 引擎在等上傳時把 ssh 砍掉:報告已經寫了,兩個暫存檔還在。照 R7.5 走 status,不是再 publish ──
 def killed_publish(ws, req, built):
     reqp, datap = put_files(ws, req, built)
-    p = subprocess.Popen([sys.executable, "-", "publish"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+    p = subprocess.Popen([sys.executable, "-", "publish", REPLY], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE, text=True, cwd=ws, env=dict(ENV, BLAVE_AGENT_WORKSPACE=ws))
     p.stdin.write(RSCRIPT)   # 真的 2 秒間隔:被砍的時候一定還在等
     p.stdin.close()
@@ -383,12 +435,97 @@ t("真 lib:ledger 那筆超過 35 分鐘 → replace 回 replace_expired、不�
 p, out, left = run_real(ws, "status", None, None, None)
 t("真 lib:超過 35 分鐘的那筆 status 也不認(不是這一則回覆的)", out == [{"status": "none"}], p.stdout + p.stderr)
 
+# ── 稽核 r3 P3-A:key 是這一則回覆的;同一條對話的下一則重用同一個 id,status／replace 都不認前一則那份 ──
+ws = tempfile.mkdtemp(dir=REAL)
+p, out, left = run_real(ws, "publish", GOOD, RB, "sent")
+put_files(ws, GOOD, RB)
+p, out, left = run_real(ws, "status", None, None, None, reply=REPLY_B)
+t("真 lib:前一則發了 pcr-real,這一則同 id 還沒寫就跑 status → none、兩個檔留著(不認成前一則那份)",
+  p.returncode == 0 and out == [{"status": "none"}] and left == (True, True), p.stdout + p.stderr)
+p, out, left = run_real(ws, "replace", GOOD, RB, "sent", reply=REPLY_B)
+t("真 lib:這一則 replace 前一則那份(35 分鐘內)→ replace_expired、不寫",
+  out == [{"error": "replace_expired"}] and listing(ws, "sent") == ["pcr-real.json"] and left == (True, True), p.stdout + p.stderr)
+
+# ── 引用圖,真 lib:圖進 final id 的 sidecar、上傳替身看得到;3 張 → refused;id 被佔走 → 進 -2 的 sidecar ──
+def pic(n):
+    return dict(PIC, file=n, alt="圖 " + n)
+
+
+IMG = dict(GOOD, report_id="pcr-img", blocks=GOOD["blocks"] + [pic("cite-a.png"), pic("cite-b.jpg")])
+ws = tempfile.mkdtemp(dir=REAL)
+SHIPPED.clear()
+p, out, left = run_real(ws, "publish", IMG, RB, "sent", pics={"cite-a.png": b"\x89PNG-a", "cite-b.jpg": b"\xff\xd8-b"})
+side = os.path.join(ws, "reports", "pcr-img.files")
+t("真 lib:2 張圖 → published、sidecar 在 final id 底下、上傳時替身看得到兩張、暫存圖目錄刪掉",
+  p.returncode == 0 and out and out[-1].get("published") == "pcr-img.json" and out[-1].get("dropped") == []
+  and SHIPPED.get("pcr-img") == ["cite-a.png", "cite-b.jpg"] and open(os.path.join(side, "cite-a.png"), "rb").read() == b"\x89PNG-a"
+  and not os.path.isdir(put_pics(ws, {})) and left == (False, False), p.stdout + p.stderr)
+three = dict(IMG, report_id="pcr-img3", blocks=IMG["blocks"] + [pic("cite-c.png")])
+p, out, left = run_real(ws, "publish", three, RB, "sent", pics={n: b"x" for n in ("cite-a.png", "cite-b.jpg", "cite-c.png")})
+msgs = (out[-1].get("refused") or []) if out else []
+t("真 lib:3 張引用圖 → refused 帶編號(lib 的上限)、沒寫報告、暫存圖留著給下一次",
+  p.returncode == 0 and len(msgs) == 1 and msgs[0].startswith("1. 3 cited images") and "pcr-img3" not in SHIPPED
+  and not os.path.exists(os.path.join(ws, "reports", "pcr-img3.json")) and os.path.isfile(os.path.join(put_pics(ws, {}), "cite-c.png"))
+  and left == (True, True), p.stdout + p.stderr)
+shutil.rmtree(put_pics(ws, {}))
+later_img = dict(IMG, blocks=GOOD["blocks"] + [pic("cite-z.png")])
+p, out, left = run_real(ws, "publish", later_img, RB, "sent", reply=REPLY_B, pics={"cite-z.png": b"z"})
+t("真 lib:下一則同 id 已被佔走 → 寫成 pcr-img-2,圖進 -2 的 sidecar、前一份的 sidecar 不多不少",
+  p.returncode == 0 and out and out[-1].get("published") == "pcr-img-2.json" and SHIPPED.get("pcr-img-2") == ["cite-z.png"]
+  and sorted(os.listdir(side)) == ["cite-a.png", "cite-b.jpg"], p.stdout + p.stderr)
+
+# ── R7.4 本機那支:把請求點名的擷取圖搬進這一輪的資料夾(之後 scp、step 8 連資料夾刪) ──
+STAGER = re.search(r"\*\*Pictures travel before publishing\*\*.*?```py\n(.*?\n)```\n", r7, re.S).group(1)
+
+
+def run_stage(ws, req, sidecars):
+    os.makedirs(os.path.join(ws, "tmp", "cloud-handoff", TURN), exist_ok=True)
+    json.dump(req, open(os.path.join(ws, "tmp", "cloud-handoff", TURN, "report.json"), "w"))
+    for rel, b in sidecars.items():
+        os.makedirs(os.path.dirname(os.path.join(ws, "reports", rel)), exist_ok=True)
+        open(os.path.join(ws, "reports", rel), "wb").write(b)
+    p = subprocess.run([sys.executable, "-", TURN], input=STAGER, text=True, capture_output=True, cwd=ws,
+                       env=dict(ENV, BLAVE_AGENT_WORKSPACE=ws), timeout=60)
+    lines = [json.loads(x) for x in p.stdout.splitlines() if x.startswith("{")]
+    out = os.path.join(ws, "tmp", "cloud-handoff", TURN, "files")
+    return p, lines, sorted(os.listdir(out)) if os.path.isdir(out) else []
+
+
+ws = tempfile.mkdtemp(dir=REAL)
+p, out, got = run_stage(ws, IMG, {"pcr-img.files/cite-a.png": b"a", "pcr-img.files/cite-b.jpg": b"b"})
+t("本機:擷取圖搬進 tmp/cloud-handoff/<turn>/files、這台電腦的 reports/ 不留(連空資料夾)",
+  p.returncode == 0 and out == [{"staged": ["cite-a.png", "cite-b.jpg"], "missing": []}] and got == ["cite-a.png", "cite-b.jpg"]
+  and not os.path.exists(os.path.join(ws, "reports", "pcr-img.files")), p.stdout + p.stderr)
+p, out, got = run_stage(ws, IMG, {})
+t("本機:被拒後再跑一次 → 已搬過的算 staged", out == [{"staged": ["cite-a.png", "cite-b.jpg"], "missing": []}], p.stdout + p.stderr)
+ws = tempfile.mkdtemp(dir=REAL)
+p, out, got = run_stage(ws, IMG, {"pcr-img.json": b"{}", "pcr-img.files/cite-a.png": b"old", "pcr-img-2.files/cite-a.png": b"new",
+                                  "pcr-img-2.files/cite-b.jpg": b"b"})
+t("本機:這台電腦已有 pcr-img → 擷取在 pcr-img-2.files(citeSlot),從那裡搬;已有報告的 sidecar 不碰",
+  out == [{"staged": ["cite-a.png", "cite-b.jpg"], "missing": []}]
+  and open(os.path.join(ws, "tmp", "cloud-handoff", TURN, "files", "cite-a.png"), "rb").read() == b"new"
+  and os.listdir(os.path.join(ws, "reports", "pcr-img.files")) == ["cite-a.png"], p.stdout + p.stderr)
+ws = tempfile.mkdtemp(dir=REAL)
+p, out, got = run_stage(ws, dict(IMG, blocks=[pic("../../.env"), pic("cite-a.png")]), {"pcr-img.files/cite-a.png": b"a"})
+t("本機:檔名不合 → {bad}、一張都不搬不送",
+  p.returncode == 0 and out and "bad" in out[0] and got == [] and os.path.isfile(os.path.join(ws, "reports", "pcr-img.files", "cite-a.png")),
+  p.stdout + p.stderr)
+ws = tempfile.mkdtemp(dir=REAL)
+p, out, got = run_stage(ws, dict(IMG, blocks=[pic("perm.png"), pic("cite-q.png")]), {"pcr-img.files/perm.png": b"p"})
+t("本機:不是 browser_capture 的檔(沒 cite- 前綴)、找不到的檔 → missing、不搬",
+  out == [{"staged": [], "missing": ["perm.png", "cite-q.png"]}] and got == []
+  and os.path.isfile(os.path.join(ws, "reports", "pcr-img.files", "perm.png")), p.stdout + p.stderr)
+
 t("R7 固定腳本只叫 lib.report:不 import 下單／帳戶／執行、不開子行程",
   not re.search(r"lib\.(order|account|execute)|subprocess|os\.system|report_templates", RSCRIPT))
 r7_text = r7[:r7.index("The research script")]
-t("R7 文件:資料檢查在本機、分析在雲端寫 blocks 檔、分析腳本不叫 write_report／publish、圖不帶過去",
+t("R7 文件:資料檢查在本機、分析在雲端寫 blocks 檔、分析腳本不叫 write_report／publish、圖先搬再 scp 到暫存目錄、不進雲端 reports/",
   "Data check here, first" in r7_text and "tmp/cloud-report-<turn>-blocks.json" in r7_text
-  and "never calls `write_report` or `publish`" in r7_text and "does not travel" in r7_text)
+  and "never calls `write_report` or `publish`" in r7_text and "does not travel" not in r7_text
+  and "tmp/cloud-report-<turn>-files/" in r7_text and "Never copy a picture into the cloud machine's `reports/`" in r7_text)
+t("R7.5 先讀這一則的 BLAVE_TURN_ID、過 16 hex、當第二個參數;不合就停",
+  "BLAVE_TURN_ID" in r7_text and "`^[0-9a-f]{16}$`" in r7_text and "`publish <reply>`" in r7_text
+  and "`status <reply>`" in r7_text and "**`replace <reply>`**" in r7_text and "stop and report it" in r7_text)
 r71, r72 = r7_text[r7_text.index("R7.1."):r7_text.index("R7.2.")], r7_text[r7_text.index("R7.2."):r7_text.index("R7.3.")]
 r73, r75 = r7_text[r7_text.index("R7.3."):r7_text.index("R7.4.")], r7_text[r7_text.index("R7.5."):]
 t("R7.1 不再說兩邊是同一份資料;本機探針只決定要不要連線,門檻以 R7.3 為準",
@@ -399,21 +536,21 @@ t("R7.2 分析腳本寫檔前先建 tmp/", 'os.makedirs("tmp", exist_ok=True)' i
 t("R7.5 publish 會等上傳,要給長 timeout;被拒(含上傳時)走 R5、同 id;最多兩次",
   "180000ms" in r75 and "at upload" in r75 and "keeps the same id" in r75 and "at most two runs" in r75)
 t("R7.5 WARNING 是建議;要修走 replace,不准再 publish(會變 -2)",
-  "**`replace`**" in r75 and "a second `publish` is a second report" in r75
+  "**`replace <reply>`**" in r75 and "a second `publish` is a second report" in r75
   and "never call `write_report` yourself" in r75 and "never that the report failed" in r75)
 t("Reports 那節開頭點名研究報告走 R7", "takes R7 instead of R2–R5" in sec[:sec.index("R1.")])
 t("R7.5 沒拿到 JSON 那一行 → 不准再 publish／replace,先跑 status;none 才照原 mode 再跑",
   "**No JSON line**" in r75 and "Never run `publish` or `replace` again for it" in r75
-  and "`status` in place of `<name>`" in r75 and '`{"status": "none"}` → nothing was written' in r75)
+  and "`status <reply>` in place of `<name>`" in r75 and '`{"status": "none"}` → nothing was written' in r75)
 t("R7.5 兩個引擎各自怎麼給等待的空間:Bash 給 180000ms;Codex exec_command 設 yield 30000、拿到 session id 用 write_stdin 輪詢、不重跑",
   "A tool named `Bash`" in r75 and "Codex's `exec_command`" in r75 and "`yield_time_ms` to 30000" in r75
   and "`write_stdin`" in r75 and "Never start the command again while that session runs" in r75
   and "exit code 124" in r75)
 t("R7.5 結果清單列了 mode 打錯、replace_expired;status／mode／none 不算兩次",
-  '`{"error": "mode"}` → the mode was mistyped' in r75 and '`{"error": "replace_expired"}` → nothing was written' in r75
+  '`{"error": "mode"}` → the mode or `<reply>` was mistyped' in r75 and '`{"error": "replace_expired"}` → nothing was written' in r75
   and '`status` runs, and runs answered by `{"error": "mode"}` or `{"status": "none"}`, do not count' in r75)
-t("R7.5 丟掉圖片自己一句、不准提議更新雲端主機;sent／pending 一律用 R6 那句(幾分鐘內出現)",
-  "這份沒有附圖：圖是在這台電腦擷取的，帶不到雲端主機。" in r75 and "Never offer to update the cloud machine for it" in r75
+t("R7.5 圖沒帶到自己一句、不准提議更新雲端主機(lib 太舊才走 R6 問更新);sent／pending 一律用 R6 那句(幾分鐘內出現)",
+  "這份少了擷取的圖：沒能從這台電腦帶到雲端主機。" in r75 and "這份沒有附圖" not in r75 and '`missing` = `["images"]`' in r75 and "Never offer to update the cloud machine for it" in r75
   and "R6's one sentence" not in r75 and "Reports list now" not in r75 and "Either `upload` value gets R6's sentence" in r75)
 
 print("\nall green" if not red else f"\n{red} red")
