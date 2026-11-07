@@ -383,6 +383,36 @@ def trip_halt(reason, source, **extra):
     audit("halt_tripped", reason=reason, source=source)
 
 
+UNEXPLAINED_MAX = 5
+
+
+def annotate_halt(item):
+    """Add `item` ({park_id, venue, symbol, at, reason}) to the HALT already on, under `unexplained` —
+    ts, reason and source untouched: whoever set it (the user's stop) keeps it, and the platform raises a
+    halt P1 per new park_id from this list (api agent_overview). One entry per park_id, the newest
+    UNEXPLAINED_MAX kept. Never creates a HALT; False when there is none or it cannot be rewritten."""
+    try:
+        info = load_json(HALT_PATH)
+    except (OSError, ValueError):
+        return False
+    if not isinstance(info, dict):
+        return False
+    rows = [r for r in info.get("unexplained") or [] if isinstance(r, dict)
+            and r.get("park_id") != item.get("park_id")] if isinstance(info.get("unexplained"), list) else []
+    info["unexplained"] = (rows + [item])[-UNEXPLAINED_MAX:]
+    tmp = HALT_PATH + ".tmp"
+    try:
+        if not os.path.exists(HALT_PATH):  # released in between: never re-create the HALT
+            return False
+        with open(tmp, "w") as f:
+            json.dump(info, f)
+        atomic_replace(tmp, HALT_PATH)
+    except OSError:
+        return False
+    audit("halt_annotated", park_id=item.get("park_id"), source=info.get("source"))
+    return True
+
+
 def clear_halt(source):
     """Remove the kill switch. Only on explicit user instruction."""
     global _halt_flag

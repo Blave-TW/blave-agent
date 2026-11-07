@@ -897,7 +897,7 @@ def _capital_claim_pending(started):
                 continue
             before = f"{expected:g} 口" if expected is not None else "不明"
             msg = _halt_words('群益', '群益下單軟體', '在群益', root, lots, len(reads), before, f"{net:g} 口")
-            guard.trip_halt(msg, 'reconciler')   # the halt P1 carries this reason: no order_errors row beside it
+            _park_unexplained(msg, root, venue_traits.CAPITAL, park_id)
             row['halted'] = True
             save()
     _save_claimed(pending, venue_traits.CAPITAL, end_of_round=True, path=CAPITAL_PENDING_PATH,
@@ -1139,6 +1139,26 @@ def _halt_words(name, app, where, what, lots, reads, before, now):
             f"有成交先{where}平掉，再按「解除暫停」。Blave 不會把它算進策略部位。")
 
 
+def _park_unexplained(msg, symbol, venue, park_id):
+    """A parked row the account reads did not explain: HALT with `msg` — its reason is the P1, so no
+    order_errors row beside it. A HALT already on (the user's stop — every 全部平倉 park sits under one —
+    or any other) keeps its source and reason, as _halt's rule: rewritten, the platform reads a
+    reconciler source as an automatic P1 and the user's own reason is gone. The row goes into that
+    HALT's `unexplained` list instead (lib/guard.annotate_halt), from which the platform raises the same
+    halt P1 once per park id. No order_errors row: its order_unconfirmed copy says closes go on and the
+    result follows by itself, both untrue under HALT (canon notifications.md)."""
+    if guard.halted():
+        annotate = getattr(guard, 'annotate_halt', None)  # a half-updated workspace's guard lacks it
+        noted = bool(annotate and annotate({'park_id': park_id, 'venue': venue, 'symbol': symbol,
+                                            'at': time.time(), 'reason': msg}))
+        guard.audit('park_unexplained_under_halt', venue=venue, symbol=symbol, park_id=park_id,
+                    halt_source=(guard.halt_info() or {}).get('source'), reason=msg, noted=noted)
+        logging.error(f"[reconciler/{venue}] {symbol}: {msg} — HALT already on, kept as it is"
+                      f"{'' if noted else ' (not noted on it: no P1 from the platform)'}")
+        return
+    guard.trip_halt(msg, 'reconciler')
+
+
 def _halt_unknown_booked(sym, pid, row, venue=venue_traits.PRESIDENT, key=None):
     """A new leg is parked onto a row whether booked or not is unknown (the book went
     unreadable after this round's send). The merge goes ahead — the order is already
@@ -1304,7 +1324,7 @@ def _president_claim_pending(started):
                                 f"{PENDING_SENT_MAX_READS} reads) — {root} entries still wait")
                 continue
             msg = _halt_words('統一', '統一 app ', '在統一 app ', pid, lots, len(reads), f"{expected:g} 口", f"{net:g} 口")
-            guard.trip_halt(msg, 'reconciler')   # the halt P1 carries this reason: no order_errors row beside it
+            _park_unexplained(msg, pid, venue_traits.PRESIDENT, park_id)
             row['halted'] = True
             _save_claimed(pending, venue_traits.PRESIDENT)
     _save_claimed(pending, venue_traits.PRESIDENT, end_of_round=True)

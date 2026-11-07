@@ -535,5 +535,22 @@ check(_seen[0] == {"kind": "bitget_mode_mismatch", "venue": "bitget", "mode": "u
       and _seen[3] == "absent",
       f"F8 halt_state carries the Bitget mismatch legs; other shapes and legs with no number are dropped ({_seen})")
 
+# 停放單在用戶的 HALT 底下對不上(lib/guard.annotate_halt 寫進 HALT 的 unexplained):有 park_id 的才帶,最多 5 筆、截長
+_had = open(_hp).read() if os.path.exists(_hp) else None
+_u = {"park_id": "capital:TMF@1.5", "venue": "capital", "symbol": "TMF", "at": 1794019900.5, "reason": "對不上" * 100}
+_seen = []
+for _doc in ({"reason": "user", "source": "web", "unexplained": [_u, {"park_id": ""}, "junk", {"venue": "x"}]},
+             {"reason": "user", "source": "web", "unexplained": [dict(_u, park_id=f"p{i}") for i in range(7)]},
+             {"reason": "user", "source": "web", "unexplained": "x"}, {"reason": "user", "source": "web"}):
+    open(_hp, "w").write(json.dumps(_doc))
+    _seen.append(pr.halt_state(hb=1, last={}).get("unexplained", "absent"))
+if _had is None:
+    os.remove(_hp)
+else:
+    open(_hp, "w").write(_had)
+check(_seen[0] == [dict(_u, reason=_u["reason"][:200])]
+      and [r["park_id"] for r in _seen[1]] == ["p2", "p3", "p4", "p5", "p6"] and _seen[2:] == ["absent", "absent"],
+      f"F9 halt_state carries unexplained parks with a park_id, newest 5, reason ≤ 200 ({_seen[1:]})")
+
 print(f"\ncheck_halt_freeze: {red} FAILED" if red else "\ncheck_halt_freeze: all ok")
 sys.exit(1 if red else 0)

@@ -140,6 +140,89 @@ check(ok, f"a park that raises returns False, the flatten goes on ({r})")
 rec._capital_nets = lambda root=None: (_ for _ in ()).throw(RuntimeError("worker down"))
 check(flatten._capital_base("TMF") is None, "a failed baseline read → None (the reconciler parks without one too)")
 
+# 7. a row the account does not explain, under the user's stop (every 全部平倉 park sits under one):
+# the user's HALT keeps its source and reason; the row goes beside it as an order_errors row (audit 0149 B-P2-1)
+reset()
+rec._capital_nets = lambda root=None: {c: v for c, v in NETS.items()}
+NETS = {"TM2611": 2.0}
+if os.path.exists("manager/order_errors.json"):
+    os.remove("manager/order_errors.json")
+guard.trip_halt("用戶按了全部平倉", "web")
+ts0 = guard.halt_info()["ts"]
+pid = flatten._capital_park_close("TMF", "long", 2, SENT0, flatten._capital_base("TMF"))
+NETS = {"TM2611": 1.0}   # the user closed 1 lot by hand in the Capital app
+for i in range(rec.PENDING_SENT_MAX_READS):
+    rec._capital_claim_pending(time.time() + i)
+info = guard.halt_info() or {}
+errs = json.load(open("manager/order_errors.json")) if os.path.exists("manager/order_errors.json") else []
+row = pending().get("TMF") or {}
+check(info.get("source") == "web" and info.get("reason") == "用戶按了全部平倉" and info.get("ts") == ts0
+      and [u.get("park_id") for u in info.get("unexplained") or []] == [pid]
+      and "對不上" in info["unexplained"][0].get("reason", "") and info["unexplained"][0].get("venue") == "capital",
+      f"three unexplained reads under the user's stop: source, reason and ts stay the user's; the park goes "
+      f"into the HALT's unexplained list for the platform's halt P1 ({info})")
+audit = [json.loads(ln) for ln in open("state/audit.jsonl", encoding="utf-8")
+         if '"park_unexplained_under_halt"' in ln]
+check(row.get("halted") is True and not errs and len(audit) == 1 and audit[0].get("park_id") == pid
+      and audit[0].get("halt_source") == "web" and "對不上" in audit[0].get("reason", ""),
+      f"…the row is marked halted; no order_errors row (its copy says closes go on), audit with the park id ({errs}, {audit})")
+rec._capital_claim_pending(time.time() + 10)
+check(not os.path.exists("manager/order_errors.json")
+      and sum('"park_unexplained_under_halt"' in ln for ln in open("state/audit.jsonl", encoding="utf-8")) == 1
+      and len((guard.halt_info() or {}).get("unexplained") or []) == 1,
+      "…and nothing more on the next round")
+guard.clear_halt("test")
+rec._capital_claim_pending(time.time() + 20)   # the user released it: the lots are theirs
+check(not os.path.exists("manager/order_errors.json") and "TMF" not in pending(),
+      "released: the row is dropped as the user's, no order_errors row to release into a 'did not fill' P3")
+# no HALT on: the reconciler trips its own, as before
+reset()
+NETS = {"TM2611": 2.0}
+flatten._capital_park_close("TMF", "long", 2, SENT0, flatten._capital_base("TMF"))
+NETS = {"TM2611": 1.0}
+for i in range(rec.PENDING_SENT_MAX_READS):
+    rec._capital_claim_pending(time.time() + i)
+info = guard.halt_info() or {}
+check(info.get("source") == "reconciler" and "對不上" in info.get("reason", ""),
+      f"no HALT on: three unexplained reads trip the reconciler's HALT ({info})")
+
+guard.clear_halt("test")
+
+# 8. 統一's claim takes the same rule (_president_claim_pending → _park_unexplained)
+pres_nets = {"TMFK6": 1.0}
+rec._president_nets = lambda: dict(pres_nets)
+
+
+def pres_rounds():
+    json.dump({"TMFK6": {"root": "TMF", "productid": "TMFK6", "lots": -2.0, "net_expected": 2.0,
+                         "legs": [{"at": 1.0, "lots": -2.0, "status": "sent"}], "reads": []}},
+              open(rec.PENDING_SENT_PATH, "w"))
+    for i in range(rec.PENDING_SENT_MAX_READS):
+        rec._president_claim_pending(time.time() + 3 * rec.QUEUED_HOLD_S + i)
+    return (rec._pending_sent(rec.PENDING_SENT_PATH).get("TMFK6") or {}).get("halted"), guard.halt_info() or {}
+
+
+guard.trip_halt("用戶按了停止", "web")
+halted_row, info = pres_rounds()
+check(halted_row is True and info.get("source") == "web" and info.get("reason") == "用戶按了停止"
+      and not os.path.exists("manager/order_errors.json")
+      and [u.get("venue") for u in info.get("unexplained") or []] == ["president"],
+      f"統一 under the user's stop: three unexplained reads keep the user's HALT, row halted, no row written ({info})")
+guard.clear_halt("test")
+halted_row, info = pres_rounds()
+check(halted_row is True and info.get("source") == "reconciler" and "對不上" in info.get("reason", ""),
+      f"統一 with no HALT on: the reconciler trips its own ({info})")
+guard.clear_halt("test")
+
+# 9. lib/guard.annotate_halt: never creates a HALT, one entry per park id, newest five
+check(guard.annotate_halt({"park_id": "x"}) is False and not os.path.exists(guard.HALT_PATH),
+      "annotate_halt with no HALT on: False, no HALT created")
+guard.trip_halt("用戶按了停止", "web")
+for i in range(7):
+    guard.annotate_halt({"park_id": f"p{i % 6}", "at": i})
+ids = [u["park_id"] for u in guard.halt_info().get("unexplained")]
+check(ids == ["p2", "p3", "p4", "p5", "p0"] and guard.halt_info()["source"] == "web",
+      f"annotate_halt: a park id again moves to the end, newest five kept, source untouched ({ids})")
 guard.clear_halt("test")
 print("all checks passed" if not fails else f"FAILED: {fails}")
 sys.exit(1 if fails else 0)

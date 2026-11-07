@@ -5006,7 +5006,9 @@ const HALT_AUTO_SOURCES = ["reconciler", "portfolio"];   // 同 api openclaw/age
 const notifiedPath = () => path.join(app.getPath("userData"), "p1-notified.json");
 let p1Marks = undefined, p1Badge = 0; const p1LastShown = {}, p1Alive = new Set();   // p1Alive:Notification 沒人持有會被 GC,click 就不觸發
 const p1Num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
-function p1Load() { try { const j = JSON.parse(fs.readFileSync(notifiedPath(), "utf8")); return { id: p1Num(j.id), halt: p1Num(j.halt), err: p1Num(j.err) }; } catch (_) { return { id: null, halt: null, err: null }; } }
+const P1_UNX_KEEP = 20;   // 記住發過的 park_id 數(HALT 檔最多帶 5 筆,lib/guard.UNEXPLAINED_MAX)
+const p1Ids = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && x).slice(-P1_UNX_KEEP) : null);
+function p1Load() { try { const j = JSON.parse(fs.readFileSync(notifiedPath(), "utf8")); return { id: p1Num(j.id), halt: p1Num(j.halt), err: p1Num(j.err), unx: p1Ids(j.unx) }; } catch (_) { return { id: null, halt: null, err: null, unx: null }; } }
 function p1Save(m) { try { fs.writeFileSync(notifiedPath(), JSON.stringify(m), { mode: 0o600 }); } catch (_) { /* 最壞=重開後同一則再發一次 */ } }
 // 時間 → epoch 秒(保留小數:解除後同秒再 HALT 靠微秒分得開)。真實格式是 ISO 字串(稽核 M1'):halt.at 帶時區
 // (lib/guard.py),拒單的 ts 是**不帶時區的 UTC**(lib/portfolio.py 的 utcnow().isoformat())——沒有時區尾碼要先補 Z,
@@ -5025,14 +5027,26 @@ function p1HaltPayload(h) {
   const m = unconfirmed ? /^\[order_unconfirmed_unparked\] (\S+?):/.exec(reason) : null;
   return m ? { unconfirmed, symbol: m[1] } : { unconfirmed };
 }
-function p1FromState(r, mark, nowS) {   // 純函式:halt / 拒單從狀態檔現況推導。mark = { halt, err }(null = 第一次,只記不發)
-  const out = { halt: mark.halt, err: mark.err, show: [] }, h = r && r.halt;
+function p1FromState(r, mark, nowS) {   // 純函式:halt / 拒單從狀態檔現況推導。mark = { halt, err, unx }(null = 第一次,只記不發)
+  const out = { halt: mark.halt, err: mark.err, unx: mark.unx, show: [] }, h = r && r.halt;
   const at = h && h.halted ? p1Sec(h.at) : NaN;
   if (at > (mark.halt == null ? -1 : mark.halt)) {
     out.halt = at;
     if (mark.halt != null && HALT_AUTO_SOURCES.indexOf(h.source) >= 0 && nowS - at <= 900)
       out.show.push({ type: "halt", ts: at, payload: p1HaltPayload(h) });
   } else if (mark.halt == null) out.halt = 0;
+  // HALT 已在(多半是用戶自己按的)時停放單帳戶讀 3 次對不上:對帳器不改 HALT 的來源與原因,記進 halt.unexplained
+  // (lib/guard.annotate_halt)。每個 park_id 一則 halt,同 api agent_overview 的 halt P1;unx = 發過的 park_id
+  const seen = mark.unx || [], unx = seen.slice();
+  for (const u of h && h.halted && Array.isArray(h.unexplained) ? h.unexplained : []) {
+    if (!u || typeof u.park_id !== "string" || !u.park_id || unx.indexOf(u.park_id) >= 0) continue;
+    unx.push(u.park_id);
+    const uat = p1Sec(u.at);
+    if ((mark.unx != null || mark.halt != null) && nowS - uat <= 900)   // 升級前的紀錄沒有 unx:看 halt 水位線,不必等下一輪
+      out.show.push({ type: "halt", ts: uat, payload: { unexplained: true, reason: typeof u.reason === "string" ? u.reason.slice(0, 200) : "",
+        symbol: typeof u.symbol === "string" ? u.symbol : "" } });
+  }
+  out.unx = unx.slice(-P1_UNX_KEEP);
   let top = mark.err == null ? -1 : mark.err;
   for (const e of r && Array.isArray(r.order_errors) ? r.order_errors : []) {
     const ts = e && typeof e === "object" ? p1Sec(e.ts) : NaN;
@@ -5077,13 +5091,16 @@ function p1Sync() {
   if (p1Marks === undefined) p1Marks = p1Load();
   const now = Date.now() / 1000, ev = p1Pick(r.events, p1Marks.id, now);
   // 狀態檔這輪 build 失敗(只有 error)時沒有 halt / order_errors:那一輪不動這兩條水位線
-  const stt = r.error ? { halt: p1Marks.halt, err: p1Marks.err, show: [] } : p1FromState(r, p1Marks, now);
-  if (ev.mark !== p1Marks.id || stt.halt !== p1Marks.halt || stt.err !== p1Marks.err) { p1Marks = { id: ev.mark, halt: stt.halt, err: stt.err }; p1Save(p1Marks); }
+  const stt = r.error ? { halt: p1Marks.halt, err: p1Marks.err, unx: p1Marks.unx, show: [] } : p1FromState(r, p1Marks, now);
+  if (ev.mark !== p1Marks.id || stt.halt !== p1Marks.halt || stt.err !== p1Marks.err || String(stt.unx) !== String(p1Marks.unx)) {
+    p1Marks = { id: ev.mark, halt: stt.halt, err: stt.err, unx: stt.unx }; p1Save(p1Marks);
+  }
   const show = stt.show.concat(ev.show);
   for (const e of show) {
     p1Badge++;
-    if (Date.now() - (p1LastShown[e.type] || 0) < 60000) continue;
-    p1LastShown[e.type] = Date.now();
+    const throttle = e.type + (e.type === "halt" && e.payload && e.payload.unexplained ? ":unexplained" : "");   // 跟同一刻的自動 HALT 分開算
+    if (Date.now() - (p1LastShown[throttle] || 0) < 60000) continue;
+    p1LastShown[throttle] = Date.now();
     const sym = e.payload && typeof e.payload.symbol === "string" ? e.payload.symbol.replace(/@spot$/, "").slice(0, 24) : "";
     if (!Notification.isSupported()) continue;
     // 這裡的事件全部來自這台電腦的狀態檔:標題第一個詞講是哪一邊(雲端的通知之後由它自己的來源加 notifPrefixCloud)
@@ -5095,7 +5112,10 @@ function p1Sync() {
       : mcr === "snapshot_lag" ? "_lag" : mcr === "queued" ? "_queued" : "";
     const head = tmLabels["ev_" + e.type + variant] || tmLabels["ev_" + e.type];
     // 下單結果不明、追蹤不了而整台暫停:講可能已成交、不要手動補單、怎麼恢復,不是只有「什麼單都不送」
-    const note = e.type === "halt" && e.payload && e.payload.unconfirmed && tmLabels.ev_halt_unconfirmed_n ? tmLabels.ev_halt_unconfirmed_n
+    // 帳戶對不上(unexplained):原因句是機器寫的那句,後面接自動暫停的固定說明——同雲端 halt P1 的「{reason}＋固定那句」
+    const note = e.type === "halt" && e.payload && e.payload.unexplained && e.payload.reason
+      ? e.payload.reason + (tmLabels.ev_machine_restart_stopped_n ? " " + tmLabels.ev_machine_restart_stopped_n : "")
+      : e.type === "halt" && e.payload && e.payload.unconfirmed && tmLabels.ev_halt_unconfirmed_n ? tmLabels.ev_halt_unconfirmed_n
       : capital && e.payload.reason === "LOCKED" && tmLabels.ev_venue_login_blocked_capital_locked_n ? tmLabels.ev_venue_login_blocked_capital_locked_n
       : mcr === "queued" ? (e.payload.until ? String(tmLabels.ev_manual_close_required_queued_n || "").replace("{at}", p1TwClock(e.payload.until))
         : tmLabels.ev_manual_close_required_queued_soon_n)

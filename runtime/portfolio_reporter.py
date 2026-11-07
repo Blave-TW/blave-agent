@@ -1659,6 +1659,7 @@ def halt_state(hb=None, last=None):
     guard_state = guard_state if isinstance(guard_state, dict) else {}
     hold, mark = guard_state.get("book_hold"), guard_state.get("bind_reset")
     mismatch = _halt_mismatch(info.get("mismatch"))
+    unexplained = _halt_unexplained(info.get("unexplained"))
     return {
         "halted": True,
         "at": info.get("ts"),
@@ -1668,6 +1669,7 @@ def halt_state(hb=None, last=None):
         # absent on every other HALT and on runtimes before it
         **({"closing": info["closing"]} if isinstance(info.get("closing"), bool) else {}),
         **({"mismatch": mismatch} if mismatch else {}),
+        **({"unexplained": unexplained} if unexplained else {}),
         "blocked": _halt_denials(info.get("ts")),
         # true = no Blave order of any kind, closes and exits included: every
         # HALT on a freezing lib (`freeze`), or on an older one an account-guard
@@ -1684,6 +1686,21 @@ def halt_state(hb=None, last=None):
 
 def _halt_num(x):
     return float(x) if isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) else None
+
+
+def _halt_unexplained(rows):
+    """Parked orders the account did not explain while a HALT was already on (lib/guard.annotate_halt):
+    [{park_id, venue, symbol, at, reason}], at most 5. The api raises a halt P1 per new park_id."""
+    out = []
+    for r in rows if isinstance(rows, list) else []:
+        if not isinstance(r, dict) or not isinstance(r.get("park_id"), str) or not r["park_id"]:
+            continue
+        at = _halt_num(r.get("at"))
+        out.append({"park_id": r["park_id"][:80],
+                    "venue": r.get("venue")[:32] if isinstance(r.get("venue"), str) else None,
+                    "symbol": r.get("symbol")[:40] if isinstance(r.get("symbol"), str) else None,
+                    "at": at, "reason": r.get("reason")[:200] if isinstance(r.get("reason"), str) else None})
+    return out[-5:]
 
 
 def _halt_mismatch(m):

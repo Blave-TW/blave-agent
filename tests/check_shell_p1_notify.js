@@ -106,4 +106,32 @@ t("stuck 那則有自己的標題與內文", src.includes("ev_order_unconfirmed_
   t("畫面交給主行程的字:manual_close_required 三種標題與內文都有",
     ["ev_manual_close_required:", "ev_manual_close_required_n:", "ev_manual_close_required_lag:", "ev_manual_close_required_lag_n:",
      "ev_manual_close_required_queued:", "ev_manual_close_required_queued_n:", "ev_manual_close_required_queued_soon_n:"].every((k) => tr.includes(k) && src.includes(k))); }
+// — HALT 已在(用戶按的)時停放單帳戶讀 3 次對不上:HALT 檔的 unexplained 出現新 park_id → 一則 halt,每個 park_id 一次 —
+{ const U = (id, ago = 20, extra = {}) => ({ park_id: id, venue: "capital", symbol: "TMF", at: NOW - ago, reason: "群益 TMF 賣 2 口沒回報成交，帳戶讀了 3 次都對不上。", ...extra });
+  const userHalt = (unx) => R({ halted: true, at: NOW - 600, source: "web", reason: "用戶按了全部平倉", ...(unx ? { unexplained: unx } : {}) });
+  const base = { halt: NOW - 600, err: 0, unx: [] };
+  let x = p1FromState(userHalt([U("capital:TMF@1")]), base, NOW);
+  t("unexplained:用戶的 HALT 底下出現新的 park_id → 一則 halt,帶原因句與標的,記住這個 id",
+    x.show.length === 1 && x.show[0].type === "halt" && x.show[0].payload.unexplained === true && x.show[0].payload.symbol === "TMF"
+    && /對不上/.test(x.show[0].payload.reason) && x.unx.join() === "capital:TMF@1" && x.halt === NOW - 600);
+  const again = p1FromState(userHalt([U("capital:TMF@1")]), { ...base, unx: x.unx }, NOW);
+  t("unexplained:同一個 park_id 下一輪不重發", again.show.length === 0 && again.unx.join() === "capital:TMF@1");
+  x = p1FromState(userHalt([U("capital:TMF@1"), U("president:TMFK6@2", 10)]), { ...base, unx: ["capital:TMF@1"] }, NOW);
+  t("unexplained:只發新的那個 park_id", x.show.length === 1 && /president/.test(x.unx.join()) && x.unx.length === 2);
+  const plain = p1FromState(userHalt(null), base, NOW), plainOld = p1FromState(userHalt(null), { halt: NOW - 600, err: 0 }, NOW);
+  t("unexplained:沒有這個欄位 → 行為照舊(用戶的 HALT 不發、水位線不動;舊的 p1-notified 沒有 unx 也一樣)",
+    plain.show.length === 0 && plain.halt === NOW - 600 && plain.unx.length === 0 && plainOld.show.length === 0);
+  const auto = p1FromState(R({ halted: true, at: NOW - 5, source: "reconciler", reason: "3 strikes" }), { halt: 0, err: 0, unx: [] }, NOW);
+  t("unexplained:自動 HALT 照舊一則,unx 不影響", auto.show.length === 1 && !auto.show[0].payload.unexplained);
+  const first = p1FromState(userHalt([U("capital:TMF@1")]), { halt: null, err: null, unx: null }, NOW);
+  t("unexplained:第一次跑(沒有 unx 紀錄)只記不發", first.show.length === 0 && first.unx.join() === "capital:TMF@1");
+  t("unexplained:升級前的 p1-notified(有 halt 水位線、沒有 unx)照樣發新的",
+    p1FromState(userHalt([U("capital:TMF@9")]), { halt: NOW - 600, err: 0 }, NOW).show.length === 1);
+  t("unexplained:超過 15 分鐘的只記不發", p1FromState(userHalt([U("old", 2000)]), base, NOW).show.length === 0);
+  t("unexplained:沒有 HALT(halted false)時不看", p1FromState(R({ halted: false, unexplained: [U("z")] }), base, NOW).show.length === 0);
+  t("unexplained:壞資料不炸、不記", (() => { const y = p1FromState(userHalt([null, "x", { park_id: "" }, { park_id: 3 }]), base, NOW); return y.show.length === 0 && y.unx.length === 0; })());
+  t("unexplained:記住的 id 有上限", p1FromState(userHalt([U("n")]), { ...base, unx: Array.from({ length: 25 }, (_, i) => "p" + i) }, NOW).unx.length === P1_UNX_KEEP);
+  t("unexplained:p1-notified.json 存讀 unx", /unx: p1Ids\(j\.unx\)/.test(src) && /unx: stt\.unx/.test(src) && p1Ids(["a", 3, ""]).join() === "a" && p1Ids(undefined) === null);
+  t("unexplained:通知內文 = 機器的原因句＋自動暫停的固定說明(同雲端 halt P1),節流跟自動 HALT 分開",
+    /e\.payload\.unexplained && e\.payload\.reason\s*\? e\.payload\.reason \+ \(tmLabels\.ev_machine_restart_stopped_n/.test(src) && /":unexplained"/.test(src)); }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
