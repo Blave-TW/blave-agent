@@ -319,7 +319,7 @@ check(len(booked_calls) == 1 and booked_calls[0][3:5] == ("TM2611", 1.0)
       f"the account shows the one lot sent: the claim books 1, not the 2 reported ({booked_calls})")
 
 # the api keeps 200 characters of a halt reason (api openclaw/agent_events halt.reason): the last
-# step (Release pause / 解除暫停) must survive, on the longest root, lot count and seq
+# step (Start trading / 啟動下單 — Wei: the button the sentence names) must survive, on the longest root, lot count and seq
 reasons, real_trip, real_park, real_en = [], guard.trip_halt, reconciler._capital_park, reconciler._en
 guard.trip_halt = lambda msg, src: reasons.append(msg)
 reconciler._capital_park = lambda *a, **k: None
@@ -331,7 +331,7 @@ try:
 finally:
     guard.trip_halt, reconciler._capital_park, reconciler._en = real_trip, real_park, real_en
 check(len(reasons) == 2 and all(len(r) <= 200 for r in reasons)
-      and reasons[0].endswith("Release pause.") and reasons[1].endswith("「解除暫停」。"),
+      and reasons[0].endswith("Start trading.") and reasons[1].endswith("「啟動下單」。"),
       f"overfill HALT reason ≤ 200 characters in both languages ({[len(r) for r in reasons]})")
 
 # 統一's claim, same shadowing as 群益's (audit 11-06 P2-4): two contracts in one round, the

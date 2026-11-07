@@ -10851,3 +10851,18 @@ msgstr "{broker} live quotes dropped, using Blave data"
 
 msgid "tr.ov.evFeedFallbackNote"
 msgstr "signals run 1–2 minutes slower and switch back once quotes return"
+
+msgid "tr.haltUnexplained"
+msgstr "Your {symbols} position at {venue} doesn't match Blave's records."
+
+msgid "tr.ov.evHaltUnexplained"
+msgstr "Position mismatch"
+
+msgid "tr.ov.evHaltUnexplainedNote"
+msgstr "check it at {venue}"
+
+msgid "tr.haltUnexplainedNosym"
+msgstr "Your {venue} positions don't match Blave's records."
+
+msgid "tr.haltUnexplainedDo"
+msgstr "Check before you press {btn}. After that, any difference is yours to handle."

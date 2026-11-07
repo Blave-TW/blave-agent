@@ -191,6 +191,15 @@ for (const lang of ["zh", "en"]) {
   ok(`Bitget 換帳戶類型的暫停句／清單／事件列 ${lang} 兩邊逐字一致(${Object.keys(BITGET_PAIRS).length} 句)`, bad.length === 0,
     bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
+// 已暫停時帳戶對不上(halt.unexplained;designer halt-unexplained-copy-review-2026-11-07 §一):頁首兩句與事件列兩句 zh / en 逐字一致,任一邊沒有就紅
+const UNX_PAIRS = { "tr.haltUnexplained": "workspace_pf_halt_unx", "tr.haltUnexplainedNosym": "workspace_pf_halt_unx_nosym",
+  "tr.haltUnexplainedDo": "workspace_pf_halt_unx_do", "tr.ov.evHaltUnexplained": "workspace_ov_ev_halt_unx", "tr.ov.evHaltUnexplainedNote": "workspace_ov_ev_halt_unx_note" };
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const bad = Object.entries(UNX_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== wp[w]);
+  ok(`帳戶對不上的頁首句與事件列 ${lang} 兩邊逐字一致(${Object.keys(UNX_PAIRS).length} 句)`, bad.length === 0,
+    bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
 // 接回後讀帳是空的而自動暫停、帳戶比帳本少(designer rebind-autohalt-ux-2026-11-05 3.2／3.3):頁首專屬句、「帳戶實際 N」與它的 tooltip 逐字一致;
 // 兩邊都用 /^positions read back empty/ 認這一型,而那串字要真的是機器端 manager/reconciler.py 寫的原因開頭。任一邊沒有就紅
 const EMPTY_READ_PAIRS = { "tr.haltEmptyRead": "workspace_pf_halt_empty_read", "po.acctActual": "workspace_pf_acct_actual", "tr.acctActualTip": "workspace_pf_acct_actual_tip" };

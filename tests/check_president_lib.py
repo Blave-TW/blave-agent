@@ -1225,15 +1225,15 @@ try:
 
     def full_freeze_reason(text):   # HALT stops closes and stops too (lib/guard): the words must say so
         return ("自動下單已全部暫停，平倉與停損也不會送" in text and "平倉照常" not in text and "closes still run" not in text
-                and "「解除暫停」" in text and "已停止下單" not in text and "恢復下單" not in text)
+                and "「啟動下單」" in text and "解除暫停" not in text and "已停止下單" not in text and "恢復下單" not in text)
 
     n_err, halts = park_then_escalate()
     e = guard.halt_info() or {}
     check(guard.halted() and len(errors()) == n_err and "TMFJ6" in e.get("reason", "")
-          and "平掉" in e.get("reason", "") and full_freeze_reason(e.get("reason", "")) and len(audits("halt_tripped")) == halts + 1
+          and "差額 Blave 不會處理" in e.get("reason", "") and "平掉" not in e.get("reason", "") and full_freeze_reason(e.get("reason", "")) and len(audits("halt_tripped")) == halts + 1
           and audits("halt_tripped")[-1]["source"] == "reconciler" and pending()["TMFJ6"].get("halted") is True,
           "the third distinct snapshot that fits neither: HALT by the reconciler (its reason the P1: a full freeze, "
-          "flatten in the app first, 解除暫停), no order_errors row beside it, the row kept as halted", e)
+          "check the position, the difference is the user's (never flatten it), 啟動下單), no order_errors row beside it, the row kept as halted", e)
     sent_legs.clear()
     reconciler.place_order("TMF", 1, exchange="president")
     check(sent_legs == [], "…and HALT holds the entry")
@@ -1386,7 +1386,7 @@ try:
     check(isinstance(e, PermissionError) and guard.halted() and "記不進帳本" in reason and full_freeze_reason(reason)
           and errors()[-1:] == before_rows
           and "TMFJ6" in pending() and book_qty() == q0 and adopted() == a4,
-          "book unreadable: HALT (reason: a full freeze, 解除暫停), no order_errors row, raised, row kept, no late_fill_adopted",
+          "book unreadable: HALT (reason: a full freeze, 啟動下單), no order_errors row, raised, row kept, no late_fill_adopted",
           (e, reason, errors()[-1:]))
     guard.clear_halt("test")
     gp()

@@ -1030,7 +1030,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const haltApp = { alive: true, report: { venues: Vp, config: { amounts: { a: 100 } }, halt: { halted: true, at: 1, source: "desktop ui" }, reconciler: { alive: false, heartbeat_at: 100 }, daemon: { reconciler: { running: false, wanted: false } } } };
       const fn2 = (n) => src.slice(src.indexOf("function " + n + "("), src.indexOf("\nfunction ", src.indexOf("function " + n + "(") + 1));
       var TR = { env: "local", st: haltApp, pending: null }, trReport = () => TR.st.report, t = (k) => k, trStamp = () => "—", envHeadWord = () => null, trKeyBad = () => false;
-      eval(fn2("trStateText")); eval(fn2("trFailStopped")); eval(fn2("trHaltReasonText")); eval(fn2("cxFailWord"));
+      eval(fn2("trStateText")); eval(fn2("trFailStopped")); eval(fn2("trHaltReasonText")); eval(fn2("trHaltReasonBase")); eval(fn2("trHaltUnexplained")); eval(fn2("trUnxVenue")); eval(fn2("cxFailWord"));
       ok("HALT + Blave 結束再打開:kind = app、狀態 halted、狀態行是 Blave 重開那條(不是 HALT 的「平倉照常」)",
         trRestartKind(haltApp.report) === "app" && trExecState(haltApp) === "halted" && trStateText("halted") === "tr.halted · tr.restartStoppedLocal");
       eval(fn2("trHaltMismatch"));
@@ -1038,12 +1038,45 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const mmR = (o) => ({ venues: Vp, config: { amounts: { a: 100 } }, halt: { halted: true, at: 1, source: "reconciler", reason: "[bitget_account_mode_mismatch] x",
         mismatch: { kind: "bitget_mode_mismatch", venue: "bitget", mode: "uta", legs: mmLegs } }, reconciler: { alive: true, heartbeat_at: 100 }, daemon: { reconciler: { running: true, wanted: true } }, ...o });
       ok("Bitget 換帳戶類型對不上(halt.mismatch):原因句換成 Bitget 專屬那句、帶對不上的腿數;經典那一邊用 Classic 那句;形狀不對、沒暫停照舊",
-        trHaltReasonText(mmR({}), null) === "tr.haltBitgetMismatchUta" && /\{ n: mm\.legs\.length \}/.test(fn2("trHaltReasonText"))
+        trHaltReasonText(mmR({}), null) === "tr.haltBitgetMismatchUta" && /\{ n: mm\.legs\.length \}/.test(fn2("trHaltReasonBase"))
         && trHaltReasonText(mmR({ halt: { ...mmR({}).halt, mismatch: { ...mmR({}).halt.mismatch, mode: "classic" } } }), null) === "tr.haltBitgetMismatchClassic"
         && trHaltMismatch(mmR({ halt: { ...mmR({}).halt, mismatch: { kind: "other", legs: mmLegs } } })) === null
         && trHaltMismatch(mmR({ halt: { ...mmR({}).halt, mismatch: { ...mmR({}).halt.mismatch, legs: [] } } })) === null
         && trHaltMismatch(mmR({ halt: { ...mmR({}).halt, halted: false } })) === null
         && trHaltReasonText(mmR({ halt: { ...mmR({}).halt, mismatch: undefined } }), null) === "tr.haltReasonAll");
+      // 已暫停時帳戶對不上(halt.unexplained;designer halt-unexplained-copy-review §一):對不上那兩句放最前面、兩家都列、標的去重,
+      // zh 句間不空格、en 用空格;雲端事件沒有 venue／symbol 時從 park_id 拆;主機重開停住也接(同網頁);{btn} 是畫面上那顆(Z 態「解除暫停」)
+      { const ux = (u, o) => mmR({ halt: { halted: true, at: 1, source: "web", reason: "close all positions", unexplained: u }, ...o });
+        const U = (id, venue, symbol) => ({ park_id: id, ...(venue ? { venue } : {}), ...(symbol ? { symbol } : {}), at: 2, reason: "x" });
+        var trVenueLabel = (v) => v, LANG = "zh";
+        const tv = (k, v) => k + (v ? JSON.stringify(v) : "");
+        var t = tv;
+        eval(fn2("trUnxSym"));
+        const base = trHaltReasonBase(ux([]), null);
+        const one = trHaltReasonText(ux([U("capital:TMF@1", "capital", "TMF")]), null);
+        const two = trHaltReasonText(ux([U("capital:TMF@1", "capital", "TMF"), U("capital:TMF@2", "capital", "TMF"), U("TMFK6@3", "president", "TMFK6")]), null);
+        LANG = "en"; const en = trHaltReasonText(ux([U("capital:TMF@1", "capital", "TMF")]), null); LANG = "zh";
+        const nosym = trHaltReasonText(ux([{ park_id: "@1", venue: "capital" }]), null);
+        ok("帳戶對不上:原因行 = 對不上(券商＋標的)＋先核對再按「啟動下單」＋原本的底句;zh 不空格、en 空格",
+          one === 'tr.haltUnexplained{"venue":"capital","symbols":"TMF"}tr.haltUnexplainedDo{"btn":"tr.start"}' + base
+          && en === 'tr.haltUnexplained{"venue":"capital","symbols":"TMF"} tr.haltUnexplainedDo{"btn":"tr.start"} ' + base, one + " | " + en);
+        ok("帳戶對不上:兩家都列、標的去重(zh 頓號);沒有標的用 Nosym 那句",
+          two.startsWith('tr.haltUnexplained{"venue":"capital、president","symbols":"TMF、TMFK6"}') && nosym.startsWith('tr.haltUnexplainedNosym{"venue":"capital"}'), two + " | " + nosym);
+        ok("帳戶對不上:沒有 unexplained、壞資料、沒暫停照舊",
+          trHaltReasonText(ux([]), null) === base && trHaltReasonText(ux([null, { park_id: "" }, "x"]), null) === base
+          && trHaltUnexplained({ halted: false, unexplained: [U("a")] }).length === 0);
+        const zr = ux([U("capital:TMF@1", "capital", "TMF")], { config: { amounts: { a: 0 } } }), zv = trZView("halted", zr);
+        const zText = trHaltReasonText(zr, null);
+        ok("帳戶對不上:Z 態(畫面上是「解除暫停」那顆)第二句填 tr.release,不是停用的啟動下單;同網頁 pfHaltUnxBtn",
+          zv.release === true && zText.includes('tr.haltUnexplainedDo{"btn":"tr.release"}') && one.includes('{"btn":"tr.start"}'), JSON.stringify(zv) + " " + zText);
+        const mr = ux([U("capital:TMF@1", "capital", "TMF")]), mRestart = trRestartKind;
+        trRestartKind = () => "machine"; const mText = trHaltReasonText(mr, null); trRestartKind = mRestart;
+        ok("帳戶對不上:主機重開停住也接(HALT 檔跨重開都在;同網頁)", mText.startsWith('tr.haltUnexplained{"venue":"capital","symbols":"TMF"}'), mText);
+        ok("帳戶對不上:券商與標的從 park_id 拆(雲端事件沒有這兩欄)",
+          trUnxVenue(U("capital:TMF@1")) === "capital" && trUnxVenue(U("TMFK6@1")) === "president" && trUnxVenue(U("TMFK6@1", "capital")) === "capital"
+          && trUnxSym(U("capital:TMF@1")) === "TMF" && trUnxSym(U("TMFK6@1.5")) === "TMFK6" && trUnxSym(U("x@1", null, "MXF")) === "MXF");
+        ok("帳戶對不上:原因行升成正文墨色(用戶自己按的暫停也升)", /\|\| trAcctAsk\(hr\) \|\| trHaltUnexplained\(hr\.halt\)\.length\) \? trHaltReasonText\(hr, TR\.acctDone\)/.test(src));
+        t = (k) => k; }
       { // 接回後讀帳是空的而自動暫停(designer rebind-autohalt-ux 3.2):專屬句;別的自動暫停、Z、主機重開照舊。比對字串是機器端 manager/reconciler.py 的原文
         const er = (o, h) => mmR({ halt: { halted: true, at: 1, source: "reconciler", reason: "positions read back empty while strategies still hold targets — confirm this is the right account", ...h }, ...o });
         const recSrc = fs.readFileSync(path.join(__dirname, "..", "manager", "reconciler.py"), "utf8");
@@ -1307,7 +1340,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("0.1.27 凍結:trMayFire 為 false(暫停中存金額不會立刻下單);舊 lib 的單純 HALT 照舊 true",
       trMayFire(F("web"), null) === false && trMayFire(H("web"), null) === true);
     const head = fnS("trPaintHead");
-    ok("A′ / B / B0 的原因行升正文墨色,用原因句本身定位(前面有「串接失敗 · 」也照升)", /const inkReason = state === "halted" && \(trRestartKind\(hr\) \|\| \(trHaltStopsAll\(hr\.halt\) && !\(trHaltFreeze\(hr\) && trHaltByUser\(hr\.halt\)\)\) \|\| trAcctAsk\(hr\)\) \? trHaltReasonText\(hr, TR\.acctDone\) : state === "noaccount" && trNoAccountStopped\(hr\) \? t\("tr\.cloud\.restartNoAccountZ"\) : "";/.test(head)
+    ok("A′ / B / B0 與帳戶對不上的原因行升正文墨色,用原因句本身定位(前面有「串接失敗 · 」也照升)", /const inkReason = state === "halted" && \(trRestartKind\(hr\) \|\| \(trHaltStopsAll\(hr\.halt\) && !\(trHaltFreeze\(hr\) && trHaltByUser\(hr\.halt\)\)\) \|\| trAcctAsk\(hr\) \|\| trHaltUnexplained\(hr\.halt\)\.length\) \? trHaltReasonText\(hr, TR\.acctDone\) : state === "noaccount" && trNoAccountStopped\(hr\) \? t\("tr\.cloud\.restartNoAccountZ"\) : "";/.test(head)
       && /const inkAt = inkReason \? full\.indexOf\(inkReason\) : -1;/.test(head) && !/full === text && !trFailedIds/.test(head.slice(head.indexOf("const inkReason"))));
     ok("A′ 事件列:halt 列與 UI 補的 HALT 列都依 source 取重開那句說明", /note = trHaltUnconfirmedSym\(d\) != null \? trHaltUnconfirmedNote\(d\) : trHaltStopsAll\(d\) \|\| trHaltFreeze\(r\) \? t\("tr\.ov\.evRestartStoppedNote"\) : closes \? null : t\("tr\.ov\.evHaltNote"\);/.test(src)
       && /trHaltStopsAll\(halt\) \? t\("tr\.ov\.evRestartStoppedNote"\) : t\("tr\.ov\.evHaltNote"\)/.test(src)); }

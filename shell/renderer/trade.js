@@ -279,7 +279,33 @@ function trHaltUnconfirmedNote(h) {
   const sym = trHaltUnconfirmedSym(h);
   return sym ? t("tr.ov.evHaltUnconfirmedNote", { sym }) : t("tr.ov.evHaltUnconfirmedNoteNosym");
 }
+/* 已暫停時(多半是用戶自己按的)停放單帳戶讀 3 次對不上:對帳器不改 HALT 的原因,記進 halt.unexplained(lib/guard.annotate_halt,
+   runtime halt_state 帶出)[{park_id, venue, symbol, at, reason}]。雲端的 halt 事件帶 data.unexplained、park_id,沒有 venue */
+function trHaltUnexplained(h) {
+  return (h && h.halted && Array.isArray(h.unexplained) ? h.unexplained : []).filter((u) => u && typeof u.park_id === "string" && u.park_id);
+}
+// 群益的 park_id 是 "capital:TMF@…",統一的是合約 "TMFK6@…"(manager/reconciler._park_id);雲端事件沒有 venue／symbol,從 park_id 拆
+function trUnxVenue(u) {
+  const v = u && typeof u.venue === "string" && u.venue ? u.venue : String((u && u.park_id) || "").startsWith("capital:") ? "capital" : "president";
+  return trVenueLabel(v, true);
+}
+function trUnxSym(u) {
+  if (u && typeof u.symbol === "string" && u.symbol) return u.symbol;
+  return String((u && u.park_id) || "").replace(/^capital:/, "").split("@")[0];
+}
+/* 暫停原因行:HALT 檔有 unexplained 時,帳戶對不上那兩句放最前面(哪家、哪個標的、先核對、差額歸你),原本的底句照留在後面。
+   兩家都列、標的去重;zh 句間不空格(designer halt-unexplained-copy-review §一 組裝規則,同網頁)。主機重開停住也接:HALT 檔與
+   unexplained 跨重開都在(重開停住是另一個檔),同網頁 pfHaltUnxBits。{btn} 是畫面上那顆鈕(Wei:一律「啟動下單」,Z 態那顆「解除暫停」;同網頁 pfHaltUnxBtn) */
 function trHaltReasonText(r, done) {
+  const base = trHaltReasonBase(r, done), unx = trHaltUnexplained(r && r.halt);
+  if (!unx.length) return base;
+  const zh = LANG === "zh", list = (a) => a.filter((x, i) => x && a.indexOf(x) === i).join(zh ? "、" : ", ");
+  const venue = list(unx.map(trUnxVenue)), symbols = list(unx.map(trUnxSym));
+  const head = symbols ? t("tr.haltUnexplained", { venue, symbols }) : t("tr.haltUnexplainedNosym", { venue });
+  const btn = t(trZView("halted", r).release ? "tr.release" : "tr.start");
+  return [head, t("tr.haltUnexplainedDo", { btn }), base].join(zh ? "" : " ");
+}
+function trHaltReasonBase(r, done) {
   const rk = trRestartKind(r), z = trNoAmounts(r) && !trRestartUnconfirmed(r), H = !!(r && r.halt && r.halt.halted);
   const vl = (v) => (typeof trVenueLabel === "function" ? trVenueLabel(v, true) : v), bh = trBookHold(r);
   if (H && bh && bh.ask !== false) return t("tr.acct.reason", { v: vl(bh.venue) });   // 要回答的那一題優先:它的出口是「確認帳戶」,不是啟動下單
@@ -1903,6 +1929,7 @@ function trPushLabels() {
     ev_manual_close_required_queued: t("tm.evCloseQueued"), ev_manual_close_required_queued_n: t("tm.evCloseQueuedNote"),
     ev_manual_close_required_queued_soon_n: t("tm.evCloseQueuedSoonNote"),
     ev_halt_unconfirmed_n: t("tm.evHaltUnconfirmedNote"),   // 大寫開頭、不帶標的(標題已帶「· 標的」)
+    ev_halt_unexplained: t("tr.ov.evHaltUnexplained"),   // 帳戶對不上(halt.unexplained):標題「部位對不上 · 標的」,內文是機器那句原因
     ev_order_unconfirmed_close_all: t("tr.ov.evUnconfirmedCloseAll"), ev_order_unconfirmed_close_all_n: t("tr.ov.evUnconfirmedCloseAllNote"),
     ev_order_unconfirmed_stuck: t("tr.ov.evUnconfirmedStuck"), ev_order_unconfirmed_stuck_n: t("tr.ov.evUnconfirmedStuckNote"),
     stratOne: t("tr.ov.evStratOne", { name: "{name}" }), stratTwo: t("tr.ov.evStratTwo", { a: "{a}", b: "{b}" }),
@@ -2514,7 +2541,8 @@ function trPaintHead() {
   // A′(自動暫停、什麼單都不下)與沒有交易所的重開停止(B0)同 B 一級
   // 用原因句本身定位(同下面 C 的紅字):前面有「串接失敗 · 」、後面接「最後更新」都照樣升(新狀態稽核 §3-1)
   const hr = trReport() || {};
-  const inkReason = state === "halted" && (trRestartKind(hr) || (trHaltStopsAll(hr.halt) && !(trHaltFreeze(hr) && trHaltByUser(hr.halt))) || trAcctAsk(hr)) ? trHaltReasonText(hr, TR.acctDone) : state === "noaccount" && trNoAccountStopped(hr) ? t("tr.cloud.restartNoAccountZ") : "";
+  // 帳戶對不上(halt.unexplained):用戶自己按的暫停也升,那兩句是按啟動前要先做的事(designer halt-unexplained-copy-review §一「顏色」,同網頁 warn)
+  const inkReason = state === "halted" && (trRestartKind(hr) || (trHaltStopsAll(hr.halt) && !(trHaltFreeze(hr) && trHaltByUser(hr.halt))) || trAcctAsk(hr) || trHaltUnexplained(hr.halt).length) ? trHaltReasonText(hr, TR.acctDone) : state === "noaccount" && trNoAccountStopped(hr) ? t("tr.cloud.restartNoAccountZ") : "";
   const inkAt = inkReason ? full.indexOf(inkReason) : -1;
   /* 「可能仍在下單」那一條原因行用紅字(錢可能還在外面暴露、而用戶以為停了);狀態詞本身一般墨色。
      紅的只有原因那一句本身:前面可能有「串接失敗 · 」、後面可能接「 · 最後更新…」(回報過舊),兩種都不能讓紅字消失 */
@@ -5840,7 +5868,7 @@ function trOvEvents(r, z) {
      雲端:平台的事件流(/cloud/events),欄位包在 data 裡、型別也多得多——認不得的型別不畫(沒有文案就是一行代號)。
      有了它,「已暫停下單」那一列在恢復之後不會消失,也才有「已恢復下單 / 已連接 / 已解除」。 */
   // 照時間排:「啟動」還是「恢復」看前一筆暫停／啟動是哪一個(稽核 0127b1 P1-6)
-  const ui = (Array.isArray(TR.ov.ui) ? TR.ov.ui : []).slice().sort((a, b) => ((a && a.ts) || 0) - ((b && b.ts) || 0)), uiHalts = [];
+  const ui = (Array.isArray(TR.ov.ui) ? TR.ov.ui : []).slice().sort((a, b) => ((a && a.ts) || 0) - ((b && b.ts) || 0)), uiHalts = [], unxSeen = new Set();
   // 主機重開後停住(machine_restart_stopped)也是暫停(那一列寫「已暫停下單」,同網頁):機器事件在 r.events,不在 ui 裡,照時間插進來只拿來判前一筆
   const stops = (Array.isArray(r.events) ? r.events : []).filter((ev) => ev && ev.type === "machine_restart_stopped").map((ev) => ({ ms: trMs(ev.ts), stop: true })).filter((x) => x.ms != null);
   const seq = ui.filter((ev) => ev && typeof ev.ts === "number").map((ev) => ({ ms: ev.ts * 1000, ev })).concat(stops).sort((a, b) => a.ms - b.ms);
@@ -5853,7 +5881,8 @@ function trOvEvents(r, z) {
     let head = null, note = null, lv = 3, tip = null, code = null, tail = null, strat = null;
     // 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);這台電腦記的那一筆沒有 source = 人按的
     // halt 的字照 source(trEvLevel);顏色在 push 那裡讓 api 的 level 蓋過
-    if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, trHaltNow(ev, d, r)); head = t(lv === 1 ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : d.by === "phone" ? "tr.ov.evHaltPhone" : "tr.ov.evHalt"); note = trHaltUnconfirmedSym(d) != null ? trHaltUnconfirmedNote(d) : trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : closes ? null : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
+    if (ev.type === "halt" && d.unexplained === true) { head = t("tr.ov.evHaltUnexplained"); lv = 1; code = trUnxSym(d) || null; note = t("tr.ov.evHaltUnexplainedNote", { venue: trUnxVenue(d) }); tip = typeof d.reason === "string" && d.reason ? d.reason : null; unxSeen.add(String(d.park_id || "")); }
+    else if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, trHaltNow(ev, d, r)); head = t(lv === 1 ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : d.by === "phone" ? "tr.ov.evHaltPhone" : "tr.ov.evHalt"); note = trHaltUnconfirmedSym(d) != null ? trHaltUnconfirmedNote(d) : trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : closes ? null : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
     // 前一筆是暫停才叫「恢復」;第一次啟動(或之前的暫停不在紀錄裡,例如對帳器自動暫停)寫「已啟動下單」。標題已經講完,不帶說明
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t(lastRun === "halt" ? "tr.ov.evResume" : "tr.ov.evStart"); lastRun = "resume"; }
     else if (ev.type === "venue_connected" && venue) head = ["tr.ov.evConnected", { venue }];
@@ -5875,6 +5904,10 @@ function trOvEvents(r, z) {
     if (trHaltUnconfirmedSym(halt) != null) body.append(" ", trEl("span", "dim", "— " + trHaltUnconfirmedNote(halt)));
     else if (trHaltStopsAll(halt) || !closes) body.append(" ", trEl("span", "dim", "— " + (trHaltStopsAll(halt) ? t("tr.ov.evRestartStoppedNote") : t("tr.ov.evHaltNote"))));   // A′:什麼單都不下,同重開那一句
   });
+  // 帳戶對不上(halt.unexplained):平台已記成事件的(雲端,同 park_id)上面畫過了;這台電腦沒有平台事件,從狀態檔畫
+  // 標題「部位對不上」＋標的(mono)＋「— 先到{venue}核對」,tooltip 是機器那句原因(口數、送單前後),同雲端那一列
+  trHaltUnexplained(halt).filter((u) => !unxSeen.has(u.park_id)).forEach((u) => push(trMs(u.at), (body) => trEvBody(body, t("tr.ov.evHaltUnexplained"),
+    t("tr.ov.evHaltUnexplainedNote", { venue: trUnxVenue(u) }), 1, typeof u.reason === "string" && u.reason ? u.reason : null, null, trUnxSym(u) || null, null, null)));
   trUnconfirmedRows(r.order_errors).forEach(({ e, ms }) => {
     push(ms, (body) => {
       const sym = String(e.symbol || "").replace(/@spot$/, ""), raw = String(e.error || e.message || ""), twn = trTwName(sym), tw = trTwNameEl(sym);

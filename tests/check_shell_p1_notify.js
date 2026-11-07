@@ -132,6 +132,8 @@ t("stuck 那則有自己的標題與內文", src.includes("ev_order_unconfirmed_
   t("unexplained:壞資料不炸、不記", (() => { const y = p1FromState(userHalt([null, "x", { park_id: "" }, { park_id: 3 }]), base, NOW); return y.show.length === 0 && y.unx.length === 0; })());
   t("unexplained:記住的 id 有上限", p1FromState(userHalt([U("n")]), { ...base, unx: Array.from({ length: 25 }, (_, i) => "p" + i) }, NOW).unx.length === P1_UNX_KEEP);
   t("unexplained:p1-notified.json 存讀 unx", /unx: p1Ids\(j\.unx\)/.test(src) && /unx: stt\.unx/.test(src) && p1Ids(["a", 3, ""]).join() === "a" && p1Ids(undefined) === null);
-  t("unexplained:通知內文 = 機器的原因句＋自動暫停的固定說明(同雲端 halt P1),節流跟自動 HALT 分開",
-    /e\.payload\.unexplained && e\.payload\.reason\s*\? e\.payload\.reason \+ \(tmLabels\.ev_machine_restart_stopped_n/.test(src) && /":unexplained"/.test(src)); }
+  t("unexplained:通知標題是帳戶對不上(ev_halt_unexplained),內文是機器的原因句;不借主機重開那句;節流跟自動 HALT 分開",
+    /const head = \(unexplained && tmLabels\.ev_halt_unexplained\) \|\|/.test(src) && /const note = unexplained \? e\.payload\.reason/.test(src)
+    && !/ev_machine_restart_stopped_n \? " "/.test(src) && /":unexplained"/.test(src)
+    && /ev_halt_unexplained: t\("tr\.ov\.evHaltUnexplained"\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8"))); }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

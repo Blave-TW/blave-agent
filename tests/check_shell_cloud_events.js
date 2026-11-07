@@ -214,4 +214,20 @@ ok("trEvApiLevel:P1/P2/P3 → 1/2/3;缺、小寫、P4、數字、非物件 → n
     /讀不到/.test(zhV["tr.ov.evUnreach"] || "") && !/沒有事件/.test(zhV["tr.ov.evUnreach"] || "")
     && /read/i.test(enV["tr.ov.evUnreach"] || "") && !/no events/i.test(enV["tr.ov.evUnreach"] || "")); }
 
+// 已暫停時帳戶對不上(雲端 halt 事件 data.unexplained、本機 HALT 檔 halt.unexplained;designer halt-unexplained-copy-review §一):
+// 事件列「部位對不上」＋標的(mono,雲端從 park_id 拆)＋「— 先到{venue}核對」,tooltip 是機器原因句;雲端畫過的 park_id 狀態檔那份不再畫
+{ const loop = cut("const ui = (Array.isArray(TR.ov.ui)", "// 目前的 HALT"), local = cut("// 標題「部位對不上」", "trUnconfirmedRows(r.order_errors).forEach");
+  ok("事件列:雲端 halt 帶 unexplained → 部位對不上、P1、代號是 park_id 拆出的標的、說明帶券商、tooltip 是原因句;排在一般 halt 分支之前",
+    /if \(ev\.type === "halt" && d\.unexplained === true\) \{ head = t\("tr\.ov\.evHaltUnexplained"\); lv = 1; code = trUnxSym\(d\) \|\| null; note = t\("tr\.ov\.evHaltUnexplainedNote", \{ venue: trUnxVenue\(d\) \}\); tip = typeof d\.reason === "string"/.test(loop)
+    && /unxSeen\.add/.test(loop) && loop.indexOf("d.unexplained === true") < loop.indexOf('else if (ev.type === "halt" || ev.type === "halt_close")'));
+  ok("事件列:本機從 halt.unexplained 畫(trEvBody 同一套:P1、標的、說明、tooltip),跳過雲端已畫的 park_id",
+    /trHaltUnexplained\(halt\)\.filter\(\(u\) => !unxSeen\.has\(u\.park_id\)\)/.test(local) && /push\(trMs\(u\.at\), \(body\) => trEvBody\(body, t\("tr\.ov\.evHaltUnexplained"\)/.test(local)
+    && /t\("tr\.ov\.evHaltUnexplainedNote", \{ venue: trUnxVenue\(u\) \}\), 1, typeof u\.reason === "string"/.test(local) && /trUnxSym\(u\) \|\| null/.test(local));
+  const S = fs.readFileSync(path.join(R, "strings.js"), "utf8");
+  const keys = { "tr.haltUnexplained": ["{venue}", "{symbols}"], "tr.haltUnexplainedNosym": ["{venue}"], "tr.haltUnexplainedDo": ["{btn}"],
+    "tr.ov.evHaltUnexplained": [], "tr.ov.evHaltUnexplainedNote": ["{venue}"] };
+  ok("帳戶對不上的五個 key 兩語都在、佔位符齊;zh 事件說明不帶句號、不叫人按鈕", Object.entries(keys).every(([k, ph]) => {
+    const vals = [...S.matchAll(new RegExp('"' + k.replace(/\./g, "\\.") + '": "((?:[^"\\\\]|\\\\.)*)"', "g"))].map((m) => m[1]);
+    return vals.length === 2 && vals.every((v) => ph.every((p) => v.includes(p)));
+  }) && /"tr\.ov\.evHaltUnexplainedNote": "先到\{venue\}核對"/.test(S)); }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

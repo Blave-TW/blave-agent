@@ -651,11 +651,11 @@ def _capital_overfill(symbol, root, result, lots, requested, base, intent):
         # the api keeps 200 characters of a halt reason (_halt_words): the seq stays in audit and log
         msg = (f"Capital reported {got:g} lots filled on {symbol}, more than the {lots} sent. All trading "
                f"paused, closes and stops too. Check the {symbol} position in the Capital app, close any "
-               f"extra lots, then press Release pause.")
+               f"extra lots, then press Start trading.")
     else:
         msg = (f"群益回報 {symbol} 成交 {got:g} 口，比送出的 {lots} 口多（序號 {seq}）。Blave 沒有記這筆。"
                f"自動下單已全部暫停，平倉與停損也不會送。到群益下單軟體核對 {symbol} 部位，"
-               f"多出的口數先平掉，再按「解除暫停」。")
+               f"多出的口數先平掉，再按「啟動下單」。")
     guard.audit('order_overfill_refused', venue=venue_traits.CAPITAL, symbol=root, lots=lots, fill_qty=got,
                 seq_no=result.get('seq_no'))
     logging.error(f"[reconciler/capital] {root}: {got:g} lots reported filled for a {lots}-lot order — "
@@ -896,7 +896,7 @@ def _capital_claim_pending(started):
                                 f"{lots:+g} parked lots ({len(reads)}/{PENDING_SENT_MAX_READS} reads)")
                 continue
             before = f"{expected:g} 口" if expected is not None else "不明"
-            msg = _halt_words('群益', '群益下單軟體', '在群益', root, lots, len(reads), before, f"{net:g} 口")
+            msg = _halt_words('群益', '群益下單軟體', root, lots, len(reads), before, f"{net:g} 口")
             _park_unexplained(msg, root, venue_traits.CAPITAL, park_id)
             row['halted'] = True
             save()
@@ -1125,18 +1125,20 @@ def _en():
     return _machine_lang() == 'en'
 
 
-def _halt_words(name, app, where, what, lots, reads, before, now):
+def _halt_words(name, app, what, lots, reads, before, now):
     """The HALT a parked send ends in (both venues). HALT is a full freeze (lib/guard): no entry,
-    no close, no stop goes out until 〔解除暫停〕. The reason is the platform's halt P1, so it says so.
-    After it the lots are the user's (dropped from the park)."""
+    no close, no stop goes out until 〔啟動下單〕 (or 〔解除暫停〕, the Z-state button). The reason is the platform's halt P1, so it says so.
+    After it the lots are the user's (dropped from the park, the book unchanged), so it never says
+    "close it if filled": the send is most often a close, and a filled close leaves nothing to close —
+    the user checks the position and owns the difference (designer halt-unexplained-copy-review §一)."""
     if _en():
         en, en_app = _VENUE_EN[name]
         # the api keeps 200 characters of a halt reason (agent_events halt.fields.reason): the steps must fit
         return (f"{en} {what}: {abs(lots):g}-lot {'buy' if lots > 0 else 'sell'}, no fill report. All trading paused, "
-                f"closes and stops too. Check it in {en_app}; if filled, close it there, then press Release pause.")
+                f"closes and stops too. Check {what} in {en_app}; Blave won't handle any difference. Then press Start trading.")
     return (f"{name} {what} {'買' if lots > 0 else '賣'} {abs(lots):g} 口沒回報成交，帳戶讀了 {reads} 次都對不上"
-            f"（送單前 {before}、現在 {now}）。自動下單已全部暫停，平倉與停損也不會送。到{app}核對這筆，"
-            f"有成交先{where}平掉，再按「解除暫停」。Blave 不會把它算進策略部位。")
+            f"（送單前 {before}、現在 {now}）。自動下單已全部暫停，平倉與停損也不會送。到{app}核對 {what} 部位，"
+            f"差額 Blave 不會處理。之後再按「啟動下單」。")
 
 
 def _park_unexplained(msg, symbol, venue, park_id):
@@ -1170,10 +1172,10 @@ def _halt_unknown_booked(sym, pid, row, venue=venue_traits.PRESIDENT, key=None):
     if _en():
         en, en_app = _VENUE_EN[name]
         msg = (f"{en} {pid}: an order with no fill report may not be booked. All trading paused, closes and "
-               f"stops too. Check the {pid} position in {en_app}, then press Release pause.")
+               f"stops too. Check the {pid} position in {en_app}, then press Start trading.")
     else:
         msg = (f"{name} {pid} 有一筆沒回報成交，Blave 確認不了它記帳了沒。自動下單已全部暫停，平倉與停損也不會送。"
-               f"到{app}核對 {pid} 部位，再按「解除暫停」。")
+               f"到{app}核對 {pid} 部位，再按「啟動下單」。")
     guard.audit('order_unfilled_park_unverified', venue=venue, symbol=sym, contract=pid,
                 park_id=_park_id(key or pid, row))
     try:
@@ -1234,10 +1236,10 @@ def _book_late_fill_or_halt(name, root, venue, contract, lots, park_id, ordernos
         # HALT is a full freeze; the row stays, so the round after 解除暫停 books it (once, by its park id)
         if _en():
             msg = (f"{_VENUE_EN.get(name, (name,))[0]} {contract}: a late {abs(lots):g}-lot fill wasn't recorded. All "
-                   f"trading paused, closes and stops too. Check {root}, then press Release pause; Blave records it next round.")
+                   f"trading paused, closes and stops too. Check {root}, then press Start trading; Blave records it next round.")
         else:
             msg = (f"{name} {contract} 有 {abs(lots):g} 口晚到的成交記不進帳本。自動下單已全部暫停，平倉與停損也不會送。"
-                   f"核對 {root} 部位後按「解除暫停」，Blave 下一輪會再記一次。")
+                   f"核對 {root} 部位後按「啟動下單」，Blave 下一輪會再記一次。")
         logging.error(f"[reconciler/{venue}] {contract}: late fill of {lots:+g} lots not booked "
                       f"({type(e).__name__}: {e}) — HALT, the park row is kept")
         try:
@@ -1323,7 +1325,7 @@ def _president_claim_pending(started):
                                 f"{expected:+g} nor {expected + lots:+g} ({len(reads)}/"
                                 f"{PENDING_SENT_MAX_READS} reads) — {root} entries still wait")
                 continue
-            msg = _halt_words('統一', '統一 app ', '在統一 app ', pid, lots, len(reads), f"{expected:g} 口", f"{net:g} 口")
+            msg = _halt_words('統一', '統一 app ', pid, lots, len(reads), f"{expected:g} 口", f"{net:g} 口")
             _park_unexplained(msg, pid, venue_traits.PRESIDENT, park_id)
             row['halted'] = True
             _save_claimed(pending, venue_traits.PRESIDENT)

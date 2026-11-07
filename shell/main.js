@@ -4442,6 +4442,7 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_venue_login_blocked_capital: "Capital login stopped", ev_venue_login_blocked_capital_n: "New orders and closes can't go out. Enter the trading password again on the auto-trading page.",
   ev_venue_login_blocked_capital_locked_n: "New orders and closes can't go out. Unlock it with Capital, then enter the trading password again on the auto-trading page.",
   ev_halt_unconfirmed_n: "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading.",
+  ev_halt_unexplained: "Position mismatch",
   ev_order_unconfirmed_close_all: "Not closed with the rest", ev_order_unconfirmed_close_all_n: "An order here has an unknown outcome and was left out of this close. Don't trade it yourself: tell your agent how much filled, then press Pause and close positions again.",
   ev_order_unconfirmed: "Order outcome unknown", ev_order_unconfirmed_n: "This order may have filled — don't place it again yourself. New entries on this symbol are paused; closes still run.",
   ev_clock_skew_hold: "TAIEX futures entries paused", ev_clock_skew_hold_n: "This computer’s clock is off, so TAIEX futures entries are paused; closes still run. Open Blave to see how to fix it.",
@@ -5110,11 +5111,11 @@ function p1Sync() {
     const mcr = e.type === "manual_close_required" && e.payload ? e.payload.reason : null;
     const variant = closeAll ? "_close_all" : stuck ? "_stuck" : capital ? "_capital"
       : mcr === "snapshot_lag" ? "_lag" : mcr === "queued" ? "_queued" : "";
-    const head = tmLabels["ev_" + e.type + variant] || tmLabels["ev_" + e.type];
+    const unexplained = e.type === "halt" && e.payload && e.payload.unexplained === true && !!e.payload.reason;
+    const head = (unexplained && tmLabels.ev_halt_unexplained) || tmLabels["ev_" + e.type + variant] || tmLabels["ev_" + e.type];
     // 下單結果不明、追蹤不了而整台暫停:講可能已成交、不要手動補單、怎麼恢復,不是只有「什麼單都不送」
-    // 帳戶對不上(unexplained):原因句是機器寫的那句,後面接自動暫停的固定說明——同雲端 halt P1 的「{reason}＋固定那句」
-    const note = e.type === "halt" && e.payload && e.payload.unexplained && e.payload.reason
-      ? e.payload.reason + (tmLabels.ev_machine_restart_stopped_n ? " " + tmLabels.ev_machine_restart_stopped_n : "")
+    // 帳戶對不上(unexplained):標題講對不上,內文是機器寫的那句原因(已帶核對步驟)
+    const note = unexplained ? e.payload.reason
       : e.type === "halt" && e.payload && e.payload.unconfirmed && tmLabels.ev_halt_unconfirmed_n ? tmLabels.ev_halt_unconfirmed_n
       : capital && e.payload.reason === "LOCKED" && tmLabels.ev_venue_login_blocked_capital_locked_n ? tmLabels.ev_venue_login_blocked_capital_locked_n
       : mcr === "queued" ? (e.payload.until ? String(tmLabels.ev_manual_close_required_queued_n || "").replace("{at}", p1TwClock(e.payload.until))

@@ -10890,3 +10890,18 @@ msgstr "{broker}即時行情斷了，改用 Blave 資料"
 
 msgid "tr.ov.evFeedFallbackNote"
 msgstr "訊號會慢 1–2 分鐘，行情回來會自動切回"
+
+msgid "tr.haltUnexplained"
+msgstr "{venue}的 {symbols} 部位跟 Blave 紀錄對不上。"
+
+msgid "tr.ov.evHaltUnexplained"
+msgstr "部位對不上"
+
+msgid "tr.ov.evHaltUnexplainedNote"
+msgstr "先到{venue}核對"
+
+msgid "tr.haltUnexplainedNosym"
+msgstr "{venue}的部位跟 Blave 紀錄對不上。"
+
+msgid "tr.haltUnexplainedDo"
+msgstr "先核對再按「{btn}」，之後差額由你處理。"

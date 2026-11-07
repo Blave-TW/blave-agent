@@ -3519,6 +3519,11 @@ const STRINGS = {
     "tm.evDataGapNote": "The signal is stuck on the last bar, so the strategy won't adjust its open position. Check the position.",
     "tr.ov.evFeedFallback": "{broker} live quotes dropped, using Blave data",
     "tr.ov.evFeedFallbackNote": "signals run 1–2 minutes slower and switch back once quotes return",
+    "tr.haltUnexplained": "Your {symbols} position at {venue} doesn't match Blave's records.",
+    "tr.ov.evHaltUnexplained": "Position mismatch",
+    "tr.ov.evHaltUnexplainedNote": "check it at {venue}",
+    "tr.haltUnexplainedNosym": "Your {venue} positions don't match Blave's records.",
+    "tr.haltUnexplainedDo": "Check before you press {btn}. After that, any difference is yours to handle.",
   },
   zh: {
     "cn.h": "連接你的 Agent",
@@ -7034,5 +7039,10 @@ const STRINGS = {
     "tm.evDataGapNote": "訊號停在上一根，帳上部位不會照策略調整。請先看一下部位。",
     "tr.ov.evFeedFallback": "{broker}即時行情斷了，改用 Blave 資料",
     "tr.ov.evFeedFallbackNote": "訊號會慢 1–2 分鐘，行情回來會自動切回",
+    "tr.haltUnexplained": "{venue}的 {symbols} 部位跟 Blave 紀錄對不上。",
+    "tr.ov.evHaltUnexplained": "部位對不上",
+    "tr.ov.evHaltUnexplainedNote": "先到{venue}核對",
+    "tr.haltUnexplainedNosym": "{venue}的部位跟 Blave 紀錄對不上。",
+    "tr.haltUnexplainedDo": "先核對再按「{btn}」，之後差額由你處理。",
   },
 };

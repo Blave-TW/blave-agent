@@ -252,7 +252,7 @@ import lib.portfolio as _pf  # noqa: E402
 _real_lang = _pf._machine_lang
 for lang in ("zh", "en"):
     _pf._machine_lang = lambda _l=lang: _l
-    texts = {"words": reconciler._halt_words("群益", "群益下單軟體", "在群益", "TXF", 2, 3, "0 口", "2 口")}
+    texts = {"words": reconciler._halt_words("群益", "群益下單軟體", "TXF", 2, 3, "0 口", "2 口")}
     n_rows = len(errors())
     tripped = []
     real_trip = reconciler.guard.trip_halt
@@ -273,9 +273,10 @@ for lang in ("zh", "en"):
           f"{lang}: the three HALT sources say a full freeze (closes and stops too), never 'closes go on'; no tw_entry_hold row",
           texts)
     # the api keeps 200 characters of a halt reason (TG / email): the steps at the end must survive it
-    check(all(0 < len(t) <= 200 for t in texts.values()) and all(("解除暫停" in t) if lang == "zh" else ("Release pause" in t) for t in texts.values())
-          and (("先在群益平掉" in texts["words"]) if lang == "zh" else ("close it there" in texts["words"])),
-          f"{lang}: every HALT reason fits the api's 200 characters, the steps included ({ {k: len(v) for k, v in texts.items()} })")
+    check(all(0 < len(t) <= 200 for t in texts.values()) and all(("「啟動下單」" in t and "解除暫停" not in t) if lang == "zh" else ("Start trading" in t and "Release pause" not in t) for t in texts.values())
+          and (("核對 TXF 部位，差額 Blave 不會處理" in texts["words"] and "平掉" not in texts["words"]) if lang == "zh"
+               else ("won't handle any difference" in texts["words"] and "close it there" not in texts["words"])),
+          f"{lang}: every HALT reason fits the api's 200 characters, the steps included; the unexplained one never says to close it (designer 11-07) ({ {k: len(v) for k, v in texts.items()} })")
 _pf._machine_lang = _real_lang
 
 # ── 7. under HALT nothing goes out: the two non-HALT tw_entry_hold sources write no row then ──────

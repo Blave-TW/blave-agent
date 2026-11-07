@@ -218,6 +218,11 @@ guard.clear_halt("test")
 check(guard.annotate_halt({"park_id": "x"}) is False and not os.path.exists(guard.HALT_PATH),
       "annotate_halt with no HALT on: False, no HALT created")
 guard.trip_halt("用戶按了停止", "web")
+guard.annotate_halt({"park_id": "same", "at": 1})
+guard.annotate_halt({"park_id": "same", "at": 2})
+dup = guard.halt_info().get("unexplained")
+check(len(dup) == 1 and dup[0]["at"] == 2, f"annotate_halt: the same park id twice keeps one entry, the newer ({dup})")
+guard.trip_halt("用戶按了停止", "web")
 for i in range(7):
     guard.annotate_halt({"park_id": f"p{i % 6}", "at": i})
 ids = [u["park_id"] for u in guard.halt_info().get("unexplained")]
