@@ -8,11 +8,13 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.160 — 2026-11-07(desktop 0.1.49)
+
 - **排隊的 tick 帶上排定時間(`BLAVE_TICK_SLOT`,`command_listener._tick_due`)**:閘門開著時,wait_for_bar 子程序多一個環境變數,值是這個策略從上次啟動以來第一個輪到它的排程週期(epoch 秒)。排隊或還在跑時被略過的週期都算在下一次啟動裡。workspace 的 wait_for_bar 拿它判斷停滯節流:這段時間裡有節流分鐘(每刻鐘的 :00、:05)就輪詢,每個節流分鐘最多一次;斷線計時(`_track_gap`、`_track_lag`)也從它算,排隊的時間不算沒在輪詢。以前閘門讓 tick 晚 56 秒以上,那一輪就被節流丟掉,`gap_since` 會被重設,資料斷線的 P1 晚好幾小時或不發。閘門關著不帶。舊 workspace 不讀這個變數,新 workspace 沒拿到就照 tick 實際開始的時間判斷,跟以前一樣;兩邊誰先更新都不會比現在差,兩邊都更新才修好。測試 `tests/check_tick_gate.py` W、`tests/check_data_gap_alerts.py` G。
 
 - **雲端視角做得出自訂研究報告(`_viewing_env_segment`)**:原本雲端視角的報告只能走 `references/cloud-handoff.md` R2 那六種模板,自己算表格再 `write_report` 的研究報告沒有路,agent 會回「雲端只能組模板資料包」。提示改指向新的 R7:資料檢查在這台電腦做,分析腳本經 step 2.5 heredoc 在雲端跑、把帶數字的 block 寫進 `tmp/cloud-report-<turn>-blocks.json`,敘述 block 由這台電腦寫進請求檔,固定的 research script 在雲端組好後呼叫 `lib.report.write_report`(id、title、type、block 形狀先驗;`image`／`meta` block 丟掉並列出;雲端 lib 沒有 `target_id`(2026-09-28 前)回 `template_unavailable`)。經 SSH 跑沒有機器 token、寫入前不做平台驗證,所以 publish 寫完會在同一次呼叫裡等 uploader 最多 100 秒,上傳被拒照 refused 回來(同 id 重送);修 WARNING 走 `replace` 模式同 id 覆寫(腳本把 `BLAVE_TURN_ID` 設成 `desktop-<turn>`,`write_report(replace=True)` 才認得出是自己寫的),不再多出 `<id>-2`;NaN／Infinity 拒絕帶編號與分析 key;分析腳本在雲端也印探針三個數,門檻以雲端那次為準。引擎在等上傳時砍掉 ssh(沒拿到 JSON 那一行)不准再 publish(會多一份 `<id>-2`),改跑新的 `status` 模式:從 ledger 找這個對話 35 分鐘內那一份,回 sent／pending／refused,沒寫過回 `{"status": "none"}`;R7.5 分寫兩個引擎:Claude Code 的 `Bash` 給 180000ms,Codex 的 `exec_command` 設 `yield_time_ms` 30000、拿到 session id 用 `write_stdin` 輪詢、不重跑。`replace` 只在 ledger 那筆 35 分鐘內(電腦版一則回覆的牆鐘上限 `_TURN_WALL_CLOCK_SEC`)才放行,超過回 `replace_expired`、不寫。replace 被拒的判斷改比 `sent/` 與 `failed/` 兩份的 mtime(搬檔不改 mtime,新的那份就是這次寫的),不再隔 1 秒猜。丟掉圖片時 agent 講自己的一句(圖在這台擷取、帶不過去),不提議更新雲端主機;sent／pending 一律用 R6「幾分鐘內出現」那句。測試 `tests/check_cloud_report_script.py` 加 R7 段,含一段用真的 `lib/report.py` 跑的(含 ssh 被砍後走 status、replace 逾時),暫存目錄跑完刪掉。
 
-- **HALT 的 `unexplained` 帶出(配合 blave-agent 0.1.49 `lib/guard.annotate_halt`)**:`portfolio_reporter.halt_state` 多帶 `halt.unexplained`(`_halt_unexplained`:`[{park_id, venue, symbol, at, reason}]` 最多 5 筆,park_id 截 80、reason 截 200)。已經 HALT(多半是用戶自己按的停止)時,群益／統一停放單帳戶讀 3 次對不上,對帳器不覆寫 HALT 的來源與原因,改記進這一欄;api 依新的 park_id 補一則 halt P1。api 要先上;舊 lib 不寫這欄,報告就不帶,行為照舊。
+- **HALT 的 `unexplained` 帶出(配合 blave-agent 2026-11-07-c 的 `lib/guard.annotate_halt`)**:`portfolio_reporter.halt_state` 多帶 `halt.unexplained`(`_halt_unexplained`:`[{park_id, venue, symbol, at, reason}]` 最多 5 筆,park_id 截 80、reason 截 200)。已經 HALT(多半是用戶自己按的停止)時,群益／統一停放單帳戶讀 3 次對不上,對帳器不覆寫 HALT 的來源與原因,改記進這一欄;api 依新的 park_id 補一則 halt P1。api 要先上;舊 lib 不寫這欄,報告就不帶,行為照舊。
 
 ## 1.1.159 — 2026-11-06(desktop 0.1.48)
 
