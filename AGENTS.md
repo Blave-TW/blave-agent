@@ -93,6 +93,8 @@ An XQ, MultiCharts or Pine version (incl. 「把策略「…」(…)轉成 … �
 
 Asked for strategy ideas from the web (incl. the app prompt 「上網幫我找 3 個…可以回測的策略點子」) → read `references/strategy-ideas.md` first: start from its site list, not from a search.
 
+**A strategy asked for by style (value, momentum, mean reversion), by an investor's method (Graham, Buffett, Lynch) or from a paper, with no rules given → look up how it is done before you write it,** and the reply says in one sentence, after the benchmark sentence, which pages you used and which rule set you took — `references/strategy-ideas.md` › *Looking up a method before building*. No lookup when the user gave the rules, only wants an existing strategy backtested, its numbers or a parameter changed, or asks for data `lib/data.py` has.
+
 ## Blave API Headers
 
 `lib/data.py` functions take a `headers` dict — the runner builds it; anywhere else (one price, a quick check) it is `load_dotenv()` then `{'api-key': os.environ['blave_api_key'], 'secret-key': os.environ['blave_secret_key']}`, no need to look it up; a crypto last price needs none: `fetch_binance_ticker_24h().loc['BTCUSDT', 'last']`. **NEVER use** `X-API-KEY`, `X-SECRET-KEY`, or `Authorization: Bearer ...` (403). **The base URL is ALWAYS `https://api.blave.org`** — copy it from `lib/data.py`, never from memory (`api.blave.ai` does not exist).

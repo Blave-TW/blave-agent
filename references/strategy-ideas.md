@@ -2,12 +2,27 @@
 
 Applies when the user wants strategy ideas from the web: the app's 「上網找點子」 message ("Search the web for 3 backtestable … strategy ideas"), 「幫我找靈感」, "what strategies could I try". Desktop: the built-in browser (`browser.md`; switched off = no web). Cloud: the engine's own web fetch, if the turn has one. The list below is where to start, so most turns need no search at all.
 
+Also applies when the user asks for one strategy by style, investor or paper without giving its rules: *Looking up a method before building*.
+
 ## Flow
 
 1. Pick **3–6 sites** from *Sources* that fit the type (A / C) and market asked for — never the whole list (12 full reads use up the 120k read budget).
 2. `browser_open_many` those list pages → `browser_read(part="links")` on each (cheap) → pick candidates.
 3. Open only the single pages you will read, and read every page you open (`browser.md` › *Standard flow*).
 4. A topic none of the listed sites covers (e.g. funding rate): skip the generic blogs and search once right away, then open the best results. Otherwise no search. One search per turn at most.
+
+## Looking up a method before building
+
+The user asked for a strategy by type or style (value, momentum, mean reversion), by an investor's method (Graham, Buffett, Lynch) or from a study or paper, and gave no concrete rules. What you remember of a method is one version of it with the numbers guessed; published versions state the universe, thresholds and rebalance dates. So look first, then build from one of them.
+
+- **Not for:** the user already gave the rules; they only want an existing strategy backtested, its numbers or a parameter changed; the question is market data `lib/data.py` has. "Backtest Graham's stock picks" names a method, not an existing strategy, so it still looks first.
+- **Where:** as in the opening paragraph (desktop: the built-in browser; cloud: the engine's own web fetch, if the turn has one). Desktop browser switched off (no web by any route, `browser.md`), a cloud turn without web, or a cloud engine with no search tool (e.g. DeepSeek): write the strategy from the method as you know it; the reply says plainly that this one was not checked on the web, and gives no source list.
+- **Flow:**
+  1. Search once first (desktop: `browser_search`), naming the method and the market (e.g. `Graham defensive investor criteria`, `Piotroski F-score rules`, or the method's local name for TW stocks) — investor and paper methods rarely sit on a list page. For stock selection, factors and value, add one or two pages from *Stock selection, factors, value* below.
+  2. Open 2–4 pages, the original over a summary (the paper, the investor's own criteria, a write-up that states every threshold), and read each one you open — on the desktop, the same 120k read budget and *Standard flow* as `browser.md`.
+  3. Take **one** rule set: the one whose data passes the *Fit check* and that states the most numbers. A threshold the source leaves out, you set and say so. Never blend several pages into a rule set none of them used. None fits the data you have: take the closest version Blave data can test (another market, or a proxy you name), and the reply says which substitute rules you used and why; never swap markets silently.
+  4. Build and run it as usual (`strategy-code.md`). No pick step: the user asked for a strategy, not a menu.
+- **Reply:** the first sentence stays the benchmark comparison (`AGENTS.md` › *Reporting a backtest*); the next one names the pages you used (title and URL) and the rule set you took, plus any threshold you set yourself. E.g. "Rules from TEJ's Dreman contrarian article (Quantpedia's book-to-market page read too), backtested on Blave data: P/E and yield filters, then at least 3 of 5 quality points, rebalanced quarterly; the article gives no holding count, so I set 20." A return the source reports is quoted only as that source's backtest, with its market and period — never as Blave's result or what this strategy will make; the numbers that count are this run's.
 
 ## Sources
 
@@ -45,6 +60,14 @@ Applies when the user wants strategy ideas from the web: the app's 「上網找�
 | TW stocks | `https://statementdog.com/blog` | Fundamentals-based picks (revenue, margin, ROE) — matches Blave's financial data |
 | TW stocks | `https://blog.fugle.tw/`, `https://www.stockfeel.com.tw/`, `https://www.cmoney.tw/notes/?cid=22814`, `https://uanalyze.com.tw/articles` | Stock / sector / chip analysis, leads only |
 | TW stocks | `https://rich01.com/`, `https://www.cmoney.tw/learn/`, `https://www.pocket.tw/school/` | Beginner methods; coarse rules, add the numbers |
+
+**Stock selection, factors, value — also an investor's or a paper's method** (FinLab and StatementDog above fit here too)
+
+| Market | URL | Use |
+|---|---|---|
+| TW stocks | `https://www.tejwin.com/insight-category/tquant-lab/` | TEJ's TQuant Lab articles: named investors' methods and factor screens tested on TW stocks with the rules in full (e.g. the Dreman contrarian article: P/E, yield and market-cap filters, a five-point quality score, quarterly rebalance dates) |
+| Any | `https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html` → a factor's *Details* page (e.g. `…/Data_Library/det_form_btm.html`) | How the academic factors (value, size, momentum, profitability, investment) are built: sort variable, breakpoints, formation month. US data; carry the rules over |
+| Any | `https://quantpedia.com/strategies/<name>` (e.g. `value-book-to-market-factor`) | One strategy per page; the free *Simple trading strategy* block gives universe, sort and rebalance, often without percentile cutoffs |
 
 ## TradingView community scripts
 
