@@ -4,8 +4,8 @@ Use this document when a user asks to connect their **Capital Securities (群益
 **Capital Futures (群益期貨)** account to Blave Agent — same corporate group, same underlying API,
 one certificate covers both markets. The integration uses the official **Capital API**
 (`SKCOM.dll`, a Windows COM component) — **Windows-only**: a **Windows cloud machine** (Steps 1–8
-below, walked by the agent), or the **desktop app on a Windows PC** (app 0.1.48 and later list 群益
-in the connect menu), where the app's own connect flow does the whole setup and the agent does none
+below, walked by the agent), or — once the app build lists 群益 in its connect menu — the **desktop
+app on a Windows PC**, where the app's own connect flow does the whole setup and the agent does none
 of it — see Step 0. Not on a Mac, not on a Linux cloud machine. There is no cross-platform package (unlike SinoPac/President).
 
 Steps 1–6 (verification test + agreement, certificate, component install, login, accounts) are
@@ -66,10 +66,12 @@ prefer the near-month aliases, or the V2.13.54+ `bstrCIDTandem`(`FITX`) + `bstrS
   Either way stop here: ask nothing more, install nothing, download nothing, never ask for the ID or the
   trading password, touch neither this computer nor the cloud machine.
   - **Connecting Capital on this computer** (no cloud-view line this turn):
-    - **Windows PC**: app 0.1.48 and later list it; older builds don't, and you cannot see the app's
-      menu — so say it in one reply: 「到 app 的 自動下單 › 連接帳戶，選群益，照畫面開通。選單裡沒有群益的話，先把電腦版更新到最新版。」
-      / "Go to Auto trading › Connect Account in the app, pick Capital and follow the steps on screen. If
-      Capital isn't in the menu, update the desktop app to the latest version first." The app connects it, not you: it
+    - **Windows PC**: not every app build has it yet, and you cannot see the app's menu — so say both
+      ways in one reply: 「如果 app 的 自動下單 › 連接帳戶 選單裡有群益，就在那裡照畫面開通；沒有的話是這一版還沒開放，
+      要用 Windows 雲端主機：在網頁開雲端主機時選 Windows（開好之後不能換）。」/ "If Auto trading › Connect
+      Account in the app lists Capital, set it up there and follow the steps on screen. If it doesn't, this
+      build has not opened it yet: use a Windows cloud machine — choose Windows when you launch one on the
+      web (it can't be changed afterward)." Where the menu has it, the app connects it, not you: it
       installs the component for this Windows account, finds, imports or issues the certificate, takes the
       ID and trading password, runs the login check and keeps the account reader running
       (`runtime/capital_local.py`; everything runs as the signed-in user — no switching to the Administrator

@@ -180,7 +180,7 @@ ok("地區設定的選單名不進 .po(兩組常數)、繁中介面那組是中�
   ok("用到的字串兩語都有(含 key 表裡的)", miss.length === 0, miss);
   const zhOf = (k) => (zh.match(new RegExp(`"${k.replace(/\./g, "\\.")}": "([^"]*)"`)) || [])[1];
   ok("zh 用全形標點(沒有半形冒號、逗號)", keys.filter((k) => /^capl\./.test(k)).every((k) => !/[:,]/.test(zhOf(k) || "")), keys.filter((k) => /[:,]/.test(zhOf(k) || ""))); }
-ok("trade.js:群益本機受 CAPL_LOCAL_ON 管(0.1.48 起開);雲端那條不動", /^const CAPL_LOCAL_ON = (true|false);$/m.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8"))
+ok("trade.js:群益本機受 CAPL_LOCAL_ON 管(0.1.48 仍關、等真機驗過;測試包分支開);雲端那條不動", /^const CAPL_LOCAL_ON = (true|false);$/m.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8"))
   && /if \(CXF\.venue === CAPITAL && CXF\.env === "cloud"\) return capPaint\(\);/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8")));
 
 // 開通結果框(Wei 10-21):只列「期貨」一列,證券那列拿掉;期貨沒讀到、證券有 → cap.tfMissing 提示照留

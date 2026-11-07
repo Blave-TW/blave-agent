@@ -1695,7 +1695,7 @@ const TR_POLL_OPEN = 4000, TR_POLL_IDLE = 15000, TR_POLL_PENDING = 2500, TR_CONF
 const TR_CONFIRM_CLOUD_MS = 240000;
 const TR_TABS = ["over", "pos", "assets", "hist", "set"];
 const TR_TAB_FEATURE = { over: "trade_overview", pos: "trade_positions", assets: "trade_assets", hist: "trade_history", set: "trade_settings" };   // 使用追蹤的名字(feature_used)
-const PAPER = "paper", BINANCE = "binance", CAPITAL = "capital";   // 群益:雲端視角走 renderer/capital.js,這台電腦走 renderer/capital_local.js
+const PAPER = "paper", BINANCE = "binance", CAPITAL = "capital";   // 群益:雲端視角走 renderer/capital.js,這台電腦走 renderer/capital_local.js(受 CAPL_LOCAL_ON 管)
 /* 連接框列得出來的真實交易所(env 名同 cloudcmd.CONNECT_VENUES、網頁 CX_VENUES;群益在 Mac 上跑不起來,不列)。
    pass = 多一格 <ENV>_PASSPHRASE。CX_LOCAL_REAL = 這台電腦綁得了的(runtime local_daemon 放行的那幾家;Binance 以外的金鑰
    由 command_listener._local_real_key_gate 在寫入前讀一次帳戶)。 */
@@ -1716,9 +1716,9 @@ const cxVenuesFor = (env) => Object.keys(CX_VENUES).filter((id) => cxVenueOpen(i
 const PRES_LOCAL_ON = true;
 // 這台電腦的下拉列不列統一:旗標開、或這個框是「繼續」帶著 president 進來的(少了那一項 select 會變空白)
 const cxPresListed = () => PRES_LOCAL_ON || CXF.venue === "president";
-/* 群益本機入口(renderer/capital_local.js:憑證、帳密、開通清單)。0.1.48 開;關掉 = 這台電腦的下拉不列群益,
-   已綁的照舊走「繼續」 */
-const CAPL_LOCAL_ON = true;
+/* 群益本機入口(renderer/capital_local.js:憑證、帳密、開通清單)。0.1.48 仍關,等群益盤中真機驗過再開;關著 = 這台電腦的下拉不列群益,
+   留下的綁定(測試包)只給解除綁定、不給「繼續」(trPaintSet、trPaintHead) */
+const CAPL_LOCAL_ON = false;
 const cxCaplListed = () => CAPL_LOCAL_ON || CXF.venue === CAPITAL;
 // 不在 CX_VENUES 裡的帳戶(lib/account_paper.py、account_capital.py、account_president.py)
 const TR_VENUE_CCY_OTHER = { paper: "USDT", capital: "TWD", president: "TWD" };
@@ -4926,7 +4926,7 @@ function trPaintSet() {
   const presIn = presW || (!ro && (trPresStopped(r, id) || trPresLoginHeld(r, id)));
   // 登入停了(不是開通中):出口跟頁首同一顆〔重新登入〕,重新測試救不回登入、不畫(設計複查 v045 S1／S2)
   const presLogin = !ro && !presW && trPresLoginHeld(r, id);
-  // 群益本機入口受 CAPL_LOCAL_ON 管:關掉的版本遇到留下的綁定不給「繼續」(框裡的步驟不在),只留解除綁定
+  // 群益本機入口受 CAPL_LOCAL_ON 管:關掉的版本遇到測試包留下的綁定不給「繼續」(框裡的步驟走不了),只留解除綁定
   const caplW = !ro && id === CAPITAL && trCapWip(r, id), caplStop = !ro && trCaplStopped(r, id) && CAPL_LOCAL_ON;
   const capWip = (ro && trCapWip(r, id)) || presW || caplW;
   const failed = !capWip && ((!!e && !e.ok) || !!(bn && bn.verdict) || presLogin), st = trEl("span", "cn-st" + (capWip ? " cx-wait" : failed ? "" : e ? " on" : " cx-wait"));
@@ -6181,7 +6181,7 @@ function cxVenueField(L) {
   cxVenuesFor(CXF.env).forEach((id) => { const ob = trEl("option", "", trVenueLabel(id)); ob.value = id; g.appendChild(ob); });
   sel.appendChild(g);
   // 雲端只列群益(交給 capital.js)。統一期貨只在這台電腦視角(雲端的開通在網頁;設計稿 §5 電腦版雲端視角 v1 不做)。
-  // 這台電腦列統一(PRES_LOCAL_ON)與群益本機(CAPL_LOCAL_ON,交給 capital_local.js);Mac 也列,選了各講一句跑不起來(統一 d-mac、群益 m-mac)
+  // 這台電腦列統一(PRES_LOCAL_ON)與群益本機(CAPL_LOCAL_ON,0.1.48 仍關,交給 capital_local.js);Mac 也列,選了各講一句跑不起來(統一 d-mac、群益 m-mac)
   const tw = CXF.env !== "local" ? [[CAPITAL, "cap.venue"]] : [cxPresListed() ? ["president", "pres.venue"] : null, cxCaplListed() ? [CAPITAL, "cap.venue"] : null].filter(Boolean);
   if (tw.length) { const g2 = document.createElement("optgroup"); g2.label = t("cap.group.tw");
     tw.forEach(([v, k]) => { const o2 = trEl("option", "", t(k)); o2.value = v; g2.appendChild(o2); });

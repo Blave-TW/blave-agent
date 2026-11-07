@@ -14,7 +14,7 @@ let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); 
 const J = JSON.stringify;
 
 if (!process.versions.electron) (async () => {
-  ok("⓪ trade.js 有 PRES_LOCAL_ON 旗標,下拉的「台股」組與 change 都看它(cxPresListed);群益本機另受 CAPL_LOCAL_ON 管(0.1.48 起開)", !!presFlag && !!caplFlag
+  ok("⓪ trade.js 有 PRES_LOCAL_ON 旗標,下拉的「台股」組與 change 都看它(cxPresListed);群益本機另受 CAPL_LOCAL_ON 管(0.1.48 仍關、等真機驗過;測試包分支開)", !!presFlag && !!caplFlag
     && /const tw = CXF\.env !== "local" \? \[\[CAPITAL, "cap\.venue"\]\] : \[cxPresListed\(\) \? \["president", "pres\.venue"\] : null, cxCaplListed\(\) \? \[CAPITAL, "cap\.venue"\] : null\]\.filter\(Boolean\);/.test(tradeSrc)
     && /\(sel\.value === "president" && CXF\.env === "local" && cxPresListed\(\)\)/.test(tradeSrc)
     && /\(sel\.value === CAPITAL && CXF\.env === "local" && cxCaplListed\(\)\) \? sel\.value : cxVenuesFor\(CXF\.env\)\[0\];/.test(tradeSrc));
@@ -160,7 +160,7 @@ app.whenReady().then(async () => {
   // 這台電腦
   await js(`(() => { envSwitch("local"); TR_BAGS.local.st = { alive: true, report: { venues: {} } }; cxModalOpen(null, null), (($m) => { if ($m && !$m.checked) { $m.checked = true; $m.dispatchEvent(new Event("change")); } })($("cx-mode-real")); })()`);
   await wait(150);
-  // 這台電腦的「台股」組:統一受 trade.js PRES_LOCAL_ON 管、群益本機受 CAPL_LOCAL_ON 管(0.1.48 起兩個都開,群益排在統一後面);
+  // 這台電腦的「台股」組:統一受 trade.js PRES_LOCAL_ON 管、群益本機受 CAPL_LOCAL_ON 管(統一開著;群益本機 0.1.48 仍關,開了排在統一後面);
   // 兩個都關時「台股」那一組整個不出
   ok("③ 這台電腦(「真實帳戶」):七家" + (presOn ? " + 「台股」組有統一" : ";PRES_LOCAL_ON 關著 → 沒有統一") + (caplOn ? "、群益本機" : "(CAPL_LOCAL_ON 關著 → 沒有群益)"),
     J(await js(`[...$("cx-venue").options].map((o) => o.value)`)) === J(["binance", "okx", "bingx", "gateio", "bybit", "stockcoin", "bitget"].concat(presOn ? ["president"] : [], caplOn ? ["capital"] : []))
