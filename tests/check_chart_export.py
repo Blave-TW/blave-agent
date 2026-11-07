@@ -32,12 +32,18 @@ df = pd.DataFrame({"Open": c, "High": c + 2, "Low": c - 2, "Close": c.copy(),
                    "Volume": rng.integers(1, 50, n).astype(float), "x": c / 7.0},
                   index=pd.date_range("2025-01-01", periods=n, freq="1min"))
 df.iloc[rng.choice(n, 40), 1] = np.nan
-plot = {"x": "x", "obj": pd.Series(list(c / 3.0), index=df.index, dtype=object)}
+df.iloc[:20, 5] = np.nan                       # a rolling indicator's warmup
+df.iloc[[100, 200], 5] = [np.inf, -np.inf]
+obj_vals = list(c / 3.0)
+obj_vals[50], obj_vals[60] = float("nan"), float("inf")
+plot = {"x": "x", "obj": pd.Series(obj_vals, index=df.index, dtype=object)}
 
 # same numbers as the per-bar path (the capped tail with k ≥ n walks every bar)
 full_c, full_p = R._build_candles(df, None), R._build_panes(plot, df, max_points=None)
 check(full_c == R._build_candles(df, n + 1) and len(full_c) == n - 40, "candles: column-wise == per-bar, bad bars dropped")
 check(full_p == R._build_panes(plot, df, max_points=n + 1), "panes: column-wise == per-bar (float and numeric-object series)")
+check([len(p["points"]) for p in full_p] == [n - 22, n - 2] and "NaN" not in json.dumps(full_p) and "Infinity" not in json.dumps(full_p),
+      "panes: NaN / inf points dropped (JSON.parse in the shell and web would refuse the whole chunk)")
 mixed = pd.Series(([None, "x", "1.5", np.nan, 3] * n)[:n], index=df.index, dtype=object)
 check(R._build_panes({"m": mixed}, df, max_points=None) == R._build_panes({"m": mixed}, df, max_points=n + 1),
       "panes: a series with a stray string still goes per element")
