@@ -4,106 +4,110 @@
 
 ---
 
-## 選擇權大額交易人（TaiwanOptionOpenInterestLargeTraders）
+## Option Large Traders (選擇權大額交易人)
 
-每天 6 筆：`put_call`（call/put）× `contract_type`（week/近月/all）。`option_id` 通常為 `TXO`。
+Use `lib.data.fetch_twoption_large_traders` — do not hand-roll the request.
 
 ```python
-def fetch_twoption_large_traders(option_id: str, start: str, end: str, headers: dict) -> pd.DataFrame:
-    """欄位：date, option_id, put_call, contract_type, buy/sell_top5/top10_trader_open_interest(_per), market_open_interest"""
-    r = requests.get(
-        f"https://api.blave.org/studio/market/twfutures/option/large_traders/{option_id}",
-        params={"start": start, "end": end},
-        headers=headers,
-        timeout=60,
-    )
-    r.raise_for_status()
-    data = r.json().get("data", [])
-    return pd.DataFrame(data) if data else pd.DataFrame()
-```
+from lib.data import fetch_twoption_large_traders
 
-常用分析：
-```python
 df = fetch_twoption_large_traders("TXO", "2025-01-01", "2025-05-30", hdrs)
+# index: date (naive). Six rows per day: put_call ('call' / 'put') × contract_type
+# ('week' / near month like '202505' / 'all').
+# columns: option_id, name, put_call, contract_type,
+#   {buy|sell}_{top5|top10}_trader_open_interest(_per)    top 5 / top 10 traders, contracts / % of market OI
+#   {buy|sell}_{top5|top10}_specific_open_interest(_per)  the same for 特定法人
+#   market_open_interest
 
-# all contracts Put/Call Ratio（大戶買方未平倉）
-all_c = df[df["contract_type"] == "all"].copy()
-pivot = all_c.groupby(["date", "put_call"])["buy_top10_trader_open_interest"].sum().unstack()
-pcr = pivot["put"] / pivot["call"]   # > 1 偏空
-
-# 外資 call net（用法人資料搭配）
-call_oi = all_c[all_c["put_call"] == "call"].set_index("date")
-net = call_oi["buy_top5_trader_open_interest"] - call_oi["sell_top5_trader_open_interest"]
+all_c = df[df["contract_type"] == "all"]
+pivot = all_c.groupby([all_c.index, "put_call"])["buy_top10_trader_open_interest"].sum().unstack()
+large_trader_pc = pivot["put"] / pivot["call"]   # > 1 leans bearish
 ```
+
+- `start` / `end` None = the whole history / up to today. One request, no local cache.
+- The official put/call ratio is `fetch_twfutures_pcr` (below) — a ratio built from this table
+  is a different number; say which one you used.
+- Published after the close: in a strategy, use a day's rows from the next trading day on. There is
+  no `FEED_TIMING` entry, so `align_feed` / `join_tw_flow` do not take this table.
 
 ---
 
-## 期貨大額交易人（TaiwanFuturesOpenInterestLargeTraders）
-
-每天 3 筆：`contract_type` = week（當週到期）、近月（如 202505）、all（全部合約）。
+## Futures Large Traders (期貨大額交易人)
 
 ```python
-def fetch_twfutures_large_traders(futures_id: str, start: str, end: str, headers: dict) -> pd.DataFrame:
-    """欄位：date, futures_id, name, contract_type, buy/sell_top5/top10_trader_open_interest(_per), market_open_interest, buy/sell_top5/top10_specific_open_interest(_per)"""
-    r = requests.get(
-        f"https://api.blave.org/studio/market/twfutures/large_traders/{futures_id}",
-        params={"start": start, "end": end},
-        headers=headers,
-        timeout=60,
-    )
-    r.raise_for_status()
-    data = r.json().get("data", [])
-    return pd.DataFrame(data) if data else pd.DataFrame()
-```
+from lib.data import fetch_twfutures_large_traders
 
-常用分析：
-```python
 df = fetch_twfutures_large_traders("TX", "2025-01-01", "2025-05-30", hdrs)
+# index: date (naive). Three rows per day by contract_type: 'week' (weekly contract),
+# the near month ('202505'), 'all'. Columns as the option table above, with futures_id.
 
-# 近月合約大戶買賣超（top5 多 - 空）
-front = df[df["contract_type"].str.len() == 6]  # 202505 格式
-front["net_top5"] = front["buy_top5_trader_open_interest"] - front["sell_top5_trader_open_interest"]
-net_series = front.set_index("date")["net_top5"]
+front = df[df["contract_type"].str.len() == 6]        # the near month
+net_top5 = front["buy_top5_trader_open_interest"] - front["sell_top5_trader_open_interest"]
 
-# 大戶持倉比例（all contracts）
-all_c = df[df["contract_type"] == "all"].set_index("date")
-buy_per = all_c["buy_top10_trader_open_interest_per"]
-sell_per = all_c["sell_top10_trader_open_interest_per"]
+all_c = df[df["contract_type"] == "all"]
+buy_share = all_c["buy_top10_trader_open_interest_per"]
 ```
+
+- `futures_id`: `TX`, `MTX` (`TXF` / `MXF` map automatically). Stock futures have no
+  large-trader data (the server answers 404).
+- One request, no local cache.
+- Published after the close: in a strategy, use a day's rows from the next trading day on. There is
+  no `FEED_TIMING` entry, so `align_feed` / `join_tw_flow` do not take this table.
 
 ---
 
-## 選擇權三大法人（TaiwanOptionInstitutionalInvestors）
-
-每天 6 筆：3 法人 × 買權/賣權。`option_id` 通常為 `TXO`。
+## Option Institutional Investors (選擇權三大法人)
 
 ```python
-def fetch_twoption_institutional(option_id: str, start: str, end: str, headers: dict) -> pd.DataFrame:
-    """欄位：date, option_id, call_put（買權/賣權）, institutional_investors, long/short_deal_volume/amount, long/short_open_interest_balance_volume/amount"""
-    r = requests.get(
-        f"https://api.blave.org/studio/market/twfutures/option/institutional/{option_id}",
-        params={"start": start, "end": end},
-        headers=headers,
-        timeout=60,
-    )
-    r.raise_for_status()
-    data = r.json().get("data", [])
-    return pd.DataFrame(data) if data else pd.DataFrame()
-```
+from lib.data import fetch_twoption_institutional
 
-常用分析：
-```python
 df = fetch_twoption_institutional("TXO", "2025-01-01", "2025-05-30", hdrs)
+# index: date (naive). Six rows per day: call_put ('買權' / '賣權') × institutional_investors
+# ('外資' / '投信' / '自營商').
+# columns: option_id, call_put, institutional_investors,
+#   long_/short_deal_volume, long_/short_deal_amount                         that day's trades
+#   long_/short_open_interest_balance_volume, long_/short_open_interest_balance_amount   open interest
 
-# 外資買權淨未平倉
-call_df = df[(df["call_put"] == "買權") & (df["institutional_investors"] == "外資")]
-call_net_oi = (call_df.set_index("date")["long_open_interest_balance_volume"]
-               - call_df.set_index("date")["short_open_interest_balance_volume"])
-
-# Put/Call Ratio（外資）
-foreign = df[df["institutional_investors"] == "外資"].groupby(["date", "call_put"])["long_open_interest_balance_volume"].sum().unstack()
-pcr = foreign["賣權"] / foreign["買權"]
+f = df[df["institutional_investors"] == "外資"]
+calls = f[f["call_put"] == "買權"]
+foreign_call_net_oi = (calls["long_open_interest_balance_volume"]
+                       - calls["short_open_interest_balance_volume"])
 ```
+
+- History from 2018-06. One request, no local cache.
+- Published after the close: in a strategy, use a day's rows from the next trading day on. There is
+  no `FEED_TIMING` entry, so `align_feed` / `join_tw_flow` do not take this table.
+
+---
+
+## Retail Long/Short Ratio (散戶多空比)
+
+One trading day per call:
+
+```python
+from lib.data import fetch_twfutures_retail_long_short_ratio
+
+r = fetch_twfutures_retail_long_short_ratio("MTX", hdrs)               # latest settled day
+r = fetch_twfutures_retail_long_short_ratio("MTX", hdrs, date="2026-11-05")
+# dict: date, futures_id, market_open_interest,
+#   institutional_long_open_interest, institutional_short_open_interest,
+#   retail_long_open_interest, retail_short_open_interest,
+#   retail_long_short_ratio   percent; > 0 = retail net long
+```
+
+- Formula: retail long = market OI − the three institutions' long OI; retail short = market OI
+  − their short OI; ratio = (retail long − retail short) / market OI × 100. Market OI counts
+  the regular-session rows of every contract month, spreads excluded.
+- `futures_id`: `TX` (大台), `MTX` (小台), `TMF` (微台); `TXF` / `MXF` map. TMF has no data before
+  about 2024-08. A date with no data is a 404.
+- **The three are different numbers — never compare one with another.** Retail holds a very
+  different share of each contract (2026-11-06: TMF +47.14 %, MTX +17.37 %, TX +5.92 %). When the
+  user says 散戶多空比 without naming a contract, the one Blave Studio's page shows is **TMF**;
+  always name the contract next to the number.
+- **There is no history call.** For a series (a backtest, a chart) compute it with the same
+  formula from `fetch_twfutures_daily(fid, start, end, hdrs, aggregate=True)["open_interest"]`
+  and `fetch_twfutures_institutional`'s `*_long_oi` / `*_short_oi` columns. Never call this
+  function once per day.
 
 ---
 
@@ -180,56 +184,36 @@ gap = cc["txf_close"].iloc[-1] - cc["cost"].iloc[-1]     # points above (+) / be
 
 ---
 
-## 期貨日行情（TaiwanFuturesDaily）
-
-每天多筆：所有合約月份 × trading_session（`position` 盤中 / `after_market` 盤後）。
+## Futures Daily Rows (期貨日行情, per contract month)
 
 ```python
-import requests
-import pandas as pd
+from lib.data import fetch_twfutures_daily
 
-def fetch_twfutures_daily(futures_id: str, start: str, end: str, headers: dict) -> pd.DataFrame:
-    """
-    futures_id: TX（台指期）、MTX（小台）、TE（電子期）、TF（金融期）
-    欄位：date, futures_id, contract_date, open, max, min, close,
-          spread, spread_per, volume, settlement_price, open_interest, trading_session
-    """
-    r = requests.get(
-        f"https://api.blave.org/studio/market/twfutures/daily/{futures_id}",
-        params={"start": start, "end": end},
-        headers=headers,
-        timeout=60,
-    )
-    r.raise_for_status()
-    data = r.json().get("data", [])
-    return pd.DataFrame(data) if data else pd.DataFrame()
+raw = fetch_twfutures_daily("TX", "2025-01-01", "2025-05-30", hdrs)
+# index: date (naive). Several rows per day: every contract month × trading_session
+# ('position' = regular session, 'after_market' = evening session), plus calendar spreads.
+# columns: futures_id, contract_date, open, max, min, close, spread, spread_per,
+#          volume, settlement_price, open_interest, trading_session
+
+day = fetch_twfutures_daily("TX", "2025-01-01", "2025-05-30", hdrs, aggregate=True)
+# one row per date: contract_date (the near month used), open, high, low, close,
+# settlement_price, volume, open_interest (both summed over all months), is_settlement_day
+oi = day["open_interest"]
 ```
 
-常用篩選：
-
-```python
-df = fetch_twfutures_daily("TX", "2025-01-01", "2025-05-30", hdrs)
-
-# 只取近月合約（position session，排除價差）
-front_month = (
-    df[(df["trading_session"] == "position") & (~df["contract_date"].str.contains("/"))]
-    .sort_values(["date", "volume"], ascending=[True, False])
-    .groupby("date")
-    .first()   # 成交量最大 = 近月
-    .reset_index()
-)
-
-# 近月收盤價序列
-close_series = front_month.set_index("date")["close"]
-
-# 未平倉量（open interest）
-oi_series = front_month.set_index("date")["open_interest"]
-```
-
-**注意事項：**
-- `contract_date` 含 `/` 的為價差合約（e.g. `202505/202506`），通常過濾掉
-- `trading_session = "position"` 為正規盤，`"after_market"` 為盤後交易
-- 近月連續序列需自行用成交量或到期日判斷；TXF 分K 仍使用 `/twfutures/ohlcv/TXF/<schema>`
+**Notes:**
+- `futures_id`: `TX` (台指期), `MTX` (小台), `TMF`, `TE` (電子期), `TF` (金融期), or a stock
+  futures id (`CDF`). `TXF` / `MXF` map to `TX` / `MTX`.
+- `aggregate=True` takes prices from the nearest monthly contract still trading that day (the
+  contract expiring that day is skipped, weeklies ignored) and sums volume and open interest
+  over all months. A price of 0 (no trade that day) comes back as NaN there.
+- Raw rows: `contract_date` with `/` is a calendar spread; `after_market` rows carry no open
+  interest. Pass a `start` — the raw full history from 1998 is a large answer. No local cache.
+- **Not a series to trade or backtest on.** Bars for a strategy come from
+  `fetch_twfutures_ohlcv` (the continuous near-month series with the roll rule below); use
+  this function for open interest, settlement prices and per-month detail.
+- Published after the close: in a strategy, use a day's rows from the next trading day on. There is
+  no `FEED_TIMING` entry, so `align_feed` / `join_tw_flow` do not take this table.
 - `fetch_twfutures_ohlcv` also accepts Shioaji-style `R1` names (`TXFR1` → `TXF`, mapped in the lib only: the API endpoints take the bare `TXF`, `TXFR1` is a 400; strip `R1` before checking the `fetch_stock_futures_ohlcv_symbols` whitelist too). The series is the near-month continuous one under the roll rule below — Shioaji's live `R1` alias flips to the next month at 13:31 on settlement day, the series does not until 15:00. `R2` (next-month continuous) is not this data and is not mapped
 
 ---
@@ -287,19 +271,20 @@ volume is both sessions. Where the TAIFEX bars differ from the Blave ones (measu
 
 ## Stock Futures Batch Daily (個股期貨)
 
-231 Taiwan individual stock futures (股票期貨) — one contract per underlying listed common stock (e.g. `CDF` → 2330 台積電).
+Taiwan individual stock futures (股票期貨) on listed common stocks (e.g. `CDF` → 2330 台積電). One stock can have both a standard (2,000 shares) and a mini (100 shares) contract; the count changes as TAIFEX lists and delists — read it from `fetch_stock_futures_list`, never hard-code it.
 
 ```python
 from lib.data import fetch_stock_futures_batch_daily
 
 batch = fetch_stock_futures_batch_daily(['CDF', 'DHF'], "2025-01-01", "2025-05-30", hdrs)
-# dict {futures_id: DataFrame}, same fields as fetch_twfutures_daily (see above)
+# dict {futures_id: DataFrame}, the raw fetch_twfutures_daily columns (above) with `date` as a
+# 'YYYY-MM-DD' column on a RangeIndex instead of the index
 ```
 
 **Notes:**
 - **No Blave data needed on the desktop app** (`BLAVE_AGENT_LOCAL=1`): with no Blave data access this turn, `fetch_stock_futures_batch_daily` returns the same columns and dtypes from TAIFEX's own daily quotes (Blave CDN, published daily ~15:35 Taipei; TAIFEX directly, one request per contract-month, when the CDN cannot serve — a printed ⚠️ line says so). Every frame's `attrs['source']` is `TAIFEX` — cite it with the TAIFEX attribution line in *TXF daily bars back to 1998*. A `-` cell in TAIFEX's file is `0` here, as in the Blave rows: filter `volume > 0` before using a price, and expect `max` / `min` of `0` on a session that traded at one price (`open` == `close`). Differences from the Blave rows: no calendar-spread rows (`contract_date` with `/`), a contract-month that traded only through spread legs has `open` / `close` `0` here (the Blave rows put the settlement price there), and a day appears once the CDN has published it (`attrs['asof']`). History from 2010-01-25; delisted 股票期貨 ids are there too. With Blave data, and on a cloud machine, it is the Blave endpoint as before.
-- `fetch_twfutures_daily(futures_id, ...)` (the generic function documented above) also works for any individual stock futures id, with Blave data only — `fetch_stock_futures_batch_daily` is the parallel/batch form (max 250 ids per call), matching `fetch_twstock_batch` for stocks, and the one to use without Blave data.
-- **Daily OHLCV covers all 231 symbols.** Intraday/minute bars (`fetch_twfutures_ohlcv(symbol, schema, ...)`) do NOT — that same function also accepts individual stock futures ids as `symbol`, but only `TXF` plus whichever ones currently have backfilled minute-line data (a dynamically-growing subset, nowhere near all 231). Passing an unsupported symbol gets a 400.
+- `fetch_twfutures_daily(futures_id, ...)` (*Futures Daily Rows* above) also works for any individual stock futures id, with Blave data only — `fetch_stock_futures_batch_daily` is the parallel/batch form (max 250 ids per call), matching `fetch_twstock_batch` for stocks, and the one to use without Blave data.
+- **Daily OHLCV covers every listed stock future.** Intraday/minute bars (`fetch_twfutures_ohlcv(symbol, schema, ...)`) do NOT — that same function also accepts individual stock futures ids as `symbol`, but only `TXF` plus whichever ones currently have backfilled minute-line data (a dynamically-growing subset, nowhere near all of them). Passing an unsupported symbol gets a 400.
 - **Check `fetch_stock_futures_ohlcv_symbols(hdrs)` first** to get the current list of symbols supported by `fetch_twfutures_ohlcv` — no need to trial-and-error against the 400:
 ```python
 from lib.data import fetch_stock_futures_ohlcv_symbols, fetch_twfutures_ohlcv
@@ -310,6 +295,31 @@ if 'CDF' in symbols:
 ```
 - **Long-history intraday fetches are cheap** — for intraday spans >62 days, `fetch_twfutures_ohlcv` automatically switches to the server's 1m-parquet bulk export endpoint (`/studio/market/twfutures/ohlcv/<symbol>/export/<year>`, one request per calendar year, resampled locally to the requested schema) instead of chunked 28-day JSON fetches. Falls back to chunked fetches automatically if the export endpoint is unavailable. Fetching 100 symbols × multi-year 60m is a few hundred requests, not thousands.
 - The direct JSON endpoint's per-request date-range caps are schema-scaled: `1d` 3,650 / `60m` 365 / `30m` 186 / `15m` 93 / `5m` 62 / `1m` 31 days. The lib's auto-chunking already respects these — only relevant when calling the API directly.
+
+### Stock futures list and liquidity ranking
+
+```python
+from lib.data import fetch_stock_futures_list, fetch_stock_futures_liquidity_ranking
+
+lst = fetch_stock_futures_list(hdrs)
+# index: futures_id ('CDF'); columns: code, stock_id (underlying), stock_name, stock_full_name,
+#   unit (shares per contract: 2000 standard / 100 mini), minute_line_enabled
+tsmc = lst[lst["stock_id"] == "2330"]              # 2330 has a standard and a mini contract
+
+rank = fetch_stock_futures_liquidity_ranking(hdrs)
+# index: futures_id, best first; columns: rank, avg_volume, avg_open_interest
+#   (contracts, mean of the last 20 trading days; regular session only — evening session and
+#   calendar spreads out, weekly contracts in), the list columns, minute_line_enabled
+liquid = rank[rank["unit"] == 2000].head(20)       # compare volumes within one unit only
+```
+
+- Use the list to map a stock to its futures id and to check `unit` before comparing lot
+  counts — a mini contract's notional is 1/20 of a standard one. `minute_line_enabled` is the
+  same coverage as `fetch_stock_futures_ohlcv_symbols`.
+- The ranking is rebuilt after the close and cached server-side for an hour; a contract with no
+  daily data is absent from it. Neither call is cached locally.
+- Not the same as `fetch_stock_futures_ohlcv_symbols` (a plain list of ids that have intraday
+  bars, `TXF` included).
 
 ---
 

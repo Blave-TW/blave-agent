@@ -137,76 +137,46 @@ df = fetch_twstock_ohlcv('2330', '5m', headers, start='2025-01-01', end='2025-06
 
 ---
 
-## 台股分K（1分鐘 OHLCV）— legacy endpoint
+## 1-minute bars — use `fetch_twstock_ohlcv`
 
-> Superseded for most uses by the minute-line section above (`fetch_twstock_ohlcv`
-> supports 1m–60m/1d resampling, caching, and retry). Kept for reference only.
-
-```python
-import requests
-
-def fetch_twstock_kbar(stock_id: str, start: str, end: str, headers: dict) -> pd.DataFrame:
-    """最多 31 天，資料從 2019-01-01 起（與 minute/ohlcv 同一份資料）。欄位：date, minute, stock_id, open, high, low, close, volume"""
-    r = requests.get(
-        f"https://api.blave.org/studio/market/twstock/kbar/{stock_id}",
-        params={"start": start, "end": end},
-        headers=headers,
-        timeout=60,
-    )
-    r.raise_for_status()
-    data = r.json().get("data", [])
-    if not data:
-        return pd.DataFrame()
-    df = pd.DataFrame(data)
-    df["datetime"] = pd.to_datetime(df["date"] + " " + df["minute"])
-    return df.set_index("datetime").sort_index()
-```
-
-**注意事項：**
-- `minute` 格式為 `HH:MM:SS`（例如 `09:00:00`），為該分鐘 bar 的起點標籤
-- 一天最多 271 筆（09:00–13:30，含 13:30 收盤撮合那根）；冷門股只有有成交的分鐘才有列
-- 非交易日（週末、假日）自動略過，不返回資料
-- 超過 31 天會回 400 錯誤；長期回測需分段呼叫
-- 資料與 `minute/ohlcv` 同一份（伺服器本地分線庫，不打上游）：涵蓋股票以 `/studio/market/twstock/minute/ohlcv/symbols` 為準，不在名單內或已下市的代碼回 400
-- 當日（盤中）資料為暫定值，16:10 後才換成官方分 K；回測請用昨日以前的資料
+The `/studio/market/twstock/kbar/{stock_id}` endpoint reads the same minute-line store as
+`fetch_twstock_ohlcv`, 31 days per request, with no cache, chunking or `adjust`. There is no lib
+wrapper for it on purpose: call `fetch_twstock_ohlcv(stock_id, '1m', headers, start=…, end=…)`
+(section above) for 1-minute bars of any span.
 
 ---
 
-## 台股新聞
-
-每天多篇，`date` 為 datetime 字串（含時間）。最多 31 天。
+## Stock news (個股新聞)
 
 ```python
-def fetch_twstock_news(stock_id: str, start: str, end: str, headers: dict) -> pd.DataFrame:
-    """欄位：date（datetime string）, title, source, link"""
-    r = requests.get(
-        f"https://api.blave.org/studio/market/twstock/news/{stock_id}",
-        params={"start": start, "end": end},
-        headers=headers,
-        timeout=60,
-    )
-    r.raise_for_status()
-    data = r.json().get("data", [])
-    return pd.DataFrame(data) if data else pd.DataFrame()
+from lib.data import fetch_twstock_news
+
+news = fetch_twstock_news("2330", "2026-10-01", None, hdrs)   # 2026-10-01 to today
+latest = fetch_twstock_news("2330", None, None, hdrs)          # start None = the last 7 days
+# index: publication time (naive, Taipei); columns: stock_id, title, source, link
 ```
+
+- Per-stock headlines with a link to the outlet's article; outlets vary, and one story can
+  appear twice when two outlets ran it.
+- The api serves at most 31 days per request; a longer span (at most a year per call) goes in 31-day windows inside the
+  call. No local cache.
+- Not `fetch_news`: that one is the licensed market headline feed (all markets, titles and
+  times only, no link — filter it with `q="台積電"`). Use `fetch_twstock_news` for one stock's
+  coverage with links, `fetch_news` for a market-wide scan.
 
 ---
 
-## 市值
+## Market cap history (市值)
 
 ```python
-def fetch_twstock_market_value(stock_id: str, start: str, end: str, headers: dict) -> pd.DataFrame:
-    """欄位：date, market_value（元，NTD）。資料從 2004-01-01 起。"""
-    r = requests.get(
-        f"https://api.blave.org/studio/market/twstock/market_value/{stock_id}",
-        params={"start": start, "end": end},
-        headers=headers,
-        timeout=60,
-    )
-    r.raise_for_status()
-    data = r.json().get("data", [])
-    return pd.DataFrame(data).set_index("date") if data else pd.DataFrame()
+from lib.data import fetch_twstock_market_value
+
+mv = fetch_twstock_market_value("2330", "2020-01-01", None, hdrs)
+# index: date (naive); one column market_value (NTD 元). History from 2004-01-01.
 ```
+
+Cached one file per stock like `fetch_twstock_per`. For a ranking or a top-N pool use the
+whole-market call below — never this one per stock across the market.
 
 ### Whole-market market-cap ranking (全市場市值排名)
 
@@ -260,34 +230,26 @@ Notes:
 
 ---
 
-## 八大行庫買賣超
-
-每天 8 筆（一家銀行一筆）。FinMind 不支援單股查詢，後台會拉整天全市場資料再 filter，**最多 31 天**。
+## Government bank trading (八大行庫買賣超)
 
 ```python
-def fetch_twstock_gov_bank(stock_id: str, start: str, end: str, headers: dict) -> pd.DataFrame:
-    """欄位：date, bank_name, buy（張）, buy_amount（元）, sell（張）, sell_amount（元）"""
-    r = requests.get(
-        f"https://api.blave.org/studio/market/twstock/gov_bank/{stock_id}",
-        params={"start": start, "end": end},
-        headers=headers,
-        timeout=60,
-    )
-    r.raise_for_status()
-    data = r.json().get("data", [])
-    return pd.DataFrame(data) if data else pd.DataFrame()
-```
+from lib.data import fetch_twstock_gov_bank
 
-常用分析：
-```python
 df = fetch_twstock_gov_bank("2330", "2025-01-01", "2025-01-31", hdrs)
+# index: date (naive); one row per bank per day
+# columns: stock_id, bank_name, buy / sell (shares 股), buy_amount / sell_amount (NTD 元)
 
-# 每日八大行庫合計淨買超（張）
-daily_net = df.groupby("date").apply(lambda x: (x["buy"] - x["sell"]).sum())
-
-# 各銀行累計淨買超
-bank_net = (df.groupby("bank_name")["buy"].sum() - df.groupby("bank_name")["sell"].sum())
+net = df["buy"] - df["sell"]
+daily_net = net.groupby(level="date").sum() / 1000   # the eight banks together, in 張 (lots)
+bank_net = net.groupby(df["bank_name"]).sum()        # per bank over the span
 ```
+
+- Only the eight banks' own rows come back — there is no total row; sum them.
+- `start` None = the last 7 days. The api caps a request at 31 days and builds each day from the
+  whole market, so a longer span (split into 31-day windows inside the call, at most a year per
+  call — a longer one raises) is slow; ask only for the span you need. No local cache.
+- Published after the close: in a strategy, use a day's rows from the next trading day on. There is
+  no `FEED_TIMING` entry, so `align_feed` / `join_tw_flow` do not take this table.
 
 ---
 
@@ -341,38 +303,27 @@ Notes:
 
 ---
 
-## 借券成交明細
-
-每天多筆，`transaction_type` 為 `競價` 或 `議借`，每筆費率/張數不同。
+## Securities lending trades (借券成交明細)
 
 ```python
-def fetch_twstock_lending(stock_id: str, start: str, end: str, headers: dict) -> pd.DataFrame:
-    """欄位：date, transaction_type, volume, fee_rate, close, original_return_date, original_lending_period"""
-    r = requests.get(
-        f"https://api.blave.org/studio/market/twstock/lending/{stock_id}",
-        params={"start": start, "end": end},
-        headers=headers,
-        timeout=60,
-    )
-    r.raise_for_status()
-    data = r.json().get("data", [])
-    return pd.DataFrame(data) if data else pd.DataFrame()
-```
+from lib.data import fetch_twstock_lending
 
-常用分析：
-```python
 df = fetch_twstock_lending("2330", "2025-01-01", "2025-05-30", hdrs)
+# index: date (naive); several rows per day
+# columns: stock_id, transaction_type ('競價' / '議借'), volume (張), fee_rate (%), close,
+#          original_return_date, original_lending_period (days)
 
-# 每日借券總量
-daily_volume = df.groupby("date")["volume"].sum()
-
-# 競價 vs 議借 分布
-by_type = df.groupby(["date", "transaction_type"])["volume"].sum().unstack(fill_value=0)
-
-# 加權平均費率（借券成本）
-df["value"] = df["volume"] * df["fee_rate"]
-avg_fee = df.groupby("date").apply(lambda x: x["value"].sum() / x["volume"].sum())
+daily_volume = df["volume"].groupby(level="date").sum()
+by_type = df.groupby([df.index, "transaction_type"])["volume"].sum().unstack(fill_value=0)
+w = df["volume"] * df["fee_rate"]
+avg_fee = w.groupby(level="date").sum() / daily_volume   # volume-weighted fee rate
 ```
+
+History from 2001-05; `start` / `end` None = the whole history / up to today. One request for any
+span, no local cache.
+
+- Published after the close: in a strategy, use a day's rows from the next trading day on. There is
+  no `FEED_TIMING` entry, so `align_feed` / `join_tw_flow` do not take this table.
 
 ---
 
@@ -535,13 +486,15 @@ from one whole-market request per dataset instead — same frames, same cache.
 
 Work as a funnel — narrow the pool first, then pull time series (measured on the uid=1 machine):
 
-1. **Narrow the pool (seconds)**: `fetch_twstock_market_value_all` (whole-market market-cap
+1. **Narrow the pool (seconds)**: `fetch_twstock_screener` (one POST: valuation, profitability,
+   revenue growth, recent returns and institutional flows on the latest close, and can drop
+   disposition / attention stocks — next section) or `fetch_twstock_market_value_all` (whole-market market-cap
    ranking in one call — THE first-layer filter for market-cap conditions: top-N pool, 前十大權值股;
    ETFs are in it, drop them with `~df["is_etf"]` and never by code prefix;
    `fetch_twstock_list` itself has no market-cap column), `fetch_twstock_list` (industry), `fetch_twstock_quote_all`
    (whole-market change/volume ratio, one request), `fetch_twstock_monthly_revenue_batch` /
    `fetch_twstock_per_batch` (fundamental / value conditions) → down to a few hundred stocks.
-   Per-stock `/market_value/{stock_id}` history is for the already-narrowed pool only.
+   Per-stock `fetch_twstock_market_value` history is for the already-narrowed pool only.
 2. **Time-series conditions (~10–30s per 100 stocks)**: on the narrowed pool use
    `fetch_twstock_price_batch` (KD / breakout and other conditions needing High/Low),
    `fetch_twstock_price_adj_batch` (moving averages / returns),
@@ -549,6 +502,93 @@ Work as a funnel — narrow the pool first, then pull time series (measured on t
 3. Pulling time series for the whole market without narrowing takes ~2–3 minutes per pass —
    only do this when the user explicitly asks for a full-market scan, and say up front how
    long it will take.
+
+---
+
+## Sector rotation (板塊輪動) and the screener
+
+Blave data, any machine (cloud or desktop with data access). No local cache — each call is "now".
+
+**Which breadth function:**
+- `fetch_twstock_sector_overview(headers, window=20)` — the ~32 TWSE sector indices (類股指數):
+  returns, relative strength vs TAIEX, rotation quadrant, institutional flows per sector.
+- `fetch_twstock_sector_up_share(headers, days=365)` — daily % of those sector indices that
+  closed up: a breadth history at the sector level.
+- `fetch_twstock_sector_constituents(slug, headers)` — a sector's five largest stocks.
+- `fetch_tw_sector_breadth(headers)` / `fetch_tw_breadth_public()` — up / down **stock** counts
+  per 產業別 for the latest session, from TWSE open data, **desktop only** (`references/lib.md`).
+  On a cloud machine there are no stock counts; use the three above and say they count sectors,
+  not stocks.
+
+```python
+from lib.data import (fetch_twstock_sector_overview, fetch_twstock_sector_up_share,
+                      fetch_twstock_sector_constituents)
+
+ov = fetch_twstock_sector_overview(hdrs, window=20)        # window 10 / 20 / 60 days
+# index: slug ('semiconductor', 'shipping', …); columns: name, group ('elec' / 'fin' / 'trad'),
+#   weight (% of mapped market cap), returns.d1 / .d5 / .d10 / .d20 / .d60 / .ytd (percent),
+#   rs = 100 × (sector close ÷ its close `window` days ago) ÷ (TAIEX close ÷ its close `window`
+#        days ago), so 100 = in line with TAIEX; momentum = 100 + the 5-day change in rs; both
+#        clamped for the chart (`clamped` says when),
+#   quadrant ('leading' / 'weakening' / 'improving' / 'lagging', from the unclamped values),
+#   migration_days, tail, foreign / trust / dealer (that day's net buy, 億元, estimated),
+#   foreign_win / trust_win / dealer_win (summed over `window`), foreign_win_prev, stats.*
+ov.attrs["date"]          # as-of close
+ov.attrs["concentration"]["top3_buy_share"]   # 0–1: top 3 sectors' share of foreign net buying
+ov.attrs["summary"]       # up / down = sector counts; whole-market foreign_total / trust_total (億元)
+                          # with streaks; margin_change (億元), margin_pctl
+leaders = ov[ov["quadrant"] == "leading"].sort_values("returns.d5", ascending=False)
+
+up = fetch_twstock_sector_up_share(hdrs, days=250)        # Series pct_up, percent, by date (≤ 730 days)
+
+top5 = fetch_twstock_sector_constituents("semiconductor", hdrs)
+# columns: stock_id, name, chg (percent), foreign (億元, estimated),
+#   themes: [{'slug': 'ai', 'name': {'zh': …, 'en': …, 'cn': …}}, …] ([] = none, or the theme store is down)
+# attrs: date, total
+```
+
+- Sector flows are estimates (each stock's net shares × that day's close, summed by sector);
+  say so when quoting them. Constituents: only the top five by market cap come back, `attrs['total']`
+  is the sector's full count.
+
+### Screener (選股器)
+
+One POST over Blave's nightly whole-market snapshot — the first call for any multi-condition
+screen on fundamentals, valuation, returns or institutional flows:
+
+```python
+from lib.data import fetch_twstock_screener
+
+df = fetch_twstock_screener(
+    hdrs,
+    filters=[
+        {"indicator": "dividend_yield", "operator_id": 3, "value": 5},     # >= 5 %
+        {"indicator": "per", "operator_id": 4, "value": 15},               # <= 15 倍
+        {"indicator": "market_cap", "operator_id": 3, "value": 300},       # >= 300 億元
+        {"indicator": "industry", "op": "not_in", "values": ["17"]},       # no 金融保險
+        {"indicator": "exclude", "values": ["disposal", "notice"]},        # drop 處置股 / 注意股
+    ],
+    sort={"indicator": "dividend_yield", "dir": "desc"},
+    limit=100,                                                              # 1–300
+)
+df.attrs["total"]   # matches before `limit`
+df.attrs["as_of"]   # the snapshot's close
+```
+
+- `operator_id`: 1 `>`, 2 `<`, 3 `>=`, 4 `<=`; a stock with no value never matches.
+- Numeric keys: `per`, `pbr` (倍); `dividend_yield`, `roe_ttm`, `gross_margin_q`,
+  `operating_margin_q`, `rev_yoy`, `ret_5d` / `ret_20d` / `ret_60d` (percent, returns
+  dividend-adjusted); `eps_ttm`, `close` (元); `market_cap`, `turnover_20d`, `foreign_5d` /
+  `_20d` / `_60d`, `trust_5d` / `_20d` / `_60d` (億元, flows estimated, positive = net buy).
+- Set filters: `market` (`twse` / `tpex`), `industry` (產業別 codes, `TWSE_INDUSTRY_NAMES`),
+  `theme` (concept-theme slugs), each with `op` `in` / `not_in`.
+- Default universe is common stock; `include_types` adds `etf`, `etn`, `reit`, `preferred`, `dr`.
+  Default sort: market cap, descending.
+- Rows carry `fin_quarter` / `rev_month` (the filing each fundamental comes from) — quote them
+  with the numbers. An unknown key or value is a 400 whose message names it: fix the condition,
+  never drop it to make the call pass.
+- It is a snapshot of the latest close: not for backtests (no history), and not a substitute for
+  the time-series conditions in *Whole-market Screening* step 2.
 
 ---
 

@@ -386,6 +386,7 @@ _PRICE_OR_META_FETCHERS = {
     "fetch_twfutures_ohlcv", "fetch_twfutures_ohlcv_batch",
     "fetch_stock_futures_batch_daily",
     "fetch_twstock_ohlcv_symbols", "fetch_stock_futures_ohlcv_symbols",
+    "fetch_stock_futures_list", "fetch_stock_futures_liquidity_ranking",
     "fetch_twstock_list", "fetch_twstock_info", "fetch_economic_calendar",
 }
 # Window computations — the self-computed indicator case. shift/diff/pct_change
@@ -676,6 +677,12 @@ _BLAVE_DATA = frozenset({
     "fetch_twstock_ratios", "fetch_twstock_ratios_batch",
     "fetch_twstock_shareholding", "fetch_twstock_shareholding_batch",
     "fetch_twstock_trader_flows", "is_tw_trading_day", "twstock_disposal_mask",
+    "fetch_stock_futures_liquidity_ranking", "fetch_stock_futures_list", "fetch_twfutures_daily",
+    "fetch_twfutures_large_traders", "fetch_twfutures_retail_long_short_ratio",
+    "fetch_twoption_institutional", "fetch_twoption_large_traders", "fetch_twstock_gov_bank",
+    "fetch_twstock_lending", "fetch_twstock_market_value", "fetch_twstock_news",
+    "fetch_twstock_screener", "fetch_twstock_sector_constituents", "fetch_twstock_sector_overview",
+    "fetch_twstock_sector_up_share",
 })
 # Batch Taiwan daily bars come only from the CDN on a keyless desktop, and the CDN
 # starts on this day: an earlier (or unreadable) START is "can't tell" (None).
