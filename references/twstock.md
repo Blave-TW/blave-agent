@@ -390,6 +390,7 @@ from lib.data import (
     fetch_twmarket_turnover,       # (start, end, headers) → volume, value, trades
     fetch_twmarket_institutional,  # (start, end, headers) → foreign, investment_trust, dealer, total
     fetch_twmarket_margin,         # (start, end, headers) → margin/short balances
+    fetch_twmarket_margin_maintenance,  # (start, end, headers) → maintenance_ratio (%)
 )
 
 taiex = fetch_twmarket_index("2024-01-01", "2026-07-28", hdrs)   # DatetimeIndex, daily
@@ -401,6 +402,7 @@ taiex = fetch_twmarket_index("2024-01-01", "2026-07-28", hdrs)   # DatetimeIndex
 | `fetch_twmarket_turnover` | `volume` `value` `trades` | shares / TWD / count | 1990-01-04 |
 | `fetch_twmarket_institutional` | `foreign` `investment_trust` `dealer` `total` | TWD, net (buy - sell) | 2004-04-07 |
 | `fetch_twmarket_margin` | `margin_balance` `margin_balance_prev` `margin_balance_value` `short_balance` `short_balance_prev` | lots (張), except `margin_balance_value` in TWD | 2001-01-03 |
+| `fetch_twmarket_margin_maintenance` | `maintenance_ratio` | percent (151.93 = 151.93 %), 上市 only | 2002-11-26 |
 
 Notes:
 - `TAIEX` is the only supported `index_id`; any other value returns 400. The index carries no
@@ -410,6 +412,7 @@ Notes:
   is part of `dealer` once and never part of `foreign` (`foreign` is 外資及陸資(不含外資自營商)).
   TWSE prints 外資自營商 as its own row only from 2017-12-18; before that there is one
   外資(及陸資) row, taken whole as `foreign` (in both this series and the key-free twin).
+- `fetch_twmarket_margin_maintenance` (大盤融資維持率) covers 上市 only — there is no 上櫃 series; it is published after the close, so a strategy uses a day's value from the next trading day on (no `FEED_TIMING` entry).
 - Margin balances here are whole-market; `margin_balance_value` is the only TWD column, the rest are lots. One stock's 融資融券 → `fetch_twstock_margin` (previous section).
 - TXO put/call ratio is a futures/options dataset — see `fetch_twfutures_pcr` in
   `references/twfutures.md`, not here.
@@ -513,7 +516,8 @@ Blave data, any machine (cloud or desktop with data access). No local cache — 
 - `fetch_twstock_sector_overview(headers, window=20)` — the ~32 TWSE sector indices (類股指數):
   returns, relative strength vs TAIEX, rotation quadrant, institutional flows per sector.
 - `fetch_twstock_sector_up_share(headers, days=365)` — daily % of those sector indices that
-  closed up: a breadth history at the sector level.
+  closed up: a breadth history at the sector level. The denominator is the sectors with a change
+  figure that day, so it can vary.
 - `fetch_twstock_sector_constituents(slug, headers)` — a sector's five largest stocks.
 - `fetch_tw_sector_breadth(headers)` / `fetch_tw_breadth_public()` — up / down **stock** counts
   per 產業別 for the latest session, from TWSE open data, **desktop only** (`references/lib.md`).
@@ -589,6 +593,63 @@ df.attrs["as_of"]   # the snapshot's close
   never drop it to make the call pass.
 - It is a snapshot of the latest close: not for backtests (no history), and not a substitute for
   the time-series conditions in *Whole-market Screening* step 2.
+
+
+---
+
+## Concept themes (題材族群) and institutional breadth (法人買超族群)
+
+Blave data, any machine. No local cache. A theme's `name` (and a member's `reason`) is a
+`{'zh', 'en', 'cn'}` dict — show the one in the user's language (`name['zh']` for 繁中), never the
+dict itself. A TWSE sector's `name` is a plain string.
+
+```python
+from lib.data import (fetch_twstock_theme_overview, fetch_twstock_theme_constituents,
+                      fetch_twstock_theme_index, fetch_twstock_chip_breadth,
+                      fetch_twstock_chip_breadth_constituents)
+
+th = fetch_twstock_theme_overview(hdrs, window=20)          # window 10 / 20 / 60
+# index: slug ('ai', 'memory', …); name {'zh','en','cn'}, count, returns.d1 … .d60 / .ytd (percent),
+#   returns_backfill.* (True = that return reaches back before the list took effect),
+#   foreign / trust / dealer (that day, 億元, estimated), foreign_win / trust_win / dealer_win,
+#   foreign_win_ex_top, foreign_buy_members, top.stock_id / top.name / top.mv_share (%), top5,
+#   stats.* — top, top5 and mv_share use market caps as of the list's effective date
+th["name"].str["zh"]                                         # display names
+th.attrs["date"], th.attrs["summary"]                        # as of; up / down theme counts, top / bottom
+
+mem = fetch_twstock_theme_constituents("memory", hdrs)
+# one row per member: stock_id, name, market, sector_slug, chg (%), foreign (億元), ret20 (%),
+#   rev_yoy (%), roe (%), foreign_share_chg_20d (pp), disposal, delisted, also (other themes),
+#   reason {'zh','en','cn'}, sources [{'date','kind','label': {'zh','en','cn'},'url'}]
+mem.attrs["name"], mem.attrs["changes"]                      # name dict; added / removed vs last month
+
+idx = fetch_twstock_theme_index("memory", hdrs, range="1y")  # '3m' / '1y' / '3y'
+# index: date; value (equal weight, total return, 100 on attrs['base_date']), taiex / tpex (same
+#   base), n, snapshot_ym, is_backfill
+
+cb = fetch_twstock_chip_breadth("theme", hdrs, window=20, inst="foreign")   # scope 'theme' / 'sector'
+# index: slug, ranked by inst; name, total, foreign.buy / .ratio (%) / .gap (pp vs market) / .rank,
+#   trust.* the same; attrs as_of, baseline (the market's own share), excluded (groups too small)
+who = fetch_twstock_chip_breadth_constituents("theme", "memory", hdrs, window=20)
+# stock_id, name, market, foreign / trust ('buy' / 'sell' / 'flat'), market_cap (億元),
+#   ret_20d (%), foreign_20d (億元), themes, disposal / notice
+```
+
+- Themes are Blave's own curated lists, revised monthly (`snapshot_ym`, `attrs['changes']`); they
+  span 上市 and 上櫃. Say "Blave's list" when you quote membership.
+- **Backfill is hindsight.** `fetch_twstock_theme_index` rows with `is_backfill` True (and a
+  `returns_backfill` True return) are computed with a list chosen after the fact — survivorship
+  bias. Never backtest on them, and say so when a chart or a return reaches into them.
+- Chip breadth counts companies, not money: `foreign.ratio` = % of the group's counted companies
+  (common stock only) the foreign investors net-bought over the window; `gap` compares it with the
+  same share for the group's market (`attrs['baseline']` — 上市 only for `sector`, 上市 + 上櫃 for
+  `theme`). A group can be mostly bought while its net flow is negative; quote both if you use both.
+  Groups with fewer than `attrs['min_group']` companies are in `attrs['excluded']`, not ranked.
+- Flow figures (億元) are estimates: daily net shares × that day's close.
+- All of these are built after the close: in a strategy use a day's numbers from the next trading
+  day on (no `FEED_TIMING` entry; `align_feed` / `join_tw_flow` do not take them).
+- Cite the institutional data with `attrs['sources']['institutional']` (chip breadth), in the
+  user's language.
 
 ---
 

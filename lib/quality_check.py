@@ -683,6 +683,9 @@ _BLAVE_DATA = frozenset({
     "fetch_twstock_lending", "fetch_twstock_market_value", "fetch_twstock_news",
     "fetch_twstock_screener", "fetch_twstock_sector_constituents", "fetch_twstock_sector_overview",
     "fetch_twstock_sector_up_share",
+    "fetch_twmarket_margin_maintenance", "fetch_twstock_chip_breadth",
+    "fetch_twstock_chip_breadth_constituents", "fetch_twstock_theme_constituents",
+    "fetch_twstock_theme_index", "fetch_twstock_theme_overview",
 })
 # Batch Taiwan daily bars come only from the CDN on a keyless desktop, and the CDN
 # starts on this day: an earlier (or unreadable) START is "can't tell" (None).

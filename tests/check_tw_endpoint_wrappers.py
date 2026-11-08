@@ -10,6 +10,8 @@
      last one's body, e.g. themes_unavailable, reaches the exception).
   5. fetch_twstock_market_value goes through the one-file cache: a second call for the same
      span does not ask again.
+  6. Theme / chip-breadth frames keep a theme's {zh,en,cn} name intact, send the right query,
+     refuse a bad scope / range locally; margin maintenance lands in the one-file cache.
 Run: cd blave-agent && .venv/bin/python tests/check_tw_endpoint_wrappers.py
 """
 import json
@@ -141,6 +143,48 @@ with tempfile.TemporaryDirectory() as tmp:
     check(first >= 1 and len(calls) == first, f'second call served from cache ({first} → {len(calls)} requests)')
     check(mv2.equals(mv), 'cached frame equals the fetched one')
     check(Path(tmp, 'twstock_mv_2330.parquet').exists(), 'single-file layout')
+
+# ── 6. themes / chip breadth / margin maintenance ────────────────────────────
+answers['twstock/theme/overview'] = {'date': '2026-11-06', 'summary': {'up': 0}, 'themes': [
+    {'slug': 'ai', 'name': {'zh': 'AI', 'en': 'AI', 'cn': 'AI'}, 'count': 12,
+     'returns': {'d1': -4.84, 'd20': -20.32}, 'top5': [{'stock_id': '2317', 'name': '鴻海'}]}]}
+calls.clear()
+th = d.fetch_twstock_theme_overview({}, window=10)
+check(calls[0][2] == {'window': 10} and th.index.tolist() == ['ai'], f'theme overview by slug: {calls[0]}')
+check(th.loc['ai', 'name'] == {'zh': 'AI', 'en': 'AI', 'cn': 'AI'} and 'returns.d20' in th.columns,
+      f'name kept as the {{zh,en,cn}} dict, the rest flattened: {list(th.columns)}')
+check(th.attrs['date'] == '2026-11-06' and 'themes' not in th.attrs, 'payload fields ride in attrs')
+answers['twstock/chip_breadth/sector'] = {'as_of': '2026-11-06', 'groups': [
+    {'slug': 'shipping', 'name': '航運', 'total': 28, 'foreign': {'buy': 24, 'ratio': 85.7, 'gap': 26, 'rank': 2},
+     'trust': {'buy': 7, 'ratio': 25.0, 'gap': 0, 'rank': 12}}]}
+calls.clear()
+cb = d.fetch_twstock_chip_breadth('sector', {}, window=60, inst='trust')
+check(calls[0][2] == {'window': 60, 'inst': 'trust'} and cb.loc['shipping', 'foreign.gap'] == 26
+      and cb.loc['shipping', 'name'] == '航運', f'chip breadth params + flattened groups: {list(cb.columns)}')
+for bad in (lambda: d.fetch_twstock_chip_breadth('industry', {}), lambda: d.fetch_twstock_theme_index('ai', {}, range='5y')):
+    try:
+        bad()
+        check(False, 'bad scope / range raises')
+    except ValueError:
+        check(True, 'bad scope / range raises ValueError locally')
+answers['twstock/theme/ai/index'] = {'base_date': '2026-10-14', 'points': [
+    {'date': '2026-10-14', 'value': 100.0, 'taiex': 100.0, 'tpex': 100.0, 'is_backfill': False, 'n': 12,
+     'snapshot_ym': '2026-10'}]}
+ti = d.fetch_twstock_theme_index('ai', {}, range='1y')
+check(isinstance(ti.index, d.pd.DatetimeIndex) and ti.attrs['base_date'] == '2026-10-14', 'theme index by date')
+answers['twstock/theme/constituents/gone'] = [(503, {'error': 'not_yet_effective'})] * 6
+try:
+    d.fetch_twstock_theme_constituents('gone', {})
+    check(False, 'exhausted 503 raises')
+except requests.HTTPError as e:
+    check('not_yet_effective' in str(e), f'theme 5xx carries the body: {e}')
+answers['twmarket/margin_maintenance'] = {'data': [{'date': '2026-11-05', 'maintenance_ratio': 155.741},
+                                                   {'date': '2026-11-06', 'maintenance_ratio': 151.93}]}
+with tempfile.TemporaryDirectory() as tmp:
+    d._CACHE_DIR = Path(tmp)
+    mm = d.fetch_twmarket_margin_maintenance('2026-11-01', '2026-11-06', {})
+    check(list(mm.columns) == ['maintenance_ratio'] and mm.iloc[-1, 0] == 151.93, f'margin maintenance: {mm}')
+    check(Path(tmp, 'twmarket_margin_maint_TWSE.parquet').exists(), 'margin maintenance in the one-file cache')
 
 print('FAILED' if fails else 'ALL PASS')
 sys.exit(1 if fails else 0)

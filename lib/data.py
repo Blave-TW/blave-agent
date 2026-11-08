@@ -742,6 +742,7 @@ _SINGLE_FILE_PREFIXES = frozenset({
     'twstock_price3', 'twstock_price_nonadj', 'twstock_inst', 'twstock_margin',
     'twstock_shareholding', 'twstock_per', 'twstock_foreign_sh', 'twstock_mv',
     'twmarket_index', 'twmarket_turnover', 'twmarket_institutional', 'twmarket_margin',
+    'twmarket_margin_maint',
     'twfutures_institutional',
 })
 _META_TS_FMT = '%Y-%m-%dT%H:%M:%S'
@@ -4650,7 +4651,9 @@ def fetch_twstock_sector_overview(headers, window=20):
 def fetch_twstock_sector_up_share(headers, days=365):
     """Daily share of the ~32 TWSE sector indices that closed up — a sector-level breadth
     line. → Series `pct_up` (percent, 0–100) indexed by naive date over the last `days`
-    calendar days (the api serves at most 730). Blave data, any machine, no local cache.
+    calendar days (the api serves at most 730). The denominator is the sector indices that had
+    a change figure that day, so it can vary from day to day. Blave data, any machine, no local
+    cache.
 
     Not fetch_tw_sector_breadth: that one is the desktop-only count of up / down STOCKS per
     industry for the latest session, from TWSE open data. This one is a history of how many
@@ -4710,6 +4713,144 @@ def fetch_twstock_screener(headers, filters=None, include_types=None, sort=None,
     out = r.json()
     df = pd.DataFrame(out.get('rows') or [])
     df.attrs.update({k: out.get(k) for k in ('as_of', 'dates', 'total', 'columns', 'sort')})
+    return df
+
+_TW_THEME_WINDOWS = (10, 20, 60)
+_TW_THEME_RANGES = ('3m', '1y', '3y')
+_TW_CHIP_SCOPES = ('theme', 'sector')
+
+
+def _tw_groups_frame(rows, index='slug'):
+    """Group rows → DataFrame on `index`: nested dicts flattened to dotted columns
+    ('returns.d5', 'foreign.ratio') except `name`, which stays as the api sends it (a
+    {'zh', 'en', 'cn'} dict for a theme, a plain string for a TWSE sector)."""
+    rows = [dict(r) for r in rows or []]
+    names = [r.pop('name', None) for r in rows]
+    df = pd.json_normalize(rows)
+    if rows:
+        df.insert(0, 'name', names)
+    return df.set_index(index) if index in df.columns else df
+
+
+def _tw_snapshot(path, headers, params=None):
+    r = _retry_get(f'{BASE}/{path}', headers=headers, params=params or {}, timeout=60,
+                   _body_on_5xx=True)
+    return r.json()
+
+
+def fetch_twstock_theme_overview(headers, window=20):
+    """Concept themes (題材族群: Blave's curated stock lists such as 'ai', 'memory'), latest
+    close. → DataFrame indexed by theme `slug`, one row per active theme:
+      name                 {'zh', 'en', 'cn'} — pick the user's language, e.g. name['zh']
+      count                members still listed; snapshot_ym = the monthly list in use
+      returns.d1 … .d60 / .ytd   the theme index's return, percent (equal-weight, total return);
+                           returns_backfill.* True = that return reaches back before the list
+                           first took effect (computed with today's members — say so)
+      foreign / trust / dealer   that day's net buy over the members, 億元 (estimated, net shares
+                           × close); *_win = summed over `window` days; foreign_win_prev = the
+                           window before; foreign_win_ex_top = foreign_win without the largest
+                           member; foreign_buy_members = members the foreign investors net-bought
+      top.stock_id / top.name / top.mv_share   the largest member and its % of the theme's
+                           market cap; top5 = the five largest [{'stock_id', 'name'}]. top,
+                           top5 and mv_share use market caps as of the list's effective date
+      stats.*              streaks and one-year percentiles; indexable (a page flag)
+    attrs: date (as of), summary (up / down theme counts on the day, top / bottom by 20-day return,
+    foreign_top), list_ym, first_ym, list_age_days, stale_months, pctl_includes_backfill,
+    flow_caps. window: 10 / 20 / 60. No local cache. Members of one theme:
+    fetch_twstock_theme_constituents; its index history: fetch_twstock_theme_index."""
+    if window not in _TW_THEME_WINDOWS:
+        raise ValueError(f'window must be one of {_TW_THEME_WINDOWS}, got {window!r}')
+    body = _tw_snapshot('studio/market/twstock/theme/overview', headers, {'window': window})
+    df = _tw_groups_frame(body.get('themes'))
+    df.attrs.update({k: v for k, v in body.items() if k != 'themes'})
+    return df
+
+
+def fetch_twstock_theme_constituents(slug, headers):
+    """One concept theme's member list. → DataFrame, one row per member (delisted ones last):
+    stock_id, name, market ('twse' / 'tpex'), sector_slug, chg (that day's change, percent),
+    foreign (that day's 外資 net buy, 億元, estimated), ret20 (20-day return, percent), rev_yoy
+    (percent), roe (percent), foreign_share_chg_20d (change in foreign holding share, percentage
+    points), disposal, delisted, last_trade_date, also (the other theme slugs holding it),
+    reason ({'zh', 'en', 'cn'}: why it is in the list), sources (list of {'date', 'kind',
+    'label': {'zh', 'en', 'cn'}, 'url'}). attrs: name and intro ({'zh', 'en', 'cn'}), date,
+    count, snapshot_ym, effective_date, published_at, first_ym, status, changes ({'added',
+    'removed', 'prev_ym'} vs last month's list), related, list_age_days, stale_months. The
+    list is Blave's own curation, revised monthly. Unknown slug → 404, retired → 410. No
+    local cache."""
+    body = _tw_snapshot(f'studio/market/twstock/theme/constituents/{slug}', headers)
+    df = pd.DataFrame(body.get('stocks') or [])
+    df.attrs.update({k: v for k, v in body.items() if k != 'stocks'})
+    return df
+
+
+def fetch_twstock_theme_index(slug, headers, range='3m'):
+    """One concept theme's index history. → DataFrame indexed by naive date: value (the theme
+    index — equal weight, total return, 100 on attrs['base_date']), taiex / tpex (the TWSE /
+    TPEx total-return indices scaled to 100 on the same day), n (members counted that day),
+    snapshot_ym (the list used), is_backfill. range: '3m' / '1y' / '3y'. History from 2023.
+
+    is_backfill True = before the theme's first list took effect: those days use that first
+    list, chosen with hindsight — a backtest over them has look-ahead (survivorship) bias. Do
+    not backtest on them; say so when a chart or a return includes them. A day's value is
+    published after the close: use it from the next trading day on. No local cache."""
+    if range not in _TW_THEME_RANGES:
+        raise ValueError(f'range must be one of {_TW_THEME_RANGES}, got {range!r}')
+    body = _tw_snapshot(f'studio/market/twstock/theme/{slug}/index', headers, {'range': range})
+    df = pd.DataFrame(body.get('points') or [])
+    if not df.empty:
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.set_index('date')
+    df.attrs.update({k: v for k, v in body.items() if k != 'points'})
+    return df
+
+
+def fetch_twstock_chip_breadth(scope, headers, window=20, inst='foreign'):
+    """法人買超族群: per group, the share of its companies an institution net-bought over the
+    last `window` trading days, against the same share for the whole market. → DataFrame
+    indexed by group `slug`, ranked best first by `inst`:
+      name                 a theme's {'zh', 'en', 'cn'} dict, or a sector's string
+      total                companies counted (common stock with a known window sum)
+      foreign.buy / .ratio / .gap / .rank   how many were net-bought, that share (percent), the
+                           share minus the market's (percentage points), the rank by share
+      trust.*              the same for investment trusts
+    attrs: as_of (the flows date), baseline ({'foreign': {'buy', 'ratio', 'total'}, 'trust': …,
+    'universe': 'twse' or 'twse+tpex'}), excluded (groups under min_group companies, not
+    ranked), min_group, scope, window, inst, sources (attribution, {'zh', 'en', 'cn'}).
+    scope: 'theme' (concept themes, 上市 + 上櫃) or 'sector' (TWSE sectors, 上市 only, compared
+    with 上市 only). window 10 / 20 / 60; inst 'foreign' / 'trust'. A count of buyers, not
+    money — a group can be mostly bought while its net flow is negative. Built nightly after
+    the close: use from the next trading day on. No local cache."""
+    if scope not in _TW_CHIP_SCOPES:
+        raise ValueError(f'scope must be one of {_TW_CHIP_SCOPES}, got {scope!r}')
+    if window not in _TW_THEME_WINDOWS:
+        raise ValueError(f'window must be one of {_TW_THEME_WINDOWS}, got {window!r}')
+    if inst not in ('foreign', 'trust'):
+        raise ValueError(f"inst must be 'foreign' or 'trust', got {inst!r}")
+    body = _tw_snapshot(f'studio/market/twstock/chip_breadth/{scope}', headers,
+                        {'window': window, 'inst': inst})
+    df = _tw_groups_frame(body.get('groups'))
+    df.attrs.update({k: v for k, v in body.items() if k != 'groups'})
+    return df
+
+
+def fetch_twstock_chip_breadth_constituents(scope, slug, headers, window=20):
+    """The counted companies of one fetch_twstock_chip_breadth group, market cap first. →
+    DataFrame: stock_id, name, market, foreign / trust ('buy' / 'sell' / 'flat' over the
+    window), market_cap (億元), ret_<window>d (percent), foreign_<window>d (外資 net buy over
+    the window, 億元, estimated), themes ([{'slug', 'name': {'zh', 'en', 'cn'}}], the other
+    themes), disposal / notice (None when attrs['alerts_available'] is False). attrs: group
+    (this group's row, as in fetch_twstock_chip_breadth), ranked (False = under min_group),
+    baseline, as_of, price_as_of, excluded_count, alerts_available, min_group, scope, window,
+    slug, sources. No local cache."""
+    if scope not in _TW_CHIP_SCOPES:
+        raise ValueError(f'scope must be one of {_TW_CHIP_SCOPES}, got {scope!r}')
+    if window not in _TW_THEME_WINDOWS:
+        raise ValueError(f'window must be one of {_TW_THEME_WINDOWS}, got {window!r}')
+    body = _tw_snapshot(f'studio/market/twstock/chip_breadth/{scope}/{slug}', headers,
+                        {'window': window})
+    df = pd.DataFrame(body.get('stocks') or [])
+    df.attrs.update({k: v for k, v in body.items() if k != 'stocks'})
     return df
 
 
@@ -5489,6 +5630,19 @@ def fetch_twmarket_margin(start, end, headers):
         'twmarket_margin', {'id': 'TWSE'},
         lambda s, e: _fetch_twmarket_raw('margin', _TWMARKET_MARGIN_COLUMNS, s, e, headers),
         start, end,
+    )
+
+
+def fetch_twmarket_margin_maintenance(start, end, headers):
+    """大盤融資維持率 (whole-market margin maintenance ratio). → DataFrame indexed by naive date,
+    one column `maintenance_ratio` in percent (151.93 = 151.93 %). 上市 (TWSE) only — there is no
+    上櫃 series. History from 2002-11-26 (start None = from then). Cached one file like
+    fetch_twmarket_margin. Published after the close: in a strategy use a day's value from the
+    next trading day on (no FEED_TIMING entry, align_feed does not take it)."""
+    return _extend_cache_monthly(
+        'twmarket_margin_maint', {'id': 'TWSE'},
+        lambda s, e: _fetch_twmarket_raw('margin_maintenance', ['maintenance_ratio'], s, e, headers),
+        start or '2002-11-26', end,
     )
 
 
@@ -8588,6 +8742,9 @@ _NON_PRICE_FETCHERS = frozenset({
     'fetch_twstock_lending', 'fetch_twstock_market_value', 'fetch_twstock_news',
     'fetch_twstock_screener', 'fetch_twstock_sector_constituents', 'fetch_twstock_sector_overview',
     'fetch_twstock_sector_up_share',
+    'fetch_twmarket_margin_maintenance', 'fetch_twstock_chip_breadth',
+    'fetch_twstock_chip_breadth_constituents', 'fetch_twstock_theme_constituents',
+    'fetch_twstock_theme_index', 'fetch_twstock_theme_overview',
 })
 
 
