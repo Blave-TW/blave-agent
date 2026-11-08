@@ -2776,7 +2776,9 @@ function libBindBuyBody(b) {
   if (!b || typeof b !== "object") return null;
   const s = (v) => (typeof v === "string" ? v.slice(0, 200) : null), n = (v) => (typeof v === "number" && isFinite(v) ? v : null);
   return { error: s(b.error), error_code: s(b.error_code), price_twd: n(b.price_twd), trial: b.trial === true, trial_days: n(b.trial_days),
-    plan_monthly_twd: n(b.plan_monthly_twd), plan_due_twd: n(b.plan_due_twd) };
+    plan_monthly_twd: n(b.plan_monthly_twd), plan_due_twd: n(b.plan_due_twd), plan_renews_card: b.plan_renews_card === true,
+    // 0.1.50 帶 accept_plan 的報價(spec library-free-data-one-step §5.1):方案第一期＋策略一筆刷
+    plan: b.plan === true, plan_twd: n(b.plan_twd), total_twd: n(b.total_twd), plan_renews_on: libDay(typeof b.plan_renews_on === "string" ? b.plan_renews_on.slice(0, 10) : null) };
 }
 // 藍新正式／測試兩個網域;api 給的 url 不在這裡就不開
 const LIB_PAY_HOSTS = ["core.newebpay.com", "ccore.newebpay.com"];
@@ -2819,7 +2821,8 @@ const libBbMarkPath = () => path.join(app.getPath("userData"), "lib-bindbuy.json
 function libBbMarkGet(now) {
   let m = null; try { m = JSON.parse(fs.readFileSync(libBbMarkPath(), "utf8")); } catch (_) { return null; }
   if (!m || !Number.isInteger(m.id) || m.id <= 0 || typeof m.at !== "number" || !(now - m.at < LIB_BB_MARK_MS && m.at <= now)) { libBbMarkSet(null); return null; }
-  return { id: m.id, at: m.at };
+  // plan / free:開方案的單(刷卡失敗的結果不帶 plan,重開 app 後埋點與等待態靠這兩格認)
+  return { id: m.id, at: m.at, plan: m.plan === true, free: m.free === true };
 }
 function libBbMarkSet(m) {
   try { if (m) wsfile.replace(libBbMarkPath(), JSON.stringify(m)); else fs.rmSync(libBbMarkPath(), { force: true }); } catch (_) { }
@@ -2830,7 +2833,11 @@ async function libraryBindBuy(strategyId, opts) {
   if (!token || !secret) return { status: 401, body: libBindBuyBody({ error_code: token ? "APP_SECRET_REQUIRED" : "INVALID_CREDENTIALS" }) };
   const o = opts && typeof opts === "object" ? opts : {};
   const body = { token, app_secret: secret, strategy_id: strategyId, lang: o.lang === "en" ? "en" : "zh" };
-  if (Number.isInteger(o.confirm) && o.confirm > 0) body.confirm_price_twd = o.confirm;
+  // 方案單只認合計(confirm_total_twd);帶了 confirm_price_twd 的方案單 api 一樣當報價
+  const plan = o.acceptPlan === true;
+  if (plan) body.accept_plan = true;
+  if (plan && Number.isInteger(o.confirmTotal) && o.confirmTotal > 0) body.confirm_total_twd = o.confirmTotal;
+  else if (!plan && Number.isInteger(o.confirm) && o.confirm > 0) body.confirm_price_twd = o.confirm;
   if (o.restart === true) body.restart = true;
   let r = null;
   try { r = await postJSON(`${API_BASE}/oauth/desktop/marketplace/bind_purchase`, body); } catch (_) { return { status: 0, body: null }; }
@@ -2838,7 +2845,7 @@ async function libraryBindBuy(strategyId, opts) {
   const form = libPayForm(r.body);
   if (!form) return { status: 0, body: null };
   try { await libPayOpen(form); } catch (_) { return { status: 0, body: null }; }
-  libBbMarkSet({ id: strategyId, at: Date.now() });
+  libBbMarkSet(plan ? { id: strategyId, at: Date.now(), plan: true, free: o.free === true } : { id: strategyId, at: Date.now() });
   return { status: 200, opened: true };
 }
 // bind_purchase_result 的那一筆:形狀不對整筆當沒有。reason 只留代號(failed 時是中文句,丟掉;代號在 reason_code)
@@ -2847,7 +2854,49 @@ function libBindResultOut(b) {
   if (!r || typeof r !== "object" || !["pending", "ok", "wallet", "failed"].includes(r.status) || !Number.isInteger(r.strategy_id)) return null;
   const n = typeof r.amount_twd === "number" && isFinite(r.amount_twd) && r.amount_twd > 0 ? r.amount_twd : null;
   const until = typeof r.trial_until === "string" && /^\d{4}-\d{2}-\d{2}/.test(r.trial_until) ? r.trial_until.slice(0, 40) : null;
-  return { status: r.status, strategy_id: r.strategy_id, amount_twd: n, reason: libCode(r.reason), reason_code: libCode(r.reason_code), trial_until: until };
+  const out = { status: r.status, strategy_id: r.strategy_id, amount_twd: n, reason: libCode(r.reason), reason_code: libCode(r.reason_code), trial_until: until };
+  if (r.plan !== true) return out;
+  // 方案單(0.1.50):amount_twd 是刷的總額;留在錢包的是 wallet_twd(null = 分不出來,不寫數字)
+  const f = (v) => (typeof v === "number" && isFinite(v) && v >= 0 ? v : null);
+  return Object.assign(out, { plan: true, plan_twd: f(r.plan_twd), price_twd: f(r.price_twd), wallet_twd: f(r.wallet_twd),
+    plan_status: ["ok", "active", "failed"].includes(r.plan_status) ? r.plan_status : null, plan_reason: typeof r.plan_reason === "string" && /^[A-Za-z_]{1,40}$/.test(r.plan_reason) ? r.plan_reason : null });
+}
+/* 策略庫一步開通(spec library-free-data-one-step;api 契約 output/backend/library-one-step-api §A／§C)。
+   checkout_quote:唯讀,下一步要的卡、末四碼、錢包、試用資格、方案價、今天錢從哪扣;card_checkout:有卡或錢包夠總額的框 ② 按 OK 後,
+   先開方案再買策略(動錢,帶確認的合計與框上寫的來源)。兩支都帶 token + app_secret;回 { status, body },body 只留畫面要的欄位 */
+const LIB_PAY_SRC = ["wallet", "card", "none", "free"];
+function libCheckoutBody(b) {
+  if (!b || typeof b !== "object") return null;
+  const n = (v) => (typeof v === "number" && isFinite(v) ? v : null), src = (v) => (LIB_PAY_SRC.includes(v) ? v : null);
+  const code = (v) => (typeof v === "string" && /^[A-Z0-9_]{1,40}$/.test(v) ? v : null);
+  return { error_code: code(b.error_code), status: ["ok", "partial"].includes(b.status) ? b.status : null, strategy_id: Number.isInteger(b.strategy_id) ? b.strategy_id : null,
+    price_twd: n(b.price_twd), plan_twd: n(b.plan_twd), total_twd: n(b.total_twd), plan: b.plan === true,
+    plan_required: b.plan_required === true, data_included: b.data_included === true, needs_data: b.needs_data !== false,
+    plan_blocked: code(b.plan_blocked), has_card: b.has_card === true, card_last4: typeof b.card_last4 === "string" && /^\d{4}$/.test(b.card_last4) ? b.card_last4 : null,
+    balance: n(b.balance), trial_eligible: b.trial_eligible === true, trial_days: n(b.trial_days),
+    plan_renews_on: libDay(typeof b.plan_renews_on === "string" ? b.plan_renews_on.slice(0, 10) : null),
+    plan_source: src(b.plan_source), price_source: src(b.price_source),
+    plan_status: ["ok", "active", "none", "failed"].includes(b.plan_status) ? b.plan_status : null,
+    purchase_status: ["ok", "failed", "none"].includes(b.purchase_status) ? b.purchase_status : null, purchase_reason: libCode(b.purchase_reason), amount_twd: n(b.amount_twd) };
+}
+async function libraryCheckoutQuote(strategyId) {
+  if (!Number.isInteger(strategyId) || strategyId <= 0) return { status: 400, body: null };
+  const token = loadToken(), secret = loadAppSecret();
+  if (!token || !secret) return { status: 401, body: null };
+  let r = null;
+  try { r = await postJSON(`${API_BASE}/oauth/desktop/marketplace/checkout_quote`, { token, app_secret: secret, strategy_id: strategyId }); } catch (_) { return { status: 0, body: null }; }
+  return { status: r.status, body: libCheckoutBody(r.body) };
+}
+async function libraryCardCheckout(strategyId, o) {
+  if (!Number.isInteger(strategyId) || strategyId <= 0 || !o || typeof o !== "object" || !Number.isInteger(o.total) || o.total <= 0) return { status: 400, body: null };
+  const token = loadToken(), secret = loadAppSecret();
+  if (!token || !secret) return { status: 401, body: null };
+  const src = (v) => (LIB_PAY_SRC.includes(v) ? v : null);
+  let r = null;
+  try { r = await postJSON(`${API_BASE}/oauth/desktop/marketplace/card_checkout`, { token, app_secret: secret, strategy_id: strategyId, confirm_total_twd: o.total, confirm_plan_source: src(o.planSrc), confirm_price_source: src(o.priceSrc) }); }
+  catch (_) { return { status: 0, body: null }; }
+  lastAcct = null; libCache = null;   // 方案與 purchased 可能都變了(含 partial)
+  return { status: r.status, body: libCheckoutBody(r.body) };
 }
 /* 回 { mark, res }:沒有等著的就不打 api(mark null)。拿到這支的終態就清記號,帳號狀態與清單作廢(綁了卡、可能開了試用) */
 async function libraryBindResult() {
@@ -4360,6 +4409,8 @@ app.whenReady().then(() => {
   ipcMain.handle("library-purchase", (e, id, confirmTopup) => (fromOurPage(e) ? libraryPurchase(id, confirmTopup) : { status: 0, body: null }));
   handle("library-bind-buy", (_e, id, opts) => libraryBindBuy(id, opts), { status: 0, body: null });
   handle("library-bind-result", () => libraryBindResult(), { mark: null, res: null });
+  handle("library-checkout-quote", (_e, id) => libraryCheckoutQuote(id), { status: 0, body: null });
+  handle("library-card-checkout", (_e, id, o) => libraryCardCheckout(id, o), { status: 0, body: null });   // 動錢:handle() 先過 fromOurPage
   handle("library-installed", (_e, patch) => libraryInstalled(patch), {});
   // 側欄偏好(renderer/stratflags.js):順序與旗標只收自家頁面;拒絕時回空的 = 照預設序、沒旗標
   handle("keep-awake", () => keepAwakeGet(), true);

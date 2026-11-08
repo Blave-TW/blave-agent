@@ -5677,6 +5677,100 @@ msgstr "付款頁已過期，沒付的話不會扣款。"
 msgid "lib.bb.rate"
 msgstr "按太多次了，稍後再試。"
 
+# 0.1.50 策略庫一步開通(spec library-free-data-one-step;bc_bindbuy_plan_* / has_server / bc_mp_login_* 逐字同網頁)
+msgid "lib.bb.planToday"
+msgstr "今天：方案 {a}＋策略 {p}"
+
+msgid "lib.bb.planRenew"
+msgstr "{d} 起每 30 天續扣"
+
+msgid "lib.bb.planTail"
+msgstr "續扣先錢包後卡。可在方案頁取消，不退款。"
+
+msgid "lib.bb.planOk"
+msgstr "綁卡並付 {p}"
+
+msgid "lib.bb.planPart"
+msgstr "方案已開通，策略沒買成，{p} 在錢包。"
+
+msgid "lib.bb.planPartNoAmt"
+msgstr "方案已開通，策略沒買成，錢在錢包。"
+
+msgid "lib.bb.planFail"
+msgstr "方案沒開成，{p} 在錢包。"
+
+msgid "lib.bb.planFailNoAmt"
+msgstr "方案沒開成，錢在錢包。"
+
+msgid "lib.bb.planActive"
+msgstr "方案已經開通，{p} 在錢包。"
+
+msgid "lib.bb.hasServer"
+msgstr "你名下已有主機，不用另開方案。"
+
+msgid "lib.bb.unsettled"
+msgstr "扣款還在確認，不會重複扣。稍後再回來看。"
+
+msgid "lib.bb.loginBuy"
+msgstr "登入並購買 {p}"
+
+msgid "lib.bb.loginUse"
+msgstr "登入並使用"
+
+msgid "lib.bb.loginInstall"
+msgstr "登入並安裝"
+
+msgid "lib.bb.loginUseNote"
+msgstr "新用戶可免費試用 {t} 天，之後每 30 天 {p}"
+
+msgid "lib.bb.planB"
+msgstr "開通 每 30 天 {p}"
+
+msgid "lib.bb.planD"
+msgstr "開通並購買 {p}"
+
+msgid "lib.bb.planTitle"
+msgstr "開通 Blave Agent 方案"
+
+msgid "lib.bb.todayCard"
+msgstr "今天刷卡"
+
+msgid "lib.bb.todayPay"
+msgstr "今天"
+
+msgid "lib.bb.pay"
+msgstr "付 {p}"
+
+msgid "lib.bb.srcCard"
+msgstr "今天從卡 {l} 扣，"
+
+msgid "lib.bb.srcCardAny"
+msgstr "今天從綁定的卡扣，"
+
+msgid "lib.bb.srcWallet"
+msgstr "今天從錢包扣，"
+
+msgid "lib.bb.srcMixWc"
+msgstr "方案扣錢包、策略刷卡 {l}，"
+
+msgid "lib.bb.srcMixWcAny"
+msgstr "方案扣錢包、策略刷卡，"
+
+msgid "lib.bb.srcMixCw"
+msgstr "方案刷卡 {l}、策略扣錢包，"
+
+msgid "lib.bb.srcMixCwAny"
+msgstr "方案刷卡、策略扣錢包，"
+
+msgid "lib.bb.partNoCharge"
+msgstr "方案已開通，策略沒買成，策略價沒有扣。"
+
+msgid "lib.bb.srcChanged"
+msgstr "錢包剛有變動，扣款來源已更新，再確認一次。"
+
+msgid "lib.bb.paying"
+msgstr "付款中…"
+
 msgid "lib.buy.inProgress"
 msgstr "這筆購買正在處理中，稍後再看一次結果。"
 

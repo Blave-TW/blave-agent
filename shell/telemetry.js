@@ -62,6 +62,12 @@ const EVENTS = {
   // 策略庫綁卡即購買(0.1.49;spec library-buy-with-bind §6、§9,renderer 送):start = 開了付款頁、ok = 買到、wallet = 刷了沒買成(錢在錢包)、
   // failed = 刷卡失敗。名字放不進 prop VARCHAR(16),所以一個事件帶 step;api desktop_telemetry 同一份,網頁 GA4 同名同值
   lib_bindbuy: { step: ["start", "ok", "wallet", "failed"] },
+  // 策略庫一步開通(0.1.50;spec library-free-data-one-step §8,renderer 送;api desktop_telemetry 同一份,網頁 GA4 同名同值):
+  // lib_bindplan = 沒卡沒試用的付款頁(框 ③;free／paid = 免費或付費策略,part = 方案成、策略沒成,wallet = 方案沒成、錢在錢包);
+  // lib_cardplan = 有卡或錢包夠的框 ② 按 OK 之後的結果;lib_login_go = 訪客鈕登入後實際接到哪一步(cta = 回到主鈕、沒自動做)
+  lib_bindplan: { step: ["start_free", "start_paid", "ok_free", "ok_paid", "part", "wallet", "failed"] },
+  lib_cardplan: { step: ["ok_free", "ok_paid", "part", "failed"] },
+  lib_login_go: { next: ["install", "pay", "box", "cta"] },
   // 0.1.15 偵測失敗(renderer 送,只在連結畫面偵測完時):本機那個 CLI 為什麼不能用。值由主行程 detectWhy 判,語意見 canon 登記表
   detect_fail: { why: ["claude_none", "claude_timeout", "claude_nonzero", "claude_badjson", "codex_none", "codex_shim", "codex_timeout", "codex_nonzero"] },
   // 本機策略的三步(0.1.18;主行程送,strategySteps):新建、第一次有回測、第一次配了錢(同雲端的 deployed;按下啟動下單另有 trade_started)。
@@ -342,7 +348,7 @@ const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   //
 // 放主行程而不是畫面:被攻破的 renderer 對 track-feature 灌合法名字也只會出門 20 次,搶不到 api 那顆全域熔斷
 const DAILY = ["feature_used", "acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed",
   "plan_start_res", "update_failed", "lib_blocked", "heartbeat", "engine_setup", "engine_opt_fail", "lib_pick", "idea_sent", "detect_fail",
-  "device_type", "reply_notif", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy"];
+  "device_type", "reply_notif", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go"];
 // 每日一則、不分屬性值:心跳一天只要一列(live 記當天第一次送出那一刻的),下單中途開關不多送
 const DAILY_ONE = ["heartbeat"];
 const HEARTBEAT_MS = 10 * 60 * 1000;   // 啟動後 10 分鐘起每 10 分鐘看一次;當天送過就不出門(啟動當天另有 app_open)
@@ -360,7 +366,7 @@ const SID_ON = ["strat_created", "strat_backtested", "strat_deployed"];
 const SID_RE = /^[0-9a-f]{16}$/;
 const SID_KEY_RE = /^[0-9a-f]{64}$/;
 // 畫面(track-event)只准送這幾個;里程碑(app_first_open、login_done…)與主行程自己判的(plan_start_res、update_failed)不收
-const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy"];
+const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go"];
 const DAY_RE = /^[0-9]{8}$/;
 const DEFAULT_ON = true;   // Wei 2026-09-21:預設開、照實告知、可關
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;

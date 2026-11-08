@@ -134,6 +134,10 @@ function libRate(v) {
   return s + "%";
 }
 function libGateFails(gc) { return gc ? ["fee", "mcpt", "robust"].filter((k) => gc[k] === "fail").length : 0; }
+// 主鈕位置是閘門(要付錢或開方案才能用)的幾態:why 帶 libGrouping 的原因,lib_blocked 也照它送
+const LIB_GATE_STATES = ["noData", "planBuy", "planResume", "planWait"];
+// api 開不了方案的原因碼(PLAN_ALREADY_ACTIVE 不在這:那是已經有方案,重拉帳號就回一般購買)
+const LIB_PLAN_BLOCKS = ["HAS_SERVER", "PLAN_CHARGE_UNCONFIRMED", "PLAN_NOT_ACTIVE"];
 /* CTA 態(spec-0.1.13 §1.3 + 0.1.6 §4.4,由上到下取第一個成立的;進行中提到最前——那支的回合就是它的進度)。c = { running, env, signedIn, dataAccess, why, cloud: "live"|"stale"|"stopped"|null,
    pending, noNew, buying, installedName, bindWait, bbOk, noCard, bal }。回 { state, paid, name, err, why, pub, again }:paid = 付費且還沒買;err = 上一輪是這支的下載、結束時沒新策略;
    why = noData 態的原因(libGrouping 的 no_card / no_balance / unknown,只在 noData 帶);pub = 分組中而這支只用公開資料(鈕下講那一句);again = 已安裝態能不能再下載一份(沒登入不能)。
@@ -143,11 +147,19 @@ function libCta(s, c) {
   const paid = !libIsFree(s) && !s.purchased && !s.is_owner, local = c.env !== "cloud", g = libGrouping(c), none = libNeeds(s) === "none";
   // short:已知沒卡、錢包也不夠買這支 → 主鈕直接出綁卡框(稽核 ②);沒卡但錢包夠或還不知道,照舊走確認框與資料牆(③)
   const short = paid && c.noCard === true && typeof c.bal === "number" && typeof s.price === "number" && c.bal < s.price;
-  const st = (state, name) => ({ state, paid, short, name: name || null, err: c.noNew === s.id && (state === "free" || state === "owned" || state === "installed"), why: state === "noData" ? g : null, pub: local && g !== null && none, again: !(local && c.signedIn === false) });
+  const st = (state, name) => ({ state, paid, short, name: name || null, err: c.noNew === s.id && (state === "free" || state === "owned" || state === "installed"), why: LIB_GATE_STATES.includes(state) ? g : null, pub: local && g !== null && none, again: !(local && c.signedIn === false) });
   if (c.pending === s.id) return st("pending");   // 正在下載的那支:回合當然在跑,它講的是自己的進度,不是「上一輪還在跑」
   if (c.bindWait === s.id) return st("bindWait");   // 綁卡即購買的付款頁開著:等結果
   if (c.running) return st("busy");
   if (local && c.signedIn === false && !c.installedName) return st("signedOut");
+  /* 一步開通(spec library-free-data-one-step §3):方案制、沒方案(no_plan = 沒試用資格,或有卡)、這支要資料 → 主鈕〔開通 每 30 天 N〕／〔開通並購買 N〕。
+     卡、錢包、Starter 月價任一查不到就不猜,照舊資料牆〔看方案〕。報價回了開不了方案的原因(帳號層級,c.planBlock):名下有主機 → 恢復方案;
+     上一筆方案扣款還在確認 → 不出主鈕;其他退回資料牆 */
+  if (local && g === "no_plan" && !none && c.planMo === true && c.bbOk !== s.id && typeof c.noCard === "boolean" && typeof c.bal === "number" && typeof c.planTwd === "number" && c.planTwd > 0) {
+    if (c.planBlock === "HAS_SERVER") return st("planResume");
+    if (c.planBlock === "PLAN_CHARGE_UNCONFIRMED") return st("planWait");
+    if (!c.planBlock) return c.buying === s.id ? st("buying") : st("planBuy");
+  }
   // 沒卡的人看付費策略:主鈕照樣是購買,綁卡與方案試用在購買框裡一起做(spec library-buy-with-bind §3;原型態 1)
   // bbOk:剛綁卡即購買成功、帳號與清單還沒重拉回來:先當已購買,不閃資料牆(稽核 ④)
   if (local && g !== null && g !== "signedOut" && !none && !(g === "no_card" && short) && c.bbOk !== s.id) return st("noData");
@@ -207,9 +219,13 @@ function libBuyBranch(status, body) {
 function libBbBox(status, body) {
   const b = body || {}, code = b.error_code, pos = (v) => (typeof v === "number" && isFinite(v) && v > 0 ? Math.round(v) : null);
   if (status === 429) return { kind: "rate" };
+  // 帶 accept_plan 的方案單報價(框 ③)要排在 trial／plain 前面:它的 trial 也是 false,漏判會出框 2、只刷策略價、方案沒開
+  if (code === "PRICE_CONFIRM_REQUIRED" && b.plan === true) return libPlanTerms(b, "planpay");
   if (code === "PRICE_CONFIRM_REQUIRED" && pos(b.price_twd))
     return { kind: b.trial === true ? "trial" : "plain", price: pos(b.price_twd), trialDays: pos(b.trial_days), planMonthly: pos(b.plan_monthly_twd), due: libBbDue(b), renew: b.plan_renews_card === true };
   if (code === "PLAN_REQUIRED" && pos(b.plan_monthly_twd)) return { kind: "plan", planMonthly: pos(b.plan_monthly_twd) };
+  if (LIB_PLAN_BLOCKS.includes(code)) return { kind: "block", block: code };
+  if (code === "PLAN_ALREADY_ACTIVE" || code === "USE_TRIAL" || code === "NOTHING_TO_PAY") return { kind: "refresh" };
   if (code === "HAS_CARD") return { kind: "has_card" };
   if (code === "BIND_PLAN_IN_PROGRESS") return { kind: "open" };
   if (status === 400 && /already purchased/i.test(typeof b.error === "string" ? b.error : "")) return { kind: "owned" };
@@ -223,7 +239,14 @@ function libBbRes(res, sid) {
   if (!res || res.strategy_id !== sid || !["pending", "ok", "wallet", "failed"].includes(res.status)) return { kind: "none" };
   const amt = typeof res.amount_twd === "number" && isFinite(res.amount_twd) && res.amount_twd > 0 ? Math.round(res.amount_twd) : null;
   const code = res.reason_code || (res.status === "wallet" ? res.reason : null) || null;
-  return { kind: res.status, code: res.status === "ok" || res.status === "pending" ? null : code, amount: amt, trialUntil: res.trial_until || null };
+  const out = { kind: res.status, code: res.status === "ok" || res.status === "pending" ? null : code, amount: amt, trialUntil: res.trial_until || null };
+  // 方案單(0.1.50):留在錢包的是 wallet_twd(amount_twd 是刷的總額);B 型(策略價 0)的 ok 沒有買策略
+  if (res.plan === true) Object.assign(out, { plan: true, planStatus: res.plan_status || null, planReason: res.plan_reason || null, free: res.price_twd === 0,
+    wallet: typeof res.wallet_twd === "number" && isFinite(res.wallet_twd) && res.wallet_twd > 0 ? Math.round(res.wallet_twd) : null });
+  /* 方案付款期間在別處開了(plan_status active):api 的 status 是 wallet(方案那筆留在錢包),reason 卻是空的或 already_purchased——策略其實買到了
+     (marketplace._settle_plan_order 1478–1489)。這時是成功:不能講「策略沒買成」、不能留會失敗的購買鈕(web 稽核 B1) */
+  if (out.plan && out.kind === "wallet" && out.planStatus !== "failed" && (out.code === null || out.code === "already_purchased")) out.kind = "ok";
+  return out;
 }
 // 有卡的 /purchase 刷了卡卻沒買成(libBuyBranch 的 charged):跟綁卡即購買的 wallet 同一套句子
 function libBbCharged(body) {
@@ -234,8 +257,18 @@ function libBbCharged(body) {
    開了試用的人錢進錢包時多講到期日。ok 沒有句子(主鈕已經換成安裝並回測) */
 function libBbLines(r) {
   if (!r) return [];
+  if (r.kind === "lines") return r.list;   // 框 ② 的結果(libCardLines)
   if (r.kind === "failed") return [{ key: "lib.bb.failed" }];
   if (r.kind === "note") return [{ key: r.key }];
+  // 方案單:都成沒有句子;方案別處已開才講方案那筆在錢包。wallet_twd 是 null(分不出來)就不寫數字
+  if (r.plan && (r.kind === "ok" || r.kind === "wallet")) {
+    const p = r.wallet;
+    if (r.kind === "ok") return r.planStatus === "active" && p ? [{ key: "lib.bb.planActive", p }] : r.code === "already_purchased" && p ? [{ key: "lib.bb.owned", p }] : [];
+    // 方案沒成而原因在帳號層級:結果句後接原因句,同一個槽兩句(設計稽核 desktop-one-step 三)
+    const why = r.planReason === "HAS_SERVER" ? [{ key: "lib.bb.hasServer" }] : r.planReason === "PLAN_CHARGE_UNCONFIRMED" ? [{ key: "lib.bb.unsettled" }] : [];
+    if (r.planStatus === "failed") return [p ? { key: "lib.bb.planFail", p } : { key: "lib.bb.planFailNoAmt" }, ...why];
+    return [p ? { key: "lib.bb.planPart", p } : { key: "lib.bb.planPartNoAmt" }];
+  }
   if (r.kind !== "wallet") return [];
   const key = r.code === "unavailable" ? "lib.bb.gone" : r.code === "already_purchased" ? "lib.bb.owned" : "lib.bb.wallet";
   const out = [r.amount ? { key, p: r.amount } : { key: "lib.bb.walletNoAmt" }];
@@ -290,6 +323,89 @@ function libSparkPath(sp, w, h, pad) {
   return { pts: lg.map((v, i) => [(i * w) / (lg.length - 1), y(v)]), base: y(lg[0]) };
 }
 function libNoteTitle(s, lang) { const m = s && s.success_note_titles; const v = m && typeof m === "object" ? m[lang] : null; return typeof v === "string" && v.trim() ? v.trim() : null; }
+/* ── 一步開通(spec library-free-data-one-step;api 契約 output/backend/library-one-step-api)── */
+// 方案報價的金額與來源:合計對不上分項就不出框(鈕上的數字一定等於實刷)。kind = planpay(框 ③,付款頁)/ cardplan(框 ②,有卡或錢包夠)
+function libPlanTerms(b, kind) {
+  const n = (v) => (typeof v === "number" && isFinite(v) ? Math.round(v) : null), src = (v) => (["wallet", "card", "free", "none"].includes(v) ? v : null);
+  const price = n(b.price_twd), plan = n(b.plan_twd), total = n(b.total_twd);
+  if (price === null || price < 0 || !(plan > 0) || !(total > 0) || price + plan !== total) return { kind: "fallback" };
+  return { kind, price, plan, total, renewsOn: libBbDate(b.plan_renews_on), planSrc: src(b.plan_source), priceSrc: price > 0 ? src(b.price_source) : null,
+    last4: typeof b.card_last4 === "string" && /^\d{4}$/.test(b.card_last4) ? b.card_last4 : null };
+}
+/* checkout_quote(200)或 card_checkout 不動錢的回應(409 報價／SOURCE_CHANGED、403 NO_CARD)→ 下一步:
+   planpay = 沒卡、錢包不夠這次總額 → 框 ③;cardplan = 有卡或錢包夠 → 框 ②;block = 開不了方案(帳號層級);refresh = 已經有資料或該走試用,重拉帳號;
+   gone = 下架;rate / fail */
+function libPqOf(status, b) {
+  if (status === 429) return { kind: "rate" };
+  if (status === 404) return { kind: "gone" };
+  if (!b) return { kind: "fail" };
+  const code = b.error_code;
+  if (code === "PLAN_ALREADY_ACTIVE" || code === "NOTHING_TO_PAY") return { kind: "refresh" };
+  if (LIB_PLAN_BLOCKS.includes(code)) return { kind: "block", block: code };
+  if (status === 200) {
+    if (b.plan_blocked === "PLAN_ALREADY_ACTIVE") return { kind: "refresh" };
+    if (b.plan_blocked) return LIB_PLAN_BLOCKS.includes(b.plan_blocked) ? { kind: "block", block: b.plan_blocked } : { kind: "fail" };
+    if (!b.plan_required || (b.trial_eligible && !b.has_card)) return { kind: "refresh" };
+  } else if (!["PRICE_CONFIRM_REQUIRED", "SOURCE_CHANGED", "NO_CARD"].includes(code) || b.plan !== true) return { kind: "fail" };
+  const q = libPlanTerms(b, "cardplan");
+  if (q.kind === "fallback") return { kind: "fail" };
+  if (code === "NO_CARD" || q.planSrc === "none" || q.priceSrc === "none") q.kind = "planpay";
+  else if (!q.planSrc || (q.price > 0 && !q.priceSrc)) return { kind: "fail" };   // 框 ② 要寫今天從哪扣,來源不明不出框
+  q.changed = code === "SOURCE_CHANGED";
+  return q;
+}
+// 框 ② 第三行的前半句「今天從哪扣」:兩筆同源一句;方案扣錢包、策略刷卡(或反過來)另一句;末四碼拿不到寫「綁定的卡」。內部帳號(free)不講
+function libPbSrc(q) {
+  const P = q.planSrc, S = q.price > 0 ? q.priceSrc : null, l = q.last4;
+  if (P === "free" || S === "free") return null;
+  const one = S === null || S === P ? P : null;
+  if (one === "wallet") return { key: "lib.bb.srcWallet" };
+  if (one === "card") return l ? { key: "lib.bb.srcCard", l } : { key: "lib.bb.srcCardAny" };
+  if (P === "wallet" && S === "card") return l ? { key: "lib.bb.srcMixWc", l } : { key: "lib.bb.srcMixWcAny" };
+  if (P === "card" && S === "wallet") return l ? { key: "lib.bb.srcMixCw", l } : { key: "lib.bb.srcMixCwAny" };
+  return null;
+}
+/* card_checkout 按 OK 之後的回應 → ok(都成;策略已買過也算)/ part(方案成、策略沒成)/ declined(方案那筆刷卡被拒,什麼都沒扣)/
+   requote(金額或來源變了、錢包不夠了:重報價重出框,不自動重送)/ block / refresh / inProgress / rate / fail */
+function libCardOut(status, b) {
+  if (status === 200 && b && (b.status === "ok" || b.status === "partial")) {
+    if (b.status === "ok" || b.purchase_reason === "already_purchased") return { kind: "ok" };
+    return { kind: "part", amount: typeof b.amount_twd === "number" && isFinite(b.amount_twd) && b.amount_twd > 0 ? Math.round(b.amount_twd) : null, reason: b.purchase_reason || null };
+  }
+  if (status === 429) return { kind: "rate" };
+  const code = b ? b.error_code : null;
+  if (code === "CHECKOUT_IN_PROGRESS") return { kind: "inProgress" };
+  if (code === "PLAN_ALREADY_ACTIVE" || code === "NOTHING_TO_PAY") return { kind: "refresh" };
+  // PLAN_CONFIRM_REQUIRED = 方案那段漲價(api 的 PlanError 原樣回):一樣重報價重出框
+  if (["PRICE_CONFIRM_REQUIRED", "SOURCE_CHANGED", "NO_CARD", "PLAN_CONFIRM_REQUIRED"].includes(code)) return { kind: "requote", changed: code === "SOURCE_CHANGED" };
+  if (LIB_PLAN_BLOCKS.includes(code)) return { kind: "block", block: code };
+  if (code === "PLAN_CHARGE_FAILED") return { kind: "declined" };
+  return { kind: "fail" };
+}
+// part 的結果句:刷了卡沒買成講金額在錢包;錢包付款的交易出錯(錢沒離開錢包)講錢在錢包;其他(刷卡被拒、錢包不夠、忙)這筆沒扣
+function libCardLines(o) {
+  if (o.amount) return [{ key: "lib.bb.planPart", p: o.amount }];
+  return [{ key: o.reason === "error" ? "lib.bb.planPartNoAmt" : "lib.bb.partNoCharge" }];
+}
+// 付款頁(框 ③)回來的終態 → lib_bindplan 的 step;free = 免費策略的單
+function libBpStep(out, free) {
+  if (out.kind === "ok") return free ? "ok_free" : "ok_paid";
+  if (out.kind === "failed") return "failed";
+  if (out.kind === "wallet") return out.planStatus === "failed" ? "wallet" : "part";
+  return null;
+}
+/* 訪客鈕登入回來接哪一步(spec §2.3,設計稽核 web-one-step #2:綁卡會開自動儲值,沒有任何一種情況跳過框)。c = 登入後重算的 libCta:
+   install = 直接代下載(免費／已買);box = 出購買框或開通框;pay = 有試用資格沒卡看要資料的免費策略,開網站綁卡頁(試用條款在那頁);cta = 停在主鈕 */
+function libLoginNext(c, planMo) {
+  if (!c) return "cta";
+  if (c.state === "free" || c.state === "owned") return "install";
+  if (c.state === "paid" || c.state === "planBuy") return "box";
+  // 付費的沒卡有試用(錢包夠或讀不到時 libCta 是 noData)不開綁卡頁:報價出框 1(spec §2.3;稽核 desktop-one-step S-2)
+  if (c.state === "noData" && c.why === "no_card" && planMo === true) return c.paid ? "box" : "pay";
+  return "cta";
+}
+// 訪客主鈕的字:付費 → 登入並購買 N;不用資料 → 登入並安裝;要資料(含未標)→ 登入並使用
+function libSignedOutKey(s, paid) { return paid ? "lib.bb.loginBuy" : libNeeds(s) === "none" ? "lib.bb.loginInstall" : "lib.bb.loginUse"; }
 /* ── 純邏輯到此 ── */
 // p 的規則只有一份,在 strategy_versions.js fillP(那支在 library.js 之後載入,呼叫時才讀);門檻跟 api 的 mcpt_alpha 走
 function libP(tpl, p, alpha) {
@@ -306,7 +422,8 @@ const LIB = { bags: { local: libNewBag(), cloud: libNewBag() }, data: null, load
   // 綁卡即購買:bbWait = { id, q, until } 付款頁開著、輪詢中;bbRes = id → 結果(libBbRes 的形狀,或 { kind: "note", key });
   // bbRestart = 上一張付款頁還開著的那幾支(下次帶 restart);bbTop = 結果那支已不在清單(下架),句子放清單頂
   bbWait: null, bbRes: new Map(), bbRestart: new Set(), bbTop: null, bbResumed: false, bbTimer: null, bbBusy: false,
-  bal: null, bbOk: null };   // bal:錢包餘額(TWD 數字,讀不到 null),判斷要不要直接出綁卡框;bbOk:剛買成、重拉中的那支
+  bal: null, bbOk: null,   // bal:錢包餘額(TWD 數字,讀不到 null),判斷要不要直接出綁卡框;bbOk:剛買成、重拉中的那支
+  planBlock: null, loginGo: null };   // planBlock:報價說開不了方案的原因碼(帳號層級,換帳號／作廢就清);loginGo:訪客鈕登入回來要接下一步的那支(只接一次)
 const LIB_CLOUD_WAIT_MS = 3 * 60 * 1000;   // 回合結束後等雲端清單跟上的上限(主機的回報器有延遲);過了就不再認新出現的那支是這次下載的
 function libNewBag() { return { open: false, detail: null, mkt: "all", sort: "reco", scroll: 0, row: null }; }
 const libEnv = () => (typeof ENV !== "undefined" && ENV.cur === "cloud" ? "cloud" : "local");
@@ -321,7 +438,8 @@ function libTrack(name) { try { if (window.blave && typeof window.blave.trackFea
 // 「想用但被擋」(lib_blocked,canon product-telemetry 登記表):why 只有列舉值,主行程再驗一次
 function libBlocked(why) { try { if (why && window.blave && typeof window.blave.trackEvent === "function") window.blave.trackEvent("lib_blocked", { why }); } catch (_) { } }
 // 點進詳情時主鈕位置是閘門、不是「使用」→ 被擋的原因;忙碌 / 下載中 / 購買中不算被擋(那是暫時的)
-function libBlockedWhy(c) { return c.state === "signedOut" ? "signed_out" : c.state === "noData" ? c.why : c.state === "stopped" || c.state === "stale" ? "cloud_off" : null; }
+// why 只在閘門那幾態有值(libCta 的 LIB_GATE_STATES)
+function libBlockedWhy(c) { return c.state === "signedOut" ? "signed_out" : c.why ? c.why : c.state === "stopped" || c.state === "stale" ? "cloud_off" : null; }
 function libEl(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
 // 範本裡的 {k} 換成節點(數字要進 .mono、字留在 sans):t() 沒給的變數會原樣留著,這裡再切
 function libRich(key, vars) {
@@ -391,12 +509,13 @@ function libCtx() {
   const env = libEnv();
   return { env, signedIn: typeof hasToken !== "undefined" ? !!hasToken : !!(LIB.data && LIB.data.signedIn),
     dataAccess: LIB.data ? LIB.data.dataAccess : null, why: LIB.data ? LIB.data.why : null,
-    noCard: typeof acctNoCard === "function" && typeof acct !== "undefined" ? acctNoCard(acct) : null, bal: LIB.bal };
+    noCard: typeof acctNoCard === "function" && typeof acct !== "undefined" && acct ? acctNoCard(acct) : null, bal: LIB.bal,
+    planMo: libPlanMo(), planTwd: typeof planVars === "function" ? planVars().pr : null, planBlock: LIB.planBlock };
 }
 function libCtaOf(s) {
   const c = libCtx();
   const bb = LIB.bbRes.get(s.id);
-  if (bb && bb.kind === "ok") s.purchased = true;   // 這次 app 開著期間綁卡即購買成功過:清單晚一步或讀不到也照已購買畫
+  if (bb && bb.kind === "ok" && !(bb.plan && bb.free)) s.purchased = true;   // 這次 app 開著期間綁卡即購買成功過:清單晚一步或讀不到也照已購買畫(免費策略的方案單沒買東西)
   return libCta(s, Object.assign(c, {
     running: false, cloud: c.env === "cloud" ? libCloud() : null,   // 回合中不再擋〔使用〕:另開分頁送(csSendAway);進度看 LIB.pending(每支一份)
     pending: LIB.pending.has(s.id) ? s.id : null, noNew: LIB.noNew, buying: LIB.buying, bindWait: LIB.bbWait ? LIB.bbWait.id : null, bbOk: LIB.bbOk,
@@ -435,11 +554,13 @@ async function libOpen(o) {
   if (libEnv() === "local") { if (typeof stratSelect === "function") await stratSelect(null); }
   else if (typeof rpCloudSelect === "function") await rpCloudSelect(null);
   B.open = true;
+  LIB.planBlock = null;   // 開不了方案的原因只記到下一次進來:扣款確認完、恢復了方案,主鈕要能回來(重按會再報價,還沒好 api 會再回同一碼)
   if (B !== libBag()) return;   // 等的時候切走了:只記下這一邊是開著的
   envShowMain();
   libIdeaSync();
   libLoad(false);   // 每次進視圖都重問主行程(它有 5 分鐘快取;dataAccess 每次現算)——綁卡 / 換帳號 / 換語言之後畫面才會跟上
   libBbResume(); libBalLoad();
+  if (typeof pubLoad === "function" && !(typeof pub !== "undefined" && pub)) pubLoad().then(() => libSync()).catch(() => {});   // 訪客鈕下的試用天數與方案價(公開價目)
   const h = B.detail ? $("lib-back") : $("lib-h");
   if (h && h.offsetParent) h.focus();
   if (!(o && o.silent)) libTrack("library_open");
@@ -486,9 +607,9 @@ async function libLoad(force) {
   libCtaFocusNow();
 }
 // 登入 / 登出 / 換帳號 / 買了(app.js 在 hasToken 翻轉的地方叫;購買成功自己叫):手上那份作廢,開著就立刻重問
-function libInvalidate() { LIB.stale = true; LIB.dlFail = null; LIB.bbWait = null; LIB.bbRes.clear(); LIB.bbRestart.clear(); LIB.bbTop = null; LIB.bal = null; LIB.bbOk = null; LIB.cloudInstalled = {}; LIB.cloudWait = null; LIB.cloudNames = null; libRefresh(); }   // 雲端「已安裝」是這個帳號的記憶:換人就丟
+function libInvalidate() { LIB.stale = true; LIB.dlFail = null; LIB.bbWait = null; LIB.bbRes.clear(); LIB.bbRestart.clear(); LIB.bbTop = null; LIB.bal = null; LIB.bbOk = null; LIB.planBlock = null; LIB.cloudInstalled = {}; LIB.cloudWait = null; LIB.cloudNames = null; libRefresh(); }   // 雲端「已安裝」是這個帳號的記憶:換人就丟
 // 視圖開著時重問一次(設定關掉、視窗回前景:綁卡 / 儲值後閘門要解)
-function libRefresh() { if (!$("lib").hidden) libLoad(false); }
+function libRefresh() { LIB.planBlock = null; if (!$("lib").hidden) libLoad(false); }   // 回前景:開不了方案的原因也重問(同 libOpen)
 // 送出「用這支」那一輪結束(app.js onTurnEnd,stratRefresh(true) 之後):本機多了一支就記下對照表;沒有就出灰字。雲端只重問一次狀態
 function libTurnEnd() {
   // 還在代下載(stage dl)的不算:結束的是用戶另外送的那一輪。sid 對不上的是別條(對話分頁並行):那支那一輪還在跑
@@ -787,20 +908,21 @@ function libGateBtn(why) {
   b.type = "button"; b.addEventListener("click", () => { if (why !== "unknown") libTrack(why === "no_balance" ? "topup_lib" : "bind_lib"); planOpen(); });
   return b;
 }
-// 詳情的「登入 Blave」/「重新登入 Blave」:直接開瀏覽器登入(app.js planSignIn);不做登入後自動續走(同 report-share.js,案 1A)。cls:已安裝那格是文字鈕
-function libSignInBtn(key, cls) {
-  const b = signInLabel(libEl("button", cls || "btn-fill"), t(key || "cn.blave.btn")); b.type = "button";
-  b.addEventListener("click", () => libSignIn(b));
+/* 詳情的登入鈕:直接開瀏覽器登入(app.js planSignIn)。cls:已安裝那格是文字鈕。label 有給 = 訪客主鈕(〔登入並安裝／使用／購買 N〕,spec
+   library-free-data-one-step §2.1):登入回來照 libLoginGo 接下一步一次;〔重新登入 Blave〕不續走 */
+function libSignInBtn(key, cls, label) {
+  const b = signInLabel(libEl("button", cls || "btn-fill"), label || t(key || "cn.blave.btn")); b.type = "button";
+  b.addEventListener("click", () => libSignIn(b, !!label));
   return b;
 }
-async function libSignIn(b) {
+async function libSignIn(b, go) {
   const id = libBag().detail, env = libEnv(), was = LIB.dlFail && LIB.dlFail.id === id ? LIB.dlFail : null;
   if (!planLoginBusy && !oauthPending) libTrack("login_lib");   // 等待中再按是取消,不算一次登入
   if (was && was.kind === "signinFailed") { LIB.dlFail = was.relogin ? { id, kind: "signin" } : null; libClearFail(); }   // 上一次沒成的那句活不過這一次;key 被撤的那句留著
   const r = await planSignIn(b);
   if (!r) return;   // 這一按是取消:結果由開始登入那一按收
   const here = () => !$("lib").hidden && libEnv() === env && libBag().detail === id;
-  if (r.ok) { LIB.ctaFocus = id; if (LIB.loading) b.disabled = true; else libCtaFocusNow(); return; }   // 清單還在路上:這顆舊鈕再按會又登入一次
+  if (r.ok) { LIB.ctaFocus = id; LIB.loginGo = go ? id : null; if (LIB.loading) b.disabled = true; else libCtaFocusNow(); return; }   // 清單還在路上:這顆舊鈕再按會又登入一次
   if (!here()) return;
   if (!oauthGaveUp(r.code)) LIB.dlFail = { id, kind: "signinFailed", relogin: !!(was && (was.kind === "signin" || was.relogin)) };
   libSync();
@@ -809,15 +931,32 @@ async function libSignIn(b) {
 function libClearFail() { const c = $("lib-cta"), e = c && c.querySelector(".err"); if (e) e.remove(); }
 // 等瀏覽器時他可能已經在輸入框打字或開了框:焦點還在策略庫裡(或掉到 body)才接手
 function libFocusFree() { const a = document.activeElement; return !a || a === document.body || $("lib").contains(a); }
-/* 登入回來:清單與帳號狀態到了才畫得出真正的下一步(綁卡、購買),所以等 libLoad 收尾才給焦點;只給一次、不自動開確認框。
-   重畫會換掉鈕,放在 libLoad 最後一步;那支剛好下架就交給 libPaint 的頁首焦點 */
+/* 登入回來:清單與帳號狀態到了才畫得出真正的下一步(綁卡、購買),所以等 libLoad 收尾才給焦點,只給一次。
+   訪客主鈕按的(loginGo)再接下一步一次(libLoginGo);重畫會換掉鈕,放在 libLoad 最後一步;那支剛好下架就交給 libPaint 的頁首焦點 */
 function libCtaFocusNow() {
-  const id = LIB.ctaFocus;
+  const id = LIB.ctaFocus, go = LIB.loginGo === id;
   if (id === null) return;
-  LIB.ctaFocus = null;
+  LIB.ctaFocus = null; LIB.loginGo = null;
   if ($("lib").hidden || libBag().detail !== id) return;
   libSync();
   const m = libCtaMain(); if (m && libFocusFree()) m.focus();
+  if (go) libLoginGo(id);
+}
+/* 訪客鈕登入回來接一次(spec §2.3):先讀錢包(卡與帳號狀態 planLogin 已等過),照重算的主鈕走它本來會走的那條——付費一律出框、
+   不用資料或已買的直接代下載、有試用資格沒卡的要資料免費策略開網站綁卡頁。中途離開這支、換視角就不接 */
+async function libLoginGo(id) {
+  if (libEnv() !== "local") return;
+  await libBalLoad();
+  // 清單那一份的帳號狀態若剛好沒讀到(dataAccess null、why unknown),重拉一次再判:這裡決定的是付錢那條路
+  if (!LIB.data || LIB.data.dataAccess === null || LIB.data.why === "unknown") { try { await libLoad(true); } catch (_) { } }
+  const s = libFind(id);
+  if (!s || $("lib").hidden || libEnv() !== "local" || libBag().detail !== id || LIB.buying !== null) return;
+  const c = libCtaOf(s), next = libLoginNext(c, libPlanMo()), m = libCtaMain();
+  try { window.blave.trackEvent("lib_login_go", { next }); } catch (_) { }
+  if (next === "install") libSend(s);
+  else if (next === "pay") bindGo("bind_lib");
+  else if (next === "box" && c.state === "planBuy") libPlanBuy(s, m);
+  else if (next === "box") { if (c.short || c.state === "noData") libBindBuy(s, m); else libBuyBox(s, "confirm", m, {}); }   // noData = 付費、沒卡有試用:報價出框 1
 }
 function libPaintGone() {
   const p = $("lib-gone"); p.textContent = "";
@@ -830,6 +969,12 @@ function libPaintGone() {
 /* 詳情 noData 鈕下那句(§3):第一句看資料需求(要用 / 未標),第二句看原因——no_card 不接(鈕字已經講了) */
 function libNoDataText(s, why) {
   return libJoin(t(libNeeds(s) === "required" ? "lib.need.data" : "lib.need.unknown"), why === "no_balance" ? t("lib.why.noBalance") : why === "no_plan" ? t("lib.why.noPlan") : why === "plan_failed" ? t("lib.why.planFailed") : why === "unknown" ? t("lib.why.unknown") : "");
+}
+// 訪客看要資料的免費策略,鈕下那句的兩個數字(試用天數、Starter 每 30 天價;沒登入讀公開價目)。方案制之前或讀不到就不出
+function libLoginUseVars() {
+  if (!libPlanMo() || typeof planVars !== "function") return null;
+  const v = planVars();
+  return v.t && v.pr ? { t: String(v.t), p: libTwd(v.pr) } : null;
 }
 function libShowDetail(id) {
   const B = libBag(); B.row = id; B.detail = id; LIB.gone = false; LIB.bbTop = null;
@@ -951,8 +1096,19 @@ function libPaintCta(s) {
   const bbGone = c.state === "paid" && !!bb && bb.kind === "wallet" && bb.code === "unavailable";
   switch (relogin && ["free", "owned", "paid"].includes(c.state) ? "relogin" : bbGone ? "bbGone" : c.state) {
     case "relogin": row.appendChild(libSignInBtn("fault.authBtn")); break;
-    case "signedOut": row.appendChild(libSignInBtn()); break;   // 鈕本身就說了「登入 Blave」,鈕下不再補一句(Wei 10-17、11-04);卡與資料登入後真的撞到資料牆再講(Wei 10-02)
+    case "signedOut": {   // 鈕寫動作與金額(spec library-free-data-one-step §2.1;金額寫實刷的 TWD);鈕下:付費 → 不自動下單、要資料的免費 → 試用與方案價(下面訊息槽)
+      const key = libSignedOutKey(s, c.paid);
+      row.appendChild(libSignInBtn(null, null, t(key, { p: key === "lib.bb.loginBuy" ? libTwd(s.price) : "" })));
+      if (key === "lib.bb.loginUse") { const v = libLoginUseVars(); if (v) note.textContent = t("lib.bb.loginUseNote", v); }
+      break;
+    }
     case "noData": row.appendChild(libGateBtn(c.why)); note.classList.add("up"); note.textContent = libNoDataText(s, c.why); break;
+    // 一步開通:鈕上寫這次要付的合計(方案第一期＋還沒買的策略價);框裡的數字以報價為準
+    case "planBuy": row.appendChild(btn("btn-fill", t(c.paid ? "lib.bb.planD" : "lib.bb.planB", { p: libTwd((c.paid ? s.price : 0) + libCtx().planTwd) }), (b) => libPlanBuy(s, b))); break;
+    // 名下有主機:方案在主機那邊,到網站恢復;句子只講原因(設計稽核 web-one-step #5)
+    // 鈕會開瀏覽器離開 app:用設定頁同一顆〔到網站恢復方案〕(設計稽核 desktop-one-step #3)
+    case "planResume": row.appendChild(btn("btn-fill", t("plan.resumeWeb"), () => planWebGo())); note.textContent = t("lib.bb.hasServer"); break;
+    case "planWait": note.textContent = t("lib.bb.unsettled"); break;   // 上一筆方案扣款還在確認:叫人等,不給鈕
     case "stopped": case "stale": row.appendChild(dis(c.paid ? buyLabel() : t("lib.use"))); note.textContent = t(c.state === "stopped" ? "ho.gate.stopped" : "ho.gate.stale"); break;
     case "pending": row.appendChild(dis(t("lib.pending"))); break;   // 鈕本身說了進行中,鈕下不再補「進度在右邊的對話」(Wei 10-17)
     case "buying": row.appendChild(dis(t("lib.buy.busy"))); break;
@@ -978,11 +1134,11 @@ function libPaintCta(s) {
   // 鈕下只有一個訊息槽(canon copy #4):結果句 > 等待付款句 > 付費未購的「買了不會自動下單。」小字
   const bbl = libBbLines(bb);
   if (bbl.length) note.textContent = "";
-  else if (c.state === "paid" && !note.textContent && !(LIB.dlFail && LIB.dlFail.id === s.id)) note.textContent = t("lib.bb.noAuto");
+  else if ((c.state === "paid" || (c.paid && (c.state === "planBuy" || c.state === "signedOut"))) && !note.textContent && !(LIB.dlFail && LIB.dlFail.id === s.id)) note.textContent = t("lib.bb.noAuto");
   note.hidden = !note.textContent;
   box.appendChild(note);
   if (bbl.length) {
-    const e = libEl("div", "err" + (bb.kind === "failed" ? " is-bad" : "")), m = libEl("span", "fault-mark"), d = libEl("div");
+    const e = libEl("div", "err" + (bb.kind === "failed" || bb.bad ? " is-bad" : "")), m = libEl("span", "fault-mark"), d = libEl("div");
     m.setAttribute("aria-hidden", "true"); e.setAttribute("role", "status");
     bbl.forEach((l) => d.appendChild(libEl("p", "", libBbText(l))));
     e.append(m, d); box.appendChild(e);
@@ -1145,6 +1301,8 @@ function libTwd(n) { return new Intl.NumberFormat(LANG === "zh" ? "zh-TW" : "en-
 // 一句結果的字(純文字,進 .err 的 <p>):{p} 金額、{d} 試用到期日
 function libBbText(l) { return t(l.key, { p: l.p != null ? libTwd(l.p) : "", d: l.d || "" }); }
 function libBbTrack(step) { try { window.blave.trackEvent("lib_bindbuy", { step }); } catch (_) { } }
+function libBpTrack(step) { try { if (step) window.blave.trackEvent("lib_bindplan", { step }); } catch (_) { } }
+function libCpTrack(step) { try { window.blave.trackEvent("lib_cardplan", { step }); } catch (_) { } }
 function libBbNote(id, key) { LIB.bbRes.set(id, { kind: "note", key }); libSync(); }
 async function libBindBuy(s, opener) {
   if (LIB.buying !== null) return;
@@ -1157,6 +1315,7 @@ async function libBindBuy(s, opener) {
 }
 function libBindBuyBox(s, q, opener) {
   const title = t("lib.buy.title", { title: s.title });
+  if (q.kind === "planpay" || q.kind === "block" || q.kind === "refresh") { libPlanNext(s, q, opener); return; }   // 一步開通的單(帶 accept_plan 才會拿到)
   if (q.kind === "has_card") { libBuyBox(s, "confirm", opener, {}); return; }
   if (q.kind === "owned") { s.purchased = true; LIB.stale = true; libSync(); libRefresh(); return; }
   if (q.kind === "rate" || q.kind === "open") { libBbNote(s.id, q.kind === "rate" ? "lib.bb.rate" : "lib.bb.open"); return; }
@@ -1188,17 +1347,24 @@ function libBindBuyBox(s, q, opener) {
 async function libBindBuyGo(s, q, restart) {
   if (LIB.buying !== null) return;
   LIB.buying = s.id; LIB.bbRes.delete(s.id); libSync();
+  // 方案單(框 ③)確認的是合計;一般單照舊確認策略價
+  const plan = q.kind === "planpay";
+  const opts = plan ? { lang: LANG, acceptPlan: true, confirmTotal: q.total, free: q.price === 0, restart: restart === true } : { lang: LANG, confirm: q.price, restart: restart === true };
   let r = null;
-  try { r = await window.blave.libraryBindBuy(s.id, { lang: LANG, confirm: q.price, restart: restart === true }); } catch (_) { r = null; }
+  try { r = await window.blave.libraryBindBuy(s.id, opts); } catch (_) { r = null; }
   LIB.buying = null;
   if (r && r.opened) {
-    LIB.bbRestart.delete(s.id); libBbTrack("start");
-    LIB.bbWait = { id: s.id, q, until: Date.now() + LIB_BB_WAIT_MS }; libSync();
+    LIB.bbRestart.delete(s.id);
+    if (plan) libBpTrack(q.price === 0 ? "start_free" : "start_paid"); else libBbTrack("start");
+    LIB.bbWait = { id: s.id, q: plan ? Object.assign({}, q, { plan: true, free: q.price === 0 }) : q, until: Date.now() + LIB_BB_WAIT_MS }; libSync();
     libBbPollSoon(LIB_BB_POLL_MS);
     return;
   }
   const q2 = libBbBox(r ? r.status : 0, r ? r.body : null);
   if (q2.kind === "open") LIB.bbRestart.add(s.id);
+  // 方案單在報價之後剛好綁了卡:回框 ②(重報價);金額變了、開不了方案、已經有資料:照新條件走
+  if (plan && q2.kind === "has_card") { libSync(); libPlanBuy(s, libCtaMain()); return; }
+  if (["planpay", "block", "refresh"].includes(q2.kind)) { libSync(); libPlanNext(s, q2, libCtaMain()); return; }
   if (["trial", "plain", "plan", "has_card", "owned"].includes(q2.kind)) { libSync(); libBindBuyBox(s, q2, libCtaMain()); return; }   // 改價、剛變成要方案:用新條件重問,不自動再送
   libBbNote(s.id, q2.kind === "rate" ? "lib.bb.rate" : q2.kind === "open" ? "lib.bb.open" : "lib.buy.failed");
   const m = libCtaMain(); if (m && libFocusFree()) m.focus();
@@ -1208,7 +1374,10 @@ async function libBindBuyGo(s, q, restart) {
 function libBbReopenAsk(s, opener) {
   const w = LIB.bbWait;
   if (!w) return;
-  confirmBox({ title: t("lib.buy.title", { title: s.title }), lines: [t("lib.bb.open")], ok: t("lib.bb.reopen"), opener, onOk: () => libBindBuyGo(s, w.q, true) });
+  // 重開 app 後接著等的方案單沒有合計:重報價、重出框 ③(按 OK 才帶 restart 開新單)
+  const requote = w.q.plan === true && !w.q.total;
+  confirmBox({ title: t("lib.buy.title", { title: s.title }), lines: [t("lib.bb.open")], ok: t("lib.bb.reopen"), opener,
+    onOk: requote ? () => { LIB.bbRestart.add(s.id); libPlanBuy(s, libCtaMain()); } : () => libBindBuyGo(s, w.q, true) });
   $("del-title").title = $("del-title").textContent;
 }
 function libBbPollSoon(ms) { clearTimeout(LIB.bbTimer); LIB.bbTimer = setTimeout(libBbPoll, ms); }
@@ -1220,28 +1389,38 @@ async function libBbPoll() {
   w.n = (w.n || 0) + 1;
   if (w.check || w.n % 6 === 0) { w.check = false; try { await libLoad(true); } catch (_) { } }
   const got = LIB.bbWait === w ? libFind(w.id) : null;
-  if (got && got.purchased) { LIB.bbBusy = false; libBbDone(w.id, { kind: "ok", code: null, amount: null, trialUntil: null }); return; }
+  // 方案單不走這條:策略買到不代表方案開了(付了舊頁的方案單,結果照輪詢)
+  if (got && got.purchased && !(w.q && w.q.plan)) { LIB.bbBusy = false; libBbDone(w.id, { kind: "ok", code: null, amount: null, trialUntil: null }); return; }
   let r = null;
   try { r = await window.blave.libraryBindResult(); } catch (_) { r = null; }
   LIB.bbBusy = false;
   if (LIB.bbWait !== w) return;
   const out = libBbRes(r ? r.res : null, w.id);
-  if (out.kind === "ok" || out.kind === "wallet" || out.kind === "failed") { libBbDone(w.id, out); return; }
+  if (out.kind === "ok" || out.kind === "wallet" || out.kind === "failed") { libBbDone(w.id, out, w.q); return; }
   if ((r && !r.mark) || Date.now() > w.until) { LIB.bbWait = null; LIB.bbRes.set(w.id, { kind: "note", key: "lib.bb.expired" }); libSync(); return; }   // 記號過期或超過付款單效期:不再等,講一句(稽核 ⑤)
   libBbPollSoon(LIB_BB_POLL_MS);
 }
-function libBbDone(id, out) {
+// q:等待時的那張單(方案單帶 plan / free;重開 app 後由主行程的記號補)
+function libBbDone(id, out, q) {
   clearTimeout(LIB.bbTimer); LIB.bbWait = null;
-  LIB.bbRes.set(id, out); libBbTrack(out.kind);
+  LIB.bbRes.set(id, out);
+  const plan = out.plan === true || !!(q && q.plan);
+  if (plan) libBpTrack(libBpStep(out, out.plan === true ? out.free : !!(q && q.free))); else libBbTrack(out.kind);
   const s = libFind(id);
-  if (s && (out.kind === "ok" || out.code === "already_purchased")) s.purchased = true;   // 停在「已購買」,主鈕安裝並回測(決定 5),不自動送
+  // 停在「已購買」,主鈕安裝並回測(決定 5),不自動送。免費策略的方案單沒有買東西
+  if (s && ((out.kind === "ok" && !(plan && (out.free || (q && q.free)))) || out.code === "already_purchased")) s.purchased = true;
   if (out.kind === "wallet" && out.code === "unavailable") LIB.bbTop = { id, out };
-  if (out.kind === "ok") LIB.bbOk = id;
-  LIB.stale = true;   // 綁了卡、可能開了試用:清單的資料狀態與帳號都重問(主行程已作廢快取)
+  if (plan && out.planStatus === "failed" && LIB_PLAN_BLOCKS.includes(out.planReason)) LIB.planBlock = out.planReason;   // 名下有主機等:主鈕換恢復方案
+  libAfterPay(id, out.kind === "ok");
+}
+/* 付完(或框 ② 回來)之後:清單的資料狀態與帳號都重問(主行程已作廢快取)。ok = 都成:重拉期間 bbOk 暫態蓋住資料牆,
+   兩份都回來才拿掉;試用或方案真的沒開成(資料權限仍是 none)這時才照實出資料牆。焦點給主鈕(安裝並回測就是下一步) */
+function libAfterPay(id, ok) {
+  if (ok) LIB.bbOk = id;
+  LIB.stale = true;
   const acctP = typeof acctSet === "function" && typeof hasToken !== "undefined" && hasToken
     ? window.blave.accountStatus().then((a) => { if (a && hasToken) { acctSet(a); if (typeof acctPaint === "function") acctPaint(); } }).catch(() => {}) : Promise.resolve();
   libSync();
-  // 兩份都回來才拿掉「已購買」暫態;試用真的沒開成(資料權限仍是 none)這時才照實出資料牆
   Promise.all([acctP, libLoad(true), libBalLoad()]).then(() => { if (LIB.bbOk === id) { LIB.bbOk = null; libSync(); } });
   const m = libCtaMain(); if (m && libFocusFree()) m.focus();
 }
@@ -1259,11 +1438,81 @@ async function libBbResume() {
   let r = null;
   try { r = await window.blave.libraryBindResult(); } catch (_) { r = null; }
   if (!r || !r.mark || LIB.bbWait) return;
-  const out = libBbRes(r.res, r.mark.id);
-  if (out.kind === "ok" || out.kind === "wallet" || out.kind === "failed") { libBbDone(r.mark.id, out); return; }
+  const out = libBbRes(r.res, r.mark.id), mq = { plan: r.mark.plan === true, free: r.mark.free === true };
+  if (out.kind === "ok" || out.kind === "wallet" || out.kind === "failed") { libBbDone(r.mark.id, out, mq); return; }
   const s = libFind(r.mark.id), price = s && typeof s.price === "number" ? Math.round(s.price) : null;
-  LIB.bbWait = { id: r.mark.id, q: { price }, until: r.mark.at + LIB_BB_WAIT_MS }; libSync();
+  // 方案單重開付款頁要重報價(合計記號裡沒有):q 只帶 plan,〔重新打開付款頁〕走 libPlanBuy
+  LIB.bbWait = { id: r.mark.id, q: mq.plan ? Object.assign({ kind: "planpay" }, mq) : { price }, until: r.mark.at + LIB_BB_WAIT_MS }; libSync();
   libBbPollSoon(LIB_BB_POLL_MS);
+}
+
+/* ── 一步開通(spec library-free-data-one-step;原型 prototype-library-free-data-one-step,字以原型為準):沒方案、要資料的策略,
+   主鈕一按就把錢的事做完。先問 checkout_quote(唯讀)→ 沒卡又錢包不夠 → 框 ③(付款頁,bind_purchase 帶 accept_plan、確認合計);
+   有卡或錢包夠總額 → 框 ②(card_checkout,確認合計與框上寫的來源)。金額、日期、末四碼全讀 api;按 OK 前不動錢 ── */
+async function libPlanBuy(s, opener, o) {
+  if (LIB.buying !== null) return;
+  if (LIB.pending.size) { const n = $("lib-cta-note"); if (n) { n.textContent = t("lib.buyWait"); n.hidden = false; } return; }   // 同 libBuyBox:裝到一半不碰錢
+  if (typeof envCanSwitch === "function" && !envCanSwitch()) return;
+  LIB.buying = s.id; LIB.bbRes.delete(s.id); libSync();
+  let r = null;
+  try { r = await window.blave.libraryCheckoutQuote(s.id); } catch (_) { r = null; }
+  if (typeof pubLoad === "function") { try { await pubLoad(); } catch (_) { } }   // 框 ③ 自動儲值那句的數字
+  LIB.buying = null; libSync();
+  const q = libPqOf(r ? r.status : 0, r ? r.body : null);
+  if (o && o.changed && q.kind === "cardplan") q.changed = true;
+  libPlanNext(s, q, libCtaMain() || opener);
+}
+function libPlanNext(s, q, opener) {
+  if (q.kind === "planpay" || q.kind === "cardplan") { libPlanBox(s, q, opener); return; }
+  if (q.kind === "block") { LIB.planBlock = q.block; libSync(); const m = libCtaMain(); if (m && libFocusFree()) m.focus(); return; }
+  if (q.kind === "refresh") { LIB.planBlock = null; libAfterPay(s.id, false); return; }   // 已經有方案或資料、該走試用:重拉,主鈕自己換
+  if (q.kind === "gone") { libInvalidate(); return; }
+  libBbNote(s.id, q.kind === "rate" ? "lib.bb.rate" : "lib.buy.failed");
+  const m = libCtaMain(); if (m && libFocusFree()) m.focus();
+}
+/* 框 ③(planpay)／框 ②(cardplan)同一個形狀(spec §4):兩列金額＋一句。框 ② 那句前面接「今天從哪扣」;框 ③ 不寫來源(鈕〔綁卡並付〕講了),
+   最後固定加自動儲值那句(設計稽核 web-one-step #1:凡綁卡的框都有,不計入三行)。付費策略標題同購買框,免費的是「開通 Blave Agent 方案」 */
+function libPlanBox(s, q, opener) {
+  const pay = q.kind === "planpay", paid = q.price > 0, tu = libBbTopup(typeof pub !== "undefined" && pub ? pub.trial : null);
+  if (pay && !tu) { libTrack("plan_lib"); planOpen(); return; }   // 自動儲值的數字讀不到:不在沒講清楚的情況下讓人綁卡,退回方案頁(同 0.1.49 框 1／2 的退法)
+  const n0 = (v) => new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(v);
+  const extra = document.createDocumentFragment(), dl = libEl("dl", "cf-rows bb");
+  const row = (k, v, cls) => { const r = libEl("div", "cf-row" + (cls ? " " + cls : "")); r.append(libEl("dt", "", k), libEl("dd", "", v)); dl.appendChild(r); };
+  if (q.changed) extra.appendChild(libEl("p", "cf-due", t("lib.bb.srcChanged")));   // 錢包剛變了、來源不同了:講為什麼框又出現一次
+  row(paid ? t("lib.bb.planToday", { a: n0(q.plan), p: n0(q.price) }) : t(pay ? "lib.bb.todayCard" : "lib.bb.todayPay"), libTwd(q.total), "lead");
+  row(q.renewsOn ? t("lib.bb.planRenew", { d: q.renewsOn }) : t("lib.bb.after"), libTwd(q.plan));
+  extra.appendChild(dl);
+  const src = pay ? null : libPbSrc(q);
+  extra.appendChild(libEl("p", "", src ? libJoin(t(src.key, { l: src.l || "" }), t("lib.bb.planTail")) :t("lib.bb.planTail")));
+  if (pay) extra.appendChild(libEl("p", "", t("lib.bb.topup", tu)));
+  confirmBox({ title: paid ? t("lib.buy.title", { title: s.title }) : t("lib.bb.planTitle"), lines: [], extra, opener,
+    ok: t(pay ? "lib.bb.planOk" : "lib.bb.pay", { p: libTwd(q.total) }),
+    onOk: pay ? () => libBindBuyGo(s, q, LIB.bbRestart.has(s.id)) : () => libCardGo(s, q) });
+  $("del-title").title = $("del-title").textContent;
+}
+/* 框 ② 按 OK:card_checkout 一次開方案再買策略。扣款在路上時框鎖住(同 libPurchase)。金額或來源變了 → 重報價重出框,不自動重送 */
+async function libCardGo(s, q) {
+  if (LIB.buying !== null) return;
+  LIB.buying = s.id; LIB.bbRes.delete(s.id); libSync();
+  const busy = libEl("p", "cf-busy"), sp = libEl("span", "spin16"); sp.setAttribute("aria-hidden", "true"); busy.append(sp, t("lib.bb.paying"));   // 接鈕上的動詞〔付 N〕(設計稽核 desktop-one-step #5)
+  confirmBox({ title: q.price > 0 ? t("lib.buy.title", { title: s.title }) : t("lib.bb.planTitle"), lines: [], extra: busy, ok: t("lib.bb.paying"), okDisabled: true, onOk: () => {} });
+  const sc = $("del-scrim"); sc.dataset.lock = "1"; $("del-cancel").disabled = true; $("del-close").disabled = true;
+  let r = null;
+  try { r = await window.blave.libraryCardCheckout(s.id, { total: q.total, planSrc: q.planSrc, priceSrc: q.price > 0 ? q.priceSrc : null }); } catch (_) { r = null; }
+  delete sc.dataset.lock; $("del-cancel").disabled = false; $("del-close").disabled = false;
+  delClose(false);
+  LIB.buying = null;
+  const o = libCardOut(r ? r.status : 0, r ? r.body : null), free = q.price === 0, focus = () => { const m = libCtaMain(); if (m && libFocusFree()) m.focus(); };
+  if (o.kind === "ok") { libCpTrack(free ? "ok_free" : "ok_paid"); if (!free) s.purchased = true; LIB.planBlock = null; libAfterPay(s.id, true); return; }
+  // 方案成、策略沒成:主鈕回〔購買並使用〕(這時已有方案,就是一般購買)
+  if (o.kind === "part") { libCpTrack("part"); LIB.bbRes.set(s.id, { kind: "lines", list: libCardLines(o) }); libAfterPay(s.id, false); return; }
+  if (o.kind === "declined") { libCpTrack("failed"); LIB.bbRes.set(s.id, { kind: "failed" }); libSync(); focus(); return; }
+  if (o.kind === "requote") { libSync(); libPlanBuy(s, libCtaMain(), { changed: o.changed }); return; }
+  if (o.kind === "block" || o.kind === "refresh") { libPlanNext(s, o, libCtaMain()); return; }
+  libSync();
+  if (o.kind === "inProgress") { libBuyBox(s, "inProgress", libCtaMain(), {}); return; }
+  // 打不到或認不得:不寫「沒有扣款」(網路類失敗無法確定);重按時 api 跳過已開的方案、已買的策略
+  libBbNote(s.id, o.kind === "rate" ? "lib.bb.rate" : "lib.buy.failed"); focus();
 }
 
 /* ── 跟基準比(spec library-benchmark-2026-10-27 B 版):沒有 benchmark 時這裡都不會被叫到,畫面跟以前同一份 ── */

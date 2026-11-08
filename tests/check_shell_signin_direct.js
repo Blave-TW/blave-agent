@@ -16,8 +16,8 @@ const NOT_SIGNIN = {   // 檔 → 所在函式:登出之後切到這一類、查
   // mvBlock:設定 › 隱私「前往登入」切到同一個設定裡的帳號與方案(mockup-desktop-mobile-view-toggle A 版 mv.leadOut;登入失效同一句);phBlock:「允許手機對話」沒登入時同一句
   // dataGateAction:資料卡與事件列共用的出口表,planOpen 那一列是〔看方案〕(登入那兩列走 planSignIn)
   "app.js": ["acctSignOut", "setCat", "dataCardState", "dataGateAction", "planOpen", "mvBlock", "phBlock"],
-  "library.js": ["libGateBtn", "libBuyBox", "libPaintList", "libBindBuyBox"],   // libPaintList:方案制試用閘門旁的「看方案」(paywall-redesign-2026-10-21);
-  // libBindBuyBox:框 3「開通方案」(spec library-buy-with-bind §3 決定 2)
+  "library.js": ["libGateBtn", "libBuyBox", "libPaintList", "libBindBuyBox", "libPlanBox"],   // libPaintList:方案制試用閘門旁的「看方案」(paywall-redesign-2026-10-21);
+  // libBindBuyBox:框 3「開通方案」(spec library-buy-with-bind §3 決定 2);libPlanBox:框 ③ 讀不到自動儲值的數字時退回方案頁(0.1.50 一步開通)
   "welcome.js": ["wdNote"],
 };
 const SIGNIN_KEYS = /"(cn\.blave\.btn|pv\.signin|shr\.gateGo|wd\.note\.out(NoNum|\.m)?)"/;
@@ -108,7 +108,7 @@ function harness() {
     ok("signInLabel:等待中建的鈕字是取消等待、原字記在 data-signin;沒在等就是原字", b9.textContent === "oauth.cancel" && b9.dataset.signin === "cn.blave.btn" && b10.textContent === "cn.blave.btn");
     ok("planLogin 收尾把 data-signin 的鈕從取消等待換回原字;策略庫、歡迎頁的登入鈕用 signInLabel 建;資料卡沒登入那態等待中鈕字是取消等待",
       /querySelectorAll\("button\[data-signin\]"\)\.forEach\(\(x\) => \{ if \(x\.textContent === t\("oauth\.cancel"\)\) x\.textContent = x\.dataset\.signin; \}\);/.test(cut(app, "planLogin"))
-      && /signInLabel\(libEl\("button", cls \|\| "btn-fill"\), t\(key \|\| "cn\.blave\.btn"\)\)/.test(cut(lib, "libSignInBtn")) && /if \(signIn\) signInLabel\(b, txt\);/.test(cut(wel, "wdNote"))
+      && /signInLabel\(libEl\("button", cls \|\| "btn-fill"\), label \|\| t\(key \|\| "cn\.blave\.btn"\)\)/.test(cut(lib, "libSignInBtn")) && /if \(signIn\) signInLabel\(b, txt\);/.test(cut(wel, "wdNote"))
       && /label: t\(planLoginBusy \? "oauth\.cancel" : key\)/.test(cut(app, "dataGateAction")) && /if \(!hasToken\) return signIn\("pv\.signin"\);/.test(cut(app, "dataGateAction"))); }
   ok("公開連結的登入鈕也用 signInLabel 建(稽核 r2 S4);資料卡沒登入那態記 data-signin = pv.signin,等待中才長出來的也換得回原字(r2 S2)",
     /signInLabel\(libEl\("button", "btn-out"\), t\("cn\.blave\.btn"\)\)/.test(shl) && /if \(b1\) \{ if \(!ready && \(!hasToken \|\| card\._relogin \|\| authRevoked\(\)\)\) b1\.dataset\.signin = t\(hasToken \? "fault\.authBtn" : "pv\.signin"\); else delete b1\.dataset\.signin; \}/.test(cut(app, "dataCardSync")));

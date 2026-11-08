@@ -28,7 +28,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
   await tick();
   t("…送出去的 props 只剩列舉那一格", JSON.stringify(sent[0].props) === '{"kind":"claude"}' && !JSON.stringify(sent[0]).includes("alpha"));
   t("first_backtest_done 只送一次(跨重開)", tm.track("first_backtest_done") === true && tm.track("first_backtest_done") === false && (await tick(), mk(dir).tm.track("first_backtest_done")) === false);
-  t("二十六個事件(0.1.9 +9 卡在哪一步、+heartbeat;0.1.10 更新提示只加 feature_used 的 name、不開新事件型別;0.1.12 +engine_setup / engine_opt_fail;0.1.13 +lib_pick / idea_sent;0.1.15 +detect_fail;0.1.18 +strat_created / strat_backtested / strat_deployed;0.1.28 +device_type;0.1.30 +reply_notif;0.1.35 +auth_fail / cli_auth;0.1.37 +key_verify;0.1.49 +lib_sort / lib_bindbuy)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 33 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
+  t("二十六個事件(0.1.9 +9 卡在哪一步、+heartbeat;0.1.10 更新提示只加 feature_used 的 name、不開新事件型別;0.1.12 +engine_setup / engine_opt_fail;0.1.13 +lib_pick / idea_sent;0.1.15 +detect_fail;0.1.18 +strat_created / strat_backtested / strat_deployed;0.1.28 +device_type;0.1.30 +reply_notif;0.1.35 +auth_fail / cli_auth;0.1.37 +key_verify;0.1.49 +lib_sort / lib_bindbuy;0.1.50 +lib_bindplan / lib_cardplan / lib_login_go)、沒有自由文字型的屬性", Object.keys(EVENTS).length === 36 && Object.values(EVENTS).every((s) => s === null || Object.values(s).every(Array.isArray)));
 
   let tok = mk(dir, { getToken: () => "acct-abc" }); tok.tm.track("login_done"); await tick();
   t("有 token 才帶 token(放 body)", tok.sent[0].token === "acct-abc" && sent.every((b) => !("token" in b)));
@@ -327,7 +327,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       && Object.keys(EVENTS).every((ev) => ev.length <= 19));   // 舊的 first_backtest_done 19 字,新名字一律 ≤16
     const tmSrc9 = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8");
     t("first_reply_done 每安裝一次(ONCE);其餘八個每日一次(DAILY,api 的每小時熔斷算的是 POST 數)", /const ONCE = \[[^\]]*"first_reply_done"/.test(tmSrc9) && Object.keys(NEW).filter((e) => e !== "first_reply_done").every((e) => new RegExp('const DAILY = \\[[^\\]]*"' + e + '"').test(tmSrc9)));
-    t("畫面只准送這幾個(FROM_RENDERER;0.1.13 +lib_pick / idea_sent、0.1.15 +detect_fail、0.1.35 +auth_fail / cli_auth、0.1.37 +key_verify、0.1.49 +lib_sort / lib_bindbuy 接在最後);里程碑與主行程自己判的兩個不在名單上", JSON.stringify(FROM_RENDERER) === JSON.stringify(["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy"])
+    t("畫面只准送這幾個(FROM_RENDERER;0.1.13 +lib_pick / idea_sent、0.1.15 +detect_fail、0.1.35 +auth_fail / cli_auth、0.1.37 +key_verify、0.1.49 +lib_sort / lib_bindbuy、0.1.50 +lib_bindplan / lib_cardplan / lib_login_go 接在最後);里程碑與主行程自己判的兩個不在名單上", JSON.stringify(FROM_RENDERER) === JSON.stringify(["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go"])
       && ["app_first_open", "app_open", "login_done", "first_backtest_done", "trade_started", "cloud_started", "feature_used", "plan_start_res", "update_failed", "heartbeat"].every((e) => !FROM_RENDERER.includes(e)));
     const x = mk(fs.mkdtempSync(path.join(TMP_ROOT, "d-")));
     t("每個事件的每個值都送得出去;表外的值 / 缺屬性 / 塞內容都不送", Object.keys(NEW).every((ev) => NEW[ev][1].every((v) => x.tm.track(ev, { [NEW[ev][0]]: v, msg: "SECRET" }) === true || ev === "first_reply_done"))
@@ -347,7 +347,14 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       t("api 的 device_type = 外殼這份(kind 三個值逐序、不是 once)", !!got.device_type && got.device_type.key === "kind" && JSON.stringify(got.device_type.vals) === JSON.stringify(EVENTS.device_type.kind) && got.device_type.once === false);
       // api 白名單要比外殼先上(canon product-telemetry):api 還沒有 lib_sort 就紅,外殼不能先出貨
       t("api 的 lib_sort = 外殼這份(by 七個值逐序、不是 once)", !!got.lib_sort && got.lib_sort.key === "by" && JSON.stringify(got.lib_sort.vals) === JSON.stringify(EVENTS.lib_sort.by) && got.lib_sort.once === false);
-      t("api 的 lib_bindbuy = 外殼這份(step 四個值逐序、不是 once)", !!got.lib_bindbuy && got.lib_bindbuy.key === "step" && JSON.stringify(got.lib_bindbuy.vals) === JSON.stringify(EVENTS.lib_bindbuy.step) && got.lib_bindbuy.once === false); }
+      t("api 的 lib_bindbuy = 外殼這份(step 四個值逐序、不是 once)", !!got.lib_bindbuy && got.lib_bindbuy.key === "step" && JSON.stringify(got.lib_bindbuy.vals) === JSON.stringify(EVENTS.lib_bindbuy.step) && got.lib_bindbuy.once === false);
+      // 0.1.50 一步開通三個事件(api 那份 lib_bindplan 換了行,這裡容許 "once" 前的空白)
+      const g50 = {};
+      for (const m of api.matchAll(/"(lib_bindplan|lib_cardplan|lib_login_go)": \{"props": \{"([a-z_]+)": \(([^()]*)\)\},\s*"once": (True|False)\}/g)) g50[m[1]] = { key: m[2], vals: [...m[3].matchAll(/"([^"]+)"/g)].map((v) => v[1]), once: m[4] === "True" };
+      t("api 的 lib_bindplan / lib_cardplan / lib_login_go = 外殼這份(屬性名、值逐序、不是 once)——api 要比外殼先上", ["lib_bindplan", "lib_cardplan", "lib_login_go"].every((ev) => { const k = Object.keys(EVENTS[ev])[0];
+        return !!g50[ev] && g50[ev].key === k && JSON.stringify(g50[ev].vals) === JSON.stringify(EVENTS[ev][k]) && g50[ev].once === false; }), JSON.stringify(g50)); }
+    t("一步開通三個事件:名字與值 ≤16 字、DAILY、畫面送;library.js 有字面送出點", ["lib_bindplan", "lib_cardplan", "lib_login_go"].every((ev) => ev.length <= 16 && Object.values(EVENTS[ev])[0].every((v) => v.length <= 16)
+      && new RegExp('const DAILY = \\[[^\\]]*"' + ev + '"').test(tmSrc9) && FROM_RENDERER.includes(ev) && fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "library.js"), "utf8").includes('trackEvent("' + ev + '"')));
     // 綁卡即購買(0.1.49):step 四個值 = spec §9 那四步;每日去重、畫面送(library.js libBbTrack)
     t("lib_bindbuy:一個屬性 step、值 start / ok / wallet / failed、名字與值 ≤16 字、DAILY、畫面送", JSON.stringify(EVENTS.lib_bindbuy) === '{"step":["start","ok","wallet","failed"]}'
       && "lib_bindbuy".length <= 16 && /const DAILY = \[[^\]]*"lib_bindbuy"/.test(tmSrc9) && FROM_RENDERER.includes("lib_bindbuy"));
@@ -413,7 +420,9 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     t("libBlockedWhy:閘門態才算被擋(signedOut / noData 的 why / 雲端停了或過期);忙碌、下載中、可用 → null",
       why({ state: "signedOut" }) === "signed_out" && ["no_card", "no_balance", "unknown"].every((w) => why({ state: "noData", why: w }) === w) && why({ state: "stopped" }) === "cloud_off" && why({ state: "stale" }) === "cloud_off"
       && ["busy", "pending", "buying", "free", "owned", "paid", "installed"].every((st) => why({ state: st }) === null)
-      && /why: state === "noData" \? g : null/.test(libSrc9) && /if \(c\.dataAccess === "none" \|\| c\.dataAccess === "plan_required" \|\| c\.dataAccess === "payment_failed"\)\n\s*return \["no_card", "no_balance", "no_plan", "plan_failed"\]\.includes\(c\.why\) \? c\.why : "unknown";\n  return "unknown";/.test(libSrc9));
+      // 0.1.50 一步開通的三態(planBuy / planResume / planWait)同樣是閘門,why 也帶;why 只在這幾態有值,libBlockedWhy 才能只看 c.why
+      && ["planBuy", "planResume", "planWait"].every((st) => why({ state: st, why: "no_plan" }) === "no_plan")
+      && /why: LIB_GATE_STATES\.includes\(state\) \? g : null/.test(libSrc9) && /^const LIB_GATE_STATES = \["noData", "planBuy", "planResume", "planWait"\];$/m.test(libSrc9) && /if \(c\.dataAccess === "none" \|\| c\.dataAccess === "plan_required" \|\| c\.dataAccess === "payment_failed"\)\n\s*return \["no_card", "no_balance", "no_plan", "plan_failed"\]\.includes\(c\.why\) \? c\.why : "unknown";\n  return "unknown";/.test(libSrc9));
     t("lib_blocked 送出點:點進詳情(libShowDetail,使用者的點擊)與「使用」送出後引擎不能跑;不在 render(libPaintCta)",
       /libPaint\(\); \$\("lib-body"\)\.scrollTop = 0;\n\s*const s = libFind\(id\); if \(s\) libBlocked\(libBlockedWhy\(libCtaOf\(s\)\)\);/.test(libSrc9) && !/libBlocked/.test(libSrc9.slice(libSrc9.indexOf("function libPaintCta("), libSrc9.indexOf("function libAsk("))));
     // 主行程接線:track-event 只收自家頁面 + FROM_RENDERER;plan_start_res 的對照;updater 的 onFail

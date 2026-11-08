@@ -5585,7 +5585,7 @@ msgid "lib.buy.noCard"
 msgstr "Not enough balance, and this account has no card on file. Add a card under Settings › Account & plan, then come back."
 
 msgid "lib.bb.ok"
-msgstr "Bind Card & Buy"
+msgstr "Add Card & Buy"
 
 msgid "lib.bb.planBtn"
 msgstr "Start a Plan"
@@ -5655,6 +5655,100 @@ msgstr "The payment page expired. If you didn't pay, nothing was charged."
 
 msgid "lib.bb.rate"
 msgstr "Too many tries. Try again later."
+
+# 0.1.50 策略庫一步開通(spec library-free-data-one-step;bc_bindbuy_plan_* / has_server / bc_mp_login_* 逐字同網頁)
+msgid "lib.bb.planToday"
+msgstr "Today: plan {a} + strategy {p}"
+
+msgid "lib.bb.planRenew"
+msgstr "Renews every 30 days from {d}"
+
+msgid "lib.bb.planTail"
+msgstr "Renewals use your balance first, then your card. Cancel anytime on the plan page. No refunds."
+
+msgid "lib.bb.planOk"
+msgstr "Add Card & Pay {p}"
+
+msgid "lib.bb.planPart"
+msgstr "Plan started, but the strategy wasn't bought. {p} is in your balance."
+
+msgid "lib.bb.planPartNoAmt"
+msgstr "Plan started, but the strategy wasn't bought. The money is in your balance."
+
+msgid "lib.bb.planFail"
+msgstr "The plan didn't start. {p} is in your balance."
+
+msgid "lib.bb.planFailNoAmt"
+msgstr "The plan didn't start. The money is in your balance."
+
+msgid "lib.bb.planActive"
+msgstr "Your plan was already on. {p} is in your balance."
+
+msgid "lib.bb.hasServer"
+msgstr "You already have a cloud machine, so you don't need a new plan."
+
+msgid "lib.bb.unsettled"
+msgstr "Still confirming the charge. You won't be charged twice. Check back shortly."
+
+msgid "lib.bb.loginBuy"
+msgstr "Sign In & Buy · {p}"
+
+msgid "lib.bb.loginUse"
+msgstr "Sign In & Use"
+
+msgid "lib.bb.loginInstall"
+msgstr "Sign In & Install"
+
+msgid "lib.bb.loginUseNote"
+msgstr "New accounts can try it free for {t} days, then {p} every 30 days"
+
+msgid "lib.bb.planB"
+msgstr "Start Plan · {p} / 30 Days"
+
+msgid "lib.bb.planD"
+msgstr "Start Plan & Buy · {p}"
+
+msgid "lib.bb.planTitle"
+msgstr "Start a Blave Agent Plan"
+
+msgid "lib.bb.todayCard"
+msgstr "Charged to your card today"
+
+msgid "lib.bb.todayPay"
+msgstr "Today"
+
+msgid "lib.bb.pay"
+msgstr "Pay {p}"
+
+msgid "lib.bb.srcCard"
+msgstr "Today's charge uses card {l}."
+
+msgid "lib.bb.srcCardAny"
+msgstr "Today's charge uses your card on file."
+
+msgid "lib.bb.srcWallet"
+msgstr "Today's charge uses your balance."
+
+msgid "lib.bb.srcMixWc"
+msgstr "The plan uses your balance, the strategy card {l}."
+
+msgid "lib.bb.srcMixWcAny"
+msgstr "The plan uses your balance, the strategy your card."
+
+msgid "lib.bb.srcMixCw"
+msgstr "The plan uses card {l}, the strategy your balance."
+
+msgid "lib.bb.srcMixCwAny"
+msgstr "The plan uses your card, the strategy your balance."
+
+msgid "lib.bb.partNoCharge"
+msgstr "Plan started, but the strategy wasn't bought or charged."
+
+msgid "lib.bb.srcChanged"
+msgstr "Your balance just changed, so the payment source was updated. Confirm again."
+
+msgid "lib.bb.paying"
+msgstr "Paying…"
 
 msgid "lib.buy.inProgress"
 msgstr "This purchase is already being processed. Check back in a moment."

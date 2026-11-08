@@ -910,14 +910,21 @@ for (const lang of ["zh", "en"]) {
 // 網頁 {p} 後面自帶「 TWD」,電腦版 {p} 已含 TWD,比之前把網頁的「{p} TWD」收成「{p}」。列舉:兩邊任一個新鍵沒進配對表或豁免表就紅。
 // 「上一筆付款頁還開著」網頁有自己的 bc_bindbuy_open 就比它,還沒有就比共用的 bc_bind_plan_pending(兩條流程講同一個事實)
 { const BB_PAIRS = { ok: "ok", planBtn: "plan_btn", today: "today", trialRow: "trial", after: "after", trialNote: "trial_note", noAuto: "no_auto", plain: "plain",
-    needPlan: "need_plan", due: "due", renew: "renew", gone: "gone", owned: "owned", wallet: "wallet", walletNoAmt: "wallet_noamt", trialOn: "trial_on", failed: "failed", open: "open", rate: "rate", topup: "-bc_risk_note" };   // topup:網頁重用一般綁卡頁那句(bc_risk_note)
-  // 刻意不同(設計複審 ⑧):電腦版付款頁還開著才有的三句與逾時句;網頁回程才有的「確認扣款中…」
-  const BB_DESK_ONLY = ["waiting", "waitNote", "reopen", "expired"], BB_WEB_ONLY = ["confirming", "desktop_title", "desktop_lede"];   // desktop_*:電腦版的單回到網頁時那一頁(稽核 W3),電腦版沒有這一頁
+    needPlan: "need_plan", due: "due", renew: "renew", gone: "gone", owned: "owned", wallet: "wallet", walletNoAmt: "wallet_noamt", trialOn: "trial_on", failed: "failed", open: "open", rate: "rate", topup: "-bc_risk_note",   // topup:網頁重用一般綁卡頁那句(bc_risk_note)
+    // 0.1.50 一步開通(spec library-free-data-one-step;設計稽核 review-web-one-step-0150):框 ③-D 的列與末句、結果句、名下有主機;訪客鈕;恢復方案;方案扣款還在確認
+    planToday: "plan_today", planRenew: "plan_renew", planTail: "plan_tail", planOk: "plan_ok", planPart: "plan_part", planPartNoAmt: "plan_part_noamt", planFail: "plan_fail",
+    planFailNoAmt: "plan_fail_noamt", planActive: "plan_active", hasServer: "has_server", loginBuy: "-bc_mp_login_buy", loginUse: "-bc_mp_login_use" };
+  // 刻意不配對(設計稽核 review-desktop-one-step-0150):〔恢復方案〕電腦版用設定頁的 plan.resumeWeb〔到網站恢復方案〕(離開 app 要講「到網站」),不設 lib.bb.resume
+  // 刻意不同(設計複審 ⑧):電腦版付款頁還開著才有的三句與逾時句;網頁回程才有的「確認扣款中…」。
+  // 0.1.50 只有電腦版的情境(spec §7 表面表:web 沒有擋免費要資料策略的牆、沒有框 ②):B 型開通鈕、框 ② 的列、來源句與付款中、訪客安裝鈕與試用句、partial 沒扣那句、
+  // 錢包變了那句;扣款還在確認(unsettled:電腦版沒有「重新整理這頁」,寫「稍後再回來看」)。web 第二批補框 ②-D 時,planD、pay、paying、src*、partNoCharge、srcChanged 從這裡移回配對表
+  const BB_DESK_ONLY = ["waiting", "waitNote", "reopen", "expired", "planB", "planD", "planTitle", "todayCard", "todayPay", "pay", "paying", "srcCard", "srcCardAny", "srcWallet",
+    "srcMixWc", "srcMixWcAny", "srcMixCw", "srcMixCwAny", "partNoCharge", "srcChanged", "loginInstall", "loginUseNote", "unsettled"], BB_WEB_ONLY = ["confirming", "desktop_title", "desktop_lede"];   // desktop_*:電腦版的單回到網頁時那一頁(稽核 W3),電腦版沒有這一頁
   for (const lang of ["zh", "en"]) {
     const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
     const wkey = (w) => (w.charAt(0) === "-" ? w.slice(1) : w === "open" && !("bc_bindbuy_open" in wp) ? "bc_bind_plan_pending" : "bc_bindbuy_" + w);
-    const norm = (x, w) => (w.charAt(0) === "-" ? String(x) : String(x).replace(/\{p\} TWD/g, "{p}"));
-    const bad = Object.entries(BB_PAIRS).filter(([d, w]) => typeof dp["lib.bb." + d] !== "string" || typeof wp[wkey(w)] !== "string" || dp["lib.bb." + d] !== norm(wp[wkey(w)], w));
+    const norm = (x) => String(x).replace(/\{p\}(?: | )TWD/g, "{p}");
+    const bad = Object.entries(BB_PAIRS).filter(([d, w]) => typeof dp["lib.bb." + d] !== "string" || typeof wp[wkey(w)] !== "string" || dp["lib.bb." + d] !== norm(wp[wkey(w)]));
     // 購買確認框只講錢(canon copy #4 例外):導語兩邊同一句;「買了不會自動下單。」改在主鈕下(noAuto ↔ no_auto,上面配對表)
     ok(`購買確認框導語 ${lang} 兩邊逐字一致(lib.buy.lead ↔ workspace_lib_buy_lead)`, typeof dp["lib.buy.lead"] === "string" && dp["lib.buy.lead"] === wp["workspace_lib_buy_lead"], dp["lib.buy.lead"] + " vs " + wp["workspace_lib_buy_lead"]);
     ok(`綁卡即購買 ${lang} 兩邊逐字一致(${Object.keys(BB_PAIRS).length} 句,含「免費」)`, bad.length === 0 && dp["lib.free"] === wp["bc_mp_free"],
