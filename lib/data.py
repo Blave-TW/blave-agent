@@ -6419,7 +6419,7 @@ def fetch_twfutures_retail_long_short_ratio(futures_id, headers, date=None):
     long OI, retail short likewise; ratio = (retail long − retail short) / market OI × 100,
     positive = retail net long. date 'YYYY-MM-DD' or None = the latest settled day; a date
     with no data is a 404. futures_id 'TX' 大台 / 'MTX' 小台 / 'TMF' 微台 ('TXF' / 'MXF' map);
-    TMF has no data before about 2024-08. The three are different contracts with different
+    TMF has data from 2024-07-29 (its listing day). The three are different contracts with different
     retail shares (2026-11-06: TMF +47.14 %, MTX +17.37 %, TX +5.92 %) — never compare one
     with another or pick one silently. When the user says 散戶多空比 without a contract, the
     one Blave Studio's page shows is TMF; name the contract with the number. No history in one call — for a series compute it from

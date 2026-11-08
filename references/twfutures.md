@@ -98,8 +98,8 @@ r = fetch_twfutures_retail_long_short_ratio("MTX", hdrs, date="2026-11-05")
 - Formula: retail long = market OI − the three institutions' long OI; retail short = market OI
   − their short OI; ratio = (retail long − retail short) / market OI × 100. Market OI counts
   the regular-session rows of every contract month, spreads excluded.
-- `futures_id`: `TX` (大台), `MTX` (小台), `TMF` (微台); `TXF` / `MXF` map. TMF has no data before
-  about 2024-08. A date with no data is a 404.
+- `futures_id`: `TX` (大台), `MTX` (小台), `TMF` (微台); `TXF` / `MXF` map. TMF has data from
+  2024-07-29 (its listing day). A date with no data is a 404.
 - **The three are different numbers — never compare one with another.** Retail holds a very
   different share of each contract (2026-11-06: TMF +47.14 %, MTX +17.37 %, TX +5.92 %). When the
   user says 散戶多空比 without naming a contract, the one Blave Studio's page shows is **TMF**;
