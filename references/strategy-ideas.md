@@ -101,7 +101,7 @@ I'd test 1 first: its rules are the most complete and need no extra parameters. 
 
 ## Fit check
 
-Every rule's data must exist in `lib/data.py` (crypto: Binance USDT-M klines, funding, OI, Blave indicators; TW stocks: adjusted prices, institutional flows, PER, dividends, monthly revenue, financial ratios, shareholding; TAIFEX). Not there (US ETFs, on-chain) → pick another idea; never deliver one that cannot be backtested.
+Every rule's data must exist in `lib/data.py` (crypto: Binance USDT-M klines, funding, OI, Blave indicators, liquidations `fetch_liquidation`, Fear & Greed `fetch_fear_greed`, CME COT `fetch_cme_cot` — long/short ratio `fetch_long_short_ratio_coin` and CVD `fetch_cvd_coin` hold only 7 days, too short to backtest; TW stocks: adjusted prices, institutional flows, PER, dividends, monthly revenue, financial ratios, shareholding, margin trading `fetch_twstock_margin` / market-wide `fetch_twmarket_margin`, broker branches `fetch_twstock_broker_net`, attention / disposition stocks `fetch_twstock_alerts`; TAIFEX incl. put/call ratio `fetch_twfutures_pcr`; US stocks / ETFs `fetch_usstock_price`). Not there (on-chain) → pick another idea; never deliver one that cannot be backtested.
 
 ## Dead or hijacked site
 
