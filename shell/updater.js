@@ -14,9 +14,11 @@ const fs = require("fs"), path = require("path");
 const sig = require("./updatesig");
 const CHECK_EVERY_MS = 4 * 3600 * 1000;
 const FIRST_CHECK_MS = 30 * 1000;   // 啟動後先讓 app 把該做的做完
-const FAIL_STAGE = { checking: "check", downloading: "download", staging: "staging", ready: "install", blocked: "install" };
+const REFRESH_STALE_MS = 30 * 60 * 1000;   // refresh 這麼久沒有任何進度就當它卡死(Mac 交給 Squirrel 的本機 proxy 起不來時 promise 永遠不結束)
+const FAIL_STAGE ={ checking: "check", downloading: "download", staging: "staging", ready: "install", blocked: "install" };
 
-/* opts:{ autoUpdater, nativeUpdater, feedUrl, currentVersion, isTrading(), onState(state), setTimer?, log? }
+/* opts:{ autoUpdater, nativeUpdater, feedUrl, currentVersion, isTrading(), onState(state), setTimer?, log?, busy()?, now()? }
+   busy() = 有人正要裝(停單並更新收工中、閒著自動裝準備中、確認框開著):這時已下載的那版不准被換掉
    state:{ phase, version?, percent?, error? }
      phase = off(沒有更新來源)| idle | checking | downloading | staging(下載完,系統正在驗章與暫存)|
              ready(已暫存,等重啟)| blocked(已暫存,但下單執行中)| error
@@ -32,7 +34,8 @@ function createUpdater(opts) {
   const au = opts.autoUpdater, log = opts.log || (() => {});
   const timer = opts.setTimer || ((fn, ms) => { const t = setInterval(fn, ms); if (t.unref) t.unref(); return t; });
   let feedUrl = opts.feedUrl || null;
-  let state = { phase: feedUrl ? "idle" : "off", version: null, percent: null, error: null }, started = false, pushed = null;
+  let state = { phase: feedUrl ? "idle" : "off", version: null, percent: null, error: null }, started = false, pushed = null, refreshing = false, refreshAt = 0;
+  const now = opts.now || Date.now, busy = () => !!(opts.busy && opts.busy());
   const push = () => { const ps = publicState(); pushed = ps.phase; try { opts.onState(ps); } catch (_) { /* 畫面壞掉不該影響更新 */ } };
   const set = (patch) => { state = { ...state, ...patch }; push(); };
   // 失敗在哪一步(埋點 update_failed):階段取自出錯那一刻的 phase,不是錯誤訊息
@@ -54,11 +57,12 @@ function createUpdater(opts) {
     au.allowDowngrade = false;
     au.allowPrerelease = false;
     au.setFeedURL({ provider: "generic", url: feedUrl });
-    au.on("checking-for-update", () => set({ phase: "checking", error: null }));
-    au.on("update-available", (i) => set({ phase: "downloading", version: i && i.version, percent: 0 }));
-    au.on("update-not-available", () => set({ phase: "idle", version: null, checkedAt: Date.now() }));   // 「已是最新版 · {t} 檢查過」用的時間
-    au.on("download-progress", (p) => set({ phase: "downloading", percent: p && Number.isFinite(p.percent) ? Math.floor(p.percent) : null }));
+    au.on("checking-for-update", () => { if (!refreshing) set({ phase: "checking", error: null }); });
+    au.on("update-available", (i) => { if (!refreshing) set({ phase: "downloading", version: i && i.version, percent: 0 }); });
+    au.on("update-not-available", () => { if (!refreshing) set({ phase: "idle", version: null, checkedAt: Date.now() }); });   // 「已是最新版 · {t} 檢查過」用的時間
+    au.on("download-progress", (p) => { if (refreshing) refreshAt = now(); else set({ phase: "downloading", percent: p && Number.isFinite(p.percent) ? Math.floor(p.percent) : null }); });
     au.on("update-downloaded", (i) => {
+      refreshing = false;
       if (opts.signed) {
         // 快取裡已經有同一個 sha512 的檔時,electron-updater 不重新下載、也就不走 verifySignature:在這裡再驗一次 yml。
         // 必須同步設 autoInstallOnAppQuit——發完這個事件它緊接著掛「結束時安裝」,看的就是這一刻的值
@@ -70,6 +74,7 @@ function createUpdater(opts) {
     });
     if (opts.nativeUpdater) opts.nativeUpdater.on("update-downloaded", () => set({ phase: "ready", percent: 100 }));
     au.on("error", (e) => {
+      if (refreshing) { log("update refresh failed, keeping " + state.version + ": " + (e && e.message)); return; }
       log("update error: " + (e && e.message));
       const installing = state.phase === "staging" || state.phase === "ready" || state.phase === "blocked";
       fail(FAIL_STAGE[state.phase] || "other");
@@ -100,8 +105,37 @@ function createUpdater(opts) {
       }
     };
   }
+  /* 已下載(ready / blocked)時照樣查,但只在 feed 比已下載那版新才下載(同版再下載,Mac 會讓 Squirrel 整個重新暫存一次)。
+     查的期間事件不動 phase、查失敗不動 phase:已下載那版還在。新版一開始下載:
+     - Windows:electron-updater 在下載前就清掉 pending/ 裡的舊 Setup.exe(DownloadedUpdateHelper sha512 不同 → emptyDir),
+       舊版已裝不了,phase 先切 downloading 再下載,之後失敗走一般的 error。
+     - Mac:Squirrel 暫存的舊版在它自己的 ShipIt 快取,要到新 zip 下載完、交給 Squirrel 重新暫存時才被清掉,
+       所以下載期間維持 ready(仍可裝),electron-updater 的 update-downloaded 之後才進 staging;下載失敗就留在舊的 ready。
+     busy() 時不查;查的途中變 busy 就不下載(Windows 一下載舊安裝檔就沒了,停完單會裝不到) */
+  function refresh() {
+    if (busy()) return false;
+    if (refreshing && now() - refreshAt < REFRESH_STALE_MS) return false;
+    if (refreshing) log("update refresh stalled, starting over");
+    refreshing = true; refreshAt = now();
+    const restore = () => { au.autoDownload = true; };
+    au.autoDownload = false;
+    Promise.resolve().then(() => au.checkForUpdates()).then((r) => {
+      restore();
+      const v = r && r.isUpdateAvailable && r.updateInfo && r.updateInfo.version;
+      if (!sig.newer(v, state.version)) { refreshing = false; return; }
+      if (busy()) { refreshing = false; log("update " + v + " found but an install is under way; keeping " + state.version); return; }
+      log("update " + v + " found while " + state.version + " is downloaded; fetching it");
+      if (!opts.nativeUpdater) { refreshing = false; set({ phase: "downloading", version: v, percent: 0, error: null }); }
+      return au.downloadUpdate();
+    }).catch((e) => {
+      restore();
+      if (refreshing) { refreshing = false; log("update refresh failed, keeping " + state.version + ": " + (e && e.message)); }
+    });
+    return true;
+  }
   function check() {
-    if (!feedUrl || ["checking", "downloading", "staging", "ready", "blocked"].indexOf(state.phase) >= 0) return false;
+    if (state.phase === "ready" || state.phase === "blocked") return feedUrl ? refresh() : false;
+    if (!feedUrl || ["checking", "downloading", "staging"].indexOf(state.phase) >= 0) return false;
     // 按下去那一刻就講「檢查中」:electron-updater 的 checking-for-update 事件要等它連上 feed 才發,那之前畫面還停在舊的「已是最新版」
     set({ phase: "checking", error: null });
     // electron-updater 查 feed 失敗是先 emit error 再 reject:error 那支記過了(phase 已是 error)就不再記一次
@@ -122,6 +156,7 @@ function createUpdater(opts) {
   function install(o) {
     if (state.phase !== "ready" && state.phase !== "blocked") return { ok: false, error: "NOT_READY" };
     if (opts.isTrading()) return { ok: false, error: "TRADING" };
+    refreshing = false;   // 裝的時候出錯要照常講 INSTALL_FAILED,不當成背景查新版的失敗吞掉
     setImmediate(() => au.quitAndInstall(!!(o && o.silent), true));
     return { ok: true };
   }

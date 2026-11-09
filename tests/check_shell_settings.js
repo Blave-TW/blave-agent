@@ -108,7 +108,7 @@ ok("① 兩個版號各自包在 .mono 裡(各在自己那一行)", mono($("set-
 p = paint(fresh, cloud());
 ok("② 還沒查完(啟動 30 秒內):第一行只寫版本、不寫狀態字、不寫「檢查中」;連結照舊;第二行不受影響", p.line === 'up.row.app{"av":"0.0.7"}' && p.link === "up.check" && !/checking/.test(p.line) && p.cline === 'up.row.cloud{"cv":"2026-09-24-b"} · up.row.latest');
 { const upd = fs.readFileSync(path.join(R, "..", "updater.js"), "utf8");
-  ok("② 那 30 秒來自 updater.js 的 FIRST_CHECK_MS;「已是最新版」只認 checkedAt,而 checkedAt 只有 update-not-available 會寫", /const FIRST_CHECK_MS = 30 \* 1000;/.test(upd) && (upd.match(/checkedAt/g) || []).length === 1 && /update-not-available", \(\) => set\(\{ phase: "idle", version: null, checkedAt: Date\.now\(\) \}\)/.test(upd)
+  ok("② 那 30 秒來自 updater.js 的 FIRST_CHECK_MS;「已是最新版」只認 checkedAt,而 checkedAt 只有 update-not-available 會寫", /const FIRST_CHECK_MS = 30 \* 1000;/.test(upd) && (upd.match(/checkedAt/g) || []).length === 1 && /update-not-available", \(\) => \{ if \(!refreshing\) set\(\{ phase: "idle", version: null, checkedAt: Date\.now\(\) \}\)/.test(upd)
     && /st\.checkedAt > 0\) status = \["up\.row\.latest"\]/.test(fnSrc("upPlan"))); }
 UP_CHECKING = true; p = paint(idle, cloud()); UP_CHECKING = false;
 ok("③ 按下檢查更新的那幾秒:連結本身變成 16/2 圓環(停用、aria-label 留著檢查更新),狀態字沿用上一次的「已是最新版」,沒有「檢查中」", p.spin && p.dis && p.link === "" && $("set-up-btn").attrs["aria-label"] === "up.check" && /up\.row\.latest$/.test(p.line));

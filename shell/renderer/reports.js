@@ -98,7 +98,7 @@ async function rptOpen() {
   envShowMain();
   rptLoad(libEnv(), false);
   rptFocusHome();
-  if (libEnv() === "local") $("rpt-nav-new").hidden = true;   // 進來就看到了:記號收掉
+  $("rpt-nav-new").hidden = true;   // 進來就看到了:記號收掉(本機與雲端的新報告共用這一個記號,哪一邊進來都收)
   libTrack("reports_list");
   return true;
 }
@@ -378,6 +378,7 @@ function rptShowRead(id) {
   const B = rptBag();
   if (!B.reading) B.scroll = $("rpt-body").scrollTop;
   B.row = id; B.reading = id;
+  $("rpt-nav-new").hidden = true;
   rptPaint(); $("rpt-body").scrollTop = 0;
   $("rpt-back").focus();
 }

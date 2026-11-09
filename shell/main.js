@@ -491,6 +491,8 @@ function updater() {
     signed: feedUrl && process.platform === "win32" ? { keys: require("./update-keys.json") } : null,
     feedUrl, currentVersion: app.getVersion(),
     isTrading: () => !!tradeMaybeLive(),   // 保守判定:可能還在下單就不裝
+    // 正要裝的這段(確認框、停單收工、閒著自動裝在問畫面)不准查到新版就換掉已下載的那版
+    busy: () => !!(restarting || quitAsking || moveAsking || quitConfirmed || quitting || _schedRunning),
     onState,
     log: (m) => console.error("[updater] " + m),
     onFail: (stage) => tm().track("update_failed", { stage }),
@@ -5028,9 +5030,10 @@ async function scheduledInstall(now = Date.now()) {
       if (bg) tm().track("feature_used", { name: "upd_idle_run" });
       else tm().track("feature_used", { name: "upd_sched_run" });
     } catch (_) { /* 追蹤不擋 */ }
-    if (bg) { bgAuto = true; try { uiPrefsPatch({ updHiddenBoot: { v: st.version, at: Date.now() } }); } catch (_) { /* 記不下:重開時視窗會出現,不擋更新 */ } }
+    const target = updater().state().version;   // 不用開頭那份 st:等畫面回話那段,已下載的那版可能被換成更新的
+    if (bg) { bgAuto = true; try { uiPrefsPatch({ updHiddenBoot: { v: target, at: Date.now() } }); } catch (_) { /* 記不下:重開時視窗會出現,不擋更新 */ } }
     const res = updater().install(bg && process.platform === "win32" ? { silent: true } : undefined);
-    if (res.ok) { try { uiPrefsPatch({ updSchedTarget: st.version }); } catch (_) { /* 記不下:下次啟動不會發現失敗,只是少一道防重開 */ } installWatch(); }
+    if (res.ok) { try { uiPrefsPatch({ updSchedTarget: target }); } catch (_) { /* 記不下:下次啟動不會發現失敗,只是少一道防重開 */ } installWatch(); }
     else { draftOk = false; bgAuto = false; setRestarting(null); try { uiPrefsPatch({ updSchedTarget: null, updHiddenBoot: null }); } catch (_) { /* 照舊 */ } }
     return { go: res.ok, why: res.ok ? "go" : "install:" + res.error };
   } finally { _schedRunning = false; }
