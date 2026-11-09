@@ -2766,6 +2766,7 @@ async function libraryPurchase(strategyId, confirmTopup) {
   try { r = await postJSON(`${API_BASE}/oauth/desktop/marketplace/purchase`, { token, app_secret: secret, strategy_id: strategyId, confirm_topup: confirmTopup === true }); }
   catch (_) { return { status: 0, body: null }; }
   libCache = null;   // 買了(或另一台正在買)之後 purchased 會變:下次開清單重打
+  if (_balance) _balance.reset();   // 錢包剛扣過:買完自動安裝要拿扣後的餘額判斷
   return { status: r.status, body: libPurchaseBody(r.body) };
 }
 /* 綁卡即購買(spec library-buy-with-bind-2026-11-06):沒卡又錢包不夠的人,綁卡與購買同一筆藍新付款。
@@ -2896,6 +2897,7 @@ async function libraryCardCheckout(strategyId, o) {
   try { r = await postJSON(`${API_BASE}/oauth/desktop/marketplace/card_checkout`, { token, app_secret: secret, strategy_id: strategyId, confirm_total_twd: o.total, confirm_plan_source: src(o.planSrc), confirm_price_source: src(o.priceSrc) }); }
   catch (_) { return { status: 0, body: null }; }
   lastAcct = null; libCache = null;   // 方案與 purchased 可能都變了(含 partial)
+  if (_balance) _balance.reset();   // 錢包剛扣過:付完自動安裝要拿扣後的餘額判斷(10 秒快取會給扣前的)
   return { status: r.status, body: libCheckoutBody(r.body) };
 }
 /* 回 { mark, res }:沒有等著的就不打 api(mark null)。拿到這支的終態就清記號,帳號狀態與清單作廢(綁了卡、可能開了試用) */
@@ -2907,7 +2909,7 @@ async function libraryBindResult() {
   let r = null;
   try { r = await postJSON(`${API_BASE}/oauth/desktop/marketplace/bind_purchase_result`, { token, app_secret: secret }); } catch (_) { return { mark, res: null }; }
   const res = r.status === 200 ? libBindResultOut(r.body) : null;
-  if (res && res.strategy_id === mark.id && res.status !== "pending") { libBbMarkSet(null); lastAcct = null; libCache = null; }
+  if (res && res.strategy_id === mark.id && res.status !== "pending") { libBbMarkSet(null); lastAcct = null; libCache = null; if (_balance) _balance.reset(); }   // 錢包與試用額度都可能變了
   return { mark, res };
 }
 /* 代下載策略碼(spec-0.1.13-library-conversion §4.2 / D1):付不出資料費的帳號,workspace `.env` 裡沒有 Blave key(syncDataEnv),

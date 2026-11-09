@@ -394,7 +394,7 @@ function libBpStep(out, free) {
   if (out.kind === "wallet") return out.planStatus === "failed" ? "wallet" : "part";
   return null;
 }
-/* 訪客鈕登入回來接哪一步(spec §2.3,設計稽核 web-one-step #2:綁卡會開自動儲值,沒有任何一種情況跳過框)。c = 登入後重算的 libCta:
+/* 訪客鈕登入回來接哪一步(spec §2.3;唯一跳過框的訪客 C 由 libLoginGo 另判)。c = 登入後重算的 libCta:
    install = 直接代下載(免費／已買);box = 出購買框或開通框;pay = 有試用資格沒卡看要資料的免費策略,開網站綁卡頁(試用條款在那頁);cta = 停在主鈕 */
 function libLoginNext(c, planMo) {
   if (!c) return "cta";
@@ -406,6 +406,20 @@ function libLoginNext(c, planMo) {
 }
 // 訪客主鈕的字:付費 → 登入並購買 N;不用資料 → 登入並安裝;要資料(含未標)→ 登入並使用
 function libSignedOutKey(s, paid) { return paid ? "lib.bb.loginBuy" : libNeeds(s) === "none" ? "lib.bb.loginInstall" : "lib.bb.loginUse"; }
+/* 付完自動送「安裝並回測」那一回合的保守估價(TWD)。依據:過去 30 天 Blave AI 實扣 usage_llm 約 9,200 TWD／13,518 次請求
+   ≈ 0.7 TWD／次,一個安裝並回測回合常 20+ 步 → 平均約 14;Claude 系一步比 DeepSeek 貴數倍,取排程回合的單份上限 1.0 USD ≈ 40 */
+const LIB_TURN_EST = 40;
+/* 這一回合跑完會不會讓用戶多被扣錢(Wei 11-09):會就不自動送。engine:claude／codex 用用戶自己的訂閱,不經 Blave,回 true;
+   apikey(自帶 API key,按 token 計費)、未知 → false。blave 照 api deduct_credit 的扣法:綁卡前額度(free)→ 試用 AI 額度(trial,
+   只在試用中有值)→ 錢包,錢包扣完低於自動儲值門檻就刷卡 300。估值會超支(最後幾筆落到錢包),所以錢包已在門檻以下一律不送;
+   門檻以上時,額度加上錢包離門檻的距離要夠 3 倍估值(複稽 2 P1)。任一數字讀不到 → false */
+function libTurnFree(engine, b, thr, est) {
+  if (engine === "claude" || engine === "codex") return true;
+  if (engine !== "blave" || !b || typeof b.balance !== "number" || !isFinite(b.balance) || typeof thr !== "number" || !(thr > 0) || !(est > 0)) return false;
+  if (b.balance < thr) return false;
+  const pos = (v) => (typeof v === "number" && isFinite(v) && v > 0 ? v : 0);
+  return pos(b.free) + pos(b.trial) + (b.balance - thr) >= 3 * est;
+}
 /* ── 純邏輯到此 ── */
 // p 的規則只有一份,在 strategy_versions.js fillP(那支在 library.js 之後載入,呼叫時才讀);門檻跟 api 的 mcpt_alpha 走
 function libP(tpl, p, alpha) {
@@ -423,7 +437,7 @@ const LIB = { bags: { local: libNewBag(), cloud: libNewBag() }, data: null, load
   // bbRestart = 上一張付款頁還開著的那幾支(下次帶 restart);bbTop = 結果那支已不在清單(下架),句子放清單頂
   bbWait: null, bbRes: new Map(), bbRestart: new Set(), bbTop: null, bbResumed: false, bbTimer: null, bbBusy: false,
   bal: null, bbOk: null,   // bal:錢包餘額(TWD 數字,讀不到 null),判斷要不要直接出綁卡框;bbOk:剛買成、重拉中的那支
-  planBlock: null, loginGo: null };   // planBlock:報價說開不了方案的原因碼(帳號層級,換帳號／作廢就清);loginGo:訪客鈕登入回來要接下一步的那支(只接一次)
+  planBlock: null, loginGo: null, loginDirect: null };   // planBlock:報價說開不了方案的原因碼(帳號層級,換帳號／作廢就清);loginGo:訪客鈕登入回來要接下一步的那支(只接一次)
 const LIB_CLOUD_WAIT_MS = 3 * 60 * 1000;   // 回合結束後等雲端清單跟上的上限(主機的回報器有延遲);過了就不再認新出現的那支是這次下載的
 function libNewBag() { return { open: false, detail: null, mkt: "all", sort: "reco", scroll: 0, row: null }; }
 const libEnv = () => (typeof ENV !== "undefined" && ENV.cur === "cloud" ? "cloud" : "local");
@@ -910,19 +924,20 @@ function libGateBtn(why) {
 }
 /* 詳情的登入鈕:直接開瀏覽器登入(app.js planSignIn)。cls:已安裝那格是文字鈕。label 有給 = 訪客主鈕(〔登入並安裝／使用／購買 N〕,spec
    library-free-data-one-step §2.1):登入回來照 libLoginGo 接下一步一次;〔重新登入 Blave〕不續走 */
-function libSignInBtn(key, cls, label) {
+function libSignInBtn(key, cls, label, direct) {
   const b = signInLabel(libEl("button", cls || "btn-fill"), label || t(key || "cn.blave.btn")); b.type = "button";
-  b.addEventListener("click", () => libSignIn(b, !!label));
+  b.addEventListener("click", () => libSignIn(b, !!label, direct));
   return b;
 }
-async function libSignIn(b, go) {
+// direct:鈕上寫的金額,登入後報價對得上才可跳過框;只有訪客 C 帶
+async function libSignIn(b, go, direct) {
   const id = libBag().detail, env = libEnv(), was = LIB.dlFail && LIB.dlFail.id === id ? LIB.dlFail : null;
   if (!planLoginBusy && !oauthPending) libTrack("login_lib");   // 等待中再按是取消,不算一次登入
   if (was && was.kind === "signinFailed") { LIB.dlFail = was.relogin ? { id, kind: "signin" } : null; libClearFail(); }   // 上一次沒成的那句活不過這一次;key 被撤的那句留著
   const r = await planSignIn(b);
   if (!r) return;   // 這一按是取消:結果由開始登入那一按收
   const here = () => !$("lib").hidden && libEnv() === env && libBag().detail === id;
-  if (r.ok) { LIB.ctaFocus = id; LIB.loginGo = go ? id : null; if (LIB.loading) b.disabled = true; else libCtaFocusNow(); return; }   // 清單還在路上:這顆舊鈕再按會又登入一次
+  if (r.ok) { LIB.ctaFocus = id; LIB.loginGo = go ? id : null; LIB.loginDirect = go && direct ? direct : null; if (LIB.loading) b.disabled = true; else libCtaFocusNow(); return; }   // 清單還在路上:這顆舊鈕再按會又登入一次
   if (!here()) return;
   if (!oauthGaveUp(r.code)) LIB.dlFail = { id, kind: "signinFailed", relogin: !!(was && (was.kind === "signin" || was.relogin)) };
   libSync();
@@ -934,17 +949,18 @@ function libFocusFree() { const a = document.activeElement; return !a || a === d
 /* 登入回來:清單與帳號狀態到了才畫得出真正的下一步(綁卡、購買),所以等 libLoad 收尾才給焦點,只給一次。
    訪客主鈕按的(loginGo)再接下一步一次(libLoginGo);重畫會換掉鈕,放在 libLoad 最後一步;那支剛好下架就交給 libPaint 的頁首焦點 */
 function libCtaFocusNow() {
-  const id = LIB.ctaFocus, go = LIB.loginGo === id;
+  const id = LIB.ctaFocus, go = LIB.loginGo === id, direct = go ? LIB.loginDirect : null;
   if (id === null) return;
-  LIB.ctaFocus = null; LIB.loginGo = null;
+  LIB.ctaFocus = null; LIB.loginGo = null; LIB.loginDirect = null;
   if ($("lib").hidden || libBag().detail !== id) return;
   libSync();
   const m = libCtaMain(); if (m && libFocusFree()) m.focus();
-  if (go) libLoginGo(id);
+  if (go) libLoginGo(id, direct);
 }
 /* 訪客鈕登入回來接一次(spec §2.3):先讀錢包(卡與帳號狀態 planLogin 已等過),照重算的主鈕走它本來會走的那條——付費一律出框、
-   不用資料或已買的直接代下載、有試用資格沒卡的要資料免費策略開網站綁卡頁。中途離開這支、換視角就不接 */
-async function libLoginGo(id) {
+   不用資料或已買的直接代下載、有試用資格沒卡的要資料免費策略開網站綁卡頁。中途離開這支、換視角就不接。
+   唯一不出框的:C(不用資料的付費策略)沒卡、錢包不夠,報價是一次性、金額等於鈕上(direct) → 直接開付款頁(Wei 11-09;spec §2.3 第 90 行) */
+async function libLoginGo(id, direct) {
   if (libEnv() !== "local") return;
   await libBalLoad();
   // 清單那一份的帳號狀態若剛好沒讀到(dataAccess null、why unknown),重拉一次再判:這裡決定的是付錢那條路
@@ -952,11 +968,12 @@ async function libLoginGo(id) {
   const s = libFind(id);
   if (!s || $("lib").hidden || libEnv() !== "local" || libBag().detail !== id || LIB.buying !== null) return;
   const c = libCtaOf(s), next = libLoginNext(c, libPlanMo()), m = libCtaMain();
-  try { window.blave.trackEvent("lib_login_go", { next }); } catch (_) { }
+  const dir = next === "box" && c.state === "paid" && c.short && libNeeds(s) === "none" && direct ? direct : null;
+  try { window.blave.trackEvent("lib_login_go", { next: dir ? "pay_direct" : next }); } catch (_) { }   // pay = 開網站綁卡頁;pay_direct = 開藍新付款頁
   if (next === "install") libSend(s);
   else if (next === "pay") bindGo("bind_lib");
   else if (next === "box" && c.state === "planBuy") libPlanBuy(s, m);
-  else if (next === "box") { if (c.short || c.state === "noData") libBindBuy(s, m); else libBuyBox(s, "confirm", m, {}); }   // noData = 付費、沒卡有試用:報價出框 1
+  else if (next === "box") { if (c.short || c.state === "noData") libBindBuy(s, m, dir ? { direct: dir } : undefined); else libBuyBox(s, "confirm", m, {}); }   // noData = 付費、沒卡有試用:報價出框 1
 }
 function libPaintGone() {
   const p = $("lib-gone"); p.textContent = "";
@@ -975,6 +992,12 @@ function libLoginUseVars() {
   if (!libPlanMo() || typeof planVars !== "function") return null;
   const v = planVars();
   return v.t && v.pr ? { t: String(v.t), p: libTwd(v.pr) } : null;
+}
+// 有試用資格又沒卡(方案制的 no_card)時的試用天數與每 30 天價,鈕下續扣句與報價比對用;任一讀不到 null(照舊出框 1)
+function libTrialTerms(c) {
+  if (!c || c.why !== "no_card" || !libPlanMo() || typeof planVars !== "function") return null;
+  const v = planVars(), d = Number(v.t), p = Number(v.pr);
+  return Number.isInteger(d) && d > 0 && Number.isInteger(p) && p > 0 ? { t: d, p } : null;
 }
 function libShowDetail(id) {
   const B = libBag(); B.row = id; B.detail = id; LIB.gone = false; LIB.bbTop = null;
@@ -1087,6 +1110,7 @@ function libPaintCta(s) {
   const hadFocus = box.contains(document.activeElement);   // 重畫前焦點在鈕上:畫完還給新的主鈕(§3 末,同 libPurchase)
   box.textContent = "";
   const c = libCtaOf(s), row = libEl("div", "row"), note = libEl("p", "note"); note.id = "lib-cta-note";
+  const under = [];   // 直接開付款頁的鈕下那一行續扣,跟著鈕、不佔訊息槽
   const btn = (cls, label, on) => { const b = libEl("button", cls, label); b.type = "button"; if (on) b.addEventListener("click", () => on(b)); return b; };
   const dis = (label) => { const b = btn("btn-fill", label); b.disabled = true; return b; };
   const buyLabel = () => t("lib.buy", { price: libPriceText(s) || "—" });
@@ -1096,15 +1120,23 @@ function libPaintCta(s) {
   const bbGone = c.state === "paid" && !!bb && bb.kind === "wallet" && bb.code === "unavailable";
   switch (relogin && ["free", "owned", "paid"].includes(c.state) ? "relogin" : bbGone ? "bbGone" : c.state) {
     case "relogin": row.appendChild(libSignInBtn("fault.authBtn")); break;
-    case "signedOut": {   // 鈕寫動作與金額(spec library-free-data-one-step §2.1;金額寫實刷的 TWD);鈕下:付費 → 不自動下單、要資料的免費 → 試用與方案價(下面訊息槽)
+    case "signedOut": {   // 鈕寫動作與金額(spec library-free-data-one-step §2.1;金額寫實刷的 TWD);鈕下:要資料的免費 → 試用與方案價(下面訊息槽),其餘空白
       const key = libSignedOutKey(s, c.paid);
-      row.appendChild(libSignInBtn(null, null, t(key, { p: key === "lib.bb.loginBuy" ? libTwd(s.price) : "" })));
+      // C(不用資料的付費策略):登入後沒卡、報價金額等於鈕上就直接開付款頁(沒有續扣)。換算幣(en 價格寫 USD)一律出框,同網頁與已登入那條
+      const dc = key === "lib.bb.loginBuy" && !libFx() && libNeeds(s) === "none" && Number.isInteger(s.price) && s.price > 0;
+      row.appendChild(libSignInBtn(null, null, t(key, { p: key === "lib.bb.loginBuy" ? libTwd(s.price) : "" }), dc ? s.price : undefined));
       if (key === "lib.bb.loginUse") { const v = libLoginUseVars(); if (v) note.textContent = t("lib.bb.loginUseNote", v); }
       break;
     }
     case "noData": row.appendChild(libGateBtn(c.why)); note.classList.add("up"); note.textContent = libNoDataText(s, c.why); break;
-    // 一步開通:鈕上寫這次要付的合計(方案第一期＋還沒買的策略價);框裡的數字以報價為準
-    case "planBuy": row.appendChild(btn("btn-fill", t(c.paid ? "lib.bb.planD" : "lib.bb.planB", { p: libTwd((c.paid ? s.price : 0) + libCtx().planTwd) }), (b) => libPlanBuy(s, b))); break;
+    /* 一步開通:鈕上寫這次要付的合計(方案第一期＋還沒買的策略價);框裡的數字以報價為準。
+       沒卡、錢包不夠合計(會走付款頁):按下去不出框 ③、直接開付款頁(Wei 11-09)。鈕下一行講續扣:D 寫之後每 30 天多少;B 的鈕字已寫每 30 天多少,只講可取消 */
+    case "planBuy": {
+      const x = libCtx(), total = (c.paid ? s.price : 0) + x.planTwd, direct = x.noCard === true && typeof x.bal === "number" && x.bal < total;
+      row.appendChild(btn("btn-fill", t(c.paid ? "lib.bb.planD" : "lib.bb.planB", { p: libTwd(total) }), (b) => libPlanBuy(s, b, direct ? { direct: total } : undefined)));
+      under.push(libEl("p", "note", c.paid ? t("lib.bb.renewNote", { p: libTwd(x.planTwd) }) : t("lib.bb.cancelNote")));
+      break;
+    }
     // 名下有主機:方案在主機那邊,到網站恢復;句子只講原因(設計稽核 web-one-step #5)
     // 鈕會開瀏覽器離開 app:用設定頁同一顆〔到網站恢復方案〕(設計稽核 desktop-one-step #3)
     case "planResume": row.appendChild(btn("btn-fill", t("plan.resumeWeb"), () => planWebGo())); note.textContent = t("lib.bb.hasServer"); break;
@@ -1124,17 +1156,25 @@ function libPaintCta(s) {
       else if (c.again) row.appendChild(btn("btn-quiet", t("lib.again"), (b) => libAsk(s, b)));
       break;
     case "bbGone": break;   // 綁卡即購買刷了卻因下架沒買成(清單還沒跟上):不給鈕,只留結果句(稽核 ⑥-2)
-    case "paid": row.appendChild(btn("btn-fill", buyLabel(), (b) => c.short ? libBindBuy(s, b) : libBuyBox(s, "confirm", b, {}))); break;
+    case "paid": {
+      /* 沒卡、錢包不夠(short):報價跟鈕上鈕下講的對得上才直接開付款頁,否則照舊框 2／框 1。C(不用資料)鈕下空白;
+         要資料、有試用資格(方案制的 no_card)鈕下一行試用後續扣。鈕上是換算幣(en 寫 USD)時鈕上沒有實刷的 TWD,不跳框 */
+      const sh = c.short && !libFx() && Number.isInteger(s.price) && s.price > 0;
+      const tr = c.short && libNeeds(s) !== "none" ? libTrialTerms(libCtx()) : null, ok = sh && (libNeeds(s) === "none" || tr);
+      row.appendChild(btn("btn-fill", buyLabel(), (b) => c.short ? libBindBuy(s, b, ok ? { direct: s.price, trial: tr || undefined } : undefined) : libBuyBox(s, "confirm", b, {})));
+      if (tr) under.push(libEl("p", "note", t("lib.bb.trialRenewNote", { t: String(tr.t), p: libTwd(tr.p) })));
+      break;
+    }
     case "owned": row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b))); break;
     default:   // free:鈕下不再補「只用公開價格」那句(Wei 10-17)
       row.appendChild(btn("btn-fill", t("lib.use"), (b) => libAsk(s, b)));
   }
   if (row.childNodes.length) box.appendChild(row);
   // 綁卡即購買／刷了沒買成的結果:主鈕下方那一格,不跳框(spec §5)。刷卡失敗是紅記號;錢進錢包是灰記號(錢沒丟)
-  // 鈕下只有一個訊息槽(canon copy #4):結果句 > 等待付款句 > 付費未購的「買了不會自動下單。」小字
+  // 鈕下最多一行(Wei 11-09):有結果句時只出結果句(同網頁),續扣那一行收起來;重按會重新報價
   const bbl = libBbLines(bb);
   if (bbl.length) note.textContent = "";
-  else if ((c.state === "paid" || (c.paid && (c.state === "planBuy" || c.state === "signedOut"))) && !note.textContent && !(LIB.dlFail && LIB.dlFail.id === s.id)) note.textContent = t("lib.bb.noAuto");
+  else under.forEach((p) => box.appendChild(p));
   note.hidden = !note.textContent;
   box.appendChild(note);
   if (bbl.length) {
@@ -1143,6 +1183,10 @@ function libPaintCta(s) {
     bbl.forEach((l) => d.appendChild(libEl("p", "", libBbText(l))));
     e.append(m, d); box.appendChild(e);
   }
+  /* 付款頁回來、這次同時綁了卡:自動儲值預設開著,在這裡講一次(詳情頁鈕下不講)。電腦版沒有讀／改自動儲值的端點,
+     用設定頁同一句(plan.topupShort,「可在網頁關閉」);數字讀不到就不出 */
+  const tb = bb && bb.bound ? libBbTopup(typeof pub !== "undefined" && pub ? pub.trial : null) : null;
+  if (tb) { const p = libEl("p", "note", t("plan.topupShort", { a: tb.lo, b: tb.a })); p.id = "lib-cta-topup"; box.appendChild(p); }
   if (c.err) { const e = libEl("p", "err"), m = libEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); e.append(m, libEl("span", "", t("lib.err.noNew"))); box.appendChild(e); }
   // key 被撤(signin):鈕字〔重新登入 Blave〕已經講了,不另寫一句(中欄 480 會把標題區擠壞;設計稽核 v045)
   if (LIB.dlFail && LIB.dlFail.id === s.id && c.state !== "pending" && LIB.dlFail.kind !== "signin") {
@@ -1183,7 +1227,7 @@ function libAsk(s, opener, o) {
   const again = libCtaOf(s).state === "installed";   // 頁首拿掉了覆蓋說明,改在按下「再下載一份」後的框裡講
   confirmBox({
     title: t(again ? "lib.cf.titleAgain" : "lib.cf.title", { title: s.title }),
-    lines: [...(again ? [t("lib.cf.l0Again", { where: libWhere() })] : []), t(cloud ? "lib.cf.l1" : "lib.cf.l1Local"), t("lib.cf.l2"), ...(fee ? [t("lib.note.billed")] : [])],
+    lines: [...(again ? [t("lib.cf.l0Again", { where: libWhere() })] : []), t(cloud ? "lib.cf.l1" : "lib.cf.l1Local"), ...(fee ? [t("lib.note.billed")] : [])],
     ok: t(again ? "lib.cf.okAgain" : "lib.cf.ok"), opener, env: cloud ? "cloud" : undefined, footWhere: cloud ? t("lib.cf.cloudNote") : undefined,
     onOk: o && o.from === "welcome" ? async () => { await libOpen({ silent: true }); libShowDetail(s.id); libSend(s, { from: "welcome" }); } : () => libSend(s),
   });
@@ -1279,7 +1323,8 @@ async function libPurchase(s, confirmTopup) {
   LIB.buying = null;
   const branch = libBuyBranch(r ? r.status : 0, r ? r.body : null);
   if (branch === "ok" || branch === "inProgress") LIB.stale = true;   // purchased 變了:主行程那份已作廢,這裡也標
-  if (branch === "ok") { s.purchased = true; libSync(); const b = libCtaMain(); if (b) b.focus(); libSend(s); libRefresh(); return; }   // 鈕上已經寫了「並使用」:不再開下載框
+  // 鈕上已經寫了「並使用」:不再開下載框;自動送跟付款頁、框 ② 同一道判斷(雲端視角、會多扣錢就停在已購買,複稽 2 P2)
+  if (branch === "ok") { s.purchased = true; libSync(); const b = libCtaMain(); if (b) b.focus(); libAutoInstall(s); libRefresh(); return; }
   if (branch === "charged") {   // 卡刷了、沒買成:照實講錢在錢包;已買過的就是已購買,不自動安裝
     const out = libBbCharged(r.body); LIB.bbRes.set(s.id, out); LIB.stale = true;
     if (out.code === "already_purchased") s.purchased = true;
@@ -1304,14 +1349,19 @@ function libBbTrack(step) { try { window.blave.trackEvent("lib_bindbuy", { step 
 function libBpTrack(step) { try { if (step) window.blave.trackEvent("lib_bindplan", { step }); } catch (_) { } }
 function libCpTrack(step) { try { window.blave.trackEvent("lib_cardplan", { step }); } catch (_) { } }
 function libBbNote(id, key) { LIB.bbRes.set(id, { kind: "note", key }); libSync(); }
-async function libBindBuy(s, opener) {
+/* o.direct:鈕上金額。沒欠費、不動既有方案續期、金額相同才不出框:只買(o 沒帶 trial)→ 不出框 2;
+   o.trial = 鈕下講的試用天數與每 30 天價,報價開試用且兩個數字都相同 → 不出框 1。其餘照舊出框 */
+async function libBindBuy(s, opener, o) {
   if (LIB.buying !== null) return;
   LIB.buying = s.id; libSync();
   let r = null;
   try { r = await window.blave.libraryBindBuy(s.id, { lang: LANG }); } catch (_) { r = null; }   // 不帶 confirm = 報價,錢不動
   if (typeof pubLoad === "function") { try { await pubLoad(); } catch (_) { } }   // 自動儲值那句的數字(一小時快取)
   LIB.buying = null; libSync();
-  libBindBuyBox(s, libBbBox(r ? r.status : 0, r ? r.body : null), libCtaMain() || opener);
+  const q = libBbBox(r ? r.status : 0, r ? r.body : null);
+  const tr = o && o.trial, same = !!(o && o.direct) && q.price === o.direct && !q.due && !q.renew;
+  if (same && (tr ? q.kind === "trial" && q.trialDays === tr.t && q.planMonthly === tr.p : q.kind === "plain")) { libBindBuyGo(s, q, LIB.bbRestart.has(s.id)); return; }
+  libBindBuyBox(s, q, libCtaMain() || opener);
 }
 function libBindBuyBox(s, q, opener) {
   const title = t("lib.buy.title", { title: s.title });
@@ -1403,15 +1453,29 @@ async function libBbPoll() {
 // q:等待時的那張單(方案單帶 plan / free;重開 app 後由主行程的記號補)
 function libBbDone(id, out, q) {
   clearTimeout(LIB.bbTimer); LIB.bbWait = null;
+  if (out.kind === "ok" || out.kind === "wallet") out.bound = true;   // 付款頁付成功 = 卡綁上了(刷卡失敗沒有卡)
   LIB.bbRes.set(id, out);
   const plan = out.plan === true || !!(q && q.plan);
   if (plan) libBpTrack(libBpStep(out, out.plan === true ? out.free : !!(q && q.free))); else libBbTrack(out.kind);
   const s = libFind(id);
-  // 停在「已購買」,主鈕安裝並回測(決定 5),不自動送。免費策略的方案單沒有買東西
+  // 免費策略的方案單沒有買東西
   if (s && ((out.kind === "ok" && !(plan && (out.free || (q && q.free)))) || out.code === "already_purchased")) s.purchased = true;
   if (out.kind === "wallet" && out.code === "unavailable") LIB.bbTop = { id, out };
   if (plan && out.planStatus === "failed" && LIB_PLAN_BLOCKS.includes(out.planReason)) LIB.planBlock = out.planReason;   // 名下有主機等:主鈕換恢復方案
   libAfterPay(id, out.kind === "ok");
+  if (out.kind === "ok") libAutoInstall(s);
+}
+/* 付成功自動安裝並回測一次(Wei 11-09,推翻 0.1.49 決定 5;安裝不會開始下單):付款頁與框 ② 共用。本機沒裝過、沒在裝才送;
+   切到雲端視角就不送(送出對象會變)。這一回合會讓用戶多被扣錢就不送(libTurnFree),停在已購買讓他自己按 */
+async function libAutoInstall(s) {
+  const can = () => !!s && libEnv() === "local" && !libInstalledOf(s, "local") && !LIB.pending.has(s.id);
+  if (!can()) return;
+  const eng = typeof cur !== "undefined" ? cur : null, a = typeof acct !== "undefined" ? acct : null, n = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+  let b = null;
+  if (eng === "blave") { try { b = await window.blave.balance(); } catch (_) { b = null; } }
+  const own = n(a && typeof a === "object" ? a.auto_topup_min : null);   // 帳號狀態那份優先,讀不到用公開價目
+  const thr = own !== null ? own : n(typeof pub !== "undefined" && pub && pub.trial ? pub.trial.auto_topup_min : null);
+  if (libTurnFree(eng, b, thr, LIB_TURN_EST) && can()) libSend(s);   // 讀餘額那一下切走或開始裝了就不送
 }
 /* 付完(或框 ② 回來)之後:清單的資料狀態與帳號都重問(主行程已作廢快取)。ok = 都成:重拉期間 bbOk 暫態蓋住資料牆,
    兩份都回來才拿掉;試用或方案真的沒開成(資料權限仍是 none)這時才照實出資料牆。焦點給主鈕(安裝並回測就是下一步) */
@@ -1447,8 +1511,9 @@ async function libBbResume() {
 }
 
 /* ── 一步開通(spec library-free-data-one-step;原型 prototype-library-free-data-one-step,字以原型為準):沒方案、要資料的策略,
-   主鈕一按就把錢的事做完。先問 checkout_quote(唯讀)→ 沒卡又錢包不夠 → 框 ③(付款頁,bind_purchase 帶 accept_plan、確認合計);
-   有卡或錢包夠總額 → 框 ②(card_checkout,確認合計與框上寫的來源)。金額、日期、末四碼全讀 api;按 OK 前不動錢 ── */
+   主鈕一按就把錢的事做完。先問 checkout_quote(唯讀)→ 沒卡又錢包不夠 → 付款頁(bind_purchase 帶 accept_plan、確認合計);
+   有卡或錢包夠總額 → 框 ②(card_checkout,確認合計與框上寫的來源)。金額、日期、末四碼全讀 api;按 OK 前不動錢。
+   o.direct = 主鈕上寫的合計:報價也是付款頁、合計相同才跳過框 ③(A 案);登入接續、重開付款頁、重報價不帶,照舊出框 ── */
 async function libPlanBuy(s, opener, o) {
   if (LIB.buying !== null) return;
   if (LIB.pending.size) { const n = $("lib-cta-note"); if (n) { n.textContent = t("lib.buyWait"); n.hidden = false; } return; }   // 同 libBuyBox:裝到一半不碰錢
@@ -1460,6 +1525,7 @@ async function libPlanBuy(s, opener, o) {
   LIB.buying = null; libSync();
   const q = libPqOf(r ? r.status : 0, r ? r.body : null);
   if (o && o.changed && q.kind === "cardplan") q.changed = true;
+  if (o && o.direct && q.kind === "planpay" && q.total === o.direct) { libBindBuyGo(s, q, LIB.bbRestart.has(s.id)); return; }
   libPlanNext(s, q, libCtaMain() || opener);
 }
 function libPlanNext(s, q, opener) {
@@ -1470,7 +1536,7 @@ function libPlanNext(s, q, opener) {
   libBbNote(s.id, q.kind === "rate" ? "lib.bb.rate" : "lib.buy.failed");
   const m = libCtaMain(); if (m && libFocusFree()) m.focus();
 }
-/* 框 ③(planpay)／框 ②(cardplan)同一個形狀(spec §4):兩列金額＋一句。框 ② 那句前面接「今天從哪扣」;框 ③ 不寫來源(鈕〔綁卡並付〕講了),
+/* 框 ③(planpay;A 案之後只剩合計跟鈕上不同、或沒帶 direct 的路徑才出)／框 ②(cardplan)同一個形狀(spec §4):兩列金額＋一句。框 ② 那句前面接「今天從哪扣」;框 ③ 不寫來源(鈕〔綁卡並付〕講了),
    最後固定加自動儲值那句(設計稽核 web-one-step #1:凡綁卡的框都有,不計入三行)。付費策略標題同購買框,免費的是「開通 Blave Agent 方案」 */
 function libPlanBox(s, q, opener) {
   const pay = q.kind === "planpay", paid = q.price > 0, tu = libBbTopup(typeof pub !== "undefined" && pub ? pub.trial : null);
@@ -1503,7 +1569,7 @@ async function libCardGo(s, q) {
   delClose(false);
   LIB.buying = null;
   const o = libCardOut(r ? r.status : 0, r ? r.body : null), free = q.price === 0, focus = () => { const m = libCtaMain(); if (m && libFocusFree()) m.focus(); };
-  if (o.kind === "ok") { libCpTrack(free ? "ok_free" : "ok_paid"); if (!free) s.purchased = true; LIB.planBlock = null; libAfterPay(s.id, true); return; }
+  if (o.kind === "ok") { libCpTrack(free ? "ok_free" : "ok_paid"); if (!free) s.purchased = true; LIB.planBlock = null; libAfterPay(s.id, true); libAutoInstall(s); return; }
   // 方案成、策略沒成:主鈕回〔購買並使用〕(這時已有方案,就是一般購買)
   if (o.kind === "part") { libCpTrack("part"); LIB.bbRes.set(s.id, { kind: "lines", list: libCardLines(o) }); libAfterPay(s.id, false); return; }
   if (o.kind === "declined") { libCpTrack("failed"); LIB.bbRes.set(s.id, { kind: "failed" }); libSync(); focus(); return; }

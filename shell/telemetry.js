@@ -64,10 +64,11 @@ const EVENTS = {
   lib_bindbuy: { step: ["start", "ok", "wallet", "failed"] },
   // 策略庫一步開通(0.1.50;spec library-free-data-one-step §8,renderer 送;api desktop_telemetry 同一份,網頁 GA4 同名同值):
   // lib_bindplan = 沒卡沒試用的付款頁(框 ③;free／paid = 免費或付費策略,part = 方案成、策略沒成,wallet = 方案沒成、錢在錢包);
-  // lib_cardplan = 有卡或錢包夠的框 ② 按 OK 之後的結果;lib_login_go = 訪客鈕登入後實際接到哪一步(cta = 回到主鈕、沒自動做)
+  // lib_cardplan = 有卡或錢包夠的框 ② 按 OK 之後的結果;lib_login_go = 訪客鈕登入後實際接到哪一步(cta = 回到主鈕、沒自動做;
+  // pay = 開網站綁卡頁;pay_direct = 訪客 C 不出框直接開藍新付款頁)
   lib_bindplan: { step: ["start_free", "start_paid", "ok_free", "ok_paid", "part", "wallet", "failed"] },
   lib_cardplan: { step: ["ok_free", "ok_paid", "part", "failed"] },
-  lib_login_go: { next: ["install", "pay", "box", "cta"] },
+  lib_login_go: { next: ["install", "pay", "pay_direct", "box", "cta"] },
   // 0.1.15 偵測失敗(renderer 送,只在連結畫面偵測完時):本機那個 CLI 為什麼不能用。值由主行程 detectWhy 判,語意見 canon 登記表
   detect_fail: { why: ["claude_none", "claude_timeout", "claude_nonzero", "claude_badjson", "codex_none", "codex_shim", "codex_timeout", "codex_nonzero"] },
   // 本機策略的三步(0.1.18;主行程送,strategySteps):新建、第一次有回測、第一次配了錢(同雲端的 deployed;按下啟動下單另有 trade_started)。

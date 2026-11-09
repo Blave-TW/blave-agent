@@ -5602,9 +5602,6 @@ msgstr "Then every 30 days"
 msgid "lib.bb.trialNote"
 msgstr "This one needs a plan to run. Cancel during the trial and you pay nothing."
 
-msgid "lib.bb.noAuto"
-msgstr "Buying it won't place any orders."
-
 msgid "lib.bb.plain"
 msgstr "Your card is charged {p} today for this strategy."
 
@@ -5701,6 +5698,15 @@ msgstr "Sign In & Install"
 
 msgid "lib.bb.loginUseNote"
 msgstr "New accounts can try it free for {t} days, then {p} every 30 days"
+
+msgid "lib.bb.renewNote"
+msgstr "Then {p} every 30 days. Cancel anytime."
+
+msgid "lib.bb.trialRenewNote"
+msgstr "{t}-day plan trial, then {p} every 30 days. Cancel anytime."
+
+msgid "lib.bb.cancelNote"
+msgstr "Cancel anytime."
 
 msgid "lib.bb.planB"
 msgstr "Start Plan · {p} / 30 Days"
@@ -5804,9 +5810,6 @@ msgstr "The agent downloads it into strategies/ and runs a backtest on fresh dat
 
 msgid "lib.cf.l1Local"
 msgstr "It downloads to strategies/ on this computer. The agent checks the code and backtests on fresh data; results show in the sidebar."
-
-msgid "lib.cf.l2"
-msgstr "No orders are placed — whether to run it is your call."
 
 msgid "lib.cf.cloudNote"
 msgstr "This goes to the agent on your cloud machine; this computer isn't affected."

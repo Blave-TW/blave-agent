@@ -54,10 +54,9 @@ ok("① 自動儲值那句:數字讀 public_tiers 的 trial(同網頁)、兩個�
   && /\(q\.kind === "trial" \|\| q\.kind === "plain"\) && !tu\) \{ libBuyBox\(s, "noCard", opener, \{\}\); return;/.test(cutFn(src, "libBindBuyBox"))
   && cutFn(src, "libBindBuyBox").indexOf("lib.bb.topup") > cutFn(src, "libBindBuyBox").indexOf("lib.bb.renew"));
 { const cta = cutFn(src, "libPaintCta");
-  ok("① 「買了不會自動下單。」不在綁卡框與購買確認框,改放付費未購主鈕下一行小字(canon copy #4 例外);鈕下一個槽:結果句 > 等待付款句 > 這行",
-    !/lib\.bb\.noAuto/.test(cutFn(src, "libBindBuyBox")) && !/不會自動下單/.test(STR.zh["lib.buy.lead"]) && !/No orders/.test(STR.en["lib.buy.lead"])
-    && /if \(bbl\.length\) note\.textContent = "";\n\s*else if \(\(c\.state === "paid" \|\| \(c\.paid && \(c\.state === "planBuy" \|\| c\.state === "signedOut"\)\)\) && !note\.textContent[^\n]*note\.textContent = t\("lib\.bb\.noAuto"\);/.test(cta)
-    && cta.indexOf('note.textContent = t("lib.bb.noAuto")') < cta.indexOf("note.hidden = !note.textContent;") && STR.zh["lib.bb.noAuto"] === "買了不會自動下單。"); }
+  ok("① 「買了不會自動下單。」鈕下、框裡都拿掉(Wei 11-09):字串連鍵刪掉、library.js 不再引用;購買框導語也不講;有結果句時只出結果句(續扣那一行收起來,實畫見 ⑥)",
+    !("lib.bb.noAuto" in STR.zh) && !("lib.bb.noAuto" in STR.en) && !/lib\.bb\.noAuto|不會自動下單/.test(src) && !/不會自動下單/.test(STR.zh["lib.buy.lead"]) && !/No orders/.test(STR.en["lib.buy.lead"])
+    && /if \(bbl\.length\) note\.textContent = "";\n\s*else under\.forEach\(\(p\) => box\.appendChild\(p\)\);/.test(cta)); }
 
 // ── ② 結果 ──
 const res = (o) => Object.assign({ status: "wallet", strategy_id: 7, amount_twd: 1600, reason: null, reason_code: null, trial_until: null }, o);
@@ -107,8 +106,9 @@ ok("④ 表單:正式／測試兩個藍新網域才收,http、別的網域、帶
 ok("④ 結果:形狀不對整筆 null;failed 的中文句被丟、代號留著;金額 ≤0 當沒有", M.libBindResultOut({ bind_purchase: { status: "nope", strategy_id: 7 } }) === null && M.libBindResultOut({}) === null
   && J(M.libBindResultOut({ bind_purchase: { status: "failed", strategy_id: 7, reason: "卡片被拒", reason_code: "card_declined", amount_twd: 0, order_no: "TCC_1_x_S7" } })) === '{"status":"failed","strategy_id":7,"amount_twd":null,"reason":null,"reason_code":"card_declined","trial_until":null}');
 ok("④ /purchase 的回應多留 amount_twd / reason / reason_code", J(M.libPurchaseBody({ error: "already purchased", amount_twd: 1500.0, reason: "already_purchased" })).includes('"amount_twd":1500,"reason":"already_purchased","reason_code":null'));
-ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並作廢帳號與清單快取", /\n  handle\("library-bind-buy", \(_e, id, opts\) => libraryBindBuy\(id, opts\), \{ status: 0, body: null \}\);/.test(mainSrc)
-  && /res\.strategy_id === mark\.id && res\.status !== "pending"\) \{ libBbMarkSet\(null\); lastAcct = null; libCache = null; \}/.test(cutFn(mainSrc, "libraryBindResult")));
+ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並作廢帳號、清單與餘額快取(付完自動安裝要扣後的餘額);框 ② 回來也作廢餘額", /\n  handle\("library-bind-buy", \(_e, id, opts\) => libraryBindBuy\(id, opts\), \{ status: 0, body: null \}\);/.test(mainSrc)
+  && /res\.strategy_id === mark\.id && res\.status !== "pending"\) \{ libBbMarkSet\(null\); lastAcct = null; libCache = null; if \(_balance\) _balance\.reset\(\); \}/.test(cutFn(mainSrc, "libraryBindResult"))
+  && /lastAcct = null; libCache = null;[^\n]*\n\s*if \(_balance\) _balance\.reset\(\);/.test(cutFn(mainSrc, "libraryCardCheckout")));
 
 // ── ⑥ 一步開通(spec library-free-data-one-step;0.1.50)──
 { const qb = (o) => Object.assign({ strategy_id: 7, price_twd: 600, plan_required: true, plan_blocked: null, has_card: false, card_last4: null, balance: 0, trial_eligible: false,
@@ -180,7 +180,7 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
     && ln({ price: 0 }, { dataAccess: "included", why: null, installedName: "x" }) === "cta" && ln({ price: 0 }, { why: "no_card", dataAccess: "plan_required" }, false) === "cta");
   // 稽核 S-2:付費要資料、沒卡有試用,錢包夠策略價或讀不到(libCta 是 noData)→ 報價出框 1,不開綁卡頁(spec §2.3;web c5de94c65 付費策略也從不開綁卡頁)
   ok("⑥ 登入後:付費 × 沒卡有試用,錢包 0／夠／讀不到 → 一律 box(不是 pay)", [0, 600, 3000, null].every((bal) => ln({}, { why: "no_card", dataAccess: "plan_required", noCard: true, bal }) === "box")
-    && /else if \(next === "box"\) \{ if \(c\.short \|\| c\.state === "noData"\) libBindBuy\(s, m\); else libBuyBox\(s, "confirm", m, \{\}\); \}/.test(cutFn(src, "libLoginGo")));
+    && /else if \(next === "box"\) \{ if \(c\.short \|\| c\.state === "noData"\) libBindBuy\(s, m, dir \? \{ direct: dir \} : undefined\); else libBuyBox\(s, "confirm", m, \{\}\); \}/.test(cutFn(src, "libLoginGo")));
   ok("⑥ 訪客主鈕字:付費 → 登入並購買;不用資料 → 登入並安裝;要資料或未標 → 登入並使用", P.libSignedOutKey(S({}), true) === "lib.bb.loginBuy" && P.libSignedOutKey(S({ blave_data: "none", price: 0 }), false) === "lib.bb.loginInstall"
     && P.libSignedOutKey(S({ blave_data: null, price: 0 }), false) === "lib.bb.loginUse");
   ok("⑥ 字面:鈕 ≤ 原型(開通 每 30 天 N／開通並購買 N／綁卡並付 N／付 N)、框三行(兩列＋一句)", STR.zh["lib.bb.planB"] === "開通 每 30 天 {p}" && STR.zh["lib.bb.planD"] === "開通並購買 {p}"
@@ -196,14 +196,14 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
     /LIB\.planBlock = null;/.test(cutFn(src, "libOpen")) && /function libRefresh\(\) \{ LIB\.planBlock = null;/.test(src));
   { const si = cutFn(src, "libSignIn"), fn = cutFn(src, "libCtaFocusNow"), lg = cutFn(src, "libLoginGo");
     ok("⑥ 登入續走接線:只有訪客主鈕(帶 label)才續走;清單收尾給焦點後接一次、只一次;帳號狀態沒讀到先重拉;照 libLoginNext 分流並送 lib_login_go",
-      /LIB\.loginGo = go \? id : null;/.test(si) && /b\.addEventListener\("click", \(\) => libSignIn\(b, !!label\)\);/.test(cutFn(src, "libSignInBtn"))
-      && /LIB\.ctaFocus = null; LIB\.loginGo = null;/.test(fn) && /if \(go\) libLoginGo\(id\);/.test(fn) && fn.indexOf("if (go) libLoginGo(id);") > fn.indexOf("libBag().detail !== id) return;")
+      /LIB\.loginGo = go \? id : null; LIB\.loginDirect = go && direct \? direct : null;/.test(si) && /b\.addEventListener\("click", \(\) => libSignIn\(b, !!label, direct\)\);/.test(cutFn(src, "libSignInBtn"))
+      && /LIB\.ctaFocus = null; LIB\.loginGo = null; LIB\.loginDirect = null;/.test(fn) && /if \(go\) libLoginGo\(id, direct\);/.test(fn) && fn.indexOf("if (go) libLoginGo(id, direct);") > fn.indexOf("libBag().detail !== id) return;")
       && /LIB\.data\.dataAccess === null \|\| LIB\.data\.why === "unknown"\) \{ try \{ await libLoad\(true\);/.test(lg) && /next = libLoginNext\(c, libPlanMo\(\)\)/.test(lg)
-      && /trackEvent\("lib_login_go", \{ next \}\)/.test(lg) && /if \(next === "install"\) libSend\(s\);/.test(lg) && !/libAsk\(/.test(lg));
+      && /trackEvent\("lib_login_go", \{ next: dir \? "pay_direct" : next \}\)/.test(lg) && /if \(next === "install"\) libSend\(s\);/.test(lg) && !/libAsk\(/.test(lg));
     /* 稽核 T1:登入回來的自動接續絕不自動扣款(Wei 紅線)。libLoginGo 裡每一個呼叫都要在白名單上:讀狀態的、代下載免費／已擁有的 libSend、
        出框的三支(libPlanBuy / libBindBuy 先報價再出框、libBuyBox 只准 "confirm")、開網站綁卡頁的 bindGo("bind_lib")(用戶自己在那頁輸卡,規格 §2.3 允許的那條)、埋點。
        扣款的 libPurchase / libCardGo / libBindBuyGo / libraryPurchase / libraryCardCheckout / libraryBindBuy 一個都不准出現 */
-    const ALLOWED = ["libEnv", "libBalLoad", "libLoad", "libFind", "libBag", "libCtaOf", "libLoginNext", "libPlanMo", "libCtaMain", "libSend", "libPlanBuy", "libBindBuy", "libBuyBox", "bindGo", "window.blave.trackEvent", "$"];
+    const ALLOWED = ["libEnv", "libBalLoad", "libLoad", "libFind", "libBag", "libCtaOf", "libLoginNext", "libPlanMo", "libNeeds", "libCtaMain", "libSend", "libPlanBuy", "libBindBuy", "libBuyBox", "bindGo", "window.blave.trackEvent", "$"];
     const body = lg.slice(lg.indexOf("{") + 1), calls = [...body.matchAll(/(?<![\w.])((?:window\.blave\.)?[A-Za-z_$][\w$]*)\(/g)].map((m) => m[1]).filter((n) => !["if", "return", "await", "async", "function", "catch", "try"].includes(n));
     const stray = calls.filter((n) => !ALLOWED.includes(n));
     ok("⑥ 稽核 T1:登入接續(libLoginGo)只呼叫白名單上的函式,沒有任何扣款呼叫;libBuyBox 只開確認框;綁卡頁只走 bindGo(\"bind_lib\")",
@@ -215,6 +215,157 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
     /if \(pay && !tu\) \{[^\n]*planOpen\(\); return; \}/.test(box) && /if \(pay\) extra\.appendChild\(libEl\("p", "", t\("lib\.bb\.topup", tu\)\)\);/.test(box)
     && /onOk: pay \? \(\) => libBindBuyGo\(s, q, LIB\.bbRestart\.has\(s\.id\)\) : \(\) => libCardGo\(s, q\)/.test(box)
     && /acceptPlan: true, confirmTotal: q\.total/.test(cutFn(src, "libBindBuyGo")));
+  ok("⑥ 鈕下短句字面(mockup-23-like-others):續扣／試用後續扣／只講可取消,zh 照拍板、en 都有;詳情頁的自動儲值短句已刪;框裡的長版 lib.bb.topup 不動(配 web bc_risk_note)",
+    STR.zh["lib.bb.renewNote"] === "之後每 30 天 {p}，可隨時取消。" && STR.zh["lib.bb.trialRenewNote"] === "試用 {t} 天後每 30 天 {p}，可隨時取消。" && STR.zh["lib.bb.cancelNote"] === "可隨時取消。"
+    && ["renewNote", "trialRenewNote", "cancelNote"].every((k) => typeof STR.en["lib.bb." + k] === "string" && STR.en["lib.bb." + k].length > 0)
+    && !("lib.bb.topupShort" in STR.zh) && !("lib.bb.topupShort" in STR.en) && !/libTopupShort|lib\.bb\.topupShort/.test(src)
+    && STR.zh["lib.bb.topup"] === "綁卡後自動儲值是開著的：餘額低於 {lo} TWD 會自動儲值 {a} TWD，可隨時關閉。");
+  /* 詳情主鈕實畫(假 DOM):鈕字、鈕與訊息槽之間的每一行(含 noAuto 槽)、按下去走哪支、帶什麼。鈕下最多一行;續扣那幾種不放「買了不會自動下單」、也不放自動儲值;
+     付款頁回來(bound)才講自動儲值(設定頁同一句 plan.topupShort) */
+  var paintRun = (o) => {
+    class E { constructor(tag, cls, text) { this.tag = tag; this.className = cls || ""; this.kids = []; this._t = text == null ? "" : String(text); this.hidden = false; this.id = ""; this.on = {};
+        this.classList = { add: (c) => { this.className += " " + c; } }; }
+      get textContent() { return this._t + this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }
+      set textContent(v) { this._t = String(v); this.kids = []; }
+      get childNodes() { return this.kids; }
+      appendChild(c) { this.kids.push(c); return c; } append(...cs) { cs.forEach((c) => this.kids.push(c)); }
+      setAttribute() {} addEventListener(e, f) { this.on[e] = f; } contains() { return false; } querySelector() { return null; } focus() {} }
+    const K = { calls: [], STR, E, O: o, LANG: o.lang || "zh" };
+    vm.createContext(K);
+    vm.runInContext(src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var ") + `
+      var LIB_PLAN_BLOCKS = [], LIB_GATE_STATES = ["noData"], document = { activeElement: null, createElement: (tag) => new E(tag) };
+      var t = (k, v) => String(STR[LANG][k] === undefined ? "?" + k : STR[LANG][k]).replace(/\\{(\\w+)\\}/g, (m, n) => (v && v[n] != null ? v[n] : m));
+      var box = new E("div"), $ = (id) => (id === "lib-cta" ? box : null), pub = O.pub === undefined ? { trial: { auto_topup_min: 50, auto_topup_amount: 300 } } : O.pub;
+      var LIB = { dlFail: null, bbRes: new Map(O.bb ? [[7, O.bb]] : []) }, libPlanMo = () => true, planVars = () => ({ t: 14, pr: 1440 });
+      var libCtx = () => O.ctx, libCtaOf = (s) => libCta(s, O.ctx), libLoginUseVars = () => null, libGateBtn = () => new E("button", "btn-fill", "gate");
+      var libSignInBtn = (k, c, label, direct) => { const b = new E("button", "btn-fill", label); b.on.click = () => calls.push("signin:" + direct); return b; };
+      var libPlanBuy = (s, b, x) => calls.push("plan:" + J(x)), libBindBuy = (s, b, x) => calls.push("bind:" + J(x)), libBuyBox = (s, st) => calls.push("buybox:" + st), libAsk = () => calls.push("ask");
+      var J = (x) => (x === undefined ? "-" : JSON.stringify(x));
+      ${/const libFx = [^\n]*/.exec(src)[0].replace(/^const/, "var")}
+      ${/const libPriceText = [^\n]*/.exec(src)[0].replace(/^const/, "var")}
+      ${cutFn(src, "libEl")}
+      ${cutFn(src, "libTwd")}
+      ${cutFn(src, "libBbText")}
+      ${cutFn(src, "libTrialTerms")}
+      ${cutFn(src, "libDlKey")}
+      ${cutFn(src, "libPaintCta")}`, K);
+    K.libPaintCta(Object.assign({ id: 7, title: "x", price: 600, purchased: false, is_owner: false, blave_data: "required" }, o.s));
+    const kids = K.box.kids, row = kids.find((k) => k.className === "row"), b = row ? row.kids[0] : null;
+    if (b && b.on.click) b.on.click(b);
+    // 鈕下:row 之後、結果框(.err)之前的 p(隱藏的訊息槽不算);付款頁回來那一句另列
+    const lines = kids.filter((k) => k !== row && k.tag === "p" && !k.hidden && k.id !== "lib-cta-topup" && !/err/.test(k.className)).map((k) => k.textContent);
+    const top = kids.filter((k) => k.id === "lib-cta-topup").map((k) => k.textContent);
+    return { btn: b ? b.textContent : null, lines, top, click: K.calls.join(), errs: kids.filter((k) => /err/.test(k.className)).length };
+  };
+  { const base = { running: false, env: "local", signedIn: true, cloud: null, pending: null, noNew: null, buying: null, installedName: null, bindWait: null, bbOk: null, planMo: true, planTwd: 1440, planBlock: null };
+    const plan = (o) => Object.assign({}, base, { dataAccess: "plan_required", why: "no_plan", noCard: true, bal: 0 }, o);
+    const trial = (o) => Object.assign({}, base, { dataAccess: "plan_required", why: "no_card", noCard: true, bal: 0 }, o);
+    const has = (o) => Object.assign({}, base, { dataAccess: "included", why: null, noCard: true, bal: 0 }, o);
+    const r = {
+      D: paintRun({ ctx: plan({}) }), B: paintRun({ s: { price: 0 }, ctx: plan({}) }), Dcard: paintRun({ ctx: plan({ noCard: false }) }),
+      Dtrial: paintRun({ ctx: trial({}) }), C: paintRun({ s: { blave_data: "none" }, ctx: has({}) }), Ccard: paintRun({ s: { blave_data: "none" }, ctx: has({ noCard: false }) }),
+      Cen: paintRun({ lang: "en", s: { blave_data: "none" }, ctx: has({}) }), guestC: paintRun({ s: { blave_data: "none" }, ctx: Object.assign({}, base, { signedIn: false, dataAccess: null, why: null, noCard: null, bal: null }) }),
+      guestCen: paintRun({ lang: "en", s: { blave_data: "none" }, ctx: Object.assign({}, base, { signedIn: false, dataAccess: null, why: null, noCard: null, bal: null }) }),
+      paidBound: paintRun({ s: { blave_data: "none", purchased: true }, ctx: has({}), bb: { kind: "ok", bound: true } }),
+      paidBoundNoPub: paintRun({ s: { blave_data: "none", purchased: true }, ctx: has({}), bb: { kind: "ok", bound: true }, pub: null }),
+      paidNotBound: paintRun({ s: { blave_data: "none", purchased: true }, ctx: has({}), bb: { kind: "ok" } }),
+      Dfailed: paintRun({ ctx: plan({}), bb: { kind: "failed" } }), DtrialFailed: paintRun({ ctx: trial({}), bb: { kind: "failed" } }) };
+    const want = {
+      D: { btn: "開通並購買 2,040 TWD", lines: ["之後每 30 天 1,440 TWD，可隨時取消。"], top: [], click: 'plan:{"direct":2040}' },
+      B: { btn: "開通 每 30 天 1,440 TWD", lines: ["可隨時取消。"], top: [], click: 'plan:{"direct":1440}' },
+      Dcard: { btn: "開通並購買 2,040 TWD", lines: ["之後每 30 天 1,440 TWD，可隨時取消。"], top: [], click: "plan:-" },
+      Dtrial: { btn: "購買並使用 600 TWD", lines: ["試用 14 天後每 30 天 1,440 TWD，可隨時取消。"], top: [], click: 'bind:{"direct":600,"trial":{"t":14,"p":1440}}' },
+      C: { btn: "購買並使用 600 TWD", lines: [], top: [], click: 'bind:{"direct":600}' },
+      Ccard: { btn: "購買並使用 600 TWD", lines: [], top: [], click: "buybox:confirm" },
+      Cen: { btn: "Buy & Use · 20 USD", lines: [], top: [], click: "bind:-" },
+      guestC: { btn: "登入並購買 600 TWD", lines: [], top: [], click: "signin:600" },
+      // 換算幣(en)訪客 C 不帶 direct:登入後照舊出框(同網頁、同已登入那條)
+      guestCen: { btn: "Sign In & Buy · 600 TWD", lines: [], top: [], click: "signin:undefined" },
+      paidBound: { btn: "安裝並回測", lines: [], top: ["低於 50 TWD 時從卡自動儲值 300 TWD。可在網頁關閉。"], click: "ask" },
+      paidBoundNoPub: { btn: "安裝並回測", lines: [], top: [], click: "ask" }, paidNotBound: { btn: "安裝並回測", lines: [], top: [], click: "ask" },
+      // 刷卡失敗:只出結果句(同網頁),續扣那一行收起來
+      Dfailed: { btn: "開通並購買 2,040 TWD", lines: [], top: [], click: 'plan:{"direct":2040}', errs: 1 },
+      DtrialFailed: { btn: "購買並使用 600 TWD", lines: [], top: [], click: 'bind:{"direct":600,"trial":{"t":14,"p":1440}}', errs: 1 } };
+    const bad = Object.keys(want).filter((k) => J({ btn: r[k].btn, lines: r[k].lines, top: r[k].top }) !== J({ btn: want[k].btn, lines: want[k].lines, top: want[k].top }) || (want[k].click && r[k].click !== want[k].click)
+      || (want[k].errs !== undefined && r[k].errs !== want[k].errs));
+    ok("⑥ 詳情主鈕實畫:D／B／有卡 D 鈕下一行續扣、有試用的 D 一行試用後續扣(不放自動儲值);C、訪客 C、en 鈕下空白;刷卡失敗只出結果句;直接付款只在沒卡錢包不夠、鈕上是 TWD;付款頁回來綁了卡才講自動儲值",
+      bad.length === 0 && Object.values(r).every((x) => x.lines.length <= 1), bad.map((k) => k + "=" + J(r[k])).join(" ; ")); }
+  var planBuyRun = async () => {
+    const run = async (direct, body) => {
+      const K = { calls: [], LIB: { buying: null, pending: new Map(), bbRes: new Map(), bbRestart: new Set() }, pub: null };
+      vm.createContext(K);
+      vm.runInContext(src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var ") + `
+        var LIB_PLAN_BLOCKS = ${J(["HAS_SERVER", "PLAN_CHARGE_UNCONFIRMED", "PLAN_NOT_ACTIVE"])}, $ = () => null, libSync = () => {}, libCtaMain = () => null;
+        var window = { blave: { libraryCheckoutQuote: async () => ({ status: 200, body: ${J(body)} }) } };
+        var libBindBuyGo = (s, q) => calls.push("go:" + q.total), libPlanNext = (s, q) => calls.push("box:" + q.kind);
+        async ` + cutFn(src, "libPlanBuy"), K);
+      await K.libPlanBuy({ id: 7 }, null, direct ? { direct } : undefined);
+      return K.calls.join();
+    };
+    const pay = { strategy_id: 7, price_twd: 600, plan_required: true, plan_blocked: null, has_card: false, balance: 0, trial_eligible: false, plan_twd: 1440, total_twd: 2040, plan_renews_on: "2026-12-08", plan_source: "none", price_source: "none" };
+    const card = Object.assign({}, pay, { has_card: true, card_last4: "4242", plan_source: "card", price_source: "card" });
+    const r = [await run(2040, pay), await run(null, pay), await run(1440, pay), await run(2040, card)];
+    ok("⑥ A 案:鈕下講過自動儲值且報價合計等於鈕上 → 直接開付款頁、不出框;沒帶 direct(登入接續等)、合計不同 → 框 ③;有卡 → 框 ②",
+      J(r) === J(["go:2040", "box:planpay", "box:planpay", "box:cardplan"]), J(r)); };
+  ok("⑥ 付款頁回來的結果才標 bound(ok／wallet;刷卡失敗沒有卡)", /if \(out\.kind === "ok" \|\| out\.kind === "wallet"\) out\.bound = true;/.test(cutFn(src, "libBbDone")));
+  // 已登入、要資料、有試用資格沒卡(Wei 11-09 推翻「有續扣就出框」):鈕下講了試用天數與每 30 天價,報價開試用且三個數字都相同才不出框 1
+  var trialRun = async () => {
+    const run = async (o, quote, pv, why) => {
+      const K = { calls: [], LIB: { buying: null, bbRestart: new Set() } };
+      vm.createContext(K);
+      vm.runInContext(src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var ") + `
+        var LANG = "zh", libSync = () => {}, libCtaMain = () => null, libPlanMo = () => true, planVars = () => (${J(pv || { t: 14, pr: 1440 })});
+        var window = { blave: { libraryBindBuy: async () => ({ status: 409, body: ${J(quote)} }) } };
+        var libBindBuyGo = (s, q) => calls.push("go:" + q.kind), libBindBuyBox = (s, q) => calls.push("box:" + q.kind);
+        async ` + cutFn(src, "libBindBuy") + "\n" + cutFn(src, "libTrialTerms"), K);
+      if (o === "terms") return J(K.libTrialTerms({ why }));
+      await K.libBindBuy({ id: 7 }, null, o);
+      return K.calls.join();
+    };
+    const tq = (x) => Object.assign({ error_code: "PRICE_CONFIRM_REQUIRED", price_twd: 600, trial: true, trial_days: 14, plan_monthly_twd: 1440 }, x), tr = { t: 14, p: 1440 };
+    const r = {
+      ok: await run({ direct: 600, trial: tr }, tq({})), days: await run({ direct: 600, trial: tr }, tq({ trial_days: 7 })), plan: await run({ direct: 600, trial: tr }, tq({ plan_monthly_twd: 1600 })),
+      price: await run({ direct: 600, trial: tr }, tq({ price_twd: 700 })), due: await run({ direct: 600, trial: tr }, tq({ plan_due_twd: 1440 })), noTrialO: await run({ direct: 600 }, tq({})),
+      plainQ: await run({ direct: 600, trial: tr }, tq({ trial: false })), noO: await run(undefined, tq({})),
+      terms: await run("terms", null, null, "no_card"), termsNoPlan: await run("terms", null, null, "no_plan"), termsBad: await run("terms", null, { t: "", pr: 1440 }, "no_card") };
+    const want = { ok: "go:trial", days: "box:trial", plan: "box:trial", price: "box:trial", due: "box:trial", noTrialO: "box:trial", plainQ: "box:plain", noO: "box:trial",
+      terms: '{"t":14,"p":1440}', termsNoPlan: "null", termsBad: "null" };
+    ok("⑥ 有試用的 D:試用天數、每 30 天價、策略價都等於鈕下講的、沒欠費 → 直接開付款頁;任一不同、欠費、鈕下沒講試用、報價不開試用 → 照舊出框;試用條件只認方案制的 no_card、數字讀不到 null",
+      J(r) === J(want), J(r)); };
+  // 訪客登入接續(Wei 11-09;spec §2.3 第 90 行):金額對得上且不開始任何續扣才不出框。實跑 libLoginGo → libCta → libLoginNext → libBindBuy,報價與四個出口是替身
+  var loginGoRun = async () => {
+    const run = async (sv, cv, direct, quote) => {
+      const K = { calls: [], LIB: { buying: null, pending: new Map(), bbRes: new Map(), bbRestart: new Set(), data: { dataAccess: cv.dataAccess, why: cv.why } } };
+      vm.createContext(K);
+      vm.runInContext(src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var ") + `
+        var LIB_PLAN_BLOCKS = ${J(["HAS_SERVER", "PLAN_CHARGE_UNCONFIRMED", "PLAN_NOT_ACTIVE"])}, LANG = "zh", S0 = ${J(sv)}, C0 = ${J(cv)};
+        var $ = () => ({ hidden: false }), libEnv = () => "local", libBalLoad = async () => {}, libLoad = async () => {}, libFind = () => S0, libBag = () => ({ detail: S0.id });
+        var libCtaOf = (s) => libCta(s, C0), libPlanMo = () => C0.planMo === true, libCtaMain = () => null, libSync = () => {};
+        var window = { blave: { trackEvent: (e, p) => calls.push("ev:" + p.next), libraryBindBuy: async () => ({ status: 409, body: ${J(quote || {})} }) } };
+        var libBindBuyGo = (s, q) => calls.push("go:" + q.price), libBindBuyBox = (s, q) => calls.push("box:" + q.kind), libBuyBox = (s, st) => calls.push("buybox:" + st);
+        var libPlanBuy = (s, m, o) => calls.push("plan" + (o ? ":direct" : "")), libSend = () => calls.push("send"), bindGo = () => calls.push("bindGo");
+        async ` + cutFn(src, "libBindBuy") + "\nasync " + cutFn(src, "libLoginGo"), K);
+      await K.libLoginGo(sv.id, direct);
+      return K.calls.join();
+    };
+    const C_ = { id: 7, price: 600, purchased: false, is_owner: false, blave_data: "none" }, D_ = Object.assign({}, C_, { blave_data: "required" });
+    const ctx = (o) => Object.assign({ running: false, env: "local", signedIn: true, dataAccess: "plan_required", why: "no_plan", cloud: null, pending: null, noNew: null, buying: null,
+      installedName: null, bindWait: null, bbOk: null, noCard: true, bal: 0, planMo: true, planTwd: 1440, planBlock: null }, o);
+    const plain = { error_code: "PRICE_CONFIRM_REQUIRED", price_twd: 600, trial: false };
+    const r = {
+      c: await run(C_, ctx({}), 600, plain),
+      cNoDirect: await run(C_, ctx({}), null, plain),
+      cRenew: await run(C_, ctx({}), 600, Object.assign({ plan_renews_card: true }, plain)),
+      cDue: await run(C_, ctx({}), 600, Object.assign({ plan_due_twd: 1440 }, plain)),
+      cRepriced: await run(C_, ctx({}), 600, Object.assign({}, plain, { price_twd: 700 })),
+      cCard: await run(C_, ctx({ noCard: false }), 600, plain),
+      cWallet: await run(C_, ctx({ bal: 5000 }), 600, plain),
+      d: await run(D_, ctx({}), 600, plain),
+      dTrial: await run(D_, ctx({ why: "no_card", dataAccess: "plan_required" }), 600, Object.assign({}, plain, { trial: true, trial_days: 14 })) };
+    const want = { c: "ev:pay_direct,go:600", cNoDirect: "ev:box,box:plain", cRenew: "ev:pay_direct,box:plain", cDue: "ev:pay_direct,box:plain", cRepriced: "ev:pay_direct,box:plain",
+      cCard: "ev:box,buybox:confirm", cWallet: "ev:box,buybox:confirm", d: "ev:box,plan", dTrial: "ev:box,box:trial" };
+    ok("⑥ 訪客接續:C 沒卡錢包不夠、金額相同、沒續扣 → 直接開付款頁;沒講過揭露、有方案續期、有欠費、改價 → 框 2;有卡或錢包夠 → 購買確認框;D → 框(不帶 direct);要資料的試用 → 框 1",
+      J(r) === J(want), J(r)); };
   const go = cutFn(src, "libCardGo");
   ok("⑥ 框 ② 送出帶框上的合計與來源;扣款在路上框鎖住;重報價不自動重送", /libraryCardCheckout\(s\.id, \{ total: q\.total, planSrc: q\.planSrc, priceSrc: q\.price > 0 \? q\.priceSrc : null \}\)/.test(go)
     && /sc\.dataset\.lock = "1"/.test(go) && /if \(o\.kind === "requote"\) \{ libSync\(\); libPlanBuy\(/.test(go)); }
@@ -268,17 +419,21 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
 // ── ⑤ 輪詢(libBbPoll / libBbDone 切出來,四周全是替身;計時器只記下、手動推)──
 (async () => {
   await t3Main();
+  await planBuyRun();
+  await loginGoRun();
+  await trialRun();
   const mk = (replies, s) => {
-    const F = { replies, s, timers: [], events: [], acct: 0, refresh: 0, now: 1000, boughtOnLoad: false };
+    const F = { replies, s, timers: [], events: [], acct: 0, refresh: 0, now: 1000, boughtOnLoad: false, sent: [], env: "local", installed: false, cur: "claude", bal: null, pub: { trial: { auto_topup_min: 50 } } };
     vm.createContext(F);
     vm.runInContext(src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var ") + `
-      var LIB = { bbWait: null, bbRes: new Map(), bbTop: null, bbTimer: null, bbBusy: false, stale: false, data: null }, LIB_BB_POLL_MS = 5000, hasToken = true;
+      var LIB = { bbWait: null, bbRes: new Map(), bbTop: null, bbTimer: null, bbBusy: false, stale: false, data: null, pending: new Map() }, LIB_BB_POLL_MS = 5000, hasToken = true;
+      var libEnv = () => env, libInstalledOf = (x, e) => (e === "local" && installed ? "dir" : null), libSend = (x) => sent.push(x.id);
       var Date = { now: () => now }, setTimeout = (f, ms) => { timers.push(ms); return timers.length; }, clearTimeout = () => {};
       var libFind = (id) => (s && s.id === id ? s : null), libSync = () => {}, libRefresh = () => { refresh++; }, libLoad = async () => { refresh++; if (s && boughtOnLoad) s.purchased = true; }, libBalLoad = async () => {}, libCtaMain = () => null, libFocusFree = () => true, acctSet = () => { acct++; }, acctPaint = () => {};
-      var window = { blave: { libraryBindResult: async () => replies.shift(), trackEvent: (e, p) => events.push(e + ":" + p.step), accountStatus: async () => ({}) } };
+      var window = { blave: { libraryBindResult: async () => replies.shift(), trackEvent: (e, p) => events.push(e + ":" + p.step), accountStatus: async () => ({}), balance: async () => bal } };
       function libBbTrack(step) { window.blave.trackEvent("lib_bindbuy", { step }); }
       function libBpTrack(step) { if (step) window.blave.trackEvent("lib_bindplan", { step }); }
-      ` + cutFn(src, "libBbPollSoon") + "\nasync " + cutFn(src, "libBbPoll") + "\n" + cutFn(src, "libBbDone") + "\n" + cutFn(src, "libAfterPay"), F);
+      ` + cutFn(src, "libBbPollSoon") + "\nasync " + cutFn(src, "libBbPoll") + "\n" + cutFn(src, "libBbDone") + "\nasync " + cutFn(src, "libAutoInstall") + "\n" + cutFn(src, "libAfterPay"), F);
     return F;
   };
   const wait = (F, id, until) => { F.LIB.bbWait = { id, q: { price: 1600 }, until }; };
@@ -296,7 +451,58 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
   { const s = { id: 7, purchased: false }, F = mk([{ mark: { id: 7, at: 0 }, res: res({ status: "ok", amount_twd: 1600 }) }], s);
     wait(F, 7, 1e9); await F.libBbPoll();
     const during = F.LIB.bbOk; await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
-    ok("⑤ ok → 標已購買(不自動安裝)、送 lib_bindbuy:ok;重拉期間 bbOk 暫態,帳號與清單都回來才拿掉", s.purchased === true && F.events.join() === "lib_bindbuy:ok" && F.LIB.bbWait === null && F.LIB.bbTop === null && during === 7 && F.LIB.bbOk === null && F.refresh === 1); }
+    ok("⑤ ok → 標已購買、記綁了卡、送 lib_bindbuy:ok、自動安裝並回測一次(Wei 11-09);重拉期間 bbOk 暫態,帳號與清單都回來才拿掉", s.purchased === true && F.events.join() === "lib_bindbuy:ok" && F.LIB.bbWait === null && F.LIB.bbTop === null && during === 7 && F.LIB.bbOk === null && F.refresh === 1
+      && F.LIB.bbRes.get(7).bound === true && J(F.sent) === "[7]", J(F.sent)); }
+  { // 自動安裝只在 ok、本機視角、這支本機沒裝過、沒在裝時送;wallet／failed 不送、failed 也不算綁了卡
+    const once = async (o, reply) => { const s = { id: 7, purchased: false }, F = mk([{ mark: { id: 7, at: 0 }, res: res(reply || { status: "ok", amount_twd: 1600 }) }], s);
+      Object.assign(F, o); if (o.pendingSelf) F.LIB.pending.set(7, { id: 7 }); wait(F, 7, 1e9); await F.libBbPoll(); await new Promise((r) => setImmediate(r));
+      return { sent: F.sent.length, bound: F.LIB.bbRes.get(7).bound === true }; };
+    const r = { installed: await once({ installed: true }), cloud: await once({ env: "cloud" }), pending: await once({ pendingSelf: true }),
+      wallet: await once({}, { reason: "price_changed" }), failed: await once({}, { status: "failed", amount_twd: null }),
+      // Blave AI:錢包在門檻以上、試用額度＋離門檻的距離 ≥ 120 → 送;剛開試用但錢包 0(低於門檻)→ 不送;C／D 付完錢包歸零 → 不送;讀不到 → 不送
+      blaveTrial: await once({ cur: "blave", bal: { balance: 70, trial: 100, free: null } }), blaveTrialNoWallet: await once({ cur: "blave", bal: { balance: 0, trial: 100, free: null } }),
+      blaveEmpty: await once({ cur: "blave", bal: { balance: 0, trial: null, free: null } }), blaveNull: await once({ cur: "blave", bal: null }) };
+    ok("⑤ 自動安裝不送:已裝過、雲端視角、正在裝、錢進錢包、刷卡失敗、Blave AI 錢包低於門檻或額度不夠 3 倍估值、讀不到額度;failed 不記綁了卡、wallet 記",
+      J(r) === J({ installed: { sent: 0, bound: true }, cloud: { sent: 0, bound: true }, pending: { sent: 0, bound: true }, wallet: { sent: 0, bound: true }, failed: { sent: 0, bound: false },
+        blaveTrial: { sent: 1, bound: true }, blaveTrialNoWallet: { sent: 0, bound: true }, blaveEmpty: { sent: 0, bound: true }, blaveNull: { sent: 0, bound: true } }), J(r)); }
+  { // 框 ②(有卡或錢包夠)扣款成功也自動安裝並回測一次(Wei 11-09 A),條件同付款頁那條;方案成策略沒成、刷卡被拒、要重報價都不送。實跑 libCardGo,四周替身
+    const go = async (reply, o) => { const K = { sent: [], env: "local", installed: false, R: reply, cur: "claude", bal: null, acct: { auto_topup_min: 50 }, pub: null };
+      vm.createContext(K);
+      vm.runInContext(src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var ") + `
+        var LIB_PLAN_BLOCKS = [], LIB = { buying: null, bbRes: new Map(), pending: new Map(), planBlock: null }, t = (k) => k;
+        var el = () => ({ dataset: {}, disabled: false, setAttribute() {}, append() {} }), nodes = {}, $ = (id) => (nodes[id] = nodes[id] || el()), libEl = el;
+        var confirmBox = () => {}, delClose = () => {}, libSync = () => {}, libCtaMain = () => null, libFocusFree = () => true, libAfterPay = () => {}, libCpTrack = () => {};
+        var libBbNote = () => {}, libPlanBuy = () => {}, libPlanNext = () => {}, libBuyBox = () => {};
+        var libEnv = () => env, libInstalledOf = (x, e) => (e === "local" && installed ? "dir" : null), libSend = (x) => sent.push(x.id);
+        var window = { blave: { libraryCardCheckout: async () => R, balance: async () => bal } };
+        async ` + cutFn(src, "libAutoInstall") + "\nasync " + cutFn(src, "libCardGo"), K);
+      Object.assign(K, o || {}); if (o && o.pendingSelf) K.LIB.pending.set(7, { id: 7 });
+      await K.libCardGo({ id: 7, title: "x", purchased: false }, { kind: "cardplan", price: 600, plan: 1440, total: 2040, planSrc: "card", priceSrc: "card" });
+      await new Promise((r) => setImmediate(r));   // 自動安裝在讀餘額之後才送
+      return K.sent.length; };
+    const okR = { status: 200, body: { status: "ok" } };
+    const r = { ok: await go(okR), installed: await go(okR, { installed: true }), cloud: await go(okR, { env: "cloud" }), pending: await go(okR, { pendingSelf: true }),
+      part: await go({ status: 200, body: { status: "partial", purchase_reason: "insufficient", amount_twd: 600 } }), declined: await go({ status: 402, body: { error_code: "PLAN_CHARGE_FAILED" } }),
+      requote: await go({ status: 409, body: { error_code: "SOURCE_CHANGED" } }),
+      // Blave AI 引擎:錢包離門檻 50 的距離 ≥ 3 × 40 才送(170 剛好);差 1 就不送;讀不到餘額不送;自帶 API key 不送
+      blaveRich: await go(okR, { cur: "blave", bal: { balance: 170, trial: null, free: null } }), blaveShort: await go(okR, { cur: "blave", bal: { balance: 169, trial: null, free: null } }),
+      blaveNull: await go(okR, { cur: "blave", bal: null }), apikey: await go(okR, { cur: "apikey" }), noEngine: await go(okR, { cur: null }) };
+    ok("⑤ 框 ② 扣款成功自動安裝一次;已裝、雲端、正在裝、策略沒買成、刷卡被拒、要重報價都不送;Blave AI 只在跑完一回合不碰自動儲值時送,讀不到、自帶 API key、不知道引擎都不送",
+      J(r) === J({ ok: 1, installed: 0, cloud: 0, pending: 0, part: 0, declined: 0, requote: 0, blaveRich: 1, blaveShort: 0, blaveNull: 0, apikey: 0, noEngine: 0 }), J(r)); }
+  { const f = (e, b, thr) => P.libTurnFree(e, b, thr, 40);
+    const r = { claude: f("claude", null, null), codex: f("codex", null, null), apikey: f("apikey", { balance: 9999 }, 50), unknown: f(null, { balance: 9999 }, 50),
+      trialNoWallet: f("blave", { balance: 0, trial: 100, free: null }, 50), trial: f("blave", { balance: 50, trial: 120, free: null }, 50), trialShort: f("blave", { balance: 50, trial: 119, free: null }, 50),
+      mix: f("blave", { balance: 110, trial: 60, free: null }, 50), mixShort: f("blave", { balance: 109, trial: 60, free: null }, 50),
+      // 複稽 2 P1:額度夠一回合但錢包已低於門檻 → 估值超支的最後幾筆落到錢包就刷 300,不送
+      free: f("blave", { balance: 0, trial: null, free: 40 }, 50), w49c200: f("blave", { balance: 49, trial: 200, free: null }, 50),
+      wallet: f("blave", { balance: 170 }, 50), walletShort: f("blave", { balance: 169.9 }, 50),
+      noThr: f("blave", { balance: 9999 }, null), noBal: f("blave", null, 50), badBal: f("blave", { balance: "90" }, 50) };
+    ok("⑥ 一回合會不會多扣錢(估 40):自己的 Claude Code／Codex 不經 Blave → 安全;自帶 API key、不知道引擎 → 不安全;Blave AI 錢包低於自動儲值門檻一律不安全,門檻以上時額度＋(錢包−門檻)要 ≥ 3 倍估值;門檻或餘額讀不到 → 不安全",
+      J(r) === J({ claude: true, codex: true, apikey: false, unknown: false, trialNoWallet: false, trial: true, trialShort: false, mix: true, mixShort: false, free: false, w49c200: false,
+        wallet: true, walletShort: false, noThr: false, noBal: false, badBal: false }), J(r)); }
+  ok("⑤ 購買確認框(/purchase)扣款成功改走 libAutoInstall(雲端視角、會多扣錢就停在已購買;複稽 2 P2),不再無條件 libSend;主行程買完清餘額快取",
+    /if \(branch === "ok"\) \{ s\.purchased = true;[^\n]*libAutoInstall\(s\);/.test(cutFn(src, "libPurchase")) && !/libSend\(/.test(cutFn(src, "libPurchase"))
+    && /libCache = null;[^\n]*\n\s*if \(_balance\) _balance\.reset\(\);/.test(cutFn(mainSrc, "libraryPurchase")));
   { // D1:重開過付款頁、付的是舊頁 → 結果槽仍是新單的 pending;回前景重拉清單看到已購買就收尾
     const s = { id: 7, purchased: false }, F = mk([{ mark: { id: 7, at: 0 }, res: res({ status: "pending" }) }], s);
     F.boughtOnLoad = true; wait(F, 7, 1e9); F.LIB.bbWait.check = true; await F.libBbPoll();
