@@ -460,6 +460,27 @@ def mark_park_released(pid, filled):
         logging.warning(f'failed to mark park {pid} released: {e}')
 
 
+def mark_rows_released(pick):
+    """mark_park_released for rows with no park id: pick(row) → None (leave it) or its
+    `filled`. Best-effort."""
+    try:
+        path = 'manager/order_errors.json'
+        rows = _order_errors_for_update(path)
+        hit = [(r, f) for r in rows or [] if isinstance(r, dict) and not r.get('released')
+               for f in (pick(r),) if f is not None]
+        if not hit:
+            return
+        now = datetime.utcnow().isoformat()
+        for r, filled in hit:
+            r.update(released=True, released_at=now, filled=bool(filled))
+        tmp = f'{path}.{os.getpid()}.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(rows[-5:], f, indent=2)
+        atomic_replace(tmp, path)
+    except Exception as e:
+        logging.warning(f'failed to mark rows released: {e}')
+
+
 def _booked_park_ids(field='unconfirmed_park_id'):
     """Park ids already in orders.jsonl under `field` ('unconfirmed_park_id': lib/unconfirmed;
     'late_fill_park_id': the reconciler's hand-wired parks). An unreadable file raises."""

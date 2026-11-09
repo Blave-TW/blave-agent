@@ -612,7 +612,7 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
         if not parked:
             # nothing will claim this send: "booked by itself, no hand re-entry" would not hold
             msg = (f"群益收了 {symbol} {lots - got:g} 口（序號 {result.get('seq_no') or '?'}），還沒回報成交，"
-                   f"Blave 記不進待確認紀錄。{symbol} 新倉先停，平倉照常。到群益下單軟體核對這筆。")
+                   f"{CAPITAL_UNPARKED_WORDS}。{symbol} 新倉先停，平倉照常。到群益下單軟體核對這筆。")
         elif result.get('status') == 'sent' and reduce_only:
             # the close gate above holds the next close on this row until the claim settles it
             msg = (f"群益收了 {symbol} {lots} 口平倉（序號 {result.get('seq_no') or '?'}），還沒回報成交。"
@@ -629,6 +629,8 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
         extra = {'kind': KIND_NO_REPORT}
         if isinstance(park_id, str):
             extra['park_id'] = park_id  # the claim releases this row (lib.portfolio.mark_park_released)
+        elif not parked:
+            extra['unparked'] = True  # only the user can settle it (_capital_release_orphan_rows)
         _record_order_error(symbol, venue_traits.CAPITAL, msg, extra=extra)
     return {
         'avg_price':       result.get('avg_fill_price') or 0.0,
@@ -823,6 +825,7 @@ def _capital_claim_pending(started):
         _note_capital_pending_unreadable(None, e)
         return
     if not pending:
+        _capital_release_orphan_rows(set())
         return
     from lib import portfolio
     from lib.capital_vault import ORDER_SETTLE_S
@@ -902,6 +905,73 @@ def _capital_claim_pending(started):
             save()
     _save_claimed(pending, venue_traits.CAPITAL, end_of_round=True, path=CAPITAL_PENDING_PATH,
                   save=_save_capital_pending)
+    _capital_release_orphan_rows(set(pending))
+
+
+CAPITAL_UNPARKED_WORDS = 'Blave 記不進待確認紀錄'
+
+
+def _capital_release_orphan_rows(held):
+    """Only what the pages read: a malformed order_errors.json or orders.jsonl must not take
+    down the claim round, which reads the 群益 account before any order goes."""
+    try:
+        _capital_release_orphan_rows_once(held)
+    except Exception as e:
+        logging.warning(f"[reconciler/capital] old order_unconfirmed rows not released this round "
+                        f"({type(e).__name__}: {e})")
+
+
+def _capital_release_orphan_rows_once(held):
+    """order_unconfirmed rows written before they carried a park id (before VERSION
+    2026-11-07-b) have nothing that releases them, so the pages kept painting 結果不明 after
+    the claim settled the send. With no park left on their root, nothing about them is unknown.
+    Unparked sends stay (the old ones only by their words): only the user can settle those.
+    filled: a row naming its seq filled only if a 群益 late fill booked that seq (a cleared send
+    re-sent and filled would otherwise read as this one); a row naming none falls back to any
+    fill on the symbol since (mark_inflight_released's rule)."""
+    from lib import portfolio
+
+    def orphan(r):
+        return (isinstance(r, dict) and r.get('kind') == KIND_NO_REPORT and not r.get('released')
+                and r.get('exchange') == venue_traits.CAPITAL and not r.get('park_id')
+                and not r.get('inflight_id') and not r.get('close_all') and not r.get('unparked')
+                and CAPITAL_UNPARKED_WORDS not in str(r.get('error') or '')
+                and str(r.get('symbol') or '').upper() not in held)
+
+    try:
+        rows = portfolio.load_json('manager/order_errors.json')
+    except (OSError, ValueError):
+        return
+    if not isinstance(rows, list) or not any(orphan(r) for r in rows):
+        return
+    adopted = set()  # 群益 lines only: 統一's order numbers are digits too
+    try:
+        with open(portfolio._ORDERS_LOG_PATH) as f:
+            for ln in f:
+                if '"late_fill_ordernos"' in ln:
+                    try:
+                        e = json.loads(ln)
+                    except ValueError:
+                        continue
+                    if e.get('exchange') == venue_traits.CAPITAL:
+                        adopted.update(str(s) for s in e.get('late_fill_ordernos') or [])
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        logging.warning(f"[reconciler/capital] orders.jsonl unreadable ({e}) — old rows left as they are")
+        return
+
+    def ident(r):
+        return (str(r.get('ts')), str(r.get('symbol')), str(r.get('error')))
+
+    # worked out before the read-modify-write of order_errors.json, which has no lock: a row
+    # another process appends inside that window is lost
+    filled = {}
+    for r in rows:
+        if orphan(r):
+            m = re.search(r'序號 (\d+)', str(r.get('error') or ''))
+            filled[ident(r)] = m.group(1) in adopted if m else portfolio._filled_since(r.get('symbol'), r.get('ts'))
+    portfolio.mark_rows_released(lambda r: filled.get(ident(r)) if orphan(r) else None)
 
 
 # ── President (統一期貨) hand-wired path ─────────────────────────────────────
