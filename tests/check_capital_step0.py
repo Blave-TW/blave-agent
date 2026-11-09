@@ -1,6 +1,7 @@
 """capital-broker.md Step 0 on the desktop app splits two cases (Wei, 0.1.16 audit P1-1):
-connecting Capital on this computer goes to the app's own connect flow on a Windows PC (0.1.28,
-runtime/capital_local.py — the agent does none of it) and is refused on a Mac; a cloud-view
+connecting Capital on this computer goes to the app's own connect flow on a Windows PC (runtime/
+capital_local.py, listed from app 0.1.50 — the agent does none of it; an older build is told to update)
+and is refused on a Mac; a cloud-view
 handoff from the desktop's Capital setup box (shell/renderer/capital.js capHandoff, viewing env=cloud)
 is sent to the blave.org cloud workspace instead — never told to launch a machine it already has.
 Both stop before asking scope. AGENTS.md's Capital routing line points at the same split.
@@ -30,12 +31,12 @@ check("Either way stop here" in desk and "touch neither" in desk, "both cases st
 win_i, mac_i = local.find("**Windows PC**"), local.find("**Mac**")
 check(0 < win_i < mac_i, "this-computer case splits Windows PC, then Mac")
 win, mac = local[win_i:mac_i], local[mac_i:]
-check("app 的 自動下單 › 連接帳戶 選單裡有群益" in win and "Auto trading › Connect\n      Account in the app lists Capital" in win
-      and "the app connects it, not you" in win and "never ask for the ID or the\n  trading password" in desk,
-      "Windows PC: if the menu lists 群益, the app's connect flow (zh + en); the agent asks for no credentials")
-check("沒有的話是這一版還沒開放" in win and "在網頁開雲端主機時選 Windows" in win and "this\n      build has not opened it yet" in win
-      and "choose Windows" in win and "say both\n      ways in one reply" in win,
-      "Windows PC: one reply covers a build without it too — the Windows cloud machine as before (zh + en)")
+check("自動下單 › 連接帳戶，選群益，照畫面開通" in win and "Auto trading › Connect Account in the app, pick Capital" in win
+      and "The app connects it, not you" in win and "never ask for the ID or the\n  trading password" in desk,
+      "Windows PC: the app's connect flow (zh + en); the agent asks for no credentials")
+check("先把電腦版更新到最新版" in win and "update the desktop app to the latest version" in win and "0.1.50" in win
+      and "這一版還沒開放" not in win and "雲端主機" not in win,
+      "Windows PC: a build without it is told to update, not sent to a cloud machine (zh + en)")
 check("no switching to the Administrator\n      account" in win and "one Windows permission\n      prompt" in win and "no\n      Administrator" not in win,
       "Windows PC: no Administrator account switch, but a missing VC++ 2010 runtime brings one UAC prompt")
 check("Mac 不能連群益" in mac and "在網頁開雲端主機時選 Windows" in mac and "choose Windows" in mac,
@@ -45,7 +46,7 @@ check("blave.org 的雲端工作頁" in cloud and "cloud workspace on\n    blave
       "cloud-view case: go to the blave.org cloud workspace (zh + en), never 'launch a Windows machine'")
 check("Capital setup box" in cloud and "雲端主機 view" in cloud, "cloud-view case names how it is recognized")
 line = next((l for l in AGENTS.split("\n") if "**Capital Futures (群益期貨):**" in l), "")
-check("connect menu lists 群益 the app's own flow does it, not you" in line and "otherwise a Windows cloud machine as before" in line
+check("Windows desktop app (0.1.50+) the app's own connect flow does it, not you" in line and "older app build: update it first" in line
       and "not on a Mac" in line and "cloud view" in line
       and "blave.org cloud workspace" in line,
       "AGENTS.md Capital line routes both cases to Step 0")
