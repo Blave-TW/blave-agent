@@ -558,6 +558,8 @@ EXEMPT = [
      'failclosed', 'inflight markers at the end of 全部平倉: an unreadable one is skipped, the run already warned per key'),
     ('lib/portfolio.py', '_filled_since', '_ORDERS_LOG_PATH',
      'append', 'manager/orders.jsonl: did a 全部平倉 row\'s in-flight order fill (append-only)'),
+    ('manager/reconciler.py', '_capital_release_orphan_rows_once', 'portfolio._ORDERS_LOG_PATH',
+     'append', 'manager/orders.jsonl: which 群益 seqs a late fill booked (append-only; unreadable → old rows left, retried next round)'),
     ('lib/unconfirmed.py', 'load_json', 'path',
      'helper', "the half-updated-workspace fallback (lib/winreplace.py without load_json)"),
 ]

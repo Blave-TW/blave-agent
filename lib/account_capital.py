@@ -20,6 +20,10 @@ except ImportError:  # half-updated workspace (lib/winreplace.py without load_js
     def load_json(path, **open_kw):
         with open(path, **open_kw) as f:
             return json.load(f)
+try:
+    from lib import venue_errors
+except ImportError:
+    venue_errors = None
 
 _SNAPSHOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                          "state", "capital_account.json")
@@ -49,8 +53,25 @@ def _read_snapshot():
         raise RuntimeError(
             f"capital snapshot stale ({int(age)}s old) — blave-agent-capital service down?")
     if not snap.get("ok"):
-        raise RuntimeError(f"capital worker error: {snap.get('error')}")
+        e = RuntimeError(f"capital worker error: {snap.get('error')}")
+        e.code = snap.get("code")
+        raise e
     return snap
+
+
+# SKCOM manual V2.13.59 codes for a lost link (lib/order_capital.SESSION_LOST_CODES), plus the
+# worker's own marker for a query whose reply never came (capital_worker.QUERY_TIMEOUT)
+_TRANSIENT_CODES = frozenset({"1000", "1041", "1108", "1109", "timeout"})
+
+
+def classify(exc):
+    """lib.venue_errors class of a failed read: the worker lost its link to 群益 or a query's
+    reply never came → TRANSIENT (skip the round, never halt — the worker logs in again by
+    itself); anything else falls to the reconciler's floor (UNKNOWN: three in a row HALT).
+    300/307 never get here: the reconciler skips those rounds first (_capital_login_stopped)."""
+    if venue_errors is not None and str(getattr(exc, "code", None)) in _TRANSIENT_CODES:
+        return venue_errors.TRANSIENT
+    return None
 
 
 def get_equity(env: dict) -> dict:

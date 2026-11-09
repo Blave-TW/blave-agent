@@ -521,7 +521,7 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
       t("api desktop_telemetry.EVENTS 的 key_verify = 外殼這份——api 還沒上就紅,出貨順序 api 先", !!got.key_verify && got.key_verify.key === "step" && JSON.stringify(got.key_verify.vals) === JSON.stringify(STEP) && got.key_verify.once === false); } }
 
   // ── 0.1.12 引擎安裝(shell/enginesetup.js,主行程送):一個 prop、值是列舉、16 字以內、每日去重、畫面送不了 ──
-  { const ENG = { engine_setup: ["result", ["first_done", "first_net", "first_other", "first_timeout", "upd_done", "upd_net", "upd_other", "upd_timeout"]],
+  { const ENG = { engine_setup: ["result", ["first_done", "first_net", "first_other", "first_timeout", "upd_done", "upd_net", "upd_other", "upd_timeout", "first_abort"]],
       // 0.1.39 Codex 引擎隨包(shell/codexpkg.js)的 codex_* 接在 us_* 後面
       engine_opt_fail: ["result", ["us_net", "us_other", "us_timeout", "codex_net", "codex_disk", "codex_checksum", "codex_other", "codex_http"]] };
     const tmSrc12 = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8");
@@ -536,7 +536,8 @@ const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "blave-tm-"));
     if (!fs.existsSync(apiPy12)) console.log("SKIP  api 端引擎事件比對(需要 monorepo 版面)");
     else { const api = fs.readFileSync(apiPy12, "utf8"), got = {};
       for (const m of api.matchAll(/"([a-z_]+)": \{"props": \{"([a-z_]+)": \(([^()]*)\)\}, "once": (True|False)\}/g)) got[m[1]] = { key: m[2], vals: [...m[3].matchAll(/"([^"]+)"/g)].map((v) => v[1]), once: m[4] === "True" };
-      t("api desktop_telemetry.EVENTS 的 engine_setup / engine_opt_fail = 外殼這份(屬性名、值、順序、不是 once)", Object.keys(ENG).every((ev) => got[ev] && got[ev].key === "result" && JSON.stringify(got[ev].vals) === JSON.stringify(ENG[ev][1]) && got[ev].once === false)); } }
+      // 前綴比對:api 先上新值(出貨順序 api 先)時 api 可以比外殼多;外殼多出 api 沒有的值就紅——那個值送上去會被 api 丟掉
+      t("api desktop_telemetry.EVENTS 的 engine_setup / engine_opt_fail 以外殼這份為前綴(屬性名、值、順序、不是 once)", Object.keys(ENG).every((ev) => got[ev] && got[ev].key === "result" && JSON.stringify(got[ev].vals.slice(0, ENG[ev][1].length)) === JSON.stringify(ENG[ev][1]) && got[ev].once === false)); } }
   // ── 0.1.13 策略庫轉換(spec-0.1.13-library-conversion §8;renderer 送):一個 prop、值是列舉、16 字以內、每日去重、畫面送得了 ──
   { const N13 = { lib_pick: ["data", ["none", "required", "unknown"]], idea_sent: ["from", ["welcome", "lib_head", "lib_empty"]] };
     const tmSrc13 = fs.readFileSync(path.join(__dirname, "..", "shell", "telemetry.js"), "utf8");

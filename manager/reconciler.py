@@ -37,6 +37,10 @@ MIN_ORDER_TTL_S = 60  # how long a symbol's venue minimum stays cached: the LOT
 DISCONNECT_HALT_AFTER = 3  # 連續 N 次「認不得」的讀持倉失敗 → 自動 HALT
                            # (暫時性錯誤不計、金鑰被拒立刻 HALT,見 _on_read_failure)
 UNREACHABLE_EVENT_AFTER_S = 1800  # 暫時性錯誤連續這麼久 → exchange_unreachable 事件
+# 群益的 TRANSIENT 含 worker 自訂的 timeout(查詢等不到回覆,重啟不一定修得好),一直讀不到也不 HALT:
+# 從第一則起每 2 小時再發一次 exchange_unreachable,minutes 帶累計時間(Wei 11-09)
+UNREACHABLE_REPEAT_S = 7200
+UNREACHABLE_REPEAT_VENUES = frozenset({venue_traits.CAPITAL})
 ACCOUNT_GUARD_PATH = 'state/venue_account.json'  # 帳戶守門:交易所帳號 id + 待確認
 ACCOUNT_ID_READ_PATH = 'state/account_id_read.json'  # 最近一次帳號 id 讀取的結果,給平台看
 OUTAGE_PATH = 'state/reconciler_outage.json'  # 進行中的暫時性斷線(重啟後接續計時)
@@ -1779,13 +1783,14 @@ def _sync_halt_flag(halt_mtime):
 
 
 def _blank_outage():
-    return {"since": None, "venue": None, "announced": False, "last": None}
+    return {"since": None, "venue": None, "announced": False, "last": None, "announced_at": None}
 
 
 def _load_outage(now=None):
     """The outage a restarted process inherits: its start and whether
-    exchange_unreachable already went out — so a watchdog restart mid-outage
-    neither re-emits it nor loses the exchange_recovered that should follow.
+    exchange_unreachable last went out — so a watchdog restart mid-outage
+    neither re-emits it early (群益's 2-hour repeat keeps its clock) nor loses
+    the exchange_recovered that should follow.
     A save whose last failure is older than OUTAGE_STALE_S is dropped: the
     daemon was down, and the link state since then is unknown."""
     now = time.time() if now is None else now
@@ -1797,8 +1802,14 @@ def _load_outage(now=None):
         return _blank_outage()
     if now - last > OUTAGE_STALE_S:
         return _blank_outage()
-    return {"since": since, "venue": doc.get('venue'),
-            "announced": bool(doc.get('announced')), "last": last}
+    announced = bool(doc.get('announced'))
+    try:
+        at = float(doc['announced_at'])
+    except (KeyError, TypeError, ValueError):
+        # a save from before the field: its one event went out at the 30-minute mark
+        at = since + UNREACHABLE_EVENT_AFTER_S
+    return {"since": since, "venue": doc.get('venue'), "announced": announced, "last": last,
+            "announced_at": at if announced else None}
 
 
 _outage = _load_outage()
@@ -1851,9 +1862,11 @@ def _on_read_failure(venue, exc, kind, now):
         logging.warning(f"get_positions transient failure ({what}, {minutes} min into "
                         f"the outage) — round skipped: {exc}")
         # not while halted: that event tells the user trading resumes by itself
-        if not _outage['announced'] and not guard.halted() \
-                and now - _outage['since'] >= UNREACHABLE_EVENT_AFTER_S:
-            _outage.update(announced=True, venue=venue)
+        due = (not _outage['announced'] and now - _outage['since'] >= UNREACHABLE_EVENT_AFTER_S) or (
+            _outage['announced'] and venue in UNREACHABLE_REPEAT_VENUES
+            and now - (_outage.get('announced_at') or 0) >= UNREACHABLE_REPEAT_S)
+        if due and not guard.halted():
+            _outage.update(announced=True, venue=venue, announced_at=now)
             events.emit("exchange_unreachable", venue=venue, minutes=minutes,
                         code=None if code is None else str(code))
         _save_outage()

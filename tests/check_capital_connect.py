@@ -533,6 +533,20 @@ check("6 B-1 finish with a 300 snapshot: SNAPSHOT_ERROR, the service is stopped,
       fin is True and ["nssm", "stop", cc.WORKER_SERVICE] in quiet and cc.pw_blocked() == 300, f"{fin} {quiet}")
 os.remove(cc._paths()["block"])
 
+# B-1b: the snapshot's own `code` field wins over the text (the text names no code here)
+quiet = []
+cc._run_quiet = lambda argv, timeout, what: quiet.append(argv[:3]) or _R(0)
+cc.admin_password = lambda: "x"
+cc._python_for_worker = lambda: "py"
+cc.time.sleep = lambda s: None
+json.dump({"ok": False, "error": "login refused", "code": 300, "read_at": int(time.time()) + 999},
+          open(cc._paths()["snapshot"], "w"))
+fin = refused(lambda: cc.run_finish(), "SNAPSHOT_ERROR")
+cc._run_quiet, cc.admin_password, cc._python_for_worker, cc.time.sleep = saved
+check("6 B-1b finish reads the snapshot's code field: 300 stops the service and writes the block",
+      fin is True and ["nssm", "stop", cc.WORKER_SERVICE] in quiet and cc.pw_blocked() == 300, f"{fin} {quiet}")
+os.remove(cc._paths()["block"])
+
 # R-1: 307 → the user unlocked at 群益 without changing the password → exactly one retry
 open(os.path.join(WS, ".env"), "w").write("capital_api_key=\ncapital_password=vault:" +
                                              cc.vault_fingerprint("Z123456789", "trade-pw") + "\n")

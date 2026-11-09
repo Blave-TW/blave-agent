@@ -2883,6 +2883,15 @@ msgstr "{venue} 已連續 {minutes} 分鐘連不上"
 msgid "tr.ov.evExUnreachNote"
 msgstr "這段時間不下單，恢復後自動繼續"
 
+msgid "tr.ov.evExUnreachCap"
+msgstr "群益讀不到帳戶已經 {hours} 小時"
+
+msgid "tr.ov.evExUnreachCapNote"
+msgstr "這段時間群益策略不會下單，也不會平倉。請檢查群益連線。"
+
+msgid "tr.ov.evExUnreachCapNoteLocal"
+msgstr "這段時間群益策略不會下單，也不會平倉。請檢查群益連線，或重開 Blave。"
+
 msgid "tr.ov.evExBack"
 msgstr "{venue} 已恢復連線"
 
@@ -3222,7 +3231,7 @@ msgid "chat.tgt.cloud"
 msgstr "雲端主機"
 
 msgid "chat.ph.cloud"
-msgstr "請 agent 在雲端主機上做事"
+msgstr "說一個交易想法…"
 
 msgid "chat.sw.cloud"
 msgstr "切到雲端，之後的指示會在雲端主機上執行"
@@ -9969,7 +9978,7 @@ msgid "capl.found"
 msgstr "這台電腦找到群益憑證，到期 {date}。接著填身分證字號和交易密碼。"
 
 msgid "capl.mac"
-msgstr "群益需要 Windows。"
+msgstr "群益需要 Windows。可以先用模擬交易，或改用 Windows 雲端主機。"
 
 # 群益本機帳密表單之後(0.1.28;renderer/capital_local.js)。帳密存在哪(主行程 safeStorage)
 msgid "capl.store"

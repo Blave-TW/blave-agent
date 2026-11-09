@@ -179,11 +179,24 @@ def _pump_until(cond, timeout=EVENT_TIMEOUT_S):
     return cond()
 
 
+QUERY_TIMEOUT = "timeout"  # the error snapshot's `code` for a reply that never came (lib/account_capital.classify)
+
+
+class QueryFailed(RuntimeError):
+    """A query refused with an SKCOM return code, or its reply never arrived (code QUERY_TIMEOUT).
+    The code goes into the error snapshot so lib/account_capital.classify can tell a lost link
+    from a real fault."""
+
+    def __init__(self, message, code):
+        super().__init__(message)
+        self.code = code
+
+
 def _check_query_code(code, call_name):
     if code == 1019:
         raise QueryInProgress(f"{call_name} code=1019 (rate-limited, transient)")
     if code != 0:
-        raise RuntimeError(f"{call_name} code={code}")
+        raise QueryFailed(f"{call_name} code={code}", code)
 
 
 def query_rights(order, login_id, tf_acct):
@@ -193,7 +206,7 @@ def query_rights(order, login_id, tf_acct):
     code = order.GetFutureRights(login_id, tf_acct, 1)
     _check_query_code(code, "GetFutureRights")
     if not _pump_until(lambda: Events.rights_done):
-        raise RuntimeError("GetFutureRights: no ## terminator within timeout")
+        raise QueryFailed("GetFutureRights: no ## terminator within timeout", QUERY_TIMEOUT)
     if not Events.rights_rows:
         raise RuntimeError("GetFutureRights: terminator without data rows")
     f = Events.rights_rows[0].split(",")
@@ -214,7 +227,7 @@ def query_open_interest(order, login_id, tf_acct):
     code = order.GetOpenInterest(login_id, tf_acct)
     _check_query_code(code, "GetOpenInterest")
     if not _pump_until(lambda: Events.oi_done):
-        raise RuntimeError("GetOpenInterest: no ## terminator within timeout")
+        raise QueryFailed("GetOpenInterest: no ## terminator within timeout", QUERY_TIMEOUT)
     positions = []
     for row in Events.oi_rows:
         f = [x.strip() for x in row.split(",")]
@@ -262,7 +275,7 @@ def query_balance(order, login_id, ts_acct):
     code = order.GetRealBalanceReport(login_id, ts_acct)
     _check_query_code(code, "GetRealBalanceReport")
     if not _pump_until(lambda: Events.balance_done):
-        raise RuntimeError("GetRealBalanceReport: no ## terminator within timeout")
+        raise QueryFailed("GetRealBalanceReport: no ## terminator within timeout", QUERY_TIMEOUT)
     # Aggregate per ticker — one row per 庫存種類 (集保/融資/融券) otherwise
     # shows the same stock as duplicate lines.
     shares_by_asset = {}
@@ -325,6 +338,9 @@ def _fail_and_exit(payload):
         pass
     _write_snapshot(payload)
     time.sleep(_backoff_s(n))
+    # the backoff reaches 300 s = account_capital's stale limit: without a fresh stamp the
+    # restart's login lands on a "stale" read, which the reconciler counts toward HALT
+    _write_snapshot(payload)
     sys.exit(1)  # NSSM restarts us with a fresh COM session
 
 
@@ -462,7 +478,7 @@ def main():
             # restart; the app shows why and only the user's press logs in again
             _write_snapshot({"ok": False, "error": str(e)})
             sys.exit(LOGIN_STOPPED_EXIT)
-        _fail_and_exit({"ok": False, "error": str(e)})
+        _fail_and_exit({"ok": False, "error": str(e), "code": e.code})
     try:
         os.remove(BACKOFF_PATH)
     except OSError:
@@ -488,7 +504,7 @@ def main():
             _log(f"tick skipped (rate-limited): {e}")
         except Exception as e:
             _log(f"tick failed: {e}")
-            _fail_and_exit({"ok": False, "error": f"{type(e).__name__}: {e}"})
+            _fail_and_exit({"ok": False, "error": f"{type(e).__name__}: {e}", "code": getattr(e, "code", None)})
 
         _sleep_until_refresh()
 

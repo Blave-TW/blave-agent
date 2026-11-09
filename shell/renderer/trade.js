@@ -1921,6 +1921,7 @@ function trPushLabels() {
     ev_venue_login_blocked: t("tr.ov.evPresStopped"), ev_venue_login_blocked_n: t("tr.ov.evPresStoppedNote"),
     ev_venue_login_blocked_capital: t("tr.ov.evCapStopped"), ev_venue_login_blocked_capital_n: t("tr.ov.evCapStoppedNote"),
     ev_venue_login_blocked_capital_locked_n: t("tr.ov.evCapLockedNote"),
+    ev_exchange_unreachable_capital: t("tr.ov.evExUnreachCap", { hours: "{hours}" }), ev_exchange_unreachable_capital_n: t("tr.ov.evExUnreachCapNoteLocal"),   // 系統通知只來自這台電腦
     ev_order_unconfirmed: t("tr.ov.evUnconfirmed"), ev_order_unconfirmed_n: t("tm.evUnconfirmedNote"),
     ev_clock_skew_hold: t("tr.ov.evClockHold"), ev_clock_skew_hold_n: t("tm.evClockHoldNote"),
     ev_tw_entry_hold: t("tr.ov.evTwHold"), ev_tw_entry_hold_n: t("tm.evTwHoldNote"),
@@ -5668,11 +5669,18 @@ function trStratEl(names) {
   return span;
 }
 // api(/cloud/events)每筆帶的級別 "P1"/"P2"/"P3";沒帶或認不得(舊 api、這台電腦記的那份)回 null,交給 trEvLevel
+/* 群益一直讀不到帳戶:對帳器不 HALT,30 分起每 2 小時再發一則 exchange_unreachable;第二則(≥150 分)起是 P1。
+   同 api level_for 與 main.js p1Event 的門檻 */
+const TR_EX_UNREACH_P1_MIN = 150;
+function trExUnreachLong(type, d) {
+  return type === "exchange_unreachable" && !!d && d.venue === "capital" && typeof d.minutes === "number" && d.minutes >= TR_EX_UNREACH_P1_MIN;
+}
 function trEvApiLevel(ev) { const m = /^P([123])$/.exec(ev && typeof ev.level === "string" ? ev.level : ""); return m ? Number(m[1]) : null; }
 function trEvLevel(type, d) {
   d = d || {};
   if (type === "halt" || type === "halt_close") return d.source === "reconciler" || d.source === "portfolio" ? 1 : 3;
   if (type === "machine_restart_stopped") return d.trigger === "resume" ? 2 : d.trigger === "upgrade" ? 3 : 1;
+  if (trExUnreachLong(type, d)) return 1;
   return TR_EV_P1.includes(type) ? 1 : TR_EV_P2.includes(type) ? 2 : 3;
 }
 const trEvClass = (lv) => (lv === 1 ? "err" : lv === 2 ? "hl" : "");
@@ -5720,6 +5728,9 @@ function trEventText(type, d, strat) {
   const out = (head, note, tip, code, tail) => [head, note == null ? null : note, lv, tip || null, code || null, tail || null, null];
   // 帶策略的那幾種:策略段由呼叫端照 trEvStrat 查好(名稱;查不到是代號),沒傳就寫代號
   const outS = (...a) => { const o = out(...a); o[6] = strat || (str(d.strategy) ? { text: d.strategy, code: true } : null); return o; };
+  // 「或重開 Blave」只在本機視角:雲端主機沒有 app 可重開(同 api notify 的句子)
+  if (trExUnreachLong(type, d)) return out(["tr.ov.evExUnreachCap", { hours: Math.floor(d.minutes / 60) }],
+    t(typeof TR !== "undefined" && TR.env === "local" ? "tr.ov.evExUnreachCapNoteLocal" : "tr.ov.evExUnreachCapNote"));
   if (type === "exchange_unreachable") return out(["tr.ov.evExUnreach", v], t("tr.ov.evExUnreachNote"), t("tr.ov.evExUnreachTip"));
   if (type === "exchange_recovered") return out(["tr.ov.evExBack", v], null);
   // Bitget 換帳戶類型後倉位全對上、自動恢復(P3,只進事件列;對不上的那一種走 halt)

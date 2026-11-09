@@ -366,7 +366,7 @@ capl.local_tick()
 check("7 其他的結束 → 等一下再起", spawned == [1])
 wsrc = open(os.path.join(ROOT, "lib", "capital_worker.py"), encoding="utf-8").read()
 check("7 capital_worker:exit 3 只在本機(BLAVE_AGENT_LOCAL=1)、雲端照舊 backoff", 'if os.environ.get("BLAVE_AGENT_LOCAL") == "1" and e.code in capital_vault.BLOCK_CODES:' in wsrc
-      and "sys.exit(LOGIN_STOPPED_EXIT)" in wsrc and wsrc.count("_fail_and_exit({\"ok\": False, \"error\": str(e)})") == 1
+      and "sys.exit(LOGIN_STOPPED_EXIT)" in wsrc and wsrc.count("_fail_and_exit({\"ok\": False, \"error\": str(e), \"code\": e.code})") == 1
       and capl.LOGIN_STOPPED_EXIT == 3 and "LOGIN_STOPPED_EXIT = 3" in wsrc)
 
 # 8. unbind

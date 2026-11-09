@@ -1014,8 +1014,11 @@ def run_finish(push=None):
         if snap is None:
             _refuse("SNAPSHOT_TIMEOUT", "the worker wrote no snapshot")
         if not snap.get("ok"):
-            m = re.search(r"code=(\d+)", str(snap.get("error") or ""))
-            code = int(m.group(1)) if m else None
+            code = snap.get("code")
+            if not isinstance(code, int) or isinstance(code, bool):
+                # "timeout" is no login code; a worker from before the field only has the text
+                m = re.search(r"code=(\d+)", str(snap.get("error") or ""))
+                code = int(m.group(1)) if m else None
             if CODE_STATES.get(code) in PW_BLOCK_STATES:
                 # an NSSM worker re-logs in on every restart: stop it before a
                 # wrong password becomes a locked account

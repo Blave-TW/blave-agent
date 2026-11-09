@@ -2864,6 +2864,15 @@ msgstr "{venue} unreachable for {minutes} min"
 msgid "tr.ov.evExUnreachNote"
 msgstr "no orders meanwhile; resumes on its own"
 
+msgid "tr.ov.evExUnreachCap"
+msgstr "Capital account unreadable for {hours} h"
+
+msgid "tr.ov.evExUnreachCapNote"
+msgstr "Capital strategies place no orders and no closes meanwhile. Check the Capital connection."
+
+msgid "tr.ov.evExUnreachCapNoteLocal"
+msgstr "Capital strategies place no orders and no closes meanwhile. Check the Capital connection, or restart Blave."
+
 msgid "tr.ov.evExBack"
 msgstr "{venue} reachable again"
 
@@ -3203,7 +3212,7 @@ msgid "chat.tgt.cloud"
 msgstr "Cloud machine"
 
 msgid "chat.ph.cloud"
-msgstr "Ask the agent to work on the cloud machine"
+msgstr "Describe a trading idea…"
 
 msgid "chat.sw.cloud"
 msgstr "Switched to Cloud · instructions from here run on the cloud machine"
@@ -9942,7 +9951,7 @@ msgid "capl.found"
 msgstr "Found a Capital certificate on this computer, expiring {date}. Next, enter your national ID number and trading password."
 
 msgid "capl.mac"
-msgstr "Capital needs Windows."
+msgstr "Capital needs Windows. On a Mac, start with paper trading, or use a Windows cloud machine."
 
 # 群益本機帳密表單之後(0.1.28;renderer/capital_local.js)。帳密存在哪(主行程 safeStorage)
 msgid "capl.store"

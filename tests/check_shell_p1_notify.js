@@ -20,6 +20,21 @@ o = p1Pick([ev(20, "halt", { source: "portfolio" }), ev(21, "order_error", { sym
 t("halt / order_error 不從 events 來(lib/events.py 禁寫;走狀態檔現況),水位線照推", o.show.length === 0 && o.mark === 21);
 o = p1Pick([ev(30, "exchange_unreachable"), ev(31, "strategy_failed"), ev(32, "bar_stale")], 22, NOW);
 t("P2 不發,水位線照推", o.show.length === 0 && o.mark === 32);
+o = p1Pick([ev(33, "exchange_unreachable", { venue: "capital", minutes: 30 }), ev(34, "exchange_unreachable", { venue: "capital", minutes: 150 }),
+  ev(35, "exchange_unreachable", { venue: "okx", minutes: 600 })], 32, NOW);
+t("群益讀不到 ≥150 分(對帳器第二則起)升 P1 發通知;30 分那則與加密交易所不發", types(o) === "exchange_unreachable:34" && o.mark === 35);
+t("群益讀不到的通知:走 _capital 那組字、標題代入小時", /ev_exchange_unreachable_capital: "Capital account unreadable for \{hours\} h"/.test(src)
+  && /\|\| p1UnreachLong\(e\);/.test(src) && /const title = p1UnreachLong\(e\) && head \? head\.replace\("\{hours\}", \(\) => String\(Math\.floor\(e\.payload\.minutes \/ 60\)\)\) : head;/.test(src)
+  && /notifTitle\(tmLabels\.notifPrefixLocal, title \+/.test(src));
+{ // 群益讀不到升 P1 的門檻:main.js(本機通知)、trade.js(事件列顏色)、api level_for 三份同一個數字
+  const num = (s, re) => { const m = re.exec(s); return m ? Number(m[1]) : null; };
+  const trSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
+  const mainMin = num(src, /^const P1_UNREACH_MIN = (\d+);/m), trMin = num(trSrc, /^const TR_EX_UNREACH_P1_MIN = (\d+);/m);
+  t("群益讀不到升 P1 的門檻:main.js 與 trade.js 同一個數字", mainMin != null && mainMin === trMin && P1_UNREACH_MIN === mainMin);
+  const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "agent_events.py");
+  if (!fs.existsSync(apiPy)) console.log("SKIP  api 端群益讀不到門檻比對(需要 monorepo 版面或 BLAVE_API_DIR)");
+  else { const apiMin = num(fs.readFileSync(apiPy, "utf8"), /^CAPITAL_UNREADABLE_P1_MIN = (\d+)$/m);
+    t("…api agent_events.CAPITAL_UNREADABLE_P1_MIN 也是同一個數字(api 還沒上就紅,出貨順序 api 先)", apiMin != null && apiMin === mainMin && apiMin === trMin); } }
 o = p1Pick([ev(40, "machine_restart_stopped", {}, 3600), ev(41, "machine_restart_stopped", {}, 60)], 32, NOW);
 t("超過 15 分鐘的舊事件不發", types(o) === "machine_restart_stopped:41" && o.mark === 41);
 t("舊型別 downtime_paused 不再發(被 machine_restart_stopped 取代),水位線照推", (() => { const x = p1Pick([ev(45, "downtime_paused", {})], 41, NOW); return x.show.length === 0 && x.mark === 45; })());

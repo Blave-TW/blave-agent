@@ -50,6 +50,18 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
   ok("halt 級別:自動(reconciler/portfolio)P1,其他 P3", J([trEvLevel("halt", { source: "reconciler" }), trEvLevel("halt", { source: "portfolio" }), trEvLevel("halt", { source: "web" }), trEvLevel("halt", {})]) === J([1, 1, 3, 3]));
   ok("級別 → class:1 err、2 hl、3 空", trEvClass(1) === "err" && trEvClass(2) === "hl" && trEvClass(3) === "");
   ok("exchange_unreachable:說明縮短、後半句進 tooltip", J(E("exchange_unreachable", { venue: "okx", minutes: 30 })) === J([["tr.ov.evExUnreach", { venue: "okx", minutes: 30 }], "tr.ov.evExUnreachNote", 2, "tr.ov.evExUnreachTip", null, null, null]));
+  ok("群益讀不到 ≥150 分(第二則起)是 P1、換群益那句、小時取整;30 分那則與加密交易所照舊 P2",
+    J(E("exchange_unreachable", { venue: "capital", minutes: 270 })) === J([["tr.ov.evExUnreachCap", { hours: 4 }], "tr.ov.evExUnreachCapNote", 1, null, null, null, null])
+    && E("exchange_unreachable", { venue: "capital", minutes: 150 })[2] === 1 && E("exchange_unreachable", { venue: "capital", minutes: 30 })[2] === 2
+    && E("exchange_unreachable", { venue: "capital", minutes: 149 })[2] === 2 && E("exchange_unreachable", { venue: "okx", minutes: 600 })[2] === 2
+    && trEvLevel("exchange_unreachable", { venue: "capital", minutes: 150 }) === 1);
+  { globalThis.TR = { env: "local" };   // 本機視角:說明換成帶「或重開 Blave」的那句
+    const k = E("exchange_unreachable", { venue: "capital", minutes: 270 })[1];
+    delete globalThis.TR;
+    const S = new Function(fs.readFileSync(path.join(R, "strings.js"), "utf8").replace(/^const STRINGS =/m, "return"))();
+    ok("本機視角(TR.env=local)拿到 Local 版:zh 含「或重開 Blave」、en 含「or restart Blave」",
+      k === "tr.ov.evExUnreachCapNoteLocal" && /或重開 Blave/.test(S.zh[k] || "") && /or restart Blave/.test(S.en[k] || "")
+      && E("exchange_unreachable", { venue: "capital", minutes: 270 })[1] === "tr.ov.evExUnreachCapNote"); }
   ok("execution_stuck 分 overdue／abandoned／其他", J(["overdue", "abandoned", "x"].map((k) => E("execution_stuck", { kind: k }).slice(0, 2))) === J([["tr.ov.evExecOverdue", "tr.ov.evExecStuckNote"], ["tr.ov.evExecAbandoned", "tr.ov.evExecAbandonedNote"], ["tr.ov.evExecStuck", "tr.ov.evExecStuckNote"]]));
   ok("market_hold 策略在策略段、不拼進標題", E("market_hold", { strategy: "s4", venue: "okx" })[0] === "tr.ov.evMarketHold" && J(E("market_hold", { strategy: "s4" })[6]) === J({ text: "s4", code: true }) && E("market_hold", { strategy: "s4" })[1] === "tr.ov.evMarketHoldNote");
   ok("settings_unsafe / rollback_failed / market_check_off 各自一句", J([E("settings_unsafe", {}), E("settings_rollback_failed", {}), E("market_check_off", { kind: "table" })].map((x) => x.slice(0, 2)))
@@ -63,6 +75,19 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
     && E("report_rejected", { title: "長".repeat(40) })[0] === 'tr.ov.evReportRejected|{"title":"' + "長".repeat(40) + '"}');
   ok("report_degraded:count ≥1 帶次數、缺/0 用不帶次數那句", E("report_degraded", { title: "晨報", count: 3 })[1] === 'tr.ov.evReportDegradedNote|{"count":3}'
     && E("report_degraded", { title: "晨報" })[1] === "tr.ov.evReportDegradedNoteNoCount" && E("report_degraded", { title: "晨報", count: 0 })[1] === "tr.ov.evReportDegradedNoteNoCount"); }
+
+// 群益讀不到 ≥150 分的說明:雲端視角不叫人「重開 Blave」(雲端主機沒有 app,同 api notify 那句),本機視角與本機系統通知才加
+{ const STR = new Function(fs.readFileSync(path.join(R, "strings.js"), "utf8").replace(/^const STRINGS =/m, "return"))();
+  const body = cut("const TR_EV_P1 = [", "\nfunction trEvBody(").replace(/^const /gm, "var ");
+  const note = (lang, env) => new Function("t", "trVenueLabel", "TR", body + "\nreturn trEventText;")(
+    (k, v) => { let s = STR[lang][k] || k; for (const x in v || {}) s = s.split("{" + x + "}").join(v[x]); return s; }, (x) => x, { env })(
+    "exchange_unreachable", { venue: "capital", minutes: 300 })[1];
+  ok("雲端視角那則不含「重開 Blave」、跟 api 句子一致;本機視角帶「或重開 Blave」",
+    !/重開 Blave/.test(note("zh", "cloud")) && !/restart Blave/.test(note("en", "cloud"))
+    && note("zh", "cloud") === "這段時間群益策略不會下單，也不會平倉。請檢查群益連線。"
+    && note("en", "cloud") === "Capital strategies place no orders and no closes meanwhile. Check the Capital connection."
+    && /或重開 Blave。$/.test(note("zh", "local")) && /or restart Blave\.$/.test(note("en", "local")));
+  ok("本機系統通知的字用本機版", /ev_exchange_unreachable_capital_n: t\("tr\.ov\.evExUnreachCapNoteLocal"\)/.test(src)); }
 
 // 值缺整句不出:用一份帶佔位的 t(上面的假 t 沒有 {x} 佔位)
 { const real = { "tr.ov.evMachineSilentNote": "{minutes} m", "tr.ov.evDiskFullNote": "{disk_pct} d", "tr.ov.evMemLowNote": "{mem_avail}/{mem_total}", "tr.ov.evReportRejectedNote": "at {field}", k: "a {x} b {y}" };

@@ -4603,6 +4603,8 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_venue_login_blocked: "President login stopped", ev_venue_login_blocked_n: "New orders and closes can't go out. Press Sign In Again on the auto-trading page.",
   ev_venue_login_blocked_capital: "Capital login stopped", ev_venue_login_blocked_capital_n: "New orders and closes can't go out. Enter the trading password again on the auto-trading page.",
   ev_venue_login_blocked_capital_locked_n: "New orders and closes can't go out. Unlock it with Capital, then enter the trading password again on the auto-trading page.",
+  ev_exchange_unreachable_capital: "Capital account unreadable for {hours} h",
+  ev_exchange_unreachable_capital_n: "Capital strategies place no orders and no closes meanwhile. Check the Capital connection, or restart Blave.",
   ev_halt_unconfirmed_n: "An order may have filled, so nothing goes out. Don't place it again yourself: tell your agent how much filled, then press Start trading.",
   ev_halt_unexplained: "Position mismatch",
   ev_order_unconfirmed_close_all: "Not closed with the rest", ev_order_unconfirmed_close_all_n: "An order here has an unknown outcome and was left out of this close. Don't trade it yourself: tell your agent how much filled, then press Pause and close positions again.",
@@ -5166,6 +5168,11 @@ function p1ManualClose(e) {
 }
 function p1TwClock(sec) { return new Date(sec * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Taipei" }); }
 const P1_EVENT_TYPES = P1_TYPES.filter((ty) => ty !== "halt" && ty !== "order_error" && P1_ERR_KINDS.indexOf(ty) < 0);   // 會出現在 events 裡的七型
+// 群益一直讀不到帳戶:exchange_unreachable 是 P2,第二則(≥150 分,對帳器每 2 小時一則)起升 P1。同 api level_for、renderer trExUnreachLong
+const P1_UNREACH_MIN = 150;
+const p1UnreachLong = (ev) => ev.type === "exchange_unreachable" && !!ev.payload && ev.payload.venue === "capital"
+  && typeof ev.payload.minutes === "number" && ev.payload.minutes >= P1_UNREACH_MIN;
+const p1Event = (ev) => P1_EVENT_TYPES.indexOf(ev.type) >= 0 || p1UnreachLong(ev);
 const HALT_AUTO_SOURCES = ["reconciler", "portfolio"];   // 同 api openclaw/agent_events._HALT_AUTO_SOURCES
 const notifiedPath = () => path.join(app.getPath("userData"), "p1-notified.json");
 let p1Marks = undefined, p1Badge = 0; const p1LastShown = {}, p1Alive = new Set();   // p1Alive:Notification 沒人持有會被 GC,click 就不觸發
@@ -5241,7 +5248,7 @@ function p1Pick(events, mark, nowS) {   // 純函式(tests/check_shell_p1_notify
   for (const ev of Array.isArray(events) ? events : []) {
     if (!ev || typeof ev.id !== "number" || typeof ev.type !== "string" || ev.id <= (mark == null ? -1 : mark)) continue;
     if (ev.id > top) top = ev.id;
-    if (mark == null || P1_EVENT_TYPES.indexOf(ev.type) < 0 || !(nowS - Number(ev.ts) <= 900)) continue;
+    if (mark == null || !p1Event(ev) || !(nowS - Number(ev.ts) <= 900)) continue;
     show.push(ev);
   }
   return { mark: top < 0 ? (mark == null ? 0 : mark) : top, show };
@@ -5270,12 +5277,13 @@ function p1Sync() {
     // 這裡的事件全部來自這台電腦的狀態檔:標題第一個詞講是哪一邊(雲端的通知之後由它自己的來源加 notifPrefixCloud)
     const closeAll = e.type === "order_unconfirmed" && e.payload && e.payload.close_all === true;
     const stuck = !closeAll && e.type === "order_unconfirmed" && e.payload && e.payload.stuck === true;
-    const capital = e.type === "venue_login_blocked" && e.payload && e.payload.venue === "capital";
+    const capital = (e.type === "venue_login_blocked" && e.payload && e.payload.venue === "capital") || p1UnreachLong(e);
     const mcr = e.type === "manual_close_required" && e.payload ? e.payload.reason : null;
     const variant = closeAll ? "_close_all" : stuck ? "_stuck" : capital ? "_capital"
       : mcr === "snapshot_lag" ? "_lag" : mcr === "queued" ? "_queued" : "";
     const unexplained = e.type === "halt" && e.payload && e.payload.unexplained === true && !!e.payload.reason;
     const head = (unexplained && tmLabels.ev_halt_unexplained) || tmLabels["ev_" + e.type + variant] || tmLabels["ev_" + e.type];
+    const title = p1UnreachLong(e) && head ? head.replace("{hours}", () => String(Math.floor(e.payload.minutes / 60))) : head;
     // 下單結果不明、追蹤不了而整台暫停:講可能已成交、不要手動補單、怎麼恢復,不是只有「什麼單都不送」
     // 帳戶對不上(unexplained):標題講對不上,內文是機器寫的那句原因(已帶核對步驟)
     const note = unexplained ? e.payload.reason
@@ -5284,7 +5292,7 @@ function p1Sync() {
       : mcr === "queued" ? (e.payload.until ? String(tmLabels.ev_manual_close_required_queued_n || "").replace("{at}", p1TwClock(e.payload.until))
         : tmLabels.ev_manual_close_required_queued_soon_n)
       : tmLabels["ev_" + e.type + variant + "_n"] || tmLabels["ev_" + e.type + "_n"];
-    const n = new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, head + (sym ? " · " + sym : "")), body: p1WithStrat(e.payload && (Array.isArray(e.payload.strategies) ? e.payload.strategies : typeof e.payload.strategy === "string" ? [e.payload.strategy] : null), note, p1StratLabel) });
+    const n = new Notification({ title: TT.notifTitle(tmLabels.notifPrefixLocal, title + (sym ? " · " + sym : "")), body: p1WithStrat(e.payload && (Array.isArray(e.payload.strategies) ? e.payload.strategies : typeof e.payload.strategy === "string" ? [e.payload.strategy] : null), note, p1StratLabel) });
     p1Alive.add(n); const drop = () => p1Alive.delete(n);
     n.on("click", () => { drop(); showMain(); }); n.on("close", drop); n.on("failed", drop); notifWatch(n, "p1 " + e.type);
     if (p1Alive.size > 20) p1Alive.delete(p1Alive.values().next().value);
