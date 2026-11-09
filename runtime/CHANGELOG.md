@@ -8,6 +8,8 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.161 — 2026-11-09(desktop 0.1.51)
+
 - **資料卡改由 runtime 觸發(spec login-upgrade-buttons-0150 §1.1,desktop 0.1.50)**:`WebSink.on_tool_result` 讀執行指令類工具的輸出尾端 64 KB(`data_access_hit`;Read／Grep 這類不算),外殼有設 `BLAVE_DATA_ACCESS` 才比:`0` 時認 `DataAccessError:` 那行或 `_NO_ACCESS_MSG` → `denied`,`1` 時認 lib/data 印的 api 403 body → `err005`／`err007`(只有一個 ERR007 字樣不算)。一輪最多一張,`done` 之前送 `{"type":"card","id":"data-access","code":…}`,err005 優先;出錯或被 Stop 截斷的回合不送。Codex 那條在 `CodexTranslator._item` 把 `command_execution` 的 `aggregated_output` 交給同一個 `on_tool_result`。模型寫的記號與那段規則照留(舊外殼靠它)。契約 `references/turn-events.md`。
 - **`BLAVE_DATA_ACCESS_WHY=relogin`**:外殼在 token 還在、`account_status` 401／`ACCOUNT_TOKEN_INVALID` 時帶。事實句講登入失效,回覆那條叫模型講要重新登入、不講方案。舊外殼不帶,原文不變。daemon 子行程讀 `state/data_access.json` 的白名單(`command_listener._DATA_ACCESS_VALUES`)一起收 `relogin`。
 - **失敗代碼 `no_credit`(第六個)**:沒跑過工具的回合撞到 Blave AI proxy 402(`API Error: 402`、`api_error_status` 402、`INSUFFICIENT_CREDIT`)不再歸成 `not_started`。web 與 TG 各一組句子;api `FAULT_CODES` 沒加之前 `/report` 會丟掉這個代碼,web 退回顯示 message。
