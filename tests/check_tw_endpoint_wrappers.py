@@ -12,6 +12,8 @@
      span does not ask again.
   6. Theme / chip-breadth frames keep a theme's {zh,en,cn} name intact, send the right query,
      refuse a bad scope / range locally; margin maintenance lands in the one-file cache.
+  7. The retail long/short ratio history maps MXF → MTX, sends only start / end, keeps the
+     api's oldest-first rows on a date index; an empty range is an empty frame with the schema.
 Run: cd blave-agent && .venv/bin/python tests/check_tw_endpoint_wrappers.py
 """
 import json
@@ -185,6 +187,25 @@ with tempfile.TemporaryDirectory() as tmp:
     mm = d.fetch_twmarket_margin_maintenance('2026-11-01', '2026-11-06', {})
     check(list(mm.columns) == ['maintenance_ratio'] and mm.iloc[-1, 0] == 151.93, f'margin maintenance: {mm}')
     check(Path(tmp, 'twmarket_margin_maint_TWSE.parquet').exists(), 'margin maintenance in the one-file cache')
+
+# ── 7. retail long/short ratio history ───────────────────────────────────────
+row = {'futures_id': 'MTX', 'market_open_interest': 96708, 'institutional_long_open_interest': 6870,
+       'institutional_short_open_interest': 52454, 'retail_long_open_interest': 89838,
+       'retail_short_open_interest': 44254, 'retail_long_short_ratio': 47.13570749059023}
+answers['twfutures/retail_long_short_ratio/MTX/history'] = {'futures_id': 'MTX', 'data': [
+    dict(row, date='2026-11-05', retail_long_short_ratio=40.5), dict(row, date='2026-11-06')]}
+calls.clear()
+lsr = d.fetch_twfutures_retail_long_short_ratio_history('MXF', '2026-11-01', '2026-11-07', {})
+check(calls[0][1].endswith('/retail_long_short_ratio/MTX/history')
+      and calls[0][2] == {'start': '2026-11-01', 'end': '2026-11-07'}, f'MXF → MTX, start / end sent: {calls[0]}')
+check(isinstance(lsr.index, d.pd.DatetimeIndex) and lsr.index.strftime('%Y-%m-%d').tolist() == ['2026-11-05', '2026-11-06']
+      and lsr['retail_long_short_ratio'].tolist() == [40.5, 47.13570749059023]
+      and lsr.loc['2026-11-06', 'retail_long_open_interest'] == 89838, f'history rows by date, order kept: {lsr}')
+answers['twfutures/retail_long_short_ratio/TMF/history'] = {'futures_id': 'TMF', 'data': []}
+calls.clear()
+empty = d.fetch_twfutures_retail_long_short_ratio_history('tmf', None, None, {})
+check(calls[0][2] == {} and empty.empty and list(empty.columns) == d._TWFUT_RETAIL_LSR_COLUMNS
+      and isinstance(empty.index, d.pd.DatetimeIndex), f'start None sends nothing; empty keeps the schema: {empty.columns}')
 
 print('FAILED' if fails else 'ALL PASS')
 sys.exit(1 if fails else 0)

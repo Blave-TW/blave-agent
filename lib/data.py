@@ -6480,13 +6480,37 @@ def fetch_twfutures_retail_long_short_ratio(futures_id, headers, date=None):
     TMF has data from 2024-07-29 (its listing day). The three are different contracts with different
     retail shares (2026-11-06: TMF +47.14 %, MTX +17.37 %, TX +5.92 %) — never compare one
     with another or pick one silently. When the user says 散戶多空比 without a contract, the
-    one Blave Studio's page shows is TMF; name the contract with the number. No history in one call — for a series compute it from
-    fetch_twfutures_daily(..., aggregate=True)['open_interest'] and
-    fetch_twfutures_institutional's *_long_oi / *_short_oi, never one call per day."""
+    one Blave Studio's page shows is TMF; name the contract with the number. For a series
+    use fetch_twfutures_retail_long_short_ratio_history (one call), never one call per day."""
     futures_id = _TWFUT_INST_ALIASES.get(futures_id.upper(), futures_id.upper())
     r = _retry_get(f'{BASE}/studio/market/twfutures/retail_long_short_ratio/{futures_id}',
                    headers=headers, params={'date': date} if date else {}, timeout=60)
     return r.json()
+
+
+_TWFUT_RETAIL_LSR_COLUMNS = ['futures_id', 'market_open_interest',
+                             'institutional_long_open_interest', 'institutional_short_open_interest',
+                             'retail_long_open_interest', 'retail_short_open_interest',
+                             'retail_long_short_ratio']
+
+
+def fetch_twfutures_retail_long_short_ratio_history(futures_id, start, end, headers):
+    """散戶多空比 series of one index future. → DataFrame indexed by naive trading date, oldest
+    first, one row per day: futures_id, market_open_interest, institutional_long_open_interest,
+    institutional_short_open_interest, retail_long_open_interest, retail_short_open_interest
+    (contracts), retail_long_short_ratio (percent, unrounded; > 0 = retail net long). Same
+    formula as fetch_twfutures_retail_long_short_ratio. futures_id 'TX' / 'MTX' / 'TMF' ('TXF' /
+    'MXF' map). start / end 'YYYY-MM-DD'; start None = the whole history (TX / MTX from
+    2018-06-05, TMF from 2024-07-29, its listing day), end None = up to today. A range with no
+    settled day is an empty frame, not an error; an id with no data at all is a 404. TX, MTX
+    and TMF are different contracts with different retail shares (2026-11-06: TMF +47.14 %,
+    MTX +17.37 %, TX +5.92 %) — never compare one with another; name the contract with the
+    number. One request, no local cache. Published after the close: in a strategy use a day's
+    value from the next trading day on (no FEED_TIMING, align_feed does not take it)."""
+    futures_id = _TWFUT_INST_ALIASES.get(futures_id.upper(), futures_id.upper())
+    params = {k: v for k, v in (('start', start), ('end', end)) if v}
+    return _tw_dated_rows(f'studio/market/twfutures/retail_long_short_ratio/{futures_id}/history',
+                          headers, params, _TWFUT_RETAIL_LSR_COLUMNS)
 
 
 def fetch_stock_futures_list(headers):
@@ -8796,6 +8820,7 @@ _NON_PRICE_FETCHERS = frozenset({
     # fetch_twfutures_daily is per contract month with no roll: not a series to trade on
     'fetch_stock_futures_liquidity_ranking', 'fetch_stock_futures_list', 'fetch_twfutures_daily',
     'fetch_twfutures_large_traders', 'fetch_twfutures_retail_long_short_ratio',
+    'fetch_twfutures_retail_long_short_ratio_history',
     'fetch_twoption_institutional', 'fetch_twoption_large_traders', 'fetch_twstock_gov_bank',
     'fetch_twstock_lending', 'fetch_twstock_market_value', 'fetch_twstock_news',
     'fetch_twstock_screener', 'fetch_twstock_sector_constituents', 'fetch_twstock_sector_overview',

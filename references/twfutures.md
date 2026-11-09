@@ -82,10 +82,11 @@ foreign_call_net_oi = (calls["long_open_interest_balance_volume"]
 
 ## Retail Long/Short Ratio (散戶多空比)
 
-One trading day per call:
+One trading day, or a series in one call:
 
 ```python
-from lib.data import fetch_twfutures_retail_long_short_ratio
+from lib.data import (fetch_twfutures_retail_long_short_ratio,
+                      fetch_twfutures_retail_long_short_ratio_history)
 
 r = fetch_twfutures_retail_long_short_ratio("MTX", hdrs)               # latest settled day
 r = fetch_twfutures_retail_long_short_ratio("MTX", hdrs, date="2026-11-05")
@@ -93,6 +94,9 @@ r = fetch_twfutures_retail_long_short_ratio("MTX", hdrs, date="2026-11-05")
 #   institutional_long_open_interest, institutional_short_open_interest,
 #   retail_long_open_interest, retail_short_open_interest,
 #   retail_long_short_ratio   percent; > 0 = retail net long
+
+df = fetch_twfutures_retail_long_short_ratio_history("TMF", "2026-10-01", None, hdrs)
+# DataFrame indexed by date, oldest first, same fields as the dict (OI columns in contracts)
 ```
 
 - Formula: retail long = market OI − the three institutions' long OI; retail short = market OI
@@ -104,10 +108,12 @@ r = fetch_twfutures_retail_long_short_ratio("MTX", hdrs, date="2026-11-05")
   different share of each contract (2026-11-06: TMF +47.14 %, MTX +17.37 %, TX +5.92 %). When the
   user says 散戶多空比 without naming a contract, the one Blave Studio's page shows is **TMF**;
   always name the contract next to the number.
-- **There is no history call.** For a series (a backtest, a chart) compute it with the same
-  formula from `fetch_twfutures_daily(fid, start, end, hdrs, aggregate=True)["open_interest"]`
-  and `fetch_twfutures_institutional`'s `*_long_oi` / `*_short_oi` columns. Never call this
-  function once per day.
+- **For a series (a backtest, a chart) use `fetch_twfutures_retail_long_short_ratio_history`** —
+  one request for the whole range. Never call the single-day function once per day. `start`
+  None = the whole history (TX / MTX from 2018-06-05, TMF from 2024-07-29); a range with no
+  settled day returns an empty frame, not an error. No local cache.
+- Published after the close: in a strategy, use a day's value from the next trading day on.
+  There is no `FEED_TIMING` entry, so `align_feed` does not take it.
 
 ---
 
