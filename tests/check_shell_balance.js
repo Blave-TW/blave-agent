@@ -87,7 +87,10 @@ const mk = (reply, o) => { const sent = []; let creds = (o && o.creds) || { toke
   // ---- 4
   ok("IPC 走 handle()(只收自家頁面);renderer 拿到的只有 balanceHost().read() 的結果", /handle\("balance", \(\) => balanceHost\(\)\.read\(\)\);/.test(mainSrc) && /balance: \(\) => ipcRenderer\.invoke\("balance"\)/.test(preload)
     && /require\("\.\/balance"\)\.createBalance\(\{ apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b\),\n    getCreds: blaveCreds \}\);/.test(mainSrc));
-  ok("登出與登入換帳號都叫 reset()", (mainSrc.match(/if \(_balance\) _balance\.reset\(\);/g) || []).length === 2);
+  // 逐函式比,不數全檔:策略庫付完也會清快取(一步化),那幾處不算登出／換帳號
+  { const body = (name) => { const i = mainSrc.indexOf("async function " + name + "("); if (i < 0) return ""; let d = 0; for (let k = mainSrc.indexOf("{", mainSrc.indexOf(")", i)); k < mainSrc.length; k++) { if (mainSrc[k] === "{") d++; else if (mainSrc[k] === "}" && --d === 0) return mainSrc.slice(i, k + 1); } return ""; };
+    const calls = (s) => /if \(_balance\) _balance\.reset\(\);/.test(s);
+    ok("登出與登入換帳號都叫 reset()", calls(body("signOutBlave")) && calls(body("startOAuth")), { signOut: calls(body("signOutBlave")), login: calls(body("startOAuth")) }); }
   { const src = fs.readFileSync(path.join(SHELL, "balance.js"), "utf8").replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
     ok("balance.js 不寫檔、不 log、不 require 任何東西", !/require\(/.test(src) && !/console\.|writeFile|appendFile/.test(src)); }
   ok("打包清單有 balance.js(main.js require 它,漏了打包版一開就炸)", /files:\s*\[[^\]]*"balance\.js"/.test(fs.readFileSync(path.join(SHELL, "electron-builder.config.js"), "utf8")));
