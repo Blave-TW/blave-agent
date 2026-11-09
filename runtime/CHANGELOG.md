@@ -14,6 +14,7 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 - **`BLAVE_DATA_ACCESS_WHY=relogin`**:外殼在 token 還在、`account_status` 401／`ACCOUNT_TOKEN_INVALID` 時帶。事實句講登入失效,回覆那條叫模型講要重新登入、不講方案。舊外殼不帶,原文不變。daemon 子行程讀 `state/data_access.json` 的白名單(`command_listener._DATA_ACCESS_VALUES`)一起收 `relogin`。
 - **失敗代碼 `no_credit`(第六個)**:沒跑過工具的回合撞到 Blave AI proxy 402(`API Error: 402`、`api_error_status` 402、`INSUFFICIENT_CREDIT`)不再歸成 `not_started`。web 與 TG 各一組句子;api `FAULT_CODES` 沒加之前 `/report` 會丟掉這個代碼,web 退回顯示 message。
 - 測試 `tests/check_data_access_card.py`(新)。
+- **群益開通讀 worker 快照的錯誤碼欄位(`capital_connect.run_finish`,配合 blave-agent 同版的 `lib/capital_worker`)**:快照失敗時先讀 `code` 欄(整數才算;連線逾時的 `"timeout"` 不是登入碼),沒有這欄的舊 worker 才退回從 `error` 文字抓 `code=N`。群益連線類錯誤的判斷(`lib/account_capital.classify`)靠同一欄。測試 `tests/check_capital_connect.py`。
 
 ## 1.1.160 — 2026-11-07(desktop 0.1.49)
 
