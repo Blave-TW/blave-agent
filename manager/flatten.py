@@ -1436,11 +1436,15 @@ def _flatten():
                    and result.get("executed_qty") is not None else None)
             done_qty = size if got is None else got
             fill_px = float(result.get("avg_price") or 0) if isinstance(result, dict) else 0.0
-            # a lots book counts lots (qty == cost, like capital); everything else the notional
-            notional = done_qty if lots_row else (round(done_qty * (fill_px or price), 2)
-                                                  if (fill_px or price) else None)
+            # a lots book counts lots (qty == cost); 群益／統一 close through close_position_partial
+            # (not lots_row) but their book is lots too — a notional here read as 41,906 口 in 交易歷史
+            tw_lots = venue_traits.has(vid, "native_units")
+            notional = done_qty if lots_row or tw_lots else (round(done_qty * (fill_px or price), 2)
+                                                             if (fill_px or price) else None)
             leg = {"signed_diff": (-notional if side == "long" else notional) if notional else None,
                    "reduce_only": True, "exchange": vid}
+            if tw_lots:
+                leg["sent_qty"] = int(round(size))  # whole lots sent, as the reconciler's TW legs: 交易歷史 counts lots from it
             if isinstance(result, dict):
                 if result.get("avg_price") is not None:
                     leg["fill_price"] = result["avg_price"]
