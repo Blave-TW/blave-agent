@@ -121,7 +121,7 @@ if (!process.versions.electron) {
     && P.libAmount(1500, "30", "USD", "en", true) === "50 USD" && P.libAmount("x", "1", "TWD", "zh", true) === null && P.libAmount(10, "0", "TWD", "zh", true) === "10 TWD");
   ok("① 年化 / 數字:帶正負號、兩位小數、缺值 —(負號 U+2212)", P.libPct(24.61) === "+24.61%" && P.libPct(-7.6368) === "−7.64%" && P.libPct(0) === "0.00%" && P.libPct(null) === "—" && P.libFixed(1.3835, 2) === "1.38" && P.libFixed(undefined, 2) === "—");
   ok("① 購買分支:200 ok / 400 already purchased → ok;409 → inProgress;402 needs_topup 有卡 → topup、沒卡 → noCard;402 no card bound → noCard;其餘 → failed",
-    P.libBuyBranch(200, { status: "ok" }) === "ok" && P.libBuyBranch(400, { error: "already purchased" }) === "ok" && P.libBuyBranch(409, {}) === "inProgress"
+    P.libBuyBranch(200, { status: "ok" }) === "ok" && P.libBuyBranch(400, { error: "already purchased" }) === "ok" && P.libBuyBranch(409, {}) === "inProgress" && P.libBuyBranch(409, { error_code: "SOURCE_CHANGED" }) === "changed" && P.libBuyBranch(409, { error_code: "PRICE_CONFIRM_REQUIRED" }) === "changed"
     && P.libBuyBranch(402, { needs_topup: true, has_card: true }) === "topup" && P.libBuyBranch(402, { needs_topup: true, has_card: false }) === "noCard" && P.libBuyBranch(402, { error: "no card bound", has_card: false }) === "noCard"
     && P.libBuyBranch(402, { error: "card charge failed" }) === "failed" && P.libBuyBranch(402, { error: "insufficient credits" }) === "failed" && P.libBuyBranch(0, null) === "failed" && P.libBuyBranch(200, { status: "nope" }) === "failed" && P.libBuyBranch(401, { error_code: "INVALID_CREDENTIALS" }) === "failed");
   const cv = P.libCurve(SPARK, "2020-01-01", "2026-06-30");
@@ -411,7 +411,7 @@ if (!process.versions.electron) {
     ok("④前 等待中再按(取消那一按):不記 login_lib、不收結果(結果由開始那一按收)", F.tracked.length === 0 && F.focused === 0 && F.synced === 0);
   })());
   ok("② libraryPurchase:帳號 token + app_secret 都在 body、沒 token / 沒 secret 各回 401 代號、打不到 { status: 0, body: null }、回應只留幾欄、之後作廢清單快取",
-    /postJSON\(`\$\{API_BASE\}\/oauth\/desktop\/marketplace\/purchase`, \{ token, app_secret: secret, strategy_id: strategyId, confirm_topup: confirmTopup === true \}\)/.test(cutFn(mainSrc, "libraryPurchase"))
+    /const body = \{ token, app_secret: secret, strategy_id: strategyId, confirm_topup: confirmTopup === true \}/.test(cutFn(mainSrc, "libraryPurchase")) && /postJSON\(`\$\{API_BASE\}\/oauth\/desktop\/marketplace\/purchase`, body\)/.test(cutFn(mainSrc, "libraryPurchase"))
     && /if \(!token\) return \{ status: 401/.test(cutFn(mainSrc, "libraryPurchase")) && /if \(!secret\) return \{ status: 401/.test(cutFn(mainSrc, "libraryPurchase")) && /catch \(_\) \{ return \{ status: 0, body: null \}; \}/.test(cutFn(mainSrc, "libraryPurchase"))
     && /libCache = null;/.test(cutFn(mainSrc, "libraryPurchase")) && /return \{ status: r\.status, body: libPurchaseBody\(r\.body\) \};/.test(cutFn(mainSrc, "libraryPurchase")));
   { const lr = cutFn(mainSrc, "libraryReport");
@@ -523,7 +523,7 @@ if (!process.versions.electron) {
     && /stratRefresh\(true\)\.catch\(\(\) => \{\}\)\.then\(tabBound\(\(\) => \{ if \(typeof libTurnEnd === "function"\) libTurnEnd\(\);/.test(appSrc.slice(appSrc.indexOf("function turnEndPre(")))
     && /rpCloudPrune\(C\.list\);[^\n]*\n\s*if \(typeof libCloudChanged === "function"\) libCloudChanged\(C\.list\);/.test(cutFn(trSrc, "trPoll")));
   ok("③ 已購:鈕下不寫說明句(lib.note.owned 連字串一起拿掉);未購的付費策略鈕下也空白(lib.bb.noAuto 與 lib.note.paid 連字串拿掉,扣款去向只在購買框 lib.buy.lead)", !("lib.bb.noAuto" in STR.zh) && !("lib.bb.noAuto" in STR.en) && !/lib\.bb\.noAuto/.test(src) && !/lib\.note\.owned/.test(src) && !("lib.note.owned" in STR.zh) && !("lib.note.owned" in STR.en) && /case "owned": [^\n]*libAsk\(s, b\)\)\); break;/.test(src) && !/t\("lib\.pub"\)/.test(src) && !("lib.pub" in STR.zh)
-    && !/lib\.note\.paid|paidNote/.test(src) && !("lib.note.paid" in STR.zh) && !("lib.note.paid" in STR.en) && /case "paid": \{[\s\S]*?libBuyBox\(s, "confirm", b, \{\}\)\)\);[\s\S]*?break;\n\s*\}/.test(src) && /case "buying": row\.appendChild\(dis\(t\("lib\.buy\.busy"\)\)\); break;/.test(src));
+    && !/lib\.note\.paid|paidNote/.test(src) && !("lib.note.paid" in STR.zh) && !("lib.note.paid" in STR.en) && /case "paid": \{[\s\S]*?libBuyBox\(s, "confirm", b, \{\}\)\)\)?;[\s\S]*?break;\n\s*\}/.test(src) && /case "buying": row\.appendChild\(dis\(t\("lib\.buy\.busy"\)\)\); break;/.test(src));
   ok("③ 已安裝:頁首只有「打開這支策略」+「再下載一份」、鈕下不寫說明句(lib.note.installed 連字串一起拿掉,覆蓋說明搬進確認框)", !/lib\.note\.installed/.test(src) && !("lib.note.installed" in STR.zh) && !("lib.note.installed" in STR.en)
     && /case "installed":\n\s*row\.append\(btn\("btn-fill", t\("lib\.open"\)[^\n]*\n\s*if \(relogin\)[^\n]*\n\s*else if \(c\.again\) row\.appendChild\(btn\("btn-quiet", t\("lib\.again"\), \(b\) => libAsk\(s, b\)\)\);\n\s*break;/.test(src));
   { const css = read(path.join(R, "library.css"));
@@ -541,8 +541,8 @@ if (!process.versions.electron) {
     ok("③ 外殼認的契約錨點就是 references/marketplace.md 裡那一節的標題(改了其中一邊這裡就紅)", !!anchor && read(path.join(__dirname, "..", "references", "marketplace.md")).split("\n").includes(anchor[1]), anchor && anchor[1]); }
   ok("③ 代下載的 IPC:preload libraryDownload、main 走 handle()(只收自家頁面,拒絕回 fail)", /libraryDownload: \(id\) => ipcRenderer\.invoke\("library-download", id\)/.test(pre)
     && /handle\("library-download", \(_e, id\) => libraryDownload\(id\), \{ ok: false, kind: "fail" \}\);/.test(mainSrc));
-  ok("③ preload 四支;main:清單、報告與已安裝走 handle()(只收自家頁面)、購買用 ipcMain.handle + fromOurPage、拒絕回打不到的形狀", /libraryList: \(lang, force\) => ipcRenderer\.invoke\("library-list", lang, force\)/.test(pre) && /libraryReport: \(id, lang\) => ipcRenderer\.invoke\("library-report", id, lang\)/.test(pre) && /libraryPurchase: \(id, confirmTopup\) => ipcRenderer\.invoke\("library-purchase", id, confirmTopup\)/.test(pre) && /libraryInstalled: \(patch\) => ipcRenderer\.invoke\("library-installed", patch\)/.test(pre)
-    && /handle\("library-list", \(_e, lang, force\) => libraryList\(lang, force === true\), null\);/.test(mainSrc) && /handle\("library-report", \(_e, id, lang\) => libraryReport\(id, lang\), null\);/.test(mainSrc) && /ipcMain\.handle\("library-purchase", \(e, id, confirmTopup\) => \(fromOurPage\(e\) \? libraryPurchase\(id, confirmTopup\) : \{ status: 0, body: null \}\)\);/.test(mainSrc) && /handle\("library-installed", \(_e, patch\) => libraryInstalled\(patch\), \{\}\);/.test(mainSrc));
+  ok("③ preload 四支;main:清單、報告與已安裝走 handle()(只收自家頁面)、購買用 ipcMain.handle + fromOurPage、拒絕回打不到的形狀", /libraryList: \(lang, force\) => ipcRenderer\.invoke\("library-list", lang, force\)/.test(pre) && /libraryReport: \(id, lang\) => ipcRenderer\.invoke\("library-report", id, lang\)/.test(pre) && /libraryPurchase: \(id, confirmTopup, box\) => ipcRenderer\.invoke\("library-purchase", id, confirmTopup, box\)/.test(pre) && /libraryInstalled: \(patch\) => ipcRenderer\.invoke\("library-installed", patch\)/.test(pre)
+    && /handle\("library-list", \(_e, lang, force\) => libraryList\(lang, force === true\), null\);/.test(mainSrc) && /handle\("library-report", \(_e, id, lang\) => libraryReport\(id, lang\), null\);/.test(mainSrc) && /ipcMain\.handle\("library-purchase", \(e, id, confirmTopup, box\) => \(fromOurPage\(e\) \? libraryPurchase\(id, confirmTopup, box\) : \{ status: 0, body: null \}\)\);/.test(mainSrc) && /handle\("library-installed", \(_e, patch\) => libraryInstalled\(patch\), \{\}\);/.test(mainSrc));
   ok("③ library.js 只走 textContent / DOM,沒有 innerHTML;埋點只在 trackFeature 存在時叫(library_open / library_use 在 telemetry.js 白名單;library_comm 沒送出點了,白名單留給 0.1.5 舊外殼);不寫 localStorage", !/innerHTML/.test(src) && /libTrack\("library_open"\)/.test(src) && /libTrack\("library_use"\)/.test(src) && /typeof window\.blave\.trackFeature === "function"/.test(src) && !/Storage/.test(src)
     && ["library_open", "library_use", "library_comm"].every((n) => require(path.join(SHELL, "telemetry.js")).EVENTS.feature_used.name.includes(n)) && !/library_comm/.test(src));
   { const keys = [...new Set([...src.matchAll(/\bt\("(lib\.[^"]+)"/g)].map((m) => m[1]).concat([...html.matchAll(/data-i18n(?:-aria)?="(lib\.[^"]+)"/g)].map((m) => m[1])))];
@@ -938,11 +938,11 @@ app.whenReady().then(async () => {
   r = await js(`(() => ({ set: document.getElementById("set-scrim").hidden, cat: (document.querySelector('.set-cat[aria-current="true"]') || { dataset: {} }).dataset.setCat }))()`);
   ok("④ 「前往綁卡」→ 關框、設定開到「資料與雲端方案」", r.set === false && r.cat === "plan", JSON.stringify(r));
   await js(`setClose();`); await wait(30);
-  await js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; q("#lib-cta .btn-fill")[0].click(); document.getElementById("del-ok").click(); })()`); await wait(30);
+  await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; q("#lib-cta .btn-fill")[0].click(); await new Promise((r) => setTimeout(r, 30)); document.getElementById("del-ok").click(); })()`); await wait(30);
   await js(`window.__lib.buyResult = { status: 409, body: { error: "purchase already in progress" } }; window.__lib.buyRelease();`); await wait(60); bx = await box();
   ok("④ 409 → 單鈕「知道了」+ lib.buy.inProgress;清單快取作廢(LIB.stale)", bx.open && bx.cancelHidden && bx.ok === (await T("cdel.gotIt")) && bx.lines.join() === (await T("lib.buy.inProgress")) && (await js("LIB.stale")) === true, JSON.stringify(bx));
   await js(`document.getElementById("del-ok").click();`); await wait(30);
-  await js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; q("#lib-cta .btn-fill")[0].click(); document.getElementById("del-ok").click(); })()`); await wait(30);
+  await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; q("#lib-cta .btn-fill")[0].click(); await new Promise((r) => setTimeout(r, 30)); document.getElementById("del-ok").click(); })()`); await wait(30);
   await js(`window.__lib.buyResult = { status: 0, body: null }; window.__lib.buyRelease();`); await wait(60); bx = await box();
   r = await js(`(() => ({ err: [...document.querySelectorAll("#del-body .plan-err")].map((x) => x.textContent).join(), mark: document.querySelectorAll("#del-body .plan-err.is-calm .fault-mark").length }))()`);
   ok("④ 打不到 → 回第一段 + 灰記號錯誤行「購買失敗，請再試一次。」、鈕回「確認購買」;錢沒送出去", bx.open && bx.ok === (await T("lib.buy.ok")) && r.err === (await T("lib.buy.failed")) && r.mark === 1 && (await js("window.__lib.sent.length")) === 1, JSON.stringify([bx, r]));
@@ -958,7 +958,7 @@ app.whenReady().then(async () => {
   // en
   r = await js(`(async () => { running = false; LIB.pending.clear(); libFind(5).purchased = false; setLang("en"); applyStatic(); await new Promise((r) => setTimeout(r, 30)); const q = (x) => [...document.querySelectorAll(x)];
     const h = document.getElementById("lib-h").textContent; document.getElementById("lib-back").click(); q('#lib-rows .lib-row[data-id="5"]')[0].click(); const tag5 = q('#lib-cta').length;
-    const note = q("#lib-cta .note")[0].textContent; q("#lib-cta .btn-fill")[0].click(); const cfNotes = q("#del-body .cf-note").map((p) => p.textContent); document.getElementById("del-cancel").click();
+    const note = q("#lib-cta .note")[0].textContent; q("#lib-cta .btn-fill")[0].click(); await new Promise((r) => setTimeout(r, 30)); const cfNotes = q("#del-body .cf-note").map((p) => p.textContent); document.getElementById("del-cancel").click();
     document.getElementById("lib-back").click(); const priceTag = q('#lib-rows .lib-row[data-id="8"] .tag').length; const l2 = q('#lib-rows .lib-row[data-id="101"] .l2')[0].textContent;
     q('#lib-rows .lib-row[data-id="72"]')[0].click(); q("#lib-cta .btn-fill")[0].click(); document.getElementById("del-ok").click(); await new Promise((r) => setTimeout(r, 60));
     const out = { h, note, cfNotes, l2, last: window.__lib.sent[window.__lib.sent.length - 1].message, priceTag, owned5: q("#lib-cta .btn-fill")[0].textContent };

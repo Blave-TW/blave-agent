@@ -54,9 +54,9 @@ ok("① 自動儲值那句:數字讀 public_tiers 的 trial(同網頁)、兩個�
   && /\(q\.kind === "trial" \|\| q\.kind === "plain"\) && !tu\) \{ libBuyBox\(s, "noCard", opener, \{\}\); return;/.test(cutFn(src, "libBindBuyBox"))
   && cutFn(src, "libBindBuyBox").indexOf("lib.bb.topup") > cutFn(src, "libBindBuyBox").indexOf("lib.bb.renew"));
 { const cta = cutFn(src, "libPaintCta");
-  ok("① 「買了不會自動下單。」鈕下、框裡都拿掉(Wei 11-09):字串連鍵刪掉、library.js 不再引用;購買框導語也不講;有結果句時只出結果句(續扣那一行收起來,實畫見 ⑥)",
+  ok("① 「買了不會自動下單。」鈕下、框裡都拿掉(Wei 11-09):字串連鍵刪掉、library.js 不再引用;購買框導語也不講;有結果句(含一鍵購買付完那句)時只出結果句(續扣那一行收起來,實畫見 ⑥)",
     !("lib.bb.noAuto" in STR.zh) && !("lib.bb.noAuto" in STR.en) && !/lib\.bb\.noAuto|不會自動下單/.test(src) && !/不會自動下單/.test(STR.zh["lib.buy.lead"]) && !/No orders/.test(STR.en["lib.buy.lead"])
-    && /if \(bbl\.length\) note\.textContent = "";\n\s*else under\.forEach\(\(p\) => box\.appendChild\(p\)\);/.test(cta)); }
+    && /if \(bbl\.length \|\| paid\) note\.textContent = "";\n\s*else under\.forEach\(\(p\) => box\.appendChild\(p\)\);/.test(cta)); }
 
 // ── ② 結果 ──
 const res = (o) => Object.assign({ status: "wallet", strategy_id: 7, amount_twd: 1600, reason: null, reason_code: null, trial_until: null }, o);
@@ -228,15 +228,15 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
       get textContent() { return this._t + this.kids.map((k) => (typeof k === "string" ? k : k.textContent)).join(""); }
       set textContent(v) { this._t = String(v); this.kids = []; }
       get childNodes() { return this.kids; }
-      appendChild(c) { this.kids.push(c); return c; } append(...cs) { cs.forEach((c) => this.kids.push(c)); }
-      setAttribute() {} addEventListener(e, f) { this.on[e] = f; } contains() { return false; } querySelector() { return null; } focus() {} }
+      appendChild(c) { this.kids.push(c); return c; } append(...cs) { cs.forEach((c) => this.kids.push(c)); } prepend(c) { this.kids.unshift(c); }
+      setAttribute(k, v) { this[k] = v; } addEventListener(e, f) { this.on[e] = f; } contains() { return false; } querySelector() { return null; } focus() {} }
     const K = { calls: [], STR, E, O: o, LANG: o.lang || "zh" };
     vm.createContext(K);
     vm.runInContext(src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此")).replace(/^const /gm, "var ") + `
       var LIB_PLAN_BLOCKS = [], LIB_GATE_STATES = ["noData"], document = { activeElement: null, createElement: (tag) => new E(tag) };
       var t = (k, v) => String(STR[LANG][k] === undefined ? "?" + k : STR[LANG][k]).replace(/\\{(\\w+)\\}/g, (m, n) => (v && v[n] != null ? v[n] : m));
       var box = new E("div"), $ = (id) => (id === "lib-cta" ? box : null), pub = O.pub === undefined ? { trial: { auto_topup_min: 50, auto_topup_amount: 300 } } : O.pub;
-      var LIB = { dlFail: null, bbRes: new Map(O.bb ? [[7, O.bb]] : []) }, libPlanMo = () => true, planVars = () => ({ t: 14, pr: 1440 });
+      var LIB = { dlFail: null, buyRead: O.buyRead, bbRes: new Map(O.bb ? [[7, O.bb]] : []) }, libPlanMo = () => true, planVars = () => ({ t: 14, pr: 1440 });
       var libCtx = () => O.ctx, libCtaOf = (s) => libCta(s, O.ctx), libLoginUseVars = () => null, libGateBtn = () => new E("button", "btn-fill", "gate");
       var libSignInBtn = (k, c, label, direct) => { const b = new E("button", "btn-fill", label); b.on.click = () => calls.push("signin:" + direct); return b; };
       var libPlanBuy = (s, b, x) => calls.push("plan:" + J(x)), libBindBuy = (s, b, x) => calls.push("bind:" + J(x)), libBuyBox = (s, st) => calls.push("buybox:" + st), libAsk = () => calls.push("ask");
@@ -251,11 +251,13 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
       ${cutFn(src, "libPaintCta")}`, K);
     K.libPaintCta(Object.assign({ id: 7, title: "x", price: 600, purchased: false, is_owner: false, blave_data: "required" }, o.s));
     const kids = K.box.kids, row = kids.find((k) => k.className === "row"), b = row ? row.kids[0] : null;
-    if (b && b.on.click) b.on.click(b);
+    if (b && b.on.click && !o.noClick) b.on.click(b);
     // 鈕下:row 之後、結果框(.err)之前的 p(隱藏的訊息槽不算);付款頁回來那一句另列
     const lines = kids.filter((k) => k !== row && k.tag === "p" && !k.hidden && k.id !== "lib-cta-topup" && !/err/.test(k.className)).map((k) => k.textContent);
     const top = kids.filter((k) => k.id === "lib-cta-topup").map((k) => k.textContent);
-    return { btn: b ? b.textContent : null, lines, top, click: K.calls.join(), errs: kids.filter((k) => /err/.test(k.className)).length };
+    const paidP = kids.find((k) => k.tag === "p" && k.className === "note up" && k.role === "status") || null;
+    return { btn: b ? b.textContent : null, lines, top, click: K.calls.join(), errs: kids.filter((k) => /err/.test(k.className)).length,
+      dis: b ? !!b.disabled : null, spin: !!(b && b.kids[0] && b.kids[0].className === "spin16"), paid: paidP ? paidP.textContent : null, kept: K.LIB.bbRes.has(7) };
   };
   { const base = { running: false, env: "local", signedIn: true, cloud: null, pending: null, noNew: null, buying: null, installedName: null, bindWait: null, bbOk: null, planMo: true, planTwd: 1440, planBlock: null };
     const plan = (o) => Object.assign({}, base, { dataAccess: "plan_required", why: "no_plan", noCard: true, bal: 0 }, o);
@@ -290,6 +292,17 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
       || (want[k].errs !== undefined && r[k].errs !== want[k].errs));
     ok("⑥ 詳情主鈕實畫:D／B／有卡 D 鈕下一行續扣、有試用的 D 一行試用後續扣(不放自動儲值);C、訪客 C、en 鈕下空白;刷卡失敗只出結果句;直接付款只在沒卡錢包不夠、鈕上是 TWD;付款頁回來綁了卡才講自動儲值",
       bad.length === 0 && Object.values(r).every((x) => x.lines.length <= 1), bad.map((k) => k + "=" + J(r[k])).join(" ; ")); }
+  // 一鍵購買(設計稽核 purchase-box-audit 第 4、7 條):付完那句無記號 note up＋role=status、只此一行;裝好就收掉;讀餘額時主鈕 disabled＋鈕內轉圈、鈕字不換
+  { const base = { running: false, env: "local", signedIn: true, cloud: null, pending: null, noNew: null, buying: null, installedName: null, bindWait: null, bbOk: null, planMo: true, planTwd: 1440, planBlock: null, dataAccess: "included", why: null, noCard: false, bal: 1000 };
+    const paidBb = { kind: "paid", key: "lib.pb.doneCard", p: 600 };
+    const a = paintRun({ s: { blave_data: "none", purchased: true }, ctx: base, bb: paidBb });
+    const pend = paintRun({ s: { blave_data: "none", purchased: true }, ctx: Object.assign({}, base, { pending: 7 }), bb: paidBb });
+    const inst = paintRun({ s: { blave_data: "none", purchased: true }, ctx: Object.assign({}, base, { installedName: "x" }), bb: paidBb, noClick: true });
+    const rd = paintRun({ s: { blave_data: "none" }, ctx: base, buyRead: 7 }), idle = paintRun({ s: { blave_data: "none" }, ctx: base });
+    ok("一鍵購買付完那句:鈕下一行「已從卡扣 600 TWD。」(p.note.up、role=status、不是 .err 沒記號);安裝中留著;裝好收掉並清 bbRes",
+      a.paid === "已從卡扣 600 TWD。" && a.errs === 0 && J(a.lines) === J(["已從卡扣 600 TWD。"]) && a.kept && pend.paid === "已從卡扣 600 TWD。" && pend.kept
+      && inst.paid === null && inst.lines.length === 0 && !inst.kept, J({ a, pend, inst }));
+    ok("讀餘額時(LIB.buyRead=這支):付費主鈕 disabled、鈕內第一個是 spin16、鈕字同平常;沒在讀就不停用", rd.dis === true && rd.spin && rd.btn === idle.btn && idle.dis === false && !idle.spin, J({ rd, idle })); }
   var planBuyRun = async () => {
     const run = async (direct, body) => {
       const K = { calls: [], LIB: { buying: null, pending: new Map(), bbRes: new Map(), bbRestart: new Set() }, pub: null };

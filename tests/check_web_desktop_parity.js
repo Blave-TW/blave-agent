@@ -941,4 +941,26 @@ for (const lang of ["zh", "en"]) {
     ok(`綁卡即購買 ${lang} 列舉:兩邊每個鍵都在配對表或豁免表`, !dStray.length && !wStray.length, "電腦版多 " + dStray.join(",") + " / 網頁多 " + wStray.join(","));
   }
 }
+// 一鍵購買框(designer purchase-confirm-2026-11-10 A 案;設計稽核 purchase-box-audit-2026-11-10;程式稽核 X1):電腦版 lib.pb.* 與網頁 workspace_lib_buy_* 逐字同(zh／en),
+// 網頁少了就紅。佔位符兩邊寫法不同、比之前收成電腦版那種:網頁卡號 {n} → {l};網頁「{p} TWD」→「{p}」(電腦版 {p} 已含 TWD,同綁卡即購買那段)。
+// 標題、價格、付款失敗網頁重用策略頁的 bc_mp_*;付款鈕與付款中電腦版重用 lib.bb.pay／paying。
+// 刻意不配對:處理中(電腦版 lib.buy.inProgress「稍後再看一次結果」會自己重拉清單;網頁要用戶重新整理,設計稽核第 1 條登記的偏離)。
+// 列舉:電腦版每個 lib.pb.* 都要在配對表;網頁 workspace_lib_buy_* 不在配對表的只能是舊兩段框的 cf_title／lead(導語上面另比)
+{ const PB_PAIRS = { "lib.pb.title": "bc_mp_confirm_purchase", "lib.pb.price": "bc_mp_price_label", "lib.pb.pay": "workspace_lib_buy_pay_with",
+    "lib.pb.wallet": "workspace_lib_buy_wallet", "lib.pb.card": "workspace_lib_buy_card", "lib.pb.cardAny": "workspace_lib_buy_card_any",
+    "lib.pb.once": "workspace_lib_buy_once", "lib.pb.changed": "workspace_lib_buy_changed", "lib.pb.doneWallet": "workspace_lib_buy_paid_wallet",
+    "lib.pb.doneCard": "workspace_lib_buy_paid_card", "lib.bb.pay": "workspace_lib_buy_ok", "lib.bb.paying": "workspace_lib_buy_paying",
+    "lib.buy.failed": "bc_mp_purchase_failed", "lib.pb.negative": "workspace_lib_buy_negative" };
+  const PB_WEB_OLD = ["cf_title", "lead"];
+  const norm = (w, x) => { let v = String(x).replace(/\{p\}(?: | )TWD/g, "{p}"); if (w === "workspace_lib_buy_card") v = v.replace("{n}", "{l}"); return v; };
+  for (const lang of ["zh", "en"]) {
+    const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+    const bad = Object.entries(PB_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== norm(w, wp[w]));
+    ok(`一鍵購買框 ${lang} 兩邊逐字一致(${Object.keys(PB_PAIRS).length} 句)`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+    const wv = Object.values(PB_PAIRS);
+    const dStray = Object.keys(dp).filter((k) => k.startsWith("lib.pb.") && !(k in PB_PAIRS));
+    const wStray = Object.keys(wp).filter((k) => k.startsWith("workspace_lib_buy_") && !wv.includes(k) && !PB_WEB_OLD.includes(k.slice(18)));
+    ok(`一鍵購買框 ${lang} 列舉:兩邊每個鍵都在配對表或豁免表`, !dStray.length && !wStray.length, "電腦版多 " + dStray.join(",") + " / 網頁多 " + wStray.join(","));
+  }
+}
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

@@ -5771,6 +5771,46 @@ msgstr "This purchase is already being processed. Check back in a moment."
 msgid "lib.buy.failed"
 msgstr "Purchase failed. Please try again."
 
+# 一鍵購買框(designer purchase-confirm-2026-11-10 A 案):標題固定,策略名放內文。web 同一個框逐字同
+msgid "lib.pb.title"
+msgstr "Confirm Purchase"
+
+msgid "lib.pb.price"
+msgstr "Price"
+
+msgid "lib.pb.pay"
+msgstr "Pay with"
+
+msgid "lib.pb.wallet"
+msgstr "Balance"
+
+# {l} = 「••」接綁定卡末四碼(/oauth/desktop/balance 的 card_last4);遮罩點在程式裡接,字串表不放 •
+msgid "lib.pb.card"
+msgstr "Card {l}"
+
+# api 還沒回末四碼時的付款列
+msgid "lib.pb.cardAny"
+msgstr "Card on file"
+
+# 框裡唯一一行說明;en 併「in TWD」交代幣別(en 詳情主鈕是換算的 USD)
+msgid "lib.pb.once"
+msgstr "One-time payment in TWD. No renewals."
+
+# 送出時 api 回 PRICE_CONFIRM_REQUIRED／SOURCE_CHANGED(沒扣):同一個框用新的金額／來源重畫,這句放框底訊息槽(同失敗、處理中那一格)
+msgid "lib.pb.changed"
+msgstr "The price or payment method just changed. Please confirm again."
+
+# 錢包是負的又要走卡(api 409 BALANCE_NEGATIVE,沒扣):框底訊息槽、紅記號,主鈕〔前往儲值〕(plan.addCredit)＋取消。web workspace_lib_buy_negative 逐字同
+msgid "lib.pb.negative"
+msgstr "Your balance is negative. Add credit before paying by card."
+
+# 付成功後主鈕下方那一句:扣了多少、從哪裡扣(照 api 回的 paid_from)。{p} = 「70 TWD」
+msgid "lib.pb.doneWallet"
+msgstr "Paid {p} from your balance."
+
+msgid "lib.pb.doneCard"
+msgstr "Charged {p} to your card."
+
 msgid "lib.fxRate"
 msgstr "30"
 

@@ -2755,17 +2755,25 @@ function libPurchaseBody(b) {
   const s = (v) => (typeof v === "string" ? v.slice(0, 200) : null), n = (v) => (typeof v === "number" && isFinite(v) ? v : null);
   // amount_twd / reason:卡刷了卻沒買成(402 / 400 / 500),錢在錢包(spec library-buy-with-bind §9)
   return { status: s(b.status), error: s(b.error), error_code: s(b.error_code), needs_topup: b.needs_topup === true, has_card: b.has_card === true, balance: n(b.balance), required: n(b.required),
-    amount_twd: n(b.amount_twd), reason: libCode(b.reason), reason_code: libCode(b.reason_code) };
+    amount_twd: n(b.amount_twd), reason: libCode(b.reason), reason_code: libCode(b.reason_code),
+    // 409 PRICE_CONFIRM_REQUIRED / SOURCE_CHANGED:一鍵框用現在的價格、餘額、來源重畫同一個框
+    price_twd: n(b.price_twd), balance_twd: n(b.balance_twd), price_source: ["wallet", "card", "none"].includes(b.price_source) ? b.price_source : null,
+    paid_from: b.paid_from === "wallet" || b.paid_from === "card" ? b.paid_from : null };   // 200:實際從哪扣(成功句照它寫;舊 api 沒這欄)
 }
 // api 的原因代號:只收小寫代號。failed 時 reason 是藍新的中文句,過不了這道,畫面也不拿它分流
 function libCode(v) { return typeof v === "string" && /^[a-z_]{1,40}$/.test(v) ? v : null; }
-async function libraryPurchase(strategyId, confirmTopup) {
+/* box = 一鍵購買框上寫的 { price(TWD), source: wallet | card }:api 在購買鎖裡對,不符回 409 不扣。
+   舊 api 不認這兩欄,多帶不影響;框退回舊兩段流程時不帶 */
+async function libraryPurchase(strategyId, confirmTopup, box) {
   if (!Number.isInteger(strategyId) || strategyId <= 0) return { status: 400, body: { error_code: "STRATEGY_ID_REQUIRED" } };
   const token = loadToken(), secret = loadAppSecret();
   if (!token) return { status: 401, body: libPurchaseBody({ error_code: "INVALID_CREDENTIALS" }) };
   if (!secret) return { status: 401, body: libPurchaseBody({ error_code: "APP_SECRET_REQUIRED" }) };
+  const body = { token, app_secret: secret, strategy_id: strategyId, confirm_topup: confirmTopup === true }, bx = box && typeof box === "object" ? box : {};
+  if (Number.isInteger(bx.price) && bx.price > 0) body.confirm_price_twd = bx.price;
+  if (bx.source === "wallet" || bx.source === "card") body.expected_source = bx.source;
   let r = null;
-  try { r = await postJSON(`${API_BASE}/oauth/desktop/marketplace/purchase`, { token, app_secret: secret, strategy_id: strategyId, confirm_topup: confirmTopup === true }); }
+  try { r = await postJSON(`${API_BASE}/oauth/desktop/marketplace/purchase`, body); }
   catch (_) { return { status: 0, body: null }; }
   libCache = null;   // 買了(或另一台正在買)之後 purchased 會變:下次開清單重打
   if (_balance) _balance.reset();   // 錢包剛扣過:買完自動安裝要拿扣後的餘額判斷
@@ -4410,7 +4418,7 @@ app.whenReady().then(() => {
   // 策略庫(renderer/library.js):清單與已安裝表只收自家頁面;購買會動到餘額與信用卡,拒絕時回「打不到」的形狀
   handle("library-list", (_e, lang, force) => libraryList(lang, force === true), null);
   handle("library-report", (_e, id, lang) => libraryReport(id, lang), null);
-  ipcMain.handle("library-purchase", (e, id, confirmTopup) => (fromOurPage(e) ? libraryPurchase(id, confirmTopup) : { status: 0, body: null }));
+  ipcMain.handle("library-purchase", (e, id, confirmTopup, box) => (fromOurPage(e) ? libraryPurchase(id, confirmTopup, box) : { status: 0, body: null }));
   handle("library-bind-buy", (_e, id, opts) => libraryBindBuy(id, opts), { status: 0, body: null });
   handle("library-bind-result", () => libraryBindResult(), { mark: null, res: null });
   handle("library-checkout-quote", (_e, id) => libraryCheckoutQuote(id), { status: 0, body: null });

@@ -63,7 +63,7 @@ const line = (re) => { const m = app.match(re); if (!m) throw new Error("找不�
   ok("② free_ai_credit_left:數字照收、null / 缺 / 字串 → null;balance 與 trial 不受影響",
     r({ balance: 0, trial_ai_credit_left: null, free_ai_credit_left: 12.4 }).free === 12.4 && r({ balance: 0, trial_ai_credit_left: 5, free_ai_credit_left: 0 }).free === 0
     && r({ balance: 1, trial_ai_credit_left: null, free_ai_credit_left: null }).free === null && r({ balance: 1, trial_ai_credit_left: null }).free === null && r({ balance: 1, free_ai_credit_left: "30" }).free === null
-    && JSON.stringify(r({ balance: 7, trial_ai_credit_left: 3, free_ai_credit_left: 30 })) === '{"balance":7,"trial":3,"free":30}');
+    && JSON.stringify(r({ balance: 7, trial_ai_credit_left: 3, free_ai_credit_left: 30 })) === '{"balance":7,"trial":3,"free":30,"last4":null}');
   (async () => {
     // 那一列對誰都不出(Wei 拍板 2B):畫它的唯一一處連同狀態一起拿掉——列舉 renderer 每個檔,沒有任何地方再讀這筆額度或用那個字串
     const R = path.join(SHELL, "renderer"), files = fs.readdirSync(R).filter((f) => /\.(js|html)$/.test(f) && f !== "strings.js");
