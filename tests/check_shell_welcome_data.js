@@ -440,7 +440,7 @@ app.whenReady().then(async () => {
     // 0.1.45 沒登入(spec library-login-required 案 1A):卡的字不變,按了先進詳情,不開確認框;記 wcard_signin
     const so = await js(`(async () => { window.__tf.length = 0; const a = $("wc-cards").querySelector(".ln-arrow"), lbl = a.querySelector(".lbl").textContent; a.click(); await new Promise((r) => setTimeout(r, 80));
       const b = document.querySelector("#lib-cta .btn-fill"), r = { lbl, box: !$("del-scrim").hidden, lib: !$("lib").hidden, detail: libBag().detail, btn: b && b.textContent, tf: window.__tf.slice() }; libLeave(); envShowMain(); await new Promise((res) => setTimeout(res, 40)); return r; })()`);
-    ok("③ 沒登入按卡的 CTA:字仍是安裝並回測、不開確認框、進那支詳情、主鈕登入 Blave、記 wcard_signin", so.lbl === Z["lib.use"] && !so.box && so.lib && so.detail === 901 && so.btn === Z["cn.blave.btn"] && so.tf.join() === "wcard_signin", JSON.stringify(so));
+    ok("③ 沒登入按卡的 CTA:字仍是安裝並回測、不開確認框、進那支詳情、主鈕登入並安裝、記 wcard_signin", so.lbl === Z["lib.use"] && !so.box && so.lib && so.detail === 901 && so.btn === Z["lib.bb.loginInstall"] && so.tf.join() === "wcard_signin", JSON.stringify(so));
     await js(`(() => { hasToken = true; acct = { can_run: true, data_access: "billed", plan: { state: "none" } }; LIB.data.signedIn = true; LIB.data.dataAccess = "billed"; WC.key = null; wcPaint(); return true; })()`); await wait(40);
     const cf = await js(`(async () => { window.__tf.length = 0; const a = $("wc-cards").querySelector(".ln-arrow"); a.click(); await new Promise((r) => setTimeout(r, 50));
       const r = { open: !$("del-scrim").hidden, title: $("del-title").textContent, focus: document.activeElement === $("del-cancel") };
