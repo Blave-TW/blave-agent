@@ -31,8 +31,21 @@ if [ -f state/reconciler_stopped.json ]; then
     exit 0
 fi
 
-OUTPUT=$(python3 "strategies/$STRATEGY_NAME/strategy.py" 2>&1)
-EXIT_CODE=$?
+# run_locked.py: one run at a time, stopped past its timeout (124). Missing only in a half-applied
+# update — run unguarded as before rather than fail every tick.
+if [ -f manager/run_locked.py ]; then
+    OUTPUT=$(python3 manager/run_locked.py "$STRATEGY_NAME" 2>&1)
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -eq 75 ]; then
+        # the earlier run is still going — not a failure; its own exit sets the heartbeat
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) skipped: previous run still running" \
+            >> "strategies/$STRATEGY_NAME/strategy.log"
+        exit 0
+    fi
+else
+    OUTPUT=$(python3 "strategies/$STRATEGY_NAME/strategy.py" 2>&1)
+    EXIT_CODE=$?
+fi
 
 if [ $EXIT_CODE -ne 0 ]; then
     echo "$OUTPUT" >> "strategies/$STRATEGY_NAME/strategy.log"

@@ -238,6 +238,7 @@ EXEMPT = [
     ('manager/reconciler.py', '_load_outage', 'OUTAGE_PATH', 'own', "the reconciler's own outage record"),
     ('manager/reconciler.py', 'load_json', 'path',
      'helper', "the retry helper's own open, or the half-updated-workspace fallback"),
+    ('manager/run_locked.py', 'timeout_seconds', 'script', 'code', 'the strategy source, scanned for INTERVAL'),
     ('manager/stop_strategy.py', 'halt_scopes', 'p', 'code', 'strategy sources scanned for scope names'),
     ('manager/stop_strategy.py', 'load_json', 'path',
      'helper', "the retry helper's own open, or the half-updated-workspace fallback"),

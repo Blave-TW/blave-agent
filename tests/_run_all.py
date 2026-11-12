@@ -155,6 +155,7 @@ def main():
     env = dict(os.environ, TMPDIR=root, GIT_OPTIONAL_LOCKS="0", PATH=fake_bin(root) + os.pathsep + os.environ["PATH"])
     env.setdefault("BLAVE_HOME", os.path.join(root, "blave-home"))
     env.pop("BLAVE_TEST_WINDOW", None)
+    env["BLAVE_CLOCK_PROBE"] = "0"   # a reconciler / flatten run as __main__ here never asks the real api for a clock sample
 
     def on_term(*_):
         raise KeyboardInterrupt

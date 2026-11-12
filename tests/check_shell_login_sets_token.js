@@ -8,9 +8,11 @@ const lines = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "a
 let red = 0, n = 0;
 lines.forEach((l, i) => {
   // 0.1.42 起登入點都叫 oauthStart(包 startOAuth);包裝本身不算登入點
-  if (!/await oauthStart\(|if \(await window\.blave\.hasBlaveToken\(\)\)/.test(l)) return;
+  // blaveGoNow 先上鎖再問 token(tok = await …;if (tok) 那一支在 4 行內)
+  const assign = /\btok = await window\.blave\.hasBlaveToken\(\)/.test(l);
+  if (!assign && !/await oauthStart\(|if \(await window\.blave\.hasBlaveToken\(\)\)/.test(l)) return;
   n++;
-  const near = lines.slice(i, i + 3).join("\n");
+  const near = lines.slice(i, i + (assign ? 5 : 3)).join("\n");
   const good = /hasToken = true/.test(near);
   console.log((good ? "PASS  " : "FAIL  ") + `app.js:${i + 1} ${l.trim().slice(0, 70)}`);
   if (!good) red++;

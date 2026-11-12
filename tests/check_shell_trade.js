@@ -152,12 +152,11 @@ ok("口數錯誤分兩種:不是整數 = bad、整數但超過 1e9 = big;看得�
 ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、-2、NaN、非數字用複數", trLotsKey(1, "m", "o") === "o" && trLotsKey(-1, "m", "o") === "o"
   && [0, 0.5, 1.2, 2, -2, NaN, null, "1"].every((n) => trLotsKey(n, "m", "o") === "m"));
 { const TXF = TR_TXF_SPECS.TXF, MXF = TR_TXF_SPECS.MXF, TMF = TR_TXF_SPECS.TMF;
-  { const cxp = src.slice(src.indexOf('const note = trEl("div", "cx-note");'), src.indexOf("if (cloud) {   // 雲端的五處差異之 2"));
+  { const cxp = src.slice(src.indexOf("  if (picked) {\n    // 步驟 1"), src.indexOf("box.appendChild(s2);"));
   const STR = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "\nreturn STRINGS;")();
-  ok("StockCoin 說明句:只在選 StockCoin 時出、排在 IP 白名單那句之前(模擬不畫說明區;本機與雲端同一段 code);zh / en 都有",
-    /\n    if \(venue === "stockcoin"\) note\.appendChild\(trEl\("p", "", t\("cx\.note\.stockcoin"\)\)\);\n/.test(cxp)
-    && cxp.indexOf('"cx.note.stockcoin"') < cxp.indexOf('t("cx.note.one")')
-    && src.indexOf('if (venue === PAPER) box.appendChild(cxPaperNote());\n  else {') < src.indexOf('"cx.note.stockcoin"')
+  ok("StockCoin 說明句:只在選 StockCoin 時出、放在步驟 2 欄位下、金鑰去向那句之前(磚那一態不畫;本機與雲端同一段 code);zh / en 都有",
+    /\n    if \(venue === "stockcoin"\) b2\.appendChild\(trEl\("p", "cx-hint", t\("cx\.note\.stockcoin"\)\)\);\n/.test(cxp)
+    && cxp.indexOf('fld("cx-api"') < cxp.indexOf('"cx.note.stockcoin"') && cxp.indexOf('"cx.note.stockcoin"') < cxp.indexOf('"cx.fact.key"')
     && STR.zh["cx.note.stockcoin"] === "金鑰要建成合約類型，並先在 StockCoin App 把資金轉進合約帳戶，Blave 只讀得到那裡的餘額。" && STR.en["cx.note.stockcoin"] === "Create a futures-type key, and move your funds into the futures account in the StockCoin app first. Blave can only read that balance.");
 }
 { const S3 = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"), has = (k, v) => S3.includes(J(k) + ": " + J(v));
@@ -170,7 +169,7 @@ ok("spec-0.1.13 #4 單複數:顯示的數 |n| = 1 用單數;0、0.5、1.2、2、
   ok("0.1.27 完全凍結:暫停框照 halt.freeze 換句(Freeze 那組講什麼單都不送);freeze 那兩句不提照常執行",
     /freeze = trHaltFreeze\(r\), choice = \(r\.self_ledger === true \? "tr\.stopChoiceSelf" : "tr\.stopChoice"\) \+ \(freeze \? "Freeze" : ""\);/.test(src)
     && /lines: \[t\(choice\), \.\.\.\(freeze \? \[t\(choice \+ "2"\)\] : \[\]\), /.test(src)
-    && ["tr.stopChoiceFreeze", "tr.stopChoiceSelfFreeze", "tr.haltReasonFreeze", "tr.haltUnboundFreeze", "tr.acct.doneSameFreeze"].every((k) => S3.includes(J(k) + ": ") && !new RegExp(J(k).replace(/\./g, "\\.") + ': "[^"]*照常執行').test(S3))); }
+    && ["tr.stopChoiceFreeze", "tr.stopChoiceSelfFreeze", "tr.haltReasonFreeze", "tr.haltUnboundFreeze", "tr.haltRebindFreeze", "tr.acct.doneSameFreeze"].every((k) => S3.includes(J(k) + ": ") && !new RegExp(J(k).replace(/\./g, "\\.") + ': "[^"]*照常執行').test(S3))); }
 { // order-copy #14:lib 的 [order_reject:<kind>] 放在最前面 → 六句白話(每句自己帶標的);沒有 token 照舊原文
   const K = ["insufficient_margin", "below_min_size", "symbol_unavailable", "key_permission", "reduce_only_rejected", "paper_margin"];
   ok("order-copy #14 token:六種都認、只認最前面;舊的兩個 token 照舊;沒有 token = null", K.every((k) => trErrToken("[order_reject:" + k + "] Binance error -2019: x") === k)
@@ -693,7 +692,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   { const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
     ok("這台電腦統一／群益開通中、改選別家:連接框鈕正上方講會取消那家的開通(cx.cancelSetup);雲端照舊講目的地",
     /function cxSetupWip\(\) \{[\s\S]{0,200}trSetupOnly\(st\)[\s\S]{0,120}trPresWip\(r, id\) \|\| trCaplWip\(r, id\)/.test(src)
-    && /const wip = !cloud \? cxSetupWip\(\) : null, cancels = !!wip && venue !== wip;/.test(src)
+    && /const wip = !cloud && picked \? cxSetupWip\(\) : null, cancels = !!wip && venue !== wip;/.test(src)
     && /cancels \? trUbSay\("cx\.cancelSetup", \{ venue: trPadLatin\(trVenueLabel\(wip, true\)\) \}\)/.test(src));
   ok("綁定(credentials)一律不帶 clear_book:換綁擠掉的那家畫面沒講,帳本不動(Wei 11-06)",
       /send\("credentials", \{ env \}, \{ trusted: true \}\)/.test(mainSrc) && /cloudCmd\(\)\.send\("credentials", \{\}, built\.secrets/.test(mainSrc)
@@ -1310,15 +1309,28 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       t: (k, o) => k + (o ? JSON.stringify(o) : "") });
     require("vm").runInContext(fn, ctx);
     const TV = (code, detail) => require("vm").runInContext("cxChkTextVenue(" + J({ code, detail: detail || {} }) + ")", ctx);
+    { // 稽核 v052 B4:TRADING_DISABLED／IP_OR_KEY 不准落到 Binance 那兩句(「上面的 IP」「Binance 拒絕」),本機與雲端同一條。IP 放哪:這台電腦畫在錯誤句下面(cxIpAddFor),雲端常駐步驟 1
+      const ST4 = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "\nreturn STRINGS;")();
+      const cx2 = require("vm").createContext({ CXF: { env: "local", venue: "okx" }, CX_VENUES: { okx: { label: "OKX", pass: true } }, trVenueLabel: () => "OKX", trErrToken: () => null,
+        BINANCE: "binance", PAPER: "paper", cxChkTextCloud: (r) => "cloud:" + r.code, cxSendFailText: () => "send", window: { blave: { platform: "darwin" } }, t: (k, o) => k + (o ? JSON.stringify(o) : "") });
+      require("vm").runInContext(fn + "\n" + src.slice(src.indexOf("function cxChkText("), src.indexOf("function cxSendFailText(")), cx2);
+      const TX = (env, venue, code) => { cx2.CXF.env = env; cx2.CXF.venue = venue; cx2.CXF.ip = "1.2.3.4"; return require("vm").runInContext("cxChkText(" + J({ code, detail: {} }) + ")", cx2); };
+      const want = { TRADING_DISABLED: 'cx.chk.tradingV{"venue":"OKX"}', IP_OR_KEY: 'cx.chk.ipOrKeyV{"venue":"OKX"}' };
+      ok("B4:OKX 等四家遇 TRADING_DISABLED／IP_OR_KEY → 帶 {venue} 的 V 句(本機、雲端都是);Binance 照舊 cx.chk.trading／ipOrKey(IP 在上面常駐)",
+        Object.keys(want).every((c) => TV(c) === want[c] && TX("local", "okx", c) === want[c] && TX("cloud", "okx", c) === want[c])
+        && TX("local", "binance", "TRADING_DISABLED") === "cx.chk.trading" && TX("local", "binance", "IP_OR_KEY") === "cx.chk.ipOrKey" && TX("cloud", "binance", "IP_OR_KEY") === "cloud:IP_OR_KEY",
+        J(Object.keys(want).map((c) => [TV(c), TX("local", "okx", c), TX("cloud", "okx", c)])));
+      ok("B4:兩句 V 版兩語都帶 {venue}、不指方向(上面／下面／above／below)、不寫死 Binance",
+        ["cx.chk.tradingV", "cx.chk.ipOrKeyV"].every((k) => ["zh", "en"].every((l) => /\{venue\}/.test(ST4[l][k] || "") && !/上面|下面|above|below|Binance/i.test(ST4[l][k]))), J(["zh", "en"].map((l) => [ST4[l]["cx.chk.tradingV"], ST4[l]["cx.chk.ipOrKeyV"]]))); }
     const ST = new Function(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8") + "\nreturn STRINGS;")();
     ok("本機 LIB_BROKEN → cx.chk.libBrokenV(帶 venue 與原因,截 200);UNKNOWN 照舊 unknownV;WITHDRAW_ENABLED 沒有專屬句了",
       TV("LIB_BROKEN", { reason: "lib/account_okx.py could not load (SyntaxError)" }) === 'cx.chk.libBrokenV{"venue":"OKX","reason":"lib/account_okx.py could not load (SyntaxError)"}'
       && TV("LIB_BROKEN", { reason: "q".repeat(300) }) === 'cx.chk.libBrokenV{"venue":"OKX","reason":"' + "q".repeat(200) + '"}' && TV("UNKNOWN") === 'cx.chk.unknownV{"venue":"OKX"}' && TV("WITHDRAW_ENABLED") === null);
-    ok("cx.chk.libBrokenV 兩語都有 {venue}{reason}、講這台電腦、叫人回報;提領那幾句已從字串表移除、note.one 只講 IP 白名單(權限建議搬到真實帳戶的事實 cx.fact.perm)",
+    ok("cx.chk.libBrokenV 兩語都有 {venue}{reason}、講這台電腦、叫人回報;提領那幾句已從字串表移除、IP 白名單那兩句(cx.ip.line／cx.chk.ipAdd)只講白名單,權限在步驟 1 的 cx.perm",
       ["zh", "en"].every((l) => /\{venue\}/.test(ST[l]["cx.chk.libBrokenV"]) && /\{reason\}/.test(ST[l]["cx.chk.libBrokenV"]))
       && /這台電腦/.test(ST.zh["cx.chk.libBrokenV"]) && /回報/.test(ST.zh["cx.chk.libBrokenV"]) && /this computer/.test(ST.en["cx.chk.libBrokenV"]) && /report/i.test(ST.en["cx.chk.libBrokenV"])
       && ["cx.chk.withdraw", "cx.chk.withdrawV", "cx.note.wdUnchecked"].every((k) => !(k in ST.zh) && !(k in ST.en))
-      && ["cx.note.one", "cx.note.oneV"].every((k) => /白名單/.test(ST.zh[k]) && !/建議|拒絕|務必/.test(ST.zh[k]) && /whitelist/.test(ST.en[k]) && !/suggest|refuse|reject/i.test(ST.en[k])) && /建議只開讀取和交易/.test(ST.zh["cx.fact.perm"])); }
+      && ["cx.ip.line", "cx.chk.ipAdd"].every((k) => /白名單/.test(ST.zh[k]) && !/建議|拒絕|務必/.test(ST.zh[k]) && /whitelist/i.test(ST.en[k]) && !/suggest|refuse|reject/i.test(ST.en[k])) && /不勾提領/.test(ST.zh["cx.perm"])); }
   var fnS = (n) => src.slice(src.indexOf("function " + n + "("), src.indexOf("\nfunction ", src.indexOf("function " + n + "(") + 1));
   { // audit-trading-ux 1-2(A′):HALT 依 source 分支,規則同 api agent_event_copy
     ok("A′ 來源:portfolio / web / user / flatten / desktop 與缺欄位 = A;reconciler 與認不得的來源 = A′",
@@ -1400,8 +1412,8 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     // Title Case 撤回(web 已回 sentence case,兩邊要一致;Title Case 另開一批)。原本唯一留著的 tr.cloud.means.2 隨啟動框改版退役(Wei 0928 第 3 點)
     ok("EN 鈕名:下單那幾顆維持 sentence case(舊字串,另批處理);0.1.28 onboarding 與連接框這次新增／改動的鈕依 canon design-system.md Casing(按鈕 Title Case)", get("en", "tr.stop") === "Pause trading" && get("en", "tr.start") === "Start trading"
       && get("en", "tr.stopFlat") === "Pause and close positions" && get("en", "tr.startCatchUp") === "Start and catch up positions" && get("en", "up.restart") === "Restart to finish updating"
-      && get("en", "cx.connect") === "Connect Account" && get("en", "cx.goPaper") === "Start Paper Trading"
-      && get("en", "cx.mode.paper") === "Paper Trading" && get("en", "cx.mode.real") === "Real Account" && get("en", "cx.title") === "Choose a Trading Account"
+      && get("en", "cx.connect") === "Connect Account" && get("en", "cx.title") === "Connect Account"
+      && get("en", "cx.paperFoot") === "Try Paper Trading First" && get("en", "cx.keyPage") === "Create a Key on {venue}"
       && ["Start Trading", "Update to the Latest Version Now", "Pause and Close Positions", "Catch Up Positions", "Wait for New Signals"].every((x) => en.indexOf(x) < 0)
       && (en.match(/Pause Trading/g) || []).length === 0
       && !/Pause Trading \(keep|Press Start Trading/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8")));
@@ -1912,8 +1924,18 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("S5 內文兩行:第一行已完成的事、第二行圓環 spinner + 正在等主機確認;沒有呼吸點", /ob\.appendChild\(trWaitTwoLines\("tr\.cloud\.cxSavedBn"\)\);/.test(ob) && !/dot busy/.test(ob)
       && /const wait = trEl\("p", "cx-saved cx-wait"\), sp = trEl\("span", "spin16"\);/.test(fnS("trWaitTwoLines")) && /t\("tr\.cloud\.cxWaiting"\)/.test(fnS("trWaitTwoLines"))
       && /if \(assumed \|\| \(state === "loading" && TR\.env === "cloud"\)\) \{ box\.appendChild\(trWaitTwoLines\(assumed \? "tr\.cloud\.cxSavedPaperDone" : "tr\.cloud\.machineUp"\)\); return; \}/.test(ob));
-    ok("spinner 照 canon Loader:16/2、缺口 1/4、currentColor、1s linear;**沒有** reduced-motion 例外", /\.spin16 \{ flex: none; display: inline-block; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: trSpin 1s linear infinite; \}/.test(css)
-      && !rmBlocks(css).some((b) => /spin16/.test(b)) && !rmBlocks(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")).some((b) => /spin16/.test(b)) && !/cx-saved \.dot/.test(css));
+    // reduced-motion 不准停圓環:app.css 全域那條 `* { animation: none !important }` 會連它一起停,所以 trade.css 要在 reduce 裡把它轉回來
+    { const appRm = rmBlocks(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "app.css"), "utf8")), allRm = rmBlocks(css).concat(appRm);
+      const brCss = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "browser.css"), "utf8"), brRm = rmBlocks(brCss);
+      ok("spinner 照 canon Loader:16/2、缺口 1/4、currentColor、1s linear;**沒有** reduced-motion 例外(全域停動畫那條要被轉回來)", /\.spin16 \{ flex: none; display: inline-block; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: trSpin 1s linear infinite; \}/.test(css)
+        && !allRm.some((b) => /spin16[^{]*\{[^}]*animation:\s*none/.test(b))
+        && (!appRm.some((b) => /\*\s*\{[^}]*animation:\s*none !important/.test(b)) || rmBlocks(css).some((b) => /\.spin16 \{ animation: trSpin 1s linear infinite !important; \}/.test(b)))
+        && !/cx-saved \.dot/.test(css));
+      ok("內建瀏覽器的 .br-spin 也是載入圓環:reduced-motion 下同樣轉回來(稽核 v052 L2),呼吸點照停",
+        /\.br-spin \{[^}]*animation: brSpin 1s linear infinite; \}/.test(brCss)
+        && !brRm.concat(appRm).some((b) => /br-spin[^{]*\{[^}]*animation:\s*none/.test(b))
+        && (!appRm.some((b) => /\*\s*\{[^}]*animation:\s*none !important/.test(b)) || brRm.some((b) => /\.br-spin \{ animation: brSpin 1s linear infinite !important; \}/.test(b)))
+        && brRm.some((b) => /\.br-pulse \{ animation: none;/.test(b))); }
     ok("稽核 B3:最低版本閘擋下「解除暫停」時的字不叫人按啟動下單", /^這個版本的 Blave 需要更新，才能送出「解除暫停」。/.test(get("zh", "minv.release")) && !/啟動下單/.test(get("zh", "minv.release")) && !/Start trading/.test(get("en", "minv.release")));
     ok("狀態行的分隔符統一成「 · 」(不混「・」)", ["tr.runningZ"].every((k) => / · /.test(get("zh", k)) && !/・/.test(get("zh", k))));
     ok("§13-2 模擬帳戶逾時自己一句:不提金鑰、講「再試一次」;真實交易所那句不動", /^模擬帳戶已送出，.*可以再試一次/.test(get("zh", "tr.cloud.cxSavedStalePaper")) && !/金鑰/.test(get("zh", "tr.cloud.cxSavedStalePaper"))
@@ -2131,7 +2153,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && J(trPickPrefs({ env: "cloud", st: null }, SFm)) === J({ order: [], flags: {} }) && J(trPickPrefs({ env: "local" }, null)) === J({ order: [], flags: {} })
         && J(trPickPrefs({ env: "cloud", st: { cloud: { strat_order: "a", strat_flags: [1] } } }, null)) === J({ order: [], flags: {} }));
       ok("接線:psOpen 先 trPickPrefs(S, SF)、list 過 sfApplyOrder(沒載入就原序)再進 trPickRows,旗標當第六個參數",
-        /prefs = trPickPrefs\(S, typeof SF !== "undefined" \? SF : null\);\n[^\n]*\n\s*const rows = mg \? trPickRows\(typeof sfApplyOrder === "function" \? sfApplyOrder\(S\.list, prefs\.order\) : S\.list, names, true, false, false, prefs\.flags\)\n\s*: trPickRows\(typeof sfApplyOrder === "function" \? sfApplyOrder\(S\.list, prefs\.order\) : S\.list, names, [^\n]*trTwBroker\(trVenueId\(\)\), prefs\.flags, trTwdVenueLock\(\)\);/.test(src));
+        /prefs = trPickPrefs\(S, typeof SF !== "undefined" \? SF : null\);\n[^\n]*\n\s*const rows = mg \? trPickRows\(typeof sfApplyOrder === "function" \? sfApplyOrder\(S\.list, prefs\.order\) : S\.list, names, true, false, false, prefs\.flags\)\n\s*: trPickRows\(typeof sfApplyOrder === "function" \? sfApplyOrder\(S\.list, prefs\.order\) : S\.list, names, [^\n]*trTwBroker\(trVenueId\(\)\), prefs\.flags, trTwdVenueLock\(\), trTwStockSelf\(\)\);/.test(src));
       const tcss = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.css"), "utf8");
       ok("CSS:.ps-flag 同側欄色條 2×16 pill、每列都佔位;只有 .ps-row[data-flag] 的上色,色走 app.css 的 [data-flag] → --flag(不另寫色)",
         /\.ps-flag \{ flex: none; width: 2px; height: 16px; border-radius: var\(--radius-pill\); \}/.test(tcss) && /\.ps-row\[data-flag\] \.ps-flag \{ background: var\(--flag\); \}/.test(tcss)
@@ -2148,7 +2170,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       ok("台幣計價的判別:TXF / MXF / TMF、台股代號(2330、00878、00631L、2330.TW);加密與美股代號不算;組合看 UNIVERSE", ["TXF", "mxf", "TMF", "2330", "00878", "00631L", "2330.TW", "6488.TWO"].every((s) => trIsTwd(s)) && ["BTCUSDT", "1000PEPEUSDT", "AAPL", "ETH", "", null, 2330, "TXFF", "123", "1234567"].every((s) => !trIsTwd(s))
         && trIsTwd([null, "BTCUSDT", "2317"]) && !trIsTwd(["BTCUSDT", "ETHUSDT"]) && J(trUniverse("X = 1\nUNIVERSE = ['2330', \"2317\",\n  '2454']\n")) === J(["2330", "2317", "2454"]) && trUniverse("UNIVERSE = load()\n").length === 0 && trUniverse(null).length === 0);
       ok("接線:框看的是連接的對象(模擬交易)、不是視角;金額表的存量列講原因、加金額被擋(可以減、可以移出);機器端 order_paper 的口數支援沒有動",
-        /const cloud = S\.env === \"cloud\", names = mg \? mgMembers\(\) : trNames\(\), prefs = [^\n]*\n[^\n]*\n[^\n]*\n\s*: trPickRows\([^\n]*, names, \(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true, trVenueId\(\) === PAPER && !trPaperTwOk\(\), trTwBroker\(trVenueId\(\)\), prefs\.flags, trTwdVenueLock\(\)\);/.test(src) && /const twdRow = trPaperTw\(n\);/.test(src) && /function trPaperTw\(n\) \{ const x = TR\.list\.find\(\(y\) => y\.name === n\); return trVenueId\(\) === PAPER && !!x && x\.twd === true && !trTxfSpec\(x\.symbol\) && !trPaperTwOk\(\); \}/.test(src)
+        /const cloud = S\.env === \"cloud\", names = mg \? mgMembers\(\) : trNames\(\), prefs = [^\n]*\n[^\n]*\n[^\n]*\n\s*: trPickRows\([^\n]*, names, \(trReport\(\) \|\| \{\}\)\.can_trade_portfolio === true, trVenueId\(\) === PAPER && !trPaperTwOk\(\), trTwBroker\(trVenueId\(\)\), prefs\.flags, trTwdVenueLock\(\), trTwStockSelf\(\)\);/.test(src) && /const twdRow = trPaperTw\(n\);/.test(src) && /function trPaperTw\(n\) \{ const x = TR\.list\.find\(\(y\) => y\.name === n\); return trVenueId\(\) === PAPER && !!x && x\.twd === true && !trTxfSpec\(x\.symbol\) && !trPaperTwOk\(\); \}/.test(src)
         && /\(twdRow && parse\(inp\.value\) > \(stored\[n\] \|\| 0\) \? "twd" : null\)/.test(src) && /whole lots|WHOLE LOTS/.test(fs.readFileSync(path.join(__dirname, "..", "lib", "order_paper.py"), "utf8"))); }
     // 0.1.18 Bug 2:統一期貨只下台指期——標的不是 TXF / MXF / TMF 的在 picker 就鎖(runtime _cmd_amounts 存的時候也擋 NOT_TXF)
     { const T = [N({ name: "txf", displayName: "台指期", symbol: "TXF" }), N({ name: "mxf", displayName: "小台", symbol: "mxf" }), N({ name: "btc", displayName: "BTC", symbol: "BTCUSDT" }), N({ name: "tsmc", displayName: "台積電", symbol: "2330" }), N({ name: "pf", displayName: "組合", portfolio: true }), N({ name: "r1", displayName: "R1", symbol: "TXFR1" })];
@@ -2164,7 +2186,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         const q = Object.fromEntries(trPickRows(TC, ["pf"], false, false, true).map((r) => [r.name, r]));
         ok("統一:已勾的投資組合不鎖(能取消勾選)、標 txfKeep;沒勾的投資組合鎖住不能新勾;各種組合下,已勾的列一律不鎖",
           q.pf.checked && !q.pf.locked && q.pf.note === "txfKeep" && q.pf2.locked && !q.pf2.checked && all.filter((r) => r.checked).every((r) => !r.locked), J(q)); }
-      ok("接線:第五個參數 = 連接的是台灣期貨券商(統一或群益,trTwBroker);psRow 畫 tr.pick.txf / txfKeep", /trVenueId\(\) === PAPER && !trPaperTwOk\(\), trTwBroker\(trVenueId\(\)\), prefs\.flags, trTwdVenueLock\(\)\);/.test(src)
+      ok("接線:第五個參數 = 連接的是台灣期貨券商(統一或群益,trTwBroker);psRow 畫 tr.pick.txf / txfKeep", /trVenueId\(\) === PAPER && !trPaperTwOk\(\), trTwBroker\(trVenueId\(\)\), prefs\.flags, trTwdVenueLock\(\), trTwStockSelf\(\)\);/.test(src)
         && /else if \(r\.note === "txf" \|\| r\.note === "txfKeep"\) note = nm\.appendChild\(trEl\("span", "ps-note", t\(r\.note === "txf" \? "tr\.pick\.txf" : "tr\.pick\.txfKeep", \{ venue: trTwVenueName\(trVenueId\(\)\) \}\)\)\);/.test(src)); }
     const stored = { a: 100, z: 0, gone: 50 };
     // 0.1.26(Wei):picker 的勾選是草稿,儲存才寫——草稿跟已存的差 = 新勾的 + 被取消勾選的(金額 0 也算)
@@ -2185,7 +2207,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     const flat = (n, out = []) => { if (n && n.tag) { out.push(n); n.kids.forEach((k) => flat(k, out)); } return out; };
     const ctx = vm.createContext({ document: { createElement: node, createElementNS: (_ns, tag) => node(tag), createDocumentFragment: () => node("#frag") }, Date, Math, JSON, Array, Object, Number, String, Set, isFinite, console, $: () => null, t: (k) => k, LANG: "zh", envHeadState: () => "running", trKeyBad: () => false });
     const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
-    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trUnknownWhyKey", "trUnknownWhy", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trPaintPosCell", "trAmountTable", "trPaperTwOk", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded"].map(cutF).join("\n"), ctx);
+    vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n" + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trUnknownWhyKey", "trUnknownWhy", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trPaintPosCell", "trAmountTable", "trPaperTwOk", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded", "trPaperCapOf", "trPaperAvailEl", "cxMonoNums"].map(cutF).join("\n"), ctx);
     const bag = (env, o) => ({ env, list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: { config: { amounts: { a_old: 100, gone: 50, z0: 0 } } } }, ...o });
     const names = (b) => { ctx.TR = b; return vm.runInContext("TR = this.TR; trNames()", ctx); };
     ok("trNames(這台電腦):picked null = 已存的 key(含清單找不到的 gone,不含只回測過的 b_new);勾了就是勾的那一份", J(names(bag("local"))) === J(["a_old", "gone", "z0"])
@@ -2338,7 +2360,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         t: (k, o) => k + (o ? " " + JSON.stringify(o) : ""), LANG: "zh", PAPER: "paper", CX_VENUES: { okx: { label: "OKX" }, binance: { label: "Binance" } }, srSay() {}, trIsPaper: () => false, trUnit: () => "USDT", trEquity: () => null, trMoneyInto() {}, envHeadState: () => "running", trKeyBad: () => false });
       const pure = src.slice(src.indexOf("/* ── 純邏輯("), src.indexOf("/* ── 純邏輯到此"));
       vm.runInContext(pure.replace(/^const /gm, "var ") + "\nvar trTipSeq = 0;\n"
-        + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trUnknownWhyKey", "trUnknownWhy", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trPaintPosCell", "trAmountTable", "trPaperTwOk", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded"].map(cutF).join("\n"), ctx);
+        + ["trEl", "trSec", "trTipLabel", "poHelpGroup", "poCfgSec", "trHead", "trFmt", "trReport", "trContracts", "trStored", "trBase", "trNamesOf", "trNames", "trListNames", "trDisplay", "trPickOff", "trPickBtn", "trVenueId", "trVenueLabel", "trStratName", "trTwNamesWant", "trTwName", "trTwNameEl", "trTxfWant", "trRowTxf", "trRowTxfNew", "trCtPend", "trCtStored", "trCt", "trCtGate", "trCtDirty", "trCtRollTag", "trRowMoneyStored", "trCtPayload", "trRowIsLot", "trRowMoney", "trLotsFmt", "trLotsTgtFmt", "trQuoteMap", "trNoSignalYet", "trZoneOf", "trUnknownWhyKey", "trUnknownWhy", "trZoneLabel", "trZoneUnit", "trFxView", "trZoneSum", "trTotalText", "trPaintPosCell", "trAmountTable", "trPaperTwOk", "trPaperTw", "trStratHeld", "trGoStartKey", "trTradableFunded", "trPaperCapOf", "trPaperAvailEl", "cxMonoNums"].map(cutF).join("\n"), ctx);
       const venuesOf = (id) => ({ [id]: { credentials: true, pair: true, order: true, account: true } });
       const bag = (venue, amounts, o) => ({ env: "local", list: L, listLoaded: true, picked: null, sent: null, save: null, edits: {}, bad: {}, st: { alive: true, report: Object.assign({ venues: venuesOf(venue), config: { amounts } }, STALE) }, ...o });
       const paint = (b, states) => { ctx.TR = b; const all = flat(vm.runInContext("TR = this.TR; trAmountTable(trNames(), trBase(), this.STATES)", Object.assign(ctx, { STATES: states || {} })));
@@ -2446,12 +2468,12 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           ctx.document.createElement = mk0; }
         ctx.trEquity = () => null; }
     }
-    ok("接線:連接框「台股」一組雲端只列群益、這台電腦列統一(PRES_LOCAL_ON)與群益本機(CAPL_LOCAL_ON,0.1.50 起開);那兩句說明與 cx.cap.local* 一起刪;交易所選單只在「真實帳戶」出、換到不認得的值退回第一家;框頂那句 cx.acct.meta 換成真實帳戶的兩行事實(onboarding E/F §7-4;「不經過 AI」那行 Wei 10-21 拿掉)",
-      /const tw = CXF\.env !== "local" \? \[\[CAPITAL, "cap\.venue"\]\] : \[cxPresListed\(\) \? \["president", "pres\.venue"\] : null, cxCaplListed\(\) \? \[CAPITAL, "cap\.venue"\] : null\]\.filter\(Boolean\);/.test(src) && /g2\.label = t\("cap\.group\.tw"\);/.test(src) && !/go\.hidden = !cloud && CXF\.venue === CAPITAL;/.test(src)
+    ok("接線:連接框「台灣期貨」那組磚雲端只列群益、這台電腦(Windows)列群益本機(CAPL_LOCAL_ON)與統一(PRES_LOCAL_ON);cx.cap.local* 已刪;交易所磚不預選、點了就進那一家;框頂沒有事實列(權限句在步驟 1、金鑰去向是欄位下那句提示泡;「不經過 AI」那行 Wei 10-21 拿掉)",
+      /if \(env !== "local"\) return \[\[CAPITAL, "cap\.venue"\]\];/.test(src) && /group\("tw", "cap\.group\.tw", tw\.map\(/.test(src) && !/go\.hidden = !cloud && CXF\.venue === CAPITAL;/.test(src)
       && !/cx\.cap\.local/.test(src) && !/cx\.cap\.local/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"))
-      && /CXF\.venue = cxVenuesFor\(CXF\.env\)\.indexOf\(sel\.value\) >= 0 \|\| \(sel\.value === CAPITAL && CXF\.env === "cloud"\) \|\| \(sel\.value === "president" && CXF\.env === "local" && cxPresListed\(\)\)\n\s+\|\| \(sel\.value === CAPITAL && CXF\.env === "local" && cxCaplListed\(\)\) \? sel\.value : cxVenuesFor\(CXF\.env\)\[0\];/.test(src)
+      && /b\.addEventListener\("click", \(\) => cxPick\(L, id\)\);/.test(src)
       && !/cx\.acct\.meta/.test(src + fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "strings.js"), "utf8"))
-      && /\[CXF\.env === "cloud" \? t\("cx\.fact\.keyCloud"\) : t\("cx\.fact\.key"\), t\("cx\.fact\.perm"\)\];/.test(src) && !/cx\.fact\.ai/.test(src));
+      && !/t\("cx\.fact\.perm"\)|cx-facts/.test(src) && /t\(cxPermKey\(venue\)\)/.test(src) && !/cx\.fact\.ai/.test(src));
     ok("接線:選擇策略框沒有 #ps-next、psOpen 不送 pick_gate_lock、外殼不讀 market_gate",
       !/ps-next/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "index.html"), "utf8")) && !/pick_gate_lock/.test(src) && !/market_gate/.test(src)); }
   /* ── 部位表策略名 → 那支的進出場紀錄(spec-0.1.12-pf-strategy-link):落點、不可點的條件、埋點、點下去才發現不在 ── */
@@ -2569,6 +2591,28 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
       const all = paintEv({ orders: [CAP, BTC], order_errors: [err] }), rows = all.filter((n) => n.className === "ev-row").map((r) => r.textContent);
       ok("§1.1 事件不含成交列:買進／賣出不出現在 .ev-row;下單失敗(order_error)照列", !rows.some((x) => /tr\.buy|tr\.sell|TX2610|500TWD/.test(x)) && rows.length === 1 && /tr\.ov\.evErr/.test(rows[0])
         && !/trOrdersShown\(r\)\.forEach/.test(cutF("trOvEvents")), J(rows));
+      { // 收盤後按的全部平倉延到開盤／開盤前按啟動下單取消延後:一般字中性句(台股、台指期各自),不是紅字下單失敗
+        const dfr = [{ ts: now - 29, symbol: "2330@spot", exchange: "paper", error: "close-all: 台股休市中,開盤後第一輪平倉", kind: "market_closed_deferred" },
+          { ts: now - 28, symbol: "TMF", exchange: "president", error: "close-all: 台指期休市中,開盤後第一輪平倉", kind: "market_closed_deferred" },
+          { ts: now - 27, symbol: "2330@spot,2317@spot", exchange: "paper", error: "close-all: 開盤前已按啟動下單,延後的台股平倉取消,改照策略目標下單" },
+          { ts: now - 26, symbol: "TMF", exchange: "capital", error: "close-all: 機器重開後按了啟動下單(重開後要按它才會恢復下單),延後的台指期平倉一併取消,改照策略目標下單" },
+          { ts: now - 25, symbol: "TMF", exchange: "capital", error: "close-all: 台指期現在不收單,開盤後再按一次全部平倉" }];
+        ok("取消延後:記在 paper 的台指期代號也說台指期", vm.runInContext("trCloseDeferred({ symbol: 'TMF', exchange: 'paper', error: 'close-all: 開盤前已按啟動下單,延後的台指期平倉取消' }).title", ctx) === "tr.ov.evDeferCancelFut"
+          && vm.runInContext("trCloseDeferred({ symbol: '2330@spot', exchange: 'paper', kind: 'market_closed_deferred' }).title", ctx) === "tr.ov.evDeferStock");
+        const evAll = paintEv({ order_errors: dfr }), evRows = evAll.filter((n) => n.className === "ev-row").map((r) => r.textContent);
+        const want = ["tr.ov.evErr", "tr.ov.evDeferCancelFut TMF — tr.ov.evDeferCancelNote", "tr.ov.evDeferCancelStock 2330, 2317 — tr.ov.evDeferCancelNote",
+          "tr.ov.evDeferFut TMF", "tr.ov.evDeferStock 2330"];
+        ok("全部平倉延到開盤／取消延後:中性句、台股台指期各自;要再按一次的照舊下單失敗",
+          evRows.length === 5 && want.every((w, i) => evRows[i].includes(w)) && evRows.slice(1).every((r) => !/tr\.ov\.evErr/.test(r))
+          && !evAll.some((n) => n.className === "err" && /tr\.ov\.evDefer/.test(n.textContent)), J(evRows));
+        // 設計稽核 0153 #2:延後那列的附註重述標題(copy #8),事件列不帶;取消那列講原因,照帶
+        ok("延後那兩列事件列不帶附註(標題已講等開盤);取消那兩列照帶", evRows.slice(3).every((r) => !/tr\.ov\.evDeferNote|—/.test(r))
+          && evRows.slice(1, 3).every((r) => r.includes("— tr.ov.evDeferCancelNote")), J(evRows)); }
+      { // Y3:模擬拒單是 P2(api level_for),事件列標題強調色、不是紅;真帳戶照舊紅
+        const pe = paintEv({ order_errors: [{ ts: now - 20, symbol: "2330@spot", exchange: "paper", error: "boom" }, { ts: now - 19, symbol: "BTCUSDT", exchange: "binance", error: "boom" }] });
+        const heads = pe.filter((n) => n.textContent === "tr.ov.evErr" && n.tag === "span").map((n) => n.className);
+        ok("模擬拒單事件列標題 hl(P2),真帳戶 err(P1);api 沒帶 level 時 trEvLevel 同 level_for",
+          J(heads.sort()) === J(["err", "hl"]) && vm.runInContext("trEvLevel('order_error', { exchange: 'paper' }) === 2 && trEvLevel('order_error', { exchange: 'okx' }) === 1 && trEvLevel('order_error') === 1", ctx), J(heads)); }
       const fills = all.find((n) => n.className === "pf-acts ev-fills"), link = fills && fills.kids.find((k) => k.tag === "button");
       ok("§1.4 標題列右側「成交 N 筆 ·」+ 看交易歷史:在 .pf-sec 的 .pf-acts 槽、數字 .mono、用複數 key(2 筆)", !!fills && all.find((n) => n.className === "pf-sec").kids.includes(fills)
         && fills.kids[0].kids.some((k) => k && k.className === "mono" && k.textContent === "2") && fills.kids[0].textContent.includes("tr.ov.evFills")
@@ -2923,7 +2967,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
         && !trPresHeldRun("running", { venues: { okx: BOUND }, president_connect: { worker: { status: "failed", error: "LOGIN_FAILED:X", ok_at: 1 } } }) && !trPresHeldRun("running", R({ worker: { status: "ok", ok_at: 1 } })));
       ok("統一跟模擬同綁(第一家是 paper):照樣認得登入停止,〔繼續〕開統一的框",
         trPresHeldRun("running", { venues: { paper: BOUND, president: BOUND }, president_connect: { worker: { status: "failed", error: "LOGIN_FAILED:TIMEOUT", ok_at: 1 } } })
-        && /CXF\.bound && venue === "president" && env === "local" && trPresLoginHeld\(st && st\.report, "president"\)\) CXF\.venue = venue/.test(src));
+        && /if \(bound && venue === "president" && env === "local" && trPresLoginHeld\(st && st\.report, "president"\)\) CXF\.venue = venue/.test(src));
       const H = src.slice(src.indexOf("function trStateText(state)"), src.indexOf("function trHeadText"));
       ok("狀態行與頂列:這一態不寫「執行中」,本機雲端各一句,字都講單送不出去;暫停鈕照舊、〔繼續〕插在它左邊用開通框",
         /trPresHeldRun\(state, r\)\) return t\(TR\.env === "cloud" \? "tr\.presStoppedCloud" : "tr\.presStopped"\)/.test(H) && /trPresHeldRun\(state, r\)\) return t\("tr\.s\.presStopped"\)/.test(src)

@@ -68,7 +68,7 @@ const LIST = { data: [{ stock_id: "1438", name: "三地開發" }, { stock_id: "0
     t("配置頁金額表的標的格:台股補名字(投資組合列、台指期列不補;窄欄那份同一支 symInto)", /else \{ host\.append\(symText\); const tw = isC \|\| txf \? null : trTwNameEl\(sym\); if \(tw\) host\.appendChild\(tw\); \}/.test(trSrc));
     t("自動下單 › 交易歷史:代號後面補名字、在市場小標之前(台指期那條走 trTxfSymInto 不補)", /ss\.textContent = sym\.replace\(\/@spot\$\/, ""\); const tw = trTwNameEl\(sym\); if \(tw\) ss\.appendChild\(tw\); \}\n\s*ss\.appendChild\(trEl\("span", "mkt-tag"/.test(trSrc));
     { const ev = cut(trSrc, "trOvEvents");
-      t("總覽的拒單事件:認得的原因整句帶「代號 名字」;認不得的原文在代號後面補名字(截尾、title)", /trOrderErrText\(twn \? sym \+ " " \+ twn : sym, raw\)/.test(ev) && /body\.append\(" ", trEl\("span", "mono", sym\)\); if \(tw\) body\.appendChild\(tw\);/.test(ev)); }
+      t("總覽的拒單事件:認得的原因整句帶「代號 名字」;認不得的原文在代號後面補名字(截尾、title)", /trOrderErrText\(twn \? sym \+ " " \+ twn : sym, raw, e\)/.test(ev) && /body\.append\(" ", trEl\("span", "mono", sym\)\); if \(tw\) body\.appendChild\(tw\);/.test(ev)); }
     // 策略組合 › 金額表投資組合列:有名字寫名字、沒有退回代號;名字表第一次沒拿到,輪詢要補問(表的簽章沒變不會再走 trTwName,代號會一直留著)
     { const ctx = { tf: (k, v) => (k === "ak.sep" ? ", " : k === "tr.typecSymsMore" ? v.list + " and " + v.k + " more" : k + (v ? JSON.stringify(v) : "")) };
       vm.runInNewContext(cut(trSrc, "trShortSym") + "\n" + cut(trSrc, "trTypeCLabel"), ctx);

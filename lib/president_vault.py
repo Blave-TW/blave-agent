@@ -451,6 +451,30 @@ def in_login_maintenance(now=None):
     return LOGIN_MAINTENANCE[0] <= t < LOGIN_MAINTENANCE[1]
 
 
+# The only hours this machine logs in to 統一 (Mon–Fri, Taipei, the machine's own clock): 15 min
+# before each open to 15 min after each close. The worker holds its session only inside one; an
+# order outside one is refused before its login (lib/order_president) — a login after hours is
+# what 2026-11-05's refused re-login was, and a failed login stops every later order.
+DAY_WINDOW = (dtime(8, 30), dtime(14, 0))
+NIGHT_WINDOW = (dtime(14, 45), dtime(5, 15))
+
+
+def session_window(now=None):
+    """Start of the trading window `now` falls in (its scheduled login), or None — after
+    hours and weekends. Holidays are not known here: a holiday window logs in and reads."""
+    now = (now or datetime.now(TAIPEI)).astimezone(TAIPEI)
+    t, today = now.time(), now.date()
+    at = lambda d, hm: datetime.combine(d, hm, tzinfo=TAIPEI)  # noqa: E731
+    if now.weekday() < 5 and DAY_WINDOW[0] <= t < DAY_WINDOW[1]:
+        return at(today, DAY_WINDOW[0])
+    if now.weekday() < 5 and t >= NIGHT_WINDOW[0]:
+        return at(today, NIGHT_WINDOW[0])
+    yesterday = today - timedelta(days=1)
+    if t < NIGHT_WINDOW[1] and yesterday.weekday() < 5:
+        return at(yesterday, NIGHT_WINDOW[0])
+    return None
+
+
 # ── the one login path (worker and order lib) ────────────────────────────────
 LOGIN_TIMEOUT_S = 30
 # a holder runs one login: up to LOGIN_TIMEOUT_S, twice that when it hangs and is joined again

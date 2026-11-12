@@ -44,10 +44,14 @@ Design rules:
    under a cross-process lock held from the check to the record). A process
    killed between the send and the record leaves the tag reusable — the
    snapshot check on reduces is the backstop there.
-4. HALTABLE + AUDITED. guard.check_restart_stop first (it also refuses every
+4. HALTABLE + AUDITED + WINDOWED. guard.check_restart_stop first (it also refuses every
    order under HALT, closes outside the user's explicit close included); every
    send audits order_sent / order_error /
-   order_filled.
+   order_filled. Outside the trading window (president_vault.session_window:
+   Mon–Fri 08:30–14:00 / 14:45–05:15) every order is refused with SessionClosed
+   before the login (order_denied_session): an entry on this machine's clock, a
+   close on the clock checked against the api's (lib/tw_clock, the reconciler's
+   close hold reads the same) — on this machine's clock when that is not measured.
 5. ONE SESSION PER CALL, ALWAYS LOGGED OUT. Unitrade starts non-daemon
    threads at login; a process that skips logout() never exits. Concurrent
    logins with the worker's session were measured fine on the test host.
@@ -113,6 +117,11 @@ _CANCELED = {"0002"}  # 0001 (a reduction) is not terminal
 # queued closes). Read as 'unknown' it was parked and the close sent again every round. The
 # rest of 98xx stays 'unknown': what those codes mean is not documented.
 _REDUCE_REJECTED = {"9868"}
+# Live, 11-10 (TMFK6, 13:51): 9876 "FUT0083:該商品交易時間已結束" — a close after the day close.
+# Read as 'unknown' it was parked; it is a plain refusal (not the over-close above: the lots are
+# still open). Only safe together with the close hold (lib/tw_clock.close_hold) and the window
+# gate below: a refused close is sent again at the next round, each send its own login.
+_SESSION_REJECTED = {"9876"}
 
 _tags_lock = threading.Lock()
 
@@ -179,6 +188,12 @@ class EntryDeferred(PresidentError):
 
 class DuplicateOrder(PresidentError):
     """This client_tag was already sent today — refused before reaching the broker."""
+
+
+class SessionClosed(PresidentError):
+    """Outside this machine's 統一 trading window (president_vault.session_window; _check_window
+    says which clock): refused before the login, nothing sent, nothing marked. The broker takes no order
+    then, and a login it refuses would stop every later one (president_vault STOP)."""
 
 
 # ── near month (rule 1) ──────────────────────────────────────────────────────
@@ -528,6 +543,41 @@ class _Reports:
             return list((self.matches.get(str(orderno)) or {}).values())
 
 
+def _in_trading_window():
+    window = getattr(president_vault, "session_window", None)
+    return window is None or window() is not None  # an older vault: no gate, as before
+
+
+def _close_window_open():
+    """A close reads the window on the clock the reconciler's close hold reads (lib/tw_clock):
+    on the machine's own clock a fast or slow one refused closes the hold had let through,
+    silently. Not measured: the machine's own clock, as the hold."""
+    window = getattr(president_vault, "session_window", None)
+    if window is None:
+        return True
+    try:
+        from lib import tw_clock
+        s = tw_clock.skew()
+    except (ImportError, AttributeError):  # half-updated workspace: sent, as before
+        return True
+    if s is None:
+        return window() is not None
+    return window(datetime.fromtimestamp(time.time() - s, president_vault.TAIPEI)) is not None
+
+
+def _check_window(fields):
+    close = fields["intent"] == "reduce"
+    if not (_close_window_open() if close else _in_trading_window()):
+        clock = "the corrected clock" if close else "this machine's clock"
+        guard.audit("order_denied_session", **fields)
+        raise SessionClosed(
+            f"統一期貨 takes no order now: outside the trading window (Mon–Fri "
+            f"{president_vault.DAY_WINDOW[0]:%H:%M}–{president_vault.DAY_WINDOW[1]:%H:%M}, "
+            f"{president_vault.NIGHT_WINDOW[0]:%H:%M}–{president_vault.NIGHT_WINDOW[1]:%H:%M} Taipei, "
+            f"{clock}) — "
+            f"{fields['intent']} {fields['symbol']} not sent, no login")
+
+
 def _check_halt(fields):
     if fields["intent"] == "entry" and guard.halted():
         guard.audit("order_denied_halt", **fields)
@@ -575,7 +625,7 @@ def _await(reports, seq, lots, timeout, fields):
             guard.audit("order_error", seq=seq, code=code, error=err, **fields)
             raise PresidentError(_reject_tag("reduce_only_rejected",
                                              f"統一 rejected the close: statuscode={code} {err}"))
-        if str(code).startswith(("99", "ERR")):
+        if str(code).startswith(("99", "ERR")) or code in _SESSION_REJECTED:
             guard.audit("order_error", seq=seq, code=code, error=err, **fields)
             raise PresidentError(f"統一 rejected the order: statuscode={code} {err}")
         # a code the SDK does not define: not a success, not a rejection — fills
@@ -626,7 +676,8 @@ def place_futures_market_order(env, symbol, action, lots, intent, client_tag=Non
 
     Returns {'status': 'filled'|'sent', 'symbol' (the month contract),
     'fill_qty', 'avg_fill_price', 'seq', 'orderno', 'ack'}; raises
-    PresidentError on refusal."""
+    PresidentError on refusal — SessionClosed, before any login, outside the
+    trading window (president_vault.session_window)."""
     if action not in ("buy", "sell"):
         raise ValueError(f"action must be 'buy' or 'sell', got {action!r}")
     if intent not in ("entry", "reduce"):
@@ -644,6 +695,7 @@ def place_futures_market_order(env, symbol, action, lots, intent, client_tag=Non
               "qty": lots, "unit": "lots", "intent": intent}
     guard.check_restart_stop(intent, fields)  # before the login
     _check_halt(fields)
+    _check_window(fields)  # before _claim: a refusal stamps no send marker and spends no tag
     if client_tag is not None:
         fields["client_tag"] = client_tag
 

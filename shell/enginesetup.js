@@ -74,6 +74,33 @@ function failKind(e) {
   if (NOT_NET_RE.test(tail)) return "other";
   return NET_RE.test(all) ? "net" : "other";
 }
+/* engine_fail 的細項(0.1.52)。pip 那條:failKind 判成 net／timeout 就照它(兩個事件不會講不一樣的話),只細分它的 other。
+   --only-binary 下這個平台沒有 wheel 會是「No matching distribution」,版本互相衝突是 ResolutionImpossible */
+function pipWhy(e, kind) {
+  if (kind === "net" || kind === "timeout") return kind;
+  const s = String((e && e.stderr) || (e && e.message) || "");
+  if (/THESE PACKAGES DO NOT MATCH THE HASHES/i.test(s)) return "hash";
+  if (/No space left on device|Errno 28|ENOSPC/i.test(s)) return "disk";
+  if (/Permission denied|Errno 13|EACCES|EPERM|Access is denied/i.test(s)) return "perm";
+  if (/ResolutionImpossible|conflicting dependencies|Cannot install .+ because/i.test(s)) return "resolve";
+  if (/No matching distribution found|Could not find a version that satisfies/i.test(s)) return "nowheel";
+  return "other";
+}
+// 建 venv:起不來(找不到 / 不能執行那顆 Python)、ensurepip 失敗(常見於缺 python3-venv 的 Linux、被砍過的 Python)、逾時、其他非 0 結束
+function venvWhy(e) {
+  if (e && e.timedOut) return "venv_timeout";
+  if (e && e.spawnFail) return "venv_spawn";
+  return /ensurepip/i.test(String((e && e.stderr) || "")) ? "venv_ensurepip" : "venv_exit";
+}
+/* 死在哪一步 → engine_fail 的 why。step = 失敗時在跑的那一步(沒有 = 步驟之外的檔案動作,算工作區);sub = cur.sub。
+   pip 失敗帶 e.cause(pipWhy)、建 venv 失敗帶 e.why(venvWhy);其餘是檔案系統的例外,照 errno 分 */
+function engineFailWhy(step, sub, e) {
+  const code = e && e.code, fsWhy = code === "ENOSPC" ? "disk" : code === "EACCES" || code === "EPERM" || code === "EROFS" ? "perm" : "other";
+  if (step === "engine" && sub === "venv") return e && /^venv_/.test(e.why || "") ? e.why : "venv_exit";
+  if (step === "engine") return "sdk_" + ((e && e.cause) || fsWhy);
+  if (step === "pkgs") return "pkg_" + ((e && e.cause) || fsWhy);
+  return "ws_" + fsWhy;
+}
 
 const markLines = (s) => String(s || "").split("\n").map((l) => l.trim()).filter(Boolean);
 /* 還要裝哪些(照清單原順序)。complete = 整份清單裝完時寫的記號檔內容;partial = 0.1.27 以前一個一個裝、裝到一半時逐個寫的那份
@@ -140,6 +167,7 @@ async function waitPidLock(fs, file, o) {
 }
 
 const STEP_ORDER = ["ws", "engine", "pkgs"];
+const FAIL_LOG_KEEP = 20;
 function createEngineSetup(o) {
   const { fs, path, spawn } = o;
   const now = o.now || Date.now;
@@ -163,6 +191,38 @@ function createEngineSetup(o) {
   // 使用追蹤(telemetry.js 的 engine_setup / engine_opt_fail;值全是列舉):追蹤壞了不能讓安裝跟著壞
   const track = (ev, result) => { try { if (o.track) o.track(ev, { result }); } catch (_) { /* 送不出去就算了 */ } };
   const kindTag = () => (S.kind === "update" ? "upd" : "first");
+  const trackWhy = (why) => { try { if (o.track) o.track("engine_fail", { why }); } catch (_) { /* 送不出去就算了 */ } };
+  /* 本機落地(BASE/state/engine-setup.log,一筆一行 JSON、只留最近 FAIL_LOG_KEEP 筆):客服請用戶用唯讀 prompt 撈。
+     錯誤摘要先過 redact(家目錄換成 ~);步驟與類別另存欄位,摘要被整則遮掉也還看得到死在哪 */
+  const failLogFile = path.join(o.base, "state", "engine-setup.log");
+  function failLog(why, step, e) {
+    try {
+      const redact = o.redact || require("./redact").redact;
+      const rec = { ts: new Date(now()).toISOString(), os: process.platform, run: S.kind || null, step, why, kind: (e && e.kind) || null,
+        name: (S.cur && S.cur.name) || null, msg: redact(String((e && e.message) || e || "")).slice(0, 600) };
+      let lines = [];
+      try { lines = String(fs.readFileSync(failLogFile, "utf8")).split("\n").filter(Boolean); } catch (_) { /* 第一筆 */ }
+      if (!fs.existsSync(o.base)) fs.mkdirSync(o.base, { recursive: true, mode: 0o700 });   // 同 ws 那一步:BASE 要是 0700
+      fs.mkdirSync(path.dirname(failLogFile), { recursive: true });
+      fs.writeFileSync(failLogFile + ".tmp", lines.concat(JSON.stringify(rec)).slice(-FAIL_LOG_KEEP).join("\n") + "\n");
+      fs.renameSync(failLogFile + ".tmp", failLogFile);
+    } catch (_) { /* 記不了不擋安裝 */ }
+  }
+  /* 進 try 之前(envPath、等鎖、begin 之前的檔案動作)就丟例外:以前沒有遙測、也不出失敗卡。這裡補一份失敗態的快照——
+     begin 之前 S 可能還是 idle(沒有 steps / kind):照工作區與核心記號檔判第一次還是更新(卡的標題用),步驟留空(卡照樣畫得出來,重試時 begin 接著補) */
+  function preFail(e) {
+    const t = now();
+    if (S.phase !== "fail" || !Array.isArray(S.steps)) {
+      let kind = "first";
+      try { kind = fs.existsSync(o.ws) && read(depsMark) !== null ? "update" : "first"; } catch (_) { /* 判不了當第一次 */ }
+      S = { kind, sizeMB: kind === "first" ? o.firstRunMB : null, acc: 0, steps: [], dl: { done: 0, file: null, installing: false, lastByteAt: t }, t0: t };
+    }
+    Object.assign(S, { phase: "fail", tEnd: t, cur: null, warn: null, show: true,
+      err: { kind: "other", msg: String((e && e.message) || e).slice(0, 600), step: null, name: null, limitMs: null } });
+    emit();
+    failLog("pre", null, e);
+    trackWhy("pre");   // engine_setup 不送:它只記「一輪真的有東西要裝」的結果,這一類以前沒算過,加進去舊序列就斷了
+  }
   function snapshot() { return JSON.parse(JSON.stringify(S)); }
 
   /* 正在跑的子行程(abort 收它)與 venv 下的鎖檔:結束 app / 為了更新重開之前先收掉 pip;收不到的(當掉、被強制結束)
@@ -276,7 +336,7 @@ function createEngineSetup(o) {
       if (my !== gen) { reject(Object.assign(new Error("stopped (app closing)"), { stderr: "", aborted: true })); return; }
       try {
         c = spawn(bin, args, { windowsHide: true, env: { ...process.env, ...o.pyEnv, PATH: envPath, PYTHONUNBUFFERED: "1" } });
-      } catch (e) { reject(Object.assign(new Error(String((e && e.message) || e)), { stderr: "" })); return; }
+      } catch (e) { reject(Object.assign(new Error(String((e && e.message) || e)), { stderr: "", spawnFail: true })); return; }
       child = c; childDone = new Promise((r) => c.once("close", r));
       try { fs.mkdirSync(venvDir, { recursive: true }); fs.writeFileSync(lockFile, JSON.stringify({ pid: c.pid, at: now() })); } catch (_) { /* 鎖檔寫不了不擋安裝 */ }
       const stop = () => { try { c.kill(); } catch (_) { /* 已經結束 */ } };
@@ -290,7 +350,7 @@ function createEngineSetup(o) {
       });
       c.stderr.on("data", (d) => { err = (err + d).slice(-65536); });
       const end = () => { clearTimeout(tm); clearInterval(iw); if (child === c) { child = null; try { fs.unlinkSync(lockFile); } catch (_) { /* 沒有就算了 */ } } };
-      c.on("error", (e) => { end(); reject(Object.assign(new Error(String((e && e.code) || e)), { stderr: err })); });
+      c.on("error", (e) => { end(); reject(Object.assign(new Error(String((e && e.code) || e)), { stderr: err, spawnFail: true })); });
       c.on("close", (code) => {
         end();
         if (code === 0 && !timedOut && !idled) return resolve();
@@ -333,7 +393,7 @@ function createEngineSetup(o) {
       p.file = null;
       o.log("[engine] pip install failed: " + args.join(" ") + "\n" + String((e && e.stderr) || (e && e.message) || e));
       const x = new Error(e.timedOut || e.idle || e.aborted ? e.message : pipError(e.stderr || e.message));
-      x.kind = failKind(e); x.limitMs = timeoutMs; x.aborted = !!e.aborted;
+      x.kind = failKind(e); x.limitMs = timeoutMs; x.aborted = !!e.aborted; x.cause = pipWhy(e, x.kind);
       throw x;
     }
   }
@@ -387,6 +447,10 @@ function createEngineSetup(o) {
   }
 
   async function ensure() {
+    let pre = true;
+    try { return await ensureRun(() => { pre = false; }); } catch (e) { if (pre) preFail(e); throw e; }
+  }
+  async function ensureRun(began) {
     const my = gen;
     const envPath = await o.envPath();
     await waitLock();
@@ -411,6 +475,7 @@ function createEngineSetup(o) {
     // 只有 venv 的連結斷了(.app 換了位置):幾秒就修好,不是第一次也不是更新,不出卡
     const kind = fresh ? "first" : !needSdk && !todo.length ? "relink" : read(depsMark) !== null ? "update" : "first";
     begin(keys, kind);
+    began();
     try {
       if (needSdk || todo.length) await reapCompile();
       if (fresh) await step("ws", () => {
@@ -441,7 +506,7 @@ function createEngineSetup(o) {
           }
           try { await run(my, o.basePython(), ["-m", "venv", venvDir], envPath, o.venvMs); } catch (e) {
             o.log("[engine] venv failed\n" + String(e.stderr || e.message));
-            throw Object.assign(new Error(e.timedOut ? e.message : pipError(e.stderr || e.message)), { kind: e.timedOut ? "timeout" : "other", limitMs: o.venvMs, aborted: !!e.aborted });
+            throw Object.assign(new Error(e.timedOut ? e.message : pipError(e.stderr || e.message)), { kind: e.timedOut ? "timeout" : "other", limitMs: o.venvMs, aborted: !!e.aborted, why: venvWhy(e) });
           }
         }
         if (needSdk) {
@@ -501,10 +566,11 @@ function createEngineSetup(o) {
       Object.assign(S, { phase: "fail", tEnd: t });
       emit();
       if (S.kind !== "relink" && !e.aborted) track("engine_setup", kindTag() + "_" + S.err.kind);   // 關 app 時我們自己收掉的不算失敗
+      if (!e.aborted) { const why = engineFailWhy(S.err.step, S.cur && S.cur.sub, e); failLog(why, S.err.step, e); if (S.kind !== "relink") trackWhy(why); }
       throw e;
     }
   }
   return { ensure, snapshot, abort, busy, compiling };
 }
 
-module.exports = { createEngineSetup, waitPidLock, pidAlive, procStartOf, pipLine, pipCurName, pipWheel, pipError, failKind, depsTodo, depGroups, lockKey, PIP_INSTALL };
+module.exports = { createEngineSetup, waitPidLock, pidAlive, procStartOf, pipLine, pipCurName, pipWheel, pipError, failKind, pipWhy, venvWhy, engineFailWhy, depsTodo, depGroups, lockKey, PIP_INSTALL, FAIL_LOG_KEEP };

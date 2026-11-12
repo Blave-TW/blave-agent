@@ -41,6 +41,7 @@ const QUIET = [
   ["app.js", "if (C && !csTitle && !running && !(o && o.force))", "csStartNew:眼前那條空著又閒著就用它、不疊空分頁;不是擋操作"],
   ["app.js", "if (upLocalTurn()) return;", "upInstall / upRestartAsk:入口(更新膠囊、細軌圓鈕、set-up-btn)先看 busyLocked、講原因;選單列那條由主行程擋(TURN_BUSY)"],
   ["export.js", "if (!XP_PLATFORM[target] || xpDisabled() ||", "xpAsk:入口 xpOpen 與 again 鈕先講原因(xpNote)"],
+  ["app.js", "mdlAct(o, rd); if (typeof busyOn === \"function\" && busyOn()) mdlPaint();", "模型接入 radio:回饋是 mdlAct 那條的「中斷回覆」確認框(busyCut);這裡只把 radio 畫回 cur,不是擋操作"],
 ];
 const hits = [];
 for (const f of fs.readdirSync(R).filter((n) => /\.js$/.test(n) && n !== "strings.js")) {

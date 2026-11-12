@@ -90,6 +90,25 @@ RESEARCH_LEAD_FIRST_WIDTH = 80
 # A delta that opens with one of these is a baseline, not a move; the renderers colour the
 # delta by the cell's tone, so a pos/neg tone paints the baseline as a gain/loss (§7b A4).
 BASELINE_DELTA_RE = re.compile(r"^\s*(?:平常|一般|同期|基準|baseline)", re.I)
+# How a research sentence's numbers are counted (7b A2): a bare integer that is a window length,
+# a segment number or a year is not one. publish()'s lead check (report_templates) shares these.
+NOT_A_NUMBER_AFTER_RE = re.compile(r"\s*(?:個)?(?:交易)?(?:日|天|週|周|月|年|段)")
+YEAR_RE = re.compile(r"(?:19|20)\d\d")
+# In body prose a figure often touches a CJK character (「是60%」), so only a Latin letter, a digit
+# or a dot before it makes it part of something else (MA20, v1.2).
+BODY_NUM_RE = re.compile(r"(?<![A-Za-z0-9_.,])[+\-−]?(\d[\d,]*(?:\.\d+)?)")
+# Dates, clock times and a bracketed stock code are not numbers either (A2): 2020-12-01, 9/23,
+# 09:30, 台積電(2330).
+NOT_A_NUMBER_RE = re.compile(r"(?<![\d.])(?:19|20)\d\d[-/]\d{1,2}(?:[-/]\d{1,2})?(?![\d.])"
+                             r"|(?<![\d./])\d{1,2}/\d{1,2}(?![\d./])|(?<![\d.])\d{1,2}:\d{2}(?![\d.])|[（(]\d{4,6}[）)]")
+# 7b A12: a body sentence carries at most two numbers, its baseline counted.
+SENTENCE_NUMBERS = 2
+# 7b A13: a table in the body is at most 4 columns by 8 rows; a larger one goes to 附表.
+BODY_TABLE_COLS, BODY_TABLE_ROWS = 4, 8
+APPENDIX_HEADING_RE = re.compile(r"^\s*##\s+(?:附表|Appendix)", re.I)
+# A section with one of these under it is an argument section (7b A7) and closes on a bold sentence.
+_EVIDENCE_TYPES = ("candlestick", "line_chart", "bar_chart", "table", "metric_table", "heatmap",
+                   "histogram", "scatter", "box", "image")
 # Cited web images (an `image` block with `source`, references/reports.md › Citing an image
 # from the web). The api sets no cap on purpose: a 400 files the whole report as failed, and a
 # third citation is not a broken document — so the cap lives here, where the agent can fix it.
@@ -317,6 +336,78 @@ def _research_warnings(title, blocks):
                 out.append(f"kpi_row [{b}] item {n} has a baseline in its delta but tone "
                            f"{item.get('tone')!r}; the delta renders in that colour, so a baseline "
                            "cell is neutral (references/reports.md 7b A4)")
+    return out + _body_warnings(blocks)
+
+
+def body_numbers(sentence):
+    """The numbers a body sentence carries, counted as 7b A2 counts them."""
+    plain = NOT_A_NUMBER_RE.sub(" ", MD_RE.sub("", sentence))
+    out = []
+    for m in BODY_NUM_RE.finditer(plain):
+        v = m.group(1)
+        if v.isdigit() and (YEAR_RE.fullmatch(v) or NOT_A_NUMBER_AFTER_RE.match(plain, m.end())):
+            continue
+        out.append(m.group(0))
+    return out
+
+
+def _sentences(markdown):
+    for line in str(markdown).splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        line = re.sub(r"^\s*(?:[-+*]|\d+\.)\s+", "", line)
+        yield from (s for s in re.split(r"(?<=[。！？!?])|(?<=\.)\s+", line) if s.strip())
+
+
+_BOLD_END_RE = re.compile(r"\*\*[^*\n]+\*\*[。．.!！?？]?$")
+
+
+def _ends_bold(markdown):
+    lines = [l for l in str(markdown).splitlines() if l.strip() and not l.lstrip().startswith("#")]
+    if not lines:
+        return False
+    last = re.sub(r"(?:\[\^[\w-]+\])+\s*$", "", lines[-1].rstrip())
+    m = _BOLD_END_RE.search(last)
+    return bool(m) and re.fullmatch(r"\s*(?:[-+*]\s+|\d+\.\s+)?|.*[。．！？!?.]\s*", last[:m.start()]) is not None
+
+
+def _body_warnings(blocks):
+    """7b A7, A12, A13: two numbers a sentence, small tables in the body, an argument section
+    closing on a bold sentence. Sections are cut at each `## ` text block; the lead is A2's.
+    A report from publish() (it closes on a `summary` text) gets the sentence count only: its data
+    blocks come from bricks the agent may not change, and its sections are fixed slots."""
+    packed = any(isinstance(b, dict) and b.get("variant") == "summary" for b in blocks)
+    out, sections, cur = [], [], None
+    for b, block in enumerate(blocks):
+        if not isinstance(block, dict) or block.get("type") == "meta" or block.get("variant") == "lead":
+            continue
+        md = str(block.get("markdown") or "") if block.get("type") == "text" else ""
+        if md.lstrip().startswith("## "):
+            cur = {"at": b, "appendix": bool(APPENDIX_HEADING_RE.match(md.lstrip())), "blocks": []}
+            sections.append(cur)
+        if cur is not None:
+            cur["blocks"].append((b, block))
+        if md:
+            for n, s in enumerate(_sentences(md)):
+                nums = body_numbers(s)
+                if len(nums) > SENTENCE_NUMBERS:
+                    out.append(f"text [{b}] sentence {n + 1} carries {len(nums)} numbers, over {SENTENCE_NUMBERS} "
+                               "(its baseline counted); move the spread or the sample size to the next sentence, "
+                               "the caption or a table (references/reports.md 7b A12)")
+        if block.get("type") == "table" and not packed and not (cur and cur["appendix"]):
+            cols, rows = len(block.get("columns") or []), len(block.get("rows") or [])
+            if cols > BODY_TABLE_COLS or rows > BODY_TABLE_ROWS:
+                out.append(f"table [{b}] is {cols} columns by {rows} rows, over {BODY_TABLE_COLS} by {BODY_TABLE_ROWS} "
+                           "in the body; move the full table to an appendix section ('## Appendix', or the Chinese heading "
+                           "in references/reports.md 7b A13) and cite its conclusion")
+    for s in sections:
+        if packed or s["appendix"] or not any(bl.get("type") in _EVIDENCE_TYPES for _, bl in s["blocks"]):
+            continue
+        texts = [(b, bl) for b, bl in s["blocks"] if bl.get("type") == "text"]
+        b, last = texts[-1]
+        if not _ends_bold(last.get("markdown")):
+            out.append(f"section at [{s['at']}]: its last text block [{b}] does not end on a whole bold sentence; "
+                       "close the section on its conclusion in bold, not in a caption (references/reports.md 7b A7)")
     return out
 
 
@@ -531,8 +622,10 @@ def write_report(report_id, title, blocks, type="research", report_type=None,
     (a name becomes a path on this disk, so it may not be one) and the cap of CITED_IMAGES_MAX
     image blocks carrying `source` (the api has no such cap).
     For `type="research"` three points of the §7b skeleton (title width, the lead's first
-    sentence, a `kpi_row` right after the lead), a baseline `delta` on a non-neutral KPI cell
-    and a missing `meta.shareable` are printed as `WARNING:`
+    sentence, a `kpi_row` right after the lead), a body or key-point sentence over two numbers,
+    a body table over 4 columns by 8 rows, an argument section that does not close on a bold
+    sentence, a baseline `delta` on a non-neutral KPI cell and a missing `meta.shareable` are
+    printed as `WARNING:`
     lines, as is a `shareable` that is not a bool or sits on another type — advice,
     never a refusal.
     """

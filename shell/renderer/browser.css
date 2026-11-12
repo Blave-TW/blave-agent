@@ -226,6 +226,7 @@
 @media (prefers-reduced-motion: reduce) {
   .pt { animation: none; }
   .br-pulse { animation: none; opacity: .5; }
+  .br-spin { animation: brSpin 1s linear infinite !important; }   /* app.css 全域停動畫會連它一起停;canon › Loader:轉動即語意(同 trade.css .spin16) */
   .bblk .pt-prog, .pg-band, .segs i, .tc, .br-open { transition: none; }
   .tr { display: none; }
 }

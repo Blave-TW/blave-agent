@@ -671,7 +671,7 @@ def _fill_spot(led, o, base_qty, price, fee_rate, env=None):
     else:
         held = led["spot"].get(base, 0.0)
         if base_qty > held + 1e-12:
-            raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient {base} to sell ({held} < {base_qty})"))
+            raise PaperError(f"insufficient {base} to sell ({held} < {base_qty})")
         proceeds = base_qty * price / rate
         fee = proceeds * fee_rate
         led["cash"] += proceeds - fee
@@ -1366,7 +1366,7 @@ def place_spot_limit_order(env, symbol, side, base_qty, price, client_order_id=N
             if side == "buy" and led["cash"] < float(base_qty) * px * (1 + rate) / _spot_fx(env, base):
                 raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient paper cash to rest a {sym} buy"))
             if side == "sell" and led["spot"].get(base, 0.0) + 1e-12 < float(base_qty):
-                raise PaperError(reject_token.tag(reject_token.INSUFFICIENT_MARGIN, f"insufficient {base} to rest a sell"))
+                raise PaperError(f"insufficient {base} to rest a sell")
             crosses = (px >= mark) if side == "buy" else (px <= mark)
             o = _new_order(led, sym, "spot", side, "limit", px, float(base_qty),
                            client_order_id, post_only=post_only)

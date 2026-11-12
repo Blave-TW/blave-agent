@@ -143,7 +143,7 @@ if (!process.versions.electron) (async () => {
     const trade = fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8"), html = fs.readFileSync(path.join(SHELL, "renderer", "index.html"), "utf8");
     const mainSrc = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
     ok("接線:mdlPaint 第一行畫 modal(detect／偵測中／paintRows／setHint 都經過它)", /^function mdlPaint\(\) \{\n  laiPaint\(\);/m.test(app));
-    ok("接線:localLogin 的第三個表面(modal 列):先判 #lai-rows,成功一樣直接 connect、字寫在列上", /const inLai = !!b\.closest\("#lai-rows"\), inRow = !inLai && !b\.closest\("\.cn-opts"\);/.test(app) && /if \(\(inRow \|\| inLai\) && r\.ok && x\.installed && x\.loggedIn\) \{\n    if \(inLai && !laiOn\(\)\) LAI\.late = kind;[^\n]*\n    return connect\(kind, x\);/.test(app) && /if \(inLai\) \{ LAI\.msg\[kind\] = "failed"; laiPaint\(\);/.test(app));
+    ok("接線:localLogin 的第三個表面(modal 列):先判 #lai-rows,成功一樣直接 connect、字寫在列上", /const inLai = !!b\.closest\("#lai-rows"\), inRow = !inLai && !b\.closest\("#set-model"\);/.test(app) && /if \(\(inRow \|\| inLai\) && r\.ok && x\.installed && x\.loggedIn\) \{\n    if \(inLai && !laiOn\(\)\) LAI\.late = kind;[^\n]*\n    return connect\(kind, x\);/.test(app) && /if \(inLai\) \{ LAI\.msg\[kind\] = "failed"; laiPaint\(\);/.test(app));
     ok("接線:enterWorkspace 換好後先給 laiDone 收框與放焦點,沒開才給輸入框", /  if \(laiDone\(kind\)\) return;[^\n]*\n  \$\("ta"\)\.focus\(\);\n\}/.test(fn("enterWorkspace")));
     ok("接線:Esc 由 escTop 關(跟其他同層的框並列,排在連接交易所之後);切視角守門算它", /\? cxDismiss : !\$\("lai-scrim"\)\.hidden \? laiClose :/.test(fn("escTop")) && /\$\("lai-scrim"\)\.hidden/.test(trade));
     ok("接線:回前景重偵測把這個 modal 算進去(裝完回來不用按重新偵測)", /\|\| onModel \|\| laiOn\(\)/.test(fn("focusRedetect")));

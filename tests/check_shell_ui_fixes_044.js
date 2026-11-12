@@ -34,7 +34,6 @@ if (!process.versions.electron) {
     "lib.gate.naShort": ["不適用", null],
     "lib.gate.robustOver": ["鄰近參數平均比選定那組還好", null],
     "cap.group.tw": ["台灣期貨", null],
-    "cx.venue": ["交易所或期貨商", null],
     "br.set.sub": ["agent 可以開網頁查資料、操作網站。", null],
     "rpt.fogNew": ["請 agent 寫第一份報告。", "Ask the agent for your first report."],
     "cx.connect": ["連接帳戶", "Connect Account"],
@@ -153,18 +152,20 @@ window.blave = new Proxy({}, { get: (_, k) => typeof k !== "string" ? undefined
     }
 
     // §15 連接框
-    await js(`(() => { trPollSoon = () => {}; trPoll = async () => {}; TR_BAGS.local.st = { alive: true, report: {} }; ENV.cur = "local"; cxModalOpen(null, null); const m = $("cx-mode-real"); m.checked = true; m.dispatchEvent(new Event("change")); })()`); await wait(100);
-    v = await js(`(async () => { const go = $("cx-go"), a = () => [go.disabled, go.getAttribute("aria-describedby")]; const s = $("cx-venue"); s.value = "okx"; s.dispatchEvent(new Event("change")); CXF.apiKey = ""; CXF.secret = ""; CXF.passphrase = ""; TR_BAGS.local.sig.cxm = null; cxModalPaint();
-      const fill = (id, x) => { const i = $(id); i.value = x; i.dispatchEvent(new Event("input")); }; const o = { empty: a() };
+    await js(`(() => { trPollSoon = () => {}; trPoll = async () => {}; TR_BAGS.local.st = { alive: true, report: {} }; ENV.cur = "local"; cxModalOpen(null, null); })()`); await wait(100);
+    v = await js(`(async () => { const go = $("cx-go"), a = () => [go.disabled, go.getAttribute("aria-describedby")], o = { tilesNoGo: go.hidden, groups: [...document.querySelectorAll("#cx-body .cx-grp")].map((x) => x.textContent) };
+      const pick = (id) => { if ($("cx-change")) $("cx-change").click(); $("cx-tile-" + id).click(); };
+      pick("okx"); CXF.apiKey = ""; CXF.secret = ""; CXF.passphrase = ""; TR_BAGS.local.sig.cxm = null; cxModalPaint();
+      const fill = (id, x) => { const i = $(id); i.value = x; i.dispatchEvent(new Event("input")); }; o.empty = a();
       window.__calls.length = 0; go.click(); cxConnect(); await new Promise((r) => setTimeout(r, 50)); o.sent = window.__calls.filter((c) => c[0] === "venueConnect" || c[0] === "cloudConnect").length;
       fill("cx-api", "not-a-real-key"); fill("cx-secret", "not-a-real-secret"); o.noPass = a(); const inp = $("cx-pass"); inp.focus(); fill("cx-pass", "not a real pass"); o.full = a(); o.same = $("cx-pass") === inp && document.activeElement === inp;
       go.focus(); CXF.secret = ""; TR_BAGS.local.sig.cxm = null; cxModalPaint(); o.fb = document.activeElement && document.activeElement.id; o.afterClear = a(); fill("cx-secret", "not-a-real-secret");
-      fill("cx-secret", "  "); o.blank = a(); fill("cx-secret", ""); const g = [...s.querySelectorAll("optgroup")].map((x) => x.label); o.groups = g; o.fld = document.querySelector("#cx-body .cx-pick .fld-l").textContent; s.value = "binance"; s.dispatchEvent(new Event("change")); CXF.apiKey = ""; CXF.secret = ""; TR_BAGS.local.sig.cxm = null; cxModalPaint(); o.bn = a();
+      fill("cx-secret", "  "); o.blank = a(); fill("cx-secret", ""); pick("binance"); CXF.apiKey = ""; CXF.secret = ""; TR_BAGS.local.sig.cxm = null; cxModalPaint(); o.bn = a();
       CXF.venue = "president"; cxModalPaint(); o.pres = a(); CXF.venue = "binance"; TR_BAGS.local.sig.cxm = null; cxModalPaint(); o.bn2 = a();
-      const r = $("cx-mode-paper"); r.checked = true; r.dispatchEvent(new Event("change")); o.paper = a(); return o; })()`);
+      $("cx-change").click(); o.unpicked = go.hidden && !$("cx-paper").hidden; return o; })()`);
     const dis = J([true, null]), on = J([false, null]);
-    ok("§15 真實帳戶、金鑰沒填滿(含 OKX 的 Passphrase):主鈕真 disabled、沒有懸空的 describedby、按了與 Enter 都不送;填滿恢復且打字焦點不掉;焦點在鈕上時變停用退到第一個空欄;全空白不算;換到統一不帶過去;模擬不擋", J(v.empty) === dis && v.sent === 0 && J(v.noPass) === dis && J(v.full) === on && v.same && v.fb === "cx-secret" && J(v.afterClear) === dis && J(v.blank) === dis && J(v.bn) === dis && J(v.pres) === on && J(v.bn2) === dis && J(v.paper) === on, J(v));
-    ok("§15 下拉標題「交易所或期貨商」,群組「台灣期貨」", v.fld === (await js(`t("cx.venue")`)) && v.groups.indexOf(await js(`t("cap.group.tw")`)) > 0 && !v.groups.includes("台股") && !v.groups.includes("Taiwan stocks"), J(v));
+    ok("§15 真實帳戶、金鑰沒填滿(含 OKX 的 Passphrase):主鈕真 disabled、沒有懸空的 describedby、按了與 Enter 都不送;填滿恢復且打字焦點不掉;焦點在鈕上時變停用退到第一個空欄;全空白不算;換到統一不帶過去;磚那一態沒有主鈕、框腳出模擬", v.tilesNoGo && J(v.empty) === dis && v.sent === 0 && J(v.noPass) === dis && J(v.full) === on && v.same && v.fb === "cx-secret" && J(v.afterClear) === dis && J(v.blank) === dis && J(v.bn) === dis && J(v.pres) === on && J(v.bn2) === dis && v.unpicked, J(v));
+    ok("§15 磚的組標籤「加密貨幣」「台灣期貨」", J(v.groups) === J(await js(`[t("cx.group.crypto"), t("cap.group.tw")]`)) && !v.groups.includes("台股") && !v.groups.includes("Taiwan stocks"), J(v));
     await js(`cxModalClose(false)`);
 
     // §11、§17

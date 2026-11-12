@@ -64,7 +64,7 @@ t("狀態:report 缺欄位不炸", (() => { try { p1FromState({}, { halt: 0, err
 //   拒單 ts = lib/portfolio.py 的 datetime.utcnow().isoformat()(**不帶時區的 UTC**)。整支用 TZ=Asia/Taipei 跑也要過。
 const isoAware = (sec) => new Date(sec * 1000).toISOString().replace("Z", "") + "000+00:00";   // 2026-…T03:39:08.940000+00:00
 const isoNaive = (sec) => new Date(sec * 1000).toISOString().replace("Z", "") + "123";          // 2026-…T03:39:08.940123
-s0 = p1FromState(R({ halted: true, at: isoAware(NOW - 5), source: "reconciler", reason: "x" }, [{ ts: isoNaive(NOW - 3), symbol: "BTCUSDT", exchange: "paper", error: "rejected" }]), { halt: 0, err: 0 }, NOW);
+s0 = p1FromState(R({ halted: true, at: isoAware(NOW - 5), source: "reconciler", reason: "x" }, [{ ts: isoNaive(NOW - 3), symbol: "BTCUSDT", exchange: "binance", error: "rejected" }]), { halt: 0, err: 0 }, NOW);
 t("真實形狀:ISO 字串的 HALT 與拒單都會發", s0.show.map((e) => e.type).join() === "halt,order_error" && Math.abs(s0.halt - (NOW - 5)) < 0.01 && Math.abs(s0.err - (NOW - 3)) < 0.01);
 t("真實形狀:不帶時區的拒單 ts 當 UTC(不是本地時間——台北會差 8 小時而被 15 分鐘門檻吃掉)", Math.abs(p1Sec(isoNaive(NOW)) - NOW) < 0.01 && Math.abs(p1Sec(isoAware(NOW)) - NOW) < 0.01);
 t("真實形狀:同一輪再來一次不重發", p1FromState(R({ halted: true, at: isoAware(NOW - 5), source: "reconciler" }, [{ ts: isoNaive(NOW - 3), symbol: "BTCUSDT" }]), { halt: s0.halt, err: s0.err }, NOW).show.length === 0);
@@ -93,6 +93,34 @@ t("通知內文:策略名經 label 換成名稱、zh 包「」;沒 label 照舊�
   && p1WithStrat(["a", "b"], "N", lbl) === "策略「台指期 籌碼」、「b」：N" && p1WithStrat(["a"], "N") === "策略「a」：N");
 t("系統通知:market_hold 這種只帶單一 strategy 的也帶策略,名稱照 p1StratLabel",
   /body: p1WithStrat\(e\.payload && \(Array\.isArray\(e\.payload\.strategies\) \? e\.payload\.strategies : typeof e\.payload\.strategy === "string" \? \[e\.payload\.strategy\] : null\), note, p1StratLabel\)/.test(src));
+// 台指期時鐘量不到(tw_clock_unchecked):自成型別;內文照列上的 clock 選三句之一(far 才講新倉暫停,同 api _CLOCK_UNCHECKED_EN);
+// 冷卻同 api:交易所＋標的＋原因去數字,3600 秒(r3 Y2、Y3)
+{ const U = (o) => ({ ts: NOW - 4, symbol: "TMF", exchange: "president", kind: "tw_clock_unchecked", error: "這台電腦的時鐘快了約 3 小時。", ...o });
+  const st1 = (rows) => p1FromState(R({ halted: false }, rows), { halt: 0, err: 0 }, NOW).show;
+  const [a, b, c, d] = [st1([U({ clock: "unmeasured" })]), st1([U({ clock: "far" })]), st1([U({ clock: "far_halt" })]), st1([U({ clock: "bogus" })])];
+  t("tw_clock_unchecked:P1 型別、不從 events 來;payload 帶認得的 clock、不帶機器句",
+    a.length === 1 && a[0].type === "tw_clock_unchecked" && a[0].payload.clock === "unmeasured" && b[0].payload.clock === "far"
+    && c[0].payload.clock === "far_halt" && !("clock" in d[0].payload) && !("error" in a[0].payload)
+    && P1_TYPES.includes("tw_clock_unchecked") && !P1_EVENT_TYPES.includes("tw_clock_unchecked"));
+  const other = st1([{ ts: NOW - 4, symbol: "TMF", kind: "tw_entry_hold", error: "x", clock: "far" }]);
+  t("…別的型別不帶 clock、沒有冷卻 key", other.length === 1 && !("clock" in other[0].payload) && other[0].cool === null);
+  const k = a[0].cool, k3 = st1([U({ clock: "far", error: "這台電腦的時鐘快了約 4 小時。" })])[0].cool;
+  t("…冷卻 key:同交易所＋標的＋原因去數字(快 3 小時、4 小時同一個);換標的另算", !!k && b[0].cool === k3
+    && st1([U({ symbol: "MXF" })])[0].cool !== a[0].cool && k !== st1([{ ts: NOW - 4, symbol: "TMF", exchange: "president", error: "這台電腦的時鐘快了約 3 小時。" }])[0].cool);
+  const seen = {}, T0 = 1_700_000_000_000;
+  p1CoolStamp(seen, k, T0);
+  t("…冷卻 3600 秒(同 api p1_cooldown_s),拒單照舊 3300", p1Cooling(seen, k, T0 + 3599 * 1000) && !p1Cooling(seen, k, T0 + 3600 * 1000)
+    && P1_COOL_S.tw_clock_unchecked === 3600);
+  const api = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "agent_events.py");
+  if (fs.existsSync(api)) { const spec = (/^    "tw_clock_unchecked": \{([\s\S]*?)\n    \S/m.exec(fs.readFileSync(api, "utf8")) || [])[1] || "";
+    t("…api 同秒數、同三個欄位", /"p1_cooldown_s": 3600\b/.test(spec) && /"p1_cool_on": \("exchange", "symbol", "error"\)/.test(spec)); }
+  else console.log("SKIP  api 端 tw_clock_unchecked 冷卻比對(需要 BLAVE_API_DIR)");
+  t("…內文照 clock 選(variant _<clock>),三句都有英文退路;不寫平倉照常",
+    /: clock \? "_" \+ clock : ""/.test(src) && ["unmeasured", "far", "far_halt"].every((c) => src.includes("ev_tw_clock_unchecked_" + c + "_n:"))
+    && /ev_tw_clock_unchecked_far_n: "[^"]*New positions are paused/.test(src) && !/ev_tw_clock_unchecked_(unmeasured|far_halt)_n: "[^"]*New positions/.test(src)
+    && !/ev_tw_clock_unchecked[^\n]*closes still run/.test(src));
+  const tr = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
+  t("…renderer 交三句內文", ["unmeasured", "far", "far_halt"].every((c) => new RegExp("ev_tw_clock_unchecked_" + c + "_n: t\\(\"tm\\.evClockUnchecked").test(tr))); }
 t("stuck 那則有自己的標題與內文", src.includes("ev_order_unconfirmed_stuck:") && src.includes("ev_order_unconfirmed_stuck_n:"));
 { const x = p1FromState(R({ halted: true, at: NOW - 5, source: "reconciler", reason: "[order_unconfirmed_unparked] BTCUSDT: unknown" }), { halt: 0, err: 0 }, NOW);
   t("追蹤不了而整台暫停:halt 那則帶 unconfirmed,內文用專屬那句(有英文退路)", x.show.length === 1 && x.show[0].payload.unconfirmed === true
@@ -151,4 +179,58 @@ t("stuck 那則有自己的標題與內文", src.includes("ev_order_unconfirmed_
     /const head = \(unexplained && tmLabels\.ev_halt_unexplained\) \|\|/.test(src) && /const note = unexplained \? e\.payload\.reason/.test(src)
     && !/ev_machine_restart_stopped_n \? " "/.test(src) && /":unexplained"/.test(src)
     && /ev_halt_unexplained: t\("tr\.ov\.evHaltUnexplained"\)/.test(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8"))); }
+// — 收盤後按的全部平倉延到開盤／開盤前按啟動下單取消延後:用戶自己按的,不發 P1(水位線照推);要用戶再按一次的那兩種照舊拒單
+s0 = p1FromState(R({ halted: true, at: NOW - 900, source: "web" }, [
+  { ts: NOW - 40, symbol: "2330@spot", exchange: "paper", error: "close-all: 台股休市中,開盤後第一輪平倉", kind: "market_closed_deferred" },
+  { ts: NOW - 39, symbol: "TMF", exchange: "president", error: "close-all: 台指期休市中,開盤後第一輪平倉", kind: "market_closed_deferred" },
+  { ts: NOW - 38, symbol: "2330@spot,2317@spot", exchange: "paper", error: "close-all: 開盤前已按啟動下單,延後的台股平倉取消,改照策略目標下單" },
+  { ts: NOW - 37, symbol: "TMF", exchange: "capital", error: "close-all: 機器重開後按了啟動下單(重開後要按它才會恢復下單),延後的台指期平倉一併取消,改照策略目標下單" },
+  { ts: NOW - 36, symbol: "TMF", exchange: "capital", error: "close-all: 台指期休市中,而且機器重開後停止下單,無法排到開盤自動平倉——請在開盤後(08:45–13:45、15:00–05:00)再按一次全部平倉" },
+  { ts: NOW - 35, symbol: "TMF", exchange: "capital", error: "close-all: 台指期現在不收單,開盤後再按一次全部平倉" }]), { halt: NOW - 900, err: 0 }, NOW);
+t("狀態:全部平倉延到開盤與取消延後不發,水位線照推;要再按一次的兩種照舊拒單",
+  s0.show.map((e) => e.type).join() === "order_error,order_error" && s0.show[0].ts === NOW - 36 && s0.err === NOW - 35);
+{ // 取消延後那列沒帶 kind,三份認同一句:main.js、trade.js、api agent_overview._DEFER_CANCEL_RE
+  const trSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "trade.js"), "utf8");
+  const reOf = (s, re) => { const m = re.exec(s); return m ? m[1].replace(/\\u([0-9a-f]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16))) : null; };   // trade.js 寫成 \u 跳脫
+  const mainRe = reOf(src, /^const P1_DEFER_CANCEL_RE = \/(.+)\/;$/m), trRe = reOf(trSrc, /^const TR_DEFER_CANCEL_RE = \/(.+)\/;$/m);
+  t("取消延後那句:main.js 與 trade.js 同一條 regex", !!mainRe && mainRe === trRe);
+  // 機器自己寫的那幾句(lib/portfolio 的 _*_TW_CANCEL* 常數)每一句都要認得:改了字沒跟著改,取消那列就會變回下單失敗 P1
+  const pf = fs.readFileSync(path.join(__dirname, "..", "lib", "portfolio.py"), "utf8");
+  const sents = [...pf.matchAll(/^_[A-Z_]*TW_CANCEL[A-Z_]* = \(?((?:\s*'[^']*')+)\)?$/gm)].map((m) => [...m[1].matchAll(/'([^']*)'/g)].map((x) => x[1]).join(""));
+  t("lib/portfolio 取消延後的每一句(" + sents.length + " 句)都被認成取消延後、不發 P1",
+    sents.length >= 2 && sents.every((x) => P1_DEFER_CANCEL_RE.test(x) && p1CloseDeferred({ error: x }) && new RegExp(trRe).test(x)), sents.join(" | "));
+  const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "agent_overview.py");
+  if (!fs.existsSync(apiPy)) console.log("SKIP  api 端取消延後 regex 比對(需要 monorepo 版面或 BLAVE_API_DIR)");
+  else t("…api agent_overview._DEFER_CANCEL_RE 也是同一條(api 還沒上就紅,出貨順序 api 先)",
+    reOf(fs.readFileSync(apiPy, "utf8"), /^_DEFER_CANCEL_RE = re\.compile\(r"(.+)"\)$/m) === mainRe); }
+// — 模擬帳戶拒單是 P2(api level_for),本機不叫;真帳戶拒單同交易所＋標的＋原因(去數字)55 分鐘只叫一次(api p1_cooldown_s／p1_cool_on)—
+{ const E = (extra) => Object.assign({ ts: NOW - 5, symbol: "2330@spot", exchange: "binance", error: "[order_reject:insufficient_margin] need 100.5 have 3" }, extra);
+  const st = (rows) => p1FromState(R({ halted: false }, rows), { halt: 0, err: 0 }, NOW);
+  let x = st([E({ exchange: "paper", ts: NOW - 9 }), E({ exchange: "paper", symbol: "BTCUSDT@spot", error: "insufficient BTC to sell (1 < 2)", ts: NOW - 8 })]);
+  t("模擬帳戶拒單(現金不夠、賣超過持有)都不叫,水位線照推", x.show.length === 0 && x.err === NOW - 8);
+  x = st([E({ exchange: "paper", kind: "order_unconfirmed", ts: NOW - 7 }), E({ exchange: "paper", kind: "manual_close_required", reason: "x", ts: NOW - 6 }), E({})]);
+  t("模擬帳戶帶 kind 的列照舊各自的型別(order_unconfirmed 照叫;manual_close 認不得退回拒單 → 模擬不叫);真帳戶拒單照叫",
+    x.show.map((e) => e.type + "/" + e.payload.symbol).join() === "order_unconfirmed/2330@spot,order_error/2330@spot");
+  t("沒有 exchange 的舊列照叫(分不出模擬或真帳戶)", st([E({ exchange: undefined })]).show.length === 1);
+  const k0 = st([E({})]).show[0].cool;
+  t("冷卻 key 只在 order_error 上,其他型別不帶", !!k0 && st([E({ kind: "order_unconfirmed" })]).show[0].cool === null);
+  t("冷卻 key:只差數字算同一個原因", st([E({ error: "[order_reject:insufficient_margin] need 7,000.25 have 12" })]).show[0].cool === k0);
+  t("冷卻 key:換標的、換交易所、換原因各算各的",
+    [E({ symbol: "2317@spot" }), E({ exchange: "okx" }), E({ error: "[order_reject:below_min_size] need 100.5" })].every((r) => st([r]).show[0].cool !== k0));
+  const seen = {}, T0 = NOW * 1000;
+  t("冷卻:沒叫過不擋", !p1Cooling(seen, k0, T0));
+  p1CoolStamp(seen, k0, T0);
+  t("冷卻:叫過後 3300 秒內擋、到點放行;null key 永遠不擋",
+    p1Cooling(seen, k0, T0 + 3299 * 1000) && !p1Cooling(seen, k0, T0 + 3300 * 1000) && !p1Cooling(seen, null, T0));
+  p1CoolStamp(seen, "other", T0 + 3300 * 1000);
+  t("冷卻:蓋新章時清掉過期的 key", !Object.prototype.hasOwnProperty.call(seen, k0) && Object.keys(seen).join() === "other");
+  t("接線:p1Sync 冷卻中的整則跳過(不加 Dock 數字),過了 60 秒節流才蓋章",
+    /for \(const e of show\) \{\n    if \(p1Cooling\(p1ErrCool, e\.cool, Date\.now\(\)\)\) continue;\n    p1Badge\+\+;/.test(src)
+    && /p1LastShown\[throttle\] = Date\.now\(\);\n    p1CoolStamp\(p1ErrCool, e\.cool, Date\.now\(\)\);/.test(src));
+  const apiPy = path.join(process.env.BLAVE_API_DIR || path.join(__dirname, "..", "..", "api"), "openclaw", "agent_events.py");
+  if (!fs.existsSync(apiPy)) console.log("SKIP  api 端拒單冷卻與模擬帳戶降級比對(需要 monorepo 版面或 BLAVE_API_DIR)");
+  else { const py = fs.readFileSync(apiPy, "utf8"), spec = (/^    "order_error": \{([\s\S]*?)\n    \S/m.exec(py) || [])[1] || "";
+    t("…api 拒單冷卻同秒數、同三個欄位、同去數字規則;模擬帳戶拒單降 P2(api 還沒上就紅,出貨順序 api 先)",
+      new RegExp('"p1_cooldown_s": ' + P1_ERR_COOL_S + "\\b").test(spec) && /"p1_cool_on": \("exchange", "symbol", "error"\)/.test(spec)
+      && py.includes('re.sub(r"\\d[\\d.,]*", "#", v)') && /if event_type == "order_error" and \(data or \{\}\)\.get\("exchange"\) == "paper":\n\s+return P2/.test(py)); } }
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);

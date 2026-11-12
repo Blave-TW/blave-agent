@@ -187,7 +187,7 @@ exit 2
       addEventListener: (ev, fn) => { if (ev === "click") n.onclick = fn; },
       setAttribute: (k, v) => { n.attrs[k] = String(v); }, querySelector: () => null, focus: () => {},
       querySelectorAll: (q) => { const out = []; const walk = (x) => (x.children || []).forEach((c) => { if (q === "button" && c.tag === "button") out.push(c); walk(c); }); walk(n); return out; },
-      closest: (q) => { const k = (q.match(/data-kind="([^"]+)"/) || [])[1]; let p = n; while (p) { if (k && p.dataset && p.dataset.kind === k) return p; if (q === ".cn-opts" && p.className === "cn-opts") return p; p = p.parent; } return null; } };
+      closest: (q) => { const k = (q.match(/data-kind="([^"]+)"/) || [])[1]; let p = n; while (p) { if (k && p.dataset && p.dataset.kind === k) return p; if (q === "#set-model" && p.id === "set-model") return p; p = p.parent; } return null; } };
     Object.defineProperty(n, "textContent", { get: () => n.children.map((c) => c.text !== undefined ? c.text : c.textContent).join("") + n._txt, set: (v) => { n.children.length = 0; n._txt = v; } });
     Object.defineProperty(n, "innerHTML", { get: () => n._html, set: (v) => { n._html = v; n.children.length = 0; if (!v) return; const s = mkEl("span"); s.className = "n"; s.parent = n; n.children.push(s); n._first = s; } });
     Object.defineProperty(n, "firstChild", { get: () => n._first });
@@ -265,7 +265,7 @@ exit 2
   R.set("loginPending", null);
 
   // 登入指令本身跑不起來(agentLogin 回 cantRun),偵測卻只看到「沒登入」:兩個表面都改「無法啟動」,不出「登入沒有完成」(稽核 P2-4)
-  { const inSet = () => { const o = mkEl("div"); o.className = "cn-opts"; const b = mkEl("button"); o.append(b); return b; };
+  { const inSet = () => { const o = mkEl("div"); o.id = "set-model"; const b = mkEl("button"); o.append(b); return b; };
     const go = async (b, res) => { RSTATE.login = async () => res; RSTATE.next = D({ installed: false }, { loggedIn: false, why: "codex_nonzero" }); R.set("HINT", null); R.ROWMSG.codex = null; await R.localLogin("codex", b); return R.get("lastDetect").codex; };
     R.said.length = 0; const a = await go(inSet(), { ok: false, cancelled: false, code: 127, cantRun: true }), aHint = R.get("HINT"), aSaid = R.said.slice();
     const c = await go(inSet(), { ok: false, cancelled: false, code: 1, cantRun: false }), cHint = R.get("HINT");

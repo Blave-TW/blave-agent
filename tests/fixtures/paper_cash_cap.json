@@ -1,0 +1,47 @@
+{
+  "_doc": "模擬帳戶台股可用額度(spec paper-tw-cash-short §2、§3)。電腦版 trPaperCap／trPaperCapLeft 與網頁 pfPaperCap 吃同一份:rows = 路由到模擬的列,entry = account.venues.paper,fx = 1 USD 換多少該幣。expect null = 不判斷;left = 帶輸入格那一支(name)的 trPaperCapLeft",
+  "cases": [
+    { "id": "under", "rows": [{ "name": "tw30", "v": 2000000, "tw": true }], "entry": { "ok": true, "holdings": [{ "asset": "USDT", "amount": 100000, "usdt_value": 100000, "wallet": "cash" }] },
+      "fx": { "USD": 1, "USDT": 1, "TWD": 32 }, "acct": "USDT", "expect": { "cap": 3200000, "d": 2000000, "over": false } },
+    { "id": "over", "rows": [{ "name": "tw30", "v": 5000000, "tw": true }], "entry": { "ok": true, "holdings": [{ "asset": "USDT", "amount": 100000, "usdt_value": 100000, "wallet": "cash" }] },
+      "fx": { "USD": 1, "USDT": 1, "TWD": 32 }, "acct": "USDT", "expect": { "cap": 3200000, "d": 5000000, "over": true } },
+    { "id": "fully_bought_not_over", "rows": [{ "name": "tw30", "v": 1000000, "tw": true }], "entry": { "ok": true, "holdings": [
+        { "asset": "USDT", "amount": 12.5, "usdt_value": 12.5, "wallet": "cash" }, { "asset": "2330", "amount": 500, "usdt_value": 15600, "wallet": "spot" }, { "asset": "2454", "amount": 400, "usdt_value": 15700, "wallet": "spot" }] },
+      "fx": { "USD": 1, "USDT": 1, "TWD": 32 }, "acct": "USDT", "expect": { "cap": 1002000, "d": 1000000, "over": false } },
+    { "id": "crypto_spot_eats_cash", "rows": [{ "name": "tw30", "v": 2000000, "tw": true }, { "name": "btc_spot", "v": 50000, "spot": "USDT" }, { "name": "eth_perp", "v": 90000 }],
+      "entry": { "ok": true, "holdings": [{ "asset": "USDT", "amount": 100000, "usdt_value": 100000, "wallet": "cash" }] },
+      "fx": { "USD": 1, "USDT": 1, "TWD": 32 }, "acct": "USDT", "expect": { "cap": 1600000, "d": 2000000, "over": true } },
+    { "id": "crypto_spot_uses_all_cap_zero", "rows": [{ "name": "tw30", "v": 100000, "tw": true }, { "name": "btc_spot", "v": 200000, "spot": "USDT" }],
+      "entry": { "ok": true, "holdings": [{ "asset": "USDT", "amount": 100000, "usdt_value": 100000, "wallet": "cash" }] },
+      "fx": { "USD": 1, "USDT": 1, "TWD": 32 }, "acct": "USDT", "expect": { "cap": 0, "d": 100000, "over": true } },
+    { "id": "floor_to_thousand", "rows": [{ "name": "tw30", "v": 10000, "tw": true }], "entry": { "ok": true, "holdings": [{ "asset": "USDT", "amount": 99.99, "usdt_value": 99.99, "wallet": "cash" }] },
+      "fx": { "USD": 1, "USDT": 1, "TWD": 32.5 }, "acct": "USDT", "expect": { "cap": 3000, "d": 10000, "over": true } },
+    { "id": "no_fx_twd", "rows": [{ "name": "tw30", "v": 2000000, "tw": true }], "entry": { "ok": true, "holdings": [{ "asset": "USDT", "amount": 100000, "usdt_value": 100000, "wallet": "cash" }] },
+      "fx": { "USD": 1, "USDT": 1 }, "acct": "USDT", "expect": null },
+    { "id": "no_fx_at_all", "rows": [{ "name": "tw30", "v": 2000000, "tw": true }], "entry": { "ok": true, "holdings": [{ "asset": "USDT", "amount": 100000, "usdt_value": 100000, "wallet": "cash" }] },
+      "fx": null, "acct": "USDT", "expect": null },
+    { "id": "holding_unpriced", "rows": [{ "name": "tw30", "v": 2000000, "tw": true }], "entry": { "ok": true, "holdings": [
+        { "asset": "USDT", "amount": 100, "usdt_value": 100, "wallet": "cash" }, { "asset": "2330", "amount": 500, "usdt_value": null, "wallet": "spot" }] },
+      "fx": { "USD": 1, "USDT": 1, "TWD": 32 }, "acct": "USDT", "expect": null },
+    { "id": "account_read_failed", "rows": [{ "name": "tw30", "v": 2000000, "tw": true }], "entry": { "ok": false, "error": "boom" },
+      "fx": { "USD": 1, "USDT": 1, "TWD": 32 }, "acct": "USDT", "expect": null },
+    { "id": "account_not_read_yet", "rows": [{ "name": "tw30", "v": 2000000, "tw": true }], "entry": null,
+      "fx": { "USD": 1, "USDT": 1, "TWD": 32 }, "acct": "USDT", "expect": null },
+    { "id": "no_cash_row", "rows": [{ "name": "tw30", "v": 2000000, "tw": true }], "entry": { "ok": true, "holdings": [{ "asset": "2330", "amount": 1, "usdt_value": 30, "wallet": "spot" }] },
+      "fx": { "USD": 1, "USDT": 1, "TWD": 32 }, "acct": "USDT", "expect": null },
+    { "id": "no_tw_rows", "rows": [{ "name": "btc_spot", "v": 50000, "spot": "USDT" }, { "name": "tw0", "v": 0, "tw": true }],
+      "entry": { "ok": true, "holdings": [{ "asset": "USDT", "amount": 100000, "usdt_value": 100000, "wallet": "cash" }] },
+      "fx": { "USD": 1, "USDT": 1, "TWD": 32 }, "acct": "USDT", "expect": null },
+    { "id": "crypto_spot_ccy_without_rate", "rows": [{ "name": "tw30", "v": 2000000, "tw": true }, { "name": "x_spot", "v": 100, "spot": "FDUSD" }],
+      "entry": { "ok": true, "holdings": [{ "asset": "USDT", "amount": 100000, "usdt_value": 100000, "wallet": "cash" }] },
+      "fx": { "USD": 1, "USDT": 1, "TWD": 32 }, "acct": "USDT", "expect": null }
+  ],
+  "left": [
+    { "id": "left_positive", "rows": [{ "name": "a", "v": 2000000, "tw": true }, { "name": "new", "v": 1500000, "tw": true }],
+      "entry": { "ok": true, "holdings": [{ "asset": "USDT", "amount": 99375, "usdt_value": 99375, "wallet": "cash" }] }, "fx": { "USD": 1, "USDT": 1, "TWD": 32 }, "acct": "USDT", "name": "new", "expect": 1180000 },
+    { "id": "left_within", "rows": [{ "name": "a", "v": 2000000, "tw": true }, { "name": "new", "v": 1000000, "tw": true }],
+      "entry": { "ok": true, "holdings": [{ "asset": "USDT", "amount": 99375, "usdt_value": 99375, "wallet": "cash" }] }, "fx": { "USD": 1, "USDT": 1, "TWD": 32 }, "acct": "USDT", "name": "new", "expect": null },
+    { "id": "left_none", "rows": [{ "name": "a", "v": 4000000, "tw": true }, { "name": "new", "v": 100000, "tw": true }],
+      "entry": { "ok": true, "holdings": [{ "asset": "USDT", "amount": 99375, "usdt_value": 99375, "wallet": "cash" }] }, "fx": { "USD": 1, "USDT": 1, "TWD": 32 }, "acct": "USDT", "name": "new", "expect": -820000 }
+  ]
+}

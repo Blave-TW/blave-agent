@@ -217,6 +217,14 @@ function libBuyBranch(status, body) {
   if (status === 402 && /no card bound/i.test(err)) return "noCard";
   return "failed";
 }
+// 一鍵框的結果 → lib_buy_result 的值(同網頁 bind_buy.js buyOutcome 的 result;already_purchased 縮成 already_owned)
+function libBuyResult(branch, status, body) {
+  const b = body || {};
+  if (branch === "ok") return status === 200 ? "success" : "already_owned";
+  if (branch === "charged") return (b.reason_code || b.reason) === "already_purchased" ? "already_owned" : "failed";
+  if (branch === "changed") return b.price_source === "none" ? "no_card" : b.price_source === "wallet" || b.price_source === "card" ? "changed" : "failed";
+  return { noCard: "no_card", topup: "needs_topup", inProgress: "in_progress", negative: "balance_negative" }[branch] || "failed";
+}
 /* 綁卡即購買(spec library-buy-with-bind-2026-11-06 §3,同網頁 bind_buy.js quoteOf):不帶 confirm 的報價回應 → 出哪一種框。
    trial = 框 1(順便開試用)、plain = 框 2(只買)、plan = 框 3(要方案、不給買);has_card = 報價前剛綁好卡(回一般購買)、
    owned = 已買過、open = 上一張付款頁還開著(下次帶 restart)、rate = 429;其餘 fallback(舊的「去綁卡」框) */
@@ -1180,7 +1188,7 @@ function libPaintCta(s) {
   // 鈕下最多一行(Wei 11-09):有結果句時只出結果句(同網頁),續扣那一行收起來;重按會重新報價
   /* 付完那句(設計稽核第 4 條):鈕下結果槽、不加記號(灰記號的意思是「沒發生」),12px ink-2。本機會自動安裝,安裝中留著、裝好收掉 */
   if (bb && bb.kind === "paid" && c.state === "installed") LIB.bbRes.delete(s.id);
-  const paid = bb && bb.kind === "paid" && c.state !== "installed" ? libEl("p", "note up", libBbText(bb)) : null;
+  const paid = bb && bb.kind === "paid" && c.state !== "installed" ? libEl("p", "note up lib-res", libBbText(bb)) : null;
   if (paid) paid.setAttribute("role", "status");
   const bbl = libBbLines(bb);
   if (bbl.length || paid) note.textContent = "";
@@ -1416,6 +1424,7 @@ async function libBuyOneGo(s, q, opener) {
   const mine = !sc.hidden && (typeof delCtx === "undefined" || delCtx === ctx);
   const shut = () => { if (mine) delClose(false); };
   const body = r && r.body ? r.body : {}, branch = libBuyBranch(r ? r.status : 0, r ? r.body : null), main = () => libCtaMain() || opener;
+  try { window.blave.trackEvent("lib_buy_result", { result: libBuyResult(branch, r ? r.status : 0, body) }); } catch (_) { }
   const box = (next) => { if (mine) { libBuyOneBox(s, next, main()); return; } LIB.bbRes.set(s.id, { kind: "note", key: LIB_PB_MSG[next.msg], bad: next.msg === "failed" || next.msg === "negative" }); libSync(); };
   if (branch === "ok" || branch === "inProgress") LIB.stale = true;
   if (branch === "ok") {

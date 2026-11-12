@@ -95,9 +95,6 @@ MAINTENANCE = (
     (dtime(5, 30), dtime(5, 50), "login"),
     (dtime(6, 0), dtime(7, 30), "account"),
 )
-# (login at, logged out at): 15 min before each open, 15 min after each close
-DAY_WINDOW = (dtime(8, 30), dtime(14, 0))
-NIGHT_WINDOW = (dtime(14, 45), dtime(5, 15))
 CLOSES = ((dtime(13, 45), range(0, 5)), (dtime(5, 0), range(1, 6)))  # day Mon–Fri, night ends Tue–Sat
 LOGIN_RETRY_S = 300
 _RATE_LIMITED = "超過每分鐘限制"  # unitrade Error.MSG012
@@ -117,20 +114,28 @@ def maintenance(now=None):
     return None
 
 
-def session_window(now=None):
-    """Start of the trading window `now` falls in (its scheduled login), or None — after
-    hours and weekends. Holidays are not known here: a holiday window logs in and reads."""
-    now = (now or datetime.now(TAIPEI)).astimezone(TAIPEI)
-    t, today = now.time(), now.date()
-    at = lambda d, hm: datetime.combine(d, hm, tzinfo=TAIPEI)  # noqa: E731
-    if now.weekday() < 5 and DAY_WINDOW[0] <= t < DAY_WINDOW[1]:
-        return at(today, DAY_WINDOW[0])
-    if now.weekday() < 5 and t >= NIGHT_WINDOW[0]:
-        return at(today, NIGHT_WINDOW[0])
-    yesterday = today - timedelta(days=1)
-    if t < NIGHT_WINDOW[1] and yesterday.weekday() < 5:
-        return at(yesterday, NIGHT_WINDOW[0])
-    return None
+if hasattr(president_vault, "session_window"):
+    # the trading windows live in the vault: the order lib refuses a send outside them too
+    DAY_WINDOW, NIGHT_WINDOW = president_vault.DAY_WINDOW, president_vault.NIGHT_WINDOW
+    session_window = president_vault.session_window
+else:  # half-updated workspace (an older lib/president_vault.py)
+    DAY_WINDOW = (dtime(8, 30), dtime(14, 0))
+    NIGHT_WINDOW = (dtime(14, 45), dtime(5, 15))
+
+    def session_window(now=None):
+        """Start of the trading window `now` falls in (its scheduled login), or None — after
+        hours and weekends. Holidays are not known here: a holiday window logs in and reads."""
+        now = (now or datetime.now(TAIPEI)).astimezone(TAIPEI)
+        t, today = now.time(), now.date()
+        at = lambda d, hm: datetime.combine(d, hm, tzinfo=TAIPEI)  # noqa: E731
+        if now.weekday() < 5 and DAY_WINDOW[0] <= t < DAY_WINDOW[1]:
+            return at(today, DAY_WINDOW[0])
+        if now.weekday() < 5 and t >= NIGHT_WINDOW[0]:
+            return at(today, NIGHT_WINDOW[0])
+        yesterday = today - timedelta(days=1)
+        if t < NIGHT_WINDOW[1] and yesterday.weekday() < 5:
+            return at(yesterday, NIGHT_WINDOW[0])
+        return None
 
 
 def last_close(now=None):

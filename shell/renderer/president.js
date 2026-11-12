@@ -306,7 +306,7 @@ function presPrepBody(view) {
 const presPfxPath = () => "C:\\Users\\<" + t("pres.none.pName") + ">\\PSCCA\\PSC_<" + t("pres.none.pId") + ">_<" + t("pres.none.pExp") + ">.pfx";
 function presFormBody() {
   const f = document.createDocumentFragment();
-  f.appendChild(cxVenueField(TR_BAGS.local));
+  f.appendChild(cxVenueField(TR_BAGS.local, true));
   // 第一句就是找 PSCCA 的結果(事前準備頁拿掉了);「已經有憑證」選到檔過來的講選好了(帳密存過 = 改帳號回來,不講);沒憑證就不講
   const lead = PRES.source === "picked" ? (PRES.info && PRES.info.saved ? null : t("pres.form.picked"))
     : PRES.scan && PRES.scan.found > 0 ? (PRES.scan.expiry ? t("pres.form.found", { date: PRES.scan.expiry }) : t("pres.form.foundNoDate")) : null;
@@ -528,7 +528,7 @@ function presPaint() {
   const hadId = box.contains(document.activeElement) ? document.activeElement.id : null;
   box.textContent = "";
   if (view === "d-mac") { box.appendChild(cxVenueField(TR_BAGS.local)); box.append(presP("cx-hint", t("pres.mac.lead"))); }
-  else if (view.indexOf("d-prep") === 0) { box.appendChild(cxVenueField(TR_BAGS.local)); box.appendChild(presPrepBody(view)); }
+  else if (view.indexOf("d-prep") === 0) { box.appendChild(cxVenueField(TR_BAGS.local, true)); box.appendChild(presPrepBody(view)); }
   else if (view === "d-form") box.appendChild(presFormBody());
   else if (view === "d-done") box.appendChild(presDoneBody(pc));
   else box.appendChild(presRows(view, pc));

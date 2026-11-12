@@ -179,9 +179,9 @@ if (!process.versions.electron) {
       actx.calls.length = 0; actx.sent.length = 0;
       actx.rpRobAsk("s1", null, () => {}, R.scanInfo(BT, null));
       const e = actx.calls[0]; e.onOk();
-      ok("③ (" + L + ") 空狀態「開始掃描」確認框:emptyCap + 期間 / 手續費兩列、沒有網格與 cf-note;訊息仍是 rob.msgScan 原句(觸發句不動)",
-        e.title === T("rob.btnScan") && e.lines[0] === T("rob.emptyCap") && JSON.stringify(rowsOf(e)) === JSON.stringify([[T("rob.cfPeriod"), "2025-01-01 → 2025-06-01", "mono"], [T("rob.cfFee"), "0.05%", "mono"]])
-        && !e.extra.kids.some((k) => k.className === "cf-note") && actx.sent[0] === T("rob.msgScan", { display_name: "s1", name: "s1" }));
+      ok("③ (" + L + ") 空狀態「開始掃描」確認框:沒有引導句、期間 / 手續費兩列、沒有網格、cf-note 是 rob.cfNoteFirst(要等多久);訊息仍是 rob.msgScan 原句(觸發句不動)",
+        e.title === T("rob.btnScan") && e.lines.length === 0 && JSON.stringify(rowsOf(e)) === JSON.stringify([[T("rob.cfPeriod"), "2025-01-01 → 2025-06-01", "mono"], [T("rob.cfFee"), "0.05%", "mono"]])
+        && e.extra.kids.filter((k) => k.className === "cf-note").map((k) => k.textContent).join() === T("rob.cfNoteFirst") && actx.sent[0] === T("rob.msgScan", { display_name: "s1", name: "s1" }));
       actx.calls.length = 0; actx.sent.length = 0;
       actx.rpRobAsk("s1", null, () => {}, R.scanInfo(BT, R.sanitizeScan(SINGLE, BT, "N = 20\n")));
       { const o1 = actx.calls[0]; o1.onOk(); const rows1 = rowsOf(o1), want1 = T("rob.msgRescan1", { display_name: "s1", name: "s1", start: "2025-01-01", end: "2025-06-01", fee: "0.05", rp: "N", r0: "10", r1: "60" });
@@ -191,7 +191,7 @@ if (!process.versions.electron) {
           && actx.sent[0] === want1 && want1 !== T("rob.msgRescan", { name: "s1" }) && !/_（|_ \(|0–0|\{/.test(want1) && /N/.test(want1) && fm1 && fm1.label === "rob.msgRescanLabel" && fm1.title === "rob.msgScanTitle" && fm1.vars.name === "s1" && fm1.vars.r1 === "60", JSON.stringify(rows1) + " | " + actx.sent[0]); }
       actx.calls.length = 0;
       actx.rpRobAsk("s1", null, () => {}, { rescan: false, now: { start: null, end: null, fee: null }, grid: null });
-      ok("③ (" + L + ") 回測讀不到期間 / 費率:那兩列不畫(不寫「—」)、也不放空的 dl", actx.calls[0].extra.kids.length === 0);
+      ok("③ (" + L + ") 回測讀不到期間 / 費率:那兩列不畫(不寫「—」)、也不放空的 dl,只剩 cf-note", actx.calls[0].extra.kids.length === 1 && actx.calls[0].extra.kids[0].className === "cf-note");
     }
   }
   {
@@ -213,14 +213,79 @@ if (!process.versions.electron) {
     && (tok.match(/--color-redLight:/g) || []).length === 2 && (tok.match(/--color-redBlack:/g) || []).length === 2 && /\.rob-cmp \{[^}]*overflow-x: auto;/.test(css)
     && /\.rob-tbl td \.rob-glyph \{[^}]*position: absolute;\s*left: 4px;\s*top: 2px;/.test(css) && /\.rob-empty-txt \{[^}]*font-size: 13px;[^}]*color: var\(--ink-3\);/.test(css) && !/\.rob-tipwrap/.test(css));
 
+  const fogDone = (async () => {
+    // ① 空狀態三態(spec param-scan-empty-2026-11-09 A 案;不開視窗):最小假 DOM 跑真的 renderRobust / robSync。
+    //   空 = Setup fog(霧底是完整結果的版面、卡上一句 + 描邊〔開始掃描〕);掃描中 = 同一顆鈕停用 + spin16 +「掃描中」+ sr-only 狀態句;完整結果 = 收霧、畫真的結論卡與熱圖
+    class N {
+      constructor(tag) { this.tagName = String(tag).toUpperCase(); this.kids = []; this.parentNode = null; this.attrs = {}; this.dataset = {}; this.style = {}; this.on = {}; this._t = ""; this.className = ""; this.disabled = false; this.inert = false; this.type = ""; this.id = ""; this.tabIndex = -1; this.scope = ""; }
+      get classList() { const n = this, l = () => n.className.split(/\s+/).filter(Boolean); return { add: (c) => { if (!l().includes(c)) n.className = l().concat(c).join(" "); }, remove: (c) => { n.className = l().filter((x) => x !== c).join(" "); }, contains: (c) => l().includes(c) }; }
+      appendChild(c) { if (c instanceof F) { c.kids.slice().forEach((k) => this.appendChild(k)); c.kids = []; return c; } if (c.parentNode) c.parentNode.kids.splice(c.parentNode.kids.indexOf(c), 1); c.parentNode = this; this.kids.push(c); return c; }
+      append(...cs) { cs.forEach((c) => this.appendChild(typeof c === "string" ? new X(c) : c)); }
+      setAttribute(k, v) { this.attrs[k] = String(v); }
+      getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
+      addEventListener(t, f) { this.on[t] = f; }
+      get textContent() { return this._t + this.kids.map((k) => k.textContent).join(""); }
+      set textContent(v) { this._t = String(v); this.kids.forEach((k) => { k.parentNode = null; }); this.kids = []; }
+      get isConnected() { let n = this; while (n.parentNode) n = n.parentNode; return n === ROOT; }
+      all() { return [this].concat(...this.kids.map((k) => (k.all ? k.all() : []))); }
+      contains(n) { return this.all().includes(n); }
+      cls(c) { return this.all().filter((n) => n.classList && n.classList.contains(c)); }
+      querySelectorAll() { return []; }
+      focus() { FOC.at = this; }
+    }
+    class X { constructor(s) { this.s = String(s); this.parentNode = null; } get textContent() { return this.s; } }
+    class F extends N {}
+    const ROOT = new N("body"), FOC = { at: null };
+    const dctx = { console, setTimeout, window: {}, getComputedStyle: () => ({ getPropertyValue: (k) => (k === "--color-red" ? "#d94f5c" : "#31a86a") }),
+      document: { body: ROOT, documentElement: ROOT, createElement: (t) => new N(t), createDocumentFragment: () => new F("#frag"), createTextNode: (s) => new X(s), get activeElement() { return FOC.at; }, querySelectorAll: () => [] } };
+    vm.createContext(dctx);
+    vm.runInContext(fs.readFileSync(path.join(SHELL, "renderer", "report-robust.js"), "utf8"), dctx);
+    const BR = dctx.window.BlaveReport, ZH = {};
+    for (const m of fs.readFileSync(path.join(SHELL, "i18n", "zh.po"), "utf8").matchAll(/^msgid "([^"]+)"\nmsgstr "((?:[^"\\]|\\.)*)"$/gm)) ZH[m[1]] = JSON.parse('"' + m[2] + '"');
+    const tz = (k, v) => { let x = ZH[k] || k; for (const n in v || {}) x = x.split("{" + n + "}").join(v[n]); return x; };
+    const box = new N("div"); ROOT.appendChild(box);
+    let live = false, resolveScan = null;
+    const opts = () => ({ t: tz, scope: "local", live: () => live, refocus: () => {}, resync: () => {}, onScan: (name, opener, begin) => { begin(); return new Promise((r) => { resolveScan = r; }); } });
+    const DATA = { stats: BT, scan: null, code: "", name: "fog1" };
+    BR.renderRobust(box, DATA, opts());
+    const fog = box.kids[0], under = fog && fog.kids[0], card = fog && fog.kids[1], btn = card && card.kids[1], sr = card && card.kids[2];
+    const cells = under ? under.cls("rob-tbl")[0].all().filter((n) => n.tagName === "TD") : [];
+    const alphas = cells.map((td) => Number((/,([\d.]+)\)$/.exec(td.style.background) || [])[1]));
+    ok("① 空:.fog.rob-fog = 霧底(aria-hidden、inert;meta、結論卡、6×7 熱圖,色階最深 34%)+ 卡(一句 rob.fog → 描邊〔開始掃描〕可按 → 空的 sr-only 狀態)",
+      !!fog && fog.className === "fog rob-fog" && under.className === "fog-under" && under.inert === true && under.getAttribute("aria-hidden") === "true"
+      && under.cls("bt-meta").length === 1 && under.cls("rob-card").length === 1 && cells.length === 42 && alphas.every((a) => a >= 0.12 && a <= 0.34) && alphas.includes(0.34)
+      && card.className === "fog-card" && card.kids[0].tagName === "P" && card.kids[0].textContent === ZH["rob.fog"]
+      && btn.tagName === "BUTTON" && btn.className === "btn-out" && !btn.disabled && btn.textContent === ZH["rob.btnScan"] && sr.className === "sr-only" && sr.getAttribute("role") === "status" && sr.textContent === "",
+      JSON.stringify({ cls: fog && fog.className, cells: cells.length, alphas: [...new Set(alphas)] }));
+    btn.on.click(); BR.robSync(box, opts());   // 確認框按下(begin)→ 回合開始時 app 叫 robSync
+    ok("① 掃描中(確認框按下、還沒回來):同一顆鈕停用、鈕內 spin16、字是〔掃描中〕;卡上那句不換、霧還在;sr-only 唸「掃描中」",
+      box.kids[0] === fog && btn.disabled && btn.kids[0].className === "spin16" && btn.textContent === ZH["rob.btnBusy"] && card.kids[0].textContent === ZH["rob.fog"] && sr.textContent === ZH["rob.btnBusy"],
+      JSON.stringify([btn.disabled, btn.textContent, sr.textContent]));
+    live = true; resolveScan({ sid: "s", seq: 1 });
+    await new Promise((r) => setTimeout(r, 0));
+    BR.robSync(box, opts());
+    ok("① 已送出(那一輪在跑):仍是〔掃描中〕停用;回合結束沒產出 → 就地恢復〔開始掃描〕、狀態句清空",
+      btn.disabled && btn.textContent === ZH["rob.btnBusy"] && (() => { live = false; BR.robSync(box, opts()); return !btn.disabled && btn.textContent === ZH["rob.btnScan"] && sr.textContent === "" && box.kids[0] === fog; })());
+    BR.renderRobust(box, { ...DATA, scan: SCAN, code: CODE }, opts());
+    ok("① 完整結果:霧收掉,畫真的頂列〔重新掃描〕、結論卡、熱圖(3×3)", box.cls("fog").length === 0 && box.cls("fog-card").length === 0 && box.cls("rob-top").length === 1 && box.cls("rob-card").length === 1
+      && box.cls("rob-tbl")[0].all().filter((n) => n.tagName === "TD").length === 9 && box.cls("rob-go")[0].textContent === ZH["rob.btnRescan"]);
+    ok("① 失敗 / 取消:onScan 回 false → 鈕恢復可按", await (async () => {
+      const b2 = new N("div"); ROOT.appendChild(b2);
+      BR.renderRobust(b2, { ...DATA, name: "fog2" }, { ...opts(), onScan: (n, o, begin) => { begin(); return Promise.resolve(false); }, resync: () => BR.robSync(b2, { ...opts() }) });
+      const b = b2.cls("fog-card")[0].kids[1]; b.on.click(); BR.robSync(b2, opts()); const mid = b.disabled;
+      await new Promise((r) => setTimeout(r, 0));
+      return mid && !b.disabled && b.textContent === ZH["rob.btnScan"]; })());
+  })().catch((e) => ok("① 空狀態三態跑完沒丟例外", false, e && e.stack));
   // ── ② 交給 Electron ──
-  const bin = GATE.bin(SHELL, "②");
-  if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
-  const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
-  const sub = r.status == null ? 1 : r.status;
-  console.log(red || sub ? `\n${red + sub} 紅` : "\nALL PASS");
-  process.exit(red || sub ? 1 : 0);
-}
+  fogDone.then(() => {
+    const bin = GATE.bin(SHELL, "②");
+    if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
+    const r = require("child_process").spawnSync(bin, [__filename], { stdio: "inherit" });
+    const sub = r.status == null ? 1 : r.status;
+    console.log(red || sub ? `\n${red + sub} 紅` : "\nALL PASS");
+    process.exit(red || sub ? 1 : 0);
+  });
+} else {   // 純 node 段有非同步的檢查,不再同步 exit:Electron 段整段包進 else
 
 const { app, BrowserWindow } = require("electron");
 const os = require("os");
@@ -249,30 +314,31 @@ app.whenReady().then(async () => {
   // 空狀態
   await js(`window.__lk = (x) => x.disabled || x.getAttribute("aria-disabled") === "true"; 0`);   // 回合中的鎖是 aria-disabled(busy-lock spec §8),其他原因照舊原生 disabled:兩種都算鎖住
   let r = await js(`(() => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, false);
-    const b = window.__box.querySelector(".rob-empty button.btn-out"), p = window.__box.querySelector(".rob-empty .rob-empty-txt"); return { has: !!b, dis: b && window.__lk(b), txt: b && b.textContent, line: p && p.textContent, before: p && p.nextElementSibling === b, cap: !!window.__box.querySelector(".rob-cap"), heat: !!window.__box.querySelector(".rob-tbl") }; })()`);
-  ok("② 沒有 scan:空狀態 = 一句「還沒掃過參數。」+ 一顆「開始掃描」填色鈕(句在鈕前)、可按、沒有熱圖", r.has && !r.dis && r.txt === (await js(`t("rob.btnScan")`)) && r.line === (await js(`t("rob.empty")`)) && r.before && !r.cap && !r.heat);
+    const b = window.__box.querySelector(".rob-fog .fog-card button.btn-out"), p = window.__box.querySelector(".rob-fog .fog-card p"), u = window.__box.querySelector(".rob-fog > .fog-under");
+    return { has: !!b, dis: b && window.__lk(b), txt: b && b.textContent, line: p && p.textContent, before: p && p.nextElementSibling === b, cap: !!window.__box.querySelector(".rob-cap"), under: !!u && u.inert && u.getAttribute("aria-hidden") === "true" && !!u.querySelector(".bt-meta") && !!u.querySelector(".rob-card") && u.querySelectorAll(".rob-tbl tbody td").length === 42, live: window.__box.querySelectorAll(".rob-tbl").length }; })()`);
+  ok("② 沒有 scan:Setup fog = 霧底(inert、aria-hidden;meta + 結論卡 + 6×7 熱圖)+ 卡上一句 rob.fog + 一顆描邊〔開始掃描〕(句在鈕前)、可按;霧外沒有熱圖", r.has && !r.dis && r.txt === (await js(`t("rob.btnScan")`)) && r.line === (await js(`t("rob.fog")`)) && r.before && !r.cap && r.under && r.live === 1, JSON.stringify(r));
   r = await js(`(() => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, true);
-    const b = window.__box.querySelector(".rob-empty button.btn-out"); return { dis: window.__lk(b), txt: b.textContent, cap: !!window.__box.querySelector(".rob-cap") }; })()`);
+    const b = window.__box.querySelector(".rob-fog .fog-card button.btn-out"); return { dis: window.__lk(b), txt: b.textContent, cap: !!window.__box.querySelector(".rob-cap") }; })()`);
   ok("② 別條回合在跑:鈕不鎖、沒有原因行;文字仍是「開始掃描」(0.1.44 放寬,另開分頁送)", !r.dis && r.txt === (await js(`t("rob.btnScan")`)) && !r.cap);
   r = await js(`(async () => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, false);
-    const b0 = window.__box.querySelector(".rob-empty button"); b0.focus(); b0.click();
+    const b0 = window.__box.querySelector(".rob-fog .fog-card button"); b0.focus(); b0.click();
     window.__turn = 7; window.__sync(true);   // 送出 → 回合開始(promise 還沒回來;這個替身沒叫 begin)
     const mid = { dis: window.__lk(b0), txt: b0.textContent };
     await new Promise((r) => setTimeout(r, 30)); window.__sync(true);
-    const b = window.__box.querySelector(".rob-empty button.btn-out");
+    const b = window.__box.querySelector(".rob-fog .fog-card button.btn-out");
     return { calls: window.__calls, mid, same: b === b0, dis: window.__lk(b), txt: b.textContent, cap: !!window.__box.querySelector(".rob-cap") }; })()`);
   // 焦點:Chromium 把 focus 中的鈕設成 disabled 就會自己掉到 body(真 disabled 的規格行為,web 同),節點不重建能保的是不閃、不 reflow
-  ok("② 按下 → onScan 回來(那一輪)→ 同一顆鈕就地改成「已送出，看對話」(不重建)",
-    JSON.stringify(r.calls) === '[["s1","BUTTON"]]' && !r.mid.dis && r.mid.txt === (await js(`t("rob.btnScan")`)) && r.same && r.dis && r.txt === (await js(`t("rob.btnSent")`)) && !r.cap);
-  r = await js(`(() => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, true); const b = window.__box.querySelector(".rob-empty button"); return b.textContent; })()`);
-  ok("② 同一支、簽章沒變、同一回合還在跑:整塊重畫仍是「已送出」", r === (await js(`t("rob.btnSent")`)));
-  r = await js(`(() => { window.__sync(false); const a = window.__box.querySelector(".rob-empty button"); const r1 = [a.textContent, window.__lk(a), !!window.__box.querySelector(".rob-cap")];
-    window.__turn = 8; window.__sync(true); const b = window.__box.querySelector(".rob-empty button"); return { r1, r2: [b.textContent, window.__lk(b), !!window.__box.querySelector(".rob-cap")], same: a === b }; })()`);
+  ok("② 按下 → onScan 回來(那一輪)→ 同一顆鈕就地改成「掃描中」(不重建)",
+    JSON.stringify(r.calls) === '[["s1","BUTTON"]]' && !r.mid.dis && r.mid.txt === (await js(`t("rob.btnScan")`)) && r.same && r.dis && r.txt === (await js(`t("rob.btnBusy")`)) && !r.cap);
+  r = await js(`(() => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, true); const b = window.__box.querySelector(".rob-fog .fog-card button"); return b.textContent; })()`);
+  ok("② 同一支、簽章沒變、同一回合還在跑:整塊重畫仍是「已送出」", r === (await js(`t("rob.btnBusy")`)));
+  r = await js(`(() => { window.__sync(false); const a = window.__box.querySelector(".rob-fog .fog-card button"); const r1 = [a.textContent, window.__lk(a), !!window.__box.querySelector(".rob-cap")];
+    window.__turn = 8; window.__sync(true); const b = window.__box.querySelector(".rob-fog .fog-card button"); return { r1, r2: [b.textContent, window.__lk(b), !!window.__box.querySelector(".rob-cap")], same: a === b }; })()`);
   ok("② 回合結束沒產出:就地解鎖回「開始掃描」;下一輪無關的回合開始:不再變回「已送出」(不跨回合)、也不鎖", r.r1[0] === (await js(`t("rob.btnScan")`)) && r.r1[1] === false && !r.r1[2] && r.r2[0] === (await js(`t("rob.btnScan")`)) && r.r2[1] === false && !r.r2[2] && r.same);
-  r = await js(`(() => { window.__turn = 7; window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, true, 7); const a = window.__box.querySelector(".rob-empty button").textContent;
-    window.__turn = 11; window.__sync(true, 7); const b = window.__box.querySelector(".rob-empty button").textContent; window.__sync(false); return { a, b }; })()`);
-  ok("② 別條開跑(全 app 流水號往前走了)、送出那一輪還在跑:照樣「已送出」,不會解鎖變成可以重送", r.a === (await js(`t("rob.btnSent")`)) && r.b === r.a, JSON.stringify(r));
-  r = await js(`(() => { window.__turn = 7; window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, true, 7, "cloud"); return window.__box.querySelector(".rob-empty button").textContent; })()`);
+  r = await js(`(() => { window.__turn = 7; window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, true, 7); const a = window.__box.querySelector(".rob-fog .fog-card button").textContent;
+    window.__turn = 11; window.__sync(true, 7); const b = window.__box.querySelector(".rob-fog .fog-card button").textContent; window.__sync(false); return { a, b }; })()`);
+  ok("② 別條開跑(全 app 流水號往前走了)、送出那一輪還在跑:照樣「已送出」,不會解鎖變成可以重送", r.a === (await js(`t("rob.btnBusy")`)) && r.b === r.a, JSON.stringify(r));
+  r = await js(`(() => { window.__turn = 7; window.__render({ stats: ${JSON.stringify(STATS)}, scan: null, code: "", name: "s1" }, true, 7, "cloud"); return window.__box.querySelector(".rob-fog .fog-card button").textContent; })()`);
   ok("② 雲端視角的同名策略(同 sig、同回合):不吃本機那份的「已送出」", r === (await js(`t("rob.btnScan")`)));
   // 結果頁:頂列常駐「重新掃描」(spec-0.1.12-scan-stale §3.1)
   r = await js(`(() => { window.__render({ stats: ${JSON.stringify(STATS)}, scan: ${JSON.stringify(SCAN)}, code: "A = 10\\nB = 0.5", name: "s2" }, false);
@@ -288,9 +354,9 @@ app.whenReady().then(async () => {
     const sentView = { calls: window.__calls, info: window.__info, cls: b.className, dis: window.__lk(b), txt: b.textContent, spin: !!b.querySelector(".spin16"), card: !!window.__box.querySelector(".rob-card"), heat: !!window.__box.querySelector(".rob-tbl"), meta: !!window.__box.querySelector(".rob-top .bt-meta") };
     window.__sync(false); const back = window.__box.querySelector("button.rob-go");
     return { mid, sentView, back: [back.className, back.disabled, !!window.__box.querySelector(".rob-card"), !!window.__box.querySelector(".rob-tbl")] }; })()`);
-  ok("② 結果頁按「重新掃描」:onScan 帶 info(rescan、上次兩軸、現在的期間 / 費率)→ 送出成功只留 meta + 填色停用鈕(轉圈 +「已送出，看對話」),結論卡與熱圖收掉;回合結束沒新結果 → 舊結果回來",
+  ok("② 結果頁按「重新掃描」:onScan 帶 info(rescan、上次兩軸、現在的期間 / 費率)→ 送出成功只留 meta + 填色停用鈕(轉圈 +「掃描中」),結論卡與熱圖收掉;回合結束沒新結果 → 舊結果回來",
     JSON.stringify(r.sentView.calls) === '[["s2","BUTTON"]]' && r.sentView.info.rescan === true && r.sentView.info.grid.rp === "A" && r.sentView.info.grid.r1 === "30" && r.sentView.info.now.fee === "0.05"
-    && !r.mid.dis && r.mid.card && r.sentView.cls === "btn-out rob-go" && r.sentView.dis && r.sentView.spin && r.sentView.txt === (await js(`t("rob.btnSent")`)) && !r.sentView.card && !r.sentView.heat && r.sentView.meta
+    && !r.mid.dis && r.mid.card && r.sentView.cls === "btn-out rob-go" && r.sentView.dis && r.sentView.spin && r.sentView.txt === (await js(`t("rob.btnBusy")`)) && !r.sentView.card && !r.sentView.heat && r.sentView.meta
     && JSON.stringify(r.back) === '["btn-quiet rob-go",false,true,true]', JSON.stringify(r));
 
   // 有 scan:目前參數在尖峰上(策略碼 A=10 / B=0.5)
@@ -393,3 +459,4 @@ app.whenReady().then(async () => {
   console.log(red ? `\n② ${red} 紅` : "\n② ALL PASS");
   app.exit(red ? 1 : 0);
 });
+}

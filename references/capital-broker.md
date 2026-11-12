@@ -592,6 +592,9 @@ declarations the prior evening).
 
 ## Step 7b — Place Stock (Securities) Orders
 
+**Reference only — never send a stock order yourself.** Blave places no TW stock orders (Step 8);
+the user trades stocks in 群益's app.
+
 ```python
 pOrder = sk.STOCKORDER()
 pOrder.bstrFullAccount = OrderEvents.stock_accounts[0]
@@ -671,13 +674,12 @@ Any consumer MUST dedupe on (the row's 13-digit seqs, type idx2, exchange seq id
 
 ## Step 8 — Wire into Portfolio
 
-`portfolio_config.json` — futures and stock strategies both route through `"capital"`:
+`portfolio_config.json` — automatic trading through `"capital"` is futures-only (台指期 TXF/MXF/TMF):
 
 ```json
 {
   "exchanges": {
-    "txf_strategy": "capital",
-    "tsmc_strategy": "capital"
+    "txf_strategy": "capital"
   },
   "asset_specs": {
     "txf_strategy": {
@@ -685,23 +687,21 @@ Any consumer MUST dedupe on (the row's 13-digit seqs, type idx2, exchange seq id
       "contract_value": 200,
       "currency": "TWD",
       "lot_size": 1
-    },
-    "tsmc_strategy": {
-      "type": "tw_stock",
-      "lot_size": 1000,
-      "currency": "TWD",
-      "capital_symbol": "2330"
     }
   }
 }
 ```
 
-`contract_value` and the Capital order code (futures only) derive MECHANICALLY from the strategy's
+**Never route a stock strategy (台股 shares or ETFs) or a portfolio to `"capital"`** — saving 下單設定
+refuses it, and the reconciler has no stock path. A stock strategy going to a real account has no
+script and you never place it yourself: point the user to 策略組合 to see the strategy's holdings
+and place those orders themselves in 群益's app. The stock functions in `lib/order_capital.py` and
+Step 7b are not for you to call.
+
+`contract_value` and the Capital order code derive MECHANICALLY from the strategy's
 `SYMBOL` — which declares the traded contract; data auto-aliases to the TXF series
 (`references/lib.md`): `TXF` → `TX00` / 200, `MXF` → `MTX00` / 50, `TMF` → `TM0000` / 10.
-`lot_size` for stocks is 1000
-(整股/張) — for a strategy trading 零股 exclusively, use `lot_size: 1` and treat `nQty` as raw
-shares. The order library ships as `lib/order_capital.py` (live-tested paths only — surface and
+The order library ships as `lib/order_capital.py` (live-tested paths only — surface and
 units in `references/lib.md`; do NOT hand-write SKCOM order calls anymore); reconciler wiring is
 the hand-wired signed-diff pattern per `references/manager.md`, and the reconciler service needs
 the `.\Administrator` ObjectName exception there (602).
@@ -846,14 +846,20 @@ trades are not folded into bars at all. To be lifted once a settlement day is re
 | 股票盤後定價 | 14:00 – 14:30 |
 | 股票盤後零股 | 13:40 – 14:30（盤中零股未成交不會 carry over 到這個時段）|
 
+The reconciler sends a 台指期 close only while the broker takes orders: from one minute into each
+pre-open (08:31, 14:51) to the close. In between (13:45–14:51, 05:00–08:31, weekends) the close
+waits without an error row and goes at the pre-open; a flip's entry waits with it
+(`lib/tw_clock.close_hold`, the same rule as 統一, the machine's clock when it has no sample). 全部平倉
+after the close defers the close to the reconciler's first round after the open.
+
 ---
 
 ## Limits & Gotchas
 
 - **No confirmed simulation environment.** A `morder1` sim server existed historically but its
   docs were removed and a "停止模擬平台服務" warning code exists — assume production-only. Validate
-  the order path with a 1-lot micro futures order (TM0000) or a 1-share 零股 stock order the user
-  approves, or an intentionally rejected order (e.g. unfunded account → 保證金不足).
+  the order path with a 1-lot micro futures order (TM0000) the user approves, or an
+  intentionally rejected order (e.g. unfunded account → 保證金不足).
 - Futures agreement activation is **next-day**; securities activation delay is **unconfirmed**
   (GAP — no source pins it, test on first real onboarding and update this doc). Certificate
   expires **yearly**. All recurring support cases, not one-time.
@@ -878,12 +884,14 @@ trades are not folded into bars at all. To be lifted once a settlement day is re
    `state/capital_account.json` fresh** → Step 8's "Account Snapshot Worker" section. **This is
    what makes the platform's web dashboard show "connected" instead of a failure card — do this
    right after Step 6/6c, before order testing or strategy wiring, not as an afterthought.**
-7. One user-approved minimal live order per market being used (or intentional rejection)
-   confirms the order path → Step 7a / 7b
-8. 用戶確認後，方可設定 reconciler 上線（參考 `references/deployment.md`）
+7. One user-approved minimal live futures order (or intentional rejection) confirms the order
+   path → Step 7a（台股不由 Blave 下單，不做 7b）
+8. 用戶確認後，方可設定 reconciler 上線（參考 `references/deployment.md`）；自動下單只接台指期
+   TXF/MXF/TMF，台股策略請用戶到策略組合看持股、自己在群益 App 下單
 9. Libs are SHIPPED (verified live 2026-08-14, uid=1) — do not hand-write SKCOM calls:
    `lib/order_capital.py` (futures IOC market / whole-lot limit+market / intraday odd-lot limit;
-   everything else raises NotImplementedError), `lib/capital_worker.py` (NSSM service
+   everything else raises NotImplementedError; its stock functions are never called by you),
+   `lib/capital_worker.py` (NSSM service
    `blave-agent-capital` → `state/capital_account.json`, install commands in Step 8) and
    `lib/account_capital.py` (snapshot reader). Both the worker and any reconciler service need
    the `.\Administrator` ObjectName exception (`references/manager.md`).

@@ -283,3 +283,9 @@
   color: var(--ink-3);
 }
 .rob-empty > .btn-out { display: inline-flex; align-items: center; gap: var(--space-8); }
+
+/* ---- 參數掃描空狀態 = Setup fog(trade.css .fog 家族):面板改成欄,霧吃滿剩下的高、霧區內不捲。
+   :not([hidden]) 不能省:少了它這條會蓋過 .rp-panel[hidden] 的 display:none,藏著的分頁跑出來 ---- */
+.rp-panel:not([hidden]):has(> .rob-fog) { display: flex; flex-direction: column; overflow: hidden; }
+.rob-fog .rob-frame { overflow: hidden; }
+.rob-fog .fog-card > .btn-out { display: inline-flex; align-items: center; gap: var(--space-8); }

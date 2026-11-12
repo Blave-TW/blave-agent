@@ -193,16 +193,11 @@ const LIE = { zh: /只能看|留在電腦上|還不能操作/, en: /can only vie
   if (dead.length) fail(`S0–S7 那一套的字還在表裡:[${dead}]`); else pass("S0–S7 那一套的字(tm.cloudUpdate* / up.chat / up.update / up.c.*)兩語都刪了");
 }
 
-// ---- 9. 綁模擬帳戶說明講各市場成交價的出處 ----
-// 模擬盤用市場上實際的最新價(lib/paper_data;網頁 workspace_cx_paper_how_p 同句):加密 Binance 最新成交、台指期近月 1m、
-// 台股照未還原收盤價、股利不入帳。舊句「用策略的行情即時成交」已不成立
-{ const note = (lang) => (block(lang).match(/"cx\.paper\.fill": "([^"]*)"/) || [])[1] || "";
-  const MUST = { zh: ["Binance 最新成交價", "近月最新一分鐘價", "未還原收盤價", "分 K 策略用最新一根", "股利不入帳"],
-    en: ["Binance's last trade", "near-month's latest 1-minute price", "unadjusted close", "intraday strategies at the latest unadjusted bar", "dividends not credited"] };
-  if (["zh", "en"].some((l) => /策略的行情即時|own market data in real time/.test(note(l)))) fail("cx.paper.fill 還寫著舊的「用策略的行情即時成交」");
-  const miss = Object.entries(MUST).filter(([l, ws]) => !ws.every((w) => note(l).includes(w))).map(([l]) => l);
-  if (miss.length) fail(`cx.paper.fill(「模擬怎麼成交？」展開內容)沒寫台股照未還原收盤價成交、股利不入帳:[${miss}]`);
-  else pass("cx.paper.fill(「模擬怎麼成交？」展開內容)兩語都寫台股照未還原收盤價成交、股利不入帳");
+// ---- 9. 連接框案一退役的字(spec connect-account-plan1 §5 不再使用清單＋稽核 v052 補的 cx.bound、cx.ip.cloudNote)兩語都刪了 ----
+// 「模擬怎麼成交？」展開列(cx.paper.q／.fill)不再從連接框出;成交價出處那段沒有另外的家,要回來時另寫一句,不是把舊 key 撿回來
+{ const gone = ["cx.mode.paper", "cx.mode.paperSub", "cx.mode.real", "cx.mode.realSub", "cx.fact.perm", "cx.note.one", "cx.note.oneV", "cx.store.q", "cx.paper.q", "cx.paper.fill", "cx.goPaper", "cx.venue", "cx.bound", "cx.ip.cloudNote"];
+  const left = gone.filter((k) => en.has(k) || zh.has(k));
+  if (left.length) fail(`連接框案一退役的字還在表裡:[${left}]`); else pass("連接框案一退役的 14 個字兩語都刪了");
 }
 
 console.log(bad ? `\n${bad} 紅` : "\nALL PASS");

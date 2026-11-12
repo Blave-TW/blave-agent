@@ -506,11 +506,21 @@ This is the one exception to AGENTS.md's "delete your `tmp/` scripts before you 
   function, `references/lib.md`), never pasted in.
 - Run it from the workspace root as `python3 -m tmp.research.<name>` (no `.py`; the folder needs
   no `__init__.py`) — it imports `lib` whether or not the machine sets `PYTHONPATH`.
-- Probes and one-off prints around it are still deleted before you reply.
+- **Beside it, a notes file: `tmp/research/<same name>.notes.md`.** Every time a version of the
+  script has run, append one line: what this version measured, its main result as one number,
+  and kept or dropped and why (`- 2026-11-10 改用每段只算一次：高檔 PCR 段勝率 7/10，留用（逐日算重複計入同一段）`).
+  Append only; never edit or delete an earlier line. It is the only source for a report's
+  「試過但沒過」 table (§7b B11) and for the order of its argument sections — a step that is not
+  in the notes did not happen. It stays on this machine: it is not uploaded and goes into no
+  report block. No key, token or password in it, the same as the script.
+- Probes and one-off prints around it are still deleted before you reply; the notes file is kept
+  with its script.
 - **Cap:** at the start of a research or report turn, keep the newest 20 files in `tmp/research/` and delete
   the rest — nothing else ages them, on the desktop app or in the cloud. Run exactly this, from the
   workspace root (only `tmp/research/*.py`, never `__pycache__` or anything outside):
   `python3 -c "import glob,os; fs=sorted(glob.glob('tmp/research/*.py'), key=os.path.getmtime, reverse=True); [os.remove(f) for f in fs[20:]]"`
+  Then remove the notes of the scripts that went:
+  `python3 -c "import glob,os; [os.remove(n) for n in glob.glob('tmp/research/*.notes.md') if not os.path.exists(n[:-9] + '.py')]"`
 
 **Making an earlier answer into a report:**
 1. `ls -t tmp/research/` (ignore the `__pycache__` folder it lists) and read the first lines; pick
@@ -1165,6 +1175,10 @@ as an observation, and never firm up a hedge to make the report read stronger. A
 sentence with nothing under it is a worse failure than a shallow one: the shallow report wastes
 the reader's time, the fabricated one loses them money. Every figure stays real or labelled.
 
+An inference is not banned, it is labelled. What is banned is writing one as if it had been
+observed. In a research report an explanation you have not verified goes only in the
+「推測」 section (§7b B10), each one marked as a guess with what would settle it.
+
 **Two checks on every figure before the report goes out:**
 
 - **A weekly or monthly change is measured from the previous period's last value.** This week's
@@ -1209,8 +1223,8 @@ rules:
 
 | Rules | Apply to |
 |---|---|
-| **A. Presentation** (A1–A11) | Every hand-written report **except `performance`**, which is a state snapshot whose title names its period, not a thesis (§7 scope table). A template brief (§1b) is only **half** out of scope: its envelope title is fixed by the template (a topic name by design — the list row carries the date, §1b — so A1 is not in play), the template implements A3, A4, A5 and A8 in the blocks it builds, and the narrative you write into it still follows A2, A6 and A7 — §1b says what that looks like in `read` / `watch`. |
-| **B. Research rules** (B1–B9) | `type: "research"` only. A hand-written `morning` report keeps §1b's rules instead: levels are statistics, never calls, and its conditions section takes the 觀察重點 (`watch`) form. |
+| **A. Presentation** (A1–A14) | Every hand-written report **except `performance`**, which is a state snapshot whose title names its period, not a thesis (§7 scope table). A template brief (§1b) is only **half** out of scope: its envelope title is fixed by the template (a topic name by design — the list row carries the date, §1b — so A1 is not in play), the template implements A3, A4, A5 and A8 in the blocks it builds, and the narrative you write into it still follows A2, A6 and A7 — §1b says what that looks like in `read` / `watch`. |
+| **B. Research rules** (B1–B11) | `type: "research"` only. A hand-written `morning` report keeps §1b's rules instead: levels are statistics, never calls, and its conditions section takes the 觀察重點 (`watch`) form. |
 
 Blocks are flat (§3). A section is a `text` block that opens with its `## ` heading,
 followed by the chart / table blocks that back it. Nothing nests inside markdown. Write the
@@ -1287,21 +1301,38 @@ section headings in the report's language.
   the first thing a reader looks at, and for research it is the main image of a public
   page; a screenshot passed on carries this chart and its title, nothing else.
 - **A6. Key points: one `text` block with 3–5 bullets, each one sentence carrying one
-  number** (§7 rule 2, the swap test). *Why:* a reader who stops here should still hold
+  number** (§7 rule 2, the swap test) — that figure and at most its baseline; the spread and
+  the sample size go in the section that argues it (A12). *Why:* a reader who stops here should still hold
   the argument.
-- **A7. Sections whose `## ` headings are claims** (「## 干預後三次反彈都在 10 個交易日內回吐」,
-  not 「## 匯率走勢」), each backed by at least one chart or table block and closed on its
-  so-what (§7 rule 3), in a short `text` after the chart or in the chart's `caption`. In
-  research the so-what is what the finding does to the claim: how far it generalises and
-  where it stops, never a trade and never a reading of today's market. In a morning report
-  it is the condition to watch, in the §1b form. *Why:* headings that state the point let
-  a reader skim the argument, and a heading with no evidence under it is just an
-  assertion.
+- **A7. Sections whose `## ` headings are claims** (「## 干預後的反彈很快回吐」, not
+  「## 匯率走勢」), each backed by at least one chart or table block and closed on its so-what
+  (§7 rule 3). Outside research the so-what goes in a short `text` after the chart or in the
+  chart's `caption`; in a morning report it is the condition to watch, in the §1b form. In
+  research a heading is a short claim, **≤ 14 CJK characters (≤ 28 Latin)
+  and no number** — the number belongs in the section's closing sentence; the fixed sections
+  (「為什麼問這題」, 「怎麼量」, 「試過但沒過」, 「推測」, 「附表」, 「總結」) keep their names. In
+  research each argument section is written in this shape:
+  - **It opens on the section before it**: the first sentence says why this comes next
+    (「毛報酬每年都是正的，接著把成本加進去。」). Short sentences; a question may carry the turn
+    (「那成本呢？」). No first-person asides or interjections — the report has no author's voice.
+  - **Around each chart**: one sentence before it leads in, one after it says how to read it
+    (which colour is what, where to look). The `caption` keeps only the sample, the period,
+    the baseline and the source.
+  - **It closes on its so-what** (§7 rule 3) as the last sentence of a `text` block, the whole
+    sentence in bold — never only in a caption. In research the so-what is what the finding
+    does to the claim: how far it generalises and where it stops, never a trade and never a
+    reading of today's market.
+
+  *Why:* headings that state the point let a reader skim the argument, and a heading with
+  no evidence under it is just an assertion. A section that neither picks up the one before
+  nor closes on a sentence reads as a pile of findings with no cause and effect, and a
+  conclusion in a caption sits in the smallest type on the page.
 - **A8. `footnote` last: method and data.** Give the window, frequency, formula and sample
   size, plus the source of every series. *Why:* a report is read later without the chat
   that produced it, so this is where a reader checks how the numbers were made.
 - **A9. A number has a home; the prose does not repeat it.** The headline number (the first
-  `kpi_row` item) appears at most three times: the KPI cell, the lead and the 「總結」. Every
+  `kpi_row` item) and its baseline appear at most five times, the KPI cell, the lead and the
+  「總結」 among them — a narrative that returns to its figure needs a few more than three. Every
   other number has one home — a chart or a table; a KPI cell is the index of the chart or
   table it summarises and counts as the same home — and the prose writes it at most once
   more. A robustness table may list the number it tests again, beside its alternative. Key
@@ -1325,8 +1356,28 @@ section headings in the report's language.
   appearance in the body, before its number. The title, the lead and the `kpi_row` use
   words a reader already has, and leave the definition to the body. After that, one word
   for one thing: never 「平常」, 「全體」 and 「同期」 for baselines that are, or are not,
-  the same. This widens §1b W3 (Blave indicators only) for hand-written reports. *Why:* a
+  the same. This widens §1b W3 (Blave indicators only) for hand-written reports. When a
+  research report uses 3 or more terms, define them once instead, as bullets in 「怎麼量」 — one sentence
+  each, at most 5 — and a term defined there needs no second definition in the body. *Why:* a
   public page's reader never saw the chat.
+- **A12. Two numbers a sentence** (research). Every sentence of the body and of the key points carries
+  at most 2 numbers; the lead keeps A2's own count. What counts as a number is A2's list, but
+  here the baseline is counted as one of the two. The spread, the sample size and the segment count (B8, B9) are still
+  required, in the next sentence, the chart's `caption` or a table — never squeezed into the
+  sentence that already carries a figure and its baseline. *Why:* A3, B8 and B9 each asked
+  for one more figure in the same sentence; together they produced key points with four
+  numbers each, and a sentence like that is read as noise.
+- **A13. Small tables in the body** (research). A `table` in the body is at most 4 columns by 8 rows.
+  A larger one goes, whole, to a 「## 附表」 (English: 「## Appendix」) section right before the
+  `footnote`, and the body cites only its conclusion. A table of numbers and a table of words
+  are two tables. When a conclusion is two amounts added or subtracted, lay the sum out as a
+  small table, one row per term down to the subtotal, so the reader can check it; every row
+  is program output (A10). *Why:* a 9-column table holds a reader longer than the argument
+  around it, and an addition the reader can check is more convincing than its result.
+- **A14. The headline number, once in everyday terms** (research). At its first appearance after the
+  lead, follow the headline number with one sentence that converts it — per year, per 100,000
+  元, per trade. The conversion is computed by the script, never in your head (A10). Only the
+  headline number; converting every figure brings the density back.
 
 ### B. Research rules — `type: "research"` only
 
@@ -1388,7 +1439,8 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
 
   B1 and B2 win over §7 wherever they meet (§7's examples read today's market, which fits
   a morning brief, not a research report), and they govern B3–B6.
-- **B3. Evidence against: a mandatory section** (「哪些數據不支持這個結論」). List the
+- **B3. Evidence against: a mandatory section** (「哪些數據不支持這個結論」; B3 and B4 may
+  share one section, 「試過但沒過」, B11). List the
   figures that do not fit the claim, each with its number and what it does to the claim's
   strength. If you found none, list what you checked. *Why:* §7 rule 4 — if every figure
   supports the thesis, you selected the figures.
@@ -1467,9 +1519,11 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
   never be recorded as `true`.
 
 - **B8. A median or an average never travels alone.** Wherever one carries the finding —
-  the title, the lead, a `kpi_row` item, a section's claim — the same sentence or the same
-  block gives the spread behind it: the hit rate ("6 of the 10"), the worst single case, or
-  the distribution itself (`histogram` / `box`, §3). Name the sample size every time; a
+  the title, the lead, a `kpi_row` item, a section's claim — the same section gives the
+  spread behind it (for the title, the lead and the `kpi_row`: the lead or the first chart),
+  in the next sentence, the chart's `caption` or a table, not in the sentence that carries the
+  figure (A12): the hit rate ("6 of the 10"), the worst single case, or the distribution
+  itself (`histogram` / `box`, §3). Name the sample size every time; a
   central tendency over a handful of events is one more reason the reader needs the spread,
   not a reason to leave it out. *Why:* "the median 10-day return over the last 10 launches
   was −0.87%" and "6 of those 10 were positive" describe the same ten events, and a reader
@@ -1484,15 +1538,49 @@ chat, and it leads with the **title**, the **lead**, the **first item of the fir
   (B3) says so. *Why:* 23 of a sample report's 47 event days fell in one stretch
   (2020-12 to 2021-05); with a 60-day window they are the same rally counted 23 times.
 
+- **B10. Speculation: labelled, in one place.** An explanation you have not verified may be
+  written (§7 rule 6), only in one section headed 「推測」 (English: 「Speculation」), at most one
+  per report and at most 3 items. Each item says three things: what was observed (with its
+  number), the guessed explanation, and what data would confirm it. A guess never goes in the
+  title, the lead, the `kpi_row`, the key points or the 「總結」. A report with this section
+  adds one sentence to the `footnote`: these are after-the-fact descriptions, not tests
+  designed in advance. B1 and B2 still hold: a guess names no trade and does not read today's
+  market. *Why:* the best part of a research write-up is often its honest guess, and a guess
+  marked as one is a finding about what is still unknown; the same sentence unmarked is a
+  fabrication.
+- **B11. 「試過但沒過」: what was tried, from the notes only.** B3 and B4 may share one
+  section, and it may carry a two-column table, 做了什麼 / 結果. Each 結果 cell is one sentence,
+  ≤ 20 CJK characters, with one number. List only what this research really ran, taken from
+  the script's notes file (§1b › *Research scripts*); nothing there → no table. Never run a
+  new scan to fill it — the Iteration Brakes still apply (B4). *Why:* a reader trusts a
+  finding more after seeing what did not hold, and a list of attempts nobody made is the
+  report inventing its own history.
+
 **Order in a research report:** `meta` → lead (A2) → `kpi_row` (A4) → first chart (A5) →
-key points (A6) → 3–5 argument sections (A7) → evidence against (B3) → robustness (B4) →
-what would break this (B5) → `footnote` (A8).
+key points (A6) → 「為什麼問這題」 → 「怎麼量」 → 3–5 argument sections (A7) → evidence against
+(B3) and robustness (B4), or the two as one 「試過但沒過」 section (B11) → 「推測」 (B10, optional)
+→ 「總結」 ending on what would break this (B5) → 「附表」 (A13, only when a table moved there)
+→ `footnote` (A8).
+- **「為什麼問這題」** (English: 「Why this question」): one section, no chart needed, ≤ 150
+  characters. Where the question came from — a saying going around, a paper, the user's own
+  question. A2's contrast is its one-line version; this is the longer one.
+- **「怎麼量」** (English: 「How it was measured」): the steps as a numbered list, one sentence
+  each, and the term definitions (A11).
+- **Argument sections** go in the order the measuring went (the notes file), not in order of
+  importance — the lead and the key points already said what matters most.
+
+A report with no real research history behind it (one script, measured once) is written in
+this order as it is. Never make up a sequence of attempts to give it a story (§7 rule 6).
 
 For a `research` report only, `write_report` prints a `WARNING:` (it never refuses) when
 the title is over the A1 research cap (24 CJK / 48 Latin), when the lead's first sentence is
-over 40 CJK / 80 Latin or has no digit (A2), when the lead is not followed by a `kpi_row`, or when
-`meta.shareable` is missing (B7; a reminder to record it, not a sharing gate). Everything else here is yours to check, in research and in
-a hand-written morning report alike.
+over 40 CJK / 80 Latin or has no digit (A2), when the lead is not followed by a `kpi_row`,
+when a sentence of the body or the key points carries more than 2 numbers (A12), when a body
+`table` is over 4 columns or 8 rows (A13; 「附表」 does not count), when an argument section —
+one with a chart or table under it — does not end its last `text` block on a whole bold
+sentence (A7), or when `meta.shareable` is missing (B7; a reminder to record it, not a
+sharing gate). Everything else here is yours to check, in research and in a hand-written
+morning report alike.
 
 ## 8. Scheduled reports — a job directory, not a cron line
 

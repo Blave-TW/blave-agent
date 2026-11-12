@@ -3,7 +3,8 @@
 //      onbPhase E／F 切換(當下完成就換成 F、送 onb_done,上線那天就已經完成的不送);沒有「都設好了」那一行
 //   ② 歡迎頁③〔加到策略組合〕(poPick)與選擇策略框 psOpen 原文接假 DOM 跑:到策略組合頁、開框、不替用戶勾;框開之前重讀這台電腦的清單
 //      (0.1.28 Wei 實機:剛裝好的策略不在框裡)
-//   ③ 連接框 cxModalOpen 原文接假 DOM 跑:預設模擬、統一照舊、每次打開記 cx_open
+//   ③ 連接框(0.1.52 案一)cxModalOpen／cxVenueField 原文接假 DOM 跑:不預選、綁模擬不鎖、統一照舊、每次打開記 cx_open;
+//      期貨磚(Mac 不出)、建金鑰網址、權限句、被拒時帶 IP 的純邏輯
 //   ③ 主行程 welcome-prefs 的清洗(原文接暫存檔跑):形狀不對當沒設、只動有帶的鍵
 // 跑法:node tests/check_shell_onboarding.js(不起 Electron)
 const fs = require("fs"), path = require("path"), vm = require("vm"), os = require("os");
@@ -181,7 +182,7 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
     const L = { env: "local", list: o.list, listLoaded: true, meta: new Map(), st: null, view: "tr",
       api: { listStrategies: async () => { log.push("list"); if (o.onList) o.onList(L); if (o.listFail) throw new Error("x"); return o.fresh; }, loadStrategy: async () => ({ stats: { symbol: "BTCUSDT" }, code: "" }) } };
     const C = { TR: L, TR_BAGS: { local: L, cloud: {} }, ENV: { cur: "local" }, $: (id) => els[id] || null, t: (k) => k, requestAnimationFrame: (f) => f(),
-      PAPER: "paper", trackFeature: (n) => log.push("track:" + n), trPickOff: () => !L.listLoaded, trNames: () => [], trReport: () => ({}), trVenueId: () => null, trPaperTwOk: () => true, trTwBroker: () => false, trTwdVenueLock: () => null,
+      PAPER: "paper", trackFeature: (n) => log.push("track:" + n), trPickOff: () => !L.listLoaded, trNames: () => [], trReport: () => ({}), trVenueId: () => null, trPaperTwOk: () => true, trTwBroker: () => false, trTwdVenueLock: () => null, trTwStockSelf: () => null,
       trPickPrefs: () => ({ order: [], flags: {} }), envDotsUp: () => false, envRunDot: () => false, trUniverse: () => [], trIsTwd: () => false, trAllTwd: () => false,
       trEl: (tag, cls, txt) => ({ tag, cls, txt, kids: [], dataset: {}, setAttribute() {}, appendChild(x) { this.kids.push(x); return x; }, append() {} }),
       psRow: (r) => ({ row: r.name }), mgMembers: () => [], psOpener: null, psMode: "", Map, Set, JSON, Object, Number, Promise, Error,
@@ -218,37 +219,111 @@ ok("② 完成列不帶 meta(Wei 10-21);①② 點了就地展開(aria-expanded)
   }).catch((e) => ok("② poPick／psOpen 跑得起來", false, e && e.stack)).then(rest);
 }
 function rest() {
-// ── ② 連接框 ──
-{ const open = (venue, mode, bound) => {
+// ── ② 連接框(0.1.52 案一,spec connect-account-plan1)──
+{ const open = (venue, bound) => {
     const log = [], el = () => ({ hidden: true, classList: { add() {}, remove() {}, toggle() {} }, focus() { log.push("focus"); }, querySelector: () => null });
-    const els = { "cx-scrim": el(), "view-ws": el(), "cx-body": el(), "cx-close": el(), "cx-mode-paper": el(), "cx-mode-real": el() };
-    const C = { ENV: { cur: "local" }, TR: { env: "local" }, TR_BAGS: { local: { sig: {} }, cloud: {} }, PAPER: "paper", CAPITAL: "capital",
-      CXF: { env: "local", mode: "paper", venue: "paper" }, cxVenuesFor: () => ["binance", "okx"], cxForget() {}, cxBag: () => C.TR_BAGS.local, trVenueIds: () => (bound ? [bound] : []), trSetupOnly: () => false, envCloudKind: () => "running",
-      trackFeature: (n) => log.push(n), $: (id) => els[id] || null, requestAnimationFrame: (f) => f(), cxModalPaint() {}, capResume() {}, cxOpener: null, CXW: { cb: null } };
+    const els = { "cx-scrim": el(), "view-ws": el(), "cx-body": el(), "cx-close": el() };
+    const C = { ENV: { cur: "local" }, TR: { env: "local" }, TR_BAGS: { local: { sig: {} }, cloud: {} }, PAPER: "paper", CAPITAL: "capital", CX_VENUES: { binance: {}, okx: {} },
+      CXF: { env: "local", venue: null, ip: "1.2.3.4" }, cxForget() {}, cxBag: () => C.TR_BAGS.local, trVenueIds: () => (Array.isArray(bound) ? bound : bound ? [bound] : []), trSetupOnly: () => false, envCloudKind: () => "running",
+      trackFeature: (n) => log.push(n), $: (id) => els[id] || null, requestAnimationFrame: (f) => f(), cxModalPaint() {}, capResume() {}, cxIpLookup() {}, cxFocusStart: () => log.push("focusStart"), cxOpener: null, CXW: { cb: null }, trPresLoginHeld: () => false };
     vm.createContext(C); vm.runInContext(cutFn(trade, "cxModalOpen").replace("function cxModalOpen", "var cxModalOpen = function"), C);
-    C.cxModalOpen(null, venue); return { venue: C.CXF.venue, mode: C.CXF.mode, bound: C.CXF.bound, log: log.join() }; };
-  const a = open(), b = open("paper"), d = open("president");
-  ok("③ 連接框預設模擬:不帶參數 / 帶模擬 → venue = paper、mode = paper;每次打開記一次 cx_open",
-    a.venue === "paper" && a.mode === "paper" && b.venue === "paper" && b.mode === "paper" && a.log.split(",").filter((x) => x === "cx_open").length === 1, JSON.stringify([a, b]));
-  ok("③ 帶統一照舊開在真實帳戶;不再有「沒帶 venue 也開在真實帳戶」那條(0.1.29 拿掉④)", d.venue === "president" && d.mode === "real" && !/mode === "real"/.test(cutFn(trade, "cxModalOpen")), JSON.stringify(d));
-  { const e = open(null, null, "okx"), f = open("paper", null, "paper");
-    ok("③ 已綁定:停在綁著的那一家、bound 為真(兩個大選項與選單由 cxVenueField 鎖住);模擬綁著就停在模擬",
-      e.venue === "okx" && e.mode === "real" && e.bound === true && f.venue === "paper" && f.mode === "paper" && f.bound === true && /CXF\.bound \|\|/.test(cutFn(trade, "cxVenueField")), JSON.stringify([e, f])); }
-  ok("③ 真實帳戶的事實長在卡裡:div.cf-wrap 裡 label 與 ul 是兄弟、ul 掛 aria-describedby;期貨商只留一行、講憑證(0.1.28 拿掉「不經過 AI」)",
-    /card\.append\(lab, ul\)/.test(cutFn(trade, "cxVenueField")) && /r\.setAttribute\("aria-describedby", ul\.id\)/.test(cutFn(trade, "cxVenueField"))
-    && /fut \? \[CXF\.env === "cloud" \? t\("cx\.fact\.certCloud"\) : t\("cx\.fact\.cert"\)\]\n/.test(cutFn(trade, "cxVenueField")));
-  { const vf = cutFn(trade, "cxVenueField"), paint = cutFn(trade, "cxModalPaint"), conn = cutFn(trade, "cxConnect");
-    ok("③ 已綁模擬:沒有主鈕(防重綁把模擬帳戶從頭建一次)、Enter 也不送,框裡講「要換帳戶，先在設定解除綁定。」;已綁真實帳戶主鈕寫「換金鑰」、事實收起",
-      /go\.hidden = CXF\.bound && venue === PAPER;/.test(paint) && /^function cxConnect\(\) \{\n  if \(CXF\.bound && CXF\.venue === PAPER\) return;/.test(conn)
-      && /if \(CXF\.mode !== "real"\) \{ if \(CXF\.bound\) w\.appendChild\(trEl\("p", "cx-hint", t\("cx\.bound"\)\)\); return w; \}/.test(vf)
-      && /CXF\.bound \? t\("cx\.changeKey"\) : t\("cx\.connect"\)/.test(paint) && /wrap = on && m === "real" && !CXF\.bound/.test(vf) && /if \(!wrap\) \{ fs\.appendChild\(lab\); return; \}/.test(vf)); }
-  { const C = { out: [], trEl: (tag, cls, txt) => ({ tag, cls, txt }) }, el = { kids: [], appendChild(x) { this.kids.push(x); }, append(x) { this.kids.push(x); } };
-    vm.createContext(C); vm.runInContext(cutFn(trade, "cxMonoNums"), C); C.cxMonoNums(el, "不用金鑰，起始 100,000 USDT，不動真錢。");
-    ok("③ 選項小字的數字包 mono(100,000),其餘照原字", JSON.stringify(el.kids) === JSON.stringify(["不用金鑰，起始 ", { tag: "span", cls: "mono", txt: "100,000" }, " USDT，不動真錢。"]), JSON.stringify(el.kids)); }
-  ok("③ 鎖住、已選的圓鈕:中間的點換 --color-greyMedium(亮色不再白點配白底)", /\.cf-opt\.off input:checked::after \{ background: var\(--color-greyMedium\); \}/.test(read(path.join(R, "app.css"))));
-  ok("③ 綁定成功的埋點:本機 cxConnected 與雲端成功那一條都分模擬／真實;框標題與霧上的鈕同一句 cx.title",
+    C.cxModalOpen(null, venue); return { venue: C.CXF.venue, bound: C.CXF.bound, paperBound: C.CXF.paperBound, log: log.join() }; };
+  const a = open(), d = open("president"), e = open(null, "okx"), f = open(null, "paper");
+  ok("③ 連接框不預選:沒帶參數 → venue = null(交易所磚),焦點交給 cxFocusStart;每次打開記一次 cx_open",
+    a.venue === null && a.bound === false && a.paperBound === false && a.log.split(",").filter((x) => x === "cx_open").length === 1 && /focusStart$/.test(a.log), JSON.stringify(a));
+  ok("③ 帶統一照舊開在統一那條", d.venue === "president", JSON.stringify(d));
+  ok("③ 綁著真實帳戶:停在那一家、bound 為真;綁著模擬:不鎖、回磚(paperBound),連上真實帳戶直接取代",
+    e.venue === "okx" && e.bound === true && e.paperBound === false && f.venue === null && f.bound === false && f.paperBound === true, JSON.stringify([e, f]));
+  { const g = open(null, ["paper", "president"]);
+    ok("③ 模擬跟統一同綁(paper 排第一):算綁著真實帳戶、停在統一,不出「取代模擬」那一態(連上別家會把統一一起擠掉)", g.bound === true && g.paperBound === false && g.venue === "president", JSON.stringify(g)); }
+  { const paint = cutFn(trade, "cxModalPaint"), conn = cutFn(trade, "cxConnect"), pg = cutFn(trade, "cxPaperGo"), vf = cutFn(trade, "cxVenueField");
+    ok("③ 磚那一態沒有主鈕、Enter 不送;框腳模擬綁著任何一種都不出、驗證碼那一步不出、送出中停用;綁著真實帳戶主鈕寫「換金鑰」、沒有「換一家」",
+      /go\.hidden = !kc && !picked;/.test(paint) && /^function cxConnect\(\) \{\n  if \(!CXF\.venue\) return;/.test(conn)
+      && /pb\.hidden = !!kc \|\| CXF\.bound \|\| CXF\.paperBound; pb\.disabled = !!L\.cx\.busy \|\| down;/.test(paint)
+      && /CXF\.bound \? t\("cx\.changeKey"\) : t\("cx\.connect"\)/.test(paint) && /if \(!CXF\.bound\) \{ const b = trEl\("button", "btn-quiet", t\("cx\.change"\)\)/.test(vf)
+      && /if \(L\.cx\.busy \|\| CXF\.bound \|\| CXF\.paperBound \|\| CXF\.kc\) return;\n  CXF\.venue = PAPER;/.test(pg)); }
+  // 純邏輯:期貨磚、建金鑰網址、權限句、被拒時帶 IP
+  { const C = { CAPITAL: "capital", BINANCE: "binance", PRES_LOCAL_ON: true, CAPL_LOCAL_ON: true, CXF: { venue: null } };
+    vm.createContext(C);
+    vm.runInContext([/const CX_VENUES = \{[\s\S]*?\};\n/.exec(trade)[0].replace("const CX_VENUES", "var CX_VENUES"), "var BITGET_VERIFIED_MODES = [];",
+      /const cxPresListed = [^\n]*\n/.exec(trade)[0].replace("const ", "var "), /const cxCaplListed = [^\n]*\n/.exec(trade)[0].replace("const ", "var "),
+      /const cxPermKey = [^\n]*\n/.exec(trade)[0].replace("const ", "var "), /const CX_IPADD_SKIP = [^\n]*\n/.exec(trade)[0].replace("const ", "var "),
+      ...["cxTwTiles", "cxKeyUrl", "cxIpAddFor", "trErrToken"].map((n) => cutFn(trade, n))].join("\n"), C);
+    const J = JSON.stringify;
+    ok("③ 台灣期貨磚:Mac(不是 win32)不出磚(null → 原位講 cx.macTw);Windows 列群益、統一;雲端只列群益",
+      C.cxTwTiles("local", "darwin") === null && C.cxTwTiles("local", "linux") === null && J(C.cxTwTiles("local", "win32")) === J([["capital", "cap.venue"], ["president", "pres.venue"]])
+      && J(C.cxTwTiles("cloud", "darwin")) === J([["capital", "cap.venue"]]), J([C.cxTwTiles("local", "win32"), C.cxTwTiles("cloud", "darwin")]));
+    ok("③ 磚的順序 = Binance、BingX、OKX、Gate.io、Bybit、Bitget、StockCoin(同網頁 CX_VENUES、landing)", J(Object.keys(C.CX_VENUES)) === J(["binance", "bingx", "okx", "gateio", "bybit", "bitget", "stockcoin"]));
+    ok("③ 建金鑰網址:Binance、BingX、OKX、Gate.io、Bybit 有不帶語系段的 https keyUrl;Bitget(待 Wei 定)、StockCoin 沒有(不出鈕)",
+      J(Object.keys(C.CX_VENUES).filter((id) => C.cxKeyUrl(id))) === J(["binance", "bingx", "okx", "gateio", "bybit"])
+      && Object.keys(C.CX_VENUES).every((id) => !C.cxKeyUrl(id) || (/^https:\/\//.test(C.cxKeyUrl(id)) && !/\/(zh|en)[-_/]/i.test(C.cxKeyUrl(id)))) && C.cxKeyUrl("nope") === null);
+    ok("③ 權限句:Binance、Gate.io 講合約交易,其他講交易", C.cxPermKey("binance") === "cx.perm.futures" && C.cxPermKey("gateio") === "cx.perm.futures" && ["okx", "bingx", "bybit", "bitget", "stockcoin"].every((v) => C.cxPermKey(v) === "cx.perm"));
+    const r = (code, reason) => ({ code, detail: { reason } });
+    ok("③ 被拒時帶 IP(只有這台電腦):Binance 一律不帶(IP 在步驟 1);其他家 IP_OR_KEY／TRADING_DISABLED／REJECTED 帶,REJECTED 已講真原因的三種不帶;雲端每一家都不帶(IP 常駐步驟 1);其他錯不帶",
+      ["IP_OR_KEY", "REJECTED", "TRADING_DISABLED"].every((c) => !C.cxIpAddFor(r(c, "x"), "binance", false))
+      && C.cxIpAddFor(r("IP_OR_KEY"), "okx", false) && C.cxIpAddFor(r("TRADING_DISABLED"), "bybit", false) && C.cxIpAddFor(r("REJECTED", "Invalid API-key, IP"), "gateio", false)
+      && ["IP_OR_KEY", "TRADING_DISABLED"].every((c) => ["okx", "bybit", "stockcoin", "binance"].every((v) => !C.cxIpAddFor(r(c), v, true)))
+      && ["[okx_account_mode] x", "[bitget_account_mode:uta] x", "[bitget_copy_trading_key] x"].every((x) => !C.cxIpAddFor(r("REJECTED", x), "okx", false))
+      && !C.cxIpAddFor(r("REJECTED", "x"), "okx", true) && !C.cxIpAddFor(r("NETWORK"), "okx", false) && !C.cxIpAddFor(r("IP_OR_KEY"), "paper", false) && !C.cxIpAddFor(null, "okx", false)); }
+  // 磚那一態接假 DOM 跑:已綁模擬那一句、兩組磚、Mac 那一句、點磚記 cx_venue_pick
+  { const mk = (tag) => { const n = { tag, className: "", id: "", textContent: "", children: [], attrs: {}, on: {}, disabled: false,
+      appendChild(c) { this.children.push(c); return c; }, append(...c) { c.forEach((x) => this.children.push(x)); }, setAttribute(k, v) { this.attrs[k] = String(v); },
+      addEventListener(e, fn) { this.on[e] = fn; } }; return n; };
+    const run = (o) => {
+      const log = [], C = { document: { createElement: mk }, CAPITAL: "capital", PAPER: "paper", BINANCE: "binance", PRES_LOCAL_ON: true, CAPL_LOCAL_ON: true,
+        CXF: { env: o.env || "local", venue: null, paperBound: !!o.paperBound, bound: false }, window: { blave: { platform: o.platform || "win32" } },
+        t: (k) => k, trackFeature: (n) => log.push(n), cxForget() {}, cxModalPaint: () => log.push("paint"), cxIpLookup: () => log.push("ip"), cxFocusStart: () => log.push("focus"),
+        cxVenuesFor: () => ["binance", "bingx", "okx"], trVenueLabel: (id) => id.toUpperCase(), $: () => null };
+      vm.createContext(C);
+      vm.runInContext([cutFn(trade, "trEl"), /const cxPresListed = [^\n]*\n/.exec(trade)[0].replace("const ", "var "), /const cxCaplListed = [^\n]*\n/.exec(trade)[0].replace("const ", "var "),
+        "var CX_VENUES = { binance: {}, bingx: {}, okx: {} };", ...["cxTwTiles", "cxPick", "cxTiles", "cxVenueField"].map((n) => cutFn(trade, n))].join("\n"), C);
+      const L = { cx: { busy: !!o.busy }, sig: {} }, w = C.cxVenueField(L);
+      return { C, L, log, w, flat: (function walk(n, out) { out.push(n); (n.children || []).forEach((c) => walk(c, out)); return out; })(w, []) };
+    };
+    const a = run({}), tiles = a.flat.filter((n) => n.className === "cx-tile");
+    ok("③ 還沒選:兩組磚(加密貨幣三家＋台灣期貨群益、統一),磚是 type=button、id 帶交易所、組有 role=group 指到組標籤;沒有已綁模擬那一句",
+      JSON.stringify(tiles.map((n) => n.id)) === JSON.stringify(["cx-tile-binance", "cx-tile-bingx", "cx-tile-okx", "cx-tile-capital", "cx-tile-president"])
+      && tiles.every((n) => n.type === "button" && !n.disabled) && a.flat.filter((n) => n.className === "cx-tiles").every((g) => g.attrs.role === "group" && /^cx-grp-/.test(g.attrs["aria-labelledby"]))
+      && !a.flat.some((n) => n.className === "cx-replace"), JSON.stringify(tiles.map((n) => n.id)));
+    tiles[2].on.click();
+    ok("③ 點磚:記 cx_venue_pick(不帶交易所名)、進那一家、重畫、加密貨幣先查 IP、焦點交給 cxFocusStart", a.C.CXF.venue === "okx" && a.log.join() === "cx_venue_pick,paint,ip,focus", a.log.join());
+    const b = run({ paperBound: true, platform: "darwin" });
+    ok("③ 已綁模擬:磚上方一句 cx.replacePaper;Mac:台灣期貨標籤下是 cx.macTw、不出期貨磚",
+      b.w.children[0].className === "cx-replace" && b.w.children[0].textContent === "cx.replacePaper" && b.flat.some((n) => n.className === "cx-macnote" && n.textContent === "cx.macTw")
+      && !b.flat.some((n) => /cx-tile-(capital|president)/.test(n.id)));
+    const c = run({ busy: true });
+    ok("③ 模擬送出中:磚停用", c.flat.filter((n) => n.className === "cx-tile").every((n) => n.disabled));
+    // replace-paper A 案:綁著模擬、自動下單正在跑、選了一家 → 主鈕正上方 cx.replacePaperRun;沒在跑(暫停、停了、不知道)、還在磚、驗證碼那一步、沒綁模擬都不出
+    { const X = {}; vm.createContext(X); vm.runInContext(cutFn(trade, "cxStopsRun"), X);
+      const paint = cutFn(trade, "cxModalPaint");
+      ok("③ 已綁模擬＋正在跑:選了一家才出「連上後模擬交易停止」;halted／dead／unknown／unconfirmed 等其他態／磚／驗證碼／沒綁模擬不出;框腳自己一格、每次重畫先藏(群益、統一提早 return 的路不留)",
+        X.cxStopsRun(true, true, false, "running") === true
+        && ["halted", "dead", "unknown", "loading", "unconfirmed", "setup", "noaccount", null].every((h) => X.cxStopsRun(true, true, false, h) === false)
+        && X.cxStopsRun(true, false, false, "running") === false && X.cxStopsRun(true, true, true, "running") === false && X.cxStopsRun(false, true, false, "running") === false
+        && /^function cxModalPaint\(\) \{\n(?:  \/\/[^\n]*\n)?[^\n]*\$\("cx-stops"\)\.hidden = true;\n  if \(CXF\.venue === CAPITAL/.test(paint)
+        && /const stops = cxStopsRun\(CXF\.paperBound, picked, !!kc, envHeadState\(L\.st, Date\.now\(\)\)\);\n  \$\("cx-stops"\)\.hidden = !stops; \$\("cx-stops"\)\.textContent = stops \? t\("cx\.replacePaperRun"\) : "";/.test(paint)
+        && /<span class="del-where" id="cx-stops" hidden><\/span>/.test(read(path.join(R, "index.html")))); }
+    // 頭列(稽核 v052 建議 7):標題已是「連接群益期貨／連接統一期貨」的那幾步傳 noName,只留「換一家」;綁著又不講名字 → 頭列整個不出
+    const head = (venue, noName, bound) => { const d = run({}); d.C.CXF.venue = venue; d.C.CXF.bound = bound; const w = d.C.cxVenueField(d.L, noName), h = w.children[0];
+      return h ? h.children.map((x) => x.textContent).join("|") : "-"; };
+    ok("③ 頭列:一般「名稱|換一家」;群益本機／統一 noName 只剩「換一家」;綁著＋noName 不出頭列;呼叫端只在標題帶名字那幾步傳 noName",
+      head("okx", false, false) === "OKX|cx.change" && head("president", true, false) === "cx.change" && head("capital", true, true) === "-" && head("capital", false, true) === "CAPITAL"
+      && /f\.appendChild\(cxVenueField\(TR_BAGS\.local, true\)\);/.test(read(path.join(R, "capital_local.js")))
+      && /view\.indexOf\("d-prep"\) === 0\) \{ box\.appendChild\(cxVenueField\(TR_BAGS\.local, true\)\);/.test(read(path.join(R, "president.js")))
+      && /view === "d-mac"\) \{ box\.appendChild\(cxVenueField\(TR_BAGS\.local\)\);/.test(read(path.join(R, "president.js")))
+      && /box\.appendChild\(cxVenueField\(TR_BAGS\.cloud\)\);/.test(read(path.join(R, "capital.js")))); }
+  ok("③ 綁定成功的埋點:本機 cxConnected 與雲端成功那一條都分模擬／真實;框標題與自動下單頁入口鈕同一句 cx.title",
     /trackFeature\(CXF\.venue === PAPER \? "cx_paper_ok" : "cx_real_ok"\);/.test(cutFn(trade, "cxConnected")) && /trackFeature\(venue === PAPER \? "cx_paper_ok" : "cx_real_ok"\);/.test(cutFn(trade, "cxConnectCloud"))
-    && /<h6 id="cx-title" data-i18n="cx\.title"><\/h6>/.test(read(path.join(R, "index.html"))) && !/t\("cx\.connect"\)\); b\.type = "button"; b\.id = "tr-connect"/.test(trade)); }
+    && /<h6 id="cx-title" data-i18n="cx\.title"><\/h6>/.test(read(path.join(R, "index.html"))) && !/t\("cx\.connect"\)\); b\.type = "button"; b\.id = "tr-connect"/.test(trade));
+  ok("③ 建金鑰鈕記 cx_key_page(不帶交易所名),外開走 open-external;雲端每一家都把主機 IP 寫進剪貼簿(同網頁),這台電腦只有 Binance",
+    /trackFeature\("cx_key_page"\);\n    const url = cxKeyUrl\(venue\); if \(url\) window\.blave\.openExternal\(url\);\n    const ip = CXF\.env === "cloud" \? cxCloudIp\(\) : venue === BINANCE \? CXF\.ip : null;/.test(cutFn(trade, "cxKeyPageBtn")));
+  ok("③ 框腳有「先用模擬交易」(#cx-paper,data-i18n cx.paperFoot),接到 cxPaperGo", /<button type="button" class="btn-quiet" id="cx-paper" data-i18n="cx\.paperFoot" hidden><\/button>/.test(read(path.join(R, "index.html")))
+    && /\$\("cx-paper"\)\.addEventListener\("click", cxPaperGo\);/.test(trade));
+  ok("③ 「先用模擬交易」熱區補到 44 高、寬至少 44(設計稽核 0153 #5,同 #cx-change)",
+    /#cx-paper::before \{ inset: auto; left: 50%; top: 50%; width: max\(44px, calc\(100% \+ 8px\)\); height: 44px; transform: translate\(-50%, -50%\); \}/.test(read(path.join(R, "trade.css"))));
+  ok("③ 金鑰去向是提示泡:觸發點 tabindex=0、aria-describedby 指到 role=tooltip 的 .tip(Esc 由 app.js tipEsc 認);展開列 cx-store-q 拿掉",
+    /tg\.tabIndex = 0; tg\.id = "cx-keyat"; tip\.id = "cx-store"; tip\.setAttribute\("role", "tooltip"\); tg\.setAttribute\("aria-describedby", tip\.id\);/.test(cutFn(trade, "cxModalPaint"))
+    && /trEl\("span", "mp-tip", t\(cloud \? "cx\.fact\.keyCloud" : "cx\.fact\.key"\)\), tip = trEl\("span", "tip", t\(cloud \? "cx\.leadCloud" : "cx\.lead"\)\)/.test(cutFn(trade, "cxModalPaint")) && !/cx-store-q|storeOpen/.test(trade)); }
 
 // ── ③ 主行程偏好清洗 ──
 { const dir = fs.mkdtempSync(path.join(os.tmpdir(), "onb-prefs-")), file = path.join(dir, "ui-prefs.json");

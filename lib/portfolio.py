@@ -777,7 +777,8 @@ _PAPER_TW_CLOSE_PATH = 'state/paper_tw_close.json'
 
 def defer_paper_tw_close(keys):
     """manager/flatten: close-all reached paper TW stock keys while the TWSE
-    session was shut. The reconciler closes them in its first round after the
+    session was shut, or TW futures keys while the broker took no order
+    (lib/tw_clock.close_hold). The reconciler closes them in its first round after the
     open (they are dropped from the target while HALT holds, and their close
     legs — the only legs a halted round sends — go out inside
     guard.halt_close_pass). Pressing 啟動下單 before that cancels it: the
@@ -801,6 +802,9 @@ def defer_paper_tw_close(keys):
 _PAPER_TW_CANCEL = 'close-all: 開盤前已按啟動下單,延後的台股平倉取消,改照策略目標下單'
 _PAPER_TW_CANCEL_RESTART = ('close-all: 機器重開後按了啟動下單(重開後要按它才會恢復下單),'
                             '延後的台股平倉一併取消,改照策略目標下單')
+_FUT_TW_CANCEL = 'close-all: 開盤前已按啟動下單,延後的台指期平倉取消,改照策略目標下單'
+_FUT_TW_CANCEL_RESTART = ('close-all: 機器重開後按了啟動下單(重開後要按它才會恢復下單),'
+                          '延後的台指期平倉一併取消,改照策略目標下單')
 
 
 def _paper_tw_deferred(diff_actual, halted):
@@ -815,8 +819,17 @@ def _paper_tw_deferred(diff_actual, halted):
         rec, keys = {}, set()
     held = {k for k in keys if float((diff_actual.get(k) or {}).get('size') or 0) > 0}
     if held and not halted:
-        _record_order_error(','.join(sorted(held)), 'paper',
-                            _PAPER_TW_CANCEL_RESTART if rec.get('restart_at') else _PAPER_TW_CANCEL)
+        restart = bool(rec.get('restart_at'))
+        stocks = {k for k in held if _tw_stock(split_key(k)[0])}
+        if stocks:
+            _record_order_error(','.join(sorted(stocks)), 'paper',
+                                _PAPER_TW_CANCEL_RESTART if restart else _PAPER_TW_CANCEL)
+        by_venue = {}
+        for k in held - stocks:  # TW futures (flatten._tw_futures_closed): said on their own venue
+            by_venue.setdefault((diff_actual.get(k) or {}).get('exchange') or book_venue(), []).append(k)
+        for venue, ks in sorted(by_venue.items()):
+            _record_order_error(','.join(sorted(ks)), venue,
+                                _FUT_TW_CANCEL_RESTART if restart else _FUT_TW_CANCEL)
     if not halted or not held:
         try:
             os.remove(_PAPER_TW_CLOSE_PATH)

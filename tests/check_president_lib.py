@@ -72,6 +72,7 @@ pc._now = lambda now: _real_now(now or FIXED_NOW)
 # wall clock, so it pins the session open
 from lib import tw_clock  # noqa: E402
 tw_clock.in_session = lambda ts: True
+op._in_trading_window = lambda: True  # and the order lib's login window (president_vault.session_window)
 
 # ── 1. near month ────────────────────────────────────────────────────────────
 T = lambda *a: datetime(*a, tzinfo=TAIPEI)  # noqa: E731

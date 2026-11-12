@@ -255,7 +255,7 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
     // 鈕下:row 之後、結果框(.err)之前的 p(隱藏的訊息槽不算);付款頁回來那一句另列
     const lines = kids.filter((k) => k !== row && k.tag === "p" && !k.hidden && k.id !== "lib-cta-topup" && !/err/.test(k.className)).map((k) => k.textContent);
     const top = kids.filter((k) => k.id === "lib-cta-topup").map((k) => k.textContent);
-    const paidP = kids.find((k) => k.tag === "p" && k.className === "note up" && k.role === "status") || null;
+    const paidP = kids.find((k) => k.tag === "p" && k.className === "note up lib-res" && k.role === "status") || null;
     return { btn: b ? b.textContent : null, lines, top, click: K.calls.join(), errs: kids.filter((k) => /err/.test(k.className)).length,
       dis: b ? !!b.disabled : null, spin: !!(b && b.kids[0] && b.kids[0].className === "spin16"), paid: paidP ? paidP.textContent : null, kept: K.LIB.bbRes.has(7) };
   };

@@ -36,6 +36,7 @@ import lib.portfolio as portfolio  # noqa: E402
 from lib import guard, tw_clock  # noqa: E402
 
 tw_clock.queued_until = lambda now=None: None  # in session
+tw_clock.close_hold = lambda now=None: None  # the broker takes closes (else flatten defers them)
 
 fails = 0
 

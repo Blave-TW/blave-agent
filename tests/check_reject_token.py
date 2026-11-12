@@ -95,9 +95,24 @@ bx.get_contract_rules = lambda env, s: {"active": True, "qty_precision": 4, "min
 check(kind(raises(lambda: bx.format_qty({}, "BTC-USDT", 0.0001))) == "below_min_size", "BingX format_qty below minimum")
 check(kind(raises(lambda: pp._spot_base("BTCEUR"))) == "symbol_unavailable", "paper spot with a non-USDT quote")
 led = {"cash": 10.0, "spot": {}, "positions": {}, "protective": {}}
-check(kind(raises(lambda: pp._fill_spot(led, {"symbol": "BTCUSDT", "side": "buy"}, 1.0, 100.0, 0.001))) == "insufficient_margin"
-      and kind(raises(lambda: pp._fill_spot(led, {"symbol": "BTCUSDT", "side": "sell"}, 1.0, 100.0, 0.001))) == "insufficient_margin",
-      "paper spot: not enough cash to buy / coin to sell")
+check(kind(raises(lambda: pp._fill_spot(led, {"symbol": "BTCUSDT", "side": "buy"}, 1.0, 100.0, 0.001))) == "insufficient_margin",
+      "paper spot: not enough cash to buy")
+# On paper insufficient_margin must mean only "cash cannot pay for the buy": the app's cloud path
+# keeps the token and drops the text, so a tagged sell would read as a cash shortfall.
+e = raises(lambda: pp._fill_spot(led, {"symbol": "BTCUSDT", "side": "sell"}, 1.0, 100.0, 0.001))
+check(isinstance(e, pp.PaperError) and kind(e) is None and not str(e).startswith("[order_reject:"),
+      f"paper spot market sell past the holding is untagged ({e})")
+os.makedirs("state", exist_ok=True)
+os.makedirs("manager", exist_ok=True)
+json.dump({"amounts": {}, "exchanges": {}}, open("manager/portfolio_config.json", "w"))
+pp._price = lambda env, symbol, cache=None: 50000.0
+PENV = {"PAPER_API_KEY": "paper", "PAPER_SECRET_KEY": "paper", "PAPER_BOUND_TS": "1", "PAPER_INITIAL_EQUITY": "100000"}
+pp.reset_account(PENV)
+e = raises(lambda: pp.place_spot_limit_order(PENV, "BTCUSDT", "sell", 0.1, 50000))
+check(isinstance(e, pp.PaperError) and kind(e) is None and not str(e).startswith("[order_reject:"),
+      f"paper spot limit sell past the holding is untagged ({e})")
+e = raises(lambda: pp.place_spot_limit_order(PENV, "BTCUSDT", "buy", 10, 50000))
+check(kind(e) == "insufficient_margin", f"paper spot limit buy past the cash stays insufficient_margin ({e})")
 
 # enumeration: every code a lib classifies maps to a real kind; every credential code tags as a key rejection
 tables = {"binance": bn._REJECT_CODES, "okx": okx._REJECT_CODES, "gateio": gt._REJECT_CODES, "bybit": by._REJECT_CODES}

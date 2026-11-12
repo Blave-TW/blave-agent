@@ -584,22 +584,63 @@ def _flatten_spot(vid, order, env, book=None, parked_held=None):
     return closed, errors, closed_symbols, unclosed
 
 
+def _tw_futures_closed(vid):
+    """A TW futures venue (lots-native broker) outside the regular session: the
+    close goes to the reconciler's first round after the open (Wei 11-10) — in
+    the pre-open it would sit queued at the broker, unconfirmed, under HALT.
+    On a measured clock (lib/tw_clock) the session decides; with no sample only
+    the broker's closed hours do (close_hold, 15 min of slack past each close),
+    so a fast clock never leaves a position open while the market trades. No
+    measurement at all: the api is asked once first (tw_clock.probe)."""
+    if not venue_traits.has(vid, "native_units"):
+        return False
+    try:
+        from lib import tw_clock
+        if tw_clock.skew() is None and getattr(tw_clock, "gross_skew", tw_clock.skew)() is None:
+            getattr(tw_clock, "probe", lambda: False)()
+        if tw_clock.skew() is not None:
+            return tw_clock.queued_until() is not None
+        return tw_clock.close_hold() is not None
+    except (ImportError, AttributeError):  # half-updated workspace: sent, as before
+        return False
+
+
 def _defer_tw_close(vid, key, exc):
-    """A paper TW stock close refused because the TWSE session is shut
-    (order_paper.PaperMarketClosed): handed to the reconciler's first round
-    after the open (lib.portfolio.defer_paper_tw_close), said once on the
-    page. The book keeps the position until then. Returns "deferred",
-    "refused" (said, counted as an error) or None (any other error).
+    """A TW close refused because the session is shut — a paper TW stock outside
+    the TWSE session (order_paper.PaperMarketClosed), a TW futures close outside
+    the broker's hours (lib/tw_clock.close_hold before the send, or
+    order_president.SessionClosed): handed to the reconciler's first round after
+    the open (lib.portfolio.defer_paper_tw_close), said once on the page. The
+    book keeps the position until then. `exc` None = held before the send (TW
+    futures). Returns "deferred", "refused" (said, counted as an error) or None
+    (any other error).
 
     After a machine restart (guard.restart_stopped) nothing is deferred: the
     reconciler skips every round while stopped, so no round after the open
     would close it — the page says to press close-all again in the session."""
-    if type(exc).__name__ != "PaperMarketClosed":
+    closed = {"PaperMarketClosed": ("台股", "09:00–13:30"),  # (market, its hours) for the page
+              "SessionClosed": ("台指期", "08:45–13:45、15:00–05:00")}
+    name = "SessionClosed" if exc is None else type(exc).__name__
+    if name not in closed or (name == "SessionClosed" and not venue_traits.has(vid, "native_units")):
         return None
+    market, hours = closed[name]
+    shut, row = f"{market}休市中", {"kind": "market_closed_deferred"}
+    if name == "SessionClosed":
+        try:
+            from lib import tw_clock
+            if tw_clock.skew() is None:  # read off this machine's own clock: the market may be open
+                if getattr(tw_clock, "gross_skew", tw_clock.skew)() is None:
+                    shut = f"量不到這台電腦的時鐘準不準,{market}照它的時間還沒開盤"
+                    row["clock"] = "unmeasured"
+                else:   # measured, past SKEW_MAX_S
+                    shut = f"這台電腦的時鐘差超過一小時,{market}照它的時間還沒開盤"
+                    row["clock"] = "far"
+        except (ImportError, AttributeError):
+            pass
     if guard.restart_stopped():
-        logging.error(f"[{vid}] {key}: TW market closed and the machine is stopped after a restart — not deferred")
-        _record_order_error(key, vid, "close-all: 台股休市中,而且機器重開後停止下單,無法排到開盤自動平倉——"
-                                      "請在開盤後(09:00–13:30)再按一次全部平倉")
+        logging.error(f"[{vid}] {key}: {market} closed and the machine is stopped after a restart — not deferred")
+        _record_order_error(key, vid, f"close-all: {shut},而且機器重開後停止下單,無法排到開盤自動平倉——"
+                                      f"請在開盤後({hours})再按一次全部平倉")
         return "refused"
     try:
         from lib.portfolio import defer_paper_tw_close
@@ -607,9 +648,8 @@ def _defer_tw_close(vid, key, exc):
     except Exception as e:
         logging.error(f"[{vid}] {key}: could not defer the close ({e})")
         return None
-    logging.info(f"[{vid}] {key}: TW market closed — close deferred to the next session")
-    _record_order_error(key, vid, "close-all: 台股休市中,開盤後第一輪平倉",
-                        {"kind": "market_closed_deferred"})
+    logging.info(f"[{vid}] {key}: {market} closed — close deferred to the next session")
+    _record_order_error(key, vid, f"close-all: {shut},開盤後第一輪平倉", row)
     return "deferred"
 
 
@@ -1368,6 +1408,14 @@ def _flatten():
                     errors += 1
                     unclosed.add(key)
                     continue
+                if _tw_futures_closed(vid):
+                    # the broker takes no order now: the reconciler closes it at the pre-open
+                    d = _defer_tw_close(vid, key, None)
+                    unclosed.add(key)
+                    errors += d != "deferred"
+                    if d is None:
+                        _record_order_error(key, vid, "close-all: 台指期現在不收單,開盤後再按一次全部平倉")
+                    continue
                 # a lots position (futures_contracts / shares — paper reports it
                 # with unit "contracts") is closed by its lot count: a notional
                 # close would be refused, or sized wrong
@@ -1592,6 +1640,11 @@ def _parse_argv(argv):
 if __name__ == "__main__":
     # the user's close: 群益 logs in now, not after the reconciler's re-login backoff (lib/order_capital)
     os.environ["BLAVE_CAPITAL_OWN_BACKOFF"] = "1"
+    try:  # an unmeasured clock may ask the api once before a TW futures close is deferred on it
+        from lib import tw_clock as _twc
+        _twc.probe_enabled = os.environ.get("BLAVE_CLOCK_PROBE") != "0"   # tests/_run_all.py: 0
+    except ImportError:
+        pass
     _parse_argv(sys.argv[1:])
     _result = flatten()
     sys.exit(EXIT_ALREADY_RUNNING if _result == ALREADY_RUNNING else (0 if _result else 1))

@@ -476,40 +476,207 @@ def _note_manual_months(venue, rows, by_root=None):
         guard.audit('manual_month_excluded', venue=venue, contract=code, lots=lots)
 
 
-# ── Taiwan futures entry gate (lib/tw_clock) ──────────────────────────────────
+# ── Taiwan futures session gates (lib/tw_clock) ───────────────────────────────
 # An entry goes out only inside the regular session on a checked clock: a pre-open
 # market IOC is queued to the open, read as "not filled" and sent again every round
-# (+110 lots simulated from a 5-lot target). Closes are never held here.
-_entry_wake_at = None  # machine epoch of the next open an entry is waiting for (main loop)
-_clock_noted = None    # the skew this process last told the user about
+# (+110 lots simulated from a 5-lot target). A close waits only while the broker takes
+# no order at all (13:45–14:51, 05:00–08:31, weekends): sent then it is refused, and
+# sent again every round with a login of its own. A pre-open close goes. Both read the
+# clock checked against the api's (the machine's own when not measured, said once — Wei),
+# and the order lib's window reads the same clock for closes.
+_entry_wake_at = None  # machine epoch of the next open / pre-open an order is waiting for (main loop)
+_clock_noted = None    # the band ('off' / 'far' / 'far_halt') this process last told the user about
+
+
+def _wake_at(at):
+    global _entry_wake_at
+    _entry_wake_at = at if _entry_wake_at is None else min(_entry_wake_at, at)
+
+
+def _tw_close_held(sym, venue):
+    """True = this TW futures close waits for the broker's next pre-open (logged only: not an
+    error, nothing sent); the main loop is woken then. Not measured (fewer than KEEP samples, or
+    past SKEW_MAX_S): held on the machine's own clock, and said once (P1 tw_clock_unchecked, HALT
+    or not) — a clock hours off would otherwise hold a stop in the session unseen. Unmeasured, it
+    first asks the api once (tw_clock.probe) and holds only if that still measures nothing."""
+    try:
+        from lib import tw_clock
+        halted = guard.halted()
+        hold = tw_clock.close_hold()
+        if tw_clock.skew() is None and _probe(tw_clock):  # not measured at all: ask before either clock decides (as flatten)
+            hold = tw_clock.close_hold()
+        if not halted:  # under HALT no close goes but close-all's leg: the entry words don't fit
+            _clock_episode(sym, venue, tw_clock)
+        unchecked = tw_clock.skew() is None
+    except (ImportError, AttributeError):  # half-updated workspace: closes go, as before
+        return False
+    if hold is None:
+        return False
+    if unchecked:
+        _unchecked_close_note(sym, venue, tw_clock, halted)
+    _wake_at(hold['until'])
+    from datetime import datetime
+    at = datetime.fromtimestamp(hold['until'], tw_clock.TAIPEI).strftime('%a %H:%M')
+    logging.info(f"[reconciler/{venue}] {sym}: close waits — the broker takes no order until {at}")
+    return True
+
+
+def _tw_halt_close_held(sym, venue):
+    """True = a close under HALT waits for the regular session. Under HALT the only close
+    that reaches a venue is 全部平倉's deferred leg (lib.portfolio._paper_tw_deferred), and it
+    goes after the open, not in the pre-open: a 啟動下單 pressed before the open cancels it, and a
+    pre-open close would already sit queued at the broker."""
+    if not guard.halted():
+        return False
+    try:
+        from lib import tw_clock
+        until = tw_clock.queued_until()
+        if tw_clock.skew() is None and _probe(tw_clock):
+            until = tw_clock.queued_until()
+        unchecked = tw_clock.skew() is None
+    except (ImportError, AttributeError):
+        return False
+    if until is None:
+        return False
+    if unchecked:  # the open read off this machine's own clock
+        _unchecked_close_note(sym, venue, tw_clock, True)
+    _wake_at(until)
+    logging.info(f"[reconciler/{venue}] {sym}: close-all's close waits for the open")
+    return True
+
+
+def _gross(tw_clock):
+    return getattr(tw_clock, 'gross_skew', tw_clock.skew)()
+
+
+def _probe(tw_clock):
+    """No measurement at all: one on-demand sample (rate-limited in tw_clock.probe). True = a reply
+    was noted, so the caller reads the clock again. Past SKEW_MAX_S is measured: no request."""
+    if _gross(tw_clock) is not None:
+        return False
+    return bool(getattr(tw_clock, 'probe', lambda: False)())
+
+
+CLOCK_REPEAT_S = 3600  # the platform's cooldown for these rows (api agent_events p1_cooldown_s)
+_last_said = (None, 0.0)
+
+
+def _say_again(band):
+    """False = `band` is the row this process wrote last, under CLOCK_REPEAT_S ago: samples
+    flickering in and out of a measurement end and start a spell, and say nothing new. Stamps it
+    otherwise."""
+    global _last_said
+    now = time.time()
+    if _last_said[0] == band and now - _last_said[1] < CLOCK_REPEAT_S:
+        return False
+    _last_said = (band, now)
+    return True
+
+
+def _clock_episode(sym, venue, tw_clock):
+    """One P1 row per band of a clock past SKEW_BLOCK_S, from whichever leg sees it first — a
+    stop-out round has no entry; a change of band is a new row. Up to SKEW_MAX_S ('off') closes run
+    on the corrected clock (clock_skew_hold, whose platform copy says closes go); past it ('far')
+    closes run on this machine's clock (tw_clock_unchecked, carrying the machine's sentence)."""
+    global _clock_noted, _unchecked_noted
+    g = _gross(tw_clock)
+    if g is None:
+        if _clock_noted is not None:  # not back within SKEW_BLOCK_S: no longer measured
+            logging.warning(f"[reconciler/{venue}] clock samples gone — not measured, entries read this machine's clock")
+            _clock_noted = None
+        return
+    _unchecked_noted = False  # samples again: the next unchecked spell is a new episode
+    if abs(g) <= tw_clock.SKEW_BLOCK_S:
+        if _clock_noted is not None:
+            logging.info(f"[reconciler/{venue}] clock back within {tw_clock.SKEW_BLOCK_S} s of the api's — entries resume")
+            guard.audit('entry_clock_resumed', venue=venue)
+            _clock_noted = None
+        return
+    band = 'far' if abs(g) > tw_clock.SKEW_MAX_S else 'off'
+    if _clock_noted == band:
+        return
+    _clock_noted = band
+    guard.audit('order_denied_clock', venue=venue, symbol=sym, skew=round(g, 1))
+    if not _say_again(band):
+        return
+    from lib.portfolio import _record_order_error
+    if band == 'far':
+        _record_order_error(sym, venue, f"這台電腦的時鐘{tw_clock.skew_words(g)}。台指期新倉暫停，"
+                                        f"平倉要等它顯示開盤才送。打開系統的自動設定時間就會恢復。",
+                            extra={'kind': KIND_CLOCK_UNCHECKED, 'clock': 'far'})
+    else:
+        _record_order_error(sym, venue, f"這台電腦的時鐘{tw_clock.skew_words(g)}。台指期新倉先暫停，"
+                                        f"平倉照常。打開系統的自動設定時間就會恢復。",
+                            extra={'kind': KIND_CLOCK_HOLD})
+
+
+_unchecked_noted = False  # a close held on an unmeasured clock was said this spell (cleared by a measurement)
+
+
+def _unchecked_close_note(sym, venue, tw_clock, halted):
+    """A close held on this machine's own clock (skew() not known): one P1 row per spell.
+    Not measured: said here, HALT or not. Past SKEW_MAX_S: _clock_episode says it outside HALT;
+    under HALT (no entry goes anyway) this row says the close only, once — a 'far' row said
+    before the HALT already covers it."""
+    global _unchecked_noted, _clock_noted
+    g = _gross(tw_clock)
+    from lib.portfolio import _record_order_error
+    if g is None:
+        if _unchecked_noted:
+            return
+        _unchecked_noted = True
+        guard.audit('close_held_unchecked_clock', venue=venue, symbol=sym)
+        if not _say_again('unmeasured'):
+            return
+        _record_order_error(sym, venue, "量不到這台電腦的時鐘準不準。台指期平倉要等它顯示開盤才送。"
+                                        "請打開系統的自動設定時間。",
+                            extra={'kind': KIND_CLOCK_UNCHECKED, 'clock': 'unmeasured'})
+    elif halted and abs(g) > tw_clock.SKEW_MAX_S and _clock_noted not in ('far', 'far_halt'):
+        _clock_noted = 'far_halt'
+        guard.audit('close_held_unchecked_clock', venue=venue, symbol=sym, skew=round(g, 1))
+        if not _say_again('far_halt'):
+            return
+        _record_order_error(sym, venue, f"這台電腦的時鐘{tw_clock.skew_words(g)}。"
+                                        f"台指期平倉要等它顯示開盤才送。請打開系統的自動設定時間。",
+                            extra={'kind': KIND_CLOCK_UNCHECKED, 'clock': 'far_halt'})
+
+
+def _clock_round():
+    """Each round: a measured clock ends the unmeasured spell — also when no TW futures leg ran in
+    between to see it. The next spell's row is still subject to _say_again."""
+    global _unchecked_noted, _clock_noted
+    if not _unchecked_noted and _clock_noted != 'far_halt':
+        return
+    try:
+        from lib import tw_clock
+        g = _gross(tw_clock)
+        if g is not None:
+            _unchecked_noted = False
+        # under HALT _clock_episode does not run: a clock back under SKEW_MAX_S ends the 'far_halt' spell here
+        if _clock_noted == 'far_halt' and (g is None or abs(g) <= tw_clock.SKEW_MAX_S):
+            _clock_noted = None
+    except Exception:  # half-updated workspace: the flag stays, at worst one note too few
+        pass
 
 
 def _tw_entry_held(sym, venue):
     """True = this TW futures entry waits (logged, a P1 row once per clock episode)."""
-    global _entry_wake_at, _clock_noted
     try:
         from lib import tw_clock
     except ImportError:
         return False
     hold = tw_clock.entry_hold()
+    # about to send on an unmeasured clock, or held for 1–2 samples hours off (not said yet): ask first
+    if (hold is None or hold['why'] == 'clock') and _probe(tw_clock):
+        hold = tw_clock.entry_hold()
+    _clock_episode(sym, venue, tw_clock)
     if hold is None:
-        if _clock_noted is not None:
-            logging.info(f"[reconciler/{venue}] clock back within {tw_clock.SKEW_BLOCK_S} s of the api's — entries resume")
-            guard.audit('entry_clock_resumed', venue=venue)
-            _clock_noted = None
         return False
     if hold['why'] == 'session':
-        _entry_wake_at = hold['until'] if _entry_wake_at is None else min(_entry_wake_at, hold['until'])
+        _wake_at(hold['until'])
         logging.info(f"[reconciler/{venue}] {sym}: entry waits for the regular session")
         return True
     logging.warning(f"[reconciler/{venue}] {sym}: entry held — this clock is {hold['skew']:+.0f} s off the api's")
-    if _clock_noted is None:
-        _clock_noted = hold['skew']
-        guard.audit('order_denied_clock', venue=venue, symbol=sym, skew=round(hold['skew'], 1))
-        from lib.portfolio import _record_order_error
-        _record_order_error(sym, venue, f"這台電腦的時鐘{tw_clock.skew_words(hold['skew'])}。台指期新倉先暫停，"
-                                        f"平倉照常。打開系統的自動設定時間就會恢復。",
-                            extra={'kind': KIND_CLOCK_HOLD})
     return True
 
 
@@ -574,7 +741,15 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
         logging.info(f"[reconciler/capital] {root}: close of {lots} waits — the close sent before is "
                      f"not reported yet and may be queued at the broker")
         return False
+    if reduce_only and (_tw_close_held(root, venue_traits.CAPITAL)
+                        or _tw_halt_close_held(root, venue_traits.CAPITAL)):
+        _closes_deferred.add(root)
+        return False
     if not reduce_only:
+        if root in _closes_deferred:
+            logging.info(f"[reconciler/capital] {root}: entry of {lots} waits — this round's close "
+                         f"of {root} was deferred, the position is still open")
+            return False
         if row is not None:
             logging.info(f"[reconciler/capital] {root}: entry of {lots} waits — a send reported no fill "
                          f"and is not claimed yet (see _capital_claim_pending)")
@@ -1016,9 +1191,9 @@ class PresidentCacheLagError(CapitalCacheLagError):
 # other roots are untouched.
 PENDING_SENT_PATH = 'state/president_pending_sent.json'
 PENDING_SENT_MAX_READS = 3
-# roots whose close leg this round was skipped (snapshot not caught up): a flip's
-# entry leg must not open the other side on top of the still-open position. Cleared
-# by _next_round().
+# roots whose close leg this round was skipped (snapshot not caught up, the broker's
+# closed hours — 統一 and 群益 both): a flip's entry leg must not open the other side on
+# top of the still-open position. Cleared by _next_round().
 _closes_deferred = set()
 
 
@@ -1187,6 +1362,7 @@ def _row_booked(key, row):
 KIND_CLOCK_HOLD = 'clock_skew_hold'     # entries held for this machine's clock; nothing was sent
 KIND_NO_REPORT = 'order_unconfirmed'    # 群益 took it and has not reported the fill (the existing kind)
 KIND_TW_HOLD = 'tw_entry_hold'          # the parked-send record unreadable or unsaved: entries held, closes go
+KIND_CLOCK_UNCHECKED = 'tw_clock_unchecked'  # clock not measured (or past SKEW_MAX_S): closes on this machine's clock
 # (the HALTs below write no row: HALT is a full freeze and the platform's halt P1 carries its reason)
 _VENUE_WORDS = {venue_traits.PRESIDENT: ('統一', '統一 app '), venue_traits.CAPITAL: ('群益', '群益下單軟體')}
 
@@ -1472,6 +1648,10 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
         logging.info(f"[reconciler/president] {sym}: close of {lots} waits — the one sent before "
                      f"the open is queued at the broker")
         return False
+    if reduce_only and (_tw_close_held(sym, venue_traits.PRESIDENT)
+                        or _tw_halt_close_held(sym, venue_traits.PRESIDENT)):
+        _closes_deferred.add(sym)
+        return False
     if not reduce_only:
         if guard.halted():
             return False
@@ -1501,13 +1681,30 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
                          f"caught up with the last order")
         return False
     net_before = _president_nets()
+    session_closed = getattr(order_president, 'SessionClosed', ())
     if reduce_only:
-        leg = order_president.place_futures_market_order({}, sym, action, lots, 'reduce',
-                                                         book_months=months)
+        try:
+            leg = order_president.place_futures_market_order({}, sym, action, lots, 'reduce',
+                                                             book_months=months)
+        except session_closed as e:
+            # the lib's window refused it before any login, on the clock the hold above passed:
+            # only at an edge. Said once per cooldown (the next minute retries), as a plain row:
+            # the existing kinds all say closes go
+            _closes_deferred.add(sym)
+            _wake_at(time.time() + 60)
+            logging.info(f"[reconciler/president] {sym}: close of {lots} deferred — {e}")
+            from lib.portfolio import _order_error_fresh, _record_order_error
+            msg = "統一期貨現在不收單，這次平倉沒送出，一分鐘後再送。"
+            _record_order_error(sym, venue_traits.PRESIDENT, msg,
+                                repeat=not _order_error_fresh(sym, msg, 'reduce'))
+            return False
     else:
         try:
             leg = order_president.place_futures_market_order({}, sym, action, lots, 'entry',
                                                              book_months=months)
+        except session_closed as e:
+            logging.info(f"[reconciler/president] {sym}: entry of {lots} waits — {e}")
+            return False
         except order_president.EntryDeferred as e:
             # the snapshot has not caught up with the last order (a flip's close
             # leg, a moment ago): the entry picks its month next round —
@@ -1629,7 +1826,9 @@ def place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
     Exchange Routing). signed_diff is a LOT COUNT here (2026-08-14, no
     lots<->TWD conversion), round-half-up to whole lots, no TWAP/custom support.
 
-    Replace this body ONLY for a venue WITHOUT official libs. Contract:
+    Replace this body ONLY for a venue WITHOUT official libs — never for TW
+    stocks on any broker (SinoPac included): Blave does not auto-trade them.
+    Contract:
       return False  = intentionally skipped (below exchange minimum, or the
                       leg is executing asynchronously) — no Telegram here,
                       no phantom trade
@@ -2088,6 +2287,7 @@ def _next_round():
     global _round_no
     _round_no += 1
     _closes_deferred.clear()
+    _clock_round()
 
 
 STOP_NOTICE_RETRY_AFTER_S = 60  # the stop's writer sends its P1 within this; past it, this round does
@@ -2493,6 +2693,12 @@ if __name__ == '__main__':
         reap_dead_inflight()
     except Exception as _e:
         logging.warning(f"[reconciler] dead-inflight reap skipped: {_e}")
+
+    try:  # resident: an unmeasured clock may ask the api once before a TW futures gate acts on it
+        from lib import tw_clock as _twc
+        _twc.probe_enabled = os.environ.get("BLAVE_CLOCK_PROBE") != "0"   # tests/_run_all.py: 0
+    except ImportError:
+        pass
 
     _round_marker(False)
     last_mtimes = {}

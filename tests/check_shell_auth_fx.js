@@ -77,6 +77,16 @@ ok("每一處同一句:conn.expired(帳號頁、公開連結、分享)= 「登�
   ok("0.1.27 完全凍結(halt.freeze):解除綁定、對帳器活著也講什麼單都不送(tr.haltUnboundFreeze);沒在跑照舊 haltUnboundOff",
     why(base({ halt: { halted: true, reason: "exchange unbound (paper)", source: "web", freeze: true, holds_all: true } })) === "tr.haltUnboundFreeze"
     && why(base({ halt: { halted: true, reason: "exchange unbound (paper)", source: "web", freeze: true, holds_all: true }, reconciler: { alive: false } })) === "tr.haltUnboundOff");
+  // replace-paper A 案:綁真實帳戶取代模擬時,機器寫的原因是 venue rebind(command_listener 擠掉舊的那一家),不能落到通用句
+  { const rb = (o) => base(Object.assign({ halt: Object.assign({ halted: true, reason: "venue rebind (paper evicted)", source: "web" }, o && o.halt) }, o && o.rest));
+    const cl = read(path.join(__dirname, "..", "runtime", "command_listener.py"));
+    ok("換帳戶(venue rebind)自己一組原因句:對帳器活著 tr.haltRebind、凍結 tr.haltRebindFreeze、沒在跑 tr.haltRebindOff;不是通用句、不借解除綁定那句;機器端還寫這個開頭",
+      why(rb()) === "tr.haltRebind" && why(rb({ halt: { freeze: true, holds_all: true } })) === "tr.haltRebindFreeze"
+      && why(rb({ rest: { reconciler: { alive: false } } })) === "tr.haltRebindOff" && why(rb({ rest: { daemon: { reconciler: { running: false, wanted: true } } } })) === "tr.haltRebindOff"
+      && !/^tr\.haltRebind/.test(why(rb({ rest: { reconciler: { alive: false, heartbeat_at: 9, stopped: { reason: "machine_restart", at: 1 } } } })))
+      && /trip_halt\(f"venue rebind \(/.test(cl)
+      && S.includes('"tr.haltRebind": "換帳戶時自動暫停：不開新倉，平倉與停損停利照常執行。"') && S.includes('"tr.haltRebindOff": "換帳戶時自動暫停，下單程式也沒在跑：什麼單都不下。"'),
+      J([why(rb()), why(rb({ halt: { freeze: true, holds_all: true } })), why(rb({ rest: { reconciler: { alive: false } } }))])); }
   // 稽核 r4 P2:沒有路由、帳本上又有部位 → 不是可按的「啟動下單」(按了會被 NEEDS_ROUTING 拒)
   const zv = vm.runInContext("trZView('halted', " + J(base({ config: { amounts: { a: 1 }, exchanges: { a: "" } }, last_reconcile: { ledger: { BTCUSDT: { side: "long", size: 5 } } } })) + ")", ctx);
   ok("沒有路由、帳本上有部位:啟動下單停用、原因講要先存(不是 tr.startOnBook)", zv.off === true && zv.reason === "tr.startOffNoAmt", J(zv)); }

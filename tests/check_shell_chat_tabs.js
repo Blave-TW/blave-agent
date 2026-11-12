@@ -128,6 +128,7 @@ const ANY = [   // 任何回合(機器層級的鎖;busyOn() = csAnyTurn())
   ["apikey.js", /const cut = cur === "apikey" && busyOn\(\);/, "移除自帶金鑰會中斷回合"],
   ["app.js", /if \(busyOn\(\)\) \{ busyCut\(null, \(\) => connectNow\(kind, info\)\); return; \}/, "換 AI"], ["app.js", /const stop = \(busyOn\(\) \? \[t\("acct\.out\.busy"\)\]/, "登出"],
   ["app.js", /if \(busyOn\(\)\) \{ busyCut\(b, \(\) => blaveGoNow\(b\)\); return; \}/, "換成 Blave AI"],
+  ["app.js", /mdlAct\(o, rd\); if \(typeof busyOn === "function" && busyOn\(\)\) mdlPaint\(\);/, "模型接入 radio:回合中切換先跳確認框,radio 當場畫回 cur"],
   ["app.js", /function upLocalTurn\(\) \{ try \{ return typeof csAnyTurn === "function" \? csAnyTurn\(\) : running === true;/, "更新會重開 app"],
   ["app.js", /busyLock\(d, csAnyTurn\(\)\)\); \}\); \}/, "刪策略"], ["app.js", /busyLock\(del, csAnyTurn\(\)\); del\.onBusy = \(\) => busyHit\("del"\);/, "刪策略"],
   ["app.js", /if \(csAnyTurn\(\)\) \{ rpcOwed = true; return; \}/, "雲端報告重抓等所有回合結束"],

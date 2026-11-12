@@ -845,7 +845,7 @@ strategy routes to, so a 下單設定 emptied to close everything still reads th
   the next round and sold it back — a round trip every round. The diff rounding above is
   then an identity, kept for hand-written `place_order_fn` callers
 - is scoped to `asset_specs[strategy]["type"] == "futures_contracts"` only — a capital strategy
-  configured as `"tw_stock"` (securities) raises loudly; that path is not wired yet
+  configured as `"tw_stock"` (securities) raises loudly; TW stocks are never auto-traded, so that path will not be wired
 
 Every other machine (crypto exchanges — the overwhelming majority of the fleet) falls straight
 through to the existing auto-wire (`auto_get_positions()` / `lib.execute.dispatch_order`),

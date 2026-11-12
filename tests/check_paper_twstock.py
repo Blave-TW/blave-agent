@@ -558,9 +558,10 @@ print("== runtime reports the capability off the disk")
 import portfolio_reporter  # noqa: E402
 portfolio_reporter.WORKSPACE_STATE = os.path.abspath("state")
 check(portfolio_reporter.deferred_close() == [], "no deferral: deferred_close []")
-json.dump({"keys": ["2454@spot", "2330", "BTCUSDT", 5, "6488.TWO@spot"], "ts": 1}, open("state/paper_tw_close.json", "w"))
-check(portfolio_reporter.deferred_close() == ["2330", "2454@spot", "6488.TWO@spot"],
-      f"deferred_close: TW stock keys only, sorted ({portfolio_reporter.deferred_close()})")
+json.dump({"keys": ["2454@spot", "2330", "BTCUSDT", 5, "6488.TWO@spot", "TMF", "txf", "TXF@spot", "TXFL6"], "ts": 1},
+          open("state/paper_tw_close.json", "w"))
+check(portfolio_reporter.deferred_close() == ["2330", "2454@spot", "6488.TWO@spot", "TMF", "TXF"],
+      f"deferred_close: TW stock keys and 台指期 roots (群益 and 統一), sorted; no month code, no @spot root ({portfolio_reporter.deferred_close()})")
 open("state/paper_tw_close.json", "w").write("{")
 check(portfolio_reporter.deferred_close() == [], "unreadable: []")
 os.remove("state/paper_tw_close.json")

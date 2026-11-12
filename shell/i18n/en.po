@@ -18,13 +18,13 @@ msgstr "Sign in for {q} TWD of credit, add a card when it runs out"
 msgid "cn.blave.descFreeNoNum"
 msgstr "Sign in to start, add a card when credit runs out"
 
-# 設定 › 模型接入 的 Blave AI 那一列,固定一行(12px:zh ≤ 346px、en ≤ 302px),句尾不加句號。沒登入且拿得到贈額數字時用這句
+# 設定 › 模型接入 的 Blave AI 那一列,固定一行(12px;右欄是「登入並切換」那顆鈕時 zh ≤ 316px、en ≤ 274px),句尾不加句號。沒登入且拿得到贈額數字時用這句
 msgid "cn.blave.descSet"
 msgstr "{q} TWD of credit, card only when it runs out"
 
 # 已登入、或拿不到贈額數字時(離線、api 沒回):只講怎麼收錢
 msgid "cn.blave.descSetNoNum"
-msgstr "Pay per use from your Blave balance"
+msgstr "Pay per use from balance"
 
 msgid "cn.blave.btn"
 msgstr "Sign In to Blave"
@@ -45,7 +45,7 @@ msgid "cn.local.label"
 msgstr "Use your own AI"
 
 msgid "cn.local.desc"
-msgstr "No AI charges from Blave"
+msgstr "No Blave charge"
 
 msgid "cn.redetect"
 msgstr "Detect again"
@@ -999,10 +999,10 @@ msgid "row.reinstall"
 msgstr "Reinstall {name}, then come back."
 
 msgid "cn.pkgSize"
-msgstr "Downloads the Codex engine (about {size} MB)"
+msgstr "Downloads about {size} MB"
 
 msgid "cn.pkgDl"
-msgstr "Downloading Codex engine {a} / {b} MB"
+msgstr "Downloading {a} / {b} MB"
 
 msgid "cn.pkgInstall"
 msgstr "Installing"
@@ -1495,12 +1495,6 @@ msgstr "Signed out. This computer no longer gets Blave data."
 msgid "cx.lead"
 msgstr "Only in this computer’s workspace (~/Blave/workspace/.env). Blave does not upload them. The agent and your strategy code can read them; that is how they place orders and read your account for you."
 
-msgid "cx.note.one"
-msgstr "When you create the key on Binance, whitelist this IP."
-
-msgid "cx.note.oneV"
-msgstr "When you create the key on {venue}: if you set an IP whitelist, add this IP."
-
 # 連接框選 StockCoin 時說明區多一句(其他家不出;同網頁 workspace_cx_note_stockcoin)
 msgid "cx.note.stockcoin"
 msgstr "Create a futures-type key, and move your funds into the futures account in the StockCoin app first. Blave can only read that balance."
@@ -1511,12 +1505,6 @@ msgstr "Bitget Classic account keys only; UTA isn't supported yet."
 
 msgid "cx.note.bitgetUtaOnly"
 msgstr "Bitget Unified Trading Account (UTA) keys only."
-
-msgid "cx.store.q"
-msgstr "Where are my keys stored?"
-
-msgid "cx.venue"
-msgstr "Exchange or futures broker"
 
 msgid "cx.paper"
 msgstr "Paper trading (no keys)"
@@ -1741,6 +1729,33 @@ msgstr "{sym} didn’t fill: Gate.io’s book was too far from the mark price, s
 
 msgid "tr.err.margin"
 msgstr "{sym} order not placed: not enough available margin or balance on the account. Lower the amount, add funds, or raise this contract's leverage on the exchange."
+
+msgid "tr.err.paperCash"
+msgstr "{sym} order not placed: the paper account doesn't have enough cash to buy it. Lower the strategy amount."
+
+msgid "tr.err.paperSell"
+msgstr "{sym} order not placed: the paper account holds less than this sell."
+
+msgid "tr.paperAvail"
+msgstr "Available ≈ {amt}"
+
+msgid "tr.paperAvailTip"
+msgstr "Paper cash plus spot holdings, minus other spot strategies' amounts."
+
+msgid "tr.paperAvailOver"
+msgstr "over"
+
+msgid "tr.cfPaperCashOver"
+msgstr "Taiwan stocks total more than the ≈ {cap} TWD available, so not all will be bought."
+
+msgid "tr.cfPaperCashLeft"
+msgstr "Keep this under about {left} TWD to buy it all."
+
+msgid "tr.cfPaperCashNone"
+msgstr "Other Taiwan stocks already use up what's available, so this one won't be bought."
+
+msgid "tr.pick.twStockSelf"
+msgstr "Taiwan stocks aren't auto-traded. Place orders with your broker yourself"
 
 msgid "tr.err.minSize"
 msgstr "{sym} not placed: this adjustment is below the exchange minimum. Raise the strategy’s amount, or wait for the gap to grow."
@@ -3450,9 +3465,12 @@ msgid "priv.c.feat.5"
 msgstr "Changing the library sort: which sort you picked"
 
 msgid "priv.c.feat.6"
-msgstr "Reply notifications: whether shown, whether clicked"
+msgstr "Buying from the library: which step it reached and the result type"
 
 msgid "priv.c.feat.7"
+msgstr "Reply notifications: whether shown, whether clicked"
+
+msgid "priv.c.feat.8"
 msgstr "Never the chat title or text"
 
 msgid "priv.c.stuck.h"
@@ -3477,6 +3495,12 @@ msgid "priv.c.stuck.6"
 msgstr "If not, which kind of reason"
 
 msgid "priv.c.stuck.7"
+msgstr "Which screen you were on when you quit the app"
+
+msgid "priv.c.stuck.8"
+msgstr "When the app crashes or doesn’t close normally, which kind it was"
+
+msgid "priv.c.stuck.9"
 msgstr "Categories only, never the content"
 
 msgid "priv.c.auth.h"
@@ -3614,6 +3638,12 @@ msgstr "That key doesn’t look right, so nothing was saved. Copy it from {venue
 
 msgid "cx.chk.rejectedV"
 msgstr "{venue} didn’t accept this key, so nothing was saved: {reason}"
+
+msgid "cx.chk.tradingV"
+msgstr "This key has no trading permission, so it was not saved. Enable trading on {venue}, then connect again."
+
+msgid "cx.chk.ipOrKeyV"
+msgstr "{venue} rejected this key, so it wasn’t saved. The IP may be missing from the whitelist, or the key mistyped or deleted."
 
 msgid "cx.chk.unknownV"
 msgstr "{venue} sent back account data that couldn’t be read, so nothing was saved. Try again in a few minutes."
@@ -4376,9 +4406,6 @@ msgstr "Update now"
 msgid "rp.missKey.go"
 msgstr "Open Data Sources"
 
-msgid "cx.ip.cloudNote"
-msgstr "This is the cloud machine’s current public IP."
-
 msgid "cx.ip.cloudNone"
 msgstr "Couldn’t read the cloud machine’s IP"
 
@@ -5003,17 +5030,14 @@ msgstr "Sharpe {s} · neighbourhood {n}"
 msgid "rob.tipNa"
 msgstr "No trades"
 
-msgid "rob.empty"
-msgstr "No parameter scan yet."
+msgid "rob.fog"
+msgstr "See if performance holds when parameters shift a little."
 
 msgid "rob.btnScan"
 msgstr "Start Scan"
 
-msgid "rob.btnSent"
-msgstr "Sent — See Chat"
-
-msgid "rob.emptyCap"
-msgstr "When the agent finishes, the verdict and heatmap appear here."
+msgid "rob.btnBusy"
+msgstr "Scanning"
 
 msgid "rob.cfOk"
 msgstr "Send"
@@ -5059,6 +5083,9 @@ msgstr "{rp} {r0}–{r1} × {cp} {c0}–{c1} ({R}×{C})"
 
 msgid "rob.cfNote"
 msgstr "Usually takes a few minutes — longer with more data or a bigger grid. The new scan replaces this one."
+
+msgid "rob.cfNoteFirst"
+msgstr "Usually a few minutes. It takes longer with more data or a bigger grid."
 
 msgid "rob.msgRescan"
 msgstr "Please rescan the parameters of strategy {display_name} ({name}) (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap). Use the current backtest's period and fee: {start} → {end}, fee {fee}%. Keep the previous axes — {rp} {r0}–{r1} and {cp} {c0}–{c1}; if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."
@@ -5706,7 +5733,7 @@ msgid "lib.bb.loginInstall"
 msgstr "Sign In & Install"
 
 msgid "lib.bb.loginUseNote"
-msgstr "New accounts can try it free for {t} days, then {p} every 30 days"
+msgstr "Needs a plan, {p} every 30 days. New accounts get {t} days free."
 
 msgid "lib.bb.renewNote"
 msgstr "Then {p} every 30 days. Cancel anytime."
@@ -7708,7 +7735,7 @@ msgid "ak.row"
 msgstr "API key"
 
 msgid "ak.yours"
-msgstr "Your API key"
+msgstr "API key"
 
 msgid "ak.saved"
 msgstr "Key saved"
@@ -9360,6 +9387,10 @@ msgstr "The Taiwan stock market is closed now; Taiwan stock orders fill in the f
 msgid "tr.deferredClose"
 msgstr "Close-all is waiting for the open ({syms}). Starting now cancels it and trades by strategy. To close, wait until it’s done, then start."
 
+# 啟動框:延後的是台指期(群益、統一;回報 deferred_close 帶根代號 TXF／MXF／TMF),取代上一句。Wei 核准原文
+msgid "tr.deferTxfCancel"
+msgstr "Starting now cancels the TAIEX futures close that's waiting for the open and trades to the strategies instead."
+
 msgid "tr.pick.noTxf"
 msgstr "No TAIEX futures strategies yet."
 
@@ -9473,6 +9504,16 @@ msgstr "Paused automatically when the exchange was unbound: no orders are sent, 
 
 msgid "tr.haltUnboundOff"
 msgstr "Paused automatically when the exchange was unbound, and the order program isn’t running: no orders at all."
+
+# 換帳戶(綁新的一家、舊的被擠掉;機器寫 venue rebind)自動掛的暫停:比照 tr.haltUnbound 三種,只換開頭
+msgid "tr.haltRebind"
+msgstr "Paused automatically when the account was switched: no new positions; closes and stops still run."
+
+msgid "tr.haltRebindFreeze"
+msgstr "Paused automatically when the account was switched: no orders are sent, exits and stops included."
+
+msgid "tr.haltRebindOff"
+msgstr "Paused automatically when the account was switched, and the order program isn’t running: no orders at all."
 
 msgid "tr.saveWarnHalted"
 msgstr "Paused: no new positions, but reductions and closes run as soon as you save."
@@ -9828,38 +9869,62 @@ msgstr "{step}, done"
 msgid "set.onb"
 msgstr "Getting started"
 
-# Connect dialog (spec §7-4, 7-5): the title and the fog button use the same phrase; two big options, paper preselected
+# Connect dialog title and the autotrade page's entry button (0.1.52 plan 1; same as the strategy page's cx.connect)
 msgid "cx.title"
-msgstr "Choose a Trading Account"
+msgstr "Connect Account"
 
-msgid "cx.goPaper"
-msgstr "Start Paper Trading"
-
-msgid "cx.mode.paperSub"
-msgstr "No keys. Starts with 100,000 USDT. No real money."
-
-msgid "cx.mode.real"
-msgstr "Real Account"
-
-msgid "cx.mode.realSub"
-msgstr "Your own exchange or futures broker"
-
-# Real account: three facts; the cloud view swaps the first for keyCloud
+# Line under the key fields; the whole sentence triggers the tooltip (cx.lead / cx.leadCloud). Cloud view uses keyCloud
 msgid "cx.fact.key"
-msgstr "Keys stay on this computer"
+msgstr "Keys stay on this computer."
 
 msgid "cx.fact.keyCloud"
-msgstr "Keys stay on your cloud machine"
+msgstr "Keys stay on your cloud machine."
 
-msgid "cx.fact.perm"
-msgstr "Allow read and trade only, not withdrawals"
+# Connect dialog (0.1.52 plan 1, spec connect-account-plan1): quiet button at the left of the footer; binds paper trading and closes
+msgid "cx.paperFoot"
+msgstr "Try Paper Trading First"
 
-# Paper-trading fills: tucked under the "How do paper fills work?" disclosure (cx.paperNote retired)
-msgid "cx.paper.q"
-msgstr "How do paper fills work?"
+# Quiet button next to the picked venue's name: back to the venue tiles
+msgid "cx.change"
+msgstr "Change"
 
-msgid "cx.paper.fill"
-msgstr "Fills at the latest real market price, minus the strategy's trading costs (the default includes slippage): crypto at Binance's last trade (if Binance is unreachable, Blave's latest 1-minute bar, then your strategy's own close); TAIEX futures at the near-month's latest 1-minute price; Taiwan and US stocks at the unadjusted close (intraday strategies at the latest unadjusted bar); dividends not credited."
+# Step 1 button: opens that venue's API management page (StockCoin has none)
+msgid "cx.keyPage"
+msgstr "Create a Key on {venue}"
+
+# Permission line under step 1: Binance and Gate.io list futures as a separate permission
+msgid "cx.perm.futures"
+msgstr "Tick Read and Futures, not Withdraw."
+
+msgid "cx.perm"
+msgstr "Tick Read and Trade, not Withdraw."
+
+# Binance only: follows the permission line, the IP chip goes on the next line
+msgid "cx.ip.line"
+msgstr "Whitelist this computer’s IP:"
+
+msgid "cx.ip.lineCloud"
+msgstr "Whitelist the cloud machine’s IP:"
+
+# "Create a Key on Binance" also copied the IP; shown next to the button for 2 seconds
+msgid "cx.ip.copiedOpen"
+msgstr "IP copied"
+
+# Non-Binance rejections: line under the error, the IP chip goes on the next line
+msgid "cx.chk.ipAdd"
+msgstr "If you set an IP whitelist, add this computer’s IP:"
+
+# Opened again with paper trading bound: line above the venue tiles
+msgid "cx.replacePaper"
+msgstr "A real account replaces paper trading."
+
+# 已綁模擬、自動下單正在跑、選了一家:主鈕正上方一句(沒在跑不出)
+msgid "cx.replacePaperRun"
+msgstr "Connecting stops paper trading and pauses auto-trading."
+
+# Mac: no futures tiles; this line sits under the "Taiwan futures" label
+msgid "cx.macTw"
+msgstr "Capital and President Futures need Windows. Use a Windows cloud machine instead."
 
 # Futures brokers (President / Capital): first fact line — brokers use certificates, not API keys
 msgid "cx.fact.cert"
@@ -9868,15 +9933,8 @@ msgstr "Certificates stay on this computer"
 msgid "cx.fact.certCloud"
 msgstr "Certificates stay on your cloud machine"
 
-# Shown when an account is already bound: the two options and the list are locked
-msgid "cx.bound"
-msgstr "To switch accounts, unbind in Settings first."
-
 msgid "cx.cancelSetup"
 msgstr "Connecting another account cancels the {venue} setup."
-
-msgid "cx.mode.paper"
-msgstr "Paper Trading"
 
 # Connect dialog primary button when an account is already bound (same words as web workspace_pf_change_key; Title Case as a button)
 msgid "cx.changeKey"
@@ -10321,6 +10379,50 @@ msgstr "TAIEX futures entries are paused; closes still run. Open Blave to see wh
 
 msgid "tm.evClockHoldNote"
 msgstr "This computer’s clock is off, so TAIEX futures entries are paused; closes still run. Open Blave to see how to fix it."
+
+# 時鐘量不到或差超過一小時(order_errors 帶 kind:tw_clock_unchecked):事件列標題、本機通知沒有機器句時的內文
+msgid "tr.ov.evClockUnchecked"
+msgstr "TAIEX futures clock unverified"
+
+msgid "tm.evClockUncheckedNote"
+msgstr "TAIEX futures closes wait until this computer’s clock shows the market open. Turn on automatic time."
+
+# tw_clock_unchecked 的本機通知內文,照列上的 clock 選(同 api notify._CLOCK_UNCHECKED_EN;far 才講新倉暫停)
+msgid "tm.evClockUncheckedUnmeasuredNote"
+msgstr "Blave can't measure the trading computer's clock. Closes wait until it shows the market open. Turn on automatic time."
+
+msgid "tm.evClockUncheckedFarNote"
+msgstr "The trading computer's clock is over an hour off. New positions are paused, and closes wait until it shows the market open. Turn on automatic time to resume."
+
+msgid "tm.evClockUncheckedFarHaltNote"
+msgstr "The trading computer's clock is over an hour off. Closes wait until it shows the market open. Turn on automatic time."
+
+# 收盤後按的全部平倉延到開盤(order_errors 帶 kind:market_closed_deferred)、開盤前按啟動下單取消延後:用戶自己按的,事件列一般字、不發通知
+msgid "tr.ov.evDeferStock"
+msgstr "Taiwan stock close-all waits for the open"
+
+msgid "tr.ov.evDeferFut"
+msgstr "TAIEX futures close-all waits for the open"
+
+msgid "tr.ov.evDeferNote"
+msgstr "Market closed, so it closes in the first round after the open"
+
+# 全部平倉延到開盤、時鐘量不到(market_closed_deferred 帶 clock:unmeasured):不講休市
+msgid "tr.ov.evDeferClockNote"
+msgstr "Clock unverified, so it closes after the open by this computer’s time"
+
+# 全部平倉延到開盤、時鐘差超過一小時(market_closed_deferred 帶 clock:far)
+msgid "tr.ov.evDeferClockFarNote"
+msgstr "Clock over an hour off, so it closes after the open by this computer’s time"
+
+msgid "tr.ov.evDeferCancelStock"
+msgstr "Taiwan stock deferred close canceled"
+
+msgid "tr.ov.evDeferCancelFut"
+msgstr "TAIEX futures deferred close canceled"
+
+msgid "tr.ov.evDeferCancelNote"
+msgstr "You started trading, so orders follow the strategy"
 
 # 下單結果不明(order_unconfirmed,canon notifications §3):事件列標題／說明、本機 P1 通知內文、列下那一句;策略段(策略檔名)組字
 msgid "tr.ov.evUnconfirmed"

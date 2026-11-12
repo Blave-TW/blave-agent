@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.162 — 2026-11-11(desktop 0.1.53)
+
+- **`deferred_close` 一併收台指期根代號(`portfolio_reporter.deferred_close`,稽核 release-0153 Y2)**:收盤後按全部平倉,群益、統一的台指期延到開盤(`state/paper_tw_close.json` 的 key 是 TXF／MXF／TMF,群益的月份代號在 `manager/flatten._book_key` 已換成根代號),以前只收台股代號、台指期被濾掉,開盤前按啟動下單會取消延後的平倉,啟動框卻不講。現在回報帶這三個根代號(只認整串、不帶 `@spot`;月份代號不收)。電腦版 0.1.53 啟動框對台指期出 `tr.deferTxfCancel`;舊電腦版照舊句列出代號。測試 `tests/check_paper_twstock.py`、`tests/check_shell_start_box.js`。
+
 ## 1.1.161 — 2026-11-09(desktop 0.1.51)
 
 - **資料卡改由 runtime 觸發(spec login-upgrade-buttons-0150 §1.1,desktop 0.1.50)**:`WebSink.on_tool_result` 讀執行指令類工具的輸出尾端 64 KB(`data_access_hit`;Read／Grep 這類不算),外殼有設 `BLAVE_DATA_ACCESS` 才比:`0` 時認 `DataAccessError:` 那行或 `_NO_ACCESS_MSG` → `denied`,`1` 時認 lib/data 印的 api 403 body → `err005`／`err007`(只有一個 ERR007 字樣不算)。一輪最多一張,`done` 之前送 `{"type":"card","id":"data-access","code":…}`,err005 優先;出錯或被 Stop 截斷的回合不送。Codex 那條在 `CodexTranslator._item` 把 `command_execution` 的 `aggregated_output` 交給同一個 `on_tool_result`。模型寫的記號與那段規則照留(舊外殼靠它)。契約 `references/turn-events.md`。

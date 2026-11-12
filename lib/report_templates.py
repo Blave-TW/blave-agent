@@ -211,7 +211,9 @@ def _publish_checklist(pack):
     if research:
         lines += [f"  2. against ≤{RESEARCH_SLOTS['against'][1]} 字(B3 必寫)、robustness ≤{RESEARCH_SLOTS['robustness'][1]} 字"
                   f"(B4 必寫,至少一個檢查)、risk ≤{RESEARCH_SLOTS['risk'][1]} 字(B5:什麼會推翻這個結論,接在總結最後);沒有 watch",
-                  "     研究只講歷史發現:不給買賣時點、目標價、價位,不說「現在正在發生」(B1/B2)"]
+                  "     研究只講歷史發現:不給買賣時點、目標價、價位,不說「現在正在發生」(B1/B2)",
+                  "     每句最多 2 個數字,基準算一個;離散、樣本數、段數放下一句或表,不擠進同一句;read 每條一句一個數字(A6/A12)",
+                  "     沒驗證過的解釋不寫成發現;這條路沒有「推測」段,寫不進就不寫(B10)"]
     else:
         lines.append(f"  2. watch = {WATCH_ROWS[0]}–{WATCH_ROWS[1]} 個 tuple (條件, 門檻, 現在值),每格 ≤{WATCH_CELL} 字;不是 markdown 表")
     _, day_cell = _dated_title(pack, "")
@@ -853,6 +855,18 @@ def quickstart():
     ]
     lines += [f"  {name}{sig(fn, ('b',))} : {first(fn)}" for name, fn in report_bricks.BRICKS.items()]
     lines += [
+        "RESEARCH WRITE-UP (reports.md 7b; write_report warns on the first three)",
+        "  Every sentence of the body and the key points: <=2 numbers, baseline counted; spread, sample size and segments",
+        "  go in the next sentence, the caption or a table. Key points: one sentence, one number each.",
+        "  Body tables <=4 columns x 8 rows; a larger one goes whole to ## 附表, the body cites its conclusion.",
+        "  Argument section: heading a claim, <=14 CJK, no number; first sentence picks up the section before; a sentence",
+        "  before each chart leads in, one after says how to read it; it ends on its conclusion as a whole **bold** sentence.",
+        "  Order: lead, kpi_row, first chart, key points, ## 為什麼問這題 (<=150 chars), ## 怎麼量 (numbered steps, terms),",
+        "  argument sections in the order you measured, ## 試過但沒過, ## 推測 (optional), ## 總結, ## 附表, footnote.",
+        "  The headline number once in everyday terms (per year, per 100,000), computed by the script.",
+        "  An unverified guess only in ## 推測 (<=3: observed, guess, data to confirm); the footnote then says these are",
+        "  after-the-fact descriptions. Each script run adds a line to tmp/research/<name>.notes.md (what, one number,",
+        "  kept or dropped and why); 試過但沒過 lists only what is there. Never make up a history of attempts.",
         "A FIGURE NO BRICK SHOWS",
         "  Look once in references/lib.md (the fetchers and their signatures), not in lib source. What is not there comes",
         "  from the pages you read - the outlet's own article or the official page - cited, and the report says it is from the web.",
@@ -1764,8 +1778,8 @@ _NUM_RE = re.compile(r"(?<![\w.])([+\-−]?)(\d[\d,]*(?:\.\d+)?)\s*(%|億|兆|�
 _MD_RE = _report.MD_RE
 _first_sentence = _report.first_sentence
 # 研究 lead 的數字算法(references/reports.md 7b A2):窗口長度、段號、年份不算數字
-_NOT_A_NUMBER_AFTER_RE = re.compile(r"\s*(?:個)?(?:交易)?(?:日|天|週|周|月|年|段)")
-_YEAR_RE = re.compile(r"(?:19|20)\d\d")
+_NOT_A_NUMBER_AFTER_RE = _report.NOT_A_NUMBER_AFTER_RE
+_YEAR_RE = _report.YEAR_RE
 
 
 def _source_of(src):

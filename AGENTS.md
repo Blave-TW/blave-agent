@@ -84,7 +84,7 @@ Always set `DISPLAY_NAME`, `DESCRIPTION` and `LOGIC` (one `entry:` / `exit:` / `
 
 **FEE is PER SIDE and never 0:** the engine charges it on every change, so a round trip pays it twice; paper trading charges the same `FEE`. Start from the market default in `references/trading-costs.md` (slippage included, conservative), adjust it to the user's own broker rate or the instrument's liquidity, and say which rate you used.
 
-**Type B:** BEFORE any exchange API call, read the relevant `skills/blave-quant/references/` file and check `lib/` for a helper; new exchange helpers go in `lib/`. BingX → `lib/order_bingx.py`, SinoPac stocks → `lib/order_sinopac.py`, never hand-written. Start the file with the templates' header comment, `# Type:     B (…)` as its second line — the desktop app reads it.
+**Type B:** BEFORE any exchange API call, read the relevant `skills/blave-quant/references/` file and check `lib/` for a helper; new exchange helpers go in `lib/`. BingX → `lib/order_bingx.py`, never hand-written; TW stocks are never ordered by Blave (`references/sinopac-broker.md` Step 5). Start the file with the templates' header comment, `# Type:     B (…)` as its second line — the desktop app reads it.
 
 **Type C:** Taiwan universe sampled by sector; live checks → *Live trading (Type C)*.
 
@@ -137,7 +137,7 @@ A report is a document the user reads in the Reports list (web: 「報告」 in 
 
 ## Shell Commands
 
-- One-off scripts → `tmp/` (workspace-relative), never workspace root or `strategies/`; delete yours before you reply, and never copy from a script already in `tmp/` (stale leftovers — `lib/` and `references/` are the reference). **Except research:** write the analysis script behind a research answer to `tmp/research/<what_it_computes>.py` and keep it (first line: question | data and window | date); turning an earlier answer into a report reruns it — never redo the research (`references/reports.md` §1b › *Research scripts*)
+- One-off scripts → `tmp/` (workspace-relative), never workspace root or `strategies/`; delete yours before you reply (a research script's `.notes.md` stays with it), and never copy from a script already in `tmp/` (stale leftovers — `lib/` and `references/` are the reference). **Except research:** write the analysis script behind a research answer to `tmp/research/<what_it_computes>.py` and keep it (first line: question | data and window | date); turning an earlier answer into a report reruns it — never redo the research (`references/reports.md` §1b › *Research scripts*)
 - **NEVER write `except Exception: pass`** — always `except Exception as e: print(f"Error: {e}")`
 - NEVER chain commands with `&&`, `||`, or `;` — run ONE command at a time, on Windows too
 - On Windows, read and write strategy files, `.env` and `references/` with python (`encoding='utf-8'`), never `Get-Content` / `Set-Content` — PowerShell 5.1 garbles UTF-8 Chinese

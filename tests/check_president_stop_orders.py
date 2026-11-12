@@ -49,6 +49,7 @@ from lib import account_president as ap, events, guard, order_president as op, p
 from lib import president_contracts as pc, president_vault as pv, president_worker as worker  # noqa: E402
 
 pv.STOP = os.path.join(TMP, "state", "president_login_stop.json")
+op._in_trading_window = lambda: True  # the login window is the wall clock's: pinned open
 pv._WS = TMP
 EMITS, EMIT_OK = [], [True]
 

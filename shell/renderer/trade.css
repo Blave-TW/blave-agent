@@ -146,6 +146,8 @@ html.ws-sc .side-gate { display: none; }
 /* 圓環 spinner(canon › Components › Loader,最小 16/2):缺口 1/4、currentColor、1s linear。
    **不設 reduced-motion 例外**——轉動即語意,停下來只剩一個沒意義的圓環(canon 明文) */
 .spin16 { flex: none; display: inline-block; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: trSpin 1s linear infinite; }
+/* app.css 全域的 reduced-motion 把 animation 全關,圓環會停成一個靜止環;canon › Loader:spinner 的轉動即語意,不設例外 */
+@media (prefers-reduced-motion: reduce) { .spin16 { animation: trSpin 1s linear infinite !important; } }
 @keyframes trSpin { to { transform: rotate(360deg); } }
 
 /* ---- 雲端第一刀唯讀:說明行、不能按的鈕(aria-disabled,不是 disabled:鍵盤停得上去、讀屏唸得到原因)、停機那一段 ---- */
@@ -329,6 +331,14 @@ html.ws-sc .side-gate { display: none; }
 .pf-tbl tbody:first-of-type tr.grp td { padding-top: var(--space-12); }
 .pf-tbl tr.grp td.cjk { font-family: var(--font-sans); }
 .pf-tbl tr.grp td.n { font-weight: 500; }
+/* 模擬帳戶台股「可用 ≈ N」(spec paper-tw-cash-short §2):TWD 區標題列小計左邊,或只有一區時合計左邊。12px ink-3、數字等寬;超過轉紅(暗色用 redBlack,同 app.css cf-st.bad) */
+.pf-avail-w { position: relative; display: inline-block; margin-right: var(--space-12); white-space: nowrap; }
+.pf-total .pf-avail-w { margin-right: 0; }
+.tr-tipb.pf-avail { font: 400 12px/1.4 var(--font-sans); color: var(--ink-3); }
+.pf-avail .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.tr-tipb.pf-avail.over, .tr-tipb.pf-avail.over:hover, .tr-tipb.pf-avail.over:focus-visible { color: var(--color-redText); }
+[data-theme="dark"] .tr-tipb.pf-avail.over, [data-theme="dark"] .tr-tipb.pf-avail.over:hover, [data-theme="dark"] .tr-tipb.pf-avail.over:focus-visible { color: var(--color-redBlack); }
+.trv .pf-avail-w .tip { left: auto; right: 0; text-align: left; white-space: normal; width: max-content; max-width: 260px; font: 400 12px/1.5 var(--font-sans); }
 /* 線(units spec §9.12):金額表與部位表只留表頭下一條最淡的線,金額表另有表底合計那條較重的;區內列線拿掉,列與區靠間距分開 */
 .pf-tbl.zoned th { border-bottom-color: var(--border-hairline); }
 .pf-tbl.zoned td { border-bottom: none; }
@@ -567,16 +577,52 @@ html.ws-sc .side-gate { display: none; }
 .cx-modal { width: min(480px, 92vw); max-height: calc(100vh - max(var(--space-48), 12vh) - var(--space-24)); }
 .cx-body { padding: var(--space-4) var(--space-16) var(--space-16); flex: 1 1 auto; min-height: 0; overflow-y: auto; }   /* 左右同 .del-body */
 .cx-body .plan-err, #tr-set .plan-err { margin: var(--space-12) 0 0; }
-/* 框頂兩個大選項(模擬／真實;.cf-opt 是確認框那一套)與真實帳戶的三行事實 */
+/* 框頂(spec connect-account-plan1 §2、§6):還沒選 → 兩組交易所磚;選了 → 頭列名稱＋「換一家」 */
 .cx-pick { margin-top: var(--space-12); }
-/* 選中的「真實帳戶」:卡是 div,裡面 label(圓鈕＋標題＋小字,排法同 .cf-opt)與事實 ul 是兄弟;ul 對齊標題的左緣(圓鈕 18 + 欄距 12) */
-.cf-opt.cf-wrap { display: block; cursor: default; }
-.cf-lab { display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: var(--space-12); cursor: pointer; }
-.cf-wrap.off .cf-lab { cursor: not-allowed; }
-.cx-facts { margin: var(--space-8) 0 0 calc(18px + var(--space-12)); padding: 0; list-style: none; display: grid; gap: var(--space-2); }
-.cx-facts li { position: relative; padding-left: var(--space-12); font-size: 12px; line-height: 1.6; color: var(--ink); text-wrap: pretty; }
-.cx-facts li::before { content: ""; position: absolute; left: 2px; top: .75em; width: 4px; height: 4px; border-radius: var(--radius-pill); background: currentColor; }
-.cf-wrap.off .cx-facts li { color: var(--ink-3); }
+.cx-replace { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-2); }
+.cx-grp { margin: var(--space-12) 0 var(--space-6); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.cx-pick > .cx-grp:first-child { margin-top: 0; }
+.cx-macnote { margin: 0; font-size: 12px; line-height: 1.6; color: var(--ink-2); text-wrap: pretty; }
+/* 交易所磚:外形照 .cf-opt 未選／hover,點了就走,沒有選中態、沒有圓鈕;3 欄,窄寬 2 欄 */
+.cx-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-8); }
+@media (max-width: 560px) { .cx-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cx-tile {
+  display: flex; align-items: center; min-width: 0; min-height: 44px; padding: var(--space-8) var(--space-12);
+  border: 1px solid transparent; border-radius: var(--radius-sm); background: var(--bg-body); text-align: left;
+  transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+}
+.cx-tile:hover:not(:disabled) { background: var(--surface-control-on); border-color: var(--border-frame); }
+.cx-tile:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.cx-tile:disabled { cursor: not-allowed; }
+.cx-tile:disabled .n { color: var(--ink-3); }
+.cx-tile .n { min-width: 0; font-size: 13px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (prefers-reduced-motion: reduce) { .cx-tile { transition: none; } }
+.cx-picked { display: flex; align-items: center; gap: var(--space-12); }
+.cx-picked .n { min-width: 0; font-size: 15px; font-weight: 600; line-height: 1.3; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 「換一家」熱區 44×44(全域 .btn-quiet 的 -6 只到 30):固定 44 高、寬至少 44,不動視覺(同 app.css .busy-fix)。
+   往上偏 3:正下方 16 就是〔到 X 建金鑰〕,置中的話底下 3px 被那顆鈕蓋掉;上方到框身頂還有空間 */
+#cx-change::before { inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, calc(-50% - 3px)); }
+/* 步驟 1、2:編號 12px mono、不畫圈不加框 */
+.cx-step { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: var(--space-8); margin-top: var(--space-16); }
+.cx-step .no { font-family: var(--font-mono); font-size: 12px; line-height: 32px; color: var(--ink-3); }
+/* 編號對齊這一步的第一行文字:第一行是 32 高的鈕時照上面的 32;是欄位標籤(步驟 2)時改成跟標籤同一條基線
+   (框在 .app 外面,標籤行高是 normal、隨字型變,寫死數字對不齊) */
+.cx-step:has(> .cx-step-b > .fld:first-child) { align-items: baseline; }
+.cx-step:has(> .cx-step-b > .fld:first-child) .no { line-height: normal; }
+.cx-step-b { min-width: 0; }
+.cx-step-b > .fld:first-child, .cx-step-b > .cx-kp { margin-top: 0; }
+.cx-kp .btn-out { display: inline-flex; align-items: center; gap: var(--space-6); }
+.cx-kp .ic-ext { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.cx-hint.is-ink2 { margin-top: var(--space-8); color: var(--ink-2); }
+.cx-step-b > .cx-hint.is-ink2:first-child { margin-top: var(--space-6); }
+/* 「金鑰只存在這台電腦。」:整句是提示泡的觸發點(.mp-tip + .tip,app.css);泡寬照內容、上限 260 */
+.cx-tipw { position: relative; display: inline-block; }
+.cx-tipw .tip { left: 0; width: max-content; max-width: 260px; }
+/* 錯誤句下一行:白名單那句,再下一行 IP */
+.cx-ipadd { display: block; margin-top: var(--space-4); }
+#cx-paper { margin-right: auto; }
+/* 「先用模擬交易」熱區 44 高、寬至少 44(做法同 #cx-change;框腳這一列上下沒有別的鈕,置中不偏) */
+#cx-paper::before { inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, -50%); }
 .cx-row .cn-st .fault-mark { margin-top: 0; }
 .fld { display: block; margin-top: var(--space-12); }
 .fld-l { display: block; margin-bottom: var(--space-6); font-size: 12px; color: var(--ink-3); }

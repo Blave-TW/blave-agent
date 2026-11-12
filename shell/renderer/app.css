@@ -1043,9 +1043,10 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .set-body { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; }
 .set-cats {
   flex: 0 0 168px; width: 168px;
-  display: flex; flex-direction: column; gap: var(--space-2);
+  display: flex; flex-direction: column; gap: 10px;
   padding: var(--space-12) var(--space-8);
   border-right: 1px solid var(--border-hairline);
+  overflow-y: auto;
 }
 /* canon › modal 內分類欄:分類欄坐在卡面上,Studio 側欄那套(control-on / hover 卡面)在這裡看不見。
    目前項 muted＋600;hover 走 row-hover,兩態都比目前項弱(light 白、dark darkBody);視覺 34,熱區用 ::before 上下各補 5 到 44 */
@@ -1057,9 +1058,9 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
   text-align: left; font-size: 13px; line-height: 18px; color: var(--ink-2);   /* 固定行高:純英文名(Agent)跟中文名同高 34 */
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
-/* 鈕距 36、熱區 44:相鄰兩顆的熱區必然重疊。熱區壓到 -1、分類欄自成一層(isolation):每顆自己的可見框永遠蓋在鄰居的熱區上面,只有框外那幾 px 才歸熱區 */
-.set-cats { isolation: isolate; }
-.set-cat::before { content: ""; position: absolute; inset: -5px 0; z-index: -1; }
+/* 鈕距 10 = 44 − 34(元件自己的尺寸,不在間距階):節距剛好 44,每顆上下各補 5 的熱區相接不重疊,首尾往外的 5 落在分類欄 12 的上下內距裡。
+   視窗矮到放不下時分類欄自己捲,不縮鈕距 */
+.set-cat::before { content: ""; position: absolute; inset: -5px 0; }
 .set-cat[aria-current="true"] { background: var(--surface-muted); color: var(--ink); font-weight: 600; }
 @media (hover: hover) { .set-cat:not([aria-current="true"]):hover { background: var(--surface-row-hover); color: var(--ink); } }
 /* 固定內容高:切分類不改變 modal 尺寸,內容自己捲 */
@@ -1225,8 +1226,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 /* 設定左欄底部的帳號區 */
 .set-cats{display:flex;flex-direction:column}
 
-/* 設定 › 模型接入:整頁 = 三選一。群組小標(12/400/--ink-3)→ 選項列(名稱 13/--ink,說明 12/--ink-3、固定一行)→ 列尾只放一樣(狀態 12、一顆小框鈕或「使用中」)。
-   「使用中」= 整列灰填 + 名稱加粗 + 列尾三個字(canon 的 Active:同左欄分類、側欄策略)。不畫線 */
+/* 設定 › 模型接入:單選列在下面 .mdl-*;群組小標(12/400/--ink-3)沿用 .cn-grp-h。.cn-opt 家族是舊排法,capital.css、reports.css 還借用它的外擴與列高 */
 #set-model{display:flex;flex-direction:column;gap:var(--space-24)}
 .cn-grp-h{display:flex;align-items:center;gap:var(--space-8);min-height:24px;font-size:12px;font-weight:400;color:var(--ink-3)}
 .cn-grp-h .sep{color:var(--ink-disabled)}
@@ -1243,8 +1243,39 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cn-opt.is-cur .m{color:var(--ink-2)}
 .cn-opt.off .n{color:var(--ink-3)}   /* 跑不起來 / 沒有回應:同連結畫面的 .cn-row.off */
 .cn-opt .cn-cur{flex:none;min-width:52px;text-align:right;font-size:12px;font-weight:600;color:var(--ink)}
+/* 設定 › 模型接入是單選列(spec settings-model-access-2026-11-09 B 案):整頁一張 grid——radio 18 | 名稱說明 | 右欄槽 minmax(76,auto),欄距 12。
+   每一列 subgrid 吃同一組欄線,Blave 那列與本機那組的右欄是同一條線;英文最長的鈕會把整欄一起撐寬。選中只靠 radio:不加灰底、名稱不加粗。
+   上面的 .cn-opt 家族留給連結畫面借用的那幾處(capital.css、reports.css),這一頁不用 */
+.mdl-list{display:grid;grid-template-columns:18px minmax(0,1fr) minmax(76px,auto);column-gap:var(--space-12);row-gap:var(--space-4)}
+.mdl-grp-h{grid-column:1/-1;margin-top:calc(var(--space-24) - var(--space-4))}   /* 組間 24 = row-gap 4 + 20 */
+.mdl-more{grid-column:1/-1;margin:0}
+.mdl-row{grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:center;min-height:44px;margin:0 calc(-1 * var(--space-12));padding:var(--space-6) var(--space-12);border-radius:var(--radius-md)}
+.mdl-lab{display:contents}
+.mdl-row .t{grid-column:2;min-width:0}
+/* 整列都是點擊面(稽核 v052 必改 3):label 是 display:contents、沒有自己的盒子,點在欄距／列內距會打到列本身,app.js put() 轉給 radio。
+   鎖住時(radio 停用)不給手指、不塗底,免得 hover 說點得到 */
+.mdl-row.usable:has(.mdl-rd:enabled){cursor:pointer}
+@media (hover:hover){.mdl-row.usable:has(.mdl-rd:enabled):hover{background:var(--surface-row-hover)}}
+.mdl-row .n{margin:0;font-size:13px;font-weight:400;line-height:1.5;color:var(--ink)}
+.mdl-row .n .spin16{margin-left:var(--space-8);vertical-align:-3px}   /* 換過去中:名稱後面的圓環(app.js connectLockPaint) */
+.mdl-row .m{margin:0;font-size:12px;line-height:1.5;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}   /* 說明固定一行 */
+.mdl-row.off .n{color:var(--ink-3)}   /* 跑不起來 / 沒有回應:同連結畫面的 .cn-row.off */
+/* radio:canon › Checkbox / Radio(同 form.css .cform-opt input,--check-*) */
+.mdl-rd{grid-column:1;appearance:none;-webkit-appearance:none;width:18px;height:18px;margin:0;border-radius:var(--radius-pill);
+  background:var(--check-bg) center / contain no-repeat;border:1px solid var(--check-border);cursor:pointer;
+  transition:background-color var(--motion-fast) var(--ease-standard),border-color var(--motion-fast) var(--ease-standard)}
+.mdl-rd:checked{background-color:var(--check-on-bg);border-color:var(--check-on-bg);background-image:var(--check-on-radio)}
+.mdl-rd:disabled{cursor:not-allowed}
+.mdl-rd:disabled:not(:checked){background-color:var(--field-disabled-bg);border-color:var(--border-hairline)}
+.mdl-rd:disabled:checked{background-color:var(--check-disabled-checked-bg);border-color:var(--check-disabled-checked-bg);background-image:var(--check-disabled-indicator-radio)}   /* canon › Disabled:已選也退一階 */
+.mdl-rd:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.mdl-rd{transition:none}}
+/* 右欄槽:鈕撐滿槽寬、字置中;狀態字跟鈕同高(4+18+4 = 鈕的 1+3+18+3+1)、置中 */
+.mdl-slot{grid-column:3;justify-self:stretch}
+#set-model .pf-act.mdl-slot{display:block;width:100%}
+.mdl-st{display:block;padding:var(--space-4) 0;font-size:12px;line-height:18px;text-align:center;white-space:nowrap;color:var(--ink-3)}
 /* 這一頁的小框鈕比別處亮一階:它是這一列的主要動作 */
-#set-model .pf-act{min-width:52px;text-align:center;color:var(--ink-2);border-color:var(--border-frame)}
+#set-model .pf-act{text-align:center;color:var(--ink-2);border-color:var(--border-frame)}
 /* 上面那條帶 id,會蓋掉 trade.css 的 .pf-act:disabled——等待登入時被鎖住的鈕要照樣變灰 */
 #set-model .pf-act:disabled{color:var(--ink-disabled);border-color:var(--border-hairline)}
 #set-model .cn-hint{margin:0}
@@ -1268,6 +1299,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cf-row.total dt { color: var(--ink); font-weight: 600; }
 .cf-row.total dd { font-size: 15px; font-weight: 600; }
 .del-body.lines p.cf-zeroed { margin: var(--space-8) 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-2); }   /* 改成 0 的那幾支:使用者自己選的,不用紅 */
+.del-body.lines p.cf-zeroed.cf-paper-cash { color: var(--ink); }   /* 模擬帳戶台股超過可用:講這筆錢的部位,比一般註記深一階;不是錯誤,不用紅 */
 /* 解除暫停框的部位清單(ux-order-1-4-5 §3.3):小標「HH:mm 讀到的部位」、標的等寬 + 多空上色 */
 .del-body.lines p.cf-sub { margin: var(--space-12) 0 var(--space-4); font-size: 12px; line-height: 1.6; color: var(--ink-3); }
 .cf-row dt.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }

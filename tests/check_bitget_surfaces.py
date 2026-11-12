@@ -105,7 +105,7 @@ eval(src.slice(src.indexOf("const PAPER = "), src.indexOf("\nfunction trEl(")).r
 eval(cut("trEnvNames"));
 eval(cut("trErrToken"));
 // 說明區:cxModalPaint 裡 Bitget 那一句的條件,用同一個式子算
-const notePart = /if \(venue === "bitget" && BITGET_VERIFIED_MODES\.length === 1\) note\.appendChild\(trEl\("p", "", (.*?)\)\);/.exec(src);
+const notePart = /if \(venue === "bitget" && BITGET_VERIFIED_MODES\.length === 1\) b2\.appendChild\(trEl\("p", "cx-hint", (.*?)\)\);/.exec(src);
 const noteKey = notePart && BITGET_VERIFIED_MODES.length === 1 ? eval(notePart[1]) : null;
 const passHint = /venue === "okx" \? t\("cx\.passHint"\) : t\("cx\.passHintV"/.test(src);
 const modeText = /if \(c === "MODE_UNVERIFIED"\) return d\.mode === "uta" \? t\("cx\.err\.bitgetUta"\) : t\("cx\.err\.bitgetClassic"\);/.test(src);

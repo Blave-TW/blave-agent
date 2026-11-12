@@ -50,7 +50,7 @@ const EVENTS = {
   // 引擎安裝(0.1.12;shell/enginesetup.js,主行程送):一輪真的有東西要裝的安裝跑完的結果(first / upd × done / net / other / timeout;
   // 只修 venv 連結的不送),以及選用的那組(美股資料)沒裝好(前綴是組別)。分兩個事件:同一輪會同時有 first_done 與美股失敗。
   // 0.1.39 起 Codex 引擎隨包(shell/codexpkg.js)沒裝好也記在這(codex_ 前綴;我們自己收掉的不送),成功記 feature_used codex_pkg_done
-  // first_abort:api 先上的值,外殼還沒有送出點(只進白名單,跟 api 的序列對齊)
+  // first_abort(0.1.52):第一次安裝裝到一半用戶結束 app,主行程 before-quit 送(main.js quitTelemetry,跟 app_quit 共用那段等待)
   engine_setup: { result: ["first_done", "first_net", "first_other", "first_timeout", "upd_done", "upd_net", "upd_other", "upd_timeout", "first_abort"] },
   engine_opt_fail: { result: ["us_net", "us_other", "us_timeout", "codex_net", "codex_disk", "codex_checksum", "codex_other", "codex_http"] },
   // 策略庫轉換(0.1.13;spec-0.1.13-library-conversion §8,renderer 送):本機「用這支」回合跑起來時那支的資料需求(未標 = unknown;雲端不送)、
@@ -70,6 +70,9 @@ const EVENTS = {
   lib_bindplan: { step: ["start_free", "start_paid", "ok_free", "ok_paid", "part", "wallet", "failed"] },
   lib_cardplan: { step: ["ok_free", "ok_paid", "part", "failed"] },
   lib_login_go: { next: ["install", "pay", "pay_direct", "box", "cta"] },
+  // 一鍵購買框按〔付 N〕之後的結果(0.1.53,renderer 送;api desktop_telemetry 同一份)。值同網頁 GA4 library_purchase_result,
+  // already_purchased 放不進 prop VARCHAR(16) 改 already_owned;不帶 strategy_id／with_card(一個事件只有一格 prop)
+  lib_buy_result: { result: ["success", "already_owned", "failed", "changed", "needs_topup", "no_card", "in_progress", "balance_negative"] },
   // 0.1.15 偵測失敗(renderer 送,只在連結畫面偵測完時):本機那個 CLI 為什麼不能用。值由主行程 detectWhy 判,語意見 canon 登記表
   detect_fail: { why: ["claude_none", "claude_timeout", "claude_nonzero", "claude_badjson", "codex_none", "codex_shim", "codex_timeout", "codex_nonzero"] },
   // 本機策略的三步(0.1.18;主行程送,strategySteps):新建、第一次有回測、第一次配了錢(同雲端的 deployed;按下啟動下單另有 trade_started)。
@@ -91,6 +94,19 @@ const EVENTS = {
   cli_auth: { how: ["claude_ai", "api_key", "api_key_helper", "oauth_token", "third_party", "none", "other"] },
   // 改金鑰驗證碼(0.1.37;renderer 送,trade.js kcNext):驗證碼那一格出現、碼過了關卡、錯太多次被鎖。不帶碼、不分交易所
   key_verify: { step: ["shown", "ok", "locked"] },
+  // 0.1.52 新人流失調查(spec desktop-telemetry-gaps;api 先上,值逐序同 api):
+  // data_card_shown = 資料卡真的畫出來(renderer/app.js dataCardSync;trial 綁卡免費試用、no_trial 沒有含資料的方案)
+  data_card_shown: { state: ["trial", "no_trial"] },
+  // app_quit = before-quit 時在哪個畫面(main.js quitTelemetry,畫面由 renderer/app.js quitScreen 判;問不到 = other)
+  app_quit: { screen: ["connect", "workspace", "library", "settings", "other"] },
+  // app_crash(main.js 的 crash 那一段,判法 createCrashWatch / sessionOpen):不帶錯誤原文、堆疊、路徑
+  app_crash: { kind: ["rend_crash", "rend_oom", "rend_killed", "rend_launch", "gpu_gone", "main_exc", "main_rej", "unresp", "unclean_exit"] },
+  // engine_fail = 引擎安裝失敗那一步的原因,跟 engine_setup 同送(enginesetup.js engineFailWhy)
+  engine_fail: { why: ["pre", "ws_disk", "ws_perm", "ws_other", "venv_spawn", "venv_ensurepip", "venv_exit", "venv_timeout",
+    "sdk_net", "sdk_nowheel", "sdk_resolve", "sdk_hash", "sdk_disk", "sdk_perm", "sdk_other", "sdk_timeout",
+    "pkg_net", "pkg_nowheel", "pkg_resolve", "pkg_hash", "pkg_disk", "pkg_perm", "pkg_other", "pkg_timeout"] },
+  // turn_fail_why = turn_failed 記 other 的那一輪另送細項(renderer/app.js turnFailWhy)。timeout／network 只在 errTail 認得出時才有
+  turn_fail_why: { why: ["no_reply", "exit_nonzero", "err_chunk", "err_card", "timeout", "network"] },
   // 用了哪個功能:名字是白名單(canon .claude/docs/product-telemetry.md 的登記表;api 端 desktop_telemetry.EVENTS 同一份),
   // api 每安裝每 name 每 UTC 日去重——回答「誰、哪天、用過哪些功能」,不做逐點擊計數。library_* 的送出點在 renderer/library.js(libTrack),
   // reports_* 在 renderer/reports.js、strategy_new 在 renderer/newstrategy.js(都經 libTrack)。
@@ -339,7 +355,9 @@ const EVENTS = {
     "handoff_menu", "handoff_card", "handoff_compare",
     // 0.1.50 登入鈕與升級鈕(spec login-upgrade-buttons-0150 §2;同 api 順序,api 先上):資料卡由 runtime 的 card chunk／只靠模型記號觸發、
     // 資料卡上的〔登入 Blave〕〔重新登入 Blave〕、自動下單頁事件列那顆鈕的四種去處(renderer/app.js dataGateAction)
-    "data_card_rt", "data_card_tag", "login_data", "login_event", "bind_event", "topup_event", "plan_event"] },
+    "data_card_rt", "data_card_tag", "login_data", "login_event", "bind_event", "topup_event", "plan_event",
+    // 0.1.52 連接框案一(renderer/trade.js;spec connect-account-plan1 §8,api 先上):cx_venue_pick = 點了一塊交易所磚;cx_key_page = 按了「到 X 建金鑰」。都不帶交易所名
+    "cx_venue_pick", "cx_key_page"] },
 };
 // `claude auth status` 的 authMethod 原值 → cli_auth 的 how(隨包 CLI 2.1.281 的 auth status 只會給這六個)。唯一的一份:
 // 主行程 detectAgents 算好放進 out.claude.how,畫面與主行程都讀那一欄。null／缺 = none,表外 = other
@@ -350,7 +368,8 @@ const ONCE = ["app_first_open", "first_backtest_done", "first_reply_done"];   //
 // 放主行程而不是畫面:被攻破的 renderer 對 track-feature 灌合法名字也只會出門 20 次,搶不到 api 那顆全域熔斷
 const DAILY = ["feature_used", "acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed",
   "plan_start_res", "update_failed", "lib_blocked", "heartbeat", "engine_setup", "engine_opt_fail", "lib_pick", "idea_sent", "detect_fail",
-  "device_type", "reply_notif", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go"];
+  "device_type", "reply_notif", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go",
+  "data_card_shown", "app_quit", "app_crash", "engine_fail", "turn_fail_why", "lib_buy_result"];
 // 每日一則、不分屬性值:心跳一天只要一列(live 記當天第一次送出那一刻的),下單中途開關不多送
 const DAILY_ONE = ["heartbeat"];
 const HEARTBEAT_MS = 10 * 60 * 1000;   // 啟動後 10 分鐘起每 10 分鐘看一次;當天送過就不出門(啟動當天另有 app_open)
@@ -368,7 +387,7 @@ const SID_ON = ["strat_created", "strat_backtested", "strat_deployed"];
 const SID_RE = /^[0-9a-f]{16}$/;
 const SID_KEY_RE = /^[0-9a-f]{64}$/;
 // 畫面(track-event)只准送這幾個;里程碑(app_first_open、login_done…)與主行程自己判的(plan_start_res、update_failed)不收
-const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go"];
+const FROM_RENDERER = ["acct_card_shown", "acct_card_click", "acct_card_back", "turn_failed", "connect_failed", "first_reply_done", "lib_blocked", "lib_pick", "idea_sent", "detect_fail", "auth_fail", "cli_auth", "key_verify", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go", "data_card_shown", "turn_fail_why", "lib_buy_result"];
 const DAY_RE = /^[0-9]{8}$/;
 const DEFAULT_ON = true;   // Wei 2026-09-21:預設開、照實告知、可關
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -577,4 +596,44 @@ function anyBacktest(stratDir) {
   return false;
 }
 
-module.exports = { createTelemetry, EVENTS, FROM_RENDERER, STRAT_KINDS, STRAT_MARKETS, statusHeaders, anyBacktest, cliAuthHow };
+/* app_crash 的判法(0.1.52;main.js 接 Electron 事件)。render-process-gone 的 reason → kind:clean-exit 不算;
+   沒列到的(abnormal-exit、integrity-failure、之後 Electron 新加的)都算 rend_crash。
+   主視窗的 renderer 掛掉時自動重新載入,整次啟動只一次(Wei 核准):第二次就停在那裡,不讓一個每次都會炸的頁面無限重載 */
+const REND_GONE = { oom: "rend_oom", "memory-eviction": "rend_oom", killed: "rend_killed", "launch-failed": "rend_launch" };
+const rendGoneKind = (reason) => (reason === "clean-exit" ? null : REND_GONE[reason] || "rend_crash");
+// o:{ track(kind), reload(target) }。rendGone 回 true = 這次重新載入了
+function createCrashWatch(o) {
+  let reloaded = false;
+  return {
+    rendGone(reason, target) {
+      const kind = rendGoneKind(reason);
+      if (!kind) return false;
+      try { o.track(kind); } catch (_) { /* 追蹤永遠不能炸 */ }
+      if (reloaded) return false;
+      reloaded = true;
+      try { o.reload(target); } catch (_) { return false; }
+      return true;
+    },
+    childGone(type, reason) { if (type === "GPU" && reason !== "clean-exit") { try { o.track("gpu_gone"); } catch (_) { /* 同上 */ } } },
+  };
+}
+/* unclean_exit:啟動時把 session 檔寫成 clean:false、正常結束(will-quit)寫回 true。下次開 app 讀到 false = 上次沒正常結束
+   (主行程原生當掉、被強制結束;只有這個方法抓得到)。沒有檔、讀不出來 = 當成正常(新安裝、舊版升上來不誤報) */
+function sessionMark(file, clean) {
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = file + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify({ clean }));
+    fs.renameSync(tmp, file);
+  } catch (_) { /* 記不了 = 下次少報或多報一則 */ }
+}
+function sessionOpen(file) {
+  let unclean = false;
+  try { unclean = JSON.parse(fs.readFileSync(file, "utf8")).clean === false; } catch (_) { /* 沒有檔 = 正常 */ }
+  sessionMark(file, false);
+  return unclean;
+}
+const sessionClose = (file) => sessionMark(file, true);
+
+module.exports = { createTelemetry, EVENTS, FROM_RENDERER, STRAT_KINDS, STRAT_MARKETS, statusHeaders, anyBacktest, cliAuthHow,
+  rendGoneKind, createCrashWatch, sessionOpen, sessionClose };

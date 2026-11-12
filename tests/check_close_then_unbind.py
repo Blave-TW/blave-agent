@@ -100,6 +100,11 @@ def build_workspace():
     shutil.copytree(os.path.join(ROOT, "lib"), os.path.join(WS, "lib"),
                     ignore=shutil.ignore_patterns("__pycache__"))
     shutil.copy(os.path.join(ROOT, "manager", "flatten.py"), os.path.join(WS, "manager", "flatten.py"))
+    with open(os.path.join(WS, "lib", "tw_clock.py"), "a") as f:
+        # the flatten here runs only in session (the listener answers market_closed otherwise): its
+        # TW futures closes must not depend on the hour the test runs
+        # nor ask the real api for a clock sample (flatten's __main__ turns tw_clock.probe on)
+        f.write("\n\ndef close_hold(now=None):\n    return None\n\n\ndef probe():\n    return False\n")
     for vid, minimum, lots in (("fakex", 0.0001, False), ("president", 1, True), ("capital", 1, True)):
         with open(os.path.join(WS, "lib", f"account_{vid}.py"), "w") as f:
             f.write(FAKE_ACCOUNT.format(vid=vid, lots=lots))

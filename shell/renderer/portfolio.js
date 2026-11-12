@@ -205,8 +205,9 @@ function spMarket(r, name, d) {
 function spCxOn(S, now) { const w = S.spCx; return !!w && typeof w.at === "number" && now - w.at < TR_CX_SAVED_MS; }
 // 綁的那家下不了(spec §15-1):原因用這一支在選擇策略框那一列會出的那句;這一支本身不鎖(別支的問題、綁兩家)才退回通用那句
 function spOffNote(S, name, r) {
-  const rows = trPickRows(Array.isArray(S.list) ? S.list : [], [], r.can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), {}, trTwdVenueLock());
+  const rows = trPickRows(Array.isArray(S.list) ? S.list : [], [], r.can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), {}, trTwdVenueLock(), trTwStockSelf());
   const n = (rows.find((y) => y.name === name) || {}).note;
+  if (n === "twStockSelf") return { key: "tr.pick.twStockSelf" };
   if (n === "txf") return { key: "tr.pick.txf", vars: { venue: trTwVenueName(trVenueId()) } };
   if (n === "twdVenue") return { key: "tr.pick.twdVenue", vars: { venue: trVenueLabel(trVenueId(), true) } };
   if (n === "twd") return { key: "tr.pick.twd" };

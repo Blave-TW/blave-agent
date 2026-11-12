@@ -2,10 +2,9 @@
 
 Use this document when a user asks to connect their SinoPac account to Blave Agent.
 
-**Stock order placement is implemented in `lib/order_sinopac.py` — import it, never hand-write
-Shioaji order calls in a strategy or one-off script.** Every rule in the Field-Verified Lessons
-section below was learned from real rejected orders on a live account; the lib encodes all of
-them.
+**Blave never places TW stock orders — not automatically, not on request (Step 5).** Never
+hand-write Shioaji stock order calls either. The Field-Verified Lessons below were learned from
+real rejected orders on a live account and still apply to anything that touches the connection.
 
 ---
 
@@ -176,36 +175,13 @@ print("Stock positions:", stk_positions)
 
 ## Step 5 — Wire into Portfolio
 
-Add a sinopac route in `portfolio_config.json`'s `exchanges`:
-
-```json
-{
-  "account_value": 500000,
-  "exchanges": {
-    "txf_strategy": "sinopac",
-    "tsmc_strategy": "sinopac"
-  },
-  "asset_specs": {
-    "txf_strategy": {
-      "type": "futures_contracts",
-      "contract_value": 200,
-      "currency": "TWD",
-      "lot_size": 1,
-      "sinopac_symbol": "TXFR1"
-    },
-    "tsmc_strategy": {
-      "type": "tw_stock",
-      "lot_size": 1000,
-      "currency": "TWD",
-      "sinopac_symbol": "2330"
-    }
-  }
-}
-```
-
-Wire `manager/reconciler.py`'s `get_positions()` / `place_order()` through
-`lib/order_sinopac.py` (`get_sinopac_positions` / `place_order_sinopac`) — see
-`references/lib.md` § order_sinopac.
+**TW stocks are never traded automatically and never ordered by you — on SinoPac or any other
+broker.** Blave places orders only through strategies, and the reconciler does not take TW stocks:
+never route a stock strategy to `"sinopac"`, never wire `manager/reconciler.py` to
+`lib/order_sinopac.py`, and never call its functions or write a script that does. A stock strategy
+going to a real account: point the user to 策略組合 to see the strategy's holdings and place those
+orders themselves in their broker's app. `lib/order_sinopac.py` stays in `lib/` only so machines
+that already use it keep working.
 
 ---
 
@@ -221,24 +197,10 @@ Wire `manager/reconciler.py`'s `get_positions()` / `place_order()` through
 
 ## Order Placement
 
-### Stocks — use the lib, do not hand-roll
+### Stocks — not placed by the agent
 
-```python
-from dotenv import dotenv_values
-from lib.order_sinopac import place_order_sinopac, get_sinopac_positions
-
-env = dotenv_values('.env')
-
-# Reconciler-style: diff in TWD (>0 buy, <0 sell); splits into ≤999-share
-# odd-lot market orders, polls each to acknowledgement, raises SinopacError
-# on rejection (with the broker's message) instead of failing silently.
-result = place_order_sinopac(env, '2330', 10_000, client_tag='twm7')
-```
-
-For a single odd-lot order with explicit share count, use
-`place_odd_lot_order(env, symbol, 'buy'|'sell', shares, client_tag=...)`. Both functions
-return exchange-confirmed fill data (`status`, `filled_qty`, `avg_fill_price`, `msg`) —
-report those numbers, never the intent. Full API: `references/lib.md`.
+See Step 5: no automatic stock orders and no stock orders placed by you. `lib/order_sinopac.py`
+is kept for compatibility only — do not call it.
 
 ### TXF futures (raw Shioaji — no lib yet, not live-verified)
 
@@ -290,6 +252,5 @@ After the user completes setup, in order:
 1. Connection test (simulation mode) → accounts list visible
 2. Query account equity → confirm equity > 0
 3. Query positions → no exceptions
-4. Only after the user confirms: enable the reconciler (see `references/deployment.md`).
-   Live orders go through `lib/order_sinopac.py`, which requires `SINOPAC_LIVE=true` and an
-   activated CA certificate (lessons 1-2).
+4. Stop there: TW stock orders are never placed by Blave (Step 5) — the user places them in
+   their broker's app from the holdings 策略組合 shows.

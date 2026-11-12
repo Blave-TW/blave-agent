@@ -351,7 +351,7 @@ function caplPickedBody() {
 }
 function caplBody(view) {
   const f = document.createDocumentFragment();
-  f.appendChild(cxVenueField(TR_BAGS.local));
+  f.appendChild(cxVenueField(TR_BAGS.local, true));
   if (view === "m-mac") { f.appendChild(caplP("cap-lead", t("capl.mac"))); return f; }
   if (view === "l-cert-load") { f.appendChild(caplP("cap-lead", t("capl.looking"))); return f; }
   if (view === "l-form") { f.appendChild(caplFormBody()); return f; }

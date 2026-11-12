@@ -629,7 +629,10 @@
     // 回合中不鎖(別條在跑照送,另開分頁);已送出是真 disabled:拿著焦點的鈕要停用,先交給分頁鈕
     if (v.disabled && !st.btn.disabled && document.activeElement === st.btn && typeof opts.refocus === "function") opts.refocus();
     st.btn.disabled = v.disabled;
-    if (st.kind === "empty") { if (on) busyLabel(st.btn, opts.t("rob.btnSent")); else st.btn.textContent = opts.t("rob.btnScan"); }
+    if (st.kind === "empty") {
+      if (on) busyLabel(st.btn, opts.t("rob.btnBusy")); else st.btn.textContent = opts.t("rob.btnScan");
+      st.sr.textContent = on ? opts.t("rob.btnBusy") : "";   // 鈕字換了讀屏不一定唸(同 report-wf.js setWait)
+    }
   }
   function wireBtn(container, st, info, opts) {
     st.btn.addEventListener("click", () => {
@@ -652,18 +655,32 @@
       });
     });
   }
+  /* 空狀態 = Setup fog(canon › Components › Setup fog;spec param-scan-empty-2026-11-09 A 案):示意底是掃完那一頁的真版面
+   * (meta、結論卡、熱圖),用結果頁同一支 builder 畫固定假資料,不讀用戶的任何東西。|Sharpe| 都 <1.75:色階只到第三階 34%,模糊後不出亮塊 */
+  const FOG_SCAN = { row_param: "p1", col_param: "p2", row_vals: [10, 15, 20, 25, 30, 35], col_vals: [1, 1.5, 2, 2.5, 3, 3.5, 4], window: 1, fee: 0.0005, start: "2021-01-01", end: "2026-11-01",
+    grid: [[-0.4, -0.1, 0.3, 0.6, 0.4, 0.1, -0.2], [-0.2, 0.2, 0.7, 1.1, 0.9, 0.5, 0], [0.1, 0.5, 1, 1.4, 1.2, 0.6, 0.2],
+      [0, 0.4, 0.9, 1.3, 1.6, 0.4, -0.3], [-0.3, 0.1, 0.5, 0.8, 0.3, -0.2, -0.5], [-0.6, -0.3, 0, 0.2, -0.1, -0.4, -0.7]] };
+  function fogUnder(opts) {
+    const sc = sanitizeScan(FOG_SCAN, null, "p1 = 25\np2 = 2.5\n"), root = el("div", "bt rob");
+    root.append(buildMeta({ symbol: "BTCUSDT", interval: "1h" }, sc, opts), buildCard(sc, opts.t), buildHeat(sc, opts.t).node);
+    return root;
+  }
   function renderEmpty(el0, data, sig, opts) {
-    const box = el("div", "rob-empty");
-    box.appendChild(el("p", "rob-empty-txt", opts.t("rob.empty")));
-    const btn = el("button", "btn-out");
+    const fog = el("div", "fog rob-fog"), under = el("div", "fog-under"), card = el("div", "fog-card");
+    under.setAttribute("aria-hidden", "true");
+    under.inert = true;
+    try { under.appendChild(fogUnder(opts)); } catch (e) { console.warn("[robust]", e); }
+    const btn = el("button", "btn-out"), sr = el("span", "sr-only");
     btn.type = "button";
-    box.appendChild(btn);
-    const st = { kind: "empty", name: data.name, data, sig, box, btn };
+    sr.setAttribute("role", "status");
+    card.append(el("p", "", opts.t("rob.fog")), btn, sr);
+    fog.append(under, card);
+    const st = { kind: "empty", name: data.name, data, sig, box: fog, btn, sr };
     wireBtn(el0, st, scanInfo(data.stats && typeof data.stats === "object" ? data.stats : null, null), opts);
     shown.set(el0, st);
     syncBtn(st, opts);
     el0.textContent = "";
-    el0.appendChild(box);
+    el0.appendChild(fog);
   }
   /* 結果頁頂列:meta(掃描自己的條件)+「重新掃描」(位置同樣本外驗證的「重新驗證」,右上)。
    * 鈕型照 VAL_BTN(syncBtn 套);已送出時鈕裡轉圈 */
@@ -672,7 +689,7 @@
     try { top.appendChild(buildMeta(stats, sc, opts)); } catch (e) { console.warn("[robust]", e); }
     const btn = el("button", "rob-go");
     btn.type = "button";
-    if (snt) busyLabel(btn, opts.t("rob.btnSent"));
+    if (snt) busyLabel(btn, opts.t("rob.btnBusy"));
     else btn.textContent = opts.t("rob.btnRescan");
     top.appendChild(btn);
     const st = { kind: "result", name: data.name, data, sig: sentSig(data), box: top, btn, sent: snt, stale: !!sc.stale };

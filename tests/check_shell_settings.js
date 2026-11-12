@@ -432,9 +432,12 @@ let M = mdlOptions(D, "claude", true);
     && /if \(cur === "blave" && hasToken\) balLoad\(\);/.test(cut("mpOpen")) && /\n  if \(cur === "blave" && hasToken\) balLoad\(\);/.test(src) && /\.mp-bill \.b \{ white-space: nowrap;/.test(css));
   ok("③ 模型接入:Blave AI 那一列登入後只講怎麼收錢(descSetNoNum)、沒登入講首次綁卡的贈額(descSet,帶 {q});連結畫面那張卡是另一組字(cn.blave.desc 只給本機已登入 CLI 的人,預設掛 descFreeNoNum)", M[0].desc === "cn.blave.descSetNoNum" && mdlOptions(D, "claude", false)[0].desc === "cn.blave.descSet" && mdlOptions(D, null, false, { oauth: true })[0].desc === "cn.blave.descSet"
     && /data-i18n="cn\.blave\.descFreeNoNum"/.test(html) && /msgid "cn\.blave\.desc"\nmsgstr "登入就能用，按用量計費"/.test(PO2[0]) && /msgid "mp\.billBal"\nmsgstr "Balance \{n\} TWD"/.test(PO2[1]));
-  ok("③ 兩句各一行、句尾不加句號(寬度預算:zh ≤ 346px、en ≤ 302px,設計師量的)", /msgid "cn\.blave\.descSet"\nmsgstr "登入就有 \{q\} TWD 額度，用完才綁卡"\n/.test(PO2[0]) && /msgid "cn\.blave\.descSetNoNum"\nmsgstr "按用量從 Blave 餘額扣款"\n/.test(PO2[0])
-    && /msgid "cn\.blave\.descSet"\nmsgstr "\{q\} TWD of credit, card only when it runs out"\n/.test(PO2[1]) && /msgid "cn\.blave\.descSetNoNum"\nmsgstr "Pay per use from your Blave balance"\n/.test(PO2[1])
-    && /\.cn-opt \.m\{[^}]*white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/.test(css)); }
+  ok("③ 兩句各一行、句尾不加句號(寬度預算:zh ≤ 346px、en ≤ 302px,設計師量的)", /msgid "cn\.blave\.descSet"\nmsgstr "登入就有 \{q\} TWD 額度，用完才綁卡"\n/.test(PO2[0]) && /msgid "cn\.blave\.descSetNoNum"\nmsgstr "按用量扣餘額"\n/.test(PO2[0])
+    && /msgid "cn\.blave\.descSet"\nmsgstr "\{q\} TWD of credit, card only when it runs out"\n/.test(PO2[1]) && /msgid "cn\.blave\.descSetNoNum"\nmsgstr "Pay per use from balance"\n/.test(PO2[1])
+    && /\.mdl-row \.m\{[^}]*white-space:nowrap;overflow:hidden;text-overflow:ellipsis\}/.test(css)); }
+  ok("③ 模型接入減字(spec settings-model-access §5):組標副句「Blave 不收費」、Codex 下載兩句不再講「Codex 引擎」、已存金鑰列副行「API 金鑰」(zh / en)",
+    [["cn.local.desc", "Blave 不收費", "No Blave charge"], ["cn.pkgSize", "需下載約 {size} MB", "Downloads about {size} MB"], ["cn.pkgDl", "下載中 {a} / {b} MB", "Downloading {a} / {b} MB"], ["ak.yours", "API 金鑰", "API key"]]
+      .every(([k, z, e]) => PO2[0].includes(`msgid "${k}"\nmsgstr "${z}"\n`) && PO2[1].includes(`msgid "${k}"\nmsgstr "${e}"\n`)));
 ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」;用中的那一列沒有動作(列尾「使用中」);裝了沒登入的列只有〔登入〕,不再並排「尚未登入」", M.length === 3 && shape(M[0]) === "blave|false||cn.use" && shape(M[1]) === "claude|true||null" && shape(M[2]) === "codex|false||cn.signIn");
 { // 列尾只放一樣:有鈕(或「使用中」)的列沒有狀態字——列舉 引擎 × token × 等待 × 偵測結果,不是抽樣
   const DS = [null, D, { claude: { installed: false }, codex: { installed: true, loggedIn: true } }, { claude: { installed: true, loggedIn: false }, codex: { installed: false } },
@@ -475,7 +478,7 @@ ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」
     && sh(cx({ phase: "download", bytes: 1, total: 2, fail: null }, { codex: { installed: true, loggedIn: false } })) === "codex|-|-|-|cn.signIn|||" && mdlOptions(null, "claude", true, null, null, { phase: "idle", fail: null })[2].st.key === "cn.detecting");
   ok("mdlAct:下載列(o.pkg)走 codexPkgGo(reinstall),不走 connect／localLogin", /if \(o\.pkg\) return codexPkgGo\(o\.reinstall, "set-model"\);/.test(fnSrc("mdlAct")) && fnSrc("mdlAct").indexOf("o.pkg") < fnSrc("mdlAct").indexOf("return connect("));
   ok("mdlPaint:傳 PKG.snap 當第 6 參數;說明與狀態字帶 vars", /mdlOptions\(MDL\.busy \? null : lastDetect, cur, hasToken, pend, typeof AK === "object" \? AK\.info : null, PKG\.snap\)/.test(fnSrc("mdlPaint"))
-    && /o\.descVars \? t\(o\.desc, o\.descVars\)/.test(fnSrc("mdlPaint")) && /t\(o\.st\.key, o\.st\.vars\)/.test(fnSrc("mdlPaint"))); }
+    && /o\.descVars \? t\(desc, o\.descVars\)/.test(fnSrc("mdlPaint")) && /t\(o\.st\.key, o\.st\.vars\)/.test(fnSrc("mdlPaint"))); }
 { // 跑不起來 / 沒有回應(稽核 P2-4):比照連結畫面,那一列寫狀態、灰掉、不給〔登入〕;一般沒登入照舊〔登入〕
   const W = { claude: { installed: true, loggedIn: false, why: "claude_timeout" }, codex: { installed: true, loggedIn: false, why: "codex_cantrun" } };
   const A = mdlOptions(W, "blave", true), B = mdlOptions(D, "claude", true), C = mdlOptions(W, "blave", true, { login: "codex" });
@@ -483,14 +486,14 @@ ok("三個選項、選一個:就緒的列不講狀態、動作一律「使用」
     shape(A[1]) === "claude|false|st.noResp|null" && shape(A[2]) === "codex|false|st.cantRun|null" && A[1].off && A[2].off
     && shape(B[2]) === "codex|false||cn.signIn" && !B[2].off && C[2].act === "login.cancel" && C[2].st === null, [A, B, C].map((m) => m.slice(1, 3).map(shape)));
   ok("模型接入:claude「無法啟動」那一列說明是 row.reinstall(帶名字),codex 不給(自己裝的不看);「沒有回應」、一般沒登入不加", mdlOptions({ claude: { installed: true, loggedIn: false, why: "claude_cantrun" }, codex: { installed: false } }, "blave", true)[1].desc === "row.reinstall" && A[2].desc === null && A[1].desc === null && B[2].desc === null
-    && /tc\.appendChild\(el\("p", "m", [^\n]*t\(o\.desc, \/\^row\\\.\/\.test\(o\.desc\) \? rowVars\(o\.kind, o\.name\) : undefined\)\)\)/.test(src), [A[1].desc, A[2].desc, B[2].desc]);
+    && /tc\.appendChild\(el\("p", "m", [^\n]*t\(desc, \/\^row\\\.\/\.test\(desc\) \? rowVars\(o\.kind, o\.name\) : undefined\)\)\)/.test(src), [A[1].desc, A[2].desc, B[2].desc]);
   // 金鑰設在 agent 回合讀不到的地方(main.js authOutside):沒登入那一列多一句出路,鈕照舊〔登入〕;跑不起來、偵測中、已登入都不出
   const K = { claude: { installed: true, loggedIn: false, authOutside: true }, codex: { installed: true, loggedIn: false, authOutside: true } };
   const KW = { claude: { installed: true, loggedIn: false, why: "claude_timeout", authOutside: true }, codex: { installed: true, loggedIn: true, authOutside: true } };
   const KO = mdlOptions(K, "claude", true), KX = mdlOptions(KW, "blave", true);
   ok("模型接入:authOutside 的沒登入列說明是 row.keyOff、鈕仍是〔登入〕;沒有回應、已登入、偵測中不出", KO[1].desc === "row.keyOff" && KO[2].desc === "row.keyOff" && KO[1].act === "cn.signIn"
     && KX[1].desc === null && KX[2].desc === null && mdlOptions(null, "claude", true)[1].desc === null, [KO[1], KO[2], KX[1], KX[2]].map((o) => o.desc));
-  ok("…畫面:off 的列加 class off、名字灰(同 .cn-row.off)", /el\("div", "cn-opt" \+ \(o\.isCur \? " is-cur" : ""\) \+ \(o\.off \? " off" : ""\)\)/.test(src) && /\.cn-opt\.off \.n\{color:var\(--ink-3\)\}/.test(css)); }
+  ok("…畫面:off 的列加 class off、名字灰(同 .cn-row.off)", /el\("div", "mdl-row" \+ \(usable \? " usable" : ""\) \+ \(o\.off \? " off" : ""\)\)/.test(src) && /\.mdl-row\.off \.n\{color:var\(--ink-3\)\}/.test(css)); }
 ok("「切換」「連結」同一個動作同一個字:三列都用 cn.use,設定頁不再出現 cn.blave.switch / cn.connect / st.signedIn", mdlOptions(D, "codex", true)[1].act === "cn.use" && mdlOptions(D, "codex", true)[0].act === "cn.use"
   && !/cn\.blave\.switch|cn\.connect|st\.signedIn/.test(mdl.replace(fnSrc("codexPkgRow"), "") + fnSrc("mdlPaint")));   // codexPkgRow 的〔連結〕是 Codex 引擎下載鈕(三個表面同一個字),不是「改用這個」
 ok("沒登入 Blave、現在用的是本機 agent:那一列是「登入並切換」(不是「登入 Blave」)", mdlOptions(D, "claude", false)[0].act === "cn.blave.signinSwitch" && mdlOptions(D, null, false)[0].act === "cn.blave.btn" && mdlOptions(D, "claude", false)[0].st === null && mdlOptions(D, null, false)[0].st === null);
@@ -503,40 +506,91 @@ M = mdlOptions(null, "claude", true);
 ok("偵測中:兩列只換狀態字、不給動作(列數不變);Blave 那一列不受偵測影響", shape(M[1]) === "claude|false|cn.detecting|null" && shape(M[2]) === "codex|false|cn.detecting|null" && M[0].act === "cn.use");
 ok("「重新偵測」只在本機有一個不能用時出:兩個都就緒不出、還沒偵測過不出", !mdlNeedsRedetect({ claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: true } })
   && mdlNeedsRedetect(D) && mdlNeedsRedetect({ claude: { installed: true, loggedIn: true }, codex: { installed: false } }) && !mdlNeedsRedetect(null));
-{ // mdlPaint 真的畫一次(假 DOM):全部就緒 → 只有「使用」「使用」「使用中」;一個沒登入 → 那一列講、本機那組底下出「重新偵測」(安靜文字鈕,不在組標題)
-  var MDL = MDL || { busy: false }, PKG = { snap: null, redetect: false }, lastDetect = null, loginPending = null, detect = () => {}, mdlAct = () => {}, laiPaint = () => {}, cnFreeQ = () => "30"; hasToken = true;
+{ // mdlPaint 真的畫一次(假 DOM),B 單選列:radio 表示現在用哪個;右欄只放「還要先做的那一步」或短狀態字;整頁不出「使用」「使用中」
+  var MDL = MDL || { busy: false }, PKG = { snap: null, redetect: false }, lastDetect = null, loginPending = null, detect = () => {}, mdlAct = () => {}, laiPaint = () => {}, cnFreeQ = () => "30", AK; hasToken = true;
+  const J = JSON.stringify;
   eval(fnSrc("mdlPaint"));
+  const mk0 = document.createElement; document.createElement = (tag) => { const n = el(), ae = n.addEventListener; n.tag = tag; n.addEventListener = (ev, fn) => { if (ev === "change") n.onchange = fn; ae(ev, fn); }; return n; };
   const walk = (n, out = []) => { (n.children || []).forEach((c) => { if (c && typeof c === "object") { out.push(c); walk(c, out); } }); return out; };
   const texts = () => walk($("set-model")).map((n) => [n._cls, n.textContent]);
+  // 列 = label(或停用時的 div)裡 radio + 文字欄,右欄槽是列的第二個子節點(不在 label 裡)
+  const rows = () => walk($("set-model")).filter((n) => /^mdl-row( |$)/.test(n._cls)).map((r) => { const lab = r.children[0], rd = lab.children[0], tc = lab.children[1];
+    return { kind: r.dataset.kind, lab: lab.tag, usable: / usable/.test(r._cls), on: !!rd.checked, off: !!rd.disabled, rdTag: rd.tag + ":" + rd.type + ":" + rd.name, desc: (tc.children[1] || {}).textContent,
+      tail: r.children.slice(1).map((c) => c._cls + ":" + c.textContent), tailDis: r.children.slice(1).map((c) => !!c.disabled) }; });
+  const list = () => $("set-model").children.find((n) => n._cls === "mdl-list");
   lastDetect = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: true } }; cur = "codex"; mdlPaint();
-  let all = walk($("set-model")), btns = all.filter((n) => n._cls === "pf-act").map((n) => n.textContent), quiet = all.filter((n) => /btn-quiet/.test(n._cls));
-  ok("全部就緒:整頁只有「使用」「使用」「使用中」,沒有「已登入」、沒有「重新偵測」", btns.join() === "cn.use,cn.use" && all.some((n) => n._cls === "cn-cur" && n.textContent === "cn.current")
-    && !texts().some(([, x]) => /st\.signedIn|cn\.redetect/.test(x)) && quiet.length === 0);
+  let all = walk($("set-model")), R = rows();
+  ok("全部就緒(用 Codex):三列 radio 都按得動、整列是 label、選中的是 Codex;右欄全空;整頁沒有「使用」「使用中」「已登入」「重新偵測」",
+    R.map((r) => r.kind + (r.on ? "*" : "") + (r.off ? "-" : "")).join() === "blave,claude,codex*" && R.every((r) => r.lab === "label" && r.usable && r.rdTag === "input:radio:mdl-pick" && r.tail.length === 0)
+    && !texts().some(([, x]) => /cn\.use|cn\.current|st\.signedIn|cn\.redetect/.test(x)) && !all.some((n) => /pf-act|cn-cur/.test(n._cls)));
+  { const raw = all.filter((n) => /^mdl-row( |$)/.test(n._cls)), r = raw.find((n) => n.dataset.kind === "claude"), rd = r.children[0].children[0]; let n = 0; rd.click = () => n++;
+    const gap = { target: { closest: () => null } };
+    r.onclick(gap); const g = n; r.onclick({ target: { closest: (q) => q } }); const inner = n; rd.disabled = true; r.onclick(gap); const dis = n;
+    const cr = raw.find((x) => x.dataset.kind === "codex"), crd = cr.children[0].children[0]; crd.click = () => n++; cr.onclick(gap);
+    ok("整列是點擊面(稽核 v052 必改 3):點在欄距／列內距轉給 radio;label 裡與右欄鈕的點擊不轉;radio 停用、已選中不轉;鎖住時不給手指",
+      g === 1 && inner === 1 && dis === 1 && n === 1 && /\.mdl-row\.usable:has\(\.mdl-rd:enabled\)\{cursor:pointer\}/.test(css) && !/\.mdl-row\.usable \.t\{cursor:pointer\}/.test(css)); }
+  { const tok = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "tokens.css"), "utf8"), dk = tok.indexOf('[data-theme="dark"] {');
+    ok("已選又停用的 radio 退一階(canon › Checkbox / Radio › Disabled):light greyLightMedium＋白點、dark darkBorder＋#546168 點",
+      dk > 0 && /\.mdl-rd:disabled:checked\{background-color:var\(--check-disabled-checked-bg\);border-color:var\(--check-disabled-checked-bg\);background-image:var\(--check-disabled-indicator-radio\)\}/.test(css)
+      && /--check-disabled-checked-bg: var\(--color-greyLightMedium\);\n  --check-disabled-indicator-radio: url\([^)]*fill='%23ffffff'/.test(tok.slice(0, dk))
+      && /--check-disabled-checked-bg: var\(--color-darkBorder\);\n  --check-disabled-indicator-radio: url\([^)]*fill='%23546168'/.test(tok.slice(dk))); }
+  ok("整組是 role=radiogroup、aria-label 是頁名(set.cat.model);列吃同一張 grid", list().attrs.role === "radiogroup" && list().attrs["aria-label"] === "set.cat.model"
+    && /\.mdl-list\{display:grid;grid-template-columns:18px minmax\(0,1fr\) minmax\(76px,auto\)/.test(css) && /\.mdl-row\{grid-column:1\/-1;display:grid;grid-template-columns:subgrid;/.test(css)
+    && /\.mdl-slot\{grid-column:3;justify-self:stretch\}/.test(css) && !/#set-model \.pf-act\{[^}]*min-width/.test(css));
   lastDetect = { claude: { installed: true, loggedIn: false }, codex: { installed: false } }; cur = "blave"; mdlPaint();
-  all = walk($("set-model")); const more = all.find((n) => n._cls === "cn-more"), rb = more && more.children[0];
-  const grpH = all.filter((n) => n._cls === "cn-grp-h");
-  ok("一個沒登入:那一列只有〔登入〕(沒有「尚未登入」),沒裝的「未偵測到」沒有鈕;本機那組底下出安靜的「重新偵測」、組標題裡沒有鈕",
-    all.filter((n) => n._cls === "st").map((n) => n.textContent).join() === "st.notFound"
-    && all.filter((n) => n._cls === "pf-act").map((n) => n.textContent).join() === "cn.signIn" && !!rb && rb._cls === "btn-quiet" && rb.textContent === "cn.redetect" && more.dataset.kind === "redetect"
-    && grpH.every((h) => !walk(h).some((c) => /pf-act|btn-quiet/.test(c._cls))));
-  // 列 = 文字欄 + 列尾;列尾放了什麼(class:字)。Blave AI 那一列的說明是 .t 的第二個子節點
-  const rows = () => walk($("set-model")).filter((n) => /^cn-opt( |$)/.test(n._cls)).map((r) => ({ kind: r.dataset.kind, desc: (r.children[0].children[1] || {}).textContent, tail: r.children.slice(1).map((c) => c._cls + ":" + c.textContent) }));
-  const blave = () => rows()[0], grps = () => $("set-model").children.filter((n) => n._cls === "cn-grp");
-  ok("第一組(Blave AI)沒有小標:只有 .cn-opts;第二組的小標「用你自己的 AI · Blave 不收 AI 費用」照舊;cn.blave.group 兩語都刪了", grps().length === 2 && grps()[0].children.map((c) => c._cls).join() === "cn-opts"
-    && grps()[1].children[0]._cls === "cn-grp-h" && /^cn\.local\.label·cn\.local\.desc$/.test(grps()[1].children[0].textContent) && grpH.length === 1
-    && !/cn\.blave\.group/.test(src + PO2[0] + PO2[1]) && /\.cn-grp>\.cn-opts:first-child\{margin-top:0\}/.test(css));
+  all = walk($("set-model")); R = rows(); const more = all.find((n) => /^cn-more/.test(n._cls)), rb = more && more.children[0];
+  const grpH = all.filter((n) => /cn-grp-h/.test(n._cls));
+  ok("一個沒登入:那一列 radio 停用、右欄〔登入〕;沒裝的 radio 停用、右欄「未偵測到」(狀態字,同鈕高);本機那組底下出安靜的「重新偵測」、組標題裡沒有鈕",
+    J(R.map((r) => [r.kind, r.on, r.off, r.lab, r.tail.join()])) === J([["blave", true, false, "label", ""], ["claude", false, true, "div", "pf-act mdl-slot:cn.signIn"], ["codex", false, true, "div", "mdl-slot mdl-st:st.notFound"]])
+    && !!rb && rb._cls === "btn-quiet" && rb.textContent === "cn.redetect" && more.dataset.kind === "redetect" && grpH.every((h) => !walk(h).some((c) => /pf-act|btn-quiet/.test(c._cls))), J(R));
+  const blave = () => rows()[0];
+  ok("Blave AI 那一列沒有小標;本機那一組的小標「用你自己的 AI · Blave 不收費」在 Blave 列與本機列之間;cn.blave.group 兩語都刪了", grpH.length === 1
+    && list().children.map((c) => c._cls.split(" ")[0]).slice(0, 3).join() === "mdl-row,cn-grp-h,mdl-row" && /^cn\.local\.label·cn\.local\.desc$/.test(grpH[0].textContent)
+    && !/cn\.blave\.group/.test(src + PO2[0] + PO2[1]));
   lastDetect = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: false } };
   hasToken = false; cur = "claude"; mdlPaint(); const outNum = blave();
   cnFreeQ = () => ""; mdlPaint(); const outNoNum = blave();
-  cnFreeQ = () => "30"; oauthPending = true; mdlPaint(); const waitOauth = blave(), lockedWhileWait = rows().slice(1).map((r) => r.tail.join()).join("|");
+  cnFreeQ = () => "30"; oauthPending = true; mdlPaint(); const waitOauth = blave(), lockedWhileWait = rows().slice(1);
   oauthPending = false; loginPending = "codex"; mdlPaint(); const waitLogin = rows();
   loginPending = null; hasToken = true; mdlPaint(); const inIdle = blave();
   cur = "blave"; mdlPaint(); const inCur = blave();
   ok("Blave AI 的說明:沒登入 + 有數字 → 贈額句(數字來自 cnFreeQ = public_tiers.free_ai_credit,不是綁卡試用那池 planVars().q);沒登入 + 拿不到數字 → 扣款句;已登入(不管用不用)→ 扣款句", outNum.desc === 'cn.blave.descSet{"q":"30"}' && outNoNum.desc === "cn.blave.descSetNoNum" && inIdle.desc === "cn.blave.descSetNoNum" && inCur.desc === "cn.blave.descSetNoNum");
-  ok("Blave AI 的列尾只有一樣:沒登入 = 一顆鈕(沒有「尚未登入」)、等待登入中 = 只有「取消等待」、已登入 = 「使用」、使用中 = 「使用中」",
-    outNum.tail.join() === "pf-act:cn.blave.signinSwitch" && waitOauth.tail.join() === "pf-act:oauth.cancel" && waitOauth.desc === 'cn.blave.descSet{"q":"30"}' && inIdle.tail.join() === "pf-act:cn.use" && inCur.tail.join() === "cn-cur:cn.current"
-    && lockedWhileWait === "cn-cur:cn.current|pf-act:cn.signIn");
-  ok("本機登入等待中:那一列只有「取消等待」;每一列的列尾都只有一樣", waitLogin[2].tail.join() === "pf-act:login.cancel" && waitLogin.every((r) => r.tail.length === 1));
+  ok("Blave AI:沒登入 = radio 停用＋右欄一顆鈕;等待登入中 = 只有「取消等待」;已登入沒在用 = radio 可按、右欄空;使用中 = radio 選中、右欄空",
+    outNum.off && outNum.tail.join() === "pf-act mdl-slot:cn.blave.signinSwitch" && waitOauth.tail.join() === "pf-act mdl-slot:oauth.cancel" && !waitOauth.tailDis[0] && waitOauth.desc === 'cn.blave.descSet{"q":"30"}'
+    && !inIdle.off && !inIdle.on && inIdle.tail.length === 0 && inCur.on && inCur.tail.length === 0, J([outNum, waitOauth, inIdle, inCur]));
+  ok("等待 OAuth 中:別列的 radio 全停用(選中的那顆照樣選中)、別列的鈕鎖住", lockedWhileWait[0].on && lockedWhileWait.every((r) => r.off) && lockedWhileWait[1].tail.join() === "pf-act mdl-slot:cn.signIn" && lockedWhileWait[1].tailDis[0] === true, J(lockedWhileWait));
+  ok("本機登入等待中:那一列只有「取消等待」;每一列右欄最多一樣", waitLogin[2].tail.join() === "pf-act mdl-slot:login.cancel" && waitLogin.every((r) => r.tail.length <= 1));
+  // radio 按得動 ⇔ 這一列今天的 act 是 cn.use 或正在用(spec §3 B);列舉 引擎 × token × 偵測結果,不是抽樣
+  { const DS = [null, { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: true } }, { claude: { installed: true, loggedIn: false }, codex: { installed: false } },
+      { claude: { installed: true, loggedIn: false, why: "claude_timeout" }, codex: { installed: true, loggedIn: true } }, { claude: { installed: true, loggedIn: false, path: "/x", authUnknown: true }, codex: { installed: false } }];
+    const bad = [];
+    for (const d of DS) for (const c of [null, "blave", "claude", "codex"]) for (const tok of [true, false]) {
+      lastDetect = d; cur = c; hasToken = tok; mdlPaint();
+      const want = mdlOptions(d, c, tok, {}, null, null).map((o) => o.act === "cn.use" || !!o.isCur), got = rows().map((r) => !r.off && r.lab === "label");
+      if (J(want) !== J(got)) bad.push(J([c, tok, want, got])); }
+    ok("radio 可按的列 = act 是 cn.use 或 isCur 的列(其他停用、不是 label)", bad.length === 0, bad.slice(0, 3).join(" ")); }
+  // 已存金鑰:〔修改〕在右欄、不在 label 裡(點它不會被當成選這一列);說明是「API 金鑰」
+  AK = { info: { presets: [{ id: "deepseek", name: "DeepSeek" }], saved: "deepseek" } }; lastDetect = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: true } }; cur = "claude"; hasToken = true; mdlPaint();
+  { const ak = rows().find((r) => r.kind === "apikey"), akRow = walk($("set-model")).find((n) => /^mdl-row/.test(n._cls) && n.dataset.kind === "apikey");
+    ok("API 金鑰存了:radio 可按、右欄〔修改〕是 label 外面的獨立格、說明「ak.yours」", !!ak && ak.lab === "label" && !ak.off && ak.tail.join() === "pf-act mdl-slot:ak.edit" && ak.desc === "ak.yours"
+      && !walk(akRow.children[0]).some((n) => n.textContent === "ak.edit"), J(ak)); }
+  AK = undefined;
+  // Codex 隨包:下載大小這一頁不講(Wei 11-09);下載進度畫在說明那一行、右欄空
+  lastDetect = { claude: { installed: true, loggedIn: true }, codex: { installed: false } }; cur = "claude";
+  PKG.snap = { phase: "idle", fail: null, size: 166 }; mdlPaint(); const pkIdle = rows()[2];
+  PKG.snap = { phase: "download", bytes: 12.3e6, total: 166e6, fail: null }; mdlPaint(); const pkDl = rows()[2];
+  PKG.snap = null;
+  ok("Codex 隨包:沒裝 = 沒有說明行(不講需下載幾 MB)、右欄〔登入〕;下載中 = 說明行「下載中 a / b MB」、右欄空", pkIdle.desc === undefined && pkIdle.tail.join() === "pf-act mdl-slot:cn.signIn"
+    && pkDl.desc === 'cn.pkgDl{"a":"12.3","b":"166.0"}' && pkDl.tail.length === 0, J([pkIdle, pkDl]));
+  // 回合中切換:先跳「中斷回覆」確認框;按取消時不會有重畫——radio 要當場畫回 cur 那一列(spec §3 B「切換失敗時重畫回原本那顆」)
+  { lastDetect = { claude: { installed: true, loggedIn: true }, codex: { installed: true, loggedIn: true } }; cur = "codex"; hasToken = true; mdlPaint();
+    const acted = [], keepAct = mdlAct; mdlAct = (o) => acted.push(o.kind);
+    const rd = walk($("set-model")).find((n) => n.tag === "input" && n.value === "claude");
+    running = true; rd.checked = true; rd.onchange(); running = false;
+    const after = rows(); mdlAct = keepAct;
+    ok("回合中點另一列的 radio:照樣交給 mdlAct(它會先問),但畫面立刻畫回現在用的那一列(codex 仍選中、claude 沒選中)", acted.join() === "claude"
+      && after.find((r) => r.kind === "codex").on && !after.find((r) => r.kind === "claude").on, J([acted, after.map((r) => r.kind + r.on)])); }
+  document.createElement = mk0;
   hasToken = true; cur = null; lastDetect = null;
   // 連結畫面(另一份 DOM:row / paintRows):同一條規則——有〔登入〕鈕的列不並排「尚未登入」;沒鈕可按的(偵測中… / 未偵測到)照講
   var LAI_INSTALL = { claude: "x" }, localReady = false, paintBlaveBtn = () => {}, connect = () => {}, localLogin = () => {}, whyState = () => null, authUnknown = () => false, ROWMSG = {}, rowMsg = () => "", btn = (cls, text) => { const b = el(); b.className = cls; b.textContent = text; return b; };
@@ -550,12 +604,13 @@ ok("「重新偵測」只在本機有一個不能用時出:兩個都就緒不出
     && /<div class="cn-sec cn-blave">\s*<!--[^>]*-->\s*<p class="cn-head">\s*<span class="cn-ttl" data-i18n="cn\.blave\.name"><\/span>\s*<span class="cn-meta" data-i18n="cn\.blave\.descFreeNoNum"><\/span>\s*<\/p>\s*<span class="cn-cur" id="cn-blave-cur" hidden><\/span>\s*<button class="btn-fill" id="btn-blave" type="button"><\/button>/.test(html)); }
 ok("連結畫面那張卡不再搬進設定(兩邊各畫各的,共用的是底下的邏輯)", !/set-model"\)\.appendChild\(document\.querySelector\("\.cn-card"\)\)/.test(src) && !/\$\("cn-foot"\)\.before\(/.test(src) && /function mdlPaint\(\)/.test(src) && /id="set-model"[^>]*><\/div>/.test(html));
 ok("登入 / 連結完重畫之後,焦點回同一列的鈕(兩個表面都靠 data-kind)", /if \(kind\) div\.dataset\.kind = kind;/.test(src) && /r\.dataset\.kind = o\.kind;/.test(src) && /const box = host\(\), again = box && \(box\.querySelector\('\[data-kind="' \+ kind \+ '"\] button'\)/.test(src));
-ok("模型接入頁的小框鈕只亮這一頁(不動全站的 .pf-act);「使用中」= 灰填 + 加粗 + 列尾三個字", /#set-model \.pf-act\{[^}]*--ink-2/.test(css) && /\.cn-opt\.is-cur\{background:var\(--surface-muted\)\}/.test(css) && /\.cn-opt\.is-cur \.n\{font-weight:600\}/.test(css));
+ok("模型接入頁的小框鈕只亮這一頁(不動全站的 .pf-act);選中只靠 radio(canon Radio,--check-*),不加灰底、名稱不加粗", /#set-model \.pf-act\{[^}]*--ink-2/.test(css)
+  && /\.mdl-rd:checked\{background-color:var\(--check-on-bg\);border-color:var\(--check-on-bg\);background-image:var\(--check-on-radio\)\}/.test(css) && !/\.mdl-row[^{]*\{[^}]*font-weight:600/.test(css) && !/\.mdl-row[^{]*\{[^}]*surface-muted/.test(css));
 ok("字串:設定頁與連結畫面那一列都是「Blave AI」(mockup 01:連結畫面標題固定,動詞句 cn.blave.title 退役)", /msgid "cn\.blave\.name"\nmsgstr "Blave AI"/.test(PO2[0]) && !/cn\.blave\.title/.test(PO2[0] + PO2[1] + src) && /data-i18n="cn\.blave\.name"/.test(html));
 ok("字串:本機那一組改成「用你自己的 AI」(0.1.16 API 金鑰同組一列,audit 方案一);「由 Blave 提供」那個小標拿掉了(底下只有一列,而且那一列就叫 Blave AI)", /msgid "cn\.local\.label"\nmsgstr "用你自己的 AI"/.test(PO2[0]) && !/cn\.blave\.group|由 Blave 提供|Provided by Blave/.test(PO2[0] + PO2[1]));
 
 // 重畫吃掉焦點 → Esc 關不掉設定(R3-1:「重新偵測」那一顆被銷毀時踩到)
-ok("重新偵測那一組掛的是 data-kind(焦點還原查的就是它),不是 data-k", /m\.dataset\.kind = "redetect";/.test(src) && !/dataset\.k = /.test(fnSrc("mdlPaint")) && /querySelector\('\[data-kind="' \+ focusKind\.kind \+ '"\] button'\)/.test(src));
+ok("重新偵測那一組掛的是 data-kind(焦點還原查的就是它),不是 data-k", /m\.dataset\.kind = "redetect";/.test(src) && !/dataset\.k = /.test(fnSrc("mdlPaint")) && /querySelector\('\[data-kind="' \+ focusKind\.kind \+ '"\] button, \[data-kind="' \+ focusKind\.kind \+ '"\] input'\)/.test(src));
 ok("設定裡重畫過的每一塊都過同一關:焦點掉到 BODY 或掉出 modal 就放回框內(不靠個別欄位名猜對)", /function setFocusGuard\(\) \{[\s\S]{0,400}a !== document\.body && \$\("set-modal"\)\.contains\(a\)/.test(src)
   && ["mdlPaint", "acctPaintAcct", "privPaint", "connectPaint"].every((n) => /setFocusGuard\(\);\n\}/.test(fnSrc(n))));
 // V4:等待狀態(oauthPending / planLoginBusy)是一件事、兩份 DOM。列舉:凡是改這兩個旗標的地方都要重畫兩個表面
@@ -595,7 +650,7 @@ const BAR = [["app.css .cn-bar/.ws-bar", /\.cn-bar, \.ws-bar \{[^}]*height: (\d+
 const bars = BAR.map(([name, re, text]) => { const m = text.match(re); return [name, m ? m[1] : "找不到"]; });
 ok("頂列三段同高(" + [...new Set(bars.map((b) => b[1]))].join("/") + "):" + bars.filter((b) => b[1] !== "52").map((b) => b[0]).join() , bars.every((b) => b[1] === "52"));
 ok("紅綠燈對到那條帶子的中線(帶子 52 → 中線 26 → 燈 y=19)", /trafficLightPosition: \{ x: 12, y: 19 \}/.test(fs.readFileSync(path.join(R, "..", "main.js"), "utf8")));
-ok("不該跟著動的 44 還在:側欄細軌的寬、收合後的寬、選項列與分類鈕的熱區下限", /html\.ws-sc \.pane-strategies \{ width: 44px;/.test(css) && /off: 44/.test(src) && /\.cn-opt\{[^}]*min-height:44px/.test(css) && /\.cn-row \{[\s\S]{0,120}min-height: 44px;/.test(css));
+ok("不該跟著動的 44 還在:側欄細軌的寬、收合後的寬、選項列與分類鈕的熱區下限", /html\.ws-sc \.pane-strategies \{ width: 44px;/.test(css) && /off: 44/.test(src) && /\.cn-opt\{[^}]*min-height:44px/.test(css) && /\.mdl-row\{[^}]*min-height:44px/.test(css) && /\.cn-row \{[\s\S]{0,120}min-height: 44px;/.test(css));
 
 // 頂列底線
 ok("中欄頂列與聊天頭沒有底線;雲端那兩條 transparent 跟著退場(沒有線可以透明)", !/\.pane-main > \.tb \{[^}]*border-bottom/.test(trcss) && !/\.chat-head \{[^}]*border-bottom/.test(css) && !/border-bottom-color: transparent/.test(trcss.split("html\[data-env")[1] || ""));
@@ -630,7 +685,7 @@ ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效
 // 會收的組(0.1.39):PRIV_COLLECT 從原文 eval 出來,組 id、句數、順序逐一對;舊的 priv.collect.<n> 一條都不能留
 const PRIV_COLLECT_V = eval(src.match(/const PRIV_COLLECT = [^\n]*;/)[0].replace(/^const PRIV_COLLECT = /, "(").replace(/;$/, ")"));
 const POS = (L, k) => { const m = PO[L].match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\nmsgstr "([^"]*)"')); return m ? m[1] : null; };
-const PRIV_SHAPE = [["step", 4], ["strat", 5], ["feat", 7], ["stuck", 7], ["auth", 5], ["meta", 5], ["acct", 2]];
+const PRIV_SHAPE = [["step", 4], ["strat", 5], ["feat", 8], ["stuck", 9], ["auth", 5], ["meta", 5], ["acct", 2]];
 const PRIV_GROUPS_OK = JSON.stringify(PRIV_COLLECT_V) === JSON.stringify(PRIV_SHAPE.map(([g, n]) => ["priv.c." + g + ".h", Array.from({ length: n }, (_, i) => "priv.c." + g + "." + (i + 1))]))
   && PRIV_COLLECT_V.every(([h, ks]) => [h, ...ks].every((k) => POS(0, k) && POS(1, k)))
   && PO.every((x) => !/msgid "priv\.collect\.\d+"/.test(x)) && !/priv\.collect\.\d/.test(src)
@@ -702,8 +757,8 @@ ok("隱私:會收分 7 組(0.1.39 設計稽核 §C,Wei 核准;0.1.45 拿掉策�
 const PRIV_ZH = {
   step: ["做到哪一步", "首次開啟、每日開啟、登入", "app 開著的每一天，含本機自動下單有沒有在跑", "完成連結，記哪一種 AI", "第一次回測、啟動下單（模擬或真錢）、上雲端運行"],
   strat: ["每支策略", "新建、第一次回測、第一次配了金額時各記一次", "只記型別（A／B／C）與市場類別，例如加密貨幣、台指期", "不記策略名稱或標的", "三步記同一組代碼，代碼只有這台電腦算得出", "Blave 推不回策略名稱"],
-  feat: ["用了哪些功能", "分頁與按鈕的名稱，每天每項記一次", "不含分頁與按鈕裡的內容", "從策略庫用一支策略時，記它要不要 Blave 資料", "送出找點子時，記從哪個入口送出", "換策略庫排序時，記選了哪一種", "回覆好了的系統通知：有沒有跳出、有沒有被點開", "不含對話標題與內容"],
-  stuck: ["卡在哪一步", "回合失敗、連不上 AI、策略庫用不了的原因類別", "綁卡／儲值提示有沒有出現與按下、回來後能不能用", "啟動雲端方案的結果、更新卡在哪一步", "第一次收到 AI 回覆", "第一次安裝或更新後補裝引擎與策略套件，有沒有裝好", "沒裝好是哪一類原因", "只記類別，不含內容"],
+  feat: ["用了哪些功能", "分頁與按鈕的名稱，每天每項記一次", "不含分頁與按鈕裡的內容", "從策略庫用一支策略時，記它要不要 Blave 資料", "送出找點子時，記從哪個入口送出", "換策略庫排序時，記選了哪一種", "在策略庫購買時，記走到哪一步與結果類別", "回覆好了的系統通知：有沒有跳出、有沒有被點開", "不含對話標題與內容"],
+  stuck: ["卡在哪一步", "回合失敗、連不上 AI、策略庫用不了的原因類別", "綁卡／儲值提示有沒有出現與按下、回來後能不能用", "啟動雲端方案的結果、更新卡在哪一步", "第一次收到 AI 回覆", "第一次安裝或更新後補裝引擎與策略套件，有沒有裝好", "沒裝好是哪一類原因", "關掉 app 時停在哪個畫面", "app 當掉或沒正常結束時，記是哪一類", "只記類別，不含內容"],
   auth: ["登入與金鑰", "本機 AI 的登入方式，例如訂閱或 API 金鑰", "不含帳號與金鑰", "登入失敗的類別，以及當下是否判定為已登入", "改金鑰時驗證碼框的出現、通過與鎖住", "不含驗證碼"],
   meta: ["每筆紀錄都帶", "發生的時間", "app 版本、作業系統與版本、系統語言", "電腦類型：筆電或桌機", "安裝識別碼：這份安裝隨機產生的編號", "登入後，安裝識別碼會跟你的帳號對上"],
   acct: ["帳號上", "登入後，帳號會記下連的是哪種 AI", "也記這台電腦有沒有跑過回測，保留 90 天"],
@@ -712,13 +767,13 @@ const privKeys = (g) => ["priv.c." + g + ".h", ...PRIV_ZH[g].slice(1).map((_, i)
 const zhCount = (x) => { const CJK = /[\p{Script=Han}]/gu; return (x.match(CJK) || []).length + (x.replace(CJK, " ").match(/[\p{L}\p{N}_]+(?:[.,]\p{N}+)*/gu) || []).length; };
 ok("隱私 0.1.39:會收七組的 zh 逐字、每句 ≤25 字(canon 算法);組標題與句子 en 都有", Object.keys(PRIV_ZH).every((g) => privKeys(g).every((k, i) => POS(0, k) === PRIV_ZH[g][i] && zhCount(PRIV_ZH[g][i]) <= 25 && !!POS(1, k))));
 // 事件數跟告知綁在一起:加事件而沒補「會收」那幾組,這裡就紅(canon product-telemetry 出貨清單第 5 條)
-ok("隱私:三十六個事件逐項對得上契約的白名單(lib_sort=用了哪些功能的策略庫排序;lib_bindbuy=用了哪些功能的策略庫綁卡即購買走到哪一步,不帶金額;0.1.50 lib_bindplan / lib_cardplan / lib_login_go 同組:策略庫一步開通與登入後接到哪一步,不帶金額;heartbeat=做到哪一步「app 開著的每一天」;strat_* 三個=每支策略,只記型別與市場類別;feature_used=用了哪些功能,名稱、每日一次、不含內容;lib_pick / idea_sent=用了哪些功能的策略庫與找點子;reply_notif=系統通知;0.1.9 九個、0.1.12 引擎安裝兩個、0.1.15 detect_fail=卡在哪一步,只記類別;cli_auth / auth_fail / key_verify=登入與金鑰;device_type=每筆紀錄都帶的電腦類型,spec-0.1.13 #12:寫作業系統與版本,不寫 macOS)",
-  Object.keys(require("../shell/telemetry.js").EVENTS).length === 36
-  && (() => { const ev = require("../shell/telemetry.js").EVENTS; return ["heartbeat", "strat_created", "strat_backtested", "strat_deployed", "feature_used", "lib_pick", "idea_sent", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go", "reply_notif", "detect_fail", "engine_setup", "engine_opt_fail", "cli_auth", "auth_fail", "key_verify", "device_type"].every((e) => !!ev[e]); })()
+ok("隱私:四十二個事件逐項對得上契約的白名單(0.1.53 lib_buy_result=用了哪些功能的策略庫一鍵購買結果類別,不帶金額;0.1.52 data_card_shown=卡在哪一步的綁卡提示、engine_fail=沒裝好是哪一類原因、turn_fail_why=回合失敗的原因類別、app_quit=關掉 app 時停在哪個畫面、app_crash=當掉或沒正常結束是哪一類;lib_sort=用了哪些功能的策略庫排序;lib_bindbuy=用了哪些功能的策略庫綁卡即購買走到哪一步,不帶金額;0.1.50 lib_bindplan / lib_cardplan / lib_login_go 同組:策略庫一步開通與登入後接到哪一步,不帶金額;heartbeat=做到哪一步「app 開著的每一天」;strat_* 三個=每支策略,只記型別與市場類別;feature_used=用了哪些功能,名稱、每日一次、不含內容;lib_pick / idea_sent=用了哪些功能的策略庫與找點子;reply_notif=系統通知;0.1.9 九個、0.1.12 引擎安裝兩個、0.1.15 detect_fail=卡在哪一步,只記類別;cli_auth / auth_fail / key_verify=登入與金鑰;device_type=每筆紀錄都帶的電腦類型,spec-0.1.13 #12:寫作業系統與版本,不寫 macOS)",
+  Object.keys(require("../shell/telemetry.js").EVENTS).length === 42
+  && (() => { const ev = require("../shell/telemetry.js").EVENTS; return ["heartbeat", "strat_created", "strat_backtested", "strat_deployed", "feature_used", "lib_pick", "idea_sent", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go", "lib_buy_result", "reply_notif", "detect_fail", "engine_setup", "engine_opt_fail", "data_card_shown", "app_quit", "app_crash", "engine_fail", "turn_fail_why", "cli_auth", "auth_fail", "key_verify", "device_type"].every((e) => !!ev[e]); })()
   && /^App version, operating system and version, system language$/.test(POS(1, "priv.c.meta.2")) && /^Computer type: laptop or desktop$/.test(POS(1, "priv.c.meta.3"))
   && /whether local auto-trading runs/.test(POS(1, "priv.c.step.2")) && /type \(A\/B\/C\) and market category/.test(POS(1, "priv.c.strat.2")) && /^Never its name or symbol$/.test(POS(1, "priv.c.strat.3"))
-  && /whether it needs Blave data/.test(POS(1, "priv.c.feat.3")) && /which entry point/.test(POS(1, "priv.c.feat.4")) && /which sort you picked/.test(POS(1, "priv.c.feat.5")) && /^Never the chat title or text$/.test(POS(1, "priv.c.feat.7"))
-  && /^Categories only, never the content$/.test(POS(1, "priv.c.stuck.7")) && /^Never the code$/.test(POS(1, "priv.c.auth.5")) && /kept 90 days/.test(POS(1, "priv.c.acct.2")));
+  && /whether it needs Blave data/.test(POS(1, "priv.c.feat.3")) && /which entry point/.test(POS(1, "priv.c.feat.4")) && /which sort you picked/.test(POS(1, "priv.c.feat.5")) && /which step it reached and the result type/.test(POS(1, "priv.c.feat.6")) && /^Never the chat title or text$/.test(POS(1, "priv.c.feat.8"))
+  && /^Categories only, never the content$/.test(POS(1, "priv.c.stuck.9")) && /^Never the code$/.test(POS(1, "priv.c.auth.5")) && /kept 90 days/.test(POS(1, "priv.c.acct.2")));
 ok("acct.sub 開通試用那句兼講期限(Wei 核准 0.1.10):zh / en 逐字", /msgid "acct\.sub"\nmsgstr "首次綁卡，\{t\} 天內有 \{q\} TWD 的 AI 額度，電腦版也拿得到 Blave 的資料。"/.test(PO[0])
   && /msgid "acct\.sub"\nmsgstr "A first-time card gets \{q\} TWD of AI credit and Blave data in the desktop app, both for \{t\} days\."/.test(PO[1]));
 // 例外只有報告分享的掛名二選一(shr.anon):那是公開頁上作者欄真的不出名字,不是在講追蹤資料匿名
@@ -1133,7 +1188,7 @@ ok("全 app 的字串不出現「匿名 / anonymous」(報告分享的掛名選�
   const planVars = () => V, planOpen = () => {}, planState = () => (acct && acct.plan && acct.plan.state) || "none", planWatch = () => {};
   const acctUrl = () => "topup", faultCard = () => mkCard(), submitMessage = async () => true, $ = () => ({ focus() {} });
   const acctSub = () => null, acctAction = () => ({}), acctCrypto = () => null, resendSecond = () => null, planRepay = () => {}, apiPlanGo = () => {};
-  const went = [], trackFeature = (n) => went.push("track:" + n), bindGo = (n) => went.push("bind:" + n);
+  const went = [], trackFeature = (n) => went.push("track:" + n), bindGo = (n) => went.push("bind:" + n), trackEvent = () => {};   // trackEvent:0.1.52 data_card_shown(tests/check_shell_telemetry_gaps.js 另外測)
   let pub = null; eval(fnSrc("planMo"));
   eval(fnSrc("dataAccessOf")); for (const n of ["acctNoCard", "acctOffer"]) { const m = src.match(new RegExp("^const " + n + " = [^\\n]*$", "m")); if (m) eval(m[0].replace(/^const /, "var ")); } eval(src.match(/^const hasData = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^const pvK = [^\n]*$/m)[0].replace(/^const /, "var "));
   eval(fnSrc("dataReadyText")); eval(src.match(/^const resendable = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(src.match(/^function canResend\(\)[^\n]*$/m)[0]); eval(src.match(/^function resendLast\(\)[^\n]*$/m)[0]); eval(src.match(/^function sysLz\(fn\)[^\n]*$/m)[0]); eval(fnSrc("resendState")); eval(fnSrc("dataGateAction")); eval(src.match(/^const gateBtn = [^\n]*$/m)[0].replace(/^const /, "var ")); eval(fnSrc("dataCardState")); eval(fnSrc("dataCardSync")); eval(fnSrc("maybeDataCard")); eval(fnSrc("acctPaint"));
@@ -1421,6 +1476,81 @@ ok("確認框字(r8):body1 有 Linux Starter;鈕「付 {x} TWD 開通」/ Pay {x
       css.includes(".del-body .cf-grp + .cf-grp { margin-top: var(--space-16); }") && /\.del-body \.cf-grp \.gl \{ display: block; margin-bottom: var\(--space-4\); font-size: 13px; font-weight: 600; line-height: 1\.5; color: var\(--ink-3\); \}/.test(css)
       && css.includes(".del-body.lines .cf-grp p + p { margin-top: var(--space-4); }") && css.includes(".del-body.lines .cf-grp p.cf-ink { color: var(--ink); }") && !/\.cf-grp[^{]*\{[^}]*border/.test(css)); }
   ok("資料來源空狀態的金鑰那句拿掉了,.src-fine 跟著刪", !/src-fine/.test(fs.readFileSync(path.join(R, "datasrc.css"), "utf8") + fs.readFileSync(path.join(R, "datasrc.js"), "utf8")));
+  { /* 模型接入換引擎時整組上鎖(稽核 v052 B2、B3;spec settings-model-access §3 B、§7):真的 connectLock / connectLockPaint / mdlAct / blaveGo / blaveGoNow
+       跑在一個認得這幾個選擇器的小假 DOM 上。B2:radio 切到 Blave AI 在第一個 await 之前就鎖住全部 radio 與鈕,方向鍵不能再觸發第二個 saveConnection;
+       B3:轉圈畫在要換過去那一列的名稱後面,不掛在右欄〔修改〕上 */
+    const N = (tag, cls, ds) => { const n = { tag, className: cls || "", dataset: ds || {}, attrs: {}, kids: [], parent: null, disabled: false, type: "", id: "",
+      setAttribute(k, v) { this.attrs[k] = String(v); },
+      append(...xs) { xs.forEach((x) => { const c = typeof x === "string" ? N("#text", "", {}) : x; if (typeof x === "string") c.text = x; c.parent = this; this.kids.push(c); }); },
+      appendChild(x) { this.append(x); return x; },
+      prepend(...xs) { const keep = this.kids; this.kids = []; this.append(...xs); this.kids.push(...keep); },
+      remove() { if (this.parent) this.parent.kids = this.parent.kids.filter((k) => k !== this); this.parent = null; },
+      get textContent() { return this.tag === "#text" ? this.text : this.kids.map((k) => k.textContent).join(""); },
+      set textContent(v) { this.kids = []; this.append(String(v)); },
+      querySelectorAll(q) { return all(this).filter((x) => matches(x, q, this)); },
+      querySelector(q) { return this.querySelectorAll(q)[0] || null; },
+      contains(x) { for (let p = x; p; p = p.parent) if (p === this) return true; return false; },
+      get isConnected() { for (let p = this; p; p = p.parent) if (p === body) return true; return false; },
+      focus() { doc.activeElement = this; } }; return n; };
+    const all = (n, out = []) => { n.kids.forEach((k) => { if (k.tag !== "#text") { out.push(k); all(k, out); } }); return out; };
+    const camel = (a) => a.replace(/^data-/, "").replace(/-(\w)/g, (_, c) => c.toUpperCase());
+    const one = (x, sel) => { const m = /^([a-z]+)?(.*)$/.exec(sel); if (m[1] && x.tag !== m[1]) return false;
+      for (const p of m[2].match(/\.[\w-]+|\[[^\]]+\]|:not\(:disabled\)/g) || []) {
+        if (p[0] === ".") { if (!x.className.split(" ").includes(p.slice(1))) return false; }
+        else if (p === ":not(:disabled)") { if (x.disabled) return false; }
+        else { const [, a, v] = /^\[([\w-]+)(?:="([^"]*)")?\]$/.exec(p); const got = a.startsWith("data-") ? x.dataset[camel(a)] : x[a];
+          if (got === undefined || (v !== undefined && String(got) !== v)) return false; } }
+      return true; };
+    const matches = (x, q, root) => q.split(",").some((alt) => { const parts = alt.trim().split(/\s+/); if (!one(x, parts[parts.length - 1])) return false;
+      let i = parts.length - 2; for (let p = x.parent; p && p !== root.parent && i >= 0; p = p.parent) if (one(p, parts[i])) i--; return i < 0; });
+    const rowOf = (kind, edit) => { const r = N("div", "mdl-row usable", { kind }), lab = N("label", "mdl-lab"), rd = N("input", "mdl-rd"), tc = N("div", "t"), n = N("p", "n");
+      rd.type = "radio"; n.textContent = kind; tc.appendChild(n); lab.append(rd, tc); r.appendChild(lab);
+      if (edit) { const e = N("button", "pf-act mdl-slot"); e.textContent = "ak.edit"; r.appendChild(e); } return r; };
+    const body = N("body"), ids = { "view-connect": N("div"), "set-model": N("div"), "lai-rows": N("div") };
+    Object.entries(ids).forEach(([k, v]) => { v.id = k; body.appendChild(v); });
+    const cnBtn = N("button", "btn-out"); cnBtn.textContent = "cn.connect"; const cnRow = N("div", "cn-row", { kind: "claude" }); cnRow.appendChild(cnBtn); ids["view-connect"].appendChild(cnRow);
+    const list = N("div", "mdl-list"); ids["set-model"].appendChild(list);
+    const signIn = N("button", "pf-act mdl-slot"); signIn.textContent = "cn.blave.signinSwitch";
+    list.append(rowOf("blave"), rowOf("claude"), rowOf("apikey", true));
+    const signRow = N("div", "mdl-row", { kind: "blave-signin" });
+    const radios = () => ids["set-model"].querySelectorAll("input"), edit = () => ids["set-model"].querySelector(".mdl-slot");
+    const spins = () => all(body).filter((x) => x.className === "spin16").map((x) => x.parent.className + ":" + x.parent.parent.parent.parent.dataset.kind);
+    const defer = () => { let res; const p = new Promise((r) => { res = r; }); return { p, res }; };
+    const env = { tok: null, save: null, saved: [], ws: [], oauth: [] };
+    const doc = { activeElement: null, createElement: (tag) => N(tag), querySelectorAll: (q) => body.querySelectorAll(q) };
+    const S = new Function("document", "$", "env", "t", [
+      'const MDL = { busy: false, connecting: null }; let hasToken = true, oauthPending = false, cur = "claude";',
+      'const busyOn = () => false, busyCut = (b, go) => go(), setHint = () => {}, waitChanged = () => {}, trackFeature = () => {}, trackEvent = () => {}, LANG = "zh";',
+      'const enterWorkspace = (k) => env.ws.push(k), connect = () => env.ws.push("connect"), oauthStart = () => { env.oauth.push({ locked: MDL.connecting, rd: [...document.querySelectorAll("input")].map((r) => r.disabled), focus: document.activeElement }); return new Promise(() => {}); };',
+      'const window = { blave: { hasBlaveToken: () => env.tok.p, saveConnection: (c) => { env.saved.push(c.kind); return env.save.p; }, cancelOAuth: () => {} } };',
+      fnSrc("connectLock"), fnSrc("connectLockPaint"), fnSrc("mdlAct"), fnSrc("blaveGo"), "async " + fnSrc("blaveGoNow"),
+      "return { mdlAct, connectLock, MDL };"].join("\n"))(doc, (id) => ids[id], env, (k) => k);
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    env.tok = defer(); env.save = defer();
+    const rdBlave = radios()[0]; rdBlave.checked = true;
+    S.mdlAct({ kind: "blave", act: "cn.use" }, rdBlave);
+    const sync = { conn: S.MDL.connecting, rd: radios().map((r) => r.disabled), edit: edit().disabled, cn: cnBtn.disabled, spins: spins() };
+    env.tok.res(true); await tick();
+    const mid = { saved: env.saved.slice(), rd: radios().map((r) => r.disabled) };
+    env.save.res(true); await tick();
+    const after = { conn: S.MDL.connecting, rd: radios().map((r) => r.disabled), edit: edit().disabled, cn: cnBtn.disabled, cnTxt: cnBtn.textContent, spins: spins(), ws: env.ws.slice() };
+    ok("B2:radio 切到 Blave AI = 當場(還沒 await 到 token)整組鎖住——三顆 radio、〔修改〕、連結畫面的鈕都停用;token 回來後只有一個 saveConnection、仍鎖著;存完才解鎖、進工作頁一次",
+      sync.conn === "blave" && sync.rd.every(Boolean) && sync.edit && sync.cn && mid.saved.join() === "blave" && mid.rd.every(Boolean)
+      && after.conn === null && after.rd.every((x) => !x) && !after.edit && !after.cn && after.cnTxt === "cn.connect" && after.ws.join() === "blave", JSON.stringify([sync, mid, after]));
+    ok("B3:轉圈畫在要換過去那一列(Blave AI)的名稱後面;解鎖後收掉", sync.spins.join() === "n:blave" && after.spins.length === 0, JSON.stringify([sync.spins, after.spins]));
+    S.connectLock("apikey");
+    const ak = { spins: spins(), edit: edit().textContent, editDis: edit().disabled, kids: edit().kids.length };
+    S.connectLock(null);
+    ok("B3:radio 切到 API 金鑰時,轉圈在 API 金鑰那一列的名稱後面,〔修改〕只停用、字不變、裡面沒有圓環;解鎖後〔修改〕還原",
+      ak.spins.join() === "n:apikey" && ak.edit === "ak.edit" && ak.editDis && ak.kids === 1 && edit().textContent === "ak.edit" && !edit().disabled && spins().length === 0, JSON.stringify(ak));
+    env.tok = defer(); env.oauth.length = 0;
+    signRow.appendChild(signIn); list.appendChild(signRow); signIn.focus();
+    S.mdlAct({ kind: "blave", act: "cn.blave.signinSwitch" }, signIn);
+    const lockFocus = doc.activeElement === signIn;
+    env.tok.res(false); await tick();
+    ok("沒 token 走 OAuth:開瀏覽器前已經解鎖(radio 照等待規則由重畫決定,不是被這把鎖住),鈕換成「取消」;鎖的那一下焦點被移開,解鎖後還給這顆鈕(鍵盤用戶按 Enter 就能取消)",
+      env.oauth.length === 1 && env.oauth[0].locked === null && env.oauth[0].rd.every((x) => !x) && signIn.textContent === "oauth.cancel" && !signIn.disabled
+      && !lockFocus && env.oauth[0].focus === signIn && doc.activeElement === signIn); }
 })().then(() => {
 console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 });

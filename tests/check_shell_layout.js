@@ -8,7 +8,7 @@
 //   ④ 關於的「服務條款 · 隱私權政策」、隱私頁的「隱私權政策」:字的左緣 = 內容欄起點(關於那一行 #set-up-line 的左緣)
 //   ⑤ 對照:把 UA 的左右 padding 蓋回去,④要壞
 // 設定 modal 方案 B(spec settings-modal-b-2026-10-24):
-//   ⑥ S7/S15 分類欄:目前項底色 = --surface-muted、hover 用的 --surface-row-hover 跟它不同(亮暗都量);視覺高 34、熱區上下各補 5 到 44
+//   ⑥ S7/S15 分類欄:目前項底色 = --surface-muted、hover 用的 --surface-row-hover 跟它不同(亮暗都量);視覺高 34、每一顆可點高 44、相鄰相接不重疊(鈕距 10);矮視窗分類欄自己捲
 //   ⑦ S8 「一般」三組:組內 8、組間 32;「關於」緊接防睡那組、隔 32(不釘底)
 //   ⑧ S9 每一類第一行字到內容區頂端 16–23(資料來源空清單時以前是 40)
 //   ⑨ 0.1.39 驗收熱區(☰、迴紋針、送出、托盤 ×)⑩ 聊天欄寬度縮放後還原 ⑪ ＋ 不疊空分頁、換語言分頁名跟著換
@@ -105,13 +105,34 @@ app.whenReady().then(async () => {
     ok(`⑥ S7 ${theme}:目前項 = --surface-muted＋600(${c.cur});hover 走 --surface-row-hover(${c.hover}),跟目前項、卡面都不同`, c.cur === c.muted && c.w === "600" && c.hover !== c.muted && c.hover !== c.card && c.rule);
   }
   await X(`document.documentElement.setAttribute("data-theme", "light")`);
-  const hit = await X(`(() => { const cats = [...document.querySelectorAll("#set-cats .set-cat")].filter((b) => !b.hidden), f = cats[0], l = cats[cats.length - 1], a = f.getBoundingClientRect(), b = l.getBoundingClientRect(), x = a.left + a.width / 2;
+  // 每一顆都拿 44 量(canon › modal 內分類欄 › 熱區):沿鈕的中線每 1px 取一點,數 elementFromPoint 落在這顆上的連續高度。
+  // 相鄰熱區重疊(鈕距 < 10)時前一顆會被後一顆的 ::before 吃掉、量不到 44;鈕距 > 10 則兩顆中間有點不到的縫
+  const hitOf = (showAll) => X(`(() => { const conn = document.querySelector('#set-cats .set-cat[data-set-cat="connect"]'), was = conn.hidden, connHidden = was && getComputedStyle(conn).display === "none"; if (${showAll}) conn.hidden = false;
+    const nav = document.getElementById("set-cats"), cats = [...nav.querySelectorAll(".set-cat")].filter((b) => !b.hidden), a = cats[0].getBoundingClientRect(), x = a.left + a.width / 2;
     const at = (y) => { const e = document.elementFromPoint(x, y); return e && e.closest(".set-cat"); };
-    const own = cats.every((c) => { const r = c.getBoundingClientRect(); return at(r.top + 1) === c && at(r.bottom - 1) === c; });
-    const conn = document.querySelector('#set-cats .set-cat[data-set-cat="connect"]');
-    return { h: cats.map((c) => Math.round(c.getBoundingClientRect().height)), up: at(a.top - 4) === f, down: at(b.bottom + 4) === l, outUp: at(a.top - 6) !== f, outDown: at(b.bottom + 6) !== l, own,
-      connHidden: !!conn && conn.hidden && getComputedStyle(conn).display === "none" }; })()`);
-  ok(`⑥ S15 分類鈕視覺高 34(${hit.h.join("/")}),熱區上下各多 5:邊外 4px 還點得到、6px 點不到;每顆可見框的上下緣 1px 點到的都是自己(不被鄰居的熱區吃掉)`, hit.h.every((h) => h === 34) && hit.up && hit.down && hit.outUp && hit.outDown && hit.own, JSON.stringify(hit));
+    const zone = cats.map((c) => { const r = c.getBoundingClientRect(); let n = 0, top = null, bot = null;
+      for (let y = Math.round(r.top) - 12 + 0.5; y < r.bottom + 12; y++) if (at(y) === c) { n++; if (top == null) top = y - 0.5; bot = y + 0.5; }
+      return { n, solid: bot - top === n, up: r.top - top, down: bot - r.bottom }; });
+    const rs = cats.map((c) => c.getBoundingClientRect()), nr = nav.getBoundingClientRect(), cs = getComputedStyle(nav);
+    const out = { n: cats.length, h: rs.map((r) => Math.round(r.height)), zone: zone.map((z) => z.n), solid: zone.every((z) => z.solid), ext: zone.every((z) => Math.abs(z.up - 5) < 1 && Math.abs(z.down - 5) < 1), top: rs[0].top, up: zone.map((z) => z.up),   // 取樣格 1px,框的位置可能落在半 px 上
+      pitch: rs.slice(1).map((r, i) => Math.round(r.top - rs[i].top)), inPad: rs[0].top - 5 >= nr.top && rs[rs.length - 1].bottom + 5 <= nr.bottom,
+      stack: cs.isolation + "/" + getComputedStyle(cats[0], "::before").zIndex, fits: nav.scrollHeight <= nav.clientHeight,
+      connHidden };
+    conn.hidden = was; return out; })()`);
+  const hit = await hitOf(false), hit7 = await hitOf(true);
+  for (const [tag, m, n] of [["預設(「連結」沒開放)", hit, 6], ["七顆全開", hit7, 7]])
+    ok(`⑥ S15 ${tag} ${m.n} 顆:視覺高 34(${m.h.join("/")}),每一顆可點高都是 44(${m.zone.join("/")})、連續、上下各補 5;節距 44(${m.pitch.join("/")})所以相鄰熱區相接不重疊;首尾外補的 5 落在分類欄內距裡;不疊放(isolation/z-index = ${m.stack});高度放得下`,
+      m.n === n && m.h.every((h) => h === 34) && m.zone.every((z) => z === 44) && m.solid && m.ext && m.pitch.every((g) => g === 44) && m.inPad && m.stack === "auto/auto" && m.fits, JSON.stringify(m));
+  // 視窗矮到放不下:分類欄自己捲(不縮鈕距、不被 modal 的 overflow: hidden 裁掉最後一顆)
+  w.setContentSize(1024, 360); await nap(300);
+  const low = await X(`(() => { const conn = document.querySelector('#set-cats .set-cat[data-set-cat="connect"]'); conn.hidden = false;
+    const nav = document.getElementById("set-cats"), cats = [...nav.querySelectorAll(".set-cat")], last = cats[cats.length - 1], body = document.querySelector(".set-body").getBoundingClientRect();
+    const o = { vh: innerHeight, oy: getComputedStyle(nav).overflowY, sh: nav.scrollHeight, ch: nav.clientHeight, inBody: Math.round(nav.getBoundingClientRect().bottom) <= Math.round(body.bottom) };
+    nav.scrollTop = nav.scrollHeight; const r = last.getBoundingClientRect(), e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    o.lastHit = !!e && e.closest(".set-cat") === last; o.lastIn = r.bottom <= body.bottom; o.pitch = Math.round(r.top - cats[cats.length - 2].getBoundingClientRect().top);
+    nav.scrollTop = 0; conn.hidden = true; return o; })()`);
+  ok(`⑥ S15 矮視窗(內容高 ${low.vh}):分類欄被設定框限高(${low.ch} < 內容 ${low.sh})、overflow-y: auto,捲到底最後一顆點得到;節距仍是 44`, low.oy === "auto" && low.sh > low.ch && low.inBody && low.lastHit && low.lastIn && low.pitch === 44, JSON.stringify(low));
+  w.setContentSize(1024, 760); await nap(300);
   ok("⑥ 平台沒開放手機查看時,「連結」那顆真的不佔位(display: none)", hit.connHidden);
   const gap = await X(`(() => { const r = (id) => document.querySelector(id).getBoundingClientRect(), rows = [...document.querySelectorAll('#set-modal .set-pane[data-set-cat="display"] > .set-row')].filter((x) => !x.hidden).map((x) => x.getBoundingClientRect());
     const sc = document.querySelector(".set-content").getBoundingClientRect();

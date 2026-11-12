@@ -25,7 +25,7 @@ same flow as live — walking it by hand now means nothing blocks you when you g
 
 ## Step scripts (≤4 steps; quote UI labels verbatim, 「」 as below)
 
-Live trading through a Taiwan broker is futures-only (台指期): a stock strategy (台股 shares or ETFs) going to a real account has no script — point the user to 策略組合 to see the strategy's holdings and place those orders by hand.
+Live trading through a Taiwan broker (群益 or 統一) is futures-only (台指期 TXF/MXF/TMF): saving 下單設定 with a stock strategy (台股 shares or ETFs) or a portfolio routed to either is refused. A stock strategy going to a real account has no script — point the user to 策略組合 to see the strategy's holdings and place those orders by hand. Paper trading does take TW stock strategies, bought with cash only.
 
 These three are the only scripts, one set per surface — use the set for the surface you run on (desktop app = `BLAVE_AGENT_LOCAL=1`; never give a desktop user the web workspace's steps, or send them to the web for these). A request for one order placed by hand (「現在幫我買 100 USDT 的 BTC」) has none: Blave trades through strategies only — say that in one sentence and never make up steps or a page name for it.
 
@@ -37,8 +37,7 @@ On mobile (narrow screens) the chat fills the screen — prepend one line:
 **Bind the paper venue / an exchange** (a key already pasted in chat: bind it with `lib.venue.bind` per AGENTS.md instead of sending this script):
 1. 點左側「自動下單」
 2. 點「連接帳戶」
-3. 選「模擬交易（免金鑰）」（real venue: pick it and fill in its API keys）
-4. 按「開始模擬交易」（real venue:「連接帳戶」）
+3. 按框底的「先用模擬交易」（real venue: pick its tile, fill in its API keys, then press「連接帳戶」）
 
 **Add to the portfolio / set amounts:**
 1. 點左側「策略組合」，切到「配置」分頁
@@ -58,8 +57,7 @@ The switcher at the top of the middle pane picks the side: 「這台電腦」 fo
 **Bind the paper venue / an exchange** (one venue at a time: if one is connected, 「設定」分頁 ›「解除綁定」 first):
 1. 點左側「自動下單」
 2. 點「連接帳戶」
-3. 在「交易所或期貨商」選「模擬交易（免金鑰）」（real venue: pick it and fill in its API keys）
-4. 按「開始模擬交易」（real venue:「連接帳戶」）
+3. 按框底的「先用模擬交易」（real venue: pick its tile, fill in its API keys, then press「連接帳戶」）
 
 **Add to the portfolio / set amounts:**
 1. 點左側「策略組合」，切到「配置」分頁

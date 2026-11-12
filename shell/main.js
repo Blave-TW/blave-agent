@@ -430,6 +430,64 @@ function tm() {
   return _tm;
 }
 
+/* ── 當機與沒有正常結束(app_crash;判法在 telemetry.js createCrashWatch / sessionOpen)──
+   只記主視窗(自家 index.html)的 renderer 與 GPU 行程;內建瀏覽器、PDF 頁不算。結束中(quitting／更新重開)的不算。
+   tm() 建立時讀 app.getLocale(),ready 之前是空的、整則會被形狀檢查丟掉:ready 之前發生的等 ready 再送 */
+const sessionFile = () => path.join(BASE, "state", "session.json");   // BASE 在下面才宣告:用到時才算
+let quitDone = false;   // will-quit 之後:視窗、renderer、GPU 正在收,這時掛掉的不算當機
+function crashTrack(kind) {
+  if (quitDone) return;
+  const go = () => { try { tm().track("app_crash", { kind }); } catch (_) { /* 追蹤永遠不能炸 */ } };
+  if (app.isReady()) go(); else app.once("ready", go);
+}
+let _crash = null;
+function crashWatch() {
+  if (!_crash) _crash = require("./telemetry").createCrashWatch({ track: crashTrack, reload: (wc) => wc.reload() });
+  return _crash;
+}
+// 主視窗的 renderer 掛掉:記一則,第一次順手重新載入(不留白畫面);第二次之後只記
+function rendGone(wc, d) {
+  if (quitDone || quitting || quitConfirmed || restarting || !wc || wc.isDestroyed() || !isOurPageUrl(wc.getURL())) return false;
+  return crashWatch().rendGone(d && d.reason, wc);
+}
+app.on("render-process-gone", (_e, wc, d) => { try { rendGone(wc, d); } catch (_) { /* 同上 */ } });
+app.on("child-process-gone", (_e, d) => { if (!quitting) crashWatch().childGone(d && d.type, d && d.reason); });
+// 用 Monitor 不用 uncaughtException:掛了後者 Electron 就不再跳「主行程發生錯誤」的框,行為會變。
+// 未處理的 Promise:throw 模式會變成 uncaught(origin = unhandledRejection),warn 模式只出 warning,兩條都只聽不改
+process.on("uncaughtExceptionMonitor", (_err, origin) => crashTrack(origin === "unhandledRejection" ? "main_rej" : "main_exc"));
+process.on("warning", (w) => { if (w && w.name === "UnhandledPromiseRejectionWarning") crashTrack("main_rej"); });
+// ready 之後、拿到單一實例鎖的那一份才叫:上一次沒走到 will-quit 就補一則 unclean_exit,這一次先記成還沒正常結束
+function sessionBoot() {
+  if (!fs.existsSync(BASE)) fs.mkdirSync(BASE, { recursive: true, mode: 0o700 });   // 新安裝:BASE 由這裡先建,權限要跟引擎安裝建的一樣(對話、金鑰都在裡面)
+  if (require("./telemetry").sessionOpen(sessionFile())) crashTrack("unclean_exit");
+}
+
+/* ── 結束時在哪個畫面(app_quit)與第一次安裝裝到一半被關掉(engine_setup first_abort)──
+   track 是送了就不管:不等的話 app 先結束、那一則出不了門,所以 before-quit 等它最多 QUIT_TEL_MS。
+   畫面問頁面(renderer/app.js quitScreen);按視窗的關閉鈕結束時,走到 before-quit 頁面已經關了——關窗那一下先讀起來(quitScreenSeen) */
+const QUIT_TEL_MS = 1500;
+let quitScreenSeen = null, quitTelSent = false;
+function quitScreenRead(win) {
+  const w = win || draftMainWin();
+  if (!w || w.isDestroyed()) return Promise.resolve(quitScreenSeen || "other");
+  const ask = w.webContents.executeJavaScript("typeof quitScreen === 'function' ? quitScreen() : null").catch(() => null);
+  return Promise.race([ask, new Promise((r) => setTimeout(() => r(null), 500))])
+    .then((s) => { if (typeof s === "string") quitScreenSeen = s; return quitScreenSeen || "other"; });
+}
+// before-quit 要不要為它擋一下:只在真的會出門時(打包版、追蹤開著),而且整次結束只一次
+function quitTelOnce() {
+  if (quitTelSent || !telemetryLive() || !tm().isEnabled()) return false;
+  quitTelSent = true;
+  return true;
+}
+function quitTelemetry() {
+  const send = (ev, props) => new Promise((r) => { try { if (!tm().track(ev, props, () => r())) r(); } catch (_) { r(); } });
+  const eng = _engineSetup ? _engineSetup.snapshot() : null;   // 要在 engineAbort 之前讀(收掉之後就不是 run 了)
+  const sends = [quitScreenRead(null).then((screen) => send("app_quit", { screen }))];
+  if (eng && eng.phase === "run" && eng.kind === "first") sends.push(send("engine_setup", { result: "first_abort" }));
+  return Promise.race([Promise.all(sends), new Promise((r) => setTimeout(r, QUIT_TEL_MS))]);
+}
+
 // ── 雲端宿主(cloud.js;線 B 第一刀:唯讀)──────────────────────
 // 用帳號 token + app_secret 讀用戶雲端主機的狀態。兩顆憑證只在這個行程裡:不進 renderer、不進 agent 的環境、不寫檔。
 // 回應也不落地——agent 讀得到 workspace,落地就等於把部位與權益交給它。renderer 拿到的是畫面用的狀態(沒有憑證)。
@@ -4504,6 +4562,7 @@ app.whenReady().then(() => {
   startStep("trade host", tradeStartIfReady);   // 引擎早就裝好的人:一開 app 就有狀態可看(對帳器仍要他自己按啟動)
   if (app.hasSingleInstanceLock()) startStep("engine", engineKick);   // 要裝的在背景裝;已經裝好的幾毫秒就結束。第二份 app 不碰 venv
   if (app.hasSingleInstanceLock()) startStep("codex engine", codexKick);   // 同上:第二份 app(開發版與打包版共用 ~/Blave)不起下載、不刪版本
+  if (app.hasSingleInstanceLock()) startStep("session mark", sessionBoot);   // app_crash unclean_exit;第二份 app 不碰(它讀到的是第一份正在跑的那筆)
   // 視窗回前景 = 用戶可能剛在瀏覽器綁完卡、開完主機:「含不含資料」的答案作廢,下一輪重查
   // (不在這裡打 api——跟 LLM 共用每分鐘 30 次的桶,而且畫面那邊有卡片時本來就會重查)
   // 畫面自己的 blur 分不出「焦點進了內建瀏覽器那一頁」跟「整個視窗退到背景」,所以由這裡講
@@ -4623,6 +4682,10 @@ let tmLabels = { running: "Auto trading is running", paperVenue: "Paper trading"
   ev_manual_close_required_queued: "Capital positions not closed", ev_manual_close_required_queued_n: "The last close is not reported yet. Press “Pause and close positions” again after {at} (Taiwan time), or check your orders in Capital's trading software before closing there.",
   ev_manual_close_required_queued_soon_n: "The last close is not reported yet. Press “Pause and close positions” again in a few minutes, or check your orders in Capital's trading software before closing there.",
   ev_tw_entry_hold: "New entries paused", ev_tw_entry_hold_n: "TAIEX futures entries are paused; closes still run. Open Blave to see what to check.",
+  ev_tw_clock_unchecked: "TAIEX futures clock unverified", ev_tw_clock_unchecked_n: "TAIEX futures closes wait until this computer’s clock shows the market open. Turn on automatic time.",
+  ev_tw_clock_unchecked_unmeasured_n: "Blave can't measure the trading computer's clock. Closes wait until it shows the market open. Turn on automatic time.",
+  ev_tw_clock_unchecked_far_n: "The trading computer's clock is over an hour off. New positions are paused, and closes wait until it shows the market open. Turn on automatic time to resume.",
+  ev_tw_clock_unchecked_far_halt_n: "The trading computer's clock is over an hour off. Closes wait until it shows the market open. Turn on automatic time.",
   ev_order_unconfirmed_stuck: "Order outcome still unknown", ev_order_unconfirmed_stuck_n: "Still no result, so new entries on this symbol stay paused. Check the exchange, tell your agent how much filled, and don't place it again yourself.",
   stratOne: "", stratTwo: "", stratMany: "", withStrat: "",
   // 有了雲端視角之後的字(字串表 tm.*)。**預設是空的 = renderer 還沒交**:空的時候相關的那一行 / 那一句 / 那個前綴整個不出現,
@@ -5163,9 +5226,16 @@ function traySync() {
    - 點通知 = 把視窗叫出來;視窗回前景就清紅點。 */
 // machine_restart_stopped 取代 downtime_paused(api 已改;設計定稿:不講時間,講部位沒人管、平倉停損不會執行、按啟動下單)
 const P1_TYPES = ["halt", "order_error", "execution_interrupted", "execution_fallback_market", "execution_stuck", "machine_restart_stopped",
-  "venue_stops_missing", "venue_login_blocked", "order_unconfirmed", "clock_skew_hold", "tw_entry_hold", "data_gap_exposed"];   // 全部十二型(標籤用)
+  "venue_stops_missing", "venue_login_blocked", "order_unconfirmed", "clock_skew_hold", "tw_entry_hold", "tw_clock_unchecked", "data_gap_exposed"];   // 全部十三型(標籤用)
 // order_unconfirmed 與台指期那三種(manager/reconciler KIND_*)跟拒單同一個來源:order_errors[] 帶 kind 的那列,不在 events 裡
-const P1_ERR_KINDS = ["order_unconfirmed", "clock_skew_hold", "tw_entry_hold"];
+const P1_ERR_KINDS = ["order_unconfirmed", "clock_skew_hold", "tw_entry_hold", "tw_clock_unchecked"];
+// 時鐘量不到那型的情境(列上的 clock,manager/reconciler):內文照它選三句之一(far 才講新倉暫停),同 api _CLOCK_UNCHECKED_EN
+const P1_CLOCK_CASES = ["unmeasured", "far", "far_halt"];
+// 收盤後按的全部平倉延到開盤(kind market_closed_deferred)、開盤前按啟動下單取消延後(沒帶 kind,認整句開頭):
+// 用戶自己按的動作,P3、不發(同 api agent_overview._close_deferred、renderer trCloseDeferred)
+const P1_DEFER_CANCEL_RE = /^close-all: (?:開盤前已按啟動下單|機器重開後按了啟動下單).*?延後的(?:台股|台指期)平倉(?:一併)?取消/;
+const p1CloseDeferred = (e) => e.kind === "market_closed_deferred" || e.kind === "close_deferred_cancelled"
+  || (e.kind == null && P1_DEFER_CANCEL_RE.test(String(e.error || "")));
 // 全部平倉刻意沒送單的那列(manager/flatten):同 api agent_overview 的分流,認得的券商＋原因才叫 manual_close_required,
 // 其他照舊當拒單。reason 選標題:identity(或沒帶)身分登不進、snapshot_lag 快照落後、queued 上一筆平倉還在等回報
 function p1ManualClose(e) {
@@ -5183,7 +5253,7 @@ const p1UnreachLong = (ev) => ev.type === "exchange_unreachable" && !!ev.payload
 const p1Event = (ev) => P1_EVENT_TYPES.indexOf(ev.type) >= 0 || p1UnreachLong(ev);
 const HALT_AUTO_SOURCES = ["reconciler", "portfolio"];   // 同 api openclaw/agent_events._HALT_AUTO_SOURCES
 const notifiedPath = () => path.join(app.getPath("userData"), "p1-notified.json");
-let p1Marks = undefined, p1Badge = 0; const p1LastShown = {}, p1Alive = new Set();   // p1Alive:Notification 沒人持有會被 GC,click 就不觸發
+let p1Marks = undefined, p1Badge = 0; const p1LastShown = {}, p1ErrCool = {}, p1Alive = new Set();   // p1Alive:Notification 沒人持有會被 GC,click 就不觸發
 const p1Num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const P1_UNX_KEEP = 20;   // 記住發過的 park_id 數(HALT 檔最多帶 5 筆,lib/guard.UNEXPLAINED_MAX)
 const p1Ids = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && x).slice(-P1_UNX_KEEP) : null);
@@ -5205,6 +5275,21 @@ function p1HaltPayload(h) {
   const reason = String((h && h.reason) || ""), unconfirmed = /^\[order_unconfirmed_unparked\]/.test(reason);
   const m = unconfirmed ? /^\[order_unconfirmed_unparked\] (\S+?):/.exec(reason) : null;
   return m ? { unconfirmed, symbol: m[1] } : { unconfirmed };
+}
+// 拒單同一個交易所＋標的＋原因 55 分鐘只叫一次(同 api agent_events.SPECS order_error 的 p1_cooldown_s／p1_cool_on):
+// order_errors 只留 5 列,失敗超過 5 檔時每輪都被擠成新 ts 的新列,水位線擋不住。原因去掉數字,換了原因的照叫
+const P1_ERR_COOL_S = 3300;
+const p1Str = (v) => (v == null ? "" : String(v));
+const p1ErrCoolKey = (e) => [p1Str(e.exchange), p1Str(e.symbol), p1Str(e.error).replace(/\d[\d.,]*/g, "#")].join("\u0000");
+// 拒單以外有平台冷卻的型別(同 api agent_events.SPECS 的 p1_cooldown_s,鍵同樣是交易所＋標的＋原因去數字):key 前綴型別
+const P1_COOL_S = { tw_clock_unchecked: 3600 };
+const p1CoolKey = (type, e) => (type === "order_error" ? p1ErrCoolKey(e) : P1_COOL_S[type] ? type + "\u0001" + p1ErrCoolKey(e) : null);
+const p1CoolS = (key) => { const i = key.indexOf("\u0001"); return (i > 0 && P1_COOL_S[key.slice(0, i)]) || P1_ERR_COOL_S; };
+const p1Cooling = (seen, key, nowMs) => !!key && nowMs - (seen[key] || 0) < p1CoolS(key) * 1000;
+function p1CoolStamp(seen, key, nowMs) {
+  if (!key) return;
+  for (const k of Object.keys(seen)) if (!p1Cooling(seen, k, nowMs)) delete seen[k];
+  seen[key] = nowMs;
 }
 function p1FromState(r, mark, nowS) {   // 純函式:halt / 拒單從狀態檔現況推導。mark = { halt, err, unx }(null = 第一次,只記不發)
   const out = { halt: mark.halt, err: mark.err, unx: mark.unx, show: [] }, h = r && r.halt;
@@ -5232,11 +5317,14 @@ function p1FromState(r, mark, nowS) {   // 純函式:halt / 拒單從狀態檔�
     if (!(ts > (mark.err == null ? -1 : mark.err))) continue;
     if (ts > top) top = ts;
     // manual 停車的第一列不叫:同一刻的 HALT 已經叫了(只有部位表那句用它)
-    if (mark.err != null && nowS - ts <= 900 && !(e.kind === "order_unconfirmed" && e.manual === true && e.stuck !== true)) {
+    if (mark.err != null && nowS - ts <= 900 && !(e.kind === "order_unconfirmed" && e.manual === true && e.stuck !== true) && !p1CloseDeferred(e)) {
+      const mc = p1ManualClose(e), type = mc ? "manual_close_required" : P1_ERR_KINDS.indexOf(e.kind) >= 0 ? e.kind : "order_error";
+      // 模擬帳戶的拒單是 P2(api level_for:沒有真錢在風險上),本機不叫、只進事件列;帶 kind 的那幾型照舊 P1
+      if (type === "order_error" && e.exchange === "paper") continue;
       const strategies = Array.isArray(e.strategies) ? e.strategies.filter((x) => typeof x === "string" && x).slice(0, 10) : [];
-      const mc = p1ManualClose(e);
-      out.show.push({ type: mc ? "manual_close_required" : P1_ERR_KINDS.indexOf(e.kind) >= 0 ? e.kind : "order_error", ts,
-        payload: { symbol: typeof e.symbol === "string" ? e.symbol : "", strategies, stuck: e.stuck === true, close_all: e.close_all === true, ...(mc || {}) } });
+      out.show.push({ type, ts, cool: p1CoolKey(type, e),
+        payload: { symbol: typeof e.symbol === "string" ? e.symbol : "", strategies, stuck: e.stuck === true, close_all: e.close_all === true, ...(mc || {}),
+          ...(type === "tw_clock_unchecked" && P1_CLOCK_CASES.indexOf(e.clock) >= 0 ? { clock: e.clock } : {}) } });
     }
   }
   out.err = top < 0 ? 0 : top;
@@ -5276,10 +5364,12 @@ function p1Sync() {
   }
   const show = stt.show.concat(ev.show);
   for (const e of show) {
+    if (p1Cooling(p1ErrCool, e.cool, Date.now())) continue;
     p1Badge++;
     const throttle = e.type + (e.type === "halt" && e.payload && e.payload.unexplained ? ":unexplained" : "");   // 跟同一刻的自動 HALT 分開算
     if (Date.now() - (p1LastShown[throttle] || 0) < 60000) continue;
     p1LastShown[throttle] = Date.now();
+    p1CoolStamp(p1ErrCool, e.cool, Date.now());   // 被 60 秒節流吃掉的那則不算叫過,下一列同因照叫
     const sym = e.payload && typeof e.payload.symbol === "string" ? e.payload.symbol.replace(/@spot$/, "").slice(0, 24) : "";
     if (!Notification.isSupported()) continue;
     // 這裡的事件全部來自這台電腦的狀態檔:標題第一個詞講是哪一邊(雲端的通知之後由它自己的來源加 notifPrefixCloud)
@@ -5287,8 +5377,9 @@ function p1Sync() {
     const stuck = !closeAll && e.type === "order_unconfirmed" && e.payload && e.payload.stuck === true;
     const capital = (e.type === "venue_login_blocked" && e.payload && e.payload.venue === "capital") || p1UnreachLong(e);
     const mcr = e.type === "manual_close_required" && e.payload ? e.payload.reason : null;
+    const clock = e.type === "tw_clock_unchecked" && e.payload ? e.payload.clock : null;   // 只選內文;標題同一個(沒有 ev_tw_clock_unchecked_<clock>)
     const variant = closeAll ? "_close_all" : stuck ? "_stuck" : capital ? "_capital"
-      : mcr === "snapshot_lag" ? "_lag" : mcr === "queued" ? "_queued" : "";
+      : mcr === "snapshot_lag" ? "_lag" : mcr === "queued" ? "_queued" : clock ? "_" + clock : "";
     const unexplained = e.type === "halt" && e.payload && e.payload.unexplained === true && !!e.payload.reason;
     const head = (unexplained && tmLabels.ev_halt_unexplained) || tmLabels["ev_" + e.type + variant] || tmLabels["ev_" + e.type];
     const title = p1UnreachLong(e) && head ? head.replace("{hours}", () => String(Math.floor(e.payload.minutes / 60))) : head;
@@ -5341,6 +5432,7 @@ app.on("browser-window-created", (_e, win) => {
       // 真的要關(不是收起來):主視窗有沒存的策略組合草稿就先問;只收起來的那兩態草稿還在記憶體裡,不問
       if (!quitting && !quitConfirmed && !draftOk && isOurPageUrl(win.webContents.getURL())) {
         e.preventDefault();
+        if (typeof quitScreenRead === "function") quitScreenRead(win);   // app_quit:頁面關掉之前先記下在哪個畫面
         if (!quitAsking && !moveAsking) draftGate(win).then((go) => { if (go && !win.isDestroyed()) { draftOk = true; win.close(); } });
       }
       return;
@@ -5351,6 +5443,11 @@ app.on("browser-window-created", (_e, win) => {
     // 「允許手機對話」開著:關視窗 = 收進背景。第一次收起時講一次(存 ui-prefs,不每次講)
     else if (phone && !trading && tmLabels.phoneHidden && Notification.isSupported() && !phoneHiddenSaid()) { phoneHiddenSaidSet(); notifWatch(new Notification({ title: tmLabels.phoneHiddenTitle, body: tmLabels.phoneHidden }), "phone hidden").show(); }
   });
+});
+// app_crash:主視窗沒回應;Windows 關機／登出時 will-quit 不一定跑得到,先記成正常結束(不算 unclean_exit)
+app.on("browser-window-created", (_e, win) => {
+  win.on("unresponsive", () => { try { if (isOurPageUrl(win.webContents.getURL())) crashTrack("unresp"); } catch (_) { /* 追蹤永遠不能炸 */ } });
+  win.on("session-end", () => { if (app.hasSingleInstanceLock()) require("./telemetry").sessionClose(sessionFile()); });
 });
 /* 結束訊號(SIGTERM / SIGINT / SIGHUP:kill、登出與關機、終端機 Ctrl+C)每一次都走 app.quit(),也就是每一次都過 before-quit 的攔截。
    不自己接的話 Chromium 的處理只管第一次:它收到一次訊號就把處理還原成系統預設,第一次被攔下(用戶按了取消)之後,
@@ -5397,6 +5494,7 @@ let quitting = false;
 // 結束框按取消。沒在下單那條更新走到這裡時(統一／群益有部位)已交給 quitAndInstall:收回才不會卡在「重新啟動中…」
 function quitCanceled() { draftOk = false; draftNote = false; if (restarting === "installing") setRestarting(null); }
 app.on("will-quit", () => startStep("awake", awakeRelease));
+app.on("will-quit", () => { quitDone = true; if (app.hasSingleInstanceLock()) require("./telemetry").sessionClose(sessionFile()); });   // app_crash:正常結束,之後掛掉的不記
 app.on("before-quit", (e) => {
   // 更新重開正在收工:它收完會自己裝 / 結束;這時再跑一次下面的 stop 只會多送一次 SIGTERM、跟 quitAndInstall 搶(稽核 P2-8)
   if (restarting === "stopping") { e.preventDefault(); return; }
@@ -5445,6 +5543,13 @@ app.on("before-quit", (e) => {
     dialog.showMessageBox(BrowserWindow.getAllWindows()[0] || undefined, { type: "warning", noLink: true, message: nLive < 1 && turnQueue.length && tmLabels.quitQueuedTitle ? tmLabels.quitQueuedTitle : tmLabels.quitTurnTitle,
       detail: draftNoted(quitTurnBody(nLive, tmLabels, turnQueue.length)), buttons: sg.buttons, defaultId: sg.defaultId, cancelId: sg.cancelId })
       .then((r) => { quitAsking = false; if (r.response === sg.goIndex) { quitConfirmed = true; app.quit(); } else quitCanceled(); }, () => { quitAsking = false; quitCanceled(); });
+    return;
+  }
+  // 結束時在哪個畫面(app_quit)、第一次安裝被關掉(first_abort):問過的框都過了才送,等它出門再走(最多 QUIT_TEL_MS)。
+  // 更新重開(restarting)不擋:quitAndInstall 途中多一次 preventDefault 會讓它裝了不重開
+  if (!quitting && !restarting && typeof quitTelOnce === "function" && quitTelOnce()) {
+    e.preventDefault();
+    quitTelemetry().finally(() => app.quit());
     return;
   }
   // 常駐程式在跑、或背景安裝的 pip / 背景編 .pyc / Codex 引擎套件下載還在跑:先收掉再結束(pip 不收會變孤兒,下次開 app 跟新的那支一起寫 venv)

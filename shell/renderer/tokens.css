@@ -155,6 +155,9 @@
   --check-border: var(--color-greyLight);
   --check-on-bg: var(--control-fill);
   --check-on-radio: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%23ffffff'/%3e%3c/svg%3e");
+  /* 已選又停用的 radio(canon › Checkbox / Radio › Disabled;名字與值同 web main.css):light greyLightMedium 底＋白點 */
+  --check-disabled-checked-bg: var(--color-greyLightMedium);
+  --check-disabled-indicator-radio: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%23ffffff'/%3e%3c/svg%3e");
 
   /* ---- 元件專用變數(不是通用角色;canon 定案前值照 spec 走) ---- */
   /* 輸入框托盤(suggest.css;spec suggest-tray T2):底與整列 hover／按下 */
@@ -223,6 +226,9 @@
   --check-border: var(--color-greyMedium);
   --check-on-bg: var(--control-fill);
   --check-on-radio: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%230f161a'/%3e%3c/svg%3e");
+  /* 已選又停用:darkBorder 底、點退成 greyDark(#546168,dark 重上值)——失效即失去前景強度 */
+  --check-disabled-checked-bg: var(--color-darkBorder);
+  --check-disabled-indicator-radio: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='2' fill='%23546168'/%3e%3c/svg%3e");
 
   /* ---- 元件專用變數 ---- */
   --surface-tray: var(--surface-muted);

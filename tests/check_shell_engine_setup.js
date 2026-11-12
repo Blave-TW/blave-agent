@@ -94,7 +94,7 @@ function rig(o = {}) {
   const base = o.base || tmpDir();
   const ws = path.join(base, "workspace"), venvPy = path.join(base, "venv", "bin", "python");
   let clock = o.clock || 1000;
-  const calls = [], snaps = [], logs = [], tracked = [], last = {}, prio = [];
+  const calls = [], snaps = [], logs = [], tracked = [], whys = [], last = {}, prio = [];
   const behave = o.behave || (() => ({ code: 0 }));
   const spawn = (bin, args, opt) => {
     const c = new EventEmitter(); c.stdout = new EventEmitter(); c.stderr = new EventEmitter(); c.pid = 5000 + calls.length;
@@ -120,11 +120,13 @@ function rig(o = {}) {
     // 假子行程的 pid(5000+n)可能撞到本機真的行程:探針預設當它死了,否則 waitLock 在假時鐘下永遠等不完
     idleMs: o.idleMs, watchMs: 5, alive: o.alive || (() => false), sleep: o.sleep, lockWaitMs: o.lockWaitMs, setPriority: (pid) => prio.push(pid),
     groupMB: o.groupMB === undefined ? { core: 100, us: 10 } : o.groupMB, pipCacheDir: o.pipCacheDir, procStart: o.procStart, killPid: o.killPid,
-    now: o.realNow ? Date.now : () => clock, onChange: (s) => snaps.push(s), log: (m) => logs.push(m), track: (ev, p) => tracked.push(ev + ":" + p.result),
+    now: o.realNow ? Date.now : () => clock, onChange: (s) => snaps.push(s), log: (m) => logs.push(m),
+    // engine_fail(0.1.52)另收一串:上面那些 tracked 的斷言只看 engine_setup／engine_opt_fail
+    track: (ev, p) => (ev === "engine_fail" ? whys : tracked).push(ev + ":" + (ev === "engine_fail" ? p.why : p.result)),
   });
   // settle:等背景編譯(假的,下一輪事件迴圈就結束)收尾;同一個 base 開下一個 rig 之前要等,不然記號檔還沒寫
   const settle = async () => { for (let k = 0; k < 2000 && S.compiling(); k++) await new Promise((x) => setTimeout(x, 1)); };
-  return { S, base, ws, venvPy, calls, snaps, logs, tracked, prio, settle, tick: (ms) => { clock += ms; }, get lastChild() { return last.child; } };
+  return { S, base, ws, venvPy, calls, snaps, logs, tracked, whys, prio, settle, tick: (ms) => { clock += ms; }, get lastChild() { return last.child; } };
 }
 const pipCalls = (r) => r.calls.filter((c) => c.args.includes("pip"));
 // 一條 pip 要裝的 pin:-c <檔> 之後的全部
@@ -637,6 +639,72 @@ const venvDir = (r) => path.join(r.base, "venv");
     const n = rig({ behave: (bin, args) => (args.includes(pin("numpy")) ? { code: 1, err: "ERROR: No matching distribution found for numpy" } : { code: 0 }) });
     let e2 = null; try { await n.S.ensure(); } catch (e) { e2 = e; }
     ok("別的失敗不重跑、照舊報錯,旗標也不拿掉", e2 && pipCalls(n).length === 2 && pipCalls(n).every((c) => c.args.includes("--progress-bar=raw")), pipCalls(n).length); }
+
+  // ── 0.1.52 engine_fail(spec desktop-telemetry-gaps §4):細項判定、pre、本機落地 ──
+  { const FAIL_VALS = require(path.join(SHELL, "telemetry.js")).EVENTS.engine_fail.why;
+    const H = "WARNING: Retrying ... NewConnectionError(...)\nERROR: x";
+    const CASES = [["ERROR: THESE PACKAGES DO NOT MATCH THE HASHES FROM THE REQUIREMENTS FILE.", "hash"], ["ERROR: Could not install packages due to an OSError: [Errno 28] No space left on device", "disk"],
+      ["ERROR: Could not install packages due to an OSError: [Errno 13] Permission denied: '/x'", "perm"], ["ERROR: ResolutionImpossible: for help visit ...", "resolve"],
+      ["ERROR: Cannot install numpy==2.5.3 and scipy==1.18.1 because these package versions have conflicting dependencies.", "resolve"],
+      ["ERROR: Could not find a version that satisfies the requirement numpy==9 (from versions: none)\nERROR: No matching distribution found for numpy==9", "nowheel"], ["ERROR: boom", "other"]];
+    ok("pipWhy:failKind 判成 net／timeout 就照它;other 才細分成 hash／disk／perm／resolve／nowheel／other",
+      E.pipWhy({ stderr: H }, E.failKind({ stderr: H })) === "net" && E.pipWhy({ stderr: "x", timedOut: true }, "timeout") === "timeout"
+      && CASES.every(([err, want]) => E.pipWhy({ stderr: err }, E.failKind({ stderr: err })) === want), CASES.map(([err]) => E.pipWhy({ stderr: err }, E.failKind({ stderr: err }))));
+    ok("venvWhy:逾時 / 起不來 / ensurepip / 其他非 0", E.venvWhy({ timedOut: true }) === "venv_timeout" && E.venvWhy({ spawnFail: true }) === "venv_spawn"
+      && E.venvWhy({ stderr: "Error: Command '[...python', '-m', 'ensurepip', '--upgrade', '--default-pip']' returned non-zero exit status 1." }) === "venv_ensurepip" && E.venvWhy({ stderr: "boom" }) === "venv_exit");
+    // 列舉:每一種步驟 × 每一種原因組出來的值都在白名單上(外殼多出 api 沒有的值,那一則會被 api 丟掉)
+    const outs = new Set();
+    for (const step of ["ws", "engine", "pkgs", null]) for (const sub of ["venv", null]) for (const e of [{}, { code: "ENOSPC" }, { code: "EACCES" }, { code: "EPERM" }, { code: "EROFS" }, { code: "EIO" },
+      ...["venv_spawn", "venv_ensurepip", "venv_exit", "venv_timeout"].map((why) => ({ why })), ...["net", "nowheel", "resolve", "hash", "disk", "perm", "other", "timeout"].map((cause) => ({ cause }))]) outs.add(E.engineFailWhy(step, sub, e));
+    ok("engineFailWhy 列舉出來的每個值都在 telemetry.js engine_fail 白名單上、且 ≤16 字", [...outs].every((v) => FAIL_VALS.includes(v) && v.length <= 16), [...outs].filter((v) => !FAIL_VALS.includes(v)));
+    ok("…白名單上除了 pre 都列舉得到(pre 走 preFail)", FAIL_VALS.filter((v) => v !== "pre").every((v) => outs.has(v)), FAIL_VALS.filter((v) => v !== "pre" && !outs.has(v)));
+    // 接上真的流程:套件那組 hash 不符 → engine_setup first_other + engine_fail pkg_hash,本機落地一筆
+    const h = rig({ behave: (bin, args) => (args.includes(pin("numpy")) ? { code: 1, err: "ERROR: THESE PACKAGES DO NOT MATCH THE HASHES FROM THE REQUIREMENTS FILE.\n    numpy from https://x/numpy.whl:\n        Expected sha256 aa\n             Got        bb" } : { code: 0 }) });
+    try { await h.S.ensure(); } catch (_) { /* 預期 */ }
+    const logF = path.join(h.base, "state", "engine-setup.log");
+    const recs = fs.existsSync(logF) ? fs.readFileSync(logF, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+    ok("套件那組 hash 不符:engine_setup first_other(不變)+ engine_fail pkg_hash;engine-setup.log 一筆、欄位有步驟／why／kind",
+      h.tracked.join() === "engine_setup:first_other" && h.whys.join() === "engine_fail:pkg_hash" && recs.length === 1 && recs[0].step === "pkgs" && recs[0].why === "pkg_hash" && recs[0].kind === "other" && recs[0].run === "first", { t: h.tracked, w: h.whys, recs });
+    // 建 venv 起不來(spawn 丟例外)→ venv_spawn
+    const vs = rig({ behave: (bin, args) => { if (args.includes("venv")) throw Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" }); return { code: 0 }; } });
+    try { await vs.S.ensure(); } catch (_) { /* 預期 */ }
+    ok("建 venv 時那顆 Python 起不來 → engine_fail venv_spawn(engine_setup 照舊 first_other)", vs.whys.join() === "engine_fail:venv_spawn" && vs.tracked.join() === "engine_setup:first_other", { w: vs.whys, t: vs.tracked });
+    // SDK 那條斷線 → sdk_net,跟 engine_setup 的 net 一致
+    const sn = rig({ behave: (bin, args) => (args.includes(SDKP[0]) ? { code: 1, err: H } : { code: 0 }) });
+    try { await sn.S.ensure(); } catch (_) { /* 預期 */ }
+    ok("SDK 那條斷線 → engine_fail sdk_net、engine_setup first_net(兩個事件講同一件事)", sn.whys.join() === "engine_fail:sdk_net" && sn.tracked.join() === "engine_setup:first_net", { w: sn.whys, t: sn.tracked });
+    // 我們自己收掉的(關 app)不送也不落地
+    const ab = rig({ behave: (bin, args) => (args.includes(pin("pandas")) ? { hang: true } : { code: 0 }) });
+    const pa = ab.S.ensure().catch((e) => e);
+    for (let k = 0; k < 500 && !ab.S.busy(); k++) await new Promise((x) => setTimeout(x, 1));
+    for (let k = 0; k < 500 && !pipCalls(ab).some((c) => c.args.includes(pin("pandas"))); k++) await new Promise((x) => setTimeout(x, 1));
+    await ab.S.abort(); await pa;
+    ok("關 app 收掉的:不送 engine_fail、不寫 engine-setup.log", ab.whys.length === 0 && !fs.existsSync(path.join(ab.base, "state", "engine-setup.log")), ab.whys);
+    // pre:envPath 就丟例外 → 以前什麼都沒有;現在出失敗卡、engine_setup first_other + engine_fail pre、落地一筆(家目錄換成 ~)
+    const HOME = os.homedir();
+    const p = rig({ envPath: async () => { throw new Error("login shell failed under " + path.join(HOME, "secret-dir")); } });
+    let pe = null; try { await p.S.ensure(); } catch (e) { pe = e; }
+    const ps = p.S.snapshot(), pl = fs.readFileSync(path.join(p.base, "state", "engine-setup.log"), "utf8");
+    ok("pre:例外照樣往外丟;快照是失敗態(show、steps 空陣列、kind first)、卡畫得出來", pe && ps.phase === "fail" && ps.show === true && Array.isArray(ps.steps) && ps.steps.length === 0 && ps.kind === "first" && ps.err && ps.err.step === null, ps);
+    ok("pre:只送 engine_fail pre;engine_setup 不送(它只記一輪真的有東西要裝的結果,舊序列不斷)", p.tracked.length === 0 && p.whys.join() === "engine_fail:pre", { t: p.tracked, w: p.whys });
+    ok("pre:engine-setup.log 一筆 step=null、why=pre,錯誤摘要裡的家目錄經 redact 換成 ~", /"why":"pre"/.test(pl) && !pl.includes(HOME) && pl.includes("~"), pl);
+    // pre 之後重試成功:begin 接著那份失敗快照,裝得完
+    let failEnv = true; const p2 = rig({ envPath: async () => { if (failEnv) throw new Error("x"); return "/usr/bin:/bin"; } });
+    try { await p2.S.ensure(); } catch (_) { /* 預期 */ } failEnv = false; await p2.S.ensure();
+    ok("pre 之後按重試:照常裝完(done)、送 first_done", p2.S.snapshot().phase === "done" && p2.tracked.join() === "engine_setup:first_done", p2.tracked);
+    // 已經裝好的人(工作區與核心記號在)撞到 pre → 記成 upd,不是 first
+    const up = rig({ base: h.base }); fs.writeFileSync(path.join(venvDir(up), ".blave-deps-1"), DEPS.join("\n"));
+    const up2 = rig({ base: h.base, envPath: async () => { throw new Error("x"); } });
+    try { await up2.S.ensure(); } catch (_) { /* 預期 */ }
+    ok("既有安裝撞到 pre → 卡記成更新(不是第一次)", up2.whys.join() === "engine_fail:pre" && up2.S.snapshot().kind === "update", { w: up2.whys, k: up2.S.snapshot().kind });
+    if (process.platform !== "win32") { const fresh = path.join(tmpDir(), "Blave"); const fb = rig({ base: fresh, envPath: async () => { throw new Error("x"); } });
+      try { await fb.S.ensure(); } catch (_) { /* 預期 */ }
+      ok("BASE 還不在時撞到 pre:落地 log 建出來的 BASE 是 0700(同 ws 那一步)", fs.existsSync(path.join(fresh, "state", "engine-setup.log")) && (fs.statSync(fresh).mode & 0o777) === 0o700, (fs.statSync(fresh).mode & 0o777).toString(8)); }
+    // 只留最近 FAIL_LOG_KEEP 筆
+    const many = rig({ envPath: async () => { throw new Error("x"); } });
+    for (let i = 0; i < E.FAIL_LOG_KEEP + 5; i++) { try { await many.S.ensure(); } catch (_) { /* 預期 */ } }
+    ok("engine-setup.log 只留最近 " + E.FAIL_LOG_KEEP + " 筆", fs.readFileSync(path.join(many.base, "state", "engine-setup.log"), "utf8").split("\n").filter(Boolean).length === E.FAIL_LOG_KEEP);
+    ok("送出點:enginesetup.js 失敗那段 engine_fail 跟 engine_setup 同一個條件(relink、自己收掉的不送)", /if \(!e\.aborted\) \{ const why = engineFailWhy\(S\.err\.step, S\.cur && S\.cur\.sub, e\); failLog\(why, S\.err\.step, e\); if \(S\.kind !== "relink"\) trackWhy\(why\); \}/.test(fs.readFileSync(path.join(SHELL, "enginesetup.js"), "utf8"))); }
 
   for (const d of TMPS) fs.rmSync(d, { recursive: true, force: true });
   process.exit(red ? 1 : 0);

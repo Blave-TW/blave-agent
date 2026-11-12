@@ -62,6 +62,10 @@ Scenarios (each in its own child process and scratch dir):
       inside it; past it the read clears it and the entry goes once more.
   L3  群益 only: a close sent in the pre-open sits queued to the open. Right: no second close
       before the open (sNewClose=2 would open a short of 2), the open's read books it.
+  C1  全部平倉 after the close (HALT, the key deferred): nothing goes after the close nor in the
+      pre-open; at the open exactly one close, no entry while HALT holds, the deferral clears.
+  C2  the same, 啟動下單 pressed in the pre-open: nothing sent, the deferral is dropped and said
+      on the venue's row, the strategy's target rules.
 
 President (統一) runs the same scenarios when lib/order_president.py exists
 (another branch); on main they are skipped. Every contract-calendar "now" is
@@ -136,6 +140,11 @@ def _pin_session():
     except ImportError:
         return
     tw_clock.in_session = lambda ts: True
+    try:
+        from lib import order_president
+    except ImportError:
+        return
+    order_president._in_trading_window = lambda: True  # 統一's login window, the wall clock's too
 
 
 def capital_world(tmp):
@@ -380,7 +389,16 @@ def child(venue, sid, tmp):
         w.session, w.open_at = True, None
         tw_clock.in_session = lambda ts: w.session
         tw_clock.next_open = lambda ts: w.open_at
+        tw_clock.close_hold = lambda now=None: None  # out of session here = the pre-open: closes go
         w.mode = {"L1": "silent", "L2": "drop"}.get(sid)
+    if sid[0] == "C":
+        from lib import tw_clock
+        w.session, w.taking, w.open_at = True, True, None
+        tw_clock.in_session = lambda ts: w.session
+        tw_clock.next_open = lambda ts: w.open_at
+        tw_clock.close_hold = lambda now=None: (None if w.taking
+                                                else {"why": "session", "until": time.time() + 3600})
+        tw_clock.queued_until = lambda now=None: None if w.session else w.open_at
     round_("entry")
     w.mode = None
     round_("converged")
@@ -589,6 +607,42 @@ def child(venue, sid, tmp):
               and len(audits("late_fill_adopted")) == 1)
         why = (f"pre-open close: held before the open={held}, closes sent={len(closes)}, broker={w.rows}, "
                f"book TXF={ledger_txf(last)}, halt={last['halt_reason']!r}")
+    elif sid in ("C1", "C2"):
+        # 全部平倉 after the close: flatten (check_capital_flatten_identity) books the key in
+        # state/paper_tw_close.json and HALT holds; the reconciler closes it at the open
+        from lib import portfolio as pf
+        w.session, w.taking, w.open_at = False, False, time.time() + 7200
+        pf.defer_paper_tw_close(["TXF"])
+        guard.trip_halt("close-all (test)", "user")
+        r1 = round_("13:50: HALT, close-all deferred")
+        let_time_pass(5.5)
+        w.taking = True
+        r2 = round_("14:51: the pre-open")
+        held = not r1["sent"] and not r2["sent"] and w.net() == 2 and ledger_txf(r2) == 2
+        if sid == "C1":
+            w.session = True
+            let_time_pass(5.5)
+            r3 = round_("the open")
+            let_time_pass(30)
+            r4 = round_("next round, still halted")
+            let_time_pass(30)
+            last = round_("one more")
+            sent = [o for r in (r3, r4, last) for o in r["sent"]]
+            closes = [o for o in sent if o.get("intent") == "reduce" or o.get("opencloseflag") == "1"]
+            ok = (held and len(sent) == 1 and len(closes) == 1 and w.net() == 0 and ledger_txf(last) == 0
+                  and last["halt"] and not os.path.exists(pf._PAPER_TW_CLOSE_PATH))
+            why = (f"close-all after the close: held before the open={held}, sent at/after the open={sent}, "
+                   f"broker={w.rows}, book TXF={ledger_txf(last)}, halt={last['halt']}, "
+                   f"deferred file left={os.path.exists(pf._PAPER_TW_CLOSE_PATH)}")
+        else:
+            guard.clear_halt("user")
+            let_time_pass(5.5)
+            last = round_("啟動下單 in the pre-open")
+            said = [e for e in errors() if "台指期平倉取消" in str(e.get("error", ""))]
+            ok = (held and not last["sent"] and w.net() == 2 and ledger_txf(last) == 2
+                  and said and said[-1].get("exchange") == venue and not os.path.exists(pf._PAPER_TW_CLOSE_PATH))
+            why = (f"resumed before the open: held={held}, sent={last['sent']}, broker={w.rows}, "
+                   f"book TXF={ledger_txf(last)}, cancel row={said[-1:]}")
     elif sid in ("H1", "H2"):
         y, m, d_late = (2026, 2, 23) if sid == "H1" else (2023, 1, 30)
         d_third = 18
@@ -672,7 +726,7 @@ def main():
     failed, xfail = [], []
     for venue in venues:
         for sid in ("A", "A2", "A3", "A4", "A5", "A6", "F", "M", "M2", "Z", "R1", "R2", "B1", "B2", "B2R", "B3", "H1", "H2",
-                    "L1", "L2", "L3"):
+                    "L1", "L2", "L3", "C1", "C2"):
             if sid[0] == "L" and venue != "capital":
                 continue  # 統一's park: tests/check_president_lib.py and check_tw_entry_gate.py
             cid = f"{venue}:{sid}"

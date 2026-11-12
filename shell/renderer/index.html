@@ -664,8 +664,12 @@
     </div>
     <div class="cx-body" id="cx-body"></div>
     <div class="modal-foot">
+      <!-- 綁著模擬、自動下單正在跑、選了一家:連上會停掉什麼(cxStopsRun) -->
+      <span class="del-where" id="cx-stops" hidden></span>
       <!-- 雲端:鈕正上方講目的地(雲端 · 真錢 · Binance) -->
       <span class="del-where" id="cx-where" hidden></span>
+      <!-- 腳左邊:按了直接綁模擬交易並關框(還沒綁任何帳戶才出;群益、統一那幾條不出) -->
+      <button type="button" class="btn-quiet" id="cx-paper" data-i18n="cx.paperFoot" hidden></button>
       <button type="button" class="btn-out" id="cx-cancel" data-i18n="del.cancel"></button>
       <button type="button" class="btn-fill" id="cx-go"></button>
     </div>

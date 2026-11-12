@@ -354,10 +354,14 @@ def tw_trading_day():
     return {"date": today, "trading": rec["verdict"]}
 
 
+# 台指期 book keys (群益 and 統一 alike: manager/flatten._book_key maps 群益's month codes to these)
+_TW_FUT_ROOTS = ("TXF", "MXF", "TMF")
+
+
 def deferred_close():
-    """Paper TW stock keys close-all deferred to the session open (lib/portfolio
-    defer_paper_tw_close, state/paper_tw_close.json), sorted; [] when none. 啟動下單
-    (resume or resume_wait) cancels them, so the start box lists them first."""
+    """Keys close-all deferred to the session open (lib/portfolio defer_paper_tw_close,
+    state/paper_tw_close.json) — paper TW stocks and 台指期 roots — sorted; [] when none.
+    啟動下單 (resume or resume_wait) cancels them, so the start box lists them first."""
     rec = _read_json(os.path.join(WORKSPACE_STATE, "paper_tw_close.json"))
     keys = rec.get("keys") if isinstance(rec, dict) else None
     if not isinstance(keys, list):
@@ -367,7 +371,7 @@ def deferred_close():
         if not isinstance(k, str):
             continue
         sym, spot = (k[:-5], "@spot") if k.endswith("@spot") else (k, "")
-        if _TW_STOCK_RE.match(sym.upper()):
+        if _TW_STOCK_RE.match(sym.upper()) or (not spot and sym.upper() in _TW_FUT_ROOTS):
             out.add(sym.upper() + spot)
     return sorted(out)[:PORTFOLIO_WEIGHTS_MAX]
 

@@ -100,7 +100,11 @@ function world(o) {
     ok("P2-1 那一句列出哪幾檔:代號＋股名、去掉 @spot、最多三檔其餘「和另外 N 檔」;空的、不是陣列 = null",
       L({ deferred_close: ["2330@spot", "2454@spot"] }) === 'tr.deferredClose|{"syms":"2330 台積電、2454"}'
       && L({ deferred_close: ["1101@spot", "1102@spot", "1103@spot", "2330@spot"] }) === 'tr.deferredClose|{"syms":"1101、1102、1103tr.opt.catchMore|{\\"n\\":1}"}'
-      && L({ deferred_close: [] }) === null && L({ deferred_close: "2330" }) === null && L({}) === null, L({ deferred_close: ["1101@spot", "1102@spot", "1103@spot", "2330@spot"] })); }
+      && L({ deferred_close: [] }) === null && L({ deferred_close: "2330" }) === null && L({}) === null, L({ deferred_close: ["1101@spot", "1102@spot", "1103@spot", "2330@spot"] }));
+    // 稽核 0153 Y2:延後的是台指期(群益、統一的根代號)→ Wei 核准那一句,不列代號;月份代號不是根代號,不算
+    ok("Y2 延後的台指期平倉:啟動框講會取消(tr.deferTxfCancel),TXF/MXF/TMF 都認",
+      ["TXF", "MXF", "TMF"].every((k) => L({ deferred_close: [k] }) === "tr.deferTxfCancel|{}") && L({ deferred_close: ["TMF", "TXF"] }) === "tr.deferTxfCancel|{}"
+      && L({ deferred_close: ["TXFL6"] }) !== "tr.deferTxfCancel|{}", L({ deferred_close: ["TMF"] })); }
   { const w = world({ money: "real", env: "cloud", restart: "machine" });
     ok("主機重開後:狀態句是主機那一句;不掛舊訊號那一句(由重算與閘門講)", w.body.kids[0].textContent === "tr.cloud.restartStartLine" && !w.opts[1].w); }
   { const w = world({ money: "paper", report: { can_wait_start: false } });

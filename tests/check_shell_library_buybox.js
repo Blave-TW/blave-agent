@@ -28,7 +28,7 @@ class El {
 function world(o) {
   const ids = {}; ["del-scrim", "del-title", "del-ok", "del-cancel", "del-close", "lib", "lib-cta"].forEach((id) => { ids[id] = new El("div"); ids[id].id = id; });
   ids["del-scrim"].hidden = true;
-  const log = { syncRead: [], opens: 0, closes: 0, boxes: [], buys: [], bindBuy: 0, legacy: [], auto: 0 };
+  const log = { syncRead: [], opens: 0, closes: 0, boxes: [], buys: [], bindBuy: 0, legacy: [], auto: 0, events: [] };
   let body = null, ctx = null;
   const sb = {
     console, Object, Number, Math, JSON, Promise, Intl,
@@ -42,6 +42,7 @@ function world(o) {
     hasToken: true,
     window: { blave: {
       balance: async () => (typeof o.balance === "function" ? o.balance() : o.balance),
+      trackEvent: (ev, p) => { log.events.push(ev + ":" + JSON.stringify(p)); },
       libraryPurchase: (id, topup, box) => new Promise((res) => { log.buys.push({ id, topup, box }); log.release = (r) => res(r); }),
     } },
     // 確認框:同 app.js 的單一 #del-scrim。藏著 → 出來才算開一次;delClose 看 lock(付款中收不掉)
@@ -69,7 +70,7 @@ function world(o) {
   vm.createContext(sb);
   sb.libBalLoad = async () => { const r = await sb.window.blave.balance(); sb.LIB.bal = r && typeof r.balance === "number" ? r.balance : null; sb.LIB.last4 = r && typeof r.last4 === "string" ? r.last4 : null; };
   // 舊兩段流程只記一筆,不真的跑(這支只驗一鍵框;舊流程在 check_shell_library ④)
-  vm.runInContext(/const LIB_PB_MSG = [^\n]*/.exec(src)[0].replace(/^const/, "var") + "\n" + ["libEl", "libBuyBranch", "libTwd", "libHasCard", "libBuyOneOpen", "libBuyOneBox", "libBuyOneGo", "libBuyBox"].map((n) => (src.includes("async function " + n + "(") ? "async " : "") + cutFn(src, n)).join("\n"), sb);
+  vm.runInContext(/const LIB_PB_MSG = [^\n]*/.exec(src)[0].replace(/^const/, "var") + "\n" + ["libEl", "libBuyBranch", "libBuyResult", "libTwd", "libHasCard", "libBuyOneOpen", "libBuyOneBox", "libBuyOneGo", "libBuyBox"].map((n) => (src.includes("async function " + n + "(") ? "async " : "") + cutFn(src, n)).join("\n"), sb);
   const realBuyBox = sb.libBuyBox;
   sb.libBuyBox = (s, stage, opener, x) => { if (x && (x.legacy || x.failed)) { log.legacy.push(stage); return; } realBuyBox(s, stage, opener, x); };
   return { sb, ids, log, ok: () => { const c = ctx, go = c && c.onOk; if (!go) return; if (!c.stay) sb.delClose(false); go(); }, cur: () => log.boxes[log.boxes.length - 1] };
@@ -243,7 +244,7 @@ const shown = (w) => !w.ids["del-scrim"].hidden;
   { const pc = cutFn(src, "libPaintCta");
     ok("讀餘額時:付費主鈕鈕字照舊(buyLabel)、前面插 spin16、disabled", /const pb = btn\("btn-fill", buyLabel\(\)[\s\S]{0,300}if \(LIB\.buyRead === s\.id\) \{ const sp = libEl\("span", "spin16"\);[^\n]*pb\.prepend\(sp\); pb\.disabled = true; \}/.test(pc));
     ok("付完那句:paid 型畫成 p.note.up(12px ink-2、無 fault-mark)、role=status;installed 時從 bbRes 拿掉",
-      /bb\.kind === "paid" && c\.state === "installed"\) LIB\.bbRes\.delete\(s\.id\)/.test(pc) && /libEl\("p", "note up", libBbText\(bb\)\)/.test(pc) && /paid\.setAttribute\("role", "status"\)/.test(pc));
+      /bb\.kind === "paid" && c\.state === "installed"\) LIB\.bbRes\.delete\(s\.id\)/.test(pc) && /libEl\("p", "note up lib-res", libBbText\(bb\)\)/.test(pc) && /paid\.setAttribute\("role", "status"\)/.test(pc));
     ok("一鍵框原文不再設 del-ok.disabled、不再有 lib-pb-meta", !/ok\.disabled = true/.test(cutFn(src, "libBuyOneGo")) && !/lib-pb-meta/.test(src)
       && !/lib-pb-meta/.test(fs.readFileSync(path.join(R, "library.css"), "utf8"))); }
   // ── 字串:zh／en 都齊(web 同一個框逐字同,清單見回報) ──
@@ -252,6 +253,36 @@ const shown = (w) => !w.ids["del-scrim"].hidden;
     && STR.zh["lib.pb.title"] === "確認購買" && STR.en["lib.pb.title"] === "Confirm Purchase" && STR.zh["lib.pb.once"] === "一次付清，不續扣。" && STR.en["lib.pb.once"] === "One-time payment in TWD. No renewals."
     && STR.zh["lib.pb.card"] === "卡 {l}" && STR.en["lib.pb.card"] === "Card {l}" && STR.en["lib.pb.pay"] === "Pay with" && STR.en["lib.pb.wallet"] === "Balance"
     && STR.zh["lib.pb.negative"] === "錢包是負的，先儲值才能刷卡購買。" && STR.en["lib.pb.negative"] === "Your balance is negative. Add credit before paying by card." && STR.zh["plan.addCredit"] === "前往儲值");
+  // ── 0.1.53 結果埋點 lib_buy_result:值同網頁 library_purchase_result(already_purchased → already_owned),每按一次付款送一則、只帶 result ──
+  { const w = world({ LIB: { bal: 1250 } }), R = (st, b) => w.sb.libBuyResult(w.sb.libBuyBranch(st, b), st, b);
+    const cases = [
+      [200, { status: "ok" }, "success"],
+      [400, { error: "already purchased" }, "already_owned"],
+      [402, { amount_twd: 70, reason_code: "already_purchased" }, "already_owned"],
+      [500, { amount_twd: 70, reason: "unavailable" }, "failed"],
+      [402, { error: "no card bound" }, "no_card"],
+      [402, { needs_topup: true, has_card: false }, "no_card"],
+      [402, { needs_topup: true, has_card: true }, "needs_topup"],
+      [409, { error_code: "SOURCE_CHANGED", price_source: "none" }, "no_card"],
+      [409, { error_code: "PRICE_CONFIRM_REQUIRED", price_twd: 90, price_source: "card" }, "changed"],
+      [409, { error_code: "SOURCE_CHANGED", price_twd: 70, price_source: "wallet" }, "changed"],
+      [409, { error_code: "SOURCE_CHANGED", price_twd: 70 }, "failed"],
+      [409, { error_code: "BALANCE_NEGATIVE" }, "balance_negative"],
+      [409, { error: "purchase already in progress" }, "in_progress"],
+      [0, null, "failed"],
+    ];
+    const vals = require(path.join(__dirname, "..", "shell", "telemetry.js")).EVENTS.lib_buy_result.result;
+    ok("libBuyResult:每種回應對到網頁 buyOutcome 同一個 result,值都在白名單上", cases.every(([st, b, want]) => R(st, b) === want && vals.includes(want)), JSON.stringify(cases.map(([st, b]) => R(st, b))));
+    const s = S(); w.sb.libBuyBox(s, "confirm", null, {}); await tick();
+    ok("開框不送結果(還沒按付款)", w.log.events.length === 0);
+    w.ok(); await tick(); w.log.release({ status: 409, body: { error_code: "SOURCE_CHANGED", price_twd: 70, balance_twd: 10, price_source: "card", has_card: true } }); await tick();
+    w.ok(); await tick(); w.log.release({ status: 200, body: { status: "ok", paid_from: "card" } }); await tick();
+    ok("按兩次付款各送一則 lib_buy_result,只帶 result(不帶 strategy_id、金額)", JSON.stringify(w.log.events) === JSON.stringify(['lib_buy_result:{"result":"changed"}', 'lib_buy_result:{"result":"success"}']), JSON.stringify(w.log.events)); }
+  { const w = world({ LIB: { bal: 10, last4: "4242" } }); const s = S();
+    w.sb.libBuyBox(s, "confirm", null, {}); await tick(); w.ok(); await tick();
+    w.sb.window.blave.trackEvent = () => { throw new Error("boom"); };
+    w.log.release({ status: 409, body: { error_code: "BALANCE_NEGATIVE", balance_twd: -50 } }); await tick();
+    ok("trackEvent 丟例外也不影響框:照畫負餘額那一態", shown(w) && w.cur().ok === "前往儲值" && w.sb.LIB.buying === null, JSON.stringify(w.cur())); }
   console.log(red ? `\n${red} FAIL` : "\nALL PASS");
   process.exit(red ? 1 : 0);
 })().catch((e) => { console.log("FAIL  例外 " + (e && e.stack)); process.exit(1); });

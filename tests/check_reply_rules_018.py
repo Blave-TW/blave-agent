@@ -171,8 +171,9 @@ t("#5B quickstart():順序寫死(先搜尋、同時可以抓 Blave 資料 → �
   and "Blave data may be fetched in the same step" in qs
   and all(f"  {name}{sig(fn, ('b',))} : " in qs for name, fn in RB.BRICKS.items()) and len(RB.BRICKS) >= 20
   and all(f"{f.__name__}{sig(f)}" in qs for f in (RT.research_pack, RT.build, RT.publish)) and ", ".join(RT.RESEARCH_TOPICS) in qs and '"bricks": [["price_chart"' in qs)
-t("#5B quickstart() 夠短(一個畫面讀得完:60 行、6,000 字以內),講明不先讀 reports.md / lib 原始碼、不 grep 簽名;沒有積木的數字去哪裡找",
-  len(qs.splitlines()) <= 60 and len(qs) <= 6000 and "Not first: references/reports.md, lib source, a grep for a signature" in qs and "Look once in references/lib.md" in qs and "not in lib source" in qs)
+# Wei 核准 75 行／7,500 字（報告好讀度第一段）;spec .claude/output/specs/research-report-readability-2026-11-10.md
+t("#5B quickstart() 夠短(75 行、7,500 字以內),講明不先讀 reports.md / lib 原始碼、不 grep 簽名;沒有積木的數字去哪裡找",
+  len(qs.splitlines()) <= 75 and len(qs) <= 7500 and "Not first: references/reports.md, lib source, a grep for a signature" in qs and "Look once in references/lib.md" in qs and "not in lib source" in qs)
 rep = read("references", "reports.md")
 top = rep.split("\n## ")[0]
 custom = [l for l in agents.splitlines() if l.startswith("- **A request that names a template")]

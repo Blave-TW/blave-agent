@@ -60,7 +60,7 @@ const authUnknown = eval("(" + app.match(/^const authUnknown = (.*);$/m)[1] + ")
       agentLoginRun: async () => { throw new Error("spawn EBADF"); },
       detectFresh: async () => { log.detect++; ctx.lastDetect = { codex: { installed: true, loggedIn: false, why: "codex_nonzero" } }; } };
     const run = new Function("ctx", `with (ctx) { ${LL}\nreturn localLogin; }`)(ctx);
-    const b = { closest: (q) => (q === "#lai-rows" || q === ".cn-opts" ? null : {}) };
+    const b = { closest: (q) => (q === "#lai-rows" || q === "#set-model" ? null : {}) };
     let threw = false; try { await run("codex", b); } catch (_) { threw = true; }
     ok("…實跑:例外不往外丟、loginPending 清成 null、detect() 叫了、那一列寫「登入沒完成」", !threw && ctx.loginPending === null && log.detect === 1 && ctx.ROWMSG.codex === "failed", { threw, lp: ctx.loginPending, ...log, msg: ctx.ROWMSG.codex });
   }

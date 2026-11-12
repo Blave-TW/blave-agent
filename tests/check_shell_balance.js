@@ -98,6 +98,6 @@ const mk = (reply, o) => { const sent = []; let creds = (o && o.creds) || { toke
   // 登入那刻發的綁卡前額度:不寫死、跟連結畫面同一個來源(cnFreeQ),不是綁卡試用那池(planVars().q)
   { const strings = fs.readFileSync(path.join(SHELL, "renderer", "strings.js"), "utf8");
     ok("cn.blave.descSet 的額度是變數({q},來自 api 的 free_ai_credit);拿不到數字只講怎麼收錢那半句", (strings.match(/"cn\.blave\.descSet": "[^"]*\{q\} TWD[^"]*"/g) || []).length === 2 && !/"cn\.blave\.descSet": "[^"]*100/.test(strings)
-      && (strings.match(/"cn\.blave\.descSetNoNum":/g) || []).length === 2 && /const q = o\.desc === "cn\.blave\.descSet" \? cnFreeQ\(\) : "";/.test(app)); }
+      && (strings.match(/"cn\.blave\.descSetNoNum":/g) || []).length === 2 && /const q = desc === "cn\.blave\.descSet" \? cnFreeQ\(\) : "";/.test(app)); }
   console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);
 })().catch((e) => { console.log("FAIL  " + (e && e.stack)); process.exit(1); });

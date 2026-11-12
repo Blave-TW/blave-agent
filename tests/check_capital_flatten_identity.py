@@ -178,6 +178,7 @@ from lib import tw_clock as _twc  # noqa: E402
 HOLD = flatten.CAPITAL_QUEUED_HOLD_S
 _real_qu = _twc.queued_until
 _twc.queued_until = lambda now=None: None   # in session unless a case says otherwise
+_twc.close_hold = lambda now=None: None     # the broker takes closes (else flatten defers them)
 
 
 def park(at, intent="reduce"):
@@ -351,6 +352,37 @@ check("TMF" not in zeroed and any("未確認成交" in e[2] for e in errors),
       "self_ledger: 群益 close partially filled → not booked flat")
 run_flatten(True, BOOK)  # control for the four above
 check("TMF" in zeroed and not errors, "self_ledger: 群益 close filled in full → TMF zeroed")
+
+# after the close (lib/tw_clock.close_hold): 群益 is not sent, the close is deferred to the reconciler's
+# first round after the open and said; the crypto leg still closes
+_real_ptc = _lp0._PAPER_TW_CLOSE_PATH
+_lp0._PAPER_TW_CLOSE_PATH = os.path.join(BASE, "paper_tw_close.json")
+_twc.close_hold = lambda now=None: {"why": "session", "until": _t0.time() + 3600}
+run_flatten(True, BOOK)
+_twc.close_hold = lambda now=None: None
+deferred = json.load(open(_lp0._PAPER_TW_CLOSE_PATH)).get("keys") if os.path.exists(_lp0._PAPER_TW_CLOSE_PATH) else None
+check(("capital", "TM2610") not in closes and ("binance", "BTCUSDT") in closes and "TMF" not in zeroed
+      and deferred == ["TMF"]
+      # no clock sample here: the row says the clock is unmeasured, not 休市 (the measured row: check_tw_entry_gate §11)
+      and [e[3] for e in errors if e[0] == "TMF"] == [{"kind": "market_closed_deferred", "clock": "unmeasured"}]
+      and any("台指期" in e[2] and "開盤後" in e[2] and "休市" not in e[2] for e in errors),
+      f"after the close: 群益 not sent, TMF deferred to the open and said, its book kept ({errors}, {deferred})")
+os.remove(_lp0._PAPER_TW_CLOSE_PATH)
+# pressed in the pre-open (14:55, clock measured): the broker would take it, but queued under HALT
+# and unconfirmed — deferred to the open the same way
+_real_skew = _twc.skew
+_twc.skew = lambda now=None: 0.0
+_twc.queued_until = lambda now=None: _t0.time() + 300
+run_flatten(True, BOOK)
+_twc.queued_until = lambda now=None: None
+deferred = json.load(open(_lp0._PAPER_TW_CLOSE_PATH)).get("keys") if os.path.exists(_lp0._PAPER_TW_CLOSE_PATH) else None
+check(("capital", "TM2610") not in closes and deferred == ["TMF"] and "TMF" not in zeroed,
+      f"pre-open press (measured clock): 群益 not sent, deferred to the open ({errors}, {deferred})")
+os.remove(_lp0._PAPER_TW_CLOSE_PATH)
+run_flatten(True, BOOK)
+check(("capital", "TM2610") in closes and "TMF" in zeroed, "in session (measured clock): closed as before")
+_twc.skew = _real_skew
+_lp0._PAPER_TW_CLOSE_PATH = _real_ptc
 
 # one venue unreadable → no stale-entry sweep at all (the book has no venue column)
 POS_ERR = RuntimeError("capital snapshot stale")

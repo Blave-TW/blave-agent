@@ -10,14 +10,13 @@ const GATE = require("./_electron_gate");
 // 統一期貨在這台電腦的下拉要不要列:照 trade.js 的旗標(0.1.18 關、0.1.19 開),測試不自己假設
 const tradeSrc = fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8"), presFlag = tradeSrc.match(/^const PRES_LOCAL_ON = (true|false);$/m), presOn = !!presFlag && presFlag[1] === "true";
 const caplFlag = tradeSrc.match(/^const CAPL_LOCAL_ON = (true|false);$/m), caplOn = !!caplFlag && caplFlag[1] === "true";
-let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
+let red = 0; const ok = (n, c, got) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) { red++; if (got !== undefined) console.log("      實際:" + (typeof got === "string" ? got : JSON.stringify(got))); } };
 const J = JSON.stringify;
 
 if (!process.versions.electron) (async () => {
-  ok("⓪ trade.js 有 PRES_LOCAL_ON 旗標,下拉的「台股」組與 change 都看它(cxPresListed);群益本機另受 CAPL_LOCAL_ON 管(0.1.50 起開)", !!presFlag && !!caplFlag
-    && /const tw = CXF\.env !== "local" \? \[\[CAPITAL, "cap\.venue"\]\] : \[cxPresListed\(\) \? \["president", "pres\.venue"\] : null, cxCaplListed\(\) \? \[CAPITAL, "cap\.venue"\] : null\]\.filter\(Boolean\);/.test(tradeSrc)
-    && /\(sel\.value === "president" && CXF\.env === "local" && cxPresListed\(\)\)/.test(tradeSrc)
-    && /\(sel\.value === CAPITAL && CXF\.env === "local" && cxCaplListed\(\)\) \? sel\.value : cxVenuesFor\(CXF\.env\)\[0\];/.test(tradeSrc));
+  ok("⓪ trade.js 有 PRES_LOCAL_ON 旗標,「台灣期貨」那組磚看它(cxPresListed);群益本機另受 CAPL_LOCAL_ON 管(0.1.50 起開);不是 Windows 不出期貨磚", !!presFlag && !!caplFlag
+    && /if \(env !== "local"\) return \[\[CAPITAL, "cap\.venue"\]\];\n  if \(platform !== "win32"\) return null;\n  return \[cxCaplListed\(\) \? \[CAPITAL, "cap\.venue"\] : null, cxPresListed\(\) \? \["president", "pres\.venue"\] : null\]\.filter\(Boolean\);/.test(tradeSrc)
+    && /const tw = cxTwTiles\(CXF\.env, window\.blave\.platform\);/.test(tradeSrc));
   // ── ① daemon 白名單 ──
   const { argsOk } = require(path.join(SHELL, "daemon.js"));
   const CC = require(path.join(SHELL, "cloudcmd.js"));
@@ -74,7 +73,7 @@ if (!process.versions.electron) (async () => {
   ok("② 名字表與主行程那份同一組交易所", J(Object.keys(CX_VENUES).sort()) === J(Object.keys(CC.CONNECT_VENUES).sort()) && CX_VENUES.okx.pass === true && !CX_VENUES.bybit.pass);
   ok("② 提領不再檢查(Wei 2026-10-15):沒有任何一家帶 noWdCheck,renderer 也不再提 cx.note.wdUnchecked", Object.keys(CX_VENUES).every((v) => !("noWdCheck" in CX_VENUES[v])) && !/noWdCheck|wdUnchecked|WITHDRAW_ENABLED/.test(src));
   ok("② 顯示名:Gate.io / OKX / BingX / StockCoin(首字大寫會寫錯)", trVenueLabel("gateio") === "Gate.io" && trVenueLabel("okx") === "OKX" && trVenueLabel("bingx") === "BingX" && trVenueLabel("stockcoin") === "StockCoin" && trVenueLabel("paper", true) === "cx.paperShort");
-  ok("② 兩個視角都列七家(runtime 已在電腦版開放 Binance 以外這六家,寫入前讀一次帳戶;Bitget 0.1.29 經典帳戶)", J(cxVenuesFor("local")) === J(["binance", "okx", "bingx", "gateio", "bybit", "stockcoin", "bitget"]) && J(cxVenuesFor("cloud")) === J(cxVenuesFor("local")));
+  ok("② 兩個視角都列七家,磚的順序同網頁與 landing(runtime 已在電腦版開放 Binance 以外這六家,寫入前讀一次帳戶;Bitget 0.1.29 經典帳戶)", J(cxVenuesFor("local")) === J(["binance", "bingx", "okx", "gateio", "bybit", "bitget", "stockcoin"]) && J(cxVenuesFor("cloud")) === J(cxVenuesFor("local")));
 
   // ── ③ 交給 Electron ──
   const bin = GATE.bin(SHELL, "③");
@@ -89,7 +88,7 @@ const os = require("os");
 app.setPath("userData", fs.mkdtempSync(path.join(os.tmpdir(), "blave-venues-")));
 const STUB = `window.__over = {}; window.__calls = [];
 window.blave = new Proxy({}, { get: (_, k) => typeof k !== "string" ? undefined
-  : k.startsWith("on") ? () => {} : k === "tradeLabels" ? () => {}
+  : k === "platform" ? (window.__platform || "win32") : k.startsWith("on") ? () => {} : k === "tradeLabels" ? () => {}
   : async (...a) => { window.__calls.push([k, a]); if (k in window.__over) return window.__over[k](...a);
       return ({ getLocale: "zh-TW", loadConnection: { kind: "claude" }, detectAgents: { claude: { installed: true, loggedIn: true }, codex: { installed: false } },
         listStrategies: [], listSessions: [], loadSession: [], loadSessionImages: [], updateState: { phase: "idle", current: "0.0.0" } })[k]; } });`;
@@ -104,8 +103,10 @@ app.whenReady().then(async () => {
   await wait(1200);
   const js = (s) => w.webContents.executeJavaScript(s, true);
   const run = (s) => w.webContents.executeJavaScript("(() => { " + s + "; return 0; })()", true);   // 賦值成函式的那幾行:回傳值不能跨 IPC
-  const fields = () => js(`[...document.querySelectorAll("#cx-body input.f-input")].map((i) => i.id)`);   // 框頂模擬／真實帳戶兩顆 radio 也在 #cx-body 裡,不算金鑰欄
-  const pick = (v) => js(`(() => { const s = $("cx-venue"); s.value = ${J(v)}; s.dispatchEvent(new Event("change")); })()`);
+  const fields = () => js(`[...document.querySelectorAll("#cx-body input.f-input")].map((i) => i.id)`);
+  // 選一家 = 點那塊磚(0.1.52 案一);已經在某一家就先按「換一家」回磚
+  const pick = (v) => js(`(() => { if ($("cx-change")) $("cx-change").click(); const b = $("cx-tile-" + ${J(v)}); if (b) b.click(); })()`);
+  const tiles = () => js(`[...document.querySelectorAll("#cx-body .cx-tile")].map((b) => b.id.replace("cx-tile-", ""))`);
   const fill = (o) => js(`(() => { for (const [id, v] of Object.entries(${J(o)})) { const i = $(id); i.value = v; i.dispatchEvent(new Event("input")); } })()`);
 
   // 雲端視角
@@ -113,12 +114,13 @@ app.whenReady().then(async () => {
     TR_BAGS.cloud.st = { alive: true, cloud: { code: "OK", machine: { state: "running", public_ip: "203.0.113.9" }, strategies: [] }, report: {} };
     if (ENV.cur !== "cloud") envSwitch("cloud"); cxModalOpen(null, null), (($m) => { if ($m && !$m.checked) { $m.checked = true; $m.dispatchEvent(new Event("change")); } })($("cx-mode-real")); })()`);
   await wait(150);
-  const cloudOpts = await js(`[...$("cx-venue").options].map((o) => o.value)`);
-  ok("③ 雲端視角(「真實帳戶」;模擬是框頂的大選項、不在選單裡):七家(Binance / OKX / BingX / Gate.io / Bybit / StockCoin / Bitget)+ 台股那一組的群益(renderer/capital.js)", J(cloudOpts) === J(["binance", "okx", "bingx", "gateio", "bybit", "stockcoin", "bitget", "capital"]));
-  const labels = await js(`[...$("cx-venue").options].map((o) => o.textContent)`);
-  const groups = await js(`[...$("cx-venue").querySelectorAll("optgroup")].map((g) => g.label)`);
+  const cloudOpts = await tiles();
+  ok("③ 雲端視角(不預選、沒有主鈕;模擬在框腳):七塊磚(Binance / BingX / OKX / Gate.io / Bybit / Bitget / StockCoin)+ 台灣期貨那一組的群益(renderer/capital.js)",
+    J(cloudOpts) === J(["binance", "bingx", "okx", "gateio", "bybit", "bitget", "stockcoin", "capital"]) && (await js(`$("cx-go").hidden && !$("cx-paper").hidden && document.activeElement === $("cx-tile-binance")`)));
+  const labels = await js(`[...document.querySelectorAll("#cx-body .cx-tile .n")].map((n) => n.textContent)`);
+  const groups = await js(`[...document.querySelectorAll("#cx-body .cx-grp")].map((g) => g.textContent)`);
   const capL = await js(`[t("cap.venue"), t("cap.group.tw")]`);
-  ok("③ 選單上是交易所的正式名字;群益(字串表的名字)在自己那一組", J(labels) === J(["Binance", "OKX", "BingX", "Gate.io", "Bybit", "StockCoin", "Bitget", capL[0]]) && groups.length === 2 && groups[1] === capL[1] && capL[0] !== "cap.venue");
+  ok("③ 磚上是交易所的正式名字;群益(字串表的名字)在自己那一組", J(labels) === J(["Binance", "BingX", "OKX", "Gate.io", "Bybit", "Bitget", "StockCoin", capL[0]]) && groups.length === 2 && groups[1] === capL[1] && capL[0] !== "cap.venue");
   const byVenue = {};
   for (const v of ["okx", "bingx", "gateio", "bybit", "stockcoin", "bitget"]) { await pick(v); byVenue[v] = await fields(); }
   ok("③ OKX、Bitget 三格(API Key / Secret Key / Passphrase);BingX / Gate.io / Bybit / StockCoin 兩格", J(byVenue.okx) === J(["cx-api", "cx-secret", "cx-pass"])
@@ -130,10 +132,26 @@ app.whenReady().then(async () => {
     !!ph && ph[0] === (await js(`t("cx.passHint")`)) && /不是 OKX 的登入密碼/.test(await js(`STRINGS.zh["cx.passHint"]`)) && ph[1] === "cx-pass-hint" && ph[2] === true);
   await pick("bingx");
   ok("③ 沒有 Passphrase 的交易所:沒有那一行", await js(`!document.querySelector("#cx-body .cx-hint[id$='-hint']")`));
-  // 提領不再檢查:每一家的說明都是「建議只開讀取和交易」那句,沒有「會被拒絕」
-  const noteHas = async (key, label) => (await js(`[...document.querySelectorAll("#cx-body .cx-note p")].map((p) => p.textContent)`)).indexOf(await js(label ? `t(${J(key)}, { venue: ${J(label)} })` : `t(${J(key)})`)) >= 0;
-  ok("③ 雲端:Gate.io / OKX 講 cx.note.oneV、Binance 講 cx.note.one(只講 IP 白名單;權限建議在真實帳戶卡裡的事實第 2 行)", (await pick("gateio"), await noteHas("cx.note.oneV", "Gate.io")) && (await pick("okx"), await noteHas("cx.note.oneV", "OKX")) && (await pick("binance"), await noteHas("cx.note.one"))
-    && !/建議|讀取/.test(await js(`STRINGS.zh["cx.note.one"]`)) && !/建議|讀取/.test(await js(`STRINGS.zh["cx.note.oneV"]`)) && /白名單/.test(await js(`STRINGS.zh["cx.note.one"]`)) && !/拒絕/.test(await js(`STRINGS.zh["cx.note.one"] + STRINGS.zh["cx.note.oneV"]`)));
+  // 步驟 1:權限句;雲端每一家(含 StockCoin)都常駐白名單那句與主機 IP(Wei 11-10:雲端寫入前不查非 Binance 金鑰,被拒那一刻等不到)
+  const step1 = () => js(`(() => { const s = document.querySelector("#cx-body .cx-step .cx-step-b"); return s ? { hint: [...s.querySelectorAll(".cx-hint")].map((p) => p.textContent), chip: !!s.querySelector(".cx-chip"), kp: !!$("cx-keypage"), ip: (s.querySelector(".cx-chip .v") || {}).textContent || null } : null; })()`);
+  const g1 = (await pick("gateio"), await step1()), o1 = (await pick("okx"), await step1()), b1 = (await pick("binance"), await step1()), s1 = (await pick("stockcoin"), await step1());
+  const [permF, permT, lineC] = await js(`[t("cx.perm.futures"), t("cx.perm"), t("cx.ip.lineCloud")]`);
+  const ipLine = (x, perm, line) => x.hint.length === 1 && x.hint[0].indexOf(perm) === 0 && x.hint[0].indexOf(line) > 0 && x.chip && x.ip === "203.0.113.9";
+  ok("③ 雲端步驟 1:Gate.io／Binance 講合約交易、OKX 講交易;每一家(含 StockCoin)都接「白名單貼雲端主機的 IP」＋主機 IP;StockCoin 沒有建金鑰鈕",
+    ipLine(g1, permF, lineC) && ipLine(o1, permT, lineC) && ipLine(b1, permF, lineC) && ipLine(s1, permT, lineC)
+    && g1.kp && o1.kp && b1.kp && !s1.kp, { gateio: g1, okx: o1, binance: b1, stockcoin: s1 });
+  { // 主機回報不出 IP:非 Binance 也照出灰 chip(讀不到雲端主機的 IP),不整句消失
+    await run(`TR_BAGS.cloud.st.cloud.machine.public_ip = null; TR_BAGS.cloud.sig.cxm = null; cxModalPaint()`);
+    const o2 = (await pick("okx"), await step1()), none = await js(`t("cx.ip.cloudNone")`);
+    ok("③ 雲端讀不到主機 IP:OKX 步驟 1 照出白名單那句與灰 chip「讀不到雲端主機的 IP」", o2.hint[0].indexOf(lineC) > 0 && o2.chip && o2.ip === none
+      && (await js(`!!document.querySelector("#cx-body .cx-step .cx-chip.is-empty")`)), o2);
+    await run(`TR_BAGS.cloud.st.cloud.machine.public_ip = "203.0.113.9"; TR_BAGS.cloud.sig.cxm = null; cxModalPaint()`); }
+  { // 雲端〔到 OKX 建金鑰〕:開頁同時把主機 IP 寫進剪貼簿、鈕旁講「IP 已複製」(同網頁,每一家都是)
+    await pick("okx");
+    await run(`window.__clip = []; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (x) => { window.__clip.push(x); } } }); $("cx-keypage").click()`);
+    await wait(100);
+    const kp = await js(`({ clip: window.__clip, said: $("cx-keypage").parentNode.querySelector(".cx-said").textContent, open: window.__calls.filter((c) => c[0] === "openExternal").map((c) => c[1][0]).pop() })`);
+    ok("③ 雲端〔到 OKX 建金鑰〕:開 OKX 的 API 頁、主機 IP 進剪貼簿、講「IP 已複製」", J(kp.clip) === J(["203.0.113.9"]) && kp.said === (await js(`t("cx.ip.copiedOpen")`)) && kp.open === "https://www.okx.com/account/my-api", kp); }
   ok("③ 三格都是密碼欄、不自動完成", await js(`[...document.querySelectorAll("#cx-body input.f-input")].length > 0 && [...document.querySelectorAll("#cx-body input.f-input")].every((i) => i.type === "password" && i.autocomplete === "off")`));
   await pick("okx");
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });
@@ -146,33 +164,36 @@ app.whenReady().then(async () => {
 
   // 雲端被拒 = 主機拒絕這個指令(設計稽核 005 第 2 條):講主機、帶 detail.error;不是「OKX 沒有接受這把金鑰：—」
   const errOf = () => js(`($("cx-body").querySelector(".plan-err") || {}).textContent || ""`);
-  await js(`cxModalOpen(null, null), (($m) => { if ($m && !$m.checked) { $m.checked = true; $m.dispatchEvent(new Event("change")); } })($("cx-mode-real"))`); await wait(100); await pick("okx");
+  await js(`cxModalOpen(null, null)`); await wait(100); await pick("okx");
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });
   await run(`window.__over.cloudConnect = async () => ({ ok: false, code: "REJECTED", detail: { error: "unsupported venue: okx" } })`);
   await js(`$("cx-go").click()`); await wait(300);
   const cRej = await errOf();
-  ok("③ 雲端 REJECTED:句子是「雲端主機沒有接受這個指令(原因)」,原因是 detail.error、不是「—」", cRej === (await js(`t("tr.cloud.cmdRejected", { err: "unsupported venue: okx" })`)) && !/沒有接受這把金鑰/.test(cRej));
+  ok("③ 雲端 REJECTED:句子是「雲端主機沒有接受這個指令(原因)」,原因是 detail.error、不是「—」;主機拒指令不接 IP 白名單那句", cRej === (await js(`t("tr.cloud.cmdRejected", { err: "unsupported venue: okx" })`)) && !/沒有接受這把金鑰/.test(cRej));
   await run(`window.__over.cloudConnect = async () => ({ ok: false, code: "REJECTED", detail: { error: "ValueError: REJECTED: okx did not accept this key (AccountModeError: OKX 帳戶模式不支援合約 [okx_account_mode] (OKX acctLv=1)) — not saved" } })`);
   await js(`$("cx-go").click()`); await wait(300);
   ok("③ 雲端 REJECTED 帶 [okx_account_mode]:講怎麼改帳戶模式", (await errOf()) === (await js(`t("cx.err.okxMode")`)));
   await js(`cxModalClose(false)`); await wait(100);
 
   // 這台電腦
-  await js(`(() => { envSwitch("local"); TR_BAGS.local.st = { alive: true, report: { venues: {} } }; cxModalOpen(null, null), (($m) => { if ($m && !$m.checked) { $m.checked = true; $m.dispatchEvent(new Event("change")); } })($("cx-mode-real")); })()`);
+  await js(`(() => { window.__platform = "darwin"; window.__over.binanceIp = async () => "198.51.100.7"; envSwitch("local"); TR_BAGS.local.st = { alive: true, report: { venues: {} } }; cxModalOpen(null, null); })()`);
   await wait(150);
-  // 這台電腦的「台股」組:統一受 trade.js PRES_LOCAL_ON 管、群益本機受 CAPL_LOCAL_ON 管(0.1.50 起兩個都開,群益排在統一後面);
-  // 兩個都關時「台股」那一組整個不出
-  ok("③ 這台電腦(「真實帳戶」):七家" + (presOn ? " + 「台股」組有統一" : ";PRES_LOCAL_ON 關著 → 沒有統一") + (caplOn ? "、群益本機" : "(CAPL_LOCAL_ON 關著 → 沒有群益)"),
-    J(await js(`[...$("cx-venue").options].map((o) => o.value)`)) === J(["binance", "okx", "bingx", "gateio", "bybit", "stockcoin", "bitget"].concat(presOn ? ["president"] : [], caplOn ? ["capital"] : []))
-    && J(await js(`[...$("cx-venue").querySelectorAll("optgroup")].map((g) => g.label)`)) === J(await js(presOn || caplOn ? `[t("cx.group.crypto"), t("cap.group.tw")]` : `[t("cx.group.crypto")]`)));
-  if (!presOn) { await pick("president"); ok("③ 旗標關著硬選 president(選單裡沒有那一項):退回第一家", (await js(`CXF.venue`)) === "binance"); }
-  await pick("capital");
-  // 群益本機受 CAPL_LOCAL_ON 管:關著時選單裡沒有、硬選退回第一家;開著時整個框交給 capital_local.js(Mac 上是 m-mac)
-  if (caplOn) ok("③ CAPL_LOCAL_ON 開著:這台電腦選 capital → 群益本機的框(標題「連接群益期貨」、這台電腦)", (await js(`CXF.venue`)) === "capital"
-    && (await js(`$("cx-title").textContent === t("cap.title") && !$("cx-env").hidden`)));
-  else ok("③ 這台電腦硬選 capital(選單裡沒有那一項):退回第一家、主鈕照在", (await js(`CXF.venue`)) === "binance" && (await js(`!$("cx-go").hidden`)));
-  await pick("okx");
+  ok("③ 這台電腦是 Mac:七塊加密貨幣磚,台灣期貨那組不出磚、原位講 cx.macTw", J(await tiles()) === J(["binance", "bingx", "okx", "gateio", "bybit", "bitget", "stockcoin"])
+    && (await js(`(document.querySelector("#cx-body .cx-macnote") || {}).textContent === t("cx.macTw")`)));
+  await js(`(() => { cxModalClose(false); window.__platform = "win32"; cxModalOpen(null, null); })()`); await wait(150);
+  // 這台電腦的「台灣期貨」組(Windows):群益本機受 CAPL_LOCAL_ON 管、統一受 PRES_LOCAL_ON 管(群益在前,同 mockup);兩個都關時那一組整個不出
+  ok("③ 這台電腦(Windows):七塊磚" + (presOn ? " + 台灣期貨有統一" : ";PRES_LOCAL_ON 關著 → 沒有統一") + (caplOn ? "、群益本機" : "(CAPL_LOCAL_ON 關著 → 沒有群益)"),
+    J(await tiles()) === J(["binance", "bingx", "okx", "gateio", "bybit", "bitget", "stockcoin"].concat(caplOn ? ["capital"] : [], presOn ? ["president"] : []))
+    && J(await js(`[...document.querySelectorAll("#cx-body .cx-grp")].map((g) => g.textContent)`)) === J(await js(presOn || caplOn ? `[t("cx.group.crypto"), t("cap.group.tw")]` : `[t("cx.group.crypto")]`)));
+  if (caplOn) {
+    await pick("capital");
+    ok("③ CAPL_LOCAL_ON 開著:這台電腦選 capital → 群益本機的框(標題「連接群益期貨」、這台電腦);頭列有「換一家」、框腳不出模擬", (await js(`CXF.venue`)) === "capital"
+      && (await js(`$("cx-title").textContent === t("cap.title") && !$("cx-env").hidden && !!$("cx-change") && $("cx-paper").hidden`)));
+  }
+  await pick("okx"); await wait(100);
   ok("③ 換到 OKX:主鈕在", await js(`!$("cx-go").hidden`));
+  { const lo = await step1();
+    ok("③ 這台電腦的 OKX:步驟 1 只有權限句,不常駐 IP(被拒才帶,spec §4)", !!lo && lo.hint.length === 1 && lo.hint[0] === permT && !lo.chip, lo); }
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });
   await run(`window.__calls.length = 0; window.__over.venueConnect = async () => ({ ok: true, code: "READ_OK", detail: {} }); window.__over.tradeSend = async () => ({ ok: true })`);
   await js(`$("cx-go").click()`); await wait(400);
@@ -184,12 +205,14 @@ app.whenReady().then(async () => {
   ok("③ 成功:講「串接成功:讀得到帳戶,交易權限在第一筆下單時確認」、框關掉、金鑰清空", await js(`$("cx-scrim").hidden && CXF.apiKey === "" && CXF.passphrase === ""`)
     && (await js(`$("sr-live").textContent`)) === (await js(`t("cx.linkOk")`)) && /交易權限/.test(await js(`STRINGS.zh["cx.linkOk"]`)));
   // 那一家拒絕:講原因,框留著、欄位照舊(沒有儲存,讓人改完再按)
-  await js(`(() => { cxModalOpen(null, null), (($m) => { if ($m && !$m.checked) { $m.checked = true; $m.dispatchEvent(new Event("change")); } })($("cx-mode-real")); })()`); await wait(100); await pick("okx");
+  await js(`cxModalOpen(null, null)`); await wait(100); await pick("okx");
   await fill({ "cx-api": "not-a-real-key-okx", "cx-secret": "not-a-real-secret-okx", "cx-pass": "not a real passphrase" });
   await run(`window.__over.venueConnect = async () => ({ ok: false, code: "REJECTED", detail: { reason: "RuntimeError: 50113 Invalid Sign" } })`);
   await js(`$("cx-go").click()`); await wait(300);
   const failMsg = await js(`($("cx-body").querySelector(".plan-err") || {}).textContent || ""`);
   ok("③ 拒絕:框留著、講 OKX 沒有接受這把金鑰與原因(不是 Binance 的句子)", !(await js(`$("cx-scrim").hidden`)) && /OKX/.test(failMsg) && /50113 Invalid Sign/.test(failMsg) && !/Binance/.test(failMsg));
+  ok("③ 拒絕(Binance 以外):同一個訊息槽多接「設了 IP 白名單的話，加進這台電腦的 IP」＋這台電腦的 IP", failMsg.indexOf(await js(`t("cx.chk.ipAdd")`)) > 0
+    && (await js(`[...$("cx-body").querySelectorAll(".plan-err .cx-chip .v")].map((v) => v.textContent).join()`)) === "198.51.100.7");
   const say = async (code) => { await run(`window.__over.venueConnect = async () => ({ ok: false, code: ${J(code)}, detail: {} })`); await js(`$("cx-go").click()`); await wait(300);
     return js(`($("cx-body").querySelector(".plan-err") || {}).textContent || ""`); };
   ok("③ 沒填齊(OKX):講三格要一起給", (await say("INCOMPLETE_PAIR")).indexOf(await js(`t("cx.chk.incompletePass")`)) >= 0);
@@ -204,23 +227,26 @@ app.whenReady().then(async () => {
   ok("③ 本機 REJECTED 帶 [okx_account_mode]:講怎麼改帳戶模式,不出原文", (await js(`($("cx-body").querySelector(".plan-err") || {}).textContent || ""`)) === (await js(`t("cx.err.okxMode")`)));
 
   // ── 等待狀態(spec-desktop-006 §1.3 A):鈕內圓環 + 「串接中…」、狀態槽講在等什麼、aria-busy;結果回來那句就消失 ──
-  const slotOf = () => js(`(() => { const s = $("cx-body").querySelector("[role=status]"); return s ? s.textContent : null; })()`);
+  // 訊息槽 = #cx-body 底下直屬的那個 role=status;〔到 X 建金鑰〕與 IP chip 旁邊各有一個(「IP 已複製」),querySelector 會先抓到它們
+  const slotOf = () => js(`(() => { const s = $("cx-body").querySelector(":scope > [role=status]"); return s ? s.textContent : null; })()`);
   await run(`window.__over.venueConnect = () => new Promise((r) => { window.__release = r; })`);
   await js(`$("cx-go").click()`); await wait(200);
-  const pend = await js(`(() => { const go = $("cx-go"), sp = go.querySelector(".spin16"), slot = $("cx-body").querySelector("[role=status]");
+  const pend = await js(`(() => { const go = $("cx-go"), sp = go.querySelector(".spin16"), slot = $("cx-body").querySelector(":scope > [role=status]");
     return { spin: !!sp && sp.getAttribute("aria-hidden") === "true" && go.firstChild === sp, label: go.textContent.trim(),
       busy: go.classList.contains("is-busy") && go.getAttribute("aria-disabled") === "true" && !go.disabled, bodyBusy: $("cx-body").getAttribute("aria-busy"),
-      marks: slot ? slot.querySelectorAll(".fault-mark, .spin16").length : -1, ro: $("cx-api").readOnly && $("cx-venue").disabled }; })()`);
-  ok("③ pending:鈕內圓環在字前(aria-hidden)+「串接中…」、is-busy + aria-disabled(不是 disabled)、#cx-body aria-busy、欄位唯讀",
+      marks: slot ? slot.querySelectorAll(".fault-mark, .spin16").length : -1, ro: $("cx-api").readOnly && $("cx-change").disabled && $("cx-paper").disabled }; })()`);
+  ok("③ pending:鈕內圓環在字前(aria-hidden)+「串接中…」、is-busy + aria-disabled(不是 disabled)、#cx-body aria-busy、欄位唯讀、「換一家」與框腳模擬停用",
     pend.spin && pend.label === (await js(`t("cx.connecting")`)) && pend.busy && pend.bodyBusy === "true" && pend.ro);
-  ok("③ pending:狀態槽講「正在向 OKX 確認這把金鑰」,不加記號、不加第二個圓環", (await slotOf()) === (await js(`t("cx.gate.checking", { venue: "OKX" })`)) && pend.marks === 0);
+  const pendSlot = await slotOf();
+  ok("③ pending:狀態槽講「正在向 OKX 確認這把金鑰」,不加記號、不加第二個圓環", pendSlot === (await js(`t("cx.gate.checking", { venue: "OKX" })`)) && pend.marks === 0, { slot: pendSlot, marks: pend.marks });
   // 20 秒逾時分兩句(§1.3 C):TIMEOUT = 指令被撤回、沒存 → 紅句;UNKNOWN_RESULT = daemon 收走了、可能還在查 → 灰句
   await js(`window.__release({ ok: false, code: "SEND_FAILED", detail: { error: "TIMEOUT" } })`); await wait(300);
   const to = await js(`(() => { const go = $("cx-go"), p = $("cx-body").querySelector(".plan-err"); return { spin: !!go.querySelector(".spin16"), label: go.textContent.trim(), dis: go.getAttribute("aria-disabled"),
     bodyBusy: $("cx-body").getAttribute("aria-busy"), msg: p ? p.textContent : "", calm: !!p && p.classList.contains("is-calm"), api: $("cx-api").value, open: !$("cx-scrim").hidden }; })()`);
+  to.slot = await slotOf();
   ok("③ TIMEOUT:紅句「下單機 20 秒內沒有處理、沒有儲存」取代 pending 句(不漏 TIMEOUT 代號)、鈕還原可按、欄位保留、框留著",
-    to.msg === (await js(`t("cx.chk.engineTimeout")`)) && (await slotOf()) === to.msg && !/TIMEOUT/.test(to.msg) && !to.calm
-    && !to.spin && to.label === (await js(`t("cx.connect")`)) && to.dis === "false" && to.bodyBusy === "false" && to.api === "not-a-real-key-okx" && to.open);
+    to.msg === (await js(`t("cx.chk.engineTimeout")`)) && to.slot === to.msg && !/TIMEOUT/.test(to.msg) && !to.calm
+    && !to.spin && to.label === (await js(`t("cx.connect")`)) && to.dis === "false" && to.bodyBusy === "false" && to.api === "not-a-real-key-okx" && to.open, to);
   await run(`window.__over.venueConnect = async () => ({ ok: false, code: "SEND_FAILED", detail: { error: "UNKNOWN_RESULT" } })`);
   await js(`$("cx-go").click()`); await wait(300);
   const un = await js(`(() => { const p = $("cx-body").querySelector(".plan-err"); return { msg: p ? p.textContent : "", calm: !!p && p.classList.contains("is-calm"), open: !$("cx-scrim").hidden, dis: $("cx-go").getAttribute("aria-disabled") }; })()`);
@@ -236,15 +262,24 @@ app.whenReady().then(async () => {
   ok("③ 灰句期間報告出現了 OKX:框自動關、金鑰清空、講「串接成功」", await js(`$("cx-scrim").hidden && CXF.apiKey === "" && CXF.secret === "" && CXF.passphrase === ""`)
     && (await js(`$("sr-live").textContent`)) === (await js(`t("cx.linkOk")`)));
   ok("③ trPoll 每一輪都叫 cxGateSlowSync(源碼)", /cxGateSlowSync\(\);\s*\n\s*if \(!\$\("cx-scrim"\)\.hidden\) cxModalPaint\(\);/.test(fs.readFileSync(path.join(SHELL, "renderer", "trade.js"), "utf8")));
-  // 模擬交易那條路:鈕短暫變灰(圓環照放)即關框,**不**出現 cx.gate.checking(本機寫 .env,次秒完成)
+  // 模擬交易那條路(0.1.52 案一):框腳〔先用模擬交易〕;磚那一態沒有主鈕,所以等待時主鈕不出、框腳那顆與磚停用,
+  // 訊息槽只講「串接中…」,**不**出現 cx.gate.checking(本機寫 .env,次秒完成)
   // 上一段的報告留著 OKX 帳戶 → 框會鎖在已綁定的那一家;模擬那條要的是還沒綁任何帳戶的第一次
   await run(`TR_BAGS.local.st = { alive: true, report: { venues: {} } }`);
   await js(`cxModalOpen(null, null)`); await wait(100);
-  await run(`window.__over.tradeSend = () => new Promise((r) => { window.__release = r; })`);
-  await js(`$("cx-go").click()`); await wait(200);
-  ok("③ 模擬交易 pending:鈕有圓環、狀態槽空的(沒有 cx.gate.checking)", (await js(`!!$("cx-go").querySelector(".spin16")`)) && (await slotOf()) === "");
-  await js(`window.__release({ ok: true })`); await wait(300);
-  ok("③ 模擬交易存好:框關", await js(`$("cx-scrim").hidden`));
+  await run(`window.__calls.length = 0; window.__release = null; window.__over.tradeSend = () => new Promise((r) => { window.__release = r; })`);
+  await js(`$("cx-paper").click()`); await wait(200);
+  const pp = await js(`(() => ({ venue: CXF.venue, goHidden: $("cx-go").hidden, footOff: !$("cx-paper").hidden && $("cx-paper").disabled,
+    tilesOff: [...document.querySelectorAll("#cx-body .cx-tile")].every((b) => b.disabled), bodyBusy: $("cx-body").getAttribute("aria-busy"), pending: typeof window.__release === "function",
+    sent: window.__calls.filter((c) => c[0] === "tradeSend" && c[1][0] === "credentials").map((c) => Object.keys((c[1][1] || {}).env || {}).sort()) }))()`);
+  pp.slot = await slotOf();
+  ok("③ 模擬交易 pending(框腳〔先用模擬交易〕):送 PAPER_* 那組、主鈕不出、框腳那顆與磚停用、狀態槽講「串接中…」(沒有 cx.gate.checking)",
+    pp.venue === "paper" && pp.pending && J(pp.sent) === J([["PAPER_API_KEY", "PAPER_BOUND_TS", "PAPER_SECRET_KEY"]]) && pp.goHidden && pp.footOff && pp.tilesOff && pp.bodyBusy === "true"
+    && pp.slot === (await js(`t("cx.connecting")`)) && pp.slot !== (await js(`t("cx.gate.checking", { venue: "OKX" })`)), pp);
+  if (pp.pending) await js(`window.__release({ ok: true })`);
+  await wait(300);
+  const pdone = await js(`({ closed: $("cx-scrim").hidden, said: $("sr-live").textContent })`);
+  ok("③ 模擬交易存好:框關、講「已連接」", pdone.closed && pdone.said === (await js(`t("cx.connected")`)), pdone);
 
   // ── 設定 › 帳戶 那一列(§1.3 D):報告還沒有這一家的帳戶條目 → 圓環 + 「串接中…」;讀到帳戶 → 綠點、圓環消失 ──
   const setRow = () => js(`(() => { const st = $("tr-set").querySelector(".cx-row .cn-st"); return st ? { cls: st.className, spin: !!st.querySelector(".spin16"), dot: !!st.querySelector(".dot"), text: st.textContent } : null; })()`);

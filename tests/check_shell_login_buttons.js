@@ -59,7 +59,7 @@ const ok = (n, c, d) => { console.log((c ? "PASS  " : "FAIL  ") + n + (c || d ==
   ok("5 登入等待中:鈕字是取消等待、idle 留原字、按了不記 login_event(是取消)", g.label === "oauth.cancel" && g.idle === "pv.signin" && G.hit.join() === "signin:B", G.hit);
   { let signed = 0; Object.assign(G, { hasToken: false, planLoginBusy: false }); g = G.dataGateAction("card", { signedIn: () => signed++ }); await g.on();
     ok("5 登入成功才叫 signedIn(資料卡拿它清掉 ERR005 的黏著)", signed === 1); }
-  ok("5 資料卡 plan_required 只有〔看方案〕,沒有第二顆〔API 方案〕", /if \(da === "plan_required"\) return \{ text: t\("data\.noPlan"\), \.\.\.gateBtn\(g\) \};/.test(cut(app, "dataCardState")) && !/apiPlanGo/.test(cut(app, "dataCardState")));
+  ok("5 資料卡 plan_required 只有〔看方案〕,沒有第二顆〔API 方案〕", /if \(da === "plan_required"\) return \{ text: t\("data\.noPlan"\), \.\.\.gateBtn\(g\), shown: "no_trial" \};/.test(cut(app, "dataCardState")) && !/apiPlanGo/.test(cut(app, "dataCardState")));
   ok("5 卡與事件列讀同一張表:dataCardState 與 trEvDataGate 都叫 dataGateAction", /dataGateAction\("card"/.test(cut(app, "dataCardState")) && /dataGateAction\("event"/.test(cut(trade, "trEvDataGate")));
 
   // ── 8 ──

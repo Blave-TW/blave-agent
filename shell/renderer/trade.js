@@ -137,7 +137,19 @@ function trPresLoginStopped(r, id) { return trPresStopped(r, id) && String(r.pre
 function trPresLoginHeld(r, id) { const c = id === "president" && r && r.president_connect; return !!c && typeof c === "object" && !trPresWip(r, id) && (trPresLoginStopped(r, id) || (!!c.login_stop && typeof c.login_stop === "object")); }
 // 對帳程式還活著、看起來在跑,其實統一的單全被擋:這一態不准寫「執行中」(標題下那一行、頂列、切換器同一個判準)
 /* 台指期那幾種不是交易所拒單的 P1(manager/reconciler KIND_*):照 kind 換標題,不掛「下單失敗」;原文是 Blave 自己寫的句子,照原句(同 api agent_overview) */
-const TR_TW_NOTICE = { clock_skew_hold: "tr.ov.evClockHold", tw_entry_hold: "tr.ov.evTwHold" };
+const TR_TW_NOTICE = { clock_skew_hold: "tr.ov.evClockHold", tw_entry_hold: "tr.ov.evTwHold", tw_clock_unchecked: "tr.ov.evClockUnchecked" };
+/* 收盤後按的全部平倉延到開盤(kind market_closed_deferred)、開盤前按啟動下單取消延後(沒帶 kind,認整句開頭):用戶自己按的,
+   不是下單失敗(P3,同 api agent_overview._close_deferred、main.js p1CloseDeferred;regex 寫成 \u 跳脫,renderer 不放中文字面)。回 null = 別的列;fut = 台指期(券商或代號) */
+const TR_DEFER_CANCEL_RE = /^close-all: (?:\u958b\u76e4\u524d\u5df2\u6309\u555f\u52d5\u4e0b\u55ae|\u6a5f\u5668\u91cd\u958b\u5f8c\u6309\u4e86\u555f\u52d5\u4e0b\u55ae).*?\u5ef6\u5f8c\u7684(?:\u53f0\u80a1|\u53f0\u6307\u671f)\u5e73\u5009(?:\u4e00\u4f75)?\u53d6\u6d88/;
+function trCloseDeferred(e) {
+  if (!e || typeof e !== "object") return null;
+  const cancel = e.kind === "close_deferred_cancelled" || (e.kind == null && TR_DEFER_CANCEL_RE.test(String(e.error || "")));
+  if (!cancel && e.kind !== "market_closed_deferred") return null;
+  const fut = e.exchange === "capital" || e.exchange === "president" || TR_TWFUT_RE.test(trCanonSym(String(e.symbol || "").split(",")[0]));
+  return { cancel, title: cancel ? (fut ? "tr.ov.evDeferCancelFut" : "tr.ov.evDeferCancelStock") : (fut ? "tr.ov.evDeferFut" : "tr.ov.evDeferStock"),
+    note: cancel ? "tr.ov.evDeferCancelNote" : e.clock === "unmeasured" ? "tr.ov.evDeferClockNote"
+      : e.clock === "far" ? "tr.ov.evDeferClockFarNote" : "tr.ov.evDeferNote" };
+}
 function trPresHeldRun(state, r) { return state === "running" && trVenueIds(r).indexOf("president") >= 0 && trPresLoginHeld(r, "president"); }
 /* 統一下單程式剛起來(worker ok、或 wanted 著還在 running)、帳戶讀取器還沒讀到它之後的那一輪(account.read_at 早於那一刻、或還沒有 account):
    這時掛著的是上一輪的舊失敗,不是串接失敗(10-13 乾淨機模擬 發現 2:開通成功回到頁面頭幾秒紅字「串接失敗」)。
@@ -327,6 +339,11 @@ function trHaltReasonBase(r, done) {
   if (H && rk !== "machine" && /^exchange unbound/.test(String((r.halt && r.halt.reason) || ""))) {
     const sup = r.daemon && r.daemon.reconciler, alive = !!(r.reconciler && r.reconciler.alive) && !(sup && sup.running === false);
     return t(alive ? (trHaltFreeze(r) ? "tr.haltUnboundFreeze" : "tr.haltUnbound") : "tr.haltUnboundOff");
+  }
+  // 換帳戶(綁新的一家把舊的擠掉,command_listener 寫 venue rebind)也是機器自己掛的:落到通用句會像用戶自己按了暫停(designer replace-paper A 案)
+  if (H && rk !== "machine" && /^venue rebind/.test(String((r.halt && r.halt.reason) || ""))) {
+    const sup = r.daemon && r.daemon.reconciler, alive = !!(r.reconciler && r.reconciler.alive) && !(sup && sup.running === false);
+    return t(alive ? (trHaltFreeze(r) ? "tr.haltRebindFreeze" : "tr.haltRebind") : "tr.haltRebindOff");
   }
   // ZH(「新倉也被擋著——包含你自己的策略程式下的單」)只在真的有自己下單的策略時講;沒有就退回 Z 那一句
   return rk === "machine" ? t(z ? "tr.cloud.restartStoppedZ" : "tr.cloud.restartStopped")
@@ -911,6 +928,40 @@ function trEquityMult(amounts, zoneOf, money, venueId, acct, equity, fx, paperTw
   }
   return any ? v / equity : null;
 }
+/* 模擬帳戶台股的可用額度(spec paper-tw-cash-short §2;同網頁 pfPaperCap,測資 tests/fixtures/paper_cash_cap.json 兩邊共用)。
+   rows = 路由到模擬的列 [{ name, v, tw, spot }]:tw = 台股(台幣金額),spot = 加密現貨的幣別(吃現金;合約、台指期不鎖現金,不算)。
+   cap = (現金 + 現貨持股市值 − 加密現貨列金額) 換台幣、千位捨去、最少 0。只用現金的話買滿就趨近 0,會誤報超過。
+   不判斷回 null:讀數沒回來／失敗、沒有現金列、任一持股沒市值、缺匯率(不退 1:1)、沒有要買的台股 */
+function trPaperCap(rows, entry, fx, acct) {
+  const list = Array.isArray(rows) ? rows : [], tw = {};
+  let d = 0;
+  list.forEach((x) => { if (x && x.tw && Number(x.v) > 0) { tw[x.name] = Number(x.v); d += Number(x.v); } });
+  if (!(d > 0) || !entry || entry.ok !== true || !Array.isArray(entry.holdings)) return null;
+  const rA = trFxRate(fx, acct), rT = trFxRate(fx, TR_TXF_CCY);
+  if (!rA || !rT) return null;
+  const num = (v) => typeof v === "number" && isFinite(v);
+  let b = 0, cash = false;
+  for (const h of entry.holdings) {
+    if (!h || typeof h !== "object") continue;
+    if (h.wallet === "cash") { if (!num(h.amount)) return null; b += h.amount; cash = true; }
+    else if (h.wallet === "spot") { if (!num(h.usdt_value)) return null; b += h.usdt_value; }
+  }
+  if (!cash) return null;
+  let o = 0;
+  for (const x of list) {
+    if (!x || x.tw || !x.spot || !(Number(x.v) > 0)) continue;
+    const rZ = trFxRate(fx, x.spot); if (!rZ) return null;
+    o += (Number(x.v) * rA) / rZ;
+  }
+  const cap = Math.max(0, Math.floor((((b - o) * rT) / rA) / 1000) * 1000);
+  return { cap, d, over: d > cap, tw };
+}
+/* 帶輸入格的那一支(策略頁〔加到策略組合〕)還能填多少:cap 扣掉其他台股列,千位捨去;這一支沒超過回 null */
+function trPaperCapLeft(pc, name) {
+  if (!pc) return null;
+  const own = pc.tw[name] || 0, left = Math.floor((pc.cap - (pc.d - own)) / 1000) * 1000;
+  return own > 0 && own > left ? left : null;
+}
 /* 累積損益的線段(照雲端 drawOvPnl):相鄰兩點都在 0 的同一側 → 一段,顏色跟著那一側(>= 0 算綠);
    跨過 0 → 在交越點(線性內插的時間)切成兩段,各取各的顏色。回 [{ t0, v0, t1, v1, pos, cut0?, cut1? }] */
 function trPnlSegments(pts) {
@@ -961,7 +1012,8 @@ function trDirty(names, stored, edits) { return names.some((n) => edits[n] != nu
    gone 的在最底)。flags = 側欄的旗標表 {內部名: 1–3}(這台電腦 SF.flags、雲端 strat_flags),列帶 flag(1–3,其餘 null,同 sfFlagId)。 */
 /* twdVenue = 綁的是加密所時的判斷函式(名字 → 是不是台幣標的的策略,trTwdVenueLock),其餘 null:台股、台指期、個股期貨策略下不了加密所,
    runtime 存的時候也擋(MARKET_VENUE),新勾的鎖住 */
-function trPickRows(list, names, canTrade, paper, txfOnly, flags, twdVenue) {
+/* twStock = 綁的是真帳戶時的判斷函式(名字 → 策略市場是不是 tw_stock,trTwStockSelf),其餘 null:台股不自動下單,鎖住那一列換成講出路的那句(spec paper-tw-cash-short §4 A 案) */
+function trPickRows(list, names, canTrade, paper, txfOnly, flags, twdVenue, twStock) {
   const by = {}; list.forEach((x) => { by[x.name] = x; });
   const fl = flags && typeof flags === "object" && !Array.isArray(flags) ? flags : {};
   const seen = new Set(); list.forEach((x) => { if (x.hasBacktest || names.indexOf(x.name) >= 0) seen.add(x.name); }); names.forEach((n) => seen.add(n));
@@ -972,10 +1024,10 @@ function trPickRows(list, names, canTrade, paper, txfOnly, flags, twdVenue) {
     // 統一:跟 runtime NOT_TXF 同一條——標的看得出來、而且不是 TXF／MXF／TMF(不去 R1:TXFR1 runtime 存的時候也拒)才鎖;看不出來不判(fail-open)。
     // 投資組合例外(稽核第三輪 P1-A,同網頁 pfTxfOnly):成分不是台指期,統一下不了——鎖
     const twd = paper === true && !!x && x.twd === true && !trTxfSpec(x.symbol), txf = txfOnly === true && !!x && (x.portfolio === true || (!!x.symbol && !trTxfSpec(x.symbol))), typeC = !!x && !!x.portfolio && !inCur && !canTrade;
-    const twv = typeof twdVenue === "function" && !!x && twdVenue(n) === true;
+    const twv = typeof twdVenue === "function" && !!x && twdVenue(n) === true, tws = !inCur && (txf || twv) && typeof twStock === "function" && twStock(n) === true;
     // 已勾的(在表裡)一律不鎖:runtime 會擋「路由到統一／群益的 Type C」存任何金額,出路只有取消勾選——鎖了就卡死(稽核)。只擋新勾
     return { name: n, display: x && x.displayName ? x.displayName : n, checked: inCur, gone: !x, locked: !inCur && (typeC || twd || txf || twv),
-      note: twd ? (inCur ? "twdKeep" : "twd") : txf ? (inCur ? "txfKeep" : "txf") : twv ? "twdVenue" : typeC ? "typeC" : null, flag: Number.isInteger(f) && f >= 1 && f <= 3 ? f : null }; });
+      note: twd ? (inCur ? "twdKeep" : "twd") : tws ? "twStockSelf" : txf ? (inCur ? "txfKeep" : "txf") : twv ? "twdVenue" : typeC ? "typeC" : null, flag: Number.isInteger(f) && f >= 1 && f <= 3 ? f : null }; });
 }
 // runtime _TW_MARKETS:這幾種市場的策略下不了加密所(MARKET_VENUE)
 const TR_TW_MARKETS = ["tw_index_futures", "tw_stock_futures", "tw_stock"];
@@ -987,6 +1039,8 @@ function trIsTwdStrat(n) {
 }
 // trPickRows 的 twdVenue:綁的是加密所才回判斷函式
 function trTwdVenueLock() { return trVenueKind(trVenueId()) === "crypto" ? trIsTwdStrat : null; }
+// trPickRows 的 twStock:綁的是真帳戶(加密所、台灣期貨券商)才回判斷函式;市場讀不到不算(照舊那句)
+function trTwStockSelf() { const k = trVenueKind(trVenueId()); return k === "crypto" || k === "tw" ? (n) => trSrcMarket(trReport(), n) === "tw_stock" : null; }
 // picker 的側欄偏好:雲端 = api 回的 strat_order / strat_flags 疊上剛改、還沒同步回來的(同 envPaintSide 的 sfCloudPrefs);這台電腦 = stratflags.js 的 SF(還沒載入就沒有:原序、無旗標)
 function trPickPrefs(S, sf) {
   const c = S && S.env === "cloud" ? (S.st && S.st.cloud) || {} : null;
@@ -1227,12 +1281,30 @@ function trErrToken(err) {
 const TR_REJECT_TEXT = { insufficient_margin: "tr.err.margin", below_min_size: "tr.err.minSize", symbol_unavailable: "tr.err.symbol",
   key_permission: "tr.err.key", reduce_only_rejected: "tr.err.reduceOnly", paper_margin: "tr.err.paperMargin",
   bitget_account_eligibility: "tr.err.bitgetEligibility", bitget_uta_unsupported: "tr.err.bitgetUta",
-  bitget_copy_trading_key: "tr.err.bitgetCopyKey" };
-/* 拒單原文 → { kind, … }:lib 的 token 先認;lib/order_paper.py 比對英文原文是權宜(之後 order_errors[] 有 code 欄位就改認 code)。比不到回 null */
-function trOrderErrParse(err) {
-  const tok = trErrToken(err);
+  bitget_copy_trading_key: "tr.err.bitgetCopyKey", paperCash: "tr.err.paperCash", paperSell: "tr.err.paperSell" };
+/* 模擬帳戶現貨的現金不夠(lib/order_paper.py:台股與加密現貨都只能用現金買;spec paper-tw-cash-short §1,句子不提台股):要整列
+   (order_errors[] 那一列)才判得出——token 是 insufficient_margin、路由 paper、標的是現貨(帶 @spot 或台股代號;台指期與合約不算,
+   模擬台指期另有 paper_margin)。英文原文不單靠(雲端轉手可能被清掉);只有舊列沒有 exchange 欄位時,台股代號加原文才算(加密現貨照舊句) */
+function trPaperTwCashRow(tok, err, row) {
+  if (!row || typeof row !== "object" || tok !== "insufficient_margin") return false;
+  const raw = String(row.symbol || ""), sym = raw.replace(/@spot$/i, "").replace(/-/g, "").toUpperCase();
+  const tw = /^\d{4,6}[A-Z]?(?:\.TWO?)?$/.test(sym);   // 同 TR_TWSTOCK_RE
+  if (/^(?:TXF|MXF|TMF)/.test(sym) || !(tw || /@spot$/i.test(raw))) return false;
+  return row.exchange === "paper" || (row.exchange == null && tw && /insufficient paper cash/.test(String(err == null ? "" : err)));
+}
+/* 模擬帳戶賣的比持有的多(lib/order_paper.py「insufficient <base> to sell／to rest a sell」):0.1.53 起這句不帶 token,原文是唯一訊號,
+   所以一定要路由 paper 才認;帶舊的 insufficient_margin token 也算(舊 lib) */
+function trPaperSellRow(tok, err, row) {
+  return !!row && typeof row === "object" && row.exchange === "paper" && (!tok || tok === "insufficient_margin") && /insufficient \S+ to (?:sell|rest a sell)/.test(String(err == null ? "" : err));
+}
+/* 拒單原文 → { kind, … }:lib 的 token 先認;lib/order_paper.py 比對英文原文是權宜(之後 order_errors[] 有 code 欄位就改認 code)。比不到回 null。
+   row = 那一列(有的話):模擬帳戶台股現金不夠要看路由與標的(trPaperTwCashRow) */
+function trOrderErrParse(err, row) {
+  const tok = trErrToken(err), e = String(err == null ? "" : err);
+  if (trPaperSellRow(tok, err, row)) return { kind: "paperSell" };   // 先認:舊 lib 的賣單也帶 insufficient_margin
+  if (trPaperTwCashRow(tok, err, row)) return { kind: "paperCash" };
   if (tok) return { kind: tok };
-  const e = String(err == null ? "" : err), m = /gross notional (\d+(?:\.\d+)?) exceeds (\d+(?:\.\d+)?)× paper equity (\d+(?:\.\d+)?)/.exec(e);
+  const m = /gross notional (\d+(?:\.\d+)?) exceeds (\d+(?:\.\d+)?)× paper equity (\d+(?:\.\d+)?)/.exec(e);
   if (m) return { kind: "paperLev", gross: +m[1], x: m[2], cap: +m[2] * +m[3] };
   return /paper account equity would be <= 0/.test(e) ? { kind: "paperBroke" } : null;
 }
@@ -1730,10 +1802,15 @@ const PAPER = "paper", BINANCE = "binance", CAPITAL = "capital";   // 群益:雲
 /* Bitget 閘門 = cloudcmd.BITGET_VERIFIED_MODES = lib/venue_traits.py bitget 列的 verified_modes(tests/check_bitget_surfaces.py 釘住同值)。
    空 = 兩個視角都不列;只開一種 = 說明區講另一種會被拒 */
 const BITGET_VERIFIED_MODES = ["classic", "uta"];
-const CX_VENUES = { binance: { label: "Binance", env: "BINANCE", ccy: "USDT" }, okx: { label: "OKX", env: "OKX", pass: true, ccy: "USD" },
-  bingx: { label: "BingX", env: "BINGX", ccy: "USDT" }, gateio: { label: "Gate.io", env: "GATEIO", ccy: "USDT" }, bybit: { label: "Bybit", env: "BYBIT", ccy: "USDT" },
-  stockcoin: { label: "StockCoin", env: "STOCKCOIN", ccy: "USDT" },
-  bitget: { label: "Bitget", env: "BITGET", pass: true, ccy: "USDT", modes: BITGET_VERIFIED_MODES } };
+/* 鍵的順序 = 連接框交易所磚的順序(= 網頁 CX_VENUES、landing 支援列)。keyUrl = 「到 X 建金鑰」開的 API 管理頁,沒有就不出那顆鈕;
+   不帶語系段(各家自己轉到用戶語系,網頁實測後選的),兩邊同值(tests/check_web_desktop_parity.js)。Bitget 不出這顆鈕(Wei 定案),所以沒有 keyUrl */
+const CX_VENUES = { binance: { label: "Binance", env: "BINANCE", ccy: "USDT", keyUrl: "https://www.binance.com/my/settings/api-management" },
+  bingx: { label: "BingX", env: "BINGX", ccy: "USDT", keyUrl: "https://bingx.com/accounts/api" },
+  okx: { label: "OKX", env: "OKX", pass: true, ccy: "USD", keyUrl: "https://www.okx.com/account/my-api" },
+  gateio: { label: "Gate.io", env: "GATEIO", ccy: "USDT", keyUrl: "https://www.gate.com/myaccount/api_key_manage" },
+  bybit: { label: "Bybit", env: "BYBIT", ccy: "USDT", keyUrl: "https://www.bybit.com/app/user/api-management" },
+  bitget: { label: "Bitget", env: "BITGET", pass: true, ccy: "USDT", modes: BITGET_VERIFIED_MODES },
+  stockcoin: { label: "StockCoin", env: "STOCKCOIN", ccy: "USDT" } };
 const CX_LOCAL_REAL = ["binance", "okx", "bingx", "gateio", "bybit", "stockcoin", "bitget"];
 const cxVenueOpen = (id) => !Array.isArray(CX_VENUES[id].modes) || CX_VENUES[id].modes.length > 0;
 const cxVenuesFor = (env) => Object.keys(CX_VENUES).filter((id) => cxVenueOpen(id) && (env === "cloud" || CX_LOCAL_REAL.indexOf(id) >= 0));
@@ -1925,6 +2002,9 @@ function trPushLabels() {
     ev_order_unconfirmed: t("tr.ov.evUnconfirmed"), ev_order_unconfirmed_n: t("tm.evUnconfirmedNote"),
     ev_clock_skew_hold: t("tr.ov.evClockHold"), ev_clock_skew_hold_n: t("tm.evClockHoldNote"),
     ev_tw_entry_hold: t("tr.ov.evTwHold"), ev_tw_entry_hold_n: t("tm.evTwHoldNote"),
+    ev_tw_clock_unchecked: t("tr.ov.evClockUnchecked"), ev_tw_clock_unchecked_n: t("tm.evClockUncheckedNote"),
+    ev_tw_clock_unchecked_unmeasured_n: t("tm.evClockUncheckedUnmeasuredNote"), ev_tw_clock_unchecked_far_n: t("tm.evClockUncheckedFarNote"),
+    ev_tw_clock_unchecked_far_halt_n: t("tm.evClockUncheckedFarHaltNote"),
     ev_manual_close_required: t("tm.evCloseIdentity"), ev_manual_close_required_n: t("tm.evCloseIdentityNote"),
     ev_manual_close_required_lag: t("tm.evCloseLag"), ev_manual_close_required_lag_n: t("tm.evCloseLagNote"),
     ev_manual_close_required_queued: t("tm.evCloseQueued"), ev_manual_close_required_queued_n: t("tm.evCloseQueuedNote"),
@@ -2225,7 +2305,7 @@ function trLoadingText() {
 /* 空狀態導引這一刻的判斷(trZGuide 的輸入在這裡湊齊):頁首、部位、總覽三處同一份。zv / pend 沒給就照 trPaintHead 同一條算 */
 // 選擇策略框有沒存的勾選(Z-draft 的輸入):底稿與 keep 同金額表的 dirty(trAmountsEdited)
 function trZDraft() { const base = trBase(); return !!base && trPickDirty(TR.picked, base, trPickKeep(TR.env, TR.picked, base, trListNames())); }
-function trZRows(r) { return TR.listLoaded ? trPickRows(TR.list, [], (r || {}).can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), {}, trTwdVenueLock()) : null; }
+function trZRows(r) { return TR.listLoaded ? trPickRows(TR.list, [], (r || {}).can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), {}, trTwdVenueLock(), trTwStockSelf()) : null; }
 function trZNow(state, zv, pend) {
   const r = trReport() || {};
   if (!zv) { zv = trZView(state, r); pend = trAmountsEdited() ? null : trPendKey(TR, Date.now(), zv.off && !zv.noStart); }
@@ -3023,10 +3103,12 @@ function trAskStart(opener, presOk) {
 }
 
 /* 休市時按的全部平倉延到開盤、還沒執行(回報 deferred_close,lib/portfolio.defer_paper_tw_close):啟動下單(補齊、等新訊號都是)
-   會取消它、改照策略目標下單(lib/portfolio._paper_tw_deferred),框裡先講、列出是哪幾檔。沒有就 null */
+   會取消它、改照策略目標下單(lib/portfolio._paper_tw_deferred),框裡先講、列出是哪幾檔。沒有就 null。
+   台指期(群益、統一,回報的是根代號)一句講完、不列口數(Wei 核准原文);一次只綁一家,不會跟模擬台股同時有 */
 function trDeferredCloseLine(r) {
   const keys = Array.isArray(r && r.deferred_close) ? r.deferred_close.filter((k) => typeof k === "string" && k) : [];
   if (!keys.length) return null;
+  if (keys.some((k) => /^(TXF|MXF|TMF)$/.test(k))) return t("tr.deferTxfCancel");
   const labs = keys.slice(0, 3).map((k) => { const s = k.replace(/@spot$/, ""), n = trTwName(s); return n ? s + " " + n : s; });
   const syms = labs.join(LANG === "zh" ? "、" : ", ") + (keys.length > 3 ? (LANG === "zh" ? "" : " ") + t("tr.opt.catchMore", { n: keys.length - 3 }) : "");
   return t("tr.deferredClose", { syms });
@@ -3548,11 +3630,15 @@ function trAmountTable(names, stored, states) {
     const am = cloud ? trSendAmounts("cloud", names, stored, TR.edits, trListNames()) : trCurrentAmounts(names, stored, TR.edits);
     const zt = trZoneSum(am, eq);
     // 區標題(§9.4):小計只在錢的區有兩列以上時出(一列就等於那一列);口數區不加口數、未定區沒有幣別,都不出
+    // 模擬帳戶台股的可用額度(spec paper-tw-cash-short §2):多區時在 TWD 區標題列,只有 TWD 一區時在合計列
+    const pc = trPaperCapOf(am);
     Object.keys(grpCells).forEach((z) => { const g = grpCells[z], Z = zt.zones[z];
-      g.sub.textContent = Z && Z.rows >= 2 && z !== TR_ZONE_LOTS && z !== TR_ZONE_UNKNOWN ? trFmt(Z.sum) : ""; });
+      g.sub.textContent = Z && Z.rows >= 2 && z !== TR_ZONE_LOTS && z !== TR_ZONE_UNKNOWN ? trFmt(Z.sum) : "";
+      if (g.avail) g.avail.set(pc); });
     /* 表底合計:只有一區 = 那一區的數(口數區是 ≈ 名目 TWD)+ 單位;兩區以上 = 換算成顯示幣別的 ≈ 整數。淨值倍數只有一個,接在合計後面。
        全是口數列也出(推翻 desktop-10-08 #4:名目 ≈ TWD 是期貨帳戶唯一看得到淨值倍數的地方,units spec §5 電腦版 #4) */
     total.textContent = "";
+    if (!Object.keys(grpCells).length && zt.order.length === 1 && zt.order[0] === TR_TXF_CCY && pc) { const av = trPaperAvailEl(); av.set(pc); total.appendChild(av.el); }
     total.appendChild(trEl("span", "", t("tr.total")));
     const tn = trEl("span", "n", trTotalText(zt.total));   // 逐幣別的 title 拿掉(同網頁 63b7b5fe)
     if (zt.total.v != null && zt.total.ccy) tn.appendChild(trEl("span", "ccy", zt.total.ccy));
@@ -3633,9 +3719,11 @@ function trAmountTable(names, stored, states) {
       const g = trEl("tr", "grp"), sub = trEl("span", "");
       const c0 = trEl("td", "grp-l" + (z === TR_ZONE_LOTS || z === TR_ZONE_UNKNOWN ? " cjk" : ""), trZoneLabel(z)), c3 = trEl("td", "n"), c4 = trEl("td", "n");
       if (z === TR_ZONE_UNKNOWN) c0.title = trUnknownWhy(names.filter((n) => zoneOf[n] === z), states);
+      const avail = z === TR_TXF_CCY ? trPaperAvailEl() : null;
+      if (avail) c3.appendChild(avail.el);
       c3.appendChild(sub);
       g.append(c0, trEl("td", "c-sym"), c3, c4); tb.appendChild(g);
-      grpCells[z] = { sub };
+      grpCells[z] = { sub, avail };
     }
     names.filter((n) => zoneOf[n] === z).sort((a, b) => sortVal(b) - sortVal(a)).forEach((n) => {
       const x = TR.list.find((y) => y.name === n) || {}, st = states[n] || {};
@@ -3831,6 +3919,36 @@ function trManualPart(r, sym, lot, bk, out) {
 }
 /* 機器的 lib 會在模擬交易裡下台股(台幣換美元記帳、休市不下單;runtime 回報 can_paper_twstock)。缺這欄 = 舊 runtime,照舊鎖 */
 function trPaperTwOk() { return ((typeof trReport === "function" && trReport()) || {}).can_paper_twstock === true; }
+/* 模擬帳戶台股的可用額度(trPaperCap):amounts = 存檔後的金額;路由照存檔後算(trAsSaved,配置頁與確認框同一條)。
+   不判斷回 null:機器還不能在模擬交易下台股、匯率缺或過期(不退 1:1)、其餘見 trPaperCap */
+function trPaperCapOf(amounts) {
+  return trAsSaved(() => {
+    const r = trReport() || {};
+    if (r.can_paper_twstock !== true) return null;
+    const fv = trFxView(); if (!fv.fx) return null;
+    const e = trLiveEntry(r, PAPER), sts = r.states || {};
+    const rows = Object.keys(amounts || {}).filter((n) => trPaperOf(n)).map((n) => {
+      const z = trZoneOf(n), mk = trSrcMarket(r, n), x = TR.list.find((y) => y.name === n) || {};
+      const tw = z === TR_TXF_CCY && mk !== "tw_stock_futures" && mk !== "tw_index_futures";
+      const spot = !tw && z !== TR_TXF_CCY && z !== TR_ZONE_LOTS && z !== TR_ZONE_UNKNOWN && ((sts[n] || {}).market || x.market) === "spot" ? z : null;
+      return { name: n, v: Number(amounts[n]) || 0, tw, spot };
+    });
+    return trPaperCap(rows, e, fv.fx, (e && e.currency) || trVenueCcy(PAPER));
+  });
+}
+/* 「可用 ≈ N」(策略組合 › 配置的 TWD 區標題列;只有 TWD 一區時在合計列):觸發點是一顆鈕(鍵盤到得了),口徑放 .tip。
+   超過時同一段字轉紅,讀屏多念一個「超過」。回 { el, set(pc) };pc 為 null 整段不出 */
+function trPaperAvailEl() {
+  const el = trEl("span", "pf-avail-w"), b = trEl("button", "tr-tipb pf-avail"), sr = trEl("span", "sr-only", ""), tip = trEl("span", "tip", "");
+  b.type = "button"; b.dataset.fk = "paper-avail"; tip.setAttribute("role", "tooltip"); tip.id = "tr-tip-" + (++trTipSeq); b.setAttribute("aria-describedby", tip.id);
+  el.append(b, tip); el.hidden = true;
+  return { el, set: (pc) => {
+    el.hidden = !pc; b.textContent = ""; tip.textContent = pc ? t("tr.paperAvailTip") : ""; if (!pc) return;   // 不出時連字都清掉(表上讀 textContent 的地方不會多一段)
+    cxMonoNums(b, t("tr.paperAvail", { amt: trFmt(pc.cap) }));
+    sr.textContent = pc.over ? " " + t("tr.paperAvailOver") : ""; b.appendChild(sr);
+    b.classList.toggle("over", pc.over);
+  } };
+}
 /* 模擬交易下不了的台幣標的(台股,機器的 lib 太舊時;台指期照機器支援):金額不能往上加——配置分頁的輸入格與套用金額走同一道(trCfOpen) */
 function trPaperTw(n) { const x = TR.list.find((y) => y.name === n); return trVenueId() === PAPER && !!x && x.twd === true && !trTxfSpec(x.symbol) && !trPaperTwOk(); }
 /* 「{舊合約}平倉」:這支換了合約、舊合約上別的策略加起來取整是 0(沒人撐了)、而且帳上那個合約真的還有部位才標;其他策略還撐著就只是減倉,不標 */
@@ -4098,7 +4216,7 @@ function trCfOpen(o) {
      移出(· 平倉)、加入但金額 0、換合約(大台 → 微台 · 舊合約平倉)。口數格留空、模擬交易台股往上加、雲端讀不到／壞值、匯率舊。
      有輸入格時隨打字重算(derive),所以是一個容器、不是 fragment */
   const extra = trEl("div", "cf-extra");
-  let hold0 = null, stratRows = [], blank = [], blocked = false, haltNote = false;
+  let hold0 = null, stratRows = [], blank = [], blocked = false, haltNote = false, paperCashKey = null;
   const keepsPos = (n) => { if (!hold0) return false; const ks = trCfSymsOf(n, (hold0.r0.states || {})[n], hold0.ct);
     return !!ks && ks.length > 0 && ks.every((k) => hold0.keys.indexOf(k) >= 0); };
   const derive = () => ctView(() => {
@@ -4137,6 +4255,10 @@ function trCfOpen(o) {
   const zeroed = Object.keys(sending).filter((n) => !(sending[n] > 0) && Number(stored[n]) > 0);
   blank = inp ? [] : trBlankLots(Object.keys(sending), TR.raw, trRowTxfNew, zeroed);
   if (blank.length) extra.appendChild(trEl("p", "cf-zeroed", t("tr.saveBlankLots", { names: blank.map(trDisplay).join(LANG === "zh" ? "、" : ", ") })));
+  // 模擬帳戶台股超過可用額度(spec paper-tw-cash-short §3):只提醒、不擋。輸入格那一支講這一格最多填多少,其餘講整個台股的上限
+  { const pc = trPaperCapOf(sending), left = inp ? (inp.tw ? trPaperCapLeft(pc, inp.name) : null) : null;
+    paperCashKey = inp ? (left == null ? null : left > 0 ? "tr.cfPaperCashLeft" : "tr.cfPaperCashNone") : pc && pc.over ? "tr.cfPaperCashOver" : null;
+    if (paperCashKey) extra.appendChild(cxMonoNums(trEl("p", "cf-zeroed cf-paper-cash"), t(paperCashKey, { cap: trFmt(pc.cap), left: trFmt(Math.max(0, left || 0)) }))); }
   const hid = cloud ? trHidden(names, stored, trListNames()) : [], badStored = cloud ? trBadStored(sending) : [];
   if (hid.length) extra.appendChild(trEl("p", "cf-note", t("tr.cloud.hidden", { n: hid.length })));
   if (badStored.length) extra.appendChild(trEl("p", "cf-block", t("tr.cloud.badStored", { names: list(badStored) })));
@@ -4288,7 +4410,7 @@ function trCfOpen(o) {
     if (cf.ctx && delCtx === cf.ctx) $("del-ok").disabled = blocked || inOff();
   }, () => !cf.firing && !$("del-ok").disabled));
   frag.append(body, extra);
-  const anyChange = !!inp || cf.rows > 0 || cf.notes > 0 || stratRows.length > 0 || blank.length > 0 || Object.keys(sending).some((n) => Number(sending[n]) !== old(n));
+  const anyChange = !!inp || cf.rows > 0 || cf.notes > 0 || stratRows.length > 0 || blank.length > 0 || !!paperCashKey || Object.keys(sending).some((n) => Number(sending[n]) !== old(n));
   // 框腳左邊的「到策略組合」(策略頁的輸入格框,台股沒有):關框、把已填的金額帶成草稿(poAdd)
   const link = inp && opt.toPo ? { label: t("po.addGo"), onClick: () => opt.toPo(ivVal()) } : null;
   const box = trCloudBox({
@@ -4686,8 +4808,9 @@ function poSigTable(r, stored, states, mode) {
   const errs = firstRead ? new Map() : trLiveOrderErrs(r.order_errors, pending, { open: openSet, twOpen: [...openSet].some((k) => !!trTxfSpec(k)), running, orders: r.orders });
   errs.forEach((le, key) => {
     const sym = String(le.symbol || "—").replace(/@spot$/, ""), err = String(le.error || le.message || ""), closeAll = err.indexOf("close-all:") === 0;
-    const plain = le.kind === "order_unconfirmed" ? t(le.close_all === true ? "tr.ov.evUnconfirmedCloseAllNote"   // close_all 優先(同網頁)
-      : le.manual === true ? "tr.err.unconfirmedManual" : "tr.err.unconfirmed") : TR_TW_NOTICE[le.kind] ? err.slice(0, 300) : trOrderErrParse(err) ? trOrderErrText("", err).replace(/^[\s:：—-]+/, "").replace(/^[a-z]/, (c) => c.toUpperCase()) : null;
+    const cd = trCloseDeferred(le);
+    const plain = cd ? t(cd.note) : le.kind === "order_unconfirmed" ? t(le.close_all === true ? "tr.ov.evUnconfirmedCloseAllNote"   // close_all 優先(同網頁)
+      : le.manual === true ? "tr.err.unconfirmedManual" : "tr.err.unconfirmed") : TR_TW_NOTICE[le.kind] ? err.slice(0, 300) : trOrderErrParse(err, le) ? trOrderErrText("", err, le).replace(/^[\s:：—-]+/, "").replace(/^[a-z]/, (c) => c.toUpperCase()) : null;
     const loud = !closeAll && trErrLoud(le, hs, TR.startAt, r.last_reconcile);
     const line = trEl("span", loud ? "pf-note err" : "pf-note past");
     // 節流中的重複失敗只更新那一列的 last_at／count(4647a2e):時間寫最後一次失敗;哪一筆還在失敗照舊看 ts(trLiveOrderErrs)
@@ -5633,8 +5756,8 @@ function trDrawCurve(canvas, pts, isPnl) {
 }
 // 機器側事件 → 兩段字(標題、後果註解)。白名單:不認得的型別不畫
 // 拒單原文 → 在地化的那一句;比不到就照舊 tr.orderFailed(原文是不可信輸入:截長、走 textContent)
-function trOrderErrText(sym, err) {
-  const p = trOrderErrParse(err);
+function trOrderErrText(sym, err, row) {
+  const p = trOrderErrParse(err, row);
   if (p && p.kind === "paperLev") return t("tr.err.paperLev", { sym, gross: trFmt(p.gross), cap: trFmt(p.cap), x: p.x, c: trCcy() });
   if (p && p.kind === "paperBroke") return t("tr.err.paperBroke", { sym });
   if (p && p.kind === "okx_account_mode") return t("tr.err.okxMode", { sym });
@@ -5681,6 +5804,7 @@ function trEvLevel(type, d) {
   if (type === "halt" || type === "halt_close") return d.source === "reconciler" || d.source === "portfolio" ? 1 : 3;
   if (type === "machine_restart_stopped") return d.trigger === "resume" ? 2 : d.trigger === "upgrade" ? 3 : 1;
   if (trExUnreachLong(type, d)) return 1;
+  if (type === "order_error" && d.exchange === "paper") return 2;   // 模擬沒有真錢在風險上:同 api level_for
   return TR_EV_P1.includes(type) ? 1 : TR_EV_P2.includes(type) ? 2 : 3;
 }
 const trEvClass = (lv) => (lv === 1 ? "err" : lv === 2 ? "hl" : "");
@@ -5961,10 +6085,18 @@ function trOvEvents(r, z) {
         return;
       }
       if (TR_TW_NOTICE[e.kind]) { body.appendChild(trEl("span", "err", t(TR_TW_NOTICE[e.kind]))); tail(raw.slice(0, 300)); return; }
-      body.appendChild(trEl("span", "err", t("tr.ov.evErr")));
+      const cd = trCloseDeferred(e);
+      if (cd) {   // 一列可能是幾個 key(逗號串起):各自去掉 @spot
+        body.append(trEl("span", "", t(cd.title)), " ", trEl("span", "mono", String(e.symbol || "").split(",").map((s) => s.replace(/@spot$/, "")).join(", ")));
+        // 延後那列不帶附註:標題已講等開盤(copy #8 不重述標題,設計稽核 0153 #2);部位表那一行沒標題,照帶。取消那列的附註講原因,留著
+        // 時鐘量不到／差超過一小時那列(clock unmeasured／far)附註講的是標題沒講的事(不是休市),照帶
+        if (cd.cancel || e.clock === "unmeasured" || e.clock === "far") body.append(" ", trEl("span", "dim", "— " + t(cd.note)));
+        return;
+      }
+      body.appendChild(trEl("span", trEvClass(trEvLevel("order_error", e)), t("tr.ov.evErr")));
       trEvCount(body, e.count);   // lib/portfolio._record_order_error 同標的同原因併成一列、累加 count
       if (strat) body.append(" ", strat);
-      if (trOrderErrParse(raw)) body.append(" ", trEl("span", "dim", "— " + trOrderErrText(twn ? sym + " " + twn : sym, raw)));   // 認得的原因:整句在地化(句子自己帶標的;台股帶名字)
+      if (trOrderErrParse(raw, e)) body.append(" ", trEl("span", "dim", "— " + trOrderErrText(twn ? sym + " " + twn : sym, raw, e)));   // 認得的原因:整句在地化(句子自己帶標的;台股帶名字)
       else { body.append(" ", trEl("span", "mono", sym)); if (tw) body.appendChild(tw); body.append(" ", trEl("span", "dim", "— " + raw.slice(0, 160))); }
     });
   });
@@ -6014,14 +6146,16 @@ function trEvListFocus(box) {
 let cxOpener = null;
 /* 表單自己的狀態(不放進袋子的 sig:金鑰不該變成一個到處被複製的字串)。ip:undefined = 還沒查 / null = 查不到 / 字串 = IPv4。
    bn = 主行程 binance_link 的 state(重查結果),設定分頁的帳戶那一列用。 */
-const CXF = { env: "local", mode: "paper", venue: PAPER, apiKey: "", secret: "", passphrase: "", ip: undefined, ipBusy: false, res: null, lockUntil: 0, lockTimer: null, bn: null, storeOpen: false, paperOpen: false, bound: false, kc: null };
+/* venue:null = 還沒選(交易所磚);PAPER 只在框腳「先用模擬交易」送出那一下。bound = 綁著真實帳戶(停在那一家、主鈕換金鑰);
+   paperBound = 綁著模擬(磚照出,連上真實帳戶直接取代) */
+const CXF = { env: "local", venue: null, apiKey: "", secret: "", passphrase: "", ip: undefined, ipBusy: false, res: null, lockUntil: 0, lockTimer: null, bn: null, bound: false, paperBound: false, kc: null };
 const cxBag = () => TR_BAGS[CXF.env === "cloud" ? "cloud" : "local"];
 // 雲端主機現在的對外 IP(cloud.js 只在 running 時交出來;停機的主機沒有固定 IP)
 function cxCloudIp() { const c = TR_BAGS.cloud.st && TR_BAGS.cloud.st.cloud; const ip = c && c.machine && c.machine.public_ip; return typeof ip === "string" && ip ? ip : null; }
 function cxForget() { CXF.apiKey = ""; CXF.secret = ""; CXF.passphrase = ""; CXF.res = null; CXF.kc = null; if (typeof capForget === "function") capForget(); if (typeof presForget === "function") presForget(); if (typeof caplForget === "function") caplForget(); }
 /* 兩個視角共用這個框(spec-desktop-cloud-s5 §2:只差五處)。雲端只在主機 running 時開得起來。 */
-/* venue:設定分頁群益「繼續」直接帶進群益那條(只有雲端);統一「繼續」只有這台電腦。
-   沒指定 venue 一律預選模擬交易(spec agent-onboarding-e-f §7-4) */
+/* venue:設定分頁群益「繼續」直接帶進群益那條;統一「繼續」只有這台電腦。
+   沒指定 venue 不預選:框頂是交易所磚,模擬交易退到框腳(spec connect-account-plan1 §2-1) */
 /* onConnected:策略頁的〔自動下單〕／〔連接帳戶〕接連接框時帶(spec strategy-page-autotrade §5)。過了上面兩道早退才記,
    框沒開成就不留;cxModalClose(true)(四條完成路都經過它)叫一次,關掉沒接(false)就丟掉 */
 const CXW = { cb: null };
@@ -6032,20 +6166,27 @@ function cxModalOpen(opener, venue, onConnected) {
   CXW.cb = typeof onConnected === "function" ? onConnected : null;
   CXF.env = env;
   const L = cxBag(); L.cx = { busy: false, err: null, retest: false };
-  cxOpener = opener || null; cxForget(); CXF.storeOpen = false; CXF.paperOpen = false;
-  // 已綁定(開通中的統一／群益不算):兩個大選項與選單鎖住、停在綁著的那一家(mockup account-dialog 格 4)
-  const st = TR_BAGS[env].st, bid = trVenueIds(st && st.report)[0] || null;
-  CXF.bound = !!bid && !trSetupOnly(st);
-  CXF.venue = CXF.bound ? bid : venue === CAPITAL ? CAPITAL : venue === "president" && env === "local" ? venue : PAPER;   // 群益:雲端 capital.js / 這台電腦 capital_local.js
-  if (CXF.bound && venue === "president" && env === "local" && trPresLoginHeld(st && st.report, "president")) CXF.venue = venue;   // 跟模擬同綁時第一家是 paper:〔繼續〕要開統一
-  CXF.mode = CXF.venue === PAPER ? "paper" : "real";
+  cxOpener = opener || null; cxForget();
+  // 綁著真實帳戶(開通中的統一／群益不算):停在那一家、沒有「換一家」(格 7)。綁著模擬不鎖:磚照出,連上真實帳戶直接取代(格 3)
+  /* 模擬跟真實帳戶(含統一、群益)不會同時綁著:runtime 每次綁定都把其他交易所的金鑰擠掉(save_routing._venue_cred_ids,一台一家)。
+     只有手改 .env 才會兩個都在;那時 ids 依字母排、paper 在 president 前,取第一家真實帳戶,不落到「取代模擬」那一態 */
+  const st = TR_BAGS[env].st, ids = trVenueIds(st && st.report), real = ids.find((id) => id !== PAPER) || null, bound = ids.length > 0 && !trSetupOnly(st);
+  CXF.bound = bound && !!real; CXF.paperBound = bound && !real;
+  CXF.venue = CXF.bound ? real : venue === CAPITAL ? CAPITAL : venue === "president" && env === "local" ? venue : null;   // 群益:雲端 capital.js / 這台電腦 capital_local.js
+  if (bound && venue === "president" && env === "local" && trPresLoginHeld(st && st.report, "president")) CXF.venue = venue;   // 跟別家同綁時第一家不是統一:〔繼續〕要開統一
   trackFeature("cx_open");
   if (CXF.venue === CAPITAL && env === "cloud" && typeof capResume === "function") capResume();
+  if (CXF.venue && CX_VENUES[CXF.venue] && env === "local" && CXF.ip === undefined) cxIpLookup();
   $("view-ws").inert = true;
   const sc = $("cx-scrim"); sc.hidden = false;
   requestAnimationFrame(() => sc.classList.add("open"));
   L.sig.cxm = null; cxModalPaint();
-  const f = $("cx-mode-" + CXF.mode) || $("cx-venue") || $("cx-body").querySelector("input, .cap-step.is-cur button") || $("cx-close"); f.focus();
+  cxFocusStart();
+}
+// 焦點:還沒選 → 第一塊磚;選了一家 → 〔到 X 建金鑰〕(StockCoin 沒有那顆 → 第一個欄位);群益／統一 → 那條的第一步
+function cxFocusStart() {
+  const f = $("cx-body").querySelector(".cx-tile, #cx-keypage, input, .cap-step.is-cur button") || $("cx-close");
+  f.focus();
 }
 /* connected:true = 金鑰／帳戶存進去了(本機 cxConnected、雲端兩段式、群益 c-done、統一 d-done、灰句期間報告帶出那一家);
    "handoff" = 群益交給 agent 走遠端桌面(只是把一句送進聊天,什麼都沒綁),關框照 true 的樣子、但不算接上;false = 沒接就關。
@@ -6076,7 +6217,8 @@ async function cxIpLookup() {
 }
 /* IP 的複製元件(連接框與設定分頁「IP 換了」共用;設計師規格 v2 方案 C):chip 裡是 IP + 一顆 icon 鈕(視覺 24、熱區 28),
    旁邊一個 status 槽——複製成功才換成勾、講「已複製」2 秒。可及名稱固定講出複製的是什麼。icon 用 DOM 組(這個檔不用 innerHTML)。 */
-const CX_ICONS = { copy: [["rect", { width: 14, height: 14, x: 8, y: 8, rx: 2, ry: 2 }], ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" }]], check: [["path", { d: "M20 6 9 17l-5-5" }]] };
+const CX_ICONS = { copy: [["rect", { width: 14, height: 14, x: 8, y: 8, rx: 2, ry: 2 }], ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" }]], check: [["path", { d: "M20 6 9 17l-5-5" }]],
+  ext: [["path", { d: "M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" }]] };
 function cxIcon(name) {
   const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg");
   svg.setAttribute("class", "ic ic-" + name); svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("aria-hidden", "true");
@@ -6106,6 +6248,9 @@ function cxChkTextVenue(r) {
   if (c === "REJECTED" && trErrToken(d.reason) === "bitget_uta_unsupported") return t("cx.err.bitgetUta");
   if (c === "REJECTED" && trErrToken(d.reason) === "bitget_copy_trading_key") return t("cx.err.bitgetCopyKey");
   if (c === "REJECTED") return trErrToken(d.reason) === "okx_account_mode" ? t("cx.err.okxMode") : t("cx.chk.rejectedV", { venue: name, reason: String(d.reason || "—").slice(0, 200) });
+  // 這兩家以外的 IP 畫在錯誤句下面、而且查得到才畫(cxIpAddFor):句子不指「上面的 IP」,也不寫死 Binance
+  if (c === "TRADING_DISABLED") return t("cx.chk.tradingV", { venue: name });
+  if (c === "IP_OR_KEY") return t("cx.chk.ipOrKeyV", { venue: name });
   if (c === "UNKNOWN") return t("cx.chk.unknownV", { venue: name });
   if (c === "NO_CHECK") return t("cx.chk.noCheckV", { venue: name });
   if (c === "LIB_BROKEN") return t("cx.chk.libBrokenV", { venue: name, reason: String(d.reason || "—").slice(0, 200) });
@@ -6219,70 +6364,112 @@ function cxDismiss() {
 }
 // 灰記號(不是錯):限速兩種輕的
 const cxCalm = (r) => !!r && (r.code === "RATE_LIMITED" || r.code === "RATE_BACKOFF");
-/* 框頂:模擬交易／真實帳戶兩個大選項(預設模擬;canon Radio,沿用確認框的 .cf-opt),選真實帳戶才出交易所選單。
-   兩個視角共用;群益那條 capital.js、統一那條 president.js 也用,所以選項在那兩條裡照樣看得到、切得回模擬 */
+/* 框頂(spec connect-account-plan1 §2、§6):還沒選 → 兩組交易所磚,點了就進那一家(沒有選中態、沒有主鈕);選了 → 頭列名稱＋「換一家」。
+   兩個視角共用;群益(capital.js／capital_local.js)、統一(president.js)也呼叫 cxVenueField,頭列在那幾條裡照樣出、換得回別家 */
 // 句子裡的數字(100,000)用 mono(canon:數字一律 mono);其餘照原字
 function cxMonoNums(el, text) {
   String(text).split(/(\d[\d,.]*\d|\d)/).forEach((x, i) => { if (!x) return; if (i % 2) el.appendChild(trEl("span", "mono", x)); else el.append(x); });
   return el;
 }
-function cxVenueField(L) {
-  const w = trEl("div", "cx-pick"), fs = trEl("fieldset", "cf-opts");
-  const lg = trEl("legend", "", t("cx.title")); fs.appendChild(lg);
-  const off = !!L.cx.busy || CXF.bound || (CXF.venue === CAPITAL && typeof CAP !== "undefined" && CAP.busy);
-  const fut = CXF.venue === CAPITAL || CXF.venue === "president";
-  [["paper", t("cx.mode.paper"), t("cx.mode.paperSub")], ["real", t("cx.mode.real"), t("cx.mode.realSub")]].forEach(([m, ti, de]) => {
-    // 選了真實帳戶、還沒綁定:卡裡要放事實,label 退成卡內的一列;鎖住(已綁定)時事實收起來,只留選項本身(mockup account-dialog 格 4)
-    const on = CXF.mode === m, wrap = on && m === "real" && !CXF.bound, lab = trEl("label", wrap ? "cf-lab" : "cf-opt" + (off ? " off" : "")), r = trEl("input");
-    r.type = "radio"; r.name = "cx-mode"; r.id = "cx-mode-" + m; r.value = m; r.checked = on; r.disabled = off;
-    r.addEventListener("change", () => {
-      if (!r.checked || CXF.mode === m) return;
-      CXF.mode = m; CXF.venue = m === "paper" ? PAPER : cxVenuesFor(CXF.env)[0];
-      cxForget(); L.cx.err = null; L.sig.cxm = null; cxModalPaint(); if (m === "real" && CXF.ip === undefined) cxIpLookup();
+/* 台灣期貨那組列哪幾家:雲端只有群益(交給 capital.js);這台電腦是 Windows 才列群益本機(CAPL_LOCAL_ON)與統一(PRES_LOCAL_ON)。
+   回 null = 這台電腦不是 Windows:不出磚,原位講 cx.macTw(兩家的下單程式都只在 Windows 跑) */
+function cxTwTiles(env, platform) {
+  if (env !== "local") return [[CAPITAL, "cap.venue"]];
+  if (platform !== "win32") return null;
+  return [cxCaplListed() ? [CAPITAL, "cap.venue"] : null, cxPresListed() ? ["president", "pres.venue"] : null].filter(Boolean);
+}
+// 「到 X 建金鑰」的網址:沒有 keyUrl 就不出鈕
+function cxKeyUrl(id) { return (Object.prototype.hasOwnProperty.call(CX_VENUES, id) && CX_VENUES[id].keyUrl) || null; }
+// 步驟 1 的權限句:合約權限另一格的那幾家講「合約交易」
+const cxPermKey = (id) => (id === BINANCE || id === "gateio" ? "cx.perm.futures" : "cx.perm");
+/* 這台電腦、Binance 以外被拒時,錯誤句下面多接 IP 白名單那一句＋IP(spec §2-5);reason 已經講了真原因的不接。
+   Binance 與雲端視角的 IP 常駐在步驟 1,不重複(雲端寫入前不查非 Binance 金鑰,被拒那一刻等不到,Wei 11-10) */
+const CX_IPADD_SKIP = ["okx_account_mode", "bitget_uta_unsupported", "bitget_copy_trading_key"];
+function cxIpAddFor(r, venue, cloud) {
+  const c = r && r.code;
+  if (cloud || venue === BINANCE || !Object.prototype.hasOwnProperty.call(CX_VENUES, venue)) return false;
+  if (c === "IP_OR_KEY" || c === "TRADING_DISABLED") return true;
+  return c === "REJECTED" && CX_IPADD_SKIP.indexOf(trErrToken(((r && r.detail) || {}).reason)) < 0;
+}
+// 兩句接成一段:CJK 標點結尾直接接,其他語言隔一格
+const cxJoin = (a, b) => a + (/[。！？：]$/.test(a) ? "" : " ") + b;
+function cxPick(L, id) {
+  trackFeature("cx_venue_pick");
+  CXF.venue = id; cxForget(); L.cx.err = null; L.sig.cxm = null; cxModalPaint();
+  if (Object.prototype.hasOwnProperty.call(CX_VENUES, id) && CXF.env === "local" && CXF.ip === undefined) cxIpLookup();
+  cxFocusStart();
+}
+// 「換一家」:回到磚、清掉已填的欄位,焦點回剛才那塊磚
+function cxUnpick(L) {
+  const was = CXF.venue;
+  CXF.venue = null; cxForget(); L.cx.err = null; L.sig.cxm = null; cxModalPaint();
+  const f = $("cx-tile-" + was) || $("cx-body").querySelector(".cx-tile"); if (f) f.focus();
+}
+function cxTiles(L) {
+  const w = trEl("div", "cx-pick"), off = !!L.cx.busy;
+  if (CXF.paperBound) w.appendChild(trEl("p", "cx-replace", t("cx.replacePaper")));
+  const group = (gid, labelKey, items, note) => {
+    const lab = trEl("p", "cx-grp", t(labelKey)); lab.id = "cx-grp-" + gid; w.appendChild(lab);
+    if (note) { w.appendChild(trEl("p", "cx-macnote", note)); return; }
+    const g = trEl("div", "cx-tiles"); g.setAttribute("role", "group"); g.setAttribute("aria-labelledby", lab.id);
+    items.forEach(([id, name]) => {
+      const b = trEl("button", "cx-tile"); b.type = "button"; b.id = "cx-tile-" + id; b.disabled = off;
+      b.appendChild(trEl("span", "n", name)); b.addEventListener("click", () => cxPick(L, id)); g.appendChild(b);
     });
-    lab.append(r, trEl("span", "cf-opt-t", ti), cxMonoNums(trEl("span", "cf-opt-d"), de));
-    if (!wrap) { fs.appendChild(lab); return; }
-    /* 選了真實帳戶:事實長在卡裡。卡是 div,label 與 ul 是兄弟、ul 用 aria-describedby 掛在圓鈕上(不進選項的可及名稱)。
-       期貨商沒有「只開讀取和交易」的權限設定:只留一行、「金鑰」改「憑證」 */
-    const card = trEl("div", "cf-opt cf-wrap" + (off ? " off" : "")), ul = trEl("ul", "cx-facts");
-    ul.id = "cx-facts"; r.setAttribute("aria-describedby", ul.id);
-    const facts = fut ? [CXF.env === "cloud" ? t("cx.fact.certCloud") : t("cx.fact.cert")]
-      : [CXF.env === "cloud" ? t("cx.fact.keyCloud") : t("cx.fact.key"), t("cx.fact.perm")];
-    facts.forEach((x) => ul.appendChild(trEl("li", "", x)));
-    card.append(lab, ul); fs.appendChild(card);
-  });
-  w.appendChild(fs);
-  // 已綁定:模擬綁著時這一句之外沒有別的(主鈕藏起來,重按會用新的 PAPER_BOUND_TS 把模擬帳戶從頭建一次)
-  if (CXF.mode !== "real") { if (CXF.bound) w.appendChild(trEl("p", "cx-hint", t("cx.bound"))); return w; }
-  const fl = trEl("label", "fld"); fl.appendChild(trEl("span", "fld-l", t("cx.venue")));
-  const sw = trEl("span", "f-selw"), sel = trEl("select", "f-input"); sel.id = "cx-venue";
-  const g = document.createElement("optgroup"); g.label = t("cx.group.crypto");
-  cxVenuesFor(CXF.env).forEach((id) => { const ob = trEl("option", "", trVenueLabel(id)); ob.value = id; g.appendChild(ob); });
-  sel.appendChild(g);
-  // 雲端只列群益(交給 capital.js)。統一期貨只在這台電腦視角(雲端的開通在網頁;設計稿 §5 電腦版雲端視角 v1 不做)。
-  // 這台電腦列統一(PRES_LOCAL_ON)與群益本機(CAPL_LOCAL_ON,交給 capital_local.js);Mac 也列,選了各講一句跑不起來(統一 d-mac、群益 m-mac)
-  const tw = CXF.env !== "local" ? [[CAPITAL, "cap.venue"]] : [cxPresListed() ? ["president", "pres.venue"] : null, cxCaplListed() ? [CAPITAL, "cap.venue"] : null].filter(Boolean);
-  if (tw.length) { const g2 = document.createElement("optgroup"); g2.label = t("cap.group.tw");
-    tw.forEach(([v, k]) => { const o2 = trEl("option", "", t(k)); o2.value = v; g2.appendChild(o2); });
-    sel.appendChild(g2); }
-  sel.value = CXF.venue; sel.disabled = off;
-  sel.addEventListener("change", () => {
-    CXF.venue = cxVenuesFor(CXF.env).indexOf(sel.value) >= 0 || (sel.value === CAPITAL && CXF.env === "cloud") || (sel.value === "president" && CXF.env === "local" && cxPresListed())
-      || (sel.value === CAPITAL && CXF.env === "local" && cxCaplListed()) ? sel.value : cxVenuesFor(CXF.env)[0];
-    cxForget(); L.cx.err = null; L.sig.cxm = null; cxModalPaint(); if (CXF.venue !== CAPITAL && CXF.venue !== "president" && CXF.ip === undefined) cxIpLookup();
-  });
-  sw.appendChild(sel); fl.appendChild(sw); w.appendChild(fl);
-  if (CXF.bound) w.appendChild(trEl("p", "cx-hint", t("cx.bound")));
+    w.appendChild(g);
+  };
+  group("crypto", "cx.group.crypto", cxVenuesFor(CXF.env).map((id) => [id, trVenueLabel(id)]));
+  const tw = cxTwTiles(CXF.env, window.blave.platform);
+  if (tw === null) group("tw", "cap.group.tw", [], t("cx.macTw"));
+  else if (tw.length) group("tw", "cap.group.tw", tw.map(([id, k]) => [id, t(k)]));
   return w;
 }
-// 模擬的成交方式:收進「模擬怎麼成交？」展開列(選項小字已經講了不用金鑰、起始金額、不動真錢)
-function cxPaperNote() {
-  const note = trEl("div", "cx-note"), disc = trEl("button", "cx-disc", t("cx.paper.q")), p = trEl("p", "cx-disc-p", t("cx.paper.fill"));
-  disc.type = "button"; disc.id = "cx-paper-q"; p.id = "cx-paper-fill"; disc.setAttribute("aria-controls", p.id);
-  disc.setAttribute("aria-expanded", CXF.paperOpen ? "true" : "false"); p.hidden = !CXF.paperOpen;
-  disc.addEventListener("click", () => { CXF.paperOpen = !CXF.paperOpen; disc.setAttribute("aria-expanded", CXF.paperOpen ? "true" : "false"); p.hidden = !CXF.paperOpen; });
-  note.append(disc, p);
-  return note;
+// noName:標題已經是「連接群益期貨／連接統一期貨」的那幾步,頭列只留「換一家」,名字不講第二次(稽核 v052 建議 7)
+function cxVenueField(L, noName) {
+  if (!CXF.venue || CXF.venue === PAPER) return cxTiles(L);
+  const fut = CXF.venue === CAPITAL || CXF.venue === "president";
+  const off = !!L.cx.busy || (fut && ((typeof CAP !== "undefined" && CXF.env === "cloud" && CAP.busy) || (typeof CAPL !== "undefined" && CXF.venue === CAPITAL && CXF.env === "local" && CAPL.busy)
+    || (typeof PRES !== "undefined" && CXF.venue === "president" && PRES.busy)));
+  const w = trEl("div", "cx-pick"), head = trEl("div", "cx-picked");
+  if (!noName) head.appendChild(trEl("span", "n", trVenueLabel(CXF.venue)));
+  // 綁著真實帳戶:一次只綁一家,換家要先解除綁定,所以沒有「換一家」(格 7)
+  if (!CXF.bound) { const b = trEl("button", "btn-quiet", t("cx.change")); b.type = "button"; b.id = "cx-change"; b.disabled = off; b.addEventListener("click", () => cxUnpick(L)); head.appendChild(b); }
+  if (head.children.length) w.appendChild(head);
+  return w;
+}
+// 步驟 1、2:編號 12px mono、不畫圈(spec §2-3)
+function cxStep(no) {
+  const s = trEl("div", "cx-step"), n = trEl("span", "no", no);
+  n.setAttribute("aria-hidden", "true"); s.append(n, trEl("div", "cx-step-b"));
+  return s;
+}
+/* 〔到 X 建金鑰〕:外開那一家的 API 管理頁(main.js open-external,只收 http/https)。步驟 1 常駐 IP 的(Binance、雲端每一家)
+   同時把 IP 寫進剪貼簿(同網頁),鈕旁講「IP 已複製」2 秒;IP 還沒查到或查不到時只開頁 */
+function cxKeyPageBtn(venue) {
+  const w = trEl("div", "cx-chipw cx-kp"), b = trEl("button", "btn-out", t("cx.keyPage", { venue: trVenueLabel(venue) })), said = trEl("span", "cx-said");
+  b.type = "button"; b.id = "cx-keypage"; b.appendChild(cxIcon("ext")); said.setAttribute("role", "status");
+  b.addEventListener("click", async () => {
+    trackFeature("cx_key_page");
+    const url = cxKeyUrl(venue); if (url) window.blave.openExternal(url);
+    const ip = CXF.env === "cloud" ? cxCloudIp() : venue === BINANCE ? CXF.ip : null;
+    if (typeof ip !== "string" || !ip) return;
+    try { await navigator.clipboard.writeText(ip); } catch (_) { return; }
+    said.textContent = t("cx.ip.copiedOpen");
+    setTimeout(() => { if (said.isConnected) said.textContent = ""; }, 2000);
+  });
+  w.append(b, said);
+  return w;
+}
+// 步驟 1 底下的 IP(Binance 兩個視角、雲端每一家):雲端是主機回報的(不查、沒有「再查一次」);這台電腦查詢中／查不到同一個 chip 殼、灰字
+function cxIpSlot(cloud, cip) {
+  const f = document.createDocumentFragment();
+  if (cloud ? cip : CXF.ip) { f.appendChild(cxIpChip(cloud ? cip : CXF.ip)); return f; }
+  const lost = !cloud && !(CXF.ipBusy || CXF.ip === undefined), w = trEl("div", "cx-chipw"), chip = trEl("span", "cx-chip is-empty");
+  chip.appendChild(trEl("span", "v", cloud ? t("cx.ip.cloudNone") : lost ? t("cx.ip.noneLong") : t("cx.ip.loading"))); w.appendChild(chip);
+  if (lost) { const rb = trEl("button", "btn-quiet", t("cx.ip.retry")); rb.type = "button"; rb.id = "cx-ip-retry"; rb.addEventListener("click", cxIpLookup); w.appendChild(rb); }
+  f.appendChild(w);
+  if (lost) f.appendChild(trEl("p", "cx-hint", t("cx.ip.fail")));
+  return f;
 }
 // 真實帳戶、這一家要的金鑰還沒填滿:主鈕停用,Enter 也不送
 function cxKeysBlank(venue) {
@@ -6294,9 +6481,12 @@ function cxSetupWip() {
   const st = TR_BAGS.local.st, r = st && st.report;
   return trSetupOnly(st) ? trVenueIds(r).find((id) => trPresWip(r, id) || trCaplWip(r, id)) || null : null;
 }
+/* 綁著模擬、自動下單正在跑、選了一家(還沒到驗證碼那一步):主鈕正上方講連上會停掉模擬、先暫停(designer replace-paper A 案)。
+   沒在跑就沒有東西可停,不出 */
+function cxStopsRun(paperBound, picked, kc, head) { return !!paperBound && !!picked && !kc && head === "running"; }
 function cxModalPaint() {
-  // 金鑰沒填滿的停用只屬於下面這條;換到群益、統一那幾條不帶過去
-  $("cx-go").classList.remove("is-lock"); $("cx-go").disabled = false;
+  // 金鑰沒填滿的停用只屬於下面這條;換到群益、統一那幾條不帶過去。框腳的「先用模擬交易」在那幾條也不出(腳由它們自己畫)
+  $("cx-go").classList.remove("is-lock"); $("cx-go").disabled = false; $("cx-paper").hidden = true; $("cx-stops").hidden = true;
   if (CXF.venue === CAPITAL && CXF.env === "cloud") return capPaint();   // 群益整個框交給 capital.js
   if (typeof capFootRestore === "function") capFootRestore();
   if (CXF.venue === CAPITAL && CXF.env === "local") {   // 群益本機整個框交給 capital_local.js;第一次進來先找憑證、讀系統地區
@@ -6312,16 +6502,17 @@ function cxModalPaint() {
   const L = cxBag(), box = $("cx-body"), go = $("cx-go"), cloud = CXF.env === "cloud";
   // 雲端:框開著時主機停了 → 框不自己關(可能正在貼金鑰),主鈕鎖住、結果那一格講原因;限速不做 app 端計時鎖(主機自己在冷卻)
   const down = cloud && envCloudKind(TR_BAGS.cloud.st) !== "running";
-  const venue = CXF.venue, locked = !cloud && Date.now() < CXF.lockUntil, kc = cloud ? CXF.kc : null;
-  const blank = !kc && !L.cx.busy && cxKeysBlank(venue);
+  // picked = 選了一家交易所(磚那一態與模擬送出那一下都不是)
+  const venue = CXF.venue, picked = !!venue && venue !== PAPER, locked = !cloud && Date.now() < CXF.lockUntil, kc = cloud ? CXF.kc : null;
+  const blank = !kc && !L.cx.busy && picked && cxKeysBlank(venue);
   const off = L.cx.busy || (venue === BINANCE && locked) || down || (!!kc && !kcReady(kc));
   const cip = cloud ? cxCloudIp() : null;
-  const sig = LANG + "|" + JSON.stringify([CXF.env, CXF.mode, CXF.bound, venue, L.cx, cloud ? cip : CXF.ip === undefined ? "?" : CXF.ip, CXF.ipBusy, CXF.res && [CXF.res.code, CXF.res.detail, CXF.res.expired], kc && kc.view, locked, down]);
+  const sig = LANG + "|" + JSON.stringify([CXF.env, CXF.bound, CXF.paperBound, venue, L.cx, cloud ? cip : CXF.ip === undefined ? "?" : CXF.ip, CXF.ipBusy, CXF.res && [CXF.res.code, CXF.res.detail, CXF.res.expired], kc && kc.view, locked, down]);
   // 等的時候圓環在字前(同 app.js 更新鈕);只在字換了才重組——輪詢重畫不能重啟圓環的動畫
-  // 已綁定的真實帳戶:主鈕跟入口同一個字「換金鑰」(一次只綁一家,「連接交易所」會被讀成再接一家);已綁模擬沒有主鈕
+  // 已綁定的真實帳戶:主鈕跟入口同一個字「換金鑰」(一次只綁一家,「連接帳戶」會被讀成再接一家);磚那一態沒有主鈕
   // 驗證碼那一步:主鈕就是這一步的動作「確認」,送的時候圓環在字前
-  const goLabel = kc ? t("cx.kc.ok") : L.cx.busy ? t("cx.connecting") : venue === PAPER ? t("cx.goPaper") : CXF.bound ? t("cx.changeKey") : t("cx.connect");
-  go.hidden = CXF.bound && venue === PAPER;
+  const goLabel = kc ? t("cx.kc.ok") : L.cx.busy ? t("cx.connecting") : CXF.bound ? t("cx.changeKey") : t("cx.connect");
+  go.hidden = !kc && !picked;
   $("cx-title").textContent = kc ? t("cx.kc.title") : t("cx.title");   // 框的名稱(aria-labelledby)跟著這一步換
   if (go.textContent.trim() !== goLabel || !!go.querySelector(".spin16") !== !!L.cx.busy) {
     go.textContent = "";
@@ -6334,16 +6525,19 @@ function cxModalPaint() {
     go.disabled = true;
     if (refocus) { const e = [["cx-api", "apiKey"], ["cx-secret", "secret"], ["cx-pass", "passphrase"]].find(([id, k]) => $(id) && !CXF[k].trim()); if (e) $(e[0]).focus(); }
   }
+  // 框腳的模擬(格 1、4):綁著任何一種都不出(綁著模擬時框頂一句講會被取代);驗證碼那一步不出;送出中停用(格 5)
+  const pb = $("cx-paper"); pb.hidden = !!kc || CXF.bound || CXF.paperBound; pb.disabled = !!L.cx.busy || down;
   box.setAttribute("aria-busy", L.cx.busy ? "true" : "false");
-  // 雲端的五處差異之 1、4:標題列灰底 +「雲端」記號;鈕正上方講目的地
+  // 雲端的五處差異之 1、4:標題列灰底 +「雲端」記號;鈕正上方講目的地(選了一家才有目的地)
   $("cx-modal").querySelector(".modal-head").classList.toggle("cloud", cloud);
   $("cx-env").hidden = !cloud; $("cx-env").textContent = cloud ? t("env.cloud") : "";
-  const money = venue === PAPER ? "paper" : "real";
   // 這台電腦的統一／群益開通中、改選了別家:連上會把開通中那家擠掉(金鑰、憑證設定一起刪),鈕正上方先講(Wei 11-06)
-  const wip = !cloud ? cxSetupWip() : null, cancels = !!wip && venue !== wip;
-  $("cx-where").hidden = !cloud && !cancels;
-  $("cx-where").textContent = cloud ? t("tr.cloud.footWhere", { where: t("env.cloud"), money: envMoneyText(money), venue: trVenueLabel(venue, true) })
+  const wip = !cloud && picked ? cxSetupWip() : null, cancels = !!wip && venue !== wip;
+  $("cx-where").hidden = !(cloud && picked) && !cancels;
+  $("cx-where").textContent = cloud && picked ? t("tr.cloud.footWhere", { where: t("env.cloud"), money: envMoneyText("real"), venue: trVenueLabel(venue, true) })
     : cancels ? trUbSay("cx.cancelSetup", { venue: trPadLatin(trVenueLabel(wip, true)) }) : "";
+  const stops = cxStopsRun(CXF.paperBound, picked, !!kc, envHeadState(L.st, Date.now()));
+  $("cx-stops").hidden = !stops; $("cx-stops").textContent = stops ? t("cx.replacePaperRun") : "";
   if (L.sig.cxm === sig && box.firstChild) return;
   L.sig.cxm = sig;
   const hadId = box.contains(document.activeElement) ? document.activeElement.id : null;
@@ -6355,8 +6549,19 @@ function cxModalPaint() {
     return;
   }
   box.appendChild(cxVenueField(L));
-  if (venue === PAPER) box.appendChild(cxPaperNote());
-  else {
+  if (picked) {
+    // 步驟 1:建金鑰(StockCoin 沒有那顆)、權限句;Binance 再接白名單那句與 IP。這台電腦的其他家被拒才帶(spec §4);
+    // 雲端每一家都常駐(Wei 11-10:雲端寫入前不查非 Binance 金鑰,被拒那一刻等不到;OKX 沒綁 IP 的交易金鑰閒置 14 天會被刪)
+    const s1 = cxStep("1"), b1 = s1.lastChild;
+    if (cxKeyUrl(venue)) b1.appendChild(cxKeyPageBtn(venue));
+    const perm = t(cxPermKey(venue));
+    if (venue === BINANCE || cloud) {
+      b1.appendChild(trEl("p", "cx-hint is-ink2", cxJoin(perm, t(cloud ? "cx.ip.lineCloud" : "cx.ip.line"))));
+      b1.appendChild(cxIpSlot(cloud, cip));
+    }
+    else b1.appendChild(trEl("p", "cx-hint is-ink2", perm));
+    box.appendChild(s1);
+    const s2 = cxStep("2"), b2 = s2.lastChild;
     const fld = (id, label, key, hint) => {
       const l = trEl("label", "fld"); l.appendChild(trEl("span", "fld-l", label));
       const i = trEl("input", "f-input"); i.id = id; i.type = "password"; i.autocomplete = "off"; i.spellcheck = false; i.setAttribute("autocapitalize", "off");
@@ -6365,50 +6570,42 @@ function cxModalPaint() {
       i.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); cxConnect(); } });
       l.appendChild(i);
       if (hint) { const h = trEl("p", "cx-hint", hint); h.id = id + "-hint"; i.setAttribute("aria-describedby", h.id); l.appendChild(h); }
-      box.appendChild(l);
+      b2.appendChild(l);
     };
     fld("cx-api", t("cx.apiKey"), "apiKey"); fld("cx-secret", t("cx.secretKey"), "secret");
     // OKX 的 Passphrase 是建立 API 金鑰時自己設的那組:最常見的錯是填成登入密碼(設計稽核 005 第 10 條)
-    if (CX_VENUES[venue] && CX_VENUES[venue].pass) fld("cx-pass", t("cx.passphrase"), "passphrase", venue === "okx" ? t("cx.passHint") : t("cx.passHintV", { venue: trVenueLabel(venue, true) }));
-    const note = trEl("div", "cx-note");
+    if (CX_VENUES[venue].pass) fld("cx-pass", t("cx.passphrase"), "passphrase", venue === "okx" ? t("cx.passHint") : t("cx.passHintV", { venue: trVenueLabel(venue, true) }));
     // StockCoin 目前只讀得到合約帳戶,這句只對它講(同網頁 cx_note_stockcoin)
-    if (venue === "stockcoin") note.appendChild(trEl("p", "", t("cx.note.stockcoin")));
+    if (venue === "stockcoin") b2.appendChild(trEl("p", "cx-hint", t("cx.note.stockcoin")));
     // Bitget 只開了一種帳戶類型:送出前先講另一種會被拒(兩種都開就不講)
-    if (venue === "bitget" && BITGET_VERIFIED_MODES.length === 1) note.appendChild(trEl("p", "", BITGET_VERIFIED_MODES[0] === "classic" ? t("cx.note.bitgetClassicOnly") : t("cx.note.bitgetUtaOnly")));
-    note.appendChild(trEl("p", "", venue === BINANCE ? t("cx.note.one") : t("cx.note.oneV", { venue: trVenueLabel(venue, true) })));
-    if (cloud) {   // 雲端的五處差異之 2:主機的 IP,不查、沒有「再查一次」;拿不到不擋(白名單本來就不強制)
-      if (cip) note.appendChild(cxIpChip(cip));
-      else { const w = trEl("div", "cx-chipw"), chip = trEl("span", "cx-chip is-empty"); chip.appendChild(trEl("span", "v", t("cx.ip.cloudNone"))); w.appendChild(chip); note.appendChild(w); }
-      note.appendChild(trEl("p", "cx-hint", t("cx.ip.cloudNote")));
-    } else if (CXF.ip) note.appendChild(cxIpChip(CXF.ip));
-    else {   // 查詢中 / 查不到:同一個 chip 殼、灰字;查不到才有「再查一次」與一句原因
-      const lost = !(CXF.ipBusy || CXF.ip === undefined), w = trEl("div", "cx-chipw"), chip = trEl("span", "cx-chip is-empty");
-      chip.appendChild(trEl("span", "v", lost ? t("cx.ip.noneLong") : t("cx.ip.loading"))); w.appendChild(chip);
-      if (lost) { const rb = trEl("button", "btn-quiet", t("cx.ip.retry")); rb.type = "button"; rb.id = "cx-ip-retry"; rb.addEventListener("click", cxIpLookup); w.appendChild(rb); }
-      note.appendChild(w);
-      if (lost) note.appendChild(trEl("p", "cx-hint", t("cx.ip.fail")));
-    }
-    // 金鑰存在哪、誰讀得到:收進展開列(真的 button + aria-expanded)。「agent 和你的策略程式讀得到」那句在展開內容裡原文保留。
-    // 展開狀態記在 CXF:框重畫(查到 IP、出錯)時不會自己收回去;按的時候就地切,不重畫(焦點不掉)
-    const disc = trEl("button", "cx-disc", t("cx.store.q")), store = trEl("p", "cx-disc-p", cloud ? t("cx.leadCloud") : t("cx.lead"));   // 雲端的五處差異之 3
-    disc.type = "button"; disc.id = "cx-store-q"; store.id = "cx-store"; disc.setAttribute("aria-controls", "cx-store");
-    disc.setAttribute("aria-expanded", CXF.storeOpen ? "true" : "false"); store.hidden = !CXF.storeOpen;
-    disc.addEventListener("click", () => { CXF.storeOpen = !CXF.storeOpen; disc.setAttribute("aria-expanded", CXF.storeOpen ? "true" : "false"); store.hidden = !CXF.storeOpen; });
-    note.append(disc, store);
-    box.appendChild(note);
+    if (venue === "bitget" && BITGET_VERIFIED_MODES.length === 1) b2.appendChild(trEl("p", "cx-hint", BITGET_VERIFIED_MODES[0] === "classic" ? t("cx.note.bitgetClassicOnly") : t("cx.note.bitgetUtaOnly")));
+    // 金鑰去向:整句是提示泡的觸發點(canon › Tooltip:hover 與鍵盤 focus 都出、Esc 收,app.js tipEsc 靠 aria-describedby 認)。雲端的五處差異之 3
+    const kp = trEl("p", "cx-hint cx-keyat"), tw = trEl("span", "cx-tipw"), tg = trEl("span", "mp-tip", t(cloud ? "cx.fact.keyCloud" : "cx.fact.key")), tip = trEl("span", "tip", t(cloud ? "cx.leadCloud" : "cx.lead"));
+    tg.tabIndex = 0; tg.id = "cx-keyat"; tip.id = "cx-store"; tip.setAttribute("role", "tooltip"); tg.setAttribute("aria-describedby", tip.id);
+    tw.append(tg, tip); kp.appendChild(tw); b2.appendChild(kp);
+    box.appendChild(s2);
   }
   const slot = trEl("div", ""); slot.setAttribute("role", "status"); box.appendChild(slot);
-  const msg = down ? t("side.stopped") : (venue !== PAPER || cloud) && CXF.res ? cxChkText(CXF.res) : L.cx.err;
+  const msg = down ? t("side.stopped") : (picked || (cloud && venue === PAPER)) && CXF.res ? cxChkText(CXF.res) : L.cx.err;
   const calm = !down && CXF.res && (cloud ? cxCalm(CXF.res) : (CXF.res.code === "RATE_LIMITED" && venue === BINANCE) || cxGateSlow(CXF.res));
-  if (msg) { const p = trEl("p", "plan-err" + (calm ? " is-calm" : "")), m = trEl("span", "fault-mark"); m.setAttribute("aria-hidden", "true"); p.append(m, trEl("span", "", msg)); slot.appendChild(p); }
-  // 真錢的等待(交易所做簽名讀取要 2–8 秒):同一個槽講在等什麼,不加記號、不加第二個圓環;模擬是本機寫 .env、次秒完成,不放
-  else if (L.cx.busy && !cloud && venue !== PAPER) slot.appendChild(trEl("p", "cx-manual-note", t("cx.gate.checking", { venue: trVenueLabel(venue, true) })));
-  const back = hadId && $(hadId); if (back && !back.disabled) back.focus(); else if (hadId) ($("cx-venue") || $("cx-mode-" + CXF.mode)).focus();
+  if (msg) {
+    const p = trEl("p", "plan-err" + (calm ? " is-calm" : "")), m = trEl("span", "fault-mark"), s = trEl("span", "", msg);
+    m.setAttribute("aria-hidden", "true");
+    // 同一個訊息槽(canon copy #5):錯誤句下一行接白名單那句與 IP;查不到 IP 就不接
+    const ipx = !down && cxIpAddFor(CXF.res, venue, cloud) ? CXF.ip : null;
+    if (ipx) s.append(trEl("span", "cx-ipadd", t("cx.chk.ipAdd")), cxIpChip(ipx));
+    p.append(m, s); slot.appendChild(p);
+  }
+  // 真錢的等待(交易所做簽名讀取要 2–8 秒):同一個槽講在等什麼,不加記號、不加第二個圓環;模擬送出那一下只講連接中
+  else if (L.cx.busy && !cloud && picked) slot.appendChild(trEl("p", "cx-manual-note", t("cx.gate.checking", { venue: trVenueLabel(venue, true) })));
+  else if (L.cx.busy && venue === PAPER) slot.appendChild(trEl("p", "cx-manual-note", t("cx.connecting")));
+  const back = hadId && $(hadId); if (back && !back.disabled) back.focus(); else if (hadId) cxFocusStart();
 }
 function cxWire() {
   $("cx-cancel").addEventListener("click", cxDismiss);
   $("cx-close").addEventListener("click", cxDismiss);
   $("cx-go").addEventListener("click", cxConnect);
+  $("cx-paper").addEventListener("click", cxPaperGo);
   $("cx-scrim").addEventListener("mousedown", (e) => { if (e.target === $("cx-scrim")) { e.preventDefault(); cxDismiss(); } });   // 驗證碼那一步點框外 = 退回表單(金鑰留著),同取消;擋掉預設才不會把剛給的焦點落回 body
   $("cx-scrim").addEventListener("keydown", (e) => trapTab(e, $("cx-modal")));   // Esc 在 app.js 的 escTop(document 層)
   // 重查結果:開場拿一次,之後主行程有變就推過來(設定分頁帳戶那一列)
@@ -6493,7 +6690,7 @@ async function cxConnectCloud() {
   if (f) f.focus();
 }
 async function cxConnect() {
-  if (CXF.bound && CXF.venue === PAPER) return;   // 已綁模擬:沒有主鈕,Enter 也不重綁
+  if (!CXF.venue) return;   // 還沒選一家:沒有主鈕,Enter 也不送
   if (CXF.venue === CAPITAL) {
     if (CXF.env === "cloud" && ENV.cur === "cloud" && !$("cx-scrim").hidden) return capPrimary();
     if (CXF.env === "local" && ENV.cur === "local" && !$("cx-scrim").hidden) return caplPrimary();
@@ -6506,6 +6703,17 @@ async function cxConnect() {
   if (L.cx.busy || ENV.cur !== "local" || $("cx-scrim").hidden) return;
   if (CXF.venue === BINANCE) return cxConnectBinance();
   if (CXF.venue !== PAPER) return cxConnectVenue();
+  return cxConnectPaper();
+}
+// 框腳「先用模擬交易」:綁模擬、關框(spec §2「先用模擬交易」)。綁著任何一種都不出這顆;雲端走 cxConnectCloud 的模擬那條
+function cxPaperGo() {
+  const L = cxBag();
+  if (L.cx.busy || CXF.bound || CXF.paperBound || CXF.kc) return;
+  CXF.venue = PAPER; cxForget(); L.cx.err = null; L.sig.cxm = null;
+  return cxConnect();
+}
+async function cxConnectPaper() {
+  const L = TR_BAGS.local;
   L.cx = { busy: true, err: null, retest: false }; cxModalPaint();
   // 模擬交易的綁定:同雲端,寫一組固定值的 PAPER_* 進 workspace 的 .env(不是金鑰,是「已啟用」的記號)
   const res = await L.api.tradeSend("credentials", { env: { PAPER_API_KEY: "paper", PAPER_SECRET_KEY: "paper", PAPER_BOUND_TS: String(Math.floor(Date.now() / 1000)) } });
@@ -6593,6 +6801,7 @@ function psRow(r, cloud, i) {
   let note = null;
   if (r.note === "twd" || r.note === "twdKeep") note = nm.appendChild(trEl("span", "ps-note", r.note === "twd" ? t("tr.pick.twd") : t("tr.pick.twdKeep")));
   else if (r.note === "txf" || r.note === "txfKeep") note = nm.appendChild(trEl("span", "ps-note", t(r.note === "txf" ? "tr.pick.txf" : "tr.pick.txfKeep", { venue: trTwVenueName(trVenueId()) })));
+  else if (r.note === "twStockSelf") note = nm.appendChild(trEl("span", "ps-note", t("tr.pick.twStockSelf")));
   else if (r.note === "twdVenue") note = nm.appendChild(trEl("span", "ps-note", t("tr.pick.twdVenue", { venue: trVenueLabel(trVenueId(), true) })));
   else if (r.locked) note = nm.appendChild(trEl("span", "ps-note", cloud ? t("tr.typeCHost") : t("tr.typeC")));
   if (note) { note.id = "ps-why-" + i; note.setAttribute("aria-hidden", "true"); cb.setAttribute("aria-describedby", note.id); }
@@ -6615,7 +6824,7 @@ async function psOpen(opener, mode, fresh, opts) {
   const cloud = S.env === "cloud", names = mg ? mgMembers() : trNames(), prefs = trPickPrefs(S, typeof SF !== "undefined" ? SF : null);
   // 優化只是試算、不下單:下單才有的鎖(模擬交易的台幣標的、統一只下台指期、舊 lib 的投資組合)不套
   const rows = mg ? trPickRows(typeof sfApplyOrder === "function" ? sfApplyOrder(S.list, prefs.order) : S.list, names, true, false, false, prefs.flags)
-    : trPickRows(typeof sfApplyOrder === "function" ? sfApplyOrder(S.list, prefs.order) : S.list, names, (trReport() || {}).can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), prefs.flags, trTwdVenueLock());   // 台灣期貨券商(統一、群益)只下台指期:非台指期的列鎖住,已勾的可以取消
+    : trPickRows(typeof sfApplyOrder === "function" ? sfApplyOrder(S.list, prefs.order) : S.list, names, (trReport() || {}).can_trade_portfolio === true, trVenueId() === PAPER && !trPaperTwOk(), trTwBroker(trVenueId()), prefs.flags, trTwdVenueLock(), trTwStockSelf());   // 台灣期貨券商(統一、群益)只下台指期:非台指期的列鎖住,已勾的可以取消
   const dotsUp = envDotsUp(S.env, S.st), now = Date.now();
   rows.forEach((r) => { r.live = dotsUp && envRunDot(r.name, S.st, now, S.just); });
   psFromWhy = !!(opts && opts.check);
