@@ -3223,7 +3223,8 @@ def _first_signal_window_s(name):
 # fails again every few minutes: 300s backoff, a 15-min stall throttle, a 20-min run timeout — so
 # TARGET_STALE_RECENT_S covers the slowest repeat) AND state.json is older than TARGET_STALE_BARS
 # bars, at least TARGET_STALE_FLOOR_S, plus TARGET_STALE_WEEKEND_S for daily-and-longer bars of
-# a market that closes on weekends (not a crypto-only strategy).
+# a market that closes on weekends (not a crypto-only strategy). That age is wall-clock, except for
+# an intraday TAIFEX index-futures strategy: session time only (_tw_fut_open_s).
 # Recency matters for going stale: one transient error at the start of a data gap (a TAIFEX
 # night-to-day gap, a weekend, a holiday) would otherwise read as stale for the whole gap. Once
 # held (state/stale_share.json names it), the one way out is the strategy computing again:
@@ -3253,8 +3254,45 @@ def _crypto_only(name):
     return bool(found) and found <= _CRYPTO_FETCHERS
 
 
+# TAIFEX index-futures sessions, Taipei (manager/wait_for_bar _TW_FUT_*): day 08:45–13:45, night
+# 15:00–05:00, both opening Monday–Friday.
+_TW_FUT_SYMBOL_RE = re.compile(r'^SYMBOL\s*=\s*["\'](?:TXF|MXF|TMF)(?:R1)?["\']', re.M)
+_TW_FUT_SESSIONS = ((timedelta(hours=8, minutes=45), timedelta(hours=13, minutes=45)),
+                    (timedelta(hours=15), timedelta(hours=29)))
+_TPE_TZ = timezone(timedelta(hours=8))
+
+
+def _tw_index_futures(name):
+    """wait_for_bar's 'index' kind with TAIFEX data only (_tw_futures_kind + _tw_fut_data):
+    TXF / MXF / TMF, every price fetcher a TAIFEX one."""
+    try:
+        src = _strategy_source(name)
+        from lib.data import _PRICE_FETCHERS, _price_fetcher_scan
+        names, _ = _price_fetcher_scan(src)
+    except Exception:
+        return False
+    return ('fetch_twfutures_ohlcv' in src and bool(_TW_FUT_SYMBOL_RE.search(src)) and bool(names)
+            and all(_PRICE_FETCHERS.get(n) == 'twfutures' for n in names))
+
+
+def _tw_fut_open_s(t0, t1):
+    """Seconds of [t0, t1] (epoch) inside a TAIFEX index-futures session. The holiday table is not
+    read: a closed weekday counts as trading, as all of it did before."""
+    a, b = datetime.fromtimestamp(t0, _TPE_TZ), datetime.fromtimestamp(t1, _TPE_TZ)
+    day = datetime(a.year, a.month, a.day, tzinfo=_TPE_TZ) - timedelta(days=1)
+    total = 0.0
+    while day <= b:
+        if day.weekday() <= 4:
+            for lo, hi in _TW_FUT_SESSIONS:
+                total += max(0.0, (min(b, day + hi) - max(a, day + lo)).total_seconds())
+        day += timedelta(days=1)
+    return total
+
+
 def _stale_target_age(name, now=None):
-    """Seconds since `name`'s state.json was written when that target is stale, else None."""
+    """Seconds since `name`'s state.json was written when that target is stale, else None. An
+    intraday TAIFEX index-futures strategy counts only session time: its target from the night's
+    last bar is not hours old at the 08:45 open."""
     bar = _bar_seconds(name)
     if not bar:
         return None
@@ -3270,14 +3308,14 @@ def _stale_target_age(name, now=None):
     now = time.time() if now is None else now
     if not _finite(failed) or failed < written:
         return None  # the strategy computed after its last failure (a good run clears it too)
+    age = _tw_fut_open_s(written, now) if bar < 86400 and _tw_index_futures(name) else now - written
     if now - failed > TARGET_STALE_RECENT_S:
         # Only a hold already in place outlives the failure's recency: the failure aging out
         # is not a new signal, so releasing here would trade the old target back (11-04: a
         # 15:00 target bought back at 17:38). A new hold still needs a recent failure.
-        return now - written if name in _stale_held_names() else None
+        return age if name in _stale_held_names() else None
     limit = (max(TARGET_STALE_BARS * bar, TARGET_STALE_FLOOR_S)
              + (TARGET_STALE_WEEKEND_S if bar >= 86400 and not _crypto_only(name) else 0))
-    age = now - written
     return age if age > limit else None
 
 

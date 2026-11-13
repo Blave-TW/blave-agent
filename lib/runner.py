@@ -1084,6 +1084,31 @@ def _clear_rerun(strategy_name):
         pass
 
 
+FEED_WAIT_ENV = 'BLAVE_FEED_WAIT_FILE'   # = manager/wait_for_bar FEED_WAIT_ENV
+
+
+def _note_feed_wait(e):
+    """A live run refused by align_feed (FeedNotPublished): tell manager/wait_for_bar, which set
+    FEED_WAIT_ENV, so it waits for the row like its own freshness check does instead of
+    reporting a failed run. The exception still propagates."""
+    path = os.environ.get(FEED_WAIT_ENV)
+    if not path:
+        return
+    try:
+        from lib.data import FeedNotPublished
+    except ImportError:
+        return
+    if not isinstance(e, FeedNotPublished):
+        return
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({'source': str(e.source), 'need': pd.Timestamp(e.need).isoformat(),
+                       'due_at': pd.Timestamp(e.due_at).isoformat(),
+                       'last_bar': pd.Timestamp(e.last_bar).isoformat()}, f)
+    except (OSError, TypeError, ValueError):
+        pass
+
+
 def _drift_flag(config, mode):
     """Live/cron tick: does strategy.py still match the code the current version stored?
 
@@ -2526,6 +2551,9 @@ def _run(config, fetch_data_fn, compute_fn, send_telegram_fn=None):
                  if mode != 'backtest' else contextlib.nullcontext()), \
                 (recorder.recording() if recorder else contextlib.nullcontext()):
             data = fetch_data_fn(hdrs)
+    except Exception as e:
+        _note_feed_wait(e)
+        raise
     finally:
         fetch_trims = list(getattr(_data, '_feed_trims', None) or []) if _data is not None else None
         if _data is not None:

@@ -8444,10 +8444,12 @@ FEED_TIMING = {
                  f"{_FSC_FIN_RULES} §3(3)); Q1/Q3/annual as twstock_financials"},
     'twfutures_bid_ask_vol': {'tz': 'UTC', 'period': 'infer', 'available': 'after_period',
                               'delay': pd.Timedelta(seconds=30), 'calendar': 'bars', 'fresh': 'raise',
+                              'bars_label': 'close',
                               'basis': "api snapshot/run_sinopac_backfill.py _aggregate_ticks floors "
                                        "ticks to the minute (row = minute open); today's minutes are "
                                        "fetched on request and cached 30 s (tw/sinopac/services.py), "
-                                       "so a row is final 30 s after its minute closes"},
+                                       "so a row is final 30 s after its minute closes. TXF 1m bars "
+                                       "are stamped at their close minute (bars_label)"},
     'fear_greed': {'tz': 'UTC', 'period': pd.Timedelta(days=1), 'available': _same_day_at(1),
                    'calendar': 'days', 'fresh': 'raise',
                    'basis': "alternative.me publishes one row a day at 00:00 UTC: on 2026-09-24 "
@@ -8671,6 +8673,30 @@ def align_feed(bars, feed, source, interval, bar_tz=None, columns=None):
         req = _latest_by(_utc_ns(c_avail), c_s, close_ns)
         if len(c_s):   # bars that span no trading day (a weekend) have no row to wait for
             need_ns = np.where(req >= 0, c_s[np.maximum(req, 0)], -1)
+        if spec.get('bars_label') == 'close' and len(c_s) and pd.Timedelta(interval) == period \
+                == pd.Timedelta(minutes=1):
+            # 1m only: 5m and longer TXF bars are resampled label-left (08:45 opens the day), so
+            # their session-open need is not handled here and stays as it was.
+            # Bars stamped at their close minute, rows at their open minute: the first bar of a
+            # session (08:46, 15:01) would wait for a row stamped like the last bar of the one
+            # before (05:00, 13:45), which does not exist, instead of its own (08:45, 15:00).
+            # Such a need moves to the bar's own open minute. In history a need the feed does hold
+            # stays: the store's minute-END days (through 2026-06-10, see
+            # _drop_txf_settlement_window) stamp rows like the bars, and there the old need is what
+            # the bar can use; the row's presence is read at a stamp due by the bar's close, so the
+            # look-ahead replay sees the same need. A live tick's last bar always waits for its own
+            # minute — today's rows are tick aggregates stamped at the minute open, and the 13:45
+            # or 05:00 row some days carry must not stand in for 15:00 / 08:45.
+            opens = cand - period
+            o_avail = _after_own_period(opens, period) + spec.get('delay', pd.Timedelta(0))
+            o_s = _utc_ns(opens)
+            o_req = _latest_by(_utc_ns(o_avail), o_s, close_ns)
+            o_need = np.where(o_req >= 0, o_s[np.maximum(o_req, 0)], -1)
+            phantom = (need_ns >= 0) & ~np.isin(need_ns, s_ns[present])
+            if _live_feeds:
+                phantom[-1] = need_ns[-1] >= 0
+            need_ns = np.where(phantom, o_need, need_ns)
+            cand, c_avail, c_s = cand.append(opens), c_avail.append(o_avail), np.concatenate([c_s, o_s])
         used_ns = np.where(row >= 0, s_ns[np.maximum(row, 0)], -1)
         stale = (need_ns >= 0) & (used_ns < need_ns)
         out.loc[stale] = np.nan

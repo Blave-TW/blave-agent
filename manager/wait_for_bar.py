@@ -60,6 +60,16 @@ State: state/bar_wait/<name>.json
                             RuntimeError on degraded dividend data), used to
                             back off retries instead of re-running (and
                             re-crashing) every single minute
+  feed_wait_source / feed_wait_since / feed_wait_seen_at : an align_feed wait — the feed, the
+                         due time (ISO, naive UTC) of the first row it refused for, and when the
+                         latest poll that met it began. pending_since stays on feed_wait_since while
+                         refusals of the same feed follow each other without a pause past
+                         FEED_WAIT_POLL_BREAK (GAP_POLL_BREAK once alerted): a feed that stays out
+                         alerts 15 minutes after its first missing row, though each new bar's row is
+                         due later. Any other outcome (a run, a failure, a non-feed wait, a quiet
+                         close) or such a pause ends it (_feed_wait_continues, _end_feed_wait)
+  feed_wait_alert_at  : epoch seconds of that wait's bar_stale (the bars keep moving and clear
+                         stall_alert_at, so this dedups it; repeats after STALL_REALERT_SECONDS)
   wrapper_error_alerted_at : epoch seconds of the last time THIS script (not
                               the strategy) alerted on its own uncaught error
   computed_fp / computed_bar : fingerprint of the data a run last computed on (every
@@ -186,7 +196,11 @@ Timeout: if the bar hasn't landed within STALE_TIMEOUT_MINUTES of when this
 script first noticed it pending, send one Telegram alert (not a repeat every
 minute) and keep polling — never give up silently. Data that moves forward but is
 still short of the bar starts that count again from the poll that saw it move
-(an align_feed wait keeps counting from the row's due time).
+(an align_feed wait keeps counting from the row's due time). The run itself fetches again and can
+see a newer bar than the check did, whose align_feed row is not in yet (e.g. a 1m TXF bar
+published inside its bid/ask row's 30 s): lib/runner reports that FeedNotPublished through
+FEED_WAIT_ENV and it is the same align_feed wait — no strategy_failed, no backoff, retried on the
+next tick.
 
 Lag (INTERVAL up to 15m): a feed that keeps moving but stays one bar short restarts that count
 every minute, so the timeout above never fires — a 1m bar always landing after the :35 retry
@@ -212,6 +226,7 @@ fetch+run section so an overrunning previous tick's subprocess can't overlap
 with the next minute's — see _acquire_lock.
 """
 import ast
+import contextlib
 import importlib.util
 import json
 import logging
@@ -224,6 +239,7 @@ import time
 import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
@@ -393,6 +409,10 @@ def _default_state():
         "last_seen_bar": None,
         "stall_alert_at": None,
         "last_attempt_failed_at": None,
+        "feed_wait_source": None,
+        "feed_wait_since": None,
+        "feed_wait_seen_at": None,
+        "feed_wait_alert_at": None,
         "wrapper_error_alerted_at": None,
         "computed_fp": None,
         "computed_bar": None,
@@ -566,7 +586,33 @@ class _FeedWait(str):
     def __new__(cls, exc):
         obj = super().__new__(cls, str(getattr(exc, "source", "feed")))
         obj.due_at = exc.due_at
+        obj.need, obj.last_bar = getattr(exc, "need", None), getattr(exc, "last_bar", None)
         return obj
+
+
+FEED_WAIT_ENV = "BLAVE_FEED_WAIT_FILE"   # = lib/runner FEED_WAIT_ENV
+
+
+FEED_WAIT_MTIME_SLACK_S = 2   # coarse file timestamps (FAT: 2 s)
+
+
+def _read_feed_wait(path, started):
+    """The _FeedWait a run's lib/runner _note_feed_wait left at `path`, or None. Only a file
+    written since `started` (epoch, the run's launch) counts: one an earlier run left behind,
+    because removing it failed (a Windows lock), must not pass a real failure off as a wait."""
+    try:
+        if os.path.getmtime(path) < started - FEED_WAIT_MTIME_SLACK_S:
+            return None
+        raw = load_json(path, encoding="utf-8")
+        fields = {k: raw[k] for k in ("source", "need", "due_at", "last_bar")}
+        fields["due_at"], fields["last_bar"] = _naive_utc(fields["due_at"]), _naive_utc(fields["last_bar"])
+        refused = _FeedWait(SimpleNamespace(**fields))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    finally:
+        with contextlib.suppress(OSError):
+            os.remove(path)
+    return refused
 
 
 def _is_feed_wait(exc):
@@ -668,11 +714,17 @@ def _run_strategy_protected(name):
     using, no hardcoded 'python3'/'bash'), catches a hang with a timeout,
     logs + Telegram-alerts on failure, touches the heartbeat on success.
 
-    Returns True on success, False otherwise.
+    Returns True on success, a _FeedWait when the run's own fetch met an align_feed row not
+    published yet (lib/runner _note_feed_wait — not a failure, nothing alerted), False otherwise.
     """
     strategy_dir = f"strategies/{name}"
     os.makedirs(strategy_dir, exist_ok=True)
     script_path = f"{strategy_dir}/strategy.py"
+    feed_wait_path = os.path.abspath(f"{STATE_DIR}/{name}.feed_wait.json")
+    try:
+        os.remove(feed_wait_path)
+    except OSError:
+        pass
 
     timeout = int(min(RUN_TIMEOUT_SECONDS, TICK_BUDGET_SECONDS - TICK_MARGIN_SECONDS
                       - (time.monotonic() - _STARTED)))
@@ -685,13 +737,21 @@ def _run_strategy_protected(name):
     # Popen rather than subprocess.run: the child pid goes into the lock (_lock_holder_dead)
     # before the run, and the except/kill mirrors run()'s own so a SIGTERM→SystemExit still
     # takes the child down with us.
+    # Inherited, not passed: env stays None (the run's environment untouched) when there is
+    # no BLAVE_FETCH_FRESH_SINCE — tests/check_twstock_bulk_fetch pins that. Unset after launch.
+    os.environ[FEED_WAIT_ENV] = feed_wait_path
     env = None
     if _fetched_since is not None:
         # this tick's freshness check just fetched the same data: the run reads it from the
         # cache instead of asking the api again (lib/data.py › _fresh_since)
         env = {**os.environ, "BLAVE_FETCH_FRESH_SINCE": _fetched_since.strftime("%Y-%m-%dT%H:%M:%S")}
-    with subprocess.Popen([sys.executable, script_path], stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, text=True, env=env) as proc:
+    started = time.time()
+    try:
+        proc = subprocess.Popen([sys.executable, script_path], stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, env=env)
+    finally:
+        os.environ.pop(FEED_WAIT_ENV, None)
+    with proc:
         _lock_note_child(name, proc.pid)
         try:
             out, err = proc.communicate(timeout=timeout)
@@ -707,6 +767,12 @@ def _run_strategy_protected(name):
             raise
 
     if returncode != 0:
+        # a timeout kill (-1) or a signal is never a wait, whatever file the run left
+        refused = _read_feed_wait(feed_wait_path, started) if returncode > 0 else None
+        if refused is not None:
+            print(f"[wait_for_bar] {name}: {refused} row for {refused.need} not published yet "
+                  f"(due {refused.due_at}) — not ready, retried next tick")
+            return refused
         try:
             with open(f"{strategy_dir}/strategy.log", "a") as f:
                 f.write(output)
@@ -814,6 +880,34 @@ GAP_SNAPSHOT_MAX_AGE_S = 24 * 3600
 # throttle grid's widest step (:05 → :15). 20 minutes, not more: a machine asleep longer than
 # this restarts the count instead of paging on its first failed wake.
 GAP_POLL_BREAK = timedelta(minutes=STALL_POLL_MINUTES + RETRY_BACKOFF_SECONDS // 60)
+# An align_feed wait polls every minute until it alerts or the session closes (then at the stall
+# throttle's minutes): a longer pause between two refusals (asleep, stopped, a lock held by a
+# long run) starts a new wait from its own due, so a refusal right after waking is not dated
+# from before the sleep.
+FEED_WAIT_POLL_BREAK = timedelta(minutes=3)
+
+
+def _feed_wait_continues(state, refused, slot, throttled=False):
+    """`refused` (a _FeedWait) continues the wait in state: same feed, and the previous poll
+    that met it ended no longer ago than polling allows (GAP_POLL_BREAK once it alerted, or
+    while this tick polls on the throttle's minutes — a TAIFEX close)."""
+    try:
+        seen = datetime.fromisoformat(state["feed_wait_seen_at"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if state.get("feed_wait_since") is None or state.get("feed_wait_source") != str(refused):
+        return False
+    limit = GAP_POLL_BREAK if throttled or state.get("feed_wait_alert_at") is not None \
+        else FEED_WAIT_POLL_BREAK
+    return slot - seen <= limit
+
+
+def _end_feed_wait(state):
+    """Any poll whose outcome is not an align_feed refusal ends the wait (and its alert)."""
+    for k in ("feed_wait_source", "feed_wait_since", "feed_wait_seen_at", "feed_wait_alert_at"):
+        state[k] = None
+
+
 _CRYPTO_FETCHERS = frozenset(("fetch_kline", "fetch_kline_batch", "fetch_bingx_kline"))
 
 
@@ -1114,6 +1208,7 @@ def _tick(name):
                     output += "\n美股日線這輪抓不到,沒有算訊號,部位維持原樣不動,稍後自動重試。"
                 _alert_failure().alert(name, "fetch_error", output, transient=transient)
                 state["last_attempt_failed_at"] = time.time()
+                _end_feed_wait(state)
                 if gap_scope:
                     _track_gap(name, state, slot, td)
                 _save_state(name, state)
@@ -1131,17 +1226,24 @@ def _tick(name):
         if ready:
             state["lag_since"] = None   # the bar is in: a failing run is strategy_failed's, not lag
             _gap_closed(state)          # …and not a data gap either
-            if _run_strategy_protected(name):
-                state["last_processed_bar"] = expected_iso
-                state["pending_since"] = None
-                state["last_seen_bar"] = observed_iso
-                state["stall_alert_at"] = None
-                state["last_attempt_failed_at"] = state["data_missing_at"] = None
-                state["computed_fp"], state["computed_bar"] = fp, newest_iso
-            else:
-                state["last_attempt_failed_at"] = time.time()
-            _save_state(name, state)
-            return
+            ran = _run_strategy_protected(name)
+            if not isinstance(ran, _FeedWait):
+                _end_feed_wait(state)
+                if ran:
+                    state["last_processed_bar"] = expected_iso
+                    state["pending_since"] = None
+                    state["last_seen_bar"] = observed_iso
+                    state["stall_alert_at"] = None
+                    state["last_attempt_failed_at"] = state["data_missing_at"] = None
+                    state["computed_fp"], state["computed_bar"] = fp, newest_iso
+                else:
+                    state["last_attempt_failed_at"] = time.time()
+                _save_state(name, state)
+                return
+            # The run's own fetch saw a newer bar than this check did, and that bar's align_feed
+            # row is not in yet: the same "not ready" as the check meeting it itself.
+            observed_ts, straggler_symbol, latest = ran.last_bar, ran, None
+            observed_iso = observed_ts.isoformat()
 
         _maybe_prime(name, state, now, expected, td, latest,
                      straggler_symbol)
@@ -1176,15 +1278,25 @@ def _tick(name):
                               _tw_fut_lots_night(state, now)):
             state["pending_since"] = None   # stall_alert_at stays: it may be a real stall's
             state["lag_since"] = state["gap_since"] = None   # gap_alert_at stays: a close is not a recovery
+            _end_feed_wait(state)
             _save_state(name, state)
             return
 
-        if isinstance(straggler_symbol, _FeedWait):
+        feed_wait = isinstance(straggler_symbol, _FeedWait)
+        if feed_wait:
             # count lateness from when the row was DUE, not from the first poll: a daily
-            # feed due at 20:00 polled from 15:00 on must not alert at 15:15
-            due = _naive_utc(straggler_symbol.due_at)
-            if state.get("pending_since") is None or datetime.fromisoformat(state["pending_since"]) < due:
-                state["pending_since"] = due.isoformat()
+            # feed due at 20:00 polled from 15:00 on must not alert at 15:15. A run of
+            # refusals polled back to back is one wait, timed from its FIRST due: every new 1m
+            # bar has a later due, and timing from the newest one never reached 15 minutes
+            # while the feed stayed out (no bar_stale, no data_missing_at, no target_stale).
+            if not _feed_wait_continues(state, straggler_symbol, slot, throttled=quiet):
+                _end_feed_wait(state)
+                state["feed_wait_source"] = str(straggler_symbol)
+                state["feed_wait_since"] = _naive_utc(straggler_symbol.due_at).isoformat()
+            state["feed_wait_seen_at"] = now.isoformat()
+            state["pending_since"] = state["feed_wait_since"]
+        else:
+            _end_feed_wait(state)
 
         if state.get("pending_since") is None:
             state["pending_since"] = now.isoformat()
@@ -1198,6 +1310,9 @@ def _tick(name):
                 # both a brand-new stall AND a strategy that has NEVER had a single
                 # data point — see comment above, that must not silently never-alert).
                 due = stall_alert_at is None or (time.time() - stall_alert_at >= STALL_REALERT_SECONDS)
+                if feed_wait:   # the bars keep moving (clearing stall_alert_at): one alert per episode
+                    said = state.get("feed_wait_alert_at")
+                    due = due and (said is None or time.time() - said >= STALL_REALERT_SECONDS)
                 daily_mute = daily and tw_kind and not isinstance(straggler_symbol, _FeedWait)
                 # The silent one below said nothing, so its 24-hour repeat must not hold back the real one
                 late_after_mute = bool(daily_mute and stall_alert_at is not None and observed_iso) and \
@@ -1210,6 +1325,8 @@ def _tick(name):
                     if not (daily_mute and _tw_fut_daily_quiet(observed_iso, now, holiday_fn)):   # not late yet: no word, same polling
                         _alert_stale(name, expected, minutes, straggler_symbol, computed=computed)
                     state["stall_alert_at"] = time.time()
+                    if feed_wait:
+                        state["feed_wait_alert_at"] = state["stall_alert_at"]
         _track_lag(name, state, slot, td, observed_ts, straggler_symbol)
         if isinstance(straggler_symbol, _FeedWait):
             _gap_closed(state)   # the bars are in; an align_feed row is late — bar_stale's case
@@ -1639,6 +1756,7 @@ def _clear_wait(name, state):
     """Nothing is pending on a closed day: a wait or alert left from before (holiday table
     down, an older wait_for_bar) must not date or mute the next real stall."""
     state["pending_since"] = state["stall_alert_at"] = None
+    _end_feed_wait(state)
     _save_state(name, state)
 
 
@@ -1692,10 +1810,14 @@ def _maybe_prime(name, state, now, expected, td, latest, straggler_symbol):
         return
     if _tw_futures_closed(name, now):
         return  # re-checked on later ticks; the first inside the session computes
-    state["prime_tried_fp"] = fp
-    if _run_strategy_protected(name):
+    tried, state["prime_tried_fp"] = state.get("prime_tried_fp"), fp
+    ran = _run_strategy_protected(name)
+    if isinstance(ran, _FeedWait):
+        state["prime_tried_fp"] = tried   # not a failure: the same data may be primed again next tick
+    elif ran:
         state["computed_fp"], state["computed_bar"] = fp, newest_iso
         state["lag_since"] = None
+        _end_feed_wait(state)
         _gap_closed(state)
         print(f"[wait_for_bar] {name}: computed on data up to {newest_iso} "
               f"(expected {expected.isoformat()} not in yet)")
