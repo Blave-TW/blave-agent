@@ -8,6 +8,10 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.163 — 2026-11-14(runtime 單獨發:雲端 web、Telegram、排程報告生效;電腦版與 Codex 引擎隨下一版安裝包)
+
+- **回覆一律寫在最後一個工具呼叫之後(`agent_turn._NO_NARRATION`,web、電腦版、Telegram 三份格式規則與 Claude、Codex 兩條引擎都帶到)**:上網找策略那輪,點子只在思考裡、旁白後接 `browser_close`,最後回覆只剩「上面已列出」,用戶看不到清單,下一輪說「列給我」又重找。規則明寫工具呼叫前的字與思考到不了聊天、清單與結果在所有工具做完後一次寫完、不准寫「上面已列出」「如上」;Telegram 段拿掉跟 `TelegramSink.on_tool` 不符的「工具呼叫前後會分開送」。兜底:有工具呼叫的回合最終回覆 ≤200 字又指向「上面」,stderr 記一行 `dangling_reference`(只帶長度與命中字樣,不改回覆)。測試 `tests/check_reply_after_tools.py`(新)、`tests/check_reply_format_plain.py`(Telegram 段釘字更新)。
+
 ## 1.1.162 — 2026-11-11(desktop 0.1.53)
 
 - **`deferred_close` 一併收台指期根代號(`portfolio_reporter.deferred_close`,稽核 release-0153 Y2)**:收盤後按全部平倉,群益、統一的台指期延到開盤(`state/paper_tw_close.json` 的 key 是 TXF／MXF／TMF,群益的月份代號在 `manager/flatten._book_key` 已換成根代號),以前只收台股代號、台指期被濾掉,開盤前按啟動下單會取消延後的平倉,啟動框卻不講。現在回報帶這三個根代號(只認整串、不帶 `@spot`;月份代號不收)。電腦版 0.1.53 啟動框對台指期出 `tr.deferTxfCancel`;舊電腦版照舊句列出代號。測試 `tests/check_paper_twstock.py`、`tests/check_shell_start_box.js`。

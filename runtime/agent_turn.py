@@ -614,6 +614,33 @@ def _counts_as_reply(text):
     return bool(visible_text(text) or _EXPORT_TAG_RE.search(text or ""))
 
 
+# 回覆只剩一句「上面已列出」:內容寫在工具呼叫前(已被收去活動列)或只在思考裡。只記 log 量發生率,不改回覆。
+# 不收裸 above／以上:「站上 20MA above」「20% 以上」是正常量化用語。
+_DANGLING_REF_RE = re.compile(
+    r"上面(?:已|列|提|那)|如上(?:所|述|列|表|圖|[，。,.\s]|$)|上述|前面(?:已|列|提)|以上列"
+    r"|\b(?:listed|shown|mentioned|outlined|see|as) above|\babove (?:list|ideas|options|results)",
+    re.I,
+)
+_DANGLING_REF_MAX_CHARS = 200
+
+
+def dangling_reference(reply, had_tools):
+    """有工具呼叫的回合,最終回覆很短又指向「上面」→ 回傳命中的字樣;否則 None。"""
+    if not had_tools:
+        return None
+    text = visible_text(reply)
+    if not text or len(text) > _DANGLING_REF_MAX_CHARS:
+        return None
+    m = _DANGLING_REF_RE.search(text)
+    return m.group(0) if m else None
+
+
+def _log_dangling_reference(reply, had_tools):
+    tok = dangling_reference(reply, had_tools)
+    if tok:
+        print(f"[agent_turn] dangling_reference len={len(visible_text(reply))} token={tok!r}", file=sys.stderr)
+
+
 _RECONCILER_STALE_S = 300  # 同 portfolio_reporter.HEARTBEAT_STALE_S
 
 
@@ -2265,7 +2292,13 @@ def preferences_rule():
 _NO_NARRATION = (
     "不要寫「Let me check...」「Now I will...」這類自言自語的執行過程當作正式內容——"
     "那些是內部推理，不是要給用戶看的話。只留使用者真正需要看到的內容"
-    "（結果、發現、決定、簡短的下一步提示），跳過「我正在做什麼」的旁白。"
+    "（結果、發現、決定、簡短的下一步提示），跳過「我正在做什麼」的旁白。\n"
+    # Both sinks drop text written before a tool call (WebSink.on_tool / TelegramSink.on_tool) and
+    # history keeps only the final text: a list written before closing browser tabs reached nobody.
+    "Only the text after your last tool call stays in the chat; text before a tool call only flashes in "
+    "the activity panel and your thinking is never shown. Finish all tool calls (closing browser tabs too) first, then put everything "
+    "the user needs (lists, results) in that final text, self-contained — never point back to earlier "
+    "text (「上面已列出」「如上」 / \"listed above\", \"as above\").\n"
 )
 
 # 交易所／券商名,中英各一,照 shell/i18n/zh.po、en.po 的 msgstr(tests/check_strategy_display_names.py 釘住);
@@ -2277,7 +2310,7 @@ _VENUE_NAMES = {
 }
 
 # Telegram uses LEGACY Markdown (single-asterisk bold) and cannot render
-# tables at all; each text segment becomes its own message bubble.
+# tables at all.
 # 兩個 sink 共用的回覆風格(語法各自另訂)。長度紀律一定要兩邊都掛——
 # 只掛 web 的結果就是 TG 上問一句「台積電多少」回 15 行全套報價(實測)。
 _STYLE_RULES = (
@@ -2310,7 +2343,6 @@ TELEGRAM_FORMATTING_RULE = (
     "- 代碼用反引號 `文字`\n"
     "- 不支援標題（#）、不支援表格（|）—表格一律改成清單（- 開頭）或分行條列\n"
     "段落之間適時空行，不要擠成一大塊。\n\n"
-    "**每個文字段落之間會各自變成一則獨立 Telegram 訊息**（工具呼叫前後會分開送）。\n\n"
     + _STYLE_RULES
     + _NO_NARRATION
 )
@@ -2576,6 +2608,7 @@ class TelegramSink:
         self.pending_new_bubble = False
         self._last_status = ""
         self.typing_task = None
+        self._had_tools = False
 
     async def start(self):
         self.typing_task = asyncio.create_task(_typing_loop(self.token, self.chat_id))
@@ -2593,6 +2626,7 @@ class TelegramSink:
     def on_tool(self, block):
         # 同 WebSink:後面還有工具呼叫的文字段是旁白。TG 是邊打邊編輯同一則訊息,
         # 所以要把已經送出的那則刪掉,否則旁白會變成一堆零碎訊息。
+        self._had_tools = True
         if self.chunk_text.strip():
             self.streamer.discard()
             self._last_status = self.chunk_text
@@ -2658,6 +2692,7 @@ class TelegramSink:
             # 用最後一句旁白當回覆,別讓用戶收到空氣。
             reply = convert_markdown_tables_to_list(narration)
             self.streamer.finish(reply)
+        _log_dangling_reference(reply, self._had_tools)
         return reply
 
 
@@ -3803,6 +3838,8 @@ class WebSink:
         if cleaned != seg:
             self.full_text = self.full_text[: self._seg_start] + cleaned
             self._send({"type": "text_replace", "text": cleaned})
+        if not self.interrupted:
+            _log_dangling_reference(cleaned, bool(self._kinds))
         # 被 Stop 截斷的回合不給建議也不送轉出檔——半途的里程碑判定不可信。
         if not self.interrupted:
             for chunk in exports:

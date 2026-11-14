@@ -36,7 +36,6 @@ TELEGRAM_OWN = (
     "- 代碼用反引號 `文字`\n"
     "- 不支援標題（#）、不支援表格（|）—表格一律改成清單（- 開頭）或分行條列\n"
     "段落之間適時空行，不要擠成一大塊。\n\n"
-    "**每個文字段落之間會各自變成一則獨立 Telegram 訊息**（工具呼叫前後會分開送）。\n\n"
 )
 
 for name in ("WEB_FORMATTING_RULE", "LOCAL_FORMATTING_RULE"):
@@ -48,7 +47,7 @@ t("LOCAL 的導航段真的換掉了(replace 沒失效)",
   at._NAV_RULE not in at.LOCAL_FORMATTING_RULE and at._NAV_RULE_LOCAL in at.LOCAL_FORMATTING_RULE)
 t("LOCAL 與 WEB 只差導航段",
   at.LOCAL_FORMATTING_RULE == at.WEB_FORMATTING_RULE.replace(at._NAV_RULE, at._NAV_RULE_LOCAL))
-t("Telegram 語法段一字不變,也沒有新句",
+t("Telegram 語法段只拿掉「工具呼叫前後會分開送」那句(1.1.163),其餘一字不變",
   at.TELEGRAM_FORMATTING_RULE == TELEGRAM_OWN + at._STYLE_RULES + at._NO_NARRATION)
 t("策略名稱與交易所名稱那兩條在共用風格段,三份格式規則都帶到",
   "都沒有才用代號" in at._STYLE_RULES and "不寫 id" in at._STYLE_RULES
