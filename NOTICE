@@ -20,3 +20,9 @@ is unrelated to that product.
 The desktop shell in shell/ launches — but does not redistribute — third-party
 agent CLIs (Claude Code, Codex) that the user installs and authenticates
 themselves. Electron, used by the shell at build time, is MIT licensed.
+
+The desktop installer also redistributes, unmodified, the pip wheel
+(https://pip.pypa.io, MIT License, Copyright (c) 2008-present The pip
+developers; it vendors libraries under their own MIT, BSD and Apache-2.0
+licenses). All of those license texts ship inside the wheel's .dist-info
+directory.

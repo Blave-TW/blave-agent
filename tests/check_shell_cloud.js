@@ -116,11 +116,12 @@ const body = (o = {}) => ({ machine: { state: "running", os_type: "linux", publi
   //   0.1.50 一步開通 libraryCheckoutQuote / libraryCardCheckout(都只打 /oauth/desktop/marketplace/*,tests/check_shell_library_bindbuy.js)
   // loadSecret: loadAppSecret 一處 = rotator() 交給 tokenrotate.js,只拿去打 /oauth/desktop/rotate(tests/check_shell_token_rotate.js)
   // blaveCreds 只交給六個 getCreds:cloudHost / cloudCmd(tests/check_shell_cloud_cmd.js)/ balanceHost(tests/check_shell_balance.js)/
-  //   shareClient(tests/check_shell_report_share.js)/ mcpCode(tests/check_shell_mcp_code.js)/ mobileView(tests/check_shell_mobileview.js)/ relay(手機對話,tests/check_shell_relay.js);
+  //   shareClient(tests/check_shell_report_share.js)/ mcpCode(tests/check_shell_mcp_code.js)/ mobileView(tests/check_shell_mobileview.js)/ relay(手機對話,tests/check_shell_relay.js)/
+  //   mainMkt(主要市場寫帳號,tests/check_shell_main_market.js);
   //   另一處是 currentWho(只回 who,不帶憑證)
-  t("main.js:app_secret 的去向沒有變多(loadAppSecret 八處、交給輪替一處、blaveCreds 只進七個 getCreds 與 currentWho)",
+  t("main.js:app_secret 的去向沒有變多(loadAppSecret 八處、交給輪替一處、blaveCreds 只進八個 getCreds 與 currentWho)",
     (mainSrc.match(/loadAppSecret\(/g) || []).length === 8 && (mainSrc.match(/\bloadAppSecret\b/g) || []).length === 9 && (mainSrc.match(/loadSecret: loadAppSecret,/g) || []).length === 1
-    && (mainSrc.match(/\bblaveCreds\b/g) || []).length === 9 && (mainSrc.match(/getCreds: blaveCreds\b/g) || []).length === 7
+    && (mainSrc.match(/\bblaveCreds\b/g) || []).length === 10 && (mainSrc.match(/getCreds: blaveCreds\b/g) || []).length === 8
     && /createMobileView\(\{\n    dir: app\.getPath\("userData"\), apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b\), get: \(u\) => getJSON\(u\),\n    getCreds: blaveCreds,/.test(mainSrc)
     && /const currentWho = \(\) => \{ const c = blaveCreds\(\); return c \? c\.who : null; \};/.test(mainSrc)
     && /createShareClient\(\{\n    apiBase: API_BASE, post: \(u, b\) => postJSON\(u, b, [^\n]*\{ timeout: SHARE_UPLOAD_TIMEOUT_MS \} : undefined\), readLocal: reportForShare,\n    logError: rptLogError, log: \(m\) => console\.error\("\[share\] " \+ m\), store: RS\.createShareStore\(path\.join\(BASE, "state", "report-shares\.json"\)\),\n    getCreds: blaveCreds,\n  \}\);/.test(mainSrc)

@@ -1212,7 +1212,13 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     // 0.1.24(desktop-portfolio-spec §3.5):雲端在跑那一行粗體 lead 與 idle / lag 兩句退場,只剩一句 saveWarn;unconfirmed 照 trMayFire 算在下單
     ok("B1 存金額確認框:unconfirmed 也算在下單(trMayFire 收 unconfirmed;框裡只剩「儲存後可能立即下單。」一句)",
       /const mayFire = trMayFire\(S\.st, S\.pending\)/.test(fn3("trCfOpen")) && /s === "running" \|\| s === "unconfirmed"/.test(fn3("trMayFire")) && !/saveLive|saveIdle|saveLag/.test(fn3("trCfOpen")));
-    ok("B2 總訊號部位表的下單失敗:unconfirmed 也是紅字的現在式(不降成灰的「上次」);字照網頁「下單失敗:{err}」,不再重寫標的", /const loud = !closeAll && trErrLoud\(le, hs, TR\.startAt, r\.last_reconcile\);/.test(src) && /const line = trEl\("span", loud \? "pf-note err" : "pf-note past"\);/.test(src)
+    // 統一回覆休市(kind broker_session_closed,api P3):部位表灰字照機器原句、不問 agent;事件列一般字、不掛「下單失敗」
+    // design review M8:照 kind 組句(tr.ov.evBrokerShut),不印機器原句(en 介面會整句中文)
+    ok("broker_session_closed:部位表不紅、不放「請 agent 查原因」;事件列一般字;兩處都照 kind 組句、不印原句",
+      /const bsc = le\.kind === "broker_session_closed";/.test(src) && /bsc \? t\("tr\.ov\.evBrokerShut"\)/.test(src)
+      && /if \(!closeAll && !bsc\) \{ const b = trEl\("button", "btn-quiet tr-err-ask"/.test(src)
+      && /if \(e\.kind === "broker_session_closed"\) \{ body\.appendChild\(trEl\("span", "", t\("tr\.ov\.evBrokerShut"\)\)\);/.test(src));
+    ok("B2 總訊號部位表的下單失敗:unconfirmed 也是紅字的現在式(不降成灰的「上次」);字照網頁「下單失敗:{err}」,不再重寫標的", /const loud = !closeAll && !bsc && trErrLoud\(le, hs, TR\.startAt, r\.last_reconcile\);/.test(src) && /const line = trEl\("span", loud \? "pf-note err" : "pf-note past"\);/.test(src)
       && /line\.append\(plain \|\| \(loud \? t\("po\.orderFailedRow", \{ err: trOrderErrRaw\(err\) \}\) : t\("po\.orderFailedLast", \{ err: trOrderErrRaw\(err\) \}\)\)\);/.test(src)
       && trErrLoud({ ts: "2026-09-21T14:26:00" }, "unconfirmed", 0, { ts: "2026-09-21T14:25:59" }) === true && trErrLoud({ ts: "2026-09-21T14:26:00" }, "halted", 0, null) === false);
     ok("不亮綠點:切換器那一格只在 running 才亮(unconfirmed 不借用 running)", /out\.run = state === "running" && /.test(src) && trExecState(C0({ gated: false })) !== "running"); }
@@ -1373,7 +1379,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
     ok("啟動框的舊訊號句:只有 Blave 重開才掛在「補齊部位」選項裡;tr.startWarn2 / tr.startWarn2Local / tr.startChoice 退役", /warn: rkS === "app" \? t\("tr\.opt\.catchStale"\) : null,/.test(src)
       && !/startWarn2|startChoice|restartStartWarn2/.test(src)); }
   { // S1:C 裡沒有啟動鈕,框裡不能叫人「之後按啟動下單」
-    ok("S1 C 的暫停框與存金額框:用不叫人按啟動的那兩句", /trRestartUnconfirmed\(r\) \? t\("tr\.cloud\.closeAllWarn2Unconfirmed"\) : t\("tr\.closeAllWarn2"\)/.test(src)
+    ok("S1 C 的暫停框與存金額框:用不叫人按啟動的那兩句", /trRestartUnconfirmed\(r\) \? t\("tr\.cloud\.closeAllWarn2Unconfirmed"\) : t\(trNoAmounts\(r\) \? "tr\.closeAllWarn2Z" : "tr\.closeAllWarn2"\)/.test(src)
       && !/tr\.cloud\.saveIdle/.test(src)); }   // 存金額框的 idle 那兩句 0.1.24 退場(desktop-portfolio-spec §3.5),框裡不再叫人之後按啟動
   { // 2-2(v4 撤回):C 期間標頭不再有「立即更新到最新版本」——雲端的更新走關於第二行的「更新雲端主機」(app.js upCloudUpdate,0.1.15),標頭沒有第二個入口
     ok("2-2 v4:標頭沒有更新鈕(trPaintGoUpd / trUpdAct / #tr-go-upd 都拿掉;trade.js 只碰 up.cloud.go 一個 up.* 字)", !/trPaintGoUpd|trUpdAct|tr-go-upd|updParked/.test(src) && (src.match(/t\("up\.[^"]*"\)/g) || []).join() === 't("up.cloud.go")' 

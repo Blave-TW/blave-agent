@@ -94,11 +94,14 @@ class GateioError(Exception):
 
 
 # lib/reject_token kinds: BALANCE_NOT_ENOUGH measured on a spot sell (lib/order_gateio.py module
-# docstring, references/lib.md). Rejected keys: account_gateio._CREDENTIAL. The other labels in
-# the order-copy spec (INSUFFICIENT_AVAILABLE, ORDER_SIZE_TOO_SMALL, SIZE_TOO_SMALL,
-# CONTRACT_NOT_FOUND, REDUCE_ONLY_FAIL, POSITION_EMPTY) could not be read verbatim from Gate's
-# label list — not classified until they are.
-_REJECT_CODES = {"BALANCE_NOT_ENOUGH": reject_token.INSUFFICIENT_MARGIN}
+# docstring, references/lib.md). INSUFFICIENT_AVAILABLE — "Balance is not enough" — read on
+# 2026-11-16 at https://www.gate.com/docs/developers/apiv4/en/ › Error Handling › "Futures
+# related label list" (label and meaning read verbatim from the rendered page). Rejected keys:
+# account_gateio._CREDENTIAL. That table also lists SIZE_TOO_SMALL, CONTRACT_NOT_FOUND and
+# POSITION_EMPTY, not classified here yet; ORDER_SIZE_TOO_SMALL and REDUCE_ONLY_FAIL from the
+# order-copy spec are not on it.
+_REJECT_CODES = {"BALANCE_NOT_ENOUGH": reject_token.INSUFFICIENT_MARGIN,
+                 "INSUFFICIENT_AVAILABLE": reject_token.INSUFFICIENT_MARGIN}
 
 
 # A market order whose worst fill would land too far from the mark price is
@@ -423,6 +426,9 @@ def get_contract_rules(env, symbol):
         "price_tick": r["tick"],
         "active": r["active"],
         "equity": r.get("equity"),
+        # only a stock maps (venue_traits instrument_class "stock"): "metals" also files
+        # PAXG_USDT, a coin on Binance
+        "category": "EQUITY" if r.get("equity") else None,
     }
 
 

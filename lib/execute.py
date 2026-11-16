@@ -740,7 +740,7 @@ def _venue_sizes_usd(symbol, floor):
     return entry, lot_usd
 
 
-def _fallback_market(symbol, reason, signed_diff, asset_spec, reduce_only, exchange):
+def _fallback_market(symbol, reason, signed_diff, asset_spec, reduce_only, exchange, contributors=None):
     """The user picked a style we cannot run. Doing nothing strands the
     position; silently doing market instead is the worse silence — so market
     order + a loud Telegram, every time it happens."""
@@ -757,7 +757,8 @@ def _fallback_market(symbol, reason, signed_diff, asset_spec, reduce_only, excha
     except Exception:
         pass
     from lib.venue_wiring import auto_place_order
-    return auto_place_order(symbol, signed_diff, asset_spec, reduce_only, exchange)
+    return auto_place_order(symbol, signed_diff, asset_spec, reduce_only, exchange,
+                            contributors=contributors)
 
 
 def dispatch_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
@@ -838,34 +839,38 @@ def dispatch_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
     # currency (_venue_min_slice_usd, chase re-posts at a USD unit), so TWAP /
     # chase / custom would slice a lot count as dollars.
     if (asset_spec or {}).get("type") in ("futures_contracts", "shares"):
-        return auto_place_order(symbol, signed_diff, asset_spec, reduce_only, exchange)
+        return auto_place_order(symbol, signed_diff, asset_spec, reduce_only, exchange,
+                                contributors=contributors)
     # a close under HALT holds a thread-local close pass (lib/guard.halt_close_pass):
     # an executor thread would not carry it and would stop at its first slice
     from lib import guard
     if reduce_only and guard.halted() and guard.halt_closes_allowed():
-        return auto_place_order(symbol, signed_diff, asset_spec, reduce_only, exchange)
+        return auto_place_order(symbol, signed_diff, asset_spec, reduce_only, exchange,
+                                contributors=contributors)
 
     # before any style launches a thread: refused here, the failure reaches reconcile's
     # order-error notice (one per cooldown), not a per-round executor crash
-    instrument_gate(symbol, reduce_only)
+    instrument_gate(symbol, reduce_only, contributors)
     spec = resolve_execution(contributors)
     if spec is None:  # config mid-write — skip, the next round re-reads
         return False
     stype = str(spec.get("type", "market"))
 
     if stype == "market":
-        return auto_place_order(symbol, signed_diff, asset_spec, reduce_only, exchange)
+        return auto_place_order(symbol, signed_diff, asset_spec, reduce_only, exchange,
+                                contributors=contributors)
 
     if stype == "twap":
         try:
             duration_min = min(max(int(spec.get("duration_min")), 1), 1440)
         except (TypeError, ValueError):
             return _fallback_market(symbol, f"bad twap duration {spec.get('duration_min')!r}",
-                                    signed_diff, asset_spec, reduce_only, exchange)
+                                    signed_diff, asset_spec, reduce_only, exchange, contributors)
         n_slices = int(min(duration_min, abs(signed_diff) // _venue_min_slice_usd(symbol)))
         if n_slices <= 1:
             # too small to slice — a straight market order IS its TWAP
-            return auto_place_order(symbol, signed_diff, asset_spec, reduce_only, exchange)
+            return auto_place_order(symbol, signed_diff, asset_spec, reduce_only, exchange,
+                                    contributors=contributors)
         return _launch(key, f"twap:{duration_min}m", _twap_thread,
                        (symbol, signed_diff, asset_spec, reduce_only, exchange,
                         contributors, duration_min, n_slices),
@@ -877,10 +882,10 @@ def dispatch_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
             tools = auto_limit_toolkit(symbol, reduce_only=reduce_only)
         except Exception as e:
             return _fallback_market(symbol, f"limit toolkit failed: {e}",
-                                    signed_diff, asset_spec, reduce_only, exchange)
+                                    signed_diff, asset_spec, reduce_only, exchange, contributors)
         if tools is None:
             return _fallback_market(symbol, "venue has no limit layer yet",
-                                    signed_diff, asset_spec, reduce_only, exchange)
+                                    signed_diff, asset_spec, reduce_only, exchange, contributors)
         return _launch(key, "chase", _chase_thread,
                        (symbol, signed_diff, asset_spec, reduce_only, exchange,
                         contributors, tools),
@@ -891,11 +896,11 @@ def dispatch_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
         module = str(spec.get("module") or "")
         if not re.fullmatch(r"[a-z0-9_]{1,64}", module):
             return _fallback_market(symbol, f"bad custom module name {module!r}",
-                                    signed_diff, asset_spec, reduce_only, exchange)
+                                    signed_diff, asset_spec, reduce_only, exchange, contributors)
         path = os.path.join(_EXECUTORS_DIR, module + ".py")
         if not os.path.isfile(path):
             return _fallback_market(symbol, f"{path} not found",
-                                    signed_diff, asset_spec, reduce_only, exchange)
+                                    signed_diff, asset_spec, reduce_only, exchange, contributors)
         try:
             mspec = importlib.util.spec_from_file_location(f"executors.{module}", path)
             mod = importlib.util.module_from_spec(mspec)
@@ -903,14 +908,14 @@ def dispatch_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
             fn = getattr(mod, "execute")
         except Exception as e:
             return _fallback_market(symbol, f"custom executor {module} failed to load: {e}",
-                                    signed_diff, asset_spec, reduce_only, exchange)
+                                    signed_diff, asset_spec, reduce_only, exchange, contributors)
         return _launch(key, f"custom:{module}", _custom_thread,
                        (symbol, signed_diff, asset_spec, reduce_only, exchange,
                         contributors, module, fn),
                        signed_diff, reduce_only, deadline_s=24 * 3600)
 
     return _fallback_market(symbol, f"unknown execution type {stype!r}",
-                            signed_diff, asset_spec, reduce_only, exchange)
+                            signed_diff, asset_spec, reduce_only, exchange, contributors)
 
 
 def _reap_own(key):
@@ -986,7 +991,8 @@ def _place_or_park(symbol, signed, asset_spec, reduce_only, exchange, contributo
     completion re-diff would send it again (audit v034 P1-2)."""
     from lib.venue_wiring import auto_place_order
     try:
-        return auto_place_order(symbol, signed, asset_spec, reduce_only, exchange, **kw)
+        return auto_place_order(symbol, signed, asset_spec, reduce_only, exchange,
+                                contributors=contributors, **kw)
     except Exception as e:
         try:
             from lib.unconfirmed import OrderOutcomeUnknown

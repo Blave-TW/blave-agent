@@ -168,13 +168,55 @@ do not assume casing or invent names.
    WITHOUT official libs, replace the two function bodies in the same session
    as the order lib (order library → reconciler is one atomic task —
    AGENTS.md); their docstrings carry the contract.
-   The wiring refuses an ENTRY into a venue's stock swap when Binance (where
-   `fetch_kline` candles come from) lists the same ticker as a coin — OKX
-   `BB-USDT-SWAP` and Bybit `ONUSDT` are stocks. The order error says so in
-   Chinese; tell the user that venue's contract under this ticker is a stock,
-   not the coin the strategy was backtested on, and never place it by hand.
-   The mirror case is refused too: Binance has the ticker as a US stock, the
-   venue as a coin. Closes are never refused. On Bitget a stock contract is
+   For a strategy on Binance bars (`fetch_kline`) the wiring refuses an ENTRY
+   into a venue's stock swap when Binance lists the same ticker as a coin —
+   OKX `BB-USDT-SWAP` / `ON-USDT-SWAP` / `QNT-USDT-SWAP` and Bybit `ONUSDT`
+   are stocks. The mirror case is refused too: Binance has the ticker as a US
+   stock, the venue as a coin. On OKX, which names its class (`instCategory`
+   1 crypto / 3 stocks / 4 commodities), any two of coin / stock / commodity
+   that differ are refused (`XAUUSDT` passes: a commodity on both); on
+   Gate.io, Bybit and Bitget, whose lists name only a stock reliably, a stock
+   is also refused where Binance has a commodity. The order
+   error says so in Chinese, naming both sides; tell the user that venue's
+   contract under this ticker is not what the strategy was backtested on,
+   and never place it by hand. A strategy whose every file reads only the
+   bound venue's own bars (`fetch_okx_kline` on OKX) is not compared — it was
+   backtested on that very contract; a mix, a helper on Binance bars or an
+   unreadable file is compared as before (any other `fetch_*`, a Blave alpha
+   included, counts as Binance, and so does anything that could read bars
+   another way: a network or dynamic import, a URL, an import from outside
+   the strategy's folder that is not the standard library, an installed
+   package or a strategy-side `lib` module (`data`, `runner`, `strategy`,
+   `exits`, `costs`, `param_scan`, `validation`, `notify`, `walk_forward`,
+   `analysis`; from `guard` only `halted` / `halted_for` / `halt_info` /
+   `halt_info_for` / `halt_path_for` / `Halted`, from `execute` only
+   `load_state` / `save_state` / `update_state`), `lib.data` through `getattr` or a `_private` name; the
+   template's own `def fetch_data` is not a fetcher; a link in a docstring or
+   as the whole value of `DESCRIPTION` / `LOGIC` / `VERSION_NOTE` /
+   `DISPLAY_NAME` is not a read, unless a file of the folder reads that name,
+   spells it in a string or uses `getattr` / `globals` / `vars` / `dir` /
+   `__dict__` / `locals()` other than the template's `run(locals(), …)`).
+   Keep shared helpers as
+   `.py` files in the strategy's own folder. On OKX a strategy on
+   Binance bars whose `SYMBOL` Binance does not list is refused too
+   (`PEPEUSDT`: Binance has only `1000PEPEUSDT`, a different multiple) — move
+   it to `fetch_okx_kline`. Moving means every `.py` in the strategy's
+   folder: `scan.py`, `wf.py`, `validate.py` switch too (re-scan the
+   parameters on the new bars) or are deleted — one leftover `fetch_kline`
+   keeps the whole folder on Binance bars and the entry refused every round.
+   The `[venue_wiring] strategy bars taken as binance` warning names the
+   file and the fetcher or import that kept it there.
+   The check reads code, it does not run it, so these reads of Binance data
+   are NOT caught and the entry would go through unchecked — never use
+   them in a strategy that orders on OKX or BingX: a local file of saved
+   bars (`pd.read_csv('tmp/…')`), `lib.data.BASE` in a hand-built URL,
+   `fetch_okx_kline.__globals__[…]`, `sys.modules['lib.data']…`,
+   `runpy.run_path` or `importlib.util.spec_from_file_location` on a file
+   outside the folder.
+   A ticker the venue does not list (`1000PEPEUSDT` on OKX) fails at the
+   order lib before anything is sent.
+   Which bars to write in the first place: `references/lib.md` › *Which
+   exchange's bars*. Closes are never refused. On Bitget a stock contract is
    a v3 instrument row with `symbolType` or `instrumentType` `stock` (or
    `instrumentType` `etf`), not `isRwa` (which also flags gold and FX): metal
    (`PAXGUSDT`, `XAUTUSDT`), energy and FX rows enter normally.

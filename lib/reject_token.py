@@ -19,8 +19,9 @@ KEY_PERMISSION = "key_permission"
 REDUCE_ONLY_REJECTED = "reduce_only_rejected"
 PAPER_MARGIN = "paper_margin"
 STOCK_AGREEMENT = "stock_agreement"  # the account has not signed the venue's stock-perp agreement
+MARKET_CLOSED = "market_closed"  # the user's close-all refused because the market is shut (manager/flatten)
 KINDS = (INSUFFICIENT_MARGIN, BELOW_MIN_SIZE, SYMBOL_UNAVAILABLE, KEY_PERMISSION,
-         REDUCE_ONLY_REJECTED, PAPER_MARGIN, STOCK_AGREEMENT)
+         REDUCE_ONLY_REJECTED, PAPER_MARGIN, STOCK_AGREEMENT, MARKET_CLOSED)
 
 _TOKEN_RE = re.compile(r"\[order_reject:([a-z_]+)\] ?")
 

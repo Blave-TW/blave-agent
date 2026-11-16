@@ -117,9 +117,9 @@ if (!process.versions.electron) {
     const both = R.staleParts(judge({ ...BT, start: "2015-01-01", "fee [%]": 0.01 })), feeOnly = R.staleParts(judge({ ...BT, "fee [%]": 0.01 }));
     const fill = (s) => s.tpl.replace(/\{(\w+)\}/g, (_, k) => s.vars[k]);
     ok("① 過時句 zh:兩項用「、」串、接「，下面是改之前的掃描結果。」(不寫「重新掃描後才會更新」)",
-      fill(R.staleTpl(both, tt("zh"))) === "回測期間已改成 2015-01-01 → 2025-06-01、手續費已改成 0.01%，下面是改之前的掃描結果。" && fill(R.staleTpl(feeOnly, tt("zh"))) === "手續費已改成 0.01%，下面是改之前的掃描結果。");
+      fill(R.staleTpl(both, tt("zh"))) === "回測期間已改成 2015-01-01 → 2025-06-01、交易成本已改成 0.01%，下面是改之前的掃描結果。" && fill(R.staleTpl(feeOnly, tt("zh"))) === "交易成本已改成 0.01%，下面是改之前的掃描結果。");
     ok("① 過時句 en:句首大寫、兩項用「, 」串、接「 — below is the scan from before the change.」",
-      fill(R.staleTpl(both, tt("en"))) === "The backtest period is now 2015-01-01 → 2025-06-01, the fee is now 0.01% — below is the scan from before the change." && fill(R.staleTpl(feeOnly, tt("en"))) === "The fee is now 0.01% — below is the scan from before the change.");
+      fill(R.staleTpl(both, tt("en"))) === "The backtest period is now 2015-01-01 → 2025-06-01, the trading cost is now 0.01% — below is the scan from before the change." && fill(R.staleTpl(feeOnly, tt("en"))) === "The trading cost is now 0.01% — below is the scan from before the change.");
   }
 
   // ── ③ 主行程 / cloud.js ──

@@ -146,7 +146,7 @@ function wdPaint() {
     });
   } else { const col = wdEl("div", "wl-col"); wdWel(WD.mk).forEach((r) => col.appendChild(wdRow(r[0], true))); body.appendChild(col); }
 }
-$("wl-seg").addEventListener("click", (e) => { const b = e.target.closest("button[data-mk]"); if (!b || b.dataset.mk === WD.mk) return; WD.mk = b.dataset.mk; wdPaint(); });
+$("wl-seg").addEventListener("click", (e) => { const b = e.target.closest("button[data-mk]"); if (!b || b.dataset.mk === WD.mk) return; WD.mk = b.dataset.mk; MKT.wdUser = true; wdPaint(); });
 $("wl-all").addEventListener("click", wdDocs);
 
 
@@ -217,14 +217,14 @@ const wcInstalled = (s, env) => (env === "cloud" || RP.loaded ? !!libInstalledOf
 /* 重畫。指紋(語言、視角、雲端狀態、資料權限、骨架、挑出來的那幾支)沒變就不碰卡,hover 與焦點不被洗掉;回合鎖與代下載鎖由 wcBusySync 就地換 */
 function wcPaint() {
   const box = $("wc-cards"); if (!box || !WC.shown) return;
-  const env = onbEnv(), cloud = env === "cloud" ? libCloud() : null;
+  const env = onbEnv(), cloud = env === "cloud" ? libCloud() : null, mkt = typeof MKT === "undefined" ? null : MKT.v;   // 主要市場(renderer/market.js)
   // 雲端主機停了或沒跟上:歡迎頁照樣出(trade.js envPaint 的 gate 不擋 stopped／stale),這裡是唯一一道;原因句住在策略庫詳情
   const off = cloud !== null && cloud !== "live";
   wcAlert(cloud);
-  const picks = off || !LIB.data ? [] : wcReco(LIB.data.strategies, { env, signedIn: !!hasToken, dataAccess: LIB.data.dataAccess, wait: env !== "cloud" && wcAcctWait(), installed: (s) => wcInstalled(s, env) });
+  const picks = off || !LIB.data ? [] : wcReco(LIB.data.strategies, { env, signedIn: !!hasToken, dataAccess: LIB.data.dataAccess, wait: env !== "cloud" && wcAcctWait(), installed: (s) => wcInstalled(s, env), mkt });
   const skel = !off && (picks === null || (!LIB.data && LIB.skel));
   const shown = skel ? [] : picks;
-  const key = JSON.stringify([LANG, env, cloud, LIB.data ? LIB.data.dataAccess : null, skel, shown.map((s) => [s.id, s.title, s.report])]);
+  const key = JSON.stringify([LANG, env, cloud, LIB.data ? LIB.data.dataAccess : null, skel, mkt, shown.map((s) => [s.id, s.title, s.report])]);
   if (key !== WC.key) {
     WC.key = key; box.textContent = "";
     if (skel) for (let i = 0; i < 3; i++) box.appendChild(wcSkel());
@@ -383,7 +383,7 @@ $("onb-lib").addEventListener("click", () => libOpen());
 // ③ 到策略組合頁並打開選擇策略框,讓用戶自己勾(Wei 0.1.29:不替他挑一支);勾了沒存／存了 0 → 落在金額格
 $("onb-po").addEventListener("click", () => { trackFeature(onbEnv() === "cloud" ? "onb_go_po_cloud" : "onb_go_po"); poPick(ONB.amt); });
 // F 的三顆籤:不帶市場(spec §3.2)
-$("wf-idea").addEventListener("click", () => ideaOpen($("wf-idea"), "welcome", "any"));
+$("wf-idea").addEventListener("click", () => ideaOpen($("wf-idea"), "welcome", libIdeaMkt(mktLibOf(MKT.v))));
 $("wf-lib").addEventListener("click", () => libOpen());
 $("wf-ns").addEventListener("click", () => nsOpen($("wf-ns")));
 Promise.resolve().then(() => window.blave.welcomePrefs()).then((p) => p, () => null).then((p) => {

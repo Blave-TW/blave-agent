@@ -485,9 +485,9 @@ check(is_open(mdir / "2026-11.parquet"), "…and the current month is open from 
 import re
 source = Path(d.__file__).read_text(encoding="utf-8")
 slugs = set(re.findall(r"_fetch_alpha\(\s*'([a-z_]+)/", source)) | set(re.findall(r"_fetch_alpha\(f'([a-z_]+)/", source))
-want = slugs | {"kline3", "bingx_kline", "oi_history"}
-check(len(want) == 14 and want == set(d._CRYPTO_SETTLE_PREFIXES),
-      f"the 14 crypto prefixes are exactly the fetchers' ({sorted(want ^ set(d._CRYPTO_SETTLE_PREFIXES))})")
+want = slugs | {"kline3", "bingx_kline", "okx_kline", "oi_history"}
+check(len(want) == 15 and want == set(d._CRYPTO_SETTLE_PREFIXES),
+      f"the 15 crypto prefixes are exactly the fetchers' ({sorted(want ^ set(d._CRYPTO_SETTLE_PREFIXES))})")
 for name in sorted(want) + ["kline3_1h", "kline3_1min"]:
     check(d._settle_delay(name) == d._CRYPTO_GRACE, f"{name} is on the 30-minute clock")
 for name in ("twstock_minute_1m", "twfutures3_1d", "twfutures_bav"):

@@ -71,6 +71,18 @@ msgstr "使用"
 msgid "cn.foot"
 msgstr "連結後可以隨時更換。"
 
+msgid "cn.mkt.step"
+msgstr "最後一步"
+
+msgid "cn.mkt.q"
+msgstr "主要做哪個市場？"
+
+msgid "cn.mkt.foot"
+msgstr "之後可以在設定改。"
+
+msgid "cn.mkt.skip"
+msgstr "跳過"
+
 msgid "st.signedIn"
 msgstr "已登入"
 
@@ -470,6 +482,14 @@ msgstr "已經下載完，安裝程式還在跑。超過 {limit}會自動停下�
 msgid "eng.stall"
 msgstr "{s} 沒有收到資料，還在等網路。超過 {limit}會自動停下，可以重試。"
 
+# 同一條下載斷線、安裝程式正在從斷點接續(pip --resume-retries;enginesetup pipErrLine),位元組再往上走就換回進度
+msgid "eng.resume"
+msgstr "網路不穩，自動接續下載。"
+
+# 網路類失敗時安裝程式自己重跑那一條下載(enginesetup NET_RETRY_MS),不出失敗卡;{n} = 第幾次
+msgid "eng.netRetry"
+msgstr "網路不穩，自動重試中（第 {n} 次）。"
+
 msgid "eng.failNet"
 msgstr "下載 {name} 時網路中斷，沒有裝完。"
 
@@ -626,7 +646,10 @@ msgid "rp.logic.stop"
 msgstr "停損"
 
 msgid "bt.fee"
-msgstr "手續費"
+msgstr "交易成本"
+
+msgid "bt.tip.fee"
+msgstr "交易成本＝手續費＋稅＋滑價，每邊 {fee}%。"
 
 msgid "bt.totalReturn"
 msgstr "總報酬"
@@ -683,7 +706,7 @@ msgid "bt.legendMedian"
 msgstr "隨機中位數"
 
 msgid "bt.tip.band"
-msgstr "1000 組隨機權重投組，每根 K 棒調回原權重，不計手續費。每天各取 p5–p95，不是單一投組的路徑。"
+msgstr "1000 組隨機權重投組，每根 K 棒調回原權重，不計交易成本。每天各取 p5–p95，不是單一投組的路徑。"
 
 msgid "bt.tip.bandNarrow"
 msgstr "隨機投組的範圍太窄，只畫中位數。"
@@ -797,7 +820,7 @@ msgid "bt.winRate"
 msgstr "日勝率"
 
 msgid "bt.totalFees"
-msgstr "總手續費"
+msgstr "總交易成本（佔資金）"
 
 msgid "bt.mcptDistTitle"
 msgstr "MCPT · 隨機打亂 {n} 次的 Sharpe 分佈，p = {p}"
@@ -902,7 +925,7 @@ msgstr "移到資源回收筒？"
 
 # 回測指標的 tooltip(定義照 lib/analysis.py、lib/runner.py 的算法)
 msgid "bt.tip.totalReturn"
-msgstr "整段回測期間的累計報酬，已扣手續費。"
+msgstr "整段回測期間的累計報酬，已扣交易成本。"
 
 msgid "bt.tip.annReturn"
 msgstr "把總報酬換算成一年的複利報酬，方便跟不同長度的回測比較。"
@@ -911,13 +934,13 @@ msgid "bt.tip.benchmark"
 msgstr "同一段期間買進後一直持有這個標的的報酬。策略要贏過它，才算比什麼都不做好。"
 
 msgid "bt.tip.benchmarkRank"
-msgstr "隨機投組：1000 組隨機權重，同一批標的、持股數相近，每根 K 棒調回權重，不計手續費。比的是總報酬。"
+msgstr "隨機投組：1000 組隨機權重，同一批標的、持股數相近，每根 K 棒調回權重，不計交易成本。比的是總報酬。"
 
 msgid "bt.tip.benchmarkBhAdj"
-msgstr "同期間持有 {sym} 的報酬，還原價、不計手續費。"
+msgstr "同期間持有 {sym} 的報酬，還原價、不計交易成本。"
 
 msgid "bt.tip.benchmarkBhRaw"
-msgstr "同期間持有 {sym} 永續的報酬，不計手續費與資金費率。"
+msgstr "同期間持有 {sym} 永續的報酬，不計交易成本與資金費率。"
 
 msgid "bt.tip.benchmarkBhAsOf"
 msgstr "基準只算到 {date}，之後的價格沒抓到。"
@@ -947,7 +970,7 @@ msgid "bt.tip.winRate"
 msgstr "有損益的日子裡，賺錢的日子佔多少。這不是每筆交易的勝率。"
 
 msgid "bt.tip.totalFees"
-msgstr "整段期間付出的手續費加總，以佔資金的百分比表示。"
+msgstr "每次交易的交易成本佔當時資金的百分比，整段期間加總。"
 
 # 刪對話確認框
 msgid "del.title"
@@ -1226,6 +1249,19 @@ msgstr "雲端主機啟動中，Blave 的資料馬上就能用。"
 
 msgid "plan.done"
 msgstr "雲端主機開好了。"
+
+# 側欄左下那一列的帳號那一格(spec sidebar-conversion §3.1、§5):膠囊字;planTip 是「升級」的滑鼠提示與 aria-label。已停機沿用 side.stopped
+msgid "side.cv.signin"
+msgstr "登入"
+
+msgid "side.cv.trial"
+msgstr "免費試用"
+
+msgid "side.cv.plan"
+msgstr "升級"
+
+msgid "side.cv.planTip"
+msgstr "升級方案"
 
 msgid "side.trial"
 msgstr "試用剩 {n} 天"
@@ -1540,7 +1576,7 @@ msgid "cx.linkOk"
 msgstr "串接成功：金鑰讀得到帳戶。交易權限在第一筆下單時確認。"
 
 msgid "cx.perfNote"
-msgstr "模擬成交，成本照策略的手續費設定。"
+msgstr "模擬成交，交易成本照策略的設定。"
 
 msgid "cx.retest"
 msgstr "重新測試"
@@ -1796,6 +1832,13 @@ msgstr "{sym} 沒有下單：交易所拒絕這把金鑰。到「自動下單 �
 
 msgid "tr.err.reduceOnly"
 msgstr "{sym} 沒有下單：交易所拒絕只減倉單，部位或掛單跟 Blave 記的不同。到交易所看這個部位現況。"
+
+# 全部平倉碰到休市被拒([order_reject:market_closed],manager/flatten._refuse_tw_futures;同網頁 workspace_pf_err_market_closed)
+msgid "tr.err.marketClosed"
+msgstr "{sym} 沒有平倉：休市中。部位還在、沒有停損，開盤後要自己平。"
+
+msgid "tr.err.marketClosedRun"
+msgstr "{sym} 沒有平倉：休市中。部位還在、沒有解除連接，開盤後要再平一次。"
 
 msgid "tr.err.paperMargin"
 msgstr "{sym} 沒有下單：台指期每口要的保證金加起來，超過模擬帳戶的淨值。調低口數再試。"
@@ -2488,13 +2531,13 @@ msgid "tr.ub.closeGo"
 msgstr "平倉並解除"
 
 msgid "tr.ub.closedTitle"
-msgstr "解除綁定後，這 {n} 個部位沒人管"
+msgstr "解除連接後，這 {n} 個部位沒人管"
 
 msgid "tr.ub.closedTitle1"
-msgstr "解除綁定後，這 1 個部位沒人管"
+msgstr "解除連接後，這 1 個部位沒人管"
 
 msgid "tr.ub.closedTitleN"
-msgstr "解除綁定後，部位可能沒人管"
+msgstr "解除連接後，部位可能沒人管"
 
 msgid "tr.ub.closedWhen"
 msgstr "台指期休市，{time} 開盤後才能平倉。"
@@ -2521,19 +2564,23 @@ msgid "tr.ub.runningBtn"
 msgstr "平倉中…"
 
 msgid "tr.ub.failTitle"
-msgstr "有 {n} 個部位沒平掉，還沒解除綁定"
+msgstr "有 {n} 個部位沒平掉，還沒解除連接"
 
 msgid "tr.ub.failTitle1"
-msgstr "有 1 個部位沒平掉，還沒解除綁定"
+msgstr "有 1 個部位沒平掉，還沒解除連接"
 
 msgid "tr.ub.failTitleN"
-msgstr "平倉沒有完成，還沒解除綁定"
+msgstr "平倉沒有完成，還沒解除連接"
 
 msgid "tr.ub.failReply"
 msgstr "{venue}回覆：{msg}"
 
 msgid "tr.ub.failState"
 msgstr "下單維持暫停，沒平的部位還在帳上。"
+
+# 休市被拒、機器撤回了這次自己掛的暫停時用這句;仍在暫停(含重開停住)用 tr.ub.failState
+msgid "tr.ub.failStateRun"
+msgstr "下單沒有暫停，沒平的部位還在帳上。"
 
 msgid "tr.ub.unconfirmed"
 msgstr "未確認的那筆，先到{app} app 看有沒有成交。"
@@ -3492,6 +3539,9 @@ msgstr "回覆好了的系統通知：有沒有跳出、有沒有被點開"
 msgid "priv.c.feat.8"
 msgstr "不含對話標題與內容"
 
+msgid "priv.c.feat.9"
+msgstr "選主要市場時，記選了哪一個"
+
 msgid "priv.c.stuck.h"
 msgstr "卡在哪一步"
 
@@ -3885,9 +3935,6 @@ msgstr "雲端主機上沒有資料來源。"
 
 msgid "ho.up.btn"
 msgstr "送上雲端…"
-
-msgid "ho.down.btn"
-msgstr "拉回…"
 
 msgid "ho.down.aria"
 msgstr "拉回這台電腦"
@@ -4863,15 +4910,12 @@ msgstr "更新中…"
 msgid "up.restarting"
 msgstr "重新啟動中…"
 
-# 側欄左下的更新膠囊(新版已暫存好;spec desktop-update-pill §3)。不寫版號;下單中字尾接「…」。細軌圓鈕的 aria-label 也是這句
+# 側欄左下的更新圓鈕(新版已暫存好;spec sidebar-conversion §3.3):滑鼠提示與 aria-label,列裡與細軌同一句。沒有版號用 up.pill;下單中字尾接「…」
 msgid "up.pill"
 msgstr "重新啟動更新"
 
 msgid "up.pillV"
 msgstr "重新啟動更新：{v}"
-
-msgid "up.pillS"
-msgstr "更新：{v}"
 
 # 更新 modal 一般(沒在下單)的標題;{v} = 已暫存的新版號(canon 具名例外:只這個標題可以寫版號)
 msgid "up.md.title"
@@ -5078,7 +5122,7 @@ msgid "rob.stale.period"
 msgstr "回測期間已改成 {start} → {end}"
 
 msgid "rob.stale.fee"
-msgstr "手續費已改成 {fee}%"
+msgstr "交易成本已改成 {fee}%"
 
 msgid "rob.stale.join"
 msgstr "、"
@@ -5093,7 +5137,7 @@ msgid "rob.cfPeriod"
 msgstr "期間"
 
 msgid "rob.cfFee"
-msgstr "手續費"
+msgstr "交易成本"
 
 msgid "rob.cfGrid"
 msgstr "網格"
@@ -5108,7 +5152,7 @@ msgid "rob.cfNoteFirst"
 msgstr "通常要幾分鐘，期間越長、格子越多越久。"
 
 msgid "rob.msgRescan"
-msgstr "請重新掃描策略「{display_name}」({name}) 的參數（lib.param_scan：scan_grid → find_plateau → write_scan → plot_heatmap）。期間與手續費照目前回測：{start} → {end}、手續費 {fee}%；兩軸沿用上次的 {rp}（{r0}–{r1}）與 {cp}（{c0}–{c1}），穩健點落在邊上時照 lib 規則往外延伸一次。掃完回報尖峰與穩健點。"
+msgstr "請重新掃描策略「{display_name}」({name}) 的參數（lib.param_scan：scan_grid → find_plateau → write_scan → plot_heatmap）。期間與交易成本照目前回測：{start} → {end}、交易成本 {fee}%；兩軸沿用上次的 {rp}（{r0}–{r1}）與 {cp}（{c0}–{c1}），穩健點落在邊上時照 lib 規則往外延伸一次。掃完回報尖峰與穩健點。"
 
 msgid "rob.msgRescanLabel"
 msgstr "重新掃描 {name} 的參數"
@@ -5138,7 +5182,7 @@ msgid "rob.cfRangeVal"
 msgstr "{rp} {r0}–{r1}（{R} 格）"
 
 msgid "rob.msgRescan1"
-msgstr "請重新掃描策略「{display_name}」({name}) 的參數（lib.param_scan：scan_grid → find_plateau → write_scan → plot_heatmap，單參數照 lib 文件的一格第二軸寫法）。期間與手續費照目前回測：{start} → {end}、手續費 {fee}%；只有一個參數 {rp}，範圍沿用上次的 {r0}–{r1}，穩健點落在邊上時照 lib 規則往外延伸一次。掃完回報尖峰與穩健點。"
+msgstr "請重新掃描策略「{display_name}」({name}) 的參數（lib.param_scan：scan_grid → find_plateau → write_scan → plot_heatmap，單參數照 lib 文件的一格第二軸寫法）。期間與交易成本照目前回測：{start} → {end}、交易成本 {fee}%；只有一個參數 {rp}，範圍沿用上次的 {r0}–{r1}，穩健點落在邊上時照 lib 規則往外延伸一次。掃完回報尖峰與穩健點。"
 
 msgid "rob.tag.atPlateau1"
 msgstr "目前參數：就是穩健參數"
@@ -5510,7 +5554,7 @@ msgid "lib.gate1"
 msgstr "誠實回測"
 
 msgid "lib.gate1d"
-msgstr "手續費不低於實際費率、沒有假歷史"
+msgstr "交易成本不低於實際費率、沒有假歷史"
 
 msgid "lib.gate2"
 msgstr "統計顯著"
@@ -9477,6 +9521,12 @@ msgstr "顯示幣別"
 msgid "set.ccyFail"
 msgstr "切換失敗，稍後再試。"
 
+msgid "set.mkt"
+msgstr "主要市場"
+
+msgid "set.mkt.all"
+msgstr "不指定"
+
 msgid "acct.revoked"
 msgstr "登入已失效"
 
@@ -10451,6 +10501,13 @@ msgstr "時鐘量不到，照這台電腦的時間開盤後平倉"
 msgid "tr.ov.evDeferClockFarNote"
 msgstr "時鐘差超過一小時，照這台電腦的時間開盤後平倉"
 
+# 雲端視角:時鐘看的是主機,不是這台電腦(同網頁 workspace_ov_ev_defer_clock_note／…_far_note)
+msgid "tr.cloud.ov.evDeferClockNote"
+msgstr "時鐘量不到，照主機的時間開盤後平倉"
+
+msgid "tr.cloud.ov.evDeferClockFarNote"
+msgstr "時鐘差超過一小時，照主機的時間開盤後平倉"
+
 msgid "tr.ov.evDeferCancelStock"
 msgstr "台股延後的平倉已取消"
 
@@ -10722,9 +10779,6 @@ msgstr "在手機上用"
 # 側欄「在手機上用」pop 的步驟(spec slot-phone-steps §3)
 msgid "ph.stepGet"
 msgstr "下載 App"
-
-msgid "ph.stepPair"
-msgstr "在 App 配對"
 
 # 已登入時第 1 步(打勾),下面小字是 Blave 帳號 email
 msgid "ph.signed"
@@ -11022,6 +11076,15 @@ msgstr "已存成雲端的 {dest}，正在確認它跑得起來"
 msgid "ho.p.trial.down"
 msgstr "已存成這台電腦的 {dest}，正在確認它跑得起來"
 
+msgid "ho.prog"
+msgstr "回測中"
+
+msgid "ho.prog.step"
+msgstr "抓 {data} 第 {i}/{n} 段，抓完約剩 {left}"
+
+msgid "ho.prog.at"
+msgstr "已存成這台電腦的 {dest}，回測中"
+
 msgid "ho.cmp.show"
 msgstr "看兩邊數字"
 
@@ -11234,3 +11297,10 @@ msgstr "{venue}的部位跟 Blave 紀錄對不上。"
 
 msgid "tr.haltUnexplainedDo"
 msgstr "先核對再按「{btn}」，之後差額由你處理。"
+
+# 0.1.54 停止框的後果句沒有策略設金額時那一版(同網頁 workspace_pf_close_all_warn2_z,頁名換電腦版的「策略組合」)、統一回休市那一列
+msgid "tr.closeAllWarn2Z"
+msgstr "策略金額會保留。目前沒有策略設金額，之後不會重建部位。要恢復下單，先到「策略組合」設金額。"
+
+msgid "tr.ov.evBrokerShut"
+msgstr "統一回覆休市，下個時段再送"

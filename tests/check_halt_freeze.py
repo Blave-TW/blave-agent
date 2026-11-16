@@ -159,8 +159,10 @@ def recon():
 
 
 def keep_2330():
-    # the close-all flatten deferred: "2330" held after the TW close
-    portfolio.defer_paper_tw_close(["2330"])
+    # a 0.1.53 close-all flatten deferred "2330" after the TW close (this lib never writes it)
+    os.makedirs(os.path.dirname(portfolio._PAPER_TW_CLOSE_PATH), exist_ok=True)
+    with open(portfolio._PAPER_TW_CLOSE_PATH, "w") as f:
+        json.dump({"keys": ["2330"], "ts": 1}, f)
 
 
 TARGET["2330"] = {"side": "long", "size": 1000.0, "exchange": "paper", "asset_spec": SHARES,
@@ -183,11 +185,10 @@ del TARGET["2330"]
 guard.trip_halt("close all positions", "web")
 keep_2330()
 r = recon()
-check(r == [("2330", -1000.0, True, True)],
-      f"R4 the close-all leg flatten deferred goes, inside the close pass; nothing else does ({r})")
-check(not guard.halt_closes_allowed(), "R5 …the pass is gone after the leg")
+check(r == [] and not os.path.exists(portfolio._PAPER_TW_CLOSE_PATH),
+      f"R4 a 0.1.53 deferred close-all leg is dropped under HALT, never sent (Wei 11-15) ({r})")
+check(not guard.halt_closes_allowed(), "R5 …and no close pass is opened")
 reset_halt()
-os.remove(portfolio._PAPER_TW_CLOSE_PATH)  # the spy fills nothing; the real close empties the row
 
 for source in ("reconciler", "execute", "portfolio", "settings"):
     guard.trip_halt(f"safety trip ({source})", source)
@@ -356,7 +357,7 @@ for base in ("lib", "manager", "runtime", "strategies", "allocators"):
                 scoped.add(rel)
 check(holders == {"manager/flatten.py", "manager/close_symbol.py"},
       f"P1 the process-wide pass: flatten.py and close_symbol.py only ({sorted(holders)})")
-check(scoped == {"lib/portfolio.py"}, f"P2 the thread-local pass: lib/portfolio.py only ({sorted(scoped)})")
+check(scoped == set(), f"P2 the thread-local pass has no caller: no deferred close-all leg is sent under HALT ({sorted(scoped)})")
 flat = open(os.path.join(ROOT, "manager", "flatten.py"), encoding="utf-8").read()
 check(flat.index("grant_halt_closes(") > flat.index("claim_close_all_pass()"),
       "P3 flatten takes the pass only past the restart-stop branch (no pass → nothing closes there)")
@@ -506,6 +507,16 @@ for _doc in ({"reason": "close all positions", "source": "web", "closing": True}
              {"reason": "close all positions", "source": "web", "closing": "yes"}, {"reason": "user request"}):
     open(_hp, "w").write(json.dumps(_doc))
     _seen.append(pr.halt_state(hb=1, last={}).get("closing", "absent"))
+# the press's close_id / already_halted (command_listener._close_all): passed on only in their shapes
+_ids = []
+for _doc in ({"reason": "close all positions", "close_id": "ca1", "already_halted": True},
+             {"reason": "close all positions", "close_id": "", "already_halted": "yes"},
+             {"reason": "close all positions", "close_id": 5}):
+    open(_hp, "w").write(json.dumps(_doc))
+    _h = pr.halt_state(hb=1, last={})
+    _ids.append((_h.get("close_id", "absent"), _h.get("already_halted", "absent")))
+check(_ids == [("ca1", True), ("absent", "absent"), ("absent", "absent")],
+      f"F7b halt_state carries close_id (non-empty str) and already_halted (bool) only ({_ids})")
 if _had is None:
     os.remove(_hp)
 else:

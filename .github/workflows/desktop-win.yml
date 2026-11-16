@@ -193,6 +193,22 @@ jobs:
           # 只有真 Windows 跑得到這條,在這裡用隨包 python 實際驗一次
           "$out/python.exe" -I -c "import os, sys; sys.path.insert(0, 'runtime'); import codex_engine as c; p = c._windows_profile_dir(); u = os.environ['USERPROFILE']; assert p and os.path.normcase(p) == os.path.normcase(u), (p, u); print('FOLDERID_Profile', p)"
 
+      # 隨包 pip wheel(fetch-python.sh 的 fetch_pip):檔名、網址、SHA256 同樣從那支讀;extraResources 收 vendor/pip-wheel,驗產物那步會查它在不在
+      - name: Fetch bundled pip wheel
+        run: |
+          fp=shell/tools/fetch-python.sh
+          whl="$(sed -n 's/^PIP_WHL="\(.*\)"$/\1/p' "$fp")"
+          url="$(sed -n 's/^PIP_URL="\(.*\)"$/\1/p' "$fp")"
+          sha="$(sed -n 's/^PIP_SHA256="\([0-9a-f]\{64\}\)"$/\1/p' "$fp")"
+          [ -n "$whl" ] && [ -n "$url" ] && [ -n "$sha" ] || { echo "::error::從 $fp 讀不到 PIP_WHL / PIP_URL / PIP_SHA256(格式變了?)"; exit 1; }
+          out=shell/vendor/pip-wheel
+          rm -rf "$out"
+          mkdir -p "$out"
+          curl -fsSL --retry 3 -o "$out/$whl.part" "$url"
+          got="$(sha256sum "$out/$whl.part" | cut -d' ' -f1)"
+          [ "$got" = "$sha" ] || { echo "::error::$whl SHA256 不符(拿到 $got,要 $sha)"; exit 1; }
+          mv "$out/$whl.part" "$out/$whl"
+
       # 未簽章的正式形狀:BLAVE_RELEASE=1 翻 fuses、蓋 blaveRelease,BLAVE_UPDATE_URL 蓋進包裡的更新網址並讓 electron-builder 產 latest.yml;
       # --publish never 保證它不自己上傳。SignPath 接上後:拿掉 BLAVE_WIN_UNSIGNED、改設 BLAVE_WIN_PUBLISHER="SignPath Foundation"。
       - name: Build NSIS installer (unsigned)

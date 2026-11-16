@@ -31,7 +31,10 @@ on this machine: any failure (MAINTENANCE aside — that is never attempted) wri
 state/president_login_stop.json with its class, and every later login refuses
 with STOPPED without contacting the broker — the worker, the order lib, a flatten.
 Only an explicit login (`president_worker.py --once`, the user's 「確認登入」)
-tries again, once per press, and a login that passes removes the stop.
+tries again, once per press, and a login that passes removes the stop. One exception
+(Wei 11-16): the user's own close sent outside the trading window (`off_hours`) — an
+UNKNOWN or TIMEOUT refusal then reads as the market being shut and writes no stop; a
+password or certificate refusal stops as always.
 
 One exception (Wei 2026-11-05): a TIMEOUT — the broker unreachable or silent — writes no
 stop the first time in a row; the LoginError carries `retry` and the caller may try once
@@ -545,7 +548,7 @@ def _pin_sdk_logs(log_dir):
             mod.os = proxy
 
 
-def login(creds, log_dir, explicit=False):
+def login(creds, log_dir, explicit=False, off_hours=False):
     """A logged-in Unitrade, or LoginError. The caller MUST logout() in a
     finally: the SDK starts non-daemon threads (logger, sockets) at login and a
     process that exits without logout() hangs on them forever — failed logins
@@ -553,14 +556,22 @@ def login(creds, log_dir, explicit=False):
     logged out here on every failure path.
 
     A failure stops logins (STOP); after that only `explicit` (the user's
-    「確認登入」 through president_worker --once) contacts the broker again."""
+    「確認登入」 through president_worker --once) contacts the broker again.
+
+    `off_hours`: the user's own close sent outside 統一's trading window (order_president,
+    Wei 11-16). A refusal the broker may give only because it is shut (UNKNOWN, TIMEOUT) writes
+    no stop and counts no timeout — the close is reported as refused by a shut market; a
+    password or certificate refusal stops logins as always (統一 locks after three)."""
     if in_login_maintenance():
         raise LoginError("MAINTENANCE")
     with _login_lock():
-        return _login_locked(creds, log_dir, explicit)
+        return _login_locked(creds, log_dir, explicit, off_hours)
 
 
-def _login_locked(creds, log_dir, explicit):
+OFF_HOURS_KINDS = ("UNKNOWN", "TIMEOUT")
+
+
+def _login_locked(creds, log_dir, explicit, off_hours=False):
     import threading
 
     if not explicit and stopped():
@@ -600,6 +611,8 @@ def _login_locked(creds, log_dir, explicit):
         else:
             kind = None
         if kind is not None:
+            if off_hours and kind in OFF_HOURS_KINDS:
+                raise LoginError(kind)
             if kind == "TIMEOUT" and not explicit and not _timeout_stops():
                 raise LoginError(kind, retry=True)
             _stop(kind, explicit, text)

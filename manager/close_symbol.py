@@ -68,6 +68,7 @@ _NOT_PERP = venue_traits.venues("perp", False)
 _QUOTES = ("USDT", "USDC", "USD")
 _NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_BELOW_MIN_RE = re.compile(r"\[order_reject:below_min_size\]")   # lib/reject_token.BELOW_MIN_SIZE
 # libs whose get_open_orders already includes conditional orders
 _CONDITIONAL_IN_REGULAR = {"order_bingx"}
 # libs whose cancel_all_orders clears regular AND conditional orders
@@ -478,6 +479,17 @@ def _cancel(order, env, sym, regular, algo):
     return False
 
 
+def _user_close(fn):
+    """{"user_close": True} when the lib names it — this script only runs on the user's request, so
+    a paper TW stock closes now at the last price, session or not (as manager/flatten._user_close).
+    Named only: a **kwargs lib could forward it to a venue."""
+    import inspect
+    try:
+        return {"user_close": True} if "user_close" in inspect.signature(fn).parameters else {}
+    except (TypeError, ValueError):
+        return {}
+
+
 def _outcome_unknown(ctx, e, cid):
     """The close's lib/unconfirmed.OrderOutcomeUnknown — an older lib's plain OrderNotConfirmed
     rebuilt as one with this close's ids — or None."""
@@ -589,13 +601,21 @@ def run_close(ctx, dry_run=False):
             # no price arg: with it format_qty also enforces min notional, which
             # reduce-only closes are exempt from on some venues (flatten audit S2)
             order.format_qty(env, sym, size)
-        except ValueError:
-            print(f"{sym} {side} {size} is below the venue minimum — dust left")
+        except ValueError as e:
+            # only the tagged minimum is dust (= manager/flatten): a suspended / delisted
+            # contract's ValueError leaves the whole position open
+            if _BELOW_MIN_RE.search(str(e)):
+                print(f"{sym} {side} {size} is below the venue minimum — dust left")
+            else:
+                print(f"close not sent: {e}")
+                _record_order_error(sym, ctx.venue, f"close_symbol: {e}")
+                ok = False
             target = []
         if target:
             cid = f"csym{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
             try:
-                result = order.close_position_partial(env, sym, side, size, client_order_id=cid)
+                result = order.close_position_partial(env, sym, side, size, client_order_id=cid,
+                                                      **_user_close(order.close_position_partial))
                 closed = True
             except Exception as e:
                 u = _outcome_unknown(ctx, e, cid)

@@ -156,16 +156,62 @@ function extract() {
   }
   // 程式碼區塊每行一個區塊元素(行號對得上的那種檢視器)時逐行讀:innerText 會把空的行元素整個吃掉、
   // 只放一個 <br> 的行又多算一行,讀的人數行號就跟畫面差一行。不是這種結構的照舊用 innerText。
+  // 程式碼截長一律在 fence 裡留記號(讀的人要知道後半沒讀到);cap 含記號本身
+  const cut = (s, cap) => { if (s.length <= cap) return s; const mk = (n) => "\n… [truncated: " + n + " of " + s.length + " characters]"; const keep = Math.max(0, cap - mk(cap).length); return s.slice(0, keep) + mk(keep); };
+  // fence 比內容裡最長的一串反引號多一個:程式碼裡的 ``` 不會提早收尾
+  const fenceOf = (s) => { let m = 0; for (const x of s.match(/`+/g) || []) if (x.length > m) m = x.length; return "`".repeat(Math.max(3, m + 1)); };
+  // 程式碼區塊不走 push() 的 200k 截法:那會連記號帶收尾的 fence 一起靜默切掉。先把內容截到放得下,
+  // 放不下時只剩記號,整份最多超出 200k 一個記號加兩道 fence 的長度
+  function codeBlk(n, s, cap) {
+    let body = cut(s, Math.max(0, Math.min(cap, MAX - total - 8))), f = fenceOf(body);
+    const fit = Math.max(0, MAX - total - 2 * f.length - 4);
+    if (body.length > fit) { body = cut(s, fit); f = fenceOf(body); }
+    const at = total, all = f + "\n" + body + "\n" + f + "\n\n";
+    out += all; total += all.length;
+    if (blocks.length < 600) { const r = rectOf(n); if (r && r.h > 0) blocks.push(Object.assign({ at, end: total }, r)); }
+  }
   function preText(pre) {
     const texts = (b, any) => Array.from(b.childNodes).some((n) => n.nodeType === 3 && (any ? n.nodeValue : T(n.nodeValue)));
     let box = pre;
     while (box.children.length === 1 && !texts(box)) box = box.children[0];   // <pre><code>…
     const rows = Array.from(box.children), rowish = /^(block|list-item|flex|grid|table-row)$/;
     // 行與行之間夾著文字節點(在 pre 裡連換行都會畫出來)就不是這種結構
-    if (rows.length < 2 || rows.length > 5000 || texts(box, true) || !rows.every((r) => hidden(r) || rowish.test(getComputedStyle(r).display))) return String(pre.innerText).slice(0, 20000);
-    let s = "";
-    for (const r of rows) { if (s.length > 20000) break; if (!hidden(r)) s += (s ? "\n" : "") + String(r.innerText).replace(/\n+$/, ""); }
-    return s.slice(0, 20000);
+    if (rows.length < 2 || rows.length > 5000 || texts(box, true) || !rows.every((r) => hidden(r) || rowish.test(getComputedStyle(r).display))) return String(pre.innerText);
+    const ls = [];
+    for (const r of rows) if (!hidden(r)) ls.push(String(r.innerText).replace(/\n+$/, ""));
+    return ls.join("\n");
+  }
+  // 不是 <pre> 的程式碼檢視器:white-space: pre 的區塊元素,裡面只有行內元素(上色用的 span、換行的 br,
+  // 註解裡的網址與強調:a、b、i、em、strong、code)。一般遞迴會把每個記號拆成一段、吃掉換行與縮排;
+  // 這裡整塊用 innerText 照行讀。不套 <pre> 的 2 萬:agent 靠讀回來的總字數決定要不要讀完,
+  // 截在 2 萬會把大腳本報小。不是程式碼檢視器回 null
+  const PHRASING = new Set(["span", "br", "a", "b", "i", "em", "strong", "code"]);
+  function codeView(el) {
+    let cs; try { cs = getComputedStyle(el); } catch (_) { return null; }
+    if (cs.whiteSpace !== "pre" || /^(inline|contents|none)/.test(cs.display)) return null;
+    let n = 0;
+    for (const d of el.getElementsByTagName("*")) { if (!PHRASING.has(d.tagName.toLowerCase())) return null; n++; }
+    if (!n) return null;
+    const s = String(el.innerText).replace(/\n+$/, "");
+    return s.includes("\n") ? s : null;
+  }
+  // 程式碼檢視器的行號欄:整塊只有兩個以上連續遞增的整數,而且跟附近(往上三層內)一個程式碼區塊並排——
+  // 上下重疊、左右分開。文章裡的編號段落是上下疊的,不會被當成行號欄
+  function gutter(el) {
+    if (!/^[\s\d]+$/.test(el.textContent || "")) return false;
+    const ns = T(el.innerText).split(" ");
+    if (ns.length < 2 || !ns.every((x, i) => /^\d+$/.test(x) && (!i || Number(x) === Number(ns[i - 1]) + 1))) return false;
+    const g = el.getBoundingClientRect();
+    if (!g.height) return false;
+    for (let p = el.parentElement, up = 0; p && up < 3; p = p.parentElement, up++) {
+      for (const d of p.getElementsByTagName("*")) {
+        if (el.contains(d) || (d.tagName.toLowerCase() !== "pre" && codeView(d) === null)) continue;
+        const c = d.getBoundingClientRect();
+        if (Math.min(g.bottom, c.bottom) - Math.max(g.top, c.top) > Math.min(g.height, c.height) / 2 && (g.right <= c.left + 1 || g.left >= c.right - 1)) return true;
+      }
+      if (p === root) break;
+    }
+    return false;
   }
   function block(el, depth) {
     if (total >= MAX || depth > 40) return;
@@ -174,14 +220,14 @@ function extract() {
       if (n.nodeType === 3) { const tx = T(n.nodeValue); if (tx) blk(el, tx + "\n\n"); continue; }
       if (n.nodeType !== 1) continue;
       const tg = n.tagName.toLowerCase();
-      if (SKIP.has(tg) || hidden(n)) continue;
+      if (SKIP.has(tg) || hidden(n) || gutter(n)) continue;
       if (tg === "header" && n !== root && depth > 0 && !n.querySelector("h1,h2")) continue;
       const hm = /^h([1-6])$/.exec(tg);
       if (hm) { const tx = T(n.innerText); if (tx) { heads.push({ id: "h" + (heads.length + 1), level: Number(hm[1]), text: tx.slice(0, 300), at: total, r: rectOf(n) }); blk(n, "#".repeat(Number(hm[1])) + " " + tx + "\n\n"); } continue; }
       if (tg === "p" || tg === "figcaption" || tg === "dd" || tg === "dt") { const tx = T(inline(n)); if (tx) blk(n, tx + "\n\n"); continue; }
       if (tg === "li") { const tx = T(inline(n)); if (tx) blk(n, "- " + tx + "\n"); continue; }
       if (tg === "ul" || tg === "ol") { block(n, depth + 1); push("\n"); continue; }
-      if (tg === "pre") { blk(n, "```\n" + preText(n) + "\n```\n\n"); continue; }
+      if (tg === "pre") { codeBlk(n, preText(n), 20000); continue; }
       if (tg === "blockquote") { const tx = T(inline(n)); if (tx) blk(n, "> " + tx + "\n\n"); continue; }
       if (tg === "table") {
         const rows = Array.from(n.querySelectorAll("tr")).slice(0, 200).map((r) => Array.from(r.children).slice(0, 20).map((c) => T(c.innerText).replace(/\|/g, "/").slice(0, 200)));
@@ -189,6 +235,8 @@ function extract() {
         continue;
       }
       if (tg === "img") { const alt = T(n.getAttribute("alt")); if (alt) blk(n, "[image: " + alt.slice(0, 200) + "]\n\n"); continue; }
+      const cv = codeView(n);
+      if (cv !== null) { codeBlk(n, cv, MAX); continue; }
       block(n, depth + 1);
     }
   }

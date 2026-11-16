@@ -775,30 +775,6 @@ def _tw_stock(sym):
 _PAPER_TW_CLOSE_PATH = 'state/paper_tw_close.json'
 
 
-def defer_paper_tw_close(keys):
-    """manager/flatten: close-all reached paper TW stock keys while the TWSE
-    session was shut, or TW futures keys while the broker took no order
-    (lib/tw_clock.close_hold). The reconciler closes them in its first round after the
-    open (they are dropped from the target while HALT holds, and their close
-    legs — the only legs a halted round sends — go out inside
-    guard.halt_close_pass). Pressing 啟動下單 before that cancels it: the
-    strategies' targets rule again. A machine restart in between stamps the
-    file `restart_at` (runtime command_listener._stop_after_restart), so the
-    cancel says the start came after a restart."""
-    keys = sorted(set(keys))
-    if not keys:
-        return
-    try:
-        have = load_json(_PAPER_TW_CLOSE_PATH).get('keys') or []
-    except (OSError, ValueError, AttributeError):
-        have = []
-    os.makedirs(os.path.dirname(_PAPER_TW_CLOSE_PATH), exist_ok=True)
-    tmp = _PAPER_TW_CLOSE_PATH + '.tmp'
-    with open(tmp, 'w') as f:
-        json.dump({'keys': sorted(set(have) | set(keys)), 'ts': int(time.time())}, f)
-    atomic_replace(tmp, _PAPER_TW_CLOSE_PATH)
-
-
 _PAPER_TW_CANCEL = 'close-all: 開盤前已按啟動下單,延後的台股平倉取消,改照策略目標下單'
 _PAPER_TW_CANCEL_RESTART = ('close-all: 機器重開後按了啟動下單(重開後要按它才會恢復下單),'
                             '延後的台股平倉一併取消,改照策略目標下單')
@@ -807,41 +783,56 @@ _FUT_TW_CANCEL_RESTART = ('close-all: 機器重開後按了啟動下單(重開�
                           '延後的台指期平倉一併取消,改照策略目標下單')
 
 
-def _paper_tw_deferred(diff_actual, halted):
-    """Keys flatten deferred (defer_paper_tw_close) that are still held. Not
-    halted any more = the user resumed: the deferral is dropped."""
+_TW_DEFER_DROPPED = 'close-all: 更新後取消等開盤的平倉，部位還在、沒有停損，要自己平'
+_TW_DEFER_DROPPED_PAPER = 'close-all: 更新後取消等開盤的平倉，模擬部位還在，要平請跟 agent 說'
+_TW_DEFER_DROPPED_UNREAD = 'close-all: 更新後取消等開盤的平倉，部位可能還在、沒有停損，要自己查'
+_TW_DEFER_DROPPED_UNREAD_PAPER = 'close-all: 更新後取消等開盤的平倉，模擬部位可能還在，要平請跟 agent 說'
+
+
+def _drop_tw_deferred(diff_actual, halted, book_known=True):
+    """A 0.1.53 close-all deferred these keys to the first round after the open
+    (state/paper_tw_close.json). Since Wei 11-15 nothing a user pressed moves at the open:
+    they are never sent. Every dropped key gets its own failure row (`symbol` = that key, so the
+    positions table can match it): under HALT order_error, P1 real / P2 paper — the user was told
+    it would close, so it is not dropped quietly; resumed, the old cancel row. A key a readable book
+    shows flat (size 0, or no row: the book drops flat rows) is not said; a round with no book to
+    read (book_known False: no baseline yet) says every key, as unread. The rows are written only once the file is gone, so they are not
+    repeated each round; a file that cannot be removed is retried next round, still never sent."""
     try:
         rec = load_json(_PAPER_TW_CLOSE_PATH)
         keys = set(rec.get('keys') or [])
     except FileNotFoundError:
-        return set()
+        return
     except (OSError, ValueError, AttributeError):
         rec, keys = {}, set()
+    try:
+        os.remove(_PAPER_TW_CLOSE_PATH)
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        logging.error(f"[reconcile] {_PAPER_TW_CLOSE_PATH} not removed ({e}) — its closes stay unsent")
+        return
+    unread = set() if book_known else {k for k in keys if k not in diff_actual}
     held = {k for k in keys if float((diff_actual.get(k) or {}).get('size') or 0) > 0}
-    if held and not halted:
-        restart = bool(rec.get('restart_at'))
-        stocks = {k for k in held if _tw_stock(split_key(k)[0])}
-        if stocks:
-            _record_order_error(','.join(sorted(stocks)), 'paper',
-                                _PAPER_TW_CANCEL_RESTART if restart else _PAPER_TW_CANCEL)
-        by_venue = {}
-        for k in held - stocks:  # TW futures (flatten._tw_futures_closed): said on their own venue
-            by_venue.setdefault((diff_actual.get(k) or {}).get('exchange') or book_venue(), []).append(k)
-        for venue, ks in sorted(by_venue.items()):
-            _record_order_error(','.join(sorted(ks)), venue,
-                                _FUT_TW_CANCEL_RESTART if restart else _FUT_TW_CANCEL)
-    if not halted or not held:
-        try:
-            os.remove(_PAPER_TW_CLOSE_PATH)
-        except OSError:
-            pass
-        return set()
-    if held != keys:
-        tmp = _PAPER_TW_CLOSE_PATH + '.tmp'
-        with open(tmp, 'w') as f:
-            json.dump({**rec, 'keys': sorted(held), 'ts': int(time.time())}, f)
-        atomic_replace(tmp, _PAPER_TW_CLOSE_PATH)
-    return held
+    if not held and not unread:
+        return
+    restart = bool(rec.get('restart_at'))
+    if halted:
+        logging.error(f"[reconcile] close-all deferred to the open dropped: {sorted(held | unread)}")
+    for k in sorted(held | unread):
+        stock = _tw_stock(split_key(k)[0])
+        venue = (diff_actual.get(k) or {}).get('exchange') or ('paper' if stock else book_venue())
+        paper = venue == 'paper'
+        if halted:
+            if k in unread:
+                text = _TW_DEFER_DROPPED_UNREAD_PAPER if paper else _TW_DEFER_DROPPED_UNREAD
+            else:
+                text = _TW_DEFER_DROPPED_PAPER if paper else _TW_DEFER_DROPPED
+        elif stock:
+            text = _PAPER_TW_CANCEL_RESTART if restart else _PAPER_TW_CANCEL
+        else:
+            text = _FUT_TW_CANCEL_RESTART if restart else _FUT_TW_CANCEL
+        _record_order_error(k, venue, text)
 
 
 def _paper_tw_closed_keys(target, diff_actual):
@@ -3241,15 +3232,30 @@ TARGET_STALE_WEEKEND_S = 2 * 86400
 _stale_targets_logged = set()
 
 
-_CRYPTO_FETCHERS = frozenset(('fetch_kline', 'fetch_kline_batch', 'fetch_bingx_kline'))
+_CRYPTO_FETCHERS = frozenset(('fetch_kline', 'fetch_kline_batch', 'fetch_bingx_kline', 'fetch_okx_kline'))
 _FETCHER_RE = re.compile(r'\bfetch_[a-z0-9_]+\b')
+
+
+def _named_fetchers(srcs):
+    """The fetch_* names the sources mention (comments aside, strings included), less the
+    functions they define themselves (the template's fetch_data, a helper) unless one reuses a
+    lib.data fetcher's name. SyntaxError / ValueError on a source that does not parse."""
+    import ast
+    from lib import data
+    lib_fetchers = set(data._PRICE_FETCHERS) | set(data._NON_PRICE_FETCHERS)
+    found, local = set(), set()
+    for src in srcs:
+        local |= {n.name for n in ast.walk(ast.parse(src))
+                  if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        found |= set(_FETCHER_RE.findall(_strip_py_comments(src)))
+    return found - (local - lib_fetchers)
 
 
 def _crypto_only(name):
     """Every lib.data fetcher the strategy names is a crypto kline (trades 7 days a week)."""
     try:
-        found = set(_FETCHER_RE.findall(_strip_py_comments(_strategy_source(name))))
-    except (OSError, ValueError):
+        found = _named_fetchers([_strategy_source(name)])
+    except (OSError, ValueError, SyntaxError):
         return False
     return bool(found) and found <= _CRYPTO_FETCHERS
 
@@ -4667,13 +4673,8 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
     # it's gated), and no close-on-removal against whatever the book already
     # holds. The gate lifts inside aggregate_portfolio() the moment the
     # strategy's signal changes; from that round on the symbol diffs normally.
-    # close-all deferred to the TW session (defer_paper_tw_close): judged on the
-    # unfiltered book and exempt from the gate / pending holds below — the
-    # user's explicit close outranks a wait for a new signal
-    deferred = _paper_tw_deferred(diff_actual_full, halted_at_start)
-    if deferred:
-        logging.info(f"[reconcile] close-all deferred to the TW session: {sorted(deferred)}")
-        target = {k: v for k, v in target.items() if k not in deferred}
+    # a 0.1.53 close-all deferred to the TW open: dropped, never sent (judged on the unfiltered book)
+    _drop_tw_deferred(diff_actual_full, halted_at_start, book_known=not (own_only and ledger is None))
     gated_symbols = {k for k, v in target.items() if v.get('gated')}
     full_target = target  # snapshot keeps gated rows (flagged 'gated': True)
     absent = [k for k, v in target.items() if v.get('diff_absent')]
@@ -4696,7 +4697,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
         # a symbol whose strategy's state was unreadable when the baseline was
         # written: neither bought nor sold until resolve_pending decides it
         logging.info(f"[reconcile] waiting on an unreadable strategy's state: {sorted(pending_keys)}")
-        hold = set(pending_keys) - deferred
+        hold = set(pending_keys)
         target = {k: v for k, v in target.items() if k not in hold}
         diff_actual = {k: v for k, v in diff_actual.items() if k not in hold}
     closed_keys = _paper_tw_closed_keys(target, diff_actual)
@@ -4988,8 +4989,7 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
             # official lib/order_* module. Deliberately silent on Telegram — a
             # denial every poll is the noise a pause exists to stop.
             halted_leg = halted_at_start or guard.halted()
-            close_all_leg = halted_leg and reduce_only and symbol in deferred
-            if halted_leg and not close_all_leg:
+            if halted_leg:
                 guard.audit('order_denied_halt', symbol=symbol, signed_diff=sub_diff,
                             exchange=order.get('exchange'), source='reconcile',
                             intent='entry' if is_entry else 'reduce')
@@ -5046,15 +5046,9 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                     break
                 marked = ok is not False
             try:
-                if close_all_leg:
-                    with guard.halt_close_pass(symbol, 'close_all_deferred'):
-                        placed = _call_place(symbol, sub_diff, asset_spec, reduce_only,
-                                             exchange=order.get('exchange'),
-                                             contributors=order.get('contributors'))
-                else:
-                    placed = _call_place(symbol, sub_diff, asset_spec, reduce_only,
-                                         exchange=order.get('exchange'),
-                                         contributors=order.get('contributors'))
+                placed = _call_place(symbol, sub_diff, asset_spec, reduce_only,
+                                     exchange=order.get('exchange'),
+                                     contributors=order.get('contributors'))
             except Exception as e:
                 names = _strategy_names(order.get('contributors'))
                 if _outcome_unknown(e):
@@ -5167,6 +5161,10 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                             # crypto: executed_qty is BASE-currency qty — convert to
                             # account-currency notional to match sub_diff's unit
                             filled_signed = sign * abs(float(executed_qty)) * float(leg['fill_price'])
+                        elif not float(executed_qty):
+                            # sent, nothing filled, no price: the request did not move, and a
+                            # replayed leg without signed_qty adds signed_diff to the cost
+                            filled_signed = 0.0
                         else:
                             filled_signed = None
                         if filled_signed is not None:
@@ -5198,6 +5196,12 @@ def reconcile(get_positions_fn, place_order_fn, threshold=RECONCILE_THRESHOLD, s
                 # the log before it, and a flip's entry leg after it
                 _flush_legs()
                 apply_ledger_writeoff(symbol, writeoff)
+            if (isinstance(placed, dict) and placed.get('executed_qty') is not None
+                    and not float(placed['executed_qty'])):
+                # sent, nothing filled yet: the row stays (it is the trade history's row A,
+                # runtime/portfolio_reporter.pair_unconfirmed_orders) and so does the re-run
+                # that claims a late fill, but "Bought TXF 0 lots" is not news
+                continue
 
             # is_lot_based rows (capital/TW futures) are sized in LOTS, not
             # account-currency notional — the $-formatted default badly

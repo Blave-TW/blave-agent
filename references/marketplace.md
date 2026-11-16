@@ -363,9 +363,10 @@ Response: `{"status": "ok"}`
 
 **Flow when user wants to share a private strategy with specific users:**
 1. If the strategy isn't uploaded yet → `POST /openclaw/marketplace/strategies/private` first
-2. `POST /openclaw/marketplace/strategies/{id}/share` with the target user IDs
-3. Confirm back to the user which strategy ID was shared with which UIDs
-4. Tell the user to inform the recipient: **請對方跟他的 Blave Agent 說「幫我看一下有沒有人分享策略給我」**，agent 會自動去 shared-with-me 撈取並載入。
+2. Before sharing, check whether the recipient will need Blave data access to run it: for each `.py` in `strategies/<name>/`, `python3 -c "import sys; from lib.quality_check import blave_data_need; print(blave_data_need(open(sys.argv[1], encoding='utf-8').read()))" <file>`. Any `True` → tell the sharer the recipient needs Blave data access, naming what it reads (e.g. whale hunter); otherwise any `None` → say it may need it; all `False` → it runs on public data. The share still goes ahead — this is a heads-up, not a gate.
+3. `POST /openclaw/marketplace/strategies/{id}/share` with the target user IDs
+4. Confirm back to the user which strategy ID was shared with which UIDs
+5. Tell the user to inform the recipient: **請對方跟他的 Blave Agent 說「幫我看一下有沒有人分享策略給我」**，agent 會自動去 shared-with-me 撈取並載入。
 
 Share with specific user IDs:
 ```

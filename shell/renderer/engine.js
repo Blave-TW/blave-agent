@@ -58,6 +58,12 @@ function engView(s, now, tr, held) {
     // 上一次 app 當掉時留下的背景編譯還在跑、查不到是不是我們那支:enginesetup 最多等 15 秒才往下裝
     // 上限是秒級,跟「{s} 沒有收到資料」一樣用經過時間的寫法(limit() 是分鐘)
     slot = { kind: "slow", text: t("eng.waitPyc", { limit: dur(cur.limitMs || 0) }) };
+  } else if (cur.retry && cur.retry.n > 0) {
+    // 網路類失敗、enginesetup 正在自動重跑那一條 pip(NET_RETRY_MS):不出失敗卡,這一格講第幾次
+    slot = { kind: "stall", text: t("eng.netRetry", { n: cur.retry.n }) };
+  } else if (cur.name && dl.resuming && file && !dl.installing) {
+    // 同一條 pip 裡斷線、pip 正在從斷點接續(enginesetup pipErrLine;pip 25.1+ 的 --resume-retries):位元組再往上走就收掉
+    slot = { kind: "stall", text: t("eng.resume") };
   } else if (cur.name) {
     const quiet = now - (dl.lastByteAt || now);
     if (file && !dl.installing && quiet >= ENG_STALL_MS) slot = { kind: "stall", text: t("eng.stall", { s: dur(quiet), limit: limit(cur.idleMs || cur.limitMs) }) };

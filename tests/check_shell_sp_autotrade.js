@@ -88,8 +88,14 @@ if (!process.versions.electron) {
   ok("② 雲朵 tooltip 時機(canon 頂列互動 ⑥):hover 停 --motion-tooltip-delay 才出、鍵盤 focus 立刻出、觸控不出;Esc 走 data-tip-off",
     /\.rp-ic:hover:not\(\[data-tip-off\]\) \+ \.tip \{ visibility: visible; opacity: 1; transition-delay: var\(--motion-tooltip-delay\); \}/.test(css)
     && /\.rp-ic:focus-visible:not\(\[data-tip-off\]\) \+ \.tip \{ visibility: visible; opacity: 1; transition-delay: 0s; \}/.test(css) && /@media \(hover: none\) \{ \.rp-icw \.tip \{ display: none; \} \}/.test(css));
-  const SP_EV = ["sp_auto_open", "sp_amt_saved", "sp_cx_opened", "sp_start_opened", "sp_cloud_icon"];
-  ok("② 埋點五個 sp_* 都有送出點、名字 ≤16", SP_EV.every((n) => new RegExp('trackFeature\\([^;\\n]*"' + n + '"').test(tr + po + ho) && n.length <= 16), J(SP_EV.filter((n) => !new RegExp('trackFeature\\([^;\\n]*"' + n + '"').test(tr + po + ho))));
+  const hp = fnOf(ho, "hoPaint");
+  ok("② 頁首搬家鈕兩個方向都是 icon 鈕:只放 icon、aria-label 只放 ho.up.btn／ho.down.aria、拿掉原生 title、aria-describedby 接同字 tooltip;不再有「拉回…」文字鈕",
+    /const label = t\(cloud \? "ho\.down\.aria" : "ho\.up\.btn"\);/.test(hp) && /b\.className = "rp-ic"; b\.removeAttribute\("title"\); b\.setAttribute\("aria-label", label\); b\.setAttribute\("aria-describedby", "rp-ho-tip"\); b\.appendChild\(hoIcon\(dir\)\);/.test(hp)
+    && /tip\.textContent = label;/.test(hp) && !/btn-out|\.title =|ho\.down\.btn/.test(hp) && !/"ho\.down\.btn"/.test(fs.readFileSync(path.join(R, "strings.js"), "utf8")));
+  ok("② 拉回那顆記 sp_pull_icon、送上雲端那顆照記 sp_cloud_icon;sp_pull_icon 在 telemetry.js 白名單最後",
+    /if \(b\.dataset\.dir === "up"\) trackFeature\("sp_cloud_icon"\); else trackFeature\("sp_pull_icon"\);/.test(hp) && /"sp_pull_icon"\] \},/.test(fs.readFileSync(path.join(SHELL, "telemetry.js"), "utf8")));
+  const SP_EV = ["sp_auto_open", "sp_amt_saved", "sp_cx_opened", "sp_start_opened", "sp_cloud_icon", "sp_pull_icon"];
+  ok("② 埋點六個 sp_* 都有送出點、名字 ≤16", SP_EV.every((n) => new RegExp('trackFeature\\([^;\\n]*"' + n + '"').test(tr + po + ho) && n.length <= 16), J(SP_EV.filter((n) => !new RegExp('trackFeature\\([^;\\n]*"' + n + '"').test(tr + po + ho))));
 
   const bin = GATE.bin(SHELL, "③");
   if (!bin) { console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0); }
@@ -163,7 +169,7 @@ app.whenReady().then(async () => {
   const reset = () => run(`window.__calls.length = 0; window.__feats.length = 0; window.__spy.length = 0; window.__send = null; trGoClick = window.__realGo;
     if (!$("del-scrim").hidden) delClose(false); if (!$("cx-scrim").hidden) cxModalClose(false); for (const k of ["local", "cloud"]) { const S = TR_BAGS[k]; S.spCx = null; S.spGo = null; S.spErr = null; S.edits = {}; S.raw = {}; S.bad = {}; S.picked = null; S.ct.edits = {}; S.pending = null; S.save = null; S.saveErr = null; }`);
   const st = async (name, r, o) => { await reset(); await setRep(r, o); await sel(name); await poll(); return head(); };
-  const tx = {}; for (const k of ["sp.btn", "po.add", "po.addGo", "sp.cx", "sp.noAcct", "sp.connecting", "sp.unsaved", "tr.routeSave", "tr.save", "tr.start", "tr.acct.btn", "cap.pending", "cap.continue", "tr.mkt.noAuto", "tr.cf.title", "tr.cf.titleFire", "tr.mode.paper", "tr.mode.real", "ho.up.btn"]) tx[k] = await T(k);
+  const tx = {}; for (const k of ["sp.btn", "po.add", "po.addGo", "sp.cx", "sp.noAcct", "sp.connecting", "sp.unsaved", "tr.routeSave", "tr.save", "tr.start", "tr.acct.btn", "cap.pending", "cap.continue", "tr.mkt.noAuto", "tr.cf.title", "tr.cf.titleFire", "tr.mode.paper", "tr.mode.real", "ho.up.btn", "ho.down.aria"]) tx[k] = await T(k);
 
   // ── §4 每一態(本機視角)
   await run(`envSwitch("local")`);
@@ -442,10 +448,27 @@ app.whenReady().then(async () => {
   ok("③ 雲朵 icon 鈕 32×32、aria-label 與 tooltip 同字「送上雲端」、靜止時 tooltip 藏著", geo.icW === 32 && geo.icH === 32 && geo.aria === tx["ho.up.btn"] && geo.tip === tx["ho.up.btn"] && geo.tipVis === "hidden", J(geo));
   await run(`const o = $("rp-ho"); o.dataset.dir = "down"; o.className = "btn-out has-ic"; o.title = "拉回這台電腦:btc"; o.removeAttribute("aria-describedby"); hoPaint()`);
   const ho2 = await js(`(() => { const b = $("rp-ho"), d = b.getAttribute("aria-describedby"); return { d, has: !!(d && document.getElementById(d)), tip: !!document.querySelector("#rp-act .rp-icw .tip"), cls: b.className, title: b.title, dir: b.dataset.dir }; })()`);
-  ok("③ 換回這台電腦(上一顆是雲端的「拉回」文字鈕):重建成 icon 鈕,aria-describedby 指得到 tooltip、沒有殘留的 title", ho2.has && ho2.tip && ho2.cls === "rp-ic" && ho2.title === "" && ho2.dir === "up", J(ho2));
+  ok("③ 換回這台電腦(上一顆是雲端那個方向、還留著 title 的節點):重建成送上雲端 icon 鈕,aria-describedby 指得到 tooltip、沒有殘留的 title", ho2.has && ho2.tip && ho2.cls === "rp-ic" && ho2.title === "" && ho2.dir === "up", J(ho2));
   await run(`$("rp-ho").click()`); await wait(100);
   ok("③ 按雲朵 icon 鈕:記 sp_cloud_icon", (await js("window.__feats")).includes("sp_cloud_icon"));
   await run(`if (!$("del-scrim").hidden) delClose(false)`);
+  // 雲端視角那顆「拉回這台電腦」:同一種 icon 鈕(0.1.54 起不再是文字鈕)。拉回要雲端看得到現況而且在運行(hoCloudLive:
+  // envCloudKind 讀 cloud.code === "OK" 與 machine.state),cloudSt 只帶 kind,這裡補上主機狀態的實際形狀。
+  // 上一段按雲朵時雲端還沒在運行,hoAsk 照設計切到雲端視角、記下 HO.pending(雲端通了會留在 #cv-empty 出「準備好了」卡、#rp 收著)。
+  // 這一段是「人在雲端看著那一支」:先收掉那個意圖,再走真的視角切換與 envPaint,讓中欄照雲端現況重算,不手改 ENV.cur
+  await reset();
+  await run(`TR_BAGS.cloud.st = ${cloudSt({ btc: 500 }, null)}; Object.assign(TR_BAGS.cloud.st.cloud, { code: "OK", machine: { state: "running" } }); const C = TR_BAGS.cloud; C.list = [{ name: "btc", displayName: "BTC", hasBacktest: true, symbol: "BTCUSDT", srcMarket: "crypto", universe: [] }]; C.listLoaded = true;
+    RPC.name = "btc"; RPC.data = { name: "btc", stats: { symbol: "BTCUSDT" }, code: "x" }; if (ENV.cur !== "cloud") envSwitch("cloud"); HO.pending = null; envPaint(); hoPaint()`);
+  await wait(100);
+  const pull = await js(`(() => { const b = $("rp-ho"); if (!b) return null; const r = b.getBoundingClientRect(), d = b.getAttribute("aria-describedby"), tip = d && document.getElementById(d);
+    return { cls: b.className, dir: b.dataset.dir, w: r.width, h: r.height, aria: b.getAttribute("aria-label"), hasTitle: b.hasAttribute("title"), text: b.textContent, kids: [...b.children].map((x) => x.tagName.toLowerCase()).join(),
+      tip: tip ? tip.textContent : null, tipRole: tip ? tip.getAttribute("role") : null, tipVis: tip ? getComputedStyle(tip).visibility : null, wrap: !!b.parentElement && b.parentElement.className === "rp-icw", env: ENV.cur, rpHidden: $("rp").hidden, gate: !$("cv-empty").hidden }; })()`);
+  ok("③ 雲端視角「拉回這台電腦」:只有 icon(沒有字)、32×32、aria-label 只放「拉回這台電腦」、沒有 title、aria-describedby 接同字 tooltip、靜止時藏著",
+    !!pull && pull.cls === "rp-ic" && pull.dir === "down" && pull.w === 32 && pull.h === 32 && pull.text === "" && pull.kids === "svg" && pull.aria === tx["ho.down.aria"] && !pull.hasTitle
+    && pull.tip === tx["ho.down.aria"] && pull.tipRole === "tooltip" && pull.tipVis === "hidden" && pull.wrap, J(pull));
+  await run(`const b = $("rp-ho"); if (b) b.click()`); await wait(100);   // 沒畫出來時上一條已經紅,不在頁面裡丟錯拖到逾時
+  { const f = await js("window.__feats"); ok("③ 按拉回 icon 鈕:記 sp_pull_icon、不記 sp_cloud_icon", f.includes("sp_pull_icon") && !f.includes("sp_cloud_icon"), J(f)); }
+  await run(`if (!$("del-scrim").hidden) delClose(false); TR_BAGS.cloud.st = null; RPC.name = null; RPC.data = null; envSwitch("local"); hoPaint()`);
 
   const cmds = await js(`window.__allCmds || []`);
   ok("③ 整支測試沒有送出任何啟動指令(resume／resume_wait／restart_reconciler)", !cmds.some((c) => /^resume|restart_reconciler/.test(c)), J(cmds));

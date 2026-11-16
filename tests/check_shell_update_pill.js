@@ -386,14 +386,16 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
   { const css = fs.readFileSync(path.join(SHELL, "renderer", "app.css"), "utf8");
     const rule = (sel) => { const re = new RegExp("^" + sel.replace(/[.*+?^${}()|[\]\\#:]/g, "\\$&") + " \\{([^}]*)\\}", "m"); const m = re.exec(css); return m ? m[1] : null; };
     const px = (v) => Number((/(-?\d+)px/.exec(v) || [])[1]);
-    const pill = rule(".up-pill"), pb = rule(".up-pill::before"), pt = rule(".up-pill-t"), rail = rule(".up-rail"), rb = rule(".up-rail::before");
-    const inset = (r) => (/inset: ([^;]+);/.exec(r) || [])[1].split(/\s+/).map(px);
-    const pi = inset(pb), ri = inset(rb);
-    t("M1 膠囊不裁切(熱區要伸出去),裁切在 .up-pill-t 並帶 min-width:0", pill && !/overflow/.test(pill) && /min-width: 0;/.test(pt) && /overflow: hidden;/.test(pt));
-    // ::before 錨在 padding box:1px 透明框不算,所以是 視覺 − 2 + 2×inset
-    t("M1 膠囊熱區:視覺高 32 − 框 2 + ::before 上下各 " + -pi[0] + " = " + (30 - 2 * pi[0]) + " ≥ 44", /height: 32px;/.test(pill) && /border: 1px solid transparent;/.test(pill) && 30 - 2 * pi[0] >= 44);
-    t("M2 細軌圓鈕:28 正圓、flex:none(不被 .side-rail 擠扁)、max-width:none(不被 .up-pill 的 max-width:100% 卡成 27)、不裁切;熱區 28 − 框 2 + 2×" + -ri[0] + " = " + (26 - 2 * ri[0]) + " ≥ 44", /flex: none;/.test(rail) && /max-width: none;/.test(rail) && /max-width: 100%;/.test(pill) && /width: 28px; height: 28px;/.test(rail) && !/overflow/.test(rail) && 26 - 2 * ri[0] >= 44 && ri.length === 1);
-    t("S3 內距加框 1 = 左 12 右 14(圖示欄對齊〔設定〕);拿掉圖示時左右一致", /^\.up-pill\.no-ic \{ padding-left: 13px; \}/m.test(css) && /padding: 0 13px 0 11px/.test(pill));
+    // 0.1.54 改圓鈕(spec sidebar-conversion §3.3、§4):列裡與細軌同一個 .up-pill,28 正圓、不寫字;1px 透明框留給停用態,::before 錨在 padding box,所以熱區 = 28 − 2 + 2×inset
+    const pill = rule(".up-pill"), pb = rule(".up-pill::before"), html = fs.readFileSync(path.join(SHELL, "renderer", "index.html"), "utf8");
+    const inset = (r) => ((/inset: ([^;]+);/.exec(r || "") || [])[1] || "").split(/\s+/).map(px);
+    const pi = inset(pb);
+    t("M1 圓鈕:28 正圓(radius-pill)、flex:none、不裁切(熱區要伸出去);熱區 28 − 框 2 + 2×" + -pi[0] + " = " + (26 - 2 * pi[0]) + " ≥ 44", !!pill && /width: 28px; height: 28px;/.test(pill) && /flex: none;/.test(pill) && /border-radius: var\(--radius-pill\);/.test(pill)
+      && /border: 1px solid transparent;/.test(pill) && !/overflow/.test(pill) && pi.length === 1 && 26 - 2 * pi[0] >= 44);
+    t("M2 圖示 14、線寬 2;橘底墨色圖示;細軌底部用 .rail-bot 釘底(更新與齒輪間距 16),圓鈕本身不帶 margin-top:auto", /^\.up-pill \.ic \{ width: 14px; height: 14px; stroke-width: 2; \}/m.test(css) && /background: var\(--color-primary\); color: var\(--ink-on-primary\);/.test(pill)
+      && /^\.rail-bot \{ margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: var\(--space-16\); \}/m.test(css) && !/margin-top/.test(pill) && rule(".up-rail") === null);
+    t("S3 不寫字:列裡 #up-pill 與細軌 #up-rail 都只有一個圖示,沒有字的節點;長膠囊的 .up-pill-wrap／.up-pill-t／.no-ic 都拿掉了", /<button class="up-pill" id="up-pill" type="button" hidden><svg class="ic"[^>]*>(?:<path [^>]*\/>)+<\/svg><\/button>/.test(html)
+      && /<button class="up-pill up-rail" id="up-rail" type="button" hidden><svg class="ic"[^>]*>(?:<path [^>]*\/>)+<\/svg><\/button>/.test(html) && !/up-pill-wrap|up-pill-t\b|no-ic/.test(css + html));
     t("S4 停用:底、字、框照 .btn-fill:disabled(surface-muted／ink-3／greyMedium)", /\.up-pill:disabled, \.up-pill\[aria-disabled="true"\] \{ background: var\(--surface-muted\); border-color: var\(--color-greyMedium\); color: var\(--ink-3\);/.test(css)
       && /\.btn-fill:disabled[^{]*\{ background: var\(--surface-muted\); color: var\(--ink-3\); border: 1px solid var\(--color-greyMedium\);/.test(css));
     t("S1 條列最後一條不留底距、整組跟後面的草稿句隔 12", /\.del-body \.up-notes li:last-child \{ margin-bottom: 0; \}/.test(css) && /\.del-body \.up-notes-slot \{ margin-bottom: var\(--space-12\); \}/.test(css));
@@ -405,9 +407,9 @@ const BODY_0134 = "- 新增「成交測試」分頁，在樣本外驗證和程�
       busyTell: () => focus.push("told"), busySlot: () => ({}), trackFeature: () => {}, upRestartAsk: () => {} };
     const click = new Function("env", "with (env) { " + cut(app, "function upPillClick(") + "\n return upPillClick; }")(env);
     click({ id: "up-rail" });
-    t("細軌回合中按圓鈕:展開側欄、講原因、焦點移到膠囊(不掉到 BODY)", toggles.join() === "side:false" && focus.join() === "told,up-pill");
+    t("細軌回合中按圓鈕:展開側欄、講原因、焦點移到列裡的圓鈕(不掉到 BODY)", toggles.join() === "side:false" && focus.join() === "told,up-pill");
     focus.length = 0; toggles.length = 0; click({ id: "up-pill" });
-    t("…側欄本來就展開(按的是膠囊):不動側欄、不搬焦點", toggles.length === 0 && focus.join() === "told"); }
+    t("…側欄本來就展開(按的是列裡那顆):不動側欄、不搬焦點", toggles.length === 0 && focus.join() === "told"); }
   // ── 稽核 P3-2:更新說明的第二次抓取不被 ready↔blocked 用掉(實際跑 onState + upNotesKick)──
   { const ON = cut(src, "const onState = (st) =>").replace(/^const onState = /, ""), KICK = cut(src, "function upNotesKick("), GET = cut(src, "async function upNotesGet(");
     let fetches = 0, answer = null;

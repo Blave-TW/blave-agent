@@ -15,7 +15,8 @@ const btn = () => ({ textContent: "", isConnected: true, dataset: {}, h: null, a
 const NOT_SIGNIN = {   // 檔 → 所在函式:登出之後切到這一類、查不到狀態 / 舊 api、看方案、綁卡 / 儲值、看完整方案
   // mvBlock:設定 › 隱私「前往登入」切到同一個設定裡的帳號與方案(mockup-desktop-mobile-view-toggle A 版 mv.leadOut;登入失效同一句);phBlock:「允許手機對話」沒登入時同一句
   // dataGateAction:資料卡與事件列共用的出口表,planOpen 那一列是〔看方案〕(登入那兩列走 planSignIn)
-  "app.js": ["acctSignOut", "setCat", "dataCardState", "dataGateAction", "planOpen", "mvBlock", "phBlock"],
+  // sideCvClick:左下角帳號那一格的「升級」「已停機」開帳號與方案(spec sidebar-conversion §3.1);「登入」那一種走 planSignIn
+  "app.js": ["acctSignOut", "setCat", "dataCardState", "dataGateAction", "planOpen", "mvBlock", "phBlock", "sideCvClick"],
   "library.js": ["libGateBtn", "libBuyBox", "libPaintList", "libBindBuyBox", "libPlanBox"],   // libPaintList:方案制試用閘門旁的「看方案」(paywall-redesign-2026-10-21);
   // libBindBuyBox:框 3「開通方案」(spec library-buy-with-bind §3 決定 2);libPlanBox:框 ③ 讀不到自動儲值的數字時退回方案頁(0.1.50 一步開通)
   "welcome.js": ["wdNote"],

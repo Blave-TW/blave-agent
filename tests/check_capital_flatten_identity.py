@@ -231,7 +231,9 @@ check(("capital", "TM2610") in closes, "N-1: pressed again 22 min after the send
 # N-4: sent out of session (14:00, or a weekend), it may sit queued to the next open — held past
 # that open plus settle, as the reconciler's queued_until, not just 16 min; the row names that time
 OPEN = _t0.time() + 3600
-_twc.queued_until = lambda now=None: OPEN
+# (only the send's own time reads out of session: the press right at a session's end, which 群益 took —
+# since Wei 11-15 a close-all while shut is sent anyway, and 群益 refusing it is a failure)
+_twc.queued_until = lambda now=None: OPEN if now is not None else None
 run_flatten(True, close={"TM2610": "sent"})
 hold = (json.load(open(flatten.LAST_PATH)).get("capital_hold_until") or {}).get("TMF")
 check(hold and abs(hold - (OPEN + flatten.CAPITAL_SETTLE_S)) < 2,
@@ -244,7 +246,8 @@ run_flatten(True, keep_last=True)
 q = queued_rows()
 check(("capital", "TM2610") not in closes and q and abs(q[0][3].get("until", 0) - (OPEN + flatten.CAPITAL_SETTLE_S)) < 2,
       f"N-4: the held row's until is the open, not 16 min after the send ({q[:1]})")
-_twc.queued_until = _real_qu
+# back to "in session" for the cases below
+_twc.queued_until = lambda now=None: None
 os.remove(flatten.LAST_PATH)
 
 res = run_flatten(False)
@@ -353,32 +356,22 @@ check("TMF" not in zeroed and any("未確認成交" in e[2] for e in errors),
 run_flatten(True, BOOK)  # control for the four above
 check("TMF" in zeroed and not errors, "self_ledger: 群益 close filled in full → TMF zeroed")
 
-# after the close (lib/tw_clock.close_hold): 群益 is not sent, the close is deferred to the reconciler's
-# first round after the open and said; the crypto leg still closes
+# after the close (unmeasured clock) and in the pre-open (measured): 群益 is sent anyway (Wei 11-15 — no time
+# gate on the user's close; 群益's refusal would be a failure row), nothing is scheduled for the open
 _real_ptc = _lp0._PAPER_TW_CLOSE_PATH
 _lp0._PAPER_TW_CLOSE_PATH = os.path.join(BASE, "paper_tw_close.json")
-_twc.close_hold = lambda now=None: {"why": "session", "until": _t0.time() + 3600}
-run_flatten(True, BOOK)
-_twc.close_hold = lambda now=None: None
-deferred = json.load(open(_lp0._PAPER_TW_CLOSE_PATH)).get("keys") if os.path.exists(_lp0._PAPER_TW_CLOSE_PATH) else None
-check(("capital", "TM2610") not in closes and ("binance", "BTCUSDT") in closes and "TMF" not in zeroed
-      and deferred == ["TMF"]
-      # no clock sample here: the row says the clock is unmeasured, not 休市 (the measured row: check_tw_entry_gate §11)
-      and [e[3] for e in errors if e[0] == "TMF"] == [{"kind": "market_closed_deferred", "clock": "unmeasured"}]
-      and any("台指期" in e[2] and "開盤後" in e[2] and "休市" not in e[2] for e in errors),
-      f"after the close: 群益 not sent, TMF deferred to the open and said, its book kept ({errors}, {deferred})")
-os.remove(_lp0._PAPER_TW_CLOSE_PATH)
-# pressed in the pre-open (14:55, clock measured): the broker would take it, but queued under HALT
-# and unconfirmed — deferred to the open the same way
+_lp0._SEED_LOCK_PATH = os.path.join(BASE, "ledger_seed.lock")
 _real_skew = _twc.skew
-_twc.skew = lambda now=None: 0.0
-_twc.queued_until = lambda now=None: _t0.time() + 300
-run_flatten(True, BOOK)
-_twc.queued_until = lambda now=None: None
-deferred = json.load(open(_lp0._PAPER_TW_CLOSE_PATH)).get("keys") if os.path.exists(_lp0._PAPER_TW_CLOSE_PATH) else None
-check(("capital", "TM2610") not in closes and deferred == ["TMF"] and "TMF" not in zeroed,
-      f"pre-open press (measured clock): 群益 not sent, deferred to the open ({errors}, {deferred})")
-os.remove(_lp0._PAPER_TW_CLOSE_PATH)
+for label, skew, until in (("after the close (unmeasured clock)", None, 3600), ("pre-open press (measured clock)", 0.0, 300)):
+    _twc.skew = (lambda now=None: None) if skew is None else (lambda now=None: 0.0)
+    _twc.queued_until = lambda now=None, u=until: _t0.time() + u
+    flatten._RUN["why"].clear()   # one process runs one flatten: earlier cases' reasons are not this run's
+    flatten._RUN["unconfirmed"].clear()
+    run_flatten(True, BOOK)
+    _twc.queued_until = lambda now=None: None
+    check(("capital", "TM2610") in closes and ("binance", "BTCUSDT") in closes and "TMF" in zeroed
+          and not os.path.exists(_lp0._PAPER_TW_CLOSE_PATH) and not [e for e in errors if e[0] == "TMF"],
+          f"{label}: 群益 sent and closed, nothing scheduled ({errors})")
 run_flatten(True, BOOK)
 check(("capital", "TM2610") in closes and "TMF" in zeroed, "in session (measured clock): closed as before")
 _twc.skew = _real_skew

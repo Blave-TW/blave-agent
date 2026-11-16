@@ -83,6 +83,64 @@ rows = [json.loads(x) for x in open("manager/orders.jsonl") if x.strip()]
 check(not rows or "resolved_symbol" not in rows[-1]["legs"][0],
       f"an unconfirmed capital order (0 filled) does not carry its alias as the month contract: {rows[-1:]}")
 
+# Sent but nothing filled yet (群益/統一 park it, work order live-order-batch0 B): no
+# "Bought TXF 0 lots", but the row stays — it is the trade history's row A — and the order
+# stays in reconcile()'s return so the 5-second re-run still claims a late fill.
+FUT = {"type": "futures_contracts"}
+open("manager/orders.jsonl", "w").close()
+del sent[:]
+target = {"TXF": {"side": "long", "size": 1, "exchange": "capital", "asset_spec": FUT, "contributors": []}}
+portfolio.aggregate_portfolio = lambda: target
+ret = portfolio.reconcile(get_positions_fn=lambda: {"TXF": {"side": "long", "size": 0}},
+                          place_order_fn=lambda symbol, signed_diff, spec, **kw: {
+                              "status": "sent", "executed_qty": 0, "sent_qty": 1, "sent_symbol": "TX2612",
+                              "avg_price": 0, "exchange": "capital"},
+                          threshold=10, send_telegram_fn=lambda text: sent.append(text))
+rows = [json.loads(x) for x in open("manager/orders.jsonl") if x.strip()]
+check(not [t for t in sent if "|" in t], f"0 filled: no buy notice: {sent}")
+check(len(rows) == 1 and rows[0]["legs"][0].get("sent_qty") == 1 and rows[0]["legs"][0].get("executed_qty") == 0,
+      f"0 filled: orders.jsonl still has the send with sent_qty: {rows}")
+check(len(ret) == 1, f"0 filled: reconcile() still returns it (the late-fill re-run): {ret}")
+os.environ["BLAVE_AGENT_BASE"] = os.getcwd()
+os.environ["BLAVE_AGENT_WORKSPACE"] = os.getcwd()
+sys.path.insert(0, os.path.join(ROOT, "runtime"))
+import portfolio_reporter  # noqa: E402
+paired = portfolio_reporter.pair_unconfirmed_orders(rows, lambda names: [])
+check(paired and paired[-1].get("fill_state") == "unconfirmed",
+      f"0 filled: the row pairs as 送出未確認: {paired}")
+
+got = run(0, 57.67, {"executed_qty": 0, "avg_price": 0})
+check(got == [], f"0 filled reduce-only close: no Closed notice: {got}")
+open("manager/orders.jsonl", "w").close()
+run(100, 0, {"executed_qty": 0.001, "avg_price": 82300.0})  # a held position the zero row lands on
+got = run(200, 0, {"executed_qty": 0, "avg_price": 0})
+check(got == [], f"0 filled crypto entry: no notice for the requested $200: {got}")
+rows = [json.loads(x) for x in open("manager/orders.jsonl") if x.strip()]
+leg = rows[-1]["legs"][0] if rows else {}
+check(len(rows) == 2 and leg.get("signed_diff") == 0 and leg.get("executed_qty") == 0,
+      f"0 filled crypto entry: the row stays, its leg records signed_diff 0, not the $200 asked: {rows[-1:]}")
+book, _ = portfolio._ledger_walk()
+check(abs(book.get("BTCUSDT", {}).get("cost", 0) - 82.3) < 0.01,
+      f"0 filled crypto entry: the book replayed from orders.jsonl does not grow by the request: {book}")
+# the fill that shows up later comes in through the park-and-claim path, once per park id
+park = {"venue": "binance", "parked_at": 0, "signed_diff": 200, "sign": 1, "contributors": []}
+portfolio.book_unconfirmed("BTCUSDT", park, 0.002, 82300.0, source="venue", pid="P-late")
+portfolio.book_unconfirmed("BTCUSDT", park, 0.002, 82300.0, source="venue", pid="P-late")
+book, _ = portfolio._ledger_walk()
+claimed = [r for r in (json.loads(x) for x in open("manager/orders.jsonl") if x.strip())
+           if r.get("unconfirmed_park_id") == "P-late"]
+check(len(claimed) == 1 and abs(book.get("BTCUSDT", {}).get("cost", 0) - 246.9) < 0.01,
+      f"a later fill is claimed once and the book holds only it: {len(claimed)} rows, {book}")
+fills = iter([{"executed_qty": 0.0005, "avg_price": 82300.0}, {"executed_qty": 0, "avg_price": 0}])
+del sent[:]
+target = {"BTCUSDT": {"side": "short", "size": 60, "exchange": None, "asset_spec": None, "contributors": []}}
+portfolio.aggregate_portfolio = lambda: target
+portfolio.reconcile(get_positions_fn=lambda: {"BTCUSDT": {"side": "long", "size": 60}},
+                    place_order_fn=lambda symbol, signed_diff, spec, **kw: next(fills),
+                    threshold=10, send_telegram_fn=lambda text: sent.append(text))
+got = [t.split("|")[0] for t in sent if "|" in t]
+check(got == ["order_close_long"], f"flip, close filled and entry 0: only the close is announced: {sent}")
+
 # the default templates: a paper TW stock row is TWD, not "$" (paper e2e 0127b1 B2)
 open("manager/portfolio_config.json", "w").write(json.dumps({"self_ledger": False}))
 del sent[:]

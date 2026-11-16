@@ -157,5 +157,27 @@ check(rc != cs.OK and abs(qty - 0.01) < 1e-12 and any("not sent" in str(e) for e
       f"close_symbol, the lib returns False: not OK, never reported closed, the book keeps 0.01 ({rc}, {qty})")
 order.close_position_partial = _close
 
-print("\n" + ("all ok" if not fails else f"{fails} FAILED"))
+# format_qty's ValueError (audit 0.1.55 S1, = flatten): only the tagged minimum is dust; a suspended
+# contract or an untagged error leaves the whole position open — FAILED with a row, never OK
+_fmt, sent = order.format_qty, []
+order.close_position_partial = lambda env, sym, side, size, client_order_id=None: sent.append(size)
+for msg, dust in (("[order_reject:below_min_size] BTCUSDT 0.01 below the minimum 0.1", True),
+                  ("[order_reject:symbol_unavailable] BTCUSDT is suspended", False),
+                  ("could not convert string to float: ''", False)):
+    def _raise(env, s, q, m=msg):
+        raise ValueError(m)
+    order.format_qty = _raise
+    fresh()
+    acct.get_positions = lambda env: [{"symbol": "BTCUSDT", "side": "long", "size": 0.01, "mark_price": 70000.0}]
+    del cs_errs[:], sent[:]
+    rc = cs.run_close(cs.Ctx(venue="okx", sym="BTCUSDT", side="long", env={}, key="k", generic=True,
+                             acct=acct, order=order))
+    if dust:
+        check(rc == cs.OK and not sent and not cs_errs, f"close_symbol, tagged below_min: dust, OK, nothing sent ({rc}, {cs_errs})")
+    else:
+        check(rc == cs.FAILED and not sent and any(msg in str(e) for e in cs_errs),
+              f"close_symbol, format_qty {msg[:40]!r}: FAILED with the venue's reason, not dust ({rc}, {cs_errs})")
+order.format_qty, order.close_position_partial = _fmt, _close
+
+print("\n" +("all ok" if not fails else f"{fails} FAILED"))
 sys.exit(1 if fails else 0)

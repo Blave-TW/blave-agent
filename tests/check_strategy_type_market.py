@@ -49,6 +49,7 @@ check(T("# Type: C組合\n") == "C" and T("# Type:     B（網格）\n") == "B" 
 
 call = "from lib.data import {f}\ndf = {f}(SYMBOL)\n"
 for f, want in (("fetch_kline", "crypto"), ("fetch_kline_batch", "crypto"), ("fetch_bingx_kline", "crypto"),
+                ("fetch_okx_kline", "crypto"),
                 ("fetch_twstock_price_adj", "tw_stock"), ("fetch_twstock_ohlcv", "tw_stock"),
                 ("fetch_stock_futures_batch_daily", "tw_stock_futures"),
                 ("fetch_usstock_price", "us_stock"), ("fetch_db_kline", "global_futures")):

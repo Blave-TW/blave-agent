@@ -169,7 +169,8 @@ const START_PAIRS = { "tr.start": "workspace_pf_start", "tr.opt.legend": "worksp
   "tr.opt.catchDesc": "workspace_pf_opt_catch_paper", "tr.opt.waitDesc": "workspace_pf_opt_wait_paper",
   "tr.opt.catchHow.market": "workspace_pf_catch_how_market", "tr.opt.catchHow.twap": "workspace_pf_catch_how_twap", "tr.opt.catchHow.chase": "workspace_pf_catch_how_chase", "tr.opt.catchHow.custom": "workspace_pf_catch_how_custom",
   "tr.keep.own": "workspace_pf_keep_own", "tr.keep.ownFirst": "workspace_pf_keep_own_first", "tr.keep.ownBuilt": "workspace_pf_keep_own_built", "tr.startWait": "workspace_pf_start_wait", "tr.startCatchUp": "workspace_pf_start_catch_up", "cf.more": "workspace_pf_more",
-  "tr.deferTxfCancel": "workspace_pf_defer_txf_cancel" };   // 稽核 0153 Y2:延後的台指期平倉會被啟動取消(zh 是 Wei 核准原文)
+  "tr.deferTxfCancel": "workspace_pf_defer_txf_cancel",   // 稽核 0153 Y2:延後的台指期平倉會被啟動取消(zh 是 Wei 核准原文)
+  "tr.closeAllWarn2Z": "workspace_pf_close_all_warn2_z" };   // 停止框後果句沒有策略設金額那一版(稽核 release-0154 S1)
 for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
   const bad = Object.entries(START_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || dp[d] !== wp[w]);
@@ -182,6 +183,27 @@ for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
   const bad = Object.entries(CREDIT_FAULT_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || dp[d] !== wp[w]);
   ok(`Blave AI 402 卡 ${lang} 兩邊逐字一致(${Object.keys(CREDIT_FAULT_PAIRS).length} 句)`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
+// 台指期休市全部平倉照送、拒了是失敗(spec txf-close-or-fail;designer txf-close-or-fail-copy-2026-11-16):統一回休市那一列、
+// 拒單 token market_closed 的白話句(網頁不帶標的:去掉開頭 {sym} 、首字大寫後比),兩邊同批上線,任一邊沒有也算紅。
+// 停止框／啟動框的台指期句兩邊都拿掉了(字串刪了才拿掉配對)
+const TXF_FAIL_PAIRS = { "tr.ov.evBrokerShut": "workspace_ov_ev_broker_session_closed", "tr.err.marketClosed": "workspace_pf_err_market_closed",
+  "tr.err.marketClosedRun": "workspace_pf_err_market_closed_run" };
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const norm = (v) => typeof v === "string" ? v.trim().replace(/%\((\w+)\)s/g, "{$1}").replace(/^\{sym\} /, "").replace(/^[a-z]/, (c) => c.toUpperCase()) : v;
+  const bad = Object.entries(TXF_FAIL_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || norm(dp[d]) !== norm(wp[w]));
+  ok(`台指期休市平不了 ${lang}:${Object.keys(TXF_FAIL_PAIRS).length} 句兩邊逐字一致`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
+ok("停止框／啟動框的台指期休市句兩邊都不在", ["tr.stopTxfClosed", "tr.stopTxfClosedN", "tr.stopTxfClosedOld", "tr.stopTxfClosedOldN", "tr.means.txfClose", "tr.means.txfCloseOld"]
+  .every((k) => !new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"').test(fs.readFileSync(path.join(__dirname, "..", "shell", "i18n", "zh.po"), "utf8")))
+  && !/workspace_pf_stop_txf_closed|workspace_pf_more_txf_close/.test(fs.readFileSync(path.join(webDir, "app", "translations", "zh", "LC_MESSAGES", "messages.po"), "utf8")));
+// 雲端視角的時鐘句(只剩 0.1.53 雲端 lib 寫的延後列):電腦版雲端那組 = 網頁(網頁只有主機一個視角)
+const CLOUD_CLOCK_PAIRS = { "tr.cloud.ov.evDeferClockNote": "workspace_ov_ev_defer_clock_note", "tr.cloud.ov.evDeferClockFarNote": "workspace_ov_ev_defer_clock_far_note" };
+for (const lang of ["zh", "en"]) {
+  const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
+  const bad = Object.entries(CLOUD_CLOCK_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || dp[d] !== wp[w]);
+  ok(`雲端視角時鐘句 ${lang}:${Object.keys(CLOUD_CLOCK_PAIRS).length} 句兩邊逐字一致`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
 }
 // 模擬帳戶總權益氣泡接的第二句:兩邊逐字同;網頁 en 把接句的空白放在字串開頭(電腦版接的時候才加),所以先 trim。任一邊沒有這個 key 也算紅
 const PAPER_TIP_PAIRS = { "cx.perfNote": "workspace_ov_equity_tip_paper" };
@@ -281,16 +303,21 @@ for (const lang of ["zh", "en"]) {
   ok(`「來自手機」${lang} 兩邊逐字一致(chat.fromPhone ↔ workspace_cs_from_phone)`, typeof dp["chat.fromPhone"] === "string" && dp["chat.fromPhone"] === wp.workspace_cs_from_phone,
     "chat.fromPhone「" + dp["chat.fromPhone"] + "」 vs workspace_cs_from_phone「" + wp.workspace_cs_from_phone + "」");
 }
-// 側欄提示格(spec sidebar-prompt-slot-2026-11-03 §2、§5):手機膠囊同一句、關閉與收掉的常數同一份。web 先出貨(§12),web 還沒落地就紅。
-// pop 的步驟字(spec slot-phone-steps §5)web 還沒開 key,開了再把 ph.stepGet／ph.stepChat 兩對加進來;workspace_slot_phone_hint 留給 /app 的 h1,不再對
+// 側欄提示格(spec sidebar-prompt-slot-2026-11-03 §2、§5):手機入口同一句。pop 的步驟字(spec slot-phone-steps §5)web 還沒開 key,
+// 開了再把 ph.stepGet／ph.stepChat 兩對加進來;workspace_slot_phone_hint 留給 /app 的 h1,不再對
 for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
   for (const [d, w] of [["ph.slot", "workspace_slot_phone"]])
     ok(`提示格 ${lang} 兩邊逐字一致(${d} ↔ ${w})`, typeof dp[d] === "string" && dp[d] === wp[w], d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」");
 }
+/* 已知差異(spec sidebar-conversion-2026-11-10 §9):電腦版 0.1.54 先把側欄底收成一列(手機改圖示、拿掉冷卻與關閉),web 排下一版跟上。
+   在那之前兩邊不同是預期的,這裡把差異逐條釘住,不整段關掉:電腦版那份常數必須已經拿掉、web 那份必須還是原值。
+   web 跟上(拿掉 SLOT_PH 或改值)時這條會紅——那時把這段換回「兩邊同一份」的比對,常數以電腦版的一列為參照面 */
 { const SLOT_RE = /SLOT_PH = (\{ COOL_DAYS: \d+, MAX_CLOSES: \d+, SEEN_DAYS: \d+, TRADE_QUIET_MIN: \d+ \})/;
-  const dS = SLOT_RE.exec(fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "promptslot.js"), "utf8")), wS = SLOT_RE.exec(web);
-  ok("提示格 SLOT_PH 兩邊同一份(30 天、2 次、7 個使用日、下單後 30 分鐘)", !!dS && !!wS && dS[1] === wS[1], (dS && dS[1]) + " vs " + (wS && wS[1])); }
+  const dSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "promptslot.js"), "utf8"), wS = SLOT_RE.exec(web);
+  ok("已知差異(側欄底列,web 排下一版):電腦版沒有提示格的冷卻／關閉常數了", !/SLOT_PH|COOL_DAYS|MAX_CLOSES|SEEN_DAYS/.test(dSrc));
+  ok("已知差異(側欄底列,web 排下一版):web 仍是提示格 SLOT_PH 原值(30 天、2 次、7 個使用日、下單後 30 分鐘);web 跟上時這條紅,換回兩邊比對",
+    !!wS && wS[1] === "{ COOL_DAYS: 30, MAX_CLOSES: 2, SEEN_DAYS: 7, TRADE_QUIET_MIN: 30 }", wS && wS[1]); }
 // 對話分頁(0.1.37;技術方案 §1.4、§4):對著雲端主機、名額滿了的排隊行與〔取消排隊〕,電腦版 chattabs.js tabsQueued 與網頁 csShowQueued 同一句;
 // 歷史清單的狀態字(回覆中／排隊中／做完，還沒看)與分組(今天／昨天／更早)也跟網頁 workspace_cs_* 同一組
 // 聊天結果卡第二行(一句話:分隔字、報告句、卡專用類型與落點字,設計師 0.1.48 標點複查):兩邊逐字一致。en 的分隔字電腦版是「,」、空格由 CSS 間距補,web 寫進字串,所以分隔字只比去掉空白後的字
@@ -342,7 +369,8 @@ for (const lang of ["zh", "en"]) {
   if (/r\.order_errors/.test(rows)) dSet.add("order_error");
   if (/e\.kind === "order_unconfirmed"/.test(rows)) dSet.add("order_unconfirmed");
   if (/e\.released === true/.test(rows)) dSet.add("order_unconfirmed_released");
-  if (/trCloseDeferred\(e\)/.test(rows)) dSet.add("close_all_deferred");   // 全部平倉延到開盤／取消延後:api 分流成 close_all_deferred(P3)   // 同一列 released 時畫成灰字;網頁畫平台的 P3 事件
+  if (/e\.kind === "broker_session_closed"/.test(rows)) dSet.add("broker_session_closed");   // 統一回休市:電腦版從 order_errors 列畫,api 分流成 broker_session_closed(P3)
+  if (/trCloseDeferred\(e[,)]/.test(rows)) dSet.add("close_all_deferred");   // 全部平倉延到開盤／取消延後:api 分流成 close_all_deferred(P3)   // 同一列 released 時畫成灰字;網頁畫平台的 P3 事件
   // 台指期那幾種 kind(TR_TW_NOTICE)也從 order_errors[] 那列畫;api 分流成自己事件型別的(agent_overview._error_events)網頁才會畫
   const API_EVENT_KINDS = ["clock_skew_hold", "tw_entry_hold", "tw_clock_unchecked"], twm = /const TR_TW_NOTICE = \{([^}]*)\}/.exec(desk);
   for (const m of (twm ? twm[1] : "").matchAll(/([a-z_]+):/g)) if (API_EVENT_KINDS.includes(m[1]) && /TR_TW_NOTICE\[e\.kind\]/.test(rows)) dSet.add(m[1]);
@@ -867,7 +895,7 @@ for (const lang of ["zh", "en"]) {
     "tr.ub.closedWhen": "closed_when", "tr.ub.closedWhenN": "closed_when_n", "tr.ub.closedLater": "closed_later", "tr.ub.cantClose": "cant_close",
     "tr.ub.runTitle": "run_title", "tr.ub.runLine": "run_line", "tr.ub.running": "running", "tr.ub.runningBtn": "running_btn",
     "tr.ub.failTitle": "fail_title", "tr.ub.failTitle1": "fail_title_1", "tr.ub.failTitleN": "fail_title_n", "tr.ub.failReply": "fail_reply",
-    "tr.ub.failState": "fail_state", "tr.ub.unconfirmed": "unconfirmed", "tr.ub.retryGo": "retry_go",
+    "tr.ub.failState": "fail_state", "tr.ub.failStateRun": "fail_state_run", "tr.ub.unconfirmed": "unconfirmed", "tr.ub.retryGo": "retry_go",
     "tr.ub.stDone": "st_done", "tr.ub.stNoFill": "st_nofill", "tr.ub.stUnconf": "st_unconf", "tr.ub.stManual": "st_manual", "tr.ub.busy": "busy",
     "tr.ub.close": "-workspace_ns_close", "tr.ub.appPres": "-workspace_ov_broker_president", "tr.ub.appCap": "-workspace_ov_broker_capital",
     "cx.cancelSetup": "-workspace_cx_cancel_setup" };
@@ -1027,5 +1055,15 @@ for (const lang of ["zh", "en"]) {
   const norm = (v) => typeof v === "string" ? v.trim().replace(/%\((\w+)\)s/g, "{$1}").replace(/^\{sym\} /, "").replace(/^[a-z]/, (c) => c.toUpperCase()) : v;
   const bad = Object.entries(PAPER_CASH_PAIRS).filter(([d, w]) => typeof dp[d] !== "string" || typeof wp[w] !== "string" || norm(dp[d]) !== norm(wp[w]));
   ok(`模擬帳戶台股現金不夠的字 ${lang} 兩邊逐字一致(${Object.keys(PAPER_CASH_PAIRS).length} 句)`, bad.length === 0, bad.map(([d, w]) => d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」").join(";"));
+}
+// 回測「總手續費」標籤(spec uiux-batch1 第 10 項):兩邊逐字同一份。網頁的 .po 走 python-format,字面的 % 寫成 %%,比之前還原;
+// 網頁那一格沒有 tooltip,bt.tip.totalFees 不比。第 11 項「模擬怎麼成交？」電腦版在 0.1.53 連接框案一已拿掉、沒有家,不比
+{ const PAIRS = { workspace_bt_total_fees: "bt.totalFees" };
+  for (const lang of ["zh", "en"]) {
+    const w = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po")), d = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po"));
+    const off = Object.keys(PAIRS).filter((k) => typeof d[PAIRS[k]] !== "string" || !d[PAIRS[k]] || typeof w[k] !== "string" || w[k].replace(/%%/g, "%") !== d[PAIRS[k]]);
+    ok("總手續費標籤兩邊同一份(" + lang + ")", off.length === 0, off.map((k) => k + "「" + w[k] + "」 vs " + PAIRS[k] + "「" + d[PAIRS[k]] + "」").join(";"));
+  }
+  ok("網頁不再有舊的一整句 workspace_cx_paper_how_p(拆成清單後留著就是兩套字)", !/workspace_cx_paper_how_p/.test(web));
 }
 console.log(red ? `\n${red} 紅` : "\nALL PASS"); process.exit(red ? 1 : 0);

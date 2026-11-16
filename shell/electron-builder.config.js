@@ -84,10 +84,12 @@ module.exports = {
   extraMetadata: RELEASE || UPDATE_URL || WIN_ONLY ? { ...(RELEASE ? { blaveRelease: true } : {}), ...(UPDATE_URL ? { blaveUpdateUrl: UPDATE_URL } : {}), ...(WIN_ONLY ? { name: "Blave" } : {}) } : undefined,
   publish: UPDATE_URL ? [{ provider: "generic", url: UPDATE_URL }] : null,   // 只為了產生 latest-mac.yml / latest.yml;上傳是手動的(--publish never)
   npmRebuild: false,
-  files: ["main.js", "daemon.js", "telemetry.js", "devicetype.js", "updater.js", "updatesig.js", "relnotes.js", "schedupdate.js", "update-keys.json", "cloud.js", "cloudcmd.js", "cloud_capital.js", "president_local.js", "capital_local.js", "fetchbuf.js", "reportshare.js", "reportpdf.js", "print-preload.js", "minversion.js", "official-known.json", "traytext.js", "twnames.js", "binance_link.js", "binance_check.js", "connstore.js", "datasrc.js", "wsfile.js", "transfer.js", "agentrules.js", "mcpcode.js", "llmrelay.js", "acctrelay.js", "balance.js", "mobileview.js", "relay.js", "redact.js", "bip39_english.txt", "tokenrotate.js", "enginesetup.js", "codexpkg.js", "winsandbox.js", "attach.js", "browser/**/*", "!browser/devverify.*", "preload.js", "renderer/**/*", "assets/**/*", "package.json"],
+  files: ["main.js", "daemon.js", "telemetry.js", "devicetype.js", "updater.js", "updatesig.js", "relnotes.js", "schedupdate.js", "update-keys.json", "cloud.js", "cloudcmd.js", "cloud_capital.js", "president_local.js", "capital_local.js", "fetchbuf.js", "reportshare.js", "reportpdf.js", "print-preload.js", "minversion.js", "official-known.json", "traytext.js", "twnames.js", "binance_link.js", "binance_check.js", "connstore.js", "datasrc.js", "wsfile.js", "transfer.js", "agentrules.js", "mcpcode.js", "llmrelay.js", "acctrelay.js", "balance.js", "mobileview.js", "relay.js", "redact.js", "bip39_english.txt", "tokenrotate.js", "enginesetup.js", "bootguard.js", "mainlog.js", "codexpkg.js", "mainmarket.js", "winsandbox.js", "attach.js", "browser/**/*", "!browser/devverify.*", "preload.js", "renderer/**/*", "assets/**/*", "package.json"],
   // 隨包 Python 依目標平台切(tools/fetch-python.sh 三顆都抓):平台區塊的 extraResources 會接在這份後面
   extraResources: [
     { from: "..", to: "agent", filter: tracked },
+    // 隨包 pip wheel(tools/fetch-python.sh fetch_pip;MIT,授權全文在 wheel 的 dist-info):引擎建完 venv 用它離線升級 pip,拿到斷線續傳
+    { from: "vendor/pip-wheel", to: "pip-wheel", filter: ["pip-*.whl"] },
   ],
   mac: {
     category: "public.app-category.finance",

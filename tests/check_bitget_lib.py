@@ -234,7 +234,8 @@ check(normalize_symbol("TWTSMUSDT") == "TWTSMUSDT" and normalize_symbol("acnstoc
 # ── rules ────────────────────────────────────────────────────────────────────
 r = order.get_contract_rules(ENV, "NVDAUSDT")
 check(r == {"step": "0.01", "min_qty": 0.01, "min_notional": 5.0, "contract_value": 1.0, "tick": "0.01",
-            "equity": True, "status": "normal"}, "rules: base step, minimum, 5 USDT value, tick, v3 stock class", r)
+            "equity": True, "category": "EQUITY", "status": "normal"},
+      "rules: base step, minimum, 5 USDT value, tick, v3 stock class", r)
 check(order.get_contract_rules(ENV, "BTCUSDT")["tick"] == "0.1" and order.get_contract_rules(ENV, "HALFUSDT")["tick"] == "0.05"
       and order.get_contract_rules(ENV, "BTCUSDT")["equity"] is False,
       "tick = priceEndStep × 10^-pricePlace; a coin is equity False")

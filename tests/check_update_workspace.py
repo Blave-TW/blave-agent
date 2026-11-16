@@ -696,6 +696,87 @@ try:
           f"mutation goes red: a kept lib/ file restarts the order program again ({rK2['restart']})")
     clear_sudo()
 
+    # 12b. a 0.1.53 close-all deferred to the TW open, under HALT, with the restart failing: the
+    #      old lib keeps running and re-reads state/paper_tw_close.json every round, so the run
+    #      drops it before the copy, through the clone's own lib/portfolio (audit 0.1.55 S3)
+    REAL_LIB = {os.path.join("lib", n): read(os.path.join(ROOT, "lib", n))
+                for n in os.listdir(os.path.join(ROOT, "lib")) if n.endswith(".py")}
+
+    def deferred_run(script, halted):
+        unit("active")
+        clear_sudo()
+        repo, v1, head = make_repo2(script, REAL_LIB)
+        ws = ws_at(repo, v1)
+        write(os.path.join(ws, "state", "paper_tw_close.json"), '{"keys": ["TXF"], "ts": 1}')
+        if halted:
+            write(os.path.join(ws, "state", "HALT"), "{}")
+        write(SUDO_RC, "1")
+        try:
+            r = run(repo, ws, "apply", head, "--restart-ok")
+        finally:
+            os.remove(SUDO_RC)
+        try:
+            rows = json.loads(read(os.path.join(ws, "manager", "order_errors.json")))
+        except (OSError, ValueError):
+            rows = []
+        return r, os.path.exists(os.path.join(ws, "state", "paper_tw_close.json")), rows
+
+    rD, leftD, rowsD = deferred_run(SRC, True)
+    check(rD["outcome"] == "restart_failed" and rD.get("tw_deferred") == {"dropped": True}
+          and "tw_deferred_again" not in rD and not leftD
+          and [(x["symbol"], x["error"]) for x in rowsD]
+          == [("TXF", "close-all: 更新後取消等開盤的平倉，部位可能還在、沒有停損，要自己查")],
+          f"HALT + a deferral + a failed restart: the file is gone and one row says so ({rD.get('tw_deferred')}, {rowsD})")
+    rN, leftN, rowsN = deferred_run(SRC, False)
+    check(leftN and not rowsN and "tw_deferred" not in rN,
+          "no HALT: the deferral is left to the old lib (it drops it and sends nothing)")
+    src = SRC.replace("tw = drop_tw_deferred(clone, workspace)", "tw = None")
+    check(SRC.count("tw = drop_tw_deferred(clone, workspace)") == 2, "mutation is real: the run never drops it")
+    rM, leftM, rowsM = deferred_run(src, True)
+    check(rM["outcome"] == "restart_failed" and leftM and not rowsM,
+          "mutation goes red: without the drop the file outlives the failed restart for the old lib to send")
+    clear_sudo()
+
+    # 12c. drop_tw_deferred alone, against a stand-in clone lib: only a helper that truly failed
+    #      drops the file without a row (audit 0.1.55 S3-a); undecodable stderr never raises (N7)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("uw_under_test", SCRIPT_SRC)
+    uw = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(uw)
+    uw.TW_DROP_RETRY_DELAYS = (0, 0, 0)
+
+    def stub_drop(body):
+        clone = tempfile.mkdtemp(dir=TMP)
+        ws = tempfile.mkdtemp(dir=TMP)
+        write(os.path.join(clone, "lib", "__init__.py"), "")
+        write(os.path.join(clone, "lib", "portfolio.py"),
+              "import os, sys\n"
+              "def _drop_tw_deferred(keys, halted, book_known=True):\n" + body)
+        write(os.path.join(ws, "state", "paper_tw_close.json"), '{"keys": ["TXF"]}')
+        write(os.path.join(ws, "state", "HALT"), "{}")
+        out = uw.drop_tw_deferred(clone, ws)
+        cf = os.path.join(ws, "calls")
+        return out, os.path.exists(os.path.join(ws, "state", "paper_tw_close.json")), \
+            os.path.exists(os.path.join(ws, "row")), int(read(cf)) if os.path.exists(cf) else 0
+
+    BUSY_ONCE = ("    n = int(open('calls').read()) if os.path.exists('calls') else 0\n"
+                 "    open('calls', 'w').write(str(n + 1))\n"
+                 "    if n == 0:\n        return\n"
+                 "    os.remove('state/paper_tw_close.json')\n    open('row', 'w').write('x')\n")
+    o, left, row, calls = stub_drop(BUSY_ONCE)
+    check(o == {"dropped": True} and not left and row and calls == 2,
+          f"helper ok but the file still there (busy): asked again, row written, not rowless ({o}, {calls})")
+    o, left, row, _ = stub_drop("    return\n")
+    check(o.get("dropped") is False and "rowless" not in o and left and not row,
+          f"helper ok but the file never goes: it stays, no rowless drop, reason returned ({o})")
+    o, left, row, _ = stub_drop("    raise RuntimeError('boom')\n")
+    check(o.get("rowless") is True and o.get("dropped") is True and not left and not row
+          and "boom" in o.get("error", ""),
+          f"helper crashed: the file goes without a row ({o})")
+    o, left, row, _ = stub_drop("    sys.stderr.buffer.write(b'\\xff\\xfe \\xe4\\xb8\\xad'); sys.exit(1)\n")
+    check(o.get("rowless") is True and not left,
+          f"undecodable stderr does not raise out of the update ({o})")
+
     # 13. the string probes of production code, against the real files — a
     #     rename turns the whole fleet's behaviour over with every test green
     check("RESTART_STOP_PATH" in read(os.path.join(ROOT, "manager", "reconciler.py")),

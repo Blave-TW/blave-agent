@@ -47,9 +47,10 @@ PRICE (the whole model, Wei 2026-10-20):
   * TW STOCKS (0.1.27) are TWD-priced: the amount is TWD, so a notional qty is
     shares and its PnL / fee — and a spot row's cost / proceeds (`2330@spot`
     is inventory of the code itself) — go through the same rate. Like the
-    exchange (Wei 10-17): every TW stock order — closes, SL/TP and close-all
-    included — waits for the TWSE session (paper_data.tw_session_open;
-    PaperMarketClosed), quantities are whole shares floored (0 → no order;
+    exchange (Wei 10-17): every TW stock order — closes and SL/TP included —
+    waits for the TWSE session (paper_data.tw_session_open; PaperMarketClosed).
+    The one exception is the user's own close (manager/flatten passes
+    user_close, Wei 11-15): it fills now at the last price. Quantities are whole shares floored (0 → no order;
     a full close takes a legacy fractional row whole), and nothing goes
     short: a sell past the long closes it, a short from flat is refused.
     A row booked before TW stocks moved to the unadjusted close is restated
@@ -259,14 +260,13 @@ def _spot_base(sym):
 
 
 class PaperMarketClosed(PaperError):
-    """A TW stock order outside the TWSE session — closes included, as at the
-    exchange. manager/flatten defers such a close to the first round after
-    the open (lib.portfolio.defer_paper_tw_close); the reconciler holds the
-    rows quietly (lib.portfolio._paper_tw_closed_keys)."""
+    """A TW stock order outside the TWSE session — a strategy's closes included, as at the
+    exchange; the reconciler holds those rows quietly (lib.portfolio._paper_tw_closed_keys).
+    The user's close-all is not refused (user_close)."""
 
 
-def _check_session(env, sym):
-    if is_tw_stock(sym) and not tw_session_open(env):
+def _check_session(env, sym, user_close=False):
+    if is_tw_stock(sym) and not user_close and not tw_session_open(env):
         raise PaperMarketClosed(f"{sym}: 台股休市中(交易時段 09:00–13:30)— paper order refused "
                                 f"outside the TWSE session")
 
@@ -969,7 +969,7 @@ def _fill_view(o):
 # ── swap layer (reconciler contract) ─────────────────────────────────────────
 
 def place_market_order(env, symbol, direction, qty, client_order_id=None,
-                       reduce_only=False):
+                       reduce_only=False, user_close=False):
     """Confirmed simulated market order: whole qty at the current price (no
     spread). Same client_order_id → the earlier fill (idempotent)."""
     guard.arm_restore(symbol, direction, qty, reduce_only)  # HALT's one netted-restore pass
@@ -1006,7 +1006,7 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
                 if signed == 0:
                     guard.audit("order_ok", order_id="", note="nothing to reduce", **fields)
                     return False
-            _check_session(env, sym)
+            _check_session(env, sym, user_close and reduce_only)
             signed = _tw_signed(led, sym, signed)
             if signed == 0:
                 guard.audit("order_ok", order_id="", note="under one share", **fields)
@@ -1030,7 +1030,7 @@ def place_market_order(env, symbol, direction, qty, client_order_id=None,
 
 def place_contract_market_order(env, symbol, direction, lots, contract_value,
                                 client_order_id=None, reduce_only=False, margin=None,
-                                currency=None):
+                                currency=None, user_close=False):
     """Simulated market order in WHOLE LOTS (asset_spec.type futures_contracts /
     shares — see module docstring). `lots` is a positive integer count; a
     reduce leg is capped at the held lots (never flips through zero). Fee is
@@ -1077,7 +1077,7 @@ def place_contract_market_order(env, symbol, direction, lots, contract_value,
                     guard.audit("order_ok", order_id="", note="nothing to reduce", **fields)
                     return False
             q0 = float(led["positions"].get(sym, {}).get("qty") or 0)
-            _check_session(env, sym)
+            _check_session(env, sym, user_close and reduce_only)
             signed = _tw_signed(led, sym, signed)
             if signed == 0:
                 guard.audit("order_ok", order_id="", note="under one share", **fields)
@@ -1111,9 +1111,9 @@ def place_contract_market_order(env, symbol, direction, lots, contract_value,
         raise
 
 
-def close_position_partial(env, symbol, direction, qty, client_order_id=None):
+def close_position_partial(env, symbol, direction, qty, client_order_id=None, user_close=False):
     return place_market_order(env, symbol, direction, qty,
-                              client_order_id=client_order_id, reduce_only=True)
+                              client_order_id=client_order_id, reduce_only=True, user_close=user_close)
 
 
 def place_limit_order(env, symbol, direction, qty, price, client_order_id=None,
@@ -1279,7 +1279,7 @@ def open_position(env, symbol, direction, qty, sl_price=None, tp_price=None,
 # ── spot layer ───────────────────────────────────────────────────────────────
 
 def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
-                            client_order_id=None):
+                            client_order_id=None, user_close=False):
     """Confirmed simulated spot market — BUY sized in quote (USDT; TWD for a TW
     share), SELL in base, at the current price. Below zero → False."""
     sym = str(symbol).upper()
@@ -1296,7 +1296,7 @@ def place_spot_market_order(env, symbol, side, base_qty=None, quote_qty=None,
                 return _fill_view(prev) if prev["status"] == "filled" else False
             price = _price(env, sym, {})
             base = _spot_base(sym)
-            _check_session(env, sym)
+            _check_session(env, sym, user_close and side == "sell")
             if side == "buy":
                 if quote_qty is None:
                     raise ValueError("spot buys are sized in quote currency — pass quote_qty")

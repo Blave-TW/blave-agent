@@ -60,9 +60,13 @@ ok("接線:部位列與事件列都把那一列傳進 trOrderErrParse／trOrderE
   /trOrderErrParse\(err, le\) \? trOrderErrText\("", err, le\)/.test(src) && /if \(trOrderErrParse\(raw, e\)\) body\.append\(" ", trEl\("span", "dim", "— " \+ trOrderErrText\([^)]*, raw, e\)\)\);/.test(src));
 // 本機 P1:模擬拒單在 p1FromState 就略過(P2),通知那一段不會拿到 paper 的列——專屬內文的變體不留
 ok("接線:本機 P1 略過模擬拒單(exchange=paper 的 order_error),且不留 paper 專屬通知變體",
-  /if \(type === "order_error" && e\.exchange === "paper"\) continue;/.test(mainSrc)
+  /if \(type === "order_error" && \(e\.exchange === "paper" \|\| e\.halt_lifted === true\)\) continue;/.test(mainSrc)
   && !/p1PaperTwCash|p1PaperSell|paper_cash|paper_sell|_paper_cash|_paper_sell|ev_order_error_paper_/.test(mainSrc)
   && !/ev_order_error_paper_/.test(src));
+// 休市拒單撤回暫停的那列(halt_lifted,api 降 P2)同一行略過;只認 === true,字串 "true" 或缺欄位照發 P1
+ok("接線:本機 P1 也略過 halt_lifted === true 的 order_error,且同一行只有這兩個條件",
+  (mainSrc.match(/if \(type === "order_error" && \([^)]*\)\) continue;/g) || []).length === 1
+  && /e\.halt_lifted === true\)\) continue;/.test(mainSrc) && !/e\.halt_lifted\)\) continue;|e\.halt_lifted ==[^=]/.test(mainSrc));
 
 // 新句子兩語都在,且不提交易所/合約/槓桿
 const vals = [...strings.matchAll(new RegExp('"' + NEW_KEY.replace(/\./g, "\\.") + '":\\s*"([^"]*)"', "g"))].map((m) => m[1]);

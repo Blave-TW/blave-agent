@@ -10,7 +10,21 @@
 // --only-binary=:all::這個架構沒有 wheel 就兩秒內大聲失敗,不退到編原始碼(那條路在用戶機上跑幾分鐘然後死在看不到的地方)。
 // --no-compile:pip 邊裝邊編 .pyc 在 test-4(Windows)占首次安裝約 90 秒(冷快取兩輪 B1 140 / 139s → B1nc 51 / 54s,現況 192 / 178s;
 // 原始數字 .claude/output/backend/engine-install-speed-spike-test4-results-2026-10-21.txt);改成 ready 之後在背景編(compileStart)
-const PIP_INSTALL = ["-m", "pip", "--isolated", "--disable-pip-version-check", "install", "--only-binary=:all:", "--progress-bar=raw", "--no-compile"];
+// --retries / --timeout(0.1.55,網路不穩的用戶):pip 自己的連線重試從預設 5 次放到 10 次、單次連線等待從 15 秒放到 60 秒。
+// 整條 pip 還是因網路失敗時,由 pip() 自動退避重跑(NET_RETRY_MS),不必等用戶按重試。
+// --resume-retries(pip 25.1 起;隨包的 25.0.1 沒有,建完 venv 先用隨包 wheel 升級,見 pipSelfUpgrade):同一條 pip 裡斷線時用 Range 從斷點接續,
+// 最多 20 次,每次接續沿用 --retries / --timeout。伺服器不給 Range 時 pip 自己從頭重下(實測 pip 26.2.2)。舊 pip 不認就拿掉重跑(PIP_OPTIONAL)
+const PIP_INSTALL = ["-m", "pip", "--isolated", "--disable-pip-version-check", "install", "--only-binary=:all:", "--progress-bar=raw", "--no-compile", "--retries", "10", "--timeout", "60", "--resume-retries", "20"];
+/* 網路類失敗(failKind = net:連線重置、逾時、DNS、SSL 中斷、HTTP 5xx、太久沒資料)自動重跑同一條 pip 的等待時間,用完才停下來給「重試」。
+   重跑不清 pip 快取:下載完的 wheel 走「Using cached」不重下(下載到一半的那一個從頭下,pip 25.0 不會續傳)。
+   只在下載階段重跑:進了「Installing collected packages」才失敗的,site-packages 可能寫了一半,照舊停下來走半裝保護。
+   總時間仍受那一條的總上限(engineMs / pkgMs)管 */
+const NET_RETRY_MS = [5000, 15000, 30000, 60000, 120000];
+// 舊 pip 可能不認、認不得就拿掉重跑的旗標(value = 後面那一個參數一起拿掉);rejected = pip 解析參數時的那一句(exit 2)
+const PIP_OPTIONAL = [
+  { flag: "--progress-bar=raw", value: false, rejected: /--progress-bar: invalid choice: 'raw'/ },
+  { flag: "--resume-retries", value: true, rejected: /no such option: --resume-retries/ },
+];
 
 const SIZE_UNIT = { bytes: 1, kB: 1e3, MB: 1e6, GB: 1e9 };
 /* 一行 pip stdout 進到下載狀態 p = { done, file, installing, lastByteAt }。回 true = 畫面上的數字變了。
@@ -19,8 +33,16 @@ function pipLine(p, line, now) {
   let m;
   if ((m = /^\s*Downloading (\S+) \(([\d.]+) (bytes|kB|MB|GB)\)\s*$/.exec(line))) {
     if (/\.metadata$/.test(m[1])) return false;
-    fileDone(p);
-    p.file = { bytes: 0, total: Math.round(parseFloat(m[2]) * SIZE_UNIT[m[3]]) };
+    // 同一個檔又「Downloading」一次 = pip 接續時伺服器不給 Range、從頭重下(實測 pip 26.2.2):前一次那一段沒下完,不算進已下載量
+    if (!(p.file && p.file.name === m[1])) fileDone(p);
+    p.file = { name: m[1], bytes: 0, total: Math.round(parseFloat(m[2]) * SIZE_UNIT[m[3]]) };
+    p.lastByteAt = now;
+    return true;
+  }
+  // 斷線後接續(pip 25.1+,實測 26.2.2):「Resuming download <檔名> (716 kB/1.8 MB)」,之後的 Progress 從斷點的絕對位元組數接著印。
+  // 同一個檔:不結算、不歸零,Progress 照舊只往上加
+  if ((m = /^\s*Resuming download (\S+) \(/.exec(line))) {
+    if (!p.file || p.file.name !== m[1]) { fileDone(p); p.file = { name: m[1], bytes: 0, total: 0 }; }
     p.lastByteAt = now;
     return true;
   }
@@ -28,13 +50,22 @@ function pipLine(p, line, now) {
     if (!p.file) return false;
     const a = Number(m[1]), b = Number(m[2]);
     if (b > 0) p.file.total = b;
-    if (a > p.file.bytes) { p.file.bytes = a; p.lastByteAt = now; return true; }
+    if (a > p.file.bytes) { p.file.bytes = a; p.lastByteAt = now; p.resuming = false; return true; }
+    // 從頭重下時 Progress 回到 0 起算(同一個檔又 Downloading 一次已經歸零;這裡防 Downloading 那行沒被看到)
+    if (a < p.file.bytes && a === 0) { p.file.bytes = 0; p.lastByteAt = now; return true; }
     return false;
   }
   if (/^Installing collected packages/.test(line)) { fileDone(p); p.installing = true; return true; }
   return false;
 }
-function fileDone(p) { if (p.file) { p.done += Math.max(p.file.total, p.file.bytes); p.file = null; } }
+function fileDone(p) { if (p.file) { p.done += Math.max(p.file.total, p.file.bytes); p.file = null; } p.resuming = false; }
+/* pip 的 stderr 一行:斷線、要接續了(pip 25.1+ 的 WARNING,實測 26.2.2 是「Connection interrupted while downloading.」接
+   「Attempting to resume incomplete download (716 kB/1.8 MB, attempt 1)」)→ p.resuming,畫面講「網路不穩,自動接續下載」;
+   位元組再往上走就收掉。回 true = 快照變了 */
+function pipErrLine(p, line) {
+  if (!p.file || !/^\s*(?:WARNING: )?(?:Connection interrupted while downloading|Attempting to resume incomplete download)/.test(line)) return false;
+  const was = p.resuming; p.resuming = true; return !was;
+}
 /* 一組一條 pip 時「現在在弄哪一個」:解析中看 Collecting(沒有那一版就死在這裡,名字要對),下載中看 Downloading 的 wheel 檔名。
    wheel 檔名的第一段就是套件名(檔名規格把名字裡的 - 換成 _);回傳一律照 PEP 503 正規化(小寫、連字號),兩種來源才寫得一樣 */
 function pipCurName(line) {
@@ -64,7 +95,7 @@ function pipError(text) {
    有別的明確原因(磁碟滿、hash 不符)就不是——前面曾經「WARNING: Retrying」過、後來死在別的原因的,不能算網路。
    ERROR 行只有「Could not find a version … (from versions: none)」時原因不在那裡,才退回去看整段的 Retrying 行(斷線實測 pip 25.0.1) */
 const NOT_NET_RE = /No space left on device|THESE PACKAGES DO NOT MATCH THE HASHES|Permission denied|Errno 13|Errno 28/i;
-const NET_RE = /HTTPS?ConnectionPool|NewConnectionError|Failed to establish a new connection|ConnectTimeout|ReadTimeout|Read timed out|ProxyError|SSLError|RemoteDisconnected|IncompleteRead|ChunkedEncodingError|Connection (?:reset|refused|aborted)|Network is unreachable|No route to host|nodename nor servname|Name or service not known|Temporary failure in name resolution|getaddrinfo failed/i;
+const NET_RE = /HTTP error 5\d\d|\b5\d\d (?:Server Error|Internal Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out)|too many 5\d\d error responses|HTTPS?ConnectionPool|NewConnectionError|Failed to establish a new connection|ConnectTimeout|ReadTimeout|Read timed out|ProxyError|SSLError|RemoteDisconnected|IncompleteRead|ChunkedEncodingError|Connection (?:reset|refused|aborted)|Network is unreachable|No route to host|nodename nor servname|Name or service not known|Temporary failure in name resolution|getaddrinfo failed/i;
 function failKind(e) {
   if (e && e.timedOut) return "timeout";
   if (e && e.idle) return "net";   // 太久沒收到資料:我們停的,但原因是網路
@@ -73,6 +104,13 @@ function failKind(e) {
   if (NET_RE.test(tail)) return "net";
   if (NOT_NET_RE.test(tail)) return "other";
   return NET_RE.test(all) ? "net" : "other";
+}
+/* 這一次失敗要不要自動重跑(NET_RETRY_MS):網路類、不是我們自己停的(關 app、總上限到了)、還在下載階段、次數沒用完、
+   等完下一次還在總上限內。n = 已經重跑過幾次 */
+function netRetryOk(e, n, delays, elapsedMs, limitMs, installing) {
+  if (!e || e.aborted || e.timedOut || installing || n >= delays.length) return false;
+  if (elapsedMs + delays[n] >= limitMs) return false;
+  return failKind(e) === "net";
 }
 /* engine_fail 的細項(0.1.52)。pip 那條:failKind 判成 net／timeout 就照它(兩個事件不會講不一樣的話),只細分它的 other。
    --only-binary 下這個平台沒有 wheel 會是「No matching distribution」,版本互相衝突是 ResolutionImpossible */
@@ -229,6 +267,7 @@ function createEngineSetup(o) {
      下次開 app 時看鎖檔,那支 pip 還活著就先等它結束,不讓兩支 pip 同時寫同一個 venv(也擋開發版與打包版共用 ~/Blave 時同時裝) */
   let child = null, childDone = null;
   const lockFile = path.join(venvDir, ".blave-install.lock");
+  const pipMark = path.join(venvDir, ".blave-pip");   // 隨包 pip wheel 升級過哪一顆(pipSelfUpgrade)
   const alive = o.alive || pidAlive;
   const sleep = o.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
   // 等到它結束或等滿就往下走(等滿也接手:pip 自己會處理半裝的 venv)
@@ -284,8 +323,9 @@ function createEngineSetup(o) {
     try { c.kill(); } catch (_) { /* 已經結束 */ }
     return Promise.all([Promise.race([done.then(() => true), sleep(5000).then(() => false)]), pyc]).then((r) => r[0]);
   }
-  // busy 只算 pip:背景編譯不改變「安裝中」(搬到應用程式資料夾的詢問、結束確認看的是這個)
-  const busy = () => !!child;
+  // busy 只算 pip 與兩次自動重跑之間的等待(retryWait):背景編譯不改變「安裝中」(搬到應用程式資料夾的詢問、結束確認看的是這個)
+  let retryWait = false;
+  const busy = () => !!child || retryWait;
 
   /* 背景編 .pyc(pip 帶 --no-compile)。不擋回合:ensure 不等它。跟回合同時 import 不會互撞——py_compile 與 import 寫 .pyc
      走同一個 importlib._bootstrap_external._write_atomic(暫存檔 + rename)。不寫鎖檔、不進 busy();abort 與新的一條 pip 開始前收掉它。
@@ -294,7 +334,8 @@ function createEngineSetup(o) {
      用建 venv 的那顆 Python(同版本、同 cache tag),不用 venv 的:Windows 的 venv\Scripts\python.exe 是轉手的 launcher,真正跑的是它開的子行程,
      spawn 之後才調的優先權調不到那一支 */
   let pyc = null, pycDone = null;
-  const setPriority = o.setPriority || ((pid) => require("os").setPriority(pid, require("os").constants.priority.PRIORITY_LOW));
+  const setPriority = o.setPriority || ((pid, p) => require("os").setPriority(pid, p === undefined ? require("os").constants.priority.PRIORITY_LOW : p));
+  const BELOW_NORMAL = require("os").constants.priority.PRIORITY_BELOW_NORMAL;
   function compileStart(envPath, my) {
     if (my !== gen || pyc || read(pycMark) === pycKey || !fs.existsSync(o.venvPy)) return;
     let c, out = "";
@@ -330,14 +371,17 @@ function createEngineSetup(o) {
   // 子行程:逐行讀 stdout(進度)、stderr 留尾巴(失敗時要)。兩道停:
   //   totalMs = 這一條的總上限(只防真的卡死);idleMs = 多久沒有新的輸出就停(下載中才算;安裝階段 pip 本來就不出聲,不算)
   // 逾時的訊息固定成「timed out after Ns」/「no data for Ns」,不放整條指令(含用戶 home 路徑)
-  function run(my, bin, args, envPath, timeoutMs, onLine, idle) {
+  function run(my, bin, args, envPath, timeoutMs, onLine, idle, onErr) {
     return new Promise((resolve, reject) => {
-      let out = "", err = "", timedOut = false, idled = false, c;
+      let out = "", err = "", errBuf = "", timedOut = false, idled = false, c;
       if (my !== gen) { reject(Object.assign(new Error("stopped (app closing)"), { stderr: "", aborted: true })); return; }
       try {
         c = spawn(bin, args, { windowsHide: true, env: { ...process.env, ...o.pyEnv, PATH: envPath, PYTHONUNBUFFERED: "1" } });
       } catch (e) { reject(Object.assign(new Error(String((e && e.message) || e)), { stderr: "", spawnFail: true })); return; }
       child = c; childDone = new Promise((r) => c.once("close", r));
+      // Windows:建 venv 與 pip 降一級優先序,不跟第一次開的畫面、防毒首掃搶 CPU(mac 不變)。pip 走 venv\Scripts\python.exe 那個轉手的 launcher,
+      // 它開的真正那支繼承的是建立當下 launcher 的優先序:這裡 spawn 完當場調,通常搶在它開子行程之前,但不保證
+      if (o.win) { try { setPriority(c.pid, BELOW_NORMAL); } catch (_) { /* 調不了照樣裝 */ } }
       try { fs.mkdirSync(venvDir, { recursive: true }); fs.writeFileSync(lockFile, JSON.stringify({ pid: c.pid, at: now() })); } catch (_) { /* 鎖檔寫不了不擋安裝 */ }
       const stop = () => { try { c.kill(); } catch (_) { /* 已經結束 */ } };
       const tm = setTimeout(() => { timedOut = true; stop(); }, timeoutMs);
@@ -348,7 +392,14 @@ function createEngineSetup(o) {
         while ((i = out.indexOf("\n")) >= 0) { const l = out.slice(0, i).replace(/\r$/, ""); out = out.slice(i + 1); if (onLine) onLine(l); }
         if (out.length > 65536) out = out.slice(-65536);
       });
-      c.stderr.on("data", (d) => { err = (err + d).slice(-65536); });
+      c.stderr.on("data", (d) => {
+        err = (err + d).slice(-65536);
+        if (!onErr) return;
+        errBuf += d;
+        let i;
+        while ((i = errBuf.indexOf("\n")) >= 0) { const l = errBuf.slice(0, i).replace(/\r$/, ""); errBuf = errBuf.slice(i + 1); onErr(l); }
+        if (errBuf.length > 65536) errBuf = errBuf.slice(-65536);
+      });
       const end = () => { clearTimeout(tm); clearInterval(iw); if (child === c) { child = null; try { fs.unlinkSync(lockFile); } catch (_) { /* 沒有就算了 */ } } };
       c.on("error", (e) => { end(); reject(Object.assign(new Error(String((e && e.code) || e)), { stderr: err, spawnFail: true })); });
       c.on("close", (code) => {
@@ -360,10 +411,39 @@ function createEngineSetup(o) {
       });
     });
   }
-  // 舊 pip(例:Xcode Python 3.9 帶的 21.2.4 建的 venv)不認 raw,在解析參數時就以 exit 2 退出、什麼都沒裝:
-  // 認出那一句就拿掉這個旗標重跑同一條,這次啟動之後的 pip 也不帶(只少了逐 byte 進度)
-  let rawBar = true;
-  const RAW_BAR = "--progress-bar=raw", RAW_BAR_REJECTED = /--progress-bar: invalid choice: 'raw'/;
+  // 舊 pip 不認的旗標,在解析參數時就以 exit 2 退出、什麼都沒裝:認出那一句就拿掉那個旗標重跑同一條,這次啟動之後的 pip 也不帶。
+  //   raw 進度:Xcode Python 3.9 帶的 21.2.4 建的 venv 沒有(只少了逐 byte 進度);
+  //   --resume-retries:25.1 以前沒有(隨包 wheel 升級失敗、留在 25.0.1 時;只少了斷點接續,實測「no such option: --resume-retries」)
+  const pipOff = new Set();
+  const pipArgv = () => PIP_INSTALL.filter((a, i) => !PIP_OPTIONAL.some((f) => pipOff.has(f.flag) && (a === f.flag || (f.value && PIP_INSTALL[i - 1] === f.flag))));
+  const pipRejected = (e) => PIP_OPTIONAL.find((f) => !pipOff.has(f.flag) && f.rejected.test(String((e && e.stderr) || "")));
+  /* 隨包 pip wheel(o.pipWheel,main.js PIP_WHEEL)升級 venv 的 pip:--no-index、只吃那一個本機檔,不碰網路。每一條 pip 之前看一次,
+     記號檔 .blave-pip 對得上就跳過(幾毫秒)。升級失敗不擋安裝:留在舊 pip,--resume-retries 由 PIP_OPTIONAL 拿掉,只少了斷點接續。
+     pip 換自己是先解除安裝舊版再裝新版,出錯會自己還原;被硬停在中間(關 app)才可能留下壞掉的 pip——開始前寫 .blave-pip.run,
+     正常結束(成功或失敗)才刪;下次看到它還在就先用 Python 自帶的 ensurepip(也是離線)把 pip 補回來再升級 */
+  let pipTried = false;
+  async function pipSelfUpgrade(my, envPath) {
+    const whl = o.pipWheel;
+    if (pipTried || !whl || !fs.existsSync(o.venvPy)) return;
+    const want = path.basename(whl), running = pipMark + ".run";
+    if (read(pipMark) === want) return;
+    pipTried = true;
+    if (!fs.existsSync(whl)) { o.log("[engine] bundled pip wheel not found; keeping the venv's pip"); return; }
+    if (fs.existsSync(running)) {
+      o.log("[engine] last pip upgrade was cut off; restoring pip with ensurepip first");
+      try { await run(my, o.venvPy, ["-m", "ensurepip", "--default-pip"], envPath, o.venvMs); } catch (e) { if (e.aborted) throw e; o.log("[engine] ensurepip failed: " + pipError(e.stderr || e.message)); }
+    }
+    try { fs.writeFileSync(running, want); } catch (_) { /* 寫不了照樣升級 */ }
+    try {
+      await run(my, o.venvPy, ["-m", "pip", "--isolated", "--disable-pip-version-check", "install", "--no-index", "--no-deps", "--no-compile", whl], envPath, o.venvMs);
+      fs.writeFileSync(pipMark, want);
+      o.log("[engine] pip upgraded from the bundled " + want);
+    } catch (e) {
+      if (e.aborted) throw e;   // 關 app:.run 留著,下次先補
+      o.log("[engine] bundled pip upgrade failed; keeping the venv's pip: " + pipError(e.stderr || e.message));
+    }
+    try { fs.unlinkSync(running); } catch (_) { /* 沒有就算了 */ }
+  }
   async function pip(my, args, envPath, timeoutMs, onName, onInstall) {
     const p = S.dl;
     let lastLine = now();
@@ -371,7 +451,8 @@ function createEngineSetup(o) {
     // 沒有新資料:最近一次有輸出(解析、Downloading、Progress)起算;進了安裝階段就不算(那時 pip 不出聲是正常的)
     const idle = { ms: o.idleMs, quiet: () => (p.installing ? 0 : now() - Math.max(lastLine, p.lastByteAt)) };
     const seen = new Map();   // 這一條 pip 下載 / 從快取拿的 wheel:名字 → 版本(給半裝保護釘版本)
-    const go = () => run(my, o.venvPy, [...PIP_INSTALL.filter((a) => rawBar || a !== RAW_BAR), ...(o.pipCacheDir ? ["--cache-dir", o.pipCacheDir] : []), ...args], envPath, timeoutMs, (l) => {
+    const t0 = now(), delays = o.netRetryMs || NET_RETRY_MS;
+    const go = () => run(my, o.venvPy, [...pipArgv(), ...(o.pipCacheDir ? ["--cache-dir", o.pipCacheDir] : []), ...args], envPath, Math.max(1, timeoutMs - (now() - t0)), (l) => {
       lastLine = now();
       const n = onName ? pipCurName(l) : null, renamed = !!n && n !== S.cur.name, moved = pipLine(p, l, now());
       const wh = onInstall && pipWheel(l);
@@ -380,14 +461,32 @@ function createEngineSetup(o) {
       if (ins) onInstall(ins[1].split(",").map((x) => x.trim()).filter(Boolean), seen);
       if (renamed) S.cur.name = n;
       if (moved || renamed) emit();
-    }, o.idleMs ? idle : null);
-    try {
-      try { await go(); } catch (e) {
-        if (!rawBar || e.aborted || !RAW_BAR_REJECTED.test(String(e.stderr || ""))) throw e;
-        rawBar = false;
-        o.log("[engine] this pip has no " + RAW_BAR + "; retrying without it");
-        await go();
+    }, o.idleMs ? idle : null, (l) => { lastLine = now(); if (pipErrLine(p, l)) emit(); });
+    const once = async () => {
+      for (;;) {
+        try { await go(); return; } catch (e) {
+          const f = e.aborted ? null : pipRejected(e);
+          if (!f) throw e;
+          pipOff.add(f.flag);
+          o.log("[engine] this pip has no " + f.flag + "; retrying without it");
+        }
       }
+    };
+    await pipSelfUpgrade(my, envPath);
+    try {
+      for (let n = 0; ; n++) {
+        try { await once(); break; } catch (e) {
+          if (!netRetryOk(e, n, delays, now() - t0, timeoutMs, p.installing)) throw e;
+          o.log(`[engine] pip network error, auto retry ${n + 1}/${delays.length} in ${Math.round(delays[n] / 1000)}s: ` + pipError(e.stderr || e.message).split("\n").pop());
+          p.file = null; S.cur.retry = { n: n + 1, max: delays.length }; emit();
+          // 切成一秒一段看代數:關 app / 更新重開(abort)時最多一秒就收掉,不讓共用的那一輪 ensure 卡到等完
+          retryWait = true;
+          try { for (let left = delays[n]; left > 0 && my === gen; left -= 1000) await sleep(Math.min(1000, left)); } finally { retryWait = false; }
+          if (my !== gen) throw Object.assign(new Error("stopped (app closing)"), { stderr: "", aborted: true });
+          p.installing = false; p.lastByteAt = now(); lastLine = now();
+        }
+      }
+      if (S.cur && S.cur.retry) { S.cur.retry = null; emit(); }
       fileDone(p);
     } catch (e) {
       p.file = null;
@@ -442,8 +541,11 @@ function createEngineSetup(o) {
   async function step(k, fn) {
     const st = S.steps.find((x) => x.k === k);
     st.st = "run"; st.t0 = now(); S.cur = { step: k, sub: null, i: 0, n: 0, name: null, t0: st.t0, limitMs: null }; emit();
+    o.log(`[engine] ${S.kind} step ${k} start`);
+    const t0 = st.t0;
     await fn();
     st.ms += now() - st.t0; st.t0 = null; st.st = "done"; emit();
+    o.log(`[engine] ${S.kind} step ${k} done in ${Math.round((now() - t0) / 1000)}s`);
   }
 
   async function ensure() {
@@ -460,7 +562,7 @@ function createEngineSetup(o) {
     const groups = depGroups(o.deps, o.optional).map((g) => ({ ...g, mark: markOf(g.id),
       todo: skipped.has(g.id) ? [] : depsTodo(g.pins, read(markOf(g.id)), read(markOf(g.id) + ".part")) }));
     const todo = groups.flatMap((g) => g.todo);
-    if (!fresh && !o.isPackaged) o.copyOfficial();   // 開發版:每次都重拷,改了 lib/ 或 AGENTS.md 重啟就生效
+    if (!fresh && !o.isPackaged) await o.copyOfficial();   // 開發版:每次都重拷,改了 lib/ 或 AGENTS.md 重啟就生效
     if (!fresh && !needVenv && !needSdk && !todo.length) {
       for (const d of ["state", "config"]) fs.mkdirSync(path.join(o.base, d), { recursive: true });
       // 上一輪失敗、這一輪卻沒事可做(上次死在寫最後那個記號檔之前,其實都裝好了):卡不能一直停在失敗
@@ -478,12 +580,12 @@ function createEngineSetup(o) {
     began();
     try {
       if (needSdk || todo.length) await reapCompile();
-      if (fresh) await step("ws", () => {
+      if (fresh) await step("ws", async () => {
         // 0700:裡面有 session.db(對話)、.env(金鑰)、狀態檔,同一台電腦的其他用戶不該讀得到(稽核 R9)。
         // 只在我們自己建立的時候設;用戶既有的目錄不動他的權限。
         if (!fs.existsSync(o.base)) fs.mkdirSync(o.base, { recursive: true, mode: 0o700 });
         fs.mkdirSync(o.ws, { recursive: true });
-        o.copyOfficial();
+        await o.copyOfficial();
       });
       for (const d of ["state", "config"]) fs.mkdirSync(path.join(o.base, d), { recursive: true });
       // 每一條 pip(SDK 那條與每個策略套件)都拿整份 WORKSPACE_DEPS 當 -c,所以在引擎那一步之前就寫好:
@@ -573,4 +675,4 @@ function createEngineSetup(o) {
   return { ensure, snapshot, abort, busy, compiling };
 }
 
-module.exports = { createEngineSetup, waitPidLock, pidAlive, procStartOf, pipLine, pipCurName, pipWheel, pipError, failKind, pipWhy, venvWhy, engineFailWhy, depsTodo, depGroups, lockKey, PIP_INSTALL, FAIL_LOG_KEEP };
+module.exports = { createEngineSetup, waitPidLock, pidAlive, procStartOf, pipLine, pipErrLine, PIP_OPTIONAL, pipCurName, pipWheel, pipError, failKind, netRetryOk, NET_RETRY_MS, pipWhy, venvWhy, engineFailWhy, depsTodo, depGroups, lockKey, PIP_INSTALL, FAIL_LOG_KEEP };

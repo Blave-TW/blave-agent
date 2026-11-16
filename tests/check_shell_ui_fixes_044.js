@@ -30,7 +30,7 @@ if (!process.versions.electron) {
     "pv.d.noTrial.m": ["這個帳號沒有首次綁卡的試用。Blave 資料要開通 Blave Agent 方案（每 {pd} 天 {p} TWD 起）。", null],
     "pv.d.plan.m": ["Blave 資料要開通 Blave Agent 方案（每 {pd} 天 {p} TWD 起）。沒有的話，電腦版只用公開資料。", null],
     "lib.gate.feeActual": ["實際 {v}", "Actual {v}"],
-    "lib.gate1d": ["手續費不低於實際費率、沒有假歷史", null],
+    "lib.gate1d": ["交易成本不低於實際費率、沒有假歷史", null],
     "lib.gate.naShort": ["不適用", null],
     "lib.gate.robustOver": ["鄰近參數平均比選定那組還好", null],
     "cap.group.tw": ["台灣期貨", null],

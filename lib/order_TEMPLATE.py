@@ -57,6 +57,10 @@ def format_qty(env: dict, symbol: str, qty: float, price: float = None) -> str:
     order). NEVER feed its return into place_market_order — that re-converts
     contracts→contracts and oversizes orders N× on ctVal≠1 instruments
     (measured live: 10× on ETH). See references/manager.md, units pitfall.
+
+    Below the minimum: raise ValueError(reject_token.tag(reject_token.BELOW_MIN_SIZE, msg)) —
+    manager/flatten and close_symbol treat only that token as dust. A suspended / delisting instrument:
+    reject_token.SYMBOL_UNAVAILABLE (a failed close, never booked flat).
     """
     raise NotImplementedError
 

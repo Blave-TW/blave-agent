@@ -30,10 +30,12 @@ contextBridge.exposeInMainWorld("blave", {
   replyCue: (kind, snippet, sid) => ipcRenderer.send("reply-cue", { kind: String(kind), snippet: typeof snippet === "string" ? snippet : "", ...(typeof sid === "string" && sid ? { sid } : {}) }),
   theme: () => ipcRenderer.invoke("theme"),
   themeSet: (v) => ipcRenderer.invoke("theme-set", typeof v === "string" ? v : ""),
-  slotState: () => ipcRenderer.invoke("slot-state"),
   slotFirstReply: () => ipcRenderer.invoke("slot-first-reply"),
-  slotPhoneSet: (p) => ipcRenderer.invoke("slot-phone-set", { closes: Number(p && p.closes), until: Number(p && p.until), seenDays: p && Array.isArray(p.seenDays) ? p.seenDays.map(String) : [] }),
   welcomePrefs: () => ipcRenderer.invoke("welcome-prefs"),
+  mainMarket: () => ipcRenderer.invoke("main-market"),
+  // { v, fresh } 改值;{ seal: true } 從連結畫面進工作頁;{ shown: true } 第二步畫出來了。主行程再驗一次值域
+  mainMarketSet: (p) => ipcRenderer.invoke("main-market-set", p && typeof p === "object" ? { v: p.v, fresh: p.fresh === true, seal: p.seal === true, shown: p.shown === true } : {}),
+  onMainMarket: (fn) => ipcRenderer.on("main-market", (_e, s) => fn(s)),
   welcomePrefsSet: (p) => ipcRenderer.invoke("welcome-prefs-set", { ...(p && "done" in p ? { done: p.done === true } : {}), ...(p && "cloudDone" in p ? { cloudDone: p.cloudDone === true } : {}) }),
   introCheck: () => ipcRenderer.invoke("intro-check"),
   introSeen: () => ipcRenderer.invoke("intro-seen"),
@@ -175,6 +177,7 @@ contextBridge.exposeInMainWorld("blave", {
   saveModelPrefs: (prefs) => ipcRenderer.invoke("save-model-prefs", prefs),
   startOAuth: (lang, intent) => ipcRenderer.invoke("start-oauth", lang, intent),
   cancelOAuth: () => ipcRenderer.invoke("cancel-oauth"),
+  reopenOAuth: () => ipcRenderer.invoke("reopen-oauth"),
   clearConnection: () => ipcRenderer.invoke("clear-connection"),
   hasBlaveToken: () => ipcRenderer.invoke("has-blave-token"),
   // 自帶 API 金鑰(renderer/apikey.js):金鑰值只經過 apikeySet 一次(主行程先打供應商驗過才存);test 重驗已存的那把、remove 刪掉、cancel 中止驗證。

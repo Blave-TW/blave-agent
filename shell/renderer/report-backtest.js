@@ -269,7 +269,7 @@
   // ---------------------------------------------------------------- 1. meta
 
   function buildMeta(stats) {
-    // 數值片段進 .mono;「手續費」這種要翻譯的字留在 sans——漢字不進 mono(canon › Type)
+    // 數值片段進 .mono;「交易成本」這種要翻譯的字留在 sans——漢字不進 mono(canon › Type)
     const parts = [];
     const mono = (text, cls) => el("span", "mono" + (cls ? " " + cls : ""), text);
     if (typeof stats.symbol === "string" && stats.symbol) {
@@ -282,9 +282,17 @@
     const end = typeof stats.end === "string" && stats.end ? stats.end : null;
     if (start || end) parts.push([mono((start || DASH) + " \u2192 " + (end || DASH))]);
     // 費率:讀 fee [%];舊的投資組合(Type C)stats.json 只有小數的 fee(runner 後來才補 fee [%],舊檔不會重跑)——
-    // 讀不到就畫「手續費 —」,旁邊又寫著總手續費,兩個數字互相打臉(設計稽核 005 第 1 條)
+    // 讀不到就畫「交易成本 —」,旁邊又寫著總交易成本,兩個數字互相打臉(設計稽核 005 第 1 條)
     const fee = fmtFixed(isNum(stats["fee [%]"]) ? stats["fee [%]"] : isNum(stats.fee) ? stats.fee * 100 : null);
-    if (fee !== null) parts.push([el("span", "", t("bt.fee")), mono(fee + "%")]);
+    let feeTip = null, feeLab = null;
+    if (fee !== null) {
+      // 用戶看到「0.01%」會以為只是券商手續費:標籤掛說明,講這個比例含手續費、稅、滑價、每邊扣一次(lib/costs.py)
+      const id = "bt-tip-" + ++tipSeq, lab = el("button", "mp-tip", t("bt.fee")), bubble = el("span", "tip", t("bt.tip.fee", { fee: fee }));
+      lab.type = "button"; lab.setAttribute("aria-describedby", id);
+      bubble.id = id; bubble.setAttribute("role", "tooltip");
+      parts.push([lab, bubble, mono(fee + "%")]);
+      feeTip = bubble; feeLab = lab;
+    }
     if (!parts.length) return null;
     // 每個直接子節點都是一組(.mgrp):標籤跟值綁在一起,折行只在組與組之間;組間的「·」由 CSS 畫(report-backtest.css),
     // 折到行首時被裁掉,行尾不留孤點(同 web IOS1)——不要再插獨立的分隔節點
@@ -294,6 +302,18 @@
       nodes.forEach(function (nd) { group.appendChild(nd); });
       meta.appendChild(group);
     });
+    // 泡泡的定位基準是 .bt-meta 本身(report-backtest.css:那一組不定位),預設貼容器左緣,永遠在 overflow-x: clip 的範圍內。
+    // 要出現的那一刻(滑過／focus)才挪到標籤上方,左右夾在容器裡;不靠排版時機
+    if (feeTip) {
+      const place = function () {
+        const m = meta.getBoundingClientRect(), b = feeLab.getBoundingClientRect();
+        if (!m.width) return;
+        feeTip.style.left = Math.max(0, Math.min(b.left - m.left, m.width - Math.min(260, m.width))) + "px";
+        feeTip.style.bottom = (m.bottom - b.top + 6) + "px";
+      };
+      feeLab.addEventListener("mouseenter", place);
+      feeLab.addEventListener("focus", place);
+    }
     return meta;
   }
 

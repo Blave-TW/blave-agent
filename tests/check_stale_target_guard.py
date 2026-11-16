@@ -351,6 +351,11 @@ for self_ledger in (False, True):
             self_ledger)
     check(v.calls == [], f"{tag} crypto daily trades 7 days: no weekend allowance, 2.5 days failing "
           f"is stale ({v.calls})")
+    tpl = {"src": "def fetch_data(hdrs):\n    from lib.data import fetch_okx_kline\n"
+                  "    return fetch_okx_kline(SYMBOL, INTERVAL, START, END)\n"}
+    v = run({"ct": (LONG, "1d", 2.5 * D, 300, tpl)}, {}, self_ledger)
+    check(v.calls == [], f"{tag} templated crypto daily (its own def fetch_data is no fetcher): "
+          f"no weekend allowance, stale ({v.calls})")
     mixed = {"src": "from lib.data import fetch_kline, fetch_twstock_price\n"}
     v = run({"mx": (LONG, "1d", 2.5 * D, 300, mixed)}, {}, self_ledger)
     check(v.calls == [("BTCUSDT", 100, False)],

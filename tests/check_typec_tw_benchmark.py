@@ -197,7 +197,15 @@ def fake_bingx(symbol, interval, start, end):
     return pd.DataFrame({"Open": BTC_CLOSE, "Close": BTC_CLOSE})[start:end]
 
 
-D.fetch_kline, D.fetch_bingx_kline = fake_kline, fake_bingx
+real_okx_inst = D._okx_inst
+
+
+def fake_okx(symbol, interval, start, end):
+    kcalls.append(("okx", real_okx_inst(symbol), interval, start, end))   # a form the real one refuses raises here too
+    return pd.DataFrame({"Open": BTC_CLOSE, "Close": BTC_CLOSE})[start:end]
+
+
+D.fetch_kline, D.fetch_bingx_kline, D.fetch_okx_kline = fake_kline, fake_bingx, fake_okx
 calls.clear()
 st = run("crypto", CRYPTO, fake_0050, BTC_SRC)
 bh = st.get("benchmark_bh") or {}
@@ -222,6 +230,12 @@ st = run("crypto_bingx", CRYPTO, fake_0050, "from lib.data import fetch_bingx_kl
 bh = st.get("benchmark_bh") or {}
 check(bh.get("kind") == "BTC_bh" and kcalls and kcalls[-1][:3] == ("bingx", "BTC-USDT", "1d"),
       f"a BingX-only Type C takes BTC from BingX ({kcalls[-1] if kcalls else None})")
+
+kcalls.clear()
+st = run("crypto_okx", CRYPTO, fake_0050, "from lib.data import fetch_okx_kline\n")
+bh = st.get("benchmark_bh") or {}
+check(bh.get("kind") == "BTC_bh" and kcalls and kcalls[-1][:3] == ("okx", "BTC-USDT-SWAP", "1d"),
+      f"an OKX-only Type C takes BTC from OKX ({kcalls[-1] if kcalls else None})")
 
 late_btc = BTC_CLOSE[BTC_CLOSE.index > "2024-03-01"]
 D.fetch_kline = lambda *a, **k: pd.DataFrame({"Open": late_btc, "Close": late_btc})

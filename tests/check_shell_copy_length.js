@@ -29,7 +29,6 @@ const EXEMPT = [
   [/(^|\.)msg(?!\w*(Label|Title)$)/, "送給 agent 的提示詞(*.msg*,不含畫面上的 Label/Title),讀者是模型不是用戶"],
   [/^cap\.ho\.prompt|^tr\.err\.askPrompt/, "送給 agent 的提示詞(群益開通交接、下單失敗請 agent 查)"],
   [/^rpt\.new\.tpl\./, "新報告範本,填進描述欄後送給 agent 的提示詞"],
-  [/^cx\.paper\.fill$/, "同頁展開內文(「模擬怎麼成交？」),canon 文案密度 #4 不設字數"],
 ];
 
 // 同頁展開內文(canon Copy #4／#9):只列確實只出現在收合區塊本體裡的 key;觸發字照 40 檢查。

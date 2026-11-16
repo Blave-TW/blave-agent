@@ -229,9 +229,17 @@ than an hour off, closes wait on the machine's own clock (up to 15 minutes past 
 (P1 `tw_clock_unchecked`; more than an hour off also pauses new positions). A clock 60 s to an
 hour off writes one P1 row (`clock_skew_hold`: new positions paused, closes go on the corrected
 clock); moving between the two bands is a new row. Holidays and typhoon closures are not known here: the broker refuses those.
-Known limit: the 統一 worker (`lib/president_worker`) logs in and reads by the machine's own clock, so on a skewed clock a close's fill shows only once that clock's window opens. 全部平倉 outside the regular session (the pre-open too, on a measured clock)
-defers TW futures to the reconciler's first round after the open (`state/paper_tw_close.json`, as
-paper TW stocks; HALT lets exactly that close through, entries stay shut); 啟動下單 first cancels it.
+Known limit: the 統一 worker (`lib/president_worker`) logs in and reads by the machine's own clock, so on a skewed clock a close's fill shows only once that clock's window opens. 全部平倉
+(暫停並關閉部位, and the close before an unbind) sends the TW futures close whatever the time: the
+lib's trading window does not apply to it (`user_close`; a strategy's close still waits for the
+window). If 統一 refuses it (9876 / 9901 / 9902, or the login itself off hours — that writes no login
+stop), that is a failure: one order_errors row (`[order_reject:market_closed]`), the position stays
+open, and nothing resends it at the open. After 暫停並關閉部位 HALT stays (no stop). After 平倉並解除
+the keys stay and nothing is unbound; if trading was not paused before that press and every position
+left is such a refusal, the pause that press set is lifted and strategies trade on (Wei 11-16) — the user closes it in the session (in 統一's own app). Tell the user exactly that; never say
+it closes at the open. Sent in the pre-open, 統一 may queue it to the open — accepted. A close an
+older lib deferred to the open (`state/paper_tw_close.json`) is dropped at the first round, never
+sent, with one failure row per symbol (in a round with no readable book, every symbol is said).
 
 While stopped nothing goes out on 統一, closes included: the reconciler skips the whole round
 (no HALT, no order_error) until the login is confirmed, then converges to the current target once.
@@ -412,6 +420,11 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
    尚未開盤 / 驗章失敗 / 已收盤) and server 99xx (the official dtrade page's example: 9902
    `TTO0002:尚未開始接收委託或者不接受此種委託`; live 11-10: 9901 `TTO0001:交易時間已結束`). Also a
    rejection: **9876 `FUT0083:該商品交易時間已結束`** (live 11-10, a close after the day close).
+   9876 and 9901 mean the market is shut (a holiday or a typhoon included — the clock knows only
+   the weekly hours): `SessionClosed` with `from_broker`; close-all reports it as a failed close
+   (the position stays), and the reconciler tries a strategy's leg again only at the next session — 9876 (one product, e.g. the
+   expiring month after a settlement day's 13:30) holds only that contract, 9901 all of 統一 — with one
+   order_errors row (kind `broker_session_closed`) for the leg that did not fill.
    9868 `FUF0092 無足夠口數留倉平倉` is the over-close refusal (`[order_reject:reduce_only_rejected]`).
    **Live, 10-02: the first reply to a market IOC was
    already 0004** — the order filled before an 0000 was seen — so success is any of

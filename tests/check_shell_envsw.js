@@ -14,7 +14,7 @@ eval((pure + env).replace(/^const /gm, "var "));
 let red = 0; const ok = (n, c) => { console.log((c ? "PASS  " : "FAIL  ") + n); if (!c) red++; };
 // 稽核 Q1:從開通頁按「綁卡」外開瀏覽器,回來要重查帳號狀態(不然畫面一直停在「綁卡」,人會以為沒綁成)
 { const appSrc = fs.readFileSync(path.join(R, "app.js"), "utf8");
-  ok("Q1 回到 app 時,開通頁看得見就重查帳號狀態", /planState\(\) === "starting" \|\| envOpenVisible\(\) \|\| planOpenNow\)\) return;/.test(appSrc)
+  ok("Q1 回到 app 時,開通頁看得見就重查帳號狀態", /planState\(\) === "starting" \|\| envOpenVisible\(\) \|\| planOpenNow \|\| sideCvGone\)\) return;/.test(appSrc)
     && /function envOpenVisible\(\) \{ return ENV\.cur === "cloud" && !\$\("cv-empty"\)\.hidden; \}/.test(src)); }
 process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到結尾"); process.exit(1); });
 

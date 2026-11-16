@@ -111,10 +111,13 @@ MSG_MAX = 300
 # --request-id: echoed into LAST_PATH and turns on the after-close re-read (_verify_flat)
 SCOPE = None
 REQUEST_ID = None
+CLOSE_ID = None   # --close-id: echoed into LAST_PATH only (_parse_argv)
 _RUN = {"unconfirmed": set(), "why": {}, "err": {}, "reply": {}, "first_err": None, "venues": []}
 # the TW brokers' refusal: "…statuscode=9902 尚未開始接收委託" (lib/order_president _await) — the text after the code is theirs
 _TW_REPLY_RE = re.compile(r"statuscode=\S*\s+(.+)$")
 _REJECT_TOKEN_RE = re.compile(r"\[order_reject:[a-z_]+\] ?")
+_SESSION_NOT_OPEN_RE = re.compile(r"statuscode=9902\b")   # 統一: 尚未開始接收委託 (lib/order_president)
+_BELOW_MIN_RE = re.compile(r"\[order_reject:below_min_size\]")   # lib/reject_token.BELOW_MIN_SIZE
 
 
 def _record_order_error(symbol, exchange, error, extra=None, repeat=False):
@@ -281,6 +284,16 @@ def _takes(fn, name):
     except (TypeError, ValueError):
         return False
     return name in params or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+
+
+def _user_close(fn):
+    """{"user_close": True} for an order call that names it (lib/order_paper: a TW stock closes now
+    at the last price, session or not — Wei 11-15), else {}. Named only: a **kwargs lib could
+    forward it to a venue."""
+    try:
+        return {"user_close": True} if "user_close" in inspect.signature(fn).parameters else {}
+    except (TypeError, ValueError):
+        return {}
 
 
 def _book_months(vid, ledger):
@@ -525,7 +538,7 @@ def _flatten_spot(vid, order, env, book=None, parked_held=None):
         try:
             cid = f"flat{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
             result = order.place_spot_market_order(env, sym, "sell", base_qty=amt,
-                                                   client_order_id=cid)
+                                                   client_order_id=cid, **_user_close(order.place_spot_market_order))
         except Exception as e:
             u = _unknown_outcome(e, vid, sym, cid)
             if u is not None:
@@ -537,10 +550,9 @@ def _flatten_spot(vid, order, env, book=None, parked_held=None):
                 _note(vid, f"{sym}@spot", "unconfirmed")
                 errors += 1
                 continue
-            d = _defer_tw_close(vid, f"{sym}@spot", e)
-            if d:
+            if _refuse_tw_futures(vid, f"{sym}@spot", e):
                 unclosed.add(f"{sym}@spot")
-                errors += d == "refused"
+                errors += 1
                 continue
             logging.error(f"[{vid}] close-all spot {sym} failed: {e}")
             _note_reply(vid, f"{sym}@spot", e)
@@ -584,73 +596,62 @@ def _flatten_spot(vid, order, env, book=None, parked_held=None):
     return closed, errors, closed_symbols, unclosed
 
 
-def _tw_futures_closed(vid):
-    """A TW futures venue (lots-native broker) outside the regular session: the
-    close goes to the reconciler's first round after the open (Wei 11-10) — in
-    the pre-open it would sit queued at the broker, unconfirmed, under HALT.
-    On a measured clock (lib/tw_clock) the session decides; with no sample only
-    the broker's closed hours do (close_hold, 15 min of slack past each close),
-    so a fast clock never leaves a position open while the market trades. No
-    measurement at all: the api is asked once first (tw_clock.probe)."""
+def _tw_clock_probe(vid):
+    """No clock sample at all: ask the api once (tw_clock.probe) before a 群益 / 統一 close, so 統一's
+    lib tells in-window from off-hours on the corrected clock (off hours its login refusal is a
+    shut market, not a login stop). Not a gate: the user's close is sent either way."""
     if not venue_traits.has(vid, "native_units"):
-        return False
+        return
     try:
         from lib import tw_clock
         if tw_clock.skew() is None and getattr(tw_clock, "gross_skew", tw_clock.skew)() is None:
             getattr(tw_clock, "probe", lambda: False)()
-        if tw_clock.skew() is not None:
-            return tw_clock.queued_until() is not None
-        return tw_clock.close_hold() is not None
-    except (ImportError, AttributeError):  # half-updated workspace: sent, as before
-        return False
+    except (ImportError, AttributeError):  # half-updated workspace
+        pass
 
 
-def _defer_tw_close(vid, key, exc):
-    """A TW close refused because the session is shut — a paper TW stock outside
-    the TWSE session (order_paper.PaperMarketClosed), a TW futures close outside
-    the broker's hours (lib/tw_clock.close_hold before the send, or
-    order_president.SessionClosed): handed to the reconciler's first round after
-    the open (lib.portfolio.defer_paper_tw_close), said once on the page. The
-    book keeps the position until then. `exc` None = held before the send (TW
-    futures). Returns "deferred", "refused" (said, counted as an error) or None
-    (any other error).
-
-    After a machine restart (guard.restart_stopped) nothing is deferred: the
-    reconciler skips every round while stopped, so no round after the open
-    would close it — the page says to press close-all again in the session."""
-    closed = {"PaperMarketClosed": ("台股", "09:00–13:30"),  # (market, its hours) for the page
-              "SessionClosed": ("台指期", "08:45–13:45、15:00–05:00")}
-    name = "SessionClosed" if exc is None else type(exc).__name__
-    if name not in closed or (name == "SessionClosed" and not venue_traits.has(vid, "native_units")):
-        return None
-    market, hours = closed[name]
-    shut, row = f"{market}休市中", {"kind": "market_closed_deferred"}
-    if name == "SessionClosed":
+def _refuse_tw_futures(vid, key, exc):
+    """A close the lib or the broker refused because the market is shut (Wei 11-15: the user's
+    close is always sent, a refusal is a failure — nothing deferred, nothing resent at the open).
+    order_president.SessionClosed: 統一 refused the order (9876 / 9901, `from_broker`) or, off
+    hours, the login (order_president._off_hours_session); 9902 (尚未開始接收委託) is the same
+    shut market. 群益 (CapitalError: raised only before the order has a sequence number) answers
+    no session code: its refusal while the weekly session table says shut is that shut market
+    (Wei 11-16; holidays not known, an unreadable clock = open). order_paper.PaperMarketClosed:
+    only an older paper lib — the current one fills a user's close at the last price. One refusal
+    row with no kind (order_error: P1 real, P2 paper) carrying [order_reject:market_closed], so the
+    pages word it in their language. Returns True when handled, None for any other error."""
+    name = type(exc).__name__
+    shut = ((name == "SessionClosed" or _SESSION_NOT_OPEN_RE.search(str(exc)))
+            and venue_traits.has(vid, "native_units")) or name == "PaperMarketClosed"
+    if not shut and name == "CapitalError" and vid == venue_traits.CAPITAL:
         try:
             from lib import tw_clock
-            if tw_clock.skew() is None:  # read off this machine's own clock: the market may be open
-                if getattr(tw_clock, "gross_skew", tw_clock.skew)() is None:
-                    shut = f"量不到這台電腦的時鐘準不準,{market}照它的時間還沒開盤"
-                    row["clock"] = "unmeasured"
-                else:   # measured, past SKEW_MAX_S
-                    shut = f"這台電腦的時鐘差超過一小時,{market}照它的時間還沒開盤"
-                    row["clock"] = "far"
-        except (ImportError, AttributeError):
-            pass
-    if guard.restart_stopped():
-        logging.error(f"[{vid}] {key}: {market} closed and the machine is stopped after a restart — not deferred")
-        _record_order_error(key, vid, f"close-all: {shut},而且機器重開後停止下單,無法排到開盤自動平倉——"
-                                      f"請在開盤後({hours})再按一次全部平倉")
-        return "refused"
-    try:
-        from lib.portfolio import defer_paper_tw_close
-        defer_paper_tw_close([key])
-    except Exception as e:
-        logging.error(f"[{vid}] {key}: could not defer the close ({e})")
+            shut = tw_clock.queued_until() is not None   # outside the regular session, corrected clock
+        except Exception:
+            shut = False
+    if not shut:
         return None
-    logging.info(f"[{vid}] {key}: {market} closed — close deferred to the next session")
-    _record_order_error(key, vid, f"close-all: {shut},開盤後第一輪平倉", row)
-    return "deferred"
+    _note(vid, key, "market_closed")
+    _note_reply(vid, key, exc)   # the broker's own words, when it answered (our window's refusal has none)
+    logging.error(f"[{vid}] {key}: market closed — the close was refused, the position stays ({exc})")
+    # The text is the P1's body (api notify). Self-contained: tests run this function on its own.
+    text = "close-all: [order_reject:market_closed] 休市中沒有平倉，部位還在、沒有停損，開盤後要自己平"
+    g = globals()
+    if g.get("REQUEST_ID") is not None and g.get("CLOSE_ID"):
+        # Always the paused row: only command_listener._lift_own_halt knows whether the HALT really
+        # goes, and it rewords this row (found by close_id) after it has. Held to the end of the run
+        # so the platform rarely sees the P1 before that rewording.
+        g["_RUN"].setdefault("refused", []).append((key, vid, text))
+        return True
+    _record_order_error(key, vid, text)
+    return True
+
+
+def _record_refusals():
+    held = _RUN.pop("refused", None) or []
+    for key, vid, paused in held:
+        _record_order_error(key, vid, paused, {"close_id": CLOSE_ID})
 
 
 def _restore_netted(vid, order, env, positions, ledger, closed_symbols, unclosed,
@@ -696,8 +697,11 @@ def _restore_netted(vid, order, env, positions, ledger, closed_symbols, unclosed
                 continue
         try:
             order.format_qty(env, sym, qty)
-        except ValueError:
-            logging.info(f"[{vid}] {sym}: netted share {qty} below minimum — left")
+        except ValueError as e:
+            if _BELOW_MIN_RE.search(str(e)):
+                logging.info(f"[{vid}] {sym}: netted share {qty} below minimum — left")
+            else:
+                logging.error(f"[{vid}] {sym}: netted share {qty} not restored — {e}")
             continue
         cid = f"flat{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
         try:
@@ -937,6 +941,10 @@ def flatten():
             _RUN["first_err"] = f"{type(e).__name__}: {e}"[:MSG_MAX]
         raise
     finally:
+        try:
+            _record_refusals()
+        except Exception as e:   # LAST_PATH still goes out: the unbind waits on it
+            logging.error(f"close-all: refusal rows not written ({type(e).__name__}: {e})")
         _write_last(_outcome(result is True, started, time.time()))
 
 
@@ -963,7 +971,7 @@ def _outcome(ok, started_at, done_at):
         msg = next((m for (v, k), m in _RUN["err"].items() if k in unconf), None)
     if msg is None:
         msg = _RUN["first_err"] or ""
-    return {"request_id": REQUEST_ID,
+    return {"request_id": REQUEST_ID, "close_id": CLOSE_ID,
             "venues": sorted(SCOPE) if SCOPE is not None else sorted(_RUN["venues"]),
             "started_at": round(started_at, 3),
             "done_at": None if done_at is None else round(done_at, 3),
@@ -1408,14 +1416,7 @@ def _flatten():
                     errors += 1
                     unclosed.add(key)
                     continue
-                if _tw_futures_closed(vid):
-                    # the broker takes no order now: the reconciler closes it at the pre-open
-                    d = _defer_tw_close(vid, key, None)
-                    unclosed.add(key)
-                    errors += d != "deferred"
-                    if d is None:
-                        _record_order_error(key, vid, "close-all: 台指期現在不收單,開盤後再按一次全部平倉")
-                    continue
+                _tw_clock_probe(vid)
                 # a lots position (futures_contracts / shares — paper reports it
                 # with unit "contracts") is closed by its lot count: a notional
                 # close would be refused, or sized wrong
@@ -1432,7 +1433,7 @@ def _flatten():
                         continue
                     result = order.place_contract_market_order(
                         env, sym, side, int(size), p.get("contract_value") or 1.0,
-                        client_order_id=cid, reduce_only=True)
+                        client_order_id=cid, reduce_only=True, **_user_close(order.place_contract_market_order))
                 else:
                     try:
                         # step/min_qty gate ONLY — deliberately no price arg: with
@@ -1442,11 +1443,15 @@ def _flatten():
                         # venue that does reject the close reports it as a visible
                         # error below, not a silent leave.
                         order.format_qty(env, sym, size)
-                    except ValueError:
+                    except ValueError as e:
+                        # only a confirmed below-minimum is dust: a suspended / delisting contract raises
+                        # ValueError too, and booking it flat would let close_then_unbind drop its keys
+                        if not _BELOW_MIN_RE.search(str(e)):
+                            raise
                         logging.info(f"[{vid}] {sym} {side} {size} below minimum — dust left")
                         closed_symbols.add(key)  # dust is still "as flat as it gets"
                         continue
-                    kw = {}
+                    kw = _user_close(order.close_position_partial)
                     if months_by_key is not None and _takes(order.close_position_partial, "book_months"):
                         kw["book_months"] = months_by_key.get(key, set())
                     cap_base = _capital_base(key) if vid == venue_traits.CAPITAL else None
@@ -1464,10 +1469,9 @@ def _flatten():
                     _note(vid, _book_key(vid, sym), "unconfirmed")
                     errors += 1
                     continue
-                d = _defer_tw_close(vid, _book_key(vid, sym), e) if sym else None
-                if d:
+                if sym and _refuse_tw_futures(vid, _book_key(vid, sym), e):
                     unclosed.add(_book_key(vid, sym))
-                    errors += d == "refused"
+                    errors += 1
                     continue
                 logging.error(f"[{vid}] close {p.get('symbol')} failed: {e}")
                 if sym:
@@ -1625,8 +1629,10 @@ _VENUE_ID_RE = re.compile(r"^[a-z0-9_]{1,32}$")
 
 def _parse_argv(argv):
     """--venues a,b and --request-id X (runtime close_then_unbind). A malformed value
-    closes nothing rather than everything: an unbind of one venue must never sell another's."""
-    global SCOPE, REQUEST_ID
+    closes nothing rather than everything: an unbind of one venue must never sell another's.
+    --close-id X (runtime _close_all, every press): only echoed into LAST_PATH, where a page
+    pairs it with the HALT the same press wrote."""
+    global SCOPE, REQUEST_ID, CLOSE_ID
     it = iter(argv)
     for a in it:
         if a == "--venues":
@@ -1635,12 +1641,15 @@ def _parse_argv(argv):
         elif a == "--request-id":
             rid = str(next(it, ""))
             REQUEST_ID = rid if _REQUEST_ID_RE.match(rid) else "invalid"
+        elif a == "--close-id":
+            cid = str(next(it, ""))
+            CLOSE_ID = cid if _REQUEST_ID_RE.match(cid) else None
 
 
 if __name__ == "__main__":
     # the user's close: 群益 logs in now, not after the reconciler's re-login backoff (lib/order_capital)
     os.environ["BLAVE_CAPITAL_OWN_BACKOFF"] = "1"
-    try:  # an unmeasured clock may ask the api once before a TW futures close is deferred on it
+    try:  # an unmeasured clock may ask the api once before a TW futures close (_tw_clock_probe)
         from lib import tw_clock as _twc
         _twc.probe_enabled = os.environ.get("BLAVE_CLOCK_PROBE") != "0"   # tests/_run_all.py: 0
     except ImportError:

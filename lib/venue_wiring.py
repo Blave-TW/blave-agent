@@ -20,6 +20,7 @@ Key contract (lib/portfolio): plain "BTCUSDT" keys = perp/swap,
 from spot_scope() so removing a spot strategy sells its inventory down and
 personal coins never enter.
 """
+import ast
 import importlib
 import inspect
 import json
@@ -260,11 +261,350 @@ def _placing(vid, sym, cid, fn, *args, **kw):
         raise wrapped from e
 
 
-# fetch_kline's candles are Binance USDⓈ-M (lib/data.py _BINANCE_KLINES), so Binance's
-# class of a symbol is what the strategy was backtested on. The same ticker can be a
-# coin there and a stock swap elsewhere (OKX BB/QNT/ON-USDT-SWAP, Bybit ONUSDT).
-# BingX is absent: its stock swaps are NCSK…, a name only lib/stock_perps maps to, never a coin's
-_VENUE_LABELS = {"okx": "OKX", "bybit": "Bybit", "gateio": "Gate.io", "bitget": "Bitget"}
+# fetch_kline's candles are Binance USDⓈ-M (lib/data.py _BINANCE_KLINES), so for a strategy on
+# them Binance's class of a symbol is what it was backtested on. The same ticker can be a
+# coin there and a stock swap elsewhere (OKX BB/QNT/ON-USDT-SWAP, Bybit ONUSDT). Which venues
+# are compared, on which classes, and whose own bars exempt a strategy: lib/venue_traits
+# (instrument_class, binance_name_gate, native_kline).
+_BARS_DEFAULT = "binance"
+_CLASS_WORDS = {"COIN": "加密幣", "EQUITY": "股票合約", "COMMODITY": "商品合約"}
+_CLASS_SETS = {"stock": ("EQUITY",), "coin_stock_commodity": ("COIN", "EQUITY", "COMMODITY")}
+# a strategy reading data past lib.data: nothing proves whose bars it is on
+_NET_MODULES = frozenset({"requests", "urllib", "urllib3", "http", "httpx", "aiohttp", "ccxt",
+                          "websocket", "websockets", "socket"})
+_DYNAMIC = frozenset({"__import__", "import_module", "exec", "eval"})
+# lib modules a strategy imports that hand it no prices of their own; lib.data's are read by
+# fetcher name. Any other lib module (paper_data's prices, report_bricks) proves nothing.
+_LIB_OK = frozenset({"data", "runner", "strategy", "exits", "costs", "param_scan", "validation",
+                     "notify", "walk_forward", "analysis"})
+# lib modules that also read files or place orders: only these names of theirs
+_LIB_SOME = {"guard": frozenset({"halted", "halted_for", "halt_info", "halt_info_for", "halt_path_for",
+                                 "Halted"}),
+             "execute": frozenset({"load_state", "save_state", "update_state"})}
+_LIB_MODS = _LIB_OK | frozenset(_LIB_SOME)
+_URL_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
+# strategy-code.md metadata: a URL assigned to one is a credit line, unless anything could read it
+_META = frozenset({"DISPLAY_NAME", "DESCRIPTION", "LOGIC", "VERSION_NOTE"})
+_INTROSPECT = frozenset({"globals", "vars", "locals", "getattr", "dir", "__dict__", "attrgetter",
+                         "getmembers", "getsource", "getsourcelines", "__getattribute__"})
+_lib_public_cache = {}
+_bars_logged = set()
+
+
+def _label(vid):
+    return venue_traits.get(vid, "label") or vid
+
+
+def _lib_public(mod):
+    """Public names lib/<mod>.py itself defines at module level (def, class, assignment) — not
+    what it imports (lib.notify's requests, lib.runner's pd), which would read bars unseen.
+    Unreadable → empty, so every use of the module proves nothing; that is not cached."""
+    if mod in _lib_public_cache:
+        return _lib_public_cache[mod]
+    names = set()
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), f"{mod}.py"),
+                  encoding="utf-8") as fh:
+            todo = list(ast.parse(fh.read()).body)
+    except (OSError, SyntaxError, ValueError):
+        return frozenset()
+    while todo:
+        st = todo.pop()
+        if isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(st.name)
+        elif isinstance(st, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            for t in (st.targets if isinstance(st, ast.Assign) else [st.target]):
+                names |= {x.id for x in ast.walk(t) if isinstance(x, ast.Name)}
+        elif isinstance(st, (ast.If, ast.Try, ast.With)):
+            todo += st.body + getattr(st, "orelse", []) + getattr(st, "finalbody", [])
+            todo += [s for h in getattr(st, "handlers", []) for s in h.body]
+    _lib_public_cache[mod] = frozenset(x for x in names if not x.startswith("_"))
+    return _lib_public_cache[mod]
+
+
+def _lib_names(mod):
+    """The names of lib/<mod>.py a strategy may use without proving nothing."""
+    return _lib_public(mod) if mod in _LIB_OK else _lib_public(mod) & _LIB_SOME.get(mod, frozenset())
+
+
+def _reads_meta(tree):
+    """The file could read a metadata string's value: the name loaded anywhere, as an attribute
+    or an import, spelled in a string, or any introspection that reaches names unseen — except
+    the template's `run(locals(), …)` with `run` bound only by `from lib.runner import run`."""
+    parent, binds = {}, []
+    for n in ast.walk(tree):
+        for c in ast.iter_child_nodes(n):
+            parent[c] = n
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name == "run":
+            binds.append(n)
+        elif isinstance(n, ast.Name) and n.id == "run" and not isinstance(n.ctx, ast.Load):
+            binds.append(n)
+        elif isinstance(n, ast.arg) and n.arg == "run":
+            binds.append(n)
+        elif isinstance(n, (ast.Import, ast.ImportFrom)):
+            binds += [n for a in n.names if (a.asname or a.name) == "run" or a.name == "*"]
+    run_is_lib = bool(binds) and all(isinstance(b, ast.ImportFrom) and b.module == "lib.runner"
+                                     and not b.level and all(a.name != "*" for a in b.names)
+                                     for b in binds)
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Name) and n.id == "locals" and run_is_lib:
+            call, outer = parent.get(n), parent.get(parent.get(n))
+            if (isinstance(call, ast.Call) and call.func is n and not call.args and not call.keywords
+                    and isinstance(outer, ast.Call) and isinstance(outer.func, ast.Name)
+                    and outer.func.id == "run" and call in outer.args):
+                continue
+        if isinstance(n, ast.Name) and (n.id in _INTROSPECT or (
+                n.id in _META and not isinstance(n.ctx, ast.Store))):
+            return True
+        if isinstance(n, ast.Attribute) and (n.attr in _META or n.attr in _INTROSPECT):
+            return True
+        if isinstance(n, (ast.Import, ast.ImportFrom)) and any(
+                a.name.rpartition(".")[2] in _META or a.name == "*" for a in n.names):
+            return True
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and any(m in n.value for m in _META):
+            return True
+    return False
+
+
+def _meta_credit(n, parent):
+    """`n` is the whole value of a module-level `DESCRIPTION = "…"` (or another _META name)."""
+    st = parent.get(n)
+    if isinstance(st, ast.Assign):
+        targets = st.targets
+    elif isinstance(st, ast.AnnAssign):
+        targets = [st.target]
+    else:
+        return False
+    return (st.value is n and isinstance(parent.get(st), ast.Module) and len(targets) == 1
+            and isinstance(targets[0], ast.Name) and targets[0].id in _META)
+
+
+def _shadowed(top, folder):
+    """`top` is also a package in the strategy's folder or a module at the workspace root: the
+    template puts the workspace first on sys.path, so that is what the strategy imports."""
+    return (os.path.isdir(os.path.join(folder, top)) or os.path.isfile(f"{top}.py")
+            or os.path.isdir(top))
+
+
+def _installed(top):
+    """`top` resolves to the standard library or an installed package — not to code beside the
+    workspace (a shared helper folder, an editable install) that kline_venue never read."""
+    import site, sys, sysconfig
+    if top in getattr(sys, "stdlib_module_names", ()):
+        return True
+    try:
+        import importlib.util
+        spec = importlib.util.find_spec(top)
+    except Exception:
+        return False
+    if spec is None:
+        return False
+    if spec.origin in ("built-in", "frozen"):
+        return True
+    where = spec.origin if spec.has_location else next(iter(spec.submodule_search_locations or ()), None)
+    if not where:
+        return False
+    paths = sysconfig.get_paths()
+    roots = [paths.get(k) for k in ("stdlib", "platstdlib", "purelib", "platlib")]
+    roots += list(getattr(site, "getsitepackages", lambda: [])()) + [site.getusersitepackages()]
+    # wherever this process found pandas is where the engine installs packages
+    roots += [os.path.dirname(os.path.dirname(m.__file__)) for m in (sys.modules.get("pandas"),)
+              if m is not None and getattr(m, "__file__", None)]
+    where = os.path.normcase(os.path.realpath(where))
+    for r in filter(None, roots):
+        r = os.path.normcase(os.path.realpath(r))
+        try:
+            if os.path.commonpath([where, r]) == r:
+                return True
+        except ValueError:   # Windows: another drive
+            continue
+    return False
+
+
+def _proves_nothing(tree, siblings=(), folder=".", meta_ok=False):
+    """Why the file can read bars without naming a lib.data fetcher (a short reason; '' when
+    nothing found): a network or dynamic import / exec, a URL, an import that is not a
+    strategy-side lib module's own public name (_lib_names), a sibling .py (`siblings`, read
+    too), the standard library or an installed package, a name the workspace root or a
+    subfolder shadows (_shadowed), or a lib module used other than as
+    `<module>.<its own public name>` (getattr, a private name, passed along). A URL is no read in
+    a docstring, nor — `meta_ok`: no file of the folder can read them (_reads_meta) — as the
+    whole value of a module-level DESCRIPTION / LOGIC / VERSION_NOTE / DISPLAY_NAME.
+
+    Known limitation (Wei 2026-11-16: a blacklist, not an allowlist): this catches what the
+    templates and references lead to, not every way code can reach data. Measured 2026-11-16,
+    each of these beside fetch_okx_kline still passes as the venue's own bars (pinned
+    KNOWN_LIMITATION in tests/check_instrument_gate.py; references/exchange-connect.md rule 7):
+      1. a local file read: pd.read_csv('tmp/onusdt_binance.csv')
+      2. lib.data's public BASE: pd.read_json(BASE + '/kline?…')
+      3. fetch_okx_kline.__globals__['_fetch_binance_kline_raw']
+      4. sys.modules['lib.data']._fetch_binance_kline_raw
+      5. runpy.run_path on a file outside the folder
+      6. importlib.util.spec_from_file_location on a file outside the folder"""
+    parent, mods, lib_names = {}, {}, set()
+    for n in ast.walk(tree):
+        for c in ast.iter_child_nodes(n):
+            parent[c] = n
+
+    def foreign(top):
+        return _shadowed(top, folder) or (top not in siblings and not _installed(top))
+
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            for a in n.names:
+                top, _, rest = a.name.partition(".")
+                if top in _NET_MODULES:
+                    return f"imports {a.name}"
+                if top == "lib":
+                    if rest and rest not in _LIB_MODS:
+                        return f"imports {a.name}"
+                    if not a.asname:
+                        lib_names.add("lib")
+                    elif rest:
+                        mods[a.asname] = rest
+                    else:
+                        lib_names.add(a.asname)
+                elif foreign(top):
+                    return f"imports {a.name} from outside its folder"
+        elif isinstance(n, ast.ImportFrom):
+            top, _, rest = (n.module or "").partition(".")
+            if n.level:
+                return "a relative import"   # reaches files kline_venue did not read
+            if top in _NET_MODULES:
+                return f"imports {n.module}"
+            if top == "lib":
+                if not rest:
+                    bad = [a.name for a in n.names if a.name not in _LIB_MODS]
+                    if bad:
+                        return f"imports lib.{bad[0]}"
+                    mods.update({a.asname or a.name: a.name for a in n.names})
+                else:
+                    bad = [a.name for a in n.names if rest not in _LIB_MODS or a.name not in _lib_names(rest)]
+                    if bad:
+                        return f"imports {bad[0]} from {n.module}"
+            elif foreign(top):
+                return f"imports {n.module} from outside its folder"
+        elif isinstance(n, ast.Constant) and isinstance(n.value, str) and _URL_RE.search(n.value):
+            if not (isinstance(parent.get(n), ast.Expr) or (meta_ok and _meta_credit(n, parent))):
+                return "a URL"
+        # a bare name only: df.eval(...) is pandas, not exec
+        elif (isinstance(n, ast.Name) and n.id in _DYNAMIC) or (
+                isinstance(n, ast.Attribute) and n.attr == "import_module"):
+            return f"uses {getattr(n, 'id', None) or n.attr}"
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Name):
+            continue
+        up = parent.get(n)
+        if n.id in lib_names:
+            if not (isinstance(up, ast.Attribute) and up.attr in _LIB_MODS):
+                return f"uses {n.id} other than lib.<module>"
+            mod, n, up = up.attr, up, parent.get(up)
+        elif n.id in mods:
+            mod = mods[n.id]
+        else:
+            continue
+        if not (isinstance(up, ast.Attribute) and up.value is n and up.attr in _lib_names(mod)):
+            return f"uses lib.{mod} other than by a public name"
+    return ""
+
+
+def _log_bars_default(found, native, per_file, own, why):
+    """One warning per distinct cause: the folder names a venue's own fetcher yet is compared
+    with Binance — the files and names that made it so (a leftover scan.py on fetch_kline)."""
+    try:
+        nat = set(native)
+        blame = [f"{p}: {', '.join(sorted(n - nat))}" for p, n in per_file if n - nat]
+        if not blame and not why and not own:   # only native fetchers, of two venues
+            blame = [f"{p}: {', '.join(sorted(n))}" for p, n in per_file if n]
+        blame += [f"defines its own {x}" for x in sorted(own)] + why
+        line = "; ".join(blame)
+        if line in _bars_logged:
+            return
+        _bars_logged.add(line)
+        logging.warning(f"[venue_wiring] strategy bars taken as {_BARS_DEFAULT}, though "
+                        f"{', '.join(sorted(found & nat))} is used — {line}. Every .py in the "
+                        f"strategy folder must read only the venue's own bars, or be deleted")
+    except Exception:
+        pass
+
+
+def kline_venue(contributors):
+    """The venue whose own bars every strategy behind an order reads ('okx' / 'bingx': its
+    venue_traits native_kline), else 'binance'. Only on proof: every contributor's folder
+    read and parsed, and every fetch_* name in every .py of it (comments aside, strings
+    included) one venue's native fetcher. A function the folder itself defines (the
+    template's fetch_data, a helper) is not a fetcher — its body is read like the rest —
+    unless it reuses a lib.data fetcher's name. No contributors, anything unreadable, a mix,
+    any other fetch_* name (a Blave alpha is computed from Binance), or a file that could read
+    bars some other way (_proves_nothing: an import from outside the folder that is not a
+    strategy-side lib module's own public name, the standard library or an installed package,
+    or one the workspace shadows; a lib module reached through getattr or a private name; a
+    URL; a network or dynamic import) → 'binance', the comparison the gate
+    always made. A wrong 'binance' refuses an entry; a wrong native verdict would buy a
+    contract never backtested. A folder naming a native fetcher that still ends on 'binance'
+    logs which file and why (_log_bars_default)."""
+    names = {str(c.get("strategy")) for c in contributors or () if isinstance(c, dict) and c.get("strategy")}
+    if not names:
+        return _BARS_DEFAULT
+    native = {venue_traits.get(v, "native_kline"): v for v in venue_traits.TRAITS
+              if venue_traits.get(v, "native_kline")}
+    srcs, local, why = [], set(), []
+    try:
+        from lib.portfolio import _named_fetchers
+        for name in sorted(names):
+            folder = os.path.join("strategies", name)
+            files = sorted(f for f in os.listdir(folder) if f.endswith(".py"))
+            if not files:
+                return _BARS_DEFAULT
+            siblings = {f[:-3] for f in files}
+            trees = []
+            for f in files:
+                with open(os.path.join(folder, f), encoding="utf-8") as fh:
+                    srcs.append((f"{name}/{f}", fh.read()))
+                trees.append(ast.parse(srcs[-1][1]))
+            meta_ok = not any(_reads_meta(t) for t in trees)
+            for f, tree in zip(files, trees):
+                reason = _proves_nothing(tree, siblings, folder, meta_ok)
+                if reason:
+                    why.append(f"{name}/{f}: {reason}")
+                local |= {n.name for n in ast.walk(tree)
+                          if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        found = _named_fetchers([s for _, s in srcs])
+        per_file = [(p, _named_fetchers([s]) & found) for p, s in srcs]
+    except Exception:
+        return _BARS_DEFAULT
+    own = local & set(native)   # its own fetch_okx_kline is not OKX's bars
+    venues = {native.get(n) for n in found}
+    if not why and not own and len(venues) == 1 and None not in venues:
+        return venues.pop()
+    if found & set(native):
+        _log_bars_default(found, native, per_file, own, why)
+    return _BARS_DEFAULT
+
+
+_BINANCE_MULTIPLES = ("1000", "10000", "1000000", "1M")
+
+
+def _binance_lists_none_of(sym):
+    """Truthy only when Binance's list was read and `sym` is not in it (unreadable → False):
+    the name Binance lists the coin under at a multiple (1000PEPEUSDT for PEPEUSDT), else True."""
+    try:
+        from lib import stock_perps
+    except ImportError:
+        return False
+    rows = stock_perps.binance_rows()
+    if rows is None or sym in rows:
+        return False
+    return next((p + sym for p in _BINANCE_MULTIPLES if p + sym in rows), True)
+
+
+def _class_family(t):
+    """Binance underlyingType → COIN / EQUITY (any *_EQUITY) / COMMODITY; None when unknown or
+    another class (INDEX, FX, PREMARKET): those are not compared."""
+    t = str(t or "").upper()
+    if t in ("COIN", "COMMODITY"):
+        return t
+    return "EQUITY" if t.endswith("EQUITY") else None
 
 
 def _binance_class(sym):
@@ -275,44 +615,66 @@ def _binance_class(sym):
     return stock_perps.binance_class(sym)
 
 
-def _binance_is_coin(sym):
-    """True = Binance lists `sym` as a coin (underlyingType COIN); False = any other
-    class (stock, index, commodity, FX, one added later); None = unreadable or not listed."""
-    t = _binance_class(sym)
-    return None if t is None else t == "COIN"
+def _class_clash(sym, vid, venue_cls, binance_cls):
+    return RuntimeError(f"交易所上的 {sym}（{_label(vid)}）是{_CLASS_WORDS[venue_cls]}，"
+                        f"策略的 K 線（Binance {sym}）是{_CLASS_WORDS[binance_cls]}，不是同一種合約，已擋下")
 
 
-def instrument_gate(symbol, reduce_only=False):
-    """Refuse an ENTRY into a stock swap when Binance — the strategy's data — has the
-    same symbol as a coin, and into a coin when Binance has it as a US stock. Closes always pass (a position bought before this gate must
-    still be able to leave). Either side unreadable → allowed and logged: a public
-    endpoint blinking must not stop every entry."""
+def instrument_gate(symbol, reduce_only=False, contributors=None):
+    """Refuse an ENTRY when the venue's contract is not the kind of instrument the strategy's
+    Binance bars were. The venue's venue_traits row decides: instrument_class names the
+    classes its rules' "category" reports (OKX coin / stock / commodity; Gate.io, Bybit,
+    Bitget a stock), each compared with Binance's and any two that differ refused; a
+    contract with no such category falls back to its "equity" flag (a coin where Binance has
+    a US stock is refused). binance_name_gate also refuses a ticker Binance does not list
+    (OKX PEPEUSDT is per coin, Binance's bars are 1000PEPEUSDT). A venue whose row
+    has no instrument_class is not compared, nor is a strategy on the venue's own bars
+    (kline_venue). Closes always pass (a position bought before this gate must still be able
+    to leave). Either side unreadable → allowed and logged: a public endpoint blinking must
+    not stop every entry."""
     sym, market = split_key(symbol)
     if reduce_only or market == "spot":
         return
     env = read_env()
     vid = detect_venue(env)
-    if vid not in _VENUE_LABELS:
-        return  # binance is the data source itself; paper / brokers have no such clash
+    klass = venue_traits.get(vid, "instrument_class")
+    if klass not in _CLASS_SETS:
+        return  # why this venue is not compared is in its venue_traits row
+    if kline_venue(contributors) == vid:
+        return
     try:
-        equity = importlib.import_module(f"lib.order_{vid}").get_contract_rules(
-            env, sym).get("equity")
+        rules = importlib.import_module(f"lib.order_{vid}").get_contract_rules(env, sym)
     except Exception as e:
         logging.warning(f"[venue_wiring] {symbol}: instrument class unchecked on {vid} ({e})")
+        return
+    equity, venue_cls = rules.get("equity"), rules.get("category")
+    binance = _binance_class(sym)
+    unlisted = binance is None and venue_traits.get(vid, "binance_name_gate") and _binance_lists_none_of(sym)
+    if unlisted:
+        # the Binance bars are under another name: a multiple (1000PEPEUSDT for PEPE) or
+        # another instrument
+        only = f"只有 {unlisted}，" if isinstance(unlisted, str) else ""
+        raise RuntimeError(f"交易所上的 {sym}（{_label(vid)}）在 Binance 沒有同名合約，{only}"
+                           f"已擋下。請 agent 改用 {_label(vid)} 的 K 線重跑回測")
+    if venue_cls in _CLASS_SETS[klass]:
+        fam = _class_family(binance)
+        if fam is None:
+            logging.warning(f"[venue_wiring] {symbol}: Binance class {binance!r} not compared — allowed")
+        elif fam != venue_cls:
+            raise _class_clash(sym, vid, venue_cls, fam)
         return
     if not equity:
         if equity is None:
             logging.warning(f"[venue_wiring] {symbol}: {vid} gave no instrument class — allowed")
-        elif _binance_class(sym) == "EQUITY":
-            raise RuntimeError(f"交易所上的 {sym}（{_VENUE_LABELS[vid]}）是加密幣，不是股票合約，已擋下")
+        elif binance == "EQUITY":
+            raise _class_clash(sym, vid, "COIN", "EQUITY")
         return
-    coin = _binance_is_coin(sym)
-    if coin is None:
+    if binance is None:
         logging.warning(f"[venue_wiring] {symbol}: stock swap on {vid}, Binance class "
                         f"unknown — allowed")
         return
-    if coin:
-        raise RuntimeError(f"交易所上的 {sym}（{_VENUE_LABELS[vid]}）是股票合約，不是加密幣，已擋下")
+    if binance == "COIN":
+        raise _class_clash(sym, vid, "EQUITY", "COIN")
 
 
 def paused_symbols(keys):
@@ -1174,7 +1536,7 @@ def cancel_parked_order(entry):
 
 
 def auto_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
-                     exchange=None, sold=0.0):
+                     exchange=None, sold=0.0, contributors=None):
     """Reconciler place_order: routes on the key's market. Spot buys are sized
     in QUOTE currency directly; spot sells in base qty capped at the wallet's
     inventory; swap converts USD at the live mark (get_mark_price contract).
@@ -1194,7 +1556,9 @@ def auto_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
     'unit_cost' (so a slicing caller counts progress in the book's USD, the
     unit signed_diff is in) and, when what is left of a full close can never
     be sold, 'writeoff': reason — with 'executed_qty': 0.0 and no order sent
-    when there was nothing to send at all. Off, nothing here changes."""
+    when there was nothing to send at all. Off, nothing here changes.
+
+    contributors: the target row's strategies, read only by instrument_gate (whose bars)."""
     env = read_env()
     vid = detect_venue(env)
     if vid is None:
@@ -1322,7 +1686,7 @@ def auto_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False,
             direction = "long" if signed_diff < 0 else "short"
             qty = _reduce_qty(env, vid, order, sym, direction, qty)
         else:
-            instrument_gate(symbol)
+            instrument_gate(symbol, contributors=contributors)   # the strategies' bars decide (kline_venue)
             direction = "long" if signed_diff > 0 else "short"
             qty = _entry_qty(order, env, sym, qty)
             # how much of this entry will net into an opposite position already

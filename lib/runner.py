@@ -2348,6 +2348,9 @@ def _pick_benchmark(close_df, strategy_name, interval, hdrs):
         if set(price) == {'fetch_bingx_kline'}:   # BingX-only: BTC from BingX too, not Binance
             return (CRYPTO_BENCHMARK, 'BTC_bh', False,
                     lambda s, e: D.fetch_bingx_kline('BTC-USDT', interval, s, e)['Close'])
+        if set(price) == {'fetch_okx_kline'}:     # OKX-only: BTC from OKX too
+            return (CRYPTO_BENCHMARK, 'BTC_bh', False,
+                    lambda s, e: D.fetch_okx_kline(CRYPTO_BENCHMARK, interval, s, e)['Close'])
         return (CRYPTO_BENCHMARK, 'BTC_bh', False,
                 lambda s, e: D.fetch_kline(CRYPTO_BENCHMARK, interval, s, e, hdrs)['Close'])
     if markets == {'us'}:

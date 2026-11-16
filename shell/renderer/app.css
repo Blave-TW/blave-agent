@@ -69,6 +69,33 @@
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-16);
 }
 .cn-foot p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+/* 第二步「主要做哪個市場？」(spec market-pref-2026-11-09 §3.2;renderer/market.js 掛 .is-mkt):同一張卡換內容,不另開框、不加轉場。
+   第一步的大標、兩區、尾註那句與語言 segment 藏起來;卡寬照第一步 560 */
+.cn-step, #cn-mkt-q, .cn-mkt, .cn-mkt-foot, .cn-mkt-skip { display: none; }
+#view-connect.is-mkt :is(.cn-mid > h4:first-of-type, .cn-sec:not(.cn-mkt), .cn-foot > p:first-child, .cn-lang) { display: none; }
+#view-connect.is-mkt :is(#cn-mkt-q, .cn-mkt, .cn-mkt-foot) { display: block; }
+#view-connect.is-mkt .cn-mkt-skip { display: inline-block; }
+.cn-step { width: 560px; max-width: 100%; margin: 0 0 var(--space-8); padding: 0 var(--space-16); text-align: center; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+#view-connect.is-mkt .cn-step { display: block; }
+#cn-mkt { border-top: 0; }   /* 前一個 .cn-sec 藏起來了,.cn-sec + .cn-sec 那條線不畫 */
+/* 格 = 卡上的地色塊(同 .cf-opt 未選),兩欄;選中只在「選了、引擎還沒連上」時看得到 */
+.mk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-8); }
+.mk-opt {
+  height: 56px; padding: 0 var(--space-16);
+  border: 1px solid transparent; border-radius: var(--radius-md);
+  background: var(--bg-body); color: var(--ink);
+  font-size: 14px; font-weight: 500; text-align: left;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.mk-opt:hover { background: var(--surface-control-on); border-color: var(--border-frame); }
+.mk-opt[aria-pressed="true"] { background: var(--surface-control-on); border-color: var(--active-line); font-weight: 600; }
+/* 引擎還在連:卡頂一行狀態(14 的圓環＋字＋右側文字鈕);沒有內容時整行不佔位 */
+.cn-wait { display: flex; align-items: center; gap: var(--space-8); margin: 0 0 var(--space-12); font-size: 12px; line-height: 1.5; color: var(--ink-2); }
+.cn-wait:empty { display: none; }
+.cn-wait .sp { flex: 1; }
+.cn-wait .spin16 { width: 14px; height: 14px; border-width: 1.5px; }
+/* 熱區 44(字 18 高 + 上下各 13),只外擴 ::before,尾註列高度不動 */
+#view-connect .cn-mkt-skip::before { inset: -13px -8px; }
 
 /* 連結卡:靜止表面 → shadow-md、無邊框(canon › Elevation:ring 就是那條線) */
 .cn-card {
@@ -666,7 +693,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .rp-head .act { flex: none; display: flex; align-items: center; gap: var(--space-8); }
 /* 鈕旁的狀態詞(還沒連接帳戶、不能自動下單、開通中):6 字以內,整句原因放說明下一行(#rp-ho-note) */
 .rp-status { flex: none; font-size: 12px; line-height: 1.5; color: var(--ink-2); white-space: nowrap; }
-/* 送上雲端的雲朵 icon 鈕:視覺 32、icon 20、熱區 44(透明 ::before);無底無框,hover／focus 才有底。跟同列 32 高的主鈕同高,不照頂列的 28 */
+/* 頁首送上雲端／拉回這台電腦的 icon 鈕:視覺 32、icon 20、熱區 44(透明 ::before);無底無框,hover／focus 才有底。跟同列 32 高的主鈕同高,不照頂列的 28 */
 .rp-icw { position: relative; flex: none; display: inline-flex; }
 .rp-ic { position: relative; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: var(--radius-sm);
   background: transparent; color: var(--ink-2); cursor: pointer; transition: background-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
@@ -683,7 +710,7 @@ button, textarea, input, a { -webkit-app-region: no-drag; }
 .rp-ic:focus-visible:not([data-tip-off]) + .tip { visibility: visible; opacity: 1; transition-delay: 0s; }
 @media (hover: none) { .rp-icw .tip { display: none; } }
 .rp-head .act[hidden] { display: none; }
-/* 「送上雲端 / 拉回」(renderer/handoff.js)。icon + 字的描邊鈕:左 8、右 12——icon 自帶留白,視覺才對稱 */
+/* icon + 字的描邊鈕(報告清單〔新增報告〕#rpt-ask):左 8、右 12——icon 自帶留白,視覺才對稱 */
 .btn-out.has-ic { display: inline-flex; align-items: center; gap: var(--space-6); padding-left: var(--space-8); }
 #rp-ho[aria-disabled="true"] { color: var(--ink-3); cursor: not-allowed; }
 #rp-ho[aria-disabled="true"]:hover { background: transparent; }
@@ -887,78 +914,63 @@ body.resizing * { cursor: col-resize !important; }
 
 /* =========================================================================
    左下角設定鈕 + 設定 modal。逐值照雲端 workspace.css 的
-   .ws-foot / .ws-more、.scrim / .ns-modal / .modal-head、.set-* 家族。
+   .ws-foot、.scrim / .ns-modal / .modal-head、.set-* 家族。
    ========================================================================= */
 .ws-foot {
   flex: none;
   margin-top: auto;              /* 自己釘底:雲端沒主機時兩份 .strat-list 都藏起來,沒人撐,設定會浮到 #side-gate 底下 */
   padding-top: var(--space-16);  /* 不畫分隔線(Wei):靠間距分開;16 = 清單最後一列到鈕的距離 */
 }
-.ws-more {
-  display: flex; justify-content: flex-start; align-items: center; gap: var(--space-8);
-  width: 100%; min-width: 0;
-  padding: var(--space-8) var(--space-12);         /* 左緣 12 = 策略列同一條對齊邊 */
-  border-radius: var(--radius-md);
-  text-align: left; white-space: nowrap;
-  min-height: 44px;                                /* 熱區 44(spec desktop-update-pill §3.2) */
-  font-size: 13px; line-height: 1.4;
-  color: var(--ink-3);                             /* 比策略名低一階:chrome 不是內容 */
+/* 左下角一列(spec sidebar-conversion-2026-11-10 §4;mockup-final.html)。列高 44,每樣視覺 28;靠左:齒輪、手機、帳號那一格、更新。
+   間距照前一樣算:圖示之間 16,其餘一律 8。手機前面一定是齒輪,所以用固定的 margin-left,不用相鄰選擇器(中間夾著 pop 與藏起來的節點)。
+   照這組間距相鄰熱區剛好相接、不重疊 */
+.foot-row { display: flex; align-items: center; min-height: 44px; padding-left: var(--space-6); }   /* 6:齒輪圖示左緣對齊策略列的字 */
+.ic-btn {
+  position: relative; flex: none; width: 28px; height: 28px; min-height: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink-3);
   transition: color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
-.ws-more:hover:not(:disabled), .ws-more[aria-expanded="true"] { background: var(--surface-muted); color: var(--ink); }
-/* 更新膠囊(spec desktop-update-pill §3;canon › In-app 功能動作鈕 › 具名例外:電腦版更新膠囊)。
-   橘實心墨字、hover primaryDark;視覺 32 / 熱區 44(透明 ::before)。停用照 Disabled 退灰(不用 opacity)。
-   細軌那顆是 28 的圓、熱區 44,同一個 class 加 .up-rail */
-.up-pill-wrap { margin: 0 0 var(--space-8); }
-.up-pill {
-  position: relative; display: inline-flex; align-items: center; gap: var(--space-8);
-  max-width: 100%; height: 32px; min-height: 0; padding: 0 13px 0 11px;   /* 加上 1px 框 = 左 12 右 14,圖示欄對齊〔設定〕(canon › 側欄提示格)。不裁切:::before 的熱區要伸出去;裁切在 .up-pill-t */
-  border: 1px solid transparent; border-radius: var(--radius-pill);
-  background: var(--color-primary); color: var(--ink-on-primary);
-  font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer;
+.ic-btn .ic { stroke-width: 1.75; }
+.ic-btn::before { content: ""; position: absolute; inset: -8px; }   /* 28 + 16 = 44 */
+.ic-btn:hover, .ic-btn[aria-expanded="true"] { background: var(--surface-muted); color: var(--ink); }
+#ph-pill { margin-left: var(--space-16); }
+.cv-pill, .row-note, .foot-row .up-pill { margin-left: var(--space-8); }
+.ic-btn[hidden], .cv-pill[hidden], .row-note[hidden] { display: none; }
+/* 帳號那一格:描邊、不填色、不用橘。熱區高 44、寬同膠囊(1px 框不在 padding box 裡,所以是 -9／-1) */
+.cv-pill {
+  position: relative; flex: none; height: 28px; min-height: 0; padding: 0 var(--space-8);
+  border: 1px solid var(--border-frame); border-radius: var(--radius-pill); background: none; color: var(--ink);
+  font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap;
   transition: background var(--motion-fast) var(--ease-standard);
 }
-.up-pill::before { content: ""; position: absolute; inset: -7px -4px; }
+.cv-pill::before { content: ""; position: absolute; inset: -9px -1px; }
+.cv-pill:hover { background: var(--surface-muted); }
+.row-note { flex: none; padding: 0 var(--space-4); font-size: 12px; line-height: 1; color: var(--ink-3); white-space: nowrap; }
+/* 更新圓鈕(canon › In-app 功能動作鈕 › 具名例外):列裡與細軌同一個長相,28 的橘圓、墨色圖示、不寫字。
+   1px 框留著給停用態用,所以熱區是 -9(28 − 2 + 18 = 44)。停用照 Disabled 退灰(不用 opacity) */
+.up-pill {
+  position: relative; flex: none; width: 28px; height: 28px; min-height: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; border-radius: var(--radius-pill);
+  background: var(--color-primary); color: var(--ink-on-primary); cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.up-pill[hidden] { display: none; }
+.up-pill .ic { width: 14px; height: 14px; stroke-width: 2; }
+.up-pill::before { content: ""; position: absolute; inset: -9px; }
 .up-pill:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--color-primaryDark); }
 .up-pill:disabled, .up-pill[aria-disabled="true"] { background: var(--surface-muted); border-color: var(--color-greyMedium); color: var(--ink-3); cursor: not-allowed; }   /* 同 .btn-fill:disabled */
-.up-pill-ic { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.up-pill-t { min-width: 0; overflow: hidden; }
-.up-pill-wrap .up-pill-ic { stroke-width: 1.75; }
-.up-pill.no-ic { padding-left: 13px; }
-.up-pill.no-ic .up-pill-ic { display: none; }
-.up-pill-wrap .busy-why { margin: var(--space-8) var(--space-4) 0; text-align: left; white-space: normal; }
-.up-rail { flex: none; max-width: none; width: 28px; height: 28px; padding: 0; justify-content: center; margin-top: auto; }
-.up-rail::before { inset: -9px; }   /* 1px 透明框不算在 padding box 裡:28 − 2 + 18 = 44 */
+/* 回合中按更新的原因句:出在列的上方(插在 #foot-why 後面),左緣對齊齒輪圖示 */
+.ws-foot .busy-why { margin: 0 0 var(--space-4); padding-left: var(--space-6); text-align: left; white-space: normal; }
+/* 細軌底部:更新圓鈕、它下面齒輪,間距 16;沒有更新時齒輪自己釘底 */
+.rail-bot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: var(--space-16); }
+.rail-bot .rail-btn .ic { stroke-width: 1.75; }   /* 細軌的齒輪跟列裡那顆同一個圖示 */
 html.ws-sc .side-rail { flex: 1 1 auto; }
-/* 側欄提示格的手機那則(canon › Components › 側欄提示格):同形膠囊,卡面底。× 視覺 24、熱區 44,滑過或焦點才出;熱區壓到膠囊時膠囊贏,不誤關 */
-.ph-slot { position: relative; display: flex; align-items: center; margin: 0 0 var(--space-8); }
-.ph-slot[hidden] { display: none; }
-.ph-slot::after { content: ""; flex: 0 1 6px; }   /* × 離右緣 6;英文、最窄側欄時縮成 0,× 才不壓到膠囊 */
-.ph-pill {
-  position: relative; z-index: 1; flex: none; display: inline-flex; align-items: center; gap: var(--space-8);
-  max-width: 100%; height: 32px; min-height: 0; padding: 0 14px 0 var(--space-12);
-  border-radius: var(--radius-pill); background: var(--surface-card); box-shadow: var(--shadow-sm); color: var(--ink);
-  font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-standard);
-}
-.ph-pill::before { content: ""; position: absolute; inset: -6px 0; }
-.ph-pill:hover { background: var(--surface-control-on); }
-.ph-pill .up-pill-ic { stroke-width: 1.75; }
-.ph-x {
-  position: relative; flex: none; margin-left: auto; width: 24px; height: 24px; min-height: 0; padding: 0;
-  display: flex; align-items: center; justify-content: center; border-radius: var(--radius-xs); color: var(--ink-3);
-  opacity: 0; transition: opacity var(--motion-fast) var(--ease-standard);
-}
-.ph-x::before { content: ""; position: absolute; inset: -10px; }
-.ph-x .ic { width: 14px; height: 14px; stroke-width: 1.75; }
-.ph-slot:hover .ph-x, .ph-x:focus-visible { opacity: 1; }
-.ph-x:hover { background: var(--surface-muted); color: var(--ink); }
-@media (hover: none) { .ph-x { opacity: 1; } }
 .ph-pop {
   position: fixed; z-index: 40; width: 240px; padding: var(--space-16);
   background: var(--surface-card); box-shadow: var(--shadow-md); border-radius: var(--radius-lg);
 }
-.ph-pill[aria-expanded="true"] { background: var(--surface-control-on); }
 .ph-plate { display: inline-block; padding: var(--space-8); background: var(--color-pureWhite); border-radius: var(--radius-md); line-height: 0; }
 .ph-plate img { display: block; width: 112px; height: 112px; }
 /* pop 裡的編號步驟(spec slot-phone-v2 §3,欄距照稽核改 12):號碼盤 20、欄距 12、列距 16。狀態只靠填不填分,只用墨色:
@@ -980,7 +992,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .ph-nw { white-space: nowrap; }
 .ph-body { grid-column: 2; margin-top: var(--space-8); }
 .ph-links { display: flex; gap: var(--space-16); margin-top: var(--space-8); }
-@media (prefers-reduced-motion: reduce) { .up-pill, .ph-pill, .ph-x { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .ic-btn, .cv-pill, .up-pill { transition: none; } }
 /* 更新 modal 的「這版改了什麼」:純文字條列 */
 .del-body .up-notes { margin: 0; padding-left: 18px; color: var(--ink); }
 .del-body .up-notes li { margin-bottom: var(--space-4); }
@@ -988,12 +1000,6 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .del-body .up-notes-slot { margin-bottom: var(--space-12); }   /* 條列是一組,跟後面的草稿句分開(組內 4 < 組間) */
 .set-upsch { margin: var(--space-8) 0; }
 
-.ws-more:disabled { cursor: not-allowed; color: var(--ink-disabled); }
-.ws-more:focus-visible { outline-offset: -2px; }
-.ws-more-ic {
-  flex: none; width: 16px; height: 16px;
-  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
-}
 
 .scrim {
   position: fixed; inset: 0; z-index: 100;
@@ -1072,7 +1078,8 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 }
 /* 「一般」三組(canon Perceptual #1,組內 : 組間 ≈ 1:4):外觀／語言／顯示幣別 → 回覆通知／建議下一步／防睡 → 關於;組內 8、組間 32 */
 .set-row { display: flex; align-items: center; gap: var(--space-8); }
-.set-row + .set-row { margin-top: var(--space-8); }
+/* ~ 不用 +:幣別列(hidden)與它的錯誤行夾在中間時,主要市場那一列照樣離上一列 8(S8 組內 8) */
+.set-row ~ .set-row { margin-top: var(--space-8); }
 /* 設定 › 顯示幣別:切換失敗那一句(下拉底下;同網頁 setFail 的字) */
 .set-ccy-err { margin: var(--space-8) 0 0; font-size: 12px; color: var(--color-redText); }
 .set-rn { margin-top: var(--space-32); }
@@ -1376,9 +1383,6 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 .cf-pop li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 6px; height: 1px; background: var(--ink-3); }
 .cf-pop .lbl { display: block; margin-bottom: var(--space-2); font-size: 12px; font-weight: 600; line-height: 1.6; color: var(--ink-2); }
 .cf-pop .btn-quiet { color: var(--ink-2); }
-/* 設定鈕右邊那行安靜的字 */
-.ws-more-note{margin-left:auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--ink-3);white-space:nowrap}
-.ws-more-note.up{color:var(--ink-2)}
 
 .set-gl { flex: none; margin: 0; white-space: nowrap; font-size: 13px; font-weight: 600; color: var(--ink); }
 .set-selw { position: relative; display: inline-flex; flex: 0 1 160px; margin-left: auto; min-width: 0; }
@@ -1404,7 +1408,7 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 
 
 @media (prefers-reduced-motion: reduce) {
-  .ws-more, .scrim, .set-modal, .modal-close, .set-cat, .set-sel { transition: none; }
+  .scrim, .set-modal, .modal-close, .set-cat, .set-sel { transition: none; }
 }
 
 
@@ -1816,13 +1820,18 @@ html[data-platform="win32"] .flag-pop.sg-pick { width: calc(224px + var(--scroll
 .lai-foot { justify-content: flex-start; }
 #lai-rows .btn-quiet::before { inset: calc(50% - 22px) -4px; }   /* 〔怎麼安裝〕熱區補到整列 44 高(.cn-row min-height),視覺不動 */
 
-/* 聊天裡的圖:跟回覆同寬,不加框(圖自己有底色);說明字同聊天的次要文字 */
-.msg.img { margin: 0 0 var(--space-24); }   /* figure 的 UA 預設是 1em 40px */
-.msg.img img { display: block; max-width: 100%; height: auto; border-radius: var(--radius-md); }
-.msg.img figcaption { margin-top: var(--space-6); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+/* 聊天裡的圖:收進聊天卡的殼,同澄清表單卡(form.css .cform;canon chat-shell.md › 聊天欄表單卡)——light 是 bg-body 地色塊、
+   dark 是 1px 框,框算在內距裡。圖的底色是 lib 出圖時定的(白),這裡不上 filter／opacity:圖裡的顏色是資料。
+   高上限 480 同報告的圖片區塊(report-blocks.css .rb-image img):只夾直式長圖,width:auto 才不變形;靠左、不放大 */
+.msg.img {   /* figure 的 UA 預設 margin 是 1em 40px */
+  margin: 0 0 var(--space-24); padding: calc(var(--space-12) - 1px); border-radius: var(--radius-md);
+  background: var(--cf-bg); border: 1px solid var(--cf-border);
+}
+.msg.img img { display: block; max-width: 100%; max-height: 480px; width: auto; height: auto; border-radius: var(--radius-micro); }
+.msg.img figcaption { margin-top: var(--space-8); font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 
 /* 圖片放大:整個遮罩都是「點了就關」,游標照實說 */
-.img-zoom { display: block; width: 100%; padding: 0; border-radius: var(--radius-md); cursor: zoom-in; }
+.img-zoom { display: block; max-width: 100%; padding: 0; border-radius: var(--radius-micro); cursor: zoom-in; }   /* 不寫 width:鈕貼著圖,圖被限高變窄時右邊沒有空的可點區 */
 .lb-scrim { cursor: zoom-out; }
 .lb-img {
   max-width: 100%; max-height: 100%; object-fit: contain;

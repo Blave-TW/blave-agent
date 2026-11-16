@@ -67,6 +67,7 @@ cases = {
     "OKX 50100 (key)": (okx.OKXError("50100", "API frozen", "/api/v5/trade/order"), "key_permission"),
     "OKX account mode keeps its own token": (okx.AccountModeError("51010", "mode", "/api/v5/trade/order"), None),
     "Gate.io BALANCE_NOT_ENOUGH": (gt.GateioError("BALANCE_NOT_ENOUGH", "Not enough balance", "/spot/orders"), "insufficient_margin"),
+    "Gate.io futures INSUFFICIENT_AVAILABLE": (gt.GateioError("INSUFFICIENT_AVAILABLE", "Balance is not enough", "/futures/usdt/orders"), "insufficient_margin"),
     "Gate.io INVALID_KEY (key)": (gt.GateioError("INVALID_KEY", "Invalid key", "/futures/usdt/orders"), "key_permission"),
     "BingX 100413 (key)": (bx.BingXError(100413, "Incorrect apiKey", "/openApi/swap/v2/trade/order"), "key_permission"),
     "BingX unverified margin code": (bx.BingXError(101204, "Insufficient margin", "/openApi/swap/v2/trade/order"), None),

@@ -63,9 +63,9 @@ const READ_CHUNK = 12000;
 function readPart(ex, args, budget) {
   const part = args.part || "full";
   const small = part === "meta" ? ex.meta : part === "outline" ? { headings: ex.headings.map((h) => ({ id: h.id, level: h.level, text: h.text })) } : part === "links" ? { links: ex.links } : null;
-  if (small) {   // 精簡讀取也計入預算(通常很小)
+  if (small) {   // 精簡讀取也計入預算(通常很小);帶 total_chars,agent 不必花一次 full 才知道整頁多大
     const n = JSON.stringify(small).length;
-    return budget(n) < n ? { error: "budget_exhausted", message: "the read budget for this turn (120,000 characters) is used up; answer with what you have" } : { content: small };
+    return budget(n) < n ? { error: "budget_exhausted", message: "the read budget for this turn (120,000 characters) is used up; answer with what you have" } : { content: small, total_chars: String(ex.markdown || "").length };
   }
   let text = ex.markdown, base = 0;
   if (part === "section") {

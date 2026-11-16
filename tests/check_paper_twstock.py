@@ -205,7 +205,7 @@ try:
     kind = None
 except order_paper.PaperError as e:
     kind = type(e).__name__
-check(kind == "PaperMarketClosed", f"refusal is PaperMarketClosed — what flatten defers on ({kind})")
+check(kind == "PaperMarketClosed", f"a strategy's close is refused with PaperMarketClosed ({kind})")
 mark(800)
 check(any(p["symbol"] == "2330" for p in snap()["positions"]),
       "a stop the mark crossed (800 < SL 850) does not trigger while the market is shut")
@@ -216,6 +216,28 @@ check(order_paper.get_order(ENV, "2330", rest["order_id"])["status"] == "filled"
 fills = [f for f in snap()["fills"] if f["symbol"] == "2330"]
 check(fills[-1]["kind"] == "sl" and not any(p["symbol"] == "2330" for p in snap()["positions"]),
       "the stop fires on the first read after the open, flattening the row")
+
+print("== the user's close-all (user_close) closes now at the last price, session or not (Wei 11-15)")
+SESSION[0] = True
+mark(1000)
+order_paper.place_market_order(ENV, "2330", "long", 5)
+order_paper.place_spot_market_order(ENV, "2330", "buy", quote_qty=3000)
+spot0 = order_paper.get_spot_balances(ENV).get("2330", 0.0)
+SESSION[0] = False
+mark(1010)
+msg = refused(order_paper.place_market_order, ENV, "2330", "long", 5, user_close=True)
+check(msg and "休市" in msg, f"user_close never lets an entry through outside the session ({msg})")
+msg = refused(order_paper.place_spot_market_order, ENV, "2330", "buy", quote_qty=1000, user_close=True)
+check(msg and "休市" in msg, "nor a spot buy")
+f_sw = order_paper.close_position_partial(ENV, "2330", "long", 5, user_close=True)
+check(isinstance(f_sw, dict) and f_sw["executed_qty"] == 5.0 and f_sw["avg_price"] == 1010
+      and not any(p["symbol"] == "2330" for p in snap()["positions"]),
+      f"close_position_partial(user_close) outside the session fills the whole row at the last price ({f_sw})")
+f_sp = order_paper.place_spot_market_order(ENV, "2330", "sell", base_qty=spot0, user_close=True)
+check(isinstance(f_sp, dict) and f_sp["executed_qty"] == spot0 and order_paper.get_spot_balances(ENV).get("2330", 0.0) == 0,
+      f"a spot sell (user_close) outside the session fills at the last price ({f_sp})")
+check(not os.path.exists("state/paper_tw_close.json"), "nothing written for the open")
+SESSION[0] = True
 
 print("== whole shares, floored; 0 shares sends nothing")
 mark(1000)
@@ -369,59 +391,62 @@ check(sum(1 for ev, n in audits0 if ev == "order_ok" and n == "under one share")
 os.remove("strategies/tsmc_a/state.json")
 os.remove("manager/portfolio_config.json")
 
-print("== close-all outside the session is deferred to the first round after the open")
+print("== close-all outside the session is never deferred to the open (Wei 11-15)")
 import ast  # noqa: E402
+import re  # noqa: E402
 fsrc = open(os.path.join(ROOT, "manager", "flatten.py"), encoding="utf-8").read()
-fn = next(n for n in ast.parse(fsrc).body if isinstance(n, ast.FunctionDef) and n.name == "_defer_tw_close")
-recorded = []
-ns = {"logging": __import__("logging"), "_record_order_error": lambda *a: recorded.append(a), "guard": order_paper.guard}
-exec(compile(ast.Module([fn], []), "flatten._defer_tw_close", "exec"), ns)
-check(ns["_defer_tw_close"]("paper", "2330", RuntimeError("boom")) is None and not os.path.exists(pf._PAPER_TW_CLOSE_PATH),
-      "any other close error stays an error")
-check(ns["_defer_tw_close"]("paper", "2330", order_paper.PaperMarketClosed("shut")) == "deferred"
-      and json.load(open(pf._PAPER_TW_CLOSE_PATH))["keys"] == ["2330"]
-      and recorded and recorded[-1][3] == {"kind": "market_closed_deferred"}, "a market-closed close is booked for later and said")
-ns["_defer_tw_close"]("paper", "2454@spot", order_paper.PaperMarketClosed("shut"))
-held = {"2330": {"side": "long", "size": 10000}, "2454@spot": {"side": "long", "size": 0}}
-check(pf._paper_tw_deferred(held, True) == {"2330"} and json.load(open(pf._PAPER_TW_CLOSE_PATH))["keys"] == ["2330"],
-      "halted: still-held keys are closed this round; the flat one drops off")
-check(pf._paper_tw_deferred({}, True) == set() and not os.path.exists(pf._PAPER_TW_CLOSE_PATH),
-      "once closed the file goes")
-pf.defer_paper_tw_close(["2330"])
-check(pf._paper_tw_deferred(held, False) == set() and not os.path.exists(pf._PAPER_TW_CLOSE_PATH),
-      "resumed (no HALT) before the open: the deferral is dropped, the strategies rule")
+fn = next(n for n in ast.parse(fsrc).body if isinstance(n, ast.FunctionDef) and n.name == "_refuse_tw_futures")
+recorded, noted = [], []
+from lib import venue_traits  # noqa: E402
+ns = {"logging": __import__("logging"), "_record_order_error": lambda *a: recorded.append(a),
+      "venue_traits": venue_traits, "_note": lambda *a: noted.append(a), "_note_reply": lambda *a: None, "_SESSION_NOT_OPEN_RE": re.compile(re.search(r'_SESSION_NOT_OPEN_RE = re.compile\(r"([^"]+)"\)', fsrc).group(1))}
+exec(compile(ast.Module([fn], []), "flatten._refuse_tw_futures", "exec"), ns)
+check(ns["_refuse_tw_futures"]("paper", "2330", RuntimeError("boom")) is None, "any other close error stays a plain error")
+check(ns["_refuse_tw_futures"]("paper", "2330@spot", order_paper.PaperMarketClosed("shut")) is True
+      and not os.path.exists(pf._PAPER_TW_CLOSE_PATH) and len(recorded[-1]) == 3
+      and "[order_reject:market_closed]" in recorded[-1][2] and "部位還在" in recorded[-1][2],
+      f"an older paper lib refusing the user's close: a failure row, nothing booked for the open ({recorded[-1:]})")
+check("_user_close(order.place_spot_market_order)" in fsrc and "_user_close(order.close_position_partial)" in fsrc
+      and "_user_close(order.place_contract_market_order)" in fsrc,
+      "flatten passes user_close on every close path it uses (spot, notional, lots)")
+csrc = open(os.path.join(ROOT, "manager", "close_symbol.py"), encoding="utf-8").read()
+check("**_user_close(order.close_position_partial)" in csrc,
+      "close_symbol (the user's one-coin close) passes user_close on its close too")
 errs = lambda: json.load(open("manager/order_errors.json")) if os.path.exists("manager/order_errors.json") else []  # noqa: E731
-pf.defer_paper_tw_close(["2330"])
-pf._paper_tw_deferred(held, False)
-check(errs() and "開盤前已按啟動下單" in errs()[-1]["error"], f"the cancel is said: resumed before the open ({errs()[-1:]})")
-pf.defer_paper_tw_close(["2330", "2454@spot"])
-d = json.load(open(pf._PAPER_TW_CLOSE_PATH))
-d["restart_at"] = 1700000000   # runtime command_listener._stop_after_restart
-json.dump(d, open(pf._PAPER_TW_CLOSE_PATH, "w"))
-pf._paper_tw_deferred({"2330": {"side": "long", "size": 10000}}, True)
-d = json.load(open(pf._PAPER_TW_CLOSE_PATH))
-check(d.get("keys") == ["2330"] and d.get("restart_at") == 1700000000,
-      f"a halted round that trims the deferral (2454 already flat) keeps the restart stamp ({d})")
-pf._paper_tw_deferred({"2330": {"side": "long", "size": 10000}}, False)
-check("機器重開後按了啟動下單" in errs()[-1]["error"] and not os.path.exists(pf._PAPER_TW_CLOSE_PATH),
-      f"restarted in between: the cancel says the start came after a restart, not an early resume ({errs()[-1:]})")
-check("deferred = _paper_tw_deferred(diff_actual_full, halted_at_start)" in open(os.path.join(ROOT, "lib", "portfolio.py")).read(),
-      "reconcile judges deferred keys on the unfiltered book")
-order_paper.guard.restart_stopped = lambda: True
-recorded.clear()
-check(ns["_defer_tw_close"]("paper", "2330@spot", order_paper.PaperMarketClosed("shut")) == "refused"
-      and not os.path.exists(pf._PAPER_TW_CLOSE_PATH) and "再按一次全部平倉" in recorded[-1][2],
-      f"B2: stopped after a restart — not deferred, said as an error ({recorded[-1][2] if recorded else None})")
-order_paper.guard.restart_stopped = lambda: False
 
-print("== B1: 「等新訊號」start, signal unchanged, close-all after the close → closed at the open")
+
+def deferral(keys, **extra):
+    os.makedirs("state", exist_ok=True)
+    json.dump({"keys": keys, "ts": 1, **extra}, open(pf._PAPER_TW_CLOSE_PATH, "w"))
+
+
+held = {"2330": {"side": "long", "size": 10000}, "2454@spot": {"side": "long", "size": 0}}
+deferral(["2330", "2454@spot"])
+n0 = len(errs())
+check(pf._drop_tw_deferred(held, True) is None and not os.path.exists(pf._PAPER_TW_CLOSE_PATH),
+      "a 0.1.53 deferral under HALT: nothing to send, the file goes")
+new_rows = errs()[n0:]
+check(len(new_rows) == 1 and new_rows[0].get("symbol") == "2330" and "模擬部位還在" in new_rows[0]["error"] and "跟 agent 說" in new_rows[0]["error"],
+      f"…one failure row for the still-held key only (the flat one is not said) ({new_rows})")
+deferral(["2330"])
+pf._drop_tw_deferred(held, False)
+check(errs() and "開盤前已按啟動下單" in errs()[-1]["error"] and not os.path.exists(pf._PAPER_TW_CLOSE_PATH),
+      f"resumed (no HALT) before the upgrade's first round: the old cancel row ({errs()[-1:]})")
+deferral(["2330"], restart_at=1700000000)
+pf._drop_tw_deferred(held, False)
+check("機器重開後按了啟動下單" in errs()[-1]["error"] and not os.path.exists(pf._PAPER_TW_CLOSE_PATH),
+      f"restarted in between: the cancel says the start came after a restart ({errs()[-1:]})")
+check("_drop_tw_deferred(diff_actual_full, halted_at_start, book_known=not (own_only and ledger is None))" in open(os.path.join(ROOT, "lib", "portfolio.py")).read(),
+      "reconcile judges a 0.1.53 deferral on the unfiltered book")
+
+print("== B1: 「等新訊號」start, signal unchanged, a 0.1.53 close-all deferral → never sent at the open")
 os.makedirs("state", exist_ok=True)
 json.dump({"symbol": "2330", "position": 1}, open("strategies/tsmc_b/state.json", "w"))
 json.dump({"amounts": {"tsmc_b": 30000}, "exchanges": {"tsmc_b": "paper"}, "self_ledger": False},
           open("manager/portfolio_config.json", "w"))
 json.dump({"tsmc_b": 1.0}, open("state/signal_gate.json", "w"))
 open("state/HALT", "w").write("close_all")
-pf.defer_paper_tw_close(["2330@spot"])
+deferral(["2330@spot"])
 paper_data.tw_session_open = lambda env=None, now=None: True
 sent = []
 
@@ -431,11 +456,12 @@ def place(symbol, diff, spec, reduce_only=False, **k):
     return {"executed_qty": abs(diff) / 1000, "avg_price": 1000}
 
 
+n0 = len(errs())
 pf.reconcile(lambda: {"2330@spot": {"side": "long", "size": 30000.0}}, place)
-check(sent and sent[0][0] == "2330@spot" and sent[0][1] < 0,
-      f"the gated 2330 is closed in the first round after the open ({sent})")
-pf.reconcile(lambda: {}, place)
-check(not os.path.exists(pf._PAPER_TW_CLOSE_PATH), "and the deferral clears once flat")
+pf.reconcile(lambda: {"2330@spot": {"side": "long", "size": 30000.0}}, place)
+check(not sent and not os.path.exists(pf._PAPER_TW_CLOSE_PATH)
+      and len([e for e in errs()[n0:] if "更新後取消等開盤的平倉" in e.get("error", "")]) == 1,
+      f"the open: nothing sent under HALT, the deferral dropped with one failure row ({sent}, {errs()[n0:]})")
 os.remove("state/HALT")
 for f in ("state/signal_gate.json", "manager/portfolio_config.json", "strategies/tsmc_b/state.json"):
     os.path.exists(f) and os.remove(f)

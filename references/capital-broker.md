@@ -850,7 +850,15 @@ The reconciler sends a 台指期 close only while the broker takes orders: from 
 pre-open (08:31, 14:51) to the close. In between (13:45–14:51, 05:00–08:31, weekends) the close
 waits without an error row and goes at the pre-open; a flip's entry waits with it
 (`lib/tw_clock.close_hold`, the same rule as 統一, the machine's clock when it has no sample). 全部平倉
-after the close defers the close to the reconciler's first round after the open.
+(暫停並關閉部位, and the close before an unbind) sends the 台指期 close whatever the time; 群益's
+refusal is a failure row and nothing resends it at the open. 群益 gives no session code, so a
+refusal while the fixed weekly session table says shut (`lib/tw_clock`, holidays not known) is
+written as the market being shut (`[order_reject:market_closed]`), the same as 統一's; a refusal
+inside the session is an ordinary failure. After 暫停並關閉部位 HALT stays (no stop). After 平倉並解除
+the keys stay and nothing is unbound; if trading was not paused before that press and every
+position left is a shut-market refusal, the pause that press set is lifted and strategies trade on
+(Wei 11-16) — the user closes it in the session (in 群益's own software). Never tell the user it
+closes at the open.
 
 ---
 

@@ -238,8 +238,8 @@ ok("confirmBox single:藏取消、焦點給確認;關框時取消鈕還原", /\$
   ok("listStrategies 用它排", /\}\)\.sort\(stratOrder\);/.test(mainSrc) && !/sort\(\(a, b\) => b\.mtime - a\.mtime\)/.test(mainSrc)); }
 
 // ── 沒有回測時,分頁列正下方那一句(兩個視角同一段)──
-ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has", /<\/div>\s*<!--[^>]*-->\s*<p class="rp-nobt" id="rp-nobt" data-i18n="rp\.noBt" hidden><\/p>\s*<div class="rp-panel" id="rp-bt"/.test(html)
-  && /rpNobtPaint\(B, has\);/.test(fnOf(appSrc, "rpShowTab")) && /nb\.classList\.remove\("is-miss"\); nb\.hidden = has;/.test(fnOf(appSrc, "rpNobtPaint")));
+ok("rp.noBt:在 #rp-tabs 正下方、跟分頁 disabled 用同一個 has;0.1.54 起拉回來的第一次回測跑著時也不出(搬家那一行在講)", /<\/div>\s*<!--[^>]*-->\s*<p class="rp-nobt" id="rp-nobt" data-i18n="rp\.noBt" hidden><\/p>\s*<div class="rp-panel" id="rp-bt"/.test(html)
+  && /rpNobtPaint\(B, has\);/.test(fnOf(appSrc, "rpShowTab")) && /nb\.classList\.remove\("is-miss"\); nb\.hidden = has \|\| \(B === RP && typeof hoPullRunning === "function" && hoPullRunning\(B\.name\)\);/.test(fnOf(appSrc, "rpNobtPaint")));
 
 // ── 側欄:再點一次選中的那支 = 取消選取、中欄回 welcome(Wei 09-23)。真的跑 stratRefresh 畫列、按列上的 click ──
 (async () => {

@@ -40,8 +40,33 @@ fetch() {   # <node arch> <pbs triple> <sha256>
   echo "fetch-python: $FILE → $OUT"
 }
 
+# 隨包 pip(0.1.55):python-build-standalone 的 ensurepip 只帶 pip 25.0.1,沒有斷線續傳(--resume-retries 25.1 才有、25.2 起穩定)。
+# 引擎建完 venv 用 --no-index 從這顆本機檔升級(shell/enginesetup.js pipSelfUpgrade),不碰網路。三個平台共用同一顆(py3-none-any)。
+# 名字要跟 main.js 的 PIP_WHEEL_NAME 一樣(tests/check_shell_paths.js 釘住);升版:改 PIP_WHL 與 SHA256(取自 PyPI 該版的 JSON),不要用猜的。
+# MIT 授權;授權全文在 wheel 的 dist-info 裡,原封不動隨包
+PIP_WHL="pip-26.2.2-py3-none-any.whl"
+PIP_URL="https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl"
+PIP_SHA256="fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
+fetch_pip() {
+  OUT="$DIR/pip-wheel/$PIP_WHL"
+  if [ -f "$OUT" ] && [ "$(shasum -a 256 "$OUT" | cut -d' ' -f1)" = "$PIP_SHA256" ]; then return 0; fi
+  mkdir -p "$DIR/pip-wheel"
+  TMP="$OUT.part"
+  curl -fsSL --retry 3 -o "$TMP" "$PIP_URL"
+  GOT="$(shasum -a 256 "$TMP" | cut -d' ' -f1)"
+  if [ "$GOT" != "$PIP_SHA256" ]; then
+    rm -f "$TMP"
+    echo "fetch-python: $PIP_WHL SHA256 不符(拿到 $GOT)" >&2; exit 1
+  fi
+  # 舊版的 pip wheel 不留:extraResources 收整個資料夾
+  find "$DIR/pip-wheel" -name 'pip-*.whl' ! -name "$PIP_WHL" -exec rm -f {} +
+  mv "$TMP" "$OUT"
+  echo "fetch-python: $PIP_WHL → $OUT"
+}
+
 fetch arm64 aarch64-apple-darwin 3ee3ee547cedfeb7c2b16b2b7156039f7b470bb8f857e226fd3d2eb11db83c76
 fetch x64   x86_64-apple-darwin  2e31b23f3f1319f707d0e620b48847a0046577541d357276821f9f1b5492e0ba
 fetch win-x64 x86_64-pc-windows-msvc e90c1b6419da3bd812dd73bb3de40287a21abf153438147639ec5e20375ea93f
+fetch_pip
 # 舊版單顆的目錄(vendor/python/)不再使用;留著只會讓人以為它還會進包
 rm -rf "$DIR/python"

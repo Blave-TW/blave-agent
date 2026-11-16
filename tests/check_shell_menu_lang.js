@@ -28,6 +28,7 @@ function run(throwing) {
     app: { hasSingleInstanceLock: () => true, on: () => {} },
     syncOfficialOnUpdate: () => { if (throwing.has("sync")) throw new Error("sync"); },
     tradeStartIfReady: () => { if (throwing.has("trade")) throw new Error("trade"); },
+    mainLog: { write: () => {} }, quitting: false, quitDone: false,   // 0.1.55 主行程 log 與「結束中不起引擎」
     engineKick: () => { if (throwing.has("engine")) throw new Error("engine"); },   // 0.1.12 開 app 就在背景裝引擎
     codexKick: () => { if (throwing.has("codex")) throw new Error("codex"); },   // 0.1.39 Codex 引擎隨包:刪舊版、連 Codex 時背景補抓
     trayStart: () => { if (throwing.has("traystart")) throw new Error("traystart"); },
@@ -43,12 +44,14 @@ function run(throwing) {
     // 0.1.16 帳號 token 輪替:開 app 檢查一次、之後定期;回合狀態是 main.js 既有那一對
     anyTurn() { return !!(this.activeTurn || this.turnStarting); }, anyTurnOrQueued() { return !!(this.activeTurn || this.turnStarting); }, turnQueue: [], liveTurnCount() { return this.activeTurn || this.turnStarting ? 1 : 0; }, activeTurn: null, turnStarting: false, ROTATE_MIN_LEFT_MS: 0, ROTATE_CHECK_MS: 1e9, setInterval: () => ({ unref() {} }),
     rotator: () => { if (throwing.has("rotate")) throw new Error("rotate"); return { ensure: () => Promise.resolve() }; },
+    gpuBootClear: () => {},   // 0.1.55 GPU 退路的復原(tests/check_shell_bootguard.js 另外測)
     sessionBoot: () => {},   // 0.1.52 app_crash unclean_exit 的 session 檔(tests/check_shell_telemetry_gaps.js 另外測)
     bgBootCheck: () => {}, bgBootQuietUntil: 0,   // 0.1.45 隱藏重開(tests/check_shell_update_restart.js 另外測)
     moveChecked: false, askMoveToApps: () => Promise.resolve(false),   // 0.1.10 搬到「應用程式」那一問(tests/check_shell_update_restart.js 另外測)
     // 0.1.17 聊天附件的七天清掃(shell/attach.js prune):啟動時清一次
     // 0.1.28 筆電／桌機偵測(shell/devicetype.js;tests/check_shell_devicetype.js 另外測):啟動時偵測一次、偵測完 track
     WS: "/ws", require: (m) => {
+      if (m === "./bootguard") return require(path.join(__dirname, "..", "shell", "bootguard.js"));   // 0.1.55 引擎等主視窗載完(stub 的 createWindow 不回視窗 → 當場起;tests/check_shell_bootguard.js 另外測)
       if (m === "./devicetype") return { detectDeviceType: () => { if (throwing.has("device")) throw new Error("device"); return Promise.resolve("laptop"); } };
       if (m !== "./attach") throw new Error("unexpected require " + m); return { prune: (ws) => { if (throwing.has("prune")) throw new Error("prune"); log.push("prune:" + ws); } }; },
     console: { error: (m) => errors.push(m) },

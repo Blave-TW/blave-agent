@@ -14,20 +14,38 @@ class Node {
   appendChild(n) { this.children.push(n); return n; }
   append(...ns) { ns.forEach((n) => this.appendChild(n)); }
   setAttribute() {}
+  addEventListener(ev) { (this.on = this.on || []).push(ev); }
   get childNodes() { return this.children; }
   get textContent() { return this.text + this.children.map((c) => c.textContent).join(""); }
 }
 const el = (tag, cls, text) => { const n = new Node(tag); n.className = cls || ""; if (text != null) n.text = String(text); return n; };
 const bt = read("report-backtest.js"), rob = read("report-robust.js");
-const btMeta = new Function("el", "t", "const DASH = \"—\", MINUS = \"−\"; const isNum = (v) => typeof v === \"number\" && isFinite(v);\n" + cut(bt, "fmtFixed") + "\n" + cut(bt, "buildMeta") + "\nreturn buildMeta;")(el, (k) => k.toUpperCase());
+const btMeta = new Function("el", "t", "let tipSeq = 0; const DASH = \"—\", MINUS = \"−\"; const isNum = (v) => typeof v === \"number\" && isFinite(v);\n" + cut(bt, "fmtFixed") + "\n" + cut(bt, "buildMeta") + "\nreturn buildMeta;")(el, (k) => k.toUpperCase());
 const robMeta = new Function("el", "const DASH = \"—\"; const isNum = (v) => typeof v === \"number\" && isFinite(v);\n" + cut(rob, "feeTxt") + "\n" + cut(rob, "buildMeta") + "\nreturn buildMeta;")(el);
 const NOCTX = { start: null, end: null, fee: null };
 const kids = (m) => m.children.map((c) => c.className);
-const shown = (m) => m.children.map((c) => c.textContent).join("·");   // 「·」模擬 CSS 在組與組之間畫的點
+// 畫面上看得到的字:說明泡泡(.tip,滑過或 focus 才出)不算
+const vis = (n) => (n.className === "tip" ? "" : n.text + n.children.map(vis).join(""));
+const shown = (m) => m.children.map(vis).join("·");   // 「·」模擬 CSS 在組與組之間畫的點
 
 const full = btMeta({ symbol: "BTCUSDT", interval: "1h", start: "a", end: "b", "fee [%]": 0.05 });
 ok("回測頁首:每個直接子節點都是 .mgrp", full.children.length === 4 && kids(full).every((c) => c === "mgrp"), kids(full));
-ok("回測頁首:組與組之間一個點、頭尾沒有點;手續費的標籤與值在同一組", shown(full) === "BTCUSDT·1h·a → b·BT.FEE0.05%", shown(full));
+ok("回測頁首:組與組之間一個點、頭尾沒有點;交易成本的標籤與值在同一組", shown(full) === "BTCUSDT·1h·a → b·BT.FEE0.05%", shown(full));
+{ const g = full.children[3], c = g.children.map((x) => x.tag + "." + x.className);
+  ok("交易成本的標籤是 .mp-tip 按鈕、緊接著說明泡泡 .tip(相鄰才會出)、再接數值;泡泡講含手續費稅滑價、每邊多少(帶這一份的數字)",
+    c.join() === "button.mp-tip,span.tip,span.mono" && g.children[1].text === "BT.TIP.FEE", c.join());
+  const btMetaV = new Function("el", "t", "let tipSeq = 0; const DASH = \"—\", MINUS = \"−\"; const isNum = (v) => typeof v === \"number\" && isFinite(v);\n" + cut(bt, "fmtFixed") + "\n" + cut(bt, "buildMeta") + "\nreturn buildMeta;")(el, (k, v) => k + (v ? JSON.stringify(v) : ""));
+  const tip = btMetaV({ "fee [%]": 0.05 }).children[0].children[1];
+  ok("說明泡泡帶這一份的每邊比例(bt.tip.fee 代 fee)", tip.text === 'bt.tip.fee{"fee":"0.05"}', tip.text); }
+{ const css = read("report-backtest.css"), g = full.children[3];
+  ok("頁首是 overflow-x: clip(裁行首的點):交易成本泡泡以 .bt-meta 為定位基準、預設貼左緣、寬不超過容器,不靠排版時機就在裁切範圍內",
+    /overflow-x: clip;\n\s*position: relative;/.test(css) && /\.bt-meta \.tip \{ width: max-content; max-width: min\(260px, 100%\); white-space: normal; left: 0; \}/.test(css)
+    && /\.bt-meta > \.mgrp:has\(> \.tip\) \{ position: static; \}/.test(css), css.slice(0, 0));
+  ok("不定位的那一組照樣有分隔點:改成組裡第一個 flex 項目、負邊距推進組間空隙",
+    /\.bt-meta > \.mgrp \+ \.mgrp:has\(> \.tip\)::before \{ position: static; flex: none; margin: 0 calc\(-1 \* var\(--space-4\)\) 0 calc\(-1 \* var\(--space-24\)\); \}/.test(css));
+  ok("出現的那一刻(滑過、focus)才把泡泡挪到標籤上方、左右夾在容器裡;沒有 ResizeObserver",
+    g.children[0].on && g.children[0].on.join() === "mouseenter,focus" && !/ResizeObserver/.test(cut(bt, "buildMeta"))
+    && /feeTip\.style\.left = Math\.max\(0, Math\.min\(b\.left - m\.left, m\.width - Math\.min\(260, m\.width\)\)\) \+ "px";/.test(cut(bt, "buildMeta"))); }
 const noSym = btMeta({ interval: "1d", start: "x", end: "y", fee: 0.001 });
 ok("沒有 symbol:第一組就是內容,不以點開頭", kids(noSym).every((c) => c === "mgrp") && shown(noSym) === "1d·x → y·BT.FEE0.10%", shown(noSym));
 const rm = robMeta({}, { rows: [1, 2, 3], cols: [1, 2], ctx: NOCTX }, { buildMeta: () => btMeta({ symbol: "ETHUSDT", interval: "4h" }), t: (k) => k });

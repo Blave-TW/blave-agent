@@ -141,14 +141,16 @@ const TR_TW_NOTICE = { clock_skew_hold: "tr.ov.evClockHold", tw_entry_hold: "tr.
 /* 收盤後按的全部平倉延到開盤(kind market_closed_deferred)、開盤前按啟動下單取消延後(沒帶 kind,認整句開頭):用戶自己按的,
    不是下單失敗(P3,同 api agent_overview._close_deferred、main.js p1CloseDeferred;regex 寫成 \u 跳脫,renderer 不放中文字面)。回 null = 別的列;fut = 台指期(券商或代號) */
 const TR_DEFER_CANCEL_RE = /^close-all: (?:\u958b\u76e4\u524d\u5df2\u6309\u555f\u52d5\u4e0b\u55ae|\u6a5f\u5668\u91cd\u958b\u5f8c\u6309\u4e86\u555f\u52d5\u4e0b\u55ae).*?\u5ef6\u5f8c\u7684(?:\u53f0\u80a1|\u53f0\u6307\u671f)\u5e73\u5009(?:\u4e00\u4f75)?\u53d6\u6d88/;
-function trCloseDeferred(e) {
+/* 0.1.54 起不再延後(休市平不了是一般拒單列,照機器原句);這兩種列只剩還沒更新的 0.1.53 雲端 lib 會寫。
+   cloud = 雲端視角:時鐘那兩句看的是主機的鐘,換 tr.cloud.ov.* 那組(同網頁「主機」);本機講「這台電腦」 */
+function trCloseDeferred(e, cloud) {
   if (!e || typeof e !== "object") return null;
   const cancel = e.kind === "close_deferred_cancelled" || (e.kind == null && TR_DEFER_CANCEL_RE.test(String(e.error || "")));
   if (!cancel && e.kind !== "market_closed_deferred") return null;
   const fut = e.exchange === "capital" || e.exchange === "president" || TR_TWFUT_RE.test(trCanonSym(String(e.symbol || "").split(",")[0]));
-  return { cancel, title: cancel ? (fut ? "tr.ov.evDeferCancelFut" : "tr.ov.evDeferCancelStock") : (fut ? "tr.ov.evDeferFut" : "tr.ov.evDeferStock"),
-    note: cancel ? "tr.ov.evDeferCancelNote" : e.clock === "unmeasured" ? "tr.ov.evDeferClockNote"
-      : e.clock === "far" ? "tr.ov.evDeferClockFarNote" : "tr.ov.evDeferNote" };
+  const note = cancel ? "tr.ov.evDeferCancelNote" : e.clock === "unmeasured" ? (cloud ? "tr.cloud.ov.evDeferClockNote" : "tr.ov.evDeferClockNote")
+    : e.clock === "far" ? (cloud ? "tr.cloud.ov.evDeferClockFarNote" : "tr.ov.evDeferClockFarNote") : "tr.ov.evDeferNote";
+  return { cancel, title: cancel ? (fut ? "tr.ov.evDeferCancelFut" : "tr.ov.evDeferCancelStock") : (fut ? "tr.ov.evDeferFut" : "tr.ov.evDeferStock"), note, rowNote: note };
 }
 function trPresHeldRun(state, r) { return state === "running" && trVenueIds(r).indexOf("president") >= 0 && trPresLoginHeld(r, "president"); }
 /* 統一下單程式剛起來(worker ok、或 wanted 著還在 running)、帳戶讀取器還沒讀到它之後的那一輪(account.read_at 早於那一刻、或還沒有 account):
@@ -1261,6 +1263,10 @@ function trAmountError(s) {
 }
 /* 去向行「{where} · {money} · {venue}」:沒交易所(B0)時後兩段是空的,不留「雲端 ·  · 」(round-2 稽核 B2) */
 function trWhereTidy(s) { return String(s || "").split("·").map((x) => x.trim()).filter(Boolean).join(" · "); }
+/* 全部平倉沒做成的那列(manager/flatten 寫「close-all: …」):lib/portfolio._record_order_error 會把 [order_reject:<kind>] 搬到最前面,
+   存進 order_errors.json 的是「[order_reject:market_closed] close-all: …」;token 在後(工作區沒有 lib/reject_token)也認 */
+const TR_CLOSE_ALL_RE = /^(?:\[order_reject:[a-z_]+\]\s*)?close-all:/;
+function trIsCloseAll(err) { return TR_CLOSE_ALL_RE.test(String(err == null ? "" : err)); }
 /* lib 的錯誤訊息帶的 token(lib/account_okx、order_okx 的 [okx_account_mode];order_gateio 的 [gateio_price_deviated])→ 那一種。
    訊息開頭本來就是給人看的中文,token 才是畫面認的東西:en 介面也要有一句,中文介面不出後面那串交易所原文。認不得回 null */
 function trErrToken(err) {
@@ -1271,15 +1277,15 @@ function trErrToken(err) {
   if (/\[bitget_copy_trading_key\]/.test(e)) return "bitget_copy_trading_key";
   // Bitget 統一帳戶還沒開放:lib 標 key_permission,不先認會講成「交易所拒絕這把金鑰」(同 cloudcmd 的 MODE_UNVERIFIED 判法)
   if (/\[bitget_account_mode:uta\]/.test(e) && BITGET_VERIFIED_MODES.indexOf("uta") < 0) return "bitget_uta_unsupported";
-  // lib/order_reject 的拒單分類(spec-0.1.13-order-copy #14):lib 放在最前面、六種之一;舊 lib 沒有 → 照舊認下面那兩個或原文
-  const r = /^\[order_reject:(insufficient_margin|below_min_size|symbol_unavailable|key_permission|reduce_only_rejected|paper_margin)\]/.exec(e);
+  // lib/order_reject 的拒單分類(spec-0.1.13-order-copy #14):lib 放在最前面;舊 lib 沒有 → 照舊認下面那兩個或原文。market_closed = 全部平倉休市被拒(manager/flatten)
+  const r = /^(?:close-all:\s*)?\[order_reject:(insufficient_margin|below_min_size|symbol_unavailable|key_permission|reduce_only_rejected|paper_margin|market_closed)\]/.exec(e);
   if (r) return r[1];
   const m = /\[(okx_account_mode|gateio_price_deviated)\]/.exec(e);
   return m ? m[1] : null;
 }
 // 拒單分類 → 那一句的 key(每句自己帶標的)
 const TR_REJECT_TEXT = { insufficient_margin: "tr.err.margin", below_min_size: "tr.err.minSize", symbol_unavailable: "tr.err.symbol",
-  key_permission: "tr.err.key", reduce_only_rejected: "tr.err.reduceOnly", paper_margin: "tr.err.paperMargin",
+  key_permission: "tr.err.key", reduce_only_rejected: "tr.err.reduceOnly", paper_margin: "tr.err.paperMargin", market_closed: "tr.err.marketClosed",
   bitget_account_eligibility: "tr.err.bitgetEligibility", bitget_uta_unsupported: "tr.err.bitgetUta",
   bitget_copy_trading_key: "tr.err.bitgetCopyKey", paperCash: "tr.err.paperCash", paperSell: "tr.err.paperSell" };
 /* 模擬帳戶現貨的現金不夠(lib/order_paper.py:台股與加密現貨都只能用現金買;spec paper-tw-cash-short §1,句子不提台股):要整列
@@ -1344,7 +1350,7 @@ function trMktKey(sym, spot, fut) {
   return spot || /@spot$/i.test(String(sym || "")) ? "tr.mkt.spot" : "tr.mkt.swap";
 }
 /* 每個還欠著單的標的各掛它最新的一筆(同網頁 pfLiveOrderErrs;兩檔同時被拒兩列都要看得到)。回 Map(列 key → 那一筆)。
-   close-all(全部平倉沒做成,error 以「close-all:」開頭)例外:只在沒在跑時掛——按了啟動那口部位就歸對帳器管——而且該列實際不是 0;
+   close-all(全部平倉沒做成,trIsCloseAll)例外:只在沒在跑時掛——按了啟動那口部位就歸對帳器管——而且該列實際不是 0;
    "*"(整台機器,呼叫端畫在表底)只認台灣期貨券商那筆、看還有沒有台指期部位。ctx = { open: Set(實際不是 0 的列), twOpen, running };缺 = close-all 一律不掛 */
 function trLiveOrderErrs(errs, pending, ctx) {
   const out = new Map();
@@ -1360,7 +1366,7 @@ function trLiveOrderErrs(errs, pending, ctx) {
   });
   errs.forEach((e) => {
     if (!e || typeof e !== "object" || e.released === true) return;   // 已解除的停車單(lib/portfolio.mark_park_released)不是現況
-    const closeAll = String(e.error || "").indexOf("close-all:") === 0, tw = e.exchange === "capital" || e.exchange === "president";
+    const closeAll = trIsCloseAll(e.error), tw = e.exchange === "capital" || e.exchange === "president";
     const k = tw && (closeAll || e.exchange !== "capital") ? trTwFutCanon(e.symbol) : trCanonKey(e.symbol);
     if (closeAll) {
       if (!ctx || ctx.running) return;
@@ -1401,7 +1407,7 @@ function trUnconfirmedRows(errs) {
 }
 /* 列下面那一句(白話不帶標的:它就掛在那個標的的列下面;同網頁 pfOrderErrPlain / pfOrderErrRaw)。認得的原因 = 在地化句去掉開頭的標的;
    認不得 = 原文拿掉機器端的分類前綴、截 200 */
-function trOrderErrRaw(err) { return String(err == null ? "" : err).replace(/^close-all: /, "").replace(/^\s*\[order_reject:[a-z_]+\]\s*/, "").slice(0, 200); }
+function trOrderErrRaw(err) { return String(err == null ? "" : err).replace(/^(?:\s*\[order_reject:[a-z_]+\]\s*|close-all: )+/, "").slice(0, 200); }
 /* 掛出來的那一筆用紅字現在式、還是灰字「上次」(帶時間)。紅字要三件都成立(0.0.3 實機:兩天前那筆 110,000 一按啟動就變紅):
    ① 對帳器在跑(或重開沒停住);
    ② 它是**最近一輪對帳**的失敗——lib/portfolio 每一輪先寫 last_reconcile.json 再下單、持續失敗每輪都會再記一筆,
@@ -2086,6 +2092,8 @@ async function trPoll() {
         if (typeof rpCloudWatch === "function") rpCloudWatch(C.list);   // 開著那支在平台上換了內容(回合結束後才同步到、或網頁發起的回合):補抓
         if (typeof rpWfSync === "function") rpWfSync();   // 雲端主機的 config_supports_wf 翻面:樣本外驗證分頁跟著換(落後態 ↔ 旋鈕)
         if (typeof rpXtSync === "function") rpXtSync();   // config_supports_exec_test 翻面:成交測試的霧跟著換
+        // 雲端回 REVOKED／NO_APP_SECRET(authRevoked 讀這份)翻面:左下角帳號那一格換成「登入」、手機圖示收掉(app.js sideCvPaint)
+        if (typeof sideCvPaint === "function" && authRevoked() !== ENV.sideRv) { ENV.sideRv = authRevoked(); sideCvPaint(); }
       } catch (_) { }
     }
     // 策略清單另外接:它失敗不能連累狀態,也不能把「沒載入」當成「一支都沒有」(listLoaded 只有成功才會變 true)
@@ -2990,7 +2998,7 @@ function trAskStop(opener) {
     lead: trStartPending(TR.pending) ? trStopAfterStartLead() : null,
     // 重開沒停住(C):沒有啟動鈕,「之後按啟動下單」要先更新(audit S1)
     // 凍結時選句只講暫停期間不送單,「暫停並關閉部位」那句另起一行(<選句>2)
-    lines: [t(choice), ...(freeze ? [t(choice + "2")] : []), trRestartUnconfirmed(r) ? t("tr.cloud.closeAllWarn2Unconfirmed") : t("tr.closeAllWarn2")],
+    lines: [t(choice), ...(freeze ? [t(choice + "2")] : []), trRestartUnconfirmed(r) ? t("tr.cloud.closeAllWarn2Unconfirmed") : t(trNoAmounts(r) ? "tr.closeAllWarn2Z" : "tr.closeAllWarn2")],
     ok: t("tr.stopKeep"), onOk: () => trRun("halted", [(S) => trSend(S, "halt", { reason: "desktop ui" })], "halt"),
     // 沒有平倉層的 workspace 不給「看起來成功但沒平」的鈕(同雲端 can_flatten)
     alt: r.can_flatten === true ? { label: t("tr.stopFlat"), danger: true, onOk: () => trRun("halted", [(S) => trSend(S, "close_all", {})], "close_all") } : null,
@@ -4807,18 +4815,21 @@ function poSigTable(r, stored, states, mode) {
   const openSet = new Set(syms.filter((k) => (mine[k] || 0) !== 0));
   const errs = firstRead ? new Map() : trLiveOrderErrs(r.order_errors, pending, { open: openSet, twOpen: [...openSet].some((k) => !!trTxfSpec(k)), running, orders: r.orders });
   errs.forEach((le, key) => {
-    const sym = String(le.symbol || "—").replace(/@spot$/, ""), err = String(le.error || le.message || ""), closeAll = err.indexOf("close-all:") === 0;
-    const cd = trCloseDeferred(le);
-    const plain = cd ? t(cd.note) : le.kind === "order_unconfirmed" ? t(le.close_all === true ? "tr.ov.evUnconfirmedCloseAllNote"   // close_all 優先(同網頁)
+    const sym = String(le.symbol || "—").replace(/@spot$/, ""), err = String(le.error || le.message || ""), closeAll = trIsCloseAll(err);
+    const cd = trCloseDeferred(le, TR.env === "cloud");
+    // 統一回覆休市(kind broker_session_closed,manager/reconciler._note_broker_shut;api P3):市場沒開、下個時段再送,不是下單失敗——灰字、不問 agent;
+    // 照 kind 組句,不印機器原句(en 介面會整句中文;design review M8)
+    const bsc = le.kind === "broker_session_closed";
+    const plain = cd ? t(cd.rowNote) : bsc ? t("tr.ov.evBrokerShut") : le.kind === "order_unconfirmed" ? t(le.close_all === true ? "tr.ov.evUnconfirmedCloseAllNote"   // close_all 優先(同網頁)
       : le.manual === true ? "tr.err.unconfirmedManual" : "tr.err.unconfirmed") : TR_TW_NOTICE[le.kind] ? err.slice(0, 300) : trOrderErrParse(err, le) ? trOrderErrText("", err, le).replace(/^[\s:：—-]+/, "").replace(/^[a-z]/, (c) => c.toUpperCase()) : null;
-    const loud = !closeAll && trErrLoud(le, hs, TR.startAt, r.last_reconcile);
+    const loud = !closeAll && !bsc && trErrLoud(le, hs, TR.startAt, r.last_reconcile);
     const line = trEl("span", loud ? "pf-note err" : "pf-note past");
     // 節流中的重複失敗只更新那一列的 last_at／count(4647a2e):時間寫最後一次失敗;哪一筆還在失敗照舊看 ts(trLiveOrderErrs)
     if (!loud) { const stamp = trErrStamp(le.last_at || le.ts, Date.now()); if (stamp) line.appendChild(trEl("span", "ts mono", stamp)); }
     // 不可信輸入(機器回報的原文):截長、走文字節點
     line.append(plain || (loud ? t("po.orderFailedRow", { err: trOrderErrRaw(err) }) : t("po.orderFailedLast", { err: trOrderErrRaw(err) })));
     // 「請 agent 查原因」:只把一句話填進本機聊天框、不送出(聊天框那一句離開了這一列,照舊帶標的);平倉失敗的答案就是那行字,不問
-    if (!closeAll) { const b = trEl("button", "btn-quiet tr-err-ask", t("tr.err.ask")); b.type = "button"; b.dataset.fk = "errask:" + key; b.addEventListener("click", () => trErrAsk(sym, err)); line.append(" ", b); }
+    if (!closeAll && !bsc) { const b = trEl("button", "btn-quiet tr-err-ask", t("tr.err.ask")); b.type = "button"; b.dataset.fk = "errask:" + key; b.addEventListener("click", () => trErrAsk(sym, err)); line.append(" ", b); }
     const host = rowOf[key];
     if (host) {
       const er = document.createElement("tr"), td = trEl("td", "note po-err"); td.colSpan = cols; td.appendChild(line); er.appendChild(td);
@@ -5295,7 +5306,8 @@ function trUbKind(r, id) {
   if (r.can_close_unbind !== true) return { kind: "cant", p, old: true };   // 舊 runtime:不給「看起來成功、其實沒平」的鈕
   if (Array.isArray(r.close_unbind_manual) && r.close_unbind_manual.indexOf(id) >= 0) return { kind: "cant", p };
   const ses = r.txf_session;
-  if (trTwBroker(id) && ses && ses.open === false) return { kind: "closed", p, next: Number(ses.next_open) || null };   // 前端不自己算台指期時段
+  // 前端不自己算台指期時段;新 lib(txf_close_refuses)休市照樣給平倉鈕,平不了停在失敗態(Wei 11-15)
+  if (trTwBroker(id) && ses && ses.open === false && r.txf_close_refuses !== true) return { kind: "closed", p, next: Number(ses.next_open) || null };
   return { kind: "ask", p };
 }
 // 券商 app 的名字(「到{app} app 自己平」):台灣兩家用短名,其餘同交易所名
@@ -5437,6 +5449,8 @@ function trUbTick() {
   }
   if (state !== u.state) { u.state = state; if (u.box) trUbShow(S); }
 }
+// 休市被拒、按之前沒暫停:機器撤回這次自己掛的 HALT,策略照跑(Wei 11-16)。照回報的停止狀態講,不照 why 推
+function trUbFailStateKey(r) { return (r.halt && r.halt.halted) || trRestartKind(r) ? "tr.ub.failState" : "tr.ub.failStateRun"; }
 function trUbShow(S, opener) {
   const u = S.ub; if (!u) return;
   const lf = u.lf || {}, m = u.m || {}, manual = Array.isArray(m.manual) ? m.manual : [];
@@ -5462,7 +5476,7 @@ function trUbShow(S, opener) {
   const lines = [];
   // 只放券商真的回的話(last_flatten.reply);我們自己的原因(msg:逾時、帳本沒基準…)不冒充成券商回覆(設計稽核 S3)
   if (lf.reply) lines.push(trEl("span", "ub-reply", trUbSay("tr.ub.failReply", { venue, msg: String(lf.reply).slice(0, 300) })));
-  lines.push(t("tr.ub.failState"));
+  lines.push(t(trUbFailStateKey(trReport() || {})));
   const hasUnconf = unconf.size > 0 || m.why === "unconfirmed";
   if (hasUnconf) { const w = trEl("span", "", trUbSay("tr.ub.unconfirmed", { app })); w.id = "ub-unconf"; lines.push(w); }
   if ((trReport() || {}).unbind_clears_book === true) lines.push(t("tr.ub.keepRejoin"));
@@ -5762,6 +5776,8 @@ function trOrderErrText(sym, err, row) {
   if (p && p.kind === "paperBroke") return t("tr.err.paperBroke", { sym });
   if (p && p.kind === "okx_account_mode") return t("tr.err.okxMode", { sym });
   if (p && p.kind === "gateio_price_deviated") return t("tr.err.gateDeviated", { sym });
+  // 平倉並解除被休市拒、這次的暫停撤回了(列上 halt_lifted,manager/flatten._record_refusals):策略照跑,不講「沒有停損」
+  if (p && p.kind === "market_closed" && row && row.halt_lifted === true) return t("tr.err.marketClosedRun", { sym });
   if (p && Object.prototype.hasOwnProperty.call(TR_REJECT_TEXT, p.kind)) return t(TR_REJECT_TEXT[p.kind], { sym });
   return t("tr.orderFailed", { sym, err: String(err == null ? "" : err).slice(0, 200) });
 }
@@ -6040,6 +6056,7 @@ function trOvEvents(r, z) {
     // 誰按的看 source(鏡射平台的 _HALT_AUTO_SOURCES);這台電腦記的那一筆沒有 source = 人按的
     // halt 的字照 source(trEvLevel);顏色在 push 那裡讓 api 的 level 蓋過
     if (ev.type === "halt" && d.unexplained === true) { head = t("tr.ov.evHaltUnexplained"); lv = 1; code = trUnxSym(d) || null; note = t("tr.ov.evHaltUnexplainedNote", { venue: trUnxVenue(d) }); tip = typeof d.reason === "string" && d.reason ? d.reason : null; unxSeen.add(String(d.park_id || "")); }
+    // 這次平倉什麼都沒平、只有台指期休市留著:照一般暫停寫,台指期由緊接的 kept 列講
     else if (ev.type === "halt" || ev.type === "halt_close") { lv = trEvLevel(ev.type, d); const closes = lv !== 1 && trHaltCloses(ev.type, trHaltNow(ev, d, r)); head = t(lv === 1 ? "tr.ov.evHaltAuto" : closes ? "tr.ov.evHaltClose" : d.by === "phone" ? "tr.ov.evHaltPhone" : "tr.ov.evHalt"); note = trHaltUnconfirmedSym(d) != null ? trHaltUnconfirmedNote(d) : trHaltStopsAll(d) || trHaltFreeze(r) ? t("tr.ov.evRestartStoppedNote") : closes ? null : t("tr.ov.evHaltNote"); uiHalts.push(ev.ts * 1000); lastRun = "halt"; }
     // 前一筆是暫停才叫「恢復」;第一次啟動(或之前的暫停不在紀錄裡,例如對帳器自動暫停)寫「已啟動下單」。標題已經講完,不帶說明
     else if (ev.type === "resume" || ev.type === "resume_wait") { head = t(lastRun === "halt" ? "tr.ov.evResume" : "tr.ov.evStart"); lastRun = "resume"; }
@@ -6085,12 +6102,14 @@ function trOvEvents(r, z) {
         return;
       }
       if (TR_TW_NOTICE[e.kind]) { body.appendChild(trEl("span", "err", t(TR_TW_NOTICE[e.kind]))); tail(raw.slice(0, 300)); return; }
-      const cd = trCloseDeferred(e);
+      // 統一回覆休市、下個時段再送(kind broker_session_closed;api P3):一般字、照 kind 組句(不印機器原句,design review M8),不掛「下單失敗」
+      if (e.kind === "broker_session_closed") { body.appendChild(trEl("span", "", t("tr.ov.evBrokerShut"))); trEvCount(body, e.count); body.append(" ", trEl("span", "mono", sym)); return; }
+      const cd = trCloseDeferred(e, TR.env === "cloud");
       if (cd) {   // 一列可能是幾個 key(逗號串起):各自去掉 @spot
         body.append(trEl("span", "", t(cd.title)), " ", trEl("span", "mono", String(e.symbol || "").split(",").map((s) => s.replace(/@spot$/, "")).join(", ")));
         // 延後那列不帶附註:標題已講等開盤(copy #8 不重述標題,設計稽核 0153 #2);部位表那一行沒標題,照帶。取消那列的附註講原因,留著
         // 時鐘量不到／差超過一小時那列(clock unmeasured／far)附註講的是標題沒講的事(不是休市),照帶
-        if (cd.cancel || e.clock === "unmeasured" || e.clock === "far") body.append(" ", trEl("span", "dim", "— " + t(cd.note)));
+        if (cd.note && (cd.cancel || e.clock === "unmeasured" || e.clock === "far")) body.append(" ", trEl("span", "dim", "— " + t(cd.note)));
         return;
       }
       body.appendChild(trEl("span", trEvClass(trEvLevel("order_error", e)), t("tr.ov.evErr")));
@@ -6418,10 +6437,12 @@ function cxTiles(L) {
     });
     w.appendChild(g);
   };
-  group("crypto", "cx.group.crypto", cxVenuesFor(CXF.env).map((id) => [id, trVenueLabel(id)]));
   const tw = cxTwTiles(CXF.env, window.blave.platform);
-  if (tw === null) group("tw", "cap.group.tw", [], t("cx.macTw"));
-  else if (tw.length) group("tw", "cap.group.tw", tw.map(([id, k]) => [id, t(k)]));
+  const twGroup = () => { if (tw === null) group("tw", "cap.group.tw", [], t("cx.macTw")); else if (tw.length) group("tw", "cap.group.tw", tw.map(([id, k]) => [id, t(k)])); };
+  const twFirst = typeof MKT !== "undefined" && mktTwFirst(MKT.v);   // 主要市場台指期:台灣期貨那組排前面
+  if (twFirst) twGroup();
+  group("crypto", "cx.group.crypto", cxVenuesFor(CXF.env).map((id) => [id, trVenueLabel(id)]));
+  if (!twFirst) twGroup();
   return w;
 }
 // noName:標題已經是「連接群益期貨／連接統一期貨」的那幾步,頭列只留「換一家」,名字不講第二次(稽核 v052 建議 7)

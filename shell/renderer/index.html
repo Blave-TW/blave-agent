@@ -43,6 +43,9 @@
     <div class="cn-mid">
       <!-- 大標與副標的預設是「本機沒有能用的 CLI」那一組(下載後最多人看到的狀態);偵測完由 app.js cnFreePaint 決定 -->
       <h4 data-i18n="cn.h.free"></h4>
+      <!-- 第二步「主要做哪個市場？」(renderer/market.js;spec market-pref-2026-11-09 §3):#view-connect.is-mkt 時同一張卡換內容,第一步的節點留著只藏起來 -->
+      <p class="cn-step" data-i18n="cn.mkt.step"></p>
+      <h4 id="cn-mkt-q" data-i18n="cn.mkt.q"></h4>
       <div class="cn-card">
         <div class="cn-sec cn-blave">
           <!-- 說明是標題的副標、不是段落:兩個選項各少一次眼睛停留。 -->
@@ -64,6 +67,15 @@
           <div class="cn-rows" id="agent-rows"></div>
           <p class="cn-hint" id="cn-hint" hidden></p>
         </div>
+        <div class="cn-sec cn-mkt" id="cn-mkt">
+          <p class="cn-wait" id="cn-mkt-wait" role="status"></p>
+          <div class="mk-grid" role="group" aria-labelledby="cn-mkt-q">
+            <button type="button" class="mk-opt" data-mk="crypto" aria-pressed="false" data-i18n="lib.mkt.crypto"></button>
+            <button type="button" class="mk-opt" data-mk="twstock" aria-pressed="false" data-i18n="lib.mkt.tw"></button>
+            <button type="button" class="mk-opt" data-mk="txf" aria-pressed="false" data-i18n="lib.mkt.txf"></button>
+            <button type="button" class="mk-opt" data-mk="usstock" aria-pressed="false" data-i18n="lib.mkt.us"></button>
+          </div>
+        </div>
       </div>
       <!-- 尾註列:左邊「連結後可以隨時更換」、右邊介面語言 segment(設計師:視線只走這 560 一欄,
            角落是死區;尾註跟語言是同一種次要的話,同一列)。segment 由 JS 建(各語言自己的名字,
@@ -71,6 +83,8 @@
       <div class="cn-foot" id="cn-foot">
         <p data-i18n="cn.foot"></p>
         <div class="cn-lang" id="cn-lang" role="radiogroup" data-i18n-aria="set.lang"></div>
+        <p class="cn-mkt-foot" data-i18n="cn.mkt.foot"></p>
+        <button type="button" class="btn-quiet cn-mkt-skip" id="cn-mkt-skip" data-i18n="cn.mkt.skip"></button>
       </div>
     </div>
   </div>
@@ -100,25 +114,22 @@
       <div class="strat-list" id="strat-list"><p class="pf-state" id="strat-empty" data-i18n="ws.noStrategies"></p></div>
       <!-- 雲端那幾份:點一支 → 中欄畫雲端那一份的報告(app.js rpCloudSelect);名字是雲端來的字串,一律 textContent -->
       <div class="strat-list" id="strat-list-cloud" hidden></div>
-      <!-- 細軌底部:更新膠囊的圓鈕(只有圖示,aria-label = 膠囊字;app.js upPillPaint 跟膠囊同一份 plan 畫) -->
-      <div class="side-rail"><button class="rail-btn" id="rail-open" type="button" data-i18n-aria="ws.sideExpand"><svg class="ws-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2"/><line x1="6" y1="2.75" x2="6" y2="13.25"/><polyline points="9.6,6.2 11.4,8 9.6,9.8"/></svg></button><button class="up-pill up-rail" id="up-rail" type="button" hidden><svg class="up-pill-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button></div>
-      <!-- 左下角:設定(照雲端 .ws-foot / .ws-more 的樣式;雲端是「更多」選單,
-           桌面版只有設定一項,所以直接開 modal 不展開) -->
+      <!-- 細軌(spec sidebar-conversion §3.5):上面展開鈕;底部更新圓鈕(跟列裡那顆同一份 plan,app.js upPillPaint)、它下面齒輪 -->
+      <div class="side-rail"><button class="rail-btn" id="rail-open" type="button" data-i18n-aria="ws.sideExpand"><svg class="ws-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2"/><line x1="6" y1="2.75" x2="6" y2="13.25"/><polyline points="9.6,6.2 11.4,8 9.6,9.8"/></svg></button><div class="rail-bot"><button class="up-pill up-rail" id="up-rail" type="button" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button><button class="rail-btn" id="rail-set" type="button" aria-haspopup="dialog"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button></div></div>
+      <!-- 左下角一列(spec sidebar-conversion-2026-11-10 §2):靠左依序 齒輪、手機、帳號那一格、更新;缺的往左補,右邊留白。
+           #foot-why 是更新回合中原因句的錨點:句子插在它後面、列的上方,列本身不動(§6.4)。手機與帳號那一格由 promptslot.js／app.js sidePaint 畫 -->
       <div class="ws-foot">
-        <!-- 更新膠囊(spec desktop-update-pill §3):新版已暫存好才出,設定鈕那一列上方;品牌橘是 canon 具名例外,整個視窗只這一顆 -->
-        <div class="up-pill-wrap" id="up-pill-wrap" hidden><button class="up-pill" id="up-pill" type="button"><svg class="up-pill-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg><span class="up-pill-t" id="up-pill-t"></span></button></div>
-        <!-- 手機那則(spec sidebar-prompt-slot §1、§6;pop 內容 spec slot-phone-steps §3):跟更新膠囊同一格,一次一則,renderer/promptslot.js 畫,pop 裡的步驟也是它建。pop 緊接膠囊:Tab 從膠囊直接進 pop -->
-        <div class="ph-slot" id="ph-slot" hidden>
-          <button class="ph-pill" id="ph-pill" type="button" aria-expanded="false" aria-controls="ph-pop"><svg class="up-pill-ic" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/></svg><span data-i18n="ph.slot"></span></button>
+        <div id="foot-why" hidden></div>
+        <div class="foot-row" id="foot-row">
+          <button class="ic-btn" id="ws-conn" type="button" aria-haspopup="dialog"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          <!-- pop 緊接手機圖示:Tab 從圖示直接進 pop。pop 是 position: fixed,不佔列寬 -->
+          <button class="ic-btn" id="ph-pill" type="button" aria-expanded="false" aria-controls="ph-pop" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/></svg></button>
           <div class="ph-pop" id="ph-pop" hidden></div>
-          <button class="ph-x" id="ph-x" type="button" data-i18n-aria="set.close"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          <button class="cv-pill" id="side-cv" type="button" hidden></button>
+          <span class="row-note" id="side-note" hidden></span>
+          <!-- 更新圓鈕(§3.3):整個視窗唯一的橘;版號只在提示、aria-label 與更新框標題 -->
+          <button class="up-pill" id="up-pill" type="button" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
         </div>
-        <button class="ws-more" id="ws-conn" type="button" aria-haspopup="dialog">
-          <svg class="ws-more-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-          <span data-i18n="ws.settings"></span>
-          <!-- 只在三種時候出字:試用最後 3 天 / 啟動中 / 已停機;其餘時間空的(不做徽章、不加紅點) -->
-          <span class="ws-more-note" id="ws-conn-note" hidden></span>
-        </button>
       </div>
     </aside>
     <div class="pane-div" id="div-side" role="separator" aria-orientation="vertical" tabindex="0" data-i18n-aria="ws.resizeSide"><button class="handle" type="button" tabindex="-1" data-i18n-aria="ws.sideCollapse"><svg class="ws-icon" viewBox="0 0 16 16" aria-hidden="true"><polyline points="9.8,3.6 5.4,8 9.8,12.4"/></svg></button></div>
@@ -581,6 +592,19 @@
             </span>
           </div>
           <p class="set-ccy-err" id="set-ccy-err" role="status" hidden></p>
+          <!-- 主要市場(renderer/market.js;spec market-pref §5.5):本機值,登入著同步到帳號;沒登入也出(市場題可能在登入前答) -->
+          <div class="set-row">
+            <label class="set-gl" for="set-mkt" data-i18n="set.mkt"></label>
+            <span class="set-selw">
+              <select class="set-sel" id="set-mkt">
+                <option value="all" data-i18n="set.mkt.all"></option>
+                <option value="crypto" data-i18n="lib.mkt.crypto"></option>
+                <option value="twstock" data-i18n="lib.mkt.tw"></option>
+                <option value="txf" data-i18n="lib.mkt.txf"></option>
+                <option value="usstock" data-i18n="lib.mkt.us"></option>
+              </select>
+            </span>
+          </div>
           <!-- 回覆好了通知我(ui-prefs replyNotify,缺 = 開;主行程 replyCue 照它決定發不發)。不寫說明句;作業系統關了通知(收到 failed)時才出下面那行,由 app.js 的 rnPaint 畫 -->
           <div class="set-rn">
             <div class="sw-row"><label class="sw-l" id="set-rn-l" for="set-rn-sw" data-i18n="set.rn"></label><button type="button" class="sw" id="set-rn-sw" role="switch" aria-checked="true" aria-labelledby="set-rn-l"></button></div>
@@ -920,6 +944,7 @@
 <script src="../node_modules/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 <script src="strings.js"></script>
 <script src="i18n.js"></script>
+<script src="market.js"></script>
 <script src="results.js"></script>
 <script src="report-backtest.js"></script>
 <script src="report-trades.js"></script>

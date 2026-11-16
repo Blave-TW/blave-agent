@@ -273,6 +273,7 @@ _TYPE_RE = re.compile(r"^#\s*Type:\s*([ABC])\b", re.M | re.ASCII)
 _TW_FUTURES = "tw_futures"   # internal: resolved by SYMBOL below, never reported
 _PRICE_FETCHERS = {
     "fetch_kline": "crypto", "fetch_kline_batch": "crypto", "fetch_bingx_kline": "crypto",
+    "fetch_okx_kline": "crypto",
     "fetch_twstock_price": "tw_stock", "fetch_twstock_price_adj": "tw_stock",
     "fetch_twstock_price_batch": "tw_stock", "fetch_twstock_price_adj_batch": "tw_stock",
     "fetch_twstock_ohlcv": "tw_stock",

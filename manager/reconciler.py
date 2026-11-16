@@ -522,10 +522,9 @@ def _tw_close_held(sym, venue):
 
 
 def _tw_halt_close_held(sym, venue):
-    """True = a close under HALT waits for the regular session. Under HALT the only close
-    that reaches a venue is 全部平倉's deferred leg (lib.portfolio._paper_tw_deferred), and it
-    goes after the open, not in the pre-open: a 啟動下單 pressed before the open cancels it, and a
-    pre-open close would already sit queued at the broker."""
+    """True = a close under HALT waits for the regular session. Since 0.1.54 no close leg goes
+    out under HALT (a 0.1.53 deferred close-all is dropped, lib.portfolio._drop_tw_deferred); kept
+    one more version as the last gate against a pre-open close queued at the broker."""
     if not guard.halted():
         return False
     try:
@@ -1195,6 +1194,48 @@ PENDING_SENT_MAX_READS = 3
 # closed hours — 統一 and 群益 both): a flip's entry leg must not open the other side on
 # top of the still-open position. Cleared by _next_round().
 _closes_deferred = set()
+# venue -> machine epoch: the broker answered the market is shut (order_president SessionClosed with
+# from_broker) — nothing is sent there before this, the next session's open (_next_session_at)
+_broker_shut_until = {}
+
+
+def _next_session_at():
+    """Machine epoch of the next TAIFEX session open after now (lib/tw_clock, corrected clock);
+    an hour from now on a workspace without it."""
+    try:
+        from lib import tw_clock
+        s = tw_clock.skew() or 0
+        return tw_clock.next_open(time.time() - s) + s
+    except (ImportError, AttributeError):
+        return time.time() + 3600
+
+
+KIND_BROKER_SHUT = 'broker_session_closed'   # api agent_overview routes it (P3), not an order_error P1
+_BROKER_SHUT_WORDS = {True: "統一期貨回覆休市，這筆平倉沒成交，下一個交易時段再送。",
+                      False: "統一期貨回覆休市，這筆新倉沒成交，下一個交易時段再送。"}
+
+
+def _note_broker_shut(sym, reduce_only):
+    """One order_errors row (kind broker_session_closed) for a leg 統一 refused as the market shut, or
+    held because it did; the same leg again inside the cooldown counts on that row."""
+    from lib.portfolio import _order_error_fresh, _record_order_error
+    msg = _BROKER_SHUT_WORDS[bool(reduce_only)]
+    leg = 'reduce' if reduce_only else 'entry'
+    _record_order_error(sym, venue_traits.PRESIDENT, msg, {'kind': KIND_BROKER_SHUT},
+                        repeat=not _order_error_fresh(sym, msg, leg))
+
+
+def _president_broker_shut(sym, reduce_only, e):
+    """統一 answered the market is shut (order_president.SessionClosed from_broker). 9901 is the whole
+    venue: nothing is sent there before the next session (_broker_shut_until). 9876 names one product
+    (the expiring month after a settlement day's 13:30): only that contract waits — order_president
+    refuses it before the login — and the other months, stops included, go on. Said either way."""
+    if getattr(e, 'contract', None) is None:
+        until = _broker_shut_until[venue_traits.PRESIDENT] = _next_session_at()
+    else:
+        until = getattr(e, 'until', None) or _next_session_at()
+    _wake_at(until)
+    _note_broker_shut(sym, reduce_only)
 
 
 class PendingUnreadable(RuntimeError):
@@ -1652,6 +1693,17 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
                         or _tw_halt_close_held(sym, venue_traits.PRESIDENT)):
         _closes_deferred.add(sym)
         return False
+    until = _broker_shut_until.get(venue_traits.PRESIDENT)
+    if until is not None and time.time() < until:
+        # the broker itself said the market is shut (9901: a holiday, a typhoon): no send — and no
+        # login — until the next session; a held close says so (the same row, deduped)
+        if reduce_only:
+            _closes_deferred.add(sym)
+            _note_broker_shut(sym, True)
+        _wake_at(until)
+        logging.info(f"[reconciler/president] {sym}: {'close' if reduce_only else 'entry'} of {lots} waits — "
+                     f"統一 answered the market is shut; next try at the next session")
+        return False
     if not reduce_only:
         if guard.halted():
             return False
@@ -1687,13 +1739,17 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
             leg = order_president.place_futures_market_order({}, sym, action, lots, 'reduce',
                                                              book_months=months)
         except session_closed as e:
+            _closes_deferred.add(sym)
+            if getattr(e, 'from_broker', False):
+                logging.warning(f"[reconciler/president] {sym}: close of {lots} refused, market shut — {e}")
+                _president_broker_shut(sym, True, e)
+                return False
             # the lib's window refused it before any login, on the clock the hold above passed:
             # only at an edge. Said once per cooldown (the next minute retries), as a plain row:
             # the existing kinds all say closes go
-            _closes_deferred.add(sym)
+            from lib.portfolio import _order_error_fresh, _record_order_error
             _wake_at(time.time() + 60)
             logging.info(f"[reconciler/president] {sym}: close of {lots} deferred — {e}")
-            from lib.portfolio import _order_error_fresh, _record_order_error
             msg = "統一期貨現在不收單，這次平倉沒送出，一分鐘後再送。"
             _record_order_error(sym, venue_traits.PRESIDENT, msg,
                                 repeat=not _order_error_fresh(sym, msg, 'reduce'))
@@ -1704,6 +1760,8 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
                                                              book_months=months)
         except session_closed as e:
             logging.info(f"[reconciler/president] {sym}: entry of {lots} waits — {e}")
+            if getattr(e, 'from_broker', False):
+                _president_broker_shut(sym, False, e)
             return False
         except order_president.EntryDeferred as e:
             # the snapshot has not caught up with the last order (a flip's close
@@ -1954,10 +2012,15 @@ def _halt(reason, message, retrip=False, notify=True):
     event carries this reason to the page, email and Telegram — so no machine
     Telegram on top (the account-changed trip; canon notifications.md)."""
     global _halt_file_seen
+    keep = {}
     if guard.halted():
-        if not retrip or (guard.halt_info() or {}).get('source') != 'reconciler':
+        info = guard.halt_info() or {}
+        if not retrip or info.get('source') != 'reconciler':
             return False
-    guard.trip_halt(reason, 'reconciler')  # raises if the file did not land
+        # a close-all pressed on this pause (runtime command_listener._close_all) keeps its press id:
+        # the page pairs it with last_flatten.close_id
+        keep = {k: info[k] for k in ('close_id', 'already_halted') if k in info}
+    guard.trip_halt(reason, 'reconciler', **keep)  # raises if the file did not land
     _halt_file_seen = True
     if notify:
         send_telegram(message)

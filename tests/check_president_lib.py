@@ -292,6 +292,55 @@ check(raises(op.PresidentError, lambda: op.place_futures_market_order({}, "TMF",
                                                                       confirm_timeout=2)) is not None,
       "99xx server reply (official doc example 9902) raises")
 
+# Wei 11-16: the user's close-all (user_close) goes to 統一 outside the window — sent, 統一's refusal is
+# SessionClosed from the broker (flatten: [order_reject:market_closed]), audited, sent once, nothing resent.
+# A strategy's close (no user_close) still waits for the window, refused before the login.
+_real_cwo, _real_ohs = op._close_window_open, op._off_hours_session
+op._close_window_open = lambda: False   # Saturday: the window is shut
+op._off_hours_session = lambda env, fields: op._session(env)   # use()'s fake api, through the off-hours path
+_snap_before = open(account_president._SNAPSHOT).read() if os.path.exists(account_president._SNAPSHOT) else None
+snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
+api = use([("reply", {"statuscode": "9901", "orderstatus": "TTO0001:交易時間已結束", "orderno": ""})])
+_errs0 = open("state/audit.jsonl", encoding="utf-8").read().count('"order_error"')
+e = raises(op.SessionClosed, lambda: op.close_position_partial({}, "TMF", "long", 1, user_close=True,
+                                                              client_order_id="flat20261024100000000001"))
+check(e is not None and e.from_broker and len(api.sent) == 1 and api.sent[0].opencloseflag == "1"
+      and open("state/audit.jsonl", encoding="utf-8").read().count('"order_error"') == _errs0 + 1,
+      "user_close outside the window: sent once, 統一's 9901 is SessionClosed from the broker, audited", e)
+# off hours the worker reads nothing: the refused order's send marker is put back, so a second press is
+# not held as "snapshot not caught up" — it is sent and refused the same way (never a snapshot_lag row)
+check(op.snapshot_caught_up("TMFJ6")[0], "…its send marker is put back (統一 placed nothing)", op.last_order_at("TMFJ6"))
+api = use([("reply", {"statuscode": "9902", "orderstatus": "TTO0002:尚未開始接收委託", "orderno": ""})])
+e = raises(op.PresidentError, lambda: op.close_position_partial({}, "TMF", "long", 1, user_close=True,
+                                                               client_order_id="flat20261024100500000002"))
+check(e is not None and "statuscode=9902" in str(e) and len(api.sent) == 1 and op.snapshot_caught_up("TMFJ6")[0],
+      "a second press: sent again, 9902 refused, the marker put back again", e)
+_denied0 = open("state/audit.jsonl", encoding="utf-8").read().count('"order_denied_session"')
+fresh()
+_sent0 = len(api.sent)
+e = raises(op.SessionClosed, lambda: op.close_position_partial({}, "TMF", "long", 1))
+check(e is not None and not e.from_broker and len(api.sent) == _sent0
+      and open("state/audit.jsonl", encoding="utf-8").read().count('"order_denied_session"') == _denied0 + 1,
+      "a strategy's close outside the window: SessionClosed before the login, nothing sent", e)
+# the login itself refused off hours: the same SessionClosed, no login stop (no venue_login_blocked)
+op._off_hours_session = _real_ohs
+_real_login, _real_resolve = president_vault.login, president_vault.resolve
+_logins = []
+president_vault.resolve = lambda: {}
+for kind, ends in (("UNKNOWN", op.SessionClosed), ("TIMEOUT", op.SessionClosed), ("PASSWORD", president_vault.LoginError)):
+    def _refuse(creds, log_dir, explicit=False, off_hours=False, kind=kind):
+        _logins.append(off_hours)
+        raise president_vault.LoginError(kind)
+    president_vault.login = _refuse
+    fresh()
+    got = raises(ends, lambda: op.close_position_partial({}, "TMF", "long", 1, user_close=True))
+    check(got is not None and _logins[-1] is True,
+          f"user_close, the login refused off hours ({kind}) → {ends.__name__}", got)
+president_vault.login, president_vault.resolve = _real_login, _real_resolve
+op._close_window_open = _real_cwo
+if _snap_before is not None:
+    open(account_president._SNAPSHOT, "w").write(_snap_before)
+
 # live 10-02: the first reply to a market IOC was already 0004 (完全成交), with its match row
 api = use([("reply", {"statuscode": "0004", "orderstatus": "完全成交", "orderno": "O1", "matchqty": 1}),
            ("match", {"orderno": "O1", "matchseq": "M1", "matchqty": 1, "matchprice": 48716.0})])
@@ -933,6 +982,21 @@ g1 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, pr
 g2 = raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR))
 check(g1.kind == "TIMEOUT" and g1.retry and g2.kind == "TIMEOUT" and president_vault.stopped() == "TIMEOUT",
       "a login thread that never answers → TIMEOUT; the second in a row stops")
+# off_hours (the user's close outside the window): a refusal a shut market may cause writes no stop and
+# counts no timeout; a password refusal stops as always
+for script, kind, stops in (([Resp(ok=False, error="[APGW]something unexpected")], "UNKNOWN", False),
+                            ([Resp(ok=False, error="Timeout")], "TIMEOUT", False),
+                            ([Resp(ok=False, error="密碼錯誤,請重新輸入!")], "PASSWORD", True)):
+    for _p in (STOP, president_vault._timeouts_path()):
+        os.path.exists(_p) and os.remove(_p)
+    LOGIN_SCRIPT[:] = list(script) * 3
+    got = [raises(president_vault.LoginError, lambda: president_vault.login(creds2, president_worker.SDK_LOG_DIR,
+                                                                           off_hours=True)) for _ in range(2)]
+    check(got[0].kind == kind and (president_vault.stopped() == kind if stops else
+                                   president_vault.stopped() is None and got[1].kind == kind
+                                   and not os.path.exists(president_vault._timeouts_path())),
+          f"off_hours login refused ({kind}): {'stops' if stops else 'no stop, no timeout count, the next press tries again'}")
+os.path.exists(STOP) and os.remove(STOP)
 president_vault.LOGIN_TIMEOUT_S = real_lt
 check(not hasattr(president_vault, "unblock") and not hasattr(president_vault, "TIMEOUT_BLOCK_AT")
       and not hasattr(president_vault, "TRANSIENT_TEXTS"),

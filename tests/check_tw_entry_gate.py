@@ -27,13 +27,15 @@ Asserts:
    a row and the flip's entry with it; on a clock not measured (no samples, 1–2 that disagree,
    or past SKEW_MAX_S) it first asks the api once (tw_clock.probe, rate-limited), then holds on
    the machine's clock and says so once per spell (tw_clock_unchecked, HALT or not; the same row
-   not again within CLOCK_REPEAT_S); HALT's close-all leg goes at the pre-open, the entry stays
-   shut. A SessionClosed close: one Chinese row, counted after.
+   not again within CLOCK_REPEAT_S); under HALT a close let through by halt_close_pass (no caller
+   since 0.1.55) goes at the pre-open, the entry stays shut. A SessionClosed close: one Chinese row, counted after.
 9. order_president: outside president_vault.session_window, SessionClosed before _claim and
    the login — a close on the corrected clock (the machine's when not measured).
-10. 9876 is a plain refusal.
-11. close-all after the close: 台指期 deferred to the first round after the open, dropped and
-   said on the venue's row when 啟動下單 comes first; nothing deferred after a restart stop.
+10. 9876 / 9901 (the broker says shut) are SessionClosed from_broker — 9876 holds that one contract,
+   9901 the venue; 9902 and the other 99xx stay plain refusals.
+11. close-all after the close: 台指期 is sent whatever the time; a refusal is one plain failure row
+   (no kind → order_error), the position stays (Wei 11-15). A close a 0.1.53 lib deferred never
+   goes: the upgrade drops it with one row per venue.
 
 Run: cd blave-agent && .venv/bin/python tests/check_tw_entry_gate.py
 """
@@ -630,6 +632,95 @@ reconciler._president_place_order("TMF", -1, reduce_only=True)
 again = errors()[n_rows:]
 check(len(again) == 1 and again[0].get("count") == 2, "the next minute's refusal: the same row counted, no new row", again)
 check(reconciler._president_place_order("TMF", 4) is False, "…and that round's entry waits")
+# the broker answers shut on a day the clock calls open (a holiday, a typhoon: 9876 / 9901 → SessionClosed
+# from_broker, Wei 11-14): not retried every minute — nothing is sent (no login) before the next session
+_sent_b = []
+
+
+def _broker_shut(*a, **k):
+    _sent_b.append(a[1])
+    e = op.SessionClosed("統一 rejected the order: statuscode=9901 x")
+    e.from_broker = True
+    raise e
+
+
+op.place_futures_market_order = _broker_shut
+reconciler._broker_shut_until.clear()
+reconciler._next_round()
+reconciler._entry_wake_at = None
+json.dump([], open("manager/order_errors.json", "w"))
+r = reconciler._president_place_order("TMF", -1, reduce_only=True)
+until = reconciler._broker_shut_until.get("president")
+rows = errors()
+check(r is False and _sent_b == ["TMF"] and until == reconciler._next_session_at() and until - real_time() > 61
+      and reconciler._entry_wake_at == until and "TMF" in reconciler._closes_deferred
+      and len(rows) == 1 and rows[0]["error"] == "統一期貨回覆休市，這筆平倉沒成交，下一個交易時段再送。"
+      and rows[0].get("kind") == "broker_session_closed",
+      "統一 answers shut (9901): one row (kind broker_session_closed, not a plain order_error), the whole venue "
+      "waits for the next session (woken then), not a minute",
+      (r, _sent_b, until, reconciler._entry_wake_at, rows))
+for _ in range(3):
+    reconciler._next_round()
+    r_c = reconciler._president_place_order("TMF", -1, reduce_only=True)
+    r_e = reconciler._president_place_order("TMF", 4)
+check(r_c is False and r_e is False and _sent_b == ["TMF"] and len(errors()) == 1
+      and errors()[0].get("count", 1) >= 2,
+      "the rounds before the next session send nothing, close or entry (no login); each held close counts on "
+      "the same row", (_sent_b, errors()))
+reconciler._broker_shut_until["president"] = real_time() - 1   # the next session came
+reconciler._next_round()
+reconciler._president_place_order("TMF", -1, reduce_only=True)
+check(_sent_b == ["TMF", "TMF"], "at the next session the close is sent again", _sent_b)
+reconciler._broker_shut_until.clear()
+# audit r2 P2-B: an entry is refused first — the closes held after it are said (no silent stop)
+_sent_b.clear()
+reconciler._broker_shut_until.clear()
+reconciler._next_round()
+reconciler._entry_wake_at = None
+json.dump([], open("manager/order_errors.json", "w"))
+# (the entry gates ahead of the send — HALT, parked rows, the clock — are their own tests: the refusal is
+# handed to the handler as the entry's except clause does)
+_e9901 = op.SessionClosed("統一 rejected the order: statuscode=9901 x")
+_e9901.from_broker = True
+reconciler._president_broker_shut("TMF", False, _e9901)
+reconciler._next_round()
+r_c = reconciler._president_place_order("TMF", -1, reduce_only=True)
+rows = errors()
+check(r_c is False and _sent_b == [] and reconciler._broker_shut_until.get("president")
+      and [(x.get("kind"), x["error"]) for x in rows] == [
+          ("broker_session_closed", "統一期貨回覆休市，這筆新倉沒成交，下一個交易時段再送。"),
+          ("broker_session_closed", "統一期貨回覆休市，這筆平倉沒成交，下一個交易時段再送。")],
+      "the entry refused first: its row, then the held close has its own row (kind broker_session_closed)", rows)
+reconciler._broker_shut_until.clear()
+# audit r2 P2-A: 9876 names one product (the expiring month after a settlement day's 13:30): only that
+# contract waits — the venue is not held, another month's close (a stop) still goes
+_contract = []
+
+
+def _one_product(env, sym, action, lots, intent, **k):
+    _contract.append(sym)
+    if sym == "TMF":
+        e = op.SessionClosed("統一 rejected the order: statuscode=9876 FUT0083")
+        e.from_broker, e.code, e.contract, e.until = True, "9876", "TMFK6", real_time() + 3600
+        raise e
+    sends.append(("president", action, lots, intent))
+    return {"status": "filled", "fill_qty": lots, "avg_fill_price": 1.0, "symbol": sym + "L6"}
+
+
+op.place_futures_market_order = _one_product
+reconciler._next_round()
+reconciler._entry_wake_at = None
+json.dump([], open("manager/order_errors.json", "w"))
+r1 = reconciler._president_place_order("TMF", -1, reduce_only=True)
+w1 = reconciler._entry_wake_at
+reconciler._next_round()
+n_sends = len(sends)
+r2 = reconciler._president_place_order("MXF", -1, reduce_only=True)
+rows = errors()
+check(r1 is False and "president" not in reconciler._broker_shut_until and w1 and abs(w1 - (real_time() + 3600)) < 5
+      and r2 and len(sends) == n_sends + 1 and [x.get("kind") for x in rows] == ["broker_session_closed"],
+      "9876 on one contract: that close waits (woken at its until), the venue is not held, MXF's close goes",
+      (r1, reconciler._broker_shut_until, w1, r2, rows))
 tw_clock.close_hold = real_close_hold
 
 # under HALT a close-all leg (halt_close_pass) at the pre-open goes; the entry does not
@@ -771,82 +862,146 @@ no_samples()
 reconciler._unchecked_noted = False
 check(not wrong, "clock cases through both close gates: never hold-passes-lib-refuses; measured → the corrected clock, not measured → the machine's", wrong)
 
-# ── 10. 9876 is a plain refusal ────────────────────────────────────────────────
+# ── 10. 9876 / 9901: the broker says shut (SessionClosed from_broker) ──────────────
+for _code in ("9876", "9901"):
+    try:
+        await_with(_code)
+        check(False, f"{_code} raises")
+    except op.SessionClosed as e:
+        check(_code in str(e) and "[order_reject:" not in str(e) and e.from_broker is True
+              and isinstance(e, op.PresidentError),
+              f"{_code}: the broker says the market is shut — SessionClosed (a PresidentError) with from_broker, "
+              f"no reduce_only_rejected token (Wei 11-14: a holiday's refusal)", str(e))
+    except op.PresidentError as e:
+        check(False, f"{_code} must be SessionClosed, got a plain PresidentError: {e}")
+for _code in ("9902", "9999"):
+    try:
+        await_with(_code)
+        check(False, f"{_code} raises")
+    except op.PresidentError as e:
+        check(not isinstance(e, op.SessionClosed) and _code in str(e),
+              f"{_code} stays a plain refusal (not SessionClosed)", str(e))
+check(op.SessionClosed("x").from_broker is False, "the lib's own window refusal is not from_broker")
+op._contract_shut.clear()
 try:
     await_with("9876")
-    check(False, "9876 raises")
-except op.PresidentError as e:
-    check("9876" in str(e) and "[order_reject:" not in str(e),
-          "9876 (FUT0083 該商品交易時間已結束) raises PresidentError, no reduce_only_rejected token", str(e))
+except op.SessionClosed as e:
+    check(e.contract == "TXFK6" and e.code == "9876" and op._contract_shut.get("TXFK6") == e.until
+          and e.until > real_time(), "9876: that contract (TXFK6) waits for the next session", (e.contract, e.until))
+op._contract_shut.clear()
+try:
+    await_with("9901")
+except op.SessionClosed as e:
+    check(e.contract is None and not op._contract_shut, "9901: the venue, no contract marked", e.contract)
+_marks, _real_cc, _real_mos = [], op._checked_close, op._mark_order_sent
+op._checked_close = lambda symbol, action, lots, book_months=None: symbol
+op._mark_order_sent = lambda pid: _marks.append(pid)
+op._contract_shut["TXFK6"] = real_time() + 3600
+try:
+    op._claim("TXFK6", "sell", 1, "reduce")
+    check(False, "a close to the waiting contract is refused")
+except op.SessionClosed as e:
+    check(e.from_broker and e.contract == "TXFK6" and not _marks,
+          "a close to the contract 9876 named: refused before its send marker (and so the login)", _marks)
+check(op._claim("TXFL6", "sell", 1, "reduce") == "TXFL6" and _marks == ["TXFL6"],
+      "another month of the same root: claimed and sent", _marks)
+op._contract_shut["TXFK6"] = real_time() - 1
+check(op._claim("TXFK6", "sell", 1, "reduce") == "TXFK6", "past the next open: that contract goes again")
+op._checked_close, op._mark_order_sent = _real_cc, _real_mos
+op._contract_shut.clear()
 
-# ── 11. close-all after the close: deferred to the reconciler's first round after the open ──────
+# ── 11. close-all after the close: sent whatever the time, a refusal is a failure (Wei 11-15) ─────────
 import ast  # noqa: E402
+import re  # noqa: E402
 fsrc = open(os.path.join(ROOT, "manager", "flatten.py"), encoding="utf-8").read()
-fns = [n for n in ast.parse(fsrc).body if isinstance(n, ast.FunctionDef) and n.name in ("_defer_tw_close", "_tw_futures_closed")]
-recorded = []
-fake_guard = types.SimpleNamespace(restart_stopped=lambda: False)
+for gone in ("_tw_futures_closed", "_defer_tw_close", "_keep_tw_futures", "_deferred_tw_keys", "_paper_txf",
+             "defer_paper_tw_close", "close_hold", "market_closed_kept", "market_closed_deferred"):
+    check(gone not in fsrc, f"flatten.py has no {gone}: nothing holds, keeps or defers a user's close by the clock")
+fns = [n for n in ast.parse(fsrc).body if isinstance(n, ast.FunctionDef) and n.name in ("_refuse_tw_futures", "_tw_clock_probe")]
+recorded, noted, replied = [], [], []
 from lib import venue_traits  # noqa: E402
 ns = {"logging": __import__("logging"), "_record_order_error": lambda *a: recorded.append(a),
-      "guard": fake_guard, "venue_traits": venue_traits}
-exec(compile(ast.Module(fns, []), "flatten._defer_tw_close", "exec"), ns)
-with_samples(T(*WED, 13, 50))
-at_time(T(*WED, 13, 50))
-closed_now = (ns["_tw_futures_closed"](venue_traits.PRESIDENT), ns["_tw_futures_closed"](venue_traits.CAPITAL),
-              ns["_tw_futures_closed"]("binance"))
-at_time(T(*WED, 14, 52))
-pre_open_now = ns["_tw_futures_closed"](venue_traits.PRESIDENT)
-at_time(T(*WED, 15, 1))
-in_session_now = ns["_tw_futures_closed"](venue_traits.PRESIDENT)
-tw_clock.time.time = real_time
-check(closed_now == (True, True, False) and pre_open_now is True and in_session_now is False,
-      "flatten (measured clock) defers 統一 and 群益 only: 13:50 and the 14:52 pre-open shut, 15:01 open",
-      (closed_now, pre_open_now, in_session_now))
-no_samples()
-at_time(T(*WED, 13, 55))
-fast_clock = ns["_tw_futures_closed"](venue_traits.PRESIDENT)
-at_time(T(*WED, 14, 52))
-pre_no_sample = ns["_tw_futures_closed"](venue_traits.PRESIDENT)
-tw_clock.time.time = real_time
-check(fast_clock is False and pre_no_sample is False,
-      "no clock sample: only the broker's closed hours defer (13:55 sent: the clock may be fast)",
-      (fast_clock, pre_no_sample))
-check(ns["_defer_tw_close"]("binance", "BTCUSDT", op.SessionClosed("x")) is None,
-      "a SessionClosed from a non-TW venue is not deferred")
-samples(0, 0, 0, at=real_time())
-check(ns["_defer_tw_close"]("president", "TMF", None) == "deferred"
-      and json.load(open(_pfm._PAPER_TW_CLOSE_PATH))["keys"] == ["TMF"]
-      and recorded[-1][3] == {"kind": "market_closed_deferred"} and "台指期休市中" in recorded[-1][2]
-      and "開盤後" in recorded[-1][2],
-      "close-all at 13:50: 台指期 deferred, the row says it closes after the open", recorded[-1:])
-check(ns["_defer_tw_close"]("president", "TXF", op.SessionClosed("x")) == "deferred"
-      and json.load(open(_pfm._PAPER_TW_CLOSE_PATH))["keys"] == ["TMF", "TXF"],
-      "the lib's SessionClosed defers the same way")
-no_samples()
-check(ns["_defer_tw_close"]("president", "TXF", None) == "deferred"
-      and recorded[-1][3] == {"kind": "market_closed_deferred", "clock": "unmeasured"}
-      and "量不到" in recorded[-1][2] and "休市" not in recorded[-1][2] and "開盤後" in recorded[-1][2],
-      "clock not measured: the deferred row says the clock is unmeasured, not that the market is closed", recorded[-1:])
-samples(3 * 3600, 3 * 3600, 3 * 3600, at=real_time())
-check(ns["_defer_tw_close"]("president", "TXF", None) == "deferred"
-      and recorded[-1][3] == {"kind": "market_closed_deferred", "clock": "far"}
-      and "差超過一小時" in recorded[-1][2] and "量不到" not in recorded[-1][2] and "休市" not in recorded[-1][2],
-      "clock past SKEW_MAX_S: the deferred row says over an hour off (clock far), not unmeasured", recorded[-1:])
-no_samples()
-check(ns["_defer_tw_close"]("president", "TXF", op.PresidentError("統一 rejected the order: statuscode=9876 x")) is None,
-      "a broker refusal (9876) is a plain error, not deferred")
-held = {"TMF": {"side": "long", "size": 1, "exchange": "president"}, "TXF": {"side": "short", "size": 0}}
-check(_pfm._paper_tw_deferred(held, True) == {"TMF"}, "halted: the held 台指期 key is this round's close-all leg")
-json.dump([], open("manager/order_errors.json", "w"))  # the file keeps 5 rows: a full one would hide the new row
-n_rows = len(errors())
-_pfm._paper_tw_deferred(held, False)
-new_rows = errors()[n_rows:]
-check(len(new_rows) == 1 and new_rows[0].get("exchange") == "president" and "台指期" in new_rows[0].get("error", "")
+      "venue_traits": venue_traits, "_note": lambda *a: noted.append(a),
+      "_note_reply": lambda *a: replied.append(a), "_SESSION_NOT_OPEN_RE": re.compile(re.search(r'_SESSION_NOT_OPEN_RE = re.compile\(r"([^"]+)"\)', fsrc).group(1))}
+exec(compile(ast.Module(fns, []), "flatten._refuse_tw_futures", "exec"), ns)
+check(ns["_refuse_tw_futures"]("binance", "BTCUSDT", op.SessionClosed("x")) is None,
+      "a SessionClosed from a non-TW venue is not handled here (a plain error)")
+check(ns["_refuse_tw_futures"]("president", "TXF", op.PresidentError("統一 rejected the order: statuscode=9999 x")) is None,
+      "another broker refusal (9999) is a plain error row, not this one")
+noted.clear(); replied.clear()
+_nyo = op.PresidentError("統一 rejected the order: statuscode=9902 尚未開始接收委託")
+check(ns["_refuse_tw_futures"]("president", "TXF", _nyo) is True and "[order_reject:market_closed]" in recorded[-1][2]
+      and replied == [("president", "TXF", _nyo)],
+      "統一 9902 (not accepting orders yet) is the same shut market: the market_closed row", recorded[-1:])
+check(ns["_refuse_tw_futures"]("binance", "BTCUSDT", RuntimeError("statuscode=9902 x")) is None,
+      "…only on a TW futures broker")
+# 統一's own window refused before the login: one plain refusal row (no kind → order_error, P1), the position stays
+_win = op.SessionClosed("統一期貨 takes no order now: outside the trading window")
+for vid, key in (("president", "TMF"), ("capital", "TXF")):
+    noted.clear(); replied.clear()
+    got = ns["_refuse_tw_futures"](vid, key, _win)
+    check(got is True and len(recorded[-1]) == 3 and recorded[-1][:2] == (key, vid)
+          and recorded[-1][2].startswith("close-all: [order_reject:market_closed] ") and "部位還在" in recorded[-1][2]
+          and "自己平" in recorded[-1][2] and "沒有停損" in recorded[-1][2] and noted == [(vid, key, "market_closed")]
+          and replied == [(vid, key, _win)]
+          and not os.path.exists(_pfm._PAPER_TW_CLOSE_PATH),
+          f"close-all refused by the window, {vid} {key}: a failure row with no kind, nothing scheduled", (got, recorded[-1:]))
+check(not re.match(r"^close-all: (?:開盤前已按啟動下單|機器重開後按了啟動下單).*?延後的(?:台股|台指期)平倉(?:一併)?取消", recorded[-1][2])
+      and "開盤後第一輪" not in recorded[-1][2] and "開盤後才平" not in recorded[-1][2],
+      "the failure row never reads as a deferral or its cancel (api agent_overview / shell P3 regexes)", recorded[-1:])
+# 統一 answered shut (9876 / 9901): the same row, the broker's words kept for the unbind box
+_bs = op.SessionClosed("統一 rejected the order: statuscode=9901 TTO0001:交易時間已結束")
+_bs.from_broker = True
+noted.clear(); replied.clear()
+check(ns["_refuse_tw_futures"]("president", "TXF", _bs) is True and len(recorded[-1]) == 3
+      and "[order_reject:market_closed]" in recorded[-1][2]
+      and noted == [("president", "TXF", "market_closed")] and replied == [("president", "TXF", _bs)],
+      "統一 answered shut: a failure row, the reply noted (last_flatten.reply)", (recorded[-1:], replied))
+from lib import order_paper as _opp  # noqa: E402
+noted.clear()
+check(ns["_refuse_tw_futures"]("paper", "2330@spot", _opp.PaperMarketClosed("x")) is True
+      and "[order_reject:market_closed]" in recorded[-1][2] and recorded[-1][:2] == ("2330@spot", "paper"),
+      "an older paper lib refusing a TW stock: the same failure row, never deferred", recorded[-1:])
+# upgrade: a 0.1.53 deferral on disk never fires — dropped with one failure row per venue while HALT holds
+def _write_deferral(keys, **extra):
+    os.makedirs("state", exist_ok=True)
+    json.dump({"keys": keys, "ts": 1, **extra}, open(_pfm._PAPER_TW_CLOSE_PATH, "w"))
+_write_deferral(["TMF", "TXF", "2330@spot"])
+held = {"TMF": {"side": "long", "size": 1, "exchange": "president"}, "TXF": {"side": "short", "size": 0},
+        "2330@spot": {"side": "long", "size": 1000, "exchange": "paper"}}
+json.dump([], open("manager/order_errors.json", "w"))  # the file keeps 5 rows: a full one would hide the new rows
+check(_pfm._drop_tw_deferred(held, True) is None and not os.path.exists(_pfm._PAPER_TW_CLOSE_PATH),
+      "upgrade under HALT: nothing returned to send, the deferral file removed")
+rows = errors()
+check(sorted((r.get("symbol"), r.get("exchange")) for r in rows) == [("2330@spot", "paper"), ("TMF", "president")]
+      and all("更新後取消等開盤的平倉" in r.get("error", "") and not r.get("kind") for r in rows)
+      and "部位還在、沒有停損" in next(r["error"] for r in rows if r["exchange"] == "president")
+      and "模擬部位還在" in next(r["error"] for r in rows if r["exchange"] == "paper"),
+      "upgrade under HALT: one plain failure row per venue (P1 real / P2 paper), only for what is still held", rows)
+check(_pfm._drop_tw_deferred(held, True) is None and len(errors()) == len(rows),
+      "the next round: no file, no second row")
+_write_deferral(["TMF"], restart_at=5)
+json.dump([], open("manager/order_errors.json", "w"))
+_pfm._drop_tw_deferred(held, False)
+rows = errors()
+check(len(rows) == 1 and rows[0].get("exchange") == "president" and "延後的台指期平倉一併取消" in rows[0].get("error", "")
       and not os.path.exists(_pfm._PAPER_TW_CLOSE_PATH),
-      "啟動下單 before the open: the 台指期 deferral is dropped, said on 統一's row", new_rows)
-fake_guard.restart_stopped = lambda: True
-check(ns["_defer_tw_close"]("president", "TMF", None) == "refused" and "再按一次" in recorded[-1][2]
-      and not os.path.exists(_pfm._PAPER_TW_CLOSE_PATH),
-      "after a restart stop nothing is deferred: the row says press again in the session")
+      "resumed before the upgrade's first round: the old cancel row, the file removed", rows)
+_write_deferral(["TMF"])
+_real_remove = os.remove
+def _deny_remove(path, *a, **k):
+    if os.path.basename(path) == "paper_tw_close.json":
+        raise PermissionError("locked")
+    return _real_remove(path, *a, **k)
+os.remove = _deny_remove
+json.dump([], open("manager/order_errors.json", "w"))
+try:
+    _pfm._drop_tw_deferred(held, True)
+finally:
+    os.remove = _real_remove
+check(errors() == [] and os.path.exists(_pfm._PAPER_TW_CLOSE_PATH),
+      "a deferral file that cannot be removed: nothing sent, no row yet (retried next round, not repeated)", errors())
+_real_remove(_pfm._PAPER_TW_CLOSE_PATH)
 
 # ── 12. on-demand sample (r3 Y2): an unmeasured clock asks the api once before a gate holds on it ──
 import requests as _rq  # noqa: E402
@@ -1041,14 +1196,16 @@ reconciler._tw_entry_held("TXF", "president")
 reconciler._tw_entry_held("TXF", "president")
 tw_clock.time.time = real_time
 check(len(calls) == calls_c + 1, "the confirming request for one lone sample is made once, not every round", calls[calls_c:])
-# close-all asks too before deferring on an unmeasured clock
+# close-all asks too before a 群益 / 統一 close on an unmeasured clock (統一's window reads the corrected clock)
 n0 = len(calls)
 no_samples()
 _rq.get, tw_clock._last_probe = ok_get, 0.0
 at_time(MACH_T)
-fl = ns["_tw_futures_closed"](venue_traits.PRESIDENT)
+ns["_tw_clock_probe"](venue_traits.PRESIDENT)
+fl = tw_clock.skew()
+ns["_tw_clock_probe"]("binance")
 tw_clock.time.time = real_time
-check(fl is False and len(calls) == n0 + 2, "close-all on an unmeasured clock: asks (two replies), measured in session → sent", (fl, calls[n0:]))
+check(fl is not None and len(calls) == n0 + 2, "close-all on an unmeasured clock: asks (two replies) and is measured; a crypto venue asks nothing", (fl, calls[n0:]))
 _rq.get, tw_clock.probe_enabled, tw_clock._last_probe = real_get, False, 0.0
 reconciler._clock_noted, reconciler._unchecked_noted, reconciler._last_said = None, False, (None, 0.0)
 no_samples()
@@ -1059,6 +1216,26 @@ check(fsrc.count(_ON) == 1 and rsrc.count(_ON) == 1 and rsrc.count("probe_enable
       and rsrc.index(_ON) > rsrc.index("if __name__ == '__main__':") and fsrc.index(_ON) > fsrc.index('if __name__ == "__main__":')
       and "BLAVE_CLOCK_PROBE" in open(os.path.join(ROOT, "tests", "_run_all.py"), encoding="utf-8").read(),
       "the probe is switched on only by the reconciler's and flatten's __main__, and off for the whole test run")
+
+# audit r2 P3: the account guard re-trips its own HALT (retrip) while a close-all pressed on it is running —
+# the press's close_id / already_halted stay, so the page still pairs it with last_flatten
+_hp = guard.HALT_PATH
+os.makedirs(os.path.dirname(_hp), exist_ok=True)
+json.dump({"ts": "x", "reason": "account mismatch", "source": "reconciler", "close_id": "ca7", "already_halted": True},
+          open(_hp, "w"))
+_tg_saved = reconciler.send_telegram
+reconciler.send_telegram = lambda *a, **k: None
+_rt = reconciler._halt("account changed again", "msg", retrip=True, notify=False)
+reconciler.send_telegram = _tg_saved
+_h = json.load(open(_hp))
+check(_rt is True and _h.get("reason") == "account changed again" and _h.get("source") == "reconciler"
+      and _h.get("close_id") == "ca7" and _h.get("already_halted") is True,
+      "the reconciler's retrip rewrites its reason and keeps the close-all press's close_id", _h)
+json.dump({"ts": "x", "reason": "user request", "source": "web", "close_id": "ca8"}, open(_hp, "w"))
+check(reconciler._halt("y", "msg", retrip=True, notify=False) is False and json.load(open(_hp))["reason"] == "user request",
+      "a user's HALT is never rewritten by the reconciler")
+os.remove(_hp)
+guard._halt_flag = False
 
 print("\ncheck_tw_entry_gate: " + ("all ok" if not fails else f"FAILED ({fails})"))
 sys.exit(1 if fails else 0)

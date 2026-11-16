@@ -2559,6 +2559,15 @@ def ed24(w):
          "a TWAP close 20% above entry sells the bot's whole 0.02 (progress counted at the book's rate)")
 
 
+def _pin_txf_session(open_):
+    """The detached flatten.py reads this workspace's lib/tw_clock: a measured clock, the TAIFEX
+    session open or shut whatever hour the test runs."""
+    until = "None" if open_ else "__import__('time').time() + 3600"
+    with open("lib/tw_clock.py", "a") as f:
+        f.write(f"\n\ndef skew(now=None):\n    return 0.0\n\n\ndef queued_until(now=None):\n    return {until}\n"
+                f"\n\ndef probe():\n    return False\n")
+
+
 @scenario("ED-25")
 def ed25(w):
     w.strategy("f1", "TMF")
@@ -2568,10 +2577,13 @@ def ed25(w):
     w.start()
     w.settle()
     w.eq(w.paper_pos("TMF"), 2.0, "2 TMF lots held")
-    w.eq(w.cmd("close_all"), "close_all=started", "close_all")
+    # 台指期 shut (Wei 11-15): the user's close is not held by the clock — paper fills at the last price
+    _pin_txf_session(False)
+    w.eq(w.cmd("close_all"), "close_all=started", "close_all while 台指期 is shut")
     log = w.wait_flatten()
-    w.eq((w.paper_pos(), w.book()), ({}, {}), "close_all closes the lots")
+    w.eq((w.paper_pos(), w.book()), ({}, {}), f"台指期 shut: close_all closes the paper TMF lots now ({log[-300:]})")
     w.check(not any("TMF" == e.get("symbol") for e in w.order_errors()), f"no close error ({log[-300:]})")
+    w.check(not os.path.exists("state/paper_tw_close.json"), "nothing scheduled for the open")
 
 
 @scenario("ED-26")

@@ -110,7 +110,7 @@ fake.format_qty = lambda env, s, q, price=None: f"{q:.6f}"
 sys.modules["lib.order_fakex"] = fake
 vw.read_env = lambda *a, **k: {}
 vw.detect_venue = lambda env: "fakex"
-vw.instrument_gate = lambda symbol: None
+vw.instrument_gate = lambda symbol, reduce_only=False, contributors=None: None
 vw._entry_qty = lambda order, env, sym, qty: qty
 vw._netted_room = lambda *a, **k: 0.0
 

@@ -256,7 +256,9 @@ sys.path.insert(0, ROOT)  # lib.guard for close_all's halt
 open(os.path.join(WS, "manager", "flatten.py"), "w").write("")
 cl.platform.system = lambda: "Linux"
 check(cl._in_workspace(cl._cmd_close_all, {}) == "close_all=started"
-      and popens[-1][0] == ["python3", "manager/flatten.py"]
+      and popens[-1][0][:2] == ["python3", "manager/flatten.py"]
+      # each press carries its close_id (command_listener._close_all), paired with the HALT it wrote
+      and popens[-1][0][2:3] == ["--close-id"] and len(popens[-1][0]) == 4 and popens[-1][0][3].startswith("ca")
       and [k for k in popens[-1][1]["env"] if k.startswith("BLAVE_")] == ["BLAVE_AGENT_WORKSPACE"],
       "[cloud] close_all: python3 + denylist env")
 os.remove(os.path.join(WS, "state", "HALT"))
@@ -282,7 +284,7 @@ cl._LOCAL_HOST = None
 
 os.environ["BLAVE_AGENT_LOCAL"] = "1"
 cl._in_workspace(cl._cmd_close_all, {})
-check(popens[-1][0] == [sys.executable, "manager/flatten.py"]
+check(popens[-1][0][:2] == [sys.executable, "manager/flatten.py"] and popens[-1][0][2:3] == ["--close-id"]
       and popens[-1][1]["env"].get("BLAVE_AGENT_BASE") == BASE, "[local] close_all: sys.executable + local env")
 os.remove(os.path.join(WS, "state", "HALT"))
 cl._cmd_retest_accounts({})

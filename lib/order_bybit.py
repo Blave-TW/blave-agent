@@ -465,14 +465,17 @@ def get_contract_rules(env: dict, symbol: str) -> dict:
         if not rows:
             raise BybitError(f"bybit: unknown linear symbol {symbol}", kind=reject_token.SYMBOL_UNAVAILABLE)
         lot, price = rows[0]["lotSizeFilter"], rows[0]["priceFilter"]
+        equity = (None if rows[0].get("symbolType") is None
+                  else rows[0]["symbolType"] in ("stock", "ETF"))
         _RULES_CACHE[key] = {
             "step": str(lot["qtyStep"]),
             "min_qty": float(lot["minOrderQty"]),
             "min_notional": float(lot.get("minNotionalValue") or 0),
             "contract_value": 1.0,
             "tick": str(price["tickSize"]),
-            "equity": (None if rows[0].get("symbolType") is None
-                       else rows[0]["symbolType"] in ("stock", "ETF")),
+            "equity": equity,
+            # only a stock maps (venue_traits instrument_class "stock"): no commodity value verified
+            "category": "EQUITY" if equity else None,
         }
     return _RULES_CACHE[key]
 

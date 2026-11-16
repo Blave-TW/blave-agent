@@ -19,6 +19,21 @@ const { cliAuthHow } = require("./telemetry");
 if (app.isPackaged) app.setName("Blave");
 // Windows:NSIS 裝的 app 要有 AppUserModelId(= appId)系統通知才會出 toast;沒有這行 Notification 一則都不顯示
 if (process.platform === "win32") app.setAppUserModelId("org.blave.desktop");
+// 主行程 log(shell/mainlog.js):要在 setName 之後(userData 的目錄名跟著它),在其他任何 console.error 之前
+const mainLog = require("./mainlog").createMainLog({ dir: () => path.join(app.getPath("userData"), "logs") });
+mainLog.hook(console);
+mainLog.write(`[boot] process start v${app.getVersion()} ${process.platform}-${process.arch} packaged=${app.isPackaged}`);
+// GPU 退路(shell/bootguard.js ③):之前某次啟動在第一格畫出來之前 GPU 行程就掛了,這次在 ready 之前關掉硬體加速;
+// 該復原的(正常結束滿次數、超過天數)這次照常開 GPU,旗標等 ready 之後由 gpuBootClear 清。gpuBootPath 在下面才宣告,這裡自己組路徑。
+// 旗標放 gpu-boot.json、不放 ui-prefs.json:GPU 可能在 whenReady 之前就掛,ui-prefs.json 是判新裝的記號之一,先寫它新裝會被判成舊裝
+let GPU_BOOT = { off: false, clear: false, why: null };
+let mainFirstPaint = false;   // 這次啟動主視窗第一次 ready-to-show 了沒:之後的 GPU 掛掉不記旗標
+if (process.platform === "win32") {
+  let prefs = "";
+  try { prefs = fs.readFileSync(path.join(app.getPath("userData"), "gpu-boot.json"), "utf8"); } catch (_) { /* 第一次 */ }
+  GPU_BOOT = require("./bootguard").gpuOffBoot(prefs, Date.now());
+  if (GPU_BOOT.off) { app.disableHardwareAcceleration(); mainLog.write("[boot] hardware acceleration off (GPU process failed before first paint earlier)"); }
+}
 
 // 發佈版(npm run release 在 package.json 蓋 blaveRelease)拒絕 Chromium 的遠端除錯開關。fuses 只關得掉
 // Node 那一側(--inspect、RUN_AS_NODE、NODE_OPTIONS);--remote-debugging-port 不歸 fuses 管(實測翻完
@@ -452,6 +467,40 @@ function rendGone(wc, d) {
 }
 app.on("render-process-gone", (_e, wc, d) => { try { rendGone(wc, d); } catch (_) { /* 同上 */ } });
 app.on("child-process-gone", (_e, d) => { if (!quitting) crashWatch().childGone(d && d.type, d && d.reason); });
+/* 主行程 log 記每一次子行程結束(type / reason / exitCode 是 Electron 給的列舉與數字),加上 GPU 退路(shell/bootguard.js ③):
+   Windows 上這次啟動主視窗第一次 ready-to-show 之前 GPU 行程非正常結束,就在 gpu-boot.json 記 gpuOff,下次啟動在 ready 之前關硬體加速
+   (gpuOffMark)。結束中、更新重開時收掉的不算——那時 GPU 行程被收掉未必是 clean-exit */
+function childGoneNote(d) {
+  const type = String((d && d.type) || "").slice(0, 40), reason = String((d && d.reason) || "").slice(0, 40);
+  mainLog.write(`[proc] child-process-gone type=${type} reason=${reason} exit=${Number(d && d.exitCode)}`);
+  // 第二份 app(拿不到單一實例鎖、正在結束)不寫:同這支檔其他啟動時的寫入
+  if (quitDone || quitting || quitConfirmed || restarting || !app.hasSingleInstanceLock() || !require("./bootguard").gpuOffMark(process.platform, type, reason, !mainFirstPaint, GPU_BOOT.off)) return false;
+  let prefs = {};
+  try { prefs = JSON.parse(fs.readFileSync(gpuBootPath(), "utf8")) || {}; } catch (_) { /* 第一次 */ }
+  try { uiPrefsPatch(require("./bootguard").gpuOffPatch(prefs, app.getVersion(), reason, Date.now()), gpuBootPath()); } catch (_) { return false; }
+  mainLog.write("[boot] GPU process failed before first paint: hardware acceleration off from next launch");
+  return true;
+}
+/* 復原那一半:旗標該清的(gpuOffBoot 判的 expired / recovered)ready 之後清;關著硬體加速正常結束(will-quit)一次就記 ok + 1。
+   只有拿到單一實例鎖的那一份寫 */
+function gpuBootClear() {
+  if (!GPU_BOOT.clear || !app.hasSingleInstanceLock()) return false;
+  try { uiPrefsPatch({ gpuOff: null }, gpuBootPath()); } catch (_) { return false; }
+  mainLog.write(`[boot] GPU fallback flag cleared (${GPU_BOOT.why}): hardware acceleration back on`);
+  return true;
+}
+function gpuOkRun() {
+  if (!GPU_BOOT.off || !app.hasSingleInstanceLock()) return false;
+  let prefs = {};
+  try { prefs = JSON.parse(fs.readFileSync(gpuBootPath(), "utf8")) || {}; } catch (_) { return false; }
+  const p = require("./bootguard").gpuOkPatch(prefs);
+  if (!p) return false;
+  try { uiPrefsPatch(p, gpuBootPath()); } catch (_) { return false; }
+  mainLog.write(`[boot] clean exit with hardware acceleration off (${p.gpuOff.ok})`);
+  return true;
+}
+app.on("child-process-gone", (_e, d) => { try { childGoneNote(d); } catch (_) { /* log 永遠不能炸 */ } });
+app.on("render-process-gone", (_e, _wc, d) => { mainLog.write(`[proc] render-process-gone reason=${String((d && d.reason) || "").slice(0, 40)} exit=${Number(d && d.exitCode)}`); });
 // 用 Monitor 不用 uncaughtException:掛了後者 Electron 就不再跳「主行程發生錯誤」的框,行為會變。
 // 未處理的 Promise:throw 模式會變成 uncaught(origin = unhandledRejection),warn 模式只出 warning,兩條都只聽不改
 process.on("uncaughtExceptionMonitor", (_err, origin) => crashTrack(origin === "unhandledRejection" ? "main_rej" : "main_exc"));
@@ -970,6 +1019,13 @@ function cancelOAuth() {
   p.abort();
   return true;
 }
+// 側欄「登入」在等待中再按(spec sidebar-conversion §6.1):把這次自己存的授權網址再開一次,不重產 state、不延長逾時。不收畫面傳來的任何字
+function reopenOAuth() {
+  const p = pendingOAuth;
+  if (!p || !p.url) return false;
+  shell.openExternal(p.url);
+  return true;
+}
 
 function getJSON(url, headers) {
   return new Promise((resolve, reject) => {
@@ -1003,10 +1059,12 @@ async function startOAuth(lang, forBlaveAi) {
   const redirectUri = `http://127.0.0.1:${port}/callback`;
 
   const code = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { server.close(); reject(new Error("OAUTH_TIMEOUT")); }, 300000);
+    // 逾時也要清掉 pendingOAuth:不清的話 reopenOAuth 會重開一個 server 已關的授權頁
+    const timer = setTimeout(() => { if (pendingOAuth === mine) pendingOAuth = null; server.close(); reject(new Error("OAUTH_TIMEOUT")); }, 300000);
     // 取消與逾時走同一個出口:關掉 server、清掉計時器,錯誤碼讓 renderer 認得出
     // 「這是我自己按的」,不要畫成失敗。
-    pendingOAuth = {
+    const mine = pendingOAuth = {
+      url: null,
       abort: () => {
         clearTimeout(timer); server.close();
         // 記號寫在 message 裡:IPC 只搬得動 message,自訂欄位到不了 renderer。
@@ -1037,6 +1095,7 @@ async function startOAuth(lang, forBlaveAi) {
     // 開發時把網址印出來(challenge / state 本來就是公開值,verifier 不在裡面):
     // 授權頁一出問題,沒有這行就只能從瀏覽器網址列抄 43 字的 challenge。
     if (!app.isPackaged) console.log("[oauth] " + authUrl);
+    mine.url = authUrl;
     shell.openExternal(authUrl);
   });
 
@@ -1116,6 +1175,10 @@ const VENV_PY = path.join(BASE, "venv", VENV_BIN, WIN ? "python.exe" : "python")
 const BUNDLED_PY = WIN ? path.join(process.resourcesPath || "", `python-${process.arch}`, "python.exe")
   : path.join(process.resourcesPath || "", `python-${process.arch}`, "bin", "python3");
 const basePython = () => (app.isPackaged && fs.existsSync(BUNDLED_PY) ? BUNDLED_PY : WIN ? "python" : "python3");
+// 隨包 pip wheel(tools/fetch-python.sh 的 PIP_WHL,兩邊要一樣):打包版在 resources/pip-wheel/,開發版在 shell/vendor/pip-wheel/(gitignored,沒抓就不升級)。
+// enginesetup 用它離線升級 venv 的 pip,拿到 --resume-retries(斷線從斷點接續)
+const PIP_WHEEL_NAME = "pip-26.2.2-py3-none-any.whl";
+const PIP_WHEEL = app.isPackaged ? path.join(process.resourcesPath || "", "pip-wheel", PIP_WHEEL_NAME) : path.join(__dirname, "vendor", "pip-wheel", PIP_WHEEL_NAME);
 // macOS:runtime 與 lib/report.py 的 urllib 走 OpenSSL 預設的 /etc/ssl/cert.pem,系統封鎖撤銷的中繼 CA 不會反映到那個檔
 // (Apple 149555,要等 macOS 更新);改信 venv 裡 certifi 那份。開 app 時算一次:第一次安裝前沒有 venv,下次開才帶。
 // 開發版 venv 用系統 python3,不一定是 3.12,所以用找的。Windows 的 OpenSSL 用系統憑證庫,不設
@@ -1179,6 +1242,14 @@ function copyOfficial() {
     fs.cpSync(path.join(REPO, d), path.join(WS, d), { recursive: true });
   // VERSION 必須最後寫(OFFICIAL_FILES 的最後一項):前面任何一步中途失敗,workspace 的版號還是舊的,下次啟動會整個重來
   for (const f of OFFICIAL_FILES) { if (f === "VERSION") writeOfficialManifest(); fs.cpSync(path.join(REPO, f), path.join(WS, f)); }
+}
+/* 同一份規則與順序的非同步版,只給引擎安裝(第一次建工作區、開發版每次重拷)用:Windows 第一次裝時防毒逐檔掃,
+   同步拷近兩百個檔會卡住主行程、視窗畫不出來。更新時的 syncOfficialOnUpdate 照舊用同步版:要在常駐程式起來之前拷完 */
+async function copyOfficialAsync() {
+  await fs.promises.mkdir(path.join(WS, "strategies"), { recursive: true });
+  for (const d of OFFICIAL_DIRS)
+    await fs.promises.cp(path.join(REPO, d), path.join(WS, d), { recursive: true });
+  for (const f of OFFICIAL_FILES) { if (f === "VERSION") writeOfficialManifest(); await fs.promises.cp(path.join(REPO, f), path.join(WS, f)); }
 }
 /* 覆寫之前,把「workspace 裡跟隨包不一樣的官方檔」備份起來(Wei 2026-09-21:覆寫,但先備份被改過的檔)。
    電腦版的官方檔跟著 app 走(一包一個版號),所以更新一定覆寫;但 agent 或用戶可能改過 lib/——那份改動不能無聲消失。
@@ -1326,7 +1397,7 @@ let _engineSetup = null;
 function engineSetup() {
   if (!_engineSetup) _engineSetup = require("./enginesetup").createEngineSetup({
     fs, path, spawn: require("child_process").spawn, base: BASE, ws: WS, venvPy: VENV_PY, venvBin: VENV_BIN, win: WIN,
-    basePython, envPath: loginShellPath, pyEnv: { ...PY_ENV, ...(WIN ? WIN_PY_ENV : {}) }, copyOfficial, isPackaged: app.isPackaged,
+    basePython, envPath: loginShellPath, pyEnv: { ...PY_ENV, ...(WIN ? WIN_PY_ENV : {}) }, copyOfficial: copyOfficialAsync, isPackaged: app.isPackaged, pipWheel: PIP_WHEEL,
     sdkPins: SDK_PINS, deps: WORKSPACE_DEPS, lock: WORKSPACE_LOCK_FOR === require("./enginesetup").lockKey(SDK_PINS, WORKSPACE_DEPS) ? WORKSPACE_LOCK : [], optional: OPTIONAL_DEPS, firstRunMB: firstRunMB(), groupMB: PKG_MB, venvMs: VENV_MS, engineMs: ENGINE_PIP_MS, pkgMs: PKG_PIP_MS, idleMs: PIP_IDLE_MS,
     // 開發版量冷快取用:pip 帶 --isolated 不吃 PIP_CACHE_DIR,改由這個變數給 --cache-dir;打包版不認
     pipCacheDir: !app.isPackaged && path.isAbsolute(process.env.BLAVE_PIP_CACHE_DIR || "") ? process.env.BLAVE_PIP_CACHE_DIR : null,
@@ -1634,6 +1705,7 @@ function stratTransfer(dir) {
     try { if (d.kind === "backtest" && fs.statSync(path.join(dir, "stats.json")).mtimeMs / 1000 > d.at + 1) return null; } catch (_) { /* 沒有 stats.json */ }
   }
   const out = { kind: d.kind, status: d.status, at: d.at };
+  if (d.status === "running" && d.kind === "backtest") { const p = transferProgress(transferLogTail(path.join(dir, "transfer.log"))); if (p) out.progress = p; }
   if (d.status === "failed") out.err = RERUN_ERRS.indexOf(d.err) >= 0 ? d.err : "EXIT";
   if (d.kind === "trial" && d.status !== "running") {
     out.exit = Number.isInteger(d.exit) ? d.exit : null;
@@ -1654,6 +1726,33 @@ function stratPerf(dir) {
   if (d.status === "failed") out.refresh.err = RERUN_ERRS.indexOf(d.err) >= 0 ? d.err : "EXIT";
   if (out.refresh.err === "DATA" && typeof d.why === "string" && /^[a-z_]{1,20}$/.test(d.why)) out.refresh.why = d.why;
   return out;
+}
+/* 拉回那一跑的進度:transfer.log 是策略程式的 stdout,可能有路徑或策略自己印的字,原文不出主行程。
+   只認最後一行、而且是 lib/progress.py 的抓資料進度行(`[fetch BTCUSDT 5min (x)] 2/4 chunks, 9s elapsed, ~9s left`),
+   交出資料名／第幾段／共幾段／約剩幾秒;括號裡的來源不交。其他行(含 done in)一律 null,畫面維持原句 */
+const XFER_PROG_RE = /^\[fetch ([A-Za-z0-9_.-]{1,40})(?:\/[A-Za-z0-9_.-]{1,40})?(?: ([0-9]{1,4}[A-Za-z]{1,4}))?(?: \([a-z]{2,16}\))?\] (\d{1,5})\/(\d{1,5}) chunks, (?:\d{1,4}h\d{2}m|\d{1,4}m\d{2}s|\d{1,4}s) elapsed, ~(\d{1,4}h\d{2}m|\d{1,4}m\d{2}s|\d{1,4}s) left$/;
+function transferProgress(text) {
+  const lines = String(text || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+  const m = lines.length ? XFER_PROG_RE.exec(lines[lines.length - 1]) : null;
+  if (!m) return null;
+  const i = Number(m[3]), n = Number(m[4]), d = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/.exec(m[5]);
+  if (!n || i < 1 || i >= n || !d) return null;
+  return { data: m[1] + (m[2] ? " " + m[2] : ""), i, n, left: (Number(d[1]) || 0) * 3600 + (Number(d[2]) || 0) * 60 + (Number(d[3]) || 0) };
+}
+// 只讀檔尾 2KB(進度行一行不到 100 字);不跟 symlink、不在 FIFO 上卡住,同 readResultJson
+function transferLogTail(p) {
+  const C = fs.constants;
+  let fd = null;
+  try {
+    if (C.O_NOFOLLOW === undefined && !fs.lstatSync(p).isFile()) return "";
+    fd = fs.openSync(p, C.O_RDONLY | (C.O_NOFOLLOW || 0) | (C.O_NONBLOCK || 0));
+    const st = fs.fstatSync(fd);
+    if (!st.isFile()) return "";
+    const len = Math.min(st.size, 2048), buf = Buffer.alloc(len);
+    const n = len ? fs.readSync(fd, buf, 0, len, st.size - len) : 0;
+    return buf.toString("utf8", 0, n);
+  } catch (_) { return ""; }
+  finally { if (fd !== null) try { fs.closeSync(fd); } catch (_) { /* 關不掉也不影響結果 */ } }
 }
 /* 轉出檔(references/{xq-xs,multicharts-powerlanguage,tradingview-pine}.md 存的三個固定檔名)。
    讀檔規則同 runtime `_read_export`:regular file、≤256KB;讀不到那一份就當沒有(不猜、不報錯)。
@@ -2396,11 +2495,13 @@ function pdfDirGet() {
     return typeof d === "string" && path.isAbsolute(d) && fs.statSync(d).isDirectory() ? d : null;
   } catch (_) { return null; }   // 沒存過 / 資料夾不在了:回「下載項目」
 }
-function uiPrefsPatch(patch) {
-  let o = {}; try { const x = JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")); if (x && typeof x === "object" && !Array.isArray(x)) o = x; } catch (_) { /* 第一次 */ }
+const gpuBootPath = () => path.join(app.getPath("userData"), "gpu-boot.json");
+// file:GPU 退路的旗標走同一套寫法、寫進 gpu-boot.json(見檔頭 GPU_BOOT 那段)
+function uiPrefsPatch(patch, file = uiPrefsPath()) {
+  let o = {}; try { const x = JSON.parse(fs.readFileSync(file, "utf8")); if (x && typeof x === "object" && !Array.isArray(x)) o = x; } catch (_) { /* 第一次 */ }
   // 先寫暫存檔再 rename:寫到一半當機會留下半個檔,下次讀不到就整份當空的覆寫(存過的 PDF 資料夾跟著不見)
-  const tmp = uiPrefsPath() + ".blave-tmp";
-  try { fs.writeFileSync(tmp, JSON.stringify({ ...o, ...patch })); fs.renameSync(tmp, uiPrefsPath()); }
+  const tmp = file + ".blave-tmp";
+  try { fs.writeFileSync(tmp, JSON.stringify({ ...o, ...patch })); fs.renameSync(tmp, file); }
   catch (e) { try { fs.unlinkSync(tmp); } catch (_) {} throw e; }
 }
 function pdfDirSet(dir) { uiPrefsPatch({ pdfDir: dir }); }
@@ -2581,6 +2682,7 @@ async function accountStatus(retried) {
     lastAcct = { at: Date.now(), body: b };
     // 帳號狀態一回來就對一次(買了資料、餘額用完、登入後第一次問):聊天回合開跑前另外還會對,兩邊同一支
     const a = dataAccessOf(b); syncDataAccess(a === "included" || a === "billed", true);
+    try { mainMkt().reconcile(who, b); } catch (_) { /* 對帳壞掉不影響帳號狀態 */ }
     return b;
   } catch (_) { return null; }
 }
@@ -3411,19 +3513,8 @@ function themeSet(v) {
   nativeTheme.themeSource = v;
   return v;
 }
-/* 側欄提示格(renderer/promptslot.js;spec sidebar-prompt-slot §2–§3):手機那則的關閉狀態記在這台裝置,不上傳。p1 = Dock 紅點那個數,視窗回前景就歸零 */
-const SLOT_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-function slotPhoneClean(p) {
-  const o = p && typeof p === "object" ? p : {}, closes = Number.isInteger(o.closes) ? Math.min(Math.max(o.closes, 0), 2) : 0;
-  return { closes, until: Number.isFinite(o.until) && o.until > 0 ? o.until : 0, seenDays: Array.isArray(o.seenDays) ? [...new Set(o.seenDays.filter((d) => typeof d === "string" && SLOT_DAY_RE.test(d)))].slice(-7) : [] };
-}
-function slotStateGet() {
-  let o = {}; try { o = JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")) || {}; } catch (_) { /* 第一次 */ }
-  return { phone: slotPhoneClean(o.slotPhone), tradeAt: Number.isFinite(o.tradeStartedAt) ? o.tradeStartedAt : 0, firstReply: o.slotFirstReply === true || tm().sentOnce("first_reply_done"), p1: p1Badge };
-}
-// 收到過第一次回覆:只存這台的 ui-prefs、不出門,追蹤關掉的人也記得到。sentOnce 留著:升級前就回覆過的人不用再等一輪
+// 收到過第一次回覆(0.1.45 側欄提示格用;0.1.54 起提示格拿掉、沒有讀的人,留著等主 session 決定要不要一起拿)
 function slotFirstReplySet() { try { uiPrefsPatch({ slotFirstReply: true }); } catch (_) { /* 寫不進去:下一輪回覆再記 */ } return true; }
-function slotPhoneSet(p) { const c = slotPhoneClean(p); try { uiPrefsPatch({ slotPhone: c }); } catch (_) { /* 寫不進去:這次只在記憶體 */ } return c; }
 /* 入門步驟(歡迎頁 onboarding;renderer/welcome.js;IPC welcome-prefs):「已進完成後首頁」旗標,只存這台電腦的 ui-prefs、不上傳。
    兩個視角分開:done = 這台電腦、cloudDone = 雲端(0.1.30)。形狀不對當沒設:只收 true(0.1.28 存的 onbMkt 市場題已退役,留在檔裡不讀) */
 function onbPrefsGet() {
@@ -3436,6 +3527,24 @@ function onbPrefsSet(patch) {
   if ("cloudDone" in p) w.onbCloudDone = p.cloudDone === true;
   if (Object.keys(w).length) try { uiPrefsPatch(w); } catch (_) { /* 寫不進去:這一次只在畫面上 */ }
   return onbPrefsGet();
+}
+/* 主要市場(mainmarket.js;spec market-pref-2026-11-09):本機 ui-prefs 是畫面讀的那一份,account_status 回來時對帳。
+   mktAskInit 在 whenReady 第一步、任何 ui-prefs／telemetry.json 寫入之前判「新裝才問」 */
+const uiPrefsRead = () => { try { const o = JSON.parse(fs.readFileSync(uiPrefsPath(), "utf8")); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch (_) { return {}; } };
+let _mktAsk = false, _mm = null;
+function mktAskInit() { _mktAsk = require("./mainmarket").askInit(app.getPath("userData"), uiPrefsRead, uiPrefsPatch); }
+function mainMkt() {
+  if (!_mm) _mm = require("./mainmarket").createMainMarket({
+    readPrefs: uiPrefsRead, patchPrefs: uiPrefsPatch, getCreds: blaveCreds, post: (u, b) => postJSON(u, b), apiBase: API_BASE, ask: _mktAsk,
+    onChange: (st) => { for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && isOurPageUrl(w.webContents.getURL())) w.webContents.send("main-market", st); },
+  });
+  return _mm;
+}
+function mainMktSet(p) {
+  const o = p && typeof p === "object" && !Array.isArray(p) ? p : {};
+  if (o.seal === true) return mainMkt().seal();
+  if (o.shown === true) return mainMkt().shown();
+  return mainMkt().set(o.v, { fresh: o.fresh === true });
 }
 /* 第一次對話 modal(renderer/intro.js;IPC intro-check / intro-seen):兩件都確定才回 show:true,讀不到一律不彈——
    不借 sessionDb()(檔不在與開不起來都回 null)也不借 onbPrefsGet(出錯回預設值):兩條都會在出錯時把老用戶判成新用戶。
@@ -3889,6 +3998,8 @@ async function runTurn(rec, { sessionId, message, model: rawModel, effort: rawEf
     ...(useCodex ? ["--engine", "codex", "--codex-bin", codexBin] : []),
     ...viewingArgs(viewing),
     ...suggestArgs(suggestMode),
+    // 主要市場(spec market-pref §5.6):包裡那份 runtime 認得 --main-market(tests/check_shell_viewing.js 釘著);all／沒設不帶
+    ...mainMkt().args(),
     // 澄清表單(renderer/form.js):電腦版 spawn 的永遠是包裡那份 runtime,沒有版本錯配(tests/check_shell_viewing.js 釘著 runtime 認得)。
     // 手機來的回合不帶:手機畫不出表單,模型寫了 <form> 用戶只會等不到問題
     ...(rec.origin === "mobile" ? [] : ["--clarify-form"]),
@@ -4093,9 +4204,9 @@ function createWindow() {
     trafficLightPosition: { x: 12, y: 19 },
     // 開窗與 resize 的瞬間看得到的底:跟主題走(themeBg)
     backgroundColor: themeBg(),
-    ...(HEADLESS ? { show: false, paintWhenInitiallyHidden: true } : {}),
-    // paintWhenInitiallyHidden 不能給 false:實測頁面不跑,交不了選單字,選單列圖示出不來
-    ...(bgBoot ? { show: false, paintWhenInitiallyHidden: true } : {}),
+    // 一律先不顯示,畫出第一格才顯示(shell/bootguard.js ①);HEADLESS 與隱藏重開那一扇從頭到尾不顯示。
+    // paintWhenInitiallyHidden 不能給 false:實測頁面不跑,交不了選單字,選單列圖示出不來;ready-to-show 也靠它
+    show: false, paintWhenInitiallyHidden: true,
     webPreferences: {
       ...(HEADLESS ? { backgroundThrottling: false } : {}),   // 看不見的視窗預設會被節流:計時器變慢、畫面停更,截到的是舊的
       preload: path.join(__dirname, "preload.js"),
@@ -4113,6 +4224,10 @@ function createWindow() {
     win.once("show", () => { shown = true; tell(); });
     win.webContents.once("did-finish-load", tell);
   }
+  mainLog.write(`[boot] createWindow${HEADLESS ? " headless" : bgBoot ? " hidden-boot" : ""}`);
+  win.webContents.once("did-finish-load", () => mainLog.write("[boot] main window did-finish-load"));
+  win.once("ready-to-show", () => { mainFirstPaint = true; mainLog.write("[boot] main window ready-to-show"); });   // 保底先顯示了也要知道第一格實際多久才畫出來
+  if (!HEADLESS && !bgBoot) require("./bootguard").showWhenReady(win, { log: (m) => mainLog.write(m), skip: () => quitting || quitDone });
   bgBoot = false;   // 只有啟動那一扇;之後 showMain 重建的視窗照常顯示
   guardNavigation(win);
   // 右鍵只有連結上那一格「複製連結」(spec chat-long-url §2):聊天把長網址縮短顯示,完整網址要拿得到。其他位置右鍵照舊什麼都不跳
@@ -4124,9 +4239,12 @@ function createWindow() {
   // 人回到電腦前:開關關著時多問一次 /relay/enabled,剛配對的手機不用等 2 分鐘的 tick 就跳確認框(relay.focusTick 自己限 20 秒一次)
   win.on("focus", () => { if (app.hasSingleInstanceLock()) relay().focusTick().catch(() => {}); });
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
+  return win;
 }
 
 app.whenReady().then(() => {
+  if (app.hasSingleInstanceLock()) startStep("market ask", mktAskInit);   // 排第一:之後的步驟會寫 ui-prefs、telemetry.json
+  mainLog.write("[boot] app ready");
   quitOnSignals(process, () => app.quit());
   nativeTheme.themeSource = themeGet();   // 要在 createWindow 之前
   nativeTheme.on("updated", () => { const bg = themeBg(); for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.setBackgroundColor(bg); });
@@ -4492,13 +4610,14 @@ app.whenReady().then(() => {
   ipcMain.on("reply-cue", (e, cue) => { if (fromOurPage(e)) replyCue(cue, e.sender); });
   handle("theme", () => themeGet(), "system");
   handle("theme-set", (_e, v) => themeSet(v), null);
-  handle("slot-state", () => slotStateGet(), null);
-  handle("slot-phone-set", (_e, p) => slotPhoneSet(p), null);
+  handle("reopen-oauth", () => reopenOAuth(), false);
   handle("slot-first-reply", () => slotFirstReplySet(), null);
   handle("welcome-prefs", () => onbPrefsGet(), { done: false, cloudDone: false });
   handle("welcome-prefs-set", (_e, p) => onbPrefsSet(p), { done: false, cloudDone: false });
   handle("intro-check", () => introCheck(), { show: false });
   handle("intro-seen", () => introSeenSet(), false);
+  handle("main-market", () => mainMkt().get(), { v: null, src: null, ask: false });
+  handle("main-market-set", (_e, p) => mainMktSet(p), { v: null, src: null, ask: false });
   handle("strat-prefs", () => stratPrefsGet(), stratPrefsClean(null));
   handle("strat-prefs-set", (_e, patch) => stratPrefsSet(patch), stratPrefsClean(null));
   handle("mg-sizing-cloud", () => mgSizingCloudGet(), { ok: false });
@@ -4554,15 +4673,17 @@ app.whenReady().then(() => {
     if (!moveChecked) { moveChecked = true; startStep("move to apps", () => { askMoveToApps().catch((err) => console.error("[move] " + ((err && err.message) || err))); }); }
   });
   startStep("hidden boot", bgBootCheck);
-  createWindow();
+  const mainWin = createWindow();
   startStep("app menu", appMenuSync);
   // 要在常駐程式起來之前:它 import 的就是 workspace 裡的 lib。只有拿到單一實例鎖的那一份才做——
   // 第二份 app 在結束前也會走到 whenReady,不能讓它把新 lib 拷進第一份正在下單的 workspace(稽核 S7)
   if (app.hasSingleInstanceLock()) startStep("workspace sync", syncOfficialOnUpdate);
   startStep("trade host", tradeStartIfReady);   // 引擎早就裝好的人:一開 app 就有狀態可看(對帳器仍要他自己按啟動)
-  if (app.hasSingleInstanceLock()) startStep("engine", engineKick);   // 要裝的在背景裝;已經裝好的幾毫秒就結束。第二份 app 不碰 venv
+  // 要裝的在背景裝;已經裝好的幾毫秒就結束。第二份 app 不碰 venv。等主視窗載完再起(shell/bootguard.js ②):首次安裝不跟第一格畫面搶
+  if (app.hasSingleInstanceLock()) startStep("engine", () => require("./bootguard").afterLoad(mainWin && mainWin.webContents, { what: "engine", log: (m) => mainLog.write(m), cancelled: () => quitting || quitDone }, () => startStep("engine", engineKick)));
   if (app.hasSingleInstanceLock()) startStep("codex engine", codexKick);   // 同上:第二份 app(開發版與打包版共用 ~/Blave)不起下載、不刪版本
-  if (app.hasSingleInstanceLock()) startStep("session mark", sessionBoot);   // app_crash unclean_exit;第二份 app 不碰(它讀到的是第一份正在跑的那筆)
+  if (app.hasSingleInstanceLock()) startStep("session mark", sessionBoot);
+  startStep("gpu flag", gpuBootClear);   // GPU 退路該復原的:這次已經照常開著 GPU 了,清掉旗標(只有拿到鎖的那份寫)   // app_crash unclean_exit;第二份 app 不碰(它讀到的是第一份正在跑的那筆)
   // 視窗回前景 = 用戶可能剛在瀏覽器綁完卡、開完主機:「含不含資料」的答案作廢,下一輪重查
   // (不在這裡打 api——跟 LLM 共用每分鐘 30 次的桶,而且畫面那邊有卡片時本來就會重查)
   // 畫面自己的 blur 分不出「焦點進了內建瀏覽器那一頁」跟「整個視窗退到背景」,所以由這裡講
@@ -5236,6 +5357,9 @@ const P1_CLOCK_CASES = ["unmeasured", "far", "far_halt"];
 const P1_DEFER_CANCEL_RE = /^close-all: (?:開盤前已按啟動下單|機器重開後按了啟動下單).*?延後的(?:台股|台指期)平倉(?:一併)?取消/;
 const p1CloseDeferred = (e) => e.kind === "market_closed_deferred" || e.kind === "close_deferred_cancelled"
   || (e.kind == null && P1_DEFER_CANCEL_RE.test(String(e.error || "")));
+/* order_errors 裡不叫 P1 的另一種列:broker_session_closed = 統一回休市、等下一個時段再送(manager/reconciler KIND_BROKER_SHUT,目前 P3)——
+   只認統一(同 api agent_overview._error_events),別家帶這個 kind 照舊叫拒單。全部平倉休市平不了是一般拒單列,照叫 */
+const p1Quiet = (e) => e.kind === "broker_session_closed" && e.exchange === "president";
 // 全部平倉刻意沒送單的那列(manager/flatten):同 api agent_overview 的分流,認得的券商＋原因才叫 manual_close_required,
 // 其他照舊當拒單。reason 選標題:identity(或沒帶)身分登不進、snapshot_lag 快照落後、queued 上一筆平倉還在等回報
 function p1ManualClose(e) {
@@ -5317,10 +5441,10 @@ function p1FromState(r, mark, nowS) {   // 純函式:halt / 拒單從狀態檔�
     if (!(ts > (mark.err == null ? -1 : mark.err))) continue;
     if (ts > top) top = ts;
     // manual 停車的第一列不叫:同一刻的 HALT 已經叫了(只有部位表那句用它)
-    if (mark.err != null && nowS - ts <= 900 && !(e.kind === "order_unconfirmed" && e.manual === true && e.stuck !== true) && !p1CloseDeferred(e)) {
+    if (mark.err != null && nowS - ts <= 900 && !(e.kind === "order_unconfirmed" && e.manual === true && e.stuck !== true) && !p1CloseDeferred(e) && !p1Quiet(e)) {
       const mc = p1ManualClose(e), type = mc ? "manual_close_required" : P1_ERR_KINDS.indexOf(e.kind) >= 0 ? e.kind : "order_error";
-      // 模擬帳戶的拒單是 P2(api level_for:沒有真錢在風險上),本機不叫、只進事件列;帶 kind 的那幾型照舊 P1
-      if (type === "order_error" && e.exchange === "paper") continue;
+      // 模擬帳戶的拒單、休市被拒且這次暫停已撤回(halt_lifted)的列是 P2(api level_for),本機不叫、只進事件列;帶 kind 的那幾型照舊 P1
+      if (type === "order_error" && (e.exchange === "paper" || e.halt_lifted === true)) continue;
       const strategies = Array.isArray(e.strategies) ? e.strategies.filter((x) => typeof x === "string" && x).slice(0, 10) : [];
       out.show.push({ type, ts, cool: p1CoolKey(type, e),
         payload: { symbol: typeof e.symbol === "string" ? e.symbol : "", strategies, stuck: e.stuck === true, close_all: e.close_all === true, ...(mc || {}),
@@ -5494,6 +5618,7 @@ let quitting = false;
 // 結束框按取消。沒在下單那條更新走到這裡時(統一／群益有部位)已交給 quitAndInstall:收回才不會卡在「重新啟動中…」
 function quitCanceled() { draftOk = false; draftNote = false; if (restarting === "installing") setRestarting(null); }
 app.on("will-quit", () => startStep("awake", awakeRelease));
+app.on("will-quit", () => startStep("gpu ok run", gpuOkRun));   // GPU 退路的復原計數:關著硬體加速走到正常結束一次
 app.on("will-quit", () => { quitDone = true; if (app.hasSingleInstanceLock()) require("./telemetry").sessionClose(sessionFile()); });   // app_crash:正常結束,之後掛掉的不記
 app.on("before-quit", (e) => {
   // 更新重開正在收工:它收完會自己裝 / 結束;這時再跑一次下面的 stop 只會多送一次 SIGTERM、跟 quitAndInstall 搶(稽核 P2-8)

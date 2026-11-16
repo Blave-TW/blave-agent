@@ -7,6 +7,7 @@
 // 文字鈕 .btn-quiet(spec-desktop-settings-cleanup §0):
 //   ④ 關於的「服務條款 · 隱私權政策」、隱私頁的「隱私權政策」:字的左緣 = 內容欄起點(關於那一行 #set-up-line 的左緣)
 //   ⑤ 對照:把 UA 的左右 padding 蓋回去,④要壞
+// 左下角一列(spec sidebar-conversion §4.3):⑫ zh／en × 180／236／400 放不放得下、手機讓位
 // 設定 modal 方案 B(spec settings-modal-b-2026-10-24):
 //   ⑥ S7/S15 分類欄:目前項底色 = --surface-muted、hover 用的 --surface-row-hover 跟它不同(亮暗都量);視覺高 34、每一顆可點高 44、相鄰相接不重疊(鈕距 10);矮視窗分類欄自己捲
 //   ⑦ S8 「一般」三組:組內 8、組間 32;「關於」緊接防睡那組、隔 32(不釘底)
@@ -174,21 +175,22 @@ app.whenReady().then(async () => {
     applyLangChoice("en"); const en = [...$("cs-tabs").querySelectorAll(".tab-t")].map((x) => x.textContent);
     applyLangChoice("zh"); const zh = [...$("cs-tabs").querySelectorAll(".tab-t")].map((x) => x.textContent);
     return { reuse, n0, two: second !== first, en, zh }; })()`);
-  // ⑫ 更新膠囊「重新啟動更新：{v}」(Wei 11-01):側欄預設 236 與最窄 180、zh／en、下單中多一個「…」,字都完整(span 不溢出),記下有沒有拿掉圖示
+  // ⑫ 左下角一列(spec sidebar-conversion-2026-11-10 §4.3、§12):zh／en × 側欄 180／236／400,帳號那一格放最寬的「免費試用」／Free Trial、更新圓鈕在、
+  //    手機條件都成立。180:三樣不溢出、不折行、手機讓位;236 與 400:四樣都在、靠左(齒輪左緣 = 列左緣 + 6)、右邊留白;列高 44
   w.setContentSize(1440, 760); await nap(400);
-  const pills = [], UP0 = await X(`JSON.stringify(UP)`);
-  for (const lang of ["zh", "en"]) for (const sw of [236, 180]) for (const ph of ["ready", "blocked"]) {
-    await X(`setLang(${JSON.stringify(lang)}); paneSt.side.off = false; paneSt.side.w = paneSt.side.want = ${sw}; panesRender(false); UP = { phase: ${JSON.stringify(ph)}, version: "0.1.41", current: "0.1.40" }; upPillPaint();`); await nap(450);
-    pills.push(await X(`(() => { upPillFit(); const tx = $("up-pill-t"), pl = $("up-pill");
-      return { lang: ${JSON.stringify(lang)}, sw: ${sw}, ph: ${JSON.stringify(ph)}, text: tx.textContent, sw0: tx.scrollWidth, cw: tx.clientWidth, pill: Math.round(pl.getBoundingClientRect().width), title: pl.title, aria: pl.getAttribute("aria-label"),
-        foot: Math.round(document.querySelector(".ws-foot").getBoundingClientRect().width), noIc: pl.classList.contains("no-ic") }; })()`)); }
-  await X(`setLang("zh"); UP = ${UP0}; upPillPaint(); paneSt.side.w = paneSt.side.want = PANES.side.def; panesRender(false);`);
+  const rows = [], UP0 = await X(`JSON.stringify(UP)`), PH0 = await X(`JSON.stringify(PH)`);
+  for (const lang of ["zh", "en"]) for (const sw of [180, 236, 400]) {
+    await X(`setLang(${JSON.stringify(lang)}); paneSt.side.off = false; paneSt.side.w = paneSt.side.want = ${sw}; panesRender(false); UP = { phase: "ready", version: "0.1.53", current: "0.1.52" }; upPillPaint();
+      PH = { visible: true, signedIn: true, pairedEver: false }; window.__pv0 = window.__pv0 || planView; planView = () => "offer"; sideBooted = true; sideCvPaint();`); await nap(450);
+    rows.push(await X(`(() => { const row = $("foot-row"), rr = row.getBoundingClientRect(), kids = [...row.children].filter((k) => !k.hidden && getComputedStyle(k).position !== "fixed"), last = kids[kids.length - 1].getBoundingClientRect();
+      return { lang: ${JSON.stringify(lang)}, sw: ${sw}, phone: !$("ph-pill").hidden, n: kids.length, h: Math.round(rr.height), over: Math.round(last.right - rr.right), gearL: Math.round($("ws-conn").getBoundingClientRect().left - rr.left),
+        cvH: Math.round($("side-cv").getBoundingClientRect().height), cvW: Math.round($("side-cv").getBoundingClientRect().width) }; })()`)); }
+  await X(`setLang("zh"); UP = ${UP0}; upPillPaint(); PH = ${PH0}; planView = window.__pv0; sidePaint(); paneSt.side.w = paneSt.side.want = PANES.side.def; panesRender(false);`);
   w.setContentSize(1024, 760); await nap(300);
-  console.log("      膠囊量測:" + JSON.stringify(pills));
-  const at = (sw) => pills.filter((x) => x.sw === sw);
-  // 放不下先換短字、圖示留著(canon › 側欄提示格):英文下單中多一個「…」,全句或短句看字寬,哪個都不能溢出、不能拿圖示
-  ok(`⑫ 膠囊預設側欄 236:zh 與英文一般狀態全句;英文下單中全句或短句;字與版號完整、圖示留著`, at(236).length === 4 && at(236).every((x) => x.sw0 <= x.cw && x.text.includes("0.1.41") && !x.noIc && (x.lang === "en" && x.ph === "blocked" ? /^(Restart to update|Update): 0\.1\.41…$/.test(x.text) : /重新啟動更新|Restart to update/.test(x.text))), JSON.stringify(at(236)));
-  ok(`⑫ 最窄側欄 180:換短句「更新：0.1.41」、版號不被切、全句在 title 與可及名稱`, at(180).length === 4 && at(180).every((x) => x.sw0 <= x.cw && /^(更新：|Update: )0\.1\.41…?$/.test(x.text) && /重新啟動更新|Restart to update/.test(x.title) && x.aria === x.title && !x.noIc), JSON.stringify(at(180)));
+  console.log("      底列量測:" + JSON.stringify(rows));
+  const at = (sw) => rows.filter((x) => x.sw === sw);
+  ok(`⑫ 最窄側欄 180:zh／en 三樣不溢出、膠囊不折行(高 28)、手機讓位;列高 44`, at(180).length === 2 && at(180).every((x) => !x.phone && x.n === 3 && x.over <= 0 && x.cvH === 28 && x.h === 44), JSON.stringify(at(180)));
+  ok(`⑫ 側欄 236 與 400:zh／en 四樣都在、靠左(齒輪離列左緣 6)、右邊留白`, [...at(236), ...at(400)].length === 4 && [...at(236), ...at(400)].every((x) => x.phone && x.n === 4 && x.over <= 0 && x.gearL === 6 && x.h === 44), JSON.stringify([...at(236), ...at(400)]));
   // ⑭ 設計稽核 B4 的熱區(視覺不變):側欄 ＋／資料夾鈕 44×44 不重疊、提示音開關 44×44、「開啟系統設定」80×45
   const hot = await X(`(async () => { ${HIT} const o = {}, add = $("strat-add"), sg = $("sg-add"); $("strat-head").hidden = false; sg.hidden = false; o.add = __hit(add); o.sg = __hit(sg);
     await setOpen(); setCat("display"); await new Promise((r) => setTimeout(r, 400)); o.sw = __hit($("set-rs-sw")); const os = $("set-rn-os"), was = os.hidden; os.hidden = false; await new Promise((r) => setTimeout(r, 100)); o.go = __hit($("set-rn-os-go")); o.sug = __hit(document.querySelector(".set-sug .sw") || $("set-rs-sw")); os.hidden = was; setClose(); return o; })()`);

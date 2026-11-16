@@ -56,13 +56,14 @@ const told = [], busySlot = (id, anchor) => ({ id, anchor }), busyTell = (slot, 
 eval("var UPD = " + src.match(/var UPD = (\{[^\n]*\});/)[1]);
 eval(["UP_SESSION_IDLE_MS", "UP_RETRY_MS", "UP_WU_STATES", "UP_WU_DIR_RE", "UP_SAID_KEY"].map((k) => src.match(new RegExp("^const " + k + " = [^\\n]*;", "m"))[0].replace(/^const /, "var ")).join("\n"));
 var CS_BOOTED = false, UP_CHECKING = false, UP_CLOUD_BUSY = false;
+var sideCvPaint = () => {};   // 左下角帳號那一格(app.js;acctPaintAcct 叫它),行為在 check_shell_prompt_slot.js
 var UP_LINE_OF = new WeakMap();
 eval(["upObserve", "upMachineGone", "upWu", "upPlan", "upCloudWhere", "upDoneLine", "upBackupLine", "upRich", "upPaintLine", "upSayLines", "upSayLine", "upRelang", "upView", "upLocalTurn", "upCloudTurn", "upNow", "upTurnEnded", "upPaint", "acctPaintAcct"].map(fnSrc).join("\n"));
 eval(["upCheck", "upCloudRefresh", "upCloudUpdate", "upCloudSend", "upInstall"].map((n) => "async " + fnSrc(n)).join("\n"));
-// 0.1.36 側欄更新膠囊(spec desktop-update-pill §3):真的那幾支;更新 modal 本體(upModal)用假的記下參數,行為在 check_shell_update_pill.js
+// 0.1.36 側欄更新膠囊(spec desktop-update-pill §3;0.1.54 改圓鈕,spec sidebar-conversion §3.3,字只在 aria-label 與 title):真的那幾支;更新 modal 本體(upModal)用假的記下參數,行為在 check_shell_update_pill.js
 var UP_PILL_DAY_KEY = "ws_upd_pill_day", UP_BOX = null, UP_AUTO = true; const modals = [];
 const upModal = (kind, data, opener, done) => { modals.push({ kind, data, done }); };
-eval(["upPillPlan", "upPillNow", "upPillLabel", "upPillPaint", "upPillFit", "upPillClick", "upRestartAsk", "upSchedPaint"].map(fnSrc).join("\n"));
+eval(["upPillPlan", "upPillNow", "upPillLabel", "upPillPaint", "upPillClick", "upRestartAsk", "upSchedPaint"].map(fnSrc).join("\n"));
 eval(src.match(/^function upRefresh\(\) \{[^\n]*\}$/m)[0]);
 eval([/^\$\("up-pill"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("up-rail"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-up-btn"\)\.addEventListener\("click", [^\n]*$/m, /^\$\("set-upc-btn"\)\.addEventListener\("click", [^\n]*$/m].map((re) => src.match(re)[0]).join("\n"));   // 入口的接線
 const stepWhere = (c) => (c && c.where) || "local";
@@ -96,7 +97,7 @@ const paint = (up, st) => { UP = up; TR_BAGS.cloud.st = st === undefined ? TR_BA
   const cb = $("set-upc-btn");
   return { cspin: cb.children.some((c) => c && c.className === "spin16"), caria: cb.attrs["aria-label"], ctitle: cb.title, line: $("set-up-line").textContent, cline: $("set-upc").hidden ? null : $("set-upc-line").textContent, clink: cb.hidden ? null : cb.textContent, cdis: cb.disabled, caria2: cb.attrs["aria-disabled"] === undefined ? null : cb.attrs["aria-disabled"], aria: b.attrs["aria-disabled"] === undefined ? null : b.attrs["aria-disabled"], link: b.textContent, kind: b.dataset.kind, dis: b.disabled, spin: b.children.some((c) => c && c.className === "spin16"), title: b.title,
     slot: w.hidden ? null : w.firstElementChild.textContent, slotKind: w.dataset.kind, slotDis: w.disabled, slotAria: w.attrs["aria-disabled"], status: w.classList.has("is-status"), slotTitle: w.title,
-    pill: $("up-pill-wrap").hidden ? null : $("up-pill-t").textContent, pillKind: $("up-pill").dataset.kind, pillDis: $("up-pill").disabled, pillAria: $("up-pill").attrs["aria-disabled"] || null, pillTitle: $("up-pill").title,
+    pill: $("up-pill").hidden ? null : $("up-pill").attrs["aria-label"], pillKind: $("up-pill").dataset.kind, pillDis: $("up-pill").disabled, pillAria: $("up-pill").attrs["aria-disabled"] || null, pillTitle: $("up-pill").title,
     rail: $("up-rail").hidden ? null : $("up-rail").attrs["aria-label"], railAria: $("up-rail").attrs["aria-disabled"] || null }; };
 const mono = (n, s) => (n.children || []).some((c) => c && c.className === "mono" && c.textContent === s);
 // ── 關於那一行:七種寫法(§4)。字一律由 upPlan 決定,upPaint 用「 · 」接、版號 mono ──
@@ -163,8 +164,8 @@ ok("(b) 下單中(blocked):那一格不出;膠囊字尾接「…」(按了主行
     pb.slot.kind === "restart" && pb.slot.ask === true && pr.slot.ask === false && pt.slot.disabled === true && pe.slot === null
     && pb.link.kind === "restart" && pb.link.ask === true && pb.row.status[0] === "up.row.ready" && !/readyQuit/.test(src)); }
 { const pr = paint({ ...C, phase: "blocked", restarting: true }, cloud());
-  ok("重新啟動中(主行程 restarting):膠囊換「重新啟動中…」、原生 disabled;關於列的連結同字、停用;那一格不出",
-    pr.slot === null && pr.pill === "up.restarting" && pr.pillKind === "restarting" && pr.pillDis && pr.pillTitle === "" && pr.link === "up.restarting" && pr.kind === "restarting" && pr.dis);
+  ok("重新啟動中(主行程 restarting):圓鈕的 aria-label 與 title 換「重新啟動中…」、原生 disabled;關於列的連結同字、停用;那一格不出",
+    pr.slot === null && pr.pill === "up.restarting" && pr.pillKind === "restarting" && pr.pillDis && pr.pillTitle === "up.restarting" && pr.link === "up.restarting" && pr.kind === "restarting" && pr.dis);
   calls.length = 0; modals.length = 0; $("up-pill").onclick(); $("up-rail").onclick(); $("set-up-btn").onclick && $("set-up-btn").onclick();
   ok("…按了什麼都不做(不重裝、不開框、不查更新)", calls.length === 0 && modals.length === 0);
   const zhS = fs.readFileSync(path.join(R, "strings.js"), "utf8");
@@ -187,7 +188,7 @@ ok("報告的 workspace_update 是不可信輸入:state 不認得 / 不是物件
     ".official-backup/a\"-20260924T051200Z", "lib/2026-09-22-p-20260924T051200Z", ".official-backup/2026-09-22-p", ".official-backup/" + "x".repeat(41) + "-20260924T051200Z", "d/", "", "ls -la; rm -rf ~"].every((d) => dir(d) === null)); }
 (async () => {
   calls.length = 0; modals.length = 0; featured.length = 0; paint({ ...C, phase: "ready" }, cloud()); await $("up-pill").onclick(); await new Promise((r) => setImmediate(r));
-  ok("(b) 按膠囊(沒在下單):畫面開 §4.1(plain,帶已暫存的版號),先不裝;記 upd_go_pill", calls.length === 0 && modals.length === 1 && modals[0].kind === "plain" && modals[0].data.v === "0.0.8" && featured.filter((n) => n !== "slot_up_show").join() === "upd_go_pill,slot_up_open" && sent.length === 0);
+  ok("(b) 按膠囊(沒在下單):畫面開 §4.1(plain,帶已暫存的版號),先不裝;記 upd_go_pill", calls.length === 0 && modals.length === 1 && modals[0].kind === "plain" && modals[0].data.v === "0.0.8" && featured.join() === "upd_go_pill" && sent.length === 0);
   modals[0].done(true); await new Promise((r) => setImmediate(r));
   ok("…§4.1 按重新啟動 = updateInstall({ confirmed: true }),不送任何雲端指令", calls.join() === "install" && JSON.stringify(lastInstall) === '{"confirmed":true}' && sent.length === 0);
   calls.length = 0; modals.length = 0; modals.length = 0; paint({ ...C, phase: "ready" }, cloud()); await $("up-pill").onclick(); modals[0].done(false); await new Promise((r) => setImmediate(r));
@@ -618,7 +619,7 @@ ok("設定裡重畫過的每一塊都過同一關:焦點掉到 BODY 或掉出 mo
 const bare = src.replace(/^\s*\/\/.*$/gm, "");   // 註解掉的程式不算數
 const sites = [...bare.matchAll(/^[^\n]*\b(?:oauthPending|planLoginBusy) = (?!false, |null)[^\n]*$/gm)].filter((m) => !/^let /.test(m[0].trim()));
 const late = sites.filter((m) => !/waitChanged\(\)/.test(bare.slice(m.index, m.index + 400).split("\n").slice(0, 4).join("\n"))).map((m) => m[0].trim().slice(0, 40));
-ok("改了等待旗標的每一處都重畫兩個表面(共 " + sites.length + " 處" + (late.length ? ";漏的:" + late.join(" / ") : "") + ")", sites.length >= 7 && late.length === 0 && /function waitChanged\(\) \{ mdlPaint\(\); acctPaintAcct\(\); \}/.test(bare));
+ok("改了等待旗標的每一處都重畫兩個表面(共 " + sites.length + " 處" + (late.length ? ";漏的:" + late.join(" / ") : "") + ")", sites.length >= 7 && late.length === 0 && /function waitChanged\(\) \{ mdlPaint\(\); acctPaintAcct\(\); if \(typeof mktPaint === "function"\) mktPaint\(\); \}/.test(bare));
 // (V4(a) 帳號頁自己的「取消」鈕隨那一頁退場:未登入時這一頁唯一的鈕是頁尾那顆,等待中它就是「取消」——planLogin 的第一行)
 ok("V4(a) 頁尾那顆「取消」按得動", /if \(planLoginBusy\) \{ window\.blave\.cancelOAuth\(\); return; \}/.test(fnSrc("planLogin")));
 ok("V1 上一則不會活過下一次登入(離線登出那句只有 detect() 會清)", /^\s*setHint\(null\);/m.test(fnSrc("planLogin").replace(/^\s*\/\/.*$/gm, "")));
@@ -685,7 +686,7 @@ ok("隱私:分類排最後、開關是 role=switch + aria-checked、即時生效
 // 會收的組(0.1.39):PRIV_COLLECT 從原文 eval 出來,組 id、句數、順序逐一對;舊的 priv.collect.<n> 一條都不能留
 const PRIV_COLLECT_V = eval(src.match(/const PRIV_COLLECT = [^\n]*;/)[0].replace(/^const PRIV_COLLECT = /, "(").replace(/;$/, ")"));
 const POS = (L, k) => { const m = PO[L].match(new RegExp('msgid "' + k.replace(/\./g, "\\.") + '"\nmsgstr "([^"]*)"')); return m ? m[1] : null; };
-const PRIV_SHAPE = [["step", 4], ["strat", 5], ["feat", 8], ["stuck", 9], ["auth", 5], ["meta", 5], ["acct", 2]];
+const PRIV_SHAPE = [["step", 4], ["strat", 5], ["feat", 9], ["stuck", 9], ["auth", 5], ["meta", 5], ["acct", 2]];
 const PRIV_GROUPS_OK = JSON.stringify(PRIV_COLLECT_V) === JSON.stringify(PRIV_SHAPE.map(([g, n]) => ["priv.c." + g + ".h", Array.from({ length: n }, (_, i) => "priv.c." + g + "." + (i + 1))]))
   && PRIV_COLLECT_V.every(([h, ks]) => [h, ...ks].every((k) => POS(0, k) && POS(1, k)))
   && PO.every((x) => !/msgid "priv\.collect\.\d+"/.test(x)) && !/priv\.collect\.\d/.test(src)
@@ -757,7 +758,7 @@ ok("隱私:會收分 7 組(0.1.39 設計稽核 §C,Wei 核准;0.1.45 拿掉策�
 const PRIV_ZH = {
   step: ["做到哪一步", "首次開啟、每日開啟、登入", "app 開著的每一天，含本機自動下單有沒有在跑", "完成連結，記哪一種 AI", "第一次回測、啟動下單（模擬或真錢）、上雲端運行"],
   strat: ["每支策略", "新建、第一次回測、第一次配了金額時各記一次", "只記型別（A／B／C）與市場類別，例如加密貨幣、台指期", "不記策略名稱或標的", "三步記同一組代碼，代碼只有這台電腦算得出", "Blave 推不回策略名稱"],
-  feat: ["用了哪些功能", "分頁與按鈕的名稱，每天每項記一次", "不含分頁與按鈕裡的內容", "從策略庫用一支策略時，記它要不要 Blave 資料", "送出找點子時，記從哪個入口送出", "換策略庫排序時，記選了哪一種", "在策略庫購買時，記走到哪一步與結果類別", "回覆好了的系統通知：有沒有跳出、有沒有被點開", "不含對話標題與內容"],
+  feat: ["用了哪些功能", "分頁與按鈕的名稱，每天每項記一次", "不含分頁與按鈕裡的內容", "從策略庫用一支策略時，記它要不要 Blave 資料", "送出找點子時，記從哪個入口送出", "換策略庫排序時，記選了哪一種", "在策略庫購買時，記走到哪一步與結果類別", "回覆好了的系統通知：有沒有跳出、有沒有被點開", "不含對話標題與內容", "選主要市場時，記選了哪一個"],
   stuck: ["卡在哪一步", "回合失敗、連不上 AI、策略庫用不了的原因類別", "綁卡／儲值提示有沒有出現與按下、回來後能不能用", "啟動雲端方案的結果、更新卡在哪一步", "第一次收到 AI 回覆", "第一次安裝或更新後補裝引擎與策略套件，有沒有裝好", "沒裝好是哪一類原因", "關掉 app 時停在哪個畫面", "app 當掉或沒正常結束時，記是哪一類", "只記類別，不含內容"],
   auth: ["登入與金鑰", "本機 AI 的登入方式，例如訂閱或 API 金鑰", "不含帳號與金鑰", "登入失敗的類別，以及當下是否判定為已登入", "改金鑰時驗證碼框的出現、通過與鎖住", "不含驗證碼"],
   meta: ["每筆紀錄都帶", "發生的時間", "app 版本、作業系統與版本、系統語言", "電腦類型：筆電或桌機", "安裝識別碼：這份安裝隨機產生的編號", "登入後，安裝識別碼會跟你的帳號對上"],
@@ -767,12 +768,12 @@ const privKeys = (g) => ["priv.c." + g + ".h", ...PRIV_ZH[g].slice(1).map((_, i)
 const zhCount = (x) => { const CJK = /[\p{Script=Han}]/gu; return (x.match(CJK) || []).length + (x.replace(CJK, " ").match(/[\p{L}\p{N}_]+(?:[.,]\p{N}+)*/gu) || []).length; };
 ok("隱私 0.1.39:會收七組的 zh 逐字、每句 ≤25 字(canon 算法);組標題與句子 en 都有", Object.keys(PRIV_ZH).every((g) => privKeys(g).every((k, i) => POS(0, k) === PRIV_ZH[g][i] && zhCount(PRIV_ZH[g][i]) <= 25 && !!POS(1, k))));
 // 事件數跟告知綁在一起:加事件而沒補「會收」那幾組,這裡就紅(canon product-telemetry 出貨清單第 5 條)
-ok("隱私:四十二個事件逐項對得上契約的白名單(0.1.53 lib_buy_result=用了哪些功能的策略庫一鍵購買結果類別,不帶金額;0.1.52 data_card_shown=卡在哪一步的綁卡提示、engine_fail=沒裝好是哪一類原因、turn_fail_why=回合失敗的原因類別、app_quit=關掉 app 時停在哪個畫面、app_crash=當掉或沒正常結束是哪一類;lib_sort=用了哪些功能的策略庫排序;lib_bindbuy=用了哪些功能的策略庫綁卡即購買走到哪一步,不帶金額;0.1.50 lib_bindplan / lib_cardplan / lib_login_go 同組:策略庫一步開通與登入後接到哪一步,不帶金額;heartbeat=做到哪一步「app 開著的每一天」;strat_* 三個=每支策略,只記型別與市場類別;feature_used=用了哪些功能,名稱、每日一次、不含內容;lib_pick / idea_sent=用了哪些功能的策略庫與找點子;reply_notif=系統通知;0.1.9 九個、0.1.12 引擎安裝兩個、0.1.15 detect_fail=卡在哪一步,只記類別;cli_auth / auth_fail / key_verify=登入與金鑰;device_type=每筆紀錄都帶的電腦類型,spec-0.1.13 #12:寫作業系統與版本,不寫 macOS)",
-  Object.keys(require("../shell/telemetry.js").EVENTS).length === 42
-  && (() => { const ev = require("../shell/telemetry.js").EVENTS; return ["heartbeat", "strat_created", "strat_backtested", "strat_deployed", "feature_used", "lib_pick", "idea_sent", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go", "lib_buy_result", "reply_notif", "detect_fail", "engine_setup", "engine_opt_fail", "data_card_shown", "app_quit", "app_crash", "engine_fail", "turn_fail_why", "cli_auth", "auth_fail", "key_verify", "device_type"].every((e) => !!ev[e]); })()
+ok("隱私:四十四個事件逐項對得上契約的白名單(0.1.54 mkt_q / mkt_set=用了哪些功能的主要市場,只記選了哪一個(priv.c.feat.9);0.1.53 lib_buy_result=用了哪些功能的策略庫一鍵購買結果類別,不帶金額;0.1.52 data_card_shown=卡在哪一步的綁卡提示、engine_fail=沒裝好是哪一類原因、turn_fail_why=回合失敗的原因類別、app_quit=關掉 app 時停在哪個畫面、app_crash=當掉或沒正常結束是哪一類;lib_sort=用了哪些功能的策略庫排序;lib_bindbuy=用了哪些功能的策略庫綁卡即購買走到哪一步,不帶金額;0.1.50 lib_bindplan / lib_cardplan / lib_login_go 同組:策略庫一步開通與登入後接到哪一步,不帶金額;heartbeat=做到哪一步「app 開著的每一天」;strat_* 三個=每支策略,只記型別與市場類別;feature_used=用了哪些功能,名稱、每日一次、不含內容;lib_pick / idea_sent=用了哪些功能的策略庫與找點子;reply_notif=系統通知;0.1.9 九個、0.1.12 引擎安裝兩個、0.1.15 detect_fail=卡在哪一步,只記類別;cli_auth / auth_fail / key_verify=登入與金鑰;device_type=每筆紀錄都帶的電腦類型,spec-0.1.13 #12:寫作業系統與版本,不寫 macOS)",
+  Object.keys(require("../shell/telemetry.js").EVENTS).length === 44
+  && (() => { const ev = require("../shell/telemetry.js").EVENTS; return ["heartbeat", "strat_created", "strat_backtested", "strat_deployed", "feature_used", "lib_pick", "idea_sent", "lib_sort", "lib_bindbuy", "lib_bindplan", "lib_cardplan", "lib_login_go", "lib_buy_result", "mkt_q", "mkt_set", "reply_notif", "detect_fail", "engine_setup", "engine_opt_fail", "data_card_shown", "app_quit", "app_crash", "engine_fail", "turn_fail_why", "cli_auth", "auth_fail", "key_verify", "device_type"].every((e) => !!ev[e]); })()
   && /^App version, operating system and version, system language$/.test(POS(1, "priv.c.meta.2")) && /^Computer type: laptop or desktop$/.test(POS(1, "priv.c.meta.3"))
   && /whether local auto-trading runs/.test(POS(1, "priv.c.step.2")) && /type \(A\/B\/C\) and market category/.test(POS(1, "priv.c.strat.2")) && /^Never its name or symbol$/.test(POS(1, "priv.c.strat.3"))
-  && /whether it needs Blave data/.test(POS(1, "priv.c.feat.3")) && /which entry point/.test(POS(1, "priv.c.feat.4")) && /which sort you picked/.test(POS(1, "priv.c.feat.5")) && /which step it reached and the result type/.test(POS(1, "priv.c.feat.6")) && /^Never the chat title or text$/.test(POS(1, "priv.c.feat.8"))
+  && /whether it needs Blave data/.test(POS(1, "priv.c.feat.3")) && /which entry point/.test(POS(1, "priv.c.feat.4")) && /which sort you picked/.test(POS(1, "priv.c.feat.5")) && /which step it reached and the result type/.test(POS(1, "priv.c.feat.6")) && /^Never the chat title or text$/.test(POS(1, "priv.c.feat.8")) && /^Picking a main market: which one you picked$/.test(POS(1, "priv.c.feat.9"))
   && /^Categories only, never the content$/.test(POS(1, "priv.c.stuck.9")) && /^Never the code$/.test(POS(1, "priv.c.auth.5")) && /kept 90 days/.test(POS(1, "priv.c.acct.2")));
 ok("acct.sub 開通試用那句兼講期限(Wei 核准 0.1.10):zh / en 逐字", /msgid "acct\.sub"\nmsgstr "首次綁卡，\{t\} 天內有 \{q\} TWD 的 AI 額度，電腦版也拿得到 Blave 的資料。"/.test(PO[0])
   && /msgid "acct\.sub"\nmsgstr "A first-time card gets \{q\} TWD of AI credit and Blave data in the desktop app, both for \{t\} days\."/.test(PO[1]));
@@ -1423,8 +1424,8 @@ ok("回合結束不再出費用那一則:dataFeeNote / dataFeeShow / data.fee �
   if (hits.length) console.log("      " + hits.join(", ")); }
 // 視窗回到前景:設定 › 帳號與方案開著就重查 account_status(10 秒內查過不再查)——到網站取消／恢復試用、重新付款後回來,那一格才會換
 { const i = src.indexOf('window.addEventListener("focus", () => {'), body = i < 0 ? "" : src.slice(i, src.indexOf("\n});", i));
-  ok("回前景:帳號與方案那一頁開著也會 acctCheck(有 10 秒節流)", /const planOpenNow = !\$\("set-scrim"\)\.hidden && !\$\("set-plan"\)\.hidden;/.test(body) && /\|\| planOpenNow\)\) return;/.test(body)
-    && /if \(Date\.now\(\) - acctAt < 10000\) return;\n  acctCheck\(\);/.test(body));
+  ok("回前景:帳號與方案那一頁開著、或剛按了左下角「免費試用」也會 acctCheck(有 10 秒節流);那次查回來才清旗標並重畫(spec sidebar-conversion §6.2)", /const planOpenNow = !\$\("set-scrim"\)\.hidden && !\$\("set-plan"\)\.hidden;/.test(body) && /\|\| planOpenNow \|\| sideCvGone\)\) return;/.test(body)
+    && /if \(Date\.now\(\) - acctAt < 10000\) return;\n[^\n]*\n  const forSide = sideCvGone;\n  acctCheck\(\)\.then\(\(\) => \{ if \(forSide\) \{ sideCvGone = false; sidePaint\(\); \} \}\)/.test(body));
   ok("已取消試用的底列不再重講日期(狀態列已經講了)", ["zh", "en"].every((l) => !/\{d\}/.test(STR[l]["pv.f.trialCancelled"]) && !/\{d\}/.test(STR[l]["pv.f.trialCancelled.m"]))); }
 // 設計稽核(desktop-mplan-static-audit)的有條件項:分隔符、chip 與 h5 不重講、en 的「到網站」、鈕列折行保險、409 那句跟網站同字
 ok("分隔符同一面一種:zh 的 pv / plan / cf 那組字用「 · 」不用「・」;en 的「到網站」鈕字一律 on the Web", Object.keys(STR.zh).filter((k) => /^(pv|plan|cf)\./.test(k)).every((k) => !/・/.test(STR.zh[k]))

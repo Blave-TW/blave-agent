@@ -29,7 +29,7 @@ const GLOBAL_OK = {
   thinkFoldSeq: "aria-controls 流水號", stepCharW: "量字寬的快取", loginPending: "本機 AI 登入中", acct: "帳號狀態", acctAt: "同上", acctRetry: "同上", balLast: "餘額",
   balSeq: "同上", acctGone: "去瀏覽器綁卡", acctPending: "帳號重查", acctSettled: "同上", taKeyed: "輸入框打過字(帳號卡)", planSlowSaid: "方案開通", planBusyPlan: "同上",
   planErr: "同上", planBusy: "同上", planSince: "同上", planTimer: "同上", planWas: "同上", planDoneSaid: "同上", planDonePending: "方案開好了那句:等眼前分頁閒著才講",
-  pub: "公開資訊", pubAt: "同上", PH: "手機對話設定(主行程 relay.js 的狀態)", PH_BUSY: "同上", PH_WAIT: "同上(這次請求;取消就換掉)", PH_ERR: "同上", PH_PHONES: "同上(帳號下的手機,唯讀)", PH_QUIET: "同上(同步數字變時不念)", PH_ASKED: "同上(配對確認框跳過的那一次)", PH_ASK_BOX: "同上(開著的配對確認框)", PH_NOTICE_KEY: "同上(輸入框上方「剛配對」那一列畫著哪一批;全 app 一列,不跟分頁換)", PH_NOTICE_CLOSED: "同上(剛按掉的那一批)", planLoginBusy: "方案登入", planLastView: "同上", planLoginOut: "同上",
+  sideCvGone: "左下角「免費試用」去外面綁卡、回前景要重查一次(全 app 一格)", sideBooted: "同上(開機讀到 token 之前不畫)", pub: "公開資訊", pubAt: "同上", PH: "手機對話設定(主行程 relay.js 的狀態)", PH_BUSY: "同上", PH_WAIT: "同上(這次請求;取消就換掉)", PH_ERR: "同上", PH_PHONES: "同上(帳號下的手機,唯讀)", PH_QUIET: "同上(同步數字變時不念)", PH_ASKED: "同上(配對確認框跳過的那一次)", PH_ASK_BOX: "同上(開著的配對確認框)", PH_NOTICE_KEY: "同上(輸入框上方「剛配對」那一列畫著哪一批;全 app 一列,不跟分頁換)", PH_NOTICE_CLOSED: "同上(剛按掉的那一批)", planLoginBusy: "方案登入", planLastView: "同上", planLoginOut: "同上",
 };
 const unclassified = lets.filter((n) => !tabKeys.includes(n) && !(n in GLOBAL_OK));
 ok("app.js 每一個頂層 let 都歸類:每個分頁一份(TAB_KEYS)或全 app 一份(GLOBAL_OK)", unclassified.length === 0, unclassified);
@@ -51,7 +51,7 @@ const MOD_GLOBAL = {
   "president.js": { PRES: "統一期貨", presTimer: "同上", PRES_FIRST_ARMED: "同上" }, "report-sharelist.js": { SHL_IO: "分享清單" }, "stratflags.js": { sfPop: "彈出層" }, "stratgroups.js": { sgMenu: "資料夾 ⋯ 選單,一次一個", sgPick: "emoji 選擇器,一次一個" },
   "suggest.js": { SUG: "TAB_KEYS 整個換(托盤跟著分頁)" }, "form.js": { FORM: "TAB_KEYS 整個換(表單跟著分頁)", formSeq: "radio 群組名流水號(全 app 一組,兩條分頁的表單名字不撞)" },
   "trade.js": { TR_AS_SAVED: "自動下單頁", TR: "同上", trTipSeq: "同上", trHistTipEl: "同上", trHistTipAt: "同上", trHistTipOpened: "同上", trHistTipQuiet: "同上", trCvHide: "同上", trCvEscN: "同上", cxOpener: "同上", psOpener: "同上", psMode: "同上", psToAmt: "同上", psFromWhy: "同上", psLoading: "同上", ENV_COMPOSING: "輸入法" },
-  "versions.js": { vcSeq: "版本頁", vcSide: "同上" }, "promptslot.js": { SLOT_ST: "側欄提示格(全 app 一格)", SLOT_SHOW_DAY: "同上", SLOT_POP_KEY: "同上(pop 內容照登入狀態與語言建)", SLOT_WHO_HOST: "同上(已登入那步的字,email 晚到原地補)", SLOT_WHO: "同上" },
+  "versions.js": { vcSeq: "版本頁", vcSide: "同上" }, "promptslot.js": { SLOT_SHOW_DAY: "左下角手機圖示(全 app 一顆)", SLOT_POP_KEY: "同上(pop 內容照開關與語言建)", SLOT_WHO_HOST: "同上(已登入那步的字,email 晚到原地補)", SLOT_WHO: "同上" },
 };
 const FIELDS = {
   LIB: { pending: "SID", seq: "GLOBAL 清單請求流水號(丟掉晚到的舊回應)", noNew: "GLOBAL 灰字掛在那一支卡上", cloudWait: "GLOBAL 一次只等一支(換一支就放掉)",
@@ -135,7 +135,6 @@ const ANY = [   // 任何回合(機器層級的鎖;busyOn() = csAnyTurn())
   ["busy.js", /function busyOn\(\) \{ return typeof csAnyTurn === "function" \? csAnyTurn\(\) : typeof running !== "undefined" && running === true; \}/, "鎖本身"],
   ["busy.js", /if \(!busyOn\(\)\) \{ fn\(\); return; \}/, "停了再做"], ["busy.js", /if \(!busyOn\(\)\) \{ go\(\); return; \}/, "busyCut"], ["busy.js", /const on = busyOn\(\);/, "busySync"],
   ["chattabs.js", /if \(!csAnyTurn\(\)\) return;/, "回覆中的時長每秒進一格"], ["chattabs.js", /function csAnyTurn\(\) \{/, "定義"],
-  ["promptslot.js", /return \{ turn: csAnyTurn\(\), awaiting: csAnyAwait\(\),/, "側欄提示格:任何對話在回覆就不畫手機"],
   ["intro.js", /running: \(typeof csAnyTurn === "function" \? csAnyTurn\(\) : typeof running !== "undefined" && running === true\)/, "第一次對話 modal 不在任何回合中彈"],
   ["reports.js", /if \(!csAnyTurn\(\)\) RPT\.busyTold = false;/, "原因句"], ["trade.js", /busyLock\(d, busyOn\(\)\); d\.onBusy = \(\) => busyHit\("del"\);/, "雲端刪策略"],
   ["stratrename.js", /if \(typeof busyOn === "function" && busyOn\(\)\) return "strat\.renameLockTurn";/, "〔改名〕停用:同刪策略,任何回合(機器 rename_strategy 也是任何回合都拒);停用時講原因"],

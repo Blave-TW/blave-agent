@@ -379,24 +379,10 @@ def _send(method, path, env, body=None, params=None, retries=3, no_resend=False)
 
 # ── symbols / rules ─────────────────────────────────────────────────────────
 
-def _swap_inst(sym):
-    """Canonical dashless (BTCUSDT) → OKX swap instId (BTC-USDT-SWAP)."""
-    sym = (sym or "").replace("-", "").upper()
-    if sym.endswith("USDT"):
-        return f"{sym[:-4]}-USDT-SWAP"
-    if sym.endswith("USDC"):
-        return f"{sym[:-4]}-USDC-SWAP"
-    raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"cannot derive OKX swap instId from {sym!r}"))
+_OKX_CATEGORIES = {"1": "COIN", "3": "EQUITY", "4": "COMMODITY"}
 
-
-def _spot_inst(sym):
-    """Canonical dashless (BTCUSDT) → OKX spot instId (BTC-USDT)."""
-    sym = (sym or "").replace("-", "").upper()
-    if sym.endswith("USDT"):
-        return f"{sym[:-4]}-USDT"
-    if sym.endswith("USDC"):
-        return f"{sym[:-4]}-USDC"
-    raise ValueError(reject_token.tag(reject_token.SYMBOL_UNAVAILABLE, f"cannot derive OKX spot instId from {sym!r}"))
+# lib/data.fetch_okx_kline reads bars through the same two (lib/okx_inst)
+from lib.okx_inst import swap_inst as _swap_inst, spot_inst as _spot_inst  # noqa: E402
 
 
 def _instrument(env, inst_id, inst_type):
@@ -414,6 +400,9 @@ def _instrument(env, inst_id, inst_type):
             "active": r.get("state") == "live",
             # instCategory 3 = stocks; None when the reply has no category
             "equity": None if r.get("instCategory") is None else str(r["instCategory"]) == "3",
+            # 1 crypto / 3 stocks / 4 commodities (XAU, CL — measured 2026-11-14); other values
+            # (FX, bonds) are left to `equity` (lib/venue_wiring.instrument_gate)
+            "category": _OKX_CATEGORIES.get(str(r.get("instCategory"))),
         }
     return _rules_cache[inst_id]
 
@@ -431,6 +420,7 @@ def get_contract_rules(env, symbol):
         "price_tick": r["tick_sz"],
         "active": r["active"],
         "equity": r.get("equity"),
+        "category": r.get("category"),
     }
 
 

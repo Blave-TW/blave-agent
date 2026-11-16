@@ -41,6 +41,20 @@ account currency). Trait meanings:
                      so). The libs read the raw cell (verified_modes()), so a
                      deleted row or cell stays closed. Filled in by the backend in
                      the commit that merges the verified libs.
+
+Crypto cells, read by lib.venue_wiring.instrument_gate / kline_venue. Every crypto
+venue with a lib/order_<id>.py declares the two gate cells explicitly
+(tests/check_crypto_venue_traits.py), so a venue left out of a check says why here:
+  instrument_class   which classes its get_contract_rules "category" reports, compared
+                     with Binance's underlyingType before an entry on Binance bars:
+                     "coin_stock_commodity" (all three), "stock" (only a stock is
+                     citable; anything else falls back to the coin-vs-US-stock mirror
+                     on "equity"), None (not compared)
+  binance_name_gate  an entry on Binance bars into a ticker Binance does not list is
+                     refused: this venue names multiplied coins per coin (PEPEUSDT)
+                     where Binance's bars are per 1000 (1000PEPEUSDT)
+  native_kline       the lib.data fetcher that reads this venue's own contract (a
+                     strategy only on it is not compared with Binance)
 """
 
 CAPITAL = "capital"
@@ -72,7 +86,36 @@ TRAITS = {
         "verified_modes": ("classic", "uta"),
         "reference": "references/exchange-connect.md",
         "label": "Bitget",
+        # v3 symbolType / instrumentType stock|etf (lib/stock_perps.bitget_is_stock). Its
+        # metal class covers PAXGUSDT / XAUTUSDT, which Binance lists as coins (2026-10-28)
+        "instrument_class": "stock",
+        # multiplied-coin names not in references/lib.md's table: unverified, not gated
+        "binance_name_gate": False,
     },
+    # instCategory 1 crypto / 3 stocks / 4 commodities (measured 2026-11-14); PEPE-USDT-SWAP
+    # is per coin where Binance has 1000PEPEUSDT (references/lib.md, multiplied contracts)
+    "okx": {"label": "OKX", "native_kline": "fetch_okx_kline",
+            "instrument_class": "coin_stock_commodity", "binance_name_gate": True},
+    # contract_type "stocks" (lib/order_gateio). Its "metals" covers PAXG_USDT, a coin on
+    # Binance (2026-10-19). Name gate off until Gate.io has its own kline in lib.data: PEPE_USDT
+    # is per coin (references/lib.md), but refusing it — and every Gate-only coin or stock perp
+    # Binance does not list — would leave no bars to move to
+    "gateio": {"label": "Gate.io", "instrument_class": "stock", "binance_name_gate": False},
+    # symbolType stock / ETF (references/stock-perps.md); no commodity value verified.
+    # Name gate off: SHIB1000USDT is Binance's 1000SHIBUSDT spelled otherwise (a name check
+    # would refuse a matching contract); 10000SATSUSDT vs Binance 1000SATSUSDT is a real
+    # 10x gap this leaves ungated (references/lib.md, multiplied contracts)
+    "bybit": {"label": "Bybit", "instrument_class": "stock", "binance_name_gate": False},
+    # stock swaps are NCSK… names only lib/stock_perps maps to, never a coin's; own bars
+    "bingx": {"label": "BingX", "native_kline": "fetch_bingx_kline",
+              "instrument_class": None, "binance_name_gate": False},
+    # no class field read by its libs or documented (references/stockcoin-skill.md):
+    # unverified, not compared
+    "stockcoin": {"label": "StockCoin", "instrument_class": None, "binance_name_gate": False},
+    # the data source itself
+    "binance": {"label": "Binance", "instrument_class": None, "binance_name_gate": False},
+    # the simulator: no venue contract to compare with
+    "paper": {"instrument_class": None, "binance_name_gate": False},
     PRESIDENT: {
         "auto_wire": False,
         "hand_wired": True,

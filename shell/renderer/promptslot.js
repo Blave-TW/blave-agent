@@ -1,71 +1,34 @@
-/* 側欄提示格的手機那則(spec sidebar-prompt-slot-2026-11-03,沒登入也出與 pop 步驟改 spec slot-phone-steps-2026-11-05;canon › Components › 側欄提示格)。更新那則是 upPillPaint 畫的,這裡只讓路。
-   關閉狀態存主行程 ui-prefs(slotPhone,主行程驗形狀)。web 工作頁同一套規則,常數比對在 tests/check_web_desktop_parity.js */
-const SLOT_PH = { COOL_DAYS: 30, MAX_CLOSES: 2, SEEN_DAYS: 7, TRADE_QUIET_MIN: 30 };
-const SLOT_DAY_MS = 86400000;
-const slotDay = (ms) => { const d = new Date(ms), p = (n) => String(n).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); };
-const slotPhClosed = (p, now) => { const closes = p.closes + 1; return { closes, until: closes >= SLOT_PH.MAX_CLOSES ? 0 : now + SLOT_PH.COOL_DAYS * SLOT_DAY_MS, seenDays: [] }; };
-/* spec §3 不畫表:回第一條成立的代號,都不成立回 null */
-function slotPhBlock(b, now) {
-  if (b.turn) return "turn";
-  if (b.awaiting) return "await";
-  if (b.scrim) return "scrim";
-  if (b.tradeAt > 0 && now >= b.tradeAt && now - b.tradeAt < SLOT_PH.TRADE_QUIET_MIN * 60000) return "trade";
-  if (b.view) return "view";
-  if (b.p1 > 0) return "p1";
-  if (b.halt) return "halt";
-  if (b.charge) return "charge";
-  if (b.acctCard) return "acct";
-  if (b.rail) return "rail";
-  return null;
-}
-/* o:{ up(更新膠囊在出), ph(主行程 relay 狀態), prefs, blocks, now, seen(這次畫出算不算使用日:視窗看得到才算) }
-   回 { draw, why, patch(要存回去的 prefs,或 null) }。spec slot-phone-steps §2:沒登入不看開關、不看 paired_ever(relay.js 沒登入一律給 undefined);
-   已登入時 paired_ever 只認 false,讀不到(undefined、null)與配對過一樣不畫 */
+/* 左下角一列的手機圖示與它的步驟框(spec sidebar-conversion-2026-11-10 §3.2、§6.5;pop 內容 spec slot-phone-v2)。
+   出不出只看六條,沒有冷卻、關閉次數、使用日或不畫表;放不下(§4.3)時手機讓位,其餘三樣不動 */
+/* o:{ ph(主行程 relay 狀態), revoked(登入失效), rail(側欄收合), fits(這一列放得下四樣) } → { draw, why }。
+   主行程的 signedIn 只看有沒有 token,登入失效時仍是 true,所以 revoked 另外擋;paired_ever 只認 false,讀不到當作配對過 */
 function slotPhPlan(o) {
-  const no = (why, patch) => ({ draw: false, why, patch: patch || null });
-  if (o.up) return no("up");
-  const ph = o.ph, p = o.prefs;
-  if (!ph) return no("flag");
-  if (ph.signedIn === true) {
-    if (ph.visible !== true) return no("flag");
-    if (ph.pairedEver !== false) return no("paired");
+  const ph = o.ph, no = (why) => ({ draw: false, why });
+  if (!ph || ph.signedIn !== true) return no("out");
+  if (o.revoked) return no("revoked");
+  if (ph.visible !== true) return no("flag");
+  if (ph.pairedEver !== false) return no("paired");
+  if (o.rail) return no("rail");
+  if (!o.fits) return no("fit");
+  return { draw: true, why: null };
+}
+/* 這一列放不放得下:把看得到的每一樣的寬加左右 margin、再加列的 padding-left,跟列的 clientWidth 比。
+   不用 scrollWidth:透明熱區(::before 伸出 8–9)會被算進去。pop 是 position: fixed,不佔列寬 */
+function slotRowFits(row) {
+  if (!row || !row.clientWidth) return false;   // 列沒排出來(細軌、還沒顯示):等 ResizeObserver 在它有寬時再算
+  const cs = (el) => getComputedStyle(el);
+  let need = parseFloat(cs(row).paddingLeft) || 0;
+  for (const el of row.children) {
+    if (el.hidden) continue;
+    const c = cs(el); if (c.display === "none" || c.position === "fixed") continue;
+    need += el.getBoundingClientRect().width + (parseFloat(c.marginLeft) || 0) + (parseFloat(c.marginRight) || 0);
   }
-  if (!p) return no("prefs");
-  if (p.closes >= SLOT_PH.MAX_CLOSES) return no("closed");
-  if (p.until > o.now) return no("cooling");
-  const why = slotPhBlock(o.blocks || {}, o.now);
-  if (why) return no(why);
-  if (!o.seen) return { draw: true, why: null, patch: null };
-  const today = slotDay(o.now);
-  if (p.seenDays.includes(today)) return { draw: true, why: null, patch: null };
-  if (p.seenDays.length >= SLOT_PH.SEEN_DAYS) return no("unclicked", slotPhClosed(p, o.now));   // 第 7 天要整天出得來:第 8 個使用日才收
-  return { draw: true, why: null, patch: { ...p, seenDays: p.seenDays.concat(today) } };
+  return need <= row.clientWidth + 0.5;   // 次像素誤差
 }
-
-/* ── 畫面 ── */
-let SLOT_ST = null, SLOT_SHOW_DAY = "";
-async function slotLoad() {
-  try { SLOT_ST = (await window.blave.slotState()) || null; } catch (_) { SLOT_ST = null; }
-  slotPaint();
-}
-function slotSave(patch) {
-  if (SLOT_ST) SLOT_ST.phone = patch;
-  Promise.resolve().then(() => window.blave.slotPhoneSet(patch)).catch(() => {});
-}
-function slotBlocks() {
-  const st = SLOT_ST || {};
-  return { turn: csAnyTurn(), awaiting: csAnyAwait(), scrim: [...document.querySelectorAll(".scrim")].some((x) => !x.hidden),
-    tradeAt: st.tradeAt, view: !$("tr").hidden || !$("po").hidden, p1: st.p1,
-    halt: ["local", "cloud"].some((k) => { const r = TR_BAGS[k].st && TR_BAGS[k].st.report; return !!(r && r.halt && r.halt.halted); }),
-    charge: dataAccessOf(acct) === "payment_failed",
-    acctCard: !!(acctCard && acctCard.el.isConnected) || creditCards.some((c) => c.el && c.el.isConnected),
-    rail: document.documentElement.classList.contains("ws-sc") };
-}
-/* pop 內容(spec slot-phone-steps §3,號碼盤三態改 spec slot-phone-v2 §2–3):沒登入〔登入 Blave〕、下載、配對;已登入 打勾的已登入、QR 加兩個商店、在 App 按〔對話〕。
-   兩種都在最後接「按〔打開〕」(「允許手機對話」已開就不列,同意框不會再問)。電腦版只看得到登不登入:只有第 1 步能打勾,
-   下載 App 之後的進度看不到,所以 now 永遠只有一步、後面都是 next,不假裝有進度。
+/* pop 內容(spec slot-phone-v2 §2–3;0.1.54 起手機圖示只對已登入的人出,只剩這一版):打勾的已登入、QR 加兩個商店、在 App 按〔對話〕,
+   最後接「按〔打開〕」(「允許手機對話」已開就不列,同意框不會再問)。下載 App 之後的進度看不到,所以 now 永遠只有一步、後面都是 next,不假裝有進度。
    email 要等 account_status 帶回來才出(api 還沒給時只寫「已登入」);晚到只原地補那一行(slotWhoPaint),不重建、不搬焦點。
-   登入狀態、開關或語言變了才重建;開著時原地換、不收,焦點本來在 pop 裡(登入鈕被拿掉後掉到 BODY)就接到 pop 第一個能按的 */
+   開關或語言變了才重建;開著時原地換、不收,焦點本來在 pop 裡就接到 pop 第一個能按的 */
 let SLOT_POP_KEY = "", SLOT_WHO_HOST = null, SLOT_WHO;
 function slotWhoPaint(email) {
   if (!SLOT_WHO_HOST || SLOT_WHO === email) return;
@@ -76,9 +39,9 @@ function slotWhoPaint(email) {
 }
 const SLOT_CHECK = "M20 6 9 17l-5-5";   // Lucide check
 function slotPopPaint() {
-  const signedIn = !!(PH && PH.signedIn === true), allowOn = !!(PH && PH.on === true);
-  const email = signedIn && acct && typeof acct.email === "string" ? acct.email.trim() : "";
-  const key = signedIn + "|" + allowOn + "|" + LANG;
+  const allowOn = !!(PH && PH.on === true);
+  const email = acct && typeof acct.email === "string" ? acct.email.trim() : "";
+  const key = allowOn + "|" + LANG;
   if (SLOT_POP_KEY === key) { slotWhoPaint(email); return; }
   SLOT_POP_KEY = key;
   const pop = $("ph-pop"), a = document.activeElement, refocus = !pop.hidden && (a === document.body || pop.contains(a));
@@ -100,28 +63,18 @@ function slotPopPaint() {
   const say = (k) => { const el = mk("span", "ph-t");
     t(k).split(nwRe).forEach((part, i) => { if (part) el.append(i % 2 ? mk("span", "ph-nw", part) : document.createTextNode(part)); });
     return el; };
-  SLOT_WHO_HOST = null; SLOT_WHO = undefined;
-  if (!signedIn) {
-    const b = signInLabel(mk("button", "btn-out"), t("pv.signin")); b.type = "button";
-    b.addEventListener("click", () => { if (!planLoginBusy && !oauthPending) trackFeature("slot_ph_login"); planSignIn(b); });   // 等待中再按是取消,不算一次登入
-    const cell = mk("span"); cell.append(b);
-    step("now", cell).classList.add("btn");
-    step("next", mk("span", "ph-t", t("ph.stepGet")));
-    step("next", mk("span", "ph-t", t("ph.stepPair")));
-  } else {
-    SLOT_WHO_HOST = mk("span", "ph-t"); slotWhoPaint(email);
-    step("done", SLOT_WHO_HOST);
-    const plate = mk("span", "ph-plate"), img = mk("img"), links = mk("div", "ph-links");
-    img.src = "qr-app.svg"; img.alt = ""; img.width = img.height = 112; plate.append(img);   // 內容 https://blave.org/app?src=desktop,依裝置分流商店
-    for (const ios of [true, false]) {
-      const go = mk("button", "btn-quiet", t(ios ? "mv.appIos" : "mv.appAndroid")); go.type = "button";
-      go.addEventListener("click", () => { trackFeature(ios ? "app_link_ios" : "app_link_android"); window.blave.openExternal(ios ? MV_APP_IOS : MV_APP_ANDROID); });
-      links.append(go);
-    }
-    const body = mk("div", "ph-body"); body.append(plate, links);
-    step("now", mk("span", "ph-t", t("ph.stepGet")), body);
-    step("next", say("ph.stepChat"));
+  SLOT_WHO_HOST = mk("span", "ph-t"); SLOT_WHO = undefined; slotWhoPaint(email);
+  step("done", SLOT_WHO_HOST);
+  const plate = mk("span", "ph-plate"), img = mk("img"), links = mk("div", "ph-links");
+  img.src = "qr-app.svg"; img.alt = ""; img.width = img.height = 112; plate.append(img);   // 內容 https://blave.org/app?src=desktop,依裝置分流商店
+  for (const ios of [true, false]) {
+    const go = mk("button", "btn-quiet", t(ios ? "mv.appIos" : "mv.appAndroid")); go.type = "button";
+    go.addEventListener("click", () => { trackFeature(ios ? "app_link_ios" : "app_link_android"); window.blave.openExternal(ios ? MV_APP_IOS : MV_APP_ANDROID); });
+    links.append(go);
   }
+  const body = mk("div", "ph-body"); body.append(plate, links);
+  step("now", mk("span", "ph-t", t("ph.stepGet")), body);
+  step("next", say("ph.stepChat"));
   if (!allowOn) step("next", say("ph.stepAllow"));
   pop.replaceChildren(ol);
   if (refocus) { const f = pop.querySelector("button"); if (f) f.focus(); }
@@ -132,47 +85,43 @@ function slotPopClose(refocus) {
   $("ph-pop").hidden = true; $("ph-pill").setAttribute("aria-expanded", "false");
   if (refocus) $("ph-pill").focus();
 }
+let SLOT_SHOW_DAY = "";
+/* 叫的地方:主行程推 relay 狀態、帳號那一格重畫(登入、語言、方案)、更新圓鈕出現或消失、列寬變了(ResizeObserver,含收合與展開)。
+   先放出來量,放不下就在同一拍收回去,畫面上不會閃 */
 function slotPaint() {
-  const wrap = $("ph-slot"); if (!wrap) return;
-  const seen = document.visibilityState === "visible";
-  const plan = slotPhPlan({ up: upPillNow().show, ph: PH, prefs: SLOT_ST && SLOT_ST.phone, blocks: slotBlocks(), now: Date.now(), seen });
-  if (plan.patch) slotSave(plan.patch);
+  const pill = $("ph-pill"), row = $("foot-row"); if (!pill || !row) return;
+  pill.title = t("ph.slot"); pill.setAttribute("aria-label", t("ph.slot"));
+  const base = { ph: PH, revoked: typeof authRevoked === "function" && authRevoked(), rail: document.documentElement.classList.contains("ws-sc") };
+  const a = document.activeElement, had = pill.contains(a) || (slotPopOpen() && $("ph-pop").contains(a));
+  let plan = slotPhPlan({ ...base, fits: true });
+  if (plan.draw) { pill.hidden = false; plan = slotPhPlan({ ...base, fits: slotRowFits(row) }); }
   if (!plan.draw) {
-    const had = !wrap.hidden && wrap.contains(document.activeElement);
-    wrap.hidden = true; slotPopClose(false);
-    if (had) $("ws-conn").focus();   // 同 ×:膠囊整個收掉(登入後發現配對過、開關沒開),焦點接到下面的〔設定〕,不掉到 BODY
+    pill.hidden = true; slotPopClose(false);
+    if (had) (base.rail ? $("rail-set") : $("ws-conn")).focus();   // 圖示整個收掉:焦點接到齒輪,不掉到 BODY
     return;
   }
-  wrap.hidden = false;
   slotPopPaint();
-  if (seen) { const d = slotDay(Date.now()); if (SLOT_SHOW_DAY !== d) { SLOT_SHOW_DAY = d; trackFeature("slot_ph_show"); } }
+  if (document.visibilityState === "visible") { const d = new Date().toDateString(); if (SLOT_SHOW_DAY !== d) { SLOT_SHOW_DAY = d; trackFeature("slot_ph_show"); } }
 }
 $("ph-pill").addEventListener("click", () => {
   if (slotPopOpen()) { slotPopClose(true); return; }
-  // 側欄 overflow:hidden、最窄 180 比 popover 窄:fixed 才不被裁,位置開的時候量
+  // 側欄 overflow:hidden、最窄 180 比 popover 窄:fixed 才不被裁,位置開的時候量;左緣對齊圖示、往上開
   slotPopPaint();
   const r = $("ph-pill").getBoundingClientRect(), pop = $("ph-pop");
   pop.style.left = r.left + "px"; pop.style.bottom = window.innerHeight - r.top + 8 + "px";
   pop.hidden = false; $("ph-pill").setAttribute("aria-expanded", "true");
   trackFeature("slot_ph_open");
-  if (SLOT_ST && SLOT_ST.phone) slotSave({ ...SLOT_ST.phone, seenDays: [] });   // 按過就不算「連 7 個使用日沒按」
-});
-$("ph-x").addEventListener("click", () => {
-  if (!SLOT_ST || !SLOT_ST.phone) return;
-  trackFeature("slot_ph_close");
-  slotSave(slotPhClosed(SLOT_ST.phone, Date.now()));
-  slotPaint();
-  $("ws-conn").focus();   // 膠囊跟 × 都收掉了:焦點接到下面的〔設定〕,不掉到 BODY
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && slotPopOpen()) { e.stopPropagation(); slotPopClose(true); } }, true);
-// 點外面收:焦點回膠囊;點到輸入框這類會接焦點的就留在那,不把人正要打字的地方搶走
+// 點外面收:焦點回圖示;點到輸入框這類會接焦點的就留在那,不把人正要打字的地方搶走
 document.addEventListener("pointerdown", (e) => {
   if (!slotPopOpen() || $("ph-pop").contains(e.target) || $("ph-pill").contains(e.target)) return;
   slotPopClose(false);
   setTimeout(() => { if (document.activeElement === document.body) $("ph-pill").focus(); }, 0);
 }, true);
 window.addEventListener("resize", () => slotPopClose(false));
-/* 不畫表的條件散在十幾個地方、大多沒有事件可接:一秒看一次(只讀旗標,變了才動畫面)。主行程那份(下單時間、第一次回覆、P1)十秒拿一次 */
-Promise.resolve().then(() => phStateLoad()).then(slotLoad).catch(() => {});
-setInterval(slotPaint, 1000);
-setInterval(slotLoad, 10000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") slotPaint(); });   // 看不到時畫出的不算曝光:回來補記
+/* 列寬變了(拖側欄、收合／展開、進工作頁)、或列裡哪一樣變寬變窄(換語言、帳號狀態、更新出現):重畫帳號那一格(它排出來才算曝光)、
+   再重算手機放不放得下(sideCvPaint 結尾會叫 slotPaint)。手機自己不觀察:它在同一拍裡放出又收回,大小沒變,不會自己觸發自己 */
+if (typeof ResizeObserver === "function") { const ro = new ResizeObserver(() => (typeof sideCvPaint === "function" ? sideCvPaint() : slotPaint())); ["foot-row", "side-cv", "side-note", "up-pill"].forEach((id) => { if ($(id)) ro.observe($(id)); }); }
+Promise.resolve().then(() => phStateLoad()).then(slotPaint).catch(() => {});

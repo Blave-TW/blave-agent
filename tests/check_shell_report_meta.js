@@ -1,7 +1,7 @@
 // 報告頁「回測」分頁的頁首那一行(report-backtest.js buildMeta)與指標(設計稽核 005 第 1 條,電腦版那一半)。
 // 用隨包的 Electron 開真的 index.html,直接叫 window.BlaveReport.renderBacktest:
-//   ① 舊的投資組合(Type C)stats.json:沒有 symbol、只有小數的 fee → 「手續費 0.05%」(fee × 100),開頭沒有多一個「·」
-//   ② 有 fee [%] 就用它(不拿 fee 覆蓋);兩個都沒有 → 整段不出(不畫「手續費 —」)
+//   ① 舊的投資組合(Type C)stats.json:沒有 symbol、只有小數的 fee → 「交易成本 0.05%」(fee × 100),開頭沒有多一個「·」
+//   ② 有 fee [%] 就用它(不拿 fee 覆蓋);兩個都沒有 → 整段不出(不畫「交易成本 —」)
 //   ③ runner 現在替 Type C 寫 Sortino / Omega:有值就照畫;舊檔沒有 → 「—」(真的缺值)
 // 跑法:node tests/check_shell_report_meta.js(找不到 shell/node_modules 的 Electron 就 SKIP)
 const path = require("path"), fs = require("fs");
@@ -43,7 +43,10 @@ app.whenReady().then(async () => {
   const render = (st) => js(`(() => { const box = document.createElement("div"); document.body.appendChild(box); window.BlaveReport.renderBacktest(box, ${JSON.stringify(st)});
     const m = box.querySelector(".bt-meta");
     const val = (k) => { const row = [...box.querySelectorAll(".bt-mrow")].find((r) => (r.querySelector(".mp-tip") || r.querySelector(".bt-mk")).textContent === t(k)); return row ? row.querySelector(".bt-mv").textContent : null; };
-    const out = { meta: m ? m.textContent : null, first: m && m.firstChild ? m.firstChild.className : null, sortino: val("bt.sortino"), omega: val("bt.omega") };
+    // 畫面上看得到的字:「交易成本」的說明泡泡(.tip)滑過才出,不算進頁首那一行
+    const vis = m ? (() => { const c = m.cloneNode(true); c.querySelectorAll(".tip").forEach((x) => x.remove()); return c.textContent; })() : null;
+    const tipEl = m && m.querySelector(".mp-tip + .tip");
+    const out = { meta: vis, tip: tipEl ? tipEl.textContent : null, first: m && m.firstChild ? m.firstChild.className : null, sortino: val("bt.sortino"), omega: val("bt.omega") };
     box.remove(); return out; })()`);
   const fee = await js(`t("bt.fee")`);
 
@@ -54,11 +57,12 @@ app.whenReady().then(async () => {
 
   r = await render({ ...TYPEC_OLD, "fee [%]": 0.1, "Sortino Ratio": 1.234, "Omega Ratio": 1.5 });
   ok("② 有 fee [%] 就用它(0.10%),不被小數的 fee 覆蓋", r.meta.includes(fee + "0.10%") && !r.meta.includes("0.05%"));
+  ok("② 交易成本的說明泡泡講含手續費、稅、滑價,每邊用的是同一個數字(0.10%)", r.tip === (await js(`t("bt.tip.fee", { fee: "0.10" })`)), r.tip);
   ok("③ runner 新寫的 Type C 有 Sortino / Omega:照畫", r.sortino === "1.23" && r.omega === "1.50");
 
   const noFee = { ...TYPEC_OLD }; delete noFee.fee;
   r = await render(noFee);
-  ok("② 兩個都沒有:手續費那一段整段不出(不畫「手續費 —」)", r.meta && !r.meta.includes(fee));
+  ok("② 兩個都沒有:交易成本那一段整段不出(不畫「交易成本 —」)", r.meta && !r.meta.includes(fee));
   r = await render({ ...TYPEC_OLD, fee: "0.0005" });
   ok("② fee 不是數字(壞值):不拿來算", r.meta && !r.meta.includes(fee));
   r = await render({ ...TYPEC_OLD, symbol: "BTCUSDT" });

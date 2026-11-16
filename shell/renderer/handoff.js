@@ -124,6 +124,21 @@ function hoErr(r) {
   if (r.kind === "undelivered") return { key: "$send" };
   return { key: "ho.err.retry" };
 }
+/* 拉回那一跑的進度(主行程 main.js transferProgress 抽好的值),這裡逐欄再驗一次;不合就 null,句子維持原句 */
+function hoProgOf(p) {
+  if (!p || typeof p !== "object") return null;
+  const int = (x, lo, hi) => Number.isInteger(x) && x >= lo && x <= hi;
+  if (typeof p.data !== "string" || !/^[A-Za-z0-9_.-]{1,40}(?: [0-9]{1,4}[A-Za-z]{1,4})?$/.test(p.data)) return null;
+  if (!int(p.n, 2, 99999) || !int(p.i, 1, p.n - 1) || !int(p.left, 0, 86400)) return null;
+  return { data: p.data, i: p.i, n: p.n, left: p.left };
+}
+/* 拉回送出成功、這台電腦開始跑之後,自動切到這台電腦打開存成的那一支(dest)。只在拉回、而且還在跑或已跑完時切;
+   人送出後已經離開來源那一頁(cur／viewing 不是雲端的那一支)就不搶。typing = 人正在打字(hoTyping):
+   切過去會換掉下一句送出的對象、搶走焦點,改由〔到這台電腦看〕讓人自己按 */
+function hoAutoSwitch(job, cur, viewing, typing) {
+  return !!job && job.dir === "down" && (job.phase === "run" || job.phase === "done") && typeof job.dest === "string" && HO_ID_RE.test(job.dest)
+    && cur === "cloud" && viewing === job.id && !typing;
+}
 /* ── 純邏輯到此 ── */
 
 /* Type B(警示、選股、網格…)沒有回測:搬過去之後是「確認它跑得起來」(會下單的不試跑、只檢查),確認框與送出去的那句都不提回測(e2e 0.1.8:框寫「重跑一次回測」、
@@ -168,26 +183,21 @@ function hoPaint() {
   const has = show || !!(sv && (sv.btn || sv.word || sv.mark));
   // 重畫時焦點留在原來那顆(同一個 id 就地換字);那顆不在了交給策略名,不掉到 BODY。#rp-go／#rp-ho 節點沿用:確認框關掉要還焦點給它
   const had = act.contains(document.activeElement) ? document.activeElement.id : null, ho0 = $("rp-ho");
-  const keep = { go: $("rp-go"), ho: ho0 && ho0.dataset.dir === dir ? ho0 : null };   // 換了視角(雲朵 icon ↔「拉回」文字鈕)就重建,不沿用另一種的節點
+  const keep = { go: $("rp-go"), ho: ho0 && ho0.dataset.dir === dir ? ho0 : null };   // 換了視角(送上雲端 ↔ 拉回)就重建,不沿用另一個方向的節點
   act.hidden = !has || verHide; act.textContent = "";
   if (typeof spPaintNote === "function") spPaintNote(act.hidden ? null : sv && sv.note);
   // 搬家那一行最後畫:那一格的優先序是搬家 ＞ 主鈕原因句(spPaintNote 剛寫的)＞ 停機句
   if (act.hidden) { hoJobPaint(); if (had) $("rp-name").focus(); return; }
   if (sv && typeof spPaintAct === "function") spPaintAct(act, sv, keep.go);
   if (show) {
-    // 這台電腦這邊是無底的雲朵 icon 鈕(spec §4 icon 鈕:只有「送上雲端」一態),tooltip 跟 aria-label 同字;雲端那邊的「拉回這台電腦」維持文字鈕
+    // 兩邊都是無底 icon 鈕(spec §4 icon 鈕;0.1.54 拉回也改成 icon):tooltip 跟 aria-label 同字、不另掛原生 title,策略名已在頁首
     const b = keep.ho || document.createElement("button"); b.type = "button"; b.id = "rp-ho"; b.dataset.dir = dir; b.dataset.id = B.name; b.textContent = "";
-    if (!keep.ho) b.addEventListener("click", () => { if (b.dataset.dir === "up") trackFeature("sp_cloud_icon"); hoAsk(b.dataset.dir, b.dataset.id, b); });
-    if (cloud) {
-      b.className = "btn-out has-ic"; const l = document.createElement("span"); l.textContent = t("ho.down.btn"); b.append(hoIcon(dir), l);
-      const full = t("ho.down.aria") + (LANG === "zh" ? "：" : ": ") + hoLabel(B.name, envCloudList(TR_BAGS.cloud.st)); b.title = full; b.setAttribute("aria-label", full); b.removeAttribute("aria-describedby");
-      act.appendChild(b);
-    } else {
-      b.className = "rp-ic"; b.title = ""; b.setAttribute("aria-label", t("ho.up.btn")); b.setAttribute("aria-describedby", "rp-ho-tip"); b.appendChild(hoIcon(dir));
-      const w = document.createElement("span"); w.className = "rp-icw";
-      const tip = document.createElement("span"); tip.className = "tip"; tip.id = "rp-ho-tip"; tip.setAttribute("role", "tooltip"); tip.textContent = t("ho.up.btn");
-      w.append(b, tip); act.appendChild(w);
-    }
+    if (!keep.ho) b.addEventListener("click", () => { if (b.dataset.dir === "up") trackFeature("sp_cloud_icon"); else trackFeature("sp_pull_icon"); hoAsk(b.dataset.dir, b.dataset.id, b); });
+    const label = t(cloud ? "ho.down.aria" : "ho.up.btn");
+    b.className = "rp-ic"; b.removeAttribute("title"); b.setAttribute("aria-label", label); b.setAttribute("aria-describedby", "rp-ho-tip"); b.appendChild(hoIcon(dir));
+    const w = document.createElement("span"); w.className = "rp-icw";
+    const tip = document.createElement("span"); tip.className = "tip"; tip.id = "rp-ho-tip"; tip.setAttribute("role", "tooltip"); tip.textContent = label;
+    w.append(b, tip); act.appendChild(w);
     hoBusy();
   }
   hoJobPaint();
@@ -322,13 +332,19 @@ async function hoRun(dir, id, to, typeB, srcData) {
   if (!r || !r.ok) { job.phase = r && r.kind === "unknown" ? "unknown" : "fail"; job.err = hoErr(r); job.res = r; hoJobPaint(); return; }
   trackFeature(dir === "up" ? "handoff_cloud" : "handoff_pull");   // ack 成功才算用過
   const res = r.result && typeof r.result === "object" ? r.result : {};
-  job.dest = HO_ID_RE.test(String(res.dest)) ? res.dest : to; job.res = res;
+  job.dest = typeof res.dest === "string" && HO_ID_RE.test(res.dest) ? res.dest : to; job.res = res;
   if (res.run === "trial" || res.type === "B") job.typeB = true; else if (res.run === "backtest") job.typeB = false;   // 機器判的型別為準
   job.missing = Array.isArray(r.missing) ? r.missing.filter((x) => typeof x === "string").slice(0, 8) : [];
   job.left = r.exported && Array.isArray(r.exported.left_behind) ? r.exported.left_behind.filter((x) => typeof x === "string").slice(0, 8) : [];
-  if (dir === "down") stratRefresh(false);                          // 新的那支出現在這台電腦的清單
   job.phase = res.run === "keys_failed" || job.missing.length ? "keys" : res.run === "not_run" ? "notrun" : "run";
+  // 新的那支出現在這台電腦的清單(切過去時側欄那一列要在);讀清單失敗不能卡住搬家那一行與輪詢
+  if (dir === "down") { try { await stratRefresh(false); } catch (_) { /* next stratRefresh catches up */ } }
+  if (HO.jobs.get(key) !== job) return;
+  // 切過去之後搬家那一行在這台電腦那一頁照畫(hoJobOwns 認 dest),雲端那一頁切回去也還在;正在打字就不切、改給〔到這台電腦看〕
+  const typing = typeof chatTyping === "function" && chatTyping();
+  if (!hoAutoSwitch(job, ENV.cur, RPC.name, typing) && typing && hoAutoSwitch(job, ENV.cur, RPC.name, false)) job.offerGo = true;
   hoJobPaint();
+  if (hoAutoSwitch(job, ENV.cur, RPC.name, typing)) hoGoDest(job);
   // 有背景跑才等:缺金鑰的那一跑多半會以 DATA 失敗,畫面照「金鑰沒搬」講,跑完照樣收結果;金鑰寫失敗(keys_failed)與 not_run 沒有那一跑
   if (res.run === "backtest" || res.run === "trial") hoPoll(job);
 }
@@ -345,26 +361,48 @@ async function hoPoll(job) {
     } catch (_) { d = null; }
     const tr = d && d.transfer && typeof d.transfer === "object" ? d.transfer : null;
     const keys = job.phase === "keys";
+    if (job.dir === "down" && !keys && tr && tr.status === "running") {
+      const pg = hoProgOf(tr.progress);
+      if (JSON.stringify(pg) !== JSON.stringify(job.prog || null)) { job.prog = pg; hoJobPaint(); }
+    }
     if (d && job.typeB && tr && tr.status !== "running") { if (!keys) { job.phase = "done"; job.trial = tr; } else return; }   // 試跑出錯也是結果(exit 不是 0)
     else if (d && tr && tr.status === "failed") { if (!keys) { job.phase = "fail"; job.err = { key: "ho.err.run", vars: { dest: job.dest, why: (HO_WHY[tr.err] || HO_WHY.EXIT)() } }; } else return; }
     else if (d && !job.typeB && !tr && d.stats) { job.phase = "done"; job.dst = d.stats; }
     else if (Date.now() - job.t0 > HO_POLL_MAX_MS) { if (!keys) { job.phase = "fail"; job.err = { key: "ho.err.slow", vars: { dest: job.dest } }; } else return; }
     else continue;
     hoJobPaint();
+    // 人正看著拉回來的那一支:跑完(或失敗)原地重讀,回測結果跟著出來,「還沒有回測」那一格也換掉。
+    // 沒有回測時分頁停在程式碼(rpShowTab 記進 RP.tab),回測跑完要落在回測分頁
+    if (job.dir === "down" && ENV.cur === "local" && RP.name === job.dest) { if (job.phase === "done" && !job.typeB) RP.tab = "bt"; stratReload(job.dest); }
   }
 }
-// 正在看的這一支有沒有搬家紀錄(來源那一支:這台電腦 = 送上雲端,雲端 = 拉回)
+// 這台電腦的 name 是不是拉回來、第一次回測還在跑的那一支(app.js rpNobtPaint 問)
+function hoPullRunning(name) {
+  for (const j of HO.jobs.values()) if (j.dir === "down" && j.dest === name && j.phase === "run") return true;
+  return false;
+}
+/* 正在看的這一支有沒有搬家紀錄:來源那一支(這台電腦 = 送上雲端,雲端 = 拉回),或這台電腦上拉回來存成的那一支(dest;自己的送上雲端優先) */
 function hoJobOwns() {
   const cloud = ENV.cur === "cloud", B = cloud ? RPC : RP;
-  return B.name ? HO.jobs.get((cloud ? "down" : "up") + ":" + B.name) || null : null;
+  if (!B.name) return null;
+  const own = HO.jobs.get((cloud ? "down" : "up") + ":" + B.name);
+  if (own || cloud) return own || null;
+  for (const j of HO.jobs.values()) if (j.dir === "down" && j.dest === B.name) return j;
+  return null;
 }
-/* 搬家那一行要講什麼 → { text, spin, acts:[動作代號], cmp:hoCompare 的結果或 null }。只算、不碰 DOM(hoJobPaint 畫)。
+/* 搬家那一行要講什麼 → { text, tail, after, spin, acts:[動作代號], cmp:hoCompare 的結果或 null }。只算、不碰 DOM(hoJobPaint 畫)。
+   tail = 會一直變的進度(段數、秒數),畫在 aria-hidden 裡:role=status 只唸 text,不每 6 秒整句重唸(同 app.js busySet);after = 接在 tail 後面的固定句
    句子帶存到哪一邊({at});「兩邊資料來源不同」只在結論不一致時講;動作代號:cmp 看兩邊數字、src 去資料來源、dest 到那一邊看、dismiss 收起 */
-function hoJobView(j) {
+function hoJobView(j, here) {
   const d = j.dir, K = HO_K[d], v = { dest: j.dest || j.to, to: j.to, at: d === "up" ? t("ho.at.up") : t("ho.at.down") };
-  const end = ["send", "run"].indexOf(j.phase) < 0, out = { text: "", spin: !end, acts: [], cmp: null };
+  const end = ["send", "run"].indexOf(j.phase) < 0, out = { text: "", tail: null, after: "", spin: !end, acts: [], cmp: null };
   const sep = LANG === "zh" ? "" : " ";   // 兩句相接:中文句號後不加半形空格
   if (j.phase === "send") out.text = K.send();
+  else if (j.phase === "run" && !j.typeB && j.prog && here) {
+    // 存成的那一支上講進度;left 只是這份資料抓完的時間(lib/progress.py),時長寫法照 canon Numbers(app.js fmtDur)
+    out.text = t("ho.prog");
+    out.tail = (LANG === "zh" ? "：" : ": ") + t("ho.prog.step", { data: j.prog.data, i: j.prog.i, n: j.prog.n, left: fmtDur(Math.max(1, j.prog.left)) });
+  } else if (j.phase === "run" && !j.typeB && j.prog) out.text = t("ho.prog.at", v);   // 雲端來源那一頁只講存到哪、在回測,不帶段數
   else if (j.phase === "run") out.text = (j.typeB ? K.trial : K.run)(v);
   else if (j.phase === "unknown") out.text = t("ho.err.unknown", v);
   else if (j.phase === "fail") out.text = j.err && j.err.key === "$send" ? trSendError(j.res, "handoff", "cloud") || t("ho.err.retry") : t((j.err && j.err.key) || "ho.err.retry", Object.assign({}, v, (j.err && j.err.vars) || {}));
@@ -383,8 +421,8 @@ function hoJobView(j) {
     out.text = (c.period ? HO_DONE.period : HO_DONE[c.state])(v) + (c.state === "differs" ? sep + t("ho.cmp.noise") : "");
     if (c.state !== "none") { out.cmp = c; out.acts.push("cmp"); }
   }
-  if (j.left.length) out.text += sep + t("ho.left", { x: j.left.join(", ") });
-  if (end && j.dest) out.acts.push("dest");
+  if (j.left.length) { const l = sep + t("ho.left", { x: j.left.join(", ") }); if (out.tail) out.after = l; else out.text += l; }
+  if ((end || j.offerGo) && j.dest && !here) out.acts.push("dest");   // here = 人就在存成的那一支上,〔到這台電腦看〕多餘;offerGo = 因為在打字沒自動切
   if (end) out.acts.push("dismiss");
   return out;
 }
@@ -399,12 +437,16 @@ function hoJobPaint() {
     return false;
   }
   const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const view = hoJobView(j);
-  if (n.hidden || n.textContent !== view.text || !!n.querySelector(".spin16") !== view.spin) {
-    delete n.dataset.busy; n.classList.remove("err"); n.textContent = ""; n.hidden = false;
+  const view = hoJobView(j, j.dir === "down" && ENV.cur === "local");
+  // 唸的部分(.ho-say 與 after)沒變就只換 aria-hidden 的進度字;那一格被別人寫過(.ho-say 不在)就整行重畫
+  const say = n.querySelector(".ho-say"), tail = n.querySelector(".ho-tail"), key = view.text + "\u0000" + view.after;
+  if (n.hidden || !say || n.dataset.hoSay !== key || !!tail !== !!view.tail || !!n.querySelector(".spin16") !== view.spin) {
+    delete n.dataset.busy; n.classList.remove("err"); n.textContent = ""; n.hidden = false; n.dataset.hoSay = key;
     if (view.spin) { const sp = mk("span", "spin16"); sp.setAttribute("aria-hidden", "true"); n.appendChild(sp); }
-    n.append(view.text);
-  }
+    n.appendChild(mk("span", "ho-say", view.text));
+    if (view.tail) { const tl = mk("span", "ho-tail", view.tail); tl.setAttribute("aria-hidden", "true"); n.appendChild(tl); }
+    if (view.after) n.append(view.after);
+  } else if (tail && tail.textContent !== view.tail) tail.textContent = view.tail;
   const sig = view.acts.join() + "|" + j.dir + ":" + j.id;
   if (acts.dataset.sig !== sig) {
     acts.dataset.sig = sig; acts.textContent = "";

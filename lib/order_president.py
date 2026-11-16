@@ -121,7 +121,18 @@ _REDUCE_REJECTED = {"9868"}
 # Read as 'unknown' it was parked; it is a plain refusal (not the over-close above: the lots are
 # still open). Only safe together with the close hold (lib/tw_clock.close_hold) and the window
 # gate below: a refused close is sent again at the next round, each send its own login.
-_SESSION_REJECTED = {"9876"}
+# 9901 is the same refusal outside the session. Both raise SessionClosed with from_broker set (Wei
+# 11-14): the broker itself said the market is shut — a holiday or a typhoon the clock cannot know —
+# so close-all reports the close as failed (manager/flatten._refuse_tw_futures) and the reconciler
+# waits for the next session instead of logging in every minute. 9902 and the other 99xx stay plain refusals.
+_SESSION_REJECTED = {"9876", "9901"}
+_SESSION_NOT_OPEN_RE = re.compile(r"statuscode=9902\b")   # 尚未開始接收委託: placed nothing either
+# 9876 names one product (該商品交易時間已結束 — e.g. the expiring month after 13:30 on a settlement day,
+# the other months still trading): only that contract waits, in this process, for the next session —
+# _claim refuses it before its send marker and the login. 9901 (交易時間已結束) is the whole venue:
+# the reconciler holds it (manager/reconciler._broker_shut_until).
+_CONTRACT_REJECTED = "9876"
+_contract_shut = {}   # productid -> machine epoch of the next session open
 
 _tags_lock = threading.Lock()
 
@@ -193,7 +204,24 @@ class DuplicateOrder(PresidentError):
 class SessionClosed(PresidentError):
     """Outside this machine's 統一 trading window (president_vault.session_window; _check_window
     says which clock): refused before the login, nothing sent, nothing marked. The broker takes no order
-    then, and a login it refuses would stop every later one (president_vault STOP)."""
+    then, and a login it refuses would stop every later one (president_vault STOP).
+    `from_broker` True: the broker answered the market is shut (_SESSION_REJECTED) — `code` its status;
+    `contract` / `until` set when that one product waits (9876), not the venue."""
+    from_broker = False
+    code = None
+    contract = None
+    until = None
+
+
+def _next_session_at():
+    """Machine epoch of the next TAIFEX session open (lib/tw_clock, corrected clock); an hour from
+    now on a workspace without it."""
+    try:
+        from lib import tw_clock
+        s = tw_clock.skew() or 0
+        return tw_clock.next_open(time.time() - s) + s
+    except (ImportError, AttributeError):
+        return time.time() + 3600
 
 
 # ── near month (rule 1) ──────────────────────────────────────────────────────
@@ -337,6 +365,12 @@ def _claim(symbol, action, lots, intent, book_months=None):
     with _send_lock():
         pid = (_checked_close(symbol, action, lots, book_months) if intent == "reduce"
                else _entry_contract_checked(symbol, book_months))
+        until = _contract_shut.get(pid)
+        if until is not None and time.time() < until:
+            e = SessionClosed(f"統一 answered {pid} is not trading (9876) — not sent before the next session")
+            e.from_broker, e.code, e.contract, e.until = True, _CONTRACT_REJECTED, pid, until
+            raise e
+        _marked.pop(pid, None)   # a new order: its first mark records what was there before
         _mark_order_sent(pid)
     _request_snapshot_refresh()  # the worker re-reads once the send has settled
     return pid
@@ -352,12 +386,40 @@ def _mark_order_sent(productid):
             raise PresidentError("統一下單紀錄讀不到,這張單沒有送出,下一輪會再試 / the 統一 send "
                                  "markers could not be read — not sending; retried next round")
         d = {}  # not JSON, and every send it could have held has settled: start over
-    d[productid] = time.time()
+    # the marker before this order: its first mark (_claim) keeps it, the re-mark right before the send
+    # (_send) only moves the time
+    _marked[productid] = (_marked[productid][0] if productid in _marked else d.get(productid), time.time())
+    d[productid] = _marked[productid][1]
     try:
         president_vault.replace_json(LAST_ORDER_PATH, d)
     except OSError as e:
         raise PresidentError(f"the send marker could not be written ({type(e).__name__}) — "
                              f"not sending")
+
+
+_marked = {}   # productid -> (the marker before this process's current order, the last one it wrote)
+
+
+def _unmark_order_sent(productid):
+    """Put back the marker this process's send replaced — only for an order 統一 certainly never
+    placed (the login refused, or a 9876 / 9901 / 9902 rejection). Off hours the worker reads
+    nothing, so a marker left behind would hold every later close as not caught up. Best effort:
+    left in place it only waits; a later send's marker is never touched."""
+    prev, mine = _marked.pop(productid, (None, None))
+    if mine is None:
+        return
+    try:
+        with _send_lock():
+            d, floor = _read_last_orders()
+            if floor or d.get(productid) != mine:
+                return
+            if prev is None:
+                d.pop(productid, None)
+            else:
+                d[productid] = prev
+            president_vault.replace_json(LAST_ORDER_PATH, d)
+    except (OSError, PresidentError) as e:
+        logging.warning(f"president: send marker of {productid} not restored ({type(e).__name__}: {e})")
 
 
 def _checked_close(symbol, action, lots, book_months=None):
@@ -505,6 +567,25 @@ def _session(env):
         api.logout()
 
 
+@contextmanager
+def _off_hours_session(env, fields):
+    """_session for the user's close outside the window: a login the broker refuses because it
+    is shut (president_vault.OFF_HOURS_KINDS), or maintenance, is SessionClosed — the close
+    failed on a shut market, no login stop and no venue_login_blocked."""
+    try:
+        api = president_vault.login(president_vault.resolve(), SDK_LOG_DIR, off_hours=True)
+    except president_vault.LoginError as e:
+        if e.kind not in president_vault.OFF_HOURS_KINDS + ("MAINTENANCE",):
+            raise
+        guard.audit("order_error", error=f"login refused off hours ({e.kind})", **fields)
+        raise SessionClosed(f"統一 refused the login outside the trading window ({e.kind}) — "
+                            f"{fields['intent']} {fields['symbol']} not sent") from None
+    try:
+        yield api
+    finally:
+        api.logout()
+
+
 def _request_snapshot_refresh():
     try:
         with open(_REFRESH_FLAG, "w"):
@@ -625,7 +706,15 @@ def _await(reports, seq, lots, timeout, fields):
             guard.audit("order_error", seq=seq, code=code, error=err, **fields)
             raise PresidentError(_reject_tag("reduce_only_rejected",
                                              f"統一 rejected the close: statuscode={code} {err}"))
-        if str(code).startswith(("99", "ERR")) or code in _SESSION_REJECTED:
+        if code in _SESSION_REJECTED:
+            guard.audit("order_error", seq=seq, code=code, error=err, **fields)
+            e = SessionClosed(f"統一 rejected the order: statuscode={code} {err}")
+            e.from_broker, e.code = True, code
+            if code == _CONTRACT_REJECTED:
+                e.contract = fields["symbol"]
+                _contract_shut[e.contract] = e.until = _next_session_at()
+            raise e
+        if str(code).startswith(("99", "ERR")):
             guard.audit("order_error", seq=seq, code=code, error=err, **fields)
             raise PresidentError(f"統一 rejected the order: statuscode={code} {err}")
         # a code the SDK does not define: not a success, not a rejection — fills
@@ -659,52 +748,13 @@ def _await(reports, seq, lots, timeout, fields):
             "ack": code, "statuscode": last.get("statuscode")}
 
 
-def place_futures_market_order(env, symbol, action, lots, intent, client_tag=None,
-                               confirm_timeout=15, book_months=None):
-    """One market IOC order.
-
-    symbol: TXF / MXF / TMF — an entry goes to the computed near month with
-    opencloseflag "" (broker decides); a reduce goes to the held row's
-    productid with opencloseflag "1" (close only), after _checked_close (a
-    month code like TXFJ6 is also accepted for a reduce). action:
-    'buy'|'sell'. lots: int ≥ 1. intent: 'entry'|'reduce', REQUIRED ('entry'
-    is HALT-blocked). client_tag: ≤10 alphanumeric chars, refused if already
-    sent today. book_months: the contract months ('2026-10') the caller's book
-    holds for this root — only those rows are the bot's (a close goes to one of
-    them, an entry adds to one or goes to the computed near month); None = no
-    book, the calendar decides (lib/president_contracts).
-
-    Returns {'status': 'filled'|'sent', 'symbol' (the month contract),
-    'fill_qty', 'avg_fill_price', 'seq', 'orderno', 'ack'}; raises
-    PresidentError on refusal — SessionClosed, before any login, outside the
-    trading window (president_vault.session_window)."""
-    if action not in ("buy", "sell"):
-        raise ValueError(f"action must be 'buy' or 'sell', got {action!r}")
-    if intent not in ("entry", "reduce"):
-        raise ValueError(f"intent must be 'entry' or 'reduce', got {intent!r}")
-    lots = int(lots)
-    if lots < 1:
-        raise ValueError(f"lots must be >= 1, got {lots}")
-    sym = str(symbol).upper()
-    if intent == "entry" and sym not in ROOTS:
-        raise ValueError(f"an entry takes TXF/MXF/TMF (the lib picks the month), got {symbol!r}")
-    if client_tag is not None and not _TAG_RE.match(str(client_tag)):
-        raise ValueError(f"client_tag must be 1-10 alphanumeric chars, got {client_tag!r}")
-
-    fields = {"venue": "president", "market": "futures", "symbol": sym, "action": action,
-              "qty": lots, "unit": "lots", "intent": intent}
-    guard.check_restart_stop(intent, fields)  # before the login
-    _check_halt(fields)
-    _check_window(fields)  # before _claim: a refusal stamps no send marker and spends no tag
-    if client_tag is not None:
-        fields["client_tag"] = client_tag
-
+def _place(env, sym, action, lots, intent, client_tag, confirm_timeout, book_months, fields, reports, off_hours):
+    """Claim, log in, send, await: (result, seq). fields["symbol"] is the claimed contract."""
     from unitrade.unitrade import DOrderObject
 
-    reports = _Reports()
     with _tag_guard(client_tag, intent) as record_tag:
         fields["symbol"] = _claim(sym, action, lots, intent, book_months)
-        with _session(env) as api:
+        with (_off_hours_session(env, fields) if off_hours else _session(env)) as api:
             if intent == "entry":
                 _require_listed(fields["symbol"], _listed(api, sym))
             accounts = api.get_accounts() or []
@@ -725,6 +775,63 @@ def place_futures_market_order(env, symbol, action, lots, intent, client_tag=Non
             seq = _send(api, o, reports, fields)
             record_tag()
             result = _await(reports, seq, lots, confirm_timeout, fields)
+    return result, seq
+
+
+def place_futures_market_order(env, symbol, action, lots, intent, client_tag=None,
+                               confirm_timeout=15, book_months=None, user_close=False):
+    """One market IOC order.
+
+    symbol: TXF / MXF / TMF — an entry goes to the computed near month with
+    opencloseflag "" (broker decides); a reduce goes to the held row's
+    productid with opencloseflag "1" (close only), after _checked_close (a
+    month code like TXFJ6 is also accepted for a reduce). action:
+    'buy'|'sell'. lots: int ≥ 1. intent: 'entry'|'reduce', REQUIRED ('entry'
+    is HALT-blocked). client_tag: ≤10 alphanumeric chars, refused if already
+    sent today. book_months: the contract months ('2026-10') the caller's book
+    holds for this root — only those rows are the bot's (a close goes to one of
+    them, an entry adds to one or goes to the computed near month); None = no
+    book, the calendar decides (lib/president_contracts).
+
+    Returns {'status': 'filled'|'sent', 'symbol' (the month contract),
+    'fill_qty', 'avg_fill_price', 'seq', 'orderno', 'ack'}; raises
+    PresidentError on refusal — SessionClosed, before any login, outside the
+    trading window (president_vault.session_window). `user_close` (a reduce from the user's
+    close-all, manager/flatten): no window — it goes to 統一 whatever the hour (Wei 11-16) and a
+    shut market's refusal, the login's included, is SessionClosed."""
+    if action not in ("buy", "sell"):
+        raise ValueError(f"action must be 'buy' or 'sell', got {action!r}")
+    if intent not in ("entry", "reduce"):
+        raise ValueError(f"intent must be 'entry' or 'reduce', got {intent!r}")
+    lots = int(lots)
+    if lots < 1:
+        raise ValueError(f"lots must be >= 1, got {lots}")
+    sym = str(symbol).upper()
+    if intent == "entry" and sym not in ROOTS:
+        raise ValueError(f"an entry takes TXF/MXF/TMF (the lib picks the month), got {symbol!r}")
+    if client_tag is not None and not _TAG_RE.match(str(client_tag)):
+        raise ValueError(f"client_tag must be 1-10 alphanumeric chars, got {client_tag!r}")
+
+    fields = {"venue": "president", "market": "futures", "symbol": sym, "action": action,
+              "qty": lots, "unit": "lots", "intent": intent}
+    guard.check_restart_stop(intent, fields)  # before the login
+    _check_halt(fields)
+    off_hours = False
+    if user_close and intent == "reduce":
+        off_hours = not _close_window_open()
+    else:
+        _check_window(fields)  # before _claim: a refusal stamps no send marker and spends no tag
+    if client_tag is not None:
+        fields["client_tag"] = client_tag
+
+    reports = _Reports()
+    try:
+        result, seq = _place(env, sym, action, lots, intent, client_tag, confirm_timeout, book_months,
+                             fields, reports, off_hours)
+    except PresidentError as e:
+        if off_hours and (isinstance(e, SessionClosed) or _SESSION_NOT_OPEN_RE.search(str(e))):
+            _unmark_order_sent(fields["symbol"])
+        raise
     if result["status"] == "filled":
         guard.audit("order_filled", seq=seq, fill_qty=result["fill_qty"],
                     avg_fill_price=result["avg_fill_price"], **fields)
@@ -740,12 +847,12 @@ def format_qty(env: dict, symbol: str, qty: float, price: float = None) -> str:
     """Lots are whole numbers; below 1 lot raises ValueError (flatten's dust-skip signal)."""
     lots = float(qty)
     if lots < 1:
-        raise ValueError(f"president: {qty} lots is below the 1-lot minimum")
+        raise ValueError(_reject_tag("below_min_size", f"president: {qty} lots is below the 1-lot minimum"))
     return str(int(round(lots)))
 
 
 def close_position_partial(env: dict, symbol: str, direction: str, qty: float,
-                           client_order_id: str = None, book_months=None):
+                           client_order_id: str = None, book_months=None, user_close=False):
     """Reduce-only close of `qty` lots of the position held in `symbol` (TXF /
     MXF / TMF, or its month code). `direction` is the position being closed;
     book_months as in place_futures_market_order."""
@@ -756,7 +863,7 @@ def close_position_partial(env: dict, symbol: str, direction: str, qty: float,
     result = place_futures_market_order(
         env, symbol, action, lots, intent="reduce",
         client_tag=_tag_for(client_order_id) if client_order_id else None,
-        book_months=book_months)
+        book_months=book_months, user_close=user_close)
     # the broker's own codes travel with the close as with an entry (the 10-02
     # live close came back without them: this mapping dropped them)
     return {

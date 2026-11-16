@@ -908,7 +908,7 @@ def _end_feed_wait(state):
         state[k] = None
 
 
-_CRYPTO_FETCHERS = frozenset(("fetch_kline", "fetch_kline_batch", "fetch_bingx_kline"))
+_CRYPTO_FETCHERS = frozenset(("fetch_kline", "fetch_kline_batch", "fetch_bingx_kline", "fetch_okx_kline"))
 
 
 def _crypto_only(name):
@@ -1654,7 +1654,7 @@ def _tw_fut_data(name):
 # runtime/strategy_reporter._PRICE_FETCHERS' names (this process cannot import runtime;
 # tests/check_tw_stock_bar_calendar pins the copies equal).
 _PRICE_FETCHERS = frozenset((
-    "fetch_kline", "fetch_kline_batch", "fetch_bingx_kline",
+    "fetch_kline", "fetch_kline_batch", "fetch_bingx_kline", "fetch_okx_kline",
     "fetch_twstock_price", "fetch_twstock_price_adj", "fetch_twstock_price_batch",
     "fetch_twstock_price_adj_batch", "fetch_twstock_ohlcv",
     "fetch_twfutures_ohlcv", "fetch_twfutures_ohlcv_batch", "fetch_txf_daily_public",

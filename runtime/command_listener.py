@@ -1307,6 +1307,18 @@ def _cmd_credentials(args):
 
                 kept = [l for l in kept if not _stale_cred(l)]
                 evicted_ids = {i.lower() for i in evict}
+                # eviction == unbind for the old venue: HALT before the new keys land. The
+                # reconciler re-reads .env every round and sends an unbound routing label to the
+                # detected venue, so a round between write and HALT trades the whole target on the
+                # new account. No HALT on disk = no bind; a failed write below keeps the HALT.
+                try:
+                    from lib.guard import trip_halt
+                    trip_halt(f"venue rebind ({'/'.join(sorted(evicted_ids))} evicted)", "web")
+                    if not os.path.exists(os.path.join(WORKSPACE_STATE, "HALT")):
+                        raise OSError("HALT not in the workspace")  # a cwd outside it
+                except Exception as e:
+                    raise RuntimeError(f"rebind halt not set ({type(e).__name__}) — "
+                                       f".env unchanged, the current account stays bound") from e
         kept += [f"{k}={env[k]}" for k in env]
         # atomic — a torn .env would strand the machine keyless. 0600 is POSIX only; Windows gets its ACL in prepare
         with atomic_file.replacing(path, perm=0o600, prepare=_env_acl) as f:
@@ -1318,17 +1330,10 @@ def _cmd_credentials(args):
         _unpark_account_state(_account_identity(kept))
         book_account = _bind_book_accounts(binding)
     if evicted_ids:
-        # eviction == unbind for the old venue: halt like credentials_remove
-        # does, or strategies still routed there run blind until auto-halt
-        # trips (~15 min)
-        try:
-            from lib.guard import trip_halt
-            trip_halt(f"venue rebind ({'/'.join(sorted(evicted_ids))} evicted)", "web")
-        except Exception as e:
-            print(f"[credentials] rebind-halt failed: {e}", file=sys.stderr)
-        # …and the evicted venue must not linger as a routing target (audit
-        # B2): empty those exchanges values, same as _cmd_amounts does for
-        # unbound venues. Best-effort like the halt — the keys are already
+        # the HALT went on under the .env lock above; the evicted venue must
+        # not linger as a routing target either (audit B2): empty those
+        # exchanges values, same as _cmd_amounts does for unbound venues.
+        # Best-effort — the keys are already
         # swapped, failing the whole command here helps nobody. Mirror FIRST,
         # then config (P2-2 write order — see _write_ui_amounts_mirror), and
         # the mirror update sources from the mirror itself, never the config
@@ -5641,9 +5646,10 @@ def _cmd_close_all(args):
     return _close_all("close_all")
 
 
-def _close_all(label, argv=()):
+def _close_all(label, argv=(), out=None):
     """_cmd_close_all's body; close_then_unbind runs the same path with its own ack label and
-    flatten.py arguments (--venues / --request-id)."""
+    flatten.py arguments (--venues / --request-id). `out` gets this press's close_id and whether
+    it wrote the HALT itself (halted_here) — the only proof the unbind may lift it later."""
     from lib.guard import trip_halt
 
     restart = os.path.exists(RESTART_STOP_PATH)
@@ -5660,34 +5666,77 @@ def _close_all(label, argv=()):
     # trips it synchronously as before, or the old reconciler re-opens what the
     # flatten closes.
     halted_here = False
+    # this press's id: on the HALT it rewrites and in the flatten's last_flatten.json, so a page
+    # pairs the two without a time window; already_halted = pressed while already paused, so a
+    # page does not read this press as a new pause nor pair the HALT's close_id with it
+    close_id = f"ca{int(time.time() * 1000)}"
+    already_halted = os.path.exists(os.path.join(WORKSPACE_STATE, "HALT"))
+    if out is not None:
+        out.update(close_id=close_id, halted_here=False)
     if not (restart and claims_pass and _reconciler_gated()):
-        trip_halt("close all positions", "web")
-        halted_here = True
-        _mark_halt_closing(False)  # flipped once a flatten is known to be running
+        if already_halted:
+            # paused already (an automatic pause included): the HALT is kept as written — its
+            # reason, source, ts, mismatch / unexplained stay on the page — only this press is added
+            _mark_halt_press(close_id=close_id, already_halted=True)
+        else:
+            trip_halt("close all positions", "web")
+            halted_here = True
+            if out is not None:
+                out["halted_here"] = True
+            # closing flipped once a flatten is known to be running
+            _mark_halt_closing(False, close_id=close_id, already_halted=False)
     result = None
     try:
-        result = _close_all_launch(prefix, restart, claims_pass, flatten_path, argv)
+        result = _close_all_launch(prefix, restart, claims_pass, flatten_path,
+                                   tuple(argv) + ("--close-id", close_id))
         return result
     finally:
-        if halted_here and _CLOSE_ALL_CLOSING_RE.search(result or ""):
+        if (halted_here or already_halted) and _CLOSE_ALL_CLOSING_RE.search(result or ""):
+            # a pause another close-all wrote ("close all positions") now closes; any other pause's
+            # HALT is left as it is (_mark_halt_closing touches only that reason)
             _mark_halt_closing(True)
+        if (result or "").endswith("already_running"):
+            # this press launched nothing: the HALT names the flatten that is running, so the page's
+            # close_id pairing waits for that one (its last_flatten.json is written at its start)
+            running = (_read_last_flatten() or {}).get("close_id")
+            if isinstance(running, str) and running:
+                _mark_halt_press(close_id=running)
+
+
+def _mark_halt_press(**fields):
+    """Add this close_all press's fields (close_id / already_halted) to the HALT on, nothing else
+    rewritten. Never creates a HALT; best effort, as _mark_halt_closing."""
+    path = os.path.join(WORKSPACE_STATE, "HALT")
+    try:
+        info = atomic_file.load_json(path)
+        if not isinstance(info, dict) or all(info.get(k) == v for k, v in fields.items()):
+            return
+        info.update(fields)
+        if os.path.exists(path):  # a resume in between removed it: never re-create the HALT
+            with atomic_file.replacing(path) as f:
+                json.dump(info, f)
+    except (OSError, ValueError) as e:
+        _log(f"close_all: HALT press mark failed: {type(e).__name__}: {e}")
 
 
 # close_all acks that mean a flatten is working (the shell's daemon.closeAllStarted reads the same)
 _CLOSE_ALL_CLOSING_RE = re.compile(r"=(?:restart_stopped:)?(?:started|already_running)$")
 
 
-def _mark_halt_closing(closing):
+def _mark_halt_closing(closing, **extra):
     """Record on the close-all HALT whether positions are actually being closed —
     the pages word the pause row from it ("closing positions" vs only paused); the
     reason alone is written before the listener knows (halted_only / capital_manual
-    never close). Best effort: the HALT itself is what stops trading, never risked here."""
+    never close). `extra`: the press's close_id / already_halted. Best effort: the HALT
+    itself is what stops trading, never risked here."""
     path = os.path.join(WORKSPACE_STATE, "HALT")
     try:
         info = atomic_file.load_json(path)
-        if not isinstance(info, dict) or info.get("reason") != "close all positions" or info.get("closing") == closing:
+        if not isinstance(info, dict) or info.get("reason") != "close all positions" or (
+                info.get("closing") == closing and all(info.get(k) == v for k, v in extra.items())):
             return
         info["closing"] = closing
+        info.update(extra)
         if os.path.exists(path):  # a resume in between removed it: never re-create the HALT
             with atomic_file.replacing(path) as f:
                 json.dump(info, f)
@@ -5937,7 +5986,8 @@ def _drop_admin_task():
 # writes its result to LAST_FLATTEN_PATH; unbind_after_close_tick (on the command thread of both
 # the cloud listener and the desktop daemon, so it survives a restart) decides once that result
 # is in: everything closed and re-read flat → credentials_remove; anything else → held, keys kept,
-# HALT kept, nothing sent again on its own.
+# nothing sent again on its own. The HALT stays, except the one this press wrote itself when the
+# only thing left open is a close the market refused (Wei 11-16, _lift_own_halt).
 
 UNBIND_AFTER_CLOSE_PATH = os.path.join(WORKSPACE_STATE, "unbind_after_close.json")
 LAST_FLATTEN_PATH = os.path.join(WORKSPACE_STATE, "last_flatten.json")
@@ -6023,6 +6073,14 @@ def _txf_closed_for(scope):
     return any(_tw_positions_held(v) for v in tw)
 
 
+def _flatten_refuses_txf():
+    try:
+        import portfolio_reporter
+        return portfolio_reporter.txf_close_refuses()
+    except Exception:
+        return False
+
+
 def _manual_venues(scope):
     """The venues in `scope` this machine can't close: only a password-logon Administrator can
     trade them (群益) and this identity isn't one — the same identity test close_all's
@@ -6049,7 +6107,8 @@ def _cmd_close_then_unbind(args):
       held             — the same request_id again after it was held: nothing launched
       unconfirmed      — the last attempt left a close of unknown outcome: no new flatten
                          (群益's auto open/close would open the reverse of one that did fill)
-      market_closed    — a TW futures venue holds positions out of session: nothing done
+      market_closed    — a TW futures venue holds positions out of session and the workspace
+                         flatten predates _refuse_tw_futures (it would defer): nothing done
       capital_manual   — every venue in scope is 群益 that this identity can't trade: nothing
                          done. Mixed with closable venues, 群益 is kept instead (marker `manual`)
                          and unbinds with the rest once they are flat
@@ -6087,8 +6146,9 @@ def _cmd_close_then_unbind(args):
     closing = scope - manual
     if not closing:
         return p + "capital_manual"
-    # only what is sent: a kept 群益 TXF out of session is not a reason to hold the others
-    if _txf_closed_for(closing):
+    # a 0.1.53 flatten would defer the TXF close to the open: refused here instead. A newer one
+    # sends it and a refusal holds the unbind (Wei 11-15)
+    if not _flatten_refuses_txf() and _txf_closed_for(closing):
         return p + "market_closed"
     if _flatten_already_running():
         return p + "flatten_busy"
@@ -6098,8 +6158,10 @@ def _cmd_close_then_unbind(args):
                           "manual": sorted(manual), "at": round(time.time(), 3),
                           "request_id": rid, "held": False,
                           **({"clear_book": True} if args.get("clear_book") is True else {})})
+    press = {}
     try:
-        result = _close_all("close_then_unbind", ("--venues", ",".join(sorted(closing)), "--request-id", rid))
+        result = _close_all("close_then_unbind", ("--venues", ",".join(sorted(closing)), "--request-id", rid),
+                            out=press)
     except BaseException:
         _drop_unbind_marker()
         raise
@@ -6107,6 +6169,8 @@ def _cmd_close_then_unbind(args):
         m = _read_unbind_marker()
         if m and m.get("request_id") == rid:
             m["halt_ts"] = _halt_ts()   # the stop this request stands on; None = restart-stopped, no HALT
+            if press.get("halted_here"):
+                m["halt_own"] = press["close_id"]   # no HALT before the press: this one is ours to lift
             _write_unbind_marker(m)
     if not result.endswith("started"):
         # nothing of ours is running: no request left to wait on. already_running here is
@@ -6143,9 +6207,122 @@ def _unbind_hold(marker, why):
         _write_unbind_marker(marker)
     except OSError as e:
         _log(f"close_then_unbind: held mark not written ({type(e).__name__})")
-    _log(f"close_then_unbind {marker.get('request_id')}: held ({why}) — keys kept, trading stays paused")
+    paused = "its HALT lifted, trading goes on" if marker.get("halt_lifted") else "trading stays paused"
+    _log(f"close_then_unbind {marker.get('request_id')}: held ({why}) — keys kept, {paused}")
     _push(_ON_APPLIED, "close_then_unbind held")
     return f"held:{why}"
+
+
+# Exactly the fields _close_all's own HALT carries. Anything more (annotate_halt's unexplained, a
+# mismatch) was added by something that wants the machine stopped.
+_OWN_HALT_KEYS = frozenset({"ts", "reason", "source", "closing", "close_id", "already_halted"})
+
+
+def _is_own_halt(h, marker):
+    return (isinstance(h, dict) and set(h) <= _OWN_HALT_KEYS
+            and h.get("reason") == "close all positions" and h.get("source") == "web"
+            and h.get("already_halted") is False and h.get("ts") == marker.get("halt_ts")
+            and h.get("close_id") == marker.get("halt_own"))
+
+
+def _refused_closed_only(last):
+    """Every key left open is one the venue refused because its market is shut, and none is of
+    unknown outcome."""
+    un = last.get("unclosed") or []
+    return (bool(un) and not last.get("unconfirmed")
+            and all(isinstance(u, dict) and u.get("why") == "market_closed" and u.get("key") != "*"
+                    for u in un))
+
+
+def _lift_own_halt(marker, last):
+    """Wei 11-16: a close-and-unbind the market refused must not leave the machine paused when it
+    was not paused before the press — keys kept, strategies trade on as before. Only the HALT this
+    press wrote goes (halt_own: _close_all tripped it, nothing was on before), unchanged since —
+    another press, a 暫停, a reconciler trip or an annotation rewrites it and it stays. The file is
+    moved aside before it is judged a second time, so a HALT written between the two reads is
+    never the one removed. Anything else left open keeps the pause, as before."""
+    own = marker.get("halt_own")
+    if not isinstance(own, str) or not own or last.get("close_id") != own or not _refused_closed_only(last):
+        return False
+    path = os.path.join(WORKSPACE_STATE, "HALT")
+    aside = f"{path}.lift.{os.getpid()}"
+    try:
+        if not _is_own_halt(atomic_file.load_json(path), marker):
+            return False
+        atomic_file.replace_retry(path, aside)
+    except (OSError, ValueError):
+        return False
+    try:
+        raw = atomic_file.read_bytes(aside)
+        moved = json.loads(raw)
+    except (OSError, ValueError):
+        raw, moved = None, None
+    if not _is_own_halt(moved, marker):
+        _restore_halt(path, aside, raw)
+        return False
+    try:
+        os.remove(aside)
+    except OSError:
+        pass
+    try:
+        _in_workspace(_halt_lift_audit, own)
+    except Exception as e:
+        _log(f"close_then_unbind: HALT lift audit failed ({type(e).__name__})")
+    _log(f"close_then_unbind {marker.get('request_id')}: market refused the close — its own HALT {own} lifted")
+    return True
+
+
+# = what lib/portfolio._record_order_error stores (token in front); the pages and api pick the
+# sentence by halt_lifted (api level_for: P2)
+_REFUSED_LIFTED = "[order_reject:market_closed] close-all: 休市中沒有平倉，部位還在、沒有解除連接，開盤後要再平一次"
+
+
+def _word_refusals_lifted(close_id):
+    """flatten wrote this press's market-closed refusals with the paused P1 sentence (tagged
+    close_id); the HALT is now really lifted, so they get the lifted sentence and halt_lifted.
+    Best effort: a row left as it was over-states the pause, never the other way round."""
+    path = os.path.join(WORKSPACE, "manager", "order_errors.json")
+    try:
+        rows = atomic_file.load_json(path)
+        hit = False
+        for r in rows if isinstance(rows, list) else ():
+            if isinstance(r, dict) and r.get("close_id") == close_id and r.get("halt_lifted") is not True:
+                r.update(error=_REFUSED_LIFTED, halt_lifted=True)
+                hit = True
+        if not hit:
+            _log(f"close_then_unbind: no refusal row of {close_id} to reword")
+            return
+        with atomic_file.replacing(path) as f:
+            json.dump(rows, f, indent=2)
+    except (OSError, ValueError) as e:
+        _log(f"close_then_unbind: refusal rows not reworded ({type(e).__name__}) — they say paused")
+
+
+def _restore_halt(path, aside, raw):
+    """Put back a HALT that changed between the check and the move; a newer one already on wins.
+    The moved copy goes only once a HALT is on again — it may be the only one left."""
+    try:
+        os.link(aside, path)
+    except FileExistsError:
+        pass
+    except OSError:
+        try:
+            if not os.path.exists(path):
+                _write_atomic(path, raw.decode("utf-8", "replace") if raw else json.dumps(
+                    {"reason": "HALT restored after a failed lift", "source": "close_then_unbind"}))
+        except OSError as e:
+            _log(f"close_then_unbind: HALT not restored ({type(e).__name__}) — left at {aside}")
+    if os.path.exists(path):
+        try:
+            os.remove(aside)
+        except OSError:
+            pass
+
+
+def _halt_lift_audit(close_id):
+    from lib import guard
+    guard.release_memory_halt()   # trip_halt in this process set it; the file it wrote is gone now
+    guard.audit("halt_cleared", source="close_then_unbind", close_id=close_id, why="market_closed")
 
 
 def unbind_after_close_tick():
@@ -6183,6 +6360,9 @@ def unbind_after_close_tick():
     if last.get("unconfirmed"):
         return _unbind_hold(marker, "unconfirmed")
     if last.get("unclosed"):
+        if _lift_own_halt(marker, last):
+            marker["halt_lifted"] = True
+            _word_refusals_lifted(marker["halt_own"])
         return _unbind_hold(marker, "unclosed")
     if last.get("ok") is not True:
         return _unbind_hold(marker, "error")

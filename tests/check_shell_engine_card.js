@@ -192,8 +192,9 @@ const cut = (s, head) => { const i = s.indexOf(head); if (i < 0) throw new Error
 const submit = cut(appSrc, "async function submitMessage("), stop = cut(appSrc, "async function stopTurn(");
 ok("③ preload:拉快照 + 聽快照;舊的 engine-progress 字串 key 不在了", /engineState: \(\) => ipcRenderer\.invoke\("engine-state"\)/.test(pre) && /onEngineState: \(fn\) => ipcRenderer\.on\("engine-state", \(_e, s\) => fn\(s\)\)/.test(pre) && !/engine-progress/.test(pre + mainSrc + appSrc));
 ok("③ main:快照整份推給我們的頁、也可以拉", /handle\("engine-state", \(\) => engineSetup\(\)\.snapshot\(\)\)/.test(mainSrc) && /webContents\.send\("engine-state", s\)/.test(mainSrc));
-ok("③ C 的時機:開 app 就在背景裝——在 workspace 同步之後、只有拿到單一實例鎖的那一份、不擋常駐程式起來",
-  /if \(app\.hasSingleInstanceLock\(\)\) startStep\("workspace sync", syncOfficialOnUpdate\);\s*startStep\("trade host", tradeStartIfReady\);[^\n]*\n\s*if \(app\.hasSingleInstanceLock\(\)\) startStep\("engine", engineKick\);/.test(mainSrc)
+// 0.1.55:等主視窗 did-finish-load(保底 5 秒)才起,不跟第一格畫面搶(tests/check_shell_bootguard.js 測等待與保底)
+ok("③ C 的時機:開 app 就在背景裝——在 workspace 同步之後、只有拿到單一實例鎖的那一份、不擋常駐程式起來;等主視窗載完才起",
+  /if \(app\.hasSingleInstanceLock\(\)\) startStep\("workspace sync", syncOfficialOnUpdate\);\s*startStep\("trade host", tradeStartIfReady\);[^\n]*\n(?:\s*\/\/[^\n]*\n)?\s*if \(app\.hasSingleInstanceLock\(\)\) startStep\("engine", \(\) => require\("\.\/bootguard"\)\.afterLoad\(mainWin && mainWin\.webContents, [^\n]*\(\) => startStep\("engine", engineKick\)\)\);/.test(mainSrc)
   && /function engineKick\(\) \{\s*ensureEngineShared\(\)\.then\(\(\) => tradeStartIfReady\(\), /.test(mainSrc));
 ok("③ C:送第一句話時接上同一份(ensure-engine 走 ensureEngineShared,不另起一份)", /handle\("ensure-engine", \(\) => ensureEngineShared\(\)\.then\(\(r\) => \{ tradeStartIfReady\(\); return r; \}\)\);/.test(mainSrc));
 ok("③ C:工作頁一打開就跟主行程對一次快照(背景安裝可能早就開始了);engine.js 載入時也對一次(開場 IPC 可能比它先走完)",

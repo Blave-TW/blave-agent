@@ -511,7 +511,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     { const sm = cut(src, "function showMain(");
       t("showMain 先解除 app.hide,不然隱藏重開之後點選單列也叫不出視窗", /^function showMain\(\) \{\n  if \(!HEADLESS && app\.isHidden && app\.isHidden\(\)\) app\.show\(\);/.test(sm));
       t("隱藏重開剛起來那幾秒 activate 不叫視窗", /app\.on\("activate", \(\) => \{ if \(Date\.now\(\) >= bgBootQuietUntil\) showMain\(\); \}\);/.test(src));
-      t("createWindow 只有啟動那一扇藏", /\.\.\.\(bgBoot \? \{ show: false, paintWhenInitiallyHidden: true \} : \{\}\),/.test(src) && /bgBoot = false;   \/\/ 只有啟動那一扇/.test(cut(src, "function createWindow("))); }
+      // 0.1.55 起每一扇都 show:false 建好、畫出第一格才顯示(tests/check_shell_bootguard.js);藏窗那一扇不掛顯示的路
+      t("createWindow 只有啟動那一扇藏:藏窗那一扇不掛 showWhenReady、之後重建的照常顯示", /\n    show: false, paintWhenInitiallyHidden: true,\n/.test(cut(src, "function createWindow(")) && /if \(!HEADLESS && !bgBoot\) require\("\.\/bootguard"\)\.showWhenReady\(win, [^\n]*\n  bgBoot = false;   \/\/ 只有啟動那一扇/.test(cut(src, "function createWindow("))); }
   }
 
   await tick();

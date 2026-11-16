@@ -56,6 +56,8 @@ function consts(platform, arch, resourcesPath) {
     && /if \(process\.platform === "win32"\) app\.setAppUserModelId\("org\.blave\.desktop"\);/.test(src));
 }
 
+const PIP_WHEEL_NAME = (/^const PIP_WHEEL_NAME = "([^"]+)";$/m.exec(src) || [])[1];
+t("main.js 的 PIP_WHEEL_NAME 跟 fetch-python.sh 的 PIP_WHL 是同一顆", !!PIP_WHEEL_NAME && fs.readFileSync(path.join(SHELL, "tools", "fetch-python.sh"), "utf8").includes('PIP_WHL="' + PIP_WHEEL_NAME + '"'));
 const dist = path.join(SHELL, "dist");
 // Windows 產物(npm run pack:win → dist/win-unpacked):有才驗——隨包 Python 的 layout、官方檔都在;沒有就 SKIP
 const winDir = path.join(dist, "win-unpacked");
@@ -66,6 +68,7 @@ else {
   t("packaged(win): app.asar 在", fs.existsSync(path.join(res, "app.asar")));
   t("packaged(win): 隨包 python-x64\\python.exe 在(沒有 bin/)", fs.existsSync(path.join(res, "python-x64", "python.exe")) && !fs.existsSync(path.join(res, "python-x64", "bin")));
   t("packaged(win): 沒有 mac 那兩顆 Python 混進來", !fs.existsSync(path.join(res, "python-arm64")));
+  t("packaged(win): 隨包 pip wheel 在 resources\\pip-wheel\\(0.1.55 斷點接續;CI 的 build job 要跟 fetch-python.sh 一樣抓 PIP_WHL)", fs.existsSync(path.join(res, "pip-wheel", PIP_WHEEL_NAME)));
 }
 // universal 打包中途壞掉會留下 mac-universal-{x64,arm64}-temp:那不是產物,不拿它測
 const appDir = fs.existsSync(dist) && fs.readdirSync(dist).filter((d) => /^mac/.test(d) && !/-temp$/.test(d))
@@ -89,6 +92,7 @@ else {
     t(`packaged: python-${a} 的直譯器是 ${machArch[a]}(→ ${fs.existsSync(py) ? archsOf(fs.realpathSync(py)) : "不在"})`,
       fs.existsSync(py) && archsOf(fs.realpathSync(py)) === machArch[a]);
   }
+  t("packaged: 隨包 pip wheel 在 Resources/pip-wheel/(0.1.55 斷點接續;fetch-python.sh fetch_pip)", fs.existsSync(path.join(res, "pip-wheel", PIP_WHEEL_NAME)));
   t("packaged: shell/vendor 兩顆 Python 都抓好了(fetch-python.sh)", PY_ARCHES.every((a) => fs.existsSync(path.join(SHELL, "vendor", `python-${a}`, ".blave-pbs"))));
   // 主程式跑得起來的那顆,實際叫一次(-I:不吃打包機的 PYTHON* 變數)
   const native = sp(path.join(res, `python-${process.arch}`, "bin", "python3"), ["-I", "-c", "import sys, platform; print(sys.version_info[:3], platform.machine())"]);

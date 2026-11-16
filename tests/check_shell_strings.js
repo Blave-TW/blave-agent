@@ -200,5 +200,14 @@ const LIE = { zh: /只能看|留在電腦上|還不能操作/, en: /can only vie
   if (left.length) fail(`連接框案一退役的字還在表裡:[${left}]`); else pass("連接框案一退役的 14 個字兩語都刪了");
 }
 
+// ---- 10. 回測「總交易成本」的標籤與說明釘在定稿(0.1.54 起叫交易成本:那個比例含手續費、稅、滑價,lib/costs.py) ----
+// 分母是每次交易當時的淨值(lib/analysis.precise_pnl:|Δw| × FEE 逐根加總),不是初始資金:標籤寫分母、「當時」留在 tooltip
+{ const one = (lang, k) => (block(lang).match(new RegExp('"' + k.replace(/\./g, "\\.") + '": "([^"]*)"')) || [])[1] || "";
+  const WANT = { zh: ["總交易成本（佔資金）", "每次交易的交易成本佔當時資金的百分比，整段期間加總。"], en: ["Total Trading Cost (% of Equity)", "Each trade's trading cost as a percentage of equity at the time, summed over the period."] };
+  const off = Object.entries(WANT).filter(([l, [lab, tip]]) => one(l, "bt.totalFees") !== lab || one(l, "bt.tip.totalFees") !== tip).map(([l]) => l);
+  if (off.length) fail(`bt.totalFees／bt.tip.totalFees 不是定稿(標籤要寫分母、tooltip 要寫「當時」):[${off}]`);
+  else pass("bt.totalFees／bt.tip.totalFees 兩語都是定稿");
+}
+
 console.log(bad ? `\n${bad} 紅` : "\nALL PASS");
 process.exit(bad ? 1 : 0);

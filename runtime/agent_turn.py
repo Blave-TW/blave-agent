@@ -2284,6 +2284,21 @@ def preferences_rule():
     return "".join(parts)
 
 
+# 給模型看的用全名;畫面標籤的「加密」是外殼與 web 的事
+_MAIN_MARKET_NAMES = {"crypto": "加密貨幣", "twstock": "台股", "txf": "台指期", "usstock": "美股"}
+
+
+def main_market_rule(v):
+    """用戶的主要市場(電腦版 --main-market、web／App 經 context.main_market)。
+    all、沒帶、不認得的值都回空字串:不能讓一個怪值把整輪弄成 exit 2。"""
+    name = _MAIN_MARKET_NAMES.get(v) if isinstance(v, str) else None
+    if not name:
+        return ""
+    return ("\n\n---\n\n## 主要市場（runtime 規則）\n"
+            f"用戶主要做{name}。用戶沒講市場或標的時，以{name}為預設來挑資料、舉例和建策略；"
+            "用戶講了別的市場就照他講的做，不必提醒他設定過主要市場。\n")
+
+
 # Shared across all surfaces: the model tends to narrate its own process as
 # user-facing text ("Let me check...", "Now I will...") — that's internal
 # reasoning, not something the user needs to read. Kept out of AGENTS.md
@@ -5227,7 +5242,8 @@ def mcp_blocked_rule(blocked):
     )
 
 
-def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule="", mcp_blocked=None):
+def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule="", mcp_blocked=None,
+                  main_market=None):
     """The Codex engine has no system-prompt channel, so the per-turn rules ride in front of
     the prompt. AGENTS.md is NOT included: Codex reads cwd's AGENTS.md itself
     (codex_engine.build_args lifts its size cap), and inlining it would feed it twice.
@@ -5236,7 +5252,8 @@ def _codex_prompt(prompt, sink, mcp_mounted, browser_mounted=False, lang_rule=""
     mcp_mounted is the same value handed to codex_engine.run, so the fence rule and the
     attached server can never disagree."""
     return ("[Runtime 規則(系統層級,位階等同 AGENTS.md;不是使用者說的,不要複述)]"
-            + python_rule() + data_access_rule() + preferences_rule() + _formatting_rule_for(sink)
+            + python_rule() + data_access_rule() + preferences_rule() + main_market_rule(main_market)
+            + _formatting_rule_for(sink)
             + mcp_rule(mcp_mounted, getattr(sink, "session_id", None)) + mcp_blocked_rule(None if mcp_mounted else mcp_blocked)
             + browser_rule(browser_mounted, desktop_web(sink, browser_mounted))
             + turn_note_rule(sink) + parallel_rule(sink) + lang_rule + "\n\n---\n\n" + prompt)
@@ -5286,7 +5303,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
                    viewing_view=None, ui_lang=None,
                    engine="claude", codex_bin=None, effort=None, mcp_config=None,
                    viewing_env=None, mcp_servers=None, suggest_mode="normal", clarify_form=False,
-                   handoff_card=False):
+                   handoff_card=False, main_market=None):
     # engine="codex" 是電腦版專屬(用戶自己的 Codex 訂閱),只換掉「呼叫模型並消化它的
     # 事件流」那一段;prompt、session store、兜底分類、寫回歷史全部共用。機隊不帶
     # --engine,走的是原本那條路,一行都不經過 codex 分支(閘門:
@@ -5429,7 +5446,7 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
     sysprompt_path = _write_system_prompt_file(
         agents_md + ('' if _relay_mode() else model_catalog_rule(session_id)) + python_rule() + data_access_rule()
         + mcp_rule(cloud_mcp, session_id) + browser_rule(browser_mounted, web) + turn_note_rule(sink) + parallel_rule(sink)
-        + preferences_rule()
+        + preferences_rule() + main_market_rule(main_market)
         + reply_lang_rule(lang_msg, reply_lang)
         + _formatting_rule_for(sink)
     ) if agents_md and not use_codex else None
@@ -5565,7 +5582,8 @@ async def run_turn(session_id, message, model, sink, viewing_strategy=None, view
 
             await codex_engine.run(
                 codex_bin, _codex_prompt(prompt, sink, bool(codex_mcp_url), browser_mounted,
-                              reply_lang_rule(lang_msg, reply_lang), codex_mcp_blocked), WORKSPACE,
+                              reply_lang_rule(lang_msg, reply_lang), codex_mcp_blocked,
+                              main_market), WORKSPACE,
                 {**os.environ,
                  **{k: v for k, v in turn_env.items() if not k.startswith("ANTHROPIC_")}},
                 sink, _codex_tool_start, _codex_tool_done, model=model, effort=effort,
@@ -5910,6 +5928,8 @@ def main():
     parser.add_argument("--clarify-form", action="store_true")
     # 外殼畫得出搬策略動作卡、而且自己會搬(電腦版 0.1.47 起帶);沒帶的外殼 agent 照 references 自己搬
     parser.add_argument("--handoff-card", action="store_true")
+    # 用戶的主要市場(電腦版 main.js、web_bridge 只帶 all 以外的值)。不設 choices:怪值當沒帶,不 exit 2
+    parser.add_argument("--main-market", default=None)
     args = parser.parse_args()
     if args.message_stdin:
         raw = sys.stdin.buffer.read(MESSAGE_STDIN_MAX + 1)
@@ -5959,6 +5979,7 @@ def main():
         effort=args.effort, mcp_config=args.mcp_config, viewing_env=args.viewing_env,
         mcp_servers=args.mcp_servers, suggest_mode=args.suggest_mode,
         clarify_form=args.clarify_form, handoff_card=args.handoff_card,
+        main_market=args.main_market,
     ))
     if args.scheduled:
         _write_sched_outcome()

@@ -88,6 +88,10 @@ e = outcome(D.fetch_bingx_kline, "BTC-USDT", "1h", "2026-09-01", "2026-09-02")
 check(isinstance(e, Reached) and "bingx.com" in reached[0],
       f"access=0: BingX klines still public through _retry_get — {reached[:1]}")
 
+e = outcome(D.fetch_okx_kline, "XAUUSDT", "1h", "2026-09-01", "2026-09-02")
+check(isinstance(e, Reached) and "okx.com" in reached[0],
+      f"access=0: OKX klines still public through _retry_get — {reached[:1]}")
+
 os.environ["BLAVE_TWSTOCK_DAILY_SOURCE"] = "public"
 outcome(D.fetch_twstock_price, "2330", "2024-01-01", "2024-01-31", HDR)
 check(reached and "twse.com.tw" in reached[0],

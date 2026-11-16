@@ -20,9 +20,13 @@ const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 t("整支只有這一處讀 BLAVE_HEADLESS,只跟 \"1\" 比", (code.match(/BLAVE_HEADLESS/g) || []).length === 1 && fnSrc.includes('env.BLAVE_HEADLESS === "1"'));
 t("不進 Dock", /^if \(HEADLESS && app\.dock\) app\.dock\.hide\(\);$/m.test(src));
 const cw = src.slice(src.indexOf("function createWindow() {"), src.indexOf("app.whenReady().then("));
-t("主視窗:沒開時選項物件一個鍵都不多(用展開,不寫 show: !HEADLESS)",
-  cw.includes("...(HEADLESS ? { show: false, paintWhenInitiallyHidden: true } : {}),") && cw.includes("...(HEADLESS ? { backgroundThrottling: false } : {}),")
+// 0.1.55 起主視窗一律 show:false 建好、畫出第一格才顯示(shell/bootguard.js showWhenReady;tests/check_shell_bootguard.js)。
+// 隱藏模式的不變式改由這裡守:顯示的那條路只在不是 HEADLESS 時掛上,createWindow 自己不 show / focus
+t("主視窗:一律 show:false 建好;顯示的路(showWhenReady)只在 !HEADLESS 時掛;隱藏模式背景不節流",
+  cw.includes("show: false, paintWhenInitiallyHidden: true,") && cw.includes("...(HEADLESS ? { backgroundThrottling: false } : {}),")
+  && /\n  if \(!HEADLESS && !bgBoot\) require\("\.\/bootguard"\)\.showWhenReady\(win,/.test(cw) && (cw.match(/showWhenReady\(/g) || []).length === 1
   && !/\bshow: (?!false, paintWhenInitiallyHidden)/.test(cw) && !/\.show\(|showInactive|\.focus\(/.test(cw));
+t("showWhenReady 只在 ready-to-show／保底時 show,不 focus、不 moveTop", (() => { const g = fs.readFileSync(path.join(__dirname, "..", "shell", "bootguard.js"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""); return (g.match(/\.show\(\)/g) || []).length === 1 && !/\.focus\(|moveTop|showInactive|app\.focus/.test(g); })());
 const sm = src.slice(src.indexOf("function showMain() {"), src.indexOf("async function pauseFromMenu()"));
 t("showMain:隱藏模式在 show / focus 之前就返回(視窗不在時照樣建)", /if \(!w\) \{ createWindow\(\); return; \}\n  if \(HEADLESS\) return;\n  if \(w\.isMinimized\(\)\) w\.restore\(\); w\.show\(\); w\.focus\(\);/.test(sm));
 // 主行程裡把主視窗叫出來的路只有 showMain 一條:多一處 .show() / app.focus 就要有人看過它在隱藏模式下會不會冒出來

@@ -21,6 +21,35 @@ const ctx = { HO_ID_RE: eval(/const HO_ID_RE = (\/.*?\/);/.exec(src)[1]), LANG: 
 const cutFn = (name) => { const i = src.indexOf("function " + name + "("); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) return src.slice(i, k + 1); } throw new Error("no " + name); };
 vm.createContext(ctx); vm.runInContext((block + "\n" + cutFn("hoMovesRow") + "\n" + cutFn("hoStaysRow")).replace(/^const /gm, "var "), ctx);
 const { hoFreeName, hoMovesRow, hoCompare, hoErr, hoCell } = ctx;
+const J = JSON.stringify;
+{ const { hoProgOf, hoAutoSwitch } = ctx;
+  t("進度欄位逐欄再驗:合格的原樣交出;路徑、空白以外的字、段數不合、剩餘秒數不合、缺欄一律 null",
+    J(hoProgOf({ data: "BTCUSDT 5min", i: 2, n: 4, left: 9 })) === '{"data":"BTCUSDT 5min","i":2,"n":4,"left":9}' && J(hoProgOf({ data: "holder_concentration", i: 1, n: 4, left: 0, x: "extra" })) === '{"data":"holder_concentration","i":1,"n":4,"left":0}'
+    && [null, "x", { data: "/Users/a", i: 1, n: 4, left: 1 }, { data: "a b c", i: 1, n: 4, left: 1 }, { data: "BTC", i: 4, n: 4, left: 1 }, { data: "BTC", i: 0, n: 4, left: 1 }, { data: "BTC", i: 1, n: 1, left: 1 },
+      { data: "BTC", i: 1.5, n: 4, left: 1 }, { data: "BTC", i: 1, n: 4, left: -1 }, { data: "BTC", i: 1, n: 4, left: 86401 }, { data: "BTC", i: 1, n: 4 }, { data: "x".repeat(41), i: 1, n: 4, left: 1 }].every((x) => hoProgOf(x) === null));
+  const J0 = { dir: "down", id: "momo", dest: "momo_2", phase: "run" };
+  t("自動切視角只在拉回、run 或 done、dest 過名字閘門、人還在雲端看著來源那一支時",
+    hoAutoSwitch(J0, "cloud", "momo") && hoAutoSwitch(Object.assign({}, J0, { phase: "done" }), "cloud", "momo")
+    && ["send", "fail", "unknown", "keys", "notrun"].every((ph) => !hoAutoSwitch(Object.assign({}, J0, { phase: ph }), "cloud", "momo"))
+    && !hoAutoSwitch(Object.assign({}, J0, { dir: "up" }), "cloud", "momo") && !hoAutoSwitch(Object.assign({}, J0, { dest: "../x" }), "cloud", "momo")
+    && !hoAutoSwitch(J0, "local", "momo") && !hoAutoSwitch(J0, "cloud", "other") && !hoAutoSwitch(null, "cloud", "momo")
+    && !hoAutoSwitch(J0, "cloud", "momo", true) && hoAutoSwitch(J0, "cloud", "momo", false)
+    && [undefined, null, 42, ["momo_2"]].every((x) => !hoAutoSwitch(Object.assign({}, J0, { dest: x }), "cloud", "momo"))); }
+t("hoRun:回條的 dest 不是字串(缺欄、陣列)→ 用提議的 to,不會變成字串 \"undefined\"", /job\.dest = typeof res\.dest === "string" && HO_ID_RE\.test\(res\.dest\) \? res\.dest : to;/.test(src) && !/HO_ID_RE\.test\(String\(/.test(cutFn("hoRun") + cutFn("hoAutoSwitch")));
+{ const mainSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "main.js"), "utf8");
+  const cutM = (name) => { const i = mainSrc.indexOf("function " + name + "("); let d = 0; for (let k = mainSrc.indexOf("{", i); k < mainSrc.length; k++) { if (mainSrc[k] === "{") d++; else if (mainSrc[k] === "}" && --d === 0) return mainSrc.slice(i, k + 1); } throw new Error("no " + name); };
+  const m = {}; vm.createContext(m); vm.runInContext("var XFER_PROG_RE = " + /const XFER_PROG_RE = (\/.*\/);/.exec(mainSrc)[1] + ";\n" + cutM("transferProgress"), m);
+  const P = (x) => J(m.transferProgress(x));
+  t("主行程 transferProgress:只認最後一行的抓資料進度行,交出資料名(來源括號不交)/段數/剩幾秒",
+    P("x\n[fetch BTCUSDT 5min (binance)] 2/4 chunks, 9s elapsed, ~9s left\n") === '{"data":"BTCUSDT 5min","i":2,"n":4,"left":9}'
+    && P("[fetch holder_concentration/get_alpha] 1/4 chunks, 1m02s elapsed, ~3m06s left") === '{"data":"holder_concentration","i":1,"n":4,"left":186}'
+    && P("[fetch BTCUSDT 1h] 3/10 chunks, 1h00m elapsed, ~2h01m left\r\n") === '{"data":"BTCUSDT 1h","i":3,"n":10,"left":7260}');
+  t("主行程 transferProgress:結尾不是進度行、done in、帶路徑或多餘字、空字串 → null(原文一律不交出去)",
+    ["", null, "[fetch BTCUSDT 5min] 2/4 chunks, 9s elapsed, ~9s left\nTraceback (most recent call last):", "[fetch BTCUSDT 5min (binance)] 4/4 chunks done in 1m00s",
+      "[fetch /Users/me/x 5min] 2/4 chunks, 9s elapsed, ~9s left", "[fetch BTCUSDT 5min] 2/4 chunks, 9s elapsed, ~9s left; rm -rf", "[scan] 36/120 cells, 2m10s elapsed, ~5m left",
+      "[fetch BTCUSDT 5min] 4/4 chunks, 9s elapsed, ~0s left"].every((x) => m.transferProgress(x) === null));
+  t("主行程:只在 running 的 backtest 讀 transfer.log 尾巴、交出抽好的 progress;不交 tail 原文",
+    /if \(d\.status === "running" && d\.kind === "backtest"\) \{ const p = transferProgress\(transferLogTail\(path\.join\(dir, "transfer\.log"\)\)\); if \(p\) out\.progress = p; \}/.test(mainSrc)); }
 
 { const re = ctx.HO_ID_RE, T = require("../shell/transfer");
   const OK = ["btc_rsi", "A-1_b", "x".repeat(64), "con_2", "console", "com10", "nul2", "lpt"], BAD = ["", " ", "btc rsi", "籌碼集中度", "a]b", "a\"b", "../etc/passwd", "a/b", "a\nb", "x".repeat(65), "a.b", "con", "CON", "Nul", "aux", "prn", "com1", "LPT9"];
@@ -226,14 +255,14 @@ t("trade.js:雲端清單列尾是刪除鈕(在 wrap 裡,不在鈕裡;跟 HO 無�
 t("trade.js:envPaint 不再看 HO.on;chat.tgt.cut1 從程式、DOM、字串表全部消失", !/HO\.on\)/.test(trSrc.slice(trSrc.indexOf("function envPaint("), trSrc.indexOf("function envPaintSide(")))
   && !/chat\.tgt\.cut1/.test(trSrc + html + strings));
 t("重畫:雲端清單的 sig 把 ho、能不能刪、選中的那支、刪除中的那幾支算進去", /JSON\.stringify\(\[kind, ho, canDel, sel, \[\.\.\.CDEL\.busy\.keys\(\)\], prefs\.flags, prefs\.groups, list\.map/.test(trSrc));
-t("字串 zh / en 都齊(ho.* key),而且訊息那兩句與提示各只有一個 {id}", (() => {
-  const keys = ["up.btn", "down.btn", "down.aria", "up.title", "down.title", "row.moves", "row.movesV", "row.movesKeys", "row.stays", "row.staysV", "row.staysVDown", "rename.up", "rename.down", "rename.maybeUp", "srcLive.up", "srcLive.down", "block.goCloud", "note.up", "note.down", "ok.up", "ok.down", "emptyHint", "back.btn", "ready.h", "ready.body", "ready.stay", "gate.stale", "gate.stopped",
+t("字串 zh / en 都齊(ho.* key),而且訊息那兩句與提示各只有一個 {id};「拉回…」文字鈕的 ho.down.btn 0.1.54 起退場(改 icon 鈕,只用 ho.down.aria)", (() => {
+  const keys = ["up.btn", "down.aria", "up.title", "down.title", "row.moves", "row.movesV", "row.movesKeys", "row.stays", "row.staysV", "row.staysVDown", "rename.up", "rename.down", "rename.maybeUp", "srcLive.up", "srcLive.down", "block.goCloud", "note.up", "note.down", "ok.up", "ok.down", "emptyHint", "back.btn", "ready.h", "ready.body", "ready.stay", "gate.stale", "gate.stopped",
     "p.send.up", "p.run.up", "p.trial.down", "done.match", "done.differs", "done.period", "done.nosrc", "cmp.noise", "at.up", "at.down", "err.old", "err.unknown", "card.up", "card.down", "menu.down"];
   return keys.every((k) => (strings.match(new RegExp('"ho\\.' + k.replace(/\./g, "\\.") + '":', "g")) || []).length === 2)
     && (strings.match(/"ho\.ready\.body": "[^"]*"/g) || []).every((l) => l.split("{id}").length === 2)
     && (strings.match(/"ho\.rename\.(up|down)": "[^"]*"/g) || []).length === 4
     && (strings.match(/"ho\.rename\.(up|down)": "[^"]*"/g) || []).every((l) => l.split("{to}").length === 2)
-    && !/"ho\.msg/.test(strings); })());
+    && !/"ho\.msg/.test(strings) && !/"ho\.down\.btn"/.test(strings); })());
 t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down 講「在這台電腦重跑」;舊的 ho.note 退場",
   /extra\.appendChild\(mk\("p", "cf-note", t\(HO_NOTE\[tb\]\[dir === "up" \? 0 : 1\]\)\)\);/.test(src) && !/"ho\.note":/.test(strings)
   && /"ho\.note\.up": "[^"]*在雲端重跑一次回測/.test(strings) && /"ho\.note\.down": "[^"]*在這台電腦重跑一次回測/.test(strings));
@@ -331,25 +360,26 @@ t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down �
     setAttribute(k, v) { n.attrs[k] = String(v); }, getAttribute(k) { return n.attrs[k]; }, addEventListener(_e, f) { n.listeners.push(f); }, click() { n.listeners.forEach((f) => f()); },
     append(...x) { n.kids.push(...x); }, appendChild(x) { n.kids.push(x); return x; },
     querySelector(q) { const all = (m) => m.kids.flatMap((k) => (typeof k === "object" ? [k, ...all(k)] : []));
-      if (q === ".spin16") return all(n).find((k) => k.className === "spin16") || null;
+      const cls = /^\.([\w-]+)$/.exec(q); if (cls) return all(n).find((k) => k.className === cls[1]) || null;
       const m = /^\[data-k="(\w+)"\]$/.exec(q); return m ? all(n).find((k) => k.dataset && k.dataset.k === m[1]) || null : null; } };
     Object.defineProperty(n, "className", { value: "", writable: true }); return n; };
   const btns = (n) => n.kids.filter((k) => typeof k === "object" && k.tag === "button").map((k) => k.textContent);
-  const flow = async ({ dir = "up", ack, polls = [], typeB = false, src = null }) => {
-    const note = el("p"), acts = el("div"), cmp = el("div"), feats = [], polled = [];
+  const flow = async ({ dir = "up", ack, polls = [], typeB = false, src = null, goSwitch = false, refreshThrows = false, typing = false, focusInput = false }) => {
+    const note = el("p"), acts = el("div"), cmp = el("div"), feats = [], polled = [], went = [], reloaded = [];
     const c = { HO: { on: true, pending: null, jobs: new Map(), cards: new Map() }, HO_ID_RE: ctx.HO_ID_RE, ENV: { cur: dir === "up" ? "local" : "cloud" }, RP: { name: "momo", list: [] }, RPC: { name: "momo" },
-      $: (id) => ({ "rp-ho-note": note, "rp-ho-acts": acts, "rp-ho-cmp": cmp })[id] || null, document: { createElement: el }, t: (k, v) => k + (v ? JSON.stringify(v) : ""), LANG: "zh", trackFeature: (f) => feats.push(f),
-      stratRefresh: () => {}, setTimeout: (fn) => setImmediate(fn), trSendError: () => "SEND", hasData: () => false, hasToken: false, acct: null, rpGoDataSrc: () => {}, hoGoDest: () => {},
+      $: (id) => ({ "rp-ho-note": note, "rp-ho-acts": acts, "rp-ho-cmp": cmp, ta: { value: typing ? "還沒送出的字" : "  " } })[id] || null, document: { createElement: el, activeElement: focusInput ? { tagName: "INPUT" } : { tagName: "BUTTON" } }, t: (k, v) => k + (v ? JSON.stringify(v) : ""), LANG: "zh", trackFeature: (f) => feats.push(f),
+      stratRefresh: async () => { if (refreshThrows) throw new Error("x"); }, fmtDur: new Function("return " + /function fmtDur\(sec\) \{[\s\S]*?\n\}/.exec(appSrc)[0])(), setTimeout: (fn) => setImmediate(fn), trSendError: () => "SEND", hasData: () => false, hasToken: false, acct: null, rpGoDataSrc: () => {}, hoGoDest: (j) => { went.push(j.dest); if (goSwitch) { c.ENV.cur = "local"; c.RP.name = j.dest; c.RP.tab = "code"; } }, stratReload: (n) => reloaded.push([n, c.RP.tab]),
       window: { blave: { transferUp: async () => ack, transferDown: async () => ack,
         cloudStrategy: async () => { polled.push(1); return { code: "OK", strategy: polls.length ? polls.shift() : null }; },
         loadStrategy: async () => { polled.push(1); return polls.length ? polls.shift() : null; } } } };
     c.Date = Date;
+    c.chatTyping = new Function("$", "document", "return " + /function chatTyping\(\) \{[\s\S]*?\n\}/.exec(appSrc)[0]).call(null, c.$, c.document);
     vm.createContext(c);
     vm.runInContext(block.replace(/^const /gm, "var ") + "\n" + ["hoRun", "hoPoll", "hoJobOwns", "hoJobView", "hoJobPaint", "hoCmpTable"].map((n) => (n === "hoRun" || n === "hoPoll" ? "async " : "") + cutFn(n)).join("\n")
       + "\n" + src_consts, c);
     await c.hoRun(dir, "momo", "momo_2", typeB, src);
     for (let i = 0; i < 20 && ["run", "send"].includes((c.HO.jobs.get(dir + ":momo") || {}).phase); i++) await new Promise((r) => setImmediate(r));
-    return { c, note, acts, cmp, job: c.HO.jobs.get(dir + ":momo"), txt: note.textContent, btns: btns(acts), feats, polled: polled.length };
+    return { c, note, acts, cmp, job: c.HO.jobs.get(dir + ":momo"), txt: note.textContent, btns: btns(acts), feats, polled: polled.length, went, reloaded };
   };
   const src_consts = ["HO_POLL_MS", "HO_K", "HO_WHY", "HO_DONE"].map((n) => { const i = src.indexOf("const " + n + " = "); let d = 0, k = src.indexOf("=", i) + 1;
     for (; k < src.length; k++) { const ch = src[k]; if ("{[(".includes(ch)) d++; else if ("}])".includes(ch)) d--; else if (ch === ";" && d === 0) break; } return "var " + src.slice(i + 6, k + 1); }).join("\n");
@@ -397,5 +427,57 @@ t("確認框那句依方向拆:up 講「在雲端重跑一次回測」、down �
     t("兩句相接:中文不加半形空格、英文加一個(設計複查)", /\}ho\.left\{/.test(zh.text) && /\} ho\.left\{/.test(en.text), [zh.text, en.text]); }
   { const sp = await flow({ ack: { ok: true, result: { dest: "momo_2", run: "backtest" }, missing: [] }, polls: [] });
     t("搬運中行首一個圓環(Loader inline 16/2,aria-hidden),句尾不放「…」;沒有鈕", sp.job.phase === "run" && !!sp.note.querySelector(".spin16") && !/…/.test(sp.txt) && sp.acts.hidden); }
+  // ── 0.1.54 拉回之後自動切到這台電腦那一支、回測進度
+  { const okAck = { ok: true, result: { dest: "momo_3", run: "backtest" }, exported: { type: "A", left_behind: [] } };
+    let g = await flow({ dir: "down", ack: okAck, polls: [{ stats: S }] });
+    t("拉回成功(機器開始跑)→ 切到這台電腦、打開實際存成的 dest(不是提議的 to);只切一次", g.went.join() === "momo_3", J(g.went));
+    for (const [name, o] of [["拒絕(fail)", { ack: { ok: false, kind: "rejected", error: wire("NOT_PORTABLE", "lib.foo") } }], ["沒回條(unknown)", { ack: { ok: false, kind: "unknown", error: "UNKNOWN_RESULT" } }],
+      ["金鑰沒寫進去(keys)", { ack: { ok: true, result: { dest: "momo_3", run: "keys_failed" } } }], ["Type B 沒試跑(notrun)", { ack: { ok: true, result: { dest: "momo_3", run: "not_run" } } }]]) {
+      g = await flow(Object.assign({ dir: "down" }, o));
+      t("拉回" + name + " → 不切視角", !g.went.length, J(g.went)); }
+    g = await flow({ ack: { ok: true, result: { dest: "momo_3", run: "backtest" }, missing: [] }, polls: [{ stats: S }] });
+    t("送上雲端不自動切(方向不變)", !g.went.length);
+    const run = (progress) => ({ transfer: { kind: "backtest", status: "running", progress } });
+    g = await flow({ dir: "down", ack: okAck, polls: [run({ data: "BTCUSDT 5min", i: 2, n: 4, left: 9 })] });
+    t("雲端來源頁有進度時只講「已存成這台電腦的 {dest}，回測中」,不帶段數與秒數", g.job.phase === "run" && g.txt === 'ho.prog.at{"dest":"momo_3","to":"momo_2","at":"ho.at.down"}' && !g.note.querySelector(".ho-tail"), g.txt);
+    g = await flow({ dir: "down", ack: okAck, polls: [run({ data: "BTCUSDT 5min", i: 2, n: 4, left: 9 })], goSwitch: true });
+    { const say = g.note.querySelector(".ho-say"), tl = g.note.querySelector(".ho-tail");
+      t("切到存成的那一支:唸的只有「回測中」;資料名、第幾段、抓完約剩幾秒在 aria-hidden 的 .ho-tail;圓環照轉",
+        !!say && say.textContent === "ho.prog" && !!tl && tl.attrs["aria-hidden"] === "true" && tl.textContent === '：ho.prog.step{"data":"BTCUSDT 5min","i":2,"n":4,"left":"9s"}' && !!g.note.querySelector(".spin16"), g.txt);
+      const w0 = g.note.writes; g.job.prog = { data: "BTCUSDT 5min", i: 3, n: 4, left: 5 }; g.c.hoJobPaint();
+      t("進度變了只換 .ho-tail 的字:整行不重寫、唸的那段是同一個節點(role=status 不每 6 秒重唸)",
+        g.note.writes === w0 && g.note.querySelector(".ho-say") === say && g.note.querySelector(".ho-tail").textContent === '：ho.prog.step{"data":"BTCUSDT 5min","i":3,"n":4,"left":"5s"}', g.txt);
+      g.c.LANG = "en"; g.c.hoJobPaint(); g.c.LANG = "zh";
+      t("英文:進度前面接半形冒號加空格", g.note.querySelector(".ho-tail").textContent.startsWith(": ho.prog.step")); }
+    g = await flow({ dir: "down", ack: okAck, polls: [run({ data: "BTCUSDT", i: 1, n: 4, left: 61 })], goSwitch: true });
+    t("抓完約剩照 canon 時長寫法(fmtDur:61 秒 → 1m 01s)", /"left":"1m 01s"/.test(g.note.querySelector(".ho-tail").textContent), g.txt);
+    t("字串:ho.prog 只有「回測中」、ho.prog.step 講這份資料抓完約剩、ho.prog.at 不帶段數",
+      /"ho\.prog": "回測中"/.test(strings) && /"ho\.prog\.step": "抓 \{data\} 第 \{i\}\/\{n\} 段，抓完約剩 \{left\}"/.test(strings) && /"ho\.prog\.at": "已存成這台電腦的 \{dest\}，回測中"/.test(strings)
+      && /"ho\.prog": "Backtesting"/.test(strings) && /"ho\.prog\.at": "Saved on this computer as \{dest\}\. Backtesting"/.test(strings));
+    for (const [name, o] of [["對話輸入框有沒送出的字", { typing: true }], ["焦點在輸入欄", { focusInput: true }]]) {
+      g = await flow(Object.assign({ dir: "down", ack: okAck, polls: [run({ data: "BTCUSDT", i: 1, n: 4, left: 9 })] }, o));
+      t("拉回成功但" + name + " → 不自動切(不換送出對象、不搶焦點),跑的期間就給〔到這台電腦看〕", !g.went.length && g.job.phase === "run" && g.btns.includes("ho.goDest.down"), J({ went: g.went, btns: g.btns })); }
+    g = await flow({ dir: "down", ack: okAck, polls: [run({ data: "BTCUSDT", i: 1, n: 4, left: 9 })] });
+    t("沒在打字:照常自動切,跑的期間雲端頁不多〔到這台電腦看〕", g.went.join() === "momo_3" && !g.btns.includes("ho.goDest.down"), J(g.btns));
+    t("切過去的焦點只落在存成那一支的標題 #rp-name(hoGoDest),對話欄不換對話:envSwitch 只在對話裡加一條「切到…」系統行",
+      /const h = \$\("rp-name"\); if \(h && h\.offsetParent\) h\.focus\(\);\n\}/.test(cutFn("hoGoDest")) && /el\.className = "sysline";/.test(appSrc) && /chatSwitched\(prev, env\);/.test(trSrc));
+    g = await flow({ dir: "down", ack: okAck, polls: [{ transfer: { kind: "backtest", status: "running", progress: { data: "/Users/x/secret", i: 1, n: 4, left: 5 } } }] });
+    t("進度欄位不合白名單 → 維持原句(ho.p.run.down)", /^ho\.p\.run\.down\{/.test(g.txt), g.txt);
+    g = await flow({ dir: "down", ack: okAck, polls: [{ stats: S }] });
+    g.c.ENV.cur = "local"; g.c.RP.name = "momo_3";
+    t("這台電腦看著 dest 那一支:hoJobOwns 認得拉回那一筆;雲端那一頁照樣認來源", g.c.hoJobOwns() === g.job && (g.c.ENV.cur = "cloud", g.c.hoJobOwns() === g.job));
+    { const v = g.c.hoJobView(g.job, true);
+      t("人就在存成的那一支上 → 不給〔到這台電腦看〕,其他鈕照給", !v.acts.includes("dest") && v.acts.includes("dismiss") && g.c.hoJobView(g.job, false).acts.includes("dest")); }
+    t("輪詢收尾時只有人正看著本機的 dest 才原地重讀(這裡在雲端 → 不重讀)", !g.reloaded.length);
+    g = await flow({ dir: "down", ack: okAck, polls: [{ transfer: { kind: "backtest", status: "running" } }, { stats: S }], goSwitch: true });
+    t("切到這台電腦的 dest 之後回測跑完:原地重讀一次、分頁從程式碼換到回測", g.job.phase === "done" && J(g.reloaded) === '[["momo_3","bt"]]', J(g.reloaded));
+    g = await flow({ dir: "down", ack: okAck, polls: [{ transfer: { kind: "backtest", status: "failed", err: "DATA" } }], goSwitch: true });
+    t("切過去之後回測失敗:原地重讀(「還沒有回測」那格回來),分頁不硬換", g.job.phase === "fail" && J(g.reloaded) === '[["momo_3","code"]]', J(g.reloaded));
+    g = await flow({ dir: "down", ack: okAck, polls: [{ stats: S }], refreshThrows: true });
+    t("讀這台電腦清單失敗不卡住:照樣切過去、照樣輪詢到跑完", g.job.phase === "done" && g.went.join() === "momo_3");
+    t("接線:hoPoll 收尾後看著 dest 就 stratReload;rpNobtPaint 在拉回第一次回測跑著時不講「還沒有回測」",
+      /if \(job\.dir === "down" && ENV\.cur === "local" && RP\.name === job\.dest\) \{ if \(job\.phase === "done" && !job\.typeB\) RP\.tab = "bt"; stratReload\(job\.dest\); \}/.test(src)
+      && /nb\.hidden = has \|\| \(B === RP && typeof hoPullRunning === "function" && hoPullRunning\(B\.name\)\);/.test(appSrc)
+      && /if \(hoAutoSwitch\(job, ENV\.cur, RPC\.name, typing\)\) hoGoDest\(job\);/.test(src)); }
   console.log(red ? red + " 紅" : "ALL PASS"); process.exit(red ? 1 : 0);
 })();

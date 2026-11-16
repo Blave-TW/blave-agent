@@ -439,13 +439,16 @@ def get_contract_rules(env, symbol):
         why = "已下架" if status == "off" else "不開放 API 下單，只能在 Bitget App 手動交易"
         raise BitgetError(f"Bitget 的 {vsym} {why}（symbolStatus={status}）",
                           kind=reject_token.SYMBOL_UNAVAILABLE)
+    equity = _equity(vsym)
     rules = {
         "step": str(row["sizeMultiplier"]),
         "min_qty": float(row["minTradeNum"]),
         "min_notional": float(row.get("minTradeUSDT") or 0),
         "contract_value": 1.0,
         "tick": _tick(row),
-        "equity": _equity(vsym),
+        "equity": equity,
+        # only a stock maps (venue_traits instrument_class "stock"): v3 metal also files PAXGUSDT
+        "category": "EQUITY" if equity else None,
         "status": status,
     }
     if rules["equity"] is not None:

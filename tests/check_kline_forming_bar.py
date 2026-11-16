@@ -82,10 +82,11 @@ with D.closed_bars_only():
     k1 = D.fetch_kline("BTCUSDT", "1h", "2026-01-01", None, {})
     kb = D.fetch_kline_batch(["BTCUSDT"], "1h", "2026-01-01", None, {})["BTCUSDT"]
     kx = D.fetch_bingx_kline("BTC-USDT", "1h", "2026-01-01", None)
+    ko = D.fetch_okx_kline("BTCUSDT", "1h", "2026-01-01", None)
 k0 = D.fetch_kline("BTCUSDT", "1h", "2026-01-01", None, {})
 closed = now_floor - pd.Timedelta("1h")
-check(k1.index[-1] == kb.index[-1] == kx.index[-1] == closed,
-      "fetch_kline / fetch_kline_batch / fetch_bingx_kline drop the forming bar in scope")
+check(k1.index[-1] == kb.index[-1] == kx.index[-1] == ko.index[-1] == closed,
+      "fetch_kline / fetch_kline_batch / fetch_bingx_kline / fetch_okx_kline drop the forming bar in scope")
 check(k0.index[-1] == now_floor, "…and return it unchanged outside the scope")
 
 # ── wait_for_bar: the freshness probe sees the last closed bar ────────────────────

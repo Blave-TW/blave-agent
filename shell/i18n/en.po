@@ -62,6 +62,18 @@ msgstr "Use"
 msgid "cn.foot"
 msgstr "You can switch at any time."
 
+msgid "cn.mkt.step"
+msgstr "Last Step"
+
+msgid "cn.mkt.q"
+msgstr "Which Market Do You Mainly Trade?"
+
+msgid "cn.mkt.foot"
+msgstr "You can change this in Settings."
+
+msgid "cn.mkt.skip"
+msgstr "Skip"
+
 msgid "st.signedIn"
 msgstr "Signed in"
 
@@ -456,6 +468,14 @@ msgstr "Download finished; the installer is still running. It stops after {limit
 msgid "eng.stall"
 msgstr "No data for {s}. Still waiting on the network; stops after {limit} and can be retried."
 
+# 同一條下載斷線、安裝程式正在從斷點接續(pip --resume-retries;enginesetup pipErrLine),位元組再往上走就換回進度
+msgid "eng.resume"
+msgstr "Connection unstable. Resuming the download automatically."
+
+# 網路類失敗時安裝程式自己重跑那一條下載(enginesetup NET_RETRY_MS),不出失敗卡;{n} = 第幾次
+msgid "eng.netRetry"
+msgstr "Connection unstable. Retrying automatically (attempt {n})."
+
 msgid "eng.failNet"
 msgstr "The network dropped while downloading {name}. Setup didn’t finish."
 
@@ -611,7 +631,10 @@ msgid "rp.logic.stop"
 msgstr "Stop"
 
 msgid "bt.fee"
-msgstr "fee"
+msgstr "trading cost"
+
+msgid "bt.tip.fee"
+msgstr "Trading cost covers fees, tax and slippage: {fee}% per side."
 
 msgid "bt.totalReturn"
 msgstr "Total Return"
@@ -668,7 +691,7 @@ msgid "bt.legendMedian"
 msgstr "Random median"
 
 msgid "bt.tip.band"
-msgstr "1,000 random-weight portfolios, rebalanced every bar, no fees. Each day’s p5–p95, not one portfolio’s path."
+msgstr "1,000 random-weight portfolios, rebalanced every bar, no trading costs. Each day’s p5–p95, not one portfolio’s path."
 
 msgid "bt.tip.bandNarrow"
 msgstr "The random portfolios’ range is too narrow to show, so only the median is drawn."
@@ -782,7 +805,7 @@ msgid "bt.winRate"
 msgstr "Daily Win Rate"
 
 msgid "bt.totalFees"
-msgstr "Total Fees"
+msgstr "Total Trading Cost (% of Equity)"
 
 msgid "bt.mcptDistTitle"
 msgstr "MCPT · Sharpe across {n} shuffles, p = {p}"
@@ -887,7 +910,7 @@ msgstr "Move to Recycle Bin?"
 
 # 回測指標的 tooltip(定義照 lib/analysis.py、lib/runner.py 的算法)
 msgid "bt.tip.totalReturn"
-msgstr "Cumulative return over the whole backtest, net of fees."
+msgstr "Cumulative return over the whole backtest, net of trading costs."
 
 msgid "bt.tip.annReturn"
 msgstr "Total return converted to a compounded yearly rate, so backtests of different lengths can be compared."
@@ -896,13 +919,13 @@ msgid "bt.tip.benchmark"
 msgstr "What buying and holding this symbol over the same period would have returned. The strategy has to beat it to be better than doing nothing."
 
 msgid "bt.tip.benchmarkRank"
-msgstr "Random portfolios: 1,000 random weights, same assets, similar holdings count, rebalanced every bar, no fees. Compares total return."
+msgstr "Random portfolios: 1,000 random weights, same assets, similar holdings count, rebalanced every bar, no trading costs. Compares total return."
 
 msgid "bt.tip.benchmarkBhAdj"
-msgstr "Return from holding {sym} over the same period, dividend-adjusted, no fees."
+msgstr "Return from holding {sym} over the same period, dividend-adjusted, no trading costs."
 
 msgid "bt.tip.benchmarkBhRaw"
-msgstr "Return from holding the {sym} perpetual over the same period, no fees or funding."
+msgstr "Return from holding the {sym} perpetual over the same period, no trading costs or funding."
 
 msgid "bt.tip.benchmarkBhAsOf"
 msgstr "Benchmark runs only to {date}. Later prices weren't available."
@@ -932,7 +955,7 @@ msgid "bt.tip.winRate"
 msgstr "Share of days with a gain, among days that had any P&L. This is not a per-trade win rate."
 
 msgid "bt.tip.totalFees"
-msgstr "All fees paid over the period, as a percentage of capital."
+msgstr "Each trade's trading cost as a percentage of equity at the time, summed over the period."
 
 # 刪對話確認框
 msgid "del.title"
@@ -1211,6 +1234,19 @@ msgstr "Your cloud machine is starting. Blave data will be available in a moment
 
 msgid "plan.done"
 msgstr "Your cloud machine is up."
+
+# 側欄左下那一列的帳號那一格(spec sidebar-conversion §3.1、§5):膠囊字;planTip 是「升級」的滑鼠提示與 aria-label。已停機沿用 side.stopped
+msgid "side.cv.signin"
+msgstr "Sign In"
+
+msgid "side.cv.trial"
+msgstr "Free Trial"
+
+msgid "side.cv.plan"
+msgstr "Upgrade"
+
+msgid "side.cv.planTip"
+msgstr "Upgrade Plan"
 
 msgid "side.trial"
 msgstr "{n} days left"
@@ -1525,7 +1561,7 @@ msgid "cx.linkOk"
 msgstr "Connected: the key can read the account. Trading permission is confirmed on the first order."
 
 msgid "cx.perfNote"
-msgstr "Simulated fills, with costs from the strategy's fee setting."
+msgstr "Simulated fills, with the strategy's trading cost setting."
 
 msgid "cx.retest"
 msgstr "Retest connection"
@@ -1780,6 +1816,13 @@ msgstr "{sym} not placed: the exchange rejected this key. Check the account in A
 
 msgid "tr.err.reduceOnly"
 msgstr "{sym} not placed: the exchange refused a reduce-only order; its position or orders differ from Blave’s record. Check the position there."
+
+# 全部平倉碰到休市被拒([order_reject:market_closed],manager/flatten._refuse_tw_futures;同網頁 workspace_pf_err_market_closed)
+msgid "tr.err.marketClosed"
+msgstr "{sym} not closed: the market is shut. The position stays open with no stop until you close it after the open."
+
+msgid "tr.err.marketClosedRun"
+msgstr "{sym} not closed: the market is shut. The position and the connection stay until you close it after the open."
 
 msgid "tr.err.paperMargin"
 msgstr "{sym} order not placed: the margin for these TAIFEX lots adds up to more than the paper account's equity. Lower the lots and try again."
@@ -2515,6 +2558,10 @@ msgstr "{venue} replied: {msg}"
 
 msgid "tr.ub.failState"
 msgstr "Trading stays paused. Unclosed positions are still open."
+
+# 休市被拒、機器撤回了這次自己掛的暫停時用這句;仍在暫停(含重開停住)用 tr.ub.failState
+msgid "tr.ub.failStateRun"
+msgstr "Trading isn’t paused. Unclosed positions are still open."
 
 msgid "tr.ub.unconfirmed"
 msgstr "Check the {app} app to see whether the unconfirmed one filled."
@@ -3473,6 +3520,9 @@ msgstr "Reply notifications: whether shown, whether clicked"
 msgid "priv.c.feat.8"
 msgstr "Never the chat title or text"
 
+msgid "priv.c.feat.9"
+msgstr "Picking a main market: which one you picked"
+
 msgid "priv.c.stuck.h"
 msgstr "Where things got stuck"
 
@@ -3866,9 +3916,6 @@ msgstr "There are no data sources on the cloud machine."
 
 msgid "ho.up.btn"
 msgstr "Send to Cloud…"
-
-msgid "ho.down.btn"
-msgstr "Bring Back…"
 
 msgid "ho.down.aria"
 msgstr "Bring back to this computer"
@@ -4843,15 +4890,12 @@ msgstr "Updating…"
 msgid "up.restarting"
 msgstr "Restarting…"
 
-# 側欄左下的更新膠囊(新版已暫存好;spec desktop-update-pill §3)。不寫版號;下單中字尾接「…」。細軌圓鈕的 aria-label 也是這句
+# 側欄左下的更新圓鈕(新版已暫存好;spec sidebar-conversion §3.3):滑鼠提示與 aria-label,列裡與細軌同一句。沒有版號用 up.pill;下單中字尾接「…」
 msgid "up.pill"
 msgstr "Restart to update"
 
 msgid "up.pillV"
 msgstr "Restart to update: {v}"
-
-msgid "up.pillS"
-msgstr "Update: {v}"
 
 # 更新 modal 一般(沒在下單)的標題;{v} = 已暫存的新版號(canon 具名例外:只這個標題可以寫版號)
 msgid "up.md.title"
@@ -5058,7 +5102,7 @@ msgid "rob.stale.period"
 msgstr "the backtest period is now {start} → {end}"
 
 msgid "rob.stale.fee"
-msgstr "the fee is now {fee}%"
+msgstr "the trading cost is now {fee}%"
 
 msgid "rob.stale.join"
 msgstr ", "
@@ -5073,7 +5117,7 @@ msgid "rob.cfPeriod"
 msgstr "Period"
 
 msgid "rob.cfFee"
-msgstr "Fee"
+msgstr "Trading Cost"
 
 msgid "rob.cfGrid"
 msgstr "Grid"
@@ -5088,7 +5132,7 @@ msgid "rob.cfNoteFirst"
 msgstr "Usually a few minutes. It takes longer with more data or a bigger grid."
 
 msgid "rob.msgRescan"
-msgstr "Please rescan the parameters of strategy {display_name} ({name}) (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap). Use the current backtest's period and fee: {start} → {end}, fee {fee}%. Keep the previous axes — {rp} {r0}–{r1} and {cp} {c0}–{c1}; if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."
+msgstr "Please rescan the parameters of strategy {display_name} ({name}) (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap). Use the current backtest's period and trading cost: {start} → {end}, trading cost {fee}%. Keep the previous axes — {rp} {r0}–{r1} and {cp} {c0}–{c1}; if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."
 
 msgid "rob.msgRescanLabel"
 msgstr "Rescan the parameters of {name}"
@@ -5118,7 +5162,7 @@ msgid "rob.cfRangeVal"
 msgstr "{rp} {r0}–{r1} ({R} cells)"
 
 msgid "rob.msgRescan1"
-msgstr "Please rescan the parameters of strategy {display_name} ({name}) (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap; a single parameter uses the one-cell second axis described in the lib docs). Use the current backtest's period and fee: {start} → {end}, fee {fee}%. There is only one parameter, {rp}; keep the previous range {r0}–{r1}, and if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."
+msgstr "Please rescan the parameters of strategy {display_name} ({name}) (lib.param_scan: scan_grid → find_plateau → write_scan → plot_heatmap; a single parameter uses the one-cell second axis described in the lib docs). Use the current backtest's period and trading cost: {start} → {end}, trading cost {fee}%. There is only one parameter, {rp}; keep the previous range {r0}–{r1}, and if the plateau lands on an edge, extend once per the lib rule. Then report the peak and the robust point."
 
 msgid "rob.tag.atPlateau1"
 msgstr "Current: the robust value"
@@ -5489,7 +5533,7 @@ msgid "lib.gate1"
 msgstr "Honest backtest"
 
 msgid "lib.gate1d"
-msgstr "Fees at or above the actual rate, no fake history"
+msgstr "Trading cost at or above the actual rate, no fake history"
 
 msgid "lib.gate2"
 msgstr "Statistically significant"
@@ -9452,6 +9496,12 @@ msgstr "Display currency"
 msgid "set.ccyFail"
 msgstr "Couldn't switch. Try again later."
 
+msgid "set.mkt"
+msgstr "Main market"
+
+msgid "set.mkt.all"
+msgstr "No preference"
+
 msgid "acct.revoked"
 msgstr "Sign-in expired"
 
@@ -10415,6 +10465,13 @@ msgstr "Clock unverified, so it closes after the open by this computer’s time"
 msgid "tr.ov.evDeferClockFarNote"
 msgstr "Clock over an hour off, so it closes after the open by this computer’s time"
 
+# 雲端視角:時鐘看的是主機,不是這台電腦(同網頁 workspace_ov_ev_defer_clock_note／…_far_note)
+msgid "tr.cloud.ov.evDeferClockNote"
+msgstr "Clock unverified, so it closes after the open by the server’s clock"
+
+msgid "tr.cloud.ov.evDeferClockFarNote"
+msgstr "Clock over an hour off, so it closes after the open by the server’s clock"
+
 msgid "tr.ov.evDeferCancelStock"
 msgstr "Taiwan stock deferred close canceled"
 
@@ -10686,9 +10743,6 @@ msgstr "Use on Phone"
 # 側欄「在手機上用」pop 的步驟(spec slot-phone-steps §3)。清單項目用句首大寫,不是按鈕
 msgid "ph.stepGet"
 msgstr "Get the app"
-
-msgid "ph.stepPair"
-msgstr "Pair in the app"
 
 # 已登入時第 1 步(打勾),下面小字是 Blave 帳號 email
 msgid "ph.signed"
@@ -10986,6 +11040,15 @@ msgstr "Saved in the cloud as {dest}. Checking that it starts"
 msgid "ho.p.trial.down"
 msgstr "Saved on this computer as {dest}. Checking that it starts"
 
+msgid "ho.prog"
+msgstr "Backtesting"
+
+msgid "ho.prog.step"
+msgstr "fetching {data}, part {i} of {n}, done fetching in about {left}"
+
+msgid "ho.prog.at"
+msgstr "Saved on this computer as {dest}. Backtesting"
+
 msgid "ho.cmp.show"
 msgstr "Show both sets of numbers"
 
@@ -11195,3 +11258,10 @@ msgstr "Your {venue} positions don't match Blave's records."
 
 msgid "tr.haltUnexplainedDo"
 msgstr "Check before you press {btn}. After that, any difference is yours to handle."
+
+# 0.1.54 stop box consequence line when no strategy has an amount (same as web workspace_pf_close_all_warn2_z); President market-closed row
+msgid "tr.closeAllWarn2Z"
+msgstr "Strategy amounts are kept. No strategy has an amount now, so nothing will be rebuilt. To trade again, set an amount in Portfolio first."
+
+msgid "tr.ov.evBrokerShut"
+msgstr "President says closed. Sending next session"

@@ -809,7 +809,8 @@ def format_qty(env: dict, symbol: str, qty: float, price: float = None) -> str:
     signal) for anything below 1 lot; never silently floors to 0."""
     lots = float(qty)
     if lots < 1:
-        raise ValueError(f"capital: {qty} lots is below the 1-lot minimum")
+        from lib import reject_token   # the token is what flatten counts as dust
+        raise ValueError(reject_token.tag(reject_token.BELOW_MIN_SIZE, f"capital: {qty} lots is below the 1-lot minimum"))
     return str(int(round(lots)))
 
 

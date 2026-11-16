@@ -6,7 +6,7 @@ Also applies when the user asks for one strategy by style, investor or paper wit
 
 ## Flow
 
-1. Pick **3–6 sites** from *Sources* that fit the type (A / C) and market asked for — never the whole list (12 full reads use up the 120k read budget).
+1. Pick **3–6 sites** from *Sources* that fit the type (A / C) and market asked for — never the whole list (12 full reads use up the 120k read budget). TradingView Source code comes out of the same budget: three scripts at up to 30,000 characters each plus the list pages' `part="links"` have to fit in it, so size each script with `part="meta"` (*TradingView community scripts*) rather than a `full` read.
 2. `browser_open_many` those list pages → `browser_read(part="links")` on each (cheap) → pick candidates.
 3. Open only the single pages you will read, and read every page you open (`browser.md` › *Standard flow*).
 4. A topic none of the listed sites covers (e.g. funding rate): skip the generic blogs and search once right away, then open the best results. Otherwise no search. One search per turn at most.
@@ -73,10 +73,13 @@ The user asked for a strategy by type or style (value, momentum, mean reversion)
 
 - Use the `/scripts/` URLs above — **never the chart's Indicators dialog** (its community rows have no refs; you cannot click them).
 - The list is already recent-popular and open-source. More: `https://www.tradingview.com/scripts/page-2/?script_type=strategies`, `page-3` … — never scroll the page. Past page 42 it sends you back to page 1. There is no all-time ranking on the web; do not look for one.
-- For idea hunting you may read an open-source script's Source code to state its rules exactly; the output is still rules + URL only — no code, nothing in `strategies/` until the user picks one (`strategy-code.md` › *Building from code the user points to*).
 - **When a TradingView list has a script that fits, at least one delivered idea comes from it** (not only from sources that are cheaper to read).
-- The code sits behind the script page's `tab "Source code"`: snapshot, click it, then read. One script is ~28k characters — choose from the list and the description first, open Source code only for the ones you will deliver.
+- **Desktop (the `browser_*` tools are attached): every TradingView script you deliver has its Source code read before you write.** Descriptions leave out filters, exits and default parameters, so the user would pick on rules the script does not have. Choose from the list and the descriptions as before; open Source code only for the ones you will deliver: `browser_snapshot` → click `tab "Source code"` → `browser_read(part="meta")` for the size → `browser_read`. On a page you already know you will deliver, click before the first read.
+- **Size varies from a few thousand to over 100k characters — check `total_chars` before reading the code.** After the click, `browser_read(part="meta")` returns `total_chars` for the whole page (description and code) at a cost of a few hundred characters; finding out with a `full` read costs up to 12,000, and that comes out of the budget even for a script you then skip. 30,000 or less: read it. Over 30,000: `browser_close` this page and take the next fitting TradingView script in the list, sized the same way — do not deliver it unread or swap in another site. Only when the list has no fitting script left may you keep one unread: write the idea from the description and say on that idea that only its description was read.
+- **Use what you read.** Each idea's one-sentence logic and its caveats follow the code; where the description and the code disagree (a filter, an exit or a default parameter the description does not mention), that is a caveat. After the click the description may not be in the chunk you read; compare with whatever of it you did read, the list entry included, and do not spend reads just to find it. The reply still carries no code and nothing goes into `strategies/` until the user picks one (`strategy-code.md` › *Building from code the user points to*).
 - Protected / invite-only: say the code is not readable and work from the description (`strategy-code.md`).
+- Cloud and Telegram (no `browser_*` tools): the code loads only when the tab is clicked, so only descriptions can be read; the opening sentence says so, never that the code was read.
+- Clicked the tab and still no code: `browser.md` › *Standard flow* (open it before you say it cannot be read), then say on that idea that only its description was read.
 
 ## Output
 
@@ -90,8 +93,8 @@ This reply exists so the user can pick one — the chat column is narrow and a r
 Reply in the user's language; the example below is the shape, not the wording.
 
 <example>
-All three use only public Binance klines, no Blave data; I read the page descriptions, not the code.
-1. First-4-hour fake breakout. Price breaks out of the UTC 0–4 range and closes back inside, so enter the other way. The author tested it only on gold.
+All three use only public Binance klines, no Blave data; I read each TradingView script's code, not just its page.
+1. First-4-hour fake breakout. Price breaks out of the UTC 0–4 range and closes back inside, so enter the other way. The author tested it only on gold; the code also exits after 12 bars, which the page does not mention.
 https://www.tradingview.com/script/…
 2. Bollinger squeeze breakout (ETH). Volatility contracts, then expands; follow the direction. The page shows only 11 trades, and two parameters are left for us to fill in.
 https://jesse.trade/strategies/…

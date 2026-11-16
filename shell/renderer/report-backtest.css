@@ -21,6 +21,7 @@
   align-items: center;
   gap: var(--space-4) var(--space-24);
   overflow-x: clip;
+  position: relative;   /* 交易成本泡泡的定位基準(見下) */
   font-size: 12px;
   line-height: 1.5;
   color: var(--ink-3);
@@ -28,6 +29,11 @@
 }
 .bt-meta .bt-sym { color: var(--ink); font-weight: 600; letter-spacing: 0.02em; }
 .bt-meta > .mgrp { position: relative; display: inline-flex; gap: var(--space-4); white-space: nowrap; }
+/* 「交易成本」的說明泡泡:.mgrp 不折行,泡泡要自己折(寬度上限照 .tip 的 260,容器更窄就照容器寬)。
+   帶泡泡的那一組不定位,泡泡改以 .bt-meta 為基準、預設貼左緣:永遠落在 overflow-x: clip 的範圍內,不靠排版時機;
+   出現時由 report-backtest.js 挪到標籤上方、左右夾在容器裡 */
+.bt-meta .tip { width: max-content; max-width: min(260px, 100%); white-space: normal; left: 0; }
+.bt-meta > .mgrp:has(> .tip) { position: static; }
 /* 分隔點是裝飾,可以比要被讀的字淡一階;第二個 content 讓讀屏不念 */
 .bt-meta > .mgrp + .mgrp::before {
   content: "·";
@@ -38,6 +44,8 @@
   text-align: center;
   color: var(--ink-disabled);
 }
+/* 不定位的那一組:點改成組裡第一個 flex 項目,左負邊距推進組間空隙(右負邊距抵掉組內 4 的間距);折到行首時一樣在容器左緣外被裁 */
+.bt-meta > .mgrp + .mgrp:has(> .tip)::before { position: static; flex: none; margin: 0 calc(-1 * var(--space-4)) 0 calc(-1 * var(--space-24)); }
 
 /* ---- 1b. 更新績效(renderer/perf.js 掛進 .bt-meta 列尾;spec stats-manual-refresh §10)----
    .upd-box 不是 .mgrp:靠右、前面不畫點;更新中是圓環(Loader inline 階 16/2,currentColor = ink-3)+ 三個字。

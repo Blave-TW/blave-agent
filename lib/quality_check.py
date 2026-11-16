@@ -379,7 +379,7 @@ def ladder_roll_findings(filepath: str) -> list[dict]:
 # built on — that is the "external indicator" case the rule targets.
 _PRICE_OR_META_FETCHERS = {
     "fetch_data",  # the strategy's own entry point
-    "fetch_kline", "fetch_kline_batch", "fetch_bingx_kline", "fetch_db_kline",
+    "fetch_kline", "fetch_kline_batch", "fetch_bingx_kline", "fetch_okx_kline", "fetch_db_kline",
     "fetch_twstock_price", "fetch_twstock_price_adj",
     "fetch_twstock_price_batch", "fetch_twstock_price_adj_batch",
     "fetch_twstock_ohlcv", "fetch_twstock_quote", "fetch_twstock_quote_batch", "fetch_usstock_price",
@@ -645,6 +645,7 @@ _DESKTOP_PUBLIC_DATA = frozenset({
     "align_feed", "feed_available_at", "join_tw_flow", "normalize_symbol",
     "settlement_signals_from_db", "tw_not_trading", "twstock_industry_name", "txf_settlement_mask",
     "us_market_closed",
+    "fetch_okx_kline",
 })
 _BLAVE_DATA = frozenset({
     "fetch_capital_shortage", "fetch_cme_cot", "fetch_cvd_coin", "fetch_cvd_table", "fetch_db_kline",

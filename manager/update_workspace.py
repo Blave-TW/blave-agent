@@ -50,6 +50,10 @@ Rules (the same as the references):
   The gap between that check and the restart is closed by state/execution/hold:
   written before the copy, removed however the run ends; the reconciler starts
   no round while it exists (and drops one older than 15 min as a dead script).
+- Under HALT with a restart due, state/paper_tw_close.json (a 0.1.53 close-all deferred
+  to the TW open) is dropped before the copy and again after it, with the clone's
+  lib/portfolio rows: a restart that does not happen leaves the old lib running, and it
+  would send those closes at the open ("tw_deferred" in the result).
 - A refused lib/ or manager/ file → no restart ("restart": "refused", outcome
   restart_deferred, owed like busy): the tree is part new, part old and a
   process started on it may not come up; the running one still has the old
@@ -112,7 +116,14 @@ ROUND_STALE_S = 900  # a marker older than this is a crashed round, not a live o
                      # legs on a slow broker API) is taken for crashed and the restart
                      # goes ahead in the middle of it.
 UPDATE_HOLD = "state/execution/hold"
+# String twins of lib/portfolio._PAPER_TW_CLOSE_PATH and lib/guard.HALT_PATH.
+TW_DEFERRED = "state/paper_tw_close.json"
+HALT = "state/HALT"
+# The clone's own lib, never the workspace's: -I keeps the workspace cwd off sys.path.
+DROP_TW_DEFERRED = ("import sys; sys.path.insert(0, sys.argv[1]); from lib import portfolio; "
+                    "portfolio._drop_tw_deferred({}, True, book_known=False)")
 BUSY_POLL_S = 5
+TW_DROP_RETRY_DELAYS = (0, 0.5, 2)
 STATUS_FILE = "state/workspace_update.json"
 
 
@@ -352,6 +363,51 @@ def set_hold(workspace):
         pass
 
 
+def drop_tw_deferred(clone, workspace):
+    """A 0.1.53 lib re-reads state/paper_tw_close.json every round and, under HALT, sends those
+    closes after the TW open. A restart that does not happen (busy / refused / failed) leaves that
+    process running past this update, so the file goes before the copy, whatever the restart does
+    (Wei 11-16). The clone's lib/portfolio._drop_tw_deferred removes it and writes its rows; no book
+    is read here, so they say unread. Without HALT the old lib drops it itself and sends nothing.
+    Never stops the update: a file that cannot be removed stays, and the reason is returned."""
+    path = os.path.join(workspace, TW_DEFERRED)
+    if not (os.path.exists(path) and os.path.exists(os.path.join(workspace, HALT))):
+        return None
+    out = {"dropped": False}
+    for pause in TW_DROP_RETRY_DELAYS:
+        time.sleep(pause)
+        try:
+            r = subprocess.run([sys.executable, "-I", "-c", DROP_TW_DEFERRED, clone], cwd=workspace,
+                               capture_output=True, encoding="utf-8", errors="replace", timeout=60)
+        except (OSError, subprocess.SubprocessError) as e:
+            out["error"] = f"{type(e).__name__}: {str(e)[:120]}"
+            break
+        if r.returncode != 0:
+            out["error"] = (r.stderr or "").strip()[-200:]
+            break
+        if not os.path.exists(path):
+            out.pop("error", None)
+            out["dropped"] = True
+            return out
+        # exit 0 with the file still there: the lib skipped the round (Windows sharing
+        # violation while the reporter reads it), so ask it again rather than lose the row
+        out["error"] = "not removed: the lib ran, the file is still there"
+    else:
+        return out
+    if os.path.exists(path):
+        # never-send outranks the row: the helper could not run, so the file goes without one
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            out["error"] = f"not removed: {type(e).__name__}: {str(e)[:120]}"
+            return out
+        out["rowless"] = True
+    out["dropped"] = True
+    return out
+
+
 def drop_hold(workspace):
     try:
         os.remove(os.path.join(workspace, UPDATE_HOLD))
@@ -573,6 +629,9 @@ def _run(a, clone, workspace, result):
         result["backup"] = os.path.relpath(backup_dir, workspace)
     if needs_restart:
         set_hold(workspace)  # main() drops it, whatever the copy or the restart does
+        tw = drop_tw_deferred(clone, workspace)
+        if tw:
+            result["tw_deferred"] = tw
     for rel in todo:
         src, dst = os.path.join(clone, rel), os.path.join(workspace, rel)
         existed = os.path.lexists(dst)
@@ -591,6 +650,11 @@ def _run(a, clone, workspace, result):
         except OSError as e:
             refused.append({"path": rel, "error": f"{type(e).__name__}: {str(e)[:120]}"})
     result.update(replaced=replaced, added=added, kept=kept, refused=refused)
+    if needs_restart:
+        # a round already running when the hold went up may have written the file back
+        tw = drop_tw_deferred(clone, workspace)
+        if tw:
+            result["tw_deferred_again"] = tw
     restarted = None
     if needs_restart and any(x["path"].split("/")[0] in CODE_DIRS for x in refused):
         # lib/ or manager/ is now part new, part old: the new files may import

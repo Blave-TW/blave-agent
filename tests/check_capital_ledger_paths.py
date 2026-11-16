@@ -613,40 +613,41 @@ def child(venue, sid, tmp):
         why = (f"pre-open close: held before the open={held}, closes sent={len(closes)}, broker={w.rows}, "
                f"book TXF={ledger_txf(last)}, halt={last['halt_reason']!r}")
     elif sid in ("C1", "C2"):
-        # 全部平倉 after the close: flatten (check_capital_flatten_identity) books the key in
-        # state/paper_tw_close.json and HALT holds; the reconciler closes it at the open
+        # a 0.1.53 全部平倉 after the close left TXF in state/paper_tw_close.json for the open; this lib
+        # never sends it (Wei 11-15). C1: HALT still on — dropped at the first round with one failure row
+        # on the venue, nothing sent at the open. C2: resumed before this lib's first round — the old
+        # cancel row, the strategies' targets rule
         from lib import portfolio as pf
         w.session, w.taking, w.open_at = False, False, time.time() + 7200
-        pf.defer_paper_tw_close(["TXF"])
-        guard.trip_halt("close-all (test)", "user")
-        r1 = round_("13:50: HALT, close-all deferred")
-        let_time_pass(5.5)
-        w.taking = True
-        r2 = round_("14:51: the pre-open")
-        held = not r1["sent"] and not r2["sent"] and w.net() == 2 and ledger_txf(r2) == 2
+        os.makedirs(os.path.dirname(pf._PAPER_TW_CLOSE_PATH), exist_ok=True)
+        with open(pf._PAPER_TW_CLOSE_PATH, "w") as f:
+            json.dump({"keys": ["TXF"], "ts": int(time.time())}, f)
         if sid == "C1":
+            guard.trip_halt("close-all (test)", "user")
+            r1 = round_("13:50: HALT, a 0.1.53 deferral on disk")
+            dropped = [e for e in errors() if "更新後取消等開盤的平倉" in str(e.get("error", ""))]
+            let_time_pass(5.5)
+            w.taking = True
+            r2 = round_("14:51: the pre-open")
             w.session = True
             let_time_pass(5.5)
             r3 = round_("the open")
             let_time_pass(30)
-            r4 = round_("next round, still halted")
-            let_time_pass(30)
-            last = round_("one more")
-            sent = [o for r in (r3, r4, last) for o in r["sent"]]
-            closes = [o for o in sent if o.get("intent") == "reduce" or o.get("opencloseflag") == "1"]
-            ok = (held and len(sent) == 1 and len(closes) == 1 and w.net() == 0 and ledger_txf(last) == 0
-                  and last["halt"] and not os.path.exists(pf._PAPER_TW_CLOSE_PATH))
-            why = (f"close-all after the close: held before the open={held}, sent at/after the open={sent}, "
-                   f"broker={w.rows}, book TXF={ledger_txf(last)}, halt={last['halt']}, "
-                   f"deferred file left={os.path.exists(pf._PAPER_TW_CLOSE_PATH)}")
+            last = round_("next round, still halted")
+            sent = [o for r in (r1, r2, r3, last) for o in r["sent"]]
+            ok = (not sent and w.net() == 2 and ledger_txf(last) == 2 and last["halt"]
+                  and len(dropped) == 1 and dropped[0].get("exchange") == venue and "部位還在、沒有停損" in dropped[0]["error"]
+                  and not dropped[0].get("kind") and not os.path.exists(pf._PAPER_TW_CLOSE_PATH)
+                  and len([e for e in errors() if "更新後取消等開盤的平倉" in str(e.get("error", ""))]) == 1)
+            why = (f"0.1.53 deferral under HALT: sent={sent}, broker={w.rows}, book TXF={ledger_txf(last)}, "
+                   f"halt={last['halt']}, failure rows={dropped}, file left={os.path.exists(pf._PAPER_TW_CLOSE_PATH)}")
         else:
-            guard.clear_halt("user")
-            let_time_pass(5.5)
-            last = round_("啟動下單 in the pre-open")
+            w.taking = True
+            last = round_("啟動下單 already pressed: the first round of this lib")
             said = [e for e in errors() if "台指期平倉取消" in str(e.get("error", ""))]
-            ok = (held and not last["sent"] and w.net() == 2 and ledger_txf(last) == 2
+            ok = (not last["sent"] and w.net() == 2 and ledger_txf(last) == 2
                   and said and said[-1].get("exchange") == venue and not os.path.exists(pf._PAPER_TW_CLOSE_PATH))
-            why = (f"resumed before the open: held={held}, sent={last['sent']}, broker={w.rows}, "
+            why = (f"resumed before the upgrade: sent={last['sent']}, broker={w.rows}, "
                    f"book TXF={ledger_txf(last)}, cancel row={said[-1:]}")
     elif sid in ("H1", "H2"):
         y, m, d_late = (2026, 2, 23) if sid == "H1" else (2023, 1, 30)
