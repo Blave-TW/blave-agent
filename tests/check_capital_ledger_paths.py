@@ -145,6 +145,11 @@ def _pin_session():
     except ImportError:
         return
     order_president._in_trading_window = lambda: True  # 統一's login window, the wall clock's too
+    # a close reads that window on the corrected clock: the real window table, at a pinned Thursday 10:00
+    from datetime import datetime
+    from lib import president_vault
+    order_president._close_window_open = lambda: president_vault.session_window(
+        datetime(2026, 10, 8, 10, 0, tzinfo=president_vault.TAIPEI)) is not None
 
 
 def capital_world(tmp):

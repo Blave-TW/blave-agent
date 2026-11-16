@@ -73,6 +73,9 @@ pc._now = lambda now: _real_now(now or FIXED_NOW)
 from lib import tw_clock  # noqa: E402
 tw_clock.in_session = lambda ts: True
 op._in_trading_window = lambda: True  # and the order lib's login window (president_vault.session_window)
+# a close reads that window on the corrected clock: the real window table, at a pinned Tuesday 10:00
+WINDOW_AT = [datetime(2026, 10, 20, 10, 0, tzinfo=TAIPEI)]
+op._close_window_open = lambda: president_vault.session_window(WINDOW_AT[0]) is not None
 
 # ── 1. near month ────────────────────────────────────────────────────────────
 T = lambda *a: datetime(*a, tzinfo=TAIPEI)  # noqa: E731
@@ -331,6 +334,14 @@ check(e is not None and "A123456789" not in str(e) and "PSCNET" not in str(e)
 # reduce → the row's own productid, even after the near month rolled past it
 snapshot([{"root": "TMF", "productid": "TMFJ6", "net": 2, "net_current": 2}])
 api = use([ACK])
+WINDOW_AT[0] = datetime(2026, 10, 24, 10, 0, tzinfo=TAIPEI)  # Saturday: 統一's window is shut
+denied = open("state/audit.jsonl", encoding="utf-8").read().count('"order_denied_session"')
+e = raises(op.SessionClosed, lambda: op.close_position_partial({}, "TMF", "long", 1,
+                                                              client_order_id="flat20260930120000123456"))
+check(e is not None and not api.sent
+      and open("state/audit.jsonl", encoding="utf-8").read().count('"order_denied_session"') == denied + 1,
+      "a close outside the window: SessionClosed, nothing sent, audited order_denied_session", e)
+WINDOW_AT[0] = datetime(2026, 10, 20, 10, 0, tzinfo=TAIPEI)
 r = op.close_position_partial({}, "TMF", "long", 1, client_order_id="flat20260930120000123456")
 check(api.sent[-1].productid == "TMFJ6" and api.sent[-1].bs == "S" and api.sent[-1].opencloseflag == "1"
       and r["exchange"] == "president",
