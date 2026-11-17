@@ -160,10 +160,13 @@ _RESTART_PASS = frozenset({"cancel", "cancel_all", "leverage", "reset"})
 # the machine stays stopped. command_listener._cmd_close_all writes this pass
 # right before launching manager/flatten.py; flatten claims it (claim_close_all_pass),
 # which lets THAT process's reduce orders through — nothing else, no entry, no
-# SL/TP, no other process. Strategies and the reconciler never hold it.
+# SL/TP. The one other process: lib/sinopac_worker.py sends flatten's 永豐 futures
+# closes, and honours the pass for a reduce whose request says flatten held it
+# (close_all_relay). Strategies and the reconciler never hold it.
 CLOSE_ALL_PASS_PATH = "state/close_all_pass.json"
 CLOSE_ALL_PASS_TTL_S = 120
 _close_all_granted = False
+_close_all_relay_local = threading.local()
 
 
 def restart_stopped():
@@ -177,7 +180,8 @@ def claim_close_all_pass():
     than CLOSE_ALL_PASS_TTL_S is void. Code running as this user could forge the
     file — but it could equally delete RESTART_STOP_PATH, so the pass adds no
     power it did not already have, and it is reachable through no argument,
-    environment variable or public lib path."""
+    environment variable or public lib path (the 永豐 worker's request field is
+    a file the same user writes: the same argument)."""
     global _close_all_granted
     claimed = f"{CLOSE_ALL_PASS_PATH}.{os.getpid()}"
     try:
@@ -201,6 +205,29 @@ def claim_close_all_pass():
     return ok
 
 
+def close_all_granted():
+    """This process claimed the user's close-all pass (manager/flatten.py). lib/order_sinopac puts it
+    in the request, so the futures worker that sends the close honours it (close_all_relay)."""
+    return _close_all_granted
+
+
+class close_all_relay:
+    """lib/sinopac_worker.py only (tests/check_halt_freeze.py pins the call): one reduce whose
+    requester held the close-all pass passes the restart stop on this thread inside the block.
+    Same trust argument as claim_close_all_pass; nothing but a reduce, and only inside the block."""
+
+    def __init__(self, symbol, source):
+        self.symbol, self.source = symbol, source
+
+    def __enter__(self):
+        _close_all_relay_local.on = True
+        return self
+
+    def __exit__(self, *exc):
+        _close_all_relay_local.on = False
+        return False
+
+
 def _order_label(fields):
     return (fields.get('symbol') or fields.get('instId') or fields.get('contract')
             or fields.get('currency_pair') or '?')
@@ -217,7 +244,8 @@ def check_restart_stop(intent, fields=None):
     if intent in _RESTART_PASS:
         return
     if restart_stopped():
-        if not (_close_all_granted and intent == "reduce"):
+        granted = _close_all_granted or getattr(_close_all_relay_local, "on", False)
+        if not (granted and intent == "reduce"):
             audit("order_denied_restart", **{**fields, "intent": intent})
             raise Halted(
                 f"the machine restarted and trading is stopped until the user presses "
@@ -231,7 +259,8 @@ def check_restart_stop(intent, fields=None):
 # ── HALT close pass: the user's explicit close while trading is paused ───────
 # Process-wide for a process that exists only to close (manager/flatten.py,
 # manager/close_symbol.py — tests/check_halt_freeze.py enumerates the callers);
-# thread-local for one close-all leg the reconciler finishes for flatten. Same
+# thread-local in lib/sinopac_worker.py for one reduce whose requester held it
+# (the request carries it, lib/order_sinopac._submit_futures). Same
 # trust argument as claim_close_all_pass: code running as this user could just
 # as well delete state/HALT, so the pass adds no power — it keeps the freeze
 # from being bypassed by accident, not by intent.
@@ -248,8 +277,8 @@ def grant_halt_closes(source):
 
 
 class halt_close_pass:
-    """One close-all leg on this thread (lib.portfolio.reconcile, flatten's
-    deferred paper TW closes): reduces pass HALT inside the block."""
+    """lib/sinopac_worker.py only: one relayed reduce whose requester held the
+    pass — reduces pass HALT on this thread inside the block."""
 
     def __init__(self, symbol, source):
         self.symbol, self.source = symbol, source

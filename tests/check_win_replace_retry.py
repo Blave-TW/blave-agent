@@ -161,6 +161,8 @@ try:
         ("lib/capital_worker.py", "_write_snapshot"), ("lib/capital_worker.py", "_write_probe"),
         ("lib/capital_vault.py", "mark_order_sent"), ("lib/capital_vault.py", "_write_block"),
         ("lib/president_vault.py", "replace_json"),
+        ("lib/sinopac_vault.py", "mark_order_sent"), ("lib/sinopac_worker.py", "_atomic_write"),
+        ("lib/order_sinopac.py", "_write_request"),
         ("manager/reconciler.py", "_save_outage"), ("manager/reconciler.py", "_save_account_guard"),
         ("manager/reconciler.py", "_save_account_id_read"), ("manager/wait_for_bar.py", "_save_state"),
     }

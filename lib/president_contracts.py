@@ -172,7 +172,7 @@ def classify_row(row, listed=None, now=None):
     return "manual"
 
 
-def bot_rows(rows, listed_by_root=None, now=None, book_months=None):
+def bot_rows(rows, listed_by_root=None, now=None, book_months=None, broker="統一"):
     """(keep, residue, manual): the held rows the bot counts (bot + pending),
     the settled residue it ignores, and the months it does not trade (left
     out, never touched). Raises ListUnknown for a month past its settlement
@@ -181,7 +181,8 @@ def bot_rows(rows, listed_by_root=None, now=None, book_months=None):
     book_months: {root: {'YYYY-MM', …} | None} — the months the bot's book
     holds; a root absent from it holds none (every row of it is manual), None
     for a root = its months are not known (the calendar decides that root).
-    None altogether = no book: the calendar decides every row."""
+    None altogether = no book: the calendar decides every row. `broker`: the name ListUnknown
+    gives the user (lib/sinopac_worker and lib/sinopac_futures_account pass 永豐)."""
     keep, residue, manual = [], [], []
     for r in rows:
         if not r.get("net"):
@@ -195,7 +196,7 @@ def bot_rows(rows, listed_by_root=None, now=None, book_months=None):
         if owned is not None and kind == "manual":
             kind = "bot"  # the book holds this month: the calendar does not get a say
         if kind == "unknown":
-            raise ListUnknown(f"統一 {r['productid']} 已過結算時點、但讀不到券商的合約清單——"
+            raise ListUnknown(f"{broker} {r['productid']} 已過結算時點、但讀不到券商的合約清單——"
                               f"無法分辨已結算或順延,本輪跳過")
         {"settled": residue, "manual": manual}.get(kind, keep).append(r)
     return keep, residue, manual

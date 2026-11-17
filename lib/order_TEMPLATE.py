@@ -1,6 +1,6 @@
 # Order library template — copy to lib/order_{exchange}.py and implement below.
-# PERP (USDT-M swap) venues only — Taiwan brokers follow lib/order_sinopac.py's
-# signed-diff contract instead, not this file.
+# PERP (USDT-M swap) venues only — Taiwan brokers follow lib/order_president.py's
+# shape (hand-wired in manager/reconciler.py) instead, not this file.
 #
 # Before implementing: read skills/blave-quant/references/{exchange}-skill.md for
 # endpoints, auth, broker attribution, and response schema, and read

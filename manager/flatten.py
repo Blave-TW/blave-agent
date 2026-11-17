@@ -278,6 +278,53 @@ def _capital_park_close(key, side, lots, result, base):
         return False
 
 
+_SINOPAC = getattr(venue_traits, "SINOPAC", None)   # a half-updated workspace's table lacks it
+# {month code: signed lots} from the settled read before this run's first 永豐 close, moved by
+# this run's fills (later reads lag them); False = that read failed
+_SJ_BASE = None
+_SJ_FINAL = ("Cancelled", "Failed", "Inactive")
+
+
+def _sinopac_base(root):
+    global _SJ_BASE
+    if _SJ_BASE is None:
+        try:
+            _SJ_BASE = _reconciler()._sinopac_nets()
+        except Exception as e:  # the close still goes; a park then has no baseline
+            logging.warning(f"[sinopac] account read for the park baseline failed ({e})")
+            _SJ_BASE = False
+    if _SJ_BASE is False:
+        return None
+    return {c: n for c, n in _SJ_BASE.items() if c[:3] == root}
+
+
+def _sinopac_park_close(key, side, lots, result, base):
+    """A 永豐 close that did not report its whole fill goes into the reconciler's park file
+    (reconciler._sinopac_park): its claim books a fill the account shows and clears one it never
+    moved for, so the book is not left holding lots a late fill closed. Never raises."""
+    got = float(result.get("executed_qty") or 0)
+    code = str(result.get("resolved_symbol") or "").strip().upper()
+    if got and isinstance(_SJ_BASE, dict) and code[:3] == key:
+        _SJ_BASE[code] = _SJ_BASE.get(code, 0.0) + (-got if side == "long" else got)
+    status = result.get("status")
+    ack = status == "unknown" or (status == "sent" and result.get("broker_status") not in _SJ_FINAL)
+    try:
+        rec = _reconciler()
+        if got + 1e-9 >= lots:
+            try:
+                if key not in rec._pending_sent(rec.SINOPAC_PENDING_PATH):
+                    return None   # filled, and no parked row whose expectation it moves
+            except rec.PendingUnreadable:
+                pass  # _sinopac_park reports it
+        return rec._sinopac_park(
+            key, {"fill_qty": got, "status": status, "symbol": code or None, "ordno": result.get("ordno"),
+                  "broker_ack": ack},
+            -lots if side == "long" else lots, base, intent="reduce")
+    except Exception as e:
+        logging.error(f"[sinopac] {key}: the close was not parked ({type(e).__name__}: {e})")
+        return False
+
+
 def _takes(fn, name):
     try:
         params = inspect.signature(fn).parameters
@@ -467,9 +514,12 @@ def _venues(env):
         if not m or m.group(1).upper() in _RESERVED or m.group(1).upper().startswith("DATA_"):
             continue
         out.append(m.group(1).lower())
-    # libs shipped but no account type verified: never traded, so nothing to flatten (and its
-    # refusal must not fail the sweep of the venue that is)
-    return sorted(set(out) - venue_traits.unverified())
+    # libs shipped but no account type verified, or keys older than the venue's own bind (永豐's
+    # odd-lot era): never traded here, so nothing to flatten (and its refusal must not fail the
+    # sweep of the venue that is). The cwd is the workspace (set at import).
+    # getattr: a half-updated workspace's venue_traits has no dormant()
+    dormant = getattr(venue_traits, "dormant", None)
+    return sorted(set(out) - (dormant(os.getcwd()) if dormant else venue_traits.unverified()))
 
 
 def _flatten_spot(vid, order, env, book=None, parked_held=None):
@@ -617,7 +667,9 @@ def _refuse_tw_futures(vid, key, exc):
     hours, the login (order_president._off_hours_session); 9902 (尚未開始接收委託) is the same
     shut market. 群益 (CapitalError: raised only before the order has a sequence number) answers
     no session code: its refusal while the weekly session table says shut is that shut market
-    (Wei 11-16; holidays not known, an unreadable clock = open). order_paper.PaperMarketClosed:
+    (Wei 11-16; holidays not known, an unreadable clock = open). 永豐 the same, decided in
+    lib/order_sinopac (SessionClosed, from_broker): only its own refusal after the send counts, never
+    the worker's pre-send checks. order_paper.PaperMarketClosed:
     only an older paper lib — the current one fills a user's close at the last price. One refusal
     row with no kind (order_error: P1 real, P2 paper) carrying [order_reject:market_closed], so the
     pages word it in their language. Returns True when handled, None for any other error."""
@@ -1455,6 +1507,7 @@ def _flatten():
                     if months_by_key is not None and _takes(order.close_position_partial, "book_months"):
                         kw["book_months"] = months_by_key.get(key, set())
                     cap_base = _capital_base(key) if vid == venue_traits.CAPITAL else None
+                    sj_base = _sinopac_base(key) if vid == _SINOPAC else None
                     result = order.close_position_partial(env, sym, side, size, client_order_id=cid, **kw)
             except Exception as e:
                 u = _unknown_outcome(e, vid, sym, cid) if sym else None
@@ -1518,6 +1571,8 @@ def _flatten():
             })
             if vid == venue_traits.CAPITAL and isinstance(result, dict) and not lots_row:
                 _capital_park_close(key, side, int(round(float(size))), result, cap_base)
+            if vid == _SINOPAC and isinstance(result, dict) and not lots_row:
+                _sinopac_park_close(key, side, int(round(float(size))), result, sj_base)
             if venue_traits.has(vid, "close_needs_fill") and (
                     not isinstance(result, dict) or result.get("status") != "filled"
                     or float(result.get("executed_qty") or 0) + 1e-9 < size):

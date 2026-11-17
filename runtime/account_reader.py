@@ -186,8 +186,10 @@ def _venues(env):
         if prefix.upper() in _RESERVED_PREFIXES or prefix.upper().startswith("DATA_"):
             continue
         vid = prefix.lower()
-        if vid in venue_traits.unverified():
-            continue  # libs ship unverified: nothing of this venue reaches the web or the app
+        if vid in venue_traits.dormant(WORKSPACE):
+            # libs ship unverified, or keys older than the venue's own bind (永豐's odd-lot era):
+            # nothing of this venue reaches the web or the app
+            continue
         if os.path.isfile(os.path.join(WORKSPACE, "lib", f"account_{vid}.py")):
             out.append(vid)
     return sorted(set(out))

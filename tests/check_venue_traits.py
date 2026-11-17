@@ -40,7 +40,7 @@ TABLES = {"lib/venue_traits.py", "runtime/venue_traits.py"}
 OWN = {
     "capital": {"lib/order_capital.py", "lib/account_capital.py", "lib/capital_worker.py",
                 "lib/capital_vault.py", "lib/capital_quote.py", "runtime/capital_connect.py", "runtime/capital_local.py"},
-    "sinopac": {"lib/order_sinopac.py"},
+    "sinopac": {"lib/order_sinopac.py", "lib/sinopac_futures_account.py", "lib/sinopac_worker.py"},
     "president": {"lib/order_president.py", "lib/account_president.py", "lib/president_worker.py",
                   "lib/president_vault.py"},
 }
@@ -118,7 +118,7 @@ except RuntimeError:
 # ── 5. unverified venue libs: enumerated, and shut on every surface ─────────
 import importlib, json, subprocess  # noqa: E401,E402
 
-SHIPPED = {"binance", "bingx", "bitget", "bybit", "capital", "gateio", "okx", "paper", "president", "sinopac",
+SHIPPED = {"binance", "bingx", "bitget", "bybit", "capital", "gateio", "okx", "paper", "president",
            "stockcoin"}
 tracked = subprocess.run(["git", "-C", ROOT, "ls-files", "lib/order_*.py"], capture_output=True,
                          text=True, check=True).stdout.split()
@@ -129,15 +129,27 @@ check(order_ids and order_ids == SHIPPED | unverified and not SHIPPED & unverifi
       (sorted(order_ids - SHIPPED - unverified), sorted(SHIPPED & unverified)))
 check(venue_traits.verified_modes("bitget") == ("classic", "uta") and "bitget" not in unverified,
       "bitget ships verified for classic and UTA accounts")
-# no real venue is unverified today: a synthetic row keeps the mechanism itself under test
+# futures only (the odd-lot path is gone, Wei 2026-11-17): unverified until the real-account run
+check(venue_traits.verified_modes("sinopac") == () and "sinopac" in unverified
+      and "verified_modes" in venue_traits.TRAITS["sinopac"],
+      "sinopac ships unverified (no stock mode; the futures run sets ('futures',))",
+      venue_traits.verified_modes("sinopac"))
+# runtime/account_reader and manager/flatten pick up any lib/account_<venue>.py: until futures are
+# verified the futures reader keeps another name
+check("futures" in venue_traits.verified_modes("sinopac")
+      or not os.path.exists(os.path.join(ROOT, "lib", "account_sinopac.py")),
+      "no lib/account_sinopac.py while sinopac futures are unverified")
+# a synthetic row keeps the mechanism itself under test, whatever the real rows say
 sys.path.insert(0, os.path.join(ROOT, "runtime"))
 rt_traits = importlib.import_module("venue_traits")
+real_unverified = set(unverified)
 for t in (venue_traits, rt_traits):
     t.TRAITS["zzgate"] = {"verified_modes": (), "reference": "references/exchange-connect.md", "label": "ZZ"}
 from lib import venue as chat_venue  # noqa: E402
 venue_wiring, chat_venue = importlib.reload(venue_wiring), importlib.reload(chat_venue)
 unverified = set(venue_traits.unverified())
-check(unverified == {"zzgate"} and "zzgate" in venue_wiring._NON_AUTO, "a row with no verified type is unverified")
+check(unverified == real_unverified | {"zzgate"} and "zzgate" in venue_wiring._NON_AUTO,
+      "a row with no verified type is unverified")
 check(venue_traits.verified_modes("nosuchvenue") == () and "nosuchvenue" not in venue_traits.unverified(),
       "verified_modes(): a venue without the cell gets () (its own lib stays shut); unverified() leaves agent libs alone")
 

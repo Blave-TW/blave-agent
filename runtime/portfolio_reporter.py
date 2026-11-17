@@ -1070,6 +1070,8 @@ def venues():
                 and not m.group(1).upper().startswith("DATA_")):
             suffixes.setdefault(m.group(1).lower(), set()).add(m.group(2).upper())
     out = {}
+    # still listed, so the keys can be unbound; account false = runtime/account_reader reads none
+    dormant = venue_traits.dormant(WORKSPACE)
     for venue_id, sfx in suffixes.items():
         if "API_KEY" not in sfx:
             continue  # secret-only orphan: not an entry, same as before
@@ -1077,7 +1079,8 @@ def venues():
             "credentials": True,
             "pair": bool(sfx & {"SECRET_KEY", "PASSWORD", "PASSPHRASE"}),
             "order": os.path.isfile(os.path.join(lib_root, f"order_{venue_id}.py")),
-            "account": os.path.isfile(os.path.join(lib_root, f"account_{venue_id}.py")),
+            "account": (os.path.isfile(os.path.join(lib_root, f"account_{venue_id}.py"))
+                        and venue_id not in dormant),
         }
     return out
 

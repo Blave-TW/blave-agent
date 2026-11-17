@@ -29,6 +29,9 @@ account currency). Trait meanings:
                      this machine: flatten reads it only once a read started
                      lib.<venue>_vault.ORDER_SETTLE_S after the last send
                      (last_order_at on the vault, else on lib.order_<venue>)
+  bound_marker       a workspace-relative file only this venue's own bind leaves, never
+                     removed: without it the venue's keys are left over from before
+                     (dormant()) — never read by runtime/account_reader, never flattened
   reference          the onboarding doc chat binding points to
   label              the broker's name in user-facing messages
   verified_modes     the account types whose real-account run passed (Bitget:
@@ -57,8 +60,20 @@ venue with a lib/order_<id>.py declares the two gate cells explicitly
                      strategy only on it is not compared with Binance)
 """
 
+import os
+
 CAPITAL = "capital"
 PRESIDENT = "president"
+SINOPAC = "sinopac"
+
+# Futures only: the odd-lot stock path was removed (Wei 2026-11-17; Blave orders no TW stock).
+# lib/sinopac_worker, lib/order_sinopac and the reconciler's _sinopac_* block stay shut until
+# their real-account run passes; the commit that merges it sets ("futures",) here and renames
+# lib/sinopac_futures_account.py to lib/account_sinopac.py. Empty = unverified(): account_reader,
+# flatten and chat binding leave 永豐 alone, so a machine still holding the odd-lot era's
+# sinopac_* keys shows no read failure; hand_wired / native_units follow it.
+_SINOPAC_MODES = ()
+_SINOPAC_FUTURES = "futures" in _SINOPAC_MODES
 
 TRAITS = {
     CAPITAL: {
@@ -74,11 +89,32 @@ TRAITS = {
         "reference": "references/capital-broker.md",
         "label": "群益",
     },
-    "sinopac": {
+    SINOPAC: {
         "auto_wire": False,
+        "hand_wired": _SINOPAC_FUTURES,
+        "native_units": _SINOPAC_FUTURES,
         "perp": False,
+        "close_needs_fill": True,
+        # M0-b 2026-11-16: list_positions right after a Filled order still read []; the wait
+        # (lib/sinopac_vault.ORDER_SETTLE_S, 20 s) is borrowed, the lag itself was not timed
+        "snapshot_settle_wait": True,
+        "verified_modes": _SINOPAC_MODES,
+        # lib/sinopac_worker.ENABLED_PATH, written by its first start (only a futures bind starts it)
+        # and never removed: keys from the odd-lot era alone are never read or flattened; a machine
+        # that has had futures reads a lost snapshot as an error and close-all reports 永豐 failed
+        "bound_marker": "state/sinopac_futures_enabled.json",
         "reference": "references/sinopac-broker.md",
         "label": "永豐金",
+        # the lowercase names odd-lot machines were bound with (web CX_VENUES) are locked; an
+        # unbind drops all six, the CA password (often the national id) included
+        "cred_env": {
+            "sinopac_api_key": "API_KEY",
+            "sinopac_secret_key": "SECRET_KEY",
+            "sinopac_ca_path": "EXTRA",
+            "sinopac_ca_passwd": "EXTRA",
+            "sinopac_person_id": "EXTRA",
+            "sinopac_live": "EXTRA",
+        },
     },
     # real-account runs passed on a classic account (2026-10-22, both position modes) and a UTA
     # (T1–T12; T11c's stop-loss re-run 2026-10-26)
@@ -169,6 +205,14 @@ def unverified():
     venue without the cell (every venue that shipped verified, an agent-written lib)
     is not in it."""
     return frozenset(v for v, t in TRAITS.items() if "verified_modes" in t and not t["verified_modes"])
+
+
+def dormant(workspace):
+    """Venue ids nothing reads or flattens in `workspace`: unverified() ones, and a venue whose
+    bound_marker file is not there."""
+    return unverified() | frozenset(
+        v for v, t in TRAITS.items()
+        if t.get("bound_marker") and not os.path.exists(os.path.join(workspace, t["bound_marker"])))
 
 
 def cred_env(name):

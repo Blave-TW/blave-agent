@@ -242,6 +242,7 @@ t("同一個 pid 的建立時間在不同 TZ 下算出同一個字串(guard 的 
 t("agent_turn 那份 ps 也固定 TZ=UTC0", '"LC_ALL": "C", "TZ": "UTC0"' in at_src)
 
 # 回合裡 flatten 最壞的等待:回合鎖 + 執行中的單排空 + 快取跟上(一次總預算),要低於 parallel_rule 給 flatten 的 timeout − 15 秒
+# 不含送單本身的時間(哪家都不算):永豐每多平一個根代號,worker 送單前最多再等 lib/sinopac_vault.ORDER_SETTLE_S
 sys.path.insert(0, os.path.join(ROOT, "manager"))
 import flatten as FL  # noqa: E402
 m_rule = re.search(r"`manager/flatten\.py`: at least (\d+) ms", at_src)

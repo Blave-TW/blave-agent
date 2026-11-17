@@ -357,7 +357,60 @@ for base in ("lib", "manager", "runtime", "strategies", "allocators"):
                 scoped.add(rel)
 check(holders == {"manager/flatten.py", "manager/close_symbol.py"},
       f"P1 the process-wide pass: flatten.py and close_symbol.py only ({sorted(holders)})")
-check(scoped == set(), f"P2 the thread-local pass has no caller: no deferred close-all leg is sent under HALT ({sorted(scoped)})")
+# lib/sinopac_worker.py sends the orders other processes hand it: it reopens the pass only for a
+# reduce whose request says the requesting process held one (lib/order_sinopac._submit_futures)
+check(scoped == {"lib/sinopac_worker.py"},
+      f"P2 the thread-local pass: lib/sinopac_worker.py only, no deferred close-all leg is sent under HALT ({sorted(scoped)})")
+# P4 (audit S4): the worker reopens a pass only for a reduce whose request carries it, and only
+# around the gate check; the requester sets the flag only from the pass its own process holds
+import ast  # noqa: E402
+
+
+def _pass_shape():
+    errs = []
+    src = open(os.path.join(ROOT, "lib", "sinopac_worker.py"), encoding="utf-8").read()
+    tree = ast.parse(src)
+    parents = {c: p for p in ast.walk(tree) for c in ast.iter_child_nodes(p)}
+    flags = {"halt_close_pass": "halt_close_pass", "close_all_relay": "close_all_pass"}
+    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+             and n.func.attr in flags and isinstance(n.func.value, ast.Name) and n.func.value.id == "guard"]
+    if sorted(c.func.attr for c in calls) != ["close_all_relay", "halt_close_pass"]:
+        errs.append(f"expected one guard.halt_close_pass and one guard.close_all_relay, got "
+                    f"{sorted(c.func.attr for c in calls)}")
+    withs = set()
+    for c in calls:
+        node = c
+        while node in parents and not isinstance(node, ast.If):
+            node = parents[node]
+        test = ast.unparse(node.test) if isinstance(node, ast.If) else ""
+        want = (f"fields['intent'] == 'reduce' and req.get('{flags[c.func.attr]}') is True")
+        if test != want:
+            errs.append(f"{c.func.attr} under `{test}`, not `{want}`")
+        if isinstance(node, ast.If) and (node.orelse or len(node.body) != 1):
+            errs.append(f"{c.func.attr}: its if holds more than the pass")
+        w = parents.get(node)
+        if not isinstance(w, ast.With):
+            errs.append(f"{c.func.attr}: its if is not directly in the with")
+        else:
+            withs.add(w)
+    for w in withs:
+        # exactly the two pass ifs, then the check: a third `if` before it would hide here (audit N-D)
+        if ([type(b) for b in w.body] != [ast.If, ast.If, ast.Expr]
+                or ast.unparse(w.body[-1].value) != "guard.check_restart_stop(fields['intent'], fields)"):
+            errs.append("the with body is more than the passes and guard.check_restart_stop")
+    if len(withs) != 1:
+        errs.append(f"the passes sit in {len(withs)} with blocks, not one")
+    osrc = open(os.path.join(ROOT, "lib", "order_sinopac.py"), encoding="utf-8").read()
+    kws = {k.arg: ast.unparse(k.value) for n in ast.walk(ast.parse(osrc)) if isinstance(n, ast.Call)
+           for k in n.keywords if k.arg in ("halt_close_pass", "close_all_pass")}
+    if kws != {"halt_close_pass": "fields['intent'] == 'reduce' and guard.halt_closes_allowed()",
+               "close_all_pass": "fields['intent'] == 'reduce' and guard.close_all_granted()"}:
+        errs.append(f"order_sinopac's request flags do not come from the pass its process holds: {kws}")
+    return errs
+
+
+_errs = _pass_shape()
+check(not _errs, f"P4 the worker reopens a pass only for a reduce carrying it, only around the gate check {_errs}")
 flat = open(os.path.join(ROOT, "manager", "flatten.py"), encoding="utf-8").read()
 check(flat.index("grant_halt_closes(") > flat.index("claim_close_all_pass()"),
       "P3 flatten takes the pass only past the restart-stop branch (no pass → nothing closes there)")

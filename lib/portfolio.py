@@ -1156,7 +1156,9 @@ def book_account_confirm(venue, same, env=None):
 
 
 _PENDING_SENT_PATHS = {venue_traits.PRESIDENT: 'state/president_pending_sent.json',
-                       venue_traits.CAPITAL: 'state/capital_pending_sent.json'}
+                       venue_traits.CAPITAL: 'state/capital_pending_sent.json',
+                       # getattr: a half-updated workspace's venue_traits has no SINOPAC yet
+                       getattr(venue_traits, 'SINOPAC', None): 'state/sinopac_pending_sent.json'}
 # {venue: reset ts}: an unbind's reset whose cleanup (parked orders, pending_sent) is not done yet
 _RESET_TODO_PATH = 'state/venue_reset_todo.json'
 

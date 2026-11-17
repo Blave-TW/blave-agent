@@ -115,7 +115,7 @@ do not assume casing or invent names.
    advice belongs at deployment time, matched to the strategy actually deployed.
 
 6. **`lib/order_{id}.py`** — copy `lib/order_TEMPLATE.py` (perp venues; Taiwan brokers
-   follow `lib/order_sinopac.py` instead) and follow `lib/order_bingx.py`'s contract:
+   follow `lib/order_president.py` instead) and follow `lib/order_bingx.py`'s contract:
    confirmed orders (poll to terminal state; report exchange-reported fills, never the
    intent), unique client-order-id for idempotency, `lib/guard` halt + audit
    integration, and the exchange's broker attribution header/field (in the skill

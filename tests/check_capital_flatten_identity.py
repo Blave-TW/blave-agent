@@ -408,11 +408,24 @@ run_flatten(True, BOOK)
 check("ETHUSDT" in zeroed and not any(e[1] == "fooex" for e in errors),
       f"key without any lib → sweep still runs ({sorted(zeroed)})")
 EXTRA_ENV.clear()
-# a venue that can trade (order lib) but can't be read (no account lib)
+# a venue that can trade (order lib) but can't be read (no account lib): 永豐 as if bound for
+# futures (verified, its bound_marker not asked) on a lib that lacks lib/account_sinopac.py
 EXTRA_ENV.update(SINOPAC_API_KEY="x", SINOPAC_SECRET_KEY="x")
-run_flatten(True, BOOK)
+_sj_row = dict(flatten.venue_traits.TRAITS["sinopac"])
+flatten.venue_traits.TRAITS["sinopac"].update(verified_modes=("futures",))
+flatten.venue_traits.TRAITS["sinopac"].pop("bound_marker", None)
+try:
+    run_flatten(True, BOOK)
+finally:
+    flatten.venue_traits.TRAITS["sinopac"].clear()
+    flatten.venue_traits.TRAITS["sinopac"].update(_sj_row)
 check("ETHUSDT" not in zeroed and ("*", "sinopac") in [e[:2] for e in errors],
       f"order lib without account lib → no sweep + visible error ({sorted(zeroed)}, {errors})")
+# the shipped row: 永豐 keys from the odd-lot era (unverified, no worker snapshot) are not a venue
+# to flatten — no error, and the sweep of the rest still runs
+run_flatten(True, BOOK)
+check("ETHUSDT" in zeroed and not any(e[1] == "sinopac" for e in errors),
+      f"odd-lot-era 永豐 keys → left out of the close-all, sweep still runs ({sorted(zeroed)}, {errors})")
 EXTRA_ENV.clear()
 # a position row with no symbol at all could be any book key
 run_flatten(True, BOOK, capital={"": {"side": "long", "size": 1}})

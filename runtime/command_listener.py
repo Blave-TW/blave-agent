@@ -4751,8 +4751,8 @@ def _cmd_credentials_remove(args):
             # legs (lib/portfolio.py), never reduce legs; an unrouted member drops out of the targets, so a live
             # daemon's next mtime-triggered reconcile (≤5s) would market-flatten
             # every actual position as "reduce". Nor does deleting the keys save
-            # sinopac/capital: their order libs are module singletons with a cached
-            # login session (lib/order_sinopac.py _get_api) that keeps reading
+            # capital/sinopac: their workers hold a logged-in session (群益 SKCOM,
+            # lib/sinopac_worker.py) that keeps reading
             # positions after .env is wiped. If the stop cannot be confirmed, keep
             # the routing — a stale-but-consistent config is the safe direction —
             # and still let the unbind succeed. Partial unbind on a multi-venue

@@ -13,7 +13,7 @@ This module IS that mapping, written once, with every harvested fix baked in.
 Scope: venues whose BOTH lib/account_{id}.py AND lib/order_{id}.py ship
 officially (see references/exchange-connect.md rule 2). Venues without
 official libs still need a hand-wired reconciler — the template's stubs say
-how. Taiwan brokers (sinopac signed-diff contract) are NOT routed here.
+how. Taiwan brokers (hand-wired signed-diff blocks) are NOT routed here.
 
 Key contract (lib/portfolio): plain "BTCUSDT" keys = perp/swap,
 "BTCUSDT@spot" = spot inventory (market_key/split_key); spot actuals come
