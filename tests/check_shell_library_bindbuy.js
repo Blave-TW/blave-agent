@@ -50,7 +50,7 @@ ok("① 欠費那句:plan_due_twd 是正數才出(四捨五入成整數);0、nul
 
 ok("① 自動儲值那句:數字讀 public_tiers 的 trial(同網頁)、兩個都是正數才講,讀不到就退回舊框;字面同網頁 bc_risk_note", J(P.libBbTopup({ auto_topup_min: 50, auto_topup_amount: 300 })) === '{"lo":"50","a":"300"}'
   && P.libBbTopup(null) === null && P.libBbTopup({ auto_topup_min: 50 }) === null && P.libBbTopup({ auto_topup_min: 0, auto_topup_amount: 300 }) === null
-  && STR.zh["lib.bb.topup"] === "綁卡後自動儲值是開著的：餘額低於 {lo} TWD 會自動儲值 {a} TWD，可隨時關閉。" && /tu = libBbTopup\(typeof pub !== "undefined" && pub \? pub\.trial : null\)/.test(cutFn(src, "libBindBuyBox"))
+  && STR.zh["lib.bb.topup"] === "綁卡後自動儲值是開著的：餘額低於 {lo} TWD 會自動儲值 {a} TWD。" && !/關閉|turn it off/.test(STR.zh["lib.bb.topup"] + STR.en["lib.bb.topup"]) && /tu = libBbTopup\(typeof pub !== "undefined" && pub \? pub\.trial : null\)/.test(cutFn(src, "libBindBuyBox"))
   && /\(q\.kind === "trial" \|\| q\.kind === "plain"\) && !tu\) \{ libBuyBox\(s, "noCard", opener, \{\}\); return;/.test(cutFn(src, "libBindBuyBox"))
   && cutFn(src, "libBindBuyBox").indexOf("lib.bb.topup") > cutFn(src, "libBindBuyBox").indexOf("lib.bb.renew"));
 { const cta = cutFn(src, "libPaintCta");
@@ -219,7 +219,7 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
     STR.zh["lib.bb.renewNote"] === "之後每 30 天 {p}，可隨時取消。" && STR.zh["lib.bb.trialRenewNote"] === "試用 {t} 天後每 30 天 {p}，可隨時取消。" && STR.zh["lib.bb.cancelNote"] === "可隨時取消。"
     && ["renewNote", "trialRenewNote", "cancelNote"].every((k) => typeof STR.en["lib.bb." + k] === "string" && STR.en["lib.bb." + k].length > 0)
     && !("lib.bb.topupShort" in STR.zh) && !("lib.bb.topupShort" in STR.en) && !/libTopupShort|lib\.bb\.topupShort/.test(src)
-    && STR.zh["lib.bb.topup"] === "綁卡後自動儲值是開著的：餘額低於 {lo} TWD 會自動儲值 {a} TWD，可隨時關閉。");
+    && STR.zh["lib.bb.topup"] === "綁卡後自動儲值是開著的：餘額低於 {lo} TWD 會自動儲值 {a} TWD。" && !/關閉|turn it off/.test(STR.zh["lib.bb.topup"] + STR.en["lib.bb.topup"]));
   /* 詳情主鈕實畫(假 DOM):鈕字、鈕與訊息槽之間的每一行(含 noAuto 槽)、按下去走哪支、帶什麼。鈕下最多一行;續扣那幾種不放「買了不會自動下單」、也不放自動儲值;
      付款頁回來(bound)才講自動儲值(設定頁同一句 plan.topupShort) */
   var paintRun = (o) => {
@@ -283,7 +283,7 @@ ok("④ IPC:綁卡即購買只收自家頁面;記號拿到這支終態才清,並
       guestC: { btn: "登入並購買 600 TWD", lines: [], top: [], click: "signin:600" },
       // 換算幣(en)訪客 C 不帶 direct:登入後照舊出框(同網頁、同已登入那條)
       guestCen: { btn: "Sign In & Buy · 600 TWD", lines: [], top: [], click: "signin:undefined" },
-      paidBound: { btn: "安裝並回測", lines: [], top: ["低於 50 TWD 時從卡自動儲值 300 TWD。可在網頁關閉。"], click: "ask" },
+      paidBound: { btn: "安裝並回測", lines: [], top: ["低於 50 TWD 時從卡自動儲值 300 TWD。"], click: "ask" },
       paidBoundNoPub: { btn: "安裝並回測", lines: [], top: [], click: "ask" }, paidNotBound: { btn: "安裝並回測", lines: [], top: [], click: "ask" },
       // 刷卡失敗:只出結果句(同網頁),續扣那一行收起來
       Dfailed: { btn: "開通並購買 2,040 TWD", lines: [], top: [], click: 'plan:{"direct":2040}', errs: 1 },

@@ -22,5 +22,5 @@ ok("en:Amount (TWD);單位 null 不加括號", en[0].textContent === "Amount (TW
 ok("帶說明的欄頭仍是虛線 + title(只剩待定的兩處),字含單位", zh[3].kids[0].className === "th-tip" && zh[3].kids[0].title === "def");
 const tips = [...(trSrc + pfSrc).matchAll(/trHead\(([\s\S]*?)\)\);/g)].map((m) => m[1]).join("\n");
 ok("差額的未啟動／已暫停 tooltip 與字串都拿掉;剩下的欄頭 tooltip 只有帳上(po.actualTip)與優化表金額(mg.propTip)", !/diffIdle/.test(trSrc + pfSrc + strSrc) && /po\.actualTip/.test(tips) && /mg\.propTip/.test(tips)
-  && (tips.match(/\[t\("[^"]+"[^\]]*?, t\(/g) || []).length === 2, tips.match(/\[t\("[^"]+"[^\]]*?, t\(/g));
+  && (tips.match(/\[t\("[^"]+"[^\]]*?, t\(/g) || []).length === 3 && /\[t\("tr\.col\.amount"\), "n", hu, t\("mg\.propTip"\)/.test(cut(pfSrc, "mgSzPlaceholder")), tips.match(/\[t\("[^"]+"[^\]]*?, t\(/g));   // 第三個是優化表還沒有權重時的同一個欄頭(spec portfolio-optimize-lite §4:骨架換成數字時表不跳)
 console.log(red ? `\n${red} FAILED` : "\nALL PASS"); process.exit(red ? 1 : 0);

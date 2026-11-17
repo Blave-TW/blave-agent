@@ -63,11 +63,11 @@ app.whenReady().then(async () => {
       for (const m of code.matchAll(/addMsg\("sys", (?:t\([^)]*\)|\w+\(\)|\w+)|className = "msg sys"|(?<!function )sysLine\(([a-zA-Z]+)\)|faultCard\(\)\.set|(\w+) = faultCard\(\)/g)) sites.push(f + ": " + m[0]); }); }
   const EMIT = { "engine.js: className = \"msg sys\"": "engDone", "app.js: className = \"msg sys\"": "upSayLine", "app.js: sysLine(line)": "turn.error", "app.js: sysLine(exitLine)": "turn.exit", "app.js: sysLine(x)": "pendingErr",
     "app.js: addMsg(\"sys\", fn()": "sysLine", "app.js: addMsg(\"sys\", t(say)": "attach", "app.js: addMsg(\"sys\", t(\"ws.attachReadFail\")": "attachRead", "app.js: addMsg(\"sys\", t(\"turn.busy\")": "busy",
-    "app.js: faultCard().set": "engineFailed／minv", "engine.js: c = faultCard()": "engWarn", "app.js: dataCard = faultCard()": "dataCard", "app.js: c = faultCard()": "plan.done", "app.js: acctCard = faultCard()": "acctCard", "app.js: card = faultCard()": "addFault" };
+    "app.js: faultCard().set": "engineFailed／minv", "engine.js: c = faultCard()": "engWarn", "app.js: dataCard = faultCard()": "dataCard", "app.js: c = faultCard()": "plan.done", "app.js: acctCard = faultCard()": "acctCard", "app.js: card = faultCard()": "addFault", "errreport.js: card = faultCard()": "errReport" };
   const unknown = [...new Set(sites)].filter((x) => !EMIT[x]), gone = Object.keys(EMIT).filter((x) => !sites.includes(x));
   ok("③ 每一處畫聊天系統行／卡的原始碼都在 EMIT 表、都有情境(" + new Set(sites).size + " 處)", !unknown.length && !gone.length, JSON.stringify({ unknown, gone }));
   const bareSet = [];
-  for (const f of ["app.js", "engine.js"]) srcOf(f).split("\n").forEach((l, i) => { if (/\b(card|acctCard|dataCard|c)\.set\(\{|faultCard\(\)\.set\(\{|\b(card|c)\.set\(resendState/.test(l.replace(/\/\/.*$/, ""))) bareSet.push(f + ":" + (i + 1)); });
+  for (const f of ["app.js", "engine.js", "errreport.js"]) srcOf(f).split("\n").forEach((l, i) => { if (/\b(card|acctCard|dataCard|c)\.set\(\{|faultCard\(\)\.set\(\{|\b(card|c)\.set\(resendState/.test(l.replace(/\/\/.*$/, ""))) bareSet.push(f + ":" + (i + 1)); });
   ok("③ 卡的內容一律經 sysLz 包起來(寫死字的 set 換語言不會跟著換)", !bareSet.length, JSON.stringify(bareSet));
 
   // 畫一輪:每一種系統行各一則,全在 zh;agent 回覆與用戶的字各一則當對照組
@@ -95,6 +95,8 @@ app.whenReady().then(async () => {
     acct = { can_run: false, reason: "NO_CARD" }; acctCard = faultCard(); acctPaint(); mark("acctCard", acctCard.el);
     { const LIM = "You've hit your session limit"; const f = classifyFault(LIM); addFault(f || { text: t("fault.authInvalid") }, f ? () => classifyFault(LIM, { again: true }) : () => ({ text: t("fault.authInvalid") })); mark("addFault.text", lastOf()); }
     dataCard = faultCard(); dataCardSync({ can_run: true, data_access: "none" }); mark("dataCard", lastOf());
+    { const B0 = window.blave; window.blave = new Proxy({}, { get: (_, k) => k === "errReportPending" ? async () => ({ id: "sys1", n: 2, text: '{"error":"x"}' }) : B0[k] });
+      try { await errAsk(); } finally { window.blave = B0; } mark("errReport", errLive && errLive.el === lastOf() ? errLive.el : null); }
     addHistoryYou("手機來的", "mobile"); mark("fromPhone", lastOf());
     addHistoryAi("回覆\\n[中斷前已執行:Bash strategies/、Read lib/x.py、…另有 2 步]"); 
     const zh = {}; for (const k of Object.keys(list)) zh[k] = A.el.querySelector('[data-sys-case="' + k + '"]').textContent;
@@ -106,7 +108,7 @@ app.whenReady().then(async () => {
     const you = [...A.el.querySelectorAll(".msg.you .bubble")].some((b) => b.textContent === ${JSON.stringify(YOU)}), ai = [...A.el.querySelectorAll(".msg.ai")].some((b) => b.textContent.includes(${JSON.stringify(AI)}));
     applyLangChoice("zh"); await new Promise((r) => setTimeout(r, 50));
     const back = Object.keys(list).filter((k) => A.el.querySelector('[data-sys-case="' + k + '"]').textContent !== zh[k]);
-    cur = was; acctCard = null; creditCards = []; dataCard = null; acct = null;
+    cur = was; acctCard = null; creditCards = []; dataCard = null; acct = null; errLive = null;
     return { cases: Object.keys(list), left, walk, you, ai, back, sample: { engDone: en.engDone, engWarn: en.engWarn, turnExit: en["turn.exit"] } }; })()`);
   console.log("      ③ " + JSON.stringify(r3.sample));
   ok("③ 切到 en:" + r3.cases.length + " 種系統行／卡全換了語言", r3.cases.length >= 16 && !r3.left.length, JSON.stringify(r3.left));

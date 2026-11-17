@@ -54,7 +54,7 @@ On mobile (narrow screens) the chat fills the screen — prepend one line:
 
 The switcher at the top of the middle pane picks the side: 「這台電腦」 for this computer, 「雲端」 for the user's cloud machine — the steps are the same on both. Orders on this computer go out only while it is awake and Blave is open; say that once when they start trading here.
 
-**Bind the paper venue / an exchange** (one venue at a time: if one is connected, 「設定」分頁 ›「解除綁定」 first):
+**Bind the paper venue / an exchange** (one venue at a time: if one is connected, 「設定」分頁 ›「解除連接」 first):
 1. 點左側「自動下單」
 2. 點「連接帳戶」
 3. 按框底的「先用模擬交易」（real venue: pick its tile, fill in its API keys, then press「連接帳戶」）

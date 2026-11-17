@@ -504,6 +504,8 @@ app.on("render-process-gone", (_e, _wc, d) => { mainLog.write(`[proc] render-pro
 // 用 Monitor 不用 uncaughtException:掛了後者 Electron 就不再跳「主行程發生錯誤」的框,行為會變。
 // 未處理的 Promise:throw 模式會變成 uncaught(origin = unhandledRejection),warn 模式只出 warning,兩條都只聽不改
 process.on("uncaughtExceptionMonitor", (_err, origin) => crashTrack(origin === "unhandledRejection" ? "main_rej" : "main_exc"));
+// 錯誤回報(shell/errreport.js):同一個監聽、同步寫一行進工作區的記錄檔,問過用戶才送。寫不了就算了,永遠不拋
+process.on("uncaughtExceptionMonitor", (err) => { try { errReport().appendMain(err, __dirname); } catch (_) { /* 啟動早期 WS 還沒宣告 */ } });
 process.on("warning", (w) => { if (w && w.name === "UnhandledPromiseRejectionWarning") crashTrack("main_rej"); });
 // ready 之後、拿到單一實例鎖的那一份才叫:上一次沒走到 will-quit 就補一則 unclean_exit,這一次先記成還沒正常結束
 function sessionBoot() {
@@ -750,6 +752,27 @@ function relayKnown() {
     if (llm) _relayEnv.vals.push(llm);
   }
   return _relayEnv.vals;
+}
+/* 錯誤回報(shell/errreport.js;spec agent-error-report-2026-11-16):讀 workspace/state/error_reports.jsonl、清洗、出卡、用戶同意才送。
+   跟使用事件是兩條通道:不同開關、不同端點;install_id 共用。已知值 = 手機同步那一份(.env 秘密、自帶金鑰)加帳號 token */
+let _er = null;
+const ERR_OFFICIAL_MAX = 2 * 1024 * 1024;   // 最大的官方檔 lib/data.py 約 480 KB
+function errReport() {
+  if (!_er) _er = require("./errreport").createErrReport({
+    file: path.join(WS, "state", "error_reports.jsonl"), stateFile: path.join(app.getPath("userData"), "error_report.json"),
+    endpoint: `${API_BASE}/oauth/desktop/error_report`,
+    known: () => { const t = loadToken(); return t ? [...relayKnown(), t] : relayKnown(); },
+    // agent 改過的 lib 檔不算我們的。路徑來自記錄檔(agent 寫得到):FIFO、symlink、超大檔都當不是官方檔
+    isOfficial: (rel) => { const buf = wsfile.read(path.join(WS, rel), ERR_OFFICIAL_MAX); return !!buf && officialKnown()(rel, buf); },
+    // runtime/ 隨包在 REPO(打包版 resources/agent);shell/ 是 app 本身(打包版在 app.asar 裡,= __dirname),不在 REPO
+    isBundled: (rel) => fs.statSync(rel.startsWith("shell/") ? path.join(__dirname, rel.slice(6)) : path.join(REPO, rel)).isFile(),
+    meta: () => {
+      const os = { darwin: "mac", win32: "win" }[process.platform];
+      return os ? { install_id: tm().installId(), app_version: app.getVersion(), runtime_version: readVersion(path.join(REPO, "runtime")), os, os_version: process.getSystemVersion() } : null;
+    },
+    token: () => loadToken(), post: (u, b) => postJSON(u, b), live: telemetryLive,   // 開發版不送(同使用事件)
+  });
+  return _er;
 }
 /* Blave 餘額(balance.js):電腦版自己的端點,帶帳號 token + app_secret;只回數字給自家畫面,憑證不出主行程。 */
 let _balance = null;
@@ -4610,6 +4633,11 @@ app.whenReady().then(() => {
   ipcMain.on("reply-cue", (e, cue) => { if (fromOurPage(e)) replyCue(cue, e.sender); });
   handle("theme", () => themeGet(), "system");
   handle("theme-set", (_e, v) => themeSet(v), null);
+  // 錯誤回報(shell/errreport.js):畫面只拿得到要顯示的那份文字與批次 id,送出的內容由主行程凍結,畫面只回決定
+  handle("err-report-pending", () => errReport().pending(), null);
+  handle("err-report-decide", (_e, id, action, always) => errReport().decide(String(id || ""), action, always === true), false);
+  handle("err-report-mode", () => errReport().mode(), "ask");
+  handle("err-report-mode-set", (_e, m) => errReport().setMode(m), null);
   handle("reopen-oauth", () => reopenOAuth(), false);
   handle("slot-first-reply", () => slotFirstReplySet(), null);
   handle("welcome-prefs", () => onbPrefsGet(), { done: false, cloudDone: false });

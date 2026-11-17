@@ -8,9 +8,12 @@ miss it. (Channel rules: `.claude/docs/blave-agent-update-channels.md`.)
 
 ## Unreleased
 
+## 1.1.165 — 2026-11-17(desktop 0.1.56)
+
 - **`venue_traits.py` 永豐列加 `verified_modes: ()`、`bound_marker`,新函式 `dormant(workspace)`**(與 `lib/venue_traits.py` 同一份):Wei 11-17 拿掉永豐零股路徑,永豐只做期貨;期貨真帳跑過之前這格是空的,sinopac 進 `unverified()`。`dormant()` = `unverified()` 加上 `bound_marker` 檔不在的那幾家(永豐是 `state/sinopac_futures_enabled.json`:期貨 worker 第一次啟動就寫、之後不刪,解除綁定也留著;只有期貨綁定會起 worker)。開過期貨的機器快照不見照樣報讀取失敗、全部平倉記永豐失敗,不會安靜跳過(Wei 11-17)。`account_reader._venues` 與 workspace 的 flatten 改用它跳過;`portfolio_reporter.venues()` 照舊列出這家(金鑰還能解除綁定),`account` 在 dormant 時給 false。只綁過零股、`.env` 留著六個 `sinopac_*` 的機器:翻閘前後都不讀、不平倉、不出讀取失敗(以前也沒有 `lib/account_sinopac.py`,畫面跟現在一樣)。真帳跑過的那顆 commit 改成 `("futures",)`。測試 `tests/check_venue_traits.py`、`tests/check_sinopac_futures_wiring.py` S6。
 - **`venue_traits.py` 永豐列接對帳器(C 項)**(與 `lib/venue_traits.py` 同一份):新常數 `SINOPAC`;`hand_wired`、`native_units` 跟著 `verified_modes` 有沒有 `"futures"` 走(現在都是 False),`close_needs_fill: True`(只有 flatten 讀,沒有 `lib/account_sinopac.py` 就讀不到永豐);`cred_env` 鎖住六個小寫名(`sinopac_api_key`／`sinopac_secret_key` 照舊算成一組綁定,`sinopac_ca_path`／`sinopac_ca_passwd`／`sinopac_person_id`／`sinopac_live` 記為 EXTRA)。對只綁過零股的機器的變化:解除綁定或換交易所擠掉永豐時,六行一起拿掉(以前 CA 路徑、CA 密碼這幾行會留在 `.env`)。測試 `tests/check_sinopac_futures_wiring.py`(新)、`tests/check_venue_traits.py`。
 - **`venue_traits.py` 永豐列加 `snapshot_settle_wait: True`**(與 `lib/venue_traits.py` 同一份):M0-b 量到成交後立刻讀部位仍是空的;`manager/flatten.py` 照群益、統一的路,從新的 `lib/sinopac_vault.py` 讀 `ORDER_SETTLE_S`(20 秒,借統一實測值)與下單記號。runtime 本身沒讀這個 trait;期貨仍未驗證(沒有 `lib/account_sinopac.py`,flatten 不會讀到永豐)。測試 `tests/check_sinopac_futures.py`。
+- **回測成本一律叫「交易成本」(`agent_turn._STYLE_RULES`,web、電腦版、Telegram 三份格式規則與 Claude、Codex 兩條引擎都帶到)**:0.1.55 介面把回測的「手續費」改名「交易成本」(`FEE` 含手續費、稅、滑價),agent 回覆仍照 runner 印的 `Fee Rate`／`Total Fees` 自己翻成「手續費」。共用風格段加一行:中文寫「交易成本」、不寫「手續費」,英文寫 trading cost。stats.json 的 key 不動。測試 `tests/check_reply_format_plain.py`。
 
 ## 1.1.164 — 2026-11-16(desktop 0.1.55；原 0.1.54 與 0.1.55 合併為一版)
 

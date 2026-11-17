@@ -53,8 +53,24 @@ if (POSIX) {
     t("append:一般檔照接,新建的是 0600", fs.readFileSync(f, "utf8") === "a\nb\n" && (fs.statSync(f).mode & 0o777) === 0o600); }
 }
 
+// ---- read:主行程同步讀 agent 指定的工作區檔(錯誤回報的 isOfficial;稽核 0156 S-2)。FIFO 與 /dev/zero 會讓主執行緒卡死,
+// 這裡只放不會卡住測試的替身:symlink 與超過上限的檔;FIFO 靠 O_NONBLOCK + fstat 擋,不在這裡實開 ----
+if (POSIX) {
+  { const { ws, out } = fresh(), real = path.join(out, "official.py"), f = path.join(ws, "x.py");
+    fs.writeFileSync(real, "print(1)\n"); fs.symlinkSync(real, f);
+    t("read:檔名是 symlink(就算指向的內容跟官方檔一樣)→ null,不跟過去讀", typeof W.read === "function" && W.read(f, 1024) === null); }
+  { const { ws } = fresh(), f = path.join(ws, "big.py");
+    fs.writeFileSync(f, Buffer.alloc(2049, 0x61));
+    t("read:超過上限 → null(不把整個檔吃進主行程)", typeof W.read === "function" && W.read(f, 2048) === null); }
+  { const { ws } = fresh(), d = path.join(ws, "dir.py"); fs.mkdirSync(d);
+    t("read:不是一般檔(目錄)→ null", typeof W.read === "function" && W.read(d, 2048) === null); }
+  { const { ws } = fresh(), f = path.join(ws, "ok.py"); fs.writeFileSync(f, "print(1)\n");
+    t("read:一般檔、上限內照讀", typeof W.read === "function" && String(W.read(f, 2048)) === "print(1)\n"); }
+}
+
 // ---- 呼叫點:跑真的 code ----
 const mainSrc = fs.readFileSync(path.join(SHELL, "main.js"), "utf8");
+t("main.js 錯誤回報 isOfficial 經 wsfile.read 讀檔(不直接 readFileSync 工作區的路徑)", /isOfficial: \(rel\) => \{ const buf = wsfile\.read\(path\.join\(WS, rel\), ERR_OFFICIAL_MAX\);/.test(mainSrc) && !/isOfficial:[^\n]*fs\.readFileSync/.test(mainSrc));
 const cutFn = (src, name) => { const i = src.indexOf("function " + name + "("); let d = 0, end = -1;
   for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}" && --d === 0) { end = k + 1; break; } } return src.slice(i, end); };
 

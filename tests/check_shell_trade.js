@@ -621,7 +621,7 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
   const b3 = wcases.filter((c) => !c.w.tbl[wKey(c)] || c.w.line !== c.w.tbl[wKey(c)] || c.w.box.alt).map((c) => c.lang + "/" + c.env + "/" + c.venue);
   // 設計稽核 desktop-10-08 #6:這台電腦那句講「登入資料」不講金鑰;沒部位時不寫「部位沒人管」(spec §2:沒部位那句是假警報)
   ok("解除綁定確認框(沒部位):模擬帳戶用自己那句;本機講「這台電腦」、雲端講「主機」,都講登入資料、不講沒人管,只有一顆解除綁定" + (b3.length ? " ✗ " + b3 : ""), b3.length === 0
-    && wcases.filter((c) => c.venue === "paper").every((c) => /重新開始|start over/.test(c.w.line) && !/100,000/.test(c.w.line) && !/金鑰|keys/.test(c.w.line))
+    && wcases.filter((c) => c.venue === "paper").every((c) => /從頭算|start over/.test(c.w.line) && !/100,000/.test(c.w.line) && !/金鑰|keys/.test(c.w.line))
     && wcases.filter((c) => c.venue !== "paper").every((c) => /登入資料|Login details/.test(c.w.line) && !/沒人管|unmanaged/.test(c.w.line))
     && wcases.filter((c) => c.venue !== "paper" && c.env === "cloud").every((c) => /主機|server/.test(c.w.line)));
   const pos = (r, id) => { r.account.venues[id].positions = { BTCUSDT: { side: "long", size: 0.01, mark_price: 100000 } }; };
@@ -2684,8 +2684,15 @@ process.on("beforeExit", () => { console.log("FAIL  非同步測試沒有跑到�
           { ts: d0 - 90, type: "bar_stale", data: { strategy: "b_1m", minutes: 7 }, strategy_label: "b_1m" }], [], []);
         const local = rowsOf([], [{ ts: iso(d0 - 60), type: "strategy_failed", payload: { strategy: "a_1m" } },
           { ts: iso(d0 - 90), type: "scheduler_error", payload: { strategy: "c_1m" } }], [{ name: "a_1m", displayName: "台指期籌碼" }, { name: "c_1m", displayName: "到 t.me/x" }]);
-        ok("事件列帶策略:雲端兩列分得出(名稱／沒名稱寫代號),這台電腦查清單、網址名稱退代號",
-          cloud.length === 2 && cloud[0].includes("台指期籌碼") && cloud[1].includes("b_1m") && local.length === 2 && local[0].includes("台指期籌碼") && local[1].includes("c_1m") && !local[1].includes("t.me"), J([cloud, local]));
+        // 0.1.56 Wei:K 棒沒到位讀不到名稱只拿掉策略段、列照畫,不退代號(只有這一型;其他型別照舊退代號)
+        ok("事件列帶策略:雲端有名稱的那列寫名稱、K 棒沒到位沒名稱那列照畫但不寫代號;這台電腦查清單、網址名稱退代號",
+          cloud.length === 2 && cloud[0].includes("台指期籌碼") && !cloud.some((x) => x.includes("b_1m")) && local.length === 2 && local[0].includes("台指期籌碼") && local[1].includes("c_1m") && !local[1].includes("t.me"), J([cloud, local]));
+        // 雲端兩支同名:api 的 strategy_label 是「名稱（代號）」;K 棒沒到位兩列都只寫名稱(同網頁),策略失敗那列照 §3.1 留後綴
+        const dup = rowsOf([{ ts: d0 - 60, type: "bar_stale", data: { strategy: "a_1m", symbol: "TXF", minutes: 7 }, strategy_label: "台指期籌碼（a_1m）" },
+          { ts: d0 - 90, type: "bar_stale", data: { strategy: "b_1m", symbol: "TXF", minutes: 7 }, strategy_label: "台指期籌碼（b_1m）" },
+          { ts: d0 - 120, type: "strategy_failed", data: { strategy: "b_1m" }, strategy_label: "台指期籌碼（b_1m）" }], [], []);
+        ok("雲端同名:K 棒沒到位兩列都寫「台指期籌碼」、不出代號;策略失敗那列照帶「（b_1m）」",
+          dup.length === 3 && dup.slice(0, 2).every((x) => x.includes("台指期籌碼") && !/[ab]_1m/.test(x)) && dup[2].includes("台指期籌碼（b_1m）"), J(dup));
         ctx.TR = { st: { report: { events: [], order_errors: [{ ts: iso(d0 - 60), symbol: "TXF", error: "x", strategies: ["a_1m", "c_1m"] }] } },
           list: [{ name: "a_1m", displayName: "台指期籌碼" }, { name: "c_1m", displayName: "到 t.me/x" }], ov: { days: 7, ui: [], uiErr: false } };
         const t0 = ctx.t; ctx.t = (k, v) => { let x = k === "tr.ov.evStratTwo" ? "策略「{a}」、「{b}」" : k; if (v) for (const n in v) x = x.split("{" + n + "}").join(v[n]); return x; };

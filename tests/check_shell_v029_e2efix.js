@@ -2,7 +2,7 @@
 //   必修 2  雲端側欄列停上去時狀態字讓位(trade.css),字留在讀屏名稱裡
 //   建議 1  中欄窄到 520 那一階,「暫停下單」不跟兩顆框線鈕均分
 //   建議 3  旗標面板從旗標鈕下方往右長(sfPopPlace);沒旗標不出「移除旗標」
-//   建議 4  優化分頁只有一顆實心鈕(mgPrimary)
+//   建議 4  優化分頁只有一顆實心鈕(0.1.56 起只剩〔套用金額〕)
 //   建議 5  選擇策略框沒有可勾的策略時只留「關閉」
 // 排版實寬另用 headless Chromium 量過(見 commit 說明);這支鎖邏輯與規則本身。
 // 跑法:node tests/check_shell_v029_e2efix.js
@@ -53,25 +53,11 @@ const trCss = read("trade.css"), appCss = read("app.css"), sf = read("stratflags
   ok("建議 3:開閉動效的原點跟著改到左側(面板從鈕往右長)", /\.flag-pop \{[^}]*transform-origin: top left;/.test(appCss) && /\.flag-pop\.up \{ transform: translateY\(2px\); transform-origin: bottom left; \}/.test(appCss)); }
 
 // ── 建議 4 ──
-{ const C = { blocked: false }; vm.runInNewContext("function mgBlocked() { return this.blocked; }\n" + cutFn(po, "mgPrimary") + "\nthis.f = (b, G) => mgPrimary(b, G || {});", C);
-  const btn = (cls, disabled) => { const s = new Set(cls.split(" ")); return { disabled, classList: { toggle: (c, on) => (on ? s.add(c) : s.delete(c)), has: (c) => s.has(c) } }; };
-  const box = (opt, ap) => ({ querySelector: (q) => (q === ".tb-run" ? opt : q === "#mg-apply" ? ap : null) });
-  const fills = (...bs) => bs.filter((b) => b && b.classList.has("btn-fill")).length;
-  let opt = btn("btn-fill tb-run", false), ap = btn("btn-fill", false); C.f(box(opt, ap));
-  ok("建議 4:有新權重可套用 → 套用金額實心、跑優化框線", ap.classList.has("btn-fill") && !ap.classList.has("btn-out") && opt.classList.has("btn-out") && fills(opt, ap) === 1);
-  opt = btn("btn-fill tb-run", false); ap = btn("btn-fill", true); C.f(box(opt, ap));
-  ok("建議 4:套用停用(沒有新權重／缺報價…) → 跑優化實心、套用框線", opt.classList.has("btn-fill") && ap.classList.has("btn-out") && fills(opt, ap) === 1);
-  opt = btn("btn-out tb-run", false); C.f(box(opt, null));
-  ok("建議 4:還沒有建議(沒有套用鈕) → 跑優化實心", opt.classList.has("btn-fill") && !opt.classList.has("btn-out"));
-  opt = btn("btn-fill tb-run", true); ap = btn("btn-fill", false); C.f(box(opt, ap), { optBusy: true });
-  ok("建議 4:優化正在跑(手上的建議是舊的)→ 套用不當主鈕,跑優化實心", opt.classList.has("btn-fill") && ap.classList.has("btn-out") && fills(opt, ap) === 1);
-  C.blocked = true; opt = btn("btn-fill tb-run", true); ap = btn("btn-fill", false); C.f(box(opt, ap));
-  ok("建議 4:機器版本落後(mgBlocked)→ 套用不當主鈕", opt.classList.has("btn-fill") && ap.classList.has("btn-out"));
-  C.blocked = false;
-  ap = btn("btn-fill", false); C.f(box(null, ap));
-  ok("建議 4:工具列不在也不炸,套用照可不可按定", ap.classList.has("btn-fill"));
-  const paint = cutFn(po, "mgPaint");
-  ok("建議 4:mgPaint 在兩顆鈕都畫完之後才判(套用的停用條件在 mgSuggestTable 裡算)", paint.indexOf("mgPrimary(box, G);") > paint.indexOf("mgSuggest()")); }
+// spec portfolio-optimize-lite §2:〔跑優化〕拿掉,全頁只有〔套用金額〕一顆實心,不再需要 mgPrimary 判誰實心;〔跑回測〕、「改跑 N 天」、〔重試〕都不實心
+{ const bp = cutFn(po, "mgBuildPage");
+  ok("建議 4(0.1.56 起):沒有 mgPrimary;全頁只有〔套用金額〕一顆實心(btn-fill),〔跑回測〕描邊",
+    !/function mgPrimary\(|tb-run/.test(po) && (bp.match(/btn-fill/g) || []).length === 1 && /trEl\("button", "btn-fill mg-apply"\)/.test(bp) && /trEl\("button", "btn-out mg-bt-run"/.test(bp)
+    && !/btn-fill/.test(cutFn(po, "mgWarns") + cutFn(po, "mgSzPlaceholder") + cutFn(po, "mgToolbar"))); }
 
 // ── 建議 5 ──
 { let els = null;

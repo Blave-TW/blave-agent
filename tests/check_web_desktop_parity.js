@@ -87,6 +87,7 @@ const EV_PAIRS = {
   evMarketCheckOffNote: "market_check_off_note",
   evBarStale: "bar_stale",
   evBarStaleNote: "bar_stale_note",
+  evBarStaleNoteHour: "bar_stale_note_hour",   // 0.1.56 盤中滿 120 分鐘改寫小時(designer copy-0156 §3)
   evExUnreach: "exchange_unreachable",
   evExBack: "exchange_back",
   evExecFallback: "exec_fallback",
@@ -303,11 +304,11 @@ for (const lang of ["zh", "en"]) {
   ok(`「來自手機」${lang} 兩邊逐字一致(chat.fromPhone ↔ workspace_cs_from_phone)`, typeof dp["chat.fromPhone"] === "string" && dp["chat.fromPhone"] === wp.workspace_cs_from_phone,
     "chat.fromPhone「" + dp["chat.fromPhone"] + "」 vs workspace_cs_from_phone「" + wp.workspace_cs_from_phone + "」");
 }
-// 側欄提示格(spec sidebar-prompt-slot-2026-11-03 §2、§5):手機入口同一句。pop 的步驟字(spec slot-phone-steps §5)web 還沒開 key,
-// 開了再把 ph.stepGet／ph.stepChat 兩對加進來;workspace_slot_phone_hint 留給 /app 的 h1,不再對
+// 側欄提示格(spec sidebar-prompt-slot-2026-11-03 §2、§5):手機入口同一句;pop 的兩步(spec phone-pair-popover-2026-11-17 §6)也同一句。
+// 頂端價值句不對:web 主詞是雲端主機。workspace_slot_phone_hint 留給 /app 的 h1,不再對
 for (const lang of ["zh", "en"]) {
   const dp = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), wp = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
-  for (const [d, w] of [["ph.slot", "workspace_slot_phone"]])
+  for (const [d, w] of [["ph.slot", "workspace_slot_phone"], ["ph.stepGet", "workspace_slot_ph_step_get"], ["ph.stepChat", "workspace_slot_ph_step_chat"]])
     ok(`提示格 ${lang} 兩邊逐字一致(${d} ↔ ${w})`, typeof dp[d] === "string" && dp[d] === wp[w], d + "「" + dp[d] + "」 vs " + w + "「" + wp[w] + "」");
 }
 /* 已知差異(spec sidebar-conversion-2026-11-10 §9):電腦版 0.1.54 先把側欄底收成一列(手機改圖示、拿掉冷卻與關閉),web 排下一版跟上。
@@ -421,12 +422,14 @@ for (const lang of ["zh", "en"]) {
     const bad = Object.keys(RC_KEYS).filter((k) => !w[k] || w[k] !== d[RC_KEYS[k]]);
     ok("通知前綴／空摘錄五句兩邊同一份(" + lang + ")", bad.length === 0, bad.map((k) => k + ": " + w[k] + " vs " + d[RC_KEYS[k]]).join(";"));
   } }
-// 優化分頁〔套用金額〕停用時的原因句(C 案):zh / en 兩邊逐字一致(設計稽核 v030 S3)
-{ const MG_KEYS = { workspace_mg_prop_other_alloc: "mg.propOtherAlloc" };
+// 優化分頁精簡(spec portfolio-optimize-lite §2、§4):〔跑優化〕、部位大小框、「是別的方法算的」、接「換一個方法」連結的那幾句兩邊都拿掉
+{ const GONE = { "mg.optRun": "workspace_mg_opt_run", "mg.optRunning": "workspace_mg_opt_running", "mg.optTip": "workspace_mg_opt_tip", "mg.secAmounts": "workspace_mg_sec_amounts", "mg.fogOpt": "workspace_mg_fog_opt",
+    "sz.pv.amt": "workspace_sz_pv_amt", "mg.waitPrefixOpt": "workspace_mg_wait_opt", "mg.needSize": "workspace_mg_need_size", "mg.propOtherAlloc": "workspace_mg_prop_other_alloc", "mg.why.noVol": "workspace_mg_why_no_vol",
+    "mg.why.shortMdd": "workspace_mg_why_short_mdd", "mg.why.method": "workspace_mg_why_method", "mg.why.changeMethod": "workspace_mg_why_change_method", "mg.why.changeTarget": "workspace_mg_why_change_target" };
   for (const lang of ["zh", "en"]) {
     const w = poRaw(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po")), d = poRaw(path.join(__dirname, "..", "shell", "i18n", lang + ".po"));
-    const bad = Object.keys(MG_KEYS).filter((k) => !w[k] || w[k] !== d[MG_KEYS[k]]);
-    ok("優化分頁套用停用原因句兩邊同一份(" + lang + ")", bad.length === 0, bad.map((k) => k + ": " + w[k] + " vs " + d[MG_KEYS[k]]).join(";"));
+    const left = Object.keys(GONE).filter((k) => k in d || GONE[k] in w);
+    ok("優化分頁拿掉的字兩邊都不在(" + lang + "," + Object.keys(GONE).length + " 對)", left.length === 0, left.map((k) => k + "／" + GONE[k]).join(";"));
   } }
 // 串接失敗講怎麼改的句子(OKX 帳戶模式):兩邊逐字一致。Bitget 統一帳戶已開放,web 拿掉了「還不支援」那幾句,不再比
 { const CX_KEYS = { workspace_pf_err_okx_mode: "cx.err.okxMode" };
@@ -844,20 +847,21 @@ for (const lang of ["zh", "en"]) {
 /* 〔套用金額〕停用原因(0.1.44):補救連結對照表、原因優先序、字樣,以及回合鎖「碰過哪一支」的判準。兩邊同一份,不同的只有下面具名的兩處:
    登入那兩條只有電腦版(web 沒有未登入這個狀態);en 的功能名 web 是 Title Case(同 web check_mg_sizing_parity)。 */
 { const pfSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "portfolio.js"), "utf8"), resSrc = fs.readFileSync(path.join(__dirname, "..", "shell", "renderer", "results.js"), "utf8");
-  const WHY_KEY = { "mg.applyDiffSet": "mgApplyDiffSet", "mg.propOtherAlloc": "mgPropOtherAlloc", "mg.needFund": "mgNeedFund", "mg.needSize": "mgNeedSize", "mg.needMethod": "mgNeedMethod", "mg.needTarget": "mgNeedTarget",
+  const WHY_KEY = { "mg.applyDiffSet": "mgApplyDiffSet", "mg.needFund": "mgNeedFund", "mg.needMethod": "mgNeedMethod", "mg.needTarget": "mgNeedTarget",
     "mg.sizeNoHist": "mgSizeNoHist", "mg.sizeNoSolve": "mgSizeNoSolve", "sz.shortMdd": "szShortMdd", "sz.noVol": "szNoVol", "sz.staleMdd": "szStaleMdd", "sz.oldMdd": "szOldMdd",
-    "mg.why.alloc": "mgWhyAlloc", "mg.why.method": "mgWhyMethod", "mg.why.changeMethod": "mgWhyChangeMethod", "mg.why.changeTarget": "mgWhyChangeTarget", "mg.why.shortMdd": "mgWhyShortMdd", "mg.why.noVol": "mgWhyNoVol",
-    "mg.why.rerun": "mgWhyRerun", "mg.why.updCloud": "mgWhyUpdCloud", "mg.applyWhyUnread": "mgApplyWhyUnread", "mg.applyWhyFx": "mgApplyWhyFx", "mg.applyWhyQuote": "mgApplyWhyQuote", "mg.applyWhySame": "mgApplyWhySame", "tr.saving": "pfSaving" };
+    "mg.why.alloc": "mgWhyAlloc", "mg.why.rerun": "mgWhyRerun", "mg.why.updCloud": "mgWhyUpdCloud", "mg.applyWhyUnread": "mgApplyWhyUnread", "mg.applyWhyFx": "mgApplyWhyFx", "mg.applyWhyQuote": "mgApplyWhyQuote", "mg.applyWhySame": "mgApplyWhySame", "tr.saving": "pfSaving" };
   const WHY_DESK_ONLY = ["mg.applyWhyLogin", "mg.applyWhyFxOld"];
   const cutLit = (src, re) => { const m = re.exec(src); return m ? m[0] : null; };
-  const dTbl = cutLit(pfSrc, /const MG_WHY_SIZE = [^\n]*\nconst MG_WHY_FIX = \{[\s\S]*?\n\};/), wTbl = cutLit(web, /function mgWhySize\([\s\S]*?\n\s*\}\n\s*const MG_WHY_FIX = \{[\s\S]*?\n\s*\};/);
-  const dFix = dTbl && new Function(dTbl + "\nreturn MG_WHY_FIX;")(), wFix = wTbl && new Function(wTbl + "\nreturn MG_WHY_FIX;")();
+  // 部位大小那三格在頁面上,缺哪一格直接講、不出連結(spec portfolio-optimize-lite §2):兩邊都沒有 size 那一類
+  const dTbl = cutLit(pfSrc, /const MG_WHY_FIX = \{[\s\S]*?\n\};/), wTbl = cutLit(web, /const MG_WHY_FIX = \{[\s\S]*?\n\s*\};/);
+  const evalFix = (tbl) => { try { return tbl && new Function(tbl + "\nreturn MG_WHY_FIX;")(); } catch (_) { return null; } };   // 還是舊表(帶 mgWhySize)的樹:記一條 FAIL,不讓整支停在這裡
+  const dFix = evalFix(dTbl), wFix = evalFix(wTbl);
   ok("MG_WHY_FIX 兩邊都切得出來", !!dFix && !!wFix);
   if (dFix && wFix) { const mapK = (k) => (k === undefined ? undefined : WHY_KEY[k] || "未對照:" + k);
-    const mapped = Object.keys(dFix).filter((k) => !WHY_DESK_ONLY.includes(k)).map((k) => [mapK(k), { go: dFix[k].go, focusOn: dFix[k].focusOn, link: mapK(dFix[k].link), text: dFix[k].text && (dFix[k].text === "mg.why.shortMdd" ? "mgWhyShortMdd" : "mgWhyNoVol") }]);
+    const mapped = Object.keys(dFix).filter((k) => !WHY_DESK_ONLY.includes(k)).map((k) => [mapK(k), { go: dFix[k].go, focusOn: dFix[k].focusOn, link: mapK(dFix[k].link), text: dFix[k].text && mapK(dFix[k].text) }]);
     const view = (o) => JSON.stringify([o.go, o.focusOn, o.link, o.text]);
     const off = mapped.filter(([wk, v]) => !wFix[wk] || view(wFix[wk]) !== view(v)).map(([wk]) => wk).concat(Object.keys(wFix).filter((wk) => !mapped.some(([k]) => k === wk)));
-    ok("MG_WHY_FIX 兩邊同一份:每條原因去哪、聚焦哪格、連結字與換句(電腦版另有登入兩條)", off.length === 0 && mapped.length === 12 && WHY_DESK_ONLY.every((k) => dFix[k] && dFix[k].go === "login"), off.join()); }
+    ok("MG_WHY_FIX 兩邊同一份:每條原因去哪、聚焦哪格、連結字與換句(電腦版另有登入兩條)", off.length === 0 && mapped.length === 3 && !mapped.some(([, v]) => v.go === "size") && WHY_DESK_ONLY.every((k) => dFix[k] && dFix[k].go === "login"), off.join()); }
   const dWhy = cutLit(pfSrc, /function mgApplyWhy\(d, quoteMissing, changed\) \{[\s\S]*?\n\}/), wWhy = cutLit(web, /function mgApplyWhyKey\(f\) \{[\s\S]*?\n\s*\}/);
   ok("原因優先序兩邊都切得出來", !!dWhy && !!wWhy);
   if (dWhy && wWhy) { const wF = new Function(wWhy + "\nreturn mgApplyWhyKey;")(), bad = [];
@@ -868,12 +872,12 @@ for (const lang of ["zh", "en"]) {
       const w = wF(f), dk = dF({ ...f, gap: gap && "mg.needFund" }), d = dk === "UNK" ? "pfUnknownWhy" : dk === "mg.needFund" ? "mgNeedFund" : WHY_KEY[dk] || dk;
       if (w !== d) bad.push(JSON.stringify(f) + " web=" + w + " 電腦版=" + dk); }
     ok("〔套用金額〕原因優先序兩邊同一份(7 個條件全組合 × 有無 gap)", bad.length === 0, bad.slice(0, 3).join(";")); }
-  const WHY_STR = { "mg.applyDiffSet": "workspace_mg_apply_diff_set", "mg.applyDiffSetN": "workspace_mg_apply_diff_set_n", "mg.propOtherAlloc": "workspace_mg_prop_other_alloc", "mg.applyWhyUnread": "workspace_mg_apply_why_unread", "mg.applyWhyQuote": "workspace_mg_apply_why_quote", "mg.applyWhyFx": "workspace_mg_apply_why_fx", "mg.applyWhySame": "workspace_mg_apply_why_same",
-    "mg.needFund": "workspace_mg_need_fund", "mg.needSize": "workspace_mg_need_size", "mg.needMethod": "workspace_mg_need_method", "mg.needTarget": "workspace_mg_need_target", "mg.sizeNoHist": "workspace_mg_size_no_hist", "mg.sizeNoSolve": "workspace_mg_size_no_solve",
+  const WHY_STR = { "mg.applyDiffSet": "workspace_mg_apply_diff_set", "mg.applyDiffSetN": "workspace_mg_apply_diff_set_n", "mg.applyWhyUnread": "workspace_mg_apply_why_unread", "mg.applyWhyQuote": "workspace_mg_apply_why_quote", "mg.applyWhyFx": "workspace_mg_apply_why_fx", "mg.applyWhySame": "workspace_mg_apply_why_same",
+    "mg.needFund": "workspace_mg_need_fund", "mg.needStrat": "workspace_mg_need_strat", "mg.busy": "workspace_mg_busy", "mg.shortOpt": "workspace_mg_short_opt", "mg.optDoneToast": "workspace_mg_opt_done_toast", "mg.needMethod": "workspace_mg_need_method", "mg.needTarget": "workspace_mg_need_target", "mg.sizeNoHist": "workspace_mg_size_no_hist", "mg.sizeNoSolve": "workspace_mg_size_no_solve",
     "sz.shortMdd": "workspace_sz_short_mdd", "sz.staleMdd": "workspace_sz_stale_mdd", "sz.oldMdd": "workspace_sz_old_mdd", "sz.noVol": "workspace_sz_no_vol",
-    "mg.why.alloc": "workspace_mg_why_alloc", "mg.why.method": "workspace_mg_why_method", "mg.why.tbMethod": "workspace_mg_why_tb_method", "mg.why.changeMethod": "workspace_mg_why_change_method", "mg.why.changeTarget": "workspace_mg_why_change_target", "mg.why.shortMdd": "workspace_mg_why_short_mdd", "mg.why.noVol": "workspace_mg_why_no_vol", "mg.why.rerun": "workspace_mg_why_rerun", "mg.why.updCloud": "workspace_mg_why_upd_cloud", "mg.why.pickTitle": "workspace_mg_why_pick_title",
+    "mg.why.alloc": "workspace_mg_why_alloc", "mg.why.tbMethod": "workspace_mg_why_tb_method", "mg.why.rerun": "workspace_mg_why_rerun", "mg.why.replaced": "workspace_mg_why_replaced", "mg.why.updCloud": "workspace_mg_why_upd_cloud", "mg.why.pickTitle": "workspace_mg_why_pick_title",
     "tr.noAccount": "workspace_pf_no_account", "tr.fogConnect": "workspace_pf_fog_connect", "po.fogNew": "workspace_pf_fog_new", "mg.fogNew": "workspace_mg_no_strategies", "rpt.fogNew": "workspace_rp_fog_new" };
-  // en 兩條字樣小差,對齊前不比:sz.shortMdd 電腦版 Under、web Less than(web 自己的 mg.why.shortMdd 也是 Under);mg.applyWhyQuote web 用直引號,其餘都是 ’
+  // en 兩條字樣小差,對齊前不比:sz.shortMdd 電腦版 Under、web Less than;mg.applyWhyQuote web 用直引號,其餘都是 ’
   const EN_OPEN = new Set(["sz.shortMdd", "mg.applyWhyQuote"]), norm = (s) => s.toLowerCase();
   for (const lang of ["zh", "en"]) { const d = poMap(path.join(__dirname, "..", "shell", "i18n", lang + ".po")), w = poMap(path.join(webDir, "app", "translations", lang, "LC_MESSAGES", "messages.po"));
     const same = (a, b) => (lang === "zh" ? a === b.replace(/%%/g, "%") : norm(a) === norm(b.replace(/%%/g, "%")));

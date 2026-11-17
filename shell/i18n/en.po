@@ -2460,7 +2460,7 @@ msgid "tr.unbinding"
 msgstr "Disconnecting…"
 
 msgid "tr.unbindWarn"
-msgstr "This computer’s login details are removed; the order engine can’t trade with them. Your portfolio and amounts are kept; save once after reconnecting."
+msgstr "Login details are removed from this computer and trading stops. Portfolio and amounts are kept; save once after reconnecting."
 
 msgid "tr.unbindWarnPaper"
 msgstr "Reconnecting paper trading makes its equity and positions start over; trade history stays. Your portfolio and amounts are kept; save once after reconnecting."
@@ -2804,7 +2804,10 @@ msgid "tr.ov.evBarStale"
 msgstr "Bar has not arrived"
 
 msgid "tr.ov.evBarStaleNote"
-msgstr "waited {minutes} min and still retrying; the signal will be late"
+msgstr "waited {minutes} min of trading time, still retrying. The signal will be late"
+
+msgid "tr.ov.evBarStaleNoteHour"
+msgstr "waited {hours} h of trading time, still retrying. The signal will be late"
 
 msgid "tr.ov.evMarketCheckOffNote"
 msgstr "held strategies stay held, but a newly added symbol may only be stopped at the next report; ask your agent to look at it"
@@ -2873,10 +2876,10 @@ msgid "tr.ov.evUiOverride"
 msgstr "Workspace settings override the config file"
 
 msgid "tr.ov.evVenueUnboundNote"
-msgstr "keys are on the machine but it is not bound on the Portfolio page, so no order is routed to it"
+msgstr "not chosen on the Portfolio page, so no order goes there"
 
 msgid "tr.ov.evVenueUnbound"
-msgstr "{venue} is not bound"
+msgstr "{venue} is connected but no strategy uses it"
 
 msgid "tr.ov.evRecBack"
 msgstr "Order engine back"
@@ -5398,9 +5401,6 @@ msgstr "US Stocks"
 msgid "lib.free"
 msgstr "Free"
 
-msgid "lib.verified"
-msgstr "Verified"
-
 msgid "lib.installed"
 msgstr "Installed"
 
@@ -5461,7 +5461,7 @@ msgstr "Newest"
 
 # 策略庫清單:照 Sharpe／最大回撤較淺／年化報酬排時,沉底那段正上方的組標籤(同 web workspace_lib_sink_head)
 msgid "lib.sinkHead"
-msgstr "Unverified or Under 1 Year"
+msgstr "Gates Not Passed or Under 1 Year"
 
 # 照「最新上架」排時,清單列副標接在標的後面
 msgid "lib.listedFor"
@@ -5554,7 +5554,7 @@ msgid "lib.gate.fail"
 msgstr "Not passed"
 
 msgid "lib.gate.na"
-msgstr "MCPT n/a (portfolio strategy)"
+msgstr "MCPT n/a (multi-asset strategy)"
 
 msgid "lib.gates.community"
 msgstr "This strategy hasn't been through the quality gates. Community strategies are listed by their authors after manual review; the backtest figures are the author's."
@@ -5695,7 +5695,7 @@ msgid "lib.bb.renew"
 msgstr "When your plan renews, this card is charged if your balance is short."
 
 msgid "lib.bb.topup"
-msgstr "Auto top-up is on once you add a card: a balance below {lo} TWD triggers a {a} TWD top-up. You can turn it off anytime."
+msgstr "Auto top-up is on once you add a card: a balance below {lo} TWD triggers a {a} TWD top-up."
 
 msgid "lib.bb.waiting"
 msgstr "Waiting for Payment…"
@@ -8505,7 +8505,7 @@ msgid "pres.err.noSeal"
 msgstr "This computer’s encrypted storage isn’t available, so nothing was saved. Try again after signing in to your Windows account."
 
 msgid "pres.err.rebound"
-msgstr "The President credentials bound on this computer differ from the saved ones. Connect again."
+msgstr "The President login on this computer differs from the saved one. Connect again."
 
 msgid "pres.err.libOutdated"
 msgstr "This computer’s strategy workspace is too old for President Futures. Update Blave, then try again."
@@ -8978,7 +8978,7 @@ msgid "pv.f.running.await"
 msgstr "The first period wasn’t charged automatically. Start the plan on the website to continue; otherwise the machine is deleted on {gu}"
 
 msgid "plan.topupShort"
-msgstr "Under {a} TWD, your card tops up {b} TWD. You can turn this off on the web."
+msgstr "Under {a} TWD, your card tops up {b} TWD."
 
 msgid "po.nav"
 msgstr "Portfolio"
@@ -9213,28 +9213,13 @@ msgid "mg.moreMethods"
 msgstr "Other methods?"
 
 msgid "mg.optDoneToast"
-msgstr "Optimization done — see Weight Allocation on the Optimize tab."
+msgstr "Weights are ready on the Optimize tab."
 
 msgid "mg.optError"
 msgstr "Optimize failed: {e}"
 
-msgid "mg.optRun"
-msgstr "Optimize"
-
 # 優化分頁「套用金額」停用的原因:手上那份權重是別的方法算的,表照畫(portfolio.js mgSuggestTable;C 案)
-msgid "mg.propOtherAlloc"
-msgstr "Computed with {method}"
-
-msgid "mg.optRunning"
-msgstr "Optimizing…"
-
-msgid "mg.optTip"
-msgstr "Turns suggested weights into suggested amounts; press Apply Amounts to write them to Allocation"
-
 # 優化分頁:選了兩檔以上、還沒有權重也沒有回測時,霧上 CTA 卡那一句(鈕是 mg.optRun)
-msgid "mg.fogOpt"
-msgstr "Get a weight for each of these {n} strategies."
-
 msgid "mg.outdated"
 msgstr "This machine's workspace is behind the version that ships strategy management — update it and Optimize is back."
 
@@ -9252,9 +9237,6 @@ msgstr ", converted to each group's unit"
 
 msgid "mg.propTipLots"
 msgstr "; TAIEX futures in lots"
-
-msgid "mg.secAmounts"
-msgstr "Weight Allocation"
 
 msgid "mg.secBt"
 msgstr "Walk-Forward Backtest"
@@ -9305,7 +9287,7 @@ msgid "mg.tbStratN"
 msgstr "{n}"
 
 msgid "mg.timeout"
-msgstr "No response from the machine — try again later"
+msgstr "No response from the machine"
 
 msgid "mg.totalReturn"
 msgstr "Total Return"
@@ -9321,16 +9303,13 @@ msgid "sz.lev"
 msgstr "Leverage"
 
 msgid "sz.m.lev"
-msgstr "Fixed Leverage"
+msgstr "Leverage"
 
 msgid "sz.m.mdd"
-msgstr "Max Drawdown"
+msgstr "Drawdown"
 
 msgid "sz.m.vol"
-msgstr "Target Volatility"
-
-msgid "sz.pv.amt"
-msgstr "Total exposure"
+msgstr "Volatility"
 
 msgid "sz.pv.mdd"
 msgstr "Max drawdown"
@@ -9547,13 +9526,13 @@ msgid "tr.badRoute.rejectedAny"
 msgstr "A strategy has a broken exchange setting, so nothing was saved. Ask the agent to fix it."
 
 msgid "tr.haltUnbound"
-msgstr "Paused automatically when the exchange was unbound: no new positions; closes and stops still run."
+msgstr "Paused automatically when the exchange was disconnected: no new positions; closes and stops still run."
 
 msgid "tr.haltUnboundFreeze"
-msgstr "Paused automatically when the exchange was unbound: no orders are sent, exits and stops included."
+msgstr "Paused automatically when the exchange was disconnected: no orders are sent, exits and stops included."
 
 msgid "tr.haltUnboundOff"
-msgstr "Paused automatically when the exchange was unbound, and the order program isn’t running: no orders at all."
+msgstr "Paused automatically when the exchange was disconnected, and the order program isn’t running: no orders at all."
 
 # 換帳戶(綁新的一家、舊的被擠掉;機器寫 venue rebind)自動掛的暫停:比照 tr.haltUnbound 三種,只換開頭
 msgid "tr.haltRebind"
@@ -9702,9 +9681,6 @@ msgstr "0 lots (under 1 lot)"
 msgid "mg.lotsUnderFoot"
 msgstr "TAIEX futures below one lot aren’t counted: ≈ {amt} less invested"
 
-msgid "mg.waitPrefixOpt"
-msgstr "Optimize: "
-
 msgid "mg.waitPrefixBt"
 msgstr "Backtest: "
 
@@ -9712,25 +9688,31 @@ msgid "mg.btWaitPerf"
 msgstr "Waiting for performance updates…"
 
 msgid "sz.oldMdd"
-msgstr "Cloud machine is out of date, so max drawdown isn’t available; update the cloud machine"
+msgstr "Drawdown isn’t available until you update the cloud machine"
 
 msgid "sz.staleMdd"
-msgstr "Rerun the optimization to use max drawdown"
+msgstr "Recalculate weights to use Drawdown"
 
 msgid "sz.shortMdd"
-msgstr "Under 90 days of shared data, so max drawdown isn’t available"
+msgstr "Under 90 days of shared data, so Drawdown isn’t available"
 
 msgid "mg.needFund"
 msgstr "Enter the capital first"
 
-msgid "mg.needSize"
-msgstr "Set the position size first"
-
 msgid "mg.needMethod"
-msgstr "Pick a position size method first"
+msgstr "Pick Volatility, Drawdown or Leverage first"
+
+msgid "mg.needStrat"
+msgstr "Pick strategies first"
+
+msgid "mg.busy"
+msgstr "Calculating…"
+
+msgid "mg.shortOpt"
+msgstr "Not enough history. Shorten the lookback in Method"
 
 msgid "mg.needTarget"
-msgstr "Enter the position size target first"
+msgstr "Enter the target first"
 
 msgid "mg.applyDiffSetN"
 msgstr "Allocation has {n} not listed here"
@@ -9739,31 +9721,20 @@ msgid "mg.applyWhyUnread"
 msgstr "Can’t read the amounts; apply once it updates"
 
 msgid "sz.noVol"
-msgstr "No volatility data in the last 90 days, so target volatility is off"
+msgstr "No volatility data for the last 90 days"
 
 msgid "mg.why.alloc"
 msgstr "Change Allocation"
 
-msgid "mg.why.method"
-msgstr "Change Method"
-
 msgid "mg.why.tbMethod"
 msgstr "Method"
 
-msgid "mg.why.changeMethod"
-msgstr "change the method"
-
-msgid "mg.why.changeTarget"
-msgstr "change the target"
-
-msgid "mg.why.shortMdd"
-msgstr "Under 90 days of shared data, so max drawdown isn’t available; change the method"
-
-msgid "mg.why.noVol"
-msgstr "No volatility data in the last 90 days, so target volatility is off; change the method"
-
 msgid "mg.why.rerun"
-msgstr "Rerun the optimization"
+msgstr "Recalculate weights"
+
+# 權重被另一次計算換掉時鈕下那一句;「Recalculate weights」是連結字(mg.why.rerun),要原樣出現在句子裡(同網頁 workspace_mg_why_replaced)
+msgid "mg.why.replaced"
+msgstr "Another run replaced these weights. Recalculate weights"
 
 msgid "mg.why.updCloud"
 msgstr "update the cloud machine"
@@ -9778,7 +9749,7 @@ msgid "mg.why.pickTitle"
 msgstr "Allocation strategies"
 
 msgid "mg.sizeNoHist"
-msgstr "This result can’t work out target volatility; change the method"
+msgstr "This result can’t compute Volatility"
 
 msgid "mg.sizeNoSolve"
 msgstr "This drawdown target can’t be turned into a leverage; change the target"
@@ -9787,7 +9758,7 @@ msgid "sz.unset"
 msgstr "Not set"
 
 msgid "mg.needAlloc"
-msgstr "Click Method and pick an allocation method first"
+msgstr "Pick a method first"
 
 msgid "mg.allocGone"
 msgstr "“{method}” is no longer on this machine; click Method to pick another"
@@ -10740,21 +10711,20 @@ msgstr "Turn Off"
 msgid "ph.slot"
 msgstr "Use on Phone"
 
-# 側欄「在手機上用」pop 的步驟(spec slot-phone-steps §3)。清單項目用句首大寫,不是按鈕
+# 側欄「在手機上用」pop 頂端的價值句(h2)與下一行好處(spec phone-pair-popover-2026-11-17 §5)
+msgid "ph.value"
+msgstr "Control this computer from your phone"
+
+msgid "ph.gain"
+msgstr "Run backtests and edit strategies while you're away."
+
+# 側欄「在手機上用」pop 的步驟(spec phone-pair-popover-2026-11-17 §4)。清單項目用句首大寫,不是按鈕
 msgid "ph.stepGet"
 msgstr "Get the app"
 
-# 已登入時第 1 步(打勾),下面小字是 Blave 帳號 email
-msgid "ph.signed"
-msgstr "Signed in"
-
-# 「Chat」是 App 的 mchat_entry;App 改字要回頭同步這句
+# 第 2 步,下面小字是 Blave 帳號 email(「this account」指它)。「Chat」是 App 的 mchat_entry;App 改字要回頭同步這句
 msgid "ph.stepChat"
-msgstr "In the app's Agent tab, tap Chat to pair"
-
-# 最後一步,「允許手機對話」已開就不列。「Turn On」要跟配對確認框的鈕 ph.ask.ok 逐字相同
-msgid "ph.stepAllow"
-msgstr "When this computer asks, choose Turn On"
+msgstr "Sign in to this account, then tap Chat in the Agent tab"
 
 msgid "ph.syncing"
 msgstr "Synced {n} of {m} chats"
@@ -11265,3 +11235,64 @@ msgstr "Strategy amounts are kept. No strategy has an amount now, so nothing wil
 
 msgid "tr.ov.evBrokerShut"
 msgstr "President says closed. Sending next session"
+
+# 0.1.56 錯誤回報詢問卡(renderer/errreport.js,由外殼畫在對話串裡,不是 AI 的回覆;spec agent-error-report-2026-11-16 §5)。文案照設計稽核 review-0156-batch2 定稿
+msgid "err.card"
+msgstr "Blave hit an error. Sending the details helps find the cause."
+
+# 同一張卡併了幾個不同的錯誤(依錯誤指紋併)
+msgid "err.cardN"
+msgstr "Blave hit {n} errors. Sending the details helps find the cause."
+
+# 用戶同意的內容之一:登入時 api 會從 token 對上帳號
+msgid "err.acct"
+msgstr "Reports sent while signed in are linked to your account."
+
+# 文字鈕:展開會送出的 JSON 原文(也當 JSON 框的讀屏名稱;W2 併掉展開標題)
+msgid "err.view"
+msgstr "See What Will Be Sent"
+
+msgid "err.hide"
+msgstr "Hide"
+
+msgid "err.send"
+msgstr "Send"
+
+# 按了這批刪掉,同一個錯誤 30 天內不再問
+msgid "err.dontSend"
+msgstr "Don't Send"
+
+# 勾選:之後的錯誤不再問,背景自動送(不帶錯誤訊息)
+msgid "err.always"
+msgstr "Send automatically"
+
+# 勾選下方的說明(W1:用排除句,自動送仍帶安裝識別碼、版本、帳號)
+msgid "err.alwaysNote"
+msgstr "Automatic reports leave out the error message."
+
+# 按了送出之後卡上剩這一句
+msgid "err.sent"
+msgstr "Sent."
+
+# 按了不送之後卡上剩這一句
+msgid "err.declined"
+msgstr "Not sent. This error won't be asked about again for 30 days."
+
+# 設定 › 隱私另開的一塊(不放進「傳送使用資料」的會收清單)
+msgid "err.priv.h"
+msgstr "Error Reports"
+
+# 三選一,預設
+msgid "err.priv.ask"
+msgstr "Ask Each Time"
+
+msgid "err.priv.auto"
+msgstr "Send Automatically"
+
+# 選了不出卡、不發任何請求
+msgid "err.priv.off"
+msgstr "Don't Send"
+
+# 這一塊的說明行
+msgid "err.priv.note"
+msgstr "Error messages are sent only when you press Send. Each report includes the error type, where it failed, versions and install ID, plus your account if you're signed in. All reports are kept for 90 days."

@@ -19,7 +19,7 @@ const ids = (sort, list) => P.libVisible(list || LIST, "all", sort).map((s) => s
 ok("① fixture 是 11-06 線上 17 支", LIST.length === 17);
 ok("① 排序 key 與順序:推薦、安裝最多、樣本期較長、Sharpe、最大回撤較淺、年化報酬、最新上架;會沉底的只有 Sharpe／回撤／年化",
   JSON.stringify([...P.LIB_SORTS]) === '["reco","installs","sample","sharpe","mdd","annual","newest"]' && JSON.stringify([...P.LIB_SINK_SORTS]) === '["sharpe","mdd","annual"]' && P.LIB_FLOOR_YEARS === 1);
-ok("① 推薦不動:不給排序、給 reco、給認不得的值,都等於原本的官方或已驗證 → libCompare",
+ok("① 推薦不動:不給排序、給 reco、給認不得的值,都等於原本的官方或過關 → libCompare",
   ids(undefined).join() === ids("reco").join() && ids("moon").join() === ids("reco").join() && ids("reco").join() === "74,137,125,73,132,106,139,101,102,124,118,88,72,128,127,86,117");
 const sh = ids("sharpe"), md = ids("mdd"), an = ids("annual");
 ok("① §3.2 驗收:Sharpe 第一名 #124、最大回撤較淺第一名 #74;兩種排序最後三列都是 #127、#117、#86(不加沉底兩個第一名都是只有半年的 #127)",
@@ -27,7 +27,7 @@ ok("① §3.2 驗收:Sharpe 第一名 #124、最大回撤較淺第一名 #74;兩
 ok("① 年化報酬也沉底:最後三列 #127、#117、#86;第一名 #124", an[0] === 124 && an.slice(-3).join() === "127,117,86", an.join());
 const s117 = LIST.find((s) => s.id === 117), s86 = LIST.find((s) => s.id === 86), s127 = LIST.find((s) => s.id === 127);
 ok("① #117 樣本 0.98 年(畫面捨入成 1.0):第一格講總報酬,同時沉底——兩邊用同一個不捨入的判斷", P.libSampleYears(s117) < 1 && P.libYears(s117) === 1 && P.wcFirstKv(s117) === "total" && P.libSinks(s117) === true && P.libUnderYear(s117) === true);
-ok("① #86 官方但未驗證照樣沉底(官方身分不救);#127 已驗證但未滿 1 年沉底;滿 1 年且已驗證的不沉底", P.libSinks(s86) === true && s86.is_official === true && P.libSinks(s127) === true && P.libSinks(LIST.find((s) => s.id === 124)) === false);
+ok("① #86 官方但未過關照樣沉底(官方身分不救);#127 過關但未滿 1 年沉底;滿 1 年且過關的不沉底", P.libSinks(s86) === true && s86.is_official === true && P.libSinks(s127) === true && P.libSinks(LIST.find((s) => s.id === 124)) === false);
 ok("① 沒有回測區間的:沉底、第一格照舊講年化(wcFirstKv 不變)", P.libSinks({ verified: true, report: {} }) === true && P.wcFirstKv({ verified: true, report: {} }) === "ann");
 ok("① 不會沉底的三種:安裝最多照 purchase_count、最新上架照 created_at、樣本期較長照不捨入年數",
   ids("installs").slice(0, 3).join() === "102,101,73" && ids("newest")[0] === 139 && ids("newest").slice(-1)[0] === 72 && ids("sample")[0] === 74 && ids("sample").slice(-1)[0] === 127);
@@ -69,9 +69,9 @@ ok("① 市場篩選照舊:加密 × Sharpe 只有加密", P.libVisible(LIST, "c
     && /<\/button>\s*<div class="ct-menu lib-mkt-menu" id="lib-sort-menu"/.test(html.slice(trigI)) && !html.includes("lib-sort-tip") && !/aria-describedby/.test(html.slice(trigI, html.indexOf(">", trigI)))
     && P.LIB_SORTS.every((k) => menu.includes('data-i18n="lib.sort.' + k + '"'))); }
 const WANT = { zh: { "lib.sort.aria": "排序", "lib.sort.reco": "推薦", "lib.sort.installs": "安裝最多", "lib.sort.sample": "樣本期較長", "lib.sort.sharpe": "Sharpe", "lib.sort.mdd": "最大回撤較淺", "lib.sort.annual": "年化報酬", "lib.sort.newest": "最新上架",
-  "lib.sinkHead": "未驗證或樣本未滿 1 年", "lib.listedFor": "上架 {n} 天", "lib.desc": "報酬皆為回測。" },
+  "lib.sinkHead": "未過關或樣本未滿 1 年", "lib.listedFor": "上架 {n} 天", "lib.desc": "報酬皆為回測。" },
   en: { "lib.sort.aria": "Sort", "lib.sort.reco": "Recommended", "lib.sort.installs": "Most installed", "lib.sort.sample": "Longest backtest", "lib.sort.sharpe": "Sharpe", "lib.sort.mdd": "Shallowest drawdown", "lib.sort.annual": "Annual Return", "lib.sort.newest": "Newest",
-  "lib.sinkHead": "Unverified or Under 1 Year", "lib.listedFor": "Listed {n}d", "lib.desc": "Returns are backtested." } };
+  "lib.sinkHead": "Gates Not Passed or Under 1 Year", "lib.listedFor": "Listed {n}d", "lib.desc": "Returns are backtested." } };
 ok("② 字串逐字照 spec §6 與設計稽核第二節第 3 題(zh／en);lib.annLabel、lib.years、提示泡的 lib.sort.tip.reco／.value 沒有呼叫點了,兩語都刪", ["zh", "en"].every((L) => Object.entries(WANT[L]).every(([k, v]) => STR[L][k] === v)) && ["lib.annLabel", "lib.years", "lib.sort.tip.reco", "lib.sort.tip.value"].every((k) => !(k in STR.zh) && !(k in STR.en) && !src.includes('"' + k + '"')));
 ok("② 接線:觸發鈕開關、面板點選 libSortPick、鍵盤與市場選單同一支 menuKeys、點外面(capture)關;清單重畫時焦點在面板裡就還給觸發鈕;離開策略庫收起來;換主題重畫曲線",
   /g\("lib-sort-trig"\)\.addEventListener\("click", \(\) => \{ if \(g\("lib-sort-menu"\)\.hidden\) libSortOpen\(\); else libSortClose\(false\); \}\);/.test(src)
@@ -97,7 +97,7 @@ ok("② 列不開 lightweight-charts:libRow／libSparkDraw 沒有 LightweightCha
     find(cls) { const out = []; const walk = (n) => { if (n && typeof n === "object") { if ((" " + n.className + " ").includes(" " + cls + " ")) out.push(n); (n.k || []).forEach(walk); } }; walk(this); return out; }
   }
   const sb = { Node: N, document: { createElement: (t) => new N(t), createDocumentFragment: () => new N("#f") }, LANG: "zh", Date,
-    libTags: () => ["已驗證", "免費"].map((x) => { const n = new N("span"); n.className = "tag"; n.textContent = x; return n; }), libShowDetail() { }, LIB_SPARK_W: 88, LIB_SPARK_H: 28, LIB_PAIR_RE: /^([A-Z0-9]{1,10})USDT$/, LIB_IV_KEYS: {}, libIvKey: () => "1h" };
+    libTags: () => ["免費"].map((x) => { const n = new N("span"); n.className = "tag"; n.textContent = x; return n; }), libShowDetail() { }, LIB_SPARK_W: 88, LIB_SPARK_H: 28, LIB_PAIR_RE: /^([A-Z0-9]{1,10})USDT$/, LIB_IV_KEYS: {}, libIvKey: () => "1h" };
   sb.t = (k) => STR[sb.LANG][k];
   for (const k of ["libSampleYears", "libUnderYear", "wcFirstKv", "libMddOf", "libNum", "libPct", "libFixed", "libListedDays", "libCreated"]) sb[k] = P[k];
   sb.LIB_FLOOR_YEARS = P.LIB_FLOOR_YEARS; sb.LIB_DAY = P.LIB_DAY;
@@ -112,7 +112,7 @@ ok("② 列不開 lightweight-charts:libRow／libSparkDraw 沒有 LightweightCha
     JSON.stringify(a1.k) === '["年化報酬","最大回撤"]' && JSON.stringify(a1.v) === '["+19.99%","−19.04%"]' && /\bup\b/.test(a1.cls[0]) && /\bdown\b/.test(a1.cls[1])
     && JSON.stringify(a2.k) === '["總報酬","Sharpe"]' && JSON.stringify(a2.v) === '["+22.44%","4.22"]' && a2.cls[1] === "v mono", JSON.stringify([a1, a2]));
   ok("③ 列不給 aria-label(照內容唸,看得到的 tag 才念得到;WCAG 2.5.3);標題與 tag 之間有空白不黏字;每列一格曲線且 aria-hidden",
-    a1.aria === undefined && a2.aria === undefined && a1.l1 === "BTC 通道動能共振 已驗證 免費" && a1.spark === 1 && a1.cv === "true", JSON.stringify([a1.aria, a1.l1]));
+    a1.aria === undefined && a2.aria === undefined && a1.l1 === "BTC 通道動能共振 免費" && a1.spark === 1 && a1.cv === "true", JSON.stringify([a1.aria, a1.l1]));
   { const sym = (r) => { sb.LANG = "zh"; return sb.libSymbolNodes({ report: r }, true).map((x) => (typeof x === "string" ? x : x.textContent)).join(""); };
     const full = (r) => { sb.LANG = "zh"; return sb.libSymbolNodes({ report: r }).map((x) => (typeof x === "string" ? x : x.textContent)).join(""); };
     ok("③ libSymbolNodes(noIv) 只回代號:BTC/USDT、TXF、2330、多標的;不帶 noIv 的三個呼叫點照舊帶後綴",

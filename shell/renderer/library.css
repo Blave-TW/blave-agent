@@ -47,7 +47,6 @@
 .lib .down { color: var(--color-redText); }
 /* Mini tag(canon):18 高、micro 角、11px/600/.04em,三值寫在 tag 自己身上 */
 .lib .tag { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--radius-micro); font-size: 11px; font-weight: 600; letter-spacing: .04em; line-height: 1; white-space: nowrap; background: var(--surface-muted); color: var(--ink-2); }
-.lib .tag.is-verified { background: var(--color-greenLight); color: var(--color-greenBlack); }
 .lib .tag.is-price { color: var(--ink); gap: var(--space-4); }
 /* 閘門卡(spec-desktop-0.1.6 §3.3):本機視角、付不出資料費時清單頂端那一張 Terminal card——一句 + 同一顆主鈕;不用 banner / alert 語氣 */
 .lib-gate { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-12); margin: var(--space-4) 0 var(--space-12); padding: var(--space-12) var(--space-16); background: var(--surface-card); border-radius: var(--radius-lg); }   /* 一句在上、鈕在下:中欄 480–512 兩欄放不下,直排寫死(設計稽核 建-3) */

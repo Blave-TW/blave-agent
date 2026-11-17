@@ -24,9 +24,10 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
 // 0.1.28 機器事件(api agent_events 白名單;句子同網頁 ovEventRow,兩邊門檻一致)
 { const J = JSON.stringify, E = (ty, d) => trEventText(ty, d);
   ok("bar_stale computed=true → 不畫(訊號已準時算出)", E("bar_stale", { strategy: "s1", symbol: "ETHUSDT", minutes: 7, computed: true }) === null);
-  ok("bar_stale computed 不是 true(false / 缺 / 字串 / 1)→ 舊那句",
-    [false, undefined, "true", 1].every((c) => J(E("bar_stale", { symbol: "X", minutes: 3, computed: c }).slice(0, 2)) === J(["tr.ov.evBarStale", 'tr.ov.evBarStaleNote|{"venue":"","minutes":3}'])));
-  ok("bar_stale 沒 minutes → 不出註解", E("bar_stale", { symbol: "X" })[1] === null);
+  const NM = { text: "S1", code: false }, EN = (d) => trEventText("bar_stale", d, NM);
+  ok("bar_stale computed 不是 true(false / 缺 / 字串 / 1)→ 照畫(盤中分鐘那句)",
+    [false, undefined, "true", 1].every((c) => J(EN({ symbol: "X", minutes: 3, computed: c }).slice(0, 2)) === J(["tr.ov.evBarStale", 'tr.ov.evBarStaleNote|{"minutes":3}'])));
+  ok("bar_stale 沒 minutes → 不出註解", EN({ symbol: "X" })[1] === null);
   const ts = (age) => E("target_stale", { strategy: "s2", keys: ["BTC"], age_s: age })[1];
   ok("target_stale 時間換算同 api _age_text(<120 分、<48 小時、其餘天,取整)",
     J([0, 59, 60, 7199, 7200, 172799, 172800, 259199].map(ts)) === J(['tr.ov.evTargetStaleMin|{"n":0}', 'tr.ov.evTargetStaleMin|{"n":0}', 'tr.ov.evTargetStaleMin|{"n":1}', 'tr.ov.evTargetStaleMin|{"n":119}',
@@ -39,7 +40,7 @@ ok("其他型別不受影響(機器事件照舊)", J0(trEventText("exchange_reco
   ok("dead_members 去 @spot、濾掉空與非字串;沒 symbols 只剩標題", dm(["A@spot", "", null, 5, "B"])[4] === "A, B" && E("dead_members", { strategy: "s3" })[0] === "tr.ov.evDeadMembers" && !E("dead_members", { strategy: "s3" })[4]);
   ok("不認得的型別照舊不顯示", E("target_stale_v2", {}) === null);
   // 三層級別(第三格):P1 紅、P2 強調、P3 一般字
-  const LV = (ty, d) => (E(ty, d || { strategy: "s", symbol: "X", minutes: 1 }) || [])[2];
+  const LV = (ty, d) => (trEventText(ty, d || { strategy: "s", symbol: "X", minutes: 1 }, { text: "S", code: false }) || [])[2];   // bar_stale 級別照有名稱的那列看
   ok("P1:下單執行、市場對不上、設定沒存成、重開沒停住、停機凍結", ["execution_interrupted", "execution_fallback_market", "execution_stuck", "manual_close_required",
     "market_hold", "settings_unsafe", "machine_restart_stop_failed", "downtime_paused"].every((ty) => LV(ty) === 1));
   ok("P2:其餘該知道的", ["reconciler_dead", "strategy_failed", "bar_stale", "target_stale", "dead_members", "scheduler_error", "venue_unbound",
@@ -192,7 +193,17 @@ ok("trEvApiLevel:P1/P2/P3 → 1/2/3;缺、小寫、P4、數字、非物件 → n
   const five = [["bar_stale", { strategy: "eth_ma", minutes: 3 }], ["strategy_failed", { strategy: "eth_ma" }], ["scheduler_error", { strategy: "eth_ma" }],
     ["target_stale", { strategy: "eth_ma", age_s: 60 }], ["market_hold", { strategy: "eth_ma", venue: "okx" }]];
   ok("五種都帶呼叫端給的策略段", five.every(([ty, d]) => trEventText(ty, d, S)[6] === S));
-  ok("沒給就寫代號(mono)", five.every(([ty, d]) => JSON.stringify(trEventText(ty, d)[6]) === JSON.stringify({ text: "eth_ma", code: true })));
+  ok("沒給就寫代號(mono);K 棒沒到位例外", five.filter(([ty]) => ty !== "bar_stale").every(([ty, d]) => JSON.stringify(trEventText(ty, d)[6]) === JSON.stringify({ text: "eth_ma", code: true })));
+  // 0.1.56 Wei:K 棒沒到位只寫顯示名稱,讀不到(沒給、或查到的是代號)只拿掉策略段、標的與等待時間照畫,不退代號;標的進代號格;滿 120 分鐘寫小時
+  { const C = { text: "eth_ma", code: true }, r = trEventText("bar_stale", { strategy: "eth_ma", symbol: "BTCUSDT", minutes: 185 }, S), r2 = trEventText("bar_stale", { strategy: "eth_ma", minutes: 119 }, S);
+    ok("K 棒沒到位:沒名稱只拿掉策略段(不退代號、標的與分鐘照出)、有名稱帶標的、分鐘 → 小時(捨去)", [trEventText("bar_stale", { strategy: "eth_ma", symbol: "BTCUSDT", minutes: 3 }), trEventText("bar_stale", { strategy: "eth_ma", symbol: "BTCUSDT", minutes: 3 }, C)].every((x) => x && x[6] === null && x[4] === "BTCUSDT" && x[1] === 'tr.ov.evBarStaleNote|{"minutes":3}')
+      && r[6] === S && r[4] === "BTCUSDT" && r[1] === 'tr.ov.evBarStaleNoteHour|{"hours":3}' && r2[4] === null && r2[1] === 'tr.ov.evBarStaleNote|{"minutes":119}'
+      && trEventText("bar_stale", { strategy: "eth_ma", minutes: 30, computed: true }, S) === null, JSON.stringify([r, r2])); }
+  // 兩支同名時 api 回「名稱（代號）」(openclaw/strategy_names.py):K 棒沒到位照網頁拿掉後綴(copy-0156 §3);其他型別照 §3.1 留著
+  { const D = { text: "ETH 均線（eth_ma）", code: false }, J = JSON.stringify, r = trEventText("bar_stale", { strategy: "eth_ma", symbol: "BTCUSDT", minutes: 3 }, D);
+    ok("K 棒沒到位:同名補的「（代號）」拿掉、只寫名稱;別支的代號後綴不動;其他型別照帶後綴", r && J(r[6]) === J({ text: "ETH 均線", code: false }) && !J(r).includes("eth_ma")
+      && J(trEventText("bar_stale", { strategy: "eth_ma", minutes: 3 }, { text: "ETH 均線（btc_ma）", code: false })[6]) === J({ text: "ETH 均線（btc_ma）", code: false })
+      && trEventText("strategy_failed", { strategy: "eth_ma" }, D)[6] === D, J(r)); }
   ok("target_stale／market_hold 的代號不再塞在代號格", trEventText("target_stale", five[3][1], S)[4] === null && trEventText("market_hold", five[4][1], S)[4] === null);
   ok("沒有策略欄位就沒有策略段;其他型別不帶", trEventText("strategy_failed", {})[6] === null && trEventText("exchange_recovered", { venue: "binance", strategy: "x" }, S)[6] === null); }
 

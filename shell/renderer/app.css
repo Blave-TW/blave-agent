@@ -973,8 +973,13 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
 }
 .ph-plate { display: inline-block; padding: var(--space-8); background: var(--color-pureWhite); border-radius: var(--radius-md); line-height: 0; }
 .ph-plate img { display: block; width: 112px; height: 112px; }
+/* pop 頂端的價值句與好處(spec phone-pair-popover-2026-11-17 §4):13／20 600,下一行 12／18,到步驟 16 */
+.ph-lead { margin-bottom: var(--space-16); }
+.ph-value { margin: 0; font-size: 13px; line-height: 20px; font-weight: 600; color: var(--ink); }
+.ph-gain { margin: var(--space-4) 0 0; font-size: 12px; line-height: 18px; color: var(--ink-3); }
+.ph-gain:lang(zh) { text-wrap: pretty; }
 /* pop 裡的編號步驟(spec slot-phone-v2 §3,欄距照稽核改 12):號碼盤 20、欄距 12、列距 16。狀態只靠填不填分,只用墨色:
-   done 實心加勾、now 實心號碼、next 空心號碼 */
+   now 實心號碼、next 空心號碼 */
 .ph-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-16); }
 .ph-step { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: var(--space-12); align-items: start; }
 .ph-step.btn { align-items: center; }
@@ -982,16 +987,15 @@ html.ws-sc .side-rail { flex: 1 1 auto; }
   width: 20px; height: 20px; border-radius: var(--radius-pill); display: flex; align-items: center; justify-content: center;
   font-size: 11px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; color: var(--ink-3); box-shadow: inset 0 0 0 1px var(--border-frame);
 }
-.ph-step.done .ph-n, .ph-step.now .ph-n { background: var(--control-fill); color: var(--control-fill-text); box-shadow: none; }
-.ph-n .ic { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.ph-step.now .ph-n { background: var(--control-fill); color: var(--control-fill-text); box-shadow: none; }
 .ph-t { min-width: 0; font-size: 13px; line-height: 20px; color: var(--ink-2); }
 .ph-t:lang(zh) { text-wrap: pretty; }
 .ph-step.now .ph-t { color: var(--ink); font-weight: 500; }
-.ph-step.done .ph-t { color: var(--ink-3); }
 .ph-who { display: block; font-size: 12px; line-height: 18px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ph-nw { white-space: nowrap; }
 .ph-body { grid-column: 2; margin-top: var(--space-8); }
 .ph-links { display: flex; gap: var(--space-16); margin-top: var(--space-8); }
+.ph-links .btn-quiet::before { inset: auto; left: 50%; top: 50%; width: max(44px, calc(100% + 8px)); height: 44px; transform: translate(-50%, -50%); }   /* 熱區 44,同 .busy-fix::before */
 @media (prefers-reduced-motion: reduce) { .ic-btn, .cv-pill, .up-pill { transition: none; } }
 /* 更新 modal 的「這版改了什麼」:純文字條列 */
 .del-body .up-notes { margin: 0; padding-left: 18px; color: var(--ink); }

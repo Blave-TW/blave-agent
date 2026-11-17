@@ -813,29 +813,84 @@ html.ws-sc .side-gate { display: none; }
 .ct-mi:hover .ct-mv, .ct-mi:focus-visible .ct-mv { color: var(--ink-2); }
 .ct-roll { margin-left: var(--space-8); font: 11px var(--font-sans); color: var(--ink-2); white-space: nowrap; cursor: help; }
 
-/* 優化分頁:單一工具列(左設定組、右動作組)、警示條、權重分配、移動窗格回測 */
+/* 優化分頁:單一工具列(左設定組、右說明問號)、警示條、部位大小那一列、權重表、移動窗格回測 */
 .mg-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8) var(--space-12); }
-.tb-set, .tb-actions { display: flex; align-items: center; gap: var(--space-8); }
-.tb-actions { margin-left: auto; }
-.tb-fld { position: relative; display: inline-flex; align-items: center; gap: var(--space-8); height: 30px; padding: 0 26px 0 var(--space-12); border: 1px solid var(--border-frame);
+.tb-set { display: flex; align-items: center; gap: var(--space-8); }
+.mg-toolbar > .mg-help { margin-left: auto; }
+.tb-fld { position: relative; display: inline-flex; align-items: center; gap: var(--space-8); height: 32px; padding: 0 26px 0 var(--space-12); border: 1px solid var(--border-frame);
   border-radius: var(--radius-xs); font-size: 12px; color: var(--ink-3); white-space: nowrap; transition: border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
 .tb-fld::after { content: ""; position: absolute; right: 11px; top: 50%; width: 5px; height: 5px; border-right: 1.6px solid var(--ink-3); border-bottom: 1.6px solid var(--ink-3); transform: translateY(-70%) rotate(45deg); }
 .tb-fld .v { color: var(--ink); font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.tb-fld .v.unset { color: var(--ink-3); font-weight: 400; }   /* 沒選方法:「未設定」灰字一般字重,不像已填的值(spec portfolio-optimize-lite §8-6) */
+.tb-fld::before, .mg-szf::before, .mg-bt-head .btn-out::before { content: ""; position: absolute; left: 0; right: 0; top: -7px; bottom: -7px; }   /* 有框的控件 32 高,熱區上下補到 44 */
 .tb-fld > .dot { color: var(--ink-disabled); }
 .tb-fld:hover:not(:disabled) { border-color: var(--ink-3); color: var(--ink-2); }
 .tb-fld:disabled { border-color: var(--border-hairline); color: var(--ink-disabled); cursor: not-allowed; }
 .tb-fld:disabled .v { color: var(--ink-3); }
-.tb-actions .btn-fill, .tb-actions .btn-out { height: 30px; display: inline-flex; align-items: center; gap: var(--space-8); white-space: nowrap; }
-.mg-size-btn { margin-left: var(--space-4); }
 .mg-err { margin: var(--space-8) 0 0; font-size: 12px; line-height: 1.5; color: var(--color-redText); overflow-wrap: anywhere; }
 .mg-warn { margin: var(--space-16) 0 0; padding: var(--space-12) var(--space-16); border-radius: var(--radius-sm); background: var(--surface-card); font-size: 12px; line-height: 1.6; color: var(--ink-2); }
 .mg-warn p { margin: 0; }
 .mg-warn-acts { display: flex; gap: var(--space-12); margin-top: var(--space-8); }
 .mg-warn .btn-quiet { font-size: 12px; }
-/* 鈕正下方自己一行、靠右;行高 44 = 連結熱區(同 .busy-fix),視覺間距由 13 內距給,負邊界抵掉 .pf-sec 的 gap 與下緣 */
-.mg-apply-why { flex: 0 0 100%; margin: -12px 0 -8px; padding: 13px 0; font-size: 12px; line-height: 18px; color: var(--ink-2); text-align: right; }
-.mg-apply-why:empty { display: none; }
-.mg-apply-why .busy-fix, .mg-need-fund .busy-fix { margin-left: 0; }
+/* 部位大小攤在頁面上(spec portfolio-optimize-lite §3,同網頁 .mg-sz):投入資金、口徑三選一、目標值、〔套用金額〕一列,預覽與原因句一列。
+   控件 32 高,熱區上下補到 44。折法量主欄寬(container),不量視窗 */
+.mg-szw { container: mg-sz / inline-size; margin-top: var(--space-12); }
+.mg-sz { display: grid; grid-template-columns: auto auto auto 1fr auto; grid-template-areas: "fund seg t . go" "msg msg msg msg msg"; column-gap: var(--space-8); align-items: center; }
+.mg-szf { grid-area: fund; position: relative; display: flex; align-items: center; gap: var(--space-8); width: 224px; height: 32px; padding: 0 var(--space-12); border: 1px solid var(--border-frame);
+  border-radius: var(--radius-xs); background: var(--bg-body); font-size: 12px; color: var(--ink-3); white-space: nowrap; cursor: text; transition: border-color var(--motion-fast) var(--ease-standard); }
+.mg-szf:focus-within { border-color: var(--ink); }
+.mg-szf[hidden] { display: none; }
+.mg-szf input { position: relative; flex: 1; min-width: 0; width: 0; height: 100%; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--ink); font: 13px var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.mg-szf .ccy { font: 11px var(--font-mono); color: var(--ink-3); }
+.mg-szf.mg-t { grid-area: t; width: 76px; }
+.mg-size-seg { grid-area: seg; display: inline-flex; }
+.mg-size-seg > button { display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 var(--space-12); font-size: 12px; white-space: nowrap; }
+/* 主機給不出的口徑:灰字、沒有 hover,點了把原因寫進鈕下(canon › 點了要說明的不可選) */
+.mg-size-seg > button[aria-disabled="true"], .mg-size-seg > button[aria-disabled="true"]:hover { color: var(--ink-disabled); cursor: not-allowed; }
+.mg-size-seg > button[aria-disabled="true"][aria-checked="true"] { background: transparent; box-shadow: inset 0 0 0 1px var(--ink-disabled); }   /* 深色下 --ink-disabled 與選中的填色同值:選中改靠框 */
+.btn-fill.mg-apply { grid-area: go; position: relative; justify-self: end; display: inline-grid; align-items: center; justify-items: center; height: 32px; white-space: nowrap; }
+.btn-fill.mg-apply::before { content: ""; position: absolute; left: 0; right: 0; top: -7px; bottom: -7px; }   /* 透明 1px 邊框不在 pseudo 裡:-7 才是 44 */
+/* 「套用金額」與「計算中…」疊在同一格:鈕寬取較寬的那個,切換時不位移 */
+.mg-apply > .lbl, .mg-apply > .lbl-busy { grid-area: 1 / 1; }
+.mg-apply > .lbl-busy { display: inline-flex; align-items: center; gap: var(--space-8); visibility: hidden; }
+.mg-apply.is-busy > .lbl { visibility: hidden; }
+.mg-apply.is-busy > .lbl-busy { visibility: visible; }
+.mg-apply .spin16 { width: 12px; height: 12px; border-width: 2px; }
+/* 預覽(左)與原因句(右)同一列,高度固定:填的時候表不跳 */
+.mg-msg { grid-area: msg; display: flex; align-items: flex-start; gap: var(--space-16); margin-top: var(--space-8); }
+.mg-pv { grid-area: pv; flex: none; display: flex; flex-wrap: wrap; gap: 0 var(--space-16); min-height: 18px; font-size: 12px; line-height: 18px; color: var(--ink-3); }
+.mg-pv > span { display: inline-flex; align-items: baseline; height: 18px; }
+.mg-pv b { margin-left: var(--space-4); font: 500 12px/18px var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.mg-pv b.warn { color: var(--color-redText); }
+.mg-apply-why { grid-area: why; flex: 1; min-width: 0; min-height: 18px; font-size: 12px; line-height: 18px; color: var(--ink-2); text-align: right; overflow-wrap: anywhere; }
+.mg-apply-why.err > span { color: var(--color-redText); }
+.mg-apply-why .busy-fix { margin-left: 0; padding: 0; font-weight: 400; }
+.mg-apply-why .busy-fix::before { top: -2px; transform: translateX(-50%); }   /* 上面只隔 8 就是〔套用金額〕的熱區(佔 6):44 從字上 2 往下算,不置中 */
+.mg-apply-why > .busy-fix:last-child::before { left: auto; right: 0; transform: none; }   /* 句子靠右:連結在句尾時熱區往左長,不探出主欄右緣(同網頁) */
+.mg-apply-why > span + .busy-fix { margin-left: var(--space-8); }
+.mg-szw + .pf-scroll { margin-top: var(--space-16); }
+.mg-tbl th:nth-child(2) { width: 18%; }   /* 兩個數字欄給固定比例:骨架換成數字時欄不左右移 */
+.mg-tbl th:nth-child(3) { width: 30%; }
+.mg-sk { display: inline-block; width: 34px; vertical-align: middle; }   /* 計算中:數字格換骨架(.sk 配方,這裡只給尺寸) */
+.mg-sk.amt { width: 52px; }
+tr:nth-child(2n) .mg-sk { width: 28px; }
+tr:nth-child(2n) .mg-sk.amt { width: 44px; }
+/* 算完:變了的數字閃一次中性底(poFlash),只閃數字那一小塊 */
+.pf-tbl .mg-flash { display: inline-block; margin: 0 calc(-1 * var(--space-4)); padding: 0 var(--space-4); border-radius: var(--radius-micro); animation: poFlash 1.2s var(--ease-standard); }
+/* 回測區:自己的區標題列,〔跑回測〕在右 */
+.pf-sec.mg-bt-head { align-items: center; }
+.mg-bt-head .btn-out { position: relative; margin-left: auto; height: 32px; white-space: nowrap; }
+/* 主欄窄:投入資金一列、三選一＋目標一列、預覽與套用同一列,原因句在鈕下佔整列 */
+@container mg-sz (max-width: 620px) {
+  .mg-sz { grid-template-columns: 1fr auto; grid-template-areas: "fund fund" "seg t" "pv go" "why why"; row-gap: var(--space-12); }
+  .mg-szf, .mg-szf.mg-t { width: auto; }
+  .mg-szf.mg-t { min-width: 76px; }   /* 跟〔套用金額〕同一欄:撐滿欄寬,右緣跟投入資金、鈕對齊 */
+  .mg-size-seg { display: flex; }
+  .mg-size-seg > button { flex: 1; min-width: 0; height: auto; min-height: 28px; padding: var(--space-2) var(--space-4); line-height: 1.2; white-space: normal; word-break: keep-all; overflow-wrap: normal; }
+  .mg-sz.no-t .mg-size-seg { grid-column: 1 / -1; }
+  .mg-msg { display: contents; }
+  .mg-apply-why { margin-top: calc(-1 * var(--space-4)); }
+}
 .mg-tbl .ct-trig { position: relative; z-index: 1; }   /* 策略名熱區撐滿整格,合約下拉要蓋在上面 */
 .mg-tbl .ct-trig::before { inset: -8px 0; }   /* 24 高撐到 40、不越列界:點偏一點不該跳去策略頁 */
 .mg-tbl tr.total td { padding-top: var(--space-8); border-top: 1px solid var(--border-frame); color: var(--ink); }
@@ -877,7 +932,7 @@ html.ws-sc .side-gate { display: none; }
 .prog { margin-top: var(--space-12); height: 4px; border-radius: var(--radius-pill); background: var(--surface-muted); overflow: hidden; }
 .prog i { display: block; height: 100%; background: var(--ink-2); border-radius: var(--radius-pill); }
 .run-meta { margin-top: var(--space-8); font-size: 12px; color: var(--ink-3); }
-/* 方法框與部位大小框 */
+/* 方法框 */
 .mg-fld { display: flex; flex-direction: column; gap: var(--space-6); margin-top: var(--space-12); }
 .mg-fld-l { font-size: 12px; color: var(--ink-3); }
 .mg-sel { height: 32px; padding: 0 var(--space-8); border: 1px solid var(--border-frame); border-radius: var(--radius-xs); background: var(--bg-body); color: var(--ink); font: 13px var(--font-sans); }
@@ -886,30 +941,16 @@ html.ws-sc .side-gate { display: none; }
 .mg-ph { font: 600 11px var(--font-sans); color: var(--ink-3); margin-bottom: var(--space-8); }
 .mg-pfld { display: flex; align-items: center; gap: var(--space-12); padding: var(--space-4) 0; font-size: 12px; color: var(--ink-2); }
 .mg-pfld label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mg-pfld .u, .mg-unitw .u { min-width: 2ch; font-size: 12px; color: var(--ink-3); }
+.mg-pfld .u { min-width: 2ch; font-size: 12px; color: var(--ink-3); }
 .mg-more { margin: var(--space-12) 0 0; font-size: 12px; color: var(--ink-3); }
 .mg-more .btn-quiet { font-size: 12px; }
-.mg-unitw { display: inline-flex; align-items: center; gap: var(--space-8); }
-.mg-unitw .amt-in { width: calc(14ch + 2 * var(--space-8) + 2px); }
-.mg-size-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
-.mg-size-seg button { min-width: 0; min-height: 36px; padding: var(--space-4); font-size: 13px; line-height: 1.2; white-space: normal; word-break: keep-all; }
-.mg-size-seg button:disabled, .mg-size-seg button:disabled:hover { color: var(--ink-disabled); cursor: not-allowed; }
-.mg-size-seg button:disabled[aria-checked="true"] { background: transparent; border-color: var(--ink-disabled); }   /* 深色下 --ink-disabled 與 --surface-segment-on 同值:填色會把字吃掉,選中改靠框與字重 */
-.mg-size-old[hidden] { display: none; }
-.mg-size-pv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-12); margin-top: var(--space-16); padding: var(--space-12); border-radius: var(--radius-sm); background: var(--bg-body); }
-.mg-size-pv > div { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
-.mg-size-pv .k { font-size: 11px; line-height: 1.3; color: var(--ink-3); }
-.mg-size-pv .v { margin-top: auto; font: 600 17px var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
-.mg-size-pv .v small { margin-left: var(--space-2); font-size: 11px; font-weight: 500; color: var(--ink-3); }
-.mg-size-pv .v.warn { color: var(--color-redText); }
 .cf-ref .arr { margin: 0 var(--space-4); }
 .pf-frozen.err { color: var(--color-redText); }
 .pf-tbl td.na.pending { color: var(--ink-3); }   /* 要用戶讀完去更新的句子,不是缺值:greyDark 只給「—」 */
 .pf-note.past .ts { margin-right: var(--space-8); }
-@media (prefers-reduced-motion: reduce) { .amt-in.flash { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .amt-in.flash, .pf-tbl .mg-flash { animation: none; } }
 /* 「主機版本較舊，更新後才會算」「下次執行後算出成分」:字不是數,退 sans、可折行(同網頁 .pending) */
 .pf-tbl td.n.pending { font-family: var(--font-sans); white-space: normal; }
-.mg-size-btn .ccy { font: 11px var(--font-mono); color: var(--ink-3); }
 /* 台股代號後面的名字(1438 三地開發;同網頁 .sym-name):sans、次要灰;長的截尾(8em),全名在 title(trTwNameEl) */
 .tw-name { display: inline-block; max-width: 8em; margin-left: var(--space-6); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; font-family: var(--font-sans); color: var(--ink-2); }
 .pf-sig .tw-name { margin-left: var(--space-8); }
@@ -926,20 +967,16 @@ html.ws-sc .side-gate { display: none; }
 .del-body .plan-tot.approx { margin-left: var(--space-4); }
 /* 「另有手動 N」:帳本模式下同標的的手動部位,虛線底線提示可以停上去看(對帳不會動它) */
 .po-det .po-manual { cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
-/* 跑優化／回測前等更新績效:鈕下方一行「等「X」更新績效… 先用目前數字跑」(不等時不出現) */
+/* 跑回測前等更新績效:回測區標題列下一行「等「X」更新績效… 先用目前數字跑」(不等時不出現;優化不等) */
 .mg-wait { flex-basis: 100%; display: flex; align-items: baseline; gap: var(--space-8); margin-top: var(--space-8); font-size: 12px; color: var(--ink-3); }
 .mg-wait .btn-quiet { font-size: inherit; }
-/* 投入資金空著時優化表上方那一句(設計最後一輪:上 8、下 16) */
-.pf-note.mg-need-fund { display: block; margin: var(--space-8) 0 var(--space-16); color: var(--ink-2); }
-.pf-note.mg-need-fund:has(> .busy-fix) { margin: -5px 0 var(--space-4); padding: 13px 0; }   /* 熱區 44 留在這一行;字的位置不動 */
 /* 策略頁頭金額框的輸入格(trCfField):標籤 → 格子＋單位(＋合約下拉)→ 換算量或錯字;表與表下照舊 */
 .cf-extra { display: contents; }
 .cf-in-fld .fld-l { display: block; margin-bottom: var(--space-6); font-size: 12px; color: var(--ink-3); }
 .cf-in-row { display: flex; align-items: center; gap: var(--space-8); }
 .cf-in-row .amt-in { width: 160px; height: 32px; font-size: 14px; }
 .cf-in-unit { font-size: 13px; color: var(--ink-2); }
-.cf-in-row .set-selw, .mg-unitw .set-selw { flex: none; margin-left: 0; }
-.mg-unitw .set-sel { height: 30px; }
+.cf-in-row .set-selw { flex: none; margin-left: 0; }
 .del-body.lines p.cf-in-ref { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); }
 .del-body.lines p.cf-in-err { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.5; color: var(--color-redText); }
 .cf-in-ref[hidden], .cf-in-err[hidden] { display: none; }

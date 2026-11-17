@@ -1,0 +1,400 @@
+{
+ "scrub": [
+  {
+   "name": "bitget 餘額列(dict 沒收尾)",
+   "in": "bitget accounts: USDT row has no accountEquity ({'marginCoin': 'USDT', 'available': '10234.5', 'locked': '0', 'accountEq",
+   "known": [],
+   "out": "bitget accounts: USDT row has no accountEquity ({…}",
+   "absent": [
+    "10234.5"
+   ]
+  },
+  {
+   "name": "stockcoin 餘額(巢狀 dict 沒收尾)",
+   "in": "stockcoin /futures/balance: expected a list, got {'code': 0, 'data': {'total': '5021.3', 'avail",
+   "known": [],
+   "out": "stockcoin /futures/balance: expected a list, got {…}",
+   "absent": [
+    "5021.3"
+   ]
+  },
+  {
+   "name": "交易所回應原文帶 IP",
+   "in": "HTTP 401: {\"code\":\"50113\",\"msg\":\"Invalid Sign\",\"data\":[{\"ip\":\"203.0.113.7\"",
+   "known": [],
+   "out": "HTTP 401: {…}",
+   "absent": [
+    "203.0.113.7",
+    "50113"
+   ]
+  },
+  {
+   "name": "raise_for_status 的 URL query 與回應原文",
+   "in": "401 Client Error: Unauthorized for url: https://x.example/v1/q?apikey=abc123def456 — {\"err\":\"bad key\"}",
+   "known": [],
+   "out": "401 Client Error: Unauthorized for url: https://x.example/v1/q?… — {…}",
+   "absent": [
+    "abc123def456",
+    "bad key"
+   ]
+  },
+  {
+   "name": "OKX 金鑰(帶連字號的 UUID)",
+   "in": "OKX-ACCESS-KEY 1f3c9a2e-7b4d-4c1e-9a8f-2b6d0e4c7a91 rejected",
+   "known": [],
+   "out": "OKX-ACCESS-KEY ⟦R⟧ rejected",
+   "absent": [
+    "1f3c9a2e-7b4d-4c1e-9a8f-2b6d0e4c7a91"
+   ]
+  },
+  {
+   "name": ".env 已知值(只有外殼比得到)",
+   "in": "login failed with Hunter2pass",
+   "known": [
+    "Hunter2pass"
+   ],
+   "out": "login failed with ⟦R⟧",
+   "absent": [
+    "Hunter2pass"
+   ]
+  },
+  {
+   "name": "身分證",
+   "in": "login failed for A123456789",
+   "known": [],
+   "out": "login failed for [id]",
+   "absent": [
+    "A123456789"
+   ]
+  },
+  {
+   "name": "居留證新式",
+   "in": "login failed for A812345678",
+   "known": [],
+   "out": "login failed for [id]",
+   "absent": [
+    "A812345678"
+   ]
+  },
+  {
+   "name": "統一期貨憑證檔名",
+   "in": "cannot open ~/certs/PSC_A123456789_20271231.pfx",
+   "known": [],
+   "out": "cannot open ~/certs/PSC_[id]_20271231.pfx",
+   "absent": [
+    "A123456789"
+   ]
+  },
+  {
+   "name": "交易所訊息帶 IP",
+   "in": "Invalid API-key, IP, or permissions for action, request ip: 203.0.113.7",
+   "known": [],
+   "out": "Invalid API-key, IP, or permissions for action, request ip: [ip]",
+   "absent": [
+    "203.0.113.7"
+   ]
+  },
+  {
+   "name": "IPv6",
+   "in": "request from 2001:db8:85a3::8a2e:370:7334 denied",
+   "known": [],
+   "out": "request from [ip] denied",
+   "absent": [
+    "2001:db8:85a3::8a2e:370:7334"
+   ]
+  },
+  {
+   "name": "時間與行號不是 IPv6",
+   "in": "bar 09:28:00 missing at x.py:123",
+   "known": [],
+   "out": "bar 09:28:00 missing at x.py:123",
+   "absent": []
+  },
+  {
+   "name": "家目錄 mac",
+   "in": "/Users/alice/Blave/workspace/lib/x.py",
+   "known": [],
+   "out": "~/Blave/workspace/lib/x.py",
+   "absent": [
+    "alice"
+   ]
+  },
+  {
+   "name": "家目錄 Windows",
+   "in": "C:\\Users\\alice\\Blave\\workspace\\lib\\x.py",
+   "known": [],
+   "out": "~\\Blave\\workspace\\lib\\x.py",
+   "absent": [
+    "alice"
+   ]
+  },
+  {
+   "name": "長識別字(不含數字;str(KeyError) 本身不帶類別名)",
+   "in": "'insufficientAvailableBalance'",
+   "known": [],
+   "out": "'insufficientAvailableBalance'",
+   "absent": []
+  },
+  {
+   "name": "一則遮超過 5 處",
+   "in": "keys 1f3c9a2e-7b4d-4c1e-9a8f-2b6d0e4c7a91 2f3c9a2e-7b4d-4c1e-9a8f-2b6d0e4c7a92 3f3c9a2e-7b4d-4c1e-9a8f-2b6d0e4c7a93 4f3c9a2e-7b4d-4c1e-9a8f-2b6d0e4c7a94 5f3c9a2e-7b4d-4c1e-9a8f-2b6d0e4c7a95 6f3c9a2e-7b4d-4c1e-9a8f-2b6d0e4c7a96",
+   "known": [],
+   "out": "⟦R:msg⟧",
+   "absent": [
+    "1f3c9a2e"
+   ]
+  },
+  {
+   "name": "email 與 20 字 token",
+   "in": "user a@b.com token Zk81QpL0xXa9TTr2m4Nw",
+   "known": [],
+   "out": "user [email] token [redacted]",
+   "absent": [
+    "a@b.com",
+    "Zk81QpL0xXa9TTr2m4Nw"
+   ]
+  },
+  {
+   "name": "口數(原樣)",
+   "in": "capital: 3 lots is below the 1-lot minimum",
+   "known": [],
+   "out": "capital: 3 lots is below the 1-lot minimum",
+   "absent": []
+  },
+  {
+   "name": "持倉數量(原樣)",
+   "in": "insufficient BTC to sell (0.5 < 0.8)",
+   "known": [],
+   "out": "insufficient BTC to sell (0.5 < 0.8)",
+   "absent": []
+  },
+  {
+   "name": "標的(原樣)",
+   "in": "'TXFF6 has no parked order'",
+   "known": [],
+   "out": "'TXFF6 has no parked order'",
+   "absent": []
+  },
+  {
+   "name": "策略名(原樣)",
+   "in": "my_alpha v3 is unreadable: …",
+   "known": [],
+   "out": "my_alpha v3 is unreadable: …",
+   "absent": []
+  },
+  {
+   "name": "用戶命名的資料夾(家目錄換 ~,名字原樣)",
+   "in": "/Users/alice/Blave/workspace/allocators/老婆的帳戶/alloc.py defines no allocate(returns, lookback)",
+   "known": [],
+   "out": "~/Blave/workspace/allocators/老婆的帳戶/alloc.py defines no allocate(returns, lookback)",
+   "absent": [
+    "alice"
+   ]
+  },
+  {
+   "name": "版本號不是 IP",
+   "in": "runtime 1.1.164 vs 0.1.56",
+   "known": [],
+   "out": "runtime 1.1.164 vs 0.1.56",
+   "absent": []
+  },
+  {
+   "name": "截 300 字",
+   "in": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "known": [],
+   "out": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "absent": []
+  }
+ ],
+ "fingerprint": [
+  {
+   "source": "py_lib",
+   "exc_type": "KeyError",
+   "frames": [
+    {
+     "file": "<other>"
+    },
+    {
+     "file": "lib/runner.py",
+     "func": "run",
+     "line": 3120
+    },
+    {
+     "file": "lib/data.py",
+     "func": "get",
+     "line": 10
+    }
+   ],
+   "hex": "e6619d36c36e54d3b72df182c78cebbfef846425"
+  },
+  {
+   "source": "py_lib",
+   "exc_type": "ValueError",
+   "frames": [
+    {
+     "file": "lib/a.py",
+     "func": "f1",
+     "line": 1
+    },
+    {
+     "file": "lib/a.py",
+     "func": "f2",
+     "line": 2
+    },
+    {
+     "file": "<other>"
+    },
+    {
+     "file": "runtime/agent_turn.py",
+     "func": "<module>",
+     "line": 3
+    },
+    {
+     "file": "manager/m.py",
+     "func": "f4",
+     "line": 4
+    },
+    {
+     "file": "lib/b.py",
+     "func": "f5",
+     "line": 5
+    },
+    {
+     "file": "lib/b.py",
+     "func": "f6",
+     "line": 6
+    }
+   ],
+   "hex": "e5ab8b8a30bed15072b5a4c93ef0539921481c9d"
+  },
+  {
+   "source": "shell_main",
+   "exc_type": "TypeError",
+   "frames": [
+    {
+     "file": "shell/main.js",
+     "func": "Object.<anonymous>",
+     "line": 506
+    }
+   ],
+   "hex": "d43100bf5dfa959e1f8d013163a5564091daee3b"
+  },
+  {
+   "source": "shell_main",
+   "exc_type": "Error",
+   "frames": [],
+   "hex": "f6b80cb4ec06e7db2265674d3ef8601e2d855469"
+  }
+ ],
+ "contract": {
+  "note": "電腦版照 records + meta + token 組出 bodies(先 once 送 py_lib 與 shell_main,再 always 送 py_lib);api clean() 要全部收",
+  "meta": {
+   "install_id": "3f2b8c1e-9a4d-4e7b-8c21-0a1b2c3d4e5f",
+   "app_version": "0.1.56",
+   "runtime_version": "1.1.164",
+   "os": "win",
+   "os_version": "10.0.26100"
+  },
+  "token": "acct-ttttttttttttttttttttttttttttttttttttttttttt",
+  "records": [
+   {
+    "v": 1,
+    "ts": 1,
+    "source": "py_lib",
+    "exc_type": "KeyError",
+    "message": "login failed for A123456789 at /Users/alice/x.py",
+    "py_version": "3.12",
+    "frames": [
+     {
+      "file": "<other>"
+     },
+     {
+      "file": "lib/runner.py",
+      "func": "run",
+      "line": 3120
+     }
+    ]
+   },
+   {
+    "v": 1,
+    "ts": 2,
+    "source": "shell_main",
+    "exc_type": "TypeError",
+    "message": "x is undefined",
+    "frames": [
+     {
+      "file": "shell/main.js",
+      "func": "Object.<anonymous>",
+      "line": 506
+     }
+    ]
+   }
+  ],
+  "bodies": [
+   {
+    "install_id": "3f2b8c1e-9a4d-4e7b-8c21-0a1b2c3d4e5f",
+    "token": "acct-ttttttttttttttttttttttttttttttttttttttttttt",
+    "consent": "once",
+    "source": "py_lib",
+    "exc_type": "KeyError",
+    "message": "login failed for [id] at ~/x.py",
+    "frames": [
+     {
+      "file": "<other>"
+     },
+     {
+      "file": "lib/runner.py",
+      "func": "run",
+      "line": 3120
+     }
+    ],
+    "app_version": "0.1.56",
+    "runtime_version": "1.1.164",
+    "os": "win",
+    "os_version": "10.0.26100",
+    "py_version": "3.12"
+   },
+   {
+    "install_id": "3f2b8c1e-9a4d-4e7b-8c21-0a1b2c3d4e5f",
+    "token": "acct-ttttttttttttttttttttttttttttttttttttttttttt",
+    "consent": "once",
+    "source": "shell_main",
+    "exc_type": "TypeError",
+    "message": "x is undefined",
+    "frames": [
+     {
+      "file": "shell/main.js",
+      "func": "Object.<anonymous>",
+      "line": 506
+     }
+    ],
+    "app_version": "0.1.56",
+    "runtime_version": "1.1.164",
+    "os": "win",
+    "os_version": "10.0.26100"
+   },
+   {
+    "install_id": "3f2b8c1e-9a4d-4e7b-8c21-0a1b2c3d4e5f",
+    "token": "acct-ttttttttttttttttttttttttttttttttttttttttttt",
+    "consent": "always",
+    "source": "py_lib",
+    "exc_type": "KeyError",
+    "frames": [
+     {
+      "file": "<other>"
+     },
+     {
+      "file": "lib/runner.py",
+      "func": "run",
+      "line": 3120
+     }
+    ],
+    "app_version": "0.1.56",
+    "runtime_version": "1.1.164",
+    "os": "win",
+    "os_version": "10.0.26100",
+    "py_version": "3.12"
+   }
+  ]
+ }
+}

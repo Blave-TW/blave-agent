@@ -5887,7 +5887,16 @@ function trEventText(type, d, strat) {
   if (type === "venue_login_blocked" && d.venue === "president") return out(t("tr.ov.evPresStopped"), t("tr.ov.evPresStoppedNote"));
   // 群益 307:密碼被群益鎖住,重填之前要先到群益解鎖
   if (type === "venue_login_blocked" && d.venue === "capital") return out(t("tr.ov.evCapStopped"), t(d.reason === "LOCKED" ? "tr.ov.evCapLockedNote" : "tr.ov.evCapStoppedNote"));
-  if (type === "bar_stale") return d.computed === true ? null : outS(t("tr.ov.evBarStale"), d.minutes == null ? null : t("tr.ov.evBarStaleNote", v));
+  /* K 棒沒到位(0.1.56 Wei:列上不出代號):策略段只寫顯示名稱,讀不到名稱只拿掉策略段、列照畫(標的與等待時間照帶),不退回代號;標的 mono。minutes 是機器算的盤中時間
+     (wait_for_bar._open_minutes),滿 120 分鐘改寫小時、無條件捨去(同 target_stale);同網頁 workspace_ov_ev_bar_stale_note(_hour) */
+  if (type === "bar_stale") {
+    if (d.computed === true) return null;
+    const m = typeof d.minutes === "number" && isFinite(d.minutes) && d.minutes >= 0 ? Math.floor(d.minutes) : null;
+    const o = out(t("tr.ov.evBarStale"), m === null ? null : m < 120 ? t("tr.ov.evBarStaleNote", { minutes: m }) : t("tr.ov.evBarStaleNoteHour", { hours: Math.floor(m / 60) }), null, str(d.symbol).slice(0, 40) || null);
+    // 兩支同名時 api 的 strategy_label 補了「（代號）」(openclaw/strategy_names.py):這一列也拿掉(copy-0156 §3,同網頁)
+    const dup = "（" + d.strategy + "）", nm = strat && !strat.code ? (strat.text.endsWith(dup) ? strat.text.slice(0, -dup.length) : strat.text) : "";
+    o[6] = !nm ? null : nm === strat.text ? strat : { text: nm, code: false }; return o;
+  }
   // 目標部位過久沒更新(同網頁 workspace_ov_ev_target_stale):換算門檻同 api notify._age_text;沒 age_s 用不帶時間那句
   if (type === "target_stale") {
     const s = d.age_s, m = typeof s === "number" && isFinite(s) && s >= 0 ? Math.floor(s / 60) : null, h = m == null ? 0 : Math.floor(m / 60);
@@ -6949,7 +6958,7 @@ document.addEventListener("compositionstart", () => { ENV_COMPOSING = true; }, t
 document.addEventListener("compositionend", () => { ENV_COMPOSING = false; }, true);
 // 開通頁看得見嗎(稽核 Q1):從這一頁按「綁卡」外開瀏覽器,回來要重查帳號狀態,不然畫面一直停在「綁卡」
 function envOpenVisible() { return ENV.cur === "cloud" && !$("cv-empty").hidden; }
-function envCanSwitch() { return !ENV_COMPOSING && !$("view-ws").hidden && $("del-scrim").hidden && $("cx-scrim").hidden && $("ps-scrim").hidden && $("lb-scrim").hidden && $("ns-scrim").hidden && $("idea-scrim").hidden && $("lai-scrim").hidden && $("rpn-scrim").hidden && $("shr-scrim").hidden && $("mgm-scrim").hidden && $("mgs-scrim").hidden; }   // 兩個表單 modal(新增策略 / 新增報告)開著也不切:送出時才讀視角,切了會送去另一台;分享框同理(公開的是開框那一袋的那一份)
+function envCanSwitch() { return !ENV_COMPOSING && !$("view-ws").hidden && $("del-scrim").hidden && $("cx-scrim").hidden && $("ps-scrim").hidden && $("lb-scrim").hidden && $("ns-scrim").hidden && $("idea-scrim").hidden && $("lai-scrim").hidden && $("rpn-scrim").hidden && $("shr-scrim").hidden && $("mgm-scrim").hidden; }   // 兩個表單 modal(新增策略 / 新增報告)開著也不切:送出時才讀視角,切了會送去另一台;分享框同理(公開的是開框那一袋的那一份)
 function envSwitchGuarded(env) {
   if ((env !== "local" && env !== "cloud") || !envCanSwitch()) return false;
   envSwitch(env); return true;

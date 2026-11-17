@@ -53,6 +53,10 @@ t("策略名稱與交易所名稱那兩條在共用風格段,三份格式規則�
   "都沒有才用代號" in at._STYLE_RULES and "不寫 id" in at._STYLE_RULES
   and all(at._STYLE_RULES in r for r in (at.WEB_FORMATTING_RULE, at.LOCAL_FORMATTING_RULE, at.TELEGRAM_FORMATTING_RULE)))
 
+t("回測成本叫「交易成本」不叫「手續費」(0.1.55 介面改名;FEE 含滑價),在共用風格段、三份格式規則都帶到",
+  "中文寫「交易成本」,不寫「手續費」" in at._STYLE_RULES
+  and all(at._STYLE_RULES in r for r in (at.WEB_FORMATTING_RULE, at.LOCAL_FORMATTING_RULE, at.TELEGRAM_FORMATTING_RULE)))
+
 shutil.rmtree(WS, ignore_errors=True)
 print(f"\n{'FAIL' if fails else 'OK'}: {len(fails)} failed")
 sys.exit(1 if fails else 0)

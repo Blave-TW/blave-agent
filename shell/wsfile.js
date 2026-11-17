@@ -27,4 +27,18 @@ function append(file, data) {
   try { fs.writeSync(fd, data); } finally { fs.closeSync(fd); }
 }
 
-module.exports = { replace, append };
+/* read:主行程同步讀 agent 能放東西的檔。FIFO 開檔會等寫端、/dev/zero 讀不完,都會卡死整個 app(稽核 0156 S-2)。
+   O_NONBLOCK 讓 FIFO 開得起來,判斷看開好的 fd(不是路徑,換檔也換不掉);不是一般檔、symlink、超過 max → null */
+function read(file, max) {
+  const K = fs.constants;
+  let fd;
+  try { fd = fs.openSync(file, K.O_RDONLY | (K.O_NOFOLLOW || 0) | (K.O_NONBLOCK || 0)); } catch (e) { if (e.code === "ELOOP") return null; throw e; }
+  try {
+    const s = fs.fstatSync(fd);
+    if (!s.isFile() || s.size > max) return null;
+    const buf = Buffer.alloc(s.size);
+    return buf.subarray(0, fs.readSync(fd, buf, 0, s.size, 0));
+  } finally { fs.closeSync(fd); }
+}
+
+module.exports = { replace, append, read };

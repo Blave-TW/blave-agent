@@ -1,0 +1,16 @@
+/* 錯誤回報詢問卡(renderer/errreport.js;帳號句、展開鈕、JSON 掛在 faultCard 的 .fault-sub,移到鈕列上面)與設定 › 隱私那一塊。版面照設計稽核 review-0156-batch2 */
+.err-sub p { margin: 0; }
+.msg.fault .fault-sub:has(.err-sub) { margin-top: var(--space-2); }            /* 帳號句貼著說明句:同一組 */
+.err-tog { display: block; margin-top: var(--space-8); }
+.err-tog::before { inset: auto; left: 50%; bottom: -6px; width: max(44px, calc(100% + 8px)); height: 44px; transform: translateX(-50%); }   /* 熱區 44:收著時下面 12 是〔送出〕列,它的熱區佔 6,多的往上補 */
+.err-json { margin: var(--space-8) 0 0; max-height: 240px; overflow: auto; padding: var(--space-8);
+  border-radius: var(--radius-sm); background: var(--surface-muted); font-family: var(--font-mono);
+  font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); }   /* 底色已經分開,不再加框 */
+.err-json[hidden] { display: none; }
+.msg.fault .fault-sub:has(.err-sub) + .fault-act { margin-top: var(--space-12); }   /* 看完內容 → 決定:組間 12 */
+.msg.fault .fault-act:has(.err-always) { column-gap: var(--space-16); row-gap: var(--space-16); }
+.err-note { margin: var(--space-6) 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-3); scroll-margin-bottom: var(--space-16); }   /* 展開時捲到這裡:底下留聊天欄自己的 16 */
+.err-always { position: relative; display: inline-flex; align-items: center; gap: var(--space-8);
+  min-height: 32px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+.err-always::before { content: ""; position: absolute; inset: -6px -4px; }   /* 外觀 32,熱區 44 */
+.err-priv { margin-top: var(--space-24); }

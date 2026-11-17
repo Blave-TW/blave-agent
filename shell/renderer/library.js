@@ -1,12 +1,12 @@
 /* 策略庫(設計:blave-canon output/designer/spec-desktop-library-2026-09-25.md;雲端工作頁 #lib_panel 縮成中欄的尺寸)。
-   側欄「策略庫」→ 中欄清單(市場選單、排序選單;預設推薦 = 官方或已驗證優先)→ 詳情(曲線、四個數字、三道關卡、怎麼交易)→「用這支」確認框 →
+   側欄「策略庫」→ 中欄清單(市場選單、排序選單;預設推薦 = 官方或過關優先)→ 詳情(曲線、四個數字、三道關卡、怎麼交易)→「用這支」確認框 →
    送給 agent 同一句固定訊息(lib.msg / lib.msgPaid,逐字同 web 的 workspace_lib_msg;runtime 認這個句型,一行不改)。
    - 清單由主行程打 api(renderer 的 CSP 不外連;主行程逐欄驗過型別才交過來);這裡仍一律 textContent。
    - 兩個視角各記一份「開著 / 詳情那支 / 分段 / 捲動」(LIB.bags,同 TR_BAGS 的作法);中欄誰該出現由 trade.js 的 envShowMain
      在最後一步問 libShowMain。選策略 / 開自動下單會 libLeave。
    - 「已安裝」(§1.2):外殼在 userData 記 { marketplace id → 本機策略資料夾名 };送出「用這支」那一輪結束、本機清單多了一支就記下;
      名字被刪就從表裡拿掉。雲端視角不寫檔:同一套「送出前記清單、之後看多了誰」的比法,只記在這次 app 開著的期間(libCloudChanged)。
-   - 不導流(§13):未驗證的社群策略也列(平鋪在同一份清單的尾段,帶「未驗證」tag;spec-desktop-0.1.6 §2),詳情用 /report 補到 400 點曲線、
+   - 不導流(§13):未過關的社群策略也列(平鋪在同一份清單的尾段,清單列不標過關與否;spec-desktop-0.1.6 §2),詳情用 /report 補到 400 點曲線、
      總報酬、關卡數值、回測期間;沒有任何開網頁的入口。
    - 付不出資料費(spec-desktop-0.1.6 §3):why 只有一個來源(主行程 libraryList 回的 why);清單分「現在就能用」與第二組,
      閘門卡掛在第二組頭上,詳情主鈕照這支要不要 Blave 資料分流(libGrouping / libCta)。本機「用這支」由主行程代下載。
@@ -76,7 +76,7 @@ function libIdeaOn(c) {
 function libDlKey(kind) { return kind === "signinFailed" ? "row.failed" : ["blocked", "gone", "rateLimited", "unsent", "agentOld", "agentOldReopen"].includes(kind) ? "lib.dl." + kind : "lib.dl.fail"; }
 // 確認框與購買框的資料費那一行(§4.1):本機、按小時計費、而且這支不是只用公開資料。兩個框共用這一支,條件不會漂
 function libFeeLine(env, dataAccess, needs) { return env !== "cloud" && dataAccess === "billed" && needs !== "none"; }
-// 推薦排序(同公開頁 library_rules.recoSort):已驗證 → 樣本長 → 新;刻意不看報酬 / Sharpe(最漂亮的回測多半最過擬合)
+// 推薦排序(同公開頁 library_rules.recoSort):過關 → 樣本長 → 新;刻意不看報酬 / Sharpe(最漂亮的回測多半最過擬合)
 function libCompare(a, b) {
   const va = a.verified ? 1 : 0, vb = b.verified ? 1 : 0;
   if (va !== vb) return vb - va;
@@ -86,11 +86,11 @@ function libCompare(a, b) {
   if (ca === cb) return 0; if (ca === null) return 1; if (cb === null) return -1;
   return cb - ca;
 }
-/* 這個分段要畫的一份清單(spec-desktop-0.1.6 §2.1):主鍵「官方或已驗證」在前,其後照 libCompare。主鍵寫成 code 是因為 libCompare
-   第一階只看 verified——「官方但沒跑關卡」在純 libCompare 下會掉到未驗證那一段;Wei 說的是「官方與已驗證在前」 */
+/* 這個分段要畫的一份清單(spec-desktop-0.1.6 §2.1):主鍵「官方或過關」在前,其後照 libCompare。主鍵寫成 code 是因為 libCompare
+   第一階只看 verified——「官方但沒跑關卡」在純 libCompare 下會掉到未過關那一段;Wei 說的是「官方與過關在前」 */
 function libRecoCmp(a, b) { return (Number(!!(b.is_official || b.verified)) - Number(!!(a.is_official || a.verified))) || libCompare(a, b); }
 /* 排序選單(spec library-sort-rows-2026-11-06 §3):key 與順序同網頁公開頁 #mp_sort 的 data-sort,另插 installs。
-   數值排序時未驗證或樣本未滿 1 年的沉底;官方身分不救(比的是數字可不可信)。同值照推薦決勝、缺值排最後(同 web valueSort) */
+   數值排序時未過關或樣本未滿 1 年的沉底;官方身分不救(比的是數字可不可信)。同值照推薦決勝、缺值排最後(同 web valueSort) */
 const LIB_SORTS = ["reco", "installs", "sample", "sharpe", "mdd", "annual", "newest"];
 const LIB_SINK_SORTS = ["sharpe", "mdd", "annual"];
 const LIB_FLOOR_YEARS = 1;
@@ -794,7 +794,6 @@ function libPaintListKeep() {
 }
 function libTags(s) {
   const out = [];
-  if (s.verified) out.push(libEl("span", "tag is-verified", t("lib.verified")));
   if (libIsFree(s)) out.push(libEl("span", "tag", t("lib.free")));
   else if (s.purchased || s.is_owner) out.push(libEl("span", "tag", t("lib.owned")));
   else { const p = libEl("span", "tag is-price"); p.append(libPriceNode(s)); out.push(p); }

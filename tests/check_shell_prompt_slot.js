@@ -1,5 +1,5 @@
 // 左下角一列(spec sidebar-conversion-2026-11-10 §2–§8、§12):帳號那一格逐值對 planView()、按下去走哪支;手機圖示六條各拿掉一條都不出;
-// 放不下時手機讓位;步驟框只剩已登入那一版;更新圓鈕原因句出在列上方;§6.1 重開授權頁只開主行程自己存的網址;字與埋點;長相的數字。
+// 放不下時手機讓位;步驟框是價值句加兩步(phone-pair-popover-2026-11-17);更新圓鈕原因句出在列上方;§6.1 重開授權頁只開主行程自己存的網址;字與埋點;長相的數字。
 // 真的函式配假 DOM,不開 Electron。量真的寬度(180／236／400、zh／en、Windows)要開窗,不在這裡。
 // 跑法:node tests/check_shell_prompt_slot.js
 const fs = require("fs"), path = require("path"), vm = require("vm");
@@ -102,20 +102,30 @@ t("§3.2 六條都成立 → 出", X.slotPhPlan(OK).draw === true);
   reset(); X.slotPaint(); const ta = { id: "ta" }; doc.active = ta; ctx.PH = { ...PHOK, pairedEver: true }; X.slotPaint();
   t("§6.5 焦點不在圖示或 pop 裡 → 收掉也不搶", doc.lastFocus === null && doc.active === ta);
 
-  // 步驟框內容:只剩已登入那一版
+  // 步驟框內容(spec phone-pair-popover-2026-11-17 §4):價值句＋好處、兩步
   { reset(); X.slotPaint(); $("ph-pill").listeners.click();
-    const steps = () => { const ol = $("ph-pop").children[0]; return ol ? ol.children : []; };
+    const ol0 = () => $("ph-pop").children.find((k) => k.tag === "ol");
+    const steps = () => { const ol = ol0(); return ol ? ol.children : []; };
     const states = (ls) => ls.map((li) => ["done", "now", "next"].filter((c) => li.classList.contains(c)).join("+")).join();
     const btns = () => $("ph-pop").all().filter((k) => k.tag === "button");
-    const s1 = steps(), img = $("ph-pop").all().find((k) => k.tag === "img");
-    t("§6.5 只有已登入那一版:done,now,next,next;沒有登入鈕(btn-out)", s1.length === 4 && states(s1) === "done,now,next,next" && !btns().some((b) => b.className === "btn-out") && s1[0].children[1].text === "已登入", states(s1));
+    const who = () => (steps()[1] ? steps()[1].all() : []).filter((k) => k.className === "ph-who");
+    const s1 = steps(), img = $("ph-pop").all().find((k) => k.tag === "img"), lead = $("ph-pop").children[0], h = lead.children[0];
+    t("A 版頂端:h2 價值句＋一行好處,pop 是 dialog、aria-labelledby 指 h2", lead.className === "ph-lead" && h.tag === "h2" && h.textContent === "用手機叫這台電腦做事" && lead.children[1].tag === "p" && lead.children[1].textContent === "不在電腦前，也能叫它跑回測、改策略。"
+      && $("ph-pop").attrs.role === "dialog" && !!h.id && $("ph-pop").attrs["aria-labelledby"] === h.id);
+    t("A 版兩步:now,next;沒有已登入那步、沒有登入鈕(btn-out)、沒有勾", s1.length === 2 && states(s1) === "now,next" && !btns().some((b) => b.className === "btn-out") && !$("ph-pop").all().some((k) => k.tag === "svg") && s1[1].children[0].textContent === "2", states(s1));
+    t("A 版第 2 步:登入這個帳號＋〔對話〕不斷開;沒有 email 就不出那一行", steps()[1].children[1].text === "登入這個帳號，在 Agent 分頁按〔對話〕" && steps()[1].all().some((k) => k.className === "ph-nw" && k.textContent === "按〔對話〕") && who().length === 0, steps()[1].children[1].text);
     t("§6.5 QR 112 白底 plate + App Store、Google Play 兩顆 btn-quiet", !!img && img.src === "qr-app.svg" && img.width === 112 && img.parent.className === "ph-plate" && btns().length === 2 && btns().every((b) => b.className === "btn-quiet"));
     feat.length = 0; btns()[0].listeners.click(); btns()[1].listeners.click();
     t("§6.5 商店連結沿用 app_link_ios／app_link_android,外開 MV_APP_*", feat.join() === "app_link_ios,app_link_android" && opened.join() === "IOS_URL,AND_URL", feat);
-    const ol = $("ph-pop").children[0], gp = btns()[1]; gp.focus(); ctx.acct = { email: "a@blave.org" }; X.slotPaint();
-    t("§6.5 email 晚到只原地補那一行(同一個 <ol>、焦點不搬)", $("ph-pop").children[0] === ol && steps()[0].children[1].children.some((k) => k.className === "ph-who" && k.textContent === "a@blave.org") && doc.active === gp);
+    const ol = ol0(), gp = btns()[1]; gp.focus(); ctx.acct = { email: "a@blave.org" }; X.slotPaint();
+    t("A 版 email 晚到只在第 2 步原地補(同一個 <ol>、焦點不搬、title 放全文)", ol0() === ol && who().length === 1 && who()[0].textContent === "a@blave.org" && who()[0].title === "a@blave.org" && doc.active === gp);
     ctx.acct = null; ctx.PH = { ...PHOK, on: true }; X.slotPaint();
-    t("§6.5 允許手機對話已開:不列〔打開〕那步", steps().length === 3);
+    t("A 版不看允許手機對話開關:開了也不重建、一樣兩步;email 拿掉那一行就收", ol0() === ol && steps().length === 2 && who().length === 0);
+    ctx.LANG = "en"; X.slotPaint();
+    t("A 版 en:換語言重建;Chat 不斷開", ol0() !== ol && $("ph-pop").children[0].children[0].textContent === "Control this computer from your phone"
+      && steps()[1].children[1].text === "Sign in to this account, then tap Chat in the Agent tab" && steps()[1].all().some((k) => k.className === "ph-nw" && k.textContent === "Chat"), steps()[1].children[1].text);
+    ctx.LANG = "zh"; X.slotPaint();
+    t("A 版拿掉 ph.signed／ph.stepAllow 與勾", !("ph.signed" in STR.zh) && !("ph.stepAllow" in STR.en) && !/ph\.signed\b|ph\.stepAllow|SLOT_CHECK|allowOn/.test(src));
     t("§7 沒登入那一支與它的埋點拿掉了", !/slot_ph_login|ph\.stepPair|planSignIn|signInLabel/.test(src)); }
 
   // ── §3.1 帳號那一格:planView() 的每個值 ──

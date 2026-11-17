@@ -1202,6 +1202,7 @@ function privPaint() {
     });
     two.append(col); }
   box.append(two, mk("p", "priv-fine", off ? t("priv.kept") : t("priv.fine")));
+  if (typeof errPrivBlock === "function") box.append(errPrivBlock(mk));   // 錯誤回報另一塊(renderer/errreport.js),不歸上面的開關管
   /* 隱私權政策的入口(法遵稽核):政策 §9.1 叫人到這一頁關遙測(安裝識別碼在 設定 › 一般 › 關於),這一頁要能連回那份政策 */
   const legal = mk("p", "set-legal"), pl = mk("button", "btn-quiet", t("legal.privacy")); pl.type = "button"; pl.id = "priv-legal";
   pl.addEventListener("click", () => window.blave.openExternal(legalUrl("privacy_policy")));
@@ -3030,6 +3031,7 @@ async function csDraw(T, since) {
   const ress = typeof resHistoryItems === "function" ? await resHistoryItems(id) : [];   // 聊天結果卡(renderer/results.js):ts = 回合結束,排在那一輪回覆之後
   if (T.dead) return;
   withTab(T, () => csPaintHistory(T, turns, imgs, brs, xps, ress));
+  if (typeof errReattach === "function") errReattach();   // 錯誤回報詢問卡被這次重畫清掉:補回眼前那條(renderer/errreport.js)
 }
 function csPaintHistory(T, turns, imgs, brs, xps, ress) {
   const live = running ? [...chatEl().childNodes] : [];   // 背景開的那條已經在跑(手機來的):即時那一段接在歷史後面

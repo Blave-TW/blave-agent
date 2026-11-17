@@ -76,6 +76,8 @@ if (!process.versions.electron) {
   ok("① 市場:舊 api(沒有 market)台股 1 支、台指期 0 支;加密 7 支(2 支未驗證在尾);api 帶 market 時 #74 改歸台指期;沒有的市場空陣列", P.libVisible(LIST, "twstock").map((s) => s.id).join() === "74" && P.libVisible(LIST, "txf").length === 0 && P.libVisible(LIST, "crypto").map((s) => s.id).join() === "101,72,5,9,86,12,8"
     && P.libVisible(LIST.map((s) => (s.id === 74 ? Object.assign({}, s, { market: "txf" }) : s)), "txf").map((s) => s.id).join() === "74" && P.libVisible(LIST.map((s) => (s.id === 74 ? Object.assign({}, s, { market: "txf" }) : s)), "twstock").length === 0
     && P.libVisible([], "twstock").length === 0 && P.libVisible(null, "all").length === 0 && P.libVisible(LIST, "usstock").length === 0);
+  ok("① 不出「已驗證」(spec library-drop-verified §10):library.js／library.css 沒有 is-verified、兩語沒有 lib.verified;排序仍讀 verified(libCompare／libSinks)",
+    !/is-verified/.test(src) && !/is-verified/.test(read(path.join(R, "library.css"))) && !/lib\.verified/.test(src) && !("lib.verified" in STR.zh) && !("lib.verified" in STR.en) && /a\.verified/.test(cutFn(src, "libCompare")) && /s\.verified/.test(cutFn(src, "libSinks")));
   {   // 選市場的埋點:選了不同的才送 lib_mkt_pick(一次)、重選同一項不送也不重畫;兩種都先收起並還焦點
     const C = { bag: { mkt: "all" }, sent: [], painted: 0, closed: [] };
     vm.createContext(C); vm.runInContext("var LIB = {}, libBag = () => bag, libTrack = (n) => sent.push(n), libPaint = () => { painted++; }, libMktClose = (f) => closed.push(f);\n" + cutFn(src, "libMktPick"), C);
@@ -716,14 +718,14 @@ app.whenReady().then(async () => {
       tags12: q('#lib-rows .lib-row[data-id="12"] .tag').map((x) => x.textContent).join("|"), tags8: q('#lib-rows .lib-row[data-id="8"] .tag').map((x) => x.textContent + ":" + x.className).join("|"), l2_12: q('#lib-rows .lib-row[data-id="12"] .l2')[0].textContent,
       tags101: q('#lib-rows .lib-row[data-id="101"] .tag').map((x) => x.textContent).join("|"), tags5: q('#lib-rows .lib-row[data-id="5"] .tag').map((x) => x.textContent).join("|"), tags9: q('#lib-rows .lib-row[data-id="9"] .tag').map((x) => x.textContent).join("|"), tag5gap: (() => { const p = q('#lib-rows .lib-row[data-id="5"] .tag.is-price')[0]; const a = p.children[0].getBoundingClientRect(), b = p.children[1].getBoundingClientRect(); return p.children.length === 2 && p.children[1].textContent === "TWD" && b.left - a.right >= 3; })(),
       l2: q('#lib-rows .lib-row[data-id="101"] .l2')[0].textContent, ann: q('#lib-rows .lib-row[data-id="101"] .num .v')[0].textContent, annCls: q('#lib-rows .lib-row[data-id="101"] .num .v')[0].className, annColor: getComputedStyle(q('#lib-rows .lib-row[data-id="101"] .num .v')[0]).color, inkColor: getComputedStyle(q('#lib-rows .lib-row[data-id="101"] .t')[0]).color, greenText: getComputedStyle(document.documentElement).getPropertyValue("--color-greenText").trim(),
-      imgs: q("#lib img").length, title5: q('#lib-rows .lib-row[data-id="5"] .t')[0].textContent, tags86: q('#lib-rows .lib-row[data-id="86"] .tag').map((x) => x.textContent).join("|"), focus: document.activeElement && document.activeElement.id }; })()`);
+      imgs: q("#lib img").length, verifiedTags: q("#lib .tag.is-verified").length, title5: q('#lib-rows .lib-row[data-id="5"] .t')[0].textContent, tags86: q('#lib-rows .lib-row[data-id="86"] .tag').map((x) => x.textContent).join("|"), focus: document.activeElement && document.activeElement.id }; })()`);
   ok("④ 開策略庫:#lib 出、入口 aria-current、歡迎頁與自動下單收;一份清單 8 列照推薦排序(未驗證的兩支在尾);焦點在 h5;沒有「在網頁版看」鈕;清單底沒有投稿腳注(#lib-foot 不存在);有資料時閘門卡不出", r.on && r.cur === "page" && r.empty && r.tr && r.ids === "74,101,72,5,9,86,12,8" && r.focus === "lib-h"
     && r.web === null && r.foot === null && r.gate === true, JSON.stringify(r));
   ok("④ 社群平鋪(0.1.6 §2):未驗證的兩支直接列在清單尾(新的先)、沒有「未驗證」標籤、只有價格 tag(沒有 is-verified)、第二行只留標的(0.1.49 拿掉官方／社群);沒有 disclosure 列、沒有 chevron", r.comm === null && r.chev === 0 && r.tags12 === "800TWD" && /^1,200TWD:tag is-price$/.test(r.tags8) && !("lib.unverified" in STR.zh) && !("lib.unverified" in STR.en) && r.l2_12 === "SOL/USDT", JSON.stringify(r));
-  ok("④ 列:tag(已驗證 + 免費 / 價格 1,500 TWD / 已購買)、第二行只留代號「BTC/USDT」(設計稽核 library-sort-review 第 7 條)、第一格年化 +24.61% 綠字;api 來的字只進 textContent(沒有 img)",
-    r.tags101 === (await T("lib.verified")) + "|" + (await T("lib.free")) && r.tags5 === (await T("lib.verified")) + "|1,500TWD" && r.tag5gap && r.tags9 === (await T("lib.verified")) + "|" + (await T("lib.owned"))
+  ok("④ 列:tag(免費 / 價格 1,500 TWD / 已購買;不再有「已驗證」,整份清單沒有 .tag.is-verified、兩語沒有 lib.verified)、第二行只留代號「BTC/USDT」(設計稽核 library-sort-review 第 7 條)、第一格年化 +24.61% 綠字;api 來的字只進 textContent(沒有 img)",
+    r.tags101 === (await T("lib.free")) && r.tags5 === "1,500TWD" && r.tag5gap && r.tags9 === (await T("lib.owned")) && r.verifiedTags === 0 && !("lib.verified" in STR.zh) && !("lib.verified" in STR.en)
     && r.l2 === "BTC/USDT" && r.ann === "+24.61%" && /\bup\b/.test(r.annCls) && r.annColor !== r.inkColor && r.imgs === 0 && r.title5 === "Cash-and-Carry <img onerror=x> Arbitrage"
-    && r.tags86 === (await T("lib.free")), JSON.stringify(r));   // 官方但未驗證(#86):既無「已驗證」也無「未驗證」
+    && r.tags86 === (await T("lib.free")), JSON.stringify(r));   // 官方但未過關(#86):跟過關的 #101 一樣只有價格 tag
   // 市場選單:點觸發器開、點項目選(真的 click,走接線那條);每一項的支數、0 也印;選完焦點回觸發鈕;Esc 收起並還焦點
   const PICK = `const pick = (m) => { document.getElementById("lib-mkt-trig").click(); document.querySelector('#lib-mkt-menu .ct-mi[data-mkt="' + m + '"]').click(); };`;
   r = await js(`(() => { const q = (x) => [...document.querySelectorAll(x)]; ${PICK} const trig = document.getElementById("lib-mkt-trig"), menu = document.getElementById("lib-mkt-menu");
@@ -908,8 +910,8 @@ app.whenReady().then(async () => {
   r = await js(`(async () => { const q = (x) => [...document.querySelectorAll(x)]; document.getElementById("lib-back").click(); const tag = q('#lib-rows .lib-row[data-id="101"] .tag').map((x) => x.textContent).join("|"), focus = document.activeElement && document.activeElement.dataset.id;
     window.__lib.strats = []; await stratRefresh(false); await new Promise((r) => setTimeout(r, 40));
     return { tag, focus, after: q('#lib-rows .lib-row[data-id="101"] .tag').map((x) => x.textContent).join("|"), patches: window.__lib.patches.length, installed: Object.keys(LIB.installed).length }; })()`);
-  ok("④ 返回清單:列上多「已安裝」tag、焦點回那一列;本機那支被刪 → tag 消失、對照表拿掉那一筆(主行程也拿掉)", r.tag === (await T("lib.verified")) + "|" + (await T("lib.free")) + "|" + (await T("lib.installed")) && r.focus === "101"
-    && r.after === (await T("lib.verified")) + "|" + (await T("lib.free")) && r.patches === 2 && r.installed === 0, JSON.stringify(r));
+  ok("④ 返回清單:列上多「已安裝」tag、焦點回那一列;本機那支被刪 → tag 消失、對照表拿掉那一筆(主行程也拿掉)", r.tag === (await T("lib.free")) + "|" + (await T("lib.installed")) && r.focus === "101"
+    && r.after === (await T("lib.free")) && r.patches === 2 && r.installed === 0, JSON.stringify(r));
   // 沒新策略
   r = await js(`(async () => { LIB.pending.clear(); LIB.pending.set(72, { id: 72, env: "local", before: new Map([]) }); libTurnEnd(); const noNew = LIB.noNew; const q = (x) => [...document.querySelectorAll(x)]; q('#lib-rows .lib-row[data-id="72"]')[0].click();
     const err = q("#lib-cta .err").map((x) => x.textContent).join(), btn = q("#lib-cta .btn-fill")[0].textContent; document.getElementById("lib-back").click(); return { noNew, err, btn, cleared: LIB.noNew }; })()`);
@@ -1020,14 +1022,14 @@ app.whenReady().then(async () => {
     LIB.cloudInstalled["72"] = "s72"; ch(st(true, [{ name: "old", updated_at: 7 }, { name: "s72", updated_at: 9 }])); const m = { m0, m1, wait: LIB.cloudWait, installed: LIB.cloudInstalled["72"], tag: tag(72) };
     running = false; libInvalidate(); await new Promise((r) => setTimeout(r, 60)); const inv = { installed: Object.keys(LIB.cloudInstalled).length, wait: LIB.cloudWait, names: LIB.cloudNames };
     LIB.pending.clear(); ENV.cur = "local"; LIB.bags.cloud.open = false; TR_BAGS.cloud.st = null; envShowMain(); return { a, b, c, absent, d, same, keep, e, f, g, h, m, inv }; })()`);
-  { const V = await T("lib.verified"), F = await T("lib.free"), I = await T("lib.installed");
+  { const F = await T("lib.free"), I = await T("lib.installed");
     ok("④ 雲端「用這支」:pending 記 env=cloud + 雲端清單(old→1)、送到雲端;turn-end → pending 收掉、比不到就掛 cloudWait;清單沒變 → 還掛著、列沒「已安裝」;缺席那一輪 → 不動;清單多了 btc_cloud → 記下(不寫檔)、列上「已安裝」、CTA 拿到名字;成員沒變不重畫(焦點留著)",
-      r.a.env === "cloud" && r.a.before === "old,1" && r.a.viewing === "cloud" && r.b.pending === null && r.b.wait === 101 && r.b.installed === undefined && r.c.wait === 101 && r.c.tag === V + "|" + F
-      && r.absent.wait === 101 && r.absent.installed === undefined && r.absent.names === "old" && r.d.wait === null && r.d.installed === "btc_cloud" && r.d.tag === V + "|" + F + "|" + I && r.d.cta === "btc_cloud" && r.d.patches === 0 && r.same.focus === "101", JSON.stringify(r));
+      r.a.env === "cloud" && r.a.before === "old,1" && r.a.viewing === "cloud" && r.b.pending === null && r.b.wait === 101 && r.b.installed === undefined && r.c.wait === 101 && r.c.tag === F
+      && r.absent.wait === 101 && r.absent.installed === undefined && r.absent.names === "old" && r.d.wait === null && r.d.installed === "btc_cloud" && r.d.tag === F + "|" + I && r.d.cta === "btc_cloud" && r.d.patches === 0 && r.same.focus === "101", JSON.stringify(r));
     ok("④ 雲端已安裝:缺席那一輪不刪(tag 與名字都留著);那支真的消失 → 拿掉;等過期 → 放掉;送出當下缺席 → before=null、清單回來不猜;等待中再送第二支 → 第一支放掉、第二支 turn-end 當場比到 → 只記第二支、列當場重畫;舊策略只有 mtime 變 → 不記、繼續等;已記的那支同名 mtime 變 → 算、成員沒變也重畫;登出全清",
-      r.keep.installed === "btc_cloud" && r.keep.tag === V + "|" + F + "|" + I && r.keep.name === "btc_cloud" && r.e.installed === undefined && r.e.tag === V + "|" + F && r.f.wait === null
-      && r.g.before === null && r.g.wait === 72 && r.g.installed === undefined && r.h.h0 === 101 && r.h.h1 === null && r.h.i101 === undefined && r.h.i72 === "s72" && r.h.tag72 === V + "|" + F + "|" + I && r.h.tag101 === V + "|" + F
-      && r.m.m0 === V + "|" + F && r.m.m1.wait === 72 && r.m.m1.installed === 0 && r.m.m1.tag === V + "|" + F && r.m.wait === null && r.m.installed === "s72" && r.m.tag === V + "|" + F + "|" + I && r.inv.installed === 0 && r.inv.wait === null && r.inv.names === null, JSON.stringify(r)); }
+      r.keep.installed === "btc_cloud" && r.keep.tag === F + "|" + I && r.keep.name === "btc_cloud" && r.e.installed === undefined && r.e.tag === F && r.f.wait === null
+      && r.g.before === null && r.g.wait === 72 && r.g.installed === undefined && r.h.h0 === 101 && r.h.h1 === null && r.h.i101 === undefined && r.h.i72 === "s72" && r.h.tag72 === F + "|" + I && r.h.tag101 === F
+      && r.m.m0 === F && r.m.m1.wait === 72 && r.m.m1.installed === 0 && r.m.m1.tag === F && r.m.wait === null && r.m.installed === "s72" && r.m.tag === F + "|" + I && r.inv.installed === 0 && r.inv.wait === null && r.inv.names === null, JSON.stringify(r)); }
   // 讀不到 / 重試
   r = await js(`(async () => { running = false; LIB.pending.clear(); LIB.data = null; LIB.stale = true; window.__lib.list = null; document.getElementById("lib-back").click(); await libLoad(true); const q = (x) => [...document.querySelectorAll(x)];
     const err = { state: document.getElementById("lib-state").textContent, hidden: document.getElementById("lib-state").hidden, retry: q("#lib-state .btn-out").length, rows: q("#lib-rows .lib-row").length };

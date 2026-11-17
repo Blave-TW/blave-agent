@@ -408,7 +408,7 @@ const PO2 = ["zh", "en"].map((l) => fs.readFileSync(path.join(__dirname, "..", "
     "src.empty1": ["還沒有自帶金鑰的資料來源。", "No data sources with your own key yet."],
     "br.set.lead": ["不開交易所後台、券商與銀行。登入、送出、付款由你按。", "It never opens exchange account pages, brokers or banks. You sign in, submit and pay."],
     "src.cloudLead": ["雲端主機上的資料來源，唯讀。", "Data sources on the cloud machine. Read-only."],
-    "plan.topupShort": ["低於 {a} TWD 時從卡自動儲值 {b} TWD。可在網頁關閉。", "Under {a} TWD, your card tops up {b} TWD. You can turn this off on the web."] };
+    "plan.topupShort": ["低於 {a} TWD 時從卡自動儲值 {b} TWD。", "Under {a} TWD, your card tops up {b} TWD."] };
   const S2 = eval(fs.readFileSync(path.join(R, "strings.js"), "utf8") + ";STRINGS");
   const off = Object.keys(want).filter((k) => S2.zh[k] !== want[k][0] || S2.en[k] !== want[k][1]);
   ok("方案 B 定稿字串 zh / en 逐字(" + Object.keys(want).length + " 個 key);刪掉的 shl.title、pv.d.running、rules.emptyHow、src.empty2 兩語都不在", off.length === 0 && ["shl.title", "pv.d.running", "rules.emptyHow", "src.empty2"].every((k) => !(k in S2.zh) && !(k in S2.en)), off.join(",")); }

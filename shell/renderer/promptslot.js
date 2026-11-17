@@ -1,4 +1,4 @@
-/* 左下角一列的手機圖示與它的步驟框(spec sidebar-conversion-2026-11-10 §3.2、§6.5;pop 內容 spec slot-phone-v2)。
+/* 左下角一列的手機圖示與它的步驟框(spec sidebar-conversion-2026-11-10 §3.2、§6.5;pop 內容 spec phone-pair-popover-2026-11-17)。
    出不出只看六條,沒有冷卻、關閉次數、使用日或不畫表;放不下(§4.3)時手機讓位,其餘三樣不動 */
 /* o:{ ph(主行程 relay 狀態), revoked(登入失效), rail(側欄收合), fits(這一列放得下四樣) } → { draw, why }。
    主行程的 signedIn 只看有沒有 token,登入失效時仍是 true,所以 revoked 另外擋;paired_ever 只認 false,讀不到當作配對過 */
@@ -25,46 +25,40 @@ function slotRowFits(row) {
   }
   return need <= row.clientWidth + 0.5;   // 次像素誤差
 }
-/* pop 內容(spec slot-phone-v2 §2–3;0.1.54 起手機圖示只對已登入的人出,只剩這一版):打勾的已登入、QR 加兩個商店、在 App 按〔對話〕,
-   最後接「按〔打開〕」(「允許手機對話」已開就不列,同意框不會再問)。下載 App 之後的進度看不到,所以 now 永遠只有一步、後面都是 next,不假裝有進度。
-   email 要等 account_status 帶回來才出(api 還沒給時只寫「已登入」);晚到只原地補那一行(slotWhoPaint),不重建、不搬焦點。
-   開關或語言變了才重建;開著時原地換、不收,焦點本來在 pop 裡就接到 pop 第一個能按的 */
+/* pop 內容(spec phone-pair-popover-2026-11-17 §4;手機圖示只對已登入的人出):頂端一句價值(h2,pop 用 aria-labelledby 指它)加一行好處,
+   再兩步:QR 加兩個商店、登入這個帳號後在 App 按〔對話〕。下載 App 之後的進度看不到,所以 now 只有第 1 步、第 2 步是 next,不假裝有進度。
+   不看「允許手機對話」開關:App 配對完自己會講按〔打開〕,兩種狀態長一樣。
+   email 要等 account_status 帶回來才出,讀不到就不出那一行(步驟句不變);晚到只在第 2 步原地補(slotWhoPaint),不重建、不搬焦點。
+   語言變了才重建;開著時原地換、不收,焦點本來在 pop 裡就接到 pop 第一個能按的 */
 let SLOT_POP_KEY = "", SLOT_WHO_HOST = null, SLOT_WHO;
 function slotWhoPaint(email) {
   if (!SLOT_WHO_HOST || SLOT_WHO === email) return;
   SLOT_WHO = email;
-  const kids = [document.createTextNode(t("ph.signed"))];
-  if (email) { const who = document.createElement("span"); who.className = "ph-who"; who.textContent = email; who.title = email; kids.push(who); }
-  SLOT_WHO_HOST.replaceChildren(...kids);
+  if (!email) { SLOT_WHO_HOST.replaceChildren(); return; }
+  const who = document.createElement("span"); who.className = "ph-who"; who.textContent = email; who.title = email;
+  SLOT_WHO_HOST.replaceChildren(who);
 }
-const SLOT_CHECK = "M20 6 9 17l-5-5";   // Lucide check
 function slotPopPaint() {
-  const allowOn = !!(PH && PH.on === true);
   const email = acct && typeof acct.email === "string" ? acct.email.trim() : "";
-  const key = allowOn + "|" + LANG;
-  if (SLOT_POP_KEY === key) { slotWhoPaint(email); return; }
-  SLOT_POP_KEY = key;
+  if (SLOT_POP_KEY === LANG) { slotWhoPaint(email); return; }
+  SLOT_POP_KEY = LANG;
   const pop = $("ph-pop"), a = document.activeElement, refocus = !pop.hidden && (a === document.body || pop.contains(a));
   const mk = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const lead = mk("div", "ph-lead"), h = mk("h2", "ph-value", t("ph.value"));
+  h.id = "ph-pop-h"; lead.append(h, mk("p", "ph-gain", t("ph.gain")));
+  pop.setAttribute("role", "dialog"); pop.setAttribute("aria-labelledby", h.id);
   const ol = mk("ol", "ph-steps");
   const step = (state, ...kids) => {
-    const li = mk("li", "ph-step " + state), n = mk("span", "ph-n");
-    n.setAttribute("aria-hidden", "true");   // <ol> 已經念號碼;done 那步的字是「已登入」,不靠勾
-    if (state === "done") {
-      const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg"), path = document.createElementNS(NS, "path");
-      svg.setAttribute("class", "ic"); svg.setAttribute("viewBox", "0 0 24 24"); path.setAttribute("d", SLOT_CHECK); svg.append(path); n.append(svg);
-    } else n.textContent = String(ol.children.length + 1);
+    const li = mk("li", "ph-step " + state), n = mk("span", "ph-n", String(ol.children.length + 1));
+    n.setAttribute("aria-hidden", "true");   // <ol> 已經念號碼
     if (state === "now") li.setAttribute("aria-current", "step");
     li.append(n, ...kids); ol.append(li); return li;
   };
-  /* 鈕名不斷開:zh〔對話〕〔打開〕連前一個字一起包,鈕名不單獨掉到最後一行;en 只包鈕名(Chat 是 App 的鈕名,Turn On 同 ph.ask.ok)。
-     split 的捕捉組落在奇數位 */
-  const nwRe = LANG === "zh" ? /(.〔[^〕]+〕。?)/ : new RegExp("\\b(Chat|" + t("ph.ask.ok").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")\\b");
+  /* 鈕名不斷開:zh〔對話〕連前一個字一起包,鈕名不單獨掉到最後一行;en 只包鈕名(Chat 是 App 的鈕名)。split 的捕捉組落在奇數位 */
+  const nwRe = LANG === "zh" ? /(.〔[^〕]+〕。?)/ : /\b(Chat)\b/;
   const say = (k) => { const el = mk("span", "ph-t");
     t(k).split(nwRe).forEach((part, i) => { if (part) el.append(i % 2 ? mk("span", "ph-nw", part) : document.createTextNode(part)); });
     return el; };
-  SLOT_WHO_HOST = mk("span", "ph-t"); SLOT_WHO = undefined; slotWhoPaint(email);
-  step("done", SLOT_WHO_HOST);
   const plate = mk("span", "ph-plate"), img = mk("img"), links = mk("div", "ph-links");
   img.src = "qr-app.svg"; img.alt = ""; img.width = img.height = 112; plate.append(img);   // 內容 https://blave.org/app?src=desktop,依裝置分流商店
   for (const ios of [true, false]) {
@@ -74,9 +68,10 @@ function slotPopPaint() {
   }
   const body = mk("div", "ph-body"); body.append(plate, links);
   step("now", mk("span", "ph-t", t("ph.stepGet")), body);
-  step("next", say("ph.stepChat"));
-  if (!allowOn) step("next", say("ph.stepAllow"));
-  pop.replaceChildren(ol);
+  const chat = say("ph.stepChat");
+  SLOT_WHO_HOST = mk("span"); SLOT_WHO = undefined; slotWhoPaint(email); chat.append(SLOT_WHO_HOST);
+  step("next", chat);
+  pop.replaceChildren(lead, ol);
   if (refocus) { const f = pop.querySelector("button"); if (f) f.focus(); }
 }
 function slotPopOpen() { return !$("ph-pop").hidden; }

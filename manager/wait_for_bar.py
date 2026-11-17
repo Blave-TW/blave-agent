@@ -842,8 +842,10 @@ def _alert_lag(name, minutes, straggler_symbol):
         logging.warning(f"[wait_for_bar] lag notification dropped ({e})")
 
 
-def _track_lag(name, state, now, td, observed_ts, straggler_symbol):
-    """Lag (module docstring). Not-ready path, after the stall alert had its say this tick."""
+def _track_lag(name, state, now, td, observed_ts, straggler_symbol, tw_kind=None, holiday_fn=None,
+               lots_night=False):
+    """Lag (module docstring). Not-ready path, after the stall alert had its say this tick.
+    tw_kind / holiday_fn / lots_night as _tick has them: the minutes reported count sessions only."""
     if td > timedelta(minutes=STALE_TIMEOUT_MINUTES) or observed_ts is None or \
             isinstance(straggler_symbol, _FeedWait) or state.get("stall_alert_at") is not None:
         state["lag_since"] = None
@@ -868,7 +870,10 @@ def _track_lag(name, state, now, td, observed_ts, straggler_symbol):
     last = state.get("lag_alert_at")
     if waited >= timedelta(minutes=STALE_TIMEOUT_MINUTES) and \
             (last is None or time.time() - last >= STALL_REALERT_SECONDS):
-        _alert_lag(name, int(waited.total_seconds() // 60), straggler_symbol)
+        minutes = _session_minutes(datetime.fromisoformat(state["lag_since"]), now, tw_kind, False, False,
+                                   holiday_fn, lots_night)   # the gate above stays wall clock: same alert times
+        _alert_lag(name, int(waited.total_seconds() // 60) if minutes is None
+                   else max(STALE_TIMEOUT_MINUTES, minutes), straggler_symbol)
         state["lag_alert_at"] = time.time()
 
 
@@ -1144,6 +1149,7 @@ def _tick(name):
     # A TAIFEX or TWSE intraday strategy between sessions: quiet (module docstring, _tw_fut_quiet).
     # A TAIFEX daily one before its bar is served only drops the alert, polling must not change.
     tw_kind = holiday_fn = None
+    lots_night = False
     daily = td == timedelta(days=1)
     if not (tw_stock or us_stock) and td <= timedelta(days=1):
         tw_kind = _tw_futures_kind(name)
@@ -1322,12 +1328,17 @@ def _tick(name):
                     computed = bool(state.get("computed_bar") and observed_iso
                                     and state["computed_bar"] > observed_iso)
                     minutes = STALE_TIMEOUT_MINUTES if late_after_mute else int(waited.total_seconds() // 60)
+                    session = None if late_after_mute else _session_minutes(
+                        datetime.fromisoformat(state["pending_since"]), now, tw_kind, tw_stock, us_stock,
+                        holiday_fn, lots_night)
+                    if session is not None:
+                        minutes = max(STALE_TIMEOUT_MINUTES, session)
                     if not (daily_mute and _tw_fut_daily_quiet(observed_iso, now, holiday_fn)):   # not late yet: no word, same polling
                         _alert_stale(name, expected, minutes, straggler_symbol, computed=computed)
                     state["stall_alert_at"] = time.time()
                     if feed_wait:
                         state["feed_wait_alert_at"] = state["stall_alert_at"]
-        _track_lag(name, state, slot, td, observed_ts, straggler_symbol)
+        _track_lag(name, state, slot, td, observed_ts, straggler_symbol, tw_kind, holiday_fn, lots_night)
         if isinstance(straggler_symbol, _FeedWait):
             _gap_closed(state)   # the bars are in; an align_feed row is late — bar_stale's case
         elif gap_scope:
@@ -1433,6 +1444,62 @@ def _tw_fut_sessions(kind, day, lots_night):
     if night is not None:
         out.append((d + timedelta(minutes=night), d + timedelta(days=1, minutes=_TW_FUT_NIGHT_CLOSE)))
     return out
+
+
+def _open_minutes(kind, since, now, holiday_fn=None, lots_night=False):
+    """Minutes of [since, now) (naive UTC) inside the market's sessions: bar_stale's 「盤中等了 N 分鐘」
+    (0.1.56: a stall held over a weekend or a night read as thousands of minutes). kind: a TAIFEX
+    kind (_tw_fut_sessions) or "stock" (TWSE 09:00–13:30). Daily bars and align_feed rows count the
+    same sessions: their wait runs past the close, but only session time is reported. A day counts
+    when it is a weekday off holiday_fn (None: weekdays only)."""
+    a, b = since + _TPE, now + _TPE
+    total = timedelta(0)
+    day = a.date() - timedelta(days=1)
+    while day <= b.date():
+        d = datetime(day.year, day.month, day.day)
+        if kind == "stock":
+            spans = [(d + timedelta(minutes=_TW_STOCK_OPEN), d + timedelta(minutes=_TW_STOCK_CLOSE - 1))]
+        else:
+            spans = _tw_fut_sessions(kind, day, lots_night)
+        part = sum((min(b, hi) - max(a, lo) for lo, hi in spans if max(a, lo) < min(b, hi)), timedelta(0))
+        if part and day.weekday() <= 4 and not (holiday_fn and holiday_fn(day)):
+            total += part
+        day += timedelta(days=1)
+    return int(total.total_seconds() // 60)
+
+
+def _session_minutes(since, now, tw_kind, tw_stock, us_stock, holiday_fn=None, lots_night=False):
+    """bar_stale's minutes for [since, now) (naive UTC): session time on a market that closes,
+    None on a 24-hour one (the wall clock stands). TWSE daily asks the holiday table itself
+    (_tick sets holiday_fn for intraday TAIFEX / TWSE only); it runs at alert time, not every tick."""
+    if us_stock:
+        return _us_open_minutes(since, now)
+    if tw_kind:
+        return _open_minutes(tw_kind, since, now, holiday_fn, lots_night)
+    if tw_stock:
+        return _open_minutes("stock", since, now, _tw_holiday)
+    return None
+
+
+_US_OPEN, _US_CLOSE = (9, 30), (16, 0)   # NYSE regular session, New York; early closes count as full
+
+
+def _us_open_minutes(since, now):
+    """Minutes of [since, now) (naive UTC) inside NYSE regular sessions, on the days
+    _us_last_session calls trading days."""
+    import pandas as pd
+    ny = lambda t: pd.Timestamp(t).tz_localize("UTC").tz_convert("America/New_York")
+    utc = lambda d, hm: pd.Timestamp(datetime(d.year, d.month, d.day, *hm)).tz_localize(
+        "America/New_York").tz_convert("UTC").tz_localize(None).to_pydatetime()
+    total = timedelta(0)
+    day = ny(since).date()
+    while day <= ny(now).date():
+        midnight = datetime(day.year, day.month, day.day)
+        lo, hi = max(since, utc(day, _US_OPEN)), min(now, utc(day, _US_CLOSE))
+        if lo < hi and _us_last_session(midnight) == midnight:
+            total += hi - lo
+        day += timedelta(days=1)
+    return int(total.total_seconds() // 60)
 
 
 def _tw_fut_bar_exists(kind, bar_open, td, holiday_fn, lots_night=False):

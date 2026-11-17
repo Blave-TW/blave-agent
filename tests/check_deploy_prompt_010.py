@@ -223,9 +223,9 @@ shutil.copy(real, os.path.join(WS, "references", "portfolio-steps.md"))
 web, desk = at._portfolio_steps_block(WS), at._portfolio_steps_block(WS, desktop=True)
 t("#7b 網頁:只有網頁那套(手機那句在、電腦版的確認框與切換器不在)",
   "### Web workspace" in web and "點下方『工作區』分頁" in web and "### Desktop app" not in web and "再按一次「儲存」" not in web)
-t("#7b 電腦版:只有電腦版那套(確認框、切換器、先解除綁定;沒有手機那句)",
+t("#7b 電腦版:只有電腦版那套(確認框、切換器、先解除連接(0.1.56 鈕名);沒有手機那句)",
   "### Desktop app" in desk and "### Web workspace" not in desk and "點下方『工作區』分頁" not in desk
-  and "確認框再按一次「儲存」" in desk and "「這台電腦」" in desk and "「解除綁定」" in desk, desk)
+  and "確認框再按一次「儲存」" in desk and "「這台電腦」" in desk and "「解除連接」" in desk and "「解除綁定」" not in desk, desk)
 for label, block in (("網頁", web), ("電腦版", desk)):
     t(f"#7b {label}:段首共用那句(單筆下單不編步驟)兩邊都帶到",
       "has none" in block and "never make up steps or a page name" in block)
