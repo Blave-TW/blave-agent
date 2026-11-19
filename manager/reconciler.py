@@ -729,7 +729,8 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     try:
         row = _pending_sent(CAPITAL_PENDING_PATH).get(root)
     except PendingUnreadable as e:
-        row = {'legs': []}  # unknown whether lots are parked: entries wait, closes go
+        # unknown whether lots are parked: entries wait, closes go — but for a row held here
+        row = (_park_unsaved.get(CAPITAL_PENDING_PATH) or {}).get(root) or {'legs': []}
         _note_capital_pending_unreadable(root, e)
     if reduce_only and any(l.get('queued_until') or (l.get('broker_ack') and l.get('intent') == 'reduce')
                            for l in (row or {}).get('legs') or []):
@@ -780,7 +781,9 @@ def _capital_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     if got + 1e-9 < lots or row is not None:
         park_id = _capital_park(root, result, requested, base, intent)
         parked = park_id is not False
-    if result.get('status') != 'filled' or got + 1e-9 < lots:
+    if root in (_park_unsaved.get(CAPITAL_PENDING_PATH) or {}):
+        pass  # the park was not saved: HALT (_park_saved), whose reason is the P1 — this row says closes go on
+    elif result.get('status') != 'filled' or got + 1e-9 < lots:
         # P1 (notifications.md 下單失敗 row): order_errors.json is diffed by the platform into an
         # order_error event — workspace, TG, email. Under self_ledger the book counts only `got`;
         # the rest is parked until an account read settles it (_capital_claim_pending).
@@ -868,8 +871,7 @@ _capital_sent_at = {}  # root → when this process last sent on it
 
 
 def _save_capital_pending(pending):
-    from lib import president_vault
-    president_vault.replace_json(CAPITAL_PENDING_PATH, pending)
+    _save_park_file(CAPITAL_PENDING_PATH, pending)
 
 
 def _capital_read_after_send(root):
@@ -919,6 +921,8 @@ def _tw_hold_row_ok():
 
 def _note_capital_pending_unreadable(root, err):
     global _capital_pending_unreadable_noted
+    if _unsaved_unreadable(CAPITAL_PENDING_PATH, venue_traits.CAPITAL, err):
+        return
     logging.error(f"[reconciler/capital] {err} — no 群益 entry until it reads again (never remove it: it holds sends that may have filled)")
     if _capital_pending_unreadable_noted or not _tw_hold_row_ok():
         return   # under HALT: not noted, so the row is written once HALT is cleared and it still fails
@@ -990,7 +994,7 @@ def _capital_park(root, result, requested, base, intent=None, halted=False):
     if halted:
         row['halted'] = True
     pending[root] = row
-    _save_capital_pending(pending)
+    _park_saved(_save_capital_pending, CAPITAL_PENDING_PATH, pending, root, venue_traits.CAPITAL, root)
     return _park_id(key, row)
 
 
@@ -1244,10 +1248,12 @@ class PendingUnreadable(RuntimeError):
 
 
 def _pending_sent(path=PENDING_SENT_PATH):
+    """The park file, with the rows only this process holds (_park_unsaved) laid over it by key.
+    The file is read every time: another process (flatten) parks into it too."""
     try:
         raw = read_retry(Path(path).read_text, encoding='utf-8')
     except FileNotFoundError:
-        return {}
+        return dict(_park_unsaved.get(path) or {})
     except OSError as e:
         raise PendingUnreadable(f"{path}: {type(e).__name__}") from e
     try:
@@ -1256,7 +1262,58 @@ def _pending_sent(path=PENDING_SENT_PATH):
         raise PendingUnreadable(f"{path} does not parse ({e})") from e
     if not isinstance(d, dict):
         raise PendingUnreadable(f"{path} is not a JSON object")
-    return d
+    return {**d, **(_park_unsaved.get(path) or {})}
+
+
+# {path: {key: row}} rows a park's save was refused for after the send (full disk, a file another
+# program holds): only this process has them. Laid over the file by _pending_sent, so the claim
+# still settles the send and its root's entries wait; dropped once a save puts them in the file
+# or the claim settles them. A restart forgets them — hence the HALT while any is left.
+_park_unsaved = {}
+
+
+def _save_park_file(path, pending):
+    from lib import president_vault
+    president_vault.replace_json(path, pending)
+    _park_unsaved.pop(path, None)  # `pending` held every row of this path: all in the file now
+
+
+def _unsaved_halt(venue, what):
+    if guard.halted():  # a HALT already on keeps its source and reason (_park_unexplained's rule)
+        return
+    try:
+        guard.trip_halt(_unverified_words(venue, what), 'reconciler')
+    except Exception as e:
+        logging.error(f"[reconciler/{venue}] HALT file not written ({e}) — halted in this process")
+
+
+def _unsaved_unreadable(path, venue, err):
+    """The park file is there but cannot be read while rows are held only in this process: HALT
+    again and True — never the row telling the user to reopen Blave (a restart forgets them)."""
+    unsaved = _park_unsaved.get(path)
+    if not unsaved:
+        return False
+    logging.error(f"[reconciler/{venue}] {err} while {', '.join(unsaved)} is held only in this process — HALT")
+    _unsaved_halt(venue, next(iter(unsaved)))
+    return True
+
+
+def _park_saved(save, path, pending, key, venue, sym):
+    """A park's save of pending[key], after the order went out. Never raises: an exception from
+    here leaves place_order as a failed order — nothing booked, no row holding the root — and the
+    next diff sends the same lots again. Refused → the row stays in this process (_park_unsaved)
+    and HALT (its reason is the user's P1, no order_errors row beside it). False = not on disk."""
+    try:
+        save(pending)
+        return True
+    except Exception as e:
+        _park_unsaved.setdefault(path, {})[key] = pending[key]
+        guard.audit('order_unfilled_park_unsaved', venue=venue, symbol=sym, contract=key,
+                    error=f"{type(e).__name__}: {e}")
+        logging.error(f"[reconciler/{venue}] {key}: the park record was not saved ({type(e).__name__}: {e}) — "
+                      f"kept in this process, HALT (a restart forgets it)")
+        _unsaved_halt(venue, key)
+        return False
 
 
 _pending_unreadable_noted = False
@@ -1266,6 +1323,8 @@ def _note_pending_unreadable(sym, err):
     """One order_errors row (P1) per process, a log line every time: entries for
     統一 wait until the file reads again; closes go on."""
     global _pending_unreadable_noted
+    if _unsaved_unreadable(PENDING_SENT_PATH, venue_traits.PRESIDENT, err):
+        return
     logging.error(f"[reconciler/president] {err} — no 統一 entry until it reads again (never remove it: it holds sends that may have filled)")
     if _pending_unreadable_noted or not _tw_hold_row_ok():
         return   # under HALT: not noted, so the row is written once HALT is cleared and it still fails
@@ -1278,8 +1337,7 @@ def _note_pending_unreadable(sym, err):
 
 
 def _save_pending_sent(pending):
-    from lib import president_vault
-    president_vault.replace_json(PENDING_SENT_PATH, pending)
+    _save_park_file(PENDING_SENT_PATH, pending)
 
 
 def _president_nets():
@@ -1332,7 +1390,7 @@ def _president_park_unfilled(sym, leg, requested, net_before):
         # a fill beside a parked send of the same contract moves what the account should show
         # (_capital_park does the same): else the claim reads this fill as the parked one's
         pending[pid] = row
-        _save_pending_sent(pending)
+        _park_saved(_save_pending_sent, PENDING_SENT_PATH, pending, pid, venue_traits.PRESIDENT, sym)
         return
     sent = {'at': time.time(), 'lots': unfilled, 'status': leg.get('status'),
             'ack': leg.get('ack'), 'statuscode': leg.get('statuscode'), 'seq': leg.get('seq'),
@@ -1342,7 +1400,8 @@ def _president_park_unfilled(sym, leg, requested, net_before):
         sent['queued_until'] = queued
     row['legs'].append(sent)
     pending[pid] = row
-    _save_pending_sent(pending)
+    if not _park_saved(_save_pending_sent, PENDING_SENT_PATH, pending, pid, venue_traits.PRESIDENT, sym):
+        return
     guard.audit('order_unfilled_parked', venue=venue_traits.PRESIDENT, symbol=sym, contract=pid,
                 lots=unfilled, status=leg.get('status'), orderno=leg.get('orderno'), rebased=rebased)
     logging.warning(f"[reconciler/president] {pid}: {unfilled:+g} lots reported no fill in time — "
@@ -1454,6 +1513,16 @@ def _park_unexplained(msg, symbol, venue, park_id):
     guard.trip_halt(msg, 'reconciler')
 
 
+def _unverified_words(venue, pid):
+    name, app = _VENUE_WORDS[venue]
+    if _en():
+        en, en_app = _VENUE_EN[name]
+        return (f"{en} {pid}: an order with no fill report may not be booked. All trading paused, closes and "
+                f"stops too. Check the {pid} position in {en_app}, then press Start trading.")
+    return (f"{name} {pid} 有一筆沒回報成交，Blave 確認不了它記帳了沒。自動下單已全部暫停，平倉與停損也不會送。"
+            f"到{app}核對 {pid} 部位，再按「啟動下單」。")
+
+
 def _halt_unknown_booked(sym, pid, row, venue=venue_traits.PRESIDENT, key=None):
     """A new leg is parked onto a row whether booked or not is unknown (the book went
     unreadable after this round's send). The merge goes ahead — the order is already
@@ -1461,18 +1530,10 @@ def _halt_unknown_booked(sym, pid, row, venue=venue_traits.PRESIDENT, key=None):
     it by its id and this leg with it, so the user is told and HALT is tripped
     (the _book_late_fill_or_halt pattern). The HALT reason is the user's P1 (the platform's halt
     event): no order_errors row beside it."""
-    name, app = _VENUE_WORDS[venue]
-    if _en():
-        en, en_app = _VENUE_EN[name]
-        msg = (f"{en} {pid}: an order with no fill report may not be booked. All trading paused, closes and "
-               f"stops too. Check the {pid} position in {en_app}, then press Start trading.")
-    else:
-        msg = (f"{name} {pid} 有一筆沒回報成交，Blave 確認不了它記帳了沒。自動下單已全部暫停，平倉與停損也不會送。"
-               f"到{app}核對 {pid} 部位，再按「啟動下單」。")
     guard.audit('order_unfilled_park_unverified', venue=venue, symbol=sym, contract=pid,
                 park_id=_park_id(key or pid, row))
     try:
-        guard.trip_halt(msg, 'reconciler')
+        guard.trip_halt(_unverified_words(venue, pid), 'reconciler')
     except Exception as e:
         logging.error(f"[reconciler/{venue}] HALT file not written ({e}) — halted in this process")
 
@@ -1494,6 +1555,18 @@ def _save_claimed(pending, venue, end_of_round=False, path=PENDING_SENT_PATH, sa
             _claim_save_fails.pop(venue, None)
         return True
     except OSError as e:
+        unsaved = _park_unsaved.get(path)
+        for key in [k for k in unsaved or {} if k not in pending]:
+            del unsaved[key]  # settled by this claim: nothing left that only this process knows
+        if unsaved == {}:
+            del _park_unsaved[path]
+        elif unsaved and end_of_round:
+            # rows only this process holds, and the file still refuses them: no "重新開啟 Blave" row
+            # (a restart forgets them and the next diff sends again) — HALT again instead
+            logging.error(f"[reconciler/{venue}] park file not saved ({type(e).__name__}: {e}) while "
+                          f"{', '.join(unsaved)} is held only in this process — HALT")
+            _unsaved_halt(venue, next(iter(unsaved)))
+            return False
         n = _claim_save_fails.get(venue, 0)
         if end_of_round:
             n = _claim_save_fails[venue] = n + 1
@@ -1677,15 +1750,17 @@ def _president_place_order(symbol, signed_diff, asset_spec=None, reduce_only=Fal
     action = 'buy' if signed_diff > 0 else 'sell'
     owned = book_months(venue_traits.PRESIDENT)
     months = None if owned is None else owned.get(sym, set())
-    queued, rows = False, []
     try:
         rows = [(pid, r) for pid, r in _pending_sent().items() if r.get('root') == sym]
         parked = [pid for pid, _r in rows]
-        # until a snapshot started past the open settles the row (the claim drops or books it)
-        queued = any(l.get('queued_until') for _pid, r in rows for l in r.get('legs') or [])
     except PendingUnreadable as e:
-        parked = ['?']  # unknown whether lots are parked: entries wait, closes go
+        # unknown whether lots are parked: entries wait, closes go — but for the rows held here
+        rows = [(pid, r) for pid, r in (_park_unsaved.get(PENDING_SENT_PATH) or {}).items()
+                if r.get('root') == sym]
+        parked = [pid for pid, _r in rows] or ['?']
         _note_pending_unreadable(sym, e)
+    # until a snapshot started past the open settles the row (the claim drops or books it)
+    queued = any(l.get('queued_until') for _pid, r in rows for l in r.get('legs') or [])
     if reduce_only and queued:
         # the close sent before the open is still queued there: another is refused 9868
         logging.info(f"[reconciler/president] {sym}: close of {lots} waits — the one sent before "
@@ -1866,8 +1941,7 @@ def _sinopac_nets(root=None):
 
 
 def _save_sinopac_pending(pending):
-    from lib import president_vault
-    president_vault.replace_json(SINOPAC_PENDING_PATH, pending)
+    _save_park_file(SINOPAC_PENDING_PATH, pending)
 
 
 _sinopac_pending_unreadable_noted = False
@@ -1875,6 +1949,8 @@ _sinopac_pending_unreadable_noted = False
 
 def _note_sinopac_pending_unreadable(root, err):
     global _sinopac_pending_unreadable_noted
+    if _unsaved_unreadable(SINOPAC_PENDING_PATH, venue_traits.SINOPAC, err):
+        return
     logging.error(f"[reconciler/sinopac] {err} — no 永豐 entry until it reads again (never remove it: it holds sends that may have filled)")
     if _sinopac_pending_unreadable_noted or not _tw_hold_row_ok():
         return
@@ -1942,7 +2018,7 @@ def _sinopac_park(root, result, requested, base, intent=None, halted=False):
     if halted:
         row['halted'] = True
     pending[root] = row
-    _save_sinopac_pending(pending)
+    _park_saved(_save_sinopac_pending, SINOPAC_PENDING_PATH, pending, root, venue_traits.SINOPAC, root)
     return _park_id(key, row)
 
 
@@ -2092,7 +2168,8 @@ def _sinopac_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     try:
         row = _pending_sent(SINOPAC_PENDING_PATH).get(sym)
     except PendingUnreadable as e:
-        row = {'legs': []}  # unknown whether lots are parked: entries wait, closes go
+        # unknown whether lots are parked: entries wait, closes go — but for a row held here
+        row = (_park_unsaved.get(SINOPAC_PENDING_PATH) or {}).get(sym) or {'legs': []}
         _note_sinopac_pending_unreadable(sym, e)
     if reduce_only and any(l.get('queued_until') or (l.get('broker_ack') and l.get('intent') == 'reduce')
                            for l in (row or {}).get('legs') or []):
@@ -2177,7 +2254,9 @@ def _sinopac_place_order(symbol, signed_diff, asset_spec=None, reduce_only=False
     park_id = None
     if got + 1e-9 < lots or row is not None:
         park_id = _sinopac_park(sym, result, requested, base, intent)
-    if result.get('broker_ack') and got + 1e-9 < lots:
+    if sym in (_park_unsaved.get(SINOPAC_PENDING_PATH) or {}):
+        pass  # the park was not saved: HALT (_park_saved), whose reason is the P1 — this row says closes go on
+    elif result.get('broker_ack') and got + 1e-9 < lots:
         # P1 (notifications.md 下單失敗 row, kind order_unconfirmed): the claim settles it
         from lib.portfolio import _record_order_error
         if park_id is False:

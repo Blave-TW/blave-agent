@@ -581,6 +581,9 @@ fill could silently go missing from the book now fail loud instead:
   silently re-buying fills the log never received;
 - a failed `manager/orders.jsonl` append under `self_ledger` trips HALT (the
   file IS the book there; in account-read mode it stays best-effort);
+- a 統一 / 群益 / 永豐 send whose park record (`state/*_pending_sent.json`) cannot be saved: the row
+  is kept in the reconciler process and HALT is tripped; a restart forgets the row, and pressing
+  Start trading while the file still refuses it trips HALT again;
 - `manager/seed_ledger.py` REFUSES to seed while any execution is in flight
   (seeding mid-execution double-counts its fills);
 - `manager/flatten.py` waits up to 30s after tripping HALT for in-flight

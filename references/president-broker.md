@@ -300,7 +300,9 @@ print(r["status"], r["symbol"], r["fill_qty"], r["ack"])
   (`state/president_pending_sent.json`) and claims them from the next caught-up snapshot: account
   net moved by exactly those lots → booked (`late_fill_adopted`); unchanged → dropped; three
   distinct snapshots fitting neither → one `order_errors` row (P1) + HALT. No entry for that root
-  goes out while lots are parked; closes still do. `unknown` is **P3 today** (the lib's
+  goes out while lots are parked; closes still do. If the park record cannot be saved after a send,
+  the row is kept in the reconciler process and HALT is tripped; a restart forgets the row, and
+  pressing Start trading while the file still refuses it trips HALT again. `unknown` is **P3 today** (the lib's
   `order_unknown_status` audit line + a reconciler log warning; it is deliberately not written to
   `manager/order_errors.json`, because the platform turns every row there into a P1 下單失敗 TG +
   email). Raising it to P2 needs, in this order: api routing that `kind` to its own P2 event,

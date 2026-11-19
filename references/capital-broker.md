@@ -664,6 +664,9 @@ the lots sent can be claimed later, on an account read that moved by exactly tha
 close that did not report its whole fill (that `sent`, a plain `sent`, a short fill) in the
 reconciler's `state/capital_pending_sent.json` as a `reduce` leg, so the reconciler's claim settles
 it on an account read exactly as it does its own sends, and its close gate holds the next close.
+If the park record cannot be saved after a send, the row is kept in the reconciler process and HALT
+is tripped; a restart forgets the row, and pressing Start trading while the file still refuses it
+trips HALT again.
 
 **Two consumer-side rules (both live-observed):** ① `SKReplyLib_ConnectByID` **replays every
 report from the whole session day** on each connect — a fresh process re-receives this morning's
